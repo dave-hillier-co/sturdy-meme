@@ -1285,14 +1285,13 @@ void Renderer::updateUniformBuffer(uint32_t currentImage, const Camera& camera) 
     float time = std::chrono::duration<float, std::chrono::seconds::period>(currentTime - startTime).count();
 
     float cycleDuration = 120.0f;
-    float timeOfDay;
     if (useManualTime) {
-        timeOfDay = manualTime;
+        currentTimeOfDay = manualTime;
     } else {
-        timeOfDay = fmod((time * timeScale) / cycleDuration, 1.0f);
+        currentTimeOfDay = fmod((time * timeScale) / cycleDuration, 1.0f);
     }
 
-    float sunAngle = timeOfDay * 2.0f * 3.14159265f - 3.14159265f * 0.5f;
+    float sunAngle = currentTimeOfDay * 2.0f * 3.14159265f - 3.14159265f * 0.5f;
     glm::vec3 sunDir = glm::normalize(glm::vec3(cos(sunAngle), sin(sunAngle), 0.3f));
     glm::vec3 moonDir = -sunDir;
 
@@ -1313,7 +1312,7 @@ void Renderer::updateUniformBuffer(uint32_t currentImage, const Camera& camera) 
     ubo.sunColor = glm::vec4(sunColor, 1.0f);
     ubo.ambientColor = glm::vec4(ambientColor, 1.0f);
     ubo.cameraPosition = glm::vec4(camera.getPosition(), 1.0f);
-    ubo.timeOfDay = timeOfDay;
+    ubo.timeOfDay = currentTimeOfDay;
     ubo.shadowMapSize = static_cast<float>(SHADOW_MAP_SIZE);
 
     memcpy(uniformBuffersMapped[currentImage], &ubo, sizeof(ubo));

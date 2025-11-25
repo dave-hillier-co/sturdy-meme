@@ -1,6 +1,7 @@
 #include "Application.h"
 #include <chrono>
 #include <cmath>
+#include <cstdio>
 
 #ifdef __APPLE__
 #include <CoreFoundation/CoreFoundation.h>
@@ -48,6 +49,7 @@ bool Application::init(const std::string& title, int width, int height) {
 
 void Application::run() {
     auto lastTime = std::chrono::high_resolution_clock::now();
+    float smoothedFps = 60.0f;
 
     while (running) {
         auto currentTime = std::chrono::high_resolution_clock::now();
@@ -61,6 +63,17 @@ void Application::run() {
         camera.setAspectRatio(static_cast<float>(renderer.getWidth()) / static_cast<float>(renderer.getHeight()));
 
         renderer.render(camera);
+
+        // Update window title with FPS and time of day
+        if (deltaTime > 0.0f) {
+            smoothedFps = smoothedFps * 0.95f + (1.0f / deltaTime) * 0.05f;
+        }
+        float timeOfDay = renderer.getTimeOfDay();
+        int hours = static_cast<int>(timeOfDay * 24.0f);
+        int minutes = static_cast<int>((timeOfDay * 24.0f - hours) * 60.0f);
+        char title[64];
+        snprintf(title, sizeof(title), "Vulkan Game - FPS: %.0f | Time: %02d:%02d", smoothedFps, hours, minutes);
+        SDL_SetWindowTitle(window, title);
     }
 
     renderer.waitIdle();

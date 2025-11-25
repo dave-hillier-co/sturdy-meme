@@ -65,6 +65,7 @@ public:
     float getTimeScale() const { return timeScale; }
     void setTimeOfDay(float time) { manualTime = time; useManualTime = true; }
     void resumeAutoTime() { useManualTime = false; }
+    float getTimeOfDay() const { return currentTimeOfDay; }
 
 private:
     bool createSwapchain();
@@ -169,4 +170,5 @@ private:
     float timeScale = 1.0f;
     float manualTime = 0.0f;
     bool useManualTime = false;
+    float currentTimeOfDay = 0.0f;
 };

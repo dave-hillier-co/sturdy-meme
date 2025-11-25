@@ -33,17 +33,27 @@ void main() {
     vec2 pos = positions[gl_VertexIndex];
     gl_Position = vec4(pos, 0.9999, 1.0);
 
-    // Transform screen position to view-space direction
-    // Use both near and far points to compute accurate ray direction
-    mat4 invProj = inverse(ubo.proj);
-    vec4 nearPoint = invProj * vec4(pos, 0.0, 1.0);
-    vec4 farPoint = invProj * vec4(pos, 1.0, 1.0);
-    vec3 nearPos = nearPoint.xyz / nearPoint.w;
-    vec3 farPos = farPoint.xyz / farPoint.w;
-    vec3 viewDir = normalize(farPos - nearPos);
+    // Reconstruct world-space ray direction from screen position
+    //
+    // Use inverse of projection to go from clip space to view space,
+    // then inverse of view rotation to go to world space.
 
-    // Transform to world space using only rotation
-    // transpose(mat3) = inverse for orthonormal rotation matrices
-    mat3 invViewRot = transpose(mat3(ubo.view));
-    rayDir = invViewRot * viewDir;
+    // For perspective projection:
+    //   proj[0][0] = 1 / (aspect * tan(fov/2))
+    //   proj[1][1] = 1 / tan(fov/2)  (negated for Vulkan Y-flip)
+    //
+    // To unproject clip (x,y) to view space direction:
+    //   view_x = clip_x / proj[0][0]
+    //   view_y = clip_y / proj[1][1]
+    //   view_z = -1 (looking down -Z)
+
+    vec3 viewSpaceDir = vec3(
+        pos.x / ubo.proj[0][0],
+        pos.y / ubo.proj[1][1],  // proj[1][1] is negative, so this flips Y correctly
+        -1.0
+    );
+
+    // Transform to world space using inverse view rotation
+    mat3 invViewRotation = transpose(mat3(ubo.view));
+    rayDir = invViewRotation * viewSpaceDir;
 }

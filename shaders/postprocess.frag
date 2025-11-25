@@ -11,6 +11,10 @@ layout(binding = 1) uniform PostProcessUniforms {
     float deltaTime;
     float adaptationSpeed;
     float bloomRadius;
+    // God rays parameters (Phase 4.4)
+    vec2 sunScreenPos;     // Sun position in screen space [0,1]
+    float godRayIntensity; // God ray strength
+    float godRayDecay;     // Falloff per sample
 } ubo;
 
 layout(location = 0) in vec2 fragTexCoord;
@@ -113,6 +117,59 @@ vec3 sampleBloom(vec2 uv, float radius) {
     return small * 0.4 + medium * 0.35 + large * 0.25;
 }
 
+// God rays / Light shafts (Phase 4.4)
+// Screen-space radial blur from sun position
+const int GOD_RAY_SAMPLES = 64;
+
+vec3 computeGodRays(vec2 uv, vec2 sunPos) {
+    // Only process if sun is roughly on screen
+    if (sunPos.x < -0.5 || sunPos.x > 1.5 || sunPos.y < -0.5 || sunPos.y > 1.5) {
+        return vec3(0.0);
+    }
+
+    // Direction from pixel to sun
+    vec2 delta = (sunPos - uv) / float(GOD_RAY_SAMPLES);
+
+    // Initial sample weight
+    float illumination = 0.0;
+    float weight = 1.0;
+    vec2 sampleUV = uv;
+
+    // Accumulate samples along ray toward sun
+    for (int i = 0; i < GOD_RAY_SAMPLES; i++) {
+        sampleUV += delta;
+
+        // Check bounds
+        if (sampleUV.x < 0.0 || sampleUV.x > 1.0 || sampleUV.y < 0.0 || sampleUV.y > 1.0) {
+            break;
+        }
+
+        // Sample brightness at this point
+        vec3 sampleColor = texture(hdrInput, sampleUV).rgb;
+        float brightness = getLuminance(sampleColor);
+
+        // Only accumulate from bright sky pixels (threshold at bloom level)
+        if (brightness > ubo.bloomThreshold * 0.5) {
+            illumination += brightness * weight;
+        }
+
+        // Exponential decay
+        weight *= ubo.godRayDecay;
+    }
+
+    // Normalize and scale
+    illumination /= float(GOD_RAY_SAMPLES);
+
+    // Fade based on distance from sun
+    float distFromSun = length(uv - sunPos);
+    float radialFalloff = 1.0 - clamp(distFromSun * 1.5, 0.0, 1.0);
+    radialFalloff *= radialFalloff;  // Squared falloff
+
+    // Return warm-tinted god rays
+    vec3 godRayColor = vec3(1.0, 0.95, 0.8);  // Slight warm tint
+    return godRayColor * illumination * radialFalloff * ubo.godRayIntensity;
+}
+
 void main() {
     vec3 hdr = texture(hdrInput, fragTexCoord).rgb;
 
@@ -137,8 +194,14 @@ void main() {
         bloom = sampleBloom(fragTexCoord, ubo.bloomRadius);
     }
 
-    // Combine HDR with bloom
-    vec3 combined = hdr + bloom * ubo.bloomIntensity;
+    // Compute god rays (Phase 4.4)
+    vec3 godRays = vec3(0.0);
+    if (ubo.godRayIntensity > 0.0) {
+        godRays = computeGodRays(fragTexCoord, ubo.sunScreenPos);
+    }
+
+    // Combine HDR with bloom and god rays
+    vec3 combined = hdr + bloom * ubo.bloomIntensity + godRays;
 
     // Apply exposure
     vec3 exposed = combined * exp2(finalExposure);

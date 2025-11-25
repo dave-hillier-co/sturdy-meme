@@ -1510,6 +1510,22 @@ void Renderer::updateUniformBuffer(uint32_t currentImage, const Camera& camera) 
     lastSunIntensity = sunIntensity;
 
     memcpy(uniformBuffersMapped[currentImage], &ubo, sizeof(ubo));
+
+    // Calculate sun screen position for god rays (Phase 4.4)
+    // Place sun at a far distance along sun direction vector
+    glm::vec3 sunWorldPos = camera.getPosition() + sunDir * 1000.0f;
+    glm::vec4 sunClipPos = ubo.proj * ubo.view * glm::vec4(sunWorldPos, 1.0f);
+
+    // Perspective divide to get NDC
+    glm::vec2 sunScreenPos(0.5f, 0.5f);  // Default to center if behind camera
+    if (sunClipPos.w > 0.0f) {
+        glm::vec3 sunNDC = glm::vec3(sunClipPos) / sunClipPos.w;
+        // Convert from NDC [-1,1] to screen space [0,1]
+        sunScreenPos = glm::vec2(sunNDC.x * 0.5f + 0.5f, sunNDC.y * 0.5f + 0.5f);
+        // Flip Y for Vulkan coordinate system
+        sunScreenPos.y = 1.0f - sunScreenPos.y;
+    }
+    postProcessSystem.setSunScreenPos(sunScreenPos);
 }
 
 void Renderer::render(const Camera& camera) {

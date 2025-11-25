@@ -781,22 +781,45 @@ glm::mat4 Renderer::calculateCascadeMatrix(const glm::vec3& lightDir, const Came
         lightDirNorm = glm::vec3(0.0f, -1.0f, 0.0f);
     }
 
-    // Get view matrix and create projection for this cascade's depth range
+    // Get camera's projection matrix (which has Vulkan Y-flip) and undo the flip for frustum calculation
+    glm::mat4 cameraProj = camera.getProjectionMatrix();
+    cameraProj[1][1] *= -1.0f;  // Undo Vulkan Y-flip for standard frustum corners
+
+    // Extract frustum parameters from the camera's projection matrix
+    // For perspective: proj[0][0] = 1/(aspect*tan(fov/2)), proj[1][1] = 1/tan(fov/2)
+    float tanHalfFov = 1.0f / cameraProj[1][1];
+    float aspect = cameraProj[1][1] / cameraProj[0][0];
+
+    // Calculate frustum corners at near and far split distances
+    float nearHeight = nearSplit * tanHalfFov;
+    float nearWidth = nearHeight * aspect;
+    float farHeight = farSplit * tanHalfFov;
+    float farWidth = farHeight * aspect;
+
+    // Get camera vectors from inverse view matrix
     glm::mat4 view = camera.getViewMatrix();
-    glm::mat4 cascadeProj = glm::perspective(glm::radians(45.0f), 16.0f/9.0f, nearSplit, farSplit);
-    glm::mat4 invViewProj = glm::inverse(cascadeProj * view);
+    glm::mat4 invView = glm::inverse(view);
+    glm::vec3 camPos = glm::vec3(invView[3]);
+    glm::vec3 camForward = -glm::vec3(invView[2]);  // Camera looks down -Z
+    glm::vec3 camRight = glm::vec3(invView[0]);
+    glm::vec3 camUp = glm::vec3(invView[1]);
 
     // Calculate frustum corners in world space
-    std::array<glm::vec3, 8> frustumCorners{};
-    int cornerIndex = 0;
-    for (int x = -1; x <= 1; x += 2) {
-        for (int y = -1; y <= 1; y += 2) {
-            for (int z = -1; z <= 1; z += 2) {
-                glm::vec4 corner = invViewProj * glm::vec4(static_cast<float>(x), static_cast<float>(y), static_cast<float>(z), 1.0f);
-                frustumCorners[cornerIndex++] = glm::vec3(corner) / corner.w;
-            }
-        }
-    }
+    glm::vec3 nearCenter = camPos + camForward * nearSplit;
+    glm::vec3 farCenter = camPos + camForward * farSplit;
+
+    std::array<glm::vec3, 8> frustumCorners{
+        // Near plane corners
+        nearCenter - camRight * nearWidth - camUp * nearHeight,
+        nearCenter + camRight * nearWidth - camUp * nearHeight,
+        nearCenter + camRight * nearWidth + camUp * nearHeight,
+        nearCenter - camRight * nearWidth + camUp * nearHeight,
+        // Far plane corners
+        farCenter - camRight * farWidth - camUp * farHeight,
+        farCenter + camRight * farWidth - camUp * farHeight,
+        farCenter + camRight * farWidth + camUp * farHeight,
+        farCenter - camRight * farWidth + camUp * farHeight,
+    };
 
     // Calculate frustum center
     glm::vec3 center(0.0f);
@@ -805,38 +828,28 @@ glm::mat4 Renderer::calculateCascadeMatrix(const glm::vec3& lightDir, const Came
     }
     center /= static_cast<float>(frustumCorners.size());
 
-    // Calculate light view matrix
-    glm::vec3 up = (std::abs(lightDirNorm.y) > 0.99f) ? glm::vec3(0.0f, 0.0f, 1.0f) : glm::vec3(0.0f, 1.0f, 0.0f);
-    glm::mat4 lightView = glm::lookAt(center - lightDirNorm * 50.0f, center, up);
-
-    // Find AABB in light space
-    float minX = std::numeric_limits<float>::max();
-    float maxX = std::numeric_limits<float>::lowest();
-    float minY = std::numeric_limits<float>::max();
-    float maxY = std::numeric_limits<float>::lowest();
-    float minZ = std::numeric_limits<float>::max();
-    float maxZ = std::numeric_limits<float>::lowest();
-
+    // Use bounding sphere for uniform shadow map coverage (like the original working code)
+    float radius = 0.0f;
     for (const auto& corner : frustumCorners) {
-        glm::vec4 lightSpaceCorner = lightView * glm::vec4(corner, 1.0f);
-        minX = std::min(minX, lightSpaceCorner.x);
-        maxX = std::max(maxX, lightSpaceCorner.x);
-        minY = std::min(minY, lightSpaceCorner.y);
-        maxY = std::max(maxY, lightSpaceCorner.y);
-        minZ = std::min(minZ, lightSpaceCorner.z);
-        maxZ = std::max(maxZ, lightSpaceCorner.z);
+        radius = std::max(radius, glm::length(corner - center));
     }
 
-    // Extend Z range to catch shadow casters behind camera
-    float zMult = 10.0f;
-    if (minZ < 0) minZ *= zMult; else minZ /= zMult;
-    if (maxZ < 0) maxZ /= zMult; else maxZ *= zMult;
+    // Position light far enough to avoid near-plane clipping
+    glm::vec3 up = (std::abs(lightDirNorm.y) > 0.99f) ? glm::vec3(0.0f, 0.0f, 1.0f) : glm::vec3(0.0f, 1.0f, 0.0f);
+    glm::vec3 lightPos = center + lightDirNorm * (radius + 50.0f);
+    glm::mat4 lightView = glm::lookAt(lightPos, center, up);
 
-    // Create orthographic projection for this cascade
-    glm::mat4 lightProjection = glm::ortho(minX, maxX, minY, maxY, minZ, maxZ);
+    // Use sphere-based ortho projection for uniform texel density
+    float orthoSize = radius * 1.1f;  // Small margin for safety
+    float zRange = radius * 2.0f + 100.0f;  // Cover the full sphere plus padding
 
-    // Vulkan corrections
+    glm::mat4 lightProjection = glm::ortho(-orthoSize, orthoSize, -orthoSize, orthoSize, 0.1f, zRange);
+
+    // Vulkan corrections:
+    // 1. Flip Y (Vulkan has inverted Y compared to OpenGL)
     lightProjection[1][1] *= -1.0f;
+    // 2. Transform Z from [-1,1] (OpenGL) to [0,1] (Vulkan)
+    //    new_z = old_z * 0.5 + 0.5
     lightProjection[2][2] = lightProjection[2][2] * 0.5f;
     lightProjection[3][2] = lightProjection[3][2] * 0.5f + 0.5f;
 

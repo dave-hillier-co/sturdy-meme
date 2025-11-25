@@ -229,13 +229,13 @@ float sampleShadowForCascade(vec3 worldPos, vec3 normal, vec3 lightDir, int casc
     vec4 lightSpacePos = ubo.cascadeViewProj[cascade] * vec4(worldPos, 1.0);
     vec3 projCoords = lightSpacePos.xyz / lightSpacePos.w;
 
-    // Transform to [0,1] range for UV coordinates
+    // Transform XY to [0,1] range for texture UV (Z is already [0,1] from Vulkan matrix)
     projCoords.xy = projCoords.xy * 0.5 + 0.5;
 
     // Check if outside shadow map
     if (projCoords.x < 0.0 || projCoords.x > 1.0 ||
         projCoords.y < 0.0 || projCoords.y > 1.0 ||
-        projCoords.z > 1.0) {
+        projCoords.z < 0.0 || projCoords.z > 1.0) {
         return 1.0;  // No shadow outside frustum
     }
 

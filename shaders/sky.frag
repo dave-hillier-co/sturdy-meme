@@ -54,14 +54,14 @@ float starField(vec3 dir) {
     float phi = asin(clamp(dir.y, -1.0, 1.0));  // Elevation angle [-PI/2, PI/2]
 
     // Create grid in spherical space - scale controls star density
-    // Use different scales to avoid alignment artifacts
-    vec2 gridCoord = vec2(theta * 80.0, phi * 80.0);
+    // Higher scale = smaller stars, lower threshold = more stars
+    vec2 gridCoord = vec2(theta * 200.0, phi * 200.0);
     vec2 cell = floor(gridCoord);
 
     vec3 p = vec3(cell, 0.0);
     float h = hash(p);
 
-    float star = step(0.997, h);
+    float star = step(0.992, h);
     float brightness = hash(p + vec3(1.0)) * 0.5 + 0.5;
 
     return star * brightness * nightFactor;

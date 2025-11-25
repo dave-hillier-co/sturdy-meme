@@ -562,6 +562,10 @@ void PostProcessSystem::recordPostProcess(VkCommandBuffer cmd, uint32_t frameInd
     ubo->bloomThreshold = bloomThreshold;
     ubo->bloomIntensity = bloomIntensity;
     ubo->bloomRadius = bloomRadius;
+    // God rays (Phase 4.4)
+    ubo->sunScreenPos = sunScreenPos;
+    ubo->godRayIntensity = godRayIntensity;
+    ubo->godRayDecay = godRayDecay;
 
     // No GPU readback: just keep CPU-side exposure as the last value we sent so
     // subsequent frames have a stable starting point for manual mode.

@@ -43,6 +43,23 @@ const float OZONE_LAYER_WIDTH = 15.0;
 
 const float SUN_ANGULAR_RADIUS = 0.00935 / 2.0;  // radians
 
+// LMS color space for accurate Rayleigh scattering (Phase 4.1.7)
+// Standard Rec709 Rayleigh produces greenish sunsets; LMS primaries are more accurate
+const mat3 RGB_TO_LMS = mat3(
+    0.4122214708, 0.5363325363, 0.0514459929,
+    0.2119034982, 0.6806995451, 0.1073969566,
+    0.0883024619, 0.2817188376, 0.6299787005
+);
+
+const mat3 LMS_TO_RGB = mat3(
+    4.0767416621, -3.3077115913, 0.2309699292,
+   -1.2684380046,  2.6097574011, -0.3413193965,
+   -0.0041960863, -0.7034186147, 1.7076147010
+);
+
+// Optimized Rayleigh coefficients for LMS space (Ghost of Tsushima technique)
+const vec3 RAYLEIGH_LMS = vec3(6.95e-3, 12.28e-3, 28.44e-3);
+
 float hash(vec3 p) {
     return fract(sin(dot(p, vec3(127.1, 311.7, 74.7))) * 43758.5453);
 }
@@ -77,6 +94,13 @@ struct ScatteringResult {
     vec3 transmittance;
 };
 
+// Compute Rayleigh scattering in LMS space for accurate sunset colors
+vec3 computeRayleighScatteringLMS(float density, float phase) {
+    // Work in LMS space for spectral accuracy
+    vec3 scatterLMS = density * RAYLEIGH_LMS * phase;
+    return LMS_TO_RGB * scatterLMS;
+}
+
 ScatteringResult integrateAtmosphere(vec3 origin, vec3 dir, int sampleCount) {
     vec2 atmo = raySphereIntersect(origin, dir, ATMOSPHERE_RADIUS);
     float start = max(atmo.x, 0.0);
@@ -109,14 +133,20 @@ ScatteringResult integrateAtmosphere(vec3 origin, vec3 dir, int sampleCount) {
         float mieDensity = exp(-altitude / MIE_SCALE_HEIGHT);
         float ozone = ozoneDensity(altitude);
 
-        vec3 rayleighScatter = rayleighDensity * RAYLEIGH_SCATTERING_BASE;
+        // Use LMS-based Rayleigh for more accurate sunset colors
+        vec3 rayleighScatterLMS = computeRayleighScatteringLMS(rayleighDensity, rayleighP);
+
+        // Mie scattering (grey, so no LMS conversion needed)
         vec3 mieScatter = mieDensity * vec3(MIE_SCATTERING_BASE);
 
-        vec3 extinction = rayleighScatter + mieScatter +
+        // Extinction uses standard RGB coefficients
+        vec3 rayleighScatterRGB = rayleighDensity * RAYLEIGH_SCATTERING_BASE;
+        vec3 extinction = rayleighScatterRGB + mieScatter +
                           mieDensity * vec3(MIE_ABSORPTION_BASE) +
                           ozone * OZONE_ABSORPTION;
 
-        vec3 segmentScatter = rayleighScatter * rayleighP + mieScatter * mieP;
+        // Combine LMS Rayleigh with RGB Mie for scattering
+        vec3 segmentScatter = rayleighScatterLMS + mieScatter * mieP;
 
         vec3 attenuation = exp(-extinction * stepSize);
         inscatter += transmittance * segmentScatter * stepSize;

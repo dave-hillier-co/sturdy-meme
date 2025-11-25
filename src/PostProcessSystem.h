@@ -15,6 +15,10 @@ struct PostProcessUniforms {
     float deltaTime;
     float adaptationSpeed;
     float bloomRadius;
+    // God rays parameters (Phase 4.4)
+    glm::vec2 sunScreenPos;   // Sun position in screen space [0,1]
+    float godRayIntensity;    // God ray strength
+    float godRayDecay;        // Falloff from sun position
 };
 
 class PostProcessSystem {
@@ -57,6 +61,14 @@ public:
     float getBloomIntensity() const { return bloomIntensity; }
     void setBloomRadius(float r) { bloomRadius = r; }
     float getBloomRadius() const { return bloomRadius; }
+
+    // God rays (Phase 4.4)
+    void setSunScreenPos(glm::vec2 pos) { sunScreenPos = pos; }
+    glm::vec2 getSunScreenPos() const { return sunScreenPos; }
+    void setGodRayIntensity(float i) { godRayIntensity = i; }
+    float getGodRayIntensity() const { return godRayIntensity; }
+    void setGodRayDecay(float d) { godRayDecay = d; }
+    float getGodRayDecay() const { return godRayDecay; }
 
 private:
     bool createHDRRenderTarget();
@@ -117,6 +129,11 @@ private:
     float bloomThreshold = 1.0f;   // Brightness threshold for bloom
     float bloomIntensity = 0.3f;   // Bloom strength
     float bloomRadius = 4.0f;      // Bloom sample radius
+
+    // God ray parameters (Phase 4.4)
+    glm::vec2 sunScreenPos = glm::vec2(0.5f, 0.5f);  // Default to center
+    float godRayIntensity = 0.5f;  // God ray strength
+    float godRayDecay = 0.96f;     // Falloff per sample
 
     // Auto-exposure parameters
     static constexpr float MIN_EXPOSURE = -4.0f;  // EV

@@ -26,6 +26,8 @@ struct UniformBufferObject {
     glm::vec4 sunColor;
     glm::vec4 ambientColor;
     glm::vec4 cameraPosition;
+    glm::vec4 pointLightPosition;  // xyz = position, w = intensity
+    glm::vec4 pointLightColor;     // rgb = color, a = radius
     float timeOfDay;
     float shadowMapSize;
     float padding[2];

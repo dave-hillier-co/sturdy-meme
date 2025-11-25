@@ -28,6 +28,8 @@ layout(binding = 0) uniform UniformBufferObject {
     vec4 sunColor;
     vec4 ambientColor;
     vec4 cameraPosition;
+    vec4 pointLightPosition;  // xyz = position, w = intensity
+    vec4 pointLightColor;     // rgb = color, a = radius
     float timeOfDay;
     float shadowMapSize;
 } ubo;
@@ -257,6 +259,39 @@ vec3 calculatePBR(vec3 N, vec3 V, vec3 L, vec3 lightColor, float lightIntensity,
     return (diffuse + specular) * lightColor * lightIntensity * NoL * shadow;
 }
 
+// Calculate point light contribution with distance attenuation
+vec3 calculatePointLight(vec3 N, vec3 V, vec3 worldPos, vec3 albedo) {
+    vec3 lightPos = ubo.pointLightPosition.xyz;
+    float lightIntensity = ubo.pointLightPosition.w;
+    vec3 lightColor = ubo.pointLightColor.rgb;
+    float lightRadius = ubo.pointLightColor.a;
+
+    // Skip if light is disabled (zero intensity)
+    if (lightIntensity <= 0.0) return vec3(0.0);
+
+    // Calculate light direction and distance
+    vec3 lightVec = lightPos - worldPos;
+    float distance = length(lightVec);
+    vec3 L = normalize(lightVec);
+
+    // Smooth attenuation that reaches zero at lightRadius
+    float attenuation = 1.0;
+    if (lightRadius > 0.0) {
+        // Windowed inverse-square falloff
+        float distRatio = distance / lightRadius;
+        float windowedFalloff = max(1.0 - distRatio * distRatio, 0.0);
+        windowedFalloff *= windowedFalloff;
+        // Inverse square with distance clamped to avoid division by near-zero
+        attenuation = windowedFalloff / (distance * distance + 0.01);
+    } else {
+        // No radius specified, use simple inverse square
+        attenuation = 1.0 / (distance * distance + 0.01);
+    }
+
+    // Calculate PBR lighting contribution (no shadow for point light)
+    return calculatePBR(N, V, L, lightColor, lightIntensity * attenuation, albedo, 1.0);
+}
+
 void main() {
     vec3 geometricN = normalize(fragNormal);
     vec3 V = normalize(ubo.cameraPosition.xyz - fragWorldPos);
@@ -291,7 +326,10 @@ void main() {
     vec3 ambientSpecular = ubo.ambientColor.rgb * F0 * material.metallic * envReflection;
     vec3 ambient = ambientDiffuse + ambientSpecular;
 
-    vec3 finalColor = ambient + sunLight + moonLight;
+    // Point light contribution
+    vec3 pointLight = calculatePointLight(N, V, fragWorldPos, albedo);
+
+    vec3 finalColor = ambient + sunLight + moonLight + pointLight;
 
     // Add emissive glow
     vec3 emissive = albedo * material.emissiveIntensity;

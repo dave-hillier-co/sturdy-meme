@@ -153,8 +153,27 @@ float celestialDisc(vec3 dir, vec3 celestialDir, float size) {
 }
 
 vec3 renderAtmosphere(vec3 dir) {
-    vec3 origin = vec3(0.0, PLANET_RADIUS + max(ubo.cameraPosition.y, 0.0), 0.0);
-    ScatteringResult result = integrateAtmosphere(origin, normalize(dir), 24);
+    vec3 normDir = normalize(dir);
+
+    // For a game scene, we want the sky horizon to match the flat ground plane at Y=0.
+    // Rays pointing downward (negative Y) are below the horizon.
+    // We still do atmospheric scattering for rays near the horizon to get the
+    // characteristic horizon glow, but clamp the minimum elevation angle.
+
+    // Remap the ray direction for atmosphere calculation:
+    // - Rays with Y >= 0 use their actual direction
+    // - Rays with Y < 0 get clamped to horizon for atmosphere, but return ground color
+    if (normDir.y < -0.001) {
+        // Below horizon - return ground color blended with horizon atmosphere
+        float night = 1.0 - smoothstep(-0.05, 0.08, ubo.sunDirection.y);
+        vec3 groundColor = mix(vec3(0.02, 0.02, 0.015), vec3(0.005, 0.005, 0.008), night);
+        return groundColor;
+    }
+
+    // Place observer on planet surface (camera height is negligible for atmosphere)
+    vec3 origin = vec3(0.0, PLANET_RADIUS + 0.001, 0.0);
+
+    ScatteringResult result = integrateAtmosphere(origin, normDir, 24);
 
     vec3 sunLight = ubo.sunColor.rgb * ubo.sunDirection.w;
     vec3 sky = result.inscatter * sunLight;

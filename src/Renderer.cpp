@@ -94,7 +94,8 @@ bool Renderer::init(SDL_Window* win, const std::string& resPath) {
     if (!createCommandBuffers()) return false;
     if (!createUniformBuffers()) return false;
 
-    groundMesh.createPlane(20.0f, 20.0f);
+    // Create disc ground mesh with radius 50, 64 segments, UV tiling of 10x
+    groundMesh.createDisc(50.0f, 64, 10.0f);
     groundMesh.upload(allocator, device, commandPool, graphicsQueue);
 
     cubeMesh.createCube();
@@ -106,8 +107,9 @@ bool Renderer::init(SDL_Window* win, const std::string& resPath) {
         return false;
     }
 
-    if (!groundTexture.createSolidColor(80, 140, 70, 255, allocator, device, commandPool, graphicsQueue)) {
-        SDL_Log("Failed to create ground texture");
+    std::string grassTexturePath = resourcePath + "/textures/grass.png";
+    if (!groundTexture.load(grassTexturePath, allocator, device, commandPool, graphicsQueue, physicalDevice)) {
+        SDL_Log("Failed to load grass texture: %s", grassTexturePath.c_str());
         return false;
     }
 

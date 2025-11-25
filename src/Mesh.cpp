@@ -1,6 +1,11 @@
 #include "Mesh.h"
 #include <cstring>
 #include <stdexcept>
+#include <cmath>
+
+#ifndef M_PI
+#define M_PI 3.14159265358979323846
+#endif
 
 void Mesh::createPlane(float width, float depth) {
     float hw = width * 0.5f;
@@ -14,6 +19,34 @@ void Mesh::createPlane(float width, float depth) {
     };
 
     indices = {0, 1, 2, 2, 3, 0};
+}
+
+void Mesh::createDisc(float radius, int segments, float uvScale) {
+    vertices.clear();
+    indices.clear();
+
+    // Center vertex
+    vertices.push_back({{0.0f, 0.0f, 0.0f}, {0.0f, 1.0f, 0.0f}, {uvScale * 0.5f, uvScale * 0.5f}});
+
+    // Edge vertices
+    for (int i = 0; i <= segments; ++i) {
+        float angle = (float)i / (float)segments * 2.0f * (float)M_PI;
+        float x = radius * std::cos(angle);
+        float z = radius * std::sin(angle);
+
+        // UV coordinates scaled for tiling - map position to UV space
+        float u = (x / radius + 1.0f) * 0.5f * uvScale;
+        float v = (z / radius + 1.0f) * 0.5f * uvScale;
+
+        vertices.push_back({{x, 0.0f, z}, {0.0f, 1.0f, 0.0f}, {u, v}});
+    }
+
+    // Create triangles from center to edge (clockwise winding when viewed from above)
+    for (int i = 1; i <= segments; ++i) {
+        indices.push_back(0);           // Center
+        indices.push_back(i + 1);       // Next edge vertex
+        indices.push_back(i);           // Current edge vertex
+    }
 }
 
 void Mesh::createCube() {

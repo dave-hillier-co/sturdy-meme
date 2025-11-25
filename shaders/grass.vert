@@ -65,62 +65,34 @@ void main() {
     vec3 p1 = vec3(windOffset * 0.3 + tilt * 0.5, height * 0.5, 0.0);  // Mid control
     vec3 p2 = vec3(windOffset + tilt, height, 0.0);  // Tip
 
-    // Blade geometry: 2 quads + 1 tip triangle = 15 vertices
-    // Quad 0: vertices 0-5 (t=0.0 to t=0.5)
-    // Quad 1: vertices 6-11 (t=0.5 to t=1.0)
-    // Tip: vertices 12-14 (triangle at t=1.0)
-
-    // Vertex index within blade
+    // Triangle strip blade geometry: 15 vertices = 7 segments (8 height levels)
+    // Even vertices (0,2,4,6,8,10,12,14) are left side
+    // Odd vertices (1,3,5,7,9,11,13) are right side
+    // Vertex 14 is the tip point (width = 0)
     uint vi = gl_VertexIndex;
 
-    // Determine which segment and which vertex in that segment
-    float t;
-    float xOffset;
-    float baseWidth = 0.02;
+    // Number of segments and height levels
+    const uint NUM_SEGMENTS = 7;
+    const float baseWidth = 0.02;
 
-    if (vi < 12) {
-        // Quads (2 triangles each = 6 vertices per quad)
-        uint quadIndex = vi / 6;      // 0 or 1
-        uint vertInQuad = vi % 6;     // 0-5
+    // Calculate which height level this vertex is at
+    uint segmentIndex = vi / 2;  // 0-7
+    bool isRightSide = (vi % 2) == 1;
 
-        // Height levels for this quad
-        float t0 = float(quadIndex) * 0.5;       // 0.0 or 0.5
-        float t1 = float(quadIndex + 1) * 0.5;   // 0.5 or 1.0
+    // Calculate t (position along blade, 0 = base, 1 = tip)
+    float t = float(segmentIndex) / float(NUM_SEGMENTS);
 
-        // Width at each height level
-        float w0 = baseWidth * (1.0 - t0 * 0.9);
-        float w1 = baseWidth * (1.0 - t1 * 0.9);
+    // Width tapers from base to tip (90% taper)
+    float widthAtT = baseWidth * (1.0 - t * 0.9);
 
-        // Two triangles per quad:
-        // Triangle 1 (verts 0,1,2): bottom-left, bottom-right, top-right
-        // Triangle 2 (verts 3,4,5): bottom-left, top-right, top-left
-
-        if (vertInQuad == 0) {
-            t = t0; xOffset = -w0;  // bottom-left
-        } else if (vertInQuad == 1) {
-            t = t0; xOffset = w0;   // bottom-right
-        } else if (vertInQuad == 2) {
-            t = t1; xOffset = w1;   // top-right
-        } else if (vertInQuad == 3) {
-            t = t0; xOffset = -w0;  // bottom-left
-        } else if (vertInQuad == 4) {
-            t = t1; xOffset = w1;   // top-right
-        } else {
-            t = t1; xOffset = -w1;  // top-left
-        }
-    } else {
-        // Tip triangle (vertices 12, 13, 14)
-        uint tipVert = vi - 12;
-        float w = baseWidth * 0.1;  // Very narrow at tip base
-
-        if (tipVert == 0) {
-            t = 1.0; xOffset = -w;   // tip-left
-        } else if (tipVert == 1) {
-            t = 1.0; xOffset = w;    // tip-right
-        } else {
-            t = 1.0; xOffset = 0.0;  // tip center (actual tip point)
-        }
+    // For the last vertex (tip), width is 0
+    if (vi == 14) {
+        widthAtT = 0.0;
+        t = 1.0;
     }
+
+    // Offset left or right from center
+    float xOffset = isRightSide ? widthAtT : -widthAtT;
 
     // Get position on bezier curve and offset by width
     vec3 curvePos = bezier(p0, p1, p2, t);

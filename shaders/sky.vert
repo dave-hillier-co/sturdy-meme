@@ -30,7 +30,7 @@ void main() {
     mat4 invProj = inverse(ubo.proj);
     vec4 clipPos = vec4(pos, 1.0, 1.0);
     vec4 viewPos = invProj * clipPos;
-    vec3 viewDir = normalize(viewPos.xyz);
+    vec3 viewDir = normalize(viewPos.xyz / viewPos.w);
 
     // Transform to world space using only rotation
     // transpose(mat3) = inverse for orthonormal rotation matrices

@@ -76,7 +76,7 @@ float sampleShadowForCascade(vec3 worldPos, vec3 normal, vec3 lightDir, int casc
     // Check if outside shadow map
     if (projCoords.x < 0.0 || projCoords.x > 1.0 ||
         projCoords.y < 0.0 || projCoords.y > 1.0 ||
-        projCoords.z > 1.0) {
+        projCoords.z < 0.0 || projCoords.z > 1.0) {
         return 1.0;  // No shadow outside frustum
     }
 

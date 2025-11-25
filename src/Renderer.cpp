@@ -1351,6 +1351,15 @@ void Renderer::updateUniformBuffer(uint32_t currentImage, const Camera& camera) 
     ubo.sunColor = glm::vec4(sunColor, 1.0f);
     ubo.ambientColor = glm::vec4(ambientColor, 1.0f);
     ubo.cameraPosition = glm::vec4(camera.getPosition(), 1.0f);
+
+    // Point light from the glowing sphere
+    // Position matches the emissive sphere transform in init()
+    glm::vec3 pointLightPos = glm::vec3(2.0f, 1.3f, 0.0f);
+    float pointLightIntensity = 5.0f;  // Bright enough to illuminate nearby objects
+    float pointLightRadius = 8.0f;     // Light falloff radius in world units
+    ubo.pointLightPosition = glm::vec4(pointLightPos, pointLightIntensity);
+    ubo.pointLightColor = glm::vec4(1.0f, 0.9f, 0.7f, pointLightRadius);  // Warm white color
+
     ubo.timeOfDay = currentTimeOfDay;
     ubo.shadowMapSize = static_cast<float>(SHADOW_MAP_SIZE);
 

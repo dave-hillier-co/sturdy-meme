@@ -597,6 +597,278 @@ bool TerrainCBT::loadHeightMap(const std::string& path) {
     return true;
 }
 
+// ============== Perlin Noise Implementation ==============
+
+namespace {
+    // Permutation table for Perlin noise
+    static const int perm[512] = {
+        151,160,137,91,90,15,131,13,201,95,96,53,194,233,7,225,140,36,103,30,69,142,
+        8,99,37,240,21,10,23,190,6,148,247,120,234,75,0,26,197,62,94,252,219,203,117,
+        35,11,32,57,177,33,88,237,149,56,87,174,20,125,136,171,168,68,175,74,165,71,
+        134,139,48,27,166,77,146,158,231,83,111,229,122,60,211,133,230,220,105,92,41,
+        55,46,245,40,244,102,143,54,65,25,63,161,1,216,80,73,209,76,132,187,208,89,
+        18,169,200,196,135,130,116,188,159,86,164,100,109,198,173,186,3,64,52,217,226,
+        250,124,123,5,202,38,147,118,126,255,82,85,212,207,206,59,227,47,16,58,17,182,
+        189,28,42,223,183,170,213,119,248,152,2,44,154,163,70,221,153,101,155,167,43,
+        172,9,129,22,39,253,19,98,108,110,79,113,224,232,178,185,112,104,218,246,97,
+        228,251,34,242,193,238,210,144,12,191,179,162,241,81,51,145,235,249,14,239,
+        107,49,192,214,31,181,199,106,157,184,84,204,176,115,121,50,45,127,4,150,254,
+        138,236,205,93,222,114,67,29,24,72,243,141,128,195,78,66,215,61,156,180,
+        // Repeat
+        151,160,137,91,90,15,131,13,201,95,96,53,194,233,7,225,140,36,103,30,69,142,
+        8,99,37,240,21,10,23,190,6,148,247,120,234,75,0,26,197,62,94,252,219,203,117,
+        35,11,32,57,177,33,88,237,149,56,87,174,20,125,136,171,168,68,175,74,165,71,
+        134,139,48,27,166,77,146,158,231,83,111,229,122,60,211,133,230,220,105,92,41,
+        55,46,245,40,244,102,143,54,65,25,63,161,1,216,80,73,209,76,132,187,208,89,
+        18,169,200,196,135,130,116,188,159,86,164,100,109,198,173,186,3,64,52,217,226,
+        250,124,123,5,202,38,147,118,126,255,82,85,212,207,206,59,227,47,16,58,17,182,
+        189,28,42,223,183,170,213,119,248,152,2,44,154,163,70,221,153,101,155,167,43,
+        172,9,129,22,39,253,19,98,108,110,79,113,224,232,178,185,112,104,218,246,97,
+        228,251,34,242,193,238,210,144,12,191,179,162,241,81,51,145,235,249,14,239,
+        107,49,192,214,31,181,199,106,157,184,84,204,176,115,121,50,45,127,4,150,254,
+        138,236,205,93,222,114,67,29,24,72,243,141,128,195,78,66,215,61,156,180
+    };
+
+    float fade(float t) {
+        return t * t * t * (t * (t * 6.0f - 15.0f) + 10.0f);
+    }
+
+    float lerp(float a, float b, float t) {
+        return a + t * (b - a);
+    }
+
+    float grad(int hash, float x, float y) {
+        int h = hash & 7;
+        float u = h < 4 ? x : y;
+        float v = h < 4 ? y : x;
+        return ((h & 1) ? -u : u) + ((h & 2) ? -2.0f * v : 2.0f * v);
+    }
+
+    float perlinNoise(float x, float y) {
+        int xi = static_cast<int>(std::floor(x)) & 255;
+        int yi = static_cast<int>(std::floor(y)) & 255;
+
+        float xf = x - std::floor(x);
+        float yf = y - std::floor(y);
+
+        float u = fade(xf);
+        float v = fade(yf);
+
+        int aa = perm[perm[xi] + yi];
+        int ab = perm[perm[xi] + yi + 1];
+        int ba = perm[perm[xi + 1] + yi];
+        int bb = perm[perm[xi + 1] + yi + 1];
+
+        float x1 = lerp(grad(aa, xf, yf), grad(ba, xf - 1, yf), u);
+        float x2 = lerp(grad(ab, xf, yf - 1), grad(bb, xf - 1, yf - 1), u);
+
+        return lerp(x1, x2, v);
+    }
+
+    // Fractal Brownian Motion - multiple octaves of noise
+    float fbm(float x, float y, int octaves, float persistence, float lacunarity) {
+        float total = 0.0f;
+        float amplitude = 1.0f;
+        float frequency = 1.0f;
+        float maxValue = 0.0f;
+
+        for (int i = 0; i < octaves; i++) {
+            total += perlinNoise(x * frequency, y * frequency) * amplitude;
+            maxValue += amplitude;
+            amplitude *= persistence;
+            frequency *= lacunarity;
+        }
+
+        return total / maxValue;
+    }
+}
+
+bool TerrainCBT::generateProceduralHeightMap(uint32_t resolution, uint32_t seed) {
+    SDL_Log("Generating procedural heightmap (%ux%u, seed=%u)...", resolution, resolution, seed);
+
+    // Generate heightmap data using Perlin noise with multiple octaves
+    std::vector<uint8_t> heightData(resolution * resolution);
+
+    // Noise parameters for natural-looking terrain
+    const int octaves = 6;
+    const float persistence = 0.5f;
+    const float lacunarity = 2.0f;
+    const float baseScale = 4.0f;  // Lower = larger features
+
+    // Seed offset for variation
+    float seedOffsetX = static_cast<float>(seed % 1000) * 0.1f;
+    float seedOffsetY = static_cast<float>((seed / 1000) % 1000) * 0.1f;
+
+    for (uint32_t y = 0; y < resolution; y++) {
+        for (uint32_t x = 0; x < resolution; x++) {
+            float nx = (static_cast<float>(x) / resolution) * baseScale + seedOffsetX;
+            float ny = (static_cast<float>(y) / resolution) * baseScale + seedOffsetY;
+
+            // Get base noise value (-1 to 1 range)
+            float noise = fbm(nx, ny, octaves, persistence, lacunarity);
+
+            // Add some ridge noise for mountain-like features
+            float ridgeNoise = 1.0f - std::abs(fbm(nx * 2.0f + 100.0f, ny * 2.0f + 100.0f, 4, 0.5f, 2.0f));
+            ridgeNoise = ridgeNoise * ridgeNoise;
+
+            // Blend base noise with ridge noise
+            noise = noise * 0.7f + ridgeNoise * 0.3f;
+
+            // Normalize to 0-255 range
+            float normalized = (noise + 1.0f) * 0.5f;
+            normalized = std::max(0.0f, std::min(1.0f, normalized));
+
+            heightData[y * resolution + x] = static_cast<uint8_t>(normalized * 255.0f);
+        }
+    }
+
+    // Destroy old resources if they exist
+    if (heightMapView) {
+        vkDestroyImageView(device, heightMapView, nullptr);
+        heightMapView = VK_NULL_HANDLE;
+    }
+    if (heightMapImage) {
+        vmaDestroyImage(allocator, heightMapImage, heightMapAllocation);
+        heightMapImage = VK_NULL_HANDLE;
+    }
+
+    // Create new image
+    VkImageCreateInfo imageInfo{};
+    imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+    imageInfo.imageType = VK_IMAGE_TYPE_2D;
+    imageInfo.extent.width = resolution;
+    imageInfo.extent.height = resolution;
+    imageInfo.extent.depth = 1;
+    imageInfo.mipLevels = 1;
+    imageInfo.arrayLayers = 1;
+    imageInfo.format = VK_FORMAT_R8_UNORM;
+    imageInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
+    imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    imageInfo.usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+    imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+    imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
+
+    VmaAllocationCreateInfo allocInfo{};
+    allocInfo.usage = VMA_MEMORY_USAGE_AUTO;
+
+    if (vmaCreateImage(allocator, &imageInfo, &allocInfo,
+                       &heightMapImage, &heightMapAllocation, nullptr) != VK_SUCCESS) {
+        SDL_Log("Failed to create procedural heightmap image");
+        return false;
+    }
+
+    // Upload image data
+    VkDeviceSize imageSize = resolution * resolution;
+
+    VkBufferCreateInfo stagingInfo{};
+    stagingInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+    stagingInfo.size = imageSize;
+    stagingInfo.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+
+    VmaAllocationCreateInfo stagingAllocInfo{};
+    stagingAllocInfo.usage = VMA_MEMORY_USAGE_AUTO;
+    stagingAllocInfo.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
+                             VMA_ALLOCATION_CREATE_MAPPED_BIT;
+
+    VkBuffer stagingBuffer;
+    VmaAllocation stagingAlloc;
+    VmaAllocationInfo stagingInfo2;
+
+    vmaCreateBuffer(allocator, &stagingInfo, &stagingAllocInfo,
+                    &stagingBuffer, &stagingAlloc, &stagingInfo2);
+    memcpy(stagingInfo2.pMappedData, heightData.data(), imageSize);
+
+    // Transition and copy
+    VkCommandBufferAllocateInfo cmdAllocInfo{};
+    cmdAllocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+    cmdAllocInfo.commandPool = commandPool;
+    cmdAllocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+    cmdAllocInfo.commandBufferCount = 1;
+
+    VkCommandBuffer cmd;
+    vkAllocateCommandBuffers(device, &cmdAllocInfo, &cmd);
+
+    VkCommandBufferBeginInfo beginInfo{};
+    beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+    beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+
+    vkBeginCommandBuffer(cmd, &beginInfo);
+
+    VkImageMemoryBarrier barrier{};
+    barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+    barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.image = heightMapImage;
+    barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    barrier.subresourceRange.baseMipLevel = 0;
+    barrier.subresourceRange.levelCount = 1;
+    barrier.subresourceRange.baseArrayLayer = 0;
+    barrier.subresourceRange.layerCount = 1;
+    barrier.srcAccessMask = 0;
+    barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+
+    vkCmdPipelineBarrier(cmd,
+                         VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+                         VK_PIPELINE_STAGE_TRANSFER_BIT,
+                         0, 0, nullptr, 0, nullptr, 1, &barrier);
+
+    VkBufferImageCopy region{};
+    region.bufferOffset = 0;
+    region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    region.imageSubresource.mipLevel = 0;
+    region.imageSubresource.baseArrayLayer = 0;
+    region.imageSubresource.layerCount = 1;
+    region.imageExtent = {resolution, resolution, 1};
+
+    vkCmdCopyBufferToImage(cmd, stagingBuffer, heightMapImage,
+                           VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
+
+    barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+    barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+    barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+
+    vkCmdPipelineBarrier(cmd,
+                         VK_PIPELINE_STAGE_TRANSFER_BIT,
+                         VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+                         0, 0, nullptr, 0, nullptr, 1, &barrier);
+
+    vkEndCommandBuffer(cmd);
+
+    VkSubmitInfo submitInfo{};
+    submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+    submitInfo.commandBufferCount = 1;
+    submitInfo.pCommandBuffers = &cmd;
+
+    vkQueueSubmit(graphicsQueue, 1, &submitInfo, VK_NULL_HANDLE);
+    vkQueueWaitIdle(graphicsQueue);
+
+    vkFreeCommandBuffers(device, commandPool, 1, &cmd);
+    vmaDestroyBuffer(allocator, stagingBuffer, stagingAlloc);
+
+    // Create image view
+    VkImageViewCreateInfo viewInfo{};
+    viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+    viewInfo.image = heightMapImage;
+    viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
+    viewInfo.format = VK_FORMAT_R8_UNORM;
+    viewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    viewInfo.subresourceRange.baseMipLevel = 0;
+    viewInfo.subresourceRange.levelCount = 1;
+    viewInfo.subresourceRange.baseArrayLayer = 0;
+    viewInfo.subresourceRange.layerCount = 1;
+
+    if (vkCreateImageView(device, &viewInfo, nullptr, &heightMapView) != VK_SUCCESS) {
+        SDL_Log("Failed to create procedural heightmap view");
+        return false;
+    }
+
+    SDL_Log("Generated procedural heightmap: %ux%u", resolution, resolution);
+    return true;
+}
+
 bool TerrainCBT::createDescriptorSetLayouts() {
     // Compute descriptor set layout
     // binding 0: CBT buffer (storage)

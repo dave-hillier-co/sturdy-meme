@@ -92,6 +92,7 @@ public:
 
     // Height map
     bool loadHeightMap(const std::string& path);
+    bool generateProceduralHeightMap(uint32_t resolution, uint32_t seed = 12345);
     bool hasHeightMap() const { return heightMapView != VK_NULL_HANDLE; }
 
 private:

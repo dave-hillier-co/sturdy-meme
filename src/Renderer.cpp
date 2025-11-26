@@ -270,15 +270,14 @@ bool Renderer::init(SDL_Window* win, const std::string& resPath) {
         return false;
     }
 
-    // Configure terrain
-    terrainCBT.setTerrainSize(100.0f);  // 100 unit terrain
-    terrainCBT.setHeightScale(10.0f);   // Max height variation
-    terrainCBT.setMaxDepth(8);          // 2^8 = 256 max triangles per base
+    // Configure terrain - large procedural terrain
+    terrainCBT.setTerrainSize(500.0f);  // 500 unit terrain (5x larger)
+    terrainCBT.setHeightScale(50.0f);   // More dramatic height variation
+    terrainCBT.setMaxDepth(10);         // 2^10 = 1024 max triangles per base
 
-    // Load terrain heightmap (Milestone 2)
-    std::string heightmapPath = resourcePath + "/textures/terrain/heightmap.jpg";
-    if (!terrainCBT.loadHeightMap(heightmapPath)) {
-        SDL_Log("Failed to load terrain heightmap, using flat terrain");
+    // Generate procedural heightmap using Perlin noise
+    if (!terrainCBT.generateProceduralHeightMap(1024, 42)) {
+        SDL_Log("Failed to generate procedural heightmap, using flat terrain");
     }
 
     // Update terrain descriptor sets with shared resources

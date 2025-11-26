@@ -120,8 +120,8 @@ float sampleWind(vec2 worldPos) {
     float gustFreq = wind.windParams.x;
     float gustAmp = wind.windParams.y;
 
-    // Scroll position in wind direction
-    vec2 scrolledPos = worldPos - windDir * windTime * windSpeed;
+    // Scroll position in wind direction (scaled down for gentler motion)
+    vec2 scrolledPos = worldPos - windDir * windTime * windSpeed * 0.4;
 
     // Frequency for ~7m wavelength: 1/7 ≈ 0.14
     float baseFreq = 0.14;

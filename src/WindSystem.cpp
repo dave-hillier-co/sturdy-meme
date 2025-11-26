@@ -191,8 +191,8 @@ float WindSystem::perlinNoise(float x, float y) const {
 }
 
 float WindSystem::sampleWindAtPosition(const glm::vec2& worldPos) const {
-    // Scroll position in wind direction
-    glm::vec2 scrolledPos = worldPos - windDirection * totalTime * windSpeed;
+    // Scroll position in wind direction (scaled down for gentler motion)
+    glm::vec2 scrolledPos = worldPos - windDirection * totalTime * windSpeed * 0.4f;
 
     // Frequency for ~7m wavelength: 1/7 ≈ 0.14
     float baseFreq = 0.14f;

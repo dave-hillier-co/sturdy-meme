@@ -92,6 +92,9 @@ set(SHADER_FILES
     ${CMAKE_CURRENT_SOURCE_DIR}/shaders/transmittance_lut.comp.spv
     ${CMAKE_CURRENT_SOURCE_DIR}/shaders/multiscatter_lut.comp.spv
     ${CMAKE_CURRENT_SOURCE_DIR}/shaders/skyview_lut.comp.spv
+)
+
+set(TERRAIN_SHADER_FILES
     ${CMAKE_CURRENT_SOURCE_DIR}/shaders/terrain/terrain_dispatcher.comp.spv
     ${CMAKE_CURRENT_SOURCE_DIR}/shaders/terrain/terrain_subdivision.comp.spv
     ${CMAKE_CURRENT_SOURCE_DIR}/shaders/terrain/terrain_sum_reduction_prepass.comp.spv
@@ -111,7 +114,11 @@ set_source_files_properties(${SHADER_FILES} PROPERTIES
     MACOSX_PACKAGE_LOCATION "Resources/shaders"
 )
 
-target_sources(${PROJECT_NAME} PRIVATE ${RESOURCE_FILES} ${SHADER_FILES})
+set_source_files_properties(${TERRAIN_SHADER_FILES} PROPERTIES
+    MACOSX_PACKAGE_LOCATION "Resources/shaders/terrain"
+)
+
+target_sources(${PROJECT_NAME} PRIVATE ${RESOURCE_FILES} ${SHADER_FILES} ${TERRAIN_SHADER_FILES})
 
 find_program(GLSLC glslc HINTS $ENV{VULKAN_SDK}/bin)
 find_program(GLSLANG_VALIDATOR glslangValidator HINTS $ENV{VULKAN_SDK}/bin)

@@ -46,6 +46,17 @@ struct TerrainUniforms {
     float padding;
 };
 
+// Terrain configuration (outside class to avoid C++17 default argument issues)
+struct TerrainConfig {
+    float size = 500.0f;              // Terrain size in world units
+    float heightScale = 50.0f;        // Maximum height
+    float targetEdgePixels = 16.0f;   // Target triangle edge length in pixels
+    int maxDepth = 20;                // Maximum CBT subdivision depth
+    int minDepth = 2;                 // Minimum subdivision depth
+    float splitThreshold = 24.0f;     // Screen pixels to trigger split (with hysteresis)
+    float mergeThreshold = 8.0f;      // Screen pixels to trigger merge
+};
+
 class TerrainSystem {
 public:
     struct InitInfo {
@@ -62,20 +73,10 @@ public:
         uint32_t framesInFlight;
     };
 
-    struct TerrainConfig {
-        float size = 500.0f;              // Terrain size in world units
-        float heightScale = 50.0f;        // Maximum height
-        float targetEdgePixels = 16.0f;   // Target triangle edge length in pixels
-        int maxDepth = 20;                // Maximum CBT subdivision depth
-        int minDepth = 2;                 // Minimum subdivision depth
-        float splitThreshold = 24.0f;     // Screen pixels to trigger split (with hysteresis)
-        float mergeThreshold = 8.0f;      // Screen pixels to trigger merge
-    };
-
     TerrainSystem() = default;
     ~TerrainSystem() = default;
 
-    bool init(const InitInfo& info, const TerrainConfig& config = TerrainConfig());
+    bool init(const InitInfo& info, const TerrainConfig& config = {});
     void destroy(VkDevice device, VmaAllocator allocator);
 
     // Update terrain descriptor sets with shared resources

@@ -243,8 +243,8 @@ void spawnFallingLeaf(uint idx) {
     // Random angular velocity for tumbling
     vec3 angularVel = (rnd2 - 0.5) * 4.0;  // 0-2 rad/s per axis
 
-    // Random size (0.03-0.07m)
-    float size = 0.03 + rnd.x * 0.04;
+    // Random size (0.08-0.18m) - larger leaves for better visibility
+    float size = 0.08 + rnd.x * 0.10;
 
     // Random leaf type (0-3)
     uint leafType = uint(rnd.y * 4.0) % 4u;
@@ -280,7 +280,8 @@ void spawnGroundedLeaf(uint idx) {
     vec4 tiltQuat = quatFromAxisAngle(vec3(1.0, 0.0, 0.0), tiltAngle);
     orientation = qmul(orientation, tiltQuat);
 
-    float size = 0.03 + rnd.x * 0.04;
+    // Random size (0.08-0.18m) - larger leaves for better visibility
+    float size = 0.08 + rnd.x * 0.10;
     uint leafType = uint(rnd.y * 4.0) % 4u;
 
     outputParticles[idx].position = pos;

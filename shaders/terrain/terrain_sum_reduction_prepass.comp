@@ -1,5 +1,7 @@
 #version 450
 
+#extension GL_GOOGLE_include_directive : require
+
 /*
  * terrain_sum_reduction_prepass.comp - First pass of sum reduction
  * Processes the bitfield using popcount and writes the bottom levels

@@ -1,5 +1,7 @@
 #version 450
 
+#extension GL_GOOGLE_include_directive : require
+
 /*
  * terrain_sum_reduction.comp - Sum reduction pass
  * Each pass combines pairs of values at level N to produce values at level N-1

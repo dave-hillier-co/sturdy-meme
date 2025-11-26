@@ -1,5 +1,7 @@
 #version 450
 
+#extension GL_GOOGLE_include_directive : require
+
 /*
  * terrain_subdivision.comp - LOD evaluation and adaptive subdivision
  * Each thread processes one leaf triangle and decides whether to split or merge

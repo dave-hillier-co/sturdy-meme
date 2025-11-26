@@ -195,6 +195,15 @@ float sampleCloudTransmittanceToSun(vec3 pos, vec3 sunDir) {
     return transmittance;
 }
 
+vec2 raySphereIntersect(vec3 origin, vec3 dir, float radius) {
+    float b = dot(origin, dir);
+    float c = dot(origin, origin) - radius * radius;
+    float h = b * b - c;
+    if (h < 0.0) return vec2(1e9, -1e9);
+    h = sqrt(h);
+    return vec2(-b - h, -b + h);
+}
+
 // Ray-plane intersection for cloud layer bounds
 vec2 intersectCloudLayer(vec3 origin, vec3 dir) {
     // Intersect with spherical shells at cloud layer boundaries
@@ -286,15 +295,6 @@ float cornetteShanksPhase(float cosTheta, float g) {
     float num = 3.0 * (1.0 - g2) * (1.0 + cosTheta * cosTheta);
     float denom = 8.0 * PI * (2.0 + g2) * pow(1.0 + g2 - 2.0 * g * cosTheta, 1.5);
     return num / denom;
-}
-
-vec2 raySphereIntersect(vec3 origin, vec3 dir, float radius) {
-    float b = dot(origin, dir);
-    float c = dot(origin, origin) - radius * radius;
-    float h = b * b - c;
-    if (h < 0.0) return vec2(1e9, -1e9);
-    h = sqrt(h);
-    return vec2(-b - h, -b + h);
 }
 
 float ozoneDensity(float altitude) {

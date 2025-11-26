@@ -160,7 +160,7 @@ bool Renderer::init(SDL_Window* win, const std::string& resPath) {
     terrainInfo.texturePath = resourcePath + "/textures";
     terrainInfo.framesInFlight = MAX_FRAMES_IN_FLIGHT;
 
-    TerrainSystem::TerrainConfig terrainConfig{};
+    TerrainConfig terrainConfig{};
     terrainConfig.size = 500.0f;
     terrainConfig.heightScale = 50.0f;
     terrainConfig.maxDepth = 18;  // Reasonable depth for testing

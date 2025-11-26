@@ -9,6 +9,7 @@ find_package(SDL3 CONFIG REQUIRED)
 find_package(glm CONFIG REQUIRED)
 find_package(vk-bootstrap CONFIG REQUIRED)
 find_package(VulkanMemoryAllocator CONFIG REQUIRED)
+find_package(physx CONFIG REQUIRED)
 
 find_path(STB_INCLUDE_DIRS "stb_image.h")
 
@@ -26,6 +27,7 @@ set(SOURCES
     src/PostProcessSystem.cpp
     src/FroxelSystem.cpp
     src/Player.cpp
+    src/PhysicsWorld.cpp
 )
 
 add_executable(${PROJECT_NAME} ${SOURCES})
@@ -41,6 +43,7 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     glm::glm
     vk-bootstrap::vk-bootstrap
     GPUOpen::VulkanMemoryAllocator
+    physx::physx
 )
 
 set_target_properties(${PROJECT_NAME} PROPERTIES

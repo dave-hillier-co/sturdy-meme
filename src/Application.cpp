@@ -43,6 +43,18 @@ bool Application::init(const std::string& title, int width, int height) {
 
     camera.setAspectRatio(static_cast<float>(width) / static_cast<float>(height));
 
+    // Initialize physics
+    if (!physicsWorld.init()) {
+        SDL_Log("Failed to initialize physics");
+        renderer.shutdown();
+        SDL_DestroyWindow(window);
+        SDL_Quit();
+        return false;
+    }
+
+    // Setup physics scene with ground and objects
+    setupPhysicsScene();
+
     running = true;
     return true;
 }
@@ -60,8 +72,29 @@ void Application::run() {
         handleInput(deltaTime);
         handleGamepadInput(deltaTime);
 
-        // Update player physics
-        player.update(deltaTime);
+        // Apply gravity and jump to velocity
+        if (physicsWorld.isCharacterOnGround()) {
+            playerVelocity.y = 0.0f;
+            if (wantsJump) {
+                playerVelocity.y = Player::JUMP_VELOCITY;
+                wantsJump = false;
+            }
+        } else {
+            playerVelocity.y -= Player::GRAVITY * deltaTime;
+        }
+
+        // Move character through physics
+        glm::vec3 displacement = playerVelocity * deltaTime;
+        physicsWorld.moveCharacter(displacement, deltaTime);
+
+        // Update player position from physics
+        player.setPosition(physicsWorld.getCharacterPosition());
+
+        // Simulate physics world (for rigid bodies)
+        physicsWorld.simulate(deltaTime);
+
+        // Update renderer with physics objects
+        renderer.updatePhysicsObjects(physicsWorld.getRigidBodies());
 
         // Update camera and player based on mode
         if (thirdPersonMode) {
@@ -92,6 +125,7 @@ void Application::run() {
 }
 
 void Application::shutdown() {
+    physicsWorld.shutdown();
     renderer.shutdown();
     closeGamepad();
 
@@ -101,6 +135,38 @@ void Application::shutdown() {
     }
 
     SDL_Quit();
+}
+
+void Application::setupPhysicsScene() {
+    // Create flat ground
+    physicsWorld.createFlatHeightfield(100.0f, 100.0f, 0.0f);
+
+    // Create character controller for player
+    physicsWorld.createCharacterController(
+        Player::CAPSULE_HEIGHT - 2.0f * Player::CAPSULE_RADIUS,  // Height of cylinder part
+        Player::CAPSULE_RADIUS,
+        glm::vec3(0.0f, 0.0f, 0.0f)
+    );
+
+    // Add some rigid body boxes as demo objects
+    physicsWorld.addBox(glm::vec3(3.0f, 2.0f, 3.0f), glm::vec3(0.5f, 0.5f, 0.5f), 10.0f);
+    physicsWorld.addBox(glm::vec3(3.5f, 4.0f, 3.0f), glm::vec3(0.4f, 0.4f, 0.4f), 8.0f);
+    physicsWorld.addBox(glm::vec3(3.0f, 6.0f, 3.5f), glm::vec3(0.3f, 0.3f, 0.3f), 5.0f);
+
+    // Add some spheres
+    physicsWorld.addSphere(glm::vec3(-3.0f, 3.0f, 2.0f), 0.4f, 5.0f);
+    physicsWorld.addSphere(glm::vec3(-2.5f, 5.0f, 2.5f), 0.3f, 3.0f);
+
+    // Stack of boxes
+    for (int i = 0; i < 5; i++) {
+        physicsWorld.addBox(
+            glm::vec3(-5.0f, 0.5f + i * 1.0f, -3.0f),
+            glm::vec3(0.5f, 0.5f, 0.5f),
+            10.0f
+        );
+    }
+
+    SDL_Log("Physics scene setup complete with ground and rigid bodies");
 }
 
 void Application::processEvents() {
@@ -268,25 +334,23 @@ void Application::handleThirdPersonInput(float deltaTime, const bool* keyState) 
         moveZ += sin(glm::radians(cameraYaw + 90.0f));
     }
 
-    // Apply movement if any input
+    // Apply movement velocity for physics (horizontal only, gravity handled separately)
     if (moveX != 0.0f || moveZ != 0.0f) {
         glm::vec3 moveDir = glm::normalize(glm::vec3(moveX, 0.0f, moveZ));
-        glm::vec3 newPos = player.getPosition() + moveDir * moveSpeed * deltaTime;
-        player.setPosition(newPos);
+        playerVelocity.x = moveDir.x * moveSpeed;
+        playerVelocity.z = moveDir.z * moveSpeed;
 
         // Rotate player to face movement direction
-        float targetYaw = glm::degrees(atan2(moveDir.z, moveDir.x));
-        player.rotate(0.0f);  // Reset
-        player.setPosition(newPos);
-        // Calculate target yaw and smoothly rotate player
         float newYaw = glm::degrees(atan2(moveDir.x, moveDir.z));
-        // Set player yaw directly for now (could smooth this later)
         float currentYaw = player.getYaw();
         float yawDiff = newYaw - currentYaw;
-        // Normalize yaw difference
         while (yawDiff > 180.0f) yawDiff -= 360.0f;
         while (yawDiff < -180.0f) yawDiff += 360.0f;
-        player.rotate(yawDiff * 10.0f * deltaTime);  // Smooth rotation
+        player.rotate(yawDiff * 10.0f * deltaTime);
+    } else {
+        // No horizontal input, stop horizontal movement
+        playerVelocity.x = 0.0f;
+        playerVelocity.z = 0.0f;
     }
 
     // Arrow keys orbit the camera around the player
@@ -311,9 +375,9 @@ void Application::handleThirdPersonInput(float deltaTime, const bool* keyState) 
         camera.adjustDistance(moveSpeed * deltaTime);
     }
 
-    // Space to jump
+    // Space to jump (through physics)
     if (keyState[SDL_SCANCODE_SPACE]) {
-        player.jump();
+        wantsJump = true;
     }
 }
 
@@ -389,8 +453,8 @@ void Application::handleThirdPersonGamepadInput(float deltaTime) {
         float moveZ = -leftY * sin(glm::radians(cameraYaw)) + leftX * sin(glm::radians(cameraYaw + 90.0f));
 
         glm::vec3 moveDir = glm::normalize(glm::vec3(moveX, 0.0f, moveZ));
-        glm::vec3 newPos = player.getPosition() + moveDir * moveSpeed * deltaTime;
-        player.setPosition(newPos);
+        playerVelocity.x = moveDir.x * moveSpeed;
+        playerVelocity.z = moveDir.z * moveSpeed;
 
         // Rotate player to face movement direction
         float newYaw = glm::degrees(atan2(moveDir.x, moveDir.z));
@@ -399,6 +463,9 @@ void Application::handleThirdPersonGamepadInput(float deltaTime) {
         while (yawDiff > 180.0f) yawDiff -= 360.0f;
         while (yawDiff < -180.0f) yawDiff += 360.0f;
         player.rotate(yawDiff * 10.0f * deltaTime);
+    } else {
+        playerVelocity.x = 0.0f;
+        playerVelocity.z = 0.0f;
     }
 
     // Right stick orbits camera around player
@@ -422,7 +489,7 @@ void Application::handleThirdPersonGamepadInput(float deltaTime) {
 
     // A button (South) to jump
     if (SDL_GetGamepadButton(gamepad, SDL_GAMEPAD_BUTTON_SOUTH)) {
-        player.jump();
+        wantsJump = true;
     }
 }
 

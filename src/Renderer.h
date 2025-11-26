@@ -17,6 +17,8 @@
 #include "PostProcessSystem.h"
 #include "FroxelSystem.h"
 
+struct RigidBodyInstance;
+
 static constexpr uint32_t NUM_SHADOW_CASCADES = 4;
 
 struct UniformBufferObject {
@@ -88,6 +90,9 @@ public:
 
     // Player rendering
     void updatePlayerTransform(const glm::mat4& transform);
+
+    // Physics objects rendering
+    void updatePhysicsObjects(const std::vector<RigidBodyInstance>& rigidBodies);
 
     // Celestial/astronomical settings
     void setLocation(const GeographicLocation& location) { celestialCalculator.setLocation(location); }
@@ -206,6 +211,7 @@ private:
     std::vector<SceneObject> sceneObjects;
     std::vector<VkDescriptorSet> metalDescriptorSets;
     size_t playerObjectIndex = 0;  // Index of the player in sceneObjects
+    std::vector<size_t> physicsObjectIndices;  // Indices of physics objects in sceneObjects
 
     uint32_t currentFrame = 0;
     static constexpr int MAX_FRAMES_IN_FLIGHT = 2;

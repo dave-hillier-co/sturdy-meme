@@ -5,6 +5,7 @@
 #include "Renderer.h"
 #include "Camera.h"
 #include "Player.h"
+#include "PhysicsWorld.h"
 
 class Application {
 public:
@@ -26,12 +27,18 @@ private:
     void openGamepad(SDL_JoystickID id);
     void closeGamepad();
     std::string getResourcePath();
+    void setupPhysicsScene();
 
     SDL_Window* window = nullptr;
     SDL_Gamepad* gamepad = nullptr;
     Renderer renderer;
     Camera camera;
     Player player;
+    PhysicsWorld physicsWorld;
+
+    // Physics-driven movement
+    glm::vec3 playerVelocity{0.0f};
+    bool wantsJump = false;
 
     bool running = false;
     bool thirdPersonMode = false;  // Toggle between free camera and third-person

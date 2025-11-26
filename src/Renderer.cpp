@@ -1,6 +1,7 @@
 #define VMA_IMPLEMENTATION
 #include "Renderer.h"
 #include "ShaderLoader.h"
+#include "PhysicsWorld.h"
 #include <SDL3/SDL_vulkan.h>
 #include <glm/gtc/matrix_transform.hpp>
 #include <stdexcept>
@@ -258,6 +259,45 @@ bool Renderer::init(SDL_Window* win, const std::string& resPath) {
 void Renderer::updatePlayerTransform(const glm::mat4& transform) {
     if (playerObjectIndex < sceneObjects.size()) {
         sceneObjects[playerObjectIndex].transform = transform;
+    }
+}
+
+void Renderer::updatePhysicsObjects(const std::vector<RigidBodyInstance>& rigidBodies) {
+    // First time: create scene objects for all rigid bodies
+    if (physicsObjectIndices.empty() && !rigidBodies.empty()) {
+        for (const auto& rb : rigidBodies) {
+            SceneObject obj;
+            obj.transform = rb.transform;
+            obj.mesh = rb.isBox ? &cubeMesh : &sphereMesh;
+            obj.texture = &metalTexture;
+            obj.roughness = 0.3f;
+            obj.metallic = 0.9f;
+            obj.castsShadow = true;
+
+            // Apply scale based on shape dimensions
+            if (rb.isBox) {
+                obj.transform = rb.transform * glm::scale(glm::mat4(1.0f), rb.halfExtents * 2.0f);
+            } else {
+                obj.transform = rb.transform * glm::scale(glm::mat4(1.0f), glm::vec3(rb.radius * 2.0f));
+            }
+
+            physicsObjectIndices.push_back(sceneObjects.size());
+            sceneObjects.push_back(obj);
+        }
+    }
+    // Update transforms for existing physics objects
+    else if (physicsObjectIndices.size() == rigidBodies.size()) {
+        for (size_t i = 0; i < rigidBodies.size(); ++i) {
+            const auto& rb = rigidBodies[i];
+            size_t objIdx = physicsObjectIndices[i];
+            if (objIdx < sceneObjects.size()) {
+                if (rb.isBox) {
+                    sceneObjects[objIdx].transform = rb.transform * glm::scale(glm::mat4(1.0f), rb.halfExtents * 2.0f);
+                } else {
+                    sceneObjects[objIdx].transform = rb.transform * glm::scale(glm::mat4(1.0f), glm::vec3(rb.radius * 2.0f));
+                }
+            }
+        }
     }
 }
 

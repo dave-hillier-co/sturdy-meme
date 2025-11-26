@@ -1,5 +1,7 @@
 #version 450
 
+#extension GL_GOOGLE_include_directive : require
+
 /*
  * terrain_dispatcher.comp - Sets up indirect dispatch and draw arguments
  * This shader reads the leaf count from the CBT and configures:

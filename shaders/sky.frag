@@ -12,7 +12,7 @@ layout(binding = 0) uniform UniformBufferObject {
     vec4 sunDirection;
     vec4 moonDirection;
     vec4 sunColor;
-    vec4 moonColor;                       // rgb = moon color
+    vec4 moonColor;                       // rgb = moon color, a = moon phase (0-1)
     vec4 ambientColor;
     vec4 cameraPosition;
     vec4 pointLightPosition;  // xyz = position, w = intensity
@@ -719,6 +719,68 @@ float celestialDisc(vec3 dir, vec3 celestialDir, float size) {
     return smoothstep(1.0 - size, 1.0 - size * 0.3, d);
 }
 
+// Lunar phase mask - simulates the moon's illumination based on phase
+// Treats the moon as a 3D sphere lit from different angles
+// phase: 0 = new moon, 0.25 = first quarter, 0.5 = full moon, 0.75 = last quarter, 1 = new moon
+// dir: viewing direction to the point on moon disc
+// moonDir: direction to moon center
+// returns: 0-1 illumination factor (0 = shadowed, 1 = fully lit)
+float lunarPhaseMask(vec3 dir, vec3 moonDir, float phase, float discSize) {
+    // Get normalized directions
+    vec3 viewDir = normalize(dir);
+    vec3 moonCenter = normalize(moonDir);
+
+    // Calculate the dot product to determine position on disc
+    float centerDot = dot(viewDir, moonCenter);
+
+    // Calculate distance from moon center in angular space
+    float angularDist = acos(clamp(centerDot, -1.0, 1.0));
+
+    // If outside the disc, return 0
+    if (angularDist > discSize) return 0.0;
+
+    // Calculate 2D position on the moon disc (tangent plane)
+    // Create a coordinate system on the moon's surface
+    vec3 up = abs(moonCenter.y) < 0.999 ? vec3(0, 1, 0) : vec3(1, 0, 0);
+    vec3 right = normalize(cross(up, moonCenter));
+    vec3 tangentUp = normalize(cross(moonCenter, right));
+
+    // Project the view direction onto the tangent plane
+    vec3 toPoint = viewDir - moonCenter * centerDot;
+    float x = dot(toPoint, right);
+    float y = dot(toPoint, tangentUp);
+
+    // Normalize to disc coordinates (-1 to 1)
+    float normalizedDist = angularDist / discSize;
+    x = x / (sin(discSize) + 0.001);
+    y = y / (sin(discSize) + 0.001);
+
+    // Calculate 3D position on sphere
+    float r2 = x * x + y * y;
+    if (r2 > 1.0) return 0.0;
+
+    float z = sqrt(1.0 - r2);
+    vec3 spherePos = vec3(x, y, z);
+
+    // Calculate light direction based on phase
+    // Phase 0.0 (new moon): sun is in front (same direction as viewer), moon fully dark
+    // Phase 0.5 (full moon): sun is behind viewer, moon fully lit
+    // Phase 1.0 (new moon): sun is in front again
+    float phaseAngle = phase * 2.0 * PI;
+    vec3 lightDir = vec3(-sin(phaseAngle), 0.0, cos(phaseAngle));
+
+    // Calculate lighting (Lambertian)
+    float lighting = dot(spherePos, lightDir);
+
+    // Smooth transition at the terminator
+    float lit = smoothstep(-0.08, 0.08, lighting);
+
+    // Add subtle earthshine on dark side (about 5% brightness)
+    lit = max(lit, 0.05);
+
+    return lit;
+}
+
 vec3 renderAtmosphere(vec3 dir) {
     vec3 normDir = normalize(dir);
 
@@ -845,8 +907,14 @@ vec3 renderAtmosphere(vec3 dir) {
     float sunDisc = celestialDisc(dir, ubo.sunDirection.xyz, SUN_ANGULAR_RADIUS);
     sky += sunLight * sunDisc * 20.0 * result.transmittance * clouds.transmittance;
 
-    float moonDisc = celestialDisc(dir, ubo.moonDirection.xyz, 0.012);
-    sky += ubo.moonColor.rgb * moonDisc * 2.0 * ubo.moonDirection.w *
+    // Moon disc with lunar phase simulation
+    const float MOON_DISC_SIZE = 0.012;
+    float moonDisc = celestialDisc(dir, ubo.moonDirection.xyz, MOON_DISC_SIZE);
+    float moonPhase = ubo.moonColor.a;  // Phase value (0 = new moon, 0.5 = full moon, 1 = new moon)
+    float phaseMask = lunarPhaseMask(dir, ubo.moonDirection.xyz, moonPhase, MOON_DISC_SIZE);
+
+    // Apply phase mask to create emissive moon with shadow
+    sky += ubo.moonColor.rgb * moonDisc * phaseMask * 2.0 * ubo.moonDirection.w *
            clamp(result.transmittance, vec3(0.2), vec3(1.0)) * clouds.transmittance;
 
     // Star field blended over the atmospheric tint (also behind clouds)

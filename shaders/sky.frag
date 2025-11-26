@@ -534,12 +534,13 @@ ScatteringResult integrateAtmosphere(vec3 origin, vec3 dir, int sampleCount) {
 
     // Add multi-scatter contribution for increased brightness (Phase 4.1.4)
     // Sample at middle altitude for approximation
+    // NOTE: Reduced contribution to prevent over-saturation
     float sampleAltitude = 4.0;  // km - middle of atmosphere
     float sampleR = PLANET_RADIUS + sampleAltitude;
     vec3 multiScatter = sampleMultiScatterLUT(sampleR, sunDir.y);
 
-    // Multi-scatter adds secondary bounced light
-    inscatter += multiScatter * 0.3;
+    // Multi-scatter adds subtle secondary bounced light (very low multiplier to prevent saturation)
+    inscatter += multiScatter * 0.02;
 
     return ScatteringResult(inscatter, transmittance);
 }

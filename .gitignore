@@ -1,5 +1,7 @@
 # Build directories
 build/
+CMakeCache.txt
+CMakeFiles/
 
 # IDE
 .vscode/

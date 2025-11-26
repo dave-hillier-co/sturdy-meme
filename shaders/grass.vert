@@ -112,37 +112,32 @@ float perlinNoise(float x, float y) {
     return (res + 1.0) * 0.5;
 }
 
-// Sample wind using traveling sine wave modulated by low-frequency turbulence
-// Sine wave creates visible traveling waves, turbulence adds organic amplitude variation
+// Sample wind using scrolling Perlin noise turbulence
+// Frequency tuned for ~5-10m wavelength waves
 float sampleWind(vec2 worldPos) {
     vec2 windDir = wind.windDirectionAndStrength.xy;
     float windStrength = wind.windDirectionAndStrength.z;
     float windSpeed = wind.windDirectionAndStrength.w;
-    float noiseScale = wind.windParams.z;
     float windTime = wind.windParams.w;
     float gustFreq = wind.windParams.x;
     float gustAmp = wind.windParams.y;
 
-    // Primary motion: sine wave traveling in wind direction
-    // This creates the visible wave fronts moving through the grass
-    float windDist = dot(worldPos, windDir);
-    float wave = sin((windDist * noiseScale * 0.5 - windTime * windSpeed) * 0.8) * 0.5 + 0.5;
+    // Scroll position in wind direction
+    vec2 scrolledPos = worldPos - windDir * windTime * windSpeed;
 
-    // Low-frequency turbulence for spatial amplitude variation
-    // Slowly scrolling so different areas have different wind intensity
-    vec2 scrolledPos = worldPos - windDir * windTime * windSpeed * 0.3;
-    float baseFreq = noiseScale * 0.08;
+    // Frequency for ~7m wavelength: 1/7 ≈ 0.14
+    // Two octaves of turbulence for organic variation
+    float baseFreq = 0.14;
     float n1 = perlinNoise(scrolledPos.x * baseFreq, scrolledPos.y * baseFreq) * 2.0 - 1.0;
     float n2 = perlinNoise(scrolledPos.x * baseFreq * 2.0, scrolledPos.y * baseFreq * 2.0) * 2.0 - 1.0;
-    float turbulence = abs(n1) * 0.7 + abs(n2) * 0.3;
 
-    // Turbulence modulates the wave amplitude (0.5 to 1.0 range)
-    float amplitudeModulation = 0.5 + turbulence * 0.5;
+    // Turbulence: absolute value creates billowy wave patterns
+    float turbulence = abs(n1) * 0.7 + abs(n2) * 0.3;
 
     // Add time-varying gust
     float gust = (sin(windTime * gustFreq * 6.28318) * 0.5 + 0.5) * gustAmp;
 
-    return (wave * amplitudeModulation + gust) * windStrength;
+    return (turbulence + gust) * windStrength;
 }
 
 layout(location = 0) out vec3 fragColor;
@@ -195,7 +190,7 @@ void main() {
 
     // Wind effect is stronger when wind is perpendicular to blade facing
     // This creates more natural bending
-    float windEffect = (windSample + phaseOffset) * 0.4;
+    float windEffect = (windSample + phaseOffset) * 0.25;
     float windOffset = windEffect * cos(relativeWindAngle);
 
     // Blade folding for short grass

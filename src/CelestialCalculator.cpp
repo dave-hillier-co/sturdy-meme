@@ -311,11 +311,11 @@ MoonPosition CelestialCalculator::calculateMoonPosition(const DateTime& dateTime
     result.illumination = (1.0f - std::cos(result.phase * 2.0f * glm::pi<float>())) * 0.5f;
 
     // Intensity based on altitude and illumination
-    // Allow useful moon light sooner after rise and push it a bit brighter overall.
+    // Moon is much dimmer than sun - keep it subtle but visible
     float altFactor = glm::clamp((result.altitude + 2.0f) / 12.0f, 0.0f, 1.0f);
-    float baseMoon = altFactor * result.illumination * 0.5f;  // Boosted to ~50% of sun for visibility
+    float baseMoon = altFactor * result.illumination * 0.12f;  // ~12% of sun for subtle moonlight
     // Keep a small floor so nights aren't pitch black even with a low moon.
-    float minMoon = result.illumination * 0.05f;
+    float minMoon = result.illumination * 0.02f;
     result.intensity = glm::max(baseMoon, minMoon);
 
     return result;

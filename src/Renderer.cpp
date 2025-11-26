@@ -1506,9 +1506,9 @@ void Renderer::updateUniformBuffer(uint32_t currentImage, const Camera& camera) 
     if (moonPos.altitude > -5.0f) {  // Moon needs to be reasonably above horizon
         // Calculate how much to boost moon based on sun altitude
         // At sun altitude 10°: no boost (factor = 1)
-        // At sun altitude -6°: full boost (factor = 3)
+        // At sun altitude -6°: full boost (factor = 2)
         float twilightFactor = glm::smoothstep(10.0f, -6.0f, sunPos.altitude);
-        moonIntensity *= (1.0f + twilightFactor * 2.0f);
+        moonIntensity *= (1.0f + twilightFactor * 1.0f);
     }
 
     glm::vec3 sunColor = celestialCalculator.getSunColor(sunPos.altitude);

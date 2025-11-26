@@ -670,8 +670,9 @@ void Application::initFlag() {
         clothSim.pinParticle(0, y);  // Pin left edge
     }
 
-    // Create initial mesh geometry
+    // Create initial mesh geometry and upload to GPU
     clothSim.createMesh(renderer.getFlagClothMesh());
+    renderer.uploadFlagClothMesh();
 
     SDL_Log("Flag initialized with %dx%d cloth simulation", clothWidth, clothHeight);
 }

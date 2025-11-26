@@ -44,7 +44,9 @@ const float OZONE_LAYER_CENTER = 25.0;        // km
 const float OZONE_LAYER_WIDTH = 15.0;
 
 const float SUN_ANGULAR_RADIUS = 0.00935 / 2.0;  // radians (produces ~180px disc)
-const float MOON_ANGULAR_RADIUS = SUN_ANGULAR_RADIUS * 0.8;  // Slightly larger than sun due to inverse celestialDisc function
+// Moon needs two different size parameters due to different function interpretations:
+const float MOON_DISC_SIZE = 0.003;              // For celestialDisc (smaller = larger disc, ~300px)
+const float MOON_MASK_RADIUS = 0.025;            // For lunarPhaseMask (actual angular radius)
 
 // LMS color space for accurate Rayleigh scattering (Phase 4.1.7)
 // Standard Rec709 Rayleigh produces greenish sunsets; LMS primaries are more accurate
@@ -902,9 +904,11 @@ vec3 renderAtmosphere(vec3 dir) {
     sky += sunLight * sunDisc * 20.0 * result.transmittance * clouds.transmittance;
 
     // Moon disc with lunar phase simulation
-    float moonDisc = celestialDisc(dir, ubo.moonDirection.xyz, MOON_ANGULAR_RADIUS);
+    // Use MOON_DISC_SIZE for celestialDisc (creates visible disc)
+    // Use MOON_MASK_RADIUS for lunarPhaseMask (angular radius for phase calculation)
+    float moonDisc = celestialDisc(dir, ubo.moonDirection.xyz, MOON_DISC_SIZE);
     float moonPhase = ubo.moonColor.a;  // Phase: 0 = new, 0.5 = full, 1 = new
-    float phaseMask = lunarPhaseMask(dir, ubo.moonDirection.xyz, moonPhase, MOON_ANGULAR_RADIUS);
+    float phaseMask = lunarPhaseMask(dir, ubo.moonDirection.xyz, moonPhase, MOON_MASK_RADIUS);
 
     // Apply phase mask with very high intensity to ensure bloom triggers
     // Moon surface is highly reflective (albedo ~0.12), but we boost for visual impact

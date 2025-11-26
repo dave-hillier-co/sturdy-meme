@@ -8,14 +8,13 @@
 #include <vector>
 #include <string>
 
-#include "Mesh.h"
-#include "Texture.h"
 #include "Camera.h"
 #include "GrassSystem.h"
 #include "CelestialCalculator.h"
 #include "WindSystem.h"
 #include "PostProcessSystem.h"
 #include "FroxelSystem.h"
+#include "SceneBuilder.h"
 
 static constexpr uint32_t NUM_SHADOW_CASCADES = 4;
 
@@ -51,16 +50,6 @@ struct PushConstants {
     float metallic;
     float emissiveIntensity;
     float padding;
-};
-
-struct SceneObject {
-    glm::mat4 transform;
-    Mesh* mesh;
-    Texture* texture;
-    float roughness = 0.5f;
-    float metallic = 0.0f;
-    float emissiveIntensity = 0.0f;
-    bool castsShadow = true;
 };
 
 class Renderer {
@@ -211,20 +200,9 @@ private:
     std::vector<VkSemaphore> renderFinishedSemaphores;
     std::vector<VkFence> inFlightFences;
 
-    Mesh groundMesh;
-    Mesh cubeMesh;
-    Mesh sphereMesh;
-    Mesh capsuleMesh;
-    Texture crateTexture;
-    Texture crateNormalMap;
-    Texture groundTexture;
-    Texture groundNormalMap;
-    Texture metalTexture;
-    Texture metalNormalMap;
-
-    std::vector<SceneObject> sceneObjects;
+    // Scene resources (meshes, textures, objects)
+    SceneBuilder sceneBuilder;
     std::vector<VkDescriptorSet> metalDescriptorSets;
-    size_t playerObjectIndex = 0;  // Index of the player in sceneObjects
 
     uint32_t currentFrame = 0;
     static constexpr int MAX_FRAMES_IN_FLIGHT = 2;

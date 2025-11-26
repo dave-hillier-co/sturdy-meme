@@ -115,90 +115,16 @@ bool Renderer::init(SDL_Window* win, const std::string& resPath) {
     if (!createCommandBuffers()) return false;
     if (!createUniformBuffers()) return false;
 
-    // Create disc ground mesh with radius 50, 64 segments, UV tiling of 10x
-    groundMesh.createDisc(50.0f, 64, 10.0f);
-    groundMesh.upload(allocator, device, commandPool, graphicsQueue);
+    // Initialize scene (meshes, textures, objects)
+    SceneBuilder::InitInfo sceneInfo{};
+    sceneInfo.allocator = allocator;
+    sceneInfo.device = device;
+    sceneInfo.commandPool = commandPool;
+    sceneInfo.graphicsQueue = graphicsQueue;
+    sceneInfo.physicalDevice = physicalDevice;
+    sceneInfo.resourcePath = resourcePath;
 
-    cubeMesh.createCube();
-    cubeMesh.upload(allocator, device, commandPool, graphicsQueue);
-
-    sphereMesh.createSphere(0.5f, 32, 32);
-    sphereMesh.upload(allocator, device, commandPool, graphicsQueue);
-
-    // Player capsule mesh (1.8m tall, 0.3m radius)
-    capsuleMesh.createCapsule(0.3f, 1.8f, 16, 16);
-    capsuleMesh.upload(allocator, device, commandPool, graphicsQueue);
-
-    std::string texturePath = resourcePath + "/textures/crates/crate1/crate1_diffuse.png";
-    if (!crateTexture.load(texturePath, allocator, device, commandPool, graphicsQueue, physicalDevice)) {
-        SDL_Log("Failed to load texture: %s", texturePath.c_str());
-        return false;
-    }
-
-    std::string crateNormalPath = resourcePath + "/textures/crates/crate1/crate1_normal.png";
-    if (!crateNormalMap.load(crateNormalPath, allocator, device, commandPool, graphicsQueue, physicalDevice, false)) {
-        SDL_Log("Failed to load crate normal map: %s", crateNormalPath.c_str());
-        return false;
-    }
-
-    std::string grassTexturePath = resourcePath + "/textures/grass/grass/grass01.jpg";
-    if (!groundTexture.load(grassTexturePath, allocator, device, commandPool, graphicsQueue, physicalDevice)) {
-        SDL_Log("Failed to load grass texture: %s", grassTexturePath.c_str());
-        return false;
-    }
-
-    std::string grassNormalPath = resourcePath + "/textures/grass/grass/grass01_n.jpg";
-    if (!groundNormalMap.load(grassNormalPath, allocator, device, commandPool, graphicsQueue, physicalDevice, false)) {
-        SDL_Log("Failed to load grass normal map: %s", grassNormalPath.c_str());
-        return false;
-    }
-
-    std::string metalTexturePath = resourcePath + "/textures/industrial/metal_1.jpg";
-    if (!metalTexture.load(metalTexturePath, allocator, device, commandPool, graphicsQueue, physicalDevice)) {
-        SDL_Log("Failed to load metal texture: %s", metalTexturePath.c_str());
-        return false;
-    }
-
-    std::string metalNormalPath = resourcePath + "/textures/industrial/metal_1_norm.jpg";
-    if (!metalNormalMap.load(metalNormalPath, allocator, device, commandPool, graphicsQueue, physicalDevice, false)) {
-        SDL_Log("Failed to load metal normal map: %s", metalNormalPath.c_str());
-        return false;
-    }
-
-    // Ground - rough, non-metallic
-    sceneObjects.push_back({glm::mat4(1.0f), &groundMesh, &groundTexture, 0.8f, 0.0f});
-
-    // Wooden crate - slightly shiny, non-metallic
-    sceneObjects.push_back({glm::translate(glm::mat4(1.0f), glm::vec3(2.0f, 0.5f, 0.0f)), &cubeMesh, &crateTexture, 0.4f, 0.0f});
-
-    // Rotated wooden crate
-    glm::mat4 rotatedCube = glm::translate(glm::mat4(1.0f), glm::vec3(-1.5f, 0.5f, 1.0f));
-    rotatedCube = glm::rotate(rotatedCube, glm::radians(30.0f), glm::vec3(0.0f, 1.0f, 0.0f));
-    sceneObjects.push_back({rotatedCube, &cubeMesh, &crateTexture, 0.4f, 0.0f});
-
-    // Polished metal sphere - smooth, fully metallic
-    sceneObjects.push_back({glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.5f, -2.0f)), &sphereMesh, &metalTexture, 0.1f, 1.0f});
-
-    // Rough/brushed metal sphere - moderately rough, metallic
-    sceneObjects.push_back({glm::translate(glm::mat4(1.0f), glm::vec3(-3.0f, 0.5f, -1.0f)), &sphereMesh, &metalTexture, 0.5f, 1.0f});
-
-    // Polished metal cube - smooth, fully metallic
-    sceneObjects.push_back({glm::translate(glm::mat4(1.0f), glm::vec3(3.0f, 0.5f, -2.0f)), &cubeMesh, &metalTexture, 0.1f, 1.0f});
-
-    // Brushed metal cube - rough, metallic
-    glm::mat4 brushedCube = glm::translate(glm::mat4(1.0f), glm::vec3(-3.0f, 0.5f, -3.0f));
-    brushedCube = glm::rotate(brushedCube, glm::radians(45.0f), glm::vec3(0.0f, 1.0f, 0.0f));
-    sceneObjects.push_back({brushedCube, &cubeMesh, &metalTexture, 0.6f, 1.0f});
-
-    // Glowing emissive sphere on top of the first crate - demonstrates bloom effect
-    glm::mat4 glowingSphereTransform = glm::translate(glm::mat4(1.0f), glm::vec3(2.0f, 1.3f, 0.0f));
-    glowingSphereTransform = glm::scale(glowingSphereTransform, glm::vec3(0.3f));
-    sceneObjects.push_back({glowingSphereTransform, &sphereMesh, &metalTexture, 0.2f, 0.0f, 25.0f, false});
-
-    // Player capsule - centered at origin, uses metal texture for visibility
-    playerObjectIndex = sceneObjects.size();
-    glm::mat4 playerTransform = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.9f, 0.0f));
-    sceneObjects.push_back({playerTransform, &capsuleMesh, &metalTexture, 0.3f, 0.8f, 0.0f, true});
+    if (!sceneBuilder.init(sceneInfo)) return false;
 
     if (!createDescriptorSets()) return false;
 
@@ -256,9 +182,7 @@ bool Renderer::init(SDL_Window* win, const std::string& resPath) {
 }
 
 void Renderer::updatePlayerTransform(const glm::mat4& transform) {
-    if (playerObjectIndex < sceneObjects.size()) {
-        sceneObjects[playerObjectIndex].transform = transform;
-    }
+    sceneBuilder.updatePlayerTransform(transform);
 }
 
 void Renderer::shutdown() {
@@ -271,17 +195,7 @@ void Renderer::shutdown() {
             vkDestroyFence(device, inFlightFences[i], nullptr);
         }
 
-        crateTexture.destroy(allocator, device);
-        crateNormalMap.destroy(allocator, device);
-        groundTexture.destroy(allocator, device);
-        groundNormalMap.destroy(allocator, device);
-        metalTexture.destroy(allocator, device);
-        metalNormalMap.destroy(allocator, device);
-        cubeMesh.destroy(allocator);
-        sphereMesh.destroy(allocator);
-        capsuleMesh.destroy(allocator);
-        groundMesh.destroy(allocator);
-        sceneObjects.clear();
+        sceneBuilder.destroy(allocator, device);
 
         vkDestroyDescriptorPool(device, descriptorPool, nullptr);
 
@@ -1380,8 +1294,8 @@ bool Renderer::createDescriptorSets() {
 
         VkDescriptorImageInfo crateImageInfo{};
         crateImageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-        crateImageInfo.imageView = crateTexture.getImageView();
-        crateImageInfo.sampler = crateTexture.getSampler();
+        crateImageInfo.imageView = sceneBuilder.getCrateTexture().getImageView();
+        crateImageInfo.sampler = sceneBuilder.getCrateTexture().getSampler();
 
         VkDescriptorImageInfo shadowImageInfo{};
         shadowImageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
@@ -1390,8 +1304,8 @@ bool Renderer::createDescriptorSets() {
 
         VkDescriptorImageInfo crateNormalImageInfo{};
         crateNormalImageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-        crateNormalImageInfo.imageView = crateNormalMap.getImageView();
-        crateNormalImageInfo.sampler = crateNormalMap.getSampler();
+        crateNormalImageInfo.imageView = sceneBuilder.getCrateNormalMap().getImageView();
+        crateNormalImageInfo.sampler = sceneBuilder.getCrateNormalMap().getSampler();
 
         std::array<VkWriteDescriptorSet, 4> descriptorWrites{};
 
@@ -1433,13 +1347,13 @@ bool Renderer::createDescriptorSets() {
         // Ground descriptor sets
         VkDescriptorImageInfo groundImageInfo{};
         groundImageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-        groundImageInfo.imageView = groundTexture.getImageView();
-        groundImageInfo.sampler = groundTexture.getSampler();
+        groundImageInfo.imageView = sceneBuilder.getGroundTexture().getImageView();
+        groundImageInfo.sampler = sceneBuilder.getGroundTexture().getSampler();
 
         VkDescriptorImageInfo groundNormalImageInfo{};
         groundNormalImageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-        groundNormalImageInfo.imageView = groundNormalMap.getImageView();
-        groundNormalImageInfo.sampler = groundNormalMap.getSampler();
+        groundNormalImageInfo.imageView = sceneBuilder.getGroundNormalMap().getImageView();
+        groundNormalImageInfo.sampler = sceneBuilder.getGroundNormalMap().getSampler();
 
         descriptorWrites[0].dstSet = groundDescriptorSets[i];
         descriptorWrites[1].dstSet = groundDescriptorSets[i];
@@ -1454,13 +1368,13 @@ bool Renderer::createDescriptorSets() {
         // Metal texture descriptor sets
         VkDescriptorImageInfo metalImageInfo{};
         metalImageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-        metalImageInfo.imageView = metalTexture.getImageView();
-        metalImageInfo.sampler = metalTexture.getSampler();
+        metalImageInfo.imageView = sceneBuilder.getMetalTexture().getImageView();
+        metalImageInfo.sampler = sceneBuilder.getMetalTexture().getSampler();
 
         VkDescriptorImageInfo metalNormalImageInfo{};
         metalNormalImageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-        metalNormalImageInfo.imageView = metalNormalMap.getImageView();
-        metalNormalImageInfo.sampler = metalNormalMap.getSampler();
+        metalNormalImageInfo.imageView = sceneBuilder.getMetalNormalMap().getImageView();
+        metalNormalImageInfo.sampler = sceneBuilder.getMetalNormalMap().getSampler();
 
         descriptorWrites[0].dstSet = metalDescriptorSets[i];
         descriptorWrites[1].dstSet = metalDescriptorSets[i];
@@ -1720,7 +1634,7 @@ void Renderer::recordShadowPass(VkCommandBuffer cmd, uint32_t frameIndex, float 
         vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
                                 shadowPipelineLayout, 0, 1, &descriptorSets[frameIndex], 0, nullptr);
 
-        for (const auto& obj : sceneObjects) {
+        for (const auto& obj : sceneBuilder.getSceneObjects()) {
             if (!obj.castsShadow) continue;
 
             ShadowPushConstants shadowPush{};
@@ -1743,7 +1657,7 @@ void Renderer::recordShadowPass(VkCommandBuffer cmd, uint32_t frameIndex, float 
 }
 
 void Renderer::recordSceneObjects(VkCommandBuffer cmd, uint32_t frameIndex) {
-    for (const auto& obj : sceneObjects) {
+    for (const auto& obj : sceneBuilder.getSceneObjects()) {
         PushConstants push{};
         push.model = obj.transform;
         push.roughness = obj.roughness;
@@ -1756,9 +1670,9 @@ void Renderer::recordSceneObjects(VkCommandBuffer cmd, uint32_t frameIndex) {
 
         // Select descriptor set based on texture
         VkDescriptorSet* descSet;
-        if (obj.texture == &groundTexture) {
+        if (obj.texture == &sceneBuilder.getGroundTexture()) {
             descSet = &groundDescriptorSets[frameIndex];
-        } else if (obj.texture == &metalTexture) {
+        } else if (obj.texture == &sceneBuilder.getMetalTexture()) {
             descSet = &metalDescriptorSets[frameIndex];
         } else {
             descSet = &descriptorSets[frameIndex];

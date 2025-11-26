@@ -110,6 +110,14 @@ public:
     // Player position for grass interaction (xyz = position, w = capsule radius)
     void setPlayerPosition(const glm::vec3& position, float radius);
 
+    // Access to systems for simulation
+    WindSystem& getWindSystem() { return windSystem; }
+    const WindSystem& getWindSystem() const { return windSystem; }
+    SceneBuilder& getSceneBuilder() { return sceneBuilder; }
+    Mesh& getFlagClothMesh() { return sceneBuilder.getFlagClothMesh(); }
+    Mesh& getFlagPoleMesh() { return sceneBuilder.getFlagPoleMesh(); }
+    void uploadFlagClothMesh() { sceneBuilder.uploadFlagClothMesh(allocator, device, commandPool, graphicsQueue); }
+
     // Celestial/astronomical settings
     void setLocation(const GeographicLocation& location) { celestialCalculator.setLocation(location); }
     const GeographicLocation& getLocation() const { return celestialCalculator.getLocation(); }

@@ -218,19 +218,19 @@ if(SHADER_COMPILE_CMD)
     )
     add_custom_command(
         OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/shaders/transmittance_lut.comp.spv
-        COMMAND ${SHADER_COMPILE_CMD} ${CMAKE_CURRENT_SOURCE_DIR}/shaders/transmittance_lut.comp.spv ${CMAKE_CURRENT_SOURCE_DIR}/shaders/transmittance_lut.comp
+        COMMAND ${GLSLANG_VALIDATOR} --target-env vulkan1.2 -I${CMAKE_CURRENT_SOURCE_DIR}/shaders -V -o ${CMAKE_CURRENT_SOURCE_DIR}/shaders/transmittance_lut.comp.spv ${CMAKE_CURRENT_SOURCE_DIR}/shaders/transmittance_lut.comp
         DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/shaders/transmittance_lut.comp ${CMAKE_CURRENT_SOURCE_DIR}/shaders/atmosphere_common.glsl
         COMMENT "Compiling transmittance LUT compute shader"
     )
     add_custom_command(
         OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/shaders/multiscatter_lut.comp.spv
-        COMMAND ${SHADER_COMPILE_CMD} ${CMAKE_CURRENT_SOURCE_DIR}/shaders/multiscatter_lut.comp.spv ${CMAKE_CURRENT_SOURCE_DIR}/shaders/multiscatter_lut.comp
+        COMMAND ${GLSLANG_VALIDATOR} --target-env vulkan1.2 -I${CMAKE_CURRENT_SOURCE_DIR}/shaders -V -o ${CMAKE_CURRENT_SOURCE_DIR}/shaders/multiscatter_lut.comp.spv ${CMAKE_CURRENT_SOURCE_DIR}/shaders/multiscatter_lut.comp
         DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/shaders/multiscatter_lut.comp ${CMAKE_CURRENT_SOURCE_DIR}/shaders/atmosphere_common.glsl
         COMMENT "Compiling multi-scatter LUT compute shader"
     )
     add_custom_command(
         OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/shaders/skyview_lut.comp.spv
-        COMMAND ${SHADER_COMPILE_CMD} ${CMAKE_CURRENT_SOURCE_DIR}/shaders/skyview_lut.comp.spv ${CMAKE_CURRENT_SOURCE_DIR}/shaders/skyview_lut.comp
+        COMMAND ${GLSLANG_VALIDATOR} --target-env vulkan1.2 -I${CMAKE_CURRENT_SOURCE_DIR}/shaders -V -o ${CMAKE_CURRENT_SOURCE_DIR}/shaders/skyview_lut.comp.spv ${CMAKE_CURRENT_SOURCE_DIR}/shaders/skyview_lut.comp
         DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/shaders/skyview_lut.comp ${CMAKE_CURRENT_SOURCE_DIR}/shaders/atmosphere_common.glsl
         COMMENT "Compiling sky-view LUT compute shader"
     )

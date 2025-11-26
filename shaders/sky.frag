@@ -254,10 +254,10 @@ CloudResult marchClouds(vec3 origin, vec3 dir) {
     float cosTheta = dot(dir, sunDir);
     vec3 sunLight = ubo.sunColor.rgb * ubo.sunDirection.w;
 
-    // Ambient sky light for cloud shading
+    // Ambient sky light for cloud shading (boosted for visibility)
     float sunAltitude = ubo.sunDirection.y;
-    vec3 ambientLight = mix(vec3(0.3, 0.4, 0.5), vec3(0.1, 0.15, 0.2),
-                            1.0 - smoothstep(-0.1, 0.3, sunAltitude)) * 0.3;
+    vec3 ambientLight = mix(vec3(0.4, 0.5, 0.6), vec3(0.15, 0.2, 0.25),
+                            1.0 - smoothstep(-0.1, 0.3, sunAltitude)) * 0.5;
 
     for (int i = 0; i < CLOUD_MARCH_STEPS; i++) {
         if (result.transmittance < 0.01) break;
@@ -328,9 +328,11 @@ float computeEarthShadow(vec3 worldPos, vec3 sunDir) {
         float shadowRadius = PLANET_RADIUS * (1.0 - altitude / (ATMOSPHERE_RADIUS - PLANET_RADIUS));
 
         if (perpDist < shadowRadius) {
-            // In umbra/penumbra region
-            float penumbraWidth = (ATMOSPHERE_RADIUS - PLANET_RADIUS) * 0.1;  // Soft edge
-            return smoothstep(shadowRadius - penumbraWidth, shadowRadius, perpDist);
+            // In umbra/penumbra region - wider penumbra for softer shadows
+            float penumbraWidth = (ATMOSPHERE_RADIUS - PLANET_RADIUS) * 0.25;
+            float shadow = smoothstep(shadowRadius - penumbraWidth, shadowRadius, perpDist);
+            // Don't fully darken - keep minimum light for atmosphere scattering
+            return mix(0.15, 1.0, shadow);
         }
     }
 
@@ -483,8 +485,15 @@ vec3 renderAtmosphere(vec3 dir) {
     CloudResult clouds = marchClouds(origin, normDir);
 
     // Composite clouds over sky
-    // Clouds receive atmospheric transmittance (appear hazier at distance)
-    vec3 cloudColor = clouds.scattering * result.transmittance;
+    // Apply softer atmospheric influence on clouds - don't fully darken horizon clouds
+    // Use sqrt of transmittance for gentler falloff, and clamp minimum
+    vec3 cloudTransmittance = sqrt(max(result.transmittance, vec3(0.3)));
+    vec3 cloudColor = clouds.scattering * cloudTransmittance;
+
+    // Add atmospheric scattering to clouds (haze effect without darkening)
+    vec3 horizonHaze = (1.0 - cloudTransmittance) * sunLight * 0.15;
+    cloudColor += horizonHaze * (1.0 - clouds.transmittance);
+
     sky = sky * clouds.transmittance + cloudColor;
 
     // Sun and moon discs (rendered behind clouds)

@@ -474,12 +474,29 @@ vec3 renderAtmosphere(vec3 dir) {
 
     // Remap the ray direction for atmosphere calculation:
     // - Rays with Y >= 0 use their actual direction
-    // - Rays with Y < 0 get clamped to horizon for atmosphere, but return ground color
+    // - Rays with Y < 0 blend to fog/horizon color to disguise the end of the world
     if (normDir.y < -0.001) {
-        // Below horizon - return ground color blended with horizon atmosphere
+        // Sample the horizon atmosphere by using a horizontal ray
+        vec3 horizonDir = normalize(vec3(normDir.x, 0.0, normDir.z));
+        ScatteringResult horizonResult = integrateAtmosphere(vec3(0.0, PLANET_RADIUS + 0.001, 0.0), horizonDir, 16);
+
+        vec3 sunLight = ubo.sunColor.rgb * ubo.sunDirection.w;
+        vec3 horizonColor = horizonResult.inscatter * sunLight;
+
+        // Add multiple scattering compensation
+        horizonColor += sunLight * 0.1 * (1.0 - horizonResult.transmittance);
+
+        // Night fallback
         float night = 1.0 - smoothstep(-0.05, 0.08, ubo.sunDirection.y);
-        vec3 groundColor = mix(vec3(0.02, 0.02, 0.015), vec3(0.005, 0.005, 0.008), night);
-        return groundColor;
+        vec3 nightTint = mix(vec3(0.01, 0.015, 0.03), vec3(0.03, 0.05, 0.08), horizonResult.transmittance.y);
+        horizonColor += night * nightTint;
+
+        // Blend from horizon color to slightly darker fog as we go further below horizon
+        // This creates a smooth transition and disguises the world boundary
+        float belowHorizonFactor = clamp(-normDir.y * 2.0, 0.0, 1.0);
+        vec3 fogColor = horizonColor * mix(1.0, 0.5, belowHorizonFactor);
+
+        return fogColor;
     }
 
     // Place observer on planet surface (camera height is negligible for atmosphere)

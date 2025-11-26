@@ -11,6 +11,7 @@
     "glm",
     "stb",
     "vk-bootstrap",
-    "vulkan-memory-allocator"
+    "vulkan-memory-allocator",
+    "joltphysics"
   ]
 }

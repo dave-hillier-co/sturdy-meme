@@ -226,13 +226,16 @@ mat3 leb__DecodeTransformationMatrix(in const cbt_Node node) {
 
 mat3 leb__DecodeTransformationMatrix_Square(in const cbt_Node node) {
     int bitID = max(0, node.depth - 1);
-    mat3 xf = leb__SquareMatrix(leb__GetBitValue(node.id, bitID));
+    uint quadBit = leb__GetBitValue(node.id, uint(bitID));
+    mat3 xf = leb__SquareMatrix(quadBit);
 
     for (bitID = node.depth - 2; bitID >= 0; --bitID) {
         xf = leb__SplittingMatrix(leb__GetBitValue(node.id, bitID)) * xf;
     }
 
-    return leb__WindingMatrix((uint(node.depth) ^ 1u) & 1u) * xf;
+    // Winding correction: account for which root triangle (quadBit) the node descended from.
+    // The two root triangles from leb__SquareMatrix have opposite winding, so we XOR with quadBit.
+    return leb__WindingMatrix((uint(node.depth) ^ quadBit) & 1u) * xf;
 }
 
 vec3 leb_DecodeNodeAttributeArray(in const cbt_Node node, in const vec3 data) {

@@ -1,5 +1,9 @@
 #version 450
 
+#extension GL_GOOGLE_include_directive : require
+
+#include "atmosphere_common.glsl"
+
 // Froxel Update Compute Shader (Phase 4.3)
 // Calculates fog density and in-scattered light for each froxel
 
@@ -18,16 +22,17 @@ layout(binding = 2) uniform FroxelUniforms {
     vec4 layerParams;       // x = layer height, y = layer thickness, z = layer density
     vec4 gridParams;        // x = volumetric far, y = depth distribution, z = frame index
     vec4 shadowParams;      // x = shadow map size
+    vec4 atmosphereRadii;   // x = planet radius, y = atmosphere radius
 } ubo;
 
 layout(binding = 3) uniform sampler2DArrayShadow shadowMap;
+layout(binding = 4) uniform sampler2D rayleighIrradianceLUT;
+layout(binding = 5) uniform sampler2D mieIrradianceLUT;
 
 // Froxel grid constants
 const uint FROXEL_WIDTH = 128;
 const uint FROXEL_HEIGHT = 64;
 const uint FROXEL_DEPTH = 64;
-
-const float PI = 3.14159265359;
 
 // Convert slice index to linear depth using exponential distribution
 float sliceToDepth(float slice) {
@@ -140,10 +145,14 @@ void main() {
     // In-scattering from sun
     vec3 sunInScatter = sunLight * phase * shadow * density;
 
-    // Ambient sky contribution (isotropic)
-    float night = 1.0 - smoothstep(-0.05, 0.08, sunDir.y);
-    vec3 skyColor = mix(vec3(0.4, 0.5, 0.7), vec3(0.02, 0.03, 0.05), night);
-    vec3 skyInScatter = skyColor * density * 0.15;  // Ambient scatter
+    // Ambient sky contribution from irradiance LUTs (isotropic)
+    float cosSunZenith = clamp(sunDir.y, -1.0, 1.0);
+    float altitude = max(0.0, worldPos.y);
+    vec3 rayleighIrr = SampleRayleighIrradiance(rayleighIrradianceLUT, cosSunZenith, altitude,
+                                                ubo.atmosphereRadii.x, ubo.atmosphereRadii.y);
+    vec3 mieIrr = SampleMieIrradiance(mieIrradianceLUT, cosSunZenith, altitude,
+                                      ubo.atmosphereRadii.x, ubo.atmosphereRadii.y);
+    vec3 skyInScatter = (rayleighIrr + mieIrr) * density * 0.1;
 
     // Total in-scattering
     vec3 totalInScatter = sunInScatter + skyInScatter;

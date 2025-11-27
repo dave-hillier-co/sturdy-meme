@@ -19,6 +19,7 @@ struct FroxelUniforms {
     glm::vec4 layerParams;        // x = layer height, y = layer thickness, z = layer density, w = unused
     glm::vec4 gridParams;         // x = volumetric far plane, y = depth distribution, z = frame index, w = unused
     glm::vec4 shadowParams;       // x = shadow map size, y-w = unused
+    glm::vec4 atmosphereRadii;    // x = planet radius, y = atmosphere radius, z-w unused
 };
 
 class FroxelSystem {
@@ -32,6 +33,11 @@ public:
         uint32_t framesInFlight;
         VkImageView shadowMapView;       // Cascaded shadow map array view
         VkSampler shadowSampler;         // Shadow sampler with comparison
+        VkImageView rayleighIrradianceView;
+        VkImageView mieIrradianceView;
+        VkSampler atmosphereSampler;
+        float planetRadius;
+        float atmosphereRadius;
     };
 
     // Froxel grid dimensions (from Phase 4.3)
@@ -121,6 +127,9 @@ private:
     // External resources (not owned)
     VkImageView shadowMapView = VK_NULL_HANDLE;
     VkSampler shadowSampler = VK_NULL_HANDLE;
+    VkImageView rayleighIrradianceView = VK_NULL_HANDLE;
+    VkImageView mieIrradianceView = VK_NULL_HANDLE;
+    VkSampler atmosphereSampler = VK_NULL_HANDLE;
 
     // Scattering volume (stores in-scattered light / opacity)
     // Format: RGB11F - L/alpha for anti-aliasing
@@ -166,6 +175,9 @@ private:
 
     // Volumetric range
     float volumetricFarPlane = 200.0f;
+
+    float planetRadius = 6371000.0f;
+    float atmosphereRadius = 6471000.0f;
 
     bool enabled = true;
 };

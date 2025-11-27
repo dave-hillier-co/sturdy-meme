@@ -14,6 +14,11 @@ bool FroxelSystem::init(const InitInfo& info) {
     framesInFlight = info.framesInFlight;
     shadowMapView = info.shadowMapView;
     shadowSampler = info.shadowSampler;
+    rayleighIrradianceView = info.rayleighIrradianceView;
+    mieIrradianceView = info.mieIrradianceView;
+    atmosphereSampler = info.atmosphereSampler;
+    planetRadius = info.planetRadius;
+    atmosphereRadius = info.atmosphereRadius;
 
     if (!createScatteringVolume()) return false;
     if (!createIntegratedVolume()) return false;
@@ -200,7 +205,7 @@ bool FroxelSystem::createSampler() {
 }
 
 bool FroxelSystem::createDescriptorSetLayout() {
-    std::array<VkDescriptorSetLayoutBinding, 4> bindings{};
+    std::array<VkDescriptorSetLayoutBinding, 6> bindings{};
 
     // Binding 0: Scattering volume (storage image, read/write)
     bindings[0].binding = 0;
@@ -225,6 +230,18 @@ bool FroxelSystem::createDescriptorSetLayout() {
     bindings[3].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     bindings[3].descriptorCount = 1;
     bindings[3].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+
+    // Binding 4: Rayleigh irradiance LUT
+    bindings[4].binding = 4;
+    bindings[4].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    bindings[4].descriptorCount = 1;
+    bindings[4].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+
+    // Binding 5: Mie irradiance LUT
+    bindings[5].binding = 5;
+    bindings[5].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    bindings[5].descriptorCount = 1;
+    bindings[5].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
 
     VkDescriptorSetLayoutCreateInfo layoutInfo{};
     layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
@@ -297,7 +314,7 @@ bool FroxelSystem::createDescriptorSets() {
     }
 
     for (uint32_t i = 0; i < framesInFlight; i++) {
-        std::array<VkWriteDescriptorSet, 4> writes{};
+        std::array<VkWriteDescriptorSet, 6> writes{};
 
         // Scattering volume
         VkDescriptorImageInfo scatteringInfo{};
@@ -352,6 +369,34 @@ bool FroxelSystem::createDescriptorSets() {
         writes[3].descriptorCount = 1;
         writes[3].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
         writes[3].pImageInfo = &shadowInfo;
+
+        // Rayleigh irradiance
+        VkDescriptorImageInfo rayleighInfo{};
+        rayleighInfo.sampler = atmosphereSampler;
+        rayleighInfo.imageView = rayleighIrradianceView;
+        rayleighInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+        writes[4].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        writes[4].dstSet = froxelDescriptorSets[i];
+        writes[4].dstBinding = 4;
+        writes[4].dstArrayElement = 0;
+        writes[4].descriptorCount = 1;
+        writes[4].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        writes[4].pImageInfo = &rayleighInfo;
+
+        // Mie irradiance
+        VkDescriptorImageInfo mieInfo{};
+        mieInfo.sampler = atmosphereSampler;
+        mieInfo.imageView = mieIrradianceView;
+        mieInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+        writes[5].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        writes[5].dstSet = froxelDescriptorSets[i];
+        writes[5].dstBinding = 5;
+        writes[5].dstArrayElement = 0;
+        writes[5].descriptorCount = 1;
+        writes[5].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        writes[5].pImageInfo = &mieInfo;
 
         vkUpdateDescriptorSets(device, static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
     }
@@ -451,6 +496,7 @@ void FroxelSystem::recordFroxelUpdate(VkCommandBuffer cmd, uint32_t frameIndex,
     ubo->gridParams = glm::vec4(volumetricFarPlane, DEPTH_DISTRIBUTION,
                                  static_cast<float>(frameCounter), 0.0f);
     ubo->shadowParams = glm::vec4(2048.0f, 0.0f, 0.0f, 0.0f);  // Shadow map size
+    ubo->atmosphereRadii = glm::vec4(planetRadius, atmosphereRadius, 0.0f, 0.0f);
 
     // Store for next frame's temporal reprojection
     prevViewProj = viewProj;

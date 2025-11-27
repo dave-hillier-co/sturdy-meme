@@ -596,7 +596,7 @@ void WeatherSystem::updateUniforms(uint32_t frameIndex, const glm::vec3& cameraP
     uniforms.spawnHeight = 10.0f;
     uniforms.groundLevel = groundLevel;
     uniforms.particleDensity = 1.0f;
-    uniforms.maxDrawDistance = 100.0f;
+    uniforms.maxDrawDistance = 2000.0f;
     uniforms.time = totalTime;
     uniforms.deltaTime = deltaTime;
     uniforms.weatherType = weatherType;

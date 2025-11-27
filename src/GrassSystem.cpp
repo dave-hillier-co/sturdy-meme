@@ -1083,9 +1083,9 @@ void GrassSystem::updateUniforms(uint32_t frameIndex, const glm::vec3& cameraPos
                                             DISPLACEMENT_REGION_SIZE, texelSize);
 
     // Distance thresholds
-    uniforms.maxDrawDistance = 50.0f;
-    uniforms.lodTransitionStart = 30.0f;
-    uniforms.lodTransitionEnd = 50.0f;
+    uniforms.maxDrawDistance = 150.0f;
+    uniforms.lodTransitionStart = 80.0f;
+    uniforms.lodTransitionEnd = 150.0f;
 
     // Terrain parameters for heightmap sampling
     uniforms.terrainSize = terrainSize;

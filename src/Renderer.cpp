@@ -163,8 +163,8 @@ bool Renderer::init(SDL_Window* win, const std::string& resPath) {
     terrainInfo.commandPool = commandPool;
 
     TerrainConfig terrainConfig{};
-    terrainConfig.size = 500.0f;
-    terrainConfig.heightScale = 50.0f;
+    terrainConfig.size = 20000.0f;
+    terrainConfig.heightScale = 500.0f;
     terrainConfig.maxDepth = 18;  // Reasonable depth for testing
     terrainConfig.minDepth = 2;
     terrainConfig.targetEdgePixels = 16.0f;

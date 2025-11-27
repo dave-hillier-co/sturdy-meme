@@ -683,7 +683,7 @@ void LeafSystem::updateUniforms(uint32_t frameIndex, const glm::vec3& cameraPos,
     uniforms.groundLevel = groundLevel;
     uniforms.deltaTime = deltaTime;
     uniforms.time = totalTime;
-    uniforms.maxDrawDistance = 60.0f;
+    uniforms.maxDrawDistance = 200.0f;
 
     // Disruption parameters
     uniforms.disruptionRadius = 2.0f;

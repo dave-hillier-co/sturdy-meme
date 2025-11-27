@@ -125,7 +125,8 @@ bool TerrainSystem::createCBTBuffer() {
 
     VmaAllocationCreateInfo allocInfo{};
     allocInfo.usage = VMA_MEMORY_USAGE_AUTO;
-    allocInfo.flags = VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT;
+    // Allow host access for initialization
+    allocInfo.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT;
 
     if (vmaCreateBuffer(allocator, &bufferInfo, &allocInfo, &cbtBuffer, &cbtAllocation, nullptr) != VK_SUCCESS) {
         std::cerr << "Failed to create CBT buffer" << std::endl;
@@ -139,54 +140,52 @@ bool TerrainSystem::initializeCBT() {
     // Initialize CBT with 2 root triangles covering the terrain quad
     // This requires setting up the initial bitfield state
 
-    // Create a staging buffer for initialization
+    // Create initialization data
     std::vector<uint32_t> initData(cbtBufferSize / sizeof(uint32_t), 0);
 
-    // The CBT buffer layout encodes max depth in heap[0]'s LSB
-    // For max depth D, heap[0] = (1 << D) | initial_node_count
-    // We start with 2 triangles at depth 1 (indices 2 and 3 in the heap)
+    // The CBT buffer layout:
+    // - heap[0] stores (1 << maxDepth) as a marker for the max depth
+    // - The sum reduction tree occupies indices 1 to 2^maxDepth - 1
+    // - The bitfield for leaf nodes starts at index 2^(maxDepth-1)
+
+    // For max depth D, we need to set up initial triangles
+    // We start with 2 triangles at depth 1 (heap indices 2 and 3)
     initData[0] = (1u << config.maxDepth);  // Max depth marker
 
-    // Set the initial two root triangle bits
-    // The bitfield starts at a specific offset in the heap
-    // For nodes at depth 1, we need to set bits for heap indices 2 and 3
-    uint32_t initialNodeCount = 2;
+    // Initialize sum reduction tree
+    // Node at index 1 (root) should have count = 2 (two initial triangles)
+    initData[1] = 2;
 
-    // Initialize the sum reduction tree with the correct counts
-    // Root (depth 0, index 1) should have count = 2
-    // This is a simplified initialization - the actual layout is more complex
-    // We'll let the sum reduction compute shader rebuild this properly
+    // Nodes at depth 1 (indices 2 and 3) each have count = 1
+    initData[2] = 1;
+    initData[3] = 1;
 
-    // Write bit for left child (index 2) and right child (index 3) of root
-    // In a simplified CBT, we set these as leaves
-    // The actual bit positions depend on the CBT memory layout
+    // Set the leaf bits in the bitfield
+    // For a CBT with max depth D, the bitfield starts at offset 2^(D-1)
+    // But for initial triangles at depth 1, we mark them as active
+    uint32_t bitfieldOffset = 1u << (config.maxDepth - 1);
 
-    // For now, we'll initialize with a simple state and let the first
-    // sum reduction pass rebuild the structure
-    initData[0] |= initialNodeCount;  // Store initial count in root
+    // Set bits for the two initial triangles (indices 2 and 3 in heap)
+    // In the bitfield, bit position corresponds to heap index - bitfield offset
+    if (bitfieldOffset < initData.size()) {
+        // Mark triangle at heap index 2 as a leaf
+        initData[bitfieldOffset] = 1;  // First leaf bit
+    }
+    if (bitfieldOffset + 1 < initData.size()) {
+        // Mark triangle at heap index 3 as a leaf
+        initData[bitfieldOffset + 1] = 1;  // Second leaf bit
+    }
 
-    // Upload to GPU
-    VkBuffer stagingBuffer;
-    VmaAllocation stagingAllocation;
-
-    VkBufferCreateInfo stagingInfo{};
-    stagingInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-    stagingInfo.size = cbtBufferSize;
-    stagingInfo.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
-
-    VmaAllocationCreateInfo stagingAllocInfo{};
-    stagingAllocInfo.usage = VMA_MEMORY_USAGE_AUTO;
-    stagingAllocInfo.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT;
-
-    vmaCreateBuffer(allocator, &stagingInfo, &stagingAllocInfo, &stagingBuffer, &stagingAllocation, nullptr);
-
+    // Map the CBT buffer directly and write initialization data
     void* data;
-    vmaMapMemory(allocator, stagingAllocation, &data);
+    if (vmaMapMemory(allocator, cbtAllocation, &data) != VK_SUCCESS) {
+        std::cerr << "Failed to map CBT buffer for initialization" << std::endl;
+        return false;
+    }
     memcpy(data, initData.data(), cbtBufferSize);
-    vmaUnmapMemory(allocator, stagingAllocation);
+    vmaUnmapMemory(allocator, cbtAllocation);
 
-    // Copy to GPU buffer (would need a command buffer - for simplicity, use mapped memory)
-    vmaDestroyBuffer(allocator, stagingBuffer, stagingAllocation);
+    std::cout << "CBT initialized with 2 root triangles, max depth " << config.maxDepth << std::endl;
 
     return true;
 }

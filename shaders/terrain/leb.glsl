@@ -268,13 +268,47 @@ mat4x3 leb_DecodeNodeAttributeArray_Square_mat4(in const cbt_Node node, in const
 }
 
 // Utility function to decode triangle vertices from a node
-// Returns triangle vertices in [0,1]^2 UV space
+// Returns triangle vertices in [0,1]^2 UV space with consistent CCW winding
 void leb_DecodeTriangleVertices(in const cbt_Node node, out vec2 v0, out vec2 v1, out vec2 v2) {
-    vec3 xPos = vec3(0, 0, 1);
-    vec3 yPos = vec3(1, 0, 0);
-    mat2x3 pos = leb_DecodeNodeAttributeArray_Square(node, mat2x3(xPos, yPos));
+    // Determine which half of the unit square this triangle belongs to.
+    // The most significant bit selects the base triangle that covers either the
+    // lower-left or upper-right half of the square.
+    uint quadBit = (node.depth == 0) ? 0u : leb__GetBitValue(node.id, node.depth - 1);
+    if (quadBit == 0u) {
+        v0 = vec2(0.0, 0.0);
+        v1 = vec2(1.0, 0.0);
+        v2 = vec2(0.0, 1.0);
+    } else {
+        v0 = vec2(1.0, 1.0);
+        v1 = vec2(0.0, 1.0);
+        v2 = vec2(1.0, 0.0);
+    }
 
-    v0 = vec2(pos[0][0], pos[1][0]);
-    v1 = vec2(pos[0][1], pos[1][1]);
-    v2 = vec2(pos[0][2], pos[1][2]);
+    // Walk down the tree from the second most significant bit, bisecting the
+    // current triangle's longest edge (v1-v2) at each step.
+    for (int bitID = node.depth - 2; bitID >= 0; --bitID) {
+        vec2 mid = 0.5 * (v1 + v2);
+        if (leb__GetBitValue(node.id, bitID) == 0u) {
+            v2 = mid;
+        } else {
+            v1 = mid;
+        }
+    }
+
+    // Reorder vertices so the longest edge is always v1-v2 (matches LEB
+    // assumptions) while keeping counter-clockwise winding.
+    float e01 = length(v0 - v1);
+    float e12 = length(v1 - v2);
+    float e20 = length(v2 - v0);
+
+    if (e01 >= e12 && e01 >= e20) {
+        vec2 tmp = v2; v2 = v1; v1 = v0; v0 = tmp;
+    } else if (e20 >= e12 && e20 >= e01) {
+        vec2 tmp = v1; v1 = v2; v2 = v0; v0 = tmp;
+    }
+
+    float area = (v1.x - v0.x) * (v2.y - v0.y) - (v2.x - v0.x) * (v1.y - v0.y);
+    if (area < 0.0) {
+        vec2 tmp = v1; v1 = v2; v2 = tmp;
+    }
 }

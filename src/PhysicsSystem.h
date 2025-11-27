@@ -55,8 +55,15 @@ public:
     // Simulation
     void update(float deltaTime);
 
-    // Terrain - creates a heightfield from the disc
+    // Terrain - creates a heightfield from the disc (flat ground)
     PhysicsBodyID createTerrainDisc(float radius, float heightOffset = 0.0f);
+
+    // Terrain - creates a heightfield shape from height samples
+    // samples: row-major height values, sampleCount x sampleCount grid
+    // worldSize: terrain extent in world units (centered at origin)
+    // heightScale: multiplier for height values
+    PhysicsBodyID createTerrainHeightfield(const float* samples, uint32_t sampleCount,
+                                           float worldSize, float heightScale);
 
     // Dynamic rigid bodies
     PhysicsBodyID createBox(const glm::vec3& position, const glm::vec3& halfExtents,

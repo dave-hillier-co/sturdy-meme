@@ -19,6 +19,21 @@ void SceneManager::initPhysics(PhysicsWorld& physics) {
     initializeScenePhysics(physics);
 }
 
+void SceneManager::initTerrainPhysics(PhysicsWorld& physics, const float* heightSamples,
+                                       uint32_t sampleCount, float worldSize, float heightScale) {
+    // Create heightfield collision shape from terrain data
+    PhysicsBodyID terrainBody = physics.createTerrainHeightfield(
+        heightSamples, sampleCount, worldSize, heightScale
+    );
+
+    if (terrainBody != INVALID_BODY_ID) {
+        SDL_Log("Terrain heightfield physics initialized");
+    } else {
+        SDL_Log("Failed to create terrain heightfield, falling back to flat ground");
+        physics.createTerrainDisc(worldSize * 0.5f, 0.0f);
+    }
+}
+
 void SceneManager::destroy(VmaAllocator allocator, VkDevice device) {
     sceneBuilder.destroy(allocator, device);
 }
@@ -32,8 +47,8 @@ void SceneManager::updatePlayerTransform(const glm::mat4& transform) {
 }
 
 void SceneManager::initializeScenePhysics(PhysicsWorld& physics) {
-    // Create terrain ground plane (radius 50)
-    physics.createTerrainDisc(50.0f, 0.0f);
+    // NOTE: Terrain physics is now initialized separately via initTerrainPhysics()
+    // which creates a heightfield from the TerrainSystem's height data
 
     // Scene object layout from SceneBuilder:
     // 0: Ground disc (static terrain - already created above)

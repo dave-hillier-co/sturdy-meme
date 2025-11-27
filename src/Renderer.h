@@ -87,6 +87,9 @@ public:
     float getTerrainHeightAt(float x, float z) const { return terrainSystem.getHeightAt(x, z); }
     uint32_t getTerrainNodeCount() const { return terrainSystem.getNodeCount(); }
 
+    // Terrain data access for physics integration
+    const TerrainSystem& getTerrainSystem() const { return terrainSystem; }
+
     // Weather control
     void setWeatherIntensity(float intensity);
     void setWeatherType(uint32_t type);

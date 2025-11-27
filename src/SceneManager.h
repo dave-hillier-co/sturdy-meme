@@ -18,6 +18,10 @@ public:
     // Initialize physics bodies for scene objects (called separately by Application)
     void initPhysics(PhysicsWorld& physics);
 
+    // Initialize terrain physics using heightfield data from TerrainSystem
+    void initTerrainPhysics(PhysicsWorld& physics, const float* heightSamples,
+                            uint32_t sampleCount, float worldSize, float heightScale);
+
     void destroy(VmaAllocator allocator, VkDevice device);
 
     // Update scene state (sync physics to visuals)

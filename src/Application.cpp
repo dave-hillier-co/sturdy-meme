@@ -49,7 +49,18 @@ bool Application::init(const std::string& title, int width, int height) {
         return false;
     }
 
-    // Initialize scene physics (terrain and scene objects)
+    // Initialize terrain physics using heightfield from terrain system
+    const auto& terrain = renderer.getTerrainSystem();
+    const auto& terrainConfig = terrain.getConfig();
+    renderer.getSceneManager().initTerrainPhysics(
+        physics,
+        terrain.getHeightMapData(),
+        terrain.getHeightMapResolution(),
+        terrainConfig.size,
+        terrainConfig.heightScale
+    );
+
+    // Initialize scene physics (dynamic objects)
     renderer.getSceneManager().initPhysics(physics);
 
     // Create character controller for player

@@ -104,6 +104,10 @@ public:
     // Get terrain height at world position (CPU-side, for collision)
     float getHeightAt(float x, float z) const;
 
+    // Get raw heightmap data for physics integration
+    const float* getHeightMapData() const { return cpuHeightMap.data(); }
+    uint32_t getHeightMapResolution() const { return heightMapResolution; }
+
     // Get current node count (for debugging/display)
     uint32_t getNodeCount() const { return currentNodeCount; }
 

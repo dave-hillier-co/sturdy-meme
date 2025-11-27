@@ -315,6 +315,92 @@ PhysicsBodyID PhysicsWorld::createTerrainDisc(float radius, float heightOffset) 
     return body->GetID().GetIndexAndSequenceNumber();
 }
 
+PhysicsBodyID PhysicsWorld::createTerrainHeightfield(const float* samples, uint32_t sampleCount,
+                                                      float worldSize, float heightScale) {
+    if (!initialized) return INVALID_BODY_ID;
+    if (!samples || sampleCount < 2) {
+        SDL_Log("Invalid heightfield parameters");
+        return INVALID_BODY_ID;
+    }
+
+    JPH::BodyInterface& bodyInterface = physicsSystem->GetBodyInterface();
+
+    // Jolt HeightFieldShape expects power-of-2 + 1 sample counts
+    // The terrain uses normalized [0,1] heights, we need to convert
+    // Jolt expects samples in row-major order with Y up
+
+    // Calculate the offset and scale for height values
+    // Find min/max to determine the range
+    float minHeight = samples[0];
+    float maxHeight = samples[0];
+    for (uint32_t i = 1; i < sampleCount * sampleCount; i++) {
+        minHeight = std::min(minHeight, samples[i]);
+        maxHeight = std::max(maxHeight, samples[i]);
+    }
+
+    // Scale factor: terrain samples are in [0,1], we want world units
+    // The heightScale parameter gives the max height in world units
+    float joltScale = heightScale;
+
+    // Offset so that minimum height is at Y=0
+    float joltOffset = minHeight * heightScale;
+
+    // Create height samples for Jolt (it wants the raw height values)
+    std::vector<float> joltSamples(sampleCount * sampleCount);
+    for (uint32_t i = 0; i < sampleCount * sampleCount; i++) {
+        // Jolt stores heights relative to the base offset, scaled
+        joltSamples[i] = samples[i] * heightScale;
+    }
+
+    // HeightFieldShapeSettings
+    // sampleCount must be a power of 2 + 1 (e.g., 65, 129, 257, 513)
+    // For a 512x512 terrain, we need to use 513 samples or downsample to 257
+    // Let's use the samples as-is and let Jolt handle it
+
+    // The scale parameter determines the XZ spacing between samples
+    // worldSize covers sampleCount-1 intervals
+    float xzScale = worldSize / (sampleCount - 1);
+
+    JPH::HeightFieldShapeSettings heightFieldSettings(
+        joltSamples.data(),
+        JPH::Vec3(-worldSize * 0.5f, 0.0f, -worldSize * 0.5f),  // Offset: center terrain at origin
+        JPH::Vec3(xzScale, 1.0f, xzScale),                       // Scale: XZ spacing, Y is direct
+        sampleCount
+    );
+
+    // Set material properties
+    heightFieldSettings.mMaterials.push_back(new JPH::PhysicsMaterial());
+
+    JPH::ShapeSettings::ShapeResult shapeResult = heightFieldSettings.Create();
+    if (!shapeResult.IsValid()) {
+        SDL_Log("Failed to create heightfield shape: %s", shapeResult.GetError().c_str());
+        return INVALID_BODY_ID;
+    }
+
+    // Create the body at the origin (the shape's offset handles positioning)
+    JPH::BodyCreationSettings bodySettings(
+        shapeResult.Get(),
+        JPH::RVec3(0.0, 0.0, 0.0),
+        JPH::Quat::sIdentity(),
+        JPH::EMotionType::Static,
+        PhysicsLayers::NON_MOVING
+    );
+    bodySettings.mFriction = 0.8f;
+    bodySettings.mRestitution = 0.0f;
+
+    JPH::Body* body = bodyInterface.CreateBody(bodySettings);
+    if (!body) {
+        SDL_Log("Failed to create heightfield body");
+        return INVALID_BODY_ID;
+    }
+
+    bodyInterface.AddBody(body->GetID(), JPH::EActivation::DontActivate);
+
+    SDL_Log("Created terrain heightfield %ux%u, world size %.1f, height scale %.1f",
+            sampleCount, sampleCount, worldSize, heightScale);
+    return body->GetID().GetIndexAndSequenceNumber();
+}
+
 PhysicsBodyID PhysicsWorld::createBox(const glm::vec3& position, const glm::vec3& halfExtents,
                                        float mass, float friction, float restitution) {
     if (!initialized) return INVALID_BODY_ID;

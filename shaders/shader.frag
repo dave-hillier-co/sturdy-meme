@@ -1,5 +1,7 @@
 #version 450
 
+#extension GL_GOOGLE_include_directive : require
+
 #include "constants_common.glsl"
 #include "lighting_common.glsl"
 #include "shadow_common.glsl"

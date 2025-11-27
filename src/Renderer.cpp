@@ -256,8 +256,8 @@ bool Renderer::init(SDL_Window* win, const std::string& resPath) {
 
     if (!froxelSystem.init(froxelInfo)) return false;
 
-    // Connect froxel volume to post-process system for compositing
-    postProcessSystem.setFroxelVolume(froxelSystem.getScatteringVolumeView(), froxelSystem.getVolumeSampler());
+    // Connect froxel volume to post-process system for compositing (use integrated volume)
+    postProcessSystem.setFroxelVolume(froxelSystem.getIntegratedVolumeView(), froxelSystem.getVolumeSampler());
     postProcessSystem.setFroxelParams(froxelSystem.getVolumetricFarPlane(), FroxelSystem::DEPTH_DISTRIBUTION);
     postProcessSystem.setFroxelEnabled(true);
 

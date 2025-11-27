@@ -63,8 +63,10 @@ public:
                            const glm::mat4* cascadeMatrices,
                            const glm::vec4& cascadeSplits);
 
-    // Get the scattering volume for compositing
+    // Get the scattering volume (raw, pre-integration)
     VkImageView getScatteringVolumeView() const { return scatteringVolumeView; }
+    // Get the integrated volume for compositing (front-to-back integrated result)
+    VkImageView getIntegratedVolumeView() const { return integratedVolumeView; }
     VkSampler getVolumeSampler() const { return volumeSampler; }
 
     // Fog parameters

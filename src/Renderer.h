@@ -113,10 +113,10 @@ public:
     // Access to systems for simulation
     WindSystem& getWindSystem() { return windSystem; }
     const WindSystem& getWindSystem() const { return windSystem; }
-    SceneBuilder& getSceneBuilder() { return sceneBuilder; }
-    Mesh& getFlagClothMesh() { return sceneBuilder.getFlagClothMesh(); }
-    Mesh& getFlagPoleMesh() { return sceneBuilder.getFlagPoleMesh(); }
-    void uploadFlagClothMesh() { sceneBuilder.uploadFlagClothMesh(allocator, device, commandPool, graphicsQueue); }
+    SceneBuilder& getSceneBuilder() { return sceneManager.getSceneBuilder(); }
+    Mesh& getFlagClothMesh() { return sceneManager.getSceneBuilder().getFlagClothMesh(); }
+    Mesh& getFlagPoleMesh() { return sceneManager.getSceneBuilder().getFlagPoleMesh(); }
+    void uploadFlagClothMesh() { sceneManager.getSceneBuilder().uploadFlagClothMesh(allocator, device, commandPool, graphicsQueue); }
 
     // Celestial/astronomical settings
     void setLocation(const GeographicLocation& location) { celestialCalculator.setLocation(location); }

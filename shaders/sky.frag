@@ -109,6 +109,8 @@ vec2 directionToSkyViewUV(vec3 dir) {
     float uvY = v * 0.5 + 0.5;  // Map [-1, 1] back to [0, 1]
 
     // Extract azimuth (phi) from XZ components
+    // skyview_lut.comp uses: phi = (uv.x - 0.5) * 2.0 * PI
+    // So the inverse is: uv.x = phi / (2.0 * PI) + 0.5
     float phi = atan(dir.z, dir.x);  // Range [-PI, PI]
     float uvX = phi / (2.0 * PI) + 0.5;  // Map [-PI, PI] to [0, 1]
 
@@ -572,7 +574,10 @@ ScatteringResult integrateAtmosphere(vec3 origin, vec3 dir, int sampleCount) {
     }
 
     // Apply solar irradiance to produce physically-correct sky brightness
-    inscatter *= SOLAR_IRRADIANCE;
+    // The base scattering coefficients produce HDR values that need exposure adjustment
+    // for display. A factor of ~5 brings the sky to typical daytime brightness levels.
+    const float SKY_EXPOSURE = 5.0;
+    inscatter *= SOLAR_IRRADIANCE * SKY_EXPOSURE;
 
     return ScatteringResult(inscatter, transmittance);
 }
@@ -937,11 +942,11 @@ vec3 renderAtmosphere(vec3 dir) {
             horizonColor += horizonResult.inscatter * moonLight * moonSkyContribution;
         }
 
-        // Multiple scattering compensation (energy-conserving)
+        // Multiple scattering compensation (reduced to avoid overpowering sky color)
         vec3 horizonTransmittance = horizonResult.transmittance;
-        horizonColor += sunLight * 0.08 * (1.0 - horizonTransmittance);
+        horizonColor += sunLight * 0.02 * (1.0 - horizonTransmittance);
         if (moonSkyContribution > 0.01) {
-            horizonColor += moonLight * 0.04 * (1.0 - horizonTransmittance) * moonSkyContribution;
+            horizonColor += moonLight * 0.01 * (1.0 - horizonTransmittance) * moonSkyContribution;
         }
 
         // Night sky floor (energy-conserving blend, not additive)
@@ -975,9 +980,9 @@ vec3 renderAtmosphere(vec3 dir) {
     // Compute atmospheric transmittance from viewer to sky (for energy conservation)
     vec3 skyTransmittance = result.transmittance;
 
-    // Sky inscatter from sun - use LUT result (already includes solar irradiance)
-    // Scale by sun intensity to match UBO light intensity
-    vec3 sunSkyContrib = skyLUTColor * ubo.sunDirection.w;
+    // Sky inscatter from sun - inscatter includes SOLAR_IRRADIANCE from integrateAtmosphere
+    // Apply sun color and intensity from UBO
+    vec3 sunSkyContrib = result.inscatter * sunLight;
 
     // Moon sky contribution - fades in smoothly during twilight
     // Use consistent twilight factor from above (moonSkyContribution)
@@ -988,12 +993,29 @@ vec3 renderAtmosphere(vec3 dir) {
     }
 
     // Multiple scattering compensation (approximates light scattered more than once)
-    // This is energy-conserving: based on what wasn't transmitted
-    vec3 multiScatterSun = sunLight * 0.08 * (1.0 - skyTransmittance);
-    vec3 multiScatterMoon = moonLight * 0.04 * (1.0 - skyTransmittance) * moonSkyContribution;
+    // Multi-scattered light is more isotropic, so we use a reduced intensity
+    // and don't let it dominate the forward-scattered sunlight near the sun
+    // The 0.02 factor is much smaller to avoid washing out the sun halo
+    vec3 multiScatterSun = sunLight * 0.02 * (1.0 - skyTransmittance);
+    vec3 multiScatterMoon = moonLight * 0.01 * (1.0 - skyTransmittance) * moonSkyContribution;
 
     // Combine all sky contributions
     vec3 sky = sunSkyContrib + moonSkyContrib + multiScatterSun + multiScatterMoon;
+
+    // Add Mie forward-scattering halo around sun
+    // The base Mie contribution in inscatter is correct but subtle due to small MIE_SCATTERING_BASE.
+    // For a visible sun halo, we add an explicit Mie phase-weighted glow that represents
+    // the bright forward-scattering peak around the sun disc.
+    vec3 sunDir = normalize(ubo.sunDirection.xyz);
+    float cosSun = dot(normDir, sunDir);
+    float miePhase = cornetteShanksPhase(cosSun, MIE_ANISOTROPY);
+
+    // The halo intensity should fall off smoothly
+    // Mie phase already provides the angular falloff - just scale it for visibility
+    // Use a wider falloff to create a natural glow extending ~30° from sun
+    float haloFalloff = smoothstep(0.0, 0.98, cosSun);  // Gradual falloff, strongest near sun
+    vec3 sunHalo = sunLight * miePhase * haloFalloff * skyTransmittance * 0.08;
+    sky += sunHalo;
 
     // Night sky radiance - represents the dark sky with slight airglow
     // This is a minimum floor, not additive, to prevent color shifts

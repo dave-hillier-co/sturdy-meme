@@ -923,45 +923,44 @@ vec3 renderAtmosphere(vec3 dir) {
     float moonVisibility = smoothstep(-0.09, 0.1, moonAltitude);
     float moonSkyContribution = twilightFactor * moonVisibility;
 
-    // Remap the ray direction for atmosphere calculation:
-    // - Rays with Y >= 0 use their actual direction
-    // - Rays with Y < 0 blend to fog/horizon color to disguise the end of the world
-    if (normDir.y < -0.001) {
-        // Sample the horizon atmosphere by using a horizontal ray
-        vec3 horizonDir = normalize(vec3(normDir.x, 0.0, normDir.z));
-        ScatteringResult horizonResult = integrateAtmosphere(vec3(0.0, PLANET_RADIUS + 0.001, 0.0), horizonDir, 16);
+    // Compute horizon/below-horizon color for blending
+    // Sample the horizon atmosphere by using a horizontal ray
+    vec3 horizonDir = normalize(vec3(normDir.x, 0.001, normDir.z));
+    ScatteringResult horizonResult = integrateAtmosphere(vec3(0.0, PLANET_RADIUS + 0.001, 0.0), horizonDir, 16);
 
-        vec3 sunLight = ubo.sunColor.rgb * ubo.sunDirection.w;
-        vec3 moonLight = ubo.moonColor.rgb * ubo.moonDirection.w;
+    vec3 sunLight = ubo.sunColor.rgb * ubo.sunDirection.w;
+    vec3 moonLight = ubo.moonColor.rgb * ubo.moonDirection.w;
 
-        // Sun contribution to horizon
-        vec3 horizonColor = horizonResult.inscatter * sunLight;
+    // Sun contribution to horizon
+    vec3 horizonColor = horizonResult.inscatter * sunLight;
 
-        // Moon contribution - fades in smoothly during twilight
-        if (moonSkyContribution > 0.01) {
-            horizonColor += horizonResult.inscatter * moonLight * moonSkyContribution;
-        }
+    // Moon contribution - fades in smoothly during twilight
+    if (moonSkyContribution > 0.01) {
+        horizonColor += horizonResult.inscatter * moonLight * moonSkyContribution;
+    }
 
-        // Multiple scattering compensation (reduced to avoid overpowering sky color)
-        vec3 horizonTransmittance = horizonResult.transmittance;
-        horizonColor += sunLight * 0.02 * (1.0 - horizonTransmittance);
-        if (moonSkyContribution > 0.01) {
-            horizonColor += moonLight * 0.01 * (1.0 - horizonTransmittance) * moonSkyContribution;
-        }
+    // Multiple scattering compensation (reduced to avoid overpowering sky color)
+    vec3 horizonTransmittance = horizonResult.transmittance;
+    horizonColor += sunLight * 0.02 * (1.0 - horizonTransmittance);
+    if (moonSkyContribution > 0.01) {
+        horizonColor += moonLight * 0.01 * (1.0 - horizonTransmittance) * moonSkyContribution;
+    }
 
-        // Night sky floor (energy-conserving blend, not additive)
-        float nightFactor = 1.0 - smoothstep(-0.1, 0.08, sunAltitude);
-        vec3 nightHorizonRadiance = vec3(0.008, 0.012, 0.02);
-        float nightBlend = nightFactor * (1.0 - moonSkyContribution * 0.5);
-        horizonColor = mix(horizonColor, max(horizonColor, nightHorizonRadiance), nightBlend);
+    // Night sky floor (energy-conserving blend, not additive)
+    float nightFactor = 1.0 - smoothstep(-0.1, 0.08, sunAltitude);
+    vec3 nightHorizonRadiance = vec3(0.008, 0.012, 0.02);
+    float nightBlend = nightFactor * (1.0 - moonSkyContribution * 0.5);
+    horizonColor = mix(horizonColor, max(horizonColor, nightHorizonRadiance), nightBlend);
 
-        // Blend from horizon color to slightly darker fog as we go further below horizon
-        // This creates a smooth transition and disguises the world boundary
+    // For rays below horizon, darken and return early
+    if (normDir.y < -0.02) {
         float belowHorizonFactor = clamp(-normDir.y * 2.0, 0.0, 1.0);
         vec3 fogColor = horizonColor * mix(1.0, 0.5, belowHorizonFactor);
-
         return fogColor;
     }
+
+    // Blend factor for smooth transition near horizon (y from -0.02 to 0.02)
+    float horizonBlend = smoothstep(-0.02, 0.02, normDir.y);
 
     // Place observer on planet surface (camera height is negligible for atmosphere)
     vec3 origin = vec3(0.0, PLANET_RADIUS + 0.001, 0.0);
@@ -974,8 +973,7 @@ vec3 renderAtmosphere(vec3 dir) {
     // Use fewer samples since we have the LUT for primary color
     ScatteringResult result = integrateAtmosphere(origin, normDir, 12);
 
-    vec3 sunLight = ubo.sunColor.rgb * ubo.sunDirection.w;
-    vec3 moonLight = ubo.moonColor.rgb * ubo.moonDirection.w;
+    // sunLight and moonLight already defined above for horizon calculation
 
     // Compute atmospheric transmittance from viewer to sky (for energy conservation)
     vec3 skyTransmittance = result.transmittance;
@@ -1019,12 +1017,12 @@ vec3 renderAtmosphere(vec3 dir) {
 
     // Night sky radiance - represents the dark sky with slight airglow
     // This is a minimum floor, not additive, to prevent color shifts
-    float nightFactor = 1.0 - smoothstep(-0.1, 0.08, sunAltitude);
+    // nightFactor already defined above for horizon calculation
     vec3 nightSkyRadiance = mix(vec3(0.005, 0.008, 0.015), vec3(0.015, 0.02, 0.035), normDir.y * 0.5 + 0.5);
 
     // Blend toward night sky when transitioning - energy conserving blend
     // During twilight, the sky naturally transitions; at deep night, use floor radiance
-    float nightBlend = nightFactor * (1.0 - moonSkyContribution * 0.5);
+    // nightBlend already defined above for horizon calculation
     sky = mix(sky, max(sky, nightSkyRadiance), nightBlend);
 
     // Render volumetric clouds (Phase 4.2)
@@ -1075,6 +1073,9 @@ vec3 renderAtmosphere(vec3 dir) {
     // Stars are already modulated by nightFactor inside starField()
     float stars = starField(dir);
     sky += vec3(stars) * clouds.transmittance;
+
+    // Blend with horizon color near the horizon to avoid seams
+    sky = mix(horizonColor, sky, horizonBlend);
 
     return sky;
 }

@@ -69,6 +69,9 @@ public:
     void computeMultiScatterLUT(VkCommandBuffer cmd);
     void computeSkyViewLUT(VkCommandBuffer cmd, const glm::vec3& sunDir, const glm::vec3& cameraPos, float cameraAltitude);
 
+    // Update sky-view LUT per frame (uses SHADER_READ_ONLY_OPTIMAL as old layout since LUT was already computed)
+    void updateSkyViewLUT(VkCommandBuffer cmd, const glm::vec3& sunDir, const glm::vec3& cameraPos, float cameraAltitude);
+
     // Get LUT views for sampling in shaders
     VkImageView getTransmittanceLUTView() const { return transmittanceLUTView; }
     VkImageView getMultiScatterLUTView() const { return multiScatterLUTView; }

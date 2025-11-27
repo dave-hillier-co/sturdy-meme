@@ -8,9 +8,9 @@ This document tracks the implementation status of features described in [LIGHTIN
 
 | Category | Implemented | Partially Implemented | Missing |
 |----------|-------------|----------------------|---------|
-| Sky Model (4.1) | 8 | 2 | 2 |
+| Sky Model (4.1) | 11 | 0 | 1 |
 | Volumetric Clouds (4.2) | 5 | 0 | 5 |
-| Volumetric Haze/Fog (4.3) | 9 | 1 | 2 |
+| Volumetric Haze/Fog (4.3) | 13 | 0 | 0 |
 | Light Shafts (4.4) | 1 | 0 | 0 |
 
 ---
@@ -30,18 +30,15 @@ This document tracks the implementation status of features described in [LIGHTIN
 | Ozone Absorption | 4.1.1 | `shaders/sky.frag:42-44, 286-289` | Gaussian distribution, affects horizon blue |
 | Solar Irradiance | 4.1.1 | `shaders/sky.frag:73` | `vec3(1.474, 1.8504, 1.91198)` W/m² |
 
-### Partially Implemented
+| Transmittance LUT | 4.1.3 | `src/AtmosphereLUTSystem.cpp`, `shaders/transmittance_lut.comp`, `shaders/sky.frag` | LUT sampled via `sampleTransmittanceLUT()` |
+| Multi-Scatter LUT | 4.1.4 | `src/AtmosphereLUTSystem.cpp`, `shaders/multiscatter_lut.comp`, `shaders/sky.frag` | LUT sampled via `sampleMultiScatterLUT()` |
 
-| Feature | Doc Section | Implementation | Issue |
-|---------|-------------|----------------|-------|
-| Transmittance LUT | 4.1.3 | `src/AtmosphereLUTSystem.cpp`, `shaders/transmittance_lut.comp`, `shaders/sky.frag` | **FIXED** - LUT now sampled via `sampleTransmittanceLUT()` |
-| Multi-Scatter LUT | 4.1.4 | `src/AtmosphereLUTSystem.cpp`, `shaders/multiscatter_lut.comp`, `shaders/sky.frag` | **FIXED** - LUT now sampled via `sampleMultiScatterLUT()` |
+| Sky-View LUT Runtime Updates | 4.1.5 | `src/Renderer.cpp:2408-2410`, `shaders/sky.frag:96-122` | LUT updated per-frame with current sun direction |
 
 ### Not Implemented
 
 | Feature | Doc Section | Notes |
 |---------|-------------|-------|
-| Sky-View LUT Runtime Updates | 4.1.5 | LUT exists but not updated per-frame with sun angle changes |
 | Irradiance LUTs | 4.1.9 | No separate Rayleigh/Mie irradiance textures for cloud/haze lighting |
 
 ### Integration Status: Atmosphere LUTs (FIXED)
@@ -130,29 +127,15 @@ This is simpler than the documented paraboloid approach but:
 | L/α Storage | 4.3.6 | `shaders/froxel_integrate.comp:78-79` | Anti-aliased compositing technique |
 | Scene Compositing | 4.3.10 | `shaders/postprocess.frag:51-69` | Depth-based froxel sampling |
 
-### Partially Implemented
+| Shadow Map Integration | 4.3.4 | `shaders/froxel_update.comp:192-247` | Full cascade shadow sampling with PCF |
+| Temporal Filtering | 4.3.4 | `shaders/froxel_update.comp:110-189, 396-430` | Reprojection with adaptive blend and ghosting rejection |
+| Tricubic Filtering | 4.3.7 | `shaders/postprocess.frag:45-127` | 8-tap B-spline optimization |
+| Local Light Contribution | 4.3.8 | `shaders/froxel_update.comp:249-317` | Point/spot lights with attenuation and phase function |
+| Fog Particle Lighting | 4.3.9 | `shaders/weather.frag:51-78` | Weather particles sample froxel volume for fog lighting |
 
-| Feature | Doc Section | Implementation | Issue |
-|---------|-------------|----------------|-------|
-| Shadow Map Integration | 4.3.4 | `shaders/froxel_update.comp:172-227` | **FIXED** - Full cascade shadow sampling with PCF |
+### Integration Status: Froxel Features
 
-### Fully Implemented (Recently Added)
-
-| Feature | Doc Section | Implementation | Notes |
-|---------|-------------|----------------|-------|
-| Temporal Filtering | 4.3.4 | `shaders/froxel_update.comp:91-170, 304-342` | **FIXED** - Reprojection with adaptive blend and ghosting rejection |
-| Tricubic Filtering | 4.3.7 | `shaders/postprocess.frag:45-127` | **FIXED** - 8-tap B-spline optimization |
-
-### Not Implemented
-
-| Feature | Doc Section | Notes |
-|---------|-------------|-------|
-| Local Light Contribution | 4.3.8 | No point/spot light scattering in froxels |
-| Fog Particle Lighting | 4.3.9 | Weather particles don't sample froxel lighting |
-
-### Integration Status: Froxel Shadows (FIXED)
-
-The froxel update shader now properly samples the cascaded shadow map:
+**Cascade Shadow Sampling:**
 
 ```glsl
 // shaders/froxel_update.comp - cascade matrices in UBO
@@ -165,11 +148,37 @@ vec4 cascadeSplits;                   // View-space split depths
 // - sampleCascadeShadow(worldPos, viewSpaceDepth) - full pipeline
 ```
 
-**Implementation details:**
-- Cascade selection based on view-space depth using `cascadeSplits`
-- 2x2 PCF kernel for soft shadow edges (lighter than scene shadows)
-- Configurable shadow bias and PCF radius via `shadowParams`
-- Bounds checking to handle positions outside shadow map
+**Local Light Contribution (4.3.8):**
+
+```glsl
+// shaders/froxel_update.comp - Light buffer SSBO
+struct GPULight {
+    vec4 positionAndType;    // xyz = position, w = type (0=point, 1=spot)
+    vec4 directionAndCone;   // xyz = direction (for spot), w = outer cone angle
+    vec4 colorAndIntensity;  // rgb = color, a = intensity
+    vec4 radiusAndInnerCone; // x = radius, y = inner cone angle
+};
+
+// computeLocalLightScatter() iterates all lights:
+// - Point light smooth quadratic attenuation
+// - Spot light cone falloff
+// - Henyey-Greenstein phase function per light
+```
+
+**Fog Particle Lighting (4.3.9):**
+
+```glsl
+// shaders/weather.frag - samples froxel volume
+vec3 sampleFroxelFogLighting(vec3 worldPos) {
+    // Convert world pos to froxel UVW coordinates
+    // Sample froxelVolume texture
+    // Returns in-scattered fog light at position
+}
+
+// Rain/snow particles add fog lighting contribution:
+color += fogLight * 0.5;  // Rain scatters more
+color += fogLight * 0.3;  // Snow scatters diffusely
+```
 
 ---
 
@@ -250,34 +259,27 @@ These features exist in the codebase but aren't documented in Phase 4:
 
 ### High Priority (Performance/Quality Impact)
 
-1. **Integrate Atmosphere LUTs into sky.frag**
-   - Add sampler bindings for transmittance and multi-scatter LUTs
-   - Replace `computeAtmosphericTransmittance()` with LUT lookups
-   - Performance benefit: reduce per-pixel ray marching
+1. **Paraboloid Cloud Maps** (4.2.1)
+   - Pre-render clouds to hemisphere texture
+   - Triple-buffer for temporal stability
+   - Performance benefit: amortize cloud cost over frames
 
-2. **Implement Froxel Shadow Sampling**
-   - Add cascade matrices to `FroxelUniforms`
-   - Implement cascade selection in `froxel_update.comp`
-   - Quality benefit: proper volumetric shadows through fog
+2. **Cloud Temporal Reprojection** (4.2.7)
+   - History blending for cloud stability
+   - Time-sliced updates to reduce per-frame cost
+   - Quality benefit: reduced flickering in clouds
 
 ### Medium Priority (Visual Quality)
 
-3. **Add Temporal Reprojection to Froxels**
-   - Implement reprojection using `prevViewProj`
-   - Blend with history for stability
-   - Quality benefit: reduced flickering in fog
+1. **Perlin-Worley Noise Textures** (4.2.3)
+   - Replace FBM value noise with proper 3D noise textures
+   - Quality benefit: more realistic cloud shapes
 
-4. **Tricubic Filtering for Froxels**
-   - Implement 8-tap B-spline sampling
-   - Quality benefit: smoother fog gradients
+2. **Density Anti-Aliasing** (4.2.2)
+   - Derivative-based density reduction for low-res textures
+   - Quality benefit: reduced aliasing artifacts
 
 ### Lower Priority (Advanced Features)
 
-5. **Paraboloid Cloud Maps** - amortize cloud cost over frames
-6. **Local Light Scattering in Fog** - point/spot lights affect fog
-7. **Perlin-Worley Noise Textures** - better cloud shapes
-8. **Aerial Perspective Volume** - distance-based atmospheric effects on geometry
-
----
-
-*Last updated: Phase 4 implementation audit*
+1. **Curl Noise** (4.2.3) - wispy detail distortion for clouds
+2. **Irradiance LUTs** (4.1.9) - separate Rayleigh/Mie irradiance textures

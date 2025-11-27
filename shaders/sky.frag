@@ -31,6 +31,7 @@ layout(binding = 0) uniform UniformBufferObject {
 // Atmosphere LUTs (Phase 4.1 - precomputed for efficiency)
 layout(binding = 1) uniform sampler2D transmittanceLUT;  // 256x64, RGBA16F
 layout(binding = 2) uniform sampler2D multiScatterLUT;   // 32x32, RG16F
+layout(binding = 3) uniform sampler2D skyViewLUT;        // 192x108, RGBA16F (updated per-frame)
 
 layout(location = 0) in vec3 rayDir;
 layout(location = 0) out vec4 outColor;
@@ -87,6 +88,38 @@ const float CLOUD_COVERAGE = 0.5;         // 0-1 coverage amount
 const float CLOUD_DENSITY = 0.3;          // Base density multiplier
 const int CLOUD_MARCH_STEPS = 32;         // Ray march samples
 const int CLOUD_LIGHT_STEPS = 6;          // Light sampling steps
+
+// Sky-view LUT dimensions (must match AtmosphereLUTSystem)
+const int SKYVIEW_WIDTH = 192;
+const int SKYVIEW_HEIGHT = 108;
+
+// Convert view direction to sky-view LUT UV coordinates
+// This is the inverse of SkyViewUVToDirection in skyview_lut.comp
+vec2 directionToSkyViewUV(vec3 dir) {
+    dir = normalize(dir);
+
+    // Extract elevation (theta) from Y component
+    float sinTheta = dir.y;
+    float theta = asin(clamp(sinTheta, -1.0, 1.0));
+
+    // Inverse of non-linear mapping: theta = sign(v) * (PI/2) * v^2
+    // Solve for v: v = sign(theta) * sqrt(abs(theta) / (PI/2))
+    float absTheta = abs(theta);
+    float v = sign(theta) * sqrt(absTheta / (PI / 2.0));
+    float uvY = v * 0.5 + 0.5;  // Map [-1, 1] back to [0, 1]
+
+    // Extract azimuth (phi) from XZ components
+    float phi = atan(dir.z, dir.x);  // Range [-PI, PI]
+    float uvX = phi / (2.0 * PI) + 0.5;  // Map [-PI, PI] to [0, 1]
+
+    return vec2(uvX, uvY);
+}
+
+// Sample sky-view LUT for precomputed atmospheric scattering
+vec3 sampleSkyViewLUT(vec3 viewDir) {
+    vec2 uv = directionToSkyViewUV(viewDir);
+    return texture(skyViewLUT, uv).rgb;
+}
 
 float hash(vec3 p) {
     return fract(sin(dot(p, vec3(127.1, 311.7, 74.7))) * 43758.5453);
@@ -923,7 +956,13 @@ vec3 renderAtmosphere(vec3 dir) {
     // Place observer on planet surface (camera height is negligible for atmosphere)
     vec3 origin = vec3(0.0, PLANET_RADIUS + 0.001, 0.0);
 
-    ScatteringResult result = integrateAtmosphere(origin, normDir, 24);
+    // Use sky-view LUT for fast atmospheric scattering lookup (Phase 4.1.5)
+    // The LUT is precomputed per-frame with current sun direction
+    vec3 skyLUTColor = sampleSkyViewLUT(normDir);
+
+    // Still need ray-marched result for transmittance and moon contribution
+    // Use fewer samples since we have the LUT for primary color
+    ScatteringResult result = integrateAtmosphere(origin, normDir, 12);
 
     vec3 sunLight = ubo.sunColor.rgb * ubo.sunDirection.w;
     vec3 moonLight = ubo.moonColor.rgb * ubo.moonDirection.w;
@@ -931,8 +970,9 @@ vec3 renderAtmosphere(vec3 dir) {
     // Compute atmospheric transmittance from viewer to sky (for energy conservation)
     vec3 skyTransmittance = result.transmittance;
 
-    // Sky inscatter from sun - primary contribution during day
-    vec3 sunSkyContrib = result.inscatter * sunLight;
+    // Sky inscatter from sun - use LUT result (already includes solar irradiance)
+    // Scale by sun intensity to match UBO light intensity
+    vec3 sunSkyContrib = skyLUTColor * ubo.sunDirection.w;
 
     // Moon sky contribution - fades in smoothly during twilight
     // Use consistent twilight factor from above (moonSkyContribution)

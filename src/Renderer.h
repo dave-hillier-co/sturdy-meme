@@ -287,6 +287,8 @@ private:
     bool useManualTime = false;
     float currentTimeOfDay = 0.0f;
     float lastSunIntensity = 1.0f;
+    glm::vec3 lastAtmosphereSunDir = glm::vec3(0.0f, 0.707f, 0.707f);
+    bool atmosphereLUTDirty = false;
 
     // Celestial calculations
     CelestialCalculator celestialCalculator;

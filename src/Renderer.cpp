@@ -228,24 +228,6 @@ bool Renderer::init(SDL_Window* win, const std::string& resPath) {
     // Set default leaf intensity (autumn scene)
     leafSystem.setIntensity(0.5f);
 
-    // Initialize froxel volumetric fog system (Phase 4.3)
-    FroxelSystem::InitInfo froxelInfo{};
-    froxelInfo.device = device;
-    froxelInfo.allocator = allocator;
-    froxelInfo.descriptorPool = descriptorPool;
-    froxelInfo.extent = swapchainExtent;
-    froxelInfo.shaderPath = resourcePath + "/shaders";
-    froxelInfo.framesInFlight = MAX_FRAMES_IN_FLIGHT;
-    froxelInfo.shadowMapView = shadowImageView;
-    froxelInfo.shadowSampler = shadowSampler;
-
-    if (!froxelSystem.init(froxelInfo)) return false;
-
-    // Connect froxel volume to post-process system for compositing
-    postProcessSystem.setFroxelVolume(froxelSystem.getScatteringVolumeView(), froxelSystem.getVolumeSampler());
-    postProcessSystem.setFroxelParams(froxelSystem.getVolumetricFarPlane(), FroxelSystem::DEPTH_DISTRIBUTION);
-    postProcessSystem.setFroxelEnabled(true);
-
     // Initialize atmosphere LUT system (Phase 4.1)
     AtmosphereLUTSystem::InitInfo atmosphereInfo{};
     atmosphereInfo.device = device;
@@ -277,6 +259,7 @@ bool Renderer::init(SDL_Window* win, const std::string& resPath) {
     // Compute sky-view LUT for current sun direction
     glm::vec3 sunDir = glm::vec3(0.0f, 0.707f, 0.707f);  // Default 45 degree sun
     atmosphereLUTSystem.computeSkyViewLUT(cmdBuffer, sunDir, glm::vec3(0.0f), 0.0f);
+    atmosphereLUTSystem.computeIrradianceLUT(cmdBuffer, sunDir);
 
     vkEndCommandBuffer(cmdBuffer);
 
@@ -294,6 +277,29 @@ bool Renderer::init(SDL_Window* win, const std::string& resPath) {
     // Export LUTs as PNG files for visualization
     atmosphereLUTSystem.exportLUTsAsPNG(resourcePath);
     SDL_Log("Atmosphere LUTs exported as PNG to: %s", resourcePath.c_str());
+
+    // Initialize froxel volumetric fog system (Phase 4.3)
+    FroxelSystem::InitInfo froxelInfo{};
+    froxelInfo.device = device;
+    froxelInfo.allocator = allocator;
+    froxelInfo.descriptorPool = descriptorPool;
+    froxelInfo.extent = swapchainExtent;
+    froxelInfo.shaderPath = resourcePath + "/shaders";
+    froxelInfo.framesInFlight = MAX_FRAMES_IN_FLIGHT;
+    froxelInfo.shadowMapView = shadowImageView;
+    froxelInfo.shadowSampler = shadowSampler;
+    froxelInfo.rayleighIrradianceView = atmosphereLUTSystem.getRayleighIrradianceView();
+    froxelInfo.mieIrradianceView = atmosphereLUTSystem.getMieIrradianceView();
+    froxelInfo.atmosphereSampler = atmosphereLUTSystem.getLUTSampler();
+    froxelInfo.planetRadius = atmosphereLUTSystem.getAtmosphereParams().planetRadius;
+    froxelInfo.atmosphereRadius = atmosphereLUTSystem.getAtmosphereParams().atmosphereRadius;
+
+    if (!froxelSystem.init(froxelInfo)) return false;
+
+    // Connect froxel volume to post-process system for compositing
+    postProcessSystem.setFroxelVolume(froxelSystem.getScatteringVolumeView(), froxelSystem.getVolumeSampler());
+    postProcessSystem.setFroxelParams(froxelSystem.getVolumetricFarPlane(), FroxelSystem::DEPTH_DISTRIBUTION);
+    postProcessSystem.setFroxelEnabled(true);
 
     if (!createSyncObjects()) return false;
 
@@ -2131,6 +2137,12 @@ void Renderer::updateUniformBuffer(uint32_t currentImage, const Camera& camera) 
     // Pure calculations
     LightingParams lighting = calculateLightingParams(currentTimeOfDay);
 
+    // Mark atmosphere LUTs dirty when sun direction changes
+    if (glm::length(lighting.sunDir - lastAtmosphereSunDir) > 0.0001f) {
+        atmosphereLUTDirty = true;
+        lastAtmosphereSunDir = lighting.sunDir;
+    }
+
     // Update cascade matrices (state mutation - modifies cascadeMatrices and cascadeSplitDepths)
     updateCascadeMatrices(lighting.sunDir, camera);
 
@@ -2201,6 +2213,18 @@ void Renderer::render(const Camera& camera) {
     vkBeginCommandBuffer(commandBuffers[currentFrame], &beginInfo);
 
     VkCommandBuffer cmd = commandBuffers[currentFrame];
+
+    // Refresh atmosphere LUTs when the sun direction changes
+    if (atmosphereLUTDirty) {
+        glm::vec3 sunDir = glm::normalize(lastAtmosphereSunDir);
+        glm::vec3 cameraPos = camera.getPosition();
+        float cameraAltitude = cameraPos.y;
+
+        atmosphereLUTSystem.computeSkyViewLUT(cmd, sunDir, cameraPos, cameraAltitude);
+        atmosphereLUTSystem.computeIrradianceLUT(cmd, sunDir);
+
+        atmosphereLUTDirty = false;
+    }
 
     // Terrain compute pass (adaptive subdivision)
     terrainSystem.recordCompute(cmd, currentFrame);

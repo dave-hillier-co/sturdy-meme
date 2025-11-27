@@ -137,6 +137,35 @@ vec2 TransmittanceLUTParamsToUV(float r, float mu, AtmosphereParams params) {
     return vec2(xMu, xR);
 }
 
+// Irradiance LUT parameterization helpers
+vec2 IrradianceParamsToUV(float cosSunZenith, float altitude, float planetRadius, float atmosphereRadius) {
+    float normalizedAltitude = clamp(altitude / (atmosphereRadius - planetRadius), 0.0, 1.0);
+    float x = cosSunZenith * 0.5 + 0.5; // [-1,1] -> [0,1]
+    return vec2(x, normalizedAltitude);
+}
+
+vec2 IrradianceParamsToUV(float cosSunZenith, float altitude, AtmosphereParams params) {
+    return IrradianceParamsToUV(cosSunZenith, altitude, params.planetRadius, params.atmosphereRadius);
+}
+
+vec3 SampleRayleighIrradiance(sampler2D lut, float cosSunZenith, float altitude, float planetRadius, float atmosphereRadius) {
+    vec2 uv = IrradianceParamsToUV(cosSunZenith, altitude, planetRadius, atmosphereRadius);
+    return texture(lut, uv).rgb;
+}
+
+vec3 SampleRayleighIrradiance(sampler2D lut, float cosSunZenith, float altitude, AtmosphereParams params) {
+    return SampleRayleighIrradiance(lut, cosSunZenith, altitude, params.planetRadius, params.atmosphereRadius);
+}
+
+vec3 SampleMieIrradiance(sampler2D lut, float cosSunZenith, float altitude, float planetRadius, float atmosphereRadius) {
+    vec2 uv = IrradianceParamsToUV(cosSunZenith, altitude, planetRadius, atmosphereRadius);
+    return texture(lut, uv).rgb;
+}
+
+vec3 SampleMieIrradiance(sampler2D lut, float cosSunZenith, float altitude, AtmosphereParams params) {
+    return SampleMieIrradiance(lut, cosSunZenith, altitude, params.planetRadius, params.atmosphereRadius);
+}
+
 // Hammersley sequence for quasi-random sampling
 vec2 Hammersley(uint i, uint N) {
     uint bits = i;

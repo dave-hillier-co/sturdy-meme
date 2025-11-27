@@ -57,6 +57,8 @@ public:
     static constexpr uint32_t MULTISCATTER_SIZE = 32;
     static constexpr uint32_t SKYVIEW_WIDTH = 192;
     static constexpr uint32_t SKYVIEW_HEIGHT = 108;
+    static constexpr uint32_t IRRADIANCE_WIDTH = 128;
+    static constexpr uint32_t IRRADIANCE_HEIGHT = 32;
 
     AtmosphereLUTSystem() = default;
     ~AtmosphereLUTSystem() = default;
@@ -68,11 +70,14 @@ public:
     void computeTransmittanceLUT(VkCommandBuffer cmd);
     void computeMultiScatterLUT(VkCommandBuffer cmd);
     void computeSkyViewLUT(VkCommandBuffer cmd, const glm::vec3& sunDir, const glm::vec3& cameraPos, float cameraAltitude);
+    void computeIrradianceLUT(VkCommandBuffer cmd, const glm::vec3& sunDir);
 
     // Get LUT views for sampling in shaders
     VkImageView getTransmittanceLUTView() const { return transmittanceLUTView; }
     VkImageView getMultiScatterLUTView() const { return multiScatterLUTView; }
     VkImageView getSkyViewLUTView() const { return skyViewLUTView; }
+    VkImageView getRayleighIrradianceView() const { return rayleighIrradianceLUTView; }
+    VkImageView getMieIrradianceView() const { return mieIrradianceLUTView; }
     VkSampler getLUTSampler() const { return lutSampler; }
 
     // Export LUTs as PNG files (for debugging/visualization)
@@ -86,6 +91,7 @@ private:
     bool createTransmittanceLUT();
     bool createMultiScatterLUT();
     bool createSkyViewLUT();
+    bool createIrradianceLUTs();
     bool createLUTSampler();
     bool createDescriptorSetLayouts();
     bool createDescriptorSets();
@@ -118,6 +124,15 @@ private:
     VmaAllocation skyViewLUTAllocation = VK_NULL_HANDLE;
     VkImageView skyViewLUTView = VK_NULL_HANDLE;
 
+    // Irradiance LUTs (Rayleigh/Mie, 128×32, RGBA16F)
+    VkImage rayleighIrradianceLUT = VK_NULL_HANDLE;
+    VmaAllocation rayleighIrradianceAllocation = VK_NULL_HANDLE;
+    VkImageView rayleighIrradianceLUTView = VK_NULL_HANDLE;
+
+    VkImage mieIrradianceLUT = VK_NULL_HANDLE;
+    VmaAllocation mieIrradianceAllocation = VK_NULL_HANDLE;
+    VkImageView mieIrradianceLUTView = VK_NULL_HANDLE;
+
     // LUT sampler (bilinear filtering, clamp to edge)
     VkSampler lutSampler = VK_NULL_HANDLE;
 
@@ -125,18 +140,22 @@ private:
     VkDescriptorSetLayout transmittanceDescriptorSetLayout = VK_NULL_HANDLE;
     VkDescriptorSetLayout multiScatterDescriptorSetLayout = VK_NULL_HANDLE;
     VkDescriptorSetLayout skyViewDescriptorSetLayout = VK_NULL_HANDLE;
+    VkDescriptorSetLayout irradianceDescriptorSetLayout = VK_NULL_HANDLE;
 
     VkPipelineLayout transmittancePipelineLayout = VK_NULL_HANDLE;
     VkPipelineLayout multiScatterPipelineLayout = VK_NULL_HANDLE;
     VkPipelineLayout skyViewPipelineLayout = VK_NULL_HANDLE;
+    VkPipelineLayout irradiancePipelineLayout = VK_NULL_HANDLE;
 
     VkPipeline transmittancePipeline = VK_NULL_HANDLE;
     VkPipeline multiScatterPipeline = VK_NULL_HANDLE;
     VkPipeline skyViewPipeline = VK_NULL_HANDLE;
+    VkPipeline irradiancePipeline = VK_NULL_HANDLE;
 
     VkDescriptorSet transmittanceDescriptorSet = VK_NULL_HANDLE;
     VkDescriptorSet multiScatterDescriptorSet = VK_NULL_HANDLE;
     VkDescriptorSet skyViewDescriptorSet = VK_NULL_HANDLE;
+    VkDescriptorSet irradianceDescriptorSet = VK_NULL_HANDLE;
 
     // Uniform buffer
     VkBuffer uniformBuffer = VK_NULL_HANDLE;
@@ -145,4 +164,7 @@ private:
 
     // Atmosphere parameters
     AtmosphereParams atmosphereParams;
+
+    bool skyViewInitialized = false;
+    bool irradianceInitialized = false;
 };

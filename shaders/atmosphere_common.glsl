@@ -337,7 +337,8 @@ vec3 applyHeightFog(vec3 color, vec3 cameraPos, vec3 fragPos, vec3 sunDir, vec3 
 
 // Apply aerial perspective (combined height fog + atmospheric scattering)
 vec3 applyAerialPerspective(vec3 color, vec3 cameraPos, vec3 viewDir, float viewDistance, vec3 sunDir, vec3 sunColor) {
-    vec3 fragPos = cameraPos + viewDir;
+    // Reconstruct fragment position from normalized view direction and distance
+    vec3 fragPos = cameraPos + viewDir * viewDistance;
 
     // Apply local height fog first (scene scale)
     vec3 fogged = applyHeightFog(color, cameraPos, fragPos, sunDir, sunColor);

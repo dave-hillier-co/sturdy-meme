@@ -621,14 +621,14 @@ void Application::initPhysics() {
 
 void Application::updatePhysicsToScene() {
     // Update scene object transforms from physics simulation
-    auto& sceneObjects = renderer.getSceneObjects();
+    auto& sceneObjects = renderer.getSceneManager().getSceneObjects();
 
     for (size_t i = 1; i < scenePhysicsBodies.size() && i < sceneObjects.size(); i++) {
         PhysicsBodyID bodyID = scenePhysicsBodies[i];
         if (bodyID == INVALID_BODY_ID) continue;
 
         // Skip player object (handled separately)
-        if (i == renderer.getPlayerObjectIndex()) continue;
+        if (i == renderer.getSceneManager().getPlayerObjectIndex()) continue;
 
         // Get transform from physics (position and rotation only)
         glm::mat4 physicsTransform = physics.getBodyTransform(bodyID);
@@ -648,7 +648,7 @@ void Application::updatePhysicsToScene() {
         // Update orb light position to follow the emissive sphere (index 7)
         if (i == 7) {
             glm::vec3 orbPosition = glm::vec3(physicsTransform[3]);
-            renderer.setOrbLightPosition(orbPosition);
+            renderer.getSceneManager().setOrbLightPosition(orbPosition);
         }
     }
 }

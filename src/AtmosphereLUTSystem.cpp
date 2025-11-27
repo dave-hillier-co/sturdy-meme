@@ -793,7 +793,7 @@ void AtmosphereLUTSystem::computeSkyViewLUT(VkCommandBuffer cmd, const glm::vec3
     uniforms.cameraPosition = glm::vec4(cameraPos, cameraAltitude);
     memcpy(uniformMappedPtr, &uniforms, sizeof(AtmosphereLUTUniforms));
 
-    // Transition to GENERAL layout for compute write
+    // Transition to GENERAL layout for compute write (from UNDEFINED at startup)
     VkImageMemoryBarrier barrier{};
     barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
     barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
@@ -831,6 +831,54 @@ void AtmosphereLUTSystem::computeSkyViewLUT(VkCommandBuffer cmd, const glm::vec3
                          0, 0, nullptr, 0, nullptr, 1, &barrier);
 
     SDL_Log("Computed sky-view LUT (%dx%d)", SKYVIEW_WIDTH, SKYVIEW_HEIGHT);
+}
+
+void AtmosphereLUTSystem::updateSkyViewLUT(VkCommandBuffer cmd, const glm::vec3& sunDir,
+                                           const glm::vec3& cameraPos, float cameraAltitude) {
+    // Update uniform buffer with new sun direction
+    AtmosphereLUTUniforms uniforms{};
+    uniforms.params = atmosphereParams;
+    uniforms.sunDirection = glm::vec4(sunDir, 0.0f);
+    uniforms.cameraPosition = glm::vec4(cameraPos, cameraAltitude);
+    memcpy(uniformMappedPtr, &uniforms, sizeof(AtmosphereLUTUniforms));
+
+    // Transition from SHADER_READ_ONLY to GENERAL for compute write
+    // (LUT was already in read-only from previous frame)
+    VkImageMemoryBarrier barrier{};
+    barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    barrier.oldLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    barrier.newLayout = VK_IMAGE_LAYOUT_GENERAL;
+    barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.image = skyViewLUT;
+    barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    barrier.subresourceRange.baseMipLevel = 0;
+    barrier.subresourceRange.levelCount = 1;
+    barrier.subresourceRange.baseArrayLayer = 0;
+    barrier.subresourceRange.layerCount = 1;
+    barrier.srcAccessMask = VK_ACCESS_SHADER_READ_BIT;
+    barrier.dstAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+
+    vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                         0, 0, nullptr, 0, nullptr, 1, &barrier);
+
+    // Bind pipeline and dispatch
+    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, skyViewPipeline);
+    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, skyViewPipelineLayout,
+                           0, 1, &skyViewDescriptorSet, 0, nullptr);
+
+    uint32_t groupCountX = (SKYVIEW_WIDTH + 15) / 16;
+    uint32_t groupCountY = (SKYVIEW_HEIGHT + 15) / 16;
+    vkCmdDispatch(cmd, groupCountX, groupCountY, 1);
+
+    // Transition back to SHADER_READ for sampling in sky.frag
+    barrier.oldLayout = VK_IMAGE_LAYOUT_GENERAL;
+    barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    barrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+    barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+
+    vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+                         0, 0, nullptr, 0, nullptr, 1, &barrier);
 }
 
 bool AtmosphereLUTSystem::exportImageToPNG(VkImage image, VkFormat format, uint32_t width, uint32_t height, const std::string& filename) {

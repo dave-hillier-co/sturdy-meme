@@ -1588,6 +1588,7 @@ bool Renderer::createSkyDescriptorSetLayout() {
     // 0: UBO (same as main shader)
     // 1: Transmittance LUT sampler
     // 2: Multi-scatter LUT sampler
+    // 3: Sky-view LUT sampler (updated per-frame)
 
     VkDescriptorSetLayoutBinding uboBinding{};
     uboBinding.binding = 0;
@@ -1610,8 +1611,15 @@ bool Renderer::createSkyDescriptorSetLayout() {
     multiScatterLUTBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
     multiScatterLUTBinding.pImmutableSamplers = nullptr;
 
-    std::array<VkDescriptorSetLayoutBinding, 3> bindings = {
-        uboBinding, transmittanceLUTBinding, multiScatterLUTBinding
+    VkDescriptorSetLayoutBinding skyViewLUTBinding{};
+    skyViewLUTBinding.binding = 3;
+    skyViewLUTBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    skyViewLUTBinding.descriptorCount = 1;
+    skyViewLUTBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+    skyViewLUTBinding.pImmutableSamplers = nullptr;
+
+    std::array<VkDescriptorSetLayoutBinding, 4> bindings = {
+        uboBinding, transmittanceLUTBinding, multiScatterLUTBinding, skyViewLUTBinding
     };
 
     VkDescriptorSetLayoutCreateInfo layoutInfo{};
@@ -1659,6 +1667,7 @@ bool Renderer::createSkyDescriptorSets() {
     // Get LUT views and sampler from atmosphere system
     VkImageView transmittanceLUTView = atmosphereLUTSystem.getTransmittanceLUTView();
     VkImageView multiScatterLUTView = atmosphereLUTSystem.getMultiScatterLUTView();
+    VkImageView skyViewLUTView = atmosphereLUTSystem.getSkyViewLUTView();
     VkSampler lutSampler = atmosphereLUTSystem.getLUTSampler();
 
     // Update each descriptor set
@@ -1681,7 +1690,13 @@ bool Renderer::createSkyDescriptorSets() {
         multiScatterInfo.imageView = multiScatterLUTView;
         multiScatterInfo.sampler = lutSampler;
 
-        std::array<VkWriteDescriptorSet, 3> descriptorWrites{};
+        // Sky-view LUT binding (updated per-frame with sun direction)
+        VkDescriptorImageInfo skyViewInfo{};
+        skyViewInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        skyViewInfo.imageView = skyViewLUTView;
+        skyViewInfo.sampler = lutSampler;
+
+        std::array<VkWriteDescriptorSet, 4> descriptorWrites{};
 
         descriptorWrites[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
         descriptorWrites[0].dstSet = skyDescriptorSets[i];
@@ -1707,11 +1722,19 @@ bool Renderer::createSkyDescriptorSets() {
         descriptorWrites[2].descriptorCount = 1;
         descriptorWrites[2].pImageInfo = &multiScatterInfo;
 
+        descriptorWrites[3].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        descriptorWrites[3].dstSet = skyDescriptorSets[i];
+        descriptorWrites[3].dstBinding = 3;
+        descriptorWrites[3].dstArrayElement = 0;
+        descriptorWrites[3].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        descriptorWrites[3].descriptorCount = 1;
+        descriptorWrites[3].pImageInfo = &skyViewInfo;
+
         vkUpdateDescriptorSets(device, static_cast<uint32_t>(descriptorWrites.size()),
                                descriptorWrites.data(), 0, nullptr);
     }
 
-    SDL_Log("Sky descriptor sets created with atmosphere LUTs");
+    SDL_Log("Sky descriptor sets created with atmosphere LUTs (including sky-view)");
     return true;
 }
 
@@ -2381,6 +2404,10 @@ void Renderer::render(const Camera& camera) {
                                         ubo->cascadeSplits);
 
         postProcessSystem.setCameraPlanes(camera.getNearPlane(), camera.getFarPlane());
+
+        // Update sky-view LUT with current sun direction (Phase 4.1.5)
+        // This precomputes atmospheric scattering for all view directions
+        atmosphereLUTSystem.updateSkyViewLUT(cmd, sunDir, camera.getPosition(), 0.0f);
     }
 
     // HDR scene render pass

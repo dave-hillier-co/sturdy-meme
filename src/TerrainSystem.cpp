@@ -292,8 +292,37 @@ bool TerrainSystem::createHeightMap() {
             float flattenFactor = glm::smoothstep(0.02f, 0.08f, dist);
             height *= flattenFactor;
 
-            // Normalize to [0, 1]
+            // Add steep cliff area for testing triplanar mapping
+            // Create a cliff ridge running diagonally at normalized position (0.65-0.75, 0.65-0.75)
+            // This creates a steep gradient that will showcase triplanar mapping
+            float cliffCenterX = 0.70f;
+            float cliffCenterY = 0.70f;
+            float distToCliffCenter = sqrt((fx - cliffCenterX) * (fx - cliffCenterX) +
+                                           (fy - cliffCenterY) * (fy - cliffCenterY));
+
+            // Create a sharp step function with a very narrow transition for steep cliff
+            // The cliff rises about 0.8 (80% of height scale) over a very short distance
+            float cliffRadius = 0.08f;  // Size of the cliff plateau
+            float cliffTransition = 0.015f;  // Very narrow transition = very steep
+            float cliffHeight = 0.8f;  // How high the cliff rises
+
+            // Smoothstep creates the steep cliff face
+            float cliffFactor = 1.0f - glm::smoothstep(cliffRadius - cliffTransition,
+                                                        cliffRadius + cliffTransition,
+                                                        distToCliffCenter);
+            height += cliffFactor * cliffHeight;
+
+            // Add a second smaller cliff area on the opposite side for variety
+            float cliff2CenterX = 0.25f;
+            float cliff2CenterY = 0.30f;
+            float distToCliff2 = sqrt((fx - cliff2CenterX) * (fx - cliff2CenterX) +
+                                      (fy - cliff2CenterY) * (fy - cliff2CenterY));
+            float cliff2Factor = 1.0f - glm::smoothstep(0.05f - 0.01f, 0.05f + 0.01f, distToCliff2);
+            height += cliff2Factor * 0.6f;
+
+            // Normalize to [0, 1] - clamp since cliffs can exceed base range
             height = (height + 1.0f) * 0.5f;
+            height = std::clamp(height, 0.0f, 1.0f);
             cpuHeightMap[y * heightMapResolution + x] = height;
         }
     }

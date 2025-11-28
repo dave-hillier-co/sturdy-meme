@@ -9,6 +9,7 @@
 
 #include "ParticleSystem.h"
 #include "BufferUtils.h"
+#include "UBOs.h"
 
 // Leaf particle states
 enum class LeafState : uint32_t {
@@ -31,31 +32,6 @@ struct LeafParticle {
     uint32_t leafType;          // 4 bytes  - Leaf variety index (0-3)
     uint32_t flags;             // 4 bytes  - Bit flags (active, visible)
     float padding;              // 4 bytes  - Padding to 80 bytes
-};
-
-// Leaf uniforms for compute shader (256 bytes, aligned)
-struct LeafUniforms {
-    glm::vec4 cameraPosition;           // xyz = position, w = unused
-    glm::vec4 frustumPlanes[6];         // 6 frustum planes for culling
-    glm::vec4 playerPosition;           // xyz = player position, w = player radius
-    glm::vec4 playerVelocity;           // xyz = player velocity, w = speed magnitude
-    glm::vec4 spawnRegionMin;           // xyz = AABB minimum
-    glm::vec4 spawnRegionMax;           // xyz = AABB maximum
-    glm::vec4 confettiSpawnPos;         // xyz = confetti spawn position, w = cone angle
-    float groundLevel;                  // Y coordinate of ground plane
-    float deltaTime;                    // Frame delta time
-    float time;                         // Accumulated time
-    float maxDrawDistance;              // Culling distance
-    float disruptionRadius;             // Player interaction range
-    float disruptionStrength;           // Force applied on disruption
-    float gustThreshold;                // Wind strength to lift grounded leaves
-    float targetFallingCount;           // Target number of falling leaves
-    float targetGroundedCount;          // Target number of grounded leaves
-    float confettiSpawnCount;           // Number of confetti to spawn this frame
-    float confettiVelocity;             // Initial upward velocity for confetti
-    float terrainSize;                  // Terrain size for heightmap UV calculation
-    float terrainHeightScale;           // Terrain height scale
-    float padding[1];                   // Alignment padding
 };
 
 // Push constants for leaf rendering

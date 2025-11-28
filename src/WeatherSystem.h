@@ -8,6 +8,7 @@
 
 #include "BufferUtils.h"
 #include "ParticleSystem.h"
+#include "UBOs.h"
 
 // Forward declaration
 class WindSystem;
@@ -22,25 +23,6 @@ struct WeatherParticle {
     float hash;             // Per-particle random seed
     uint32_t type;          // 0 = rain, 1 = snow, 2 = splash
     uint32_t flags;         // State flags (active, collided, etc.)
-};
-
-// Weather uniforms for compute shader (256 bytes, aligned)
-struct WeatherUniforms {
-    glm::vec4 cameraPosition;           // xyz = position, w = unused
-    glm::vec4 frustumPlanes[6];         // 6 frustum planes for culling
-    glm::vec4 windDirectionStrength;    // xy = direction, z = strength, w = turbulence
-    glm::vec4 gravity;                  // xyz = gravity vector, w = terminal velocity
-    glm::vec4 spawnRegion;              // xyz = center, w = radius
-    float spawnHeight;                  // Height above camera to spawn particles
-    float groundLevel;                  // Y coordinate of ground plane
-    float particleDensity;              // Particles per cubic meter
-    float maxDrawDistance;              // Culling distance
-    float time;                         // Current simulation time
-    float deltaTime;                    // Frame delta time
-    uint32_t weatherType;               // 0 = rain, 1 = snow
-    float intensity;                    // 0.0-1.0 precipitation strength
-    float nearZoneRadius;               // Radius of near zone (8m default)
-    float padding[3];                   // Alignment padding
 };
 
 // Push constants for weather rendering

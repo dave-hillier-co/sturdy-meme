@@ -5,6 +5,7 @@
 #include <glm/glm.hpp>
 #include <vector>
 #include <string>
+#include "UBOs.h"
 
 // Atmosphere LUT system for physically-based sky rendering (Phase 4.1)
 // Precomputes transmittance and multi-scatter LUTs for efficient atmospheric scattering
@@ -38,12 +39,16 @@ struct AtmosphereParams {
     float pad5 = 0.0f;                     // Padding for struct alignment
 };
 
-struct AtmosphereLUTUniforms {
+// AtmosphereUniforms struct (manually defined since it contains nested AtmosphereParams)
+struct AtmosphereUniforms {
     AtmosphereParams params;
     glm::vec4 sunDirection;  // xyz = sun dir, w = unused
     glm::vec4 cameraPosition; // xyz = camera pos, w = camera altitude
     float padding[2];
 };
+
+// Alias for compatibility
+using AtmosphereLUTUniforms = AtmosphereUniforms;
 
 // Cloud map uniform parameters (must match GLSL layout)
 struct CloudMapUniforms {

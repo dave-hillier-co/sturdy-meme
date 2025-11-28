@@ -11,6 +11,9 @@ build/
 # macOS
 .DS_Store
 
+# Generated code (regenerated during build)
+generated/
+
 # Compiled shaders (regenerated during build)
 *.spv
 vcpkg_installed/

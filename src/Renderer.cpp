@@ -2694,14 +2694,15 @@ UniformBufferObject Renderer::buildUniformBufferData(const Camera& camera, const
     ubo.shadowMapSize = static_cast<float>(SHADOW_MAP_SIZE);
     ubo.debugCascades = showCascadeDebug ? 1.0f : 0.0f;
     ubo.julianDay = static_cast<float>(lighting.julianDay);
-    ubo.cloudStyle = useParaboloidClouds ? 1.0f : 0.0f;
+    // Note: cloudStyle was removed from shader UBO
+    // ubo.cloudStyle = useParaboloidClouds ? 1.0f : 0.0f;
 
-    // Snow parameters
-    ubo.snowAmount = environmentSettings.snowAmount;
-    ubo.snowRoughness = environmentSettings.snowRoughness;
-    ubo.snowTexScale = environmentSettings.snowTexScale;
-    ubo.snowColor = glm::vec4(environmentSettings.snowColor, 1.0f);
-    ubo.snowMaskParams = glm::vec4(snowMaskSystem.getMaskOrigin(), snowMaskSystem.getMaskSize(), 0.0f);
+    // Note: Snow parameters not yet added to shader UBO - need to update shaders first
+    // ubo.snowAmount = environmentSettings.snowAmount;
+    // ubo.snowRoughness = environmentSettings.snowRoughness;
+    // ubo.snowTexScale = environmentSettings.snowTexScale;
+    // ubo.snowColor = glm::vec4(environmentSettings.snowColor, 1.0f);
+    // ubo.snowMaskParams = glm::vec4(snowMaskSystem.getMaskOrigin(), snowMaskSystem.getMaskSize(), 0.0f);
 
     return ubo;
 }

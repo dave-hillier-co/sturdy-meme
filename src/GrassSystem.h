@@ -8,6 +8,7 @@
 #include <string>
 
 #include "BufferUtils.h"
+#include "SystemLifecycleHelper.h"
 
 struct GrassPushConstants {
     float time;
@@ -46,16 +47,9 @@ struct GrassInstance {
 
 class GrassSystem {
 public:
-    struct InitInfo {
-        VkDevice device;
-        VmaAllocator allocator;
-        VkRenderPass renderPass;
+    struct InitInfo : public SystemLifecycleHelper::InitInfo {
         VkRenderPass shadowRenderPass;
-        VkDescriptorPool descriptorPool;
-        VkExtent2D extent;
         uint32_t shadowMapSize;
-        std::string shaderPath;
-        uint32_t framesInFlight;
     };
 
     GrassSystem() = default;
@@ -97,26 +91,24 @@ private:
     bool createGraphicsDescriptorSetLayout();
     bool createGraphicsPipeline();
     bool createDescriptorSets();
+    bool createExtraPipelines();
+    void destroyBuffers(VmaAllocator allocator);
 
-    VkDevice device = VK_NULL_HANDLE;
-    VmaAllocator allocator = VK_NULL_HANDLE;
-    VkRenderPass renderPass = VK_NULL_HANDLE;
+    VkDevice getDevice() const { return lifecycle.getDevice(); }
+    VmaAllocator getAllocator() const { return lifecycle.getAllocator(); }
+    VkRenderPass getRenderPass() const { return lifecycle.getRenderPass(); }
+    VkDescriptorPool getDescriptorPool() const { return lifecycle.getDescriptorPool(); }
+    const VkExtent2D& getExtent() const { return lifecycle.getExtent(); }
+    const std::string& getShaderPath() const { return lifecycle.getShaderPath(); }
+    uint32_t getFramesInFlight() const { return lifecycle.getFramesInFlight(); }
+
+    SystemLifecycleHelper::PipelineHandles& getComputePipelineHandles() { return lifecycle.getComputePipeline(); }
+    SystemLifecycleHelper::PipelineHandles& getGraphicsPipelineHandles() { return lifecycle.getGraphicsPipeline(); }
+
+    SystemLifecycleHelper lifecycle;
+
     VkRenderPass shadowRenderPass = VK_NULL_HANDLE;
-    VkDescriptorPool descriptorPool = VK_NULL_HANDLE;
-    VkExtent2D extent = {0, 0};
     uint32_t shadowMapSize = 0;
-    std::string shaderPath;
-    uint32_t framesInFlight = 0;
-
-    // Compute pipeline
-    VkDescriptorSetLayout computeDescriptorSetLayout = VK_NULL_HANDLE;
-    VkPipelineLayout computePipelineLayout = VK_NULL_HANDLE;
-    VkPipeline computePipeline = VK_NULL_HANDLE;
-
-    // Graphics pipeline
-    VkDescriptorSetLayout graphicsDescriptorSetLayout = VK_NULL_HANDLE;
-    VkPipelineLayout graphicsPipelineLayout = VK_NULL_HANDLE;
-    VkPipeline graphicsPipeline = VK_NULL_HANDLE;
 
     // Shadow pipeline (for casting shadows)
     VkDescriptorSetLayout shadowDescriptorSetLayout = VK_NULL_HANDLE;

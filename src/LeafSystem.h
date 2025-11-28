@@ -7,6 +7,8 @@
 #include <vector>
 #include <string>
 
+#include "SystemLifecycleHelper.h"
+
 // Leaf particle states
 enum class LeafState : uint32_t {
     INACTIVE = 0,
@@ -64,15 +66,7 @@ struct LeafPushConstants {
 
 class LeafSystem {
 public:
-    struct InitInfo {
-        VkDevice device;
-        VmaAllocator allocator;
-        VkRenderPass renderPass;
-        VkDescriptorPool descriptorPool;
-        VkExtent2D extent;
-        std::string shaderPath;
-        uint32_t framesInFlight;
-    };
+    using InitInfo = SystemLifecycleHelper::InitInfo;
 
     LeafSystem() = default;
     ~LeafSystem() = default;
@@ -129,24 +123,20 @@ private:
     bool createGraphicsDescriptorSetLayout();
     bool createGraphicsPipeline();
     bool createDescriptorSets();
+    void destroyBuffers(VmaAllocator allocator);
 
-    VkDevice device = VK_NULL_HANDLE;
-    VmaAllocator allocator = VK_NULL_HANDLE;
-    VkRenderPass renderPass = VK_NULL_HANDLE;
-    VkDescriptorPool descriptorPool = VK_NULL_HANDLE;
-    VkExtent2D extent = {0, 0};
-    std::string shaderPath;
-    uint32_t framesInFlight = 0;
+    VkDevice getDevice() const { return lifecycle.getDevice(); }
+    VmaAllocator getAllocator() const { return lifecycle.getAllocator(); }
+    VkRenderPass getRenderPass() const { return lifecycle.getRenderPass(); }
+    VkDescriptorPool getDescriptorPool() const { return lifecycle.getDescriptorPool(); }
+    const VkExtent2D& getExtent() const { return lifecycle.getExtent(); }
+    const std::string& getShaderPath() const { return lifecycle.getShaderPath(); }
+    uint32_t getFramesInFlight() const { return lifecycle.getFramesInFlight(); }
 
-    // Compute pipeline
-    VkDescriptorSetLayout computeDescriptorSetLayout = VK_NULL_HANDLE;
-    VkPipelineLayout computePipelineLayout = VK_NULL_HANDLE;
-    VkPipeline computePipeline = VK_NULL_HANDLE;
+    SystemLifecycleHelper::PipelineHandles& getComputePipelineHandles() { return lifecycle.getComputePipeline(); }
+    SystemLifecycleHelper::PipelineHandles& getGraphicsPipelineHandles() { return lifecycle.getGraphicsPipeline(); }
 
-    // Graphics pipeline
-    VkDescriptorSetLayout graphicsDescriptorSetLayout = VK_NULL_HANDLE;
-    VkPipelineLayout graphicsPipelineLayout = VK_NULL_HANDLE;
-    VkPipeline graphicsPipeline = VK_NULL_HANDLE;
+    SystemLifecycleHelper lifecycle;
 
     // Double-buffered storage buffers
     static constexpr uint32_t BUFFER_SET_COUNT = 2;

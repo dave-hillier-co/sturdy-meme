@@ -8,6 +8,7 @@
 #include <string>
 
 #include "BufferUtils.h"
+#include "SystemBase.h"
 
 struct GrassPushConstants {
     float time;
@@ -44,18 +45,11 @@ struct GrassInstance {
     glm::vec4 terrainNormal;      // xyz = terrain normal (for tangent alignment), w = unused
 };
 
-class GrassSystem {
+class GrassSystem : public SystemBase {
 public:
-    struct InitInfo {
-        VkDevice device;
-        VmaAllocator allocator;
-        VkRenderPass renderPass;
+    struct InitInfo : public SystemBase::InitInfo {
         VkRenderPass shadowRenderPass;
-        VkDescriptorPool descriptorPool;
-        VkExtent2D extent;
         uint32_t shadowMapSize;
-        std::string shaderPath;
-        uint32_t framesInFlight;
     };
 
     GrassSystem() = default;
@@ -89,34 +83,19 @@ public:
 
 private:
     bool createShadowPipeline();
-    bool createBuffers();
+    bool createBuffers() override;
     bool createDisplacementResources();
     bool createDisplacementPipeline();
-    bool createComputeDescriptorSetLayout();
-    bool createComputePipeline();
-    bool createGraphicsDescriptorSetLayout();
-    bool createGraphicsPipeline();
-    bool createDescriptorSets();
+    bool createComputeDescriptorSetLayout() override;
+    bool createComputePipeline() override;
+    bool createGraphicsDescriptorSetLayout() override;
+    bool createGraphicsPipeline() override;
+    bool createDescriptorSets() override;
+    bool createExtraPipelines() override;
+    void destroyBuffers(VmaAllocator allocator) override;
 
-    VkDevice device = VK_NULL_HANDLE;
-    VmaAllocator allocator = VK_NULL_HANDLE;
-    VkRenderPass renderPass = VK_NULL_HANDLE;
     VkRenderPass shadowRenderPass = VK_NULL_HANDLE;
-    VkDescriptorPool descriptorPool = VK_NULL_HANDLE;
-    VkExtent2D extent = {0, 0};
     uint32_t shadowMapSize = 0;
-    std::string shaderPath;
-    uint32_t framesInFlight = 0;
-
-    // Compute pipeline
-    VkDescriptorSetLayout computeDescriptorSetLayout = VK_NULL_HANDLE;
-    VkPipelineLayout computePipelineLayout = VK_NULL_HANDLE;
-    VkPipeline computePipeline = VK_NULL_HANDLE;
-
-    // Graphics pipeline
-    VkDescriptorSetLayout graphicsDescriptorSetLayout = VK_NULL_HANDLE;
-    VkPipelineLayout graphicsPipelineLayout = VK_NULL_HANDLE;
-    VkPipeline graphicsPipeline = VK_NULL_HANDLE;
 
     // Shadow pipeline (for casting shadows)
     VkDescriptorSetLayout shadowDescriptorSetLayout = VK_NULL_HANDLE;

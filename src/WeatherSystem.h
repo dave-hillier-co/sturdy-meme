@@ -7,6 +7,7 @@
 #include <string>
 
 #include "BufferUtils.h"
+#include "SystemBase.h"
 
 // Forward declaration
 class WindSystem;
@@ -50,17 +51,9 @@ struct WeatherPushConstants {
     int padding;
 };
 
-class WeatherSystem {
+class WeatherSystem : public SystemBase {
 public:
-    struct InitInfo {
-        VkDevice device;
-        VmaAllocator allocator;
-        VkRenderPass renderPass;
-        VkDescriptorPool descriptorPool;
-        VkExtent2D extent;
-        std::string shaderPath;
-        uint32_t framesInFlight;
-    };
+    using InitInfo = SystemBase::InitInfo;
 
     WeatherSystem() = default;
     ~WeatherSystem() = default;
@@ -99,30 +92,13 @@ public:
     void setGroundLevel(float level) { groundLevel = level; }
 
 private:
-    bool createBuffers();
-    bool createComputeDescriptorSetLayout();
-    bool createComputePipeline();
-    bool createGraphicsDescriptorSetLayout();
-    bool createGraphicsPipeline();
-    bool createDescriptorSets();
-
-    VkDevice device = VK_NULL_HANDLE;
-    VmaAllocator allocator = VK_NULL_HANDLE;
-    VkRenderPass renderPass = VK_NULL_HANDLE;
-    VkDescriptorPool descriptorPool = VK_NULL_HANDLE;
-    VkExtent2D extent = {0, 0};
-    std::string shaderPath;
-    uint32_t framesInFlight = 0;
-
-    // Compute pipeline
-    VkDescriptorSetLayout computeDescriptorSetLayout = VK_NULL_HANDLE;
-    VkPipelineLayout computePipelineLayout = VK_NULL_HANDLE;
-    VkPipeline computePipeline = VK_NULL_HANDLE;
-
-    // Graphics pipeline
-    VkDescriptorSetLayout graphicsDescriptorSetLayout = VK_NULL_HANDLE;
-    VkPipelineLayout graphicsPipelineLayout = VK_NULL_HANDLE;
-    VkPipeline graphicsPipeline = VK_NULL_HANDLE;
+    bool createBuffers() override;
+    bool createComputeDescriptorSetLayout() override;
+    bool createComputePipeline() override;
+    bool createGraphicsDescriptorSetLayout() override;
+    bool createGraphicsPipeline() override;
+    bool createDescriptorSets() override;
+    void destroyBuffers(VmaAllocator allocator) override;
 
     // Double-buffered storage buffers
     static constexpr uint32_t BUFFER_SET_COUNT = 2;

@@ -9,22 +9,11 @@
 
 #include "BufferUtils.h"
 #include "ParticleSystem.h"
+#include "UBOs.h"
 
 struct GrassPushConstants {
     float time;
     int cascadeIndex;  // For shadow pass: which cascade we're rendering
-};
-
-struct GrassUniforms {
-    glm::vec4 cameraPosition;      // xyz = position, w = unused
-    glm::vec4 frustumPlanes[6];    // 6 frustum planes (ax+by+cz+d form)
-    glm::vec4 displacementRegion;  // xy = world center, z = region size (50m), w = texel size
-    float maxDrawDistance;          // Max distance for grass rendering
-    float lodTransitionStart;       // Distance where LOD transition begins
-    float lodTransitionEnd;         // Distance where LOD transition ends
-    float terrainSize;              // Terrain size for heightmap UV calculation
-    float terrainHeightScale;       // Terrain height scale
-    float padding[3];
 };
 
 // Displacement source for grass interaction (player, NPCs, etc.)

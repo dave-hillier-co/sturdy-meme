@@ -22,36 +22,9 @@
 #include "TerrainSystem.h"
 #include "SnowMaskSystem.h"
 #include "EnvironmentSettings.h"
+#include "UBOs.h"
 
 static constexpr uint32_t NUM_SHADOW_CASCADES = 4;
-
-struct UniformBufferObject {
-    glm::mat4 model;
-    glm::mat4 view;
-    glm::mat4 proj;
-    glm::mat4 cascadeViewProj[NUM_SHADOW_CASCADES];  // Per-cascade light matrices
-    glm::vec4 cascadeSplits;                          // View-space split depths
-    glm::vec4 sunDirection;
-    glm::vec4 moonDirection;
-    glm::vec4 sunColor;
-    glm::vec4 moonColor;                              // rgb = moon color, a = moon phase (0-1)
-    glm::vec4 ambientColor;
-    glm::vec4 cameraPosition;
-    glm::vec4 pointLightPosition;  // xyz = position, w = intensity
-    glm::vec4 pointLightColor;     // rgb = color, a = radius
-    glm::vec4 windDirectionAndSpeed;                  // xy = direction, z = speed, w = time
-    float timeOfDay;
-    float shadowMapSize;
-    float debugCascades;           // 1.0 = show cascade colors
-    float julianDay;               // Julian day for sidereal rotation
-    float cloudStyle;              // 0.0 = procedural, 1.0 = paraboloid LUT hybrid
-    float snowAmount;              // Global snow intensity (0-1)
-    float snowRoughness;           // Snow surface roughness
-    float snowTexScale;            // World-space snow texture scale
-    glm::vec4 snowColor;           // rgb = snow color, a = unused
-    glm::vec4 snowMaskParams;      // xy = mask origin, z = mask size, w = unused
-};
-
 struct ShadowPushConstants {
     glm::mat4 model;
     int cascadeIndex;  // Which cascade we're rendering to

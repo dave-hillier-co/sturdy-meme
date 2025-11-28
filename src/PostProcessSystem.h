@@ -208,11 +208,11 @@ private:
     float farPlane = 1000.0f;
 
     // Auto-exposure parameters
-    static constexpr float MIN_EXPOSURE = -4.0f;  // EV
-    static constexpr float MAX_EXPOSURE = 0.0f;   // EV (no auto-brightening - preserve dark nights)
+    static constexpr float MIN_EXPOSURE = -4.0f;  // EV (darkening limit)
+    static constexpr float MAX_EXPOSURE = 4.0f;   // EV (brightening limit)
     static constexpr float ADAPTATION_SPEED_UP = 2.0f;    // Faster brightening
     static constexpr float ADAPTATION_SPEED_DOWN = 1.0f;  // Slower darkening
-    static constexpr float TARGET_LUMINANCE = 0.05f;      // Dark target - preserve night atmosphere
+    static constexpr float TARGET_LUMINANCE = 0.18f;      // Standard middle gray
     static constexpr float MIN_LOG_LUMINANCE = -8.0f;     // Log2 of minimum luminance
     static constexpr float MAX_LOG_LUMINANCE = 4.0f;      // Log2 of maximum luminance
     static constexpr float LOW_PERCENTILE = 0.05f;        // Include most dark pixels (only ignore 5%)

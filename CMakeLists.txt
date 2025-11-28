@@ -136,6 +136,7 @@ set(SHADER_FILES
     ${CMAKE_CURRENT_SOURCE_DIR}/shaders/histogram_reduce.comp.spv
     ${CMAKE_CURRENT_SOURCE_DIR}/shaders/snow_accumulation.comp.spv
     ${CMAKE_CURRENT_SOURCE_DIR}/shaders/volumetric_snow.comp.spv
+    ${CMAKE_CURRENT_SOURCE_DIR}/shaders/cloud_temporal.comp.spv
 )
 
 set(TERRAIN_SHADER_FILES
@@ -227,6 +228,7 @@ if(SHADER_COMPILE_CMD)
         volumetric_snow.comp
         cloudmap_lut.comp
         cloud_shadow.comp
+        cloud_temporal.comp
     )
 
     foreach(SHADER ${SPECIAL_COMPUTE_SHADERS})
@@ -362,6 +364,8 @@ if(SHADER_COMPILE_CMD)
         ${CMAKE_CURRENT_SOURCE_DIR}/shaders/histogram_reduce.comp.spv
         ${CMAKE_CURRENT_SOURCE_DIR}/shaders/snow_accumulation.comp.spv
         ${CMAKE_CURRENT_SOURCE_DIR}/shaders/volumetric_snow.comp.spv
+        ${CMAKE_CURRENT_SOURCE_DIR}/shaders/cloudmap_lut.comp.spv
+        ${CMAKE_CURRENT_SOURCE_DIR}/shaders/cloud_temporal.comp.spv
         ${CMAKE_CURRENT_SOURCE_DIR}/shaders/terrain/terrain_dispatcher.comp.spv
         ${CMAKE_CURRENT_SOURCE_DIR}/shaders/terrain/terrain_subdivision.comp.spv
         ${CMAKE_CURRENT_SOURCE_DIR}/shaders/terrain/terrain_sum_reduction_prepass.comp.spv

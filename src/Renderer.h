@@ -21,6 +21,7 @@
 #include "FroxelSystem.h"
 #include "AtmosphereLUTSystem.h"
 #include "SkySystem.h"
+#include "CloudTemporalSystem.h"
 #include "SceneManager.h"
 #include "TerrainSystem.h"
 #include "CatmullClarkSystem.h"
@@ -95,6 +96,12 @@ public:
     bool isCloudShadowEnabled() const { return cloudShadowSystem.isEnabled(); }
     void setCloudShadowIntensity(float intensity) { cloudShadowSystem.setShadowIntensity(intensity); }
     float getCloudShadowIntensity() const { return cloudShadowSystem.getShadowIntensity(); }
+
+    // Cloud temporal reprojection control
+    void toggleCloudTemporal() { cloudTemporalSystem.setTemporalEnabled(!cloudTemporalSystem.isTemporalEnabled()); }
+    bool isCloudTemporalEnabled() const { return cloudTemporalSystem.isTemporalEnabled(); }
+    void setCloudTemporalBlend(float blend) { cloudTemporalSystem.setTemporalBlend(blend); }
+    float getCloudTemporalBlend() const { return cloudTemporalSystem.getTemporalBlend(); }
 
     // Terrain control
     void toggleTerrainWireframe() { terrainSystem.setWireframeMode(!terrainSystem.isWireframeMode()); }
@@ -223,6 +230,7 @@ private:
     BloomSystem bloomSystem;
     FroxelSystem froxelSystem;
     AtmosphereLUTSystem atmosphereLUTSystem;
+    CloudTemporalSystem cloudTemporalSystem;
     TerrainSystem terrainSystem;
     CatmullClarkSystem catmullClarkSystem;
     SnowMaskSystem snowMaskSystem;

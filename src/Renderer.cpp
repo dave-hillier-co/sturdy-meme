@@ -433,6 +433,24 @@ bool Renderer::init(SDL_Window* win, const std::string& resPath) {
     // Update Catmull-Clark descriptor sets with shared resources
     catmullClarkSystem.updateDescriptorSets(device, uniformBuffers);
 
+    // Initialize cloud temporal reprojection system (Phase 4.2.7)
+    CloudTemporalSystem::InitInfo cloudTemporalInfo{};
+    cloudTemporalInfo.device = device;
+    cloudTemporalInfo.allocator = allocator;
+    cloudTemporalInfo.descriptorPool = descriptorPool;
+    cloudTemporalInfo.shaderPath = resourcePath + "/shaders";
+    cloudTemporalInfo.framesInFlight = MAX_FRAMES_IN_FLIGHT;
+    cloudTemporalInfo.transmittanceLUTView = atmosphereLUTSystem.getTransmittanceLUTView();
+    cloudTemporalInfo.multiScatterLUTView = atmosphereLUTSystem.getMultiScatterLUTView();
+    cloudTemporalInfo.lutSampler = atmosphereLUTSystem.getLUTSampler();
+
+    if (!cloudTemporalSystem.init(cloudTemporalInfo)) {
+        SDL_Log("Warning: Cloud temporal system initialization failed, continuing without temporal reprojection");
+        // Don't fail - we can fall back to non-temporal cloud rendering
+    } else {
+        SDL_Log("Cloud temporal reprojection system initialized");
+    }
+
     // Create sky descriptor sets now that uniform buffers and LUTs are ready
     if (!skySystem.createDescriptorSets(uniformBuffers, sizeof(UniformBufferObject), atmosphereLUTSystem)) return false;
 
@@ -500,6 +518,7 @@ void Renderer::shutdown() {
         froxelSystem.destroy(device, allocator);
         cloudShadowSystem.destroy();
         atmosphereLUTSystem.destroy(device, allocator);
+        cloudTemporalSystem.destroy(device, allocator);
         skySystem.destroy(device, allocator);
         postProcessSystem.destroy(device, allocator);
         bloomSystem.destroy(device, allocator);
@@ -1316,6 +1335,24 @@ void Renderer::render(const Camera& camera) {
                                           windTime * 0.002f,  // Slow vertical evolution
                                           windDir.y * windSpeed * windTime * cloudTimeScale);
         atmosphereLUTSystem.updateCloudMapLUT(cmd, windOffset, windTime * cloudTimeScale);
+
+        // Cloud temporal reprojection compute pass (Phase 4.2.7)
+        // Pre-renders clouds with temporal blending for stable, flicker-free output
+        if (cloudTemporalSystem.isTemporalEnabled()) {
+            // Get moon parameters
+            UniformBufferObject* ubo = static_cast<UniformBufferObject*>(uniformBuffersMapped[currentFrame]);
+            glm::vec3 moonDir = glm::normalize(glm::vec3(ubo->moonDirection));
+            float moonIntensity = ubo->moonDirection.w;
+            glm::vec3 moonColor = glm::vec3(ubo->moonColor);
+            float moonPhase = ubo->moonColor.a;
+
+            cloudTemporalSystem.recordCloudUpdate(cmd, currentFrame,
+                                                  camera.getViewMatrix(), camera.getProjectionMatrix(),
+                                                  camera.getPosition(),
+                                                  sunDir, sunIntensity, sunColor,
+                                                  moonDir, moonIntensity, moonColor, moonPhase,
+                                                  windDir, windSpeed, windTime);
+        }
     }
 
     // HDR scene render pass
@@ -1450,6 +1487,7 @@ UniformBufferObject Renderer::buildUniformBufferData(const Camera& camera, const
     ubo.debugCascades = showCascadeDebug ? 1.0f : 0.0f;
     ubo.julianDay = static_cast<float>(lighting.julianDay);
     ubo.cloudStyle = useParaboloidClouds ? 1.0f : 0.0f;
+    ubo.cloudTemporal = cloudTemporalSystem.isTemporalEnabled() ? 1.0f : 0.0f;
 
     // Snow parameters
     ubo.snowAmount = environmentSettings.snowAmount;

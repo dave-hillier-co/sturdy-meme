@@ -14,6 +14,9 @@ public:
     bool init(const InitInfo& info, const Hooks& hooks, uint32_t bufferSets = 2);
     void destroy(VkDevice device, VmaAllocator allocator);
 
+    // Create standard descriptor sets for all buffer sets (allocates both compute and graphics descriptor sets)
+    bool createStandardDescriptorSets();
+
     void advanceBufferSet();
 
     uint32_t getComputeBufferSet() const { return computeBufferSet; }

@@ -93,16 +93,35 @@ UBODefinition reflectUBO(const SpvReflectDescriptorBinding* binding) {
     ubo.binding = binding->binding;
     ubo.set = binding->set;
 
-    std::ostringstream structDef;
-    structDef << "struct " << binding->type_description->type_name << " {\n";
-
-    // Generate members
+    // Check if this UBO contains nested struct types
+    bool hasNestedStructs = false;
     for (uint32_t i = 0; i < binding->block.member_count; i++) {
         const SpvReflectBlockVariable& member = binding->block.members[i];
-        structDef << generateStructMember(&member) << "\n";
+        if (member.type_description->type_flags & SPV_REFLECT_TYPE_FLAG_STRUCT) {
+            hasNestedStructs = true;
+            break;
+        }
     }
 
-    structDef << "};";
+    std::ostringstream structDef;
+
+    // If it has nested structs, comment it out and add a note
+    if (hasNestedStructs) {
+        structDef << "// SKIPPED: " << binding->type_description->type_name
+                  << " (contains nested struct types - define manually)\n";
+        structDef << "// This struct is defined in its corresponding system header file\n";
+        structDef << "// Binding: " << binding->binding << ", Set: " << binding->set;
+    } else {
+        structDef << "struct " << binding->type_description->type_name << " {\n";
+
+        // Generate members
+        for (uint32_t i = 0; i < binding->block.member_count; i++) {
+            const SpvReflectBlockVariable& member = binding->block.members[i];
+            structDef << generateStructMember(&member) << "\n";
+        }
+
+        structDef << "};";
+    }
 
     ubo.structDef = structDef.str();
     return ubo;

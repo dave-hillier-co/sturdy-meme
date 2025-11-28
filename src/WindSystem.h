@@ -7,13 +7,7 @@
 #include <vector>
 
 #include "BufferUtils.h"
-
-// Wind uniform data passed to GPU shaders
-// Must match the GLSL WindUniforms struct exactly
-struct WindUniforms {
-    glm::vec4 windDirectionAndStrength;  // xy = normalized direction, z = strength, w = speed
-    glm::vec4 windParams;                 // x = gustFrequency, y = gustAmplitude, z = noiseScale, w = time
-};
+#include "UBOs.h"
 
 // Wind system for CPU-side wind management and GPU uniform updates
 // Implements a scrolling Perlin noise wind model as described in Ghost of Tsushima's wind system

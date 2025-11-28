@@ -5,39 +5,10 @@
 #include <glm/glm.hpp>
 #include <vector>
 #include <string>
+#include "UBOs.h"
 
-struct PostProcessUniforms {
-    float exposure;
-    float bloomThreshold;
-    float bloomIntensity;
-    float autoExposure;  // 0 = manual, 1 = auto (histogram-based)
-    float previousExposure;
-    float deltaTime;
-    float adaptationSpeed;
-    float bloomRadius;
-    // God rays parameters (Phase 4.4)
-    glm::vec2 sunScreenPos;   // Sun position in screen space [0,1]
-    float godRayIntensity;    // God ray strength
-    float godRayDecay;        // Falloff from sun position
-    // Froxel volumetrics (Phase 4.3)
-    float froxelEnabled;      // 1.0 = enabled, 0.0 = disabled
-    float froxelFarPlane;     // Volumetric far plane
-    float froxelDepthDist;    // Depth distribution factor
-    float nearPlane;          // Camera near plane for depth linearization
-    float farPlane;           // Camera far plane for depth linearization
-    // Purkinje effect (Phase 5.6)
-    float sceneIlluminance;   // Scene illuminance in lux for Purkinje effect
-    float padding2;
-    float padding3;
-};
-
-// Histogram build compute shader parameters
-struct HistogramBuildParams {
-    float minLogLum;      // Minimum log luminance (e.g., -8.0)
-    float maxLogLum;      // Maximum log luminance (e.g., 4.0)
-    float invLogLumRange; // 1.0 / (maxLogLum - minLogLum)
-    uint32_t pixelCount;  // Total pixel count for normalization
-};
+// Alias for compatibility with existing code
+using HistogramBuildParams = HistogramParams;
 
 // Histogram reduce compute shader parameters
 struct HistogramReduceParams {

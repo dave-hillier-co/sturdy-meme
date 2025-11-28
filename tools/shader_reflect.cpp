@@ -40,6 +40,13 @@ std::string getGLMType(const SpvReflectTypeDescription* typeDesc) {
             break;
     }
 
+    // Handle matrices BEFORE vectors (matrices have both flags set)
+    if (typeDesc->type_flags & SPV_REFLECT_TYPE_FLAG_MATRIX) {
+        uint32_t colCount = typeDesc->traits.numeric.matrix.column_count;
+        uint32_t rowCount = typeDesc->traits.numeric.matrix.row_count;
+        return "glm::mat" + std::to_string(colCount) + (colCount != rowCount ? "x" + std::to_string(rowCount) : "");
+    }
+
     // Handle vectors
     if (typeDesc->type_flags & SPV_REFLECT_TYPE_FLAG_VECTOR) {
         uint32_t componentCount = typeDesc->traits.numeric.vector.component_count;
@@ -50,13 +57,6 @@ std::string getGLMType(const SpvReflectTypeDescription* typeDesc) {
         } else if (baseType == "uint32_t") {
             return "glm::uvec" + std::to_string(componentCount);
         }
-    }
-
-    // Handle matrices
-    if (typeDesc->type_flags & SPV_REFLECT_TYPE_FLAG_MATRIX) {
-        uint32_t colCount = typeDesc->traits.numeric.matrix.column_count;
-        uint32_t rowCount = typeDesc->traits.numeric.matrix.row_count;
-        return "glm::mat" + std::to_string(colCount) + (colCount != rowCount ? "x" + std::to_string(rowCount) : "");
     }
 
     return baseType;

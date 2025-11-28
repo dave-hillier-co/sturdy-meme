@@ -51,6 +51,7 @@ add_executable(${PROJECT_NAME} ${SOURCES})
 
 target_include_directories(${PROJECT_NAME} PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src
+    ${CMAKE_CURRENT_SOURCE_DIR}/generated
     ${STB_INCLUDE_DIRS}
 )
 
@@ -450,9 +451,10 @@ if(SHADER_COMPILE_CMD)
 
     # Generate UBO headers from SPIR-V reflection
     add_custom_command(
-        OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/src/GeneratedUBOs.h
+        OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/generated/UBOs.h
+        COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_CURRENT_SOURCE_DIR}/generated
         COMMAND shader_reflect
-            ${CMAKE_CURRENT_SOURCE_DIR}/src/GeneratedUBOs.h
+            ${CMAKE_CURRENT_SOURCE_DIR}/generated/UBOs.h
             ${CMAKE_CURRENT_SOURCE_DIR}/shaders/shader.vert.spv
             ${CMAKE_CURRENT_SOURCE_DIR}/shaders/shader.frag.spv
             ${CMAKE_CURRENT_SOURCE_DIR}/shaders/grass.vert.spv
@@ -472,7 +474,7 @@ if(SHADER_COMPILE_CMD)
     )
 
     add_custom_target(generated_headers DEPENDS
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/GeneratedUBOs.h
+        ${CMAKE_CURRENT_SOURCE_DIR}/generated/UBOs.h
     )
 
     add_dependencies(${PROJECT_NAME} shaders generated_headers)

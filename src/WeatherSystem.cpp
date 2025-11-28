@@ -205,38 +205,7 @@ bool WeatherSystem::createGraphicsPipeline() {
 }
 
 bool WeatherSystem::createDescriptorSets() {
-    // Allocate descriptor sets for both buffer sets
-    for (uint32_t set = 0; set < BUFFER_SET_COUNT; set++) {
-        // Compute descriptor set
-        VkDescriptorSetAllocateInfo computeAllocInfo{};
-        computeAllocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-        computeAllocInfo.descriptorPool = getDescriptorPool();
-        computeAllocInfo.descriptorSetCount = 1;
-        computeAllocInfo.pSetLayouts = &getComputePipelineHandles().descriptorSetLayout;
-
-        VkDescriptorSet computeSet = VK_NULL_HANDLE;
-        if (vkAllocateDescriptorSets(getDevice(), &computeAllocInfo, &computeSet) != VK_SUCCESS) {
-            SDL_Log("Failed to allocate weather compute descriptor set (set %u)", set);
-            return false;
-        }
-        particleSystem.setComputeDescriptorSet(set, computeSet);
-
-        // Graphics descriptor set
-        VkDescriptorSetAllocateInfo graphicsAllocInfo{};
-        graphicsAllocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-        graphicsAllocInfo.descriptorPool = getDescriptorPool();
-        graphicsAllocInfo.descriptorSetCount = 1;
-        graphicsAllocInfo.pSetLayouts = &getGraphicsPipelineHandles().descriptorSetLayout;
-
-        VkDescriptorSet graphicsSet = VK_NULL_HANDLE;
-        if (vkAllocateDescriptorSets(getDevice(), &graphicsAllocInfo, &graphicsSet) != VK_SUCCESS) {
-            SDL_Log("Failed to allocate weather graphics descriptor set (set %u)", set);
-            return false;
-        }
-        particleSystem.setGraphicsDescriptorSet(set, graphicsSet);
-    }
-
-    return true;
+    return particleSystem.createStandardDescriptorSets();
 }
 
 void WeatherSystem::updateDescriptorSets(VkDevice dev, const std::vector<VkBuffer>& rendererUniformBuffers,

@@ -22,81 +22,47 @@ void LeafSystem::destroy(VkDevice dev, VmaAllocator alloc) {
 }
 
 void LeafSystem::destroyBuffers(VmaAllocator alloc) {
-    for (uint32_t set = 0; set < BUFFER_SET_COUNT; set++) {
-        vmaDestroyBuffer(alloc, particleBuffers[set], particleAllocations[set]);
-        vmaDestroyBuffer(alloc, indirectBuffers[set], indirectAllocations[set]);
-    }
+    BufferUtils::destroyBuffers(alloc, particleBuffers);
+    BufferUtils::destroyBuffers(alloc, indirectBuffers);
+    BufferUtils::destroyBuffers(alloc, uniformBuffers);
 
     for (size_t i = 0; i < getFramesInFlight(); i++) {
-        vmaDestroyBuffer(alloc, uniformBuffers[i], uniformAllocations[i]);
         vmaDestroyBuffer(alloc, displacementRegionBuffers[i], displacementRegionAllocations[i]);
     }
 }
 
 bool LeafSystem::createBuffers() {
-    uniformBuffers.resize(getFramesInFlight());
-    uniformAllocations.resize(getFramesInFlight());
-    uniformMappedPtrs.resize(getFramesInFlight());
-
     VkDeviceSize particleBufferSize = sizeof(LeafParticle) * MAX_PARTICLES;
     VkDeviceSize indirectBufferSize = sizeof(VkDrawIndirectCommand);
     VkDeviceSize uniformBufferSize = sizeof(LeafUniforms);
 
-    VmaAllocationCreateInfo allocInfo{};
-    allocInfo.usage = VMA_MEMORY_USAGE_AUTO;
-
-    // Create double-buffered particle and indirect buffers
-    for (uint32_t set = 0; set < BUFFER_SET_COUNT; set++) {
-        // Particle buffer - storage buffer for compute read/write and vertex shader read
-        VkBufferCreateInfo particleBufferInfo{};
-        particleBufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-        particleBufferInfo.size = particleBufferSize;
-        particleBufferInfo.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
-        particleBufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-
-        if (vmaCreateBuffer(getAllocator(), &particleBufferInfo, &allocInfo,
-                           &particleBuffers[set], &particleAllocations[set],
-                           nullptr) != VK_SUCCESS) {
-            SDL_Log("Failed to create leaf particle buffer (set %u)", set);
-            return false;
-        }
-
-        // Indirect buffer - for indirect drawing
-        VkBufferCreateInfo indirectBufferInfo{};
-        indirectBufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-        indirectBufferInfo.size = indirectBufferSize;
-        indirectBufferInfo.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
-        indirectBufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-
-        if (vmaCreateBuffer(getAllocator(), &indirectBufferInfo, &allocInfo,
-                           &indirectBuffers[set], &indirectAllocations[set],
-                           nullptr) != VK_SUCCESS) {
-            SDL_Log("Failed to create leaf indirect buffer (set %u)", set);
-            return false;
-        }
+    BufferUtils::DoubleBufferedBufferBuilder particleBuilder;
+    if (!particleBuilder.setAllocator(getAllocator())
+             .setSetCount(BUFFER_SET_COUNT)
+             .setSize(particleBufferSize)
+             .setUsage(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT)
+             .build(particleBuffers)) {
+        SDL_Log("Failed to create leaf particle buffers");
+        return false;
     }
 
-    // Create uniform buffers (per-frame)
-    for (size_t i = 0; i < getFramesInFlight(); i++) {
-        VkBufferCreateInfo uniformBufferInfo{};
-        uniformBufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-        uniformBufferInfo.size = uniformBufferSize;
-        uniformBufferInfo.usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
-        uniformBufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+    BufferUtils::DoubleBufferedBufferBuilder indirectBuilder;
+    if (!indirectBuilder.setAllocator(getAllocator())
+             .setSetCount(BUFFER_SET_COUNT)
+             .setSize(indirectBufferSize)
+             .setUsage(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT)
+             .build(indirectBuffers)) {
+        SDL_Log("Failed to create leaf indirect buffers");
+        return false;
+    }
 
-        VmaAllocationCreateInfo uniformAllocInfo{};
-        uniformAllocInfo.usage = VMA_MEMORY_USAGE_AUTO;
-        uniformAllocInfo.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
-                                 VMA_ALLOCATION_CREATE_MAPPED_BIT;
-
-        VmaAllocationInfo uniformAllocInfoResult;
-        if (vmaCreateBuffer(getAllocator(), &uniformBufferInfo, &uniformAllocInfo,
-                           &uniformBuffers[i], &uniformAllocations[i],
-                           &uniformAllocInfoResult) != VK_SUCCESS) {
-            SDL_Log("Failed to create leaf uniform buffer");
-            return false;
-        }
-        uniformMappedPtrs[i] = uniformAllocInfoResult.pMappedData;
+    BufferUtils::PerFrameBufferBuilder uniformBuilder;
+    if (!uniformBuilder.setAllocator(getAllocator())
+             .setFrameCount(getFramesInFlight())
+             .setSize(uniformBufferSize)
+             .build(uniformBuffers)) {
+        SDL_Log("Failed to create leaf uniform buffers");
+        return false;
     }
 
     // Create displacement region uniform buffers (per-frame)
@@ -434,38 +400,7 @@ bool LeafSystem::createGraphicsPipeline() {
 }
 
 bool LeafSystem::createDescriptorSets() {
-    // Allocate descriptor sets for both buffer sets
-    for (uint32_t set = 0; set < BUFFER_SET_COUNT; set++) {
-        // Compute descriptor set
-        VkDescriptorSetAllocateInfo computeAllocInfo{};
-        computeAllocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-        computeAllocInfo.descriptorPool = getDescriptorPool();
-        computeAllocInfo.descriptorSetCount = 1;
-        computeAllocInfo.pSetLayouts = &getComputePipelineHandles().descriptorSetLayout;
-
-        VkDescriptorSet computeSet = VK_NULL_HANDLE;
-        if (vkAllocateDescriptorSets(getDevice(), &computeAllocInfo, &computeSet) != VK_SUCCESS) {
-            SDL_Log("Failed to allocate leaf compute descriptor set (set %u)", set);
-            return false;
-        }
-        particleSystem.setComputeDescriptorSet(set, computeSet);
-
-        // Graphics descriptor set
-        VkDescriptorSetAllocateInfo graphicsAllocInfo{};
-        graphicsAllocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-        graphicsAllocInfo.descriptorPool = getDescriptorPool();
-        graphicsAllocInfo.descriptorSetCount = 1;
-        graphicsAllocInfo.pSetLayouts = &getGraphicsPipelineHandles().descriptorSetLayout;
-
-        VkDescriptorSet graphicsSet = VK_NULL_HANDLE;
-        if (vkAllocateDescriptorSets(getDevice(), &graphicsAllocInfo, &graphicsSet) != VK_SUCCESS) {
-            SDL_Log("Failed to allocate leaf graphics descriptor set (set %u)", set);
-            return false;
-        }
-        particleSystem.setGraphicsDescriptorSet(set, graphicsSet);
-    }
-
-    return true;
+    return particleSystem.createStandardDescriptorSets();
 }
 
 void LeafSystem::updateDescriptorSets(VkDevice dev, const std::vector<VkBuffer>& rendererUniformBuffers,
@@ -485,22 +420,22 @@ void LeafSystem::updateDescriptorSets(VkDevice dev, const std::vector<VkBuffer>&
 
         // Compute descriptor set writes
         VkDescriptorBufferInfo inputParticleBufferInfo{};
-        inputParticleBufferInfo.buffer = particleBuffers[inputSet];
+        inputParticleBufferInfo.buffer = particleBuffers.buffers[inputSet];
         inputParticleBufferInfo.offset = 0;
         inputParticleBufferInfo.range = sizeof(LeafParticle) * MAX_PARTICLES;
 
         VkDescriptorBufferInfo outputParticleBufferInfo{};
-        outputParticleBufferInfo.buffer = particleBuffers[outputSet];
+        outputParticleBufferInfo.buffer = particleBuffers.buffers[outputSet];
         outputParticleBufferInfo.offset = 0;
         outputParticleBufferInfo.range = sizeof(LeafParticle) * MAX_PARTICLES;
 
         VkDescriptorBufferInfo indirectBufferInfo{};
-        indirectBufferInfo.buffer = indirectBuffers[outputSet];
+        indirectBufferInfo.buffer = indirectBuffers.buffers[outputSet];
         indirectBufferInfo.offset = 0;
         indirectBufferInfo.range = sizeof(VkDrawIndirectCommand);
 
         VkDescriptorBufferInfo leafUniformInfo{};
-        leafUniformInfo.buffer = uniformBuffers[0];
+        leafUniformInfo.buffer = uniformBuffers.buffers[0];
         leafUniformInfo.offset = 0;
         leafUniformInfo.range = sizeof(LeafUniforms);
 
@@ -600,7 +535,7 @@ void LeafSystem::updateDescriptorSets(VkDevice dev, const std::vector<VkBuffer>&
         uboInfo.range = 320;  // sizeof(UniformBufferObject)
 
         VkDescriptorBufferInfo particleBufferInfo{};
-        particleBufferInfo.buffer = particleBuffers[set];
+        particleBufferInfo.buffer = particleBuffers.buffers[set];
         particleBufferInfo.offset = 0;
         particleBufferInfo.range = sizeof(LeafParticle) * MAX_PARTICLES;
 
@@ -695,7 +630,7 @@ void LeafSystem::updateUniforms(uint32_t frameIndex, const glm::vec3& cameraPos,
     uniforms.terrainSize = terrainSize;
     uniforms.terrainHeightScale = terrainHeightScale;
 
-    memcpy(uniformMappedPtrs[frameIndex], &uniforms, sizeof(LeafUniforms));
+    memcpy(uniformBuffers.mappedPointers[frameIndex], &uniforms, sizeof(LeafUniforms));
 
     // Update displacement region to follow camera (same as grass system)
     displacementRegionCenter = glm::vec2(cameraPos.x, cameraPos.z);
@@ -714,7 +649,7 @@ void LeafSystem::recordResetAndCompute(VkCommandBuffer cmd, uint32_t frameIndex,
 
     // Update compute descriptor set to use this frame's uniform and displacement region buffers
     VkDescriptorBufferInfo uniformBufferInfo{};
-    uniformBufferInfo.buffer = uniformBuffers[frameIndex];
+    uniformBufferInfo.buffer = uniformBuffers.buffers[frameIndex];
     uniformBufferInfo.offset = 0;
     uniformBufferInfo.range = sizeof(LeafUniforms);
 
@@ -744,7 +679,7 @@ void LeafSystem::recordResetAndCompute(VkCommandBuffer cmd, uint32_t frameIndex,
     vkUpdateDescriptorSets(getDevice(), static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
 
     // Reset indirect buffer before compute dispatch
-    vkCmdFillBuffer(cmd, indirectBuffers[writeSet], 0, sizeof(VkDrawIndirectCommand), 0);
+    vkCmdFillBuffer(cmd, indirectBuffers.buffers[writeSet], 0, sizeof(VkDrawIndirectCommand), 0);
 
     // Barrier to ensure fill completes before compute shader runs
     VkMemoryBarrier fillBarrier{};
@@ -807,7 +742,7 @@ void LeafSystem::recordDraw(VkCommandBuffer cmd, uint32_t frameIndex, float time
                        0, sizeof(LeafPushConstants), &pushConstants);
 
     // Indirect draw: 4 vertices per leaf (quad)
-    vkCmdDrawIndirect(cmd, indirectBuffers[readSet], 0, 1, sizeof(VkDrawIndirectCommand));
+    vkCmdDrawIndirect(cmd, indirectBuffers.buffers[readSet], 0, 1, sizeof(VkDrawIndirectCommand));
 }
 
 void LeafSystem::advanceBufferSet() { particleSystem.advanceBufferSet(); }

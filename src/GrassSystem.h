@@ -8,7 +8,7 @@
 #include <string>
 
 #include "BufferUtils.h"
-#include "SystemBase.h"
+#include "SystemLifecycleHelper.h"
 
 struct GrassPushConstants {
     float time;
@@ -45,9 +45,9 @@ struct GrassInstance {
     glm::vec4 terrainNormal;      // xyz = terrain normal (for tangent alignment), w = unused
 };
 
-class GrassSystem : public SystemBase {
+class GrassSystem {
 public:
-    struct InitInfo : public SystemBase::InitInfo {
+    struct InitInfo : public SystemLifecycleHelper::InitInfo {
         VkRenderPass shadowRenderPass;
         uint32_t shadowMapSize;
     };
@@ -83,16 +83,29 @@ public:
 
 private:
     bool createShadowPipeline();
-    bool createBuffers() override;
+    bool createBuffers();
     bool createDisplacementResources();
     bool createDisplacementPipeline();
-    bool createComputeDescriptorSetLayout() override;
-    bool createComputePipeline() override;
-    bool createGraphicsDescriptorSetLayout() override;
-    bool createGraphicsPipeline() override;
-    bool createDescriptorSets() override;
-    bool createExtraPipelines() override;
-    void destroyBuffers(VmaAllocator allocator) override;
+    bool createComputeDescriptorSetLayout();
+    bool createComputePipeline();
+    bool createGraphicsDescriptorSetLayout();
+    bool createGraphicsPipeline();
+    bool createDescriptorSets();
+    bool createExtraPipelines();
+    void destroyBuffers(VmaAllocator allocator);
+
+    VkDevice getDevice() const { return lifecycle.getDevice(); }
+    VmaAllocator getAllocator() const { return lifecycle.getAllocator(); }
+    VkRenderPass getRenderPass() const { return lifecycle.getRenderPass(); }
+    VkDescriptorPool getDescriptorPool() const { return lifecycle.getDescriptorPool(); }
+    const VkExtent2D& getExtent() const { return lifecycle.getExtent(); }
+    const std::string& getShaderPath() const { return lifecycle.getShaderPath(); }
+    uint32_t getFramesInFlight() const { return lifecycle.getFramesInFlight(); }
+
+    SystemLifecycleHelper::PipelineHandles& getComputePipelineHandles() { return lifecycle.getComputePipeline(); }
+    SystemLifecycleHelper::PipelineHandles& getGraphicsPipelineHandles() { return lifecycle.getGraphicsPipeline(); }
+
+    SystemLifecycleHelper lifecycle;
 
     VkRenderPass shadowRenderPass = VK_NULL_HANDLE;
     uint32_t shadowMapSize = 0;

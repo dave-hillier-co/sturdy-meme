@@ -13,7 +13,17 @@ bool GrassSystem::init(const InitInfo& info) {
     shadowRenderPass = info.shadowRenderPass;
     shadowMapSize = info.shadowMapSize;
 
-    return initBase(info);
+    SystemLifecycleHelper::Hooks hooks{};
+    hooks.createBuffers = [this]() { return createBuffers(); };
+    hooks.createComputeDescriptorSetLayout = [this]() { return createComputeDescriptorSetLayout(); };
+    hooks.createComputePipeline = [this]() { return createComputePipeline(); };
+    hooks.createGraphicsDescriptorSetLayout = [this]() { return createGraphicsDescriptorSetLayout(); };
+    hooks.createGraphicsPipeline = [this]() { return createGraphicsPipeline(); };
+    hooks.createExtraPipelines = [this]() { return createExtraPipelines(); };
+    hooks.createDescriptorSets = [this]() { return createDescriptorSets(); };
+    hooks.destroyBuffers = [this](VmaAllocator allocator) { destroyBuffers(allocator); };
+
+    return lifecycle.init(info, hooks);
 }
 
 void GrassSystem::destroy(VkDevice dev, VmaAllocator alloc) {
@@ -28,7 +38,7 @@ void GrassSystem::destroy(VkDevice dev, VmaAllocator alloc) {
     vkDestroyImageView(dev, displacementImageView, nullptr);
     vmaDestroyImage(alloc, displacementImage, displacementAllocation);
 
-    destroyBase(dev, alloc);
+    lifecycle.destroy(dev, alloc);
 }
 
 void GrassSystem::destroyBuffers(VmaAllocator alloc) {
@@ -46,7 +56,7 @@ bool GrassSystem::createBuffers() {
     VkDeviceSize uniformBufferSize = sizeof(GrassUniforms);
 
     BufferUtils::DoubleBufferedBufferBuilder instanceBuilder;
-    if (!instanceBuilder.setAllocator(allocator)
+    if (!instanceBuilder.setAllocator(getAllocator())
              .setSetCount(BUFFER_SET_COUNT)
              .setSize(instanceBufferSize)
              .setUsage(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT)
@@ -56,7 +66,7 @@ bool GrassSystem::createBuffers() {
     }
 
     BufferUtils::DoubleBufferedBufferBuilder indirectBuilder;
-    if (!indirectBuilder.setAllocator(allocator)
+    if (!indirectBuilder.setAllocator(getAllocator())
              .setSetCount(BUFFER_SET_COUNT)
              .setSize(indirectBufferSize)
              .setUsage(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT)
@@ -66,8 +76,8 @@ bool GrassSystem::createBuffers() {
     }
 
     BufferUtils::PerFrameBufferBuilder uniformBuilder;
-    if (!uniformBuilder.setAllocator(allocator)
-             .setFrameCount(framesInFlight)
+    if (!uniformBuilder.setAllocator(getAllocator())
+             .setFrameCount(getFramesInFlight())
              .setSize(uniformBufferSize)
              .build(uniformBuffers)) {
         SDL_Log("Failed to create grass uniform buffers");
@@ -82,9 +92,9 @@ bool GrassSystem::createDisplacementResources() {
     VkImageCreateInfo imageInfo{};
     imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
     imageInfo.imageType = VK_IMAGE_TYPE_2D;
-    imageInfo.extent.width = DISPLACEMENT_TEXTURE_SIZE;
-    imageInfo.extent.height = DISPLACEMENT_TEXTURE_SIZE;
-    imageInfo.extent.depth = 1;
+    imageInfo.getExtent().width = DISPLACEMENT_TEXTURE_SIZE;
+    imageInfo.getExtent().height = DISPLACEMENT_TEXTURE_SIZE;
+    imageInfo.getExtent().depth = 1;
     imageInfo.mipLevels = 1;
     imageInfo.arrayLayers = 1;
     imageInfo.format = VK_FORMAT_R16G16_SFLOAT;  // RG16F for XZ displacement
@@ -97,7 +107,7 @@ bool GrassSystem::createDisplacementResources() {
     VmaAllocationCreateInfo allocInfo{};
     allocInfo.usage = VMA_MEMORY_USAGE_AUTO;
 
-    if (vmaCreateImage(allocator, &imageInfo, &allocInfo,
+    if (vmaCreateImage(getAllocator(), &imageInfo, &allocInfo,
                        &displacementImage, &displacementAllocation, nullptr) != VK_SUCCESS) {
         SDL_Log("Failed to create displacement image");
         return false;
@@ -115,7 +125,7 @@ bool GrassSystem::createDisplacementResources() {
     viewInfo.subresourceRange.baseArrayLayer = 0;
     viewInfo.subresourceRange.layerCount = 1;
 
-    if (vkCreateImageView(device, &viewInfo, nullptr, &displacementImageView) != VK_SUCCESS) {
+    if (vkCreateImageView(getDevice(), &viewInfo, nullptr, &displacementImageView) != VK_SUCCESS) {
         SDL_Log("Failed to create displacement image view");
         return false;
     }
@@ -138,7 +148,7 @@ bool GrassSystem::createDisplacementResources() {
     samplerInfo.minLod = 0.0f;
     samplerInfo.maxLod = 0.0f;
 
-    if (vkCreateSampler(device, &samplerInfo, nullptr, &displacementSampler) != VK_SUCCESS) {
+    if (vkCreateSampler(getDevice(), &samplerInfo, nullptr, &displacementSampler) != VK_SUCCESS) {
         SDL_Log("Failed to create displacement sampler");
         return false;
     }
@@ -147,8 +157,8 @@ bool GrassSystem::createDisplacementResources() {
     VkDeviceSize uniformBufferSize = sizeof(DisplacementUniforms);
 
     BufferUtils::PerFrameBufferBuilder sourceBuilder;
-    if (!sourceBuilder.setAllocator(allocator)
-             .setFrameCount(framesInFlight)
+    if (!sourceBuilder.setAllocator(getAllocator())
+             .setFrameCount(getFramesInFlight())
              .setSize(sourceBufferSize)
              .setUsage(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT)
              .build(displacementSourceBuffers)) {
@@ -157,8 +167,8 @@ bool GrassSystem::createDisplacementResources() {
     }
 
     BufferUtils::PerFrameBufferBuilder uniformBuilder;
-    if (!uniformBuilder.setAllocator(allocator)
-             .setFrameCount(framesInFlight)
+    if (!uniformBuilder.setAllocator(getAllocator())
+             .setFrameCount(getFramesInFlight())
              .setSize(uniformBufferSize)
              .build(displacementUniformBuffers)) {
         SDL_Log("Failed to create displacement uniform buffers");
@@ -195,7 +205,7 @@ bool GrassSystem::createDisplacementPipeline() {
     layoutInfo.bindingCount = static_cast<uint32_t>(bindings.size());
     layoutInfo.pBindings = bindings.data();
 
-    if (vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr,
+    if (vkCreateDescriptorSetLayout(getDevice(), &layoutInfo, nullptr,
                                     &displacementDescriptorSetLayout) != VK_SUCCESS) {
         SDL_Log("Failed to create displacement descriptor set layout");
         return false;
@@ -207,20 +217,20 @@ bool GrassSystem::createDisplacementPipeline() {
     pipelineLayoutInfo.setLayoutCount = 1;
     pipelineLayoutInfo.pSetLayouts = &displacementDescriptorSetLayout;
 
-    if (vkCreatePipelineLayout(device, &pipelineLayoutInfo, nullptr,
+    if (vkCreatePipelineLayout(getDevice(), &pipelineLayoutInfo, nullptr,
                                &displacementPipelineLayout) != VK_SUCCESS) {
         SDL_Log("Failed to create displacement pipeline layout");
         return false;
     }
 
     // Load compute shader
-    auto compShaderCode = ShaderLoader::readFile(shaderPath + "/grass_displacement.comp.spv");
+    auto compShaderCode = ShaderLoader::readFile(getShaderPath() + "/grass_displacement.comp.spv");
     if (compShaderCode.empty()) {
         SDL_Log("Failed to load displacement compute shader");
         return false;
     }
 
-    VkShaderModule compShaderModule = ShaderLoader::createShaderModule(device, compShaderCode);
+    VkShaderModule compShaderModule = ShaderLoader::createShaderModule(getDevice(), compShaderCode);
 
     VkPipelineShaderStageCreateInfo shaderStageInfo{};
     shaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
@@ -233,11 +243,11 @@ bool GrassSystem::createDisplacementPipeline() {
     pipelineInfo.stage = shaderStageInfo;
     pipelineInfo.layout = displacementPipelineLayout;
 
-    VkResult result = vkCreateComputePipelines(device, VK_NULL_HANDLE, 1,
+    VkResult result = vkCreateComputePipelines(getDevice(), VK_NULL_HANDLE, 1,
                                                &pipelineInfo, nullptr,
                                                &displacementPipeline);
 
-    vkDestroyShaderModule(device, compShaderModule, nullptr);
+    vkDestroyShaderModule(getDevice(), compShaderModule, nullptr);
 
     if (result != VK_SUCCESS) {
         SDL_Log("Failed to create displacement compute pipeline");
@@ -247,11 +257,11 @@ bool GrassSystem::createDisplacementPipeline() {
     // Allocate displacement descriptor set
     VkDescriptorSetAllocateInfo allocInfo{};
     allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-    allocInfo.descriptorPool = descriptorPool;
+    allocInfo.getDescriptorPool() = getDescriptorPool();
     allocInfo.descriptorSetCount = 1;
     allocInfo.pSetLayouts = &displacementDescriptorSetLayout;
 
-    if (vkAllocateDescriptorSets(device, &allocInfo, &displacementDescriptorSet) != VK_SUCCESS) {
+    if (vkAllocateDescriptorSets(getDevice(), &allocInfo, &displacementDescriptorSet) != VK_SUCCESS) {
         SDL_Log("Failed to allocate displacement descriptor set");
         return false;
     }
@@ -270,36 +280,36 @@ bool GrassSystem::createDisplacementPipeline() {
     imageWrite.descriptorCount = 1;
     imageWrite.pImageInfo = &imageInfo;
 
-    vkUpdateDescriptorSets(device, 1, &imageWrite, 0, nullptr);
+    vkUpdateDescriptorSets(getDevice(), 1, &imageWrite, 0, nullptr);
 
     return true;
 }
 
 bool GrassSystem::createComputeDescriptorSetLayout() {
-    PipelineBuilder builder(device);
+    PipelineBuilder builder(getDevice());
     builder.addDescriptorBinding(0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT)
         .addDescriptorBinding(1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT)
         .addDescriptorBinding(2, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT)
         .addDescriptorBinding(3, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_COMPUTE_BIT)
         .addDescriptorBinding(4, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_COMPUTE_BIT);
 
-    return builder.buildDescriptorSetLayout(computePipeline.descriptorSetLayout);
+    return builder.buildDescriptorSetLayout(getComputePipelineHandles().descriptorSetLayout);
 }
 
 bool GrassSystem::createComputePipeline() {
-    PipelineBuilder builder(device);
-    builder.addShaderStage(shaderPath + "/grass.comp.spv", VK_SHADER_STAGE_COMPUTE_BIT)
+    PipelineBuilder builder(getDevice());
+    builder.addShaderStage(getShaderPath() + "/grass.comp.spv", VK_SHADER_STAGE_COMPUTE_BIT)
         .addPushConstantRange(VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(GrassPushConstants));
 
-    if (!builder.buildPipelineLayout({computePipeline.descriptorSetLayout}, computePipeline.pipelineLayout)) {
+    if (!builder.buildPipelineLayout({getComputePipelineHandles().descriptorSetLayout}, getComputePipelineHandles().pipelineLayout)) {
         return false;
     }
 
-    return builder.buildComputePipeline(computePipeline.pipelineLayout, computePipeline.pipeline);
+    return builder.buildComputePipeline(getComputePipelineHandles().pipelineLayout, getComputePipelineHandles().pipeline);
 }
 
 bool GrassSystem::createGraphicsDescriptorSetLayout() {
-    PipelineBuilder builder(device);
+    PipelineBuilder builder(getDevice());
     builder.addDescriptorBinding(0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1,
                                  VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT)
         .addDescriptorBinding(1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT)
@@ -307,13 +317,13 @@ bool GrassSystem::createGraphicsDescriptorSetLayout() {
         .addDescriptorBinding(3, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT)
         .addDescriptorBinding(4, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_FRAGMENT_BIT);
 
-    return builder.buildDescriptorSetLayout(graphicsPipeline.descriptorSetLayout);
+    return builder.buildDescriptorSetLayout(getGraphicsPipelineHandles().descriptorSetLayout);
 }
 
 bool GrassSystem::createGraphicsPipeline() {
-    PipelineBuilder builder(device);
-    builder.addShaderStage(shaderPath + "/grass.vert.spv", VK_SHADER_STAGE_VERTEX_BIT)
-        .addShaderStage(shaderPath + "/grass.frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT)
+    PipelineBuilder builder(getDevice());
+    builder.addShaderStage(getShaderPath() + "/grass.vert.spv", VK_SHADER_STAGE_VERTEX_BIT)
+        .addShaderStage(getShaderPath() + "/grass.frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT)
         .addPushConstantRange(VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(GrassPushConstants));
 
     // No vertex input - procedural geometry from instance buffer
@@ -332,14 +342,14 @@ bool GrassSystem::createGraphicsPipeline() {
     VkViewport viewport{};
     viewport.x = 0.0f;
     viewport.y = 0.0f;
-    viewport.width = static_cast<float>(extent.width);
-    viewport.height = static_cast<float>(extent.height);
+    viewport.width = static_cast<float>(getExtent().width);
+    viewport.height = static_cast<float>(getExtent().height);
     viewport.minDepth = 0.0f;
     viewport.maxDepth = 1.0f;
 
     VkRect2D scissor{};
     scissor.offset = {0, 0};
-    scissor.extent = extent;
+    scissor.getExtent() = getExtent();
 
     VkPipelineViewportStateCreateInfo viewportState{};
     viewportState.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
@@ -382,7 +392,7 @@ bool GrassSystem::createGraphicsPipeline() {
     colorBlending.attachmentCount = 1;
     colorBlending.pAttachments = &colorBlendAttachment;
 
-    if (!builder.buildPipelineLayout({graphicsPipeline.descriptorSetLayout}, graphicsPipeline.pipelineLayout)) {
+    if (!builder.buildPipelineLayout({getGraphicsPipelineHandles().descriptorSetLayout}, getGraphicsPipelineHandles().pipelineLayout)) {
         return false;
     }
 
@@ -395,14 +405,14 @@ bool GrassSystem::createGraphicsPipeline() {
     pipelineInfo.pMultisampleState = &multisampling;
     pipelineInfo.pDepthStencilState = &depthStencil;
     pipelineInfo.pColorBlendState = &colorBlending;
-    pipelineInfo.renderPass = renderPass;
+    pipelineInfo.getRenderPass() = getRenderPass();
     pipelineInfo.subpass = 0;
 
-    return builder.buildGraphicsPipeline(pipelineInfo, graphicsPipeline.pipelineLayout, graphicsPipeline.pipeline);
+    return builder.buildGraphicsPipeline(pipelineInfo, getGraphicsPipelineHandles().pipelineLayout, getGraphicsPipelineHandles().pipeline);
 }
 
 bool GrassSystem::createShadowPipeline() {
-    PipelineBuilder layoutBuilder(device);
+    PipelineBuilder layoutBuilder(getDevice());
     layoutBuilder.addDescriptorBinding(0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT)
         .addDescriptorBinding(1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT)
         .addDescriptorBinding(2, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT);
@@ -411,9 +421,9 @@ bool GrassSystem::createShadowPipeline() {
         return false;
     }
 
-    PipelineBuilder builder(device);
-    builder.addShaderStage(shaderPath + "/grass_shadow.vert.spv", VK_SHADER_STAGE_VERTEX_BIT)
-        .addShaderStage(shaderPath + "/grass_shadow.frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT)
+    PipelineBuilder builder(getDevice());
+    builder.addShaderStage(getShaderPath() + "/grass_shadow.vert.spv", VK_SHADER_STAGE_VERTEX_BIT)
+        .addShaderStage(getShaderPath() + "/grass_shadow.frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT)
         .addPushConstantRange(VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(GrassPushConstants));
 
     // No vertex input - procedural geometry from instance buffer
@@ -435,7 +445,7 @@ bool GrassSystem::createShadowPipeline() {
 
     VkRect2D scissor{};
     scissor.offset = {0, 0};
-    scissor.extent = {shadowMapSize, shadowMapSize};
+    scissor.getExtent() = {shadowMapSize, shadowMapSize};
 
     VkPipelineViewportStateCreateInfo viewportState{};
     viewportState.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
@@ -488,7 +498,7 @@ bool GrassSystem::createShadowPipeline() {
     pipelineInfo.pMultisampleState = &multisampling;
     pipelineInfo.pDepthStencilState = &depthStencil;
     pipelineInfo.pColorBlendState = &colorBlending;
-    pipelineInfo.renderPass = shadowRenderPass;
+    pipelineInfo.getRenderPass() = shadowRenderPass;
     pipelineInfo.subpass = 0;
 
     return builder.buildGraphicsPipeline(pipelineInfo, shadowPipelineLayout, shadowPipeline);
@@ -502,11 +512,11 @@ bool GrassSystem::createDescriptorSets() {
         // Allocate compute descriptor set for this buffer set
         VkDescriptorSetAllocateInfo computeAllocInfo{};
         computeAllocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-        computeAllocInfo.descriptorPool = descriptorPool;
+        computeAllocInfo.getDescriptorPool() = getDescriptorPool();
         computeAllocInfo.descriptorSetCount = 1;
-        computeAllocInfo.pSetLayouts = &computePipeline.descriptorSetLayout;
+        computeAllocInfo.pSetLayouts = &getComputePipelineHandles().descriptorSetLayout;
 
-        if (vkAllocateDescriptorSets(device, &computeAllocInfo, &computeDescriptorSets[set]) != VK_SUCCESS) {
+        if (vkAllocateDescriptorSets(getDevice(), &computeAllocInfo, &computeDescriptorSets[set]) != VK_SUCCESS) {
             SDL_Log("Failed to allocate grass compute descriptor set (set %u)", set);
             return false;
         }
@@ -514,11 +524,11 @@ bool GrassSystem::createDescriptorSets() {
         // Allocate graphics descriptor set for this buffer set
         VkDescriptorSetAllocateInfo graphicsAllocInfo{};
         graphicsAllocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-        graphicsAllocInfo.descriptorPool = descriptorPool;
+        graphicsAllocInfo.getDescriptorPool() = getDescriptorPool();
         graphicsAllocInfo.descriptorSetCount = 1;
-        graphicsAllocInfo.pSetLayouts = &graphicsPipeline.descriptorSetLayout;
+        graphicsAllocInfo.pSetLayouts = &getGraphicsPipelineHandles().descriptorSetLayout;
 
-        if (vkAllocateDescriptorSets(device, &graphicsAllocInfo, &graphicsDescriptorSets[set]) != VK_SUCCESS) {
+        if (vkAllocateDescriptorSets(getDevice(), &graphicsAllocInfo, &graphicsDescriptorSets[set]) != VK_SUCCESS) {
             SDL_Log("Failed to allocate grass graphics descriptor set (set %u)", set);
             return false;
         }
@@ -526,11 +536,11 @@ bool GrassSystem::createDescriptorSets() {
         // Allocate shadow descriptor set for this buffer set
         VkDescriptorSetAllocateInfo shadowAllocInfo{};
         shadowAllocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-        shadowAllocInfo.descriptorPool = descriptorPool;
+        shadowAllocInfo.getDescriptorPool() = getDescriptorPool();
         shadowAllocInfo.descriptorSetCount = 1;
         shadowAllocInfo.pSetLayouts = &shadowDescriptorSetLayout;
 
-        if (vkAllocateDescriptorSets(device, &shadowAllocInfo, &shadowDescriptorSetsDB[set]) != VK_SUCCESS) {
+        if (vkAllocateDescriptorSets(getDevice(), &shadowAllocInfo, &shadowDescriptorSetsDB[set]) != VK_SUCCESS) {
             SDL_Log("Failed to allocate grass shadow descriptor set (set %u)", set);
             return false;
         }
@@ -579,7 +589,7 @@ bool GrassSystem::createDescriptorSets() {
         computeWrites[2].descriptorCount = 1;
         computeWrites[2].pBufferInfo = &uniformBufferInfo;
 
-        vkUpdateDescriptorSets(device, static_cast<uint32_t>(computeWrites.size()),
+        vkUpdateDescriptorSets(getDevice(), static_cast<uint32_t>(computeWrites.size()),
                                computeWrites.data(), 0, nullptr);
     }
 
@@ -806,7 +816,7 @@ void GrassSystem::recordDisplacementUpdate(VkCommandBuffer cmd, uint32_t frameIn
     writes[1].descriptorCount = 1;
     writes[1].pBufferInfo = &uniformBufferInfo;
 
-    vkUpdateDescriptorSets(device, static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
+    vkUpdateDescriptorSets(getDevice(), static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
 
     // Copy displacement sources to buffer
     memcpy(displacementSourceBuffers.mappedPointers[frameIndex], currentDisplacementSources.data(),
@@ -923,7 +933,7 @@ void GrassSystem::recordResetAndCompute(VkCommandBuffer cmd, uint32_t frameIndex
     writes[2].descriptorCount = 1;
     writes[2].pImageInfo = &displacementMapInfo;
 
-    vkUpdateDescriptorSets(device, static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
+    vkUpdateDescriptorSets(getDevice(), static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
 
     // Reset indirect buffer before compute dispatch to prevent accumulation
     vkCmdFillBuffer(cmd, indirectBuffers.buffers[writeSet], 0, sizeof(VkDrawIndirectCommand), 0);
@@ -939,14 +949,14 @@ void GrassSystem::recordResetAndCompute(VkCommandBuffer cmd, uint32_t frameIndex
                          0, 1, &fillBarrier, 0, nullptr, 0, nullptr);
 
     // Dispatch grass compute shader using the compute buffer set
-    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, computePipeline.pipeline);
+    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, getComputePipelineHandles().pipeline);
     vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE,
-                            computePipeline.pipelineLayout, 0, 1,
+                            getComputePipelineHandles().pipelineLayout, 0, 1,
                             &computeDescriptorSets[writeSet], 0, nullptr);
 
     GrassPushConstants grassPush{};
     grassPush.time = time;
-    vkCmdPushConstants(cmd, computePipeline.pipelineLayout,
+    vkCmdPushConstants(cmd, getComputePipelineHandles().pipelineLayout,
                        VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(GrassPushConstants), &grassPush);
 
     // Dispatch: ceil(1,000,000 / 64) = 15,625 workgroups (1000x1000 grid)
@@ -976,14 +986,14 @@ void GrassSystem::recordDraw(VkCommandBuffer cmd, uint32_t frameIndex, float tim
         readSet = computeBufferSet;
     }
 
-    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, graphicsPipeline.pipeline);
+    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, getGraphicsPipelineHandles().pipeline);
     vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                            graphicsPipeline.pipelineLayout, 0, 1,
+                            getGraphicsPipelineHandles().pipelineLayout, 0, 1,
                             &graphicsDescriptorSets[readSet], 0, nullptr);
 
     GrassPushConstants grassPush{};
     grassPush.time = time;
-    vkCmdPushConstants(cmd, graphicsPipeline.pipelineLayout,
+    vkCmdPushConstants(cmd, getGraphicsPipelineHandles().pipelineLayout,
                        VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(GrassPushConstants), &grassPush);
 
     vkCmdDrawIndirect(cmd, indirectBuffers.buffers[readSet], 0, 1, sizeof(VkDrawIndirectCommand));

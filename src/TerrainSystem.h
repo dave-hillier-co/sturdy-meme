@@ -6,6 +6,7 @@
 #include <vector>
 #include <string>
 #include <array>
+#include "UBOs.h"
 
 // Push constants for terrain rendering
 struct TerrainPushConstants {
@@ -30,20 +31,6 @@ struct TerrainDispatcherPushConstants {
 // Push constants for sum reduction
 struct TerrainSumReductionPushConstants {
     int passID;
-};
-
-// Uniform buffer for terrain system
-struct TerrainUniforms {
-    glm::mat4 viewMatrix;
-    glm::mat4 projMatrix;
-    glm::mat4 viewProjMatrix;
-    glm::vec4 frustumPlanes[6];
-    glm::vec4 cameraPosition;
-    glm::vec4 terrainParams;   // x = size, y = height scale, z = target edge pixels, w = max depth
-    glm::vec4 lodParams;       // x = split threshold, y = merge threshold, z = min depth, w = unused
-    glm::vec2 screenSize;
-    float lodFactor;
-    float padding;
 };
 
 // Terrain configuration (outside class to avoid C++17 default argument issues)

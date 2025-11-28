@@ -23,6 +23,7 @@ set(SOURCES
     src/Mesh.cpp
     src/Texture.cpp
     src/ShaderLoader.cpp
+    src/PipelineBuilder.cpp
     src/GrassSystem.cpp
     src/CelestialCalculator.cpp
     src/WindSystem.cpp

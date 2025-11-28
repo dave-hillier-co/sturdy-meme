@@ -8,32 +8,14 @@
 #include <array>
 
 bool WeatherSystem::init(const InitInfo& info) {
-    device = info.device;
-    allocator = info.allocator;
-    renderPass = info.renderPass;
-    descriptorPool = info.descriptorPool;
-    extent = info.extent;
-    shaderPath = info.shaderPath;
-    framesInFlight = info.framesInFlight;
-
-    if (!createBuffers()) return false;
-    if (!createComputeDescriptorSetLayout()) return false;
-    if (!createComputePipeline()) return false;
-    if (!createGraphicsDescriptorSetLayout()) return false;
-    if (!createGraphicsPipeline()) return false;
-    if (!createDescriptorSets()) return false;
-
-    return true;
+    return initBase(info);
 }
 
 void WeatherSystem::destroy(VkDevice dev, VmaAllocator alloc) {
-    vkDestroyPipeline(dev, graphicsPipeline, nullptr);
-    vkDestroyPipelineLayout(dev, graphicsPipelineLayout, nullptr);
-    vkDestroyDescriptorSetLayout(dev, graphicsDescriptorSetLayout, nullptr);
-    vkDestroyPipeline(dev, computePipeline, nullptr);
-    vkDestroyPipelineLayout(dev, computePipelineLayout, nullptr);
-    vkDestroyDescriptorSetLayout(dev, computeDescriptorSetLayout, nullptr);
+    destroyBase(dev, alloc);
+}
 
+void WeatherSystem::destroyBuffers(VmaAllocator alloc) {
     BufferUtils::destroyBuffers(alloc, particleBuffers);
     BufferUtils::destroyBuffers(alloc, indirectBuffers);
     BufferUtils::destroyBuffers(alloc, uniformBuffers);
@@ -84,7 +66,7 @@ bool WeatherSystem::createComputeDescriptorSetLayout() {
         .addDescriptorBinding(3, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT)
         .addDescriptorBinding(4, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT);
 
-    return builder.buildDescriptorSetLayout(computeDescriptorSetLayout);
+    return builder.buildDescriptorSetLayout(computePipeline.descriptorSetLayout);
 }
 
 bool WeatherSystem::createComputePipeline() {
@@ -92,11 +74,11 @@ bool WeatherSystem::createComputePipeline() {
     builder.addShaderStage(shaderPath + "/weather.comp.spv", VK_SHADER_STAGE_COMPUTE_BIT)
         .addPushConstantRange(VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(WeatherPushConstants));
 
-    if (!builder.buildPipelineLayout({computeDescriptorSetLayout}, computePipelineLayout)) {
+    if (!builder.buildPipelineLayout({computePipeline.descriptorSetLayout}, computePipeline.pipelineLayout)) {
         return false;
     }
 
-    return builder.buildComputePipeline(computePipelineLayout, computePipeline);
+    return builder.buildComputePipeline(computePipeline.pipelineLayout, computePipeline.pipeline);
 }
 
 bool WeatherSystem::createGraphicsDescriptorSetLayout() {
@@ -107,7 +89,7 @@ bool WeatherSystem::createGraphicsDescriptorSetLayout() {
         .addDescriptorBinding(2, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT)
         .addDescriptorBinding(3, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT);
 
-    return builder.buildDescriptorSetLayout(graphicsDescriptorSetLayout);
+    return builder.buildDescriptorSetLayout(graphicsPipeline.descriptorSetLayout);
 }
 
 bool WeatherSystem::createGraphicsPipeline() {
@@ -190,7 +172,7 @@ bool WeatherSystem::createGraphicsPipeline() {
     colorBlending.attachmentCount = 1;
     colorBlending.pAttachments = &colorBlendAttachment;
 
-    if (!builder.buildPipelineLayout({graphicsDescriptorSetLayout}, graphicsPipelineLayout)) {
+    if (!builder.buildPipelineLayout({graphicsPipeline.descriptorSetLayout}, graphicsPipeline.pipelineLayout)) {
         return false;
     }
 
@@ -206,7 +188,7 @@ bool WeatherSystem::createGraphicsPipeline() {
     pipelineInfo.renderPass = renderPass;
     pipelineInfo.subpass = 0;
 
-    return builder.buildGraphicsPipeline(pipelineInfo, graphicsPipelineLayout, graphicsPipeline);
+    return builder.buildGraphicsPipeline(pipelineInfo, graphicsPipeline.pipelineLayout, graphicsPipeline.pipeline);
 }
 
 bool WeatherSystem::createDescriptorSets() {
@@ -217,7 +199,7 @@ bool WeatherSystem::createDescriptorSets() {
         computeAllocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
         computeAllocInfo.descriptorPool = descriptorPool;
         computeAllocInfo.descriptorSetCount = 1;
-        computeAllocInfo.pSetLayouts = &computeDescriptorSetLayout;
+        computeAllocInfo.pSetLayouts = &computePipeline.descriptorSetLayout;
 
         if (vkAllocateDescriptorSets(device, &computeAllocInfo, &computeDescriptorSets[set]) != VK_SUCCESS) {
             SDL_Log("Failed to allocate weather compute descriptor set (set %u)", set);
@@ -229,7 +211,7 @@ bool WeatherSystem::createDescriptorSets() {
         graphicsAllocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
         graphicsAllocInfo.descriptorPool = descriptorPool;
         graphicsAllocInfo.descriptorSetCount = 1;
-        graphicsAllocInfo.pSetLayouts = &graphicsDescriptorSetLayout;
+        graphicsAllocInfo.pSetLayouts = &graphicsPipeline.descriptorSetLayout;
 
         if (vkAllocateDescriptorSets(device, &graphicsAllocInfo, &graphicsDescriptorSets[set]) != VK_SUCCESS) {
             SDL_Log("Failed to allocate weather graphics descriptor set (set %u)", set);
@@ -466,15 +448,15 @@ void WeatherSystem::recordResetAndCompute(VkCommandBuffer cmd, uint32_t frameInd
                          0, 1, &fillBarrier, 0, nullptr, 0, nullptr);
 
     // Dispatch weather compute shader
-    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, computePipeline);
+    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, computePipeline.pipeline);
     vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE,
-                            computePipelineLayout, 0, 1,
+                            computePipeline.pipelineLayout, 0, 1,
                             &computeDescriptorSets[writeSet], 0, nullptr);
 
     WeatherPushConstants pushConstants{};
     pushConstants.time = time;
     pushConstants.deltaTime = deltaTime;
-    vkCmdPushConstants(cmd, computePipelineLayout,
+    vkCmdPushConstants(cmd, computePipeline.pipelineLayout,
                        VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(WeatherPushConstants), &pushConstants);
 
     // Dispatch: ceil(MAX_PARTICLES / WORKGROUP_SIZE) workgroups
@@ -518,15 +500,15 @@ void WeatherSystem::recordDraw(VkCommandBuffer cmd, uint32_t frameIndex, float t
 
     vkUpdateDescriptorSets(device, 1, &uboWrite, 0, nullptr);
 
-    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, graphicsPipeline);
+    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, graphicsPipeline.pipeline);
     vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                            graphicsPipelineLayout, 0, 1,
+                            graphicsPipeline.pipelineLayout, 0, 1,
                             &graphicsDescriptorSets[readSet], 0, nullptr);
 
     WeatherPushConstants pushConstants{};
     pushConstants.time = time;
     pushConstants.deltaTime = 0.0f;  // Not needed for rendering
-    vkCmdPushConstants(cmd, graphicsPipelineLayout,
+    vkCmdPushConstants(cmd, graphicsPipeline.pipelineLayout,
                        VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
                        0, sizeof(WeatherPushConstants), &pushConstants);
 

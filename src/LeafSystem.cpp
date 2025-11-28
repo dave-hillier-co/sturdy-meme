@@ -5,32 +5,14 @@
 #include <algorithm>
 
 bool LeafSystem::init(const InitInfo& info) {
-    device = info.device;
-    allocator = info.allocator;
-    renderPass = info.renderPass;
-    descriptorPool = info.descriptorPool;
-    extent = info.extent;
-    shaderPath = info.shaderPath;
-    framesInFlight = info.framesInFlight;
-
-    if (!createBuffers()) return false;
-    if (!createComputeDescriptorSetLayout()) return false;
-    if (!createComputePipeline()) return false;
-    if (!createGraphicsDescriptorSetLayout()) return false;
-    if (!createGraphicsPipeline()) return false;
-    if (!createDescriptorSets()) return false;
-
-    return true;
+    return initBase(info);
 }
 
 void LeafSystem::destroy(VkDevice dev, VmaAllocator alloc) {
-    vkDestroyPipeline(dev, graphicsPipeline, nullptr);
-    vkDestroyPipelineLayout(dev, graphicsPipelineLayout, nullptr);
-    vkDestroyDescriptorSetLayout(dev, graphicsDescriptorSetLayout, nullptr);
-    vkDestroyPipeline(dev, computePipeline, nullptr);
-    vkDestroyPipelineLayout(dev, computePipelineLayout, nullptr);
-    vkDestroyDescriptorSetLayout(dev, computeDescriptorSetLayout, nullptr);
+    destroyBase(dev, alloc);
+}
 
+void LeafSystem::destroyBuffers(VmaAllocator alloc) {
     for (uint32_t set = 0; set < BUFFER_SET_COUNT; set++) {
         vmaDestroyBuffer(alloc, particleBuffers[set], particleAllocations[set]);
         vmaDestroyBuffer(alloc, indirectBuffers[set], indirectAllocations[set]);
@@ -197,7 +179,7 @@ bool LeafSystem::createComputeDescriptorSetLayout() {
     layoutInfo.pBindings = bindings.data();
 
     if (vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr,
-                                    &computeDescriptorSetLayout) != VK_SUCCESS) {
+                                    &computePipeline.descriptorSetLayout) != VK_SUCCESS) {
         SDL_Log("Failed to create leaf compute descriptor set layout");
         return false;
     }
@@ -228,12 +210,12 @@ bool LeafSystem::createComputePipeline() {
     VkPipelineLayoutCreateInfo layoutInfo{};
     layoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
     layoutInfo.setLayoutCount = 1;
-    layoutInfo.pSetLayouts = &computeDescriptorSetLayout;
+    layoutInfo.pSetLayouts = &computePipeline.descriptorSetLayout;
     layoutInfo.pushConstantRangeCount = 1;
     layoutInfo.pPushConstantRanges = &pushConstantRange;
 
     if (vkCreatePipelineLayout(device, &layoutInfo, nullptr,
-                               &computePipelineLayout) != VK_SUCCESS) {
+                               &computePipeline.pipelineLayout) != VK_SUCCESS) {
         SDL_Log("Failed to create leaf compute pipeline layout");
         vkDestroyShaderModule(device, compShaderModule, nullptr);
         return false;
@@ -242,11 +224,11 @@ bool LeafSystem::createComputePipeline() {
     VkComputePipelineCreateInfo pipelineInfo{};
     pipelineInfo.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
     pipelineInfo.stage = shaderStageInfo;
-    pipelineInfo.layout = computePipelineLayout;
+    pipelineInfo.layout = computePipeline.pipelineLayout;
 
     VkResult result = vkCreateComputePipelines(device, VK_NULL_HANDLE, 1,
                                                &pipelineInfo, nullptr,
-                                               &computePipeline);
+                                               &computePipeline.pipeline);
 
     vkDestroyShaderModule(device, compShaderModule, nullptr);
 
@@ -285,7 +267,7 @@ bool LeafSystem::createGraphicsDescriptorSetLayout() {
     layoutInfo.pBindings = bindings.data();
 
     if (vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr,
-                                    &graphicsDescriptorSetLayout) != VK_SUCCESS) {
+                                    &graphicsPipeline.descriptorSetLayout) != VK_SUCCESS) {
         SDL_Log("Failed to create leaf graphics descriptor set layout");
         return false;
     }
@@ -400,12 +382,12 @@ bool LeafSystem::createGraphicsPipeline() {
     VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
     pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
     pipelineLayoutInfo.setLayoutCount = 1;
-    pipelineLayoutInfo.pSetLayouts = &graphicsDescriptorSetLayout;
+    pipelineLayoutInfo.pSetLayouts = &graphicsPipeline.descriptorSetLayout;
     pipelineLayoutInfo.pushConstantRangeCount = 1;
     pipelineLayoutInfo.pPushConstantRanges = &pushConstantRange;
 
     if (vkCreatePipelineLayout(device, &pipelineLayoutInfo, nullptr,
-                               &graphicsPipelineLayout) != VK_SUCCESS) {
+                               &graphicsPipeline.pipelineLayout) != VK_SUCCESS) {
         SDL_Log("Failed to create leaf graphics pipeline layout");
         vkDestroyShaderModule(device, fragShaderModule, nullptr);
         vkDestroyShaderModule(device, vertShaderModule, nullptr);
@@ -423,13 +405,13 @@ bool LeafSystem::createGraphicsPipeline() {
     pipelineInfo.pMultisampleState = &multisampling;
     pipelineInfo.pDepthStencilState = &depthStencil;
     pipelineInfo.pColorBlendState = &colorBlending;
-    pipelineInfo.layout = graphicsPipelineLayout;
+    pipelineInfo.layout = graphicsPipeline.pipelineLayout;
     pipelineInfo.renderPass = renderPass;
     pipelineInfo.subpass = 0;
 
     VkResult result = vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1,
                                                 &pipelineInfo, nullptr,
-                                                &graphicsPipeline);
+                                                &graphicsPipeline.pipeline);
 
     vkDestroyShaderModule(device, fragShaderModule, nullptr);
     vkDestroyShaderModule(device, vertShaderModule, nullptr);
@@ -450,7 +432,7 @@ bool LeafSystem::createDescriptorSets() {
         computeAllocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
         computeAllocInfo.descriptorPool = descriptorPool;
         computeAllocInfo.descriptorSetCount = 1;
-        computeAllocInfo.pSetLayouts = &computeDescriptorSetLayout;
+        computeAllocInfo.pSetLayouts = &computePipeline.descriptorSetLayout;
 
         if (vkAllocateDescriptorSets(device, &computeAllocInfo, &computeDescriptorSets[set]) != VK_SUCCESS) {
             SDL_Log("Failed to allocate leaf compute descriptor set (set %u)", set);
@@ -462,7 +444,7 @@ bool LeafSystem::createDescriptorSets() {
         graphicsAllocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
         graphicsAllocInfo.descriptorPool = descriptorPool;
         graphicsAllocInfo.descriptorSetCount = 1;
-        graphicsAllocInfo.pSetLayouts = &graphicsDescriptorSetLayout;
+        graphicsAllocInfo.pSetLayouts = &graphicsPipeline.descriptorSetLayout;
 
         if (vkAllocateDescriptorSets(device, &graphicsAllocInfo, &graphicsDescriptorSets[set]) != VK_SUCCESS) {
             SDL_Log("Failed to allocate leaf graphics descriptor set (set %u)", set);
@@ -762,15 +744,15 @@ void LeafSystem::recordResetAndCompute(VkCommandBuffer cmd, uint32_t frameIndex,
                          0, 1, &fillBarrier, 0, nullptr, 0, nullptr);
 
     // Dispatch leaf compute shader
-    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, computePipeline);
+    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, computePipeline.pipeline);
     vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE,
-                            computePipelineLayout, 0, 1,
+                            computePipeline.pipelineLayout, 0, 1,
                             &computeDescriptorSets[writeSet], 0, nullptr);
 
     LeafPushConstants pushConstants{};
     pushConstants.time = time;
     pushConstants.deltaTime = deltaTime;
-    vkCmdPushConstants(cmd, computePipelineLayout,
+    vkCmdPushConstants(cmd, computePipeline.pipelineLayout,
                        VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(LeafPushConstants), &pushConstants);
 
     // Dispatch: ceil(MAX_PARTICLES / WORKGROUP_SIZE) workgroups
@@ -797,15 +779,15 @@ void LeafSystem::recordDraw(VkCommandBuffer cmd, uint32_t frameIndex, float time
         readSet = computeBufferSet;
     }
 
-    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, graphicsPipeline);
+    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, graphicsPipeline.pipeline);
     vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                            graphicsPipelineLayout, 0, 1,
+                            graphicsPipeline.pipelineLayout, 0, 1,
                             &graphicsDescriptorSets[readSet], 0, nullptr);
 
     LeafPushConstants pushConstants{};
     pushConstants.time = time;
     pushConstants.deltaTime = 0.0f;  // Not needed for rendering
-    vkCmdPushConstants(cmd, graphicsPipelineLayout,
+    vkCmdPushConstants(cmd, graphicsPipeline.pipelineLayout,
                        VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
                        0, sizeof(LeafPushConstants), &pushConstants);
 

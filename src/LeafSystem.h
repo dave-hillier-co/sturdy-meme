@@ -7,7 +7,7 @@
 #include <vector>
 #include <string>
 
-#include "SystemBase.h"
+#include "SystemLifecycleHelper.h"
 
 // Leaf particle states
 enum class LeafState : uint32_t {
@@ -64,9 +64,9 @@ struct LeafPushConstants {
     int padding[2];
 };
 
-class LeafSystem : public SystemBase {
+class LeafSystem {
 public:
-    using InitInfo = SystemBase::InitInfo;
+    using InitInfo = SystemLifecycleHelper::InitInfo;
 
     LeafSystem() = default;
     ~LeafSystem() = default;
@@ -117,13 +117,26 @@ public:
     void setEnvironmentSettings(const EnvironmentSettings* settings) { environmentSettings = settings; }
 
 private:
-    bool createBuffers() override;
-    bool createComputeDescriptorSetLayout() override;
-    bool createComputePipeline() override;
-    bool createGraphicsDescriptorSetLayout() override;
-    bool createGraphicsPipeline() override;
-    bool createDescriptorSets() override;
-    void destroyBuffers(VmaAllocator allocator) override;
+    bool createBuffers();
+    bool createComputeDescriptorSetLayout();
+    bool createComputePipeline();
+    bool createGraphicsDescriptorSetLayout();
+    bool createGraphicsPipeline();
+    bool createDescriptorSets();
+    void destroyBuffers(VmaAllocator allocator);
+
+    VkDevice getDevice() const { return lifecycle.getDevice(); }
+    VmaAllocator getAllocator() const { return lifecycle.getAllocator(); }
+    VkRenderPass getRenderPass() const { return lifecycle.getRenderPass(); }
+    VkDescriptorPool getDescriptorPool() const { return lifecycle.getDescriptorPool(); }
+    const VkExtent2D& getExtent() const { return lifecycle.getExtent(); }
+    const std::string& getShaderPath() const { return lifecycle.getShaderPath(); }
+    uint32_t getFramesInFlight() const { return lifecycle.getFramesInFlight(); }
+
+    SystemLifecycleHelper::PipelineHandles& getComputePipelineHandles() { return lifecycle.getComputePipeline(); }
+    SystemLifecycleHelper::PipelineHandles& getGraphicsPipelineHandles() { return lifecycle.getGraphicsPipeline(); }
+
+    SystemLifecycleHelper lifecycle;
 
     // Double-buffered storage buffers
     static constexpr uint32_t BUFFER_SET_COUNT = 2;

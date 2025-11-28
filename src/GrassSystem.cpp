@@ -1,5 +1,6 @@
 #include "GrassSystem.h"
 #include "ShaderLoader.h"
+#include "PipelineBuilder.h"
 #include <SDL3/SDL.h>
 #include <cstring>
 #include <algorithm>  // for std::swap
@@ -372,181 +373,45 @@ bool GrassSystem::createDisplacementPipeline() {
 }
 
 bool GrassSystem::createComputeDescriptorSetLayout() {
-    std::array<VkDescriptorSetLayoutBinding, 5> bindings{};
+    PipelineBuilder builder(device);
+    builder.addDescriptorBinding(0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT)
+        .addDescriptorBinding(1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT)
+        .addDescriptorBinding(2, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT)
+        .addDescriptorBinding(3, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_COMPUTE_BIT)
+        .addDescriptorBinding(4, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_COMPUTE_BIT);
 
-    // Instance buffer (output)
-    bindings[0].binding = 0;
-    bindings[0].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    bindings[0].descriptorCount = 1;
-    bindings[0].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
-
-    // Indirect buffer (output)
-    bindings[1].binding = 1;
-    bindings[1].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    bindings[1].descriptorCount = 1;
-    bindings[1].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
-
-    // Grass uniforms (culling parameters)
-    bindings[2].binding = 2;
-    bindings[2].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    bindings[2].descriptorCount = 1;
-    bindings[2].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
-
-    // Terrain heightmap sampler (for grass placement)
-    bindings[3].binding = 3;
-    bindings[3].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    bindings[3].descriptorCount = 1;
-    bindings[3].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
-    bindings[3].pImmutableSamplers = nullptr;
-
-    // Displacement map sampler (for player/NPC grass interaction)
-    bindings[4].binding = 4;
-    bindings[4].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    bindings[4].descriptorCount = 1;
-    bindings[4].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
-    bindings[4].pImmutableSamplers = nullptr;
-
-    VkDescriptorSetLayoutCreateInfo layoutInfo{};
-    layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-    layoutInfo.bindingCount = static_cast<uint32_t>(bindings.size());
-    layoutInfo.pBindings = bindings.data();
-
-    if (vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr,
-                                    &computeDescriptorSetLayout) != VK_SUCCESS) {
-        SDL_Log("Failed to create grass compute descriptor set layout");
-        return false;
-    }
-
-    return true;
+    return builder.buildDescriptorSetLayout(computeDescriptorSetLayout);
 }
 
 bool GrassSystem::createComputePipeline() {
-    auto compShaderCode = ShaderLoader::readFile(shaderPath + "/grass.comp.spv");
-    if (compShaderCode.empty()) {
-        SDL_Log("Failed to load grass compute shader");
+    PipelineBuilder builder(device);
+    builder.addShaderStage(shaderPath + "/grass.comp.spv", VK_SHADER_STAGE_COMPUTE_BIT)
+        .addPushConstantRange(VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(GrassPushConstants));
+
+    if (!builder.buildPipelineLayout({computeDescriptorSetLayout}, computePipelineLayout)) {
         return false;
     }
 
-    VkShaderModule compShaderModule = ShaderLoader::createShaderModule(device, compShaderCode);
-
-    VkPipelineShaderStageCreateInfo shaderStageInfo{};
-    shaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-    shaderStageInfo.stage = VK_SHADER_STAGE_COMPUTE_BIT;
-    shaderStageInfo.module = compShaderModule;
-    shaderStageInfo.pName = "main";
-
-    VkPushConstantRange pushConstantRange{};
-    pushConstantRange.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
-    pushConstantRange.offset = 0;
-    pushConstantRange.size = sizeof(GrassPushConstants);
-
-    VkPipelineLayoutCreateInfo layoutInfo{};
-    layoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-    layoutInfo.setLayoutCount = 1;
-    layoutInfo.pSetLayouts = &computeDescriptorSetLayout;
-    layoutInfo.pushConstantRangeCount = 1;
-    layoutInfo.pPushConstantRanges = &pushConstantRange;
-
-    if (vkCreatePipelineLayout(device, &layoutInfo, nullptr,
-                               &computePipelineLayout) != VK_SUCCESS) {
-        SDL_Log("Failed to create grass compute pipeline layout");
-        vkDestroyShaderModule(device, compShaderModule, nullptr);
-        return false;
-    }
-
-    VkComputePipelineCreateInfo pipelineInfo{};
-    pipelineInfo.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
-    pipelineInfo.stage = shaderStageInfo;
-    pipelineInfo.layout = computePipelineLayout;
-
-    VkResult result = vkCreateComputePipelines(device, VK_NULL_HANDLE, 1,
-                                               &pipelineInfo, nullptr,
-                                               &computePipeline);
-
-    vkDestroyShaderModule(device, compShaderModule, nullptr);
-
-    if (result != VK_SUCCESS) {
-        SDL_Log("Failed to create grass compute pipeline");
-        return false;
-    }
-
-    return true;
+    return builder.buildComputePipeline(computePipelineLayout, computePipeline);
 }
 
 bool GrassSystem::createGraphicsDescriptorSetLayout() {
-    std::array<VkDescriptorSetLayoutBinding, 5> bindings{};
+    PipelineBuilder builder(device);
+    builder.addDescriptorBinding(0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1,
+                                 VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT)
+        .addDescriptorBinding(1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT)
+        .addDescriptorBinding(2, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT)
+        .addDescriptorBinding(3, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT)
+        .addDescriptorBinding(4, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_FRAGMENT_BIT);
 
-    // UBO (same as main pipeline)
-    bindings[0].binding = 0;
-    bindings[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    bindings[0].descriptorCount = 1;
-    bindings[0].stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
-
-    // Instance buffer (read-only in vertex shader)
-    bindings[1].binding = 1;
-    bindings[1].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    bindings[1].descriptorCount = 1;
-    bindings[1].stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
-
-    // Shadow map sampler (for receiving shadows)
-    bindings[2].binding = 2;
-    bindings[2].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    bindings[2].descriptorCount = 1;
-    bindings[2].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-    bindings[2].pImmutableSamplers = nullptr;
-
-    // Wind uniform buffer (for vertex shader wind animation)
-    bindings[3].binding = 3;
-    bindings[3].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    bindings[3].descriptorCount = 1;
-    bindings[3].stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
-
-    // Light buffer SSBO (for dynamic lights)
-    bindings[4].binding = 4;
-    bindings[4].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    bindings[4].descriptorCount = 1;
-    bindings[4].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-    bindings[4].pImmutableSamplers = nullptr;
-
-    VkDescriptorSetLayoutCreateInfo layoutInfo{};
-    layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-    layoutInfo.bindingCount = static_cast<uint32_t>(bindings.size());
-    layoutInfo.pBindings = bindings.data();
-
-    if (vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr,
-                                    &graphicsDescriptorSetLayout) != VK_SUCCESS) {
-        SDL_Log("Failed to create grass graphics descriptor set layout");
-        return false;
-    }
-
-    return true;
+    return builder.buildDescriptorSetLayout(graphicsDescriptorSetLayout);
 }
 
 bool GrassSystem::createGraphicsPipeline() {
-    auto vertShaderCode = ShaderLoader::readFile(shaderPath + "/grass.vert.spv");
-    auto fragShaderCode = ShaderLoader::readFile(shaderPath + "/grass.frag.spv");
-
-    if (vertShaderCode.empty() || fragShaderCode.empty()) {
-        SDL_Log("Failed to load grass shader files");
-        return false;
-    }
-
-    VkShaderModule vertShaderModule = ShaderLoader::createShaderModule(device, vertShaderCode);
-    VkShaderModule fragShaderModule = ShaderLoader::createShaderModule(device, fragShaderCode);
-
-    VkPipelineShaderStageCreateInfo vertShaderStageInfo{};
-    vertShaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-    vertShaderStageInfo.stage = VK_SHADER_STAGE_VERTEX_BIT;
-    vertShaderStageInfo.module = vertShaderModule;
-    vertShaderStageInfo.pName = "main";
-
-    VkPipelineShaderStageCreateInfo fragShaderStageInfo{};
-    fragShaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-    fragShaderStageInfo.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
-    fragShaderStageInfo.module = fragShaderModule;
-    fragShaderStageInfo.pName = "main";
-
-    VkPipelineShaderStageCreateInfo shaderStages[] = {vertShaderStageInfo, fragShaderStageInfo};
+    PipelineBuilder builder(device);
+    builder.addShaderStage(shaderPath + "/grass.vert.spv", VK_SHADER_STAGE_VERTEX_BIT)
+        .addShaderStage(shaderPath + "/grass.frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT)
+        .addPushConstantRange(VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(GrassPushConstants));
 
     // No vertex input - procedural geometry from instance buffer
     VkPipelineVertexInputStateCreateInfo vertexInputInfo{};
@@ -614,30 +479,12 @@ bool GrassSystem::createGraphicsPipeline() {
     colorBlending.attachmentCount = 1;
     colorBlending.pAttachments = &colorBlendAttachment;
 
-    VkPushConstantRange pushConstantRange{};
-    pushConstantRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
-    pushConstantRange.offset = 0;
-    pushConstantRange.size = sizeof(GrassPushConstants);
-
-    VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
-    pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-    pipelineLayoutInfo.setLayoutCount = 1;
-    pipelineLayoutInfo.pSetLayouts = &graphicsDescriptorSetLayout;
-    pipelineLayoutInfo.pushConstantRangeCount = 1;
-    pipelineLayoutInfo.pPushConstantRanges = &pushConstantRange;
-
-    if (vkCreatePipelineLayout(device, &pipelineLayoutInfo, nullptr,
-                               &graphicsPipelineLayout) != VK_SUCCESS) {
-        SDL_Log("Failed to create grass graphics pipeline layout");
-        vkDestroyShaderModule(device, fragShaderModule, nullptr);
-        vkDestroyShaderModule(device, vertShaderModule, nullptr);
+    if (!builder.buildPipelineLayout({graphicsDescriptorSetLayout}, graphicsPipelineLayout)) {
         return false;
     }
 
     VkGraphicsPipelineCreateInfo pipelineInfo{};
     pipelineInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
-    pipelineInfo.stageCount = 2;
-    pipelineInfo.pStages = shaderStages;
     pipelineInfo.pVertexInputState = &vertexInputInfo;
     pipelineInfo.pInputAssemblyState = &inputAssembly;
     pipelineInfo.pViewportState = &viewportState;
@@ -645,83 +492,26 @@ bool GrassSystem::createGraphicsPipeline() {
     pipelineInfo.pMultisampleState = &multisampling;
     pipelineInfo.pDepthStencilState = &depthStencil;
     pipelineInfo.pColorBlendState = &colorBlending;
-    pipelineInfo.layout = graphicsPipelineLayout;
     pipelineInfo.renderPass = renderPass;
     pipelineInfo.subpass = 0;
 
-    VkResult result = vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1,
-                                                &pipelineInfo, nullptr,
-                                                &graphicsPipeline);
-
-    vkDestroyShaderModule(device, fragShaderModule, nullptr);
-    vkDestroyShaderModule(device, vertShaderModule, nullptr);
-
-    if (result != VK_SUCCESS) {
-        SDL_Log("Failed to create grass graphics pipeline");
-        return false;
-    }
-
-    return true;
+    return builder.buildGraphicsPipeline(pipelineInfo, graphicsPipelineLayout, graphicsPipeline);
 }
 
 bool GrassSystem::createShadowPipeline() {
-    // Shadow descriptor set layout: UBO (binding 0) + instance buffer (binding 1) + wind (binding 2)
-    std::array<VkDescriptorSetLayoutBinding, 3> shadowBindings{};
+    PipelineBuilder layoutBuilder(device);
+    layoutBuilder.addDescriptorBinding(0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT)
+        .addDescriptorBinding(1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT)
+        .addDescriptorBinding(2, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT);
 
-    // UBO for light space matrix
-    shadowBindings[0].binding = 0;
-    shadowBindings[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    shadowBindings[0].descriptorCount = 1;
-    shadowBindings[0].stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
-
-    // Instance buffer
-    shadowBindings[1].binding = 1;
-    shadowBindings[1].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    shadowBindings[1].descriptorCount = 1;
-    shadowBindings[1].stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
-
-    // Wind uniform buffer (for consistent wind animation in shadows)
-    shadowBindings[2].binding = 2;
-    shadowBindings[2].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    shadowBindings[2].descriptorCount = 1;
-    shadowBindings[2].stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
-
-    VkDescriptorSetLayoutCreateInfo shadowLayoutInfo{};
-    shadowLayoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-    shadowLayoutInfo.bindingCount = static_cast<uint32_t>(shadowBindings.size());
-    shadowLayoutInfo.pBindings = shadowBindings.data();
-
-    if (vkCreateDescriptorSetLayout(device, &shadowLayoutInfo, nullptr,
-                                    &shadowDescriptorSetLayout) != VK_SUCCESS) {
-        SDL_Log("Failed to create grass shadow descriptor set layout");
+    if (!layoutBuilder.buildDescriptorSetLayout(shadowDescriptorSetLayout)) {
         return false;
     }
 
-    // Load shadow shaders
-    auto vertShaderCode = ShaderLoader::readFile(shaderPath + "/grass_shadow.vert.spv");
-    auto fragShaderCode = ShaderLoader::readFile(shaderPath + "/grass_shadow.frag.spv");
-
-    if (vertShaderCode.empty() || fragShaderCode.empty()) {
-        SDL_Log("Failed to load grass shadow shader files");
-        return false;
-    }
-
-    VkShaderModule vertShaderModule = ShaderLoader::createShaderModule(device, vertShaderCode);
-    VkShaderModule fragShaderModule = ShaderLoader::createShaderModule(device, fragShaderCode);
-
-    VkPipelineShaderStageCreateInfo vertShaderStageInfo{};
-    vertShaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-    vertShaderStageInfo.stage = VK_SHADER_STAGE_VERTEX_BIT;
-    vertShaderStageInfo.module = vertShaderModule;
-    vertShaderStageInfo.pName = "main";
-
-    VkPipelineShaderStageCreateInfo fragShaderStageInfo{};
-    fragShaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-    fragShaderStageInfo.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
-    fragShaderStageInfo.module = fragShaderModule;
-    fragShaderStageInfo.pName = "main";
-
-    VkPipelineShaderStageCreateInfo shaderStages[] = {vertShaderStageInfo, fragShaderStageInfo};
+    PipelineBuilder builder(device);
+    builder.addShaderStage(shaderPath + "/grass_shadow.vert.spv", VK_SHADER_STAGE_VERTEX_BIT)
+        .addShaderStage(shaderPath + "/grass_shadow.frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT)
+        .addPushConstantRange(VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(GrassPushConstants));
 
     // No vertex input - procedural geometry from instance buffer
     VkPipelineVertexInputStateCreateInfo vertexInputInfo{};
@@ -782,30 +572,12 @@ bool GrassSystem::createShadowPipeline() {
     colorBlending.logicOpEnable = VK_FALSE;
     colorBlending.attachmentCount = 0;
 
-    VkPushConstantRange pushConstantRange{};
-    pushConstantRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
-    pushConstantRange.offset = 0;
-    pushConstantRange.size = sizeof(GrassPushConstants);
-
-    VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
-    pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-    pipelineLayoutInfo.setLayoutCount = 1;
-    pipelineLayoutInfo.pSetLayouts = &shadowDescriptorSetLayout;
-    pipelineLayoutInfo.pushConstantRangeCount = 1;
-    pipelineLayoutInfo.pPushConstantRanges = &pushConstantRange;
-
-    if (vkCreatePipelineLayout(device, &pipelineLayoutInfo, nullptr,
-                               &shadowPipelineLayout) != VK_SUCCESS) {
-        SDL_Log("Failed to create grass shadow pipeline layout");
-        vkDestroyShaderModule(device, fragShaderModule, nullptr);
-        vkDestroyShaderModule(device, vertShaderModule, nullptr);
+    if (!builder.buildPipelineLayout({shadowDescriptorSetLayout}, shadowPipelineLayout)) {
         return false;
     }
 
     VkGraphicsPipelineCreateInfo pipelineInfo{};
     pipelineInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
-    pipelineInfo.stageCount = 2;
-    pipelineInfo.pStages = shaderStages;
     pipelineInfo.pVertexInputState = &vertexInputInfo;
     pipelineInfo.pInputAssemblyState = &inputAssembly;
     pipelineInfo.pViewportState = &viewportState;
@@ -813,23 +585,10 @@ bool GrassSystem::createShadowPipeline() {
     pipelineInfo.pMultisampleState = &multisampling;
     pipelineInfo.pDepthStencilState = &depthStencil;
     pipelineInfo.pColorBlendState = &colorBlending;
-    pipelineInfo.layout = shadowPipelineLayout;
     pipelineInfo.renderPass = shadowRenderPass;
     pipelineInfo.subpass = 0;
 
-    VkResult result = vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1,
-                                                &pipelineInfo, nullptr,
-                                                &shadowPipeline);
-
-    vkDestroyShaderModule(device, fragShaderModule, nullptr);
-    vkDestroyShaderModule(device, vertShaderModule, nullptr);
-
-    if (result != VK_SUCCESS) {
-        SDL_Log("Failed to create grass shadow pipeline");
-        return false;
-    }
-
-    return true;
+    return builder.buildGraphicsPipeline(pipelineInfo, shadowPipelineLayout, shadowPipeline);
 }
 
 bool GrassSystem::createDescriptorSets() {

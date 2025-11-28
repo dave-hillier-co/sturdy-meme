@@ -256,12 +256,12 @@ void Application::processEvents() {
                 }
                 else if (event.key.scancode == SDL_SCANCODE_LEFTBRACKET) {
                     float density = renderer.getFogDensity();
-                    renderer.setFogDensity(std::max(0.0f, density - 0.005f));
+                    renderer.setFogDensity(std::max(0.0f, density - 0.0025f));
                     SDL_Log("Fog density: %.3f", renderer.getFogDensity());
                 }
                 else if (event.key.scancode == SDL_SCANCODE_RIGHTBRACKET) {
                     float density = renderer.getFogDensity();
-                    renderer.setFogDensity(std::min(0.2f, density + 0.005f));
+                    renderer.setFogDensity(std::min(0.2f, density + 0.0025f));
                     SDL_Log("Fog density: %.3f", renderer.getFogDensity());
                 }
                 else if (event.key.scancode == SDL_SCANCODE_BACKSLASH) {

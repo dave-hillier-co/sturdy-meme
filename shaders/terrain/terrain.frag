@@ -67,6 +67,34 @@ const float GRASS_RENDER_DISTANCE = 60.0;     // Should match grass system maxDr
 const float FAR_LOD_TRANSITION_START = 50.0;  // Start blending far LOD
 const float FAR_LOD_TRANSITION_END = 70.0;    // Full far LOD (terrain with grass tint)
 
+// Triplanar mapping parameters
+const float TRIPLANAR_SCALE = 0.1;            // World-space texture scale (larger = bigger texture)
+const float TRIPLANAR_SHARPNESS = 4.0;        // Higher = sharper transitions between projections
+
+// Triplanar texture sampling - samples texture from 3 axis-aligned projections
+// and blends based on surface normal to avoid stretching on steep surfaces
+vec3 sampleTriplanar(sampler2D tex, vec3 worldPos, vec3 normal, float scale) {
+    // Use absolute normal for blend weights
+    vec3 blendWeights = abs(normal);
+
+    // Raise to power for sharper transitions
+    blendWeights = pow(blendWeights, vec3(TRIPLANAR_SHARPNESS));
+
+    // Normalize so weights sum to 1
+    blendWeights /= (blendWeights.x + blendWeights.y + blendWeights.z);
+
+    // Sample texture from each axis projection
+    // X-axis projection: use YZ plane
+    vec3 xProj = texture(tex, worldPos.yz * scale).rgb;
+    // Y-axis projection: use XZ plane (top-down view, most common for terrain)
+    vec3 yProj = texture(tex, worldPos.xz * scale).rgb;
+    // Z-axis projection: use XY plane
+    vec3 zProj = texture(tex, worldPos.xy * scale).rgb;
+
+    // Blend based on weights
+    return xProj * blendWeights.x + yProj * blendWeights.y + zProj * blendWeights.z;
+}
+
 // Inputs from vertex shader
 layout(location = 0) in vec2 fragTexCoord;
 layout(location = 1) in vec3 fragNormal;
@@ -91,12 +119,14 @@ float getShadowFactor(vec3 worldPos) {
 }
 
 void main() {
-    // Sample terrain albedo with tiling
-    vec3 albedo = texture(terrainAlbedo, fragTexCoord * 50.0).rgb;
-
-    // Add some variation based on slope
+    // Normalize the surface normal
     vec3 normal = normalize(fragNormal);
     float slope = 1.0 - normal.y;
+
+    // Use triplanar mapping for terrain albedo - prevents texture stretching on steep slopes
+    // On flat surfaces (high normal.y), this mainly uses the Y projection (top-down XZ plane)
+    // On steep cliffs, it blends in X and Z projections to avoid stretching
+    vec3 albedo = sampleTriplanar(terrainAlbedo, fragWorldPos, normal, TRIPLANAR_SCALE);
 
     // === FAR LOD GRASS BLENDING ===
     // At distances beyond grass render distance, blend in grass texture to maintain

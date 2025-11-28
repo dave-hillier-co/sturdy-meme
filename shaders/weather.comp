@@ -230,13 +230,13 @@ void spawnParticle(uint idx, vec3 spawnCenter) {
         // Rain: fast falling, slight horizontal
         float terminalVel = uniforms.gravity.w * (0.8 + rnd.x * 0.4);  // 80-120% of terminal
         velocity = vec3(0.0, -terminalVel, 0.0);
-        size = 0.002 + rnd.y * 0.001;  // 2-3mm width
+        size = 0.008 + rnd.y * 0.004;  // 8-12mm width
         lifetime = PARTICLE_LIFETIME_RAIN * (0.8 + rnd.z * 0.4);
     } else {
         // Snow: slow falling, more horizontal drift
         float terminalVel = 1.5 + rnd.x * 1.5;  // 1.5-3 m/s
         velocity = vec3((rnd.y - 0.5) * 0.5, -terminalVel, (rnd.z - 0.5) * 0.5);
-        size = 0.005 + rnd.y * 0.015;  // 5-20mm
+        size = 0.02 + rnd.y * 0.03;  // 20-50mm
         lifetime = PARTICLE_LIFETIME_SNOW * (0.8 + rnd.z * 0.4);
     }
 

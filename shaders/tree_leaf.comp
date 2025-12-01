@@ -293,8 +293,6 @@ void generateLeavesForTree(uint treeIndex) {
     if (!isInFrustum(canopyCenter, canopyRadius)) return;
 
     // LOD - reduce leaf count at distance (Milestone 8)
-    float lodFactor = smoothstep(uniforms.lodTransitionStart, uniforms.lodTransitionEnd, distToCamera);
-
     // Multi-tier LOD with smooth probability transitions
     // Near (0-50m): Full density, small leaves
     // Medium (50-150m): 60% density, medium leaves

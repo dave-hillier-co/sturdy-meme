@@ -356,7 +356,7 @@ void generateLeavesForTree(uint treeIndex) {
         MultiScaleClump clump = calculateMultiScaleClumping(worldPos, tree.scale);
 
         // Clump-based density culling
-        float effectiveDensity = baseDensityMult * clump.clumpDensity;
+        float effectiveDensity = densityMult * clump.clumpDensity;
         if (hash(leafHash * 100.0 + clump.mediumClumpId * 50.0) > effectiveDensity) continue;
 
         // Ellipsoid boundary check with soft falloff

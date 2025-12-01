@@ -1,4 +1,5 @@
 #include "Application.h"
+#include "TownGenerator.h"
 #include <chrono>
 #include <cmath>
 #include <cstdio>
@@ -55,6 +56,23 @@ bool Application::init(const std::string& title, int width, int height) {
 
     // Initialize scene physics (dynamic objects)
     renderer.getSceneManager().initPhysics(physics);
+
+    // Generate procedural town
+    TownConfig townConfig{};
+    townConfig.center = glm::vec2(0.0f, -50.0f);  // Place town slightly south of center
+    townConfig.radius = 80.0f;
+    townConfig.numCells = 40;
+    townConfig.relaxIterations = 3;
+    townConfig.roadWidth = 2.5f;
+    townConfig.mainRoadWidth = 4.0f;
+    townConfig.maxBuildingSlope = 0.25f;
+    townConfig.buildingDensity = 0.5f;
+    townConfig.seed = 42;
+    townConfig.minBuildingSpacing = 2.5f;
+    renderer.generateTown(townConfig);
+    SDL_Log("Town generated with %zu buildings and %zu roads",
+            renderer.getTownSystem().getGenerator().getBuildings().size(),
+            renderer.getTownSystem().getGenerator().getRoads().size());
 
     // Create character controller for player
     physics.createCharacter(glm::vec3(0.0f, 0.1f, 0.0f), Player::CAPSULE_HEIGHT, Player::CAPSULE_RADIUS);

@@ -24,6 +24,7 @@
 #include "SceneManager.h"
 #include "TerrainSystem.h"
 #include "CatmullClarkSystem.h"
+#include "TownSystem.h"
 #include "SnowMaskSystem.h"
 #include "VolumetricSnowSystem.h"
 #include "EnvironmentSettings.h"
@@ -101,6 +102,11 @@ public:
     void toggleCatmullClarkWireframe() { catmullClarkSystem.setWireframeMode(!catmullClarkSystem.isWireframeMode()); }
     bool isCatmullClarkWireframeMode() const { return catmullClarkSystem.isWireframeMode(); }
     CatmullClarkSystem& getCatmullClarkSystem() { return catmullClarkSystem; }
+
+    // Town system control
+    void generateTown(const TownConfig& config);
+    TownSystem& getTownSystem() { return townSystem; }
+    const TownSystem& getTownSystem() const { return townSystem; }
 
     // Weather control
     void setWeatherIntensity(float intensity);
@@ -214,6 +220,7 @@ private:
     AtmosphereLUTSystem atmosphereLUTSystem;
     TerrainSystem terrainSystem;
     CatmullClarkSystem catmullClarkSystem;
+    TownSystem townSystem;
     SnowMaskSystem snowMaskSystem;
     VolumetricSnowSystem volumetricSnowSystem;
     EnvironmentSettings environmentSettings;

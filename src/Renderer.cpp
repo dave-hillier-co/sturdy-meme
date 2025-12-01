@@ -346,6 +346,27 @@ bool Renderer::init(SDL_Window* win, const std::string& resPath) {
     // Update Catmull-Clark descriptor sets with shared resources
     catmullClarkSystem.updateDescriptorSets(device, uniformBuffers);
 
+    // Initialize town system
+    TownSystem::InitInfo townInfo{};
+    townInfo.device = device;
+    townInfo.physicalDevice = physicalDevice;
+    townInfo.allocator = allocator;
+    townInfo.renderPass = postProcessSystem.getHDRRenderPass();
+    townInfo.shadowRenderPass = shadowSystem.getShadowRenderPass();
+    townInfo.descriptorPool = descriptorPool;
+    townInfo.extent = swapchainExtent;
+    townInfo.shadowMapSize = shadowSystem.getShadowMapSize();
+    townInfo.shaderPath = resourcePath + "/shaders";
+    townInfo.texturePath = resourcePath + "/textures";
+    townInfo.framesInFlight = MAX_FRAMES_IN_FLIGHT;
+    townInfo.graphicsQueue = graphicsQueue;
+    townInfo.commandPool = commandPool;
+
+    if (!townSystem.init(townInfo)) return false;
+
+    // Update town descriptor sets with shared resources
+    townSystem.updateDescriptorSets(device, uniformBuffers, shadowSystem.getShadowImageView(), shadowSystem.getShadowSampler());
+
     // Create sky descriptor sets now that uniform buffers and LUTs are ready
     if (!skySystem.createDescriptorSets(uniformBuffers, sizeof(UniformBufferObject), atmosphereLUTSystem)) return false;
 
@@ -365,6 +386,15 @@ void Renderer::setWeatherType(uint32_t type) {
 void Renderer::setPlayerPosition(const glm::vec3& position, float radius) {
     playerPosition = position;
     playerCapsuleRadius = radius;
+}
+
+void Renderer::generateTown(const TownConfig& config) {
+    // Use terrain system's height function for terrain-aware placement
+    auto heightFunc = [this](float x, float z) -> float {
+        return terrainSystem.getHeightAt(x, z);
+    };
+
+    townSystem.generate(config, heightFunc);
 }
 
 void Renderer::shutdown() {
@@ -403,6 +433,7 @@ void Renderer::shutdown() {
 
         grassSystem.destroy(device, allocator);
         terrainSystem.destroy(device, allocator);
+        townSystem.destroy(device, allocator);
         windSystem.destroy(device, allocator);
         weatherSystem.destroy(device, allocator);
         snowMaskSystem.destroy(device, allocator);
@@ -1370,9 +1401,11 @@ glm::vec2 Renderer::calculateSunScreenPos(const Camera& camera, const glm::vec3&
 // Render pass recording helpers - pure command recording, no state mutation
 
 void Renderer::recordShadowPass(VkCommandBuffer cmd, uint32_t frameIndex, float grassTime) {
-    // Delegate to the shadow system with callbacks for terrain and grass
+    // Delegate to the shadow system with callbacks for terrain, town, and grass
     auto terrainCallback = [this, frameIndex](VkCommandBuffer cb, uint32_t cascade, const glm::mat4& lightMatrix) {
         terrainSystem.recordShadowDraw(cb, frameIndex, lightMatrix, static_cast<int>(cascade));
+        // Town shadows rendered after terrain
+        townSystem.recordShadowDraw(cb, frameIndex, lightMatrix, static_cast<int>(cascade));
     };
 
     auto grassCallback = [this, frameIndex, grassTime](VkCommandBuffer cb, uint32_t cascade, const glm::mat4& lightMatrix) {
@@ -1441,6 +1474,9 @@ void Renderer::recordHDRPass(VkCommandBuffer cmd, uint32_t frameIndex, float gra
 
     // Draw terrain (LEB adaptive tessellation)
     terrainSystem.recordDraw(cmd, frameIndex);
+
+    // Draw town buildings and roads
+    townSystem.recordDraw(cmd, frameIndex);
 
     // Draw Catmull-Clark subdivision surfaces
     catmullClarkSystem.recordDraw(cmd, frameIndex);

@@ -60,6 +60,10 @@ set(SOURCES
     src/CatmullClarkCBT.cpp
     src/CatmullClarkMesh.cpp
     src/CatmullClarkSystem.cpp
+    src/VoronoiDiagram.cpp
+    src/TownGenerator.cpp
+    src/BuildingMeshGenerator.cpp
+    src/TownSystem.cpp
 )
 
 add_executable(${PROJECT_NAME} ${SOURCES})
@@ -133,6 +137,9 @@ set(SHADER_FILES
     ${CMAKE_CURRENT_SOURCE_DIR}/shaders/histogram_reduce.comp.spv
     ${CMAKE_CURRENT_SOURCE_DIR}/shaders/snow_accumulation.comp.spv
     ${CMAKE_CURRENT_SOURCE_DIR}/shaders/volumetric_snow.comp.spv
+    ${CMAKE_CURRENT_SOURCE_DIR}/shaders/town.vert.spv
+    ${CMAKE_CURRENT_SOURCE_DIR}/shaders/town.frag.spv
+    ${CMAKE_CURRENT_SOURCE_DIR}/shaders/town_shadow.vert.spv
 )
 
 set(TERRAIN_SHADER_FILES
@@ -467,6 +474,29 @@ if(SHADER_COMPILE_CMD)
         DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/shaders/catmullclark_render.frag.glsl
         COMMENT "Compiling Catmull-Clark fragment shader"
     )
+    # Town shaders
+    add_custom_command(
+        OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/shaders/town.vert.spv
+        COMMAND ${GLSLANG_VALIDATOR} --target-env vulkan1.2 -I${CMAKE_CURRENT_SOURCE_DIR}/shaders -V -o ${CMAKE_CURRENT_SOURCE_DIR}/shaders/town.vert.spv ${CMAKE_CURRENT_SOURCE_DIR}/shaders/town.vert
+        DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/shaders/town.vert
+        COMMENT "Compiling town vertex shader"
+    )
+    add_custom_command(
+        OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/shaders/town.frag.spv
+        COMMAND ${GLSLANG_VALIDATOR} --target-env vulkan1.2 -I${CMAKE_CURRENT_SOURCE_DIR}/shaders -V -o ${CMAKE_CURRENT_SOURCE_DIR}/shaders/town.frag.spv ${CMAKE_CURRENT_SOURCE_DIR}/shaders/town.frag
+        DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/shaders/town.frag
+                ${CMAKE_CURRENT_SOURCE_DIR}/shaders/constants_common.glsl
+                ${CMAKE_CURRENT_SOURCE_DIR}/shaders/lighting_common.glsl
+                ${CMAKE_CURRENT_SOURCE_DIR}/shaders/shadow_common.glsl
+                ${CMAKE_CURRENT_SOURCE_DIR}/shaders/atmosphere_common.glsl
+        COMMENT "Compiling town fragment shader"
+    )
+    add_custom_command(
+        OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/shaders/town_shadow.vert.spv
+        COMMAND ${GLSLANG_VALIDATOR} --target-env vulkan1.2 -I${CMAKE_CURRENT_SOURCE_DIR}/shaders -V -o ${CMAKE_CURRENT_SOURCE_DIR}/shaders/town_shadow.vert.spv ${CMAKE_CURRENT_SOURCE_DIR}/shaders/town_shadow.vert
+        DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/shaders/town_shadow.vert
+        COMMENT "Compiling town shadow vertex shader"
+    )
     add_custom_target(shaders DEPENDS
         ${CMAKE_CURRENT_SOURCE_DIR}/shaders/shader.vert.spv
         ${CMAKE_CURRENT_SOURCE_DIR}/shaders/shader.frag.spv
@@ -513,6 +543,9 @@ if(SHADER_COMPILE_CMD)
         ${CMAKE_CURRENT_SOURCE_DIR}/shaders/catmullclark_subdivision.comp.spv
         ${CMAKE_CURRENT_SOURCE_DIR}/shaders/catmullclark_render.vert.spv
         ${CMAKE_CURRENT_SOURCE_DIR}/shaders/catmullclark_render.frag.spv
+        ${CMAKE_CURRENT_SOURCE_DIR}/shaders/town.vert.spv
+        ${CMAKE_CURRENT_SOURCE_DIR}/shaders/town.frag.spv
+        ${CMAKE_CURRENT_SOURCE_DIR}/shaders/town_shadow.vert.spv
     )
 
     # Generate UBO headers from SPIR-V reflection

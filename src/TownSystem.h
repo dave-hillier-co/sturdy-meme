@@ -157,6 +157,9 @@ private:
     std::vector<glm::mat4> roadTransforms;
     std::vector<float> roadWidths;
 
+    // Terrain height function for road tessellation
+    std::function<float(float, float)> terrainHeightFunc;
+
     // Generation
     TownGenerator generator;
     BuildingMeshGenerator meshGenerator;
@@ -165,6 +168,9 @@ private:
 
     // Generate combined mesh for all buildings using modular system
     void generateCombinedBuildingMesh();
+
+    // Generate terrain-following road mesh
+    void generateRoadMesh();
 
     // Debug
     bool showVoronoi = false;

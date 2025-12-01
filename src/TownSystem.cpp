@@ -587,11 +587,15 @@ bool TownSystem::createInstanceBuffers() {
 }
 
 void TownSystem::generate(const TownConfig& config, std::function<float(float, float)> heightFunc) {
+    terrainHeightFunc = heightFunc;
     generator.generate(config, heightFunc);
     generated = true;
 
     // Generate combined building mesh from modular system
     generateCombinedBuildingMesh();
+
+    // Generate terrain-conforming road mesh
+    generateRoadMesh();
 
     updateInstanceData();
 }
@@ -672,6 +676,98 @@ void TownSystem::generateCombinedBuildingMesh() {
     if (!allVertices.empty() && !allIndices.empty()) {
         buildingsMesh.setCustomGeometry(allVertices, allIndices);
         buildingsMesh.upload(allocator, device, commandPool, graphicsQueue);
+    }
+}
+
+void TownSystem::generateRoadMesh() {
+    const auto& roads = generator.getRoads();
+    if (roads.empty() || !terrainHeightFunc) return;
+
+    std::vector<Vertex> allVertices;
+    std::vector<uint32_t> allIndices;
+
+    const float SEGMENT_LENGTH = 1.0f;  // Tessellate every 1 meter
+    const float ROAD_ELEVATION = 0.05f; // Slight elevation above terrain
+
+    for (const auto& road : roads) {
+        glm::vec3 start = road.start;
+        glm::vec3 end = road.end;
+        float width = road.width;
+
+        // Direction along road (in XZ plane)
+        glm::vec2 dir2D = glm::normalize(glm::vec2(end.x - start.x, end.z - start.z));
+        float length = glm::length(glm::vec2(end.x - start.x, end.z - start.z));
+
+        if (length < 0.1f) continue;
+
+        // Perpendicular direction
+        glm::vec2 perp2D(-dir2D.y, dir2D.x);
+        float halfWidth = width * 0.5f;
+
+        // Number of segments along the road
+        int numSegments = std::max(1, static_cast<int>(std::ceil(length / SEGMENT_LENGTH)));
+        float segmentLength = length / numSegments;
+
+        // Generate tessellated road quads
+        for (int i = 0; i < numSegments; ++i) {
+            float t0 = static_cast<float>(i) / numSegments;
+            float t1 = static_cast<float>(i + 1) / numSegments;
+
+            // Sample positions along road centerline
+            glm::vec2 center0 = glm::vec2(start.x, start.z) + dir2D * (t0 * length);
+            glm::vec2 center1 = glm::vec2(start.x, start.z) + dir2D * (t1 * length);
+
+            // Sample terrain heights at quad corners
+            glm::vec2 left0 = center0 - perp2D * halfWidth;
+            glm::vec2 right0 = center0 + perp2D * halfWidth;
+            glm::vec2 left1 = center1 - perp2D * halfWidth;
+            glm::vec2 right1 = center1 + perp2D * halfWidth;
+
+            float h_left0 = terrainHeightFunc(left0.x, left0.y) + ROAD_ELEVATION;
+            float h_right0 = terrainHeightFunc(right0.x, right0.y) + ROAD_ELEVATION;
+            float h_left1 = terrainHeightFunc(left1.x, left1.y) + ROAD_ELEVATION;
+            float h_right1 = terrainHeightFunc(right1.x, right1.y) + ROAD_ELEVATION;
+
+            // Create quad vertices
+            glm::vec3 p0(left0.x, h_left0, left0.y);
+            glm::vec3 p1(right0.x, h_right0, right0.y);
+            glm::vec3 p2(right1.x, h_right1, right1.y);
+            glm::vec3 p3(left1.x, h_left1, left1.y);
+
+            // Calculate normal (average of quad)
+            glm::vec3 edge1 = p1 - p0;
+            glm::vec3 edge2 = p3 - p0;
+            glm::vec3 normal = glm::normalize(glm::cross(edge1, edge2));
+
+            // Tangent along road direction
+            glm::vec3 tangent = glm::normalize(glm::vec3(dir2D.x, 0, dir2D.y));
+
+            // UVs - tile along road length
+            float u0 = 0.0f, u1 = 1.0f;
+            float v0 = t0 * length / width;
+            float v1 = t1 * length / width;
+
+            uint32_t baseIdx = static_cast<uint32_t>(allVertices.size());
+
+            allVertices.push_back({p0, normal, glm::vec2(u0, v0), glm::vec4(tangent, 1.0f)});
+            allVertices.push_back({p1, normal, glm::vec2(u1, v0), glm::vec4(tangent, 1.0f)});
+            allVertices.push_back({p2, normal, glm::vec2(u1, v1), glm::vec4(tangent, 1.0f)});
+            allVertices.push_back({p3, normal, glm::vec2(u0, v1), glm::vec4(tangent, 1.0f)});
+
+            // Two triangles per quad
+            allIndices.push_back(baseIdx + 0);
+            allIndices.push_back(baseIdx + 1);
+            allIndices.push_back(baseIdx + 2);
+            allIndices.push_back(baseIdx + 0);
+            allIndices.push_back(baseIdx + 2);
+            allIndices.push_back(baseIdx + 3);
+        }
+    }
+
+    // Upload road mesh
+    if (!allVertices.empty() && !allIndices.empty()) {
+        roadMesh.setCustomGeometry(allVertices, allIndices);
+        roadMesh.upload(allocator, device, commandPool, graphicsQueue);
     }
 }
 
@@ -799,25 +895,23 @@ void TownSystem::recordDraw(VkCommandBuffer cmd, uint32_t frameIndex) {
         vkCmdDrawIndexed(cmd, buildingsMesh.getIndexCount(), 1, 0, 0, 0);
     }
 
-    // Draw roads
-    if (!roadTransforms.empty() && roadMesh.getIndexCount() > 0) {
+    // Draw roads (single combined mesh, already in world space)
+    if (roadMesh.getIndexCount() > 0) {
         VkBuffer vertexBuffers[] = {roadMesh.getVertexBuffer()};
         VkDeviceSize offsets[] = {0};
         vkCmdBindVertexBuffers(cmd, 0, 1, vertexBuffers, offsets);
         vkCmdBindIndexBuffer(cmd, roadMesh.getIndexBuffer(), 0, VK_INDEX_TYPE_UINT32);
 
-        for (size_t i = 0; i < roadTransforms.size(); ++i) {
-            TownPushConstants push;
-            push.model = roadTransforms[i];
-            push.roughness = 0.9f;
-            push.metallic = 0.0f;
+        TownPushConstants push;
+        push.model = glm::mat4(1.0f);  // Identity - mesh is in world space
+        push.roughness = 0.9f;
+        push.metallic = 0.0f;
 
-            vkCmdPushConstants(cmd, pipelineLayout,
-                              VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
-                              0, sizeof(TownPushConstants), &push);
+        vkCmdPushConstants(cmd, pipelineLayout,
+                          VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+                          0, sizeof(TownPushConstants), &push);
 
-            vkCmdDrawIndexed(cmd, roadMesh.getIndexCount(), 1, 0, 0, 0);
-        }
+        vkCmdDrawIndexed(cmd, roadMesh.getIndexCount(), 1, 0, 0, 0);
     }
 }
 

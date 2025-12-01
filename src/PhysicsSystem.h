@@ -75,6 +75,12 @@ public:
     PhysicsBodyID createStaticBox(const glm::vec3& position, const glm::vec3& halfExtents,
                                   const glm::quat& rotation = glm::quat(1, 0, 0, 0));
 
+    // Static convex hull from vertex positions (for irregular shapes like rocks)
+    // vertices: array of 3D positions, scale: uniform scale applied to all vertices
+    PhysicsBodyID createStaticConvexHull(const glm::vec3& position, const glm::vec3* vertices,
+                                         size_t vertexCount, float scale = 1.0f,
+                                         const glm::quat& rotation = glm::quat(1, 0, 0, 0));
+
     // Character controller
     bool createCharacter(const glm::vec3& position, float height, float radius);
     void updateCharacter(float deltaTime, const glm::vec3& desiredVelocity, bool jump);

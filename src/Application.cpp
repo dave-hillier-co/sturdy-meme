@@ -56,6 +56,36 @@ bool Application::init(const std::string& title, int width, int height) {
     // Initialize scene physics (dynamic objects)
     renderer.getSceneManager().initPhysics(physics);
 
+    // Create convex hull colliders for rocks using actual mesh geometry
+    const auto& rockSystem = renderer.getRockSystem();
+    const auto& rockInstances = rockSystem.getRockInstances();
+    const auto& rockMeshes = rockSystem.getRockMeshes();
+
+    for (const auto& rock : rockInstances) {
+        // Rock position is adjusted down by 15% of scale in rendering
+        glm::vec3 colliderPos = rock.position;
+        colliderPos.y -= rock.scale * 0.15f;
+
+        // Get the mesh for this rock variation
+        const Mesh& mesh = rockMeshes[rock.meshVariation];
+        const auto& vertices = mesh.getVertices();
+
+        // Extract just the positions from the vertex data
+        std::vector<glm::vec3> positions;
+        positions.reserve(vertices.size());
+        for (const auto& v : vertices) {
+            positions.push_back(v.position);
+        }
+
+        // Create rotation quaternion from Y-axis rotation
+        glm::quat rotation = glm::angleAxis(rock.rotation, glm::vec3(0.0f, 1.0f, 0.0f));
+
+        // Create convex hull from mesh vertices with rock's scale
+        physics.createStaticConvexHull(colliderPos, positions.data(), positions.size(),
+                                       rock.scale, rotation);
+    }
+    SDL_Log("Created %zu rock convex hull colliders", rockInstances.size());
+
     // Create character controller for player
     physics.createCharacter(glm::vec3(0.0f, 0.1f, 0.0f), Player::CAPSULE_HEIGHT, Player::CAPSULE_RADIUS);
 

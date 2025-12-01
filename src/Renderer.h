@@ -143,6 +143,9 @@ public:
     SceneManager& getSceneManager() { return sceneManager; }
     const SceneManager& getSceneManager() const { return sceneManager; }
 
+    // Rock system access for physics integration
+    const RockSystem& getRockSystem() const { return rockSystem; }
+
     // Player position for grass interaction (xyz = position, w = capsule radius)
     void setPlayerPosition(const glm::vec3& position, float radius);
 

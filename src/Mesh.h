@@ -67,6 +67,9 @@ public:
     VkBuffer getIndexBuffer() const { return indexBuffer; }
     uint32_t getIndexCount() const { return static_cast<uint32_t>(indices.size()); }
 
+    // Access to vertex data for physics collision shapes
+    const std::vector<Vertex>& getVertices() const { return vertices; }
+
 private:
     std::vector<Vertex> vertices;
     std::vector<uint32_t> indices;

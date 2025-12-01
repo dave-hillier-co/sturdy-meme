@@ -65,6 +65,12 @@ public:
     size_t getRockCount() const { return rockInstances.size(); }
     size_t getMeshVariationCount() const { return rockMeshes.size(); }
 
+    // Get rock instances for physics integration
+    const std::vector<RockInstance>& getRockInstances() const { return rockInstances; }
+
+    // Get rock meshes for physics collision shapes
+    const std::vector<Mesh>& getRockMeshes() const { return rockMeshes; }
+
 private:
     bool createRockMeshes(const InitInfo& info);
     bool loadTextures(const InitInfo& info);

@@ -86,6 +86,12 @@ vec3 evaluateBezierDerivative(vec3 p0, vec3 p1, vec3 p2, vec3 p3, float t) {
     return 3.0*u*u*(p1-p0) + 6.0*u*t*(p2-p1) + 3.0*t*t*(p3-p2);
 }
 
+// Constants for tube geometry - must match main vertex shader
+const uint NUM_SEGMENTS = 8;
+const uint VERTS_PER_RING = 6;
+const uint TRIS_PER_QUAD = 2;
+const uint VERTS_PER_TRI = 3;
+
 void main() {
     uint branchIndex = gl_InstanceIndex;
     uint vertIndex = gl_VertexIndex;
@@ -101,16 +107,47 @@ void main() {
     vec3 ctrl2 = branch.controlPoint2.xyz;
     uint depth = branch.metadata.y;
 
-    const uint NUM_SEGMENTS = 8;
-    const uint VERTS_PER_RING = 4;
+    // Decode vertex index - same logic as main vertex shader
+    uint vertsPerRingPair = VERTS_PER_RING * TRIS_PER_QUAD * VERTS_PER_TRI;
+    uint ringPairIndex = vertIndex / vertsPerRingPair;
+    uint vertInRingPair = vertIndex % vertsPerRingPair;
 
-    uint segmentIndex = vertIndex / VERTS_PER_RING;
-    uint ringIndex = vertIndex % VERTS_PER_RING;
+    uint quadIndex = vertInRingPair / (TRIS_PER_QUAD * VERTS_PER_TRI);
+    uint vertInQuad = vertInRingPair % (TRIS_PER_QUAD * VERTS_PER_TRI);
 
-    float t = float(segmentIndex) / float(NUM_SEGMENTS - 1);
+    uint ring0 = ringPairIndex;
+    uint ring1 = ringPairIndex + 1u;
+
+    uint v0 = quadIndex;
+    uint v1 = (quadIndex + 1u) % VERTS_PER_RING;
+
+    uint segmentIdx;
+    uint ringVertIdx;
+
+    if (vertInQuad == 0u) {
+        segmentIdx = ring0; ringVertIdx = v0;
+    } else if (vertInQuad == 1u) {
+        segmentIdx = ring1; ringVertIdx = v0;
+    } else if (vertInQuad == 2u) {
+        segmentIdx = ring0; ringVertIdx = v1;
+    } else if (vertInQuad == 3u) {
+        segmentIdx = ring0; ringVertIdx = v1;
+    } else if (vertInQuad == 4u) {
+        segmentIdx = ring1; ringVertIdx = v0;
+    } else {
+        segmentIdx = ring1; ringVertIdx = v1;
+    }
+
+    float t = float(segmentIdx) / float(NUM_SEGMENTS - 1u);
 
     vec3 curvePos = evaluateBezier(basePos, ctrl1, ctrl2, tipPos, t);
-    vec3 tangent = normalize(evaluateBezierDerivative(basePos, ctrl1, ctrl2, tipPos, t));
+    vec3 tangent = evaluateBezierDerivative(basePos, ctrl1, ctrl2, tipPos, t);
+
+    if (length(tangent) < 0.001) {
+        tangent = normalize(tipPos - basePos);
+    } else {
+        tangent = normalize(tangent);
+    }
 
     float radius = mix(baseRadius, tipRadius, t);
 
@@ -118,24 +155,24 @@ void main() {
     vec3 right = normalize(cross(up, tangent));
     vec3 forward = normalize(cross(tangent, right));
 
-    float angle = float(ringIndex) / float(VERTS_PER_RING) * 6.28318;
+    float angle = float(ringVertIdx) / float(VERTS_PER_RING) * 6.28318;
     vec3 radialDir = right * cos(angle) + forward * sin(angle);
 
     vec3 localPos = curvePos + radialDir * radius;
 
     // Apply wind (same as main shader)
     float windSample = sampleWind(basePos.xz);
-    vec2 windDir = wind.windDirectionAndStrength.xy;
+    vec2 windDir2D = wind.windDirectionAndStrength.xy;
 
     float stiffness = baseRadius / 0.3;
     float sway = windSample * (1.0 - stiffness * 0.5) * 0.15;
     sway *= t * t;
     sway *= 1.0 + float(depth) * 0.3;
 
-    vec3 windOffset = vec3(windDir.x, 0.0, windDir.y) * sway;
+    vec3 windOffset = vec3(windDir2D.x, 0.0, windDir2D.y) * sway;
 
     float perpPhase = push.time * 2.0 + branchHash * 6.28318;
-    vec3 perpDir = vec3(-windDir.y, 0.0, windDir.x);
+    vec3 perpDir = vec3(-windDir2D.y, 0.0, windDir2D.x);
     windOffset += perpDir * sin(perpPhase) * sway * 0.3;
 
     vec3 worldPos = localPos + windOffset;

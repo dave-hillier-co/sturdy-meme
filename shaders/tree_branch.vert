@@ -149,9 +149,16 @@ vec3 evaluateBezierDerivative(vec3 p0, vec3 p1, vec3 p2, vec3 p3, float t) {
     return 3.0*u*u*(p1-p0) + 6.0*u*t*(p2-p1) + 3.0*t*t*(p3-p2);
 }
 
+// Constants for tube geometry
+// Using TRIANGLE_LIST topology: each quad between rings = 2 triangles = 6 vertices
+const uint NUM_SEGMENTS = 8;      // Number of rings along branch
+const uint VERTS_PER_RING = 6;    // Vertices around circumference (hexagonal cross-section)
+const uint TRIS_PER_QUAD = 2;
+const uint VERTS_PER_TRI = 3;
+// Total vertices per branch: (NUM_SEGMENTS-1) ring pairs * VERTS_PER_RING quads * 2 tris * 3 verts = 252
+const uint VERTS_PER_BRANCH = (NUM_SEGMENTS - 1u) * VERTS_PER_RING * TRIS_PER_QUAD * VERTS_PER_TRI;
+
 void main() {
-    // Decode vertex index
-    // 32 vertices per branch: 8 segments * 4 vertices per ring
     uint branchIndex = gl_InstanceIndex;
     uint vertIndex = gl_VertexIndex;
 
@@ -167,19 +174,55 @@ void main() {
     vec3 ctrl2 = branch.controlPoint2.xyz;
     uint depth = branch.metadata.y;
 
-    // Branch segments and rings
-    const uint NUM_SEGMENTS = 8;
-    const uint VERTS_PER_RING = 4;
+    // Decode vertex index to determine which triangle vertex this is
+    // Each ring pair has VERTS_PER_RING quads, each quad has 2 triangles, each triangle has 3 vertices
+    uint vertsPerRingPair = VERTS_PER_RING * TRIS_PER_QUAD * VERTS_PER_TRI;  // 36
+    uint ringPairIndex = vertIndex / vertsPerRingPair;  // Which ring pair (0 to NUM_SEGMENTS-2)
+    uint vertInRingPair = vertIndex % vertsPerRingPair;
 
-    uint segmentIndex = vertIndex / VERTS_PER_RING;
-    uint ringIndex = vertIndex % VERTS_PER_RING;
+    uint quadIndex = vertInRingPair / (TRIS_PER_QUAD * VERTS_PER_TRI);  // Which quad in this ring pair (0 to 5)
+    uint vertInQuad = vertInRingPair % (TRIS_PER_QUAD * VERTS_PER_TRI);  // 0-5
+
+    // Decode quad vertex to ring indices
+    // Quad vertices (two triangles forming a quad):
+    // Triangle 1: (ring0, v0), (ring1, v0), (ring0, v1)  -> vertices 0, 1, 2
+    // Triangle 2: (ring0, v1), (ring1, v0), (ring1, v1)  -> vertices 3, 4, 5
+    uint ring0 = ringPairIndex;
+    uint ring1 = ringPairIndex + 1u;
+
+    uint v0 = quadIndex;
+    uint v1 = (quadIndex + 1u) % VERTS_PER_RING;
+
+    uint segmentIdx;
+    uint ringVertIdx;
+
+    if (vertInQuad == 0u) {
+        segmentIdx = ring0; ringVertIdx = v0;
+    } else if (vertInQuad == 1u) {
+        segmentIdx = ring1; ringVertIdx = v0;
+    } else if (vertInQuad == 2u) {
+        segmentIdx = ring0; ringVertIdx = v1;
+    } else if (vertInQuad == 3u) {
+        segmentIdx = ring0; ringVertIdx = v1;
+    } else if (vertInQuad == 4u) {
+        segmentIdx = ring1; ringVertIdx = v0;
+    } else {  // vertInQuad == 5
+        segmentIdx = ring1; ringVertIdx = v1;
+    }
 
     // Position along branch (0 = base, 1 = tip)
-    float t = float(segmentIndex) / float(NUM_SEGMENTS - 1);
+    float t = float(segmentIdx) / float(NUM_SEGMENTS - 1u);
 
     // Get position on bezier curve
     vec3 curvePos = evaluateBezier(basePos, ctrl1, ctrl2, tipPos, t);
-    vec3 tangent = normalize(evaluateBezierDerivative(basePos, ctrl1, ctrl2, tipPos, t));
+    vec3 tangent = evaluateBezierDerivative(basePos, ctrl1, ctrl2, tipPos, t);
+
+    // Handle near-zero tangent at endpoints
+    if (length(tangent) < 0.001) {
+        tangent = normalize(tipPos - basePos);
+    } else {
+        tangent = normalize(tangent);
+    }
 
     // Interpolate radius
     float radius = mix(baseRadius, tipRadius, t);
@@ -189,15 +232,15 @@ void main() {
     vec3 right = normalize(cross(up, tangent));
     vec3 forward = normalize(cross(tangent, right));
 
-    // Radial position
-    float angle = float(ringIndex) / float(VERTS_PER_RING) * 6.28318;
+    // Radial position (angle around circumference)
+    float angle = float(ringVertIdx) / float(VERTS_PER_RING) * 6.28318;
     vec3 radialDir = right * cos(angle) + forward * sin(angle);
 
     vec3 localPos = curvePos + radialDir * radius;
 
     // Apply wind animation
     float windSample = sampleWind(basePos.xz);
-    vec2 windDir = wind.windDirectionAndStrength.xy;
+    vec2 windDir2D = wind.windDirectionAndStrength.xy;
 
     // Stiffness based on branch thickness (thicker = stiffer)
     float stiffness = baseRadius / 0.3;  // Normalize against typical trunk radius
@@ -209,11 +252,11 @@ void main() {
     // Deeper branches sway more
     sway *= 1.0 + float(depth) * 0.3;
 
-    vec3 windOffset = vec3(windDir.x, 0.0, windDir.y) * sway;
+    vec3 windOffset = vec3(windDir2D.x, 0.0, windDir2D.y) * sway;
 
     // Add perpendicular oscillation
     float perpPhase = push.time * 2.0 + branchHash * 6.28318;
-    vec3 perpDir = vec3(-windDir.y, 0.0, windDir.x);
+    vec3 perpDir = vec3(-windDir2D.y, 0.0, windDir2D.x);
     windOffset += perpDir * sin(perpPhase) * sway * 0.3;
 
     vec3 worldPos = localPos + windOffset;

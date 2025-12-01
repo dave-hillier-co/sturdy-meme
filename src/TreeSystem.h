@@ -192,7 +192,8 @@ private:
     static constexpr uint32_t MAX_TREES = 1000;
     static constexpr uint32_t MAX_DEFINITIONS = 16;
     static constexpr uint32_t MAX_BRANCHES = 50000;  // Generated branches per frame
-    static constexpr uint32_t VERTICES_PER_BRANCH = 32;  // 8 segments * 4 vertices per ring
+    // 8 rings, 6 verts per ring, 7 ring pairs, 2 tris per quad, 3 verts per tri = (8-1)*6*2*3 = 252
+    static constexpr uint32_t VERTICES_PER_BRANCH = 252;
 
     const EnvironmentSettings* environmentSettings = nullptr;
 };

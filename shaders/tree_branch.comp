@@ -223,9 +223,9 @@ void generatePrimaryBranches(uint treeIndex, uint trunkSlot) {
 void main() {
     uint treeIndex = gl_GlobalInvocationID.x;
 
-    // Set vertex count (32 vertices per branch segment)
+    // Set vertex count: 8 rings, 6 verts per ring, 7 ring pairs, 2 tris per quad, 3 verts per tri = 252
     if (treeIndex == 0) {
-        atomicMax(drawCmd.vertexCount, 32);  // 8 segments * 4 vertices per ring (triangle strip)
+        atomicMax(drawCmd.vertexCount, 252);  // (8-1) * 6 * 2 * 3 = 252 (triangle list)
     }
 
     if (treeIndex >= uniforms.treeCount) return;

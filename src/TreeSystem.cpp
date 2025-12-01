@@ -35,6 +35,14 @@ void TreeSystem::destroy(VkDevice dev, VmaAllocator alloc) {
     vkDestroyPipelineLayout(dev, shadowPipelineLayout, nullptr);
     vkDestroyDescriptorSetLayout(dev, shadowDescriptorSetLayout, nullptr);
 
+    vkDestroyPipeline(dev, leafComputePipeline, nullptr);
+    vkDestroyPipelineLayout(dev, leafComputePipelineLayout, nullptr);
+    vkDestroyDescriptorSetLayout(dev, leafComputeDescriptorSetLayout, nullptr);
+
+    vkDestroyPipeline(dev, leafGraphicsPipeline, nullptr);
+    vkDestroyPipelineLayout(dev, leafGraphicsPipelineLayout, nullptr);
+    vkDestroyDescriptorSetLayout(dev, leafGraphicsDescriptorSetLayout, nullptr);
+
     if (definitionBuffer != VK_NULL_HANDLE) {
         vmaDestroyBuffer(alloc, definitionBuffer, definitionAllocation);
     }
@@ -48,6 +56,8 @@ void TreeSystem::destroy(VkDevice dev, VmaAllocator alloc) {
 void TreeSystem::destroyBuffers(VmaAllocator alloc) {
     BufferUtils::destroyBuffers(alloc, branchBuffers);
     BufferUtils::destroyBuffers(alloc, indirectBuffers);
+    BufferUtils::destroyBuffers(alloc, leafBuffers);
+    BufferUtils::destroyBuffers(alloc, leafIndirectBuffers);
     BufferUtils::destroyBuffers(alloc, uniformBuffers);
 }
 
@@ -55,6 +65,7 @@ bool TreeSystem::createBuffers() {
     VkDeviceSize branchBufferSize = sizeof(BranchInstance) * MAX_BRANCHES;
     VkDeviceSize indirectBufferSize = sizeof(VkDrawIndirectCommand);
     VkDeviceSize uniformBufferSize = sizeof(TreeUniforms);
+    VkDeviceSize leafBufferSize = sizeof(LeafInstance) * MAX_LEAVES;
 
     BufferUtils::DoubleBufferedBufferBuilder branchBuilder;
     if (!branchBuilder.setAllocator(getAllocator())
@@ -73,6 +84,26 @@ bool TreeSystem::createBuffers() {
              .setUsage(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT)
              .build(indirectBuffers)) {
         SDL_Log("Failed to create tree indirect buffers");
+        return false;
+    }
+
+    BufferUtils::DoubleBufferedBufferBuilder leafBuilder;
+    if (!leafBuilder.setAllocator(getAllocator())
+             .setSetCount(BUFFER_SET_COUNT)
+             .setSize(leafBufferSize)
+             .setUsage(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT)
+             .build(leafBuffers)) {
+        SDL_Log("Failed to create tree leaf buffers");
+        return false;
+    }
+
+    BufferUtils::DoubleBufferedBufferBuilder leafIndirectBuilder;
+    if (!leafIndirectBuilder.setAllocator(getAllocator())
+             .setSetCount(BUFFER_SET_COUNT)
+             .setSize(indirectBufferSize)
+             .setUsage(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT)
+             .build(leafIndirectBuffers)) {
+        SDL_Log("Failed to create tree leaf indirect buffers");
         return false;
     }
 
@@ -154,6 +185,149 @@ bool TreeSystem::createComputePipeline() {
     }
 
     return builder.buildComputePipeline(getComputePipelineHandles().pipelineLayout, getComputePipelineHandles().pipeline);
+}
+
+bool TreeSystem::createLeafComputePipeline() {
+    // Create descriptor set layout for leaf compute
+    PipelineBuilder layoutBuilder(getDevice());
+    // binding 0: leaf output buffer (storage)
+    // binding 1: indirect buffer (storage)
+    // binding 2: tree uniforms (uniform)
+    // binding 3: tree definitions (storage)
+    // binding 4: tree instances (storage)
+    // binding 5: terrain heightmap (sampler)
+    layoutBuilder.addDescriptorBinding(0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT)
+        .addDescriptorBinding(1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT)
+        .addDescriptorBinding(2, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT)
+        .addDescriptorBinding(3, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT)
+        .addDescriptorBinding(4, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT)
+        .addDescriptorBinding(5, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_COMPUTE_BIT);
+
+    if (!layoutBuilder.buildDescriptorSetLayout(leafComputeDescriptorSetLayout)) {
+        return false;
+    }
+
+    PipelineBuilder builder(getDevice());
+    builder.addShaderStage(getShaderPath() + "/tree_leaf.comp.spv", VK_SHADER_STAGE_COMPUTE_BIT)
+        .addPushConstantRange(VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(TreePushConstants));
+
+    if (!builder.buildPipelineLayout({leafComputeDescriptorSetLayout}, leafComputePipelineLayout)) {
+        return false;
+    }
+
+    return builder.buildComputePipeline(leafComputePipelineLayout, leafComputePipeline);
+}
+
+bool TreeSystem::createLeafGraphicsPipeline() {
+    // Create descriptor set layout for leaf graphics
+    PipelineBuilder layoutBuilder(getDevice());
+    // binding 0: renderer UBO (uniform)
+    // binding 1: leaf buffer (storage)
+    // binding 2: shadow map (sampler)
+    // binding 3: wind uniforms (uniform)
+    // binding 4: light buffer (storage)
+    layoutBuilder.addDescriptorBinding(0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1,
+                                 VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT)
+        .addDescriptorBinding(1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT)
+        .addDescriptorBinding(2, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT)
+        .addDescriptorBinding(3, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT)
+        .addDescriptorBinding(4, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_FRAGMENT_BIT);
+
+    if (!layoutBuilder.buildDescriptorSetLayout(leafGraphicsDescriptorSetLayout)) {
+        return false;
+    }
+
+    PipelineBuilder builder(getDevice());
+    builder.addShaderStage(getShaderPath() + "/tree_leaf.vert.spv", VK_SHADER_STAGE_VERTEX_BIT)
+        .addShaderStage(getShaderPath() + "/tree_leaf.frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT)
+        .addPushConstantRange(VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(TreePushConstants));
+
+    // No vertex input - procedural geometry from leaf buffer
+    VkPipelineVertexInputStateCreateInfo vertexInputInfo{};
+    vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+
+    VkPipelineInputAssemblyStateCreateInfo inputAssembly{};
+    inputAssembly.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
+    inputAssembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+    inputAssembly.primitiveRestartEnable = VK_FALSE;
+
+    VkViewport viewport{};
+    viewport.x = 0.0f;
+    viewport.y = 0.0f;
+    viewport.width = static_cast<float>(getExtent().width);
+    viewport.height = static_cast<float>(getExtent().height);
+    viewport.minDepth = 0.0f;
+    viewport.maxDepth = 1.0f;
+
+    VkRect2D scissor{};
+    scissor.offset = {0, 0};
+    scissor.extent = getExtent();
+
+    VkPipelineViewportStateCreateInfo viewportState{};
+    viewportState.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
+    viewportState.viewportCount = 1;
+    viewportState.pViewports = &viewport;
+    viewportState.scissorCount = 1;
+    viewportState.pScissors = &scissor;
+
+    VkPipelineRasterizationStateCreateInfo rasterizer{};
+    rasterizer.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
+    rasterizer.depthClampEnable = VK_FALSE;
+    rasterizer.rasterizerDiscardEnable = VK_FALSE;
+    rasterizer.polygonMode = VK_POLYGON_MODE_FILL;
+    rasterizer.lineWidth = 1.0f;
+    rasterizer.cullMode = VK_CULL_MODE_NONE;  // Two-sided for leaves
+    rasterizer.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
+    rasterizer.depthBiasEnable = VK_FALSE;
+
+    VkPipelineMultisampleStateCreateInfo multisampling{};
+    multisampling.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
+    multisampling.sampleShadingEnable = VK_FALSE;
+    multisampling.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+
+    VkPipelineDepthStencilStateCreateInfo depthStencil{};
+    depthStencil.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
+    depthStencil.depthTestEnable = VK_TRUE;
+    depthStencil.depthWriteEnable = VK_TRUE;
+    depthStencil.depthCompareOp = VK_COMPARE_OP_LESS;
+    depthStencil.depthBoundsTestEnable = VK_FALSE;
+    depthStencil.stencilTestEnable = VK_FALSE;
+
+    // Enable alpha blending for leaf transparency
+    VkPipelineColorBlendAttachmentState colorBlendAttachment{};
+    colorBlendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
+                                          VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+    colorBlendAttachment.blendEnable = VK_TRUE;
+    colorBlendAttachment.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+    colorBlendAttachment.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+    colorBlendAttachment.colorBlendOp = VK_BLEND_OP_ADD;
+    colorBlendAttachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+    colorBlendAttachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
+    colorBlendAttachment.alphaBlendOp = VK_BLEND_OP_ADD;
+
+    VkPipelineColorBlendStateCreateInfo colorBlending{};
+    colorBlending.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
+    colorBlending.logicOpEnable = VK_FALSE;
+    colorBlending.attachmentCount = 1;
+    colorBlending.pAttachments = &colorBlendAttachment;
+
+    if (!builder.buildPipelineLayout({leafGraphicsDescriptorSetLayout}, leafGraphicsPipelineLayout)) {
+        return false;
+    }
+
+    VkGraphicsPipelineCreateInfo pipelineInfo{};
+    pipelineInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
+    pipelineInfo.pVertexInputState = &vertexInputInfo;
+    pipelineInfo.pInputAssemblyState = &inputAssembly;
+    pipelineInfo.pViewportState = &viewportState;
+    pipelineInfo.pRasterizationState = &rasterizer;
+    pipelineInfo.pMultisampleState = &multisampling;
+    pipelineInfo.pDepthStencilState = &depthStencil;
+    pipelineInfo.pColorBlendState = &colorBlending;
+    pipelineInfo.renderPass = getRenderPass();
+    pipelineInfo.subpass = 0;
+
+    return builder.buildGraphicsPipeline(pipelineInfo, leafGraphicsPipelineLayout, leafGraphicsPipeline);
 }
 
 bool TreeSystem::createGraphicsDescriptorSetLayout() {
@@ -373,6 +547,30 @@ bool TreeSystem::createDescriptorSets() {
             return false;
         }
 
+        // Allocate leaf compute descriptor sets
+        VkDescriptorSetAllocateInfo leafComputeAllocInfo{};
+        leafComputeAllocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+        leafComputeAllocInfo.descriptorPool = getDescriptorPool();
+        leafComputeAllocInfo.descriptorSetCount = 1;
+        leafComputeAllocInfo.pSetLayouts = &leafComputeDescriptorSetLayout;
+
+        if (vkAllocateDescriptorSets(getDevice(), &leafComputeAllocInfo, &leafComputeDescriptorSetsDB[set]) != VK_SUCCESS) {
+            SDL_Log("Failed to allocate tree leaf compute descriptor set (set %u)", set);
+            return false;
+        }
+
+        // Allocate leaf graphics descriptor sets
+        VkDescriptorSetAllocateInfo leafGraphicsAllocInfo{};
+        leafGraphicsAllocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+        leafGraphicsAllocInfo.descriptorPool = getDescriptorPool();
+        leafGraphicsAllocInfo.descriptorSetCount = 1;
+        leafGraphicsAllocInfo.pSetLayouts = &leafGraphicsDescriptorSetLayout;
+
+        if (vkAllocateDescriptorSets(getDevice(), &leafGraphicsAllocInfo, &leafGraphicsDescriptorSetsDB[set]) != VK_SUCCESS) {
+            SDL_Log("Failed to allocate tree leaf graphics descriptor set (set %u)", set);
+            return false;
+        }
+
         // Update compute descriptor sets
         VkDescriptorBufferInfo branchBufferInfo{};
         branchBufferInfo.buffer = branchBuffers.buffers[set];
@@ -443,13 +641,78 @@ bool TreeSystem::createDescriptorSets() {
 
         vkUpdateDescriptorSets(getDevice(), static_cast<uint32_t>(computeWrites.size()),
                                computeWrites.data(), 0, nullptr);
+
+        // Update leaf compute descriptor sets
+        VkDescriptorBufferInfo leafBufferInfo{};
+        leafBufferInfo.buffer = leafBuffers.buffers[set];
+        leafBufferInfo.offset = 0;
+        leafBufferInfo.range = sizeof(LeafInstance) * MAX_LEAVES;
+
+        VkDescriptorBufferInfo leafIndirectBufferInfo{};
+        leafIndirectBufferInfo.buffer = leafIndirectBuffers.buffers[set];
+        leafIndirectBufferInfo.offset = 0;
+        leafIndirectBufferInfo.range = sizeof(VkDrawIndirectCommand);
+
+        std::array<VkWriteDescriptorSet, 5> leafComputeWrites{};
+
+        leafComputeWrites[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        leafComputeWrites[0].dstSet = leafComputeDescriptorSetsDB[set];
+        leafComputeWrites[0].dstBinding = 0;
+        leafComputeWrites[0].dstArrayElement = 0;
+        leafComputeWrites[0].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        leafComputeWrites[0].descriptorCount = 1;
+        leafComputeWrites[0].pBufferInfo = &leafBufferInfo;
+
+        leafComputeWrites[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        leafComputeWrites[1].dstSet = leafComputeDescriptorSetsDB[set];
+        leafComputeWrites[1].dstBinding = 1;
+        leafComputeWrites[1].dstArrayElement = 0;
+        leafComputeWrites[1].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        leafComputeWrites[1].descriptorCount = 1;
+        leafComputeWrites[1].pBufferInfo = &leafIndirectBufferInfo;
+
+        leafComputeWrites[2].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        leafComputeWrites[2].dstSet = leafComputeDescriptorSetsDB[set];
+        leafComputeWrites[2].dstBinding = 2;
+        leafComputeWrites[2].dstArrayElement = 0;
+        leafComputeWrites[2].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+        leafComputeWrites[2].descriptorCount = 1;
+        leafComputeWrites[2].pBufferInfo = &uniformBufferInfo;
+
+        leafComputeWrites[3].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        leafComputeWrites[3].dstSet = leafComputeDescriptorSetsDB[set];
+        leafComputeWrites[3].dstBinding = 3;
+        leafComputeWrites[3].dstArrayElement = 0;
+        leafComputeWrites[3].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        leafComputeWrites[3].descriptorCount = 1;
+        leafComputeWrites[3].pBufferInfo = &definitionBufferInfo;
+
+        leafComputeWrites[4].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        leafComputeWrites[4].dstSet = leafComputeDescriptorSetsDB[set];
+        leafComputeWrites[4].dstBinding = 4;
+        leafComputeWrites[4].dstArrayElement = 0;
+        leafComputeWrites[4].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        leafComputeWrites[4].descriptorCount = 1;
+        leafComputeWrites[4].pBufferInfo = &treeInstanceBufferInfo;
+
+        vkUpdateDescriptorSets(getDevice(), static_cast<uint32_t>(leafComputeWrites.size()),
+                               leafComputeWrites.data(), 0, nullptr);
     }
 
     return true;
 }
 
 bool TreeSystem::createExtraPipelines() {
-    return createShadowPipeline();
+    if (!createShadowPipeline()) {
+        return false;
+    }
+    if (!createLeafComputePipeline()) {
+        return false;
+    }
+    if (!createLeafGraphicsPipeline()) {
+        return false;
+    }
+    return true;
 }
 
 void TreeSystem::updateDescriptorSets(VkDevice dev, const std::vector<VkBuffer>& rendererUniformBuffers,
@@ -560,6 +823,57 @@ void TreeSystem::updateDescriptorSets(VkDevice dev, const std::vector<VkBuffer>&
 
         vkUpdateDescriptorSets(dev, static_cast<uint32_t>(shadowWrites.size()),
                                shadowWrites.data(), 0, nullptr);
+
+        // Update leaf graphics descriptor sets
+        VkDescriptorBufferInfo leafBufferInfo{};
+        leafBufferInfo.buffer = leafBuffers.buffers[set];
+        leafBufferInfo.offset = 0;
+        leafBufferInfo.range = sizeof(LeafInstance) * MAX_LEAVES;
+
+        std::array<VkWriteDescriptorSet, 5> leafGraphicsWrites{};
+
+        leafGraphicsWrites[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        leafGraphicsWrites[0].dstSet = leafGraphicsDescriptorSetsDB[set];
+        leafGraphicsWrites[0].dstBinding = 0;
+        leafGraphicsWrites[0].dstArrayElement = 0;
+        leafGraphicsWrites[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+        leafGraphicsWrites[0].descriptorCount = 1;
+        leafGraphicsWrites[0].pBufferInfo = &uboInfo;
+
+        leafGraphicsWrites[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        leafGraphicsWrites[1].dstSet = leafGraphicsDescriptorSetsDB[set];
+        leafGraphicsWrites[1].dstBinding = 1;
+        leafGraphicsWrites[1].dstArrayElement = 0;
+        leafGraphicsWrites[1].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        leafGraphicsWrites[1].descriptorCount = 1;
+        leafGraphicsWrites[1].pBufferInfo = &leafBufferInfo;
+
+        leafGraphicsWrites[2].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        leafGraphicsWrites[2].dstSet = leafGraphicsDescriptorSetsDB[set];
+        leafGraphicsWrites[2].dstBinding = 2;
+        leafGraphicsWrites[2].dstArrayElement = 0;
+        leafGraphicsWrites[2].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        leafGraphicsWrites[2].descriptorCount = 1;
+        leafGraphicsWrites[2].pImageInfo = &shadowImageInfo;
+
+        leafGraphicsWrites[3].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        leafGraphicsWrites[3].dstSet = leafGraphicsDescriptorSetsDB[set];
+        leafGraphicsWrites[3].dstBinding = 3;
+        leafGraphicsWrites[3].dstArrayElement = 0;
+        leafGraphicsWrites[3].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+        leafGraphicsWrites[3].descriptorCount = 1;
+        leafGraphicsWrites[3].pBufferInfo = &windBufferInfo;
+
+        leafGraphicsWrites[4].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        leafGraphicsWrites[4].dstSet = leafGraphicsDescriptorSetsDB[set];
+        leafGraphicsWrites[4].dstBinding = 4;
+        leafGraphicsWrites[4].dstArrayElement = 0;
+        leafGraphicsWrites[4].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        leafGraphicsWrites[4].descriptorCount = 1;
+        leafGraphicsWrites[4].pBufferInfo = &lightBufferInfo;
+
+        vkUpdateDescriptorSets(dev, static_cast<uint32_t>(leafGraphicsWrites.size()),
+                               leafGraphicsWrites.data(), 0, nullptr);
     }
 }
 
@@ -637,8 +951,9 @@ void TreeSystem::recordResetAndCompute(VkCommandBuffer cmd, uint32_t frameIndex,
 
     vkUpdateDescriptorSets(getDevice(), static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
 
-    // Reset indirect buffer
+    // Reset branch and leaf indirect buffers
     vkCmdFillBuffer(cmd, indirectBuffers.buffers[writeSet], 0, sizeof(VkDrawIndirectCommand), 0);
+    vkCmdFillBuffer(cmd, leafIndirectBuffers.buffers[writeSet], 0, sizeof(VkDrawIndirectCommand), 0);
 
     VkMemoryBarrier fillBarrier{};
     fillBarrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
@@ -661,8 +976,41 @@ void TreeSystem::recordResetAndCompute(VkCommandBuffer cmd, uint32_t frameIndex,
     vkCmdPushConstants(cmd, getComputePipelineHandles().pipelineLayout,
                        VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(TreePushConstants), &treePush);
 
-    // Dispatch one workgroup per tree
+    // Dispatch one workgroup per tree for branches
     uint32_t numWorkgroups = (static_cast<uint32_t>(trees.size()) + 63) / 64;
+    vkCmdDispatch(cmd, numWorkgroups, 1, 1);
+
+    // Update leaf compute descriptor set with terrain heightmap
+    std::array<VkWriteDescriptorSet, 2> leafWrites{};
+
+    leafWrites[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    leafWrites[0].dstSet = leafComputeDescriptorSetsDB[writeSet];
+    leafWrites[0].dstBinding = 2;
+    leafWrites[0].dstArrayElement = 0;
+    leafWrites[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    leafWrites[0].descriptorCount = 1;
+    leafWrites[0].pBufferInfo = &uniformBufferInfo;
+
+    leafWrites[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    leafWrites[1].dstSet = leafComputeDescriptorSetsDB[writeSet];
+    leafWrites[1].dstBinding = 5;
+    leafWrites[1].dstArrayElement = 0;
+    leafWrites[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    leafWrites[1].descriptorCount = 1;
+    leafWrites[1].pImageInfo = &heightMapInfo;
+
+    vkUpdateDescriptorSets(getDevice(), static_cast<uint32_t>(leafWrites.size()), leafWrites.data(), 0, nullptr);
+
+    // Dispatch leaf compute shader
+    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, leafComputePipeline);
+    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE,
+                            leafComputePipelineLayout, 0, 1,
+                            &leafComputeDescriptorSetsDB[writeSet], 0, nullptr);
+
+    vkCmdPushConstants(cmd, leafComputePipelineLayout,
+                       VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(TreePushConstants), &treePush);
+
+    // Dispatch one workgroup per tree for leaves
     vkCmdDispatch(cmd, numWorkgroups, 1, 1);
 
     // Memory barrier
@@ -697,6 +1045,27 @@ void TreeSystem::recordDraw(VkCommandBuffer cmd, uint32_t frameIndex, float time
                        VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(TreePushConstants), &treePush);
 
     vkCmdDrawIndirect(cmd, indirectBuffers.buffers[readSet], 0, 1, sizeof(VkDrawIndirectCommand));
+}
+
+void TreeSystem::recordLeafDraw(VkCommandBuffer cmd, uint32_t frameIndex, float time) {
+    if (trees.empty()) return;
+
+    uint32_t readSet = particleSystem.getRenderBufferSet();
+    if (particleSystem.getComputeBufferSet() == particleSystem.getRenderBufferSet()) {
+        readSet = particleSystem.getComputeBufferSet();
+    }
+
+    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, leafGraphicsPipeline);
+    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                            leafGraphicsPipelineLayout, 0, 1,
+                            &leafGraphicsDescriptorSetsDB[readSet], 0, nullptr);
+
+    TreePushConstants treePush{};
+    treePush.time = time;
+    vkCmdPushConstants(cmd, leafGraphicsPipelineLayout,
+                       VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(TreePushConstants), &treePush);
+
+    vkCmdDrawIndirect(cmd, leafIndirectBuffers.buffers[readSet], 0, 1, sizeof(VkDrawIndirectCommand));
 }
 
 void TreeSystem::recordShadowDraw(VkCommandBuffer cmd, uint32_t frameIndex, float time, uint32_t cascadeIndex) {

@@ -1,0 +1,260 @@
+#version 450
+
+layout(local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
+
+// Leaf instance output - matches C++ struct
+struct LeafInstance {
+    vec4 position;      // xyz = world position, w = size
+    vec4 facing;        // xy = facing direction, z = hash, w = flutter
+    vec4 color;         // rgb = color tint, a = alpha
+    uvec4 metadata;     // x = tree index, y = flags, z = unused, w = unused
+};
+
+struct DrawIndirectCommand {
+    uint vertexCount;
+    uint instanceCount;
+    uint firstVertex;
+    uint firstInstance;
+};
+
+// Tree definition - matches C++ struct
+struct TreeDefinition {
+    float trunkHeight;
+    float trunkRadius;
+    float trunkTaper;
+    float trunkBend;
+
+    uint branchLevels;
+    float branchAngle;
+    float branchSpread;
+    float branchLengthRatio;
+    float branchRadiusRatio;
+    uint branchesPerLevel;
+
+    vec3 canopyCenter;
+    vec3 canopyExtent;
+    float leafDensity;
+    float leafSize;
+    float leafSizeVariance;
+
+    float windInfluence;
+    float branchStiffness;
+
+    uint leafPaletteIndex;
+    uint barkTextureIndex;
+
+    float padding[2];
+};
+
+// Tree instance - matches C++ struct
+struct TreeInstance {
+    vec3 position;
+    float rotation;
+    float scale;
+    float age;
+    uint definitionIndex;
+    float hash;
+};
+
+layout(std430, binding = 0) buffer LeafBuffer {
+    LeafInstance leaves[];
+};
+
+layout(std430, binding = 1) buffer IndirectBuffer {
+    DrawIndirectCommand drawCmd;
+};
+
+layout(binding = 2) uniform TreeUniforms {
+    vec4 cameraPosition;
+    vec4 frustumPlanes[6];
+    float maxDrawDistance;
+    float lodTransitionStart;
+    float lodTransitionEnd;
+    float terrainSize;
+    float terrainHeightScale;
+    float time;
+    uint treeCount;
+    float padding;
+} uniforms;
+
+layout(std430, binding = 3) buffer DefinitionBuffer {
+    TreeDefinition definitions[];
+};
+
+layout(std430, binding = 4) buffer TreeInstanceBuffer {
+    TreeInstance trees[];
+};
+
+layout(binding = 5) uniform sampler2D terrainHeightMap;
+
+layout(push_constant) uniform PushConstants {
+    float time;
+    int cascadeIndex;
+    float padding[2];
+} push;
+
+// Hash functions
+float hash(float p) {
+    return fract(sin(p * 127.1) * 43758.5453);
+}
+
+vec3 hash3(float p) {
+    return vec3(
+        hash(p),
+        hash(p + 47.0),
+        hash(p + 103.0)
+    );
+}
+
+vec3 hash3v(vec3 p) {
+    return vec3(
+        fract(sin(dot(p, vec3(127.1, 311.7, 74.7))) * 43758.5453),
+        fract(sin(dot(p, vec3(269.5, 183.3, 246.1))) * 43758.5453),
+        fract(sin(dot(p, vec3(113.5, 271.9, 124.6))) * 43758.5453)
+    );
+}
+
+// Sample terrain height at world position
+float sampleTerrainHeight(vec2 worldXZ) {
+    vec2 uv = worldXZ / uniforms.terrainSize + 0.5;
+    if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) {
+        return 0.0;
+    }
+    float h = texture(terrainHeightMap, uv).r;
+    return (h - 0.5) * uniforms.terrainHeightScale;
+}
+
+// Frustum culling check
+bool isInFrustum(vec3 pos, float radius) {
+    vec4 p = vec4(pos, 1.0);
+    for (int i = 0; i < 6; i++) {
+        if (dot(p, uniforms.frustumPlanes[i]) < -radius) {
+            return false;
+        }
+    }
+    return true;
+}
+
+// Generate leaves for a single tree
+void generateLeavesForTree(uint treeIndex) {
+    TreeInstance tree = trees[treeIndex];
+    TreeDefinition def = definitions[tree.definitionIndex];
+
+    // Get terrain height at tree position
+    float terrainY = sampleTerrainHeight(tree.position.xz);
+    vec3 treeBase = vec3(tree.position.x, terrainY, tree.position.z);
+
+    // Calculate canopy center in world space
+    float effectiveHeight = def.trunkHeight * tree.scale * tree.age;
+    vec3 canopyCenter = treeBase + vec3(0.0, effectiveHeight * 0.8, 0.0) + def.canopyCenter * tree.scale;
+    vec3 canopyExtent = def.canopyExtent * tree.scale * tree.age;
+
+    // Distance to camera for LOD
+    float distToCamera = length(canopyCenter - uniforms.cameraPosition.xyz);
+
+    // Skip if too far
+    if (distToCamera > uniforms.maxDrawDistance) return;
+
+    // Frustum cull the whole canopy
+    float canopyRadius = max(canopyExtent.x, max(canopyExtent.y, canopyExtent.z));
+    if (!isInFrustum(canopyCenter, canopyRadius)) return;
+
+    // LOD - reduce leaf count at distance
+    float lodFactor = smoothstep(uniforms.lodTransitionStart, uniforms.lodTransitionEnd, distToCamera);
+    float densityMult = 1.0 - lodFactor * 0.8;  // Keep 20% at max distance
+
+    // Number of leaves based on density and canopy volume
+    float canopyVolume = canopyExtent.x * canopyExtent.y * canopyExtent.z * 4.19; // ~4/3 pi
+    uint maxLeaves = uint(def.leafDensity * canopyVolume * densityMult);
+    maxLeaves = min(maxLeaves, 500u);  // Cap per tree
+
+    // Generate leaves in a spiral pattern around canopy
+    for (uint i = 0; i < maxLeaves; i++) {
+        // Use golden ratio spiral for better distribution
+        float phi = float(i) * 2.39996; // Golden angle
+        float cosTheta = 1.0 - 2.0 * (float(i) + 0.5) / float(maxLeaves);
+        float sinTheta = sqrt(1.0 - cosTheta * cosTheta);
+
+        // Position on unit sphere
+        vec3 unitPos = vec3(
+            sinTheta * cos(phi),
+            cosTheta,
+            sinTheta * sin(phi)
+        );
+
+        // Add hash-based variation
+        float leafHash = hash(tree.hash * 1000.0 + float(i));
+        vec3 jitter = hash3(tree.hash * 2000.0 + float(i)) * 2.0 - 1.0;
+
+        // Random radius within canopy (denser toward center)
+        float radiusFactor = 0.3 + leafHash * 0.7;
+        radiusFactor = sqrt(radiusFactor); // Bias toward outer region for more natural look
+
+        // Position within canopy ellipsoid
+        vec3 localPos = unitPos * canopyExtent * radiusFactor + jitter * 0.2 * tree.scale;
+        vec3 worldPos = canopyCenter + localPos;
+
+        // Skip some leaves randomly for variation
+        if (hash(leafHash * 100.0) > densityMult) continue;
+
+        // Calculate facing direction (roughly outward from canopy center with some random)
+        vec2 facingDir = normalize(mix(
+            localPos.xz,
+            vec2(hash(leafHash * 10.0) - 0.5, hash(leafHash * 20.0) - 0.5),
+            0.3
+        ));
+
+        // Leaf size with variance
+        float baseSize = def.leafSize * tree.scale;
+        float sizeVar = 1.0 + (leafHash - 0.5) * def.leafSizeVariance;
+        float leafSize = baseSize * sizeVar;
+
+        // Increase leaf size at distance to maintain coverage
+        leafSize *= 1.0 + lodFactor * 0.5;
+
+        // Color variation based on depth in canopy and hash
+        float depthInCanopy = 1.0 - radiusFactor;  // 0 = surface, 1 = center
+        vec3 baseColor = vec3(0.2, 0.5, 0.15);  // Base green
+        vec3 darkColor = vec3(0.1, 0.3, 0.08);  // Darker interior
+        vec3 lightColor = vec3(0.3, 0.6, 0.2);  // Lighter outer
+
+        // Mix based on vertical position and depth
+        float verticalFactor = (localPos.y / canopyExtent.y) * 0.5 + 0.5;
+        vec3 leafColor = mix(darkColor, lightColor, verticalFactor * (1.0 - depthInCanopy * 0.5));
+
+        // Add per-leaf color variation
+        leafColor += (hash3(leafHash * 50.0) - 0.5) * 0.1;
+        leafColor = clamp(leafColor, vec3(0.0), vec3(1.0));
+
+        // Allocate leaf slot
+        uint slot = atomicAdd(drawCmd.instanceCount, 1);
+
+        // Limit to buffer size
+        if (slot >= 100000) {
+            atomicAdd(drawCmd.instanceCount, 0xFFFFFFFF); // Decrement back
+            return;
+        }
+
+        // Flutter amount based on depth (outer leaves flutter more)
+        float flutter = (1.0 - depthInCanopy) * 0.5 + 0.1;
+
+        // Write leaf data
+        leaves[slot].position = vec4(worldPos, leafSize);
+        leaves[slot].facing = vec4(facingDir, leafHash, flutter);
+        leaves[slot].color = vec4(leafColor, 1.0);
+        leaves[slot].metadata = uvec4(treeIndex, 0, 0, 0);
+    }
+}
+
+void main() {
+    uint treeIndex = gl_GlobalInvocationID.x;
+
+    // Set vertex count for triangle list (6 verts per leaf quad)
+    if (treeIndex == 0) {
+        atomicMax(drawCmd.vertexCount, 6);
+    }
+
+    if (treeIndex >= uniforms.treeCount) return;
+
+    generateLeavesForTree(treeIndex);
+}

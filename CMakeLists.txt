@@ -123,6 +123,9 @@ set(SHADER_FILES
     ${CMAKE_CURRENT_SOURCE_DIR}/shaders/tree_branch.frag.spv
     ${CMAKE_CURRENT_SOURCE_DIR}/shaders/tree_shadow.vert.spv
     ${CMAKE_CURRENT_SOURCE_DIR}/shaders/tree_shadow.frag.spv
+    ${CMAKE_CURRENT_SOURCE_DIR}/shaders/tree_leaf.comp.spv
+    ${CMAKE_CURRENT_SOURCE_DIR}/shaders/tree_leaf.vert.spv
+    ${CMAKE_CURRENT_SOURCE_DIR}/shaders/tree_leaf.frag.spv
 )
 
 set(TERRAIN_SHADER_FILES
@@ -366,6 +369,24 @@ if(SHADER_COMPILE_CMD)
         COMMENT "Compiling tree shadow fragment shader"
     )
     add_custom_command(
+        OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/shaders/tree_leaf.comp.spv
+        COMMAND ${SHADER_COMPILE_CMD} ${CMAKE_CURRENT_SOURCE_DIR}/shaders/tree_leaf.comp.spv ${CMAKE_CURRENT_SOURCE_DIR}/shaders/tree_leaf.comp
+        DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/shaders/tree_leaf.comp
+        COMMENT "Compiling tree leaf compute shader"
+    )
+    add_custom_command(
+        OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/shaders/tree_leaf.vert.spv
+        COMMAND ${SHADER_COMPILE_CMD} ${CMAKE_CURRENT_SOURCE_DIR}/shaders/tree_leaf.vert.spv ${CMAKE_CURRENT_SOURCE_DIR}/shaders/tree_leaf.vert
+        DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/shaders/tree_leaf.vert
+        COMMENT "Compiling tree leaf vertex shader"
+    )
+    add_custom_command(
+        OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/shaders/tree_leaf.frag.spv
+        COMMAND ${SHADER_COMPILE_CMD} ${CMAKE_CURRENT_SOURCE_DIR}/shaders/tree_leaf.frag.spv ${CMAKE_CURRENT_SOURCE_DIR}/shaders/tree_leaf.frag
+        DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/shaders/tree_leaf.frag
+        COMMENT "Compiling tree leaf fragment shader"
+    )
+    add_custom_command(
         OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/shaders/transmittance_lut.comp.spv
         COMMAND ${GLSLANG_VALIDATOR} --target-env vulkan1.2 -I${CMAKE_CURRENT_SOURCE_DIR}/shaders -V -o ${CMAKE_CURRENT_SOURCE_DIR}/shaders/transmittance_lut.comp.spv ${CMAKE_CURRENT_SOURCE_DIR}/shaders/transmittance_lut.comp
         DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/shaders/transmittance_lut.comp ${CMAKE_CURRENT_SOURCE_DIR}/shaders/atmosphere_common.glsl
@@ -491,6 +512,9 @@ if(SHADER_COMPILE_CMD)
         ${CMAKE_CURRENT_SOURCE_DIR}/shaders/tree_branch.frag.spv
         ${CMAKE_CURRENT_SOURCE_DIR}/shaders/tree_shadow.vert.spv
         ${CMAKE_CURRENT_SOURCE_DIR}/shaders/tree_shadow.frag.spv
+        ${CMAKE_CURRENT_SOURCE_DIR}/shaders/tree_leaf.comp.spv
+        ${CMAKE_CURRENT_SOURCE_DIR}/shaders/tree_leaf.vert.spv
+        ${CMAKE_CURRENT_SOURCE_DIR}/shaders/tree_leaf.frag.spv
         ${CMAKE_CURRENT_SOURCE_DIR}/shaders/terrain/terrain_dispatcher.comp.spv
         ${CMAKE_CURRENT_SOURCE_DIR}/shaders/terrain/terrain_subdivision.comp.spv
         ${CMAKE_CURRENT_SOURCE_DIR}/shaders/terrain/terrain_sum_reduction_prepass.comp.spv

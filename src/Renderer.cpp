@@ -2909,8 +2909,9 @@ void Renderer::recordHDRPass(VkCommandBuffer cmd, uint32_t frameIndex, float gra
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, graphicsPipeline);
     recordSceneObjects(cmd, frameIndex);
 
-    // Draw trees (before grass)
+    // Draw trees (before grass) - branches first, then leaves
     treeSystem.recordDraw(cmd, frameIndex, grassTime);
+    treeSystem.recordLeafDraw(cmd, frameIndex, grassTime);
 
     // Draw grass
     grassSystem.recordDraw(cmd, frameIndex, grassTime);

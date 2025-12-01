@@ -13,6 +13,8 @@
 #include <Jolt/Physics/Collision/Shape/CapsuleShape.h>
 #include <Jolt/Physics/Collision/Shape/HeightFieldShape.h>
 #include <Jolt/Physics/Collision/Shape/StaticCompoundShape.h>
+#include <Jolt/Physics/Collision/Shape/ConvexHullShape.h>
+#include <Jolt/Physics/Collision/Shape/ScaledShape.h>
 #include <Jolt/Physics/Body/BodyCreationSettings.h>
 #include <Jolt/Physics/Body/BodyActivationListener.h>
 #include <Jolt/Physics/Character/CharacterVirtual.h>
@@ -523,6 +525,48 @@ PhysicsBodyID PhysicsWorld::createStaticBox(const glm::vec3& position, const glm
     JPH::Body* body = bodyInterface.CreateBody(bodySettings);
     if (!body) {
         SDL_Log("Failed to create static box body");
+        return INVALID_BODY_ID;
+    }
+
+    bodyInterface.AddBody(body->GetID(), JPH::EActivation::DontActivate);
+    return body->GetID().GetIndexAndSequenceNumber();
+}
+
+PhysicsBodyID PhysicsWorld::createStaticConvexHull(const glm::vec3& position, const glm::vec3* vertices,
+                                                    size_t vertexCount, float scale,
+                                                    const glm::quat& rotation) {
+    if (!initialized || vertexCount < 4) return INVALID_BODY_ID;
+
+    JPH::BodyInterface& bodyInterface = physicsSystem->GetBodyInterface();
+
+    // Convert glm vertices to Jolt Vec3 array with scale applied
+    std::vector<JPH::Vec3> joltVertices;
+    joltVertices.reserve(vertexCount);
+    for (size_t i = 0; i < vertexCount; ++i) {
+        joltVertices.push_back(JPH::Vec3(vertices[i].x * scale, vertices[i].y * scale, vertices[i].z * scale));
+    }
+
+    // Create convex hull from vertices
+    JPH::ConvexHullShapeSettings hullSettings(joltVertices.data(), static_cast<int>(joltVertices.size()));
+    hullSettings.mMaxConvexRadius = 0.05f;  // Small radius for sharp edges
+    JPH::ShapeSettings::ShapeResult shapeResult = hullSettings.Create();
+    if (!shapeResult.IsValid()) {
+        SDL_Log("Failed to create convex hull shape: %s", shapeResult.GetError().c_str());
+        return INVALID_BODY_ID;
+    }
+
+    JPH::BodyCreationSettings bodySettings(
+        shapeResult.Get(),
+        JPH::RVec3(position.x, position.y, position.z),
+        toJolt(rotation),
+        JPH::EMotionType::Static,
+        PhysicsLayers::NON_MOVING
+    );
+    bodySettings.mFriction = 0.7f;  // Rocks are rough
+
+    JPH::Body* body = bodyInterface.CreateBody(bodySettings);
+    if (!body) {
+        SDL_Log("Failed to create convex hull body");
         return INVALID_BODY_ID;
     }
 

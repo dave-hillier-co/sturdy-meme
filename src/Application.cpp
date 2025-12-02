@@ -162,8 +162,13 @@ void Application::run() {
             }
         }
 
+        // Detect jump BEFORE physics update (character is still grounded when jump is requested)
+        bool wasGrounded = physics.isCharacterOnGround();
+        bool wantsJump = input.wantsJump();
+        bool isJumping = wantsJump && wasGrounded;
+
         // Always update physics character controller (handles gravity, jumping, and movement)
-        physics.updateCharacter(deltaTime, desiredVelocity, input.wantsJump());
+        physics.updateCharacter(deltaTime, desiredVelocity, wantsJump);
 
         // Update physics simulation
         physics.update(deltaTime);
@@ -185,7 +190,6 @@ void Application::run() {
         // Calculate movement speed from desired velocity for animation state machine
         float movementSpeed = glm::length(glm::vec2(desiredVelocity.x, desiredVelocity.z));
         bool isGrounded = physics.isCharacterOnGround();
-        bool isJumping = input.wantsJump() && isGrounded;
         renderer.updateAnimatedCharacter(deltaTime, movementSpeed, isGrounded, isJumping);
 
         // Update camera and player based on mode

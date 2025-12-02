@@ -47,6 +47,9 @@ public:
     // Jump input (true only on initial press)
     bool wantsJump() const { return jumpRequested; }
 
+    // Sprint input (Shift key held or left stick toggle on gamepad)
+    bool isSprinting() const { return sprinting; }
+
     // Camera control input
     float getCameraYawInput() const { return cameraYawInput; }
     float getCameraPitchInput() const { return cameraPitchInput; }
@@ -109,6 +112,10 @@ private:
     bool jumpRequested = false;
     bool keyboardJumpHeld = false;
     bool gamepadJumpHeld = false;
+
+    // Sprint input state
+    bool sprinting = false;
+    bool gamepadSprintToggle = false;  // Toggled by left stick press
 
     // Camera control input (for orbit/free look)
     float cameraYawInput = 0.0f;

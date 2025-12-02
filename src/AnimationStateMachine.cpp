@@ -94,8 +94,8 @@ void AnimationStateMachine::update(float deltaTime, float movementSpeed, bool is
                 transitionTo("idle", 0.2f);
             }
         }
-    } else if (isJumping && !isGrounded) {
-        // Started jumping
+    } else if (isJumping) {
+        // Started jumping (isJumping is already gated by isGrounded in Application.cpp)
         transitionTo("jump", 0.1f);
     } else if (movementSpeed > RUN_THRESHOLD) {
         if (currentState != "run") {

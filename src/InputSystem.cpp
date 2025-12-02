@@ -42,7 +42,15 @@ bool InputSystem::processEvent(const SDL_Event& event) {
 
         case SDL_EVENT_GAMEPAD_BUTTON_DOWN:
             if (event.gbutton.button == SDL_GAMEPAD_BUTTON_LEFT_STICK) {
-                // Left stick click toggles camera mode
+                // Left stick click toggles sprint (in third person mode)
+                if (thirdPersonMode) {
+                    gamepadSprintToggle = !gamepadSprintToggle;
+                    SDL_Log("Sprint: %s", gamepadSprintToggle ? "ON" : "OFF");
+                }
+                return true;
+            }
+            if (event.gbutton.button == SDL_GAMEPAD_BUTTON_RIGHT_STICK) {
+                // Right stick click toggles camera mode
                 thirdPersonMode = !thirdPersonMode;
                 modeSwitchedThisFrame = true;
                 SDL_Log("Camera mode: %s", thirdPersonMode ? "Third Person" : "Free Camera");
@@ -208,6 +216,9 @@ void InputSystem::processThirdPersonKeyboard(float deltaTime, float cameraYaw, c
     if (keyState[SDL_SCANCODE_E]) {
         cameraZoomInput += moveSpeed * deltaTime;
     }
+
+    // Left Shift to sprint (held)
+    sprinting = keyState[SDL_SCANCODE_LSHIFT] || gamepadSprintToggle;
 }
 
 void InputSystem::processGamepadInput(float deltaTime, float cameraYaw) {

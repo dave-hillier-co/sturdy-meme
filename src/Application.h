@@ -53,4 +53,5 @@ private:
 
     bool running = false;
     float moveSpeed = 3.0f;
+    float sprintSpeed = 6.0f;
 };

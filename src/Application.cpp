@@ -149,7 +149,8 @@ void Application::run() {
             glm::vec3 moveDir = input.getMovementDirection();
             if (glm::length(moveDir) > 0.001f) {
                 moveDir = glm::normalize(moveDir);
-                desiredVelocity = moveDir * moveSpeed;
+                float currentSpeed = input.isSprinting() ? sprintSpeed : moveSpeed;
+                desiredVelocity = moveDir * currentSpeed;
 
                 // Rotate player to face movement direction
                 float newYaw = glm::degrees(atan2(moveDir.x, moveDir.z));

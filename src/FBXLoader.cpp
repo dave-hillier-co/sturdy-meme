@@ -223,20 +223,9 @@ MaterialInfo extractMaterialInfo(const ofbx::Material* mat, const std::string& f
         info.roughness = 1.0f - std::min(1.0f, static_cast<float>(shininess) / 100.0f);
     }
 
-    info.opacity = static_cast<float>(mat->getOpacity());
+    // OpenFBX doesn't expose opacity directly, default to 1.0
+    info.opacity = 1.0f;
     info.emissiveFactor = static_cast<float>(mat->getEmissiveFactor());
-
-    // Check shading model for metallic hints
-    ofbx::DataView shadingModel = mat->getShadingModel();
-    if (shadingModel.begin && shadingModel.end > shadingModel.begin) {
-        std::string model(reinterpret_cast<const char*>(shadingModel.begin),
-                          static_cast<size_t>(shadingModel.end - shadingModel.begin));
-        // Some FBX files use "metallic" in the shading model name
-        if (model.find("metal") != std::string::npos ||
-            model.find("Metal") != std::string::npos) {
-            info.metallic = 1.0f;
-        }
-    }
 
     // Texture paths
     const ofbx::Texture* diffuseTex = mat->getTexture(ofbx::Texture::TextureType::DIFFUSE);

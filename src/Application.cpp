@@ -164,7 +164,22 @@ void Application::run() {
                 // Store turn angle for animation before applying smoothing
                 turnAngle = yawDiff;
 
-                player.rotate(yawDiff * 10.0f * deltaTime);  // Smooth rotation
+                // Apply rotation at different speeds based on turn magnitude
+                // For large turns (where turn animations play), rotate slowly
+                // so the rotation completes around when the animation ends (~0.8s)
+                float absTurn = std::abs(yawDiff);
+                float rotationSpeed;
+                if (absTurn > 135.0f) {
+                    // 180 turn animation - rotate slowly over ~0.8s
+                    rotationSpeed = 2.5f;
+                } else if (absTurn > 60.0f) {
+                    // 90 turn animation - rotate over ~0.6s
+                    rotationSpeed = 3.0f;
+                } else {
+                    // Small adjustments - quick response
+                    rotationSpeed = 10.0f;
+                }
+                player.rotate(yawDiff * rotationSpeed * deltaTime);
             }
         }
 

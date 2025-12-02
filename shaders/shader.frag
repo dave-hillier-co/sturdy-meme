@@ -78,7 +78,7 @@ layout(push_constant) uniform PushConstants {
     float roughness;
     float metallic;
     float emissiveIntensity;
-    float padding;
+    float opacity;  // For camera occlusion fading (1.0 = fully visible)
     vec4 emissiveColor;
 } material;
 
@@ -357,5 +357,7 @@ void main() {
         atmosphericColor = mix(atmosphericColor, cascadeColor, 0.3);  // 30% tint
     }
 
-    outColor = vec4(atmosphericColor, texColor.a);
+    // Apply opacity for camera occlusion fading
+    float finalAlpha = texColor.a * material.opacity;
+    outColor = vec4(atmosphericColor, finalAlpha);
 }

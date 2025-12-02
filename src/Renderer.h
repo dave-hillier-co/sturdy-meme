@@ -40,7 +40,7 @@ struct PushConstants {
     float roughness;
     float metallic;
     float emissiveIntensity;
-    float padding;
+    float opacity;  // For camera occlusion fading (1.0 = fully visible)
     glm::vec4 emissiveColor;  // rgb = color, a unused
 };
 

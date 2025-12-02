@@ -119,12 +119,12 @@ void AnimationStateMachine::update(float deltaTime, float movementSpeed, bool is
             isTurning = true;
             transitionTo("turn_180", 0.1f);
         } else if (absTurnAngle > TURN_THRESHOLD) {
-            if (turnAngle > 0 && findState("turn_right")) {
-                isTurning = true;
-                transitionTo("turn_right", 0.1f);
-            } else if (turnAngle < 0 && findState("turn_left")) {
+            if (turnAngle > 0 && findState("turn_left")) {
                 isTurning = true;
                 transitionTo("turn_left", 0.1f);
+            } else if (turnAngle < 0 && findState("turn_right")) {
+                isTurning = true;
+                transitionTo("turn_right", 0.1f);
             }
         } else {
             // Normal locomotion transition

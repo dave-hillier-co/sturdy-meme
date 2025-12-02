@@ -12,6 +12,7 @@ find_package(VulkanMemoryAllocator CONFIG REQUIRED)
 find_package(Jolt CONFIG REQUIRED)
 find_package(imgui CONFIG REQUIRED)
 find_package(fastgltf CONFIG REQUIRED)
+find_package(unofficial-openfbx CONFIG REQUIRED)
 
 find_path(STB_INCLUDE_DIRS "stb_image.h")
 
@@ -69,6 +70,7 @@ set(SOURCES
     src/Animation.cpp
     src/AnimatedCharacter.cpp
     src/AnimationStateMachine.cpp
+    src/FBXLoader.cpp
 )
 
 add_executable(${PROJECT_NAME} ${SOURCES})
@@ -88,6 +90,7 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     Jolt::Jolt
     imgui::imgui
     fastgltf::fastgltf
+    unoffical::openfbx::openfbx
 )
 
 set_target_properties(${PROJECT_NAME} PROPERTIES

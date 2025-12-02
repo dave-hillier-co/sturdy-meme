@@ -742,12 +742,15 @@ std::vector<RaycastHit> PhysicsWorld::castRayAllHits(const glm::vec3& from, cons
     ray.mOrigin = JPH::RVec3(from.x, from.y, from.z);
     ray.mDirection = JPH::Vec3(direction.x * rayLength, direction.y * rayLength, direction.z * rayLength);
 
-    // Use a collector to gather all hits
-    JPH::AllHitCollisionCollector<JPH::RayCastBodyCollector> collector;
+    // Use NarrowPhaseQuery for accurate shape-level collision detection
+    // BroadPhaseQuery only tests against AABBs, which causes false positives for heightfields
+    JPH::AllHitCollisionCollector<JPH::CastRayCollector> collector;
 
-    // Cast the ray - use no filters to detect all object layers
-    // We want to detect both MOVING objects and NON_MOVING (terrain, static objects)
-    physicsSystem->GetBroadPhaseQuery().CastRay(static_cast<JPH::RayCast>(ray), collector);
+    // Use RayCastSettings with default backface mode (ignores backfaces for triangles/convex)
+    JPH::RayCastSettings settings;
+
+    // Cast the ray using narrowphase - this tests against actual shape geometry
+    physicsSystem->GetNarrowPhaseQuery().CastRay(ray, settings, collector);
 
     // Convert results
     for (const auto& hit : collector.mHits) {

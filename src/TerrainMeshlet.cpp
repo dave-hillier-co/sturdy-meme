@@ -11,46 +11,74 @@ uint64_t TerrainMeshlet::hashVertex(const glm::vec2& v) {
     return (static_cast<uint64_t>(x) << 32) | static_cast<uint64_t>(y);
 }
 
+// LEB splitting matrix - matches leb__SplittingMatrix in leb.glsl
+static glm::mat3 splittingMatrix(uint32_t splitBit) {
+    float b = static_cast<float>(splitBit);
+    float c = 1.0f - b;
+
+    // Note: GLM is column-major, shader uses transpose of row-major
+    // Original shader: transpose(mat3(c, b, 0, 0.5, 0, 0.5, 0, c, b))
+    return glm::mat3(
+        glm::vec3(c, 0.5f, 0.0f),      // column 0
+        glm::vec3(b, 0.0f, c),          // column 1
+        glm::vec3(0.0f, 0.5f, b)        // column 2
+    );
+}
+
+// Winding correction matrix - matches leb__WindingMatrix in leb.glsl
+static glm::mat3 windingMatrix(uint32_t mirrorBit) {
+    float b = static_cast<float>(mirrorBit);
+    float c = 1.0f - b;
+
+    return glm::mat3(
+        glm::vec3(c, 0.0f, b),          // column 0
+        glm::vec3(0.0f, 1.0f, 0.0f),    // column 1
+        glm::vec3(b, 0.0f, c)           // column 2
+    );
+}
+
+// Decode triangle vertices for a given node ID and depth
+// This matches leb_DecodeTriangleVertices in leb.glsl for the unit triangle case
+static void decodeTriangleVertices(uint32_t nodeId, int depth, glm::vec2& v0, glm::vec2& v1, glm::vec2& v2) {
+    // Start with identity
+    glm::mat3 xf(1.0f);
+
+    // Apply splitting matrices for each bit (from MSB to LSB)
+    for (int bitID = depth - 1; bitID >= 0; --bitID) {
+        uint32_t bit = (nodeId >> bitID) & 1u;
+        xf = splittingMatrix(bit) * xf;
+    }
+
+    // Apply winding correction based on depth parity
+    xf = windingMatrix(static_cast<uint32_t>(depth) & 1u) * xf;
+
+    // Base triangle vertices in barycentric coordinates:
+    // We use a unit right triangle: (0,0), (1,0), (0,1)
+    // The matrix transforms barycentric weights
+    glm::vec3 bary0(1.0f, 0.0f, 0.0f);  // vertex 0 weight
+    glm::vec3 bary1(0.0f, 1.0f, 0.0f);  // vertex 1 weight
+    glm::vec3 bary2(0.0f, 0.0f, 1.0f);  // vertex 2 weight
+
+    glm::vec3 w0 = xf * bary0;
+    glm::vec3 w1 = xf * bary1;
+    glm::vec3 w2 = xf * bary2;
+
+    // Convert barycentric weights to positions in unit triangle
+    // Unit triangle: A=(0,0), B=(1,0), C=(0,1)
+    // P = w.x * A + w.y * B + w.z * C = (w.y, w.z)
+    v0 = glm::vec2(w0.y, w0.z);
+    v1 = glm::vec2(w1.y, w1.z);
+    v2 = glm::vec2(w2.y, w2.z);
+}
+
 void TerrainMeshlet::subdivideLEB(uint32_t depth, uint32_t targetDepth,
                                    glm::vec2 v0, glm::vec2 v1, glm::vec2 v2,
                                    std::vector<MeshletVertex>& vertices,
                                    std::vector<uint16_t>& indices,
                                    std::unordered_map<uint64_t, uint16_t>& vertexMap) {
-    if (depth == targetDepth) {
-        // Emit triangle
-        auto addVertex = [&](const glm::vec2& v) -> uint16_t {
-            uint64_t hash = hashVertex(v);
-            auto it = vertexMap.find(hash);
-            if (it != vertexMap.end()) {
-                return it->second;
-            }
-            uint16_t idx = static_cast<uint16_t>(vertices.size());
-            vertices.push_back({v});
-            vertexMap[hash] = idx;
-            return idx;
-        };
-
-        indices.push_back(addVertex(v0));
-        indices.push_back(addVertex(v1));
-        indices.push_back(addVertex(v2));
-        return;
-    }
-
-    // LEB bisection: split along longest edge (v1 to v2)
-    glm::vec2 midpoint = (v1 + v2) * 0.5f;
-
-    // Left child: v0, midpoint, v1 -> rotated to v1, v0, midpoint
-    // Right child: v0, v2, midpoint -> rotated to v2, midpoint, v0
-    // After rotation for consistent orientation (matching LEB library):
-    // The LEB rotation puts the new edge as the "longest" edge for the next level
-
-    // Left child (bit 0): new triangle is (v1, v0, midpoint)
-    // After LEB-style rotation: (midpoint, v1, v0)
-    subdivideLEB(depth + 1, targetDepth, midpoint, v1, v0, vertices, indices, vertexMap);
-
-    // Right child (bit 1): new triangle is (v2, midpoint, v0)
-    // After LEB-style rotation: (midpoint, v2, v0) but winding matters
-    subdivideLEB(depth + 1, targetDepth, midpoint, v2, v0, vertices, indices, vertexMap);
+    // Not used anymore - kept for interface compatibility
+    (void)depth; (void)targetDepth; (void)v0; (void)v1; (void)v2;
+    (void)vertices; (void)indices; (void)vertexMap;
 }
 
 void TerrainMeshlet::generateMeshletGeometry(uint32_t level,
@@ -58,18 +86,30 @@ void TerrainMeshlet::generateMeshletGeometry(uint32_t level,
                                               std::vector<uint16_t>& indices) {
     std::unordered_map<uint64_t, uint16_t> vertexMap;
 
-    // Start with unit triangle in barycentric-like coordinates
-    // v0 = (0, 0) - first corner
-    // v1 = (1, 0) - second corner
-    // v2 = (0, 1) - third corner
-    // This maps to: P = v0 + s*(v1-v0) + t*(v2-v0) = s*v1 + t*v2 + (1-s-t)*v0
-    // In UV space of parent triangle: UV = uv0 + pos.x*(uv1-uv0) + pos.y*(uv2-uv0)
+    // Generate all 2^level leaf triangles using the same matrix-based
+    // transformation as the shader's LEB library
+    uint32_t numTriangles = 1u << level;
 
-    glm::vec2 v0(0.0f, 0.0f);
-    glm::vec2 v1(1.0f, 0.0f);
-    glm::vec2 v2(0.0f, 1.0f);
+    auto addVertex = [&](const glm::vec2& v) -> uint16_t {
+        uint64_t hash = hashVertex(v);
+        auto it = vertexMap.find(hash);
+        if (it != vertexMap.end()) {
+            return it->second;
+        }
+        uint16_t idx = static_cast<uint16_t>(vertices.size());
+        vertices.push_back({v});
+        vertexMap[hash] = idx;
+        return idx;
+    };
 
-    subdivideLEB(0, level, v0, v1, v2, vertices, indices, vertexMap);
+    for (uint32_t i = 0; i < numTriangles; ++i) {
+        glm::vec2 v0, v1, v2;
+        decodeTriangleVertices(i, static_cast<int>(level), v0, v1, v2);
+
+        indices.push_back(addVertex(v0));
+        indices.push_back(addVertex(v1));
+        indices.push_back(addVertex(v2));
+    }
 }
 
 bool TerrainMeshlet::init(const InitInfo& info) {

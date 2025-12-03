@@ -1573,7 +1573,6 @@ UniformBufferObject Renderer::buildUniformBufferData(const Camera& camera, const
     ubo.debugCascades = showCascadeDebug ? 1.0f : 0.0f;
     ubo.julianDay = static_cast<float>(lighting.julianDay);
     ubo.cloudStyle = useParaboloidClouds ? 1.0f : 0.0f;
-    ubo.uboPadding = glm::vec3(0.0f);
 
     return ubo;
 }

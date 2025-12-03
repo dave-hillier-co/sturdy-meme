@@ -103,8 +103,8 @@ void GpuProfiler::beginZone(VkCommandBuffer cmd, const char* zoneName) {
     activeZones[zoneName] = zone;
     currentFrameZoneOrder.push_back(zoneName);
 
-    // Write start timestamp
-    vkCmdWriteTimestamp(cmd, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+    // Write start timestamp - use ALL_COMMANDS to ensure prior work is complete
+    vkCmdWriteTimestamp(cmd, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
                         queryPools[currentFrameIndex], zone.startQueryIndex);
 }
 
@@ -119,8 +119,8 @@ void GpuProfiler::endZone(VkCommandBuffer cmd, const char* zoneName) {
 
     it->second.endQueryIndex = currentQueryIndex++;
 
-    // Write end timestamp
-    vkCmdWriteTimestamp(cmd, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
+    // Write end timestamp - use ALL_COMMANDS to capture actual work completion
+    vkCmdWriteTimestamp(cmd, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
                         queryPools[currentFrameIndex], it->second.endQueryIndex);
 }
 
@@ -268,13 +268,14 @@ void GpuProfiler::collectResults(uint32_t frameIndex) {
         measuredTotal += time;
     }
 
-    // Add "Other" zone for unaccounted time
-    float otherTime = smoothedFrameTimeMs - measuredTotal;
-    if (otherTime > 0.01f) {  // Only show if > 0.01ms
-        TimingResult other;
-        other.name = "Other";
-        other.gpuTimeMs = otherTime;
-        other.percentOfFrame = (smoothedFrameTimeMs > 0.0f) ? (otherTime / smoothedFrameTimeMs * 100.0f) : 0.0f;
-        smoothedStats.zones.push_back(other);
+    // Add "Idle/Sync" zone for unaccounted time
+    // This is typically GPU idle time waiting for vsync or semaphores
+    float idleTime = smoothedFrameTimeMs - measuredTotal;
+    if (idleTime > 0.01f) {  // Only show if > 0.01ms
+        TimingResult idle;
+        idle.name = "Idle/Sync";
+        idle.gpuTimeMs = idleTime;
+        idle.percentOfFrame = (smoothedFrameTimeMs > 0.0f) ? (idleTime / smoothedFrameTimeMs * 100.0f) : 0.0f;
+        smoothedStats.zones.push_back(idle);
     }
 }

@@ -1,4 +1,5 @@
 #include "PhysicsSystem.h"
+#include "TerrainHeight.h"
 
 // Jolt Physics includes
 #include <Jolt/Jolt.h>
@@ -371,13 +372,11 @@ PhysicsBodyID PhysicsWorld::createTerrainHeightfield(const float* samples, uint3
     // The terrain uses normalized [0,1] heights, we need to convert
     // Jolt expects samples in row-major order with Y up
 
-    // Create height samples for Jolt
-    // The terrain shader uses: h * heightScale (0 = ground level, 1 = max height)
-    // Heights range from 0 to heightScale
+    // Create height samples for Jolt using shared TerrainHeight functions
+    // See TerrainHeight.h for authoritative height formula
     std::vector<float> joltSamples(sampleCount * sampleCount);
     for (uint32_t i = 0; i < sampleCount * sampleCount; i++) {
-        // Match shader: sample * heightScale
-        joltSamples[i] = samples[i] * heightScale;
+        joltSamples[i] = TerrainHeight::toWorld(samples[i], heightScale);
     }
 
     // HeightFieldShapeSettings

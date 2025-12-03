@@ -1,4 +1,5 @@
 #include "TerrainHeightMap.h"
+#include "TerrainHeight.h"
 #include <cstring>
 #include <cmath>
 #include <algorithm>
@@ -394,6 +395,6 @@ float TerrainHeightMap::getHeightAt(float x, float z) const {
     float h1 = h01 * (1.0f - tx) + h11 * tx;
     float h = h0 * (1.0f - ty) + h1 * ty;
 
-    // Match shader: h * heightScale (0 = ground level)
-    return h * heightScale;
+    // Use shared TerrainHeight function (see TerrainHeight.h for authoritative formula)
+    return TerrainHeight::toWorld(h, heightScale);
 }

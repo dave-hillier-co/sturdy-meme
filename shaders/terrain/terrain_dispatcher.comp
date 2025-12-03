@@ -22,10 +22,14 @@ layout(std430, binding = 1) buffer DispatchIndirect {
 };
 
 // Indirect draw arguments for terrain rendering
+// Layout supports both VkDrawIndirectCommand and VkDrawIndexedIndirectCommand
+// Non-meshlet: vertexCount, instanceCount, firstVertex, firstInstance
+// Meshlet:     indexCount, instanceCount, firstIndex, vertexOffset, firstInstance
 layout(std430, binding = 2) buffer DrawIndirect {
-    uint vertexCount;
+    uint indexCountOrVertexCount;
     uint instanceCount;
-    uint firstVertex;
+    uint firstIndexOrFirstVertex;
+    int vertexOffset;      // Only used in indexed mode
     uint firstInstance;
 };
 
@@ -45,14 +49,22 @@ void main() {
 
     // Set up draw arguments
     if (meshletVertexCount > 0u) {
-        // Instanced meshlet rendering: one instance per leaf
-        vertexCount = meshletVertexCount;
+        // Instanced meshlet rendering with indexed draw: one instance per leaf
+        // VkDrawIndexedIndirectCommand format:
+        // indexCount, instanceCount, firstIndex, vertexOffset, firstInstance
+        indexCountOrVertexCount = meshletVertexCount;  // This is index count
         instanceCount = leafCount;
+        firstIndexOrFirstVertex = 0u;
+        vertexOffset = 0;
+        firstInstance = 0u;
     } else {
         // Direct triangle rendering: 3 vertices per leaf
-        vertexCount = leafCount * 3u;
+        // VkDrawIndirectCommand format:
+        // vertexCount, instanceCount, firstVertex, firstInstance
+        indexCountOrVertexCount = leafCount * 3u;  // This is vertex count
         instanceCount = 1u;
+        firstIndexOrFirstVertex = 0u;
+        vertexOffset = 0;
+        firstInstance = 0u;
     }
-    firstVertex = 0u;
-    firstInstance = 0u;
 }

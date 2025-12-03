@@ -54,6 +54,7 @@ set(SOURCES
     src/TerrainHeightMap.cpp
     src/TerrainTextures.cpp
     src/TerrainCBT.cpp
+    src/TerrainMeshlet.cpp
     src/TerrainImporter.cpp
     src/ClothSimulation.cpp
     src/SnowMaskSystem.cpp
@@ -182,6 +183,8 @@ set(TERRAIN_SHADER_FILES
     ${CMAKE_CURRENT_SOURCE_DIR}/shaders/terrain/terrain_shadow.vert.spv
     ${CMAKE_CURRENT_SOURCE_DIR}/shaders/terrain/terrain_shadow.frag.spv
     ${CMAKE_CURRENT_SOURCE_DIR}/shaders/terrain/terrain_wireframe.frag.spv
+    ${CMAKE_CURRENT_SOURCE_DIR}/shaders/terrain/terrain_meshlet.vert.spv
+    ${CMAKE_CURRENT_SOURCE_DIR}/shaders/terrain/terrain_meshlet_shadow.vert.spv
 )
 
 set(CATMULLCLARK_SHADER_FILES
@@ -307,6 +310,8 @@ if(SHADER_COMPILE_CMD)
         terrain_frustum_cull.comp
         terrain.vert
         terrain_shadow.vert
+        terrain_meshlet.vert
+        terrain_meshlet_shadow.vert
     )
 
     foreach(SHADER ${TERRAIN_LEB_SHADERS})
@@ -417,6 +422,8 @@ if(SHADER_COMPILE_CMD)
         ${CMAKE_CURRENT_SOURCE_DIR}/shaders/terrain/terrain_shadow.vert.spv
         ${CMAKE_CURRENT_SOURCE_DIR}/shaders/terrain/terrain_shadow.frag.spv
         ${CMAKE_CURRENT_SOURCE_DIR}/shaders/terrain/terrain_wireframe.frag.spv
+        ${CMAKE_CURRENT_SOURCE_DIR}/shaders/terrain/terrain_meshlet.vert.spv
+        ${CMAKE_CURRENT_SOURCE_DIR}/shaders/terrain/terrain_meshlet_shadow.vert.spv
         ${CMAKE_CURRENT_SOURCE_DIR}/shaders/catmullclark_subdivision.comp.spv
         ${CMAKE_CURRENT_SOURCE_DIR}/shaders/catmullclark_render.vert.spv
         ${CMAKE_CURRENT_SOURCE_DIR}/shaders/catmullclark_render.frag.spv

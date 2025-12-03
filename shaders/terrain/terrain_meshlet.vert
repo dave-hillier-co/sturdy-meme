@@ -1,0 +1,134 @@
+#version 450
+
+#extension GL_GOOGLE_include_directive : require
+
+/*
+ * terrain_meshlet.vert - Meshlet-based terrain vertex shader
+ *
+ * Each CBT leaf is rendered as an instanced meshlet (pre-subdivided triangle).
+ * gl_InstanceIndex = CBT leaf index
+ * gl_VertexIndex = vertex within meshlet (via index buffer)
+ *
+ * Meshlet vertices are in "unit triangle" space:
+ *   v0 = (0, 0), v1 = (1, 0), v2 = (0, 1)
+ * These are transformed to the parent CBT triangle's UV space.
+ *
+ * TERRAIN HEIGHT CONVENTION (Authoritative Source):
+ * Height formula: worldY = h * heightScale
+ * Where h is normalized [0,1] and heightScale is max height in meters.
+ * See terrain_height_common.glsl for shared implementation.
+ */
+
+#define CBT_BUFFER_BINDING 0
+#include "cbt.glsl"
+#include "leb.glsl"
+#include "../terrain_height_common.glsl"
+#include "../snow_common.glsl"
+
+// Meshlet vertex input: position in unit triangle space
+layout(location = 0) in vec2 inMeshletPos;
+
+// Height map
+layout(binding = 3) uniform sampler2D heightMap;
+
+// Volumetric snow cascades
+layout(binding = 10) uniform sampler2D snowCascade0;
+layout(binding = 11) uniform sampler2D snowCascade1;
+layout(binding = 12) uniform sampler2D snowCascade2;
+
+// Uniform buffer
+layout(std140, binding = 4) uniform TerrainUniforms {
+    mat4 viewMatrix;
+    mat4 projMatrix;
+    mat4 viewProjMatrix;
+    vec4 frustumPlanes[6];
+    vec4 cameraPosition;
+    vec4 terrainParams;   // x = size, y = height scale, z = target edge pixels, w = max depth
+    vec4 lodParams;       // x = split threshold, y = merge threshold, z = min depth, w = unused
+    vec2 screenSize;
+    float lodFactor;
+    float padding;
+    // Volumetric snow parameters
+    vec4 snowCascade0Params;  // xy = origin, z = size, w = texel size
+    vec4 snowCascade1Params;  // xy = origin, z = size, w = texel size
+    vec4 snowCascade2Params;  // xy = origin, z = size, w = texel size
+    float useVolumetricSnow;  // 1.0 = enabled
+    float snowMaxHeight;      // Maximum snow height in meters
+    float snowPadding1;
+    float snowPadding2;
+};
+
+#define TERRAIN_SIZE (terrainParams.x)
+#define HEIGHT_SCALE (terrainParams.y)
+
+// Output to fragment shader
+layout(location = 0) out vec2 fragTexCoord;
+layout(location = 1) out vec3 fragNormal;
+layout(location = 2) out vec3 fragWorldPos;
+layout(location = 3) out float fragDepth;
+
+// Calculate normal from height map gradient (uses shared terrain_height_common.glsl)
+vec3 calculateNormal(vec2 uv) {
+    return calculateTerrainNormalFromHeightmap(heightMap, uv, TERRAIN_SIZE, HEIGHT_SCALE);
+}
+
+void main() {
+    // Get the CBT leaf index from instance
+    uint cbtLeafIndex = uint(gl_InstanceIndex);
+
+    // Map leaf index to heap index
+    cbt_Node node = cbt_DecodeNode(cbtLeafIndex);
+
+    // Decode parent triangle vertices in UV space
+    vec2 parentV0, parentV1, parentV2;
+    leb_DecodeTriangleVertices(node, parentV0, parentV1, parentV2);
+
+    // Transform meshlet local position to parent triangle UV space
+    // Meshlet is in unit triangle: (0,0), (1,0), (0,1)
+    // UV = parentV0 + s * (parentV1 - parentV0) + t * (parentV2 - parentV0)
+    //    = parentV0 * (1 - s - t) + parentV1 * s + parentV2 * t
+    float s = inMeshletPos.x;
+    float t = inMeshletPos.y;
+    vec2 uv = parentV0 * (1.0 - s - t) + parentV1 * s + parentV2 * t;
+
+    // Sample height using shared function (terrain_height_common.glsl)
+    float height = sampleTerrainHeight(heightMap, uv, HEIGHT_SCALE);
+
+    // Compute world position
+    vec3 worldPos = vec3(
+        (uv.x - 0.5) * TERRAIN_SIZE,
+        height,
+        (uv.y - 0.5) * TERRAIN_SIZE
+    );
+
+    // Calculate normal
+    vec3 normal = calculateNormal(uv);
+
+    // Apply volumetric snow displacement
+    if (useVolumetricSnow > 0.5) {
+        // Sample snow height from cascades
+        float snowHeight = sampleVolumetricSnowHeight(
+            snowCascade0, snowCascade1, snowCascade2,
+            worldPos, cameraPosition.xyz,
+            snowCascade0Params, snowCascade1Params, snowCascade2Params
+        );
+
+        // Calculate snow coverage based on height and slope
+        float snowCoverage = snowHeightToCoverage(snowHeight, 1.0, normal);
+
+        // Only displace if coverage is significant
+        if (snowCoverage > 0.5) {
+            worldPos = displaceVertexBySnow(worldPos, snowHeight, normal);
+        }
+    }
+
+    // Transform to clip space
+    vec4 clipPos = viewProjMatrix * vec4(worldPos, 1.0);
+
+    // Output
+    gl_Position = clipPos;
+    fragTexCoord = uv;
+    fragNormal = normal;
+    fragWorldPos = worldPos;
+    fragDepth = float(node.depth);
+}

@@ -59,6 +59,18 @@ bool TerrainSystem::init(const InitInfo& info, const TerrainConfig& cfg) {
     cbtInfo.initDepth = 6;  // Start with 64 triangles
     if (!cbt.init(cbtInfo)) return false;
 
+    // Initialize meshlet if enabled
+    if (config.useMeshlets) {
+        TerrainMeshlet::InitInfo meshletInfo{};
+        meshletInfo.allocator = allocator;
+        meshletInfo.device = device;
+        meshletInfo.graphicsQueue = graphicsQueue;
+        meshletInfo.commandPool = commandPool;
+        meshletInfo.subdivisionLevel = config.meshletSubdivisionLevel;
+        if (!meshlet.init(meshletInfo)) return false;
+        meshletMode = true;
+    }
+
     // Query GPU subgroup capabilities for optimized compute paths
     querySubgroupCapabilities();
 
@@ -76,7 +88,14 @@ bool TerrainSystem::init(const InitInfo& info, const TerrainConfig& cfg) {
     if (!createWireframePipeline()) return false;
     if (!createShadowPipeline()) return false;
 
-    SDL_Log("TerrainSystem initialized with CBT max depth %d", config.maxDepth);
+    // Create meshlet pipelines if meshlets are enabled
+    if (meshletMode) {
+        if (!createMeshletRenderPipeline()) return false;
+        if (!createMeshletShadowPipeline()) return false;
+    }
+
+    SDL_Log("TerrainSystem initialized with CBT max depth %d%s", config.maxDepth,
+            meshletMode ? " (meshlet mode enabled)" : "");
     return true;
 }
 
@@ -95,6 +114,9 @@ void TerrainSystem::destroy(VkDevice device, VmaAllocator allocator) {
     if (renderPipeline) vkDestroyPipeline(device, renderPipeline, nullptr);
     if (wireframePipeline) vkDestroyPipeline(device, wireframePipeline, nullptr);
     if (shadowPipeline) vkDestroyPipeline(device, shadowPipeline, nullptr);
+    if (meshletRenderPipeline) vkDestroyPipeline(device, meshletRenderPipeline, nullptr);
+    if (meshletWireframePipeline) vkDestroyPipeline(device, meshletWireframePipeline, nullptr);
+    if (meshletShadowPipeline) vkDestroyPipeline(device, meshletShadowPipeline, nullptr);
 
     // Destroy pipeline layouts
     if (dispatcherPipelineLayout) vkDestroyPipelineLayout(device, dispatcherPipelineLayout, nullptr);
@@ -122,6 +144,7 @@ void TerrainSystem::destroy(VkDevice device, VmaAllocator allocator) {
     }
 
     // Destroy composed subsystems
+    meshlet.destroy(allocator);
     cbt.destroy(allocator);
     textures.destroy(device, allocator);
     heightMap.destroy(device, allocator);
@@ -173,11 +196,12 @@ bool TerrainSystem::createIndirectBuffers() {
         }
     }
 
-    // Indirect draw buffer (4 uints: vertexCount, instanceCount, firstVertex, firstInstance)
+    // Indirect draw buffer (5 uints to support both VkDrawIndirectCommand and VkDrawIndexedIndirectCommand)
+    // Layout: indexCount/vertexCount, instanceCount, firstIndex/firstVertex, vertexOffset, firstInstance
     {
         VkBufferCreateInfo bufferInfo{};
         bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-        bufferInfo.size = sizeof(uint32_t) * 4;
+        bufferInfo.size = sizeof(uint32_t) * 5;  // VkDrawIndexedIndirectCommand has 5 fields
         bufferInfo.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT;
         bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 
@@ -196,7 +220,7 @@ bool TerrainSystem::createIndirectBuffers() {
         indirectDrawMappedPtr = allocationInfo.pMappedData;
 
         // Initialize with default values (2 triangles = 6 vertices)
-        uint32_t drawArgs[4] = {6, 1, 0, 0};
+        uint32_t drawArgs[5] = {6, 1, 0, 0, 0};
         memcpy(indirectDrawMappedPtr, drawArgs, sizeof(drawArgs));
     }
 
@@ -244,10 +268,16 @@ uint32_t TerrainSystem::getTriangleCount() const {
     if (!indirectDrawMappedPtr) {
         return 0;
     }
-    // Indirect draw buffer layout: {vertexCount, instanceCount, firstVertex, firstInstance}
-    // Triangle count = vertexCount / 3
+    // Indirect draw buffer layout: {indexCount/vertexCount, instanceCount, ...}
     const uint32_t* drawArgs = static_cast<const uint32_t*>(indirectDrawMappedPtr);
-    return drawArgs[0] / 3;
+
+    if (meshletMode) {
+        // In meshlet mode: instanceCount (CBT leaves) * triangles per meshlet
+        return drawArgs[1] * meshlet.getTriangleCount();
+    } else {
+        // In direct mode: vertexCount / 3
+        return drawArgs[0] / 3;
+    }
 }
 
 bool TerrainSystem::createComputeDescriptorSetLayout() {
@@ -983,6 +1013,230 @@ bool TerrainSystem::createShadowPipeline() {
     return result == VK_SUCCESS;
 }
 
+bool TerrainSystem::createMeshletRenderPipeline() {
+    VkShaderModule vertModule = loadShaderModule(device, shaderPath + "/terrain/terrain_meshlet.vert.spv");
+    VkShaderModule fragModule = loadShaderModule(device, shaderPath + "/terrain/terrain.frag.spv");
+    if (!vertModule || !fragModule) {
+        if (vertModule) vkDestroyShaderModule(device, vertModule, nullptr);
+        if (fragModule) vkDestroyShaderModule(device, fragModule, nullptr);
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to load meshlet shaders");
+        return false;
+    }
+
+    std::array<VkPipelineShaderStageCreateInfo, 2> shaderStages{};
+    shaderStages[0].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    shaderStages[0].stage = VK_SHADER_STAGE_VERTEX_BIT;
+    shaderStages[0].module = vertModule;
+    shaderStages[0].pName = "main";
+
+    shaderStages[1].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    shaderStages[1].stage = VK_SHADER_STAGE_FRAGMENT_BIT;
+    shaderStages[1].module = fragModule;
+    shaderStages[1].pName = "main";
+
+    // Vertex input: meshlet position (vec2)
+    VkVertexInputBindingDescription bindingDesc{};
+    bindingDesc.binding = 0;
+    bindingDesc.stride = sizeof(glm::vec2);
+    bindingDesc.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+
+    VkVertexInputAttributeDescription attrDesc{};
+    attrDesc.binding = 0;
+    attrDesc.location = 0;
+    attrDesc.format = VK_FORMAT_R32G32_SFLOAT;
+    attrDesc.offset = 0;
+
+    VkPipelineVertexInputStateCreateInfo vertexInputInfo{};
+    vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+    vertexInputInfo.vertexBindingDescriptionCount = 1;
+    vertexInputInfo.pVertexBindingDescriptions = &bindingDesc;
+    vertexInputInfo.vertexAttributeDescriptionCount = 1;
+    vertexInputInfo.pVertexAttributeDescriptions = &attrDesc;
+
+    VkPipelineInputAssemblyStateCreateInfo inputAssembly{};
+    inputAssembly.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
+    inputAssembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+
+    VkPipelineViewportStateCreateInfo viewportState{};
+    viewportState.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
+    viewportState.viewportCount = 1;
+    viewportState.scissorCount = 1;
+
+    VkPipelineRasterizationStateCreateInfo rasterizer{};
+    rasterizer.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
+    rasterizer.polygonMode = VK_POLYGON_MODE_FILL;
+    rasterizer.lineWidth = 1.0f;
+    rasterizer.cullMode = VK_CULL_MODE_BACK_BIT;
+    rasterizer.frontFace = VK_FRONT_FACE_CLOCKWISE;
+
+    VkPipelineMultisampleStateCreateInfo multisampling{};
+    multisampling.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
+    multisampling.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+
+    VkPipelineDepthStencilStateCreateInfo depthStencil{};
+    depthStencil.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
+    depthStencil.depthTestEnable = VK_TRUE;
+    depthStencil.depthWriteEnable = VK_TRUE;
+    depthStencil.depthCompareOp = VK_COMPARE_OP_LESS;
+
+    VkPipelineColorBlendAttachmentState colorBlendAttachment{};
+    colorBlendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
+                                          VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+
+    VkPipelineColorBlendStateCreateInfo colorBlending{};
+    colorBlending.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
+    colorBlending.attachmentCount = 1;
+    colorBlending.pAttachments = &colorBlendAttachment;
+
+    std::array<VkDynamicState, 2> dynamicStates = {VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR};
+    VkPipelineDynamicStateCreateInfo dynamicState{};
+    dynamicState.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
+    dynamicState.dynamicStateCount = static_cast<uint32_t>(dynamicStates.size());
+    dynamicState.pDynamicStates = dynamicStates.data();
+
+    VkGraphicsPipelineCreateInfo pipelineInfo{};
+    pipelineInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
+    pipelineInfo.stageCount = static_cast<uint32_t>(shaderStages.size());
+    pipelineInfo.pStages = shaderStages.data();
+    pipelineInfo.pVertexInputState = &vertexInputInfo;
+    pipelineInfo.pInputAssemblyState = &inputAssembly;
+    pipelineInfo.pViewportState = &viewportState;
+    pipelineInfo.pRasterizationState = &rasterizer;
+    pipelineInfo.pMultisampleState = &multisampling;
+    pipelineInfo.pDepthStencilState = &depthStencil;
+    pipelineInfo.pColorBlendState = &colorBlending;
+    pipelineInfo.pDynamicState = &dynamicState;
+    pipelineInfo.layout = renderPipelineLayout;  // Reuse existing layout
+    pipelineInfo.renderPass = renderPass;
+    pipelineInfo.subpass = 0;
+
+    VkResult result = vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &meshletRenderPipeline);
+
+    // Also create wireframe version
+    if (result == VK_SUCCESS) {
+        rasterizer.polygonMode = VK_POLYGON_MODE_LINE;
+        rasterizer.cullMode = VK_CULL_MODE_NONE;
+
+        // Use wireframe fragment shader
+        vkDestroyShaderModule(device, fragModule, nullptr);
+        fragModule = loadShaderModule(device, shaderPath + "/terrain/terrain_wireframe.frag.spv");
+        if (fragModule) {
+            shaderStages[1].module = fragModule;
+            vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &meshletWireframePipeline);
+        }
+    }
+
+    vkDestroyShaderModule(device, vertModule, nullptr);
+    vkDestroyShaderModule(device, fragModule, nullptr);
+
+    return result == VK_SUCCESS;
+}
+
+bool TerrainSystem::createMeshletShadowPipeline() {
+    VkShaderModule vertModule = loadShaderModule(device, shaderPath + "/terrain/terrain_meshlet_shadow.vert.spv");
+    VkShaderModule fragModule = loadShaderModule(device, shaderPath + "/terrain/terrain_shadow.frag.spv");
+    if (!vertModule || !fragModule) {
+        if (vertModule) vkDestroyShaderModule(device, vertModule, nullptr);
+        if (fragModule) vkDestroyShaderModule(device, fragModule, nullptr);
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to load meshlet shadow shaders");
+        return false;
+    }
+
+    std::array<VkPipelineShaderStageCreateInfo, 2> shaderStages{};
+    shaderStages[0].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    shaderStages[0].stage = VK_SHADER_STAGE_VERTEX_BIT;
+    shaderStages[0].module = vertModule;
+    shaderStages[0].pName = "main";
+
+    shaderStages[1].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    shaderStages[1].stage = VK_SHADER_STAGE_FRAGMENT_BIT;
+    shaderStages[1].module = fragModule;
+    shaderStages[1].pName = "main";
+
+    // Vertex input: meshlet position (vec2)
+    VkVertexInputBindingDescription bindingDesc{};
+    bindingDesc.binding = 0;
+    bindingDesc.stride = sizeof(glm::vec2);
+    bindingDesc.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+
+    VkVertexInputAttributeDescription attrDesc{};
+    attrDesc.binding = 0;
+    attrDesc.location = 0;
+    attrDesc.format = VK_FORMAT_R32G32_SFLOAT;
+    attrDesc.offset = 0;
+
+    VkPipelineVertexInputStateCreateInfo vertexInputInfo{};
+    vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+    vertexInputInfo.vertexBindingDescriptionCount = 1;
+    vertexInputInfo.pVertexBindingDescriptions = &bindingDesc;
+    vertexInputInfo.vertexAttributeDescriptionCount = 1;
+    vertexInputInfo.pVertexAttributeDescriptions = &attrDesc;
+
+    VkPipelineInputAssemblyStateCreateInfo inputAssembly{};
+    inputAssembly.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
+    inputAssembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+
+    VkPipelineViewportStateCreateInfo viewportState{};
+    viewportState.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
+    viewportState.viewportCount = 1;
+    viewportState.scissorCount = 1;
+
+    VkPipelineRasterizationStateCreateInfo rasterizer{};
+    rasterizer.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
+    rasterizer.polygonMode = VK_POLYGON_MODE_FILL;
+    rasterizer.lineWidth = 1.0f;
+    rasterizer.cullMode = VK_CULL_MODE_FRONT_BIT;
+    rasterizer.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
+    rasterizer.depthBiasEnable = VK_TRUE;
+
+    VkPipelineMultisampleStateCreateInfo multisampling{};
+    multisampling.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
+    multisampling.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+
+    VkPipelineDepthStencilStateCreateInfo depthStencil{};
+    depthStencil.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
+    depthStencil.depthTestEnable = VK_TRUE;
+    depthStencil.depthWriteEnable = VK_TRUE;
+    depthStencil.depthCompareOp = VK_COMPARE_OP_LESS;
+
+    VkPipelineColorBlendStateCreateInfo colorBlending{};
+    colorBlending.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
+    colorBlending.attachmentCount = 0;
+
+    std::array<VkDynamicState, 3> dynamicStates = {
+        VK_DYNAMIC_STATE_VIEWPORT,
+        VK_DYNAMIC_STATE_SCISSOR,
+        VK_DYNAMIC_STATE_DEPTH_BIAS
+    };
+    VkPipelineDynamicStateCreateInfo dynamicState{};
+    dynamicState.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
+    dynamicState.dynamicStateCount = static_cast<uint32_t>(dynamicStates.size());
+    dynamicState.pDynamicStates = dynamicStates.data();
+
+    VkGraphicsPipelineCreateInfo pipelineInfo{};
+    pipelineInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
+    pipelineInfo.stageCount = static_cast<uint32_t>(shaderStages.size());
+    pipelineInfo.pStages = shaderStages.data();
+    pipelineInfo.pVertexInputState = &vertexInputInfo;
+    pipelineInfo.pInputAssemblyState = &inputAssembly;
+    pipelineInfo.pViewportState = &viewportState;
+    pipelineInfo.pRasterizationState = &rasterizer;
+    pipelineInfo.pMultisampleState = &multisampling;
+    pipelineInfo.pDepthStencilState = &depthStencil;
+    pipelineInfo.pColorBlendState = &colorBlending;
+    pipelineInfo.pDynamicState = &dynamicState;
+    pipelineInfo.layout = shadowPipelineLayout;  // Reuse existing shadow layout
+    pipelineInfo.renderPass = shadowRenderPass;
+    pipelineInfo.subpass = 0;
+
+    VkResult result = vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &meshletShadowPipeline);
+
+    vkDestroyShaderModule(device, vertModule, nullptr);
+    vkDestroyShaderModule(device, fragModule, nullptr);
+
+    return result == VK_SUCCESS;
+}
+
 void TerrainSystem::querySubgroupCapabilities() {
     VkPhysicalDeviceSubgroupProperties subgroupProps{};
     subgroupProps.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SUBGROUP_PROPERTIES;
@@ -1342,7 +1596,8 @@ void TerrainSystem::recordCompute(VkCommandBuffer cmd, uint32_t frameIndex, GpuP
 
     TerrainDispatcherPushConstants dispatcherPC{};
     dispatcherPC.subdivisionWorkgroupSize = SUBDIVISION_WORKGROUP_SIZE;
-    dispatcherPC.meshletVertexCount = 0;
+    // In meshlet mode, set the index count for indexed instanced draw
+    dispatcherPC.meshletVertexCount = meshletMode ? meshlet.getIndexCount() : 0;
     vkCmdPushConstants(cmd, dispatcherPipelineLayout, VK_SHADER_STAGE_COMPUTE_BIT, 0,
                       sizeof(dispatcherPC), &dispatcherPC);
 
@@ -1563,7 +1818,13 @@ void TerrainSystem::recordCompute(VkCommandBuffer cmd, uint32_t frameIndex, GpuP
 }
 
 void TerrainSystem::recordDraw(VkCommandBuffer cmd, uint32_t frameIndex) {
-    VkPipeline pipeline = wireframeMode ? wireframePipeline : renderPipeline;
+    // Select appropriate pipeline based on mode
+    VkPipeline pipeline;
+    if (meshletMode) {
+        pipeline = wireframeMode ? meshletWireframePipeline : meshletRenderPipeline;
+    } else {
+        pipeline = wireframeMode ? wireframePipeline : renderPipeline;
+    }
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
 
     vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, renderPipelineLayout,
@@ -1583,12 +1844,25 @@ void TerrainSystem::recordDraw(VkCommandBuffer cmd, uint32_t frameIndex) {
     scissor.extent = extent;
     vkCmdSetScissor(cmd, 0, 1, &scissor);
 
-    vkCmdDrawIndirect(cmd, indirectDrawBuffer, 0, 1, sizeof(VkDrawIndirectCommand));
+    if (meshletMode) {
+        // Bind meshlet vertex and index buffers
+        VkBuffer vertexBuffers[] = {meshlet.getVertexBuffer()};
+        VkDeviceSize offsets[] = {0};
+        vkCmdBindVertexBuffers(cmd, 0, 1, vertexBuffers, offsets);
+        vkCmdBindIndexBuffer(cmd, meshlet.getIndexBuffer(), 0, VK_INDEX_TYPE_UINT16);
+
+        // Indexed instanced draw: indexCount from meshlet, instanceCount from indirect buffer
+        vkCmdDrawIndexedIndirect(cmd, indirectDrawBuffer, 0, 1, sizeof(VkDrawIndexedIndirectCommand));
+    } else {
+        vkCmdDrawIndirect(cmd, indirectDrawBuffer, 0, 1, sizeof(VkDrawIndirectCommand));
+    }
 }
 
 void TerrainSystem::recordShadowDraw(VkCommandBuffer cmd, uint32_t frameIndex,
                                       const glm::mat4& lightViewProj, int cascadeIndex) {
-    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, shadowPipeline);
+    // Select appropriate shadow pipeline based on mode
+    VkPipeline pipeline = meshletMode ? meshletShadowPipeline : shadowPipeline;
+    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
     vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, shadowPipelineLayout,
                            0, 1, &renderDescriptorSets[frameIndex], 0, nullptr);
 
@@ -1615,7 +1889,18 @@ void TerrainSystem::recordShadowDraw(VkCommandBuffer cmd, uint32_t frameIndex,
     pc.cascadeIndex = cascadeIndex;
     vkCmdPushConstants(cmd, shadowPipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(pc), &pc);
 
-    vkCmdDrawIndirect(cmd, indirectDrawBuffer, 0, 1, sizeof(VkDrawIndirectCommand));
+    if (meshletMode) {
+        // Bind meshlet vertex and index buffers
+        VkBuffer vertexBuffers[] = {meshlet.getVertexBuffer()};
+        VkDeviceSize offsets[] = {0};
+        vkCmdBindVertexBuffers(cmd, 0, 1, vertexBuffers, offsets);
+        vkCmdBindIndexBuffer(cmd, meshlet.getIndexBuffer(), 0, VK_INDEX_TYPE_UINT16);
+
+        // Indexed instanced draw
+        vkCmdDrawIndexedIndirect(cmd, indirectDrawBuffer, 0, 1, sizeof(VkDrawIndexedIndirectCommand));
+    } else {
+        vkCmdDrawIndirect(cmd, indirectDrawBuffer, 0, 1, sizeof(VkDrawIndirectCommand));
+    }
 }
 
 float TerrainSystem::getHeightAt(float x, float z) const {

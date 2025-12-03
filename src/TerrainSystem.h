@@ -10,6 +10,7 @@
 #include "TerrainHeightMap.h"
 #include "TerrainTextures.h"
 #include "TerrainCBT.h"
+#include "TerrainMeshlet.h"
 
 class GpuProfiler;
 
@@ -77,6 +78,10 @@ struct TerrainConfig {
 
     // Computed height scale (maxAltitude - minAltitude), set during init
     float heightScale = 0.0f;
+
+    // Meshlet configuration
+    bool useMeshlets = false;         // Enable meshlet rendering mode
+    uint32_t meshletSubdivisionLevel = 4;  // Meshlet subdivision level (2^level triangles per meshlet)
 };
 
 class TerrainSystem {
@@ -173,6 +178,11 @@ public:
     void setWireframeMode(bool enabled) { wireframeMode = enabled; }
     bool isWireframeMode() const { return wireframeMode; }
 
+    // Toggle meshlet mode for higher resolution rendering
+    void setMeshletMode(bool enabled) { meshletMode = enabled; }
+    bool isMeshletMode() const { return meshletMode; }
+    uint32_t getMeshletTriangleMultiplier() const { return meshlet.getTriangleCount(); }
+
 private:
     // Initialization helpers
     bool createUniformBuffers();
@@ -191,6 +201,8 @@ private:
     bool createRenderPipeline();
     bool createWireframePipeline();
     bool createShadowPipeline();
+    bool createMeshletRenderPipeline();
+    bool createMeshletShadowPipeline();
 
     // Utility functions
     void extractFrustumPlanes(const glm::mat4& viewProj, glm::vec4 planes[6]);
@@ -215,6 +227,7 @@ private:
     TerrainHeightMap heightMap;
     TerrainTextures textures;
     TerrainCBT cbt;
+    TerrainMeshlet meshlet;
 
     // Indirect dispatch/draw buffers
     VkBuffer indirectDispatchBuffer = VK_NULL_HANDLE;
@@ -265,6 +278,11 @@ private:
     VkPipelineLayout shadowPipelineLayout = VK_NULL_HANDLE;
     VkPipeline shadowPipeline = VK_NULL_HANDLE;
 
+    // Meshlet pipelines (with vertex input for instanced rendering)
+    VkPipeline meshletRenderPipeline = VK_NULL_HANDLE;
+    VkPipeline meshletWireframePipeline = VK_NULL_HANDLE;
+    VkPipeline meshletShadowPipeline = VK_NULL_HANDLE;
+
     // Descriptor sets
     std::vector<VkDescriptorSet> computeDescriptorSets;  // Per frame
     std::vector<VkDescriptorSet> renderDescriptorSets;   // Per frame
@@ -273,6 +291,7 @@ private:
     // Configuration
     TerrainConfig config;
     bool wireframeMode = false;
+    bool meshletMode = false;  // Use meshlet-based rendering for higher resolution
     bool skipFrameOptimizationEnabled = true;  // Camera-still skip optimization
     bool gpuCullingEnabled = true;             // GPU frustum culling for split phase
 

@@ -78,6 +78,7 @@ public:
 
     // Results access
     const GpuProfiler::FrameStats& getGpuResults() const { return gpuProfiler.getResults(); }
+    const GpuProfiler::FrameStats& getSmoothedGpuResults() const { return gpuProfiler.getSmoothedResults(); }
     const CpuProfiler::FrameStats& getCpuResults() const { return cpuProfiler.getResults(); }
     const CpuProfiler::FrameStats& getSmoothedCpuResults() const { return cpuProfiler.getSmoothedResults(); }
 

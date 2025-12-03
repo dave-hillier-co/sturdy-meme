@@ -81,6 +81,12 @@ public:
     const FrameStats& getResults() const { return lastFrameStats; }
 
     /**
+     * Get smoothed profiling results (averaged over multiple frames).
+     * More stable for display, handles zones that appear/disappear.
+     */
+    const FrameStats& getSmoothedResults() const { return smoothedStats; }
+
+    /**
      * Check if profiling is enabled.
      */
     bool isEnabled() const { return enabled; }
@@ -120,7 +126,12 @@ private:
 
     // Results from previous frame
     FrameStats lastFrameStats;
+    FrameStats smoothedStats;
+    std::unordered_map<std::string, float> smoothedZoneTimes;  // Per-zone smoothed times
     std::vector<std::string> zoneNames;
+
+    // Smoothing factor (0.0 = no smoothing, 1.0 = infinite smoothing)
+    static constexpr float SMOOTHING_FACTOR = 0.9f;
 
     // Frame start/end query indices
     uint32_t frameStartQuery = 0;

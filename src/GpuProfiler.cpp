@@ -190,4 +190,61 @@ void GpuProfiler::collectResults(uint32_t frameIndex) {
 
         queryIdx += 2;  // Each zone has start + end query
     }
+
+    // Update smoothed stats using exponential moving average
+    // Track which zones were seen this frame
+    std::unordered_map<std::string, bool> seenThisFrame;
+
+    // Update smoothed values for zones in this frame
+    for (const auto& zone : lastFrameStats.zones) {
+        seenThisFrame[zone.name] = true;
+
+        auto it = smoothedZoneTimes.find(zone.name);
+        if (it == smoothedZoneTimes.end()) {
+            // New zone - initialize with current value
+            smoothedZoneTimes[zone.name] = zone.gpuTimeMs;
+        } else {
+            // Existing zone - apply EMA
+            it->second = SMOOTHING_FACTOR * it->second + (1.0f - SMOOTHING_FACTOR) * zone.gpuTimeMs;
+        }
+    }
+
+    // Decay zones not seen this frame (they may be intermittent like FrustumCull)
+    for (auto& [name, time] : smoothedZoneTimes) {
+        if (!seenThisFrame[name]) {
+            // Decay toward zero but keep it in the map for a while
+            time *= SMOOTHING_FACTOR;
+        }
+    }
+
+    // Remove zones that have decayed to near-zero
+    for (auto it = smoothedZoneTimes.begin(); it != smoothedZoneTimes.end(); ) {
+        if (it->second < 0.001f) {
+            it = smoothedZoneTimes.erase(it);
+        } else {
+            ++it;
+        }
+    }
+
+    // Build smoothed stats from the map
+    float totalSmoothedMs = 0.0f;
+    for (const auto& [name, time] : smoothedZoneTimes) {
+        totalSmoothedMs += time;
+    }
+
+    smoothedStats.totalGpuTimeMs = totalSmoothedMs;
+    smoothedStats.zones.clear();
+
+    // Sort by time descending for stable display order
+    std::vector<std::pair<std::string, float>> sortedZones(smoothedZoneTimes.begin(), smoothedZoneTimes.end());
+    std::sort(sortedZones.begin(), sortedZones.end(),
+              [](const auto& a, const auto& b) { return a.second > b.second; });
+
+    for (const auto& [name, time] : sortedZones) {
+        TimingResult result;
+        result.name = name;
+        result.gpuTimeMs = time;
+        result.percentOfFrame = (totalSmoothedMs > 0.0f) ? (time / totalSmoothedMs * 100.0f) : 0.0f;
+        smoothedStats.zones.push_back(result);
+    }
 }

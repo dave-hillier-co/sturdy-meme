@@ -812,10 +812,8 @@ void GuiSystem::renderTerrainSection(Renderer& renderer) {
         ImGui::SetTooltip("Use GPU frustum culling with stream compaction for split phase");
     }
 
-    // Debug status
-    ImGui::Text("Status: %s, Phase: %s",
-        terrainMut.isCurrentlySkipping() ? "SKIPPING" : "COMPUTING",
-        terrainMut.getCurrentPhase() == 0 ? "SPLIT" : "MERGE");
+    // Debug status (phase alternates every frame so not useful to display)
+    ImGui::Text("Status: %s", terrainMut.isCurrentlySkipping() ? "SKIPPING" : "ACTIVE");
 
     ImGui::Spacing();
 
@@ -932,7 +930,7 @@ void GuiSystem::renderProfilerSection(Renderer& renderer) {
     ImGui::Text("GPU TIMING");
     ImGui::PopStyleColor();
 
-    const auto& gpuStats = profiler.getGpuResults();
+    const auto& gpuStats = profiler.getSmoothedGpuResults();
 
     if (gpuStats.zones.empty()) {
         ImGui::TextDisabled("No GPU data yet (waiting for frames)");

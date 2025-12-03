@@ -55,7 +55,7 @@ struct TerrainSubdivisionPushConstants {
     uint32_t updateMode;       // 0 = split only, 1 = merge only
     uint32_t frameIndex;       // For temporal spreading
     uint32_t spreadFactor;     // Process 1/N triangles per frame (1 = all)
-    uint32_t useCompactBuffer; // 1 = read from compact buffer (GPU culling enabled)
+    uint32_t reserved;         // Reserved for future use (was useCompactBuffer)
 };
 
 // Push constants for prepare cull dispatch (legacy, kept for compatibility)

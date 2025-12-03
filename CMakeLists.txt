@@ -52,6 +52,10 @@ set(SOURCES
     src/TerrainHeightMap.cpp
     src/TerrainTextures.cpp
     src/TerrainCBT.cpp
+    src/TerrainTile.cpp
+    src/StreamingManager.cpp
+    src/TerrainStreamingManager.cpp
+    src/PagedTerrainRenderer.cpp
     src/ClothSimulation.cpp
     src/SnowMaskSystem.cpp
     src/VolumetricSnowSystem.cpp

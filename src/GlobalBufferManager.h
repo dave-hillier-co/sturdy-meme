@@ -8,11 +8,7 @@
 
 #include "BufferUtils.h"
 #include "Light.h"
-#include "SnowUBO.h"
-#include "CloudShadowUBO.h"
-
-// Forward declarations
-struct UniformBufferObject;
+#include "UBOs.h"  // For UniformBufferObject, SnowUBO, and CloudShadowUBO (auto-generated)
 
 /**
  * GlobalBufferManager - Manages per-frame shared GPU buffers

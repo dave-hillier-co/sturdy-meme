@@ -459,8 +459,8 @@ bool Renderer::init(SDL_Window* win, const std::string& resPath) {
         SDL_Log("Warning: Hi-Z system initialization failed, occlusion culling disabled");
         // Continue without Hi-Z - it's an optional optimization
     } else {
-        // Connect depth buffer to Hi-Z system
-        hiZSystem.setDepthBuffer(depthImageView, depthSampler);
+        // Connect depth buffer to Hi-Z system - use HDR depth where scene is rendered
+        hiZSystem.setDepthBuffer(postProcessSystem.getHDRDepthView(), depthSampler);
 
         // Initialize object data for culling
         updateHiZObjectData();
@@ -1424,6 +1424,9 @@ void Renderer::render(const Camera& camera) {
 
     // HDR scene render pass
     recordHDRPass(cmd, currentFrame, grassTime);
+
+    // Generate Hi-Z pyramid from scene depth (before bloom to ensure bloom doesn't affect it)
+    hiZSystem.recordPyramidGeneration(cmd, currentFrame);
 
     // Multi-pass bloom
     bloomSystem.setThreshold(postProcessSystem.getBloomThreshold());

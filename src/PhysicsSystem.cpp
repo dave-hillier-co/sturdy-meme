@@ -372,13 +372,12 @@ PhysicsBodyID PhysicsWorld::createTerrainHeightfield(const float* samples, uint3
     // Jolt expects samples in row-major order with Y up
 
     // Create height samples for Jolt
-    // The terrain shader centers heights: (h - 0.5) * heightScale
-    // So heights range from -0.5*heightScale to +0.5*heightScale
-    // We need to match this in physics
+    // The terrain shader uses: h * heightScale (0 = ground level, 1 = max height)
+    // Heights range from 0 to heightScale
     std::vector<float> joltSamples(sampleCount * sampleCount);
     for (uint32_t i = 0; i < sampleCount * sampleCount; i++) {
-        // Match shader: (sample - 0.5) * heightScale
-        joltSamples[i] = (samples[i] - 0.5f) * heightScale;
+        // Match shader: sample * heightScale
+        joltSamples[i] = samples[i] * heightScale;
     }
 
     // HeightFieldShapeSettings

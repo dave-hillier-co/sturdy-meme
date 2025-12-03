@@ -215,8 +215,8 @@ float sampleTerrainHeight(vec2 worldXZ) {
     // Sample heightmap (R32_SFLOAT format, values in [0,1])
     float heightSample = texture(terrainHeightMap, terrainUV).r;
 
-    // Convert to world Y using same formula as terrain shader
-    return (heightSample - 0.5) * uniforms.terrainHeightScale;
+    // Convert to world Y using same formula as terrain shader: h * heightScale
+    return heightSample * uniforms.terrainHeightScale;
 }
 
 // Sample wind with turbulence

@@ -185,8 +185,8 @@ void main() {
     // Sample heightmap (R32_SFLOAT format, values in [0,1])
     float heightSample = texture(terrainHeightMap, terrainUV).r;
 
-    // Convert to world Y using same formula as terrain shader: (h - 0.5) * heightScale
-    float terrainY = (heightSample - 0.5) * uniforms.terrainHeightScale;
+    // Convert to world Y using same formula as terrain shader: h * heightScale
+    float terrainY = heightSample * uniforms.terrainHeightScale;
 
     vec3 worldPos = vec3(x, terrainY, z);
 

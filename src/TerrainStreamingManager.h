@@ -7,18 +7,34 @@
 #include <vector>
 #include <memory>
 
+// LOD level configuration
+struct LODLevelConfig {
+    float minDistance = 0.0f;      // Minimum distance for this LOD (inner boundary)
+    float maxDistance = 512.0f;    // Maximum distance for this LOD (outer boundary)
+    float unloadMargin = 64.0f;    // Hysteresis margin for unloading
+};
+
 // Configuration for terrain streaming
 struct TerrainStreamingConfig {
     TerrainTileConfig tileConfig;                 // Per-tile configuration
-    float loadRadius = 1024.0f;                   // Distance to start loading tiles
-    float unloadRadius = 1280.0f;                 // Distance to unload tiles (with hysteresis)
-    uint32_t maxLoadedTiles = 64;                 // Maximum number of loaded tiles
+
+    // LOD level ranges (distance from camera where each LOD is used)
+    // LOD 0 = highest detail (closest), LOD N = lowest detail (farthest)
+    // Default: LOD 0: 0-512m, LOD 1: 512-2048m, LOD 2: 2048-8192m, LOD 3: 8192m+
+    std::vector<LODLevelConfig> lodLevels = {
+        {0.0f, 512.0f, 64.0f},       // LOD 0: high detail, near
+        {512.0f, 2048.0f, 128.0f},   // LOD 1: medium detail
+        {2048.0f, 8192.0f, 256.0f},  // LOD 2: low detail
+        {8192.0f, 32768.0f, 512.0f}  // LOD 3: very low detail, far
+    };
+
+    uint32_t maxLoadedTiles = 128;                // Maximum number of loaded tiles (across all LODs)
     StreamingBudget budget = {
-        .maxGPUMemory = 128 * 1024 * 1024,        // 128 MB for terrain
-        .targetGPUMemory = 100 * 1024 * 1024,
-        .maxConcurrentLoads = 2,
-        .maxLoadRequestsPerFrame = 2,
-        .maxUnloadsPerFrame = 2
+        .maxGPUMemory = 256 * 1024 * 1024,        // 256 MB for terrain (more for multi-LOD)
+        .targetGPUMemory = 200 * 1024 * 1024,
+        .maxConcurrentLoads = 4,
+        .maxLoadRequestsPerFrame = 4,
+        .maxUnloadsPerFrame = 4
     };
 };
 
@@ -65,8 +81,14 @@ protected:
     uint32_t processCompletedLoads() override;
 
 private:
-    // Convert world position to tile coordinate
-    TerrainTile::Coord worldToTileCoord(float worldX, float worldZ) const;
+    // Convert world position to tile coordinate for a specific LOD level
+    TerrainTile::Coord worldToTileCoord(float worldX, float worldZ, uint32_t lodLevel) const;
+
+    // Get tile size for a specific LOD level
+    float getTileSizeForLOD(uint32_t lodLevel) const;
+
+    // Get appropriate LOD level for a given distance
+    uint32_t getLODForDistance(float distance) const;
 
     // Get or create tile at coordinate
     TerrainTile* getOrCreateTile(const TerrainTile::Coord& coord);
@@ -74,13 +96,20 @@ private:
     // Request tile to be loaded
     void requestTileLoad(TerrainTile* tile, float distance, uint64_t frameNumber);
 
-    // Determine which tiles should be loaded based on camera
+    // Determine which tiles should be loaded based on camera (for all LOD levels)
     void updateTileRequests(const glm::vec3& cameraPos, uint64_t frameNumber);
+
+    // Update tile requests for a specific LOD level
+    void updateTileRequestsForLOD(const glm::vec3& cameraPos, uint64_t frameNumber,
+                                   uint32_t lodLevel, float minDist, float maxDist);
+
+    // Check if a higher-detail LOD tile covers this position
+    bool hasHigherLODCoverage(float worldX, float worldZ, uint32_t currentLOD) const;
 
     // Unload tiles that are too far or over budget
     void evictTiles(const glm::vec3& cameraPos, uint64_t frameNumber);
 
-    // Update visible tiles list
+    // Update visible tiles list (excluding tiles covered by higher LOD)
     void updateVisibleTiles(const glm::vec3& cameraPos);
 
     // Configuration

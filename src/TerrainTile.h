@@ -17,23 +17,25 @@ enum class TileLoadState {
 
 // Configuration for terrain tiles
 struct TerrainTileConfig {
-    uint32_t heightmapResolution = 256;  // Per-tile heightmap resolution
-    float tileSize = 256.0f;              // World units per tile
+    uint32_t heightmapResolution = 256;  // Per-tile heightmap resolution (same for all LODs)
+    float baseTileSize = 256.0f;          // World units for LOD 0 tiles
     float heightScale = 50.0f;            // Maximum height
-    int cbtMaxDepth = 16;                 // CBT depth per tile (less than global)
+    int cbtMaxDepth = 16;                 // CBT depth per tile
     int cbtInitDepth = 4;                 // Initial CBT subdivision
+    uint32_t numLODLevels = 4;            // Number of LOD levels (0 = highest detail)
 };
 
 // Represents a single terrain tile with its own heightmap and CBT
 class TerrainTile {
 public:
-    // Tile coordinate (grid position)
+    // Tile coordinate (grid position + LOD level)
     struct Coord {
         int32_t x;
         int32_t z;
+        uint32_t lod;  // LOD level (0 = highest detail, larger = lower detail)
 
         bool operator==(const Coord& other) const {
-            return x == other.x && z == other.z;
+            return x == other.x && z == other.z && lod == other.lod;
         }
     };
 
@@ -41,7 +43,14 @@ public:
     ~TerrainTile() = default;
 
     // Initialize tile with configuration (allocates CPU data only)
+    // LOD level determines tile size: tileSize = baseTileSize * (1 << lodLevel)
     void init(const Coord& coord, const TerrainTileConfig& config);
+
+    // Get LOD level (0 = highest detail)
+    uint32_t getLODLevel() const { return coord.lod; }
+
+    // Get actual tile size (depends on LOD level)
+    float getTileSize() const { return tileSize; }
 
     // Load heightmap data (can be called from background thread)
     // Returns true if data was loaded successfully
@@ -126,7 +135,10 @@ private:
 // Hash function for tile coordinates (for use in std::unordered_map)
 struct TileCoordHash {
     size_t operator()(const TerrainTile::Coord& coord) const {
-        // Simple hash combining x and z
-        return std::hash<int32_t>()(coord.x) ^ (std::hash<int32_t>()(coord.z) << 16);
+        // Hash combining x, z, and lod level
+        size_t h = std::hash<int32_t>()(coord.x);
+        h ^= std::hash<int32_t>()(coord.z) << 16;
+        h ^= std::hash<uint32_t>()(coord.lod) << 28;
+        return h;
     }
 };

@@ -42,13 +42,16 @@ static float fbm(float x, float z, int octaves, float persistence) {
 void TerrainTile::init(const Coord& tileCoord, const TerrainTileConfig& cfg) {
     coord = tileCoord;
     config = cfg;
-    tileSize = cfg.tileSize;
 
-    // Calculate world position
+    // Calculate tile size based on LOD level
+    // LOD 0 = baseTileSize, LOD 1 = 2x, LOD 2 = 4x, etc.
+    tileSize = cfg.baseTileSize * static_cast<float>(1u << coord.lod);
+
+    // Calculate world position (tile grid coordinates are relative to LOD level)
     worldMin.x = static_cast<float>(coord.x) * tileSize;
     worldMin.y = static_cast<float>(coord.z) * tileSize;
 
-    // Reserve CPU data
+    // Reserve CPU data (same resolution for all LODs, but covers larger area at higher LOD)
     uint32_t dataSize = config.heightmapResolution * config.heightmapResolution;
     cpuHeightData.resize(dataSize, 0.0f);
 

@@ -168,7 +168,7 @@ bool TerrainImporter::loadSourceHeightmap(const std::string& path) {
     // Load as 16-bit
     uint16_t* data = stbi_load_16(path.c_str(), &width, &height, &channels, 1);
     if (!data) {
-        SDL_Log("Failed to load heightmap: %s - %s", path.c_str(), stbi_failure_reason());
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to load heightmap: %s - %s", path.c_str(), stbi_failure_reason());
         return false;
     }
 
@@ -210,7 +210,7 @@ bool TerrainImporter::import(const TerrainImportConfig& config, ImportProgressCa
     tilesZ = (sourceHeight + config.tileResolution - 1) / config.tileResolution;
 
     SDL_Log("Source: %ux%u pixels", sourceWidth, sourceHeight);
-    SDL_Log("World size: %.0fm x %.0fm", worldWidth, worldHeight);
+    SDL_Log("World size: %.1fm x %.1fm", worldWidth, worldHeight);
     SDL_Log("LOD 0: %ux%u tiles (%ux%u each)", tilesX, tilesZ, config.tileResolution, config.tileResolution);
 
     // Initialize LOD data with source
@@ -242,7 +242,7 @@ bool TerrainImporter::import(const TerrainImportConfig& config, ImportProgressCa
 
     // Save metadata
     if (!saveMetadata(config)) {
-        SDL_Log("Failed to save cache metadata");
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to save cache metadata");
         return false;
     }
 
@@ -330,7 +330,7 @@ bool TerrainImporter::generateLODLevel(const TerrainImportConfig& config, uint32
             // Save tile
             std::string tilePath = getTilePath(config.cacheDirectory, tx, tz, lod);
             if (!saveTile(tilePath, tileData, tileRes)) {
-                SDL_Log("Failed to save tile: %s", tilePath.c_str());
+                SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to save tile: %s", tilePath.c_str());
                 return false;
             }
 

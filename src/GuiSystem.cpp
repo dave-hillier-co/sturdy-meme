@@ -695,6 +695,55 @@ void GuiSystem::renderTerrainSection(Renderer& renderer) {
     ImGui::Separator();
     ImGui::Spacing();
 
+    // LOD parameters (modifiable at runtime)
+    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.8f, 0.7f, 0.5f, 1.0f));
+    ImGui::Text("LOD PARAMETERS");
+    ImGui::PopStyleColor();
+
+    auto& terrainMut = renderer.getTerrainSystem();
+    TerrainConfig cfg = terrainMut.getConfig();
+    bool configChanged = false;
+
+    if (ImGui::SliderFloat("Split Threshold", &cfg.splitThreshold, 4.0f, 64.0f, "%.0f px")) {
+        configChanged = true;
+    }
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("Screen-space edge length (pixels) to trigger subdivision");
+    }
+
+    if (ImGui::SliderFloat("Merge Threshold", &cfg.mergeThreshold, 2.0f, 32.0f, "%.0f px")) {
+        configChanged = true;
+    }
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("Screen-space edge length (pixels) to trigger merge");
+    }
+
+    int maxDepth = cfg.maxDepth;
+    if (ImGui::SliderInt("Max Depth", &maxDepth, 16, 28)) {
+        cfg.maxDepth = maxDepth;
+        configChanged = true;
+    }
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("Maximum subdivision depth (higher = finer detail, more triangles)");
+    }
+
+    int minDepth = cfg.minDepth;
+    if (ImGui::SliderInt("Min Depth", &minDepth, 1, 10)) {
+        cfg.minDepth = minDepth;
+        configChanged = true;
+    }
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("Minimum subdivision depth (base tessellation level)");
+    }
+
+    if (configChanged) {
+        terrainMut.setConfig(cfg);
+    }
+
+    ImGui::Spacing();
+    ImGui::Separator();
+    ImGui::Spacing();
+
     // Wireframe toggle
     bool wireframe = renderer.isTerrainWireframeMode();
     if (ImGui::Checkbox("Wireframe Mode", &wireframe)) {

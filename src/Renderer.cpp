@@ -1937,7 +1937,7 @@ bool Renderer::createSkinnedDescriptorSetLayout() {
     VkDevice device = vulkanContext.getDevice();
 
     // Skinned descriptor set layout:
-    // Same as main layout but with binding 10 for bone matrices UBO
+    // Same as main layout but with additional binding 12 for bone matrices UBO
     // 0: UBO (camera/view data)
     // 1: Diffuse texture sampler
     // 2: Shadow map sampler (CSM cascade array)
@@ -1948,7 +1948,9 @@ bool Renderer::createSkinnedDescriptorSetLayout() {
     // 7: Spot shadow depth maps
     // 8: Snow mask texture
     // 9: Cloud shadow map
-    // 10: Bone matrices UBO
+    // 10: Snow UBO
+    // 11: Cloud shadow UBO
+    // 12: Bone matrices UBO
     skinnedDescriptorSetLayout = DescriptorManager::LayoutBuilder(device)
         .addUniformBuffer(VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT)  // 0: UBO
         .addCombinedImageSampler(VK_SHADER_STAGE_FRAGMENT_BIT)  // 1: diffuse
@@ -1960,7 +1962,9 @@ bool Renderer::createSkinnedDescriptorSetLayout() {
         .addCombinedImageSampler(VK_SHADER_STAGE_FRAGMENT_BIT)  // 7: spot shadow
         .addCombinedImageSampler(VK_SHADER_STAGE_FRAGMENT_BIT)  // 8: snow mask
         .addCombinedImageSampler(VK_SHADER_STAGE_FRAGMENT_BIT)  // 9: cloud shadow map
-        .addUniformBuffer(VK_SHADER_STAGE_VERTEX_BIT)           // 10: bone matrices
+        .addUniformBuffer(VK_SHADER_STAGE_FRAGMENT_BIT)         // 10: snow UBO
+        .addUniformBuffer(VK_SHADER_STAGE_FRAGMENT_BIT)         // 11: cloud shadow UBO
+        .addUniformBuffer(VK_SHADER_STAGE_VERTEX_BIT)           // 12: bone matrices
         .build();
 
     if (skinnedDescriptorSetLayout == VK_NULL_HANDLE) {
@@ -2092,6 +2096,12 @@ bool Renderer::createSkinnedDescriptorSets() {
         common.snowMaskSampler = snowMaskSystem.getSnowMaskSampler();
         common.cloudShadowView = cloudShadowSystem.getShadowMapView();
         common.cloudShadowSampler = cloudShadowSystem.getShadowMapSampler();
+        // Snow and cloud shadow UBOs (bindings 10 and 11)
+        common.snowUboBuffer = snowBuffers[i];
+        common.snowUboBufferSize = sizeof(SnowUBO);
+        common.cloudShadowUboBuffer = cloudShadowBuffers[i];
+        common.cloudShadowUboBufferSize = sizeof(CloudShadowUBO);
+        // Bone matrices (binding 12)
         common.boneMatricesBuffer = boneMatricesBuffers[i];
         common.boneMatricesBufferSize = sizeof(BoneMatricesUBO);
 

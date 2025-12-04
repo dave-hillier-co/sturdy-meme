@@ -71,9 +71,9 @@ void MaterialDescriptorFactory::writeSkinnedDescriptorSet(
         // Binding 3: Normal map
         .writeImage(3, material.normalView, material.normalSampler);
 
-    // Binding 10: Bone matrices (required for skinned meshes)
+    // Binding 12: Bone matrices (required for skinned meshes)
     if (common.boneMatricesBuffer != VK_NULL_HANDLE) {
-        writer.writeBuffer(10, common.boneMatricesBuffer, 0, common.boneMatricesBufferSize);
+        writer.writeBuffer(12, common.boneMatricesBuffer, 0, common.boneMatricesBufferSize);
     }
 
     writer.update();

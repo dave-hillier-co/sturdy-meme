@@ -5,10 +5,11 @@
 const int NUM_CASCADES = 4;
 const int MAX_BONES = 128;
 
+#include "bindings.glsl"
 #include "ubo_common.glsl"
 #include "push_constants_common.glsl"
 
-layout(binding = 10) uniform BoneMatrices {
+layout(binding = BINDING_BONE_MATRICES) uniform BoneMatrices {
     mat4 bones[MAX_BONES];
 } boneData;
 

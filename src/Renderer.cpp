@@ -124,6 +124,42 @@ bool Renderer::init(SDL_Window* win, const std::string& resPath) {
         SDL_Log("Using existing terrain cache");
     }
 
+    // Run erosion simulation for water placement (rivers, lakes)
+    ErosionConfig erosionConfig{};
+    erosionConfig.sourceHeightmapPath = heightmapPath;
+    erosionConfig.cacheDirectory = terrainCachePath;
+    erosionConfig.numDroplets = 500000;
+    erosionConfig.maxDropletLifetime = 512;
+    erosionConfig.outputResolution = 4096;
+    erosionConfig.riverFlowThreshold = 0.15f;
+    erosionConfig.riverMinWidth = 5.0f;
+    erosionConfig.riverMaxWidth = 80.0f;
+    erosionConfig.lakeMinArea = 500.0f;
+    erosionConfig.lakeMinDepth = 2.0f;
+    erosionConfig.seaLevel = 0.0f;
+    erosionConfig.terrainSize = 16384.0f;
+    erosionConfig.minAltitude = -15.0f;
+    erosionConfig.maxAltitude = 220.0f;
+
+    if (erosionSimulator.isCacheValid(erosionConfig)) {
+        SDL_Log("Loading erosion data from cache...");
+        if (!erosionSimulator.loadFromCache(erosionConfig)) {
+            SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "Failed to load erosion cache, running simulation");
+            erosionSimulator.simulate(erosionConfig, [](float progress, const std::string& status) {
+                SDL_Log("Erosion: %.0f%% - %s", progress * 100.0f, status.c_str());
+            });
+        }
+    } else {
+        SDL_Log("Running erosion simulation...");
+        erosionSimulator.simulate(erosionConfig, [](float progress, const std::string& status) {
+            SDL_Log("Erosion: %.0f%% - %s", progress * 100.0f, status.c_str());
+        });
+    }
+
+    const auto& waterData = erosionSimulator.getWaterData();
+    SDL_Log("Water placement: %zu rivers, %zu lakes detected",
+            waterData.rivers.size(), waterData.lakes.size());
+
     // Initialize terrain system with CBT (loads heightmap directly for now)
     TerrainSystem::InitInfo terrainInfo{};
     terrainInfo.device = device;

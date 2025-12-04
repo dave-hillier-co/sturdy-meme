@@ -24,6 +24,7 @@
 #include "SceneManager.h"
 #include "TerrainSystem.h"
 #include "TerrainImporter.h"
+#include "ErosionSimulator.h"
 #include "CatmullClarkSystem.h"
 #include "SnowMaskSystem.h"
 #include "VolumetricSnowSystem.h"
@@ -170,6 +171,7 @@ public:
     const WindSystem& getWindSystem() const { return windSystem; }
     WaterSystem& getWaterSystem() { return waterSystem; }
     const WaterSystem& getWaterSystem() const { return waterSystem; }
+    const WaterPlacementData& getWaterPlacementData() const { return erosionSimulator.getWaterData(); }
     SceneBuilder& getSceneBuilder() { return sceneManager.getSceneBuilder(); }
     Mesh& getFlagClothMesh() { return sceneManager.getSceneBuilder().getFlagClothMesh(); }
     Mesh& getFlagPoleMesh() { return sceneManager.getSceneBuilder().getFlagPoleMesh(); }
@@ -286,6 +288,7 @@ private:
     CloudShadowSystem cloudShadowSystem;
     HiZSystem hiZSystem;
     WaterSystem waterSystem;
+    ErosionSimulator erosionSimulator;
     EnvironmentSettings environmentSettings;
     Profiler profiler;
     bool useVolumetricSnow = true;  // Use new volumetric system by default

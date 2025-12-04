@@ -336,6 +336,7 @@ vec3 applyHeightFog(vec3 color, vec3 cameraPos, vec3 fragPos, vec3 sunDir, vec3 
 }
 
 // Apply aerial perspective (combined height fog + atmospheric scattering)
+// Uses ubo.aerialPerspectiveScale and ubo.aerialPerspectiveMaxBlend for configurable distance
 vec3 applyAerialPerspective(vec3 color, vec3 cameraPos, vec3 viewDir, float viewDistance, vec3 sunDir, vec3 sunColor) {
     // Reconstruct fragment position from normalized view direction and distance
     vec3 fragPos = cameraPos + viewDir * viewDistance;
@@ -353,8 +354,8 @@ vec3 applyAerialPerspective(vec3 color, vec3 cameraPos, vec3 viewDir, float view
     scatterLight += night * vec3(0.01, 0.015, 0.03) * (1.0 - result.transmittance);
 
     // Combine: atmospheric scattering adds to fogged scene
-    // Scale for large world: gradual ramp over long distances (reaches 0.5 at ~5000 units)
-    float atmoBlend = clamp(viewDistance * 0.0001, 0.0, 0.7);
+    // Uses configurable scale and max blend from UBO
+    float atmoBlend = clamp(viewDistance * ubo.aerialPerspectiveScale, 0.0, ubo.aerialPerspectiveMaxBlend);
     // Smooth the blend curve for more natural transition
     atmoBlend = atmoBlend * atmoBlend * (3.0 - 2.0 * atmoBlend);  // Smoothstep-like
     vec3 finalColor = mix(fogged, fogged * result.transmittance + scatterLight, atmoBlend);

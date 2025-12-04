@@ -37,7 +37,9 @@ layout(binding = UBO_BINDING) uniform UniformBufferObject {
     float debugCascades;       // 1.0 = show cascade colors
     float julianDay;           // Julian day for sidereal rotation
     float cloudStyle;
-    vec3 uboPadding;           // Padding for alignment
+    float aerialPerspectiveScale;    // Distance scale for atmospheric blend (default 0.0001)
+    float aerialPerspectiveMaxBlend; // Maximum atmospheric blend (default 0.7)
+    float uboPadding;                // Padding for alignment
 } ubo;
 
 #endif // UBO_COMMON_GLSL

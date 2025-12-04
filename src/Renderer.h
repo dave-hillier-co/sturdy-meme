@@ -149,6 +149,12 @@ public:
     AtmosphereLUTSystem& getAtmosphereSystem() { return atmosphereLUTSystem; }
     const AtmosphereLUTSystem& getAtmosphereSystem() const { return atmosphereLUTSystem; }
 
+    // Aerial perspective control (atmospheric scattering blend)
+    void setAerialPerspectiveScale(float scale) { aerialPerspectiveScale = scale; }
+    float getAerialPerspectiveScale() const { return aerialPerspectiveScale; }
+    void setAerialPerspectiveMaxBlend(float blend) { aerialPerspectiveMaxBlend = blend; }
+    float getAerialPerspectiveMaxBlend() const { return aerialPerspectiveMaxBlend; }
+
     // Leaf control
     void setLeafIntensity(float intensity) { leafSystem.setIntensity(intensity); }
     float getLeafIntensity() const { return leafSystem.getIntensity(); }
@@ -317,6 +323,10 @@ private:
     EnvironmentSettings environmentSettings;
     Profiler profiler;
     bool useVolumetricSnow = true;  // Use new volumetric system by default
+
+    // Aerial perspective settings (atmospheric scattering blend distance)
+    float aerialPerspectiveScale = 0.0001f;    // Distance scale (1/distance for max blend)
+    float aerialPerspectiveMaxBlend = 0.7f;    // Maximum blend factor
 
     // Render pipeline (stages abstraction - for future refactoring)
     RenderPipeline renderPipeline;

@@ -637,6 +637,17 @@ void GuiSystem::renderEnvironmentSection(Renderer& renderer) {
                 froxel.setLayerDensity(layerDensity);
             }
 
+            // Advanced: far plane
+            ImGui::Spacing();
+            ImGui::Text("Range:");
+            float farPlane = froxel.getVolumetricFarPlane();
+            if (ImGui::SliderFloat("Far Plane", &farPlane, 50.0f, 500.0f, "%.0f m")) {
+                froxel.setVolumetricFarPlane(farPlane);
+            }
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("Maximum distance for volumetric fog (higher = more GPU cost)");
+            }
+
             // Presets
             ImGui::Spacing();
             ImGui::Text("Presets:");
@@ -679,7 +690,33 @@ void GuiSystem::renderEnvironmentSection(Renderer& renderer) {
     // Atmospheric Scattering
     if (ImGui::TreeNodeEx("Atmospheric Scattering (Far)", ImGuiTreeNodeFlags_DefaultOpen)) {
         ImGui::TextDisabled("Rayleigh/Mie scattering for distant haze");
-        ImGui::TextDisabled("Affects objects beyond ~200m");
+
+        // Blend distance control - express as user-friendly distance
+        float maxBlend = renderer.getAerialPerspectiveMaxBlend();
+        float scale = renderer.getAerialPerspectiveScale();
+        // Calculate full blend distance: distance = maxBlend / scale
+        float fullBlendDistance = (scale > 0.0f) ? (maxBlend / scale) : 10000.0f;
+
+        if (ImGui::SliderFloat("Blend Distance", &fullBlendDistance, 500.0f, 20000.0f, "%.0f m")) {
+            // Convert back to scale: scale = maxBlend / distance
+            float newScale = maxBlend / std::max(fullBlendDistance, 100.0f);
+            renderer.setAerialPerspectiveScale(newScale);
+        }
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Distance at which atmospheric scattering reaches full intensity");
+        }
+
+        if (ImGui::SliderFloat("Max Intensity", &maxBlend, 0.0f, 1.0f, "%.2f")) {
+            renderer.setAerialPerspectiveMaxBlend(maxBlend);
+            // Update scale to maintain the same blend distance
+            float newScale = maxBlend / std::max(fullBlendDistance, 100.0f);
+            renderer.setAerialPerspectiveScale(newScale);
+        }
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Maximum atmospheric blend (0 = no scattering, 1 = full scattering)");
+        }
+
+        ImGui::Spacing();
 
         auto& atmo = renderer.getAtmosphereSystem();
         AtmosphereParams params = atmo.getAtmosphereParams();
@@ -689,7 +726,7 @@ void GuiSystem::renderEnvironmentSection(Renderer& renderer) {
             paramsChanged = true;
         }
         if (ImGui::IsItemHovered()) {
-            ImGui::SetTooltip("Aerosol/haze density - affects distant haze intensity");
+            ImGui::SetTooltip("Aerosol/haze density - affects haze color and intensity");
         }
 
         if (ImGui::SliderFloat("Mie Anisotropy", &params.mieAnisotropy, 0.0f, 0.99f, "%.2f")) {

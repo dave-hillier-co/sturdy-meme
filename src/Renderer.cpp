@@ -136,7 +136,7 @@ bool Renderer::init(SDL_Window* win, const std::string& resPath) {
     erosionConfig.riverMaxWidth = 80.0f;
     erosionConfig.lakeMinArea = 500.0f;
     erosionConfig.lakeMinDepth = 2.0f;
-    erosionConfig.seaLevel = 0.0f;
+    erosionConfig.seaLevel = 25.0f;  // RGB (25,25,25) in heightmap (minAltitude offset not applied)
     erosionConfig.terrainSize = 16384.0f;
     erosionConfig.minAltitude = -15.0f;
     erosionConfig.maxAltitude = 220.0f;
@@ -571,15 +571,15 @@ bool Renderer::init(SDL_Window* win, const std::string& resPath) {
 
     if (!waterSystem.init(waterInfo)) return false;
 
-    // Configure water surface - sea level at 0
-    waterSystem.setWaterLevel(0.0f);  // Mean sea level
+    // Configure water surface - sea level matches erosion config
+    waterSystem.setWaterLevel(25.0f);  // RGB (25,25,25) in heightmap
     waterSystem.setWaterExtent(glm::vec2(0.0f, 0.0f), glm::vec2(16384.0f, 16384.0f));
     waterSystem.setWaterColor(glm::vec4(0.02f, 0.08f, 0.15f, 0.95f));  // Deep ocean blue
-    waterSystem.setWaveAmplitude(1.5f);   // Ocean-scale waves
+    waterSystem.setWaveAmplitude(0.5f);   // Ocean-scale waves
     waterSystem.setWaveLength(30.0f);     // Longer wavelengths for open sea
     waterSystem.setWaveSteepness(0.4f);
     waterSystem.setWaveSpeed(0.8f);
-    waterSystem.setTidalRange(3.0f);      // 3m tidal range (spring tide: ±3m from mean)
+    waterSystem.setTidalRange(1.0f);      // 3m tidal range (spring tide: ±3m from mean)
 
     // Create water descriptor sets
     if (!waterSystem.createDescriptorSets(uniformBuffers, sizeof(UniformBufferObject), shadowSystem)) return false;

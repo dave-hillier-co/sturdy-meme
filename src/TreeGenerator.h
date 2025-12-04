@@ -63,6 +63,11 @@ struct SpaceColonisationParams {
     float baseThickness = 0.3f;         // Trunk base thickness
     float thicknessPower = 2.0f;        // Exponent for pipe model (da Vinci's rule)
     float minThickness = 0.02f;         // Minimum branch thickness
+
+    // Geometry quality settings
+    int radialSegments = 8;             // Segments around circumference
+    int curveSubdivisions = 3;          // Subdivisions per branch for smooth curves
+    float smoothingStrength = 0.5f;     // How much to smooth branch curves (0-1)
 };
 
 // Tree generation parameters similar to ez-tree
@@ -140,6 +145,8 @@ struct TreeNode {
     int childCount;         // Number of children (for thickness calculation)
     float thickness;        // Calculated branch thickness
     bool isTerminal;        // Is this a leaf node?
+    int depth;              // Depth from root (for level calculation)
+    std::vector<int> childIndices;  // Indices of child nodes
 };
 
 class TreeGenerator {
@@ -228,6 +235,28 @@ private:
     // Convert tree nodes to branch segments
     void nodesToSegments(const std::vector<TreeNode>& nodes,
                         const TreeParameters& params);
+
+    // Generate curved geometry for space colonisation trees
+    void generateCurvedBranchGeometry(const std::vector<TreeNode>& nodes,
+                                      const TreeParameters& params);
+
+    // Generate a curved tube along a path of points
+    void generateCurvedTube(const std::vector<glm::vec3>& points,
+                           const std::vector<float>& radii,
+                           int radialSegments,
+                           int level,
+                           const TreeParameters& params);
+
+    // Catmull-Rom spline interpolation
+    glm::vec3 catmullRom(const glm::vec3& p0, const glm::vec3& p1,
+                         const glm::vec3& p2, const glm::vec3& p3, float t);
+
+    // Build child index lists for nodes
+    void buildChildIndices(std::vector<TreeNode>& nodes);
+
+    // Find branch chains (sequences of single-child nodes)
+    void findBranchChains(const std::vector<TreeNode>& nodes,
+                          std::vector<std::vector<int>>& chains);
 
     std::vector<BranchSegment> segments;
     std::vector<Vertex> branchVertices;

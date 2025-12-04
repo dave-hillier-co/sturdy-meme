@@ -237,6 +237,28 @@ void TreeEditorGui::renderSpaceColonisationSection(Renderer& renderer) {
     ImGui::Separator();
     ImGui::Spacing();
 
+    // Geometry Quality
+    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.7f, 0.7f, 0.8f, 1.0f));
+    ImGui::Text("GEOMETRY QUALITY");
+    ImGui::PopStyleColor();
+
+    if (ImGui::SliderInt("Radial Segments", &scParams.radialSegments, 4, 16)) changed = true;
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("Segments around branch circumference");
+    }
+    if (ImGui::SliderInt("Curve Subdivisions", &scParams.curveSubdivisions, 1, 8)) changed = true;
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("Subdivisions for smooth curved branches");
+    }
+    if (ImGui::SliderFloat("Smoothing", &scParams.smoothingStrength, 0.0f, 1.0f)) changed = true;
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("Amount of curve smoothing applied");
+    }
+
+    ImGui::Spacing();
+    ImGui::Separator();
+    ImGui::Spacing();
+
     if (changed) {
         treeSystem.regenerateTree();
     }

@@ -39,6 +39,7 @@ private:
     void renderWaterSection(Renderer& renderer);
     void renderDebugSection(Renderer& renderer);
     void renderProfilerSection(Renderer& renderer);
+    void renderTreeEditorSection(Renderer& renderer);
     void renderHelpOverlay();
     void renderPositionPanel(const Camera& camera);
 

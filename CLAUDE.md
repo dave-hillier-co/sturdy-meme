@@ -17,3 +17,10 @@
   - `SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, ...)` for errors
   - `SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, ...)` for warnings
   - `SDL_LogDebug(SDL_LOG_CATEGORY_APPLICATION, ...)` for debug output
+
+## Web Claude Code Environment
+
+When running in web Claude Code (Linux environment without vcpkg pre-installed):
+- Use `./build-claude.sh` to build - it bootstraps vcpkg automatically
+- The claude preset uses a local vcpkg installation in the project directory
+- Custom triplets in `triplets/` disable problematic features for restricted environments

@@ -210,10 +210,23 @@ MaterialInfo extractMaterialInfo(const ofbx::Material* mat, const std::string& f
         info.name = mat->name;
     }
 
-    // Colors
+    // Colors - validate for NaN/Inf
+    auto validateColor = [&info](glm::vec3& color, const char* name) {
+        if (std::isnan(color.r) || std::isnan(color.g) || std::isnan(color.b) ||
+            std::isinf(color.r) || std::isinf(color.g) || std::isinf(color.b)) {
+            SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                "FBXLoader: Invalid %s from material '%s', using default",
+                name, info.name.c_str());
+            color = glm::vec3(0.5f);  // Gray default
+        }
+    };
+
     info.diffuseColor = convertColor(mat->getDiffuseColor());
+    validateColor(info.diffuseColor, "diffuseColor");
     info.specularColor = convertColor(mat->getSpecularColor());
+    validateColor(info.specularColor, "specularColor");
     info.emissiveColor = convertColor(mat->getEmissiveColor());
+    // emissiveColor validated below with emissiveFactor
 
     // PBR properties
     // Convert shininess to roughness - use a sensible default for characters
@@ -239,7 +252,26 @@ MaterialInfo extractMaterialInfo(const ofbx::Material* mat, const std::string& f
 
     // OpenFBX doesn't expose opacity directly, default to 1.0
     info.opacity = 1.0f;
-    info.emissiveFactor = static_cast<float>(mat->getEmissiveFactor());
+
+    // Validate emissive factor - OpenFBX can return NaN or huge values
+    float rawEmissiveFactor = static_cast<float>(mat->getEmissiveFactor());
+    if (std::isnan(rawEmissiveFactor) || std::isinf(rawEmissiveFactor) || rawEmissiveFactor < 0.0f) {
+        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+            "FBXLoader: Invalid emissiveFactor %.2f from material '%s', using 0.0",
+            rawEmissiveFactor, info.name.c_str());
+        info.emissiveFactor = 0.0f;
+    } else {
+        info.emissiveFactor = std::min(rawEmissiveFactor, 10.0f);  // Clamp to reasonable range
+    }
+
+    // Validate emissive color components
+    if (std::isnan(info.emissiveColor.r) || std::isnan(info.emissiveColor.g) || std::isnan(info.emissiveColor.b) ||
+        std::isinf(info.emissiveColor.r) || std::isinf(info.emissiveColor.g) || std::isinf(info.emissiveColor.b)) {
+        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+            "FBXLoader: Invalid emissiveColor from material '%s', using black",
+            info.name.c_str());
+        info.emissiveColor = glm::vec3(0.0f);
+    }
 
     // Texture paths
     const ofbx::Texture* diffuseTex = mat->getTexture(ofbx::Texture::TextureType::DIFFUSE);

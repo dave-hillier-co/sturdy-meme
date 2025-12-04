@@ -340,8 +340,8 @@ vec3 applyAerialPerspective(vec3 color, vec3 cameraPos, vec3 viewDir, float view
     // Reconstruct fragment position from normalized view direction and distance
     vec3 fragPos = cameraPos + viewDir * viewDistance;
 
-    // Apply local height fog first (scene scale)
-    vec3 fogged = applyHeightFog(color, cameraPos, fragPos, sunDir, sunColor);
+    // Height fog disabled - froxel volumetric fog handles scene-scale fog now
+    vec3 fogged = color;
 
     // Then apply large-scale atmospheric scattering (km scale)
     vec3 origin = vec3(0.0, PLANET_RADIUS + max(cameraPos.y, 0.0), 0.0);

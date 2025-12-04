@@ -109,7 +109,7 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     lodepng
 )
 
-# macOS app bundle configuration
+# Platform-specific setup
 if(APPLE)
     set_target_properties(${PROJECT_NAME} PROPERTIES
         MACOSX_BUNDLE TRUE
@@ -145,6 +145,24 @@ if(APPLE)
             ${CMAKE_CURRENT_SOURCE_DIR}/assets
             $<TARGET_BUNDLE_CONTENT_DIR:${PROJECT_NAME}>/Resources/assets
         COMMENT "Copying assets to app bundle"
+    )
+else()
+    # Copy textures directory to build output (Linux/Windows)
+    add_custom_command(
+        TARGET ${PROJECT_NAME} POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+            ${CMAKE_CURRENT_SOURCE_DIR}/textures
+            $<TARGET_FILE_DIR:${PROJECT_NAME}>/textures
+        COMMENT "Copying textures to build directory"
+    )
+
+    # Copy assets directory to build output (Linux/Windows)
+    add_custom_command(
+        TARGET ${PROJECT_NAME} POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+            ${CMAKE_CURRENT_SOURCE_DIR}/assets
+            $<TARGET_FILE_DIR:${PROJECT_NAME}>/assets
+        COMMENT "Copying assets to build directory"
     )
 endif()
 
@@ -195,7 +213,7 @@ add_dependencies(terrain_preprocessing terrain_preprocess erosion_preprocess)
 # Main target depends on preprocessing
 add_dependencies(${PROJECT_NAME} terrain_preprocessing)
 
-# Copy terrain data to app bundle (macOS only)
+# Copy terrain data to output location
 if(APPLE)
     add_custom_command(
         TARGET ${PROJECT_NAME} POST_BUILD
@@ -203,6 +221,14 @@ if(APPLE)
             ${TERRAIN_DATA_DIR}
             $<TARGET_BUNDLE_CONTENT_DIR:${PROJECT_NAME}>/Resources/terrain_data
         COMMENT "Copying terrain data to app bundle"
+    )
+else()
+    add_custom_command(
+        TARGET ${PROJECT_NAME} POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+            ${TERRAIN_DATA_DIR}
+            $<TARGET_FILE_DIR:${PROJECT_NAME}>/terrain_data
+        COMMENT "Copying terrain data to build directory"
     )
 endif()
 

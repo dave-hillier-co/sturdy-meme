@@ -41,7 +41,7 @@ struct TreeParameters {
     float leafSize = 0.3f;
     int leavesPerBranch = 8;
     float leafAngle = 45.0f;            // Angle from branch (degrees)
-    float leafStartLevel = 2;           // Branch level where leaves start
+    int leafStartLevel = 2;           // Branch level where leaves start
 
     // Quality settings
     int branchSegments = 6;             // Radial segments for branches

@@ -5,6 +5,7 @@
 #define ATMOSPHERE_COMMON_GLSL
 
 #include "constants_common.glsl"
+#include "ubo_common.glsl"
 
 // Atmosphere parameters structure (must match C++ struct)
 struct AtmosphereParams {

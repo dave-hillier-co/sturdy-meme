@@ -12,12 +12,12 @@
 #include "constants_common.glsl"
 #include "lighting_common.glsl"
 #include "shadow_common.glsl"
-#include "atmosphere_common.glsl"
-#include "snow_common.glsl"
-#include "cloud_shadow_common.glsl"
 #include "ubo_common.glsl"
 #include "ubo_snow.glsl"
 #include "ubo_cloud_shadow.glsl"
+#include "atmosphere_common.glsl"
+#include "snow_common.glsl"
+#include "cloud_shadow_common.glsl"
 
 // Grass system descriptor set layout:
 // binding 0: UBO (main rendering uniforms)

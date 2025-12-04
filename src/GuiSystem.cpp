@@ -284,7 +284,7 @@ void GuiSystem::render(Renderer& renderer, const Camera& camera, float deltaTime
     renderPositionPanel(camera);
 
     // Tree editor as separate window
-    treeEditorGui.render(renderer);
+    treeEditorGui.render(renderer, camera);
 }
 
 void GuiSystem::endFrame(VkCommandBuffer cmd) {
@@ -1099,6 +1099,7 @@ void GuiSystem::renderDebugSection(Renderer& renderer) {
 
     ImGui::BulletText("F1 - Toggle GUI");
     ImGui::BulletText("F2 - Tree Editor");
+    ImGui::BulletText("P - Place tree at camera");
     ImGui::BulletText("Tab - Toggle camera mode");
     ImGui::BulletText("1-4 - Time presets");
     ImGui::BulletText("+/- - Time scale");

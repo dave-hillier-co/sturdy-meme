@@ -1,10 +1,38 @@
 #include "TreeEditorGui.h"
 #include "Renderer.h"
+#include "Camera.h"
 
 #include <imgui.h>
 #include <glm/glm.hpp>
+#include <cmath>
 
-void TreeEditorGui::render(Renderer& renderer) {
+void TreeEditorGui::placeTreeAtCamera(Renderer& renderer, const Camera& camera) {
+    auto& treeSystem = renderer.getTreeEditSystem();
+
+    // Get camera position and forward direction
+    glm::vec3 camPos = camera.getPosition();
+    glm::vec3 forward = camera.getFront();
+
+    // Project forward onto XZ plane and normalize
+    glm::vec3 forwardXZ = glm::normalize(glm::vec3(forward.x, 0.0f, forward.z));
+
+    // Place tree 15 meters in front of camera
+    float distance = 15.0f;
+    glm::vec3 treePos = camPos + forwardXZ * distance;
+
+    // Get terrain height at that position
+    float terrainHeight = renderer.getTerrainHeightAt(treePos.x, treePos.z);
+    treePos.y = terrainHeight;
+
+    treeSystem.setPosition(treePos);
+
+    // Enable tree editor if not already enabled
+    if (!treeSystem.isEnabled()) {
+        treeSystem.setEnabled(true);
+    }
+}
+
+void TreeEditorGui::render(Renderer& renderer, const Camera& camera) {
     if (!visible) return;
 
     auto& treeSystem = renderer.getTreeEditSystem();
@@ -55,7 +83,7 @@ void TreeEditorGui::render(Renderer& renderer) {
         renderVariationSection(renderer);
         renderLeafSection(renderer);
         renderSeedSection(renderer);
-        renderTransformSection(renderer);
+        renderTransformSection(renderer, camera);
         renderPresets(renderer);
     }
     ImGui::End();
@@ -188,12 +216,22 @@ void TreeEditorGui::renderSeedSection(Renderer& renderer) {
     ImGui::Spacing();
 }
 
-void TreeEditorGui::renderTransformSection(Renderer& renderer) {
+void TreeEditorGui::renderTransformSection(Renderer& renderer, const Camera& camera) {
     auto& treeSystem = renderer.getTreeEditSystem();
 
     ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.7f, 0.7f, 0.9f, 1.0f));
     ImGui::Text("TRANSFORM");
     ImGui::PopStyleColor();
+
+    // Place at camera button
+    if (ImGui::Button("Place at Camera (P)", ImVec2(-1, 0))) {
+        placeTreeAtCamera(renderer, camera);
+    }
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("Place tree 15m in front of camera on terrain");
+    }
+
+    ImGui::Spacing();
 
     glm::vec3 pos = treeSystem.getPosition();
     float position[3] = {pos.x, pos.y, pos.z};

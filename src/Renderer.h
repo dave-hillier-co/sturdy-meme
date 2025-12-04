@@ -144,6 +144,10 @@ public:
     float getFogDensity() const { return froxelSystem.getFogDensity(); }
     void setFogEnabled(bool enabled) { froxelSystem.setEnabled(enabled); postProcessSystem.setFroxelEnabled(enabled); }
     bool isFogEnabled() const { return froxelSystem.isEnabled(); }
+    FroxelSystem& getFroxelSystem() { return froxelSystem; }
+    const FroxelSystem& getFroxelSystem() const { return froxelSystem; }
+    AtmosphereLUTSystem& getAtmosphereSystem() { return atmosphereLUTSystem; }
+    const AtmosphereLUTSystem& getAtmosphereSystem() const { return atmosphereLUTSystem; }
 
     // Leaf control
     void setLeafIntensity(float intensity) { leafSystem.setIntensity(intensity); }

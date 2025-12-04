@@ -1,6 +1,8 @@
 #include "GuiSystem.h"
 #include "Renderer.h"
 #include "Camera.h"
+#include "FroxelSystem.h"
+#include "AtmosphereLUTSystem.h"
 
 #include <imgui.h>
 #include <imgui_impl_sdl3.h>
@@ -568,32 +570,140 @@ void GuiSystem::renderWeatherSection(Renderer& renderer) {
 void GuiSystem::renderEnvironmentSection(Renderer& renderer) {
     ImGui::Spacing();
 
-    // Fog controls
-    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.7f, 0.7f, 0.9f, 1.0f));
-    ImGui::Text("VOLUMETRIC FOG");
+    // Unified Atmosphere & Fog section
+    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.6f, 0.8f, 1.0f, 1.0f));
+    ImGui::Text("ATMOSPHERE & FOG");
     ImGui::PopStyleColor();
 
-    bool fogEnabled = renderer.isFogEnabled();
-    if (ImGui::Checkbox("Enable Fog", &fogEnabled)) {
-        renderer.setFogEnabled(fogEnabled);
-    }
+    ImGui::TextDisabled("Unified control for atmospheric effects");
 
-    if (fogEnabled) {
-        float fogDensity = renderer.getFogDensity();
-        if (ImGui::SliderFloat("Fog Density", &fogDensity, 0.0f, 0.1f, "%.4f")) {
-            renderer.setFogDensity(fogDensity);
+    ImGui::Spacing();
+
+    // Volumetric Fog (Froxel System)
+    if (ImGui::TreeNodeEx("Volumetric Fog (Near)", ImGuiTreeNodeFlags_DefaultOpen)) {
+        auto& froxel = renderer.getFroxelSystem();
+
+        bool fogEnabled = renderer.isFogEnabled();
+        if (ImGui::Checkbox("Enable", &fogEnabled)) {
+            renderer.setFogEnabled(fogEnabled);
+        }
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Froxel-based volumetric fog with shadows and local lights (0-200m range)");
         }
 
-        // Fog presets
-        ImGui::Text("Presets:");
-        ImGui::SameLine();
-        if (ImGui::Button("None##fog")) renderer.setFogDensity(0.0f);
-        ImGui::SameLine();
-        if (ImGui::Button("Light##fog")) renderer.setFogDensity(0.005f);
-        ImGui::SameLine();
-        if (ImGui::Button("Dense##fog")) renderer.setFogDensity(0.02f);
-        ImGui::SameLine();
-        if (ImGui::Button("Thick##fog")) renderer.setFogDensity(0.05f);
+        if (fogEnabled) {
+            float density = froxel.getFogDensity();
+            if (ImGui::SliderFloat("Density", &density, 0.0f, 0.1f, "%.4f")) {
+                froxel.setFogDensity(density);
+            }
+
+            float scaleHeight = froxel.getFogScaleHeight();
+            if (ImGui::SliderFloat("Scale Height", &scaleHeight, 1.0f, 200.0f, "%.0f m")) {
+                froxel.setFogScaleHeight(scaleHeight);
+            }
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("Height over which fog density falls off exponentially");
+            }
+
+            float baseHeight = froxel.getFogBaseHeight();
+            if (ImGui::SliderFloat("Base Height", &baseHeight, -50.0f, 100.0f, "%.0f m")) {
+                froxel.setFogBaseHeight(baseHeight);
+            }
+
+            float absorption = froxel.getFogAbsorption();
+            if (ImGui::SliderFloat("Absorption", &absorption, 0.0f, 0.1f, "%.4f")) {
+                froxel.setFogAbsorption(absorption);
+            }
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("Light absorption coefficient (higher = darker fog)");
+            }
+
+            // Ground fog layer
+            ImGui::Spacing();
+            ImGui::Text("Ground Layer:");
+
+            float layerHeight = froxel.getLayerHeight();
+            if (ImGui::SliderFloat("Layer Height", &layerHeight, -20.0f, 50.0f, "%.0f m")) {
+                froxel.setLayerHeight(layerHeight);
+            }
+
+            float layerThickness = froxel.getLayerThickness();
+            if (ImGui::SliderFloat("Layer Thickness", &layerThickness, 1.0f, 50.0f, "%.0f m")) {
+                froxel.setLayerThickness(layerThickness);
+            }
+
+            float layerDensity = froxel.getLayerDensity();
+            if (ImGui::SliderFloat("Layer Density", &layerDensity, 0.0f, 0.1f, "%.4f")) {
+                froxel.setLayerDensity(layerDensity);
+            }
+
+            // Presets
+            ImGui::Spacing();
+            ImGui::Text("Presets:");
+            ImGui::SameLine();
+            if (ImGui::Button("Clear##fog")) {
+                froxel.setFogDensity(0.0f);
+                froxel.setLayerDensity(0.0f);
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Light Haze")) {
+                froxel.setFogDensity(0.003f);
+                froxel.setFogScaleHeight(100.0f);
+                froxel.setLayerDensity(0.0f);
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Morning Mist")) {
+                froxel.setFogDensity(0.005f);
+                froxel.setFogScaleHeight(30.0f);
+                froxel.setLayerDensity(0.02f);
+                froxel.setLayerThickness(15.0f);
+            }
+            if (ImGui::Button("Dense Fog")) {
+                froxel.setFogDensity(0.02f);
+                froxel.setFogScaleHeight(50.0f);
+                froxel.setLayerDensity(0.03f);
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Valley Fog")) {
+                froxel.setFogDensity(0.008f);
+                froxel.setFogScaleHeight(20.0f);
+                froxel.setLayerDensity(0.04f);
+                froxel.setLayerThickness(25.0f);
+                froxel.setLayerHeight(-10.0f);
+            }
+        }
+
+        ImGui::TreePop();
+    }
+
+    // Atmospheric Scattering
+    if (ImGui::TreeNodeEx("Atmospheric Scattering (Far)", ImGuiTreeNodeFlags_DefaultOpen)) {
+        ImGui::TextDisabled("Rayleigh/Mie scattering for distant haze");
+        ImGui::TextDisabled("Affects objects beyond ~200m");
+
+        auto& atmo = renderer.getAtmosphereSystem();
+        AtmosphereParams params = atmo.getAtmosphereParams();
+        bool paramsChanged = false;
+
+        if (ImGui::SliderFloat("Mie Density", &params.mieScatteringBase, 0.0f, 0.02f, "%.4f")) {
+            paramsChanged = true;
+        }
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Aerosol/haze density - affects distant haze intensity");
+        }
+
+        if (ImGui::SliderFloat("Mie Anisotropy", &params.mieAnisotropy, 0.0f, 0.99f, "%.2f")) {
+            paramsChanged = true;
+        }
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Forward scattering strength (higher = sun glare)");
+        }
+
+        if (paramsChanged) {
+            atmo.setAtmosphereParams(params);
+        }
+
+        ImGui::TreePop();
     }
 
     ImGui::Spacing();

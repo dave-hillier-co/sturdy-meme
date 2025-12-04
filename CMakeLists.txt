@@ -144,6 +144,7 @@ set(EROSION_DATA_META ${TERRAIN_DATA_DIR}/erosion_data.meta)
 file(MAKE_DIRECTORY ${TERRAIN_DATA_DIR})
 
 # Run terrain_preprocess when heightmap changes
+# Note: We don't depend on terrain_preprocess executable to avoid re-running when code changes
 add_custom_command(
     OUTPUT ${TERRAIN_TILES_META}
     COMMAND $<TARGET_FILE:terrain_preprocess>
@@ -151,7 +152,7 @@ add_custom_command(
         ${TERRAIN_DATA_DIR}
         --min-altitude -15
         --max-altitude 220
-    DEPENDS terrain_preprocess ${TERRAIN_HEIGHTMAP}
+    DEPENDS ${TERRAIN_HEIGHTMAP}
     COMMENT "Preprocessing terrain tiles"
 )
 
@@ -165,7 +166,7 @@ add_custom_command(
         --max-altitude 220
         --sea-level 23
         --terrain-size 16384
-    DEPENDS erosion_preprocess ${TERRAIN_HEIGHTMAP}
+    DEPENDS ${TERRAIN_HEIGHTMAP}
     COMMENT "Preprocessing erosion and water placement"
 )
 
@@ -173,6 +174,9 @@ add_custom_command(
 add_custom_target(terrain_preprocessing
     DEPENDS ${TERRAIN_TILES_META} ${EROSION_DATA_META}
 )
+
+# Ensure tools are built before preprocessing runs
+add_dependencies(terrain_preprocessing terrain_preprocess erosion_preprocess)
 
 # Main target depends on preprocessing
 add_dependencies(${PROJECT_NAME} terrain_preprocessing)

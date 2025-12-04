@@ -30,8 +30,7 @@
 // =============================================================================
 // Skinned Mesh Descriptor Set (extends main set)
 // =============================================================================
-#define BINDING_BONE_MATRICES          10   // Note: Shares binding 10 with SNOW_UBO
-                                            // but in a different descriptor set layout
+#define BINDING_BONE_MATRICES          12   // Bone matrices for skinned meshes
 
 // =============================================================================
 // Terrain Descriptor Set

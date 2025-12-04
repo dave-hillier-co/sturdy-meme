@@ -27,6 +27,18 @@
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release"
       }
+    },
+    {
+      "name": "claude",
+      "inherits": "base",
+      "displayName": "Claude (Debug with local vcpkg)",
+      "binaryDir": "${sourceDir}/build/claude",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/vcpkg/scripts/buildsystems/vcpkg.cmake",
+        "VCPKG_TARGET_TRIPLET": "x64-linux-claude",
+        "VCPKG_OVERLAY_TRIPLETS": "${sourceDir}/triplets"
+      }
     }
   ],
   "buildPresets": [
@@ -37,6 +49,10 @@
     {
       "name": "release",
       "configurePreset": "release"
+    },
+    {
+      "name": "claude",
+      "configurePreset": "claude"
     }
   ]
 }

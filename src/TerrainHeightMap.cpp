@@ -570,11 +570,16 @@ void TerrainHeightMap::setHole(float x, float z, bool hole) {
 
 void TerrainHeightMap::setHoleCircle(float centerX, float centerZ, float radius, bool hole) {
     // Convert radius to texel space
-    float texelsPerUnit = (resolution - 1) / terrainSize;
+    float texelsPerUnit = static_cast<float>(resolution - 1) / terrainSize;
     int texelRadius = static_cast<int>(std::ceil(radius * texelsPerUnit));
+
+    // Ensure at least 1 texel radius for small holes
+    if (texelRadius < 1) texelRadius = 1;
 
     int centerTexelX, centerTexelY;
     worldToTexel(centerX, centerZ, centerTexelX, centerTexelY);
+
+    int holesSet = 0;
 
     // Iterate over bounding box of circle
     for (int dy = -texelRadius; dy <= texelRadius; dy++) {
@@ -596,9 +601,14 @@ void TerrainHeightMap::setHoleCircle(float centerX, float centerZ, float radius,
 
             if (distSq <= radius * radius) {
                 holeMaskCpuData[ty * resolution + tx] = hole ? 255 : 0;
+                holesSet++;
             }
         }
     }
+
+    SDL_Log("setHoleCircle: center=(%.1f,%.1f) radius=%.1f texelRadius=%d centerTexel=(%d,%d) texelsSet=%d",
+            centerX, centerZ, radius, texelRadius, centerTexelX, centerTexelY, holesSet);
+
     holeMaskDirty = true;
 }
 

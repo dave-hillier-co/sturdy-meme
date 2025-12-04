@@ -593,12 +593,12 @@ void GuiSystem::renderEnvironmentSection(Renderer& renderer) {
 
         if (fogEnabled) {
             float density = froxel.getFogDensity();
-            if (ImGui::SliderFloat("Density", &density, 0.0f, 0.1f, "%.4f")) {
+            if (ImGui::SliderFloat("Density", &density, 0.0f, 1.0f, "%.4f")) {
                 froxel.setFogDensity(density);
             }
 
             float scaleHeight = froxel.getFogScaleHeight();
-            if (ImGui::SliderFloat("Scale Height", &scaleHeight, 1.0f, 200.0f, "%.0f m")) {
+            if (ImGui::SliderFloat("Scale Height", &scaleHeight, 1.0f, 500.0f, "%.0f m")) {
                 froxel.setFogScaleHeight(scaleHeight);
             }
             if (ImGui::IsItemHovered()) {
@@ -606,12 +606,12 @@ void GuiSystem::renderEnvironmentSection(Renderer& renderer) {
             }
 
             float baseHeight = froxel.getFogBaseHeight();
-            if (ImGui::SliderFloat("Base Height", &baseHeight, -50.0f, 100.0f, "%.0f m")) {
+            if (ImGui::SliderFloat("Base Height", &baseHeight, -100.0f, 200.0f, "%.0f m")) {
                 froxel.setFogBaseHeight(baseHeight);
             }
 
             float absorption = froxel.getFogAbsorption();
-            if (ImGui::SliderFloat("Absorption", &absorption, 0.0f, 0.1f, "%.4f")) {
+            if (ImGui::SliderFloat("Absorption", &absorption, 0.0f, 1.0f, "%.4f")) {
                 froxel.setFogAbsorption(absorption);
             }
             if (ImGui::IsItemHovered()) {
@@ -633,7 +633,7 @@ void GuiSystem::renderEnvironmentSection(Renderer& renderer) {
             }
 
             float layerDensity = froxel.getLayerDensity();
-            if (ImGui::SliderFloat("Layer Density", &layerDensity, 0.0f, 0.1f, "%.4f")) {
+            if (ImGui::SliderFloat("Layer Density", &layerDensity, 0.0f, 1.0f, "%.4f")) {
                 froxel.setLayerDensity(layerDensity);
             }
 
@@ -697,9 +697,9 @@ void GuiSystem::renderEnvironmentSection(Renderer& renderer) {
         // Calculate full blend distance: distance = maxBlend / scale
         float fullBlendDistance = (scale > 0.0f) ? (maxBlend / scale) : 10000.0f;
 
-        if (ImGui::SliderFloat("Blend Distance", &fullBlendDistance, 500.0f, 20000.0f, "%.0f m")) {
+        if (ImGui::SliderFloat("Blend Distance", &fullBlendDistance, 50.0f, 50000.0f, "%.0f m")) {
             // Convert back to scale: scale = maxBlend / distance
-            float newScale = maxBlend / std::max(fullBlendDistance, 100.0f);
+            float newScale = maxBlend / std::max(fullBlendDistance, 10.0f);
             renderer.setAerialPerspectiveScale(newScale);
         }
         if (ImGui::IsItemHovered()) {
@@ -709,7 +709,7 @@ void GuiSystem::renderEnvironmentSection(Renderer& renderer) {
         if (ImGui::SliderFloat("Max Intensity", &maxBlend, 0.0f, 1.0f, "%.2f")) {
             renderer.setAerialPerspectiveMaxBlend(maxBlend);
             // Update scale to maintain the same blend distance
-            float newScale = maxBlend / std::max(fullBlendDistance, 100.0f);
+            float newScale = maxBlend / std::max(fullBlendDistance, 10.0f);
             renderer.setAerialPerspectiveScale(newScale);
         }
         if (ImGui::IsItemHovered()) {
@@ -722,7 +722,7 @@ void GuiSystem::renderEnvironmentSection(Renderer& renderer) {
         AtmosphereParams params = atmo.getAtmosphereParams();
         bool paramsChanged = false;
 
-        if (ImGui::SliderFloat("Mie Density", &params.mieScatteringBase, 0.0f, 0.02f, "%.4f")) {
+        if (ImGui::SliderFloat("Mie Density", &params.mieScatteringBase, 0.0f, 0.2f, "%.4f")) {
             paramsChanged = true;
         }
         if (ImGui::IsItemHovered()) {

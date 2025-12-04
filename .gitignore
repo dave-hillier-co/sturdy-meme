@@ -17,6 +17,7 @@ generated/
 # Compiled shaders (regenerated during build)
 *.spv
 vcpkg_installed/
+vcpkg/
 
 downloads/
 assets/terrain/*

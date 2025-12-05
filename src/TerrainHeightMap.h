@@ -68,6 +68,7 @@ private:
 
     // Helper to convert world coords to texel coords
     void worldToTexel(float x, float z, int& texelX, int& texelY) const;
+    void worldToHoleMaskTexel(float x, float z, int& texelX, int& texelY) const;
 
     // Init params (stored for queries)
     VkDevice device = VK_NULL_HANDLE;
@@ -77,6 +78,7 @@ private:
     float terrainSize = 500.0f;
     float heightScale = 50.0f;
     uint32_t resolution = 512;
+    uint32_t holeMaskResolution = 2048;  // Higher res for finer hole detail (~8m/texel on 16km terrain)
 
     // GPU resources for height map
     VkImage image = VK_NULL_HANDLE;

@@ -28,15 +28,16 @@ bool TerrainHeightMap::init(const InitInfo& info) {
         if (!generateHeightData()) return false;
     }
 
-    // Initialize hole mask to all solid (no holes)
-    holeMaskCpuData.resize(resolution * resolution, 0);
+    // Initialize hole mask to all solid (no holes) - uses higher resolution for finer detail
+    holeMaskCpuData.resize(holeMaskResolution * holeMaskResolution, 0);
 
     if (!createGPUResources()) return false;
     if (!createHoleMaskResources()) return false;
     if (!uploadToGPU()) return false;
     if (!uploadHoleMaskToGPUInternal()) return false;
 
-    SDL_Log("TerrainHeightMap initialized: %ux%u (with hole mask support)", resolution, resolution);
+    SDL_Log("TerrainHeightMap initialized: %ux%u heightmap, %ux%u hole mask",
+            resolution, resolution, holeMaskResolution, holeMaskResolution);
     return true;
 }
 
@@ -278,11 +279,12 @@ bool TerrainHeightMap::createGPUResources() {
 
 bool TerrainHeightMap::createHoleMaskResources() {
     // Create Vulkan image for hole mask (R8_UNORM: 0=solid, 255=hole)
+    // Uses higher resolution than heightmap for finer hole detail
     VkImageCreateInfo imageInfo{};
     imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
     imageInfo.imageType = VK_IMAGE_TYPE_2D;
     imageInfo.format = VK_FORMAT_R8_UNORM;
-    imageInfo.extent = {resolution, resolution, 1};
+    imageInfo.extent = {holeMaskResolution, holeMaskResolution, 1};
     imageInfo.mipLevels = 1;
     imageInfo.arrayLayers = 1;
     imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
@@ -335,7 +337,7 @@ bool TerrainHeightMap::createHoleMaskResources() {
 }
 
 bool TerrainHeightMap::uploadHoleMaskToGPUInternal() {
-    VkDeviceSize imageSize = resolution * resolution * sizeof(uint8_t);
+    VkDeviceSize imageSize = holeMaskResolution * holeMaskResolution * sizeof(uint8_t);
 
     // Create staging buffer
     VkBuffer stagingBuffer;
@@ -407,7 +409,7 @@ bool TerrainHeightMap::uploadHoleMaskToGPUInternal() {
     region.imageSubresource.baseArrayLayer = 0;
     region.imageSubresource.layerCount = 1;
     region.imageOffset = {0, 0, 0};
-    region.imageExtent = {resolution, resolution, 1};
+    region.imageExtent = {holeMaskResolution, holeMaskResolution, 1};
 
     vkCmdCopyBufferToImage(cmd, stagingBuffer, holeMaskImage, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
 
@@ -555,29 +557,40 @@ void TerrainHeightMap::worldToTexel(float x, float z, int& texelX, int& texelY) 
     texelY = std::clamp(texelY, 0, static_cast<int>(resolution - 1));
 }
 
+void TerrainHeightMap::worldToHoleMaskTexel(float x, float z, int& texelX, int& texelY) const {
+    float u = (x / terrainSize) + 0.5f;
+    float v = (z / terrainSize) + 0.5f;
+    u = std::clamp(u, 0.0f, 1.0f);
+    v = std::clamp(v, 0.0f, 1.0f);
+    texelX = static_cast<int>(u * (holeMaskResolution - 1));
+    texelY = static_cast<int>(v * (holeMaskResolution - 1));
+    texelX = std::clamp(texelX, 0, static_cast<int>(holeMaskResolution - 1));
+    texelY = std::clamp(texelY, 0, static_cast<int>(holeMaskResolution - 1));
+}
+
 bool TerrainHeightMap::isHole(float x, float z) const {
     int texelX, texelY;
-    worldToTexel(x, z, texelX, texelY);
-    return holeMaskCpuData[texelY * resolution + texelX] > 127;
+    worldToHoleMaskTexel(x, z, texelX, texelY);
+    return holeMaskCpuData[texelY * holeMaskResolution + texelX] > 127;
 }
 
 void TerrainHeightMap::setHole(float x, float z, bool hole) {
     int texelX, texelY;
-    worldToTexel(x, z, texelX, texelY);
-    holeMaskCpuData[texelY * resolution + texelX] = hole ? 255 : 0;
+    worldToHoleMaskTexel(x, z, texelX, texelY);
+    holeMaskCpuData[texelY * holeMaskResolution + texelX] = hole ? 255 : 0;
     holeMaskDirty = true;
 }
 
 void TerrainHeightMap::setHoleCircle(float centerX, float centerZ, float radius, bool hole) {
-    // Convert radius to texel space
-    float texelsPerUnit = static_cast<float>(resolution - 1) / terrainSize;
+    // Convert radius to texel space (using hole mask resolution)
+    float texelsPerUnit = static_cast<float>(holeMaskResolution - 1) / terrainSize;
     int texelRadius = static_cast<int>(std::ceil(radius * texelsPerUnit));
 
     // Ensure at least 1 texel radius for small holes
     if (texelRadius < 1) texelRadius = 1;
 
     int centerTexelX, centerTexelY;
-    worldToTexel(centerX, centerZ, centerTexelX, centerTexelY);
+    worldToHoleMaskTexel(centerX, centerZ, centerTexelX, centerTexelY);
 
     int holesSet = 0;
 
@@ -588,26 +601,26 @@ void TerrainHeightMap::setHoleCircle(float centerX, float centerZ, float radius,
             int ty = centerTexelY + dy;
 
             // Check bounds
-            if (tx < 0 || tx >= static_cast<int>(resolution) ||
-                ty < 0 || ty >= static_cast<int>(resolution)) {
+            if (tx < 0 || tx >= static_cast<int>(holeMaskResolution) ||
+                ty < 0 || ty >= static_cast<int>(holeMaskResolution)) {
                 continue;
             }
 
             // Check if within circle (in world space for accuracy)
-            float worldX = (static_cast<float>(tx) / (resolution - 1) - 0.5f) * terrainSize;
-            float worldZ = (static_cast<float>(ty) / (resolution - 1) - 0.5f) * terrainSize;
+            float worldX = (static_cast<float>(tx) / (holeMaskResolution - 1) - 0.5f) * terrainSize;
+            float worldZ = (static_cast<float>(ty) / (holeMaskResolution - 1) - 0.5f) * terrainSize;
             float distSq = (worldX - centerX) * (worldX - centerX) +
                           (worldZ - centerZ) * (worldZ - centerZ);
 
             if (distSq <= radius * radius) {
-                holeMaskCpuData[ty * resolution + tx] = hole ? 255 : 0;
+                holeMaskCpuData[ty * holeMaskResolution + tx] = hole ? 255 : 0;
                 holesSet++;
             }
         }
     }
 
-    SDL_Log("setHoleCircle: center=(%.1f,%.1f) radius=%.1f texelRadius=%d centerTexel=(%d,%d) texelsSet=%d",
-            centerX, centerZ, radius, texelRadius, centerTexelX, centerTexelY, holesSet);
+    SDL_Log("setHoleCircle: center=(%.1f,%.1f) radius=%.1f texelRadius=%d centerTexel=(%d,%d) texelsSet=%d (holeMaskRes=%u)",
+            centerX, centerZ, radius, texelRadius, centerTexelX, centerTexelY, holesSet, holeMaskResolution);
 
     holeMaskDirty = true;
 }

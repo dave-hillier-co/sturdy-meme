@@ -305,6 +305,7 @@ set(SHADER_FILES
     ${CMAKE_CURRENT_SOURCE_DIR}/shaders/water_displacement.comp.spv
     ${CMAKE_CURRENT_SOURCE_DIR}/shaders/foam_blur.comp.spv
     ${CMAKE_CURRENT_SOURCE_DIR}/shaders/ssr.comp.spv
+    ${CMAKE_CURRENT_SOURCE_DIR}/shaders/water_tile_cull.comp.spv
     ${CMAKE_CURRENT_SOURCE_DIR}/shaders/tree.vert.spv
     ${CMAKE_CURRENT_SOURCE_DIR}/shaders/tree.frag.spv
 )
@@ -493,6 +494,14 @@ if(SHADER_COMPILE_CMD)
         COMMAND ${GLSLANG_VALIDATOR} --target-env vulkan1.2 -V -o ${CMAKE_CURRENT_SOURCE_DIR}/shaders/ssr.comp.spv ${CMAKE_CURRENT_SOURCE_DIR}/shaders/ssr.comp
         DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/shaders/ssr.comp
         COMMENT "Compiling SSR compute shader"
+    )
+
+    # Water tile cull compute shader (Phase 7: Screen-Space Tessellation)
+    add_custom_command(
+        OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/shaders/water_tile_cull.comp.spv
+        COMMAND ${GLSLANG_VALIDATOR} --target-env vulkan1.2 -V -o ${CMAKE_CURRENT_SOURCE_DIR}/shaders/water_tile_cull.comp.spv ${CMAKE_CURRENT_SOURCE_DIR}/shaders/water_tile_cull.comp
+        DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/shaders/water_tile_cull.comp
+        COMMENT "Compiling water tile cull compute shader"
     )
 
     # Terrain shaders (LEB terrain system)

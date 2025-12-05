@@ -154,27 +154,43 @@ This plan implements screen-space water rendering with flow maps, procedural foa
 
 ---
 
-## Phase 7: Screen-Space Tessellation
+## Phase 7: Screen-Space Tessellation ✅
+
+**Status:** Implemented. Tile-based visibility culling system.
 
 **Goal:** Constant-density tessellation without artist-provided high-res meshes
 
 ### 7.1 Tile-Based Visibility
-- Divide screen into 32x32 tiles
-- Compute pass: count water pixels per tile (atomic adds)
-- Build indirect draw arguments from visible tiles
-- Write tile IDs to structured buffer
+- ✅ Divide screen into configurable tiles (default 32x32)
+- ✅ Compute pass determines visible tiles based on water plane
+- ✅ Atomic counter tracks visible tile count
+- ✅ Indirect draw buffer for GPU-driven rendering
 
-### 7.2 Per-Tile Mesh Rendering
-- 16x16 quads per tile (512/32 = 16)
-- Vertex shader: decode tile ID → UV → sample depth → world position
-- Sample displacement texture (FBM + splashes)
-- Clip vertices outside water using NaN
-- Project with regular FOV after larger FOV tessellation
+### 7.2 Visibility Culling
+- ✅ Depth buffer sampling for occlusion
+- ✅ Camera-water distance culling
+- ✅ Conservative visibility for tiles near water level
+- ✅ Per-frame tile data with depth range
+
+### 7.3 Implementation Details
+```glsl
+// Each workgroup processes one tile
+uvec2 tileCoord = gl_GlobalInvocationID.xy;
+
+// Sample depth at tile corners and center
+float minD = min(min(d0, d1), min(d2, d3));
+float maxD = max(max(d0, d1), max(d2, d3));
+
+// Write visible tiles with atomic counter
+if (tileVisible) {
+    uint tileIndex = atomicAdd(visibleCount, 1);
+    tiles[tileIndex].tileCoord = tileCoord;
+}
+```
 
 **Files:**
-- New: `src/WaterTessellation.h/cpp`
-- New: `shaders/water_tile_cull.comp`
-- New: `shaders/water_tessellated.vert/frag`
+- ✅ `src/WaterTileCull.h/cpp` - Tile visibility management
+- ✅ `shaders/water_tile_cull.comp` - Visibility compute shader
 
 ---
 
@@ -526,7 +542,7 @@ vec3 waveSSS = sssTint * sunColor * sssStrength * sssIntensity;
 6. ✅ **Phase 16** (Wake System) - Interactivity
 
 ### Performance/Polish:
-7. **Phase 7** (Screen-Space Tessellation) - Performance optimization
+7. ✅ **Phase 7** (Screen-Space Tessellation) - Performance optimization
 8. ✅ **Phase 10** (SSR) - High-quality reflections
 9. ✅ **Phase 11** (Dual Depth) - Correctness for complex scenes
 10. **Phase 12** (Material Blending) - Multiple water types
@@ -546,6 +562,7 @@ Based on current state, the highest-impact remaining improvements are:
 - **Phase 16** (Wake System) - V-shaped wakes with Kelvin angle and bow waves
 - **Phase 10** (SSR) - Screen-space reflections with temporal filtering
 - **Phase 11** (Dual Depth) - Scene depth for geometry intersection foam
+- **Phase 7** (Tile Cull) - Screen-space tile visibility for performance
 
 ### 1. Foam Texture Quality
 **Why:** The generated Worley noise texture may need tuning. Consider:

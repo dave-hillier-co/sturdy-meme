@@ -4,6 +4,7 @@
 #include "PhysicsSystem.h"
 #include <SDL3/SDL_log.h>
 #include <glm/gtc/matrix_transform.hpp>
+#include <algorithm>
 
 namespace {
 bool endsWith(const std::string& str, const std::string& suffix) {
@@ -268,6 +269,35 @@ void AnimatedCharacter::update(float deltaTime, VmaAllocator allocator, VkDevice
         animationPlayer.update(deltaTime);
         animationPlayer.applyToSkeleton(skeleton);
     }
+
+    // Update foot locking state based on movement speed
+    // During idle, feet should lock in place to prevent IK sliding
+    // During movement, feet should follow the animation with IK ground adaptation
+    constexpr float IDLE_THRESHOLD = 0.1f;
+    constexpr float LOCK_BLEND_SPEED = 5.0f;  // How fast to blend into/out of lock
+
+    auto updateFootLock = [&](FootPlacementIK* foot) {
+        if (!foot || !foot->enabled) return;
+
+        float targetLockBlend = (movementSpeed < IDLE_THRESHOLD) ? 1.0f : 0.0f;
+
+        // Smoothly blend toward target lock state
+        if (deltaTime > 0.0f) {
+            float blendDelta = LOCK_BLEND_SPEED * deltaTime;
+            if (foot->lockBlend < targetLockBlend) {
+                foot->lockBlend = std::min(foot->lockBlend + blendDelta, targetLockBlend);
+            } else if (foot->lockBlend > targetLockBlend) {
+                foot->lockBlend = std::max(foot->lockBlend - blendDelta, targetLockBlend);
+                // When unlocking, reset the lock so it re-establishes when stopping
+                if (foot->lockBlend < 0.1f) {
+                    foot->isLocked = false;
+                }
+            }
+        }
+    };
+
+    updateFootLock(ikSystem.getFootPlacement("LeftFoot"));
+    updateFootLock(ikSystem.getFootPlacement("RightFoot"));
 
     // Apply IK after animation sampling
     // Pass world transform so foot placement can query terrain in world space

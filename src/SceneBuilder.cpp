@@ -103,9 +103,26 @@ bool SceneBuilder::createMeshes(const InitInfo& info) {
             ikSystem.setGroundQueryFunc([this](const glm::vec3& position, float maxDistance) -> GroundQueryResult {
                 GroundQueryResult result;
                 result.hit = true;
-                result.position = glm::vec3(position.x, getTerrainHeight(position.x, position.z), position.z);
-                result.normal = glm::vec3(0, 1, 0);  // Simplified - assume flat ground normal
-                result.distance = glm::abs(position.y - result.position.y);
+
+                // Get height at position
+                float h = getTerrainHeight(position.x, position.z);
+                result.position = glm::vec3(position.x, h, position.z);
+                result.distance = glm::abs(position.y - h);
+
+                // Compute terrain normal using finite differences
+                const float delta = 0.1f;  // 10cm sample distance
+                float hPosX = getTerrainHeight(position.x + delta, position.z);
+                float hNegX = getTerrainHeight(position.x - delta, position.z);
+                float hPosZ = getTerrainHeight(position.x, position.z + delta);
+                float hNegZ = getTerrainHeight(position.x, position.z - delta);
+
+                // Tangent vectors
+                glm::vec3 tangentX(2.0f * delta, hPosX - hNegX, 0.0f);
+                glm::vec3 tangentZ(0.0f, hPosZ - hNegZ, 2.0f * delta);
+
+                // Normal is cross product of tangents
+                result.normal = glm::normalize(glm::cross(tangentZ, tangentX));
+
                 return result;
             });
             SDL_Log("SceneBuilder: Setup ground query for foot IK");

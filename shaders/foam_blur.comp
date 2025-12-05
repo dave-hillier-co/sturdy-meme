@@ -8,6 +8,11 @@
  * - Decay over time for natural fade-out
  * - Flow map advection to move foam with water currents
  *
+ * Phase 16: Wake/Trail System additions:
+ * - Wake injection from moving objects
+ * - V-shaped bow wave patterns
+ * - Kelvin wake angle simulation
+ *
  * Based on Sea of Thieves GDC 2018 talk.
  */
 
@@ -22,12 +27,32 @@ layout(binding = 1) uniform sampler2D foamBufferIn;
 // Flow map for advection (rg = flow direction, b = speed)
 layout(binding = 2) uniform sampler2D flowMap;
 
+// Wake source structure (must match C++ WakeSource struct)
+struct WakeSource {
+    vec2 position;      // World position XZ
+    vec2 velocity;      // Velocity direction and speed
+    float radius;       // Object radius
+    float intensity;    // Wake foam intensity
+    float wakeAngle;    // Kelvin wake angle
+    float padding;
+};
+
+// Maximum wake sources (must match MAX_WAKE_SOURCES in C++)
+#define MAX_WAKE_SOURCES 16
+
+// Wake sources uniform buffer
+layout(std140, binding = 3) uniform WakeData {
+    WakeSource wakeSources[MAX_WAKE_SOURCES];
+};
+
 layout(push_constant) uniform PushConstants {
     vec4 worldExtent;       // xy = center, zw = size
     float deltaTime;
     float blurStrength;     // How much to blur each frame (0.02 = subtle)
     float decayRate;        // Foam decay per second (0.5 = half life of ~1.4s)
-    float injectionStrength; // Not used in blur pass
+    float injectionStrength; // Strength of wake foam injection
+    uint wakeCount;         // Number of active wake sources
+    float padding[3];
 } pc;
 
 // 3x3 Gaussian blur kernel weights
@@ -43,6 +68,60 @@ const ivec2 offsets[9] = ivec2[](
     ivec2(-1,  0), ivec2(0,  0), ivec2(1,  0),
     ivec2(-1,  1), ivec2(0,  1), ivec2(1,  1)
 );
+
+// Calculate wake contribution at a world position from a single wake source
+float calculateWakeContribution(vec2 worldPos, WakeSource wake) {
+    // Vector from wake source to current position
+    vec2 toPos = worldPos - wake.position;
+    float dist = length(toPos);
+
+    // Basic circular wake at object position
+    float circularWake = smoothstep(wake.radius * 1.5, wake.radius * 0.5, dist);
+
+    // If object is moving, create V-shaped wake pattern
+    float speed = length(wake.velocity);
+    if (speed > 0.1) {
+        vec2 moveDir = normalize(wake.velocity);
+
+        // How far behind the object is this point?
+        float behind = -dot(toPos, moveDir);
+
+        // Only create wake behind the object
+        if (behind > 0.0) {
+            // Perpendicular distance from wake centerline
+            vec2 perpDir = vec2(-moveDir.y, moveDir.x);
+            float perpDist = abs(dot(toPos, perpDir));
+
+            // Kelvin wake spreads at the wake angle
+            float wakeWidth = behind * tan(wake.wakeAngle);
+
+            // V-shape falloff: wider wake further back
+            float wakeFalloff = smoothstep(wakeWidth + wake.radius, wakeWidth * 0.5, perpDist);
+
+            // Wake intensity falls off with distance behind
+            float distFalloff = exp(-behind * 0.05);
+
+            // Boost wake based on speed
+            float speedBoost = smoothstep(0.0, 5.0, speed);
+
+            // Combine for V-shaped wake
+            float vWake = wakeFalloff * distFalloff * speedBoost;
+
+            // Also add bow wave (foam at the front)
+            float ahead = dot(toPos, moveDir);
+            if (ahead > 0.0 && ahead < wake.radius * 2.0) {
+                float bowDist = length(toPos - moveDir * wake.radius);
+                float bowWave = smoothstep(wake.radius * 1.2, wake.radius * 0.3, bowDist);
+                bowWave *= speedBoost * 1.5;
+                circularWake = max(circularWake, bowWave);
+            }
+
+            circularWake = max(circularWake, vWake);
+        }
+    }
+
+    return circularWake * wake.intensity;
+}
 
 void main() {
     ivec2 pixel = ivec2(gl_GlobalInvocationID.xy);
@@ -79,6 +158,19 @@ void main() {
 
     // Apply exponential decay
     foam *= exp(-pc.decayRate * pc.deltaTime);
+
+    // Phase 16: Wake injection
+    // Calculate world position for this pixel
+    vec2 worldPos = pc.worldExtent.xy + (uv - 0.5) * pc.worldExtent.zw;
+
+    // Accumulate wake contributions from all active sources
+    float wakeContribution = 0.0;
+    for (uint i = 0; i < pc.wakeCount && i < MAX_WAKE_SOURCES; i++) {
+        wakeContribution += calculateWakeContribution(worldPos, wakeSources[i]);
+    }
+
+    // Add wake foam with injection strength
+    foam = max(foam, wakeContribution * pc.injectionStrength);
 
     // Clamp to valid range
     foam = clamp(foam, 0.0, 1.0);

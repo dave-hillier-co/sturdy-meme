@@ -27,7 +27,7 @@ This plan implements screen-space water rendering with flow maps, procedural foa
 | 13 | Jacobian Foam | ✅ Implemented |
 | 14 | Temporal Foam Persistence | ✅ Implemented |
 | 15 | Intersection Foam | ✅ Implemented |
-| 16 | Wake/Trail System | ❌ Not started |
+| 16 | Wake/Trail System | ✅ Implemented |
 | 17 | Enhanced SSS | ✅ Implemented |
 
 ---
@@ -387,28 +387,55 @@ float intersectionStrength = smoothstep(0.5, 0.0, waterDepth);
 
 ---
 
-## Phase 16: Wake/Trail System
+## Phase 16: Wake/Trail System ✅
+
+**Status:** Implemented. V-shaped wakes with Kelvin angle and bow waves.
 
 **Goal:** Persistent foam trails behind moving objects
 
 ### 16.1 Wake Injection
-- Track moving objects in water (boats, characters, projectiles)
-- Inject foam into foam buffer at object positions
-- Shape based on object velocity and size
+- ✅ `addWakeSource(position, velocity, radius, intensity)` API
+- ✅ `addWake(position, radius, intensity)` for simple splashes
+- ✅ Up to 16 wake sources per frame
+- ✅ Wake data passed via uniform buffer to compute shader
 
 ### 16.2 Wake Persistence
-- Uses same foam buffer as Phase 14
-- Advect with flow, blur over time
-- Foam trails naturally dissipate
+- ✅ Uses same foam buffer as Phase 14 (ping-pong)
+- ✅ Advect with flow, blur over time
+- ✅ Foam trails naturally dissipate with decay rate
 
-### 16.3 Bow Waves
-- Special case for boats: directional wake pattern
-- V-shaped foam at bow based on velocity
-- Kelvin wake pattern for realistic appearance
+### 16.3 Wake Patterns
+- ✅ Circular wake for stationary/slow objects
+- ✅ V-shaped wake behind moving objects
+- ✅ Kelvin wake angle (19.47°) for realistic spread
+- ✅ Bow wave at front of fast-moving objects
+- ✅ Speed-based intensity scaling
+
+### 16.4 Implementation
+```glsl
+// V-shaped wake calculation
+float behind = -dot(toPos, moveDir);
+float wakeWidth = behind * tan(wake.wakeAngle);
+float wakeFalloff = smoothstep(wakeWidth + radius, wakeWidth * 0.5, perpDist);
+
+// Bow wave
+float bowWave = smoothstep(radius * 1.2, radius * 0.3, bowDist) * speedBoost;
+```
+
+### 16.5 Usage
+```cpp
+// From game code, each frame:
+foamBuffer.addWakeSource(
+    glm::vec2(boat.x, boat.z),  // Position
+    glm::vec2(boat.vx, boat.vz), // Velocity
+    boatRadius,                   // Hull radius
+    1.0f                          // Intensity
+);
+```
 
 **Files:**
-- Modify: `src/FoamBuffer.h/cpp`
-- Modify: `shaders/foam_blur.comp` (add injection points)
+- ✅ `src/FoamBuffer.h/cpp` - Wake source API and uniform buffer
+- ✅ `shaders/foam_blur.comp` - Wake pattern calculation and injection
 
 ---
 
@@ -458,7 +485,7 @@ vec3 waveSSS = sssTint * sunColor * sssStrength * sssIntensity;
 ### Medium Impact:
 4. ✅ **Phase 9** (Caustics) - Animated underwater light patterns
 5. ✅ **Phase 15** (Intersection Foam) - Foam around geometry
-6. **Phase 16** (Wake System) - Interactivity
+6. ✅ **Phase 16** (Wake System) - Interactivity
 
 ### Performance/Polish:
 7. **Phase 7** (Screen-Space Tessellation) - Performance optimization
@@ -478,11 +505,9 @@ Based on current state, the highest-impact remaining improvements are:
 - **Phase 17** (Enhanced SSS) - Light glowing through thin wave peaks
 - **Phase 9** (Caustics) - Animated underwater light patterns
 - **Phase 15** (Intersection Foam) - Dynamic foam at shorelines and geometry
+- **Phase 16** (Wake System) - V-shaped wakes with Kelvin angle and bow waves
 
-### 1. Wake/Trail System (Phase 16)
-**Why:** Persistent foam trails behind moving objects creates interactivity and dynamic water responses.
-
-### 2. Foam Texture Quality
+### 1. Foam Texture Quality
 **Why:** The generated Worley noise texture may need tuning. Consider:
 - Higher resolution (1024x1024)
 - More octaves for finer detail

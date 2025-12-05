@@ -2,6 +2,7 @@
 #include "ShaderLoader.h"
 #include <SDL3/SDL_log.h>
 #include <array>
+#include <cstring>
 
 bool FoamBuffer::init(const InitInfo& info) {
     device = info.device;
@@ -22,6 +23,11 @@ bool FoamBuffer::init(const InitInfo& info) {
         return false;
     }
 
+    if (!createWakeBuffers()) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "FoamBuffer: Failed to create wake buffers");
+        return false;
+    }
+
     if (!createComputePipeline()) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "FoamBuffer: Failed to create compute pipeline");
         return false;
@@ -32,7 +38,7 @@ bool FoamBuffer::init(const InitInfo& info) {
         return false;
     }
 
-    SDL_Log("FoamBuffer: Initialized successfully");
+    SDL_Log("FoamBuffer: Initialized successfully with wake system support");
     return true;
 }
 
@@ -82,6 +88,16 @@ void FoamBuffer::destroy() {
             foamAllocation[i] = VK_NULL_HANDLE;
         }
     }
+
+    // Destroy wake uniform buffers
+    for (size_t i = 0; i < wakeUniformBuffers.size(); i++) {
+        if (wakeUniformBuffers[i] != VK_NULL_HANDLE) {
+            vmaDestroyBuffer(allocator, wakeUniformBuffers[i], wakeUniformAllocations[i]);
+        }
+    }
+    wakeUniformBuffers.clear();
+    wakeUniformAllocations.clear();
+    wakeUniformMapped.clear();
 
     SDL_Log("FoamBuffer: Destroyed");
 }
@@ -149,9 +165,44 @@ bool FoamBuffer::createFoamBuffers() {
     return true;
 }
 
+bool FoamBuffer::createWakeBuffers() {
+    // Create uniform buffers for wake data (one per frame in flight)
+    wakeUniformBuffers.resize(framesInFlight);
+    wakeUniformAllocations.resize(framesInFlight);
+    wakeUniformMapped.resize(framesInFlight);
+
+    for (uint32_t i = 0; i < framesInFlight; i++) {
+        VkBufferCreateInfo bufferInfo{};
+        bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+        bufferInfo.size = sizeof(WakeUniformData);
+        bufferInfo.usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
+        bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+        VmaAllocationCreateInfo allocInfo{};
+        allocInfo.usage = VMA_MEMORY_USAGE_CPU_TO_GPU;
+        allocInfo.flags = VMA_ALLOCATION_CREATE_MAPPED_BIT;
+
+        VmaAllocationInfo allocationInfo{};
+        if (vmaCreateBuffer(allocator, &bufferInfo, &allocInfo,
+                           &wakeUniformBuffers[i], &wakeUniformAllocations[i],
+                           &allocationInfo) != VK_SUCCESS) {
+            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create wake uniform buffer %u", i);
+            return false;
+        }
+
+        wakeUniformMapped[i] = allocationInfo.pMappedData;
+
+        // Initialize to zero
+        std::memset(wakeUniformMapped[i], 0, sizeof(WakeUniformData));
+    }
+
+    SDL_Log("FoamBuffer: Created %u wake uniform buffers", framesInFlight);
+    return true;
+}
+
 bool FoamBuffer::createComputePipeline() {
     // Descriptor set layout
-    std::array<VkDescriptorSetLayoutBinding, 3> bindings{};
+    std::array<VkDescriptorSetLayoutBinding, 4> bindings{};
 
     // Binding 0: Current foam buffer (storage image, read/write)
     bindings[0].binding = 0;
@@ -170,6 +221,12 @@ bool FoamBuffer::createComputePipeline() {
     bindings[2].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     bindings[2].descriptorCount = 1;
     bindings[2].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+
+    // Binding 3: Wake sources uniform buffer (Phase 16)
+    bindings[3].binding = 3;
+    bindings[3].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    bindings[3].descriptorCount = 1;
+    bindings[3].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
 
     VkDescriptorSetLayoutCreateInfo layoutInfo{};
     layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
@@ -228,11 +285,13 @@ bool FoamBuffer::createDescriptorSets() {
     // Create descriptor pool (need 2 sets for ping-pong, times frames in flight)
     uint32_t setCount = framesInFlight * 2;  // 2 for ping-pong per frame
 
-    std::array<VkDescriptorPoolSize, 2> poolSizes{};
+    std::array<VkDescriptorPoolSize, 3> poolSizes{};
     poolSizes[0].type = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
     poolSizes[0].descriptorCount = setCount;
     poolSizes[1].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     poolSizes[1].descriptorCount = setCount * 2;  // prev foam + flow map
+    poolSizes[2].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    poolSizes[2].descriptorCount = setCount;  // wake uniform buffer
 
     VkDescriptorPoolCreateInfo poolInfo{};
     poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
@@ -266,6 +325,11 @@ void FoamBuffer::recordCompute(VkCommandBuffer cmd, uint32_t frameIndex, float d
                                 VkImageView flowMapView, VkSampler flowMapSampler) {
     if (computePipeline == VK_NULL_HANDLE) return;
 
+    // Update wake uniform buffer for this frame
+    if (!wakeUniformMapped.empty()) {
+        std::memcpy(wakeUniformMapped[frameIndex], &wakeData, sizeof(WakeUniformData));
+    }
+
     // Determine which buffers to use (ping-pong)
     int readBuffer = currentBuffer;
     int writeBuffer = 1 - currentBuffer;
@@ -273,7 +337,7 @@ void FoamBuffer::recordCompute(VkCommandBuffer cmd, uint32_t frameIndex, float d
     // Update descriptor sets for this frame's configuration
     uint32_t descSetIndex = frameIndex * 2 + writeBuffer;
 
-    std::array<VkWriteDescriptorSet, 3> writes{};
+    std::array<VkWriteDescriptorSet, 4> writes{};
 
     // Write buffer (storage image)
     VkDescriptorImageInfo writeImageInfo{};
@@ -315,6 +379,20 @@ void FoamBuffer::recordCompute(VkCommandBuffer cmd, uint32_t frameIndex, float d
     writes[2].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     writes[2].descriptorCount = 1;
     writes[2].pImageInfo = &flowImageInfo;
+
+    // Wake uniform buffer
+    VkDescriptorBufferInfo wakeBufferInfo{};
+    wakeBufferInfo.buffer = wakeUniformBuffers[frameIndex];
+    wakeBufferInfo.offset = 0;
+    wakeBufferInfo.range = sizeof(WakeUniformData);
+
+    writes[3].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    writes[3].dstSet = descriptorSets[descSetIndex];
+    writes[3].dstBinding = 3;
+    writes[3].dstArrayElement = 0;
+    writes[3].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    writes[3].descriptorCount = 1;
+    writes[3].pBufferInfo = &wakeBufferInfo;
 
     vkUpdateDescriptorSets(device, static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
 
@@ -362,6 +440,10 @@ void FoamBuffer::recordCompute(VkCommandBuffer cmd, uint32_t frameIndex, float d
     pushConstants.blurStrength = blurStrength;
     pushConstants.decayRate = decayRate;
     pushConstants.injectionStrength = injectionStrength;
+    pushConstants.wakeCount = wakeCount;
+    pushConstants.padding[0] = 0.0f;
+    pushConstants.padding[1] = 0.0f;
+    pushConstants.padding[2] = 0.0f;
 
     vkCmdPushConstants(cmd, computePipelineLayout, VK_SHADER_STAGE_COMPUTE_BIT,
                       0, sizeof(pushConstants), &pushConstants);
@@ -386,6 +468,36 @@ void FoamBuffer::recordCompute(VkCommandBuffer cmd, uint32_t frameIndex, float d
 
     // Swap buffers for next frame
     currentBuffer = writeBuffer;
+
+    // Clear wake sources after processing (they're per-frame)
+    clearWakeSources();
+}
+
+void FoamBuffer::addWakeSource(const glm::vec2& position, const glm::vec2& velocity,
+                                float radius, float intensity) {
+    if (wakeCount >= MAX_WAKE_SOURCES) {
+        return;  // Silently ignore if at capacity
+    }
+
+    WakeSource& wake = wakeData.sources[wakeCount];
+    wake.position = position;
+    wake.velocity = velocity;
+    wake.radius = radius;
+    wake.intensity = intensity;
+    wake.wakeAngle = 0.3403f;  // Kelvin wake angle: 19.47 degrees in radians
+    wake.padding = 0.0f;
+
+    wakeCount++;
+}
+
+void FoamBuffer::addWake(const glm::vec2& position, float radius, float intensity) {
+    // Simple wake without velocity - just a circular disturbance
+    addWakeSource(position, glm::vec2(0.0f), radius, intensity);
+}
+
+void FoamBuffer::clearWakeSources() {
+    wakeCount = 0;
+    // No need to clear the data, wakeCount controls how many are used
 }
 
 void FoamBuffer::setWorldExtent(const glm::vec2& center, const glm::vec2& size) {

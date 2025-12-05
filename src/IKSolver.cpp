@@ -689,8 +689,29 @@ void FootPlacementIKSolver::solve(
     // Transform to world space using character transform
     glm::vec3 worldFootPos = glm::vec3(characterTransform * glm::vec4(animFootPos, 1.0f));
 
-    // Query ground height at foot position
-    glm::vec3 rayOrigin = worldFootPos + glm::vec3(0.0f, foot.raycastHeight, 0.0f);
+    // Extract scale from character transform (for converting world offsets to skeleton space)
+    float scaleY = glm::length(glm::vec3(characterTransform[1]));
+    if (scaleY < 0.0001f) scaleY = 1.0f;
+
+    // Foot locking logic: when lockBlend > 0, we lock the foot's XZ world position
+    // to prevent sliding during idle, while still allowing Y adjustment for ground contact
+    glm::vec3 queryWorldPos = worldFootPos;
+
+    if (foot.lockBlend > 0.0f) {
+        if (!foot.isLocked) {
+            // First time locking - store the current world position
+            foot.lockedWorldPosition = worldFootPos;
+            foot.isLocked = true;
+        }
+
+        // Blend XZ position toward locked position (keep foot planted)
+        // Y still follows the animation for natural weight shifting
+        queryWorldPos.x = glm::mix(worldFootPos.x, foot.lockedWorldPosition.x, foot.lockBlend);
+        queryWorldPos.z = glm::mix(worldFootPos.z, foot.lockedWorldPosition.z, foot.lockBlend);
+    }
+
+    // Query ground height at the (potentially locked) foot position
+    glm::vec3 rayOrigin = queryWorldPos + glm::vec3(0.0f, foot.raycastHeight, 0.0f);
     GroundQueryResult groundResult = groundQuery(rayOrigin, foot.raycastHeight + foot.raycastDistance);
 
     if (!groundResult.hit) {
@@ -709,7 +730,7 @@ void FootPlacementIKSolver::solve(
 
     // Calculate how much the foot needs to move
     // Since skeleton is now in meters (same as world space), no scale conversion needed
-    float heightOffset = targetWorldFootY - worldFootPos.y;  // Positive = need to move up
+    float heightOffset = targetWorldFootY - queryWorldPos.y;  // Positive = need to move up
 
     // Clamp the offset to reasonable bounds (in meters)
     // Positive: foot moves up (leg bends more) - max ~20cm = 0.20m
@@ -720,24 +741,46 @@ void FootPlacementIKSolver::solve(
 
     // Small threshold to avoid jitter (in meters)
     const float threshold = 0.02f;  // 2cm
-    if (std::abs(heightOffset) < threshold) {
+    // Allow processing when foot is locked even with small offsets
+    if (std::abs(heightOffset) < threshold && foot.lockBlend < 0.5f) {
         foot.isGrounded = true;
         foot.currentFootTarget = animFootPos;
         return;
     }
 
-    // The target position is the animation position adjusted to meet ground
-    glm::vec3 targetLocalPos = animFootPos;
-    targetLocalPos.y += heightOffset;
+    // Calculate the target position in skeleton space
+    // When locked, we need to convert the locked world XZ back to skeleton space
+    glm::vec3 targetLocalPos;
+    if (foot.lockBlend > 0.0f) {
+        // Convert locked world position back to skeleton space
+        glm::mat4 invCharTransform = glm::inverse(characterTransform);
+        glm::vec3 lockedSkeletonPos = glm::vec3(invCharTransform * glm::vec4(queryWorldPos, 1.0f));
+        // Use locked XZ, adjust Y for ground
+        targetLocalPos = lockedSkeletonPos;
+        targetLocalPos.y = animFootPos.y + heightOffset;
+    } else {
+        // Normal case: animation position adjusted for ground
+        targetLocalPos = animFootPos;
+        targetLocalPos.y += heightOffset;
+    }
+
+    static int footDebugCounter = 0;
+    if (footDebugCounter++ % 300 == 0) {
+        SDL_Log("FootIK: worldFoot=%.2f targetWorld=%.2f offset=%.3f lockBlend=%.2f locked=%d",
+                queryWorldPos.y, targetWorldFootY, heightOffset,
+                foot.lockBlend, foot.isLocked ? 1 : 0);
+    }
 
     // Initialize currentFootTarget if it's at origin (first frame)
     if (glm::length2(foot.currentFootTarget) < 0.001f) {
         foot.currentFootTarget = targetLocalPos;
     }
 
-    // Smooth the target position (faster response for foot placement)
+    // Smooth the target position
+    // Use slower smoothing when locked to reduce jitter
     if (deltaTime > 0.0f) {
-        float t = glm::clamp(20.0f * deltaTime, 0.0f, 1.0f);  // Faster smoothing
+        float smoothSpeed = foot.lockBlend > 0.5f ? 8.0f : 20.0f;  // Slower when locked
+        float t = glm::clamp(smoothSpeed * deltaTime, 0.0f, 1.0f);
         foot.currentFootTarget = glm::mix(foot.currentFootTarget, targetLocalPos, t);
     } else {
         foot.currentFootTarget = targetLocalPos;

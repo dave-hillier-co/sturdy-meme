@@ -396,15 +396,16 @@ void main() {
     float totalShadow = sunVisibility * shadow;
 
     // In-scattering from sun (attenuated by shadow)
-    vec3 sunInScatter = sunLight * phase * totalShadow * density;
+    // Boost scattering to make volumetric light shafts visible
+    vec3 sunInScatter = sunLight * phase * totalShadow * density * 2.0;
 
     // Ambient sky contribution (isotropic)
     float night = 1.0 - smoothstep(-0.05, 0.08, sunDir.y);
     vec3 skyColor = mix(vec3(0.4, 0.5, 0.7), vec3(0.02, 0.03, 0.05), night);
-    vec3 skyInScatter = skyColor * density * 0.15;  // Ambient scatter
+    vec3 skyInScatter = skyColor * density * 0.5;  // Boosted ambient scatter
 
     // Local light contribution (point and spot lights)
-    vec3 localLightScatter = computeLocalLightScatter(worldPos, viewDir, density);
+    vec3 localLightScatter = computeLocalLightScatter(worldPos, viewDir, density) * 3.0;  // Boost local lights
 
     // Total in-scattering
     vec3 totalInScatter = sunInScatter + skyInScatter + localLightScatter;

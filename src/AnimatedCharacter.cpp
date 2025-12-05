@@ -4,6 +4,7 @@
 #include "PhysicsSystem.h"
 #include <SDL3/SDL_log.h>
 #include <glm/gtc/matrix_transform.hpp>
+#include <algorithm>
 
 namespace {
 bool endsWith(const std::string& str, const std::string& suffix) {
@@ -269,27 +270,34 @@ void AnimatedCharacter::update(float deltaTime, VmaAllocator allocator, VkDevice
         animationPlayer.applyToSkeleton(skeleton);
     }
 
-    // Adjust foot IK weight based on movement speed
-    // During idle (low speed), reduce foot IK to prevent sliding from IK fighting animation
-    // During movement, enable foot IK to plant feet on uneven terrain
-    constexpr float IDLE_THRESHOLD = 0.1f;  // Same as AnimationStateMachine::WALK_THRESHOLD
-    constexpr float FULL_IK_THRESHOLD = 0.5f;  // Speed at which foot IK is fully enabled
+    // Update foot locking state based on movement speed
+    // During idle, feet should lock in place to prevent IK sliding
+    // During movement, feet should follow the animation with IK ground adaptation
+    constexpr float IDLE_THRESHOLD = 0.1f;
+    constexpr float LOCK_BLEND_SPEED = 5.0f;  // How fast to blend into/out of lock
 
-    float footIKWeight = 0.0f;
-    if (movementSpeed > FULL_IK_THRESHOLD) {
-        footIKWeight = 1.0f;
-    } else if (movementSpeed > IDLE_THRESHOLD) {
-        // Smooth transition between idle and moving
-        footIKWeight = (movementSpeed - IDLE_THRESHOLD) / (FULL_IK_THRESHOLD - IDLE_THRESHOLD);
-    }
+    auto updateFootLock = [&](FootPlacementIK* foot) {
+        if (!foot || !foot->enabled) return;
 
-    // Apply the calculated weight to foot placement IK
-    if (auto* leftFoot = ikSystem.getFootPlacement("LeftFoot")) {
-        leftFoot->weight = footIKWeight;
-    }
-    if (auto* rightFoot = ikSystem.getFootPlacement("RightFoot")) {
-        rightFoot->weight = footIKWeight;
-    }
+        float targetLockBlend = (movementSpeed < IDLE_THRESHOLD) ? 1.0f : 0.0f;
+
+        // Smoothly blend toward target lock state
+        if (deltaTime > 0.0f) {
+            float blendDelta = LOCK_BLEND_SPEED * deltaTime;
+            if (foot->lockBlend < targetLockBlend) {
+                foot->lockBlend = std::min(foot->lockBlend + blendDelta, targetLockBlend);
+            } else if (foot->lockBlend > targetLockBlend) {
+                foot->lockBlend = std::max(foot->lockBlend - blendDelta, targetLockBlend);
+                // When unlocking, reset the lock so it re-establishes when stopping
+                if (foot->lockBlend < 0.1f) {
+                    foot->isLocked = false;
+                }
+            }
+        }
+    };
+
+    updateFootLock(ikSystem.getFootPlacement("LeftFoot"));
+    updateFootLock(ikSystem.getFootPlacement("RightFoot"));
 
     // Apply IK after animation sampling
     // Pass world transform so foot placement can query terrain in world space

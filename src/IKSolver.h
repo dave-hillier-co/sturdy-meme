@@ -128,6 +128,11 @@ struct FootPlacementIK {
     glm::quat currentFootRotation = glm::quat(1, 0, 0, 0);
     float currentGroundHeight = 0.0f;
     bool isGrounded = false;
+
+    // Foot locking state (prevents sliding during idle)
+    glm::vec3 lockedWorldPosition = glm::vec3(0.0f);  // World position where foot is locked
+    bool isLocked = false;                             // Whether foot is currently locked in place
+    float lockBlend = 0.0f;                            // Blend factor toward locked position (0-1)
 };
 
 // Pelvis adjustment for foot placement

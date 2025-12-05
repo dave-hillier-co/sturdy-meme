@@ -2,6 +2,8 @@
 #include "ShaderLoader.h"
 #include "BindingBuilder.h"
 #include "GpuProfiler.h"
+#include "SnowUBO.h"
+#include "CloudShadowUBO.h"
 #include <SDL3/SDL.h>
 #include <cstring>
 #include <cmath>
@@ -370,7 +372,7 @@ bool TerrainSystem::createRenderDescriptorSetLayout() {
             .build();
     };
 
-    std::array<VkDescriptorSetLayoutBinding, 14> bindings = {
+    std::array<VkDescriptorSetLayoutBinding, 16> bindings = {
         makeGraphicsBinding(0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_VERTEX_BIT),
         makeGraphicsBinding(3, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
                            VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT),
@@ -390,7 +392,11 @@ bool TerrainSystem::createRenderDescriptorSetLayout() {
         // Shadow culled visible indices (for shadow culled vertex shaders)
         makeGraphicsBinding(14, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_VERTEX_BIT),
         // Hole mask for caves/wells
-        makeGraphicsBinding(16, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT)};
+        makeGraphicsBinding(16, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT),
+        // Snow UBO (binding 17) - separate from snow cascade textures
+        makeGraphicsBinding(17, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_FRAGMENT_BIT),
+        // Cloud shadow UBO (binding 18) - separate from cloud shadow texture
+        makeGraphicsBinding(18, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_FRAGMENT_BIT)};
 
     VkDescriptorSetLayoutCreateInfo layoutInfo{};
     layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
@@ -1658,7 +1664,9 @@ void TerrainSystem::extractFrustumPlanes(const glm::mat4& viewProj, glm::vec4 pl
 void TerrainSystem::updateDescriptorSets(VkDevice device,
                                           const std::vector<VkBuffer>& sceneUniformBuffers,
                                           VkImageView shadowMapView,
-                                          VkSampler shadowSampler) {
+                                          VkSampler shadowSampler,
+                                          const std::vector<VkBuffer>& snowUBOBuffers,
+                                          const std::vector<VkBuffer>& cloudShadowUBOBuffers) {
     for (uint32_t i = 0; i < framesInFlight; i++) {
         std::vector<VkWriteDescriptorSet> writes;
 
@@ -1768,6 +1776,32 @@ void TerrainSystem::updateDescriptorSets(VkDevice device,
         holeMaskWrite.descriptorCount = 1;
         holeMaskWrite.pImageInfo = &holeMaskInfo;
         writes.push_back(holeMaskWrite);
+
+        // Snow UBO (binding 17)
+        if (i < snowUBOBuffers.size() && snowUBOBuffers[i] != VK_NULL_HANDLE) {
+            VkDescriptorBufferInfo snowUBOInfo{snowUBOBuffers[i], 0, sizeof(SnowUBO)};
+            VkWriteDescriptorSet snowUBOWrite{};
+            snowUBOWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+            snowUBOWrite.dstSet = renderDescriptorSets[i];
+            snowUBOWrite.dstBinding = 17;  // BINDING_TERRAIN_SNOW_UBO
+            snowUBOWrite.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+            snowUBOWrite.descriptorCount = 1;
+            snowUBOWrite.pBufferInfo = &snowUBOInfo;
+            writes.push_back(snowUBOWrite);
+        }
+
+        // Cloud shadow UBO (binding 18)
+        if (i < cloudShadowUBOBuffers.size() && cloudShadowUBOBuffers[i] != VK_NULL_HANDLE) {
+            VkDescriptorBufferInfo cloudShadowUBOInfo{cloudShadowUBOBuffers[i], 0, sizeof(CloudShadowUBO)};
+            VkWriteDescriptorSet cloudShadowUBOWrite{};
+            cloudShadowUBOWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+            cloudShadowUBOWrite.dstSet = renderDescriptorSets[i];
+            cloudShadowUBOWrite.dstBinding = 18;  // BINDING_TERRAIN_CLOUD_SHADOW_UBO
+            cloudShadowUBOWrite.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+            cloudShadowUBOWrite.descriptorCount = 1;
+            cloudShadowUBOWrite.pBufferInfo = &cloudShadowUBOInfo;
+            writes.push_back(cloudShadowUBOWrite);
+        }
 
         vkUpdateDescriptorSets(device, static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
     }

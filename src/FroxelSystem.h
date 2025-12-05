@@ -57,23 +57,26 @@ public:
     VkImageView getIntegratedVolumeView() const { return integratedVolumeView; }
     VkSampler getVolumeSampler() const { return volumeSampler; }
 
-    // Fog parameters
-    void setFogBaseHeight(float h) { fogBaseHeight = h; }
+    // Fog parameters (reset temporal history on change for immediate feedback)
+    void setFogBaseHeight(float h) { fogBaseHeight = h; resetTemporalHistory(); }
     float getFogBaseHeight() const { return fogBaseHeight; }
-    void setFogScaleHeight(float h) { fogScaleHeight = h; }
+    void setFogScaleHeight(float h) { fogScaleHeight = h; resetTemporalHistory(); }
     float getFogScaleHeight() const { return fogScaleHeight; }
-    void setFogDensity(float d) { fogDensity = d; }
+    void setFogDensity(float d) { fogDensity = d; resetTemporalHistory(); }
     float getFogDensity() const { return fogDensity; }
-    void setFogAbsorption(float a) { fogAbsorption = a; }
+    void setFogAbsorption(float a) { fogAbsorption = a; resetTemporalHistory(); }
     float getFogAbsorption() const { return fogAbsorption; }
 
     // Ground fog layer parameters
-    void setLayerHeight(float h) { layerHeight = h; }
+    void setLayerHeight(float h) { layerHeight = h; resetTemporalHistory(); }
     float getLayerHeight() const { return layerHeight; }
-    void setLayerThickness(float t) { layerThickness = t; }
+    void setLayerThickness(float t) { layerThickness = t; resetTemporalHistory(); }
     float getLayerThickness() const { return layerThickness; }
-    void setLayerDensity(float d) { layerDensity = d; }
+    void setLayerDensity(float d) { layerDensity = d; resetTemporalHistory(); }
     float getLayerDensity() const { return layerDensity; }
+
+    // Reset temporal history (call when fog parameters change significantly)
+    void resetTemporalHistory() { frameCounter = 0; }
 
     void setVolumetricFarPlane(float f) { volumetricFarPlane = f; }
     float getVolumetricFarPlane() const { return volumetricFarPlane; }
@@ -156,16 +159,16 @@ private:
     glm::mat4 prevViewProj = glm::mat4(1.0f);
     uint32_t frameCounter = 0;
 
-    // Fog parameters
-    float fogBaseHeight = 0.0f;
-    float fogScaleHeight = 50.0f;
-    float fogDensity = 0.01f;
-    float fogAbsorption = 0.01f;
+    // Fog parameters (matching previous constants_common.glsl values for large world)
+    float fogBaseHeight = 0.0f;           // Ground level
+    float fogScaleHeight = 300.0f;        // Exponential falloff height in scene units (large world)
+    float fogDensity = 0.003f;            // Base fog density (reduced for large world visibility)
+    float fogAbsorption = 0.003f;         // Match fog density
 
     // Ground fog layer
     float layerHeight = 0.0f;
-    float layerThickness = 10.0f;
-    float layerDensity = 0.02f;
+    float layerThickness = 30.0f;         // Low-lying fog layer thickness
+    float layerDensity = 0.008f;          // Low-lying fog density (reduced for large world)
 
     // Volumetric range
     float volumetricFarPlane = 200.0f;

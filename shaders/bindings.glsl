@@ -83,6 +83,9 @@
 #define BINDING_TERRAIN_SHADOW_DRAW    15   // Shadow indirect draw buffer
 // Hole mask for caves/wells (R8_UNORM: 0=solid, 1=hole)
 #define BINDING_TERRAIN_HOLE_MASK      16   // Hole mask texture
+// Terrain-specific UBO bindings (separate from textures)
+#define BINDING_TERRAIN_SNOW_UBO       17   // Snow UBO for terrain
+#define BINDING_TERRAIN_CLOUD_SHADOW_UBO 18 // Cloud shadow UBO for terrain
 
 // =============================================================================
 // Grass Compute Shader Descriptor Set

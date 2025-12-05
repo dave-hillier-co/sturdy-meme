@@ -407,35 +407,18 @@ void AnimatedCharacter::setupDefaultIKChains() {
         }
     }
 
-    // Left leg chain
+    // Note: Leg chains are NOT created as separate two-bone chains.
+    // Leg IK is handled by the foot placement system which creates its own
+    // two-bone chains internally. Creating separate leg chains would cause
+    // double-solving and incorrect results.
+
+    // Find leg bones for foot placement (used below)
     std::string leftThigh = findBone({"LeftUpLeg", "LeftUpperLeg", "L_UpperLeg", "thigh.L", "thigh_l"});
     std::string leftKnee = findBone({"LeftLeg", "LeftLowerLeg", "L_LowerLeg", "shin.L", "calf_l"});
     std::string leftFoot = findBone({"LeftFoot", "L_Foot", "foot.L", "foot_l"});
-
-    if (!leftThigh.empty() && !leftKnee.empty() && !leftFoot.empty()) {
-        if (ikSystem.addTwoBoneChain("LeftLeg", skeleton, leftThigh, leftKnee, leftFoot)) {
-            // Set default pole vector for knee (forward)
-            if (auto* chain = ikSystem.getChain("LeftLeg")) {
-                chain->poleVector = glm::vec3(0, 0, 1);  // Knees bend forward
-            }
-            SDL_Log("AnimatedCharacter: Setup left leg IK chain");
-        }
-    }
-
-    // Right leg chain
     std::string rightThigh = findBone({"RightUpLeg", "RightUpperLeg", "R_UpperLeg", "thigh.R", "thigh_r"});
     std::string rightKnee = findBone({"RightLeg", "RightLowerLeg", "R_LowerLeg", "shin.R", "calf_r"});
     std::string rightFoot = findBone({"RightFoot", "R_Foot", "foot.R", "foot_r"});
-
-    if (!rightThigh.empty() && !rightKnee.empty() && !rightFoot.empty()) {
-        if (ikSystem.addTwoBoneChain("RightLeg", skeleton, rightThigh, rightKnee, rightFoot)) {
-            // Set default pole vector for knee (forward)
-            if (auto* chain = ikSystem.getChain("RightLeg")) {
-                chain->poleVector = glm::vec3(0, 0, 1);  // Knees bend forward
-            }
-            SDL_Log("AnimatedCharacter: Setup right leg IK chain");
-        }
-    }
 
     // Look-At IK (head tracking)
     std::string head = findBone({"Head", "head"});

@@ -138,6 +138,18 @@ bool TwoBoneIKSolver::solve(
     glm::vec3 endPos = IKUtils::getWorldPosition(globalTransforms[chain.endBoneIndex]);
     glm::vec3 targetPos = chain.targetPosition;
 
+    static int debugCounter = 0;
+    if (debugCounter++ % 300 == 0) {
+        glm::vec3 toTargetDir = glm::normalize(targetPos - rootPos);
+        SDL_Log("IK[%s]: root=(%.1f,%.1f,%.1f) mid=(%.1f,%.1f,%.1f) end=(%.1f,%.1f,%.1f) target=(%.1f,%.1f,%.1f) targetDir=(%.2f,%.2f,%.2f)",
+                skeleton.joints[chain.rootBoneIndex].name.c_str(),
+                rootPos.x, rootPos.y, rootPos.z,
+                midPos.x, midPos.y, midPos.z,
+                endPos.x, endPos.y, endPos.z,
+                targetPos.x, targetPos.y, targetPos.z,
+                toTargetDir.x, toTargetDir.y, toTargetDir.z);
+    }
+
     // Calculate bone lengths
     float upperLen = glm::length(midPos - rootPos);
     float lowerLen = glm::length(endPos - midPos);
@@ -189,32 +201,52 @@ bool TwoBoneIKSolver::solve(
     Joint& midJoint = skeleton.joints[chain.midBoneIndex];
 
     // Get current local rotations
+    // Note: localTransform = T * Rpre * R * S (pre-rotation is baked in)
+    // We need to extract just R for IK, then recompose with Rpre
     glm::vec3 rootTranslation, midTranslation, rootScale, midScale;
-    glm::quat rootLocalRot, midLocalRot;
-    IKUtils::decomposeTransform(rootJoint.localTransform, rootTranslation, rootLocalRot, rootScale);
-    IKUtils::decomposeTransform(midJoint.localTransform, midTranslation, midLocalRot, midScale);
+    glm::quat rootLocalRotWithPre, midLocalRotWithPre;
+    IKUtils::decomposeTransform(rootJoint.localTransform, rootTranslation, rootLocalRotWithPre, rootScale);
+    IKUtils::decomposeTransform(midJoint.localTransform, midTranslation, midLocalRotWithPre, midScale);
 
-    // Calculate the plane normal using pole vector
-    // The pole vector is a direction (not a position) indicating which way the elbow/knee should point
+    // Extract the animated rotation by removing pre-rotation
+    // localRotWithPre = Rpre * R, so R = inverse(Rpre) * localRotWithPre
+    glm::quat rootAnimRot = glm::inverse(rootJoint.preRotation) * rootLocalRotWithPre;
+    glm::quat midAnimRot = glm::inverse(midJoint.preRotation) * midLocalRotWithPre;
+
+    // Calculate bend direction from pole vector
+    // The pole vector indicates which way the elbow/knee should point
+    // We need to project it onto the plane perpendicular to the target direction
     glm::vec3 poleDir = glm::normalize(chain.poleVector);
-    glm::vec3 planeNormal = glm::normalize(glm::cross(targetDir, poleDir));
-    if (glm::length2(planeNormal) < 0.0001f) {
-        // Pole vector is aligned with target direction, use a default
-        planeNormal = glm::vec3(0, 1, 0);
-        if (std::abs(glm::dot(targetDir, planeNormal)) > 0.99f) {
-            planeNormal = glm::vec3(1, 0, 0);
-        }
-        planeNormal = glm::normalize(glm::cross(targetDir, planeNormal));
-    }
 
-    // Calculate the bend direction (perpendicular to target direction, in the pole plane)
-    glm::vec3 bendDir = glm::normalize(glm::cross(planeNormal, targetDir));
+    // Project pole vector onto plane perpendicular to target direction
+    // bendDir = poleDir - (poleDir . targetDir) * targetDir
+    float poleDotTarget = glm::dot(poleDir, targetDir);
+    glm::vec3 bendDir = poleDir - poleDotTarget * targetDir;
+
+    if (glm::length2(bendDir) < 0.0001f) {
+        // Pole vector is aligned with target direction, use a default perpendicular
+        bendDir = glm::vec3(0, 0, 1);  // Default forward
+        if (std::abs(glm::dot(targetDir, bendDir)) > 0.99f) {
+            bendDir = glm::vec3(0, 1, 0);
+        }
+        bendDir = bendDir - glm::dot(bendDir, targetDir) * targetDir;
+    }
+    bendDir = glm::normalize(bendDir);
 
     // Calculate new mid position
     // The mid joint lies at distance upperLen from root, at angle rootAngle from target direction
     glm::vec3 newMidPos = rootPos
                           + targetDir * (upperLen * std::cos(rootAngle))
                           + bendDir * (upperLen * std::sin(rootAngle));
+
+    if (debugCounter % 300 == 1) {
+        glm::vec3 newMidDir = glm::normalize(newMidPos - rootPos);
+        SDL_Log("IK: bendDir=(%.2f,%.2f,%.2f) newMidPos=(%.1f,%.1f,%.1f) newMidDir=(%.2f,%.2f,%.2f) rootAngle=%.1f",
+                bendDir.x, bendDir.y, bendDir.z,
+                newMidPos.x, newMidPos.y, newMidPos.z,
+                newMidDir.x, newMidDir.y, newMidDir.z,
+                glm::degrees(rootAngle));
+    }
 
     // Calculate rotations for root bone
     // Current bone direction (from animation)
@@ -229,55 +261,100 @@ bool TwoBoneIKSolver::solve(
     glm::quat parentWorldRot = glm::quat_cast(glm::mat3(parentGlobal));
     glm::quat parentWorldRotInv = glm::inverse(parentWorldRot);
 
-    // Calculate world rotation delta and convert to local
-    glm::quat rootRotDelta = IKUtils::aimAt(currentRootDir, newRootDir, chain.poleVector);
+    // The key insight: we need to rotate the parent bone such that when the child's
+    // local transform is applied, the child ends up at the desired position.
+    //
+    // Child world pos = Parent world transform * Child local translation
+    // We want to find a new parent rotation such that:
+    // newMidPos = parentPos + parentRot * midLocalTranslation
+    //
+    // So we need: parentRot * midLocalTranslation = (newMidPos - parentPos)
+    // Which means: parentRot = rotation that takes midLocalTranslation to (newMidPos - parentPos)
+
+    // Get the mid bone's local translation (offset from parent in parent's local space)
+    glm::vec3 midLocalTranslation = glm::vec3(midJoint.localTransform[3]);
+
+    // Current: hip rotation transforms midLocalTranslation to (midPos - rootPos)
+    // We want: hip rotation transforms midLocalTranslation to (newMidPos - rootPos)
+    glm::vec3 currentChildOffset = midPos - rootPos;
+    glm::vec3 desiredChildOffset = newMidPos - rootPos;
+
+    // Normalize to get directions (the lengths should be equal since we're not changing bone length)
+    glm::vec3 currentOffsetDir = glm::normalize(currentChildOffset);
+    glm::vec3 desiredOffsetDir = glm::normalize(desiredChildOffset);
+
+    // Calculate the rotation that takes currentOffsetDir to desiredOffsetDir
+    glm::quat rootRotDelta = IKUtils::aimAt(currentOffsetDir, desiredOffsetDir, chain.poleVector);
+
+    // Apply this rotation to the current world rotation
     glm::quat currentWorldRot = glm::quat_cast(glm::mat3(globalTransforms[chain.rootBoneIndex]));
     glm::quat newWorldRot = rootRotDelta * currentWorldRot;
-    glm::quat newRootLocalRot = parentWorldRotInv * newWorldRot;
 
-    // Apply pre-rotation if present
-    if (glm::length2(rootJoint.preRotation - glm::quat(1, 0, 0, 0)) > 0.0001f) {
-        newRootLocalRot = glm::inverse(rootJoint.preRotation) * newRootLocalRot;
+    // Convert to local space (this gives us Rpre * newR)
+    glm::quat newLocalRotWithPre = parentWorldRotInv * newWorldRot;
+
+    // Extract just the animated rotation: newR = inverse(Rpre) * newLocalRotWithPre
+    glm::quat newRootAnimRot = glm::inverse(rootJoint.preRotation) * newLocalRotWithPre;
+
+    // Recompose: localTransform = T * Rpre * R * S
+    glm::quat finalRootLocalRot = rootJoint.preRotation * newRootAnimRot;
+
+    if (debugCounter % 300 == 1) {
+        // Verify: apply the new rotation and see where the child would end up
+        glm::mat4 testRootGlobal;
+        if (rootJoint.parentIndex >= 0) {
+            testRootGlobal = globalTransforms[rootJoint.parentIndex] *
+                            IKUtils::composeTransform(rootTranslation, finalRootLocalRot, rootScale);
+        } else {
+            testRootGlobal = IKUtils::composeTransform(rootTranslation, finalRootLocalRot, rootScale);
+        }
+        // Where would the mid bone end up?
+        glm::vec4 predictedMidPos4 = testRootGlobal * glm::vec4(midTranslation, 1.0f);
+        glm::vec3 predictedMidPos = glm::vec3(predictedMidPos4);
+        SDL_Log("IK: expected newMidPos=(%.1f,%.1f,%.1f) predicted=(%.1f,%.1f,%.1f) current mid=(%.1f,%.1f,%.1f)",
+                newMidPos.x, newMidPos.y, newMidPos.z,
+                predictedMidPos.x, predictedMidPos.y, predictedMidPos.z,
+                midPos.x, midPos.y, midPos.z);
     }
 
-    // Calculate rotations for mid bone
-    glm::vec3 currentMidDir = glm::normalize(endPos - midPos);
-    glm::vec3 newEndPos = targetPos;  // End should reach target
-    glm::vec3 newMidDir = glm::normalize(newEndPos - newMidPos);
+    // Calculate rotations for mid bone using the same approach
+    glm::vec3 currentEndOffset = endPos - midPos;
+    glm::vec3 desiredEndOffset = targetPos - newMidPos;
+    glm::vec3 currentEndDir = glm::normalize(currentEndOffset);
+    glm::vec3 desiredEndDir = glm::normalize(desiredEndOffset);
 
     // Mid bone's parent is root bone (after IK), so we need the new root global transform
+    // Use finalRootLocalRot which includes pre-rotation
     glm::mat4 newRootGlobal;
     if (rootJoint.parentIndex >= 0) {
         newRootGlobal = globalTransforms[rootJoint.parentIndex] *
-                        IKUtils::composeTransform(rootTranslation, newRootLocalRot, rootScale);
+                        IKUtils::composeTransform(rootTranslation, finalRootLocalRot, rootScale);
     } else {
-        newRootGlobal = IKUtils::composeTransform(rootTranslation, newRootLocalRot, rootScale);
-    }
-    // Apply pre-rotation to get actual global
-    if (glm::length2(rootJoint.preRotation - glm::quat(1, 0, 0, 0)) > 0.0001f) {
-        glm::mat4 preRotMat = glm::mat4_cast(rootJoint.preRotation);
-        newRootGlobal = newRootGlobal * preRotMat;
+        newRootGlobal = IKUtils::composeTransform(rootTranslation, finalRootLocalRot, rootScale);
     }
 
     glm::quat midParentWorldRot = glm::quat_cast(glm::mat3(newRootGlobal));
     glm::quat midParentWorldRotInv = glm::inverse(midParentWorldRot);
 
-    glm::quat midRotDelta = IKUtils::aimAt(currentMidDir, newMidDir, chain.poleVector);
+    glm::quat midRotDelta = IKUtils::aimAt(currentEndDir, desiredEndDir, chain.poleVector);
     glm::quat currentMidWorldRot = glm::quat_cast(glm::mat3(globalTransforms[chain.midBoneIndex]));
     glm::quat newMidWorldRot = midRotDelta * currentMidWorldRot;
-    glm::quat newMidLocalRot = midParentWorldRotInv * newMidWorldRot;
 
-    // Apply pre-rotation for mid joint
-    if (glm::length2(midJoint.preRotation - glm::quat(1, 0, 0, 0)) > 0.0001f) {
-        newMidLocalRot = glm::inverse(midJoint.preRotation) * newMidLocalRot;
-    }
+    // Convert to local space (includes pre-rotation)
+    glm::quat newMidLocalRotWithPre = midParentWorldRotInv * newMidWorldRot;
 
-    // Apply joint limits to mid bone
-    newMidLocalRot = applyJointLimits(newMidLocalRot, chain.midBoneLimits);
+    // Extract animated rotation and recompose
+    glm::quat newMidAnimRot = glm::inverse(midJoint.preRotation) * newMidLocalRotWithPre;
+
+    // Apply joint limits to the animated rotation
+    newMidAnimRot = applyJointLimits(newMidAnimRot, chain.midBoneLimits);
+
+    // Recompose with pre-rotation
+    glm::quat finalMidLocalRot = midJoint.preRotation * newMidAnimRot;
 
     // Update skeleton local transforms
-    rootJoint.localTransform = IKUtils::composeTransform(rootTranslation, newRootLocalRot, rootScale);
-    midJoint.localTransform = IKUtils::composeTransform(midTranslation, newMidLocalRot, midScale);
+    rootJoint.localTransform = IKUtils::composeTransform(rootTranslation, finalRootLocalRot, rootScale);
+    midJoint.localTransform = IKUtils::composeTransform(midTranslation, finalMidLocalRot, midScale);
 
     return reachable;
 }
@@ -645,7 +722,7 @@ void FootPlacementIKSolver::solve(
     if (foot.footBoneIndex < 0 || foot.hipBoneIndex < 0 || foot.kneeBoneIndex < 0) return;
     if (!groundQuery) return;
 
-    // Get current foot world position from animation
+    // Get current foot position in skeleton space (from animation)
     glm::vec3 animFootPos = IKUtils::getWorldPosition(globalTransforms[foot.footBoneIndex]);
 
     // Transform to world space using character transform
@@ -663,16 +740,57 @@ void FootPlacementIKSolver::solve(
     foot.isGrounded = true;
     foot.currentGroundHeight = groundResult.position.y;
 
-    // Calculate target foot position (on ground)
-    glm::vec3 targetWorldPos = groundResult.position - foot.footOffset;
+    // Extract scale from character transform (for converting world offsets to skeleton space)
+    // The character transform includes scale (e.g., 0.01 for Mixamo cm→m conversion)
+    float scaleY = glm::length(glm::vec3(characterTransform[1]));
+    if (scaleY < 0.0001f) scaleY = 1.0f;
 
-    // Transform target back to character local space
-    glm::mat4 invCharTransform = glm::inverse(characterTransform);
-    glm::vec3 targetLocalPos = glm::vec3(invCharTransform * glm::vec4(targetWorldPos, 1.0f));
+    // Calculate target foot position in world space
+    // The foot bone (ankle) should be at ground height + ankle height offset
+    float ankleHeightAboveGround = 0.08f;  // ~8cm ankle height in world space (meters)
+    float targetWorldFootY = groundResult.position.y + ankleHeightAboveGround;
 
-    // Smooth the target position
+    // Calculate how much the foot needs to move in world space
+    float worldHeightDiff = targetWorldFootY - worldFootPos.y;  // Positive = need to move up
+
+    // Convert to skeleton space (skeleton is in cm, world is in m, scale is 0.01)
+    // world_to_skeleton = world / scale = world * 100
+    float skeletonHeightOffset = worldHeightDiff / scaleY;
+
+    // Clamp the offset to reasonable bounds in skeleton space (cm)
+    // Positive: foot moves up (leg bends more) - max ~20cm
+    // Negative: foot moves down (leg straightens) - max ~15cm
+    const float maxLiftOffset = 20.0f;
+    const float maxDropOffset = -15.0f;
+    skeletonHeightOffset = glm::clamp(skeletonHeightOffset, maxDropOffset, maxLiftOffset);
+
+    // Small threshold to avoid jitter
+    const float threshold = 2.0f;  // 2cm in skeleton space
+    if (std::abs(skeletonHeightOffset) < threshold) {
+        foot.isGrounded = true;
+        foot.currentFootTarget = animFootPos;
+        return;
+    }
+
+    // The target position is the animation position adjusted to meet ground
+    glm::vec3 targetLocalPos = animFootPos;
+    targetLocalPos.y += skeletonHeightOffset;
+
+    static int footDebugCounter = 0;
+    if (footDebugCounter++ % 300 == 0) {
+        SDL_Log("FootIK: worldFoot=%.2f targetWorld=%.2f worldDiff=%.3f skelOffset=%.1f animY=%.1f targetY=%.1f",
+                worldFootPos.y, targetWorldFootY, worldHeightDiff, skeletonHeightOffset,
+                animFootPos.y, targetLocalPos.y);
+    }
+
+    // Initialize currentFootTarget if it's at origin (first frame)
+    if (glm::length2(foot.currentFootTarget) < 0.001f) {
+        foot.currentFootTarget = targetLocalPos;
+    }
+
+    // Smooth the target position (faster response for foot placement)
     if (deltaTime > 0.0f) {
-        float t = glm::clamp(10.0f * deltaTime, 0.0f, 1.0f);
+        float t = glm::clamp(20.0f * deltaTime, 0.0f, 1.0f);  // Faster smoothing
         foot.currentFootTarget = glm::mix(foot.currentFootTarget, targetLocalPos, t);
     } else {
         foot.currentFootTarget = targetLocalPos;
@@ -693,28 +811,68 @@ void FootPlacementIKSolver::solve(
 
     // Align foot to ground slope if enabled
     if (foot.alignToGround && foot.footBoneIndex >= 0) {
-        // Transform ground normal to character local space
-        glm::vec3 localNormal = glm::normalize(
-            glm::vec3(glm::inverse(glm::mat3(characterTransform)) * groundResult.normal)
-        );
+        // Recompute global transforms after leg IK to get updated foot/parent orientation
+        std::vector<glm::mat4> updatedGlobalTransforms;
+        skeleton.computeGlobalTransforms(updatedGlobalTransforms);
 
-        glm::quat footAlign = alignFootToGround(localNormal, foot.currentFootRotation, foot.maxFootAngle);
+        // Ground normal is in world space, transform to skeleton space
+        glm::mat3 charRotInv = glm::inverse(glm::mat3(characterTransform));
+        glm::vec3 targetUp = glm::normalize(charRotInv * groundResult.normal);
 
-        // Apply foot rotation
+        // Get the foot joint's current local rotation (from animation + leg IK)
         Joint& footJoint = skeleton.joints[foot.footBoneIndex];
         glm::vec3 t, s;
-        glm::quat r;
-        IKUtils::decomposeTransform(footJoint.localTransform, t, r, s);
+        glm::quat currentLocalRot;
+        IKUtils::decomposeTransform(footJoint.localTransform, t, currentLocalRot, s);
 
-        // Blend alignment
-        glm::quat targetRot = footAlign * r;
-        if (deltaTime > 0.0f) {
-            float blendT = glm::clamp(8.0f * deltaTime, 0.0f, 1.0f);
-            foot.currentFootRotation = glm::slerp(foot.currentFootRotation, footAlign, blendT);
+        // Get parent world rotation to convert between local and world space
+        int32_t parentIdx = skeleton.joints[foot.footBoneIndex].parentIndex;
+        if (parentIdx >= 0) {
+            glm::quat parentWorldRot = glm::quat_cast(glm::mat3(updatedGlobalTransforms[parentIdx]));
+
+            // Compute the foot's world rotation from its current local rotation
+            glm::quat footWorldRot = parentWorldRot * currentLocalRot;
+
+            // The foot's current "up" direction in skeleton space
+            // For Mixamo feet, +Z points up from the foot (perpendicular to sole)
+            glm::vec3 footCurrentUp = footWorldRot * glm::vec3(0.0f, 0.0f, 1.0f);
+
+            // Calculate rotation needed to align foot up with ground normal
+            float dot = glm::dot(footCurrentUp, targetUp);
+
+            if (footDebugCounter % 120 == 0) {
+                SDL_Log("FootAlign: groundNormal=(%.2f,%.2f,%.2f) footUp=(%.2f,%.2f,%.2f) targetUp=(%.2f,%.2f,%.2f) dot=%.3f",
+                        groundResult.normal.x, groundResult.normal.y, groundResult.normal.z,
+                        footCurrentUp.x, footCurrentUp.y, footCurrentUp.z,
+                        targetUp.x, targetUp.y, targetUp.z, dot);
+            }
+
+            // Compute alignment rotation
+            glm::quat alignDelta = glm::quat(1, 0, 0, 0);  // Identity
+            if (dot < 0.9999f && dot > -0.9999f) {
+                glm::vec3 axis = glm::cross(footCurrentUp, targetUp);
+                if (glm::length2(axis) > 0.0001f) {
+                    float angle = std::acos(glm::clamp(dot, -1.0f, 1.0f));
+                    // Clamp to max foot rotation angle
+                    angle = glm::clamp(angle, -foot.maxFootAngle, foot.maxFootAngle);
+                    alignDelta = glm::angleAxis(angle, glm::normalize(axis));
+                }
+            }
+
+            // Apply alignment in world space, then convert back to local
+            glm::quat alignedWorldRot = alignDelta * footWorldRot;
+            glm::quat alignedLocalRot = glm::inverse(parentWorldRot) * alignedWorldRot;
+
+            // Smooth blend to the aligned rotation
+            glm::quat targetLocalRot = alignedLocalRot;
+            if (deltaTime > 0.0f) {
+                float blendT = glm::clamp(8.0f * deltaTime, 0.0f, 1.0f);
+                glm::quat blendedRot = glm::slerp(currentLocalRot, targetLocalRot, blendT);
+                footJoint.localTransform = IKUtils::composeTransform(t, blendedRot, s);
+            } else {
+                footJoint.localTransform = IKUtils::composeTransform(t, targetLocalRot, s);
+            }
         }
-
-        glm::quat finalRot = glm::slerp(r, foot.currentFootRotation * r, foot.weight);
-        footJoint.localTransform = IKUtils::composeTransform(t, finalRot, s);
     }
 }
 
@@ -870,7 +1028,7 @@ bool IKSystem::addFootPlacement(
     nfp.foot.kneeBoneIndex = kneeIdx;
     nfp.foot.footBoneIndex = footIdx;
     nfp.foot.toeBoneIndex = toeIdx;
-    nfp.foot.enabled = false;
+    nfp.foot.enabled = true;  // Enabled by default
 
     footPlacements.push_back(nfp);
 

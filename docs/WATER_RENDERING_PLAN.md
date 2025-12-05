@@ -23,7 +23,7 @@ This plan implements screen-space water rendering with flow maps, procedural foa
 | 9 | Refraction & Caustics | ✅ Implemented |
 | 10 | Screen-Space Reflections | ✅ Implemented |
 | 11 | Dual Depth Buffer | ✅ Implemented |
-| 12 | Material Blending | ❌ Not started |
+| 12 | Material Blending | ✅ Implemented |
 | 13 | Jacobian Foam | ✅ Implemented |
 | 14 | Temporal Foam Persistence | ✅ Implemented |
 | 15 | Intersection Foam | ✅ Implemented |
@@ -319,18 +319,54 @@ float geometryFoam = (1.0 - softEdge) * foamNoise;
 
 ---
 
-## Phase 12: Material Blending System
+## Phase 12: Material Blending System ✅
+
+**Status:** Implemented. Smooth transitions between different water body types.
 
 **Goal:** Smooth transitions between different water bodies
 
-### 12.1 Per-Pixel Material Interpolation
-- Store blend material ID per pixel
-- Interpolate specific material properties (not all)
-- Artist-controllable blend distance (3m, 6m, 12m)
+### 12.1 Material Properties
+- ✅ WaterMaterial struct with blendable properties (color, scattering, roughness, SSS)
+- ✅ 8 preset water types (Ocean, CoastalOcean, River, MuddyRiver, ClearStream, Lake, Swamp, Tropical)
+- ✅ Primary and secondary material slots
+
+### 12.2 Blend Modes
+- ✅ Distance mode: blend based on distance from center point
+- ✅ Directional mode: blend along a direction (e.g., river flowing to ocean)
+- ✅ Radial mode: blend radially outward from center
+
+### 12.3 Per-Pixel Material Interpolation
+- ✅ All material properties interpolated per-pixel
+- ✅ Configurable blend center and distance (world units)
+- ✅ Smoothstep interpolation for natural transitions
+
+### 12.4 Implementation Details
+```glsl
+// Calculate blend factor based on world position
+float blend = calculateMaterialBlendFactor(fragWorldPos);
+
+// Get blended material properties
+BlendedMaterial mat;
+mat.color = mix(waterColor, waterColor2, blend);
+mat.absorption = mix(scatteringCoeffs.rgb, scatteringCoeffs2.rgb, blend);
+mat.roughness = mix(specularRoughness, specularRoughness2, blend);
+```
+
+### 12.5 Usage
+```cpp
+// Set up a transition from river to ocean
+waterSystem.setupMaterialTransition(
+    WaterSystem::WaterType::River,
+    WaterSystem::WaterType::Ocean,
+    glm::vec2(riverMouthX, riverMouthZ),  // Blend center
+    50.0f,                                  // Blend distance in meters
+    WaterSystem::BlendMode::Directional    // Blend along river direction
+);
+```
 
 **Files:**
-- Modify: `src/WaterSystem.h/cpp`
-- Modify: `shaders/water.frag`
+- ✅ `src/WaterSystem.h/cpp` - Material struct, presets, blend API
+- ✅ `shaders/water.frag` - Material blending logic
 
 ---
 
@@ -545,7 +581,7 @@ vec3 waveSSS = sssTint * sunColor * sssStrength * sssIntensity;
 7. ✅ **Phase 7** (Screen-Space Tessellation) - Performance optimization
 8. ✅ **Phase 10** (SSR) - High-quality reflections
 9. ✅ **Phase 11** (Dual Depth) - Correctness for complex scenes
-10. **Phase 12** (Material Blending) - Multiple water types
+10. ✅ **Phase 12** (Material Blending) - Multiple water types
 
 ---
 
@@ -563,6 +599,7 @@ Based on current state, the highest-impact remaining improvements are:
 - **Phase 10** (SSR) - Screen-space reflections with temporal filtering
 - **Phase 11** (Dual Depth) - Scene depth for geometry intersection foam
 - **Phase 7** (Tile Cull) - Screen-space tile visibility for performance
+- **Phase 12** (Material Blending) - Smooth transitions between water types
 
 ### 1. Foam Texture Quality
 **Why:** The generated Worley noise texture may need tuning. Consider:

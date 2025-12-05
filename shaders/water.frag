@@ -20,11 +20,24 @@
 
 // Water-specific uniforms
 layout(std140, binding = 1) uniform WaterUniforms {
+    // Primary material properties
     vec4 waterColor;           // rgb = base water color, a = transparency
     vec4 waveParams;           // x = amplitude, y = wavelength, z = steepness, w = speed
     vec4 waveParams2;          // Second wave layer parameters
     vec4 waterExtent;          // xy = position offset, zw = size
     vec4 scatteringCoeffs;     // rgb = absorption coefficients, a = turbidity
+
+    // Phase 12: Secondary material for blending
+    vec4 waterColor2;          // Secondary water color
+    vec4 scatteringCoeffs2;    // Secondary scattering coefficients
+    vec4 blendCenter;          // xy = world position, z = blend direction angle, w = unused
+    float absorptionScale2;    // Secondary absorption scale
+    float scatteringScale2;    // Secondary scattering scale
+    float specularRoughness2;  // Secondary specular roughness
+    float sssIntensity2;       // Secondary SSS intensity
+    float blendDistance;       // Distance over which materials blend (world units)
+    int blendMode;             // 0 = distance from center, 1 = directional, 2 = radial
+
     float waterLevel;          // Y height of water plane
     float foamThreshold;       // Wave height threshold for foam
     float fresnelPower;        // Fresnel reflection power
@@ -256,6 +269,69 @@ float calculateVarianceRoughness(vec3 normal, vec3 meshNormal, float baseRoughne
     return clamp(combinedRoughness, 0.02, 1.0);
 }
 
+// =========================================================================
+// PHASE 12: Material Blending
+// Smooth transitions between different water types
+// =========================================================================
+
+// Calculate blend factor based on world position and blend mode
+// Returns 0.0 = primary material, 1.0 = secondary material
+float calculateMaterialBlendFactor(vec3 worldPos) {
+    vec2 pos2D = worldPos.xz;
+    vec2 center = blendCenter.xy;
+    float blendAngle = blendCenter.z;
+
+    float blendFactor = 0.0;
+
+    if (blendMode == 0) {
+        // Distance mode: blend based on distance from center point
+        float dist = length(pos2D - center);
+        blendFactor = smoothstep(0.0, blendDistance, dist);
+    }
+    else if (blendMode == 1) {
+        // Directional mode: blend along a direction (e.g., river flowing to ocean)
+        // The blend angle defines the direction of transition
+        vec2 dir = vec2(cos(blendAngle), sin(blendAngle));
+        float projDist = dot(pos2D - center, dir);
+        blendFactor = smoothstep(-blendDistance * 0.5, blendDistance * 0.5, projDist);
+    }
+    else if (blendMode == 2) {
+        // Radial mode: blend radially outward from center (inverse of distance)
+        // 0 = secondary at center, 1 = primary at edge
+        float dist = length(pos2D - center);
+        blendFactor = 1.0 - smoothstep(0.0, blendDistance, dist);
+    }
+
+    return clamp(blendFactor, 0.0, 1.0);
+}
+
+// Blended material properties structure
+struct BlendedMaterial {
+    vec4 color;
+    vec3 absorption;
+    float turbidity;
+    float absorptionScale;
+    float scatteringScale;
+    float roughness;
+    float sss;
+};
+
+// Get blended material properties for current fragment
+BlendedMaterial getBlendedMaterial(vec3 worldPos) {
+    float blend = calculateMaterialBlendFactor(worldPos);
+
+    BlendedMaterial mat;
+    mat.color = mix(waterColor, waterColor2, blend);
+    mat.absorption = mix(scatteringCoeffs.rgb, scatteringCoeffs2.rgb, blend);
+    mat.turbidity = mix(scatteringCoeffs.a, scatteringCoeffs2.a, blend);
+    mat.absorptionScale = mix(absorptionScale, absorptionScale2, blend);
+    mat.scatteringScale = mix(scatteringScale, scatteringScale2, blend);
+    mat.roughness = mix(specularRoughness, specularRoughness2, blend);
+    mat.sss = mix(sssIntensity, sssIntensity2, blend);
+
+    return mat;
+}
+
 void main() {
     vec3 N = normalize(fragNormal);
     vec3 V = normalize(ubo.cameraPosition.xyz - fragWorldPos);
@@ -346,19 +422,24 @@ void main() {
     );
 
     // =========================================================================
+    // PHASE 12: Get blended material properties
+    // =========================================================================
+    BlendedMaterial mat = getBlendedMaterial(fragWorldPos);
+
+    // =========================================================================
     // PBR WATER COLOR - Beer-Lambert absorption (Phase 8)
     // =========================================================================
-    // Get physical scattering properties from uniforms
-    vec3 absorption = scatteringCoeffs.rgb * absorptionScale;
-    float turbidity = scatteringCoeffs.a;
+    // Get physical scattering properties from blended material
+    vec3 absorption = mat.absorption * mat.absorptionScale;
+    float turbidity = mat.turbidity;
 
     // Calculate transmission through water using Beer-Lambert law
     // This replaces artist-picked colors with physically-based light transport
-    vec3 waterTransmission = calculateWaterTransmission(waterDepth, absorption, turbidity, scatteringScale);
+    vec3 waterTransmission = calculateWaterTransmission(waterDepth, absorption, turbidity, mat.scatteringScale);
 
     // Base water color is the inverse of absorption (what's NOT absorbed)
     // Mix with white for scattered light in turbid water
-    vec3 baseColor = waterColor.rgb * waterTransmission;
+    vec3 baseColor = mat.color.rgb * waterTransmission;
 
     // Sun color used for SSS and specular - calculate once
     vec3 sunColor = ubo.sunColor.rgb * ubo.sunDirection.w;
@@ -403,8 +484,8 @@ void main() {
 
     // Calculate SSS color - sun-tinted with water's natural color
     // Use a warmer tint at thin peaks for more realistic appearance
-    vec3 sssTint = mix(waterColor.rgb, vec3(0.1, 0.5, 0.4), 0.5); // Blue-green tint
-    vec3 waveSSS = sssTint * sunColor * sssStrength * sssIntensity;
+    vec3 sssTint = mix(mat.color.rgb, vec3(0.1, 0.5, 0.4), 0.5); // Blue-green tint
+    vec3 waveSSS = sssTint * sunColor * sssStrength * mat.sss;
 
     // Apply enhanced SSS to base color
     baseColor += waveSSS * shadow;
@@ -476,7 +557,7 @@ void main() {
 
     // Calculate variance-adjusted roughness to reduce specular aliasing
     // Higher normal variance = more roughness = less aliasing
-    float adjustedRoughness = calculateVarianceRoughness(N, meshNormal, specularRoughness);
+    float adjustedRoughness = calculateVarianceRoughness(N, meshNormal, mat.roughness);
 
     // Further increase roughness at distance to reduce shimmer
     adjustedRoughness = mix(adjustedRoughness, adjustedRoughness + 0.1, fbmLodFactor);
@@ -672,7 +753,7 @@ void main() {
     totalFoamAmount = clamp(totalFoamAmount, 0.0, 1.0);
 
     // Foam color varies slightly with depth
-    foamColor = calculateFoamColor(totalFoamAmount, waterDepth, waterColor.rgb);
+    foamColor = calculateFoamColor(totalFoamAmount, waterDepth, mat.color.rgb);
 
     // =========================================================================
     // COMBINE LIGHTING
@@ -690,7 +771,7 @@ void main() {
     // =========================================================================
     // ALPHA - soft shore edges + foam opacity
     // =========================================================================
-    float baseAlpha = waterColor.a;
+    float baseAlpha = mat.color.a;
 
     // Soft edge near shore (fade out as water gets very shallow)
     float shoreAlpha = smoothstep(0.0, shoreBlendDistance, waterDepth);

@@ -29,13 +29,37 @@ public:
         std::string assetPath;     // Base path for assets (for foam texture)
     };
 
+    // Water material properties for blending (Phase 12)
+    // Subset of properties that define a water type's appearance
+    struct WaterMaterial {
+        glm::vec4 waterColor;       // rgb = base water color, a = transparency
+        glm::vec4 scatteringCoeffs; // rgb = absorption coefficients, a = turbidity
+        float absorptionScale;      // How quickly light is absorbed with depth
+        float scatteringScale;      // How much light scatters (turbidity multiplier)
+        float specularRoughness;    // Base roughness for specular
+        float sssIntensity;         // Subsurface scattering intensity
+    };
+
     // Water uniforms - must match shader layout
     struct WaterUniforms {
+        // Primary material properties
         glm::vec4 waterColor;      // rgb = base water color, a = transparency
         glm::vec4 waveParams;      // x = amplitude, y = wavelength, z = steepness, w = speed
         glm::vec4 waveParams2;     // Second wave layer parameters
         glm::vec4 waterExtent;     // xy = position offset, zw = size
         glm::vec4 scatteringCoeffs; // rgb = absorption coefficients, a = turbidity
+
+        // Phase 12: Secondary material for blending
+        glm::vec4 waterColor2;      // Secondary water color
+        glm::vec4 scatteringCoeffs2; // Secondary scattering coefficients
+        glm::vec4 blendCenter;      // xy = world position, z = blend direction angle, w = unused
+        float absorptionScale2;     // Secondary absorption scale
+        float scatteringScale2;     // Secondary scattering scale
+        float specularRoughness2;   // Secondary specular roughness
+        float sssIntensity2;        // Secondary SSS intensity
+        float blendDistance;        // Distance over which materials blend (world units)
+        int blendMode;              // 0 = distance from center, 1 = directional, 2 = radial
+
         float waterLevel;          // Y height of water plane
         float foamThreshold;       // Wave height threshold for foam
         float fresnelPower;        // Fresnel reflection power
@@ -188,6 +212,39 @@ public:
         Tropical        // Turquoise, very clear
     };
     void setWaterType(WaterType type);
+
+    // Phase 12: Material blending
+    // Blend modes for material transitions
+    enum class BlendMode {
+        Distance,    // Blend based on distance from center point
+        Directional, // Blend along a direction (e.g., river to ocean)
+        Radial       // Blend radially outward from center
+    };
+
+    // Get material preset by water type
+    WaterMaterial getMaterialPreset(WaterType type) const;
+
+    // Set primary and secondary materials for blending
+    void setPrimaryMaterial(const WaterMaterial& material);
+    void setSecondaryMaterial(const WaterMaterial& material);
+    void setPrimaryMaterial(WaterType type);
+    void setSecondaryMaterial(WaterType type);
+
+    // Configure blend parameters
+    void setBlendCenter(const glm::vec2& worldPos) { waterUniforms.blendCenter.x = worldPos.x; waterUniforms.blendCenter.y = worldPos.y; }
+    void setBlendDirection(float angleRadians) { waterUniforms.blendCenter.z = angleRadians; }
+    void setBlendDistance(float distance) { waterUniforms.blendDistance = distance; }
+    void setBlendMode(BlendMode mode) { waterUniforms.blendMode = static_cast<int>(mode); }
+
+    // Getters for blend parameters
+    glm::vec2 getBlendCenter() const { return glm::vec2(waterUniforms.blendCenter.x, waterUniforms.blendCenter.y); }
+    float getBlendDirection() const { return waterUniforms.blendCenter.z; }
+    float getBlendDistance() const { return waterUniforms.blendDistance; }
+    BlendMode getBlendMode() const { return static_cast<BlendMode>(waterUniforms.blendMode); }
+
+    // Convenience: set up a transition between two water types
+    void setupMaterialTransition(WaterType from, WaterType to, const glm::vec2& center,
+                                  float distance, BlendMode mode = BlendMode::Distance);
 
 private:
     bool createDescriptorSetLayout();

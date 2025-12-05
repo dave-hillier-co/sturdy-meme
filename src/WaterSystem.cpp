@@ -52,6 +52,18 @@ bool WaterSystem::init(const InitInfo& info) {
     waterUniforms.causticsIntensity = 0.5f;   // Caustics brightness (Phase 9)
     waterUniforms.padding = 0.0f;
 
+    // Phase 12: Material blending defaults
+    // Secondary material defaults to same as primary (no blending)
+    waterUniforms.waterColor2 = waterUniforms.waterColor;
+    waterUniforms.scatteringCoeffs2 = waterUniforms.scatteringCoeffs;
+    waterUniforms.absorptionScale2 = waterUniforms.absorptionScale;
+    waterUniforms.scatteringScale2 = waterUniforms.scatteringScale;
+    waterUniforms.specularRoughness2 = waterUniforms.specularRoughness;
+    waterUniforms.sssIntensity2 = waterUniforms.sssIntensity;
+    waterUniforms.blendCenter = glm::vec4(0.0f, 0.0f, 0.0f, 0.0f);
+    waterUniforms.blendDistance = 50.0f;  // Default 50m blend distance
+    waterUniforms.blendMode = 0;          // Distance mode
+
     if (!createDescriptorSetLayout()) return false;
     if (!createPipeline()) return false;
     if (!createWaterMesh()) return false;
@@ -685,4 +697,127 @@ void WaterSystem::setWaterType(WaterType type) {
     SDL_Log("Water type set with absorption (%.2f, %.2f, %.2f), turbidity %.2f",
             waterUniforms.scatteringCoeffs.r, waterUniforms.scatteringCoeffs.g,
             waterUniforms.scatteringCoeffs.b, waterUniforms.scatteringCoeffs.a);
+}
+
+// Phase 12: Material blending implementation
+
+WaterSystem::WaterMaterial WaterSystem::getMaterialPreset(WaterType type) const {
+    WaterMaterial material{};
+
+    switch (type) {
+        case WaterType::Ocean:
+            material.waterColor = glm::vec4(0.01f, 0.03f, 0.08f, 0.95f);
+            material.scatteringCoeffs = glm::vec4(0.45f, 0.09f, 0.02f, 0.05f);
+            material.absorptionScale = 0.12f;
+            material.scatteringScale = 0.8f;
+            material.specularRoughness = 0.04f;
+            material.sssIntensity = 1.2f;
+            break;
+
+        case WaterType::CoastalOcean:
+            material.waterColor = glm::vec4(0.02f, 0.06f, 0.10f, 0.92f);
+            material.scatteringCoeffs = glm::vec4(0.35f, 0.12f, 0.05f, 0.15f);
+            material.absorptionScale = 0.18f;
+            material.scatteringScale = 1.2f;
+            material.specularRoughness = 0.05f;
+            material.sssIntensity = 1.4f;
+            break;
+
+        case WaterType::River:
+            material.waterColor = glm::vec4(0.04f, 0.08f, 0.06f, 0.90f);
+            material.scatteringCoeffs = glm::vec4(0.25f, 0.18f, 0.12f, 0.25f);
+            material.absorptionScale = 0.25f;
+            material.scatteringScale = 1.5f;
+            material.specularRoughness = 0.06f;
+            material.sssIntensity = 1.0f;
+            break;
+
+        case WaterType::MuddyRiver:
+            material.waterColor = glm::vec4(0.12f, 0.10f, 0.06f, 0.85f);
+            material.scatteringCoeffs = glm::vec4(0.15f, 0.20f, 0.25f, 0.6f);
+            material.absorptionScale = 0.4f;
+            material.scatteringScale = 2.5f;
+            material.specularRoughness = 0.08f;
+            material.sssIntensity = 0.5f;
+            break;
+
+        case WaterType::ClearStream:
+            material.waterColor = glm::vec4(0.01f, 0.04f, 0.08f, 0.98f);
+            material.scatteringCoeffs = glm::vec4(0.50f, 0.08f, 0.01f, 0.02f);
+            material.absorptionScale = 0.08f;
+            material.scatteringScale = 0.5f;
+            material.specularRoughness = 0.03f;
+            material.sssIntensity = 2.0f;
+            break;
+
+        case WaterType::Lake:
+            material.waterColor = glm::vec4(0.02f, 0.05f, 0.08f, 0.93f);
+            material.scatteringCoeffs = glm::vec4(0.35f, 0.15f, 0.08f, 0.12f);
+            material.absorptionScale = 0.20f;
+            material.scatteringScale = 1.0f;
+            material.specularRoughness = 0.04f;
+            material.sssIntensity = 1.3f;
+            break;
+
+        case WaterType::Swamp:
+            material.waterColor = glm::vec4(0.08f, 0.10f, 0.04f, 0.80f);
+            material.scatteringCoeffs = glm::vec4(0.10f, 0.15f, 0.20f, 0.8f);
+            material.absorptionScale = 0.5f;
+            material.scatteringScale = 3.0f;
+            material.specularRoughness = 0.10f;
+            material.sssIntensity = 0.3f;
+            break;
+
+        case WaterType::Tropical:
+            material.waterColor = glm::vec4(0.0f, 0.08f, 0.12f, 0.97f);
+            material.scatteringCoeffs = glm::vec4(0.55f, 0.06f, 0.03f, 0.03f);
+            material.absorptionScale = 0.06f;
+            material.scatteringScale = 0.4f;
+            material.specularRoughness = 0.03f;
+            material.sssIntensity = 2.5f;
+            break;
+    }
+
+    return material;
+}
+
+void WaterSystem::setPrimaryMaterial(const WaterMaterial& material) {
+    waterUniforms.waterColor = material.waterColor;
+    waterUniforms.scatteringCoeffs = material.scatteringCoeffs;
+    waterUniforms.absorptionScale = material.absorptionScale;
+    waterUniforms.scatteringScale = material.scatteringScale;
+    waterUniforms.specularRoughness = material.specularRoughness;
+    waterUniforms.sssIntensity = material.sssIntensity;
+}
+
+void WaterSystem::setSecondaryMaterial(const WaterMaterial& material) {
+    waterUniforms.waterColor2 = material.waterColor;
+    waterUniforms.scatteringCoeffs2 = material.scatteringCoeffs;
+    waterUniforms.absorptionScale2 = material.absorptionScale;
+    waterUniforms.scatteringScale2 = material.scatteringScale;
+    waterUniforms.specularRoughness2 = material.specularRoughness;
+    waterUniforms.sssIntensity2 = material.sssIntensity;
+}
+
+void WaterSystem::setPrimaryMaterial(WaterType type) {
+    setPrimaryMaterial(getMaterialPreset(type));
+    SDL_Log("Primary water material set to type %d", static_cast<int>(type));
+}
+
+void WaterSystem::setSecondaryMaterial(WaterType type) {
+    setSecondaryMaterial(getMaterialPreset(type));
+    SDL_Log("Secondary water material set to type %d", static_cast<int>(type));
+}
+
+void WaterSystem::setupMaterialTransition(WaterType from, WaterType to, const glm::vec2& center,
+                                           float distance, BlendMode mode) {
+    setPrimaryMaterial(from);
+    setSecondaryMaterial(to);
+    setBlendCenter(center);
+    setBlendDistance(distance);
+    setBlendMode(mode);
+
+    SDL_Log("Material transition set up: type %d -> %d at (%.1f, %.1f), distance %.1fm, mode %d",
+            static_cast<int>(from), static_cast<int>(to),
+            center.x, center.y, distance, static_cast<int>(mode));
 }

@@ -279,23 +279,26 @@ void main() {
     vec3 hdr = texture(hdrInput, fragTexCoord).rgb;
 
     // Apply froxel volumetric fog (Phase 4.3)
-    // Skip sky pixels - they already have atmospheric scattering
     if (ubo.froxelEnabled > 0.5) {
         float depth = texture(depthInput, fragTexCoord).r;
 
         // Sky depth threshold - pixels at or near far plane are sky
         const float SKY_DEPTH_THRESHOLD = 0.9999;
 
-        if (depth < SKY_DEPTH_THRESHOLD) {
-            float linearDepth = linearizeDepth(depth);
-
-            vec4 fog = sampleFroxelFog(fragTexCoord, linearDepth);
-            vec3 inScatter = fog.rgb;
-            float transmittance = fog.a;
-
-            // Apply fog: scene * transmittance + in-scatter
-            hdr = hdr * transmittance + inScatter;
+        // For sky pixels, use far plane depth so fog blends at horizon
+        float linearDepth;
+        if (depth >= SKY_DEPTH_THRESHOLD) {
+            linearDepth = ubo.froxelFarPlane;
+        } else {
+            linearDepth = linearizeDepth(depth);
         }
+
+        vec4 fog = sampleFroxelFog(fragTexCoord, linearDepth);
+        vec3 inScatter = fog.rgb;
+        float transmittance = fog.a;
+
+        // Apply fog: scene * transmittance + in-scatter
+        hdr = hdr * transmittance + inScatter;
     }
 
     // Exposure is computed by histogram compute shaders and passed via uniform

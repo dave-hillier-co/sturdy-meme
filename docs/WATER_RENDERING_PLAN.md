@@ -232,22 +232,38 @@ float causticPattern = texture(causticsTexture, causticsUV1).r *
 
 ---
 
-## Phase 10: Screen-Space Reflections
+## Phase 10: Screen-Space Reflections ✅
+
+**Status:** Implemented. Compute-based SSR with temporal stability.
 
 **Goal:** High-quality dynamic reflections
 
 ### 10.1 SSR Ray Marching
-- Ray march in screen space along reflection direction
-- Hierarchical tracing for performance
-- Fallback to environment map where SSR fails
+- ✅ Linear ray marching in screen space along reflection direction
+- ✅ Binary search refinement for precise hit detection
+- ✅ Adaptive step size (increases with distance)
+- ✅ Fallback to environment map where SSR fails
 
-### 10.2 Reflection Compositing
-- Blend SSR with low-res environment map (64x64)
-- Fresnel-weighted reflection intensity
+### 10.2 SSR Features
+- ✅ Half-resolution rendering for performance
+- ✅ Temporal filtering with previous frame
+- ✅ Distance-based confidence falloff
+- ✅ Edge fading near screen borders
+- ✅ Angle-based confidence (grazing angles preferred)
+
+### 10.3 Implementation Details
+```glsl
+// SSR samples from previous frame for temporal stability
+vec4 ssrSample = texture(ssrTexture, screenUV);
+float ssrConfidence = ssrSample.a;
+// Blend SSR with environment based on confidence
+vec3 finalReflection = mix(envReflection, ssrSample.rgb, ssrConfidence);
+```
 
 **Files:**
-- New: `shaders/water_ssr.comp`
-- Modify: `shaders/water.frag`
+- ✅ `src/SSRSystem.h/cpp` - SSR compute system
+- ✅ `shaders/ssr.comp` - SSR compute shader
+- ✅ `shaders/water.frag` - SSR sampling with environment fallback
 
 ---
 
@@ -489,7 +505,7 @@ vec3 waveSSS = sssTint * sunColor * sssStrength * sssIntensity;
 
 ### Performance/Polish:
 7. **Phase 7** (Screen-Space Tessellation) - Performance optimization
-8. **Phase 10** (SSR) - High-quality reflections
+8. ✅ **Phase 10** (SSR) - High-quality reflections
 9. **Phase 11** (Dual Depth) - Correctness for complex scenes
 10. **Phase 12** (Material Blending) - Multiple water types
 
@@ -506,6 +522,7 @@ Based on current state, the highest-impact remaining improvements are:
 - **Phase 9** (Caustics) - Animated underwater light patterns
 - **Phase 15** (Intersection Foam) - Dynamic foam at shorelines and geometry
 - **Phase 16** (Wake System) - V-shaped wakes with Kelvin angle and bow waves
+- **Phase 10** (SSR) - Screen-space reflections with temporal filtering
 
 ### 1. Foam Texture Quality
 **Why:** The generated Worley noise texture may need tuning. Consider:

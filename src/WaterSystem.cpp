@@ -109,6 +109,7 @@ bool WaterSystem::createDescriptorSetLayout() {
     // 6: Foam noise texture (tileable Worley noise)
     // 7: Temporal foam buffer (Phase 14: persistent foam)
     // 8: Caustics texture (Phase 9: animated underwater light patterns)
+    // 9: SSR texture (Phase 10: screen-space reflections)
 
     auto uboBinding = BindingBuilder()
         .setBinding(0)
@@ -164,10 +165,16 @@ bool WaterSystem::createDescriptorSetLayout() {
         .setStageFlags(VK_SHADER_STAGE_FRAGMENT_BIT)
         .build();
 
-    std::array<VkDescriptorSetLayoutBinding, 9> bindings = {
+    auto ssrTextureBinding = BindingBuilder()
+        .setBinding(9)
+        .setDescriptorType(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER)
+        .setStageFlags(VK_SHADER_STAGE_FRAGMENT_BIT)
+        .build();
+
+    std::array<VkDescriptorSetLayoutBinding, 10> bindings = {
         uboBinding, waterUniformBinding, shadowMapBinding, terrainHeightMapBinding,
         flowMapBinding, displacementMapBinding, foamTextureBinding, temporalFoamBinding,
-        causticsTextureBinding
+        causticsTextureBinding, ssrTextureBinding
     };
 
     VkDescriptorSetLayoutCreateInfo layoutInfo{};
@@ -371,7 +378,9 @@ bool WaterSystem::createDescriptorSets(const std::vector<VkBuffer>& uniformBuffe
                                         VkImageView displacementMapView,
                                         VkSampler displacementMapSampler,
                                         VkImageView temporalFoamView,
-                                        VkSampler temporalFoamSampler) {
+                                        VkSampler temporalFoamSampler,
+                                        VkImageView ssrView,
+                                        VkSampler ssrSampler) {
     // Allocate descriptor sets using managed pool
     descriptorSets = descriptorPool->allocate(descriptorSetLayout, framesInFlight);
     if (descriptorSets.size() != framesInFlight) {
@@ -439,7 +448,13 @@ bool WaterSystem::createDescriptorSets(const std::vector<VkBuffer>& uniformBuffe
         causticsInfo.imageView = causticsTexture.getImageView();
         causticsInfo.sampler = causticsTexture.getSampler();
 
-        std::array<VkWriteDescriptorSet, 9> descriptorWrites{};
+        // SSR texture binding (Phase 10: screen-space reflections)
+        VkDescriptorImageInfo ssrInfo{};
+        ssrInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;  // SSR uses general layout for compute
+        ssrInfo.imageView = ssrView;
+        ssrInfo.sampler = ssrSampler;
+
+        std::array<VkWriteDescriptorSet, 10> descriptorWrites{};
 
         descriptorWrites[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
         descriptorWrites[0].dstSet = descriptorSets[i];
@@ -513,11 +528,19 @@ bool WaterSystem::createDescriptorSets(const std::vector<VkBuffer>& uniformBuffe
         descriptorWrites[8].descriptorCount = 1;
         descriptorWrites[8].pImageInfo = &causticsInfo;
 
+        descriptorWrites[9].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        descriptorWrites[9].dstSet = descriptorSets[i];
+        descriptorWrites[9].dstBinding = 9;
+        descriptorWrites[9].dstArrayElement = 0;
+        descriptorWrites[9].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        descriptorWrites[9].descriptorCount = 1;
+        descriptorWrites[9].pImageInfo = &ssrInfo;
+
         vkUpdateDescriptorSets(device, static_cast<uint32_t>(descriptorWrites.size()),
                                descriptorWrites.data(), 0, nullptr);
     }
 
-    SDL_Log("Water descriptor sets created with terrain heightmap, flow map, displacement map, foam texture, temporal foam, and caustics");
+    SDL_Log("Water descriptor sets created with terrain heightmap, flow map, displacement map, foam texture, temporal foam, caustics, and SSR");
     return true;
 }
 

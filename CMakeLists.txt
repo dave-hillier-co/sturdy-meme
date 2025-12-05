@@ -304,6 +304,7 @@ set(SHADER_FILES
     ${CMAKE_CURRENT_SOURCE_DIR}/shaders/water_position.frag.spv
     ${CMAKE_CURRENT_SOURCE_DIR}/shaders/water_displacement.comp.spv
     ${CMAKE_CURRENT_SOURCE_DIR}/shaders/foam_blur.comp.spv
+    ${CMAKE_CURRENT_SOURCE_DIR}/shaders/ssr.comp.spv
     ${CMAKE_CURRENT_SOURCE_DIR}/shaders/tree.vert.spv
     ${CMAKE_CURRENT_SOURCE_DIR}/shaders/tree.frag.spv
 )
@@ -484,6 +485,14 @@ if(SHADER_COMPILE_CMD)
         COMMAND ${GLSLANG_VALIDATOR} --target-env vulkan1.2 -V -o ${CMAKE_CURRENT_SOURCE_DIR}/shaders/foam_blur.comp.spv ${CMAKE_CURRENT_SOURCE_DIR}/shaders/foam_blur.comp
         DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/shaders/foam_blur.comp
         COMMENT "Compiling foam blur compute shader"
+    )
+
+    # SSR compute shader (Phase 10: Screen-Space Reflections)
+    add_custom_command(
+        OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/shaders/ssr.comp.spv
+        COMMAND ${GLSLANG_VALIDATOR} --target-env vulkan1.2 -V -o ${CMAKE_CURRENT_SOURCE_DIR}/shaders/ssr.comp.spv ${CMAKE_CURRENT_SOURCE_DIR}/shaders/ssr.comp
+        DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/shaders/ssr.comp
+        COMMENT "Compiling SSR compute shader"
     )
 
     # Terrain shaders (LEB terrain system)

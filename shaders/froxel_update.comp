@@ -73,7 +73,7 @@ float sliceToDepth(float slice) {
 float exponentialHeightDensity(float height) {
     float baseHeight = ubo.fogParams.x;
     float scaleHeight = ubo.fogParams.y;
-    float density = ubo.fogParams.z * 50.0;  // Amplify density for visible fog
+    float density = ubo.fogParams.z * 5.0;  // Moderate amplification
     float relHeight = height - baseHeight;
     return density * exp(-max(relHeight, 0.0) / scaleHeight);
 }
@@ -121,7 +121,7 @@ float fbm(vec3 p, int octaves) {
 float volumetricGroundFog(vec3 worldPos) {
     float layerHeight = ubo.layerParams.x;
     float layerThickness = ubo.layerParams.y;
-    float layerDensity = ubo.layerParams.z * 50.0;
+    float layerDensity = ubo.layerParams.z * 5.0;  // Moderate amplification
 
     // Height-based falloff - fog exists at and BELOW layerHeight
     // layerHeight is the TOP of the fog layer

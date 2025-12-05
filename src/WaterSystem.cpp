@@ -18,14 +18,15 @@ bool WaterSystem::init(const InitInfo& info) {
     commandPool = info.commandPool;
     graphicsQueue = info.graphicsQueue;
     waterSize = info.waterSize;
+    assetPath = info.assetPath;
 
     // Initialize default water parameters
     waterUniforms.waterColor = glm::vec4(0.1f, 0.3f, 0.5f, 0.85f);  // Blue-green, semi-transparent
-    waterUniforms.waveParams = glm::vec4(0.5f, 8.0f, 0.4f, 1.0f);   // amplitude, wavelength, steepness, speed
-    waterUniforms.waveParams2 = glm::vec4(0.3f, 5.0f, 0.3f, 1.2f);  // Secondary wave
+    waterUniforms.waveParams = glm::vec4(0.15f, 4.0f, 0.3f, 0.8f);   // amplitude, wavelength, steepness, speed (calmer)
+    waterUniforms.waveParams2 = glm::vec4(0.08f, 2.5f, 0.25f, 1.0f);  // Secondary wave (smaller)
     waterUniforms.waterExtent = glm::vec4(0.0f, 0.0f, 100.0f, 100.0f);  // position, size
     waterUniforms.waterLevel = 0.0f;
-    waterUniforms.foamThreshold = 0.3f;
+    waterUniforms.foamThreshold = 0.1f;  // Reduced to match smaller wave amplitude
     waterUniforms.fresnelPower = 5.0f;
     waterUniforms.terrainSize = 16384.0f;      // Default terrain size
     waterUniforms.terrainHeightScale = 220.0f; // Default height scale
@@ -50,11 +51,15 @@ bool WaterSystem::init(const InitInfo& info) {
     if (!createPipeline()) return false;
     if (!createWaterMesh()) return false;
     if (!createUniformBuffers()) return false;
+    if (!loadFoamTexture()) return false;
 
     return true;
 }
 
 void WaterSystem::destroy(VkDevice device, VmaAllocator allocator) {
+    // Destroy foam texture
+    foamTexture.destroy(allocator, device);
+
     // Destroy uniform buffers
     for (size_t i = 0; i < waterUniformBuffers.size(); i++) {
         if (waterUniformBuffers[i] != VK_NULL_HANDLE) {
@@ -91,6 +96,9 @@ bool WaterSystem::createDescriptorSetLayout() {
     // 2: Shadow map array (for shadow sampling)
     // 3: Terrain heightmap (for shore detection)
     // 4: Flow map (for water flow direction and speed)
+    // 5: Displacement map (for interactive splashes)
+    // 6: Foam noise texture (tileable Worley noise)
+    // 7: Temporal foam buffer (Phase 14: persistent foam)
 
     auto uboBinding = BindingBuilder()
         .setBinding(0)
@@ -128,8 +136,21 @@ bool WaterSystem::createDescriptorSetLayout() {
         .setStageFlags(VK_SHADER_STAGE_VERTEX_BIT)
         .build();
 
-    std::array<VkDescriptorSetLayoutBinding, 6> bindings = {
-        uboBinding, waterUniformBinding, shadowMapBinding, terrainHeightMapBinding, flowMapBinding, displacementMapBinding
+    auto foamTextureBinding = BindingBuilder()
+        .setBinding(6)
+        .setDescriptorType(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER)
+        .setStageFlags(VK_SHADER_STAGE_FRAGMENT_BIT)
+        .build();
+
+    auto temporalFoamBinding = BindingBuilder()
+        .setBinding(7)
+        .setDescriptorType(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER)
+        .setStageFlags(VK_SHADER_STAGE_FRAGMENT_BIT)
+        .build();
+
+    std::array<VkDescriptorSetLayoutBinding, 8> bindings = {
+        uboBinding, waterUniformBinding, shadowMapBinding, terrainHeightMapBinding,
+        flowMapBinding, displacementMapBinding, foamTextureBinding, temporalFoamBinding
     };
 
     VkDescriptorSetLayoutCreateInfo layoutInfo{};
@@ -285,6 +306,25 @@ bool WaterSystem::createUniformBuffers() {
     return true;
 }
 
+bool WaterSystem::loadFoamTexture() {
+    std::string foamPath = assetPath + "/textures/foam_noise.png";
+
+    // Try to load the foam texture, fall back to white if not found
+    if (!foamTexture.load(foamPath, allocator, device, commandPool, graphicsQueue, physicalDevice, false)) {
+        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                    "Foam texture not found at %s, creating fallback white texture", foamPath.c_str());
+        // Create a 1x1 white texture as fallback
+        if (!foamTexture.createSolidColor(255, 255, 255, 255, allocator, device, commandPool, graphicsQueue)) {
+            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create fallback foam texture");
+            return false;
+        }
+    } else {
+        SDL_Log("Loaded foam texture from %s", foamPath.c_str());
+    }
+
+    return true;
+}
+
 bool WaterSystem::createDescriptorSets(const std::vector<VkBuffer>& uniformBuffers,
                                         VkDeviceSize uniformBufferSize,
                                         ShadowSystem& shadowSystem,
@@ -293,7 +333,9 @@ bool WaterSystem::createDescriptorSets(const std::vector<VkBuffer>& uniformBuffe
                                         VkImageView flowMapView,
                                         VkSampler flowMapSampler,
                                         VkImageView displacementMapView,
-                                        VkSampler displacementMapSampler) {
+                                        VkSampler displacementMapSampler,
+                                        VkImageView temporalFoamView,
+                                        VkSampler temporalFoamSampler) {
     // Allocate descriptor sets using managed pool
     descriptorSets = descriptorPool->allocate(descriptorSetLayout, framesInFlight);
     if (descriptorSets.size() != framesInFlight) {
@@ -343,7 +385,19 @@ bool WaterSystem::createDescriptorSets(const std::vector<VkBuffer>& uniformBuffe
         displacementInfo.imageView = displacementMapView;
         displacementInfo.sampler = displacementMapSampler;
 
-        std::array<VkWriteDescriptorSet, 6> descriptorWrites{};
+        // Foam noise texture binding
+        VkDescriptorImageInfo foamInfo{};
+        foamInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        foamInfo.imageView = foamTexture.getImageView();
+        foamInfo.sampler = foamTexture.getSampler();
+
+        // Temporal foam buffer binding (Phase 14: persistent foam)
+        VkDescriptorImageInfo temporalFoamInfo{};
+        temporalFoamInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        temporalFoamInfo.imageView = temporalFoamView;
+        temporalFoamInfo.sampler = temporalFoamSampler;
+
+        std::array<VkWriteDescriptorSet, 8> descriptorWrites{};
 
         descriptorWrites[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
         descriptorWrites[0].dstSet = descriptorSets[i];
@@ -393,11 +447,27 @@ bool WaterSystem::createDescriptorSets(const std::vector<VkBuffer>& uniformBuffe
         descriptorWrites[5].descriptorCount = 1;
         descriptorWrites[5].pImageInfo = &displacementInfo;
 
+        descriptorWrites[6].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        descriptorWrites[6].dstSet = descriptorSets[i];
+        descriptorWrites[6].dstBinding = 6;
+        descriptorWrites[6].dstArrayElement = 0;
+        descriptorWrites[6].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        descriptorWrites[6].descriptorCount = 1;
+        descriptorWrites[6].pImageInfo = &foamInfo;
+
+        descriptorWrites[7].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        descriptorWrites[7].dstSet = descriptorSets[i];
+        descriptorWrites[7].dstBinding = 7;
+        descriptorWrites[7].dstArrayElement = 0;
+        descriptorWrites[7].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        descriptorWrites[7].descriptorCount = 1;
+        descriptorWrites[7].pImageInfo = &temporalFoamInfo;
+
         vkUpdateDescriptorSets(device, static_cast<uint32_t>(descriptorWrites.size()),
                                descriptorWrites.data(), 0, nullptr);
     }
 
-    SDL_Log("Water descriptor sets created with terrain heightmap, flow map, and displacement map");
+    SDL_Log("Water descriptor sets created with terrain heightmap, flow map, displacement map, foam texture, and temporal foam");
     return true;
 }
 

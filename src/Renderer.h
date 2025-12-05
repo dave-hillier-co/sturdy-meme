@@ -46,6 +46,7 @@
 #include "WaterSystem.h"
 #include "WaterDisplacement.h"
 #include "FlowMapGenerator.h"
+#include "FoamBuffer.h"
 #include "TreeEditSystem.h"
 
 struct PushConstants {
@@ -337,6 +338,7 @@ private:
     WaterSystem waterSystem;
     WaterDisplacement waterDisplacement;
     FlowMapGenerator flowMapGenerator;
+    FoamBuffer foamBuffer;
     ErosionSimulator erosionSimulator;
     TreeEditSystem treeEditSystem;
     EnvironmentSettings environmentSettings;

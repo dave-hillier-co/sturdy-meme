@@ -19,7 +19,7 @@ struct IKDebugSettings {
 
     // IK feature enables
     bool lookAtEnabled = false;
-    bool footPlacementEnabled = false;
+    bool footPlacementEnabled = true;
     bool straddleEnabled = false;
 
     // Look-at target mode

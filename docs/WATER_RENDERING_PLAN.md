@@ -24,8 +24,8 @@ This plan implements screen-space water rendering with flow maps, procedural foa
 | 10 | Screen-Space Reflections | ❌ Not started |
 | 11 | Dual Depth Buffer | ❌ Not started |
 | 12 | Material Blending | ❌ Not started |
-| 13 | Jacobian Foam | ❌ Not started |
-| 14 | Temporal Foam Persistence | ❌ Not started |
+| 13 | Jacobian Foam | ✅ Implemented |
+| 14 | Temporal Foam Persistence | ✅ Implemented |
 | 15 | Intersection Foam | ❌ Not started |
 | 16 | Wake/Trail System | ❌ Not started |
 | 17 | Enhanced SSS | ❌ Not started |

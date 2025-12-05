@@ -98,6 +98,7 @@ bool WaterSystem::createDescriptorSetLayout() {
     // 4: Flow map (for water flow direction and speed)
     // 5: Displacement map (for interactive splashes)
     // 6: Foam noise texture (tileable Worley noise)
+    // 7: Temporal foam buffer (Phase 14: persistent foam)
 
     auto uboBinding = BindingBuilder()
         .setBinding(0)
@@ -141,9 +142,15 @@ bool WaterSystem::createDescriptorSetLayout() {
         .setStageFlags(VK_SHADER_STAGE_FRAGMENT_BIT)
         .build();
 
-    std::array<VkDescriptorSetLayoutBinding, 7> bindings = {
+    auto temporalFoamBinding = BindingBuilder()
+        .setBinding(7)
+        .setDescriptorType(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER)
+        .setStageFlags(VK_SHADER_STAGE_FRAGMENT_BIT)
+        .build();
+
+    std::array<VkDescriptorSetLayoutBinding, 8> bindings = {
         uboBinding, waterUniformBinding, shadowMapBinding, terrainHeightMapBinding,
-        flowMapBinding, displacementMapBinding, foamTextureBinding
+        flowMapBinding, displacementMapBinding, foamTextureBinding, temporalFoamBinding
     };
 
     VkDescriptorSetLayoutCreateInfo layoutInfo{};
@@ -326,7 +333,9 @@ bool WaterSystem::createDescriptorSets(const std::vector<VkBuffer>& uniformBuffe
                                         VkImageView flowMapView,
                                         VkSampler flowMapSampler,
                                         VkImageView displacementMapView,
-                                        VkSampler displacementMapSampler) {
+                                        VkSampler displacementMapSampler,
+                                        VkImageView temporalFoamView,
+                                        VkSampler temporalFoamSampler) {
     // Allocate descriptor sets using managed pool
     descriptorSets = descriptorPool->allocate(descriptorSetLayout, framesInFlight);
     if (descriptorSets.size() != framesInFlight) {
@@ -382,7 +391,13 @@ bool WaterSystem::createDescriptorSets(const std::vector<VkBuffer>& uniformBuffe
         foamInfo.imageView = foamTexture.getImageView();
         foamInfo.sampler = foamTexture.getSampler();
 
-        std::array<VkWriteDescriptorSet, 7> descriptorWrites{};
+        // Temporal foam buffer binding (Phase 14: persistent foam)
+        VkDescriptorImageInfo temporalFoamInfo{};
+        temporalFoamInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        temporalFoamInfo.imageView = temporalFoamView;
+        temporalFoamInfo.sampler = temporalFoamSampler;
+
+        std::array<VkWriteDescriptorSet, 8> descriptorWrites{};
 
         descriptorWrites[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
         descriptorWrites[0].dstSet = descriptorSets[i];
@@ -440,11 +455,19 @@ bool WaterSystem::createDescriptorSets(const std::vector<VkBuffer>& uniformBuffe
         descriptorWrites[6].descriptorCount = 1;
         descriptorWrites[6].pImageInfo = &foamInfo;
 
+        descriptorWrites[7].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        descriptorWrites[7].dstSet = descriptorSets[i];
+        descriptorWrites[7].dstBinding = 7;
+        descriptorWrites[7].dstArrayElement = 0;
+        descriptorWrites[7].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        descriptorWrites[7].descriptorCount = 1;
+        descriptorWrites[7].pImageInfo = &temporalFoamInfo;
+
         vkUpdateDescriptorSets(device, static_cast<uint32_t>(descriptorWrites.size()),
                                descriptorWrites.data(), 0, nullptr);
     }
 
-    SDL_Log("Water descriptor sets created with terrain heightmap, flow map, displacement map, and foam texture");
+    SDL_Log("Water descriptor sets created with terrain heightmap, flow map, displacement map, foam texture, and temporal foam");
     return true;
 }
 

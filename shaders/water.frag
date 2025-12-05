@@ -47,11 +47,13 @@ layout(binding = 2) uniform sampler2DArrayShadow shadowMapArray;
 layout(binding = 3) uniform sampler2D terrainHeightMap;
 layout(binding = 4) uniform sampler2D flowMap;
 layout(binding = 6) uniform sampler2D foamNoiseTexture;
+layout(binding = 7) uniform sampler2D temporalFoamMap;  // Phase 14: Persistent foam
 
 layout(location = 0) in vec3 fragWorldPos;
 layout(location = 1) in vec3 fragNormal;
 layout(location = 2) in vec2 fragTexCoord;
 layout(location = 3) in float fragWaveHeight;
+layout(location = 4) in float fragJacobian;  // Phase 13: Jacobian for foam detection
 
 layout(location = 0) out vec4 outColor;
 
@@ -340,9 +342,10 @@ void main() {
     vec3 ambient = baseColor * ubo.ambientColor.rgb * 0.4 * depthDarkening;
 
     // =========================================================================
-    // FOAM - Texture-based foam system with flow animation
-    // Uses tileable Worley noise texture sampled at multiple scales
-    // Based on Far Cry 5 approach: "noise texture modulated by noise texture"
+    // FOAM - Jacobian + texture-based foam system (Phase 13)
+    // Uses Jacobian from vertex shader to detect wave folding (whitecaps)
+    // Combined with tileable noise texture for organic appearance
+    // Based on Sea of Thieves + Far Cry 5 approaches
     // =========================================================================
     vec3 foamColor = vec3(0.9, 0.95, 1.0);
     float totalFoamAmount = 0.0;
@@ -368,8 +371,25 @@ void main() {
     // Add some contrast
     combinedFoamNoise = smoothstep(0.2, 0.8, combinedFoamNoise);
 
-    // --- Wave peak foam ---
-    float waveFoamAmount = smoothstep(foamThreshold * 0.7, foamThreshold, fragWaveHeight);
+    // --- Phase 13: Jacobian-based wave foam (whitecaps) ---
+    // Jacobian < 0 means wave surface is folding over itself
+    // Jacobian = 0 is the threshold where folding begins
+    // We use foamThreshold as a bias to control foam amount (negative = more foam)
+    float jacobianBias = -foamThreshold;  // Convert threshold to bias (0.1 threshold -> -0.1 bias)
+    float jacobianFoam = smoothstep(jacobianBias, jacobianBias + 0.3, -fragJacobian);
+
+    // Also add foam based on wave height for steep waves that haven't folded yet
+    float heightFoam = smoothstep(foamThreshold * 2.0, foamThreshold * 4.0, fragWaveHeight);
+
+    // --- Phase 14: Sample temporal foam buffer for persistent foam ---
+    // The foam buffer accumulates foam over time and blurs it for natural dissipation
+    vec2 temporalFoamUV = (fragWorldPos.xz - waterExtent.xy) / waterExtent.zw + 0.5;
+    temporalFoamUV = clamp(temporalFoamUV, 0.0, 1.0);
+    float temporalFoam = texture(temporalFoamMap, temporalFoamUV).r;
+
+    // Combine Jacobian foam with temporal persistence
+    // Fresh Jacobian foam is sharp, temporal foam is the accumulated/blurred version
+    float waveFoamAmount = max(jacobianFoam, max(heightFoam * 0.5, temporalFoam));
     // Modulate by foam texture for organic wave caps
     waveFoamAmount *= smoothstep(0.3, 0.7, combinedFoamNoise);
 

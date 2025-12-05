@@ -14,11 +14,24 @@
 #include "bindings.glsl"
 
 layout(std140, binding = BINDING_WATER_UBO) uniform WaterUniforms {
+    // Primary material properties
     vec4 waterColor;
     vec4 waveParams;
     vec4 waveParams2;
     vec4 waterExtent;
     vec4 scatteringCoeffs;
+
+    // Phase 12: Secondary material for blending
+    vec4 waterColor2;
+    vec4 scatteringCoeffs2;
+    vec4 blendCenter;
+    float absorptionScale2;
+    float scatteringScale2;
+    float specularRoughness2;
+    float sssIntensity2;
+    float blendDistance;
+    int blendMode;
+
     float waterLevel;
     float foamThreshold;
     float fresnelPower;
@@ -34,6 +47,11 @@ layout(std140, binding = BINDING_WATER_UBO) uniform WaterUniforms {
     float specularRoughness;
     float absorptionScale;
     float scatteringScale;
+    float displacementScale;
+    float sssIntensity;
+    float causticsScale;
+    float causticsSpeed;
+    float causticsIntensity;
     float padding;
 } water;
 

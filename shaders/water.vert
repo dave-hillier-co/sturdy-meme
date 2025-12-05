@@ -13,27 +13,40 @@
 
 // Water-specific uniforms
 layout(std140, binding = BINDING_WATER_UBO) uniform WaterUniforms {
+    // Primary material properties
     vec4 waterColor;           // rgb = base water color, a = transparency
     vec4 waveParams;           // x = amplitude, y = wavelength, z = steepness, w = speed
     vec4 waveParams2;          // Second wave layer parameters
     vec4 waterExtent;          // xy = position offset, zw = size
     vec4 scatteringCoeffs;     // rgb = absorption coefficients, a = turbidity
+
+    // Phase 12: Secondary material for blending
+    vec4 waterColor2;          // Secondary water color
+    vec4 scatteringCoeffs2;    // Secondary scattering coefficients
+    vec4 blendCenter;          // xy = world position, z = blend direction angle, w = unused
+    float absorptionScale2;    // Secondary absorption scale
+    float scatteringScale2;    // Secondary scattering scale
+    float specularRoughness2;  // Secondary specular roughness
+    float sssIntensity2;       // Secondary SSS intensity
+    float blendDistance;       // Distance over which materials blend (world units)
+    int blendMode;             // 0 = distance from center, 1 = directional, 2 = radial
+
     float waterLevel;          // Y height of water plane
     float foamThreshold;       // Wave height threshold for foam
     float fresnelPower;        // Fresnel reflection power
     float terrainSize;         // Terrain size for UV calculation
     float terrainHeightScale;  // Terrain height scale
-    float shoreBlendDistance;  // Distance over which shore fades
-    float shoreFoamWidth;      // Width of shore foam band
-    float flowStrength;        // How much flow affects UV offset
+    float shoreBlendDistance;  // Distance over which shore fades (world units)
+    float shoreFoamWidth;      // Width of shore foam band (world units)
+    float flowStrength;        // How much flow affects UV offset (world units)
     float flowSpeed;           // Flow animation speed multiplier
     float flowFoamStrength;    // How much flow speed affects foam
-    float fbmNearDistance;     // Distance for max FBM detail
-    float fbmFarDistance;      // Distance for min FBM detail
+    float fbmNearDistance;     // Distance for max FBM detail (9 octaves)
+    float fbmFarDistance;      // Distance for min FBM detail (3 octaves)
     float specularRoughness;   // Base roughness for specular
-    float absorptionScale;     // How quickly light is absorbed
-    float scatteringScale;     // How much light scatters
-    float displacementScale;   // Scale for interactive displacement (Phase 4)
+    float absorptionScale;     // How quickly light is absorbed with depth
+    float scatteringScale;     // Turbidity multiplier
+    float displacementScale;   // Scale for interactive displacement
     float sssIntensity;        // Phase 17: Subsurface scattering intensity
     float causticsScale;       // Phase 9: Caustics pattern scale
     float causticsSpeed;       // Phase 9: Caustics animation speed

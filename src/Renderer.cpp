@@ -530,6 +530,7 @@ bool Renderer::init(SDL_Window* win, const std::string& resPath) {
     waterInfo.commandPool = commandPool;
     waterInfo.graphicsQueue = graphicsQueue;
     waterInfo.waterSize = 65536.0f;  // Extend well beyond terrain for horizon
+    waterInfo.assetPath = resourcePath;
 
     if (!waterSystem.init(waterInfo)) return false;
 
@@ -597,11 +598,29 @@ bool Renderer::init(SDL_Window* win, const std::string& resPath) {
         return false;
     }
 
-    // Create water descriptor sets with terrain heightmap, flow map, and displacement map
+    // Initialize foam buffer (Phase 14: temporal foam persistence)
+    FoamBuffer::InitInfo foamInfo{};
+    foamInfo.device = device;
+    foamInfo.physicalDevice = physicalDevice;
+    foamInfo.allocator = allocator;
+    foamInfo.commandPool = commandPool;
+    foamInfo.computeQueue = graphicsQueue;
+    foamInfo.shaderPath = resourcePath + "/shaders";
+    foamInfo.framesInFlight = MAX_FRAMES_IN_FLIGHT;
+    foamInfo.resolution = 512;
+    foamInfo.worldSize = 65536.0f;
+
+    if (!foamBuffer.init(foamInfo)) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to initialize foam buffer");
+        return false;
+    }
+
+    // Create water descriptor sets with terrain heightmap, flow map, displacement map, and temporal foam
     if (!waterSystem.createDescriptorSets(uniformBuffers, sizeof(UniformBufferObject), shadowSystem,
                                           terrainSystem.getHeightMapView(), terrainSystem.getHeightMapSampler(),
                                           flowMapGenerator.getFlowMapView(), flowMapGenerator.getFlowMapSampler(),
-                                          waterDisplacement.getDisplacementMapView(), waterDisplacement.getSampler())) return false;
+                                          waterDisplacement.getDisplacementMapView(), waterDisplacement.getSampler(),
+                                          foamBuffer.getFoamBufferView(), foamBuffer.getSampler())) return false;
 
     // Initialize tree edit system
     TreeEditSystem::InitInfo treeEditInfo{};
@@ -700,6 +719,7 @@ void Renderer::shutdown() {
         profiler.shutdown();
         waterSystem.destroy(device, allocator);
         waterDisplacement.destroy();
+        foamBuffer.destroy();
         flowMapGenerator.destroy(device, allocator);
         treeEditSystem.destroy(device, allocator);
         atmosphereLUTSystem.destroy(device, allocator);
@@ -1526,6 +1546,12 @@ void Renderer::render(const Camera& camera) {
     profiler.beginGpuZone(cmd, "LeafCompute");
     leafSystem.recordResetAndCompute(cmd, frame.frameIndex, frame.time, frame.deltaTime);
     profiler.endGpuZone(cmd, "LeafCompute");
+
+    // Water foam persistence compute pass (Phase 14)
+    profiler.beginGpuZone(cmd, "FoamCompute");
+    foamBuffer.recordCompute(cmd, frame.frameIndex, frame.deltaTime,
+                             flowMapGenerator.getFlowMapView(), flowMapGenerator.getFlowMapSampler());
+    profiler.endGpuZone(cmd, "FoamCompute");
 
     // Cloud shadow map compute pass
     if (cloudShadowSystem.isEnabled()) {

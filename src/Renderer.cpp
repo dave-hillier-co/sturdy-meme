@@ -615,12 +615,30 @@ bool Renderer::init(SDL_Window* win, const std::string& resPath) {
         return false;
     }
 
-    // Create water descriptor sets with terrain heightmap, flow map, displacement map, and temporal foam
+    // Initialize SSR system (Phase 10: Screen-Space Reflections)
+    SSRSystem::InitInfo ssrInfo{};
+    ssrInfo.device = device;
+    ssrInfo.physicalDevice = physicalDevice;
+    ssrInfo.allocator = allocator;
+    ssrInfo.commandPool = commandPool;
+    ssrInfo.computeQueue = graphicsQueue;
+    ssrInfo.shaderPath = resourcePath + "/shaders";
+    ssrInfo.framesInFlight = MAX_FRAMES_IN_FLIGHT;
+    ssrInfo.extent = swapchainExtent;
+
+    if (!ssrSystem.init(ssrInfo)) {
+        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "Failed to initialize SSR system - continuing without SSR");
+        // Don't fail init - SSR is optional
+    }
+
+    // Create water descriptor sets with terrain heightmap, flow map, displacement map, temporal foam, SSR, and scene depth
     if (!waterSystem.createDescriptorSets(uniformBuffers, sizeof(UniformBufferObject), shadowSystem,
                                           terrainSystem.getHeightMapView(), terrainSystem.getHeightMapSampler(),
                                           flowMapGenerator.getFlowMapView(), flowMapGenerator.getFlowMapSampler(),
                                           waterDisplacement.getDisplacementMapView(), waterDisplacement.getSampler(),
-                                          foamBuffer.getFoamBufferView(), foamBuffer.getSampler())) return false;
+                                          foamBuffer.getFoamBufferView(), foamBuffer.getSampler(),
+                                          ssrSystem.getSSRResultView(), ssrSystem.getSampler(),
+                                          postProcessSystem.getHDRDepthView(), depthSampler)) return false;
 
     // Initialize tree edit system
     TreeEditSystem::InitInfo treeEditInfo{};
@@ -720,6 +738,7 @@ void Renderer::shutdown() {
         waterSystem.destroy(device, allocator);
         waterDisplacement.destroy();
         foamBuffer.destroy();
+        ssrSystem.destroy();
         flowMapGenerator.destroy(device, allocator);
         treeEditSystem.destroy(device, allocator);
         atmosphereLUTSystem.destroy(device, allocator);
@@ -1620,6 +1639,18 @@ void Renderer::render(const Camera& camera) {
     recordHDRPass(cmd, frame.frameIndex, frame.time);
     profiler.endGpuZone(cmd, "HDRPass");
 
+    // Screen-Space Reflections compute pass (Phase 10)
+    // Computes SSR for next frame's water - uses current scene for temporal stability
+    if (ssrSystem.isEnabled()) {
+        profiler.beginGpuZone(cmd, "SSR");
+        ssrSystem.recordCompute(cmd, frame.frameIndex,
+                                postProcessSystem.getHDRColorView(),
+                                postProcessSystem.getHDRDepthView(),
+                                frame.view, frame.projection,
+                                frame.cameraPosition);
+        profiler.endGpuZone(cmd, "SSR");
+    }
+
     // Generate Hi-Z pyramid from scene depth (before bloom to ensure bloom doesn't affect it)
     profiler.beginGpuZone(cmd, "HiZPyramid");
     hiZSystem.recordPyramidGeneration(cmd, frame.frameIndex);
@@ -1802,6 +1833,9 @@ bool Renderer::handleResize() {
 
     // Resize Hi-Z system (occlusion culling)
     hiZSystem.resize(newExtent);
+
+    // Resize SSR system (screen-space reflections)
+    ssrSystem.resize(newExtent);
 
     // Update extent on all rendering subsystems for viewport/scissor
     terrainSystem.setExtent(newExtent);

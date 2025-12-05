@@ -20,11 +20,24 @@
 
 // Water-specific uniforms
 layout(std140, binding = 1) uniform WaterUniforms {
+    // Primary material properties
     vec4 waterColor;           // rgb = base water color, a = transparency
     vec4 waveParams;           // x = amplitude, y = wavelength, z = steepness, w = speed
     vec4 waveParams2;          // Second wave layer parameters
     vec4 waterExtent;          // xy = position offset, zw = size
     vec4 scatteringCoeffs;     // rgb = absorption coefficients, a = turbidity
+
+    // Phase 12: Secondary material for blending
+    vec4 waterColor2;          // Secondary water color
+    vec4 scatteringCoeffs2;    // Secondary scattering coefficients
+    vec4 blendCenter;          // xy = world position, z = blend direction angle, w = unused
+    float absorptionScale2;    // Secondary absorption scale
+    float scatteringScale2;    // Secondary scattering scale
+    float specularRoughness2;  // Secondary specular roughness
+    float sssIntensity2;       // Secondary SSS intensity
+    float blendDistance;       // Distance over which materials blend (world units)
+    int blendMode;             // 0 = distance from center, 1 = directional, 2 = radial
+
     float waterLevel;          // Y height of water plane
     float foamThreshold;       // Wave height threshold for foam
     float fresnelPower;        // Fresnel reflection power
@@ -40,7 +53,12 @@ layout(std140, binding = 1) uniform WaterUniforms {
     float specularRoughness;   // Base roughness for specular
     float absorptionScale;     // How quickly light is absorbed with depth
     float scatteringScale;     // Turbidity multiplier
-    float padding;
+    float displacementScale;   // Scale for interactive displacement
+    float sssIntensity;        // Phase 17: Subsurface scattering intensity
+    float causticsScale;       // Phase 9: Caustics pattern scale
+    float causticsSpeed;       // Phase 9: Caustics animation speed
+    float causticsIntensity;   // Phase 9: Caustics brightness
+    float padding;             // Alignment padding
 };
 
 layout(binding = 2) uniform sampler2DArrayShadow shadowMapArray;
@@ -48,12 +66,16 @@ layout(binding = 3) uniform sampler2D terrainHeightMap;
 layout(binding = 4) uniform sampler2D flowMap;
 layout(binding = 6) uniform sampler2D foamNoiseTexture;
 layout(binding = 7) uniform sampler2D temporalFoamMap;  // Phase 14: Persistent foam
+layout(binding = 8) uniform sampler2D causticsTexture;  // Phase 9: Underwater light patterns
+layout(binding = 9) uniform sampler2D ssrTexture;       // Phase 10: Screen-Space Reflections
+layout(binding = 10) uniform sampler2D sceneDepthTexture; // Phase 11: Scene depth for refraction
 
 layout(location = 0) in vec3 fragWorldPos;
 layout(location = 1) in vec3 fragNormal;
 layout(location = 2) in vec2 fragTexCoord;
 layout(location = 3) in float fragWaveHeight;
 layout(location = 4) in float fragJacobian;  // Phase 13: Jacobian for foam detection
+layout(location = 5) in float fragWaveSlope; // Phase 17: Wave slope for SSS
 
 layout(location = 0) out vec4 outColor;
 
@@ -89,13 +111,57 @@ float fbm(vec2 p, int octaves) {
     return value;
 }
 
+// =========================================================================
+// PHASE 11: Dual Depth Buffer Functions
+// Scene depth sampling for refraction and soft edges
+// =========================================================================
+
+// Saturate helper (clamp to 0-1)
+float saturate(float x) { return clamp(x, 0.0, 1.0); }
+vec2 saturate(vec2 x) { return clamp(x, 0.0, 1.0); }
+vec3 saturate(vec3 x) { return clamp(x, 0.0, 1.0); }
+
+// Convert hardware depth to linear depth (view space)
+float linearizeDepth(float depth, float near, float far) {
+    // Vulkan uses [0,1] depth range with reverse-Z typically
+    float z = depth;
+    return near * far / (far - z * (far - near));
+}
+
+// Get scene depth at screen UV
+float getSceneDepth(vec2 screenUV, float near, float far) {
+    float rawDepth = texture(sceneDepthTexture, screenUV).r;
+    return linearizeDepth(rawDepth, near, far);
+}
+
+// Calculate soft edge factor for water-geometry intersection
+// Returns 0.0 at geometry intersection, 1.0 away from geometry
+float calculateSoftEdge(vec2 screenUV, float waterDepth, float softEdgeDistance, float near, float far) {
+    float sceneDepth = getSceneDepth(screenUV, near, far);
+    float depthDiff = sceneDepth - waterDepth;
+    return smoothstep(0.0, softEdgeDistance, depthDiff);
+}
+
+// Calculate refraction UV offset based on scene depth
+// Deeper water = more refraction distortion
+vec2 calculateRefractionOffset(vec2 screenUV, vec3 normal, float waterDepth, float near, float far) {
+    float sceneDepth = getSceneDepth(screenUV, near, far);
+    float depthDiff = max(0.0, sceneDepth - waterDepth);
+
+    // Scale refraction by depth difference (more distortion through deeper water)
+    float refractionStrength = saturate(depthDiff * 0.1) * 0.05;
+
+    // Offset UV based on normal XZ (horizontal distortion)
+    return normal.xz * refractionStrength;
+}
+
 // Schlick's Fresnel approximation
 float fresnelSchlick(float cosTheta, float F0) {
     return F0 + (1.0 - F0) * pow(clamp(1.0 - cosTheta, 0.0, 1.0), fresnelPower);
 }
 
 // Sample environment reflection (simplified sky reflection)
-vec3 sampleReflection(vec3 reflectDir, vec3 sunDir, vec3 sunColor) {
+vec3 sampleEnvironmentReflection(vec3 reflectDir, vec3 sunDir, vec3 sunColor) {
     // Simplified sky color based on reflection direction
     float skyGradient = smoothstep(-0.1, 0.5, reflectDir.y);
 
@@ -114,6 +180,29 @@ vec3 sampleReflection(vec3 reflectDir, vec3 sunDir, vec3 sunColor) {
     vec3 sunReflect = sunColor * pow(sunDot, 256.0) * 2.0;  // Tight specular
 
     return skyColor + sunReflect;
+}
+
+// =========================================================================
+// PHASE 10: Screen-Space Reflections
+// Sample SSR texture and blend with environment fallback
+// =========================================================================
+vec3 sampleReflection(vec3 reflectDir, vec3 sunDir, vec3 sunColor, vec2 screenUV) {
+    // Get environment reflection as fallback
+    vec3 envReflection = sampleEnvironmentReflection(reflectDir, sunDir, sunColor);
+
+    // Sample SSR texture
+    // SSR texture stores: rgb = reflection color, a = confidence (0 = no hit)
+    vec4 ssrSample = texture(ssrTexture, screenUV);
+    float ssrConfidence = ssrSample.a;
+
+    // Fade SSR based on reflection angle (SSR works best for grazing angles)
+    float angleFade = 1.0 - abs(reflectDir.y);  // Less confident for vertical reflections
+    ssrConfidence *= angleFade;
+
+    // Blend SSR with environment based on confidence
+    vec3 finalReflection = mix(envReflection, ssrSample.rgb, ssrConfidence);
+
+    return finalReflection;
 }
 
 // =========================================================================
@@ -178,6 +267,69 @@ float calculateVarianceRoughness(vec3 normal, vec3 meshNormal, float baseRoughne
     float combinedRoughness = sqrt(baseRoughness * baseRoughness + varianceRoughness * varianceRoughness);
 
     return clamp(combinedRoughness, 0.02, 1.0);
+}
+
+// =========================================================================
+// PHASE 12: Material Blending
+// Smooth transitions between different water types
+// =========================================================================
+
+// Calculate blend factor based on world position and blend mode
+// Returns 0.0 = primary material, 1.0 = secondary material
+float calculateMaterialBlendFactor(vec3 worldPos) {
+    vec2 pos2D = worldPos.xz;
+    vec2 center = blendCenter.xy;
+    float blendAngle = blendCenter.z;
+
+    float blendFactor = 0.0;
+
+    if (blendMode == 0) {
+        // Distance mode: blend based on distance from center point
+        float dist = length(pos2D - center);
+        blendFactor = smoothstep(0.0, blendDistance, dist);
+    }
+    else if (blendMode == 1) {
+        // Directional mode: blend along a direction (e.g., river flowing to ocean)
+        // The blend angle defines the direction of transition
+        vec2 dir = vec2(cos(blendAngle), sin(blendAngle));
+        float projDist = dot(pos2D - center, dir);
+        blendFactor = smoothstep(-blendDistance * 0.5, blendDistance * 0.5, projDist);
+    }
+    else if (blendMode == 2) {
+        // Radial mode: blend radially outward from center (inverse of distance)
+        // 0 = secondary at center, 1 = primary at edge
+        float dist = length(pos2D - center);
+        blendFactor = 1.0 - smoothstep(0.0, blendDistance, dist);
+    }
+
+    return clamp(blendFactor, 0.0, 1.0);
+}
+
+// Blended material properties structure
+struct BlendedMaterial {
+    vec4 color;
+    vec3 absorption;
+    float turbidity;
+    float absorptionScale;
+    float scatteringScale;
+    float roughness;
+    float sss;
+};
+
+// Get blended material properties for current fragment
+BlendedMaterial getBlendedMaterial(vec3 worldPos) {
+    float blend = calculateMaterialBlendFactor(worldPos);
+
+    BlendedMaterial mat;
+    mat.color = mix(waterColor, waterColor2, blend);
+    mat.absorption = mix(scatteringCoeffs.rgb, scatteringCoeffs2.rgb, blend);
+    mat.turbidity = mix(scatteringCoeffs.a, scatteringCoeffs2.a, blend);
+    mat.absorptionScale = mix(absorptionScale, absorptionScale2, blend);
+    mat.scatteringScale = mix(scatteringScale, scatteringScale2, blend);
+    mat.roughness = mix(specularRoughness, specularRoughness2, blend);
+    mat.sss = mix(sssIntensity, sssIntensity2, blend);
+
+    return mat;
 }
 
 void main() {
@@ -270,28 +422,126 @@ void main() {
     );
 
     // =========================================================================
+    // PHASE 12: Get blended material properties
+    // =========================================================================
+    BlendedMaterial mat = getBlendedMaterial(fragWorldPos);
+
+    // =========================================================================
     // PBR WATER COLOR - Beer-Lambert absorption (Phase 8)
     // =========================================================================
-    // Get physical scattering properties from uniforms
-    vec3 absorption = scatteringCoeffs.rgb * absorptionScale;
-    float turbidity = scatteringCoeffs.a;
+    // Get physical scattering properties from blended material
+    vec3 absorption = mat.absorption * mat.absorptionScale;
+    float turbidity = mat.turbidity;
 
     // Calculate transmission through water using Beer-Lambert law
     // This replaces artist-picked colors with physically-based light transport
-    vec3 waterTransmission = calculateWaterTransmission(waterDepth, absorption, turbidity, scatteringScale);
+    vec3 waterTransmission = calculateWaterTransmission(waterDepth, absorption, turbidity, mat.scatteringScale);
 
     // Base water color is the inverse of absorption (what's NOT absorbed)
     // Mix with white for scattered light in turbid water
-    vec3 baseColor = waterColor.rgb * waterTransmission;
+    vec3 baseColor = mat.color.rgb * waterTransmission;
 
-    // Add subsurface scattering contribution - light that bounces back
-    float sssDepth = min(waterDepth, 10.0);  // Cap for very deep water
-    vec3 sssColor = vec3(0.0, 0.3, 0.4) * (1.0 - exp(-sssDepth * 0.2)) * (1.0 - turbidity * 0.5);
-    baseColor += sssColor * 0.3;
-
-    // Reflection color from environment
+    // Sun color used for SSS and specular - calculate once
     vec3 sunColor = ubo.sunColor.rgb * ubo.sunDirection.w;
-    vec3 reflectionColor = sampleReflection(R, sunDir, sunColor);
+
+    // =========================================================================
+    // PHASE 17: Enhanced Subsurface Scattering (Sea of Thieves inspired)
+    // Light transmission through thin wave peaks creates a glowing effect
+    // =========================================================================
+
+    // Basic depth-based SSS (existing behavior, kept for deep water contribution)
+    float sssDepth = min(waterDepth, 10.0);  // Cap for very deep water
+    vec3 depthSSS = vec3(0.0, 0.3, 0.4) * (1.0 - exp(-sssDepth * 0.2)) * (1.0 - turbidity * 0.5);
+    baseColor += depthSSS * 0.2;
+
+    // Wave geometry-based SSS - light shining through thin wave peaks
+    // When the sun is behind the wave (relative to viewer), light passes through
+    // the thin water at wave crests, creating a glowing translucent effect
+
+    // Back-lighting factor: strongest when looking toward the sun
+    // dot(sunDir, -V) is positive when sun is behind the water relative to viewer
+    float backLighting = max(0.0, dot(sunDir, -V));
+
+    // Wave slope indicates thin water (steep slope = thin wave peak)
+    // fragWaveSlope is 0 for flat surface, ~1 for nearly vertical
+    float waveSlope = fragWaveSlope;
+
+    // Also use wave height to boost SSS at wave peaks
+    float heightFactor = smoothstep(0.0, waveParams.x * 2.0, fragWaveHeight);
+
+    // Combine slope and height for thin-water detection
+    float thinWaterFactor = max(waveSlope, heightFactor * 0.5);
+
+    // SSS is strongest where water is thin AND back-lit
+    float sssStrength = thinWaterFactor * backLighting * backLighting; // Square for falloff
+
+    // Shallow water enhances SSS visibility
+    float shallowBoost = 1.0 - smoothstep(0.0, 5.0, waterDepth);
+    sssStrength *= mix(0.5, 1.5, shallowBoost);
+
+    // Turbidity reduces SSS (particles scatter the light before it reaches the eye)
+    sssStrength *= (1.0 - turbidity * 0.7);
+
+    // Calculate SSS color - sun-tinted with water's natural color
+    // Use a warmer tint at thin peaks for more realistic appearance
+    vec3 sssTint = mix(mat.color.rgb, vec3(0.1, 0.5, 0.4), 0.5); // Blue-green tint
+    vec3 waveSSS = sssTint * sunColor * sssStrength * mat.sss;
+
+    // Apply enhanced SSS to base color
+    baseColor += waveSSS * shadow;
+
+    // =========================================================================
+    // PHASE 9: Caustics - Underwater Light Patterns
+    // Animated light patterns that appear on underwater surfaces
+    // =========================================================================
+
+    // Calculate caustics contribution - strongest in shallow, sunlit water
+    vec3 causticsContribution = vec3(0.0);
+
+    if (waterDepth > 0.0 && waterDepth < 20.0) {
+        float time = ubo.windDirectionAndSpeed.w;
+
+        // Two-layer caustics animation for richer look
+        // Layer 1: Main caustics pattern
+        vec2 causticsUV1 = fragWorldPos.xz * causticsScale + vec2(time * causticsSpeed * 0.3, time * causticsSpeed * 0.2);
+        float caustic1 = texture(causticsTexture, causticsUV1).r;
+
+        // Layer 2: Secondary pattern at different scale and speed (creates shimmering)
+        vec2 causticsUV2 = fragWorldPos.xz * causticsScale * 1.5 - vec2(time * causticsSpeed * 0.2, time * causticsSpeed * 0.35);
+        float caustic2 = texture(causticsTexture, causticsUV2).r;
+
+        // Combine layers - multiply for sharper caustic lines
+        float causticPattern = caustic1 * caustic2 * 2.0 + (caustic1 + caustic2) * 0.25;
+        causticPattern = clamp(causticPattern, 0.0, 1.0);
+
+        // Depth falloff - caustics are most visible in shallow water
+        float depthFalloff = 1.0 - smoothstep(0.0, 15.0, waterDepth);
+
+        // Sun angle influence - caustics are stronger with overhead sun
+        float sunAngle = max(0.0, sunDir.y);
+        float sunInfluence = sunAngle * sunAngle;
+
+        // Combine factors
+        float causticStrength = causticPattern * depthFalloff * sunInfluence * causticsIntensity;
+
+        // Caustics are sun-colored light focused by wave refraction
+        causticsContribution = sunColor * causticStrength * shadow;
+
+        // Reduce caustics in turbid water (particles scatter the light)
+        causticsContribution *= (1.0 - turbidity * 0.8);
+    }
+
+    // Add caustics to base color (affects what we see through the water)
+    baseColor += causticsContribution;
+
+    // Calculate screen UV for SSR sampling (Phase 10)
+    // SSR texture is at half resolution, so multiply texture size by 2 to get screen size
+    vec2 ssrTextureSize = vec2(textureSize(ssrTexture, 0));
+    vec2 screenSize = ssrTextureSize * 2.0;  // SSR is half resolution
+    vec2 screenUV = gl_FragCoord.xy / screenSize;
+
+    // Reflection color from environment + SSR (Phase 10)
+    vec3 reflectionColor = sampleReflection(R, sunDir, sunColor, screenUV);
 
     // Refraction color based on transmitted light
     vec3 refractionColor = baseColor;
@@ -307,7 +557,7 @@ void main() {
 
     // Calculate variance-adjusted roughness to reduce specular aliasing
     // Higher normal variance = more roughness = less aliasing
-    float adjustedRoughness = calculateVarianceRoughness(N, meshNormal, specularRoughness);
+    float adjustedRoughness = calculateVarianceRoughness(N, meshNormal, mat.roughness);
 
     // Further increase roughness at distance to reduce shimmer
     adjustedRoughness = mix(adjustedRoughness, adjustedRoughness + 0.1, fbmLodFactor);
@@ -409,26 +659,93 @@ void main() {
         flowFoamAmount = max(flowFoamAmount, obstacleFoam);
     }
 
-    // --- Shore foam (depth-based) ---
+    // --- Phase 15: Intersection Foam (shore + geometry) ---
+    // Enhanced shore foam with better intersection detection and flow advection
     float shoreFoamAmount = 0.0;
     if (insideTerrain && waterDepth > 0.0 && waterDepth < shoreFoamWidth) {
-        // Create foam bands at different depths
         float fw = shoreFoamWidth;
-        float band1 = smoothstep(0.0, fw * 0.15, waterDepth) * smoothstep(fw * 0.35, fw * 0.1, waterDepth);
-        float band2 = smoothstep(fw * 0.25, fw * 0.4, waterDepth) * smoothstep(fw * 0.6, fw * 0.4, waterDepth);
-        float band3 = smoothstep(fw * 0.5, fw * 0.7, waterDepth) * smoothstep(fw, fw * 0.7, waterDepth);
+
+        // Wave-modulated intersection detection
+        // Waves push and pull the waterline, creating dynamic foam patterns
+        float waveInfluence = sin(fragWaveHeight * 10.0 + time * 2.0) * 0.3 + 0.7;
+        float effectiveDepth = waterDepth / waveInfluence;
+
+        // Create foam bands at different depths - more bands for richer look
+        float band1 = smoothstep(0.0, fw * 0.15, effectiveDepth) * smoothstep(fw * 0.35, fw * 0.1, effectiveDepth);
+        float band2 = smoothstep(fw * 0.25, fw * 0.4, effectiveDepth) * smoothstep(fw * 0.6, fw * 0.4, effectiveDepth);
+        float band3 = smoothstep(fw * 0.5, fw * 0.7, effectiveDepth) * smoothstep(fw, fw * 0.7, effectiveDepth);
+
+        // Flow-advected foam UVs for intersection foam
+        // Foam appears at intersection and flows away with water
+        vec2 advectedUV = fragWorldPos.xz * 0.1 + flowSample.flowDir * time * 0.3;
+        float advectedNoise = texture(foamNoiseTexture, advectedUV * 0.5).r;
 
         // Modulate bands with foam texture for organic cellular look
         shoreFoamAmount = band1 * smoothstep(0.3, 0.7, foam1);
         shoreFoamAmount += band2 * smoothstep(0.35, 0.65, foam2) * 0.7;
         shoreFoamAmount += band3 * smoothstep(0.4, 0.6, combinedFoamNoise) * 0.4;
 
-        // Strong foam right at the waterline
-        float waterlineIntensity = smoothstep(1.0, 0.0, waterDepth);
-        shoreFoamAmount = max(shoreFoamAmount, waterlineIntensity * foam2);
+        // Strong foam right at the waterline with wave dynamics
+        float waterlineIntensity = smoothstep(1.0, 0.0, effectiveDepth);
+        // Add advected noise for foam that appears to flow away from the shore
+        float dynamicWaterline = waterlineIntensity * mix(foam2, advectedNoise, 0.5);
+        shoreFoamAmount = max(shoreFoamAmount, dynamicWaterline);
+
+        // Intersection foam boost - extra foam very close to geometry
+        float intersectionStrength = smoothstep(0.5, 0.0, waterDepth);
+        float intersectionFoam = intersectionStrength * advectedNoise * 1.5;
+        shoreFoamAmount = max(shoreFoamAmount, intersectionFoam);
 
         // Boost shore foam in fast-flowing areas (rapids effect)
-        shoreFoamAmount *= mix(1.0, 1.5, flowSample.speed);
+        shoreFoamAmount *= mix(1.0, 1.8, flowSample.speed);
+
+        // Add splashing effect based on wave height at shoreline
+        float splashFactor = smoothstep(0.0, 0.05, fragWaveHeight) * intersectionStrength;
+        float splashFoam = splashFactor * foam3 * 0.8;
+        shoreFoamAmount = max(shoreFoamAmount, splashFoam);
+    }
+
+    // =========================================================================
+    // PHASE 11: Scene Depth-Based Intersection Foam
+    // Detect intersections with ANY geometry using scene depth buffer
+    // This catches objects like rocks, boats, docks that terrain check misses
+    // =========================================================================
+    {
+        // Calculate linear depth of water surface
+        vec4 clipPos = ubo.proj * ubo.view * vec4(fragWorldPos, 1.0);
+        float waterLinearDepth = linearizeDepth(clipPos.z / clipPos.w * 0.5 + 0.5, 0.1, 1000.0);
+
+        // Get scene depth and calculate soft edge
+        float sceneLinearDepth = getSceneDepth(screenUV, 0.1, 1000.0);
+        float depthDiff = sceneLinearDepth - waterLinearDepth;
+
+        // Soft edge factor: 0 at intersection, 1 away from geometry
+        float softEdgeDist = 0.5;  // World units for soft transition
+        float softEdge = smoothstep(0.0, softEdgeDist, depthDiff);
+
+        // Add foam at intersections with any geometry
+        if (depthDiff < softEdgeDist && depthDiff > -0.1) {
+            float intersectionFactor = 1.0 - softEdge;
+
+            // Sample foam texture at intersection
+            vec2 intersectionUV = fragWorldPos.xz * 0.15 + time * 0.05;
+            float intersectionNoise = texture(foamNoiseTexture, intersectionUV).r;
+
+            // Scale foam by intersection proximity
+            float geometryFoam = intersectionFactor * intersectionNoise * 0.8;
+
+            // Add to shore foam (if inside terrain) or directly to total
+            if (insideTerrain) {
+                shoreFoamAmount = max(shoreFoamAmount, geometryFoam);
+            } else {
+                // For non-terrain geometry intersections
+                flowFoamAmount = max(flowFoamAmount, geometryFoam);
+            }
+        }
+
+        // Use soft edge to fade water alpha at intersections (soft particles effect)
+        // This creates a smoother blend where water meets geometry
+        // Store for later use in alpha blending
     }
 
     // Combine all foam sources
@@ -436,7 +753,7 @@ void main() {
     totalFoamAmount = clamp(totalFoamAmount, 0.0, 1.0);
 
     // Foam color varies slightly with depth
-    foamColor = calculateFoamColor(totalFoamAmount, waterDepth, waterColor.rgb);
+    foamColor = calculateFoamColor(totalFoamAmount, waterDepth, mat.color.rgb);
 
     // =========================================================================
     // COMBINE LIGHTING
@@ -454,7 +771,7 @@ void main() {
     // =========================================================================
     // ALPHA - soft shore edges + foam opacity
     // =========================================================================
-    float baseAlpha = waterColor.a;
+    float baseAlpha = mat.color.a;
 
     // Soft edge near shore (fade out as water gets very shallow)
     float shoreAlpha = smoothstep(0.0, shoreBlendDistance, waterDepth);

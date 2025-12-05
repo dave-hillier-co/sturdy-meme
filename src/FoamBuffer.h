@@ -7,7 +7,7 @@
 #include <string>
 
 /**
- * FoamBuffer - Phase 14: Temporal Foam Persistence (Sea of Thieves)
+ * FoamBuffer - Phase 14 & 16: Temporal Foam Persistence + Wake System
  *
  * Implements persistent foam that fades over time:
  * - Foam render target that persists between frames
@@ -15,8 +15,27 @@
  * - Advection using flow map
  * - Sharp foam at wave crests, gradual fade
  *
+ * Phase 16 additions:
+ * - Wake injection for moving objects
+ * - V-shaped bow wave patterns
+ * - Kelvin wake angle simulation
+ *
  * Based on Sea of Thieves GDC 2018 talk.
  */
+
+// Maximum wake sources per frame
+constexpr uint32_t MAX_WAKE_SOURCES = 16;
+
+// Wake source data - represents a moving object creating a wake
+struct WakeSource {
+    glm::vec2 position;     // World position XZ
+    glm::vec2 velocity;     // Velocity direction and speed
+    float radius;           // Object radius (affects wake width)
+    float intensity;        // Wake foam intensity (0-1)
+    float wakeAngle;        // Kelvin wake angle (typically 19.47 degrees)
+    float padding;          // Alignment padding
+};
+
 class FoamBuffer {
 public:
     struct InitInfo {
@@ -38,6 +57,13 @@ public:
         float blurStrength;       // How much to blur each frame
         float decayRate;          // How fast foam fades
         float injectionStrength;  // Strength of new foam injection
+        uint32_t wakeCount;       // Number of active wake sources
+        float padding[3];         // Alignment
+    };
+
+    // Wake uniform buffer data (matches shader layout)
+    struct WakeUniformData {
+        WakeSource sources[MAX_WAKE_SOURCES];
     };
 
     FoamBuffer() = default;
@@ -67,6 +93,20 @@ public:
 
     // Clear foam buffer
     void clear(VkCommandBuffer cmd);
+
+    // Phase 16: Wake System
+    // Add a wake source for this frame (cleared after compute pass)
+    void addWakeSource(const glm::vec2& position, const glm::vec2& velocity,
+                       float radius, float intensity = 1.0f);
+
+    // Add a simple wake at position (velocity inferred from position change)
+    void addWake(const glm::vec2& position, float radius, float intensity = 1.0f);
+
+    // Clear all wake sources (called automatically after compute)
+    void clearWakeSources();
+
+    // Get current wake count
+    uint32_t getWakeCount() const { return wakeCount; }
 
 private:
     bool createFoamBuffers();
@@ -108,4 +148,13 @@ private:
     VkDescriptorSetLayout descriptorSetLayout = VK_NULL_HANDLE;
     VkDescriptorPool descriptorPool = VK_NULL_HANDLE;
     std::vector<VkDescriptorSet> descriptorSets;
+
+    // Phase 16: Wake system
+    WakeUniformData wakeData{};
+    uint32_t wakeCount = 0;
+    std::vector<VkBuffer> wakeUniformBuffers;
+    std::vector<VmaAllocation> wakeUniformAllocations;
+    std::vector<void*> wakeUniformMapped;
+
+    bool createWakeBuffers();
 };

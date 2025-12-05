@@ -123,24 +123,38 @@ float volumetricGroundFog(vec3 worldPos) {
     float layerThickness = ubo.layerParams.y;
     float layerDensity = ubo.layerParams.z * 50.0;
 
-    // Height-based falloff (fog is densest at layerHeight, fades above)
+    // Height-based falloff - fog exists at and BELOW layerHeight
+    // layerHeight is the TOP of the fog layer
     float heightAboveLayer = worldPos.y - layerHeight;
-    float heightFalloff = 1.0 / (1.0 + exp(heightAboveLayer * 2.0 / max(layerThickness, 0.001)));
 
-    // 3D noise for fog volume shapes - creates patches and wisps
-    // Scale controls size of fog patches (larger = bigger patches)
-    float noiseScale = 0.02;  // ~50m fog patches
+    // Hard cutoff above the layer - no fog above layerHeight + small margin
+    if (heightAboveLayer > layerThickness * 0.5) {
+        return 0.0;
+    }
+
+    // Fog is full density below layerHeight, fades out above
+    float heightFalloff;
+    if (heightAboveLayer <= 0.0) {
+        // Below or at layer height - full fog (modulated by noise)
+        heightFalloff = 1.0;
+    } else {
+        // Above layer height - fade out smoothly
+        heightFalloff = 1.0 - smoothstep(0.0, layerThickness * 0.5, heightAboveLayer);
+    }
+
+    // 3D noise for fog volume shapes - creates patches and clear areas
+    float noiseScale = 0.012;  // ~80m fog patches
     vec3 noisePos = worldPos * noiseScale;
 
     // Multi-octave noise for natural variation
-    float fogNoise = fbm(noisePos, 4);
+    float fogNoise = fbm(noisePos, 3);  // Fewer octaves = larger scale features
 
-    // Threshold noise to create distinct fog volumes (not just haze)
-    // Values below threshold = no fog, above = fog
-    float threshold = 0.35;
-    float fogShape = smoothstep(threshold, threshold + 0.2, fogNoise);
+    // Higher threshold creates more clear areas (less fog coverage)
+    // At 0.55, roughly 40% of space has fog, 60% is clear
+    float threshold = 0.55;
+    float fogShape = smoothstep(threshold - 0.1, threshold + 0.1, fogNoise);
 
-    // Combine height falloff with noise shape
+    // Combine: only fog where noise says AND below layer height
     return layerDensity * heightFalloff * fogShape;
 }
 

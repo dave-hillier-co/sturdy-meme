@@ -980,8 +980,612 @@ void IKSystem::solve(Skeleton& skeleton, const glm::mat4& characterTransform, fl
         }
     }
 
+    // Solve straddling IK (hip tilt for different foot heights)
+    if (straddle.enabled && straddle.weight > 0.0f) {
+        FootPlacementIK* leftFoot = nullptr;
+        FootPlacementIK* rightFoot = nullptr;
+        for (auto& nfp : footPlacements) {
+            if (nfp.name.find("left") != std::string::npos ||
+                nfp.name.find("Left") != std::string::npos) {
+                leftFoot = &nfp.foot;
+            } else {
+                rightFoot = &nfp.foot;
+            }
+        }
+        StraddleIKSolver::solve(skeleton, straddle, leftFoot, rightFoot, cachedGlobalTransforms, deltaTime);
+        skeleton.computeGlobalTransforms(cachedGlobalTransforms);
+    }
+
+    // Solve climbing IK
+    if (climbing.enabled && climbing.weight > 0.0f && climbing.currentTransition > 0.0f) {
+        // Gather arm and leg chains
+        std::vector<TwoBoneIKChain> armChains;
+        std::vector<TwoBoneIKChain> legChains;
+
+        if (auto* leftArm = getChain(leftArmChainName)) armChains.push_back(*leftArm);
+        if (auto* rightArm = getChain(rightArmChainName)) armChains.push_back(*rightArm);
+        if (auto* leftLeg = getChain(leftLegChainName)) legChains.push_back(*leftLeg);
+        if (auto* rightLeg = getChain(rightLegChainName)) legChains.push_back(*rightLeg);
+
+        ClimbingIKSolver::solve(skeleton, climbing, armChains, legChains,
+                                cachedGlobalTransforms, characterTransform, deltaTime);
+        skeleton.computeGlobalTransforms(cachedGlobalTransforms);
+    }
+
     // Solve look-at IK last (head movement shouldn't affect body)
     if (lookAt.enabled && lookAt.weight > 0.0f) {
         LookAtIKSolver::solve(skeleton, lookAt, cachedGlobalTransforms, deltaTime);
     }
+}
+
+// ============================================================================
+// Straddle IK Solver Implementation
+// ============================================================================
+
+void StraddleIKSolver::solve(
+    Skeleton& skeleton,
+    StraddleIK& straddle,
+    const FootPlacementIK* leftFoot,
+    const FootPlacementIK* rightFoot,
+    const std::vector<glm::mat4>& globalTransforms,
+    float deltaTime
+) {
+    if (!straddle.enabled || straddle.weight <= 0.0f) return;
+    if (straddle.pelvisBoneIndex < 0) return;
+
+    // Get foot heights
+    float leftHeight = 0.0f;
+    float rightHeight = 0.0f;
+
+    if (leftFoot && leftFoot->isGrounded) {
+        leftHeight = leftFoot->currentGroundHeight;
+    }
+    if (rightFoot && rightFoot->isGrounded) {
+        rightHeight = rightFoot->currentGroundHeight;
+    }
+
+    // Store for debug/queries
+    straddle.leftFootHeight = leftHeight;
+    straddle.rightFootHeight = rightHeight;
+
+    float heightDiff = rightHeight - leftHeight;
+    float absHeightDiff = std::abs(heightDiff);
+
+    // Only apply straddle if height difference is significant
+    if (absHeightDiff < straddle.minHeightDiff) {
+        // Smoothly return to neutral
+        if (deltaTime > 0.0f) {
+            float t = glm::clamp(straddle.tiltSmoothSpeed * deltaTime, 0.0f, 1.0f);
+            straddle.currentHipTilt = glm::mix(straddle.currentHipTilt, 0.0f, t);
+            straddle.currentHipShift = glm::mix(straddle.currentHipShift, 0.0f, t);
+        }
+    } else {
+        // Calculate target hip tilt
+        float targetTilt = calculateHipTilt(leftHeight, rightHeight,
+                                            straddle.maxHipTilt, straddle.maxHeightDiff);
+
+        // Calculate lateral shift (shift hips toward higher foot)
+        float shiftDir = heightDiff > 0 ? 1.0f : -1.0f;  // Positive = shift right
+        float shiftAmount = (absHeightDiff / straddle.maxHeightDiff) * straddle.maxHipShift;
+        shiftAmount = glm::clamp(shiftAmount, 0.0f, straddle.maxHipShift) * shiftDir;
+
+        // Smooth interpolation
+        if (deltaTime > 0.0f) {
+            float t = glm::clamp(straddle.tiltSmoothSpeed * deltaTime, 0.0f, 1.0f);
+            straddle.currentHipTilt = glm::mix(straddle.currentHipTilt, targetTilt, t);
+            straddle.currentHipShift = glm::mix(straddle.currentHipShift, shiftAmount, t);
+        } else {
+            straddle.currentHipTilt = targetTilt;
+            straddle.currentHipShift = shiftAmount;
+        }
+    }
+
+    // Apply hip tilt
+    Joint& pelvisJoint = skeleton.joints[straddle.pelvisBoneIndex];
+    glm::mat4 parentGlobal = pelvisJoint.parentIndex >= 0
+        ? globalTransforms[pelvisJoint.parentIndex]
+        : glm::mat4(1.0f);
+
+    applyHipTilt(pelvisJoint, straddle.currentHipTilt * straddle.weight,
+                 straddle.currentHipShift * straddle.weight, parentGlobal);
+
+    // Apply spine counter-rotation to keep upper body upright
+    if (straddle.spineBaseBoneIndex >= 0) {
+        Joint& spineJoint = skeleton.joints[straddle.spineBaseBoneIndex];
+        glm::mat4 spineParentGlobal = spineJoint.parentIndex >= 0
+            ? globalTransforms[spineJoint.parentIndex]
+            : glm::mat4(1.0f);
+
+        // Counter-rotate spine to compensate for hip tilt
+        float compensation = -straddle.currentHipTilt * 0.7f * straddle.weight;
+        applySpineCompensation(spineJoint, compensation, spineParentGlobal);
+    }
+
+    // Update weight balance
+    straddle.targetWeightBalance = calculateWeightBalance(leftHeight, rightHeight, 0.0f);
+    if (deltaTime > 0.0f) {
+        float t = glm::clamp(straddle.tiltSmoothSpeed * deltaTime, 0.0f, 1.0f);
+        straddle.weightBalance = glm::mix(straddle.weightBalance, straddle.targetWeightBalance, t);
+    }
+}
+
+float StraddleIKSolver::calculateHipTilt(
+    float leftFootHeight,
+    float rightFootHeight,
+    float maxTilt,
+    float maxHeightDiff
+) {
+    float heightDiff = rightFootHeight - leftFootHeight;
+    float normalizedDiff = glm::clamp(heightDiff / maxHeightDiff, -1.0f, 1.0f);
+
+    // Tilt hip down toward lower foot (roll rotation)
+    // Positive height diff (right higher) = negative tilt (roll left)
+    return -normalizedDiff * maxTilt;
+}
+
+float StraddleIKSolver::calculateWeightBalance(
+    float leftFootHeight,
+    float rightFootHeight,
+    float characterVelocityX
+) {
+    // Weight shifts toward the lower foot (more stable)
+    float heightDiff = rightFootHeight - leftFootHeight;
+    float baseBalance = 0.5f;
+
+    // Shift weight toward lower foot
+    if (std::abs(heightDiff) > 0.01f) {
+        float shift = glm::clamp(heightDiff * 2.0f, -0.3f, 0.3f);
+        baseBalance -= shift;  // Negative diff = more weight on right
+    }
+
+    // Velocity affects weight distribution
+    baseBalance += characterVelocityX * 0.1f;
+
+    return glm::clamp(baseBalance, 0.0f, 1.0f);
+}
+
+void StraddleIKSolver::applyHipTilt(
+    Joint& pelvisJoint,
+    float tiltAngle,
+    float lateralShift,
+    const glm::mat4& parentGlobalTransform
+) {
+    glm::vec3 translation, scale;
+    glm::quat rotation;
+    IKUtils::decomposeTransform(pelvisJoint.localTransform, translation, rotation, scale);
+
+    // Apply roll rotation (around forward axis, Z in local space)
+    glm::quat tiltRotation = glm::angleAxis(tiltAngle, glm::vec3(0, 0, 1));
+    rotation = tiltRotation * rotation;
+
+    // Apply lateral shift
+    translation.x += lateralShift;
+
+    pelvisJoint.localTransform = IKUtils::composeTransform(translation, rotation, scale);
+}
+
+void StraddleIKSolver::applySpineCompensation(
+    Joint& spineJoint,
+    float compensationAngle,
+    const glm::mat4& parentGlobalTransform
+) {
+    glm::vec3 translation, scale;
+    glm::quat rotation;
+    IKUtils::decomposeTransform(spineJoint.localTransform, translation, rotation, scale);
+
+    // Counter-rotate to keep upper body upright
+    glm::quat compensation = glm::angleAxis(compensationAngle, glm::vec3(0, 0, 1));
+    rotation = compensation * rotation;
+
+    spineJoint.localTransform = IKUtils::composeTransform(translation, rotation, scale);
+}
+
+// ============================================================================
+// Climbing IK Solver Implementation
+// ============================================================================
+
+void ClimbingIKSolver::solve(
+    Skeleton& skeleton,
+    ClimbingIK& climbing,
+    std::vector<TwoBoneIKChain>& armChains,
+    std::vector<TwoBoneIKChain>& legChains,
+    const std::vector<glm::mat4>& globalTransforms,
+    const glm::mat4& characterTransform,
+    float deltaTime
+) {
+    if (!climbing.enabled || climbing.weight <= 0.0f) return;
+
+    // Update transition
+    float targetTransition = climbing.enabled ? 1.0f : 0.0f;
+    if (deltaTime > 0.0f) {
+        float t = glm::clamp(climbing.transitionSpeed * deltaTime, 0.0f, 1.0f);
+        climbing.currentTransition = glm::mix(climbing.currentTransition, targetTransition, t);
+    }
+
+    if (climbing.currentTransition < 0.01f) return;
+
+    // Calculate and apply body position
+    positionBody(skeleton, climbing, globalTransforms, deltaTime);
+
+    // Solve arm IK for hand holds
+    if (armChains.size() >= 2) {
+        // Left arm
+        if (climbing.leftHandHold.isValid) {
+            armChains[0].targetPosition = climbing.leftHandHold.position;
+            armChains[0].enabled = true;
+            armChains[0].weight = climbing.weight * climbing.currentTransition;
+            TwoBoneIKSolver::solveBlended(skeleton, armChains[0], globalTransforms, armChains[0].weight);
+
+            // Orient hand to grip
+            if (climbing.leftHandBoneIndex >= 0) {
+                orientHandToHold(skeleton.joints[climbing.leftHandBoneIndex],
+                                climbing.leftHandHold,
+                                globalTransforms[skeleton.joints[climbing.leftHandBoneIndex].parentIndex]);
+            }
+        }
+
+        // Right arm
+        if (climbing.rightHandHold.isValid) {
+            armChains[1].targetPosition = climbing.rightHandHold.position;
+            armChains[1].enabled = true;
+            armChains[1].weight = climbing.weight * climbing.currentTransition;
+            TwoBoneIKSolver::solveBlended(skeleton, armChains[1], globalTransforms, armChains[1].weight);
+
+            if (climbing.rightHandBoneIndex >= 0) {
+                orientHandToHold(skeleton.joints[climbing.rightHandBoneIndex],
+                                climbing.rightHandHold,
+                                globalTransforms[skeleton.joints[climbing.rightHandBoneIndex].parentIndex]);
+            }
+        }
+    }
+
+    // Solve leg IK for foot holds
+    if (legChains.size() >= 2) {
+        // Left leg
+        if (climbing.leftFootHold.isValid) {
+            legChains[0].targetPosition = climbing.leftFootHold.position;
+            legChains[0].enabled = true;
+            legChains[0].weight = climbing.weight * climbing.currentTransition;
+            TwoBoneIKSolver::solveBlended(skeleton, legChains[0], globalTransforms, legChains[0].weight);
+        }
+
+        // Right leg
+        if (climbing.rightFootHold.isValid) {
+            legChains[1].targetPosition = climbing.rightFootHold.position;
+            legChains[1].enabled = true;
+            legChains[1].weight = climbing.weight * climbing.currentTransition;
+            TwoBoneIKSolver::solveBlended(skeleton, legChains[1], globalTransforms, legChains[1].weight);
+        }
+    }
+}
+
+glm::vec3 ClimbingIKSolver::calculateBodyPosition(
+    const ClimbingIK& climbing,
+    const glm::mat4& characterTransform
+) {
+    // Calculate center of active holds
+    glm::vec3 holdCenter(0.0f);
+    int holdCount = 0;
+
+    if (climbing.leftHandHold.isValid) {
+        holdCenter += climbing.leftHandHold.position;
+        holdCount++;
+    }
+    if (climbing.rightHandHold.isValid) {
+        holdCenter += climbing.rightHandHold.position;
+        holdCount++;
+    }
+    if (climbing.leftFootHold.isValid) {
+        holdCenter += climbing.leftFootHold.position;
+        holdCount++;
+    }
+    if (climbing.rightFootHold.isValid) {
+        holdCenter += climbing.rightFootHold.position;
+        holdCount++;
+    }
+
+    if (holdCount > 0) {
+        holdCenter /= static_cast<float>(holdCount);
+    }
+
+    // Position body at wall distance from surface
+    glm::vec3 bodyPos = holdCenter + climbing.wallNormal * climbing.wallDistance;
+
+    // Adjust height to be between hands and feet
+    float handHeight = 0.0f;
+    float footHeight = 0.0f;
+    int handCount = 0;
+    int footCount = 0;
+
+    if (climbing.leftHandHold.isValid) { handHeight += climbing.leftHandHold.position.y; handCount++; }
+    if (climbing.rightHandHold.isValid) { handHeight += climbing.rightHandHold.position.y; handCount++; }
+    if (climbing.leftFootHold.isValid) { footHeight += climbing.leftFootHold.position.y; footCount++; }
+    if (climbing.rightFootHold.isValid) { footHeight += climbing.rightFootHold.position.y; footCount++; }
+
+    if (handCount > 0) handHeight /= handCount;
+    if (footCount > 0) footHeight /= footCount;
+
+    // Body should be roughly 60% of the way from feet to hands
+    if (handCount > 0 && footCount > 0) {
+        bodyPos.y = footHeight + (handHeight - footHeight) * 0.6f;
+    }
+
+    return bodyPos;
+}
+
+glm::quat ClimbingIKSolver::calculateBodyRotation(
+    const glm::vec3& wallNormal,
+    const glm::vec3& upVector
+) {
+    // Face toward wall (opposite of normal)
+    glm::vec3 forward = -glm::normalize(wallNormal);
+    glm::vec3 up = glm::normalize(upVector);
+    glm::vec3 right = glm::normalize(glm::cross(up, forward));
+    up = glm::cross(forward, right);
+
+    glm::mat3 rotMat(right, up, forward);
+    return glm::quat_cast(rotMat);
+}
+
+void ClimbingIKSolver::setHandHold(
+    ClimbingIK& climbing,
+    bool isLeft,
+    const glm::vec3& position,
+    const glm::vec3& normal,
+    const glm::vec3& gripDir
+) {
+    HandHold& hold = isLeft ? climbing.leftHandHold : climbing.rightHandHold;
+    hold.position = position;
+    hold.normal = normal;
+    hold.gripDirection = gripDir;
+    hold.isValid = true;
+}
+
+void ClimbingIKSolver::setFootHold(
+    ClimbingIK& climbing,
+    bool isLeft,
+    const glm::vec3& position,
+    const glm::vec3& normal
+) {
+    FootHold& hold = isLeft ? climbing.leftFootHold : climbing.rightFootHold;
+    hold.position = position;
+    hold.normal = normal;
+    hold.isValid = true;
+}
+
+void ClimbingIKSolver::clearHandHold(ClimbingIK& climbing, bool isLeft) {
+    HandHold& hold = isLeft ? climbing.leftHandHold : climbing.rightHandHold;
+    hold.isValid = false;
+}
+
+void ClimbingIKSolver::clearFootHold(ClimbingIK& climbing, bool isLeft) {
+    FootHold& hold = isLeft ? climbing.leftFootHold : climbing.rightFootHold;
+    hold.isValid = false;
+}
+
+bool ClimbingIKSolver::canReach(
+    const ClimbingIK& climbing,
+    const glm::vec3& holdPosition,
+    bool isArm,
+    bool isLeft,
+    const std::vector<glm::mat4>& globalTransforms
+) {
+    // Get shoulder/hip position
+    int32_t rootBoneIndex = isArm
+        ? (isLeft ? climbing.leftArmChainIndex : climbing.rightArmChainIndex)
+        : (isLeft ? climbing.leftLegChainIndex : climbing.rightLegChainIndex);
+
+    if (rootBoneIndex < 0 || static_cast<size_t>(rootBoneIndex) >= globalTransforms.size()) {
+        return false;
+    }
+
+    glm::vec3 rootPos = IKUtils::getWorldPosition(globalTransforms[rootBoneIndex]);
+    float distance = glm::length(holdPosition - rootPos);
+    float maxReach = isArm ? climbing.maxArmReach : climbing.maxLegReach;
+
+    return distance <= maxReach;
+}
+
+void ClimbingIKSolver::positionBody(
+    Skeleton& skeleton,
+    ClimbingIK& climbing,
+    const std::vector<glm::mat4>& globalTransforms,
+    float deltaTime
+) {
+    if (climbing.pelvisBoneIndex < 0) return;
+
+    // Calculate target body position
+    climbing.targetBodyPosition = calculateBodyPosition(climbing, glm::mat4(1.0f));
+    climbing.targetBodyRotation = calculateBodyRotation(climbing.wallNormal, glm::vec3(0, 1, 0));
+
+    // Smooth interpolation
+    if (deltaTime > 0.0f) {
+        float t = glm::clamp(climbing.transitionSpeed * deltaTime, 0.0f, 1.0f);
+        climbing.currentBodyPosition = glm::mix(climbing.currentBodyPosition, climbing.targetBodyPosition, t);
+        climbing.currentBodyRotation = glm::slerp(climbing.currentBodyRotation, climbing.targetBodyRotation, t);
+    }
+
+    // Apply to pelvis (root of body hierarchy)
+    Joint& pelvisJoint = skeleton.joints[climbing.pelvisBoneIndex];
+    glm::vec3 translation, scale;
+    glm::quat rotation;
+    IKUtils::decomposeTransform(pelvisJoint.localTransform, translation, rotation, scale);
+
+    // Blend between animation and climbing position
+    float blend = climbing.weight * climbing.currentTransition;
+
+    // For climbing, we override the pelvis position to be relative to holds
+    // This is a simplification - full implementation would transform to local space
+    glm::quat blendedRotation = glm::slerp(rotation, climbing.currentBodyRotation, blend);
+
+    pelvisJoint.localTransform = IKUtils::composeTransform(translation, blendedRotation, scale);
+}
+
+void ClimbingIKSolver::orientHandToHold(
+    Joint& handJoint,
+    const HandHold& hold,
+    const glm::mat4& parentGlobalTransform
+) {
+    glm::vec3 translation, scale;
+    glm::quat rotation;
+    IKUtils::decomposeTransform(handJoint.localTransform, translation, rotation, scale);
+
+    // Orient hand so palm faces hold surface
+    glm::vec3 palmNormal = -hold.normal;  // Palm faces into surface
+    glm::vec3 fingerDir = hold.gripDirection;
+    glm::vec3 thumbDir = glm::cross(palmNormal, fingerDir);
+
+    glm::mat3 handRotMat(thumbDir, palmNormal, fingerDir);
+    glm::quat worldRotation = glm::quat_cast(handRotMat);
+
+    // Convert to local space
+    glm::quat parentRotation = glm::quat_cast(glm::mat3(parentGlobalTransform));
+    glm::quat localRotation = glm::inverse(parentRotation) * worldRotation;
+
+    handJoint.localTransform = IKUtils::composeTransform(translation, localRotation, scale);
+}
+
+void ClimbingIKSolver::orientFootToHold(
+    Joint& footJoint,
+    const FootHold& hold,
+    const glm::mat4& parentGlobalTransform
+) {
+    glm::vec3 translation, scale;
+    glm::quat rotation;
+    IKUtils::decomposeTransform(footJoint.localTransform, translation, rotation, scale);
+
+    // Orient foot so sole contacts hold
+    glm::vec3 footUp = hold.normal;
+    glm::vec3 footForward = glm::vec3(0, 0, 1);  // Default forward
+
+    // Make forward perpendicular to normal
+    footForward = glm::normalize(footForward - glm::dot(footForward, footUp) * footUp);
+    glm::vec3 footRight = glm::cross(footUp, footForward);
+
+    glm::mat3 footRotMat(footRight, footUp, footForward);
+    glm::quat worldRotation = glm::quat_cast(footRotMat);
+
+    glm::quat parentRotation = glm::quat_cast(glm::mat3(parentGlobalTransform));
+    glm::quat localRotation = glm::inverse(parentRotation) * worldRotation;
+
+    footJoint.localTransform = IKUtils::composeTransform(translation, localRotation, scale);
+}
+
+// ============================================================================
+// IKSystem - Straddle Methods
+// ============================================================================
+
+bool IKSystem::setupStraddle(
+    const Skeleton& skeleton,
+    const std::string& pelvisBoneName,
+    const std::string& spineBaseBoneName
+) {
+    int32_t pelvisIdx = skeleton.findJointIndex(pelvisBoneName);
+    if (pelvisIdx < 0) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "IKSystem: Pelvis bone '%s' not found for straddle", pelvisBoneName.c_str());
+        return false;
+    }
+
+    straddle.pelvisBoneIndex = pelvisIdx;
+    straddle.spineBaseBoneIndex = spineBaseBoneName.empty() ? -1 : skeleton.findJointIndex(spineBaseBoneName);
+    straddleEnabled = true;
+
+    SDL_Log("IKSystem: Setup straddle (pelvis=%d, spine=%d)",
+            straddle.pelvisBoneIndex, straddle.spineBaseBoneIndex);
+    return true;
+}
+
+void IKSystem::setStraddleEnabled(bool enabled) {
+    straddle.enabled = enabled;
+}
+
+void IKSystem::setStraddleWeight(float weight) {
+    straddle.weight = glm::clamp(weight, 0.0f, 1.0f);
+}
+
+// ============================================================================
+// IKSystem - Climbing Methods
+// ============================================================================
+
+bool IKSystem::setupClimbing(
+    const Skeleton& skeleton,
+    const std::string& pelvisBoneName,
+    const std::string& spineBaseBoneName,
+    const std::string& spineMidBoneName,
+    const std::string& chestBoneName
+) {
+    int32_t pelvisIdx = skeleton.findJointIndex(pelvisBoneName);
+    if (pelvisIdx < 0) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "IKSystem: Pelvis bone '%s' not found for climbing", pelvisBoneName.c_str());
+        return false;
+    }
+
+    climbing.pelvisBoneIndex = pelvisIdx;
+    climbing.spineBaseBoneIndex = skeleton.findJointIndex(spineBaseBoneName);
+    climbing.spineMidBoneIndex = spineMidBoneName.empty() ? -1 : skeleton.findJointIndex(spineMidBoneName);
+    climbing.chestBoneIndex = chestBoneName.empty() ? -1 : skeleton.findJointIndex(chestBoneName);
+    climbingEnabled = true;
+
+    SDL_Log("IKSystem: Setup climbing (pelvis=%d, spineBase=%d, spineMid=%d, chest=%d)",
+            climbing.pelvisBoneIndex, climbing.spineBaseBoneIndex,
+            climbing.spineMidBoneIndex, climbing.chestBoneIndex);
+    return true;
+}
+
+void IKSystem::setClimbingArmChains(const std::string& leftArm, const std::string& rightArm) {
+    leftArmChainName = leftArm;
+    rightArmChainName = rightArm;
+
+    // Find chain indices
+    for (size_t i = 0; i < chains.size(); i++) {
+        if (chains[i].name == leftArm) climbing.leftArmChainIndex = static_cast<int32_t>(i);
+        if (chains[i].name == rightArm) climbing.rightArmChainIndex = static_cast<int32_t>(i);
+    }
+}
+
+void IKSystem::setClimbingLegChains(const std::string& leftLeg, const std::string& rightLeg) {
+    leftLegChainName = leftLeg;
+    rightLegChainName = rightLeg;
+
+    for (size_t i = 0; i < chains.size(); i++) {
+        if (chains[i].name == leftLeg) climbing.leftLegChainIndex = static_cast<int32_t>(i);
+        if (chains[i].name == rightLeg) climbing.rightLegChainIndex = static_cast<int32_t>(i);
+    }
+}
+
+void IKSystem::setClimbingHandBones(
+    const Skeleton& skeleton,
+    const std::string& leftHandBoneName,
+    const std::string& rightHandBoneName
+) {
+    climbing.leftHandBoneIndex = skeleton.findJointIndex(leftHandBoneName);
+    climbing.rightHandBoneIndex = skeleton.findJointIndex(rightHandBoneName);
+}
+
+void IKSystem::setClimbingHandHold(bool isLeft, const glm::vec3& position, const glm::vec3& normal, const glm::vec3& gripDir) {
+    ClimbingIKSolver::setHandHold(climbing, isLeft, position, normal, gripDir);
+}
+
+void IKSystem::setClimbingFootHold(bool isLeft, const glm::vec3& position, const glm::vec3& normal) {
+    ClimbingIKSolver::setFootHold(climbing, isLeft, position, normal);
+}
+
+void IKSystem::clearClimbingHandHold(bool isLeft) {
+    ClimbingIKSolver::clearHandHold(climbing, isLeft);
+}
+
+void IKSystem::clearClimbingFootHold(bool isLeft) {
+    ClimbingIKSolver::clearFootHold(climbing, isLeft);
+}
+
+void IKSystem::setClimbingEnabled(bool enabled) {
+    climbing.enabled = enabled;
+}
+
+void IKSystem::setClimbingWeight(float weight) {
+    climbing.weight = glm::clamp(weight, 0.0f, 1.0f);
+}
+
+void IKSystem::setClimbingWallNormal(const glm::vec3& normal) {
+    climbing.wallNormal = glm::normalize(normal);
 }

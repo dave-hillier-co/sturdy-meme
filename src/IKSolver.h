@@ -142,6 +142,115 @@ struct PelvisAdjustment {
     float currentOffset = 0.0f;
 };
 
+// Straddling IK - for stepping onto elevated surfaces (boxes, stairs, etc.)
+struct StraddleIK {
+    int32_t pelvisBoneIndex = -1;     // Hips bone for tilt
+    int32_t spineBaseBoneIndex = -1;  // Lower spine for counter-rotation
+
+    // Height difference thresholds
+    float minHeightDiff = 0.05f;      // Minimum height diff to trigger straddle
+    float maxHeightDiff = 0.6f;       // Maximum supported height difference
+    float maxStepHeight = 0.5f;       // Max height character can step up
+
+    // Hip tilt settings
+    float maxHipTilt = glm::radians(15.0f);   // Max hip rotation angle
+    float maxHipShift = 0.15f;        // Max lateral hip shift toward higher foot
+    float tiltSmoothSpeed = 6.0f;     // Interpolation speed
+
+    // Weight distribution (0 = left foot, 1 = right foot)
+    float weightBalance = 0.5f;       // Current weight distribution
+    float targetWeightBalance = 0.5f;
+
+    float weight = 1.0f;
+    bool enabled = false;
+
+    // Internal state
+    float currentHipTilt = 0.0f;      // Current hip tilt angle (roll)
+    float currentHipShift = 0.0f;     // Current lateral shift
+    glm::quat currentSpineCompensation = glm::quat(1, 0, 0, 0);
+    float leftFootHeight = 0.0f;
+    float rightFootHeight = 0.0f;
+};
+
+// Hand hold for climbing
+struct HandHold {
+    glm::vec3 position = glm::vec3(0.0f);     // World position of hold
+    glm::vec3 normal = glm::vec3(0, 0, -1);   // Surface normal (facing away from wall)
+    glm::vec3 gripDirection = glm::vec3(0, -1, 0);  // Direction fingers wrap
+    float radius = 0.05f;             // Size of hold
+    bool isValid = false;             // Whether this hold is active
+};
+
+// Foot hold for climbing
+struct FootHold {
+    glm::vec3 position = glm::vec3(0.0f);
+    glm::vec3 normal = glm::vec3(0, 0, -1);
+    float radius = 0.1f;
+    bool isValid = false;
+};
+
+// Climbing surface query result
+struct ClimbSurfaceQuery {
+    glm::vec3 surfacePoint;           // Nearest point on climbable surface
+    glm::vec3 surfaceNormal;          // Surface normal at that point
+    float distance;                   // Distance from query point
+    bool isClimbable;                 // Whether surface can be climbed
+};
+
+// Callback for finding climbable surfaces
+using ClimbSurfaceQueryFunc = std::function<ClimbSurfaceQuery(const glm::vec3& position, float maxDistance)>;
+
+// Climbing IK - for climbing walls, ledges, ladders
+struct ClimbingIK {
+    // Bone indices
+    int32_t pelvisBoneIndex = -1;
+    int32_t spineBaseBoneIndex = -1;
+    int32_t spineMidBoneIndex = -1;
+    int32_t chestBoneIndex = -1;
+
+    // Arm chains (indices into IKSystem's two-bone chains)
+    int32_t leftArmChainIndex = -1;
+    int32_t rightArmChainIndex = -1;
+
+    // Leg chains
+    int32_t leftLegChainIndex = -1;
+    int32_t rightLegChainIndex = -1;
+
+    // Hand bone indices for grip rotation
+    int32_t leftHandBoneIndex = -1;
+    int32_t rightHandBoneIndex = -1;
+
+    // Current holds
+    HandHold leftHandHold;
+    HandHold rightHandHold;
+    FootHold leftFootHold;
+    FootHold rightFootHold;
+
+    // Body positioning
+    float wallDistance = 0.3f;        // How far body stays from wall
+    float bodyLean = 0.0f;            // Lean toward wall (-1 to 1)
+    glm::vec3 wallNormal = glm::vec3(0, 0, -1);  // Current wall facing direction
+
+    // Reach settings
+    float maxArmReach = 0.8f;         // Maximum arm extension
+    float maxLegReach = 0.9f;         // Maximum leg extension
+    float comfortArmReach = 0.5f;     // Comfortable reaching distance
+    float comfortLegReach = 0.6f;
+
+    // Transition settings
+    float transitionSpeed = 4.0f;     // Speed of transitioning into/out of climb
+    float currentTransition = 0.0f;   // 0 = not climbing, 1 = fully climbing
+
+    float weight = 1.0f;
+    bool enabled = false;
+
+    // Internal state
+    glm::vec3 targetBodyPosition = glm::vec3(0.0f);
+    glm::quat targetBodyRotation = glm::quat(1, 0, 0, 0);
+    glm::vec3 currentBodyPosition = glm::vec3(0.0f);
+    glm::quat currentBodyRotation = glm::quat(1, 0, 0, 0);
+};
+
 // Two-Bone IK Solver
 // Uses analytical solution for exactly 2 bones (arm or leg)
 // Algorithm: Law of cosines to find joint angles, pole vector for bend direction
@@ -248,6 +357,133 @@ private:
     );
 };
 
+// Straddle IK Solver
+// Handles hip tilt and weight distribution when feet are at different heights
+class StraddleIKSolver {
+public:
+    // Solve straddling based on foot height difference
+    static void solve(
+        Skeleton& skeleton,
+        StraddleIK& straddle,
+        const FootPlacementIK* leftFoot,
+        const FootPlacementIK* rightFoot,
+        const std::vector<glm::mat4>& globalTransforms,
+        float deltaTime
+    );
+
+    // Calculate hip tilt angle from foot height difference
+    static float calculateHipTilt(
+        float leftFootHeight,
+        float rightFootHeight,
+        float maxTilt,
+        float maxHeightDiff
+    );
+
+    // Calculate weight distribution based on foot positions
+    static float calculateWeightBalance(
+        float leftFootHeight,
+        float rightFootHeight,
+        float characterVelocityX  // Lateral velocity affects weight shift
+    );
+
+private:
+    // Apply hip tilt rotation
+    static void applyHipTilt(
+        Joint& pelvisJoint,
+        float tiltAngle,
+        float lateralShift,
+        const glm::mat4& parentGlobalTransform
+    );
+
+    // Apply spine counter-rotation to keep upper body upright
+    static void applySpineCompensation(
+        Joint& spineJoint,
+        float compensationAngle,
+        const glm::mat4& parentGlobalTransform
+    );
+};
+
+// Climbing IK Solver
+// Coordinates limbs for climbing walls, ledges, and ladders
+class ClimbingIKSolver {
+public:
+    // Main solve function - positions body and limbs for climbing
+    static void solve(
+        Skeleton& skeleton,
+        ClimbingIK& climbing,
+        std::vector<TwoBoneIKChain>& armChains,
+        std::vector<TwoBoneIKChain>& legChains,
+        const std::vector<glm::mat4>& globalTransforms,
+        const glm::mat4& characterTransform,
+        float deltaTime
+    );
+
+    // Calculate optimal body position given current holds
+    static glm::vec3 calculateBodyPosition(
+        const ClimbingIK& climbing,
+        const glm::mat4& characterTransform
+    );
+
+    // Calculate body rotation to face wall
+    static glm::quat calculateBodyRotation(
+        const glm::vec3& wallNormal,
+        const glm::vec3& upVector
+    );
+
+    // Set a hand hold position
+    static void setHandHold(
+        ClimbingIK& climbing,
+        bool isLeft,
+        const glm::vec3& position,
+        const glm::vec3& normal,
+        const glm::vec3& gripDir
+    );
+
+    // Set a foot hold position
+    static void setFootHold(
+        ClimbingIK& climbing,
+        bool isLeft,
+        const glm::vec3& position,
+        const glm::vec3& normal
+    );
+
+    // Clear a hold (limb returns to default position)
+    static void clearHandHold(ClimbingIK& climbing, bool isLeft);
+    static void clearFootHold(ClimbingIK& climbing, bool isLeft);
+
+    // Check if a reach is possible from current body position
+    static bool canReach(
+        const ClimbingIK& climbing,
+        const glm::vec3& holdPosition,
+        bool isArm,
+        bool isLeft,
+        const std::vector<glm::mat4>& globalTransforms
+    );
+
+private:
+    // Position body relative to wall
+    static void positionBody(
+        Skeleton& skeleton,
+        ClimbingIK& climbing,
+        const std::vector<glm::mat4>& globalTransforms,
+        float deltaTime
+    );
+
+    // Orient hand to grip hold
+    static void orientHandToHold(
+        Joint& handJoint,
+        const HandHold& hold,
+        const glm::mat4& parentGlobalTransform
+    );
+
+    // Orient foot to contact hold
+    static void orientFootToHold(
+        Joint& footJoint,
+        const FootHold& hold,
+        const glm::mat4& parentGlobalTransform
+    );
+};
+
 // IK System - manages multiple IK chains for a character
 class IKSystem {
 public:
@@ -325,6 +561,60 @@ public:
     void setFootPlacementEnabled(const std::string& name, bool enabled);
     void setFootPlacementWeight(const std::string& name, float weight);
 
+    // ========== Straddling IK (stepping on boxes) ==========
+
+    // Setup straddling by bone names
+    bool setupStraddle(
+        const Skeleton& skeleton,
+        const std::string& pelvisBoneName,
+        const std::string& spineBaseBoneName = ""
+    );
+
+    // Get straddle for modification
+    StraddleIK* getStraddle() { return straddleEnabled ? &straddle : nullptr; }
+    const StraddleIK* getStraddle() const { return straddleEnabled ? &straddle : nullptr; }
+
+    // Enable/disable straddling
+    void setStraddleEnabled(bool enabled);
+    void setStraddleWeight(float weight);
+
+    // ========== Climbing IK ==========
+
+    // Setup climbing by bone names
+    bool setupClimbing(
+        const Skeleton& skeleton,
+        const std::string& pelvisBoneName,
+        const std::string& spineBaseBoneName,
+        const std::string& spineMidBoneName = "",
+        const std::string& chestBoneName = ""
+    );
+
+    // Link arm/leg chains to climbing system
+    void setClimbingArmChains(const std::string& leftArmChainName, const std::string& rightArmChainName);
+    void setClimbingLegChains(const std::string& leftLegChainName, const std::string& rightLegChainName);
+
+    // Set hand bone indices for grip orientation
+    void setClimbingHandBones(
+        const Skeleton& skeleton,
+        const std::string& leftHandBoneName,
+        const std::string& rightHandBoneName
+    );
+
+    // Get climbing for modification
+    ClimbingIK* getClimbing() { return climbingEnabled ? &climbing : nullptr; }
+    const ClimbingIK* getClimbing() const { return climbingEnabled ? &climbing : nullptr; }
+
+    // Climbing hold control
+    void setClimbingHandHold(bool isLeft, const glm::vec3& position, const glm::vec3& normal, const glm::vec3& gripDir);
+    void setClimbingFootHold(bool isLeft, const glm::vec3& position, const glm::vec3& normal);
+    void clearClimbingHandHold(bool isLeft);
+    void clearClimbingFootHold(bool isLeft);
+
+    // Enable/disable climbing
+    void setClimbingEnabled(bool enabled);
+    void setClimbingWeight(float weight);
+    void setClimbingWallNormal(const glm::vec3& normal);
+
     // ========== Solving ==========
 
     // Solve all enabled IK chains
@@ -363,6 +653,18 @@ private:
     std::vector<NamedFootPlacement> footPlacements;
     PelvisAdjustment pelvisAdjustment;
     GroundQueryFunc groundQuery;
+
+    // Straddling IK
+    StraddleIK straddle;
+    bool straddleEnabled = false;
+
+    // Climbing IK
+    ClimbingIK climbing;
+    bool climbingEnabled = false;
+    std::string leftArmChainName;
+    std::string rightArmChainName;
+    std::string leftLegChainName;
+    std::string rightLegChainName;
 
     // Cached global transforms (computed once per solve)
     mutable std::vector<glm::mat4> cachedGlobalTransforms;

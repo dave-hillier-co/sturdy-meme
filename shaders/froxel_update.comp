@@ -78,19 +78,78 @@ float exponentialHeightDensity(float height) {
     return density * exp(-max(relHeight, 0.0) / scaleHeight);
 }
 
-// Sigmoidal layer density (ground fog layer)
-float sigmoidalLayerDensity(float height) {
-    float layerHeight = ubo.layerParams.x;
-    float layerThickness = ubo.layerParams.y;
-    float layerDensity = ubo.layerParams.z * 50.0;  // Amplify for visible ground fog
-    float t = (height - layerHeight) / max(layerThickness, 0.001);
-    return layerDensity / (1.0 + exp(t * 2.0));
+// 3D value noise for fog volume variation
+float noise3D(vec3 p) {
+    vec3 i = floor(p);
+    vec3 f = fract(p);
+    f = f * f * (3.0 - 2.0 * f);  // Smoothstep
+
+    // Hash corners of the cell
+    float n000 = fract(sin(dot(i + vec3(0,0,0), vec3(127.1, 311.7, 74.7))) * 43758.5453);
+    float n001 = fract(sin(dot(i + vec3(0,0,1), vec3(127.1, 311.7, 74.7))) * 43758.5453);
+    float n010 = fract(sin(dot(i + vec3(0,1,0), vec3(127.1, 311.7, 74.7))) * 43758.5453);
+    float n011 = fract(sin(dot(i + vec3(0,1,1), vec3(127.1, 311.7, 74.7))) * 43758.5453);
+    float n100 = fract(sin(dot(i + vec3(1,0,0), vec3(127.1, 311.7, 74.7))) * 43758.5453);
+    float n101 = fract(sin(dot(i + vec3(1,0,1), vec3(127.1, 311.7, 74.7))) * 43758.5453);
+    float n110 = fract(sin(dot(i + vec3(1,1,0), vec3(127.1, 311.7, 74.7))) * 43758.5453);
+    float n111 = fract(sin(dot(i + vec3(1,1,1), vec3(127.1, 311.7, 74.7))) * 43758.5453);
+
+    // Trilinear interpolation
+    float n00 = mix(n000, n100, f.x);
+    float n01 = mix(n001, n101, f.x);
+    float n10 = mix(n010, n110, f.x);
+    float n11 = mix(n011, n111, f.x);
+    float n0 = mix(n00, n10, f.y);
+    float n1 = mix(n01, n11, f.y);
+    return mix(n0, n1, f.z);
 }
 
-// Combined fog density at height
+// Fractal Brownian Motion for more natural fog shapes
+float fbm(vec3 p, int octaves) {
+    float value = 0.0;
+    float amplitude = 0.5;
+    float frequency = 1.0;
+    for (int i = 0; i < octaves; i++) {
+        value += amplitude * noise3D(p * frequency);
+        amplitude *= 0.5;
+        frequency *= 2.0;
+    }
+    return value;
+}
+
+// Volumetric ground fog layer with 3D noise for fog patches/wisps
+float volumetricGroundFog(vec3 worldPos) {
+    float layerHeight = ubo.layerParams.x;
+    float layerThickness = ubo.layerParams.y;
+    float layerDensity = ubo.layerParams.z * 50.0;
+
+    // Height-based falloff (fog is densest at layerHeight, fades above)
+    float heightAboveLayer = worldPos.y - layerHeight;
+    float heightFalloff = 1.0 / (1.0 + exp(heightAboveLayer * 2.0 / max(layerThickness, 0.001)));
+
+    // 3D noise for fog volume shapes - creates patches and wisps
+    // Scale controls size of fog patches (larger = bigger patches)
+    float noiseScale = 0.02;  // ~50m fog patches
+    vec3 noisePos = worldPos * noiseScale;
+
+    // Multi-octave noise for natural variation
+    float fogNoise = fbm(noisePos, 4);
+
+    // Threshold noise to create distinct fog volumes (not just haze)
+    // Values below threshold = no fog, above = fog
+    float threshold = 0.35;
+    float fogShape = smoothstep(threshold, threshold + 0.2, fogNoise);
+
+    // Combine height falloff with noise shape
+    return layerDensity * heightFalloff * fogShape;
+}
+
+// Combined fog density at world position
 float getHazeDensity(vec3 worldPos) {
     float height = worldPos.y;
-    return exponentialHeightDensity(height) + sigmoidalLayerDensity(height);
+    float generalHaze = exponentialHeightDensity(height);
+    float groundFog = volumetricGroundFog(worldPos);
+    return generalHaze + groundFog;
 }
 
 // Henyey-Greenstein phase function

@@ -135,7 +135,9 @@ public:
     void updateDescriptorSets(VkDevice device,
                               const std::vector<VkBuffer>& sceneUniformBuffers,
                               VkImageView shadowMapView,
-                              VkSampler shadowSampler);
+                              VkSampler shadowSampler,
+                              const std::vector<VkBuffer>& snowUBOBuffers,
+                              const std::vector<VkBuffer>& cloudShadowUBOBuffers);
 
     // Set snow mask texture for snow accumulation rendering (legacy)
     void setSnowMask(VkDevice device, VkImageView snowMaskView, VkSampler snowMaskSampler);

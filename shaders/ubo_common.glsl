@@ -37,7 +37,20 @@ layout(binding = UBO_BINDING) uniform UniformBufferObject {
     float debugCascades;       // 1.0 = show cascade colors
     float julianDay;           // Julian day for sidereal rotation
     float cloudStyle;
-    vec3 uboPadding;           // Padding for alignment
+    float uboPad1;             // Padding - was vec3 but vec3 causes std140 alignment mismatch
+    float uboPad2;
+    float uboPad3;
+
+    // Atmosphere parameters (from UI controls) - used by atmosphere_common.glsl
+    vec4 atmosRayleighScattering;  // xyz = rayleigh scattering base, w = scale height
+    vec4 atmosMieParams;           // x = mie scattering, y = mie absorption, z = scale height, w = anisotropy
+    vec4 atmosOzoneAbsorption;     // xyz = ozone absorption, w = layer center
+    float atmosOzoneWidth;         // Ozone layer width
+    float atmosPad1, atmosPad2, atmosPad3;  // Padding for alignment
+
+    // Height fog parameters (from UI controls) - used by applyHeightFog/applyAerialPerspective
+    vec4 heightFogParams;          // x = baseHeight, y = scaleHeight, z = density, w = unused
+    vec4 heightFogLayerParams;     // x = layerThickness, y = layerDensity, z = unused, w = unused
 } ubo;
 
 #endif // UBO_COMMON_GLSL

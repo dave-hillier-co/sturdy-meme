@@ -1,5 +1,9 @@
 // Atmosphere common functions and constants
 // Based on Phase 4.1 documentation (Bruneton & Neyret, Hillaire, Ghost of Tsushima)
+//
+// IMPORTANT: Shaders that include this file must include ubo_common.glsl BEFORE
+// including atmosphere_common.glsl. The fog and scattering functions use
+// ubo.atmosRayleighScattering, ubo.atmosMieParams, ubo.heightFogParams, etc.
 
 #ifndef ATMOSPHERE_COMMON_GLSL
 #define ATMOSPHERE_COMMON_GLSL
@@ -188,13 +192,21 @@ vec2 raySphereIntersect(vec3 origin, vec3 dir, float radius) {
     return vec2(-b - h, -b + h);
 }
 
-// Simplified ozone density
+// ============================================================================
+// UBO-Dependent Functions (require ubo_common.glsl to be included first)
+// These functions use runtime parameters from the UBO for UI control
+// ============================================================================
+#ifdef UBO_COMMON_GLSL
+
+// Simplified ozone density (uses UBO params for UI control)
 float ozoneDensity(float altitude) {
-    float z = (altitude - OZONE_LAYER_CENTER) / OZONE_LAYER_WIDTH;
+    float ozoneCenter = ubo.atmosOzoneAbsorption.w;  // Center stored in w component
+    float ozoneWidth = max(ubo.atmosOzoneWidth, 0.1);  // Prevent division by zero
+    float z = (altitude - ozoneCenter) / ozoneWidth;
     return exp(-0.5 * z * z);
 }
 
-// Integrate atmospheric scattering along a ray
+// Integrate atmospheric scattering along a ray (uses UBO params for UI control)
 ScatteringResult integrateAtmosphere(vec3 origin, vec3 dir, float maxDistance, int sampleCount, vec3 sunDirection) {
     vec2 atmo = raySphereIntersect(origin, dir, ATMOSPHERE_RADIUS);
     float start = max(atmo.x, 0.0);
@@ -213,6 +225,15 @@ ScatteringResult integrateAtmosphere(vec3 origin, vec3 dir, float maxDistance, i
         return ScatteringResult(vec3(0.0), vec3(1.0));
     }
 
+    // Extract atmosphere parameters from UBO (with safety clamps to prevent division by zero)
+    vec3 rayleighScatteringBase = ubo.atmosRayleighScattering.xyz;
+    float rayleighScaleHeight = max(ubo.atmosRayleighScattering.w, 0.1);
+    float mieScatteringBase = ubo.atmosMieParams.x;
+    float mieAbsorptionBase = ubo.atmosMieParams.y;
+    float mieScaleHeight = max(ubo.atmosMieParams.z, 0.1);
+    float mieAnisotropy = clamp(ubo.atmosMieParams.w, -0.99, 0.99);  // Avoid singularity at |g|=1
+    vec3 ozoneAbsorption = ubo.atmosOzoneAbsorption.xyz;
+
     float stepSize = (end - start) / float(sampleCount);
     vec3 transmittance = vec3(1.0);
     vec3 inscatter = vec3(0.0);
@@ -220,23 +241,23 @@ ScatteringResult integrateAtmosphere(vec3 origin, vec3 dir, float maxDistance, i
     vec3 sunDir = normalize(sunDirection);
     float cosViewSun = dot(dir, sunDir);
     float rayleighP = RayleighPhase(cosViewSun);
-    float mieP = CornetteShanksMiePhase(cosViewSun, MIE_ANISOTROPY);
+    float mieP = CornetteShanksMiePhase(cosViewSun, mieAnisotropy);
 
     for (int i = 0; i < sampleCount; i++) {
         float t = start + (float(i) + 0.5) * stepSize;
         vec3 pos = origin + dir * t;
         float altitude = max(length(pos) - PLANET_RADIUS, 0.0);
 
-        float rayleighDensity = exp(-altitude / RAYLEIGH_SCALE_HEIGHT);
-        float mieDensity = exp(-altitude / MIE_SCALE_HEIGHT);
+        float rayleighDensity = exp(-altitude / rayleighScaleHeight);
+        float mieDensity = exp(-altitude / mieScaleHeight);
         float ozone = ozoneDensity(altitude);
 
-        vec3 rayleighScatter = rayleighDensity * RAYLEIGH_SCATTERING_BASE;
-        vec3 mieScatter = mieDensity * vec3(MIE_SCATTERING_BASE);
+        vec3 rayleighScatter = rayleighDensity * rayleighScatteringBase;
+        vec3 mieScatter = mieDensity * vec3(mieScatteringBase);
 
         vec3 extinction = rayleighScatter + mieScatter +
-                          mieDensity * vec3(MIE_ABSORPTION_BASE) +
-                          ozone * OZONE_ABSORPTION;
+                          mieDensity * vec3(mieAbsorptionBase) +
+                          ozone * ozoneAbsorption;
 
         vec3 segmentScatter = rayleighScatter * rayleighP + mieScatter * mieP;
 
@@ -250,19 +271,30 @@ ScatteringResult integrateAtmosphere(vec3 origin, vec3 dir, float maxDistance, i
 
 // ============================================================================
 // Height Fog Functions (Phase 4.3 - Volumetric Haze)
+// Uses UBO parameters for UI control
 // ============================================================================
 
 // Exponential height falloff - good for general atmospheric haze
 float exponentialHeightDensity(float height) {
-    float relativeHeight = height - FOG_BASE_HEIGHT;
-    return FOG_DENSITY * exp(-max(relativeHeight, 0.0) / FOG_SCALE_HEIGHT);
+    float fogBaseHeight = ubo.heightFogParams.x;
+    float fogScaleHeight = max(ubo.heightFogParams.y, 1.0);  // Prevent division by zero
+    float fogDensity = ubo.heightFogParams.z;
+    float relativeHeight = height - fogBaseHeight;
+    // Clamp exponent to prevent underflow (result would be ~0 anyway for large values)
+    float exponent = clamp(-max(relativeHeight, 0.0) / fogScaleHeight, -40.0, 0.0);
+    return fogDensity * exp(exponent);
 }
 
 // Sigmoidal layer density - good for low-lying ground fog
 float sigmoidalLayerDensity(float height) {
-    float t = (height - FOG_BASE_HEIGHT) / FOG_LAYER_THICKNESS;
+    float fogBaseHeight = ubo.heightFogParams.x;
+    float layerThickness = max(ubo.heightFogLayerParams.x, 1.0);  // Prevent division by zero
+    float layerDensity = ubo.heightFogLayerParams.y;
+    float t = (height - fogBaseHeight) / layerThickness;
+    // Clamp t to prevent exp overflow (exp(88) ~ FLT_MAX, so clamp well below)
+    t = clamp(t, -40.0, 40.0);
     // Smooth transition from full density below to zero above
-    return FOG_LAYER_DENSITY / (1.0 + exp(t * 2.0));
+    return layerDensity / (1.0 + exp(t * 2.0));
 }
 
 // Combined fog density at a given height
@@ -287,20 +319,29 @@ float integrateExponentialFog(vec3 startPos, vec3 endPos) {
         return getHeightFogDensity(avgHeight) * distance;
     }
 
+    // Extract fog params from UBO
+    float fogBaseHeight = ubo.heightFogParams.x;
+    float fogScaleHeight = max(ubo.heightFogParams.y, 1.0);  // Prevent division by zero
+    float fogDensity = ubo.heightFogParams.z;
+
     // Analytical integration of exponential density along ray
-    float invScaleHeight = 1.0 / FOG_SCALE_HEIGHT;
+    float invScaleHeight = 1.0 / fogScaleHeight;
+
+    // Clamp exponent arguments to prevent overflow/underflow
+    float exp0 = clamp(-((h0 - fogBaseHeight)) * invScaleHeight, -40.0, 40.0);
+    float exp1 = clamp(-((h1 - fogBaseHeight)) * invScaleHeight, -40.0, 40.0);
 
     // Exponential fog component
-    float expIntegral = FOG_DENSITY * FOG_SCALE_HEIGHT *
-        abs(exp(-((h0 - FOG_BASE_HEIGHT)) * invScaleHeight) -
-            exp(-((h1 - FOG_BASE_HEIGHT)) * invScaleHeight)) /
+    float expIntegral = fogDensity * fogScaleHeight *
+        abs(exp(exp0) - exp(exp1)) /
         max(abs(deltaH / distance), 0.001);
 
     // Sigmoidal component (approximate with average)
     float avgSigmoidal = (sigmoidalLayerDensity(h0) + sigmoidalLayerDensity(h1)) * 0.5;
     float sigIntegral = avgSigmoidal * distance;
 
-    return expIntegral + sigIntegral;
+    // Clamp final result to prevent extreme values
+    return clamp(expIntegral + sigIntegral, 0.0, 100.0);
 }
 
 // Apply height fog with in-scattering
@@ -361,5 +402,7 @@ vec3 applyAerialPerspective(vec3 color, vec3 cameraPos, vec3 viewDir, float view
 
     return finalColor;
 }
+
+#endif // UBO_COMMON_GLSL
 
 #endif // ATMOSPHERE_COMMON_GLSL

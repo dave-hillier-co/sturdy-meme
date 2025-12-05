@@ -10,29 +10,9 @@
 #include "constants_common.glsl"
 #include "lighting_common.glsl"
 #include "shadow_common.glsl"
+#include "ubo_common.glsl"
 #include "atmosphere_common.glsl"
 #include "terrain_height_common.glsl"
-
-layout(binding = 0) uniform UniformBufferObject {
-    mat4 model;
-    mat4 view;
-    mat4 proj;
-    mat4 cascadeViewProj[NUM_CASCADES];
-    vec4 cascadeSplits;
-    vec4 sunDirection;
-    vec4 moonDirection;
-    vec4 sunColor;
-    vec4 moonColor;
-    vec4 ambientColor;
-    vec4 cameraPosition;
-    vec4 pointLightPosition;
-    vec4 pointLightColor;
-    vec4 windDirectionAndSpeed;
-    float timeOfDay;
-    float shadowMapSize;
-    float debugCascades;
-    float julianDay;
-} ubo;
 
 // Water-specific uniforms
 layout(std140, binding = 1) uniform WaterUniforms {

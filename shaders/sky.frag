@@ -1025,19 +1025,22 @@ vec3 renderAtmosphere(vec3 dir) {
     float moonSkyContribution = twilightFactor * moonVisibility;
 
     // Compute horizon/below-horizon color for blending
-    // Sample the horizon atmosphere by using a horizontal ray
+    // Use sky-view LUT sampled at horizon level for consistent atmosphere response
     vec3 horizonDir = normalize(vec3(normDir.x, 0.001, normDir.z));
+    vec3 horizonLUTColor = sampleSkyViewLUT(horizonDir);
+
+    // Still need ray-marched result for transmittance
     ScatteringResult horizonResult = integrateAtmosphere(vec3(0.0, PLANET_RADIUS + 0.001, 0.0), horizonDir, 16);
 
     vec3 sunLight = ubo.sunColor.rgb * ubo.sunDirection.w;
     vec3 moonLight = ubo.moonColor.rgb * ubo.moonDirection.w;
 
-    // Sun contribution to horizon
-    vec3 horizonColor = horizonResult.inscatter * sunLight;
+    // Sun contribution to horizon using LUT
+    vec3 horizonColor = horizonLUTColor * sunLight;
 
     // Moon contribution - fades in smoothly during twilight
     if (moonSkyContribution > 0.01) {
-        horizonColor += horizonResult.inscatter * moonLight * moonSkyContribution;
+        horizonColor += horizonLUTColor * moonLight * moonSkyContribution;
     }
 
     // Multiple scattering compensation (reduced to avoid overpowering sky color)
@@ -1067,28 +1070,30 @@ vec3 renderAtmosphere(vec3 dir) {
     vec3 origin = vec3(0.0, PLANET_RADIUS + 0.001, 0.0);
 
     // Use sky-view LUT for fast atmospheric scattering lookup (Phase 4.1.5)
-    // The LUT is precomputed per-frame with current sun direction
+    // The LUT is precomputed per-frame with current sun direction and responds to UI parameter changes
     vec3 skyLUTColor = sampleSkyViewLUT(normDir);
 
-    // Still need ray-marched result for transmittance and moon contribution
+    // Still need ray-marched result for transmittance (used for sun disc, clouds, etc.)
     // Use fewer samples since we have the LUT for primary color
     ScatteringResult result = integrateAtmosphere(origin, normDir, 12);
 
     // sunLight and moonLight already defined above for horizon calculation
 
     // Compute atmospheric transmittance from viewer to sky (for energy conservation)
+    // Note: transmittance also uses hardcoded constants, but its effect is less visible
+    // when atmosphere is disabled (mostly affects sun/moon disc brightness)
     vec3 skyTransmittance = result.transmittance;
 
-    // Sky inscatter from sun - inscatter includes SOLAR_IRRADIANCE from integrateAtmosphere
-    // Apply sun color and intensity from UBO
-    vec3 sunSkyContrib = result.inscatter * sunLight;
+    // Use LUT-based sky color which responds to atmosphere parameter changes from UI
+    // The LUT already includes proper Rayleigh/Mie scattering with current parameters
+    vec3 sunSkyContrib = skyLUTColor * sunLight;
 
     // Moon sky contribution - fades in smoothly during twilight
-    // Use consistent twilight factor from above (moonSkyContribution)
+    // Sample LUT with moon direction for moon's atmospheric scattering contribution
     vec3 moonSkyContrib = vec3(0.0);
     if (moonSkyContribution > 0.01) {
         // Moon illuminates the atmosphere similar to sun but dimmer
-        moonSkyContrib = result.inscatter * moonLight * moonSkyContribution;
+        moonSkyContrib = skyLUTColor * moonLight * moonSkyContribution;
     }
 
     // Multiple scattering compensation (approximates light scattered more than once)

@@ -183,6 +183,36 @@ std::vector<UBODefinition> reflectSPIRV(const std::string& filepath) {
     return ubos;
 }
 
+// Get the size in bytes for a C++ type matching std140 layout
+uint32_t getStd140TypeSize(const std::string& type) {
+    // Scalars
+    if (type == "float" || type == "int" || type == "uint32_t" || type == "bool") return 4;
+    // Vec2
+    if (type == "glm::vec2" || type == "glm::ivec2" || type == "glm::uvec2") return 8;
+    // Vec3 and Vec4 both occupy 16 bytes in std140
+    if (type == "glm::vec3" || type == "glm::ivec3" || type == "glm::uvec3") return 12;  // But aligned to 16!
+    if (type == "glm::vec4" || type == "glm::ivec4" || type == "glm::uvec4") return 16;
+    // Matrices (column-major, each column is a vec4)
+    if (type == "glm::mat2") return 32;   // 2 columns x 16 bytes
+    if (type == "glm::mat3") return 48;   // 3 columns x 16 bytes
+    if (type == "glm::mat4") return 64;   // 4 columns x 16 bytes
+    return 4;  // Default to float size
+}
+
+// Get the alignment requirement for a C++ type matching std140 layout
+uint32_t getStd140TypeAlignment(const std::string& type) {
+    // Scalars align to their own size
+    if (type == "float" || type == "int" || type == "uint32_t" || type == "bool") return 4;
+    // Vec2 aligns to 8
+    if (type == "glm::vec2" || type == "glm::ivec2" || type == "glm::uvec2") return 8;
+    // Vec3 and Vec4 both align to 16 in std140
+    if (type == "glm::vec3" || type == "glm::ivec3" || type == "glm::uvec3") return 16;
+    if (type == "glm::vec4" || type == "glm::ivec4" || type == "glm::uvec4") return 16;
+    // Matrices align to vec4 (16 bytes)
+    if (type.find("glm::mat") != std::string::npos) return 16;
+    return 4;
+}
+
 std::string generateStructDef(const UBODefinition& ubo) {
     std::ostringstream structDef;
 
@@ -197,7 +227,8 @@ std::string generateStructDef(const UBODefinition& ubo) {
         structDef << "// This struct is defined in its corresponding system header file\n";
         structDef << "// Binding: " << ubo.binding << ", Set: " << ubo.set;
     } else {
-        structDef << "struct " << ubo.structName << " {\n";
+        // Use alignas(16) to ensure the struct itself aligns correctly for UBO usage
+        structDef << "struct alignas(16) " << ubo.structName << " {\n";
 
         // Sort members by offset to ensure correct order
         std::vector<UBOMember> sortedMembers = ubo.members;
@@ -206,12 +237,54 @@ std::string generateStructDef(const UBODefinition& ubo) {
                 return a.offset < b.offset;
             });
 
-        // Generate members
+        // Generate members with explicit padding for std140 compatibility
+        uint32_t currentOffset = 0;
+        int paddingIndex = 0;
+
         for (const auto& member : sortedMembers) {
-            structDef << "    " << member.type << " " << member.name << member.arraySpec << ";\n";
+            // Add padding if there's a gap between current offset and member offset
+            if (member.offset > currentOffset) {
+                uint32_t paddingNeeded = member.offset - currentOffset;
+                // Generate padding as uint8_t array
+                structDef << "    uint8_t _pad" << paddingIndex++ << "[" << paddingNeeded << "];  // std140 alignment padding\n";
+            }
+
+            // Get std140 alignment requirement
+            uint32_t alignment = getStd140TypeAlignment(member.type);
+
+            // Detect if this is a scalar array (float[], int[], etc.) which needs special handling
+            // In std140, scalar arrays have each element rounded to 16 bytes
+            bool isScalarArray = !member.arraySpec.empty() &&
+                                 (member.type == "float" || member.type == "int" || member.type == "uint32_t" || member.type == "bool");
+
+            if (isScalarArray) {
+                // For scalar arrays, use uint8_t to preserve exact std140 size
+                // member.size is the std140 size (e.g., 48 for float[3], not 12)
+                structDef << "    uint8_t " << member.name << "[" << member.size << "];  // std140: " << member.type << member.arraySpec << " (16-byte stride)\n";
+            } else {
+                // Add alignas for any type that needs alignment > 4 (C++ default)
+                // This ensures vec3 (align 16), vec4 (align 16), and matrices (align 16) are correctly aligned
+                if (alignment > 4) {
+                    structDef << "    alignas(" << alignment << ") " << member.type << " " << member.name << member.arraySpec << ";\n";
+                } else {
+                    structDef << "    " << member.type << " " << member.name << member.arraySpec << ";\n";
+                }
+            }
+
+            // Calculate size (use SPIR-V reported size, which is std140 size)
+            uint32_t memberSize = member.size;
+            currentOffset = member.offset + memberSize;
         }
 
-        structDef << "};";
+        // Add trailing padding if struct size is less than total reported size
+        if (currentOffset < ubo.totalSize) {
+            uint32_t trailingPadding = ubo.totalSize - currentOffset;
+            structDef << "    uint8_t _paddingEnd[" << trailingPadding << "];  // std140 trailing padding\n";
+        }
+
+        structDef << "};\n";
+        structDef << "static_assert(sizeof(" << ubo.structName << ") == " << ubo.totalSize
+                  << ", \"" << ubo.structName << " size mismatch with std140 layout\");";
     }
 
     return structDef.str();
@@ -222,10 +295,12 @@ std::string generateHeader(const std::map<std::string, UBODefinition>& uniqueUBO
 
     header << "// Auto-generated by shader_reflect tool\n";
     header << "// DO NOT EDIT MANUALLY - this file is generated from SPIR-V shaders\n";
+    header << "// Structs are laid out to match std140 GLSL layout for UBO compatibility\n";
     header << "\n";
     header << "#pragma once\n";
     header << "\n";
     header << "#include <glm/glm.hpp>\n";
+    header << "#include <cstdint>\n";
     header << "\n";
 
     for (const auto& [name, ubo] : uniqueUBOs) {

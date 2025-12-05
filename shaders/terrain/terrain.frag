@@ -11,13 +11,18 @@
 #include "../constants_common.glsl"
 #include "../lighting_common.glsl"
 #include "../shadow_common.glsl"
-#include "../atmosphere_common.glsl"
 #include "../snow_common.glsl"
 #include "../cloud_shadow_common.glsl"
 
 // Terrain uses binding 5 for the main UBO (different descriptor set layout)
 #define UBO_BINDING 5
 #include "../ubo_common.glsl"
+#include "../atmosphere_common.glsl"
+
+// Terrain uses separate bindings for Snow/CloudShadow UBOs to avoid conflicts
+// with snow cascade textures at bindings 10-12
+#define SNOW_UBO_BINDING BINDING_TERRAIN_SNOW_UBO
+#define CLOUD_SHADOW_UBO_BINDING BINDING_TERRAIN_CLOUD_SHADOW_UBO
 #include "../ubo_snow.glsl"
 #include "../ubo_cloud_shadow.glsl"
 
@@ -311,6 +316,19 @@ void main() {
         // Overlay depth color (70% blend)
         atmosphericColor = mix(atmosphericColor, depthColor, 0.7);
     }
+
+    // DEBUG: Test fog UBO values after alignment fix
+    // To enable: change #if 0 to #if 1
+    #if 0
+    // R = fogDensity * 100 (0.003 -> 0.3, should show red tint)
+    // G = fogScaleHeight / 1000 (300 -> 0.3, should show green tint)
+    // B = layerDensity * 100 (0.008 -> 0.8, should show strong blue)
+    float r = ubo.heightFogParams.z * 100.0;  // fogDensity
+    float g = ubo.heightFogParams.y / 1000.0;  // fogScaleHeight
+    float b = ubo.heightFogLayerParams.y * 100.0;  // layerDensity
+    outColor = vec4(r, g, b, 1.0);
+    return;
+    #endif
 
     // Output
     outColor = vec4(atmosphericColor, 1.0);

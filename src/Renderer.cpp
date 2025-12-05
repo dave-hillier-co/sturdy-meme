@@ -9,6 +9,7 @@
 #include <stdexcept>
 #include <cstring>
 #include <cmath>
+#include <cstddef>
 #include <array>
 #include <limits>
 
@@ -232,7 +233,8 @@ bool Renderer::init(SDL_Window* win, const std::string& resPath) {
                                       cloudShadowSystem.getShadowMapView(), cloudShadowSystem.getShadowMapSampler());
 
     // Update terrain descriptor sets with shared resources
-    terrainSystem.updateDescriptorSets(device, uniformBuffers, shadowSystem.getShadowImageView(), shadowSystem.getShadowSampler());
+    terrainSystem.updateDescriptorSets(device, uniformBuffers, shadowSystem.getShadowImageView(), shadowSystem.getShadowSampler(),
+                                        snowBuffers, cloudShadowBuffers);
 
     // Initialize rock system (uses terrain for height queries)
     RockSystem::InitInfo rockInfo{};
@@ -1812,6 +1814,23 @@ UniformBufferObject Renderer::buildUniformBufferData(const Camera& camera, const
     ubo.debugCascades = showCascadeDebug ? 1.0f : 0.0f;
     ubo.julianDay = static_cast<float>(lighting.julianDay);
     ubo.cloudStyle = useParaboloidClouds ? 1.0f : 0.0f;
+
+    // Copy atmosphere parameters from AtmosphereLUTSystem for use in atmosphere_common.glsl
+    const auto& atmosParams = atmosphereLUTSystem.getAtmosphereParams();
+    ubo.atmosRayleighScattering = glm::vec4(atmosParams.rayleighScatteringBase, atmosParams.rayleighScaleHeight);
+    ubo.atmosMieParams = glm::vec4(atmosParams.mieScatteringBase, atmosParams.mieAbsorptionBase,
+                                   atmosParams.mieScaleHeight, atmosParams.mieAnisotropy);
+    ubo.atmosOzoneAbsorption = glm::vec4(atmosParams.ozoneAbsorption, atmosParams.ozoneLayerCenter);
+    ubo.atmosOzoneWidth = atmosParams.ozoneLayerWidth;
+
+    // Copy height fog parameters from FroxelSystem for use in atmosphere_common.glsl
+    ubo.heightFogParams = glm::vec4(froxelSystem.getFogBaseHeight(),
+                                     froxelSystem.getFogScaleHeight(),
+                                     froxelSystem.getFogDensity(),
+                                     0.0f);
+    ubo.heightFogLayerParams = glm::vec4(froxelSystem.getLayerThickness(),
+                                          froxelSystem.getLayerDensity(),
+                                          0.0f, 0.0f);
 
     return ubo;
 }

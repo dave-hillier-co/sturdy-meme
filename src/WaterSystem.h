@@ -52,6 +52,7 @@ public:
         float absorptionScale;     // How quickly light is absorbed with depth
         float scatteringScale;     // How much light scatters (turbidity multiplier)
         float displacementScale;   // Scale for interactive displacement (Phase 4)
+        float sssIntensity;        // Subsurface scattering intensity (Phase 17)
     };
 
     WaterSystem() = default;
@@ -154,6 +155,10 @@ public:
     // Displacement parameters (Phase 4)
     void setDisplacementScale(float scale) { waterUniforms.displacementScale = scale; }
     float getDisplacementScale() const { return waterUniforms.displacementScale; }
+
+    // Subsurface scattering parameters (Phase 17)
+    void setSSSIntensity(float intensity) { waterUniforms.sssIntensity = intensity; }
+    float getSSSIntensity() const { return waterUniforms.sssIntensity; }
 
     // Water type presets (based on Far Cry 5 approach)
     enum class WaterType {

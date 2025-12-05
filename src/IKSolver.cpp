@@ -138,18 +138,6 @@ bool TwoBoneIKSolver::solve(
     glm::vec3 endPos = IKUtils::getWorldPosition(globalTransforms[chain.endBoneIndex]);
     glm::vec3 targetPos = chain.targetPosition;
 
-    static int debugCounter = 0;
-    if (debugCounter++ % 300 == 0) {
-        glm::vec3 toTargetDir = glm::normalize(targetPos - rootPos);
-        SDL_Log("IK[%s]: root=(%.1f,%.1f,%.1f) mid=(%.1f,%.1f,%.1f) end=(%.1f,%.1f,%.1f) target=(%.1f,%.1f,%.1f) targetDir=(%.2f,%.2f,%.2f)",
-                skeleton.joints[chain.rootBoneIndex].name.c_str(),
-                rootPos.x, rootPos.y, rootPos.z,
-                midPos.x, midPos.y, midPos.z,
-                endPos.x, endPos.y, endPos.z,
-                targetPos.x, targetPos.y, targetPos.z,
-                toTargetDir.x, toTargetDir.y, toTargetDir.z);
-    }
-
     // Calculate bone lengths
     float upperLen = glm::length(midPos - rootPos);
     float lowerLen = glm::length(endPos - midPos);
@@ -239,15 +227,6 @@ bool TwoBoneIKSolver::solve(
                           + targetDir * (upperLen * std::cos(rootAngle))
                           + bendDir * (upperLen * std::sin(rootAngle));
 
-    if (debugCounter % 300 == 1) {
-        glm::vec3 newMidDir = glm::normalize(newMidPos - rootPos);
-        SDL_Log("IK: bendDir=(%.2f,%.2f,%.2f) newMidPos=(%.1f,%.1f,%.1f) newMidDir=(%.2f,%.2f,%.2f) rootAngle=%.1f",
-                bendDir.x, bendDir.y, bendDir.z,
-                newMidPos.x, newMidPos.y, newMidPos.z,
-                newMidDir.x, newMidDir.y, newMidDir.z,
-                glm::degrees(rootAngle));
-    }
-
     // Calculate rotations for root bone
     // Current bone direction (from animation)
     glm::vec3 currentRootDir = glm::normalize(midPos - rootPos);
@@ -308,13 +287,6 @@ bool TwoBoneIKSolver::solve(
         } else {
             testRootGlobal = IKUtils::composeTransform(rootTranslation, finalRootLocalRot, rootScale);
         }
-        // Where would the mid bone end up?
-        glm::vec4 predictedMidPos4 = testRootGlobal * glm::vec4(midTranslation, 1.0f);
-        glm::vec3 predictedMidPos = glm::vec3(predictedMidPos4);
-        SDL_Log("IK: expected newMidPos=(%.1f,%.1f,%.1f) predicted=(%.1f,%.1f,%.1f) current mid=(%.1f,%.1f,%.1f)",
-                newMidPos.x, newMidPos.y, newMidPos.z,
-                predictedMidPos.x, predictedMidPos.y, predictedMidPos.z,
-                midPos.x, midPos.y, midPos.z);
     }
 
     // Calculate rotations for mid bone using the same approach
@@ -776,13 +748,6 @@ void FootPlacementIKSolver::solve(
     glm::vec3 targetLocalPos = animFootPos;
     targetLocalPos.y += skeletonHeightOffset;
 
-    static int footDebugCounter = 0;
-    if (footDebugCounter++ % 300 == 0) {
-        SDL_Log("FootIK: worldFoot=%.2f targetWorld=%.2f worldDiff=%.3f skelOffset=%.1f animY=%.1f targetY=%.1f",
-                worldFootPos.y, targetWorldFootY, worldHeightDiff, skeletonHeightOffset,
-                animFootPos.y, targetLocalPos.y);
-    }
-
     // Initialize currentFootTarget if it's at origin (first frame)
     if (glm::length2(foot.currentFootTarget) < 0.001f) {
         foot.currentFootTarget = targetLocalPos;
@@ -839,13 +804,6 @@ void FootPlacementIKSolver::solve(
 
             // Calculate rotation needed to align foot up with ground normal
             float dot = glm::dot(footCurrentUp, targetUp);
-
-            if (footDebugCounter % 120 == 0) {
-                SDL_Log("FootAlign: groundNormal=(%.2f,%.2f,%.2f) footUp=(%.2f,%.2f,%.2f) targetUp=(%.2f,%.2f,%.2f) dot=%.3f",
-                        groundResult.normal.x, groundResult.normal.y, groundResult.normal.z,
-                        footCurrentUp.x, footCurrentUp.y, footCurrentUp.z,
-                        targetUp.x, targetUp.y, targetUp.z, dot);
-            }
 
             // Compute alignment rotation
             glm::quat alignDelta = glm::quat(1, 0, 0, 0);  // Identity

@@ -54,6 +54,7 @@ layout(binding = 4) uniform sampler2D flowMap;
 layout(binding = 6) uniform sampler2D foamNoiseTexture;
 layout(binding = 7) uniform sampler2D temporalFoamMap;  // Phase 14: Persistent foam
 layout(binding = 8) uniform sampler2D causticsTexture;  // Phase 9: Underwater light patterns
+layout(binding = 9) uniform sampler2D ssrTexture;       // Phase 10: Screen-Space Reflections
 
 layout(location = 0) in vec3 fragWorldPos;
 layout(location = 1) in vec3 fragNormal;
@@ -102,7 +103,7 @@ float fresnelSchlick(float cosTheta, float F0) {
 }
 
 // Sample environment reflection (simplified sky reflection)
-vec3 sampleReflection(vec3 reflectDir, vec3 sunDir, vec3 sunColor) {
+vec3 sampleEnvironmentReflection(vec3 reflectDir, vec3 sunDir, vec3 sunColor) {
     // Simplified sky color based on reflection direction
     float skyGradient = smoothstep(-0.1, 0.5, reflectDir.y);
 
@@ -121,6 +122,29 @@ vec3 sampleReflection(vec3 reflectDir, vec3 sunDir, vec3 sunColor) {
     vec3 sunReflect = sunColor * pow(sunDot, 256.0) * 2.0;  // Tight specular
 
     return skyColor + sunReflect;
+}
+
+// =========================================================================
+// PHASE 10: Screen-Space Reflections
+// Sample SSR texture and blend with environment fallback
+// =========================================================================
+vec3 sampleReflection(vec3 reflectDir, vec3 sunDir, vec3 sunColor, vec2 screenUV) {
+    // Get environment reflection as fallback
+    vec3 envReflection = sampleEnvironmentReflection(reflectDir, sunDir, sunColor);
+
+    // Sample SSR texture
+    // SSR texture stores: rgb = reflection color, a = confidence (0 = no hit)
+    vec4 ssrSample = texture(ssrTexture, screenUV);
+    float ssrConfidence = ssrSample.a;
+
+    // Fade SSR based on reflection angle (SSR works best for grazing angles)
+    float angleFade = 1.0 - abs(reflectDir.y);  // Less confident for vertical reflections
+    ssrConfidence *= angleFade;
+
+    // Blend SSR with environment based on confidence
+    vec3 finalReflection = mix(envReflection, ssrSample.rgb, ssrConfidence);
+
+    return finalReflection;
 }
 
 // =========================================================================
@@ -384,8 +408,14 @@ void main() {
     // Add caustics to base color (affects what we see through the water)
     baseColor += causticsContribution;
 
-    // Reflection color from environment
-    vec3 reflectionColor = sampleReflection(R, sunDir, sunColor);
+    // Calculate screen UV for SSR sampling (Phase 10)
+    // SSR texture is at half resolution, so multiply texture size by 2 to get screen size
+    vec2 ssrTextureSize = vec2(textureSize(ssrTexture, 0));
+    vec2 screenSize = ssrTextureSize * 2.0;  // SSR is half resolution
+    vec2 screenUV = gl_FragCoord.xy / screenSize;
+
+    // Reflection color from environment + SSR (Phase 10)
+    vec3 reflectionColor = sampleReflection(R, sunDir, sunColor, screenUV);
 
     // Refraction color based on transmitted light
     vec3 refractionColor = baseColor;

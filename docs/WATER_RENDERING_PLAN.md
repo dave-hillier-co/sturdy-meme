@@ -28,7 +28,7 @@ This plan implements screen-space water rendering with flow maps, procedural foa
 | 14 | Temporal Foam Persistence | ✅ Implemented |
 | 15 | Intersection Foam | ❌ Not started |
 | 16 | Wake/Trail System | ❌ Not started |
-| 17 | Enhanced SSS | ❌ Not started |
+| 17 | Enhanced SSS | ✅ Implemented |
 
 ---
 
@@ -381,34 +381,48 @@ Sea of Thieves generates foam by comparing water mesh depth against scene depth 
 
 ---
 
-## Phase 17: Enhanced Subsurface Scattering (Sea of Thieves)
+## Phase 17: Enhanced Subsurface Scattering (Sea of Thieves) ✅
+
+**Status:** Implemented. Wave geometry-based SSS with back-lighting effect.
 
 **Goal:** Light transmission through thin wave peaks
 
 Sea of Thieves uses wave "choppiness" (displacement amplitude) to mask where SSS should appear.
 
 ### 17.1 SSS Mask from Wave Geometry
-- Calculate wave slope/steepness per-vertex
-- Steep slopes = thin water = more light transmission
-- Use dot(lightDir, viewDir) for SSS contribution
+- ✅ Calculate wave slope/steepness per-vertex (1 - abs(normal.y))
+- ✅ Steep slopes = thin water = more light transmission
+- ✅ Use dot(sunDir, -viewDir) for back-lighting contribution
 
-### 17.2 Integration
+### 17.2 Implementation
+- ✅ Wave slope passed from vertex shader as `fragWaveSlope`
+- ✅ Back-lighting factor from sun direction relative to view
+- ✅ Height-based boost at wave peaks
+- ✅ Shallow water enhancement for visibility
+- ✅ Turbidity reduction (particles scatter light)
+- ✅ `sssIntensity` uniform for artist control
+
+### 17.3 SSS Calculation
 ```glsl
-float sssStrength = waveSlope * max(0.0, dot(lightDir, -viewDir));
-vec3 sssColor = waterColor * sunColor * sssStrength * sssIntensity;
+float backLighting = max(0.0, dot(sunDir, -V));
+float thinWaterFactor = max(waveSlope, heightFactor * 0.5);
+float sssStrength = thinWaterFactor * backLighting * backLighting;
+vec3 waveSSS = sssTint * sunColor * sssStrength * sssIntensity;
 ```
 
 **Files:**
-- Modify: `shaders/water.frag`
+- ✅ `shaders/water.vert` - Wave slope output
+- ✅ `shaders/water.frag` - Enhanced SSS calculation
+- ✅ `src/WaterSystem.h/cpp` - sssIntensity uniform
 
 ---
 
 ## Recommended Implementation Order (Updated)
 
 ### High Impact / Lower Complexity (Do First):
-1. **Phase 13** (Jacobian Foam) - Much better foam placement than height threshold
-2. **Phase 17** (Enhanced SSS) - Quick win for visual quality
-3. **Phase 14** (Temporal Foam) - Foam that looks alive, not static
+1. ✅ **Phase 13** (Jacobian Foam) - Much better foam placement than height threshold
+2. ✅ **Phase 17** (Enhanced SSS) - Quick win for visual quality
+3. ✅ **Phase 14** (Temporal Foam) - Foam that looks alive, not static
 
 ### Medium Impact:
 4. **Phase 9** (Caustics) - Complete the partial implementation
@@ -425,16 +439,21 @@ vec3 sssColor = waterColor * sunColor * sssStrength * sssIntensity;
 
 ## Next Steps for Quality Improvement
 
-Based on current state, the highest-impact improvements are:
+Based on current state, the highest-impact remaining improvements are:
 
-### 1. Jacobian Foam (Phase 13)
-**Why:** Current foam uses height threshold which doesn't capture wave physics. Jacobian foam appears where waves actually fold/overlap, which is physically correct and looks much better.
+### ✅ Completed High-Impact Features
+- **Phase 13** (Jacobian Foam) - Physically-accurate foam at wave crests
+- **Phase 14** (Temporal Foam) - Foam that persists and fades naturally
+- **Phase 17** (Enhanced SSS) - Light glowing through thin wave peaks
 
-### 2. Temporal Foam Persistence (Phase 14)
-**Why:** Current foam is instantaneous - appears and disappears each frame. Persistent foam that fades over time looks more realistic and creates natural foam trails.
+### 1. Caustics Completion (Phase 9)
+**Why:** Refraction is partially implemented. Adding animated caustics would complete the underwater light patterns, enhancing the overall visual quality.
 
-### 3. SSS Enhancement (Phase 17)
-**Why:** Quick implementation, big visual impact. Light glowing through wave peaks adds life to the water.
+### 2. Intersection Foam (Phase 15)
+**Why:** Foam where water meets geometry (islands, rocks, boats) adds realism and makes the water interact with the world.
+
+### 3. Wake/Trail System (Phase 16)
+**Why:** Persistent foam trails behind moving objects creates interactivity and dynamic water responses.
 
 ### 4. Foam Texture Quality
 **Why:** The generated Worley noise texture may need tuning. Consider:

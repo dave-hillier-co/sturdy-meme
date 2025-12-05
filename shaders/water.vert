@@ -33,6 +33,7 @@ layout(std140, binding = 1) uniform WaterUniforms {
     float absorptionScale;     // How quickly light is absorbed
     float scatteringScale;     // How much light scatters
     float displacementScale;   // Scale for interactive displacement (Phase 4)
+    float sssIntensity;        // Phase 17: Subsurface scattering intensity
 };
 
 // Displacement map (Phase 4: Interactive splashes)
@@ -51,6 +52,7 @@ layout(location = 1) out vec3 fragNormal;
 layout(location = 2) out vec2 fragTexCoord;
 layout(location = 3) out float fragWaveHeight;
 layout(location = 4) out float fragJacobian;  // Phase 13: Jacobian for foam detection
+layout(location = 5) out float fragWaveSlope; // Phase 17: Wave slope for SSS
 
 // Gerstner wave function
 // Returns displacement and calculates tangent/bitangent for normal
@@ -163,4 +165,10 @@ void main() {
     fragTexCoord = inTexCoord;
     fragWaveHeight = totalDisplacement.y + interactiveDisplacement * displacementScale;
     fragJacobian = totalJacobian;  // Phase 13: Pass Jacobian for foam detection
+
+    // Phase 17: Calculate wave slope for SSS
+    // Slope = how much the normal deviates from straight up
+    // A flat surface has normal.y = 1, slope = 0
+    // A steep wave has normal tilted, slope > 0
+    fragWaveSlope = 1.0 - abs(normal.y);
 }

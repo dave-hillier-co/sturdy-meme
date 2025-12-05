@@ -40,7 +40,8 @@ layout(std140, binding = 1) uniform WaterUniforms {
     float specularRoughness;   // Base roughness for specular
     float absorptionScale;     // How quickly light is absorbed with depth
     float scatteringScale;     // Turbidity multiplier
-    float padding;
+    float displacementScale;   // Scale for interactive displacement
+    float sssIntensity;        // Phase 17: Subsurface scattering intensity
 };
 
 layout(binding = 2) uniform sampler2DArrayShadow shadowMapArray;
@@ -54,6 +55,7 @@ layout(location = 1) in vec3 fragNormal;
 layout(location = 2) in vec2 fragTexCoord;
 layout(location = 3) in float fragWaveHeight;
 layout(location = 4) in float fragJacobian;  // Phase 13: Jacobian for foam detection
+layout(location = 5) in float fragWaveSlope; // Phase 17: Wave slope for SSS
 
 layout(location = 0) out vec4 outColor;
 
@@ -284,13 +286,56 @@ void main() {
     // Mix with white for scattered light in turbid water
     vec3 baseColor = waterColor.rgb * waterTransmission;
 
-    // Add subsurface scattering contribution - light that bounces back
+    // Sun color used for SSS and specular - calculate once
+    vec3 sunColor = ubo.sunColor.rgb * ubo.sunDirection.w;
+
+    // =========================================================================
+    // PHASE 17: Enhanced Subsurface Scattering (Sea of Thieves inspired)
+    // Light transmission through thin wave peaks creates a glowing effect
+    // =========================================================================
+
+    // Basic depth-based SSS (existing behavior, kept for deep water contribution)
     float sssDepth = min(waterDepth, 10.0);  // Cap for very deep water
-    vec3 sssColor = vec3(0.0, 0.3, 0.4) * (1.0 - exp(-sssDepth * 0.2)) * (1.0 - turbidity * 0.5);
-    baseColor += sssColor * 0.3;
+    vec3 depthSSS = vec3(0.0, 0.3, 0.4) * (1.0 - exp(-sssDepth * 0.2)) * (1.0 - turbidity * 0.5);
+    baseColor += depthSSS * 0.2;
+
+    // Wave geometry-based SSS - light shining through thin wave peaks
+    // When the sun is behind the wave (relative to viewer), light passes through
+    // the thin water at wave crests, creating a glowing translucent effect
+
+    // Back-lighting factor: strongest when looking toward the sun
+    // dot(sunDir, -V) is positive when sun is behind the water relative to viewer
+    float backLighting = max(0.0, dot(sunDir, -V));
+
+    // Wave slope indicates thin water (steep slope = thin wave peak)
+    // fragWaveSlope is 0 for flat surface, ~1 for nearly vertical
+    float waveSlope = fragWaveSlope;
+
+    // Also use wave height to boost SSS at wave peaks
+    float heightFactor = smoothstep(0.0, waveParams.x * 2.0, fragWaveHeight);
+
+    // Combine slope and height for thin-water detection
+    float thinWaterFactor = max(waveSlope, heightFactor * 0.5);
+
+    // SSS is strongest where water is thin AND back-lit
+    float sssStrength = thinWaterFactor * backLighting * backLighting; // Square for falloff
+
+    // Shallow water enhances SSS visibility
+    float shallowBoost = 1.0 - smoothstep(0.0, 5.0, waterDepth);
+    sssStrength *= mix(0.5, 1.5, shallowBoost);
+
+    // Turbidity reduces SSS (particles scatter the light before it reaches the eye)
+    sssStrength *= (1.0 - turbidity * 0.7);
+
+    // Calculate SSS color - sun-tinted with water's natural color
+    // Use a warmer tint at thin peaks for more realistic appearance
+    vec3 sssTint = mix(waterColor.rgb, vec3(0.1, 0.5, 0.4), 0.5); // Blue-green tint
+    vec3 waveSSS = sssTint * sunColor * sssStrength * sssIntensity;
+
+    // Apply enhanced SSS to base color
+    baseColor += waveSSS * shadow;
 
     // Reflection color from environment
-    vec3 sunColor = ubo.sunColor.rgb * ubo.sunDirection.w;
     vec3 reflectionColor = sampleReflection(R, sunDir, sunColor);
 
     // Refraction color based on transmitted light

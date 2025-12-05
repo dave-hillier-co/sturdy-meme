@@ -46,6 +46,7 @@ bool WaterSystem::init(const InitInfo& info) {
     waterUniforms.absorptionScale = 0.15f;     // Depth-based absorption rate
     waterUniforms.scatteringScale = 1.0f;      // Turbidity multiplier
     waterUniforms.displacementScale = 1.0f;   // Interactive displacement scale (Phase 4)
+    waterUniforms.sssIntensity = 1.5f;        // Subsurface scattering intensity (Phase 17)
 
     if (!createDescriptorSetLayout()) return false;
     if (!createPipeline()) return false;

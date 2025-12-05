@@ -85,6 +85,7 @@ set(SOURCES
     src/FlowMapGenerator.cpp
     src/WaterGBuffer.cpp
     src/WaterDisplacement.cpp
+    src/FoamBuffer.cpp
     src/TreeGenerator.cpp
     src/TreeEditSystem.cpp
     src/TreeEditorGui.cpp
@@ -302,6 +303,7 @@ set(SHADER_FILES
     ${CMAKE_CURRENT_SOURCE_DIR}/shaders/water_position.vert.spv
     ${CMAKE_CURRENT_SOURCE_DIR}/shaders/water_position.frag.spv
     ${CMAKE_CURRENT_SOURCE_DIR}/shaders/water_displacement.comp.spv
+    ${CMAKE_CURRENT_SOURCE_DIR}/shaders/foam_blur.comp.spv
     ${CMAKE_CURRENT_SOURCE_DIR}/shaders/tree.vert.spv
     ${CMAKE_CURRENT_SOURCE_DIR}/shaders/tree.frag.spv
 )
@@ -476,6 +478,14 @@ if(SHADER_COMPILE_CMD)
         COMMENT "Compiling water displacement compute shader"
     )
 
+    # Foam blur compute shader (Phase 14: temporal foam persistence)
+    add_custom_command(
+        OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/shaders/foam_blur.comp.spv
+        COMMAND ${GLSLANG_VALIDATOR} --target-env vulkan1.2 -V -o ${CMAKE_CURRENT_SOURCE_DIR}/shaders/foam_blur.comp.spv ${CMAKE_CURRENT_SOURCE_DIR}/shaders/foam_blur.comp
+        DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/shaders/foam_blur.comp
+        COMMENT "Compiling foam blur compute shader"
+    )
+
     # Terrain shaders (LEB terrain system)
     set(TERRAIN_CBT_DEPS
         ${CMAKE_CURRENT_SOURCE_DIR}/shaders/terrain/cbt.glsl
@@ -618,6 +628,7 @@ if(SHADER_COMPILE_CMD)
         ${CMAKE_CURRENT_SOURCE_DIR}/shaders/water_position.vert.spv
         ${CMAKE_CURRENT_SOURCE_DIR}/shaders/water_position.frag.spv
         ${CMAKE_CURRENT_SOURCE_DIR}/shaders/water_displacement.comp.spv
+        ${CMAKE_CURRENT_SOURCE_DIR}/shaders/foam_blur.comp.spv
         ${CMAKE_CURRENT_SOURCE_DIR}/shaders/tree.vert.spv
         ${CMAKE_CURRENT_SOURCE_DIR}/shaders/tree.frag.spv
         ${CMAKE_CURRENT_SOURCE_DIR}/shaders/terrain/terrain_dispatcher.comp.spv

@@ -72,7 +72,9 @@ public:
                               VkImageView flowMapView,
                               VkSampler flowMapSampler,
                               VkImageView displacementMapView,
-                              VkSampler displacementMapSampler);
+                              VkSampler displacementMapSampler,
+                              VkImageView temporalFoamView,
+                              VkSampler temporalFoamSampler);
 
     // Update water uniforms (call each frame)
     void updateUniforms(uint32_t frameIndex);

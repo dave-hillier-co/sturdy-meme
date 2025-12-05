@@ -50,11 +50,13 @@ layout(location = 0) out vec3 fragWorldPos;
 layout(location = 1) out vec3 fragNormal;
 layout(location = 2) out vec2 fragTexCoord;
 layout(location = 3) out float fragWaveHeight;
+layout(location = 4) out float fragJacobian;  // Phase 13: Jacobian for foam detection
 
 // Gerstner wave function
 // Returns displacement and calculates tangent/bitangent for normal
+// Also outputs jacobian contribution for foam detection (Phase 13)
 vec3 gerstnerWave(vec2 pos, float time, vec2 direction, float wavelength, float steepness, float amplitude,
-                  out vec3 tangent, out vec3 bitangent) {
+                  out vec3 tangent, out vec3 bitangent, out float jacobian) {
     float k = 2.0 * 3.14159265359 / wavelength;
     float c = sqrt(9.8 / k);  // Phase speed from dispersion relation
     vec2 d = normalize(direction);
@@ -81,6 +83,12 @@ vec3 gerstnerWave(vec2 pos, float time, vec2 direction, float wavelength, float 
         1.0 - d.y * d.y * steepness * sin(f)
     );
 
+    // Phase 13: Jacobian determinant for foam detection
+    // For Gerstner waves: J = (1 - steepness * cos(f))
+    // When J < 0, the wave surface folds over itself (whitecap formation)
+    // We compute the contribution to the total Jacobian (multiply later)
+    jacobian = 1.0 - steepness * cos(f);
+
     return displacement;
 }
 
@@ -97,28 +105,37 @@ void main() {
     vec3 totalTangent = vec3(1.0, 0.0, 0.0);
     vec3 totalBitangent = vec3(0.0, 0.0, 1.0);
 
+    // Phase 13: Accumulate Jacobian from all waves (multiplicative)
+    float totalJacobian = 1.0;
+
     // Primary wave (wind-driven)
     vec3 tangent1, bitangent1;
+    float jacobian1;
     vec3 wave1 = gerstnerWave(pos, time * waveParams.w, windDir,
                                waveParams.y, waveParams.z, waveParams.x,
-                               tangent1, bitangent1);
+                               tangent1, bitangent1, jacobian1);
     totalDisplacement += wave1;
+    totalJacobian *= jacobian1;
 
     // Secondary wave (cross-wind, smaller)
     vec3 tangent2, bitangent2;
+    float jacobian2;
     vec2 crossDir = vec2(-windDir.y, windDir.x) * 0.7 + windDir * 0.3;
     vec3 wave2 = gerstnerWave(pos, time * waveParams2.w * 1.3, crossDir,
                                waveParams2.y * 0.6, waveParams2.z * 0.7, waveParams2.x * 0.5,
-                               tangent2, bitangent2);
+                               tangent2, bitangent2, jacobian2);
     totalDisplacement += wave2;
+    totalJacobian *= jacobian2;
 
     // Tertiary wave (counter direction, even smaller for detail)
     vec3 tangent3, bitangent3;
+    float jacobian3;
     vec2 counterDir = -windDir * 0.5 + vec2(windDir.y, -windDir.x) * 0.5;
     vec3 wave3 = gerstnerWave(pos, time * waveParams.w * 0.7, counterDir,
                                waveParams.y * 0.3, waveParams.z * 0.5, waveParams.x * 0.25,
-                               tangent3, bitangent3);
+                               tangent3, bitangent3, jacobian3);
     totalDisplacement += wave3;
+    totalJacobian *= jacobian3;
 
     // Blend tangents/bitangents
     totalTangent = normalize(tangent1 + tangent2 * 0.5 + tangent3 * 0.25);
@@ -145,4 +162,5 @@ void main() {
     fragNormal = normal;
     fragTexCoord = inTexCoord;
     fragWaveHeight = totalDisplacement.y + interactiveDisplacement * displacementScale;
+    fragJacobian = totalJacobian;  // Phase 13: Pass Jacobian for foam detection
 }

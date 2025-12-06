@@ -150,8 +150,12 @@ bool WaterTileCull::createBuffers() {
     }
     counterMapped = mapInfo.pMappedData;
 
-    // Initialize counter to 0
-    memset(counterMapped, 0, sizeof(uint32_t) * framesInFlight);
+    // Initialize counter to non-zero so water renders on first frames
+    // (visibility will be properly computed after first tile cull pass)
+    uint32_t* counters = static_cast<uint32_t*>(counterMapped);
+    for (uint32_t i = 0; i < framesInFlight; ++i) {
+        counters[i] = 1;  // Assume visible initially
+    }
 
     // Indirect draw buffer
     VkBufferCreateInfo indirectBufferInfo{};
@@ -429,4 +433,17 @@ uint32_t WaterTileCull::getVisibleTileCount(uint32_t frameIndex) const {
     if (counterMapped == nullptr) return 0;
     const uint32_t* counterPtr = static_cast<const uint32_t*>(counterMapped) + frameIndex;
     return *counterPtr;
+}
+
+bool WaterTileCull::wasWaterVisibleLastFrame(uint32_t /*currentFrameIndex*/) const {
+    // TODO: Tile-based visibility culling has GPU/CPU synchronization issues causing flickering.
+    // The compute shader writes to counter buffer via atomicAdd, but CPU reads may not see
+    // updated values reliably. Possible causes:
+    // - Memory coherency between GPU writes and CPU reads
+    // - Timing of when counter is read vs when GPU dispatch completes
+    // - Counter reset at start of recordTileCull interfering with reads
+    //
+    // For now, always assume water is visible. The tile cull compute still runs and
+    // produces valid data - this can be used for indirect draw integration later.
+    return true;
 }

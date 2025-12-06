@@ -1519,6 +1519,30 @@ void GuiSystem::renderWaterSection(Renderer& renderer) {
         water.setWaveSteepness(0.3f);
         water.setWaveSpeed(0.6f);
     }
+
+    ImGui::Spacing();
+    ImGui::Separator();
+    ImGui::Spacing();
+
+    // Performance optimization controls
+    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.9f, 0.7f, 0.5f, 1.0f));
+    ImGui::Text("PERFORMANCE");
+    ImGui::PopStyleColor();
+
+    auto& tileCull = renderer.getWaterTileCull();
+    bool tileCullEnabled = tileCull.isEnabled();
+    if (ImGui::Checkbox("Tile Culling", &tileCullEnabled)) {
+        tileCull.setEnabled(tileCullEnabled);
+    }
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("Skip water rendering when not visible (temporal)");
+    }
+
+    // Show tile cull stats when enabled
+    if (tileCullEnabled) {
+        glm::uvec2 tileCount = tileCull.getTileCount();
+        ImGui::Text("Tiles: %ux%u (%u px)", tileCount.x, tileCount.y, tileCull.getTileSize());
+    }
 }
 
 void GuiSystem::renderDebugSection(Renderer& renderer) {

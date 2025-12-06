@@ -81,6 +81,10 @@ public:
     // Get visible tile count for this frame
     uint32_t getVisibleTileCount(uint32_t frameIndex) const;
 
+    // Check if water was visible in previous frame (for temporal culling)
+    // Uses previous frame's tile cull results to skip water draw
+    bool wasWaterVisibleLastFrame(uint32_t currentFrameIndex) const;
+
     // Get tile buffer for debug visualization
     VkBuffer getTileBuffer() const { return tileBuffer; }
 

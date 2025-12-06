@@ -234,6 +234,8 @@ public:
     const WindSystem& getWindSystem() const { return windSystem; }
     WaterSystem& getWaterSystem() { return waterSystem; }
     const WaterSystem& getWaterSystem() const { return waterSystem; }
+    WaterTileCull& getWaterTileCull() { return waterTileCull; }
+    const WaterTileCull& getWaterTileCull() const { return waterTileCull; }
     const WaterPlacementData& getWaterPlacementData() const { return erosionSimulator.getWaterData(); }
     SceneBuilder& getSceneBuilder() { return sceneManager.getSceneBuilder(); }
     Mesh& getFlagClothMesh() { return sceneManager.getSceneBuilder().getFlagClothMesh(); }

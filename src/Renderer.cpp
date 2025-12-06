@@ -1694,7 +1694,9 @@ void Renderer::render(const Camera& camera) {
     }
 
     // Water G-buffer pass (Phase 3) - renders water mesh to mini G-buffer
-    if (waterGBuffer.getPipeline() != VK_NULL_HANDLE) {
+    // Skip if water was not visible last frame (temporal culling)
+    if (waterGBuffer.getPipeline() != VK_NULL_HANDLE &&
+        waterTileCull.wasWaterVisibleLastFrame(frame.frameIndex)) {
         profiler.beginGpuZone(cmd, "WaterGBuffer");
         waterGBuffer.beginRenderPass(cmd);
 
@@ -2340,7 +2342,10 @@ void Renderer::recordHDRPass(VkCommandBuffer cmd, uint32_t frameIndex, float gra
     grassSystem.recordDraw(cmd, frameIndex, grassTime);
 
     // Draw water surface (after opaque geometry, blended)
-    waterSystem.recordDraw(cmd, frameIndex);
+    // Use temporal tile culling: skip if no tiles were visible last frame
+    if (waterTileCull.wasWaterVisibleLastFrame(frameIndex)) {
+        waterSystem.recordDraw(cmd, frameIndex);
+    }
 
     // Draw falling leaves - after grass, before weather
     leafSystem.recordDraw(cmd, frameIndex, grassTime);

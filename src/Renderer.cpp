@@ -1084,24 +1084,10 @@ bool Renderer::createSyncObjects() {
     return true;
 }
 
-bool Renderer::createDescriptorSetLayout() {
-    VkDevice device = vulkanContext.getDevice();
-
-    // Main scene descriptor set layout:
-    // 0: UBO (camera/view data)
-    // 1: Diffuse texture sampler
-    // 2: Shadow map sampler (CSM cascade array)
-    // 3: Normal map sampler
-    // 4: Light buffer (SSBO for dynamic lights)
-    // 5: Emissive map sampler
-    // 6: Point shadow cube maps
-    // 7: Spot shadow depth maps
-    // 8: Snow mask texture
-    // 9: Cloud shadow map
-    // 10: Snow UBO
-    // 11: Cloud shadow UBO
-    // 13-16: PBR textures (roughness, metallic, AO, height)
-    descriptorSetLayout = DescriptorManager::LayoutBuilder(device)
+// Adds the common descriptor bindings shared between main and skinned layouts.
+// This ensures both layouts stay in sync for bindings used by shader.frag.
+void Renderer::addCommonDescriptorBindings(DescriptorManager::LayoutBuilder& builder) {
+    builder
         .addUniformBuffer(VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT)  // 0: UBO
         .addCombinedImageSampler(VK_SHADER_STAGE_FRAGMENT_BIT)  // 1: diffuse
         .addCombinedImageSampler(VK_SHADER_STAGE_FRAGMENT_BIT)  // 2: shadow
@@ -1114,11 +1100,20 @@ bool Renderer::createDescriptorSetLayout() {
         .addCombinedImageSampler(VK_SHADER_STAGE_FRAGMENT_BIT)  // 9: cloud shadow map
         .addUniformBuffer(VK_SHADER_STAGE_FRAGMENT_BIT)         // 10: Snow UBO
         .addUniformBuffer(VK_SHADER_STAGE_FRAGMENT_BIT)         // 11: Cloud shadow UBO
+        // Note: binding 12 (bone matrices) is added separately for skinned layout
         .addBinding(Bindings::ROUGHNESS_MAP, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT)  // 13: roughness
         .addBinding(Bindings::METALLIC_MAP, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT)   // 14: metallic
         .addBinding(Bindings::AO_MAP, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT)         // 15: AO
-        .addBinding(Bindings::HEIGHT_MAP, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT)     // 16: height
-        .build();
+        .addBinding(Bindings::HEIGHT_MAP, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT);    // 16: height
+}
+
+bool Renderer::createDescriptorSetLayout() {
+    VkDevice device = vulkanContext.getDevice();
+
+    // Main scene descriptor set layout - uses common bindings (0-11, 13-16)
+    DescriptorManager::LayoutBuilder builder(device);
+    addCommonDescriptorBindings(builder);
+    descriptorSetLayout = builder.build();
 
     if (descriptorSetLayout == VK_NULL_HANDLE) {
         SDL_Log("Failed to create descriptor set layout");
@@ -2353,39 +2348,11 @@ bool Renderer::createSkinnedDescriptorSetLayout() {
 
     // Skinned descriptor set layout:
     // Same as main layout but with additional binding 12 for bone matrices UBO
-    // 0: UBO (camera/view data)
-    // 1: Diffuse texture sampler
-    // 2: Shadow map sampler (CSM cascade array)
-    // 3: Normal map sampler
-    // 4: Light buffer (SSBO for dynamic lights)
-    // 5: Emissive map sampler
-    // 6: Point shadow cube maps
-    // 7: Spot shadow depth maps
-    // 8: Snow mask texture
-    // 9: Cloud shadow map
-    // 10: Snow UBO
-    // 11: Cloud shadow UBO
-    // 12: Bone matrices UBO
-    // 13-16: PBR textures (roughness, metallic, AO, height)
-    skinnedDescriptorSetLayout = DescriptorManager::LayoutBuilder(device)
-        .addUniformBuffer(VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT)  // 0: UBO
-        .addCombinedImageSampler(VK_SHADER_STAGE_FRAGMENT_BIT)  // 1: diffuse
-        .addCombinedImageSampler(VK_SHADER_STAGE_FRAGMENT_BIT)  // 2: shadow
-        .addCombinedImageSampler(VK_SHADER_STAGE_FRAGMENT_BIT)  // 3: normal
-        .addStorageBuffer(VK_SHADER_STAGE_FRAGMENT_BIT)         // 4: lights
-        .addCombinedImageSampler(VK_SHADER_STAGE_FRAGMENT_BIT)  // 5: emissive
-        .addCombinedImageSampler(VK_SHADER_STAGE_FRAGMENT_BIT)  // 6: point shadow
-        .addCombinedImageSampler(VK_SHADER_STAGE_FRAGMENT_BIT)  // 7: spot shadow
-        .addCombinedImageSampler(VK_SHADER_STAGE_FRAGMENT_BIT)  // 8: snow mask
-        .addCombinedImageSampler(VK_SHADER_STAGE_FRAGMENT_BIT)  // 9: cloud shadow map
-        .addUniformBuffer(VK_SHADER_STAGE_FRAGMENT_BIT)         // 10: snow UBO
-        .addUniformBuffer(VK_SHADER_STAGE_FRAGMENT_BIT)         // 11: cloud shadow UBO
-        .addUniformBuffer(VK_SHADER_STAGE_VERTEX_BIT)           // 12: bone matrices
-        .addBinding(Bindings::ROUGHNESS_MAP, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT)  // 13: roughness
-        .addBinding(Bindings::METALLIC_MAP, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT)   // 14: metallic
-        .addBinding(Bindings::AO_MAP, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT)         // 15: AO
-        .addBinding(Bindings::HEIGHT_MAP, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT)     // 16: height
-        .build();
+    DescriptorManager::LayoutBuilder builder(device);
+    addCommonDescriptorBindings(builder);
+    // Add skinned-specific binding
+    builder.addBinding(Bindings::BONE_MATRICES, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_VERTEX_BIT);  // 12: bone matrices
+    skinnedDescriptorSetLayout = builder.build();
 
     if (skinnedDescriptorSetLayout == VK_NULL_HANDLE) {
         SDL_Log("Failed to create skinned descriptor set layout");

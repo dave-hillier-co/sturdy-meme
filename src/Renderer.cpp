@@ -2197,12 +2197,11 @@ void Renderer::recordShadowPass(VkCommandBuffer cmd, uint32_t frameIndex, float 
     const auto& sceneObjects = sceneManager.getSceneObjects();
     size_t playerIndex = sceneManager.getSceneBuilder().getPlayerObjectIndex();
     bool hasCharacter = sceneManager.getSceneBuilder().hasCharacter();
-    bool useGPUSkinning = hasCharacter && sceneManager.getSceneBuilder().getAnimatedCharacter().isGPUSkinningEnabled();
 
     allObjects.reserve(sceneObjects.size() + rockSystem.getSceneObjects().size());
     for (size_t i = 0; i < sceneObjects.size(); ++i) {
         // Skip player character - rendered with skinned shadow pipeline
-        if (useGPUSkinning && i == playerIndex && hasCharacter) {
+        if (hasCharacter && i == playerIndex) {
             continue;
         }
         allObjects.push_back(sceneObjects[i]);
@@ -2211,7 +2210,7 @@ void Renderer::recordShadowPass(VkCommandBuffer cmd, uint32_t frameIndex, float 
 
     // Skinned character shadow callback (renders with GPU skinning)
     ShadowSystem::DrawCallback skinnedCallback = nullptr;
-    if (useGPUSkinning) {
+    if (hasCharacter) {
         skinnedCallback = [this, frameIndex, playerIndex](VkCommandBuffer cb, uint32_t cascade, const glm::mat4& lightMatrix) {
             (void)lightMatrix;  // Not used, cascade matrices are in UBO
             SceneBuilder& sceneBuilder = sceneManager.getSceneBuilder();
@@ -2266,11 +2265,10 @@ void Renderer::recordSceneObjects(VkCommandBuffer cmd, uint32_t frameIndex) {
     const auto& sceneObjects = sceneManager.getSceneObjects();
     size_t playerIndex = sceneManager.getSceneBuilder().getPlayerObjectIndex();
     bool hasCharacter = sceneManager.getSceneBuilder().hasCharacter();
-    bool useGPUSkinning = hasCharacter && sceneManager.getSceneBuilder().getAnimatedCharacter().isGPUSkinningEnabled();
 
     for (size_t i = 0; i < sceneObjects.size(); ++i) {
-        // Skip player character if using GPU skinning (rendered separately)
-        if (useGPUSkinning && i == playerIndex && hasCharacter) {
+        // Skip player character (rendered separately with GPU skinning)
+        if (hasCharacter && i == playerIndex) {
             continue;
         }
 

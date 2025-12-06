@@ -281,6 +281,7 @@ private:
     bool createCommandBuffers();
     bool createSyncObjects();
     bool createDescriptorSetLayout();
+    void addCommonDescriptorBindings(DescriptorManager::LayoutBuilder& builder);
     bool createGraphicsPipeline();
     bool createUniformBuffers();
     bool createDescriptorPool();

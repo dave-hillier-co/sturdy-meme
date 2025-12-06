@@ -534,7 +534,10 @@ bool Renderer::init(SDL_Window* win, const std::string& resPath) {
     waterInfo.extent = swapchainExtent;
     waterInfo.commandPool = commandPool;
     waterInfo.graphicsQueue = graphicsQueue;
-    float waterSize = terrainConfig.size * 2.0f;  // 2x terrain size (32768) for horizon coverage
+    // Water size based on horizon distance from max altitude
+    // horizon = sqrt(2 * R * h) where R = 6,371,000m (Earth radius), h = maxAltitude
+    // At 220m: horizon ≈ 53km. Use 65km to ensure coverage with some margin.
+    float waterSize = 65536.0f;
     waterInfo.waterSize = waterSize;
     waterInfo.assetPath = resourcePath;
 

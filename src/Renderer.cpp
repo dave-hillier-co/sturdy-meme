@@ -559,7 +559,8 @@ bool Renderer::init(SDL_Window* win, const std::string& resPath) {
     waterSystem.setShoreFoamWidth(8.0f);      // Shore foam band 8m wide
 
     // Set camera planes for depth linearization (used for soft edges, intersection foam)
-    waterSystem.setCameraPlanes(camera.getNearPlane(), camera.getFarPlane());
+    // Values must match Camera.cpp defaults: nearPlane=0.1f, farPlane=50000.0f
+    waterSystem.setCameraPlanes(0.1f, 50000.0f);
 
     // Initialize flow map generator
     if (!flowMapGenerator.init(device, allocator, commandPool, graphicsQueue)) {

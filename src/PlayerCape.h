@@ -28,6 +28,22 @@ struct CapeAttachment {
     int clothY;                 // Cloth grid Y coordinate to pin
 };
 
+// Debug visualization data for cape colliders
+struct CapeDebugData {
+    struct SphereCollider {
+        glm::vec3 center;
+        float radius;
+    };
+    struct CapsuleCollider {
+        glm::vec3 point1;
+        glm::vec3 point2;
+        float radius;
+    };
+    std::vector<SphereCollider> spheres;
+    std::vector<CapsuleCollider> capsules;
+    std::vector<glm::vec3> attachmentPoints;
+};
+
 // Player cape with cloth simulation and body collision
 class PlayerCape {
 public:
@@ -69,6 +85,13 @@ public:
     // Get cloth simulation for debugging
     const ClothSimulation& getClothSimulation() const { return clothSim; }
 
+    // Get debug visualization data (colliders and attachment points)
+    CapeDebugData getDebugData() const;
+
+    // Initialize cloth particle positions from skeleton (call once after skeleton is ready)
+    // This prevents the cape from "snapping" from origin to the character
+    void initializeFromSkeleton(const Skeleton& skeleton, const glm::mat4& worldTransform);
+
 private:
     // Find bone world position from skeleton
     glm::vec3 getBoneWorldPosition(const Skeleton& skeleton, const glm::mat4& worldTransform,
@@ -89,6 +112,8 @@ private:
     int clothHeight = 0;
     float particleSpacing = 0.05f;
     bool initialized = false;
+    bool positionsInitialized = false;  // True after first skeleton-based init
+    mutable CapeDebugData lastDebugData;  // Cached debug data
 
     // Cape parameters
     static constexpr float CAPE_WIDTH = 0.5f;       // Half-width in meters

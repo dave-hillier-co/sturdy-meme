@@ -8,11 +8,12 @@ void PlayerCape::create(int width, int height, float spacing) {
     particleSpacing = spacing;
 
     // Create cloth with initial position at origin
-    // Will be repositioned when attachments are updated
+    // Will be repositioned when initializeFromSkeleton is called
     glm::vec3 topLeft(0.0f, 0.0f, 0.0f);
     clothSim.create(width, height, spacing, topLeft);
 
     initialized = true;
+    positionsInitialized = false;
     SDL_Log("PlayerCape: Created %dx%d cloth simulation", width, height);
 }
 
@@ -35,19 +36,20 @@ void PlayerCape::setupDefaultColliders() {
     };
 
     // Spine/Torso capsule (from hips to spine2)
+    // Offset slightly back (+Z in character local space)
     bodyColliders.push_back({
         makeBone("Hips"), makeBone("Spine2"),
-        0.15f,                           // radius
-        glm::vec3(0.0f, 0.0f, 0.0f),    // offset1
-        glm::vec3(0.0f, 0.0f, 0.0f),    // offset2
+        0.12f,                           // radius
+        glm::vec3(0.0f, 0.0f, 0.02f),   // offset1 - slightly back
+        glm::vec3(0.0f, 0.0f, 0.02f),   // offset2 - slightly back
         true                             // isCapsule
     });
 
-    // Upper back sphere (to prevent cape going through chest)
+    // Upper back sphere (to prevent cape going through back)
     bodyColliders.push_back({
-        makeBone("Spine1"), "",
-        0.18f,                           // radius
-        glm::vec3(0.0f, 0.0f, -0.05f),  // offset (slightly back)
+        makeBone("Spine2"), "",
+        0.14f,                           // radius
+        glm::vec3(0.0f, 0.0f, 0.08f),   // offset: behind spine (+Z is back)
         glm::vec3(0.0f),
         false                            // isSphere
     });
@@ -55,7 +57,7 @@ void PlayerCape::setupDefaultColliders() {
     // Left upper arm
     bodyColliders.push_back({
         makeBone("LeftArm"), makeBone("LeftForeArm"),
-        0.06f,
+        0.05f,
         glm::vec3(0.0f), glm::vec3(0.0f),
         true
     });
@@ -63,7 +65,7 @@ void PlayerCape::setupDefaultColliders() {
     // Right upper arm
     bodyColliders.push_back({
         makeBone("RightArm"), makeBone("RightForeArm"),
-        0.06f,
+        0.05f,
         glm::vec3(0.0f), glm::vec3(0.0f),
         true
     });
@@ -71,7 +73,7 @@ void PlayerCape::setupDefaultColliders() {
     // Left upper leg
     bodyColliders.push_back({
         makeBone("LeftUpLeg"), makeBone("LeftLeg"),
-        0.08f,
+        0.07f,
         glm::vec3(0.0f), glm::vec3(0.0f),
         true
     });
@@ -79,7 +81,7 @@ void PlayerCape::setupDefaultColliders() {
     // Right upper leg
     bodyColliders.push_back({
         makeBone("RightUpLeg"), makeBone("RightLeg"),
-        0.08f,
+        0.07f,
         glm::vec3(0.0f), glm::vec3(0.0f),
         true
     });
@@ -87,7 +89,7 @@ void PlayerCape::setupDefaultColliders() {
     // Head sphere
     bodyColliders.push_back({
         makeBone("Head"), "",
-        0.12f,
+        0.10f,
         glm::vec3(0.0f, 0.05f, 0.0f),   // offset up
         glm::vec3(0.0f),
         false
@@ -104,16 +106,17 @@ void PlayerCape::setupDefaultAttachments() {
     };
 
     // Attach top-left corner to left shoulder
+    // +Z is back in character local space
     attachments.push_back({
         makeBone("LeftShoulder"),
-        glm::vec3(-0.05f, 0.0f, -0.1f),  // Offset: slightly left and back
+        glm::vec3(0.0f, -0.02f, 0.08f),  // Offset: back of shoulder
         0, 0                              // Top-left corner
     });
 
     // Attach top-right corner to right shoulder
     attachments.push_back({
         makeBone("RightShoulder"),
-        glm::vec3(0.05f, 0.0f, -0.1f),   // Offset: slightly right and back
+        glm::vec3(0.0f, -0.02f, 0.08f),  // Offset: back of shoulder
         clothWidth - 1, 0                 // Top-right corner
     });
 
@@ -121,7 +124,7 @@ void PlayerCape::setupDefaultAttachments() {
     int centerX = clothWidth / 2;
     attachments.push_back({
         makeBone("Spine2"),
-        glm::vec3(0.0f, 0.0f, -0.12f),   // Offset: back of spine
+        glm::vec3(0.0f, 0.0f, 0.10f),    // Offset: back of spine
         centerX, 0                        // Top-center
     });
 
@@ -149,29 +152,27 @@ glm::vec3 PlayerCape::getBoneWorldPosition(const Skeleton& skeleton, const glm::
         return glm::vec3(0.0f);
     }
 
-    // Get bone world position
+    // Get bone world position with local offset transformed by bone orientation
     glm::mat4 boneWorld = worldTransform * cachedGlobalTransforms[boneIndex];
     glm::vec4 worldPos = boneWorld * glm::vec4(offset, 1.0f);
     return glm::vec3(worldPos);
 }
 
 void PlayerCape::updateAttachments(const Skeleton& skeleton, const glm::mat4& worldTransform) {
-    // Access cloth particles directly to move pinned particles
-    // This is a bit of a hack - we need to expose particle access in ClothSimulation
-    // For now, we'll recreate the cloth at the correct position
-
-    // Get positions for each attachment point
+    // Update attachment positions by moving pinned particles
     for (const auto& att : attachments) {
         glm::vec3 worldPos = getBoneWorldPosition(skeleton, worldTransform, att.boneName, att.localOffset);
-
-        // We need to update the pinned particle position
-        // ClothSimulation doesn't expose this directly, so we work around it
-        // by setting up the cloth simulation's internal particle positions
+        clothSim.setParticlePosition(att.clothX, att.clothY, worldPos);
     }
 }
 
 void PlayerCape::applyBodyColliders(const Skeleton& skeleton, const glm::mat4& worldTransform) {
     clothSim.clearCollisions();
+
+    // Clear debug data
+    lastDebugData.spheres.clear();
+    lastDebugData.capsules.clear();
+    lastDebugData.attachmentPoints.clear();
 
     for (const auto& collider : bodyColliders) {
         glm::vec3 pos1 = getBoneWorldPosition(skeleton, worldTransform, collider.boneName1, collider.offset1);
@@ -179,10 +180,86 @@ void PlayerCape::applyBodyColliders(const Skeleton& skeleton, const glm::mat4& w
         if (collider.isCapsule && !collider.boneName2.empty()) {
             glm::vec3 pos2 = getBoneWorldPosition(skeleton, worldTransform, collider.boneName2, collider.offset2);
             clothSim.addCapsuleCollision(pos1, pos2, collider.radius);
+
+            // Store for debug visualization
+            lastDebugData.capsules.push_back({pos1, pos2, collider.radius});
         } else {
             clothSim.addSphereCollision(pos1, collider.radius);
+
+            // Store for debug visualization
+            lastDebugData.spheres.push_back({pos1, collider.radius});
         }
     }
+
+    // Store attachment points for debug
+    for (const auto& att : attachments) {
+        glm::vec3 worldPos = getBoneWorldPosition(skeleton, worldTransform, att.boneName, att.localOffset);
+        lastDebugData.attachmentPoints.push_back(worldPos);
+    }
+}
+
+void PlayerCape::initializeFromSkeleton(const Skeleton& skeleton, const glm::mat4& worldTransform) {
+    if (!initialized || positionsInitialized) return;
+
+    // Cache global transforms
+    skeleton.computeGlobalTransforms(cachedGlobalTransforms);
+
+    // Get attachment world positions
+    std::vector<glm::vec3> attachWorldPos;
+    for (const auto& att : attachments) {
+        glm::vec3 worldPos = getBoneWorldPosition(skeleton, worldTransform, att.boneName, att.localOffset);
+        attachWorldPos.push_back(worldPos);
+    }
+
+    if (attachWorldPos.empty()) {
+        SDL_Log("PlayerCape: No attachments, cannot initialize positions");
+        return;
+    }
+
+    // Calculate cape center and down direction from attachments
+    glm::vec3 topCenter(0.0f);
+    for (const auto& pos : attachWorldPos) {
+        topCenter += pos;
+    }
+    topCenter /= static_cast<float>(attachWorldPos.size());
+
+    // Cape hangs down from attachments
+    glm::vec3 down(0.0f, -1.0f, 0.0f);
+
+    // Calculate cape width from left-right attachment spread
+    float capeWidth = clothWidth * particleSpacing;
+    if (attachWorldPos.size() >= 2) {
+        capeWidth = glm::length(attachWorldPos[1] - attachWorldPos[0]);
+    }
+
+    // Initialize all cloth particles to form a flat cape behind the character
+    // Get the character's back direction from world transform
+    glm::vec3 back = glm::normalize(glm::vec3(worldTransform[2]));  // Z axis of transform
+
+    for (int y = 0; y < clothHeight; ++y) {
+        for (int x = 0; x < clothWidth; ++x) {
+            // Interpolate position based on grid coordinates
+            float u = static_cast<float>(x) / static_cast<float>(clothWidth - 1);
+            float v = static_cast<float>(y) / static_cast<float>(clothHeight - 1);
+
+            // Horizontal position: interpolate across width
+            glm::vec3 left = attachWorldPos.size() > 0 ? attachWorldPos[0] : topCenter;
+            glm::vec3 right = attachWorldPos.size() > 1 ? attachWorldPos[1] : topCenter;
+            glm::vec3 horizontal = glm::mix(left, right, u);
+
+            // Vertical position: go down from top
+            float capeLength = clothHeight * particleSpacing;
+            glm::vec3 pos = horizontal + down * (v * capeLength);
+
+            // Slight backward offset to keep cape behind character
+            pos += back * (v * 0.1f);
+
+            clothSim.setParticlePosition(x, y, pos);
+        }
+    }
+
+    positionsInitialized = true;
+    SDL_Log("PlayerCape: Initialized cloth positions from skeleton");
 }
 
 void PlayerCape::update(const Skeleton& skeleton, const glm::mat4& worldTransform,
@@ -192,14 +269,14 @@ void PlayerCape::update(const Skeleton& skeleton, const glm::mat4& worldTransfor
     // Cache global transforms
     skeleton.computeGlobalTransforms(cachedGlobalTransforms);
 
-    // Update pinned particle positions based on bone positions
-    // We need direct access to particles, so let's extend ClothSimulation
-    // For now, work with the existing API
+    // Initialize positions on first update
+    if (!positionsInitialized) {
+        initializeFromSkeleton(skeleton, worldTransform);
+    }
 
     // Update attachment positions by moving pinned particles
     for (const auto& att : attachments) {
         glm::vec3 worldPos = getBoneWorldPosition(skeleton, worldTransform, att.boneName, att.localOffset);
-        // Note: This requires extending ClothSimulation to allow setting particle positions
         clothSim.setParticlePosition(att.clothX, att.clothY, worldPos);
     }
 
@@ -218,4 +295,8 @@ void PlayerCape::createMesh(Mesh& mesh) const {
 void PlayerCape::updateMesh(Mesh& mesh) const {
     if (!initialized) return;
     clothSim.updateMesh(mesh);
+}
+
+CapeDebugData PlayerCape::getDebugData() const {
+    return lastDebugData;
 }

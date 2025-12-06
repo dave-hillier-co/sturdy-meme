@@ -430,3 +430,17 @@ uint32_t WaterTileCull::getVisibleTileCount(uint32_t frameIndex) const {
     const uint32_t* counterPtr = static_cast<const uint32_t*>(counterMapped) + frameIndex;
     return *counterPtr;
 }
+
+bool WaterTileCull::wasWaterVisibleLastFrame(uint32_t currentFrameIndex) const {
+    if (!enabled || counterMapped == nullptr || framesInFlight == 0) {
+        // If disabled or not initialized, assume water is visible
+        return true;
+    }
+
+    // Get previous frame's index (wrap around)
+    uint32_t prevFrameIndex = (currentFrameIndex + framesInFlight - 1) % framesInFlight;
+    uint32_t count = getVisibleTileCount(prevFrameIndex);
+
+    // Water is visible if any tiles were marked visible
+    return count > 0;
+}

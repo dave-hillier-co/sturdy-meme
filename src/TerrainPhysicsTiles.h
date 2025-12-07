@@ -32,6 +32,10 @@ public:
     // Loads LOD0 tiles within highDetailRadius, LOD3 tiles for rest of terrain
     void update(const glm::vec3& playerPos, float highDetailRadius = 1000.0f);
 
+    // Preload all physics tiles needed for a position (blocking, no per-frame limit)
+    // Call this before spawning character to ensure collision is ready
+    void preloadTilesAt(const glm::vec3& playerPos, float highDetailRadius = 1000.0f);
+
     // Get count of active physics tiles
     uint32_t getActivePhysicsTileCount() const { return static_cast<uint32_t>(physicsTiles.size()); }
 

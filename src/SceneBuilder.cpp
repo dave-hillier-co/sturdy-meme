@@ -67,9 +67,6 @@ void SceneBuilder::destroy(VmaAllocator allocator, VkDevice device) {
 }
 
 bool SceneBuilder::createMeshes(const InitInfo& info) {
-    // Create disc ground mesh with radius 50, 64 segments, UV tiling of 10x
-    groundMesh.createDisc(50.0f, 64, 10.0f);
-    groundMesh.upload(info.allocator, info.device, info.commandPool, info.graphicsQueue);
 
     cubeMesh.createCube();
     cubeMesh.upload(info.allocator, info.device, info.commandPool, info.graphicsQueue);
@@ -310,7 +307,7 @@ void SceneBuilder::createRenderables() {
     // Brushed metal cube - rough, metallic
     float brushedCubeX = -3.0f, brushedCubeZ = -3.0f;
     glm::mat4 brushedCube = glm::translate(glm::mat4(1.0f),
-        glm::vec3(brushedCubeX, getGroundY(brushedCubeX, brushedCubeZ, 0.5f), brushedCubeZ));
+        glm::vec3(brushedCubeX, getGroundY(brushedCubeX, brushedCubeZ, 10.5f), brushedCubeZ));
     brushedCube = glm::rotate(brushedCube, glm::radians(45.0f), glm::vec3(0.0f, 1.0f, 0.0f));
     sceneObjects.push_back(RenderableBuilder()
         .withTransform(brushedCube)
@@ -342,7 +339,7 @@ void SceneBuilder::createRenderables() {
     // Blue light indicator sphere - saturated blue, floating above terrain
     float blueLightX = -3.0f, blueLightZ = 2.0f;
     glm::mat4 blueLightTransform = glm::translate(glm::mat4(1.0f),
-        glm::vec3(blueLightX, getGroundY(blueLightX, blueLightZ, 2.0f), blueLightZ));
+        glm::vec3(blueLightX, getGroundY(blueLightX, blueLightZ, 12.0f), blueLightZ));
     blueLightTransform = glm::scale(blueLightTransform, glm::vec3(0.2f));
     sceneObjects.push_back(RenderableBuilder()
         .withTransform(blueLightTransform)
@@ -359,7 +356,7 @@ void SceneBuilder::createRenderables() {
     // Green light indicator sphere - saturated green, floating above terrain
     float greenLightX = 4.0f, greenLightZ = -2.0f;
     glm::mat4 greenLightTransform = glm::translate(glm::mat4(1.0f),
-        glm::vec3(greenLightX, getGroundY(greenLightX, greenLightZ, 1.5f), greenLightZ));
+        glm::vec3(greenLightX, getGroundY(greenLightX, greenLightZ, 11.5f), greenLightZ));
     greenLightTransform = glm::scale(greenLightTransform, glm::vec3(0.2f));
     sceneObjects.push_back(RenderableBuilder()
         .withTransform(greenLightTransform)
@@ -376,7 +373,7 @@ void SceneBuilder::createRenderables() {
     // Debug cube at elevated position
     float debugCubeX = 5.0f, debugCubeZ = -5.0f;
     sceneObjects.push_back(RenderableBuilder()
-        .atPosition(glm::vec3(debugCubeX, getGroundY(debugCubeX, debugCubeZ, 5.0f), debugCubeZ))
+        .atPosition(glm::vec3(debugCubeX, getGroundY(debugCubeX, debugCubeZ, 15.0f), debugCubeZ))
         .withMesh(&cubeMesh)
         .withTexture(&crateTexture)
         .withMaterialId(crateMaterialId)
@@ -411,7 +408,7 @@ void SceneBuilder::createRenderables() {
         }
 
         sceneObjects.push_back(RenderableBuilder()
-            .withTransform(buildCharacterTransform(glm::vec3(playerX, playerTerrainY, playerZ), 0.0f))
+            .withTransform(buildCharacterTransform(glm::vec3(playerX, playerTerrainY, playerZ), 10.0f))
             .withMesh(&animatedCharacter.getMesh())
             .withTexture(&whiteTexture)  // White texture so vertex colors show through
             .withMaterialId(whiteMaterialId)
@@ -438,7 +435,7 @@ void SceneBuilder::createRenderables() {
     float flagPoleX = 5.0f, flagPoleZ = 0.0f;
     flagPoleIndex = sceneObjects.size();
     sceneObjects.push_back(RenderableBuilder()
-        .atPosition(glm::vec3(flagPoleX, getGroundY(flagPoleX, flagPoleZ, 1.5f), flagPoleZ))
+        .atPosition(glm::vec3(flagPoleX, getGroundY(flagPoleX, flagPoleZ, 11.5f), flagPoleZ))
         .withMesh(&flagPoleMesh)
         .withTexture(&metalTexture)
         .withMaterialId(metalMaterialId)
@@ -481,7 +478,7 @@ void SceneBuilder::createRenderables() {
     // Frame floats 3m above terrain so hole is visible
     glm::mat4 wellTransform = glm::translate(glm::mat4(1.0f),
         glm::vec3(wellEntranceX, wellY + 3.0f, wellEntranceZ));
-    wellTransform = glm::scale(wellTransform, glm::vec3(2.0f, 0.5f, 2.0f));
+    wellTransform = glm::scale(wellTransform, glm::vec3(2.0f, 0.5f, 12.0f));
     wellEntranceIndex = sceneObjects.size();
     sceneObjects.push_back(RenderableBuilder()
         .withTransform(wellTransform)

@@ -121,6 +121,10 @@ public:
     // Returns true if tile is now loaded (or was already loaded)
     bool requestTileLoad(TileCoord coord, uint32_t lod);
 
+    // Load only CPU data for a tile (no GPU resources) - for physics during early init
+    // Returns true if cpuData is available after this call
+    bool loadTileCPUOnly(TileCoord coord, uint32_t lod);
+
     // LOD distance thresholds (can be configured)
     static constexpr float LOD0_MAX_DISTANCE = 1000.0f;  // < 1km: LOD0
     static constexpr float LOD1_MAX_DISTANCE = 2000.0f;  // 1-2km: LOD1

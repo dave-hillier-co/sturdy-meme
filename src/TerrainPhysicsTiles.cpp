@@ -149,8 +149,9 @@ void TerrainPhysicsTiles::createPhysicsForTile(TileCoord coord, uint32_t lod) {
         return;
     }
 
-    // Request tile to be loaded (this ensures cpuData is available)
-    if (!tileCache->requestTileLoad(coord, lod)) {
+    // Request tile CPU data to be loaded (this ensures cpuData is available)
+    // Use loadTileCPUOnly for physics - doesn't require GPU resources
+    if (!tileCache->loadTileCPUOnly(coord, lod)) {
         SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
                     "TerrainPhysicsTiles: Failed to load tile (%d, %d) LOD%u",
                     coord.x, coord.z, lod);
@@ -209,6 +210,24 @@ void TerrainPhysicsTiles::destroyPhysicsForTile(uint64_t key) {
             it->second.coord.x, it->second.coord.z, it->second.lod);
 
     physicsTiles.erase(it);
+}
+
+void TerrainPhysicsTiles::preloadTilesAt(const glm::vec3& playerPos, float highDetailRadius) {
+    if (!physics || !tileCache) return;
+
+    // Get all tiles that should have physics
+    std::vector<std::pair<TileCoord, uint32_t>> desiredTiles;
+    getDesiredTiles(playerPos, highDetailRadius, desiredTiles);
+
+    // Create physics for ALL desired tiles immediately (no per-frame limit)
+    for (const auto& [coord, lod] : desiredTiles) {
+        uint64_t key = makeTileKey(coord, lod);
+        if (physicsTiles.find(key) == physicsTiles.end()) {
+            createPhysicsForTile(coord, lod);
+        }
+    }
+
+    SDL_Log("TerrainPhysicsTiles: Preloaded %u physics tiles", getActivePhysicsTileCount());
 }
 
 void TerrainPhysicsTiles::update(const glm::vec3& playerPos, float highDetailRadius) {

@@ -385,54 +385,75 @@ void TerrainTileCache::updateActiveTiles(const glm::vec3& cameraPos, float loadR
 }
 
 bool TerrainTileCache::loadTile(TileCoord coord, uint32_t lod) {
-    std::string path = getTilePath(coord, lod);
-
-    int width, height, channels;
-
-    // Load 16-bit PNG at NATIVE resolution - NO downsampling!
-    uint16_t* data = stbi_load_16(path.c_str(), &width, &height, &channels, 1);
-    if (!data) {
-        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "TerrainTileCache: Failed to load tile: %s",
-                    path.c_str());
-        return false;
-    }
-
-    // CRITICAL: Tiles must be 512x512 - refuse to resample
-    if (width != static_cast<int>(tileResolution) || height != static_cast<int>(tileResolution)) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
-                     "TerrainTileCache: Tile %s is %dx%d, expected %ux%u - refusing to resample",
-                     path.c_str(), width, height, tileResolution, tileResolution);
-        stbi_image_free(data);
-        return false;
-    }
-
-    // Create tile entry
     uint64_t key = makeTileKey(coord, lod);
-    TerrainTile& tile = loadedTiles[key];
-    tile.coord = coord;
-    tile.lod = lod;
 
-    // Calculate world bounds for this tile
-    uint32_t lodTilesX = tilesX >> lod;
-    uint32_t lodTilesZ = tilesZ >> lod;
-    if (lodTilesX < 1) lodTilesX = 1;
-    if (lodTilesZ < 1) lodTilesZ = 1;
-
-    float tileWorldSizeX = terrainSize / lodTilesX;
-    float tileWorldSizeZ = terrainSize / lodTilesZ;
-
-    tile.worldMinX = (static_cast<float>(coord.x) / lodTilesX - 0.5f) * terrainSize;
-    tile.worldMinZ = (static_cast<float>(coord.z) / lodTilesZ - 0.5f) * terrainSize;
-    tile.worldMaxX = tile.worldMinX + tileWorldSizeX;
-    tile.worldMaxZ = tile.worldMinZ + tileWorldSizeZ;
-
-    // Convert to float32 directly - NO resampling
-    tile.cpuData.resize(tileResolution * tileResolution);
-    for (uint32_t i = 0; i < tileResolution * tileResolution; i++) {
-        tile.cpuData[i] = static_cast<float>(data[i]) / 65535.0f;
+    // Check if tile already has GPU resources (fully loaded)
+    auto existingIt = loadedTiles.find(key);
+    if (existingIt != loadedTiles.end() && existingIt->second.loaded) {
+        return true;  // Already fully loaded
     }
 
-    stbi_image_free(data);
+    // Check if we already have CPU data from loadTileCPUOnly
+    bool hasCpuData = (existingIt != loadedTiles.end() && !existingIt->second.cpuData.empty());
+
+    TerrainTile* tilePtr = nullptr;
+
+    if (hasCpuData) {
+        // Already have CPU data, just need to add GPU resources
+        tilePtr = &existingIt->second;
+    } else {
+        // Need to load from disk
+        std::string path = getTilePath(coord, lod);
+
+        int width, height, channels;
+
+        // Load 16-bit PNG at NATIVE resolution - NO downsampling!
+        uint16_t* data = stbi_load_16(path.c_str(), &width, &height, &channels, 1);
+        if (!data) {
+            SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "TerrainTileCache: Failed to load tile: %s",
+                        path.c_str());
+            return false;
+        }
+
+        // CRITICAL: Tiles must be 512x512 - refuse to resample
+        if (width != static_cast<int>(tileResolution) || height != static_cast<int>(tileResolution)) {
+            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
+                         "TerrainTileCache: Tile %s is %dx%d, expected %ux%u - refusing to resample",
+                         path.c_str(), width, height, tileResolution, tileResolution);
+            stbi_image_free(data);
+            return false;
+        }
+
+        // Create tile entry
+        TerrainTile& tile = loadedTiles[key];
+        tile.coord = coord;
+        tile.lod = lod;
+
+        // Calculate world bounds for this tile
+        uint32_t lodTilesX = tilesX >> lod;
+        uint32_t lodTilesZ = tilesZ >> lod;
+        if (lodTilesX < 1) lodTilesX = 1;
+        if (lodTilesZ < 1) lodTilesZ = 1;
+
+        float tileWorldSizeX = terrainSize / lodTilesX;
+        float tileWorldSizeZ = terrainSize / lodTilesZ;
+
+        tile.worldMinX = (static_cast<float>(coord.x) / lodTilesX - 0.5f) * terrainSize;
+        tile.worldMinZ = (static_cast<float>(coord.z) / lodTilesZ - 0.5f) * terrainSize;
+        tile.worldMaxX = tile.worldMinX + tileWorldSizeX;
+        tile.worldMaxZ = tile.worldMinZ + tileWorldSizeZ;
+
+        // Convert to float32 directly - NO resampling
+        tile.cpuData.resize(tileResolution * tileResolution);
+        for (uint32_t i = 0; i < tileResolution * tileResolution; i++) {
+            tile.cpuData[i] = static_cast<float>(data[i]) / 65535.0f;
+        }
+
+        stbi_image_free(data);
+        tilePtr = &tile;
+    }
+
+    TerrainTile& tile = *tilePtr;
 
     // Create GPU resources and upload
     if (!createTileGPUResources(tile)) {
@@ -449,8 +470,9 @@ bool TerrainTileCache::loadTile(TileCoord coord, uint32_t lod) {
 
     tile.loaded = true;
 
-    SDL_Log("TerrainTileCache: Loaded tile (%d, %d) LOD%u - world bounds [%.0f,%.0f]-[%.0f,%.0f]",
-            coord.x, coord.z, lod, tile.worldMinX, tile.worldMinZ, tile.worldMaxX, tile.worldMaxZ);
+    SDL_Log("TerrainTileCache: Loaded tile (%d, %d) LOD%u - world bounds [%.0f,%.0f]-[%.0f,%.0f]%s",
+            coord.x, coord.z, lod, tile.worldMinX, tile.worldMinZ, tile.worldMaxX, tile.worldMaxZ,
+            hasCpuData ? " (added GPU to existing)" : "");
 
     return true;
 }
@@ -641,48 +663,62 @@ void TerrainTileCache::updateTileInfoBuffer() {
 
 bool TerrainTileCache::isTileLoaded(TileCoord coord, uint32_t lod) const {
     uint64_t key = makeTileKey(coord, lod);
-    return loadedTiles.find(key) != loadedTiles.end();
+    auto it = loadedTiles.find(key);
+    // A tile is fully loaded only if it has GPU resources (tile.loaded = true)
+    return it != loadedTiles.end() && it->second.loaded;
 }
 
 bool TerrainTileCache::getHeightAt(float worldX, float worldZ, float& outHeight) const {
-    // Find the best tile that covers this position
+    // Helper to sample height from a tile
+    auto sampleTile = [&](const TerrainTile& tile) -> bool {
+        if (tile.cpuData.empty()) return false;
+        if (worldX < tile.worldMinX || worldX >= tile.worldMaxX ||
+            worldZ < tile.worldMinZ || worldZ >= tile.worldMaxZ) return false;
+
+        // Calculate UV within tile
+        float u = (worldX - tile.worldMinX) / (tile.worldMaxX - tile.worldMinX);
+        float v = (worldZ - tile.worldMinZ) / (tile.worldMaxZ - tile.worldMinZ);
+
+        // Clamp to valid range
+        u = std::clamp(u, 0.0f, 1.0f);
+        v = std::clamp(v, 0.0f, 1.0f);
+
+        // Sample with bilinear interpolation
+        float fx = u * (tileResolution - 1);
+        float fy = v * (tileResolution - 1);
+
+        int x0 = static_cast<int>(fx);
+        int y0 = static_cast<int>(fy);
+        int x1 = std::min(x0 + 1, static_cast<int>(tileResolution - 1));
+        int y1 = std::min(y0 + 1, static_cast<int>(tileResolution - 1));
+
+        float tx = fx - x0;
+        float ty = fy - y0;
+
+        float h00 = tile.cpuData[y0 * tileResolution + x0];
+        float h10 = tile.cpuData[y0 * tileResolution + x1];
+        float h01 = tile.cpuData[y1 * tileResolution + x0];
+        float h11 = tile.cpuData[y1 * tileResolution + x1];
+
+        float h0 = h00 * (1.0f - tx) + h10 * tx;
+        float h1 = h01 * (1.0f - tx) + h11 * tx;
+        float h = h0 * (1.0f - ty) + h1 * ty;
+
+        // Convert to world height using standard formula: h * heightScale
+        // See TerrainHeight.h for authoritative formula
+        outHeight = h * heightScale;
+        return true;
+    };
+
+    // First check active tiles (GPU tiles - highest priority)
     for (const TerrainTile* tile : activeTiles) {
-        if (worldX >= tile->worldMinX && worldX < tile->worldMaxX &&
-            worldZ >= tile->worldMinZ && worldZ < tile->worldMaxZ) {
+        if (sampleTile(*tile)) return true;
+    }
 
-            // Calculate UV within tile
-            float u = (worldX - tile->worldMinX) / (tile->worldMaxX - tile->worldMinX);
-            float v = (worldZ - tile->worldMinZ) / (tile->worldMaxZ - tile->worldMinZ);
-
-            // Clamp to valid range
-            u = std::clamp(u, 0.0f, 1.0f);
-            v = std::clamp(v, 0.0f, 1.0f);
-
-            // Sample with bilinear interpolation
-            float fx = u * (tileResolution - 1);
-            float fy = v * (tileResolution - 1);
-
-            int x0 = static_cast<int>(fx);
-            int y0 = static_cast<int>(fy);
-            int x1 = std::min(x0 + 1, static_cast<int>(tileResolution - 1));
-            int y1 = std::min(y0 + 1, static_cast<int>(tileResolution - 1));
-
-            float tx = fx - x0;
-            float ty = fy - y0;
-
-            float h00 = tile->cpuData[y0 * tileResolution + x0];
-            float h10 = tile->cpuData[y0 * tileResolution + x1];
-            float h01 = tile->cpuData[y1 * tileResolution + x0];
-            float h11 = tile->cpuData[y1 * tileResolution + x1];
-
-            float h0 = h00 * (1.0f - tx) + h10 * tx;
-            float h1 = h01 * (1.0f - tx) + h11 * tx;
-            float h = h0 * (1.0f - ty) + h1 * ty;
-
-            // Convert to world height
-            outHeight = h * heightScale + minAltitude;
-            return true;
-        }
+    // Also check all loaded tiles (includes CPU-only tiles from physics preloading)
+    // This ensures physics and CPU queries use the same high-res tile data
+    for (const auto& [key, tile] : loadedTiles) {
+        if (sampleTile(tile)) return true;
     }
 
     return false; // No tile covers this position
@@ -795,7 +831,8 @@ void TerrainTileCache::copyTileToArrayLayer(TerrainTile* tile, uint32_t layerInd
 const TerrainTile* TerrainTileCache::getLoadedTile(TileCoord coord, uint32_t lod) const {
     uint64_t key = makeTileKey(coord, lod);
     auto it = loadedTiles.find(key);
-    if (it != loadedTiles.end() && it->second.loaded) {
+    // Return tile if fully loaded OR if CPU data is available (for physics)
+    if (it != loadedTiles.end() && (it->second.loaded || !it->second.cpuData.empty())) {
         return &it->second;
     }
     return nullptr;
@@ -809,6 +846,76 @@ bool TerrainTileCache::requestTileLoad(TileCoord coord, uint32_t lod) {
         return true;
     }
 
+    // Also accept CPU-only loaded tiles (no GPU resources yet)
+    if (it != loadedTiles.end() && !it->second.cpuData.empty()) {
+        return true;
+    }
+
     // Load the tile
     return loadTile(coord, lod);
+}
+
+bool TerrainTileCache::loadTileCPUOnly(TileCoord coord, uint32_t lod) {
+    // Check if already loaded (either fully or CPU-only)
+    uint64_t key = makeTileKey(coord, lod);
+    auto it = loadedTiles.find(key);
+    if (it != loadedTiles.end() && !it->second.cpuData.empty()) {
+        return true;  // Already has CPU data
+    }
+
+    std::string path = getTilePath(coord, lod);
+
+    int width, height, channels;
+
+    // Load 16-bit PNG at NATIVE resolution - NO downsampling!
+    uint16_t* data = stbi_load_16(path.c_str(), &width, &height, &channels, 1);
+    if (!data) {
+        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "TerrainTileCache: Failed to load tile (CPU): %s",
+                    path.c_str());
+        return false;
+    }
+
+    // CRITICAL: Tiles must be 512x512 - refuse to resample
+    if (width != static_cast<int>(tileResolution) || height != static_cast<int>(tileResolution)) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
+                     "TerrainTileCache: Tile %s is %dx%d, expected %ux%u - refusing to resample",
+                     path.c_str(), width, height, tileResolution, tileResolution);
+        stbi_image_free(data);
+        return false;
+    }
+
+    // Create tile entry with CPU data only (no GPU)
+    TerrainTile& tile = loadedTiles[key];
+    tile.coord = coord;
+    tile.lod = lod;
+
+    // Calculate world bounds for this tile
+    uint32_t lodTilesX = tilesX >> lod;
+    uint32_t lodTilesZ = tilesZ >> lod;
+    if (lodTilesX < 1) lodTilesX = 1;
+    if (lodTilesZ < 1) lodTilesZ = 1;
+
+    float tileWorldSizeX = terrainSize / lodTilesX;
+    float tileWorldSizeZ = terrainSize / lodTilesZ;
+
+    tile.worldMinX = (static_cast<float>(coord.x) / lodTilesX - 0.5f) * terrainSize;
+    tile.worldMinZ = (static_cast<float>(coord.z) / lodTilesZ - 0.5f) * terrainSize;
+    tile.worldMaxX = tile.worldMinX + tileWorldSizeX;
+    tile.worldMaxZ = tile.worldMinZ + tileWorldSizeZ;
+
+    // Convert to float32 directly - NO resampling
+    tile.cpuData.resize(tileResolution * tileResolution);
+    for (uint32_t i = 0; i < tileResolution * tileResolution; i++) {
+        tile.cpuData[i] = static_cast<float>(data[i]) / 65535.0f;
+    }
+
+    stbi_image_free(data);
+
+    // Leave loaded=false - GPU resources will be created later when needed
+    tile.loaded = false;
+
+    SDL_Log("TerrainTileCache: Loaded tile CPU data (%d, %d) LOD%u - world bounds [%.0f,%.0f]-[%.0f,%.0f]",
+            coord.x, coord.z, lod, tile.worldMinX, tile.worldMinZ, tile.worldMaxX, tile.worldMaxZ);
+
+    return true;
 }

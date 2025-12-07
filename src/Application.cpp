@@ -79,6 +79,11 @@ bool Application::init(const std::string& title, int width, int height) {
     );
     SDL_Log("Terrain physics using tile-based streaming (1000m high detail radius)");
 
+    // IMPORTANT: Preload terrain physics tiles BEFORE spawning any dynamic objects
+    // Otherwise objects spawn and immediately fall through non-existent collision
+    glm::vec3 spawnAreaCenter(0.0f, 0.0f, 0.0f);
+    terrainPhysicsTiles.preloadTilesAt(spawnAreaCenter, 1000.0f);
+
     // Initialize scene physics (dynamic objects)
     renderer.getSceneManager().initPhysics(physics);
 
@@ -115,6 +120,22 @@ bool Application::init(const std::string& title, int width, int height) {
     // Create character controller for player at terrain height
     float playerSpawnX = 0.0f, playerSpawnZ = 0.0f;
     float playerSpawnY = terrain.getHeightAt(playerSpawnX, playerSpawnZ) + 0.1f;
+
+    // IMPORTANT: Load physics tiles at spawn position BEFORE creating character
+    // Otherwise character falls through non-existent terrain collision
+    // Use preloadTilesAt() which loads all needed tiles at once (no per-frame limit)
+    glm::vec3 spawnPos(playerSpawnX, playerSpawnY, playerSpawnZ);
+    terrainPhysicsTiles.preloadTilesAt(spawnPos, 1000.0f);
+
+    // Debug: Sample terrain height at spawn position using different methods
+    float heightFromTerrainSystem = terrain.getHeightAt(playerSpawnX, playerSpawnZ);
+    float heightFromTileCache = 0.0f;
+    bool tileHasHeight = terrain.getTileCache().getHeightAt(playerSpawnX, playerSpawnZ, heightFromTileCache);
+    SDL_Log("DEBUG Height at spawn (%.1f, %.1f):", playerSpawnX, playerSpawnZ);
+    SDL_Log("  TerrainSystem.getHeightAt(): %.2f", heightFromTerrainSystem);
+    SDL_Log("  TileCache.getHeightAt(): %.2f (found=%d)", heightFromTileCache, tileHasHeight ? 1 : 0);
+    SDL_Log("  Player spawn Y (height + 0.1): %.2f", playerSpawnY);
+
     physics.createCharacter(glm::vec3(playerSpawnX, playerSpawnY, playerSpawnZ), Player::CAPSULE_HEIGHT, Player::CAPSULE_RADIUS);
 
     SDL_Log("Physics initialized with %d active bodies", physics.getActiveBodyCount());
@@ -225,6 +246,66 @@ void Application::run() {
         // Update terrain physics tiles based on player position
         glm::vec3 playerPos = physics.getCharacterPosition();
         terrainPhysicsTiles.update(playerPos, 1000.0f);
+
+        // Debug: Log orb position every second to track physics terrain offset
+        static float debugLogTimer = 0.0f;
+        debugLogTimer += deltaTime;
+        if (debugLogTimer >= 1.0f) {
+            debugLogTimer = 0.0f;
+            auto& terrainSys = renderer.getTerrainSystem();
+
+            // Use the orb light position (updated from physics body 6 - emissive sphere)
+            // The orb physics radius is 0.15 (0.5 * 0.3 scale)
+            glm::vec3 orbPos = renderer.getSceneManager().getOrbLightPosition();
+            float cpuTerrainHeight = terrainSys.getHeightAt(orbPos.x, orbPos.z);
+
+            // Cast ray down from above orb to find where physics terrain collision is
+            glm::vec3 rayStart = glm::vec3(orbPos.x, orbPos.y + 10.0f, orbPos.z);
+            glm::vec3 rayEnd = glm::vec3(orbPos.x, orbPos.y - 50.0f, orbPos.z);
+            auto hits = physics.castRayAllHits(rayStart, rayEnd);
+
+            float physicsTerrainHeight = -9999.0f;
+            for (const auto& hit : hits) {
+                // Find the terrain hit (should be below orb position)
+                if (hit.position.y < orbPos.y && hit.position.y > physicsTerrainHeight) {
+                    physicsTerrainHeight = hit.position.y;
+                }
+            }
+
+            float orbBottom = orbPos.y - 0.15f;  // Physics radius = 0.5 * 0.3 = 0.15
+
+            // Also log GPU active tile count to see if shaders are using tiles
+            auto& tileCache = terrainSys.getTileCache();
+            uint32_t gpuTileCount = tileCache.getActiveTileCount();
+
+            // Check if orb position is covered by any GPU tile
+            bool gpuTileCoversOrb = false;
+            for (const auto* tile : tileCache.getActiveTiles()) {
+                if (orbPos.x >= tile->worldMinX && orbPos.x < tile->worldMaxX &&
+                    orbPos.z >= tile->worldMinZ && orbPos.z < tile->worldMaxZ) {
+                    gpuTileCoversOrb = true;
+                    break;
+                }
+            }
+
+            SDL_Log("DEBUG Orb pos: (%.1f, %.2f, %.1f), physGnd: %.2f, cpuTerrain: %.2f, gpuTiles: %u, coversOrb: %d",
+                    orbPos.x, orbPos.y, orbPos.z, physicsTerrainHeight, cpuTerrainHeight, gpuTileCount,
+                    gpuTileCoversOrb ? 1 : 0);
+
+            // Log first few GPU tile bounds to understand coverage
+            if (!gpuTileCoversOrb && gpuTileCount > 0) {
+                SDL_Log("  GPU tiles not covering orb at (%.1f, %.1f):", orbPos.x, orbPos.z);
+                int count = 0;
+                for (const auto* tile : tileCache.getActiveTiles()) {
+                    if (count++ < 3) {
+                        SDL_Log("    Tile[%d,%d]: X[%.0f,%.0f] Z[%.0f,%.0f]",
+                                tile->coord.x, tile->coord.z,
+                                tile->worldMinX, tile->worldMaxX,
+                                tile->worldMinZ, tile->worldMaxZ);
+                    }
+                }
+            }
+        }
 
         // Update player position from physics character controller
         glm::vec3 physicsPos = playerPos;
@@ -538,22 +619,24 @@ void Application::initPhysics() {
         return;
     }
 
-    // Create terrain ground plane (radius 50)
-    physics.createTerrainDisc(50.0f, 0.0f);
+    // Helper to get terrain height at a position
+    auto getTerrainY = [this](float x, float z) -> float {
+        return renderer.getTerrainHeightAt(x, z);
+    };
 
     // Scene object layout from SceneBuilder (after multi-lights update):
     // 0: Ground disc (static terrain - already created above)
-    // 1: Wooden crate 1 at (2.0, 0.5, 0.0) - unit cube
-    // 2: Rotated wooden crate at (-1.5, 0.5, 1.0)
-    // 3: Polished metal sphere at (0.0, 0.5, -2.0) - radius 0.5
-    // 4: Rough metal sphere at (-3.0, 0.5, -1.0) - radius 0.5
-    // 5: Polished metal cube at (3.0, 0.5, -2.0)
-    // 6: Brushed metal cube at (-3.0, 0.5, -3.0)
-    // 7: Emissive sphere at (2.0, 1.3, 0.0) - scaled 0.3, visual radius 0.15
+    // 1: Wooden crate 1 at (2.0, terrain+0.5, 0.0) - unit cube
+    // 2: Rotated wooden crate at (-1.5, terrain+0.5, 1.0)
+    // 3: Polished metal sphere at (0.0, terrain+0.5, -2.0) - radius 0.5
+    // 4: Rough metal sphere at (-3.0, terrain+0.5, -1.0) - radius 0.5
+    // 5: Polished metal cube at (3.0, terrain+0.5, -2.0)
+    // 6: Brushed metal cube at (-3.0, terrain+0.5, -3.0)
+    // 7: Emissive sphere at (2.0, terrain+1.3, 0.0) - scaled 0.3, visual radius 0.15
     // 8: Blue light at (-3.0, 2.0, 2.0) - fixed, no physics
     // 9: Green light at (4.0, 1.5, -2.0) - fixed, no physics
     // 10: Player capsule (handled by character controller)
-    // 11: Flag pole at (5.0, 1.5, 0.0) - static physics
+    // 11: Flag pole at (5.0, terrain+1.5, 0.0) - static physics
     // 12: Flag cloth - no physics (soft body simulation handles it)
 
     const size_t numSceneObjects = 13;
@@ -564,43 +647,53 @@ void Application::initPhysics() {
     float boxMass = 10.0f;
     float sphereMass = 5.0f;
 
-    // Spawn objects slightly above ground to let them settle
+    // Spawn objects slightly above terrain to let them settle
     const float spawnOffset = 0.1f;
 
     // Index 1: Wooden crate 1
-    scenePhysicsBodies[1] = physics.createBox(glm::vec3(2.0f, 0.5f + spawnOffset, 0.0f), cubeHalfExtents, boxMass);
+    float x1 = 2.0f, z1 = 0.0f;
+    scenePhysicsBodies[1] = physics.createBox(glm::vec3(x1, getTerrainY(x1, z1) + 0.5f + spawnOffset, z1), cubeHalfExtents, boxMass);
 
     // Index 2: Rotated wooden crate
-    scenePhysicsBodies[2] = physics.createBox(glm::vec3(-1.5f, 0.5f + spawnOffset, 1.0f), cubeHalfExtents, boxMass);
+    float x2 = -1.5f, z2 = 1.0f;
+    scenePhysicsBodies[2] = physics.createBox(glm::vec3(x2, getTerrainY(x2, z2) + 0.5f + spawnOffset, z2), cubeHalfExtents, boxMass);
 
     // Index 3: Polished metal sphere (mesh radius 0.5)
-    scenePhysicsBodies[3] = physics.createSphere(glm::vec3(0.0f, 0.5f + spawnOffset, -2.0f), 0.5f, sphereMass);
+    float x3 = 0.0f, z3 = -2.0f;
+    scenePhysicsBodies[3] = physics.createSphere(glm::vec3(x3, getTerrainY(x3, z3) + 0.5f + spawnOffset, z3), 0.5f, sphereMass);
 
     // Index 4: Rough metal sphere (mesh radius 0.5)
-    scenePhysicsBodies[4] = physics.createSphere(glm::vec3(-3.0f, 0.5f + spawnOffset, -1.0f), 0.5f, sphereMass);
+    float x4 = -3.0f, z4 = -1.0f;
+    scenePhysicsBodies[4] = physics.createSphere(glm::vec3(x4, getTerrainY(x4, z4) + 0.5f + spawnOffset, z4), 0.5f, sphereMass);
 
     // Index 5: Polished metal cube
-    scenePhysicsBodies[5] = physics.createBox(glm::vec3(3.0f, 0.5f + spawnOffset, -2.0f), cubeHalfExtents, boxMass);
+    float x5 = 3.0f, z5 = -2.0f;
+    scenePhysicsBodies[5] = physics.createBox(glm::vec3(x5, getTerrainY(x5, z5) + 0.5f + spawnOffset, z5), cubeHalfExtents, boxMass);
 
     // Index 6: Brushed metal cube
-    scenePhysicsBodies[6] = physics.createBox(glm::vec3(-3.0f, 0.5f + spawnOffset, -3.0f), cubeHalfExtents, boxMass);
+    float x6 = -3.0f, z6 = -3.0f;
+    scenePhysicsBodies[6] = physics.createBox(glm::vec3(x6, getTerrainY(x6, z6) + 0.5f + spawnOffset, z6), cubeHalfExtents, boxMass);
 
     // Index 7: Emissive sphere - mesh radius 0.5, scaled 0.3 = visual radius 0.15
-    scenePhysicsBodies[7] = physics.createSphere(glm::vec3(2.0f, 1.3f + spawnOffset, 0.0f), 0.5f * 0.3f, 1.0f);
+    float x7 = 2.0f, z7 = 0.0f;
+    scenePhysicsBodies[7] = physics.createSphere(glm::vec3(x7, getTerrainY(x7, z7) + 1.3f + spawnOffset, z7), 0.5f * 0.3f, 1.0f);
 
     // Index 8 & 9: Blue and green lights - NO PHYSICS (fixed light indicators)
     // scenePhysicsBodies[8] and [9] remain INVALID_BODY_ID
 
     // Index 11: Flag pole - static cylinder (radius 0.05m, height 3m)
     // Create as a static box approximation for simplicity
+    float x11 = 5.0f, z11 = 0.0f;
     glm::vec3 poleHalfExtents(0.05f, 1.5f, 0.05f);  // Half of 3m height
-    scenePhysicsBodies[11] = physics.createStaticBox(glm::vec3(5.0f, 1.5f, 0.0f), poleHalfExtents);
+    scenePhysicsBodies[11] = physics.createStaticBox(glm::vec3(x11, getTerrainY(x11, z11) + 1.5f, z11), poleHalfExtents);
 
     // Index 12: Flag cloth - NO PHYSICS (soft body simulation)
     // scenePhysicsBodies[12] remains INVALID_BODY_ID
 
-    // Create character controller for player slightly above ground
-    physics.createCharacter(glm::vec3(0.0f, spawnOffset, 0.0f), Player::CAPSULE_HEIGHT, Player::CAPSULE_RADIUS);
+    // Create character controller for player at terrain height
+    float playerX = 0.0f, playerZ = 0.0f;
+    float playerTerrainY = getTerrainY(playerX, playerZ);
+    physics.createCharacter(glm::vec3(playerX, playerTerrainY + spawnOffset, playerZ), Player::CAPSULE_HEIGHT, Player::CAPSULE_RADIUS);
 
     SDL_Log("Physics initialized with %d active bodies", physics.getActiveBodyCount());
 }

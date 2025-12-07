@@ -805,12 +805,21 @@ PhysicsBodyID PhysicsWorld::createTerrainTile(const float* samples, uint32_t sam
     JPH::BodyInterface& bodyInterface = physicsSystem->GetBodyInterface();
 
     // Convert normalized heights to world heights
-    // Height formula: worldY = h * heightScale (matches terrain shader)
-    // Note: minAltitude is NOT added here - the shader uses h * heightScale only
-    (void)minAltitude; // Unused, kept for API compatibility
+    // Use same formula as global heightfield: worldY = h * heightScale
+    // See TerrainHeight.h for authoritative formula
+    (void)minAltitude; // Unused - kept for API compatibility
     std::vector<float> joltSamples(sampleCount * sampleCount);
     for (uint32_t i = 0; i < sampleCount * sampleCount; i++) {
         joltSamples[i] = samples[i] * heightScale;
+    }
+
+    // Debug: Log first sample height for tile containing origin
+    if (worldMinX <= 0.0f && worldMinX + tileWorldSize > 0.0f &&
+        worldMinZ <= 0.0f && worldMinZ + tileWorldSize > 0.0f) {
+        SDL_Log("Physics tile at origin: worldMin=(%.0f,%.0f), size=%.0f",
+                worldMinX, worldMinZ, tileWorldSize);
+        SDL_Log("  Sample[0] normalized=%.4f, scaled=%.2f (heightScale=%.1f)",
+                samples[0], joltSamples[0], heightScale);
     }
 
     // The scale parameter determines the XZ spacing between samples

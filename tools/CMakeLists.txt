@@ -158,6 +158,7 @@ target_include_directories(tile_generator_lib PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/../src
     ${CMAKE_CURRENT_SOURCE_DIR}/road_generator
+    ${CMAKE_CURRENT_SOURCE_DIR}/biome_preprocess
 )
 
 target_link_libraries(tile_generator_lib PUBLIC
@@ -189,6 +190,7 @@ add_executable(road_generator
 target_include_directories(road_generator PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/../src
+    ${CMAKE_CURRENT_SOURCE_DIR}/biome_preprocess
 )
 
 target_link_libraries(road_generator PRIVATE

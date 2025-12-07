@@ -5,6 +5,8 @@ find_package(SDL3 CONFIG REQUIRED)
 find_package(glm CONFIG REQUIRED)
 find_package(lodepng CONFIG REQUIRED)
 find_package(miniz CONFIG REQUIRED)
+find_package(LibArchive REQUIRED)
+find_package(nlohmann_json CONFIG REQUIRED)
 find_path(STB_INCLUDE_DIRS "stb_image.h")
 
 add_executable(shader_reflect shader_reflect.cpp)
@@ -113,6 +115,7 @@ target_link_libraries(sbsar_render PRIVATE
     glm::glm
     lodepng
     miniz::miniz
+    LibArchive::LibArchive
 )
 
 target_compile_features(sbsar_render PRIVATE cxx_std_17)
@@ -131,3 +134,69 @@ target_link_libraries(cape_texture_gen PRIVATE
 target_compile_features(biome_preprocess PRIVATE cxx_std_17)
 
 target_compile_features(cape_texture_gen PRIVATE cxx_std_17)
+
+# Material texture generator (procedural placeholder textures)
+add_executable(material_texture_gen
+    material_texture_gen.cpp
+)
+
+target_link_libraries(material_texture_gen PRIVATE
+    SDL3::SDL3
+    glm::glm
+    lodepng
+)
+
+target_compile_features(material_texture_gen PRIVATE cxx_std_17)
+
+# Tile generator library (for virtual texturing)
+add_library(tile_generator_lib STATIC
+    tile_generator/MaterialLibrary.cpp
+    tile_generator/SplineRasterizer.cpp
+    tile_generator/TileCompositor.cpp
+)
+
+target_include_directories(tile_generator_lib PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src
+    ${CMAKE_CURRENT_SOURCE_DIR}/road_generator
+)
+
+target_link_libraries(tile_generator_lib PUBLIC
+    SDL3::SDL3
+    glm::glm
+    lodepng
+    nlohmann_json::nlohmann_json
+)
+
+target_compile_features(tile_generator_lib PRIVATE cxx_std_17)
+
+# Virtual texture tile generator
+add_executable(tile_generator
+    tile_generator/main.cpp
+)
+
+target_link_libraries(tile_generator PRIVATE
+    tile_generator_lib
+)
+
+target_compile_features(tile_generator PRIVATE cxx_std_17)
+
+# Road network generator (A* pathfinding for settlement connections)
+add_executable(road_generator
+    road_generator/main.cpp
+    road_generator/RoadPathfinder.cpp
+)
+
+target_include_directories(road_generator PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src
+)
+
+target_link_libraries(road_generator PRIVATE
+    SDL3::SDL3
+    glm::glm
+    lodepng
+    nlohmann_json::nlohmann_json
+)
+
+target_compile_features(road_generator PRIVATE cxx_std_17)

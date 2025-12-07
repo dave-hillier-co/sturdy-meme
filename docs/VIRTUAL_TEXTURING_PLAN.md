@@ -16,7 +16,7 @@ Virtual texturing (VT) enables rendering arbitrarily large terrain textures by s
 
 | Phase | Description | Status |
 |-------|-------------|--------|
-| 1 | Material Library & Source Assets | Pending |
+| 1 | Material Library & Source Assets | Complete |
 | 2 | Road Spline Generation | Pending |
 | 3 | Spline Rasterization | Pending |
 | 4 | Tile Compositor | Pending |

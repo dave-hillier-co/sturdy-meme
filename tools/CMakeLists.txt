@@ -151,11 +151,13 @@ target_compile_features(material_texture_gen PRIVATE cxx_std_17)
 # Tile generator library (for virtual texturing)
 add_library(tile_generator_lib STATIC
     tile_generator/MaterialLibrary.cpp
+    tile_generator/SplineRasterizer.cpp
 )
 
 target_include_directories(tile_generator_lib PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/../src
+    ${CMAKE_CURRENT_SOURCE_DIR}/road_generator
 )
 
 target_link_libraries(tile_generator_lib PUBLIC

@@ -64,8 +64,13 @@ target_include_directories(biome_preprocess PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../src
     ${STB_INCLUDE_DIRS}
 )
-
 target_link_libraries(biome_preprocess PRIVATE
+    SDL3::SDL3
+    glm::glm
+    lodepng
+)
+
+
 # Foam noise texture generator
 add_executable(foam_noise_gen
     foam_noise_gen.cpp

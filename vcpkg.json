@@ -35,6 +35,7 @@
     "openfbx",
     "lodepng",
     "nlohmann-json",
-    "miniz"
+    "miniz",
+    "libarchive"
   ]
 }

@@ -5,6 +5,7 @@ find_package(SDL3 CONFIG REQUIRED)
 find_package(glm CONFIG REQUIRED)
 find_package(lodepng CONFIG REQUIRED)
 find_package(miniz CONFIG REQUIRED)
+find_package(LibArchive REQUIRED)
 find_path(STB_INCLUDE_DIRS "stb_image.h")
 
 add_executable(shader_reflect shader_reflect.cpp)
@@ -113,6 +114,7 @@ target_link_libraries(sbsar_render PRIVATE
     glm::glm
     lodepng
     miniz::miniz
+    LibArchive::LibArchive
 )
 
 target_compile_features(sbsar_render PRIVATE cxx_std_17)

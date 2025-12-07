@@ -27,10 +27,8 @@ bool TerrainSystem::init(const InitInfo& info, const TerrainConfig& cfg) {
     commandPool = info.commandPool;
     config = cfg;
 
-    // Compute heightScale from altitude range
-    config.heightScale = config.maxAltitude - config.minAltitude;
-
     // Initialize height map
+    // heightScale is used directly (no min/max altitude conversion)
     TerrainHeightMap::InitInfo heightMapInfo{};
     heightMapInfo.device = device;
     heightMapInfo.allocator = allocator;
@@ -40,8 +38,6 @@ bool TerrainSystem::init(const InitInfo& info, const TerrainConfig& cfg) {
     heightMapInfo.terrainSize = config.size;
     heightMapInfo.heightScale = config.heightScale;
     heightMapInfo.heightmapPath = config.heightmapPath;
-    heightMapInfo.minAltitude = config.minAltitude;
-    heightMapInfo.maxAltitude = config.maxAltitude;
     if (!heightMap.init(heightMapInfo)) return false;
 
     // Initialize textures

@@ -106,11 +106,10 @@ bool Renderer::init(SDL_Window* win, const std::string& resPath) {
     ErosionConfig erosionConfig{};
     erosionConfig.sourceHeightmapPath = heightmapPath;
     erosionConfig.cacheDirectory = terrainDataPath;
-    // Sea level: real-world 0m altitude maps to worldY = 0 - minAltitude = 15m
-    erosionConfig.seaLevel = 15.0f;
+    erosionConfig.seaLevel = 0.0f;  // Water at world Y = 0
     erosionConfig.terrainSize = 16384.0f;
-    erosionConfig.minAltitude = -15.0f;
-    erosionConfig.maxAltitude = 220.0f;
+    erosionConfig.minAltitude = 0.0f;
+    erosionConfig.maxAltitude = 200.0f;
 
     if (erosionSimulator.isCacheValid(erosionConfig)) {
         if (erosionSimulator.loadFromCache(erosionConfig)) {
@@ -148,11 +147,8 @@ bool Renderer::init(SDL_Window* win, const std::string& resPath) {
     terrainConfig.targetEdgePixels = 16.0f;
     terrainConfig.splitThreshold = 100.0f;
     terrainConfig.mergeThreshold = 50.0f;
-    // Load Isle of Wight heightmap (-15m to 200m altitude range, includes beaches below sea level)
     terrainConfig.heightmapPath = resourcePath + "/assets/terrain/isleofwight-0m-200m.png";
-    terrainConfig.minAltitude = -15.0f;
-    terrainConfig.maxAltitude = 220.0f;
-    // heightScale is computed from minAltitude/maxAltitude during init
+    terrainConfig.heightScale = 200.0f;  // 16-bit PNG normalized to [0,1] * 200m
 
     if (!terrainSystem.init(terrainInfo, terrainConfig)) return false;
 
@@ -543,11 +539,9 @@ bool Renderer::init(SDL_Window* win, const std::string& resPath) {
     if (!waterSystem.init(waterInfo)) return false;
 
     // Configure water surface
-    // Terrain formula is worldY = h * heightScale, where h is normalized [0,1]
-    // h=0 maps to minAltitude, h=1 maps to maxAltitude
-    // Real-world 0m altitude corresponds to worldY = 0 - minAltitude = 15m
-    float seaLevel = -terrainConfig.minAltitude;  // = 15.0f for minAltitude = -15
-    waterSystem.setWaterLevel(seaLevel);
+    // Simple water level - set to desired world Y coordinate
+    float waterLevel = 0.0f;  // Water at world Y = 0
+    waterSystem.setWaterLevel(waterLevel);
     waterSystem.setWaterExtent(glm::vec2(0.0f, 0.0f), glm::vec2(65536.0f, 65536.0f));
     waterSystem.setWaterColor(glm::vec4(0.02f, 0.08f, 0.15f, 0.95f));  // Deep ocean blue
     waterSystem.setWaveAmplitude(0.5f);   // Ocean-scale waves
@@ -577,7 +571,7 @@ bool Renderer::init(SDL_Window* win, const std::string& resPath) {
     FlowMapGenerator::Config flowConfig{};
     flowConfig.resolution = 512;
     flowConfig.worldSize = computedTerrainConfig.size;
-    flowConfig.waterLevel = seaLevel;
+    flowConfig.waterLevel = waterLevel;
     flowConfig.maxFlowSpeed = 1.0f;
     flowConfig.slopeInfluence = 2.0f;  // Water flows faster on steeper slopes
     flowConfig.shoreDistance = 100.0f; // Max shore distance for foam

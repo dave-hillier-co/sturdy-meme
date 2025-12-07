@@ -90,11 +90,10 @@ struct TerrainConfig {
     float mergeThreshold = 8.0f;      // Screen pixels to trigger merge
     uint32_t spreadFactor = 2;        // Temporal spreading: process 1/N triangles per frame (1 = all)
     std::string heightmapPath;        // Optional: path to 16-bit PNG heightmap
-    float minAltitude = -15.0f;         // Altitude for height value 0 (when loading from file)
-    float maxAltitude = 220.0f;       // Altitude for height value 65535 (when loading from file)
 
-    // Computed height scale (maxAltitude - minAltitude), set during init
-    float heightScale = 0.0f;
+    // Height scale: world units for normalized height 1.0
+    // For 16-bit PNG, values 0-65535 are normalized to 0.0-1.0, then multiplied by heightScale
+    float heightScale = 200.0f;
 
     // Meshlet settings
     bool useMeshlets = true;          // Enable meshlet-based rendering for higher detail

@@ -18,10 +18,8 @@ public:
         VkCommandPool commandPool;
         uint32_t resolution;
         float terrainSize;
-        float heightScale;
+        float heightScale;          // World units for normalized height 1.0
         std::string heightmapPath;  // Optional: path to 16-bit PNG heightmap (empty = procedural)
-        float minAltitude = 0.0f;   // Altitude for height value 0 (when loading from file)
-        float maxAltitude = 200.0f; // Altitude for height value 65535 (when loading from file)
     };
 
     // Special return value indicating a hole in terrain (no ground)
@@ -60,7 +58,7 @@ public:
 
 private:
     bool generateHeightData();
-    bool loadHeightDataFromFile(const std::string& path, float minAlt, float maxAlt);
+    bool loadHeightDataFromFile(const std::string& path);
     bool createGPUResources();
     bool createHoleMaskResources();
     bool uploadToGPU();

@@ -19,8 +19,9 @@ bool TerrainHeightMap::init(const InitInfo& info) {
     heightScale = info.heightScale;
 
     // Either load from file or generate procedurally
+    // 16-bit PNG values are normalized to [0,1], then scaled by heightScale
     if (!info.heightmapPath.empty()) {
-        if (!loadHeightDataFromFile(info.heightmapPath, info.minAltitude, info.maxAltitude)) {
+        if (!loadHeightDataFromFile(info.heightmapPath)) {
             SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to load heightmap from file, falling back to procedural");
             if (!generateHeightData()) return false;
         }
@@ -120,10 +121,11 @@ bool TerrainHeightMap::generateHeightData() {
     return true;
 }
 
-bool TerrainHeightMap::loadHeightDataFromFile(const std::string& path, float minAlt, float maxAlt) {
+bool TerrainHeightMap::loadHeightDataFromFile(const std::string& path) {
     int width, height, channels;
 
     // Load as 16-bit if available
+    // 16-bit PNG values (0-65535) are normalized to [0,1]
     stbi_us* data16 = stbi_load_16(path.c_str(), &width, &height, &channels, 1);
     if (data16) {
         SDL_Log("Loaded 16-bit heightmap: %s (%dx%d)", path.c_str(), width, height);
@@ -149,7 +151,7 @@ bool TerrainHeightMap::loadHeightDataFromFile(const std::string& path, float min
                 float tx = srcX - x0;
                 float ty = srcY - y0;
 
-                // Sample 4 corners (16-bit values)
+                // Sample 4 corners (16-bit values normalized to [0,1])
                 float h00 = static_cast<float>(data16[y0 * srcWidth + x0]) / 65535.0f;
                 float h10 = static_cast<float>(data16[y0 * srcWidth + x1]) / 65535.0f;
                 float h01 = static_cast<float>(data16[y1 * srcWidth + x0]) / 65535.0f;
@@ -167,7 +169,7 @@ bool TerrainHeightMap::loadHeightDataFromFile(const std::string& path, float min
 
         stbi_image_free(data16);
 
-        SDL_Log("Height scale: %.1fm (altitude range: %.1fm to %.1fm)", heightScale, minAlt, maxAlt);
+        SDL_Log("Height scale: %.1fm (normalized height 1.0 = %.1fm)", heightScale, heightScale);
 
         return true;
     }

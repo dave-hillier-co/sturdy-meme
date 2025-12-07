@@ -142,8 +142,9 @@ private:
     static constexpr int NUM_LEAF_TYPES = 4;
     std::array<Texture, NUM_LEAF_TYPES> leafTextures;
 
-    // Fallback solid color texture
-    Texture fallbackTexture;
+    // Fallback textures
+    Texture fallbackTexture;        // Gray for color/AO/roughness
+    Texture fallbackNormalTexture;  // Flat normal (128,128,255) for normal maps
     bool texturesLoaded = false;
 
     // Currently selected texture indices for descriptor binding

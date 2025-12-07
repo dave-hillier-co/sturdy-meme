@@ -7,8 +7,12 @@
 // - XML metadata describing inputs, outputs, and presets (e.g., MaterialName.xml)
 // - .sbsasm binary compiled substance graph files
 // Reference: https://blog.jdboyd.net/2018/09/substance-designer-sbsprs-sbsar-file-format-notes/
+//
+// Uses libarchive for 7-zip extraction (no external 7z command required)
 
 #include <SDL3/SDL_log.h>
+#include <archive.h>
+#include <archive_entry.h>
 #include <glm/glm.hpp>
 #include <lodepng.h>
 #include <miniz.h>
@@ -231,104 +235,75 @@ MaterialParameters parseXmlParameters(const std::string& xml) {
     return params;
 }
 
-// Check if 7z command is available
-bool check7zAvailable() {
-#ifdef _WIN32
-    int result = std::system("7z >nul 2>&1");
-#else
-    int result = std::system("7z >/dev/null 2>&1");
-#endif
-    // 7z returns 0 on success, but also returns 0 with no args on some versions
-    // Check for common 7z/7za commands
-    if (result != 0) {
-#ifdef _WIN32
-        result = std::system("7za >nul 2>&1");
-#else
-        result = std::system("7za >/dev/null 2>&1");
-#endif
-    }
-    return result == 0;
-}
-
-// Try to parse .sbsar as 7-zip archive using command-line tool
-std::string extract7zXmlContent(const std::string& path) {
+// Extract XML content from 7-zip archive using libarchive
+std::string extractLibarchive7zXmlContent(const std::string& path) {
     std::string xmlContent;
 
-    // Create temp directory for extraction
-    std::string tempDir = "/tmp/sbsar_extract_" + std::to_string(std::hash<std::string>{}(path));
-    fs::create_directories(tempDir);
-
-    // First, list the archive contents to find XML files
-    std::string listCmd = "7z l \"" + path + "\" 2>/dev/null";
-    FILE* pipe = popen(listCmd.c_str(), "r");
-    if (!pipe) {
-        // Try 7za as fallback
-        listCmd = "7za l \"" + path + "\" 2>/dev/null";
-        pipe = popen(listCmd.c_str(), "r");
+    struct archive* a = archive_read_new();
+    if (!a) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create archive reader");
+        return xmlContent;
     }
 
-    std::string xmlFilename;
-    if (pipe) {
-        std::array<char, 256> buffer;
-        std::string output;
-        while (fgets(buffer.data(), buffer.size(), pipe) != nullptr) {
-            output += buffer.data();
-        }
-        pclose(pipe);
+    // Enable all formats (including 7z) and all filters
+    archive_read_support_format_all(a);
+    archive_read_support_filter_all(a);
 
-        // Parse output to find .xml files
-        std::istringstream iss(output);
-        std::string line;
-        while (std::getline(iss, line)) {
-            if (line.find(".xml") != std::string::npos) {
-                // Extract filename from 7z output line
-                // Format varies but filename is usually at end after spaces
-                size_t pos = line.rfind("   ");
-                if (pos != std::string::npos) {
-                    xmlFilename = line.substr(pos);
-                    // Trim whitespace
-                    size_t start = xmlFilename.find_first_not_of(" \t");
-                    if (start != std::string::npos) {
-                        xmlFilename = xmlFilename.substr(start);
-                    }
+    int r = archive_read_open_filename(a, path.c_str(), 10240);
+    if (r != ARCHIVE_OK) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
+                     "Failed to open archive: %s", archive_error_string(a));
+        archive_read_free(a);
+        return xmlContent;
+    }
+
+    struct archive_entry* entry;
+    while (archive_read_next_header(a, &entry) == ARCHIVE_OK) {
+        const char* entryPath = archive_entry_pathname(entry);
+        if (!entryPath) {
+            archive_read_data_skip(a);
+            continue;
+        }
+
+        std::string filename = entryPath;
+        SDL_Log("  Archive entry: %s", filename.c_str());
+
+        // Look for XML files
+        if (filename.find(".xml") != std::string::npos) {
+            SDL_Log("Found XML file in archive: %s", filename.c_str());
+
+            // Get the uncompressed size
+            la_int64_t size = archive_entry_size(entry);
+            if (size > 0) {
+                std::vector<char> buffer(static_cast<size_t>(size) + 1);
+                la_ssize_t bytesRead = archive_read_data(a, buffer.data(), static_cast<size_t>(size));
+                if (bytesRead > 0) {
+                    buffer[static_cast<size_t>(bytesRead)] = '\0';
+                    xmlContent = buffer.data();
+                    SDL_Log("Extracted XML from 7z archive (%zu bytes)", xmlContent.size());
+                    break;  // Found XML, stop searching
                 }
-                if (!xmlFilename.empty()) {
-                    SDL_Log("Found XML file in 7z archive: %s", xmlFilename.c_str());
+            } else {
+                // Size unknown, read in chunks
+                std::stringstream ss;
+                std::array<char, 8192> chunkBuffer;
+                la_ssize_t bytesRead;
+                while ((bytesRead = archive_read_data(a, chunkBuffer.data(), chunkBuffer.size())) > 0) {
+                    ss.write(chunkBuffer.data(), bytesRead);
+                }
+                xmlContent = ss.str();
+                if (!xmlContent.empty()) {
+                    SDL_Log("Extracted XML from 7z archive (%zu bytes)", xmlContent.size());
                     break;
                 }
             }
+        } else {
+            archive_read_data_skip(a);
         }
     }
 
-    // Extract all XML files (including nested paths like assemblies/content/0000/*.xml)
-    if (!xmlFilename.empty()) {
-        // Use -r for recursive extraction of all xml files from nested directories
-        std::string extractCmd = "7z e -y -r -o\"" + tempDir + "\" \"" + path + "\" \"*.xml\" 2>/dev/null";
-        int result = std::system(extractCmd.c_str());
-        if (result != 0) {
-            extractCmd = "7za e -y -r -o\"" + tempDir + "\" \"" + path + "\" \"*.xml\" 2>/dev/null";
-            result = std::system(extractCmd.c_str());
-        }
-
-        if (result == 0) {
-            // Read extracted XML file
-            for (const auto& entry : fs::directory_iterator(tempDir)) {
-                if (entry.path().extension() == ".xml") {
-                    std::ifstream file(entry.path());
-                    if (file.is_open()) {
-                        std::stringstream ss;
-                        ss << file.rdbuf();
-                        xmlContent = ss.str();
-                        SDL_Log("Extracted XML from 7z archive (%zu bytes)", xmlContent.size());
-                        break;
-                    }
-                }
-            }
-        }
-    }
-
-    // Clean up temp directory
-    fs::remove_all(tempDir);
+    archive_read_close(a);
+    archive_read_free(a);
 
     return xmlContent;
 }
@@ -385,17 +360,13 @@ MaterialParameters parseSbsarArchive(const std::string& path) {
 
     std::string xmlContent;
 
-    // Try 7-zip first if available (real .sbsar files are 7z archives)
-    if (check7zAvailable()) {
-        SDL_Log("7z command available, trying 7-zip format...");
-        xmlContent = extract7zXmlContent(path);
-    } else {
-        SDL_Log("7z command not found (install p7zip-full for real .sbsar support)");
-    }
+    // Try 7-zip format using libarchive (real .sbsar files are 7z archives)
+    SDL_Log("Trying 7-zip format with libarchive...");
+    xmlContent = extractLibarchive7zXmlContent(path);
 
-    // Fall back to regular ZIP (for test files or older formats)
+    // Fall back to regular ZIP using miniz (for test files or older formats)
     if (xmlContent.empty()) {
-        SDL_Log("Trying ZIP format...");
+        SDL_Log("Trying ZIP format with miniz...");
         xmlContent = extractZipXmlContent(path);
     }
 

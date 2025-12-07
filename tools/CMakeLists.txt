@@ -133,3 +133,33 @@ target_link_libraries(cape_texture_gen PRIVATE
 target_compile_features(biome_preprocess PRIVATE cxx_std_17)
 
 target_compile_features(cape_texture_gen PRIVATE cxx_std_17)
+
+# Material texture generator (procedural placeholder textures)
+add_executable(material_texture_gen
+    material_texture_gen.cpp
+)
+
+target_link_libraries(material_texture_gen PRIVATE
+    SDL3::SDL3
+    glm::glm
+    lodepng
+)
+
+target_compile_features(material_texture_gen PRIVATE cxx_std_17)
+
+# Tile generator library (for virtual texturing)
+add_library(tile_generator_lib STATIC
+    tile_generator/MaterialLibrary.cpp
+)
+
+target_include_directories(tile_generator_lib PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src
+)
+
+target_link_libraries(tile_generator_lib PUBLIC
+    SDL3::SDL3
+    glm::glm
+)
+
+target_compile_features(tile_generator_lib PRIVATE cxx_std_17)

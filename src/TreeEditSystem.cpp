@@ -61,6 +61,7 @@ void TreeEditSystem::destroy(VkDevice device, VmaAllocator allocator) {
         leafTextures[i].destroy(allocator, device);
     }
     fallbackTexture.destroy(allocator, device);
+    fallbackNormalTexture.destroy(allocator, device);
     texturesLoaded = false;
 
     // Destroy pipelines
@@ -193,9 +194,10 @@ void TreeEditSystem::updateDescriptorSets(VkDevice device, const std::vector<VkB
             barkNormalInfo.imageView = barkNormalTextures[barkIdx].getImageView();
             barkNormalInfo.sampler = barkNormalTextures[barkIdx].getSampler();
         } else {
+            // Use fallback normal texture (128,128,255) for flat normal
             barkNormalInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-            barkNormalInfo.imageView = fallbackTexture.getImageView();
-            barkNormalInfo.sampler = fallbackTexture.getSampler();
+            barkNormalInfo.imageView = fallbackNormalTexture.getImageView();
+            barkNormalInfo.sampler = fallbackNormalTexture.getSampler();
         }
         descriptorWrites[2].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
         descriptorWrites[2].dstSet = descriptorSets[i];
@@ -554,6 +556,13 @@ bool TreeEditSystem::loadTextures() {
     // Create fallback texture (gray color for bark, green for leaves)
     if (!fallbackTexture.createSolidColor(128, 128, 128, 255, allocator, device, commandPool, graphicsQueue)) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create fallback texture");
+        return false;
+    }
+
+    // Create fallback normal map texture (flat normal pointing up in tangent space)
+    // RGB(128, 128, 255) = normalized (0, 0, 1) after conversion from [0,1] to [-1,1]
+    if (!fallbackNormalTexture.createSolidColor(128, 128, 255, 255, allocator, device, commandPool, graphicsQueue)) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create fallback normal texture");
         return false;
     }
 

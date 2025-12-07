@@ -3,8 +3,8 @@
 #include "MaterialLibrary.h"
 #include "SplineRasterizer.h"
 #include "../road_generator/RoadSpline.h"
-#include "../../src/BiomeGenerator.h"
-#include "../../src/ErosionSimulator.h"
+#include "BiomeGenerator.h"
+#include "ErosionSimulator.h"
 #include <vector>
 #include <string>
 #include <functional>

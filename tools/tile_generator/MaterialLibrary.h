@@ -5,7 +5,7 @@
 #include <array>
 #include <optional>
 #include <glm/glm.hpp>
-#include "../../src/BiomeGenerator.h"
+#include "BiomeGenerator.h" 
 
 namespace VirtualTexture {
 

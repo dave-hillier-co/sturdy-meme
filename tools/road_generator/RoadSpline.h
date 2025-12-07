@@ -4,7 +4,7 @@
 #include <cstdint>
 #include <string>
 #include <glm/glm.hpp>
-#include "../../src/BiomeGenerator.h"
+#include "BiomeGenerator.h"
 
 namespace RoadGen {
 

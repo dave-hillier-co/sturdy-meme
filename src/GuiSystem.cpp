@@ -4,6 +4,10 @@
 #include "AtmosphereLUTSystem.h"
 #include "AnimatedCharacter.h"
 #include "PlayerCape.h"
+#include "DebugLineSystem.h"
+#ifdef JPH_DEBUG_RENDERER
+#include "PhysicsDebugRenderer.h"
+#endif
 
 #include <imgui.h>
 #include <imgui_impl_sdl3.h>
@@ -1599,6 +1603,50 @@ void GuiSystem::renderDebugSection(Renderer& renderer) {
     if (ImGui::IsItemHovered()) {
         ImGui::SetTooltip("Shows snow accumulation depth as heat map");
     }
+
+#ifdef JPH_DEBUG_RENDERER
+    ImGui::Spacing();
+
+    bool physicsDebug = renderer.isPhysicsDebugEnabled();
+    if (ImGui::Checkbox("Physics Debug", &physicsDebug)) {
+        renderer.setPhysicsDebugEnabled(physicsDebug);
+    }
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("Draw Jolt Physics collision shapes and debug info");
+    }
+
+    if (physicsDebug) {
+        ImGui::Indent();
+
+        auto* debugRenderer = renderer.getPhysicsDebugRenderer();
+        if (debugRenderer) {
+            auto& options = debugRenderer->getOptions();
+
+            ImGui::Checkbox("Draw Shapes", &options.drawShapes);
+            ImGui::Checkbox("Wireframe", &options.drawShapeWireframe);
+            ImGui::Checkbox("Bounding Boxes", &options.drawBoundingBox);
+            ImGui::Checkbox("Velocity", &options.drawVelocity);
+            ImGui::Checkbox("Center of Mass", &options.drawCenterOfMassTransform);
+
+            ImGui::Spacing();
+            ImGui::Text("Body Types:");
+            ImGui::Checkbox("Static", &options.drawStaticBodies);
+            ImGui::Checkbox("Dynamic", &options.drawDynamicBodies);
+            ImGui::Checkbox("Kinematic", &options.drawKinematicBodies);
+            ImGui::Checkbox("Character", &options.drawCharacter);
+        } else {
+            ImGui::TextDisabled("Enable to see options");
+        }
+
+        // Show stats
+        auto& debugLines = renderer.getDebugLineSystem();
+        ImGui::Spacing();
+        ImGui::Text("Lines: %zu", debugLines.getLineCount());
+        ImGui::Text("Triangles: %zu", debugLines.getTriangleCount());
+
+        ImGui::Unindent();
+    }
+#endif
 
     ImGui::Spacing();
     ImGui::Separator();

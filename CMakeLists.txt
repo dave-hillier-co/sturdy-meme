@@ -107,6 +107,8 @@ set(SOURCES
     src/VirtualTextureFeedback.cpp
     src/VirtualTextureTileLoader.cpp
     src/VirtualTextureSystem.cpp
+    src/PhysicsDebugRenderer.cpp
+    src/DebugLineSystem.cpp
 )
 
 add_executable(${PROJECT_NAME} ${SOURCES})
@@ -130,6 +132,9 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     lodepng
     nlohmann_json::nlohmann_json
 )
+
+# Enable Jolt Physics debug renderer for visualization
+target_compile_definitions(${PROJECT_NAME} PRIVATE JPH_DEBUG_RENDERER)
 
 # Platform-specific setup
 if(APPLE)
@@ -378,6 +383,8 @@ set(SHADER_FILES
     ${CMAKE_CURRENT_SOURCE_DIR}/shaders/tree.vert.spv
     ${CMAKE_CURRENT_SOURCE_DIR}/shaders/tree.frag.spv
     ${CMAKE_CURRENT_SOURCE_DIR}/shaders/tree_billboard.frag.spv
+    ${CMAKE_CURRENT_SOURCE_DIR}/shaders/debug_line.vert.spv
+    ${CMAKE_CURRENT_SOURCE_DIR}/shaders/debug_line.frag.spv
 )
 
 set(TERRAIN_SHADER_FILES
@@ -443,6 +450,7 @@ if(SHADER_COMPILE_CMD)
         bloom_downsample.frag bloom_upsample.frag bloom_composite.frag
         histogram_build.comp histogram_reduce.comp
         hiz_downsample.comp hiz_culling.comp
+        debug_line.vert debug_line.frag
     )
 
     foreach(SHADER ${SIMPLE_SHADERS})
@@ -745,6 +753,8 @@ if(SHADER_COMPILE_CMD)
         ${CMAKE_CURRENT_SOURCE_DIR}/shaders/catmullclark_subdivision.comp.spv
         ${CMAKE_CURRENT_SOURCE_DIR}/shaders/catmullclark_render.vert.spv
         ${CMAKE_CURRENT_SOURCE_DIR}/shaders/catmullclark_render.frag.spv
+        ${CMAKE_CURRENT_SOURCE_DIR}/shaders/debug_line.vert.spv
+        ${CMAKE_CURRENT_SOURCE_DIR}/shaders/debug_line.frag.spv
     )
 
     # Generate UBO headers from SPIR-V reflection

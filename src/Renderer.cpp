@@ -721,6 +721,14 @@ bool Renderer::init(SDL_Window* win, const std::string& resPath) {
 
     if (!createSyncObjects()) return false;
 
+    // Initialize debug line system for physics visualization
+    if (!debugLineSystem.init(device, allocator, postProcessSystem.getHDRRenderPass(),
+                               resourcePath + "/shaders", MAX_FRAMES_IN_FLIGHT)) {
+        SDL_Log("Failed to initialize debug line system");
+        return false;
+    }
+    SDL_Log("Debug line system initialized");
+
     return true;
 }
 
@@ -741,6 +749,35 @@ void Renderer::setPlayerState(const glm::vec3& position, const glm::vec3& veloci
     playerVelocity = velocity;
     playerCapsuleRadius = radius;
 }
+
+#ifdef JPH_DEBUG_RENDERER
+void Renderer::updatePhysicsDebug(PhysicsWorld& physics, const glm::vec3& cameraPos) {
+    if (!physicsDebugEnabled) return;
+
+    // Create debug renderer on first use (after Jolt is initialized)
+    if (!physicsDebugRenderer) {
+        physicsDebugRenderer = std::make_unique<PhysicsDebugRenderer>();
+        physicsDebugRenderer->init();
+    }
+
+    // Begin debug line frame (clear previous and set frame index)
+    debugLineSystem.beginFrame(currentFrame);
+
+    // Begin physics debug frame
+    physicsDebugRenderer->beginFrame(cameraPos);
+
+    // Draw all physics bodies
+    if (physics.getPhysicsSystem()) {
+        physicsDebugRenderer->drawBodies(*physics.getPhysicsSystem());
+    }
+
+    // End frame (cleanup cached geometry)
+    physicsDebugRenderer->endFrame();
+
+    // Import collected lines into our debug line system
+    debugLineSystem.importFromPhysicsDebugRenderer(*physicsDebugRenderer);
+}
+#endif
 
 void Renderer::shutdown() {
     VkDevice device = vulkanContext.getDevice();
@@ -809,6 +846,7 @@ void Renderer::shutdown() {
         waterGBuffer.destroy();
         flowMapGenerator.destroy(device, allocator);
         treeEditSystem.destroy(device, allocator);
+        debugLineSystem.shutdown();
         atmosphereLUTSystem.destroy(device, allocator);
         skySystem.destroy(device, allocator);
         postProcessSystem.destroy(device, allocator);
@@ -1501,6 +1539,14 @@ void Renderer::render(const Camera& camera) {
 
     // Build per-frame shared state
     FrameData frame = buildFrameData(camera, deltaTime, grassTime);
+
+    // Cache view-projection for debug rendering
+    lastViewProj = frame.viewProj;
+
+    // Upload debug lines if enabled (lines were collected in updatePhysicsDebug before render)
+    if (physicsDebugEnabled && debugLineSystem.hasLines()) {
+        debugLineSystem.uploadLines();
+    }
 
     // Update subsystems (state mutations)
     profiler.beginCpuZone("SystemUpdates");
@@ -2375,6 +2421,28 @@ void Renderer::recordHDRPass(VkCommandBuffer cmd, uint32_t frameIndex, float gra
 
     // Draw weather particles (rain/snow) - after opaque geometry
     weatherSystem.recordDraw(cmd, frameIndex, grassTime);
+
+    // Draw physics debug lines (if enabled and lines available)
+    if (physicsDebugEnabled && debugLineSystem.hasLines()) {
+        // Set up viewport and scissor for debug rendering
+        VkViewport viewport{};
+        viewport.x = 0.0f;
+        viewport.y = 0.0f;
+        viewport.width = static_cast<float>(postProcessSystem.getExtent().width);
+        viewport.height = static_cast<float>(postProcessSystem.getExtent().height);
+        viewport.minDepth = 0.0f;
+        viewport.maxDepth = 1.0f;
+        vkCmdSetViewport(cmd, 0, 1, &viewport);
+
+        VkRect2D scissor{};
+        scissor.offset = {0, 0};
+        scissor.extent = postProcessSystem.getExtent();
+        vkCmdSetScissor(cmd, 0, 1, &scissor);
+
+        // Need to get viewProj from the current frame data
+        // For now, use the last known values (could be improved by passing as parameter)
+        debugLineSystem.recordCommands(cmd, lastViewProj);
+    }
 
     vkCmdEndRenderPass(cmd);
 }

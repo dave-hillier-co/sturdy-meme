@@ -4,6 +4,10 @@
 #include <cstdio>
 #include <unordered_set>
 
+#ifdef JPH_DEBUG_RENDERER
+#include "PhysicsDebugRenderer.h"
+#endif
+
 #ifdef __APPLE__
 #include <CoreFoundation/CoreFoundation.h>
 #endif
@@ -378,6 +382,11 @@ void Application::run() {
         }
 
         camera.setAspectRatio(static_cast<float>(renderer.getWidth()) / static_cast<float>(renderer.getHeight()));
+
+        // Update physics debug visualization (before render)
+#ifdef JPH_DEBUG_RENDERER
+        renderer.updatePhysicsDebug(physics, camera.getPosition());
+#endif
 
         renderer.render(camera);
 

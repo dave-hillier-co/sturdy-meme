@@ -131,6 +131,11 @@ public:
     // Debug
     int getActiveBodyCount() const;
 
+#ifdef JPH_DEBUG_RENDERER
+    // Access to physics system for debug rendering (non-const because DrawBodies is non-const)
+    JPH::PhysicsSystem* getPhysicsSystem() { return physicsSystem.get(); }
+#endif
+
 private:
     std::unique_ptr<JPH::TempAllocatorImpl> tempAllocator;
     std::unique_ptr<JPH::JobSystemThreadPool> jobSystem;

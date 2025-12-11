@@ -49,6 +49,11 @@
 #include "SSRSystem.h"
 #include "WaterTileCull.h"
 #include "WaterGBuffer.h"
+#include "DebugLineSystem.h"
+
+#ifdef JPH_DEBUG_RENDERER
+#include "PhysicsDebugRenderer.h"
+#endif
 
 // PBR texture flags - indicates which optional PBR textures are bound
 // Must match definitions in push_constants_common.glsl
@@ -313,6 +318,19 @@ public:
     DescriptorManager::Pool* getDescriptorPool() { return &*descriptorManagerPool; }
     std::string getShaderPath() const { return resourcePath + "/shaders"; }
 
+    // Physics debug visualization
+    DebugLineSystem& getDebugLineSystem() { return debugLineSystem; }
+    const DebugLineSystem& getDebugLineSystem() const { return debugLineSystem; }
+    void setPhysicsDebugEnabled(bool enabled) { physicsDebugEnabled = enabled; }
+    bool isPhysicsDebugEnabled() const { return physicsDebugEnabled; }
+#ifdef JPH_DEBUG_RENDERER
+    PhysicsDebugRenderer* getPhysicsDebugRenderer() { return physicsDebugRenderer.get(); }
+    const PhysicsDebugRenderer* getPhysicsDebugRenderer() const { return physicsDebugRenderer.get(); }
+
+    // Update physics debug visualization (call before render)
+    void updatePhysicsDebug(PhysicsWorld& physics, const glm::vec3& cameraPos);
+#endif
+
 private:
     bool createRenderPass();
     void destroyRenderResources();
@@ -409,6 +427,12 @@ private:
     TreeEditSystem treeEditSystem;
     EnvironmentSettings environmentSettings;
     Profiler profiler;
+    DebugLineSystem debugLineSystem;
+#ifdef JPH_DEBUG_RENDERER
+    std::unique_ptr<PhysicsDebugRenderer> physicsDebugRenderer;
+#endif
+    bool physicsDebugEnabled = false;
+    glm::mat4 lastViewProj{1.0f};  // Cached view-projection for debug rendering
     bool useVolumetricSnow = true;  // Use new volumetric system by default
 
     // Render pipeline (stages abstraction - for future refactoring)

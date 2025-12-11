@@ -1,4 +1,5 @@
 #include "TerrainPhysicsTiles.h"
+#include "DebugLineSystem.h"
 #include <SDL3/SDL_log.h>
 #include <cmath>
 #include <algorithm>
@@ -267,5 +268,24 @@ void TerrainPhysicsTiles::update(const glm::vec3& playerPos, float highDetailRad
                 break;  // Spread creation across frames
             }
         }
+    }
+}
+
+void TerrainPhysicsTiles::drawTileBounds(DebugLineSystem& debugLines) const {
+    // Colors for different LOD levels
+    const glm::vec4 lod0Color{0.0f, 1.0f, 0.0f, 1.0f};  // Green for LOD0 (high detail)
+    const glm::vec4 lod3Color{1.0f, 0.5f, 0.0f, 1.0f};  // Orange for LOD3 (coarse)
+
+    for (const auto& [key, tile] : physicsTiles) {
+        float minX, minZ, maxX, maxZ;
+        getTileWorldBounds(tile.coord, tile.lod, minX, minZ, maxX, maxZ);
+
+        // Use heightScale range for Y bounds (approximate terrain height range)
+        float minY = minAltitude;
+        float maxY = minAltitude + heightScale;
+
+        glm::vec4 color = (tile.lod == HIGH_DETAIL_LOD) ? lod0Color : lod3Color;
+
+        debugLines.addBox(glm::vec3(minX, minY, minZ), glm::vec3(maxX, maxY, maxZ), color);
     }
 }

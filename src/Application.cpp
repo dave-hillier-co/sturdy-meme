@@ -86,7 +86,7 @@ bool Application::init(const std::string& title, int width, int height) {
     // IMPORTANT: Preload terrain physics tiles BEFORE spawning any dynamic objects
     // Otherwise objects spawn and immediately fall through non-existent collision
     glm::vec3 spawnAreaCenter(0.0f, 0.0f, 0.0f);
-    terrainPhysicsTiles.preloadTilesAt(spawnAreaCenter, 1000.0f);
+    terrainPhysicsTiles.preloadTilesAt(spawnAreaCenter, 150.0f);
 
     // Initialize scene physics (dynamic objects)
     renderer.getSceneManager().initPhysics(physics);
@@ -129,7 +129,7 @@ bool Application::init(const std::string& title, int width, int height) {
     // Otherwise character falls through non-existent terrain collision
     // Use preloadTilesAt() which loads all needed tiles at once (no per-frame limit)
     glm::vec3 spawnPos(playerSpawnX, playerSpawnY, playerSpawnZ);
-    terrainPhysicsTiles.preloadTilesAt(spawnPos, 1000.0f);
+    terrainPhysicsTiles.preloadTilesAt(spawnPos, 150.0f);
 
     // Debug: Sample terrain height at spawn position using different methods
     float heightFromTerrainSystem = terrain.getHeightAt(playerSpawnX, playerSpawnZ);
@@ -266,8 +266,9 @@ void Application::run() {
         physics.update(deltaTime);
 
         // Update terrain physics tiles based on player position
+        // Only need physics collision within ~150m of player (character + thrown objects range)
         glm::vec3 playerPos = physics.getCharacterPosition();
-        terrainPhysicsTiles.update(playerPos, 1000.0f);
+        terrainPhysicsTiles.update(playerPos, 150.0f);
 
         // Debug: Log orb position every second to track physics terrain offset
         static float debugLogTimer = 0.0f;
@@ -385,7 +386,7 @@ void Application::run() {
 
         // Update physics debug visualization (before render)
 #ifdef JPH_DEBUG_RENDERER
-        renderer.updatePhysicsDebug(physics, camera.getPosition());
+        renderer.updatePhysicsDebug(physics, camera.getPosition(), &terrainPhysicsTiles);
 #endif
 
         renderer.render(camera);

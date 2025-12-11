@@ -6,6 +6,9 @@
 #include <unordered_map>
 #include <cstdint>
 
+// Forward declaration
+class DebugLineSystem;
+
 // Physics tile tracking - stores physics body for each terrain tile
 struct PhysicsTile {
     TileCoord coord;
@@ -30,14 +33,20 @@ public:
 
     // Update physics tiles based on player position
     // Loads LOD0 tiles within highDetailRadius, LOD3 tiles for rest of terrain
-    void update(const glm::vec3& playerPos, float highDetailRadius = 1000.0f);
+    void update(const glm::vec3& playerPos, float highDetailRadius = 150.0f);
 
     // Preload all physics tiles needed for a position (blocking, no per-frame limit)
     // Call this before spawning character to ensure collision is ready
-    void preloadTilesAt(const glm::vec3& playerPos, float highDetailRadius = 1000.0f);
+    void preloadTilesAt(const glm::vec3& playerPos, float highDetailRadius = 150.0f);
 
     // Get count of active physics tiles
     uint32_t getActivePhysicsTileCount() const { return static_cast<uint32_t>(physicsTiles.size()); }
+
+    // Debug visualization - draw tile bounds as wireframe boxes (much faster than Jolt's heightfield rendering)
+    void drawTileBounds(DebugLineSystem& debugLines) const;
+
+    // Access to tile bounds for iteration
+    const std::unordered_map<uint64_t, PhysicsTile>& getPhysicsTiles() const { return physicsTiles; }
 
 private:
     // Create/destroy physics body for a tile

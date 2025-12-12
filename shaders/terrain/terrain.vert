@@ -88,12 +88,21 @@ int findTileForWorldPos(vec2 worldXZ) {
 }
 
 // Sample height with LOD tile support
+// UV calculation aligns with Jolt Physics heightfield sampling grid
+// Jolt uses 512 samples with 511 intervals (xzScale = tileSize/511)
+// GPU texture sampling: texel i center is at UV (i+0.5)/textureSize
 float sampleHeightLOD(vec2 uv, vec2 worldXZ) {
     int tileIdx = findTileForWorldPos(worldXZ);
     if (tileIdx >= 0) {
         // High-res tile available - calculate local UV within tile
         vec4 bounds = tiles[tileIdx].worldBounds;
-        vec2 tileUV = (worldXZ - bounds.xy) / (bounds.zw - bounds.xy);
+        vec2 normalizedPos = (worldXZ - bounds.xy) / (bounds.zw - bounds.xy);
+        // Align GPU texture sampling with Jolt's heightfield grid:
+        // - Jolt grid index at normalized position p: g = p * (N-1) where N=512
+        // - GPU texel center i is at UV (i+0.5)/N
+        // - To sample at grid index g, use UV = (g + 0.5) / N = (p*(N-1) + 0.5) / N
+        float tileRes = float(textureSize(heightMapTiles, 0).x);
+        vec2 tileUV = (normalizedPos * (tileRes - 1.0) + 0.5) / tileRes;
         return texture(heightMapTiles, vec3(tileUV, float(tileIdx))).r * HEIGHT_SCALE;
     }
     // Fall back to global coarse texture

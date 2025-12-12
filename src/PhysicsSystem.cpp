@@ -400,9 +400,12 @@ PhysicsBodyID PhysicsWorld::createTerrainHeightfield(const float* samples, const
     // worldSize covers sampleCount-1 intervals
     float xzScale = worldSize / (sampleCount - 1);
 
+    // Y offset of -0.5f compensates for observed mismatch between physics and rendered terrain
+    // This aligns the physics heightfield with the GPU-rendered terrain mesh
+    constexpr float TERRAIN_PHYSICS_Y_OFFSET = -0.5f;
     JPH::HeightFieldShapeSettings heightFieldSettings(
         joltSamples.data(),
-        JPH::Vec3(-worldSize * 0.5f, 0.0f, -worldSize * 0.5f),  // Offset: center terrain at origin
+        JPH::Vec3(-worldSize * 0.5f, TERRAIN_PHYSICS_Y_OFFSET, -worldSize * 0.5f),  // Offset: center terrain at origin with Y correction
         JPH::Vec3(xzScale, 1.0f, xzScale),                       // Scale: XZ spacing, Y is direct
         sampleCount
     );
@@ -827,9 +830,12 @@ PhysicsBodyID PhysicsWorld::createTerrainTile(const float* samples, uint32_t sam
     float xzScale = tileWorldSize / (sampleCount - 1);
 
     // HeightFieldShapeSettings - offset positions the tile corner in world space
+    // Y offset of -0.5f compensates for observed mismatch between physics and rendered terrain
+    // This aligns the physics heightfield with the GPU-rendered terrain mesh
+    constexpr float TERRAIN_PHYSICS_Y_OFFSET = -0.5f;
     JPH::HeightFieldShapeSettings heightFieldSettings(
         joltSamples.data(),
-        JPH::Vec3(worldMinX, 0.0f, worldMinZ),  // Offset: tile corner position
+        JPH::Vec3(worldMinX, TERRAIN_PHYSICS_Y_OFFSET, worldMinZ),  // Offset: tile corner position with Y correction
         JPH::Vec3(xzScale, 1.0f, xzScale),       // Scale: XZ spacing, Y is direct (already scaled)
         sampleCount
     );

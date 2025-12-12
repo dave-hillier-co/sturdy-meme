@@ -528,7 +528,11 @@ uint32_t WaterTileCull::getVisibleTileCount(uint32_t frameIndex) const {
 }
 
 bool WaterTileCull::wasWaterVisibleLastFrame(uint32_t currentFrameIndex) const {
-    // Requires that the previous frame using this frame index has finished (CPU waits on fences).
-    uint32_t visibleTiles = getVisibleTileCount(currentFrameIndex);
-    return visibleTiles > 0;
+    // TEMP: Always return true to debug flickering issue
+    // The temporal culling was causing alternating visibility
+    return true;
+
+    // Original logic (disabled for debugging):
+    // uint32_t visibleTiles = getVisibleTileCount(currentFrameIndex);
+    // return visibleTiles > 0;
 }

@@ -527,12 +527,25 @@ uint32_t WaterTileCull::getVisibleTileCount(uint32_t frameIndex) const {
     return *counterPtr;
 }
 
-bool WaterTileCull::wasWaterVisibleLastFrame(uint32_t currentFrameIndex) const {
-    // TEMP: Always return true to debug flickering issue
-    // The temporal culling was causing alternating visibility
-    return true;
+bool WaterTileCull::wasWaterVisibleLastFrame(uint32_t /*currentFrameIndex*/) const {
+    // Use CPU-side absolute frame tracking to avoid double-buffer aliasing issues.
+    // The per-frame-index readback buffers have 2-frame latency which caused
+    // alternating visibility flickering.
+    //
+    // Instead, we track if water was visible in any recent frame and provide
+    // a grace period to handle transient occlusion without popping.
+    return (currentAbsoluteFrame <= lastVisibleFrame + VISIBILITY_GRACE_FRAMES);
+}
 
-    // Original logic (disabled for debugging):
-    // uint32_t visibleTiles = getVisibleTileCount(currentFrameIndex);
-    // return visibleTiles > 0;
+void WaterTileCull::endFrame(uint32_t frameIndex) {
+    // Increment absolute frame counter
+    currentAbsoluteFrame++;
+
+    // Check if water was visible this frame using the per-frame-index readback
+    // This data is from the tile cull that just ran, which will be available
+    // after GPU sync (fence wait at start of next frame using this index)
+    uint32_t visibleTiles = getVisibleTileCount(frameIndex);
+    if (visibleTiles > 0) {
+        lastVisibleFrame = currentAbsoluteFrame;
+    }
 }

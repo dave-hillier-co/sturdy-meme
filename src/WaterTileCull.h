@@ -94,6 +94,9 @@ public:
     glm::uvec2 getTileCount() const { return tileCount; }
     uint32_t getTileSize() const { return tileSize; }
 
+    // Call at end of frame to update visibility tracking
+    void endFrame(uint32_t frameIndex);
+
 private:
     bool createBuffers();
     bool createComputePipeline();
@@ -140,4 +143,10 @@ private:
 
     // Depth texture sampler for tile culling
     VkSampler depthSampler = VK_NULL_HANDLE;
+
+    // CPU-side visibility tracking to avoid double-buffer aliasing issues
+    // Tracks the last frame number where water was visible
+    uint64_t lastVisibleFrame = 0;
+    uint64_t currentAbsoluteFrame = 0;
+    static constexpr uint64_t VISIBILITY_GRACE_FRAMES = 4;  // Keep rendering for N frames after last visible
 };

@@ -199,8 +199,9 @@ vec3 sampleReflection(vec3 reflectDir, vec3 sunDir, vec3 sunColor, vec2 screenUV
     vec4 ssrSample = texture(ssrTexture, screenUV);
     float ssrConfidence = ssrSample.a;
 
-    // Fade SSR based on reflection angle (SSR works best for grazing angles)
-    float angleFade = 1.0 - abs(reflectDir.y);  // Less confident for vertical reflections
+    // Fade SSR only for very steep reflections (nearly vertical)
+    // Previous linear fade was too aggressive, killing reflections at normal viewing angles
+    float angleFade = 1.0 - smoothstep(0.85, 1.0, abs(reflectDir.y));
     ssrConfidence *= angleFade;
 
     // Blend SSR with environment based on confidence

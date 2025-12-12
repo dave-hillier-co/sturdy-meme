@@ -1868,6 +1868,9 @@ void Renderer::render(const Camera& camera) {
     weatherSystem.advanceBufferSet();
     leafSystem.advanceBufferSet();
 
+    // Update water tile cull visibility tracking (uses absolute frame counter)
+    waterTileCull.endFrame(currentFrame);
+
     currentFrame = (currentFrame + 1) % MAX_FRAMES_IN_FLIGHT;
 }
 

@@ -11,7 +11,6 @@
 #include "ClothSimulation.h"
 #include "GuiSystem.h"
 #include "InputSystem.h"
-#include "TerrainPhysicsTiles.h"
 #include "BreadcrumbTracker.h"
 
 class Application {
@@ -44,9 +43,6 @@ private:
 
     // Physics body IDs for scene objects (mapped to scene object indices)
     std::vector<PhysicsBodyID> scenePhysicsBodies;
-
-    // Terrain physics tiles (streams collision tiles near player)
-    TerrainPhysicsTiles terrainPhysicsTiles;
 
     // Breadcrumb tracker for fast respawn (Ghost of Tsushima optimization)
     // Tracks safe player positions so respawns load most content from cache

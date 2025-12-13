@@ -1691,18 +1691,9 @@ void GuiSystem::renderDebugSection(Renderer& renderer) {
         ImGui::Unindent();
     }
 
-    // Terrain tile bounds (fast alternative to static body rendering)
-    bool tileBounds = renderer.isTerrainTileBoundsEnabled();
-    if (ImGui::Checkbox("Terrain Tile Bounds", &tileBounds)) {
-        renderer.setTerrainTileBoundsEnabled(tileBounds);
-    }
-    if (ImGui::IsItemHovered()) {
-        ImGui::SetTooltip("Draw physics terrain tile bounds as wireframe boxes (fast).\nGreen = LOD0 (high detail), Orange = LOD3 (coarse)");
-    }
-
     // Show stats
     auto& debugLines = renderer.getDebugLineSystem();
-    if (physicsDebug || tileBounds) {
+    if (physicsDebug) {
         ImGui::Spacing();
         ImGui::Text("Lines: %zu", debugLines.getLineCount());
         ImGui::Text("Triangles: %zu", debugLines.getTriangleCount());

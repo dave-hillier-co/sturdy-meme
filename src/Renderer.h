@@ -341,13 +341,7 @@ public:
     const PhysicsDebugRenderer* getPhysicsDebugRenderer() const { return physicsDebugRenderer.get(); }
 
     // Update physics debug visualization (call before render)
-    // Pass terrainPhysicsTiles to enable terrain tile bounds visualization
-    void updatePhysicsDebug(PhysicsWorld& physics, const glm::vec3& cameraPos,
-                            class TerrainPhysicsTiles* terrainPhysicsTiles = nullptr);
-
-    // Terrain tile bounds visualization (fast alternative to full heightfield rendering)
-    void setTerrainTileBoundsEnabled(bool enabled) { terrainTileBoundsEnabled = enabled; }
-    bool isTerrainTileBoundsEnabled() const { return terrainTileBoundsEnabled; }
+    void updatePhysicsDebug(PhysicsWorld& physics, const glm::vec3& cameraPos);
 #endif
 
 private:
@@ -449,7 +443,6 @@ private:
     DebugLineSystem debugLineSystem;
 #ifdef JPH_DEBUG_RENDERER
     std::unique_ptr<PhysicsDebugRenderer> physicsDebugRenderer;
-    bool terrainTileBoundsEnabled = false;
 #endif
     bool physicsDebugEnabled = false;
     glm::mat4 lastViewProj{1.0f};  // Cached view-projection for debug rendering

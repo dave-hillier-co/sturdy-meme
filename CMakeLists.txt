@@ -58,7 +58,6 @@ set(SOURCES
     src/TerrainCBT.cpp
     src/TerrainMeshlet.cpp
     src/TerrainTileCache.cpp
-    src/TerrainPhysicsTiles.cpp
     src/ErosionDataLoader.cpp
     src/ClothSimulation.cpp
     src/PlayerCape.cpp

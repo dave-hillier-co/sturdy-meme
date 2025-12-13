@@ -204,6 +204,10 @@ vec3 sampleReflection(vec3 reflectDir, vec3 sunDir, vec3 sunColor, vec2 screenUV
     float angleFade = 1.0 - smoothstep(0.85, 1.0, abs(reflectDir.y));
     ssrConfidence *= angleFade;
 
+    // Boost SSR confidence for water - the SSR was computed for the scene before water,
+    // so confidence may be low, but the color data is still useful
+    ssrConfidence = smoothstep(0.0, 0.5, ssrConfidence);
+
     // Blend SSR with environment based on confidence
     vec3 finalReflection = mix(envReflection, ssrSample.rgb, ssrConfidence);
 
@@ -804,12 +808,25 @@ void main() {
 
     // DEBUG: Visualize water depth as color gradient
     // Red = shallow (0-5m), Green = medium (5-20m), Blue = deep (20m+)
-    #if 0  // Set to 1 to enable debug
+    #if 0  // Set to 1 to enable depth debug
     vec3 debugColor = vec3(0.0);
     debugColor.r = 1.0 - smoothstep(0.0, 5.0, waterDepth);
     debugColor.g = smoothstep(0.0, 5.0, waterDepth) * (1.0 - smoothstep(5.0, 20.0, waterDepth));
     debugColor.b = smoothstep(5.0, 20.0, waterDepth);
     outColor = vec4(debugColor, 1.0);
+    return;
+    #endif
+
+    // DEBUG: Visualize foam amount (red = high foam)
+    #if 0  // Set to 1 to enable foam debug
+    outColor = vec4(totalFoamAmount, totalFoamAmount * 0.5, 0.0, 1.0);
+    return;
+    #endif
+
+    // DEBUG: Visualize SSR confidence (green = high SSR)
+    #if 0  // Set to 1 to enable SSR debug
+    vec4 ssrDebug = texture(ssrTexture, screenUV);
+    outColor = vec4(0.0, ssrDebug.a, ssrDebug.a * 0.5, 1.0);
     return;
     #endif
 

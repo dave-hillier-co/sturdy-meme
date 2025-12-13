@@ -70,23 +70,30 @@ bool Application::init(const std::string& title, int width, int height) {
                 wellX, wellZ, SceneBuilder::WELL_HOLE_RADIUS);
     }
 
-    // Initialize tile-based terrain physics
-    // Streams high-res collision tiles near player, coarse tiles for distant coverage
+    // Get terrain reference for spawning objects
     auto& terrain = renderer.getTerrainSystem();
-    const auto& terrainConfig = terrain.getConfig();
-    terrainPhysicsTiles.init(
-        &physics,
-        &terrain.getTileCache(),
-        terrainConfig.size,
-        terrain.getTileCache().getHeightScale(),
-        terrain.getTileCache().getMinAltitude()
-    );
-    SDL_Log("Terrain physics using tile-based streaming (1000m high detail radius)");
 
-    // IMPORTANT: Preload terrain physics tiles BEFORE spawning any dynamic objects
-    // Otherwise objects spawn and immediately fall through non-existent collision
-    glm::vec3 spawnAreaCenter(0.0f, 0.0f, 0.0f);
-    terrainPhysicsTiles.preloadTilesAt(spawnAreaCenter, 150.0f);
+    // Create terrain physics heightfield from the terrain heightmap data
+    // This provides collision for the entire terrain matching the visual rendering
+    // Note: hole mask is not passed since it's at different resolution (2048 vs 512);
+    // holes in the terrain (e.g., well entrance) will still allow objects through visually
+    {
+        const float* heightData = terrain.getHeightMapData();
+        uint32_t resolution = terrain.getHeightMapResolution();
+        float worldSize = terrain.getConfig().size;
+        float heightScale = terrain.getConfig().heightScale;
+
+        PhysicsBodyID terrainBody = physics.createTerrainHeightfield(
+            heightData, resolution, worldSize, heightScale
+        );
+
+        if (terrainBody != INVALID_BODY_ID) {
+            SDL_Log("Terrain heightfield physics created: %ux%u samples, world size %.0f, height scale %.1f",
+                    resolution, resolution, worldSize, heightScale);
+        } else {
+            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create terrain heightfield physics!");
+        }
+    }
 
     // Initialize scene physics (dynamic objects)
     renderer.getSceneManager().initPhysics(physics);
@@ -124,12 +131,6 @@ bool Application::init(const std::string& title, int width, int height) {
     // Create character controller for player at terrain height
     float playerSpawnX = 0.0f, playerSpawnZ = 0.0f;
     float playerSpawnY = terrain.getHeightAt(playerSpawnX, playerSpawnZ) + 0.1f;
-
-    // IMPORTANT: Load physics tiles at spawn position BEFORE creating character
-    // Otherwise character falls through non-existent terrain collision
-    // Use preloadTilesAt() which loads all needed tiles at once (no per-frame limit)
-    glm::vec3 spawnPos(playerSpawnX, playerSpawnY, playerSpawnZ);
-    terrainPhysicsTiles.preloadTilesAt(spawnPos, 150.0f);
 
     // Debug: Sample terrain height at spawn position using different methods
     float heightFromTerrainSystem = terrain.getHeightAt(playerSpawnX, playerSpawnZ);
@@ -265,10 +266,7 @@ void Application::run() {
         // Update physics simulation
         physics.update(deltaTime);
 
-        // Update terrain physics tiles based on player position
-        // Only need physics collision within ~150m of player (character + thrown objects range)
         glm::vec3 playerPos = physics.getCharacterPosition();
-        terrainPhysicsTiles.update(playerPos, 150.0f);
 
         // Debug: Log orb position every second to track physics terrain offset
         static float debugLogTimer = 0.0f;
@@ -386,7 +384,7 @@ void Application::run() {
 
         // Update physics debug visualization (before render)
 #ifdef JPH_DEBUG_RENDERER
-        renderer.updatePhysicsDebug(physics, camera.getPosition(), &terrainPhysicsTiles);
+        renderer.updatePhysicsDebug(physics, camera.getPosition());
 #endif
 
         renderer.render(camera);
@@ -412,7 +410,6 @@ void Application::shutdown() {
     renderer.waitIdle();
     gui.shutdown(renderer.getDevice());
     input.shutdown();
-    terrainPhysicsTiles.destroy();
     physics.shutdown();
     renderer.shutdown();
 

@@ -5,7 +5,6 @@
 #include "GraphicsPipelineFactory.h"
 #include "MaterialDescriptorFactory.h"
 #include "Bindings.h"
-#include "TerrainPhysicsTiles.h"
 #include <SDL3/SDL_vulkan.h>
 #include <glm/gtc/matrix_transform.hpp>
 #include <stdexcept>
@@ -752,40 +751,31 @@ void Renderer::setPlayerState(const glm::vec3& position, const glm::vec3& veloci
 }
 
 #ifdef JPH_DEBUG_RENDERER
-void Renderer::updatePhysicsDebug(PhysicsWorld& physics, const glm::vec3& cameraPos,
-                                   TerrainPhysicsTiles* terrainPhysicsTiles) {
-    if (!physicsDebugEnabled && !terrainTileBoundsEnabled) return;
+void Renderer::updatePhysicsDebug(PhysicsWorld& physics, const glm::vec3& cameraPos) {
+    if (!physicsDebugEnabled) return;
 
     // Begin debug line frame (clear previous and set frame index)
     debugLineSystem.beginFrame(currentFrame);
 
-    // Draw Jolt physics debug if enabled
-    if (physicsDebugEnabled) {
-        // Create debug renderer on first use (after Jolt is initialized)
-        if (!physicsDebugRenderer) {
-            physicsDebugRenderer = std::make_unique<PhysicsDebugRenderer>();
-            physicsDebugRenderer->init();
-        }
-
-        // Begin physics debug frame
-        physicsDebugRenderer->beginFrame(cameraPos);
-
-        // Draw all physics bodies
-        if (physics.getPhysicsSystem()) {
-            physicsDebugRenderer->drawBodies(*physics.getPhysicsSystem());
-        }
-
-        // End frame (cleanup cached geometry)
-        physicsDebugRenderer->endFrame();
-
-        // Import collected lines into our debug line system
-        debugLineSystem.importFromPhysicsDebugRenderer(*physicsDebugRenderer);
+    // Create debug renderer on first use (after Jolt is initialized)
+    if (!physicsDebugRenderer) {
+        physicsDebugRenderer = std::make_unique<PhysicsDebugRenderer>();
+        physicsDebugRenderer->init();
     }
 
-    // Draw terrain physics tile bounds if enabled (fast wireframe boxes)
-    if (terrainTileBoundsEnabled && terrainPhysicsTiles) {
-        terrainPhysicsTiles->drawTileBounds(debugLineSystem);
+    // Begin physics debug frame
+    physicsDebugRenderer->beginFrame(cameraPos);
+
+    // Draw all physics bodies
+    if (physics.getPhysicsSystem()) {
+        physicsDebugRenderer->drawBodies(*physics.getPhysicsSystem());
     }
+
+    // End frame (cleanup cached geometry)
+    physicsDebugRenderer->endFrame();
+
+    // Import collected lines into our debug line system
+    debugLineSystem.importFromPhysicsDebugRenderer(*physicsDebugRenderer);
 }
 #endif
 
@@ -1572,7 +1562,7 @@ void Renderer::render(const Camera& camera) {
 
     // Upload debug lines if enabled (lines were collected in updatePhysicsDebug before render)
 #ifdef JPH_DEBUG_RENDERER
-    if ((physicsDebugEnabled || terrainTileBoundsEnabled) && debugLineSystem.hasLines()) {
+    if (physicsDebugEnabled && debugLineSystem.hasLines()) {
         debugLineSystem.uploadLines();
     }
 #endif
@@ -2473,7 +2463,7 @@ void Renderer::recordHDRPass(VkCommandBuffer cmd, uint32_t frameIndex, float gra
 
     // Draw physics debug lines (if enabled and lines available)
 #ifdef JPH_DEBUG_RENDERER
-    if ((physicsDebugEnabled || terrainTileBoundsEnabled) && debugLineSystem.hasLines()) {
+    if (physicsDebugEnabled && debugLineSystem.hasLines()) {
         // Set up viewport and scissor for debug rendering
         VkViewport viewport{};
         viewport.x = 0.0f;

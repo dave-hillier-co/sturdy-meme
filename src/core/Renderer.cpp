@@ -311,6 +311,45 @@ bool Renderer::init(SDL_Window* win, const std::string& resPath) {
     uboSystems.environmentSettings = &environmentSettings;
     uboBuilder.setSystems(uboSystems);
 
+    // Register systems with resize coordinator
+    // Order matters: render targets first, then systems that depend on them, then viewport-only
+
+    // Render targets that need full resize (device/allocator/extent)
+    resizeCoordinator.registerWithResize(postProcessSystem, "PostProcessSystem", ResizePriority::RenderTarget);
+    resizeCoordinator.registerWithResize(bloomSystem, "BloomSystem", ResizePriority::RenderTarget);
+    resizeCoordinator.registerWithResize(froxelSystem, "FroxelSystem", ResizePriority::RenderTarget);
+
+    // Culling systems with simple resize (extent only, but reallocates)
+    resizeCoordinator.registerWithSimpleResize(hiZSystem, "HiZSystem", ResizePriority::Culling);
+    resizeCoordinator.registerWithSimpleResize(ssrSystem, "SSRSystem", ResizePriority::Culling);
+    resizeCoordinator.registerWithSimpleResize(waterTileCull, "WaterTileCull", ResizePriority::Culling);
+
+    // G-buffer systems
+    resizeCoordinator.registerWithSimpleResize(waterGBuffer, "WaterGBuffer", ResizePriority::GBuffer);
+
+    // Viewport-only systems (setExtent)
+    resizeCoordinator.registerWithExtent(terrainSystem, "TerrainSystem");
+    resizeCoordinator.registerWithExtent(skySystem, "SkySystem");
+    resizeCoordinator.registerWithExtent(waterSystem, "WaterSystem");
+    resizeCoordinator.registerWithExtent(grassSystem, "GrassSystem");
+    resizeCoordinator.registerWithExtent(weatherSystem, "WeatherSystem");
+    resizeCoordinator.registerWithExtent(leafSystem, "LeafSystem");
+    resizeCoordinator.registerWithExtent(catmullClarkSystem, "CatmullClarkSystem");
+    resizeCoordinator.registerWithExtent(skinnedMeshRenderer, "SkinnedMeshRenderer");
+
+    // Tree edit system uses updateExtent
+    resizeCoordinator.registerWithUpdateExtent(treeEditSystem, "TreeEditSystem");
+
+    // Register callback for bloom texture rebinding (needed after bloom resize)
+    resizeCoordinator.registerCallback("BloomRebind",
+        [this](VkDevice, VmaAllocator, VkExtent2D) {
+            postProcessSystem.setBloomTexture(bloomSystem.getBloomOutput(), bloomSystem.getBloomSampler());
+        },
+        nullptr,
+        ResizePriority::RenderTarget);
+
+    SDL_Log("Resize coordinator configured with %zu systems", 17UL);
+
     // Setup render pipeline stages with lambdas
     setupRenderPipeline();
     SDL_Log("Render pipeline configured");
@@ -1492,32 +1531,12 @@ void Renderer::destroyFramebuffers() {
     framebuffers.clear();
 }
 
-bool Renderer::handleResize() {
+bool Renderer::recreateDepthResources(VkExtent2D newExtent) {
     VkDevice device = vulkanContext.getDevice();
     VmaAllocator allocator = vulkanContext.getAllocator();
 
-    // Wait for GPU to finish all work
-    vkDeviceWaitIdle(device);
-
-    // Recreate swapchain
-    if (!vulkanContext.recreateSwapchain()) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to recreate swapchain");
-        return false;
-    }
-
-    VkExtent2D newExtent = vulkanContext.getSwapchainExtent();
-
-    // Handle minimized window (extent = 0)
-    if (newExtent.width == 0 || newExtent.height == 0) {
-        return true;  // Don't recreate resources for minimized window
-    }
-
-    SDL_Log("Window resized to %ux%u", newExtent.width, newExtent.height);
-
-    // Destroy and recreate depth resources (keep sampler)
     destroyDepthImageAndView();
 
-    // Recreate depth image and view (reusing existing depthFormat and depthSampler)
     VkImageCreateInfo imageInfo{};
     imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
     imageInfo.imageType = VK_IMAGE_TYPE_2D;
@@ -1557,47 +1576,42 @@ bool Renderer::handleResize() {
         return false;
     }
 
-    // Destroy and recreate framebuffers
+    return true;
+}
+
+bool Renderer::handleResize() {
+    VkDevice device = vulkanContext.getDevice();
+    VmaAllocator allocator = vulkanContext.getAllocator();
+
+    // Wait for GPU to finish all work
+    vkDeviceWaitIdle(device);
+
+    // Recreate swapchain
+    if (!vulkanContext.recreateSwapchain()) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to recreate swapchain");
+        return false;
+    }
+
+    VkExtent2D newExtent = vulkanContext.getSwapchainExtent();
+
+    // Handle minimized window (extent = 0)
+    if (newExtent.width == 0 || newExtent.height == 0) {
+        return true;  // Don't recreate resources for minimized window
+    }
+
+    SDL_Log("Window resized to %ux%u", newExtent.width, newExtent.height);
+
+    // Recreate core resources (depth buffer, framebuffers)
+    if (!recreateDepthResources(newExtent)) return false;
+
     destroyFramebuffers();
     if (!createFramebuffers()) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to recreate framebuffers during resize");
         return false;
     }
 
-    // Resize post-process system (HDR render target)
-    postProcessSystem.resize(device, allocator, newExtent);
-
-    // Resize bloom system
-    bloomSystem.resize(device, allocator, newExtent);
-
-    // Rebind bloom texture to post-process system (bloom image views changed)
-    postProcessSystem.setBloomTexture(bloomSystem.getBloomOutput(), bloomSystem.getBloomSampler());
-
-    // Resize froxel system (volumetric fog)
-    froxelSystem.resize(device, allocator, newExtent);
-
-    // Resize Hi-Z system (occlusion culling)
-    hiZSystem.resize(newExtent);
-
-    // Resize SSR system (screen-space reflections)
-    ssrSystem.resize(newExtent);
-
-    // Resize water tile cull system
-    waterTileCull.resize(newExtent);
-
-    // Resize water G-buffer
-    waterGBuffer.resize(newExtent);
-
-    // Update extent on all rendering subsystems for viewport/scissor
-    terrainSystem.setExtent(newExtent);
-    skySystem.setExtent(newExtent);
-    waterSystem.setExtent(newExtent);
-    grassSystem.setExtent(newExtent);
-    weatherSystem.setExtent(newExtent);
-    leafSystem.setExtent(newExtent);
-    catmullClarkSystem.setExtent(newExtent);
-    skinnedMeshRenderer.setExtent(newExtent);
-    treeEditSystem.updateExtent(newExtent);
+    // Delegate subsystem resize to coordinator
+    resizeCoordinator.performResize(device, allocator, newExtent);
 
     framebufferResized = false;
     return true;

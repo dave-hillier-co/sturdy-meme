@@ -53,6 +53,7 @@
 #include "WaterGBuffer.h"
 #include "DebugLineSystem.h"
 #include "UBOBuilder.h"
+#include "ResizeCoordinator.h"
 
 #ifdef JPH_DEBUG_RENDERER
 #include "PhysicsDebugRenderer.h"
@@ -353,6 +354,7 @@ private:
     void destroyRenderResources();
     void destroyDepthImageAndView();  // Helper for resize (keeps sampler)
     void destroyFramebuffers();       // Helper for resize
+    bool recreateDepthResources(VkExtent2D newExtent);  // Helper for resize
     bool createFramebuffers();
     bool createCommandPool();
     bool createCommandBuffers();
@@ -426,6 +428,7 @@ private:
     UBOBuilder uboBuilder;
     Profiler profiler;
     DebugLineSystem debugLineSystem;
+    ResizeCoordinator resizeCoordinator;
 #ifdef JPH_DEBUG_RENDERER
     std::unique_ptr<PhysicsDebugRenderer> physicsDebugRenderer;
 #endif

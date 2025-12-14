@@ -1,4 +1,5 @@
 #include "TerrainTileCache.h"
+#include "TerrainHeight.h"
 #include "VulkanBarriers.h"
 #include <SDL3/SDL.h>
 #include <stb_image.h>
@@ -651,9 +652,8 @@ bool TerrainTileCache::getHeightAt(float worldX, float worldZ, float& outHeight)
         float h1 = h01 * (1.0f - tx) + h11 * tx;
         float h = h0 * (1.0f - ty) + h1 * ty;
 
-        // Convert to world height using standard formula: h * heightScale
-        // See TerrainHeight.h for authoritative formula
-        outHeight = h * heightScale;
+        // Convert to world height using authoritative formula from TerrainHeight.h
+        outHeight = TerrainHeight::toWorld(h, heightScale);
         return true;
     };
 

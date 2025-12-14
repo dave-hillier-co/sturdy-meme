@@ -24,6 +24,23 @@ bool BloomSystem::init(const InitInfo& info) {
     return true;
 }
 
+bool BloomSystem::init(const InitContext& ctx) {
+    device = ctx.device;
+    allocator = ctx.allocator;
+    descriptorPool = ctx.descriptorPool;
+    extent = ctx.extent;
+    shaderPath = ctx.shaderPath;
+
+    if (!createRenderPass()) return false;
+    if (!createMipChain()) return false;
+    if (!createSampler()) return false;
+    if (!createDescriptorSetLayouts()) return false;
+    if (!createPipelines()) return false;
+    if (!createDescriptorSets()) return false;
+
+    return true;
+}
+
 void BloomSystem::destroy(VkDevice device, VmaAllocator allocator) {
     destroyMipChain();
 

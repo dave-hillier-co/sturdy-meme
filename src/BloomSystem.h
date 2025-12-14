@@ -5,9 +5,11 @@
 #include <vector>
 #include <string>
 #include "DescriptorManager.h"
+#include "InitContext.h"
 
 class BloomSystem {
 public:
+    // Legacy InitInfo - kept for backward compatibility during migration
     struct InitInfo {
         VkDevice device;
         VmaAllocator allocator;
@@ -20,6 +22,7 @@ public:
     ~BloomSystem() = default;
 
     bool init(const InitInfo& info);
+    bool init(const InitContext& ctx);  // New simplified init
     void destroy(VkDevice device, VmaAllocator allocator);
     void resize(VkDevice device, VmaAllocator allocator, VkExtent2D newExtent);
 

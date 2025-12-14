@@ -1,7 +1,7 @@
 #!/bin/bash
 
-# Hook to check if modified files exceed 1200 lines
-# Returns a system message prompting refactoring when files are too large
+# Hook to check if file size has increased by more than 1000 lines
+# Returns a system message prompting refactoring when file growth is too large
 
 # Read JSON input from stdin
 input=$(cat)
@@ -16,9 +16,20 @@ fi
 
 # Count lines in the file
 if [[ -f "$file_path" ]]; then
-  line_count=$(wc -l < "$file_path" | tr -d ' ')
+  current_lines=$(wc -l < "$file_path" | tr -d ' ')
 
-  if (( line_count > 1200 )); then
+  # Get the previous line count from git (HEAD version)
+  previous_lines=$(git show HEAD:"$file_path" 2>/dev/null | wc -l | tr -d ' ')
+
+  # If file didn't exist before, previous_lines will be 0
+  if [[ -z "$previous_lines" ]]; then
+    previous_lines=0
+  fi
+
+  # Calculate the increase
+  increase=$((current_lines - previous_lines))
+
+  if (( increase > 1000 )); then
     # Get just the filename for cleaner output
     filename=$(basename "$file_path")
 
@@ -26,10 +37,12 @@ if [[ -f "$file_path" ]]; then
     jq -n \
       --arg file "$filename" \
       --arg path "$file_path" \
-      --arg lines "$line_count" \
+      --arg prev "$previous_lines" \
+      --arg curr "$current_lines" \
+      --arg inc "$increase" \
       '{
         "decision": "block",
-        "reason": "File \($file) has \($lines) lines (exceeds 1200 line limit). Please refactor this file into smaller components before continuing."
+        "reason": "File \($file) has grown by \($inc) lines (\($prev) → \($curr)). This exceeds the 1000 line increase limit. Please refactor this file into smaller components before continuing."
       }'
   fi
 fi

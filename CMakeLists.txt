@@ -100,6 +100,12 @@ set(SOURCES
     src/BlendSpace.cpp
     src/BoneMask.cpp
     src/IKSolver.cpp
+    src/IKUtils.cpp
+    src/TwoBoneIKSolver.cpp
+    src/LookAtIKSolver.cpp
+    src/FootPlacementIKSolver.cpp
+    src/StraddleIKSolver.cpp
+    src/ClimbingIKSolver.cpp
     src/FBXLoader.cpp
     src/FBXPostProcess.cpp
     src/HiZSystem.cpp

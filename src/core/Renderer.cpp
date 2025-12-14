@@ -2054,6 +2054,7 @@ bool Renderer::handleResize() {
     weatherSystem.setExtent(newExtent);
     leafSystem.setExtent(newExtent);
     catmullClarkSystem.setExtent(newExtent);
+    skinnedMeshRenderer.setExtent(newExtent);
 
     framebufferResized = false;
     return true;

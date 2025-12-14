@@ -144,15 +144,27 @@ bool PhysicsTerrain::loadTile(TileCoord coord) {
     float worldMaxZ = tile->worldMaxZ;
     float tileWorldSize = worldMaxX - worldMinX;  // Actual tile size from cache
 
-    // Create physics heightfield for this tile
-    // Use config.heightScale which comes from TerrainSystem (same as rendering)
+    // Debug: verify heightScale consistency between config and tile cache
     uint32_t resolution = terrainTileCache->getTileResolution();
+    float cacheHeightScale = terrainTileCache->getHeightScale();
+    if (std::abs(config.heightScale - cacheHeightScale) > 0.1f) {
+        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                    "PhysicsTerrain: heightScale mismatch! config=%.1f, tileCache=%.1f - using tileCache value",
+                    config.heightScale, cacheHeightScale);
+    }
+
+    // Create physics heightfield for this tile
+    // IMPORTANT: Use tile cache's heightScale, not config.heightScale!
+    // The tile cache recalculates heightScale from metadata (maxAltitude - minAltitude)
+    // which may differ from TerrainSystem's config if the tile cache was generated
+    // with different altitude settings.
+    float effectiveHeightScale = terrainTileCache->getHeightScale();
 
     PhysicsBodyID bodyId = physicsWorld->createTileHeightfield(
         tile->cpuData.data(),
         resolution,
         tileWorldSize,
-        config.heightScale,
+        effectiveHeightScale,
         worldMinX,
         worldMinZ
     );

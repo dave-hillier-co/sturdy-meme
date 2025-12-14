@@ -21,12 +21,12 @@ if [[ -f "$file_path" ]]; then
   # Only check files over 1000 lines
   if (( current_lines > 1000 )); then
     # Get the previous line count from git (HEAD version)
-    previous_lines=$(git show HEAD:"$file_path" 2>/dev/null | wc -l | tr -d ' ')
-
-    # If file didn't exist before, previous_lines will be 0
-    if [[ -z "$previous_lines" ]]; then
-      previous_lines=0
+    # Check if file exists in git first
+    if ! git show HEAD:"$file_path" >/dev/null 2>&1; then
+      # File not tracked in git yet, skip the check
+      exit 0
     fi
+    previous_lines=$(git show HEAD:"$file_path" 2>/dev/null | wc -l | tr -d ' ')
 
     # Block if the file has grown (any increase)
     if (( current_lines > previous_lines )); then

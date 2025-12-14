@@ -1,5 +1,6 @@
 #include "ShadowSystem.h"
 #include "ShaderLoader.h"
+#include "DescriptorManager.h"
 #include "Mesh.h"
 #include <SDL3/SDL.h>
 #include <algorithm>
@@ -342,14 +343,8 @@ bool ShadowSystem::createShadowPipeline() {
     pushConstantRange.offset = 0;
     pushConstantRange.size = sizeof(ShadowPushConstants);
 
-    VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
-    pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-    pipelineLayoutInfo.setLayoutCount = 1;
-    pipelineLayoutInfo.pSetLayouts = &mainDescriptorSetLayout;  // Use main layout for compatibility
-    pipelineLayoutInfo.pushConstantRangeCount = 1;
-    pipelineLayoutInfo.pPushConstantRanges = &pushConstantRange;
-
-    if (vkCreatePipelineLayout(device, &pipelineLayoutInfo, nullptr, &shadowPipelineLayout) != VK_SUCCESS) {
+    shadowPipelineLayout = DescriptorManager::createPipelineLayout(device, mainDescriptorSetLayout, {pushConstantRange});
+    if (shadowPipelineLayout == VK_NULL_HANDLE) {
         SDL_Log("Failed to create shadow pipeline layout");
         return false;
     }
@@ -484,14 +479,8 @@ bool ShadowSystem::createSkinnedShadowPipeline() {
     pushConstantRange.offset = 0;
     pushConstantRange.size = sizeof(ShadowPushConstants);
 
-    VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
-    pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-    pipelineLayoutInfo.setLayoutCount = 1;
-    pipelineLayoutInfo.pSetLayouts = &skinnedDescriptorSetLayout;  // Use skinned layout (has binding 12 for bones)
-    pipelineLayoutInfo.pushConstantRangeCount = 1;
-    pipelineLayoutInfo.pPushConstantRanges = &pushConstantRange;
-
-    if (vkCreatePipelineLayout(device, &pipelineLayoutInfo, nullptr, &skinnedShadowPipelineLayout) != VK_SUCCESS) {
+    skinnedShadowPipelineLayout = DescriptorManager::createPipelineLayout(device, skinnedDescriptorSetLayout, {pushConstantRange});
+    if (skinnedShadowPipelineLayout == VK_NULL_HANDLE) {
         SDL_Log("Failed to create skinned shadow pipeline layout");
         return false;
     }
@@ -881,14 +870,8 @@ bool ShadowSystem::createDynamicShadowPipeline() {
     pushConstantRange.offset = 0;
     pushConstantRange.size = sizeof(ShadowPushConstants);
 
-    VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
-    pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-    pipelineLayoutInfo.setLayoutCount = 1;
-    pipelineLayoutInfo.pSetLayouts = &mainDescriptorSetLayout;
-    pipelineLayoutInfo.pushConstantRangeCount = 1;
-    pipelineLayoutInfo.pPushConstantRanges = &pushConstantRange;
-
-    if (vkCreatePipelineLayout(device, &pipelineLayoutInfo, nullptr, &dynamicShadowPipelineLayout) != VK_SUCCESS) {
+    dynamicShadowPipelineLayout = DescriptorManager::createPipelineLayout(device, mainDescriptorSetLayout, {pushConstantRange});
+    if (dynamicShadowPipelineLayout == VK_NULL_HANDLE) {
         SDL_Log("Failed to create dynamic shadow pipeline layout");
         return false;
     }

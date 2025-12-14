@@ -1,6 +1,6 @@
 #include "PostProcessSystem.h"
 #include "ShaderLoader.h"
-#include "BindingBuilder.h"
+#include "DescriptorManager.h"
 #include "VulkanBarriers.h"
 #include <SDL3/SDL.h>
 #include <array>
@@ -130,21 +130,9 @@ void PostProcessSystem::resize(VkDevice device, VmaAllocator allocator, VkExtent
 
     // Update descriptor sets with new image view
     for (size_t i = 0; i < framesInFlight; i++) {
-        VkDescriptorImageInfo hdrImageInfo{};
-        hdrImageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-        hdrImageInfo.imageView = hdrColorView;
-        hdrImageInfo.sampler = hdrSampler;
-
-        VkWriteDescriptorSet imageWrite{};
-        imageWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        imageWrite.dstSet = compositeDescriptorSets[i];
-        imageWrite.dstBinding = 0;
-        imageWrite.dstArrayElement = 0;
-        imageWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        imageWrite.descriptorCount = 1;
-        imageWrite.pImageInfo = &hdrImageInfo;
-
-        vkUpdateDescriptorSets(device, 1, &imageWrite, 0, nullptr);
+        DescriptorManager::SetWriter(device, compositeDescriptorSets[i])
+            .writeImage(0, hdrColorView, hdrSampler)
+            .update();
     }
 }
 
@@ -348,27 +336,15 @@ bool PostProcessSystem::createSampler() {
 }
 
 bool PostProcessSystem::createDescriptorSetLayout() {
-    auto makeBinding = [](uint32_t binding, VkDescriptorType type) {
-        return BindingBuilder()
-            .setBinding(binding)
-            .setDescriptorType(type)
-            .setStageFlags(VK_SHADER_STAGE_FRAGMENT_BIT)
-            .build();
-    };
+    compositeDescriptorSetLayout = DescriptorManager::LayoutBuilder(device)
+        .addCombinedImageSampler(VK_SHADER_STAGE_FRAGMENT_BIT)  // 0: HDR color
+        .addUniformBuffer(VK_SHADER_STAGE_FRAGMENT_BIT)         // 1: uniforms
+        .addCombinedImageSampler(VK_SHADER_STAGE_FRAGMENT_BIT)  // 2: depth
+        .addCombinedImageSampler(VK_SHADER_STAGE_FRAGMENT_BIT)  // 3: froxel
+        .addCombinedImageSampler(VK_SHADER_STAGE_FRAGMENT_BIT)  // 4: bloom
+        .build();
 
-    std::array<VkDescriptorSetLayoutBinding, 5> bindings = {
-        makeBinding(0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER),
-        makeBinding(1, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER),
-        makeBinding(2, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER),
-        makeBinding(3, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER),
-        makeBinding(4, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER)};
-
-    VkDescriptorSetLayoutCreateInfo layoutInfo{};
-    layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-    layoutInfo.bindingCount = static_cast<uint32_t>(bindings.size());
-    layoutInfo.pBindings = bindings.data();
-
-    if (vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, &compositeDescriptorSetLayout) != VK_SUCCESS) {
+    if (compositeDescriptorSetLayout == VK_NULL_HANDLE) {
         SDL_Log("Failed to create composite descriptor set layout");
         return false;
     }
@@ -421,85 +397,20 @@ bool PostProcessSystem::createDescriptorSets() {
     }
 
     for (size_t i = 0; i < framesInFlight; i++) {
-        VkDescriptorImageInfo hdrImageInfo{};
-        hdrImageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-        hdrImageInfo.imageView = hdrColorView;
-        hdrImageInfo.sampler = hdrSampler;
-
-        VkDescriptorBufferInfo bufferInfo{};
-        bufferInfo.buffer = uniformBuffers[i];
-        bufferInfo.offset = 0;
-        bufferInfo.range = sizeof(PostProcessUniforms);
-
-        VkDescriptorImageInfo depthImageInfo{};
-        depthImageInfo.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
-        depthImageInfo.imageView = hdrDepthView;
-        depthImageInfo.sampler = hdrSampler;
-
-        std::vector<VkWriteDescriptorSet> descriptorWrites;
-        descriptorWrites.reserve(5);
-
-        VkWriteDescriptorSet hdrWrite{};
-        hdrWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        hdrWrite.dstSet = compositeDescriptorSets[i];
-        hdrWrite.dstBinding = 0;
-        hdrWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        hdrWrite.descriptorCount = 1;
-        hdrWrite.pImageInfo = &hdrImageInfo;
-        descriptorWrites.push_back(hdrWrite);
-
-        VkWriteDescriptorSet uboWrite{};
-        uboWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        uboWrite.dstSet = compositeDescriptorSets[i];
-        uboWrite.dstBinding = 1;
-        uboWrite.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-        uboWrite.descriptorCount = 1;
-        uboWrite.pBufferInfo = &bufferInfo;
-        descriptorWrites.push_back(uboWrite);
-
-        VkWriteDescriptorSet depthWrite{};
-        depthWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        depthWrite.dstSet = compositeDescriptorSets[i];
-        depthWrite.dstBinding = 2;
-        depthWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        depthWrite.descriptorCount = 1;
-        depthWrite.pImageInfo = &depthImageInfo;
-        descriptorWrites.push_back(depthWrite);
+        DescriptorManager::SetWriter writer(device, compositeDescriptorSets[i]);
+        writer
+            .writeImage(0, hdrColorView, hdrSampler)
+            .writeBuffer(1, uniformBuffers[i], 0, sizeof(PostProcessUniforms))
+            .writeImage(2, hdrDepthView, hdrSampler, VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL);
 
         if (froxelVolumeView != VK_NULL_HANDLE && froxelSampler != VK_NULL_HANDLE) {
-            VkDescriptorImageInfo froxelImageInfo{};
-            froxelImageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-            froxelImageInfo.imageView = froxelVolumeView;
-            froxelImageInfo.sampler = froxelSampler;
-
-            VkWriteDescriptorSet froxelWrite{};
-            froxelWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-            froxelWrite.dstSet = compositeDescriptorSets[i];
-            froxelWrite.dstBinding = 3;
-            froxelWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-            froxelWrite.descriptorCount = 1;
-            froxelWrite.pImageInfo = &froxelImageInfo;
-            descriptorWrites.push_back(froxelWrite);
+            writer.writeImage(3, froxelVolumeView, froxelSampler);
         }
-
         if (bloomView != VK_NULL_HANDLE && bloomSampler != VK_NULL_HANDLE) {
-            VkDescriptorImageInfo bloomImageInfo{};
-            bloomImageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-            bloomImageInfo.imageView = bloomView;
-            bloomImageInfo.sampler = bloomSampler;
-
-            VkWriteDescriptorSet bloomWrite{};
-            bloomWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-            bloomWrite.dstSet = compositeDescriptorSets[i];
-            bloomWrite.dstBinding = 4;
-            bloomWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-            bloomWrite.descriptorCount = 1;
-            bloomWrite.pImageInfo = &bloomImageInfo;
-            descriptorWrites.push_back(bloomWrite);
+            writer.writeImage(4, bloomView, bloomSampler);
         }
 
-        vkUpdateDescriptorSets(device, static_cast<uint32_t>(descriptorWrites.size()),
-                               descriptorWrites.data(), 0, nullptr);
+        writer.update();
     }
 
     return true;
@@ -597,12 +508,8 @@ bool PostProcessSystem::createCompositePipeline() {
     dynamicState.dynamicStateCount = static_cast<uint32_t>(dynamicStates.size());
     dynamicState.pDynamicStates = dynamicStates.data();
 
-    VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
-    pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-    pipelineLayoutInfo.setLayoutCount = 1;
-    pipelineLayoutInfo.pSetLayouts = &compositeDescriptorSetLayout;
-
-    if (vkCreatePipelineLayout(device, &pipelineLayoutInfo, nullptr, &compositePipelineLayout) != VK_SUCCESS) {
+    compositePipelineLayout = DescriptorManager::createPipelineLayout(device, compositeDescriptorSetLayout);
+    if (compositePipelineLayout == VK_NULL_HANDLE) {
         SDL_Log("Failed to create composite pipeline layout");
         vkDestroyShaderModule(device, vertShaderModule, nullptr);
         vkDestroyShaderModule(device, fragShaderModule, nullptr);
@@ -836,42 +743,24 @@ bool PostProcessSystem::createHistogramResources() {
 }
 
 bool PostProcessSystem::createHistogramPipelines() {
-    auto makeComputeBinding = [](uint32_t binding, VkDescriptorType type) {
-        return BindingBuilder()
-            .setBinding(binding)
-            .setDescriptorType(type)
-            .setStageFlags(VK_SHADER_STAGE_COMPUTE_BIT)
-            .build();
-    };
-
     // ============================================
     // Histogram Build Pipeline
     // ============================================
     {
         // Descriptor set layout for histogram build
+        histogramBuildDescLayout = DescriptorManager::LayoutBuilder(device)
+            .addStorageImage(VK_SHADER_STAGE_COMPUTE_BIT)   // 0: HDR color
+            .addStorageBuffer(VK_SHADER_STAGE_COMPUTE_BIT)  // 1: histogram
+            .addUniformBuffer(VK_SHADER_STAGE_COMPUTE_BIT)  // 2: params
+            .build();
 
-        std::array<VkDescriptorSetLayoutBinding, 3> buildBindings = {
-            makeComputeBinding(0, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE),
-            makeComputeBinding(1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER),
-            makeComputeBinding(2, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER)};
-
-        VkDescriptorSetLayoutCreateInfo buildLayoutInfo{};
-        buildLayoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-        buildLayoutInfo.bindingCount = static_cast<uint32_t>(buildBindings.size());
-        buildLayoutInfo.pBindings = buildBindings.data();
-
-        if (vkCreateDescriptorSetLayout(device, &buildLayoutInfo, nullptr, &histogramBuildDescLayout) != VK_SUCCESS) {
+        if (histogramBuildDescLayout == VK_NULL_HANDLE) {
             SDL_Log("Failed to create histogram build descriptor set layout");
             return false;
         }
 
-        // Pipeline layout
-        VkPipelineLayoutCreateInfo buildPipelineLayoutInfo{};
-        buildPipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-        buildPipelineLayoutInfo.setLayoutCount = 1;
-        buildPipelineLayoutInfo.pSetLayouts = &histogramBuildDescLayout;
-
-        if (vkCreatePipelineLayout(device, &buildPipelineLayoutInfo, nullptr, &histogramBuildPipelineLayout) != VK_SUCCESS) {
+        histogramBuildPipelineLayout = DescriptorManager::createPipelineLayout(device, histogramBuildDescLayout);
+        if (histogramBuildPipelineLayout == VK_NULL_HANDLE) {
             SDL_Log("Failed to create histogram build pipeline layout");
             return false;
         }
@@ -914,28 +803,19 @@ bool PostProcessSystem::createHistogramPipelines() {
     // ============================================
     {
         // Descriptor set layout for histogram reduce
-        std::array<VkDescriptorSetLayoutBinding, 3> reduceBindings = {
-            makeComputeBinding(0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER),
-            makeComputeBinding(1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER),
-            makeComputeBinding(2, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER)};
+        histogramReduceDescLayout = DescriptorManager::LayoutBuilder(device)
+            .addStorageBuffer(VK_SHADER_STAGE_COMPUTE_BIT)  // 0: histogram
+            .addStorageBuffer(VK_SHADER_STAGE_COMPUTE_BIT)  // 1: exposure
+            .addUniformBuffer(VK_SHADER_STAGE_COMPUTE_BIT)  // 2: params
+            .build();
 
-        VkDescriptorSetLayoutCreateInfo reduceLayoutInfo{};
-        reduceLayoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-        reduceLayoutInfo.bindingCount = static_cast<uint32_t>(reduceBindings.size());
-        reduceLayoutInfo.pBindings = reduceBindings.data();
-
-        if (vkCreateDescriptorSetLayout(device, &reduceLayoutInfo, nullptr, &histogramReduceDescLayout) != VK_SUCCESS) {
+        if (histogramReduceDescLayout == VK_NULL_HANDLE) {
             SDL_Log("Failed to create histogram reduce descriptor set layout");
             return false;
         }
 
-        // Pipeline layout
-        VkPipelineLayoutCreateInfo reducePipelineLayoutInfo{};
-        reducePipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-        reducePipelineLayoutInfo.setLayoutCount = 1;
-        reducePipelineLayoutInfo.pSetLayouts = &histogramReduceDescLayout;
-
-        if (vkCreatePipelineLayout(device, &reducePipelineLayoutInfo, nullptr, &histogramReducePipelineLayout) != VK_SUCCESS) {
+        histogramReducePipelineLayout = DescriptorManager::createPipelineLayout(device, histogramReduceDescLayout);
+        if (histogramReducePipelineLayout == VK_NULL_HANDLE) {
             SDL_Log("Failed to create histogram reduce pipeline layout");
             return false;
         }
@@ -994,89 +874,21 @@ bool PostProcessSystem::createHistogramDescriptorSets() {
     // Update descriptor sets
     for (uint32_t i = 0; i < framesInFlight; i++) {
         // Build descriptor set
-        {
-            VkDescriptorImageInfo hdrImageInfo{};
-            hdrImageInfo.imageView = hdrColorView;
-            hdrImageInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
-
-            VkDescriptorBufferInfo histogramInfo{};
-            histogramInfo.buffer = histogramBuffer;
-            histogramInfo.offset = 0;
-            histogramInfo.range = HISTOGRAM_BINS * sizeof(uint32_t);
-
-            VkDescriptorBufferInfo paramsInfo{};
-            paramsInfo.buffer = histogramParamsBuffers[i];
-            paramsInfo.offset = 0;
-            paramsInfo.range = sizeof(HistogramParams);
-
-            std::array<VkWriteDescriptorSet, 3> writes{};
-
-            writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-            writes[0].dstSet = histogramBuildDescSets[i];
-            writes[0].dstBinding = 0;
-            writes[0].descriptorCount = 1;
-            writes[0].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
-            writes[0].pImageInfo = &hdrImageInfo;
-
-            writes[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-            writes[1].dstSet = histogramBuildDescSets[i];
-            writes[1].dstBinding = 1;
-            writes[1].descriptorCount = 1;
-            writes[1].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-            writes[1].pBufferInfo = &histogramInfo;
-
-            writes[2].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-            writes[2].dstSet = histogramBuildDescSets[i];
-            writes[2].dstBinding = 2;
-            writes[2].descriptorCount = 1;
-            writes[2].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-            writes[2].pBufferInfo = &paramsInfo;
-
-            vkUpdateDescriptorSets(device, static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
-        }
+        DescriptorManager::SetWriter(device, histogramBuildDescSets[i])
+            .writeStorageImage(0, hdrColorView)
+            .writeBuffer(1, histogramBuffer, 0, HISTOGRAM_BINS * sizeof(uint32_t),
+                         VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+            .writeBuffer(2, histogramParamsBuffers[i], 0, sizeof(HistogramParams))
+            .update();
 
         // Reduce descriptor set
-        {
-            VkDescriptorBufferInfo histogramInfo{};
-            histogramInfo.buffer = histogramBuffer;
-            histogramInfo.offset = 0;
-            histogramInfo.range = HISTOGRAM_BINS * sizeof(uint32_t);
-
-            VkDescriptorBufferInfo exposureInfo{};
-            exposureInfo.buffer = exposureBuffers[i];
-            exposureInfo.offset = 0;
-            exposureInfo.range = sizeof(ExposureData);
-
-            VkDescriptorBufferInfo paramsInfo{};
-            paramsInfo.buffer = histogramParamsBuffers[i];
-            paramsInfo.offset = 0;
-            paramsInfo.range = sizeof(HistogramReduceParams);
-
-            std::array<VkWriteDescriptorSet, 3> writes{};
-
-            writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-            writes[0].dstSet = histogramReduceDescSets[i];
-            writes[0].dstBinding = 0;
-            writes[0].descriptorCount = 1;
-            writes[0].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-            writes[0].pBufferInfo = &histogramInfo;
-
-            writes[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-            writes[1].dstSet = histogramReduceDescSets[i];
-            writes[1].dstBinding = 1;
-            writes[1].descriptorCount = 1;
-            writes[1].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-            writes[1].pBufferInfo = &exposureInfo;
-
-            writes[2].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-            writes[2].dstSet = histogramReduceDescSets[i];
-            writes[2].dstBinding = 2;
-            writes[2].descriptorCount = 1;
-            writes[2].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-            writes[2].pBufferInfo = &paramsInfo;
-
-            vkUpdateDescriptorSets(device, static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
-        }
+        DescriptorManager::SetWriter(device, histogramReduceDescSets[i])
+            .writeBuffer(0, histogramBuffer, 0, HISTOGRAM_BINS * sizeof(uint32_t),
+                         VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+            .writeBuffer(1, exposureBuffers[i], 0, sizeof(ExposureData),
+                         VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+            .writeBuffer(2, histogramParamsBuffers[i], 0, sizeof(HistogramReduceParams))
+            .update();
     }
 
     return true;
@@ -1213,21 +1025,9 @@ void PostProcessSystem::setFroxelVolume(VkImageView volumeView, VkSampler volume
 
     // Update descriptor sets with the froxel volume
     for (size_t i = 0; i < framesInFlight; i++) {
-        VkDescriptorImageInfo froxelImageInfo{};
-        froxelImageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-        froxelImageInfo.imageView = volumeView;
-        froxelImageInfo.sampler = volumeSampler;
-
-        VkWriteDescriptorSet descriptorWrite{};
-        descriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        descriptorWrite.dstSet = compositeDescriptorSets[i];
-        descriptorWrite.dstBinding = 3;
-        descriptorWrite.dstArrayElement = 0;
-        descriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        descriptorWrite.descriptorCount = 1;
-        descriptorWrite.pImageInfo = &froxelImageInfo;
-
-        vkUpdateDescriptorSets(device, 1, &descriptorWrite, 0, nullptr);
+        DescriptorManager::SetWriter(device, compositeDescriptorSets[i])
+            .writeImage(3, volumeView, volumeSampler)
+            .update();
     }
 }
 
@@ -1237,21 +1037,9 @@ void PostProcessSystem::setBloomTexture(VkImageView bloomView, VkSampler bloomSa
 
     // Update descriptor sets with the bloom texture
     for (size_t i = 0; i < framesInFlight; i++) {
-        VkDescriptorImageInfo bloomImageInfo{};
-        bloomImageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-        bloomImageInfo.imageView = bloomView;
-        bloomImageInfo.sampler = bloomSampler;
-
-        VkWriteDescriptorSet descriptorWrite{};
-        descriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        descriptorWrite.dstSet = compositeDescriptorSets[i];
-        descriptorWrite.dstBinding = 4;
-        descriptorWrite.dstArrayElement = 0;
-        descriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        descriptorWrite.descriptorCount = 1;
-        descriptorWrite.pImageInfo = &bloomImageInfo;
-
-        vkUpdateDescriptorSets(device, 1, &descriptorWrite, 0, nullptr);
+        DescriptorManager::SetWriter(device, compositeDescriptorSets[i])
+            .writeImage(4, bloomView, bloomSampler)
+            .update();
     }
 }
 

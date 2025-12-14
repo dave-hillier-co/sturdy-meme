@@ -248,11 +248,11 @@ bool Renderer::init(SDL_Window* win, const std::string& resPath) {
         MaterialDescriptorFactory factory(device);
         for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
             MaterialDescriptorFactory::CommonBindings common{};
-            common.uniformBuffer = uniformBuffers[i];
+            common.uniformBuffer = globalBufferManager.uniformBuffers.buffers[i];
             common.uniformBufferSize = sizeof(UniformBufferObject);
             common.shadowMapView = shadowSystem.getShadowImageView();
             common.shadowMapSampler = shadowSystem.getShadowSampler();
-            common.lightBuffer = lightBuffers[i];
+            common.lightBuffer = globalBufferManager.lightBuffers.buffers[i];
             common.lightBufferSize = sizeof(LightBuffer);
             common.emissiveMapView = sceneManager.getSceneBuilder().getDefaultEmissiveMap().getImageView();
             common.emissiveMapSampler = sceneManager.getSceneBuilder().getDefaultEmissiveMap().getSampler();
@@ -288,7 +288,7 @@ bool Renderer::init(SDL_Window* win, const std::string& resPath) {
     if (!weatherSystem.init(weatherInfo)) return false;
 
     // Update weather system descriptor sets with wind buffers - use HDR depth where scene is rendered
-    weatherSystem.updateDescriptorSets(device, uniformBuffers, windBuffers, postProcessSystem.getHDRDepthView(), shadowSystem.getShadowSampler());
+    weatherSystem.updateDescriptorSets(device, globalBufferManager.uniformBuffers.buffers, windBuffers, postProcessSystem.getHDRDepthView(), shadowSystem.getShadowSampler());
 
     // Connect snow mask to environment settings (already initialized above)
     snowMaskSystem.setEnvironmentSettings(environmentSettings);
@@ -320,7 +320,7 @@ bool Renderer::init(SDL_Window* win, const std::string& resPath) {
     if (!leafSystem.init(leafInfo)) return false;
 
     // Update leaf system descriptor sets with wind buffers, terrain heightmap, and displacement map
-    leafSystem.updateDescriptorSets(device, uniformBuffers, windBuffers,
+    leafSystem.updateDescriptorSets(device, globalBufferManager.uniformBuffers.buffers, windBuffers,
                                      terrainSystem.getHeightMapView(), terrainSystem.getHeightMapSampler(),
                                      grassSystem.getDisplacementImageView(), grassSystem.getDisplacementSampler());
 
@@ -331,7 +331,7 @@ bool Renderer::init(SDL_Window* win, const std::string& resPath) {
     if (!froxelSystem.init(initCtx,
                            shadowSystem.getShadowImageView(),
                            shadowSystem.getShadowSampler(),
-                           lightBuffers)) return false;
+                           globalBufferManager.lightBuffers.buffers)) return false;
 
     // Connect froxel volume to post-process system for compositing (use integrated volume)
     postProcessSystem.setFroxelVolume(froxelSystem.getIntegratedVolumeView(), froxelSystem.getVolumeSampler());
@@ -434,10 +434,10 @@ bool Renderer::init(SDL_Window* win, const std::string& resPath) {
     if (!catmullClarkSystem.init(catmullClarkInfo, catmullClarkConfig)) return false;
 
     // Update Catmull-Clark descriptor sets with shared resources
-    catmullClarkSystem.updateDescriptorSets(device, uniformBuffers);
+    catmullClarkSystem.updateDescriptorSets(device, globalBufferManager.uniformBuffers.buffers);
 
     // Create sky descriptor sets now that uniform buffers and LUTs are ready
-    if (!skySystem.createDescriptorSets(uniformBuffers, sizeof(UniformBufferObject), atmosphereLUTSystem)) return false;
+    if (!skySystem.createDescriptorSets(globalBufferManager.uniformBuffers.buffers, sizeof(UniformBufferObject), atmosphereLUTSystem)) return false;
 
     // Initialize Hi-Z occlusion culling system
     if (!hiZSystem.init(initCtx, depthFormat)) {
@@ -601,7 +601,7 @@ bool Renderer::init(SDL_Window* win, const std::string& resPath) {
     }
 
     // Create water descriptor sets with terrain heightmap, flow map, displacement map, temporal foam, SSR, and scene depth
-    if (!waterSystem.createDescriptorSets(uniformBuffers, sizeof(UniformBufferObject), shadowSystem,
+    if (!waterSystem.createDescriptorSets(globalBufferManager.uniformBuffers.buffers, sizeof(UniformBufferObject), shadowSystem,
                                           terrainSystem.getHeightMapView(), terrainSystem.getHeightMapSampler(),
                                           flowMapGenerator.getFlowMapView(), flowMapGenerator.getFlowMapSampler(),
                                           waterDisplacement.getDisplacementMapView(), waterDisplacement.getSampler(),
@@ -612,7 +612,7 @@ bool Renderer::init(SDL_Window* win, const std::string& resPath) {
     // Create water G-buffer descriptor sets
     if (waterGBuffer.getPipeline() != VK_NULL_HANDLE) {
         if (!waterGBuffer.createDescriptorSets(
-                uniformBuffers, sizeof(UniformBufferObject),
+                globalBufferManager.uniformBuffers.buffers, sizeof(UniformBufferObject),
                 waterSystem.getUniformBuffers(), WaterSystem::getUniformBufferSize(),
                 terrainSystem.getHeightMapView(), terrainSystem.getHeightMapSampler(),
                 flowMapGenerator.getFlowMapView(), flowMapGenerator.getFlowMapSampler())) {
@@ -636,7 +636,7 @@ bool Renderer::init(SDL_Window* win, const std::string& resPath) {
     if (!treeEditSystem.init(treeEditInfo)) return false;
 
     // Update tree edit system descriptor sets with scene UBOs
-    treeEditSystem.updateDescriptorSets(device, uniformBuffers);
+    treeEditSystem.updateDescriptorSets(device, globalBufferManager.uniformBuffers.buffers);
 
     if (!createSyncObjects()) return false;
 
@@ -760,7 +760,7 @@ void Renderer::setupRenderPipeline() {
     renderPipeline.setFroxelStageFn([this](RenderContext& ctx) {
         profiler.beginGpuZone(ctx.cmd, "Atmosphere");
 
-        UniformBufferObject* ubo = static_cast<UniformBufferObject*>(uniformBuffersMapped[ctx.frameIndex]);
+        UniformBufferObject* ubo = static_cast<UniformBufferObject*>(globalBufferManager.uniformBuffers.mappedPointers[ctx.frameIndex]);
         glm::vec3 sunColor = glm::vec3(ubo->sunColor);
 
         // Froxel volumetric fog
@@ -2113,7 +2113,7 @@ FrameData Renderer::buildFrameData(const Camera& camera, float deltaTime, float 
     frame.viewProj = frame.projection * frame.view;
 
     // Get sun direction from last computed UBO (already computed in updateUniformBuffer)
-    UniformBufferObject* ubo = static_cast<UniformBufferObject*>(uniformBuffersMapped[currentFrame]);
+    UniformBufferObject* ubo = static_cast<UniformBufferObject*>(globalBufferManager.uniformBuffers.mappedPointers[currentFrame]);
     frame.sunDirection = glm::normalize(glm::vec3(ubo->sunDirection));
     frame.sunIntensity = ubo->sunDirection.w;
 

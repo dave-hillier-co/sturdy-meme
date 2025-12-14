@@ -28,3 +28,8 @@ When running in web Claude Code (Linux environment without vcpkg pre-installed):
 - Use `./build-claude.sh` to build - it bootstraps vcpkg automatically
 - The claude preset uses a local vcpkg installation in the project directory
 - Custom triplets in `triplets/` disable problematic features for restricted environments
+
+Build options:
+- `./build-claude.sh` - Fast build: shaders, headers, and C++ (skips terrain preprocessing tools)
+- `./build-claude.sh --full` - Complete build including terrain preprocessing
+- `./build-claude.sh --shaders` - Shaders and generated headers only (no C++)

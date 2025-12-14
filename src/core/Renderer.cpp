@@ -46,14 +46,10 @@ bool Renderer::init(SDL_Window* win, const std::string& resPath) {
         vulkanContext, commandPool, &*descriptorManagerPool,
         resourcePath, MAX_FRAMES_IN_FLIGHT);
 
-    // Initialize post-process system early to get HDR render pass
-    if (!postProcessSystem.init(initCtx, renderPass, swapchainImageFormat)) return false;
-
-    // Initialize bloom system
-    if (!bloomSystem.init(initCtx)) return false;
-
-    // Bind bloom texture to post-process system
-    postProcessSystem.setBloomTexture(bloomSystem.getBloomOutput(), bloomSystem.getBloomSampler());
+    // Initialize post-processing systems (PostProcessSystem, BloomSystem)
+    if (!RendererInit::initPostProcessing(postProcessSystem, bloomSystem, initCtx, renderPass, swapchainImageFormat)) {
+        return false;
+    }
 
     if (!createGraphicsPipeline()) return false;
 
@@ -148,58 +144,20 @@ bool Renderer::init(SDL_Window* win, const std::string& resPath) {
 
     if (!sceneManager.init(sceneInfo)) return false;
 
-    // Initialize snow mask system early (before createDescriptorSets, since shader.frag needs binding 8)
-    SnowMaskSystem::InitInfo snowMaskInfo{};
-    snowMaskInfo.device = device;
-    snowMaskInfo.allocator = allocator;
-    snowMaskInfo.renderPass = postProcessSystem.getHDRRenderPass();
-    snowMaskInfo.descriptorPool = &*descriptorManagerPool;
-    snowMaskInfo.extent = swapchainExtent;
-    snowMaskInfo.shaderPath = resourcePath + "/shaders";
-    snowMaskInfo.framesInFlight = MAX_FRAMES_IN_FLIGHT;
-
-    if (!snowMaskSystem.init(snowMaskInfo)) return false;
-
-    // Initialize volumetric snow system (cascaded heightfield)
-    VolumetricSnowSystem::InitInfo volumetricSnowInfo{};
-    volumetricSnowInfo.device = device;
-    volumetricSnowInfo.allocator = allocator;
-    volumetricSnowInfo.renderPass = postProcessSystem.getHDRRenderPass();
-    volumetricSnowInfo.descriptorPool = &*descriptorManagerPool;
-    volumetricSnowInfo.extent = swapchainExtent;
-    volumetricSnowInfo.shaderPath = resourcePath + "/shaders";
-    volumetricSnowInfo.framesInFlight = MAX_FRAMES_IN_FLIGHT;
-
-    if (!volumetricSnowSystem.init(volumetricSnowInfo)) return false;
+    // Initialize snow subsystems (SnowMaskSystem, VolumetricSnowSystem)
+    if (!RendererInit::initSnowSubsystems(snowMaskSystem, volumetricSnowSystem, initCtx,
+                                          postProcessSystem.getHDRRenderPass())) return false;
 
     if (!createDescriptorSets()) return false;
     if (!createSkinnedMeshRendererDescriptorSets()) return false;
 
-    // Initialize grass system using HDR render pass
-    GrassSystem::InitInfo grassInfo{};
-    grassInfo.device = device;
-    grassInfo.allocator = allocator;
-    grassInfo.renderPass = postProcessSystem.getHDRRenderPass();
-    grassInfo.shadowRenderPass = shadowSystem.getShadowRenderPass();
-    grassInfo.descriptorPool = &*descriptorManagerPool;
-    grassInfo.extent = swapchainExtent;
-    grassInfo.shadowMapSize = shadowSystem.getShadowMapSize();
-    grassInfo.shaderPath = resourcePath + "/shaders";
-    grassInfo.framesInFlight = MAX_FRAMES_IN_FLIGHT;
+    // Initialize grass and wind subsystems
+    if (!RendererInit::initGrassSubsystem(grassSystem, windSystem, leafSystem, initCtx,
+                                          postProcessSystem.getHDRRenderPass(),
+                                          shadowSystem.getShadowRenderPass(),
+                                          shadowSystem.getShadowMapSize())) return false;
 
-    if (!grassSystem.init(grassInfo)) return false;
-
-    // Initialize wind system
-    WindSystem::InitInfo windInfo{};
-    windInfo.device = device;
-    windInfo.allocator = allocator;
-    windInfo.framesInFlight = MAX_FRAMES_IN_FLIGHT;
-
-    if (!windSystem.init(windInfo)) return false;
-
-    const EnvironmentSettings* environmentSettings = &windSystem.getEnvironmentSettings();
-    grassSystem.setEnvironmentSettings(environmentSettings);
-    leafSystem.setEnvironmentSettings(environmentSettings);
+    const EnvironmentSettings* envSettings = &windSystem.getEnvironmentSettings();
 
     // Get wind buffers for grass descriptor sets
     std::vector<VkBuffer> windBuffers(MAX_FRAMES_IN_FLIGHT);
@@ -215,33 +173,9 @@ bool Renderer::init(SDL_Window* win, const std::string& resPath) {
     terrainSystem.updateDescriptorSets(device, globalBufferManager.uniformBuffers.buffers, shadowSystem.getShadowImageView(), shadowSystem.getShadowSampler(),
                                         globalBufferManager.snowBuffers.buffers, globalBufferManager.cloudShadowBuffers.buffers);
 
-    // Initialize rock system (uses terrain for height queries)
-    RockSystem::InitInfo rockInfo{};
-    rockInfo.device = device;
-    rockInfo.allocator = allocator;
-    rockInfo.commandPool = commandPool;
-    rockInfo.graphicsQueue = graphicsQueue;
-    rockInfo.physicalDevice = physicalDevice;
-    rockInfo.resourcePath = resourcePath;
-    rockInfo.terrainSize = terrainConfig.size;
-    rockInfo.getTerrainHeight = [this](float x, float z) {
-        return terrainSystem.getHeightAt(x, z);
-    };
-
-    RockConfig rockConfig{};
-    rockConfig.rockVariations = 6;
-    rockConfig.rocksPerVariation = 10;
-    rockConfig.minRadius = 0.4f;
-    rockConfig.maxRadius = 2.0f;
-    rockConfig.placementRadius = 100.0f;
-    rockConfig.minDistanceBetween = 4.0f;
-    rockConfig.roughness = 0.35f;
-    rockConfig.asymmetry = 0.3f;
-    rockConfig.subdivisions = 3;
-    rockConfig.materialRoughness = 0.75f;
-    rockConfig.materialMetallic = 0.0f;
-
-    if (!rockSystem.init(rockInfo, rockConfig)) return false;
+    // Initialize rock system
+    if (!RendererInit::initRockSystem(rockSystem, initCtx, terrainConfig.size,
+                                       [this](float x, float z) { return terrainSystem.getHeightAt(x, z); })) return false;
 
     // Update rock descriptor sets now that rock textures are loaded
     {
@@ -275,165 +209,50 @@ bool Renderer::init(SDL_Window* win, const std::string& resPath) {
         }
     }
 
-    // Initialize weather particle system (rain/snow)
-    WeatherSystem::InitInfo weatherInfo{};
-    weatherInfo.device = device;
-    weatherInfo.allocator = allocator;
-    weatherInfo.renderPass = postProcessSystem.getHDRRenderPass();
-    weatherInfo.descriptorPool = &*descriptorManagerPool;
-    weatherInfo.extent = swapchainExtent;
-    weatherInfo.shaderPath = resourcePath + "/shaders";
-    weatherInfo.framesInFlight = MAX_FRAMES_IN_FLIGHT;
+    // Initialize weather and leaf subsystems
+    if (!RendererInit::initWeatherSubsystems(weatherSystem, leafSystem, initCtx,
+                                              postProcessSystem.getHDRRenderPass())) return false;
 
-    if (!weatherSystem.init(weatherInfo)) return false;
+    // Update weather system descriptor sets
+    weatherSystem.updateDescriptorSets(device, globalBufferManager.uniformBuffers.buffers, windBuffers,
+                                        postProcessSystem.getHDRDepthView(), shadowSystem.getShadowSampler());
 
-    // Update weather system descriptor sets with wind buffers - use HDR depth where scene is rendered
-    weatherSystem.updateDescriptorSets(device, globalBufferManager.uniformBuffers.buffers, windBuffers, postProcessSystem.getHDRDepthView(), shadowSystem.getShadowSampler());
-
-    // Connect snow mask to environment settings (already initialized above)
-    snowMaskSystem.setEnvironmentSettings(environmentSettings);
-    volumetricSnowSystem.setEnvironmentSettings(environmentSettings);
-
-    // Connect snow mask to terrain system (legacy)
+    // Connect snow to environment settings and systems
+    snowMaskSystem.setEnvironmentSettings(envSettings);
+    volumetricSnowSystem.setEnvironmentSettings(envSettings);
     terrainSystem.setSnowMask(device, snowMaskSystem.getSnowMaskView(), snowMaskSystem.getSnowMaskSampler());
-
-    // Connect volumetric snow cascades to terrain system
     terrainSystem.setVolumetricSnowCascades(device,
-        volumetricSnowSystem.getCascadeView(0),
-        volumetricSnowSystem.getCascadeView(1),
-        volumetricSnowSystem.getCascadeView(2),
-        volumetricSnowSystem.getCascadeSampler());
-
-    // Connect snow mask to grass system
+        volumetricSnowSystem.getCascadeView(0), volumetricSnowSystem.getCascadeView(1),
+        volumetricSnowSystem.getCascadeView(2), volumetricSnowSystem.getCascadeSampler());
     grassSystem.setSnowMask(device, snowMaskSystem.getSnowMaskView(), snowMaskSystem.getSnowMaskSampler());
 
-    // Initialize leaf particle system
-    LeafSystem::InitInfo leafInfo{};
-    leafInfo.device = device;
-    leafInfo.allocator = allocator;
-    leafInfo.renderPass = postProcessSystem.getHDRRenderPass();
-    leafInfo.descriptorPool = &*descriptorManagerPool;
-    leafInfo.extent = swapchainExtent;
-    leafInfo.shaderPath = resourcePath + "/shaders";
-    leafInfo.framesInFlight = MAX_FRAMES_IN_FLIGHT;
-
-    if (!leafSystem.init(leafInfo)) return false;
-
-    // Update leaf system descriptor sets with wind buffers, terrain heightmap, and displacement map
+    // Update leaf system descriptor sets
     leafSystem.updateDescriptorSets(device, globalBufferManager.uniformBuffers.buffers, windBuffers,
                                      terrainSystem.getHeightMapView(), terrainSystem.getHeightMapSampler(),
                                      grassSystem.getDisplacementImageView(), grassSystem.getDisplacementSampler());
 
-    // Set default leaf intensity (autumn scene)
-    leafSystem.setIntensity(0.5f);
+    // Initialize atmosphere subsystems (Froxel, AtmosphereLUT, CloudShadow)
+    if (!RendererInit::initAtmosphereSubsystems(froxelSystem, atmosphereLUTSystem, cloudShadowSystem,
+                                                 postProcessSystem, initCtx, shadowSystem.getShadowImageView(),
+                                                 shadowSystem.getShadowSampler(), globalBufferManager.lightBuffers.buffers)) return false;
 
-    // Initialize froxel volumetric fog system (Phase 4.3)
-    if (!froxelSystem.init(initCtx,
-                           shadowSystem.getShadowImageView(),
-                           shadowSystem.getShadowSampler(),
-                           globalBufferManager.lightBuffers.buffers)) return false;
-
-    // Connect froxel volume to post-process system for compositing (use integrated volume)
-    postProcessSystem.setFroxelVolume(froxelSystem.getIntegratedVolumeView(), froxelSystem.getVolumeSampler());
-    postProcessSystem.setFroxelParams(froxelSystem.getVolumetricFarPlane(), FroxelSystem::DEPTH_DISTRIBUTION);
-    postProcessSystem.setFroxelEnabled(true);
-
-    // Connect froxel volume to weather system for fog particle lighting (Phase 4.3.9)
+    // Connect froxel volume to weather system
     weatherSystem.setFroxelVolume(froxelSystem.getScatteringVolumeView(), froxelSystem.getVolumeSampler(),
                                    froxelSystem.getVolumetricFarPlane(), FroxelSystem::DEPTH_DISTRIBUTION);
 
-    // Initialize atmosphere LUT system (Phase 4.1)
-    if (!atmosphereLUTSystem.init(initCtx)) return false;
-
-    // Compute atmosphere LUTs at startup
-    {
-        CommandScope cmdScope(device, commandPool, graphicsQueue);
-        if (!cmdScope.begin()) return false;
-
-        // Compute transmittance and multi-scatter LUTs (once at startup)
-        atmosphereLUTSystem.computeTransmittanceLUT(cmdScope.get());
-        atmosphereLUTSystem.computeMultiScatterLUT(cmdScope.get());
-        // Compute irradiance LUTs after transmittance (Phase 4.1.9)
-        atmosphereLUTSystem.computeIrradianceLUT(cmdScope.get());
-
-        // Compute sky-view LUT for current sun direction
-        glm::vec3 sunDir = glm::vec3(0.0f, 0.707f, 0.707f);  // Default 45 degree sun
-        atmosphereLUTSystem.computeSkyViewLUT(cmdScope.get(), sunDir, glm::vec3(0.0f), 0.0f);
-
-        // Compute cloud map LUT (paraboloid projection)
-        atmosphereLUTSystem.computeCloudMapLUT(cmdScope.get(), glm::vec3(0.0f), 0.0f);
-
-        if (!cmdScope.end()) return false;
-    }
-
-    SDL_Log("Atmosphere LUTs computed successfully");
-
-    // Export LUTs as PNG files for visualization
-    atmosphereLUTSystem.exportLUTsAsPNG(resourcePath);
-    SDL_Log("Atmosphere LUTs exported as PNG to: %s", resourcePath.c_str());
-
-    // Initialize cloud shadow system
-    if (!cloudShadowSystem.init(initCtx,
-                                 atmosphereLUTSystem.getCloudMapLUTView(),
-                                 atmosphereLUTSystem.getLUTSampler())) return false;
-
     // Connect cloud shadow map to terrain system
-    terrainSystem.setCloudShadowMap(device,
-        cloudShadowSystem.getShadowMapView(),
-        cloudShadowSystem.getShadowMapSampler());
+    terrainSystem.setCloudShadowMap(device, cloudShadowSystem.getShadowMapView(), cloudShadowSystem.getShadowMapSampler());
 
-    // Update all descriptor sets with cloud shadow map (binding 9)
-    // This is done here because cloudShadowSystem is initialized after createDescriptorSets
-    {
-        // Update MaterialRegistry-managed descriptor sets
-        sceneManager.getSceneBuilder().getMaterialRegistry().updateCloudShadowBinding(
-            device,
-            cloudShadowSystem.getShadowMapView(),
-            cloudShadowSystem.getShadowMapSampler());
-
-        // Update descriptor sets not managed by MaterialRegistry (rocks, skinned)
-        MaterialDescriptorFactory factory(device);
-        VkDescriptorSet rockSets[] = {
-            rockDescriptorSets[0], rockDescriptorSets[1]
-        };
-        for (auto set : rockSets) {
-            factory.updateCloudShadowBinding(set,
-                cloudShadowSystem.getShadowMapView(),
-                cloudShadowSystem.getShadowMapSampler());
-        }
-        // Update skinned mesh renderer cloud shadow binding
-        skinnedMeshRenderer.updateCloudShadowBinding(
-            cloudShadowSystem.getShadowMapView(),
-            cloudShadowSystem.getShadowMapSampler());
-    }
+    // Update cloud shadow bindings across all descriptor sets
+    RendererInit::updateCloudShadowBindings(device, sceneManager.getSceneBuilder().getMaterialRegistry(),
+                                            rockDescriptorSets, skinnedMeshRenderer,
+                                            cloudShadowSystem.getShadowMapView(), cloudShadowSystem.getShadowMapSampler());
 
     // Initialize Catmull-Clark subdivision system
-    CatmullClarkSystem::InitInfo catmullClarkInfo{};
-    catmullClarkInfo.device = device;
-    catmullClarkInfo.physicalDevice = physicalDevice;
-    catmullClarkInfo.allocator = allocator;
-    catmullClarkInfo.renderPass = postProcessSystem.getHDRRenderPass();
-    catmullClarkInfo.descriptorPool = &*descriptorManagerPool;
-    catmullClarkInfo.extent = swapchainExtent;
-    catmullClarkInfo.shaderPath = resourcePath + "/shaders";
-    catmullClarkInfo.framesInFlight = MAX_FRAMES_IN_FLIGHT;
-    catmullClarkInfo.graphicsQueue = graphicsQueue;
-    catmullClarkInfo.commandPool = commandPool;
-
-    CatmullClarkConfig catmullClarkConfig{};
     float suzanneX = 5.0f, suzanneZ = -5.0f;
-    float terrainY = terrainSystem.getHeightAt(suzanneX, suzanneZ);
-    catmullClarkConfig.position = glm::vec3(suzanneX, terrainY + 2.0f, suzanneZ);
-    catmullClarkConfig.scale = glm::vec3(2.0f);
-    catmullClarkConfig.targetEdgePixels = 12.0f;
-    catmullClarkConfig.maxDepth = 16;
-    catmullClarkConfig.splitThreshold = 18.0f;
-    catmullClarkConfig.mergeThreshold = 6.0f;
-    catmullClarkConfig.objPath = resourcePath + "/assets/suzanne.obj";
-
-    if (!catmullClarkSystem.init(catmullClarkInfo, catmullClarkConfig)) return false;
-
-    // Update Catmull-Clark descriptor sets with shared resources
+    glm::vec3 suzannePos(suzanneX, terrainSystem.getHeightAt(suzanneX, suzanneZ) + 2.0f, suzanneZ);
+    if (!RendererInit::initCatmullClarkSystem(catmullClarkSystem, initCtx,
+                                              postProcessSystem.getHDRRenderPass(), suzannePos)) return false;
     catmullClarkSystem.updateDescriptorSets(device, globalBufferManager.uniformBuffers.buffers);
 
     // Create sky descriptor sets now that uniform buffers and LUTs are ready
@@ -457,195 +276,24 @@ bool Renderer::init(SDL_Window* win, const std::string& resPath) {
         // Continue without profiling - it's optional
     }
 
-    // Initialize water system - sea covering terrain areas below sea level
-    WaterSystem::InitInfo waterInfo{};
-    waterInfo.device = device;
-    waterInfo.physicalDevice = physicalDevice;
-    waterInfo.allocator = allocator;
-    waterInfo.descriptorPool = &*descriptorManagerPool;
-    waterInfo.hdrRenderPass = postProcessSystem.getHDRRenderPass();
-    waterInfo.shaderPath = resourcePath + "/shaders";
-    waterInfo.framesInFlight = MAX_FRAMES_IN_FLIGHT;
-    waterInfo.extent = swapchainExtent;
-    waterInfo.commandPool = commandPool;
-    waterInfo.graphicsQueue = graphicsQueue;
-    waterInfo.waterSize = 65536.0f;  // Extend well beyond terrain for horizon
-    waterInfo.assetPath = resourcePath;
+    // Initialize water subsystems (WaterSystem, WaterDisplacement, FlowMap, Foam, SSR, TileCull, GBuffer)
+    WaterSubsystems waterSubs{waterSystem, waterDisplacement, flowMapGenerator, foamBuffer, ssrSystem, waterTileCull, waterGBuffer};
+    if (!RendererInit::initWaterSubsystems(waterSubs, initCtx, postProcessSystem.getHDRRenderPass(),
+                                            shadowSystem, terrainSystem, terrainConfig, postProcessSystem, depthSampler)) return false;
 
-    if (!waterSystem.init(waterInfo)) return false;
-
-    // Configure water surface
-    // Terrain formula is worldY = h * heightScale, where h is normalized [0,1]
-    // h=0 maps to minAltitude, h=1 maps to maxAltitude
-    // Real-world 0m altitude corresponds to worldY = 0 - minAltitude = 15m
-    float seaLevel = -terrainConfig.minAltitude;  // = 15.0f for minAltitude = -15
-    waterSystem.setWaterLevel(seaLevel);
-    waterSystem.setWaterExtent(glm::vec2(0.0f, 0.0f), glm::vec2(65536.0f, 65536.0f));
-    // English estuary/coastal water style - murky grey-green, moderate chop
-    waterSystem.setWaterColor(glm::vec4(0.15f, 0.22f, 0.25f, 0.9f));  // Grey-green estuary
-    waterSystem.setWaveAmplitude(0.3f);   // English Channel swell
-    waterSystem.setWaveLength(15.0f);     // Medium wavelengths
-    waterSystem.setWaveSteepness(0.25f);
-    waterSystem.setWaveSpeed(0.5f);
-    waterSystem.setTidalRange(3.0f);      // ±3m tidal range (English Channel has large tides)
-
-    // Set terrain params for shore detection
-    waterSystem.setTerrainParams(terrainConfig.size, terrainConfig.heightScale);
-    waterSystem.setShoreBlendDistance(8.0f);   // Wider soft edge (was 3.0)
-    waterSystem.setShoreFoamWidth(15.0f);      // Shore foam band 15m wide (was 8.0)
-
-    // Set camera planes for depth linearization (used for soft edges, intersection foam)
-    // Values must match Camera.cpp defaults: nearPlane=0.1f, farPlane=50000.0f
-    waterSystem.setCameraPlanes(0.1f, 50000.0f);
-
-    // Initialize flow map generator
-    if (!flowMapGenerator.init(device, allocator, commandPool, graphicsQueue)) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to initialize flow map generator");
-        return false;
-    }
-
-    // Generate flow map from terrain data
-    FlowMapGenerator::Config flowConfig{};
-    flowConfig.resolution = 512;
-    flowConfig.worldSize = terrainConfig.size;
-    flowConfig.waterLevel = seaLevel;
-    flowConfig.maxFlowSpeed = 1.0f;
-    flowConfig.slopeInfluence = 2.0f;  // Water flows faster on steeper slopes
-    flowConfig.shoreDistance = 100.0f; // Max shore distance for foam
-
-    // Get terrain height data and generate slope-based flow
-    const float* heightData = terrainSystem.getHeightMapData();
-    uint32_t heightRes = terrainSystem.getHeightMapResolution();
-    if (heightData && heightRes > 0) {
-        std::vector<float> heightVec(heightData, heightData + heightRes * heightRes);
-        if (!flowMapGenerator.generateFromTerrain(heightVec, heightRes, terrainConfig.heightScale, flowConfig)) {
-            SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "Flow map generation failed, using radial flow fallback");
-            flowMapGenerator.generateRadialFlow(flowConfig, glm::vec2(0.0f));
-        }
-    } else {
-        // Fallback to radial flow for testing
-        SDL_Log("No terrain height data available, generating radial flow map");
-        flowMapGenerator.generateRadialFlow(flowConfig, glm::vec2(0.0f));
-    }
-
-    // Initialize water displacement system (Phase 4: interactive splashes)
-    WaterDisplacement::InitInfo dispInfo{};
-    dispInfo.device = device;
-    dispInfo.physicalDevice = physicalDevice;
-    dispInfo.allocator = allocator;
-    dispInfo.commandPool = commandPool;
-    dispInfo.computeQueue = graphicsQueue;  // Use graphics queue for compute
-    dispInfo.framesInFlight = MAX_FRAMES_IN_FLIGHT;
-    dispInfo.displacementResolution = 512;
-    dispInfo.worldSize = 65536.0f;
-
-    if (!waterDisplacement.init(dispInfo)) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to initialize water displacement");
-        return false;
-    }
-
-    // Initialize foam buffer (Phase 14: temporal foam persistence)
-    FoamBuffer::InitInfo foamInfo{};
-    foamInfo.device = device;
-    foamInfo.physicalDevice = physicalDevice;
-    foamInfo.allocator = allocator;
-    foamInfo.commandPool = commandPool;
-    foamInfo.computeQueue = graphicsQueue;
-    foamInfo.shaderPath = resourcePath + "/shaders";
-    foamInfo.framesInFlight = MAX_FRAMES_IN_FLIGHT;
-    foamInfo.resolution = 512;
-    foamInfo.worldSize = 65536.0f;
-
-    if (!foamBuffer.init(foamInfo)) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to initialize foam buffer");
-        return false;
-    }
-
-    // Initialize SSR system (Phase 10: Screen-Space Reflections)
-    if (!ssrSystem.init(initCtx)) {
-        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "Failed to initialize SSR system - continuing without SSR");
-        // Don't fail init - SSR is optional
-    }
-
-    // Initialize water tile culling (Phase 7: screen-space tile visibility)
-    WaterTileCull::InitInfo tileCullInfo{};
-    tileCullInfo.device = device;
-    tileCullInfo.physicalDevice = physicalDevice;
-    tileCullInfo.allocator = allocator;
-    tileCullInfo.commandPool = commandPool;
-    tileCullInfo.computeQueue = graphicsQueue;
-    tileCullInfo.shaderPath = resourcePath + "/shaders";
-    tileCullInfo.framesInFlight = MAX_FRAMES_IN_FLIGHT;
-    tileCullInfo.extent = swapchainExtent;
-    tileCullInfo.tileSize = 32;
-
-    if (!waterTileCull.init(tileCullInfo)) {
-        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "Failed to initialize water tile cull - continuing without");
-        // Don't fail init - tile culling is optional optimization
-    }
-
-    // Initialize water G-buffer (Phase 3)
-    WaterGBuffer::InitInfo gbufferInfo{};
-    gbufferInfo.device = device;
-    gbufferInfo.physicalDevice = physicalDevice;
-    gbufferInfo.allocator = allocator;
-    gbufferInfo.fullResExtent = swapchainExtent;
-    gbufferInfo.resolutionScale = 0.5f;  // Half resolution for performance
-    gbufferInfo.framesInFlight = MAX_FRAMES_IN_FLIGHT;
-    gbufferInfo.shaderPath = resourcePath + "/shaders";
-    gbufferInfo.descriptorPool = &*descriptorManagerPool;
-
-    if (!waterGBuffer.init(gbufferInfo)) {
-        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "Failed to initialize water G-buffer - continuing without");
-        // Don't fail init - G-buffer is optional optimization
-    }
-
-    // Create water descriptor sets with terrain heightmap, flow map, displacement map, temporal foam, SSR, and scene depth
-    if (!waterSystem.createDescriptorSets(globalBufferManager.uniformBuffers.buffers, sizeof(UniformBufferObject), shadowSystem,
-                                          terrainSystem.getHeightMapView(), terrainSystem.getHeightMapSampler(),
-                                          flowMapGenerator.getFlowMapView(), flowMapGenerator.getFlowMapSampler(),
-                                          waterDisplacement.getDisplacementMapView(), waterDisplacement.getSampler(),
-                                          foamBuffer.getFoamBufferView(), foamBuffer.getSampler(),
-                                          ssrSystem.getSSRResultView(), ssrSystem.getSampler(),
-                                          postProcessSystem.getHDRDepthView(), depthSampler)) return false;
-
-    // Create water G-buffer descriptor sets
-    if (waterGBuffer.getPipeline() != VK_NULL_HANDLE) {
-        if (!waterGBuffer.createDescriptorSets(
-                globalBufferManager.uniformBuffers.buffers, sizeof(UniformBufferObject),
-                waterSystem.getUniformBuffers(), WaterSystem::getUniformBufferSize(),
-                terrainSystem.getHeightMapView(), terrainSystem.getHeightMapSampler(),
-                flowMapGenerator.getFlowMapView(), flowMapGenerator.getFlowMapSampler())) {
-            SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "Failed to create water G-buffer descriptor sets");
-        }
-    }
+    // Create water descriptor sets
+    if (!RendererInit::createWaterDescriptorSets(waterSubs, globalBufferManager.uniformBuffers.buffers,
+                                                  sizeof(UniformBufferObject), shadowSystem, terrainSystem,
+                                                  postProcessSystem, depthSampler)) return false;
 
     // Initialize tree edit system
-    TreeEditSystem::InitInfo treeEditInfo{};
-    treeEditInfo.device = device;
-    treeEditInfo.physicalDevice = physicalDevice;
-    treeEditInfo.allocator = allocator;
-    treeEditInfo.renderPass = postProcessSystem.getHDRRenderPass();
-    treeEditInfo.descriptorPool = &*descriptorManagerPool;
-    treeEditInfo.extent = swapchainExtent;
-    treeEditInfo.shaderPath = resourcePath + "/shaders";
-    treeEditInfo.framesInFlight = MAX_FRAMES_IN_FLIGHT;
-    treeEditInfo.graphicsQueue = graphicsQueue;
-    treeEditInfo.commandPool = commandPool;
-
-    if (!treeEditSystem.init(treeEditInfo)) return false;
-
-    // Update tree edit system descriptor sets with scene UBOs
+    if (!RendererInit::initTreeEditSystem(treeEditSystem, initCtx, postProcessSystem.getHDRRenderPass())) return false;
     treeEditSystem.updateDescriptorSets(device, globalBufferManager.uniformBuffers.buffers);
 
     if (!createSyncObjects()) return false;
 
-    // Initialize debug line system for physics visualization
-    if (!debugLineSystem.init(device, allocator, postProcessSystem.getHDRRenderPass(),
-                               resourcePath + "/shaders", MAX_FRAMES_IN_FLIGHT)) {
-        SDL_Log("Failed to initialize debug line system");
-        return false;
-    }
+    // Initialize debug line system
+    if (!RendererInit::initDebugLineSystem(debugLineSystem, initCtx, postProcessSystem.getHDRRenderPass())) return false;
     SDL_Log("Debug line system initialized");
 
     // Initialize UBO builder with system references
@@ -660,7 +308,7 @@ bool Renderer::init(SDL_Window* win, const std::string& resPath) {
     uboSystems.snowMaskSystem = &snowMaskSystem;
     uboSystems.volumetricSnowSystem = &volumetricSnowSystem;
     uboSystems.cloudShadowSystem = &cloudShadowSystem;
-    uboSystems.environmentSettings = environmentSettings;
+    uboSystems.environmentSettings = &environmentSettings;
     uboBuilder.setSystems(uboSystems);
 
     // Setup render pipeline stages with lambdas

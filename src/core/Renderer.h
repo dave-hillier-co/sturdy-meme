@@ -359,7 +359,6 @@ private:
     bool createDescriptorSetLayout();
     void addCommonDescriptorBindings(DescriptorManager::LayoutBuilder& builder);
     bool createGraphicsPipeline();
-    bool createUniformBuffers();
     bool createDescriptorPool();
     bool createDescriptorSets();
     bool createDepthResources();
@@ -464,24 +463,8 @@ private:
     // Shadow system (CSM + dynamic shadows)
     ShadowSystem shadowSystem;
 
-    std::vector<VkBuffer> uniformBuffers;
-    std::vector<VmaAllocation> uniformBuffersAllocations;
-    std::vector<void*> uniformBuffersMapped;
-
-    // Snow UBO buffers (binding 14)
-    std::vector<VkBuffer> snowBuffers;
-    std::vector<VmaAllocation> snowBuffersAllocations;
-    std::vector<void*> snowBuffersMapped;
-
-    // Cloud shadow UBO buffers (binding 15)
-    std::vector<VkBuffer> cloudShadowBuffers;
-    std::vector<VmaAllocation> cloudShadowBuffersAllocations;
-    std::vector<void*> cloudShadowBuffersMapped;
-
-    // Light buffer SSBO (per frame)
-    std::vector<VkBuffer> lightBuffers;
-    std::vector<VmaAllocation> lightBufferAllocations;
-    std::vector<void*> lightBuffersMapped;
+    // Global buffer manager for per-frame shared GPU buffers
+    GlobalBufferManager globalBufferManager;
 
     std::optional<DescriptorManager::Pool> descriptorManagerPool;
 
@@ -527,7 +510,6 @@ private:
     // GUI rendering callback
     GuiRenderCallback guiRenderCallback;
 
-    bool createLightBuffers();
     void updateLightBuffer(uint32_t currentImage, const Camera& camera);
 
     // Skinned mesh rendering

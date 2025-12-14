@@ -2,6 +2,7 @@
 #include "ShaderLoader.h"
 #include "BindingBuilder.h"
 #include "PipelineBuilder.h"
+#include "DescriptorManager.h"
 #include "GpuProfiler.h"
 #include "UBOs.h"
 #include "VulkanBarriers.h"
@@ -452,82 +453,17 @@ bool TerrainSystem::createDescriptorSets() {
 
     // Update compute descriptor sets
     for (uint32_t i = 0; i < framesInFlight; i++) {
-        std::array<VkWriteDescriptorSet, 9> writes{};
-
-        VkDescriptorBufferInfo cbtInfo{cbt.getBuffer(), 0, cbt.getBufferSize()};
-        writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        writes[0].dstSet = computeDescriptorSets[i];
-        writes[0].dstBinding = 0;
-        writes[0].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-        writes[0].descriptorCount = 1;
-        writes[0].pBufferInfo = &cbtInfo;
-
-        VkDescriptorBufferInfo dispatchInfo{indirectDispatchBuffer, 0, sizeof(uint32_t) * 3};
-        writes[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        writes[1].dstSet = computeDescriptorSets[i];
-        writes[1].dstBinding = 1;
-        writes[1].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-        writes[1].descriptorCount = 1;
-        writes[1].pBufferInfo = &dispatchInfo;
-
-        VkDescriptorBufferInfo drawInfo{indirectDrawBuffer, 0, sizeof(uint32_t) * 4};
-        writes[2].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        writes[2].dstSet = computeDescriptorSets[i];
-        writes[2].dstBinding = 2;
-        writes[2].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-        writes[2].descriptorCount = 1;
-        writes[2].pBufferInfo = &drawInfo;
-
-        VkDescriptorImageInfo heightMapInfo{heightMap.getSampler(), heightMap.getView(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
-        writes[3].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        writes[3].dstSet = computeDescriptorSets[i];
-        writes[3].dstBinding = 3;
-        writes[3].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        writes[3].descriptorCount = 1;
-        writes[3].pImageInfo = &heightMapInfo;
-
-        VkDescriptorBufferInfo uniformInfo{uniformBuffers[i], 0, sizeof(TerrainUniforms)};
-        writes[4].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        writes[4].dstSet = computeDescriptorSets[i];
-        writes[4].dstBinding = 4;
-        writes[4].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-        writes[4].descriptorCount = 1;
-        writes[4].pBufferInfo = &uniformInfo;
-
-        VkDescriptorBufferInfo visibleIndicesInfo{visibleIndicesBuffer, 0, sizeof(uint32_t) * (1 + MAX_VISIBLE_TRIANGLES)};
-        writes[5].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        writes[5].dstSet = computeDescriptorSets[i];
-        writes[5].dstBinding = 5;
-        writes[5].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-        writes[5].descriptorCount = 1;
-        writes[5].pBufferInfo = &visibleIndicesInfo;
-
-        VkDescriptorBufferInfo cullDispatchInfo{cullIndirectDispatchBuffer, 0, sizeof(uint32_t) * 3};
-        writes[6].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        writes[6].dstSet = computeDescriptorSets[i];
-        writes[6].dstBinding = 6;
-        writes[6].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-        writes[6].descriptorCount = 1;
-        writes[6].pBufferInfo = &cullDispatchInfo;
-
-        // Shadow culling buffers
-        VkDescriptorBufferInfo shadowVisibleInfo{shadowVisibleBuffer, 0, sizeof(uint32_t) * (1 + MAX_VISIBLE_TRIANGLES)};
-        writes[7].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        writes[7].dstSet = computeDescriptorSets[i];
-        writes[7].dstBinding = 14;  // BINDING_TERRAIN_SHADOW_VISIBLE
-        writes[7].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-        writes[7].descriptorCount = 1;
-        writes[7].pBufferInfo = &shadowVisibleInfo;
-
-        VkDescriptorBufferInfo shadowDrawInfo{shadowIndirectDrawBuffer, 0, sizeof(uint32_t) * 5};
-        writes[8].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        writes[8].dstSet = computeDescriptorSets[i];
-        writes[8].dstBinding = 15;  // BINDING_TERRAIN_SHADOW_DRAW
-        writes[8].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-        writes[8].descriptorCount = 1;
-        writes[8].pBufferInfo = &shadowDrawInfo;
-
-        vkUpdateDescriptorSets(device, static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
+        DescriptorManager::SetWriter(device, computeDescriptorSets[i])
+            .writeBuffer(0, cbt.getBuffer(), 0, cbt.getBufferSize(), VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+            .writeBuffer(1, indirectDispatchBuffer, 0, sizeof(uint32_t) * 3, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+            .writeBuffer(2, indirectDrawBuffer, 0, sizeof(uint32_t) * 4, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+            .writeImage(3, heightMap.getView(), heightMap.getSampler())
+            .writeBuffer(4, uniformBuffers[i], 0, sizeof(TerrainUniforms))
+            .writeBuffer(5, visibleIndicesBuffer, 0, sizeof(uint32_t) * (1 + MAX_VISIBLE_TRIANGLES), VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+            .writeBuffer(6, cullIndirectDispatchBuffer, 0, sizeof(uint32_t) * 3, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+            .writeBuffer(14, shadowVisibleBuffer, 0, sizeof(uint32_t) * (1 + MAX_VISIBLE_TRIANGLES), VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+            .writeBuffer(15, shadowIndirectDrawBuffer, 0, sizeof(uint32_t) * 5, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+            .update();
     }
 
     return true;
@@ -542,14 +478,8 @@ bool TerrainSystem::createDispatcherPipeline() {
     pushConstantRange.offset = 0;
     pushConstantRange.size = sizeof(TerrainDispatcherPushConstants);
 
-    VkPipelineLayoutCreateInfo layoutInfo{};
-    layoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-    layoutInfo.setLayoutCount = 1;
-    layoutInfo.pSetLayouts = &computeDescriptorSetLayout;
-    layoutInfo.pushConstantRangeCount = 1;
-    layoutInfo.pPushConstantRanges = &pushConstantRange;
-
-    if (vkCreatePipelineLayout(device, &layoutInfo, nullptr, &dispatcherPipelineLayout) != VK_SUCCESS) {
+    dispatcherPipelineLayout = DescriptorManager::createPipelineLayout(device, computeDescriptorSetLayout, {pushConstantRange});
+    if (dispatcherPipelineLayout == VK_NULL_HANDLE) {
         vkDestroyShaderModule(device, shaderModule, nullptr);
         return false;
     }

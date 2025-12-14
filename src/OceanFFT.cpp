@@ -1,5 +1,7 @@
 #include "OceanFFT.h"
 #include "ShaderLoader.h"
+#include "DescriptorManager.h"
+#include "VulkanBarriers.h"
 #include "shaders/bindings.h"
 #include <SDL_log.h>
 #include <cmath>
@@ -418,41 +420,17 @@ bool OceanFFT::createComputePipelines() {
     // Spectrum Generation Pipeline
     // =========================================================================
     {
-        std::array<VkDescriptorSetLayoutBinding, 3> bindings{};
-
-        // H0 spectrum output
-        bindings[0].binding = Bindings::OCEAN_SPECTRUM_H0;
-        bindings[0].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
-        bindings[0].descriptorCount = 1;
-        bindings[0].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
-
-        // Omega spectrum output
-        bindings[1].binding = Bindings::OCEAN_SPECTRUM_OMEGA;
-        bindings[1].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
-        bindings[1].descriptorCount = 1;
-        bindings[1].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
-
-        // Parameters UBO
-        bindings[2].binding = Bindings::OCEAN_SPECTRUM_PARAMS;
-        bindings[2].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-        bindings[2].descriptorCount = 1;
-        bindings[2].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
-
-        VkDescriptorSetLayoutCreateInfo layoutInfo{};
-        layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-        layoutInfo.bindingCount = static_cast<uint32_t>(bindings.size());
-        layoutInfo.pBindings = bindings.data();
-
-        if (vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, &spectrumDescLayout) != VK_SUCCESS) {
+        spectrumDescLayout = DescriptorManager::LayoutBuilder(device)
+            .addBinding(Bindings::OCEAN_SPECTRUM_H0, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, VK_SHADER_STAGE_COMPUTE_BIT)
+            .addBinding(Bindings::OCEAN_SPECTRUM_OMEGA, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, VK_SHADER_STAGE_COMPUTE_BIT)
+            .addBinding(Bindings::OCEAN_SPECTRUM_PARAMS, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_COMPUTE_BIT)
+            .build();
+        if (spectrumDescLayout == VK_NULL_HANDLE) {
             return false;
         }
 
-        VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
-        pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-        pipelineLayoutInfo.setLayoutCount = 1;
-        pipelineLayoutInfo.pSetLayouts = &spectrumDescLayout;
-
-        if (vkCreatePipelineLayout(device, &pipelineLayoutInfo, nullptr, &spectrumPipelineLayout) != VK_SUCCESS) {
+        spectrumPipelineLayout = DescriptorManager::createPipelineLayout(device, spectrumDescLayout);
+        if (spectrumPipelineLayout == VK_NULL_HANDLE) {
             return false;
         }
 
@@ -482,41 +460,14 @@ bool OceanFFT::createComputePipelines() {
     // Time Evolution Pipeline
     // =========================================================================
     {
-        std::array<VkDescriptorSetLayoutBinding, 5> bindings{};
-
-        // Output spectra
-        bindings[0].binding = Bindings::OCEAN_HKT_DY;
-        bindings[0].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
-        bindings[0].descriptorCount = 1;
-        bindings[0].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
-
-        bindings[1].binding = Bindings::OCEAN_HKT_DX;
-        bindings[1].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
-        bindings[1].descriptorCount = 1;
-        bindings[1].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
-
-        bindings[2].binding = Bindings::OCEAN_HKT_DZ;
-        bindings[2].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
-        bindings[2].descriptorCount = 1;
-        bindings[2].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
-
-        // Input spectra
-        bindings[3].binding = Bindings::OCEAN_H0_INPUT;
-        bindings[3].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        bindings[3].descriptorCount = 1;
-        bindings[3].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
-
-        bindings[4].binding = Bindings::OCEAN_OMEGA_INPUT;
-        bindings[4].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        bindings[4].descriptorCount = 1;
-        bindings[4].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
-
-        VkDescriptorSetLayoutCreateInfo layoutInfo{};
-        layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-        layoutInfo.bindingCount = static_cast<uint32_t>(bindings.size());
-        layoutInfo.pBindings = bindings.data();
-
-        if (vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, &timeEvolutionDescLayout) != VK_SUCCESS) {
+        timeEvolutionDescLayout = DescriptorManager::LayoutBuilder(device)
+            .addBinding(Bindings::OCEAN_HKT_DY, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, VK_SHADER_STAGE_COMPUTE_BIT)
+            .addBinding(Bindings::OCEAN_HKT_DX, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, VK_SHADER_STAGE_COMPUTE_BIT)
+            .addBinding(Bindings::OCEAN_HKT_DZ, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, VK_SHADER_STAGE_COMPUTE_BIT)
+            .addBinding(Bindings::OCEAN_H0_INPUT, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_COMPUTE_BIT)
+            .addBinding(Bindings::OCEAN_OMEGA_INPUT, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_COMPUTE_BIT)
+            .build();
+        if (timeEvolutionDescLayout == VK_NULL_HANDLE) {
             return false;
         }
 
@@ -526,14 +477,8 @@ bool OceanFFT::createComputePipelines() {
         pushRange.offset = 0;
         pushRange.size = sizeof(float) * 4;  // time, resolution, oceanSize, choppiness
 
-        VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
-        pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-        pipelineLayoutInfo.setLayoutCount = 1;
-        pipelineLayoutInfo.pSetLayouts = &timeEvolutionDescLayout;
-        pipelineLayoutInfo.pushConstantRangeCount = 1;
-        pipelineLayoutInfo.pPushConstantRanges = &pushRange;
-
-        if (vkCreatePipelineLayout(device, &pipelineLayoutInfo, nullptr, &timeEvolutionPipelineLayout) != VK_SUCCESS) {
+        timeEvolutionPipelineLayout = DescriptorManager::createPipelineLayout(device, timeEvolutionDescLayout, {pushRange});
+        if (timeEvolutionPipelineLayout == VK_NULL_HANDLE) {
             return false;
         }
 
@@ -563,24 +508,11 @@ bool OceanFFT::createComputePipelines() {
     // FFT Pipeline
     // =========================================================================
     {
-        std::array<VkDescriptorSetLayoutBinding, 2> bindings{};
-
-        bindings[0].binding = Bindings::OCEAN_FFT_INPUT;
-        bindings[0].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
-        bindings[0].descriptorCount = 1;
-        bindings[0].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
-
-        bindings[1].binding = Bindings::OCEAN_FFT_OUTPUT;
-        bindings[1].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
-        bindings[1].descriptorCount = 1;
-        bindings[1].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
-
-        VkDescriptorSetLayoutCreateInfo layoutInfo{};
-        layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-        layoutInfo.bindingCount = static_cast<uint32_t>(bindings.size());
-        layoutInfo.pBindings = bindings.data();
-
-        if (vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, &fftDescLayout) != VK_SUCCESS) {
+        fftDescLayout = DescriptorManager::LayoutBuilder(device)
+            .addBinding(Bindings::OCEAN_FFT_INPUT, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, VK_SHADER_STAGE_COMPUTE_BIT)
+            .addBinding(Bindings::OCEAN_FFT_OUTPUT, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, VK_SHADER_STAGE_COMPUTE_BIT)
+            .build();
+        if (fftDescLayout == VK_NULL_HANDLE) {
             return false;
         }
 
@@ -590,14 +522,8 @@ bool OceanFFT::createComputePipelines() {
         pushRange.offset = 0;
         pushRange.size = sizeof(int) * 4;
 
-        VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
-        pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-        pipelineLayoutInfo.setLayoutCount = 1;
-        pipelineLayoutInfo.pSetLayouts = &fftDescLayout;
-        pipelineLayoutInfo.pushConstantRangeCount = 1;
-        pipelineLayoutInfo.pPushConstantRanges = &pushRange;
-
-        if (vkCreatePipelineLayout(device, &pipelineLayoutInfo, nullptr, &fftPipelineLayout) != VK_SUCCESS) {
+        fftPipelineLayout = DescriptorManager::createPipelineLayout(device, fftDescLayout, {pushRange});
+        if (fftPipelineLayout == VK_NULL_HANDLE) {
             return false;
         }
 
@@ -627,46 +553,15 @@ bool OceanFFT::createComputePipelines() {
     // Displacement Generation Pipeline
     // =========================================================================
     {
-        std::array<VkDescriptorSetLayoutBinding, 6> bindings{};
-
-        // Input FFT results
-        bindings[0].binding = Bindings::OCEAN_DISP_DY;
-        bindings[0].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
-        bindings[0].descriptorCount = 1;
-        bindings[0].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
-
-        bindings[1].binding = Bindings::OCEAN_DISP_DX;
-        bindings[1].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
-        bindings[1].descriptorCount = 1;
-        bindings[1].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
-
-        bindings[2].binding = Bindings::OCEAN_DISP_DZ;
-        bindings[2].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
-        bindings[2].descriptorCount = 1;
-        bindings[2].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
-
-        // Outputs
-        bindings[3].binding = Bindings::OCEAN_DISP_OUTPUT;
-        bindings[3].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
-        bindings[3].descriptorCount = 1;
-        bindings[3].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
-
-        bindings[4].binding = Bindings::OCEAN_NORMAL_OUTPUT;
-        bindings[4].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
-        bindings[4].descriptorCount = 1;
-        bindings[4].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
-
-        bindings[5].binding = Bindings::OCEAN_FOAM_OUTPUT;
-        bindings[5].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
-        bindings[5].descriptorCount = 1;
-        bindings[5].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
-
-        VkDescriptorSetLayoutCreateInfo layoutInfo{};
-        layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-        layoutInfo.bindingCount = static_cast<uint32_t>(bindings.size());
-        layoutInfo.pBindings = bindings.data();
-
-        if (vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, &displacementDescLayout) != VK_SUCCESS) {
+        displacementDescLayout = DescriptorManager::LayoutBuilder(device)
+            .addBinding(Bindings::OCEAN_DISP_DY, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, VK_SHADER_STAGE_COMPUTE_BIT)
+            .addBinding(Bindings::OCEAN_DISP_DX, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, VK_SHADER_STAGE_COMPUTE_BIT)
+            .addBinding(Bindings::OCEAN_DISP_DZ, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, VK_SHADER_STAGE_COMPUTE_BIT)
+            .addBinding(Bindings::OCEAN_DISP_OUTPUT, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, VK_SHADER_STAGE_COMPUTE_BIT)
+            .addBinding(Bindings::OCEAN_NORMAL_OUTPUT, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, VK_SHADER_STAGE_COMPUTE_BIT)
+            .addBinding(Bindings::OCEAN_FOAM_OUTPUT, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, VK_SHADER_STAGE_COMPUTE_BIT)
+            .build();
+        if (displacementDescLayout == VK_NULL_HANDLE) {
             return false;
         }
 
@@ -676,14 +571,8 @@ bool OceanFFT::createComputePipelines() {
         pushRange.offset = 0;
         pushRange.size = sizeof(float) * 6;  // resolution, oceanSize, heightScale, foamThreshold, foamDecay, normalStrength
 
-        VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
-        pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-        pipelineLayoutInfo.setLayoutCount = 1;
-        pipelineLayoutInfo.pSetLayouts = &displacementDescLayout;
-        pipelineLayoutInfo.pushConstantRangeCount = 1;
-        pipelineLayoutInfo.pPushConstantRanges = &pushRange;
-
-        if (vkCreatePipelineLayout(device, &pipelineLayoutInfo, nullptr, &displacementPipelineLayout) != VK_SUCCESS) {
+        displacementPipelineLayout = DescriptorManager::createPipelineLayout(device, displacementDescLayout, {pushRange});
+        if (displacementPipelineLayout == VK_NULL_HANDLE) {
             return false;
         }
 
@@ -779,44 +668,11 @@ bool OceanFFT::createDescriptorSets() {
                 return false;
             }
 
-            // Update spectrum descriptor set
-            VkDescriptorImageInfo h0Info{};
-            h0Info.imageView = cascades[i].h0SpectrumView;
-            h0Info.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
-
-            VkDescriptorImageInfo omegaInfo{};
-            omegaInfo.imageView = cascades[i].omegaSpectrumView;
-            omegaInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
-
-            VkDescriptorBufferInfo uboInfo{};
-            uboInfo.buffer = spectrumUBOs[i];
-            uboInfo.offset = 0;
-            uboInfo.range = sizeof(SpectrumUBO);
-
-            std::array<VkWriteDescriptorSet, 3> writes{};
-
-            writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-            writes[0].dstSet = spectrumDescSets[i];
-            writes[0].dstBinding = Bindings::OCEAN_SPECTRUM_H0;
-            writes[0].descriptorCount = 1;
-            writes[0].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
-            writes[0].pImageInfo = &h0Info;
-
-            writes[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-            writes[1].dstSet = spectrumDescSets[i];
-            writes[1].dstBinding = Bindings::OCEAN_SPECTRUM_OMEGA;
-            writes[1].descriptorCount = 1;
-            writes[1].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
-            writes[1].pImageInfo = &omegaInfo;
-
-            writes[2].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-            writes[2].dstSet = spectrumDescSets[i];
-            writes[2].dstBinding = Bindings::OCEAN_SPECTRUM_PARAMS;
-            writes[2].descriptorCount = 1;
-            writes[2].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-            writes[2].pBufferInfo = &uboInfo;
-
-            vkUpdateDescriptorSets(device, static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
+            DescriptorManager::SetWriter(device, spectrumDescSets[i])
+                .writeStorageImage(Bindings::OCEAN_SPECTRUM_H0, cascades[i].h0SpectrumView)
+                .writeStorageImage(Bindings::OCEAN_SPECTRUM_OMEGA, cascades[i].omegaSpectrumView)
+                .writeBuffer(Bindings::OCEAN_SPECTRUM_PARAMS, spectrumUBOs[i], 0, sizeof(SpectrumUBO))
+                .update();
         }
 
         // Time evolution descriptor set
@@ -831,66 +687,13 @@ bool OceanFFT::createDescriptorSets() {
                 return false;
             }
 
-            VkDescriptorImageInfo hktDyInfo{};
-            hktDyInfo.imageView = cascades[i].hktDyView;
-            hktDyInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
-
-            VkDescriptorImageInfo hktDxInfo{};
-            hktDxInfo.imageView = cascades[i].hktDxView;
-            hktDxInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
-
-            VkDescriptorImageInfo hktDzInfo{};
-            hktDzInfo.imageView = cascades[i].hktDzView;
-            hktDzInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
-
-            VkDescriptorImageInfo h0SamplerInfo{};
-            h0SamplerInfo.sampler = sampler;
-            h0SamplerInfo.imageView = cascades[i].h0SpectrumView;
-            h0SamplerInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-
-            VkDescriptorImageInfo omegaSamplerInfo{};
-            omegaSamplerInfo.sampler = sampler;
-            omegaSamplerInfo.imageView = cascades[i].omegaSpectrumView;
-            omegaSamplerInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-
-            std::array<VkWriteDescriptorSet, 5> writes{};
-
-            writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-            writes[0].dstSet = timeEvolutionDescSets[i];
-            writes[0].dstBinding = Bindings::OCEAN_HKT_DY;
-            writes[0].descriptorCount = 1;
-            writes[0].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
-            writes[0].pImageInfo = &hktDyInfo;
-
-            writes[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-            writes[1].dstSet = timeEvolutionDescSets[i];
-            writes[1].dstBinding = Bindings::OCEAN_HKT_DX;
-            writes[1].descriptorCount = 1;
-            writes[1].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
-            writes[1].pImageInfo = &hktDxInfo;
-
-            writes[2].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-            writes[2].dstSet = timeEvolutionDescSets[i];
-            writes[2].dstBinding = Bindings::OCEAN_HKT_DZ;
-            writes[2].descriptorCount = 1;
-            writes[2].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
-            writes[2].pImageInfo = &hktDzInfo;
-
-            writes[3].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-            writes[3].dstSet = timeEvolutionDescSets[i];
-            writes[3].dstBinding = Bindings::OCEAN_H0_INPUT;
-            writes[3].descriptorCount = 1;
-            writes[3].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-            writes[3].pImageInfo = &h0SamplerInfo;
-
-            writes[4].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-            writes[4].dstSet = timeEvolutionDescSets[i];
-            writes[4].dstBinding = Bindings::OCEAN_OMEGA_INPUT;
-            writes[4].descriptorCount = 1;
-            writes[4].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-            writes[4].pImageInfo = &omegaSamplerInfo;
-
-            vkUpdateDescriptorSets(device, static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
+            DescriptorManager::SetWriter(device, timeEvolutionDescSets[i])
+                .writeStorageImage(Bindings::OCEAN_HKT_DY, cascades[i].hktDyView)
+                .writeStorageImage(Bindings::OCEAN_HKT_DX, cascades[i].hktDxView)
+                .writeStorageImage(Bindings::OCEAN_HKT_DZ, cascades[i].hktDzView)
+                .writeImage(Bindings::OCEAN_H0_INPUT, cascades[i].h0SpectrumView, sampler)
+                .writeImage(Bindings::OCEAN_OMEGA_INPUT, cascades[i].omegaSpectrumView, sampler)
+                .update();
         }
 
         // Displacement descriptor set
@@ -929,13 +732,7 @@ void OceanFFT::update(VkCommandBuffer cmd, uint32_t frameIndex, float time) {
         recordTimeEvolution(cmd, cascade, time);
 
         // Insert barrier between time evolution and FFT
-        VkMemoryBarrier barrier{};
-        barrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
-        barrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
-        barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-        vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-                             VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0,
-                             1, &barrier, 0, nullptr, 0, nullptr);
+        Barriers::computeToCompute(cmd);
 
         // FFT for each displacement component
         recordFFT(cmd, cascade, cascade.hktDy, cascade.hktDyView,
@@ -946,22 +743,18 @@ void OceanFFT::update(VkCommandBuffer cmd, uint32_t frameIndex, float time) {
                   cascade.fftPing, cascade.fftPingView);
 
         // Barrier before displacement generation
-        vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-                             VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0,
-                             1, &barrier, 0, nullptr, 0, nullptr);
+        Barriers::computeToCompute(cmd);
 
         // Generate final displacement/normal/foam maps
         recordDisplacementGeneration(cmd, cascade);
     }
 
     // Final barrier before water shader can sample
-    VkMemoryBarrier finalBarrier{};
-    finalBarrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
-    finalBarrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
-    finalBarrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-    vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-                         VK_PIPELINE_STAGE_VERTEX_SHADER_BIT | VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0,
-                         1, &finalBarrier, 0, nullptr, 0, nullptr);
+    Barriers::BarrierBatch(cmd,
+        VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+        VK_PIPELINE_STAGE_VERTEX_SHADER_BIT | VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT)
+        .memoryBarrier(VK_ACCESS_SHADER_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT)
+        .submit();
 }
 
 void OceanFFT::regenerateSpectrum(VkCommandBuffer cmd) {
@@ -984,39 +777,17 @@ void OceanFFT::regenerateSpectrum(VkCommandBuffer cmd) {
     }
 
     // Barrier after spectrum generation
-    VkMemoryBarrier barrier{};
-    barrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
-    barrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
-    barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-    vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-                         VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0,
-                         1, &barrier, 0, nullptr, 0, nullptr);
+    Barriers::computeToCompute(cmd);
 }
 
 void OceanFFT::recordSpectrumGeneration(VkCommandBuffer cmd, Cascade& cascade, uint32_t seed) {
-    // Transition images to general layout
-    std::array<VkImageMemoryBarrier, 2> barriers{};
-
-    barriers[0].sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-    barriers[0].srcAccessMask = 0;
-    barriers[0].dstAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
-    barriers[0].oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-    barriers[0].newLayout = VK_IMAGE_LAYOUT_GENERAL;
-    barriers[0].image = cascade.h0Spectrum;
-    barriers[0].subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
-
-    barriers[1].sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-    barriers[1].srcAccessMask = 0;
-    barriers[1].dstAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
-    barriers[1].oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-    barriers[1].newLayout = VK_IMAGE_LAYOUT_GENERAL;
-    barriers[1].image = cascade.omegaSpectrum;
-    barriers[1].subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
-
-    vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
-                         VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0,
-                         0, nullptr, 0, nullptr,
-                         static_cast<uint32_t>(barriers.size()), barriers.data());
+    // Transition images to general layout for compute writes
+    Barriers::BarrierBatch(cmd, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT)
+        .imageTransition(cascade.h0Spectrum, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL,
+                         0, VK_ACCESS_SHADER_WRITE_BIT)
+        .imageTransition(cascade.omegaSpectrum, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL,
+                         0, VK_ACCESS_SHADER_WRITE_BIT)
+        .submit();
 
     // Bind pipeline and descriptor set
     int cascadeIndex = static_cast<int>(&cascade - &cascades[0]);
@@ -1030,45 +801,26 @@ void OceanFFT::recordSpectrumGeneration(VkCommandBuffer cmd, Cascade& cascade, u
     vkCmdDispatch(cmd, groupCount, groupCount, 1);
 
     // Transition to shader read for time evolution
-    barriers[0].srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
-    barriers[0].dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-    barriers[0].oldLayout = VK_IMAGE_LAYOUT_GENERAL;
-    barriers[0].newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-
-    barriers[1].srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
-    barriers[1].dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-    barriers[1].oldLayout = VK_IMAGE_LAYOUT_GENERAL;
-    barriers[1].newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-
-    vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-                         VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0,
-                         0, nullptr, 0, nullptr,
-                         static_cast<uint32_t>(barriers.size()), barriers.data());
+    Barriers::BarrierBatch(cmd, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT)
+        .imageTransition(cascade.h0Spectrum, VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                         VK_ACCESS_SHADER_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT)
+        .imageTransition(cascade.omegaSpectrum, VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                         VK_ACCESS_SHADER_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT)
+        .submit();
 }
 
 void OceanFFT::recordTimeEvolution(VkCommandBuffer cmd, Cascade& cascade, float time) {
     int cascadeIndex = static_cast<int>(&cascade - &cascades[0]);
 
     // Transition output images to general layout
-    std::array<VkImageMemoryBarrier, 3> barriers{};
-    barriers[0].sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-    barriers[0].srcAccessMask = 0;
-    barriers[0].dstAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
-    barriers[0].oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-    barriers[0].newLayout = VK_IMAGE_LAYOUT_GENERAL;
-    barriers[0].image = cascade.hktDy;
-    barriers[0].subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
-
-    barriers[1] = barriers[0];
-    barriers[1].image = cascade.hktDx;
-
-    barriers[2] = barriers[0];
-    barriers[2].image = cascade.hktDz;
-
-    vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
-                         VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0,
-                         0, nullptr, 0, nullptr,
-                         static_cast<uint32_t>(barriers.size()), barriers.data());
+    Barriers::BarrierBatch(cmd, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT)
+        .imageTransition(cascade.hktDy, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL,
+                         0, VK_ACCESS_SHADER_WRITE_BIT)
+        .imageTransition(cascade.hktDx, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL,
+                         0, VK_ACCESS_SHADER_WRITE_BIT)
+        .imageTransition(cascade.hktDz, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL,
+                         0, VK_ACCESS_SHADER_WRITE_BIT)
+        .submit();
 
     // Bind pipeline
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, timeEvolutionPipeline);
@@ -1131,31 +883,10 @@ void OceanFFT::recordFFT(VkCommandBuffer cmd, Cascade& cascade,
 
     // Horizontal FFT passes
     for (int stage = 0; stage < numStages; stage++) {
-        // Update descriptor set
-        VkDescriptorImageInfo inputInfo{};
-        inputInfo.imageView = currentInputView;
-        inputInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
-
-        VkDescriptorImageInfo outputInfo{};
-        outputInfo.imageView = currentOutputView;
-        outputInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
-
-        std::array<VkWriteDescriptorSet, 2> writes{};
-        writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        writes[0].dstSet = fftDescSet;
-        writes[0].dstBinding = Bindings::OCEAN_FFT_INPUT;
-        writes[0].descriptorCount = 1;
-        writes[0].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
-        writes[0].pImageInfo = &inputInfo;
-
-        writes[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        writes[1].dstSet = fftDescSet;
-        writes[1].dstBinding = Bindings::OCEAN_FFT_OUTPUT;
-        writes[1].descriptorCount = 1;
-        writes[1].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
-        writes[1].pImageInfo = &outputInfo;
-
-        vkUpdateDescriptorSets(device, static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
+        DescriptorManager::SetWriter(device, fftDescSet)
+            .writeStorageImage(Bindings::OCEAN_FFT_INPUT, currentInputView)
+            .writeStorageImage(Bindings::OCEAN_FFT_OUTPUT, currentOutputView)
+            .update();
 
         vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, fftPipelineLayout,
                                 0, 1, &fftDescSet, 0, nullptr);
@@ -1168,13 +899,7 @@ void OceanFFT::recordFFT(VkCommandBuffer cmd, Cascade& cascade,
         vkCmdDispatch(cmd, groupCount, groupCount, 1);
 
         // Barrier between stages
-        VkMemoryBarrier barrier{};
-        barrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
-        barrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
-        barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-        vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-                             VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0,
-                             1, &barrier, 0, nullptr, 0, nullptr);
+        Barriers::computeToCompute(cmd);
 
         // Swap buffers for ping-pong
         std::swap(currentInput, currentOutput);
@@ -1197,30 +922,10 @@ void OceanFFT::recordFFT(VkCommandBuffer cmd, Cascade& cascade,
 
     // Vertical FFT passes
     for (int stage = 0; stage < numStages; stage++) {
-        VkDescriptorImageInfo inputInfo{};
-        inputInfo.imageView = currentInputView;
-        inputInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
-
-        VkDescriptorImageInfo outputInfo{};
-        outputInfo.imageView = currentOutputView;
-        outputInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
-
-        std::array<VkWriteDescriptorSet, 2> writes{};
-        writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        writes[0].dstSet = fftDescSet;
-        writes[0].dstBinding = Bindings::OCEAN_FFT_INPUT;
-        writes[0].descriptorCount = 1;
-        writes[0].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
-        writes[0].pImageInfo = &inputInfo;
-
-        writes[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        writes[1].dstSet = fftDescSet;
-        writes[1].dstBinding = Bindings::OCEAN_FFT_OUTPUT;
-        writes[1].descriptorCount = 1;
-        writes[1].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
-        writes[1].pImageInfo = &outputInfo;
-
-        vkUpdateDescriptorSets(device, static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
+        DescriptorManager::SetWriter(device, fftDescSet)
+            .writeStorageImage(Bindings::OCEAN_FFT_INPUT, currentInputView)
+            .writeStorageImage(Bindings::OCEAN_FFT_OUTPUT, currentOutputView)
+            .update();
 
         vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, fftPipelineLayout,
                                 0, 1, &fftDescSet, 0, nullptr);
@@ -1232,13 +937,7 @@ void OceanFFT::recordFFT(VkCommandBuffer cmd, Cascade& cascade,
 
         vkCmdDispatch(cmd, groupCount, groupCount, 1);
 
-        VkMemoryBarrier barrier{};
-        barrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
-        barrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
-        barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-        vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-                             VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0,
-                             1, &barrier, 0, nullptr, 0, nullptr);
+        Barriers::computeToCompute(cmd);
 
         std::swap(currentInput, currentOutput);
         std::swap(currentInputView, currentOutputView);
@@ -1256,96 +955,25 @@ void OceanFFT::recordFFT(VkCommandBuffer cmd, Cascade& cascade,
 void OceanFFT::recordDisplacementGeneration(VkCommandBuffer cmd, Cascade& cascade) {
     int cascadeIndex = static_cast<int>(&cascade - &cascades[0]);
 
-    // Transition output images
-    std::array<VkImageMemoryBarrier, 3> barriers{};
-    barriers[0].sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-    barriers[0].srcAccessMask = 0;
-    barriers[0].dstAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
-    barriers[0].oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-    barriers[0].newLayout = VK_IMAGE_LAYOUT_GENERAL;
-    barriers[0].image = cascade.displacementMap;
-    barriers[0].subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
-
-    barriers[1] = barriers[0];
-    barriers[1].image = cascade.normalMap;
-
-    barriers[2] = barriers[0];
-    barriers[2].image = cascade.foamMap;
-
-    vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
-                         VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0,
-                         0, nullptr, 0, nullptr,
-                         static_cast<uint32_t>(barriers.size()), barriers.data());
+    // Transition output images to general layout for compute writes
+    Barriers::BarrierBatch(cmd, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT)
+        .imageTransition(cascade.displacementMap, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL,
+                         0, VK_ACCESS_SHADER_WRITE_BIT)
+        .imageTransition(cascade.normalMap, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL,
+                         0, VK_ACCESS_SHADER_WRITE_BIT)
+        .imageTransition(cascade.foamMap, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL,
+                         0, VK_ACCESS_SHADER_WRITE_BIT)
+        .submit();
 
     // Update displacement descriptor set with current FFT results
-    VkDescriptorImageInfo dyInfo{};
-    dyInfo.imageView = cascade.fftPingView;  // Final result location
-    dyInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
-
-    VkDescriptorImageInfo dxInfo{};
-    dxInfo.imageView = cascade.fftPongView;
-    dxInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
-
-    VkDescriptorImageInfo dzInfo{};
-    dzInfo.imageView = cascade.fftPingView;
-    dzInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
-
-    VkDescriptorImageInfo dispOutInfo{};
-    dispOutInfo.imageView = cascade.displacementMapView;
-    dispOutInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
-
-    VkDescriptorImageInfo normalOutInfo{};
-    normalOutInfo.imageView = cascade.normalMapView;
-    normalOutInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
-
-    VkDescriptorImageInfo foamOutInfo{};
-    foamOutInfo.imageView = cascade.foamMapView;
-    foamOutInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
-
-    std::array<VkWriteDescriptorSet, 6> writes{};
-    writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    writes[0].dstSet = displacementDescSets[cascadeIndex];
-    writes[0].dstBinding = Bindings::OCEAN_DISP_DY;
-    writes[0].descriptorCount = 1;
-    writes[0].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
-    writes[0].pImageInfo = &dyInfo;
-
-    writes[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    writes[1].dstSet = displacementDescSets[cascadeIndex];
-    writes[1].dstBinding = Bindings::OCEAN_DISP_DX;
-    writes[1].descriptorCount = 1;
-    writes[1].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
-    writes[1].pImageInfo = &dxInfo;
-
-    writes[2].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    writes[2].dstSet = displacementDescSets[cascadeIndex];
-    writes[2].dstBinding = Bindings::OCEAN_DISP_DZ;
-    writes[2].descriptorCount = 1;
-    writes[2].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
-    writes[2].pImageInfo = &dzInfo;
-
-    writes[3].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    writes[3].dstSet = displacementDescSets[cascadeIndex];
-    writes[3].dstBinding = Bindings::OCEAN_DISP_OUTPUT;
-    writes[3].descriptorCount = 1;
-    writes[3].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
-    writes[3].pImageInfo = &dispOutInfo;
-
-    writes[4].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    writes[4].dstSet = displacementDescSets[cascadeIndex];
-    writes[4].dstBinding = Bindings::OCEAN_NORMAL_OUTPUT;
-    writes[4].descriptorCount = 1;
-    writes[4].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
-    writes[4].pImageInfo = &normalOutInfo;
-
-    writes[5].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    writes[5].dstSet = displacementDescSets[cascadeIndex];
-    writes[5].dstBinding = Bindings::OCEAN_FOAM_OUTPUT;
-    writes[5].descriptorCount = 1;
-    writes[5].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
-    writes[5].pImageInfo = &foamOutInfo;
-
-    vkUpdateDescriptorSets(device, static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
+    DescriptorManager::SetWriter(device, displacementDescSets[cascadeIndex])
+        .writeStorageImage(Bindings::OCEAN_DISP_DY, cascade.fftPingView)
+        .writeStorageImage(Bindings::OCEAN_DISP_DX, cascade.fftPongView)
+        .writeStorageImage(Bindings::OCEAN_DISP_DZ, cascade.fftPingView)
+        .writeStorageImage(Bindings::OCEAN_DISP_OUTPUT, cascade.displacementMapView)
+        .writeStorageImage(Bindings::OCEAN_NORMAL_OUTPUT, cascade.normalMapView)
+        .writeStorageImage(Bindings::OCEAN_FOAM_OUTPUT, cascade.foamMapView)
+        .update();
 
     // Bind and dispatch
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, displacementPipeline);
@@ -1377,25 +1005,15 @@ void OceanFFT::recordDisplacementGeneration(VkCommandBuffer cmd, Cascade& cascad
     vkCmdDispatch(cmd, groupCount, groupCount, 1);
 
     // Transition outputs to shader read
-    barriers[0].srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
-    barriers[0].dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-    barriers[0].oldLayout = VK_IMAGE_LAYOUT_GENERAL;
-    barriers[0].newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-
-    barriers[1].srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
-    barriers[1].dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-    barriers[1].oldLayout = VK_IMAGE_LAYOUT_GENERAL;
-    barriers[1].newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-
-    barriers[2].srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
-    barriers[2].dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-    barriers[2].oldLayout = VK_IMAGE_LAYOUT_GENERAL;
-    barriers[2].newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-
-    vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-                         VK_PIPELINE_STAGE_VERTEX_SHADER_BIT | VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0,
-                         0, nullptr, 0, nullptr,
-                         static_cast<uint32_t>(barriers.size()), barriers.data());
+    Barriers::BarrierBatch(cmd, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                           VK_PIPELINE_STAGE_VERTEX_SHADER_BIT | VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT)
+        .imageTransition(cascade.displacementMap, VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                         VK_ACCESS_SHADER_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT)
+        .imageTransition(cascade.normalMap, VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                         VK_ACCESS_SHADER_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT)
+        .imageTransition(cascade.foamMap, VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                         VK_ACCESS_SHADER_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT)
+        .submit();
 }
 
 VkImageView OceanFFT::getDisplacementView(int cascade) const {

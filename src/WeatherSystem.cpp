@@ -443,11 +443,7 @@ void WeatherSystem::recordResetAndCompute(VkCommandBuffer cmd, uint32_t frameInd
     vkCmdDispatch(cmd, workgroupCount, 1, 1);
 
     // Memory barrier: compute write -> vertex shader read and indirect read
-    Barriers::BarrierBatch(cmd)
-        .setStages(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-                   VK_PIPELINE_STAGE_DRAW_INDIRECT_BIT | VK_PIPELINE_STAGE_VERTEX_SHADER_BIT)
-        .memoryBarrier(VK_ACCESS_SHADER_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_INDIRECT_COMMAND_READ_BIT)
-        .submit();
+    Barriers::computeToVertexAndIndirectDraw(cmd);
 }
 
 void WeatherSystem::recordDraw(VkCommandBuffer cmd, uint32_t frameIndex, float time) {

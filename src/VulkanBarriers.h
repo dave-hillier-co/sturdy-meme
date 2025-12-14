@@ -85,6 +85,24 @@ inline void computeToIndirectDraw(VkCommandBuffer cmd) {
 }
 
 /**
+ * Synchronize compute shader output for vertex shader storage buffer reads and indirect draw.
+ * Use for particle systems where compute shaders write instance data that vertex shaders
+ * read as storage buffers, combined with indirect draw commands.
+ *
+ * This differs from computeToIndirectDraw by targeting the vertex shader stage for
+ * storage buffer reads rather than vertex input stage for vertex attributes.
+ */
+inline void computeToVertexAndIndirectDraw(VkCommandBuffer cmd) {
+    VkMemoryBarrier barrier{VK_STRUCTURE_TYPE_MEMORY_BARRIER};
+    barrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+    barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_INDIRECT_COMMAND_READ_BIT;
+    vkCmdPipelineBarrier(cmd,
+        VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+        VK_PIPELINE_STAGE_DRAW_INDIRECT_BIT | VK_PIPELINE_STAGE_VERTEX_SHADER_BIT,
+        0, 1, &barrier, 0, nullptr, 0, nullptr);
+}
+
+/**
  * Synchronize compute shader output for fragment shader sampling.
  * Use when transitioning from compute writes to texture sampling in fragment shaders.
  */
@@ -123,6 +141,21 @@ inline void transferToFragmentRead(VkCommandBuffer cmd) {
     vkCmdPipelineBarrier(cmd,
         VK_PIPELINE_STAGE_TRANSFER_BIT,
         VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+        0, 1, &barrier, 0, nullptr, 0, nullptr);
+}
+
+/**
+ * Synchronize transfer operations before CPU host access.
+ * Use after vkCmdCopyBuffer to a host-visible readback buffer
+ * when the CPU needs to read the results.
+ */
+inline void transferToHostRead(VkCommandBuffer cmd) {
+    VkMemoryBarrier barrier{VK_STRUCTURE_TYPE_MEMORY_BARRIER};
+    barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+    barrier.dstAccessMask = VK_ACCESS_HOST_READ_BIT;
+    vkCmdPipelineBarrier(cmd,
+        VK_PIPELINE_STAGE_TRANSFER_BIT,
+        VK_PIPELINE_STAGE_HOST_BIT,
         0, 1, &barrier, 0, nullptr, 0, nullptr);
 }
 

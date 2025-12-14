@@ -746,100 +746,148 @@ bool TerrainTileCache::loadTileCPUOnly(TileCoord coord, uint32_t lod) {
 
 #ifdef DEBUG_LOD_HEIGHTS
 void TerrainTileCache::debugCrossReferenceLODs(float worldX, float worldZ) {
-    SDL_Log("=== DEBUG LOD Cross-Reference at world (%.1f, %.1f) ===", worldX, worldZ);
+    // Find the coarsest available LOD and use EXACT PIXEL positions from it.
+    // These pixel centers in the coarse LOD should have matching heights when
+    // sampled in finer LOD levels (since finer LODs have more resolution).
 
-    // Sample height from each LOD level
-    float heights[4] = {0, 0, 0, 0};
-    bool found[4] = {false, false, false, false};
+    SDL_Log("=== DEBUG LOD Cross-Reference (pixel-aligned) near world (%.1f, %.1f) ===", worldX, worldZ);
 
-    for (uint32_t lod = 0; lod < numLODLevels && lod < 4; lod++) {
-        // Calculate which tile contains this position at this LOD
-        uint32_t lodTilesX = tilesX >> lod;
-        uint32_t lodTilesZ = tilesZ >> lod;
-        if (lodTilesX < 1) lodTilesX = 1;
-        if (lodTilesZ < 1) lodTilesZ = 1;
+    // Find coarsest LOD tile that covers this position
+    uint32_t coarsestLOD = numLODLevels - 1;
+    if (coarsestLOD > 3) coarsestLOD = 3;  // Cap at LOD3
 
-        float normX = (worldX / terrainSize) + 0.5f;
-        float normZ = (worldZ / terrainSize) + 0.5f;
-        normX = std::clamp(normX, 0.0f, 0.9999f);
-        normZ = std::clamp(normZ, 0.0f, 0.9999f);
+    // Calculate tile coord at coarsest LOD
+    uint32_t coarseTilesX = tilesX >> coarsestLOD;
+    uint32_t coarseTilesZ = tilesZ >> coarsestLOD;
+    if (coarseTilesX < 1) coarseTilesX = 1;
+    if (coarseTilesZ < 1) coarseTilesZ = 1;
 
-        TileCoord coord;
-        coord.x = static_cast<int32_t>(normX * lodTilesX);
-        coord.z = static_cast<int32_t>(normZ * lodTilesZ);
+    float normX = (worldX / terrainSize) + 0.5f;
+    float normZ = (worldZ / terrainSize) + 0.5f;
+    normX = std::clamp(normX, 0.0f, 0.9999f);
+    normZ = std::clamp(normZ, 0.0f, 0.9999f);
 
-        // Try to load tile CPU data
-        if (!loadTileCPUOnly(coord, lod)) {
-            SDL_Log("  LOD%u: Tile (%d,%d) - FAILED TO LOAD", lod, coord.x, coord.z);
-            continue;
-        }
+    TileCoord coarseCoord;
+    coarseCoord.x = static_cast<int32_t>(normX * coarseTilesX);
+    coarseCoord.z = static_cast<int32_t>(normZ * coarseTilesZ);
 
-        // Get the tile
-        uint64_t key = makeTileKey(coord, lod);
-        auto it = loadedTiles.find(key);
-        if (it == loadedTiles.end() || it->second.cpuData.empty()) {
-            SDL_Log("  LOD%u: Tile (%d,%d) - NO DATA", lod, coord.x, coord.z);
-            continue;
-        }
-
-        const TerrainTile& tile = it->second;
-
-        // Check if position is within tile bounds
-        if (worldX < tile.worldMinX || worldX > tile.worldMaxX ||
-            worldZ < tile.worldMinZ || worldZ > tile.worldMaxZ) {
-            SDL_Log("  LOD%u: Tile (%d,%d) bounds [%.0f,%.0f]-[%.0f,%.0f] - POSITION OUTSIDE!",
-                    lod, coord.x, coord.z,
-                    tile.worldMinX, tile.worldMinZ, tile.worldMaxX, tile.worldMaxZ);
-            continue;
-        }
-
-        // Calculate UV within tile
-        float u = (worldX - tile.worldMinX) / (tile.worldMaxX - tile.worldMinX);
-        float v = (worldZ - tile.worldMinZ) / (tile.worldMaxZ - tile.worldMinZ);
-
-        // Sample with bilinear interpolation
-        float fx = u * (tileResolution - 1);
-        float fy = v * (tileResolution - 1);
-
-        int x0 = static_cast<int>(fx);
-        int y0 = static_cast<int>(fy);
-        int x1 = std::min(x0 + 1, static_cast<int>(tileResolution - 1));
-        int y1 = std::min(y0 + 1, static_cast<int>(tileResolution - 1));
-
-        float tx = fx - x0;
-        float ty = fy - y0;
-
-        float h00 = tile.cpuData[y0 * tileResolution + x0];
-        float h10 = tile.cpuData[y0 * tileResolution + x1];
-        float h01 = tile.cpuData[y1 * tileResolution + x0];
-        float h11 = tile.cpuData[y1 * tileResolution + x1];
-
-        float h0 = h00 * (1.0f - tx) + h10 * tx;
-        float h1 = h01 * (1.0f - tx) + h11 * tx;
-        float hNorm = h0 * (1.0f - ty) + h1 * ty;
-
-        heights[lod] = hNorm * heightScale;
-        found[lod] = true;
-
-        SDL_Log("  LOD%u: Tile (%d,%d) bounds [%.0f,%.0f]-[%.0f,%.0f]",
-                lod, coord.x, coord.z,
-                tile.worldMinX, tile.worldMinZ, tile.worldMaxX, tile.worldMaxZ);
-        SDL_Log("         UV=(%.4f,%.4f) pixel=(%.1f,%.1f) hNorm=%.6f worldH=%.2f",
-                u, v, fx, fy, hNorm, heights[lod]);
+    // Load coarse tile
+    if (!loadTileCPUOnly(coarseCoord, coarsestLOD)) {
+        SDL_Log("  Cannot load coarse LOD%u tile (%d,%d)", coarsestLOD, coarseCoord.x, coarseCoord.z);
+        return;
     }
 
-    // Compare heights
-    SDL_Log("  --- Height Comparison ---");
-    for (uint32_t lod = 0; lod < numLODLevels && lod < 4; lod++) {
-        if (found[lod]) {
-            float diff = (lod > 0 && found[0]) ? (heights[lod] - heights[0]) : 0.0f;
-            SDL_Log("  LOD%u: %.2f m %s", lod, heights[lod],
-                    (lod > 0 && found[0]) ?
-                        (std::abs(diff) > 0.1f ?
-                            (diff > 0 ? "(HIGHER than LOD0!)" : "(lower than LOD0)") : "(matches LOD0)")
-                        : "(reference)");
+    uint64_t coarseKey = makeTileKey(coarseCoord, coarsestLOD);
+    auto coarseIt = loadedTiles.find(coarseKey);
+    if (coarseIt == loadedTiles.end() || coarseIt->second.cpuData.empty()) {
+        SDL_Log("  No data for coarse LOD%u tile", coarsestLOD);
+        return;
+    }
+
+    const TerrainTile& coarseTile = coarseIt->second;
+
+    SDL_Log("  Using LOD%u tile (%d,%d) bounds [%.0f,%.0f]-[%.0f,%.0f] as reference",
+            coarsestLOD, coarseCoord.x, coarseCoord.z,
+            coarseTile.worldMinX, coarseTile.worldMinZ,
+            coarseTile.worldMaxX, coarseTile.worldMaxZ);
+
+    // Test specific pixel positions from the coarse LOD
+    // These are EXACT pixel centers that exist in the coarse tile
+    const int testPixels[][2] = {
+        {0, 0},                                     // top-left corner
+        {static_cast<int>(tileResolution/2), static_cast<int>(tileResolution/2)},   // center
+        {static_cast<int>(tileResolution-1), static_cast<int>(tileResolution-1)},   // bottom-right
+        {static_cast<int>(tileResolution/4), static_cast<int>(tileResolution/4)},   // quarter
+    };
+
+    for (const auto& px : testPixels) {
+        int pixelX = px[0];
+        int pixelZ = px[1];
+
+        // Calculate world position of this pixel CENTER in the coarse tile
+        // Each pixel covers (tile world size) / tileResolution
+        // Pixel center is at (pixel + 0.5) / tileResolution within [0,1]
+        float tileU = (static_cast<float>(pixelX) + 0.5f) / tileResolution;
+        float tileV = (static_cast<float>(pixelZ) + 0.5f) / tileResolution;
+
+        float testWorldX = coarseTile.worldMinX + tileU * (coarseTile.worldMaxX - coarseTile.worldMinX);
+        float testWorldZ = coarseTile.worldMinZ + tileV * (coarseTile.worldMaxZ - coarseTile.worldMinZ);
+
+        // Get the exact height value from the coarse tile (no interpolation needed for exact pixel)
+        float coarseHeightNorm = coarseTile.cpuData[pixelZ * tileResolution + pixelX];
+        float coarseHeightWorld = coarseHeightNorm * heightScale;
+
+        SDL_Log("  Test pixel (%d,%d) -> world (%.1f, %.1f):", pixelX, pixelZ, testWorldX, testWorldZ);
+        SDL_Log("    LOD%u: hNorm=%.6f worldH=%.2f (EXACT PIXEL - reference)",
+                coarsestLOD, coarseHeightNorm, coarseHeightWorld);
+
+        // Now sample from finer LOD levels at this EXACT world position
+        for (int lod = static_cast<int>(coarsestLOD) - 1; lod >= 0; lod--) {
+            uint32_t lodTilesX = tilesX >> lod;
+            uint32_t lodTilesZ = tilesZ >> lod;
+            if (lodTilesX < 1) lodTilesX = 1;
+            if (lodTilesZ < 1) lodTilesZ = 1;
+
+            float lodNormX = (testWorldX / terrainSize) + 0.5f;
+            float lodNormZ = (testWorldZ / terrainSize) + 0.5f;
+            lodNormX = std::clamp(lodNormX, 0.0f, 0.9999f);
+            lodNormZ = std::clamp(lodNormZ, 0.0f, 0.9999f);
+
+            TileCoord lodCoord;
+            lodCoord.x = static_cast<int32_t>(lodNormX * lodTilesX);
+            lodCoord.z = static_cast<int32_t>(lodNormZ * lodTilesZ);
+
+            if (!loadTileCPUOnly(lodCoord, lod)) {
+                SDL_Log("    LOD%d: FAILED TO LOAD tile (%d,%d)", lod, lodCoord.x, lodCoord.z);
+                continue;
+            }
+
+            uint64_t lodKey = makeTileKey(lodCoord, lod);
+            auto lodIt = loadedTiles.find(lodKey);
+            if (lodIt == loadedTiles.end() || lodIt->second.cpuData.empty()) {
+                SDL_Log("    LOD%d: NO DATA", lod);
+                continue;
+            }
+
+            const TerrainTile& lodTile = lodIt->second;
+
+            // Calculate UV within this finer tile
+            float u = (testWorldX - lodTile.worldMinX) / (lodTile.worldMaxX - lodTile.worldMinX);
+            float v = (testWorldZ - lodTile.worldMinZ) / (lodTile.worldMaxZ - lodTile.worldMinZ);
+            u = std::clamp(u, 0.0f, 1.0f);
+            v = std::clamp(v, 0.0f, 1.0f);
+
+            // Sample with bilinear interpolation (position may not be pixel-aligned in finer LOD)
+            float fx = u * (tileResolution - 1);
+            float fy = v * (tileResolution - 1);
+
+            int x0 = static_cast<int>(fx);
+            int y0 = static_cast<int>(fy);
+            int x1 = std::min(x0 + 1, static_cast<int>(tileResolution - 1));
+            int y1 = std::min(y0 + 1, static_cast<int>(tileResolution - 1));
+
+            float tx = fx - x0;
+            float ty = fy - y0;
+
+            float h00 = lodTile.cpuData[y0 * tileResolution + x0];
+            float h10 = lodTile.cpuData[y0 * tileResolution + x1];
+            float h01 = lodTile.cpuData[y1 * tileResolution + x0];
+            float h11 = lodTile.cpuData[y1 * tileResolution + x1];
+
+            float h0 = h00 * (1.0f - tx) + h10 * tx;
+            float h1 = h01 * (1.0f - tx) + h11 * tx;
+            float hNorm = h0 * (1.0f - ty) + h1 * ty;
+            float hWorld = hNorm * heightScale;
+
+            float diff = hWorld - coarseHeightWorld;
+            const char* status = (std::abs(diff) < 0.5f) ? "OK" :
+                                 (std::abs(diff) < 2.0f) ? "minor diff" : "MISMATCH!";
+
+            SDL_Log("    LOD%d: pixel=(%.2f,%.2f) hNorm=%.6f worldH=%.2f diff=%.2f %s",
+                    lod, fx, fy, hNorm, hWorld, diff, status);
         }
     }
+
     SDL_Log("=== End LOD Cross-Reference ===");
 }
 #endif

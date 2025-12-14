@@ -27,113 +27,276 @@ The water implementation is production-quality, drawing from several respected A
 
 ## Migration Phases
 
-### Phase 1: FFT Ocean (Highest Impact) ⬅️ CURRENT
+### Phase 1: FFT Ocean ✅ COMPLETE
 **Goal:** Replace Gerstner waves with FFT simulation
 
-1. Implement Phillips/JONSWAP spectrum generator (compute shader)
-2. Create 2D FFT compute pipeline (256×256 or 512×512)
-3. Generate displacement map (height + horizontal XZ)
-4. Generate derivative maps (normals, Jacobian, foam)
-5. Sample FFT maps in vertex shader instead of analytical Gerstner
-6. Add wind-driven parameters (direction, speed, fetch)
-7. Implement cascaded FFT for multi-scale detail
-
-**Output:** `fft_spectrum.comp`, `fft_butterfly.comp`, `fft_displacement.comp`
-
-### Phase 2: Planar Reflections
-**Goal:** Capture full-scene reflections for water
-
-1. Create reflection render pass with flipped camera
-2. Clip geometry below water plane (oblique near plane)
-3. Render at 1/2 or 1/4 resolution
-4. Store in reflection texture
-5. Blend SSR + Planar based on SSR confidence
-6. Add temporal jitter and accumulation
-
-**Output:** `WaterReflection.h/cpp`, `water_reflection.frag`
-
-### Phase 3: Underwater System
-**Goal:** Support camera under water surface
-
-1. Detect camera below water level
-2. Implement underwater fog (depth-based absorption)
-3. Project caustics onto underwater surfaces (deferred decal)
-4. Add underwater light shafts (extend god rays)
-5. Render water surface from below (invert normals, Snell's window)
-6. Add underwater particle effects (bubbles, sediment)
-
-**Output:** `UnderwaterSystem.h/cpp`, `underwater_fog.frag`, `underwater_caustics.comp`
-
-### Phase 4: Breaking Waves
-**Goal:** Realistic shore wave behavior
-
-1. Calculate wave shoaling based on water depth
-2. Detect breaking condition (height/depth ratio)
-3. Deform wave mesh to show forward-leaning crest
-4. Trigger spray particle emitter at break point
-5. Add splash and foam injection
-6. Implement wash-up foam trails on beach
-
-**Output:** `WaveBreaking.h/cpp`, modifications to `water.vert`
-
-### Phase 5: Volumetric Caustics
-**Goal:** Light patterns on underwater objects
-
-1. Generate caustic mesh from water surface normals
-2. Project caustic pattern as deferred light volume
-3. Animate caustic projection based on wave state
-4. Fade with water depth (absorption)
-5. Integrate with underwater god rays
-
-**Output:** `VolumetricCaustics.h/cpp`, `caustics_projection.comp`
-
-### Phase 6: Advanced Refraction
-**Goal:** Physically correct distortion
-
-1. Calculate proper refraction vector using IOR (1.33 for water)
-2. Ray march through screen-space depth for refraction
-3. Add chromatic aberration at edges
-4. Handle depth discontinuities (don't sample sky through shallow)
-5. Add temporal stability
-
-**Output:** `water_refraction.comp` or integrate into `water.frag`
-
-### Phase 7: River System
-**Goal:** Proper flowing water bodies
-
-1. Create river mesh from spline curves
-2. Generate per-river flow maps
-3. Implement waterfall rendering with particle splash
-4. Add river-specific foam (rapids, rocks)
-5. Integrate with existing flow system
-
-**Output:** `RiverSystem.h/cpp`, `river.vert/frag`
-
-### Phase 8: Particle Foam (Optional, High Cost)
-**Goal:** Individual bubble simulation
-
-1. Create foam particle buffer (GPU particles)
-2. Spawn particles at wave crests, impacts, wakes
-3. Simulate particle movement (advection, spreading)
-4. Handle particle lifecycle (fade, pop)
-5. Render as instanced quads or point sprites
-
-**Output:** `FoamParticles.h/cpp`, `foam_particles.comp/vert/frag`
+Implemented:
+- Phillips spectrum generator with wind-driven parameters
+- Radix-2 Cooley-Tukey FFT compute pipeline
+- 3 cascaded FFT for multi-scale waves (256m, 64m, 16m patches)
+- Displacement, normal, and Jacobian-based foam maps
+- Toggle between FFT and Gerstner via push constant
 
 ---
 
-## Priority Matrix
+## Unified Architecture (Phases 2-8 Consolidated)
 
-| Phase | Impact | Complexity | Priority |
-|-------|--------|------------|----------|
-| 1. FFT Ocean | ★★★★★ | High | **P0** |
-| 2. Planar Reflections | ★★★★☆ | Medium | **P0** |
-| 3. Underwater | ★★★★☆ | Medium-High | **P1** |
-| 4. Breaking Waves | ★★★☆☆ | Medium | **P1** |
-| 5. Volumetric Caustics | ★★★☆☆ | Medium | **P2** |
-| 6. Advanced Refraction | ★★☆☆☆ | Low-Medium | **P2** |
-| 7. River System | ★★★☆☆ | High | **P2** |
-| 8. Particle Foam | ★★☆☆☆ | High | **P3** |
+Analysis revealed that the original 8 phases share significant overlap and can be
+unified into 3 coherent systems plus 1 extension:
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                     WATER VOLUME RENDERER                          │
+│  (Unifies: Underwater, Volumetric Caustics, Advanced Refraction)   │
+│                                                                     │
+│  • Single ray-march system for above/below water                   │
+│  • Volumetric light transport with Beer-Lambert                    │
+│  • Caustics as part of volume lighting                             │
+│  • Camera-agnostic rendering                                       │
+└─────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────┐
+│                   UNIFIED REFLECTION SYSTEM                         │
+│         (Unifies: Planar Reflections with existing SSR)            │
+│                                                                     │
+│  • SSR → Planar → Environment fallback chain                       │
+│  • Per-pixel confidence blending                                   │
+│  • Shared temporal filtering                                       │
+└─────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────┐
+│                  DEPTH-AWARE SHORE SYSTEM                          │
+│     (Unifies: Breaking Waves with existing shore foam)             │
+│                                                                     │
+│  • Wave shoaling from bathymetry                                   │
+│  • Breaking triggers foam AND wave deformation                     │
+│  • Unified shore interaction model                                 │
+└─────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────┐
+│                      FLOW NETWORK                                   │
+│         (Extends existing flow maps for rivers)                    │
+│                                                                     │
+│  • Spline-guided flow regions                                      │
+│  • Waterfall = vertical flow + splash particles                    │
+│  • Rapids/obstacle foam integration                                │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+### Phase 2: Water Volume Renderer
+**Goal:** Unified above/below water rendering with volumetric effects
+
+This single system replaces separate underwater, caustics, and refraction phases.
+
+**Core Architecture:**
+```
+WaterVolume {
+    SDF waterShape;           // Signed distance to water surface
+    vec3 absorption;          // Per-channel light absorption (existing)
+    float scattering;         // Turbidity/scattering (existing)
+
+    // Render modes determined by camera position relative to SDF
+    bool isUnderwater();      // SDF(cameraPos) < 0
+}
+```
+
+**Implementation Steps:**
+
+1. **Water SDF Generation**
+   - Generate SDF from water mesh + FFT displacement
+   - Store in 3D texture or compute on-the-fly
+   - Enables smooth above/below transitions
+
+2. **Volumetric Ray March** (single pass handles refraction + caustics + fog)
+   ```glsl
+   // Pseudo-code for unified volume rendering
+   vec3 rayMarchWaterVolume(vec3 rayOrigin, vec3 rayDir) {
+       float waterEntry = intersectWaterSDF(rayOrigin, rayDir);
+       float waterExit = findExitPoint(rayOrigin + rayDir * waterEntry, rayDir);
+       float pathLength = waterExit - waterEntry;
+
+       // Beer-Lambert absorption
+       vec3 transmission = exp(-absorption * pathLength);
+
+       // Accumulate caustics along path
+       vec3 caustics = integrateWaterCaustics(waterEntry, waterExit, rayDir);
+
+       // Refracted scene color
+       vec3 refractDir = refract(rayDir, waterNormal, 1.0/1.33);
+       vec3 sceneColor = sampleScene(refractDir);
+
+       return sceneColor * transmission + caustics;
+   }
+   ```
+
+3. **Caustics Integration**
+   - Sample FFT normal map to compute caustic intensity
+   - Project onto underwater geometry via ray march
+   - Single computation serves both surface caustics AND underwater projection
+
+4. **Camera Transition**
+   - Snell's window effect when looking up from underwater
+   - Total internal reflection at grazing angles
+   - Smooth fog transition at surface crossing
+
+**Output:** `WaterVolume.h/cpp`, `water_volume.comp`, `water_volume.frag`
+
+---
+
+### Phase 3: Unified Reflection System
+**Goal:** Multi-source reflection with intelligent blending
+
+Extends existing SSR with planar reflections and better fallback.
+
+**Architecture:**
+```
+ReflectionManager {
+    SSRSystem ssr;                    // Existing
+    PlanarReflection planar;          // New
+    EnvironmentProbe environment;     // Existing (sky)
+
+    // Returns blended reflection based on confidence
+    vec3 sampleReflection(vec2 uv, vec3 worldPos, vec3 normal);
+}
+```
+
+**Implementation Steps:**
+
+1. **Planar Reflection Pass**
+   - Render scene with camera mirrored across water plane
+   - Use oblique near-plane clipping
+   - Half or quarter resolution with temporal upscale
+
+2. **Confidence-Based Blending**
+   ```glsl
+   vec3 getReflection(vec2 uv, vec3 worldPos, vec3 reflectDir) {
+       // SSR has highest priority where valid
+       vec4 ssrResult = sampleSSR(uv);  // rgb + confidence
+
+       // Planar fills SSR gaps
+       vec4 planarResult = samplePlanar(worldPos);
+
+       // Environment is final fallback
+       vec3 envResult = sampleEnvironment(reflectDir);
+
+       // Blend by confidence
+       vec3 reflection = envResult;
+       reflection = mix(reflection, planarResult.rgb, planarResult.a);
+       reflection = mix(reflection, ssrResult.rgb, ssrResult.a);
+
+       return reflection;
+   }
+   ```
+
+3. **Shared Temporal Filtering**
+   - Single temporal buffer for all reflection sources
+   - Reduces ghosting and improves stability
+
+**Output:** `ReflectionManager.h/cpp`, `planar_reflection.vert/frag`
+
+---
+
+### Phase 4: Depth-Aware Shore System
+**Goal:** Physically-based wave breaking and shore interaction
+
+Unifies breaking waves with existing shore foam system.
+
+**Architecture:**
+```
+ShoreInteraction {
+    sampler2D bathymetry;     // Water depth map (existing terrain height)
+
+    // Wave modification based on depth
+    WaveState computeShoreWave(vec2 worldPos, float baseWaveHeight);
+
+    // Breaking detection and foam injection
+    BreakInfo detectBreaking(WaveState wave, float depth);
+}
+```
+
+**Implementation Steps:**
+
+1. **Wave Shoaling**
+   - Waves slow down and grow taller as depth decreases
+   - Modify FFT displacement based on local depth:
+   ```glsl
+   float shoalingFactor = sqrt(deepWaterDepth / localDepth);
+   waveHeight *= shoalingFactor;
+   waveLength /= shoalingFactor;
+   ```
+
+2. **Breaking Detection**
+   - Wave breaks when: `waveHeight > 0.78 * waterDepth`
+   - Track breaking state per-vertex for consistent foam
+
+3. **Unified Breaking Response**
+   - Foam injection (connects to existing Jacobian foam)
+   - Wave crest deformation (forward lean before break)
+   - Spray particle emission at break point
+
+4. **Integration with Existing Shore Foam**
+   - Breaking foam feeds into `temporalFoamMap`
+   - Shore proximity foam already in place
+   - Unified foam buffer handles all sources
+
+**Output:** Modifications to `water.vert`, `shore_interaction.glsl`
+
+---
+
+### Phase 5: Flow Network Extension
+**Goal:** Rivers and waterfalls as flow map extensions
+
+Builds on existing flow map system rather than separate river rendering.
+
+**Architecture:**
+```
+FlowNetwork {
+    // Existing
+    sampler2D globalFlowMap;
+
+    // Extensions
+    RiverSpline[] rivers;           // Spline-defined flow corridors
+    WaterfallRegion[] waterfalls;   // Vertical flow transitions
+}
+```
+
+**Implementation Steps:**
+
+1. **River Flow Injection**
+   - Rivers defined as splines with width profile
+   - Generate flow direction/speed along spline
+   - Blend into global flow map
+
+2. **Waterfall Handling**
+   - Vertical flow = particle system (not mesh deformation)
+   - Splash pool at base injects into foam buffer
+   - Mist particles for spray effect
+
+3. **Rapids/Obstacle Foam**
+   - Detect high flow speed + obstacle proximity
+   - Already partially implemented in `foam.glsl`
+   - Extend with more aggressive foam at rapids
+
+**Output:** `FlowNetwork.h/cpp`, modifications to `FlowMapGenerator`
+
+---
+
+## Revised Priority Matrix
+
+| Phase | Description | Impact | Complexity | Priority |
+|-------|-------------|--------|------------|----------|
+| 2 | Water Volume Renderer | ★★★★★ | High | **P0** |
+| 3 | Unified Reflection | ★★★★☆ | Medium | **P1** |
+| 4 | Shore System | ★★★☆☆ | Medium | **P1** |
+| 5 | Flow Network | ★★☆☆☆ | Low | **P2** |
+
+**Key Insight:** The Water Volume Renderer (Phase 2) is now the highest priority because it:
+- Provides underwater rendering (high player impact)
+- Includes volumetric caustics (visual quality)
+- Handles advanced refraction (realism)
+- All in ONE coherent system instead of THREE separate features
 
 ---
 

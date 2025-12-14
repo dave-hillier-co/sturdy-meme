@@ -957,11 +957,7 @@ void GrassSystem::recordResetAndCompute(VkCommandBuffer cmd, uint32_t frameIndex
     // Memory barrier: compute write -> vertex shader read (storage buffer) and indirect read
     // Note: This barrier ensures the compute results are visible when we draw from this buffer
     // in the NEXT frame (after advanceBufferSet swaps the sets)
-    Barriers::BarrierBatch(cmd)
-        .setStages(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-                   VK_PIPELINE_STAGE_DRAW_INDIRECT_BIT | VK_PIPELINE_STAGE_VERTEX_SHADER_BIT)
-        .memoryBarrier(VK_ACCESS_SHADER_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_INDIRECT_COMMAND_READ_BIT)
-        .submit();
+    Barriers::computeToVertexAndIndirectDraw(cmd);
 }
 
 void GrassSystem::recordDraw(VkCommandBuffer cmd, uint32_t frameIndex, float time) {

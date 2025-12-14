@@ -2,6 +2,7 @@
 #include "ShaderLoader.h"
 #include "BindingBuilder.h"
 #include "VulkanBarriers.h"
+#include "VulkanRAII.h"
 #include <SDL3/SDL.h>
 #include <array>
 #include <cstring>
@@ -225,36 +226,18 @@ bool SSRSystem::createSSRBuffers() {
     }
 
     // Transition images to general layout for compute
-    VkCommandBuffer cmd;
-    VkCommandBufferAllocateInfo cmdAllocInfo{};
-    cmdAllocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-    cmdAllocInfo.commandPool = commandPool;
-    cmdAllocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-    cmdAllocInfo.commandBufferCount = 1;
+    {
+        CommandScope cmdScope(device, commandPool, computeQueue);
+        if (!cmdScope.begin()) return false;
 
-    vkAllocateCommandBuffers(device, &cmdAllocInfo, &cmd);
+        // Transition both result buffers and intermediate buffer to GENERAL for compute
+        for (int i = 0; i < 2; i++) {
+            Barriers::prepareImageForCompute(cmdScope.get(), ssrResult[i]);
+        }
+        Barriers::prepareImageForCompute(cmdScope.get(), ssrIntermediate);
 
-    VkCommandBufferBeginInfo beginInfo{};
-    beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-    beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-    vkBeginCommandBuffer(cmd, &beginInfo);
-
-    // Transition both result buffers and intermediate buffer to GENERAL for compute
-    for (int i = 0; i < 2; i++) {
-        Barriers::prepareImageForCompute(cmd, ssrResult[i]);
+        if (!cmdScope.end()) return false;
     }
-    Barriers::prepareImageForCompute(cmd, ssrIntermediate);
-
-    vkEndCommandBuffer(cmd);
-
-    VkSubmitInfo submitInfo{};
-    submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-    submitInfo.commandBufferCount = 1;
-    submitInfo.pCommandBuffers = &cmd;
-
-    vkQueueSubmit(computeQueue, 1, &submitInfo, VK_NULL_HANDLE);
-    vkQueueWaitIdle(computeQueue);
-    vkFreeCommandBuffers(device, commandPool, 1, &cmd);
 
     SDL_Log("SSR buffers created at %dx%d (half resolution)", ssrExtent.width, ssrExtent.height);
     return true;

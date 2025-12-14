@@ -1,5 +1,6 @@
 #include "VirtualTexturePageTable.h"
 #include "VulkanBarriers.h"
+#include "VulkanRAII.h"
 #include <SDL3/SDL_log.h>
 #include <cstring>
 #include <algorithm>
@@ -165,41 +166,22 @@ bool VirtualTexturePageTable::createPageTableTextures(VkDevice device, VmaAlloca
     }
 
     // Transition all images to shader read layout
-    VkCommandBufferAllocateInfo cmdAllocInfo{};
-    cmdAllocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-    cmdAllocInfo.commandPool = commandPool;
-    cmdAllocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-    cmdAllocInfo.commandBufferCount = 1;
-
-    VkCommandBuffer cmd;
-    vkAllocateCommandBuffers(device, &cmdAllocInfo, &cmd);
-
-    VkCommandBufferBeginInfo beginInfo{};
-    beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-    beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-    vkBeginCommandBuffer(cmd, &beginInfo);
-
     {
-        Barriers::BarrierBatch batch(cmd,
-            VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT);
-        for (uint32_t mip = 0; mip < config.maxMipLevels; ++mip) {
-            batch.imageTransition(pageTableImages[mip],
-                VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-                0, VK_ACCESS_SHADER_READ_BIT);
+        CommandScope cmdScope(device, commandPool, queue);
+        if (!cmdScope.begin()) return false;
+
+        {
+            Barriers::BarrierBatch batch(cmdScope.get(),
+                VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT);
+            for (uint32_t mip = 0; mip < config.maxMipLevels; ++mip) {
+                batch.imageTransition(pageTableImages[mip],
+                    VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                    0, VK_ACCESS_SHADER_READ_BIT);
+            }
         }
+
+        if (!cmdScope.end()) return false;
     }
-
-    vkEndCommandBuffer(cmd);
-
-    VkSubmitInfo submitInfo{};
-    submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-    submitInfo.commandBufferCount = 1;
-    submitInfo.pCommandBuffers = &cmd;
-
-    vkQueueSubmit(queue, 1, &submitInfo, VK_NULL_HANDLE);
-    vkQueueWaitIdle(queue);
-
-    vkFreeCommandBuffers(device, commandPool, 1, &cmd);
 
     return true;
 }

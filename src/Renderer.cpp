@@ -5,6 +5,7 @@
 #include "GraphicsPipelineFactory.h"
 #include "MaterialDescriptorFactory.h"
 #include "Bindings.h"
+#include "VulkanRAII.h"
 #include <SDL3/SDL_vulkan.h>
 #include <glm/gtc/matrix_transform.hpp>
 #include <stdexcept>
@@ -387,42 +388,25 @@ bool Renderer::init(SDL_Window* win, const std::string& resPath) {
     if (!atmosphereLUTSystem.init(atmosphereInfo)) return false;
 
     // Compute atmosphere LUTs at startup
-    VkCommandBuffer cmdBuffer;
-    VkCommandBufferAllocateInfo allocInfo{};
-    allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-    allocInfo.commandPool = commandPool;
-    allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-    allocInfo.commandBufferCount = 1;
-    vkAllocateCommandBuffers(device, &allocInfo, &cmdBuffer);
+    {
+        CommandScope cmdScope(device, commandPool, graphicsQueue);
+        if (!cmdScope.begin()) return false;
 
-    VkCommandBufferBeginInfo beginInfo{};
-    beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-    beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-    vkBeginCommandBuffer(cmdBuffer, &beginInfo);
+        // Compute transmittance and multi-scatter LUTs (once at startup)
+        atmosphereLUTSystem.computeTransmittanceLUT(cmdScope.get());
+        atmosphereLUTSystem.computeMultiScatterLUT(cmdScope.get());
+        // Compute irradiance LUTs after transmittance (Phase 4.1.9)
+        atmosphereLUTSystem.computeIrradianceLUT(cmdScope.get());
 
-    // Compute transmittance and multi-scatter LUTs (once at startup)
-    atmosphereLUTSystem.computeTransmittanceLUT(cmdBuffer);
-    atmosphereLUTSystem.computeMultiScatterLUT(cmdBuffer);
-    // Compute irradiance LUTs after transmittance (Phase 4.1.9)
-    atmosphereLUTSystem.computeIrradianceLUT(cmdBuffer);
+        // Compute sky-view LUT for current sun direction
+        glm::vec3 sunDir = glm::vec3(0.0f, 0.707f, 0.707f);  // Default 45 degree sun
+        atmosphereLUTSystem.computeSkyViewLUT(cmdScope.get(), sunDir, glm::vec3(0.0f), 0.0f);
 
-    // Compute sky-view LUT for current sun direction
-    glm::vec3 sunDir = glm::vec3(0.0f, 0.707f, 0.707f);  // Default 45 degree sun
-    atmosphereLUTSystem.computeSkyViewLUT(cmdBuffer, sunDir, glm::vec3(0.0f), 0.0f);
+        // Compute cloud map LUT (paraboloid projection)
+        atmosphereLUTSystem.computeCloudMapLUT(cmdScope.get(), glm::vec3(0.0f), 0.0f);
 
-    // Compute cloud map LUT (paraboloid projection)
-    atmosphereLUTSystem.computeCloudMapLUT(cmdBuffer, glm::vec3(0.0f), 0.0f);
-
-    vkEndCommandBuffer(cmdBuffer);
-
-    VkSubmitInfo submitInfo{};
-    submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-    submitInfo.commandBufferCount = 1;
-    submitInfo.pCommandBuffers = &cmdBuffer;
-
-    vkQueueSubmit(graphicsQueue, 1, &submitInfo, VK_NULL_HANDLE);
-    vkQueueWaitIdle(graphicsQueue);
-    vkFreeCommandBuffers(device, commandPool, 1, &cmdBuffer);
+        if (!cmdScope.end()) return false;
+    }
 
     SDL_Log("Atmosphere LUTs computed successfully");
 

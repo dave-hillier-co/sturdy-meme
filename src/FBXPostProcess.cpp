@@ -49,8 +49,8 @@ glm::mat3 getCoordinateSystemRotation(UpAxis sourceUp, ForwardAxis sourceFwd) {
         case ForwardAxis::NEG_X: srcFwdVec = glm::vec3(-1, 0, 0); break;
     }
 
-    // Derive right vector from forward and up (right-handed: right = forward × up)
-    glm::vec3 srcRightVec = glm::cross(srcFwdVec, srcUpVec);
+    // Derive right vector from up and forward (right-handed: right = up × forward)
+    glm::vec3 srcRightVec = glm::cross(srcUpVec, srcFwdVec);
 
     // Handle degenerate case (up and forward parallel)
     if (glm::length(srcRightVec) < 0.001f) {
@@ -64,8 +64,8 @@ glm::mat3 getCoordinateSystemRotation(UpAxis sourceUp, ForwardAxis sourceFwd) {
     }
     srcRightVec = glm::normalize(srcRightVec);
 
-    // Re-derive forward to ensure orthogonality (forward = up × right for right-handed)
-    srcFwdVec = glm::cross(srcUpVec, srcRightVec);
+    // Re-derive forward to ensure orthogonality (forward = right × up for right-handed)
+    srcFwdVec = glm::cross(srcRightVec, srcUpVec);
     srcFwdVec = glm::normalize(srcFwdVec);
 
     // Build transformation matrix

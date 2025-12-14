@@ -88,16 +88,18 @@ int findTileForWorldPos(vec2 worldXZ) {
 }
 
 // Sample height with LOD tile support
+// Uses terrainHeightToWorld() for tile arrays, sampleTerrainHeight() for global fallback
 float sampleHeightLOD(vec2 uv, vec2 worldXZ) {
     int tileIdx = findTileForWorldPos(worldXZ);
     if (tileIdx >= 0) {
         // High-res tile available - calculate local UV within tile
         vec4 bounds = tiles[tileIdx].worldBounds;
         vec2 tileUV = (worldXZ - bounds.xy) / (bounds.zw - bounds.xy);
-        return texture(heightMapTiles, vec3(tileUV, float(tileIdx))).r * HEIGHT_SCALE;
+        float h = texture(heightMapTiles, vec3(tileUV, float(tileIdx))).r;
+        return terrainHeightToWorld(h, HEIGHT_SCALE);
     }
-    // Fall back to global coarse texture
-    return texture(heightMapGlobal, uv).r * HEIGHT_SCALE;
+    // Fall back to global coarse texture (uses sampleTerrainHeight from terrain_height_common.glsl)
+    return sampleTerrainHeight(heightMapGlobal, uv, HEIGHT_SCALE);
 }
 
 // Calculate normal from height map gradient with LOD support

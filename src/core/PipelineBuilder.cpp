@@ -1,4 +1,5 @@
 #include "PipelineBuilder.h"
+#include "VulkanRAII.h"
 #include "ShaderLoader.h"
 #include <SDL3/SDL.h>
 #include <glm/glm.hpp>
@@ -248,6 +249,58 @@ bool PipelineBuilder::buildGraphicsPipeline(const GraphicsPipelineConfig& config
         return false;
     }
 
+    return true;
+}
+
+// ============================================================================
+// RAII-managed build methods
+// ============================================================================
+
+bool PipelineBuilder::buildManagedDescriptorSetLayout(ManagedDescriptorSetLayout& outLayout) const {
+    VkDescriptorSetLayout rawLayout = VK_NULL_HANDLE;
+    if (!buildDescriptorSetLayout(rawLayout)) {
+        return false;
+    }
+    outLayout = ManagedDescriptorSetLayout::fromRaw(device, rawLayout);
+    return true;
+}
+
+bool PipelineBuilder::buildManagedPipelineLayout(const std::vector<VkDescriptorSetLayout>& setLayouts,
+                                                  ManagedPipelineLayout& outLayout) const {
+    VkPipelineLayout rawLayout = VK_NULL_HANDLE;
+    if (!buildPipelineLayout(setLayouts, rawLayout)) {
+        return false;
+    }
+    outLayout = ManagedPipelineLayout::fromRaw(device, rawLayout);
+    return true;
+}
+
+bool PipelineBuilder::buildManagedComputePipeline(VkPipelineLayout layout, ManagedPipeline& outPipeline) {
+    VkPipeline rawPipeline = VK_NULL_HANDLE;
+    if (!buildComputePipeline(layout, rawPipeline)) {
+        return false;
+    }
+    outPipeline = ManagedPipeline::fromRaw(device, rawPipeline);
+    return true;
+}
+
+bool PipelineBuilder::buildManagedGraphicsPipeline(const VkGraphicsPipelineCreateInfo& pipelineInfoBase,
+                                                    VkPipelineLayout layout, ManagedPipeline& outPipeline) {
+    VkPipeline rawPipeline = VK_NULL_HANDLE;
+    if (!buildGraphicsPipeline(pipelineInfoBase, layout, rawPipeline)) {
+        return false;
+    }
+    outPipeline = ManagedPipeline::fromRaw(device, rawPipeline);
+    return true;
+}
+
+bool PipelineBuilder::buildManagedGraphicsPipeline(const GraphicsPipelineConfig& config,
+                                                    VkPipelineLayout layout, ManagedPipeline& outPipeline) {
+    VkPipeline rawPipeline = VK_NULL_HANDLE;
+    if (!buildGraphicsPipeline(config, layout, rawPipeline)) {
+        return false;
+    }
+    outPipeline = ManagedPipeline::fromRaw(device, rawPipeline);
     return true;
 }
 

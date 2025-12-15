@@ -5,6 +5,10 @@
 #include <unordered_map>
 #include <optional>
 
+// Forward declarations for RAII wrappers
+class ManagedDescriptorSetLayout;
+class ManagedPipelineLayout;
+
 // Declarative descriptor set management with automatic pool growth
 // Replaces verbose manual descriptor set creation patterns
 
@@ -25,7 +29,11 @@ public:
         LayoutBuilder& addBinding(uint32_t binding, VkDescriptorType type,
                                   VkShaderStageFlags stages, uint32_t count = 1);
 
+        // Build and return raw handle (caller must manage lifetime)
         VkDescriptorSetLayout build();
+
+        // Build and return RAII-managed layout
+        bool buildManaged(ManagedDescriptorSetLayout& outLayout);
 
     private:
         VkDevice device;
@@ -117,15 +125,29 @@ public:
         } poolSizes;
     };
 
-    // Helper: Create pipeline layout from descriptor set layouts
+    // Helper: Create pipeline layout from descriptor set layouts (raw handle)
     static VkPipelineLayout createPipelineLayout(
         VkDevice device,
         const std::vector<VkDescriptorSetLayout>& setLayouts,
         const std::vector<VkPushConstantRange>& pushConstants = {});
 
-    // Helper: Create pipeline layout from a single layout
+    // Helper: Create pipeline layout from a single layout (raw handle)
     static VkPipelineLayout createPipelineLayout(
         VkDevice device,
         VkDescriptorSetLayout setLayout,
+        const std::vector<VkPushConstantRange>& pushConstants = {});
+
+    // Helper: Create RAII-managed pipeline layout from descriptor set layouts
+    static bool createManagedPipelineLayout(
+        VkDevice device,
+        const std::vector<VkDescriptorSetLayout>& setLayouts,
+        ManagedPipelineLayout& outLayout,
+        const std::vector<VkPushConstantRange>& pushConstants = {});
+
+    // Helper: Create RAII-managed pipeline layout from a single layout
+    static bool createManagedPipelineLayout(
+        VkDevice device,
+        VkDescriptorSetLayout setLayout,
+        ManagedPipelineLayout& outLayout,
         const std::vector<VkPushConstantRange>& pushConstants = {});
 };

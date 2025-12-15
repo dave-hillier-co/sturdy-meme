@@ -7,6 +7,7 @@
 
 // Forward declarations
 class PipelineBuilder;
+class ManagedPipeline;
 
 /**
  * GraphicsPipelineFactory - Fluent builder for Vulkan graphics pipelines
@@ -98,8 +99,11 @@ public:
     GraphicsPipelineFactory& setNoColorAttachments();
     GraphicsPipelineFactory& setColorAttachmentCount(uint32_t count);  // For multiple render targets
 
-    // Build the pipeline
+    // Build the pipeline (raw handle - caller must manage lifetime)
     bool build(VkPipeline& pipeline);
+
+    // Build and return RAII-managed pipeline
+    bool buildManaged(ManagedPipeline& outPipeline);
 
     // Cleanup any allocated shader modules (called automatically by build)
     void cleanup();

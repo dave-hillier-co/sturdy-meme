@@ -714,6 +714,14 @@ public:
         return true;
     }
 
+    // Adopt an existing raw pipeline layout (e.g., created by PipelineBuilder)
+    static ManagedPipelineLayout fromRaw(VkDevice device, VkPipelineLayout layout) {
+        ManagedPipelineLayout result;
+        result.device_ = device;
+        result.layout_ = layout;
+        return result;
+    }
+
     void destroy() {
         if (layout_ != VK_NULL_HANDLE && device_ != VK_NULL_HANDLE) {
             vkDestroyPipelineLayout(device_, layout_, nullptr);
@@ -805,6 +813,14 @@ public:
 
         outPipeline = std::move(result);
         return true;
+    }
+
+    // Adopt an existing raw pipeline (e.g., created by PipelineBuilder)
+    static ManagedPipeline fromRaw(VkDevice device, VkPipeline pipeline) {
+        ManagedPipeline result;
+        result.device_ = device;
+        result.pipeline_ = pipeline;
+        return result;
     }
 
     void destroy() {

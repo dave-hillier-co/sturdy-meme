@@ -2,6 +2,7 @@
 
 #include <vulkan/vulkan.h>
 #include <string>
+#include "core/VulkanRAII.h"
 
 struct SubgroupCapabilities;
 class TerrainMeshlet;
@@ -30,46 +31,46 @@ public:
     void destroy(VkDevice device);
 
     // Compute pipeline accessors
-    VkPipelineLayout getDispatcherPipelineLayout() const { return dispatcherPipelineLayout; }
-    VkPipeline getDispatcherPipeline() const { return dispatcherPipeline; }
+    VkPipelineLayout getDispatcherPipelineLayout() const { return dispatcherPipelineLayout_.get(); }
+    VkPipeline getDispatcherPipeline() const { return dispatcherPipeline_.get(); }
 
-    VkPipelineLayout getSubdivisionPipelineLayout() const { return subdivisionPipelineLayout; }
-    VkPipeline getSubdivisionPipeline() const { return subdivisionPipeline; }
+    VkPipelineLayout getSubdivisionPipelineLayout() const { return subdivisionPipelineLayout_.get(); }
+    VkPipeline getSubdivisionPipeline() const { return subdivisionPipeline_.get(); }
 
-    VkPipelineLayout getSumReductionPipelineLayout() const { return sumReductionPipelineLayout; }
-    VkPipeline getSumReductionPrepassPipeline() const { return sumReductionPrepassPipeline; }
-    VkPipeline getSumReductionPrepassSubgroupPipeline() const { return sumReductionPrepassSubgroupPipeline; }
-    VkPipeline getSumReductionPipeline() const { return sumReductionPipeline; }
+    VkPipelineLayout getSumReductionPipelineLayout() const { return sumReductionPipelineLayout_.get(); }
+    VkPipeline getSumReductionPrepassPipeline() const { return sumReductionPrepassPipeline_.get(); }
+    VkPipeline getSumReductionPrepassSubgroupPipeline() const { return sumReductionPrepassSubgroupPipeline_.get(); }
+    VkPipeline getSumReductionPipeline() const { return sumReductionPipeline_.get(); }
 
-    VkPipelineLayout getSumReductionBatchedPipelineLayout() const { return sumReductionBatchedPipelineLayout; }
-    VkPipeline getSumReductionBatchedPipeline() const { return sumReductionBatchedPipeline; }
+    VkPipelineLayout getSumReductionBatchedPipelineLayout() const { return sumReductionBatchedPipelineLayout_.get(); }
+    VkPipeline getSumReductionBatchedPipeline() const { return sumReductionBatchedPipeline_.get(); }
 
-    VkPipelineLayout getFrustumCullPipelineLayout() const { return frustumCullPipelineLayout; }
-    VkPipeline getFrustumCullPipeline() const { return frustumCullPipeline; }
+    VkPipelineLayout getFrustumCullPipelineLayout() const { return frustumCullPipelineLayout_.get(); }
+    VkPipeline getFrustumCullPipeline() const { return frustumCullPipeline_.get(); }
 
-    VkPipelineLayout getPrepareDispatchPipelineLayout() const { return prepareDispatchPipelineLayout; }
-    VkPipeline getPrepareDispatchPipeline() const { return prepareDispatchPipeline; }
+    VkPipelineLayout getPrepareDispatchPipelineLayout() const { return prepareDispatchPipelineLayout_.get(); }
+    VkPipeline getPrepareDispatchPipeline() const { return prepareDispatchPipeline_.get(); }
 
     // Render pipeline accessors
-    VkPipelineLayout getRenderPipelineLayout() const { return renderPipelineLayout; }
-    VkPipeline getRenderPipeline() const { return renderPipeline; }
-    VkPipeline getWireframePipeline() const { return wireframePipeline; }
-    VkPipeline getMeshletRenderPipeline() const { return meshletRenderPipeline; }
-    VkPipeline getMeshletWireframePipeline() const { return meshletWireframePipeline; }
+    VkPipelineLayout getRenderPipelineLayout() const { return renderPipelineLayout_.get(); }
+    VkPipeline getRenderPipeline() const { return renderPipeline_.get(); }
+    VkPipeline getWireframePipeline() const { return wireframePipeline_.get(); }
+    VkPipeline getMeshletRenderPipeline() const { return meshletRenderPipeline_.get(); }
+    VkPipeline getMeshletWireframePipeline() const { return meshletWireframePipeline_.get(); }
 
     // Shadow pipeline accessors
-    VkPipelineLayout getShadowPipelineLayout() const { return shadowPipelineLayout; }
-    VkPipeline getShadowPipeline() const { return shadowPipeline; }
-    VkPipeline getMeshletShadowPipeline() const { return meshletShadowPipeline; }
+    VkPipelineLayout getShadowPipelineLayout() const { return shadowPipelineLayout_.get(); }
+    VkPipeline getShadowPipeline() const { return shadowPipeline_.get(); }
+    VkPipeline getMeshletShadowPipeline() const { return meshletShadowPipeline_.get(); }
 
     // Shadow culling pipeline accessors
-    VkPipelineLayout getShadowCullPipelineLayout() const { return shadowCullPipelineLayout; }
-    VkPipeline getShadowCullPipeline() const { return shadowCullPipeline; }
-    VkPipeline getShadowCulledPipeline() const { return shadowCulledPipeline; }
-    VkPipeline getMeshletShadowCulledPipeline() const { return meshletShadowCulledPipeline; }
+    VkPipelineLayout getShadowCullPipelineLayout() const { return shadowCullPipelineLayout_.get(); }
+    VkPipeline getShadowCullPipeline() const { return shadowCullPipeline_.get(); }
+    VkPipeline getShadowCulledPipeline() const { return shadowCulledPipeline_.get(); }
+    VkPipeline getMeshletShadowCulledPipeline() const { return meshletShadowCulledPipeline_.get(); }
 
     // Check if shadow culling is available
-    bool hasShadowCulling() const { return shadowCullPipeline != VK_NULL_HANDLE; }
+    bool hasShadowCulling() const { return static_cast<bool>(shadowCullPipeline_); }
 
 private:
     // Pipeline creation helpers
@@ -97,41 +98,41 @@ private:
     const SubgroupCapabilities* subgroupCaps = nullptr;
 
     // Compute pipelines
-    VkPipelineLayout dispatcherPipelineLayout = VK_NULL_HANDLE;
-    VkPipeline dispatcherPipeline = VK_NULL_HANDLE;
+    ManagedPipelineLayout dispatcherPipelineLayout_;
+    ManagedPipeline dispatcherPipeline_;
 
-    VkPipelineLayout subdivisionPipelineLayout = VK_NULL_HANDLE;
-    VkPipeline subdivisionPipeline = VK_NULL_HANDLE;
+    ManagedPipelineLayout subdivisionPipelineLayout_;
+    ManagedPipeline subdivisionPipeline_;
 
-    VkPipelineLayout sumReductionPipelineLayout = VK_NULL_HANDLE;
-    VkPipeline sumReductionPrepassPipeline = VK_NULL_HANDLE;
-    VkPipeline sumReductionPrepassSubgroupPipeline = VK_NULL_HANDLE;
-    VkPipeline sumReductionPipeline = VK_NULL_HANDLE;
+    ManagedPipelineLayout sumReductionPipelineLayout_;
+    ManagedPipeline sumReductionPrepassPipeline_;
+    ManagedPipeline sumReductionPrepassSubgroupPipeline_;
+    ManagedPipeline sumReductionPipeline_;
 
-    VkPipelineLayout sumReductionBatchedPipelineLayout = VK_NULL_HANDLE;
-    VkPipeline sumReductionBatchedPipeline = VK_NULL_HANDLE;
+    ManagedPipelineLayout sumReductionBatchedPipelineLayout_;
+    ManagedPipeline sumReductionBatchedPipeline_;
 
-    VkPipelineLayout frustumCullPipelineLayout = VK_NULL_HANDLE;
-    VkPipeline frustumCullPipeline = VK_NULL_HANDLE;
+    ManagedPipelineLayout frustumCullPipelineLayout_;
+    ManagedPipeline frustumCullPipeline_;
 
-    VkPipelineLayout prepareDispatchPipelineLayout = VK_NULL_HANDLE;
-    VkPipeline prepareDispatchPipeline = VK_NULL_HANDLE;
+    ManagedPipelineLayout prepareDispatchPipelineLayout_;
+    ManagedPipeline prepareDispatchPipeline_;
 
     // Render pipelines
-    VkPipelineLayout renderPipelineLayout = VK_NULL_HANDLE;
-    VkPipeline renderPipeline = VK_NULL_HANDLE;
-    VkPipeline wireframePipeline = VK_NULL_HANDLE;
-    VkPipeline meshletRenderPipeline = VK_NULL_HANDLE;
-    VkPipeline meshletWireframePipeline = VK_NULL_HANDLE;
+    ManagedPipelineLayout renderPipelineLayout_;
+    ManagedPipeline renderPipeline_;
+    ManagedPipeline wireframePipeline_;
+    ManagedPipeline meshletRenderPipeline_;
+    ManagedPipeline meshletWireframePipeline_;
 
     // Shadow pipelines
-    VkPipelineLayout shadowPipelineLayout = VK_NULL_HANDLE;
-    VkPipeline shadowPipeline = VK_NULL_HANDLE;
-    VkPipeline meshletShadowPipeline = VK_NULL_HANDLE;
+    ManagedPipelineLayout shadowPipelineLayout_;
+    ManagedPipeline shadowPipeline_;
+    ManagedPipeline meshletShadowPipeline_;
 
     // Shadow culling pipelines
-    VkPipelineLayout shadowCullPipelineLayout = VK_NULL_HANDLE;
-    VkPipeline shadowCullPipeline = VK_NULL_HANDLE;
-    VkPipeline shadowCulledPipeline = VK_NULL_HANDLE;
-    VkPipeline meshletShadowCulledPipeline = VK_NULL_HANDLE;
+    ManagedPipelineLayout shadowCullPipelineLayout_;
+    ManagedPipeline shadowCullPipeline_;
+    ManagedPipeline shadowCulledPipeline_;
+    ManagedPipeline meshletShadowCulledPipeline_;
 };

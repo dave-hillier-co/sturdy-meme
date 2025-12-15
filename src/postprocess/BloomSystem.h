@@ -6,6 +6,7 @@
 #include <string>
 #include "DescriptorManager.h"
 #include "InitContext.h"
+#include "core/VulkanRAII.h"
 
 class BloomSystem {
 public:
@@ -29,7 +30,7 @@ public:
     void recordBloomPass(VkCommandBuffer cmd, VkImageView hdrInput);
 
     VkImageView getBloomOutput() const { return mipChain.empty() ? VK_NULL_HANDLE : mipChain[0].imageView; }
-    VkSampler getBloomSampler() const { return sampler; }
+    VkSampler getBloomSampler() const { return sampler_.get(); }
 
     void setThreshold(float t) { threshold = t; }
     float getThreshold() const { return threshold; }
@@ -65,20 +66,20 @@ private:
 
     std::vector<MipLevel> mipChain;
 
-    VkRenderPass downsampleRenderPass = VK_NULL_HANDLE;
-    VkRenderPass upsampleRenderPass = VK_NULL_HANDLE;
-    VkSampler sampler = VK_NULL_HANDLE;
+    ManagedRenderPass downsampleRenderPass_;
+    ManagedRenderPass upsampleRenderPass_;
+    ManagedSampler sampler_;
 
     // Downsample pipeline
-    VkDescriptorSetLayout downsampleDescSetLayout = VK_NULL_HANDLE;
-    VkPipelineLayout downsamplePipelineLayout = VK_NULL_HANDLE;
-    VkPipeline downsamplePipeline = VK_NULL_HANDLE;
+    ManagedDescriptorSetLayout downsampleDescSetLayout_;
+    ManagedPipelineLayout downsamplePipelineLayout_;
+    ManagedPipeline downsamplePipeline_;
     std::vector<VkDescriptorSet> downsampleDescSets;
 
     // Upsample pipeline
-    VkDescriptorSetLayout upsampleDescSetLayout = VK_NULL_HANDLE;
-    VkPipelineLayout upsamplePipelineLayout = VK_NULL_HANDLE;
-    VkPipeline upsamplePipeline = VK_NULL_HANDLE;
+    ManagedDescriptorSetLayout upsampleDescSetLayout_;
+    ManagedPipelineLayout upsamplePipelineLayout_;
+    ManagedPipeline upsamplePipeline_;
     std::vector<VkDescriptorSet> upsampleDescSets;
 
     // Parameters

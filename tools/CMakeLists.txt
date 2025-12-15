@@ -44,6 +44,7 @@ target_compile_features(terrain_preprocess PRIVATE cxx_std_17)
 add_executable(biome_preprocess
     biome_preprocess/biome_preprocess.cpp
     biome_preprocess/BiomeGenerator.cpp
+    biome_preprocess/WatershedMetrics.cpp
     common/stb_impl.cpp
 )
 

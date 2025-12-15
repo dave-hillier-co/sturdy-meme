@@ -1,5 +1,6 @@
 #pragma once
 
+#include "WatershedMetrics.h"
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -94,6 +95,14 @@ struct BiomeConfig {
     float riverFlowThreshold = 0.3f;
     float wetlandRiverDistance = 100.0f;
 
+    // Watershed-derived thresholds
+    float twiWetlandThreshold = 8.0f;      // TWI above this indicates wetland-prone areas
+    float twiWetMeadowThreshold = 6.0f;    // TWI for wet meadow/water meadow classification
+    float twiDryThreshold = 4.0f;          // TWI below this indicates dry chalk downs
+    float streamOrderRiparianScale = 50.0f; // Base riparian width, scaled by stream order
+    float valleyBottomTwi = 7.0f;          // TWI threshold for identifying valley bottoms
+    float basinVariationStrength = 0.3f;   // How much basins affect sub-zone variation
+
     // Settlement thresholds
     float hamletMinDistance = 400.0f;
     float villageMinDistance = 800.0f;
@@ -117,6 +126,12 @@ struct BiomeResult {
     std::vector<float> slopeMap;
     std::vector<float> distanceToSea;
     std::vector<float> distanceToRiver;
+
+    // Watershed-derived data
+    std::vector<float> twiMap;             // Topographic Wetness Index
+    std::vector<uint8_t> streamOrderMap;   // Strahler stream order (0 = not a stream)
+    std::vector<uint32_t> basinLabels;     // Watershed basin ID for each cell
+    uint32_t basinCount = 0;               // Total number of basins
 };
 
 class BiomeGenerator {
@@ -147,6 +162,7 @@ private:
     void computeSlopeMap(ProgressCallback callback);
     void computeDistanceToSea(ProgressCallback callback);
     void computeDistanceToRiver(ProgressCallback callback);
+    void computeWatershedMetrics(ProgressCallback callback);
 
     void classifyZones(ProgressCallback callback);
     void applySubZoneNoise(ProgressCallback callback);
@@ -166,6 +182,7 @@ private:
 
     BiomeConfig config;
     BiomeResult result;
+    WatershedMetricsResult watershedMetrics;
 
     // Source data
     std::vector<float> heightData;

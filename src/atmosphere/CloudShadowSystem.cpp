@@ -1,5 +1,6 @@
 #include "CloudShadowSystem.h"
 #include "ShaderLoader.h"
+#include "DescriptorManager.h"
 #include "VulkanBarriers.h"
 #include "DescriptorManager.h"
 #include <SDL3/SDL_log.h>
@@ -188,32 +189,13 @@ bool CloudShadowSystem::createDescriptorSetLayout() {
     // 1: Cloud map LUT (sampled image from atmosphere system)
     // 2: Uniform buffer
 
-    std::array<VkDescriptorSetLayoutBinding, 3> bindings{};
+    descriptorSetLayout = DescriptorManager::LayoutBuilder(device)
+        .addStorageImage(VK_SHADER_STAGE_COMPUTE_BIT)            // 0: Cloud shadow map
+        .addCombinedImageSampler(VK_SHADER_STAGE_COMPUTE_BIT)    // 1: Cloud map LUT
+        .addUniformBuffer(VK_SHADER_STAGE_COMPUTE_BIT)           // 2: Uniform buffer
+        .build();
 
-    // Binding 0: Cloud shadow map (storage image)
-    bindings[0].binding = 0;
-    bindings[0].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
-    bindings[0].descriptorCount = 1;
-    bindings[0].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
-
-    // Binding 1: Cloud map LUT (combined image sampler)
-    bindings[1].binding = 1;
-    bindings[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    bindings[1].descriptorCount = 1;
-    bindings[1].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
-
-    // Binding 2: Uniform buffer
-    bindings[2].binding = 2;
-    bindings[2].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    bindings[2].descriptorCount = 1;
-    bindings[2].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
-
-    VkDescriptorSetLayoutCreateInfo layoutInfo{};
-    layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-    layoutInfo.bindingCount = static_cast<uint32_t>(bindings.size());
-    layoutInfo.pBindings = bindings.data();
-
-    if (vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, &descriptorSetLayout) != VK_SUCCESS) {
+    if (descriptorSetLayout == VK_NULL_HANDLE) {
         SDL_Log("Failed to create cloud shadow descriptor set layout");
         return false;
     }
@@ -261,12 +243,8 @@ bool CloudShadowSystem::createComputePipeline() {
     stageInfo.module = shaderModule;
     stageInfo.pName = "main";
 
-    VkPipelineLayoutCreateInfo layoutInfo{};
-    layoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-    layoutInfo.setLayoutCount = 1;
-    layoutInfo.pSetLayouts = &descriptorSetLayout;
-
-    if (vkCreatePipelineLayout(device, &layoutInfo, nullptr, &pipelineLayout) != VK_SUCCESS) {
+    pipelineLayout = DescriptorManager::createPipelineLayout(device, descriptorSetLayout);
+    if (pipelineLayout == VK_NULL_HANDLE) {
         vkDestroyShaderModule(device, shaderModule, nullptr);
         SDL_Log("Failed to create cloud shadow pipeline layout");
         return false;

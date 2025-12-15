@@ -61,47 +61,23 @@ bool SkySystem::createDescriptorSetLayout() {
     // 5: Mie Irradiance LUT sampler (Phase 4.1.9)
     // 6: Cloud Map LUT sampler (Paraboloid projection, updated per-frame)
 
-    auto makeBinding = [](uint32_t binding, VkDescriptorType type, VkShaderStageFlags stages) {
-        VkDescriptorSetLayoutBinding b{};
-        b.binding = binding;
-        b.descriptorType = type;
-        b.descriptorCount = 1;
-        b.stageFlags = stages;
-        return b;
-    };
+    descriptorSetLayout = DescriptorManager::LayoutBuilder(device)
+        .addUniformBuffer(VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT)  // 0: UBO
+        .addCombinedImageSampler(VK_SHADER_STAGE_FRAGMENT_BIT)  // 1: Transmittance LUT
+        .addCombinedImageSampler(VK_SHADER_STAGE_FRAGMENT_BIT)  // 2: Multi-scatter LUT
+        .addCombinedImageSampler(VK_SHADER_STAGE_FRAGMENT_BIT)  // 3: Sky-view LUT
+        .addCombinedImageSampler(VK_SHADER_STAGE_FRAGMENT_BIT)  // 4: Rayleigh Irradiance LUT
+        .addCombinedImageSampler(VK_SHADER_STAGE_FRAGMENT_BIT)  // 5: Mie Irradiance LUT
+        .addCombinedImageSampler(VK_SHADER_STAGE_FRAGMENT_BIT)  // 6: Cloud Map LUT
+        .build();
 
-    constexpr auto VF = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
-    constexpr auto F = VK_SHADER_STAGE_FRAGMENT_BIT;
-
-    std::array<VkDescriptorSetLayoutBinding, 7> bindings = {
-        makeBinding(0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VF),
-        makeBinding(1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, F),
-        makeBinding(2, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, F),
-        makeBinding(3, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, F),
-        makeBinding(4, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, F),
-        makeBinding(5, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, F),
-        makeBinding(6, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, F)
-    };
-
-    VkDescriptorSetLayoutCreateInfo layoutInfo{};
-    layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-    layoutInfo.bindingCount = static_cast<uint32_t>(bindings.size());
-    layoutInfo.pBindings = bindings.data();
-
-    if (vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, &descriptorSetLayout) != VK_SUCCESS) {
+    if (descriptorSetLayout == VK_NULL_HANDLE) {
         SDL_Log("Failed to create sky descriptor set layout");
         return false;
     }
 
-    // Create pipeline layout for sky shader
-    VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
-    pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-    pipelineLayoutInfo.setLayoutCount = 1;
-    pipelineLayoutInfo.pSetLayouts = &descriptorSetLayout;
-    pipelineLayoutInfo.pushConstantRangeCount = 0;
-    pipelineLayoutInfo.pPushConstantRanges = nullptr;
-
-    if (vkCreatePipelineLayout(device, &pipelineLayoutInfo, nullptr, &pipelineLayout) != VK_SUCCESS) {
+    pipelineLayout = DescriptorManager::createPipelineLayout(device, descriptorSetLayout);
+    if (pipelineLayout == VK_NULL_HANDLE) {
         SDL_Log("Failed to create sky pipeline layout");
         return false;
     }

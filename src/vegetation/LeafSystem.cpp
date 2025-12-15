@@ -1,5 +1,6 @@
 #include "LeafSystem.h"
 #include "ShaderLoader.h"
+#include "DescriptorManager.h"
 #include "VulkanBarriers.h"
 #include <SDL3/SDL.h>
 #include <cstring>
@@ -127,33 +128,27 @@ bool LeafSystem::createBuffers() {
 }
 
 bool LeafSystem::createComputeDescriptorSetLayout(SystemLifecycleHelper::PipelineHandles& handles) {
-    auto makeComputeBinding = [](uint32_t binding, VkDescriptorType type) {
-        VkDescriptorSetLayoutBinding b{};
-        b.binding = binding;
-        b.descriptorType = type;
-        b.descriptorCount = 1;
-        b.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
-        return b;
-    };
+    // 0: Particle buffer input (previous frame state)
+    // 1: Particle buffer output (current frame result)
+    // 2: Indirect buffer (output)
+    // 3: Leaf uniforms
+    // 4: Wind uniforms
+    // 5: Terrain heightmap
+    // 6: Displacement map (shared with grass system for player interaction)
+    // 7: Displacement region uniform buffer
 
-    std::array<VkDescriptorSetLayoutBinding, 8> bindings = {
-        makeComputeBinding(0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER),         // Particle buffer input
-        makeComputeBinding(1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER),         // Particle buffer output
-        makeComputeBinding(2, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER),         // Indirect buffer
-        makeComputeBinding(3, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER),         // Leaf uniforms
-        makeComputeBinding(4, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER),         // Wind uniforms
-        makeComputeBinding(5, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER), // Terrain heightmap
-        makeComputeBinding(6, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER), // Displacement map
-        makeComputeBinding(7, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER)          // Displacement region
-    };
+    handles.descriptorSetLayout = DescriptorManager::LayoutBuilder(getDevice())
+        .addStorageBuffer(VK_SHADER_STAGE_COMPUTE_BIT)           // 0: Particle buffer input
+        .addStorageBuffer(VK_SHADER_STAGE_COMPUTE_BIT)           // 1: Particle buffer output
+        .addStorageBuffer(VK_SHADER_STAGE_COMPUTE_BIT)           // 2: Indirect buffer
+        .addUniformBuffer(VK_SHADER_STAGE_COMPUTE_BIT)           // 3: Leaf uniforms
+        .addUniformBuffer(VK_SHADER_STAGE_COMPUTE_BIT)           // 4: Wind uniforms
+        .addCombinedImageSampler(VK_SHADER_STAGE_COMPUTE_BIT)    // 5: Terrain heightmap
+        .addCombinedImageSampler(VK_SHADER_STAGE_COMPUTE_BIT)    // 6: Displacement map
+        .addUniformBuffer(VK_SHADER_STAGE_COMPUTE_BIT)           // 7: Displacement region
+        .build();
 
-    VkDescriptorSetLayoutCreateInfo layoutInfo{};
-    layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-    layoutInfo.bindingCount = static_cast<uint32_t>(bindings.size());
-    layoutInfo.pBindings = bindings.data();
-
-    if (vkCreateDescriptorSetLayout(getDevice(), &layoutInfo, nullptr,
-                                    &handles.descriptorSetLayout) != VK_SUCCESS) {
+    if (handles.descriptorSetLayout == VK_NULL_HANDLE) {
         SDL_Log("Failed to create leaf compute descriptor set layout");
         return false;
     }
@@ -181,15 +176,9 @@ bool LeafSystem::createComputePipeline(SystemLifecycleHelper::PipelineHandles& h
     pushConstantRange.offset = 0;
     pushConstantRange.size = sizeof(LeafPushConstants);
 
-    VkPipelineLayoutCreateInfo layoutInfo{};
-    layoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-    layoutInfo.setLayoutCount = 1;
-    layoutInfo.pSetLayouts = &handles.descriptorSetLayout;
-    layoutInfo.pushConstantRangeCount = 1;
-    layoutInfo.pPushConstantRanges = &pushConstantRange;
-
-    if (vkCreatePipelineLayout(getDevice(), &layoutInfo, nullptr,
-                               &handles.pipelineLayout) != VK_SUCCESS) {
+    handles.pipelineLayout = DescriptorManager::createPipelineLayout(
+        getDevice(), handles.descriptorSetLayout, {pushConstantRange});
+    if (handles.pipelineLayout == VK_NULL_HANDLE) {
         SDL_Log("Failed to create leaf compute pipeline layout");
         vkDestroyShaderModule(getDevice(), compShaderModule, nullptr);
         return false;
@@ -215,31 +204,17 @@ bool LeafSystem::createComputePipeline(SystemLifecycleHelper::PipelineHandles& h
 }
 
 bool LeafSystem::createGraphicsDescriptorSetLayout(SystemLifecycleHelper::PipelineHandles& handles) {
-    auto makeBinding = [](uint32_t binding, VkDescriptorType type, VkShaderStageFlags stages) {
-        VkDescriptorSetLayoutBinding b{};
-        b.binding = binding;
-        b.descriptorType = type;
-        b.descriptorCount = 1;
-        b.stageFlags = stages;
-        return b;
-    };
+    // 0: UBO (scene uniforms)
+    // 1: Particle buffer (read-only in vertex shader)
+    // 2: Wind uniforms (for consistent animation)
 
-    constexpr auto VF = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
-    constexpr auto V = VK_SHADER_STAGE_VERTEX_BIT;
+    handles.descriptorSetLayout = DescriptorManager::LayoutBuilder(getDevice())
+        .addUniformBuffer(VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT)  // 0: UBO
+        .addStorageBuffer(VK_SHADER_STAGE_VERTEX_BIT)                                  // 1: Particle buffer
+        .addUniformBuffer(VK_SHADER_STAGE_VERTEX_BIT)                                  // 2: Wind uniforms
+        .build();
 
-    std::array<VkDescriptorSetLayoutBinding, 3> bindings = {
-        makeBinding(0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VF),  // UBO
-        makeBinding(1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, V),   // Particle buffer
-        makeBinding(2, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, V)    // Wind uniforms
-    };
-
-    VkDescriptorSetLayoutCreateInfo layoutInfo{};
-    layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-    layoutInfo.bindingCount = static_cast<uint32_t>(bindings.size());
-    layoutInfo.pBindings = bindings.data();
-
-    if (vkCreateDescriptorSetLayout(getDevice(), &layoutInfo, nullptr,
-                                    &handles.descriptorSetLayout) != VK_SUCCESS) {
+    if (handles.descriptorSetLayout == VK_NULL_HANDLE) {
         SDL_Log("Failed to create leaf graphics descriptor set layout");
         return false;
     }
@@ -358,15 +333,9 @@ bool LeafSystem::createGraphicsPipeline(SystemLifecycleHelper::PipelineHandles& 
     pushConstantRange.offset = 0;
     pushConstantRange.size = sizeof(LeafPushConstants);
 
-    VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
-    pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-    pipelineLayoutInfo.setLayoutCount = 1;
-    pipelineLayoutInfo.pSetLayouts = &handles.descriptorSetLayout;
-    pipelineLayoutInfo.pushConstantRangeCount = 1;
-    pipelineLayoutInfo.pPushConstantRanges = &pushConstantRange;
-
-    if (vkCreatePipelineLayout(getDevice(), &pipelineLayoutInfo, nullptr,
-                               &handles.pipelineLayout) != VK_SUCCESS) {
+    handles.pipelineLayout = DescriptorManager::createPipelineLayout(
+        getDevice(), handles.descriptorSetLayout, {pushConstantRange});
+    if (handles.pipelineLayout == VK_NULL_HANDLE) {
         SDL_Log("Failed to create leaf graphics pipeline layout");
         vkDestroyShaderModule(getDevice(), fragShaderModule, nullptr);
         vkDestroyShaderModule(getDevice(), vertShaderModule, nullptr);

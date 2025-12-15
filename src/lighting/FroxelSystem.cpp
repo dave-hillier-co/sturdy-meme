@@ -1,7 +1,7 @@
 #include "FroxelSystem.h"
 #include "ShaderLoader.h"
-#include "VulkanBarriers.h"
 #include "DescriptorManager.h"
+#include "VulkanBarriers.h"
 #include <SDL3/SDL_log.h>
 #include <glm/gtc/matrix_transform.hpp>
 #include <array>
@@ -210,44 +210,34 @@ bool FroxelSystem::createSampler() {
 }
 
 bool FroxelSystem::createDescriptorSetLayout() {
-    auto makeComputeBinding = [](uint32_t binding, VkDescriptorType type) {
-        VkDescriptorSetLayoutBinding b{};
-        b.binding = binding;
-        b.descriptorType = type;
-        b.descriptorCount = 1;
-        b.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
-        return b;
-    };
+    // 0: Scattering volume (storage image)
+    // 1: Integrated volume (storage image)
+    // 2: Uniform buffer
+    // 3: Shadow map (combined image sampler)
+    // 4: Light buffer (storage buffer)
+    // 5: Previous scattering volume (storage image)
 
-    std::array<VkDescriptorSetLayoutBinding, 6> bindings = {
-        makeComputeBinding(0, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE),
-        makeComputeBinding(1, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE),
-        makeComputeBinding(2, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER),
-        makeComputeBinding(3, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER),
-        makeComputeBinding(4, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER),
-        makeComputeBinding(5, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE)};
+    VkDescriptorSetLayout rawLayout = DescriptorManager::LayoutBuilder(device)
+        .addStorageImage(VK_SHADER_STAGE_COMPUTE_BIT)            // 0: Scattering volume
+        .addStorageImage(VK_SHADER_STAGE_COMPUTE_BIT)            // 1: Integrated volume
+        .addUniformBuffer(VK_SHADER_STAGE_COMPUTE_BIT)           // 2: Uniform buffer
+        .addCombinedImageSampler(VK_SHADER_STAGE_COMPUTE_BIT)    // 3: Shadow map
+        .addStorageBuffer(VK_SHADER_STAGE_COMPUTE_BIT)           // 4: Light buffer
+        .addStorageImage(VK_SHADER_STAGE_COMPUTE_BIT)            // 5: Previous scattering
+        .build();
 
-    VkDescriptorSetLayoutCreateInfo layoutInfo{};
-    layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-    layoutInfo.bindingCount = static_cast<uint32_t>(bindings.size());
-    layoutInfo.pBindings = bindings.data();
-
-    if (!ManagedDescriptorSetLayout::create(device, layoutInfo, froxelDescriptorSetLayout)) {
+    if (rawLayout == VK_NULL_HANDLE) {
         SDL_Log("Failed to create froxel descriptor set layout");
         return false;
     }
+    froxelDescriptorSetLayout = ManagedDescriptorSetLayout::fromRaw(device, rawLayout);
 
-    // Create pipeline layout
-    VkDescriptorSetLayout rawLayout = froxelDescriptorSetLayout.get();
-    VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
-    pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-    pipelineLayoutInfo.setLayoutCount = 1;
-    pipelineLayoutInfo.pSetLayouts = &rawLayout;
-
-    if (!ManagedPipelineLayout::create(device, pipelineLayoutInfo, froxelPipelineLayout)) {
+    VkPipelineLayout rawPipelineLayout = DescriptorManager::createPipelineLayout(device, rawLayout);
+    if (rawPipelineLayout == VK_NULL_HANDLE) {
         SDL_Log("Failed to create froxel pipeline layout");
         return false;
     }
+    froxelPipelineLayout = ManagedPipelineLayout::fromRaw(device, rawPipelineLayout);
 
     return true;
 }

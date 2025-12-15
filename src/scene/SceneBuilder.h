@@ -84,8 +84,8 @@ public:
     void uploadFlagClothMesh(VmaAllocator allocator, VkDevice device, VkCommandPool commandPool, VkQueue queue);
 
     // Animated character access
-    AnimatedCharacter& getAnimatedCharacter() { return animatedCharacter; }
-    const AnimatedCharacter& getAnimatedCharacter() const { return animatedCharacter; }
+    AnimatedCharacter& getAnimatedCharacter() { return **animatedCharacter; }
+    const AnimatedCharacter& getAnimatedCharacter() const { return **animatedCharacter; }
     bool hasCharacter() const { return hasAnimatedCharacter; }
 
     // Update animated character (call each frame)
@@ -127,7 +127,9 @@ private:
     // Meshes (dynamic - manually managed, re-uploaded during runtime)
     Mesh flagClothMesh;
     Mesh capeMesh;
-    AnimatedCharacter animatedCharacter;  // Player character (animated from glTF)
+
+    // Animated character (RAII-managed - mesh uploaded once, bone matrices updated by Renderer)
+    std::optional<RAIIAdapter<AnimatedCharacter>> animatedCharacter;
     bool hasAnimatedCharacter = false;  // True if animated character was loaded successfully
 
     // Player cape (cloth simulation attached to character)

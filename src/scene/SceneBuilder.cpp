@@ -62,9 +62,9 @@ void SceneBuilder::destroy(VmaAllocator allocator, VkDevice device) {
     // Manually managed meshes (dynamic - re-uploaded during runtime)
     flagClothMesh.destroy(allocator);
     capeMesh.destroy(allocator);
-    if (hasAnimatedCharacter) {
-        animatedCharacter.destroy(allocator);
-    }
+
+    // RAII-managed animated character
+    animatedCharacter.reset();
 
     sceneObjects.clear();
 }
@@ -116,27 +116,39 @@ bool SceneBuilder::createMeshes(const InitInfo& info) {
     // Flag cloth mesh will be initialized later by ClothSimulation
     // (it's dynamic and will be updated each frame)
 
-    // Load animated character from FBX
+    // Load animated character from FBX (RAII-managed)
     std::string characterPath = info.resourcePath + "/assets/characters/fbx/Y Bot.fbx";
-    if (animatedCharacter.load(characterPath, info.allocator, info.device, info.commandPool, info.graphicsQueue)) {
+    std::vector<std::string> additionalAnimations = {
+        info.resourcePath + "/assets/characters/fbx/ss_idle.fbx",
+        info.resourcePath + "/assets/characters/fbx/ss_walk.fbx",
+        info.resourcePath + "/assets/characters/fbx/ss_run.fbx",
+        info.resourcePath + "/assets/characters/fbx/ss_jump.fbx"
+    };
+
+    animatedCharacter = RAIIAdapter<AnimatedCharacter>::create(
+        [&](auto& c) {
+            if (!c.load(characterPath, info.allocator, info.device, info.commandPool, info.graphicsQueue)) {
+                return false;  // Load failed, don't create RAII wrapper
+            }
+
+            // Load additional animations (sword and shield locomotion set)
+            c.loadAdditionalAnimations(additionalAnimations);
+
+            // Setup default IK chains for arms, legs, look-at, and foot placement
+            c.setupDefaultIKChains();
+
+            return true;
+        },
+        [this](auto& c) { c.destroy(storedAllocator); }
+    );
+
+    if (animatedCharacter) {
         hasAnimatedCharacter = true;
         SDL_Log("SceneBuilder: Loaded FBX animated character");
 
-        // Load additional animations (sword and shield locomotion set)
-        std::vector<std::string> additionalAnimations = {
-            info.resourcePath + "/assets/characters/fbx/ss_idle.fbx",
-            info.resourcePath + "/assets/characters/fbx/ss_walk.fbx",
-            info.resourcePath + "/assets/characters/fbx/ss_run.fbx",
-            info.resourcePath + "/assets/characters/fbx/ss_jump.fbx"
-        };
-        animatedCharacter.loadAdditionalAnimations(additionalAnimations);
-
-        // Setup default IK chains for arms, legs, look-at, and foot placement
-        animatedCharacter.setupDefaultIKChains();
-
         // Setup ground query for foot placement IK
         if (terrainHeightFunc) {
-            auto& ikSystem = animatedCharacter.getIKSystem();
+            auto& ikSystem = (*animatedCharacter)->getIKSystem();
             ikSystem.setGroundQueryFunc([this](const glm::vec3& position, float maxDistance) -> GroundQueryResult {
                 GroundQueryResult result;
                 result.hit = true;
@@ -457,7 +469,7 @@ void SceneBuilder::createRenderables() {
         glm::vec3 charEmissiveColor = glm::vec3(0.0f);
         float charEmissiveIntensity = 0.0f;
 
-        const auto& materials = animatedCharacter.getMaterials();
+        const auto& materials = (*animatedCharacter)->getMaterials();
         if (!materials.empty()) {
             // Use first material's properties (most characters have a primary material)
             const auto& mat = materials[0];
@@ -471,7 +483,7 @@ void SceneBuilder::createRenderables() {
 
         sceneObjects.push_back(RenderableBuilder()
             .withTransform(buildCharacterTransform(glm::vec3(playerX, playerTerrainY, playerZ), 10.0f))
-            .withMesh(&animatedCharacter.getMesh())
+            .withMesh(&(*animatedCharacter)->getMesh())
             .withTexture(&**whiteTexture)  // White texture so vertex colors show through
             .withMaterialId(whiteMaterialId)
             .withRoughness(charRoughness)
@@ -598,18 +610,18 @@ void SceneBuilder::updateAnimatedCharacter(float deltaTime, VmaAllocator allocat
         worldTransform = sceneObjects[playerObjectIndex].transform;
     }
 
-    animatedCharacter.update(deltaTime, allocator, device, commandPool, queue,
-                             movementSpeed, isGrounded, isJumping, worldTransform);
+    (*animatedCharacter)->update(deltaTime, allocator, device, commandPool, queue,
+                                  movementSpeed, isGrounded, isJumping, worldTransform);
 
     // Update the mesh pointer in the renderable (in case it was re-created)
     if (playerObjectIndex < sceneObjects.size()) {
-        sceneObjects[playerObjectIndex].mesh = &animatedCharacter.getMesh();
+        sceneObjects[playerObjectIndex].mesh = &(*animatedCharacter)->getMesh();
     }
 
     // Update player cape if enabled
     if (hasCapeEnabled) {
         // Update cape simulation with current skeleton pose
-        playerCape.update(animatedCharacter.getSkeleton(), worldTransform, deltaTime, nullptr);
+        playerCape.update((*animatedCharacter)->getSkeleton(), worldTransform, deltaTime, nullptr);
 
         // Update cape mesh and re-upload
         playerCape.updateMesh(capeMesh);
@@ -625,5 +637,5 @@ void SceneBuilder::updateAnimatedCharacter(float deltaTime, VmaAllocator allocat
 
 void SceneBuilder::startCharacterJump(const glm::vec3& startPos, const glm::vec3& velocity, float gravity, const PhysicsWorld* physics) {
     if (!hasAnimatedCharacter) return;
-    animatedCharacter.startJump(startPos, velocity, gravity, physics);
+    (*animatedCharacter)->startJump(startPos, velocity, gravity, physics);
 }

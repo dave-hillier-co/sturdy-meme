@@ -17,6 +17,8 @@
 #include "TerrainPipelines.h"
 #include "DescriptorManager.h"
 #include "InitContext.h"
+#include "core/RAIIAdapter.h"
+#include <optional>
 
 class GpuProfiler;
 
@@ -286,7 +288,7 @@ private:
     TerrainTileCache tileCache;          // LOD-based tile streaming
     TerrainBuffers buffers;              // Uniform, indirect, and visibility buffers
     TerrainCameraOptimizer cameraOptimizer;  // Skip-frame optimization
-    TerrainPipelines pipelines;          // All compute and graphics pipelines
+    std::optional<RAIIAdapter<TerrainPipelines>> pipelines;  // All compute and graphics pipelines (RAII-managed)
 
     // Descriptor set layouts (needed for descriptor allocation)
     VkDescriptorSetLayout computeDescriptorSetLayout = VK_NULL_HANDLE;

@@ -344,6 +344,15 @@ public:
         }
     }
 
+    // Adopt an existing raw image (takes ownership)
+    static ManagedImage fromRaw(VmaAllocator allocator, VkImage image, VmaAllocation allocation) {
+        ManagedImage result;
+        result.allocator_ = allocator;
+        result.image_ = image;
+        result.allocation_ = allocation;
+        return result;
+    }
+
     // Accessors
     VkImage get() const { return image_; }
     VkImage* ptr() { return &image_; }
@@ -420,6 +429,14 @@ public:
             vkDestroyImageView(device_, imageView_, nullptr);
             imageView_ = VK_NULL_HANDLE;
         }
+    }
+
+    // Adopt an existing raw image view
+    static ManagedImageView fromRaw(VkDevice device, VkImageView imageView) {
+        ManagedImageView result;
+        result.device_ = device;
+        result.imageView_ = imageView;
+        return result;
     }
 
     VkImageView get() const { return imageView_; }
@@ -575,6 +592,14 @@ public:
             vkDestroySampler(device_, sampler_, nullptr);
             sampler_ = VK_NULL_HANDLE;
         }
+    }
+
+    // Adopt an existing raw sampler
+    static ManagedSampler fromRaw(VkDevice device, VkSampler sampler) {
+        ManagedSampler result;
+        result.device_ = device;
+        result.sampler_ = sampler;
+        return result;
     }
 
     VkSampler get() const { return sampler_; }
@@ -910,6 +935,14 @@ public:
         }
     }
 
+    // Adopt an existing raw render pass
+    static ManagedRenderPass fromRaw(VkDevice device, VkRenderPass renderPass) {
+        ManagedRenderPass result;
+        result.device_ = device;
+        result.renderPass_ = renderPass;
+        return result;
+    }
+
     VkRenderPass get() const { return renderPass_; }
     explicit operator bool() const { return renderPass_ != VK_NULL_HANDLE; }
 
@@ -980,6 +1013,14 @@ public:
             vkDestroyFramebuffer(device_, framebuffer_, nullptr);
             framebuffer_ = VK_NULL_HANDLE;
         }
+    }
+
+    // Adopt an existing raw framebuffer
+    static ManagedFramebuffer fromRaw(VkDevice device, VkFramebuffer framebuffer) {
+        ManagedFramebuffer result;
+        result.device_ = device;
+        result.framebuffer_ = framebuffer;
+        return result;
     }
 
     VkFramebuffer get() const { return framebuffer_; }
@@ -1073,4 +1114,233 @@ private:
     VkCommandPool commandPool_;
     VkQueue queue_;
     VkCommandBuffer commandBuffer_ = VK_NULL_HANDLE;
+};
+
+// ============================================================================
+// ManagedCommandPool - RAII wrapper for VkCommandPool
+// ============================================================================
+
+class ManagedCommandPool {
+public:
+    ManagedCommandPool() = default;
+
+    ~ManagedCommandPool() {
+        destroy();
+    }
+
+    // Move-only semantics
+    ManagedCommandPool(ManagedCommandPool&& other) noexcept
+        : commandPool_(other.commandPool_)
+        , device_(other.device_) {
+        other.commandPool_ = VK_NULL_HANDLE;
+        other.device_ = VK_NULL_HANDLE;
+    }
+
+    ManagedCommandPool& operator=(ManagedCommandPool&& other) noexcept {
+        if (this != &other) {
+            destroy();
+            commandPool_ = other.commandPool_;
+            device_ = other.device_;
+            other.commandPool_ = VK_NULL_HANDLE;
+            other.device_ = VK_NULL_HANDLE;
+        }
+        return *this;
+    }
+
+    ManagedCommandPool(const ManagedCommandPool&) = delete;
+    ManagedCommandPool& operator=(const ManagedCommandPool&) = delete;
+
+    static bool create(VkDevice device,
+                       uint32_t queueFamilyIndex,
+                       VkCommandPoolCreateFlags flags,
+                       ManagedCommandPool& outPool) {
+        ManagedCommandPool result;
+        result.device_ = device;
+
+        VkCommandPoolCreateInfo poolInfo{};
+        poolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+        poolInfo.flags = flags;
+        poolInfo.queueFamilyIndex = queueFamilyIndex;
+
+        VkResult vkResult = vkCreateCommandPool(device, &poolInfo, nullptr, &result.commandPool_);
+        if (vkResult != VK_SUCCESS) {
+            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
+                "ManagedCommandPool::create failed: %d", vkResult);
+            return false;
+        }
+
+        outPool = std::move(result);
+        return true;
+    }
+
+    void destroy() {
+        if (commandPool_ != VK_NULL_HANDLE && device_ != VK_NULL_HANDLE) {
+            vkDestroyCommandPool(device_, commandPool_, nullptr);
+            commandPool_ = VK_NULL_HANDLE;
+        }
+    }
+
+    VkCommandPool get() const { return commandPool_; }
+    explicit operator bool() const { return commandPool_ != VK_NULL_HANDLE; }
+
+    VkCommandPool release() {
+        VkCommandPool tmp = commandPool_;
+        commandPool_ = VK_NULL_HANDLE;
+        return tmp;
+    }
+
+private:
+    VkCommandPool commandPool_ = VK_NULL_HANDLE;
+    VkDevice device_ = VK_NULL_HANDLE;
+};
+
+// ============================================================================
+// ManagedSemaphore - RAII wrapper for VkSemaphore
+// ============================================================================
+
+class ManagedSemaphore {
+public:
+    ManagedSemaphore() = default;
+
+    ~ManagedSemaphore() {
+        destroy();
+    }
+
+    // Move-only semantics
+    ManagedSemaphore(ManagedSemaphore&& other) noexcept
+        : semaphore_(other.semaphore_)
+        , device_(other.device_) {
+        other.semaphore_ = VK_NULL_HANDLE;
+        other.device_ = VK_NULL_HANDLE;
+    }
+
+    ManagedSemaphore& operator=(ManagedSemaphore&& other) noexcept {
+        if (this != &other) {
+            destroy();
+            semaphore_ = other.semaphore_;
+            device_ = other.device_;
+            other.semaphore_ = VK_NULL_HANDLE;
+            other.device_ = VK_NULL_HANDLE;
+        }
+        return *this;
+    }
+
+    ManagedSemaphore(const ManagedSemaphore&) = delete;
+    ManagedSemaphore& operator=(const ManagedSemaphore&) = delete;
+
+    static bool create(VkDevice device, ManagedSemaphore& outSemaphore) {
+        ManagedSemaphore result;
+        result.device_ = device;
+
+        VkSemaphoreCreateInfo semaphoreInfo{};
+        semaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+
+        VkResult vkResult = vkCreateSemaphore(device, &semaphoreInfo, nullptr, &result.semaphore_);
+        if (vkResult != VK_SUCCESS) {
+            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
+                "ManagedSemaphore::create failed: %d", vkResult);
+            return false;
+        }
+
+        outSemaphore = std::move(result);
+        return true;
+    }
+
+    void destroy() {
+        if (semaphore_ != VK_NULL_HANDLE && device_ != VK_NULL_HANDLE) {
+            vkDestroySemaphore(device_, semaphore_, nullptr);
+            semaphore_ = VK_NULL_HANDLE;
+        }
+    }
+
+    VkSemaphore get() const { return semaphore_; }
+    VkSemaphore* ptr() { return &semaphore_; }
+    explicit operator bool() const { return semaphore_ != VK_NULL_HANDLE; }
+
+private:
+    VkSemaphore semaphore_ = VK_NULL_HANDLE;
+    VkDevice device_ = VK_NULL_HANDLE;
+};
+
+// ============================================================================
+// ManagedFence - RAII wrapper for VkFence
+// ============================================================================
+
+class ManagedFence {
+public:
+    ManagedFence() = default;
+
+    ~ManagedFence() {
+        destroy();
+    }
+
+    // Move-only semantics
+    ManagedFence(ManagedFence&& other) noexcept
+        : fence_(other.fence_)
+        , device_(other.device_) {
+        other.fence_ = VK_NULL_HANDLE;
+        other.device_ = VK_NULL_HANDLE;
+    }
+
+    ManagedFence& operator=(ManagedFence&& other) noexcept {
+        if (this != &other) {
+            destroy();
+            fence_ = other.fence_;
+            device_ = other.device_;
+            other.fence_ = VK_NULL_HANDLE;
+            other.device_ = VK_NULL_HANDLE;
+        }
+        return *this;
+    }
+
+    ManagedFence(const ManagedFence&) = delete;
+    ManagedFence& operator=(const ManagedFence&) = delete;
+
+    static bool create(VkDevice device, VkFenceCreateFlags flags, ManagedFence& outFence) {
+        ManagedFence result;
+        result.device_ = device;
+
+        VkFenceCreateInfo fenceInfo{};
+        fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+        fenceInfo.flags = flags;
+
+        VkResult vkResult = vkCreateFence(device, &fenceInfo, nullptr, &result.fence_);
+        if (vkResult != VK_SUCCESS) {
+            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
+                "ManagedFence::create failed: %d", vkResult);
+            return false;
+        }
+
+        outFence = std::move(result);
+        return true;
+    }
+
+    // Convenience: create signaled fence (common for frame synchronization)
+    static bool createSignaled(VkDevice device, ManagedFence& outFence) {
+        return create(device, VK_FENCE_CREATE_SIGNALED_BIT, outFence);
+    }
+
+    void destroy() {
+        if (fence_ != VK_NULL_HANDLE && device_ != VK_NULL_HANDLE) {
+            vkDestroyFence(device_, fence_, nullptr);
+            fence_ = VK_NULL_HANDLE;
+        }
+    }
+
+    VkFence get() const { return fence_; }
+    VkFence* ptr() { return &fence_; }
+    explicit operator bool() const { return fence_ != VK_NULL_HANDLE; }
+
+    // Convenience methods for fence operations
+    VkResult wait(uint64_t timeout = UINT64_MAX) const {
+        return vkWaitForFences(device_, 1, &fence_, VK_TRUE, timeout);
+    }
+
+    VkResult reset() const {
+        return vkResetFences(device_, 1, &fence_);
+    }
+
+private:
+    VkFence fence_ = VK_NULL_HANDLE;
+    VkDevice device_ = VK_NULL_HANDLE;
 };

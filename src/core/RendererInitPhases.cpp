@@ -29,7 +29,7 @@ bool Renderer::initSubsystems(const InitContext& initCtx) {
     VkFormat swapchainImageFormat = vulkanContext.getSwapchainImageFormat();
 
     // Initialize post-processing systems (PostProcessSystem, BloomSystem)
-    if (!RendererInit::initPostProcessing(postProcessSystem, bloomSystem, initCtx, renderPass, swapchainImageFormat)) {
+    if (!RendererInit::initPostProcessing(postProcessSystem, bloomSystem, initCtx, renderPass.get(), swapchainImageFormat)) {
         return false;
     }
 
@@ -57,7 +57,7 @@ bool Renderer::initSubsystems(const InitContext& initCtx) {
     }
 
     // Initialize shadow system (needs descriptor set layouts for pipeline compatibility)
-    if (!shadowSystem.init(initCtx, descriptorSetLayout, skinnedMeshRenderer.getDescriptorSetLayout())) return false;
+    if (!shadowSystem.init(initCtx, descriptorSetLayout.get(), skinnedMeshRenderer.getDescriptorSetLayout())) return false;
 
     // Initialize terrain system BEFORE scene so scene objects can query terrain height
     std::string heightmapPath = resourcePath + "/assets/terrain/isleofwight-0m-200m.png";
@@ -99,7 +99,7 @@ bool Renderer::initSubsystems(const InitContext& initCtx) {
     SceneBuilder::InitInfo sceneInfo{};
     sceneInfo.allocator = allocator;
     sceneInfo.device = device;
-    sceneInfo.commandPool = commandPool;
+    sceneInfo.commandPool = commandPool.get();
     sceneInfo.graphicsQueue = graphicsQueue;
     sceneInfo.physicalDevice = physicalDevice;
     sceneInfo.resourcePath = resourcePath;
@@ -223,7 +223,7 @@ bool Renderer::initSubsystems(const InitContext& initCtx) {
         // Continue without Hi-Z - it's an optional optimization
     } else {
         // Connect depth buffer to Hi-Z system - use HDR depth where scene is rendered
-        hiZSystem.setDepthBuffer(core.hdr.depthView, depthSampler);
+        hiZSystem.setDepthBuffer(core.hdr.depthView, depthSampler.get());
 
         // Initialize object data for culling
         updateHiZObjectData();
@@ -238,12 +238,12 @@ bool Renderer::initSubsystems(const InitContext& initCtx) {
     // Initialize water subsystems (WaterSystem, WaterDisplacement, FlowMap, Foam, SSR, TileCull, GBuffer)
     WaterSubsystems waterSubs{waterSystem, waterDisplacement, flowMapGenerator, foamBuffer, ssrSystem, waterTileCull, waterGBuffer};
     if (!RendererInit::initWaterSubsystems(waterSubs, initCtx, core.hdr.renderPass,
-                                            shadowSystem, terrainSystem, terrainConfig, postProcessSystem, depthSampler)) return false;
+                                            shadowSystem, terrainSystem, terrainConfig, postProcessSystem, depthSampler.get())) return false;
 
     // Create water descriptor sets
     if (!RendererInit::createWaterDescriptorSets(waterSubs, globalBufferManager.uniformBuffers.buffers,
                                                   sizeof(UniformBufferObject), shadowSystem, terrainSystem,
-                                                  postProcessSystem, depthSampler)) return false;
+                                                  postProcessSystem, depthSampler.get())) return false;
 
     // Initialize tree edit system
     if (!RendererInit::initTreeEditSystem(treeEditSystem, initCtx, core.hdr)) return false;

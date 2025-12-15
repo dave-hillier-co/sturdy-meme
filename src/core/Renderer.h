@@ -54,6 +54,7 @@
 #include "DebugLineSystem.h"
 #include "UBOBuilder.h"
 #include "ResizeCoordinator.h"
+#include "VulkanRAII.h"
 
 #ifdef JPH_DEBUG_RENDERER
 #include "PhysicsDebugRenderer.h"
@@ -110,7 +111,7 @@ public:
     VkDevice getDevice() const { return vulkanContext.getDevice(); }
     VkQueue getGraphicsQueue() const { return vulkanContext.getGraphicsQueue(); }
     uint32_t getGraphicsQueueFamily() const { return vulkanContext.getGraphicsQueueFamily(); }
-    VkRenderPass getSwapchainRenderPass() const { return renderPass; }
+    VkRenderPass getSwapchainRenderPass() const { return renderPass.get(); }
     uint32_t getSwapchainImageCount() const { return vulkanContext.getSwapchainImageCount(); }
 
     // Access to VulkanContext
@@ -267,14 +268,14 @@ public:
     SceneBuilder& getSceneBuilder() { return sceneManager.getSceneBuilder(); }
     Mesh& getFlagClothMesh() { return sceneManager.getSceneBuilder().getFlagClothMesh(); }
     Mesh& getFlagPoleMesh() { return sceneManager.getSceneBuilder().getFlagPoleMesh(); }
-    void uploadFlagClothMesh() { sceneManager.getSceneBuilder().uploadFlagClothMesh(vulkanContext.getAllocator(), vulkanContext.getDevice(), commandPool, vulkanContext.getGraphicsQueue()); }
+    void uploadFlagClothMesh() { sceneManager.getSceneBuilder().uploadFlagClothMesh(vulkanContext.getAllocator(), vulkanContext.getDevice(), commandPool.get(), vulkanContext.getGraphicsQueue()); }
 
     // Animated character update
     // movementSpeed: horizontal speed for animation state selection
     // isGrounded: whether on the ground
     // isJumping: whether just started jumping
     void updateAnimatedCharacter(float deltaTime, float movementSpeed = 0.0f, bool isGrounded = true, bool isJumping = false) {
-        sceneManager.getSceneBuilder().updateAnimatedCharacter(deltaTime, vulkanContext.getAllocator(), vulkanContext.getDevice(), commandPool, vulkanContext.getGraphicsQueue(), movementSpeed, isGrounded, isJumping);
+        sceneManager.getSceneBuilder().updateAnimatedCharacter(deltaTime, vulkanContext.getAllocator(), vulkanContext.getDevice(), commandPool.get(), vulkanContext.getGraphicsQueue(), movementSpeed, isGrounded, isJumping);
     }
 
     // Start a jump with trajectory prediction for animation sync
@@ -332,7 +333,7 @@ public:
     void toggleTreeEditMode() { treeEditSystem.toggle(); }
 
     // Resource access for billboard capture
-    VkCommandPool getCommandPool() const { return commandPool; }
+    VkCommandPool getCommandPool() const { return commandPool.get(); }
     DescriptorManager::Pool* getDescriptorPool() { return &*descriptorManagerPool; }
     std::string getShaderPath() const { return resourcePath + "/shaders"; }
 
@@ -397,10 +398,10 @@ private:
 
     VulkanContext vulkanContext;
 
-    VkRenderPass renderPass = VK_NULL_HANDLE;
-    VkDescriptorSetLayout descriptorSetLayout = VK_NULL_HANDLE;
-    VkPipelineLayout pipelineLayout = VK_NULL_HANDLE;
-    VkPipeline graphicsPipeline = VK_NULL_HANDLE;
+    ManagedRenderPass renderPass;
+    ManagedDescriptorSetLayout descriptorSetLayout;
+    ManagedPipelineLayout pipelineLayout;
+    ManagedPipeline graphicsPipeline;
 
     // Skinned mesh rendering (GPU skinning)
     SkinnedMeshRenderer skinnedMeshRenderer;
@@ -445,14 +446,13 @@ private:
     // Render pipeline (stages abstraction - for future refactoring)
     RenderPipeline renderPipeline;
 
-    std::vector<VkFramebuffer> framebuffers;
-    VkCommandPool commandPool = VK_NULL_HANDLE;
+    std::vector<ManagedFramebuffer> framebuffers;
+    ManagedCommandPool commandPool;
     std::vector<VkCommandBuffer> commandBuffers;
 
-    VkImage depthImage = VK_NULL_HANDLE;
-    VmaAllocation depthImageAllocation = VK_NULL_HANDLE;
-    VkImageView depthImageView = VK_NULL_HANDLE;
-    VkSampler depthSampler = VK_NULL_HANDLE;  // For Hi-Z pyramid generation
+    ManagedImage depthImage;
+    ManagedImageView depthImageView;
+    ManagedSampler depthSampler;  // For Hi-Z pyramid generation
     VkFormat depthFormat = VK_FORMAT_UNDEFINED;
 
     // Shadow system (CSM + dynamic shadows)
@@ -463,9 +463,9 @@ private:
 
     std::optional<DescriptorManager::Pool> descriptorManagerPool;
 
-    std::vector<VkSemaphore> imageAvailableSemaphores;
-    std::vector<VkSemaphore> renderFinishedSemaphores;
-    std::vector<VkFence> inFlightFences;
+    std::vector<ManagedSemaphore> imageAvailableSemaphores;
+    std::vector<ManagedSemaphore> renderFinishedSemaphores;
+    std::vector<ManagedFence> inFlightFences;
 
     // Scene management (meshes, textures, objects, lights, physics)
     SceneManager sceneManager;

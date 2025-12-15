@@ -44,7 +44,19 @@ bool BloomSystem::init(const InitContext& ctx) {
 void BloomSystem::destroy(VkDevice /*device*/, VmaAllocator /*allocator*/) {
     destroyMipChain();
 
-    // RAII handles cleanup of pipelines, layouts, samplers, and render passes
+    // Reset RAII members before device is destroyed
+    upsamplePipeline_ = ManagedPipeline();
+    upsamplePipelineLayout_ = ManagedPipelineLayout();
+    upsampleDescSetLayout_ = ManagedDescriptorSetLayout();
+
+    downsamplePipeline_ = ManagedPipeline();
+    downsamplePipelineLayout_ = ManagedPipelineLayout();
+    downsampleDescSetLayout_ = ManagedDescriptorSetLayout();
+
+    sampler_ = ManagedSampler();
+    upsampleRenderPass_ = ManagedRenderPass();
+    downsampleRenderPass_ = ManagedRenderPass();
+
     downsampleDescSets.clear();
     upsampleDescSets.clear();
 }

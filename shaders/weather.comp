@@ -239,9 +239,9 @@ void main() {
     uint idx = gl_GlobalInvocationID.x;
     if (idx >= MAX_PARTICLES) return;
 
-    // Set vertex count for quad using common helper (4 vertices for triangle strip)
+    // Set vertex count for quad (4 vertices for triangle strip)
     if (idx == 0) {
-        setVertexCount(drawCmd, 4);
+        atomicMax(drawCmd.vertexCount, 4);
     }
 
     // Calculate target particle count based on intensity
@@ -360,6 +360,6 @@ void main() {
         outputParticles[idx].flags &= ~2u;  // Clear visible bit
     }
 
-    // Set instance count to target particles using common helper
-    setInstanceCount(drawCmd, targetParticles);
+    // Set instance count to target particles
+    atomicMax(drawCmd.instanceCount, targetParticles);
 }

@@ -123,21 +123,19 @@ vec3 hash3D(vec3 p) {
 // ============================================================================
 // Indirect Draw Command Helpers
 // ============================================================================
-
-// Atomically set vertex count (call once per dispatch, typically from thread 0)
-// This is safe even with multiple workgroups since they all write the same value
-void setVertexCount(inout DrawIndirectCommand cmd, uint vertexCount) {
-    atomicMax(cmd.vertexCount, vertexCount);
-}
-
-// Atomically increment instance count and return the slot index for this instance
-uint allocateInstanceSlot(inout DrawIndirectCommand cmd) {
-    return atomicAdd(cmd.instanceCount, 1);
-}
-
-// Set instance count directly (use atomicMax for thread-safe single-value setting)
-void setInstanceCount(inout DrawIndirectCommand cmd, uint count) {
-    atomicMax(cmd.instanceCount, count);
-}
+// NOTE: Atomic operations on DrawIndirectCommand fields must be done directly
+// on buffer storage variables in the shader, not through helper functions.
+// GLSL requires atomicMax/atomicAdd to operate on l-values from buffer storage.
+//
+// Example usage in compute shaders:
+//   layout(std430, binding = X) buffer IndirectBuffer {
+//       DrawIndirectCommand drawCmd;
+//   };
+//
+//   // In main():
+//   if (gl_GlobalInvocationID.x == 0) {
+//       atomicMax(drawCmd.vertexCount, 4);  // Set vertex count (e.g., 4 for quad)
+//   }
+//   atomicMax(drawCmd.instanceCount, totalInstances);  // Set instance count
 
 #endif // INSTANCING_COMMON_GLSL

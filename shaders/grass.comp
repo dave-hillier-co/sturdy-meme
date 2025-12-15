@@ -127,10 +127,10 @@ void calculateClump(vec2 worldPos, float clumpScale,
 void main() {
     uint idx = gl_GlobalInvocationID.x;
 
-    // Set vertexCount atomically using common helper
+    // Set vertexCount atomically
     // (buffer is pre-cleared to 0 by CPU, so atomicMax ensures it becomes 15)
     if (idx == 0) {
-        setVertexCount(drawCmd, 15);  // 5 segments * 3 vertices per triangle
+        atomicMax(drawCmd.vertexCount, 15);  // 5 segments * 3 vertices per triangle
     }
 
     // Generate grass positions in a grid pattern
@@ -184,8 +184,8 @@ void main() {
     float instanceHash = hash(cell + vec2(500.0, 500.0));
     if (lodCull(distToCamera, uniforms.lodTransitionStart, uniforms.lodTransitionEnd, 0.75, instanceHash)) return;
 
-    // Atomically increment instance count and get our slot using common helper
-    uint slot = allocateInstanceSlot(drawCmd);
+    // Atomically increment instance count and get our slot
+    uint slot = atomicAdd(drawCmd.instanceCount, 1);
 
     // Calculate clumping
     float clumpId, clumpDist;

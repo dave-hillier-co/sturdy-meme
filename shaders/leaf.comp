@@ -392,9 +392,9 @@ void main() {
     uint idx = gl_GlobalInvocationID.x;
     if (idx >= MAX_PARTICLES) return;
 
-    // Set vertex count for quad using common helper (4 vertices for triangle strip)
+    // Set vertex count for quad (4 vertices for triangle strip)
     if (idx == 0) {
-        setVertexCount(drawCmd, 4);
+        atomicMax(drawCmd.vertexCount, 4);
     }
 
     float dt = push.deltaTime;
@@ -641,6 +641,6 @@ void main() {
         outputParticles[idx].flags &= ~FLAG_VISIBLE;
     }
 
-    // Update instance count using common helper
-    setInstanceCount(drawCmd, totalTarget);
+    // Update instance count
+    atomicMax(drawCmd.instanceCount, totalTarget);
 }

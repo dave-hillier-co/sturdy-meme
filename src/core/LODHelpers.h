@@ -217,6 +217,241 @@ namespace LODPresets {
 }
 
 // ============================================================================
+// Screen-Space Error LOD Selection
+// ============================================================================
+
+/**
+ * Configuration for screen-space error LOD selection.
+ * Thresholds are minimum screen pixels for each LOD level (descending order).
+ * LOD 0 requires the most pixels, higher LODs require fewer.
+ */
+struct ScreenSpaceLODConfig {
+    std::vector<float> pixelThresholds;  // Min screen pixels for each LOD (descending)
+    float hysteresisRatio = 0.1f;        // Hysteresis as ratio of threshold
+
+    ScreenSpaceLODConfig() = default;
+
+    ScreenSpaceLODConfig(std::initializer_list<float> pixels, float hysteresis = 0.1f)
+        : pixelThresholds(pixels), hysteresisRatio(hysteresis) {}
+
+    ScreenSpaceLODConfig(std::vector<float> pixels, float hysteresis = 0.1f)
+        : pixelThresholds(std::move(pixels)), hysteresisRatio(hysteresis) {}
+
+    uint32_t numLODLevels() const {
+        return static_cast<uint32_t>(pixelThresholds.size());
+    }
+};
+
+/**
+ * Calculate projected screen size in pixels for an object.
+ *
+ * @param objectSize World-space size of the object (e.g., height, diameter)
+ * @param distance Distance from camera to object
+ * @param fovY Vertical field of view in radians
+ * @param screenHeight Screen height in pixels
+ * @return Projected size in screen pixels
+ */
+inline float calculateScreenSize(float objectSize, float distance,
+                                  float fovY, float screenHeight) {
+    if (distance <= 0.0f) {
+        return std::numeric_limits<float>::max();
+    }
+    // projection factor = screenHeight / (2 * tan(fovY/2))
+    float projectionFactor = screenHeight / (2.0f * std::tan(fovY * 0.5f));
+    return (objectSize / distance) * projectionFactor;
+}
+
+/**
+ * Calculate projected screen size using pre-computed projection factor.
+ * Use this when calling repeatedly with the same FOV and screen height.
+ *
+ * @param objectSize World-space size of the object
+ * @param distance Distance from camera to object
+ * @param projectionFactor Pre-computed: screenHeight / (2 * tan(fovY/2))
+ * @return Projected size in screen pixels
+ */
+inline float calculateScreenSizeFast(float objectSize, float distance,
+                                      float projectionFactor) {
+    if (distance <= 0.0f) {
+        return std::numeric_limits<float>::max();
+    }
+    return (objectSize / distance) * projectionFactor;
+}
+
+/**
+ * Compute the projection factor for screen-space calculations.
+ * Cache this value when FOV and screen height don't change.
+ *
+ * @param fovY Vertical field of view in radians
+ * @param screenHeight Screen height in pixels
+ * @return Projection factor for use with calculateScreenSizeFast
+ */
+inline float computeProjectionFactor(float fovY, float screenHeight) {
+    return screenHeight / (2.0f * std::tan(fovY * 0.5f));
+}
+
+/**
+ * Select LOD level based on screen-space pixel size.
+ * Thresholds should be in descending order (LOD0 needs most pixels).
+ *
+ * @param screenPixels Projected screen size in pixels
+ * @param pixelThresholds Min pixels for each LOD level (descending order)
+ * @return LOD level (0 = highest detail when object is large on screen)
+ */
+inline uint32_t selectLODByScreenSize(float screenPixels,
+                                       const std::vector<float>& pixelThresholds) {
+    for (uint32_t i = 0; i < pixelThresholds.size(); ++i) {
+        if (screenPixels >= pixelThresholds[i]) {
+            return i;
+        }
+    }
+    return static_cast<uint32_t>(pixelThresholds.size());
+}
+
+/**
+ * Select LOD level by screen size with hysteresis.
+ *
+ * When transitioning to lower detail (object getting smaller), requires
+ * screen size to drop below threshold - hysteresis margin.
+ * When transitioning to higher detail (object getting larger), uses
+ * the normal threshold.
+ *
+ * @param screenPixels Projected screen size in pixels
+ * @param currentLOD Current LOD level
+ * @param config Screen-space LOD configuration
+ * @return New LOD level
+ */
+inline uint32_t selectLODByScreenSizeWithHysteresis(float screenPixels,
+                                                     uint32_t currentLOD,
+                                                     const ScreenSpaceLODConfig& config) {
+    if (config.pixelThresholds.empty()) {
+        return 0;
+    }
+
+    const uint32_t numLevels = config.numLODLevels();
+    const float hysteresisRatio = config.hysteresisRatio;
+
+    // Calculate target LOD without hysteresis
+    uint32_t targetLOD = selectLODByScreenSize(screenPixels, config.pixelThresholds);
+
+    // Apply hysteresis
+    if (targetLOD > currentLOD) {
+        // Moving to lower detail (object getting smaller on screen)
+        // Require pixels to drop below threshold - hysteresis
+        uint32_t checkLOD = currentLOD;
+        while (checkLOD < targetLOD && checkLOD < numLevels) {
+            float threshold = config.pixelThresholds[checkLOD];
+            float hysteresisMargin = threshold * hysteresisRatio;
+            if (screenPixels > threshold - hysteresisMargin) {
+                // Not small enough yet, stay at current
+                return checkLOD;
+            }
+            ++checkLOD;
+        }
+        return targetLOD;
+    } else if (targetLOD < currentLOD) {
+        // Moving to higher detail (object getting larger on screen)
+        // Require pixels to exceed threshold + hysteresis
+        uint32_t checkLOD = currentLOD;
+        while (checkLOD > targetLOD && checkLOD > 0) {
+            float threshold = config.pixelThresholds[checkLOD - 1];
+            float hysteresisMargin = threshold * hysteresisRatio;
+            if (screenPixels < threshold + hysteresisMargin) {
+                // Not large enough yet, stay at current
+                return checkLOD;
+            }
+            --checkLOD;
+        }
+        return targetLOD;
+    }
+
+    return currentLOD;
+}
+
+/**
+ * Common screen-space LOD presets.
+ * Thresholds are minimum screen pixels (descending order).
+ */
+namespace ScreenSpaceLODPresets {
+    // Buildings/large structures - need detail when prominent
+    inline ScreenSpaceLODConfig buildings() {
+        return ScreenSpaceLODConfig({200.0f, 100.0f, 50.0f, 20.0f}, 0.1f);
+    }
+
+    // Trees/vegetation - medium detail requirements
+    inline ScreenSpaceLODConfig trees() {
+        return ScreenSpaceLODConfig({80.0f, 40.0f, 20.0f, 8.0f}, 0.15f);
+    }
+
+    // Small props - lower detail thresholds
+    inline ScreenSpaceLODConfig smallProps() {
+        return ScreenSpaceLODConfig({40.0f, 20.0f, 10.0f, 4.0f}, 0.1f);
+    }
+
+    // Characters - high detail when visible
+    inline ScreenSpaceLODConfig characters() {
+        return ScreenSpaceLODConfig({150.0f, 80.0f, 40.0f, 15.0f}, 0.12f);
+    }
+}
+
+/**
+ * Screen-space LOD Selector with hysteresis support.
+ * Maintains state and caches projection factor for efficient per-frame updates.
+ */
+class ScreenSpaceLODSelector {
+public:
+    ScreenSpaceLODSelector() = default;
+
+    explicit ScreenSpaceLODSelector(const ScreenSpaceLODConfig& cfg)
+        : config(cfg), currentLOD(0), projectionFactor(0.0f) {}
+
+    ScreenSpaceLODSelector(std::initializer_list<float> thresholds, float hysteresisRatio = 0.1f)
+        : config(thresholds, hysteresisRatio), currentLOD(0), projectionFactor(0.0f) {}
+
+    /**
+     * Update projection factor when FOV or screen size changes.
+     * Call this once per frame or when camera parameters change.
+     */
+    void updateProjection(float fovY, float screenHeight) {
+        projectionFactor = computeProjectionFactor(fovY, screenHeight);
+    }
+
+    /**
+     * Select LOD level for an object based on its size and distance.
+     *
+     * @param objectSize World-space size of the object
+     * @param distance Distance from camera to object
+     * @return Selected LOD level (0 = highest detail)
+     */
+    uint32_t selectLOD(float objectSize, float distance) {
+        float screenPixels = calculateScreenSizeFast(objectSize, distance, projectionFactor);
+        currentLOD = selectLODByScreenSizeWithHysteresis(screenPixels, currentLOD, config);
+        return currentLOD;
+    }
+
+    /**
+     * Select LOD using pre-computed screen pixels.
+     */
+    uint32_t selectLODFromScreenSize(float screenPixels) {
+        currentLOD = selectLODByScreenSizeWithHysteresis(screenPixels, currentLOD, config);
+        return currentLOD;
+    }
+
+    uint32_t getCurrentLOD() const { return currentLOD; }
+    void setCurrentLOD(uint32_t lod) { currentLOD = std::min(lod, config.numLODLevels()); }
+    void reset() { currentLOD = 0; }
+
+    const ScreenSpaceLODConfig& getConfig() const { return config; }
+    ScreenSpaceLODConfig& getConfig() { return config; }
+    float getProjectionFactor() const { return projectionFactor; }
+
+private:
+    ScreenSpaceLODConfig config;
+    uint32_t currentLOD = 0;
+    float projectionFactor = 0.0f;
+};
+
+// ============================================================================
 // LODSelector Class - Stateful LOD selection with hysteresis
 // ============================================================================
 

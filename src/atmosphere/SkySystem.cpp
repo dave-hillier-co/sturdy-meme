@@ -1,6 +1,7 @@
 #include "SkySystem.h"
 #include "AtmosphereLUTSystem.h"
 #include "GraphicsPipelineFactory.h"
+#include "DescriptorManager.h"
 #include "UBOs.h"
 #include <SDL3/SDL.h>
 #include <array>
@@ -129,108 +130,15 @@ bool SkySystem::createDescriptorSets(const std::vector<VkBuffer>& uniformBuffers
 
     // Update each descriptor set
     for (size_t i = 0; i < framesInFlight; i++) {
-        // UBO binding
-        VkDescriptorBufferInfo bufferInfo{};
-        bufferInfo.buffer = uniformBuffers[i];
-        bufferInfo.offset = 0;
-        bufferInfo.range = uniformBufferSize;
-
-        // Transmittance LUT binding
-        VkDescriptorImageInfo transmittanceInfo{};
-        transmittanceInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-        transmittanceInfo.imageView = transmittanceLUTView;
-        transmittanceInfo.sampler = lutSampler;
-
-        // Multi-scatter LUT binding
-        VkDescriptorImageInfo multiScatterInfo{};
-        multiScatterInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-        multiScatterInfo.imageView = multiScatterLUTView;
-        multiScatterInfo.sampler = lutSampler;
-
-        // Sky-view LUT binding (updated per-frame with sun direction)
-        VkDescriptorImageInfo skyViewInfo{};
-        skyViewInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-        skyViewInfo.imageView = skyViewLUTView;
-        skyViewInfo.sampler = lutSampler;
-
-        // Rayleigh Irradiance LUT binding (Phase 4.1.9)
-        VkDescriptorImageInfo rayleighIrradianceInfo{};
-        rayleighIrradianceInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-        rayleighIrradianceInfo.imageView = rayleighIrradianceLUTView;
-        rayleighIrradianceInfo.sampler = lutSampler;
-
-        // Mie Irradiance LUT binding (Phase 4.1.9)
-        VkDescriptorImageInfo mieIrradianceInfo{};
-        mieIrradianceInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-        mieIrradianceInfo.imageView = mieIrradianceLUTView;
-        mieIrradianceInfo.sampler = lutSampler;
-
-        // Cloud Map LUT binding (Paraboloid projection)
-        VkDescriptorImageInfo cloudMapInfo{};
-        cloudMapInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-        cloudMapInfo.imageView = cloudMapLUTView;
-        cloudMapInfo.sampler = lutSampler;
-
-        std::array<VkWriteDescriptorSet, 7> descriptorWrites{};
-
-        descriptorWrites[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        descriptorWrites[0].dstSet = descriptorSets[i];
-        descriptorWrites[0].dstBinding = 0;
-        descriptorWrites[0].dstArrayElement = 0;
-        descriptorWrites[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-        descriptorWrites[0].descriptorCount = 1;
-        descriptorWrites[0].pBufferInfo = &bufferInfo;
-
-        descriptorWrites[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        descriptorWrites[1].dstSet = descriptorSets[i];
-        descriptorWrites[1].dstBinding = 1;
-        descriptorWrites[1].dstArrayElement = 0;
-        descriptorWrites[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        descriptorWrites[1].descriptorCount = 1;
-        descriptorWrites[1].pImageInfo = &transmittanceInfo;
-
-        descriptorWrites[2].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        descriptorWrites[2].dstSet = descriptorSets[i];
-        descriptorWrites[2].dstBinding = 2;
-        descriptorWrites[2].dstArrayElement = 0;
-        descriptorWrites[2].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        descriptorWrites[2].descriptorCount = 1;
-        descriptorWrites[2].pImageInfo = &multiScatterInfo;
-
-        descriptorWrites[3].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        descriptorWrites[3].dstSet = descriptorSets[i];
-        descriptorWrites[3].dstBinding = 3;
-        descriptorWrites[3].dstArrayElement = 0;
-        descriptorWrites[3].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        descriptorWrites[3].descriptorCount = 1;
-        descriptorWrites[3].pImageInfo = &skyViewInfo;
-
-        descriptorWrites[4].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        descriptorWrites[4].dstSet = descriptorSets[i];
-        descriptorWrites[4].dstBinding = 4;
-        descriptorWrites[4].dstArrayElement = 0;
-        descriptorWrites[4].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        descriptorWrites[4].descriptorCount = 1;
-        descriptorWrites[4].pImageInfo = &rayleighIrradianceInfo;
-
-        descriptorWrites[5].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        descriptorWrites[5].dstSet = descriptorSets[i];
-        descriptorWrites[5].dstBinding = 5;
-        descriptorWrites[5].dstArrayElement = 0;
-        descriptorWrites[5].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        descriptorWrites[5].descriptorCount = 1;
-        descriptorWrites[5].pImageInfo = &mieIrradianceInfo;
-
-        descriptorWrites[6].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        descriptorWrites[6].dstSet = descriptorSets[i];
-        descriptorWrites[6].dstBinding = 6;
-        descriptorWrites[6].dstArrayElement = 0;
-        descriptorWrites[6].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        descriptorWrites[6].descriptorCount = 1;
-        descriptorWrites[6].pImageInfo = &cloudMapInfo;
-
-        vkUpdateDescriptorSets(device, static_cast<uint32_t>(descriptorWrites.size()),
-                               descriptorWrites.data(), 0, nullptr);
+        DescriptorManager::SetWriter(device, descriptorSets[i])
+            .writeBuffer(0, uniformBuffers[i], 0, uniformBufferSize)
+            .writeImage(1, transmittanceLUTView, lutSampler)
+            .writeImage(2, multiScatterLUTView, lutSampler)
+            .writeImage(3, skyViewLUTView, lutSampler)
+            .writeImage(4, rayleighIrradianceLUTView, lutSampler)
+            .writeImage(5, mieIrradianceLUTView, lutSampler)
+            .writeImage(6, cloudMapLUTView, lutSampler)
+            .update();
     }
 
     SDL_Log("Sky descriptor sets created with atmosphere LUTs (including cloud map)");

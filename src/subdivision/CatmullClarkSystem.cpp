@@ -294,160 +294,28 @@ bool CatmullClarkSystem::createDescriptorSets() {
 }
 
 void CatmullClarkSystem::updateDescriptorSets(VkDevice device, const std::vector<VkBuffer>& sceneUniformBuffers) {
+    VkDeviceSize vertexBufferSize = (*mesh)->vertices.size() * sizeof(CatmullClarkMesh::Vertex);
+    VkDeviceSize halfedgeBufferSize = (*mesh)->halfedges.size() * sizeof(CatmullClarkMesh::Halfedge);
+    VkDeviceSize faceBufferSize = (*mesh)->faces.size() * sizeof(CatmullClarkMesh::Face);
+
     for (uint32_t i = 0; i < framesInFlight; ++i) {
-        std::vector<VkWriteDescriptorSet> descriptorWrites;
-
         // Compute descriptor set
-        {
-            VkDescriptorBufferInfo sceneBufferInfo{};
-            sceneBufferInfo.buffer = sceneUniformBuffers[i];
-            sceneBufferInfo.offset = 0;
-            sceneBufferInfo.range = sizeof(UniformBufferObject);
-
-            VkDescriptorBufferInfo cbtBufferInfo{};
-            cbtBufferInfo.buffer = (*cbt)->getBuffer();
-            cbtBufferInfo.offset = 0;
-            cbtBufferInfo.range = (*cbt)->getBufferSize();
-
-            VkDescriptorBufferInfo vertexBufferInfo{};
-            vertexBufferInfo.buffer = (*mesh)->vertexBuffer;
-            vertexBufferInfo.offset = 0;
-            vertexBufferInfo.range = (*mesh)->vertices.size() * sizeof(CatmullClarkMesh::Vertex);
-
-            VkDescriptorBufferInfo halfedgeBufferInfo{};
-            halfedgeBufferInfo.buffer = (*mesh)->halfedgeBuffer;
-            halfedgeBufferInfo.offset = 0;
-            halfedgeBufferInfo.range = (*mesh)->halfedges.size() * sizeof(CatmullClarkMesh::Halfedge);
-
-            VkDescriptorBufferInfo faceBufferInfo{};
-            faceBufferInfo.buffer = (*mesh)->faceBuffer;
-            faceBufferInfo.offset = 0;
-            faceBufferInfo.range = (*mesh)->faces.size() * sizeof(CatmullClarkMesh::Face);
-
-            VkWriteDescriptorSet write0{};
-            write0.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-            write0.dstSet = computeDescriptorSets[i];
-            write0.dstBinding = 0;
-            write0.dstArrayElement = 0;
-            write0.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-            write0.descriptorCount = 1;
-            write0.pBufferInfo = &sceneBufferInfo;
-
-            VkWriteDescriptorSet write1{};
-            write1.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-            write1.dstSet = computeDescriptorSets[i];
-            write1.dstBinding = 1;
-            write1.dstArrayElement = 0;
-            write1.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-            write1.descriptorCount = 1;
-            write1.pBufferInfo = &cbtBufferInfo;
-
-            VkWriteDescriptorSet write2{};
-            write2.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-            write2.dstSet = computeDescriptorSets[i];
-            write2.dstBinding = 2;
-            write2.dstArrayElement = 0;
-            write2.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-            write2.descriptorCount = 1;
-            write2.pBufferInfo = &vertexBufferInfo;
-
-            VkWriteDescriptorSet write3{};
-            write3.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-            write3.dstSet = computeDescriptorSets[i];
-            write3.dstBinding = 3;
-            write3.dstArrayElement = 0;
-            write3.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-            write3.descriptorCount = 1;
-            write3.pBufferInfo = &halfedgeBufferInfo;
-
-            VkWriteDescriptorSet write4{};
-            write4.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-            write4.dstSet = computeDescriptorSets[i];
-            write4.dstBinding = 4;
-            write4.dstArrayElement = 0;
-            write4.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-            write4.descriptorCount = 1;
-            write4.pBufferInfo = &faceBufferInfo;
-
-            VkWriteDescriptorSet writes[] = {write0, write1, write2, write3, write4};
-            vkUpdateDescriptorSets(device, 5, writes, 0, nullptr);
-        }
+        DescriptorManager::SetWriter(device, computeDescriptorSets[i])
+            .writeBuffer(0, sceneUniformBuffers[i], 0, sizeof(UniformBufferObject))
+            .writeBuffer(1, (*cbt)->getBuffer(), 0, (*cbt)->getBufferSize(), VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+            .writeBuffer(2, (*mesh)->vertexBuffer, 0, vertexBufferSize, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+            .writeBuffer(3, (*mesh)->halfedgeBuffer, 0, halfedgeBufferSize, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+            .writeBuffer(4, (*mesh)->faceBuffer, 0, faceBufferSize, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+            .update();
 
         // Render descriptor set (same buffers)
-        {
-            VkDescriptorBufferInfo sceneBufferInfo{};
-            sceneBufferInfo.buffer = sceneUniformBuffers[i];
-            sceneBufferInfo.offset = 0;
-            sceneBufferInfo.range = sizeof(UniformBufferObject);
-
-            VkDescriptorBufferInfo cbtBufferInfo{};
-            cbtBufferInfo.buffer = (*cbt)->getBuffer();
-            cbtBufferInfo.offset = 0;
-            cbtBufferInfo.range = (*cbt)->getBufferSize();
-
-            VkDescriptorBufferInfo vertexBufferInfo{};
-            vertexBufferInfo.buffer = (*mesh)->vertexBuffer;
-            vertexBufferInfo.offset = 0;
-            vertexBufferInfo.range = (*mesh)->vertices.size() * sizeof(CatmullClarkMesh::Vertex);
-
-            VkDescriptorBufferInfo halfedgeBufferInfo{};
-            halfedgeBufferInfo.buffer = (*mesh)->halfedgeBuffer;
-            halfedgeBufferInfo.offset = 0;
-            halfedgeBufferInfo.range = (*mesh)->halfedges.size() * sizeof(CatmullClarkMesh::Halfedge);
-
-            VkDescriptorBufferInfo faceBufferInfo{};
-            faceBufferInfo.buffer = (*mesh)->faceBuffer;
-            faceBufferInfo.offset = 0;
-            faceBufferInfo.range = (*mesh)->faces.size() * sizeof(CatmullClarkMesh::Face);
-
-            VkWriteDescriptorSet write0{};
-            write0.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-            write0.dstSet = renderDescriptorSets[i];
-            write0.dstBinding = 0;
-            write0.dstArrayElement = 0;
-            write0.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-            write0.descriptorCount = 1;
-            write0.pBufferInfo = &sceneBufferInfo;
-
-            VkWriteDescriptorSet write1{};
-            write1.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-            write1.dstSet = renderDescriptorSets[i];
-            write1.dstBinding = 1;
-            write1.dstArrayElement = 0;
-            write1.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-            write1.descriptorCount = 1;
-            write1.pBufferInfo = &cbtBufferInfo;
-
-            VkWriteDescriptorSet write2{};
-            write2.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-            write2.dstSet = renderDescriptorSets[i];
-            write2.dstBinding = 2;
-            write2.dstArrayElement = 0;
-            write2.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-            write2.descriptorCount = 1;
-            write2.pBufferInfo = &vertexBufferInfo;
-
-            VkWriteDescriptorSet write3{};
-            write3.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-            write3.dstSet = renderDescriptorSets[i];
-            write3.dstBinding = 3;
-            write3.dstArrayElement = 0;
-            write3.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-            write3.descriptorCount = 1;
-            write3.pBufferInfo = &halfedgeBufferInfo;
-
-            VkWriteDescriptorSet write4{};
-            write4.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-            write4.dstSet = renderDescriptorSets[i];
-            write4.dstBinding = 4;
-            write4.dstArrayElement = 0;
-            write4.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-            write4.descriptorCount = 1;
-            write4.pBufferInfo = &faceBufferInfo;
-
-            VkWriteDescriptorSet writes[] = {write0, write1, write2, write3, write4};
-            vkUpdateDescriptorSets(device, 5, writes, 0, nullptr);
-        }
+        DescriptorManager::SetWriter(device, renderDescriptorSets[i])
+            .writeBuffer(0, sceneUniformBuffers[i], 0, sizeof(UniformBufferObject))
+            .writeBuffer(1, (*cbt)->getBuffer(), 0, (*cbt)->getBufferSize(), VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+            .writeBuffer(2, (*mesh)->vertexBuffer, 0, vertexBufferSize, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+            .writeBuffer(3, (*mesh)->halfedgeBuffer, 0, halfedgeBufferSize, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+            .writeBuffer(4, (*mesh)->faceBuffer, 0, faceBufferSize, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+            .update();
     }
 }
 

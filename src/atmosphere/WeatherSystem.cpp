@@ -255,121 +255,21 @@ void WeatherSystem::updateDescriptorSets(VkDevice dev, const std::vector<VkBuffe
         uint32_t inputSet = (set == 0) ? 1 : 0;  // Read from opposite buffer
         uint32_t outputSet = set;
 
-        // Compute descriptor set writes
-        VkDescriptorBufferInfo inputParticleBufferInfo{};
-        inputParticleBufferInfo.buffer = particleBuffers.buffers[inputSet];
-        inputParticleBufferInfo.offset = 0;
-        inputParticleBufferInfo.range = sizeof(WeatherParticle) * MAX_PARTICLES;
+        // Compute descriptor set
+        DescriptorManager::SetWriter(dev, (*particleSystem)->getComputeDescriptorSet(set))
+            .writeBuffer(0, particleBuffers.buffers[inputSet], 0, sizeof(WeatherParticle) * MAX_PARTICLES, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+            .writeBuffer(1, particleBuffers.buffers[outputSet], 0, sizeof(WeatherParticle) * MAX_PARTICLES, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+            .writeBuffer(2, indirectBuffers.buffers[outputSet], 0, sizeof(VkDrawIndirectCommand), VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+            .writeBuffer(3, uniformBuffers.buffers[0], 0, sizeof(WeatherUniforms))
+            .writeBuffer(4, windBuffers[0], 0, 32)  // sizeof(WindUniforms)
+            .update();
 
-        VkDescriptorBufferInfo outputParticleBufferInfo{};
-        outputParticleBufferInfo.buffer = particleBuffers.buffers[outputSet];
-        outputParticleBufferInfo.offset = 0;
-        outputParticleBufferInfo.range = sizeof(WeatherParticle) * MAX_PARTICLES;
-
-        VkDescriptorBufferInfo indirectBufferInfo{};
-        indirectBufferInfo.buffer = indirectBuffers.buffers[outputSet];
-        indirectBufferInfo.offset = 0;
-        indirectBufferInfo.range = sizeof(VkDrawIndirectCommand);
-
-        VkDescriptorBufferInfo weatherUniformInfo{};
-        weatherUniformInfo.buffer = uniformBuffers.buffers[0];
-        weatherUniformInfo.offset = 0;
-        weatherUniformInfo.range = sizeof(WeatherUniforms);
-
-        VkDescriptorBufferInfo windBufferInfo{};
-        windBufferInfo.buffer = windBuffers[0];
-        windBufferInfo.offset = 0;
-        windBufferInfo.range = 32;  // sizeof(WindUniforms)
-
-        std::array<VkWriteDescriptorSet, 5> computeWrites{};
-
-        computeWrites[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        computeWrites[0].dstSet = (*particleSystem)->getComputeDescriptorSet(set);
-        computeWrites[0].dstBinding = 0;
-        computeWrites[0].dstArrayElement = 0;
-        computeWrites[0].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-        computeWrites[0].descriptorCount = 1;
-        computeWrites[0].pBufferInfo = &inputParticleBufferInfo;
-
-        computeWrites[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        computeWrites[1].dstSet = (*particleSystem)->getComputeDescriptorSet(set);
-        computeWrites[1].dstBinding = 1;
-        computeWrites[1].dstArrayElement = 0;
-        computeWrites[1].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-        computeWrites[1].descriptorCount = 1;
-        computeWrites[1].pBufferInfo = &outputParticleBufferInfo;
-
-        computeWrites[2].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        computeWrites[2].dstSet = (*particleSystem)->getComputeDescriptorSet(set);
-        computeWrites[2].dstBinding = 2;
-        computeWrites[2].dstArrayElement = 0;
-        computeWrites[2].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-        computeWrites[2].descriptorCount = 1;
-        computeWrites[2].pBufferInfo = &indirectBufferInfo;
-
-        computeWrites[3].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        computeWrites[3].dstSet = (*particleSystem)->getComputeDescriptorSet(set);
-        computeWrites[3].dstBinding = 3;
-        computeWrites[3].dstArrayElement = 0;
-        computeWrites[3].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-        computeWrites[3].descriptorCount = 1;
-        computeWrites[3].pBufferInfo = &weatherUniformInfo;
-
-        computeWrites[4].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        computeWrites[4].dstSet = (*particleSystem)->getComputeDescriptorSet(set);
-        computeWrites[4].dstBinding = 4;
-        computeWrites[4].dstArrayElement = 0;
-        computeWrites[4].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-        computeWrites[4].descriptorCount = 1;
-        computeWrites[4].pBufferInfo = &windBufferInfo;
-
-        vkUpdateDescriptorSets(dev, static_cast<uint32_t>(computeWrites.size()),
-                               computeWrites.data(), 0, nullptr);
-
-        // Graphics descriptor set writes
-        VkDescriptorBufferInfo uboInfo{};
-        uboInfo.buffer = rendererUniformBuffers[0];
-        uboInfo.offset = 0;
-        uboInfo.range = 320;  // sizeof(UniformBufferObject)
-
-        VkDescriptorBufferInfo particleBufferInfo{};
-        particleBufferInfo.buffer = particleBuffers.buffers[set];
-        particleBufferInfo.offset = 0;
-        particleBufferInfo.range = sizeof(WeatherParticle) * MAX_PARTICLES;
-
-        VkDescriptorImageInfo depthImageInfo{};
-        depthImageInfo.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
-        depthImageInfo.imageView = depthImageView;
-        depthImageInfo.sampler = depthSampler;
-
-        std::array<VkWriteDescriptorSet, 3> graphicsWrites{};
-
-        graphicsWrites[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        graphicsWrites[0].dstSet = (*particleSystem)->getGraphicsDescriptorSet(set);
-        graphicsWrites[0].dstBinding = 0;
-        graphicsWrites[0].dstArrayElement = 0;
-        graphicsWrites[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-        graphicsWrites[0].descriptorCount = 1;
-        graphicsWrites[0].pBufferInfo = &uboInfo;
-
-        graphicsWrites[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        graphicsWrites[1].dstSet = (*particleSystem)->getGraphicsDescriptorSet(set);
-        graphicsWrites[1].dstBinding = 1;
-        graphicsWrites[1].dstArrayElement = 0;
-        graphicsWrites[1].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-        graphicsWrites[1].descriptorCount = 1;
-        graphicsWrites[1].pBufferInfo = &particleBufferInfo;
-
-        graphicsWrites[2].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        graphicsWrites[2].dstSet = (*particleSystem)->getGraphicsDescriptorSet(set);
-        graphicsWrites[2].dstBinding = 2;
-        graphicsWrites[2].dstArrayElement = 0;
-        graphicsWrites[2].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        graphicsWrites[2].descriptorCount = 1;
-        graphicsWrites[2].pImageInfo = &depthImageInfo;
-
-        vkUpdateDescriptorSets(dev, static_cast<uint32_t>(graphicsWrites.size()),
-                               graphicsWrites.data(), 0, nullptr);
+        // Graphics descriptor set
+        DescriptorManager::SetWriter(dev, (*particleSystem)->getGraphicsDescriptorSet(set))
+            .writeBuffer(0, rendererUniformBuffers[0], 0, 320)  // sizeof(UniformBufferObject)
+            .writeBuffer(1, particleBuffers.buffers[set], 0, sizeof(WeatherParticle) * MAX_PARTICLES, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+            .writeImage(2, depthImageView, depthSampler, VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL)
+            .update();
     }
 }
 
@@ -425,35 +325,10 @@ void WeatherSystem::recordResetAndCompute(VkCommandBuffer cmd, uint32_t frameInd
     uint32_t writeSet = (*particleSystem)->getComputeBufferSet();
 
     // Update compute descriptor set to use this frame's uniform buffers
-    VkDescriptorBufferInfo uniformBufferInfo{};
-    uniformBufferInfo.buffer = uniformBuffers.buffers[frameIndex];
-    uniformBufferInfo.offset = 0;
-    uniformBufferInfo.range = sizeof(WeatherUniforms);
-
-    VkDescriptorBufferInfo windBufferInfo{};
-    windBufferInfo.buffer = externalWindBuffers[frameIndex];
-    windBufferInfo.offset = 0;
-    windBufferInfo.range = 32;  // sizeof(WindUniforms)
-
-    std::array<VkWriteDescriptorSet, 2> computeWrites{};
-
-    computeWrites[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    computeWrites[0].dstSet = (*particleSystem)->getComputeDescriptorSet(writeSet);
-    computeWrites[0].dstBinding = 3;
-    computeWrites[0].dstArrayElement = 0;
-    computeWrites[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    computeWrites[0].descriptorCount = 1;
-    computeWrites[0].pBufferInfo = &uniformBufferInfo;
-
-    computeWrites[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    computeWrites[1].dstSet = (*particleSystem)->getComputeDescriptorSet(writeSet);
-    computeWrites[1].dstBinding = 4;
-    computeWrites[1].dstArrayElement = 0;
-    computeWrites[1].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    computeWrites[1].descriptorCount = 1;
-    computeWrites[1].pBufferInfo = &windBufferInfo;
-
-    vkUpdateDescriptorSets(getDevice(), static_cast<uint32_t>(computeWrites.size()), computeWrites.data(), 0, nullptr);
+    DescriptorManager::SetWriter(getDevice(), (*particleSystem)->getComputeDescriptorSet(writeSet))
+        .writeBuffer(3, uniformBuffers.buffers[frameIndex], 0, sizeof(WeatherUniforms))
+        .writeBuffer(4, externalWindBuffers[frameIndex], 0, 32)  // sizeof(WindUniforms)
+        .update();
 
     // Reset indirect buffer before compute dispatch
     Barriers::clearBufferForComputeReadWrite(cmd, indirectBuffers.buffers[writeSet], 0, sizeof(VkDrawIndirectCommand));
@@ -489,21 +364,9 @@ void WeatherSystem::recordDraw(VkCommandBuffer cmd, uint32_t frameIndex, float t
     }
 
     // Update graphics descriptor set to use this frame's renderer UBO
-    VkDescriptorBufferInfo uboInfo{};
-    uboInfo.buffer = externalRendererUniformBuffers[frameIndex];
-    uboInfo.offset = 0;
-    uboInfo.range = 320;  // sizeof(UniformBufferObject)
-
-    VkWriteDescriptorSet uboWrite{};
-    uboWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    uboWrite.dstSet = (*particleSystem)->getGraphicsDescriptorSet(readSet);
-    uboWrite.dstBinding = 0;
-    uboWrite.dstArrayElement = 0;
-    uboWrite.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    uboWrite.descriptorCount = 1;
-    uboWrite.pBufferInfo = &uboInfo;
-
-    vkUpdateDescriptorSets(getDevice(), 1, &uboWrite, 0, nullptr);
+    DescriptorManager::SetWriter(getDevice(), (*particleSystem)->getGraphicsDescriptorSet(readSet))
+        .writeBuffer(0, externalRendererUniformBuffers[frameIndex], 0, 320)  // sizeof(UniformBufferObject)
+        .update();
 
     auto& graphicsPipeline = getGraphicsPipelineHandles();
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, graphicsPipeline.pipeline);
@@ -551,21 +414,9 @@ void WeatherSystem::setFroxelVolume(VkImageView volumeView, VkSampler volumeSamp
     // Update graphics descriptor sets with froxel volume
     if (froxelVolumeView != VK_NULL_HANDLE && froxelVolumeSampler != VK_NULL_HANDLE) {
         for (uint32_t set = 0; set < BUFFER_SET_COUNT; set++) {
-            VkDescriptorImageInfo froxelImageInfo{};
-            froxelImageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-            froxelImageInfo.imageView = froxelVolumeView;
-            froxelImageInfo.sampler = froxelVolumeSampler;
-
-            VkWriteDescriptorSet froxelWrite{};
-            froxelWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-            froxelWrite.dstSet = (*particleSystem)->getGraphicsDescriptorSet(set);
-            froxelWrite.dstBinding = 3;
-            froxelWrite.dstArrayElement = 0;
-            froxelWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-            froxelWrite.descriptorCount = 1;
-            froxelWrite.pImageInfo = &froxelImageInfo;
-
-            vkUpdateDescriptorSets(getDevice(), 1, &froxelWrite, 0, nullptr);
+            DescriptorManager::SetWriter(getDevice(), (*particleSystem)->getGraphicsDescriptorSet(set))
+                .writeImage(3, froxelVolumeView, froxelVolumeSampler)
+                .update();
         }
     }
 }

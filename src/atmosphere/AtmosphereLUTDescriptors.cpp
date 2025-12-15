@@ -1,4 +1,5 @@
 #include "AtmosphereLUTSystem.h"
+#include "DescriptorManager.h"
 #include <SDL3/SDL_log.h>
 #include <array>
 
@@ -170,34 +171,10 @@ bool AtmosphereLUTSystem::createDescriptorSets() {
             return false;
         }
 
-        std::array<VkWriteDescriptorSet, 2> writes{};
-
-        VkDescriptorImageInfo imageInfo{};
-        imageInfo.imageView = transmittanceLUTView;
-        imageInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
-
-        writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        writes[0].dstSet = transmittanceDescriptorSet;
-        writes[0].dstBinding = 0;
-        writes[0].dstArrayElement = 0;
-        writes[0].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
-        writes[0].descriptorCount = 1;
-        writes[0].pImageInfo = &imageInfo;
-
-        VkDescriptorBufferInfo bufferInfo{};
-        bufferInfo.buffer = staticUniformBuffers.buffers[0];
-        bufferInfo.offset = 0;
-        bufferInfo.range = sizeof(AtmosphereUniforms);
-
-        writes[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        writes[1].dstSet = transmittanceDescriptorSet;
-        writes[1].dstBinding = 1;
-        writes[1].dstArrayElement = 0;
-        writes[1].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-        writes[1].descriptorCount = 1;
-        writes[1].pBufferInfo = &bufferInfo;
-
-        vkUpdateDescriptorSets(device, static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
+        DescriptorManager::SetWriter(device, transmittanceDescriptorSet)
+            .writeStorageImage(0, transmittanceLUTView)
+            .writeBuffer(1, staticUniformBuffers.buffers[0], 0, sizeof(AtmosphereUniforms))
+            .update();
     }
 
     // Allocate multi-scatter descriptor set using managed pool
@@ -208,47 +185,11 @@ bool AtmosphereLUTSystem::createDescriptorSets() {
             return false;
         }
 
-        std::array<VkWriteDescriptorSet, 3> writes{};
-
-        VkDescriptorImageInfo outputImageInfo{};
-        outputImageInfo.imageView = multiScatterLUTView;
-        outputImageInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
-
-        writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        writes[0].dstSet = multiScatterDescriptorSet;
-        writes[0].dstBinding = 0;
-        writes[0].dstArrayElement = 0;
-        writes[0].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
-        writes[0].descriptorCount = 1;
-        writes[0].pImageInfo = &outputImageInfo;
-
-        VkDescriptorImageInfo transmittanceImageInfo{};
-        transmittanceImageInfo.imageView = transmittanceLUTView;
-        transmittanceImageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-        transmittanceImageInfo.sampler = lutSampler;
-
-        writes[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        writes[1].dstSet = multiScatterDescriptorSet;
-        writes[1].dstBinding = 1;
-        writes[1].dstArrayElement = 0;
-        writes[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        writes[1].descriptorCount = 1;
-        writes[1].pImageInfo = &transmittanceImageInfo;
-
-        VkDescriptorBufferInfo bufferInfo{};
-        bufferInfo.buffer = staticUniformBuffers.buffers[0];
-        bufferInfo.offset = 0;
-        bufferInfo.range = sizeof(AtmosphereUniforms);
-
-        writes[2].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        writes[2].dstSet = multiScatterDescriptorSet;
-        writes[2].dstBinding = 2;
-        writes[2].dstArrayElement = 0;
-        writes[2].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-        writes[2].descriptorCount = 1;
-        writes[2].pBufferInfo = &bufferInfo;
-
-        vkUpdateDescriptorSets(device, static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
+        DescriptorManager::SetWriter(device, multiScatterDescriptorSet)
+            .writeStorageImage(0, multiScatterLUTView)
+            .writeImage(1, transmittanceLUTView, lutSampler)
+            .writeBuffer(2, staticUniformBuffers.buffers[0], 0, sizeof(AtmosphereUniforms))
+            .update();
     }
 
     // Allocate per-frame sky-view descriptor sets (double-buffered) using managed pool
@@ -261,60 +202,12 @@ bool AtmosphereLUTSystem::createDescriptorSets() {
 
         // Update each per-frame descriptor set with its corresponding uniform buffer
         for (uint32_t i = 0; i < framesInFlight; ++i) {
-            std::array<VkWriteDescriptorSet, 4> writes{};
-
-            VkDescriptorImageInfo outputImageInfo{};
-            outputImageInfo.imageView = skyViewLUTView;
-            outputImageInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
-
-            writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-            writes[0].dstSet = skyViewDescriptorSets[i];
-            writes[0].dstBinding = 0;
-            writes[0].dstArrayElement = 0;
-            writes[0].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
-            writes[0].descriptorCount = 1;
-            writes[0].pImageInfo = &outputImageInfo;
-
-            VkDescriptorImageInfo transmittanceImageInfo{};
-            transmittanceImageInfo.imageView = transmittanceLUTView;
-            transmittanceImageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-            transmittanceImageInfo.sampler = lutSampler;
-
-            writes[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-            writes[1].dstSet = skyViewDescriptorSets[i];
-            writes[1].dstBinding = 1;
-            writes[1].dstArrayElement = 0;
-            writes[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-            writes[1].descriptorCount = 1;
-            writes[1].pImageInfo = &transmittanceImageInfo;
-
-            VkDescriptorImageInfo multiScatterImageInfo{};
-            multiScatterImageInfo.imageView = multiScatterLUTView;
-            multiScatterImageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-            multiScatterImageInfo.sampler = lutSampler;
-
-            writes[2].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-            writes[2].dstSet = skyViewDescriptorSets[i];
-            writes[2].dstBinding = 2;
-            writes[2].dstArrayElement = 0;
-            writes[2].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-            writes[2].descriptorCount = 1;
-            writes[2].pImageInfo = &multiScatterImageInfo;
-
-            VkDescriptorBufferInfo bufferInfo{};
-            bufferInfo.buffer = skyViewUniformBuffers.buffers[i];
-            bufferInfo.offset = 0;
-            bufferInfo.range = sizeof(AtmosphereUniforms);
-
-            writes[3].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-            writes[3].dstSet = skyViewDescriptorSets[i];
-            writes[3].dstBinding = 3;
-            writes[3].dstArrayElement = 0;
-            writes[3].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-            writes[3].descriptorCount = 1;
-            writes[3].pBufferInfo = &bufferInfo;
-
-            vkUpdateDescriptorSets(device, static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
+            DescriptorManager::SetWriter(device, skyViewDescriptorSets[i])
+                .writeStorageImage(0, skyViewLUTView)
+                .writeImage(1, transmittanceLUTView, lutSampler)
+                .writeImage(2, multiScatterLUTView, lutSampler)
+                .writeBuffer(3, skyViewUniformBuffers.buffers[i], 0, sizeof(AtmosphereUniforms))
+                .update();
         }
     }
 
@@ -326,59 +219,12 @@ bool AtmosphereLUTSystem::createDescriptorSets() {
             return false;
         }
 
-        std::array<VkWriteDescriptorSet, 4> writes{};
-
-        VkDescriptorImageInfo rayleighImageInfo{};
-        rayleighImageInfo.imageView = rayleighIrradianceLUTView;
-        rayleighImageInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
-
-        writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        writes[0].dstSet = irradianceDescriptorSet;
-        writes[0].dstBinding = 0;
-        writes[0].dstArrayElement = 0;
-        writes[0].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
-        writes[0].descriptorCount = 1;
-        writes[0].pImageInfo = &rayleighImageInfo;
-
-        VkDescriptorImageInfo mieImageInfo{};
-        mieImageInfo.imageView = mieIrradianceLUTView;
-        mieImageInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
-
-        writes[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        writes[1].dstSet = irradianceDescriptorSet;
-        writes[1].dstBinding = 1;
-        writes[1].dstArrayElement = 0;
-        writes[1].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
-        writes[1].descriptorCount = 1;
-        writes[1].pImageInfo = &mieImageInfo;
-
-        VkDescriptorImageInfo transmittanceImageInfo{};
-        transmittanceImageInfo.imageView = transmittanceLUTView;
-        transmittanceImageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-        transmittanceImageInfo.sampler = lutSampler;
-
-        writes[2].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        writes[2].dstSet = irradianceDescriptorSet;
-        writes[2].dstBinding = 2;
-        writes[2].dstArrayElement = 0;
-        writes[2].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        writes[2].descriptorCount = 1;
-        writes[2].pImageInfo = &transmittanceImageInfo;
-
-        VkDescriptorBufferInfo bufferInfo{};
-        bufferInfo.buffer = staticUniformBuffers.buffers[0];
-        bufferInfo.offset = 0;
-        bufferInfo.range = sizeof(AtmosphereUniforms);
-
-        writes[3].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        writes[3].dstSet = irradianceDescriptorSet;
-        writes[3].dstBinding = 3;
-        writes[3].dstArrayElement = 0;
-        writes[3].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-        writes[3].descriptorCount = 1;
-        writes[3].pBufferInfo = &bufferInfo;
-
-        vkUpdateDescriptorSets(device, static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
+        DescriptorManager::SetWriter(device, irradianceDescriptorSet)
+            .writeStorageImage(0, rayleighIrradianceLUTView)
+            .writeStorageImage(1, mieIrradianceLUTView)
+            .writeImage(2, transmittanceLUTView, lutSampler)
+            .writeBuffer(3, staticUniformBuffers.buffers[0], 0, sizeof(AtmosphereUniforms))
+            .update();
     }
 
     // Allocate per-frame cloud map descriptor sets (double-buffered) using managed pool
@@ -391,34 +237,10 @@ bool AtmosphereLUTSystem::createDescriptorSets() {
 
         // Update each per-frame descriptor set with its corresponding uniform buffer
         for (uint32_t i = 0; i < framesInFlight; ++i) {
-            std::array<VkWriteDescriptorSet, 2> writes{};
-
-            VkDescriptorImageInfo imageInfo{};
-            imageInfo.imageView = cloudMapLUTView;
-            imageInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
-
-            writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-            writes[0].dstSet = cloudMapDescriptorSets[i];
-            writes[0].dstBinding = 0;
-            writes[0].dstArrayElement = 0;
-            writes[0].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
-            writes[0].descriptorCount = 1;
-            writes[0].pImageInfo = &imageInfo;
-
-            VkDescriptorBufferInfo bufferInfo{};
-            bufferInfo.buffer = cloudMapUniformBuffers.buffers[i];
-            bufferInfo.offset = 0;
-            bufferInfo.range = sizeof(CloudMapUniforms);
-
-            writes[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-            writes[1].dstSet = cloudMapDescriptorSets[i];
-            writes[1].dstBinding = 1;
-            writes[1].dstArrayElement = 0;
-            writes[1].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-            writes[1].descriptorCount = 1;
-            writes[1].pBufferInfo = &bufferInfo;
-
-            vkUpdateDescriptorSets(device, static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
+            DescriptorManager::SetWriter(device, cloudMapDescriptorSets[i])
+                .writeStorageImage(0, cloudMapLUTView)
+                .writeBuffer(1, cloudMapUniformBuffers.buffers[i], 0, sizeof(CloudMapUniforms))
+                .update();
         }
     }
 

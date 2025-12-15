@@ -1,6 +1,7 @@
 #include "WaterTileCull.h"
 #include "ShaderLoader.h"
 #include "VulkanBarriers.h"
+#include "DescriptorManager.h"
 #include <SDL3/SDL.h>
 #include <array>
 #include <cstring>
@@ -361,57 +362,12 @@ void WaterTileCull::recordTileCull(VkCommandBuffer cmd, uint32_t frameIndex,
     vmaFlushAllocation(allocator, counterAllocation, frameIndex * sizeof(uint32_t), sizeof(uint32_t));
 
     // Update descriptor set with depth texture and storage buffers
-    VkDescriptorImageInfo depthImageInfo{};
-    depthImageInfo.sampler = depthSampler;
-    depthImageInfo.imageView = depthView;
-    depthImageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-
-    VkDescriptorBufferInfo tileBufferInfo{};
-    tileBufferInfo.buffer = tileBuffer;
-    tileBufferInfo.offset = 0;
-    tileBufferInfo.range = VK_WHOLE_SIZE;
-
-    VkDescriptorBufferInfo counterBufferInfo{};
-    counterBufferInfo.buffer = counterBuffer;
-    counterBufferInfo.offset = 0;
-    counterBufferInfo.range = VK_WHOLE_SIZE;
-
-    VkDescriptorBufferInfo indirectBufferInfo{};
-    indirectBufferInfo.buffer = indirectDrawBuffer;
-    indirectBufferInfo.offset = 0;
-    indirectBufferInfo.range = sizeof(IndirectDrawCommand);
-
-    std::array<VkWriteDescriptorSet, 4> writes{};
-
-    writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    writes[0].dstSet = descriptorSets[frameIndex];
-    writes[0].dstBinding = 0;
-    writes[0].descriptorCount = 1;
-    writes[0].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    writes[0].pImageInfo = &depthImageInfo;
-
-    writes[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    writes[1].dstSet = descriptorSets[frameIndex];
-    writes[1].dstBinding = 1;
-    writes[1].descriptorCount = 1;
-    writes[1].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    writes[1].pBufferInfo = &tileBufferInfo;
-
-    writes[2].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    writes[2].dstSet = descriptorSets[frameIndex];
-    writes[2].dstBinding = 2;
-    writes[2].descriptorCount = 1;
-    writes[2].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    writes[2].pBufferInfo = &counterBufferInfo;
-
-    writes[3].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    writes[3].dstSet = descriptorSets[frameIndex];
-    writes[3].dstBinding = 3;
-    writes[3].descriptorCount = 1;
-    writes[3].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    writes[3].pBufferInfo = &indirectBufferInfo;
-
-    vkUpdateDescriptorSets(device, static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
+    DescriptorManager::SetWriter(device, descriptorSets[frameIndex])
+        .writeImage(0, depthView, depthSampler)
+        .writeBuffer(1, tileBuffer, 0, VK_WHOLE_SIZE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+        .writeBuffer(2, counterBuffer, 0, VK_WHOLE_SIZE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+        .writeBuffer(3, indirectDrawBuffer, 0, sizeof(IndirectDrawCommand), VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+        .update();
 
     // Push constants
     TileCullPushConstants pc{};

@@ -571,16 +571,9 @@ void TerrainSystem::updateDescriptorSets(VkDevice device,
 
 void TerrainSystem::setSnowMask(VkDevice device, VkImageView snowMaskView, VkSampler snowMaskSampler) {
     for (uint32_t i = 0; i < framesInFlight; i++) {
-        VkDescriptorImageInfo snowMaskInfo{snowMaskSampler, snowMaskView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
-        VkWriteDescriptorSet snowMaskWrite{};
-        snowMaskWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        snowMaskWrite.dstSet = renderDescriptorSets[i];
-        snowMaskWrite.dstBinding = 9;
-        snowMaskWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        snowMaskWrite.descriptorCount = 1;
-        snowMaskWrite.pImageInfo = &snowMaskInfo;
-
-        vkUpdateDescriptorSets(device, 1, &snowMaskWrite, 0, nullptr);
+        DescriptorManager::SetWriter(device, renderDescriptorSets[i])
+            .writeImage(9, snowMaskView, snowMaskSampler)
+            .update();
     }
 }
 
@@ -588,50 +581,19 @@ void TerrainSystem::setVolumetricSnowCascades(VkDevice device,
                                                VkImageView cascade0View, VkImageView cascade1View, VkImageView cascade2View,
                                                VkSampler cascadeSampler) {
     for (uint32_t i = 0; i < framesInFlight; i++) {
-        VkDescriptorImageInfo cascade0Info{cascadeSampler, cascade0View, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
-        VkDescriptorImageInfo cascade1Info{cascadeSampler, cascade1View, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
-        VkDescriptorImageInfo cascade2Info{cascadeSampler, cascade2View, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
-
-        std::array<VkWriteDescriptorSet, 3> writes{};
-
-        writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        writes[0].dstSet = renderDescriptorSets[i];
-        writes[0].dstBinding = 10;
-        writes[0].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        writes[0].descriptorCount = 1;
-        writes[0].pImageInfo = &cascade0Info;
-
-        writes[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        writes[1].dstSet = renderDescriptorSets[i];
-        writes[1].dstBinding = 11;
-        writes[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        writes[1].descriptorCount = 1;
-        writes[1].pImageInfo = &cascade1Info;
-
-        writes[2].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        writes[2].dstSet = renderDescriptorSets[i];
-        writes[2].dstBinding = 12;
-        writes[2].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        writes[2].descriptorCount = 1;
-        writes[2].pImageInfo = &cascade2Info;
-
-        vkUpdateDescriptorSets(device, static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
+        DescriptorManager::SetWriter(device, renderDescriptorSets[i])
+            .writeImage(10, cascade0View, cascadeSampler)
+            .writeImage(11, cascade1View, cascadeSampler)
+            .writeImage(12, cascade2View, cascadeSampler)
+            .update();
     }
 }
 
 void TerrainSystem::setCloudShadowMap(VkDevice device, VkImageView cloudShadowView, VkSampler cloudShadowSampler) {
     for (uint32_t i = 0; i < framesInFlight; i++) {
-        VkDescriptorImageInfo cloudShadowInfo{cloudShadowSampler, cloudShadowView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
-
-        VkWriteDescriptorSet write{};
-        write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        write.dstSet = renderDescriptorSets[i];
-        write.dstBinding = 13;  // Binding 13 for cloud shadow map
-        write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        write.descriptorCount = 1;
-        write.pImageInfo = &cloudShadowInfo;
-
-        vkUpdateDescriptorSets(device, 1, &write, 0, nullptr);
+        DescriptorManager::SetWriter(device, renderDescriptorSets[i])
+            .writeImage(13, cloudShadowView, cloudShadowSampler)
+            .update();
     }
 }
 

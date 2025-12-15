@@ -1,6 +1,7 @@
 #include "FroxelSystem.h"
 #include "ShaderLoader.h"
 #include "VulkanBarriers.h"
+#include "DescriptorManager.h"
 #include <SDL3/SDL_log.h>
 #include <glm/gtc/matrix_transform.hpp>
 #include <array>
@@ -286,90 +287,14 @@ bool FroxelSystem::createDescriptorSets() {
     }
 
     for (uint32_t i = 0; i < framesInFlight; i++) {
-        std::array<VkWriteDescriptorSet, 6> writes{};
-
-        // Current scattering volume (write target) - initially volume 0
-        VkDescriptorImageInfo scatteringInfo{};
-        scatteringInfo.imageView = scatteringVolumeViews[0];
-        scatteringInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
-
-        writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        writes[0].dstSet = froxelDescriptorSets[i];
-        writes[0].dstBinding = 0;
-        writes[0].dstArrayElement = 0;
-        writes[0].descriptorCount = 1;
-        writes[0].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
-        writes[0].pImageInfo = &scatteringInfo;
-
-        // Integrated volume
-        VkDescriptorImageInfo integratedInfo{};
-        integratedInfo.imageView = integratedVolumeView;
-        integratedInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
-
-        writes[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        writes[1].dstSet = froxelDescriptorSets[i];
-        writes[1].dstBinding = 1;
-        writes[1].dstArrayElement = 0;
-        writes[1].descriptorCount = 1;
-        writes[1].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
-        writes[1].pImageInfo = &integratedInfo;
-
-        // Uniform buffer
-        VkDescriptorBufferInfo bufferInfo{};
-        bufferInfo.buffer = uniformBuffers.buffers[i];
-        bufferInfo.offset = 0;
-        bufferInfo.range = sizeof(FroxelUniforms);
-
-        writes[2].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        writes[2].dstSet = froxelDescriptorSets[i];
-        writes[2].dstBinding = 2;
-        writes[2].dstArrayElement = 0;
-        writes[2].descriptorCount = 1;
-        writes[2].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-        writes[2].pBufferInfo = &bufferInfo;
-
-        // Shadow map
-        VkDescriptorImageInfo shadowInfo{};
-        shadowInfo.sampler = shadowSampler;
-        shadowInfo.imageView = shadowMapView;
-        shadowInfo.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
-
-        writes[3].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        writes[3].dstSet = froxelDescriptorSets[i];
-        writes[3].dstBinding = 3;
-        writes[3].dstArrayElement = 0;
-        writes[3].descriptorCount = 1;
-        writes[3].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        writes[3].pImageInfo = &shadowInfo;
-
-        // Light buffer (SSBO)
-        VkDescriptorBufferInfo lightBufferInfo{};
-        lightBufferInfo.buffer = lightBuffers[i];
-        lightBufferInfo.offset = 0;
-        lightBufferInfo.range = VK_WHOLE_SIZE;
-
-        writes[4].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        writes[4].dstSet = froxelDescriptorSets[i];
-        writes[4].dstBinding = 4;
-        writes[4].dstArrayElement = 0;
-        writes[4].descriptorCount = 1;
-        writes[4].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-        writes[4].pBufferInfo = &lightBufferInfo;
-
-        // History scattering volume (read for temporal) - initially volume 1
-        VkDescriptorImageInfo historyInfo{};
-        historyInfo.imageView = scatteringVolumeViews[1];
-        historyInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
-
-        writes[5].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        writes[5].dstSet = froxelDescriptorSets[i];
-        writes[5].dstBinding = 5;
-        writes[5].dstArrayElement = 0;
-        writes[5].descriptorCount = 1;
-        writes[5].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
-        writes[5].pImageInfo = &historyInfo;
-
-        vkUpdateDescriptorSets(device, static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
+        DescriptorManager::SetWriter(device, froxelDescriptorSets[i])
+            .writeStorageImage(0, scatteringVolumeViews[0])  // Current scattering volume (write target)
+            .writeStorageImage(1, integratedVolumeView)      // Integrated volume
+            .writeBuffer(2, uniformBuffers.buffers[i], 0, sizeof(FroxelUniforms))
+            .writeImage(3, shadowMapView, shadowSampler, VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL)
+            .writeBuffer(4, lightBuffers[i], 0, VK_WHOLE_SIZE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+            .writeStorageImage(5, scatteringVolumeViews[1])  // History scattering volume (read for temporal)
+            .update();
     }
 
     return true;
@@ -491,32 +416,10 @@ void FroxelSystem::recordFroxelUpdate(VkCommandBuffer cmd, uint32_t frameIndex,
     frameCounter++;
 
     // Update descriptor sets with correct volume bindings for this frame
-    std::array<VkWriteDescriptorSet, 2> volumeWrites{};
-    VkDescriptorImageInfo currentInfo{};
-    currentInfo.imageView = scatteringVolumeViews[currentVolumeIdx];
-    currentInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
-
-    volumeWrites[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    volumeWrites[0].dstSet = froxelDescriptorSets[frameIndex];
-    volumeWrites[0].dstBinding = 0;  // Current scattering volume (write)
-    volumeWrites[0].dstArrayElement = 0;
-    volumeWrites[0].descriptorCount = 1;
-    volumeWrites[0].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
-    volumeWrites[0].pImageInfo = &currentInfo;
-
-    VkDescriptorImageInfo historyInfo{};
-    historyInfo.imageView = scatteringVolumeViews[historyVolumeIdx];
-    historyInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
-
-    volumeWrites[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    volumeWrites[1].dstSet = froxelDescriptorSets[frameIndex];
-    volumeWrites[1].dstBinding = 5;  // History scattering volume (read)
-    volumeWrites[1].dstArrayElement = 0;
-    volumeWrites[1].descriptorCount = 1;
-    volumeWrites[1].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
-    volumeWrites[1].pImageInfo = &historyInfo;
-
-    vkUpdateDescriptorSets(device, static_cast<uint32_t>(volumeWrites.size()), volumeWrites.data(), 0, nullptr);
+    DescriptorManager::SetWriter(device, froxelDescriptorSets[frameIndex])
+        .writeStorageImage(0, scatteringVolumeViews[currentVolumeIdx])  // Current scattering volume (write)
+        .writeStorageImage(5, scatteringVolumeViews[historyVolumeIdx])  // History scattering volume (read)
+        .update();
 
     // Note: frameCounter was already incremented above, so first frame is frameCounter == 1
     bool isFirstFrame = (frameCounter == 1);

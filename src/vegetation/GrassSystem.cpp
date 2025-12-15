@@ -297,47 +297,11 @@ bool GrassSystem::createDisplacementPipeline() {
 
     // Update each per-frame descriptor set with image and per-frame buffers
     for (uint32_t i = 0; i < getFramesInFlight(); ++i) {
-        VkDescriptorImageInfo imageInfo{};
-        imageInfo.imageView = displacementImageView;
-        imageInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
-
-        VkDescriptorBufferInfo sourceBufferInfo{};
-        sourceBufferInfo.buffer = displacementSourceBuffers.buffers[i];
-        sourceBufferInfo.offset = 0;
-        sourceBufferInfo.range = sizeof(DisplacementSource) * MAX_DISPLACEMENT_SOURCES;
-
-        VkDescriptorBufferInfo uniformBufferInfo{};
-        uniformBufferInfo.buffer = displacementUniformBuffers.buffers[i];
-        uniformBufferInfo.offset = 0;
-        uniformBufferInfo.range = sizeof(DisplacementUniforms);
-
-        std::array<VkWriteDescriptorSet, 3> writes{};
-
-        writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        writes[0].dstSet = displacementDescriptorSets[i];
-        writes[0].dstBinding = 0;
-        writes[0].dstArrayElement = 0;
-        writes[0].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
-        writes[0].descriptorCount = 1;
-        writes[0].pImageInfo = &imageInfo;
-
-        writes[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        writes[1].dstSet = displacementDescriptorSets[i];
-        writes[1].dstBinding = 1;
-        writes[1].dstArrayElement = 0;
-        writes[1].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-        writes[1].descriptorCount = 1;
-        writes[1].pBufferInfo = &sourceBufferInfo;
-
-        writes[2].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        writes[2].dstSet = displacementDescriptorSets[i];
-        writes[2].dstBinding = 2;
-        writes[2].dstArrayElement = 0;
-        writes[2].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-        writes[2].descriptorCount = 1;
-        writes[2].pBufferInfo = &uniformBufferInfo;
-
-        vkUpdateDescriptorSets(getDevice(), static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
+        DescriptorManager::SetWriter(getDevice(), displacementDescriptorSets[i])
+            .writeStorageImage(0, displacementImageView)
+            .writeBuffer(1, displacementSourceBuffers.buffers[i], 0, sizeof(DisplacementSource) * MAX_DISPLACEMENT_SOURCES, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+            .writeBuffer(2, displacementUniformBuffers.buffers[i], 0, sizeof(DisplacementUniforms))
+            .update();
     }
 
     return true;
@@ -610,50 +574,11 @@ void GrassSystem::writeComputeDescriptorSets() {
     // Write compute descriptor sets with instance and indirect buffers
     // Called after ParticleSystem is fully initialized and descriptor sets are allocated
     for (uint32_t set = 0; set < BUFFER_SET_COUNT; set++) {
-        VkDescriptorBufferInfo instanceBufferInfo{};
-        instanceBufferInfo.buffer = instanceBuffers.buffers[set];
-        instanceBufferInfo.offset = 0;
-        instanceBufferInfo.range = sizeof(GrassInstance) * MAX_INSTANCES;
-
-        VkDescriptorBufferInfo indirectBufferInfo{};
-        indirectBufferInfo.buffer = indirectBuffers.buffers[set];
-        indirectBufferInfo.offset = 0;
-        indirectBufferInfo.range = sizeof(VkDrawIndirectCommand);
-
-        // Use first frame's uniform buffer initially; will be updated per-frame
-        VkDescriptorBufferInfo uniformBufferInfo{};
-        uniformBufferInfo.buffer = uniformBuffers.buffers[0];
-        uniformBufferInfo.offset = 0;
-        uniformBufferInfo.range = sizeof(GrassUniforms);
-
-        std::array<VkWriteDescriptorSet, 3> computeWrites{};
-
-        computeWrites[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        computeWrites[0].dstSet = (*particleSystem)->getComputeDescriptorSet(set);
-        computeWrites[0].dstBinding = 0;
-        computeWrites[0].dstArrayElement = 0;
-        computeWrites[0].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-        computeWrites[0].descriptorCount = 1;
-        computeWrites[0].pBufferInfo = &instanceBufferInfo;
-
-        computeWrites[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        computeWrites[1].dstSet = (*particleSystem)->getComputeDescriptorSet(set);
-        computeWrites[1].dstBinding = 1;
-        computeWrites[1].dstArrayElement = 0;
-        computeWrites[1].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-        computeWrites[1].descriptorCount = 1;
-        computeWrites[1].pBufferInfo = &indirectBufferInfo;
-
-        computeWrites[2].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        computeWrites[2].dstSet = (*particleSystem)->getComputeDescriptorSet(set);
-        computeWrites[2].dstBinding = 2;
-        computeWrites[2].dstArrayElement = 0;
-        computeWrites[2].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-        computeWrites[2].descriptorCount = 1;
-        computeWrites[2].pBufferInfo = &uniformBufferInfo;
-
-        vkUpdateDescriptorSets(getDevice(), static_cast<uint32_t>(computeWrites.size()),
-                               computeWrites.data(), 0, nullptr);
+        DescriptorManager::SetWriter(getDevice(), (*particleSystem)->getComputeDescriptorSet(set))
+            .writeBuffer(0, instanceBuffers.buffers[set], 0, sizeof(GrassInstance) * MAX_INSTANCES, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+            .writeBuffer(1, indirectBuffers.buffers[set], 0, sizeof(VkDrawIndirectCommand), VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+            .writeBuffer(2, uniformBuffers.buffers[0], 0, sizeof(GrassUniforms))
+            .update();
     }
 }
 
@@ -676,154 +601,25 @@ void GrassSystem::updateDescriptorSets(VkDevice dev, const std::vector<VkBuffer>
     this->terrainHeightMapSampler = terrainHeightMapSampler;
 
     // Update graphics and shadow descriptor sets for both buffer sets (A and B)
-    // Note: We use the first frame's UBO/wind buffer since they're updated each frame anyway
-    // For proper per-frame handling, we'd need dynamic offsets or per-frame descriptor sets
     for (uint32_t set = 0; set < BUFFER_SET_COUNT; set++) {
-        // Use first frame's uniform buffers (they're updated before each draw anyway)
-        VkDescriptorBufferInfo uboInfo{};
-        uboInfo.buffer = rendererUniformBuffers[0];
-        uboInfo.offset = 0;
-        uboInfo.range = 160;  // sizeof(UniformBufferObject) - matches Renderer's UBO
+        // Graphics descriptor set
+        DescriptorManager::SetWriter(dev, (*particleSystem)->getGraphicsDescriptorSet(set))
+            .writeBuffer(0, rendererUniformBuffers[0], 0, 160)  // sizeof(UniformBufferObject)
+            .writeBuffer(1, instanceBuffers.buffers[set], 0, sizeof(GrassInstance) * MAX_INSTANCES, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+            .writeImage(2, shadowMapView, shadowSampler, VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL)
+            .writeBuffer(3, windBuffers[0], 0, 32)  // sizeof(WindUniforms)
+            .writeBuffer(4, lightBuffersParam[0], 0, VK_WHOLE_SIZE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+            .writeImage(6, cloudShadowMapView, cloudShadowMapSampler)
+            .writeBuffer(10, snowBuffersParam[0], 0, sizeof(SnowUBO))
+            .writeBuffer(11, cloudShadowBuffersParam[0], 0, sizeof(CloudShadowUBO))
+            .update();
 
-        VkDescriptorBufferInfo instanceBufferInfo{};
-        instanceBufferInfo.buffer = instanceBuffers.buffers[set];
-        instanceBufferInfo.offset = 0;
-        instanceBufferInfo.range = sizeof(GrassInstance) * MAX_INSTANCES;
-
-        VkDescriptorImageInfo shadowImageInfo{};
-        shadowImageInfo.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
-        shadowImageInfo.imageView = shadowMapView;
-        shadowImageInfo.sampler = shadowSampler;
-
-        VkDescriptorBufferInfo windBufferInfo{};
-        windBufferInfo.buffer = windBuffers[0];
-        windBufferInfo.offset = 0;
-        windBufferInfo.range = 32;  // sizeof(WindUniforms) - 2 vec4s
-
-        VkDescriptorBufferInfo lightBufferInfo{};
-        lightBufferInfo.buffer = lightBuffersParam[0];
-        lightBufferInfo.offset = 0;
-        lightBufferInfo.range = VK_WHOLE_SIZE;  // sizeof(LightBuffer)
-
-        // Cloud shadow map (binding 6)
-        VkDescriptorImageInfo cloudShadowMapInfo{};
-        cloudShadowMapInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-        cloudShadowMapInfo.imageView = cloudShadowMapView;
-        cloudShadowMapInfo.sampler = cloudShadowMapSampler;
-
-        // Snow UBO (binding 10)
-        VkDescriptorBufferInfo snowBufferInfo{};
-        snowBufferInfo.buffer = snowBuffersParam[0];
-        snowBufferInfo.offset = 0;
-        snowBufferInfo.range = sizeof(SnowUBO);
-
-        // Cloud shadow UBO (binding 11)
-        VkDescriptorBufferInfo cloudShadowBufferInfo{};
-        cloudShadowBufferInfo.buffer = cloudShadowBuffersParam[0];
-        cloudShadowBufferInfo.offset = 0;
-        cloudShadowBufferInfo.range = sizeof(CloudShadowUBO);
-
-        std::array<VkWriteDescriptorSet, 8> graphicsWrites{};
-
-        graphicsWrites[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        graphicsWrites[0].dstSet = (*particleSystem)->getGraphicsDescriptorSet(set);
-        graphicsWrites[0].dstBinding = 0;
-        graphicsWrites[0].dstArrayElement = 0;
-        graphicsWrites[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-        graphicsWrites[0].descriptorCount = 1;
-        graphicsWrites[0].pBufferInfo = &uboInfo;
-
-        graphicsWrites[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        graphicsWrites[1].dstSet = (*particleSystem)->getGraphicsDescriptorSet(set);
-        graphicsWrites[1].dstBinding = 1;
-        graphicsWrites[1].dstArrayElement = 0;
-        graphicsWrites[1].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-        graphicsWrites[1].descriptorCount = 1;
-        graphicsWrites[1].pBufferInfo = &instanceBufferInfo;
-
-        graphicsWrites[2].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        graphicsWrites[2].dstSet = (*particleSystem)->getGraphicsDescriptorSet(set);
-        graphicsWrites[2].dstBinding = 2;
-        graphicsWrites[2].dstArrayElement = 0;
-        graphicsWrites[2].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        graphicsWrites[2].descriptorCount = 1;
-        graphicsWrites[2].pImageInfo = &shadowImageInfo;
-
-        graphicsWrites[3].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        graphicsWrites[3].dstSet = (*particleSystem)->getGraphicsDescriptorSet(set);
-        graphicsWrites[3].dstBinding = 3;
-        graphicsWrites[3].dstArrayElement = 0;
-        graphicsWrites[3].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-        graphicsWrites[3].descriptorCount = 1;
-        graphicsWrites[3].pBufferInfo = &windBufferInfo;
-
-        graphicsWrites[4].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        graphicsWrites[4].dstSet = (*particleSystem)->getGraphicsDescriptorSet(set);
-        graphicsWrites[4].dstBinding = 4;
-        graphicsWrites[4].dstArrayElement = 0;
-        graphicsWrites[4].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-        graphicsWrites[4].descriptorCount = 1;
-        graphicsWrites[4].pBufferInfo = &lightBufferInfo;
-
-        // binding 6: cloud shadow map
-        graphicsWrites[5].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        graphicsWrites[5].dstSet = (*particleSystem)->getGraphicsDescriptorSet(set);
-        graphicsWrites[5].dstBinding = 6;
-        graphicsWrites[5].dstArrayElement = 0;
-        graphicsWrites[5].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        graphicsWrites[5].descriptorCount = 1;
-        graphicsWrites[5].pImageInfo = &cloudShadowMapInfo;
-
-        // binding 10: snow UBO
-        graphicsWrites[6].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        graphicsWrites[6].dstSet = (*particleSystem)->getGraphicsDescriptorSet(set);
-        graphicsWrites[6].dstBinding = 10;
-        graphicsWrites[6].dstArrayElement = 0;
-        graphicsWrites[6].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-        graphicsWrites[6].descriptorCount = 1;
-        graphicsWrites[6].pBufferInfo = &snowBufferInfo;
-
-        // binding 11: cloud shadow UBO
-        graphicsWrites[7].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        graphicsWrites[7].dstSet = (*particleSystem)->getGraphicsDescriptorSet(set);
-        graphicsWrites[7].dstBinding = 11;
-        graphicsWrites[7].dstArrayElement = 0;
-        graphicsWrites[7].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-        graphicsWrites[7].descriptorCount = 1;
-        graphicsWrites[7].pBufferInfo = &cloudShadowBufferInfo;
-
-        vkUpdateDescriptorSets(dev, static_cast<uint32_t>(graphicsWrites.size()),
-                               graphicsWrites.data(), 0, nullptr);
-
-        // Update shadow descriptor sets (UBO + instance buffer + wind buffer)
-        std::array<VkWriteDescriptorSet, 3> shadowWrites{};
-
-        shadowWrites[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        shadowWrites[0].dstSet = shadowDescriptorSetsDB[set];
-        shadowWrites[0].dstBinding = 0;
-        shadowWrites[0].dstArrayElement = 0;
-        shadowWrites[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-        shadowWrites[0].descriptorCount = 1;
-        shadowWrites[0].pBufferInfo = &uboInfo;
-
-        shadowWrites[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        shadowWrites[1].dstSet = shadowDescriptorSetsDB[set];
-        shadowWrites[1].dstBinding = 1;
-        shadowWrites[1].dstArrayElement = 0;
-        shadowWrites[1].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-        shadowWrites[1].descriptorCount = 1;
-        shadowWrites[1].pBufferInfo = &instanceBufferInfo;
-
-        shadowWrites[2].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        shadowWrites[2].dstSet = shadowDescriptorSetsDB[set];
-        shadowWrites[2].dstBinding = 2;
-        shadowWrites[2].dstArrayElement = 0;
-        shadowWrites[2].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-        shadowWrites[2].descriptorCount = 1;
-        shadowWrites[2].pBufferInfo = &windBufferInfo;
-
-        vkUpdateDescriptorSets(dev, static_cast<uint32_t>(shadowWrites.size()),
-                               shadowWrites.data(), 0, nullptr);
+        // Shadow descriptor set
+        DescriptorManager::SetWriter(dev, shadowDescriptorSetsDB[set])
+            .writeBuffer(0, rendererUniformBuffers[0], 0, 160)  // sizeof(UniformBufferObject)
+            .writeBuffer(1, instanceBuffers.buffers[set], 0, sizeof(GrassInstance) * MAX_INSTANCES, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+            .writeBuffer(2, windBuffers[0], 0, 32)  // sizeof(WindUniforms)
+            .update();
     }
 }
 
@@ -937,49 +733,11 @@ void GrassSystem::recordResetAndCompute(VkCommandBuffer cmd, uint32_t frameIndex
     uint32_t writeSet = (*particleSystem)->getComputeBufferSet();
 
     // Update compute descriptor set to use this frame's uniform buffer, terrain heightmap, and displacement map
-    // (uniforms contain per-frame camera/frustum data)
-    VkDescriptorBufferInfo uniformBufferInfo{};
-    uniformBufferInfo.buffer = uniformBuffers.buffers[frameIndex];
-    uniformBufferInfo.offset = 0;
-    uniformBufferInfo.range = sizeof(GrassUniforms);
-
-    VkDescriptorImageInfo heightMapInfo{};
-    heightMapInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-    heightMapInfo.imageView = terrainHeightMapView;
-    heightMapInfo.sampler = terrainHeightMapSampler;
-
-    VkDescriptorImageInfo displacementMapInfo{};
-    displacementMapInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-    displacementMapInfo.imageView = displacementImageView;
-    displacementMapInfo.sampler = displacementSampler;
-
-    std::array<VkWriteDescriptorSet, 3> writes{};
-
-    writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    writes[0].dstSet = (*particleSystem)->getComputeDescriptorSet(writeSet);
-    writes[0].dstBinding = 2;
-    writes[0].dstArrayElement = 0;
-    writes[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    writes[0].descriptorCount = 1;
-    writes[0].pBufferInfo = &uniformBufferInfo;
-
-    writes[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    writes[1].dstSet = (*particleSystem)->getComputeDescriptorSet(writeSet);
-    writes[1].dstBinding = 3;
-    writes[1].dstArrayElement = 0;
-    writes[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    writes[1].descriptorCount = 1;
-    writes[1].pImageInfo = &heightMapInfo;
-
-    writes[2].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    writes[2].dstSet = (*particleSystem)->getComputeDescriptorSet(writeSet);
-    writes[2].dstBinding = 4;
-    writes[2].dstArrayElement = 0;
-    writes[2].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    writes[2].descriptorCount = 1;
-    writes[2].pImageInfo = &displacementMapInfo;
-
-    vkUpdateDescriptorSets(getDevice(), static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
+    DescriptorManager::SetWriter(getDevice(), (*particleSystem)->getComputeDescriptorSet(writeSet))
+        .writeBuffer(2, uniformBuffers.buffers[frameIndex], 0, sizeof(GrassUniforms))
+        .writeImage(3, terrainHeightMapView, terrainHeightMapSampler)
+        .writeImage(4, displacementImageView, displacementSampler)
+        .update();
 
     // Reset indirect buffer before compute dispatch to prevent accumulation
     Barriers::clearBufferForComputeReadWrite(cmd, indirectBuffers.buffers[writeSet], 0, sizeof(VkDrawIndirectCommand));
@@ -1071,16 +829,9 @@ void GrassSystem::recordShadowDraw(VkCommandBuffer cmd, uint32_t frameIndex, flo
 void GrassSystem::setSnowMask(VkDevice device, VkImageView snowMaskView, VkSampler snowMaskSampler) {
     // Update graphics descriptor sets with snow mask texture
     for (uint32_t setIndex = 0; setIndex < BUFFER_SET_COUNT; setIndex++) {
-        VkDescriptorImageInfo snowMaskInfo{snowMaskSampler, snowMaskView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
-        VkWriteDescriptorSet snowMaskWrite{};
-        snowMaskWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        snowMaskWrite.dstSet = (*particleSystem)->getGraphicsDescriptorSet(setIndex);
-        snowMaskWrite.dstBinding = 5;
-        snowMaskWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        snowMaskWrite.descriptorCount = 1;
-        snowMaskWrite.pImageInfo = &snowMaskInfo;
-
-        vkUpdateDescriptorSets(device, 1, &snowMaskWrite, 0, nullptr);
+        DescriptorManager::SetWriter(device, (*particleSystem)->getGraphicsDescriptorSet(setIndex))
+            .writeImage(5, snowMaskView, snowMaskSampler)
+            .update();
     }
 }
 

@@ -425,155 +425,24 @@ void LeafSystem::updateDescriptorSets(VkDevice dev, const std::vector<VkBuffer>&
         uint32_t inputSet = (set == 0) ? 1 : 0;  // Read from opposite buffer
         uint32_t outputSet = set;
 
-        // Compute descriptor set writes
-        VkDescriptorBufferInfo inputParticleBufferInfo{};
-        inputParticleBufferInfo.buffer = particleBuffers.buffers[inputSet];
-        inputParticleBufferInfo.offset = 0;
-        inputParticleBufferInfo.range = sizeof(LeafParticle) * MAX_PARTICLES;
+        // Compute descriptor set
+        DescriptorManager::SetWriter(dev, (*particleSystem)->getComputeDescriptorSet(set))
+            .writeBuffer(0, particleBuffers.buffers[inputSet], 0, sizeof(LeafParticle) * MAX_PARTICLES, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+            .writeBuffer(1, particleBuffers.buffers[outputSet], 0, sizeof(LeafParticle) * MAX_PARTICLES, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+            .writeBuffer(2, indirectBuffers.buffers[outputSet], 0, sizeof(VkDrawIndirectCommand), VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+            .writeBuffer(3, uniformBuffers.buffers[0], 0, sizeof(LeafUniforms))
+            .writeBuffer(4, windBuffers[0], 0, 32)  // sizeof(WindUniforms)
+            .writeImage(5, terrainHeightMapView, terrainHeightMapSampler)
+            .writeImage(6, displacementMapViewParam, displacementMapSamplerParam)
+            .writeBuffer(7, displacementRegionBuffers[0], 0, sizeof(glm::vec4))
+            .update();
 
-        VkDescriptorBufferInfo outputParticleBufferInfo{};
-        outputParticleBufferInfo.buffer = particleBuffers.buffers[outputSet];
-        outputParticleBufferInfo.offset = 0;
-        outputParticleBufferInfo.range = sizeof(LeafParticle) * MAX_PARTICLES;
-
-        VkDescriptorBufferInfo indirectBufferInfo{};
-        indirectBufferInfo.buffer = indirectBuffers.buffers[outputSet];
-        indirectBufferInfo.offset = 0;
-        indirectBufferInfo.range = sizeof(VkDrawIndirectCommand);
-
-        VkDescriptorBufferInfo leafUniformInfo{};
-        leafUniformInfo.buffer = uniformBuffers.buffers[0];
-        leafUniformInfo.offset = 0;
-        leafUniformInfo.range = sizeof(LeafUniforms);
-
-        VkDescriptorBufferInfo windBufferInfo{};
-        windBufferInfo.buffer = windBuffers[0];
-        windBufferInfo.offset = 0;
-        windBufferInfo.range = 32;  // sizeof(WindUniforms)
-
-        VkDescriptorImageInfo heightMapInfo{};
-        heightMapInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-        heightMapInfo.imageView = terrainHeightMapView;
-        heightMapInfo.sampler = terrainHeightMapSampler;
-
-        VkDescriptorImageInfo displacementMapInfo{};
-        displacementMapInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-        displacementMapInfo.imageView = displacementMapViewParam;
-        displacementMapInfo.sampler = displacementMapSamplerParam;
-
-        VkDescriptorBufferInfo dispRegionInfo{};
-        dispRegionInfo.buffer = displacementRegionBuffers[0];
-        dispRegionInfo.offset = 0;
-        dispRegionInfo.range = sizeof(glm::vec4);
-
-        std::array<VkWriteDescriptorSet, 8> computeWrites{};
-
-        computeWrites[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        computeWrites[0].dstSet = (*particleSystem)->getComputeDescriptorSet(set);
-        computeWrites[0].dstBinding = 0;
-        computeWrites[0].dstArrayElement = 0;
-        computeWrites[0].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-        computeWrites[0].descriptorCount = 1;
-        computeWrites[0].pBufferInfo = &inputParticleBufferInfo;
-
-        computeWrites[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        computeWrites[1].dstSet = (*particleSystem)->getComputeDescriptorSet(set);
-        computeWrites[1].dstBinding = 1;
-        computeWrites[1].dstArrayElement = 0;
-        computeWrites[1].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-        computeWrites[1].descriptorCount = 1;
-        computeWrites[1].pBufferInfo = &outputParticleBufferInfo;
-
-        computeWrites[2].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        computeWrites[2].dstSet = (*particleSystem)->getComputeDescriptorSet(set);
-        computeWrites[2].dstBinding = 2;
-        computeWrites[2].dstArrayElement = 0;
-        computeWrites[2].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-        computeWrites[2].descriptorCount = 1;
-        computeWrites[2].pBufferInfo = &indirectBufferInfo;
-
-        computeWrites[3].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        computeWrites[3].dstSet = (*particleSystem)->getComputeDescriptorSet(set);
-        computeWrites[3].dstBinding = 3;
-        computeWrites[3].dstArrayElement = 0;
-        computeWrites[3].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-        computeWrites[3].descriptorCount = 1;
-        computeWrites[3].pBufferInfo = &leafUniformInfo;
-
-        computeWrites[4].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        computeWrites[4].dstSet = (*particleSystem)->getComputeDescriptorSet(set);
-        computeWrites[4].dstBinding = 4;
-        computeWrites[4].dstArrayElement = 0;
-        computeWrites[4].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-        computeWrites[4].descriptorCount = 1;
-        computeWrites[4].pBufferInfo = &windBufferInfo;
-
-        computeWrites[5].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        computeWrites[5].dstSet = (*particleSystem)->getComputeDescriptorSet(set);
-        computeWrites[5].dstBinding = 5;
-        computeWrites[5].dstArrayElement = 0;
-        computeWrites[5].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        computeWrites[5].descriptorCount = 1;
-        computeWrites[5].pImageInfo = &heightMapInfo;
-
-        computeWrites[6].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        computeWrites[6].dstSet = (*particleSystem)->getComputeDescriptorSet(set);
-        computeWrites[6].dstBinding = 6;
-        computeWrites[6].dstArrayElement = 0;
-        computeWrites[6].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        computeWrites[6].descriptorCount = 1;
-        computeWrites[6].pImageInfo = &displacementMapInfo;
-
-        computeWrites[7].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        computeWrites[7].dstSet = (*particleSystem)->getComputeDescriptorSet(set);
-        computeWrites[7].dstBinding = 7;
-        computeWrites[7].dstArrayElement = 0;
-        computeWrites[7].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-        computeWrites[7].descriptorCount = 1;
-        computeWrites[7].pBufferInfo = &dispRegionInfo;
-
-        vkUpdateDescriptorSets(dev, static_cast<uint32_t>(computeWrites.size()),
-                               computeWrites.data(), 0, nullptr);
-
-        // Graphics descriptor set writes
-        VkDescriptorBufferInfo uboInfo{};
-        uboInfo.buffer = rendererUniformBuffers[0];
-        uboInfo.offset = 0;
-        uboInfo.range = 320;  // sizeof(UniformBufferObject)
-
-        VkDescriptorBufferInfo particleBufferInfo{};
-        particleBufferInfo.buffer = particleBuffers.buffers[set];
-        particleBufferInfo.offset = 0;
-        particleBufferInfo.range = sizeof(LeafParticle) * MAX_PARTICLES;
-
-        std::array<VkWriteDescriptorSet, 3> graphicsWrites{};
-
-        graphicsWrites[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        graphicsWrites[0].dstSet = (*particleSystem)->getGraphicsDescriptorSet(set);
-        graphicsWrites[0].dstBinding = 0;
-        graphicsWrites[0].dstArrayElement = 0;
-        graphicsWrites[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-        graphicsWrites[0].descriptorCount = 1;
-        graphicsWrites[0].pBufferInfo = &uboInfo;
-
-        graphicsWrites[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        graphicsWrites[1].dstSet = (*particleSystem)->getGraphicsDescriptorSet(set);
-        graphicsWrites[1].dstBinding = 1;
-        graphicsWrites[1].dstArrayElement = 0;
-        graphicsWrites[1].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-        graphicsWrites[1].descriptorCount = 1;
-        graphicsWrites[1].pBufferInfo = &particleBufferInfo;
-
-        graphicsWrites[2].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        graphicsWrites[2].dstSet = (*particleSystem)->getGraphicsDescriptorSet(set);
-        graphicsWrites[2].dstBinding = 2;
-        graphicsWrites[2].dstArrayElement = 0;
-        graphicsWrites[2].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-        graphicsWrites[2].descriptorCount = 1;
-        graphicsWrites[2].pBufferInfo = &windBufferInfo;
-
-        vkUpdateDescriptorSets(dev, static_cast<uint32_t>(graphicsWrites.size()),
-                               graphicsWrites.data(), 0, nullptr);
+        // Graphics descriptor set
+        DescriptorManager::SetWriter(dev, (*particleSystem)->getGraphicsDescriptorSet(set))
+            .writeBuffer(0, rendererUniformBuffers[0], 0, 320)  // sizeof(UniformBufferObject)
+            .writeBuffer(1, particleBuffers.buffers[set], 0, sizeof(LeafParticle) * MAX_PARTICLES, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+            .writeBuffer(2, windBuffers[0], 0, 32)  // sizeof(WindUniforms)
+            .update();
     }
 }
 
@@ -655,35 +524,10 @@ void LeafSystem::recordResetAndCompute(VkCommandBuffer cmd, uint32_t frameIndex,
     uint32_t writeSet = (*particleSystem)->getComputeBufferSet();
 
     // Update compute descriptor set to use this frame's uniform and displacement region buffers
-    VkDescriptorBufferInfo uniformBufferInfo{};
-    uniformBufferInfo.buffer = uniformBuffers.buffers[frameIndex];
-    uniformBufferInfo.offset = 0;
-    uniformBufferInfo.range = sizeof(LeafUniforms);
-
-    VkDescriptorBufferInfo dispRegionBufferInfo{};
-    dispRegionBufferInfo.buffer = displacementRegionBuffers[frameIndex];
-    dispRegionBufferInfo.offset = 0;
-    dispRegionBufferInfo.range = sizeof(glm::vec4);
-
-    std::array<VkWriteDescriptorSet, 2> writes{};
-
-    writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    writes[0].dstSet = (*particleSystem)->getComputeDescriptorSet(writeSet);
-    writes[0].dstBinding = 3;
-    writes[0].dstArrayElement = 0;
-    writes[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    writes[0].descriptorCount = 1;
-    writes[0].pBufferInfo = &uniformBufferInfo;
-
-    writes[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    writes[1].dstSet = (*particleSystem)->getComputeDescriptorSet(writeSet);
-    writes[1].dstBinding = 7;
-    writes[1].dstArrayElement = 0;
-    writes[1].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    writes[1].descriptorCount = 1;
-    writes[1].pBufferInfo = &dispRegionBufferInfo;
-
-    vkUpdateDescriptorSets(getDevice(), static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
+    DescriptorManager::SetWriter(getDevice(), (*particleSystem)->getComputeDescriptorSet(writeSet))
+        .writeBuffer(3, uniformBuffers.buffers[frameIndex], 0, sizeof(LeafUniforms))
+        .writeBuffer(7, displacementRegionBuffers[frameIndex], 0, sizeof(glm::vec4))
+        .update();
 
     // Reset indirect buffer before compute dispatch
     Barriers::clearBufferForCompute(cmd, indirectBuffers.buffers[writeSet], 0, sizeof(VkDrawIndirectCommand));

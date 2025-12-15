@@ -1,6 +1,7 @@
 #include "FoamBuffer.h"
 #include "ShaderLoader.h"
 #include "VulkanBarriers.h"
+#include "DescriptorManager.h"
 #include <SDL3/SDL_log.h>
 #include <array>
 #include <cstring>
@@ -338,64 +339,13 @@ void FoamBuffer::recordCompute(VkCommandBuffer cmd, uint32_t frameIndex, float d
     // Update descriptor sets for this frame's configuration
     uint32_t descSetIndex = frameIndex * 2 + writeBuffer;
 
-    std::array<VkWriteDescriptorSet, 4> writes{};
-
-    // Write buffer (storage image)
-    VkDescriptorImageInfo writeImageInfo{};
-    writeImageInfo.imageView = foamBufferView[writeBuffer];
-    writeImageInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
-
-    writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    writes[0].dstSet = descriptorSets[descSetIndex];
-    writes[0].dstBinding = 0;
-    writes[0].dstArrayElement = 0;
-    writes[0].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
-    writes[0].descriptorCount = 1;
-    writes[0].pImageInfo = &writeImageInfo;
-
-    // Read buffer (sampled)
-    VkDescriptorImageInfo readImageInfo{};
-    readImageInfo.sampler = sampler;
-    readImageInfo.imageView = foamBufferView[readBuffer];
-    readImageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-
-    writes[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    writes[1].dstSet = descriptorSets[descSetIndex];
-    writes[1].dstBinding = 1;
-    writes[1].dstArrayElement = 0;
-    writes[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    writes[1].descriptorCount = 1;
-    writes[1].pImageInfo = &readImageInfo;
-
-    // Flow map
-    VkDescriptorImageInfo flowImageInfo{};
-    flowImageInfo.sampler = flowMapSampler;
-    flowImageInfo.imageView = flowMapView;
-    flowImageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-
-    writes[2].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    writes[2].dstSet = descriptorSets[descSetIndex];
-    writes[2].dstBinding = 2;
-    writes[2].dstArrayElement = 0;
-    writes[2].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    writes[2].descriptorCount = 1;
-    writes[2].pImageInfo = &flowImageInfo;
-
-    // Wake uniform buffer
-    VkDescriptorBufferInfo wakeBufferInfo{};
-    wakeBufferInfo.buffer = wakeUniformBuffers[frameIndex];
-    wakeBufferInfo.offset = 0;
-    wakeBufferInfo.range = sizeof(WakeUniformData);
-
-    writes[3].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    writes[3].dstSet = descriptorSets[descSetIndex];
-    writes[3].dstBinding = 3;
-    writes[3].dstArrayElement = 0;
-    writes[3].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    writes[3].descriptorCount = 1;
-    writes[3].pBufferInfo = &wakeBufferInfo;
-
-    vkUpdateDescriptorSets(device, static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
+    // Update descriptor set using SetWriter
+    DescriptorManager::SetWriter(device, descriptorSets[descSetIndex])
+        .writeStorageImage(0, foamBufferView[writeBuffer])
+        .writeImage(1, foamBufferView[readBuffer], sampler)
+        .writeImage(2, flowMapView, flowMapSampler)
+        .writeBuffer(3, wakeUniformBuffers[frameIndex], 0, sizeof(WakeUniformData))
+        .update();
 
     // Transition write buffer to general layout
     Barriers::prepareImageForCompute(cmd, foamBuffer[writeBuffer]);

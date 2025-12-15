@@ -1,6 +1,7 @@
 #include "WaterSystem.h"
 #include "ShadowSystem.h"
 #include "GraphicsPipelineFactory.h"
+#include "DescriptorManager.h"
 #include <SDL3/SDL.h>
 #include <array>
 #include <cstring>
@@ -120,43 +121,26 @@ bool WaterSystem::createDescriptorSetLayout() {
     // 8: Caustics texture (Phase 9: animated underwater light patterns)
     // 9: SSR texture (Phase 10: screen-space reflections)
     // 10: Scene depth texture (Phase 11: dual depth for refraction)
+    // 11-13: FFT Ocean displacement maps (vertex shader)
 
-    auto makeBinding = [](uint32_t binding, VkDescriptorType type, VkShaderStageFlags stages) {
-        VkDescriptorSetLayoutBinding b{};
-        b.binding = binding;
-        b.descriptorType = type;
-        b.descriptorCount = 1;
-        b.stageFlags = stages;
-        return b;
-    };
+    descriptorSetLayout = DescriptorManager::LayoutBuilder(device)
+        .addUniformBuffer(VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT)  // 0: Main UBO
+        .addUniformBuffer(VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT)  // 1: Water uniforms
+        .addCombinedImageSampler(VK_SHADER_STAGE_FRAGMENT_BIT)  // 2: Shadow map
+        .addCombinedImageSampler(VK_SHADER_STAGE_FRAGMENT_BIT)  // 3: Terrain heightmap
+        .addCombinedImageSampler(VK_SHADER_STAGE_FRAGMENT_BIT)  // 4: Flow map
+        .addCombinedImageSampler(VK_SHADER_STAGE_VERTEX_BIT)    // 5: Displacement map
+        .addCombinedImageSampler(VK_SHADER_STAGE_FRAGMENT_BIT)  // 6: Foam texture
+        .addCombinedImageSampler(VK_SHADER_STAGE_FRAGMENT_BIT)  // 7: Temporal foam
+        .addCombinedImageSampler(VK_SHADER_STAGE_FRAGMENT_BIT)  // 8: Caustics texture
+        .addCombinedImageSampler(VK_SHADER_STAGE_FRAGMENT_BIT)  // 9: SSR texture
+        .addCombinedImageSampler(VK_SHADER_STAGE_FRAGMENT_BIT)  // 10: Scene depth
+        .addCombinedImageSampler(VK_SHADER_STAGE_VERTEX_BIT)    // 11: Ocean displacement
+        .addCombinedImageSampler(VK_SHADER_STAGE_VERTEX_BIT)    // 12: Ocean normal
+        .addCombinedImageSampler(VK_SHADER_STAGE_VERTEX_BIT)    // 13: Ocean foam
+        .build();
 
-    constexpr auto VF = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
-    constexpr auto F = VK_SHADER_STAGE_FRAGMENT_BIT;
-    constexpr auto V = VK_SHADER_STAGE_VERTEX_BIT;
-
-    std::array<VkDescriptorSetLayoutBinding, 14> bindings = {
-        makeBinding(0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VF),
-        makeBinding(1, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VF),
-        makeBinding(2, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, F),
-        makeBinding(3, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, F),
-        makeBinding(4, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, F),
-        makeBinding(5, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, V),
-        makeBinding(6, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, F),
-        makeBinding(7, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, F),
-        makeBinding(8, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, F),
-        makeBinding(9, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, F),
-        makeBinding(10, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, F),
-        makeBinding(11, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, V),
-        makeBinding(12, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, V),
-        makeBinding(13, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, V)
-    };
-
-    VkDescriptorSetLayoutCreateInfo layoutInfo{};
-    layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-    layoutInfo.bindingCount = static_cast<uint32_t>(bindings.size());
-    layoutInfo.pBindings = bindings.data();
-
-    if (vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, &descriptorSetLayout) != VK_SUCCESS) {
+    if (descriptorSetLayout == VK_NULL_HANDLE) {
         SDL_Log("Failed to create water descriptor set layout");
         return false;
     }
@@ -167,14 +151,8 @@ bool WaterSystem::createDescriptorSetLayout() {
     pushConstantRange.offset = 0;
     pushConstantRange.size = sizeof(PushConstants);
 
-    VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
-    pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-    pipelineLayoutInfo.setLayoutCount = 1;
-    pipelineLayoutInfo.pSetLayouts = &descriptorSetLayout;
-    pipelineLayoutInfo.pushConstantRangeCount = 1;
-    pipelineLayoutInfo.pPushConstantRanges = &pushConstantRange;
-
-    if (vkCreatePipelineLayout(device, &pipelineLayoutInfo, nullptr, &pipelineLayout) != VK_SUCCESS) {
+    pipelineLayout = DescriptorManager::createPipelineLayout(device, descriptorSetLayout, {pushConstantRange});
+    if (pipelineLayout == VK_NULL_HANDLE) {
         SDL_Log("Failed to create water pipeline layout");
         return false;
     }

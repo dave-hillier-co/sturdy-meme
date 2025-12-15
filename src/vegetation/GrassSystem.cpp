@@ -1,6 +1,7 @@
 #include "GrassSystem.h"
 #include "ShaderLoader.h"
 #include "PipelineBuilder.h"
+#include "DescriptorManager.h"
 #include "UBOs.h"
 #include "VulkanBarriers.h"
 #include <SDL3/SDL.h>
@@ -219,40 +220,24 @@ bool GrassSystem::createDisplacementResources() {
 
 bool GrassSystem::createDisplacementPipeline() {
     // Create descriptor set layout for displacement update compute shader
-    auto makeComputeBinding = [](uint32_t binding, VkDescriptorType type) {
-        VkDescriptorSetLayoutBinding b{};
-        b.binding = binding;
-        b.descriptorType = type;
-        b.descriptorCount = 1;
-        b.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
-        return b;
-    };
+    // 0: Displacement map (storage image, read-write)
+    // 1: Source buffer (SSBO)
+    // 2: Displacement uniforms
 
-    std::array<VkDescriptorSetLayoutBinding, 3> bindings = {
-        makeComputeBinding(0, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE),      // Displacement map
-        makeComputeBinding(1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER),     // Source buffer
-        makeComputeBinding(2, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER)      // Displacement uniforms
-    };
+    displacementDescriptorSetLayout = DescriptorManager::LayoutBuilder(getDevice())
+        .addStorageImage(VK_SHADER_STAGE_COMPUTE_BIT)      // 0: Displacement map
+        .addStorageBuffer(VK_SHADER_STAGE_COMPUTE_BIT)     // 1: Source buffer
+        .addUniformBuffer(VK_SHADER_STAGE_COMPUTE_BIT)     // 2: Displacement uniforms
+        .build();
 
-    VkDescriptorSetLayoutCreateInfo layoutInfo{};
-    layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-    layoutInfo.bindingCount = static_cast<uint32_t>(bindings.size());
-    layoutInfo.pBindings = bindings.data();
-
-    if (vkCreateDescriptorSetLayout(getDevice(), &layoutInfo, nullptr,
-                                    &displacementDescriptorSetLayout) != VK_SUCCESS) {
+    if (displacementDescriptorSetLayout == VK_NULL_HANDLE) {
         SDL_Log("Failed to create displacement descriptor set layout");
         return false;
     }
 
-    // Create pipeline layout
-    VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
-    pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-    pipelineLayoutInfo.setLayoutCount = 1;
-    pipelineLayoutInfo.pSetLayouts = &displacementDescriptorSetLayout;
-
-    if (vkCreatePipelineLayout(getDevice(), &pipelineLayoutInfo, nullptr,
-                               &displacementPipelineLayout) != VK_SUCCESS) {
+    displacementPipelineLayout = DescriptorManager::createPipelineLayout(
+        getDevice(), displacementDescriptorSetLayout);
+    if (displacementPipelineLayout == VK_NULL_HANDLE) {
         SDL_Log("Failed to create displacement pipeline layout");
         return false;
     }

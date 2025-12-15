@@ -652,6 +652,14 @@ public:
     VkDescriptorSetLayout get() const { return layout_; }
     explicit operator bool() const { return layout_ != VK_NULL_HANDLE; }
 
+    // Adopt an existing raw descriptor set layout (e.g., created by LayoutBuilder)
+    static ManagedDescriptorSetLayout fromRaw(VkDevice device, VkDescriptorSetLayout layout) {
+        ManagedDescriptorSetLayout result;
+        result.device_ = device;
+        result.layout_ = layout;
+        return result;
+    }
+
     VkDescriptorSetLayout release() {
         VkDescriptorSetLayout tmp = layout_;
         layout_ = VK_NULL_HANDLE;

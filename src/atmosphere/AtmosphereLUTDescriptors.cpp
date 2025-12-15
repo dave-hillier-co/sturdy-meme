@@ -4,38 +4,20 @@
 #include <array>
 
 bool AtmosphereLUTSystem::createDescriptorSetLayouts() {
-    auto makeComputeBinding = [](uint32_t binding, VkDescriptorType type) {
-        VkDescriptorSetLayoutBinding b{};
-        b.binding = binding;
-        b.descriptorType = type;
-        b.descriptorCount = 1;
-        b.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
-        return b;
-    };
-
     // Transmittance LUT descriptor set layout (just output image and uniform buffer)
     {
-        std::array<VkDescriptorSetLayoutBinding, 2> bindings = {
-            makeComputeBinding(0, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE),
-            makeComputeBinding(1, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER)
-        };
+        transmittanceDescriptorSetLayout = DescriptorManager::LayoutBuilder(device)
+            .addStorageImage(VK_SHADER_STAGE_COMPUTE_BIT)      // 0: Output image
+            .addUniformBuffer(VK_SHADER_STAGE_COMPUTE_BIT)     // 1: Uniform buffer
+            .build();
 
-        VkDescriptorSetLayoutCreateInfo layoutInfo{};
-        layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-        layoutInfo.bindingCount = static_cast<uint32_t>(bindings.size());
-        layoutInfo.pBindings = bindings.data();
-
-        if (vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, &transmittanceDescriptorSetLayout) != VK_SUCCESS) {
+        if (transmittanceDescriptorSetLayout == VK_NULL_HANDLE) {
             SDL_Log("Failed to create transmittance descriptor set layout");
             return false;
         }
 
-        VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
-        pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-        pipelineLayoutInfo.setLayoutCount = 1;
-        pipelineLayoutInfo.pSetLayouts = &transmittanceDescriptorSetLayout;
-
-        if (vkCreatePipelineLayout(device, &pipelineLayoutInfo, nullptr, &transmittancePipelineLayout) != VK_SUCCESS) {
+        transmittancePipelineLayout = DescriptorManager::createPipelineLayout(device, transmittanceDescriptorSetLayout);
+        if (transmittancePipelineLayout == VK_NULL_HANDLE) {
             SDL_Log("Failed to create transmittance pipeline layout");
             return false;
         }
@@ -43,28 +25,19 @@ bool AtmosphereLUTSystem::createDescriptorSetLayouts() {
 
     // Multi-scatter LUT descriptor set layout (transmittance input, output image, uniform buffer)
     {
-        std::array<VkDescriptorSetLayoutBinding, 3> bindings = {
-            makeComputeBinding(0, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE),
-            makeComputeBinding(1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER),
-            makeComputeBinding(2, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER)
-        };
+        multiScatterDescriptorSetLayout = DescriptorManager::LayoutBuilder(device)
+            .addStorageImage(VK_SHADER_STAGE_COMPUTE_BIT)            // 0: Output image
+            .addCombinedImageSampler(VK_SHADER_STAGE_COMPUTE_BIT)    // 1: Transmittance input
+            .addUniformBuffer(VK_SHADER_STAGE_COMPUTE_BIT)           // 2: Uniform buffer
+            .build();
 
-        VkDescriptorSetLayoutCreateInfo layoutInfo{};
-        layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-        layoutInfo.bindingCount = static_cast<uint32_t>(bindings.size());
-        layoutInfo.pBindings = bindings.data();
-
-        if (vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, &multiScatterDescriptorSetLayout) != VK_SUCCESS) {
+        if (multiScatterDescriptorSetLayout == VK_NULL_HANDLE) {
             SDL_Log("Failed to create multi-scatter descriptor set layout");
             return false;
         }
 
-        VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
-        pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-        pipelineLayoutInfo.setLayoutCount = 1;
-        pipelineLayoutInfo.pSetLayouts = &multiScatterDescriptorSetLayout;
-
-        if (vkCreatePipelineLayout(device, &pipelineLayoutInfo, nullptr, &multiScatterPipelineLayout) != VK_SUCCESS) {
+        multiScatterPipelineLayout = DescriptorManager::createPipelineLayout(device, multiScatterDescriptorSetLayout);
+        if (multiScatterPipelineLayout == VK_NULL_HANDLE) {
             SDL_Log("Failed to create multi-scatter pipeline layout");
             return false;
         }
@@ -72,29 +45,20 @@ bool AtmosphereLUTSystem::createDescriptorSetLayouts() {
 
     // Sky-view LUT descriptor set layout (transmittance + multiscatter inputs, output image, uniform buffer)
     {
-        std::array<VkDescriptorSetLayoutBinding, 4> bindings = {
-            makeComputeBinding(0, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE),
-            makeComputeBinding(1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER),
-            makeComputeBinding(2, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER),
-            makeComputeBinding(3, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER)
-        };
+        skyViewDescriptorSetLayout = DescriptorManager::LayoutBuilder(device)
+            .addStorageImage(VK_SHADER_STAGE_COMPUTE_BIT)            // 0: Output image
+            .addCombinedImageSampler(VK_SHADER_STAGE_COMPUTE_BIT)    // 1: Transmittance input
+            .addCombinedImageSampler(VK_SHADER_STAGE_COMPUTE_BIT)    // 2: Multi-scatter input
+            .addUniformBuffer(VK_SHADER_STAGE_COMPUTE_BIT)           // 3: Uniform buffer
+            .build();
 
-        VkDescriptorSetLayoutCreateInfo layoutInfo{};
-        layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-        layoutInfo.bindingCount = static_cast<uint32_t>(bindings.size());
-        layoutInfo.pBindings = bindings.data();
-
-        if (vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, &skyViewDescriptorSetLayout) != VK_SUCCESS) {
+        if (skyViewDescriptorSetLayout == VK_NULL_HANDLE) {
             SDL_Log("Failed to create sky-view descriptor set layout");
             return false;
         }
 
-        VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
-        pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-        pipelineLayoutInfo.setLayoutCount = 1;
-        pipelineLayoutInfo.pSetLayouts = &skyViewDescriptorSetLayout;
-
-        if (vkCreatePipelineLayout(device, &pipelineLayoutInfo, nullptr, &skyViewPipelineLayout) != VK_SUCCESS) {
+        skyViewPipelineLayout = DescriptorManager::createPipelineLayout(device, skyViewDescriptorSetLayout);
+        if (skyViewPipelineLayout == VK_NULL_HANDLE) {
             SDL_Log("Failed to create sky-view pipeline layout");
             return false;
         }
@@ -103,29 +67,20 @@ bool AtmosphereLUTSystem::createDescriptorSetLayouts() {
     // Irradiance LUT descriptor set layout (Phase 4.1.9)
     // Two output images (Rayleigh and Mie), transmittance input, uniform buffer
     {
-        std::array<VkDescriptorSetLayoutBinding, 4> bindings = {
-            makeComputeBinding(0, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE),
-            makeComputeBinding(1, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE),
-            makeComputeBinding(2, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER),
-            makeComputeBinding(3, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER)
-        };
+        irradianceDescriptorSetLayout = DescriptorManager::LayoutBuilder(device)
+            .addStorageImage(VK_SHADER_STAGE_COMPUTE_BIT)            // 0: Rayleigh output
+            .addStorageImage(VK_SHADER_STAGE_COMPUTE_BIT)            // 1: Mie output
+            .addCombinedImageSampler(VK_SHADER_STAGE_COMPUTE_BIT)    // 2: Transmittance input
+            .addUniformBuffer(VK_SHADER_STAGE_COMPUTE_BIT)           // 3: Uniform buffer
+            .build();
 
-        VkDescriptorSetLayoutCreateInfo layoutInfo{};
-        layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-        layoutInfo.bindingCount = static_cast<uint32_t>(bindings.size());
-        layoutInfo.pBindings = bindings.data();
-
-        if (vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, &irradianceDescriptorSetLayout) != VK_SUCCESS) {
+        if (irradianceDescriptorSetLayout == VK_NULL_HANDLE) {
             SDL_Log("Failed to create irradiance descriptor set layout");
             return false;
         }
 
-        VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
-        pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-        pipelineLayoutInfo.setLayoutCount = 1;
-        pipelineLayoutInfo.pSetLayouts = &irradianceDescriptorSetLayout;
-
-        if (vkCreatePipelineLayout(device, &pipelineLayoutInfo, nullptr, &irradiancePipelineLayout) != VK_SUCCESS) {
+        irradiancePipelineLayout = DescriptorManager::createPipelineLayout(device, irradianceDescriptorSetLayout);
+        if (irradiancePipelineLayout == VK_NULL_HANDLE) {
             SDL_Log("Failed to create irradiance pipeline layout");
             return false;
         }
@@ -133,27 +88,18 @@ bool AtmosphereLUTSystem::createDescriptorSetLayouts() {
 
     // Cloud Map LUT descriptor set layout (output image, uniform buffer)
     {
-        std::array<VkDescriptorSetLayoutBinding, 2> bindings = {
-            makeComputeBinding(0, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE),
-            makeComputeBinding(1, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER)
-        };
+        cloudMapDescriptorSetLayout = DescriptorManager::LayoutBuilder(device)
+            .addStorageImage(VK_SHADER_STAGE_COMPUTE_BIT)      // 0: Output image
+            .addUniformBuffer(VK_SHADER_STAGE_COMPUTE_BIT)     // 1: Uniform buffer
+            .build();
 
-        VkDescriptorSetLayoutCreateInfo layoutInfo{};
-        layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-        layoutInfo.bindingCount = static_cast<uint32_t>(bindings.size());
-        layoutInfo.pBindings = bindings.data();
-
-        if (vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, &cloudMapDescriptorSetLayout) != VK_SUCCESS) {
+        if (cloudMapDescriptorSetLayout == VK_NULL_HANDLE) {
             SDL_Log("Failed to create cloud map descriptor set layout");
             return false;
         }
 
-        VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
-        pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-        pipelineLayoutInfo.setLayoutCount = 1;
-        pipelineLayoutInfo.pSetLayouts = &cloudMapDescriptorSetLayout;
-
-        if (vkCreatePipelineLayout(device, &pipelineLayoutInfo, nullptr, &cloudMapPipelineLayout) != VK_SUCCESS) {
+        cloudMapPipelineLayout = DescriptorManager::createPipelineLayout(device, cloudMapDescriptorSetLayout);
+        if (cloudMapPipelineLayout == VK_NULL_HANDLE) {
             SDL_Log("Failed to create cloud map pipeline layout");
             return false;
         }

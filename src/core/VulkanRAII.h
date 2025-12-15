@@ -458,6 +458,387 @@ private:
 };
 
 // ============================================================================
+// ManagedDescriptorSetLayout - RAII wrapper for VkDescriptorSetLayout
+// ============================================================================
+
+class ManagedDescriptorSetLayout {
+public:
+    ManagedDescriptorSetLayout() = default;
+
+    ~ManagedDescriptorSetLayout() {
+        destroy();
+    }
+
+    // Move-only semantics
+    ManagedDescriptorSetLayout(ManagedDescriptorSetLayout&& other) noexcept
+        : layout_(other.layout_)
+        , device_(other.device_) {
+        other.layout_ = VK_NULL_HANDLE;
+        other.device_ = VK_NULL_HANDLE;
+    }
+
+    ManagedDescriptorSetLayout& operator=(ManagedDescriptorSetLayout&& other) noexcept {
+        if (this != &other) {
+            destroy();
+            layout_ = other.layout_;
+            device_ = other.device_;
+            other.layout_ = VK_NULL_HANDLE;
+            other.device_ = VK_NULL_HANDLE;
+        }
+        return *this;
+    }
+
+    ManagedDescriptorSetLayout(const ManagedDescriptorSetLayout&) = delete;
+    ManagedDescriptorSetLayout& operator=(const ManagedDescriptorSetLayout&) = delete;
+
+    static bool create(VkDevice device,
+                       const VkDescriptorSetLayoutCreateInfo& layoutInfo,
+                       ManagedDescriptorSetLayout& outLayout) {
+        ManagedDescriptorSetLayout result;
+        result.device_ = device;
+
+        VkResult vkResult = vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, &result.layout_);
+        if (vkResult != VK_SUCCESS) {
+            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
+                "ManagedDescriptorSetLayout::create failed: %d", vkResult);
+            return false;
+        }
+
+        outLayout = std::move(result);
+        return true;
+    }
+
+    void destroy() {
+        if (layout_ != VK_NULL_HANDLE && device_ != VK_NULL_HANDLE) {
+            vkDestroyDescriptorSetLayout(device_, layout_, nullptr);
+            layout_ = VK_NULL_HANDLE;
+        }
+    }
+
+    VkDescriptorSetLayout get() const { return layout_; }
+    explicit operator bool() const { return layout_ != VK_NULL_HANDLE; }
+
+    VkDescriptorSetLayout release() {
+        VkDescriptorSetLayout tmp = layout_;
+        layout_ = VK_NULL_HANDLE;
+        return tmp;
+    }
+
+private:
+    VkDescriptorSetLayout layout_ = VK_NULL_HANDLE;
+    VkDevice device_ = VK_NULL_HANDLE;
+};
+
+// ============================================================================
+// ManagedPipelineLayout - RAII wrapper for VkPipelineLayout
+// ============================================================================
+
+class ManagedPipelineLayout {
+public:
+    ManagedPipelineLayout() = default;
+
+    ~ManagedPipelineLayout() {
+        destroy();
+    }
+
+    // Move-only semantics
+    ManagedPipelineLayout(ManagedPipelineLayout&& other) noexcept
+        : layout_(other.layout_)
+        , device_(other.device_) {
+        other.layout_ = VK_NULL_HANDLE;
+        other.device_ = VK_NULL_HANDLE;
+    }
+
+    ManagedPipelineLayout& operator=(ManagedPipelineLayout&& other) noexcept {
+        if (this != &other) {
+            destroy();
+            layout_ = other.layout_;
+            device_ = other.device_;
+            other.layout_ = VK_NULL_HANDLE;
+            other.device_ = VK_NULL_HANDLE;
+        }
+        return *this;
+    }
+
+    ManagedPipelineLayout(const ManagedPipelineLayout&) = delete;
+    ManagedPipelineLayout& operator=(const ManagedPipelineLayout&) = delete;
+
+    static bool create(VkDevice device,
+                       const VkPipelineLayoutCreateInfo& layoutInfo,
+                       ManagedPipelineLayout& outLayout) {
+        ManagedPipelineLayout result;
+        result.device_ = device;
+
+        VkResult vkResult = vkCreatePipelineLayout(device, &layoutInfo, nullptr, &result.layout_);
+        if (vkResult != VK_SUCCESS) {
+            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
+                "ManagedPipelineLayout::create failed: %d", vkResult);
+            return false;
+        }
+
+        outLayout = std::move(result);
+        return true;
+    }
+
+    void destroy() {
+        if (layout_ != VK_NULL_HANDLE && device_ != VK_NULL_HANDLE) {
+            vkDestroyPipelineLayout(device_, layout_, nullptr);
+            layout_ = VK_NULL_HANDLE;
+        }
+    }
+
+    VkPipelineLayout get() const { return layout_; }
+    explicit operator bool() const { return layout_ != VK_NULL_HANDLE; }
+
+    VkPipelineLayout release() {
+        VkPipelineLayout tmp = layout_;
+        layout_ = VK_NULL_HANDLE;
+        return tmp;
+    }
+
+private:
+    VkPipelineLayout layout_ = VK_NULL_HANDLE;
+    VkDevice device_ = VK_NULL_HANDLE;
+};
+
+// ============================================================================
+// ManagedPipeline - RAII wrapper for VkPipeline
+// ============================================================================
+
+class ManagedPipeline {
+public:
+    ManagedPipeline() = default;
+
+    ~ManagedPipeline() {
+        destroy();
+    }
+
+    // Move-only semantics
+    ManagedPipeline(ManagedPipeline&& other) noexcept
+        : pipeline_(other.pipeline_)
+        , device_(other.device_) {
+        other.pipeline_ = VK_NULL_HANDLE;
+        other.device_ = VK_NULL_HANDLE;
+    }
+
+    ManagedPipeline& operator=(ManagedPipeline&& other) noexcept {
+        if (this != &other) {
+            destroy();
+            pipeline_ = other.pipeline_;
+            device_ = other.device_;
+            other.pipeline_ = VK_NULL_HANDLE;
+            other.device_ = VK_NULL_HANDLE;
+        }
+        return *this;
+    }
+
+    ManagedPipeline(const ManagedPipeline&) = delete;
+    ManagedPipeline& operator=(const ManagedPipeline&) = delete;
+
+    // Create graphics pipeline
+    static bool createGraphics(VkDevice device,
+                               VkPipelineCache pipelineCache,
+                               const VkGraphicsPipelineCreateInfo& pipelineInfo,
+                               ManagedPipeline& outPipeline) {
+        ManagedPipeline result;
+        result.device_ = device;
+
+        VkResult vkResult = vkCreateGraphicsPipelines(device, pipelineCache, 1, &pipelineInfo, nullptr, &result.pipeline_);
+        if (vkResult != VK_SUCCESS) {
+            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
+                "ManagedPipeline::createGraphics failed: %d", vkResult);
+            return false;
+        }
+
+        outPipeline = std::move(result);
+        return true;
+    }
+
+    // Create compute pipeline
+    static bool createCompute(VkDevice device,
+                              VkPipelineCache pipelineCache,
+                              const VkComputePipelineCreateInfo& pipelineInfo,
+                              ManagedPipeline& outPipeline) {
+        ManagedPipeline result;
+        result.device_ = device;
+
+        VkResult vkResult = vkCreateComputePipelines(device, pipelineCache, 1, &pipelineInfo, nullptr, &result.pipeline_);
+        if (vkResult != VK_SUCCESS) {
+            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
+                "ManagedPipeline::createCompute failed: %d", vkResult);
+            return false;
+        }
+
+        outPipeline = std::move(result);
+        return true;
+    }
+
+    void destroy() {
+        if (pipeline_ != VK_NULL_HANDLE && device_ != VK_NULL_HANDLE) {
+            vkDestroyPipeline(device_, pipeline_, nullptr);
+            pipeline_ = VK_NULL_HANDLE;
+        }
+    }
+
+    VkPipeline get() const { return pipeline_; }
+    explicit operator bool() const { return pipeline_ != VK_NULL_HANDLE; }
+
+    VkPipeline release() {
+        VkPipeline tmp = pipeline_;
+        pipeline_ = VK_NULL_HANDLE;
+        return tmp;
+    }
+
+private:
+    VkPipeline pipeline_ = VK_NULL_HANDLE;
+    VkDevice device_ = VK_NULL_HANDLE;
+};
+
+// ============================================================================
+// ManagedRenderPass - RAII wrapper for VkRenderPass
+// ============================================================================
+
+class ManagedRenderPass {
+public:
+    ManagedRenderPass() = default;
+
+    ~ManagedRenderPass() {
+        destroy();
+    }
+
+    // Move-only semantics
+    ManagedRenderPass(ManagedRenderPass&& other) noexcept
+        : renderPass_(other.renderPass_)
+        , device_(other.device_) {
+        other.renderPass_ = VK_NULL_HANDLE;
+        other.device_ = VK_NULL_HANDLE;
+    }
+
+    ManagedRenderPass& operator=(ManagedRenderPass&& other) noexcept {
+        if (this != &other) {
+            destroy();
+            renderPass_ = other.renderPass_;
+            device_ = other.device_;
+            other.renderPass_ = VK_NULL_HANDLE;
+            other.device_ = VK_NULL_HANDLE;
+        }
+        return *this;
+    }
+
+    ManagedRenderPass(const ManagedRenderPass&) = delete;
+    ManagedRenderPass& operator=(const ManagedRenderPass&) = delete;
+
+    static bool create(VkDevice device,
+                       const VkRenderPassCreateInfo& renderPassInfo,
+                       ManagedRenderPass& outRenderPass) {
+        ManagedRenderPass result;
+        result.device_ = device;
+
+        VkResult vkResult = vkCreateRenderPass(device, &renderPassInfo, nullptr, &result.renderPass_);
+        if (vkResult != VK_SUCCESS) {
+            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
+                "ManagedRenderPass::create failed: %d", vkResult);
+            return false;
+        }
+
+        outRenderPass = std::move(result);
+        return true;
+    }
+
+    void destroy() {
+        if (renderPass_ != VK_NULL_HANDLE && device_ != VK_NULL_HANDLE) {
+            vkDestroyRenderPass(device_, renderPass_, nullptr);
+            renderPass_ = VK_NULL_HANDLE;
+        }
+    }
+
+    VkRenderPass get() const { return renderPass_; }
+    explicit operator bool() const { return renderPass_ != VK_NULL_HANDLE; }
+
+    VkRenderPass release() {
+        VkRenderPass tmp = renderPass_;
+        renderPass_ = VK_NULL_HANDLE;
+        return tmp;
+    }
+
+private:
+    VkRenderPass renderPass_ = VK_NULL_HANDLE;
+    VkDevice device_ = VK_NULL_HANDLE;
+};
+
+// ============================================================================
+// ManagedFramebuffer - RAII wrapper for VkFramebuffer
+// ============================================================================
+
+class ManagedFramebuffer {
+public:
+    ManagedFramebuffer() = default;
+
+    ~ManagedFramebuffer() {
+        destroy();
+    }
+
+    // Move-only semantics
+    ManagedFramebuffer(ManagedFramebuffer&& other) noexcept
+        : framebuffer_(other.framebuffer_)
+        , device_(other.device_) {
+        other.framebuffer_ = VK_NULL_HANDLE;
+        other.device_ = VK_NULL_HANDLE;
+    }
+
+    ManagedFramebuffer& operator=(ManagedFramebuffer&& other) noexcept {
+        if (this != &other) {
+            destroy();
+            framebuffer_ = other.framebuffer_;
+            device_ = other.device_;
+            other.framebuffer_ = VK_NULL_HANDLE;
+            other.device_ = VK_NULL_HANDLE;
+        }
+        return *this;
+    }
+
+    ManagedFramebuffer(const ManagedFramebuffer&) = delete;
+    ManagedFramebuffer& operator=(const ManagedFramebuffer&) = delete;
+
+    static bool create(VkDevice device,
+                       const VkFramebufferCreateInfo& framebufferInfo,
+                       ManagedFramebuffer& outFramebuffer) {
+        ManagedFramebuffer result;
+        result.device_ = device;
+
+        VkResult vkResult = vkCreateFramebuffer(device, &framebufferInfo, nullptr, &result.framebuffer_);
+        if (vkResult != VK_SUCCESS) {
+            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
+                "ManagedFramebuffer::create failed: %d", vkResult);
+            return false;
+        }
+
+        outFramebuffer = std::move(result);
+        return true;
+    }
+
+    void destroy() {
+        if (framebuffer_ != VK_NULL_HANDLE && device_ != VK_NULL_HANDLE) {
+            vkDestroyFramebuffer(device_, framebuffer_, nullptr);
+            framebuffer_ = VK_NULL_HANDLE;
+        }
+    }
+
+    VkFramebuffer get() const { return framebuffer_; }
+    explicit operator bool() const { return framebuffer_ != VK_NULL_HANDLE; }
+
+    VkFramebuffer release() {
+        VkFramebuffer tmp = framebuffer_;
+        framebuffer_ = VK_NULL_HANDLE;
+        return tmp;
+    }
+
+private:
+    VkFramebuffer framebuffer_ = VK_NULL_HANDLE;
+    VkDevice device_ = VK_NULL_HANDLE;
+};
+
+// ============================================================================
 // CommandScope - RAII wrapper for one-time command buffer submission
 // ============================================================================
 // Usage:

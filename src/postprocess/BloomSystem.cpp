@@ -1,6 +1,7 @@
 #include "BloomSystem.h"
 #include "GraphicsPipelineFactory.h"
 #include "VulkanBarriers.h"
+#include "DescriptorManager.h"
 #include <array>
 #include <algorithm>
 #include <cmath>
@@ -348,25 +349,10 @@ void BloomSystem::recordBloomPass(VkCommandBuffer cmd, VkImageView hdrInput) {
     // Downsample pass - from HDR to smallest mip
     for (size_t i = 0; i < mipChain.size(); ++i) {
         // Update descriptor set to sample from previous level
-        VkDescriptorImageInfo imageInfo = {};
-        imageInfo.sampler = sampler_.get();
-        if (i == 0) {
-            imageInfo.imageView = hdrInput;
-        } else {
-            imageInfo.imageView = mipChain[i - 1].imageView;
-        }
-        imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-
-        VkWriteDescriptorSet write = {};
-        write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        write.dstSet = downsampleDescSets[i];
-        write.dstBinding = 0;
-        write.dstArrayElement = 0;
-        write.descriptorCount = 1;
-        write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        write.pImageInfo = &imageInfo;
-
-        vkUpdateDescriptorSets(device, 1, &write, 0, nullptr);
+        VkImageView sourceView = (i == 0) ? hdrInput : mipChain[i - 1].imageView;
+        DescriptorManager::SetWriter(device, downsampleDescSets[i])
+            .writeImage(0, sourceView, sampler_.get())
+            .update();
 
         // Begin render pass
         VkRenderPassBeginInfo renderPassInfo = {};
@@ -425,21 +411,9 @@ void BloomSystem::recordBloomPass(VkCommandBuffer cmd, VkImageView hdrInput) {
     // Blend upsampled results additively into each level
     for (int i = static_cast<int>(mipChain.size()) - 2; i >= 0; --i) {
         // Update descriptor set to sample from smaller mip (i+1)
-        VkDescriptorImageInfo imageInfo = {};
-        imageInfo.sampler = sampler_.get();
-        imageInfo.imageView = mipChain[i + 1].imageView;
-        imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-
-        VkWriteDescriptorSet write = {};
-        write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        write.dstSet = upsampleDescSets[i];
-        write.dstBinding = 0;
-        write.dstArrayElement = 0;
-        write.descriptorCount = 1;
-        write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        write.pImageInfo = &imageInfo;
-
-        vkUpdateDescriptorSets(device, 1, &write, 0, nullptr);
+        DescriptorManager::SetWriter(device, upsampleDescSets[i])
+            .writeImage(0, mipChain[i + 1].imageView, sampler_.get())
+            .update();
 
         // Transition current mip to color attachment for blending
         Barriers::transitionImage(cmd, mipChain[i].image,

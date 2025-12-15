@@ -394,207 +394,22 @@ bool WaterSystem::createDescriptorSets(const std::vector<VkBuffer>& uniformBuffe
 
     // Update each descriptor set
     for (size_t i = 0; i < framesInFlight; i++) {
-        // Main UBO binding
-        VkDescriptorBufferInfo mainUboInfo{};
-        mainUboInfo.buffer = uniformBuffers[i];
-        mainUboInfo.offset = 0;
-        mainUboInfo.range = uniformBufferSize;
-
-        // Water uniforms binding
-        VkDescriptorBufferInfo waterUboInfo{};
-        waterUboInfo.buffer = waterUniformBuffers[i];
-        waterUboInfo.offset = 0;
-        waterUboInfo.range = sizeof(WaterUniforms);
-
-        // Shadow map binding
-        VkDescriptorImageInfo shadowInfo{};
-        shadowInfo.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
-        shadowInfo.imageView = shadowView;
-        shadowInfo.sampler = shadowSampler;
-
-        // Terrain heightmap binding
-        VkDescriptorImageInfo terrainInfo{};
-        terrainInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-        terrainInfo.imageView = terrainHeightMapView;
-        terrainInfo.sampler = terrainHeightMapSampler;
-
-        // Flow map binding
-        VkDescriptorImageInfo flowInfo{};
-        flowInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-        flowInfo.imageView = flowMapView;
-        flowInfo.sampler = flowMapSampler;
-
-        // Displacement map binding (Phase 4: interactive splashes)
-        VkDescriptorImageInfo displacementInfo{};
-        displacementInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-        displacementInfo.imageView = displacementMapView;
-        displacementInfo.sampler = displacementMapSampler;
-
-        // Foam noise texture binding
-        VkDescriptorImageInfo foamInfo{};
-        foamInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-        foamInfo.imageView = (*foamTexture)->getImageView();
-        foamInfo.sampler = (*foamTexture)->getSampler();
-
-        // Temporal foam buffer binding (Phase 14: persistent foam)
-        VkDescriptorImageInfo temporalFoamInfo{};
-        temporalFoamInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-        temporalFoamInfo.imageView = temporalFoamView;
-        temporalFoamInfo.sampler = temporalFoamSampler;
-
-        // Caustics texture binding (Phase 9: underwater light patterns)
-        VkDescriptorImageInfo causticsInfo{};
-        causticsInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-        causticsInfo.imageView = (*causticsTexture)->getImageView();
-        causticsInfo.sampler = (*causticsTexture)->getSampler();
-
-        // SSR texture binding (Phase 10: screen-space reflections)
-        VkDescriptorImageInfo ssrInfo{};
-        ssrInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;  // SSR uses general layout for compute
-        ssrInfo.imageView = ssrView;
-        ssrInfo.sampler = ssrSampler;
-
-        // Scene depth binding (Phase 11: dual depth for refraction)
-        VkDescriptorImageInfo sceneDepthInfo{};
-        sceneDepthInfo.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
-        sceneDepthInfo.imageView = sceneDepthView;
-        sceneDepthInfo.sampler = sceneDepthSampler;
-
-        // FFT Ocean bindings (11-13) - use displacement map as placeholder until FFT is integrated
-        VkDescriptorImageInfo oceanDispInfo{};
-        oceanDispInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-        oceanDispInfo.imageView = displacementMapView;
-        oceanDispInfo.sampler = displacementMapSampler;
-
-        VkDescriptorImageInfo oceanNormalInfo{};
-        oceanNormalInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-        oceanNormalInfo.imageView = displacementMapView;
-        oceanNormalInfo.sampler = displacementMapSampler;
-
-        VkDescriptorImageInfo oceanFoamInfo{};
-        oceanFoamInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-        oceanFoamInfo.imageView = displacementMapView;
-        oceanFoamInfo.sampler = displacementMapSampler;
-
-        std::array<VkWriteDescriptorSet, 14> descriptorWrites{};
-
-        descriptorWrites[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        descriptorWrites[0].dstSet = descriptorSets[i];
-        descriptorWrites[0].dstBinding = 0;
-        descriptorWrites[0].dstArrayElement = 0;
-        descriptorWrites[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-        descriptorWrites[0].descriptorCount = 1;
-        descriptorWrites[0].pBufferInfo = &mainUboInfo;
-
-        descriptorWrites[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        descriptorWrites[1].dstSet = descriptorSets[i];
-        descriptorWrites[1].dstBinding = 1;
-        descriptorWrites[1].dstArrayElement = 0;
-        descriptorWrites[1].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-        descriptorWrites[1].descriptorCount = 1;
-        descriptorWrites[1].pBufferInfo = &waterUboInfo;
-
-        descriptorWrites[2].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        descriptorWrites[2].dstSet = descriptorSets[i];
-        descriptorWrites[2].dstBinding = 2;
-        descriptorWrites[2].dstArrayElement = 0;
-        descriptorWrites[2].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        descriptorWrites[2].descriptorCount = 1;
-        descriptorWrites[2].pImageInfo = &shadowInfo;
-
-        descriptorWrites[3].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        descriptorWrites[3].dstSet = descriptorSets[i];
-        descriptorWrites[3].dstBinding = 3;
-        descriptorWrites[3].dstArrayElement = 0;
-        descriptorWrites[3].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        descriptorWrites[3].descriptorCount = 1;
-        descriptorWrites[3].pImageInfo = &terrainInfo;
-
-        descriptorWrites[4].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        descriptorWrites[4].dstSet = descriptorSets[i];
-        descriptorWrites[4].dstBinding = 4;
-        descriptorWrites[4].dstArrayElement = 0;
-        descriptorWrites[4].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        descriptorWrites[4].descriptorCount = 1;
-        descriptorWrites[4].pImageInfo = &flowInfo;
-
-        descriptorWrites[5].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        descriptorWrites[5].dstSet = descriptorSets[i];
-        descriptorWrites[5].dstBinding = 5;
-        descriptorWrites[5].dstArrayElement = 0;
-        descriptorWrites[5].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        descriptorWrites[5].descriptorCount = 1;
-        descriptorWrites[5].pImageInfo = &displacementInfo;
-
-        descriptorWrites[6].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        descriptorWrites[6].dstSet = descriptorSets[i];
-        descriptorWrites[6].dstBinding = 6;
-        descriptorWrites[6].dstArrayElement = 0;
-        descriptorWrites[6].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        descriptorWrites[6].descriptorCount = 1;
-        descriptorWrites[6].pImageInfo = &foamInfo;
-
-        descriptorWrites[7].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        descriptorWrites[7].dstSet = descriptorSets[i];
-        descriptorWrites[7].dstBinding = 7;
-        descriptorWrites[7].dstArrayElement = 0;
-        descriptorWrites[7].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        descriptorWrites[7].descriptorCount = 1;
-        descriptorWrites[7].pImageInfo = &temporalFoamInfo;
-
-        descriptorWrites[8].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        descriptorWrites[8].dstSet = descriptorSets[i];
-        descriptorWrites[8].dstBinding = 8;
-        descriptorWrites[8].dstArrayElement = 0;
-        descriptorWrites[8].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        descriptorWrites[8].descriptorCount = 1;
-        descriptorWrites[8].pImageInfo = &causticsInfo;
-
-        descriptorWrites[9].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        descriptorWrites[9].dstSet = descriptorSets[i];
-        descriptorWrites[9].dstBinding = 9;
-        descriptorWrites[9].dstArrayElement = 0;
-        descriptorWrites[9].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        descriptorWrites[9].descriptorCount = 1;
-        descriptorWrites[9].pImageInfo = &ssrInfo;
-
-        descriptorWrites[10].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        descriptorWrites[10].dstSet = descriptorSets[i];
-        descriptorWrites[10].dstBinding = 10;
-        descriptorWrites[10].dstArrayElement = 0;
-        descriptorWrites[10].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        descriptorWrites[10].descriptorCount = 1;
-        descriptorWrites[10].pImageInfo = &sceneDepthInfo;
-
-        // FFT Ocean displacement (binding 11)
-        descriptorWrites[11].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        descriptorWrites[11].dstSet = descriptorSets[i];
-        descriptorWrites[11].dstBinding = 11;
-        descriptorWrites[11].dstArrayElement = 0;
-        descriptorWrites[11].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        descriptorWrites[11].descriptorCount = 1;
-        descriptorWrites[11].pImageInfo = &oceanDispInfo;
-
-        // FFT Ocean normal (binding 12)
-        descriptorWrites[12].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        descriptorWrites[12].dstSet = descriptorSets[i];
-        descriptorWrites[12].dstBinding = 12;
-        descriptorWrites[12].dstArrayElement = 0;
-        descriptorWrites[12].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        descriptorWrites[12].descriptorCount = 1;
-        descriptorWrites[12].pImageInfo = &oceanNormalInfo;
-
-        // FFT Ocean foam (binding 13)
-        descriptorWrites[13].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        descriptorWrites[13].dstSet = descriptorSets[i];
-        descriptorWrites[13].dstBinding = 13;
-        descriptorWrites[13].dstArrayElement = 0;
-        descriptorWrites[13].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        descriptorWrites[13].descriptorCount = 1;
-        descriptorWrites[13].pImageInfo = &oceanFoamInfo;
-
-        vkUpdateDescriptorSets(device, static_cast<uint32_t>(descriptorWrites.size()),
-                               descriptorWrites.data(), 0, nullptr);
+        DescriptorManager::SetWriter(device, descriptorSets[i])
+            .writeBuffer(0, uniformBuffers[i], 0, uniformBufferSize)
+            .writeBuffer(1, waterUniformBuffers[i], 0, sizeof(WaterUniforms))
+            .writeImage(2, shadowView, shadowSampler, VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL)
+            .writeImage(3, terrainHeightMapView, terrainHeightMapSampler)
+            .writeImage(4, flowMapView, flowMapSampler)
+            .writeImage(5, displacementMapView, displacementMapSampler)
+            .writeImage(6, (*foamTexture)->getImageView(), (*foamTexture)->getSampler())
+            .writeImage(7, temporalFoamView, temporalFoamSampler)
+            .writeImage(8, (*causticsTexture)->getImageView(), (*causticsTexture)->getSampler())
+            .writeImage(9, ssrView, ssrSampler, VK_IMAGE_LAYOUT_GENERAL)
+            .writeImage(10, sceneDepthView, sceneDepthSampler, VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL)
+            .writeImage(11, displacementMapView, displacementMapSampler)  // FFT Ocean displacement placeholder
+            .writeImage(12, displacementMapView, displacementMapSampler)  // FFT Ocean normal placeholder
+            .writeImage(13, displacementMapView, displacementMapSampler)  // FFT Ocean foam placeholder
+            .update();
     }
 
     SDL_Log("Water descriptor sets created with terrain heightmap, flow map, displacement map, foam texture, temporal foam, caustics, SSR, and scene depth");

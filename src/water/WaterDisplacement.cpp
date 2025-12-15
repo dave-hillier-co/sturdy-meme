@@ -1,6 +1,7 @@
 #include "WaterDisplacement.h"
 #include "ShaderLoader.h"
 #include "VulkanBarriers.h"
+#include "DescriptorManager.h"
 #include <SDL3/SDL_log.h>
 #include <algorithm>
 #include <cstring>
@@ -355,50 +356,11 @@ bool WaterDisplacement::createDescriptorSets() {
 
     // Update descriptor sets
     for (uint32_t i = 0; i < framesInFlight; i++) {
-        std::array<VkWriteDescriptorSet, 3> writes{};
-
-        // Current displacement map (storage image)
-        VkDescriptorImageInfo currentImageInfo{};
-        currentImageInfo.imageView = displacementMapView;
-        currentImageInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
-
-        writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        writes[0].dstSet = descriptorSets[i];
-        writes[0].dstBinding = 0;
-        writes[0].dstArrayElement = 0;
-        writes[0].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
-        writes[0].descriptorCount = 1;
-        writes[0].pImageInfo = &currentImageInfo;
-
-        // Previous displacement map (sampled)
-        VkDescriptorImageInfo prevImageInfo{};
-        prevImageInfo.sampler = sampler;
-        prevImageInfo.imageView = prevDisplacementMapView;
-        prevImageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-
-        writes[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        writes[1].dstSet = descriptorSets[i];
-        writes[1].dstBinding = 1;
-        writes[1].dstArrayElement = 0;
-        writes[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        writes[1].descriptorCount = 1;
-        writes[1].pImageInfo = &prevImageInfo;
-
-        // Particle buffer
-        VkDescriptorBufferInfo bufferInfo{};
-        bufferInfo.buffer = particleBuffers[i];
-        bufferInfo.offset = 0;
-        bufferInfo.range = sizeof(SplashParticle) * MAX_PARTICLES;
-
-        writes[2].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        writes[2].dstSet = descriptorSets[i];
-        writes[2].dstBinding = 2;
-        writes[2].dstArrayElement = 0;
-        writes[2].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-        writes[2].descriptorCount = 1;
-        writes[2].pBufferInfo = &bufferInfo;
-
-        vkUpdateDescriptorSets(device, static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
+        DescriptorManager::SetWriter(device, descriptorSets[i])
+            .writeStorageImage(0, displacementMapView)
+            .writeImage(1, prevDisplacementMapView, sampler)
+            .writeBuffer(2, particleBuffers[i], 0, sizeof(SplashParticle) * MAX_PARTICLES, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+            .update();
     }
 
     return true;

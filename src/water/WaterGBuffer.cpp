@@ -2,6 +2,7 @@
 #include "GraphicsPipelineFactory.h"
 #include "Mesh.h"
 #include "ShaderLoader.h"
+#include "DescriptorManager.h"
 #include <SDL3/SDL_log.h>
 #include <array>
 #include <algorithm>
@@ -573,65 +574,12 @@ bool WaterGBuffer::createDescriptorSets(
 
     // Update descriptor sets for each frame
     for (uint32_t i = 0; i < framesInFlight; i++) {
-        std::array<VkWriteDescriptorSet, 4> writes{};
-
-        // Main UBO
-        VkDescriptorBufferInfo mainUBOInfo{};
-        mainUBOInfo.buffer = mainUBOs[i];
-        mainUBOInfo.offset = 0;
-        mainUBOInfo.range = mainUBOSize;
-
-        writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        writes[0].dstSet = descriptorSets[i];
-        writes[0].dstBinding = 0;
-        writes[0].dstArrayElement = 0;
-        writes[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-        writes[0].descriptorCount = 1;
-        writes[0].pBufferInfo = &mainUBOInfo;
-
-        // Water UBO
-        VkDescriptorBufferInfo waterUBOInfo{};
-        waterUBOInfo.buffer = waterUBOs[i];
-        waterUBOInfo.offset = 0;
-        waterUBOInfo.range = waterUBOSize;
-
-        writes[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        writes[1].dstSet = descriptorSets[i];
-        writes[1].dstBinding = 1;
-        writes[1].dstArrayElement = 0;
-        writes[1].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-        writes[1].descriptorCount = 1;
-        writes[1].pBufferInfo = &waterUBOInfo;
-
-        // Terrain height map
-        VkDescriptorImageInfo terrainInfo{};
-        terrainInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-        terrainInfo.imageView = terrainHeightView;
-        terrainInfo.sampler = terrainSampler;
-
-        writes[2].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        writes[2].dstSet = descriptorSets[i];
-        writes[2].dstBinding = 3;
-        writes[2].dstArrayElement = 0;
-        writes[2].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        writes[2].descriptorCount = 1;
-        writes[2].pImageInfo = &terrainInfo;
-
-        // Flow map
-        VkDescriptorImageInfo flowInfo{};
-        flowInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-        flowInfo.imageView = flowMapView;
-        flowInfo.sampler = flowMapSampler;
-
-        writes[3].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        writes[3].dstSet = descriptorSets[i];
-        writes[3].dstBinding = 4;
-        writes[3].dstArrayElement = 0;
-        writes[3].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        writes[3].descriptorCount = 1;
-        writes[3].pImageInfo = &flowInfo;
-
-        vkUpdateDescriptorSets(device, static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
+        DescriptorManager::SetWriter(device, descriptorSets[i])
+            .writeBuffer(0, mainUBOs[i], 0, mainUBOSize)
+            .writeBuffer(1, waterUBOs[i], 0, waterUBOSize)
+            .writeImage(3, terrainHeightView, terrainSampler)
+            .writeImage(4, flowMapView, flowMapSampler)
+            .update();
     }
 
     SDL_Log("WaterGBuffer: Descriptor sets created for %u frames", framesInFlight);

@@ -2,6 +2,7 @@
 #include "ShaderLoader.h"
 #include "PipelineBuilder.h"
 #include "VulkanBarriers.h"
+#include "DescriptorManager.h"
 #include <SDL3/SDL.h>
 #include <cstring>
 #include <array>
@@ -163,51 +164,12 @@ bool SnowMaskSystem::createDescriptorSets() {
     }
 
     // Update descriptor sets with image binding (same image for all frames)
-    VkDescriptorImageInfo imageInfo{};
-    imageInfo.imageView = snowMaskView;
-    imageInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
-
     for (uint32_t i = 0; i < getFramesInFlight(); i++) {
-        VkDescriptorBufferInfo uniformInfo{};
-        uniformInfo.buffer = uniformBuffers.buffers[i];
-        uniformInfo.offset = 0;
-        uniformInfo.range = sizeof(SnowMaskUniforms);
-
-        VkDescriptorBufferInfo interactionInfo{};
-        interactionInfo.buffer = interactionBuffers.buffers[i];
-        interactionInfo.offset = 0;
-        interactionInfo.range = sizeof(SnowInteractionSource) * MAX_INTERACTIONS;
-
-        std::array<VkWriteDescriptorSet, 3> writes{};
-
-        // Snow mask storage image
-        writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        writes[0].dstSet = computeDescriptorSets[i];
-        writes[0].dstBinding = 0;
-        writes[0].dstArrayElement = 0;
-        writes[0].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
-        writes[0].descriptorCount = 1;
-        writes[0].pImageInfo = &imageInfo;
-
-        // Uniform buffer
-        writes[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        writes[1].dstSet = computeDescriptorSets[i];
-        writes[1].dstBinding = 1;
-        writes[1].dstArrayElement = 0;
-        writes[1].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-        writes[1].descriptorCount = 1;
-        writes[1].pBufferInfo = &uniformInfo;
-
-        // Interaction sources buffer
-        writes[2].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        writes[2].dstSet = computeDescriptorSets[i];
-        writes[2].dstBinding = 2;
-        writes[2].dstArrayElement = 0;
-        writes[2].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-        writes[2].descriptorCount = 1;
-        writes[2].pBufferInfo = &interactionInfo;
-
-        vkUpdateDescriptorSets(getDevice(), static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
+        DescriptorManager::SetWriter(getDevice(), computeDescriptorSets[i])
+            .writeStorageImage(0, snowMaskView)
+            .writeBuffer(1, uniformBuffers.buffers[i], 0, sizeof(SnowMaskUniforms))
+            .writeBuffer(2, interactionBuffers.buffers[i], 0, sizeof(SnowInteractionSource) * MAX_INTERACTIONS, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+            .update();
     }
 
     return true;

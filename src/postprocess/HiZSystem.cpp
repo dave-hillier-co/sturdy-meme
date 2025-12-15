@@ -457,71 +457,14 @@ bool HiZSystem::createDescriptorSets() {
     }
 
     for (uint32_t i = 0; i < framesInFlight; ++i) {
-
         // Update culling descriptor set
-        VkDescriptorBufferInfo uniformInfo{};
-        uniformInfo.buffer = uniformBuffers.buffers[i];
-        uniformInfo.offset = 0;
-        uniformInfo.range = sizeof(HiZCullUniforms);
-
-        VkDescriptorBufferInfo objectInfo{};
-        objectInfo.buffer = objectDataBuffer;
-        objectInfo.offset = 0;
-        objectInfo.range = VK_WHOLE_SIZE;
-
-        VkDescriptorBufferInfo indirectInfo{};
-        indirectInfo.buffer = indirectDrawBuffers.buffers[i];
-        indirectInfo.offset = 0;
-        indirectInfo.range = VK_WHOLE_SIZE;
-
-        VkDescriptorBufferInfo countInfo{};
-        countInfo.buffer = drawCountBuffers.buffers[i];
-        countInfo.offset = 0;
-        countInfo.range = sizeof(uint32_t);
-
-        VkDescriptorImageInfo hiZInfo{};
-        hiZInfo.sampler = hiZSampler;
-        hiZInfo.imageView = hiZPyramidView;
-        hiZInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-
-        std::array<VkWriteDescriptorSet, 5> writes{};
-
-        writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        writes[0].dstSet = cullingDescSets[i];
-        writes[0].dstBinding = 0;
-        writes[0].descriptorCount = 1;
-        writes[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-        writes[0].pBufferInfo = &uniformInfo;
-
-        writes[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        writes[1].dstSet = cullingDescSets[i];
-        writes[1].dstBinding = 1;
-        writes[1].descriptorCount = 1;
-        writes[1].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-        writes[1].pBufferInfo = &objectInfo;
-
-        writes[2].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        writes[2].dstSet = cullingDescSets[i];
-        writes[2].dstBinding = 2;
-        writes[2].descriptorCount = 1;
-        writes[2].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-        writes[2].pBufferInfo = &indirectInfo;
-
-        writes[3].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        writes[3].dstSet = cullingDescSets[i];
-        writes[3].dstBinding = 3;
-        writes[3].descriptorCount = 1;
-        writes[3].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-        writes[3].pBufferInfo = &countInfo;
-
-        writes[4].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        writes[4].dstSet = cullingDescSets[i];
-        writes[4].dstBinding = 4;
-        writes[4].descriptorCount = 1;
-        writes[4].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        writes[4].pImageInfo = &hiZInfo;
-
-        vkUpdateDescriptorSets(device, static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
+        DescriptorManager::SetWriter(device, cullingDescSets[i])
+            .writeBuffer(0, uniformBuffers.buffers[i], 0, sizeof(HiZCullUniforms))
+            .writeBuffer(1, objectDataBuffer, 0, VK_WHOLE_SIZE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+            .writeBuffer(2, indirectDrawBuffers.buffers[i], 0, VK_WHOLE_SIZE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+            .writeBuffer(3, drawCountBuffers.buffers[i], 0, sizeof(uint32_t), VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+            .writeImage(4, hiZPyramidView, hiZSampler)
+            .update();
     }
 
     return true;
@@ -543,44 +486,13 @@ void HiZSystem::setDepthBuffer(VkImageView depthView, VkSampler depthSampler) {
     }
 
     for (uint32_t mip = 0; mip < mipLevelCount; ++mip) {
-        VkDescriptorImageInfo srcDepthInfo{};
-        srcDepthInfo.sampler = sourceDepthSampler;
-        srcDepthInfo.imageView = sourceDepthView;
-        srcDepthInfo.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
+        VkImageView srcMipView = mip > 0 ? hiZMipViews[mip - 1] : hiZMipViews[0];
 
-        VkDescriptorImageInfo srcMipInfo{};
-        srcMipInfo.sampler = hiZSampler;
-        srcMipInfo.imageView = mip > 0 ? hiZMipViews[mip - 1] : hiZMipViews[0];
-        srcMipInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-
-        VkDescriptorImageInfo dstMipInfo{};
-        dstMipInfo.imageView = hiZMipViews[mip];
-        dstMipInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
-
-        std::array<VkWriteDescriptorSet, 3> writes{};
-
-        writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        writes[0].dstSet = pyramidDescSets[mip];
-        writes[0].dstBinding = 0;
-        writes[0].descriptorCount = 1;
-        writes[0].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        writes[0].pImageInfo = &srcDepthInfo;
-
-        writes[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        writes[1].dstSet = pyramidDescSets[mip];
-        writes[1].dstBinding = 1;
-        writes[1].descriptorCount = 1;
-        writes[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        writes[1].pImageInfo = &srcMipInfo;
-
-        writes[2].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        writes[2].dstSet = pyramidDescSets[mip];
-        writes[2].dstBinding = 2;
-        writes[2].descriptorCount = 1;
-        writes[2].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
-        writes[2].pImageInfo = &dstMipInfo;
-
-        vkUpdateDescriptorSets(device, static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
+        DescriptorManager::SetWriter(device, pyramidDescSets[mip])
+            .writeImage(0, sourceDepthView, sourceDepthSampler, VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL)
+            .writeImage(1, srcMipView, hiZSampler)
+            .writeStorageImage(2, hiZMipViews[mip])
+            .update();
     }
 }
 

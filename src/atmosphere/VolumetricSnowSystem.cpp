@@ -2,6 +2,7 @@
 #include "ShaderLoader.h"
 #include "PipelineBuilder.h"
 #include "VulkanBarriers.h"
+#include "DescriptorManager.h"
 #include <SDL3/SDL.h>
 #include <cstring>
 #include <array>
@@ -178,72 +179,14 @@ bool VolumetricSnowSystem::createDescriptorSets() {
         return false;
     }
 
-    // Prepare image infos for all cascades
-    std::array<VkDescriptorImageInfo, NUM_SNOW_CASCADES> imageInfos{};
-    for (uint32_t c = 0; c < NUM_SNOW_CASCADES; c++) {
-        imageInfos[c].imageView = cascadeViews[c];
-        imageInfos[c].imageLayout = VK_IMAGE_LAYOUT_GENERAL;
-    }
-
     for (uint32_t i = 0; i < getFramesInFlight(); i++) {
-        VkDescriptorBufferInfo uniformInfo{};
-        uniformInfo.buffer = uniformBuffers.buffers[i];
-        uniformInfo.offset = 0;
-        uniformInfo.range = sizeof(VolumetricSnowUniforms);
-
-        VkDescriptorBufferInfo interactionInfo{};
-        interactionInfo.buffer = interactionBuffers.buffers[i];
-        interactionInfo.offset = 0;
-        interactionInfo.range = sizeof(VolumetricSnowInteraction) * MAX_INTERACTIONS;
-
-        std::array<VkWriteDescriptorSet, 5> writes{};
-
-        // Cascade 0 storage image
-        writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        writes[0].dstSet = computeDescriptorSets[i];
-        writes[0].dstBinding = 0;
-        writes[0].dstArrayElement = 0;
-        writes[0].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
-        writes[0].descriptorCount = 1;
-        writes[0].pImageInfo = &imageInfos[0];
-
-        // Cascade 1 storage image
-        writes[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        writes[1].dstSet = computeDescriptorSets[i];
-        writes[1].dstBinding = 1;
-        writes[1].dstArrayElement = 0;
-        writes[1].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
-        writes[1].descriptorCount = 1;
-        writes[1].pImageInfo = &imageInfos[1];
-
-        // Cascade 2 storage image
-        writes[2].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        writes[2].dstSet = computeDescriptorSets[i];
-        writes[2].dstBinding = 2;
-        writes[2].dstArrayElement = 0;
-        writes[2].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
-        writes[2].descriptorCount = 1;
-        writes[2].pImageInfo = &imageInfos[2];
-
-        // Uniform buffer
-        writes[3].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        writes[3].dstSet = computeDescriptorSets[i];
-        writes[3].dstBinding = 3;
-        writes[3].dstArrayElement = 0;
-        writes[3].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-        writes[3].descriptorCount = 1;
-        writes[3].pBufferInfo = &uniformInfo;
-
-        // Interaction sources buffer
-        writes[4].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        writes[4].dstSet = computeDescriptorSets[i];
-        writes[4].dstBinding = 4;
-        writes[4].dstArrayElement = 0;
-        writes[4].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-        writes[4].descriptorCount = 1;
-        writes[4].pBufferInfo = &interactionInfo;
-
-        vkUpdateDescriptorSets(getDevice(), static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
+        DescriptorManager::SetWriter(getDevice(), computeDescriptorSets[i])
+            .writeStorageImage(0, cascadeViews[0])
+            .writeStorageImage(1, cascadeViews[1])
+            .writeStorageImage(2, cascadeViews[2])
+            .writeBuffer(3, uniformBuffers.buffers[i], 0, sizeof(VolumetricSnowUniforms))
+            .writeBuffer(4, interactionBuffers.buffers[i], 0, sizeof(VolumetricSnowInteraction) * MAX_INTERACTIONS, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+            .update();
     }
 
     return true;

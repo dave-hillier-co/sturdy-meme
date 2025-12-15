@@ -385,6 +385,55 @@ void BiomeGenerator::computeDistanceToSea(ProgressCallback callback) {
     SDL_Log("Computed distance to sea");
 }
 
+void BiomeGenerator::computeWatershedMetrics(ProgressCallback callback) {
+    // Delegate to WatershedMetrics class
+    WatershedMetricsConfig wsConfig;
+    wsConfig.terrainSize = config.terrainSize;
+    wsConfig.seaLevel = config.seaLevel;
+    wsConfig.riverFlowThreshold = config.riverFlowThreshold;
+    wsConfig.erosionCacheDir = config.erosionCacheDir;
+
+    // Compute TWI
+    WatershedMetrics::computeTWI(
+        watershedMetrics,
+        result.slopeMap,
+        flowAccumulation,
+        flowMapWidth, flowMapHeight,
+        result.width, result.height,
+        config.terrainSize,
+        callback
+    );
+
+    // Compute stream order
+    WatershedMetrics::computeStreamOrder(
+        watershedMetrics,
+        flowAccumulation,
+        flowDirection,
+        heightData,
+        flowMapWidth, flowMapHeight,
+        heightmapWidth, heightmapHeight,
+        wsConfig,
+        callback
+    );
+
+    // Load or generate basin labels
+    WatershedMetrics::loadOrGenerateBasins(
+        watershedMetrics,
+        heightData,
+        flowDirection,
+        heightmapWidth, heightmapHeight,
+        flowMapWidth, flowMapHeight,
+        wsConfig,
+        callback
+    );
+
+    // Copy results to BiomeResult for compatibility
+    result.twiMap = watershedMetrics.twiMap;
+    result.streamOrderMap = watershedMetrics.streamOrderMap;
+    result.basinLabels = watershedMetrics.basinLabels;
+    result.basinCount = watershedMetrics.basinCount;
+}
+
 void BiomeGenerator::computeDistanceToRiver(ProgressCallback callback) {
     if (callback) callback(0.2f, "Computing distance to rivers...");
 
@@ -453,13 +502,27 @@ void BiomeGenerator::classifyZones(ProgressCallback callback) {
             float distRiver = result.distanceToRiver[y * result.width + x];
             float flow = sampleFlowAccumulation(worldX, worldZ);
 
+            // Get TWI and stream order from watershed metrics
+            float twi = WatershedMetrics::sampleTWI(watershedMetrics, worldX, worldZ, config.terrainSize);
+            uint8_t streamOrder = WatershedMetrics::sampleStreamOrder(watershedMetrics, worldX, worldZ, config.terrainSize);
+
+            // Compute riparian buffer distance based on stream order
+            float riparianDist = config.streamOrderRiparianScale * streamOrder;
+
             bool isCoastal = distSea < config.coastalDistance;
             bool isRiver = flow > config.riverFlowThreshold && height >= config.seaLevel;
             bool nearRiver = distRiver < config.wetlandRiverDistance;
+            bool inRiparianZone = distRiver < riparianDist && streamOrder > 0;
+
+            // TWI-based moisture classification
+            bool isWetByTwi = twi > config.twiWetlandThreshold;
+            bool isWetMeadow = twi > config.twiWetMeadowThreshold && twi <= config.twiWetlandThreshold;
+            bool isDryChalk = twi < config.twiDryThreshold;
+            bool isValleyBottom = twi > config.valleyBottomTwi && slope < 0.1f;
 
             BiomeZone zone = BiomeZone::Grassland;  // Default
 
-            // Priority-based classification
+            // Priority-based classification with TWI enhancement
             if (height < config.seaLevel) {
                 zone = BiomeZone::Sea;
             }
@@ -475,8 +538,24 @@ void BiomeGenerator::classifyZones(ProgressCallback callback) {
             else if (isCoastal && height < config.marshMaxHeight && slope < config.marshMaxSlope) {
                 zone = BiomeZone::SaltMarsh;
             }
+            else if (isWetByTwi && height < config.agriculturalMaxHeight) {
+                // TWI indicates wetland-prone area (high flow accumulation, low slope)
+                zone = BiomeZone::Wetland;
+            }
             else if (nearRiver && slope < 0.1f && height < config.agriculturalMaxHeight) {
                 zone = BiomeZone::Wetland;
+            }
+            else if (isDryChalk && height > config.grasslandMinHeight && slope < config.grasslandMaxSlope) {
+                // Dry chalk downs - classic downland
+                zone = BiomeZone::Grassland;
+            }
+            else if (isValleyBottom || inRiparianZone) {
+                // Valley bottoms and riparian zones become woodland
+                zone = BiomeZone::Woodland;
+            }
+            else if (isWetMeadow && slope < config.agriculturalMaxSlope) {
+                // Wet meadow areas are good for agriculture (water meadows)
+                zone = BiomeZone::Agricultural;
             }
             else if (height > config.grasslandMinHeight && slope < config.grasslandMaxSlope) {
                 zone = BiomeZone::Grassland;
@@ -525,9 +604,21 @@ void BiomeGenerator::applySubZoneNoise(ProgressCallback callback) {
             float n1 = noise2D(worldX, worldZ, 0.001f);  // Large scale variation
             float n2 = noise2D(worldX, worldZ, 0.005f);  // Medium scale
 
-            // Combine noise values
-            float noiseVal = (n1 + n2 * 0.5f) / 1.5f;  // [-1, 1]
-            noiseVal = (noiseVal + 1.0f) * 0.5f;       // [0, 1]
+            // Get basin label for watershed-based variation
+            uint32_t basinLabel = WatershedMetrics::sampleBasinLabel(watershedMetrics, worldX, worldZ, config.terrainSize);
+
+            // Generate basin-specific offset using basin label as seed
+            // This creates distinct vegetation patterns per watershed
+            float basinNoise = 0.0f;
+            if (basinLabel > 0 && watershedMetrics.basinCount > 0) {
+                // Use basin ID to create a deterministic but varied offset
+                uint32_t basinHash = basinLabel * 2654435761u;  // Knuth multiplicative hash
+                basinNoise = (static_cast<float>(basinHash & 0xFFFF) / 65535.0f - 0.5f) * 2.0f;  // [-1, 1]
+            }
+
+            // Combine noise values with basin variation
+            float noiseVal = (n1 + n2 * 0.5f + basinNoise * config.basinVariationStrength) / (1.5f + config.basinVariationStrength);
+            noiseVal = std::clamp((noiseVal + 1.0f) * 0.5f, 0.0f, 1.0f);  // [0, 1]
 
             // Map to sub-zone (4 sub-zones per zone type)
             uint8_t subZoneIdx = static_cast<uint8_t>(noiseVal * 3.99f);  // 0-3
@@ -535,7 +626,7 @@ void BiomeGenerator::applySubZoneNoise(ProgressCallback callback) {
         }
     }
 
-    SDL_Log("Applied sub-zone noise variation");
+    SDL_Log("Applied sub-zone noise variation with basin boundaries");
 }
 
 float BiomeGenerator::calculateSettlementScore(float x, float z) const {
@@ -721,7 +812,10 @@ bool BiomeGenerator::generate(const BiomeConfig& cfg, ProgressCallback callback)
     computeDistanceToSea(callback);
     computeDistanceToRiver(callback);
 
-    // Classify zones
+    // Compute watershed-derived metrics (TWI, stream order, basin labels)
+    computeWatershedMetrics(callback);
+
+    // Classify zones (now uses TWI and stream order)
     classifyZones(callback);
     applySubZoneNoise(callback);
 

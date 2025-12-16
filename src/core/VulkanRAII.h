@@ -5,6 +5,172 @@
 #include <SDL3/SDL_log.h>
 #include <utility>
 #include <functional>
+#include <memory>
+
+// ============================================================================
+// VkHandleDeleter - Generic deleter for Vulkan handles using unique_ptr
+// ============================================================================
+// This template enables using std::unique_ptr for RAII management of Vulkan
+// handles that only require a VkDevice for destruction.
+
+template<typename Handle, void (*DestroyFn)(VkDevice, Handle, const VkAllocationCallbacks*)>
+struct VkHandleDeleter {
+    VkDevice device = VK_NULL_HANDLE;
+
+    using pointer = Handle;  // Required for unique_ptr with non-pointer types
+
+    void operator()(Handle handle) const noexcept {
+        if (handle != VK_NULL_HANDLE && device != VK_NULL_HANDLE) {
+            DestroyFn(device, handle, nullptr);
+        }
+    }
+};
+
+// ============================================================================
+// VmaImageDeleter - Deleter for VMA-allocated images
+// ============================================================================
+// VMA images require both allocator and allocation for destruction.
+// This deleter stores the allocation alongside the allocator.
+
+struct VmaImageDeleter {
+    VmaAllocator allocator = VK_NULL_HANDLE;
+    VmaAllocation allocation = VK_NULL_HANDLE;
+
+    using pointer = VkImage;  // Required for unique_ptr with non-pointer types
+
+    void operator()(VkImage image) const noexcept {
+        if (image != VK_NULL_HANDLE && allocator != VK_NULL_HANDLE) {
+            vmaDestroyImage(allocator, image, allocation);
+        }
+    }
+};
+
+using UniqueVmaImage = std::unique_ptr<std::remove_pointer_t<VkImage>, VmaImageDeleter>;
+
+inline UniqueVmaImage makeUniqueVmaImage(VmaAllocator allocator, VkImage image, VmaAllocation allocation) {
+    return UniqueVmaImage(image, {allocator, allocation});
+}
+
+// ============================================================================
+// VmaBufferDeleter - Deleter for VMA-allocated buffers
+// ============================================================================
+// VMA buffers require both allocator and allocation for destruction.
+// This deleter stores the allocation alongside the allocator.
+
+struct VmaBufferDeleter {
+    VmaAllocator allocator = VK_NULL_HANDLE;
+    VmaAllocation allocation = VK_NULL_HANDLE;
+
+    using pointer = VkBuffer;  // Required for unique_ptr with non-pointer types
+
+    void operator()(VkBuffer buffer) const noexcept {
+        if (buffer != VK_NULL_HANDLE && allocator != VK_NULL_HANDLE) {
+            vmaDestroyBuffer(allocator, buffer, allocation);
+        }
+    }
+};
+
+using UniqueVmaBuffer = std::unique_ptr<std::remove_pointer_t<VkBuffer>, VmaBufferDeleter>;
+
+inline UniqueVmaBuffer makeUniqueVmaBuffer(VmaAllocator allocator, VkBuffer buffer, VmaAllocation allocation) {
+    return UniqueVmaBuffer(buffer, {allocator, allocation});
+}
+
+// ============================================================================
+// Unique* type aliases - RAII wrappers using std::unique_ptr
+// ============================================================================
+
+using UniquePipeline = std::unique_ptr<
+    std::remove_pointer_t<VkPipeline>,
+    VkHandleDeleter<VkPipeline, vkDestroyPipeline>>;
+
+using UniqueRenderPass = std::unique_ptr<
+    std::remove_pointer_t<VkRenderPass>,
+    VkHandleDeleter<VkRenderPass, vkDestroyRenderPass>>;
+
+using UniquePipelineLayout = std::unique_ptr<
+    std::remove_pointer_t<VkPipelineLayout>,
+    VkHandleDeleter<VkPipelineLayout, vkDestroyPipelineLayout>>;
+
+using UniqueDescriptorSetLayout = std::unique_ptr<
+    std::remove_pointer_t<VkDescriptorSetLayout>,
+    VkHandleDeleter<VkDescriptorSetLayout, vkDestroyDescriptorSetLayout>>;
+
+using UniqueImageView = std::unique_ptr<
+    std::remove_pointer_t<VkImageView>,
+    VkHandleDeleter<VkImageView, vkDestroyImageView>>;
+
+using UniqueFramebuffer = std::unique_ptr<
+    std::remove_pointer_t<VkFramebuffer>,
+    VkHandleDeleter<VkFramebuffer, vkDestroyFramebuffer>>;
+
+using UniqueFence = std::unique_ptr<
+    std::remove_pointer_t<VkFence>,
+    VkHandleDeleter<VkFence, vkDestroyFence>>;
+
+using UniqueSemaphore = std::unique_ptr<
+    std::remove_pointer_t<VkSemaphore>,
+    VkHandleDeleter<VkSemaphore, vkDestroySemaphore>>;
+
+using UniqueCommandPool = std::unique_ptr<
+    std::remove_pointer_t<VkCommandPool>,
+    VkHandleDeleter<VkCommandPool, vkDestroyCommandPool>>;
+
+using UniqueDescriptorPool = std::unique_ptr<
+    std::remove_pointer_t<VkDescriptorPool>,
+    VkHandleDeleter<VkDescriptorPool, vkDestroyDescriptorPool>>;
+
+using UniqueSampler = std::unique_ptr<
+    std::remove_pointer_t<VkSampler>,
+    VkHandleDeleter<VkSampler, vkDestroySampler>>;
+
+// ============================================================================
+// Factory functions for creating Unique* handles
+// ============================================================================
+
+inline UniquePipeline makeUniquePipeline(VkDevice device, VkPipeline pipeline) {
+    return UniquePipeline(pipeline, {device});
+}
+
+inline UniqueRenderPass makeUniqueRenderPass(VkDevice device, VkRenderPass renderPass) {
+    return UniqueRenderPass(renderPass, {device});
+}
+
+inline UniquePipelineLayout makeUniquePipelineLayout(VkDevice device, VkPipelineLayout layout) {
+    return UniquePipelineLayout(layout, {device});
+}
+
+inline UniqueDescriptorSetLayout makeUniqueDescriptorSetLayout(VkDevice device, VkDescriptorSetLayout layout) {
+    return UniqueDescriptorSetLayout(layout, {device});
+}
+
+inline UniqueImageView makeUniqueImageView(VkDevice device, VkImageView imageView) {
+    return UniqueImageView(imageView, {device});
+}
+
+inline UniqueFramebuffer makeUniqueFramebuffer(VkDevice device, VkFramebuffer framebuffer) {
+    return UniqueFramebuffer(framebuffer, {device});
+}
+
+inline UniqueFence makeUniqueFence(VkDevice device, VkFence fence) {
+    return UniqueFence(fence, {device});
+}
+
+inline UniqueSemaphore makeUniqueSemaphore(VkDevice device, VkSemaphore semaphore) {
+    return UniqueSemaphore(semaphore, {device});
+}
+
+inline UniqueCommandPool makeUniqueCommandPool(VkDevice device, VkCommandPool pool) {
+    return UniqueCommandPool(pool, {device});
+}
+
+inline UniqueDescriptorPool makeUniqueDescriptorPool(VkDevice device, VkDescriptorPool pool) {
+    return UniqueDescriptorPool(pool, {device});
+}
+
+inline UniqueSampler makeUniqueSampler(VkDevice device, VkSampler sampler) {
+    return UniqueSampler(sampler, {device});
+}
 
 // ============================================================================
 // VK_CHECK - Error checking macro for Vulkan calls
@@ -73,60 +239,37 @@ ScopeGuard<F> makeScopeGuard(F func) {
 }
 
 // ============================================================================
-// ManagedBuffer - RAII wrapper for VkBuffer + VmaAllocation
+// ManagedBuffer - RAII wrapper for VkBuffer + VmaAllocation (inherits from UniqueVmaBuffer)
 // ============================================================================
+// Adds map()/unmap() methods by accessing allocator and allocation from deleter.
 
-class ManagedBuffer {
+class ManagedBuffer : public UniqueVmaBuffer {
 public:
+    using UniqueVmaBuffer::UniqueVmaBuffer;  // Inherit constructors
+
     ManagedBuffer() = default;
 
-    ~ManagedBuffer() {
-        destroy();
-    }
-
-    // Move-only semantics
-    ManagedBuffer(ManagedBuffer&& other) noexcept
-        : buffer_(other.buffer_)
-        , allocation_(other.allocation_)
-        , allocator_(other.allocator_) {
-        other.buffer_ = VK_NULL_HANDLE;
-        other.allocation_ = VK_NULL_HANDLE;
-        other.allocator_ = VK_NULL_HANDLE;
-    }
-
-    ManagedBuffer& operator=(ManagedBuffer&& other) noexcept {
-        if (this != &other) {
-            destroy();
-            buffer_ = other.buffer_;
-            allocation_ = other.allocation_;
-            allocator_ = other.allocator_;
-            other.buffer_ = VK_NULL_HANDLE;
-            other.allocation_ = VK_NULL_HANDLE;
-            other.allocator_ = VK_NULL_HANDLE;
-        }
-        return *this;
-    }
-
-    ManagedBuffer(const ManagedBuffer&) = delete;
-    ManagedBuffer& operator=(const ManagedBuffer&) = delete;
+    // Allow conversion from UniqueVmaBuffer
+    ManagedBuffer(UniqueVmaBuffer&& other) noexcept
+        : UniqueVmaBuffer(std::move(other)) {}
 
     // Create a buffer with the given parameters
     static bool create(VmaAllocator allocator,
                        const VkBufferCreateInfo& bufferInfo,
                        const VmaAllocationCreateInfo& allocInfo,
                        ManagedBuffer& outBuffer) {
-        ManagedBuffer result;
-        result.allocator_ = allocator;
+        VkBuffer buffer = VK_NULL_HANDLE;
+        VmaAllocation allocation = VK_NULL_HANDLE;
 
         VkResult vkResult = vmaCreateBuffer(allocator, &bufferInfo, &allocInfo,
-                                            &result.buffer_, &result.allocation_, nullptr);
+                                            &buffer, &allocation, nullptr);
         if (vkResult != VK_SUCCESS) {
             SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
                 "ManagedBuffer::create failed: %d", vkResult);
             return false;
         }
 
-        outBuffer = std::move(result);
+        outBuffer = ManagedBuffer(makeUniqueVmaBuffer(allocator, buffer, allocation));
         return true;
     }
 
@@ -225,282 +368,176 @@ public:
         return create(allocator, bufferInfo, allocInfo, outBuffer);
     }
 
-    void destroy() {
-        if (buffer_ != VK_NULL_HANDLE && allocator_ != VK_NULL_HANDLE) {
-            vmaDestroyBuffer(allocator_, buffer_, allocation_);
-            buffer_ = VK_NULL_HANDLE;
-            allocation_ = VK_NULL_HANDLE;
-        }
+    // Adopt an existing raw buffer (takes ownership)
+    static ManagedBuffer fromRaw(VmaAllocator allocator, VkBuffer buffer, VmaAllocation allocation) {
+        return ManagedBuffer(makeUniqueVmaBuffer(allocator, buffer, allocation));
     }
+
+    // Legacy API compatibility
+    void destroy() { reset(); }
+
+    // Access allocator and allocation from deleter
+    VmaAllocator allocator() const { return get_deleter().allocator; }
+    VmaAllocation getAllocation() const { return get_deleter().allocation; }
 
     // Map memory for writing
     void* map() {
-        if (allocator_ == VK_NULL_HANDLE || allocation_ == VK_NULL_HANDLE) {
+        VmaAllocator alloc = allocator();
+        VmaAllocation allocation = getAllocation();
+        if (alloc == VK_NULL_HANDLE || allocation == VK_NULL_HANDLE) {
             return nullptr;
         }
         void* data = nullptr;
-        if (vmaMapMemory(allocator_, allocation_, &data) != VK_SUCCESS) {
+        if (vmaMapMemory(alloc, allocation, &data) != VK_SUCCESS) {
             return nullptr;
         }
         return data;
     }
 
     void unmap() {
-        if (allocator_ != VK_NULL_HANDLE && allocation_ != VK_NULL_HANDLE) {
-            vmaUnmapMemory(allocator_, allocation_);
+        VmaAllocator alloc = allocator();
+        VmaAllocation allocation = getAllocation();
+        if (alloc != VK_NULL_HANDLE && allocation != VK_NULL_HANDLE) {
+            vmaUnmapMemory(alloc, allocation);
         }
     }
 
-    // Accessors
-    VkBuffer get() const { return buffer_; }
-    VkBuffer* ptr() { return &buffer_; }
-    VmaAllocation getAllocation() const { return allocation_; }
-    explicit operator bool() const { return buffer_ != VK_NULL_HANDLE; }
+    // Get pointer to handle (for Vulkan APIs that need VkBuffer*)
+    VkBuffer* ptr() {
+        return reinterpret_cast<VkBuffer*>(this);
+    }
 
     // Release ownership (for transferring to non-RAII code)
-    VkBuffer release() {
-        VkBuffer tmp = buffer_;
-        buffer_ = VK_NULL_HANDLE;
-        allocation_ = VK_NULL_HANDLE;
-        return tmp;
-    }
-
     void releaseToRaw(VkBuffer& outBuffer, VmaAllocation& outAllocation) {
-        outBuffer = buffer_;
-        outAllocation = allocation_;
-        buffer_ = VK_NULL_HANDLE;
-        allocation_ = VK_NULL_HANDLE;
+        outBuffer = get();
+        outAllocation = get_deleter().allocation;
+        release();  // Release without destroying
     }
-
-private:
-    VkBuffer buffer_ = VK_NULL_HANDLE;
-    VmaAllocation allocation_ = VK_NULL_HANDLE;
-    VmaAllocator allocator_ = VK_NULL_HANDLE;
 };
 
 // ============================================================================
-// ManagedImage - RAII wrapper for VkImage + VmaAllocation
+// ManagedImage - RAII wrapper for VkImage + VmaAllocation (inherits from UniqueVmaImage)
 // ============================================================================
 
-class ManagedImage {
+class ManagedImage : public UniqueVmaImage {
 public:
+    using UniqueVmaImage::UniqueVmaImage;  // Inherit constructors
+
     ManagedImage() = default;
 
-    ~ManagedImage() {
-        destroy();
-    }
-
-    // Move-only semantics
-    ManagedImage(ManagedImage&& other) noexcept
-        : image_(other.image_)
-        , allocation_(other.allocation_)
-        , allocator_(other.allocator_) {
-        other.image_ = VK_NULL_HANDLE;
-        other.allocation_ = VK_NULL_HANDLE;
-        other.allocator_ = VK_NULL_HANDLE;
-    }
-
-    ManagedImage& operator=(ManagedImage&& other) noexcept {
-        if (this != &other) {
-            destroy();
-            image_ = other.image_;
-            allocation_ = other.allocation_;
-            allocator_ = other.allocator_;
-            other.image_ = VK_NULL_HANDLE;
-            other.allocation_ = VK_NULL_HANDLE;
-            other.allocator_ = VK_NULL_HANDLE;
-        }
-        return *this;
-    }
-
-    ManagedImage(const ManagedImage&) = delete;
-    ManagedImage& operator=(const ManagedImage&) = delete;
+    // Allow conversion from UniqueVmaImage
+    ManagedImage(UniqueVmaImage&& other) noexcept
+        : UniqueVmaImage(std::move(other)) {}
 
     // Create an image with the given parameters
     static bool create(VmaAllocator allocator,
                        const VkImageCreateInfo& imageInfo,
                        const VmaAllocationCreateInfo& allocInfo,
                        ManagedImage& outImage) {
-        ManagedImage result;
-        result.allocator_ = allocator;
+        VkImage image = VK_NULL_HANDLE;
+        VmaAllocation allocation = VK_NULL_HANDLE;
 
         VkResult vkResult = vmaCreateImage(allocator, &imageInfo, &allocInfo,
-                                           &result.image_, &result.allocation_, nullptr);
+                                           &image, &allocation, nullptr);
         if (vkResult != VK_SUCCESS) {
             SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
                 "ManagedImage::create failed: %d", vkResult);
             return false;
         }
 
-        outImage = std::move(result);
+        outImage = ManagedImage(makeUniqueVmaImage(allocator, image, allocation));
         return true;
-    }
-
-    void destroy() {
-        if (image_ != VK_NULL_HANDLE && allocator_ != VK_NULL_HANDLE) {
-            vmaDestroyImage(allocator_, image_, allocation_);
-            image_ = VK_NULL_HANDLE;
-            allocation_ = VK_NULL_HANDLE;
-        }
     }
 
     // Adopt an existing raw image (takes ownership)
     static ManagedImage fromRaw(VmaAllocator allocator, VkImage image, VmaAllocation allocation) {
-        ManagedImage result;
-        result.allocator_ = allocator;
-        result.image_ = image;
-        result.allocation_ = allocation;
-        return result;
+        return ManagedImage(makeUniqueVmaImage(allocator, image, allocation));
     }
 
-    // Accessors
-    VkImage get() const { return image_; }
-    VkImage* ptr() { return &image_; }
-    VmaAllocation getAllocation() const { return allocation_; }
-    explicit operator bool() const { return image_ != VK_NULL_HANDLE; }
+    // Legacy API compatibility
+    void destroy() { reset(); }
+
+    // Get pointer to handle (for Vulkan APIs that need VkImage*)
+    VkImage* ptr() {
+        return reinterpret_cast<VkImage*>(this);
+    }
+
+    // Access allocation from deleter
+    VmaAllocation getAllocation() const { return get_deleter().allocation; }
 
     // Release ownership (for transferring to non-RAII code)
     void releaseToRaw(VkImage& outImage, VmaAllocation& outAllocation) {
-        outImage = image_;
-        outAllocation = allocation_;
-        image_ = VK_NULL_HANDLE;
-        allocation_ = VK_NULL_HANDLE;
+        outImage = get();
+        outAllocation = get_deleter().allocation;
+        release();  // Release without destroying
     }
-
-private:
-    VkImage image_ = VK_NULL_HANDLE;
-    VmaAllocation allocation_ = VK_NULL_HANDLE;
-    VmaAllocator allocator_ = VK_NULL_HANDLE;
 };
 
 // ============================================================================
-// ManagedImageView - RAII wrapper for VkImageView
+// ManagedImageView - RAII wrapper for VkImageView (inherits from UniqueImageView)
 // ============================================================================
 
-class ManagedImageView {
+class ManagedImageView : public UniqueImageView {
 public:
+    using UniqueImageView::UniqueImageView;  // Inherit constructors
+
     ManagedImageView() = default;
 
-    ~ManagedImageView() {
-        destroy();
-    }
-
-    // Move-only semantics
-    ManagedImageView(ManagedImageView&& other) noexcept
-        : imageView_(other.imageView_)
-        , device_(other.device_) {
-        other.imageView_ = VK_NULL_HANDLE;
-        other.device_ = VK_NULL_HANDLE;
-    }
-
-    ManagedImageView& operator=(ManagedImageView&& other) noexcept {
-        if (this != &other) {
-            destroy();
-            imageView_ = other.imageView_;
-            device_ = other.device_;
-            other.imageView_ = VK_NULL_HANDLE;
-            other.device_ = VK_NULL_HANDLE;
-        }
-        return *this;
-    }
-
-    ManagedImageView(const ManagedImageView&) = delete;
-    ManagedImageView& operator=(const ManagedImageView&) = delete;
+    // Allow conversion from UniqueImageView
+    ManagedImageView(UniqueImageView&& other) noexcept
+        : UniqueImageView(std::move(other)) {}
 
     static bool create(VkDevice device,
                        const VkImageViewCreateInfo& viewInfo,
                        ManagedImageView& outView) {
-        ManagedImageView result;
-        result.device_ = device;
-
-        VkResult vkResult = vkCreateImageView(device, &viewInfo, nullptr, &result.imageView_);
+        VkImageView imageView = VK_NULL_HANDLE;
+        VkResult vkResult = vkCreateImageView(device, &viewInfo, nullptr, &imageView);
         if (vkResult != VK_SUCCESS) {
             SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
                 "ManagedImageView::create failed: %d", vkResult);
             return false;
         }
 
-        outView = std::move(result);
+        outView = ManagedImageView(makeUniqueImageView(device, imageView));
         return true;
-    }
-
-    void destroy() {
-        if (imageView_ != VK_NULL_HANDLE && device_ != VK_NULL_HANDLE) {
-            vkDestroyImageView(device_, imageView_, nullptr);
-            imageView_ = VK_NULL_HANDLE;
-        }
     }
 
     // Adopt an existing raw image view
     static ManagedImageView fromRaw(VkDevice device, VkImageView imageView) {
-        ManagedImageView result;
-        result.device_ = device;
-        result.imageView_ = imageView;
-        return result;
+        return ManagedImageView(makeUniqueImageView(device, imageView));
     }
 
-    VkImageView get() const { return imageView_; }
-    explicit operator bool() const { return imageView_ != VK_NULL_HANDLE; }
-
-    VkImageView release() {
-        VkImageView tmp = imageView_;
-        imageView_ = VK_NULL_HANDLE;
-        return tmp;
-    }
-
-private:
-    VkImageView imageView_ = VK_NULL_HANDLE;
-    VkDevice device_ = VK_NULL_HANDLE;
+    // Legacy API compatibility
+    void destroy() { reset(); }
 };
 
 // ============================================================================
-// ManagedSampler - RAII wrapper for VkSampler
+// ManagedSampler - RAII wrapper for VkSampler (inherits from UniqueSampler)
 // ============================================================================
+// Adds convenience factory methods for common sampler configurations.
 
-class ManagedSampler {
+class ManagedSampler : public UniqueSampler {
 public:
+    using UniqueSampler::UniqueSampler;  // Inherit constructors
+
     ManagedSampler() = default;
 
-    ~ManagedSampler() {
-        destroy();
-    }
-
-    // Move-only semantics
-    ManagedSampler(ManagedSampler&& other) noexcept
-        : sampler_(other.sampler_)
-        , device_(other.device_) {
-        other.sampler_ = VK_NULL_HANDLE;
-        other.device_ = VK_NULL_HANDLE;
-    }
-
-    ManagedSampler& operator=(ManagedSampler&& other) noexcept {
-        if (this != &other) {
-            destroy();
-            sampler_ = other.sampler_;
-            device_ = other.device_;
-            other.sampler_ = VK_NULL_HANDLE;
-            other.device_ = VK_NULL_HANDLE;
-        }
-        return *this;
-    }
-
-    ManagedSampler(const ManagedSampler&) = delete;
-    ManagedSampler& operator=(const ManagedSampler&) = delete;
+    // Allow conversion from UniqueSampler
+    ManagedSampler(UniqueSampler&& other) noexcept
+        : UniqueSampler(std::move(other)) {}
 
     static bool create(VkDevice device,
                        const VkSamplerCreateInfo& samplerInfo,
                        ManagedSampler& outSampler) {
-        ManagedSampler result;
-        result.device_ = device;
-
-        VkResult vkResult = vkCreateSampler(device, &samplerInfo, nullptr, &result.sampler_);
+        VkSampler sampler = VK_NULL_HANDLE;
+        VkResult vkResult = vkCreateSampler(device, &samplerInfo, nullptr, &sampler);
         if (vkResult != VK_SUCCESS) {
             SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
                 "ManagedSampler::create failed: %d", vkResult);
             return false;
         }
 
-        outSampler = std::move(result);
+        outSampler = ManagedSampler(makeUniqueSampler(device, sampler));
         return true;
     }
 
@@ -587,245 +624,119 @@ public:
         return create(device, samplerInfo, outSampler);
     }
 
-    void destroy() {
-        if (sampler_ != VK_NULL_HANDLE && device_ != VK_NULL_HANDLE) {
-            vkDestroySampler(device_, sampler_, nullptr);
-            sampler_ = VK_NULL_HANDLE;
-        }
-    }
-
     // Adopt an existing raw sampler
     static ManagedSampler fromRaw(VkDevice device, VkSampler sampler) {
-        ManagedSampler result;
-        result.device_ = device;
-        result.sampler_ = sampler;
-        return result;
+        return ManagedSampler(makeUniqueSampler(device, sampler));
     }
 
-    VkSampler get() const { return sampler_; }
-    explicit operator bool() const { return sampler_ != VK_NULL_HANDLE; }
-
-    VkSampler release() {
-        VkSampler tmp = sampler_;
-        sampler_ = VK_NULL_HANDLE;
-        return tmp;
-    }
-
-private:
-    VkSampler sampler_ = VK_NULL_HANDLE;
-    VkDevice device_ = VK_NULL_HANDLE;
+    // Legacy API compatibility
+    void destroy() { reset(); }
 };
 
 // ============================================================================
-// ManagedDescriptorSetLayout - RAII wrapper for VkDescriptorSetLayout
+// ManagedDescriptorSetLayout - RAII wrapper (inherits from UniqueDescriptorSetLayout)
 // ============================================================================
 
-class ManagedDescriptorSetLayout {
+class ManagedDescriptorSetLayout : public UniqueDescriptorSetLayout {
 public:
+    using UniqueDescriptorSetLayout::UniqueDescriptorSetLayout;  // Inherit constructors
+
     ManagedDescriptorSetLayout() = default;
 
-    ~ManagedDescriptorSetLayout() {
-        destroy();
-    }
-
-    // Move-only semantics
-    ManagedDescriptorSetLayout(ManagedDescriptorSetLayout&& other) noexcept
-        : layout_(other.layout_)
-        , device_(other.device_) {
-        other.layout_ = VK_NULL_HANDLE;
-        other.device_ = VK_NULL_HANDLE;
-    }
-
-    ManagedDescriptorSetLayout& operator=(ManagedDescriptorSetLayout&& other) noexcept {
-        if (this != &other) {
-            destroy();
-            layout_ = other.layout_;
-            device_ = other.device_;
-            other.layout_ = VK_NULL_HANDLE;
-            other.device_ = VK_NULL_HANDLE;
-        }
-        return *this;
-    }
-
-    ManagedDescriptorSetLayout(const ManagedDescriptorSetLayout&) = delete;
-    ManagedDescriptorSetLayout& operator=(const ManagedDescriptorSetLayout&) = delete;
+    // Allow conversion from UniqueDescriptorSetLayout
+    ManagedDescriptorSetLayout(UniqueDescriptorSetLayout&& other) noexcept
+        : UniqueDescriptorSetLayout(std::move(other)) {}
 
     static bool create(VkDevice device,
                        const VkDescriptorSetLayoutCreateInfo& layoutInfo,
                        ManagedDescriptorSetLayout& outLayout) {
-        ManagedDescriptorSetLayout result;
-        result.device_ = device;
-
-        VkResult vkResult = vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, &result.layout_);
+        VkDescriptorSetLayout layout = VK_NULL_HANDLE;
+        VkResult vkResult = vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, &layout);
         if (vkResult != VK_SUCCESS) {
             SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
                 "ManagedDescriptorSetLayout::create failed: %d", vkResult);
             return false;
         }
 
-        outLayout = std::move(result);
+        outLayout = ManagedDescriptorSetLayout(makeUniqueDescriptorSetLayout(device, layout));
         return true;
     }
 
     // Adopt an existing raw descriptor set layout (e.g., created by DescriptorManager)
     static ManagedDescriptorSetLayout fromRaw(VkDevice device, VkDescriptorSetLayout layout) {
-        ManagedDescriptorSetLayout result;
-        result.device_ = device;
-        result.layout_ = layout;
-        return result;
+        return ManagedDescriptorSetLayout(makeUniqueDescriptorSetLayout(device, layout));
     }
 
-    void destroy() {
-        if (layout_ != VK_NULL_HANDLE && device_ != VK_NULL_HANDLE) {
-            vkDestroyDescriptorSetLayout(device_, layout_, nullptr);
-            layout_ = VK_NULL_HANDLE;
-        }
-    }
-
-    VkDescriptorSetLayout get() const { return layout_; }
-    explicit operator bool() const { return layout_ != VK_NULL_HANDLE; }
-
-    VkDescriptorSetLayout release() {
-        VkDescriptorSetLayout tmp = layout_;
-        layout_ = VK_NULL_HANDLE;
-        return tmp;
-    }
-
-private:
-    VkDescriptorSetLayout layout_ = VK_NULL_HANDLE;
-    VkDevice device_ = VK_NULL_HANDLE;
+    // Legacy API compatibility
+    void destroy() { reset(); }
 };
 
 // ============================================================================
-// ManagedPipelineLayout - RAII wrapper for VkPipelineLayout
+// ManagedPipelineLayout - RAII wrapper (inherits from UniquePipelineLayout)
 // ============================================================================
 
-class ManagedPipelineLayout {
+class ManagedPipelineLayout : public UniquePipelineLayout {
 public:
+    using UniquePipelineLayout::UniquePipelineLayout;  // Inherit constructors
+
     ManagedPipelineLayout() = default;
 
-    ~ManagedPipelineLayout() {
-        destroy();
-    }
-
-    // Move-only semantics
-    ManagedPipelineLayout(ManagedPipelineLayout&& other) noexcept
-        : layout_(other.layout_)
-        , device_(other.device_) {
-        other.layout_ = VK_NULL_HANDLE;
-        other.device_ = VK_NULL_HANDLE;
-    }
-
-    ManagedPipelineLayout& operator=(ManagedPipelineLayout&& other) noexcept {
-        if (this != &other) {
-            destroy();
-            layout_ = other.layout_;
-            device_ = other.device_;
-            other.layout_ = VK_NULL_HANDLE;
-            other.device_ = VK_NULL_HANDLE;
-        }
-        return *this;
-    }
-
-    ManagedPipelineLayout(const ManagedPipelineLayout&) = delete;
-    ManagedPipelineLayout& operator=(const ManagedPipelineLayout&) = delete;
+    // Allow conversion from UniquePipelineLayout
+    ManagedPipelineLayout(UniquePipelineLayout&& other) noexcept
+        : UniquePipelineLayout(std::move(other)) {}
 
     static bool create(VkDevice device,
                        const VkPipelineLayoutCreateInfo& layoutInfo,
                        ManagedPipelineLayout& outLayout) {
-        ManagedPipelineLayout result;
-        result.device_ = device;
-
-        VkResult vkResult = vkCreatePipelineLayout(device, &layoutInfo, nullptr, &result.layout_);
+        VkPipelineLayout layout = VK_NULL_HANDLE;
+        VkResult vkResult = vkCreatePipelineLayout(device, &layoutInfo, nullptr, &layout);
         if (vkResult != VK_SUCCESS) {
             SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
                 "ManagedPipelineLayout::create failed: %d", vkResult);
             return false;
         }
 
-        outLayout = std::move(result);
+        outLayout = ManagedPipelineLayout(makeUniquePipelineLayout(device, layout));
         return true;
     }
 
     // Adopt an existing raw pipeline layout (e.g., created by PipelineBuilder)
     static ManagedPipelineLayout fromRaw(VkDevice device, VkPipelineLayout layout) {
-        ManagedPipelineLayout result;
-        result.device_ = device;
-        result.layout_ = layout;
-        return result;
+        return ManagedPipelineLayout(makeUniquePipelineLayout(device, layout));
     }
 
-    void destroy() {
-        if (layout_ != VK_NULL_HANDLE && device_ != VK_NULL_HANDLE) {
-            vkDestroyPipelineLayout(device_, layout_, nullptr);
-            layout_ = VK_NULL_HANDLE;
-        }
-    }
-
-    VkPipelineLayout get() const { return layout_; }
-    explicit operator bool() const { return layout_ != VK_NULL_HANDLE; }
-
-    VkPipelineLayout release() {
-        VkPipelineLayout tmp = layout_;
-        layout_ = VK_NULL_HANDLE;
-        return tmp;
-    }
-
-private:
-    VkPipelineLayout layout_ = VK_NULL_HANDLE;
-    VkDevice device_ = VK_NULL_HANDLE;
+    // Legacy API compatibility
+    void destroy() { reset(); }
 };
 
 // ============================================================================
-// ManagedPipeline - RAII wrapper for VkPipeline
+// ManagedPipeline - RAII wrapper for VkPipeline (inherits from UniquePipeline)
 // ============================================================================
 
-class ManagedPipeline {
+class ManagedPipeline : public UniquePipeline {
 public:
+    using UniquePipeline::UniquePipeline;  // Inherit constructors
+
     ManagedPipeline() = default;
 
-    ~ManagedPipeline() {
-        destroy();
-    }
-
-    // Move-only semantics
-    ManagedPipeline(ManagedPipeline&& other) noexcept
-        : pipeline_(other.pipeline_)
-        , device_(other.device_) {
-        other.pipeline_ = VK_NULL_HANDLE;
-        other.device_ = VK_NULL_HANDLE;
-    }
-
-    ManagedPipeline& operator=(ManagedPipeline&& other) noexcept {
-        if (this != &other) {
-            destroy();
-            pipeline_ = other.pipeline_;
-            device_ = other.device_;
-            other.pipeline_ = VK_NULL_HANDLE;
-            other.device_ = VK_NULL_HANDLE;
-        }
-        return *this;
-    }
-
-    ManagedPipeline(const ManagedPipeline&) = delete;
-    ManagedPipeline& operator=(const ManagedPipeline&) = delete;
+    // Allow conversion from UniquePipeline
+    ManagedPipeline(UniquePipeline&& other) noexcept
+        : UniquePipeline(std::move(other)) {}
 
     // Create graphics pipeline
     static bool createGraphics(VkDevice device,
                                VkPipelineCache pipelineCache,
                                const VkGraphicsPipelineCreateInfo& pipelineInfo,
                                ManagedPipeline& outPipeline) {
-        ManagedPipeline result;
-        result.device_ = device;
-
-        VkResult vkResult = vkCreateGraphicsPipelines(device, pipelineCache, 1, &pipelineInfo, nullptr, &result.pipeline_);
+        VkPipeline pipeline = VK_NULL_HANDLE;
+        VkResult vkResult = vkCreateGraphicsPipelines(device, pipelineCache, 1, &pipelineInfo, nullptr, &pipeline);
         if (vkResult != VK_SUCCESS) {
             SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
                 "ManagedPipeline::createGraphics failed: %d", vkResult);
             return false;
         }
 
-        outPipeline = std::move(result);
+        outPipeline = ManagedPipeline(makeUniquePipeline(device, pipeline));
         return true;
     }
 
@@ -834,207 +745,101 @@ public:
                               VkPipelineCache pipelineCache,
                               const VkComputePipelineCreateInfo& pipelineInfo,
                               ManagedPipeline& outPipeline) {
-        ManagedPipeline result;
-        result.device_ = device;
-
-        VkResult vkResult = vkCreateComputePipelines(device, pipelineCache, 1, &pipelineInfo, nullptr, &result.pipeline_);
+        VkPipeline pipeline = VK_NULL_HANDLE;
+        VkResult vkResult = vkCreateComputePipelines(device, pipelineCache, 1, &pipelineInfo, nullptr, &pipeline);
         if (vkResult != VK_SUCCESS) {
             SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
                 "ManagedPipeline::createCompute failed: %d", vkResult);
             return false;
         }
 
-        outPipeline = std::move(result);
+        outPipeline = ManagedPipeline(makeUniquePipeline(device, pipeline));
         return true;
     }
 
     // Adopt an existing raw pipeline (e.g., created by PipelineBuilder)
     static ManagedPipeline fromRaw(VkDevice device, VkPipeline pipeline) {
-        ManagedPipeline result;
-        result.device_ = device;
-        result.pipeline_ = pipeline;
-        return result;
+        return ManagedPipeline(makeUniquePipeline(device, pipeline));
     }
 
-    void destroy() {
-        if (pipeline_ != VK_NULL_HANDLE && device_ != VK_NULL_HANDLE) {
-            vkDestroyPipeline(device_, pipeline_, nullptr);
-            pipeline_ = VK_NULL_HANDLE;
-        }
-    }
-
-    VkPipeline get() const { return pipeline_; }
-    explicit operator bool() const { return pipeline_ != VK_NULL_HANDLE; }
-
-    VkPipeline release() {
-        VkPipeline tmp = pipeline_;
-        pipeline_ = VK_NULL_HANDLE;
-        return tmp;
-    }
-
-private:
-    VkPipeline pipeline_ = VK_NULL_HANDLE;
-    VkDevice device_ = VK_NULL_HANDLE;
+    // Legacy API compatibility
+    void destroy() { reset(); }
 };
 
 // ============================================================================
-// ManagedRenderPass - RAII wrapper for VkRenderPass
+// ManagedRenderPass - RAII wrapper for VkRenderPass (inherits from UniqueRenderPass)
 // ============================================================================
 
-class ManagedRenderPass {
+class ManagedRenderPass : public UniqueRenderPass {
 public:
+    using UniqueRenderPass::UniqueRenderPass;  // Inherit constructors
+
     ManagedRenderPass() = default;
 
-    ~ManagedRenderPass() {
-        destroy();
-    }
-
-    // Move-only semantics
-    ManagedRenderPass(ManagedRenderPass&& other) noexcept
-        : renderPass_(other.renderPass_)
-        , device_(other.device_) {
-        other.renderPass_ = VK_NULL_HANDLE;
-        other.device_ = VK_NULL_HANDLE;
-    }
-
-    ManagedRenderPass& operator=(ManagedRenderPass&& other) noexcept {
-        if (this != &other) {
-            destroy();
-            renderPass_ = other.renderPass_;
-            device_ = other.device_;
-            other.renderPass_ = VK_NULL_HANDLE;
-            other.device_ = VK_NULL_HANDLE;
-        }
-        return *this;
-    }
-
-    ManagedRenderPass(const ManagedRenderPass&) = delete;
-    ManagedRenderPass& operator=(const ManagedRenderPass&) = delete;
+    // Allow conversion from UniqueRenderPass
+    ManagedRenderPass(UniqueRenderPass&& other) noexcept
+        : UniqueRenderPass(std::move(other)) {}
 
     static bool create(VkDevice device,
                        const VkRenderPassCreateInfo& renderPassInfo,
                        ManagedRenderPass& outRenderPass) {
-        ManagedRenderPass result;
-        result.device_ = device;
-
-        VkResult vkResult = vkCreateRenderPass(device, &renderPassInfo, nullptr, &result.renderPass_);
+        VkRenderPass renderPass = VK_NULL_HANDLE;
+        VkResult vkResult = vkCreateRenderPass(device, &renderPassInfo, nullptr, &renderPass);
         if (vkResult != VK_SUCCESS) {
             SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
                 "ManagedRenderPass::create failed: %d", vkResult);
             return false;
         }
 
-        outRenderPass = std::move(result);
+        outRenderPass = ManagedRenderPass(makeUniqueRenderPass(device, renderPass));
         return true;
-    }
-
-    void destroy() {
-        if (renderPass_ != VK_NULL_HANDLE && device_ != VK_NULL_HANDLE) {
-            vkDestroyRenderPass(device_, renderPass_, nullptr);
-            renderPass_ = VK_NULL_HANDLE;
-        }
     }
 
     // Adopt an existing raw render pass
     static ManagedRenderPass fromRaw(VkDevice device, VkRenderPass renderPass) {
-        ManagedRenderPass result;
-        result.device_ = device;
-        result.renderPass_ = renderPass;
-        return result;
+        return ManagedRenderPass(makeUniqueRenderPass(device, renderPass));
     }
 
-    VkRenderPass get() const { return renderPass_; }
-    explicit operator bool() const { return renderPass_ != VK_NULL_HANDLE; }
-
-    VkRenderPass release() {
-        VkRenderPass tmp = renderPass_;
-        renderPass_ = VK_NULL_HANDLE;
-        return tmp;
-    }
-
-private:
-    VkRenderPass renderPass_ = VK_NULL_HANDLE;
-    VkDevice device_ = VK_NULL_HANDLE;
+    // Legacy API compatibility
+    void destroy() { reset(); }
 };
 
 // ============================================================================
-// ManagedFramebuffer - RAII wrapper for VkFramebuffer
+// ManagedFramebuffer - RAII wrapper for VkFramebuffer (inherits from UniqueFramebuffer)
 // ============================================================================
 
-class ManagedFramebuffer {
+class ManagedFramebuffer : public UniqueFramebuffer {
 public:
+    using UniqueFramebuffer::UniqueFramebuffer;  // Inherit constructors
+
     ManagedFramebuffer() = default;
 
-    ~ManagedFramebuffer() {
-        destroy();
-    }
-
-    // Move-only semantics
-    ManagedFramebuffer(ManagedFramebuffer&& other) noexcept
-        : framebuffer_(other.framebuffer_)
-        , device_(other.device_) {
-        other.framebuffer_ = VK_NULL_HANDLE;
-        other.device_ = VK_NULL_HANDLE;
-    }
-
-    ManagedFramebuffer& operator=(ManagedFramebuffer&& other) noexcept {
-        if (this != &other) {
-            destroy();
-            framebuffer_ = other.framebuffer_;
-            device_ = other.device_;
-            other.framebuffer_ = VK_NULL_HANDLE;
-            other.device_ = VK_NULL_HANDLE;
-        }
-        return *this;
-    }
-
-    ManagedFramebuffer(const ManagedFramebuffer&) = delete;
-    ManagedFramebuffer& operator=(const ManagedFramebuffer&) = delete;
+    // Allow conversion from UniqueFramebuffer
+    ManagedFramebuffer(UniqueFramebuffer&& other) noexcept
+        : UniqueFramebuffer(std::move(other)) {}
 
     static bool create(VkDevice device,
                        const VkFramebufferCreateInfo& framebufferInfo,
                        ManagedFramebuffer& outFramebuffer) {
-        ManagedFramebuffer result;
-        result.device_ = device;
-
-        VkResult vkResult = vkCreateFramebuffer(device, &framebufferInfo, nullptr, &result.framebuffer_);
+        VkFramebuffer framebuffer = VK_NULL_HANDLE;
+        VkResult vkResult = vkCreateFramebuffer(device, &framebufferInfo, nullptr, &framebuffer);
         if (vkResult != VK_SUCCESS) {
             SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
                 "ManagedFramebuffer::create failed: %d", vkResult);
             return false;
         }
 
-        outFramebuffer = std::move(result);
+        outFramebuffer = ManagedFramebuffer(makeUniqueFramebuffer(device, framebuffer));
         return true;
-    }
-
-    void destroy() {
-        if (framebuffer_ != VK_NULL_HANDLE && device_ != VK_NULL_HANDLE) {
-            vkDestroyFramebuffer(device_, framebuffer_, nullptr);
-            framebuffer_ = VK_NULL_HANDLE;
-        }
     }
 
     // Adopt an existing raw framebuffer
     static ManagedFramebuffer fromRaw(VkDevice device, VkFramebuffer framebuffer) {
-        ManagedFramebuffer result;
-        result.device_ = device;
-        result.framebuffer_ = framebuffer;
-        return result;
+        return ManagedFramebuffer(makeUniqueFramebuffer(device, framebuffer));
     }
 
-    VkFramebuffer get() const { return framebuffer_; }
-    explicit operator bool() const { return framebuffer_ != VK_NULL_HANDLE; }
-
-    VkFramebuffer release() {
-        VkFramebuffer tmp = framebuffer_;
-        framebuffer_ = VK_NULL_HANDLE;
-        return tmp;
-    }
-
-private:
-    VkFramebuffer framebuffer_ = VK_NULL_HANDLE;
-    VkDevice device_ = VK_NULL_HANDLE;
+    // Legacy API compatibility
+    void destroy() { reset(); }
 };
 
 // ============================================================================
@@ -1117,201 +922,125 @@ private:
 };
 
 // ============================================================================
-// ManagedCommandPool - RAII wrapper for VkCommandPool
+// ManagedCommandPool - RAII wrapper for VkCommandPool (inherits from UniqueCommandPool)
 // ============================================================================
 
-class ManagedCommandPool {
+class ManagedCommandPool : public UniqueCommandPool {
 public:
+    using UniqueCommandPool::UniqueCommandPool;  // Inherit constructors
+
     ManagedCommandPool() = default;
 
-    ~ManagedCommandPool() {
-        destroy();
-    }
-
-    // Move-only semantics
-    ManagedCommandPool(ManagedCommandPool&& other) noexcept
-        : commandPool_(other.commandPool_)
-        , device_(other.device_) {
-        other.commandPool_ = VK_NULL_HANDLE;
-        other.device_ = VK_NULL_HANDLE;
-    }
-
-    ManagedCommandPool& operator=(ManagedCommandPool&& other) noexcept {
-        if (this != &other) {
-            destroy();
-            commandPool_ = other.commandPool_;
-            device_ = other.device_;
-            other.commandPool_ = VK_NULL_HANDLE;
-            other.device_ = VK_NULL_HANDLE;
-        }
-        return *this;
-    }
-
-    ManagedCommandPool(const ManagedCommandPool&) = delete;
-    ManagedCommandPool& operator=(const ManagedCommandPool&) = delete;
+    // Allow conversion from UniqueCommandPool
+    ManagedCommandPool(UniqueCommandPool&& other) noexcept
+        : UniqueCommandPool(std::move(other)) {}
 
     static bool create(VkDevice device,
                        uint32_t queueFamilyIndex,
                        VkCommandPoolCreateFlags flags,
                        ManagedCommandPool& outPool) {
-        ManagedCommandPool result;
-        result.device_ = device;
-
         VkCommandPoolCreateInfo poolInfo{};
         poolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
         poolInfo.flags = flags;
         poolInfo.queueFamilyIndex = queueFamilyIndex;
 
-        VkResult vkResult = vkCreateCommandPool(device, &poolInfo, nullptr, &result.commandPool_);
+        VkCommandPool commandPool = VK_NULL_HANDLE;
+        VkResult vkResult = vkCreateCommandPool(device, &poolInfo, nullptr, &commandPool);
         if (vkResult != VK_SUCCESS) {
             SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
                 "ManagedCommandPool::create failed: %d", vkResult);
             return false;
         }
 
-        outPool = std::move(result);
+        outPool = ManagedCommandPool(makeUniqueCommandPool(device, commandPool));
         return true;
     }
 
-    void destroy() {
-        if (commandPool_ != VK_NULL_HANDLE && device_ != VK_NULL_HANDLE) {
-            vkDestroyCommandPool(device_, commandPool_, nullptr);
-            commandPool_ = VK_NULL_HANDLE;
-        }
+    // Adopt an existing raw command pool
+    static ManagedCommandPool fromRaw(VkDevice device, VkCommandPool commandPool) {
+        return ManagedCommandPool(makeUniqueCommandPool(device, commandPool));
     }
 
-    VkCommandPool get() const { return commandPool_; }
-    explicit operator bool() const { return commandPool_ != VK_NULL_HANDLE; }
-
-    VkCommandPool release() {
-        VkCommandPool tmp = commandPool_;
-        commandPool_ = VK_NULL_HANDLE;
-        return tmp;
-    }
-
-private:
-    VkCommandPool commandPool_ = VK_NULL_HANDLE;
-    VkDevice device_ = VK_NULL_HANDLE;
+    // Legacy API compatibility
+    void destroy() { reset(); }
 };
 
 // ============================================================================
-// ManagedSemaphore - RAII wrapper for VkSemaphore
+// ManagedSemaphore - RAII wrapper for VkSemaphore (inherits from UniqueSemaphore)
 // ============================================================================
+// Adds ptr() method for Vulkan APIs that need VkSemaphore*.
 
-class ManagedSemaphore {
+class ManagedSemaphore : public UniqueSemaphore {
 public:
+    using UniqueSemaphore::UniqueSemaphore;  // Inherit constructors
+
     ManagedSemaphore() = default;
 
-    ~ManagedSemaphore() {
-        destroy();
-    }
-
-    // Move-only semantics
-    ManagedSemaphore(ManagedSemaphore&& other) noexcept
-        : semaphore_(other.semaphore_)
-        , device_(other.device_) {
-        other.semaphore_ = VK_NULL_HANDLE;
-        other.device_ = VK_NULL_HANDLE;
-    }
-
-    ManagedSemaphore& operator=(ManagedSemaphore&& other) noexcept {
-        if (this != &other) {
-            destroy();
-            semaphore_ = other.semaphore_;
-            device_ = other.device_;
-            other.semaphore_ = VK_NULL_HANDLE;
-            other.device_ = VK_NULL_HANDLE;
-        }
-        return *this;
-    }
-
-    ManagedSemaphore(const ManagedSemaphore&) = delete;
-    ManagedSemaphore& operator=(const ManagedSemaphore&) = delete;
+    // Allow conversion from UniqueSemaphore
+    ManagedSemaphore(UniqueSemaphore&& other) noexcept
+        : UniqueSemaphore(std::move(other)) {}
 
     static bool create(VkDevice device, ManagedSemaphore& outSemaphore) {
-        ManagedSemaphore result;
-        result.device_ = device;
-
         VkSemaphoreCreateInfo semaphoreInfo{};
         semaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
 
-        VkResult vkResult = vkCreateSemaphore(device, &semaphoreInfo, nullptr, &result.semaphore_);
+        VkSemaphore semaphore = VK_NULL_HANDLE;
+        VkResult vkResult = vkCreateSemaphore(device, &semaphoreInfo, nullptr, &semaphore);
         if (vkResult != VK_SUCCESS) {
             SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
                 "ManagedSemaphore::create failed: %d", vkResult);
             return false;
         }
 
-        outSemaphore = std::move(result);
+        outSemaphore = ManagedSemaphore(makeUniqueSemaphore(device, semaphore));
         return true;
     }
 
-    void destroy() {
-        if (semaphore_ != VK_NULL_HANDLE && device_ != VK_NULL_HANDLE) {
-            vkDestroySemaphore(device_, semaphore_, nullptr);
-            semaphore_ = VK_NULL_HANDLE;
-        }
+    // Adopt an existing raw semaphore
+    static ManagedSemaphore fromRaw(VkDevice device, VkSemaphore semaphore) {
+        return ManagedSemaphore(makeUniqueSemaphore(device, semaphore));
     }
 
-    VkSemaphore get() const { return semaphore_; }
-    VkSemaphore* ptr() { return &semaphore_; }
-    explicit operator bool() const { return semaphore_ != VK_NULL_HANDLE; }
+    // Legacy API compatibility
+    void destroy() { reset(); }
 
-private:
-    VkSemaphore semaphore_ = VK_NULL_HANDLE;
-    VkDevice device_ = VK_NULL_HANDLE;
+    // Get pointer to handle (for Vulkan APIs that need VkSemaphore*)
+    VkSemaphore* ptr() {
+        // Note: This returns pointer to the internal handle storage
+        // Only valid while the ManagedSemaphore is alive and not moved
+        return reinterpret_cast<VkSemaphore*>(this);
+    }
 };
 
 // ============================================================================
-// ManagedFence - RAII wrapper for VkFence
+// ManagedFence - RAII wrapper for VkFence (inherits from UniqueFence)
 // ============================================================================
+// Adds wait() and reset() convenience methods by accessing device from deleter.
 
-class ManagedFence {
+class ManagedFence : public UniqueFence {
 public:
+    using UniqueFence::UniqueFence;  // Inherit constructors
+
     ManagedFence() = default;
 
-    ~ManagedFence() {
-        destroy();
-    }
-
-    // Move-only semantics
-    ManagedFence(ManagedFence&& other) noexcept
-        : fence_(other.fence_)
-        , device_(other.device_) {
-        other.fence_ = VK_NULL_HANDLE;
-        other.device_ = VK_NULL_HANDLE;
-    }
-
-    ManagedFence& operator=(ManagedFence&& other) noexcept {
-        if (this != &other) {
-            destroy();
-            fence_ = other.fence_;
-            device_ = other.device_;
-            other.fence_ = VK_NULL_HANDLE;
-            other.device_ = VK_NULL_HANDLE;
-        }
-        return *this;
-    }
-
-    ManagedFence(const ManagedFence&) = delete;
-    ManagedFence& operator=(const ManagedFence&) = delete;
+    // Allow conversion from UniqueFence
+    ManagedFence(UniqueFence&& other) noexcept
+        : UniqueFence(std::move(other)) {}
 
     static bool create(VkDevice device, VkFenceCreateFlags flags, ManagedFence& outFence) {
-        ManagedFence result;
-        result.device_ = device;
-
         VkFenceCreateInfo fenceInfo{};
         fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
         fenceInfo.flags = flags;
 
-        VkResult vkResult = vkCreateFence(device, &fenceInfo, nullptr, &result.fence_);
+        VkFence fence = VK_NULL_HANDLE;
+        VkResult vkResult = vkCreateFence(device, &fenceInfo, nullptr, &fence);
         if (vkResult != VK_SUCCESS) {
             SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
                 "ManagedFence::create failed: %d", vkResult);
             return false;
         }
 
-        outFence = std::move(result);
+        outFence = ManagedFence(makeUniqueFence(device, fence));
         return true;
     }
 
@@ -1320,27 +1049,32 @@ public:
         return create(device, VK_FENCE_CREATE_SIGNALED_BIT, outFence);
     }
 
-    void destroy() {
-        if (fence_ != VK_NULL_HANDLE && device_ != VK_NULL_HANDLE) {
-            vkDestroyFence(device_, fence_, nullptr);
-            fence_ = VK_NULL_HANDLE;
-        }
+    // Adopt an existing raw fence
+    static ManagedFence fromRaw(VkDevice device, VkFence fence) {
+        return ManagedFence(makeUniqueFence(device, fence));
     }
 
-    VkFence get() const { return fence_; }
-    VkFence* ptr() { return &fence_; }
-    explicit operator bool() const { return fence_ != VK_NULL_HANDLE; }
+    // Legacy API compatibility
+    void destroy() { reset(); }
+
+    // Get pointer to handle (for Vulkan APIs that need VkFence*)
+    VkFence* ptr() {
+        // Note: This returns pointer to the internal handle storage
+        // Only valid while the ManagedFence is alive and not moved
+        return reinterpret_cast<VkFence*>(this);
+    }
+
+    // Access device from deleter (for sync operations)
+    VkDevice device() const { return get_deleter().device; }
 
     // Convenience methods for fence operations
     VkResult wait(uint64_t timeout = UINT64_MAX) const {
-        return vkWaitForFences(device_, 1, &fence_, VK_TRUE, timeout);
+        VkFence f = get();
+        return vkWaitForFences(device(), 1, &f, VK_TRUE, timeout);
     }
 
-    VkResult reset() const {
-        return vkResetFences(device_, 1, &fence_);
+    VkResult resetFence() const {
+        VkFence f = get();
+        return vkResetFences(device(), 1, &f);
     }
-
-private:
-    VkFence fence_ = VK_NULL_HANDLE;
-    VkDevice device_ = VK_NULL_HANDLE;
 };

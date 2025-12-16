@@ -116,6 +116,131 @@ These need custom classes due to extra state:
 | `ManagedBuffer` | Needs VmaAllocator, VmaAllocation, mapped state tracking |
 | `ManagedImage` | Needs VmaAllocator, VmaAllocation |
 | `ManagedCommandBuffer` | Needs VkCommandPool for freeing |
+| `ManagedSampler` | Many convenience factories (createNearestClamp, etc.) |
+| `ManagedFence` | Convenience methods: wait(), reset() |
+
+## Pointer Type Analysis
+
+The codebase uses Vulkan handles in three distinct patterns:
+
+### 1. Owning References (unique_ptr appropriate)
+
+Member variables that own the handle and destroy it in their destructor:
+
+```cpp
+class BloomSystem {
+    ManagedPipeline downsamplePipeline_;   // Owns, destroys in shutdown()
+    ManagedRenderPass downsampleRenderPass_;
+};
+```
+
+**Recommendation**: `unique_ptr` with custom deleter works well here.
+
+### 2. Non-Owning References (raw handle appropriate)
+
+Function parameters that borrow handles without taking ownership:
+
+```cpp
+bool init(VkDevice device, VkRenderPass renderPass);  // Borrows
+void render(VkCommandBuffer cmd, VkPipeline pipeline);  // Borrows
+```
+
+**Recommendation**: Keep using raw `VkXxx` handles. This is idiomatic - the caller owns the resource.
+
+### 3. Shared Ownership (rare in this codebase)
+
+Resources referenced by multiple owners with unclear lifetime:
+
+```cpp
+// Not common here - most resources have clear single owners
+```
+
+**Recommendation**: If needed, `shared_ptr` with custom deleter, but avoid if possible.
+
+### Why Not Just unique_ptr Everywhere?
+
+1. **Non-owning function params**: Functions like `init(VkRenderPass renderPass)` receive borrowed handles. Using `unique_ptr&` would be awkward and misleading. Raw handles clearly express "I borrow this".
+
+2. **Vulkan API compatibility**: Vulkan functions take raw handles. Extracting via `.get()` everywhere adds noise.
+
+3. **No weak_ptr equivalent for unique_ptr**: If you need to observe without owning, raw handles are the right choice.
+
+### Recommended Pattern
+
+```cpp
+// Owning member: use unique_ptr or keep Managed* wrapper
+class System {
+    UniquePipeline pipeline_;  // Owns
+    ManagedSampler sampler_;   // Owns (kept for convenience methods)
+};
+
+// Borrowing parameter: use raw handle
+bool System::init(VkDevice device, VkRenderPass renderPass) {
+    // Create owned resource using borrowed renderPass
+    pipeline_ = createPipeline(device, renderPass);
+}
+
+// Passing owned resource to Vulkan: use .get()
+vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_.get());
+```
+
+## Implementation: Managed* Inherits from Unique*
+
+The `Managed*` classes now inherit from their corresponding `Unique*` types:
+
+```cpp
+class ManagedPipeline : public UniquePipeline {
+public:
+    using UniquePipeline::UniquePipeline;  // Inherit constructors
+
+    ManagedPipeline() = default;
+
+    // Allow conversion from UniquePipeline
+    ManagedPipeline(UniquePipeline&& other) noexcept
+        : UniquePipeline(std::move(other)) {}
+
+    // Static factory methods for convenience
+    static bool createGraphics(VkDevice device, VkPipelineCache cache,
+                               const VkGraphicsPipelineCreateInfo& info,
+                               ManagedPipeline& out);
+    static bool createCompute(VkDevice device, VkPipelineCache cache,
+                              const VkComputePipelineCreateInfo& info,
+                              ManagedPipeline& out);
+    static ManagedPipeline fromRaw(VkDevice device, VkPipeline pipeline);
+
+    // Legacy API compatibility
+    void destroy() { reset(); }
+};
+```
+
+### Benefits of Inheritance
+
+1. **Code reuse**: `Managed*` gets `get()`, `reset()`, `release()`, `operator bool()` from `unique_ptr`
+2. **Backward compatible**: Existing code using `ManagedPipeline` continues to work
+3. **Interoperable**: Can assign `UniquePipeline` to `ManagedPipeline`
+4. **Refactorable**: Call sites can use `auto` with factory methods
+5. **Less boilerplate**: Each `Managed*` class is ~20 lines instead of ~80
+
+### Classes Refactored to Inherit
+
+| Class | Inherits From | Notes |
+|-------|---------------|-------|
+| `ManagedPipeline` | `UniquePipeline` | Has `createGraphics`, `createCompute`, `fromRaw` |
+| `ManagedRenderPass` | `UniqueRenderPass` | Has `create`, `fromRaw` |
+| `ManagedPipelineLayout` | `UniquePipelineLayout` | Has `create`, `fromRaw` |
+| `ManagedDescriptorSetLayout` | `UniqueDescriptorSetLayout` | Has `create`, `fromRaw` |
+| `ManagedImageView` | `UniqueImageView` | Has `create`, `fromRaw` |
+| `ManagedFramebuffer` | `UniqueFramebuffer` | Has `create`, `fromRaw` |
+| `ManagedFence` | `UniqueFence` | Has `wait()`, `resetFence()`, `device()` via deleter |
+| `ManagedSampler` | `UniqueSampler` | Has convenience factories (createLinearClamp, etc.) |
+| `ManagedSemaphore` | `UniqueSemaphore` | Has `ptr()` for Vulkan APIs needing address |
+| `ManagedImage` | `UniqueVmaImage` | VMA deleter stores allocator + allocation |
+| `ManagedBuffer` | `UniqueVmaBuffer` | VMA deleter stores allocator + allocation; has `map()`/`unmap()` |
+| `ManagedCommandPool` | `UniqueCommandPool` | Has `create` with queue family index, `fromRaw` |
+
+### Classes Kept as Custom (Not Inheriting)
+
+All `Managed*` classes have been refactored to inherit from their corresponding `Unique*` types.
 
 ## Migration Strategy
 

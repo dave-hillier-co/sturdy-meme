@@ -809,7 +809,7 @@ bool Renderer::render(const Camera& camera) {
         return false;
     }
 
-    inFlightFences[currentFrame].reset();
+    inFlightFences[currentFrame].resetFence();
 
     // Update time system (frame timing and day/night cycle)
     TimingData timing = systems_->time().update();

@@ -3,6 +3,7 @@
 #include "ShaderLoader.h"
 #include "BufferUtils.h"
 #include "VulkanBarriers.h"
+#include "VulkanResourceFactory.h"
 #include <SDL3/SDL.h>
 #include <glm/gtc/matrix_transform.hpp>
 #include <algorithm>
@@ -107,7 +108,7 @@ bool CatmullClarkSystem::createUniformBuffers() {
     uniformMappedPtrs.resize(framesInFlight);
 
     for (uint32_t i = 0; i < framesInFlight; ++i) {
-        if (!ManagedBuffer::createUniform(allocator, sizeof(UniformBufferObject), uniformBuffers_[i])) {
+        if (!VulkanResourceFactory::createUniformBuffer(allocator, sizeof(UniformBufferObject), uniformBuffers_[i])) {
             SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create Catmull-Clark uniform buffer %u", i);
             return false;
         }
@@ -119,13 +120,13 @@ bool CatmullClarkSystem::createUniformBuffers() {
 
 bool CatmullClarkSystem::createIndirectBuffers() {
     // Indirect dispatch buffer
-    if (!ManagedBuffer::createIndirect(allocator, sizeof(VkDispatchIndirectCommand), indirectDispatchBuffer_)) {
+    if (!VulkanResourceFactory::createIndirectBuffer(allocator, sizeof(VkDispatchIndirectCommand), indirectDispatchBuffer_)) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create indirect dispatch buffer");
         return false;
     }
 
     // Indirect draw buffer
-    if (!ManagedBuffer::createIndirect(allocator, sizeof(VkDrawIndirectCommand), indirectDrawBuffer_)) {
+    if (!VulkanResourceFactory::createIndirectBuffer(allocator, sizeof(VkDrawIndirectCommand), indirectDrawBuffer_)) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create indirect draw buffer");
         return false;
     }

@@ -4,6 +4,7 @@
 #include "DescriptorManager.h"
 #include "UBOs.h"
 #include "VulkanBarriers.h"
+#include "VulkanResourceFactory.h"
 #include <SDL3/SDL.h>
 #include <cstring>
 #include <array>
@@ -167,7 +168,7 @@ bool GrassSystem::createDisplacementResources() {
     }
 
     // Create sampler for grass compute shader to sample displacement
-    if (!ManagedSampler::createLinearClamp(getDevice(), displacementSampler_)) {
+    if (!VulkanResourceFactory::createSamplerLinearClamp(getDevice(), displacementSampler_)) {
         SDL_Log("Failed to create displacement sampler");
         return false;
     }

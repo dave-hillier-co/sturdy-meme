@@ -1,6 +1,7 @@
 #include "WaterDisplacement.h"
 #include "ShaderLoader.h"
 #include "VulkanBarriers.h"
+#include "VulkanResourceFactory.h"
 #include "DescriptorManager.h"
 #include <SDL3/SDL_log.h>
 #include <algorithm>
@@ -194,7 +195,7 @@ bool WaterDisplacement::createParticleBuffer() {
     VkDeviceSize bufferSize = sizeof(SplashParticle) * MAX_PARTICLES;
 
     for (uint32_t i = 0; i < framesInFlight; i++) {
-        if (!ManagedBuffer::createStorageHostReadable(allocator, bufferSize, particleBuffers_[i])) {
+        if (!VulkanResourceFactory::createStorageBufferHostReadable(allocator, bufferSize, particleBuffers_[i])) {
             return false;
         }
 

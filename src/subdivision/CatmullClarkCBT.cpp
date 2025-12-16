@@ -1,4 +1,5 @@
 #include "CatmullClarkCBT.h"
+#include "VulkanResourceFactory.h"
 #include <SDL3/SDL.h>
 #include <cstring>
 #include <cmath>
@@ -115,8 +116,8 @@ bool CatmullClarkCBT::init(const InitInfo& info) {
     faceCount = info.faceCount;
     bufferSize = calculateBufferSize(maxDepth, faceCount);
 
-    // Create buffer using ManagedBuffer
-    if (!ManagedBuffer::createStorageHostWritable(info.allocator, bufferSize, buffer_)) {
+    // Create buffer using VulkanResourceFactory
+    if (!VulkanResourceFactory::createStorageBufferHostWritable(info.allocator, bufferSize, buffer_)) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create Catmull-Clark CBT buffer");
         return false;
     }

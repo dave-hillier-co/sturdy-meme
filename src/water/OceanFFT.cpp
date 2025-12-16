@@ -566,7 +566,7 @@ bool OceanFFT::createDescriptorSets() {
     spectrumUBOMapped.resize(cascadeCount);
 
     for (int i = 0; i < cascadeCount; i++) {
-        if (!ManagedBuffer::createUniform(allocator, sizeof(SpectrumUBO), spectrumUBOs[i])) {
+        if (!VulkanResourceFactory::createUniformBuffer(allocator, sizeof(SpectrumUBO), spectrumUBOs[i])) {
             return false;
         }
         spectrumUBOMapped[i] = spectrumUBOs[i].map();

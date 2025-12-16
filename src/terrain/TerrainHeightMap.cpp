@@ -1,6 +1,7 @@
 #include "TerrainHeightMap.h"
 #include "TerrainHeight.h"
 #include "VulkanBarriers.h"
+#include "VulkanResourceFactory.h"
 #include <SDL3/SDL.h>
 #include <cstring>
 #include <cmath>
@@ -259,7 +260,7 @@ bool TerrainHeightMap::createGPUResources() {
     }
 
     // Create sampler
-    if (!ManagedSampler::createLinearClamp(device, sampler)) {
+    if (!VulkanResourceFactory::createSamplerLinearClamp(device, sampler)) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create height map sampler");
         return false;
     }
@@ -309,7 +310,7 @@ bool TerrainHeightMap::createHoleMaskResources() {
     }
 
     // Create sampler (linear filtering for smooth edges for rendering)
-    if (!ManagedSampler::createLinearClamp(device, holeMaskSampler)) {
+    if (!VulkanResourceFactory::createSamplerLinearClamp(device, holeMaskSampler)) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create hole mask sampler");
         return false;
     }
@@ -322,7 +323,7 @@ bool TerrainHeightMap::uploadHoleMaskToGPUInternal() {
 
     // Create staging buffer using RAII wrapper
     ManagedBuffer stagingBuffer;
-    if (!ManagedBuffer::createStaging(allocator, imageSize, stagingBuffer)) {
+    if (!VulkanResourceFactory::createStagingBuffer(allocator, imageSize, stagingBuffer)) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create staging buffer for hole mask upload");
         return false;
     }
@@ -351,7 +352,7 @@ bool TerrainHeightMap::uploadToGPU() {
 
     // Create staging buffer using RAII wrapper
     ManagedBuffer stagingBuffer;
-    if (!ManagedBuffer::createStaging(allocator, imageSize, stagingBuffer)) {
+    if (!VulkanResourceFactory::createStagingBuffer(allocator, imageSize, stagingBuffer)) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create staging buffer for height map upload");
         return false;
     }

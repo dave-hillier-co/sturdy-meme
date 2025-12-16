@@ -1,5 +1,6 @@
 #include "VirtualTextureFeedback.h"
 #include "VulkanBarriers.h"
+#include "VulkanResourceFactory.h"
 #include <SDL3/SDL_log.h>
 #include <algorithm>
 #include <cstring>
@@ -41,23 +42,23 @@ bool VirtualTextureFeedback::createFrameBuffer(VmaAllocator allocator, FrameBuff
     VkDeviceSize counterSize = sizeof(uint32_t);
 
     // GPU feedback buffer (storage buffer, written by shader)
-    if (!ManagedBuffer::createStorage(allocator, feedbackSize, fb.feedbackBuffer)) {
+    if (!VulkanResourceFactory::createStorageBuffer(allocator, feedbackSize, fb.feedbackBuffer)) {
         return false;
     }
 
     // GPU counter buffer (atomic counter for number of requests)
-    if (!ManagedBuffer::createStorage(allocator, counterSize, fb.counterBuffer)) {
+    if (!VulkanResourceFactory::createStorageBuffer(allocator, counterSize, fb.counterBuffer)) {
         return false;
     }
 
     // CPU readback buffer for feedback
-    if (!ManagedBuffer::createReadback(allocator, feedbackSize, fb.readbackBuffer)) {
+    if (!VulkanResourceFactory::createReadbackBuffer(allocator, feedbackSize, fb.readbackBuffer)) {
         return false;
     }
     fb.readbackMapped = fb.readbackBuffer.map();
 
     // CPU readback buffer for counter
-    if (!ManagedBuffer::createReadback(allocator, counterSize, fb.counterReadbackBuffer)) {
+    if (!VulkanResourceFactory::createReadbackBuffer(allocator, counterSize, fb.counterReadbackBuffer)) {
         return false;
     }
     fb.counterReadbackMapped = fb.counterReadbackBuffer.map();

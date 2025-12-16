@@ -1,5 +1,6 @@
 #include "TerrainTextures.h"
 #include "VulkanBarriers.h"
+#include "VulkanResourceFactory.h"
 #include <SDL3/SDL.h>
 #include <stb_image.h>
 #include <cstring>
@@ -89,7 +90,7 @@ bool TerrainTextures::createAlbedoTexture() {
     }
 
     // Create sampler
-    if (!ManagedSampler::createLinearRepeatAnisotropic(device, 16.0f, albedoSampler)) {
+    if (!VulkanResourceFactory::createSamplerLinearRepeatAnisotropic(device, 16.0f, albedoSampler)) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create terrain albedo sampler");
         stbi_image_free(pixels);
         return false;
@@ -163,7 +164,7 @@ bool TerrainTextures::createGrassFarLODTexture() {
     }
 
     // Create sampler
-    if (!ManagedSampler::createLinearRepeatAnisotropic(device, 16.0f, grassFarLODSampler)) {
+    if (!VulkanResourceFactory::createSamplerLinearRepeatAnisotropic(device, 16.0f, grassFarLODSampler)) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create grass far LOD sampler");
         stbi_image_free(pixels);
         return false;
@@ -187,7 +188,7 @@ bool TerrainTextures::uploadImageData(VkImage image, const void* data, uint32_t 
 
     // Create staging buffer using RAII wrapper
     ManagedBuffer stagingBuffer;
-    if (!ManagedBuffer::createStaging(allocator, imageSize, stagingBuffer)) {
+    if (!VulkanResourceFactory::createStagingBuffer(allocator, imageSize, stagingBuffer)) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create staging buffer for image upload");
         return false;
     }

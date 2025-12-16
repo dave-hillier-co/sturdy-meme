@@ -1,6 +1,7 @@
 #include "VirtualTexturePageTable.h"
 #include "VulkanBarriers.h"
 #include "VulkanRAII.h"
+#include "VulkanResourceFactory.h"
 #include <SDL3/SDL_log.h>
 #include <cstring>
 #include <algorithm>
@@ -49,7 +50,7 @@ bool VirtualTexturePageTable::init(VkDevice device, VmaAllocator allocator,
     uint32_t maxMipSize = mipSizes[0];
     VkDeviceSize stagingSize = maxMipSize * sizeof(uint32_t); // RGBA8 packed
 
-    if (!ManagedBuffer::createStaging(allocator, stagingSize, stagingBuffer_)) {
+    if (!VulkanResourceFactory::createStagingBuffer(allocator, stagingSize, stagingBuffer_)) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create VT page table staging buffer");
         return false;
     }
@@ -171,7 +172,7 @@ bool VirtualTexturePageTable::createPageTableTextures(VkDevice device, VmaAlloca
 }
 
 bool VirtualTexturePageTable::createSampler(VkDevice device) {
-    return ManagedSampler::createNearestClamp(device, pageTableSampler);
+    return VulkanResourceFactory::createSamplerNearestClamp(device, pageTableSampler);
 }
 
 size_t VirtualTexturePageTable::getEntryIndex(TileId id) const {

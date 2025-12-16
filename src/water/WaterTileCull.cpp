@@ -1,6 +1,7 @@
 #include "WaterTileCull.h"
 #include "ShaderLoader.h"
 #include "VulkanBarriers.h"
+#include "VulkanResourceFactory.h"
 #include "DescriptorManager.h"
 #include <SDL3/SDL.h>
 #include <array>
@@ -94,14 +95,14 @@ bool WaterTileCull::createBuffers() {
     uint32_t maxTiles = tileCount.x * tileCount.y;
 
     // Tile buffer - stores visibility data for each tile
-    if (!ManagedBuffer::createStorage(allocator, maxTiles * sizeof(TileData), tileBuffer_)) {
+    if (!VulkanResourceFactory::createStorageBuffer(allocator, maxTiles * sizeof(TileData), tileBuffer_)) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create tile buffer");
         return false;
     }
 
     // Counter buffer - atomic counter for visible tile count (CPU-to-GPU, mapped)
     VkDeviceSize counterSize = sizeof(uint32_t) * framesInFlight;
-    if (!ManagedBuffer::createStorageHostReadable(allocator, counterSize, counterBuffer_)) {
+    if (!VulkanResourceFactory::createStorageBufferHostReadable(allocator, counterSize, counterBuffer_)) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create counter buffer");
         return false;
     }
@@ -114,7 +115,7 @@ bool WaterTileCull::createBuffers() {
     }
 
     // Counter readback buffer (host-visible)
-    if (!ManagedBuffer::createReadback(allocator, counterSize, counterReadbackBuffer_)) {
+    if (!VulkanResourceFactory::createReadbackBuffer(allocator, counterSize, counterReadbackBuffer_)) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create counter readback buffer");
         return false;
     }
@@ -126,7 +127,7 @@ bool WaterTileCull::createBuffers() {
     }
 
     // Indirect draw buffer
-    if (!ManagedBuffer::createIndirect(allocator, sizeof(IndirectDrawCommand), indirectDrawBuffer_)) {
+    if (!VulkanResourceFactory::createIndirectBuffer(allocator, sizeof(IndirectDrawCommand), indirectDrawBuffer_)) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create indirect draw buffer");
         return false;
     }
@@ -291,7 +292,7 @@ void WaterTileCull::recordTileCull(VkCommandBuffer cmd, uint32_t frameIndex,
     // Reset counter for this frame
     uint32_t* counterPtr = static_cast<uint32_t*>(counterMapped) + frameIndex;
     *counterPtr = 0;
-    vmaFlushAllocation(counterBuffer_.getAllocator(), counterBuffer_.getAllocation(),
+    vmaFlushAllocation(counterBuffer_.allocator(), counterBuffer_.getAllocation(),
                        frameIndex * sizeof(uint32_t), sizeof(uint32_t));
 
     // Update descriptor set with depth texture and storage buffers
@@ -359,7 +360,7 @@ void WaterTileCull::barrierCounterForHostRead(VkCommandBuffer cmd, uint32_t fram
 uint32_t WaterTileCull::getVisibleTileCount(uint32_t frameIndex) const {
     if (counterReadbackMapped == nullptr) return 0;
 
-    VkResult invalidateResult = vmaInvalidateAllocation(counterReadbackBuffer_.getAllocator(),
+    VkResult invalidateResult = vmaInvalidateAllocation(counterReadbackBuffer_.allocator(),
                                                         counterReadbackBuffer_.getAllocation(),
                                                         frameIndex * sizeof(uint32_t), sizeof(uint32_t));
     if (invalidateResult != VK_SUCCESS) {

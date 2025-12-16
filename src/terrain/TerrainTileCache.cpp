@@ -1,6 +1,7 @@
 #include "TerrainTileCache.h"
 #include "TerrainHeight.h"
 #include "VulkanBarriers.h"
+#include "VulkanResourceFactory.h"
 #include <SDL3/SDL.h>
 #include <stb_image.h>
 #include <fstream>
@@ -28,15 +29,15 @@ bool TerrainTileCache::init(const InitInfo& info) {
     }
 
     // Create sampler for tile textures
-    if (!ManagedSampler::createLinearClamp(device, sampler)) {
+    if (!VulkanResourceFactory::createSamplerLinearClamp(device, sampler)) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "TerrainTileCache: Failed to create sampler");
         return false;
     }
 
-    // Create tile info buffer for shader using ManagedBuffer
+    // Create tile info buffer for shader using VulkanResourceFactory
     // Layout: uint activeTileCount, uint padding[3], TileInfoGPU tiles[MAX_ACTIVE_TILES]
     VkDeviceSize bufferSize = sizeof(uint32_t) * 4 + MAX_ACTIVE_TILES * sizeof(TileInfoGPU);
-    if (!ManagedBuffer::createStorageHostReadable(allocator, bufferSize, tileInfoBuffer_)) {
+    if (!VulkanResourceFactory::createStorageBufferHostReadable(allocator, bufferSize, tileInfoBuffer_)) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "TerrainTileCache: Failed to create tile info buffer");
         return false;
     }
@@ -487,7 +488,7 @@ bool TerrainTileCache::uploadTileToGPU(TerrainTile& tile) {
 
     // Create staging buffer using RAII wrapper
     ManagedBuffer stagingBuffer;
-    if (!ManagedBuffer::createStaging(allocator, imageSize, stagingBuffer)) {
+    if (!VulkanResourceFactory::createStagingBuffer(allocator, imageSize, stagingBuffer)) {
         return false;
     }
 
@@ -615,7 +616,7 @@ void TerrainTileCache::copyTileToArrayLayer(TerrainTile* tile, uint32_t layerInd
     VkDeviceSize imageSize = tileResolution * tileResolution * sizeof(float);
 
     ManagedBuffer stagingBuffer;
-    if (!ManagedBuffer::createStaging(allocator, imageSize, stagingBuffer)) {
+    if (!VulkanResourceFactory::createStagingBuffer(allocator, imageSize, stagingBuffer)) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "TerrainTileCache: Failed to create staging buffer for tile copy");
         return;
     }

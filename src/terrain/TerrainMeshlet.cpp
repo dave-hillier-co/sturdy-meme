@@ -1,4 +1,5 @@
 #include "TerrainMeshlet.h"
+#include "VulkanResourceFactory.h"
 #include <SDL3/SDL.h>
 #include <cstring>
 #include <unordered_map>
@@ -136,7 +137,7 @@ bool TerrainMeshlet::init(const InitInfo& info) {
 
     // Create vertex buffer (vertex + storage for compute access)
     VkDeviceSize vertexBufferSize = vertices.size() * sizeof(glm::vec2);
-    if (!ManagedBuffer::createVertexStorage(info.allocator, vertexBufferSize, vertexBuffer_)) {
+    if (!VulkanResourceFactory::createVertexStorageBuffer(info.allocator, vertexBufferSize, vertexBuffer_)) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create meshlet vertex buffer");
         return false;
     }
@@ -152,7 +153,7 @@ bool TerrainMeshlet::init(const InitInfo& info) {
 
     // Create index buffer
     VkDeviceSize indexBufferSize = indices.size() * sizeof(uint16_t);
-    if (!ManagedBuffer::createIndexHostWritable(info.allocator, indexBufferSize, indexBuffer_)) {
+    if (!VulkanResourceFactory::createIndexBufferHostWritable(info.allocator, indexBufferSize, indexBuffer_)) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create meshlet index buffer");
         return false;
     }

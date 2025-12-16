@@ -1,6 +1,7 @@
 #include "BillboardCapture.h"
 #include "ShaderLoader.h"
 #include "TreeEditSystem.h"
+#include "VulkanResourceFactory.h"
 
 #include <SDL3/SDL.h>
 #include <glm/gtc/matrix_transform.hpp>
@@ -213,7 +214,7 @@ bool BillboardCapture::createRenderTarget(uint32_t width, uint32_t height) {
     // Create staging buffer for pixel readback using RAII wrapper
     VkDeviceSize stagingSize = width * height * 4;  // RGBA8
 
-    if (!ManagedBuffer::createReadback(allocator, stagingSize, stagingBuffer_)) {
+    if (!VulkanResourceFactory::createReadbackBuffer(allocator, stagingSize, stagingBuffer_)) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create billboard staging buffer");
         return false;
     }
@@ -288,7 +289,7 @@ bool BillboardCapture::createDescriptorSets() {
 }
 
 bool BillboardCapture::createUniformBuffer() {
-    if (!ManagedBuffer::createUniform(allocator, sizeof(UniformBufferObject), uboBuffer_)) {
+    if (!VulkanResourceFactory::createUniformBuffer(allocator, sizeof(UniformBufferObject), uboBuffer_)) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create billboard UBO buffer");
         return false;
     }

@@ -1,6 +1,7 @@
 #include "BloomSystem.h"
 #include "GraphicsPipelineFactory.h"
 #include "VulkanBarriers.h"
+#include "VulkanResourceFactory.h"
 #include "DescriptorManager.h"
 #include <array>
 #include <algorithm>
@@ -226,7 +227,7 @@ bool BloomSystem::createRenderPass() {
 
 bool BloomSystem::createSampler() {
     // Use the convenience factory for linear clamp sampler
-    return ManagedSampler::createLinearClamp(device, sampler_);
+    return VulkanResourceFactory::createSamplerLinearClamp(device, sampler_);
 }
 
 bool BloomSystem::createDescriptorSetLayouts() {

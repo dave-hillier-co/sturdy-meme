@@ -1,6 +1,7 @@
 #include "HiZSystem.h"
 #include "ShaderLoader.h"
 #include "VulkanBarriers.h"
+#include "VulkanResourceFactory.h"
 #include <SDL3/SDL_log.h>
 #include <array>
 #include <cstring>
@@ -334,8 +335,8 @@ void HiZSystem::destroyPipelines() {
 bool HiZSystem::createBuffers() {
     VkDeviceSize objectBufferSize = sizeof(CullObjectData) * MAX_OBJECTS;
 
-    // Create object data buffer using ManagedBuffer
-    if (!ManagedBuffer::createStorageHostReadable(allocator, objectBufferSize, objectDataBuffer_)) {
+    // Create object data buffer using VulkanResourceFactory
+    if (!VulkanResourceFactory::createStorageBufferHostReadable(allocator, objectBufferSize, objectDataBuffer_)) {
         SDL_Log("HiZSystem: Failed to create object data buffer");
         return false;
     }

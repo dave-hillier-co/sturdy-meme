@@ -111,13 +111,13 @@ public:
     using GuiRenderCallback = std::function<void(VkCommandBuffer)>;
     void setGuiRenderCallback(GuiRenderCallback callback) { guiRenderCallback = callback; }
 
-    void setTimeScale(float scale) { systems_->time().setTimeScale(scale); }
-    float getTimeScale() const { return systems_->time().getTimeScale(); }
-    void setTimeOfDay(float time) { systems_->time().setTimeOfDay(time); }
-    void resumeAutoTime() { systems_->time().resumeAutoTime(); }
-    float getTimeOfDay() const { return systems_->time().getTimeOfDay(); }
-    TimeSystem& getTimeSystem() { return systems_->time(); }
-    const TimeSystem& getTimeSystem() const { return systems_->time(); }
+    void setTimeScale(float scale);
+    float getTimeScale() const;
+    void setTimeOfDay(float time);
+    void resumeAutoTime();
+    float getTimeOfDay() const;
+    TimeSystem& getTimeSystem();
+    const TimeSystem& getTimeSystem() const;
 
     void toggleCascadeDebug() { showCascadeDebug = !showCascadeDebug; }
     bool isShowingCascadeDebug() const { return showCascadeDebug; }
@@ -130,129 +130,117 @@ public:
     bool isUsingParaboloidClouds() const { return useParaboloidClouds; }
 
     // Cloud coverage and density (synced to sky shader, cloud shadows, and cloud map LUT)
-    void setCloudCoverage(float coverage) {
-        cloudCoverage = glm::clamp(coverage, 0.0f, 1.0f);
-        systems_->cloudShadow().setCloudCoverage(cloudCoverage);
-        systems_->atmosphereLUT().setCloudCoverage(cloudCoverage);
-    }
+    void setCloudCoverage(float coverage);
     float getCloudCoverage() const { return cloudCoverage; }
 
-    void setCloudDensity(float density) {
-        cloudDensity = glm::clamp(density, 0.0f, 1.0f);
-        systems_->cloudShadow().setCloudDensity(cloudDensity);
-        systems_->atmosphereLUT().setCloudDensity(cloudDensity);
-    }
+    void setCloudDensity(float density);
     float getCloudDensity() const { return cloudDensity; }
 
     // Cloud shadow control
-    void setCloudShadowEnabled(bool enabled) { systems_->cloudShadow().setEnabled(enabled); }
-    bool isCloudShadowEnabled() const { return systems_->cloudShadow().isEnabled(); }
+    void setCloudShadowEnabled(bool enabled);
+    bool isCloudShadowEnabled() const;
 
     // HDR/Post-processing control
     void setHDREnabled(bool enabled) { hdrEnabled = enabled; }
     bool isHDREnabled() const { return hdrEnabled; }
-    void setCloudShadowIntensity(float intensity) { systems_->cloudShadow().setShadowIntensity(intensity); }
-    float getCloudShadowIntensity() const { return systems_->cloudShadow().getShadowIntensity(); }
+    void setCloudShadowIntensity(float intensity);
+    float getCloudShadowIntensity() const;
 
     // God ray quality control
-    void setGodRaysEnabled(bool enabled) { systems_->postProcess().setGodRaysEnabled(enabled); }
-    bool isGodRaysEnabled() const { return systems_->postProcess().isGodRaysEnabled(); }
-    void setGodRayQuality(PostProcessSystem::GodRayQuality quality);
-    PostProcessSystem::GodRayQuality getGodRayQuality() const;
+    void setGodRaysEnabled(bool enabled);
+    bool isGodRaysEnabled() const;
+    void setGodRayQuality(int quality);  // 0=Low, 1=Medium, 2=High
+    int getGodRayQuality() const;
 
     // Froxel volumetric fog quality control
-    void setFroxelFilterQuality(bool highQuality) { systems_->postProcess().setFroxelFilterQuality(highQuality); }
-    bool isFroxelFilterHighQuality() const { return systems_->postProcess().isFroxelFilterHighQuality(); }
+    void setFroxelFilterQuality(bool highQuality);
+    bool isFroxelFilterHighQuality() const;
 
     // Terrain control
     void setTerrainEnabled(bool enabled) { terrainEnabled = enabled; }
     bool isTerrainEnabled() const { return terrainEnabled; }
-    void toggleTerrainWireframe() { systems_->terrain().setWireframeMode(!systems_->terrain().isWireframeMode()); }
-    bool isTerrainWireframeMode() const { return systems_->terrain().isWireframeMode(); }
-    float getTerrainHeightAt(float x, float z) const { return systems_->terrain().getHeightAt(x, z); }
-    uint32_t getTerrainNodeCount() const { return systems_->terrain().getNodeCount(); }
+    void toggleTerrainWireframe();
+    bool isTerrainWireframeMode() const;
+    float getTerrainHeightAt(float x, float z) const;
+    uint32_t getTerrainNodeCount() const;
 
     // Terrain data access for physics integration
-    const TerrainSystem& getTerrainSystem() const { return systems_->terrain(); }
-    TerrainSystem& getTerrainSystem() { return systems_->terrain(); }
+    const TerrainSystem& getTerrainSystem() const;
+    TerrainSystem& getTerrainSystem();
 
     // Catmull-Clark subdivision control
-    void toggleCatmullClarkWireframe() { systems_->catmullClark().setWireframeMode(!systems_->catmullClark().isWireframeMode()); }
-    bool isCatmullClarkWireframeMode() const { return systems_->catmullClark().isWireframeMode(); }
-    CatmullClarkSystem& getCatmullClarkSystem() { return systems_->catmullClark(); }
+    void toggleCatmullClarkWireframe();
+    bool isCatmullClarkWireframeMode() const;
+    CatmullClarkSystem& getCatmullClarkSystem();
 
     // Weather control
     void setWeatherIntensity(float intensity);
     void setWeatherType(uint32_t type);
-    uint32_t getWeatherType() const { return systems_->weather().getWeatherType(); }
-    float getIntensity() const { return systems_->weather().getIntensity(); }
+    uint32_t getWeatherType() const;
+    float getIntensity() const;
 
     // Fog control - Froxel volumetric fog
-    void setFogDensity(float density) { systems_->froxel().setFogDensity(density); }
-    float getFogDensity() const { return systems_->froxel().getFogDensity(); }
-    void setFogEnabled(bool enabled) { systems_->froxel().setEnabled(enabled); systems_->postProcess().setFroxelEnabled(enabled); }
-    bool isFogEnabled() const { return systems_->froxel().isEnabled(); }
+    void setFogDensity(float density);
+    float getFogDensity() const;
+    void setFogEnabled(bool enabled);
+    bool isFogEnabled() const;
 
     // Froxel fog extended parameters
-    void setFogBaseHeight(float h) { systems_->froxel().setFogBaseHeight(h); }
-    float getFogBaseHeight() const { return systems_->froxel().getFogBaseHeight(); }
-    void setFogScaleHeight(float h) { systems_->froxel().setFogScaleHeight(h); }
-    float getFogScaleHeight() const { return systems_->froxel().getFogScaleHeight(); }
-    void setFogAbsorption(float a) { systems_->froxel().setFogAbsorption(a); }
-    float getFogAbsorption() const { return systems_->froxel().getFogAbsorption(); }
+    void setFogBaseHeight(float h);
+    float getFogBaseHeight() const;
+    void setFogScaleHeight(float h);
+    float getFogScaleHeight() const;
+    void setFogAbsorption(float a);
+    float getFogAbsorption() const;
     void setVolumetricFarPlane(float f);
-    float getVolumetricFarPlane() const { return systems_->froxel().getVolumetricFarPlane(); }
-    void setTemporalBlend(float b) { systems_->froxel().setTemporalBlend(b); }
-    float getTemporalBlend() const { return systems_->froxel().getTemporalBlend(); }
+    float getVolumetricFarPlane() const;
+    void setTemporalBlend(float b);
+    float getTemporalBlend() const;
 
     // Height fog layer parameters
-    void setLayerHeight(float h) { systems_->froxel().setLayerHeight(h); }
-    float getLayerHeight() const { return systems_->froxel().getLayerHeight(); }
-    void setLayerThickness(float t) { systems_->froxel().setLayerThickness(t); }
-    float getLayerThickness() const { return systems_->froxel().getLayerThickness(); }
-    void setLayerDensity(float d) { systems_->froxel().setLayerDensity(d); }
-    float getLayerDensity() const { return systems_->froxel().getLayerDensity(); }
+    void setLayerHeight(float h);
+    float getLayerHeight() const;
+    void setLayerThickness(float t);
+    float getLayerThickness() const;
+    void setLayerDensity(float d);
+    float getLayerDensity() const;
 
     // Atmospheric scattering parameters
     void setAtmosphereParams(const AtmosphereParams& params);
     const AtmosphereParams& getAtmosphereParams() const;
-    AtmosphereLUTSystem& getAtmosphereLUTSystem() { return systems_->atmosphereLUT(); }
+    AtmosphereLUTSystem& getAtmosphereLUTSystem();
 
     // Leaf control
-    void setLeafIntensity(float intensity) { systems_->leaf().setIntensity(intensity); }
-    float getLeafIntensity() const { return systems_->leaf().getIntensity(); }
-    void spawnConfetti(const glm::vec3& position, float velocity = 8.0f, float count = 100.0f, float coneAngle = 0.5f) {
-        systems_->leaf().spawnConfetti(position, velocity, count, coneAngle);
-    }
+    void setLeafIntensity(float intensity);
+    float getLeafIntensity() const;
+    void spawnConfetti(const glm::vec3& position, float velocity = 8.0f, float count = 100.0f, float coneAngle = 0.5f);
 
     // Snow control
-    void setSnowAmount(float amount) { systems_->environmentSettings().snowAmount = glm::clamp(amount, 0.0f, 1.0f); }
-    float getSnowAmount() const { return systems_->environmentSettings().snowAmount; }
-    void setSnowColor(const glm::vec3& color) { systems_->environmentSettings().snowColor = color; }
-    const glm::vec3& getSnowColor() const { return systems_->environmentSettings().snowColor; }
-    void addSnowInteraction(const glm::vec3& position, float radius, float strength) {
-        systems_->snowMask().addInteraction(position, radius, strength);
-    }
-    EnvironmentSettings& getEnvironmentSettings() { return systems_->environmentSettings(); }
+    void setSnowAmount(float amount);
+    float getSnowAmount() const;
+    void setSnowColor(const glm::vec3& color);
+    const glm::vec3& getSnowColor() const;
+    void addSnowInteraction(const glm::vec3& position, float radius, float strength);
+    EnvironmentSettings& getEnvironmentSettings();
 
     // Scene access
-    SceneManager& getSceneManager() { return systems_->scene(); }
-    const SceneManager& getSceneManager() const { return systems_->scene(); }
+    SceneManager& getSceneManager();
+    const SceneManager& getSceneManager() const;
 
     // Rock system access for physics integration
-    const RockSystem& getRockSystem() const { return systems_->rock(); }
+    const RockSystem& getRockSystem() const;
 
     // Player position for grass interaction (xyz = position, w = capsule radius)
     void setPlayerPosition(const glm::vec3& position, float radius);
     void setPlayerState(const glm::vec3& position, const glm::vec3& velocity, float radius);
 
     // Access to systems for simulation
-    WindSystem& getWindSystem() { return systems_->wind(); }
-    const WindSystem& getWindSystem() const { return systems_->wind(); }
-    WaterSystem& getWaterSystem() { return systems_->water(); }
-    const WaterSystem& getWaterSystem() const { return systems_->water(); }
-    WaterTileCull& getWaterTileCull() { return systems_->waterTileCull(); }
-    const WaterTileCull& getWaterTileCull() const { return systems_->waterTileCull(); }
+    WindSystem& getWindSystem();
+    const WindSystem& getWindSystem() const;
+    WaterSystem& getWaterSystem();
+    const WaterSystem& getWaterSystem() const;
+    WaterTileCull& getWaterTileCull();
+    const WaterTileCull& getWaterTileCull() const;
     const WaterPlacementData& getWaterPlacementData() const;
     SceneBuilder& getSceneBuilder();
     Mesh& getFlagClothMesh();
@@ -271,65 +259,73 @@ public:
     // Celestial/astronomical settings
     void setLocation(const GeographicLocation& location);
     const GeographicLocation& getLocation() const;
-    void setDate(int year, int month, int day) { systems_->time().setDate(year, month, day); }
-    int getCurrentYear() const { return systems_->time().getCurrentYear(); }
-    int getCurrentMonth() const { return systems_->time().getCurrentMonth(); }
-    int getCurrentDay() const { return systems_->time().getCurrentDay(); }
-    const CelestialCalculator& getCelestialCalculator() const { return systems_->celestial(); }
+    void setDate(int year, int month, int day);
+    int getCurrentYear() const;
+    int getCurrentMonth() const;
+    int getCurrentDay() const;
+    const CelestialCalculator& getCelestialCalculator() const;
 
     // Moon phase override controls
-    void setMoonPhaseOverride(bool enabled) { systems_->time().setMoonPhaseOverride(enabled); }
-    bool isMoonPhaseOverrideEnabled() const { return systems_->time().isMoonPhaseOverrideEnabled(); }
-    void setMoonPhase(float phase) { systems_->time().setMoonPhase(phase); }
-    float getMoonPhase() const { return systems_->time().getMoonPhase(); }
-    float getCurrentMoonPhase() const { return systems_->time().getCurrentMoonPhase(); }  // Actual phase (auto or manual)
+    void setMoonPhaseOverride(bool enabled);
+    bool isMoonPhaseOverrideEnabled() const;
+    void setMoonPhase(float phase);
+    float getMoonPhase() const;
+    float getCurrentMoonPhase() const;  // Actual phase (auto or manual)
 
     // Moon brightness controls
-    void setMoonBrightness(float brightness) { systems_->time().setMoonBrightness(brightness); }
-    float getMoonBrightness() const { return systems_->time().getMoonBrightness(); }
-    void setMoonDiscIntensity(float intensity) { systems_->time().setMoonDiscIntensity(intensity); }
-    float getMoonDiscIntensity() const { return systems_->time().getMoonDiscIntensity(); }
-    void setMoonEarthshine(float earthshine) { systems_->time().setMoonEarthshine(earthshine); }
-    float getMoonEarthshine() const { return systems_->time().getMoonEarthshine(); }
+    void setMoonBrightness(float brightness);
+    float getMoonBrightness() const;
+    void setMoonDiscIntensity(float intensity);
+    float getMoonDiscIntensity() const;
+    void setMoonEarthshine(float earthshine);
+    float getMoonEarthshine() const;
 
     // Eclipse controls
-    void setEclipseEnabled(bool enabled) { systems_->time().setEclipseEnabled(enabled); }
-    bool isEclipseEnabled() const { return systems_->time().isEclipseEnabled(); }
-    void setEclipseAmount(float amount) { systems_->time().setEclipseAmount(amount); }
-    float getEclipseAmount() const { return systems_->time().getEclipseAmount(); }
+    void setEclipseEnabled(bool enabled);
+    bool isEclipseEnabled() const;
+    void setEclipseAmount(float amount);
+    float getEclipseAmount() const;
 
     // Hi-Z occlusion culling control
-    void setHiZCullingEnabled(bool enabled) { systems_->hiZ().setHiZEnabled(enabled); }
-    bool isHiZCullingEnabled() const { return systems_->hiZ().isHiZEnabled(); }
-    HiZSystem::CullingStats getHiZCullingStats() const;
-    uint32_t getVisibleObjectCount() const { return systems_->hiZ().getVisibleCount(currentFrame); }
+    void setHiZCullingEnabled(bool enabled);
+    bool isHiZCullingEnabled() const;
+
+    // Culling stats (mirrors HiZSystem::CullingStats)
+    struct CullingStats {
+        uint32_t totalObjects;
+        uint32_t visibleObjects;
+        uint32_t frustumCulled;
+        uint32_t occlusionCulled;
+    };
+    CullingStats getHiZCullingStats() const;
+    uint32_t getVisibleObjectCount() const;
 
     // Profiling access
-    Profiler& getProfiler() { return systems_->profiler(); }
-    const Profiler& getProfiler() const { return systems_->profiler(); }
-    void setProfilingEnabled(bool enabled) { systems_->profiler().setEnabled(enabled); }
-    bool isProfilingEnabled() const { return systems_->profiler().isEnabled(); }
+    Profiler& getProfiler();
+    const Profiler& getProfiler() const;
+    void setProfilingEnabled(bool enabled);
+    bool isProfilingEnabled() const;
 
     // Tree edit system access
-    TreeEditSystem& getTreeEditSystem() { return systems_->treeEdit(); }
-    const TreeEditSystem& getTreeEditSystem() const { return systems_->treeEdit(); }
-    bool isTreeEditMode() const { return systems_->treeEdit().isEnabled(); }
-    void setTreeEditMode(bool enabled) { systems_->treeEdit().setEnabled(enabled); }
-    void toggleTreeEditMode() { systems_->treeEdit().toggle(); }
+    TreeEditSystem& getTreeEditSystem();
+    const TreeEditSystem& getTreeEditSystem() const;
+    bool isTreeEditMode() const;
+    void setTreeEditMode(bool enabled);
+    void toggleTreeEditMode();
 
     // Resource access for billboard capture
     VkCommandPool getCommandPool() const { return commandPool.get(); }
-    DescriptorManager::Pool* getDescriptorPool() { return &*descriptorManagerPool; }
+    DescriptorManager::Pool* getDescriptorPool();
     std::string getShaderPath() const { return resourcePath + "/shaders"; }
 
     // Physics debug visualization
-    DebugLineSystem& getDebugLineSystem() { return systems_->debugLine(); }
-    const DebugLineSystem& getDebugLineSystem() const { return systems_->debugLine(); }
+    DebugLineSystem& getDebugLineSystem();
+    const DebugLineSystem& getDebugLineSystem() const;
     void setPhysicsDebugEnabled(bool enabled) { physicsDebugEnabled = enabled; }
     bool isPhysicsDebugEnabled() const { return physicsDebugEnabled; }
 #ifdef JPH_DEBUG_RENDERER
-    PhysicsDebugRenderer* getPhysicsDebugRenderer() { return systems_->physicsDebugRenderer(); }
-    const PhysicsDebugRenderer* getPhysicsDebugRenderer() const { return systems_->physicsDebugRenderer(); }
+    PhysicsDebugRenderer* getPhysicsDebugRenderer();
+    const PhysicsDebugRenderer* getPhysicsDebugRenderer() const;
 
     // Update physics debug visualization (call before render)
     void updatePhysicsDebug(PhysicsWorld& physics, const glm::vec3& cameraPos);

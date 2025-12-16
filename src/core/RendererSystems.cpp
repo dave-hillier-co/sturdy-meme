@@ -105,229 +105,23 @@ RendererSystems::~RendererSystems() {
     // No manual cleanup needed - this is the benefit of RAII
 }
 
-bool RendererSystems::init(const InitContext& initCtx,
-                            VkRenderPass swapchainRenderPass,
-                            VkFormat swapchainImageFormat,
-                            VkDescriptorSetLayout mainDescriptorSetLayout,
-                            VkFormat depthFormat,
-                            VkSampler depthSampler,
-                            const std::string& resourcePath) {
-    VkDevice device = initCtx.device;
-    VmaAllocator allocator = initCtx.allocator;
-    VkPhysicalDevice physicalDevice = initCtx.physicalDevice;
-    VkQueue graphicsQueue = initCtx.graphicsQueue;
-    uint32_t framesInFlight = initCtx.framesInFlight;
-
-    // ========================================================================
-    // Phase 1: Tier-1 systems (PostProcess, Bloom, Shadow, Terrain)
-    // ========================================================================
-
-    // Initialize post-processing systems
-    if (!RendererInit::initPostProcessing(*postProcessSystem_, *bloomSystem_, initCtx,
-                                          swapchainRenderPass, swapchainImageFormat)) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to initialize post-processing");
-        return false;
-    }
-
-    // Initialize skinned mesh rendering (GPU skinning for animated characters)
-    if (!skinnedMeshRenderer_->init(initCtx, postProcessSystem_->getHDRRenderPass())) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to initialize skinned mesh renderer");
-        return false;
-    }
-
-    // Initialize sky system
-    if (!skySystem_->init(initCtx, postProcessSystem_->getHDRRenderPass())) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to initialize sky system");
-        return false;
-    }
-
-    // Initialize global buffer manager for per-frame shared buffers
-    if (!globalBufferManager_->init(allocator, framesInFlight)) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to initialize GlobalBufferManager");
-        return false;
-    }
-
-    // Initialize light buffers with empty data
-    for (uint32_t i = 0; i < framesInFlight; i++) {
-        LightBuffer emptyBuffer{};
-        emptyBuffer.lightCount = glm::uvec4(0, 0, 0, 0);
-        globalBufferManager_->updateLightBuffer(i, emptyBuffer);
-    }
-
-    // Initialize shadow system
-    if (!shadowSystem_->init(initCtx, mainDescriptorSetLayout,
-                              skinnedMeshRenderer_->getDescriptorSetLayout())) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to initialize shadow system");
-        return false;
-    }
-
-    // Initialize terrain system
-    std::string heightmapPath = resourcePath + "/assets/terrain/isleofwight-0m-200m.png";
-
-    TerrainSystem::TerrainInitParams terrainParams{};
-    terrainParams.renderPass = postProcessSystem_->getHDRRenderPass();
-    terrainParams.shadowRenderPass = shadowSystem_->getShadowRenderPass();
-    terrainParams.shadowMapSize = shadowSystem_->getShadowMapSize();
-    terrainParams.texturePath = resourcePath + "/textures";
-
-    TerrainConfig terrainConfig{};
-    terrainConfig.size = 16384.0f;
-    terrainConfig.maxDepth = 20;
-    terrainConfig.minDepth = 5;
-    terrainConfig.targetEdgePixels = 16.0f;
-    terrainConfig.splitThreshold = 100.0f;
-    terrainConfig.mergeThreshold = 50.0f;
-    terrainConfig.heightmapPath = resourcePath + "/assets/terrain/isleofwight-0m-200m.png";
-    terrainConfig.minAltitude = -15.0f;
-    terrainConfig.maxAltitude = 220.0f;
-    terrainConfig.tileCacheDir = resourcePath + "/terrain_data";
-    terrainConfig.tileLoadRadius = 2000.0f;
-    terrainConfig.tileUnloadRadius = 3000.0f;
-
-    if (!terrainSystem_->init(initCtx, terrainParams, terrainConfig)) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to initialize terrain system");
-        return false;
-    }
-
-    // ========================================================================
-    // Collect CoreResources from Tier-1 for Tier-2+ systems
-    // ========================================================================
-    CoreResources core = getCoreResources(framesInFlight);
-
-    // ========================================================================
-    // Phase 2: Scene setup
-    // ========================================================================
-
-    SceneBuilder::InitInfo sceneInfo{};
-    sceneInfo.allocator = allocator;
-    sceneInfo.device = device;
-    sceneInfo.commandPool = initCtx.commandPool;
-    sceneInfo.graphicsQueue = graphicsQueue;
-    sceneInfo.physicalDevice = physicalDevice;
-    sceneInfo.resourcePath = resourcePath;
-    sceneInfo.getTerrainHeight = [this](float x, float z) {
-        return terrainSystem_->getHeightAt(x, z);
-    };
-
-    if (!sceneManager_->init(sceneInfo)) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to initialize scene manager");
-        return false;
-    }
-
-    // ========================================================================
-    // Phase 3: Tier-2 systems
-    // ========================================================================
-
-    // Snow subsystems
-    if (!RendererInit::initSnowSubsystems(*snowMaskSystem_, *volumetricSnowSystem_,
-                                          initCtx, core.hdr)) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to initialize snow subsystems");
-        return false;
-    }
-
-    // Grass and wind subsystems
-    if (!RendererInit::initGrassSubsystem(*grassSystem_, *windSystem_, *leafSystem_,
-                                          initCtx, core.hdr, core.shadow)) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to initialize grass subsystems");
-        return false;
-    }
-
-    // Rock system
-    if (!RendererInit::initRockSystem(*rockSystem_, initCtx, core.terrain)) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to initialize rock system");
-        return false;
-    }
-
-    // Weather and leaf subsystems
-    if (!RendererInit::initWeatherSubsystems(*weatherSystem_, *leafSystem_, initCtx, core.hdr)) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to initialize weather subsystems");
-        return false;
-    }
-
-    // Connect snow to environment settings
-    const EnvironmentSettings* envSettings = &windSystem_->getEnvironmentSettings();
-    snowMaskSystem_->setEnvironmentSettings(envSettings);
-    volumetricSnowSystem_->setEnvironmentSettings(envSettings);
-
-    // Atmosphere subsystems
-    if (!RendererInit::initAtmosphereSubsystems(*froxelSystem_, *atmosphereLUTSystem_,
-                                                 *cloudShadowSystem_, *postProcessSystem_,
-                                                 initCtx, core.shadow,
-                                                 globalBufferManager_->lightBuffers.buffers)) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to initialize atmosphere subsystems");
-        return false;
-    }
-
-    // Catmull-Clark subdivision
-    float suzanneX = 5.0f, suzanneZ = -5.0f;
-    glm::vec3 suzannePos(suzanneX, core.terrain.getHeightAt(suzanneX, suzanneZ) + 2.0f, suzanneZ);
-    if (!RendererInit::initCatmullClarkSystem(*catmullClarkSystem_, initCtx, core.hdr, suzannePos)) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to initialize Catmull-Clark system");
-        return false;
-    }
-
-    // Hi-Z occlusion culling (optional)
-    if (!hiZSystem_->init(initCtx, depthFormat)) {
-        SDL_Log("Warning: Hi-Z system initialization failed, occlusion culling disabled");
-        // Continue without Hi-Z - it's an optional optimization
-    } else {
-        hiZSystem_->setDepthBuffer(core.hdr.depthView, depthSampler);
-    }
-
-    // Profiler (optional)
-    if (!profiler_->init(device, physicalDevice, framesInFlight)) {
-        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "Profiler initialization failed - disabled");
-    }
-
-    // Water subsystems
-    WaterSubsystems waterSubs{*waterSystem_, *waterDisplacement_, *flowMapGenerator_,
-                              *foamBuffer_, *ssrSystem_, *waterTileCull_, *waterGBuffer_};
-    if (!RendererInit::initWaterSubsystems(waterSubs, initCtx, core.hdr.renderPass,
-                                            *shadowSystem_, *terrainSystem_, terrainConfig,
-                                            *postProcessSystem_, depthSampler)) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to initialize water subsystems");
-        return false;
-    }
-
-    // Tree edit system
-    if (!RendererInit::initTreeEditSystem(*treeEditSystem_, initCtx, core.hdr)) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to initialize tree edit system");
-        return false;
-    }
-
-    // Debug line system
-    if (!RendererInit::initDebugLineSystem(*debugLineSystem_, initCtx, core.hdr)) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to initialize debug line system");
-        return false;
-    }
-
-    // ========================================================================
-    // Phase 4: Wire up UBOBuilder
-    // ========================================================================
-    UBOBuilder::Systems uboSystems{};
-    uboSystems.timeSystem = timeSystem_.get();
-    uboSystems.celestialCalculator = celestialCalculator_.get();
-    uboSystems.shadowSystem = shadowSystem_.get();
-    uboSystems.windSystem = windSystem_.get();
-    uboSystems.atmosphereLUTSystem = atmosphereLUTSystem_.get();
-    uboSystems.froxelSystem = froxelSystem_.get();
-    uboSystems.sceneManager = sceneManager_.get();
-    uboSystems.snowMaskSystem = snowMaskSystem_.get();
-    uboSystems.volumetricSnowSystem = volumetricSnowSystem_.get();
-    uboSystems.cloudShadowSystem = cloudShadowSystem_.get();
-    uboSystems.environmentSettings = environmentSettings_.get();
-    uboBuilder_->setSystems(uboSystems);
-
-    initialized_ = true;
-    SDL_Log("RendererSystems initialized successfully");
-    return true;
+bool RendererSystems::init(const InitContext& /*initCtx*/,
+                            VkRenderPass /*swapchainRenderPass*/,
+                            VkFormat /*swapchainImageFormat*/,
+                            VkDescriptorSetLayout /*mainDescriptorSetLayout*/,
+                            VkFormat /*depthFormat*/,
+                            VkSampler /*depthSampler*/,
+                            const std::string& /*resourcePath*/) {
+    // NOTE: This centralized init is not currently used.
+    // Initialization is done via RendererInitPhases.cpp which calls each subsystem directly.
+    // This stub exists for potential future refactoring.
+    SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "RendererSystems::init() is not implemented - use RendererInitPhases instead");
+    return false;
 }
 
 void RendererSystems::destroy(VkDevice device, VmaAllocator allocator) {
-    if (!initialized_) {
-        return;
-    }
-
+    // Note: initialized_ flag is not used since initialization is done
+    // via RendererInitPhases.cpp, not RendererSystems::init()
     SDL_Log("RendererSystems::destroy starting");
 
     // Destroy in reverse dependency order
@@ -377,7 +171,6 @@ void RendererSystems::destroy(VkDevice device, VmaAllocator allocator) {
     bloomSystem_->destroy(device, allocator);
     postProcessSystem_->destroy(device, allocator);
 
-    initialized_ = false;
     SDL_Log("RendererSystems::destroy complete");
 }
 
@@ -387,11 +180,8 @@ CoreResources RendererSystems::getCoreResources(uint32_t framesInFlight) const {
 }
 
 #ifdef JPH_DEBUG_RENDERER
-void RendererSystems::createPhysicsDebugRenderer(const InitContext& ctx, VkRenderPass hdrRenderPass) {
+void RendererSystems::createPhysicsDebugRenderer(const InitContext& /*ctx*/, VkRenderPass /*hdrRenderPass*/) {
     physicsDebugRenderer_ = std::make_unique<PhysicsDebugRenderer>();
-    if (!physicsDebugRenderer_->init(ctx, hdrRenderPass)) {
-        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "Physics debug renderer init failed");
-        physicsDebugRenderer_.reset();
-    }
+    physicsDebugRenderer_->init();
 }
 #endif

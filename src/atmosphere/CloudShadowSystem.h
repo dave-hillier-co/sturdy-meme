@@ -8,6 +8,7 @@
 #include "DescriptorManager.h"
 #include "InitContext.h"
 #include "core/VulkanRAII.h"
+#include "BufferUtils.h"
 
 // Cloud Shadow System
 // Generates a world-space cloud shadow map by ray-marching through the cloud layer
@@ -120,9 +121,7 @@ private:
     std::vector<VkDescriptorSet> descriptorSets;
 
     // Uniform buffers (per frame)
-    std::vector<VkBuffer> uniformBuffers;
-    std::vector<VmaAllocation> uniformAllocations;
-    std::vector<void*> uniformMappedPtrs;
+    BufferUtils::PerFrameBufferSet uniformBuffers;
 
     // World to shadow UV matrix
     glm::mat4 worldToShadowUV = glm::mat4(1.0f);

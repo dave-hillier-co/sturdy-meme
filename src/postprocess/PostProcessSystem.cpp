@@ -634,8 +634,7 @@ bool PostProcessSystem::createHistogramResources() {
     VmaAllocationCreateInfo histogramAllocInfo{};
     histogramAllocInfo.usage = VMA_MEMORY_USAGE_GPU_ONLY;
 
-    if (vmaCreateBuffer(allocator, &histogramBufferInfo, &histogramAllocInfo,
-                        &histogramBuffer, &histogramAllocation, nullptr) != VK_SUCCESS) {
+    if (!ManagedBuffer::create(allocator, histogramBufferInfo, histogramAllocInfo, histogramBuffer)) {
         SDL_Log("Failed to create histogram buffer");
         return false;
     }
@@ -813,14 +812,14 @@ bool PostProcessSystem::createHistogramDescriptorSets() {
         // Build descriptor set
         DescriptorManager::SetWriter(device, histogramBuildDescSets[i])
             .writeStorageImage(0, hdrColorView)
-            .writeBuffer(1, histogramBuffer, 0, HISTOGRAM_BINS * sizeof(uint32_t),
+            .writeBuffer(1, histogramBuffer.get(), 0, HISTOGRAM_BINS * sizeof(uint32_t),
                          VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
             .writeBuffer(2, histogramParamsBuffers.buffers[i], 0, sizeof(HistogramParams))
             .update();
 
         // Reduce descriptor set
         DescriptorManager::SetWriter(device, histogramReduceDescSets[i])
-            .writeBuffer(0, histogramBuffer, 0, HISTOGRAM_BINS * sizeof(uint32_t),
+            .writeBuffer(0, histogramBuffer.get(), 0, HISTOGRAM_BINS * sizeof(uint32_t),
                          VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
             .writeBuffer(1, exposureBuffers.buffers[i], 0, sizeof(ExposureData),
                          VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
@@ -832,10 +831,7 @@ bool PostProcessSystem::createHistogramDescriptorSets() {
 }
 
 void PostProcessSystem::destroyHistogramResources() {
-    if (histogramBuffer != VK_NULL_HANDLE) {
-        vmaDestroyBuffer(allocator, histogramBuffer, histogramAllocation);
-        histogramBuffer = VK_NULL_HANDLE;
-    }
+    histogramBuffer.reset();
 
     BufferUtils::destroyBuffers(allocator, exposureBuffers);
     BufferUtils::destroyBuffers(allocator, histogramParamsBuffers);
@@ -899,7 +895,7 @@ void PostProcessSystem::recordHistogramCompute(VkCommandBuffer cmd, uint32_t fra
         VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT);
 
     // Clear histogram buffer
-    Barriers::clearBufferForComputeReadWrite(cmd, histogramBuffer, 0, HISTOGRAM_BINS * sizeof(uint32_t));
+    Barriers::clearBufferForComputeReadWrite(cmd, histogramBuffer.get(), 0, HISTOGRAM_BINS * sizeof(uint32_t));
 
     // Dispatch histogram build
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, histogramBuildPipeline);
@@ -924,7 +920,7 @@ void PostProcessSystem::recordHistogramCompute(VkCommandBuffer cmd, uint32_t fra
 void PostProcessSystem::barrierHistogramBuildToReduce(VkCommandBuffer cmd) {
     Barriers::BarrierBatch(cmd)
         .setStages(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT)
-        .bufferBarrier(histogramBuffer, VK_ACCESS_SHADER_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT,
+        .bufferBarrier(histogramBuffer.get(), VK_ACCESS_SHADER_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT,
                        0, HISTOGRAM_BINS * sizeof(uint32_t))
         .submit();
 }

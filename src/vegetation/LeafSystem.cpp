@@ -56,9 +56,7 @@ void LeafSystem::destroyBuffers(VmaAllocator alloc) {
     BufferUtils::destroyBuffers(alloc, indirectBuffers);
     BufferUtils::destroyBuffers(alloc, uniformBuffers);
 
-    for (size_t i = 0; i < getFramesInFlight(); i++) {
-        vmaDestroyBuffer(alloc, displacementRegionBuffers[i], displacementRegionAllocations[i]);
-    }
+    BufferUtils::destroyBuffers(alloc, displacementRegionBuffers);
 }
 
 bool LeafSystem::createBuffers() {
@@ -96,32 +94,17 @@ bool LeafSystem::createBuffers() {
     }
 
     // Create displacement region uniform buffers (per-frame)
-    displacementRegionBuffers.resize(getFramesInFlight());
-    displacementRegionAllocations.resize(getFramesInFlight());
-    displacementRegionMappedPtrs.resize(getFramesInFlight());
-
-    VkDeviceSize dispRegionBufferSize = sizeof(glm::vec4);  // regionCenterAndSize
-
-    for (size_t i = 0; i < getFramesInFlight(); i++) {
-        VkBufferCreateInfo dispRegionBufferInfo{};
-        dispRegionBufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-        dispRegionBufferInfo.size = dispRegionBufferSize;
-        dispRegionBufferInfo.usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
-        dispRegionBufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-
-        VmaAllocationCreateInfo dispRegionAllocInfo{};
-        dispRegionAllocInfo.usage = VMA_MEMORY_USAGE_AUTO;
-        dispRegionAllocInfo.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
-                                   VMA_ALLOCATION_CREATE_MAPPED_BIT;
-
-        VmaAllocationInfo dispRegionAllocResult;
-        if (vmaCreateBuffer(getAllocator(), &dispRegionBufferInfo, &dispRegionAllocInfo,
-                           &displacementRegionBuffers[i], &displacementRegionAllocations[i],
-                           &dispRegionAllocResult) != VK_SUCCESS) {
-            SDL_Log("Failed to create leaf displacement region buffer");
-            return false;
-        }
-        displacementRegionMappedPtrs[i] = dispRegionAllocResult.pMappedData;
+    if (!BufferUtils::PerFrameBufferBuilder()
+            .setAllocator(getAllocator())
+            .setFrameCount(getFramesInFlight())
+            .setSize(sizeof(glm::vec4))  // regionCenterAndSize
+            .setUsage(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT)
+            .setMemoryUsage(VMA_MEMORY_USAGE_AUTO)
+            .setAllocationFlags(VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
+                               VMA_ALLOCATION_CREATE_MAPPED_BIT)
+            .build(displacementRegionBuffers)) {
+        SDL_Log("Failed to create leaf displacement region buffers");
+        return false;
     }
 
     return true;
@@ -403,7 +386,7 @@ void LeafSystem::updateDescriptorSets(VkDevice dev, const std::vector<VkBuffer>&
             .writeBuffer(4, windBuffers[0], 0, 32)  // sizeof(WindUniforms)
             .writeImage(5, terrainHeightMapView, terrainHeightMapSampler)
             .writeImage(6, displacementMapViewParam, displacementMapSamplerParam)
-            .writeBuffer(7, displacementRegionBuffers[0], 0, sizeof(glm::vec4))
+            .writeBuffer(7, displacementRegionBuffers.buffers[0], 0, sizeof(glm::vec4))
             .update();
 
         // Graphics descriptor set
@@ -483,7 +466,7 @@ void LeafSystem::updateUniforms(uint32_t frameIndex, const glm::vec3& cameraPos,
     // Update displacement region uniform buffer
     glm::vec4 dispRegionData(displacementRegionCenter.x, displacementRegionCenter.y,
                              DISPLACEMENT_REGION_SIZE, 0.0f);
-    memcpy(displacementRegionMappedPtrs[frameIndex], &dispRegionData, sizeof(glm::vec4));
+    memcpy(displacementRegionBuffers.mappedPointers[frameIndex], &dispRegionData, sizeof(glm::vec4));
 
     // Reset confetti spawn count after it's been sent to GPU
     confettiToSpawn = 0.0f;
@@ -495,7 +478,7 @@ void LeafSystem::recordResetAndCompute(VkCommandBuffer cmd, uint32_t frameIndex,
     // Update compute descriptor set to use this frame's uniform and displacement region buffers
     DescriptorManager::SetWriter(getDevice(), (*particleSystem)->getComputeDescriptorSet(writeSet))
         .writeBuffer(3, uniformBuffers.buffers[frameIndex], 0, sizeof(LeafUniforms))
-        .writeBuffer(7, displacementRegionBuffers[frameIndex], 0, sizeof(glm::vec4))
+        .writeBuffer(7, displacementRegionBuffers.buffers[frameIndex], 0, sizeof(glm::vec4))
         .update();
 
     // Reset indirect buffer before compute dispatch

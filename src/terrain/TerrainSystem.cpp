@@ -373,168 +373,74 @@ void TerrainSystem::updateDescriptorSets(VkDevice device,
                                           const std::vector<VkBuffer>& snowUBOBuffers,
                                           const std::vector<VkBuffer>& cloudShadowUBOBuffers) {
     for (uint32_t i = 0; i < framesInFlight; i++) {
-        std::vector<VkWriteDescriptorSet> writes;
+        auto writer = DescriptorManager::SetWriter(device, renderDescriptorSets[i]);
 
-        // CBT buffer
-        VkDescriptorBufferInfo cbtInfo{(*cbt)->getBuffer(), 0, (*cbt)->getBufferSize()};
-        VkWriteDescriptorSet cbtWrite{};
-        cbtWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        cbtWrite.dstSet = renderDescriptorSets[i];
-        cbtWrite.dstBinding = 0;
-        cbtWrite.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-        cbtWrite.descriptorCount = 1;
-        cbtWrite.pBufferInfo = &cbtInfo;
-        writes.push_back(cbtWrite);
+        // CBT buffer (binding 0)
+        writer.writeBuffer(0, (*cbt)->getBuffer(), 0, (*cbt)->getBufferSize(),
+                          VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
 
-        // Height map
-        VkDescriptorImageInfo heightMapInfo{(*heightMap)->getSampler(), (*heightMap)->getView(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
-        VkWriteDescriptorSet heightMapWrite{};
-        heightMapWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        heightMapWrite.dstSet = renderDescriptorSets[i];
-        heightMapWrite.dstBinding = 3;
-        heightMapWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        heightMapWrite.descriptorCount = 1;
-        heightMapWrite.pImageInfo = &heightMapInfo;
-        writes.push_back(heightMapWrite);
+        // Height map (binding 3)
+        writer.writeImage(3, (*heightMap)->getView(), (*heightMap)->getSampler(),
+                         VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
 
-        // Terrain uniforms
-        VkDescriptorBufferInfo uniformInfo{(*buffers)->getUniformBuffer(i), 0, sizeof(TerrainUniforms)};
-        VkWriteDescriptorSet uniformWrite{};
-        uniformWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        uniformWrite.dstSet = renderDescriptorSets[i];
-        uniformWrite.dstBinding = 4;
-        uniformWrite.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-        uniformWrite.descriptorCount = 1;
-        uniformWrite.pBufferInfo = &uniformInfo;
-        writes.push_back(uniformWrite);
+        // Terrain uniforms (binding 4)
+        writer.writeBuffer(4, (*buffers)->getUniformBuffer(i), 0, sizeof(TerrainUniforms));
 
-        // Scene UBO
+        // Scene UBO (binding 5)
         if (i < sceneUniformBuffers.size()) {
-            VkDescriptorBufferInfo sceneInfo{sceneUniformBuffers[i], 0, VK_WHOLE_SIZE};
-            VkWriteDescriptorSet sceneWrite{};
-            sceneWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-            sceneWrite.dstSet = renderDescriptorSets[i];
-            sceneWrite.dstBinding = 5;
-            sceneWrite.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-            sceneWrite.descriptorCount = 1;
-            sceneWrite.pBufferInfo = &sceneInfo;
-            writes.push_back(sceneWrite);
+            writer.writeBuffer(5, sceneUniformBuffers[i], 0, VK_WHOLE_SIZE);
         }
 
-        // Terrain albedo
-        VkDescriptorImageInfo albedoInfo{(*textures)->getAlbedoSampler(), (*textures)->getAlbedoView(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
-        VkWriteDescriptorSet albedoWrite{};
-        albedoWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        albedoWrite.dstSet = renderDescriptorSets[i];
-        albedoWrite.dstBinding = 6;
-        albedoWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        albedoWrite.descriptorCount = 1;
-        albedoWrite.pImageInfo = &albedoInfo;
-        writes.push_back(albedoWrite);
+        // Terrain albedo (binding 6)
+        writer.writeImage(6, (*textures)->getAlbedoView(), (*textures)->getAlbedoSampler(),
+                         VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
 
-        // Shadow map
+        // Shadow map (binding 7)
         if (shadowMapView != VK_NULL_HANDLE) {
-            VkDescriptorImageInfo shadowInfo{shadowSampler, shadowMapView, VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL};
-            VkWriteDescriptorSet shadowWrite{};
-            shadowWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-            shadowWrite.dstSet = renderDescriptorSets[i];
-            shadowWrite.dstBinding = 7;
-            shadowWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-            shadowWrite.descriptorCount = 1;
-            shadowWrite.pImageInfo = &shadowInfo;
-            writes.push_back(shadowWrite);
+            writer.writeImage(7, shadowMapView, shadowSampler,
+                             VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL);
         }
 
-        // Grass far LOD texture
+        // Grass far LOD texture (binding 8)
         if ((*textures)->getGrassFarLODView() != VK_NULL_HANDLE) {
-            VkDescriptorImageInfo grassFarLODInfo{(*textures)->getGrassFarLODSampler(), (*textures)->getGrassFarLODView(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
-            VkWriteDescriptorSet grassFarLODWrite{};
-            grassFarLODWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-            grassFarLODWrite.dstSet = renderDescriptorSets[i];
-            grassFarLODWrite.dstBinding = 8;
-            grassFarLODWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-            grassFarLODWrite.descriptorCount = 1;
-            grassFarLODWrite.pImageInfo = &grassFarLODInfo;
-            writes.push_back(grassFarLODWrite);
+            writer.writeImage(8, (*textures)->getGrassFarLODView(), (*textures)->getGrassFarLODSampler(),
+                             VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
         }
 
-        // Shadow visible indices (for shadow culled vertex shaders)
+        // Shadow visible indices (binding 14)
         if ((*buffers)->getShadowVisibleBuffer() != VK_NULL_HANDLE) {
-            VkDescriptorBufferInfo shadowVisibleInfo{(*buffers)->getShadowVisibleBuffer(), 0, sizeof(uint32_t) * (1 + MAX_VISIBLE_TRIANGLES)};
-            VkWriteDescriptorSet shadowVisibleWrite{};
-            shadowVisibleWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-            shadowVisibleWrite.dstSet = renderDescriptorSets[i];
-            shadowVisibleWrite.dstBinding = 14;
-            shadowVisibleWrite.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-            shadowVisibleWrite.descriptorCount = 1;
-            shadowVisibleWrite.pBufferInfo = &shadowVisibleInfo;
-            writes.push_back(shadowVisibleWrite);
+            writer.writeBuffer(14, (*buffers)->getShadowVisibleBuffer(), 0,
+                              sizeof(uint32_t) * (1 + MAX_VISIBLE_TRIANGLES),
+                              VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
         }
 
-        // Hole mask (for cave/well rendering)
-        VkDescriptorImageInfo holeMaskInfo{(*heightMap)->getHoleMaskSampler(), (*heightMap)->getHoleMaskView(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
-        VkWriteDescriptorSet holeMaskWrite{};
-        holeMaskWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        holeMaskWrite.dstSet = renderDescriptorSets[i];
-        holeMaskWrite.dstBinding = 16;  // BINDING_TERRAIN_HOLE_MASK
-        holeMaskWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        holeMaskWrite.descriptorCount = 1;
-        holeMaskWrite.pImageInfo = &holeMaskInfo;
-        writes.push_back(holeMaskWrite);
+        // Hole mask (binding 16)
+        writer.writeImage(16, (*heightMap)->getHoleMaskView(), (*heightMap)->getHoleMaskSampler(),
+                         VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
 
         // Snow UBO (binding 17)
         if (i < snowUBOBuffers.size() && snowUBOBuffers[i] != VK_NULL_HANDLE) {
-            VkDescriptorBufferInfo snowUBOInfo{snowUBOBuffers[i], 0, sizeof(SnowUBO)};
-            VkWriteDescriptorSet snowUBOWrite{};
-            snowUBOWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-            snowUBOWrite.dstSet = renderDescriptorSets[i];
-            snowUBOWrite.dstBinding = 17;  // BINDING_TERRAIN_SNOW_UBO
-            snowUBOWrite.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-            snowUBOWrite.descriptorCount = 1;
-            snowUBOWrite.pBufferInfo = &snowUBOInfo;
-            writes.push_back(snowUBOWrite);
+            writer.writeBuffer(17, snowUBOBuffers[i], 0, sizeof(SnowUBO));
         }
 
         // Cloud shadow UBO (binding 18)
         if (i < cloudShadowUBOBuffers.size() && cloudShadowUBOBuffers[i] != VK_NULL_HANDLE) {
-            VkDescriptorBufferInfo cloudShadowUBOInfo{cloudShadowUBOBuffers[i], 0, sizeof(CloudShadowUBO)};
-            VkWriteDescriptorSet cloudShadowUBOWrite{};
-            cloudShadowUBOWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-            cloudShadowUBOWrite.dstSet = renderDescriptorSets[i];
-            cloudShadowUBOWrite.dstBinding = 18;  // BINDING_TERRAIN_CLOUD_SHADOW_UBO
-            cloudShadowUBOWrite.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-            cloudShadowUBOWrite.descriptorCount = 1;
-            cloudShadowUBOWrite.pBufferInfo = &cloudShadowUBOInfo;
-            writes.push_back(cloudShadowUBOWrite);
+            writer.writeBuffer(18, cloudShadowUBOBuffers[i], 0, sizeof(CloudShadowUBO));
         }
 
         // LOD tile array texture (binding 19)
         if (tileCache && (*tileCache)->getTileArrayView() != VK_NULL_HANDLE) {
-            VkDescriptorImageInfo tileArrayInfo{(*tileCache)->getSampler(), (*tileCache)->getTileArrayView(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
-            VkWriteDescriptorSet tileArrayWrite{};
-            tileArrayWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-            tileArrayWrite.dstSet = renderDescriptorSets[i];
-            tileArrayWrite.dstBinding = 19;  // BINDING_TERRAIN_TILE_ARRAY
-            tileArrayWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-            tileArrayWrite.descriptorCount = 1;
-            tileArrayWrite.pImageInfo = &tileArrayInfo;
-            writes.push_back(tileArrayWrite);
+            writer.writeImage(19, (*tileCache)->getTileArrayView(), (*tileCache)->getSampler(),
+                             VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
         }
 
         // LOD tile info buffer (binding 20)
         if (tileCache && (*tileCache)->getTileInfoBuffer() != VK_NULL_HANDLE) {
-            VkDescriptorBufferInfo tileInfoBufInfo{(*tileCache)->getTileInfoBuffer(), 0, VK_WHOLE_SIZE};
-            VkWriteDescriptorSet tileInfoWrite{};
-            tileInfoWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-            tileInfoWrite.dstSet = renderDescriptorSets[i];
-            tileInfoWrite.dstBinding = 20;  // BINDING_TERRAIN_TILE_INFO
-            tileInfoWrite.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-            tileInfoWrite.descriptorCount = 1;
-            tileInfoWrite.pBufferInfo = &tileInfoBufInfo;
-            writes.push_back(tileInfoWrite);
+            writer.writeBuffer(20, (*tileCache)->getTileInfoBuffer(), 0, VK_WHOLE_SIZE,
+                              VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
         }
 
-        vkUpdateDescriptorSets(device, static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
+        writer.update();
     }
 }
 

@@ -12,6 +12,7 @@
 #include "MaterialDescriptorFactory.h"
 #include "RenderableBuilder.h"
 #include "GlobalBufferManager.h"
+#include "BufferUtils.h"
 
 class AnimatedCharacter;
 
@@ -102,7 +103,5 @@ private:
     VkPipeline pipeline = VK_NULL_HANDLE;
 
     std::vector<VkDescriptorSet> descriptorSets;
-    std::vector<VkBuffer> boneMatricesBuffers;
-    std::vector<VmaAllocation> boneMatricesAllocations;
-    std::vector<void*> boneMatricesMapped;
+    BufferUtils::PerFrameBufferSet boneMatricesBuffers;
 };

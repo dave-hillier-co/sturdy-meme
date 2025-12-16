@@ -54,14 +54,7 @@ void CloudShadowSystem::destroy() {
     pipelineLayout = ManagedPipelineLayout();
     descriptorSetLayout = ManagedDescriptorSetLayout();
 
-    for (size_t i = 0; i < uniformBuffers.size(); i++) {
-        if (uniformBuffers[i] != VK_NULL_HANDLE) {
-            vmaDestroyBuffer(allocator, uniformBuffers[i], uniformAllocations[i]);
-        }
-    }
-    uniformBuffers.clear();
-    uniformAllocations.clear();
-    uniformMappedPtrs.clear();
+    BufferUtils::destroyBuffers(allocator, uniformBuffers);
 
     shadowMapSampler.reset();
     if (shadowMapView != VK_NULL_HANDLE) {
@@ -129,28 +122,16 @@ bool CloudShadowSystem::createSampler() {
 }
 
 bool CloudShadowSystem::createUniformBuffers() {
-    uniformBuffers.resize(framesInFlight);
-    uniformAllocations.resize(framesInFlight);
-    uniformMappedPtrs.resize(framesInFlight);
-
-    VkBufferCreateInfo bufferInfo{};
-    bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-    bufferInfo.size = sizeof(CloudShadowUniforms);
-    bufferInfo.usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
-    bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-
-    VmaAllocationCreateInfo allocInfo{};
-    allocInfo.usage = VMA_MEMORY_USAGE_CPU_TO_GPU;
-    allocInfo.flags = VMA_ALLOCATION_CREATE_MAPPED_BIT;
-
-    for (uint32_t i = 0; i < framesInFlight; i++) {
-        VmaAllocationInfo allocationInfo;
-        if (vmaCreateBuffer(allocator, &bufferInfo, &allocInfo,
-                           &uniformBuffers[i], &uniformAllocations[i], &allocationInfo) != VK_SUCCESS) {
-            SDL_Log("Failed to create cloud shadow uniform buffer");
-            return false;
-        }
-        uniformMappedPtrs[i] = allocationInfo.pMappedData;
+    if (!BufferUtils::PerFrameBufferBuilder()
+            .setAllocator(allocator)
+            .setFrameCount(framesInFlight)
+            .setSize(sizeof(CloudShadowUniforms))
+            .setUsage(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT)
+            .setMemoryUsage(VMA_MEMORY_USAGE_CPU_TO_GPU)
+            .setAllocationFlags(VMA_ALLOCATION_CREATE_MAPPED_BIT)
+            .build(uniformBuffers)) {
+        SDL_Log("Failed to create cloud shadow uniform buffers");
+        return false;
     }
 
     return true;
@@ -187,7 +168,7 @@ bool CloudShadowSystem::createDescriptorSets() {
         DescriptorManager::SetWriter(device, descriptorSets[i])
             .writeStorageImage(0, shadowMapView)
             .writeImage(1, cloudMapLUTView, cloudMapLUTSampler)
-            .writeBuffer(2, uniformBuffers[i], 0, sizeof(CloudShadowUniforms))
+            .writeBuffer(2, uniformBuffers.buffers[i], 0, sizeof(CloudShadowUniforms))
             .update();
     }
 
@@ -307,7 +288,7 @@ void CloudShadowSystem::recordUpdate(VkCommandBuffer cmd, uint32_t frameIndex,
     uniforms.shadowBias = 0.001f;
     uniforms.padding = 0.0f;
 
-    memcpy(uniformMappedPtrs[frameIndex], &uniforms, sizeof(uniforms));
+    memcpy(uniformBuffers.mappedPointers[frameIndex], &uniforms, sizeof(uniforms));
 
     // Transition shadow map to general layout for compute write
     Barriers::transitionImage(cmd, shadowMap,

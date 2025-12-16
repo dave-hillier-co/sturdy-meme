@@ -40,14 +40,7 @@ void SkinnedMeshRenderer::destroy() {
         descriptorSetLayout = VK_NULL_HANDLE;
     }
 
-    for (size_t i = 0; i < boneMatricesBuffers.size(); ++i) {
-        if (boneMatricesBuffers[i] != VK_NULL_HANDLE) {
-            vmaDestroyBuffer(allocator, boneMatricesBuffers[i], boneMatricesAllocations[i]);
-        }
-    }
-    boneMatricesBuffers.clear();
-    boneMatricesAllocations.clear();
-    boneMatricesMapped.clear();
+    BufferUtils::destroyBuffers(allocator, boneMatricesBuffers);
 
     // Descriptor sets are freed when the pool is destroyed
     descriptorSets.clear();
@@ -117,34 +110,22 @@ bool SkinnedMeshRenderer::createPipeline() {
 }
 
 bool SkinnedMeshRenderer::createBoneMatricesBuffers() {
-    VkDeviceSize bufferSize = sizeof(BoneMatricesUBO);
+    if (!BufferUtils::PerFrameBufferBuilder()
+            .setAllocator(allocator)
+            .setFrameCount(framesInFlight)
+            .setSize(sizeof(BoneMatricesUBO))
+            .setUsage(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT)
+            .setMemoryUsage(VMA_MEMORY_USAGE_AUTO)
+            .setAllocationFlags(VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
+                               VMA_ALLOCATION_CREATE_MAPPED_BIT)
+            .build(boneMatricesBuffers)) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create bone matrices buffers");
+        return false;
+    }
 
-    boneMatricesBuffers.resize(framesInFlight);
-    boneMatricesAllocations.resize(framesInFlight);
-    boneMatricesMapped.resize(framesInFlight);
-
+    // Initialize with identity matrices
     for (size_t i = 0; i < framesInFlight; i++) {
-        VkBufferCreateInfo bufferInfo{};
-        bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-        bufferInfo.size = bufferSize;
-        bufferInfo.usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
-        bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-
-        VmaAllocationCreateInfo allocInfo{};
-        allocInfo.usage = VMA_MEMORY_USAGE_AUTO;
-        allocInfo.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT;
-
-        VmaAllocationInfo allocationInfo;
-        if (vmaCreateBuffer(allocator, &bufferInfo, &allocInfo, &boneMatricesBuffers[i],
-                            &boneMatricesAllocations[i], &allocationInfo) != VK_SUCCESS) {
-            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create bone matrices buffer");
-            return false;
-        }
-
-        boneMatricesMapped[i] = allocationInfo.pMappedData;
-
-        // Initialize with identity matrices
-        BoneMatricesUBO* ubo = static_cast<BoneMatricesUBO*>(boneMatricesMapped[i]);
+        BoneMatricesUBO* ubo = static_cast<BoneMatricesUBO*>(boneMatricesBuffers.mappedPointers[i]);
         for (uint32_t j = 0; j < MAX_BONES; j++) {
             ubo->bones[j] = glm::mat4(1.0f);
         }
@@ -192,7 +173,7 @@ bool SkinnedMeshRenderer::createDescriptorSets(const DescriptorResources& resour
         common.cloudShadowUboBuffer = gbm.cloudShadowBuffers.buffers[i];
         common.cloudShadowUboBufferSize = sizeof(CloudShadowUBO);
         // Bone matrices
-        common.boneMatricesBuffer = boneMatricesBuffers[i];
+        common.boneMatricesBuffer = boneMatricesBuffers.buffers[i];
         common.boneMatricesBufferSize = sizeof(BoneMatricesUBO);
         // Placeholder texture for unused PBR bindings
         common.placeholderTextureView = resources.whiteTextureView;
@@ -218,7 +199,7 @@ void SkinnedMeshRenderer::updateCloudShadowBinding(VkImageView cloudShadowView, 
 }
 
 void SkinnedMeshRenderer::updateBoneMatrices(uint32_t frameIndex, AnimatedCharacter* character) {
-    BoneMatricesUBO* ubo = static_cast<BoneMatricesUBO*>(boneMatricesMapped[frameIndex]);
+    BoneMatricesUBO* ubo = static_cast<BoneMatricesUBO*>(boneMatricesBuffers.mappedPointers[frameIndex]);
 
     if (!character) {
         // Ensure identity matrices when no character to prevent garbage data

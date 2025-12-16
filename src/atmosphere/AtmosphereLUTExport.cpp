@@ -1,5 +1,6 @@
 #include "AtmosphereLUTSystem.h"
 #include "VulkanBarriers.h"
+#include "VulkanRAII.h"
 #include <SDL3/SDL_log.h>
 #include <vector>
 
@@ -27,9 +28,6 @@ bool AtmosphereLUTSystem::exportImageToPNG(VkImage image, VkFormat format, uint3
     // Create staging buffer with correct size based on actual format
     VkDeviceSize imageSize = width * height * channelCount * sizeof(uint16_t);
 
-    VkBuffer stagingBuffer;
-    VmaAllocation stagingAllocation;
-
     VkBufferCreateInfo bufferInfo{};
     bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
     bufferInfo.size = imageSize;
@@ -39,7 +37,8 @@ bool AtmosphereLUTSystem::exportImageToPNG(VkImage image, VkFormat format, uint3
     VmaAllocationCreateInfo allocInfo{};
     allocInfo.usage = VMA_MEMORY_USAGE_GPU_TO_CPU;
 
-    if (vmaCreateBuffer(allocator, &bufferInfo, &allocInfo, &stagingBuffer, &stagingAllocation, nullptr) != VK_SUCCESS) {
+    ManagedBuffer stagingBuffer;
+    if (!ManagedBuffer::create(allocator, bufferInfo, allocInfo, stagingBuffer)) {
         SDL_Log("Failed to create staging buffer for PNG export");
         return false;
     }
@@ -86,7 +85,7 @@ bool AtmosphereLUTSystem::exportImageToPNG(VkImage image, VkFormat format, uint3
     region.imageOffset = {0, 0, 0};
     region.imageExtent = {width, height, 1};
 
-    vkCmdCopyImageToBuffer(commandBuffer, image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, stagingBuffer, 1, &region);
+    vkCmdCopyImageToBuffer(commandBuffer, image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, stagingBuffer.get(), 1, &region);
 
     // Transition back
     Barriers::transitionImage(commandBuffer, image,
@@ -142,8 +141,12 @@ bool AtmosphereLUTSystem::exportImageToPNG(VkImage image, VkFormat format, uint3
     };
 
     // Map and convert to 8-bit RGBA for PNG
-    void* data;
-    vmaMapMemory(allocator, stagingAllocation, &data);
+    void* data = stagingBuffer.map();
+    if (!data) {
+        SDL_Log("Failed to map staging buffer for PNG export");
+        vkDestroyCommandPool(device, commandPool, nullptr);
+        return false;
+    }
 
     std::vector<uint8_t> rgba8(width * height * 4);
     uint16_t* src = static_cast<uint16_t*>(data);
@@ -181,13 +184,12 @@ bool AtmosphereLUTSystem::exportImageToPNG(VkImage image, VkFormat format, uint3
         }
     }
 
-    vmaUnmapMemory(allocator, stagingAllocation);
+    stagingBuffer.unmap();
 
     // Write PNG
     int result = stbi_write_png(filename.c_str(), width, height, 4, rgba8.data(), width * 4);
 
-    // Cleanup
-    vmaDestroyBuffer(allocator, stagingBuffer, stagingAllocation);
+    // Cleanup - ManagedBuffer auto-destroys, just need to clean up command pool
     vkDestroyCommandPool(device, commandPool, nullptr);
 
     if (result == 0) {

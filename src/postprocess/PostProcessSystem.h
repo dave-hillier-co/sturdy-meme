@@ -228,8 +228,7 @@ private:
     static constexpr uint32_t HISTOGRAM_BINS = 256;
 
     // Histogram-based exposure resources
-    VkBuffer histogramBuffer = VK_NULL_HANDLE;
-    VmaAllocation histogramAllocation = VK_NULL_HANDLE;
+    ManagedBuffer histogramBuffer;
 
     BufferUtils::PerFrameBufferSet exposureBuffers;  // Per-frame exposure output
 

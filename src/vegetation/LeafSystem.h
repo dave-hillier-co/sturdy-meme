@@ -158,9 +158,7 @@ private:
     VkSampler displacementMapSampler = VK_NULL_HANDLE;
 
     // Displacement region uniform buffer (per-frame)
-    std::vector<VkBuffer> displacementRegionBuffers;
-    std::vector<VmaAllocation> displacementRegionAllocations;
-    std::vector<void*> displacementRegionMappedPtrs;
+    BufferUtils::PerFrameBufferSet displacementRegionBuffers;
 
     // Displacement region center (updated from camera position)
     glm::vec2 displacementRegionCenter = glm::vec2(0.0f);

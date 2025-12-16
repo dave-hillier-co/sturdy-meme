@@ -135,9 +135,9 @@ bool TerrainMeshlet::init(const InitInfo& info) {
     indexCount = static_cast<uint32_t>(indices.size());
     triangleCount = indexCount / 3;
 
-    // Create vertex buffer (vertex + storage for compute access)
+    // Create vertex buffer (vertex + storage for compute access, host-writable for upload)
     VkDeviceSize vertexBufferSize = vertices.size() * sizeof(glm::vec2);
-    if (!VulkanResourceFactory::createVertexStorageBuffer(info.allocator, vertexBufferSize, vertexBuffer_)) {
+    if (!VulkanResourceFactory::createVertexStorageBufferHostWritable(info.allocator, vertexBufferSize, vertexBuffer_)) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create meshlet vertex buffer");
         return false;
     }

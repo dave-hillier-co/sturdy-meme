@@ -694,6 +694,23 @@ bool VulkanResourceFactory::createVertexStorageBuffer(VmaAllocator allocator, Vk
     return ManagedBuffer::create(allocator, bufferInfo, allocInfo, outBuffer);
 }
 
+bool VulkanResourceFactory::createVertexStorageBufferHostWritable(VmaAllocator allocator, VkDeviceSize size, ManagedBuffer& outBuffer) {
+    VkBufferCreateInfo bufferInfo{};
+    bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+    bufferInfo.size = size;
+    bufferInfo.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT |
+                      VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
+                      VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+    bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+    VmaAllocationCreateInfo allocInfo{};
+    allocInfo.usage = VMA_MEMORY_USAGE_AUTO;
+    allocInfo.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
+                      VMA_ALLOCATION_CREATE_MAPPED_BIT;
+
+    return ManagedBuffer::create(allocator, bufferInfo, allocInfo, outBuffer);
+}
+
 bool VulkanResourceFactory::createIndexBufferHostWritable(VmaAllocator allocator, VkDeviceSize size, ManagedBuffer& outBuffer) {
     VkBufferCreateInfo bufferInfo{};
     bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;

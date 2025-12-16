@@ -56,15 +56,21 @@ inline UniqueVmaImage makeUniqueVmaImage(VmaAllocator allocator, VkImage image, 
 // ============================================================================
 // VMA buffers require both allocator and allocation for destruction.
 // This deleter stores the allocation alongside the allocator.
+// Also tracks mapped state to auto-unmap before destruction.
 
 struct VmaBufferDeleter {
     VmaAllocator allocator = VK_NULL_HANDLE;
     VmaAllocation allocation = VK_NULL_HANDLE;
+    mutable bool mapped = false;  // Track if buffer is currently mapped
 
     using pointer = VkBuffer;  // Required for unique_ptr with non-pointer types
 
     void operator()(VkBuffer buffer) const noexcept {
         if (buffer != VK_NULL_HANDLE && allocator != VK_NULL_HANDLE) {
+            // Auto-unmap if still mapped to avoid VMA assertion
+            if (mapped && allocation != VK_NULL_HANDLE) {
+                vmaUnmapMemory(allocator, allocation);
+            }
             vmaDestroyBuffer(allocator, buffer, allocation);
         }
     }
@@ -296,6 +302,8 @@ public:
         if (vmaMapMemory(alloc, allocation, &data) != VK_SUCCESS) {
             return nullptr;
         }
+        // Track mapped state in deleter for auto-unmap on destruction
+        get_deleter().mapped = true;
         return data;
     }
 
@@ -304,6 +312,7 @@ public:
         VmaAllocation allocation = getAllocation();
         if (alloc != VK_NULL_HANDLE && allocation != VK_NULL_HANDLE) {
             vmaUnmapMemory(alloc, allocation);
+            get_deleter().mapped = false;
         }
     }
 

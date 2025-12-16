@@ -255,6 +255,11 @@ public:
     static bool createVertexStorageBuffer(VmaAllocator allocator, VkDeviceSize size, ManagedBuffer& outBuffer);
 
     /**
+     * Create a vertex+storage buffer with host write access (for CPU->GPU uploads with compute access)
+     */
+    static bool createVertexStorageBufferHostWritable(VmaAllocator allocator, VkDeviceSize size, ManagedBuffer& outBuffer);
+
+    /**
      * Create an index buffer with host write access (for CPU->GPU uploads)
      */
     static bool createIndexBufferHostWritable(VmaAllocator allocator, VkDeviceSize size, ManagedBuffer& outBuffer);

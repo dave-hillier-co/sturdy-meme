@@ -1,5 +1,6 @@
 #include "VirtualTextureCache.h"
 #include "VulkanBarriers.h"
+#include "VulkanResourceFactory.h"
 #include <SDL3/SDL_log.h>
 #include <algorithm>
 #include <cstring>
@@ -164,7 +165,7 @@ bool VirtualTextureCache::createCacheTexture(VkDevice device, VmaAllocator alloc
 }
 
 bool VirtualTextureCache::createSampler(VkDevice device) {
-    return ManagedSampler::createLinearClamp(device, cacheSampler);
+    return VulkanResourceFactory::createSamplerLinearClamp(device, cacheSampler);
 }
 
 CacheSlot* VirtualTextureCache::allocateSlot(TileId id, uint32_t currentFrame) {

@@ -204,4 +204,67 @@ public:
         const std::vector<VkImageView>& depthImageViews,
         VkExtent2D extent,
         std::vector<VkFramebuffer>& outFramebuffers);
+
+    // ========================================================================
+    // Buffer Factories
+    // ========================================================================
+
+    /**
+     * Create a staging buffer (host-visible, for CPU->GPU transfers)
+     */
+    static bool createStagingBuffer(VmaAllocator allocator, VkDeviceSize size, ManagedBuffer& outBuffer);
+
+    /**
+     * Create a vertex buffer (device-local)
+     */
+    static bool createVertexBuffer(VmaAllocator allocator, VkDeviceSize size, ManagedBuffer& outBuffer);
+
+    /**
+     * Create an index buffer (device-local)
+     */
+    static bool createIndexBuffer(VmaAllocator allocator, VkDeviceSize size, ManagedBuffer& outBuffer);
+
+    /**
+     * Create a uniform buffer (host-visible, mapped for CPU updates)
+     */
+    static bool createUniformBuffer(VmaAllocator allocator, VkDeviceSize size, ManagedBuffer& outBuffer);
+
+    /**
+     * Create a storage buffer (device-local, GPU-only)
+     */
+    static bool createStorageBuffer(VmaAllocator allocator, VkDeviceSize size, ManagedBuffer& outBuffer);
+
+    /**
+     * Create a storage buffer with host read access (for GPU->CPU readback)
+     */
+    static bool createStorageBufferHostReadable(VmaAllocator allocator, VkDeviceSize size, ManagedBuffer& outBuffer);
+
+    // ========================================================================
+    // Sampler Factories
+    // ========================================================================
+
+    /**
+     * Create nearest-filtering sampler with clamp-to-edge (depth/integer textures)
+     */
+    static bool createSamplerNearestClamp(VkDevice device, ManagedSampler& outSampler);
+
+    /**
+     * Create linear-filtering sampler with clamp-to-edge
+     */
+    static bool createSamplerLinearClamp(VkDevice device, ManagedSampler& outSampler);
+
+    /**
+     * Create linear-filtering sampler with repeat (standard textures)
+     */
+    static bool createSamplerLinearRepeat(VkDevice device, ManagedSampler& outSampler);
+
+    /**
+     * Create linear-filtering sampler with repeat and anisotropy (terrain/high-quality textures)
+     */
+    static bool createSamplerLinearRepeatAnisotropic(VkDevice device, float maxAnisotropy, ManagedSampler& outSampler);
+
+    /**
+     * Create shadow map comparison sampler
+     */
+    static bool createSamplerShadowComparison(VkDevice device, ManagedSampler& outSampler);
 };

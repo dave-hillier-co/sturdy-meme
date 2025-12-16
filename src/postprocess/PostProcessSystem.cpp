@@ -2,6 +2,7 @@
 #include "ShaderLoader.h"
 #include "DescriptorManager.h"
 #include "VulkanBarriers.h"
+#include "VulkanResourceFactory.h"
 #include <SDL3/SDL.h>
 #include <array>
 
@@ -300,7 +301,7 @@ bool PostProcessSystem::createHDRFramebuffer() {
 }
 
 bool PostProcessSystem::createSampler() {
-    if (!ManagedSampler::createLinearClamp(device, hdrSampler)) {
+    if (!VulkanResourceFactory::createSamplerLinearClamp(device, hdrSampler)) {
         SDL_Log("Failed to create HDR sampler");
         return false;
     }

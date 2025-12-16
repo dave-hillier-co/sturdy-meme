@@ -2,6 +2,7 @@
 #include <stb_image.h>
 #include "Texture.h"
 #include "VulkanRAII.h"
+#include "VulkanResourceFactory.h"
 #include "VulkanBarriers.h"
 #include <cstring>
 
@@ -23,7 +24,7 @@ bool Texture::load(const std::string& path, VmaAllocator allocator, VkDevice dev
 
     // Create staging buffer using RAII
     ManagedBuffer stagingBuffer;
-    if (!ManagedBuffer::createStaging(allocator, imageSize, stagingBuffer)) {
+    if (!VulkanResourceFactory::createStagingBuffer(allocator, imageSize, stagingBuffer)) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create staging buffer for texture: %s", path.c_str());
         return false;
     }
@@ -144,7 +145,7 @@ bool Texture::createSolidColor(uint8_t r, uint8_t g, uint8_t b, uint8_t a,
 
     // Create staging buffer using RAII
     ManagedBuffer stagingBuffer;
-    if (!ManagedBuffer::createStaging(allocator, imageSize, stagingBuffer)) {
+    if (!VulkanResourceFactory::createStagingBuffer(allocator, imageSize, stagingBuffer)) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create staging buffer for solid color texture");
         return false;
     }

@@ -1,6 +1,7 @@
 #include "VirtualTexturePageTable.h"
 #include "VulkanBarriers.h"
 #include "VulkanRAII.h"
+#include "VulkanResourceFactory.h"
 #include <SDL3/SDL_log.h>
 #include <cstring>
 #include <algorithm>
@@ -184,7 +185,7 @@ bool VirtualTexturePageTable::createPageTableTextures(VkDevice device, VmaAlloca
 }
 
 bool VirtualTexturePageTable::createSampler(VkDevice device) {
-    return ManagedSampler::createNearestClamp(device, pageTableSampler);
+    return VulkanResourceFactory::createSamplerNearestClamp(device, pageTableSampler);
 }
 
 size_t VirtualTexturePageTable::getEntryIndex(TileId id) const {

@@ -2,6 +2,7 @@
 #include "ShaderLoader.h"
 #include "PipelineBuilder.h"
 #include "VulkanBarriers.h"
+#include "VulkanResourceFactory.h"
 #include "DescriptorManager.h"
 #include <SDL3/SDL.h>
 #include <cstring>
@@ -104,7 +105,7 @@ bool SnowMaskSystem::createSnowMaskTexture() {
     }
 
     // Create sampler for other systems to sample the snow mask
-    if (!ManagedSampler::createLinearClamp(getDevice(), snowMaskSampler)) {
+    if (!VulkanResourceFactory::createSamplerLinearClamp(getDevice(), snowMaskSampler)) {
         SDL_Log("Failed to create snow mask sampler");
         return false;
     }

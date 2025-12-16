@@ -2,7 +2,7 @@
 #include "ShaderLoader.h"
 #include "DescriptorManager.h"
 #include "VulkanBarriers.h"
-#include "DescriptorManager.h"
+#include "VulkanResourceFactory.h"
 #include <SDL3/SDL_log.h>
 #include <glm/gtc/matrix_transform.hpp>
 #include <array>
@@ -120,7 +120,7 @@ bool CloudShadowSystem::createShadowMap() {
 
 bool CloudShadowSystem::createSampler() {
     // Bilinear filtering for smooth shadow edges
-    if (!ManagedSampler::createLinearClamp(device, shadowMapSampler)) {
+    if (!VulkanResourceFactory::createSamplerLinearClamp(device, shadowMapSampler)) {
         SDL_Log("Failed to create cloud shadow sampler");
         return false;
     }

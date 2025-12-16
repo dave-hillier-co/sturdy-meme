@@ -1,6 +1,7 @@
 #include "TerrainTileCache.h"
 #include "TerrainHeight.h"
 #include "VulkanBarriers.h"
+#include "VulkanResourceFactory.h"
 #include <SDL3/SDL.h>
 #include <stb_image.h>
 #include <fstream>
@@ -28,7 +29,7 @@ bool TerrainTileCache::init(const InitInfo& info) {
     }
 
     // Create sampler for tile textures
-    if (!ManagedSampler::createLinearClamp(device, sampler)) {
+    if (!VulkanResourceFactory::createSamplerLinearClamp(device, sampler)) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "TerrainTileCache: Failed to create sampler");
         return false;
     }

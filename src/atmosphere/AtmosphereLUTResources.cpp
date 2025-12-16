@@ -1,4 +1,5 @@
 #include "AtmosphereLUTSystem.h"
+#include "VulkanResourceFactory.h"
 #include <SDL3/SDL_log.h>
 
 bool AtmosphereLUTSystem::createTransmittanceLUT() {
@@ -227,7 +228,7 @@ bool AtmosphereLUTSystem::createCloudMapLUT() {
 }
 
 bool AtmosphereLUTSystem::createLUTSampler() {
-    if (!ManagedSampler::createLinearClamp(device, lutSampler)) {
+    if (!VulkanResourceFactory::createSamplerLinearClamp(device, lutSampler)) {
         SDL_Log("Failed to create LUT sampler");
         return false;
     }

@@ -185,63 +185,27 @@ bool TerrainTextures::uploadImageData(VkImage image, const void* data, uint32_t 
                                        VkFormat format, uint32_t bytesPerPixel) {
     VkDeviceSize imageSize = width * height * bytesPerPixel;
 
-    // Create staging buffer
-    VkBuffer stagingBuffer;
-    VmaAllocation stagingAllocation;
-
-    VkBufferCreateInfo bufferInfo{};
-    bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-    bufferInfo.size = imageSize;
-    bufferInfo.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
-    bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-
-    VmaAllocationCreateInfo allocInfo{};
-    allocInfo.usage = VMA_MEMORY_USAGE_AUTO;
-    allocInfo.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT;
-
-    if (vmaCreateBuffer(allocator, &bufferInfo, &allocInfo, &stagingBuffer, &stagingAllocation, nullptr) != VK_SUCCESS) {
+    // Create staging buffer using RAII wrapper
+    ManagedBuffer stagingBuffer;
+    if (!ManagedBuffer::createStaging(allocator, imageSize, stagingBuffer)) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create staging buffer for image upload");
         return false;
     }
 
     // Copy data to staging buffer
-    void* mappedData;
-    vmaMapMemory(allocator, stagingAllocation, &mappedData);
+    void* mappedData = stagingBuffer.map();
     memcpy(mappedData, data, imageSize);
-    vmaUnmapMemory(allocator, stagingAllocation);
+    stagingBuffer.unmap();
 
-    // Allocate command buffer
-    VkCommandBufferAllocateInfo cmdAllocInfo{};
-    cmdAllocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-    cmdAllocInfo.commandPool = commandPool;
-    cmdAllocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-    cmdAllocInfo.commandBufferCount = 1;
-
-    VkCommandBuffer cmd;
-    vkAllocateCommandBuffers(device, &cmdAllocInfo, &cmd);
-
-    VkCommandBufferBeginInfo beginInfo{};
-    beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-    beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-    vkBeginCommandBuffer(cmd, &beginInfo);
+    // Use CommandScope for one-time command submission
+    CommandScope cmd(device, commandPool, graphicsQueue);
+    if (!cmd.begin()) return false;
 
     // Copy staging buffer to image with automatic barrier transitions
-    Barriers::copyBufferToImage(cmd, stagingBuffer, image, width, height);
+    Barriers::copyBufferToImage(cmd.get(), stagingBuffer.get(), image, width, height);
 
-    vkEndCommandBuffer(cmd);
+    if (!cmd.end()) return false;
 
-    // Submit and wait
-    VkSubmitInfo submitInfo{};
-    submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-    submitInfo.commandBufferCount = 1;
-    submitInfo.pCommandBuffers = &cmd;
-
-    vkQueueSubmit(graphicsQueue, 1, &submitInfo, VK_NULL_HANDLE);
-    vkQueueWaitIdle(graphicsQueue);
-
-    // Cleanup
-    vkFreeCommandBuffers(device, commandPool, 1, &cmd);
-    vmaDestroyBuffer(allocator, stagingBuffer, stagingAllocation);
-
+    // ManagedBuffer automatically destroyed on scope exit
     return true;
 }

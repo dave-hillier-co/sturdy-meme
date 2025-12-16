@@ -33,27 +33,14 @@ bool VirtualTextureCache::init(VkDevice device, VmaAllocator allocator,
         return false;
     }
 
-    // Create staging buffer for tile uploads
+    // Create staging buffer for tile uploads using RAII wrapper
     VkDeviceSize stagingSize = config.tileSizePixels * config.tileSizePixels * 4; // RGBA8
 
-    VkBufferCreateInfo bufferInfo{};
-    bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-    bufferInfo.size = stagingSize;
-    bufferInfo.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
-    bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-
-    VmaAllocationCreateInfo allocInfo{};
-    allocInfo.usage = VMA_MEMORY_USAGE_AUTO;
-    allocInfo.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
-                      VMA_ALLOCATION_CREATE_MAPPED_BIT;
-
-    VmaAllocationInfo allocationInfo;
-    if (vmaCreateBuffer(allocator, &bufferInfo, &allocInfo, &stagingBuffer,
-                        &stagingAllocation, &allocationInfo) != VK_SUCCESS) {
+    if (!ManagedBuffer::createStaging(allocator, stagingSize, stagingBuffer_)) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create VT staging buffer");
         return false;
     }
-    stagingMapped = allocationInfo.pMappedData;
+    stagingMapped = stagingBuffer_.map();
 
     SDL_Log("VirtualTextureCache initialized: %u slots (%ux%u tiles), %upx cache",
             totalSlots, slotsPerAxis, slotsPerAxis, config.cacheSizePixels);
@@ -62,12 +49,12 @@ bool VirtualTextureCache::init(VkDevice device, VmaAllocator allocator,
 }
 
 void VirtualTextureCache::destroy(VkDevice device, VmaAllocator allocator) {
-    if (stagingBuffer != VK_NULL_HANDLE) {
-        vmaDestroyBuffer(allocator, stagingBuffer, stagingAllocation);
-        stagingBuffer = VK_NULL_HANDLE;
-        stagingAllocation = VK_NULL_HANDLE;
+    // ManagedBuffer cleanup - unmap first
+    if (stagingMapped) {
+        stagingBuffer_.unmap();
         stagingMapped = nullptr;
     }
+    stagingBuffer_.destroy();
 
     cacheSampler.destroy();
 
@@ -280,7 +267,7 @@ void VirtualTextureCache::uploadTile(TileId id, const void* pixelData,
         VK_ACCESS_SHADER_READ_BIT, VK_ACCESS_TRANSFER_WRITE_BIT);
 
     // Copy buffer to image region at tile slot position
-    Barriers::copyBufferToImageRegion(cmd, stagingBuffer, cacheImage,
+    Barriers::copyBufferToImageRegion(cmd, stagingBuffer_.get(), cacheImage,
         static_cast<int32_t>(slotX * config.tileSizePixels),
         static_cast<int32_t>(slotY * config.tileSizePixels),
         width, height);

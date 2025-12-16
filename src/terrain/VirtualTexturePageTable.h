@@ -77,9 +77,8 @@ private:
     VkImageView combinedImageView = VK_NULL_HANDLE;
     ManagedSampler pageTableSampler;
 
-    // Staging buffer for uploads
-    VkBuffer stagingBuffer = VK_NULL_HANDLE;
-    VmaAllocation stagingAllocation = VK_NULL_HANDLE;
+    // Staging buffer for uploads (persistent, reused)
+    ManagedBuffer stagingBuffer_;
     void* stagingMapped = nullptr;
 
     // CPU-side page table data (linear array, indexed per mip level)

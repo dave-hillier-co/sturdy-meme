@@ -500,63 +500,27 @@ bool TerrainTileCache::createTileGPUResources(TerrainTile& tile) {
 bool TerrainTileCache::uploadTileToGPU(TerrainTile& tile) {
     VkDeviceSize imageSize = tileResolution * tileResolution * sizeof(float);
 
-    // Create staging buffer
-    VkBuffer stagingBuffer;
-    VmaAllocation stagingAllocation;
-
-    VkBufferCreateInfo bufferInfo{};
-    bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-    bufferInfo.size = imageSize;
-    bufferInfo.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
-    bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-
-    VmaAllocationCreateInfo allocInfo{};
-    allocInfo.usage = VMA_MEMORY_USAGE_AUTO;
-    allocInfo.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT;
-
-    if (vmaCreateBuffer(allocator, &bufferInfo, &allocInfo, &stagingBuffer, &stagingAllocation, nullptr) != VK_SUCCESS) {
+    // Create staging buffer using RAII wrapper
+    ManagedBuffer stagingBuffer;
+    if (!ManagedBuffer::createStaging(allocator, imageSize, stagingBuffer)) {
         return false;
     }
 
     // Copy data to staging buffer
-    void* mappedData;
-    vmaMapMemory(allocator, stagingAllocation, &mappedData);
+    void* mappedData = stagingBuffer.map();
     memcpy(mappedData, tile.cpuData.data(), imageSize);
-    vmaUnmapMemory(allocator, stagingAllocation);
+    stagingBuffer.unmap();
 
-    // Allocate command buffer
-    VkCommandBufferAllocateInfo cmdAllocInfo{};
-    cmdAllocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-    cmdAllocInfo.commandPool = commandPool;
-    cmdAllocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-    cmdAllocInfo.commandBufferCount = 1;
-
-    VkCommandBuffer cmd;
-    vkAllocateCommandBuffers(device, &cmdAllocInfo, &cmd);
-
-    VkCommandBufferBeginInfo beginInfo{};
-    beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-    beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-    vkBeginCommandBuffer(cmd, &beginInfo);
+    // Use CommandScope for one-time command submission
+    CommandScope cmd(device, commandPool, graphicsQueue);
+    if (!cmd.begin()) return false;
 
     // Copy staging buffer to tile image with automatic barrier transitions
-    Barriers::copyBufferToImage(cmd, stagingBuffer, tile.image, tileResolution, tileResolution);
+    Barriers::copyBufferToImage(cmd.get(), stagingBuffer.get(), tile.image, tileResolution, tileResolution);
 
-    vkEndCommandBuffer(cmd);
+    if (!cmd.end()) return false;
 
-    // Submit and wait
-    VkSubmitInfo submitInfo{};
-    submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-    submitInfo.commandBufferCount = 1;
-    submitInfo.pCommandBuffers = &cmd;
-
-    vkQueueSubmit(graphicsQueue, 1, &submitInfo, VK_NULL_HANDLE);
-    vkQueueWaitIdle(graphicsQueue);
-
-    // Cleanup
-    vkFreeCommandBuffers(device, commandPool, 1, &cmd);
-    vmaDestroyBuffer(allocator, stagingBuffer, stagingAllocation);
-
+    // ManagedBuffer automatically destroyed on scope exit
     return true;
 }
 
@@ -662,78 +626,44 @@ bool TerrainTileCache::getHeightAt(float worldX, float worldZ, float& outHeight)
 void TerrainTileCache::copyTileToArrayLayer(TerrainTile* tile, uint32_t layerIndex) {
     if (!tile || tile->cpuData.empty() || layerIndex >= MAX_ACTIVE_TILES) return;
 
-    // Create staging buffer for upload
+    // Create staging buffer using RAII wrapper
     VkDeviceSize imageSize = tileResolution * tileResolution * sizeof(float);
 
-    VkBuffer stagingBuffer;
-    VmaAllocation stagingAllocation;
-
-    VkBufferCreateInfo stagingBufferInfo{};
-    stagingBufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-    stagingBufferInfo.size = imageSize;
-    stagingBufferInfo.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
-    stagingBufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-
-    VmaAllocationCreateInfo stagingAllocInfo{};
-    stagingAllocInfo.usage = VMA_MEMORY_USAGE_AUTO;
-    stagingAllocInfo.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
-                            VMA_ALLOCATION_CREATE_MAPPED_BIT;
-
-    VmaAllocationInfo stagingInfo{};
-    if (vmaCreateBuffer(allocator, &stagingBufferInfo, &stagingAllocInfo, &stagingBuffer,
-                       &stagingAllocation, &stagingInfo) != VK_SUCCESS) {
+    ManagedBuffer stagingBuffer;
+    if (!ManagedBuffer::createStaging(allocator, imageSize, stagingBuffer)) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "TerrainTileCache: Failed to create staging buffer for tile copy");
         return;
     }
 
     // Copy tile data to staging buffer
-    memcpy(stagingInfo.pMappedData, tile->cpuData.data(), imageSize);
+    void* mappedData = stagingBuffer.map();
+    memcpy(mappedData, tile->cpuData.data(), imageSize);
+    stagingBuffer.unmap();
 
-    // Allocate command buffer
-    VkCommandBuffer cmd;
-    VkCommandBufferAllocateInfo cmdAllocInfo{};
-    cmdAllocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-    cmdAllocInfo.commandPool = commandPool;
-    cmdAllocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-    cmdAllocInfo.commandBufferCount = 1;
-    vkAllocateCommandBuffers(device, &cmdAllocInfo, &cmd);
-
-    VkCommandBufferBeginInfo beginInfo{};
-    beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-    beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-    vkBeginCommandBuffer(cmd, &beginInfo);
+    // Use CommandScope for one-time command submission
+    CommandScope cmd(device, commandPool, graphicsQueue);
+    if (!cmd.begin()) return;
 
     // Transition tile array layer to transfer dst
-    Barriers::transitionImage(cmd, tileArrayImage,
+    Barriers::transitionImage(cmd.get(), tileArrayImage,
         VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
         VK_PIPELINE_STAGE_VERTEX_SHADER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
         VK_ACCESS_SHADER_READ_BIT, VK_ACCESS_TRANSFER_WRITE_BIT,
         VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, layerIndex, 1);
 
     // Copy buffer to image layer
-    Barriers::copyBufferToImageLayer(cmd, stagingBuffer, tileArrayImage,
+    Barriers::copyBufferToImageLayer(cmd.get(), stagingBuffer.get(), tileArrayImage,
                                      tileResolution, tileResolution, layerIndex);
 
     // Transition back to shader read
-    Barriers::transitionImage(cmd, tileArrayImage,
+    Barriers::transitionImage(cmd.get(), tileArrayImage,
         VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
         VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_VERTEX_SHADER_BIT,
         VK_ACCESS_TRANSFER_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT,
         VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, layerIndex, 1);
 
-    vkEndCommandBuffer(cmd);
-
-    // Submit and wait
-    VkSubmitInfo submitInfo{};
-    submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-    submitInfo.commandBufferCount = 1;
-    submitInfo.pCommandBuffers = &cmd;
-    vkQueueSubmit(graphicsQueue, 1, &submitInfo, VK_NULL_HANDLE);
-    vkQueueWaitIdle(graphicsQueue);
-
-    // Cleanup
-    vkFreeCommandBuffers(device, commandPool, 1, &cmd);
-    vmaDestroyBuffer(allocator, stagingBuffer, stagingAllocation);
+    cmd.end();
+    // ManagedBuffer automatically destroyed on scope exit
 }
 
 const TerrainTile* TerrainTileCache::getLoadedTile(TileCoord coord, uint32_t lod) const {

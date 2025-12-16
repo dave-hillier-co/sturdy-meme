@@ -142,9 +142,8 @@ private:
     uint32_t renderWidth = 0;
     uint32_t renderHeight = 0;
 
-    // Staging buffer for readback
-    VkBuffer stagingBuffer = VK_NULL_HANDLE;
-    VmaAllocation stagingAllocation = VK_NULL_HANDLE;
+    // Staging buffer for readback (persistent)
+    ManagedBuffer stagingBuffer_;
 
     // Pipeline
     ManagedDescriptorSetLayout descriptorSetLayout_;
@@ -155,9 +154,8 @@ private:
     // Descriptor sets
     VkDescriptorSet descriptorSet = VK_NULL_HANDLE;
 
-    // UBO
-    VkBuffer uboBuffer = VK_NULL_HANDLE;
-    VmaAllocation uboAllocation = VK_NULL_HANDLE;
+    // UBO (persistent, mapped)
+    ManagedBuffer uboBuffer_;
     void* uboMapped = nullptr;
 
     static constexpr VkFormat COLOR_FORMAT = VK_FORMAT_R8G8B8A8_UNORM;

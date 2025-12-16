@@ -86,9 +86,8 @@ private:
     VkImageView cacheImageView = VK_NULL_HANDLE;
     ManagedSampler cacheSampler;
 
-    // Staging buffer for uploads
-    VkBuffer stagingBuffer = VK_NULL_HANDLE;
-    VmaAllocation stagingAllocation = VK_NULL_HANDLE;
+    // Staging buffer for uploads (persistent, reused)
+    ManagedBuffer stagingBuffer_;
     void* stagingMapped = nullptr;
 
     // Cache slot management

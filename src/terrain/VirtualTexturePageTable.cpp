@@ -45,28 +45,15 @@ bool VirtualTexturePageTable::init(VkDevice device, VmaAllocator allocator,
         return false;
     }
 
-    // Create staging buffer (sized for largest mip level)
+    // Create staging buffer (sized for largest mip level) using RAII wrapper
     uint32_t maxMipSize = mipSizes[0];
     VkDeviceSize stagingSize = maxMipSize * sizeof(uint32_t); // RGBA8 packed
 
-    VkBufferCreateInfo bufferInfo{};
-    bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-    bufferInfo.size = stagingSize;
-    bufferInfo.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
-    bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-
-    VmaAllocationCreateInfo allocInfo{};
-    allocInfo.usage = VMA_MEMORY_USAGE_AUTO;
-    allocInfo.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
-                      VMA_ALLOCATION_CREATE_MAPPED_BIT;
-
-    VmaAllocationInfo allocationInfo;
-    if (vmaCreateBuffer(allocator, &bufferInfo, &allocInfo, &stagingBuffer,
-                        &stagingAllocation, &allocationInfo) != VK_SUCCESS) {
+    if (!ManagedBuffer::createStaging(allocator, stagingSize, stagingBuffer_)) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create VT page table staging buffer");
         return false;
     }
-    stagingMapped = allocationInfo.pMappedData;
+    stagingMapped = stagingBuffer_.map();
 
     SDL_Log("VirtualTexturePageTable initialized: %u mip levels, %zu total entries",
             config.maxMipLevels, totalEntries);
@@ -75,12 +62,12 @@ bool VirtualTexturePageTable::init(VkDevice device, VmaAllocator allocator,
 }
 
 void VirtualTexturePageTable::destroy(VkDevice device, VmaAllocator allocator) {
-    if (stagingBuffer != VK_NULL_HANDLE) {
-        vmaDestroyBuffer(allocator, stagingBuffer, stagingAllocation);
-        stagingBuffer = VK_NULL_HANDLE;
-        stagingAllocation = VK_NULL_HANDLE;
+    // ManagedBuffer automatically cleans up in destructor, but unmap first
+    if (stagingMapped) {
+        stagingBuffer_.unmap();
         stagingMapped = nullptr;
     }
+    stagingBuffer_.destroy();
 
     pageTableSampler.destroy();
 
@@ -267,7 +254,7 @@ void VirtualTexturePageTable::upload(VkDevice device, VkCommandPool commandPool,
             VK_ACCESS_SHADER_READ_BIT, VK_ACCESS_TRANSFER_WRITE_BIT);
 
         // Copy buffer to page table image
-        Barriers::copyBufferToImageRegion(cmd, stagingBuffer, pageTableImages[mip],
+        Barriers::copyBufferToImageRegion(cmd, stagingBuffer_.get(), pageTableImages[mip],
                                           0, 0, tilesAtMip, tilesAtMip);
 
         // Transition back to shader read

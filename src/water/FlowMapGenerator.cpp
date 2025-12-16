@@ -121,30 +121,17 @@ bool FlowMapGenerator::createSampler() {
 void FlowMapGenerator::uploadToGPU() {
     if (flowData.empty() || flowMapImage == VK_NULL_HANDLE) return;
 
-    // Create staging buffer
+    // Create staging buffer using RAII wrapper
     VkDeviceSize imageSize = currentResolution * currentResolution * 4; // RGBA8
 
-    VkBufferCreateInfo bufferInfo{};
-    bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-    bufferInfo.size = imageSize;
-    bufferInfo.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
-
-    VmaAllocationCreateInfo stagingAllocInfo{};
-    stagingAllocInfo.usage = VMA_MEMORY_USAGE_CPU_ONLY;
-    stagingAllocInfo.flags = VMA_ALLOCATION_CREATE_MAPPED_BIT;
-
-    VkBuffer stagingBuffer;
-    VmaAllocation stagingAllocation;
-    VmaAllocationInfo stagingInfo;
-
-    if (vmaCreateBuffer(allocator, &bufferInfo, &stagingAllocInfo,
-                        &stagingBuffer, &stagingAllocation, &stagingInfo) != VK_SUCCESS) {
+    ManagedBuffer stagingBuffer;
+    if (!ManagedBuffer::createStaging(allocator, imageSize, stagingBuffer)) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create staging buffer for flow map");
         return;
     }
 
     // Convert float data to RGBA8
-    uint8_t* pixels = static_cast<uint8_t*>(stagingInfo.pMappedData);
+    uint8_t* pixels = static_cast<uint8_t*>(stagingBuffer.map());
     for (size_t i = 0; i < flowData.size(); i++) {
         const glm::vec4& flow = flowData[i];
         pixels[i * 4 + 0] = static_cast<uint8_t>(std::clamp(flow.r, 0.0f, 1.0f) * 255.0f);
@@ -152,41 +139,19 @@ void FlowMapGenerator::uploadToGPU() {
         pixels[i * 4 + 2] = static_cast<uint8_t>(std::clamp(flow.b, 0.0f, 1.0f) * 255.0f);
         pixels[i * 4 + 3] = static_cast<uint8_t>(std::clamp(flow.a, 0.0f, 1.0f) * 255.0f);
     }
+    stagingBuffer.unmap();
 
-    // Allocate command buffer
-    VkCommandBufferAllocateInfo allocCommandInfo{};
-    allocCommandInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-    allocCommandInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-    allocCommandInfo.commandPool = commandPool;
-    allocCommandInfo.commandBufferCount = 1;
-
-    VkCommandBuffer commandBuffer;
-    vkAllocateCommandBuffers(device, &allocCommandInfo, &commandBuffer);
-
-    VkCommandBufferBeginInfo beginInfo{};
-    beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-    beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-    vkBeginCommandBuffer(commandBuffer, &beginInfo);
+    // Use CommandScope for one-time command submission
+    CommandScope cmd(device, commandPool, queue);
+    if (!cmd.begin()) return;
 
     // Copy staging buffer to flow map with automatic barrier transitions
-    Barriers::copyBufferToImage(commandBuffer, stagingBuffer, flowMapImage,
+    Barriers::copyBufferToImage(cmd.get(), stagingBuffer.get(), flowMapImage,
                                 currentResolution, currentResolution);
 
-    vkEndCommandBuffer(commandBuffer);
+    if (!cmd.end()) return;
 
-    // Submit and wait
-    VkSubmitInfo submitInfo{};
-    submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-    submitInfo.commandBufferCount = 1;
-    submitInfo.pCommandBuffers = &commandBuffer;
-
-    vkQueueSubmit(queue, 1, &submitInfo, VK_NULL_HANDLE);
-    vkQueueWaitIdle(queue);
-
-    // Cleanup
-    vkFreeCommandBuffers(device, commandPool, 1, &commandBuffer);
-    vmaDestroyBuffer(allocator, stagingBuffer, stagingAllocation);
-
+    // ManagedBuffer automatically destroyed on scope exit
     SDL_Log("Flow map uploaded to GPU");
 }
 

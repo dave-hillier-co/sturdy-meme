@@ -53,10 +53,12 @@ bool BillboardCapture::init(const InitInfo& info) {
 void BillboardCapture::destroy() {
     destroyRenderTarget();
 
-    if (uboBuffer) {
-        vmaDestroyBuffer(allocator, uboBuffer, uboAllocation);
-        uboBuffer = VK_NULL_HANDLE;
+    // ManagedBuffer cleanup for UBO
+    if (uboMapped) {
+        uboBuffer_.unmap();
+        uboMapped = nullptr;
     }
+    uboBuffer_.destroy();
 
     // RAII wrappers automatically clean up: solidPipeline_, leafPipeline_,
     // pipelineLayout_, descriptorSetLayout_, renderPass_, framebuffer_, sampler_
@@ -208,18 +210,10 @@ bool BillboardCapture::createRenderTarget(uint32_t width, uint32_t height) {
         return false;
     }
 
-    // Create staging buffer for pixel readback
-    VkBufferCreateInfo bufferInfo{};
-    bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-    bufferInfo.size = width * height * 4;  // RGBA8
-    bufferInfo.usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT;
-    bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+    // Create staging buffer for pixel readback using RAII wrapper
+    VkDeviceSize stagingSize = width * height * 4;  // RGBA8
 
-    VmaAllocationCreateInfo stagingAllocInfo{};
-    stagingAllocInfo.usage = VMA_MEMORY_USAGE_GPU_TO_CPU;
-    stagingAllocInfo.flags = VMA_ALLOCATION_CREATE_MAPPED_BIT;
-
-    if (vmaCreateBuffer(allocator, &bufferInfo, &stagingAllocInfo, &stagingBuffer, &stagingAllocation, nullptr) != VK_SUCCESS) {
+    if (!ManagedBuffer::createReadback(allocator, stagingSize, stagingBuffer_)) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create billboard staging buffer");
         return false;
     }
@@ -228,10 +222,8 @@ bool BillboardCapture::createRenderTarget(uint32_t width, uint32_t height) {
 }
 
 void BillboardCapture::destroyRenderTarget() {
-    if (stagingBuffer) {
-        vmaDestroyBuffer(allocator, stagingBuffer, stagingAllocation);
-        stagingBuffer = VK_NULL_HANDLE;
-    }
+    // ManagedBuffer cleanup for staging buffer
+    stagingBuffer_.destroy();
 
     // Reset RAII framebuffer wrapper
     framebuffer_ = ManagedFramebuffer();
@@ -296,23 +288,12 @@ bool BillboardCapture::createDescriptorSets() {
 }
 
 bool BillboardCapture::createUniformBuffer() {
-    VkBufferCreateInfo bufferInfo{};
-    bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-    bufferInfo.size = sizeof(UniformBufferObject);
-    bufferInfo.usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
-    bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-
-    VmaAllocationCreateInfo allocInfo{};
-    allocInfo.usage = VMA_MEMORY_USAGE_CPU_TO_GPU;
-    allocInfo.flags = VMA_ALLOCATION_CREATE_MAPPED_BIT;
-
-    VmaAllocationInfo allocResultInfo;
-    if (vmaCreateBuffer(allocator, &bufferInfo, &allocInfo, &uboBuffer, &uboAllocation, &allocResultInfo) != VK_SUCCESS) {
+    if (!ManagedBuffer::createUniform(allocator, sizeof(UniformBufferObject), uboBuffer_)) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create billboard UBO buffer");
         return false;
     }
 
-    uboMapped = allocResultInfo.pMappedData;
+    uboMapped = uboBuffer_.map();
     return true;
 }
 
@@ -540,7 +521,7 @@ bool BillboardCapture::renderCapture(
 
     // Update descriptor set using DescriptorManager::SetWriter for consistency
     DescriptorManager::SetWriter(device, descriptorSet)
-        .writeBuffer(0, uboBuffer, 0, sizeof(UniformBufferObject))
+        .writeBuffer(0, uboBuffer_.get(), 0, sizeof(UniformBufferObject))
         .writeImage(1, barkColorTex.getImageView(), barkColorTex.getSampler())
         .writeImage(2, barkNormalTex.getImageView(), barkNormalTex.getSampler())
         .writeImage(3, barkAOTex.getImageView(), barkAOTex.getSampler())
@@ -651,7 +632,7 @@ bool BillboardCapture::renderCapture(
     region.imageOffset = {0, 0, 0};
     region.imageExtent = {renderWidth, renderHeight, 1};
 
-    vkCmdCopyImageToBuffer(cmd, colorImage, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, stagingBuffer, 1, &region);
+    vkCmdCopyImageToBuffer(cmd, colorImage, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, stagingBuffer_.get(), 1, &region);
 
     vkEndCommandBuffer(cmd);
 
@@ -672,10 +653,10 @@ bool BillboardCapture::renderCapture(
 bool BillboardCapture::readPixels(std::vector<uint8_t>& outPixels) {
     outPixels.resize(renderWidth * renderHeight * 4);
 
-    void* data;
-    vmaMapMemory(allocator, stagingAllocation, &data);
+    void* data = stagingBuffer_.map();
+    if (!data) return false;
     memcpy(outPixels.data(), data, outPixels.size());
-    vmaUnmapMemory(allocator, stagingAllocation);
+    stagingBuffer_.unmap();
 
     return true;
 }

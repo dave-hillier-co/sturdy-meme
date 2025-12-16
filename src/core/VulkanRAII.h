@@ -316,11 +316,6 @@ public:
         }
     }
 
-    // Get pointer to handle (for Vulkan APIs that need VkBuffer*)
-    VkBuffer* ptr() {
-        return reinterpret_cast<VkBuffer*>(this);
-    }
-
     // Release ownership (for transferring to non-RAII code)
     void releaseToRaw(VkBuffer& outBuffer, VmaAllocation& outAllocation) {
         outBuffer = get();
@@ -370,11 +365,6 @@ public:
 
     // Legacy API compatibility
     void destroy() { reset(); }
-
-    // Get pointer to handle (for Vulkan APIs that need VkImage*)
-    VkImage* ptr() {
-        return reinterpret_cast<VkImage*>(this);
-    }
 
     // Access allocation from deleter
     VmaAllocation getAllocation() const { return get_deleter().allocation; }
@@ -799,7 +789,6 @@ public:
 // ============================================================================
 // ManagedSemaphore - RAII wrapper for VkSemaphore (inherits from UniqueSemaphore)
 // ============================================================================
-// Adds ptr() method for Vulkan APIs that need VkSemaphore*.
 
 class ManagedSemaphore : public UniqueSemaphore {
 public:
@@ -834,13 +823,6 @@ public:
 
     // Legacy API compatibility
     void destroy() { reset(); }
-
-    // Get pointer to handle (for Vulkan APIs that need VkSemaphore*)
-    VkSemaphore* ptr() {
-        // Note: This returns pointer to the internal handle storage
-        // Only valid while the ManagedSemaphore is alive and not moved
-        return reinterpret_cast<VkSemaphore*>(this);
-    }
 };
 
 // ============================================================================
@@ -887,13 +869,6 @@ public:
 
     // Legacy API compatibility
     void destroy() { reset(); }
-
-    // Get pointer to handle (for Vulkan APIs that need VkFence*)
-    VkFence* ptr() {
-        // Note: This returns pointer to the internal handle storage
-        // Only valid while the ManagedFence is alive and not moved
-        return reinterpret_cast<VkFence*>(this);
-    }
 
     // Access device from deleter (for sync operations)
     VkDevice device() const { return get_deleter().device; }

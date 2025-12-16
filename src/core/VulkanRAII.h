@@ -310,10 +310,11 @@ public:
     void unmap() {
         VmaAllocator alloc = allocator();
         VmaAllocation allocation = getAllocation();
-        if (alloc != VK_NULL_HANDLE && allocation != VK_NULL_HANDLE) {
-            vmaUnmapMemory(alloc, allocation);
-            get_deleter().mapped = false;
+        if (alloc == VK_NULL_HANDLE || allocation == VK_NULL_HANDLE) {
+            return;
         }
+        vmaUnmapMemory(alloc, allocation);
+        get_deleter().mapped = false;
     }
 
     // Release ownership (for transferring to non-RAII code)
@@ -366,7 +367,8 @@ public:
     // Legacy API compatibility
     void destroy() { reset(); }
 
-    // Access allocation from deleter
+    // Access allocator and allocation from deleter
+    VmaAllocator allocator() const { return get_deleter().allocator; }
     VmaAllocation getAllocation() const { return get_deleter().allocation; }
 
     // Release ownership (for transferring to non-RAII code)

@@ -6,6 +6,7 @@
 #include <utility>
 #include <functional>
 #include <memory>
+#include <vector>
 
 // ============================================================================
 // VkHandleDeleter - Generic deleter for Vulkan handles using unique_ptr
@@ -715,6 +716,145 @@ private:
     VkCommandPool commandPool_;
     VkQueue queue_;
     VkCommandBuffer commandBuffer_ = VK_NULL_HANDLE;
+};
+
+// ============================================================================
+// RenderPassScope - RAII wrapper for render pass begin/end
+// ============================================================================
+// Usage:
+//   VkRenderPassBeginInfo beginInfo = {...};
+//   {
+//       RenderPassScope renderPass(cmd, beginInfo);
+//       vkCmdBindPipeline(cmd, ...);
+//       vkCmdDraw(cmd, ...);
+//   } // vkCmdEndRenderPass called automatically
+//
+// Or with fluent builder:
+//   {
+//       auto renderPass = RenderPassScope::begin(cmd)
+//           .renderPass(myRenderPass)
+//           .framebuffer(myFramebuffer)
+//           .renderArea(0, 0, width, height)
+//           .clearColor(0.0f, 0.0f, 0.0f, 1.0f)
+//           .clearDepth(1.0f, 0);
+//       // render commands...
+//   }
+
+class RenderPassScope {
+public:
+    // Builder for fluent construction
+    class Builder {
+    public:
+        explicit Builder(VkCommandBuffer cmd) : cmd_(cmd) {
+            beginInfo_.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+        }
+
+        Builder& renderPass(VkRenderPass rp) {
+            beginInfo_.renderPass = rp;
+            return *this;
+        }
+
+        Builder& framebuffer(VkFramebuffer fb) {
+            beginInfo_.framebuffer = fb;
+            return *this;
+        }
+
+        Builder& renderArea(int32_t x, int32_t y, uint32_t width, uint32_t height) {
+            beginInfo_.renderArea = {{x, y}, {width, height}};
+            return *this;
+        }
+
+        Builder& renderArea(VkRect2D area) {
+            beginInfo_.renderArea = area;
+            return *this;
+        }
+
+        Builder& renderAreaFullExtent(uint32_t width, uint32_t height) {
+            beginInfo_.renderArea = {{0, 0}, {width, height}};
+            return *this;
+        }
+
+        Builder& clearColor(float r, float g, float b, float a) {
+            VkClearValue clear;
+            clear.color = {{r, g, b, a}};
+            clearValues_.push_back(clear);
+            return *this;
+        }
+
+        Builder& clearDepth(float depth, uint32_t stencil) {
+            VkClearValue clear;
+            clear.depthStencil = {depth, stencil};
+            clearValues_.push_back(clear);
+            return *this;
+        }
+
+        Builder& clearValues(const VkClearValue* values, uint32_t count) {
+            clearValues_.assign(values, values + count);
+            return *this;
+        }
+
+        Builder& subpassContents(VkSubpassContents contents) {
+            contents_ = contents;
+            return *this;
+        }
+
+        // Implicit conversion to RenderPassScope starts the render pass
+        operator RenderPassScope() {
+            beginInfo_.clearValueCount = static_cast<uint32_t>(clearValues_.size());
+            beginInfo_.pClearValues = clearValues_.empty() ? nullptr : clearValues_.data();
+            return RenderPassScope(cmd_, beginInfo_, contents_);
+        }
+
+    private:
+        VkCommandBuffer cmd_;
+        VkRenderPassBeginInfo beginInfo_{};
+        std::vector<VkClearValue> clearValues_;
+        VkSubpassContents contents_ = VK_SUBPASS_CONTENTS_INLINE;
+    };
+
+    // Direct construction with pre-built begin info
+    RenderPassScope(VkCommandBuffer cmd, const VkRenderPassBeginInfo& beginInfo,
+                    VkSubpassContents contents = VK_SUBPASS_CONTENTS_INLINE)
+        : cmd_(cmd) {
+        vkCmdBeginRenderPass(cmd_, &beginInfo, contents);
+    }
+
+    ~RenderPassScope() {
+        if (cmd_ != VK_NULL_HANDLE) {
+            vkCmdEndRenderPass(cmd_);
+        }
+    }
+
+    // Non-copyable
+    RenderPassScope(const RenderPassScope&) = delete;
+    RenderPassScope& operator=(const RenderPassScope&) = delete;
+
+    // Move-only (transfers ownership)
+    RenderPassScope(RenderPassScope&& other) noexcept : cmd_(other.cmd_) {
+        other.cmd_ = VK_NULL_HANDLE;
+    }
+
+    RenderPassScope& operator=(RenderPassScope&& other) noexcept {
+        if (this != &other) {
+            if (cmd_ != VK_NULL_HANDLE) {
+                vkCmdEndRenderPass(cmd_);
+            }
+            cmd_ = other.cmd_;
+            other.cmd_ = VK_NULL_HANDLE;
+        }
+        return *this;
+    }
+
+    // Fluent builder entry point
+    static Builder begin(VkCommandBuffer cmd) {
+        return Builder(cmd);
+    }
+
+    // Access the command buffer for issuing draw commands
+    VkCommandBuffer cmd() const { return cmd_; }
+
+private:
+    VkCommandBuffer cmd_;
 };
 
 // ============================================================================

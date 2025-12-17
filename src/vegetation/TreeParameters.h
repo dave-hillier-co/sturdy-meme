@@ -132,59 +132,69 @@ struct TreeParameters {
     bool barkFlatShading = false;                // Use flat shading for bark
 
     // Per-level branch parameters (ez-tree style, levels 0-3)
-    // Scaled for meters: typical tree ~5-8m tall, trunk radius ~0.15-0.25m
+    // Scaled from ez-tree oak_medium preset (proportionally reduced to ~1/10 scale)
+    // ez-tree uses ~37m trunk, we use ~3.7m for game-appropriate scale
     std::array<BranchLevelParams, 4> branchParams = {{
-        // Level 0 (trunk): ~5m tall, 0.2m radius
-        { 0.0f, 5, 0.15f, 5.0f, 0.2f, 12, 8, 0.0f, 0.7f, 0.0f },
-        // Level 1: main branches ~2.5m long, 0.08m radius
-        { 45.0f, 4, 0.2f, 2.5f, 0.08f, 10, 6, 0.5f, 0.7f, 0.0f },
-        // Level 2: secondary branches ~1.2m long, 0.03m radius
-        { 50.0f, 3, 0.3f, 1.2f, 0.03f, 8, 4, 0.3f, 0.7f, 0.0f },
-        // Level 3: twigs ~0.4m long, 0.01m radius
-        { 55.0f, 0, 0.02f, 0.4f, 0.01f, 6, 3, 0.3f, 0.7f, 0.0f }
+        // Level 0 (trunk): based on ez-tree oak_medium trunk
+        // angle=0 (trunk points up), children=6, gnarliness=0 (trunk is straight)
+        // length=3.7m, radius=0.14m, sections=8, segments=7, start=0, taper=0.73
+        { 0.0f, 6, 0.0f, 3.7f, 0.14f, 8, 7, 0.0f, 0.73f, -0.02f },
+        // Level 1: main branches - angle 54°, 4 children
+        // length=1.1m, radius=0.09 (relative), sections=6, segments=5
+        // start=0.49 (branches start midway up trunk), taper=0.42, twist=0.42
+        { 54.0f, 4, 0.1f, 1.1f, 0.09f, 6, 5, 0.49f, 0.42f, 0.42f },
+        // Level 2: secondary branches - angle 58°, 3 children
+        // length=1.2m, radius=0.07, sections=3, segments=3
+        // start=0.06 (branches start very early), taper=0.69
+        { 58.0f, 3, 0.15f, 1.2f, 0.07f, 3, 3, 0.06f, 0.69f, 0.0f },
+        // Level 3: twigs - angle 32°, terminal branches
+        // length=0.7m, radius=0.05, sections=1, segments=3
+        // start=0.12, taper=0.75
+        { 32.0f, 0, 0.09f, 0.7f, 0.05f, 1, 3, 0.12f, 0.75f, 0.0f }
     }};
 
     // Number of branch recursion levels (0-3)
     int branchLevels = 3;
 
     // Growth direction influence (external force)
+    // ez-tree uses negative strength (-0.01) which creates natural drooping effect
     glm::vec3 growthDirection = glm::vec3(0.0f, 1.0f, 0.0f);
-    float growthInfluence = 0.01f;       // How much growth direction affects branches
+    float growthInfluence = -0.01f;      // Negative creates natural drooping, positive forces upward
 
-    // Leaf parameters (scaled for meters)
-    // ez-tree uses leaf size ~12.5% of trunk height for good visual balance
+    // Leaf parameters (scaled from ez-tree oak_medium)
+    // ez-tree: count=18, size=2.5 (at ~37m trunk), angle=42°, start=0.16
     LeafType leafType = LeafType::Oak;
     glm::vec3 leafTint = glm::vec3(1.0f);       // Tint color for leaves
     BillboardMode leafBillboard = BillboardMode::Double;
     float leafAlphaTest = 0.5f;                  // Alpha discard threshold
     bool generateLeaves = true;
-    float leafSize = 0.5f;                       // ~50cm leaves (matches ez-tree ratio)
-    float leafSizeVariance = 0.5f;               // Random size variance (0-1)
-    int leavesPerBranch = 3;                     // Number of leaves per branch
-    float leafAngle = 30.0f;                     // Angle from branch (degrees)
-    float leafStart = 0.3f;                      // Where leaves start on branch (0-1)
+    float leafSize = 0.25f;                      // ~25cm leaves (scaled from ez-tree 2.5 at 1/10)
+    float leafSizeVariance = 0.7f;               // Random size variance (ez-tree: 0.7)
+    int leavesPerBranch = 18;                    // Many leaves per branch (ez-tree: 18)
+    float leafAngle = 42.0f;                     // Angle from branch (ez-tree: 42°)
+    float leafStart = 0.16f;                     // Where leaves start on branch (ez-tree: 0.16)
     int leafStartLevel = 2;                      // Branch level where leaves start
 
     // Legacy parameters (for backwards compatibility with existing code)
     // These are derived from branchParams when using per-level system
-    float trunkHeight = 5.0f;           // Height of main trunk (uses branchParams[0].length)
-    float trunkRadius = 0.2f;           // Radius at trunk base (uses branchParams[0].radius)
-    float trunkTaper = 0.6f;            // Taper ratio (uses branchParams[0].taper)
-    int trunkSegments = 8;              // Radial segments for trunk
-    int trunkRings = 6;                 // Vertical segments for trunk
+    float trunkHeight = 3.7f;           // Height of main trunk (uses branchParams[0].length)
+    float trunkRadius = 0.14f;          // Radius at trunk base (uses branchParams[0].radius)
+    float trunkTaper = 0.73f;           // Taper ratio (uses branchParams[0].taper)
+    int trunkSegments = 7;              // Radial segments for trunk
+    int trunkRings = 8;                 // Vertical segments for trunk
 
     // Legacy branch parameters (used when not using per-level system)
     int childrenPerBranch = 4;          // Number of child branches per parent
-    float branchingAngle = 35.0f;       // Angle from parent branch (degrees)
+    float branchingAngle = 54.0f;       // Angle from parent branch (degrees, ez-tree L1)
     float branchingSpread = 120.0f;     // Spread angle around parent (degrees)
-    float branchLengthRatio = 0.7f;     // Child length as ratio of parent
-    float branchRadiusRatio = 0.5f;     // Child radius as ratio of parent
-    float branchTaper = 0.5f;           // Taper along each branch
-    float branchStartHeight = 0.4f;     // Where branches start on trunk (0-1)
+    float branchLengthRatio = 0.3f;     // Child length as ratio of parent (ez-tree: ~11/37)
+    float branchRadiusRatio = 0.64f;    // Child radius as ratio of parent (ez-tree: ~0.9/1.41)
+    float branchTaper = 0.42f;          // Taper along each branch (ez-tree L1)
+    float branchStartHeight = 0.49f;    // Where branches start on trunk (0-1, ez-tree)
 
     // Curvature and natural variation
-    float gnarliness = 0.2f;            // Random twist/curve amount
-    float twistAngle = 15.0f;           // Twist per segment (degrees)
+    float gnarliness = 0.1f;            // Random twist/curve amount (ez-tree L1)
+    float twistAngle = 12.0f;           // Twist per segment (degrees, ez-tree ~0.42 rad)
 
     // Quality settings
     int branchSegments = 6;             // Radial segments for branches

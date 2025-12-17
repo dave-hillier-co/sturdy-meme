@@ -5,6 +5,7 @@
 #include "BillboardCapture.h"
 #include "TreeEditSystem.h"
 #include "SceneManager.h"
+#include "TreePresets.h"
 
 #include <imgui.h>
 #include <glm/glm.hpp>
@@ -17,6 +18,11 @@ static const char* shapeNames[] = { "Sphere", "Hemisphere", "Cone", "Cylinder", 
 static const char* barkTypeNames[] = { "Oak", "Birch", "Pine", "Willow" };
 static const char* leafTypeNames[] = { "Oak", "Ash", "Aspen", "Pine" };
 static const char* billboardModeNames[] = { "Single", "Double" };
+
+void TreeEditorGui::loadPresets(const std::string& resourcePath) {
+    std::string presetsDir = resourcePath + "/assets/presets/trees";
+    presets = TreePresets::loadPresetsFromDirectory(presetsDir);
+}
 
 void TreeEditorGui::placeTreeAtCamera(Renderer& renderer, const Camera& camera) {
     auto& treeSystem = renderer.getTreeEditSystem();
@@ -508,76 +514,56 @@ void TreeEditorGui::renderPresets(Renderer& renderer) {
     ImGui::PopStyleColor();
 
     if (params.algorithm == TreeAlgorithm::Recursive) {
-        // Recursive algorithm presets (use legacy parameters)
-        if (ImGui::Button("Oak", ImVec2(60, 0))) {
-            params.usePerLevelParams = false;
-            params.trunkHeight = 8.0f;
-            params.trunkRadius = 0.4f;
-            params.branchLevels = 4;
-            params.childrenPerBranch = 4;
-            params.branchingAngle = 40.0f;
-            params.branchingSpread = 120.0f;
-            params.gnarliness = 0.3f;
-            params.leafSize = 0.25f;
-            treeSystem.regenerateTree();
-        }
-        ImGui::SameLine();
-        if (ImGui::Button("Pine", ImVec2(60, 0))) {
-            params.usePerLevelParams = false;
-            params.trunkHeight = 12.0f;
-            params.trunkRadius = 0.3f;
-            params.trunkTaper = 0.8f;
-            params.branchLevels = 3;
-            params.childrenPerBranch = 6;
-            params.branchingAngle = 65.0f;
-            params.branchingSpread = 360.0f;
-            params.branchLengthRatio = 0.5f;
-            params.gnarliness = 0.1f;
-            params.leafSize = 0.15f;
-            treeSystem.regenerateTree();
-        }
-        ImGui::SameLine();
-        if (ImGui::Button("Willow", ImVec2(60, 0))) {
-            params.usePerLevelParams = false;
-            params.trunkHeight = 6.0f;
-            params.trunkRadius = 0.35f;
-            params.branchLevels = 4;
-            params.childrenPerBranch = 5;
-            params.branchingAngle = 50.0f;
-            params.branchLengthRatio = 0.8f;
-            params.gnarliness = 0.5f;
-            params.growthInfluence = -0.3f;
-            params.leafSize = 0.2f;
-            treeSystem.regenerateTree();
-        }
-        if (ImGui::Button("Shrub", ImVec2(60, 0))) {
-            params.usePerLevelParams = false;
-            params.trunkHeight = 2.0f;
-            params.trunkRadius = 0.15f;
-            params.branchLevels = 3;
-            params.childrenPerBranch = 5;
-            params.branchingAngle = 45.0f;
-            params.branchStartHeight = 0.1f;
-            params.gnarliness = 0.4f;
-            params.leafSize = 0.3f;
-            treeSystem.regenerateTree();
-        }
-        ImGui::SameLine();
-        if (ImGui::Button("Birch", ImVec2(60, 0))) {
-            params.usePerLevelParams = false;
-            params.trunkHeight = 10.0f;
-            params.trunkRadius = 0.2f;
-            params.trunkTaper = 0.9f;
-            params.branchLevels = 3;
-            params.childrenPerBranch = 3;
-            params.branchingAngle = 30.0f;
-            params.branchStartHeight = 0.5f;
-            params.gnarliness = 0.15f;
-            params.leafSize = 0.2f;
-            treeSystem.regenerateTree();
+        // Show loaded JSON presets as a dropdown + grid of buttons
+        if (!presets.empty()) {
+            // Combo box for full preset list
+            if (ImGui::BeginCombo("Preset", selectedPresetIndex >= 0 ? presets[selectedPresetIndex].name.c_str() : "Select...")) {
+                for (size_t i = 0; i < presets.size(); i++) {
+                    bool isSelected = (selectedPresetIndex == static_cast<int>(i));
+                    if (ImGui::Selectable(presets[i].name.c_str(), isSelected)) {
+                        selectedPresetIndex = static_cast<int>(i);
+                        params = presets[i].params;
+                        treeSystem.regenerateTree();
+                    }
+                    if (isSelected) {
+                        ImGui::SetItemDefaultFocus();
+                    }
+                }
+                ImGui::EndCombo();
+            }
+
+            ImGui::Spacing();
+
+            // Quick buttons for common presets (4 per row)
+            int buttonsPerRow = 4;
+            int buttonCount = 0;
+            for (size_t i = 0; i < presets.size() && i < 12; i++) {
+                // Truncate name for button
+                std::string shortName = presets[i].name;
+                if (shortName.length() > 10) {
+                    shortName = shortName.substr(0, 9) + "...";
+                }
+
+                if (buttonCount > 0 && buttonCount % buttonsPerRow != 0) {
+                    ImGui::SameLine();
+                }
+
+                if (ImGui::Button(shortName.c_str(), ImVec2(70, 0))) {
+                    selectedPresetIndex = static_cast<int>(i);
+                    params = presets[i].params;
+                    treeSystem.regenerateTree();
+                }
+                if (ImGui::IsItemHovered()) {
+                    ImGui::SetTooltip("%s", presets[i].name.c_str());
+                }
+                buttonCount++;
+            }
+        } else {
+            ImGui::TextDisabled("No presets loaded");
+            ImGui::TextDisabled("Check assets/presets/trees/");
         }
     } else {
-        // Space colonisation presets
+        // Space colonisation presets (keep these hardcoded as they're algorithm-specific)
         auto& sc = params.spaceColonisation;
 
         if (ImGui::Button("Sphere Oak", ImVec2(80, 0))) {

@@ -45,6 +45,9 @@ bool Application::init(const std::string& title, int width, int height) {
         return false;
     }
 
+    // Load tree presets from JSON files
+    gui.getTreeEditorGui().loadPresets(resourcePath);
+
     camera.setAspectRatio(static_cast<float>(width) / static_cast<float>(height));
 
     // Position camera at terrain height, looking at scene objects

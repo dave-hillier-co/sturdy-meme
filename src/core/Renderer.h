@@ -329,6 +329,7 @@ public:
     VkCommandPool getCommandPool() const { return commandPool.get(); }
     DescriptorManager::Pool* getDescriptorPool();
     std::string getShaderPath() const { return resourcePath + "/shaders"; }
+    const std::string& getResourcePath() const { return resourcePath; }
 
     // Physics debug visualization
     DebugLineSystem& getDebugLineSystem();

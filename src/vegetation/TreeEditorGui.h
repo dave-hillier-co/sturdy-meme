@@ -1,8 +1,10 @@
 #pragma once
 
 #include "BillboardCapture.h"
+#include "TreePresets.h"
 #include <memory>
 #include <string>
+#include <vector>
 
 class Renderer;
 class Camera;
@@ -11,6 +13,9 @@ class TreeEditorGui {
 public:
     TreeEditorGui() = default;
     ~TreeEditorGui() = default;
+
+    // Initialize presets from directory
+    void loadPresets(const std::string& resourcePath);
 
     // Render the tree editor as a separate ImGui window
     void render(Renderer& renderer, const Camera& camera);
@@ -36,6 +41,10 @@ private:
     void renderBillboardSection(Renderer& renderer);
 
     bool visible = false;
+
+    // Loaded presets from JSON files
+    std::vector<TreePreset> presets;
+    int selectedPresetIndex = -1;
 
     // Billboard capture state
     std::unique_ptr<BillboardCapture> billboardCapture;

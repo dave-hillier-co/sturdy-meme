@@ -107,6 +107,11 @@ bool TerrainSystem::init(const InitInfo& info, const TerrainConfig& cfg) {
             SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "Failed to initialize tile cache, using global heightmap only");
         } else {
             SDL_Log("Tile cache initialized: %s", config.tileCacheDir.c_str());
+
+            // Pre-load tiles around origin for immediate height queries during scene init
+            // This ensures objects spawned near (0,0) use high-res terrain heights
+            // Radius 600m covers ~2 tiles in each direction from origin (tiles are ~512m each)
+            (*tileCache)->preloadTilesAround(0.0f, 0.0f, 600.0f);
         }
     }
 

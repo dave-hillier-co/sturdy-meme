@@ -51,6 +51,25 @@ void TreeGenerator::generate(const TreeParameters& params) {
 
     SDL_Log("Tree generated: %zu segments, %zu vertices, %zu leaves",
             segments.size(), branchVertices.size(), leafInstances.size());
+
+    // Debug: Check for NaN in generated vertices
+    int nanCount = 0;
+    for (size_t i = 0; i < branchVertices.size(); ++i) {
+        const auto& v = branchVertices[i];
+        if (std::isnan(v.position.x) || std::isnan(v.position.y) || std::isnan(v.position.z) ||
+            std::isnan(v.normal.x) || std::isnan(v.normal.y) || std::isnan(v.normal.z)) {
+            if (nanCount < 10) {
+                SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                    "NaN detected in vertex %zu: pos(%.2f,%.2f,%.2f) normal(%.2f,%.2f,%.2f)",
+                    i, v.position.x, v.position.y, v.position.z,
+                    v.normal.x, v.normal.y, v.normal.z);
+            }
+            nanCount++;
+        }
+    }
+    if (nanCount > 0) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Total NaN vertices: %d", nanCount);
+    }
 }
 
 void TreeGenerator::generateSpaceColonisation(const TreeParameters& params) {
@@ -95,9 +114,12 @@ void TreeGenerator::generateBranch(const TreeParameters& params,
 
     // Apply growth direction influence (ez-tree style force)
     if (params.growthInfluence > 0.0f) {
-        direction = glm::normalize(
-            glm::mix(direction, params.growthDirection, params.growthInfluence)
-        );
+        glm::vec3 mixed = glm::mix(direction, params.growthDirection, params.growthInfluence);
+        float mixedLen = glm::length(mixed);
+        if (mixedLen > 0.0001f) {
+            direction = mixed / mixedLen;
+        }
+        // If mixed is zero, keep original direction
     }
 
     segment.endPos = startPos + direction * length;
@@ -190,6 +212,9 @@ void TreeGenerator::generateBranchGeometry(const BranchSegment& segment,
     float length = glm::length(segment.endPos - segment.startPos);
     if (length < 0.0001f) return;  // Skip zero-length segments
 
+    // Skip segments with zero radius (would produce NaN normals)
+    if (segment.startRadius < 0.0001f && segment.endRadius < 0.0001f) return;
+
     // Get per-level segments or use defaults
     int levelIdx = std::min(segment.level, 3);
     int radialSegments = params.usePerLevelParams ?
@@ -199,14 +224,34 @@ void TreeGenerator::generateBranchGeometry(const BranchSegment& segment,
                params.branchParams[levelIdx].sections :
                (segment.level == 0 ? params.trunkRings : params.branchRings);
 
+
     // Direction of branch (safe since we checked length > 0)
     glm::vec3 direction = (segment.endPos - segment.startPos) / length;
 
-    // Build coordinate frame
-    glm::vec3 up = glm::abs(direction.y) > 0.99f
-        ? glm::vec3(1.0f, 0.0f, 0.0f)
-        : glm::vec3(0.0f, 1.0f, 0.0f);
-    glm::vec3 right = glm::normalize(glm::cross(up, direction));
+    // Build coordinate frame (perpendicular to branch direction)
+    // Choose an 'up' vector that's not parallel to direction
+    glm::vec3 up;
+    if (glm::abs(direction.y) > 0.99f) {
+        up = glm::vec3(1.0f, 0.0f, 0.0f);
+    } else if (glm::abs(direction.x) > 0.99f) {
+        up = glm::vec3(0.0f, 1.0f, 0.0f);
+    } else if (glm::abs(direction.z) > 0.99f) {
+        up = glm::vec3(0.0f, 1.0f, 0.0f);
+    } else {
+        up = glm::vec3(0.0f, 1.0f, 0.0f);
+    }
+
+    glm::vec3 right = glm::cross(up, direction);
+    float rightLen = glm::length(right);
+    if (rightLen < 0.0001f) {
+        // Final fallback - shouldn't happen with the logic above
+        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+            "Degenerate coordinate frame for direction (%.3f,%.3f,%.3f)",
+            direction.x, direction.y, direction.z);
+        right = glm::vec3(1.0f, 0.0f, 0.0f);
+    } else {
+        right = right / rightLen;
+    }
     up = glm::cross(direction, right);
 
     uint32_t baseVertexIndex = static_cast<uint32_t>(branchVertices.size());
@@ -226,11 +271,12 @@ void TreeGenerator::generateBranchGeometry(const BranchSegment& segment,
             float sinA = std::sin(angle);
 
             // Position on ring
-            glm::vec3 offset = (right * cosA + up * sinA) * radius;
+            glm::vec3 radialDir = right * cosA + up * sinA;
+            glm::vec3 offset = radialDir * radius;
             glm::vec3 pos = center + offset;
 
-            // Normal points outward
-            glm::vec3 normal = glm::normalize(offset);
+            // Normal points outward (use radial direction which is always unit length)
+            glm::vec3 normal = radialDir;
 
             // UV coordinates with texture scaling
             // U wraps around circumference, V runs along branch length
@@ -238,8 +284,8 @@ void TreeGenerator::generateBranchGeometry(const BranchSegment& segment,
             // Scale UVs for texture tiling
             glm::vec2 uv(u * texScale.x, t * length * texScale.y * 0.1f);
 
-            // Tangent along circumference
-            glm::vec3 tangentDir = glm::normalize(-right * sinA + up * cosA);
+            // Tangent along circumference (perpendicular to radial in the ring plane)
+            glm::vec3 tangentDir = -right * sinA + up * cosA;
             glm::vec4 tangent(tangentDir, 1.0f);
 
             // Color: apply bark tint (shader will multiply with texture)
@@ -250,6 +296,7 @@ void TreeGenerator::generateBranchGeometry(const BranchSegment& segment,
     }
 
     // Generate indices
+    uint32_t baseIndexCount = static_cast<uint32_t>(branchIndices.size());
     for (int ring = 0; ring < rings; ++ring) {
         for (int i = 0; i < radialSegments; ++i) {
             uint32_t current = baseVertexIndex + ring * (radialSegments + 1) + i;
@@ -267,11 +314,16 @@ void TreeGenerator::generateBranchGeometry(const BranchSegment& segment,
             branchIndices.push_back(below);
         }
     }
+
 }
 
 void TreeGenerator::generateLeaves(const BranchSegment& segment,
                                    const TreeParameters& params) {
-    glm::vec3 branchDir = glm::normalize(segment.endPos - segment.startPos);
+    // Calculate branch direction safely
+    glm::vec3 branchVec = segment.endPos - segment.startPos;
+    float branchLen = glm::length(branchVec);
+    if (branchLen < 0.0001f) return;  // Skip leaves on degenerate branches
+    glm::vec3 branchDir = branchVec / branchLen;
 
     // Place leaves along the branch
     for (int i = 0; i < params.leavesPerBranch; ++i) {
@@ -284,19 +336,25 @@ void TreeGenerator::generateLeaves(const BranchSegment& segment,
         // Random offset from branch axis
         glm::vec3 offset = randomOnSphere();
         offset -= branchDir * glm::dot(offset, branchDir);  // Project to perpendicular plane
-        if (glm::length(offset) > 0.001f) {
-            offset = glm::normalize(offset);
+        float offsetLen = glm::length(offset);
+        if (offsetLen > 0.001f) {
+            offset = offset / offsetLen;
+        } else {
+            // Fallback: use a perpendicular direction
+            offset = glm::abs(branchDir.y) > 0.99f
+                ? glm::vec3(1.0f, 0.0f, 0.0f)
+                : glm::normalize(glm::cross(branchDir, glm::vec3(0.0f, 1.0f, 0.0f)));
         }
         float radius = glm::mix(segment.startRadius, segment.endRadius, t);
         pos += offset * (radius + params.leafSize * 0.5f);
 
         // Leaf normal - angle from branch (degrees)
         float leafAngleRad = glm::radians(params.leafAngle);
-        glm::vec3 normal = glm::normalize(
-            offset * std::cos(leafAngleRad) +
-            branchDir * std::sin(leafAngleRad) +
-            glm::vec3(0.0f, 0.2f, 0.0f)
-        );
+        glm::vec3 normalVec = offset * std::cos(leafAngleRad) +
+                              branchDir * std::sin(leafAngleRad) +
+                              glm::vec3(0.0f, 0.2f, 0.0f);
+        float normalLen = glm::length(normalVec);
+        glm::vec3 normal = normalLen > 0.0001f ? normalVec / normalLen : glm::vec3(0.0f, 1.0f, 0.0f);
 
         // Apply size variance
         float sizeVariance = 1.0f - params.leafSizeVariance + randomFloat(0.0f, 2.0f * params.leafSizeVariance);
@@ -358,12 +416,22 @@ void TreeGenerator::buildLeafMesh(Mesh& outMesh, const TreeParameters& params) {
     for (size_t i = 0; i < leafInstances.size(); ++i) {
         const auto& leaf = leafInstances[i];
 
+        // Skip leaves with NaN position or normal
+        if (std::isnan(leaf.position.x) || std::isnan(leaf.position.y) || std::isnan(leaf.position.z) ||
+            std::isnan(leaf.normal.x) || std::isnan(leaf.normal.y) || std::isnan(leaf.normal.z)) {
+            SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "Skipping leaf %zu with NaN data", i);
+            continue;
+        }
+
         // Build tangent space from normal
         glm::vec3 right;
-        if (std::abs(leaf.normal.y) > 0.99f) {
+        glm::vec3 crossVec = glm::cross(glm::vec3(0.0f, 1.0f, 0.0f), leaf.normal);
+        float crossLen = glm::length(crossVec);
+        if (crossLen < 0.001f) {
+            // Normal is nearly vertical, use a different reference
             right = glm::vec3(1.0f, 0.0f, 0.0f);
         } else {
-            right = glm::normalize(glm::cross(glm::vec3(0.0f, 1.0f, 0.0f), leaf.normal));
+            right = crossVec / crossLen;
         }
         glm::vec3 up = glm::cross(leaf.normal, right);
 
@@ -447,6 +515,25 @@ void TreeGenerator::buildLeafMesh(Mesh& outMesh, const TreeParameters& params) {
             indices.push_back(baseIdx + 2);
             indices.push_back(baseIdx + 3);
         }
+    }
+
+    // Debug: Check for NaN in leaf mesh vertices
+    int nanLeafCount = 0;
+    for (size_t i = 0; i < vertices.size(); ++i) {
+        const auto& v = vertices[i];
+        if (std::isnan(v.position.x) || std::isnan(v.position.y) || std::isnan(v.position.z) ||
+            std::isnan(v.normal.x) || std::isnan(v.normal.y) || std::isnan(v.normal.z)) {
+            if (nanLeafCount < 5) {
+                SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                    "NaN in leaf mesh vertex %zu: pos(%.2f,%.2f,%.2f) normal(%.2f,%.2f,%.2f)",
+                    i, v.position.x, v.position.y, v.position.z,
+                    v.normal.x, v.normal.y, v.normal.z);
+            }
+            nanLeafCount++;
+        }
+    }
+    if (nanLeafCount > 0) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Total NaN leaf mesh vertices: %d", nanLeafCount);
     }
 
     outMesh.setCustomGeometry(vertices, indices);

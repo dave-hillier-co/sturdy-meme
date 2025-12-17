@@ -49,27 +49,8 @@ void TreeGenerator::generate(const TreeParameters& params) {
         }
     }
 
-    SDL_Log("Tree generated: %zu segments, %zu vertices, %zu leaves",
-            segments.size(), branchVertices.size(), leafInstances.size());
-
-    // Debug: Check for NaN in generated vertices
-    int nanCount = 0;
-    for (size_t i = 0; i < branchVertices.size(); ++i) {
-        const auto& v = branchVertices[i];
-        if (std::isnan(v.position.x) || std::isnan(v.position.y) || std::isnan(v.position.z) ||
-            std::isnan(v.normal.x) || std::isnan(v.normal.y) || std::isnan(v.normal.z)) {
-            if (nanCount < 10) {
-                SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
-                    "NaN detected in vertex %zu: pos(%.2f,%.2f,%.2f) normal(%.2f,%.2f,%.2f)",
-                    i, v.position.x, v.position.y, v.position.z,
-                    v.normal.x, v.normal.y, v.normal.z);
-            }
-            nanCount++;
-        }
-    }
-    if (nanCount > 0) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Total NaN vertices: %d", nanCount);
-    }
+    SDL_Log("Tree generated: %zu segments, %zu vertices, %zu indices, %zu leaves",
+            segments.size(), branchVertices.size(), branchIndices.size(), leafInstances.size());
 }
 
 void TreeGenerator::generateSpaceColonisation(const TreeParameters& params) {
@@ -224,7 +205,6 @@ void TreeGenerator::generateBranchGeometry(const BranchSegment& segment,
                params.branchParams[levelIdx].sections :
                (segment.level == 0 ? params.trunkRings : params.branchRings);
 
-
     // Direction of branch (safe since we checked length > 0)
     glm::vec3 direction = (segment.endPos - segment.startPos) / length;
 
@@ -296,7 +276,6 @@ void TreeGenerator::generateBranchGeometry(const BranchSegment& segment,
     }
 
     // Generate indices
-    uint32_t baseIndexCount = static_cast<uint32_t>(branchIndices.size());
     for (int ring = 0; ring < rings; ++ring) {
         for (int i = 0; i < radialSegments; ++i) {
             uint32_t current = baseVertexIndex + ring * (radialSegments + 1) + i;
@@ -314,7 +293,6 @@ void TreeGenerator::generateBranchGeometry(const BranchSegment& segment,
             branchIndices.push_back(below);
         }
     }
-
 }
 
 void TreeGenerator::generateLeaves(const BranchSegment& segment,

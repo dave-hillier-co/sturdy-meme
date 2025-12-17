@@ -57,6 +57,18 @@ void main() {
     vec4 worldPos = pc.model * vec4(pos, 1.0);
     gl_Position = ubo.proj * ubo.view * worldPos;
 
+    // Guard against invalid clip coordinates (NaN, inf, or extreme W)
+    if (any(isnan(gl_Position)) || any(isinf(gl_Position)) || abs(gl_Position.w) < 0.0001) {
+        gl_Position = vec4(0.0, 0.0, -2.0, 1.0); // Behind near plane
+        fragNormal = vec3(0.0, 1.0, 0.0);
+        fragTangent = vec3(1.0, 0.0, 0.0);
+        fragBitangent = vec3(0.0, 0.0, 1.0);
+        fragTexCoord = vec2(0.0);
+        fragWorldPos = vec3(0.0);
+        fragColor = vec4(1.0, 0.0, 1.0, 1.0); // Magenta debug
+        return;
+    }
+
     // Transform normal to world space using inverse-transpose for correct
     // handling of non-uniform scaling. For uniform scaling this is equivalent
     // to mat3(model), but handles general cases correctly.

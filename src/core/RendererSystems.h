@@ -108,6 +108,7 @@ public:
     const BloomSystem& bloom() const { return *bloomSystem_; }
     ShadowSystem& shadow() { return *shadowSystem_; }
     const ShadowSystem& shadow() const { return *shadowSystem_; }
+    void setShadow(std::unique_ptr<ShadowSystem> system);
     TerrainSystem& terrain() { return *terrainSystem_; }
     const TerrainSystem& terrain() const { return *terrainSystem_; }
 

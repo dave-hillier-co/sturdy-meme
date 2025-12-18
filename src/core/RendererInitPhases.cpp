@@ -95,7 +95,9 @@ bool Renderer::initSubsystems(const InitContext& initCtx) {
     }
 
     // Initialize shadow system (needs descriptor set layouts for pipeline compatibility)
-    if (!systems_->shadow().init(initCtx, descriptorSetLayout.get(), systems_->skinnedMesh().getDescriptorSetLayout())) return false;
+    auto shadowSystem = ShadowSystem::create(initCtx, descriptorSetLayout.get(), systems_->skinnedMesh().getDescriptorSetLayout());
+    if (!shadowSystem) return false;
+    systems_->setShadow(std::move(shadowSystem));
 
     // Initialize terrain system BEFORE scene so scene objects can query terrain height
     std::string heightmapPath = resourcePath + "/assets/terrain/isleofwight-0m-200m.png";

@@ -325,11 +325,11 @@ public:
     }
 
     /**
-     * Initialize Hi-Z occlusion culling system
+     * Initialize Hi-Z occlusion culling system via factory
      * Returns true even if Hi-Z fails (it's optional)
      */
     static bool initHiZSystem(
-        HiZSystem& hiZSystem,
+        RendererSystems& systems,
         const InitContext& ctx,
         VkFormat depthFormat,
         VkImageView hdrDepthView,
@@ -338,13 +338,13 @@ public:
 
     // Overload using HDRResources (still needs depthFormat and depthSampler)
     static bool initHiZSystem(
-        HiZSystem& hiZSystem,
+        RendererSystems& systems,
         const InitContext& ctx,
         VkFormat depthFormat,
         const HDRResources& hdr,
         VkSampler depthSampler
     ) {
-        return initHiZSystem(hiZSystem, ctx, depthFormat, hdr.depthView, depthSampler);
+        return initHiZSystem(systems, ctx, depthFormat, hdr.depthView, depthSampler);
     }
 
     /**

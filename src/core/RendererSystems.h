@@ -165,6 +165,7 @@ public:
     // Culling and optimization
     HiZSystem& hiZ() { return *hiZSystem_; }
     const HiZSystem& hiZ() const { return *hiZSystem_; }
+    void setHiZ(std::unique_ptr<HiZSystem> system);
 
     // Scene and resources
     SceneManager& scene() { return *sceneManager_; }

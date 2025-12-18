@@ -80,7 +80,7 @@ RendererSystems::RendererSystems()
     , catmullClarkSystem_(std::make_unique<CatmullClarkSystem>())
     , rockSystem_(std::make_unique<RockSystem>())
     // Tier 2 - Culling
-    , hiZSystem_(std::make_unique<HiZSystem>())
+    // hiZSystem_ created via factory in RendererInit
     // Infrastructure
     , sceneManager_(std::make_unique<SceneManager>())
     // globalBufferManager_ created via factory in RendererInitPhases
@@ -129,6 +129,10 @@ void RendererSystems::setSSR(std::unique_ptr<SSRSystem> system) {
     ssrSystem_ = std::move(system);
 }
 
+void RendererSystems::setHiZ(std::unique_ptr<HiZSystem> system) {
+    hiZSystem_ = std::move(system);
+}
+
 bool RendererSystems::init(const InitContext& /*initCtx*/,
                             VkRenderPass /*swapchainRenderPass*/,
                             VkFormat /*swapchainImageFormat*/,
@@ -165,7 +169,7 @@ void RendererSystems::destroy(VkDevice device, VmaAllocator allocator) {
     waterSystem_->destroy(device, allocator);
 
     profiler_.reset();
-    hiZSystem_->destroy();
+    hiZSystem_.reset();  // RAII cleanup via destructor
 
     catmullClarkSystem_->destroy(device, allocator);
     rockSystem_->destroy(allocator, device);

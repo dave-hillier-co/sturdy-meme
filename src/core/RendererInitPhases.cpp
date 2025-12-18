@@ -261,11 +261,13 @@ bool Renderer::initSubsystems(const InitContext& initCtx) {
     // Create sky descriptor sets now that uniform buffers and LUTs are ready
     if (!systems_->sky().createDescriptorSets(systems_->globalBuffers().uniformBuffers.buffers, sizeof(UniformBufferObject), systems_->atmosphereLUT())) return false;
 
-    // Initialize Hi-Z occlusion culling system
-    if (!systems_->hiZ().init(initCtx, depthFormat)) {
+    // Initialize Hi-Z occlusion culling system via factory
+    auto hiZSystem = HiZSystem::create(initCtx, depthFormat);
+    if (!hiZSystem) {
         SDL_Log("Warning: Hi-Z system initialization failed, occlusion culling disabled");
         // Continue without Hi-Z - it's an optional optimization
     } else {
+        systems_->setHiZ(std::move(hiZSystem));
         // Connect depth buffer to Hi-Z system - use HDR depth where scene is rendered
         systems_->hiZ().setDepthBuffer(core.hdr.depthView, depthSampler.get());
 

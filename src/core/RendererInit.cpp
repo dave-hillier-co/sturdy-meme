@@ -554,19 +554,23 @@ bool RendererInit::initCatmullClarkSystem(
 }
 
 bool RendererInit::initHiZSystem(
-    HiZSystem& hiZSystem,
+    RendererSystems& systems,
     const InitContext& ctx,
     VkFormat depthFormat,
     VkImageView hdrDepthView,
     VkSampler depthSampler
 ) {
-    if (!hiZSystem.init(ctx, depthFormat)) {
+    auto hiZSystem = HiZSystem::create(ctx, depthFormat);
+    if (!hiZSystem) {
         SDL_Log("Warning: Hi-Z system initialization failed, occlusion culling disabled");
         return true;  // Don't fail - Hi-Z is optional
     }
 
     // Connect depth buffer to Hi-Z system
-    hiZSystem.setDepthBuffer(hdrDepthView, depthSampler);
+    hiZSystem->setDepthBuffer(hdrDepthView, depthSampler);
+
+    // Store in RendererSystems
+    systems.setHiZ(std::move(hiZSystem));
 
     return true;
 }

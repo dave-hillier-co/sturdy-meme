@@ -1,5 +1,6 @@
 #include "TerrainMeshlet.h"
 #include "VulkanResourceFactory.h"
+#include "VulkanBarriers.h"
 #include <SDL3/SDL.h>
 #include <cstring>
 #include <unordered_map>
@@ -131,53 +132,194 @@ std::unique_ptr<TerrainMeshlet> TerrainMeshlet::create(const InitInfo& info) {
     return meshlet;
 }
 
-bool TerrainMeshlet::initInternal(const InitInfo& info) {
-    subdivisionLevel = info.subdivisionLevel;
+bool TerrainMeshlet::createBuffers() {
+    VkDeviceSize vertexBufferSize = pendingVertices_.size() * sizeof(glm::vec2);
+    VkDeviceSize indexBufferSize = pendingIndices_.size() * sizeof(uint16_t);
 
-    // Generate meshlet geometry
-    std::vector<glm::vec2> vertices;
-    std::vector<uint16_t> indices;
-    generateMeshletGeometry(subdivisionLevel, vertices, indices);
-
-    vertexCount = static_cast<uint32_t>(vertices.size());
-    indexCount = static_cast<uint32_t>(indices.size());
-    triangleCount = indexCount / 3;
-
-    // Create vertex buffer (vertex + storage for compute access, host-writable for upload)
-    VkDeviceSize vertexBufferSize = vertices.size() * sizeof(glm::vec2);
-    if (!VulkanResourceFactory::createVertexStorageBufferHostWritable(info.allocator, vertexBufferSize, vertexBuffer_)) {
+    // Create device-local vertex buffer (with transfer dst for staging uploads)
+    if (!VulkanResourceFactory::createVertexStorageBuffer(allocator_, vertexBufferSize, vertexBuffer_)) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create meshlet vertex buffer");
         return false;
     }
 
-    // Copy vertex data
-    void* data = vertexBuffer_.map();
-    if (!data) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to map meshlet vertex buffer");
-        return false;
-    }
-    memcpy(data, vertices.data(), vertexBufferSize);
-    vertexBuffer_.unmap();
-
-    // Create index buffer
-    VkDeviceSize indexBufferSize = indices.size() * sizeof(uint16_t);
-    if (!VulkanResourceFactory::createIndexBufferHostWritable(info.allocator, indexBufferSize, indexBuffer_)) {
+    // Create device-local index buffer
+    if (!VulkanResourceFactory::createIndexBuffer(allocator_, indexBufferSize, indexBuffer_)) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create meshlet index buffer");
         return false;
     }
 
-    // Copy index data
-    data = indexBuffer_.map();
-    if (!data) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to map meshlet index buffer");
+    return true;
+}
+
+bool TerrainMeshlet::initInternal(const InitInfo& info) {
+    allocator_ = info.allocator;
+    framesInFlight_ = info.framesInFlight;
+    subdivisionLevel_ = info.subdivisionLevel;
+
+    // Generate meshlet geometry to pending buffers
+    generateMeshletGeometry(subdivisionLevel_, pendingVertices_, pendingIndices_);
+
+    vertexCount_ = static_cast<uint32_t>(pendingVertices_.size());
+    indexCount_ = static_cast<uint32_t>(pendingIndices_.size());
+    triangleCount_ = indexCount_ / 3;
+
+    // Create device-local GPU buffers
+    if (!createBuffers()) {
         return false;
     }
-    memcpy(data, indices.data(), indexBufferSize);
-    indexBuffer_.unmap();
 
-    SDL_Log("TerrainMeshlet initialized: level %u, %u triangles, %u vertices",
-            subdivisionLevel, triangleCount, vertexCount);
+    // Create per-frame staging buffers (like VirtualTextureCache pattern)
+    VkDeviceSize vertexBufferSize = pendingVertices_.size() * sizeof(glm::vec2);
+    VkDeviceSize indexBufferSize = pendingIndices_.size() * sizeof(uint16_t);
+
+    vertexStagingBuffers_.resize(framesInFlight_);
+    indexStagingBuffers_.resize(framesInFlight_);
+    vertexStagingMapped_.resize(framesInFlight_);
+    indexStagingMapped_.resize(framesInFlight_);
+
+    for (uint32_t i = 0; i < framesInFlight_; ++i) {
+        if (!VulkanResourceFactory::createStagingBuffer(allocator_, vertexBufferSize, vertexStagingBuffers_[i])) {
+            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create meshlet vertex staging buffer %u", i);
+            return false;
+        }
+        vertexStagingMapped_[i] = vertexStagingBuffers_[i].map();
+
+        if (!VulkanResourceFactory::createStagingBuffer(allocator_, indexBufferSize, indexStagingBuffers_[i])) {
+            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create meshlet index staging buffer %u", i);
+            return false;
+        }
+        indexStagingMapped_[i] = indexStagingBuffers_[i].map();
+    }
+
+    // Mark that we need to upload for all frames in flight
+    pendingUpload_ = true;
+    pendingUploadFrames_ = framesInFlight_;
+
+    SDL_Log("TerrainMeshlet initialized: level %u, %u triangles, %u vertices, %u staging buffers",
+            subdivisionLevel_, triangleCount_, vertexCount_, framesInFlight_);
 
     return true;
 }
 
+bool TerrainMeshlet::requestSubdivisionChange(uint32_t newLevel) {
+    if (newLevel == subdivisionLevel_ && !pendingUpload_) {
+        return false;  // Already at this level and no pending upload
+    }
+
+    // Generate new geometry to CPU memory (no GPU wait needed!)
+    generateMeshletGeometry(newLevel, pendingVertices_, pendingIndices_);
+
+    // Check if buffer sizes changed - if so, we need to recreate buffers
+    uint32_t newVertexCount = static_cast<uint32_t>(pendingVertices_.size());
+    uint32_t newIndexCount = static_cast<uint32_t>(pendingIndices_.size());
+
+    if (newVertexCount != vertexCount_ || newIndexCount != indexCount_) {
+        // Buffer sizes changed - need to recreate GPU buffers and staging buffers
+        // This is the only case where we might need to be careful about in-flight frames
+        // But since we're using per-frame staging, we just recreate everything
+
+        VkDeviceSize vertexBufferSize = pendingVertices_.size() * sizeof(glm::vec2);
+        VkDeviceSize indexBufferSize = pendingIndices_.size() * sizeof(uint16_t);
+
+        // Recreate GPU buffers
+        vertexBuffer_.reset();
+        indexBuffer_.reset();
+        if (!createBuffers()) {
+            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to recreate meshlet buffers");
+            return false;
+        }
+
+        // Recreate staging buffers with new sizes
+        for (uint32_t i = 0; i < framesInFlight_; ++i) {
+            if (vertexStagingMapped_[i]) {
+                vertexStagingBuffers_[i].unmap();
+            }
+            if (indexStagingMapped_[i]) {
+                indexStagingBuffers_[i].unmap();
+            }
+
+            vertexStagingBuffers_[i].reset();
+            indexStagingBuffers_[i].reset();
+
+            if (!VulkanResourceFactory::createStagingBuffer(allocator_, vertexBufferSize, vertexStagingBuffers_[i])) {
+                SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to recreate meshlet vertex staging buffer %u", i);
+                return false;
+            }
+            vertexStagingMapped_[i] = vertexStagingBuffers_[i].map();
+
+            if (!VulkanResourceFactory::createStagingBuffer(allocator_, indexBufferSize, indexStagingBuffers_[i])) {
+                SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to recreate meshlet index staging buffer %u", i);
+                return false;
+            }
+            indexStagingMapped_[i] = indexStagingBuffers_[i].map();
+        }
+
+        vertexCount_ = newVertexCount;
+        indexCount_ = newIndexCount;
+    }
+
+    subdivisionLevel_ = newLevel;
+    triangleCount_ = indexCount_ / 3;
+
+    // Mark that we need to upload for all frames in flight
+    pendingUpload_ = true;
+    pendingUploadFrames_ = framesInFlight_;
+
+    SDL_Log("TerrainMeshlet subdivision change requested: level %u (%u triangles)",
+            subdivisionLevel_, triangleCount_);
+
+    return true;
+}
+
+void TerrainMeshlet::recordUpload(VkCommandBuffer cmd, uint32_t frameIndex) {
+    if (!pendingUpload_) {
+        return;  // Nothing to upload
+    }
+
+    uint32_t bufferIndex = frameIndex % framesInFlight_;
+
+    if (bufferIndex >= vertexStagingBuffers_.size()) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
+                     "TerrainMeshlet::recordUpload: invalid frame index %u", frameIndex);
+        return;
+    }
+
+    // Copy geometry to this frame's staging buffers
+    VkDeviceSize vertexDataSize = pendingVertices_.size() * sizeof(glm::vec2);
+    VkDeviceSize indexDataSize = pendingIndices_.size() * sizeof(uint16_t);
+
+    if (vertexStagingMapped_[bufferIndex]) {
+        std::memcpy(vertexStagingMapped_[bufferIndex], pendingVertices_.data(), vertexDataSize);
+    }
+    if (indexStagingMapped_[bufferIndex]) {
+        std::memcpy(indexStagingMapped_[bufferIndex], pendingIndices_.data(), indexDataSize);
+    }
+
+    // Record copy commands: staging -> device-local
+    VkBufferCopy vertexCopy{};
+    vertexCopy.srcOffset = 0;
+    vertexCopy.dstOffset = 0;
+    vertexCopy.size = vertexDataSize;
+    vkCmdCopyBuffer(cmd, vertexStagingBuffers_[bufferIndex].get(), vertexBuffer_.get(), 1, &vertexCopy);
+
+    VkBufferCopy indexCopy{};
+    indexCopy.srcOffset = 0;
+    indexCopy.dstOffset = 0;
+    indexCopy.size = indexDataSize;
+    vkCmdCopyBuffer(cmd, indexStagingBuffers_[bufferIndex].get(), indexBuffer_.get(), 1, &indexCopy);
+
+    // Barrier: transfer -> vertex input (so the buffers are ready for drawing)
+    Barriers::transferToVertexInput(cmd);
+
+    // Track upload progress
+    if (pendingUploadFrames_ > 0) {
+        pendingUploadFrames_--;
+    }
+
+    // After all frames have uploaded, clear pending state
+    if (pendingUploadFrames_ == 0) {
+        pendingUpload_ = false;
+        // Keep pending geometry in memory in case we need it again
+        // (optional: could clear to save memory if subdivision changes are rare)
+    }
+}

@@ -4,6 +4,7 @@
 #include <vulkan/vulkan.h>
 #include <vk_mem_alloc.h>
 #include <glm/glm.hpp>
+#include <array>
 #include <vector>
 #include <string>
 #include <memory>
@@ -74,7 +75,7 @@ public:
                               VkSampler displacementMapSampler,
                               VkImageView tileArrayView = VK_NULL_HANDLE,
                               VkSampler tileSampler = VK_NULL_HANDLE,
-                              VkBuffer tileInfoBuffer = VK_NULL_HANDLE);
+                              const std::array<VkBuffer, 3>& tileInfoBuffers = {});
 
     // Update leaf uniforms each frame
     void updateUniforms(uint32_t frameIndex, const glm::vec3& cameraPos,
@@ -168,6 +169,9 @@ private:
     // Displacement texture (shared from GrassSystem)
     VkImageView displacementMapView = VK_NULL_HANDLE;
     VkSampler displacementMapSampler = VK_NULL_HANDLE;
+
+    // Tile cache resources for high-res terrain sampling
+    std::array<VkBuffer, 3> tileInfoBuffers = {};  // Triple-buffered for frames-in-flight sync
 
     // Displacement region uniform buffer (per-frame)
     BufferUtils::PerFrameBufferSet displacementRegionBuffers;

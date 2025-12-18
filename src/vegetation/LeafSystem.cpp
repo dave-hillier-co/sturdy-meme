@@ -397,12 +397,16 @@ void LeafSystem::updateDescriptorSets(VkDevice dev, const std::vector<VkBuffer>&
                                        VkSampler displacementMapSamplerParam,
                                        VkImageView tileArrayView,
                                        VkSampler tileSampler,
-                                       VkBuffer tileInfoBuffer) {
+                                       const std::array<VkBuffer, 3>& tileInfoBuffersParam) {
     // Store displacement texture references
     this->displacementMapView = displacementMapViewParam;
     this->displacementMapSampler = displacementMapSamplerParam;
 
+    // Store tile info buffers (triple-buffered for frames-in-flight sync)
+    this->tileInfoBuffers = tileInfoBuffersParam;
+
     // Update compute and graphics descriptor sets for both buffer sets
+    // Note: tile info buffer (binding 9) is updated per-frame in recordResetAndCompute
     for (uint32_t set = 0; set < BUFFER_SET_COUNT; set++) {
         uint32_t inputSet = (set == 0) ? 1 : 0;  // Read from opposite buffer
         uint32_t outputSet = set;
@@ -422,8 +426,9 @@ void LeafSystem::updateDescriptorSets(VkDevice dev, const std::vector<VkBuffer>&
         if (tileArrayView != VK_NULL_HANDLE && tileSampler != VK_NULL_HANDLE) {
             computeWriter.writeImage(8, tileArrayView, tileSampler);
         }
-        if (tileInfoBuffer != VK_NULL_HANDLE) {
-            computeWriter.writeBuffer(9, tileInfoBuffer, 0, VK_WHOLE_SIZE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
+        // Write initial tile info buffer (frame 0) - will be updated per-frame
+        if (tileInfoBuffers[0] != VK_NULL_HANDLE) {
+            computeWriter.writeBuffer(9, tileInfoBuffers[0], 0, VK_WHOLE_SIZE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
         }
 
         computeWriter.update();
@@ -514,11 +519,16 @@ void LeafSystem::updateUniforms(uint32_t frameIndex, const glm::vec3& cameraPos,
 void LeafSystem::recordResetAndCompute(VkCommandBuffer cmd, uint32_t frameIndex, float time, float deltaTime) {
     uint32_t writeSet = (*particleSystem)->getComputeBufferSet();
 
-    // Update compute descriptor set to use this frame's uniform and displacement region buffers
-    DescriptorManager::SetWriter(getDevice(), (*particleSystem)->getComputeDescriptorSet(writeSet))
-        .writeBuffer(3, uniformBuffers.buffers[frameIndex], 0, sizeof(LeafUniforms))
-        .writeBuffer(7, displacementRegionBuffers.buffers[frameIndex], 0, sizeof(glm::vec4))
-        .update();
+    // Update compute descriptor set to use this frame's uniform, displacement region, and tile info buffers
+    DescriptorManager::SetWriter writer(getDevice(), (*particleSystem)->getComputeDescriptorSet(writeSet));
+    writer.writeBuffer(3, uniformBuffers.buffers[frameIndex], 0, sizeof(LeafUniforms))
+          .writeBuffer(7, displacementRegionBuffers.buffers[frameIndex], 0, sizeof(glm::vec4));
+
+    // Update tile info buffer to the correct frame's buffer (triple-buffered to avoid CPU-GPU sync)
+    if (tileInfoBuffers[frameIndex % 3] != VK_NULL_HANDLE) {
+        writer.writeBuffer(9, tileInfoBuffers[frameIndex % 3], 0, VK_WHOLE_SIZE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
+    }
+    writer.update();
 
     // Reset indirect buffer before compute dispatch
     Barriers::clearBufferForCompute(cmd, indirectBuffers.buffers[writeSet], 0, sizeof(VkDrawIndirectCommand));

@@ -1,6 +1,7 @@
 // RendererInitPhases.cpp - High-level initialization phases for Renderer
 // Split from Renderer.cpp to keep file sizes manageable
 
+#include <array>
 #include "Renderer.h"
 #include "RendererInit.h"
 #include "MaterialDescriptorFactory.h"
@@ -263,23 +264,35 @@ bool Renderer::initSubsystems(const InitContext& initCtx) {
     systems_->grass().setSnowMask(device, systems_->snowMask().getSnowMaskView(), systems_->snowMask().getSnowMaskSampler());
 
     // Update leaf system descriptor sets
+    // Pass triple-buffered tile info buffers to avoid CPU-GPU sync issues
+    std::array<VkBuffer, 3> leafTileInfoBuffers = {
+        systems_->terrain().getTileInfoBuffer(0),
+        systems_->terrain().getTileInfoBuffer(1),
+        systems_->terrain().getTileInfoBuffer(2)
+    };
     systems_->leaf().updateDescriptorSets(device, systems_->globalBuffers().uniformBuffers.buffers, windBuffers,
                                      systems_->terrain().getHeightMapView(), systems_->terrain().getHeightMapSampler(),
                                      systems_->grass().getDisplacementImageView(), systems_->grass().getDisplacementSampler(),
                                      systems_->terrain().getTileArrayView(), systems_->terrain().getTileSampler(),
-                                     systems_->terrain().getTileInfoBuffer());
+                                     leafTileInfoBuffers);
 
     // Initialize atmosphere subsystems (Froxel, AtmosphereLUT, CloudShadow)
     if (!RendererInit::initAtmosphereSubsystems(*systems_, initCtx, core.shadow,
                                                  systems_->globalBuffers().lightBuffers.buffers)) return false;
 
     // Update grass descriptor sets (now that CloudShadowSystem exists)
+    // Pass triple-buffered tile info buffers to avoid CPU-GPU sync issues
+    std::array<VkBuffer, 3> tileInfoBuffers = {
+        systems_->terrain().getTileInfoBuffer(0),
+        systems_->terrain().getTileInfoBuffer(1),
+        systems_->terrain().getTileInfoBuffer(2)
+    };
     systems_->grass().updateDescriptorSets(device, systems_->globalBuffers().uniformBuffers.buffers, systems_->shadow().getShadowImageView(), systems_->shadow().getShadowSampler(), windBuffers, systems_->globalBuffers().lightBuffers.buffers,
                                       systems_->terrain().getHeightMapView(), systems_->terrain().getHeightMapSampler(),
                                       systems_->globalBuffers().snowBuffers.buffers, systems_->globalBuffers().cloudShadowBuffers.buffers,
                                       systems_->cloudShadow().getShadowMapView(), systems_->cloudShadow().getShadowMapSampler(),
                                       systems_->terrain().getTileArrayView(), systems_->terrain().getTileSampler(),
-                                      systems_->terrain().getTileInfoBuffer());
+                                      tileInfoBuffers);
 
     // Connect froxel volume to weather system
     systems_->weather().setFroxelVolume(systems_->froxel().getScatteringVolumeView(), systems_->froxel().getVolumeSampler(),

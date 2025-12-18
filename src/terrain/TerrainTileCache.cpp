@@ -46,14 +46,16 @@ bool TerrainTileCache::initInternal(const InitInfo& info) {
         return false;
     }
 
-    // Create tile info buffer for shader using VulkanResourceFactory
+    // Create tile info buffers for shader using VulkanResourceFactory (triple-buffered)
     // Layout: uint activeTileCount, uint padding[3], TileInfoGPU tiles[MAX_ACTIVE_TILES]
     VkDeviceSize bufferSize = sizeof(uint32_t) * 4 + MAX_ACTIVE_TILES * sizeof(TileInfoGPU);
-    if (!VulkanResourceFactory::createStorageBufferHostReadable(allocator, bufferSize, tileInfoBuffer_)) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "TerrainTileCache: Failed to create tile info buffer");
-        return false;
+    for (uint32_t i = 0; i < FRAMES_IN_FLIGHT; i++) {
+        if (!VulkanResourceFactory::createStorageBufferHostReadable(allocator, bufferSize, tileInfoBuffers_[i])) {
+            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "TerrainTileCache: Failed to create tile info buffer %u", i);
+            return false;
+        }
+        tileInfoMappedPtrs_[i] = tileInfoBuffers_[i].map();
     }
-    tileInfoMappedPtr = tileInfoBuffer_.map();
 
     // Create tile array image (2D array texture with MAX_ACTIVE_TILES layers)
     VkImageCreateInfo imageInfo{};
@@ -129,9 +131,13 @@ bool TerrainTileCache::initInternal(const InitInfo& info) {
         vkFreeCommandBuffers(device, commandPool, 1, &cmd);
     }
 
-    // Initialize tile info buffer with activeTileCount = 0
+    // Initialize all tile info buffers with activeTileCount = 0
     // This ensures shaders don't read garbage if they run before first updateActiveTiles()
-    updateTileInfoBuffer();
+    for (uint32_t i = 0; i < FRAMES_IN_FLIGHT; i++) {
+        currentFrameIndex_ = i;
+        updateTileInfoBuffer();
+    }
+    currentFrameIndex_ = 0;
 
     SDL_Log("TerrainTileCache initialized: %s", cacheDirectory.c_str());
     SDL_Log("  Terrain size: %.0fm, Tile resolution: %u, LOD levels: %u",
@@ -155,8 +161,10 @@ void TerrainTileCache::cleanup() {
     loadedTiles.clear();
     activeTiles.clear();
 
-    // Destroy tile info buffer (RAII via reset)
-    tileInfoBuffer_.reset();
+    // Destroy tile info buffers (RAII via reset)
+    for (uint32_t i = 0; i < FRAMES_IN_FLIGHT; i++) {
+        tileInfoBuffers_[i].reset();
+    }
 
     // Destroy tile array texture
     if (tileArrayView) {
@@ -527,10 +535,12 @@ bool TerrainTileCache::uploadTileToGPU(TerrainTile& tile) {
 }
 
 void TerrainTileCache::updateTileInfoBuffer() {
-    if (!tileInfoMappedPtr) return;
+    // Write to the current frame's buffer (triple-buffered to avoid CPU-GPU sync issues)
+    void* mappedPtr = tileInfoMappedPtrs_[currentFrameIndex_ % FRAMES_IN_FLIGHT];
+    if (!mappedPtr) return;
 
     // First 4 bytes: active tile count
-    uint32_t* countPtr = static_cast<uint32_t*>(tileInfoMappedPtr);
+    uint32_t* countPtr = static_cast<uint32_t*>(mappedPtr);
     countPtr[0] = static_cast<uint32_t>(activeTiles.size());
     countPtr[1] = 0; // padding1
     countPtr[2] = 0; // padding2

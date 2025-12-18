@@ -604,17 +604,18 @@ void GrassSystem::updateDescriptorSets(VkDevice dev, const std::vector<VkBuffer>
                                         VkImageView cloudShadowMapView, VkSampler cloudShadowMapSampler,
                                         VkImageView tileArrayViewParam,
                                         VkSampler tileSamplerParam,
-                                        VkBuffer tileInfoBufferParam) {
+                                        const std::array<VkBuffer, 3>& tileInfoBuffersParam) {
     // Store terrain heightmap info for compute descriptor set updates
     this->terrainHeightMapView = terrainHeightMapViewParam;
     this->terrainHeightMapSampler = terrainHeightMapSamplerParam;
 
-    // Store tile cache resources
+    // Store tile cache resources (triple-buffered tile info)
     this->tileArrayView = tileArrayViewParam;
     this->tileSampler = tileSamplerParam;
-    this->tileInfoBuffer = tileInfoBufferParam;
+    this->tileInfoBuffers = tileInfoBuffersParam;
 
     // Update compute descriptor sets with terrain heightmap, displacement, and tile cache
+    // Note: tile info buffer (binding 6) is updated per-frame in recordResetAndCompute
     for (uint32_t set = 0; set < BUFFER_SET_COUNT; set++) {
         // Use non-fluent pattern to avoid copy semantics bug with DescriptorManager::SetWriter
         DescriptorManager::SetWriter computeWriter(dev, (*particleSystem)->getComputeDescriptorSet(set));
@@ -628,8 +629,9 @@ void GrassSystem::updateDescriptorSets(VkDevice dev, const std::vector<VkBuffer>
         if (tileArrayView != VK_NULL_HANDLE && tileSampler != VK_NULL_HANDLE) {
             computeWriter.writeImage(5, tileArrayView, tileSampler);
         }
-        if (tileInfoBuffer != VK_NULL_HANDLE) {
-            computeWriter.writeBuffer(6, tileInfoBuffer, 0, VK_WHOLE_SIZE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
+        // Write initial tile info buffer (frame 0) - will be updated per-frame
+        if (tileInfoBuffers[0] != VK_NULL_HANDLE) {
+            computeWriter.writeBuffer(6, tileInfoBuffers[0], 0, VK_WHOLE_SIZE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
         }
 
         computeWriter.update();
@@ -767,12 +769,18 @@ void GrassSystem::recordResetAndCompute(VkCommandBuffer cmd, uint32_t frameIndex
     // Double-buffer: compute writes to computeBufferSet
     uint32_t writeSet = (*particleSystem)->getComputeBufferSet();
 
-    // Update compute descriptor set to use this frame's uniform buffer, terrain heightmap, and displacement map
-    DescriptorManager::SetWriter(getDevice(), (*particleSystem)->getComputeDescriptorSet(writeSet))
-        .writeBuffer(2, uniformBuffers.buffers[frameIndex], 0, sizeof(GrassUniforms))
-        .writeImage(3, terrainHeightMapView, terrainHeightMapSampler)
-        .writeImage(4, displacementImageView, displacementSampler_.get())
-        .update();
+    // Update compute descriptor set to use this frame's uniform buffer, terrain heightmap, displacement map,
+    // and the correct triple-buffered tile info buffer for this frame
+    DescriptorManager::SetWriter writer(getDevice(), (*particleSystem)->getComputeDescriptorSet(writeSet));
+    writer.writeBuffer(2, uniformBuffers.buffers[frameIndex], 0, sizeof(GrassUniforms))
+          .writeImage(3, terrainHeightMapView, terrainHeightMapSampler)
+          .writeImage(4, displacementImageView, displacementSampler_.get());
+
+    // Update tile info buffer to the correct frame's buffer (triple-buffered to avoid CPU-GPU sync)
+    if (tileInfoBuffers[frameIndex % 3] != VK_NULL_HANDLE) {
+        writer.writeBuffer(6, tileInfoBuffers[frameIndex % 3], 0, VK_WHOLE_SIZE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
+    }
+    writer.update();
 
     // Reset indirect buffer before compute dispatch to prevent accumulation
     Barriers::clearBufferForComputeReadWrite(cmd, indirectBuffers.buffers[writeSet], 0, sizeof(VkDrawIndirectCommand));

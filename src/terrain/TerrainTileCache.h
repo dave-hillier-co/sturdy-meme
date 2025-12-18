@@ -3,6 +3,7 @@
 #include <vulkan/vulkan.h>
 #include <vk_mem_alloc.h>
 #include <glm/glm.hpp>
+#include <array>
 #include <vector>
 #include <string>
 #include <unordered_map>
@@ -109,8 +110,18 @@ public:
     uint32_t getActiveTileCount() const { return static_cast<uint32_t>(activeTiles.size()); }
     const std::vector<TerrainTile*>& getActiveTiles() const { return activeTiles; }
 
-    // Get tile info buffer for shader
-    VkBuffer getTileInfoBuffer() const { return tileInfoBuffer_.get(); }
+    // Get tile info buffer for shader (triple-buffered for frames-in-flight sync)
+    VkBuffer getTileInfoBuffer(uint32_t frameIndex) const {
+        return tileInfoBuffers_[frameIndex % FRAMES_IN_FLIGHT].get();
+    }
+    // Legacy accessor for systems that don't need per-frame sync (returns frame 0)
+    VkBuffer getTileInfoBuffer() const { return tileInfoBuffers_[0].get(); }
+
+    // Update which frame we're writing to (call during updateActiveTiles)
+    void setCurrentFrameIndex(uint32_t frameIndex) { currentFrameIndex_ = frameIndex; }
+
+    // Number of frames in flight (matches Renderer::MAX_FRAMES_IN_FLIGHT)
+    static constexpr uint32_t FRAMES_IN_FLIGHT = 3;
 
     // Accessors
     uint32_t getNumLODLevels() const { return numLODLevels; }
@@ -185,9 +196,10 @@ private:
     VkCommandPool commandPool = VK_NULL_HANDLE;
     ManagedSampler sampler;
 
-    // Tile info buffer for shader (RAII-managed)
-    ManagedBuffer tileInfoBuffer_;
-    void* tileInfoMappedPtr = nullptr;
+    // Tile info buffers for shader (RAII-managed, triple-buffered for frames-in-flight)
+    std::array<ManagedBuffer, FRAMES_IN_FLIGHT> tileInfoBuffers_;
+    std::array<void*, FRAMES_IN_FLIGHT> tileInfoMappedPtrs_ = {};
+    uint32_t currentFrameIndex_ = 0;
 
     // Tile array texture (sampler2DArray) for shader - holds all active tiles
     VkImage tileArrayImage = VK_NULL_HANDLE;

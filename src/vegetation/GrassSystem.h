@@ -4,6 +4,7 @@
 #include <vulkan/vulkan.h>
 #include <vk_mem_alloc.h>
 #include <glm/glm.hpp>
+#include <array>
 #include <vector>
 #include <string>
 #include <memory>
@@ -72,7 +73,7 @@ public:
                               VkImageView cloudShadowMapView, VkSampler cloudShadowMapSampler,
                               VkImageView tileArrayView = VK_NULL_HANDLE,
                               VkSampler tileSampler = VK_NULL_HANDLE,
-                              VkBuffer tileInfoBuffer = VK_NULL_HANDLE);
+                              const std::array<VkBuffer, 3>& tileInfoBuffers = {});
 
     void updateUniforms(uint32_t frameIndex, const glm::vec3& cameraPos, const glm::mat4& viewProj,
                         float terrainSize, float terrainHeightScale);
@@ -194,7 +195,7 @@ private:
     // Tile cache resources for high-res terrain sampling
     VkImageView tileArrayView = VK_NULL_HANDLE;
     VkSampler tileSampler = VK_NULL_HANDLE;
-    VkBuffer tileInfoBuffer = VK_NULL_HANDLE;
+    std::array<VkBuffer, 3> tileInfoBuffers = {};  // Triple-buffered for frames-in-flight sync
 
     static constexpr uint32_t MAX_INSTANCES = 100000;  // ~100k rendered after culling
 

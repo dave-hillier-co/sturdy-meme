@@ -261,6 +261,9 @@ public:
     VkBuffer getTileInfoBuffer() const {
         return tileCache ? tileCache->getTileInfoBuffer() : VK_NULL_HANDLE;
     }
+    VkBuffer getTileInfoBuffer(uint32_t frameIndex) const {
+        return tileCache ? tileCache->getTileInfoBuffer(frameIndex) : VK_NULL_HANDLE;
+    }
 
     // Toggle wireframe mode for debugging
     void setWireframeMode(bool enabled) { wireframeMode = enabled; }

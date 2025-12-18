@@ -512,7 +512,9 @@ void TerrainSystem::updateUniforms(uint32_t frameIndex, const glm::vec3& cameraP
     cameraOptimizer.update(cameraPos, view);
 
     // Update tile cache - stream high-res tiles based on camera position
+    // Set frame index first so tile info buffer writes to the correct triple-buffered slot
     if (tileCache) {
+        tileCache->setCurrentFrameIndex(frameIndex);
         tileCache->updateActiveTiles(cameraPos, config.tileLoadRadius, config.tileUnloadRadius);
     }
 

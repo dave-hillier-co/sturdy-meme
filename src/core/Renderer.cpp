@@ -1460,6 +1460,8 @@ bool Renderer::initSkinnedMeshRenderer() {
 bool Renderer::createSkinnedMeshRendererDescriptorSets() {
     const auto& whiteTexture = systems_->scene().getSceneBuilder().getWhiteTexture();
     const auto& emissiveMap = systems_->scene().getSceneBuilder().getDefaultEmissiveMap();
+    const auto& sceneBuilder = systems_->scene().getSceneBuilder();
+    const auto& materialRegistry = sceneBuilder.getMaterialRegistry();
 
     // Build point and spot shadow views for all frames
     std::vector<VkImageView> pointShadowViews(MAX_FRAMES_IN_FLIGHT);
@@ -1467,6 +1469,31 @@ bool Renderer::createSkinnedMeshRendererDescriptorSets() {
     for (uint32_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
         pointShadowViews[i] = systems_->shadow().getPointShadowArrayView(i);
         spotShadowViews[i] = systems_->shadow().getSpotShadowArrayView(i);
+    }
+
+    // Get the player's actual material from MaterialRegistry based on their materialId
+    // This fixes the race condition where player could have different material based on FBX load success
+    VkImageView playerDiffuseView = whiteTexture.getImageView();
+    VkSampler playerDiffuseSampler = whiteTexture.getSampler();
+    VkImageView playerNormalView = whiteTexture.getImageView();
+    VkSampler playerNormalSampler = whiteTexture.getSampler();
+
+    const auto& sceneObjects = sceneBuilder.getRenderables();
+    size_t playerIndex = sceneBuilder.getPlayerObjectIndex();
+    if (playerIndex < sceneObjects.size()) {
+        MaterialId playerMaterialId = sceneObjects[playerIndex].materialId;
+        const auto* playerMaterial = materialRegistry.getMaterial(playerMaterialId);
+        if (playerMaterial) {
+            if (playerMaterial->diffuse) {
+                playerDiffuseView = playerMaterial->diffuse->getImageView();
+                playerDiffuseSampler = playerMaterial->diffuse->getSampler();
+            }
+            if (playerMaterial->normal) {
+                playerNormalView = playerMaterial->normal->getImageView();
+                playerNormalSampler = playerMaterial->normal->getSampler();
+            }
+            SDL_Log("SkinnedMeshRenderer: Using player material '%s'", playerMaterial->name.c_str());
+        }
     }
 
     SkinnedMeshRenderer::DescriptorResources resources{};
@@ -1483,6 +1510,10 @@ bool Renderer::createSkinnedMeshRendererDescriptorSets() {
     resources.snowMaskSampler = systems_->snowMask().getSnowMaskSampler();
     resources.whiteTextureView = whiteTexture.getImageView();
     resources.whiteTextureSampler = whiteTexture.getSampler();
+    resources.playerDiffuseView = playerDiffuseView;
+    resources.playerDiffuseSampler = playerDiffuseSampler;
+    resources.playerNormalView = playerNormalView;
+    resources.playerNormalSampler = playerNormalSampler;
 
     return systems_->skinnedMesh().createDescriptorSets(resources);
 }

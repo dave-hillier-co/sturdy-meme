@@ -44,6 +44,11 @@ public:
     const std::vector<Renderable>& getRenderables() const { return sceneObjects; }
     std::vector<Renderable>& getRenderables() { return sceneObjects; }
     size_t getPlayerObjectIndex() const { return playerObjectIndex; }
+    size_t getEmissiveOrbIndex() const { return emissiveOrbIndex; }
+
+    // Get indices of objects that need physics bodies
+    // SceneManager uses this instead of hardcoded indices
+    const std::vector<size_t>& getPhysicsEnabledIndices() const { return physicsEnabledIndices; }
 
     // Material registry - call registerMaterials() after init(), before Renderer creates descriptor sets
     MaterialRegistry& getMaterialRegistry() { return materialRegistry; }
@@ -153,6 +158,11 @@ private:
     size_t flagClothIndex = 0;
     size_t wellEntranceIndex = 0;
     size_t capeIndex = 0;
+    size_t emissiveOrbIndex = 0;  // Glowing orb that has a corresponding light
+
+    // Indices of objects that should have physics bodies (dynamic objects)
+    // Objects NOT in this list are either static (lights, flags) or handled separately (player)
+    std::vector<size_t> physicsEnabledIndices;
 
     // Well entrance position (for terrain hole creation)
     float wellEntranceX = 0.0f;

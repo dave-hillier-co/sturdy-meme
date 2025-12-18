@@ -311,6 +311,7 @@ bool SceneBuilder::loadTextures(const InitInfo& info) {
 
 void SceneBuilder::createRenderables() {
     sceneObjects.clear();
+    physicsEnabledIndices.clear();
 
     // Ground disc removed - terrain system provides the ground now
 
@@ -320,9 +321,17 @@ void SceneBuilder::createRenderables() {
         return getTerrainHeight(x, z) + objectHeight;
     };
 
+    // Helper to add physics-enabled objects
+    auto addPhysicsObject = [this](Renderable&& r) -> size_t {
+        size_t idx = sceneObjects.size();
+        sceneObjects.push_back(std::move(r));
+        physicsEnabledIndices.push_back(idx);
+        return idx;
+    };
+
     // Wooden crate - slightly shiny, non-metallic (unit cube, half-extent 0.5)
     float crateX = 2.0f, crateZ = 0.0f;
-    sceneObjects.push_back(RenderableBuilder()
+    addPhysicsObject(RenderableBuilder()
         .atPosition(glm::vec3(crateX, getGroundY(crateX, crateZ, 0.5f), crateZ))
         .withMesh(&**cubeMesh)
         .withTexture(&**crateTexture)
@@ -336,7 +345,7 @@ void SceneBuilder::createRenderables() {
     glm::mat4 rotatedCube = glm::translate(glm::mat4(1.0f),
         glm::vec3(rotatedCrateX, getGroundY(rotatedCrateX, rotatedCrateZ, 0.5f), rotatedCrateZ));
     rotatedCube = glm::rotate(rotatedCube, glm::radians(30.0f), glm::vec3(0.0f, 1.0f, 0.0f));
-    sceneObjects.push_back(RenderableBuilder()
+    addPhysicsObject(RenderableBuilder()
         .withTransform(rotatedCube)
         .withMesh(&**cubeMesh)
         .withTexture(&**crateTexture)
@@ -347,7 +356,7 @@ void SceneBuilder::createRenderables() {
 
     // Polished metal sphere - smooth, fully metallic (radius 0.5)
     float polishedSphereX = 0.0f, polishedSphereZ = -2.0f;
-    sceneObjects.push_back(RenderableBuilder()
+    addPhysicsObject(RenderableBuilder()
         .atPosition(glm::vec3(polishedSphereX, getGroundY(polishedSphereX, polishedSphereZ, 0.5f), polishedSphereZ))
         .withMesh(&**sphereMesh)
         .withTexture(&**metalTexture)
@@ -358,7 +367,7 @@ void SceneBuilder::createRenderables() {
 
     // Rough/brushed metal sphere - moderately rough, metallic (radius 0.5)
     float roughSphereX = -3.0f, roughSphereZ = -1.0f;
-    sceneObjects.push_back(RenderableBuilder()
+    addPhysicsObject(RenderableBuilder()
         .atPosition(glm::vec3(roughSphereX, getGroundY(roughSphereX, roughSphereZ, 0.5f), roughSphereZ))
         .withMesh(&**sphereMesh)
         .withTexture(&**metalTexture)
@@ -369,7 +378,7 @@ void SceneBuilder::createRenderables() {
 
     // Polished metal cube - smooth, fully metallic (half-extent 0.5)
     float polishedCubeX = 3.0f, polishedCubeZ = -2.0f;
-    sceneObjects.push_back(RenderableBuilder()
+    addPhysicsObject(RenderableBuilder()
         .atPosition(glm::vec3(polishedCubeX, getGroundY(polishedCubeX, polishedCubeZ, 0.5f), polishedCubeZ))
         .withMesh(&**cubeMesh)
         .withTexture(&**metalTexture)
@@ -383,7 +392,7 @@ void SceneBuilder::createRenderables() {
     glm::mat4 brushedCube = glm::translate(glm::mat4(1.0f),
         glm::vec3(brushedCubeX, getGroundY(brushedCubeX, brushedCubeZ, 0.5f), brushedCubeZ));
     brushedCube = glm::rotate(brushedCube, glm::radians(45.0f), glm::vec3(0.0f, 1.0f, 0.0f));
-    sceneObjects.push_back(RenderableBuilder()
+    addPhysicsObject(RenderableBuilder()
         .withTransform(brushedCube)
         .withMesh(&**cubeMesh)
         .withTexture(&**metalTexture)
@@ -394,11 +403,12 @@ void SceneBuilder::createRenderables() {
 
     // Glowing emissive sphere on top of the first crate - demonstrates bloom effect
     // Sits 0.8m above crate (crate top at terrain+1.0, sphere center at terrain+1.0+0.3)
+    // This object has physics AND is tracked as the emissive orb for light sync
     float glowSphereScale = 0.3f;
     glm::mat4 glowingSphereTransform = glm::translate(glm::mat4(1.0f),
         glm::vec3(crateX, getGroundY(crateX, crateZ, 1.0f + glowSphereScale), crateZ));
     glowingSphereTransform = glm::scale(glowingSphereTransform, glm::vec3(glowSphereScale));
-    sceneObjects.push_back(RenderableBuilder()
+    emissiveOrbIndex = addPhysicsObject(RenderableBuilder()
         .withTransform(glowingSphereTransform)
         .withMesh(&**sphereMesh)
         .withTexture(&**metalTexture)

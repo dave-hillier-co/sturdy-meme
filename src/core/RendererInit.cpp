@@ -1,4 +1,5 @@
 #include "RendererInit.h"
+#include "RendererSystems.h"
 #include "VulkanRAII.h"
 #include "MaterialDescriptorFactory.h"
 
@@ -45,7 +46,7 @@
 
 bool RendererInit::initPostProcessing(
     PostProcessSystem& postProcessSystem,
-    BloomSystem& bloomSystem,
+    RendererSystems& systems,
     const InitContext& ctx,
     VkRenderPass finalRenderPass,
     VkFormat swapchainImageFormat
@@ -56,14 +57,18 @@ bool RendererInit::initPostProcessing(
         return false;
     }
 
-    // Initialize bloom system
-    if (!bloomSystem.init(ctx)) {
+    // Initialize bloom system via factory
+    auto bloomSystem = BloomSystem::create(ctx);
+    if (!bloomSystem) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to initialize BloomSystem");
         return false;
     }
 
     // Bind bloom texture to post-process system
-    postProcessSystem.setBloomTexture(bloomSystem.getBloomOutput(), bloomSystem.getBloomSampler());
+    postProcessSystem.setBloomTexture(bloomSystem->getBloomOutput(), bloomSystem->getBloomSampler());
+
+    // Store in RendererSystems
+    systems.setBloom(std::move(bloomSystem));
 
     return true;
 }

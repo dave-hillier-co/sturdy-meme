@@ -65,7 +65,7 @@ bool Renderer::initSubsystems(const InitContext& initCtx) {
     VkFormat swapchainImageFormat = vulkanContext.getSwapchainImageFormat();
 
     // Initialize post-processing systems (PostProcessSystem, BloomSystem)
-    if (!RendererInit::initPostProcessing(systems_->postProcess(), systems_->bloom(), initCtx, renderPass.get(), swapchainImageFormat)) {
+    if (!RendererInit::initPostProcessing(systems_->postProcess(), *systems_, initCtx, renderPass.get(), swapchainImageFormat)) {
         return false;
     }
 
@@ -323,7 +323,7 @@ void Renderer::initResizeCoordinator() {
 
     // Render targets that need full resize (device/allocator/extent)
     systems_->resizeCoordinator().registerWithResize(systems_->postProcess(), "PostProcessSystem", ResizePriority::RenderTarget);
-    systems_->resizeCoordinator().registerWithResize(systems_->bloom(), "BloomSystem", ResizePriority::RenderTarget);
+    systems_->resizeCoordinator().registerWithSimpleResize(systems_->bloom(), "BloomSystem", ResizePriority::RenderTarget);
     systems_->resizeCoordinator().registerWithResize(systems_->froxel(), "FroxelSystem", ResizePriority::RenderTarget);
 
     // Culling systems with simple resize (extent only, but reallocates)

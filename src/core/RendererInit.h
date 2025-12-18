@@ -40,6 +40,7 @@ class DebugLineSystem;
 class ShadowSystem;
 class MaterialRegistry;
 class SkinnedMeshRenderer;
+class RendererSystems;
 struct TerrainConfig;
 struct EnvironmentSettings;
 
@@ -129,7 +130,7 @@ public:
      */
     static bool initPostProcessing(
         PostProcessSystem& postProcessSystem,
-        BloomSystem& bloomSystem,
+        RendererSystems& systems,
         const InitContext& ctx,
         VkRenderPass finalRenderPass,
         VkFormat swapchainImageFormat

@@ -106,6 +106,7 @@ public:
     const PostProcessSystem& postProcess() const { return *postProcessSystem_; }
     BloomSystem& bloom() { return *bloomSystem_; }
     const BloomSystem& bloom() const { return *bloomSystem_; }
+    void setBloom(std::unique_ptr<BloomSystem> system);
     ShadowSystem& shadow() { return *shadowSystem_; }
     const ShadowSystem& shadow() const { return *shadowSystem_; }
     void setShadow(std::unique_ptr<ShadowSystem> system);

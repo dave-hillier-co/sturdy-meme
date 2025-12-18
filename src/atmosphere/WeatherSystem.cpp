@@ -334,6 +334,11 @@ void WeatherSystem::updateUniforms(uint32_t frameIndex, const glm::vec3& cameraP
 }
 
 void WeatherSystem::recordResetAndCompute(VkCommandBuffer cmd, uint32_t frameIndex, float time, float deltaTime) {
+    // Early-out: skip compute when weather is disabled
+    if (weatherIntensity <= 0.0f) {
+        return;
+    }
+
     uint32_t writeSet = (*particleSystem)->getComputeBufferSet();
 
     // Update compute descriptor set to use this frame's uniform buffers
@@ -368,6 +373,11 @@ void WeatherSystem::recordResetAndCompute(VkCommandBuffer cmd, uint32_t frameInd
 }
 
 void WeatherSystem::recordDraw(VkCommandBuffer cmd, uint32_t frameIndex, float time) {
+    // Early-out: skip all GPU work when weather is disabled
+    if (weatherIntensity <= 0.0f) {
+        return;
+    }
+
     uint32_t readSet = (*particleSystem)->getRenderBufferSet();
 
     // Bootstrap: if we haven't diverged yet, read from compute set

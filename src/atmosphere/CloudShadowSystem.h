@@ -143,6 +143,9 @@ private:
 
     bool enabled = true;
 
+    // Temporal spreading: update 1/4 of shadow map per frame
+    uint32_t quadrantIndex = 0;  // Cycles 0-3
+
     CloudShadowSystem() = default;  // Private: use factory
 
     bool initInternal(const InitInfo& info);

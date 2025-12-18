@@ -201,7 +201,13 @@ bool CloudShadowSystem::createComputePipeline() {
     stageInfo.module = *shaderModule;
     stageInfo.pName = "main";
 
-    if (!DescriptorManager::createManagedPipelineLayout(device, descriptorSetLayout.get(), pipelineLayout)) {
+    // Push constant for temporal spreading quadrant index
+    VkPushConstantRange pushConstantRange{};
+    pushConstantRange.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+    pushConstantRange.offset = 0;
+    pushConstantRange.size = sizeof(uint32_t);  // quadrantIndex
+
+    if (!DescriptorManager::createManagedPipelineLayout(device, descriptorSetLayout.get(), pipelineLayout, {pushConstantRange})) {
         vkDestroyShaderModule(device, *shaderModule, nullptr);
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create cloud shadow pipeline layout");
         return false;
@@ -306,6 +312,13 @@ void CloudShadowSystem::recordUpdate(VkCommandBuffer cmd, uint32_t frameIndex,
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, computePipeline.get());
     vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE,
                             pipelineLayout.get(), 0, 1, &descriptorSets[frameIndex], 0, nullptr);
+
+    // Push current quadrant index for temporal spreading
+    vkCmdPushConstants(cmd, pipelineLayout.get(), VK_SHADER_STAGE_COMPUTE_BIT,
+                       0, sizeof(uint32_t), &quadrantIndex);
+
+    // Cycle quadrant for next frame (0->1->2->3->0...)
+    quadrantIndex = (quadrantIndex + 1) % 4;
 
     // Dispatch compute shader (16x16 workgroups)
     uint32_t groupCountX = (SHADOW_MAP_SIZE + 15) / 16;

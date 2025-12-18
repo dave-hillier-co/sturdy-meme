@@ -1369,21 +1369,30 @@ void Renderer::recordHDRPass(VkCommandBuffer cmd, uint32_t frameIndex, float gra
     vkCmdBeginRenderPass(cmd, &hdrPassInfo, VK_SUBPASS_CONTENTS_INLINE);
 
     // Draw sky (with atmosphere LUT bindings)
+    systems_->profiler().beginGpuZone(cmd, "HDR:Sky");
     systems_->sky().recordDraw(cmd, frameIndex);
+    systems_->profiler().endGpuZone(cmd, "HDR:Sky");
 
     // Draw terrain (LEB adaptive tessellation)
     if (terrainEnabled) {
+        systems_->profiler().beginGpuZone(cmd, "HDR:Terrain");
         systems_->terrain().recordDraw(cmd, frameIndex);
+        systems_->profiler().endGpuZone(cmd, "HDR:Terrain");
     }
 
     // Draw Catmull-Clark subdivision surfaces
+    systems_->profiler().beginGpuZone(cmd, "HDR:CatmullClark");
     systems_->catmullClark().recordDraw(cmd, frameIndex);
+    systems_->profiler().endGpuZone(cmd, "HDR:CatmullClark");
 
     // Draw scene objects (static meshes)
+    systems_->profiler().beginGpuZone(cmd, "HDR:SceneObjects");
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, graphicsPipeline.get());
     recordSceneObjects(cmd, frameIndex);
+    systems_->profiler().endGpuZone(cmd, "HDR:SceneObjects");
 
     // Draw skinned character with GPU skinning
+    systems_->profiler().beginGpuZone(cmd, "HDR:SkinnedChar");
     {
         SceneBuilder& sceneBuilder = systems_->scene().getSceneBuilder();
         if (sceneBuilder.hasCharacter()) {
@@ -1395,24 +1404,35 @@ void Renderer::recordHDRPass(VkCommandBuffer cmd, uint32_t frameIndex, float gra
             }
         }
     }
+    systems_->profiler().endGpuZone(cmd, "HDR:SkinnedChar");
 
     // Draw tree editor (when enabled)
+    systems_->profiler().beginGpuZone(cmd, "HDR:TreeEdit");
     systems_->treeEdit().recordDraw(cmd, frameIndex);
+    systems_->profiler().endGpuZone(cmd, "HDR:TreeEdit");
 
     // Draw grass
+    systems_->profiler().beginGpuZone(cmd, "HDR:Grass");
     systems_->grass().recordDraw(cmd, frameIndex, grassTime);
+    systems_->profiler().endGpuZone(cmd, "HDR:Grass");
 
     // Draw water surface (after opaque geometry, blended)
     // Use temporal tile culling: skip if no tiles were visible last frame
     if (systems_->waterTileCull().wasWaterVisibleLastFrame(frameIndex)) {
+        systems_->profiler().beginGpuZone(cmd, "HDR:Water");
         systems_->water().recordDraw(cmd, frameIndex);
+        systems_->profiler().endGpuZone(cmd, "HDR:Water");
     }
 
     // Draw falling leaves - after grass, before weather
+    systems_->profiler().beginGpuZone(cmd, "HDR:Leaves");
     systems_->leaf().recordDraw(cmd, frameIndex, grassTime);
+    systems_->profiler().endGpuZone(cmd, "HDR:Leaves");
 
     // Draw weather particles (rain/snow) - after opaque geometry
+    systems_->profiler().beginGpuZone(cmd, "HDR:Weather");
     systems_->weather().recordDraw(cmd, frameIndex, grassTime);
+    systems_->profiler().endGpuZone(cmd, "HDR:Weather");
 
     // Draw physics debug lines (if enabled and lines available)
 #ifdef JPH_DEBUG_RENDERER

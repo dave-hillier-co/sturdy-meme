@@ -30,6 +30,11 @@ layout(binding = BINDING_CLOUD_SHADOW_UNIFORMS) uniform CloudShadowUniforms {
     float padding;
 };
 
+// Push constant for temporal spreading
+layout(push_constant) uniform PushConstants {
+    uint quadrantIndex;  // 0-3: which quadrant to update this frame
+};
+
 const float PI = 3.14159265359;
 
 // Cloud layer parameters (matching sky.frag, in km for atmosphere calculations)
@@ -215,6 +220,14 @@ void main() {
 
     if (pixelCoord.x >= mapSize.x || pixelCoord.y >= mapSize.y) {
         return;
+    }
+
+    // Temporal spreading: only update 1/4 of pixels per frame (checkerboard pattern)
+    // quadrantIndex 0-3 determines which pixels to update:
+    // 0: even x, even y | 1: odd x, even y | 2: even x, odd y | 3: odd x, odd y
+    uint pixelQuadrant = uint(pixelCoord.x & 1) + uint(pixelCoord.y & 1) * 2;
+    if (pixelQuadrant != quadrantIndex) {
+        return;  // Skip - this pixel was updated in a different frame
     }
 
     // Convert pixel coordinate to UV [0, 1]

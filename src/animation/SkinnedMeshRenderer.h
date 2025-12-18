@@ -52,6 +52,12 @@ public:
         // Placeholder textures
         VkImageView whiteTextureView;
         VkSampler whiteTextureSampler;
+
+        // Player material textures (from MaterialRegistry based on player's materialId)
+        VkImageView playerDiffuseView;
+        VkSampler playerDiffuseSampler;
+        VkImageView playerNormalView;
+        VkSampler playerNormalSampler;
     };
 
     SkinnedMeshRenderer() = default;

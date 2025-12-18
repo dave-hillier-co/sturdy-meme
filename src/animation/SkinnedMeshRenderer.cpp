@@ -179,11 +179,13 @@ bool SkinnedMeshRenderer::createDescriptorSets(const DescriptorResources& resour
         common.placeholderTextureView = resources.whiteTextureView;
         common.placeholderTextureSampler = resources.whiteTextureSampler;
 
+        // Use player's actual material textures from MaterialRegistry
+        // (avoids race condition where player could have different material based on FBX load success)
         MaterialDescriptorFactory::MaterialTextures mat{};
-        mat.diffuseView = resources.whiteTextureView;
-        mat.diffuseSampler = resources.whiteTextureSampler;
-        mat.normalView = resources.whiteTextureView;
-        mat.normalSampler = resources.whiteTextureSampler;
+        mat.diffuseView = resources.playerDiffuseView;
+        mat.diffuseSampler = resources.playerDiffuseSampler;
+        mat.normalView = resources.playerNormalView;
+        mat.normalSampler = resources.playerNormalSampler;
         factory.writeSkinnedDescriptorSet(descriptorSets[i], common, mat);
     }
 

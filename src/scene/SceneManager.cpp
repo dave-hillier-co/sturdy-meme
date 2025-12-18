@@ -67,28 +67,17 @@ void SceneManager::initializeScenePhysics(PhysicsWorld& physics) {
     // NOTE: Terrain physics is now initialized separately via initTerrainPhysics()
     // which creates a heightfield from the TerrainSystem's height data
 
-    // Scene object layout from SceneBuilder:
-    // 0: Wooden crate 1 - unit cube
-    // 1: Rotated wooden crate
-    // 2: Polished metal sphere - radius 0.5
-    // 3: Rough metal sphere - radius 0.5
-    // 4: Polished metal cube
-    // 5: Brushed metal cube
-    // 6: Emissive sphere - scaled 0.3, visual radius 0.15
-    // 7: Blue light indicator sphere - fixed, no physics
-    // 8: Green light indicator sphere - fixed, no physics
-    // 9: Debug cube - no physics
-    // 10: Player capsule (tracked by playerObjectIndex)
+    // Get scene objects from builder
+    const auto& sceneObjects = sceneBuilder.getRenderables();
+    const auto& physicsIndices = sceneBuilder.getPhysicsEnabledIndices();
 
-    const size_t numSceneObjects = 11;
-    scenePhysicsBodies.resize(numSceneObjects, INVALID_BODY_ID);
+    // Resize physics bodies array to match scene objects
+    scenePhysicsBodies.resize(sceneObjects.size(), INVALID_BODY_ID);
 
-    // Box half-extent for unit cube
+    // Physics parameters
     glm::vec3 cubeHalfExtents(0.5f, 0.5f, 0.5f);
     float boxMass = 10.0f;
     float sphereMass = 5.0f;
-
-    // Spawn objects slightly above terrain to let them settle
     const float spawnOffset = 0.1f;
 
     // Helper to get spawn Y position on terrain
@@ -96,53 +85,39 @@ void SceneManager::initializeScenePhysics(PhysicsWorld& physics) {
         return getTerrainHeight(x, z) + objectHeight + spawnOffset;
     };
 
-    // Index 0: Wooden crate 1 at (2.0, terrain+0.5, 0.0)
-    float crate1X = 2.0f, crate1Z = 0.0f;
-    scenePhysicsBodies[0] = physics.createBox(
-        glm::vec3(crate1X, getSpawnY(crate1X, crate1Z, 0.5f), crate1Z),
-        cubeHalfExtents, boxMass);
+    // Get the emissive orb index from SceneBuilder
+    size_t emissiveOrbIndex = sceneBuilder.getEmissiveOrbIndex();
 
-    // Index 1: Rotated wooden crate at (-1.5, terrain+0.5, 1.0)
-    float crate2X = -1.5f, crate2Z = 1.0f;
-    scenePhysicsBodies[1] = physics.createBox(
-        glm::vec3(crate2X, getSpawnY(crate2X, crate2Z, 0.5f), crate2Z),
-        cubeHalfExtents, boxMass);
+    // Create physics bodies for each physics-enabled object
+    // The physicsIndices tells us which scene objects need physics
+    for (size_t i = 0; i < physicsIndices.size(); ++i) {
+        size_t objIndex = physicsIndices[i];
+        if (objIndex >= sceneObjects.size()) continue;
 
-    // Index 2: Polished metal sphere at (0.0, terrain+0.5, -2.0)
-    float sphere1X = 0.0f, sphere1Z = -2.0f;
-    scenePhysicsBodies[2] = physics.createSphere(
-        glm::vec3(sphere1X, getSpawnY(sphere1X, sphere1Z, 0.5f), sphere1Z),
-        0.5f, sphereMass);
+        const auto& obj = sceneObjects[objIndex];
+        glm::vec3 pos = glm::vec3(obj.transform[3]);
 
-    // Index 3: Rough metal sphere at (-3.0, terrain+0.5, -1.0)
-    float sphere2X = -3.0f, sphere2Z = -1.0f;
-    scenePhysicsBodies[3] = physics.createSphere(
-        glm::vec3(sphere2X, getSpawnY(sphere2X, sphere2Z, 0.5f), sphere2Z),
-        0.5f, sphereMass);
+        // Determine object type from mesh - cubes vs spheres
+        // For the emissive orb (small sphere on crate), use smaller radius
+        if (objIndex == emissiveOrbIndex) {
+            // Small emissive sphere (scaled 0.3)
+            scenePhysicsBodies[objIndex] = physics.createSphere(
+                glm::vec3(pos.x, pos.y + spawnOffset, pos.z),
+                0.5f * 0.3f, 1.0f);
+        } else if (i < 2 || i == 4 || i == 5) {
+            // Boxes: crates (0,1) and metal cubes (4,5)
+            scenePhysicsBodies[objIndex] = physics.createBox(
+                glm::vec3(pos.x, pos.y + spawnOffset, pos.z),
+                cubeHalfExtents, boxMass);
+        } else {
+            // Spheres: indices 2,3
+            scenePhysicsBodies[objIndex] = physics.createSphere(
+                glm::vec3(pos.x, pos.y + spawnOffset, pos.z),
+                0.5f, sphereMass);
+        }
+    }
 
-    // Index 4: Polished metal cube at (3.0, terrain+0.5, -2.0)
-    float cube1X = 3.0f, cube1Z = -2.0f;
-    scenePhysicsBodies[4] = physics.createBox(
-        glm::vec3(cube1X, getSpawnY(cube1X, cube1Z, 0.5f), cube1Z),
-        cubeHalfExtents, boxMass);
-
-    // Index 5: Brushed metal cube at (-3.0, terrain+0.5, -3.0)
-    float cube2X = -3.0f, cube2Z = -3.0f;
-    scenePhysicsBodies[5] = physics.createBox(
-        glm::vec3(cube2X, getSpawnY(cube2X, cube2Z, 0.5f), cube2Z),
-        cubeHalfExtents, boxMass);
-
-    // Index 6: Emissive sphere - sits on top of crate 1, mesh radius 0.5 * 0.3 = 0.15
-    // On top of crate (terrain + 1.0m) + sphere center (0.15m)
-    scenePhysicsBodies[6] = physics.createSphere(
-        glm::vec3(crate1X, getTerrainHeight(crate1X, crate1Z) + 1.0f + 0.15f + spawnOffset, crate1Z),
-        0.5f * 0.3f, 1.0f);
-
-    // Index 7 & 8: Blue and green lights - NO PHYSICS (fixed light indicators)
-    // Index 9: Debug cube - NO PHYSICS
-    // scenePhysicsBodies[7], [8], [9] remain INVALID_BODY_ID
-
-    SDL_Log("Scene physics initialized with terrain-aware spawn positions");
+    SDL_Log("Scene physics initialized with %zu physics-enabled objects", physicsIndices.size());
 }
 
 void SceneManager::initializeSceneLights() {
@@ -185,6 +160,7 @@ void SceneManager::initializeSceneLights() {
 void SceneManager::updatePhysicsToScene(PhysicsWorld& physics) {
     // Update scene object transforms from physics simulation
     auto& sceneObjects = sceneBuilder.getRenderables();
+    size_t emissiveOrbIndex = sceneBuilder.getEmissiveOrbIndex();
 
     for (size_t i = 0; i < scenePhysicsBodies.size() && i < sceneObjects.size(); i++) {
         PhysicsBodyID bodyID = scenePhysicsBodies[i];
@@ -208,8 +184,8 @@ void SceneManager::updatePhysicsToScene(PhysicsWorld& physics) {
         // Update scene object transform
         sceneObjects[i].transform = physicsTransform;
 
-        // Update orb light position to follow the emissive sphere (index 6)
-        if (i == ORB_LIGHT_OBJECT_INDEX) {
+        // Update orb light position to follow the emissive sphere
+        if (i == emissiveOrbIndex) {
             glm::vec3 orbPosition = glm::vec3(physicsTransform[3]);
             orbLightPosition = orbPosition;
 

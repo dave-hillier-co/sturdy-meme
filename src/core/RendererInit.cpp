@@ -45,14 +45,14 @@
 #include <SDL3/SDL.h>
 
 bool RendererInit::initPostProcessing(
-    PostProcessSystem& postProcessSystem,
     RendererSystems& systems,
     const InitContext& ctx,
     VkRenderPass finalRenderPass,
     VkFormat swapchainImageFormat
 ) {
-    // Initialize post-process system early to get HDR render pass
-    if (!postProcessSystem.init(ctx, finalRenderPass, swapchainImageFormat)) {
+    // Initialize post-process system via factory
+    auto postProcessSystem = PostProcessSystem::create(ctx, finalRenderPass, swapchainImageFormat);
+    if (!postProcessSystem) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to initialize PostProcessSystem");
         return false;
     }
@@ -65,9 +65,10 @@ bool RendererInit::initPostProcessing(
     }
 
     // Bind bloom texture to post-process system
-    postProcessSystem.setBloomTexture(bloomSystem->getBloomOutput(), bloomSystem->getBloomSampler());
+    postProcessSystem->setBloomTexture(bloomSystem->getBloomOutput(), bloomSystem->getBloomSampler());
 
     // Store in RendererSystems
+    systems.setPostProcess(std::move(postProcessSystem));
     systems.setBloom(std::move(bloomSystem));
 
     return true;

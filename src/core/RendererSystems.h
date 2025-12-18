@@ -104,6 +104,7 @@ public:
     // Tier 1 - Core rendering
     PostProcessSystem& postProcess() { return *postProcessSystem_; }
     const PostProcessSystem& postProcess() const { return *postProcessSystem_; }
+    void setPostProcess(std::unique_ptr<PostProcessSystem> system);
     BloomSystem& bloom() { return *bloomSystem_; }
     const BloomSystem& bloom() const { return *bloomSystem_; }
     void setBloom(std::unique_ptr<BloomSystem> system);

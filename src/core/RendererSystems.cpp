@@ -51,10 +51,10 @@
 
 RendererSystems::RendererSystems()
     // Tier 1
-    : postProcessSystem_(std::make_unique<PostProcessSystem>())
+    // postProcessSystem_ created via factory in RendererInitPhases
     // bloomSystem_ created via factory in RendererInitPhases
     // shadowSystem_ created via factory in RendererInitPhases
-    , terrainSystem_(std::make_unique<TerrainSystem>())
+    : terrainSystem_(std::make_unique<TerrainSystem>())
     // Tier 2 - Sky/Atmosphere
     , skySystem_(std::make_unique<SkySystem>())
     , atmosphereLUTSystem_(std::make_unique<AtmosphereLUTSystem>())
@@ -119,6 +119,10 @@ void RendererSystems::setGlobalBuffers(std::unique_ptr<GlobalBufferManager> buff
 
 void RendererSystems::setShadow(std::unique_ptr<ShadowSystem> system) {
     shadowSystem_ = std::move(system);
+}
+
+void RendererSystems::setPostProcess(std::unique_ptr<PostProcessSystem> system) {
+    postProcessSystem_ = std::move(system);
 }
 
 void RendererSystems::setBloom(std::unique_ptr<BloomSystem> system) {
@@ -198,7 +202,7 @@ void RendererSystems::destroy(VkDevice device, VmaAllocator allocator) {
     shadowSystem_.reset();  // RAII cleanup via destructor
     skinnedMeshRenderer_->destroy();
     bloomSystem_.reset();  // RAII cleanup via destructor
-    postProcessSystem_->destroy(device, allocator);
+    postProcessSystem_.reset();  // RAII cleanup via destructor
 
     SDL_Log("RendererSystems::destroy complete");
 }

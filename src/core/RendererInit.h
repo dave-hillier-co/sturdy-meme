@@ -126,10 +126,10 @@ public:
 
     /**
      * Initialize post-processing systems (PostProcessSystem, BloomSystem)
+     * Uses factory pattern to create PostProcessSystem.
      * Should be called early to get HDR render pass for other systems
      */
     static bool initPostProcessing(
-        PostProcessSystem& postProcessSystem,
         RendererSystems& systems,
         const InitContext& ctx,
         VkRenderPass finalRenderPass,

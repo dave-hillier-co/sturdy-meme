@@ -159,6 +159,21 @@ inline void transferToHostRead(VkCommandBuffer cmd) {
         0, 1, &barrier, 0, nullptr, 0, nullptr);
 }
 
+/**
+ * Synchronize transfer operations before vertex input stage.
+ * Use after vkCmdCopyBuffer to vertex/index buffers when they
+ * will be bound for drawing.
+ */
+inline void transferToVertexInput(VkCommandBuffer cmd) {
+    VkMemoryBarrier barrier{VK_STRUCTURE_TYPE_MEMORY_BARRIER};
+    barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+    barrier.dstAccessMask = VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT | VK_ACCESS_INDEX_READ_BIT;
+    vkCmdPipelineBarrier(cmd,
+        VK_PIPELINE_STAGE_TRANSFER_BIT,
+        VK_PIPELINE_STAGE_VERTEX_INPUT_BIT,
+        0, 1, &barrier, 0, nullptr, 0, nullptr);
+}
+
 // ============================================================================
 // Image layout transition helper
 // ============================================================================

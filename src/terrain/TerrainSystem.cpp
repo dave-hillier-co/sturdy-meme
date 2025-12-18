@@ -83,11 +83,12 @@ bool TerrainSystem::initInternal(const InitInfo& info, const TerrainConfig& cfg)
     );
     if (!cbt) return false;
 
-    // Initialize meshlet for high-resolution rendering with RAII wrapper
+    // Initialize meshlet for high-resolution rendering
     if (config.useMeshlets) {
         TerrainMeshlet::InitInfo meshletInfo{};
         meshletInfo.allocator = allocator;
         meshletInfo.subdivisionLevel = static_cast<uint32_t>(config.meshletSubdivisionLevel);
+        meshletInfo.framesInFlight = framesInFlight;  // For per-frame staging buffers
         meshlet = TerrainMeshlet::create(meshletInfo);
         if (!meshlet) {
             SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "Failed to create meshlet, falling back to direct triangles");
@@ -558,6 +559,11 @@ void TerrainSystem::updateUniforms(uint32_t frameIndex, const glm::vec3& cameraP
 }
 
 void TerrainSystem::recordCompute(VkCommandBuffer cmd, uint32_t frameIndex, GpuProfiler* profiler) {
+    // Record pending meshlet uploads (fence-free, like virtual texture system)
+    if (config.useMeshlets && meshlet && meshlet->hasPendingUpload()) {
+        meshlet->recordUpload(cmd, frameIndex);
+    }
+
     // Skip-frame optimization: skip compute when camera is stationary and terrain has converged
     if (cameraOptimizer.shouldSkipCompute()) {
         cameraOptimizer.recordComputeSkipped();
@@ -878,21 +884,19 @@ bool TerrainSystem::setMeshletSubdivisionLevel(int level) {
         return true;  // No change needed
     }
 
-    // Destroy old meshlet and create new one with RAII
-    vkDeviceWaitIdle(device);
-    meshlet.reset();
-
-    TerrainMeshlet::InitInfo meshletInfo{};
-    meshletInfo.allocator = allocator;
-    meshletInfo.subdivisionLevel = static_cast<uint32_t>(level);
-
-    meshlet = TerrainMeshlet::create(meshletInfo);
     if (!meshlet) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
-                     "Failed to reinitialize meshlet at level %d", level);
-        // Try to restore previous level
-        meshletInfo.subdivisionLevel = static_cast<uint32_t>(config.meshletSubdivisionLevel);
-        meshlet = TerrainMeshlet::create(meshletInfo);
+                     "Cannot change meshlet subdivision level: meshlet not initialized");
+        return false;
+    }
+
+    // Request subdivision change - NO vkDeviceWaitIdle needed!
+    // Uses per-frame staging buffers like virtual texture system.
+    // The geometry is generated to CPU memory immediately, then uploaded
+    // via recordUpload() over the next N frames (where N = framesInFlight).
+    if (!meshlet->requestSubdivisionChange(static_cast<uint32_t>(level))) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
+                     "Failed to request meshlet subdivision change to level %d", level);
         return false;
     }
 

@@ -583,51 +583,43 @@ void PostProcessSystem::recordPostProcess(VkCommandBuffer cmd, uint32_t frameInd
     // Store computed exposure for next frame
     lastAutoExposure = autoExposureEnabled ? computedExposure : manualExposure;
 
-    // Begin swapchain render pass for final composite
-    VkRenderPassBeginInfo renderPassInfo{};
-    renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-    renderPassInfo.renderPass = outputRenderPass;
-    renderPassInfo.framebuffer = swapchainFB;
-    renderPassInfo.renderArea.offset = {0, 0};
-    renderPassInfo.renderArea.extent = extent;
+    // Begin swapchain render pass for final composite (RAII scope)
+    {
+        RenderPassScope renderPass = RenderPassScope::begin(cmd)
+            .renderPass(outputRenderPass)
+            .framebuffer(swapchainFB)
+            .renderAreaFullExtent(extent.width, extent.height)
+            .clearColor(0.0f, 0.0f, 0.0f, 1.0f)
+            .clearDepth(1.0f, 0);
 
-    std::array<VkClearValue, 2> clearValues{};
-    clearValues[0].color = {{0.0f, 0.0f, 0.0f, 1.0f}};
-    clearValues[1].depthStencil = {1.0f, 0};
-    renderPassInfo.clearValueCount = static_cast<uint32_t>(clearValues.size());
-    renderPassInfo.pClearValues = clearValues.data();
+        // Select pipeline variant based on god ray quality setting
+        VkPipeline selectedPipeline = compositePipelines[static_cast<int>(godRayQuality)];
+        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, selectedPipeline);
+        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, compositePipelineLayout,
+                                0, 1, &compositeDescriptorSets[frameIndex], 0, nullptr);
 
-    vkCmdBeginRenderPass(cmd, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
+        VkViewport viewport{};
+        viewport.x = 0.0f;
+        viewport.y = 0.0f;
+        viewport.width = static_cast<float>(extent.width);
+        viewport.height = static_cast<float>(extent.height);
+        viewport.minDepth = 0.0f;
+        viewport.maxDepth = 1.0f;
+        vkCmdSetViewport(cmd, 0, 1, &viewport);
 
-    // Select pipeline variant based on god ray quality setting
-    VkPipeline selectedPipeline = compositePipelines[static_cast<int>(godRayQuality)];
-    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, selectedPipeline);
-    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, compositePipelineLayout,
-                            0, 1, &compositeDescriptorSets[frameIndex], 0, nullptr);
+        VkRect2D scissor{};
+        scissor.offset = {0, 0};
+        scissor.extent = extent;
+        vkCmdSetScissor(cmd, 0, 1, &scissor);
 
-    VkViewport viewport{};
-    viewport.x = 0.0f;
-    viewport.y = 0.0f;
-    viewport.width = static_cast<float>(extent.width);
-    viewport.height = static_cast<float>(extent.height);
-    viewport.minDepth = 0.0f;
-    viewport.maxDepth = 1.0f;
-    vkCmdSetViewport(cmd, 0, 1, &viewport);
+        // Draw fullscreen triangle
+        vkCmdDraw(cmd, 3, 1, 0, 0);
 
-    VkRect2D scissor{};
-    scissor.offset = {0, 0};
-    scissor.extent = extent;
-    vkCmdSetScissor(cmd, 0, 1, &scissor);
-
-    // Draw fullscreen triangle
-    vkCmdDraw(cmd, 3, 1, 0, 0);
-
-    // Call pre-end callback (e.g., for GUI rendering)
-    if (preEndCallback) {
-        preEndCallback(cmd);
-    }
-
-    vkCmdEndRenderPass(cmd);
+        // Call pre-end callback (e.g., for GUI rendering)
+        if (preEndCallback) {
+            preEndCallback(cmd);
+        }
+    } // vkCmdEndRenderPass called automatically
 }
 
 bool PostProcessSystem::createHistogramResources() {

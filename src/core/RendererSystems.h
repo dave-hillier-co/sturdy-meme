@@ -117,6 +117,7 @@ public:
     // Sky and atmosphere
     SkySystem& sky() { return *skySystem_; }
     const SkySystem& sky() const { return *skySystem_; }
+    void setSky(std::unique_ptr<SkySystem> system);
     AtmosphereLUTSystem& atmosphereLUT() { return *atmosphereLUTSystem_; }
     const AtmosphereLUTSystem& atmosphereLUT() const { return *atmosphereLUTSystem_; }
     FroxelSystem& froxel() { return *froxelSystem_; }

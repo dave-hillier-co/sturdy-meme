@@ -74,8 +74,10 @@ bool Renderer::initSubsystems(const InitContext& initCtx) {
     // Initialize skinned mesh rendering (GPU skinning for animated characters)
     if (!initSkinnedMeshRenderer()) return false;
 
-    // Initialize sky system (needs HDR render pass from postProcessSystem)
-    if (!systems_->sky().init(initCtx, systems_->postProcess().getHDRRenderPass())) return false;
+    // Initialize sky system via factory (needs HDR render pass from postProcessSystem)
+    auto skySystem = SkySystem::create(initCtx, systems_->postProcess().getHDRRenderPass());
+    if (!skySystem) return false;
+    systems_->setSky(std::move(skySystem));
 
     if (!createCommandBuffers()) return false;
 

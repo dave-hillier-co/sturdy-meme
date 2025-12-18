@@ -56,7 +56,7 @@ RendererSystems::RendererSystems()
     // shadowSystem_ created via factory in RendererInitPhases
     : terrainSystem_(std::make_unique<TerrainSystem>())
     // Tier 2 - Sky/Atmosphere
-    , skySystem_(std::make_unique<SkySystem>())
+    // skySystem_ created via factory in RendererInitPhases
     , atmosphereLUTSystem_(std::make_unique<AtmosphereLUTSystem>())
     , froxelSystem_(std::make_unique<FroxelSystem>())
     , cloudShadowSystem_(std::make_unique<CloudShadowSystem>())
@@ -137,6 +137,10 @@ void RendererSystems::setHiZ(std::unique_ptr<HiZSystem> system) {
     hiZSystem_ = std::move(system);
 }
 
+void RendererSystems::setSky(std::unique_ptr<SkySystem> system) {
+    skySystem_ = std::move(system);
+}
+
 bool RendererSystems::init(const InitContext& /*initCtx*/,
                             VkRenderPass /*swapchainRenderPass*/,
                             VkFormat /*swapchainImageFormat*/,
@@ -197,7 +201,7 @@ void RendererSystems::destroy(VkDevice device, VmaAllocator allocator) {
     globalBufferManager_.reset();  // RAII cleanup via destructor
 
     // Tier 1
-    skySystem_->destroy(device, allocator);
+    skySystem_.reset();  // RAII cleanup via destructor
     terrainSystem_->destroy(device, allocator);
     shadowSystem_.reset();  // RAII cleanup via destructor
     skinnedMeshRenderer_->destroy();

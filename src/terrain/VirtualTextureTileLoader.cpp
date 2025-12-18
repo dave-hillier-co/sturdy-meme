@@ -5,11 +5,19 @@
 
 namespace VirtualTexture {
 
+std::unique_ptr<VirtualTextureTileLoader> VirtualTextureTileLoader::create(const std::string& basePath, uint32_t workerCount) {
+    std::unique_ptr<VirtualTextureTileLoader> loader(new VirtualTextureTileLoader());
+    if (!loader->initInternal(basePath, workerCount)) {
+        return nullptr;
+    }
+    return loader;
+}
+
 VirtualTextureTileLoader::~VirtualTextureTileLoader() {
     shutdown();
 }
 
-bool VirtualTextureTileLoader::init(const std::string& path, uint32_t workerCount) {
+bool VirtualTextureTileLoader::initInternal(const std::string& path, uint32_t workerCount) {
     basePath = path;
     running = true;
 

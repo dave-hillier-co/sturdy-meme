@@ -305,14 +305,14 @@ private:
     VkCommandPool commandPool = VK_NULL_HANDLE;
 
     // Composed subsystems (RAII-managed)
-    std::optional<RAIIAdapter<TerrainHeightMap>> heightMap;
+    std::unique_ptr<TerrainHeightMap> heightMap;
     std::optional<RAIIAdapter<TerrainTextures>> textures;
     std::optional<RAIIAdapter<TerrainCBT>> cbt;
-    std::optional<RAIIAdapter<TerrainMeshlet>> meshlet;
-    std::optional<RAIIAdapter<TerrainTileCache>> tileCache;  // LOD-based tile streaming
+    std::unique_ptr<TerrainMeshlet> meshlet;
+    std::unique_ptr<TerrainTileCache> tileCache;  // LOD-based tile streaming
     std::optional<RAIIAdapter<TerrainBuffers>> buffers;      // Uniform, indirect, and visibility buffers
     TerrainCameraOptimizer cameraOptimizer;                  // Skip-frame optimization (no destroy needed)
-    std::optional<RAIIAdapter<TerrainPipelines>> pipelines;  // All compute and graphics pipelines
+    std::unique_ptr<TerrainPipelines> pipelines;  // All compute and graphics pipelines
 
     // Descriptor set layouts (needed for descriptor allocation)
     VkDescriptorSetLayout computeDescriptorSetLayout = VK_NULL_HANDLE;

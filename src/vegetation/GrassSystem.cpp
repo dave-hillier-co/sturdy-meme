@@ -812,8 +812,10 @@ void GrassSystem::recordResetAndCompute(VkCommandBuffer cmd, uint32_t frameIndex
     vkCmdPushConstants(cmd, getComputePipelineHandles().pipelineLayout,
                        VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(GrassPushConstants), &grassPush);
 
-    // Dispatch: ceil(1,000,000 / 64) = 15,625 workgroups (1000x1000 grid)
-    vkCmdDispatch(cmd, 15625, 1, 1);
+    // Dispatch: 2D grid of workgroups for better texture cache coherency
+    // Grid: 1000x1000 blades, Workgroup: 16x16 threads
+    // ceil(1000/16) = 63 workgroups per dimension (63*63*256 = 1,016,064 threads)
+    vkCmdDispatch(cmd, 63, 63, 1);
 
     // Memory barrier: compute write -> vertex shader read (storage buffer) and indirect read
     // Note: This barrier ensures the compute results are visible when we draw from this buffer

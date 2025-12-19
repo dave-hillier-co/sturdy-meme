@@ -35,7 +35,7 @@ layout(set = 0, binding = UBO_BINDING) uniform UniformBufferObject {
     float timeOfDay;
     float shadowMapSize;
     float debugCascades;       // 1.0 = show cascade colors
-    float julianDay;           // Julian day for sidereal rotation
+    float julianDayOffset;     // Days since J2000 epoch for sidereal rotation (better float precision)
     float cloudStyle;
     float cameraNear;          // Camera near plane for linearizing depth
     float cameraFar;           // Camera far plane for linearizing depth

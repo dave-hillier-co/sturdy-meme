@@ -122,7 +122,11 @@ UniformBufferObject UBOBuilder::buildUniformBufferData(
     ubo.timeOfDay = timeOfDay;
     ubo.shadowMapSize = static_cast<float>(systems_.shadowSystem->getShadowMapSize());
     ubo.debugCascades = config.showCascadeDebug ? 1.0f : 0.0f;
-    ubo.julianDay = static_cast<float>(lighting.julianDay);
+    // Store Julian day as offset from J2000 epoch for better float precision
+    // Full Julian day is ~2.4 million which loses precision in 32-bit float
+    // Offset is typically < 10000 for modern dates, preserving sub-hour precision
+    constexpr double J2000_EPOCH = 2451545.0;  // January 1, 2000, 12:00 TT
+    ubo.julianDayOffset = static_cast<float>(lighting.julianDay - J2000_EPOCH);
     ubo.cloudStyle = config.useParaboloidClouds ? 1.0f : 0.0f;
     ubo.cameraNear = camera.getNearPlane();
     ubo.cameraFar = camera.getFarPlane();

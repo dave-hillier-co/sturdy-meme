@@ -75,7 +75,8 @@ public:
                               VkSampler displacementMapSampler,
                               VkImageView tileArrayView = VK_NULL_HANDLE,
                               VkSampler tileSampler = VK_NULL_HANDLE,
-                              const std::array<VkBuffer, 3>& tileInfoBuffers = {});
+                              const std::array<VkBuffer, 3>& tileInfoBuffers = {},
+                              const BufferUtils::DynamicUniformBuffer* dynamicRendererUBO = nullptr);
 
     // Update leaf uniforms each frame
     void updateUniforms(uint32_t frameIndex, const glm::vec3& cameraPos,
@@ -175,6 +176,10 @@ private:
 
     // Renderer uniform buffers for per-frame descriptor updates
     std::vector<VkBuffer> rendererUniformBuffers_;
+
+    // Dynamic renderer UBO - used with VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC
+    // to avoid per-frame descriptor set updates
+    const BufferUtils::DynamicUniformBuffer* dynamicRendererUBO_ = nullptr;
 
     // Displacement region uniform buffer (per-frame)
     BufferUtils::PerFrameBufferSet displacementRegionBuffers;

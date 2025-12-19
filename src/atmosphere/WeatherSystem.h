@@ -60,7 +60,8 @@ public:
     // Update descriptor sets with external resources (UBO, wind buffer)
     void updateDescriptorSets(VkDevice device, const std::vector<VkBuffer>& uniformBuffers,
                               const std::vector<VkBuffer>& windBuffers,
-                              VkImageView depthImageView, VkSampler depthSampler);
+                              VkImageView depthImageView, VkSampler depthSampler,
+                              const BufferUtils::DynamicUniformBuffer* dynamicRendererUBO = nullptr);
 
     // Set froxel volume for fog lighting on particles (Phase 4.3.9)
     void setFroxelVolume(VkImageView volumeView, VkSampler volumeSampler,
@@ -144,6 +145,10 @@ private:
     // External buffer references for per-frame descriptor updates
     std::vector<VkBuffer> externalWindBuffers;
     std::vector<VkBuffer> externalRendererUniformBuffers;
+
+    // Dynamic renderer UBO - used with VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC
+    // to avoid per-frame descriptor set updates
+    const BufferUtils::DynamicUniformBuffer* dynamicRendererUBO_ = nullptr;
 
     // Froxel volume for fog particle lighting (Phase 4.3.9)
     VkImageView froxelVolumeView = VK_NULL_HANDLE;

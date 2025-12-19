@@ -252,7 +252,8 @@ bool Renderer::initSubsystems(const InitContext& initCtx) {
 
     // Update weather system descriptor sets
     systems_->weather().updateDescriptorSets(device, systems_->globalBuffers().uniformBuffers.buffers, windBuffers,
-                                        systems_->postProcess().getHDRDepthView(), systems_->shadow().getShadowSampler());
+                                        systems_->postProcess().getHDRDepthView(), systems_->shadow().getShadowSampler(),
+                                        &systems_->globalBuffers().dynamicRendererUBO);
 
     // Connect snow to environment settings and systems
     systems_->snowMask().setEnvironmentSettings(envSettings);
@@ -274,7 +275,7 @@ bool Renderer::initSubsystems(const InitContext& initCtx) {
                                      systems_->terrain().getHeightMapView(), systems_->terrain().getHeightMapSampler(),
                                      systems_->grass().getDisplacementImageView(), systems_->grass().getDisplacementSampler(),
                                      systems_->terrain().getTileArrayView(), systems_->terrain().getTileSampler(),
-                                     leafTileInfoBuffers);
+                                     leafTileInfoBuffers, &systems_->globalBuffers().dynamicRendererUBO);
 
     // Initialize atmosphere subsystems (Froxel, AtmosphereLUT, CloudShadow)
     if (!RendererInit::initAtmosphereSubsystems(*systems_, initCtx, core.shadow,

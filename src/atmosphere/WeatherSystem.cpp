@@ -133,7 +133,8 @@ bool WeatherSystem::createComputePipeline(SystemLifecycleHelper::PipelineHandles
 
 bool WeatherSystem::createGraphicsDescriptorSetLayout(SystemLifecycleHelper::PipelineHandles& handles) {
     PipelineBuilder builder(getDevice());
-    builder.addDescriptorBinding(0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1,
+    // Binding 0 uses DYNAMIC to avoid per-frame descriptor updates
+    builder.addDescriptorBinding(0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, 1,
                                  VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT)
         .addDescriptorBinding(1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT)
         .addDescriptorBinding(2, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT)
@@ -257,10 +258,14 @@ bool WeatherSystem::createDescriptorSets() {
 
 void WeatherSystem::updateDescriptorSets(VkDevice dev, const std::vector<VkBuffer>& rendererUniformBuffers,
                                           const std::vector<VkBuffer>& windBuffers,
-                                          VkImageView depthImageView, VkSampler depthSampler) {
-    // Store external buffer references for per-frame descriptor updates
+                                          VkImageView depthImageView, VkSampler depthSampler,
+                                          const BufferUtils::DynamicUniformBuffer* dynamicRendererUBO) {
+    // Store external buffer references (kept for backward compatibility)
     externalWindBuffers = windBuffers;
     externalRendererUniformBuffers = rendererUniformBuffers;
+
+    // Store dynamic renderer UBO reference for per-frame binding with dynamic offsets
+    dynamicRendererUBO_ = dynamicRendererUBO;
 
     // Update compute and graphics descriptor sets for both buffer sets
     for (uint32_t set = 0; set < BUFFER_SET_COUNT; set++) {
@@ -276,12 +281,18 @@ void WeatherSystem::updateDescriptorSets(VkDevice dev, const std::vector<VkBuffe
             .writeBuffer(4, windBuffers[0], 0, 32)  // sizeof(WindUniforms)
             .update();
 
-        // Graphics descriptor set
-        DescriptorManager::SetWriter(dev, (*particleSystem)->getGraphicsDescriptorSet(set))
-            .writeBuffer(0, rendererUniformBuffers[0], 0, 320)  // sizeof(UniformBufferObject)
-            .writeBuffer(1, particleBuffers.buffers[set], 0, sizeof(WeatherParticle) * MAX_PARTICLES, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
-            .writeImage(2, depthImageView, depthSampler, VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL)
-            .update();
+        // Graphics descriptor set - use dynamic UBO if available (avoids per-frame descriptor updates)
+        DescriptorManager::SetWriter graphicsWriter(dev, (*particleSystem)->getGraphicsDescriptorSet(set));
+        if (dynamicRendererUBO && dynamicRendererUBO->isValid()) {
+            graphicsWriter.writeBuffer(0, dynamicRendererUBO->buffer, 0, dynamicRendererUBO->alignedSize,
+                                       VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC);
+        } else {
+            graphicsWriter.writeBuffer(0, rendererUniformBuffers[0], 0, 320,
+                                       VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC);  // sizeof(UniformBufferObject)
+        }
+        graphicsWriter.writeBuffer(1, particleBuffers.buffers[set], 0, sizeof(WeatherParticle) * MAX_PARTICLES, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
+        graphicsWriter.writeImage(2, depthImageView, depthSampler, VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL);
+        graphicsWriter.update();
     }
 }
 
@@ -381,10 +392,8 @@ void WeatherSystem::recordDraw(VkCommandBuffer cmd, uint32_t frameIndex, float t
     // Double-buffer: graphics reads from renderBufferSet (previous frame's compute output)
     uint32_t readSet = (*particleSystem)->getRenderBufferSet();
 
-    // Update graphics descriptor set to use this frame's renderer UBO
-    DescriptorManager::SetWriter(getDevice(), (*particleSystem)->getGraphicsDescriptorSet(readSet))
-        .writeBuffer(0, externalRendererUniformBuffers[frameIndex], 0, 320)  // sizeof(UniformBufferObject)
-        .update();
+    // Dynamic UBO: no per-frame descriptor update needed - we pass the offset at bind time instead
+    // This eliminates per-frame vkUpdateDescriptorSets calls for the renderer UBO
 
     auto& graphicsPipeline = getGraphicsPipelineHandles();
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, graphicsPipeline.pipeline);
@@ -405,9 +414,18 @@ void WeatherSystem::recordDraw(VkCommandBuffer cmd, uint32_t frameIndex, float t
     vkCmdSetScissor(cmd, 0, 1, &scissor);
 
     VkDescriptorSet graphicsSet = (*particleSystem)->getGraphicsDescriptorSet(readSet);
-    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                            graphicsPipeline.pipelineLayout, 0, 1,
-                            &graphicsSet, 0, nullptr);
+
+    // Use dynamic offset for binding 0 (renderer UBO) if dynamic buffer is available
+    if (dynamicRendererUBO_ && dynamicRendererUBO_->isValid()) {
+        uint32_t dynamicOffset = dynamicRendererUBO_->getDynamicOffset(frameIndex);
+        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                graphicsPipeline.pipelineLayout, 0, 1,
+                                &graphicsSet, 1, &dynamicOffset);
+    } else {
+        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                graphicsPipeline.pipelineLayout, 0, 1,
+                                &graphicsSet, 0, nullptr);
+    }
 
     WeatherPushConstants pushConstants{};
     pushConstants.time = time;

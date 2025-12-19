@@ -152,10 +152,9 @@ void main() {
     uint gridX = gl_GlobalInvocationID.x;
     uint gridZ = gl_GlobalInvocationID.y;
 
-    // Set vertexCount atomically (only first thread)
-    // (buffer is pre-cleared to 0 by CPU, so atomicMax ensures it becomes 15)
+    // Set vertexCount (only first thread writes this constant value)
     if (gridX == 0 && gridZ == 0) {
-        atomicMax(drawCmd.vertexCount, 15);  // 5 segments * 3 vertices per triangle
+        drawCmd.vertexCount = 15;  // 5 segments * 3 vertices per triangle
     }
 
     // Generate grass positions in a grid pattern

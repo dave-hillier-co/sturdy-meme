@@ -121,6 +121,26 @@ bool TerrainSystem::initInternal(const InitInfo& info, const TerrainConfig& cfg)
         }
     }
 
+    // Initialize virtual texture system (if configured)
+    if (config.useVirtualTexture && !config.virtualTextureTileDir.empty()) {
+        virtualTexture = std::make_unique<VirtualTexture::VirtualTextureSystem>();
+        VirtualTexture::VirtualTextureConfig vtConfig{};
+        // Use smaller config for testing - 64 tiles per axis, 6 mip levels
+        vtConfig.virtualSizePixels = 8192;  // 64 * 128 = 8192
+        vtConfig.tileSizePixels = 128;
+        vtConfig.cacheSizePixels = 2048;    // 16x16 tiles in cache
+        vtConfig.borderPixels = 4;
+        vtConfig.maxMipLevels = 6;
+
+        if (!virtualTexture->init(device, allocator, commandPool, graphicsQueue,
+                                   config.virtualTextureTileDir, vtConfig, framesInFlight)) {
+            SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "Failed to initialize virtual texture system");
+            virtualTexture.reset();
+        } else {
+            SDL_Log("Virtual texture system initialized: %s", config.virtualTextureTileDir.c_str());
+        }
+    }
+
     // Query GPU subgroup capabilities for optimized compute paths
     querySubgroupCapabilities();
 
@@ -192,6 +212,10 @@ void TerrainSystem::cleanup() {
 
     // Reset all RAII-managed subsystems
     buffers.reset();
+    if (virtualTexture) {
+        virtualTexture->destroy(device, allocator);
+        virtualTexture.reset();
+    }
     tileCache.reset();
     meshlet.reset();
     cbt.reset();

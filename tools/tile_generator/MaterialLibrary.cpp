@@ -122,12 +122,12 @@ void MaterialLibrary::setupDefaultMaterials() {
         0.9f
     };
 
-    // Beach sub-zones
+    // Beach sub-zones (all use sand_albedo as fallback until more textures available)
     subZoneMaterials[static_cast<size_t>(BiomeZone::Beach)] = {{
-        {"wet_sand", "terrain/beach/wet_sand_albedo.png", "", "", config.defaultTilingScale, 0.7f},
-        {"pebbles", "terrain/beach/pebbles_albedo.png", "terrain/beach/pebbles_normal.png", "", config.defaultTilingScale, 0.85f},
-        {"driftwood", "terrain/beach/driftwood_albedo.png", "", "", config.defaultTilingScale, 0.8f},
-        {"seaweed", "terrain/beach/seaweed_albedo.png", "", "", config.defaultTilingScale, 0.75f}
+        {"wet_sand", "terrain/beach/sand_albedo.png", "terrain/beach/sand_normal.png", "", config.defaultTilingScale, 0.7f},
+        {"pebbles", "terrain/beach/sand_albedo.png", "terrain/beach/sand_normal.png", "", config.defaultTilingScale, 0.85f},
+        {"driftwood", "terrain/beach/sand_albedo.png", "terrain/beach/sand_normal.png", "", config.defaultTilingScale, 0.8f},
+        {"seaweed", "terrain/beach/sand_albedo.png", "terrain/beach/sand_normal.png", "", config.defaultTilingScale, 0.75f}
     }};
 
     // Chalk cliff material
@@ -140,12 +140,12 @@ void MaterialLibrary::setupDefaultMaterials() {
         0.7f
     };
 
-    // Chalk cliff sub-zones
+    // Chalk cliff sub-zones (all use chalk_albedo as fallback)
     subZoneMaterials[static_cast<size_t>(BiomeZone::ChalkCliff)] = {{
-        {"exposed_chalk", "terrain/cliff/exposed_chalk_albedo.png", "", "", config.defaultTilingScale, 0.65f},
-        {"grass_topped", "terrain/cliff/grass_topped_albedo.png", "", "", config.defaultTilingScale, 0.8f},
-        {"eroded_chalk", "terrain/cliff/eroded_chalk_albedo.png", "terrain/cliff/eroded_chalk_normal.png", "", config.defaultTilingScale, 0.7f},
-        {"flint", "terrain/cliff/flint_albedo.png", "terrain/cliff/flint_normal.png", "", config.defaultTilingScale, 0.6f}
+        {"exposed_chalk", "terrain/cliff/chalk_albedo.png", "terrain/cliff/chalk_normal.png", "", config.defaultTilingScale, 0.65f},
+        {"grass_topped", "terrain/cliff/chalk_albedo.png", "terrain/cliff/chalk_normal.png", "", config.defaultTilingScale, 0.8f},
+        {"eroded_chalk", "terrain/cliff/chalk_albedo.png", "terrain/cliff/chalk_normal.png", "", config.defaultTilingScale, 0.7f},
+        {"flint", "terrain/cliff/rock_albedo.png", "terrain/cliff/rock_normal.png", "", config.defaultTilingScale, 0.6f}
     }};
 
     // Salt marsh material
@@ -158,12 +158,12 @@ void MaterialLibrary::setupDefaultMaterials() {
         0.85f
     };
 
-    // Salt marsh sub-zones
+    // Salt marsh sub-zones (all use muddy_grass_albedo as fallback)
     subZoneMaterials[static_cast<size_t>(BiomeZone::SaltMarsh)] = {{
-        {"mudflat", "terrain/marsh/mudflat_albedo.png", "", "", config.defaultTilingScale, 0.9f},
-        {"saltpan", "terrain/marsh/saltpan_albedo.png", "", "", config.defaultTilingScale, 0.75f},
-        {"cordgrass", "terrain/marsh/cordgrass_albedo.png", "", "", config.defaultTilingScale, 0.8f},
-        {"creek", "terrain/marsh/creek_albedo.png", "", "", config.defaultTilingScale, 0.7f}
+        {"mudflat", "terrain/marsh/muddy_grass_albedo.png", "terrain/marsh/muddy_grass_normal.png", "", config.defaultTilingScale, 0.9f},
+        {"saltpan", "terrain/marsh/muddy_grass_albedo.png", "terrain/marsh/muddy_grass_normal.png", "", config.defaultTilingScale, 0.75f},
+        {"cordgrass", "terrain/marsh/muddy_grass_albedo.png", "terrain/marsh/muddy_grass_normal.png", "", config.defaultTilingScale, 0.8f},
+        {"creek", "terrain/marsh/muddy_grass_albedo.png", "terrain/marsh/muddy_grass_normal.png", "", config.defaultTilingScale, 0.7f}
     }};
 
     // River material (placeholder - handled by spline rasterization)
@@ -176,12 +176,12 @@ void MaterialLibrary::setupDefaultMaterials() {
         0.85f
     };
 
-    // River sub-zones
+    // River sub-zones (all use gravel_albedo as fallback)
     subZoneMaterials[static_cast<size_t>(BiomeZone::River)] = {{
         {"river_gravel", "terrain/river/gravel_albedo.png", "terrain/river/gravel_normal.png", "", config.defaultTilingScale, 0.85f},
-        {"river_stones", "terrain/river/stones_albedo.png", "terrain/river/stones_normal.png", "", config.defaultTilingScale, 0.8f},
-        {"river_sand", "terrain/river/sand_albedo.png", "", "", config.defaultTilingScale, 0.9f},
-        {"river_mud", "terrain/river/mud_albedo.png", "", "", config.defaultTilingScale, 0.95f}
+        {"river_stones", "terrain/river/gravel_albedo.png", "terrain/river/gravel_normal.png", "", config.defaultTilingScale, 0.8f},
+        {"river_sand", "terrain/river/gravel_albedo.png", "terrain/river/gravel_normal.png", "", config.defaultTilingScale, 0.9f},
+        {"river_mud", "terrain/river/gravel_albedo.png", "terrain/river/gravel_normal.png", "", config.defaultTilingScale, 0.95f}
     }};
 
     // Wetland material
@@ -194,12 +194,12 @@ void MaterialLibrary::setupDefaultMaterials() {
         0.85f
     };
 
-    // Wetland sub-zones
+    // Wetland sub-zones (use available textures)
     subZoneMaterials[static_cast<size_t>(BiomeZone::Wetland)] = {{
-        {"marsh_grass", "terrain/wetland/marsh_grass_albedo.png", "", "", config.defaultTilingScale, 0.85f},
-        {"reeds", "terrain/wetland/reeds_albedo.png", "", "", config.defaultTilingScale, 0.75f},
+        {"marsh_grass", "terrain/wetland/wet_grass_albedo.png", "terrain/wetland/wet_grass_normal.png", "", config.defaultTilingScale, 0.85f},
+        {"reeds", "terrain/wetland/wet_grass_albedo.png", "terrain/wetland/wet_grass_normal.png", "", config.defaultTilingScale, 0.75f},
         {"muddy", "terrain/wetland/muddy_albedo.png", "", "", config.defaultTilingScale, 0.95f},
-        {"flooded", "terrain/wetland/flooded_albedo.png", "", "", config.defaultTilingScale, 0.5f}
+        {"flooded", "terrain/wetland/wet_grass_albedo.png", "terrain/wetland/wet_grass_normal.png", "", config.defaultTilingScale, 0.5f}
     }};
 
     // Grassland material (chalk downs)
@@ -212,12 +212,12 @@ void MaterialLibrary::setupDefaultMaterials() {
         0.8f
     };
 
-    // Grassland sub-zones
+    // Grassland sub-zones (all use chalk_grass_albedo as fallback)
     subZoneMaterials[static_cast<size_t>(BiomeZone::Grassland)] = {{
-        {"open_down", "terrain/grassland/open_down_albedo.png", "", "", config.defaultTilingScale, 0.8f},
-        {"wildflower", "terrain/grassland/wildflower_albedo.png", "", "", config.defaultTilingScale, 0.75f},
-        {"gorse", "terrain/grassland/gorse_albedo.png", "", "", config.defaultTilingScale, 0.7f},
-        {"chalk_scrape", "terrain/grassland/chalk_scrape_albedo.png", "", "", config.defaultTilingScale, 0.65f}
+        {"open_down", "terrain/grassland/chalk_grass_albedo.png", "terrain/grassland/chalk_grass_normal.png", "", config.defaultTilingScale, 0.8f},
+        {"wildflower", "terrain/grassland/chalk_grass_albedo.png", "terrain/grassland/chalk_grass_normal.png", "", config.defaultTilingScale, 0.75f},
+        {"gorse", "terrain/grassland/chalk_grass_albedo.png", "terrain/grassland/chalk_grass_normal.png", "", config.defaultTilingScale, 0.7f},
+        {"chalk_scrape", "terrain/grassland/chalk_grass_albedo.png", "terrain/grassland/chalk_grass_normal.png", "", config.defaultTilingScale, 0.65f}
     }};
 
     // Agricultural material
@@ -230,12 +230,12 @@ void MaterialLibrary::setupDefaultMaterials() {
         0.9f
     };
 
-    // Agricultural sub-zones
+    // Agricultural sub-zones (all use ploughed_albedo as fallback)
     subZoneMaterials[static_cast<size_t>(BiomeZone::Agricultural)] = {{
         {"ploughed", "terrain/agricultural/ploughed_albedo.png", "terrain/agricultural/ploughed_normal.png", "", config.defaultTilingScale, 0.9f},
-        {"pasture", "terrain/agricultural/pasture_albedo.png", "", "", config.defaultTilingScale, 0.8f},
-        {"crop", "terrain/agricultural/crop_albedo.png", "", "", config.defaultTilingScale, 0.75f},
-        {"fallow", "terrain/agricultural/fallow_albedo.png", "", "", config.defaultTilingScale, 0.85f}
+        {"pasture", "terrain/agricultural/ploughed_albedo.png", "terrain/agricultural/ploughed_normal.png", "", config.defaultTilingScale, 0.8f},
+        {"crop", "terrain/agricultural/ploughed_albedo.png", "terrain/agricultural/ploughed_normal.png", "", config.defaultTilingScale, 0.75f},
+        {"fallow", "terrain/agricultural/ploughed_albedo.png", "terrain/agricultural/ploughed_normal.png", "", config.defaultTilingScale, 0.85f}
     }};
 
     // Woodland material
@@ -248,12 +248,12 @@ void MaterialLibrary::setupDefaultMaterials() {
         0.85f
     };
 
-    // Woodland sub-zones
+    // Woodland sub-zones (all use forest_floor_albedo as fallback)
     subZoneMaterials[static_cast<size_t>(BiomeZone::Woodland)] = {{
-        {"beech_floor", "terrain/woodland/beech_floor_albedo.png", "", "", config.defaultTilingScale, 0.85f},
-        {"oak_fern", "terrain/woodland/oak_fern_albedo.png", "", "", config.defaultTilingScale, 0.8f},
-        {"clearing", "terrain/woodland/clearing_albedo.png", "", "", config.defaultTilingScale, 0.75f},
-        {"coppice", "terrain/woodland/coppice_albedo.png", "", "", config.defaultTilingScale, 0.8f}
+        {"beech_floor", "terrain/woodland/forest_floor_albedo.png", "terrain/woodland/forest_floor_normal.png", "", config.defaultTilingScale, 0.85f},
+        {"oak_fern", "terrain/woodland/forest_floor_albedo.png", "terrain/woodland/forest_floor_normal.png", "", config.defaultTilingScale, 0.8f},
+        {"clearing", "terrain/woodland/forest_floor_albedo.png", "terrain/woodland/forest_floor_normal.png", "", config.defaultTilingScale, 0.75f},
+        {"coppice", "terrain/woodland/forest_floor_albedo.png", "terrain/woodland/forest_floor_normal.png", "", config.defaultTilingScale, 0.8f}
     }};
 
     // Cliff material (for steep slopes)

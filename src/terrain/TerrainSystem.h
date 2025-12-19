@@ -16,6 +16,7 @@
 #include "TerrainBuffers.h"
 #include "TerrainCameraOptimizer.h"
 #include "TerrainPipelines.h"
+#include "VirtualTextureSystem.h"
 #include "DescriptorManager.h"
 #include "InitContext.h"
 #include "core/RAIIAdapter.h"
@@ -115,6 +116,10 @@ struct TerrainConfig {
     std::string tileCacheDir;         // Directory containing preprocessed tiles (empty = disabled)
     float tileLoadRadius = 2000.0f;   // Distance from camera to load high-res tiles
     float tileUnloadRadius = 3000.0f; // Distance from camera to unload tiles
+
+    // Virtual texture settings
+    std::string virtualTextureTileDir;  // Directory containing VT tiles (empty = disabled)
+    bool useVirtualTexture = false;     // Enable virtual texturing for terrain
 };
 
 class TerrainSystem {
@@ -310,6 +315,7 @@ private:
     std::optional<RAIIAdapter<TerrainCBT>> cbt;
     std::unique_ptr<TerrainMeshlet> meshlet;
     std::unique_ptr<TerrainTileCache> tileCache;  // LOD-based tile streaming
+    std::unique_ptr<VirtualTexture::VirtualTextureSystem> virtualTexture;  // Virtual texture system
     std::optional<RAIIAdapter<TerrainBuffers>> buffers;      // Uniform, indirect, and visibility buffers
     TerrainCameraOptimizer cameraOptimizer;                  // Skip-frame optimization (no destroy needed)
     std::unique_ptr<TerrainPipelines> pipelines;  // All compute and graphics pipelines

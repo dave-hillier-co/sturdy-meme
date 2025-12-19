@@ -131,6 +131,10 @@ bool Renderer::initSubsystems(const InitContext& initCtx) {
     terrainConfig.tileLoadRadius = 2000.0f;   // Load high-res tiles within 2km
     terrainConfig.tileUnloadRadius = 3000.0f; // Unload tiles beyond 3km
 
+    // Enable virtual texturing (if tile directory exists)
+    terrainConfig.virtualTextureTileDir = resourcePath + "/vt_tiles";
+    terrainConfig.useVirtualTexture = true;
+
     auto terrainSystem = TerrainSystem::create(initCtx, terrainParams, terrainConfig);
     if (!terrainSystem) return false;
     systems_->setTerrain(std::move(terrainSystem));

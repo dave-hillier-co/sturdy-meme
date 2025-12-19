@@ -390,6 +390,16 @@ if(APPLE)
             $<TARGET_BUNDLE_CONTENT_DIR:${PROJECT_NAME}>/Resources/terrain_data
         COMMENT "Copying terrain data to app bundle"
     )
+    # Copy virtual texture tiles if they exist
+    if(EXISTS ${CMAKE_SOURCE_DIR}/generated/vt_tiles)
+        add_custom_command(
+            TARGET ${PROJECT_NAME} POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_directory
+                ${CMAKE_SOURCE_DIR}/generated/vt_tiles
+                $<TARGET_BUNDLE_CONTENT_DIR:${PROJECT_NAME}>/Resources/vt_tiles
+            COMMENT "Copying virtual texture tiles to app bundle"
+        )
+    endif()
 else()
     add_custom_command(
         TARGET ${PROJECT_NAME} POST_BUILD
@@ -398,6 +408,16 @@ else()
             $<TARGET_FILE_DIR:${PROJECT_NAME}>/terrain_data
         COMMENT "Copying terrain data to build directory"
     )
+    # Copy virtual texture tiles if they exist
+    if(EXISTS ${CMAKE_SOURCE_DIR}/generated/vt_tiles)
+        add_custom_command(
+            TARGET ${PROJECT_NAME} POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_directory
+                ${CMAKE_SOURCE_DIR}/generated/vt_tiles
+                $<TARGET_FILE_DIR:${PROJECT_NAME}>/vt_tiles
+            COMMENT "Copying virtual texture tiles to build directory"
+        )
+    endif()
 endif()
 
 # Check for shader compiler early so we can skip shader target_sources if not available

@@ -782,6 +782,11 @@ void GrassSystem::recordResetAndCompute(VkCommandBuffer cmd, uint32_t frameIndex
     }
     writer.update();
 
+    // Ensure CPU writes to tile info buffer are visible to GPU before compute dispatch
+    // The tile info buffer is written by CPU in TerrainTileCache::updateTileInfoBuffer()
+    // and needs to be visible to the grass compute shader that samples terrain heights
+    Barriers::hostToCompute(cmd);
+
     // Reset indirect buffer before compute dispatch to prevent accumulation
     Barriers::clearBufferForComputeReadWrite(cmd, indirectBuffers.buffers[writeSet], 0, sizeof(VkDrawIndirectCommand));
 

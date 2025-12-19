@@ -530,6 +530,10 @@ void LeafSystem::recordResetAndCompute(VkCommandBuffer cmd, uint32_t frameIndex,
     }
     writer.update();
 
+    // Ensure CPU writes to tile info buffer are visible to GPU before compute dispatch
+    // The tile info buffer is written by CPU in TerrainTileCache::updateTileInfoBuffer()
+    Barriers::hostToCompute(cmd);
+
     // Reset indirect buffer before compute dispatch
     Barriers::clearBufferForCompute(cmd, indirectBuffers.buffers[writeSet], 0, sizeof(VkDrawIndirectCommand));
 

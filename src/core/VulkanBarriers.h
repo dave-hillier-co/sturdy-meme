@@ -160,6 +160,21 @@ inline void transferToHostRead(VkCommandBuffer cmd) {
 }
 
 /**
+ * Synchronize CPU host writes before compute shader access.
+ * Use when CPU writes to persistently mapped buffers that compute shaders will read.
+ * This ensures host writes are visible to the GPU before the compute dispatch.
+ */
+inline void hostToCompute(VkCommandBuffer cmd) {
+    VkMemoryBarrier barrier{VK_STRUCTURE_TYPE_MEMORY_BARRIER};
+    barrier.srcAccessMask = VK_ACCESS_HOST_WRITE_BIT;
+    barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+    vkCmdPipelineBarrier(cmd,
+        VK_PIPELINE_STAGE_HOST_BIT,
+        VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+        0, 1, &barrier, 0, nullptr, 0, nullptr);
+}
+
+/**
  * Synchronize transfer operations before vertex input stage.
  * Use after vkCmdCopyBuffer to vertex/index buffers when they
  * will be bound for drawing.

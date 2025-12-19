@@ -2,6 +2,7 @@
 #include "ShaderLoader.h"
 #include "DescriptorManager.h"
 #include "VulkanBarriers.h"
+#include "WindSystem.h"
 #include <SDL3/SDL.h>
 #include <cstring>
 #include <algorithm>
@@ -424,7 +425,7 @@ void LeafSystem::updateDescriptorSets(VkDevice dev, const std::vector<VkBuffer>&
         computeWriter.writeBuffer(1, particleBuffers.buffers[outputSet], 0, sizeof(LeafParticle) * MAX_PARTICLES, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
         computeWriter.writeBuffer(2, indirectBuffers.buffers[outputSet], 0, sizeof(VkDrawIndirectCommand), VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
         computeWriter.writeBuffer(3, uniformBuffers.buffers[0], 0, sizeof(LeafUniforms));
-        computeWriter.writeBuffer(4, windBuffers[0], 0, 32);  // sizeof(WindUniforms)
+        computeWriter.writeBuffer(4, windBuffers[0], 0, sizeof(WindUniforms));
         computeWriter.writeImage(5, terrainHeightMapView, terrainHeightMapSampler);
         computeWriter.writeImage(6, displacementMapViewParam, displacementMapSamplerParam);
         computeWriter.writeBuffer(7, displacementRegionBuffers.buffers[0], 0, sizeof(glm::vec4));
@@ -451,7 +452,7 @@ void LeafSystem::updateDescriptorSets(VkDevice dev, const std::vector<VkBuffer>&
                                        VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC);  // sizeof(UniformBufferObject)
         }
         graphicsWriter.writeBuffer(1, particleBuffers.buffers[set], 0, sizeof(LeafParticle) * MAX_PARTICLES, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
-        graphicsWriter.writeBuffer(2, windBuffers[0], 0, 32);  // sizeof(WindUniforms)
+        graphicsWriter.writeBuffer(2, windBuffers[0], 0, sizeof(WindUniforms));
         graphicsWriter.update();
     }
 }

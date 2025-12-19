@@ -5,6 +5,7 @@
 #include "UBOs.h"
 #include "VulkanBarriers.h"
 #include "VulkanResourceFactory.h"
+#include "WindSystem.h"
 #include <SDL3/SDL.h>
 #include <cstring>
 #include <array>
@@ -656,7 +657,7 @@ void GrassSystem::updateDescriptorSets(VkDevice dev, const std::vector<VkBuffer>
         }
         graphicsWriter.writeBuffer(1, instanceBuffers.buffers[set], 0, sizeof(GrassInstance) * MAX_INSTANCES, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
         graphicsWriter.writeImage(2, shadowMapView, shadowSampler, VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL);
-        graphicsWriter.writeBuffer(3, windBuffers[0], 0, 32);  // sizeof(WindUniforms)
+        graphicsWriter.writeBuffer(3, windBuffers[0], 0, sizeof(WindUniforms));
         graphicsWriter.writeBuffer(4, lightBuffersParam[0], 0, VK_WHOLE_SIZE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
         graphicsWriter.writeImage(6, cloudShadowMapView, cloudShadowMapSampler);
         graphicsWriter.writeBuffer(10, snowBuffersParam[0], 0, sizeof(SnowUBO));
@@ -667,7 +668,7 @@ void GrassSystem::updateDescriptorSets(VkDevice dev, const std::vector<VkBuffer>
         DescriptorManager::SetWriter shadowWriter(dev, shadowDescriptorSetsDB[set]);
         shadowWriter.writeBuffer(0, rendererUniformBuffers[0], 0, 160);  // sizeof(UniformBufferObject)
         shadowWriter.writeBuffer(1, instanceBuffers.buffers[set], 0, sizeof(GrassInstance) * MAX_INSTANCES, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
-        shadowWriter.writeBuffer(2, windBuffers[0], 0, 32);  // sizeof(WindUniforms)
+        shadowWriter.writeBuffer(2, windBuffers[0], 0, sizeof(WindUniforms));
         shadowWriter.update();
     }
 }

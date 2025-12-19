@@ -278,7 +278,7 @@ void WeatherSystem::updateDescriptorSets(VkDevice dev, const std::vector<VkBuffe
             .writeBuffer(1, particleBuffers.buffers[outputSet], 0, sizeof(WeatherParticle) * MAX_PARTICLES, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
             .writeBuffer(2, indirectBuffers.buffers[outputSet], 0, sizeof(VkDrawIndirectCommand), VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
             .writeBuffer(3, uniformBuffers.buffers[0], 0, sizeof(WeatherUniforms))
-            .writeBuffer(4, windBuffers[0], 0, 32)  // sizeof(WindUniforms)
+            .writeBuffer(4, windBuffers[0], 0, sizeof(WindUniforms))
             .update();
 
         // Graphics descriptor set - use dynamic UBO if available (avoids per-frame descriptor updates)
@@ -355,7 +355,7 @@ void WeatherSystem::recordResetAndCompute(VkCommandBuffer cmd, uint32_t frameInd
     // Update compute descriptor set to use this frame's uniform buffers
     DescriptorManager::SetWriter(getDevice(), (*particleSystem)->getComputeDescriptorSet(writeSet))
         .writeBuffer(3, uniformBuffers.buffers[frameIndex], 0, sizeof(WeatherUniforms))
-        .writeBuffer(4, externalWindBuffers[frameIndex], 0, 32)  // sizeof(WindUniforms)
+        .writeBuffer(4, externalWindBuffers[frameIndex], 0, sizeof(WindUniforms))
         .update();
 
     // Reset indirect buffer before compute dispatch

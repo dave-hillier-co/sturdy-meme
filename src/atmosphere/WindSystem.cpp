@@ -93,6 +93,17 @@ void WindSystem::updateUniforms(uint32_t frameIndex) {
         totalTime
     );
 
+    // Pack permutation table into ivec4 array (4 ints per ivec4)
+    // permutation[] has 512 elements, packed into 128 ivec4s
+    for (int i = 0; i < 128; i++) {
+        uniforms.permPacked[i] = glm::ivec4(
+            permutation[i * 4 + 0],
+            permutation[i * 4 + 1],
+            permutation[i * 4 + 2],
+            permutation[i * 4 + 3]
+        );
+    }
+
     memcpy(uniformBuffers.mappedPointers[frameIndex], &uniforms, sizeof(WindUniforms));
 }
 

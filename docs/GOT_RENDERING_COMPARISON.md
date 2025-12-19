@@ -9,13 +9,13 @@ Comparison of techniques from Justin Petri's "A Real-Time Samurai Cinema Experie
 | Category | GOT Techniques | Implemented | Partially | Missing |
 |----------|---------------|-------------|-----------|---------|
 | **Indirect Diffuse** | SH probes, sky visibility, bounce light | - | - | All |
-| **Indirect Specular** | Reflection probes, cube map shadows, horizon occlusion | SSR only | - | Probes, horizon occlusion |
+| **Indirect Specular** | Reflection probes, cube map shadows, horizon occlusion | SSR + horizon occlusion | - | Reflection probes |
 | **Atmospheric LUTs** | Transmittance, multi-scatter, irradiance | Transmittance, multi-scatter, skyview | Irradiance (basic) | Rayleigh/Mie split irradiance |
 | **LMS Color Space** | Spectral primaries for accurate Rayleigh | Yes | - | - |
 | **Volumetric Fog** | Froxel grid, density anti-aliasing, tricubic filtering | Yes | - | - |
 | **Cloud Rendering** | Paraboloid maps, density AA, phase function blending | Yes | - | Triple-buffered temporal |
 | **Particle Haze Lighting** | Haze lighting model, multi-scatter approx | - | - | All |
-| **Tone Mapping** | Bilateral filter local contrast | - | - | All |
+| **Tone Mapping** | Bilateral filter local contrast | Bilateral grid + shaders | - | CPU-side system integration |
 | **Color Grading** | White balance with Bradford chromatic adaptation | - | - | All |
 | **Custom Tone Map Space** | Modified ACES CG (adjusted red primary) | - | - | All |
 | **Purkinje Effect** | LMSR physiological model | Yes (simplified) | - | Full LMSR model |
@@ -69,16 +69,11 @@ SSR alone has fundamental limitations:
 - Limited range and accuracy
 - Struggles with rough surfaces
 
-### Horizon Occlusion (Missing)
-GOT's horizon occlusion formula for reflection probes:
-```glsl
-// θc = cone half-angle containing 95% of GGX energy
-float thetaC = atan(alpha * 0.5 / sqrt(1.0 - alpha * alpha)); // approximation
-float thetaP = acos(dot(normalMap, vertexNormal));
-float thetaR = acos(dot(reflect(-V, normalMap), vertexNormal));
-float thetaO = max(thetaR - 2.0 * thetaP, 0.0);
-float occlusion = 1.0 - smoothstep(0.0, thetaC, thetaO) * 0.95;
-```
+### Horizon Occlusion (Implemented)
+Implemented in `shaders/lighting_common.glsl:92-119` as `horizonOcclusion()`:
+- Applied to ambient specular in `shader.frag:319-322`
+- Prevents normal-mapped bumps from glowing unrealistically on back sides
+- Uses GOT's formula with proper cone angle calculation
 
 ### Parallax Roughness Compensation (Missing)
 ```glsl
@@ -224,19 +219,27 @@ This would integrate particles naturally with volumetric fog, preventing the "pa
 - **Detail strength parameter** for local contrast boost
 - **~250 μs** overhead at 1080p
 
-### Current Implementation
-**Not implemented.** Uses global ACES tone mapping only.
+### Current Implementation (Partial - Shaders Only)
+Shader implementation added:
+- `shaders/bilateral_grid_build.comp` - Populates 3D grid with log-luminance
+- `shaders/bilateral_grid_blur.comp` - Separable Gaussian blur for the grid
+- `shaders/postprocess.frag:238-301` - Grid sampling and local tone mapping
 
-### Gap Analysis
-This is documented in `FUTURE_WORK.md` and `MOLTENVK_CONSTRAINTS.md` with implementation notes.
+The shader-side implementation includes:
+- Trilinear grid sampling
+- Contrast reduction toward midpoint (middle gray)
+- Detail boost parameter for local contrast enhancement
+- Applied before ACES tonemapping
 
-The bilateral grid would help:
-- Recover shadow detail in high-contrast scenes
-- Prevent sky desaturation
-- Handle indoor/outdoor transitions
+### Remaining Work (CPU-side)
+The `BilateralGridSystem` C++ class needs to be added to:
+- Create and manage the 3D grid texture (64×32×64 RGBA16F)
+- Set up compute pipelines for build and blur passes
+- Integrate with PostProcessSystem for per-frame updates
+- Add UI controls for contrast/detail parameters
 
 ### Recommended Priority
-**Medium-High** - Would significantly improve dynamic range handling.
+**Medium** - Shaders are ready, needs C++ integration.
 
 ---
 
@@ -342,21 +345,24 @@ vec3 deltaRGB = inverse(RGBtoLMSR_3x3) * inverse(A) * deltaO;
 
 ## Prioritized Improvement Roadmap
 
-### High Impact, Achievable Scope
-1. **Horizon Occlusion for Reflections** - Add to `lighting_common.glsl`, improves normal-mapped surfaces
-2. **Cloud Phase Function Blending** - Add to cloud rendering, improves backlit clouds
-3. **Bilateral Local Tone Mapping** - Implement bilateral grid, documented in `FUTURE_WORK.md`
+### Completed (This Update)
+1. ✅ **Horizon Occlusion for Reflections** - Added to `lighting_common.glsl:92-119`
+2. ✅ **Cloud Phase Function Blending** - Already implemented in `sky.frag:301-326`
+3. ⚡ **Bilateral Local Tone Mapping** - Shaders added, needs C++ integration
+
+### High Impact, Remaining Work
+4. **Bilateral Grid C++ System** - Integrate shaders with PostProcessSystem
+5. **Reflection Probes** - Add static environment probes for off-screen reflections
+6. **Separate Rayleigh/Mie Irradiance LUTs** - Improve cloud/particle lighting
 
 ### Medium Impact
-4. **Reflection Probes** - Add static environment probes for off-screen reflections
-5. **Separate Rayleigh/Mie Irradiance LUTs** - Improve cloud/particle lighting
-6. **Particle Haze Lighting** - Sample froxel Li for volumetric particles
+7. **Particle Haze Lighting** - Sample froxel Li for volumetric particles
+8. **SH Irradiance Probes** - Full indirect diffuse system
 
 ### Lower Priority
-7. **SH Irradiance Probes** - Full indirect diffuse system
-8. **White Balance Tool** - Artist control via Bradford adaptation
-9. **Custom Tone Map Space** - Modified ACES CG primaries
-10. **Full Purkinje Model** - Physiological accuracy
+9. **White Balance Tool** - Artist control via Bradford adaptation
+10. **Custom Tone Map Space** - Modified ACES CG primaries
+11. **Full Purkinje Model** - Physiological accuracy
 
 ---
 

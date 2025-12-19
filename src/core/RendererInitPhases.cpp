@@ -83,7 +83,7 @@ bool Renderer::initSubsystems(const InitContext& initCtx) {
     if (!createCommandBuffers()) return false;
 
     // Initialize global buffer manager for all per-frame shared buffers
-    auto globalBuffers = GlobalBufferManager::create(allocator, MAX_FRAMES_IN_FLIGHT);
+    auto globalBuffers = GlobalBufferManager::create(allocator, physicalDevice, MAX_FRAMES_IN_FLIGHT);
     if (!globalBuffers) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to initialize GlobalBufferManager");
         return false;
@@ -292,7 +292,7 @@ bool Renderer::initSubsystems(const InitContext& initCtx) {
                                       systems_->globalBuffers().snowBuffers.buffers, systems_->globalBuffers().cloudShadowBuffers.buffers,
                                       systems_->cloudShadow().getShadowMapView(), systems_->cloudShadow().getShadowMapSampler(),
                                       systems_->terrain().getTileArrayView(), systems_->terrain().getTileSampler(),
-                                      tileInfoBuffers);
+                                      tileInfoBuffers, &systems_->globalBuffers().dynamicRendererUBO);
 
     // Connect froxel volume to weather system
     systems_->weather().setFroxelVolume(systems_->froxel().getScatteringVolumeView(), systems_->froxel().getVolumeSampler(),

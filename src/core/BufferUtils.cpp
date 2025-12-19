@@ -222,6 +222,78 @@ void destroyBuffer(VmaAllocator allocator, SingleBuffer& buffer) {
     buffer = {};
 }
 
+void destroyBuffer(VmaAllocator allocator, DynamicUniformBuffer& buffer) {
+    if (!allocator) return;
+    if (buffer.buffer != VK_NULL_HANDLE && buffer.allocation != VK_NULL_HANDLE) {
+        vmaDestroyBuffer(allocator, buffer.buffer, buffer.allocation);
+    }
+    buffer = {};
+}
+
+// DynamicUniformBufferBuilder implementation
+DynamicUniformBufferBuilder& DynamicUniformBufferBuilder::setAllocator(VmaAllocator newAllocator) {
+    allocator = newAllocator;
+    return *this;
+}
+
+DynamicUniformBufferBuilder& DynamicUniformBufferBuilder::setPhysicalDevice(VkPhysicalDevice device) {
+    physicalDevice = device;
+    return *this;
+}
+
+DynamicUniformBufferBuilder& DynamicUniformBufferBuilder::setFrameCount(uint32_t count) {
+    frameCount = count;
+    return *this;
+}
+
+DynamicUniformBufferBuilder& DynamicUniformBufferBuilder::setElementSize(VkDeviceSize size) {
+    elementSize = size;
+    return *this;
+}
+
+bool DynamicUniformBufferBuilder::build(DynamicUniformBuffer& outBuffer) const {
+    if (!allocator || !physicalDevice || frameCount == 0 || elementSize == 0) {
+        SDL_Log("DynamicUniformBufferBuilder missing required fields");
+        return false;
+    }
+
+    // Get minimum uniform buffer offset alignment
+    VkPhysicalDeviceProperties props;
+    vkGetPhysicalDeviceProperties(physicalDevice, &props);
+    VkDeviceSize minAlignment = props.limits.minUniformBufferOffsetAlignment;
+
+    // Calculate aligned size (round up to alignment)
+    VkDeviceSize alignedSize = (elementSize + minAlignment - 1) & ~(minAlignment - 1);
+    VkDeviceSize totalSize = alignedSize * frameCount;
+
+    VkBufferCreateInfo bufferInfo{};
+    bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+    bufferInfo.size = totalSize;
+    bufferInfo.usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
+    bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+    VmaAllocationCreateInfo allocInfo{};
+    allocInfo.usage = VMA_MEMORY_USAGE_AUTO;
+    allocInfo.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT;
+
+    DynamicUniformBuffer result{};
+    VmaAllocationInfo allocationInfo{};
+
+    if (vmaCreateBuffer(allocator, &bufferInfo, &allocInfo, &result.buffer, &result.allocation,
+                        &allocationInfo) != VK_SUCCESS) {
+        SDL_Log("Failed to create dynamic uniform buffer");
+        return false;
+    }
+
+    result.mappedPointer = allocationInfo.pMappedData;
+    result.alignedSize = alignedSize;
+    result.elementSize = elementSize;
+    result.frameCount = frameCount;
+
+    outBuffer = result;
+    return true;
+}
+
 // DoubleBufferedImageBuilder implementation
 DoubleBufferedImageBuilder& DoubleBufferedImageBuilder::setDevice(VkDevice newDevice) {
     device = newDevice;

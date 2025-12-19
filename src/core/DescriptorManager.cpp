@@ -15,6 +15,11 @@ DescriptorManager::LayoutBuilder& DescriptorManager::LayoutBuilder::addUniformBu
     return addBinding(nextBinding++, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, stages, count);
 }
 
+DescriptorManager::LayoutBuilder& DescriptorManager::LayoutBuilder::addDynamicUniformBuffer(
+    VkShaderStageFlags stages, uint32_t count) {
+    return addBinding(nextBinding++, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, stages, count);
+}
+
 DescriptorManager::LayoutBuilder& DescriptorManager::LayoutBuilder::addStorageBuffer(
     VkShaderStageFlags stages, uint32_t count) {
     return addBinding(nextBinding++, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, stages, count);

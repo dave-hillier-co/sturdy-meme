@@ -20,7 +20,7 @@
  * Uses the existing BufferUtils patterns for consistency.
  *
  * Usage:
- *   auto buffers = GlobalBufferManager::create(allocator, frameCount);
+ *   auto buffers = GlobalBufferManager::create(allocator, physicalDevice, frameCount);
  *   if (!buffers) { handle error; }
  */
 class GlobalBufferManager {
@@ -29,10 +29,10 @@ public:
      * Factory: Create and initialize buffer manager.
      * Returns nullptr on failure.
      */
-    static std::unique_ptr<GlobalBufferManager> create(VmaAllocator allocator, uint32_t frameCount,
-                                                        uint32_t maxBones = 128) {
+    static std::unique_ptr<GlobalBufferManager> create(VmaAllocator allocator, VkPhysicalDevice physicalDevice,
+                                                        uint32_t frameCount, uint32_t maxBones = 128) {
         auto manager = std::unique_ptr<GlobalBufferManager>(new GlobalBufferManager());
-        if (!manager->initInternal(allocator, frameCount, maxBones)) {
+        if (!manager->initInternal(allocator, physicalDevice, frameCount, maxBones)) {
             return nullptr;
         }
         return manager;
@@ -55,6 +55,10 @@ public:
     BufferUtils::PerFrameBufferSet snowBuffers;         // Snow UBO (binding 14)
     BufferUtils::PerFrameBufferSet cloudShadowBuffers;  // Cloud shadow UBO (binding 15)
 
+    // Dynamic uniform buffer for renderer UBO - use with VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC
+    // to avoid per-frame descriptor set updates in vegetation/weather systems
+    BufferUtils::DynamicUniformBuffer dynamicRendererUBO;
+
     // Configuration accessors
     uint32_t getFramesInFlight() const { return framesInFlight_; }
     uint32_t getMaxBoneMatrices() const { return maxBoneMatrices_; }
@@ -62,7 +66,8 @@ public:
 private:
     GlobalBufferManager() = default;
 
-    bool initInternal(VmaAllocator allocator, uint32_t frameCount, uint32_t maxBones) {
+    bool initInternal(VmaAllocator allocator, VkPhysicalDevice physicalDevice,
+                      uint32_t frameCount, uint32_t maxBones) {
         allocator_ = allocator;
         framesInFlight_ = frameCount;
         maxBoneMatrices_ = maxBones;
@@ -79,6 +84,20 @@ private:
             return false;
         }
 
+        // Create dynamic renderer UBO for vegetation/weather systems
+        // This avoids per-frame descriptor set updates by using dynamic offsets
+        success = BufferUtils::DynamicUniformBufferBuilder()
+            .setAllocator(allocator)
+            .setPhysicalDevice(physicalDevice)
+            .setFrameCount(frameCount)
+            .setElementSize(sizeof(UniformBufferObject))
+            .build(dynamicRendererUBO);
+
+        if (!success) {
+            BufferUtils::destroyBuffers(allocator, uniformBuffers);
+            return false;
+        }
+
         // Create light buffers (SSBO)
         success = BufferUtils::PerFrameBufferBuilder()
             .setAllocator(allocator)
@@ -89,6 +108,7 @@ private:
 
         if (!success) {
             BufferUtils::destroyBuffers(allocator, uniformBuffers);
+            BufferUtils::destroyBuffer(allocator, dynamicRendererUBO);
             return false;
         }
 
@@ -102,6 +122,7 @@ private:
 
         if (!success) {
             BufferUtils::destroyBuffers(allocator, uniformBuffers);
+            BufferUtils::destroyBuffer(allocator, dynamicRendererUBO);
             BufferUtils::destroyBuffers(allocator, lightBuffers);
             return false;
         }
@@ -116,6 +137,7 @@ private:
 
         if (!success) {
             BufferUtils::destroyBuffers(allocator, uniformBuffers);
+            BufferUtils::destroyBuffer(allocator, dynamicRendererUBO);
             BufferUtils::destroyBuffers(allocator, lightBuffers);
             BufferUtils::destroyBuffers(allocator, boneMatricesBuffers);
             return false;
@@ -131,6 +153,7 @@ private:
 
         if (!success) {
             BufferUtils::destroyBuffers(allocator, uniformBuffers);
+            BufferUtils::destroyBuffer(allocator, dynamicRendererUBO);
             BufferUtils::destroyBuffers(allocator, lightBuffers);
             BufferUtils::destroyBuffers(allocator, boneMatricesBuffers);
             BufferUtils::destroyBuffers(allocator, snowBuffers);
@@ -143,6 +166,7 @@ private:
     void cleanup() {
         if (!allocator_) return;  // Not initialized
         BufferUtils::destroyBuffers(allocator_, uniformBuffers);
+        BufferUtils::destroyBuffer(allocator_, dynamicRendererUBO);
         BufferUtils::destroyBuffers(allocator_, lightBuffers);
         BufferUtils::destroyBuffers(allocator_, boneMatricesBuffers);
         BufferUtils::destroyBuffers(allocator_, snowBuffers);
@@ -151,10 +175,17 @@ private:
     }
 
 public:
-    // Update the main UBO for a frame
+    // Update the main UBO for a frame (updates both regular and dynamic buffers)
     void updateUniformBuffer(uint32_t frameIndex, const UniformBufferObject& ubo) {
         if (frameIndex < uniformBuffers.mappedPointers.size()) {
             std::memcpy(uniformBuffers.mappedPointers[frameIndex], &ubo, sizeof(ubo));
+        }
+        // Also update the dynamic UBO used by vegetation/weather systems
+        if (dynamicRendererUBO.isValid()) {
+            void* ptr = dynamicRendererUBO.getMappedPtr(frameIndex);
+            if (ptr) {
+                std::memcpy(ptr, &ubo, sizeof(ubo));
+            }
         }
     }
 
@@ -196,6 +227,28 @@ public:
             info.range = sizeof(UniformBufferObject);
         }
         return info;
+    }
+
+    // Dynamic renderer UBO accessors (for vegetation/weather systems using dynamic uniform buffers)
+    const BufferUtils::DynamicUniformBuffer& getDynamicRendererUBO() const {
+        return dynamicRendererUBO;
+    }
+
+    // Get descriptor buffer info for dynamic UBO (use with VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC)
+    // Write this to descriptor set once, then use getDynamicOffset() at bind time
+    VkDescriptorBufferInfo getDynamicUniformBufferInfo() const {
+        VkDescriptorBufferInfo info{};
+        if (dynamicRendererUBO.isValid()) {
+            info.buffer = dynamicRendererUBO.buffer;
+            info.offset = 0;
+            info.range = dynamicRendererUBO.alignedSize;  // One element's aligned size
+        }
+        return info;
+    }
+
+    // Get dynamic offset for a specific frame (use at vkCmdBindDescriptorSets time)
+    uint32_t getDynamicOffset(uint32_t frameIndex) const {
+        return dynamicRendererUBO.getDynamicOffset(frameIndex);
     }
 
     VkDescriptorBufferInfo getLightBufferInfo(uint32_t frameIndex) const {

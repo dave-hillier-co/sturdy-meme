@@ -263,8 +263,9 @@ endif()
 
 # Terrain preprocessing - runs tools to generate data if inputs changed
 # Tools are organized into parallel targets where possible for faster builds
+# Output goes to generated/terrain_data/ (shared between debug/release builds)
 set(TERRAIN_HEIGHTMAP ${CMAKE_CURRENT_SOURCE_DIR}/assets/terrain/isleofwight-0m-200m.png)
-set(TERRAIN_DATA_DIR ${CMAKE_BINARY_DIR}/terrain_data)
+set(TERRAIN_DATA_DIR ${CMAKE_CURRENT_SOURCE_DIR}/generated/terrain_data)
 set(TERRAIN_TILES_META ${TERRAIN_DATA_DIR}/terrain_tiles.meta)
 
 # Create terrain data directory

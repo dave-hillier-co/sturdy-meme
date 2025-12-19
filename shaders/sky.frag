@@ -2,15 +2,14 @@
 
 #extension GL_GOOGLE_include_directive : require
 
-const float PI = 3.14159265359;
-const int NUM_CASCADES = 4;
+#include "constants_common.glsl"
+#include "bindings.glsl"
+#include "ubo_common.glsl"
+#include "celestial_common.glsl"
 
 // LUT dimensions (must match AtmosphereLUTSystem)
 const int TRANSMITTANCE_WIDTH = 256;
 const int TRANSMITTANCE_HEIGHT = 64;
-
-#include "bindings.glsl"
-#include "ubo_common.glsl"
 
 // Atmosphere LUTs (Phase 4.1 - precomputed for efficiency)
 layout(binding = BINDING_SKY_TRANSMITTANCE_LUT) uniform sampler2D transmittanceLUT;  // 256x64, RGBA16F
@@ -41,12 +40,8 @@ const vec3 OZONE_ABSORPTION = vec3(0.65e-3, 1.881e-3, 0.085e-3);
 const float OZONE_LAYER_CENTER = 25.0;        // km
 const float OZONE_LAYER_WIDTH = 15.0;
 
-const float SUN_ANGULAR_RADIUS = 0.00935 / 2.0;  // radians (produces ~180px disc)
-// Moon should be same apparent size as sun (both ~0.5 degrees in reality)
-// The celestialDisc function produces a visual disc of radius acos(1.0 - size) radians
-// For size = SUN_ANGULAR_RADIUS, visual radius ≈ 0.097 radians ≈ 5.5 degrees
-const float MOON_DISC_SIZE = SUN_ANGULAR_RADIUS; // Same visual size as sun
-const float MOON_MASK_RADIUS = 0.097;            // Visual disc radius for phase mask alignment
+// Sun/moon size constants now in celestial_common.glsl:
+// SUN_DISC_SIZE, MOON_DISC_SIZE, MOON_PHASE_RADIUS
 
 // LMS color space for accurate Rayleigh scattering (Phase 4.1.7)
 // Standard Rec709 Rayleigh produces greenish sunsets; LMS primaries are more accurate
@@ -195,13 +190,10 @@ vec4 sampleCloudMapLUT(vec3 dir) {
 }
 
 // Sample cloud density at a point
+// rayDir: view ray direction for paraboloid cloud map lookup (used when cloudStyle > 0.5)
 // Cloud style is controlled by ubo.cloudStyle uniform:
 // 0.0 = original procedural noise, 1.0 = paraboloid LUT hybrid
-
-// Global ray direction for paraboloid cloud lookup (set by caller)
-vec3 g_cloudRayDir = vec3(0.0, 1.0, 0.0);
-
-float sampleCloudDensity(vec3 worldPos) {
+float sampleCloudDensity(vec3 worldPos, vec3 rayDir) {
     float altitude = length(worldPos) - PLANET_RADIUS;
 
     // Check if within cloud layer
@@ -226,7 +218,7 @@ float sampleCloudDensity(vec3 worldPos) {
         // but add 3D procedural detail for volumetric structure
 
         // Get coverage from paraboloid map (indexed by view direction)
-        vec4 cloudData = sampleCloudMapLUT(g_cloudRayDir);
+        vec4 cloudData = sampleCloudMapLUT(rayDir);
         float coverage = cloudData.r;  // Large-scale cloud presence
 
         // Early out if no cloud coverage in this direction
@@ -326,7 +318,8 @@ float cloudPhase(float cosTheta, float transmittanceToLight, float segmentTransm
 }
 
 // Sample light transmittance to sun through clouds (optimized)
-float sampleCloudTransmittanceToSun(vec3 pos, vec3 sunDir) {
+// rayDir: view ray direction for paraboloid cloud map lookup
+float sampleCloudTransmittanceToSun(vec3 pos, vec3 sunDir, vec3 rayDir) {
     float opticalDepth = 0.0;
     float stepSize = (CLOUD_LAYER_TOP - CLOUD_LAYER_BOTTOM) / float(CLOUD_LIGHT_STEPS);
 
@@ -338,7 +331,7 @@ float sampleCloudTransmittanceToSun(vec3 pos, vec3 sunDir) {
         float alt = length(samplePos) - PLANET_RADIUS;
         if (alt < CLOUD_LAYER_BOTTOM || alt > CLOUD_LAYER_TOP) continue;
 
-        float density = sampleCloudDensity(samplePos);
+        float density = sampleCloudDensity(samplePos, rayDir);
         opticalDepth += density * stepSize * 10.0;
 
         if (opticalDepth > 4.0) break;  // Early out when heavily shadowed
@@ -655,13 +648,9 @@ ScatteringResult integrateAtmosphere(vec3 origin, vec3 dir, int sampleCount) {
     float moonAltitude = moonDir.y;
     float moonIntensity = ubo.moonDirection.w;
 
-    // Smooth twilight transition - moon scattering fades in during sunset
-    // At sun altitude 0.17 (10°): no moon atmospheric scattering
-    // At sun altitude -0.1 (-6°): full moon atmospheric scattering
-    float twilightFactor = smoothstep(0.17, -0.1, sunAltitude);
-    // Moon visibility: matches C++ altFactor range (-2° to +10°, i.e., -0.035 to 0.17 radians)
-    float moonVisibility = smoothstep(-0.035, 0.17, moonAltitude);
-    float moonAtmoContribution = twilightFactor * moonVisibility;
+    // Moon atmospheric contribution uses helper functions from celestial_common.glsl
+    // for consistent twilight transitions across all sky rendering
+    float moonAtmoContribution = getMoonContribution(sunAltitude, moonAltitude);
 
     for (int i = 0; i < sampleCount; i++) {
         float t = start + (float(i) + 0.5) * stepSize;
@@ -786,12 +775,20 @@ SkyIrradiance computeSkyIrradiance(vec3 position, vec3 sunDir, vec3 moonDir,
 // March through cloud layer with physically-based lighting
 // Uses atmospheric transmittance and computed sky irradiance for accurate results
 CloudResult marchClouds(vec3 origin, vec3 dir) {
-    // Set global ray direction for paraboloid cloud map lookup
-    g_cloudRayDir = dir;
-
     CloudResult result;
     result.scattering = vec3(0.0);
     result.transmittance = 1.0;
+
+    // Early out if no clouds configured (saves expensive ray marching)
+    // For procedural clouds (cloudStyle < 0.5), cloudCoverage controls density
+    // For paraboloid clouds (cloudStyle >= 0.5), the LUT contains coverage data
+    if (ubo.cloudCoverage < 0.001 && ubo.cloudStyle < 0.5) {
+        return result;
+    }
+    // For paraboloid clouds, density multiplier of 0 also means no clouds
+    if (ubo.cloudDensity < 0.001) {
+        return result;
+    }
 
     // Find intersection with cloud layer
     vec2 cloudHit = intersectCloudLayer(origin, dir);
@@ -829,11 +826,8 @@ CloudResult marchClouds(vec3 origin, vec3 dir) {
     float sunAltitude = ubo.sunDirection.y;
     float moonAltitude = ubo.moonDirection.y;
 
-    // Smooth twilight transition factor - moon fades in as sun approaches/passes horizon
-    float twilightFactor = smoothstep(0.17, -0.1, sunAltitude);
-    // Moon visibility: matches C++ altFactor range (-2° to +10°, i.e., -0.035 to 0.17 radians)
-    float moonVisibility = smoothstep(-0.035, 0.17, moonAltitude);
-    float moonContribution = twilightFactor * moonVisibility;
+    // Moon contribution uses helper from celestial_common.glsl for consistency
+    float moonContribution = getMoonContribution(sunAltitude, moonAltitude);
 
     // Compute physically-based sky irradiance at cloud altitude
     // Sample position in middle of cloud layer for irradiance calculation
@@ -862,11 +856,11 @@ CloudResult marchClouds(vec3 origin, vec3 dir) {
         float t = tStart + (float(i) + 0.5) * stepSize;
         vec3 pos = origin + dir * t;
 
-        float density = sampleCloudDensity(pos);
+        float density = sampleCloudDensity(pos, dir);
 
         if (density > 0.005) {  // Skip very thin cloud regions
             // Sample transmittance to sun through clouds
-            float cloudTransmittanceToSun = sampleCloudTransmittanceToSun(pos, sunDir);
+            float cloudTransmittanceToSun = sampleCloudTransmittanceToSun(pos, sunDir, dir);
 
             // Phase function for sun using Cornette-Shanks for consistency with atmosphere
             // Use depth-dependent phase for multi-scattering approximation
@@ -878,7 +872,7 @@ CloudResult marchClouds(vec3 origin, vec3 dir) {
             // Add moon scattering - scales smoothly with twilight transition
             vec3 moonScatter = vec3(0.0);
             if (moonContribution > 0.01) {
-                float cloudTransmittanceToMoon = sampleCloudTransmittanceToSun(pos, moonDir);
+                float cloudTransmittanceToMoon = sampleCloudTransmittanceToSun(pos, moonDir, dir);
                 float phaseMoon = cloudPhase(cosThetaMoon, cloudTransmittanceToMoon, result.transmittance);
                 moonScatter = attenuatedMoonLight * cloudTransmittanceToMoon * phaseMoon * moonContribution;
             }
@@ -914,33 +908,12 @@ CloudResult marchClouds(vec3 origin, vec3 dir) {
     return result;
 }
 
-// Rotate vector around Y-axis (celestial pole) for sidereal rotation
-vec3 rotateSidereal(vec3 dir, float julianDay) {
-    // Sidereal rotation: 360.9856 degrees per day (one sidereal day = 0.99726958 solar days)
-    // Use J2000.0 (JD 2451545.0) as reference epoch
-    const float J2000 = 2451545.0;
-    const float SIDEREAL_RATE = 360.9856;  // degrees per day
-
-    float daysSinceJ2000 = julianDay - J2000;
-    float rotationAngle = daysSinceJ2000 * SIDEREAL_RATE;
-    float angleRad = radians(rotationAngle);
-
-    // Rotation matrix around Y-axis
-    float c = cos(angleRad);
-    float s = sin(angleRad);
-    mat3 rotation = mat3(
-        c,  0.0, s,
-        0.0, 1.0, 0.0,
-        -s, 0.0, c
-    );
-
-    return rotation * dir;
-}
+// rotateSidereal function now in celestial_common.glsl
+// Uses julianDayOffset (days since J2000) for better float precision
 
 float starField(vec3 dir) {
-    // Stars appear as sun goes below horizon - consistent with twilight transition
-    float sunAltitude = ubo.sunDirection.y;
-    float nightFactor = 1.0 - smoothstep(-0.1, 0.08, sunAltitude);
+    // Stars appear as sun goes below horizon - use consistent night factor
+    float nightFactor = getNightFactor(ubo.sunDirection.y);
     if (nightFactor < 0.01) return 0.0;
 
     dir = normalize(dir);
@@ -954,8 +927,9 @@ float starField(vec3 dir) {
     starDir.y = max(starDir.y, 0.001);
     starDir = normalize(starDir);
 
-    // Apply sidereal rotation based on Julian day
-    starDir = rotateSidereal(starDir, ubo.julianDay);
+    // Apply sidereal rotation based on Julian day offset (days since J2000)
+    // Using offset instead of full Julian day gives better float precision
+    starDir = rotateSidereal(starDir, ubo.julianDayOffset);
 
     float theta = atan(starDir.z, starDir.x);
     float phi = asin(clamp(starDir.y, -1.0, 1.0));
@@ -988,10 +962,7 @@ float starField(vec3 dir) {
     return star * brightness * nightFactor * horizonFade;
 }
 
-float celestialDisc(vec3 dir, vec3 celestialDir, float size) {
-    float d = dot(normalize(dir), normalize(celestialDir));
-    return smoothstep(1.0 - size, 1.0 - size * 0.3, d);
-}
+// celestialDisc function now in celestial_common.glsl
 
 // Lunar phase mask - creates moon phases based on actual sun-moon geometry
 // sunDir: actual sun direction in world space
@@ -1114,11 +1085,8 @@ vec3 renderAtmosphere(vec3 dir) {
     float sunAltitude = ubo.sunDirection.y;
     float moonAltitude = ubo.moonDirection.y;
 
-    // Smooth twilight transition factor for sky rendering
-    float twilightFactor = smoothstep(0.17, -0.1, sunAltitude);
-    // Moon visibility: matches C++ altFactor range (-2° to +10°, i.e., -0.035 to 0.17 radians)
-    float moonVisibility = smoothstep(-0.035, 0.17, moonAltitude);
-    float moonSkyContribution = twilightFactor * moonVisibility;
+    // Moon sky contribution uses helper from celestial_common.glsl for consistency
+    float moonSkyContribution = getMoonContribution(sunAltitude, moonAltitude);
 
     // Compute horizon/below-horizon color for blending
     // Use sky-view LUT sampled at horizon level for consistent atmosphere response
@@ -1147,7 +1115,7 @@ vec3 renderAtmosphere(vec3 dir) {
     }
 
     // Night sky floor (energy-conserving blend, not additive)
-    float nightFactor = 1.0 - smoothstep(-0.1, 0.08, sunAltitude);
+    float nightFactor = getNightFactor(sunAltitude);
     vec3 nightHorizonRadiance = vec3(0.008, 0.012, 0.02);
     float nightBlend = nightFactor * (1.0 - moonSkyContribution * 0.5);
     horizonColor = mix(horizonColor, max(horizonColor, nightHorizonRadiance), nightBlend);
@@ -1249,23 +1217,21 @@ vec3 renderAtmosphere(vec3 dir) {
 
     // Sun and moon discs (rendered behind clouds)
     // Only show sun/moon if clouds don't fully occlude them
-    float sunDisc = celestialDisc(dir, ubo.sunDirection.xyz, SUN_ANGULAR_RADIUS);
+    float sunDisc = celestialDisc(dir, ubo.sunDirection.xyz, SUN_DISC_SIZE);
 
     // Apply eclipse masking to sun
     float eclipseMask = solarEclipseMask(dir, ubo.sunDirection.xyz, ubo.moonDirection.xyz,
-                                         ubo.eclipseAmount, MOON_MASK_RADIUS);
+                                         ubo.eclipseAmount, MOON_PHASE_RADIUS);
     sky += sunLight * sunDisc * 20.0 * eclipseMask * skyTransmittance * clouds.transmittance;
 
     // Add solar corona during eclipse (visible during totality)
-    vec3 corona = solarCorona(dir, ubo.sunDirection.xyz, ubo.eclipseAmount, MOON_MASK_RADIUS);
+    vec3 corona = solarCorona(dir, ubo.sunDirection.xyz, ubo.eclipseAmount, MOON_PHASE_RADIUS);
     sky += corona * skyTransmittance * clouds.transmittance;
 
     // Moon disc with lunar phase simulation
-    // Use MOON_DISC_SIZE for celestialDisc (creates visible disc)
-    // Use MOON_MASK_RADIUS for lunarPhaseMask (angular radius for phase calculation)
-    // Pass actual sun direction for correct terminator orientation
+    // Both use constants from celestial_common.glsl for consistency
     float moonDisc = celestialDisc(dir, ubo.moonDirection.xyz, MOON_DISC_SIZE);
-    float phaseMask = lunarPhaseMask(dir, ubo.moonDirection.xyz, ubo.sunDirection.xyz, MOON_MASK_RADIUS);
+    float phaseMask = lunarPhaseMask(dir, ubo.moonDirection.xyz, ubo.sunDirection.xyz, MOON_PHASE_RADIUS);
 
     // Apply phase mask with intensity scaled by illumination
     // Moon surface has albedo ~0.12, so it's much dimmer than the sun

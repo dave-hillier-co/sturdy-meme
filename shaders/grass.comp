@@ -6,7 +6,9 @@
 #include "terrain_height_common.glsl"
 #include "instancing_common.glsl"
 
-layout(local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
+// 2D workgroup layout for better texture cache coherency - threads in the same
+// workgroup sample nearby terrain/displacement texels (16x16 = 256 threads)
+layout(local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
 
 struct GrassInstance {
     vec4 positionAndFacing;  // xyz = position, w = facing angle
@@ -145,11 +147,14 @@ void calculateClump(vec2 worldPos, float clumpScale,
 }
 
 void main() {
-    uint idx = gl_GlobalInvocationID.x;
+    // 2D dispatch: use xy directly instead of computing from flattened index
+    // This eliminates expensive integer division/modulo and improves cache locality
+    uint gridX = gl_GlobalInvocationID.x;
+    uint gridZ = gl_GlobalInvocationID.y;
 
-    // Set vertexCount atomically
+    // Set vertexCount atomically (only first thread)
     // (buffer is pre-cleared to 0 by CPU, so atomicMax ensures it becomes 15)
-    if (idx == 0) {
+    if (gridX == 0 && gridZ == 0) {
         atomicMax(drawCmd.vertexCount, 15);  // 5 segments * 3 vertices per triangle
     }
 
@@ -158,10 +163,7 @@ void main() {
     // With 0.2m spacing = 200m x 200m area = 25 blades per square meter
     // Culling systems (distance, frustum, LOD) will reduce to ~100k rendered
     uint gridSize = 1000;
-    if (idx >= gridSize * gridSize) return;
-
-    uint gridX = idx % gridSize;
-    uint gridZ = idx / gridSize;
+    if (gridX >= gridSize || gridZ >= gridSize) return;
 
     // Map to world space (centered on origin)
     float spacing = 0.2;  // 200m x 200m coverage

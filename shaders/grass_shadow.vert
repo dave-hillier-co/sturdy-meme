@@ -18,11 +18,13 @@ layout(std430, binding = BINDING_GRASS_INSTANCE_BUFFER) readonly buffer Instance
     GrassInstance instances[];
 };
 
-// Wind uniform buffer (uses WindUniformsData from wind_common.glsl)
+// Wind uniform buffer (auto-generated via shader_reflect)
 // Note: Shadow pass uses binding 2 for wind (different from main pass which uses 3)
 layout(binding = BINDING_GRASS_SHADOW_WIND_UBO) uniform WindUniforms {
-    WindUniformsData wind;
-};
+    vec4 windDirectionAndStrength;  // xy = normalized direction, z = strength, w = speed
+    vec4 windParams;                // x = gustFrequency, y = gustAmplitude, z = noiseScale, w = time
+    ivec4 permPacked[128];          // Permutation table: 512 ints packed as 128 ivec4s
+} wind;
 
 layout(push_constant) uniform PushConstants {
     float time;
@@ -75,7 +77,7 @@ void main() {
     float windTime = wind.windParams.w;
 
     // Sample wind strength at this blade's position (uses UBO permutation table)
-    float windSample = sampleWindNoise(wind, vec2(basePos.x, basePos.z));
+    float windSample = sampleWindNoise(wind.windDirectionAndStrength, wind.windParams, wind.permPacked, vec2(basePos.x, basePos.z));
 
     // Per-blade phase offset for variation (prevents lockstep motion)
     float windPhase = bladeHash * 6.28318;

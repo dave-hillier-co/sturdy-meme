@@ -55,10 +55,11 @@ layout(binding = BINDING_WEATHER_UNIFORMS) uniform WeatherUniforms {
     float padding[3];
 } uniforms;
 
-// Wind uniforms
+// Wind uniforms (full layout for auto-generation, only uses first 2 vec4s)
 layout(binding = BINDING_WEATHER_WIND) uniform WindUniforms {
     vec4 windDirectionAndStrength;  // xy = normalized direction, z = strength, w = speed
     vec4 windParams;                // x = gustFrequency, y = gustAmplitude, z = noiseScale, w = time
+    ivec4 permPacked[128];          // Permutation table (unused here, required for layout match)
 } wind;
 
 layout(push_constant) uniform PushConstants {

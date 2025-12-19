@@ -8,17 +8,7 @@
 #include <memory>
 
 #include "BufferUtils.h"
-#include "UBOs.h"
-
-// WindUniforms UBO - must match shader wind_common.glsl WindUniformsData
-// The permutation table is packed as ivec4[128] for std140 alignment efficiency
-// (512 ints packed into 128 vec4s = 2KB instead of 8KB for unpacked int[512])
-struct alignas(16) WindUniforms {
-    glm::vec4 windDirectionAndStrength;  // xy = normalized direction, z = strength, w = speed
-    glm::vec4 windParams;                // x = gustFrequency, y = gustAmplitude, z = noiseScale, w = time
-    glm::ivec4 permPacked[128];          // Permutation table: 512 ints packed as 128 ivec4s
-};
-static_assert(sizeof(WindUniforms) == 2080, "WindUniforms size mismatch with shader std140 layout");
+#include "UBOs.h"  // WindUniforms is auto-generated via shader_reflect
 
 // Wind system for CPU-side wind management and GPU uniform updates
 // Implements a scrolling Perlin noise wind model as described in Ghost of Tsushima's wind system

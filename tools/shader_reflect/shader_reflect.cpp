@@ -15,10 +15,7 @@ namespace fs = std::filesystem;
 // These modular UBOs are split from the main UniformBufferObject for cleaner organization
 // Most UBOs are auto-generated from SPIR-V reflection, except those listed here
 const std::set<std::string> MANUALLY_DEFINED_UBOS = {
-    // WindUniforms is manually defined in WindSystem.h with the extended permutation table
-    // The grass shaders use a nested struct which the reflector skips, while leaf/weather
-    // shaders use a smaller version - we want the full definition from WindSystem.h
-    "WindUniforms"
+    // Add UBO names here if they need manual definition (e.g., nested structs not supported by reflector)
 };
 
 struct UBOMember {

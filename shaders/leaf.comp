@@ -75,10 +75,11 @@ layout(binding = BINDING_LEAF_COMPUTE_UNIFORMS) uniform LeafUniforms {
     float padding[1];
 } uniforms;
 
-// Wind uniforms
+// Wind uniforms (full layout for auto-generation, only uses first 2 vec4s)
 layout(binding = BINDING_LEAF_COMPUTE_WIND) uniform WindUniforms {
     vec4 windDirectionAndStrength;  // xy = normalized direction, z = strength, w = speed
     vec4 windParams;                // x = gustFrequency, y = gustAmplitude, z = noiseScale, w = time
+    ivec4 permPacked[128];          // Permutation table (unused here, required for layout match)
 } wind;
 
 // Terrain heightmap for leaf placement on terrain

@@ -7,11 +7,33 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <functional>
+#include <thread>
+#include <vector>
+#include <atomic>
+#include <mutex>
 #include <SDL3/SDL_log.h>
 
-#ifdef _OPENMP
-#include <omp.h>
-#endif
+namespace {
+    // Simple parallel for using std::thread
+    template<typename Func>
+    void parallel_for(int start, int end, Func f) {
+        int n = std::max(1u, std::thread::hardware_concurrency());
+        std::vector<std::thread> threads;
+        int total = end - start;
+        int chunk = (total + n - 1) / n;
+
+        for (int t = 0; t < n; ++t) {
+            int from = start + t * chunk;
+            int to = std::min(from + chunk, end);
+            if (from < end) {
+                threads.emplace_back([=]{
+                    for (int i = from; i < to; ++i) f(i);
+                });
+            }
+        }
+        for (auto& t : threads) t.join();
+    }
+}
 
 // D8 direction offsets
 // Direction: 0=N, 1=NE, 2=E, 3=SE, 4=S, 5=SW, 6=W, 7=NW
@@ -66,44 +88,46 @@ static void compute_flow_accumulation(
     int width, int height
 ) {
     // Count incoming flows for each cell (parallel with atomics)
-    std::vector<int> in_degree(width * height, 0);
+    std::vector<std::atomic<int>> in_degree(width * height);
+    for (auto& d : in_degree) d.store(0);
 
-    #pragma omp parallel for schedule(static) collapse(2)
-    for (int y = 0; y < height; ++y) {
+    parallel_for(0, height, [&](int y) {
         for (int x = 0; x < width; ++x) {
             uint8_t dir = flow_direction[y * width + x];
             if (dir < 8) {
                 int nx = x + dx8[dir];
                 int ny = y + dy8[dir];
                 if (nx >= 0 && nx < width && ny >= 0 && ny < height) {
-                    #pragma omp atomic
-                    in_degree[ny * width + nx]++;
+                    in_degree[ny * width + nx].fetch_add(1, std::memory_order_relaxed);
                 }
             }
         }
-    }
+    });
 
-    // Initialize accumulation to 1 (self) - parallel
-    #pragma omp parallel for schedule(static)
-    for (size_t i = 0; i < flow_accumulation.size(); ++i) {
-        flow_accumulation[i] = 1;
-    }
+    // Initialize accumulation to 1 (self)
+    std::fill(flow_accumulation.begin(), flow_accumulation.end(), 1);
 
     // Collect cells with no incoming flow (parallel)
     std::vector<std::pair<int, int>> sources;
-    #pragma omp parallel
-    {
+    std::mutex sources_mutex;
+
+    parallel_for(0, height, [&](int y) {
         std::vector<std::pair<int, int>> local_sources;
-        #pragma omp for schedule(static) collapse(2) nowait
-        for (int y = 0; y < height; ++y) {
-            for (int x = 0; x < width; ++x) {
-                if (in_degree[y * width + x] == 0) {
-                    local_sources.push_back({x, y});
-                }
+        for (int x = 0; x < width; ++x) {
+            if (in_degree[y * width + x].load() == 0) {
+                local_sources.push_back({x, y});
             }
         }
-        #pragma omp critical
-        sources.insert(sources.end(), local_sources.begin(), local_sources.end());
+        if (!local_sources.empty()) {
+            std::lock_guard<std::mutex> lock(sources_mutex);
+            sources.insert(sources.end(), local_sources.begin(), local_sources.end());
+        }
+    });
+
+    // Convert atomic in_degree to regular vector for sequential processing
+    std::vector<int> in_deg(width * height);
+    for (int i = 0; i < width * height; ++i) {
+        in_deg[i] = in_degree[i].load();
     }
 
     // Process cells with topological sort (sequential due to dependencies)
@@ -122,8 +146,8 @@ static void compute_flow_accumulation(
             int ny = y + dy8[dir];
             if (nx >= 0 && nx < width && ny >= 0 && ny < height) {
                 flow_accumulation[ny * width + nx] += flow_accumulation[y * width + x];
-                in_degree[ny * width + nx]--;
-                if (in_degree[ny * width + nx] == 0) {
+                in_deg[ny * width + nx]--;
+                if (in_deg[ny * width + nx] == 0) {
                     queue.push({nx, ny});
                 }
             }
@@ -139,15 +163,14 @@ D8Result compute_d8(const ElevationGrid& elevation) {
     result.flow_accumulation.resize(elevation.width * elevation.height);
 
     // Compute flow directions (embarrassingly parallel - each pixel is independent)
-    #pragma omp parallel for schedule(dynamic, 64) collapse(2)
-    for (int y = 0; y < elevation.height; ++y) {
+    parallel_for(0, elevation.height, [&](int y) {
         for (int x = 0; x < elevation.width; ++x) {
             result.flow_direction[y * elevation.width + x] =
                 compute_flow_direction(elevation, x, y);
         }
-    }
+    });
 
-    // Compute flow accumulation (sequential due to dependencies)
+    // Compute flow accumulation
     compute_flow_accumulation(
         result.flow_direction,
         result.flow_accumulation,
@@ -294,52 +317,49 @@ D8Result resolve_dafa_by_merging(const ElevationGrid& elevation, D8Result d8, ui
     // Step 3: Find all spill points between adjacent watersheds (parallel)
     // Each thread builds a local map, then merge them
     std::map<std::pair<uint32_t, uint32_t>, SpillPoint> best_spills;
+    std::mutex spills_mutex;
 
-    #pragma omp parallel
-    {
+    parallel_for(0, height, [&](int y) {
         std::map<std::pair<uint32_t, uint32_t>, SpillPoint> local_spills;
 
-        #pragma omp for schedule(dynamic, 64) nowait
-        for (int y = 0; y < height; ++y) {
-            for (int x = 0; x < width; ++x) {
-                uint32_t label1 = labels[y * width + x];
-                if (label1 == 0) continue;
+        for (int x = 0; x < width; ++x) {
+            uint32_t label1 = labels[y * width + x];
+            if (label1 == 0) continue;
 
-                uint16_t elev1 = elevation.at(x, y);
+            uint16_t elev1 = elevation.at(x, y);
 
-                for (int dir = 0; dir < 8; ++dir) {
-                    int nx = x + dx8[dir];
-                    int ny = y + dy8[dir];
-                    if (nx < 0 || nx >= width || ny < 0 || ny >= height) continue;
+            for (int dir = 0; dir < 8; ++dir) {
+                int nx = x + dx8[dir];
+                int ny = y + dy8[dir];
+                if (nx < 0 || nx >= width || ny < 0 || ny >= height) continue;
 
-                    uint32_t label2 = labels[ny * width + nx];
-                    if (label2 == 0 || label2 == label1) continue;
+                uint32_t label2 = labels[ny * width + nx];
+                if (label2 == 0 || label2 == label1) continue;
 
-                    uint16_t elev2 = elevation.at(nx, ny);
-                    uint16_t spill_elev = std::max(elev1, elev2);
+                uint16_t elev2 = elevation.at(nx, ny);
+                uint16_t spill_elev = std::max(elev1, elev2);
 
-                    // Canonical key (smaller label first)
-                    auto key = std::make_pair(std::min(label1, label2), std::max(label1, label2));
+                // Canonical key (smaller label first)
+                auto key = std::make_pair(std::min(label1, label2), std::max(label1, label2));
 
-                    auto it = local_spills.find(key);
-                    if (it == local_spills.end() || spill_elev < it->second.spill_elevation) {
-                        SpillPoint sp;
-                        sp.ws1 = label1;
-                        sp.ws2 = label2;
-                        sp.x1 = x;
-                        sp.y1 = y;
-                        sp.x2 = nx;
-                        sp.y2 = ny;
-                        sp.spill_elevation = spill_elev;
-                        local_spills[key] = sp;
-                    }
+                auto it = local_spills.find(key);
+                if (it == local_spills.end() || spill_elev < it->second.spill_elevation) {
+                    SpillPoint sp;
+                    sp.ws1 = label1;
+                    sp.ws2 = label2;
+                    sp.x1 = x;
+                    sp.y1 = y;
+                    sp.x2 = nx;
+                    sp.y2 = ny;
+                    sp.spill_elevation = spill_elev;
+                    local_spills[key] = sp;
                 }
             }
         }
 
-        // Merge local maps into global map
-        #pragma omp critical
-        {
+        // Merge local spills into global map
+        if (!local_spills.empty()) {
+            std::lock_guard<std::mutex> lock(spills_mutex);
             for (auto& [key, sp] : local_spills) {
                 auto it = best_spills.find(key);
                 if (it == best_spills.end() || sp.spill_elevation < it->second.spill_elevation) {
@@ -347,7 +367,7 @@ D8Result resolve_dafa_by_merging(const ElevationGrid& elevation, D8Result d8, ui
                 }
             }
         }
-    }
+    });
 
     // Step 4: Priority queue of spill points, sorted by elevation
     std::priority_queue<SpillPoint, std::vector<SpillPoint>, std::greater<SpillPoint>> pq;

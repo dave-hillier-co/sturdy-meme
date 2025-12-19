@@ -7,10 +7,30 @@
 #include <algorithm>
 #include <cmath>
 #include <limits>
+#include <thread>
+#include <vector>
 
-#ifdef _OPENMP
-#include <omp.h>
-#endif
+namespace {
+    // Simple parallel for using std::thread
+    template<typename Func>
+    void parallel_for(int start, int end, Func f) {
+        int n = std::max(1u, std::thread::hardware_concurrency());
+        std::vector<std::thread> threads;
+        int total = end - start;
+        int chunk = (total + n - 1) / n;
+
+        for (int t = 0; t < n; ++t) {
+            int from = start + t * chunk;
+            int to = std::min(from + chunk, end);
+            if (from < end) {
+                threads.emplace_back([=]{
+                    for (int i = from; i < to; ++i) f(i);
+                });
+            }
+        }
+        for (auto& t : threads) t.join();
+    }
+}
 
 // Simple hash-based noise function
 float BiomeGenerator::noise2D(float x, float y, float frequency) const {
@@ -314,8 +334,7 @@ void BiomeGenerator::computeSlopeMap(ProgressCallback callback) {
     float cellSize = config.terrainSize / result.width;
 
     // Parallel slope computation - each pixel is independent
-    #pragma omp parallel for schedule(dynamic, 64) collapse(2)
-    for (uint32_t y = 0; y < result.height; y++) {
+    parallel_for(0, static_cast<int>(result.height), [&](int y) {
         for (uint32_t x = 0; x < result.width; x++) {
             float worldX = (static_cast<float>(x) + 0.5f) / result.width * config.terrainSize;
             float worldZ = (static_cast<float>(y) + 0.5f) / result.height * config.terrainSize;
@@ -333,7 +352,7 @@ void BiomeGenerator::computeSlopeMap(ProgressCallback callback) {
             float slope = std::sqrt(dhdx * dhdx + dhdz * dhdz);
             result.slopeMap[y * result.width + x] = slope;
         }
-    }
+    });
 
     SDL_Log("Computed slope map");
 }
@@ -498,8 +517,7 @@ void BiomeGenerator::classifyZones(ProgressCallback callback) {
     if (callback) callback(0.3f, "Classifying zones...");
 
     // Parallel zone classification - each cell is independent
-    #pragma omp parallel for schedule(dynamic, 64) collapse(2)
-    for (uint32_t y = 0; y < result.height; y++) {
+    parallel_for(0, static_cast<int>(result.height), [&](int y) {
         for (uint32_t x = 0; x < result.width; x++) {
             float worldX = (static_cast<float>(x) + 0.5f) / result.width * config.terrainSize;
             float worldZ = (static_cast<float>(y) + 0.5f) / result.height * config.terrainSize;
@@ -580,7 +598,7 @@ void BiomeGenerator::classifyZones(ProgressCallback callback) {
 
             result.cells[y * result.width + x].zone = zone;
         }
-    }
+    });
 
     // Count zones
     std::vector<uint32_t> zoneCounts(static_cast<size_t>(BiomeZone::Count), 0);
@@ -602,8 +620,7 @@ void BiomeGenerator::applySubZoneNoise(ProgressCallback callback) {
     if (callback) callback(0.5f, "Applying sub-zone variation...");
 
     // Parallel sub-zone noise application
-    #pragma omp parallel for schedule(dynamic, 64) collapse(2)
-    for (uint32_t y = 0; y < result.height; y++) {
+    parallel_for(0, static_cast<int>(result.height), [&](int y) {
         for (uint32_t x = 0; x < result.width; x++) {
             float worldX = (static_cast<float>(x) + 0.5f) / result.width * config.terrainSize;
             float worldZ = (static_cast<float>(y) + 0.5f) / result.height * config.terrainSize;
@@ -634,7 +651,7 @@ void BiomeGenerator::applySubZoneNoise(ProgressCallback callback) {
             uint8_t subZoneIdx = static_cast<uint8_t>(noiseVal * 3.99f);  // 0-3
             cell.subZone = static_cast<BiomeSubZone>(subZoneIdx);
         }
-    }
+    });
 
     SDL_Log("Applied sub-zone noise variation with basin boundaries");
 }

@@ -58,9 +58,9 @@ void main() {
         sampleCoord = clamp(sampleCoord, ivec3(0), gridDims.xyz - 1);
 
         float weight = gaussianWeight(i, sigma);
-        vec4 sample = imageLoad(gridSrc, sampleCoord);
+        vec4 gridValue = imageLoad(gridSrc, sampleCoord);
 
-        result += sample * weight;
+        result += gridValue * weight;
         totalWeight += weight;
     }
 

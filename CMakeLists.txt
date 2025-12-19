@@ -88,6 +88,7 @@ set(SOURCES
     # Postprocess
     src/postprocess/PostProcessSystem.cpp
     src/postprocess/BloomSystem.cpp
+    src/postprocess/BilateralGridSystem.cpp
     src/postprocess/SSRSystem.cpp
     src/postprocess/HiZSystem.cpp
     # Lighting

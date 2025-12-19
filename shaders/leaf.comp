@@ -416,7 +416,7 @@ void main() {
 
     // Set vertex count for quad (4 vertices for triangle strip)
     if (idx == 0) {
-        atomicMax(drawCmd.vertexCount, 4);
+        drawCmd.vertexCount = 4;
     }
 
     float dt = push.deltaTime;
@@ -663,6 +663,8 @@ void main() {
         outputParticles[idx].flags &= ~FLAG_VISIBLE;
     }
 
-    // Update instance count
-    atomicMax(drawCmd.instanceCount, totalTarget);
+    // Update instance count (only thread 0 writes this constant value)
+    if (idx == 0) {
+        drawCmd.instanceCount = totalTarget;
+    }
 }

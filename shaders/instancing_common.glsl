@@ -123,19 +123,21 @@ vec3 hash3D(vec3 p) {
 // ============================================================================
 // Indirect Draw Command Helpers
 // ============================================================================
-// NOTE: Atomic operations on DrawIndirectCommand fields must be done directly
-// on buffer storage variables in the shader, not through helper functions.
-// GLSL requires atomicMax/atomicAdd to operate on l-values from buffer storage.
+// Usage patterns for DrawIndirectCommand in compute shaders:
 //
-// Example usage in compute shaders:
 //   layout(std430, binding = X) buffer IndirectBuffer {
 //       DrawIndirectCommand drawCmd;
 //   };
 //
-//   // In main():
+//   // For constant values (vertexCount, instanceCount when known):
+//   // Use a single thread to write - no atomic needed
 //   if (gl_GlobalInvocationID.x == 0) {
-//       atomicMax(drawCmd.vertexCount, 4);  // Set vertex count (e.g., 4 for quad)
+//       drawCmd.vertexCount = 4;           // Constant value
+//       drawCmd.instanceCount = totalCount; // Known count
 //   }
-//   atomicMax(drawCmd.instanceCount, totalInstances);  // Set instance count
+//
+//   // For dynamic instance counting (each thread adds one instance):
+//   // Use atomicAdd to get unique slots
+//   uint slot = atomicAdd(drawCmd.instanceCount, 1);
 
 #endif // INSTANCING_COMMON_GLSL

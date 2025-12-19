@@ -83,7 +83,7 @@ bool Renderer::initSubsystems(const InitContext& initCtx) {
     if (!createCommandBuffers()) return false;
 
     // Initialize global buffer manager for all per-frame shared buffers
-    auto globalBuffers = GlobalBufferManager::create(allocator, MAX_FRAMES_IN_FLIGHT);
+    auto globalBuffers = GlobalBufferManager::create(allocator, physicalDevice, MAX_FRAMES_IN_FLIGHT);
     if (!globalBuffers) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to initialize GlobalBufferManager");
         return false;
@@ -252,7 +252,8 @@ bool Renderer::initSubsystems(const InitContext& initCtx) {
 
     // Update weather system descriptor sets
     systems_->weather().updateDescriptorSets(device, systems_->globalBuffers().uniformBuffers.buffers, windBuffers,
-                                        systems_->postProcess().getHDRDepthView(), systems_->shadow().getShadowSampler());
+                                        systems_->postProcess().getHDRDepthView(), systems_->shadow().getShadowSampler(),
+                                        &systems_->globalBuffers().dynamicRendererUBO);
 
     // Connect snow to environment settings and systems
     systems_->snowMask().setEnvironmentSettings(envSettings);
@@ -274,7 +275,7 @@ bool Renderer::initSubsystems(const InitContext& initCtx) {
                                      systems_->terrain().getHeightMapView(), systems_->terrain().getHeightMapSampler(),
                                      systems_->grass().getDisplacementImageView(), systems_->grass().getDisplacementSampler(),
                                      systems_->terrain().getTileArrayView(), systems_->terrain().getTileSampler(),
-                                     leafTileInfoBuffers);
+                                     leafTileInfoBuffers, &systems_->globalBuffers().dynamicRendererUBO);
 
     // Initialize atmosphere subsystems (Froxel, AtmosphereLUT, CloudShadow)
     if (!RendererInit::initAtmosphereSubsystems(*systems_, initCtx, core.shadow,
@@ -292,7 +293,7 @@ bool Renderer::initSubsystems(const InitContext& initCtx) {
                                       systems_->globalBuffers().snowBuffers.buffers, systems_->globalBuffers().cloudShadowBuffers.buffers,
                                       systems_->cloudShadow().getShadowMapView(), systems_->cloudShadow().getShadowMapSampler(),
                                       systems_->terrain().getTileArrayView(), systems_->terrain().getTileSampler(),
-                                      tileInfoBuffers);
+                                      tileInfoBuffers, &systems_->globalBuffers().dynamicRendererUBO);
 
     // Connect froxel volume to weather system
     systems_->weather().setFroxelVolume(systems_->froxel().getScatteringVolumeView(), systems_->froxel().getVolumeSampler(),

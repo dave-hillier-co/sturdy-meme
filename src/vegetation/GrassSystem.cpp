@@ -326,7 +326,7 @@ bool GrassSystem::createComputePipeline(SystemLifecycleHelper::PipelineHandles& 
 bool GrassSystem::createGraphicsDescriptorSetLayout(SystemLifecycleHelper::PipelineHandles& handles) {
     PipelineBuilder builder(getDevice());
     // Grass system descriptor set layout:
-    // binding 0: UBO (main rendering uniforms)
+    // binding 0: UBO (main rendering uniforms) - DYNAMIC to avoid per-frame descriptor updates
     // binding 1: instance buffer (SSBO) - vertex shader only
     // binding 2: shadow map (sampler)
     // binding 3: wind UBO - vertex shader only
@@ -335,7 +335,7 @@ bool GrassSystem::createGraphicsDescriptorSetLayout(SystemLifecycleHelper::Pipel
     // binding 6: cloud shadow map (sampler)
     // binding 10: snow UBO
     // binding 11: cloud shadow UBO
-    builder.addDescriptorBinding(0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1,
+    builder.addDescriptorBinding(0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, 1,
                                  VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT)
         .addDescriptorBinding(1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT)
         .addDescriptorBinding(2, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT)
@@ -604,7 +604,8 @@ void GrassSystem::updateDescriptorSets(VkDevice dev, const std::vector<VkBuffer>
                                         VkImageView cloudShadowMapView, VkSampler cloudShadowMapSampler,
                                         VkImageView tileArrayViewParam,
                                         VkSampler tileSamplerParam,
-                                        const std::array<VkBuffer, 3>& tileInfoBuffersParam) {
+                                        const std::array<VkBuffer, 3>& tileInfoBuffersParam,
+                                        const BufferUtils::DynamicUniformBuffer* dynamicRendererUBO) {
     // Store terrain heightmap info for compute descriptor set updates
     this->terrainHeightMapView = terrainHeightMapViewParam;
     this->terrainHeightMapSampler = terrainHeightMapSamplerParam;
@@ -614,8 +615,11 @@ void GrassSystem::updateDescriptorSets(VkDevice dev, const std::vector<VkBuffer>
     this->tileSampler = tileSamplerParam;
     this->tileInfoBuffers = tileInfoBuffersParam;
 
-    // Store renderer uniform buffers for per-frame graphics descriptor updates
+    // Store renderer uniform buffers (kept for backward compatibility)
     this->rendererUniformBuffers_ = rendererUniformBuffers;
+
+    // Store dynamic renderer UBO reference for per-frame binding with dynamic offsets
+    this->dynamicRendererUBO_ = dynamicRendererUBO;
 
     // Update compute descriptor sets with terrain heightmap, displacement, and tile cache
     // Note: tile info buffer (binding 6) is updated per-frame in recordResetAndCompute
@@ -644,7 +648,14 @@ void GrassSystem::updateDescriptorSets(VkDevice dev, const std::vector<VkBuffer>
     for (uint32_t set = 0; set < BUFFER_SET_COUNT; set++) {
         // Graphics descriptor set - use non-fluent pattern
         DescriptorManager::SetWriter graphicsWriter(dev, (*particleSystem)->getGraphicsDescriptorSet(set));
-        graphicsWriter.writeBuffer(0, rendererUniformBuffers[0], 0, 160);  // sizeof(UniformBufferObject)
+        // Use dynamic UBO if available (avoids per-frame descriptor updates)
+        if (dynamicRendererUBO && dynamicRendererUBO->isValid()) {
+            graphicsWriter.writeBuffer(0, dynamicRendererUBO->buffer, 0, dynamicRendererUBO->alignedSize,
+                                       VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC);
+        } else {
+            graphicsWriter.writeBuffer(0, rendererUniformBuffers[0], 0, 160,
+                                       VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC);  // sizeof(UniformBufferObject)
+        }
         graphicsWriter.writeBuffer(1, instanceBuffers.buffers[set], 0, sizeof(GrassInstance) * MAX_INSTANCES, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
         graphicsWriter.writeImage(2, shadowMapView, shadowSampler, VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL);
         graphicsWriter.writeBuffer(3, windBuffers[0], 0, 32);  // sizeof(WindUniforms)
@@ -818,13 +829,8 @@ void GrassSystem::recordDraw(VkCommandBuffer cmd, uint32_t frameIndex, float tim
     // Double-buffer: graphics reads from renderBufferSet (previous frame's compute output)
     uint32_t readSet = (*particleSystem)->getRenderBufferSet();
 
-    // Update graphics descriptor set to use this frame's renderer UBO
-    // This ensures the grass uses the current frame's view-projection matrix
-    if (!rendererUniformBuffers_.empty()) {
-        DescriptorManager::SetWriter(getDevice(), (*particleSystem)->getGraphicsDescriptorSet(readSet))
-            .writeBuffer(0, rendererUniformBuffers_[frameIndex], 0, 160)  // sizeof(UniformBufferObject) truncated for grass needs
-            .update();
-    }
+    // Dynamic UBO: no per-frame descriptor update needed - we pass the offset at bind time instead
+    // This eliminates per-frame vkUpdateDescriptorSets calls for the renderer UBO
 
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, getGraphicsPipelineHandles().pipeline);
 
@@ -844,9 +850,18 @@ void GrassSystem::recordDraw(VkCommandBuffer cmd, uint32_t frameIndex, float tim
     vkCmdSetScissor(cmd, 0, 1, &scissor);
 
     VkDescriptorSet graphicsSet = (*particleSystem)->getGraphicsDescriptorSet(readSet);
-    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                            getGraphicsPipelineHandles().pipelineLayout, 0, 1,
-                            &graphicsSet, 0, nullptr);
+
+    // Use dynamic offset for binding 0 (renderer UBO) if dynamic buffer is available
+    if (dynamicRendererUBO_ && dynamicRendererUBO_->isValid()) {
+        uint32_t dynamicOffset = dynamicRendererUBO_->getDynamicOffset(frameIndex);
+        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                getGraphicsPipelineHandles().pipelineLayout, 0, 1,
+                                &graphicsSet, 1, &dynamicOffset);
+    } else {
+        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                getGraphicsPipelineHandles().pipelineLayout, 0, 1,
+                                &graphicsSet, 0, nullptr);
+    }
 
     GrassPushConstants grassPush{};
     grassPush.time = time;

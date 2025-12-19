@@ -30,6 +30,33 @@ struct DoubleBufferedBufferSet {
     std::vector<VmaAllocation> allocations;
 };
 
+// Dynamic uniform buffer: single buffer with aligned offsets for each frame
+// Use with VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC to avoid per-frame descriptor updates
+struct DynamicUniformBuffer {
+    VkBuffer buffer = VK_NULL_HANDLE;
+    VmaAllocation allocation = VK_NULL_HANDLE;
+    void* mappedPointer = nullptr;
+    VkDeviceSize alignedSize = 0;    // Size of each frame's data (aligned)
+    VkDeviceSize elementSize = 0;    // Original unaligned size
+    uint32_t frameCount = 0;
+
+    bool isValid() const { return buffer != VK_NULL_HANDLE; }
+
+    // Get dynamic offset for a specific frame
+    uint32_t getDynamicOffset(uint32_t frameIndex) const {
+        return static_cast<uint32_t>(alignedSize * frameIndex);
+    }
+
+    // Get pointer to a specific frame's data for writing
+    void* getMappedPtr(uint32_t frameIndex) const {
+        if (!mappedPointer) return nullptr;
+        return static_cast<char*>(mappedPointer) + alignedSize * frameIndex;
+    }
+
+    // Total buffer size
+    VkDeviceSize getTotalSize() const { return alignedSize * frameCount; }
+};
+
 // Double-buffered images for ping-pong rendering (temporal effects, SSR, etc.)
 struct DoubleBufferedImageSet {
     VkImage images[2] = {VK_NULL_HANDLE, VK_NULL_HANDLE};
@@ -112,6 +139,24 @@ private:
         VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT;
 };
 
+// Builder for dynamic uniform buffers (single buffer with aligned per-frame data)
+// Use with VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC
+class DynamicUniformBufferBuilder {
+public:
+    DynamicUniformBufferBuilder& setAllocator(VmaAllocator allocator);
+    DynamicUniformBufferBuilder& setPhysicalDevice(VkPhysicalDevice physicalDevice);
+    DynamicUniformBufferBuilder& setFrameCount(uint32_t count);
+    DynamicUniformBufferBuilder& setElementSize(VkDeviceSize size);
+
+    bool build(DynamicUniformBuffer& outBuffer) const;
+
+private:
+    VmaAllocator allocator = VK_NULL_HANDLE;
+    VkPhysicalDevice physicalDevice = VK_NULL_HANDLE;
+    uint32_t frameCount = 0;
+    VkDeviceSize elementSize = 0;
+};
+
 // Builder for double-buffered images (ping-pong for temporal effects)
 class DoubleBufferedImageBuilder {
 public:
@@ -137,6 +182,7 @@ private:
 };
 
 void destroyBuffer(VmaAllocator allocator, SingleBuffer& buffer);
+void destroyBuffer(VmaAllocator allocator, DynamicUniformBuffer& buffer);
 void destroyBuffers(VmaAllocator allocator, const PerFrameBufferSet& buffers);
 void destroyBuffers(VmaAllocator allocator, const DoubleBufferedBufferSet& buffers);
 void destroyImages(VkDevice device, VmaAllocator allocator, DoubleBufferedImageSet& images);

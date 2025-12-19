@@ -73,7 +73,8 @@ public:
                               VkImageView cloudShadowMapView, VkSampler cloudShadowMapSampler,
                               VkImageView tileArrayView = VK_NULL_HANDLE,
                               VkSampler tileSampler = VK_NULL_HANDLE,
-                              const std::array<VkBuffer, 3>& tileInfoBuffers = {});
+                              const std::array<VkBuffer, 3>& tileInfoBuffers = {},
+                              const BufferUtils::DynamicUniformBuffer* dynamicRendererUBO = nullptr);
 
     void updateUniforms(uint32_t frameIndex, const glm::vec3& cameraPos, const glm::mat4& viewProj,
                         float terrainSize, float terrainHeightScale);
@@ -199,6 +200,10 @@ private:
 
     // Renderer uniform buffers for per-frame descriptor updates (stores reference from updateDescriptorSets)
     std::vector<VkBuffer> rendererUniformBuffers_;
+
+    // Dynamic renderer UBO - used with VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC
+    // to avoid per-frame descriptor set updates
+    const BufferUtils::DynamicUniformBuffer* dynamicRendererUBO_ = nullptr;
 
     static constexpr uint32_t MAX_INSTANCES = 100000;  // ~100k rendered after culling
 

@@ -21,6 +21,7 @@ public:
 
         // Add binding at next available index
         LayoutBuilder& addUniformBuffer(VkShaderStageFlags stages, uint32_t count = 1);
+        LayoutBuilder& addDynamicUniformBuffer(VkShaderStageFlags stages, uint32_t count = 1);
         LayoutBuilder& addStorageBuffer(VkShaderStageFlags stages, uint32_t count = 1);
         LayoutBuilder& addCombinedImageSampler(VkShaderStageFlags stages, uint32_t count = 1);
         LayoutBuilder& addStorageImage(VkShaderStageFlags stages, uint32_t count = 1);

@@ -207,14 +207,14 @@ bool LeafSystem::createComputePipeline(SystemLifecycleHelper::PipelineHandles& h
 }
 
 bool LeafSystem::createGraphicsDescriptorSetLayout(SystemLifecycleHelper::PipelineHandles& handles) {
-    // 0: UBO (scene uniforms)
+    // 0: UBO (scene uniforms) - DYNAMIC to avoid per-frame descriptor updates
     // 1: Particle buffer (read-only in vertex shader)
     // 2: Wind uniforms (for consistent animation)
 
     handles.descriptorSetLayout = DescriptorManager::LayoutBuilder(getDevice())
-        .addUniformBuffer(VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT)  // 0: UBO
-        .addStorageBuffer(VK_SHADER_STAGE_VERTEX_BIT)                                  // 1: Particle buffer
-        .addUniformBuffer(VK_SHADER_STAGE_VERTEX_BIT)                                  // 2: Wind uniforms
+        .addDynamicUniformBuffer(VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT)  // 0: UBO (dynamic)
+        .addStorageBuffer(VK_SHADER_STAGE_VERTEX_BIT)                                         // 1: Particle buffer
+        .addUniformBuffer(VK_SHADER_STAGE_VERTEX_BIT)                                         // 2: Wind uniforms
         .build();
 
     if (handles.descriptorSetLayout == VK_NULL_HANDLE) {
@@ -397,7 +397,8 @@ void LeafSystem::updateDescriptorSets(VkDevice dev, const std::vector<VkBuffer>&
                                        VkSampler displacementMapSamplerParam,
                                        VkImageView tileArrayView,
                                        VkSampler tileSampler,
-                                       const std::array<VkBuffer, 3>& tileInfoBuffersParam) {
+                                       const std::array<VkBuffer, 3>& tileInfoBuffersParam,
+                                       const BufferUtils::DynamicUniformBuffer* dynamicRendererUBO) {
     // Store displacement texture references
     this->displacementMapView = displacementMapViewParam;
     this->displacementMapSampler = displacementMapSamplerParam;
@@ -405,8 +406,11 @@ void LeafSystem::updateDescriptorSets(VkDevice dev, const std::vector<VkBuffer>&
     // Store tile info buffers (triple-buffered for frames-in-flight sync)
     this->tileInfoBuffers = tileInfoBuffersParam;
 
-    // Store renderer uniform buffers for per-frame graphics descriptor updates
+    // Store renderer uniform buffers (kept for backward compatibility)
     this->rendererUniformBuffers_ = rendererUniformBuffers;
+
+    // Store dynamic renderer UBO reference for per-frame binding with dynamic offsets
+    this->dynamicRendererUBO_ = dynamicRendererUBO;
 
     // Update compute and graphics descriptor sets for both buffer sets
     // Note: tile info buffer (binding 9) is updated per-frame in recordResetAndCompute
@@ -437,8 +441,15 @@ void LeafSystem::updateDescriptorSets(VkDevice dev, const std::vector<VkBuffer>&
         computeWriter.update();
 
         // Graphics descriptor set - use non-fluent pattern
+        // Use dynamic UBO if available (avoids per-frame descriptor updates)
         DescriptorManager::SetWriter graphicsWriter(dev, (*particleSystem)->getGraphicsDescriptorSet(set));
-        graphicsWriter.writeBuffer(0, rendererUniformBuffers[0], 0, 320);  // sizeof(UniformBufferObject)
+        if (dynamicRendererUBO && dynamicRendererUBO->isValid()) {
+            graphicsWriter.writeBuffer(0, dynamicRendererUBO->buffer, 0, dynamicRendererUBO->alignedSize,
+                                       VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC);
+        } else {
+            graphicsWriter.writeBuffer(0, rendererUniformBuffers[0], 0, 320,
+                                       VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC);  // sizeof(UniformBufferObject)
+        }
         graphicsWriter.writeBuffer(1, particleBuffers.buffers[set], 0, sizeof(LeafParticle) * MAX_PARTICLES, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
         graphicsWriter.writeBuffer(2, windBuffers[0], 0, 32);  // sizeof(WindUniforms)
         graphicsWriter.update();
@@ -565,13 +576,8 @@ void LeafSystem::recordDraw(VkCommandBuffer cmd, uint32_t frameIndex, float time
     // Double-buffer: graphics reads from renderBufferSet (previous frame's compute output)
     uint32_t readSet = (*particleSystem)->getRenderBufferSet();
 
-    // Update graphics descriptor set to use this frame's renderer UBO
-    // This ensures leaves use the current frame's view-projection matrix
-    if (!rendererUniformBuffers_.empty()) {
-        DescriptorManager::SetWriter(getDevice(), (*particleSystem)->getGraphicsDescriptorSet(readSet))
-            .writeBuffer(0, rendererUniformBuffers_[frameIndex], 0, 320)  // sizeof(UniformBufferObject)
-            .update();
-    }
+    // Dynamic UBO: no per-frame descriptor update needed - we pass the offset at bind time instead
+    // This eliminates per-frame vkUpdateDescriptorSets calls for the renderer UBO
 
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, getGraphicsPipelineHandles().pipeline);
 
@@ -591,9 +597,18 @@ void LeafSystem::recordDraw(VkCommandBuffer cmd, uint32_t frameIndex, float time
     vkCmdSetScissor(cmd, 0, 1, &scissor);
 
     VkDescriptorSet graphicsSet = (*particleSystem)->getGraphicsDescriptorSet(readSet);
-    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                            getGraphicsPipelineHandles().pipelineLayout, 0, 1,
-                            &graphicsSet, 0, nullptr);
+
+    // Use dynamic offset for binding 0 (renderer UBO) if dynamic buffer is available
+    if (dynamicRendererUBO_ && dynamicRendererUBO_->isValid()) {
+        uint32_t dynamicOffset = dynamicRendererUBO_->getDynamicOffset(frameIndex);
+        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                getGraphicsPipelineHandles().pipelineLayout, 0, 1,
+                                &graphicsSet, 1, &dynamicOffset);
+    } else {
+        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                getGraphicsPipelineHandles().pipelineLayout, 0, 1,
+                                &graphicsSet, 0, nullptr);
+    }
 
     LeafPushConstants pushConstants{};
     pushConstants.time = time;

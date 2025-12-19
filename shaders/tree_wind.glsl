@@ -171,23 +171,23 @@ vec3 applyTreeWind(
     // - Sub-branch (level 2+): Small, rapid flutter
     float levelMultiplier = 1.0;
     float swayFrequency = 1.5;
-    float swayAmplitude = 0.025;
+    float swayAmplitude = 0.008;
 
     if (branchLevel < 0.5) {
         // Trunk: slow, subtle sway
         levelMultiplier = 0.3;
         swayFrequency = 0.8;
-        swayAmplitude = 0.01;
+        swayAmplitude = 0.003;
     } else if (branchLevel < 1.5) {
         // Primary branches: moderate sway
         levelMultiplier = 0.7;
         swayFrequency = 1.5;
-        swayAmplitude = 0.02;
+        swayAmplitude = 0.006;
     } else {
         // Sub-branches and leaves: faster flutter
         levelMultiplier = 1.0;
         swayFrequency = 2.5 + branchLevel * 0.5;
-        swayAmplitude = 0.03;
+        swayAmplitude = 0.01;
     }
 
     // Sinusoidal sway with position-hashed phase
@@ -207,7 +207,7 @@ vec3 applyTreeWind(
     totalWindEffect *= sqrt(branchLength);
 
     // Clamp to prevent extreme deformation
-    totalWindEffect = clamp(totalWindEffect, -0.15, 0.15);
+    totalWindEffect = clamp(totalWindEffect, -0.05, 0.05);
 
     // Calculate rotation axis: perpendicular to both wind direction and up
     vec3 windDir3D = normalize(vec3(windDir.x, 0.0, windDir.y));
@@ -242,8 +242,8 @@ vec3 applyLeafWind(
     }
 
     // Leaves have rapid flutter
-    float flutter = sin(time * 5.0 + phaseOffset) * 0.03 +
-                    sin(time * 7.3 + phaseOffset * 1.5) * 0.015;
+    float flutter = sin(time * 5.0 + phaseOffset) * 0.01 +
+                    sin(time * 7.3 + phaseOffset * 1.5) * 0.005;
 
     float totalEffect = flutter * windStrength;
 
@@ -252,7 +252,7 @@ vec3 applyLeafWind(
     vec3 rotationAxis = normalize(cross(up, windDir3D));
 
     // Add some twist around leaf normal
-    float twist = sin(time * 3.0 + phaseOffset * 2.0) * 0.05 * windStrength;
+    float twist = sin(time * 3.0 + phaseOffset * 2.0) * 0.015 * windStrength;
 
     vec3 result = rotateAroundAxis(position, attachPoint, rotationAxis, totalEffect);
 

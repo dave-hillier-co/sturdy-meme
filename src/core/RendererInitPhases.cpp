@@ -235,7 +235,7 @@ bool Renderer::initSubsystems(const InitContext& initCtx) {
         return false;
     }
 
-    // Add some default trees to the scene, loading from JSON presets
+    // Add trees to the scene
     std::string presetDir = treeInfo.resourcePath + "/assets/trees/presets/";
 
     auto loadPresetOrDefault = [&](const std::string& presetName, TreeOptions (*defaultFn)()) {
@@ -246,19 +246,25 @@ bool Renderer::initSubsystems(const InitContext& initCtx) {
         return defaultFn();
     };
 
-    float treeX = 15.0f, treeZ = -10.0f;
-    glm::vec3 treePos(treeX, core.terrain.getHeightAt(treeX, treeZ), treeZ);
-    treeSystem->addTree(treePos, 0.0f, 1.0f, loadPresetOrDefault("oak_large.json", TreeOptions::defaultOak));
+    // Oak tree
+    float oakX = 35.0f, oakZ = 25.0f;
+    glm::vec3 oakPos(oakX, core.terrain.getHeightAt(oakX, oakZ), oakZ);
+    treeSystem->addTree(oakPos, 0.0f, 1.0f, loadPresetOrDefault("oak_large.json", TreeOptions::defaultOak));
 
-    // Add a pine tree nearby
-    float pineX = 25.0f, pineZ = -15.0f;
+    // Pine tree
+    float pineX = 50.0f, pineZ = -30.0f;
     glm::vec3 pinePos(pineX, core.terrain.getHeightAt(pineX, pineZ), pineZ);
-    treeSystem->addTree(pinePos, 0.5f, 1.2f, loadPresetOrDefault("pine_large.json", TreeOptions::defaultPine));
+    treeSystem->addTree(pinePos, 0.5f, 1.0f, loadPresetOrDefault("pine_large.json", TreeOptions::defaultPine));
 
-    // Add a birch tree
-    float birchX = 10.0f, birchZ = 5.0f;
-    glm::vec3 birchPos(birchX, core.terrain.getHeightAt(birchX, birchZ), birchZ);
-    treeSystem->addTree(birchPos, 1.0f, 0.9f, loadPresetOrDefault("birch_large.json", TreeOptions::defaultBirch));
+    // Ash tree
+    float ashX = -40.0f, ashZ = -25.0f;
+    glm::vec3 ashPos(ashX, core.terrain.getHeightAt(ashX, ashZ), ashZ);
+    treeSystem->addTree(ashPos, 1.0f, 1.0f, loadPresetOrDefault("ash_large.json", TreeOptions::defaultOak));
+
+    // Aspen tree
+    float aspenX = 30.0f, aspenZ = 40.0f;
+    glm::vec3 aspenPos(aspenX, core.terrain.getHeightAt(aspenX, aspenZ), aspenZ);
+    treeSystem->addTree(aspenPos, 1.5f, 1.0f, loadPresetOrDefault("aspen_large.json", TreeOptions::defaultOak));
 
     systems_->setTree(std::move(treeSystem));
     SDL_Log("Tree system initialized with %zu trees", systems_->tree()->getTreeCount());

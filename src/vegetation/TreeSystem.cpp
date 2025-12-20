@@ -32,71 +32,16 @@ bool TreeSystem::initInternal(const InitInfo& info) {
         return false;
     }
 
-    // Load trees from JSON presets
+    // Load default options from preset if available
     std::string presetsPath = info.resourcePath + "/assets/trees/presets/";
-
-    // Try to load presets from files, fallback to hardcoded if not found
-    std::vector<std::pair<std::string, glm::vec3>> treesToCreate;
-
-    // Check if preset directory exists
-    if (std::filesystem::exists(presetsPath)) {
-        // Load oak_large.json at origin
-        std::string oakPath = presetsPath + "oak_large.json";
-        if (std::filesystem::exists(oakPath)) {
-            defaultOptions_ = TreeOptions::loadFromJson(oakPath);
-            treesToCreate.push_back({"oak_large.json", glm::vec3(0.0f, 0.0f, 0.0f)});
-        } else {
-            defaultOptions_ = TreeOptions::defaultOak();
-            treesToCreate.push_back({"default_oak", glm::vec3(0.0f, 0.0f, 0.0f)});
-        }
-
-        // Additional trees at different positions
-        treesToCreate.push_back({"pine_large.json", glm::vec3(30.0f, 0.0f, 0.0f)});
-        treesToCreate.push_back({"ash_large.json", glm::vec3(-30.0f, 0.0f, 0.0f)});
-        treesToCreate.push_back({"aspen_large.json", glm::vec3(0.0f, 0.0f, 30.0f)});
+    std::string oakPath = presetsPath + "oak_large.json";
+    if (std::filesystem::exists(oakPath)) {
+        defaultOptions_ = TreeOptions::loadFromJson(oakPath);
     } else {
-        SDL_Log("TreeSystem: Preset directory not found, using defaults");
         defaultOptions_ = TreeOptions::defaultOak();
-        treesToCreate.push_back({"default_oak", glm::vec3(0.0f, 0.0f, 0.0f)});
     }
 
-    // Create trees
-    for (size_t i = 0; i < treesToCreate.size(); ++i) {
-        const auto& [presetName, position] = treesToCreate[i];
-
-        TreeOptions treeOpts;
-        std::string presetPath = presetsPath + presetName;
-        if (presetName.find(".json") != std::string::npos && std::filesystem::exists(presetPath)) {
-            treeOpts = TreeOptions::loadFromJson(presetPath);
-        } else {
-            // Fallback to default with different seed
-            treeOpts = defaultOptions_;
-            treeOpts.seed = 12345 + static_cast<uint32_t>(i) * 1000;
-        }
-
-        Mesh branchMesh, leafMesh;
-        if (!generateTreeMesh(treeOpts, branchMesh, leafMesh)) {
-            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "TreeSystem: Failed to generate tree mesh for %s", presetName.c_str());
-            continue;
-        }
-
-        uint32_t meshIndex = static_cast<uint32_t>(branchMeshes_.size());
-        branchMeshes_.push_back(std::move(branchMesh));
-        leafMeshes_.push_back(std::move(leafMesh));
-        treeOptions_.push_back(treeOpts);
-
-        TreeInstanceData instance;
-        instance.position = position;
-        if (info.getTerrainHeight) {
-            instance.position.y = info.getTerrainHeight(position.x, position.z);
-        }
-        instance.rotation = 0.0f;
-        instance.scale = 1.0f;
-        instance.meshIndex = meshIndex;
-        instance.isSelected = (i == 0);  // Select first tree
-        treeInstances_.push_back(instance);
-    }
-
+    // Trees are added via addTree() from RendererInitPhases
     if (!treeInstances_.empty()) {
         selectedTreeIndex_ = 0;
     }

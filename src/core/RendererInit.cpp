@@ -24,7 +24,6 @@
 #include "GrassSystem.h"
 #include "LeafSystem.h"
 #include "RockSystem.h"
-#include "TreeEditSystem.h"
 
 // Water systems
 #include "WaterSystem.h"

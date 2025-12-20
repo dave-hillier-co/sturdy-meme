@@ -31,7 +31,6 @@
 #include "WaterTileCull.h"
 #include "FlowMapGenerator.h"
 #include "FoamBuffer.h"
-#include "TreeEditSystem.h"
 #include "DebugLineSystem.h"
 #include "Profiler.h"
 #include "SceneManager.h"
@@ -284,11 +283,6 @@ void Renderer::setupRenderPipeline() {
         }
     });
 
-    // Tree editor
-    renderPipeline.hdrStage.addDrawCall("treeEdit", [this](RenderContext& ctx) {
-        systems_->treeEdit().recordDraw(ctx.cmd, ctx.frameIndex);
-    });
-
     // Grass
     renderPipeline.hdrStage.addDrawCall("grass", [this](RenderContext& ctx) {
         systems_->grass().recordDraw(ctx.cmd, ctx.frameIndex, ctx.frame.time);
@@ -371,7 +365,6 @@ void Renderer::syncPerformanceToggles() {
     renderPipeline.hdrStage.setDrawCallEnabled("catmullClark", perfToggles.catmullClarkDraw);
     renderPipeline.hdrStage.setDrawCallEnabled("sceneObjects", perfToggles.sceneObjectsDraw);
     renderPipeline.hdrStage.setDrawCallEnabled("skinnedCharacter", perfToggles.skinnedCharacterDraw);
-    renderPipeline.hdrStage.setDrawCallEnabled("treeEdit", perfToggles.treeEditDraw);
     renderPipeline.hdrStage.setDrawCallEnabled("grass", perfToggles.grassDraw);
     renderPipeline.hdrStage.setDrawCallEnabled("water", perfToggles.waterDraw);
     renderPipeline.hdrStage.setDrawCallEnabled("leaves", perfToggles.leavesDraw);
@@ -906,9 +899,6 @@ bool Renderer::render(const Camera& camera) {
     systems_->weather().updateUniforms(frame.frameIndex, frame.cameraPosition, frame.viewProj, frame.deltaTime, frame.time, systems_->wind());
     systems_->terrain().updateUniforms(frame.frameIndex, frame.cameraPosition, frame.view, frame.projection,
                                   systems_->volumetricSnow().getCascadeParams(), useVolumetricSnow, MAX_SNOW_HEIGHT);
-
-    // Tree edit system per-frame setup (cleanup pending meshes, update descriptors)
-    systems_->treeEdit().beginFrame(frame.frameIndex);
 
     // Update snow mask system - accumulation/melting based on weather type
     bool isSnowing = (systems_->weather().getWeatherType() == 1);  // 1 = snow
@@ -1471,11 +1461,6 @@ void Renderer::recordHDRPass(VkCommandBuffer cmd, uint32_t frameIndex, float gra
     }
     systems_->profiler().endGpuZone(cmd, "HDR:SkinnedChar");
 
-    // Draw tree editor (when enabled)
-    systems_->profiler().beginGpuZone(cmd, "HDR:TreeEdit");
-    systems_->treeEdit().recordDraw(cmd, frameIndex);
-    systems_->profiler().endGpuZone(cmd, "HDR:TreeEdit");
-
     // Draw grass
     systems_->profiler().beginGpuZone(cmd, "HDR:Grass");
     systems_->grass().recordDraw(cmd, frameIndex, grassTime);
@@ -1857,14 +1842,7 @@ const Profiler& Renderer::getProfiler() const { return systems_->profiler(); }
 void Renderer::setProfilingEnabled(bool enabled) { systems_->profiler().setEnabled(enabled); }
 bool Renderer::isProfilingEnabled() const { return systems_->profiler().isEnabled(); }
 
-// Tree edit system access
-TreeEditSystem& Renderer::getTreeEditSystem() { return systems_->treeEdit(); }
-const TreeEditSystem& Renderer::getTreeEditSystem() const { return systems_->treeEdit(); }
-bool Renderer::isTreeEditMode() const { return systems_->treeEdit().isEnabled(); }
-void Renderer::setTreeEditMode(bool enabled) { systems_->treeEdit().setEnabled(enabled); }
-void Renderer::toggleTreeEditMode() { systems_->treeEdit().toggle(); }
-
-// Resource access for billboard capture
+// Resource access
 DescriptorManager::Pool* Renderer::getDescriptorPool() { return &*descriptorManagerPool; }
 
 // Physics debug visualization

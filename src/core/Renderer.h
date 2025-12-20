@@ -31,7 +31,6 @@ class WindSystem;
 class WaterSystem;
 class WaterTileCull;
 class SceneManager;
-class TreeEditSystem;
 class DebugLineSystem;
 class Profiler;
 class HiZSystem;
@@ -353,14 +352,7 @@ public:
     void setProfilingEnabled(bool enabled);
     bool isProfilingEnabled() const;
 
-    // Tree edit system access
-    TreeEditSystem& getTreeEditSystem();
-    const TreeEditSystem& getTreeEditSystem() const;
-    bool isTreeEditMode() const;
-    void setTreeEditMode(bool enabled);
-    void toggleTreeEditMode();
-
-    // Resource access for billboard capture
+    // Resource access
     VkCommandPool getCommandPool() const { return commandPool.get(); }
     DescriptorManager::Pool* getDescriptorPool();
     std::string getShaderPath() const { return resourcePath + "/shaders"; }

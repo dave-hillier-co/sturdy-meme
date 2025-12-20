@@ -298,15 +298,6 @@
 #define BINDING_SSR_PREV                   3   // Previous frame SSR
 
 // =============================================================================
-// Tree Shader Descriptor Set
-// =============================================================================
-#define BINDING_TREE_BARK_COLOR            1   // Bark color texture
-#define BINDING_TREE_BARK_NORMAL           2   // Bark normal map
-#define BINDING_TREE_BARK_AO               3   // Bark ambient occlusion
-#define BINDING_TREE_BARK_ROUGHNESS        4   // Bark roughness map
-#define BINDING_TREE_LEAF                  5   // Leaf texture
-
-// =============================================================================
 // Ocean FFT Descriptor Set (Tessendorf-style ocean simulation)
 // =============================================================================
 // Spectrum generation pass
@@ -569,13 +560,6 @@ constexpr uint32_t SSR_COLOR              = BINDING_SSR_COLOR;
 constexpr uint32_t SSR_DEPTH              = BINDING_SSR_DEPTH;
 constexpr uint32_t SSR_OUTPUT             = BINDING_SSR_OUTPUT;
 constexpr uint32_t SSR_PREV               = BINDING_SSR_PREV;
-
-// Tree Shader
-constexpr uint32_t TREE_BARK_COLOR        = BINDING_TREE_BARK_COLOR;
-constexpr uint32_t TREE_BARK_NORMAL       = BINDING_TREE_BARK_NORMAL;
-constexpr uint32_t TREE_BARK_AO           = BINDING_TREE_BARK_AO;
-constexpr uint32_t TREE_BARK_ROUGHNESS    = BINDING_TREE_BARK_ROUGHNESS;
-constexpr uint32_t TREE_LEAF              = BINDING_TREE_LEAF;
 
 // Ocean FFT
 constexpr uint32_t OCEAN_SPECTRUM_H0      = BINDING_OCEAN_SPECTRUM_H0;

@@ -34,7 +34,6 @@ struct PerformanceToggles {
     bool catmullClarkDraw = true;
     bool sceneObjectsDraw = true;
     bool skinnedCharacterDraw = true;
-    bool treeEditDraw = true;
     bool grassDraw = true;
     bool waterDraw = true;
     bool leavesDraw = true;
@@ -85,7 +84,6 @@ struct PerformanceToggles {
             {"catmullClarkDraw", "HDR Draw", &catmullClarkDraw},
             {"sceneObjectsDraw", "HDR Draw", &sceneObjectsDraw},
             {"skinnedCharacterDraw", "HDR Draw", &skinnedCharacterDraw},
-            {"treeEditDraw", "HDR Draw", &treeEditDraw},
             {"grassDraw", "HDR Draw", &grassDraw},
             {"waterDraw", "HDR Draw", &waterDraw},
             {"leavesDraw", "HDR Draw", &leavesDraw},

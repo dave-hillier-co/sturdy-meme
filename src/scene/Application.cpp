@@ -188,9 +188,6 @@ bool Application::init(const std::string& title, int width, int height) {
         return false;
     }
 
-    // Load tree presets from JSON files
-    gui_->getTreeEditorGui().loadPresets(resourcePath);
-
     // Set GUI render callback
     renderer_->setGuiRenderCallback([this](VkCommandBuffer cmd) {
         gui_->endFrame(cmd);
@@ -486,15 +483,6 @@ void Application::processEvents() {
                 }
                 else if (event.key.scancode == SDL_SCANCODE_F1) {
                     gui_->toggleVisibility();
-                }
-                else if (event.key.scancode == SDL_SCANCODE_F2) {
-                    gui_->getTreeEditorGui().toggleVisibility();
-                    SDL_Log("Tree Editor: %s", gui_->getTreeEditorGui().isVisible() ? "ON" : "OFF");
-                }
-                else if (event.key.scancode == SDL_SCANCODE_P) {
-                    gui_->getTreeEditorGui().placeTreeAtCamera(*renderer_, camera);
-                    gui_->getTreeEditorGui().setVisible(true);
-                    SDL_Log("Tree placed at camera position");
                 }
                 else if (event.key.scancode == SDL_SCANCODE_1) {
                     renderer_->setTimeOfDay(0.25f);

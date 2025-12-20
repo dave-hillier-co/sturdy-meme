@@ -31,7 +31,6 @@ class SSRSystem;
 class WaterTileCull;
 class WaterGBuffer;
 class ErosionDataLoader;
-class TreeEditSystem;
 class UBOBuilder;
 class Profiler;
 class DebugLineSystem;
@@ -207,9 +206,6 @@ public:
     void setSkinnedMesh(std::unique_ptr<SkinnedMeshRenderer> system);
 
     // Tools and debug
-    TreeEditSystem& treeEdit() { return *treeEditSystem_; }
-    const TreeEditSystem& treeEdit() const { return *treeEditSystem_; }
-    void setTreeEdit(std::unique_ptr<TreeEditSystem> system);
     DebugLineSystem& debugLine() { return *debugLineSystem_; }
     const DebugLineSystem& debugLine() const { return *debugLineSystem_; }
     void setDebugLineSystem(std::unique_ptr<DebugLineSystem> system);
@@ -286,7 +282,6 @@ private:
     std::unique_ptr<SkinnedMeshRenderer> skinnedMeshRenderer_;
 
     // Tools and debug
-    std::unique_ptr<TreeEditSystem> treeEditSystem_;
     std::unique_ptr<DebugLineSystem> debugLineSystem_;
     std::unique_ptr<Profiler> profiler_;
 

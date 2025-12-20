@@ -30,7 +30,6 @@
 #include "WaterTileCull.h"
 #include "WaterGBuffer.h"
 #include "SSRSystem.h"
-#include "TreeEditSystem.h"
 #include "DebugLineSystem.h"
 #include "Profiler.h"
 #include "SkinnedMeshRenderer.h"
@@ -486,27 +485,6 @@ bool Renderer::initSubsystems(const InitContext& initCtx) {
                                                   sizeof(UniformBufferObject), systems_->shadow(), systems_->terrain(),
                                                   systems_->postProcess(), depthSampler.get())) return false;
 
-    // Initialize tree edit system via factory
-    TreeEditSystem::InitInfo treeEditInfo{};
-    treeEditInfo.device = device;
-    treeEditInfo.physicalDevice = physicalDevice;
-    treeEditInfo.allocator = allocator;
-    treeEditInfo.renderPass = core.hdr.renderPass;
-    treeEditInfo.descriptorPool = initCtx.descriptorPool;
-    treeEditInfo.extent = initCtx.extent;
-    treeEditInfo.shaderPath = initCtx.shaderPath;
-    treeEditInfo.framesInFlight = MAX_FRAMES_IN_FLIGHT;
-    treeEditInfo.graphicsQueue = graphicsQueue;
-    treeEditInfo.commandPool = commandPool.get();
-
-    auto treeEditSystem = TreeEditSystem::create(treeEditInfo);
-    if (!treeEditSystem) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create TreeEditSystem");
-        return false;
-    }
-    systems_->setTreeEdit(std::move(treeEditSystem));
-    systems_->treeEdit().updateDescriptorSets(device, systems_->globalBuffers().uniformBuffers.buffers);
-
     if (!createSyncObjects()) return false;
 
     // Create debug line system via factory
@@ -559,9 +537,6 @@ void Renderer::initResizeCoordinator() {
     systems_->resizeCoordinator().registerWithExtent(systems_->leaf(), "LeafSystem");
     systems_->resizeCoordinator().registerWithExtent(systems_->catmullClark(), "CatmullClarkSystem");
     systems_->resizeCoordinator().registerWithExtent(systems_->skinnedMesh(), "SkinnedMeshRenderer");
-
-    // Tree edit system uses updateExtent
-    systems_->resizeCoordinator().registerWithUpdateExtent(systems_->treeEdit(), "TreeEditSystem");
 
     // Register callback for bloom texture rebinding (needed after bloom resize)
     systems_->resizeCoordinator().registerCallback("BloomRebind",

@@ -333,9 +333,6 @@ void GuiSystem::render(Renderer& renderer, const Camera& camera, float deltaTime
     if (ikDebugSettings.showSkeleton || ikDebugSettings.showIKTargets) {
         GuiIKTab::renderSkeletonOverlay(renderer, camera, ikDebugSettings, playerSettings.showCapeColliders);
     }
-
-    // Tree editor as separate window
-    treeEditorGui.render(renderer, camera);
 }
 
 void GuiSystem::endFrame(VkCommandBuffer cmd) {

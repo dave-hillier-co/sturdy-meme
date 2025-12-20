@@ -35,7 +35,6 @@ class TerrainSystem;
 class RockSystem;
 class CatmullClarkSystem;
 class HiZSystem;
-class TreeEditSystem;
 class DebugLineSystem;
 class ShadowSystem;
 class MaterialRegistry;

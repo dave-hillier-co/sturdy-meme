@@ -54,8 +54,6 @@ set(SOURCES
     src/core/MaterialDescriptorFactory.cpp
     src/core/MaterialRegistry.cpp
     src/core/RenderableBuilder.cpp
-    src/core/VolumeGenerator.cpp
-    src/core/CurvedGeometryGenerator.cpp
     # Atmosphere
     src/atmosphere/TimeSystem.cpp
     src/atmosphere/CelestialCalculator.cpp
@@ -75,16 +73,6 @@ set(SOURCES
     src/vegetation/GrassSystem.cpp
     src/vegetation/LeafSystem.cpp
     src/vegetation/RockSystem.cpp
-    src/vegetation/TreeGenerator.cpp
-    src/vegetation/SpaceColonisationGenerator.cpp
-    src/vegetation/TreeEditSystem.cpp
-    src/vegetation/TreeEditorGui.cpp
-    src/vegetation/BillboardCapture.cpp
-    src/vegetation/RecursiveBranchingStrategy.cpp
-    src/vegetation/SpaceColonisationStrategy.cpp
-    src/vegetation/TubeBranchGeometry.cpp
-    src/vegetation/BillboardLeafGenerator.cpp
-    src/vegetation/TreeBuilder.cpp
     # Postprocess
     src/postprocess/PostProcessSystem.cpp
     src/postprocess/BloomSystem.cpp
@@ -543,9 +531,6 @@ set(SHADER_FILES
     ${CMAKE_CURRENT_SOURCE_DIR}/shaders/ssr.comp.spv
     ${CMAKE_CURRENT_SOURCE_DIR}/shaders/ssr_blur.comp.spv
     ${CMAKE_CURRENT_SOURCE_DIR}/shaders/water_tile_cull.comp.spv
-    ${CMAKE_CURRENT_SOURCE_DIR}/shaders/tree.vert.spv
-    ${CMAKE_CURRENT_SOURCE_DIR}/shaders/tree.frag.spv
-    ${CMAKE_CURRENT_SOURCE_DIR}/shaders/tree_billboard.frag.spv
     ${CMAKE_CURRENT_SOURCE_DIR}/shaders/debug_line.vert.spv
     ${CMAKE_CURRENT_SOURCE_DIR}/shaders/debug_line.frag.spv
 )
@@ -636,7 +621,6 @@ if(SHADER_COMPILE_CMD)
         weather.comp weather.vert weather.frag
         leaf.comp leaf.vert leaf.frag
         snow_accumulation.comp
-        tree.vert tree.frag tree_billboard.frag
         bilateral_grid_build.comp bilateral_grid_blur.comp
     )
 
@@ -896,8 +880,6 @@ if(SHADER_COMPILE_CMD)
         ${CMAKE_CURRENT_SOURCE_DIR}/shaders/water_position.frag.spv
         ${CMAKE_CURRENT_SOURCE_DIR}/shaders/water_displacement.comp.spv
         ${CMAKE_CURRENT_SOURCE_DIR}/shaders/foam_blur.comp.spv
-        ${CMAKE_CURRENT_SOURCE_DIR}/shaders/tree.vert.spv
-        ${CMAKE_CURRENT_SOURCE_DIR}/shaders/tree.frag.spv
         ${CMAKE_CURRENT_SOURCE_DIR}/shaders/terrain/terrain_dispatcher.comp.spv
         ${CMAKE_CURRENT_SOURCE_DIR}/shaders/terrain/terrain_subdivision.comp.spv
         ${CMAKE_CURRENT_SOURCE_DIR}/shaders/terrain/terrain_frustum_cull.comp.spv

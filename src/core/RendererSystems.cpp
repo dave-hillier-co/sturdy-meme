@@ -31,7 +31,6 @@
 #include "WaterTileCull.h"
 #include "WaterGBuffer.h"
 #include "ErosionDataLoader.h"
-#include "TreeEditSystem.h"
 #include "UBOBuilder.h"
 #include "Profiler.h"
 #include "DebugLineSystem.h"
@@ -88,7 +87,6 @@ RendererSystems::RendererSystems()
     : erosionDataLoader_(std::make_unique<ErosionDataLoader>())
     // skinnedMeshRenderer_ created via factory in RendererInitPhases
     // Tools
-    // treeEditSystem_ created via factory in RendererInitPhases
     // debugLineSystem_ created via factory in RendererInit
     // profiler_ created via Profiler::create() factory in RendererInitPhases
     // Coordination
@@ -226,10 +224,6 @@ void RendererSystems::setSkinnedMesh(std::unique_ptr<SkinnedMeshRenderer> system
     skinnedMeshRenderer_ = std::move(system);
 }
 
-void RendererSystems::setTreeEdit(std::unique_ptr<TreeEditSystem> system) {
-    treeEditSystem_ = std::move(system);
-}
-
 bool RendererSystems::init(const InitContext& /*initCtx*/,
                             VkRenderPass /*swapchainRenderPass*/,
                             VkFormat /*swapchainImageFormat*/,
@@ -254,7 +248,6 @@ void RendererSystems::destroy(VkDevice device, VmaAllocator allocator) {
 
     // debugLineSystem_ cleanup handled by destructor (RAII)
     debugLineSystem_.reset();
-    treeEditSystem_.reset();  // RAII cleanup via destructor
 
     // Water
     waterGBuffer_.reset();  // RAII cleanup via destructor

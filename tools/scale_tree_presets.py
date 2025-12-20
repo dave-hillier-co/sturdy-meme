@@ -30,7 +30,7 @@ def scale_level_zero_only(d: dict, scale_factor: float) -> dict:
     return result
 
 
-def scale_preset(data: dict, scale_factor: float, max_texture_scale_y: float = 3.0) -> dict:
+def scale_preset(data: dict, scale_factor: float) -> dict:
     """
     Scale tree preset dimensions by the given factor.
 
@@ -39,7 +39,7 @@ def scale_preset(data: dict, scale_factor: float, max_texture_scale_y: float = 3
     - branch.radius["0"] only (levels 1+ are relative multipliers)
     - leaves.size
 
-    Also caps bark.textureScale.y to reduce UV repetition.
+    Does NOT modify texture scale - those values control UV tiling, not world size.
     """
     result = json.loads(json.dumps(data))  # Deep copy
 
@@ -61,13 +61,6 @@ def scale_preset(data: dict, scale_factor: float, max_texture_scale_y: float = 3
         if "size" in leaves:
             leaves["size"] = round(leaves["size"] * scale_factor, 2)
 
-    # Cap bark textureScale.y to reduce UV repetition
-    if "bark" in result:
-        bark = result["bark"]
-        if "textureScale" in bark:
-            if bark["textureScale"].get("y", 1.0) > max_texture_scale_y:
-                bark["textureScale"]["y"] = max_texture_scale_y
-
     return result
 
 
@@ -83,12 +76,6 @@ def main():
         type=float,
         default=0.25,
         help="Scale factor for dimensions (default: 0.25)"
-    )
-    parser.add_argument(
-        "--max-texture-scale-y", "-t",
-        type=float,
-        default=3.0,
-        help="Maximum value for bark.textureScale.y (default: 3.0)"
     )
     parser.add_argument(
         "--dry-run", "-n",
@@ -121,7 +108,6 @@ def main():
         return 1
 
     print(f"Scale factor: {args.scale_factor}")
-    print(f"Max textureScale.y: {args.max_texture_scale_y}")
     print(f"Preset directory: {preset_dir}")
     print(f"Found {len(json_files)} preset files")
     print()
@@ -132,7 +118,7 @@ def main():
         with open(json_path, "r") as f:
             original = json.load(f)
 
-        scaled = scale_preset(original, args.scale_factor, args.max_texture_scale_y)
+        scaled = scale_preset(original, args.scale_factor)
 
         # Show changes
         if "branch" in original and "branch" in scaled:
@@ -153,12 +139,6 @@ def main():
             new_size = scaled["leaves"].get("size", 0)
             if orig_size:
                 print(f"  leaf size: {orig_size} -> {new_size}")
-
-        if "bark" in original and "bark" in scaled:
-            orig_ts = original["bark"].get("textureScale", {}).get("y", 1)
-            new_ts = scaled["bark"].get("textureScale", {}).get("y", 1)
-            if orig_ts != new_ts:
-                print(f"  textureScale.y: {orig_ts} -> {new_ts}")
 
         if not args.dry_run:
             with open(json_path, "w") as f:

@@ -2,6 +2,7 @@
 // Split from Renderer.cpp to keep file sizes manageable
 
 #include <array>
+#include <filesystem>
 #include "Renderer.h"
 #include "RendererInit.h"
 #include "MaterialDescriptorFactory.h"
@@ -233,20 +234,30 @@ bool Renderer::initSubsystems(const InitContext& initCtx) {
         return false;
     }
 
-    // Add some default trees to the scene
+    // Add some default trees to the scene, loading from JSON presets
+    std::string presetDir = treeInfo.resourcePath + "/assets/trees/presets/";
+
+    auto loadPresetOrDefault = [&](const std::string& presetName, TreeOptions (*defaultFn)()) {
+        std::string path = presetDir + presetName;
+        if (std::filesystem::exists(path)) {
+            return TreeOptions::loadFromJson(path);
+        }
+        return defaultFn();
+    };
+
     float treeX = 15.0f, treeZ = -10.0f;
     glm::vec3 treePos(treeX, core.terrain.getHeightAt(treeX, treeZ), treeZ);
-    treeSystem->addTree(treePos, 0.0f, 1.0f, TreeOptions::defaultOak());
+    treeSystem->addTree(treePos, 0.0f, 1.0f, loadPresetOrDefault("oak_large.json", TreeOptions::defaultOak));
 
     // Add a pine tree nearby
     float pineX = 25.0f, pineZ = -15.0f;
     glm::vec3 pinePos(pineX, core.terrain.getHeightAt(pineX, pineZ), pineZ);
-    treeSystem->addTree(pinePos, 0.5f, 1.2f, TreeOptions::defaultPine());
+    treeSystem->addTree(pinePos, 0.5f, 1.2f, loadPresetOrDefault("pine_large.json", TreeOptions::defaultPine));
 
     // Add a birch tree
     float birchX = 10.0f, birchZ = 5.0f;
     glm::vec3 birchPos(birchX, core.terrain.getHeightAt(birchX, birchZ), birchZ);
-    treeSystem->addTree(birchPos, 1.0f, 0.9f, TreeOptions::defaultBirch());
+    treeSystem->addTree(birchPos, 1.0f, 0.9f, loadPresetOrDefault("birch_large.json", TreeOptions::defaultBirch));
 
     systems_->setTree(std::move(treeSystem));
     SDL_Log("Tree system initialized with %zu trees", systems_->tree()->getTreeCount());

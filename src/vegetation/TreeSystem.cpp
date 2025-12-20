@@ -363,11 +363,12 @@ bool TreeSystem::generateTreeMesh(const TreeOptions& options, Mesh& branchMesh, 
                 glm::vec3(halfW, leafHeight, 0.0f)    // Top-right
             };
 
+            // UVs flipped vertically so leaf base (branch) is at bottom of quad
             glm::vec2 uvs[4] = {
-                glm::vec2(0.0f, 1.0f),
-                glm::vec2(0.0f, 0.0f),
-                glm::vec2(1.0f, 0.0f),
-                glm::vec2(1.0f, 1.0f)
+                glm::vec2(0.0f, 0.0f),  // Top-left vertex gets bottom of texture
+                glm::vec2(0.0f, 1.0f),  // Bottom-left vertex gets top of texture
+                glm::vec2(1.0f, 1.0f),  // Bottom-right
+                glm::vec2(1.0f, 0.0f)   // Top-right
             };
 
             glm::vec3 normal = finalQuat * glm::vec3(0.0f, 0.0f, 1.0f);
@@ -562,6 +563,17 @@ const TreeOptions* TreeSystem::getSelectedTreeOptions() const {
 }
 
 void TreeSystem::loadPreset(const std::string& name) {
+    // Try to load from JSON first, fall back to hardcoded defaults
+    std::string presetDir = storedResourcePath_ + "/assets/trees/presets/";
+    std::string jsonPath = presetDir + name + "_large.json";
+
+    if (std::filesystem::exists(jsonPath)) {
+        setPreset(TreeOptions::loadFromJson(jsonPath));
+        SDL_Log("TreeSystem: Loaded preset from %s", jsonPath.c_str());
+        return;
+    }
+
+    // Fall back to hardcoded defaults
     if (name == "oak") {
         setPreset(TreeOptions::defaultOak());
     } else if (name == "pine") {

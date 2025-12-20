@@ -313,15 +313,20 @@ void TreeEditorGui::renderSpaceColonisationSection(Renderer& renderer) {
 void TreeEditorGui::renderTrunkSection(Renderer& renderer) {
     auto& treeSystem = renderer.getTreeEditSystem();
     auto& params = treeSystem.getParameters();
+    auto& trunk = params.branchParams[0];
     bool changed = false;
 
     ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.7f, 0.5f, 0.3f, 1.0f));
-    ImGui::Text("TRUNK");
+    ImGui::Text("TRUNK (Level 0)");
     ImGui::PopStyleColor();
 
-    if (ImGui::SliderFloat("Height", &params.trunkHeight, 1.0f, 20.0f)) changed = true;
-    if (ImGui::SliderFloat("Radius", &params.trunkRadius, 0.1f, 1.0f)) changed = true;
-    if (ImGui::SliderFloat("Taper", &params.trunkTaper, 0.1f, 1.0f)) changed = true;
+    if (ImGui::SliderFloat("Length", &trunk.length, 0.5f, 10.0f)) changed = true;
+    if (ImGui::SliderFloat("Radius", &trunk.radius, 0.05f, 0.5f)) changed = true;
+    if (ImGui::SliderFloat("Taper", &trunk.taper, 0.1f, 1.0f)) changed = true;
+    if (ImGui::SliderFloat("Gnarliness##trunk", &trunk.gnarliness, 0.0f, 1.0f)) changed = true;
+    if (ImGui::SliderInt("Children##trunk", &trunk.children, 1, 12)) changed = true;
+    if (ImGui::SliderInt("Sections##trunk", &trunk.sections, 2, 20)) changed = true;
+    if (ImGui::SliderInt("Segments##trunk", &trunk.segments, 3, 12)) changed = true;
 
     ImGui::Spacing();
     ImGui::Separator();
@@ -341,19 +346,33 @@ void TreeEditorGui::renderBranchSection(Renderer& renderer) {
     ImGui::Text("BRANCHES");
     ImGui::PopStyleColor();
 
-    if (ImGui::SliderInt("Levels", &params.branchLevels, 1, 5)) {
-        // Clamp leafStartLevel to not exceed branchLevels
+    if (ImGui::SliderInt("Levels", &params.branchLevels, 1, 4)) {
         if (params.leafStartLevel > params.branchLevels) {
             params.leafStartLevel = params.branchLevels;
         }
         changed = true;
     }
-    if (ImGui::SliderInt("Children/Branch", &params.childrenPerBranch, 1, 8)) changed = true;
-    if (ImGui::SliderFloat("Branching Angle", &params.branchingAngle, 10.0f, 80.0f, "%.0f deg")) changed = true;
-    if (ImGui::SliderFloat("Spread", &params.branchingSpread, 30.0f, 360.0f, "%.0f deg")) changed = true;
-    if (ImGui::SliderFloat("Length Ratio", &params.branchLengthRatio, 0.3f, 0.9f)) changed = true;
-    if (ImGui::SliderFloat("Radius Ratio", &params.branchRadiusRatio, 0.3f, 0.8f)) changed = true;
-    if (ImGui::SliderFloat("Start Height", &params.branchStartHeight, 0.2f, 0.8f)) changed = true;
+
+    // Per-level branch controls
+    for (int level = 1; level <= std::min(params.branchLevels, 3); ++level) {
+        auto& bp = params.branchParams[level];
+        std::string label = "Level " + std::to_string(level);
+
+        if (ImGui::TreeNode(label.c_str())) {
+            std::string suffix = "##L" + std::to_string(level);
+            if (ImGui::SliderFloat(("Length" + suffix).c_str(), &bp.length, 0.1f, 10.0f)) changed = true;
+            if (ImGui::SliderFloat(("Radius" + suffix).c_str(), &bp.radius, 0.1f, 2.0f, "%.2fx parent")) changed = true;
+            if (ImGui::SliderFloat(("Angle" + suffix).c_str(), &bp.angle, 0.0f, 180.0f, "%.0f deg")) changed = true;
+            if (ImGui::SliderFloat(("Taper" + suffix).c_str(), &bp.taper, 0.0f, 1.0f)) changed = true;
+            if (ImGui::SliderFloat(("Gnarliness" + suffix).c_str(), &bp.gnarliness, -0.5f, 0.5f)) changed = true;
+            if (ImGui::SliderFloat(("Twist" + suffix).c_str(), &bp.twist, -0.5f, 0.5f)) changed = true;
+            if (ImGui::SliderFloat(("Start" + suffix).c_str(), &bp.start, 0.0f, 1.0f)) changed = true;
+            if (ImGui::SliderInt(("Children" + suffix).c_str(), &bp.children, 0, 100)) changed = true;
+            if (ImGui::SliderInt(("Sections" + suffix).c_str(), &bp.sections, 1, 20)) changed = true;
+            if (ImGui::SliderInt(("Segments" + suffix).c_str(), &bp.segments, 3, 16)) changed = true;
+            ImGui::TreePop();
+        }
+    }
 
     ImGui::Spacing();
     ImGui::Separator();
@@ -370,12 +389,10 @@ void TreeEditorGui::renderVariationSection(Renderer& renderer) {
     bool changed = false;
 
     ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.6f, 0.7f, 0.5f, 1.0f));
-    ImGui::Text("VARIATION");
+    ImGui::Text("GROWTH");
     ImGui::PopStyleColor();
 
-    if (ImGui::SliderFloat("Gnarliness", &params.gnarliness, 0.0f, 1.0f)) changed = true;
-    if (ImGui::SliderFloat("Twist", &params.twistAngle, 0.0f, 45.0f, "%.0f deg")) changed = true;
-    if (ImGui::SliderFloat("Growth Influence", &params.growthInfluence, -1.0f, 1.0f)) changed = true;
+    if (ImGui::SliderFloat("Growth Influence", &params.growthInfluence, -0.1f, 0.1f)) changed = true;
 
     ImGui::Spacing();
     ImGui::Separator();

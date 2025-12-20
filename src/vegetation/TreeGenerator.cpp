@@ -5,6 +5,7 @@
 #include "BillboardLeafGenerator.h"
 #include "SpaceColonisationGenerator.h"
 #include "CurvedGeometryGenerator.h"
+#include "EzTreeGenerator.h"
 #include <SDL3/SDL.h>
 #include <glm/gtc/matrix_transform.hpp>
 #include <cmath>
@@ -34,20 +35,31 @@ void TreeGenerator::generate(const TreeParameters& params) {
         // that generates curved geometry directly from nodes
         generateSpaceColonisationDirect(params);
     } else {
-        // Use the new component system for recursive branching
-        builder.useRecursiveBranching();
-        builder.build();
+        // Use EzTreeGenerator - faithful port of ez-tree algorithm
+        // This combines structure and geometry generation in a single pass
+        EzTreeGenerator ezGen;
+        ezGen.setSeed(params.seed);
 
-        // Copy results from builder to our storage
-        treeStructure = builder.getTreeStructure();
-        branchVertices = builder.getBranchVertices();
-        branchIndices = builder.getBranchIndices();
-        leafInstances = builder.getLeafInstances();
-        leafVertices = builder.getLeafVertices();
-        leafIndices = builder.getLeafIndices();
+        std::vector<EzTreeGenerator::LeafInstance> ezLeaves;
+        ezGen.generate(params, branchVertices, branchIndices, ezLeaves);
 
-        // Generate legacy segments for compatibility
-        updateLegacySegments();
+        // Convert leaves to our format
+        if (params.generateLeaves) {
+            for (const auto& ezLeaf : ezLeaves) {
+                LeafInstance leaf;
+                leaf.position = ezLeaf.position;
+                // Convert quaternion orientation to normal and rotation
+                glm::vec3 up = ezLeaf.orientation * glm::vec3(0.0f, 1.0f, 0.0f);
+                leaf.normal = up;
+                leaf.rotation = glm::eulerAngles(ezLeaf.orientation).y;
+                leaf.size = ezLeaf.size;
+                leafInstances.push_back(leaf);
+            }
+
+            // Build leaf mesh
+            BillboardLeafGenerator leafGen;
+            leafGen.buildLeafMesh(leafInstances, params, leafVertices, leafIndices);
+        }
     }
 
     SDL_Log("TreeGenerator: Generated %zu vertices, %zu indices, %zu leaves",

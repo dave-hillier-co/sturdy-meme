@@ -77,6 +77,10 @@ TreeBuilder& TreeBuilder::build() {
 
     // Step 2: Generate branch geometry
     if (geometryGenerator) {
+        // Pass RNG to geometry generator for per-section curvature
+        if (auto* tubeGeom = dynamic_cast<TubeBranchGeometry*>(geometryGenerator.get())) {
+            tubeGeom->setRng(&rng);
+        }
         geometryGenerator->generate(tree, params, branchVertices, branchIndices);
     }
 

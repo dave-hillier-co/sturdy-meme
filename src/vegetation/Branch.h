@@ -5,6 +5,14 @@
 #include <vector>
 #include <memory>
 
+// Per-section data for curved branch geometry (ez-tree style)
+// Stores the evolved orientation at each section along the branch
+struct SectionData {
+    glm::vec3 origin;
+    glm::quat orientation;
+    float radius;
+};
+
 // Represents a single branch in a tree's hierarchical structure
 // Branches form a tree structure where each branch can have multiple children
 class Branch {
@@ -37,6 +45,11 @@ public:
 
     const Properties& getProperties() const { return properties; }
     Properties& getProperties() { return properties; }
+
+    // Section data for curved geometry (populated during geometry generation)
+    const std::vector<SectionData>& getSectionData() const { return sectionData; }
+    void setSectionData(std::vector<SectionData>&& data) { sectionData = std::move(data); }
+    void clearSectionData() { sectionData.clear(); }
 
     int getLevel() const { return properties.level; }
     float getLength() const { return properties.length; }
@@ -113,4 +126,5 @@ private:
     glm::quat orientation{1.0f, 0.0f, 0.0f, 0.0f};  // Identity quaternion
     Properties properties;
     std::vector<Branch> children;
+    std::vector<SectionData> sectionData;  // Curved geometry section data
 };

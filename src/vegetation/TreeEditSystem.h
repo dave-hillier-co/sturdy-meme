@@ -92,7 +92,7 @@ public:
 
     // Get tree position for camera focusing
     glm::vec3 getTreeCenter() const;
-    float getTreeHeight() const { return treeParams.trunkHeight * 1.5f; }
+    float getTreeHeight() const { return treeParams.branchParams[0].length * 1.5f; }
 
     // Tree transform
     void setPosition(const glm::vec3& pos) { position = pos; }

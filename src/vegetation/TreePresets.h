@@ -21,8 +21,9 @@ struct TreePreset {
 namespace TreePresets {
 
 // Scale factor to convert ez-tree units to game units
-// Ez-tree uses ~30-70 unit trees, we want ~3-7 meter trees
-constexpr float SCALE_FACTOR = 0.1f;
+// Ez-tree units appear to be roughly 1:1 with meters for realistic tree sizes
+// A "large oak" at 48 units = ~15m tall tree (reasonable for oak)
+constexpr float SCALE_FACTOR = 0.3f;
 
 // Convert ez-tree JSON to TreeParameters
 inline TreeParameters loadFromJson(const nlohmann::json& j) {
@@ -77,7 +78,6 @@ inline TreeParameters loadFromJson(const nlohmann::json& j) {
         }
 
         // Load per-level parameters
-        p.usePerLevelParams = true;
 
         // Load angle per level
         if (branch.contains("angle")) {
@@ -138,13 +138,17 @@ inline TreeParameters loadFromJson(const nlohmann::json& j) {
             }
         }
 
-        // Load radius per level (scaled)
+        // Load radius per level
+        // IMPORTANT: Only level 0 (trunk) is absolute and needs scaling
+        // Levels 1-3 are MULTIPLIERS on parent radius (no scaling needed)
         if (branch.contains("radius")) {
             const auto& radius = branch["radius"];
             for (int i = 0; i <= 3; i++) {
                 std::string key = std::to_string(i);
                 if (radius.contains(key)) {
-                    p.branchParams[i].radius = radius[key].get<float>() * SCALE_FACTOR;
+                    float r = radius[key].get<float>();
+                    // Only scale level 0 (trunk absolute radius)
+                    p.branchParams[i].radius = (i == 0) ? (r * SCALE_FACTOR) : r;
                 }
             }
         }
@@ -253,13 +257,6 @@ inline TreeParameters loadFromJson(const nlohmann::json& j) {
         if (leaves.contains("alphaTest")) {
             p.leafAlphaTest = leaves["alphaTest"].get<float>();
         }
-    }
-
-    // Update legacy parameters to match
-    if (p.branchLevels > 0) {
-        p.trunkHeight = p.branchParams[0].length;
-        p.trunkRadius = p.branchParams[0].radius;
-        p.trunkTaper = p.branchParams[0].taper;
     }
 
     return p;

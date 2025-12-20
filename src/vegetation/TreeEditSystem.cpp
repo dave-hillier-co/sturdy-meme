@@ -621,7 +621,7 @@ void TreeEditSystem::recordDraw(VkCommandBuffer cmd, uint32_t frameIndex) {
 }
 
 glm::vec3 TreeEditSystem::getTreeCenter() const {
-    return position + glm::vec3(0.0f, treeParams.trunkHeight * 0.5f * scale, 0.0f);
+    return position + glm::vec3(0.0f, treeParams.branchParams[0].length * 0.5f * scale, 0.0f);
 }
 
 bool TreeEditSystem::loadTextures() {

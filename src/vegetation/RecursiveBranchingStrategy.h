@@ -1,10 +1,13 @@
 #pragma once
 
 #include "ITreeGenerationStrategy.h"
+#include "Branch.h"
 #include <random>
+#include <vector>
 
 // Recursive branching tree generation strategy
 // Creates trees by recursively spawning child branches from parent branches
+// Uses ez-tree style per-section curvature with gnarliness, twist, and growth force
 class RecursiveBranchingStrategy : public ITreeGenerationStrategy {
 public:
     void generate(const TreeParameters& params,
@@ -14,13 +17,19 @@ public:
     const char* getName() const override { return "Recursive Branching"; }
 
 private:
-    // Recursive branch generation
+    // Compute section data for a branch (ez-tree style curvature)
+    // This pre-computes the curved path so children can spawn from correct positions
+    std::vector<SectionData> computeSectionData(const TreeParameters& params,
+                                                 const glm::vec3& startPos,
+                                                 const glm::quat& orientation,
+                                                 float length,
+                                                 float radius,
+                                                 int level);
+
+    // Recursive branch generation using section data for child placement
     void generateBranch(const TreeParameters& params,
                        Branch& parentBranch,
-                       const glm::vec3& startPos,
-                       const glm::quat& orientation,
-                       float length,
-                       float radius,
+                       const std::vector<SectionData>& parentSections,
                        int level);
 
     // Random utilities

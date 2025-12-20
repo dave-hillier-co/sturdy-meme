@@ -149,7 +149,7 @@ void GuiTreeTab::render(Renderer& renderer) {
                 if (ImGui::SliderFloat(label, &opts.branch.twist[level], -0.5f, 0.5f)) changed = true;
 
                 snprintf(label, sizeof(label), "Gnarliness##%d", level);
-                if (ImGui::SliderFloat(label, &opts.branch.gnarliness[level], 0.0f, 1.0f)) changed = true;
+                if (ImGui::SliderFloat(label, &opts.branch.gnarliness[level], -0.5f, 0.5f)) changed = true;
 
                 ImGui::TreePop();
             }

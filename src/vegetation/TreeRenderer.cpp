@@ -221,8 +221,9 @@ bool TreeRenderer::allocateDescriptorSets(uint32_t maxFramesInFlight) {
     return true;
 }
 
-void TreeRenderer::updateDescriptorSets(
+void TreeRenderer::updateBarkDescriptorSet(
     uint32_t frameIndex,
+    const std::string& barkType,
     VkBuffer uniformBuffer,
     VkBuffer windBuffer,
     VkImageView shadowMapView,
@@ -231,11 +232,20 @@ void TreeRenderer::updateDescriptorSets(
     VkImageView barkNormal,
     VkImageView barkRoughness,
     VkImageView barkAO,
-    VkSampler barkSampler,
-    VkImageView leafAlbedo,
-    VkSampler leafSampler) {
+    VkSampler barkSampler) {
 
-    // Update default branch descriptor set
+    // Allocate descriptor set for this type if not already allocated
+    if (branchDescriptorSets_[frameIndex].find(barkType) == branchDescriptorSets_[frameIndex].end()) {
+        auto sets = descriptorPool_->allocate(branchDescriptorSetLayout_.get(), 1);
+        if (sets.empty()) {
+            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to allocate bark descriptor set for type: %s", barkType.c_str());
+            return;
+        }
+        branchDescriptorSets_[frameIndex][barkType] = sets[0];
+    }
+
+    VkDescriptorSet dstSet = branchDescriptorSets_[frameIndex][barkType];
+
     VkDescriptorBufferInfo uboInfo{};
     uboInfo.buffer = uniformBuffer;
     uboInfo.offset = 0;
@@ -271,108 +281,151 @@ void TreeRenderer::updateDescriptorSets(
     barkAOInfo.imageView = barkAO;
     barkAOInfo.sampler = barkSampler;
 
-    VkDescriptorImageInfo leafAlbedoInfo{};
-    leafAlbedoInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-    leafAlbedoInfo.imageView = leafAlbedo;
-    leafAlbedoInfo.sampler = leafSampler;
-
-    // Branch descriptor writes (7 bindings)
     std::array<VkWriteDescriptorSet, 7> branchWrites{};
 
-    // UBO binding (binding 0)
     branchWrites[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    branchWrites[0].dstSet = defaultBranchDescriptorSets_[frameIndex];
+    branchWrites[0].dstSet = dstSet;
     branchWrites[0].dstBinding = Bindings::TREE_GFX_UBO;
     branchWrites[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
     branchWrites[0].descriptorCount = 1;
     branchWrites[0].pBufferInfo = &uboInfo;
 
-    // Shadow map binding (binding 2)
     branchWrites[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    branchWrites[1].dstSet = defaultBranchDescriptorSets_[frameIndex];
+    branchWrites[1].dstSet = dstSet;
     branchWrites[1].dstBinding = Bindings::TREE_GFX_SHADOW_MAP;
     branchWrites[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     branchWrites[1].descriptorCount = 1;
     branchWrites[1].pImageInfo = &shadowInfo;
 
-    // Wind UBO binding (binding 3)
     branchWrites[2].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    branchWrites[2].dstSet = defaultBranchDescriptorSets_[frameIndex];
+    branchWrites[2].dstSet = dstSet;
     branchWrites[2].dstBinding = Bindings::TREE_GFX_WIND_UBO;
     branchWrites[2].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
     branchWrites[2].descriptorCount = 1;
     branchWrites[2].pBufferInfo = &windInfo;
 
-    // Bark albedo (binding 4)
     branchWrites[3].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    branchWrites[3].dstSet = defaultBranchDescriptorSets_[frameIndex];
+    branchWrites[3].dstSet = dstSet;
     branchWrites[3].dstBinding = Bindings::TREE_GFX_BARK_ALBEDO;
     branchWrites[3].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     branchWrites[3].descriptorCount = 1;
     branchWrites[3].pImageInfo = &barkAlbedoInfo;
 
-    // Bark normal (binding 5)
     branchWrites[4].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    branchWrites[4].dstSet = defaultBranchDescriptorSets_[frameIndex];
+    branchWrites[4].dstSet = dstSet;
     branchWrites[4].dstBinding = Bindings::TREE_GFX_BARK_NORMAL;
     branchWrites[4].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     branchWrites[4].descriptorCount = 1;
     branchWrites[4].pImageInfo = &barkNormalInfo;
 
-    // Bark roughness (binding 6)
     branchWrites[5].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    branchWrites[5].dstSet = defaultBranchDescriptorSets_[frameIndex];
+    branchWrites[5].dstSet = dstSet;
     branchWrites[5].dstBinding = Bindings::TREE_GFX_BARK_ROUGHNESS;
     branchWrites[5].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     branchWrites[5].descriptorCount = 1;
     branchWrites[5].pImageInfo = &barkRoughnessInfo;
 
-    // Bark AO (binding 7)
     branchWrites[6].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    branchWrites[6].dstSet = defaultBranchDescriptorSets_[frameIndex];
+    branchWrites[6].dstSet = dstSet;
     branchWrites[6].dstBinding = Bindings::TREE_GFX_BARK_AO;
     branchWrites[6].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     branchWrites[6].descriptorCount = 1;
     branchWrites[6].pImageInfo = &barkAOInfo;
 
     vkUpdateDescriptorSets(device_, static_cast<uint32_t>(branchWrites.size()), branchWrites.data(), 0, nullptr);
+}
 
-    // Leaf descriptor writes (4 bindings)
+void TreeRenderer::updateLeafDescriptorSet(
+    uint32_t frameIndex,
+    const std::string& leafType,
+    VkBuffer uniformBuffer,
+    VkBuffer windBuffer,
+    VkImageView shadowMapView,
+    VkSampler shadowSampler,
+    VkImageView leafAlbedo,
+    VkSampler leafSampler) {
+
+    // Allocate descriptor set for this type if not already allocated
+    if (leafDescriptorSets_[frameIndex].find(leafType) == leafDescriptorSets_[frameIndex].end()) {
+        auto sets = descriptorPool_->allocate(leafDescriptorSetLayout_.get(), 1);
+        if (sets.empty()) {
+            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to allocate leaf descriptor set for type: %s", leafType.c_str());
+            return;
+        }
+        leafDescriptorSets_[frameIndex][leafType] = sets[0];
+    }
+
+    VkDescriptorSet dstSet = leafDescriptorSets_[frameIndex][leafType];
+
+    VkDescriptorBufferInfo uboInfo{};
+    uboInfo.buffer = uniformBuffer;
+    uboInfo.offset = 0;
+    uboInfo.range = VK_WHOLE_SIZE;
+
+    VkDescriptorBufferInfo windInfo{};
+    windInfo.buffer = windBuffer;
+    windInfo.offset = 0;
+    windInfo.range = VK_WHOLE_SIZE;
+
+    VkDescriptorImageInfo shadowInfo{};
+    shadowInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    shadowInfo.imageView = shadowMapView;
+    shadowInfo.sampler = shadowSampler;
+
+    VkDescriptorImageInfo leafAlbedoInfo{};
+    leafAlbedoInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    leafAlbedoInfo.imageView = leafAlbedo;
+    leafAlbedoInfo.sampler = leafSampler;
+
     std::array<VkWriteDescriptorSet, 4> leafWrites{};
 
-    // UBO binding (binding 0)
     leafWrites[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    leafWrites[0].dstSet = defaultLeafDescriptorSets_[frameIndex];
+    leafWrites[0].dstSet = dstSet;
     leafWrites[0].dstBinding = Bindings::TREE_GFX_UBO;
     leafWrites[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
     leafWrites[0].descriptorCount = 1;
     leafWrites[0].pBufferInfo = &uboInfo;
 
-    // Shadow map binding (binding 2)
     leafWrites[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    leafWrites[1].dstSet = defaultLeafDescriptorSets_[frameIndex];
+    leafWrites[1].dstSet = dstSet;
     leafWrites[1].dstBinding = Bindings::TREE_GFX_SHADOW_MAP;
     leafWrites[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     leafWrites[1].descriptorCount = 1;
     leafWrites[1].pImageInfo = &shadowInfo;
 
-    // Wind UBO binding (binding 3)
     leafWrites[2].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    leafWrites[2].dstSet = defaultLeafDescriptorSets_[frameIndex];
+    leafWrites[2].dstSet = dstSet;
     leafWrites[2].dstBinding = Bindings::TREE_GFX_WIND_UBO;
     leafWrites[2].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
     leafWrites[2].descriptorCount = 1;
     leafWrites[2].pBufferInfo = &windInfo;
 
-    // Leaf albedo (binding 8)
     leafWrites[3].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    leafWrites[3].dstSet = defaultLeafDescriptorSets_[frameIndex];
+    leafWrites[3].dstSet = dstSet;
     leafWrites[3].dstBinding = Bindings::TREE_GFX_LEAF_ALBEDO;
     leafWrites[3].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     leafWrites[3].descriptorCount = 1;
     leafWrites[3].pImageInfo = &leafAlbedoInfo;
 
     vkUpdateDescriptorSets(device_, static_cast<uint32_t>(leafWrites.size()), leafWrites.data(), 0, nullptr);
+}
+
+VkDescriptorSet TreeRenderer::getBranchDescriptorSet(uint32_t frameIndex, const std::string& barkType) const {
+    auto frameIt = branchDescriptorSets_[frameIndex].find(barkType);
+    if (frameIt != branchDescriptorSets_[frameIndex].end()) {
+        return frameIt->second;
+    }
+    // Fall back to default descriptor set
+    return defaultBranchDescriptorSets_[frameIndex];
+}
+
+VkDescriptorSet TreeRenderer::getLeafDescriptorSet(uint32_t frameIndex, const std::string& leafType) const {
+    auto frameIt = leafDescriptorSets_[frameIndex].find(leafType);
+    if (frameIt != leafDescriptorSets_[frameIndex].end()) {
+        return frameIt->second;
+    }
+    // Fall back to default descriptor set
+    return defaultLeafDescriptorSets_[frameIndex];
 }
 
 void TreeRenderer::render(VkCommandBuffer cmd, uint32_t frameIndex, float time,
@@ -384,11 +437,17 @@ void TreeRenderer::render(VkCommandBuffer cmd, uint32_t frameIndex, float time,
 
     // Render branches
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, branchPipeline_.get());
-    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, branchPipelineLayout_.get(),
-                            0, 1, &defaultBranchDescriptorSets_[frameIndex], 0, nullptr);
 
+    std::string lastBarkType;
     for (const auto& renderable : branchRenderables) {
-        // Use the pre-computed transform from the renderable
+        // Bind descriptor set for this bark type if different from last
+        if (renderable.barkType != lastBarkType) {
+            VkDescriptorSet descriptorSet = getBranchDescriptorSet(frameIndex, renderable.barkType);
+            vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, branchPipelineLayout_.get(),
+                                    0, 1, &descriptorSet, 0, nullptr);
+            lastBarkType = renderable.barkType;
+        }
+
         TreeBranchPushConstants push{};
         push.model = renderable.transform;
         push.time = time;
@@ -399,7 +458,6 @@ void TreeRenderer::render(VkCommandBuffer cmd, uint32_t frameIndex, float time,
                            VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
                            0, sizeof(TreeBranchPushConstants), &push);
 
-        // Bind vertex/index buffers and draw
         if (renderable.mesh) {
             VkBuffer vertexBuffers[] = {renderable.mesh->getVertexBuffer()};
             VkDeviceSize offsets[] = {0};
@@ -411,10 +469,17 @@ void TreeRenderer::render(VkCommandBuffer cmd, uint32_t frameIndex, float time,
 
     // Render leaves
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, leafPipeline_.get());
-    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, leafPipelineLayout_.get(),
-                            0, 1, &defaultLeafDescriptorSets_[frameIndex], 0, nullptr);
 
+    std::string lastLeafType;
     for (const auto& renderable : leafRenderables) {
+        // Bind descriptor set for this leaf type if different from last
+        if (renderable.leafType != lastLeafType) {
+            VkDescriptorSet descriptorSet = getLeafDescriptorSet(frameIndex, renderable.leafType);
+            vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, leafPipelineLayout_.get(),
+                                    0, 1, &descriptorSet, 0, nullptr);
+            lastLeafType = renderable.leafType;
+        }
+
         TreeLeafPushConstants push{};
         push.model = renderable.transform;
         push.time = time;

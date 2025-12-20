@@ -903,25 +903,39 @@ bool Renderer::render(const Camera& camera) {
     if (systems_->treeRenderer() && systems_->tree()) {
         VkDescriptorBufferInfo windInfo = systems_->wind().getBufferInfo(frame.frameIndex);
 
-        // Use oak textures as default (all trees currently use the same descriptor set)
-        Texture* barkTex = systems_->tree()->getBarkTexture("oak");
-        Texture* barkNormal = systems_->tree()->getBarkNormalMap("oak");
-        Texture* leafTex = systems_->tree()->getLeafTexture("oak");
+        // Update descriptor sets for each bark texture type
+        for (const auto& barkType : systems_->tree()->getBarkTextureTypes()) {
+            Texture* barkTex = systems_->tree()->getBarkTexture(barkType);
+            Texture* barkNormal = systems_->tree()->getBarkNormalMap(barkType);
 
-        // Use bark albedo as placeholder for roughness/AO if not available
-        systems_->treeRenderer()->updateDescriptorSets(
-            frame.frameIndex,
-            systems_->globalBuffers().uniformBuffers.buffers[frame.frameIndex],
-            windInfo.buffer,
-            systems_->shadow().getShadowImageView(),
-            systems_->shadow().getShadowSampler(),
-            barkTex->getImageView(),
-            barkNormal->getImageView(),
-            barkTex->getImageView(),  // roughness placeholder
-            barkTex->getImageView(),  // AO placeholder
-            barkTex->getSampler(),
-            leafTex->getImageView(),
-            leafTex->getSampler());
+            systems_->treeRenderer()->updateBarkDescriptorSet(
+                frame.frameIndex,
+                barkType,
+                systems_->globalBuffers().uniformBuffers.buffers[frame.frameIndex],
+                windInfo.buffer,
+                systems_->shadow().getShadowImageView(),
+                systems_->shadow().getShadowSampler(),
+                barkTex->getImageView(),
+                barkNormal->getImageView(),
+                barkTex->getImageView(),  // roughness placeholder
+                barkTex->getImageView(),  // AO placeholder
+                barkTex->getSampler());
+        }
+
+        // Update descriptor sets for each leaf texture type
+        for (const auto& leafType : systems_->tree()->getLeafTextureTypes()) {
+            Texture* leafTex = systems_->tree()->getLeafTexture(leafType);
+
+            systems_->treeRenderer()->updateLeafDescriptorSet(
+                frame.frameIndex,
+                leafType,
+                systems_->globalBuffers().uniformBuffers.buffers[frame.frameIndex],
+                windInfo.buffer,
+                systems_->shadow().getShadowImageView(),
+                systems_->shadow().getShadowSampler(),
+                leafTex->getImageView(),
+                leafTex->getSampler());
+        }
     }
 
     systems_->grass().updateUniforms(frame.frameIndex, frame.cameraPosition, frame.viewProj,

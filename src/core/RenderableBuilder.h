@@ -5,6 +5,7 @@
 #include <optional>
 #include <cassert>
 #include <cstdint>
+#include <string>
 
 class Mesh;
 class Texture;
@@ -27,6 +28,8 @@ struct Renderable {
     float opacity = 1.0f;  // For camera occlusion fading (1.0 = fully visible)
     uint32_t pbrFlags = 0;  // Bitmask indicating which PBR textures are bound (set automatically from material)
     float alphaTestThreshold = 0.0f;  // Alpha test threshold (0 = disabled, >0 = discard if alpha < threshold)
+    std::string barkType = "oak";  // Bark texture type for trees (oak, pine, birch, willow)
+    std::string leafType = "oak";  // Leaf texture type for trees (oak, ash, aspen, pine)
 
 private:
     friend class RenderableBuilder;
@@ -69,6 +72,12 @@ public:
     // Pixels with alpha < threshold will be discarded
     RenderableBuilder& withAlphaTest(float threshold);
 
+    // Optional: Set bark texture type for trees (oak, pine, birch, willow)
+    RenderableBuilder& withBarkType(const std::string& type);
+
+    // Optional: Set leaf texture type for trees (oak, ash, aspen, pine)
+    RenderableBuilder& withLeafType(const std::string& type);
+
     // Convenience: Set position only (creates translation matrix)
     RenderableBuilder& atPosition(const glm::vec3& position);
 
@@ -90,4 +99,6 @@ private:
     glm::vec3 emissiveColor_ = glm::vec3(1.0f);
     bool castsShadow_ = true;
     float alphaTestThreshold_ = 0.0f;
+    std::string barkType_ = "oak";
+    std::string leafType_ = "oak";
 };

@@ -463,6 +463,7 @@ void TreeSystem::createSceneObjects() {
                 .withTransform(transform)
                 .withRoughness(0.7f)
                 .withMetallic(0.0f)
+                .withBarkType(opts.bark.type)
                 .build();
 
             branchRenderables_.push_back(branchRenderable);
@@ -479,6 +480,7 @@ void TreeSystem::createSceneObjects() {
                     .withRoughness(0.8f)
                     .withMetallic(0.0f)
                     .withAlphaTest(opts.leaves.alphaTest)
+                    .withLeafType(opts.leaves.type)
                     .build();
 
                 leafRenderables_.push_back(leafRenderable);

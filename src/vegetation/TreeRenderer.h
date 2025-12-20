@@ -51,9 +51,10 @@ public:
     TreeRenderer(TreeRenderer&&) = delete;
     TreeRenderer& operator=(TreeRenderer&&) = delete;
 
-    // Update descriptor sets with common resources and textures
-    void updateDescriptorSets(
+    // Update descriptor sets for a specific texture type
+    void updateBarkDescriptorSet(
         uint32_t frameIndex,
+        const std::string& barkType,
         VkBuffer uniformBuffer,
         VkBuffer windBuffer,
         VkImageView shadowMapView,
@@ -62,9 +63,21 @@ public:
         VkImageView barkNormal,
         VkImageView barkRoughness,
         VkImageView barkAO,
-        VkSampler barkSampler,
+        VkSampler barkSampler);
+
+    void updateLeafDescriptorSet(
+        uint32_t frameIndex,
+        const std::string& leafType,
+        VkBuffer uniformBuffer,
+        VkBuffer windBuffer,
+        VkImageView shadowMapView,
+        VkSampler shadowSampler,
         VkImageView leafAlbedo,
         VkSampler leafSampler);
+
+    // Get descriptor set for a specific type (returns default if type not found)
+    VkDescriptorSet getBranchDescriptorSet(uint32_t frameIndex, const std::string& barkType) const;
+    VkDescriptorSet getLeafDescriptorSet(uint32_t frameIndex, const std::string& leafType) const;
 
     // Render all trees
     void render(VkCommandBuffer cmd, uint32_t frameIndex, float time,

@@ -51,6 +51,16 @@ RenderableBuilder& RenderableBuilder::withAlphaTest(float threshold) {
     return *this;
 }
 
+RenderableBuilder& RenderableBuilder::withBarkType(const std::string& type) {
+    barkType_ = type;
+    return *this;
+}
+
+RenderableBuilder& RenderableBuilder::withLeafType(const std::string& type) {
+    leafType_ = type;
+    return *this;
+}
+
 RenderableBuilder& RenderableBuilder::atPosition(const glm::vec3& position) {
     transform_ = glm::translate(glm::mat4(1.0f), position);
     return *this;
@@ -86,6 +96,8 @@ Renderable RenderableBuilder::build() const {
     renderable.emissiveColor = emissiveColor_;
     renderable.castsShadow = castsShadow_;
     renderable.alphaTestThreshold = alphaTestThreshold_;
+    renderable.barkType = barkType_;
+    renderable.leafType = leafType_;
 
     return renderable;
 }

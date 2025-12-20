@@ -53,6 +53,10 @@ public:
         // Placeholder texture for unused PBR bindings (bindings 13-16 must always be written)
         VkImageView placeholderTextureView = VK_NULL_HANDLE;
         VkSampler placeholderTextureSampler = VK_NULL_HANDLE;
+
+        // Wind UBO for vegetation animation (binding 17)
+        VkBuffer windBuffer = VK_NULL_HANDLE;
+        VkDeviceSize windBufferSize = 0;
     };
 
     // Per-material texture bindings

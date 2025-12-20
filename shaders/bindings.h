@@ -30,6 +30,7 @@
 #define BINDING_METALLIC_MAP           14   // Per-pixel metallic (linear, R channel)
 #define BINDING_AO_MAP                 15   // Ambient occlusion (linear, R channel)
 #define BINDING_HEIGHT_MAP             16   // Height/displacement map (linear, R channel)
+#define BINDING_WIND_UBO               17   // Wind uniforms for vegetation animation
 
 // Storage Buffers
 #define BINDING_LIGHT_BUFFER            4   // Point/spot light array
@@ -389,6 +390,7 @@ constexpr uint32_t ROUGHNESS_MAP          = BINDING_ROUGHNESS_MAP;
 constexpr uint32_t METALLIC_MAP           = BINDING_METALLIC_MAP;
 constexpr uint32_t AO_MAP                 = BINDING_AO_MAP;
 constexpr uint32_t HEIGHT_MAP             = BINDING_HEIGHT_MAP;
+constexpr uint32_t WIND_UBO               = BINDING_WIND_UBO;
 
 // Grass/Leaf System
 constexpr uint32_t GRASS_INSTANCE_BUFFER  = BINDING_GRASS_INSTANCE_BUFFER;

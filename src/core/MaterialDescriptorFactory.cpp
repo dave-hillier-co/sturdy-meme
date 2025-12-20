@@ -41,6 +41,11 @@ void MaterialDescriptorFactory::writeCommonBindings(
     if (common.cloudShadowUboBuffer != VK_NULL_HANDLE) {
         writer.writeBuffer(11, common.cloudShadowUboBuffer, 0, common.cloudShadowUboBufferSize);
     }
+
+    // Binding 17: Wind UBO for vegetation animation
+    if (common.windBuffer != VK_NULL_HANDLE) {
+        writer.writeBuffer(17, common.windBuffer, 0, common.windBufferSize);
+    }
 }
 
 void MaterialDescriptorFactory::writeDescriptorSet(

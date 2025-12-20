@@ -337,6 +337,9 @@ bool Renderer::initSubsystems(const InitContext& initCtx) {
             common.snowMaskSampler = systems_->snowMask().getSnowMaskSampler();
             common.placeholderTextureView = systems_->scene().getSceneBuilder().getWhiteTexture().getImageView();
             common.placeholderTextureSampler = systems_->scene().getSceneBuilder().getWhiteTexture().getSampler();
+            // Wind buffer for vegetation animation
+            common.windBuffer = windBuffers[i];
+            common.windBufferSize = 32;  // sizeof(WindUBO): 2 x vec4
 
             // Write descriptor sets for each bark type
             for (const auto& typeName : systems_->tree()->getBarkTextureTypes()) {

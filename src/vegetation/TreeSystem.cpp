@@ -310,7 +310,10 @@ bool TreeSystem::generateTreeMesh(const TreeOptions& options, Mesh& branchMesh, 
                     glm::normalize(section.orientation * glm::vec3(0.0f, 1.0f, 0.0f)),
                     1.0f
                 );
-                v.color = glm::vec4(1.0f);  // White, will be tinted by material
+                // Wind animation data in vertex color:
+                // RGB = pivot point (branch origin) for skeletal rotation
+                // A = branch level (0-1 for levels 0-3) for wind intensity
+                v.color = glm::vec4(branch.origin, static_cast<float>(branch.level) / 3.0f);
 
                 branchVertices.push_back(v);
             }
@@ -379,7 +382,10 @@ bool TreeSystem::generateTreeMesh(const TreeOptions& options, Mesh& branchMesh, 
                 v.normal = normal;
                 v.texCoord = uvs[i];
                 v.tangent = glm::vec4(finalQuat * glm::vec3(1.0f, 0.0f, 0.0f), 1.0f);
-                v.color = glm::vec4(1.0f);
+                // Wind animation data in vertex color:
+                // RGB = pivot point (leaf attachment) for skeletal rotation
+                // A = 1.0 (leaves are highest level, maximum sway)
+                v.color = glm::vec4(leaf.position, 1.0f);
 
                 leafVertices.push_back(v);
             }

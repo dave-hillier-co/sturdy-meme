@@ -71,40 +71,38 @@ TreeMeshData TreeGenerator::generate(const TreeOptions& options) {
         branchQueue.pop();
         processBranch(branch, options, rng, meshData);
 
-        // Generate children for this branch
-        if (branch.level < options.branch.levels) {
-            const BranchData& processedBranch = meshData.branches.back();
+        const BranchData& processedBranch = meshData.branches.back();
 
-            if (options.type == TreeType::Deciduous && branch.level < options.branch.levels) {
-                // Terminal branch from end
-                if (branch.level + 1 <= options.branch.levels) {
-                    const SectionData& lastSection = processedBranch.sections.back();
-                    Branch child;
-                    child.origin = lastSection.origin;
-                    child.orientation = lastSection.orientation;
-                    child.length = options.branch.length[branch.level + 1];
-                    child.radius = lastSection.radius;
-                    child.level = branch.level + 1;
-                    child.sectionCount = processedBranch.sectionCount;  // Same as parent
-                    child.segmentCount = processedBranch.segmentCount;
-                    branchQueue.push(child);
-                }
-            }
-
-            // Radial child branches
+        // Deciduous trees have a terminal branch that grows out of the end of the parent branch
+        if (options.type == TreeType::Deciduous) {
+            const SectionData& lastSection = processedBranch.sections.back();
             if (branch.level < options.branch.levels) {
-                generateChildBranches(
-                    options.branch.children[branch.level],
-                    branch.level + 1,
-                    processedBranch.sections,
-                    options, rng, branchQueue);
+                // Add terminal branch from tip
+                Branch child;
+                child.origin = lastSection.origin;
+                child.orientation = lastSection.orientation;
+                child.length = options.branch.length[branch.level + 1];
+                child.radius = lastSection.radius;
+                child.level = branch.level + 1;
+                child.sectionCount = processedBranch.sectionCount;  // Same as parent
+                child.segmentCount = processedBranch.segmentCount;
+                branchQueue.push(child);
+            } else {
+                // At final level - just add a single leaf at the tip
+                generateLeaf(lastSection.origin, lastSection.orientation, options, rng, meshData);
             }
         }
 
-        // Generate leaves on final level
+        // Generate leaves on final level branches
         if (branch.level == options.branch.levels) {
-            const BranchData& processedBranch = meshData.branches.back();
             generateLeaves(processedBranch.sections, options, rng, meshData);
+        } else if (branch.level < options.branch.levels) {
+            // Radial child branches
+            generateChildBranches(
+                options.branch.children[branch.level],
+                branch.level + 1,
+                processedBranch.sections,
+                options, rng, branchQueue);
         }
     }
 
@@ -170,26 +168,39 @@ void TreeGenerator::processBranch(const Branch& branch, const TreeOptions& optio
         glm::quat twist = glm::angleAxis(options.branch.twist[branch.level], glm::vec3(0.0f, 1.0f, 0.0f));
         sectionOrientation = sectionOrientation * twist;
 
-        // Apply growth force
-        if (options.branch.forceStrength > 0.0f) {
+        // Apply growth force (matching ez-tree's rotateTowards behavior)
+        // Force strength can be positive (towards forceDirection) or negative (away from it)
+        if (std::abs(options.branch.forceStrength) > 0.0001f) {
             glm::vec3 forceDir = glm::normalize(options.branch.forceDirection);
-            // Compute rotation from up (0,1,0) to forceDir
+
+            // Compute target quaternion that rotates Y-up to forceDirection
             glm::vec3 up(0.0f, 1.0f, 0.0f);
             float dot = glm::dot(up, forceDir);
             glm::quat forceQuat;
             if (dot < -0.999f) {
-                // Vectors are nearly opposite
                 forceQuat = glm::angleAxis(glm::pi<float>(), glm::vec3(1.0f, 0.0f, 0.0f));
             } else if (dot > 0.999f) {
-                // Vectors are nearly aligned
                 forceQuat = glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
             } else {
                 glm::vec3 axis = glm::normalize(glm::cross(up, forceDir));
                 float angle = std::acos(dot);
                 forceQuat = glm::angleAxis(angle, axis);
             }
-            float strength = options.branch.forceStrength / sectionRadius;
-            sectionOrientation = glm::slerp(sectionOrientation, forceQuat, glm::clamp(strength, 0.0f, 1.0f));
+
+            // rotateTowards: rotate by the given angle towards forceQuat
+            // positive strength rotates towards, negative rotates away
+            float maxAngle = options.branch.forceStrength / sectionRadius;
+
+            // Calculate angle between current and target orientation
+            // angle = 2 * acos(|dot(q1, q2)|)
+            float dotProduct = glm::dot(sectionOrientation, forceQuat);
+            float angleBetween = 2.0f * std::acos(glm::clamp(std::abs(dotProduct), 0.0f, 1.0f));
+
+            if (angleBetween > 0.0001f) {
+                // Clamp rotation to maxAngle (can be negative to rotate away)
+                float t = glm::clamp(maxAngle / angleBetween, -1.0f, 1.0f);
+                sectionOrientation = glm::slerp(sectionOrientation, forceQuat, t);
+            }
         }
     }
 
@@ -229,7 +240,7 @@ void TreeGenerator::generateChildBranches(int count, int level,
         float childRadius = options.branch.radius[level] *
                            glm::mix(sectionA.radius, sectionB.radius, alpha);
 
-        // Interpolate orientation
+        // Interpolate orientation: alpha=0 -> sectionA, alpha=1 -> sectionB
         glm::quat parentOrientation = glm::slerp(sectionA.orientation, sectionB.orientation, alpha);
 
         // Calculate child branch angle and radial position
@@ -237,7 +248,8 @@ void TreeGenerator::generateChildBranches(int count, int level,
         float branchAngle = glm::radians(options.branch.angle[level]);
 
         // Build child orientation: rotate from parent by branch angle, then rotate around Y
-        glm::quat angleRotation = glm::angleAxis(branchAngle, glm::vec3(1.0f, 0.0f, 0.0f));
+        // Negate angle to match ez-tree's coordinate system
+        glm::quat angleRotation = glm::angleAxis(-branchAngle, glm::vec3(1.0f, 0.0f, 0.0f));
         glm::quat radialRotation = glm::angleAxis(radialAngle, glm::vec3(0.0f, 1.0f, 0.0f));
         glm::quat childOrientation = parentOrientation * radialRotation * angleRotation;
 
@@ -288,14 +300,15 @@ void TreeGenerator::generateLeaves(const std::vector<SectionData>& sections,
         // Interpolate origin
         glm::vec3 leafOrigin = glm::mix(sectionA.origin, sectionB.origin, alpha);
 
-        // Interpolate orientation
+        // Interpolate orientation: alpha=0 -> sectionA, alpha=1 -> sectionB
         glm::quat parentOrientation = glm::slerp(sectionA.orientation, sectionB.orientation, alpha);
 
         // Calculate leaf orientation
         float radialAngle = 2.0f * glm::pi<float>() * (radialOffset + static_cast<float>(i) / options.leaves.count);
         float leafAngle = glm::radians(options.leaves.angle);
 
-        glm::quat angleRotation = glm::angleAxis(leafAngle, glm::vec3(1.0f, 0.0f, 0.0f));
+        // Negate angle to match ez-tree's coordinate system
+        glm::quat angleRotation = glm::angleAxis(-leafAngle, glm::vec3(1.0f, 0.0f, 0.0f));
         glm::quat radialRotation = glm::angleAxis(radialAngle, glm::vec3(0.0f, 1.0f, 0.0f));
         glm::quat leafOrientation = parentOrientation * radialRotation * angleRotation;
 

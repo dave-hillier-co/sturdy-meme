@@ -312,9 +312,10 @@ bool TreeSystem::generateTreeMesh(const TreeOptions& options, Mesh& branchMesh, 
                 );
                 // Wind animation data in vertex color:
                 // RGB = pivot point (branch origin) for skeletal rotation
-                // A = branch level (0-1 for levels 0-3) for wind intensity
+                // A = branch level (0-0.95 for levels 0-3) for wind intensity
                 // For trunk (level 0), use white RGB so texture renders correctly
-                float normalizedLevel = static_cast<float>(branch.level) / 3.0f;
+                // Cap alpha at 0.95 to distinguish from default color (1,1,1,1)
+                float normalizedLevel = static_cast<float>(branch.level) / 3.0f * 0.95f;
                 if (branch.level == 0) {
                     // Trunk: no wind animation, use white for proper texture rendering
                     v.color = glm::vec4(1.0f, 1.0f, 1.0f, 0.0f);

@@ -16,6 +16,21 @@
 #include "Texture.h"
 #include "RenderableBuilder.h"
 #include "core/RAIIAdapter.h"
+#include "core/BufferUtils.h"
+
+// GPU leaf instance data - matches shaders/tree_leaf_instance.glsl
+// std430 layout: 32 bytes per instance
+struct LeafInstanceGPU {
+    glm::vec4 positionAndSize;  // xyz = world position, w = size
+    glm::vec4 orientation;       // quaternion (x, y, z, w)
+};
+static_assert(sizeof(LeafInstanceGPU) == 32, "LeafInstanceGPU must be 32 bytes for std430 layout");
+
+// Per-tree leaf instance offsets and counts for instanced drawing
+struct LeafDrawInfo {
+    uint32_t firstInstance;  // Starting instance in the SSBO
+    uint32_t instanceCount;  // Number of leaf instances for this tree
+};
 
 // A single tree instance in the scene
 struct TreeInstanceData {
@@ -97,13 +112,21 @@ public:
     // Regenerate tree at index with new options
     void regenerateTree(uint32_t index);
 
+    // Leaf instancing accessors (for TreeRenderer)
+    VkBuffer getLeafInstanceBuffer() const { return leafInstanceBuffer_; }
+    VkDeviceSize getLeafInstanceBufferSize() const { return leafInstanceBufferSize_; }
+    const Mesh& getSharedLeafQuadMesh() const { return sharedLeafQuadMesh_; }
+    const std::vector<LeafDrawInfo>& getLeafDrawInfo() const { return leafDrawInfoPerTree_; }
+
 private:
     TreeSystem() = default;  // Private: use factory
 
     bool initInternal(const InitInfo& info);
     void cleanup();
     bool loadTextures(const InitInfo& info);
-    bool generateTreeMesh(const TreeOptions& options, Mesh& branchMesh, Mesh& leafMesh);
+    bool generateTreeMesh(const TreeOptions& options, Mesh& branchMesh, std::vector<LeafInstanceGPU>& leafInstances);
+    bool createSharedLeafQuadMesh();
+    bool uploadLeafInstanceBuffer();
     void createSceneObjects();
     void rebuildSceneObjects();
 
@@ -122,9 +145,26 @@ private:
     std::vector<TreeOptions> treeOptions_;
     TreeOptions defaultOptions_;
 
-    // Tree meshes (branches and leaves separate)
+    // Tree meshes (branches only - leaves use instanced quad)
     std::vector<Mesh> branchMeshes_;
-    std::vector<Mesh> leafMeshes_;
+
+    // Shared leaf quad mesh (4 vertices, 6 indices) used for all leaf instances
+    Mesh sharedLeafQuadMesh_;
+
+    // Leaf instance data per tree (CPU-side, uploaded to GPU SSBO)
+    // Each tree's leaves are stored contiguously: tree 0 leaves, tree 1 leaves, etc.
+    std::vector<std::vector<LeafInstanceGPU>> leafInstancesPerTree_;
+
+    // All leaf instances combined for GPU upload (flattened from leafInstancesPerTree_)
+    std::vector<LeafInstanceGPU> allLeafInstances_;
+
+    // Per-tree leaf instance offsets and counts for instanced drawing
+    std::vector<LeafDrawInfo> leafDrawInfoPerTree_;
+
+    // Leaf instance SSBO (storage buffer for GPU)
+    VkBuffer leafInstanceBuffer_ = VK_NULL_HANDLE;
+    VmaAllocation leafInstanceAllocation_ = VK_NULL_HANDLE;
+    VkDeviceSize leafInstanceBufferSize_ = 0;
 
     // Textures indexed by type name (e.g., "oak", "pine", "ash")
     // Using RAIIAdapter for automatic cleanup matching RockSystem pattern

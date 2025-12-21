@@ -150,6 +150,7 @@
 #define BINDING_TREE_GFX_BARK_ROUGHNESS    6   // Bark roughness map
 #define BINDING_TREE_GFX_BARK_AO           7   // Bark AO map
 #define BINDING_TREE_GFX_LEAF_ALBEDO       8   // Leaf albedo texture
+#define BINDING_TREE_GFX_LEAF_INSTANCES    9   // Leaf instance SSBO
 
 // =============================================================================
 // Leaf Compute Shader Descriptor Set
@@ -477,6 +478,7 @@ constexpr uint32_t TREE_GFX_BARK_NORMAL   = BINDING_TREE_GFX_BARK_NORMAL;
 constexpr uint32_t TREE_GFX_BARK_ROUGHNESS = BINDING_TREE_GFX_BARK_ROUGHNESS;
 constexpr uint32_t TREE_GFX_BARK_AO       = BINDING_TREE_GFX_BARK_AO;
 constexpr uint32_t TREE_GFX_LEAF_ALBEDO   = BINDING_TREE_GFX_LEAF_ALBEDO;
+constexpr uint32_t TREE_GFX_LEAF_INSTANCES = BINDING_TREE_GFX_LEAF_INSTANCES;
 
 // Leaf Compute
 constexpr uint32_t LEAF_COMPUTE_INPUT     = BINDING_LEAF_COMPUTE_INPUT;

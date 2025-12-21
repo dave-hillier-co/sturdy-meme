@@ -23,11 +23,13 @@ struct TreeBranchPushConstants {
 };
 
 struct TreeLeafPushConstants {
-    glm::mat4 model;    // offset 0, size 64
-    float time;         // offset 64, size 4
-    float _pad1[3];     // offset 68, size 12 (padding to align vec3 to 16 bytes)
-    glm::vec3 leafTint; // offset 80, size 12
-    float alphaTest;    // offset 92, size 4
+    glm::mat4 model;     // offset 0, size 64
+    float time;          // offset 64, size 4
+    float _pad1[3];      // offset 68, size 12 (padding to align vec3 to 16 bytes)
+    glm::vec3 leafTint;  // offset 80, size 12
+    float alphaTest;     // offset 92, size 4
+    int32_t firstInstance; // offset 96, size 4 (offset into leaf SSBO for this tree)
+    float _pad2[3];      // offset 100, size 12 (padding to 16-byte boundary)
 };
 
 // Shadow pass push constants (branches)
@@ -36,11 +38,13 @@ struct TreeBranchShadowPushConstants {
     int cascadeIndex;     // offset 64, size 4
 };
 
-// Shadow pass push constants (leaves with alpha test)
+// Shadow pass push constants (leaves with alpha test and instancing)
 struct TreeLeafShadowPushConstants {
-    glm::mat4 model;      // offset 0, size 64
-    int cascadeIndex;     // offset 64, size 4
-    float alphaTest;      // offset 68, size 4
+    glm::mat4 model;       // offset 0, size 64
+    int32_t cascadeIndex;  // offset 64, size 4
+    float alphaTest;       // offset 68, size 4
+    int32_t firstInstance; // offset 72, size 4 (offset into leaf SSBO for this tree)
+    float _pad;            // offset 76, size 4 (padding)
 };
 
 class TreeRenderer {
@@ -89,7 +93,9 @@ public:
         VkImageView shadowMapView,
         VkSampler shadowSampler,
         VkImageView leafAlbedo,
-        VkSampler leafSampler);
+        VkSampler leafSampler,
+        VkBuffer leafInstanceBuffer,
+        VkDeviceSize leafInstanceBufferSize);
 
     // Get descriptor set for a specific type (returns default if type not found)
     VkDescriptorSet getBranchDescriptorSet(uint32_t frameIndex, const std::string& barkType) const;

@@ -77,16 +77,18 @@ bool TreeRenderer::createDescriptorSetLayout() {
     branchDescriptorSetLayout_ = ManagedDescriptorSetLayout::fromRaw(device_, rawBranchLayout);
 
     // Leaf descriptor set layout (bindings from bindings.h):
-    // BINDING_TREE_GFX_UBO           = 0  - Scene uniforms
-    // BINDING_TREE_GFX_SHADOW_MAP    = 2  - Shadow map
-    // BINDING_TREE_GFX_WIND_UBO      = 3  - Wind uniforms
-    // BINDING_TREE_GFX_LEAF_ALBEDO   = 8  - Leaf albedo texture
+    // BINDING_TREE_GFX_UBO             = 0  - Scene uniforms
+    // BINDING_TREE_GFX_SHADOW_MAP      = 2  - Shadow map
+    // BINDING_TREE_GFX_WIND_UBO        = 3  - Wind uniforms
+    // BINDING_TREE_GFX_LEAF_ALBEDO     = 8  - Leaf albedo texture
+    // BINDING_TREE_GFX_LEAF_INSTANCES  = 9  - Leaf instance SSBO
 
     std::vector<VkDescriptorSetLayoutBinding> leafBindings = {
         {Bindings::TREE_GFX_UBO, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, nullptr},
         {Bindings::TREE_GFX_SHADOW_MAP, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr},
         {Bindings::TREE_GFX_WIND_UBO, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT, nullptr},
         {Bindings::TREE_GFX_LEAF_ALBEDO, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr},
+        {Bindings::TREE_GFX_LEAF_INSTANCES, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT, nullptr},
     };
 
     VkDescriptorSetLayoutCreateInfo leafLayoutInfo{};
@@ -424,7 +426,9 @@ void TreeRenderer::updateLeafDescriptorSet(
     VkImageView shadowMapView,
     VkSampler shadowSampler,
     VkImageView leafAlbedo,
-    VkSampler leafSampler) {
+    VkSampler leafSampler,
+    VkBuffer leafInstanceBuffer,
+    VkDeviceSize leafInstanceBufferSize) {
 
     // Allocate descriptor set for this type if not already allocated
     if (leafDescriptorSets_[frameIndex].find(leafType) == leafDescriptorSets_[frameIndex].end()) {
@@ -458,7 +462,12 @@ void TreeRenderer::updateLeafDescriptorSet(
     leafAlbedoInfo.imageView = leafAlbedo;
     leafAlbedoInfo.sampler = leafSampler;
 
-    std::array<VkWriteDescriptorSet, 4> leafWrites{};
+    VkDescriptorBufferInfo leafInstanceInfo{};
+    leafInstanceInfo.buffer = leafInstanceBuffer;
+    leafInstanceInfo.offset = 0;
+    leafInstanceInfo.range = leafInstanceBufferSize > 0 ? leafInstanceBufferSize : VK_WHOLE_SIZE;
+
+    std::array<VkWriteDescriptorSet, 5> leafWrites{};
 
     leafWrites[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
     leafWrites[0].dstSet = dstSet;
@@ -487,6 +496,13 @@ void TreeRenderer::updateLeafDescriptorSet(
     leafWrites[3].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     leafWrites[3].descriptorCount = 1;
     leafWrites[3].pImageInfo = &leafAlbedoInfo;
+
+    leafWrites[4].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    leafWrites[4].dstSet = dstSet;
+    leafWrites[4].dstBinding = Bindings::TREE_GFX_LEAF_INSTANCES;
+    leafWrites[4].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    leafWrites[4].descriptorCount = 1;
+    leafWrites[4].pBufferInfo = &leafInstanceInfo;
 
     vkUpdateDescriptorSets(device_, static_cast<uint32_t>(leafWrites.size()), leafWrites.data(), 0, nullptr);
 }
@@ -548,11 +564,32 @@ void TreeRenderer::render(VkCommandBuffer cmd, uint32_t frameIndex, float time,
         }
     }
 
-    // Render leaves
+    // Render leaves with instancing
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, leafPipeline_.get());
+
+    // Get leaf draw info from tree system
+    const auto& leafDrawInfo = treeSystem.getLeafDrawInfo();
+    const Mesh& sharedQuad = treeSystem.getSharedLeafQuadMesh();
+
+    // Bind shared quad mesh once (used for all leaf instances)
+    if (sharedQuad.getIndexCount() > 0) {
+        VkBuffer vertexBuffers[] = {sharedQuad.getVertexBuffer()};
+        VkDeviceSize offsets[] = {0};
+        vkCmdBindVertexBuffers(cmd, 0, 1, vertexBuffers, offsets);
+        vkCmdBindIndexBuffer(cmd, sharedQuad.getIndexBuffer(), 0, VK_INDEX_TYPE_UINT32);
+    }
 
     std::string lastLeafType;
     for (const auto& renderable : leafRenderables) {
+        // Skip if no leaf instances for this tree
+        if (renderable.leafInstanceIndex < 0 ||
+            static_cast<size_t>(renderable.leafInstanceIndex) >= leafDrawInfo.size()) {
+            continue;
+        }
+
+        const auto& drawInfo = leafDrawInfo[renderable.leafInstanceIndex];
+        if (drawInfo.instanceCount == 0) continue;
+
         // Bind descriptor set for this leaf type if different from last
         if (renderable.leafType != lastLeafType) {
             VkDescriptorSet descriptorSet = getLeafDescriptorSet(frameIndex, renderable.leafType);
@@ -566,18 +603,14 @@ void TreeRenderer::render(VkCommandBuffer cmd, uint32_t frameIndex, float time,
         push.time = time;
         push.leafTint = glm::vec3(1.0f);
         push.alphaTest = renderable.alphaTestThreshold > 0.0f ? renderable.alphaTestThreshold : 0.5f;
+        push.firstInstance = static_cast<int32_t>(drawInfo.firstInstance);
 
         vkCmdPushConstants(cmd, leafPipelineLayout_.get(),
                            VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
                            0, sizeof(TreeLeafPushConstants), &push);
 
-        if (renderable.mesh) {
-            VkBuffer vertexBuffers[] = {renderable.mesh->getVertexBuffer()};
-            VkDeviceSize offsets[] = {0};
-            vkCmdBindVertexBuffers(cmd, 0, 1, vertexBuffers, offsets);
-            vkCmdBindIndexBuffer(cmd, renderable.mesh->getIndexBuffer(), 0, VK_INDEX_TYPE_UINT32);
-            vkCmdDrawIndexed(cmd, renderable.mesh->getIndexCount(), 1, 0, 0, 0);
-        }
+        // Draw instanced: 6 indices for one quad, N instances for this tree's leaves
+        vkCmdDrawIndexed(cmd, sharedQuad.getIndexCount(), drawInfo.instanceCount, 0, 0, 0);
     }
 }
 
@@ -618,12 +651,33 @@ void TreeRenderer::renderShadows(VkCommandBuffer cmd, uint32_t frameIndex,
         }
     }
 
-    // Render leaf shadows (with alpha test)
+    // Render leaf shadows with instancing (with alpha test)
     if (!leafRenderables.empty() && leafShadowPipeline_.get() != VK_NULL_HANDLE) {
         vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, leafShadowPipeline_.get());
 
+        // Get leaf draw info from tree system
+        const auto& leafDrawInfo = treeSystem.getLeafDrawInfo();
+        const Mesh& sharedQuad = treeSystem.getSharedLeafQuadMesh();
+
+        // Bind shared quad mesh once
+        if (sharedQuad.getIndexCount() > 0) {
+            VkBuffer vertexBuffers[] = {sharedQuad.getVertexBuffer()};
+            VkDeviceSize offsets[] = {0};
+            vkCmdBindVertexBuffers(cmd, 0, 1, vertexBuffers, offsets);
+            vkCmdBindIndexBuffer(cmd, sharedQuad.getIndexBuffer(), 0, VK_INDEX_TYPE_UINT32);
+        }
+
         std::string lastLeafType;
         for (const auto& renderable : leafRenderables) {
+            // Skip if no leaf instances for this tree
+            if (renderable.leafInstanceIndex < 0 ||
+                static_cast<size_t>(renderable.leafInstanceIndex) >= leafDrawInfo.size()) {
+                continue;
+            }
+
+            const auto& drawInfo = leafDrawInfo[renderable.leafInstanceIndex];
+            if (drawInfo.instanceCount == 0) continue;
+
             // Bind descriptor set for this leaf type (for alpha test texture)
             if (renderable.leafType != lastLeafType) {
                 VkDescriptorSet leafSet = getLeafDescriptorSet(frameIndex, renderable.leafType);
@@ -636,18 +690,14 @@ void TreeRenderer::renderShadows(VkCommandBuffer cmd, uint32_t frameIndex,
             push.model = renderable.transform;
             push.cascadeIndex = cascadeIndex;
             push.alphaTest = renderable.alphaTestThreshold > 0.0f ? renderable.alphaTestThreshold : 0.5f;
+            push.firstInstance = static_cast<int32_t>(drawInfo.firstInstance);
 
             vkCmdPushConstants(cmd, leafShadowPipelineLayout_.get(),
                                VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
                                0, sizeof(TreeLeafShadowPushConstants), &push);
 
-            if (renderable.mesh) {
-                VkBuffer vertexBuffers[] = {renderable.mesh->getVertexBuffer()};
-                VkDeviceSize offsets[] = {0};
-                vkCmdBindVertexBuffers(cmd, 0, 1, vertexBuffers, offsets);
-                vkCmdBindIndexBuffer(cmd, renderable.mesh->getIndexBuffer(), 0, VK_INDEX_TYPE_UINT32);
-                vkCmdDrawIndexed(cmd, renderable.mesh->getIndexCount(), 1, 0, 0, 0);
-            }
+            // Draw instanced
+            vkCmdDrawIndexed(cmd, sharedQuad.getIndexCount(), drawInfo.instanceCount, 0, 0, 0);
         }
     }
 }

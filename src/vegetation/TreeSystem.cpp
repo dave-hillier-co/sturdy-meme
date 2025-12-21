@@ -32,6 +32,12 @@ bool TreeSystem::initInternal(const InitInfo& info) {
         return false;
     }
 
+    // Create shared leaf quad mesh for instanced rendering
+    if (!createSharedLeafQuadMesh()) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "TreeSystem: Failed to create shared leaf quad mesh");
+        return false;
+    }
+
     // Load default options from preset if available
     std::string presetsPath = info.resourcePath + "/assets/trees/presets/";
     std::string oakPath = presetsPath + "oak_large.json";
@@ -67,10 +73,19 @@ void TreeSystem::cleanup() {
     }
     branchMeshes_.clear();
 
-    for (auto& mesh : leafMeshes_) {
-        mesh.destroy(storedAllocator_);
+    // Shared leaf quad mesh
+    sharedLeafQuadMesh_.destroy(storedAllocator_);
+
+    // Leaf instance SSBO
+    if (leafInstanceBuffer_ != VK_NULL_HANDLE) {
+        vmaDestroyBuffer(storedAllocator_, leafInstanceBuffer_, leafInstanceAllocation_);
+        leafInstanceBuffer_ = VK_NULL_HANDLE;
+        leafInstanceAllocation_ = VK_NULL_HANDLE;
+        leafInstanceBufferSize_ = 0;
     }
-    leafMeshes_.clear();
+    leafInstancesPerTree_.clear();
+    allLeafInstances_.clear();
+    leafDrawInfoPerTree_.clear();
 
     branchRenderables_.clear();
     leafRenderables_.clear();
@@ -205,7 +220,7 @@ std::vector<std::string> TreeSystem::getLeafTextureTypes() const {
     return types;
 }
 
-bool TreeSystem::generateTreeMesh(const TreeOptions& options, Mesh& branchMesh, Mesh& leafMesh) {
+bool TreeSystem::generateTreeMesh(const TreeOptions& options, Mesh& branchMesh, std::vector<LeafInstanceGPU>& leafInstances) {
     // Generate tree data
     TreeMeshData meshData = generator_.generate(options);
 
@@ -297,16 +312,11 @@ bool TreeSystem::generateTreeMesh(const TreeOptions& options, Mesh& branchMesh, 
         indexOffset += static_cast<uint32_t>(branch.sections.size()) * vertsPerRing;
     }
 
-    // Build leaf mesh vertices
-    std::vector<Vertex> leafVertices;
-    std::vector<uint32_t> leafIndices;
-
-    uint32_t leafVertexOffset = 0;
+    // Build leaf instance data (for instanced rendering)
+    // Each leaf generates 1 or 2 instances (for double billboard mode)
+    leafInstances.clear();
     for (const auto& leaf : meshData.leaves) {
-        float halfW = leaf.size * 0.5f;
-        float leafHeight = leaf.size;
-
-        // Calculate billboard mode based on options (for now, always double)
+        // Calculate billboard mode based on options
         int quadsPerLeaf = (options.leaves.billboard == BillboardMode::Double) ? 2 : 1;
 
         for (int quad = 0; quad < quadsPerLeaf; ++quad) {
@@ -314,49 +324,11 @@ bool TreeSystem::generateTreeMesh(const TreeOptions& options, Mesh& branchMesh, 
             glm::quat yQuat = glm::angleAxis(yRotation, glm::vec3(0.0f, 1.0f, 0.0f));
             glm::quat finalQuat = leaf.orientation * yQuat;
 
-            // Quad vertices (bottom to top)
-            glm::vec3 localVerts[4] = {
-                glm::vec3(-halfW, leafHeight, 0.0f),  // Top-left
-                glm::vec3(-halfW, 0.0f, 0.0f),         // Bottom-left
-                glm::vec3(halfW, 0.0f, 0.0f),          // Bottom-right
-                glm::vec3(halfW, leafHeight, 0.0f)    // Top-right
-            };
-
-            // UVs flipped vertically so leaf base (branch) is at bottom of quad
-            glm::vec2 uvs[4] = {
-                glm::vec2(0.0f, 0.0f),  // Top-left vertex gets bottom of texture
-                glm::vec2(0.0f, 1.0f),  // Bottom-left vertex gets top of texture
-                glm::vec2(1.0f, 1.0f),  // Bottom-right
-                glm::vec2(1.0f, 0.0f)   // Top-right
-            };
-
-            glm::vec3 normal = finalQuat * glm::vec3(0.0f, 0.0f, 1.0f);
-
-            for (int i = 0; i < 4; ++i) {
-                Vertex v{};
-                v.position = leaf.position + finalQuat * localVerts[i];
-                v.normal = normal;
-                v.texCoord = uvs[i];
-                v.tangent = glm::vec4(finalQuat * glm::vec3(1.0f, 0.0f, 0.0f), 1.0f);
-                // Wind animation data in vertex color:
-                // RGB = pivot point (leaf attachment) for skeletal rotation
-                // A = 0.98 (leaves are highest level, maximum sway - not 1.0 to avoid default color detection)
-                v.color = glm::vec4(leaf.position, 0.98f);
-
-                leafVertices.push_back(v);
-            }
-
-            // Indices - CCW winding when viewed from positive Z (where normal points)
-            uint32_t base = leafVertexOffset + quad * 4;
-            leafIndices.push_back(base + 0);
-            leafIndices.push_back(base + 2);
-            leafIndices.push_back(base + 1);
-            leafIndices.push_back(base + 0);
-            leafIndices.push_back(base + 3);
-            leafIndices.push_back(base + 2);
+            LeafInstanceGPU instance;
+            instance.positionAndSize = glm::vec4(leaf.position, leaf.size);
+            instance.orientation = glm::vec4(finalQuat.x, finalQuat.y, finalQuat.z, finalQuat.w);
+            leafInstances.push_back(instance);
         }
-
-        leafVertexOffset += quadsPerLeaf * 4;
     }
 
     // Create GPU meshes
@@ -368,18 +340,108 @@ bool TreeSystem::generateTreeMesh(const TreeOptions& options, Mesh& branchMesh, 
         }
     }
 
-    if (!leafVertices.empty()) {
-        leafMesh.setCustomGeometry(leafVertices, leafIndices);
-        if (!leafMesh.upload(storedAllocator_, storedDevice_, storedCommandPool_, storedQueue_)) {
-            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to upload leaf mesh");
-            return false;
-        }
+    SDL_Log("TreeSystem: Created branch mesh - %zu verts, %zu indices; %zu leaf instances",
+            branchVertices.size(), branchIndices.size(), leafInstances.size());
+
+    return true;
+}
+
+bool TreeSystem::createSharedLeafQuadMesh() {
+    // Create a single quad mesh (4 vertices, 6 indices) that will be instanced for all leaves
+    // The vertex positions are in local space: [-0.5, 0.5] x [0, 1] x [0, 0]
+    // The shader will transform each instance using the SSBO data
+    std::vector<Vertex> vertices(4);
+    std::vector<uint32_t> indices = {0, 2, 1, 0, 3, 2};  // CCW winding
+
+    // Vertex positions match LEAF_QUAD_OFFSETS in tree_leaf_instance.glsl
+    glm::vec3 positions[4] = {
+        glm::vec3(-0.5f, 1.0f, 0.0f),   // Top-left
+        glm::vec3(-0.5f, 0.0f, 0.0f),   // Bottom-left
+        glm::vec3( 0.5f, 0.0f, 0.0f),   // Bottom-right
+        glm::vec3( 0.5f, 1.0f, 0.0f)    // Top-right
+    };
+
+    // UVs match LEAF_QUAD_UVS in tree_leaf_instance.glsl
+    glm::vec2 uvs[4] = {
+        glm::vec2(0.0f, 0.0f),  // Top-left gets bottom of texture
+        glm::vec2(0.0f, 1.0f),  // Bottom-left gets top of texture
+        glm::vec2(1.0f, 1.0f),  // Bottom-right
+        glm::vec2(1.0f, 0.0f)   // Top-right
+    };
+
+    for (int i = 0; i < 4; ++i) {
+        vertices[i].position = positions[i];
+        vertices[i].normal = glm::vec3(0.0f, 0.0f, 1.0f);  // Default normal, will be computed in shader
+        vertices[i].texCoord = uvs[i];
+        vertices[i].tangent = glm::vec4(1.0f, 0.0f, 0.0f, 1.0f);  // Default tangent
+        vertices[i].color = glm::vec4(1.0f);  // Not used for instanced leaves
     }
 
-    SDL_Log("TreeSystem: Created meshes - branches: %zu verts, %zu indices; leaves: %zu verts, %zu indices",
-            branchVertices.size(), branchIndices.size(),
-            leafVertices.size(), leafIndices.size());
+    sharedLeafQuadMesh_.setCustomGeometry(vertices, indices);
+    if (!sharedLeafQuadMesh_.upload(storedAllocator_, storedDevice_, storedCommandPool_, storedQueue_)) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to upload shared leaf quad mesh");
+        return false;
+    }
 
+    SDL_Log("TreeSystem: Created shared leaf quad mesh (4 vertices, 6 indices)");
+    return true;
+}
+
+bool TreeSystem::uploadLeafInstanceBuffer() {
+    // Destroy old buffer if it exists
+    if (leafInstanceBuffer_ != VK_NULL_HANDLE) {
+        vmaDestroyBuffer(storedAllocator_, leafInstanceBuffer_, leafInstanceAllocation_);
+        leafInstanceBuffer_ = VK_NULL_HANDLE;
+        leafInstanceAllocation_ = VK_NULL_HANDLE;
+    }
+
+    // Flatten all per-tree leaf instances into a single array and compute draw info
+    allLeafInstances_.clear();
+    leafDrawInfoPerTree_.clear();
+
+    uint32_t currentOffset = 0;
+    for (size_t treeIdx = 0; treeIdx < leafInstancesPerTree_.size(); ++treeIdx) {
+        const auto& treeLeaves = leafInstancesPerTree_[treeIdx];
+
+        LeafDrawInfo drawInfo;
+        drawInfo.firstInstance = currentOffset;
+        drawInfo.instanceCount = static_cast<uint32_t>(treeLeaves.size());
+        leafDrawInfoPerTree_.push_back(drawInfo);
+
+        allLeafInstances_.insert(allLeafInstances_.end(), treeLeaves.begin(), treeLeaves.end());
+        currentOffset += drawInfo.instanceCount;
+    }
+
+    if (allLeafInstances_.empty()) {
+        leafInstanceBufferSize_ = 0;
+        return true;  // No leaves to upload
+    }
+
+    // Create storage buffer for leaf instances
+    leafInstanceBufferSize_ = sizeof(LeafInstanceGPU) * allLeafInstances_.size();
+
+    VkBufferCreateInfo bufferInfo{};
+    bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+    bufferInfo.size = leafInstanceBufferSize_;
+    bufferInfo.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+    bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+    VmaAllocationCreateInfo allocInfo{};
+    allocInfo.usage = VMA_MEMORY_USAGE_AUTO;
+    allocInfo.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT;
+
+    VmaAllocationInfo allocationInfo{};
+    if (vmaCreateBuffer(storedAllocator_, &bufferInfo, &allocInfo,
+                        &leafInstanceBuffer_, &leafInstanceAllocation_, &allocationInfo) != VK_SUCCESS) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create leaf instance SSBO");
+        return false;
+    }
+
+    // Copy data to the mapped buffer
+    memcpy(allocationInfo.pMappedData, allLeafInstances_.data(), leafInstanceBufferSize_);
+
+    SDL_Log("TreeSystem: Uploaded %zu leaf instances to SSBO (%zu bytes)",
+            allLeafInstances_.size(), static_cast<size_t>(leafInstanceBufferSize_));
     return true;
 }
 
@@ -387,7 +449,8 @@ void TreeSystem::createSceneObjects() {
     branchRenderables_.clear();
     leafRenderables_.clear();
 
-    for (const auto& instance : treeInstances_) {
+    for (size_t treeIdx = 0; treeIdx < treeInstances_.size(); ++treeIdx) {
+        const auto& instance = treeInstances_[treeIdx];
         if (instance.meshIndex >= branchMeshes_.size()) continue;
         if (instance.meshIndex >= treeOptions_.size()) continue;
 
@@ -417,22 +480,23 @@ void TreeSystem::createSceneObjects() {
             branchRenderables_.push_back(branchRenderable);
         }
 
-        // Leaf renderable
-        if (instance.meshIndex < leafMeshes_.size()) {
-            Mesh* leafMesh = &leafMeshes_[instance.meshIndex];
-            if (leafMesh->getIndexCount() > 0) {
-                Renderable leafRenderable = RenderableBuilder()
-                    .withMesh(leafMesh)
-                    .withTexture(leafTex)
-                    .withTransform(transform)
-                    .withRoughness(0.8f)
-                    .withMetallic(0.0f)
-                    .withAlphaTest(opts.leaves.alphaTest)
-                    .withLeafType(opts.leaves.type)
-                    .build();
+        // Leaf renderable - uses shared quad mesh with instancing
+        // The mesh index in the renderable is used to look up leaf draw info
+        if (instance.meshIndex < leafDrawInfoPerTree_.size() &&
+            leafDrawInfoPerTree_[instance.meshIndex].instanceCount > 0) {
+            Renderable leafRenderable = RenderableBuilder()
+                .withMesh(const_cast<Mesh*>(&sharedLeafQuadMesh_))  // Shared quad mesh
+                .withTexture(leafTex)
+                .withTransform(transform)
+                .withRoughness(0.8f)
+                .withMetallic(0.0f)
+                .withAlphaTest(opts.leaves.alphaTest)
+                .withLeafType(opts.leaves.type)
+                .build();
 
-                leafRenderables_.push_back(leafRenderable);
-            }
+            // Store the mesh index so the renderer can look up leaf draw info
+            leafRenderable.leafInstanceIndex = static_cast<int>(instance.meshIndex);
+            leafRenderables_.push_back(leafRenderable);
         }
     }
 }
@@ -442,16 +506,17 @@ void TreeSystem::rebuildSceneObjects() {
 }
 
 uint32_t TreeSystem::addTree(const glm::vec3& position, float rotation, float scale, const TreeOptions& options) {
-    // Generate mesh for this tree
-    Mesh branchMesh, leafMesh;
-    if (!generateTreeMesh(options, branchMesh, leafMesh)) {
+    // Generate mesh and leaf instances for this tree
+    Mesh branchMesh;
+    std::vector<LeafInstanceGPU> leafInstances;
+    if (!generateTreeMesh(options, branchMesh, leafInstances)) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "TreeSystem: Failed to generate tree mesh");
         return UINT32_MAX;
     }
 
     uint32_t meshIndex = static_cast<uint32_t>(branchMeshes_.size());
     branchMeshes_.push_back(std::move(branchMesh));
-    leafMeshes_.push_back(std::move(leafMesh));
+    leafInstancesPerTree_.push_back(std::move(leafInstances));
     treeOptions_.push_back(options);
 
     TreeInstanceData instance;
@@ -463,6 +528,11 @@ uint32_t TreeSystem::addTree(const glm::vec3& position, float rotation, float sc
 
     uint32_t treeIndex = static_cast<uint32_t>(treeInstances_.size());
     treeInstances_.push_back(instance);
+
+    // Upload leaf instances to GPU SSBO
+    if (!uploadLeafInstanceBuffer()) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "TreeSystem: Failed to upload leaf instance buffer");
+    }
 
     rebuildSceneObjects();
 
@@ -567,24 +637,25 @@ void TreeSystem::regenerateTree(uint32_t treeIndex) {
     uint32_t meshIndex = treeInstances_[treeIndex].meshIndex;
     if (meshIndex >= treeOptions_.size()) return;
 
-    // Destroy old meshes
+    // Destroy old branch mesh
     if (meshIndex < branchMeshes_.size()) {
         branchMeshes_[meshIndex].destroy(storedAllocator_);
     }
-    if (meshIndex < leafMeshes_.size()) {
-        leafMeshes_[meshIndex].destroy(storedAllocator_);
-    }
 
-    // Generate new meshes
-    Mesh branchMesh, leafMesh;
-    if (generateTreeMesh(treeOptions_[meshIndex], branchMesh, leafMesh)) {
+    // Generate new branch mesh and leaf instances
+    Mesh branchMesh;
+    std::vector<LeafInstanceGPU> leafInstances;
+    if (generateTreeMesh(treeOptions_[meshIndex], branchMesh, leafInstances)) {
         if (meshIndex < branchMeshes_.size()) {
             branchMeshes_[meshIndex] = std::move(branchMesh);
         }
-        if (meshIndex < leafMeshes_.size()) {
-            leafMeshes_[meshIndex] = std::move(leafMesh);
+        if (meshIndex < leafInstancesPerTree_.size()) {
+            leafInstancesPerTree_[meshIndex] = std::move(leafInstances);
         }
     }
+
+    // Re-upload leaf instance buffer
+    uploadLeafInstanceBuffer();
 
     rebuildSceneObjects();
 }

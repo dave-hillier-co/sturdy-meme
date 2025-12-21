@@ -30,6 +30,7 @@ struct Renderable {
     float alphaTestThreshold = 0.0f;  // Alpha test threshold (0 = disabled, >0 = discard if alpha < threshold)
     std::string barkType = "oak";  // Bark texture type for trees (oak, pine, birch, willow)
     std::string leafType = "oak";  // Leaf texture type for trees (oak, ash, aspen, pine)
+    int leafInstanceIndex = -1;  // Index into TreeSystem::leafDrawInfoPerTree_ for instanced leaf rendering
 
 private:
     friend class RenderableBuilder;

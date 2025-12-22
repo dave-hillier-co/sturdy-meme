@@ -1,0 +1,92 @@
+#version 450
+
+#extension GL_GOOGLE_include_directive : require
+
+#include "bindings.glsl"
+#include "instancing_common.glsl"
+#include "tree_leaf_instance.glsl"
+
+// Workgroup size: 256 threads per workgroup
+layout(local_size_x = 256, local_size_y = 1, local_size_z = 1) in;
+
+// Input: all leaf instances from TreeSystem
+layout(std430, binding = BINDING_TREE_LEAF_CULL_INPUT) readonly buffer InputBuffer {
+    LeafInstance inputInstances[];
+};
+
+// Output: visible leaf instances after culling
+layout(std430, binding = BINDING_TREE_LEAF_CULL_OUTPUT) writeonly buffer OutputBuffer {
+    LeafInstance outputInstances[];
+};
+
+// Indirect draw commands for instanced rendering (one per tree)
+// Uses DrawIndexedIndirectCommand for vkCmdDrawIndexedIndirect
+layout(std430, binding = BINDING_TREE_LEAF_CULL_INDIRECT) buffer IndirectBuffer {
+    DrawIndexedIndirectCommand drawCmds[];
+};
+
+// Culling uniforms
+layout(binding = BINDING_TREE_LEAF_CULL_UNIFORMS) uniform TreeLeafCullUniforms {
+    vec4 cameraPosition;          // xyz = camera pos, w = unused
+    vec4 frustumPlanes[6];        // Frustum planes for culling
+    mat4 treeModel;               // Current tree's model matrix
+    float maxDrawDistance;        // Maximum leaf draw distance
+    float lodTransitionStart;     // LOD transition start distance
+    float lodTransitionEnd;       // LOD transition end distance
+    float maxLodDropRate;         // Maximum LOD drop rate (0.0-1.0)
+    uint inputFirstInstance;      // Offset into inputInstances for this tree
+    uint inputInstanceCount;      // Number of input instances for this tree
+    uint outputBaseOffset;        // Base offset in output buffer for this tree
+    uint treeIndex;               // Index of this tree (for indirect command array)
+} uniforms;
+
+void main() {
+    uint localIdx = gl_GlobalInvocationID.x;
+    uint treeIdx = uniforms.treeIndex;
+
+    // Initialize indirect draw command for this tree (only first thread)
+    if (localIdx == 0) {
+        drawCmds[treeIdx].indexCount = 6;  // Quad: 6 indices
+        // instanceCount will be atomically incremented per visible leaf
+    }
+
+    // Check if this thread has work to do
+    if (localIdx >= uniforms.inputInstanceCount) {
+        return;
+    }
+
+    // Get input instance
+    uint inputIdx = uniforms.inputFirstInstance + localIdx;
+    LeafInstance leaf = inputInstances[inputIdx];
+
+    // Transform leaf position to world space
+    vec3 leafLocalPos = leaf.positionAndSize.xyz;
+    vec4 worldPos = uniforms.treeModel * vec4(leafLocalPos, 1.0);
+
+    // Distance culling
+    float distToCamera = getDistanceToCamera(worldPos.xyz, uniforms.cameraPosition.xyz);
+    if (distToCamera > uniforms.maxDrawDistance) {
+        return;
+    }
+
+    // Frustum culling with margin for leaf size
+    float leafSize = leaf.positionAndSize.w;
+    float margin = leafSize * 2.0;  // Extra margin for leaf billboard rotation
+    if (!isInFrustum(uniforms.frustumPlanes, worldPos.xyz, margin)) {
+        return;
+    }
+
+    // LOD blade dropping - use position-based hash for consistent results
+    float instanceHash = hash2D(leafLocalPos.xz);
+    if (lodCull(distToCamera, uniforms.lodTransitionStart, uniforms.lodTransitionEnd,
+                uniforms.maxLodDropRate, instanceHash)) {
+        return;
+    }
+
+    // This leaf is visible - atomically get output slot for this tree
+    uint outputSlot = atomicAdd(drawCmds[treeIdx].instanceCount, 1);
+
+    // Write to output buffer at the allocated slot
+    // Output position remains in tree-local space (shader applies model matrix)
+    outputInstances[uniforms.outputBaseOffset + outputSlot] = leaf;
+}

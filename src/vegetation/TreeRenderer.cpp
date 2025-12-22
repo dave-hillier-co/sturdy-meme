@@ -15,7 +15,21 @@ std::unique_ptr<TreeRenderer> TreeRenderer::create(const InitInfo& info) {
 }
 
 TreeRenderer::~TreeRenderer() {
-    // RAII handles cleanup
+    // Clean up culling buffers (not managed by RAII)
+    for (uint32_t i = 0; i < CULL_BUFFER_SET_COUNT; ++i) {
+        if (cullOutputBuffers_[i] != VK_NULL_HANDLE) {
+            vmaDestroyBuffer(allocator_, cullOutputBuffers_[i], cullOutputAllocations_[i]);
+        }
+        if (cullIndirectBuffers_[i] != VK_NULL_HANDLE) {
+            vmaDestroyBuffer(allocator_, cullIndirectBuffers_[i], cullIndirectAllocations_[i]);
+        }
+    }
+    // Clean up per-frame uniform buffers
+    for (size_t i = 0; i < cullUniformBuffers_.buffers.size(); ++i) {
+        if (cullUniformBuffers_.buffers[i] != VK_NULL_HANDLE) {
+            vmaDestroyBuffer(allocator_, cullUniformBuffers_.buffers[i], cullUniformBuffers_.allocations[i]);
+        }
+    }
 }
 
 bool TreeRenderer::initInternal(const InitInfo& info) {
@@ -25,6 +39,7 @@ bool TreeRenderer::initInternal(const InitInfo& info) {
     descriptorPool_ = info.descriptorPool;
     resourcePath_ = info.resourcePath;
     extent_ = info.extent;
+    maxFramesInFlight_ = info.maxFramesInFlight;
 
     if (!createDescriptorSetLayout()) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "TreeRenderer: Failed to create descriptor set layouts");
@@ -39,6 +54,11 @@ bool TreeRenderer::initInternal(const InitInfo& info) {
     if (!allocateDescriptorSets(info.maxFramesInFlight)) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "TreeRenderer: Failed to allocate descriptor sets");
         return false;
+    }
+
+    // Create culling pipeline (optional - gracefully degrade if fails)
+    if (!createCullPipeline()) {
+        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "TreeRenderer: Culling pipeline not available, using direct rendering");
     }
 
     SDL_Log("TreeRenderer initialized successfully");
@@ -304,6 +324,146 @@ bool TreeRenderer::allocateDescriptorSets(uint32_t maxFramesInFlight) {
     return true;
 }
 
+bool TreeRenderer::createCullPipeline() {
+    // Create culling descriptor set layout
+    std::vector<VkDescriptorSetLayoutBinding> cullBindings = {
+        {Bindings::TREE_LEAF_CULL_INPUT, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr},
+        {Bindings::TREE_LEAF_CULL_OUTPUT, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr},
+        {Bindings::TREE_LEAF_CULL_INDIRECT, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr},
+        {Bindings::TREE_LEAF_CULL_UNIFORMS, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr},
+    };
+
+    VkDescriptorSetLayoutCreateInfo cullLayoutInfo{};
+    cullLayoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+    cullLayoutInfo.bindingCount = static_cast<uint32_t>(cullBindings.size());
+    cullLayoutInfo.pBindings = cullBindings.data();
+
+    VkDescriptorSetLayout rawCullLayout;
+    if (vkCreateDescriptorSetLayout(device_, &cullLayoutInfo, nullptr, &rawCullLayout) != VK_SUCCESS) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "TreeRenderer: Failed to create cull descriptor set layout");
+        return false;
+    }
+    cullDescriptorSetLayout_ = ManagedDescriptorSetLayout::fromRaw(device_, rawCullLayout);
+
+    // Create culling pipeline layout
+    VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
+    pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+    pipelineLayoutInfo.setLayoutCount = 1;
+    VkDescriptorSetLayout cullSetLayout = cullDescriptorSetLayout_.get();
+    pipelineLayoutInfo.pSetLayouts = &cullSetLayout;
+
+    VkPipelineLayout rawCullPipelineLayout;
+    if (vkCreatePipelineLayout(device_, &pipelineLayoutInfo, nullptr, &rawCullPipelineLayout) != VK_SUCCESS) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "TreeRenderer: Failed to create cull pipeline layout");
+        return false;
+    }
+    cullPipelineLayout_ = ManagedPipelineLayout::fromRaw(device_, rawCullPipelineLayout);
+
+    // Load compute shader
+    std::string shaderPath = resourcePath_ + "/shaders/tree_leaf_cull.comp.spv";
+    auto shaderModuleOpt = ShaderLoader::loadShaderModule(device_, shaderPath);
+    if (!shaderModuleOpt.has_value()) {
+        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "TreeRenderer: Cull shader not found: %s", shaderPath.c_str());
+        return false;
+    }
+    VkShaderModule computeShaderModule = shaderModuleOpt.value();
+
+    VkPipelineShaderStageCreateInfo shaderStageInfo{};
+    shaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    shaderStageInfo.stage = VK_SHADER_STAGE_COMPUTE_BIT;
+    shaderStageInfo.module = computeShaderModule;
+    shaderStageInfo.pName = "main";
+
+    VkComputePipelineCreateInfo pipelineInfo{};
+    pipelineInfo.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
+    pipelineInfo.stage = shaderStageInfo;
+    pipelineInfo.layout = cullPipelineLayout_.get();
+
+    VkPipeline rawCullPipeline;
+    VkResult result = vkCreateComputePipelines(device_, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &rawCullPipeline);
+    vkDestroyShaderModule(device_, computeShaderModule, nullptr);
+
+    if (result != VK_SUCCESS) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "TreeRenderer: Failed to create cull compute pipeline");
+        return false;
+    }
+    cullPipeline_ = ManagedPipeline::fromRaw(device_, rawCullPipeline);
+
+    SDL_Log("TreeRenderer: Created leaf culling compute pipeline");
+    return true;
+}
+
+bool TreeRenderer::createCullBuffers(uint32_t maxLeafInstances, uint32_t numTrees) {
+    // Store number of trees for indirect buffer sizing
+    numTreesForIndirect_ = numTrees;
+
+    // Calculate buffer sizes
+    cullOutputBufferSize_ = maxLeafInstances * sizeof(LeafInstanceGPU);
+
+    VkBufferCreateInfo bufferInfo{};
+    bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+    bufferInfo.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
+    bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+    VmaAllocationCreateInfo allocInfo{};
+    allocInfo.usage = VMA_MEMORY_USAGE_GPU_ONLY;
+
+    // Create double-buffered output buffers
+    for (uint32_t i = 0; i < CULL_BUFFER_SET_COUNT; ++i) {
+        bufferInfo.size = cullOutputBufferSize_;
+        if (vmaCreateBuffer(allocator_, &bufferInfo, &allocInfo,
+                            &cullOutputBuffers_[i], &cullOutputAllocations_[i], nullptr) != VK_SUCCESS) {
+            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "TreeRenderer: Failed to create cull output buffer %u", i);
+            return false;
+        }
+    }
+
+    // Create indirect draw buffers (one command per tree)
+    VkBufferCreateInfo indirectInfo{};
+    indirectInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+    indirectInfo.size = numTrees * sizeof(VkDrawIndexedIndirectCommand);
+    indirectInfo.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT |
+                         VK_BUFFER_USAGE_TRANSFER_DST_BIT;  // For vkCmdUpdateBuffer
+    indirectInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+    for (uint32_t i = 0; i < CULL_BUFFER_SET_COUNT; ++i) {
+        if (vmaCreateBuffer(allocator_, &indirectInfo, &allocInfo,
+                            &cullIndirectBuffers_[i], &cullIndirectAllocations_[i], nullptr) != VK_SUCCESS) {
+            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "TreeRenderer: Failed to create cull indirect buffer %u", i);
+            return false;
+        }
+    }
+
+    // Create per-frame uniform buffers using builder pattern
+    if (!BufferUtils::PerFrameBufferBuilder()
+            .setAllocator(allocator_)
+            .setFrameCount(maxFramesInFlight_)
+            .setSize(sizeof(TreeLeafCullUniforms))
+            .setUsage(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT)
+            .build(cullUniformBuffers_)) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "TreeRenderer: Failed to create cull uniform buffers");
+        return false;
+    }
+
+    // Allocate descriptor sets for culling compute shader
+    cullDescriptorSets_ = descriptorPool_->allocate(cullDescriptorSetLayout_.get(), maxFramesInFlight_);
+    if (cullDescriptorSets_.empty()) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "TreeRenderer: Failed to allocate cull descriptor sets");
+        return false;
+    }
+
+    // Initialize per-frame maps for culled leaf descriptor sets (allocated lazily per-type)
+    culledLeafDescriptorSets_.resize(maxFramesInFlight_);
+
+    // Initialize per-tree output offsets
+    perTreeOutputOffsets_.resize(numTrees, 0);
+
+    SDL_Log("TreeRenderer: Created leaf culling buffers (max %u instances, %u trees, %.2f MB)",
+            maxLeafInstances, numTrees,
+            static_cast<float>(cullOutputBufferSize_ * CULL_BUFFER_SET_COUNT) / (1024.0f * 1024.0f));
+    return true;
+}
+
 void TreeRenderer::updateBarkDescriptorSet(
     uint32_t frameIndex,
     const std::string& barkType,
@@ -507,6 +667,107 @@ void TreeRenderer::updateLeafDescriptorSet(
     vkUpdateDescriptorSets(device_, static_cast<uint32_t>(leafWrites.size()), leafWrites.data(), 0, nullptr);
 }
 
+void TreeRenderer::updateCulledLeafDescriptorSet(
+    uint32_t frameIndex,
+    const std::string& leafType,
+    VkBuffer uniformBuffer,
+    VkBuffer windBuffer,
+    VkImageView shadowMapView,
+    VkSampler shadowSampler,
+    VkImageView leafAlbedo,
+    VkSampler leafSampler) {
+
+    // Skip if cull output buffer not created yet
+    if (cullOutputBuffers_[currentCullBufferSet_] == VK_NULL_HANDLE) {
+        return;
+    }
+
+    // Ensure per-frame maps exist
+    if (culledLeafDescriptorSets_.size() <= frameIndex) {
+        culledLeafDescriptorSets_.resize(maxFramesInFlight_);
+    }
+
+    // Allocate descriptor set for this type if not already allocated
+    if (culledLeafDescriptorSets_[frameIndex].find(leafType) == culledLeafDescriptorSets_[frameIndex].end()) {
+        auto sets = descriptorPool_->allocate(leafDescriptorSetLayout_.get(), 1);
+        if (sets.empty()) {
+            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to allocate culled leaf descriptor set for type: %s", leafType.c_str());
+            return;
+        }
+        culledLeafDescriptorSets_[frameIndex][leafType] = sets[0];
+    }
+
+    VkDescriptorSet dstSet = culledLeafDescriptorSets_[frameIndex][leafType];
+
+    VkDescriptorBufferInfo uboInfo{};
+    uboInfo.buffer = uniformBuffer;
+    uboInfo.offset = 0;
+    uboInfo.range = VK_WHOLE_SIZE;
+
+    VkDescriptorBufferInfo windInfo{};
+    windInfo.buffer = windBuffer;
+    windInfo.offset = 0;
+    windInfo.range = VK_WHOLE_SIZE;
+
+    VkDescriptorImageInfo shadowInfo{};
+    shadowInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    shadowInfo.imageView = shadowMapView;
+    shadowInfo.sampler = shadowSampler;
+
+    VkDescriptorImageInfo leafAlbedoInfo{};
+    leafAlbedoInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    leafAlbedoInfo.imageView = leafAlbedo;
+    leafAlbedoInfo.sampler = leafSampler;
+
+    // Use culled output buffer for leaf instances
+    // IMPORTANT: Must update SSBO binding every frame because we double-buffer
+    VkDescriptorBufferInfo leafInstanceInfo{};
+    leafInstanceInfo.buffer = cullOutputBuffers_[currentCullBufferSet_];
+    leafInstanceInfo.offset = 0;
+    leafInstanceInfo.range = VK_WHOLE_SIZE;
+
+    std::array<VkWriteDescriptorSet, 5> writes{};
+
+    writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    writes[0].dstSet = dstSet;
+    writes[0].dstBinding = Bindings::TREE_GFX_UBO;
+    writes[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    writes[0].descriptorCount = 1;
+    writes[0].pBufferInfo = &uboInfo;
+
+    writes[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    writes[1].dstSet = dstSet;
+    writes[1].dstBinding = Bindings::TREE_GFX_SHADOW_MAP;
+    writes[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    writes[1].descriptorCount = 1;
+    writes[1].pImageInfo = &shadowInfo;
+
+    writes[2].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    writes[2].dstSet = dstSet;
+    writes[2].dstBinding = Bindings::TREE_GFX_WIND_UBO;
+    writes[2].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    writes[2].descriptorCount = 1;
+    writes[2].pBufferInfo = &windInfo;
+
+    writes[3].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    writes[3].dstSet = dstSet;
+    writes[3].dstBinding = Bindings::TREE_GFX_LEAF_ALBEDO;
+    writes[3].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    writes[3].descriptorCount = 1;
+    writes[3].pImageInfo = &leafAlbedoInfo;
+
+    writes[4].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    writes[4].dstSet = dstSet;
+    writes[4].dstBinding = Bindings::TREE_GFX_LEAF_INSTANCES;
+    writes[4].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    writes[4].descriptorCount = 1;
+    writes[4].pBufferInfo = &leafInstanceInfo;
+
+    // Update all bindings every frame (not just on first allocation)
+    // This ensures the double-buffered SSBO binding stays in sync
+    vkUpdateDescriptorSets(device_, static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
+}
+
 VkDescriptorSet TreeRenderer::getBranchDescriptorSet(uint32_t frameIndex, const std::string& barkType) const {
     auto frameIt = branchDescriptorSets_[frameIndex].find(barkType);
     if (frameIt != branchDescriptorSets_[frameIndex].end()) {
@@ -523,6 +784,242 @@ VkDescriptorSet TreeRenderer::getLeafDescriptorSet(uint32_t frameIndex, const st
     }
     // Fall back to default descriptor set
     return defaultLeafDescriptorSets_[frameIndex];
+}
+
+VkDescriptorSet TreeRenderer::getCulledLeafDescriptorSet(uint32_t frameIndex, const std::string& leafType) const {
+    if (frameIndex < culledLeafDescriptorSets_.size()) {
+        auto frameIt = culledLeafDescriptorSets_[frameIndex].find(leafType);
+        if (frameIt != culledLeafDescriptorSets_[frameIndex].end()) {
+            return frameIt->second;
+        }
+    }
+    // Fall back to regular leaf descriptor set if culled version not found
+    return getLeafDescriptorSet(frameIndex, leafType);
+}
+
+void TreeRenderer::recordLeafCulling(VkCommandBuffer cmd, uint32_t frameIndex,
+                                      const TreeSystem& treeSystem,
+                                      const glm::vec3& cameraPos,
+                                      const glm::vec4* frustumPlanes) {
+    // Skip if culling not enabled or no leaves
+    if (!isLeafCullingEnabled()) {
+        return;
+    }
+
+    const auto& leafRenderables = treeSystem.getLeafRenderables();
+    const auto& leafDrawInfo = treeSystem.getLeafDrawInfo();
+
+    if (leafRenderables.empty() || leafDrawInfo.empty()) {
+        return;
+    }
+
+    // Count valid trees for indirect buffer sizing
+    uint32_t numTrees = 0;
+    uint32_t totalLeafInstances = 0;
+    for (const auto& renderable : leafRenderables) {
+        if (renderable.leafInstanceIndex >= 0 &&
+            static_cast<size_t>(renderable.leafInstanceIndex) < leafDrawInfo.size()) {
+            const auto& drawInfo = leafDrawInfo[renderable.leafInstanceIndex];
+            if (drawInfo.instanceCount > 0) {
+                numTrees++;
+                totalLeafInstances += drawInfo.instanceCount;
+            }
+        }
+    }
+    if (numTrees == 0 || totalLeafInstances == 0) return;
+
+    // Ensure culling buffers are allocated (lazy initialization based on actual leaf count)
+    if (cullOutputBuffers_[0] == VK_NULL_HANDLE) {
+        if (!createCullBuffers(totalLeafInstances, numTrees)) {
+            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "TreeRenderer: Failed to create cull buffers");
+            return;
+        }
+
+        // Update compute descriptor sets with buffer bindings
+        for (uint32_t f = 0; f < maxFramesInFlight_; ++f) {
+            VkDescriptorBufferInfo inputInfo{};
+            inputInfo.buffer = treeSystem.getLeafInstanceBuffer();
+            inputInfo.offset = 0;
+            inputInfo.range = VK_WHOLE_SIZE;
+
+            // Use current buffer set for output
+            VkDescriptorBufferInfo outputInfo{};
+            outputInfo.buffer = cullOutputBuffers_[currentCullBufferSet_];
+            outputInfo.offset = 0;
+            outputInfo.range = VK_WHOLE_SIZE;
+
+            VkDescriptorBufferInfo indirectInfo{};
+            indirectInfo.buffer = cullIndirectBuffers_[currentCullBufferSet_];
+            indirectInfo.offset = 0;
+            indirectInfo.range = VK_WHOLE_SIZE;  // Full buffer with all commands
+
+            VkDescriptorBufferInfo uniformInfo{};
+            uniformInfo.buffer = cullUniformBuffers_.buffers[f];
+            uniformInfo.offset = 0;
+            uniformInfo.range = sizeof(TreeLeafCullUniforms);
+
+            std::array<VkWriteDescriptorSet, 4> writes{};
+
+            writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+            writes[0].dstSet = cullDescriptorSets_[f];
+            writes[0].dstBinding = Bindings::TREE_LEAF_CULL_INPUT;
+            writes[0].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+            writes[0].descriptorCount = 1;
+            writes[0].pBufferInfo = &inputInfo;
+
+            writes[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+            writes[1].dstSet = cullDescriptorSets_[f];
+            writes[1].dstBinding = Bindings::TREE_LEAF_CULL_OUTPUT;
+            writes[1].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+            writes[1].descriptorCount = 1;
+            writes[1].pBufferInfo = &outputInfo;
+
+            writes[2].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+            writes[2].dstSet = cullDescriptorSets_[f];
+            writes[2].dstBinding = Bindings::TREE_LEAF_CULL_INDIRECT;
+            writes[2].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+            writes[2].descriptorCount = 1;
+            writes[2].pBufferInfo = &indirectInfo;
+
+            writes[3].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+            writes[3].dstSet = cullDescriptorSets_[f];
+            writes[3].dstBinding = Bindings::TREE_LEAF_CULL_UNIFORMS;
+            writes[3].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+            writes[3].descriptorCount = 1;
+            writes[3].pBufferInfo = &uniformInfo;
+
+            vkUpdateDescriptorSets(device_, static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
+        }
+        // Note: Culled leaf descriptor sets (per-type) are updated via updateCulledLeafDescriptorSet()
+    }
+
+    // Reset all per-tree indirect draw commands
+    std::vector<VkDrawIndexedIndirectCommand> resetCmds(numTreesForIndirect_);
+    for (auto& resetCmd : resetCmds) {
+        resetCmd.indexCount = 6;  // Quad indices
+        resetCmd.instanceCount = 0;  // Will be atomically incremented by compute shader
+        resetCmd.firstIndex = 0;
+        resetCmd.vertexOffset = 0;
+        resetCmd.firstInstance = 0;
+    }
+
+    vkCmdUpdateBuffer(cmd, cullIndirectBuffers_[currentCullBufferSet_],
+                      0, numTreesForIndirect_ * sizeof(VkDrawIndexedIndirectCommand), resetCmds.data());
+
+    // Memory barrier for buffer update
+    VkMemoryBarrier barrier{};
+    barrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
+    barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+    barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
+    vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                         0, 1, &barrier, 0, nullptr, 0, nullptr);
+
+    // Update compute descriptor sets to use current buffer set
+    // (These need to be updated each frame since we double-buffer)
+    {
+        VkDescriptorBufferInfo outputInfo{};
+        outputInfo.buffer = cullOutputBuffers_[currentCullBufferSet_];
+        outputInfo.offset = 0;
+        outputInfo.range = VK_WHOLE_SIZE;
+
+        VkDescriptorBufferInfo indirectInfo{};
+        indirectInfo.buffer = cullIndirectBuffers_[currentCullBufferSet_];
+        indirectInfo.offset = 0;
+        indirectInfo.range = VK_WHOLE_SIZE;
+
+        std::array<VkWriteDescriptorSet, 2> writes{};
+
+        writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        writes[0].dstSet = cullDescriptorSets_[frameIndex];
+        writes[0].dstBinding = Bindings::TREE_LEAF_CULL_OUTPUT;
+        writes[0].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        writes[0].descriptorCount = 1;
+        writes[0].pBufferInfo = &outputInfo;
+
+        writes[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        writes[1].dstSet = cullDescriptorSets_[frameIndex];
+        writes[1].dstBinding = Bindings::TREE_LEAF_CULL_INDIRECT;
+        writes[1].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        writes[1].descriptorCount = 1;
+        writes[1].pBufferInfo = &indirectInfo;
+
+        vkUpdateDescriptorSets(device_, static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
+    }
+
+    // Bind compute pipeline and descriptor set
+    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, cullPipeline_.get());
+    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, cullPipelineLayout_.get(),
+                            0, 1, &cullDescriptorSets_[frameIndex], 0, nullptr);
+
+    // Process each tree's leaves
+    uint32_t outputOffset = 0;
+    uint32_t treeIdx = 0;
+    for (const auto& renderable : leafRenderables) {
+        if (renderable.leafInstanceIndex < 0 ||
+            static_cast<size_t>(renderable.leafInstanceIndex) >= leafDrawInfo.size()) {
+            continue;
+        }
+
+        const auto& drawInfo = leafDrawInfo[renderable.leafInstanceIndex];
+        if (drawInfo.instanceCount == 0) continue;
+
+        // Store per-tree output offset for rendering
+        if (treeIdx < perTreeOutputOffsets_.size()) {
+            perTreeOutputOffsets_[treeIdx] = outputOffset;
+        }
+
+        // Update uniform buffer for this tree
+        TreeLeafCullUniforms uniforms{};
+        uniforms.cameraPosition = glm::vec4(cameraPos, 0.0f);
+        for (int i = 0; i < 6; ++i) {
+            uniforms.frustumPlanes[i] = frustumPlanes[i];
+        }
+        uniforms.treeModel = renderable.transform;
+        uniforms.maxDrawDistance = leafMaxDrawDistance_;
+        uniforms.lodTransitionStart = leafLodTransitionStart_;
+        uniforms.lodTransitionEnd = leafLodTransitionEnd_;
+        uniforms.maxLodDropRate = leafMaxLodDropRate_;
+        uniforms.inputFirstInstance = drawInfo.firstInstance;
+        uniforms.inputInstanceCount = drawInfo.instanceCount;
+        uniforms.outputBaseOffset = outputOffset;
+        uniforms.treeIndex = treeIdx;
+
+        // Copy uniforms to GPU buffer (embed in command buffer for correct per-tree values)
+        vkCmdUpdateBuffer(cmd, cullUniformBuffers_.buffers[frameIndex], 0,
+                          sizeof(TreeLeafCullUniforms), &uniforms);
+
+        // Barrier to ensure uniform buffer is ready before dispatch
+        VkMemoryBarrier uniformBarrier{};
+        uniformBarrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
+        uniformBarrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+        uniformBarrier.dstAccessMask = VK_ACCESS_UNIFORM_READ_BIT;
+        vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                             0, 1, &uniformBarrier, 0, nullptr, 0, nullptr);
+
+        // Dispatch compute shader
+        uint32_t workgroupCount = (drawInfo.instanceCount + 255) / 256;
+        vkCmdDispatch(cmd, workgroupCount, 1, 1);
+
+        // Barrier to ensure compute writes complete before next tree's dispatch
+        VkMemoryBarrier computeBarrier{};
+        computeBarrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
+        computeBarrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+        computeBarrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+        vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
+                             0, 1, &computeBarrier, 0, nullptr, 0, nullptr);
+
+        outputOffset += drawInfo.instanceCount;  // Reserve space for this tree's output
+        treeIdx++;
+    }
+
+    // Memory barrier for compute -> graphics
+    barrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+    barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_INDIRECT_COMMAND_READ_BIT;
+    vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                         VK_PIPELINE_STAGE_DRAW_INDIRECT_BIT | VK_PIPELINE_STAGE_VERTEX_SHADER_BIT,
+                         0, 1, &barrier, 0, nullptr, 0, nullptr);
+
+    // Note: Buffer set swap happens in render() after drawing
 }
 
 void TreeRenderer::render(VkCommandBuffer cmd, uint32_t frameIndex, float time,
@@ -579,38 +1076,98 @@ void TreeRenderer::render(VkCommandBuffer cmd, uint32_t frameIndex, float time,
         vkCmdBindIndexBuffer(cmd, sharedQuad.getIndexBuffer(), 0, VK_INDEX_TYPE_UINT32);
     }
 
-    std::string lastLeafType;
-    for (const auto& renderable : leafRenderables) {
-        // Skip if no leaf instances for this tree
-        if (renderable.leafInstanceIndex < 0 ||
-            static_cast<size_t>(renderable.leafInstanceIndex) >= leafDrawInfo.size()) {
-            continue;
+    // Check if we should use GPU culling with indirect draws
+    // Ensure culled descriptor sets are actually populated (not just resized)
+    bool hasCulledDescriptors = !culledLeafDescriptorSets_.empty() &&
+                                 frameIndex < culledLeafDescriptorSets_.size() &&
+                                 !culledLeafDescriptorSets_[frameIndex].empty();
+    bool useCulledPath = isLeafCullingEnabled() &&
+                         !perTreeOutputOffsets_.empty() &&
+                         hasCulledDescriptors &&
+                         cullIndirectBuffers_[currentCullBufferSet_] != VK_NULL_HANDLE;
+
+    if (useCulledPath) {
+        // GPU-culled indirect draw path
+        // Use per-type culled descriptor sets (with culled output buffer as SSBO)
+        std::string lastLeafType;
+        uint32_t treeIdx = 0;
+        for (const auto& renderable : leafRenderables) {
+            // Skip if no leaf instances for this tree
+            if (renderable.leafInstanceIndex < 0 ||
+                static_cast<size_t>(renderable.leafInstanceIndex) >= leafDrawInfo.size()) {
+                continue;
+            }
+
+            const auto& drawInfo = leafDrawInfo[renderable.leafInstanceIndex];
+            if (drawInfo.instanceCount == 0) continue;
+
+            // Ensure we have an offset for this tree
+            if (treeIdx >= perTreeOutputOffsets_.size()) break;
+
+            // Bind descriptor set for this leaf type if different from last
+            // Use per-type culled descriptor set which has the output buffer as SSBO
+            if (renderable.leafType != lastLeafType) {
+                VkDescriptorSet descriptorSet = getCulledLeafDescriptorSet(frameIndex, renderable.leafType);
+                vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, leafPipelineLayout_.get(),
+                                        0, 1, &descriptorSet, 0, nullptr);
+                lastLeafType = renderable.leafType;
+            }
+
+            TreeLeafPushConstants push{};
+            push.model = renderable.transform;
+            push.time = time;
+            push.leafTint = glm::vec3(1.0f);
+            push.alphaTest = renderable.alphaTestThreshold > 0.0f ? renderable.alphaTestThreshold : 0.5f;
+            push.firstInstance = static_cast<int32_t>(perTreeOutputOffsets_[treeIdx]);
+
+            vkCmdPushConstants(cmd, leafPipelineLayout_.get(),
+                               VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+                               0, sizeof(TreeLeafPushConstants), &push);
+
+            // Indirect draw from per-tree command
+            VkDeviceSize indirectOffset = treeIdx * sizeof(VkDrawIndexedIndirectCommand);
+            vkCmdDrawIndexedIndirect(cmd, cullIndirectBuffers_[currentCullBufferSet_],
+                                     indirectOffset, 1, sizeof(VkDrawIndexedIndirectCommand));
+            treeIdx++;
         }
 
-        const auto& drawInfo = leafDrawInfo[renderable.leafInstanceIndex];
-        if (drawInfo.instanceCount == 0) continue;
+        // Swap buffer sets for next frame (after all indirect draws complete)
+        currentCullBufferSet_ = (currentCullBufferSet_ + 1) % CULL_BUFFER_SET_COUNT;
+    } else {
+        // Direct draw path (fallback when culling not available)
+        std::string lastLeafType;
+        for (const auto& renderable : leafRenderables) {
+            // Skip if no leaf instances for this tree
+            if (renderable.leafInstanceIndex < 0 ||
+                static_cast<size_t>(renderable.leafInstanceIndex) >= leafDrawInfo.size()) {
+                continue;
+            }
 
-        // Bind descriptor set for this leaf type if different from last
-        if (renderable.leafType != lastLeafType) {
-            VkDescriptorSet descriptorSet = getLeafDescriptorSet(frameIndex, renderable.leafType);
-            vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, leafPipelineLayout_.get(),
-                                    0, 1, &descriptorSet, 0, nullptr);
-            lastLeafType = renderable.leafType;
+            const auto& drawInfo = leafDrawInfo[renderable.leafInstanceIndex];
+            if (drawInfo.instanceCount == 0) continue;
+
+            // Bind descriptor set for this leaf type if different from last
+            if (renderable.leafType != lastLeafType) {
+                VkDescriptorSet descriptorSet = getLeafDescriptorSet(frameIndex, renderable.leafType);
+                vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, leafPipelineLayout_.get(),
+                                        0, 1, &descriptorSet, 0, nullptr);
+                lastLeafType = renderable.leafType;
+            }
+
+            TreeLeafPushConstants push{};
+            push.model = renderable.transform;
+            push.time = time;
+            push.leafTint = glm::vec3(1.0f);
+            push.alphaTest = renderable.alphaTestThreshold > 0.0f ? renderable.alphaTestThreshold : 0.5f;
+            push.firstInstance = static_cast<int32_t>(drawInfo.firstInstance);
+
+            vkCmdPushConstants(cmd, leafPipelineLayout_.get(),
+                               VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+                               0, sizeof(TreeLeafPushConstants), &push);
+
+            // Draw instanced: 6 indices for one quad, N instances for this tree's leaves
+            vkCmdDrawIndexed(cmd, sharedQuad.getIndexCount(), drawInfo.instanceCount, 0, 0, 0);
         }
-
-        TreeLeafPushConstants push{};
-        push.model = renderable.transform;
-        push.time = time;
-        push.leafTint = glm::vec3(1.0f);
-        push.alphaTest = renderable.alphaTestThreshold > 0.0f ? renderable.alphaTestThreshold : 0.5f;
-        push.firstInstance = static_cast<int32_t>(drawInfo.firstInstance);
-
-        vkCmdPushConstants(cmd, leafPipelineLayout_.get(),
-                           VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
-                           0, sizeof(TreeLeafPushConstants), &push);
-
-        // Draw instanced: 6 indices for one quad, N instances for this tree's leaves
-        vkCmdDrawIndexed(cmd, sharedQuad.getIndexCount(), drawInfo.instanceCount, 0, 0, 0);
     }
 }
 

@@ -62,4 +62,8 @@ struct FrameData {
     // Snow parameters
     float snowAmount = 0.0f;
     glm::vec3 snowColor = glm::vec3(0.95f, 0.97f, 1.0f);
+
+    // Frustum planes (extracted from viewProj, normalized)
+    // Order: left, right, bottom, top, near, far
+    glm::vec4 frustumPlanes[6] = {};
 };

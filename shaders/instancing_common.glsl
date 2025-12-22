@@ -8,13 +8,23 @@
 #define INSTANCING_COMMON_GLSL
 
 // ============================================================================
-// Draw Indirect Command Structure
+// Draw Indirect Command Structures
 // ============================================================================
 
+// For vkCmdDrawIndirect
 struct DrawIndirectCommand {
     uint vertexCount;
     uint instanceCount;
     uint firstVertex;
+    uint firstInstance;
+};
+
+// For vkCmdDrawIndexedIndirect - matches VkDrawIndexedIndirectCommand
+struct DrawIndexedIndirectCommand {
+    uint indexCount;
+    uint instanceCount;
+    uint firstIndex;
+    int  vertexOffset;
     uint firstInstance;
 };
 

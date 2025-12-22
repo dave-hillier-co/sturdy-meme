@@ -161,6 +161,18 @@ void Renderer::setupRenderPipeline() {
         systems_->profiler().endGpuZone(ctx.cmd, "LeafCompute");
     });
 
+    // Tree leaf culling compute pass
+    renderPipeline.computeStage.addPass("treeLeafCull", [this](RenderContext& ctx) {
+        if (!systems_->tree() || !systems_->treeRenderer()) return;
+        if (!systems_->treeRenderer()->isLeafCullingEnabled()) return;
+
+        systems_->profiler().beginGpuZone(ctx.cmd, "TreeLeafCull");
+        systems_->treeRenderer()->recordLeafCulling(
+            ctx.cmd, ctx.frameIndex, *systems_->tree(),
+            ctx.frame.cameraPosition, ctx.frame.frustumPlanes);
+        systems_->profiler().endGpuZone(ctx.cmd, "TreeLeafCull");
+    });
+
     // Water foam persistence compute pass
     renderPipeline.computeStage.addPass("foam", [this](RenderContext& ctx) {
         systems_->profiler().beginGpuZone(ctx.cmd, "FoamCompute");
@@ -945,6 +957,23 @@ bool Renderer::render(const Camera& camera) {
                 systems_->tree()->getLeafInstanceBuffer(),
                 systems_->tree()->getLeafInstanceBufferSize());
         }
+
+        // Update culled leaf descriptor sets (for GPU culling path)
+        // Update for each leaf type to support multiple textures
+        for (const auto& leafType : systems_->tree()->getLeafTextureTypes()) {
+            Texture* leafTex = systems_->tree()->getLeafTexture(leafType);
+            if (leafTex) {
+                systems_->treeRenderer()->updateCulledLeafDescriptorSet(
+                    frame.frameIndex,
+                    leafType,
+                    systems_->globalBuffers().uniformBuffers.buffers[frame.frameIndex],
+                    windInfo.buffer,
+                    systems_->shadow().getShadowImageView(),
+                    systems_->shadow().getShadowSampler(),
+                    leafTex->getImageView(),
+                    leafTex->getSampler());
+            }
+        }
     }
 
     systems_->grass().updateUniforms(frame.frameIndex, frame.cameraPosition, frame.viewProj,
@@ -1252,6 +1281,21 @@ FrameData Renderer::buildFrameData(const Camera& camera, float deltaTime, float 
     frame.view = camera.getViewMatrix();
     frame.projection = camera.getProjectionMatrix();
     frame.viewProj = frame.projection * frame.view;
+
+    // Extract frustum planes from view-projection matrix (normalized)
+    glm::mat4 m = glm::transpose(frame.viewProj);
+    frame.frustumPlanes[0] = m[3] + m[0];  // Left
+    frame.frustumPlanes[1] = m[3] - m[0];  // Right
+    frame.frustumPlanes[2] = m[3] + m[1];  // Bottom
+    frame.frustumPlanes[3] = m[3] - m[1];  // Top
+    frame.frustumPlanes[4] = m[3] + m[2];  // Near
+    frame.frustumPlanes[5] = m[3] - m[2];  // Far
+    for (int i = 0; i < 6; ++i) {
+        float len = glm::length(glm::vec3(frame.frustumPlanes[i]));
+        if (len > 0.0f) {
+            frame.frustumPlanes[i] /= len;
+        }
+    }
 
     // Get sun direction from last computed UBO (already computed in updateUniformBuffer)
     UniformBufferObject* ubo = static_cast<UniformBufferObject*>(systems_->globalBuffers().uniformBuffers.mappedPointers[currentFrame]);

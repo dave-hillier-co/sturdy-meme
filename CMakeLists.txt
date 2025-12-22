@@ -547,6 +547,7 @@ set(SHADER_FILES
     ${CMAKE_CURRENT_SOURCE_DIR}/shaders/tree_leaf_shadow.frag.spv
     ${CMAKE_CURRENT_SOURCE_DIR}/shaders/tree_geometry.comp.spv
     ${CMAKE_CURRENT_SOURCE_DIR}/shaders/tree_leaf.comp.spv
+    ${CMAKE_CURRENT_SOURCE_DIR}/shaders/tree_leaf_cull.comp.spv
 )
 
 set(TERRAIN_SHADER_FILES
@@ -640,7 +641,7 @@ if(SHADER_COMPILE_CMD)
         tree_leaf.vert tree_leaf.frag
         tree_shadow.vert
         tree_leaf_shadow.vert tree_leaf_shadow.frag
-        tree_geometry.comp tree_leaf.comp
+        tree_geometry.comp tree_leaf.comp tree_leaf_cull.comp
     )
 
     foreach(SHADER ${SHADERS_WITH_BINDINGS})
@@ -931,6 +932,7 @@ if(SHADER_COMPILE_CMD)
         ${CMAKE_CURRENT_SOURCE_DIR}/shaders/tree_leaf_shadow.frag.spv
         ${CMAKE_CURRENT_SOURCE_DIR}/shaders/tree_geometry.comp.spv
         ${CMAKE_CURRENT_SOURCE_DIR}/shaders/tree_leaf.comp.spv
+        ${CMAKE_CURRENT_SOURCE_DIR}/shaders/tree_leaf_cull.comp.spv
     )
 
     # Generate UBO headers from SPIR-V reflection

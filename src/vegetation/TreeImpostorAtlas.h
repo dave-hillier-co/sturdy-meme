@@ -30,8 +30,10 @@ struct ImpostorAtlasConfig {
 struct TreeImpostorArchetype {
     std::string name;           // e.g., "oak_large", "pine_medium"
     std::string treeType;       // e.g., "oak", "pine"
-    float boundingSphereRadius; // For billboard sizing
+    float boundingSphereRadius; // For billboard sizing (half of max dimension)
     float centerHeight;         // Height of tree center above base (for billboard offset)
+    float treeHeight;           // Actual tree height (maxBounds.y - minBounds.y)
+    float baseOffset;           // Offset from mesh origin to tree base (minBounds.y)
 
     // Atlas textures (owned by TreeImpostorAtlas)
     VkImageView albedoAlphaView = VK_NULL_HANDLE;

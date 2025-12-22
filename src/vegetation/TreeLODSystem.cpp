@@ -814,10 +814,13 @@ void TreeLODSystem::renderImpostors(VkCommandBuffer cmd, uint32_t frameIndex,
 
     if (impostorAtlas_->getArchetypeCount() > 0) {
         const auto* archetype = impostorAtlas_->getArchetype(0u);
+        // atlasParams: x=unused, y=boundingSphereRadius (for billboard sizing), z=centerHeight (for positioning)
+        float boundingRadius = archetype ? archetype->boundingSphereRadius : 10.0f;
+        float centerHeight = archetype ? archetype->centerHeight : 10.0f;
         pushConstants.atlasParams = glm::vec4(
-            0.0f,  // archetype index
-            archetype ? archetype->boundingSphereRadius : 10.0f,
-            archetype ? archetype->centerHeight : 5.0f,  // center height for billboard offset
+            0.0f,
+            boundingRadius,
+            centerHeight,
             0.0f
         );
     }
@@ -908,10 +911,13 @@ void TreeLODSystem::renderImpostorShadows(VkCommandBuffer cmd, uint32_t frameInd
 
     if (impostorAtlas_->getArchetypeCount() > 0) {
         const auto* archetype = impostorAtlas_->getArchetype(0u);
+        // atlasParams: x=unused, y=boundingSphereRadius (for billboard sizing), z=centerHeight (for positioning)
+        float boundingRadius = archetype ? archetype->boundingSphereRadius : 10.0f;
+        float centerHeight = archetype ? archetype->centerHeight : 10.0f;
         pushConstants.atlasParams = glm::vec4(
             0.0f,
-            archetype ? archetype->boundingSphereRadius : 10.0f,
-            archetype ? archetype->centerHeight : 5.0f,
+            boundingRadius,
+            centerHeight,
             0.0f
         );
     }

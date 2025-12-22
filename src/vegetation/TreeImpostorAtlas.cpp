@@ -975,14 +975,16 @@ int32_t TreeImpostorAtlas::generateArchetype(
     archetype.treeType = options.bark.type;
     archetype.boundingSphereRadius = maxRadius;
     archetype.centerHeight = centerHeight;
+    archetype.treeHeight = treeExtent.y;
+    archetype.baseOffset = minBounds.y;
     archetype.albedoAlphaView = atlasTextures_[archetypeIndex].albedoAlphaView.get();
     archetype.normalDepthAOView = atlasTextures_[archetypeIndex].normalDepthAOView.get();
     archetype.atlasIndex = archetypeIndex;
 
     archetypes_.push_back(archetype);
 
-    SDL_Log("TreeImpostorAtlas: Generated archetype '%s' (radius=%.2f, center=%.2f, %d cells)",
-            name.c_str(), maxRadius, centerHeight, cellIndex);
+    SDL_Log("TreeImpostorAtlas: Generated archetype '%s' (radius=%.2f, height=%.2f, baseOffset=%.2f, %d cells)",
+            name.c_str(), maxRadius, treeExtent.y, minBounds.y, cellIndex);
 
     return static_cast<int32_t>(archetypeIndex);
 }

@@ -91,6 +91,7 @@ void TreeSystem::cleanup() {
     leafRenderables_.clear();
     treeInstances_.clear();
     treeOptions_.clear();
+    treeMeshData_.clear();
 }
 
 bool TreeSystem::loadTextures(const InitInfo& info) {
@@ -220,12 +221,18 @@ std::vector<std::string> TreeSystem::getLeafTextureTypes() const {
     return types;
 }
 
-bool TreeSystem::generateTreeMesh(const TreeOptions& options, Mesh& branchMesh, std::vector<LeafInstanceGPU>& leafInstances) {
+bool TreeSystem::generateTreeMesh(const TreeOptions& options, Mesh& branchMesh, std::vector<LeafInstanceGPU>& leafInstances,
+                                   TreeMeshData* meshDataOut) {
     // Generate tree data
     TreeMeshData meshData = generator_.generate(options);
 
     SDL_Log("TreeSystem: Generated tree with %zu branches, %zu leaves",
             meshData.branches.size(), meshData.leaves.size());
+
+    // Output mesh data if requested (for collision generation)
+    if (meshDataOut) {
+        *meshDataOut = meshData;
+    }
 
     // Build branch mesh vertices
     std::vector<Vertex> branchVertices;
@@ -509,7 +516,8 @@ uint32_t TreeSystem::addTree(const glm::vec3& position, float rotation, float sc
     // Generate mesh and leaf instances for this tree
     Mesh branchMesh;
     std::vector<LeafInstanceGPU> leafInstances;
-    if (!generateTreeMesh(options, branchMesh, leafInstances)) {
+    TreeMeshData meshData;
+    if (!generateTreeMesh(options, branchMesh, leafInstances, &meshData)) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "TreeSystem: Failed to generate tree mesh");
         return UINT32_MAX;
     }
@@ -518,6 +526,7 @@ uint32_t TreeSystem::addTree(const glm::vec3& position, float rotation, float sc
     branchMeshes_.push_back(std::move(branchMesh));
     leafInstancesPerTree_.push_back(std::move(leafInstances));
     treeOptions_.push_back(options);
+    treeMeshData_.push_back(std::move(meshData));
 
     TreeInstanceData instance;
     instance.position = position;
@@ -645,12 +654,16 @@ void TreeSystem::regenerateTree(uint32_t treeIndex) {
     // Generate new branch mesh and leaf instances
     Mesh branchMesh;
     std::vector<LeafInstanceGPU> leafInstances;
-    if (generateTreeMesh(treeOptions_[meshIndex], branchMesh, leafInstances)) {
+    TreeMeshData meshData;
+    if (generateTreeMesh(treeOptions_[meshIndex], branchMesh, leafInstances, &meshData)) {
         if (meshIndex < branchMeshes_.size()) {
             branchMeshes_[meshIndex] = std::move(branchMesh);
         }
         if (meshIndex < leafInstancesPerTree_.size()) {
             leafInstancesPerTree_[meshIndex] = std::move(leafInstances);
+        }
+        if (meshIndex < treeMeshData_.size()) {
+            treeMeshData_[meshIndex] = std::move(meshData);
         }
     }
 
@@ -658,4 +671,51 @@ void TreeSystem::regenerateTree(uint32_t treeIndex) {
     uploadLeafInstanceBuffer();
 
     rebuildSceneObjects();
+}
+
+const TreeMeshData* TreeSystem::getTreeMeshData(uint32_t meshIndex) const {
+    if (meshIndex >= treeMeshData_.size()) {
+        return nullptr;
+    }
+    return &treeMeshData_[meshIndex];
+}
+
+std::vector<PhysicsWorld::CapsuleData> TreeSystem::getTreeCollisionCapsules(
+    uint32_t treeIndex,
+    const TreeCollision::Config& config) const
+{
+    if (treeIndex >= treeInstances_.size()) {
+        return {};
+    }
+
+    const TreeInstanceData& instance = treeInstances_[treeIndex];
+    if (instance.meshIndex >= treeMeshData_.size()) {
+        return {};
+    }
+
+    // Generate capsules in local tree space (relative to tree origin)
+    auto localCapsules = TreeCollision::generateCapsules(treeMeshData_[instance.meshIndex], config);
+
+    // Apply instance scale to capsule dimensions and positions
+    // Keep positions LOCAL so caller can position the compound body at tree's world position
+    std::vector<PhysicsWorld::CapsuleData> scaledCapsules;
+    scaledCapsules.reserve(localCapsules.size());
+
+    for (const auto& local : localCapsules) {
+        PhysicsWorld::CapsuleData scaled;
+
+        // Scale the local position (still relative to tree origin at 0,0,0)
+        scaled.localPosition = local.localPosition * instance.scale;
+
+        // Keep the local rotation unchanged
+        scaled.localRotation = local.localRotation;
+
+        // Scale the capsule dimensions
+        scaled.halfHeight = local.halfHeight * instance.scale;
+        scaled.radius = local.radius * instance.scale;
+
+        scaledCapsules.push_back(scaled);
+    }
+
+    return scaledCapsules;
 }

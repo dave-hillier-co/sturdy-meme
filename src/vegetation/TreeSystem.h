@@ -12,6 +12,7 @@
 
 #include "TreeOptions.h"
 #include "TreeGenerator.h"
+#include "TreeCollision.h"
 #include "Mesh.h"
 #include "Texture.h"
 #include "RenderableBuilder.h"
@@ -96,6 +97,15 @@ public:
     // Get tree instances for physics/other systems
     const std::vector<TreeInstanceData>& getTreeInstances() const { return treeInstances_; }
 
+    // Generate collision capsule data for a tree instance
+    // Returns capsules in world space (tree position + rotation + scale applied)
+    std::vector<PhysicsWorld::CapsuleData> getTreeCollisionCapsules(
+        uint32_t treeIndex,
+        const TreeCollision::Config& config = TreeCollision::Config{}) const;
+
+    // Get raw mesh data for a tree (for external collision generation)
+    const TreeMeshData* getTreeMeshData(uint32_t meshIndex) const;
+
     // Access textures for GUI display
     const TreeOptions& getDefaultOptions() const { return defaultOptions_; }
     TreeOptions& getDefaultOptions() { return defaultOptions_; }
@@ -124,7 +134,8 @@ private:
     bool initInternal(const InitInfo& info);
     void cleanup();
     bool loadTextures(const InitInfo& info);
-    bool generateTreeMesh(const TreeOptions& options, Mesh& branchMesh, std::vector<LeafInstanceGPU>& leafInstances);
+    bool generateTreeMesh(const TreeOptions& options, Mesh& branchMesh, std::vector<LeafInstanceGPU>& leafInstances,
+                          TreeMeshData* meshDataOut = nullptr);
     bool createSharedLeafQuadMesh();
     bool uploadLeafInstanceBuffer();
     void createSceneObjects();
@@ -165,6 +176,9 @@ private:
     VkBuffer leafInstanceBuffer_ = VK_NULL_HANDLE;
     VmaAllocation leafInstanceAllocation_ = VK_NULL_HANDLE;
     VkDeviceSize leafInstanceBufferSize_ = 0;
+
+    // Raw mesh data (stored for collision generation)
+    std::vector<TreeMeshData> treeMeshData_;
 
     // Textures indexed by type name (e.g., "oak", "pine", "ash")
     // Using RAIIAdapter for automatic cleanup matching RockSystem pattern

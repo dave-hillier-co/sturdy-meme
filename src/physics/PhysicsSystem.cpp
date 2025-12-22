@@ -799,6 +799,91 @@ PhysicsBodyID PhysicsWorld::createStaticConvexHull(const glm::vec3& position, co
     return body->GetID().GetIndexAndSequenceNumber();
 }
 
+PhysicsBodyID PhysicsWorld::createStaticCapsule(const glm::vec3& position, float halfHeight, float radius,
+                                                 const glm::quat& rotation) {
+    JPH::BodyInterface& bodyInterface = physicsSystem->GetBodyInterface();
+
+    // Jolt capsules are oriented along the Y axis by default
+    JPH::CapsuleShapeSettings capsuleSettings(halfHeight, radius);
+    JPH::ShapeSettings::ShapeResult shapeResult = capsuleSettings.Create();
+    if (!shapeResult.IsValid()) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create static capsule shape: %s",
+                     shapeResult.GetError().c_str());
+        return INVALID_BODY_ID;
+    }
+
+    JPH::BodyCreationSettings bodySettings(
+        shapeResult.Get(),
+        JPH::RVec3(position.x, position.y, position.z),
+        toJolt(rotation),
+        JPH::EMotionType::Static,
+        PhysicsLayers::NON_MOVING
+    );
+    bodySettings.mFriction = 0.6f;
+
+    JPH::Body* body = bodyInterface.CreateBody(bodySettings);
+    if (!body) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create static capsule body");
+        return INVALID_BODY_ID;
+    }
+
+    bodyInterface.AddBody(body->GetID(), JPH::EActivation::DontActivate);
+    return body->GetID().GetIndexAndSequenceNumber();
+}
+
+PhysicsBodyID PhysicsWorld::createStaticCompoundCapsules(const glm::vec3& position,
+                                                          const std::vector<CapsuleData>& capsules,
+                                                          const glm::quat& rotation) {
+    if (capsules.empty()) {
+        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "createStaticCompoundCapsules called with empty capsule list");
+        return INVALID_BODY_ID;
+    }
+
+    JPH::BodyInterface& bodyInterface = physicsSystem->GetBodyInterface();
+
+    // Build compound shape from multiple capsules
+    JPH::StaticCompoundShapeSettings compoundSettings;
+    compoundSettings.mSubShapes.reserve(capsules.size());
+
+    for (const auto& capsule : capsules) {
+        // Create capsule shape (Jolt capsules are Y-axis aligned by default)
+        auto capsuleShape = new JPH::CapsuleShape(capsule.halfHeight, capsule.radius);
+
+        // Add to compound with local transform
+        compoundSettings.AddShape(
+            toJolt(capsule.localPosition),
+            toJolt(capsule.localRotation),
+            capsuleShape
+        );
+    }
+
+    JPH::ShapeSettings::ShapeResult shapeResult = compoundSettings.Create();
+    if (!shapeResult.IsValid()) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create compound capsule shape: %s",
+                     shapeResult.GetError().c_str());
+        return INVALID_BODY_ID;
+    }
+
+    JPH::BodyCreationSettings bodySettings(
+        shapeResult.Get(),
+        JPH::RVec3(position.x, position.y, position.z),
+        toJolt(rotation),
+        JPH::EMotionType::Static,
+        PhysicsLayers::NON_MOVING
+    );
+    bodySettings.mFriction = 0.6f;
+
+    JPH::Body* body = bodyInterface.CreateBody(bodySettings);
+    if (!body) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create compound capsule body");
+        return INVALID_BODY_ID;
+    }
+
+    bodyInterface.AddBody(body->GetID(), JPH::EActivation::DontActivate);
+    SDL_Log("Created compound shape with %zu capsules", capsules.size());
+    return body->GetID().GetIndexAndSequenceNumber();
+}
+
 bool PhysicsWorld::createCharacter(const glm::vec3& position, float height, float radius) {
     characterHeight = height;
     characterRadius = radius;

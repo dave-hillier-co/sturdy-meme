@@ -114,6 +114,25 @@ public:
                                          size_t vertexCount, float scale = 1.0f,
                                          const glm::quat& rotation = glm::quat(1, 0, 0, 0));
 
+    // Static capsule (for tree trunks, poles, etc.)
+    // halfHeight: half the height of the cylindrical part (total height = 2*halfHeight + 2*radius)
+    PhysicsBodyID createStaticCapsule(const glm::vec3& position, float halfHeight, float radius,
+                                      const glm::quat& rotation = glm::quat(1, 0, 0, 0));
+
+    // Capsule data for compound shapes (e.g., tree branches)
+    struct CapsuleData {
+        glm::vec3 localPosition;  // Position relative to compound body origin
+        glm::quat localRotation;  // Rotation relative to compound body
+        float halfHeight;         // Half the cylindrical part height
+        float radius;             // Capsule radius
+    };
+
+    // Static compound shape from multiple capsules (for trees with multiple branches)
+    // Creates a single physics body containing all capsules
+    PhysicsBodyID createStaticCompoundCapsules(const glm::vec3& position,
+                                               const std::vector<CapsuleData>& capsules,
+                                               const glm::quat& rotation = glm::quat(1, 0, 0, 0));
+
     // Character controller
     bool createCharacter(const glm::vec3& position, float height, float radius);
     void updateCharacter(float deltaTime, const glm::vec3& desiredVelocity, bool jump);

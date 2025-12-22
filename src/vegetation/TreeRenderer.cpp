@@ -1151,9 +1151,10 @@ void TreeRenderer::render(VkCommandBuffer cmd, uint32_t frameIndex, float time,
             push.model = renderable.transform;
             push.time = time;
             push.lodBlendFactor = lodSystem ? lodSystem->getBlendFactor(leafTreeIndex) : 0.0f;
-            push.leafTint = glm::vec3(1.0f);
+            push.leafTint = renderable.leafTint;
             push.alphaTest = renderable.alphaTestThreshold > 0.0f ? renderable.alphaTestThreshold : 0.5f;
             push.firstInstance = static_cast<int32_t>(perTreeOutputOffsets_[treeIdx]);
+            push.autumnHueShift = renderable.autumnHueShift;
 
             vkCmdPushConstants(cmd, leafPipelineLayout_.get(),
                                VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
@@ -1205,9 +1206,10 @@ void TreeRenderer::render(VkCommandBuffer cmd, uint32_t frameIndex, float time,
             push.model = renderable.transform;
             push.time = time;
             push.lodBlendFactor = lodSystem ? lodSystem->getBlendFactor(leafTreeIndex) : 0.0f;
-            push.leafTint = glm::vec3(1.0f);
+            push.leafTint = renderable.leafTint;
             push.alphaTest = renderable.alphaTestThreshold > 0.0f ? renderable.alphaTestThreshold : 0.5f;
             push.firstInstance = static_cast<int32_t>(drawInfo.firstInstance);
+            push.autumnHueShift = renderable.autumnHueShift;
 
             vkCmdPushConstants(cmd, leafPipelineLayout_.get(),
                                VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,

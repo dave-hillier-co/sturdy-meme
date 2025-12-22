@@ -814,13 +814,14 @@ void TreeLODSystem::renderImpostors(VkCommandBuffer cmd, uint32_t frameIndex,
 
     if (impostorAtlas_->getArchetypeCount() > 0) {
         const auto* archetype = impostorAtlas_->getArchetype(0u);
-        // atlasParams: x=unused, y=orthoSize (billboard half-size), z=baseOffset (tree base Y)
-        // orthoSize = boundingSphereRadius * 1.1 (matches capture projection)
-        float orthoSize = archetype ? archetype->boundingSphereRadius * 1.1f : 10.0f;
+        // atlasParams: x=hSize (horizontal half-size), y=vSize (vertical half-size), z=baseOffset, w=unused
+        // hSize = boundingSphereRadius * 1.1, vSize = halfHeight * 1.1 (matches capture projection)
+        float hSize = archetype ? archetype->boundingSphereRadius * 1.1f : 10.0f;
+        float vSize = archetype ? archetype->treeHeight * 0.5f * 1.1f : 10.0f;
         float baseOffset = archetype ? archetype->baseOffset : 0.0f;
         pushConstants.atlasParams = glm::vec4(
-            0.0f,
-            orthoSize,
+            hSize,
+            vSize,
             baseOffset,
             0.0f
         );
@@ -912,12 +913,13 @@ void TreeLODSystem::renderImpostorShadows(VkCommandBuffer cmd, uint32_t frameInd
 
     if (impostorAtlas_->getArchetypeCount() > 0) {
         const auto* archetype = impostorAtlas_->getArchetype(0u);
-        // atlasParams: x=unused, y=orthoSize (billboard half-size), z=baseOffset (tree base Y)
-        float orthoSize = archetype ? archetype->boundingSphereRadius * 1.1f : 10.0f;
+        // atlasParams: x=hSize (horizontal half-size), y=vSize (vertical half-size), z=baseOffset, w=unused
+        float hSize = archetype ? archetype->boundingSphereRadius * 1.1f : 10.0f;
+        float vSize = archetype ? archetype->treeHeight * 0.5f * 1.1f : 10.0f;
         float baseOffset = archetype ? archetype->baseOffset : 0.0f;
         pushConstants.atlasParams = glm::vec4(
-            0.0f,
-            orthoSize,
+            hSize,
+            vSize,
             baseOffset,
             0.0f
         );

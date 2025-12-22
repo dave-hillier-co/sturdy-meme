@@ -134,9 +134,10 @@ private:
         float elevation,    // Vertical angle (0 = horizon, 90 = top-down)
         const Mesh& branchMesh,
         const std::vector<LeafInstanceGPU>& leafInstances,
-        float boundingRadius,
-        float centerHeight,
-        float baseY,        // Y coordinate of tree base (for asymmetric projection)
+        float boundingRadius,  // Half of max horizontal dimension (for billboard width)
+        float halfHeight,      // Half of tree height (for billboard height)
+        float centerHeight,    // Height of tree center above origin
+        float baseY,           // Y coordinate of tree base (for asymmetric projection)
         VkDescriptorSet branchDescSet,
         VkDescriptorSet leafDescSet);
 

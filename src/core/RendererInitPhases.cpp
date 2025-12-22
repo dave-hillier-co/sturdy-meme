@@ -368,37 +368,55 @@ bool Renderer::initSubsystems(const InitContext& initCtx) {
 
             SDL_Log("Forest added: %d trees at distance 100 units", numTrees);
 
-            // Generate impostor for the first tree archetype (they share similar appearance)
+            // Generate impostor archetypes for each unique tree type
+            // The first 4 trees (display trees) define the archetypes: oak, pine, ash, aspen
             auto* treeLOD = systems_->treeLOD();
-            if (treeLOD && treeSystem->getMeshCount() > 0) {
-                // Use the first tree's mesh as the impostor archetype
-                const auto& branchMesh = treeSystem->getBranchMesh(0);
-                const auto& leafInstances = treeSystem->getLeafInstances(0);
-                const auto& treeOpts = treeSystem->getTreeOptions(0);
+            if (treeLOD) {
+                // Archetype definitions: mesh index -> (name, bark, leaves)
+                struct ArchetypeInfo {
+                    uint32_t meshIndex;
+                    std::string name;
+                    std::string bark;
+                    std::string leaves;
+                };
 
-                // Get textures (using default oak for now)
-                auto* barkTex = treeSystem->getBarkTexture("oak");
-                auto* barkNorm = treeSystem->getBarkNormalMap("oak");
-                auto* leafTex = treeSystem->getLeafTexture("oak");
+                std::vector<ArchetypeInfo> archetypeInfos = {
+                    {0, "oak",   "oak",   "oak"},
+                    {1, "pine",  "pine",  "pine"},
+                    {2, "ash",   "oak",   "ash"},
+                    {3, "aspen", "birch", "aspen"}
+                };
 
-                if (barkTex && barkNorm && leafTex) {
-                    int32_t archetypeIdx = treeLOD->generateImpostor(
-                        "forest_tree",
-                        treeOpts,
-                        branchMesh,
-                        leafInstances,
-                        barkTex->getImageView(),
-                        barkNorm->getImageView(),
-                        leafTex->getImageView(),
-                        barkTex->getSampler()
-                    );
-                    if (archetypeIdx >= 0) {
-                        SDL_Log("Generated impostor archetype %d for forest trees", archetypeIdx);
+                for (const auto& info : archetypeInfos) {
+                    if (info.meshIndex >= treeSystem->getMeshCount()) continue;
+
+                    const auto& branchMesh = treeSystem->getBranchMesh(info.meshIndex);
+                    const auto& leafInstances = treeSystem->getLeafInstances(info.meshIndex);
+                    const auto& treeOpts = treeSystem->getTreeOptions(info.meshIndex);
+
+                    auto* barkTex = treeSystem->getBarkTexture(info.bark);
+                    auto* barkNorm = treeSystem->getBarkNormalMap(info.bark);
+                    auto* leafTex = treeSystem->getLeafTexture(info.leaves);
+
+                    if (barkTex && barkNorm && leafTex) {
+                        int32_t archetypeIdx = treeLOD->generateImpostor(
+                            info.name,
+                            treeOpts,
+                            branchMesh,
+                            leafInstances,
+                            barkTex->getImageView(),
+                            barkNorm->getImageView(),
+                            leafTex->getImageView(),
+                            barkTex->getSampler()
+                        );
+                        if (archetypeIdx >= 0) {
+                            SDL_Log("Generated impostor archetype %d: %s", archetypeIdx, info.name.c_str());
+                        } else {
+                            SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "Failed to generate %s impostor", info.name.c_str());
+                        }
                     } else {
-                        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "Failed to generate tree impostor");
+                        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "Missing textures for %s impostor", info.name.c_str());
                     }
-                } else {
-                    SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "Missing textures for impostor generation");
                 }
             }
         }

@@ -13,12 +13,13 @@ layout(location = 1) in vec3 fragWorldPos;
 layout(location = 2) in float fragBlendFactor;
 layout(location = 3) flat in int fragCellIndex;
 layout(location = 4) in mat3 fragImpostorToWorld;
+layout(location = 7) flat in uint fragArchetypeIndex;
 
 layout(location = 0) out vec4 outColor;
 
-// Impostor atlas textures
-layout(binding = BINDING_TREE_IMPOSTOR_ALBEDO) uniform sampler2D albedoAlphaAtlas;
-layout(binding = BINDING_TREE_IMPOSTOR_NORMAL) uniform sampler2D normalDepthAOAtlas;
+// Impostor atlas texture arrays (one layer per archetype)
+layout(binding = BINDING_TREE_IMPOSTOR_ALBEDO) uniform sampler2DArray albedoAlphaAtlas;
+layout(binding = BINDING_TREE_IMPOSTOR_NORMAL) uniform sampler2DArray normalDepthAOAtlas;
 
 // Shadow map
 layout(binding = BINDING_TREE_IMPOSTOR_SHADOW_MAP) uniform sampler2DArrayShadow shadowMapArray;
@@ -61,9 +62,10 @@ const float bayerMatrix[16] = float[16](
 );
 
 void main() {
-    // Sample impostor atlas
-    vec4 albedoAlpha = texture(albedoAlphaAtlas, fragTexCoord);
-    vec4 normalDepthAO = texture(normalDepthAOAtlas, fragTexCoord);
+    // Sample impostor atlas array using archetype index as layer
+    vec3 atlasCoord = vec3(fragTexCoord, float(fragArchetypeIndex));
+    vec4 albedoAlpha = texture(albedoAlphaAtlas, atlasCoord);
+    vec4 normalDepthAO = texture(normalDepthAOAtlas, atlasCoord);
 
     // Alpha test
     if (albedoAlpha.a < 0.5) {

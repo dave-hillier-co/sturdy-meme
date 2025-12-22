@@ -108,10 +108,14 @@ public:
     // Get number of archetypes
     size_t getArchetypeCount() const { return archetypes_.size(); }
 
-    // Get atlas textures for binding
+    // Get atlas array textures for binding (single array covers all archetypes)
+    VkImageView getAlbedoAtlasArrayView() const { return albedoArrayView_.get(); }
+    VkImageView getNormalAtlasArrayView() const { return normalArrayView_.get(); }
+    VkSampler getAtlasSampler() const { return atlasSampler_.get(); }
+
+    // Legacy per-archetype access (for preview/debug)
     VkImageView getAlbedoAtlasView(uint32_t archetypeIndex) const;
     VkImageView getNormalAtlasView(uint32_t archetypeIndex) const;
-    VkSampler getAtlasSampler() const { return atlasSampler_.get(); }
 
     // LOD settings
     TreeLODSettings& getLODSettings() { return lodSettings_; }
@@ -127,7 +131,8 @@ private:
 
     bool createRenderPass();
     bool createCapturePipeline();
-    bool createAtlasResources(uint32_t archetypeIndex);
+    bool createAtlasArrayTextures();  // Create the shared array textures
+    bool createAtlasResources(uint32_t archetypeIndex);  // Create per-layer framebuffer
     bool createSampler();
     bool createPreviewDescriptorSets();
 
@@ -199,6 +204,18 @@ private:
 
     // Archetype data
     std::vector<TreeImpostorArchetype> archetypes_;
+
+    // Texture array for all archetypes (shared across all archetypes)
+    VkImage albedoArrayImage_ = VK_NULL_HANDLE;
+    VmaAllocation albedoArrayAllocation_ = VK_NULL_HANDLE;
+    ManagedImageView albedoArrayView_;  // View of entire array for shader binding
+
+    VkImage normalArrayImage_ = VK_NULL_HANDLE;
+    VmaAllocation normalArrayAllocation_ = VK_NULL_HANDLE;
+    ManagedImageView normalArrayView_;  // View of entire array for shader binding
+
+    uint32_t maxArchetypes_ = 16;  // Maximum layers in the array
+    uint32_t currentArchetypeCount_ = 0;
 
     // Shared sampler for atlas textures
     ManagedSampler atlasSampler_;

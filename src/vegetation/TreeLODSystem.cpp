@@ -621,11 +621,26 @@ void TreeLODSystem::update(float deltaTime, const glm::vec3& cameraPos, const Tr
         lodStates_.resize(instances.size());
     }
 
+    // Number of archetypes (display trees define the archetypes)
+    const uint32_t numArchetypes = static_cast<uint32_t>(impostorAtlas_->getArchetypeCount());
+    const uint32_t numDisplayTrees = 4;  // oak, pine, ash, aspen
+
     visibleImpostors_.clear();
 
     for (size_t i = 0; i < instances.size(); i++) {
         const auto& tree = instances[i];
         auto& state = lodStates_[i];
+
+        // Assign archetype index based on tree type
+        // Display trees (0-3) map directly to their archetype
+        // Forest trees (4+) cycle through archetypes
+        if (numArchetypes > 0) {
+            if (i < numDisplayTrees) {
+                state.archetypeIndex = static_cast<uint32_t>(i) % numArchetypes;
+            } else {
+                state.archetypeIndex = static_cast<uint32_t>((i - numDisplayTrees) % numArchetypes);
+            }
+        }
 
         float distance = glm::distance(cameraPos, tree.position);
         state.lastDistance = distance;
@@ -675,17 +690,39 @@ void TreeLODSystem::update(float deltaTime, const glm::vec3& cameraPos, const Tr
 
         // Collect visible impostors
         if (settings.enableImpostors && state.blendFactor > 0.0f && state.archetypeIndex < impostorAtlas_->getArchetypeCount()) {
-            const auto* archetype = impostorAtlas_->getArchetype(state.archetypeIndex);
             ImpostorInstanceGPU instance;
             instance.position = tree.position;
             instance.scale = tree.scale;
             instance.rotation = tree.rotation;
             instance.archetypeIndex = state.archetypeIndex;
             instance.blendFactor = state.blendFactor;
-            // Store archetype dimensions scaled by tree scale
-            instance.hSize = (archetype ? archetype->boundingSphereRadius * 1.1f : 10.0f) * tree.scale;
-            instance.vSize = (archetype ? archetype->treeHeight * 0.5f * 1.1f : 10.0f) * tree.scale;
-            instance.baseOffset = (archetype ? archetype->baseOffset : 0.0f) * tree.scale;
+
+            // Use actual tree mesh bounds instead of archetype bounds
+            // Each tree has its own procedurally generated mesh with potentially different bounds
+            if (tree.meshIndex < treeSystem.getMeshCount()) {
+                const auto& meshBounds = treeSystem.getBranchMesh(tree.meshIndex).getBounds();
+                glm::vec3 minB = meshBounds.min;
+                glm::vec3 maxB = meshBounds.max;
+
+                // Compute horizontal radius (max of X and Z half-extents)
+                float hRadius = std::max(std::abs(minB.x), std::abs(maxB.x));
+                hRadius = std::max(hRadius, std::max(std::abs(minB.z), std::abs(maxB.z)));
+
+                // Tree height and base offset
+                float treeHeight = maxB.y - minB.y;
+                float baseOffset = minB.y;
+
+                // Scale by tree instance scale and add 10% margin
+                instance.hSize = hRadius * 1.1f * tree.scale;
+                instance.vSize = treeHeight * 0.5f * 1.1f * tree.scale;
+                instance.baseOffset = baseOffset * tree.scale;
+            } else {
+                // Fallback to archetype bounds if mesh not available
+                const auto* archetype = impostorAtlas_->getArchetype(state.archetypeIndex);
+                instance.hSize = (archetype ? archetype->boundingSphereRadius * 1.1f : 10.0f) * tree.scale;
+                instance.vSize = (archetype ? archetype->treeHeight * 0.5f * 1.1f : 10.0f) * tree.scale;
+                instance.baseOffset = (archetype ? archetype->baseOffset : 0.0f) * tree.scale;
+            }
             visibleImpostors_.push_back(instance);
         }
     }
@@ -734,11 +771,9 @@ void TreeLODSystem::updateInstanceBuffer(const std::vector<ImpostorInstanceGPU>&
 
 void TreeLODSystem::updateDescriptorSets(uint32_t frameIndex, VkBuffer uniformBuffer,
                                           VkImageView shadowMap, VkSampler shadowSampler) {
-    if (impostorAtlas_->getArchetypeCount() == 0) return;
-
-    // Use first archetype's atlas for now (could support multiple atlases)
-    VkImageView albedoView = impostorAtlas_->getAlbedoAtlasView(0);
-    VkImageView normalView = impostorAtlas_->getNormalAtlasView(0);
+    // Use the shared array views that contain all archetypes
+    VkImageView albedoView = impostorAtlas_->getAlbedoAtlasArrayView();
+    VkImageView normalView = impostorAtlas_->getNormalAtlasArrayView();
     VkSampler atlasSampler = impostorAtlas_->getAtlasSampler();
 
     if (albedoView == VK_NULL_HANDLE || normalView == VK_NULL_HANDLE) return;

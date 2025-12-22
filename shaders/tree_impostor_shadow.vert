@@ -28,6 +28,7 @@ layout(push_constant) uniform PushConstants {
 } push;
 
 layout(location = 0) out vec2 fragTexCoord;
+layout(location = 1) flat out uint fragArchetypeIndex;
 
 // Atlas layout constants
 const int CELLS_PER_ROW = 9;
@@ -51,8 +52,8 @@ void main() {
     hAngle = degrees(hAngle);
     if (hAngle < 0.0) hAngle += 360.0;
 
-    // Apply tree rotation offset
-    hAngle = mod(hAngle - degrees(rotation) + 360.0, 360.0);
+    // Apply tree rotation offset - add rotation because we're rotating the view around the tree
+    hAngle = mod(hAngle + degrees(rotation) + 360.0, 360.0);
 
     // Select horizontal cell index (0-7)
     int hIndex = int(mod(round(hAngle / ANGLE_STEP), float(HORIZONTAL_ANGLES)));
@@ -79,7 +80,7 @@ void main() {
 
     // For top-down view (sun directly overhead), rotate UV by horizontal angle
     if (sunElevation > 67.5) {
-        float rotAngle = radians(-hAngle + degrees(rotation));
+        float rotAngle = radians(-hAngle);
         vec2 centered = cellUV - 0.5;
         cellUV = vec2(
             centered.x * cos(rotAngle) - centered.y * sin(rotAngle),
@@ -118,4 +119,6 @@ void main() {
 
     // Transform by cascade light matrix
     gl_Position = ubo.cascadeViewProj[push.cascadeIndex] * vec4(worldPos, 1.0);
+
+    fragArchetypeIndex = instanceArchetype;
 }

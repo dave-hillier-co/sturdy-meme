@@ -32,6 +32,7 @@ layout(location = 1) out vec3 fragWorldPos;
 layout(location = 2) out float fragBlendFactor;
 layout(location = 3) flat out int fragCellIndex;
 layout(location = 4) out mat3 fragImpostorToWorld;  // Rotation from impostor space to world
+layout(location = 7) flat out uint fragArchetypeIndex;
 
 // Atlas layout constants
 const int CELLS_PER_ROW = 9;
@@ -51,13 +52,13 @@ void main() {
 
     // Compute horizontal angle (0-360 degrees)
     // atan(x, z) gives angle where +Z is 0°, +X is 90°
-    // Negate so that moving counterclockwise around tree decreases cell index
-    float hAngle = -atan(toCameraHorizontal.x, toCameraHorizontal.y);
+    // This matches capture convention: azimuth=0 is camera at +Z, azimuth=90 is camera at +X
+    float hAngle = atan(toCameraHorizontal.x, toCameraHorizontal.y);
     hAngle = degrees(hAngle);
     if (hAngle < 0.0) hAngle += 360.0;
 
-    // Apply tree rotation offset
-    hAngle = mod(hAngle - degrees(rotation) + 360.0, 360.0);
+    // Apply tree rotation offset - add rotation because we're rotating the view around the tree
+    hAngle = mod(hAngle + degrees(rotation) + 360.0, 360.0);
 
     // Select horizontal cell index (0-7)
     int hIndex = int(mod(round(hAngle / ANGLE_STEP), float(HORIZONTAL_ANGLES)));
@@ -163,4 +164,5 @@ void main() {
     gl_Position = ubo.proj * ubo.view * vec4(worldPos, 1.0);
 
     fragBlendFactor = instanceBlendFactor;
+    fragArchetypeIndex = instanceArchetype;
 }

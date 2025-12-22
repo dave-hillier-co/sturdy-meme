@@ -102,14 +102,14 @@ void main() {
     }
 
     // Position billboard vertex
+    // Billboard bottom should be at tree base, so center is at boundingRadius height
     float boundingRadius = push.atlasParams.y * scale;
-    float centerHeight = push.atlasParams.z * scale;
 
     vec3 localPos = right * inPosition.x * boundingRadius * 2.0 +
                     up * (inPosition.y - 0.5) * boundingRadius * 2.0;
 
-    // Offset billboard center to tree center height
-    vec3 worldPos = treePos + vec3(0.0, centerHeight, 0.0) + localPos;
+    // Offset billboard center so bottom is at tree base
+    vec3 worldPos = treePos + vec3(0.0, boundingRadius, 0.0) + localPos;
 
     // Transform by cascade light matrix
     gl_Position = ubo.cascadeViewProj[push.cascadeIndex] * vec4(worldPos, 1.0);

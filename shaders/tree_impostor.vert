@@ -121,16 +121,16 @@ void main() {
     fragImpostorToWorld = mat3(right, up, forward);
 
     // Position billboard vertex
-    // Billboard is centered on tree center (at centerHeight above base)
+    // Billboard bottom should be at tree base, so center is at boundingRadius height
     float boundingRadius = push.atlasParams.y * scale;
-    float centerHeight = push.atlasParams.z * scale;
 
-    // inPosition.y is 0-1, we need to center it around the tree center
+    // inPosition.y is 0-1, we need to center it around the billboard center
     vec3 localPos = right * inPosition.x * boundingRadius * 2.0 +
                     up * (inPosition.y - 0.5) * boundingRadius * 2.0;
 
-    // Offset billboard center to tree center height
-    vec3 worldPos = treePos + vec3(0.0, centerHeight, 0.0) + localPos;
+    // Offset billboard center so bottom is at tree base (treePos.y)
+    // Billboard extends from -radius to +radius from center, so center should be at +radius
+    vec3 worldPos = treePos + vec3(0.0, boundingRadius, 0.0) + localPos;
     fragWorldPos = worldPos;
 
     gl_Position = ubo.proj * ubo.view * vec4(worldPos, 1.0);

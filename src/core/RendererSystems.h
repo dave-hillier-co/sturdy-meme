@@ -24,6 +24,7 @@ class RockSystem;
 class TreeSystem;
 class TreeRenderer;
 class TreeLODSystem;
+class DetritusSystem;
 class CloudShadowSystem;
 class HiZSystem;
 class WaterSystem;
@@ -196,6 +197,9 @@ public:
     TreeLODSystem* treeLOD() { return treeLODSystem_.get(); }
     const TreeLODSystem* treeLOD() const { return treeLODSystem_.get(); }
     void setTreeLOD(std::unique_ptr<TreeLODSystem> system);
+    DetritusSystem* detritus() { return detritusSystem_.get(); }
+    const DetritusSystem* detritus() const { return detritusSystem_.get(); }
+    void setDetritus(std::unique_ptr<DetritusSystem> system);
 
     // Culling and optimization
     HiZSystem& hiZ() { return *hiZSystem_; }
@@ -286,6 +290,7 @@ private:
     std::unique_ptr<TreeSystem> treeSystem_;
     std::unique_ptr<TreeRenderer> treeRenderer_;
     std::unique_ptr<TreeLODSystem> treeLODSystem_;
+    std::unique_ptr<DetritusSystem> detritusSystem_;
 
     // Tier 2 - Culling
     std::unique_ptr<HiZSystem> hiZSystem_;

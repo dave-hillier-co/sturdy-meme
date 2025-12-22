@@ -480,6 +480,9 @@ private:
     // Rock descriptor sets (RockSystem has its own textures, not in MaterialRegistry)
     std::vector<VkDescriptorSet> rockDescriptorSets;
 
+    // Detritus descriptor sets (DetritusSystem has its own bark textures)
+    std::vector<VkDescriptorSet> detritusDescriptorSets;
+
     // Tree descriptor sets per texture type (keyed by type name string)
     // Each map has entries for each frame: map[typeName][frameIndex]
     std::unordered_map<std::string, std::vector<VkDescriptorSet>> treeBarkDescriptorSets;

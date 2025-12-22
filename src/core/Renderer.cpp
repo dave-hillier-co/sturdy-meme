@@ -44,6 +44,7 @@
 #include "TreeSystem.h"
 #include "TreeRenderer.h"
 #include "TreeLODSystem.h"
+#include "DetritusSystem.h"
 #include "UBOBuilder.h"
 #include "WaterGBuffer.h"
 #include "WaterDisplacement.h"
@@ -768,6 +769,13 @@ bool Renderer::createDescriptorSets() {
         return false;
     }
 
+    // Detritus descriptor sets (fallen branches - allocation only, writing done in initPhase2)
+    detritusDescriptorSets = descriptorManagerPool->allocate(descriptorSetLayout.get(), MAX_FRAMES_IN_FLIGHT);
+    if (detritusDescriptorSets.empty()) {
+        SDL_Log("Failed to allocate detritus descriptor sets");
+        return false;
+    }
+
     // Tree descriptor sets - allocation deferred to initPhase2 when TreeSystem is available
     // Will allocate per texture type using string-based maps
 
@@ -1421,7 +1429,8 @@ void Renderer::recordShadowPass(VkCommandBuffer cmd, uint32_t frameIndex, float 
     size_t playerIndex = systems_->scene().getSceneBuilder().getPlayerObjectIndex();
     bool hasCharacter = systems_->scene().getSceneBuilder().hasCharacter();
 
-    allObjects.reserve(sceneObjects.size() + systems_->rock().getSceneObjects().size());
+    size_t detritusCount = systems_->detritus() ? systems_->detritus()->getSceneObjects().size() : 0;
+    allObjects.reserve(sceneObjects.size() + systems_->rock().getSceneObjects().size() + detritusCount);
     for (size_t i = 0; i < sceneObjects.size(); ++i) {
         // Skip player character - rendered with skinned shadow pipeline
         if (hasCharacter && i == playerIndex) {
@@ -1430,6 +1439,9 @@ void Renderer::recordShadowPass(VkCommandBuffer cmd, uint32_t frameIndex, float 
         allObjects.push_back(sceneObjects[i]);
     }
     allObjects.insert(allObjects.end(), systems_->rock().getSceneObjects().begin(), systems_->rock().getSceneObjects().end());
+    if (systems_->detritus()) {
+        allObjects.insert(allObjects.end(), systems_->detritus()->getSceneObjects().begin(), systems_->detritus()->getSceneObjects().end());
+    }
 
     // Skinned character shadow callback (renders with GPU skinning)
     ShadowSystem::DrawCallback skinnedCallback = nullptr;
@@ -1521,6 +1533,14 @@ void Renderer::recordSceneObjects(VkCommandBuffer cmd, uint32_t frameIndex) {
     VkDescriptorSet rockDescSet = rockDescriptorSets[frameIndex];
     for (const auto& rock : systems_->rock().getSceneObjects()) {
         renderObject(rock, rockDescSet);
+    }
+
+    // Render woodland detritus (fallen branches - uses its own descriptor sets)
+    if (systems_->detritus() && !detritusDescriptorSets.empty()) {
+        VkDescriptorSet detritusDescSet = detritusDescriptorSets[frameIndex];
+        for (const auto& detritus : systems_->detritus()->getSceneObjects()) {
+            renderObject(detritus, detritusDescSet);
+        }
     }
 
     // Render procedural trees using dedicated TreeRenderer with wind animation

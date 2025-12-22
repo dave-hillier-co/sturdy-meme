@@ -24,6 +24,7 @@
 #include "TreeSystem.h"
 #include "TreeRenderer.h"
 #include "TreeLODSystem.h"
+#include "DetritusSystem.h"
 #include "CloudShadowSystem.h"
 #include "HiZSystem.h"
 #include "WaterSystem.h"
@@ -229,6 +230,10 @@ void RendererSystems::setTreeRenderer(std::unique_ptr<TreeRenderer> renderer) {
 
 void RendererSystems::setTreeLOD(std::unique_ptr<TreeLODSystem> system) {
     treeLODSystem_ = std::move(system);
+}
+
+void RendererSystems::setDetritus(std::unique_ptr<DetritusSystem> system) {
+    detritusSystem_ = std::move(system);
 }
 
 void RendererSystems::setScene(std::unique_ptr<SceneManager> system) {

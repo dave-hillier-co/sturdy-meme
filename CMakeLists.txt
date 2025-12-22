@@ -555,6 +555,8 @@ set(SHADER_FILES
     ${CMAKE_CURRENT_SOURCE_DIR}/shaders/tree_impostor_capture.vert.spv
     ${CMAKE_CURRENT_SOURCE_DIR}/shaders/tree_impostor_capture.frag.spv
     ${CMAKE_CURRENT_SOURCE_DIR}/shaders/tree_impostor_capture_leaf.vert.spv
+    ${CMAKE_CURRENT_SOURCE_DIR}/shaders/tree_impostor_shadow.vert.spv
+    ${CMAKE_CURRENT_SOURCE_DIR}/shaders/tree_impostor_shadow.frag.spv
 )
 
 set(TERRAIN_SHADER_FILES
@@ -652,6 +654,7 @@ if(SHADER_COMPILE_CMD)
         tree_impostor.vert tree_impostor.frag
         tree_impostor_capture.vert tree_impostor_capture.frag
         tree_impostor_capture_leaf.vert
+        tree_impostor_shadow.vert tree_impostor_shadow.frag
     )
 
     foreach(SHADER ${SHADERS_WITH_BINDINGS})
@@ -948,6 +951,8 @@ if(SHADER_COMPILE_CMD)
         ${CMAKE_CURRENT_SOURCE_DIR}/shaders/tree_impostor_capture.vert.spv
         ${CMAKE_CURRENT_SOURCE_DIR}/shaders/tree_impostor_capture.frag.spv
         ${CMAKE_CURRENT_SOURCE_DIR}/shaders/tree_impostor_capture_leaf.vert.spv
+        ${CMAKE_CURRENT_SOURCE_DIR}/shaders/tree_impostor_shadow.vert.spv
+        ${CMAKE_CURRENT_SOURCE_DIR}/shaders/tree_impostor_shadow.frag.spv
     )
 
     # Generate UBO headers from SPIR-V reflection

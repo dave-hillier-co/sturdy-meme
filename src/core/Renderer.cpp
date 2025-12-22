@@ -1407,6 +1407,11 @@ void Renderer::recordShadowPass(VkCommandBuffer cmd, uint32_t frameIndex, float 
         if (systems_->tree() && systems_->treeRenderer()) {
             systems_->treeRenderer()->renderShadows(cb, frameIndex, *systems_->tree(), static_cast<int>(cascade), systems_->treeLOD());
         }
+        // Render impostor shadows
+        if (systems_->treeLOD()) {
+            VkBuffer uniformBuffer = systems_->globalBuffers().uniformBuffers.buffers[frameIndex];
+            systems_->treeLOD()->renderImpostorShadows(cb, frameIndex, static_cast<int>(cascade), uniformBuffer);
+        }
     };
 
     // Combine scene objects and rock objects for shadow rendering

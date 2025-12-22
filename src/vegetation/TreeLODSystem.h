@@ -45,6 +45,7 @@ public:
         VkPhysicalDevice physicalDevice;
         VmaAllocator allocator;
         VkRenderPass hdrRenderPass;
+        VkRenderPass shadowRenderPass;  // For shadow casting
         VkCommandPool commandPool;
         VkQueue graphicsQueue;
         DescriptorManager::Pool* descriptorPool;
@@ -68,6 +69,10 @@ public:
     // Render impostors (called after full geometry trees are rendered)
     void renderImpostors(VkCommandBuffer cmd, uint32_t frameIndex,
                          VkBuffer uniformBuffer, VkImageView shadowMap, VkSampler shadowSampler);
+
+    // Render impostor shadows for a specific cascade
+    void renderImpostorShadows(VkCommandBuffer cmd, uint32_t frameIndex,
+                               int cascadeIndex, VkBuffer uniformBuffer);
 
     // Get LOD state for a specific tree
     const TreeLODState& getTreeLODState(uint32_t treeIndex) const;
@@ -112,8 +117,11 @@ private:
     TreeLODSystem() = default;
     bool initInternal(const InitInfo& info);
     bool createPipeline();
+    bool createShadowPipeline();
     bool createDescriptorSetLayout();
+    bool createShadowDescriptorSetLayout();
     bool allocateDescriptorSets();
+    bool allocateShadowDescriptorSets();
     bool createInstanceBuffer(size_t maxInstances);
     bool createBillboardMesh();
     void updateInstanceBuffer(const std::vector<ImpostorInstanceGPU>& instances);
@@ -122,6 +130,7 @@ private:
     VkPhysicalDevice physicalDevice_ = VK_NULL_HANDLE;
     VmaAllocator allocator_ = VK_NULL_HANDLE;
     VkRenderPass hdrRenderPass_ = VK_NULL_HANDLE;
+    VkRenderPass shadowRenderPass_ = VK_NULL_HANDLE;
     VkCommandPool commandPool_ = VK_NULL_HANDLE;
     VkQueue graphicsQueue_ = VK_NULL_HANDLE;
     DescriptorManager::Pool* descriptorPool_ = nullptr;
@@ -140,8 +149,14 @@ private:
     ManagedPipelineLayout impostorPipelineLayout_;
     ManagedDescriptorSetLayout impostorDescriptorSetLayout_;
 
+    // Shadow rendering pipeline
+    ManagedPipeline shadowPipeline_;
+    ManagedPipelineLayout shadowPipelineLayout_;
+    ManagedDescriptorSetLayout shadowDescriptorSetLayout_;
+
     // Per-frame descriptor sets
     std::vector<VkDescriptorSet> impostorDescriptorSets_;
+    std::vector<VkDescriptorSet> shadowDescriptorSets_;
 
     // Billboard quad mesh
     VkBuffer billboardVertexBuffer_ = VK_NULL_HANDLE;

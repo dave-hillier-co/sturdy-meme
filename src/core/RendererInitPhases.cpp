@@ -300,6 +300,7 @@ bool Renderer::initSubsystems(const InitContext& initCtx) {
         treeLODInfo.physicalDevice = physicalDevice;
         treeLODInfo.allocator = allocator;
         treeLODInfo.hdrRenderPass = systems_->postProcess().getHDRRenderPass();
+        treeLODInfo.shadowRenderPass = systems_->shadow().getShadowRenderPass();
         treeLODInfo.commandPool = commandPool.get();
         treeLODInfo.graphicsQueue = graphicsQueue;
         treeLODInfo.descriptorPool = &*descriptorManagerPool;

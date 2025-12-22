@@ -39,6 +39,7 @@ bool TreeLODSystem::initInternal(const InitInfo& info) {
     physicalDevice_ = info.physicalDevice;
     allocator_ = info.allocator;
     hdrRenderPass_ = info.hdrRenderPass;
+    shadowRenderPass_ = info.shadowRenderPass;
     commandPool_ = info.commandPool;
     graphicsQueue_ = info.graphicsQueue;
     descriptorPool_ = info.descriptorPool;
@@ -80,6 +81,24 @@ bool TreeLODSystem::initInternal(const InitInfo& info) {
     if (!allocateDescriptorSets()) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "TreeLODSystem: Failed to allocate descriptor sets");
         return false;
+    }
+
+    // Initialize shadow pipeline if shadow render pass is provided
+    if (shadowRenderPass_ != VK_NULL_HANDLE) {
+        if (!createShadowDescriptorSetLayout()) {
+            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "TreeLODSystem: Failed to create shadow descriptor set layout");
+            return false;
+        }
+
+        if (!createShadowPipeline()) {
+            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "TreeLODSystem: Failed to create shadow pipeline");
+            return false;
+        }
+
+        if (!allocateShadowDescriptorSets()) {
+            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "TreeLODSystem: Failed to allocate shadow descriptor sets");
+            return false;
+        }
     }
 
     // Create initial instance buffer
@@ -393,6 +412,182 @@ bool TreeLODSystem::allocateDescriptorSets() {
     return !impostorDescriptorSets_.empty();
 }
 
+bool TreeLODSystem::createShadowDescriptorSetLayout() {
+    // Shadow pass needs UBO (for cascade matrices) and albedo atlas (for alpha testing)
+    std::array<VkDescriptorSetLayoutBinding, 2> bindings{};
+
+    // UBO
+    bindings[0].binding = BINDING_TREE_IMPOSTOR_UBO;
+    bindings[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    bindings[0].descriptorCount = 1;
+    bindings[0].stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+
+    // Albedo atlas (for alpha testing in fragment shader)
+    bindings[1].binding = BINDING_TREE_IMPOSTOR_ALBEDO;
+    bindings[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    bindings[1].descriptorCount = 1;
+    bindings[1].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+
+    VkDescriptorSetLayoutCreateInfo layoutInfo{};
+    layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+    layoutInfo.bindingCount = static_cast<uint32_t>(bindings.size());
+    layoutInfo.pBindings = bindings.data();
+
+    VkDescriptorSetLayout layout;
+    if (vkCreateDescriptorSetLayout(device_, &layoutInfo, nullptr, &layout) != VK_SUCCESS) {
+        return false;
+    }
+    shadowDescriptorSetLayout_ = ManagedDescriptorSetLayout(makeUniqueDescriptorSetLayout(device_, layout));
+
+    return true;
+}
+
+bool TreeLODSystem::createShadowPipeline() {
+    // Push constants: cameraPos, lodParams, atlasParams, cascadeIndex
+    VkPushConstantRange pushConstant{};
+    pushConstant.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+    pushConstant.offset = 0;
+    pushConstant.size = sizeof(glm::vec4) * 3 + sizeof(int);  // cameraPos, lodParams, atlasParams, cascadeIndex
+
+    VkDescriptorSetLayout layouts[] = {shadowDescriptorSetLayout_.get()};
+
+    VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
+    pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+    pipelineLayoutInfo.setLayoutCount = 1;
+    pipelineLayoutInfo.pSetLayouts = layouts;
+    pipelineLayoutInfo.pushConstantRangeCount = 1;
+    pipelineLayoutInfo.pPushConstantRanges = &pushConstant;
+
+    VkPipelineLayout pipelineLayout;
+    if (vkCreatePipelineLayout(device_, &pipelineLayoutInfo, nullptr, &pipelineLayout) != VK_SUCCESS) {
+        return false;
+    }
+    shadowPipelineLayout_ = ManagedPipelineLayout(makeUniquePipelineLayout(device_, pipelineLayout));
+
+    // Load shadow shaders
+    std::string shaderPath = resourcePath_ + "/shaders/";
+    auto vertModule = ShaderLoader::loadShaderModule(device_, shaderPath + "tree_impostor_shadow.vert.spv");
+    auto fragModule = ShaderLoader::loadShaderModule(device_, shaderPath + "tree_impostor_shadow.frag.spv");
+
+    if (!vertModule || !fragModule) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "TreeLODSystem: Failed to load impostor shadow shaders");
+        return false;
+    }
+
+    std::array<VkPipelineShaderStageCreateInfo, 2> shaderStages{};
+    shaderStages[0].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    shaderStages[0].stage = VK_SHADER_STAGE_VERTEX_BIT;
+    shaderStages[0].module = *vertModule;
+    shaderStages[0].pName = "main";
+    shaderStages[1].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    shaderStages[1].stage = VK_SHADER_STAGE_FRAGMENT_BIT;
+    shaderStages[1].module = *fragModule;
+    shaderStages[1].pName = "main";
+
+    // Vertex input: same as main pipeline
+    std::array<VkVertexInputBindingDescription, 2> bindingDescriptions{};
+    bindingDescriptions[0].binding = 0;
+    bindingDescriptions[0].stride = sizeof(glm::vec3) + sizeof(glm::vec2);
+    bindingDescriptions[0].inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+
+    bindingDescriptions[1].binding = 1;
+    bindingDescriptions[1].stride = sizeof(ImpostorInstanceGPU);
+    bindingDescriptions[1].inputRate = VK_VERTEX_INPUT_RATE_INSTANCE;
+
+    std::array<VkVertexInputAttributeDescription, 6> attributeDescriptions{};
+    attributeDescriptions[0] = {0, 0, VK_FORMAT_R32G32B32_SFLOAT, 0};
+    attributeDescriptions[1] = {1, 0, VK_FORMAT_R32G32_SFLOAT, sizeof(glm::vec3)};
+    attributeDescriptions[2] = {2, 1, VK_FORMAT_R32G32B32_SFLOAT, offsetof(ImpostorInstanceGPU, position)};
+    attributeDescriptions[3] = {3, 1, VK_FORMAT_R32_SFLOAT, offsetof(ImpostorInstanceGPU, scale)};
+    attributeDescriptions[4] = {4, 1, VK_FORMAT_R32_SFLOAT, offsetof(ImpostorInstanceGPU, rotation)};
+    attributeDescriptions[5] = {5, 1, VK_FORMAT_R32_UINT, offsetof(ImpostorInstanceGPU, archetypeIndex)};
+
+    VkPipelineVertexInputStateCreateInfo vertexInputInfo{};
+    vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+    vertexInputInfo.vertexBindingDescriptionCount = static_cast<uint32_t>(bindingDescriptions.size());
+    vertexInputInfo.pVertexBindingDescriptions = bindingDescriptions.data();
+    vertexInputInfo.vertexAttributeDescriptionCount = static_cast<uint32_t>(attributeDescriptions.size());
+    vertexInputInfo.pVertexAttributeDescriptions = attributeDescriptions.data();
+
+    VkPipelineInputAssemblyStateCreateInfo inputAssembly{};
+    inputAssembly.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
+    inputAssembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+
+    VkPipelineViewportStateCreateInfo viewportState{};
+    viewportState.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
+    viewportState.viewportCount = 1;
+    viewportState.scissorCount = 1;
+
+    VkPipelineRasterizationStateCreateInfo rasterizer{};
+    rasterizer.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
+    rasterizer.polygonMode = VK_POLYGON_MODE_FILL;
+    rasterizer.lineWidth = 1.0f;
+    rasterizer.cullMode = VK_CULL_MODE_NONE;  // Billboard, no culling
+    rasterizer.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
+    rasterizer.depthBiasEnable = VK_TRUE;  // Enable depth bias for shadow acne
+    rasterizer.depthBiasConstantFactor = 1.25f;
+    rasterizer.depthBiasSlopeFactor = 1.75f;
+
+    VkPipelineMultisampleStateCreateInfo multisampling{};
+    multisampling.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
+    multisampling.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+
+    VkPipelineDepthStencilStateCreateInfo depthStencil{};
+    depthStencil.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
+    depthStencil.depthTestEnable = VK_TRUE;
+    depthStencil.depthWriteEnable = VK_TRUE;
+    depthStencil.depthCompareOp = VK_COMPARE_OP_LESS;
+
+    // No color attachment for shadow pass
+    VkPipelineColorBlendStateCreateInfo colorBlending{};
+    colorBlending.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
+    colorBlending.attachmentCount = 0;
+
+    std::array<VkDynamicState, 2> dynamicStates = {
+        VK_DYNAMIC_STATE_VIEWPORT,
+        VK_DYNAMIC_STATE_SCISSOR
+    };
+
+    VkPipelineDynamicStateCreateInfo dynamicState{};
+    dynamicState.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
+    dynamicState.dynamicStateCount = static_cast<uint32_t>(dynamicStates.size());
+    dynamicState.pDynamicStates = dynamicStates.data();
+
+    VkGraphicsPipelineCreateInfo pipelineInfo{};
+    pipelineInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
+    pipelineInfo.stageCount = static_cast<uint32_t>(shaderStages.size());
+    pipelineInfo.pStages = shaderStages.data();
+    pipelineInfo.pVertexInputState = &vertexInputInfo;
+    pipelineInfo.pInputAssemblyState = &inputAssembly;
+    pipelineInfo.pViewportState = &viewportState;
+    pipelineInfo.pRasterizationState = &rasterizer;
+    pipelineInfo.pMultisampleState = &multisampling;
+    pipelineInfo.pDepthStencilState = &depthStencil;
+    pipelineInfo.pColorBlendState = &colorBlending;
+    pipelineInfo.pDynamicState = &dynamicState;
+    pipelineInfo.layout = pipelineLayout;
+    pipelineInfo.renderPass = shadowRenderPass_;
+    pipelineInfo.subpass = 0;
+
+    VkPipeline pipeline;
+    VkResult result = vkCreateGraphicsPipelines(device_, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &pipeline);
+
+    vkDestroyShaderModule(device_, *vertModule, nullptr);
+    vkDestroyShaderModule(device_, *fragModule, nullptr);
+
+    if (result != VK_SUCCESS) {
+        return false;
+    }
+    shadowPipeline_ = ManagedPipeline(makeUniquePipeline(device_, pipeline));
+
+    return true;
+}
+
+bool TreeLODSystem::allocateShadowDescriptorSets() {
+    shadowDescriptorSets_ = descriptorPool_->allocate(shadowDescriptorSetLayout_.get(), maxFramesInFlight_);
+    return !shadowDescriptorSets_.empty();
+}
+
 bool TreeLODSystem::createInstanceBuffer(size_t maxInstances) {
     maxInstances_ = maxInstances;
     instanceBufferSize_ = maxInstances * sizeof(ImpostorInstanceGPU);
@@ -629,6 +824,101 @@ void TreeLODSystem::renderImpostors(VkCommandBuffer cmd, uint32_t frameIndex,
 
     vkCmdPushConstants(cmd, impostorPipelineLayout_.get(),
                       VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+                      0, sizeof(pushConstants), &pushConstants);
+
+    // Bind buffers
+    VkBuffer vertexBuffers[] = {billboardVertexBuffer_, instanceBuffer_};
+    VkDeviceSize offsets[] = {0, 0};
+    vkCmdBindVertexBuffers(cmd, 0, 2, vertexBuffers, offsets);
+    vkCmdBindIndexBuffer(cmd, billboardIndexBuffer_, 0, VK_INDEX_TYPE_UINT32);
+
+    // Draw instanced
+    vkCmdDrawIndexed(cmd, billboardIndexCount_, static_cast<uint32_t>(visibleImpostors_.size()), 0, 0, 0);
+}
+
+void TreeLODSystem::renderImpostorShadows(VkCommandBuffer cmd, uint32_t frameIndex,
+                                           int cascadeIndex, VkBuffer uniformBuffer) {
+    if (visibleImpostors_.empty() || impostorAtlas_->getArchetypeCount() == 0) return;
+    if (shadowPipeline_.get() == VK_NULL_HANDLE) return;
+    if (uniformBuffer == VK_NULL_HANDLE) return;
+
+    const auto& settings = getLODSettings();
+    if (!settings.enableImpostors) return;
+
+    // Update shadow descriptor set with UBO and albedo atlas
+    if (!shadowDescriptorSets_.empty() && impostorAtlas_->getArchetypeCount() > 0) {
+        VkImageView albedoView = impostorAtlas_->getAlbedoAtlasView(0);
+        VkSampler atlasSampler = impostorAtlas_->getAtlasSampler();
+
+        if (albedoView != VK_NULL_HANDLE) {
+            std::array<VkWriteDescriptorSet, 2> writes{};
+
+            // UBO
+            VkDescriptorBufferInfo uboInfo{};
+            uboInfo.buffer = uniformBuffer;
+            uboInfo.offset = 0;
+            uboInfo.range = VK_WHOLE_SIZE;
+
+            writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+            writes[0].dstSet = shadowDescriptorSets_[frameIndex];
+            writes[0].dstBinding = BINDING_TREE_IMPOSTOR_UBO;
+            writes[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+            writes[0].descriptorCount = 1;
+            writes[0].pBufferInfo = &uboInfo;
+
+            // Albedo atlas
+            VkDescriptorImageInfo albedoInfo{};
+            albedoInfo.sampler = atlasSampler;
+            albedoInfo.imageView = albedoView;
+            albedoInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+            writes[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+            writes[1].dstSet = shadowDescriptorSets_[frameIndex];
+            writes[1].dstBinding = BINDING_TREE_IMPOSTOR_ALBEDO;
+            writes[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+            writes[1].descriptorCount = 1;
+            writes[1].pImageInfo = &albedoInfo;
+
+            vkUpdateDescriptorSets(device_, static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
+        }
+    }
+
+    // Bind shadow pipeline
+    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, shadowPipeline_.get());
+
+    // Bind descriptor sets - use the main UBO descriptor set passed in for cascade matrices
+    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, shadowPipelineLayout_.get(),
+                           0, 1, &shadowDescriptorSets_[frameIndex], 0, nullptr);
+
+    // Push constants with cascade index
+    struct {
+        glm::vec4 cameraPos;
+        glm::vec4 lodParams;
+        glm::vec4 atlasParams;
+        int cascadeIndex;
+    } pushConstants;
+
+    pushConstants.cameraPos = glm::vec4(lastCameraPos_, 1.0f);
+    pushConstants.lodParams = glm::vec4(
+        1.0f,
+        settings.impostorBrightness,
+        settings.normalStrength,
+        0.0f
+    );
+
+    if (impostorAtlas_->getArchetypeCount() > 0) {
+        const auto* archetype = impostorAtlas_->getArchetype(0u);
+        pushConstants.atlasParams = glm::vec4(
+            0.0f,
+            archetype ? archetype->boundingSphereRadius : 10.0f,
+            archetype ? archetype->centerHeight : 5.0f,
+            0.0f
+        );
+    }
+    pushConstants.cascadeIndex = cascadeIndex;
+
+    vkCmdPushConstants(cmd, shadowPipelineLayout_.get(),
+                      VK_SHADER_STAGE_VERTEX_BIT,
                       0, sizeof(pushConstants), &pushConstants);
 
     // Bind buffers

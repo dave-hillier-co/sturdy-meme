@@ -112,9 +112,9 @@ public:
     TreeLODSettings& getLODSettings() { return lodSettings_; }
     const TreeLODSettings& getLODSettings() const { return lodSettings_; }
 
-    // Get atlas image for UI preview
+    // Get atlas image for UI preview (lazy-initializes ImGui descriptor on first call)
     VkImageView getPreviewImageView(uint32_t archetypeIndex) const;
-    VkDescriptorSet getPreviewDescriptorSet(uint32_t archetypeIndex) const;
+    VkDescriptorSet getPreviewDescriptorSet(uint32_t archetypeIndex);
 
 private:
     TreeImpostorAtlas() = default;

@@ -988,12 +988,8 @@ int32_t TreeImpostorAtlas::generateArchetype(
 
     archetypes_.push_back(archetype);
 
-    // Create ImGui preview descriptor set for this atlas
-    atlasTextures_[archetypeIndex].previewDescriptorSet = ImGui_ImplVulkan_AddTexture(
-        atlasSampler_.get(),
-        atlasTextures_[archetypeIndex].albedoAlphaView.get(),
-        VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
-    );
+    // Note: Preview descriptor set is created lazily in getPreviewDescriptorSet()
+    // because ImGui may not be initialized yet at this point
 
     SDL_Log("TreeImpostorAtlas: Generated archetype '%s' (radius=%.2f, height=%.2f, baseOffset=%.2f, %d cells)",
             name.c_str(), maxRadius, treeExtent.y, minBounds.y, cellIndex);
@@ -1165,9 +1161,20 @@ VkImageView TreeImpostorAtlas::getPreviewImageView(uint32_t archetypeIndex) cons
     return getAlbedoAtlasView(archetypeIndex);
 }
 
-VkDescriptorSet TreeImpostorAtlas::getPreviewDescriptorSet(uint32_t archetypeIndex) const {
-    if (archetypeIndex < atlasTextures_.size()) {
-        return atlasTextures_[archetypeIndex].previewDescriptorSet;
+VkDescriptorSet TreeImpostorAtlas::getPreviewDescriptorSet(uint32_t archetypeIndex) {
+    if (archetypeIndex >= atlasTextures_.size()) {
+        return VK_NULL_HANDLE;
     }
-    return VK_NULL_HANDLE;
+
+    // Lazy initialization: create ImGui descriptor set on first request
+    // (ImGui must be initialized by this point, which happens after renderer init)
+    if (atlasTextures_[archetypeIndex].previewDescriptorSet == VK_NULL_HANDLE) {
+        atlasTextures_[archetypeIndex].previewDescriptorSet = ImGui_ImplVulkan_AddTexture(
+            atlasSampler_.get(),
+            atlasTextures_[archetypeIndex].albedoAlphaView.get(),
+            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
+        );
+    }
+
+    return atlasTextures_[archetypeIndex].previewDescriptorSet;
 }

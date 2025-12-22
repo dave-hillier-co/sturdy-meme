@@ -779,16 +779,17 @@ int32_t TreeImpostorAtlas::generateArchetype(
     // Calculate tree center and dimensions
     glm::vec3 treeCenter = (minBounds + maxBounds) * 0.5f;
     glm::vec3 treeExtent = maxBounds - minBounds;
-    float maxRadius = glm::max(treeExtent.x, glm::max(treeExtent.y, treeExtent.z)) * 0.5f;
+    // Horizontal radius is max of X and Z extents (not Y - that's vertical)
+    float horizontalRadius = glm::max(treeExtent.x, treeExtent.z) * 0.5f;
+    // For depth clipping, use the full 3D bounding sphere radius
+    float boundingSphereRadius = glm::length(treeExtent) * 0.5f;
     float centerHeight = treeCenter.y;  // Height of tree center above origin
     float halfHeight = treeExtent.y * 0.5f;
-    float hSize = maxRadius * 1.1f;
-    float vSize = halfHeight * 1.1f;
 
-    SDL_Log("TreeImpostorAtlas: Tree bounds Y=[%.2f, %.2f], center=%.2f, height=%.2f, hSize=%.2f, vSize=%.2f",
-            minBounds.y, maxBounds.y, centerHeight, treeExtent.y, hSize, vSize);
-    SDL_Log("TreeImpostorAtlas: Billboard: baseOffset=%.2f, height=%.2f (vSize*2)",
-            minBounds.y, vSize * 2.0f);
+    SDL_Log("TreeImpostorAtlas: Tree bounds X=[%.2f, %.2f], Y=[%.2f, %.2f], Z=[%.2f, %.2f]",
+            minBounds.x, maxBounds.x, minBounds.y, maxBounds.y, minBounds.z, maxBounds.z);
+    SDL_Log("TreeImpostorAtlas: horizontalRadius=%.2f, halfHeight=%.2f, boundingSphere=%.2f",
+            horizontalRadius, halfHeight, boundingSphereRadius);
 
     // Upload leaf instances to buffer if we have any
     VkDescriptorSet leafCaptureDescSet = VK_NULL_HANDLE;
@@ -948,20 +949,23 @@ int32_t TreeImpostorAtlas::generateArchetype(
     // Row 0: 8 horizon views + 1 top-down
     for (int h = 0; h < ImpostorAtlasConfig::HORIZONTAL_ANGLES; h++) {
         float azimuth = h * (360.0f / ImpostorAtlasConfig::HORIZONTAL_ANGLES);
-        renderToCell(cmd, h, 0, azimuth, 0.0f, branchMesh, leafInstances, maxRadius, halfHeight,
+        renderToCell(cmd, h, 0, azimuth, 0.0f, branchMesh, leafInstances,
+                     horizontalRadius, boundingSphereRadius, halfHeight,
                      centerHeight, minBounds.y, captureDescSet, leafCaptureDescSet);
         cellIndex++;
     }
 
     // Top-down view (cell 8 of row 0)
-    renderToCell(cmd, 8, 0, 0.0f, 90.0f, branchMesh, leafInstances, maxRadius, halfHeight,
+    renderToCell(cmd, 8, 0, 0.0f, 90.0f, branchMesh, leafInstances,
+                 horizontalRadius, boundingSphereRadius, halfHeight,
                  centerHeight, minBounds.y, captureDescSet, leafCaptureDescSet);
     cellIndex++;
 
     // Row 1: 8 elevated views (45 degrees)
     for (int h = 0; h < ImpostorAtlasConfig::HORIZONTAL_ANGLES; h++) {
         float azimuth = h * (360.0f / ImpostorAtlasConfig::HORIZONTAL_ANGLES);
-        renderToCell(cmd, h, 1, azimuth, 45.0f, branchMesh, leafInstances, maxRadius, halfHeight,
+        renderToCell(cmd, h, 1, azimuth, 45.0f, branchMesh, leafInstances,
+                     horizontalRadius, boundingSphereRadius, halfHeight,
                      centerHeight, minBounds.y, captureDescSet, leafCaptureDescSet);
         cellIndex++;
     }
@@ -984,7 +988,7 @@ int32_t TreeImpostorAtlas::generateArchetype(
     TreeImpostorArchetype archetype;
     archetype.name = name;
     archetype.treeType = options.bark.type;
-    archetype.boundingSphereRadius = maxRadius;
+    archetype.boundingSphereRadius = horizontalRadius;  // Used for billboard sizing
     archetype.centerHeight = centerHeight;
     archetype.treeHeight = treeExtent.y;
     archetype.baseOffset = minBounds.y;
@@ -997,8 +1001,8 @@ int32_t TreeImpostorAtlas::generateArchetype(
     // Note: Preview descriptor set is created lazily in getPreviewDescriptorSet()
     // because ImGui may not be initialized yet at this point
 
-    SDL_Log("TreeImpostorAtlas: Generated archetype '%s' (radius=%.2f, height=%.2f, baseOffset=%.2f, %d cells)",
-            name.c_str(), maxRadius, treeExtent.y, minBounds.y, cellIndex);
+    SDL_Log("TreeImpostorAtlas: Generated archetype '%s' (hRadius=%.2f, height=%.2f, baseOffset=%.2f, %d cells)",
+            name.c_str(), horizontalRadius, treeExtent.y, minBounds.y, cellIndex);
 
     return static_cast<int32_t>(archetypeIndex);
 }
@@ -1010,7 +1014,8 @@ void TreeImpostorAtlas::renderToCell(
     float elevation,
     const Mesh& branchMesh,
     const std::vector<LeafInstanceGPU>& leafInstances,
-    float boundingRadius,
+    float horizontalRadius,
+    float boundingSphereRadius,
     float halfHeight,
     float centerHeight,
     float baseY,
@@ -1039,7 +1044,8 @@ void TreeImpostorAtlas::renderToCell(
     float azimuthRad = glm::radians(azimuth);
     float elevationRad = glm::radians(elevation);
 
-    float camDist = boundingRadius * 3.0f;
+    // Use bounding sphere for camera distance and depth clipping to ensure no geometry is clipped
+    float camDist = boundingSphereRadius * 3.0f;
     glm::vec3 target(0.0f, centerHeight, 0.0f);  // Look at actual tree center
     glm::vec3 camPos(
         camDist * cos(elevationRad) * sin(azimuthRad),
@@ -1052,10 +1058,10 @@ void TreeImpostorAtlas::renderToCell(
 
     glm::mat4 view = glm::lookAt(camPos, target, up);
 
-    // Orthographic projection: use boundingRadius for horizontal, halfHeight for vertical
-    // This gives tighter vertical framing so tree base is at cell bottom
-    float hSize = boundingRadius * 1.1f;  // Horizontal extent with small margin
-    float vSize = halfHeight * 1.1f;      // Vertical extent with small margin
+    // Orthographic projection: use horizontalRadius for horizontal extent, halfHeight for vertical
+    // This gives proper framing for the tree's actual shape
+    float hSize = horizontalRadius * 1.1f;  // Horizontal extent with small margin
+    float vSize = halfHeight * 1.1f;        // Vertical extent with small margin
 
     glm::mat4 proj;
     if (elevation < 80.0f) {
@@ -1065,13 +1071,14 @@ void TreeImpostorAtlas::renderToCell(
         float elevCos = cos(elevationRad);
         float baseInViewSpace = (baseY - centerHeight) * elevCos;
         float yBottom = baseInViewSpace;
-        float yTop = yBottom + 2.0f * vSize * elevCos;  // Also scale vertical extent
-        proj = glm::ortho(-hSize, hSize, yBottom, yTop, 0.1f, camDist * 2.0f);
+        float yTop = yBottom + 2.0f * vSize * elevCos;
+        // Use boundingSphereRadius for near/far to ensure no depth clipping
+        proj = glm::ortho(-hSize, hSize, yBottom, yTop, 0.1f, camDist + boundingSphereRadius * 2.0f);
     } else {
         // For top-down views: use symmetric projection (no clear "bottom")
         // Use max of horizontal and vertical for both axes
         float maxSize = glm::max(hSize, vSize);
-        proj = glm::ortho(-maxSize, maxSize, -maxSize, maxSize, 0.1f, camDist * 2.0f);
+        proj = glm::ortho(-maxSize, maxSize, -maxSize, maxSize, 0.1f, camDist + boundingSphereRadius * 2.0f);
     }
 
     // Vulkan clip space correction - for asymmetric projections, must flip both Y scale and Y translation
@@ -1103,7 +1110,7 @@ void TreeImpostorAtlas::renderToCell(
     branchPush.captureParams = glm::vec4(
         static_cast<float>(cellX + cellY * ImpostorAtlasConfig::CELLS_PER_ROW),
         0.0f,  // is leaf pass = false
-        boundingRadius,
+        boundingSphereRadius,
         0.1f   // alpha test
     );
 
@@ -1142,7 +1149,7 @@ void TreeImpostorAtlas::renderToCell(
         leafPush.captureParams = glm::vec4(
             static_cast<float>(cellX + cellY * ImpostorAtlasConfig::CELLS_PER_ROW),
             1.0f,  // is leaf pass = true
-            boundingRadius,
+            boundingSphereRadius,
             0.3f   // alpha test for leaves
         );
         leafPush.firstInstance = 0;  // All leaves start at offset 0

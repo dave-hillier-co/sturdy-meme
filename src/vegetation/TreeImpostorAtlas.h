@@ -134,14 +134,15 @@ private:
     void renderToCell(
         VkCommandBuffer cmd,
         int cellX, int cellY,
-        float azimuth,      // Horizontal angle (0-360)
-        float elevation,    // Vertical angle (0 = horizon, 90 = top-down)
+        float azimuth,           // Horizontal angle (0-360)
+        float elevation,         // Vertical angle (0 = horizon, 90 = top-down)
         const Mesh& branchMesh,
         const std::vector<LeafInstanceGPU>& leafInstances,
-        float boundingRadius,  // Half of max horizontal dimension (for billboard width)
-        float halfHeight,      // Half of tree height (for billboard height)
-        float centerHeight,    // Height of tree center above origin
-        float baseY,           // Y coordinate of tree base (for asymmetric projection)
+        float horizontalRadius,      // Half of max horizontal dimension (X/Z)
+        float boundingSphereRadius,  // Full 3D bounding sphere radius for depth clipping
+        float halfHeight,            // Half of tree height (for billboard height)
+        float centerHeight,          // Height of tree center above origin
+        float baseY,                 // Y coordinate of tree base (for asymmetric projection)
         VkDescriptorSet branchDescSet,
         VkDescriptorSet leafDescSet);
 

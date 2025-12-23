@@ -1025,6 +1025,11 @@ bool Renderer::render(const Camera& camera) {
 
     // Update tree LOD system for impostor rendering
     if (systems_->treeLOD() && systems_->tree()) {
+        // Update cluster visibility with frustum planes
+        std::array<glm::vec4, 6> frustumPlanes;
+        std::copy(std::begin(frame.frustumPlanes), std::end(frame.frustumPlanes), frustumPlanes.begin());
+        systems_->treeLOD()->updateClusterVisibility(frustumPlanes);
+
         // Sync GPU LOD states from previous frame (for UI display)
         systems_->treeLOD()->syncGPULODStates();
         systems_->treeLOD()->update(frame.deltaTime, frame.cameraPosition, *systems_->tree());

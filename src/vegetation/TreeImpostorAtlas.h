@@ -78,6 +78,13 @@ struct TreeLODSettings {
     // Seasonal effects (global for all impostors)
     float autumnHueShift = 0.0f;           // 0 = summer green, 1 = full autumn colors
 
+    // Cluster-based culling and LOD (forest-scale optimization)
+    bool enableClusterCulling = true;      // Enable spatial clustering for hierarchical culling
+    bool enableClusterLOD = true;          // Force impostor for distant clusters
+    float clusterCellSize = 50.0f;         // Size of each cluster cell in world units
+    float clusterImpostorDistance = 400.0f;// Force impostor for clusters beyond this distance
+    float clusterCullDistance = 1000.0f;   // Cull clusters beyond this distance
+
     // GPU-driven LOD (experimental)
     bool enableGPUDrivenLOD = false;       // Use GPU compute for LOD calculations
 };

@@ -9,6 +9,7 @@
 
 #include "TreeImpostorAtlas.h"
 #include "TreeGPULODPipeline.h"
+#include "TreeClusterGrid.h"
 #include "core/VulkanRAII.h"
 #include "core/DescriptorManager.h"
 
@@ -143,6 +144,17 @@ public:
     };
     const DebugInfo& getDebugInfo() const { return debugInfo_; }
 
+    // Cluster grid access
+    const TreeClusterGrid& getClusterGrid() const { return clusterGrid_; }
+    bool isClusterGridInitialized() const { return clusterGridInitialized_; }
+
+    // Initialize cluster grid with world bounds (call once when forest is set up)
+    void initializeClusterGrid(const glm::vec3& worldMin, const glm::vec3& worldMax,
+                               const TreeSystem& treeSystem);
+
+    // Update cluster visibility with frustum planes (call each frame before update)
+    void updateClusterVisibility(const std::array<glm::vec4, 6>& frustumPlanes);
+
 private:
     TreeLODSystem() = default;
     bool initInternal(const InitInfo& info);
@@ -175,6 +187,11 @@ private:
     std::unique_ptr<TreeGPULODPipeline> gpuLODPipeline_;
     bool gpuLODInitialized_ = false;
     TreeDrawCounters lastGPUCounters_{};
+
+    // Cluster grid for hierarchical culling
+    TreeClusterGrid clusterGrid_;
+    bool clusterGridInitialized_ = false;
+    std::array<glm::vec4, 6> lastFrustumPlanes_{};
 
     // Per-tree LOD states
     std::vector<TreeLODState> lodStates_;

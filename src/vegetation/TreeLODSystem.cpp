@@ -640,6 +640,17 @@ void TreeLODSystem::update(float deltaTime, const glm::vec3& cameraPos, const Tr
         lodStates_.resize(instances.size());
     }
 
+    // Update cluster visibility if cluster grid is initialized
+    if (clusterGridInitialized_ && settings.enableClusterCulling) {
+        ClusterGridSettings clusterSettings;
+        clusterSettings.cellSize = settings.clusterCellSize;
+        clusterSettings.clusterImpostorDistance = settings.clusterImpostorDistance;
+        clusterSettings.clusterCullDistance = settings.clusterCullDistance;
+        clusterSettings.enableClusterLOD = settings.enableClusterLOD;
+        clusterSettings.enableClusterCulling = settings.enableClusterCulling;
+        clusterGrid_.updateVisibility(cameraPos, lastFrustumPlanes_, clusterSettings);
+    }
+
     // Number of archetypes (display trees define the archetypes)
     const uint32_t numArchetypes = static_cast<uint32_t>(impostorAtlas_->getArchetypeCount());
     const uint32_t numDisplayTrees = 4;  // oak, pine, ash, aspen
@@ -649,6 +660,8 @@ void TreeLODSystem::update(float deltaTime, const glm::vec3& cameraPos, const Tr
     // When GPU LOD is active, lodStates_ are already populated by syncGPULODStates()
     // We just need to assign archetype indices and collect impostors
     const bool useGPULOD = isGPUDrivenLODActive() && gpuLODInitialized_;
+    const bool useClusterCulling = clusterGridInitialized_ && settings.enableClusterCulling;
+    const bool useClusterLOD = clusterGridInitialized_ && settings.enableClusterLOD;
 
     if (!useGPULOD) {
         // CPU path: Budget-based LOD calculation
@@ -656,6 +669,13 @@ void TreeLODSystem::update(float deltaTime, const glm::vec3& cameraPos, const Tr
         treeDistances.reserve(instances.size());
 
         for (size_t i = 0; i < instances.size(); i++) {
+            // Skip trees in culled clusters
+            if (useClusterCulling && !clusterGrid_.isTreeClusterVisible(static_cast<uint32_t>(i))) {
+                lodStates_[i].currentLevel = TreeLODState::Level::Impostor;
+                lodStates_[i].blendFactor = 1.0f;
+                continue;
+            }
+
             const auto& tree = instances[i];
             float distance = glm::distance(cameraPos, tree.position);
             treeDistances.emplace_back(distance, i);
@@ -680,12 +700,23 @@ void TreeLODSystem::update(float deltaTime, const glm::vec3& cameraPos, const Tr
         }
 
         for (size_t i = 0; i < instances.size(); i++) {
+            // Skip culled trees
+            if (useClusterCulling && !clusterGrid_.isTreeClusterVisible(static_cast<uint32_t>(i))) {
+                continue;
+            }
+
             auto& state = lodStates_[i];
             float distance = state.lastDistance;
 
-            // Determine effective full detail distance based on budget
+            // Check if cluster forces impostor for this tree
+            bool clusterForceImpostor = useClusterLOD &&
+                clusterGrid_.shouldTreeForceImpostor(static_cast<uint32_t>(i));
+
+            // Determine effective full detail distance based on budget and cluster LOD
             float effectiveFullDetailDist = settings.fullDetailDistance;
-            if (settings.enableBudgetLOD && !withinBudget[i]) {
+            if (clusterForceImpostor) {
+                effectiveFullDetailDist = 0.0f;  // Force impostor
+            } else if (settings.enableBudgetLOD && !withinBudget[i]) {
                 effectiveFullDetailDist = 0.0f;
             }
 
@@ -736,6 +767,11 @@ void TreeLODSystem::update(float deltaTime, const glm::vec3& cameraPos, const Tr
 
     // Assign archetype indices and collect visible impostors (both CPU and GPU paths)
     for (size_t i = 0; i < instances.size(); i++) {
+        // Skip trees in culled clusters (don't render impostors for them either)
+        if (useClusterCulling && !clusterGrid_.isTreeClusterVisible(static_cast<uint32_t>(i))) {
+            continue;
+        }
+
         const auto& tree = instances[i];
         auto& state = lodStates_[i];
 
@@ -1162,6 +1198,42 @@ void TreeLODSystem::recordGPULODCompute(VkCommandBuffer cmd, uint32_t frameIndex
 
     const auto& settings = getLODSettings();
     gpuLODPipeline_->recordLODCompute(cmd, frameIndex, cameraPos, settings);
+}
+
+void TreeLODSystem::initializeClusterGrid(const glm::vec3& worldMin, const glm::vec3& worldMax,
+                                           const TreeSystem& treeSystem) {
+    const auto& settings = getLODSettings();
+    const auto& instances = treeSystem.getTreeInstances();
+
+    if (instances.empty()) {
+        SDL_Log("TreeLODSystem: No trees to cluster");
+        return;
+    }
+
+    // Initialize grid with configured cell size
+    clusterGrid_.initialize(worldMin, worldMax, settings.clusterCellSize);
+
+    // Add all trees to their respective clusters
+    for (size_t i = 0; i < instances.size(); ++i) {
+        clusterGrid_.addTree(static_cast<uint32_t>(i), instances[i].position);
+    }
+
+    // Rebuild tight cluster bounds based on actual tree positions
+    clusterGrid_.rebuildClusterBounds(instances);
+
+    clusterGridInitialized_ = true;
+
+    SDL_Log("TreeLODSystem: Cluster grid initialized with %u clusters (%u trees)",
+            clusterGrid_.getTotalClusterCount(),
+            static_cast<uint32_t>(instances.size()));
+}
+
+void TreeLODSystem::updateClusterVisibility(const std::array<glm::vec4, 6>& frustumPlanes) {
+    if (!clusterGridInitialized_) {
+        return;
+    }
+
+    lastFrustumPlanes_ = frustumPlanes;
 }
 
 void TreeLODSystem::syncGPULODStates() {

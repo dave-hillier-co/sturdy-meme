@@ -481,6 +481,12 @@ bool Renderer::initSubsystems(const InitContext& initCtx) {
 
                 // Upload tree instances to GPU LOD pipeline
                 treeLOD->uploadTreeInstancesToGPU(*treeSystem);
+
+                // Initialize cluster grid for hierarchical culling
+                float halfSize = core.terrain.size * 0.5f;
+                glm::vec3 worldMin(-halfSize, 0.0f, -halfSize);
+                glm::vec3 worldMax(halfSize, core.terrain.heightScale, halfSize);
+                treeLOD->initializeClusterGrid(worldMin, worldMax, *treeSystem);
             }
         }
     }

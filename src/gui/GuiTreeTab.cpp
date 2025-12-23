@@ -80,6 +80,40 @@ void GuiTreeTab::render(Renderer& renderer) {
             }
 
             ImGui::Spacing();
+            ImGui::Text("Cluster Culling:");
+            ImGui::Checkbox("Enable Cluster Culling", &settings.enableClusterCulling);
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("Cull entire clusters of trees for better performance");
+            }
+            if (settings.enableClusterCulling) {
+                bool clusterActive = treeLOD->isClusterGridInitialized();
+                if (clusterActive) {
+                    const auto& grid = treeLOD->getClusterGrid();
+                    ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "  Cluster grid active");
+                    ImGui::Text("    Visible: %u / %u clusters", grid.getVisibleClusterCount(), grid.getTotalClusterCount());
+                    ImGui::Text("    Visible trees: %u", grid.getVisibleTreeCount());
+                } else {
+                    ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.0f, 1.0f), "  Grid not initialized");
+                }
+                ImGui::SliderFloat("Cell Size", &settings.clusterCellSize, 25.0f, 200.0f, "%.0f");
+                ImGui::SliderFloat("Cull Distance", &settings.clusterCullDistance, 200.0f, 2000.0f, "%.0f");
+                if (ImGui::IsItemHovered()) {
+                    ImGui::SetTooltip("Cull clusters beyond this distance");
+                }
+
+                ImGui::Checkbox("Enable Cluster LOD", &settings.enableClusterLOD);
+                if (ImGui::IsItemHovered()) {
+                    ImGui::SetTooltip("Force impostor for distant clusters");
+                }
+                if (settings.enableClusterLOD) {
+                    ImGui::SliderFloat("Cluster Impostor Dist", &settings.clusterImpostorDistance, 100.0f, 800.0f, "%.0f");
+                    if (ImGui::IsItemHovered()) {
+                        ImGui::SetTooltip("Force all trees in cluster to impostor beyond this distance");
+                    }
+                }
+            }
+
+            ImGui::Spacing();
             ImGui::Text("Shadow LOD:");
             ImGui::Checkbox("Enable Leaf Shadow LOD", &settings.enableLeafShadowLOD);
             if (settings.enableLeafShadowLOD) {

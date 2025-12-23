@@ -217,6 +217,8 @@ bool DetritusSystem::generateMeshFromBranches(const GeneratedBranch& branchData,
         return false;
     }
 
+    SDL_Log("DetritusSystem: Mesh generated with %zu vertices, %zu indices", vertices.size(), indices.size());
+
     outMesh.setCustomGeometry(vertices, indices);
     if (!outMesh.upload(info.allocator, info.device, info.commandPool, info.graphicsQueue)) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "DetritusSystem: Failed to upload mesh");
@@ -311,9 +313,11 @@ void DetritusSystem::generatePlacements(const InitInfo& info) {
         // Rotation: fallen branches lie on the ground with random orientations
         float yaw = hashPosition(x, z, 33333) * 2.0f * 3.14159f;  // Random horizontal rotation
 
-        // Slight random pitch and roll for natural look
-        float pitch = (hashPosition(x, z, 44444) - 0.5f) * 0.3f;  // Small tilt
-        float roll = glm::half_pi<float>() - 0.1f + hashPosition(x, z, 55555) * 0.2f;  // Mostly lying down
+        // Branch is generated pointing UP (Y axis). To make it lie flat,
+        // we rotate around X (pitch) by ~π/2. With Y-X-Z rotation order,
+        // pitch is applied second and tips the branch to horizontal.
+        float pitch = glm::half_pi<float>() - 0.1f + (hashPosition(x, z, 44444) - 0.5f) * 0.2f;  // Tip to horizontal
+        float roll = (hashPosition(x, z, 55555) - 0.5f) * 0.3f;  // Small twist variation
 
         instance.rotation = glm::vec3(pitch, yaw, roll);
 

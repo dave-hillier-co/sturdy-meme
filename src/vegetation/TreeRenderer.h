@@ -52,14 +52,23 @@ struct TreeLeafShadowPushConstants {
 };
 
 // Uniforms for tree leaf culling compute shader (must match shader layout)
+// This is the global uniform block shared across all trees
 struct TreeLeafCullUniforms {
     glm::vec4 cameraPosition;           // xyz = camera pos, w = unused
     glm::vec4 frustumPlanes[6];         // Frustum planes for culling
-    glm::mat4 treeModel;                // Current tree's model matrix
     float maxDrawDistance;              // Maximum leaf draw distance
     float lodTransitionStart;           // LOD transition start distance
     float lodTransitionEnd;             // LOD transition end distance
     float maxLodDropRate;               // Maximum LOD drop rate (0.0-1.0)
+    uint32_t numTrees;                  // Total number of trees
+    uint32_t totalLeafInstances;        // Total leaf instances across all trees
+    uint32_t _pad0;
+    uint32_t _pad1;
+};
+
+// Per-tree culling data (stored in SSBO, one entry per tree)
+struct TreeCullData {
+    glm::mat4 treeModel;                // Tree's model matrix
     uint32_t inputFirstInstance;        // Offset into inputInstances for this tree
     uint32_t inputInstanceCount;        // Number of input instances for this tree
     uint32_t outputBaseOffset;          // Base offset in output buffer for this tree
@@ -224,6 +233,11 @@ private:
 
     // Uniform buffers for culling (per-frame)
     BufferUtils::PerFrameBufferSet cullUniformBuffers_;
+
+    // Per-tree data buffer (SSBO with all tree transforms and offsets)
+    VkBuffer treeDataBuffer_ = VK_NULL_HANDLE;
+    VmaAllocation treeDataAllocation_ = VK_NULL_HANDLE;
+    VkDeviceSize treeDataBufferSize_ = 0;
 
     // Culling parameters
     float leafMaxDrawDistance_ = 100.0f;

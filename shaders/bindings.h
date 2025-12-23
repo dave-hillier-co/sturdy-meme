@@ -145,6 +145,7 @@
 #define BINDING_TREE_LEAF_CULL_OUTPUT      1   // Output leaf instances (visible)
 #define BINDING_TREE_LEAF_CULL_INDIRECT    2   // Indirect draw command
 #define BINDING_TREE_LEAF_CULL_UNIFORMS    3   // Culling uniforms
+#define BINDING_TREE_LEAF_CULL_TREES       4   // Per-tree data SSBO (batched)
 
 // Tree Graphics Descriptor Set
 #define BINDING_TREE_GFX_UBO               0   // Scene uniforms
@@ -486,6 +487,7 @@ constexpr uint32_t TREE_LEAF_CULL_INPUT   = BINDING_TREE_LEAF_CULL_INPUT;
 constexpr uint32_t TREE_LEAF_CULL_OUTPUT  = BINDING_TREE_LEAF_CULL_OUTPUT;
 constexpr uint32_t TREE_LEAF_CULL_INDIRECT = BINDING_TREE_LEAF_CULL_INDIRECT;
 constexpr uint32_t TREE_LEAF_CULL_UNIFORMS = BINDING_TREE_LEAF_CULL_UNIFORMS;
+constexpr uint32_t TREE_LEAF_CULL_TREES   = BINDING_TREE_LEAF_CULL_TREES;
 
 // Tree Graphics
 constexpr uint32_t TREE_GFX_UBO           = BINDING_TREE_GFX_UBO;

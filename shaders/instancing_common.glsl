@@ -102,32 +102,48 @@ bool lodCull(float distance, float lodStart, float lodEnd, float maxDropRate, fl
 // Hash Functions (for procedural placement and LOD randomization)
 // ============================================================================
 
-// Simple 2D hash returning float in [0, 1)
-float hash2D(vec2 p) {
-    return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
+// Integer hash helper - based on pcg_hash
+uint pcgHash(uint v) {
+    uint state = v * 747796405u + 2891336453u;
+    uint word = ((state >> ((state >> 28u) + 4u)) ^ state) * 277803737u;
+    return (word >> 22u) ^ word;
 }
 
-// Alternative 2D hash with different coefficients (for uncorrelated values)
+// Fast 2D hash using integer operations (no sin() - much faster on GPU)
+float hash2D(vec2 p) {
+    uvec2 ip = uvec2(floatBitsToUint(p.x), floatBitsToUint(p.y));
+    uint h = pcgHash(ip.x ^ pcgHash(ip.y));
+    return float(h) / 4294967295.0;
+}
+
+// Alternative 2D hash with different seed (for uncorrelated values)
 float hash2D_alt(vec2 p) {
-    return fract(sin(dot(p, vec2(269.5, 183.3))) * 43758.5453);
+    uvec2 ip = uvec2(floatBitsToUint(p.x), floatBitsToUint(p.y));
+    uint h = pcgHash(ip.x ^ pcgHash(ip.y + 0x9E3779B9u));
+    return float(h) / 4294967295.0;
 }
 
 // Returns vec2 hash for a cell (useful for jittered placement)
 vec2 hash2D_vec2(vec2 p) {
-    return vec2(hash2D(p), hash2D(p + vec2(47.0, 13.0)));
+    uvec2 ip = uvec2(floatBitsToUint(p.x), floatBitsToUint(p.y));
+    uint h1 = pcgHash(ip.x ^ pcgHash(ip.y));
+    uint h2 = pcgHash(h1);
+    return vec2(float(h1), float(h2)) / 4294967295.0;
 }
 
 // 1D hash
 float hash1D(float n) {
-    return fract(sin(n) * 43758.5453);
+    uint h = pcgHash(floatBitsToUint(n));
+    return float(h) / 4294967295.0;
 }
 
 // 3D hash returning vec3
 vec3 hash3D(vec3 p) {
-    p = vec3(dot(p, vec3(127.1, 311.7, 74.7)),
-             dot(p, vec3(269.5, 183.3, 246.1)),
-             dot(p, vec3(113.5, 271.9, 124.6)));
-    return fract(sin(p) * 43758.5453);
+    uvec3 ip = uvec3(floatBitsToUint(p.x), floatBitsToUint(p.y), floatBitsToUint(p.z));
+    uint h1 = pcgHash(ip.x ^ pcgHash(ip.y ^ pcgHash(ip.z)));
+    uint h2 = pcgHash(h1);
+    uint h3 = pcgHash(h2);
+    return vec3(float(h1), float(h2), float(h3)) / 4294967295.0;
 }
 
 // ============================================================================

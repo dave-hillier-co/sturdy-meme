@@ -25,68 +25,104 @@ layout(std430, binding = BINDING_TREE_LEAF_CULL_INDIRECT) buffer IndirectBuffer 
     DrawIndexedIndirectCommand drawCmds[];
 };
 
-// Culling uniforms
+// Per-tree culling data (batched for all trees)
+struct TreeCullData {
+    mat4 treeModel;                // Tree's model matrix
+    uint inputFirstInstance;       // Offset into inputInstances for this tree
+    uint inputInstanceCount;       // Number of input instances for this tree
+    uint outputBaseOffset;         // Base offset in output buffer for this tree
+    uint treeIndex;                // Index of this tree (for indirect command array)
+};
+
+layout(std430, binding = BINDING_TREE_LEAF_CULL_TREES) readonly buffer TreeDataBuffer {
+    TreeCullData treeData[];
+};
+
+// Global culling uniforms (shared across all trees)
 layout(binding = BINDING_TREE_LEAF_CULL_UNIFORMS) uniform TreeLeafCullUniforms {
     vec4 cameraPosition;          // xyz = camera pos, w = unused
     vec4 frustumPlanes[6];        // Frustum planes for culling
-    mat4 treeModel;               // Current tree's model matrix
     float maxDrawDistance;        // Maximum leaf draw distance
     float lodTransitionStart;     // LOD transition start distance
     float lodTransitionEnd;       // LOD transition end distance
     float maxLodDropRate;         // Maximum LOD drop rate (0.0-1.0)
-    uint inputFirstInstance;      // Offset into inputInstances for this tree
-    uint inputInstanceCount;      // Number of input instances for this tree
-    uint outputBaseOffset;        // Base offset in output buffer for this tree
-    uint treeIndex;               // Index of this tree (for indirect command array)
-} uniforms;
+    uint numTrees;                // Total number of trees
+    uint totalLeafInstances;      // Total leaf instances across all trees
+    uint _pad0;
+    uint _pad1;
+};
 
 void main() {
-    uint localIdx = gl_GlobalInvocationID.x;
-    uint treeIdx = uniforms.treeIndex;
+    uint globalIdx = gl_GlobalInvocationID.x;
 
-    // Initialize indirect draw command for this tree (only first thread)
-    if (localIdx == 0) {
-        drawCmds[treeIdx].indexCount = 6;  // Quad: 6 indices
-        // instanceCount will be atomically incremented per visible leaf
+    // Early exit if beyond total leaf count
+    if (globalIdx >= totalLeafInstances) {
+        return;
     }
 
-    // Check if this thread has work to do
-    if (localIdx >= uniforms.inputInstanceCount) {
+    // Find which tree this leaf belongs to using binary search
+    // Since we know input ranges are contiguous, we can search for the tree
+    uint treeIdx = 0;
+    uint low = 0;
+    uint high = numTrees;
+
+    while (low < high) {
+        uint mid = (low + high) / 2;
+        uint treeStart = treeData[mid].inputFirstInstance;
+        uint treeEnd = treeStart + treeData[mid].inputInstanceCount;
+
+        if (globalIdx < treeStart) {
+            high = mid;
+        } else if (globalIdx >= treeEnd) {
+            low = mid + 1;
+        } else {
+            treeIdx = mid;
+            break;
+        }
+    }
+
+    // Get tree data
+    TreeCullData tree = treeData[treeIdx];
+
+    // Local index within this tree's leaf instances
+    uint localIdx = globalIdx - tree.inputFirstInstance;
+
+    // Sanity check
+    if (localIdx >= tree.inputInstanceCount) {
         return;
     }
 
     // Get input instance
-    uint inputIdx = uniforms.inputFirstInstance + localIdx;
-    LeafInstance leaf = inputInstances[inputIdx];
+    LeafInstance leaf = inputInstances[globalIdx];
 
     // Transform leaf position to world space
     vec3 leafLocalPos = leaf.positionAndSize.xyz;
-    vec4 worldPos = uniforms.treeModel * vec4(leafLocalPos, 1.0);
+    vec4 worldPos = tree.treeModel * vec4(leafLocalPos, 1.0);
 
     // Distance culling
-    float distToCamera = getDistanceToCamera(worldPos.xyz, uniforms.cameraPosition.xyz);
-    if (distToCamera > uniforms.maxDrawDistance) {
+    float distToCamera = getDistanceToCamera(worldPos.xyz, cameraPosition.xyz);
+    if (distToCamera > maxDrawDistance) {
         return;
     }
 
     // Frustum culling with margin for leaf size
     float leafSize = leaf.positionAndSize.w;
     float margin = leafSize * 2.0;  // Extra margin for leaf billboard rotation
-    if (!isInFrustum(uniforms.frustumPlanes, worldPos.xyz, margin)) {
+    if (!isInFrustum(frustumPlanes, worldPos.xyz, margin)) {
         return;
     }
 
     // LOD blade dropping - use position-based hash for consistent results
     float instanceHash = hash2D(leafLocalPos.xz);
-    if (lodCull(distToCamera, uniforms.lodTransitionStart, uniforms.lodTransitionEnd,
-                uniforms.maxLodDropRate, instanceHash)) {
+    if (lodCull(distToCamera, lodTransitionStart, lodTransitionEnd,
+                maxLodDropRate, instanceHash)) {
         return;
     }
 
     // This leaf is visible - atomically get output slot for this tree
-    uint outputSlot = atomicAdd(drawCmds[treeIdx].instanceCount, 1);
+    uint outputSlot = atomicAdd(drawCmds[tree.treeIndex].instanceCount, 1);
 
     // Write to output buffer at the allocated slot
     // Output position remains in tree-local space (shader applies model matrix)
-    outputInstances[uniforms.outputBaseOffset + outputSlot] = leaf;
+    outputInstances[tree.outputBaseOffset + outputSlot] = leaf;
 }

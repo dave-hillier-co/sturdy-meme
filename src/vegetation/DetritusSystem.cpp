@@ -216,8 +216,8 @@ void DetritusSystem::generatePlacements(const InitInfo& info) {
                 y = info.getTerrainHeight(x, z);
             }
 
-            // Skip very low areas (water level)
-            if (y < 1.0f) {
+            // Skip areas below tree line (24m elevation)
+            if (y < 24.0f) {
                 continue;
             }
 

@@ -25,6 +25,7 @@ class TreeSystem;
 class TreeRenderer;
 class TreeLODSystem;
 class TreeGPUForest;
+class TreeArchetypeMeshes;
 class DetritusSystem;
 class CloudShadowSystem;
 class HiZSystem;
@@ -201,6 +202,9 @@ public:
     TreeGPUForest* treeGPUForest() { return treeGPUForest_.get(); }
     const TreeGPUForest* treeGPUForest() const { return treeGPUForest_.get(); }
     void setTreeGPUForest(std::unique_ptr<TreeGPUForest> system);
+    TreeArchetypeMeshes* treeArchetypeMeshes() { return treeArchetypeMeshes_.get(); }
+    const TreeArchetypeMeshes* treeArchetypeMeshes() const { return treeArchetypeMeshes_.get(); }
+    void setTreeArchetypeMeshes(std::unique_ptr<TreeArchetypeMeshes> system);
     DetritusSystem* detritus() { return detritusSystem_.get(); }
     const DetritusSystem* detritus() const { return detritusSystem_.get(); }
     void setDetritus(std::unique_ptr<DetritusSystem> system);
@@ -295,6 +299,7 @@ private:
     std::unique_ptr<TreeRenderer> treeRenderer_;
     std::unique_ptr<TreeLODSystem> treeLODSystem_;
     std::unique_ptr<TreeGPUForest> treeGPUForest_;
+    std::unique_ptr<TreeArchetypeMeshes> treeArchetypeMeshes_;
     std::unique_ptr<DetritusSystem> detritusSystem_;
 
     // Tier 2 - Culling

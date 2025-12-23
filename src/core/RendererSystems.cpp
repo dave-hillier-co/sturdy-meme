@@ -25,6 +25,7 @@
 #include "TreeRenderer.h"
 #include "TreeLODSystem.h"
 #include "TreeGPUForest.h"
+#include "TreeArchetypeMeshes.h"
 #include "DetritusSystem.h"
 #include "CloudShadowSystem.h"
 #include "HiZSystem.h"
@@ -237,6 +238,10 @@ void RendererSystems::setTreeGPUForest(std::unique_ptr<TreeGPUForest> system) {
     treeGPUForest_ = std::move(system);
 }
 
+void RendererSystems::setTreeArchetypeMeshes(std::unique_ptr<TreeArchetypeMeshes> system) {
+    treeArchetypeMeshes_ = std::move(system);
+}
+
 void RendererSystems::setDetritus(std::unique_ptr<DetritusSystem> system) {
     detritusSystem_ = std::move(system);
 }
@@ -288,6 +293,7 @@ void RendererSystems::destroy(VkDevice device, VmaAllocator allocator) {
 
     catmullClarkSystem_.reset();  // RAII cleanup via destructor
     rockSystem_.reset();  // RAII cleanup via destructor
+    treeArchetypeMeshes_.reset();  // RAII cleanup via destructor
     treeGPUForest_.reset();  // RAII cleanup via destructor
     treeLODSystem_.reset();  // RAII cleanup via destructor
     treeRenderer_.reset();  // RAII cleanup via destructor

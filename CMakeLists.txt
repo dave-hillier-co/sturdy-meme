@@ -82,6 +82,7 @@ set(SOURCES
     src/vegetation/TreeGPULODPipeline.cpp
     src/vegetation/TreeClusterGrid.cpp
     src/vegetation/TreeGPUForest.cpp
+    src/vegetation/TreeArchetypeMeshes.cpp
     src/vegetation/BranchGenerator.cpp
     src/vegetation/DetritusSystem.cpp
     # Postprocess

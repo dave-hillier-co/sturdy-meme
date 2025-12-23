@@ -145,19 +145,20 @@ For smooth transitions:
 | GPU culling shader | ✅ Done | Frustum, distance, LOD selection |
 | Impostor indirect draw | ✅ Done | Uses existing impostor pipeline |
 | Terrain height sampling | ✅ Done | Trees follow terrain contours |
-| Full-detail indirect draw | ⏳ Deferred | Requires mesh batching per archetype |
+| TreeArchetypeMeshes | ✅ Done | Per-archetype mesh buffers for indirect draw |
+| Full-detail indirect draw | 🔄 Partial | Archetype meshes ready, needs per-archetype compute output |
 
-### Full-Detail Indirect Draw (Deferred)
+### Full-Detail Indirect Draw (Partial)
 
-Full-detail tree rendering requires per-archetype mesh handling because each tree type
-(oak, pine, ash, aspen) has a different mesh. Implementing indirect draw would require:
-1. Combined vertex/index buffers per archetype
-2. Multi-draw indirect with offsets
-3. Significant TreeRenderer refactoring
+TreeArchetypeMeshes class is complete with per-archetype mesh buffers and `renderArchetypeIndirect()` API.
+Full GPU-driven rendering requires modifying the compute shader to output per-archetype:
+1. ✅ Combined vertex/index buffers per archetype (TreeArchetypeMeshes)
+2. ⏳ Per-archetype indirect commands in compute shader (4 separate counters)
+3. ⏳ Per-archetype instance output or post-cull sorting pass
 
 Since full-detail is budget-limited to 5,000 trees (nearby only), CPU-managed rendering
-is acceptable. The impostor indirect draw handles 95%+ of visible trees, providing the
-main performance benefit.
+via TreeRenderer is acceptable. The impostor indirect draw handles 95%+ of visible trees,
+providing the main performance benefit.
 
 ## Comparison to AAA Engines
 

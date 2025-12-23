@@ -28,6 +28,7 @@
 #include "TreeRenderer.h"
 #include "TreeLODSystem.h"
 #include "TreeGPUForest.h"
+#include "TreeArchetypeMeshes.h"
 #include "DetritusSystem.h"
 #include "WaterSystem.h"
 #include "WaterDisplacement.h"
@@ -532,6 +533,31 @@ bool Renderer::initSubsystems(const InitContext& initCtx) {
                     systems_->treeGPUForest()->getClusterCount());
         } else {
             SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "TreeGPUForest creation failed (non-fatal)");
+        }
+    }
+
+    // Initialize TreeArchetypeMeshes for GPU-driven full-detail rendering
+    // This creates combined vertex/index buffers per tree type for indirect draw
+    if (systems_->tree()) {
+        TreeArchetypeMeshes::InitInfo archetypeInfo{};
+        archetypeInfo.device = device;
+        archetypeInfo.physicalDevice = physicalDevice;
+        archetypeInfo.allocator = allocator;
+        archetypeInfo.commandPool = commandPool.get();
+        archetypeInfo.graphicsQueue = graphicsQueue;
+        archetypeInfo.resourcePath = resourcePath;
+
+        auto archetypeMeshes = TreeArchetypeMeshes::create(archetypeInfo);
+        if (archetypeMeshes) {
+            if (archetypeMeshes->buildFromPresets(*systems_->tree())) {
+                systems_->setTreeArchetypeMeshes(std::move(archetypeMeshes));
+                SDL_Log("TreeArchetypeMeshes initialized with %u archetypes",
+                        systems_->treeArchetypeMeshes()->getArchetypeCount());
+            } else {
+                SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "TreeArchetypeMeshes::buildFromPresets failed");
+            }
+        } else {
+            SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "TreeArchetypeMeshes creation failed (non-fatal)");
         }
     }
 

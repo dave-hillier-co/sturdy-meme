@@ -59,8 +59,8 @@ void DetritusSystem::cleanup() {
 }
 
 bool DetritusSystem::loadTextures(const InitInfo& info) {
-    // Use oak bark texture for fallen branches
-    std::string texturePath = info.resourcePath + "/assets/textures/bark/oak_bark.jpg";
+    // Use oak bark texture for fallen branches (same textures as TreeSystem)
+    std::string texturePath = info.resourcePath + "/textures/bark/oak_color_1k.jpg";
     barkTexture_ = RAIIAdapter<Texture>::create(
         [&](auto& t) {
             if (!t.load(texturePath, info.allocator, info.device, info.commandPool,
@@ -74,7 +74,7 @@ bool DetritusSystem::loadTextures(const InitInfo& info) {
     );
     if (!barkTexture_) return false;
 
-    std::string normalPath = info.resourcePath + "/assets/textures/bark/oak_bark_norm.jpg";
+    std::string normalPath = info.resourcePath + "/textures/bark/oak_normal_1k.jpg";
     barkNormalMap_ = RAIIAdapter<Texture>::create(
         [&](auto& t) {
             if (!t.load(normalPath, info.allocator, info.device, info.commandPool,

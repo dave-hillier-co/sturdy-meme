@@ -43,14 +43,51 @@ layout(binding = BINDING_TREE_LEAF_CULL_UNIFORMS) uniform TreeLeafCullUniforms {
     vec4 cameraPosition;          // xyz = camera pos, w = unused
     vec4 frustumPlanes[6];        // Frustum planes for culling
     float maxDrawDistance;        // Maximum leaf draw distance
-    float lodTransitionStart;     // LOD transition start distance
-    float lodTransitionEnd;       // LOD transition end distance
+    float lodTransitionStart;     // LOD transition start distance (density starts reducing)
+    float lodTransitionEnd;       // LOD transition end distance (max drop rate reached)
     float maxLodDropRate;         // Maximum LOD drop rate (0.0-1.0)
     uint numTrees;                // Total number of trees
     uint totalLeafInstances;      // Total leaf instances across all trees
     uint _pad0;
     uint _pad1;
 };
+
+// Improved continuous density curve (AAA-style)
+// Returns probability of keeping a leaf based on distance
+// Uses smooth hermite curve for natural falloff
+float calculateLeafDensity(float distance, float nearStart, float farEnd, float maxDropRate) {
+    // Three-phase density curve:
+    // 1. Full density at close range (0 to nearStart * 0.5)
+    // 2. Gradual reduction (nearStart * 0.5 to nearStart)
+    // 3. Aggressive reduction (nearStart to farEnd)
+
+    float earlyStart = nearStart * 0.33;  // Start reducing at 1/3 of lodTransitionStart
+
+    if (distance < earlyStart) {
+        return 1.0;  // Full density very close
+    }
+
+    // Use smoothstep for natural-looking falloff
+    float t;
+    if (distance < nearStart) {
+        // Early phase: gentle reduction (keep 100% to 85%)
+        t = smoothstep(earlyStart, nearStart, distance);
+        return mix(1.0, 0.85, t);
+    } else {
+        // Main phase: aggressive reduction (85% to (1 - maxDropRate))
+        t = smoothstep(nearStart, farEnd, distance);
+        // Apply exponential curve for more aggressive distant culling
+        t = t * t;  // Quadratic for steeper falloff
+        return mix(0.85, 1.0 - maxDropRate, t);
+    }
+}
+
+// Improved LOD cull that uses continuous density curve
+bool continuousLodCull(float distance, float nearStart, float farEnd,
+                       float maxDropRate, float instanceHash) {
+    float keepProbability = calculateLeafDensity(distance, nearStart, farEnd, maxDropRate);
+    return instanceHash > keepProbability;  // Cull if hash exceeds keep probability
+}
 
 void main() {
     uint globalIdx = gl_GlobalInvocationID.x;
@@ -112,10 +149,10 @@ void main() {
         return;
     }
 
-    // LOD blade dropping - use position-based hash for consistent results
+    // Continuous leaf density reduction - use position-based hash for consistent results
     float instanceHash = hash2D(leafLocalPos.xz);
-    if (lodCull(distToCamera, lodTransitionStart, lodTransitionEnd,
-                maxLodDropRate, instanceHash)) {
+    if (continuousLodCull(distToCamera, lodTransitionStart, lodTransitionEnd,
+                          maxLodDropRate, instanceHash)) {
         return;
     }
 

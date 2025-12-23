@@ -627,35 +627,68 @@ void TreeLODSystem::update(float deltaTime, const glm::vec3& cameraPos, const Tr
 
     visibleImpostors_.clear();
 
+    // Budget-based LOD: Calculate distances for all trees first
+    std::vector<std::pair<float, size_t>> treeDistances;
+    treeDistances.reserve(instances.size());
+
+    for (size_t i = 0; i < instances.size(); i++) {
+        const auto& tree = instances[i];
+        float distance = glm::distance(cameraPos, tree.position);
+        treeDistances.emplace_back(distance, i);
+        lodStates_[i].lastDistance = distance;
+
+        // Assign archetype index based on tree type
+        if (numArchetypes > 0) {
+            if (i < numDisplayTrees) {
+                lodStates_[i].archetypeIndex = static_cast<uint32_t>(i) % numArchetypes;
+            } else {
+                lodStates_[i].archetypeIndex = static_cast<uint32_t>((i - numDisplayTrees) % numArchetypes);
+            }
+        }
+    }
+
+    // Sort trees by distance for budget-based LOD
+    std::sort(treeDistances.begin(), treeDistances.end());
+
+    // Determine which trees are within budget for full detail
+    std::vector<bool> withinBudget(instances.size(), false);
+    if (settings.enableBudgetLOD) {
+        uint32_t budgetCount = 0;
+        for (const auto& [dist, idx] : treeDistances) {
+            // Stop if we've hit the budget or exceeded max distance
+            if (budgetCount >= settings.fullDetailBudget ||
+                dist > static_cast<float>(settings.maxFullDetailDistance)) {
+                break;
+            }
+            withinBudget[idx] = true;
+            budgetCount++;
+        }
+    }
+
     for (size_t i = 0; i < instances.size(); i++) {
         const auto& tree = instances[i];
         auto& state = lodStates_[i];
 
-        // Assign archetype index based on tree type
-        // Display trees (0-3) map directly to their archetype
-        // Forest trees (4+) cycle through archetypes
-        if (numArchetypes > 0) {
-            if (i < numDisplayTrees) {
-                state.archetypeIndex = static_cast<uint32_t>(i) % numArchetypes;
-            } else {
-                state.archetypeIndex = static_cast<uint32_t>((i - numDisplayTrees) % numArchetypes);
-            }
-        }
+        float distance = state.lastDistance;
 
-        float distance = glm::distance(cameraPos, tree.position);
-        state.lastDistance = distance;
+        // Determine effective full detail distance based on budget
+        float effectiveFullDetailDist = settings.fullDetailDistance;
+        if (settings.enableBudgetLOD && !withinBudget[i]) {
+            // Not in budget - force to impostor immediately
+            effectiveFullDetailDist = 0.0f;
+        }
 
         // Determine target LOD level with hysteresis
         TreeLODState::Level newTarget = state.targetLevel;
 
         if (state.targetLevel == TreeLODState::Level::FullDetail) {
             // Currently at full detail, check if should switch to impostor
-            if (distance > settings.fullDetailDistance + settings.hysteresis) {
+            if (distance > effectiveFullDetailDist + settings.hysteresis) {
                 newTarget = TreeLODState::Level::Impostor;
             }
         } else {
             // Currently at impostor, check if should switch to full detail
-            if (distance < settings.fullDetailDistance - settings.hysteresis) {
+            if (distance < effectiveFullDetailDist - settings.hysteresis) {
                 newTarget = TreeLODState::Level::FullDetail;
             }
         }
@@ -663,9 +696,9 @@ void TreeLODSystem::update(float deltaTime, const glm::vec3& cameraPos, const Tr
         state.targetLevel = newTarget;
 
         // Update blend factor
-        if (settings.blendRange > 0.0f) {
-            float blendStart = settings.fullDetailDistance;
-            float blendEnd = settings.fullDetailDistance + settings.blendRange;
+        if (settings.blendRange > 0.0f && effectiveFullDetailDist > 0.0f) {
+            float blendStart = effectiveFullDetailDist;
+            float blendEnd = effectiveFullDetailDist + settings.blendRange;
 
             if (distance < blendStart) {
                 state.blendFactor = 0.0f;
@@ -675,6 +708,9 @@ void TreeLODSystem::update(float deltaTime, const glm::vec3& cameraPos, const Tr
                 float t = (distance - blendStart) / settings.blendRange;
                 state.blendFactor = std::pow(t, settings.blendExponent);
             }
+        } else if (effectiveFullDetailDist <= 0.0f) {
+            // Not in budget - full impostor with quick blend
+            state.blendFactor = 1.0f;
         } else {
             state.blendFactor = (state.targetLevel == TreeLODState::Level::Impostor) ? 1.0f : 0.0f;
         }

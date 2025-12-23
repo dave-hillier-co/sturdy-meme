@@ -240,11 +240,14 @@ private:
     VmaAllocation treeDataAllocation_ = VK_NULL_HANDLE;
     VkDeviceSize treeDataBufferSize_ = 0;
 
-    // Culling parameters - should match tree LOD settings (fullDetailDistance = 250)
+    // Culling parameters - AAA-style continuous density reduction
+    // lodTransitionStart: where density reduction begins (1/3 of this for early gentle reduction)
+    // lodTransitionEnd: where max drop rate is reached
+    // maxLodDropRate: up to 90% of leaves can be culled at max distance
     float leafMaxDrawDistance_ = 250.0f;
-    float leafLodTransitionStart_ = 150.0f;
+    float leafLodTransitionStart_ = 100.0f;  // Start reducing earlier
     float leafLodTransitionEnd_ = 250.0f;
-    float leafMaxLodDropRate_ = 0.75f;
+    float leafMaxLodDropRate_ = 0.90f;       // More aggressive (keep only 10% at max dist)
 
     // Per-frame, per-type descriptor sets for culled leaf output buffer
     std::vector<std::unordered_map<std::string, VkDescriptorSet>> culledLeafDescriptorSets_;

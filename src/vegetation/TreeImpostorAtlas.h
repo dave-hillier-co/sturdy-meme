@@ -56,6 +56,15 @@ struct TreeLODSettings {
     float blendRange = 10.0f;              // Distance over which to blend LODs
     float blendExponent = 1.0f;            // Blend curve (1.0 = linear)
 
+    // Budget-based LOD (AAA optimization)
+    bool enableBudgetLOD = true;           // Enable budget-based tree selection
+    uint32_t fullDetailBudget = 75;        // Max trees at full detail (nearest N)
+    uint32_t maxFullDetailDistance = 300;  // Hard cap even for budgeted trees
+
+    // Shadow LOD settings (performance optimization)
+    float leafShadowMaxDistance = 75.0f;   // Skip leaf shadows beyond this distance (big perf win)
+    bool enableLeafShadowLOD = true;       // Enable distance-based leaf shadow culling
+
     // Impostor settings
     bool enableImpostors = true;
     float impostorBrightness = 1.0f;       // Brightness adjustment for impostors

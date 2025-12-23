@@ -1273,12 +1273,22 @@ void TreeRenderer::renderShadows(VkCommandBuffer cmd, uint32_t frameIndex,
     }
 
     // Render leaf shadows with instancing (with alpha test)
+    // AAA optimization: Skip leaf shadows for distant trees (huge fillrate savings)
     if (!leafRenderables.empty() && leafShadowPipeline_.get() != VK_NULL_HANDLE) {
         vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, leafShadowPipeline_.get());
 
         // Get leaf draw info from tree system
         const auto& leafDrawInfo = treeSystem.getLeafDrawInfo();
         const Mesh& sharedQuad = treeSystem.getSharedLeafQuadMesh();
+
+        // Get shadow LOD settings
+        float leafShadowMaxDist = 75.0f;  // Default
+        bool enableLeafShadowLOD = true;
+        if (lodSystem) {
+            const auto& lodSettings = lodSystem->getLODSettings();
+            leafShadowMaxDist = lodSettings.leafShadowMaxDistance;
+            enableLeafShadowLOD = lodSettings.enableLeafShadowLOD;
+        }
 
         // Bind shared quad mesh once
         if (sharedQuad.getIndexCount() > 0) {
@@ -1308,6 +1318,16 @@ void TreeRenderer::renderShadows(VkCommandBuffer cmd, uint32_t frameIndex,
             if (lodSystem && !lodSystem->shouldRenderFullGeometry(leafTreeIndex)) {
                 leafTreeIndex++;
                 continue;
+            }
+
+            // Skip leaf shadows for distant trees (major performance optimization)
+            // Branch shadows still render, but leaf shadows are very expensive
+            if (enableLeafShadowLOD && lodSystem) {
+                const auto& lodState = lodSystem->getTreeLODState(leafTreeIndex);
+                if (lodState.lastDistance > leafShadowMaxDist) {
+                    leafTreeIndex++;
+                    continue;
+                }
             }
 
             // Bind descriptor set for this leaf type (for alpha test texture)

@@ -655,3 +655,78 @@ TreeDrawCounters TreeGPULODPipeline::readDrawCounters() {
 
     return counters;
 }
+
+std::vector<TreeLODStateGPU> TreeGPULODPipeline::readLODStates() {
+    std::vector<TreeLODStateGPU> states;
+    if (currentTreeCount_ == 0 || lodStateBuffer_ == VK_NULL_HANDLE) {
+        return states;
+    }
+
+    states.resize(currentTreeCount_);
+    VkDeviceSize readSize = currentTreeCount_ * sizeof(TreeLODStateGPU);
+
+    // Create staging buffer for readback
+    VkBuffer stagingBuffer;
+    VmaAllocation stagingAllocation;
+
+    VkBufferCreateInfo stagingInfo{};
+    stagingInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+    stagingInfo.size = readSize;
+    stagingInfo.usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+
+    VmaAllocationCreateInfo stagingAllocInfo{};
+    stagingAllocInfo.usage = VMA_MEMORY_USAGE_GPU_TO_CPU;
+
+    if (vmaCreateBuffer(allocator_, &stagingInfo, &stagingAllocInfo,
+                        &stagingBuffer, &stagingAllocation, nullptr) != VK_SUCCESS) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "TreeGPULODPipeline: Failed to create readback staging buffer");
+        return states;
+    }
+
+    // Record and execute copy command
+    VkCommandBufferAllocateInfo allocInfo{};
+    allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+    allocInfo.commandPool = commandPool_;
+    allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+    allocInfo.commandBufferCount = 1;
+
+    VkCommandBuffer cmd;
+    if (vkAllocateCommandBuffers(device_, &allocInfo, &cmd) != VK_SUCCESS) {
+        vmaDestroyBuffer(allocator_, stagingBuffer, stagingAllocation);
+        return states;
+    }
+
+    VkCommandBufferBeginInfo beginInfo{};
+    beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+    beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+    vkBeginCommandBuffer(cmd, &beginInfo);
+
+    VkBufferCopy copyRegion{};
+    copyRegion.srcOffset = 0;
+    copyRegion.dstOffset = 0;
+    copyRegion.size = readSize;
+    vkCmdCopyBuffer(cmd, lodStateBuffer_, stagingBuffer, 1, &copyRegion);
+
+    vkEndCommandBuffer(cmd);
+
+    VkSubmitInfo submitInfo{};
+    submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+    submitInfo.commandBufferCount = 1;
+    submitInfo.pCommandBuffers = &cmd;
+
+    vkQueueSubmit(computeQueue_, 1, &submitInfo, VK_NULL_HANDLE);
+    vkQueueWaitIdle(computeQueue_);
+
+    vkFreeCommandBuffers(device_, commandPool_, 1, &cmd);
+
+    // Read back data
+    void* data;
+    if (vmaMapMemory(allocator_, stagingAllocation, &data) == VK_SUCCESS) {
+        memcpy(states.data(), data, readSize);
+        vmaUnmapMemory(allocator_, stagingAllocation);
+    }
+
+    vmaDestroyBuffer(allocator_, stagingBuffer, stagingAllocation);
+
+    return states;
+}

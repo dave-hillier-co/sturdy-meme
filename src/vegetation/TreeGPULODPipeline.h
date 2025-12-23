@@ -61,6 +61,10 @@ public:
     // Note: Reading this causes a GPU sync - only use for debugging
     TreeDrawCounters readDrawCounters();
 
+    // Read back LOD states from GPU to CPU
+    // Note: This causes a GPU sync - call once per frame at most
+    std::vector<TreeLODStateGPU> readLODStates();
+
     // Check if pipeline is ready
     bool isReady() const { return pipelinesReady_; }
 

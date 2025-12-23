@@ -646,101 +646,106 @@ void TreeLODSystem::update(float deltaTime, const glm::vec3& cameraPos, const Tr
 
     visibleImpostors_.clear();
 
-    // Budget-based LOD: Calculate distances for all trees first
-    std::vector<std::pair<float, size_t>> treeDistances;
-    treeDistances.reserve(instances.size());
+    // When GPU LOD is active, lodStates_ are already populated by syncGPULODStates()
+    // We just need to assign archetype indices and collect impostors
+    const bool useGPULOD = isGPUDrivenLODActive() && gpuLODInitialized_;
 
-    for (size_t i = 0; i < instances.size(); i++) {
-        const auto& tree = instances[i];
-        float distance = glm::distance(cameraPos, tree.position);
-        treeDistances.emplace_back(distance, i);
-        lodStates_[i].lastDistance = distance;
+    if (!useGPULOD) {
+        // CPU path: Budget-based LOD calculation
+        std::vector<std::pair<float, size_t>> treeDistances;
+        treeDistances.reserve(instances.size());
 
-        // Assign archetype index based on tree type
-        if (numArchetypes > 0) {
-            if (i < numDisplayTrees) {
-                lodStates_[i].archetypeIndex = static_cast<uint32_t>(i) % numArchetypes;
+        for (size_t i = 0; i < instances.size(); i++) {
+            const auto& tree = instances[i];
+            float distance = glm::distance(cameraPos, tree.position);
+            treeDistances.emplace_back(distance, i);
+            lodStates_[i].lastDistance = distance;
+        }
+
+        // Sort trees by distance for budget-based LOD
+        std::sort(treeDistances.begin(), treeDistances.end());
+
+        // Determine which trees are within budget for full detail
+        std::vector<bool> withinBudget(instances.size(), false);
+        if (settings.enableBudgetLOD) {
+            uint32_t budgetCount = 0;
+            for (const auto& [dist, idx] : treeDistances) {
+                if (budgetCount >= settings.fullDetailBudget ||
+                    dist > static_cast<float>(settings.maxFullDetailDistance)) {
+                    break;
+                }
+                withinBudget[idx] = true;
+                budgetCount++;
+            }
+        }
+
+        for (size_t i = 0; i < instances.size(); i++) {
+            auto& state = lodStates_[i];
+            float distance = state.lastDistance;
+
+            // Determine effective full detail distance based on budget
+            float effectiveFullDetailDist = settings.fullDetailDistance;
+            if (settings.enableBudgetLOD && !withinBudget[i]) {
+                effectiveFullDetailDist = 0.0f;
+            }
+
+            // Determine target LOD level with hysteresis
+            TreeLODState::Level newTarget = state.targetLevel;
+
+            if (state.targetLevel == TreeLODState::Level::FullDetail) {
+                if (distance > effectiveFullDetailDist + settings.hysteresis) {
+                    newTarget = TreeLODState::Level::Impostor;
+                }
             } else {
-                lodStates_[i].archetypeIndex = static_cast<uint32_t>((i - numDisplayTrees) % numArchetypes);
+                if (distance < effectiveFullDetailDist - settings.hysteresis) {
+                    newTarget = TreeLODState::Level::FullDetail;
+                }
+            }
+
+            state.targetLevel = newTarget;
+
+            // Update blend factor
+            if (settings.blendRange > 0.0f && effectiveFullDetailDist > 0.0f) {
+                float blendStart = effectiveFullDetailDist;
+                float blendEnd = effectiveFullDetailDist + settings.blendRange;
+
+                if (distance < blendStart) {
+                    state.blendFactor = 0.0f;
+                } else if (distance > blendEnd) {
+                    state.blendFactor = 1.0f;
+                } else {
+                    float t = (distance - blendStart) / settings.blendRange;
+                    state.blendFactor = std::pow(t, settings.blendExponent);
+                }
+            } else if (effectiveFullDetailDist <= 0.0f) {
+                state.blendFactor = 1.0f;
+            } else {
+                state.blendFactor = (state.targetLevel == TreeLODState::Level::Impostor) ? 1.0f : 0.0f;
+            }
+
+            // Determine current level based on blend factor
+            if (state.blendFactor < 0.01f) {
+                state.currentLevel = TreeLODState::Level::FullDetail;
+            } else if (state.blendFactor > 0.99f) {
+                state.currentLevel = TreeLODState::Level::Impostor;
+            } else {
+                state.currentLevel = TreeLODState::Level::Blending;
             }
         }
     }
 
-    // Sort trees by distance for budget-based LOD
-    std::sort(treeDistances.begin(), treeDistances.end());
-
-    // Determine which trees are within budget for full detail
-    std::vector<bool> withinBudget(instances.size(), false);
-    if (settings.enableBudgetLOD) {
-        uint32_t budgetCount = 0;
-        for (const auto& [dist, idx] : treeDistances) {
-            // Stop if we've hit the budget or exceeded max distance
-            if (budgetCount >= settings.fullDetailBudget ||
-                dist > static_cast<float>(settings.maxFullDetailDistance)) {
-                break;
-            }
-            withinBudget[idx] = true;
-            budgetCount++;
-        }
-    }
-
+    // Assign archetype indices and collect visible impostors (both CPU and GPU paths)
     for (size_t i = 0; i < instances.size(); i++) {
         const auto& tree = instances[i];
         auto& state = lodStates_[i];
 
-        float distance = state.lastDistance;
-
-        // Determine effective full detail distance based on budget
-        float effectiveFullDetailDist = settings.fullDetailDistance;
-        if (settings.enableBudgetLOD && !withinBudget[i]) {
-            // Not in budget - force to impostor immediately
-            effectiveFullDetailDist = 0.0f;
-        }
-
-        // Determine target LOD level with hysteresis
-        TreeLODState::Level newTarget = state.targetLevel;
-
-        if (state.targetLevel == TreeLODState::Level::FullDetail) {
-            // Currently at full detail, check if should switch to impostor
-            if (distance > effectiveFullDetailDist + settings.hysteresis) {
-                newTarget = TreeLODState::Level::Impostor;
-            }
-        } else {
-            // Currently at impostor, check if should switch to full detail
-            if (distance < effectiveFullDetailDist - settings.hysteresis) {
-                newTarget = TreeLODState::Level::FullDetail;
-            }
-        }
-
-        state.targetLevel = newTarget;
-
-        // Update blend factor
-        if (settings.blendRange > 0.0f && effectiveFullDetailDist > 0.0f) {
-            float blendStart = effectiveFullDetailDist;
-            float blendEnd = effectiveFullDetailDist + settings.blendRange;
-
-            if (distance < blendStart) {
-                state.blendFactor = 0.0f;
-            } else if (distance > blendEnd) {
-                state.blendFactor = 1.0f;
+        // Assign archetype index based on tree type
+        if (numArchetypes > 0) {
+            if (i < numDisplayTrees) {
+                state.archetypeIndex = static_cast<uint32_t>(i) % numArchetypes;
             } else {
-                float t = (distance - blendStart) / settings.blendRange;
-                state.blendFactor = std::pow(t, settings.blendExponent);
+                state.archetypeIndex = static_cast<uint32_t>((i - numDisplayTrees) % numArchetypes);
             }
-        } else if (effectiveFullDetailDist <= 0.0f) {
-            // Not in budget - full impostor with quick blend
-            state.blendFactor = 1.0f;
-        } else {
-            state.blendFactor = (state.targetLevel == TreeLODState::Level::Impostor) ? 1.0f : 0.0f;
-        }
-
-        // Determine current level based on blend factor
-        if (state.blendFactor < 0.01f) {
-            state.currentLevel = TreeLODState::Level::FullDetail;
-        } else if (state.blendFactor > 0.99f) {
-            state.currentLevel = TreeLODState::Level::Impostor;
-        } else {
-            state.currentLevel = TreeLODState::Level::Blending;
         }
 
         // Collect visible impostors
@@ -1165,10 +1170,32 @@ void TreeLODSystem::syncGPULODStates() {
         return;
     }
 
-    // Read draw counters and store for UI display
+    // Read draw counters for UI display
     lastGPUCounters_ = gpuLODPipeline_->readDrawCounters();
 
-    // Note: For now, we still use CPU-based impostor collection after this.
-    // Full GPU-driven would require the render shaders to read LOD states directly
-    // from the GPU buffer. That's Phase 2 of the GPU-driven pipeline.
+    // Read back GPU-computed LOD states and update CPU-side lodStates_
+    auto gpuStates = gpuLODPipeline_->readLODStates();
+    if (gpuStates.size() == lodStates_.size()) {
+        for (size_t i = 0; i < gpuStates.size(); ++i) {
+            const auto& gpu = gpuStates[i];
+            auto& cpu = lodStates_[i];
+
+            cpu.lastDistance = gpu.distance;
+            cpu.blendFactor = gpu.blendFactor;
+
+            // Map GPU LOD level to CPU enum
+            switch (gpu.lodLevel) {
+                case TreeLODLevel::FullDetail:
+                    cpu.currentLevel = TreeLODState::Level::FullDetail;
+                    break;
+                case TreeLODLevel::Blending:
+                    cpu.currentLevel = TreeLODState::Level::Blending;
+                    break;
+                case TreeLODLevel::Impostor:
+                default:
+                    cpu.currentLevel = TreeLODState::Level::Impostor;
+                    break;
+            }
+        }
+    }
 }

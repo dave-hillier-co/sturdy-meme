@@ -239,10 +239,10 @@ private:
     VmaAllocation treeDataAllocation_ = VK_NULL_HANDLE;
     VkDeviceSize treeDataBufferSize_ = 0;
 
-    // Culling parameters
-    float leafMaxDrawDistance_ = 100.0f;
-    float leafLodTransitionStart_ = 50.0f;
-    float leafLodTransitionEnd_ = 100.0f;
+    // Culling parameters - should match tree LOD settings (fullDetailDistance = 250)
+    float leafMaxDrawDistance_ = 250.0f;
+    float leafLodTransitionStart_ = 150.0f;
+    float leafLodTransitionEnd_ = 250.0f;
     float leafMaxLodDropRate_ = 0.75f;
 
     // Per-frame, per-type descriptor sets for culled leaf output buffer

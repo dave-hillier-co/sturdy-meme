@@ -135,6 +135,30 @@ For smooth transitions:
 - Render both full detail AND impostor during blend
 - Fade impostor in/out with alpha
 
+## Implementation Status
+
+| Component | Status | Notes |
+|-----------|--------|-------|
+| TreeGPUForest class | ✅ Done | Manages 1M trees, compute dispatch |
+| GPU source buffer | ✅ Done | 32 bytes/tree, procedural generation |
+| Cluster culling | ✅ Done | CPU visibility + GPU early-out |
+| GPU culling shader | ✅ Done | Frustum, distance, LOD selection |
+| Impostor indirect draw | ✅ Done | Uses existing impostor pipeline |
+| Terrain height sampling | ✅ Done | Trees follow terrain contours |
+| Full-detail indirect draw | ⏳ Deferred | Requires mesh batching per archetype |
+
+### Full-Detail Indirect Draw (Deferred)
+
+Full-detail tree rendering requires per-archetype mesh handling because each tree type
+(oak, pine, ash, aspen) has a different mesh. Implementing indirect draw would require:
+1. Combined vertex/index buffers per archetype
+2. Multi-draw indirect with offsets
+3. Significant TreeRenderer refactoring
+
+Since full-detail is budget-limited to 5,000 trees (nearby only), CPU-managed rendering
+is acceptable. The impostor indirect draw handles 95%+ of visible trees, providing the
+main performance benefit.
+
 ## Comparison to AAA Engines
 
 | Feature | Our Target | UE5 Nanite | SpeedTree |

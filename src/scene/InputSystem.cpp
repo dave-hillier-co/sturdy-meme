@@ -64,6 +64,11 @@ bool InputSystem::processEvent(const SDL_Event& event) {
             }
             break;
 
+        case SDL_EVENT_MOUSE_WHEEL:
+            // Accumulate mouse wheel for camera zoom (negative = zoom out, positive = zoom in)
+            mouseWheelAccumulator -= event.wheel.y * 0.5f;
+            return true;
+
         default:
             break;
     }
@@ -77,7 +82,9 @@ void InputSystem::update(float deltaTime, float cameraYaw) {
     jumpRequested = false;
     cameraYawInput = 0.0f;
     cameraPitchInput = 0.0f;
-    cameraZoomInput = 0.0f;
+    // Start with accumulated mouse wheel input, then reset it
+    cameraZoomInput = mouseWheelAccumulator;
+    mouseWheelAccumulator = 0.0f;
     freeCameraForward = 0.0f;
     freeCameraRight = 0.0f;
     freeCameraUp = 0.0f;

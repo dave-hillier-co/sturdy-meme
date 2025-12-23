@@ -18,11 +18,12 @@
 // Configuration for detritus generation and placement
 struct DetritusConfig {
     int branchVariations = 8;         // Number of unique fallen branch mesh variations
+    int forkedVariations = 4;         // Number of Y-shaped forked branch variations
     int branchesPerVariation = 4;     // How many instances of each variation
     float minLength = 0.5f;           // Minimum branch length
-    float maxLength = 2.5f;           // Maximum branch length
+    float maxLength = 4.0f;           // Maximum branch length (larger for variation)
     float minRadius = 0.03f;          // Minimum branch radius
-    float maxRadius = 0.15f;          // Maximum branch radius
+    float maxRadius = 0.25f;          // Maximum branch radius (thicker branches)
     float placementRadius = 60.0f;    // Radius from origin to place detritus
     float minDistanceBetween = 1.0f;  // Minimum distance between pieces
     float breakChance = 0.7f;         // Chance for branch to have a break point

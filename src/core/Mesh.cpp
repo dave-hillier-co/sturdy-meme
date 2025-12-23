@@ -657,6 +657,196 @@ void Mesh::createRock(float baseRadius, int subdivisions, uint32_t seed, float r
     calculateBounds();
 }
 
+void Mesh::createBranch(float radius, float length, int sections, int segments, uint32_t seed,
+                        float taper, float gnarliness) {
+    vertices.clear();
+    indices.clear();
+
+    // Simple hash function for reproducible randomness
+    auto hash = [seed](int a, int b) -> float {
+        uint32_t n = static_cast<uint32_t>(a) * 374761393U + static_cast<uint32_t>(b) * 668265263U + seed;
+        n = (n ^ (n >> 13)) * 1274126177U;
+        return static_cast<float>(n & 0xFFFFFF) / static_cast<float>(0xFFFFFF);
+    };
+
+    // Create rings along the branch
+    for (int section = 0; section <= sections; ++section) {
+        float t = static_cast<float>(section) / static_cast<float>(sections);
+        float y = t * length;
+
+        // Taper radius along length
+        float sectionRadius = radius * (1.0f - t * (1.0f - taper));
+
+        // Add gnarliness - offset the ring center slightly
+        float offsetX = (hash(section, 0) - 0.5f) * gnarliness * radius;
+        float offsetZ = (hash(section, 1) - 0.5f) * gnarliness * radius;
+
+        for (int seg = 0; seg <= segments; ++seg) {
+            float theta = 2.0f * static_cast<float>(M_PI) * static_cast<float>(seg) / static_cast<float>(segments);
+
+            // Add per-vertex gnarliness
+            float vertGnarl = 1.0f + (hash(section * 100 + seg, 2) - 0.5f) * gnarliness * 0.5f;
+
+            float x = sectionRadius * vertGnarl * std::cos(theta) + offsetX;
+            float z = sectionRadius * vertGnarl * std::sin(theta) + offsetZ;
+
+            glm::vec3 pos(x, y, z);
+            glm::vec3 normal = glm::normalize(glm::vec3(std::cos(theta), 0.0f, std::sin(theta)));
+            glm::vec2 uv(static_cast<float>(seg) / static_cast<float>(segments), t * 2.0f);
+
+            // Tangent along the branch
+            glm::vec3 tangentDir(-std::sin(theta), 0.0f, std::cos(theta));
+            glm::vec4 tangent(glm::normalize(tangentDir), 1.0f);
+
+            vertices.push_back({pos, normal, uv, tangent});
+        }
+    }
+
+    // Create indices connecting rings
+    int vertsPerRing = segments + 1;
+    for (int section = 0; section < sections; ++section) {
+        for (int seg = 0; seg < segments; ++seg) {
+            int v0 = section * vertsPerRing + seg;
+            int v1 = v0 + 1;
+            int v2 = v0 + vertsPerRing;
+            int v3 = v2 + 1;
+
+            // First triangle
+            indices.push_back(v0);
+            indices.push_back(v2);
+            indices.push_back(v1);
+
+            // Second triangle
+            indices.push_back(v1);
+            indices.push_back(v2);
+            indices.push_back(v3);
+        }
+    }
+
+    calculateBounds();
+}
+
+void Mesh::createForkedBranch(float radius, float length, int sections, int segments, uint32_t seed,
+                              float taper, float gnarliness, float forkAngle) {
+    vertices.clear();
+    indices.clear();
+
+    // Hash function for reproducible randomness
+    auto hash = [seed](int a, int b) -> float {
+        uint32_t n = static_cast<uint32_t>(a) * 374761393U + static_cast<uint32_t>(b) * 668265263U + seed;
+        n = (n ^ (n >> 13)) * 1274126177U;
+        return static_cast<float>(n & 0xFFFFFF) / static_cast<float>(0xFFFFFF);
+    };
+
+    // Fork point is 30-60% along the main trunk
+    float forkT = 0.3f + hash(0, 0) * 0.3f;
+    int forkSection = static_cast<int>(forkT * sections);
+    float forkY = forkT * length;
+
+    // Child branch parameters
+    float childLength = length * (0.5f + hash(1, 0) * 0.3f);  // 50-80% of main length
+    float childRadius = radius * 0.7f;  // 70% of main radius
+    int childSections = sections / 2 + 1;
+
+    // Vary fork angles slightly
+    float leftAngle = forkAngle + (hash(2, 0) - 0.5f) * 0.2f;
+    float rightAngle = forkAngle + (hash(3, 0) - 0.5f) * 0.2f;
+    float leftYaw = hash(4, 0) * 2.0f * static_cast<float>(M_PI);
+    float rightYaw = leftYaw + static_cast<float>(M_PI) * (0.8f + hash(5, 0) * 0.4f);  // Roughly opposite
+
+    int vertsPerRing = segments + 1;
+
+    // Helper to create a branch segment
+    auto createBranchSegment = [&](glm::vec3 basePos, glm::vec3 direction, float baseRadius, float segLength,
+                                   int numSections, float segTaper, int baseVertexOffset) {
+        glm::vec3 up = glm::normalize(direction);
+        glm::vec3 right = glm::normalize(glm::cross(up, glm::vec3(0.0f, 1.0f, 0.1f)));
+        glm::vec3 forward = glm::normalize(glm::cross(right, up));
+
+        for (int section = 0; section <= numSections; ++section) {
+            float t = static_cast<float>(section) / static_cast<float>(numSections);
+            float sectionRadius = baseRadius * (1.0f - t * (1.0f - segTaper));
+
+            glm::vec3 center = basePos + up * (t * segLength);
+
+            // Add gnarliness
+            float offsetX = (hash(section + baseVertexOffset, 10) - 0.5f) * gnarliness * baseRadius;
+            float offsetZ = (hash(section + baseVertexOffset, 11) - 0.5f) * gnarliness * baseRadius;
+            center += right * offsetX + forward * offsetZ;
+
+            for (int seg = 0; seg <= segments; ++seg) {
+                float theta = 2.0f * static_cast<float>(M_PI) * static_cast<float>(seg) / static_cast<float>(segments);
+
+                float vertGnarl = 1.0f + (hash((section + baseVertexOffset) * 100 + seg, 12) - 0.5f) * gnarliness * 0.5f;
+
+                glm::vec3 localOffset = right * (std::cos(theta) * sectionRadius * vertGnarl)
+                                      + forward * (std::sin(theta) * sectionRadius * vertGnarl);
+                glm::vec3 pos = center + localOffset;
+
+                glm::vec3 normal = glm::normalize(localOffset);
+                glm::vec2 uv(static_cast<float>(seg) / static_cast<float>(segments), t * 2.0f);
+                glm::vec3 tangentDir = glm::normalize(glm::cross(normal, up));
+                glm::vec4 tangent(tangentDir, 1.0f);
+
+                vertices.push_back({pos, normal, uv, tangent});
+            }
+        }
+    };
+
+    // Helper to create indices for a branch segment
+    auto createBranchIndices = [&](int startVertex, int numSections) {
+        for (int section = 0; section < numSections; ++section) {
+            for (int seg = 0; seg < segments; ++seg) {
+                int v0 = startVertex + section * vertsPerRing + seg;
+                int v1 = v0 + 1;
+                int v2 = v0 + vertsPerRing;
+                int v3 = v2 + 1;
+
+                indices.push_back(v0);
+                indices.push_back(v2);
+                indices.push_back(v1);
+
+                indices.push_back(v1);
+                indices.push_back(v2);
+                indices.push_back(v3);
+            }
+        }
+    };
+
+    // Create main trunk (up to fork point)
+    int trunkVertexStart = 0;
+    createBranchSegment(glm::vec3(0.0f), glm::vec3(0.0f, 1.0f, 0.0f), radius, forkY, forkSection, taper, 0);
+    createBranchIndices(trunkVertexStart, forkSection);
+
+    // Fork position
+    glm::vec3 forkPos(0.0f, forkY, 0.0f);
+    float forkRadius = radius * (1.0f - forkT * (1.0f - taper));
+
+    // Left fork direction
+    glm::vec3 leftDir(std::sin(leftAngle) * std::cos(leftYaw),
+                      std::cos(leftAngle),
+                      std::sin(leftAngle) * std::sin(leftYaw));
+    leftDir = glm::normalize(leftDir);
+
+    // Right fork direction
+    glm::vec3 rightDir(std::sin(rightAngle) * std::cos(rightYaw),
+                       std::cos(rightAngle),
+                       std::sin(rightAngle) * std::sin(rightYaw));
+    rightDir = glm::normalize(rightDir);
+
+    // Create left fork
+    int leftForkStart = static_cast<int>(vertices.size());
+    createBranchSegment(forkPos, leftDir, forkRadius * 0.85f, childLength, childSections, taper, 1000);
+    createBranchIndices(leftForkStart, childSections);
+
+    // Create right fork
+    int rightForkStart = static_cast<int>(vertices.size());
+    createBranchSegment(forkPos, rightDir, forkRadius * 0.85f, childLength * 0.9f, childSections, taper, 2000);
+    createBranchIndices(rightForkStart, childSections);
+
+    calculateBounds();
+}
+
 bool Mesh::upload(VmaAllocator allocator, VkDevice device, VkCommandPool commandPool, VkQueue queue) {
     if (vertices.empty() || indices.empty()) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Mesh::upload: No vertex or index data");

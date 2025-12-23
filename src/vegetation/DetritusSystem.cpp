@@ -92,141 +92,73 @@ bool DetritusSystem::loadTextures(const InitInfo& info) {
 }
 
 bool DetritusSystem::createBranchMeshes(const InitInfo& info) {
-    meshes_.resize(config_.branchVariations);
+    int totalMeshes = config_.branchVariations + config_.forkedVariations;
+    meshes_.resize(totalMeshes);
 
+    // Create regular branches with intentional size variation
     for (int i = 0; i < config_.branchVariations; ++i) {
-        // Create varied branch configurations
-        BranchConfig branchConfig;
-        branchConfig.seed = 98765 + i * 1337;
+        uint32_t seed = 98765 + i * 1337;
 
-        // Vary length and radius
-        float t = hashPosition(float(i), 0.0f, branchConfig.seed);
-        branchConfig.length = config_.minLength + t * (config_.maxLength - config_.minLength);
+        // Every 3rd branch is deliberately longer, every 4th is gnarlier
+        bool makeLong = (i % 3 == 0);
+        bool makeGnarly = (i % 4 == 0);
 
-        float r = hashPosition(float(i), 1.0f, branchConfig.seed + 100);
-        branchConfig.radius = config_.minRadius + r * (config_.maxRadius - config_.minRadius);
+        float t = hashPosition(float(i), 0.0f, seed);
+        if (makeLong) t = 0.6f + t * 0.4f;  // Bias to 0.6-1.0 for longer branches
+        float length = config_.minLength + t * (config_.maxLength - config_.minLength);
+
+        float r = hashPosition(float(i), 1.0f, seed + 100);
+        if (makeLong) r = 0.4f + r * 0.6f;  // Thicker radius for long branches
+        float radius = config_.minRadius + r * (config_.maxRadius - config_.minRadius);
 
         // More sections for longer branches
-        branchConfig.sectionCount = 4 + static_cast<int>(branchConfig.length * 3);
-        branchConfig.segmentCount = 5;
+        int sections = 4 + static_cast<int>(length * 2.5f);
+        int segments = 6;
 
-        // Varied appearance
-        branchConfig.taper = 0.6f + hashPosition(float(i), 2.0f, branchConfig.seed + 200) * 0.3f;
-        branchConfig.gnarliness = 0.1f + hashPosition(float(i), 3.0f, branchConfig.seed + 300) * 0.2f;
-        branchConfig.twist = (hashPosition(float(i), 4.0f, branchConfig.seed + 400) - 0.5f) * 0.1f;
+        // Vary taper and gnarliness - higher gnarliness range
+        float taper = 0.5f + hashPosition(float(i), 2.0f, seed + 200) * 0.4f;
+        float gnarliness = 0.15f + hashPosition(float(i), 3.0f, seed + 300) * 0.35f;  // 0.15-0.5 range
+        if (makeGnarly) gnarliness = 0.35f + hashPosition(float(i), 3.0f, seed + 300) * 0.25f;  // 0.35-0.6
 
-        // Break point configuration
-        if (hashPosition(float(i), 5.0f, branchConfig.seed + 500) < config_.breakChance) {
-            branchConfig.hasBreak = true;
-            branchConfig.breakPoint = 0.5f + hashPosition(float(i), 6.0f, branchConfig.seed + 600) * 0.4f;
-        }
+        meshes_[i].createBranch(radius, length, sections, segments, seed, taper, gnarliness);
+        meshes_[i].upload(info.allocator, info.device, info.commandPool, info.graphicsQueue);
 
-        // Child branches for larger pieces
-        if (branchConfig.length > 1.5f && hashPosition(float(i), 7.0f, branchConfig.seed + 700) > 0.4f) {
-            branchConfig.childCount = 1 + static_cast<int>(hashPosition(float(i), 8.0f, branchConfig.seed + 800) * config_.maxChildren);
-            branchConfig.childStart = 0.2f + hashPosition(float(i), 9.0f, branchConfig.seed + 900) * 0.4f;
-            branchConfig.childAngle = 30.0f + hashPosition(float(i), 10.0f, branchConfig.seed + 1000) * 40.0f;
-            branchConfig.childLengthRatio = 0.3f + hashPosition(float(i), 11.0f, branchConfig.seed + 1100) * 0.3f;
-            branchConfig.childRadiusRatio = 0.4f + hashPosition(float(i), 12.0f, branchConfig.seed + 1200) * 0.3f;
-        }
+        SDL_Log("DetritusSystem: Created branch mesh %d (r=%.2f, h=%.2f, sections=%d, taper=%.2f, gnarl=%.2f%s%s)",
+                i, radius, length, sections, taper, gnarliness,
+                makeLong ? " LONG" : "", makeGnarly ? " GNARLED" : "");
+    }
 
-        // Generate the branch
-        GeneratedBranch branchData = generator_.generate(branchConfig);
+    // Create Y-shaped forked branches - these are generally larger and gnarlier
+    for (int i = 0; i < config_.forkedVariations; ++i) {
+        int meshIdx = config_.branchVariations + i;
+        uint32_t seed = 54321 + i * 2741;
 
-        if (!generateMeshFromBranches(branchData, meshes_[i], info)) {
-            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "DetritusSystem: Failed to generate mesh %d", i);
-            return false;
-        }
+        // Forked branches are larger - bias strongly toward upper range
+        float t = 0.65f + hashPosition(float(i + 100), 0.0f, seed) * 0.35f;  // 0.65-1.0 range
+        float length = config_.minLength + t * (config_.maxLength - config_.minLength);
+
+        float r = 0.5f + hashPosition(float(i + 100), 1.0f, seed + 100) * 0.5f;  // 0.5-1.0 range
+        float radius = config_.minRadius + r * (config_.maxRadius - config_.minRadius);
+
+        int sections = 6 + static_cast<int>(length * 2.5f);
+        int segments = 6;
+
+        float taper = 0.55f + hashPosition(float(i + 100), 2.0f, seed + 200) * 0.35f;
+        float gnarliness = 0.3f + hashPosition(float(i + 100), 3.0f, seed + 300) * 0.35f;  // 0.3-0.65 range - gnarlier
+        float forkAngle = 0.3f + hashPosition(float(i + 100), 4.0f, seed + 400) * 0.4f;  // 0.3-0.7 radians
+
+        meshes_[meshIdx].createForkedBranch(radius, length, sections, segments, seed, taper, gnarliness, forkAngle);
+        meshes_[meshIdx].upload(info.allocator, info.device, info.commandPool, info.graphicsQueue);
+
+        SDL_Log("DetritusSystem: Created forked branch mesh %d (r=%.2f, h=%.2f, fork=%.2f, gnarl=%.2f)",
+                meshIdx, radius, length, forkAngle, gnarliness);
     }
 
     return true;
 }
 
-bool DetritusSystem::generateMeshFromBranches(const GeneratedBranch& branchData, Mesh& outMesh,
-                                               const InitInfo& info) {
-    std::vector<Vertex> vertices;
-    std::vector<uint32_t> indices;
-
-    // Texture scale for bark
-    glm::vec2 textureScale(1.0f, 0.25f);
-    float vRepeat = 1.0f / textureScale.y;
-
-    uint32_t indexOffset = 0;
-    for (const auto& branch : branchData.branches) {
-        int sectionCount = branch.sectionCount;
-        int segmentCount = branch.segmentCount;
-
-        for (size_t sectionIdx = 0; sectionIdx < branch.sections.size(); ++sectionIdx) {
-            const SectionData& section = branch.sections[sectionIdx];
-
-            // V coordinate alternates for tiling
-            float vCoord = (sectionIdx % 2 == 0) ? 0.0f : vRepeat;
-
-            for (int seg = 0; seg <= segmentCount; ++seg) {
-                float angle = 2.0f * glm::pi<float>() * static_cast<float>(seg) / static_cast<float>(segmentCount);
-
-                // Local position on unit circle
-                glm::vec3 localPos(std::cos(angle), 0.0f, std::sin(angle));
-                glm::vec3 localNormal = localPos;  // Outward facing normal
-
-                // Transform by section orientation
-                glm::vec3 worldOffset = section.orientation * (localPos * section.radius);
-                glm::vec3 worldNormal = glm::normalize(section.orientation * localNormal);
-
-                float uCoord = static_cast<float>(seg) / static_cast<float>(segmentCount) * textureScale.x;
-
-                Vertex v{};
-                v.position = section.origin + worldOffset;
-                v.normal = worldNormal;
-                v.texCoord = glm::vec2(uCoord, vCoord);
-                v.tangent = glm::vec4(
-                    glm::normalize(section.orientation * glm::vec3(0.0f, 1.0f, 0.0f)),
-                    1.0f
-                );
-                // No wind animation for fallen branches
-                v.color = glm::vec4(1.0f, 1.0f, 1.0f, 0.0f);
-
-                vertices.push_back(v);
-            }
-        }
-
-        // Generate indices for this branch
-        uint32_t vertsPerRing = static_cast<uint32_t>(segmentCount + 1);
-        for (int section = 0; section < sectionCount; ++section) {
-            for (int seg = 0; seg < segmentCount; ++seg) {
-                uint32_t v0 = indexOffset + section * vertsPerRing + seg;
-                uint32_t v1 = v0 + 1;
-                uint32_t v2 = v0 + vertsPerRing;
-                uint32_t v3 = v2 + 1;
-
-                indices.push_back(v0);
-                indices.push_back(v2);
-                indices.push_back(v1);
-
-                indices.push_back(v1);
-                indices.push_back(v2);
-                indices.push_back(v3);
-            }
-        }
-
-        indexOffset += static_cast<uint32_t>(branch.sections.size()) * vertsPerRing;
-    }
-
-    if (vertices.empty()) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "DetritusSystem: Generated empty mesh");
-        return false;
-    }
-
-    SDL_Log("DetritusSystem: Mesh generated with %zu vertices, %zu indices", vertices.size(), indices.size());
-
-    outMesh.setCustomGeometry(vertices, indices);
-    if (!outMesh.upload(info.allocator, info.device, info.commandPool, info.graphicsQueue)) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "DetritusSystem: Failed to upload mesh");
-        return false;
-    }
-
-    return true;
-}
+// Note: Complex branch mesh generation removed - now using simple cylinders
+// like RockSystem uses createRock()
 
 float DetritusSystem::hashPosition(float x, float z, uint32_t seed) const {
     uint32_t ix = *reinterpret_cast<uint32_t*>(&x);
@@ -240,7 +172,8 @@ float DetritusSystem::hashPosition(float x, float z, uint32_t seed) const {
 void DetritusSystem::generatePlacements(const InitInfo& info) {
     instances_.clear();
 
-    const int totalPieces = config_.branchVariations * config_.branchesPerVariation;
+    const int totalMeshes = config_.branchVariations + config_.forkedVariations;
+    const int totalPieces = totalMeshes * config_.branchesPerVariation;
     const float minDist = config_.minDistanceBetween;
     const float minDistSq = minDist * minDist;
 
@@ -325,23 +258,14 @@ void DetritusSystem::generatePlacements(const InitInfo& info) {
         float t = hashPosition(x, z, 66666);
         instance.scale = 0.7f + t * 0.6f;
 
-        // Assign mesh variation
-        instance.meshVariation = placed % config_.branchVariations;
+        // Assign mesh variation (cycles through all meshes including forked)
+        instance.meshVariation = placed % totalMeshes;
 
         instances_.push_back(instance);
         placed++;
     }
 
     SDL_Log("DetritusSystem: Placed %d pieces in %d attempts", placed, attempts);
-
-    // Log each detritus location for debugging
-    for (size_t i = 0; i < instances_.size(); ++i) {
-        const auto& inst = instances_[i];
-        SDL_Log("  Detritus[%zu]: pos(%.1f, %.1f, %.1f) rot(%.2f, %.2f, %.2f) scale=%.2f mesh=%d",
-                i, inst.position.x, inst.position.y, inst.position.z,
-                inst.rotation.x, inst.rotation.y, inst.rotation.z,
-                inst.scale, inst.meshVariation);
-    }
 }
 
 void DetritusSystem::createSceneObjects() {

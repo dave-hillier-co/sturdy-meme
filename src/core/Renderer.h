@@ -46,6 +46,7 @@ class SceneBuilder;
 class Mesh;
 class PhysicsWorld;
 class TreeSystem;
+class DetritusSystem;
 
 #ifdef JPH_DEBUG_RENDERER
 class PhysicsDebugRenderer;
@@ -282,6 +283,9 @@ public:
     // Rock system access for physics integration
     const RockSystem& getRockSystem() const;
 
+    // Detritus system access for physics integration
+    const DetritusSystem* getDetritusSystem() const;
+
     // Tree system access for GUI
     TreeSystem* getTreeSystem();
     const TreeSystem* getTreeSystem() const;
@@ -479,6 +483,9 @@ private:
 
     // Rock descriptor sets (RockSystem has its own textures, not in MaterialRegistry)
     std::vector<VkDescriptorSet> rockDescriptorSets;
+
+    // Detritus descriptor sets (DetritusSystem has its own bark textures)
+    std::vector<VkDescriptorSet> detritusDescriptorSets;
 
     // Tree descriptor sets per texture type (keyed by type name string)
     // Each map has entries for each frame: map[typeName][frameIndex]

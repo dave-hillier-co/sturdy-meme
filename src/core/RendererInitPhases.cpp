@@ -27,6 +27,7 @@
 #include "TreeSystem.h"
 #include "TreeRenderer.h"
 #include "TreeLODSystem.h"
+#include "DetritusSystem.h"
 #include "WaterSystem.h"
 #include "WaterDisplacement.h"
 #include "FlowMapGenerator.h"
@@ -481,6 +482,42 @@ bool Renderer::initSubsystems(const InitContext& initCtx) {
         }
     }
 
+    // Initialize detritus system (fallen branches scattered on forest floor)
+    {
+        DetritusSystem::InitInfo detritusInfo{};
+        detritusInfo.device = device;
+        detritusInfo.allocator = allocator;
+        detritusInfo.commandPool = commandPool.get();
+        detritusInfo.graphicsQueue = graphicsQueue;
+        detritusInfo.physicalDevice = physicalDevice;
+        detritusInfo.resourcePath = resourcePath;
+        detritusInfo.terrainSize = core.terrain.size;
+        detritusInfo.getTerrainHeight = core.terrain.getHeightAt;
+
+        DetritusConfig detritusConfig{};
+        detritusConfig.branchVariations = 8;
+        detritusConfig.branchesPerVariation = 4;
+        detritusConfig.minLength = 0.5f;
+        detritusConfig.maxLength = 2.5f;
+        detritusConfig.minRadius = 0.03f;
+        detritusConfig.maxRadius = 0.12f;
+        detritusConfig.placementRadius = 60.0f;
+        detritusConfig.minDistanceBetween = 1.5f;
+        detritusConfig.breakChance = 0.7f;
+        detritusConfig.maxChildren = 3;
+        detritusConfig.materialRoughness = 0.85f;
+        detritusConfig.materialMetallic = 0.0f;
+
+        auto detritusSystem = DetritusSystem::create(detritusInfo, detritusConfig);
+        if (detritusSystem) {
+            systems_->setDetritus(std::move(detritusSystem));
+            SDL_Log("DetritusSystem initialized with %zu fallen branches",
+                    systems_->detritus()->getDetritusCount());
+        } else {
+            SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "DetritusSystem creation failed (non-fatal)");
+        }
+    }
+
     // Update rock descriptor sets now that rock textures are loaded
     {
         MaterialDescriptorFactory factory(device);
@@ -510,6 +547,37 @@ bool Renderer::initSubsystems(const InitContext& initCtx) {
             mat.normalView = systems_->rock().getRockNormalMap().getImageView();
             mat.normalSampler = systems_->rock().getRockNormalMap().getSampler();
             factory.writeDescriptorSet(rockDescriptorSets[i], common, mat);
+        }
+    }
+
+    // Update detritus descriptor sets now that detritus textures are loaded
+    if (systems_->detritus()) {
+        MaterialDescriptorFactory factory(device);
+        for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
+            MaterialDescriptorFactory::CommonBindings common{};
+            common.uniformBuffer = systems_->globalBuffers().uniformBuffers.buffers[i];
+            common.uniformBufferSize = sizeof(UniformBufferObject);
+            common.shadowMapView = systems_->shadow().getShadowImageView();
+            common.shadowMapSampler = systems_->shadow().getShadowSampler();
+            common.lightBuffer = systems_->globalBuffers().lightBuffers.buffers[i];
+            common.lightBufferSize = sizeof(LightBuffer);
+            common.emissiveMapView = systems_->scene().getSceneBuilder().getDefaultEmissiveMap().getImageView();
+            common.emissiveMapSampler = systems_->scene().getSceneBuilder().getDefaultEmissiveMap().getSampler();
+            common.pointShadowView = systems_->shadow().getPointShadowArrayView(i);
+            common.pointShadowSampler = systems_->shadow().getPointShadowSampler();
+            common.spotShadowView = systems_->shadow().getSpotShadowArrayView(i);
+            common.spotShadowSampler = systems_->shadow().getSpotShadowSampler();
+            common.snowMaskView = systems_->snowMask().getSnowMaskView();
+            common.snowMaskSampler = systems_->snowMask().getSnowMaskSampler();
+            common.placeholderTextureView = systems_->scene().getSceneBuilder().getWhiteTexture().getImageView();
+            common.placeholderTextureSampler = systems_->scene().getSceneBuilder().getWhiteTexture().getSampler();
+
+            MaterialDescriptorFactory::MaterialTextures mat{};
+            mat.diffuseView = systems_->detritus()->getBarkTexture().getImageView();
+            mat.diffuseSampler = systems_->detritus()->getBarkTexture().getSampler();
+            mat.normalView = systems_->detritus()->getBarkNormalMap().getImageView();
+            mat.normalSampler = systems_->detritus()->getBarkNormalMap().getSampler();
+            factory.writeDescriptorSet(detritusDescriptorSets[i], common, mat);
         }
     }
 
@@ -649,7 +717,7 @@ bool Renderer::initSubsystems(const InitContext& initCtx) {
 
     // Update cloud shadow bindings across all descriptor sets
     RendererInit::updateCloudShadowBindings(device, systems_->scene().getSceneBuilder().getMaterialRegistry(),
-                                            rockDescriptorSets, systems_->skinnedMesh(),
+                                            rockDescriptorSets, detritusDescriptorSets, systems_->skinnedMesh(),
                                             systems_->cloudShadow().getShadowMapView(), systems_->cloudShadow().getShadowMapSampler());
 
     // Initialize Catmull-Clark subdivision system via factory

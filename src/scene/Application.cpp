@@ -8,6 +8,7 @@
 #include "TerrainTileCache.h"
 #include "RockSystem.h"
 #include "TreeSystem.h"
+#include "DetritusSystem.h"
 #include "SceneManager.h"
 #include "WaterSystem.h"
 #include "WindSystem.h"
@@ -137,6 +138,33 @@ bool Application::init(const std::string& title, int width, int height) {
                                        rock.scale, rotation);
     }
     SDL_Log("Created %zu rock convex hull colliders", rockInstances.size());
+
+    // Create convex hull colliders for fallen branches (detritus)
+    if (const DetritusSystem* detritusSystem = renderer_->getDetritusSystem()) {
+        const auto& detritusInstances = detritusSystem->getInstances();
+        const auto& detritusMeshes = detritusSystem->getMeshes();
+
+        for (const auto& detritus : detritusInstances) {
+            // Get the mesh for this detritus variation
+            const Mesh& mesh = detritusMeshes[detritus.meshVariation];
+            const auto& vertices = mesh.getVertices();
+
+            // Extract positions from vertex data
+            std::vector<glm::vec3> positions;
+            positions.reserve(vertices.size());
+            for (const auto& v : vertices) {
+                positions.push_back(v.position);
+            }
+
+            // Create rotation quaternion from euler angles (x, y, z)
+            glm::quat rotation = glm::quat(detritus.rotation);
+
+            // Create convex hull from mesh vertices with detritus scale
+            physics().createStaticConvexHull(detritus.position, positions.data(), positions.size(),
+                                           detritus.scale, rotation);
+        }
+        SDL_Log("Created %zu detritus convex hull colliders", detritusInstances.size());
+    }
 
     // Create compound capsule colliders for trees (trunk + major branches)
     if (TreeSystem* treeSystem = renderer_->getTreeSystem()) {
@@ -303,70 +331,6 @@ void Application::run() {
         // Update physics terrain tiles based on player position
         glm::vec3 playerPos = physics().getCharacterPosition();
         physicsTerrainManager_.update(playerPos);
-
-        // Debug: Log orb position every second to track physics terrain offset
-        static float debugLogTimer = 0.0f;
-        debugLogTimer += deltaTime;
-        if (debugLogTimer >= 1.0f) {
-            debugLogTimer = 0.0f;
-            auto& terrainSys = renderer_->getTerrainSystem();
-
-            // Use the orb light position (updated from physics body 6 - emissive sphere)
-            // The orb physics radius is 0.15 (0.5 * 0.3 scale)
-            glm::vec3 orbPos = renderer_->getSceneManager().getOrbLightPosition();
-            float cpuTerrainHeight = terrainSys.getHeightAt(orbPos.x, orbPos.z);
-
-            // Cast ray down from above orb to find where physics terrain collision is
-            glm::vec3 rayStart = glm::vec3(orbPos.x, orbPos.y + 10.0f, orbPos.z);
-            glm::vec3 rayEnd = glm::vec3(orbPos.x, orbPos.y - 50.0f, orbPos.z);
-            auto hits = physics().castRayAllHits(rayStart, rayEnd);
-
-            float physicsTerrainHeight = -9999.0f;
-            for (const auto& hit : hits) {
-                // Find the terrain hit (should be below orb position)
-                if (hit.position.y < orbPos.y && hit.position.y > physicsTerrainHeight) {
-                    physicsTerrainHeight = hit.position.y;
-                }
-            }
-
-            float orbBottom = orbPos.y - 0.15f;  // Physics radius = 0.5 * 0.3 = 0.15
-
-            // Also log GPU active tile count to see if shaders are using tiles
-            uint32_t gpuTileCount = 0;
-            bool gpuTileCoversOrb = false;
-            if (auto* tileCachePtr = terrainSys.getTileCache()) {
-                gpuTileCount = tileCachePtr->getActiveTileCount();
-
-                // Check if orb position is covered by any GPU tile
-                for (const auto* tile : tileCachePtr->getActiveTiles()) {
-                    if (orbPos.x >= tile->worldMinX && orbPos.x < tile->worldMaxX &&
-                        orbPos.z >= tile->worldMinZ && orbPos.z < tile->worldMaxZ) {
-                        gpuTileCoversOrb = true;
-                        break;
-                    }
-                }
-            }
-
-            SDL_Log("DEBUG Orb pos: (%.1f, %.2f, %.1f), physGnd: %.2f, cpuTerrain: %.2f, gpuTiles: %u, coversOrb: %d",
-                    orbPos.x, orbPos.y, orbPos.z, physicsTerrainHeight, cpuTerrainHeight, gpuTileCount,
-                    gpuTileCoversOrb ? 1 : 0);
-
-            // Log first few GPU tile bounds to understand coverage
-            if (!gpuTileCoversOrb && gpuTileCount > 0) {
-                SDL_Log("  GPU tiles not covering orb at (%.1f, %.1f):", orbPos.x, orbPos.z);
-                if (auto* tileCacheDebug = terrainSys.getTileCache()) {
-                    int count = 0;
-                    for (const auto* tile : tileCacheDebug->getActiveTiles()) {
-                        if (count++ < 3) {
-                            SDL_Log("    Tile[%d,%d]: X[%.0f,%.0f] Z[%.0f,%.0f]",
-                                    tile->coord.x, tile->coord.z,
-                                    tile->worldMinX, tile->worldMaxX,
-                                    tile->worldMinZ, tile->worldMaxZ);
-                        }
-                    }
-                }
-            }
-        }
 
         // Update player position from physics character controller
         glm::vec3 physicsPos = playerPos;

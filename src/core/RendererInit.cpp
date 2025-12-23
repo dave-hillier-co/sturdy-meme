@@ -437,6 +437,7 @@ void RendererInit::updateCloudShadowBindings(
     VkDevice device,
     MaterialRegistry& materialRegistry,
     const std::vector<VkDescriptorSet>& rockDescriptorSets,
+    const std::vector<VkDescriptorSet>& detritusDescriptorSets,
     SkinnedMeshRenderer& skinnedMeshRenderer,
     VkImageView cloudShadowView,
     VkSampler cloudShadowSampler
@@ -444,9 +445,12 @@ void RendererInit::updateCloudShadowBindings(
     // Update MaterialRegistry-managed descriptor sets
     materialRegistry.updateCloudShadowBinding(device, cloudShadowView, cloudShadowSampler);
 
-    // Update descriptor sets not managed by MaterialRegistry (rocks, skinned)
+    // Update descriptor sets not managed by MaterialRegistry (rocks, detritus, skinned)
     MaterialDescriptorFactory factory(device);
     for (auto set : rockDescriptorSets) {
+        factory.updateCloudShadowBinding(set, cloudShadowView, cloudShadowSampler);
+    }
+    for (auto set : detritusDescriptorSets) {
         factory.updateCloudShadowBinding(set, cloudShadowView, cloudShadowSampler);
     }
 

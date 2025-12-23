@@ -115,6 +115,10 @@ public:
     void createCapsule(float radius, float height, int stacks, int slices);
     void createCylinder(float radius, float height, int segments);
     void createRock(float baseRadius, int subdivisions, uint32_t seed, float roughness = 0.3f, float asymmetry = 0.2f);
+    void createBranch(float radius, float length, int sections, int segments, uint32_t seed,
+                      float taper = 0.7f, float gnarliness = 0.15f);
+    void createForkedBranch(float radius, float length, int sections, int segments, uint32_t seed,
+                            float taper = 0.7f, float gnarliness = 0.15f, float forkAngle = 0.4f);
     void setCustomGeometry(const std::vector<Vertex>& verts, const std::vector<uint32_t>& inds);
     bool upload(VmaAllocator allocator, VkDevice device, VkCommandPool commandPool, VkQueue queue);
     void destroy(VmaAllocator allocator);

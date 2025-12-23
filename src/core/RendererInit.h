@@ -298,6 +298,7 @@ public:
         VkDevice device,
         MaterialRegistry& materialRegistry,
         const std::vector<VkDescriptorSet>& rockDescriptorSets,
+        const std::vector<VkDescriptorSet>& detritusDescriptorSets,
         SkinnedMeshRenderer& skinnedMeshRenderer,
         VkImageView cloudShadowView,
         VkSampler cloudShadowSampler

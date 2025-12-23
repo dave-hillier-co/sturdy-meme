@@ -289,10 +289,11 @@ bool TreeGPUForest::createDescriptorSets() {
                           1000 * sizeof(uint32_t), VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
         writer.writeBuffer(Bindings::TREE_FOREST_FULL_DETAIL, fullDetailBuffer_, 0,
                           maxFullDetailTrees_ * sizeof(TreeFullDetailGPU), VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
-        // Initial binding uses writeBufferSet_; will be updated dynamically in recordCullingCompute
-        writer.writeBuffer(Bindings::TREE_FOREST_IMPOSTORS, impostorBuffers_[writeBufferSet_], 0,
+        // Each descriptor set binds to its corresponding buffer set (set 0 -> buffers[0], set 1 -> buffers[1])
+        // This matches GrassSystem convention - no per-frame descriptor updates needed
+        writer.writeBuffer(Bindings::TREE_FOREST_IMPOSTORS, impostorBuffers_[i], 0,
                           maxImpostorTrees_ * sizeof(TreeImpostorGPU), VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
-        writer.writeBuffer(Bindings::TREE_FOREST_INDIRECT, indirectBuffers_[writeBufferSet_], 0,
+        writer.writeBuffer(Bindings::TREE_FOREST_INDIRECT, indirectBuffers_[i], 0,
                           sizeof(ForestIndirectCommands), VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
         writer.writeBuffer(Bindings::TREE_FOREST_UNIFORMS, uniformBuffer_, 0,
                           sizeof(ForestUniformsGPU));
@@ -813,21 +814,12 @@ void TreeGPUForest::recordCullingCompute(VkCommandBuffer cmd, uint32_t frameInde
                              0, 1, &barrier, 0, nullptr, 0, nullptr);
     }
 
-    // Update descriptor set to use current write buffer set
-    // (double-buffering: compute writes to writeBufferSet_, graphics reads from readBufferSet_)
-    {
-        DescriptorManager::SetWriter writer(device_, descriptorSets_[frameIndex % 2]);
-        writer.writeBuffer(Bindings::TREE_FOREST_IMPOSTORS, writeImpostorBuffer, 0,
-                          maxImpostorTrees_ * sizeof(TreeImpostorGPU), VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
-        writer.writeBuffer(Bindings::TREE_FOREST_INDIRECT, writeIndirectBuffer, 0,
-                          sizeof(ForestIndirectCommands), VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
-        writer.update();
-    }
-
     // Bind pipeline and descriptor set
+    // Use writeBufferSet_ to select descriptor set (matches GrassSystem convention)
+    // Each descriptor set is permanently bound to its buffer set at init time
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, cullPipeline_);
     vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, cullPipelineLayout_,
-                            0, 1, &descriptorSets_[frameIndex % 2], 0, nullptr);
+                            0, 1, &descriptorSets_[writeBufferSet_], 0, nullptr);
 
     // Push constants
     uint32_t pushData[4] = {frameIndex, 0, 0, 0};

@@ -146,8 +146,10 @@ public:
     VkBuffer getIndirectBuffer() const { return indirectBuffers_[readBufferSet_]; }
 
     // Advance buffer sets after frame is complete (call at end of frame)
+    // Matches ParticleSystem pattern: render reads from where compute wrote, compute moves to next
     void advanceBufferSet() {
-        std::swap(writeBufferSet_, readBufferSet_);
+        readBufferSet_ = writeBufferSet_;  // Read from where compute just wrote
+        writeBufferSet_ = (writeBufferSet_ + 1) % BUFFER_SET_COUNT;  // Compute moves to next
     }
 
     // Get instance counts (read back from GPU - causes sync!)
@@ -208,7 +210,7 @@ private:
     std::array<VmaAllocation, BUFFER_SET_COUNT> indirectAllocations_{};
 
     uint32_t writeBufferSet_ = 0;  // Compute writes to this set
-    uint32_t readBufferSet_ = 1;   // Graphics reads from this set
+    uint32_t readBufferSet_ = 0;   // Graphics reads from this set (starts at 0, first frame reads compute output via barrier)
 
     VkBuffer uniformBuffer_ = VK_NULL_HANDLE;       // Forest uniforms
     VmaAllocation uniformAllocation_ = VK_NULL_HANDLE;

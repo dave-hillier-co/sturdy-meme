@@ -44,6 +44,8 @@
 #include "TreeSystem.h"
 #include "TreeRenderer.h"
 #include "TreeLODSystem.h"
+#include "TreeGPUForest.h"
+#include "TreeImpostorAtlas.h"
 #include "DetritusSystem.h"
 #include "UBOBuilder.h"
 #include "WaterGBuffer.h"
@@ -173,6 +175,41 @@ void Renderer::setupRenderPipeline() {
             ctx.cmd, ctx.frameIndex, *systems_->tree(),
             ctx.frame.cameraPosition, ctx.frame.frustumPlanes);
         systems_->profiler().endGpuZone(ctx.cmd, "TreeLeafCull");
+    });
+
+    // GPU forest culling compute pass (1M trees)
+    renderPipeline.computeStage.addPass("gpuForestCull", [this](RenderContext& ctx) {
+        if (!systems_->treeGPUForest() || !systems_->treeGPUForest()->isReady()) return;
+
+        systems_->profiler().beginGpuZone(ctx.cmd, "GPUForestCull");
+
+        // Get LOD settings from TreeLODSystem if available
+        TreeLODSettings lodSettings;
+        if (systems_->treeLOD()) {
+            lodSettings = systems_->treeLOD()->getLODSettings();
+        }
+
+        // Convert C-style array to std::array
+        std::array<glm::vec4, 6> frustumPlanes;
+        std::copy(std::begin(ctx.frame.frustumPlanes), std::end(ctx.frame.frustumPlanes), frustumPlanes.begin());
+
+        // Update cluster visibility (CPU-side pre-pass)
+        systems_->treeGPUForest()->updateClusterVisibility(
+            ctx.frame.cameraPosition,
+            frustumPlanes,
+            lodSettings.impostorDistance,      // clusterCullDistance
+            lodSettings.fullDetailDistance * 2.0f  // clusterImpostorDistance
+        );
+
+        // Record GPU culling compute dispatch
+        systems_->treeGPUForest()->recordCullingCompute(
+            ctx.cmd, ctx.frameIndex,
+            ctx.frame.cameraPosition,
+            frustumPlanes,
+            lodSettings
+        );
+
+        systems_->profiler().endGpuZone(ctx.cmd, "GPUForestCull");
     });
 
     // Water foam persistence compute pass

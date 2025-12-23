@@ -27,6 +27,7 @@
 #include "TreeSystem.h"
 #include "TreeRenderer.h"
 #include "TreeLODSystem.h"
+#include "TreeGPUForest.h"
 #include "DetritusSystem.h"
 #include "WaterSystem.h"
 #include "WaterDisplacement.h"
@@ -488,6 +489,43 @@ bool Renderer::initSubsystems(const InitContext& initCtx) {
                 glm::vec3 worldMax(halfSize, core.terrain.heightScale, halfSize);
                 treeLOD->initializeClusterGrid(worldMin, worldMax, *treeSystem);
             }
+        }
+    }
+
+    // Initialize TreeGPUForest for 1M tree GPU-driven rendering
+    {
+        TreeGPUForest::InitInfo gpuForestInfo{};
+        gpuForestInfo.device = device;
+        gpuForestInfo.physicalDevice = physicalDevice;
+        gpuForestInfo.allocator = allocator;
+        gpuForestInfo.descriptorPool = &*descriptorManagerPool;
+        gpuForestInfo.maxTreeCount = 1000000;      // 1M trees target
+        gpuForestInfo.maxFullDetailTrees = 5000;   // Budget for nearby trees
+        gpuForestInfo.maxImpostorTrees = 200000;   // Max visible impostors
+
+        auto gpuForest = TreeGPUForest::create(gpuForestInfo);
+        if (gpuForest) {
+            // Generate procedural forest across terrain
+            float halfSize = core.terrain.size * 0.5f;
+            glm::vec3 worldMin(-halfSize, 0.0f, -halfSize);
+            glm::vec3 worldMax(halfSize, 500.0f, halfSize);  // Up to 500m height
+            gpuForest->generateProceduralForest(worldMin, worldMax, 100000, 42);  // Start with 100k trees
+
+            // Build spatial cluster grid (50m cells)
+            gpuForest->buildClusterGrid(50.0f);
+
+            // Set archetype bounds for impostor sizing (oak, pine, ash, aspen)
+            gpuForest->setArchetypeBounds(0, glm::vec3(4.0f, 8.0f, 4.0f), 0.0f);   // Oak
+            gpuForest->setArchetypeBounds(1, glm::vec3(3.0f, 12.0f, 3.0f), 0.0f);  // Pine
+            gpuForest->setArchetypeBounds(2, glm::vec3(3.5f, 7.0f, 3.5f), 0.0f);   // Ash
+            gpuForest->setArchetypeBounds(3, glm::vec3(2.5f, 6.0f, 2.5f), 0.0f);   // Aspen
+
+            systems_->setTreeGPUForest(std::move(gpuForest));
+            SDL_Log("TreeGPUForest initialized with %u trees in %u clusters",
+                    systems_->treeGPUForest()->getTotalTreeCount(),
+                    systems_->treeGPUForest()->getClusterCount());
+        } else {
+            SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "TreeGPUForest creation failed (non-fatal)");
         }
     }
 

@@ -225,21 +225,33 @@ The existing tree rendering system implements several modern GPU-driven techniqu
 | Impostor Atlas | 17-view capture (8 horizontal + 8 elevated + 1 top-down) | `TreeImpostorAtlas.h` |
 | LOD System | FullDetail / Blending / Impostor states | `TreeLODSystem.h` |
 | Instance Data | SSBOs for `TreeCullData`, `TreeRenderDataGPU` | `TreeRenderer.h` |
+| Spatial Indexing | Uniform grid partitioning with GPU buffers | `TreeSpatialIndex.h` |
+| Hi-Z Occlusion | Hierarchical depth culling for impostors | `ImpostorCullSystem.h` |
+| Two-Phase Leaf Cull | Tree filtering then leaf culling | `tree_filter.comp`, `tree_leaf_cull_phase3.comp` |
 
-### Current Bottlenecks
+### Implementation Status Summary
 
-1. **Distance-based LOD**: Fixed thresholds don't adapt to resolution/FOV
-2. **No budget control**: Triangle count can explode in dense forest views
-3. **Linear tree processing**: All trees processed in compute shaders regardless of visibility
-4. **No occlusion culling**: Trees behind terrain still processed
-5. **Single-phase leaf culling**: Leaves processed for all trees, not just visible ones
-6. **Uniform shader complexity**: Same PBR shader at all distances
+| Phase | Status | Notes |
+|-------|--------|-------|
+| Phase 1: Spatial Partitioning | ✅ Complete | `TreeSpatialIndex`, `tree_cell_cull.comp` |
+| Phase 2: Hi-Z Occlusion Culling | ✅ Complete | `ImpostorCullSystem`, integrated into `tree_impostor_cull.comp` |
+| Phase 3: Two-Phase Tree-to-Leaf Culling | ✅ Complete | `tree_filter.comp`, `tree_leaf_cull_phase3.comp` with UI toggle |
+| Phase 4: Screen-Space Error LOD | ✅ Complete | `TreeLODSettings.useScreenSpaceError`, FOV-aware LOD selection |
+| Phase 5: Temporal Coherence | ❌ Not Started | No visibility caching |
+| Phase 6: Octahedral Impostor Mapping | ❌ Not Started | Still using 17-view atlas |
+
+### Remaining Bottlenecks
+
+1. **No budget control**: Triangle count can explode in dense forest views
+2. **Uniform shader complexity**: Same PBR shader at all distances
 
 ---
 
-## Phase 1: Spatial Partitioning
+## Phase 1: Spatial Partitioning ✅ COMPLETE
 
 **Goal**: Reduce culling workload from O(n) to O(visible cells + trees in visible cells)
+
+**Status**: Fully implemented in `TreeSpatialIndex.h/cpp` and `tree_cell_cull.comp`.
 
 ### Design
 
@@ -318,9 +330,11 @@ void TreeSpatialIndex::rebuildIndex(const std::vector<TreeInstanceData>& trees) 
 
 ---
 
-## Phase 2: Hi-Z Occlusion Culling
+## Phase 2: Hi-Z Occlusion Culling ✅ COMPLETE
 
 **Goal**: Eliminate trees hidden behind terrain and large occluders
+
+**Status**: Fully implemented in `ImpostorCullSystem.h/cpp` and integrated into `tree_impostor_cull.comp`. Features Hi-Z pyramid sampling, conservative occlusion testing using back of bounding sphere, and runtime toggle via UI.
 
 ### Design
 
@@ -375,9 +389,11 @@ if (treeDepth > occluderDepth + depthMargin) {
 
 ---
 
-## Phase 3: Two-Phase Tree-to-Leaf Culling
+## Phase 3: Two-Phase Tree-to-Leaf Culling ✅ COMPLETE
 
 **Goal**: Process leaf instances only for visible trees
+
+**Status**: Fully implemented with `tree_filter.comp` (Phase 3 tree filtering) and `tree_leaf_cull_phase3.comp` (per-visible-tree leaf culling). Includes indirect dispatch via `DispatchIndirectCommand`, output buffer partitioning by leaf type, and UI toggle to compare with legacy single-phase culling. Descriptor sets are configured at runtime to avoid buffer binding at creation time.
 
 ### Current Problem
 
@@ -460,9 +476,11 @@ void main() {
 
 ---
 
-## Phase 4: Screen-Space Error LOD Selection
+## Phase 4: Screen-Space Error LOD Selection ✅ COMPLETE
 
 **Goal**: Replace fixed distance thresholds with perceptually-correct screen-space error metrics
+
+**Status**: Fully implemented with FOV-aware screen-space error calculation in both GPU (`tree_impostor_cull.comp`) and CPU (`TreeLODSystem`). Per-archetype world error bounds stored in `ArchetypeCullData.lodErrorData`. UI toggle in Tree tab allows comparison with legacy distance-based LOD.
 
 ### Why Screen-Space Error?
 
@@ -789,23 +807,24 @@ vec4 sampleImpostor(vec3 viewDir, uint archetypeIndex) {
 
 ## Implementation Schedule
 
-| Phase | Dependencies | Complexity | Files Modified |
-|-------|--------------|------------|----------------|
-| 1. Spatial Partitioning | None | High | New: `TreeSpatialIndex.h/cpp`, `tree_cell_cull.comp` |
-| 2. Hi-Z Occlusion | Phase 1 (optional) | Medium | `tree_impostor_cull.comp`, `TreeRenderer.cpp` |
-| 3. Two-Phase Culling | Phase 1 | High | `tree_leaf_cull.comp`, `TreeRenderer.cpp` |
-| 4. Screen-Space Error LOD | None | Medium | New: `tree_lod_select.comp`, `TreeLODSystem.cpp` |
-| 5. Temporal Coherence | Phase 1, 3 | Medium | `TreeRenderer.cpp`, culling shaders |
-| 6. Octahedral Impostors | None | High | `TreeImpostorAtlas.cpp`, `tree_impostor.vert/frag` |
+| Phase | Status | Dependencies | Complexity | Files Modified |
+|-------|--------|--------------|------------|----------------|
+| 1. Spatial Partitioning | ✅ Done | None | High | `TreeSpatialIndex.h/cpp`, `tree_cell_cull.comp` |
+| 2. Hi-Z Occlusion | ✅ Done | Phase 1 (optional) | Medium | `ImpostorCullSystem.h/cpp`, `tree_impostor_cull.comp` |
+| 3. Two-Phase Culling | ✅ Done | Phase 1 | High | `tree_filter.comp`, `tree_leaf_cull_phase3.comp`, `TreeRenderer.cpp` |
+| 4. Screen-Space Error LOD | ✅ Done | None | Medium | `TreeLODSettings`, `tree_impostor_cull.comp`, `TreeLODSystem.cpp` |
+| 5. Temporal Coherence | ❌ Next | Phase 1, 3 | Medium | `TreeRenderer.cpp`, culling shaders |
+| 6. Octahedral Impostors | ❌ Pending | None | High | `TreeImpostorAtlas.cpp`, `tree_impostor.vert/frag` |
 
-### Recommended Order
+### Recommended Next Steps
 
-1. **Phase 4** (Screen-Space Error LOD) - Foundation for budget control, can implement independently
-2. **Phase 1** (Spatial Partitioning) - Prerequisite for scaling culling
-3. **Phase 3** (Two-Phase Culling) - Major win, builds on Phase 1
-4. **Phase 2** (Hi-Z Occlusion) - Independent, can parallelize with Phase 1
-5. **Phase 5** (Temporal Coherence) - Polish phase
-6. **Phase 6** (Octahedral) - Quality/memory improvement
+**Phase 5: Temporal Coherence** is the recommended next phase because:
+- Reduces per-frame culling overhead by reusing visibility from previous frames
+- Benefits from stable camera views (common in gameplay)
+- Complements the screen-space error system for smoother transitions
+
+After Phase 5:
+- **Phase 6** (Octahedral Impostors) - Memory reduction and smoother view transitions
 
 ---
 

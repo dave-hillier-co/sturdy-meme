@@ -46,8 +46,12 @@ layout(binding = BINDING_TREE_IMPOSTOR_CULL_UNIFORMS) uniform ImpostorCullUnifor
     float blendRange;              // Distance over which to blend LODs
     uint numTrees;                 // Total number of trees
     uint enableHiZ;                // 1 = enable Hi-Z culling, 0 = frustum only
+    uint useScreenSpaceError;      // 1 = use screen-space error LOD, 0 = distance-based
+    float tanHalfFOV;              // tan(fov/2) for screen-space error calculation
+    float errorThresholdFull;      // Screen error threshold for full detail (pixels)
+    float errorThresholdImpostor;  // Screen error threshold for impostor (pixels)
+    float errorThresholdCull;      // Screen error beyond which to cull
     uint _pad0;
-    uint _pad1;
 };
 
 // Hi-Z pyramid for occlusion culling
@@ -55,12 +59,20 @@ layout(binding = BINDING_TREE_IMPOSTOR_CULL_HIZ) uniform sampler2D hiZPyramid;
 
 // Per-archetype sizing data
 struct ArchetypeData {
-    vec4 sizingData;  // x = hSize, y = vSize, z = baseOffset, w = boundingSphereRadius
+    vec4 sizingData;   // x = hSize, y = vSize, z = baseOffset, w = boundingSphereRadius
+    vec4 lodErrorData; // x = worldErrorFull, y = worldErrorImpostor, z = unused, w = unused
 };
 
 layout(std430, binding = BINDING_TREE_IMPOSTOR_CULL_ARCHETYPE) readonly buffer ArchetypeBuffer {
     ArchetypeData archetypes[];
 };
+
+// Compute screen-space error from world-space error
+// Formula: screenError = worldError * screenHeight / (2 * distance * tan(fov/2))
+float computeScreenError(float worldError, float distance) {
+    if (distance <= 0.0) return 9999.0; // Infinite error at zero distance
+    return worldError * screenParams.y / (2.0 * distance * tanHalfFOV);
+}
 
 // Hi-Z occlusion test
 // Returns true if the object is occluded (not visible)
@@ -142,21 +154,54 @@ void main() {
     // Distance to camera
     float distToCamera = getDistanceToCamera(treePos, cameraPosition.xyz);
 
-    // Skip trees too close (they render as full geometry)
-    // Use hysteresis to prevent flickering at the boundary
-    if (distToCamera < fullDetailDistance - hysteresis) {
-        return;
-    }
-
-    // Skip trees too far
-    if (distToCamera > impostorDistance) {
-        return;
-    }
-
     // Get archetype sizing data
     ArchetypeData arch = archetypes[archetypeIndex];
     float boundingRadius = arch.sizingData.w * treeScale;
     float vSize = arch.sizingData.y * treeScale;  // Vertical half-size
+
+    // LOD selection - either screen-space error or distance-based
+    bool shouldRenderAsImpostor = false;
+    bool shouldCull = false;
+
+    if (useScreenSpaceError != 0u) {
+        // Screen-space error LOD (Phase 4)
+        // Scale world error by tree scale (larger trees have proportionally larger errors)
+        float worldErrorFull = arch.lodErrorData.x * treeScale;
+        float worldErrorImpostor = arch.lodErrorData.y * treeScale;
+
+        float screenErrorFull = computeScreenError(worldErrorFull, distToCamera);
+        float screenErrorImpostor = computeScreenError(worldErrorImpostor, distToCamera);
+
+        // Tree should render as full geometry if full detail error is acceptable
+        // It should render as impostor if impostor error is acceptable but full is not
+        // It should be culled if even impostor error is too large
+        if (screenErrorFull <= errorThresholdFull) {
+            // Tree is close enough for full detail - skip impostor
+            return;
+        } else if (screenErrorImpostor > errorThresholdCull) {
+            // Tree is too far even for impostor (sub-pixel)
+            shouldCull = true;
+        } else {
+            // Tree should render as impostor
+            shouldRenderAsImpostor = true;
+        }
+    } else {
+        // Legacy distance-based LOD
+        // Skip trees too close (they render as full geometry)
+        if (distToCamera < fullDetailDistance - hysteresis) {
+            return;
+        }
+        // Skip trees too far
+        if (distToCamera > impostorDistance) {
+            shouldCull = true;
+        } else {
+            shouldRenderAsImpostor = true;
+        }
+    }
+
+    if (shouldCull) {
+        return;
+    }
 
     // Calculate tree center (base position + vertical offset)
     // Trees are positioned at their base, but extend upward
@@ -177,10 +222,27 @@ void main() {
     // Calculate blend factor for LOD transition
     // 0 = pure geometry, 1 = pure impostor
     float blendFactor = 1.0;
-    if (distToCamera < fullDetailDistance + blendRange) {
-        blendFactor = smoothstep(fullDetailDistance - hysteresis,
-                                  fullDetailDistance + blendRange,
-                                  distToCamera);
+    if (useScreenSpaceError != 0u) {
+        // Screen-space error based blending
+        // Blend from full geometry to impostor based on screen error thresholds
+        float worldErrorFull = arch.lodErrorData.x * treeScale;
+        float screenErrorFull = computeScreenError(worldErrorFull, distToCamera);
+
+        // Blend between errorThresholdFull and errorThresholdImpostor
+        if (screenErrorFull < errorThresholdFull) {
+            blendFactor = 0.0;
+        } else if (screenErrorFull > errorThresholdImpostor) {
+            blendFactor = 1.0;
+        } else {
+            blendFactor = smoothstep(errorThresholdFull, errorThresholdImpostor, screenErrorFull);
+        }
+    } else {
+        // Legacy distance-based blending
+        if (distToCamera < fullDetailDistance + blendRange) {
+            blendFactor = smoothstep(fullDetailDistance - hysteresis,
+                                      fullDetailDistance + blendRange,
+                                      distToCamera);
+        }
     }
 
     // This impostor is visible - atomically get output slot

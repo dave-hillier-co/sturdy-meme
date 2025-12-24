@@ -302,9 +302,16 @@ void ImpostorCullSystem::updateArchetypeData(const TreeImpostorAtlas* atlas) {
                 archetype->baseOffset,                     // baseOffset
                 archetype->boundingSphereRadius            // bounding radius for culling
             );
+            // LOD error data for screen-space error calculation
+            // worldErrorFull: smallest visible detail at full geometry (e.g., thin branch ~0.1m)
+            // worldErrorImpostor: canopy-level detail for impostor (10% of canopy radius)
+            float worldErrorFull = 0.1f;  // ~10cm branch thickness
+            float worldErrorImpostor = archetype->boundingSphereRadius * 0.1f;  // 10% of canopy
+            archetypeData[i].lodErrorData = glm::vec4(worldErrorFull, worldErrorImpostor, 0.0f, 0.0f);
         } else {
             // Default values
             archetypeData[i].sizingData = glm::vec4(10.0f, 10.0f, 0.0f, 10.0f);
+            archetypeData[i].lodErrorData = glm::vec4(0.1f, 1.0f, 0.0f, 0.0f);
         }
     }
 
@@ -405,10 +412,7 @@ void ImpostorCullSystem::recordCulling(VkCommandBuffer cmd, uint32_t frameIndex,
                                         const glm::mat4& viewProjMatrix,
                                         VkImageView hiZPyramidView,
                                         VkSampler hiZSampler,
-                                        float fullDetailDistance,
-                                        float impostorDistance,
-                                        float hysteresis,
-                                        float blendRange) {
+                                        const LODParams& lodParams) {
     if (treeCount_ == 0) return;
 
     // Update uniforms
@@ -424,12 +428,18 @@ void ImpostorCullSystem::recordCulling(VkCommandBuffer cmd, uint32_t frameIndex,
         1.0f / static_cast<float>(extent_.width),
         1.0f / static_cast<float>(extent_.height)
     );
-    uniforms.fullDetailDistance = fullDetailDistance;
-    uniforms.impostorDistance = impostorDistance;
-    uniforms.hysteresis = hysteresis;
-    uniforms.blendRange = blendRange;
+    uniforms.fullDetailDistance = lodParams.fullDetailDistance;
+    uniforms.impostorDistance = lodParams.impostorDistance;
+    uniforms.hysteresis = lodParams.hysteresis;
+    uniforms.blendRange = lodParams.blendRange;
     uniforms.numTrees = treeCount_;
     uniforms.enableHiZ = (hiZEnabled_ && hiZPyramidView != VK_NULL_HANDLE) ? 1u : 0u;
+    // Screen-space error LOD parameters
+    uniforms.useScreenSpaceError = lodParams.useScreenSpaceError ? 1u : 0u;
+    uniforms.tanHalfFOV = lodParams.tanHalfFOV;
+    uniforms.errorThresholdFull = lodParams.errorThresholdFull;
+    uniforms.errorThresholdImpostor = lodParams.errorThresholdImpostor;
+    uniforms.errorThresholdCull = lodParams.errorThresholdCull;
 
     // Upload uniforms
     void* data;

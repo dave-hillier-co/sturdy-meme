@@ -192,14 +192,21 @@ void Renderer::setupRenderPipeline() {
         VkImageView hiZView = systems_->hiZ().getHiZPyramidView();
         VkSampler hiZSampler = systems_->hiZ().getHiZSampler();
 
-        // Get LOD settings for distance thresholds
-        float fullDetailDist = 50.0f;   // Default values
-        float impostorDist = 500.0f;
+        // Build LOD params from settings
+        ImpostorCullSystem::LODParams lodParams;
         if (systems_->treeLOD()) {
             const auto& lodSettings = systems_->treeLOD()->getLODSettings();
-            fullDetailDist = lodSettings.fullDetailDistance;
-            impostorDist = lodSettings.impostorDistance;
+            lodParams.fullDetailDistance = lodSettings.fullDetailDistance;
+            lodParams.impostorDistance = lodSettings.impostorDistance;
+            lodParams.hysteresis = lodSettings.hysteresis;
+            lodParams.blendRange = lodSettings.blendRange;
+            lodParams.useScreenSpaceError = lodSettings.useScreenSpaceError;
+            lodParams.errorThresholdFull = lodSettings.errorThresholdFull;
+            lodParams.errorThresholdImpostor = lodSettings.errorThresholdImpostor;
+            lodParams.errorThresholdCull = lodSettings.errorThresholdCull;
         }
+        // Extract tanHalfFOV from projection matrix: proj[1][1] = 1/tan(fov/2)
+        lodParams.tanHalfFOV = 1.0f / ctx.frame.projection[1][1];
 
         impostorCull->recordCulling(
             ctx.cmd, ctx.frameIndex,
@@ -207,10 +214,7 @@ void Renderer::setupRenderPipeline() {
             ctx.frame.frustumPlanes,
             ctx.frame.viewProj,
             hiZView, hiZSampler,
-            fullDetailDist,
-            impostorDist,
-            5.0f,   // hysteresis
-            10.0f   // blend range
+            lodParams
         );
 
         systems_->profiler().endGpuZone(ctx.cmd, "ImpostorCull");
@@ -1066,7 +1070,12 @@ bool Renderer::render(const Camera& camera) {
 
     // Update tree LOD system for impostor rendering
     if (systems_->treeLOD() && systems_->tree()) {
-        systems_->treeLOD()->update(frame.deltaTime, frame.cameraPosition, *systems_->tree());
+        // Compute screen params for screen-space error LOD
+        TreeLODSystem::ScreenParams screenParams;
+        screenParams.screenHeight = static_cast<float>(extent.height);
+        // Extract tanHalfFOV from projection matrix: proj[1][1] = 1/tan(fov/2)
+        screenParams.tanHalfFOV = 1.0f / frame.projection[1][1];
+        systems_->treeLOD()->update(frame.deltaTime, frame.cameraPosition, *systems_->tree(), screenParams);
     }
 
     // Update water system uniforms

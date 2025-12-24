@@ -53,6 +53,32 @@ void GuiTreeTab::render(ITreeControl& treeControl) {
             ImGui::SliderFloat("Blend Exponent", &settings.blendExponent, 0.0f, 3.0f, "%.2f");
 
             ImGui::Spacing();
+            ImGui::Text("Screen-Space Error LOD (Phase 4):");
+            ImGui::Checkbox("Use Screen-Space Error", &settings.useScreenSpaceError);
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("Use FOV-aware screen-space error for LOD selection.\n"
+                                  "Gives consistent quality across resolutions and zoom levels.\n"
+                                  "When disabled, uses fixed distance thresholds.");
+            }
+            if (settings.useScreenSpaceError) {
+                ImGui::SliderFloat("Full Detail Error", &settings.errorThresholdFull, 0.5f, 10.0f, "%.1f px");
+                if (ImGui::IsItemHovered()) {
+                    ImGui::SetTooltip("Max screen error for full geometry detail.\n"
+                                      "Lower = more detail at distance (more geometry).");
+                }
+                ImGui::SliderFloat("Impostor Error", &settings.errorThresholdImpostor, 2.0f, 32.0f, "%.1f px");
+                if (ImGui::IsItemHovered()) {
+                    ImGui::SetTooltip("Max screen error for impostor LOD.\n"
+                                      "Blend from geometry to impostor between these thresholds.");
+                }
+                ImGui::SliderFloat("Cull Error", &settings.errorThresholdCull, 8.0f, 128.0f, "%.1f px");
+                if (ImGui::IsItemHovered()) {
+                    ImGui::SetTooltip("Screen error threshold for culling.\n"
+                                      "Trees with error above this are too small to render.");
+                }
+            }
+
+            ImGui::Spacing();
             ImGui::Text("Impostor Appearance:");
             ImGui::SliderFloat("Brightness", &settings.impostorBrightness, 0.0f, 2.0f, "%.2f");
             ImGui::SliderFloat("Normal Strength", &settings.normalStrength, 0.0f, 1.0f, "%.2f");

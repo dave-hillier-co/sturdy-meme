@@ -1,10 +1,42 @@
 #pragma once
 
 #include <memory>
+#include <functional>
 #include <vulkan/vulkan.h>
 
 #include "InitContext.h"
 #include "CoreResources.h"
+
+// Forward declarations for control subsystems
+class LocationControlSubsystem;
+class WeatherControlSubsystem;
+class EnvironmentControlSubsystem;
+class PostProcessControlSubsystem;
+class TerrainControlSubsystem;
+class WaterControlSubsystem;
+class TreeControlSubsystem;
+class DebugControlSubsystem;
+class ProfilerControlSubsystem;
+class PerformanceControlSubsystem;
+class SceneControlSubsystem;
+class PlayerControlSubsystem;
+
+// Forward declarations for interfaces
+class ILocationControl;
+class IWeatherControl;
+class IEnvironmentControl;
+class IPostProcessControl;
+class ITerrainControl;
+class IWaterControl;
+class ITreeControl;
+class IDebugControl;
+class IProfilerControl;
+class IPerformanceControl;
+class ISceneControl;
+class IPlayerControl;
+
+class VulkanContext;
+struct PerformanceToggles;
 
 // Forward declarations for all subsystems
 class SkySystem;
@@ -251,6 +283,45 @@ public:
     void createPhysicsDebugRenderer(const InitContext& ctx, VkRenderPass hdrRenderPass);
 #endif
 
+    // ========================================================================
+    // Control subsystem accessors (implement GUI-facing interfaces)
+    // ========================================================================
+
+    /**
+     * Initialize control subsystems after all other subsystems are ready.
+     * Must be called after init() and after VulkanContext is available.
+     */
+    void initControlSubsystems(VulkanContext& vulkanContext, PerformanceToggles& perfToggles);
+
+    // Control subsystem accessors - return interface references
+    ILocationControl& locationControl();
+    const ILocationControl& locationControl() const;
+    IWeatherControl& weatherControl();
+    const IWeatherControl& weatherControl() const;
+    IEnvironmentControl& environmentControl();
+    const IEnvironmentControl& environmentControl() const;
+    IPostProcessControl& postProcessControl();
+    const IPostProcessControl& postProcessControl() const;
+    ITerrainControl& terrainControl();
+    const ITerrainControl& terrainControl() const;
+    IWaterControl& waterControl();
+    const IWaterControl& waterControl() const;
+    ITreeControl& treeControl();
+    const ITreeControl& treeControl() const;
+    IDebugControl& debugControl();
+    const IDebugControl& debugControl() const;
+    IProfilerControl& profilerControl();
+    const IProfilerControl& profilerControl() const;
+    IPerformanceControl& performanceControl();
+    const IPerformanceControl& performanceControl() const;
+    ISceneControl& sceneControl();
+    const ISceneControl& sceneControl() const;
+    IPlayerControl& playerControl();
+    const IPlayerControl& playerControl() const;
+
+    // Set the sync callback for performance control (must be called after initControlSubsystems)
+    void setPerformanceSyncCallback(std::function<void()> callback);
+
 private:
     // Tier 1 - Core rendering systems (initialize first)
     std::unique_ptr<PostProcessSystem> postProcessSystem_;
@@ -318,5 +389,20 @@ private:
     std::unique_ptr<PhysicsDebugRenderer> physicsDebugRenderer_;
 #endif
 
+    // Control subsystems (implement GUI-facing interfaces)
+    std::unique_ptr<LocationControlSubsystem> locationControl_;
+    std::unique_ptr<WeatherControlSubsystem> weatherControl_;
+    std::unique_ptr<EnvironmentControlSubsystem> environmentControl_;
+    std::unique_ptr<PostProcessControlSubsystem> postProcessControl_;
+    std::unique_ptr<TerrainControlSubsystem> terrainControl_;
+    std::unique_ptr<WaterControlSubsystem> waterControl_;
+    std::unique_ptr<TreeControlSubsystem> treeControl_;
+    std::unique_ptr<DebugControlSubsystem> debugControl_;
+    std::unique_ptr<ProfilerControlSubsystem> profilerControl_;
+    std::unique_ptr<PerformanceControlSubsystem> performanceControl_;
+    std::unique_ptr<SceneControlSubsystem> sceneControl_;
+    std::unique_ptr<PlayerControlSubsystem> playerControl_;
+
     bool initialized_ = false;
+    bool controlsInitialized_ = false;
 };

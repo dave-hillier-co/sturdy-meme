@@ -42,6 +42,18 @@ set(SOURCES
     src/core/ResizeCoordinator.cpp
     src/core/UBOBuilder.cpp
     src/core/RendererSystems.cpp
+    # Control subsystems (implement GUI-facing interfaces)
+    src/core/controls/LocationControlSubsystem.cpp
+    src/core/controls/WeatherControlSubsystem.cpp
+    src/core/controls/EnvironmentControlSubsystem.cpp
+    src/core/controls/PostProcessControlSubsystem.cpp
+    src/core/controls/TerrainControlSubsystem.cpp
+    src/core/controls/WaterControlSubsystem.cpp
+    src/core/controls/TreeControlSubsystem.cpp
+    src/core/controls/DebugControlSubsystem.cpp
+    src/core/controls/ProfilerControlSubsystem.cpp
+    src/core/controls/SceneControlSubsystem.cpp
+    src/core/controls/PlayerControlSubsystem.cpp
     src/core/VulkanContext.cpp
     src/core/Mesh.cpp
     src/core/BufferUtils.cpp

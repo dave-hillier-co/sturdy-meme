@@ -103,7 +103,10 @@ bool Renderer::initInternal(const InitInfo& info) {
     // Phase 3: All subsystems (terrain, grass, weather, snow, water, etc.)
     if (!initSubsystems(initCtx)) return false;
 
-    // Phase 4: Resize coordinator registration
+    // Phase 4: Control subsystems (after systems are ready)
+    initControlSubsystems();
+
+    // Phase 5: Resize coordinator registration
     initResizeCoordinator();
 
     // Setup render pipeline stages with lambdas

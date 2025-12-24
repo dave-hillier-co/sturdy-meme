@@ -46,6 +46,22 @@
 #include "TimeSystem.h"
 #include "CelestialCalculator.h"
 #include "EnvironmentSettings.h"
+#include "VulkanContext.h"
+#include "PerformanceToggles.h"
+
+// Include control subsystem headers
+#include "controls/LocationControlSubsystem.h"
+#include "controls/WeatherControlSubsystem.h"
+#include "controls/EnvironmentControlSubsystem.h"
+#include "controls/PostProcessControlSubsystem.h"
+#include "controls/TerrainControlSubsystem.h"
+#include "controls/WaterControlSubsystem.h"
+#include "controls/TreeControlSubsystem.h"
+#include "controls/DebugControlSubsystem.h"
+#include "controls/ProfilerControlSubsystem.h"
+#include "controls/PerformanceControlSubsystem.h"
+#include "controls/SceneControlSubsystem.h"
+#include "controls/PlayerControlSubsystem.h"
 
 #ifdef JPH_DEBUG_RENDERER
 #include "PhysicsDebugRenderer.h"
@@ -327,3 +343,70 @@ void RendererSystems::createPhysicsDebugRenderer(const InitContext& /*ctx*/, VkR
     physicsDebugRenderer_->init();
 }
 #endif
+
+// ============================================================================
+// Control Subsystem Implementation
+// ============================================================================
+
+void RendererSystems::initControlSubsystems(VulkanContext& vulkanContext, PerformanceToggles& perfToggles) {
+    locationControl_ = std::make_unique<LocationControlSubsystem>(*celestialCalculator_);
+    weatherControl_ = std::make_unique<WeatherControlSubsystem>(*weatherSystem_, *environmentSettings_);
+    environmentControl_ = std::make_unique<EnvironmentControlSubsystem>(
+        *froxelSystem_, *atmosphereLUTSystem_, *leafSystem_, *cloudShadowSystem_,
+        *postProcessSystem_, *environmentSettings_);
+    postProcessControl_ = std::make_unique<PostProcessControlSubsystem>(*postProcessSystem_, *cloudShadowSystem_);
+    terrainControl_ = std::make_unique<TerrainControlSubsystem>(*terrainSystem_);
+    waterControl_ = std::make_unique<WaterControlSubsystem>(*waterSystem_, *waterTileCull_);
+    treeControl_ = std::make_unique<TreeControlSubsystem>(treeSystem_.get(), *this);
+    debugControl_ = std::make_unique<DebugControlSubsystem>(*debugLineSystem_, *hiZSystem_, *this);
+    profilerControl_ = std::make_unique<ProfilerControlSubsystem>(*profiler_);
+    performanceControl_ = std::make_unique<PerformanceControlSubsystem>(perfToggles, nullptr);
+    sceneControl_ = std::make_unique<SceneControlSubsystem>(*sceneManager_, vulkanContext);
+    playerControl_ = std::make_unique<PlayerControlSubsystem>(*sceneManager_);
+
+    controlsInitialized_ = true;
+    SDL_Log("Control subsystems initialized");
+}
+
+void RendererSystems::setPerformanceSyncCallback(std::function<void()> callback) {
+    if (performanceControl_) {
+        performanceControl_->setSyncCallback(callback);
+    }
+}
+
+// Control subsystem accessors
+ILocationControl& RendererSystems::locationControl() { return *locationControl_; }
+const ILocationControl& RendererSystems::locationControl() const { return *locationControl_; }
+
+IWeatherControl& RendererSystems::weatherControl() { return *weatherControl_; }
+const IWeatherControl& RendererSystems::weatherControl() const { return *weatherControl_; }
+
+IEnvironmentControl& RendererSystems::environmentControl() { return *environmentControl_; }
+const IEnvironmentControl& RendererSystems::environmentControl() const { return *environmentControl_; }
+
+IPostProcessControl& RendererSystems::postProcessControl() { return *postProcessControl_; }
+const IPostProcessControl& RendererSystems::postProcessControl() const { return *postProcessControl_; }
+
+ITerrainControl& RendererSystems::terrainControl() { return *terrainControl_; }
+const ITerrainControl& RendererSystems::terrainControl() const { return *terrainControl_; }
+
+IWaterControl& RendererSystems::waterControl() { return *waterControl_; }
+const IWaterControl& RendererSystems::waterControl() const { return *waterControl_; }
+
+ITreeControl& RendererSystems::treeControl() { return *treeControl_; }
+const ITreeControl& RendererSystems::treeControl() const { return *treeControl_; }
+
+IDebugControl& RendererSystems::debugControl() { return *debugControl_; }
+const IDebugControl& RendererSystems::debugControl() const { return *debugControl_; }
+
+IProfilerControl& RendererSystems::profilerControl() { return *profilerControl_; }
+const IProfilerControl& RendererSystems::profilerControl() const { return *profilerControl_; }
+
+IPerformanceControl& RendererSystems::performanceControl() { return *performanceControl_; }
+const IPerformanceControl& RendererSystems::performanceControl() const { return *performanceControl_; }
+
+ISceneControl& RendererSystems::sceneControl() { return *sceneControl_; }
+const ISceneControl& RendererSystems::sceneControl() const { return *sceneControl_; }
+
+IPlayerControl& RendererSystems::playerControl() { return *playerControl_; }
+const IPlayerControl& RendererSystems::playerControl() const { return *playerControl_; }

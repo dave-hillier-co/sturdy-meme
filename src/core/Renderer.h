@@ -299,7 +299,6 @@ private:
 
     bool showCascadeDebug = false;         // true = show cascade colors overlay
     bool showSnowDepthDebug = false;       // true = show snow depth heat map overlay
-    bool showBiomeDebug = false;           // true = show biome visualization on terrain
     bool useParaboloidClouds = true;       // true = paraboloid LUT hybrid, false = procedural
     bool hdrEnabled = true;                // true = HDR tonemapping/bloom, false = bypass
     bool hdrPassEnabled = true;            // true = render HDR pass, false = skip entire HDR scene rendering

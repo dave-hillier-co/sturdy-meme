@@ -31,9 +31,13 @@ TreeRenderer::~TreeRenderer() {
             vmaDestroyBuffer(allocator_, cullUniformBuffers_.buffers[i], cullUniformBuffers_.allocations[i]);
         }
     }
-    // Clean up tree data buffer
+    // Clean up tree cull data buffer
     if (treeDataBuffer_ != VK_NULL_HANDLE) {
         vmaDestroyBuffer(allocator_, treeDataBuffer_, treeDataAllocation_);
+    }
+    // Clean up tree render data buffer
+    if (treeRenderDataBuffer_ != VK_NULL_HANDLE) {
+        vmaDestroyBuffer(allocator_, treeRenderDataBuffer_, treeRenderDataAllocation_);
     }
 }
 
@@ -106,7 +110,8 @@ bool TreeRenderer::createDescriptorSetLayout() {
     // BINDING_TREE_GFX_SHADOW_MAP      = 2  - Shadow map
     // BINDING_TREE_GFX_WIND_UBO        = 3  - Wind uniforms
     // BINDING_TREE_GFX_LEAF_ALBEDO     = 8  - Leaf albedo texture
-    // BINDING_TREE_GFX_LEAF_INSTANCES  = 9  - Leaf instance SSBO
+    // BINDING_TREE_GFX_LEAF_INSTANCES  = 9  - World-space leaf instance SSBO
+    // BINDING_TREE_GFX_TREE_DATA       = 10 - Tree render data SSBO
 
     std::vector<VkDescriptorSetLayoutBinding> leafBindings = {
         {Bindings::TREE_GFX_UBO, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, nullptr},
@@ -114,6 +119,7 @@ bool TreeRenderer::createDescriptorSetLayout() {
         {Bindings::TREE_GFX_WIND_UBO, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT, nullptr},
         {Bindings::TREE_GFX_LEAF_ALBEDO, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr},
         {Bindings::TREE_GFX_LEAF_INSTANCES, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT, nullptr},
+        {Bindings::TREE_GFX_TREE_DATA, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT, nullptr},
     };
 
     VkDescriptorSetLayoutCreateInfo leafLayoutInfo{};
@@ -403,8 +409,8 @@ bool TreeRenderer::createCullBuffers(uint32_t maxLeafInstances, uint32_t numTree
     // Store number of trees for indirect buffer sizing
     numTreesForIndirect_ = numTrees;
 
-    // Calculate buffer sizes
-    cullOutputBufferSize_ = maxLeafInstances * sizeof(LeafInstanceGPU);
+    // Calculate buffer sizes - use WorldLeafInstanceGPU (48 bytes) for world-space output
+    cullOutputBufferSize_ = maxLeafInstances * sizeof(WorldLeafInstanceGPU);
 
     VkBufferCreateInfo bufferInfo{};
     bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
@@ -414,7 +420,7 @@ bool TreeRenderer::createCullBuffers(uint32_t maxLeafInstances, uint32_t numTree
     VmaAllocationCreateInfo allocInfo{};
     allocInfo.usage = VMA_MEMORY_USAGE_GPU_ONLY;
 
-    // Create double-buffered output buffers
+    // Create double-buffered output buffers (world-space leaves)
     for (uint32_t i = 0; i < CULL_BUFFER_SET_COUNT; ++i) {
         bufferInfo.size = cullOutputBufferSize_;
         if (vmaCreateBuffer(allocator_, &bufferInfo, &allocInfo,
@@ -424,10 +430,10 @@ bool TreeRenderer::createCullBuffers(uint32_t maxLeafInstances, uint32_t numTree
         }
     }
 
-    // Create indirect draw buffers (one command per tree)
+    // Create indirect draw buffers (SINGLE command for all leaves)
     VkBufferCreateInfo indirectInfo{};
     indirectInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-    indirectInfo.size = numTrees * sizeof(VkDrawIndexedIndirectCommand);
+    indirectInfo.size = sizeof(VkDrawIndexedIndirectCommand);  // Single command
     indirectInfo.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT |
                          VK_BUFFER_USAGE_TRANSFER_DST_BIT;  // For vkCmdUpdateBuffer
     indirectInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
@@ -451,7 +457,7 @@ bool TreeRenderer::createCullBuffers(uint32_t maxLeafInstances, uint32_t numTree
         return false;
     }
 
-    // Create per-tree data buffer (SSBO for batched culling)
+    // Create per-tree cull data buffer (SSBO for batched culling)
     treeDataBufferSize_ = numTrees * sizeof(TreeCullData);
     VkBufferCreateInfo treeDataInfo{};
     treeDataInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
@@ -461,7 +467,21 @@ bool TreeRenderer::createCullBuffers(uint32_t maxLeafInstances, uint32_t numTree
 
     if (vmaCreateBuffer(allocator_, &treeDataInfo, &allocInfo,
                         &treeDataBuffer_, &treeDataAllocation_, nullptr) != VK_SUCCESS) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "TreeRenderer: Failed to create tree data buffer");
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "TreeRenderer: Failed to create tree cull data buffer");
+        return false;
+    }
+
+    // Create per-tree render data buffer (SSBO for vertex shader tints, autumn, etc.)
+    treeRenderDataBufferSize_ = numTrees * sizeof(TreeRenderDataGPU);
+    VkBufferCreateInfo treeRenderDataInfo{};
+    treeRenderDataInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+    treeRenderDataInfo.size = treeRenderDataBufferSize_;
+    treeRenderDataInfo.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+    treeRenderDataInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+    if (vmaCreateBuffer(allocator_, &treeRenderDataInfo, &allocInfo,
+                        &treeRenderDataBuffer_, &treeRenderDataAllocation_, nullptr) != VK_SUCCESS) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "TreeRenderer: Failed to create tree render data buffer");
         return false;
     }
 
@@ -475,10 +495,7 @@ bool TreeRenderer::createCullBuffers(uint32_t maxLeafInstances, uint32_t numTree
     // Initialize per-frame maps for culled leaf descriptor sets (allocated lazily per-type)
     culledLeafDescriptorSets_.resize(maxFramesInFlight_);
 
-    // Initialize per-tree output offsets
-    perTreeOutputOffsets_.resize(numTrees, 0);
-
-    SDL_Log("TreeRenderer: Created leaf culling buffers (max %u instances, %u trees, %.2f MB)",
+    SDL_Log("TreeRenderer: Created leaf culling buffers (max %u instances, %u trees, %.2f MB world-space output)",
             maxLeafInstances, numTrees,
             static_cast<float>(cullOutputBufferSize_ * CULL_BUFFER_SET_COUNT) / (1024.0f * 1024.0f));
     return true;
@@ -739,14 +756,20 @@ void TreeRenderer::updateCulledLeafDescriptorSet(
     leafAlbedoInfo.imageView = leafAlbedo;
     leafAlbedoInfo.sampler = leafSampler;
 
-    // Use culled output buffer for leaf instances
+    // Use culled output buffer for leaf instances (world-space)
     // IMPORTANT: Must update SSBO binding every frame because we double-buffer
     VkDescriptorBufferInfo leafInstanceInfo{};
     leafInstanceInfo.buffer = cullOutputBuffers_[currentCullBufferSet_];
     leafInstanceInfo.offset = 0;
     leafInstanceInfo.range = VK_WHOLE_SIZE;
 
-    std::array<VkWriteDescriptorSet, 5> writes{};
+    // Tree render data buffer (for vertex shader to look up tints, autumn, wind phase)
+    VkDescriptorBufferInfo treeRenderDataInfo{};
+    treeRenderDataInfo.buffer = treeRenderDataBuffer_;
+    treeRenderDataInfo.offset = 0;
+    treeRenderDataInfo.range = VK_WHOLE_SIZE;
+
+    std::array<VkWriteDescriptorSet, 6> writes{};
 
     writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
     writes[0].dstSet = dstSet;
@@ -782,6 +805,13 @@ void TreeRenderer::updateCulledLeafDescriptorSet(
     writes[4].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
     writes[4].descriptorCount = 1;
     writes[4].pBufferInfo = &leafInstanceInfo;
+
+    writes[5].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    writes[5].dstSet = dstSet;
+    writes[5].dstBinding = Bindings::TREE_GFX_TREE_DATA;
+    writes[5].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    writes[5].descriptorCount = 1;
+    writes[5].pBufferInfo = &treeRenderDataInfo;
 
     // Update all bindings every frame (not just on first allocation)
     // This ensures the double-buffered SSBO binding stays in sync
@@ -835,32 +865,38 @@ void TreeRenderer::recordLeafCulling(VkCommandBuffer cmd, uint32_t frameIndex,
 
     // Count valid trees and build per-tree data for batched culling
     std::vector<TreeCullData> treeDataList;
+    std::vector<TreeRenderDataGPU> treeRenderDataList;
     treeDataList.reserve(leafRenderables.size());
+    treeRenderDataList.reserve(leafRenderables.size());
 
     uint32_t numTrees = 0;
     uint32_t totalLeafInstances = 0;
-    uint32_t outputOffset = 0;
 
     for (const auto& renderable : leafRenderables) {
         if (renderable.leafInstanceIndex >= 0 &&
             static_cast<size_t>(renderable.leafInstanceIndex) < leafDrawInfo.size()) {
             const auto& drawInfo = leafDrawInfo[renderable.leafInstanceIndex];
             if (drawInfo.instanceCount > 0) {
+                // Cull data for compute shader
                 TreeCullData treeData{};
                 treeData.treeModel = renderable.transform;
                 treeData.inputFirstInstance = drawInfo.firstInstance;
                 treeData.inputInstanceCount = drawInfo.instanceCount;
-                treeData.outputBaseOffset = outputOffset;
-                treeData.treeIndex = numTrees;
+                treeData.treeIndex = numTrees;  // Index for render data lookup
+                treeData._pad = 0;
 
                 treeDataList.push_back(treeData);
 
-                // Store per-tree output offset for rendering
-                if (numTrees < perTreeOutputOffsets_.size()) {
-                    perTreeOutputOffsets_[numTrees] = outputOffset;
-                }
+                // Render data for vertex shader
+                TreeRenderDataGPU renderData{};
+                renderData.model = renderable.transform;
+                renderData.tintAndParams = glm::vec4(renderable.leafTint, renderable.autumnHueShift);
+                // Wind phase offset based on tree position for variation
+                float windPhase = glm::fract(renderable.transform[3][0] * 0.1f + renderable.transform[3][2] * 0.1f) * 6.28318f;
+                renderData.windPhaseAndLOD = glm::vec4(windPhase, 0.0f, 0.0f, 0.0f);
 
-                outputOffset += drawInfo.instanceCount;
+                treeRenderDataList.push_back(renderData);
+
                 totalLeafInstances += drawInfo.instanceCount;
                 numTrees++;
             }
@@ -943,23 +979,25 @@ void TreeRenderer::recordLeafCulling(VkCommandBuffer cmd, uint32_t frameIndex,
         }
     }
 
-    // Reset all per-tree indirect draw commands
-    std::vector<VkDrawIndexedIndirectCommand> resetCmds(numTreesForIndirect_);
-    for (auto& resetCmd : resetCmds) {
-        resetCmd.indexCount = 6;  // Quad indices
-        resetCmd.instanceCount = 0;  // Will be atomically incremented by compute shader
-        resetCmd.firstIndex = 0;
-        resetCmd.vertexOffset = 0;
-        resetCmd.firstInstance = 0;
-    }
+    // Reset SINGLE indirect draw command (instanceCount will be set by compute shader)
+    VkDrawIndexedIndirectCommand resetCmd{};
+    resetCmd.indexCount = 6;  // Quad indices
+    resetCmd.instanceCount = 0;  // Will be atomically incremented by compute shader
+    resetCmd.firstIndex = 0;
+    resetCmd.vertexOffset = 0;
+    resetCmd.firstInstance = 0;
 
-    // Batch update: reset indirect commands
+    // Batch update: reset single indirect command
     vkCmdUpdateBuffer(cmd, cullIndirectBuffers_[currentCullBufferSet_],
-                      0, numTreesForIndirect_ * sizeof(VkDrawIndexedIndirectCommand), resetCmds.data());
+                      0, sizeof(VkDrawIndexedIndirectCommand), &resetCmd);
 
-    // Batch update: upload per-tree data SSBO
+    // Batch update: upload per-tree cull data SSBO
     vkCmdUpdateBuffer(cmd, treeDataBuffer_, 0,
                       numTrees * sizeof(TreeCullData), treeDataList.data());
+
+    // Batch update: upload per-tree render data SSBO (for vertex shader)
+    vkCmdUpdateBuffer(cmd, treeRenderDataBuffer_, 0,
+                      numTrees * sizeof(TreeRenderDataGPU), treeRenderDataList.data());
 
     // Batch update: upload global uniforms
     TreeLeafCullUniforms uniforms{};
@@ -1108,121 +1146,43 @@ void TreeRenderer::render(VkCommandBuffer cmd, uint32_t frameIndex, float time,
                                  frameIndex < culledLeafDescriptorSets_.size() &&
                                  !culledLeafDescriptorSets_[frameIndex].empty();
     bool useCulledPath = isLeafCullingEnabled() &&
-                         !perTreeOutputOffsets_.empty() &&
                          hasCulledDescriptors &&
                          cullIndirectBuffers_[currentCullBufferSet_] != VK_NULL_HANDLE;
 
     if (useCulledPath) {
-        // GPU-culled indirect draw path
-        // Use per-type culled descriptor sets (with culled output buffer as SSBO)
-        std::string lastLeafType;
-        uint32_t treeIdx = 0;
-        uint32_t leafTreeIndex = 0;
-        for (const auto& renderable : leafRenderables) {
-            // Skip if no leaf instances for this tree
-            if (renderable.leafInstanceIndex < 0 ||
-                static_cast<size_t>(renderable.leafInstanceIndex) >= leafDrawInfo.size()) {
-                leafTreeIndex++;
-                continue;
-            }
+        // GPU-culled SINGLE indirect draw path
+        // All leaves from all trees are drawn in ONE call (world-space data from compute shader)
 
-            const auto& drawInfo = leafDrawInfo[renderable.leafInstanceIndex];
-            if (drawInfo.instanceCount == 0) {
-                leafTreeIndex++;
-                continue;
-            }
+        // Use first leaf type's descriptor set (assumes homogeneous leaf types for now)
+        // TODO: Group by leaf type for heterogeneous forests
+        if (!leafRenderables.empty()) {
+            const auto& firstRenderable = leafRenderables[0];
+            VkDescriptorSet descriptorSet = getCulledLeafDescriptorSet(frameIndex, firstRenderable.leafType);
+            vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, leafPipelineLayout_.get(),
+                                    0, 1, &descriptorSet, 0, nullptr);
 
-            // Skip if LOD system says this tree should be pure impostor (no full geometry)
-            if (lodSystem && !lodSystem->shouldRenderFullGeometry(leafTreeIndex)) {
-                leafTreeIndex++;
-                treeIdx++;
-                continue;
-            }
-
-            // Ensure we have an offset for this tree
-            if (treeIdx >= perTreeOutputOffsets_.size()) break;
-
-            // Bind descriptor set for this leaf type if different from last
-            // Use per-type culled descriptor set which has the output buffer as SSBO
-            if (renderable.leafType != lastLeafType) {
-                VkDescriptorSet descriptorSet = getCulledLeafDescriptorSet(frameIndex, renderable.leafType);
-                vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, leafPipelineLayout_.get(),
-                                        0, 1, &descriptorSet, 0, nullptr);
-                lastLeafType = renderable.leafType;
-            }
-
+            // Simplified push constants - per-tree data comes from SSBO
             TreeLeafPushConstants push{};
-            push.model = renderable.transform;
             push.time = time;
-            push.lodBlendFactor = lodSystem ? lodSystem->getBlendFactor(leafTreeIndex) : 0.0f;
-            push.leafTint = renderable.leafTint;
-            push.alphaTest = renderable.alphaTestThreshold > 0.0f ? renderable.alphaTestThreshold : 0.5f;
-            push.firstInstance = static_cast<int32_t>(perTreeOutputOffsets_[treeIdx]);
-            push.autumnHueShift = std::max(globalAutumnHueShift, renderable.autumnHueShift);
+            push.alphaTest = firstRenderable.alphaTestThreshold > 0.0f ? firstRenderable.alphaTestThreshold : 0.5f;
 
             vkCmdPushConstants(cmd, leafPipelineLayout_.get(),
                                VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
                                0, sizeof(TreeLeafPushConstants), &push);
 
-            // Indirect draw from per-tree command
-            VkDeviceSize indirectOffset = treeIdx * sizeof(VkDrawIndexedIndirectCommand);
+            // SINGLE indirect draw for ALL visible leaves across ALL trees
             vkCmdDrawIndexedIndirect(cmd, cullIndirectBuffers_[currentCullBufferSet_],
-                                     indirectOffset, 1, sizeof(VkDrawIndexedIndirectCommand));
-            leafTreeIndex++;
-            treeIdx++;
+                                     0, 1, sizeof(VkDrawIndexedIndirectCommand));
         }
 
         // Swap buffer sets for next frame (after all indirect draws complete)
         currentCullBufferSet_ = (currentCullBufferSet_ + 1) % CULL_BUFFER_SET_COUNT;
     } else {
-        // Direct draw path (fallback when culling not available)
-        std::string lastLeafType;
-        uint32_t leafTreeIndex = 0;
-        for (const auto& renderable : leafRenderables) {
-            // Skip if no leaf instances for this tree
-            if (renderable.leafInstanceIndex < 0 ||
-                static_cast<size_t>(renderable.leafInstanceIndex) >= leafDrawInfo.size()) {
-                leafTreeIndex++;
-                continue;
-            }
-
-            const auto& drawInfo = leafDrawInfo[renderable.leafInstanceIndex];
-            if (drawInfo.instanceCount == 0) {
-                leafTreeIndex++;
-                continue;
-            }
-
-            // Skip if LOD system says this tree should be pure impostor (no full geometry)
-            if (lodSystem && !lodSystem->shouldRenderFullGeometry(leafTreeIndex)) {
-                leafTreeIndex++;
-                continue;
-            }
-
-            // Bind descriptor set for this leaf type if different from last
-            if (renderable.leafType != lastLeafType) {
-                VkDescriptorSet descriptorSet = getLeafDescriptorSet(frameIndex, renderable.leafType);
-                vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, leafPipelineLayout_.get(),
-                                        0, 1, &descriptorSet, 0, nullptr);
-                lastLeafType = renderable.leafType;
-            }
-
-            TreeLeafPushConstants push{};
-            push.model = renderable.transform;
-            push.time = time;
-            push.lodBlendFactor = lodSystem ? lodSystem->getBlendFactor(leafTreeIndex) : 0.0f;
-            push.leafTint = renderable.leafTint;
-            push.alphaTest = renderable.alphaTestThreshold > 0.0f ? renderable.alphaTestThreshold : 0.5f;
-            push.firstInstance = static_cast<int32_t>(drawInfo.firstInstance);
-            push.autumnHueShift = std::max(globalAutumnHueShift, renderable.autumnHueShift);
-
-            vkCmdPushConstants(cmd, leafPipelineLayout_.get(),
-                               VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
-                               0, sizeof(TreeLeafPushConstants), &push);
-
-            // Draw instanced: 6 indices for one quad, N instances for this tree's leaves
-            vkCmdDrawIndexed(cmd, sharedQuad.getIndexCount(), drawInfo.instanceCount, 0, 0, 0);
-            leafTreeIndex++;
-        }
+        // GPU-driven path not available - leaves will be skipped
+        // (branches still render, and impostors handle distant trees)
+        // This fallback can be enabled later with a non-GPU-driven path if needed
+        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                    "Leaf culling not available - leaves will not render for close trees");
     }
 }
 
@@ -1276,8 +1236,6 @@ void TreeRenderer::renderShadows(VkCommandBuffer cmd, uint32_t frameIndex,
     if (!leafRenderables.empty() && leafShadowPipeline_.get() != VK_NULL_HANDLE) {
         vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, leafShadowPipeline_.get());
 
-        // Get leaf draw info from tree system
-        const auto& leafDrawInfo = treeSystem.getLeafDrawInfo();
         const Mesh& sharedQuad = treeSystem.getSharedLeafQuadMesh();
 
         // Bind shared quad mesh once
@@ -1288,49 +1246,80 @@ void TreeRenderer::renderShadows(VkCommandBuffer cmd, uint32_t frameIndex,
             vkCmdBindIndexBuffer(cmd, sharedQuad.getIndexBuffer(), 0, VK_INDEX_TYPE_UINT32);
         }
 
-        std::string lastLeafType;
-        uint32_t leafTreeIndex = 0;
-        for (const auto& renderable : leafRenderables) {
-            // Skip if no leaf instances for this tree
-            if (renderable.leafInstanceIndex < 0 ||
-                static_cast<size_t>(renderable.leafInstanceIndex) >= leafDrawInfo.size()) {
-                leafTreeIndex++;
-                continue;
-            }
+        // Check if we should use GPU culling with indirect draws for shadows
+        bool hasCulledDescriptors = !culledLeafDescriptorSets_.empty() &&
+                                     frameIndex < culledLeafDescriptorSets_.size() &&
+                                     !culledLeafDescriptorSets_[frameIndex].empty();
+        bool useCulledPath = isLeafCullingEnabled() &&
+                             hasCulledDescriptors &&
+                             cullIndirectBuffers_[currentCullBufferSet_] != VK_NULL_HANDLE;
 
-            const auto& drawInfo = leafDrawInfo[renderable.leafInstanceIndex];
-            if (drawInfo.instanceCount == 0) {
-                leafTreeIndex++;
-                continue;
-            }
+        if (useCulledPath && !leafRenderables.empty()) {
+            // GPU-culled SINGLE indirect draw path for shadows
+            const auto& firstRenderable = leafRenderables[0];
 
-            // Skip if LOD system says this tree should be pure impostor (no full geometry)
-            if (lodSystem && !lodSystem->shouldRenderFullGeometry(leafTreeIndex)) {
-                leafTreeIndex++;
-                continue;
-            }
+            // Use culled descriptor set (has world-space output buffer)
+            VkDescriptorSet leafSet = getCulledLeafDescriptorSet(frameIndex, firstRenderable.leafType);
+            vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                    leafShadowPipelineLayout_.get(), 0, 1, &leafSet, 0, nullptr);
 
-            // Bind descriptor set for this leaf type (for alpha test texture)
-            if (renderable.leafType != lastLeafType) {
-                VkDescriptorSet leafSet = getLeafDescriptorSet(frameIndex, renderable.leafType);
-                vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                                        leafShadowPipelineLayout_.get(), 0, 1, &leafSet, 0, nullptr);
-                lastLeafType = renderable.leafType;
-            }
-
+            // Simplified push constants
             TreeLeafShadowPushConstants push{};
-            push.model = renderable.transform;
             push.cascadeIndex = cascadeIndex;
-            push.alphaTest = renderable.alphaTestThreshold > 0.0f ? renderable.alphaTestThreshold : 0.5f;
-            push.firstInstance = static_cast<int32_t>(drawInfo.firstInstance);
+            push.alphaTest = firstRenderable.alphaTestThreshold > 0.0f ? firstRenderable.alphaTestThreshold : 0.5f;
 
             vkCmdPushConstants(cmd, leafShadowPipelineLayout_.get(),
                                VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
                                0, sizeof(TreeLeafShadowPushConstants), &push);
 
-            // Draw instanced
-            vkCmdDrawIndexed(cmd, sharedQuad.getIndexCount(), drawInfo.instanceCount, 0, 0, 0);
-            leafTreeIndex++;
+            // SINGLE indirect draw for ALL visible leaves
+            vkCmdDrawIndexedIndirect(cmd, cullIndirectBuffers_[currentCullBufferSet_],
+                                     0, 1, sizeof(VkDrawIndexedIndirectCommand));
+        } else {
+            // Direct draw path (fallback when culling not available)
+            const auto& leafDrawInfo = treeSystem.getLeafDrawInfo();
+            std::string lastLeafType;
+            uint32_t leafTreeIndex = 0;
+            for (const auto& renderable : leafRenderables) {
+                // Skip if no leaf instances for this tree
+                if (renderable.leafInstanceIndex < 0 ||
+                    static_cast<size_t>(renderable.leafInstanceIndex) >= leafDrawInfo.size()) {
+                    leafTreeIndex++;
+                    continue;
+                }
+
+                const auto& drawInfo = leafDrawInfo[renderable.leafInstanceIndex];
+                if (drawInfo.instanceCount == 0) {
+                    leafTreeIndex++;
+                    continue;
+                }
+
+                // Skip if LOD system says this tree should be pure impostor (no full geometry)
+                if (lodSystem && !lodSystem->shouldRenderFullGeometry(leafTreeIndex)) {
+                    leafTreeIndex++;
+                    continue;
+                }
+
+                // Bind descriptor set for this leaf type (for alpha test texture)
+                if (renderable.leafType != lastLeafType) {
+                    VkDescriptorSet leafSet = getLeafDescriptorSet(frameIndex, renderable.leafType);
+                    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                            leafShadowPipelineLayout_.get(), 0, 1, &leafSet, 0, nullptr);
+                    lastLeafType = renderable.leafType;
+                }
+
+                TreeLeafShadowPushConstants push{};
+                push.cascadeIndex = cascadeIndex;
+                push.alphaTest = renderable.alphaTestThreshold > 0.0f ? renderable.alphaTestThreshold : 0.5f;
+
+                vkCmdPushConstants(cmd, leafShadowPipelineLayout_.get(),
+                                   VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+                                   0, sizeof(TreeLeafShadowPushConstants), &push);
+
+                // Draw instanced (fallback path - uses original tree-local SSBO)
+                vkCmdDrawIndexed(cmd, sharedQuad.getIndexCount(), drawInfo.instanceCount, 0, 0, 0);
+                leafTreeIndex++;
+            }
         }
     }
 }

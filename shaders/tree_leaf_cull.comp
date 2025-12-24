@@ -5,24 +5,25 @@
 #include "bindings.glsl"
 #include "instancing_common.glsl"
 #include "tree_leaf_instance.glsl"
+#include "tree_leaf_world.glsl"
 
 // Workgroup size: 256 threads per workgroup
 layout(local_size_x = 256, local_size_y = 1, local_size_z = 1) in;
 
-// Input: all leaf instances from TreeSystem
+// Input: all leaf instances from TreeSystem (tree-local space)
 layout(std430, binding = BINDING_TREE_LEAF_CULL_INPUT) readonly buffer InputBuffer {
     LeafInstance inputInstances[];
 };
 
-// Output: visible leaf instances after culling
+// Output: visible leaf instances after culling (WORLD space with tree index)
 layout(std430, binding = BINDING_TREE_LEAF_CULL_OUTPUT) writeonly buffer OutputBuffer {
-    LeafInstance outputInstances[];
+    WorldLeafInstance outputInstances[];
 };
 
-// Indirect draw commands for instanced rendering (one per tree)
+// Single indirect draw command for ALL visible leaves
 // Uses DrawIndexedIndirectCommand for vkCmdDrawIndexedIndirect
 layout(std430, binding = BINDING_TREE_LEAF_CULL_INDIRECT) buffer IndirectBuffer {
-    DrawIndexedIndirectCommand drawCmds[];
+    DrawIndexedIndirectCommand drawCmd;
 };
 
 // Per-tree culling data (batched for all trees)
@@ -30,8 +31,8 @@ struct TreeCullData {
     mat4 treeModel;                // Tree's model matrix
     uint inputFirstInstance;       // Offset into inputInstances for this tree
     uint inputInstanceCount;       // Number of input instances for this tree
-    uint outputBaseOffset;         // Base offset in output buffer for this tree
-    uint treeIndex;                // Index of this tree (for indirect command array)
+    uint treeIndex;                // Index of this tree (for render data lookup)
+    uint _pad;
 };
 
 layout(std430, binding = BINDING_TREE_LEAF_CULL_TREES) readonly buffer TreeDataBuffer {
@@ -54,6 +55,15 @@ layout(binding = BINDING_TREE_LEAF_CULL_UNIFORMS) uniform TreeLeafCullUniforms {
 
 void main() {
     uint globalIdx = gl_GlobalInvocationID.x;
+
+    // First thread initializes the indirect command (constant values)
+    if (globalIdx == 0) {
+        drawCmd.indexCount = 6;       // Quad: 6 indices
+        drawCmd.firstIndex = 0;
+        drawCmd.vertexOffset = 0;
+        drawCmd.firstInstance = 0;
+        // instanceCount is set via atomicAdd below
+    }
 
     // Early exit if beyond total leaf count
     if (globalIdx >= totalLeafInstances) {
@@ -119,10 +129,20 @@ void main() {
         return;
     }
 
-    // This leaf is visible - atomically get output slot for this tree
-    uint outputSlot = atomicAdd(drawCmds[tree.treeIndex].instanceCount, 1);
+    // This leaf is visible - atomically get output slot (SINGLE global counter)
+    uint outputSlot = atomicAdd(drawCmd.instanceCount, 1);
 
-    // Write to output buffer at the allocated slot
-    // Output position remains in tree-local space (shader applies model matrix)
-    outputInstances[tree.outputBaseOffset + outputSlot] = leaf;
+    // Transform orientation to world space
+    // Extract rotation from model matrix and combine with local orientation
+    mat3 rotationMatrix = mat3(tree.treeModel);
+    vec4 treeRotQuat = mat3ToQuat(rotationMatrix);
+    vec4 worldOrientation = quatMul(treeRotQuat, leaf.orientation);
+
+    // Write world-space leaf with tree index
+    outputInstances[outputSlot].worldPosition = vec4(worldPos.xyz, leafSize);
+    outputInstances[outputSlot].worldOrientation = worldOrientation;
+    outputInstances[outputSlot].treeIndex = tree.treeIndex;
+    outputInstances[outputSlot]._pad0 = 0;
+    outputInstances[outputSlot]._pad1 = 0;
+    outputInstances[outputSlot]._pad2 = 0;
 }

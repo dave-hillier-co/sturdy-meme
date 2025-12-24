@@ -25,16 +25,11 @@ struct TreeBranchPushConstants {
     float roughnessScale; // offset 92, size 4
 };
 
+// Simplified push constants for single-draw leaf rendering
+// Per-tree data now comes from tree render data SSBO
 struct TreeLeafPushConstants {
-    glm::mat4 model;       // offset 0, size 64
-    float time;            // offset 64, size 4
-    float lodBlendFactor;  // offset 68, size 4 (0=full geometry, 1=full impostor)
-    float _pad1[2];        // offset 72, size 8 (padding to align vec3 to 16 bytes)
-    glm::vec3 leafTint;    // offset 80, size 12
-    float alphaTest;       // offset 92, size 4
-    int32_t firstInstance; // offset 96, size 4 (offset into leaf SSBO for this tree)
-    float autumnHueShift;  // offset 100, size 4 (0=summer, 1=full autumn colors)
-    float _pad2[2];        // offset 104, size 8 (padding to 16-byte boundary)
+    float time;            // offset 0, size 4
+    float alphaTest;       // offset 4, size 4
 };
 
 // Shadow pass push constants (branches)
@@ -43,13 +38,10 @@ struct TreeBranchShadowPushConstants {
     int cascadeIndex;     // offset 64, size 4
 };
 
-// Shadow pass push constants (leaves with alpha test and instancing)
+// Simplified shadow pass push constants for single-draw leaf rendering
 struct TreeLeafShadowPushConstants {
-    glm::mat4 model;       // offset 0, size 64
-    int32_t cascadeIndex;  // offset 64, size 4
-    float alphaTest;       // offset 68, size 4
-    int32_t firstInstance; // offset 72, size 4 (offset into leaf SSBO for this tree)
-    float _pad;            // offset 76, size 4 (padding)
+    int32_t cascadeIndex;  // offset 0, size 4
+    float alphaTest;       // offset 4, size 4
 };
 
 // Uniforms for tree leaf culling compute shader (must match shader layout)
@@ -68,12 +60,33 @@ struct TreeLeafCullUniforms {
 };
 
 // Per-tree culling data (stored in SSBO, one entry per tree)
+// Must match tree_leaf_cull.comp TreeCullData struct
 struct TreeCullData {
     glm::mat4 treeModel;                // Tree's model matrix
     uint32_t inputFirstInstance;        // Offset into inputInstances for this tree
     uint32_t inputInstanceCount;        // Number of input instances for this tree
-    uint32_t outputBaseOffset;          // Base offset in output buffer for this tree
-    uint32_t treeIndex;                 // Index of this tree (for indirect command array)
+    uint32_t treeIndex;                 // Index of this tree (for render data lookup)
+    uint32_t _pad;                      // Padding
+};
+
+// World-space leaf instance data (output from compute, input to vertex shader)
+// Must match tree_leaf_world.glsl WorldLeafInstance struct - 48 bytes
+struct WorldLeafInstanceGPU {
+    glm::vec4 worldPosition;            // xyz = world pos, w = size
+    glm::vec4 worldOrientation;         // world-space quaternion
+    uint32_t treeIndex;                 // Index into tree render data SSBO
+    uint32_t _pad0;
+    uint32_t _pad1;
+    uint32_t _pad2;
+};
+static_assert(sizeof(WorldLeafInstanceGPU) == 48, "WorldLeafInstanceGPU must be 48 bytes for std430 layout");
+
+// Per-tree render data (stored in SSBO, indexed by treeIndex in vertex shader)
+// Must match tree_leaf_world.glsl TreeRenderData struct
+struct TreeRenderDataGPU {
+    glm::mat4 model;                    // Tree model matrix (for normals, wind pivot)
+    glm::vec4 tintAndParams;            // rgb = leaf tint, a = autumn hue shift
+    glm::vec4 windPhaseAndLOD;          // x = wind phase offset, y = LOD blend factor, zw = reserved
 };
 
 class TreeRenderer {
@@ -235,10 +248,15 @@ private:
     // Uniform buffers for culling (per-frame)
     BufferUtils::PerFrameBufferSet cullUniformBuffers_;
 
-    // Per-tree data buffer (SSBO with all tree transforms and offsets)
+    // Per-tree cull data buffer (SSBO with all tree transforms and offsets for compute)
     VkBuffer treeDataBuffer_ = VK_NULL_HANDLE;
     VmaAllocation treeDataAllocation_ = VK_NULL_HANDLE;
     VkDeviceSize treeDataBufferSize_ = 0;
+
+    // Per-tree render data buffer (SSBO with tints, autumn, wind phase for vertex shader)
+    VkBuffer treeRenderDataBuffer_ = VK_NULL_HANDLE;
+    VmaAllocation treeRenderDataAllocation_ = VK_NULL_HANDLE;
+    VkDeviceSize treeRenderDataBufferSize_ = 0;
 
     // Culling parameters - should match tree LOD settings (fullDetailDistance = 250)
     float leafMaxDrawDistance_ = 250.0f;

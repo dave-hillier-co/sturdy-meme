@@ -157,7 +157,8 @@
 #define BINDING_TREE_GFX_BARK_ROUGHNESS    6   // Bark roughness map
 #define BINDING_TREE_GFX_BARK_AO           7   // Bark AO map
 #define BINDING_TREE_GFX_LEAF_ALBEDO       8   // Leaf albedo texture
-#define BINDING_TREE_GFX_LEAF_INSTANCES    9   // Leaf instance SSBO
+#define BINDING_TREE_GFX_LEAF_INSTANCES    9   // Leaf instance SSBO (world-space)
+#define BINDING_TREE_GFX_TREE_DATA        10   // Tree render data SSBO (transforms, tints)
 
 // Tree Impostor Descriptor Set
 #define BINDING_TREE_IMPOSTOR_UBO          0   // Scene uniforms
@@ -500,6 +501,7 @@ constexpr uint32_t TREE_GFX_BARK_ROUGHNESS = BINDING_TREE_GFX_BARK_ROUGHNESS;
 constexpr uint32_t TREE_GFX_BARK_AO       = BINDING_TREE_GFX_BARK_AO;
 constexpr uint32_t TREE_GFX_LEAF_ALBEDO   = BINDING_TREE_GFX_LEAF_ALBEDO;
 constexpr uint32_t TREE_GFX_LEAF_INSTANCES = BINDING_TREE_GFX_LEAF_INSTANCES;
+constexpr uint32_t TREE_GFX_TREE_DATA = BINDING_TREE_GFX_TREE_DATA;
 
 // Tree Impostor
 constexpr uint32_t TREE_IMPOSTOR_UBO      = BINDING_TREE_IMPOSTOR_UBO;

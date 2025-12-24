@@ -2025,6 +2025,7 @@ const PhysicsDebugRenderer* Renderer::getPhysicsDebugRenderer() const { return s
 
 // Scene builder and mesh access
 SceneBuilder& Renderer::getSceneBuilder() { return systems_->scene().getSceneBuilder(); }
+const SceneBuilder& Renderer::getSceneBuilder() const { return systems_->scene().getSceneBuilder(); }
 Mesh& Renderer::getFlagClothMesh() { return systems_->scene().getSceneBuilder().getFlagClothMesh(); }
 Mesh& Renderer::getFlagPoleMesh() { return systems_->scene().getSceneBuilder().getFlagPoleMesh(); }
 void Renderer::uploadFlagClothMesh() {

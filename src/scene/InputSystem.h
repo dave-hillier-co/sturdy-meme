@@ -120,6 +120,11 @@ private:
     float cameraPitchInput = 0.0f;
     float cameraZoomInput = 0.0f;
 
+    // Mouse look state
+    bool mouseLookEnabled = false;
+    float mouseYawAccumulator = 0.0f;
+    float mousePitchAccumulator = 0.0f;
+
     // Free camera movement
     float freeCameraForward = 0.0f;
     float freeCameraRight = 0.0f;
@@ -137,6 +142,9 @@ private:
     // Input settings
     float moveSpeed = 5.0f;
     float rotateSpeed = 60.0f;
+
+    // Mouse wheel accumulator (accumulated between frames, consumed during update)
+    float mouseWheelAccumulator = 0.0f;
 
     // Gamepad constants
     static constexpr float stickDeadzone = 0.15f;

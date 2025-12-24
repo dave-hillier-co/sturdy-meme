@@ -1107,6 +1107,7 @@ VkDescriptorSet TreeRenderer::getCulledLeafDescriptorSet(uint32_t frameIndex, co
 
 void TreeRenderer::recordLeafCulling(VkCommandBuffer cmd, uint32_t frameIndex,
                                       const TreeSystem& treeSystem,
+                                      const TreeLODSystem* lodSystem,
                                       const glm::vec3& cameraPos,
                                       const glm::vec4* frustumPlanes) {
     // Skip if culling not enabled or no leaves
@@ -1129,12 +1130,19 @@ void TreeRenderer::recordLeafCulling(VkCommandBuffer cmd, uint32_t frameIndex,
 
     uint32_t numTrees = 0;
     uint32_t totalLeafInstances = 0;
+    uint32_t lodTreeIndex = 0;  // Index for LOD system lookup (matches tree instance order)
 
     for (const auto& renderable : leafRenderables) {
         if (renderable.leafInstanceIndex >= 0 &&
             static_cast<size_t>(renderable.leafInstanceIndex) < leafDrawInfo.size()) {
             const auto& drawInfo = leafDrawInfo[renderable.leafInstanceIndex];
             if (drawInfo.instanceCount > 0) {
+                // Get LOD blend factor from LOD system
+                float lodBlendFactor = 0.0f;
+                if (lodSystem) {
+                    lodBlendFactor = lodSystem->getBlendFactor(lodTreeIndex);
+                }
+
                 // Convert leaf type string to index (oak=0, ash=1, aspen=2, pine=3)
                 uint32_t leafTypeIdx = LEAF_TYPE_OAK;  // default
                 if (renderable.leafType == "ash") leafTypeIdx = LEAF_TYPE_ASH;
@@ -1148,6 +1156,10 @@ void TreeRenderer::recordLeafCulling(VkCommandBuffer cmd, uint32_t frameIndex,
                 treeData.inputInstanceCount = drawInfo.instanceCount;
                 treeData.treeIndex = numTrees;  // Index for render data lookup
                 treeData.leafTypeIndex = leafTypeIdx;
+                treeData.lodBlendFactor = lodBlendFactor;
+                treeData._pad0 = 0;
+                treeData._pad1 = 0;
+                treeData._pad2 = 0;
 
                 treeDataList.push_back(treeData);
 
@@ -1157,7 +1169,7 @@ void TreeRenderer::recordLeafCulling(VkCommandBuffer cmd, uint32_t frameIndex,
                 renderData.tintAndParams = glm::vec4(renderable.leafTint, renderable.autumnHueShift);
                 // Wind phase offset based on tree position for variation
                 float windPhase = glm::fract(renderable.transform[3][0] * 0.1f + renderable.transform[3][2] * 0.1f) * 6.28318f;
-                renderData.windPhaseAndLOD = glm::vec4(windPhase, 0.0f, 0.0f, 0.0f);
+                renderData.windPhaseAndLOD = glm::vec4(windPhase, lodBlendFactor, 0.0f, 0.0f);
 
                 treeRenderDataList.push_back(renderData);
 
@@ -1165,6 +1177,7 @@ void TreeRenderer::recordLeafCulling(VkCommandBuffer cmd, uint32_t frameIndex,
                 numTrees++;
             }
         }
+        lodTreeIndex++;  // Always increment to stay in sync with tree instance order
     }
     if (numTrees == 0 || totalLeafInstances == 0) return;
 

@@ -87,7 +87,26 @@ struct TreeCullData {
     uint32_t inputInstanceCount;        // Number of input instances for this tree
     uint32_t treeIndex;                 // Index of this tree (for render data lookup)
     uint32_t leafTypeIndex;             // Leaf type (0=oak, 1=ash, 2=aspen, 3=pine)
+    float lodBlendFactor;               // LOD blend factor (0=full detail, 1=full impostor)
+    uint32_t _pad0;                     // Padding for std430 alignment
+    uint32_t _pad1;
+    uint32_t _pad2;
 };
+static_assert(sizeof(TreeCullData) == 96, "TreeCullData must be 96 bytes for std430 layout");
+
+// Phase 3: Visible tree data (output from tree filtering, input to leaf culling)
+// Must match tree_filter.comp and tree_leaf_cull_phase3.comp VisibleTreeData struct
+struct VisibleTreeData {
+    uint32_t originalTreeIndex;         // Index into full TreeCullData array
+    uint32_t leafFirstInstance;         // Offset into leaf instance buffer
+    uint32_t leafInstanceCount;         // Number of leaves for this tree
+    uint32_t leafTypeIndex;             // Leaf type (0=oak, 1=ash, 2=aspen, 3=pine)
+    float lodBlendFactor;               // LOD blend factor (0=full detail, 1=full impostor)
+    uint32_t _pad0;
+    uint32_t _pad1;
+    uint32_t _pad2;
+};
+static_assert(sizeof(VisibleTreeData) == 32, "VisibleTreeData must be 32 bytes for std430 layout");
 
 // World-space leaf instance data (output from compute, input to vertex shader)
 // Must match tree_leaf_world.glsl WorldLeafInstance struct - 48 bytes
@@ -180,6 +199,7 @@ public:
     // Record compute pass for leaf culling (call before render pass)
     void recordLeafCulling(VkCommandBuffer cmd, uint32_t frameIndex,
                            const TreeSystem& treeSystem,
+                           const TreeLODSystem* lodSystem,
                            const glm::vec3& cameraPos,
                            const glm::vec4* frustumPlanes);
 
@@ -332,4 +352,29 @@ private:
 
     // Terrain size for spatial index configuration
     float terrainSize_ = 4096.0f;
+
+    // =========================================================================
+    // Phase 3: Two-Phase Tree-to-Leaf Culling
+    // =========================================================================
+
+    // Tree filtering compute pipeline (filters trees from visible cells)
+    ManagedPipeline treeFilterPipeline_;
+    ManagedPipelineLayout treeFilterPipelineLayout_;
+    ManagedDescriptorSetLayout treeFilterDescriptorSetLayout_;
+
+    // Per-frame tree filter descriptor sets
+    std::vector<VkDescriptorSet> treeFilterDescriptorSets_;
+
+    // Visible tree output buffer (compacted list of visible trees)
+    // Contains: [visibleTreeCount, VisibleTreeData[0], VisibleTreeData[1], ...]
+    VkBuffer visibleTreeBuffer_ = VK_NULL_HANDLE;
+    VmaAllocation visibleTreeAllocation_ = VK_NULL_HANDLE;
+    VkDeviceSize visibleTreeBufferSize_ = 0;
+
+    // Indirect dispatch buffer for leaf culling (set by tree filtering)
+    VkBuffer leafCullIndirectDispatch_ = VK_NULL_HANDLE;
+    VmaAllocation leafCullIndirectDispatchAllocation_ = VK_NULL_HANDLE;
+
+    // Flag to enable two-phase culling (Phase 3)
+    bool twoPhaseLeafCullingEnabled_ = false;
 };

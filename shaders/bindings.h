@@ -156,6 +156,15 @@
 #define BINDING_TREE_CELL_CULL_INDIRECT    2   // Indirect dispatch for tree cull
 #define BINDING_TREE_CELL_CULL_UNIFORMS    3   // Culling uniforms
 
+// Tree Filter Compute Descriptor Set (Phase 3: Two-Phase Culling)
+#define BINDING_TREE_FILTER_ALL_TREES      0   // All tree cull data (input)
+#define BINDING_TREE_FILTER_VISIBLE_CELLS  1   // Visible cell indices (input from cell cull)
+#define BINDING_TREE_FILTER_CELL_DATA      2   // Cell data for tree ranges (input)
+#define BINDING_TREE_FILTER_SORTED_TREES   3   // Trees sorted by cell (input)
+#define BINDING_TREE_FILTER_VISIBLE_TREES  4   // Visible trees output (compacted)
+#define BINDING_TREE_FILTER_INDIRECT       5   // Indirect dispatch for leaf cull
+#define BINDING_TREE_FILTER_UNIFORMS       6   // Filter uniforms
+
 // Tree Graphics Descriptor Set
 #define BINDING_TREE_GFX_UBO               0   // Scene uniforms
 #define BINDING_TREE_GFX_VERTICES          1   // Vertex SSBO
@@ -526,6 +535,15 @@ constexpr uint32_t TREE_CELL_CULL_CELLS   = BINDING_TREE_CELL_CULL_CELLS;
 constexpr uint32_t TREE_CELL_CULL_VISIBLE = BINDING_TREE_CELL_CULL_VISIBLE;
 constexpr uint32_t TREE_CELL_CULL_INDIRECT = BINDING_TREE_CELL_CULL_INDIRECT;
 constexpr uint32_t TREE_CELL_CULL_UNIFORMS = BINDING_TREE_CELL_CULL_UNIFORMS;
+
+// Tree Filter Compute (Phase 3)
+constexpr uint32_t TREE_FILTER_ALL_TREES  = BINDING_TREE_FILTER_ALL_TREES;
+constexpr uint32_t TREE_FILTER_VISIBLE_CELLS = BINDING_TREE_FILTER_VISIBLE_CELLS;
+constexpr uint32_t TREE_FILTER_CELL_DATA  = BINDING_TREE_FILTER_CELL_DATA;
+constexpr uint32_t TREE_FILTER_SORTED_TREES = BINDING_TREE_FILTER_SORTED_TREES;
+constexpr uint32_t TREE_FILTER_VISIBLE_TREES = BINDING_TREE_FILTER_VISIBLE_TREES;
+constexpr uint32_t TREE_FILTER_INDIRECT   = BINDING_TREE_FILTER_INDIRECT;
+constexpr uint32_t TREE_FILTER_UNIFORMS   = BINDING_TREE_FILTER_UNIFORMS;
 
 // Tree Graphics
 constexpr uint32_t TREE_GFX_UBO           = BINDING_TREE_GFX_UBO;

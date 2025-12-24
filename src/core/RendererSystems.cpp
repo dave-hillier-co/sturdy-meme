@@ -50,9 +50,7 @@
 #include "PerformanceToggles.h"
 
 // Include control subsystem headers (only those that coordinate multiple systems)
-#include "controls/WeatherControlSubsystem.h"
 #include "controls/EnvironmentControlSubsystem.h"
-#include "controls/PostProcessControlSubsystem.h"
 #include "controls/WaterControlSubsystem.h"
 #include "controls/TreeControlSubsystem.h"
 #include "controls/DebugControlSubsystem.h"
@@ -60,7 +58,9 @@
 #include "controls/SceneControlSubsystem.h"
 #include "controls/PlayerControlSubsystem.h"
 // Note: ILocationControl -> CelestialCalculator, ITerrainControl -> TerrainSystem,
-//       IProfilerControl -> Profiler implement their interfaces directly
+//       IProfilerControl -> Profiler, IWeatherState -> WeatherSystem,
+//       IPostProcessState -> PostProcessSystem, ICloudShadowControl -> CloudShadowSystem
+//       implement their interfaces directly
 
 #ifdef JPH_DEBUG_RENDERER
 #include "PhysicsDebugRenderer.h"
@@ -352,13 +352,14 @@ void RendererSystems::initControlSubsystems(VulkanContext& vulkanContext, Perfor
     // - CelestialCalculator implements ILocationControl
     // - TerrainSystem implements ITerrainControl
     // - Profiler implements IProfilerControl
+    // - WeatherSystem implements IWeatherState
+    // - PostProcessSystem implements IPostProcessState
+    // - CloudShadowSystem implements ICloudShadowControl
 
     // Subsystems that coordinate multiple systems:
-    weatherControl_ = std::make_unique<WeatherControlSubsystem>(*weatherSystem_, *environmentSettings_);
     environmentControl_ = std::make_unique<EnvironmentControlSubsystem>(
         *froxelSystem_, *atmosphereLUTSystem_, *leafSystem_, *cloudShadowSystem_,
         *postProcessSystem_, *environmentSettings_);
-    postProcessControl_ = std::make_unique<PostProcessControlSubsystem>(*postProcessSystem_, *cloudShadowSystem_);
     waterControl_ = std::make_unique<WaterControlSubsystem>(*waterSystem_, *waterTileCull_);
     treeControl_ = std::make_unique<TreeControlSubsystem>(treeSystem_.get(), *this);
     debugControl_ = std::make_unique<DebugControlSubsystem>(*debugLineSystem_, *hiZSystem_, *this);
@@ -381,14 +382,17 @@ void RendererSystems::setPerformanceSyncCallback(std::function<void()> callback)
 ILocationControl& RendererSystems::locationControl() { return *celestialCalculator_; }
 const ILocationControl& RendererSystems::locationControl() const { return *celestialCalculator_; }
 
-IWeatherControl& RendererSystems::weatherControl() { return *weatherControl_; }
-const IWeatherControl& RendererSystems::weatherControl() const { return *weatherControl_; }
+IWeatherState& RendererSystems::weatherState() { return *weatherSystem_; }
+const IWeatherState& RendererSystems::weatherState() const { return *weatherSystem_; }
 
 IEnvironmentControl& RendererSystems::environmentControl() { return *environmentControl_; }
 const IEnvironmentControl& RendererSystems::environmentControl() const { return *environmentControl_; }
 
-IPostProcessControl& RendererSystems::postProcessControl() { return *postProcessControl_; }
-const IPostProcessControl& RendererSystems::postProcessControl() const { return *postProcessControl_; }
+IPostProcessState& RendererSystems::postProcessState() { return *postProcessSystem_; }
+const IPostProcessState& RendererSystems::postProcessState() const { return *postProcessSystem_; }
+
+ICloudShadowControl& RendererSystems::cloudShadowControl() { return *cloudShadowSystem_; }
+const ICloudShadowControl& RendererSystems::cloudShadowControl() const { return *cloudShadowSystem_; }
 
 ITerrainControl& RendererSystems::terrainControl() { return *terrainSystem_; }
 const ITerrainControl& RendererSystems::terrainControl() const { return *terrainSystem_; }

@@ -26,9 +26,10 @@
 
 // Forward declarations for interfaces
 class ILocationControl;
-class IWeatherControl;
+class IWeatherState;
 class IEnvironmentControl;
-class IPostProcessControl;
+class IPostProcessState;
+class ICloudShadowControl;
 class ITerrainControl;
 class IWaterControl;
 class ITreeControl;
@@ -148,12 +149,14 @@ public:
     // Interface accessors - provide access to GUI-facing control interfaces via RendererSystems
     ILocationControl& getLocationControl() { return systems_->locationControl(); }
     const ILocationControl& getLocationControl() const { return systems_->locationControl(); }
-    IWeatherControl& getWeatherControl() { return systems_->weatherControl(); }
-    const IWeatherControl& getWeatherControl() const { return systems_->weatherControl(); }
+    IWeatherState& getWeatherState() { return systems_->weatherState(); }
+    const IWeatherState& getWeatherState() const { return systems_->weatherState(); }
     IEnvironmentControl& getEnvironmentControl() { return systems_->environmentControl(); }
     const IEnvironmentControl& getEnvironmentControl() const { return systems_->environmentControl(); }
-    IPostProcessControl& getPostProcessControl() { return systems_->postProcessControl(); }
-    const IPostProcessControl& getPostProcessControl() const { return systems_->postProcessControl(); }
+    IPostProcessState& getPostProcessState() { return systems_->postProcessState(); }
+    const IPostProcessState& getPostProcessState() const { return systems_->postProcessState(); }
+    ICloudShadowControl& getCloudShadowControl() { return systems_->cloudShadowControl(); }
+    const ICloudShadowControl& getCloudShadowControl() const { return systems_->cloudShadowControl(); }
     ITerrainControl& getTerrainControl() { return systems_->terrainControl(); }
     const ITerrainControl& getTerrainControl() const { return systems_->terrainControl(); }
     IWaterControl& getWaterControl() { return systems_->waterControl(); }

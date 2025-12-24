@@ -44,10 +44,9 @@ set(SOURCES
     src/core/RendererSystems.cpp
     # Control subsystems (coordinate multiple systems for GUI interfaces)
     # Note: Some systems implement their interfaces directly (CelestialCalculator -> ILocationControl,
-    #       TerrainSystem -> ITerrainControl, Profiler -> IProfilerControl)
-    src/core/controls/WeatherControlSubsystem.cpp
+    #       TerrainSystem -> ITerrainControl, Profiler -> IProfilerControl, WeatherSystem -> IWeatherState,
+    #       PostProcessSystem -> IPostProcessState, CloudShadowSystem -> ICloudShadowControl)
     src/core/controls/EnvironmentControlSubsystem.cpp
-    src/core/controls/PostProcessControlSubsystem.cpp
     src/core/controls/WaterControlSubsystem.cpp
     src/core/controls/TreeControlSubsystem.cpp
     src/core/controls/DebugControlSubsystem.cpp

@@ -8,9 +8,7 @@
 #include "CoreResources.h"
 
 // Forward declarations for control subsystems (only those that coordinate multiple systems)
-class WeatherControlSubsystem;
 class EnvironmentControlSubsystem;
-class PostProcessControlSubsystem;
 class WaterControlSubsystem;
 class TreeControlSubsystem;
 class DebugControlSubsystem;
@@ -20,9 +18,10 @@ class PlayerControlSubsystem;
 
 // Forward declarations for interfaces
 class ILocationControl;
-class IWeatherControl;
+class IWeatherState;
 class IEnvironmentControl;
-class IPostProcessControl;
+class IPostProcessState;
+class ICloudShadowControl;
 class ITerrainControl;
 class IWaterControl;
 class ITreeControl;
@@ -293,12 +292,14 @@ public:
     // Control subsystem accessors - return interface references
     ILocationControl& locationControl();
     const ILocationControl& locationControl() const;
-    IWeatherControl& weatherControl();
-    const IWeatherControl& weatherControl() const;
+    IWeatherState& weatherState();
+    const IWeatherState& weatherState() const;
     IEnvironmentControl& environmentControl();
     const IEnvironmentControl& environmentControl() const;
-    IPostProcessControl& postProcessControl();
-    const IPostProcessControl& postProcessControl() const;
+    IPostProcessState& postProcessState();
+    const IPostProcessState& postProcessState() const;
+    ICloudShadowControl& cloudShadowControl();
+    const ICloudShadowControl& cloudShadowControl() const;
     ITerrainControl& terrainControl();
     const ITerrainControl& terrainControl() const;
     IWaterControl& waterControl();
@@ -388,10 +389,10 @@ private:
 
     // Control subsystems (only for interfaces that coordinate multiple systems)
     // Note: ILocationControl -> CelestialCalculator, ITerrainControl -> TerrainSystem,
-    //       IProfilerControl -> Profiler implement their interfaces directly
-    std::unique_ptr<WeatherControlSubsystem> weatherControl_;
+    //       IProfilerControl -> Profiler, IWeatherState -> WeatherSystem,
+    //       IPostProcessState -> PostProcessSystem, ICloudShadowControl -> CloudShadowSystem
+    //       implement their interfaces directly
     std::unique_ptr<EnvironmentControlSubsystem> environmentControl_;
-    std::unique_ptr<PostProcessControlSubsystem> postProcessControl_;
     std::unique_ptr<WaterControlSubsystem> waterControl_;
     std::unique_ptr<TreeControlSubsystem> treeControl_;
     std::unique_ptr<DebugControlSubsystem> debugControl_;

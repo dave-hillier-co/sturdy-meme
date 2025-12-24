@@ -40,7 +40,13 @@ layout(binding = BINDING_PP_UNIFORMS) uniform PostProcessUniforms {
     float minLogLuminance;      // Min log2 luminance for grid
     float maxLogLuminance;      // Max log2 luminance for grid
     float bilateralBlend;       // Blend factor for bilateral vs gaussian (0.4=GOT)
-    float pad1, pad2;           // Alignment padding
+    // Water Volume Renderer - Underwater Effects (Phase 2)
+    float underwaterEnabled;    // 1.0 = underwater, 0.0 = above water
+    float underwaterDepth;      // Camera depth below water surface (meters)
+    vec4 underwaterAbsorption;  // xyz = absorption coefficients, w = turbidity
+    vec4 underwaterColor;       // Water tint color
+    float underwaterWaterLevel; // Water surface Y position
+    float underwaterPad1, underwaterPad2, underwaterPad3;  // Alignment padding
 } ubo;
 
 // Specialization constant for god ray sample count
@@ -364,20 +370,130 @@ vec3 computeGodRays(vec2 uv, vec2 sunPos) {
     return godRayColor * illumination * radialFalloff * ubo.godRayIntensity;
 }
 
+// ============================================================================
+// Water Volume Renderer - Underwater Effects (Phase 2)
+// Volumetric fog, light absorption, and Snell's window when camera is underwater
+// ============================================================================
+
+// Apply underwater fog using Beer-Lambert law
+// Returns fog color to blend with scene based on view distance
+vec3 applyUnderwaterFog(vec3 sceneColor, float linearDepth) {
+    // Get absorption coefficients from water material
+    vec3 absorption = ubo.underwaterAbsorption.xyz;
+    float turbidity = ubo.underwaterAbsorption.w;
+
+    // Scale absorption based on water type (turbidity increases absorption)
+    vec3 totalAbsorption = absorption * (1.0 + turbidity * 0.5);
+
+    // Beer-Lambert absorption: I = I0 * e^(-absorption * distance)
+    vec3 transmittance = exp(-totalAbsorption * linearDepth);
+
+    // Fog color is water color tinted by depth (deeper = darker, more blue)
+    vec3 fogColor = ubo.underwaterColor.rgb;
+
+    // Add depth-based color shift - blue dominates at depth
+    float depthFactor = min(linearDepth / 50.0, 1.0);  // Normalize to 50m
+    fogColor = mix(fogColor, vec3(0.05, 0.1, 0.15), depthFactor * 0.5);
+
+    // Add slight scattering contribution (turbidity-based)
+    // In turbid water, scattered light adds to fog color
+    vec3 scatterColor = fogColor * turbidity * 0.3;
+
+    // Final color: transmitted scene + scattered fog
+    return sceneColor * transmittance + fogColor * (1.0 - transmittance) + scatterColor;
+}
+
+// Apply Snell's window effect when looking up from underwater
+// Light can only enter water within a 97.2° cone (critical angle)
+// Outside this cone, we see total internal reflection of underwater scene
+vec3 applySnellsWindow(vec3 sceneColor, vec2 uv) {
+    // Screen center represents looking straight up
+    vec2 screenCenter = vec2(0.5, 0.5);
+    float distFromCenter = length(uv - screenCenter) * 2.0;  // Normalize to [0,1] at edges
+
+    // Critical angle for water-air interface: arcsin(1/1.33) ≈ 48.6°
+    // This maps to roughly 0.65 in our normalized screen space when looking up
+    const float CRITICAL_ANGLE = 0.65;
+
+    // Inside the window, we see refracted above-water scene (sky, etc.)
+    // Outside the window, we see total internal reflection
+    if (distFromCenter > CRITICAL_ANGLE) {
+        // Total internal reflection zone
+        // In a full implementation, this would reflect the underwater scene
+        // For now, we darken and tint the edge to simulate the effect
+        float reflectionAmount = smoothstep(CRITICAL_ANGLE, 1.0, distFromCenter);
+
+        // Darken and apply water color tint for reflected region
+        vec3 reflectedColor = sceneColor * ubo.underwaterColor.rgb * 0.3;
+
+        return mix(sceneColor, reflectedColor, reflectionAmount);
+    }
+
+    // Inside Snell's window - apply subtle edge distortion/chromatic aberration
+    float edgeFactor = smoothstep(0.0, CRITICAL_ANGLE, distFromCenter);
+
+    // Slight barrel distortion at window edge (Snell's law refraction)
+    // This is a simplified version - real implementation would ray-trace
+    float distortion = edgeFactor * 0.02;
+    vec2 distortedUV = uv + (uv - screenCenter) * distortion;
+
+    // Clamp to valid UV range
+    distortedUV = clamp(distortedUV, 0.0, 1.0);
+
+    // Sample with slight chromatic aberration at edge
+    vec3 distortedColor;
+    if (distortion > 0.001) {
+        distortedColor.r = texture(hdrInput, distortedUV + vec2(0.002, 0.0) * edgeFactor).r;
+        distortedColor.g = texture(hdrInput, distortedUV).g;
+        distortedColor.b = texture(hdrInput, distortedUV - vec2(0.002, 0.0) * edgeFactor).b;
+    } else {
+        distortedColor = sceneColor;
+    }
+
+    // Darken edges of Snell's window (light loses intensity at steep angles)
+    float edgeDarkening = 1.0 - edgeFactor * 0.3;
+    return distortedColor * edgeDarkening;
+}
+
+// Main underwater effect composition
+vec3 applyUnderwaterEffects(vec3 sceneColor, vec2 uv, float linearDepth) {
+    // Apply underwater fog/absorption
+    vec3 foggedColor = applyUnderwaterFog(sceneColor, linearDepth);
+
+    // Apply Snell's window effect (looking up from underwater)
+    // This effect is strongest when depth is moderate (not at surface)
+    float snellStrength = smoothstep(0.0, 2.0, ubo.underwaterDepth);
+    if (snellStrength > 0.01) {
+        vec3 snellColor = applySnellsWindow(foggedColor, uv);
+        foggedColor = mix(foggedColor, snellColor, snellStrength);
+    }
+
+    // Caustics on underwater surfaces would be handled in terrain shader
+    // God rays underwater would need separate underwater ray-marching
+
+    return foggedColor;
+}
+
 void main() {
     vec3 hdr = texture(hdrInput, fragTexCoord).rgb;
 
-    // Apply froxel volumetric fog (Phase 4.3)
-    if (ubo.froxelEnabled > 0.5) {
-        float depth = texture(depthInput, fragTexCoord).r;
-        float linearDepth = linearizeDepth(depth);
+    // Get depth for volumetric effects
+    float depth = texture(depthInput, fragTexCoord).r;
+    float linearDepth = linearizeDepth(depth);
 
+    // Apply froxel volumetric fog (Phase 4.3) - only when above water
+    if (ubo.froxelEnabled > 0.5 && ubo.underwaterEnabled < 0.5) {
         vec4 fog = sampleFroxelFog(fragTexCoord, linearDepth);
         vec3 inScatter = fog.rgb;
         float transmittance = fog.a;
 
         // Apply fog: scene * transmittance + in-scatter
         hdr = hdr * transmittance + inScatter;
+    }
+
+    // Apply underwater effects (Water Volume Renderer Phase 2)
+    if (ubo.underwaterEnabled > 0.5) {
+        hdr = applyUnderwaterEffects(hdr, fragTexCoord, linearDepth);
     }
 
     // Exposure is computed by histogram compute shaders and passed via uniform

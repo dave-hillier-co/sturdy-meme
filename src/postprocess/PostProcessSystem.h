@@ -159,6 +159,36 @@ public:
     }
     void setCameraPlanes(float near, float far) { nearPlane = near; farPlane = far; }
 
+    // =========================================================================
+    // Water Volume Renderer - Underwater Effects (Phase 2)
+    // =========================================================================
+
+    // Set underwater state (called each frame based on camera position)
+    void setUnderwaterState(bool underwater, float depth,
+                            const glm::vec3& absorption, float turbidity,
+                            const glm::vec4& waterColor, float waterLevel) {
+        isUnderwater_ = underwater;
+        underwaterDepth_ = depth;
+        underwaterAbsorption_ = absorption;
+        underwaterTurbidity_ = turbidity;
+        underwaterColor_ = waterColor;
+        underwaterWaterLevel_ = waterLevel;
+    }
+
+    // Individual setters for underwater parameters
+    void setUnderwaterEnabled(bool enabled) { isUnderwater_ = enabled; }
+    bool isUnderwater() const { return isUnderwater_; }
+    void setUnderwaterDepth(float depth) { underwaterDepth_ = depth; }
+    float getUnderwaterDepth() const { return underwaterDepth_; }
+    void setUnderwaterAbsorption(const glm::vec3& absorption) { underwaterAbsorption_ = absorption; }
+    glm::vec3 getUnderwaterAbsorption() const { return underwaterAbsorption_; }
+    void setUnderwaterTurbidity(float turbidity) { underwaterTurbidity_ = turbidity; }
+    float getUnderwaterTurbidity() const { return underwaterTurbidity_; }
+    void setUnderwaterColor(const glm::vec4& color) { underwaterColor_ = color; }
+    glm::vec4 getUnderwaterColor() const { return underwaterColor_; }
+    void setUnderwaterWaterLevel(float level) { underwaterWaterLevel_ = level; }
+    float getUnderwaterWaterLevel() const { return underwaterWaterLevel_; }
+
 private:
     PostProcessSystem() = default;  // Private: use factory
 
@@ -268,6 +298,14 @@ private:
     float bilateralBlend = 0.4f;       // GOT used 40% bilateral, 60% gaussian
     float minLogLuminance = -8.0f;
     float maxLogLuminance = 4.0f;
+
+    // Underwater rendering parameters (Water Volume Renderer Phase 2)
+    bool isUnderwater_ = false;                              // Is camera underwater
+    float underwaterDepth_ = 0.0f;                           // Depth below water surface
+    glm::vec3 underwaterAbsorption_ = glm::vec3(0.4f, 0.03f, 0.01f);  // Beer-Lambert absorption (default coastal)
+    float underwaterTurbidity_ = 0.5f;                       // Scattering factor
+    glm::vec4 underwaterColor_ = glm::vec4(0.1f, 0.3f, 0.4f, 0.8f);   // Water tint color
+    float underwaterWaterLevel_ = 0.0f;                      // Water surface Y position
 
     // Auto-exposure parameters
     static constexpr float MIN_EXPOSURE = -4.0f;  // EV (darkening limit)

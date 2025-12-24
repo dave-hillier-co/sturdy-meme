@@ -725,11 +725,11 @@ bool Renderer::initSubsystems(const InitContext& initCtx) {
     systems_->terrain().setCloudShadowMap(device, systems_->cloudShadow().getShadowMapView(), systems_->cloudShadow().getShadowMapSampler());
 
     // Connect underwater caustics to terrain system (use foam texture as caustics pattern)
-    if (water.system.getFoamTextureView() != VK_NULL_HANDLE) {
+    if (systems_->water().getFoamTextureView() != VK_NULL_HANDLE) {
         systems_->terrain().setCaustics(device,
-                                         water.system.getFoamTextureView(),
-                                         water.system.getFoamTextureSampler(),
-                                         water.system.getWaterLevel(),
+                                         systems_->water().getFoamTextureView(),
+                                         systems_->water().getFoamTextureSampler(),
+                                         systems_->water().getWaterLevel(),
                                          true);  // Enable caustics
     }
 

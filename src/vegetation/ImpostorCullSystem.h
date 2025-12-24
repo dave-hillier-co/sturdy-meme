@@ -26,13 +26,18 @@ struct alignas(16) ImpostorCullUniforms {
     float blendRange;                   // Distance over which to blend LODs
     uint32_t numTrees;                  // Total number of trees
     uint32_t enableHiZ;                 // 1 = enable Hi-Z culling, 0 = frustum only
+    uint32_t useScreenSpaceError;       // 1 = use screen-space error LOD, 0 = distance-based
+    float tanHalfFOV;                   // tan(fov/2) for screen-space error calculation
+    float errorThresholdFull;           // Screen error threshold for full detail (pixels)
+    float errorThresholdImpostor;       // Screen error threshold for impostor (pixels)
+    float errorThresholdCull;           // Screen error beyond which to cull
     uint32_t _pad0;
-    uint32_t _pad1;
 };
 
 // Per-archetype sizing data (matches shader struct)
 struct ArchetypeCullData {
     glm::vec4 sizingData;  // x = hSize, y = vSize, z = baseOffset, w = boundingSphereRadius
+    glm::vec4 lodErrorData; // x = worldErrorFull, y = worldErrorImpostor, z = unused, w = unused
 };
 
 // Tree input data for culling (matches shader struct)
@@ -90,6 +95,19 @@ public:
      */
     void updateArchetypeData(const TreeImpostorAtlas* atlas);
 
+    // LOD parameters for screen-space error calculation
+    struct LODParams {
+        float fullDetailDistance = 250.0f;
+        float impostorDistance = 50000.0f;
+        float hysteresis = 5.0f;
+        float blendRange = 10.0f;
+        bool useScreenSpaceError = true;
+        float tanHalfFOV = 1.0f;  // tan(fov/2)
+        float errorThresholdFull = 2.0f;
+        float errorThresholdImpostor = 8.0f;
+        float errorThresholdCull = 32.0f;
+    };
+
     /**
      * Record compute dispatch for impostor culling.
      * Call after terrain depth pass and Hi-Z pyramid generation.
@@ -101,10 +119,7 @@ public:
      * @param viewProjMatrix View-projection matrix
      * @param hiZPyramidView Hi-Z pyramid image view (nullptr to disable Hi-Z)
      * @param hiZSampler Sampler for Hi-Z pyramid
-     * @param fullDetailDistance Distance below which trees render as full geometry
-     * @param impostorDistance Maximum distance for impostors
-     * @param hysteresis LOD transition hysteresis
-     * @param blendRange LOD blend distance
+     * @param lodParams LOD parameters including screen-space error settings
      */
     void recordCulling(VkCommandBuffer cmd, uint32_t frameIndex,
                        const glm::vec3& cameraPos,
@@ -112,10 +127,7 @@ public:
                        const glm::mat4& viewProjMatrix,
                        VkImageView hiZPyramidView,
                        VkSampler hiZSampler,
-                       float fullDetailDistance,
-                       float impostorDistance,
-                       float hysteresis,
-                       float blendRange);
+                       const LODParams& lodParams);
 
     // Get output buffers for rendering
     VkBuffer getVisibleImpostorBuffer() const { return visibleImpostorBuffer_; }

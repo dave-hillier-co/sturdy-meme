@@ -45,7 +45,7 @@ struct TreeImpostorArchetype {
 
 // LOD settings with hysteresis support
 struct TreeLODSettings {
-    // Distance thresholds
+    // Distance thresholds (used when useScreenSpaceError = false)
     float fullDetailDistance = 250.0f;     // Full geometry below this
     float impostorDistance = 50000.0f;     // Impostors visible up to this distance (very far)
 
@@ -55,6 +55,12 @@ struct TreeLODSettings {
     // Blending characteristics
     float blendRange = 10.0f;              // Distance over which to blend LODs
     float blendExponent = 1.0f;            // Blend curve (1.0 = linear)
+
+    // Screen-space error LOD (Phase 4)
+    bool useScreenSpaceError = true;       // Use screen-space error instead of distance
+    float errorThresholdFull = 2.0f;       // Max screen error for full detail (pixels)
+    float errorThresholdImpostor = 8.0f;   // Max screen error for impostor (pixels)
+    float errorThresholdCull = 32.0f;      // Screen error beyond which to cull (sub-pixel)
 
     // Impostor settings
     bool enableImpostors = true;

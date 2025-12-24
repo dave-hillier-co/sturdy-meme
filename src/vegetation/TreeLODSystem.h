@@ -66,8 +66,18 @@ public:
     TreeLODSystem(TreeLODSystem&&) = delete;
     TreeLODSystem& operator=(TreeLODSystem&&) = delete;
 
+    // Screen parameters for screen-space error LOD
+    struct ScreenParams {
+        float screenHeight;
+        float tanHalfFOV;  // tan(fov/2)
+
+        ScreenParams() : screenHeight(1080.0f), tanHalfFOV(1.0f) {}
+        ScreenParams(float height, float tanFov) : screenHeight(height), tanHalfFOV(tanFov) {}
+    };
+
     // Update LOD states based on camera position
-    void update(float deltaTime, const glm::vec3& cameraPos, const TreeSystem& treeSystem);
+    void update(float deltaTime, const glm::vec3& cameraPos, const TreeSystem& treeSystem,
+                const ScreenParams& screenParams = ScreenParams());
 
     // Render impostors (called after full geometry trees are rendered)
     void renderImpostors(VkCommandBuffer cmd, uint32_t frameIndex,

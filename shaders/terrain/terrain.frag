@@ -63,6 +63,21 @@ layout(binding = BINDING_TERRAIN_CLOUD_SHADOW) uniform sampler2D cloudShadowMap;
 // Hole mask for caves/wells (R8: 0=solid, 1=hole)
 layout(binding = BINDING_TERRAIN_HOLE_MASK) uniform sampler2D holeMask;
 
+// Underwater caustics texture (Phase 2)
+layout(binding = BINDING_TERRAIN_CAUSTICS) uniform sampler2D causticsTexture;
+
+// Caustics parameters UBO (Phase 2)
+layout(std140, binding = BINDING_TERRAIN_CAUSTICS_UBO) uniform CausticsUniforms {
+    float causticsWaterLevel;      // Water surface height (Y)
+    float causticsScale;           // Pattern scale (world units)
+    float causticsSpeed;           // Animation speed
+    float causticsIntensity;       // Brightness multiplier
+    float causticsMaxDepth;        // Maximum depth for caustics visibility
+    float causticsTime;            // Animation time
+    float causticsEnabled;         // 0 = disabled, 1 = enabled
+    float causticsPadding;         // Alignment padding
+};
+
 // Far LOD grass parameters (where to start/end grass-to-terrain transition)
 const float GRASS_RENDER_DISTANCE = 60.0;     // Should match grass system maxDrawDistance
 const float FAR_LOD_TRANSITION_START = 50.0;  // Start blending far LOD
@@ -123,6 +138,63 @@ float getShadowFactor(vec3 worldPos) {
         ubo.shadowMapSize,
         shadowMapArray
     );
+}
+
+// =========================================================================
+// PHASE 2: Underwater Caustics
+// Project animated light patterns onto terrain below water surface
+// =========================================================================
+vec3 calculateUnderwaterCaustics(vec3 worldPos, vec3 sunDir, vec3 sunColor, float shadow) {
+    // Check if caustics are enabled and fragment is underwater
+    if (causticsEnabled < 0.5) {
+        return vec3(0.0);
+    }
+
+    // Calculate underwater depth (positive = below water)
+    float underwaterDepth = causticsWaterLevel - worldPos.y;
+
+    // Only apply caustics to underwater surfaces
+    if (underwaterDepth <= 0.0) {
+        return vec3(0.0);
+    }
+
+    // Depth-based intensity falloff
+    float depthFalloff = 1.0 - smoothstep(0.0, causticsMaxDepth, underwaterDepth);
+    if (depthFalloff <= 0.0) {
+        return vec3(0.0);
+    }
+
+    // Sun angle influence - caustics are stronger with overhead sun
+    float sunAngle = max(0.0, sunDir.y);
+    float sunInfluence = sunAngle * sunAngle;  // Square for realistic falloff
+
+    // Project caustics using world XZ position with light refraction offset
+    // Snell's law approximation: light bends toward vertical when entering water
+    // Offset the sampling position based on depth and sun angle
+    float refractionIndex = 1.33;  // Water refraction index
+    vec2 refractionOffset = sunDir.xz * underwaterDepth * (1.0 / refractionIndex - 1.0) * 0.3;
+
+    // Two-layer caustics animation for richer look (matches water.frag approach)
+    // Layer 1: Main caustics pattern
+    vec2 causticsUV1 = (worldPos.xz + refractionOffset) * causticsScale
+                     + vec2(causticsTime * causticsSpeed * 0.3, causticsTime * causticsSpeed * 0.2);
+    float caustic1 = texture(causticsTexture, causticsUV1).r;
+
+    // Layer 2: Secondary pattern at different scale and speed (creates shimmering)
+    vec2 causticsUV2 = (worldPos.xz + refractionOffset) * causticsScale * 1.5
+                     - vec2(causticsTime * causticsSpeed * 0.2, causticsTime * causticsSpeed * 0.35);
+    float caustic2 = texture(causticsTexture, causticsUV2).r;
+
+    // Combine layers - multiply for sharper caustic lines
+    float causticPattern = caustic1 * caustic2 * 2.0 + (caustic1 + caustic2) * 0.25;
+    causticPattern = clamp(causticPattern, 0.0, 1.0);
+
+    // Final caustic strength
+    float causticStrength = causticPattern * depthFalloff * sunInfluence * causticsIntensity;
+
+    // Caustics are sun-colored light focused by wave refraction
+    // Apply shadow to reduce caustics in shaded areas
+    return sunColor * causticStrength * shadow;
 }
 
 void main() {
@@ -314,6 +386,11 @@ void main() {
 
     // Combine lighting (sun with shadows, moon without for soft night light)
     vec3 color = ambient + sunLight * shadow + moonLight;
+
+    // === UNDERWATER CAUSTICS (Phase 2) ===
+    // Add animated light patterns to underwater terrain
+    vec3 causticsLight = calculateUnderwaterCaustics(fragWorldPos, L, radiance, shadow);
+    color += causticsLight * albedo;  // Modulate by albedo for natural look
 
     // Debug: visualize LOD depth
     #if 0

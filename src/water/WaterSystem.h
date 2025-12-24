@@ -126,7 +126,9 @@ public:
                               VkSampler sceneDepthSampler,
                               VkImageView tileArrayView = VK_NULL_HANDLE,
                               VkSampler tileSampler = VK_NULL_HANDLE,
-                              const std::array<VkBuffer, 3>& tileInfoBuffers = {});
+                              const std::array<VkBuffer, 3>& tileInfoBuffers = {},
+                              VkImageView envCubemapView = VK_NULL_HANDLE,
+                              VkSampler envCubemapSampler = VK_NULL_HANDLE);
 
     // Update water uniforms (call each frame)
     void updateUniforms(uint32_t frameIndex);
@@ -154,6 +156,10 @@ public:
     float getWaterLevel() const { return waterUniforms.waterLevel; }
     float getBaseWaterLevel() const { return baseWaterLevel; }
     float getTidalRange() const { return tidalRange; }
+
+    // Foam texture accessors (can be used for terrain caustics)
+    VkImageView getFoamTextureView() const { return foamTexture ? (*foamTexture)->getImageView() : VK_NULL_HANDLE; }
+    VkSampler getFoamTextureSampler() const { return foamTexture ? (*foamTexture)->getSampler() : VK_NULL_HANDLE; }
     glm::vec4 getWaterColor() const { return waterUniforms.waterColor; }
     float getWaveAmplitude() const { return waterUniforms.waveParams.x; }
     float getWaveLength() const { return waterUniforms.waveParams.y; }

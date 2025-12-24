@@ -236,15 +236,14 @@ The existing tree rendering system implements several modern GPU-driven techniqu
 | Phase 1: Spatial Partitioning | ✅ Complete | `TreeSpatialIndex`, `tree_cell_cull.comp` |
 | Phase 2: Hi-Z Occlusion Culling | ✅ Complete | `ImpostorCullSystem`, integrated into `tree_impostor_cull.comp` |
 | Phase 3: Two-Phase Tree-to-Leaf Culling | ✅ Complete | `tree_filter.comp`, `tree_leaf_cull_phase3.comp` with UI toggle |
-| Phase 4: Screen-Space Error LOD | ❌ Not Started | Still using distance-based thresholds |
+| Phase 4: Screen-Space Error LOD | ✅ Complete | `TreeLODSettings.useScreenSpaceError`, FOV-aware LOD selection |
 | Phase 5: Temporal Coherence | ❌ Not Started | No visibility caching |
 | Phase 6: Octahedral Impostor Mapping | ❌ Not Started | Still using 17-view atlas |
 
 ### Remaining Bottlenecks
 
-1. **Distance-based LOD**: Fixed thresholds don't adapt to resolution/FOV
-2. **No budget control**: Triangle count can explode in dense forest views
-3. **Uniform shader complexity**: Same PBR shader at all distances
+1. **No budget control**: Triangle count can explode in dense forest views
+2. **Uniform shader complexity**: Same PBR shader at all distances
 
 ---
 
@@ -477,9 +476,11 @@ void main() {
 
 ---
 
-## Phase 4: Screen-Space Error LOD Selection
+## Phase 4: Screen-Space Error LOD Selection ✅ COMPLETE
 
 **Goal**: Replace fixed distance thresholds with perceptually-correct screen-space error metrics
+
+**Status**: Fully implemented with FOV-aware screen-space error calculation in both GPU (`tree_impostor_cull.comp`) and CPU (`TreeLODSystem`). Per-archetype world error bounds stored in `ArchetypeCullData.lodErrorData`. UI toggle in Tree tab allows comparison with legacy distance-based LOD.
 
 ### Why Screen-Space Error?
 
@@ -811,19 +812,18 @@ vec4 sampleImpostor(vec3 viewDir, uint archetypeIndex) {
 | 1. Spatial Partitioning | ✅ Done | None | High | `TreeSpatialIndex.h/cpp`, `tree_cell_cull.comp` |
 | 2. Hi-Z Occlusion | ✅ Done | Phase 1 (optional) | Medium | `ImpostorCullSystem.h/cpp`, `tree_impostor_cull.comp` |
 | 3. Two-Phase Culling | ✅ Done | Phase 1 | High | `tree_filter.comp`, `tree_leaf_cull_phase3.comp`, `TreeRenderer.cpp` |
-| 4. Screen-Space Error LOD | ❌ Next | None | Medium | New: `tree_lod_select.comp`, `TreeLODSystem.cpp` |
-| 5. Temporal Coherence | ❌ Pending | Phase 1, 3 | Medium | `TreeRenderer.cpp`, culling shaders |
+| 4. Screen-Space Error LOD | ✅ Done | None | Medium | `TreeLODSettings`, `tree_impostor_cull.comp`, `TreeLODSystem.cpp` |
+| 5. Temporal Coherence | ❌ Next | Phase 1, 3 | Medium | `TreeRenderer.cpp`, culling shaders |
 | 6. Octahedral Impostors | ❌ Pending | None | High | `TreeImpostorAtlas.cpp`, `tree_impostor.vert/frag` |
 
 ### Recommended Next Steps
 
-**Phase 4: Screen-Space Error LOD** is the recommended next phase because:
-- Foundation for budget control and consistent quality across resolutions/FOVs
-- Can be implemented independently of the completed phases
-- Addresses remaining bottlenecks: distance-based thresholds and lack of triangle budget
+**Phase 5: Temporal Coherence** is the recommended next phase because:
+- Reduces per-frame culling overhead by reusing visibility from previous frames
+- Benefits from stable camera views (common in gameplay)
+- Complements the screen-space error system for smoother transitions
 
-After Phase 4:
-- **Phase 5** (Temporal Coherence) - Optimization for stable camera views
+After Phase 5:
 - **Phase 6** (Octahedral Impostors) - Memory reduction and smoother view transitions
 
 ---

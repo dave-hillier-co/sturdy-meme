@@ -175,6 +175,7 @@
 #define BINDING_TREE_IMPOSTOR_NORMAL       2   // Impostor normal+depth+AO atlas
 #define BINDING_TREE_IMPOSTOR_SHADOW_MAP   3   // Shadow map
 #define BINDING_TREE_IMPOSTOR_INSTANCES    4   // Impostor instance SSBO (visible output)
+#define BINDING_TREE_IMPOSTOR_SHADOW_INSTANCES 2  // Shadow pass instance SSBO (binding 2 in shadow layout)
 
 // Tree Impostor Cull Compute Descriptor Set
 #define BINDING_TREE_IMPOSTOR_CULL_INPUT       0   // All tree positions/data (input)
@@ -535,6 +536,7 @@ constexpr uint32_t TREE_IMPOSTOR_ALBEDO   = BINDING_TREE_IMPOSTOR_ALBEDO;
 constexpr uint32_t TREE_IMPOSTOR_NORMAL   = BINDING_TREE_IMPOSTOR_NORMAL;
 constexpr uint32_t TREE_IMPOSTOR_SHADOW_MAP = BINDING_TREE_IMPOSTOR_SHADOW_MAP;
 constexpr uint32_t TREE_IMPOSTOR_INSTANCES = BINDING_TREE_IMPOSTOR_INSTANCES;
+constexpr uint32_t TREE_IMPOSTOR_SHADOW_INSTANCES = BINDING_TREE_IMPOSTOR_SHADOW_INSTANCES;
 
 // Tree Impostor Cull Compute
 constexpr uint32_t TREE_IMPOSTOR_CULL_INPUT     = BINDING_TREE_IMPOSTOR_CULL_INPUT;

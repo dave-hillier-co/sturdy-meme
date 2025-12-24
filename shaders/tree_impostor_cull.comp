@@ -95,23 +95,24 @@ bool isOccludedHiZ(vec3 worldPos, float boundingRadius) {
     // Clamp to valid mip range (assume max 12 levels for 4K)
     mipLevel = min(mipLevel, 11.0);
 
-    // Sample Hi-Z at appropriate mip (returns max depth in the region)
+    // Sample Hi-Z at appropriate mip (returns MIN depth in the region)
+    // Hi-Z uses reversed-Z: 0 = far, 1 = near
+    // Min = farthest visible point in the region
     float occluderDepth = textureLod(hiZPyramid, screenUV, mipLevel).r;
 
-    // Calculate conservative depth for tree (use front of bounding sphere)
-    // Project the closest point of the bounding sphere
+    // Calculate conservative depth for tree (use back of bounding sphere - farthest point)
+    // In reversed-Z, we want the farthest point of the tree to compare against
+    // the farthest visible occluder point
     vec3 toCamera = normalize(cameraPosition.xyz - worldPos);
-    vec3 closestPoint = worldPos + toCamera * boundingRadius;
-    vec4 closestClip = viewProjMatrix * vec4(closestPoint, 1.0);
-    float treeDepth = closestClip.z / closestClip.w;
+    vec3 farthestPoint = worldPos - toCamera * boundingRadius;  // Point away from camera
+    vec4 farthestClip = viewProjMatrix * vec4(farthestPoint, 1.0);
+    float treeDepth = farthestClip.z / farthestClip.w;
 
-    // Convert to [0,1] depth range (Vulkan uses [0,1] NDC depth)
-    treeDepth = treeDepth * 0.5 + 0.5;
-
-    // Tree is occluded if its closest depth is greater than the occluder's max depth
+    // Tree is occluded if its farthest point is farther than the farthest visible occluder
+    // In reversed-Z: smaller depth = farther
     // Add small margin to account for precision issues
     float depthMargin = 0.001;
-    return treeDepth > occluderDepth + depthMargin;
+    return treeDepth < occluderDepth - depthMargin;
 }
 
 void main() {
@@ -155,15 +156,21 @@ void main() {
     // Get archetype sizing data
     ArchetypeData arch = archetypes[archetypeIndex];
     float boundingRadius = arch.sizingData.w * treeScale;
+    float vSize = arch.sizingData.y * treeScale;  // Vertical half-size
+
+    // Calculate tree center (base position + vertical offset)
+    // Trees are positioned at their base, but extend upward
+    vec3 treeCenter = treePos + vec3(0.0, vSize, 0.0);
 
     // Frustum culling with margin for billboard size
     float margin = boundingRadius * 2.0;
-    if (!isInFrustum(frustumPlanes, treePos, margin)) {
+    if (!isInFrustum(frustumPlanes, treeCenter, margin)) {
         return;
     }
 
     // Hi-Z occlusion culling (Phase 2: eliminate trees behind terrain/occluders)
-    if (enableHiZ != 0u && isOccludedHiZ(treePos, boundingRadius)) {
+    // Use tree center for occlusion test, not base position
+    if (enableHiZ != 0u && isOccludedHiZ(treeCenter, boundingRadius)) {
         return;
     }
 

@@ -23,6 +23,20 @@
 #include "RendererSystems.h"
 #include "PerformanceToggles.h"
 
+// GUI-facing interfaces
+#include "interfaces/ITimeControl.h"
+#include "interfaces/IWeatherControl.h"
+#include "interfaces/IEnvironmentControl.h"
+#include "interfaces/IPostProcessControl.h"
+#include "interfaces/ITerrainControl.h"
+#include "interfaces/IWaterControl.h"
+#include "interfaces/ITreeControl.h"
+#include "interfaces/IDebugControl.h"
+#include "interfaces/IProfilerControl.h"
+#include "interfaces/IPerformanceControl.h"
+#include "interfaces/ISceneControl.h"
+#include "interfaces/IPlayerControl.h"
+
 // Forward declarations for types used in public API
 class PostProcessSystem;
 class TimeSystem;
@@ -60,7 +74,18 @@ constexpr uint32_t PBR_HAS_AO_MAP        = (1u << 2);
 constexpr uint32_t PBR_HAS_HEIGHT_MAP    = (1u << 3);
 
 
-class Renderer {
+class Renderer : public ITimeControl,
+                  public IWeatherControl,
+                  public IEnvironmentControl,
+                  public IPostProcessControl,
+                  public ITerrainControl,
+                  public IWaterControl,
+                  public ITreeControl,
+                  public IDebugControl,
+                  public IProfilerControl,
+                  public IPerformanceControl,
+                  public ISceneControl,
+                  public IPlayerControl {
 public:
     // Configuration for renderer initialization
     struct Config {
@@ -97,8 +122,9 @@ public:
     // This prevents race conditions where GPU is reading buffers we're about to destroy.
     void waitForPreviousFrame();
 
-    uint32_t getWidth() const { return vulkanContext.getWidth(); }
-    uint32_t getHeight() const { return vulkanContext.getHeight(); }
+    // ISceneControl implementation (viewport dimensions)
+    uint32_t getWidth() const override { return vulkanContext.getWidth(); }
+    uint32_t getHeight() const override { return vulkanContext.getHeight(); }
 
     // Handle window resize (recreate swapchain and dependent resources)
     bool handleResize();
@@ -134,147 +160,135 @@ public:
     using GuiRenderCallback = std::function<void(VkCommandBuffer)>;
     void setGuiRenderCallback(GuiRenderCallback callback) { guiRenderCallback = callback; }
 
-    void setTimeScale(float scale);
-    float getTimeScale() const;
-    void setTimeOfDay(float time);
-    void resumeAutoTime();
-    float getTimeOfDay() const;
+    // ITimeControl implementation
+    void setTimeScale(float scale) override;
+    float getTimeScale() const override;
+    void setTimeOfDay(float time) override;
+    void resumeAutoTime() override;
+    float getTimeOfDay() const override;
     TimeSystem& getTimeSystem();
     const TimeSystem& getTimeSystem() const;
 
-    void toggleCascadeDebug() { showCascadeDebug = !showCascadeDebug; }
-    bool isShowingCascadeDebug() const { return showCascadeDebug; }
+    // IDebugControl implementation (partial)
+    void toggleCascadeDebug() override { showCascadeDebug = !showCascadeDebug; }
+    bool isShowingCascadeDebug() const override { return showCascadeDebug; }
 
-    void toggleSnowDepthDebug() { showSnowDepthDebug = !showSnowDepthDebug; }
-    bool isShowingSnowDepthDebug() const { return showSnowDepthDebug; }
+    void toggleSnowDepthDebug() override { showSnowDepthDebug = !showSnowDepthDebug; }
+    bool isShowingSnowDepthDebug() const override { return showSnowDepthDebug; }
 
-    // Cloud style toggle (procedural vs paraboloid LUT hybrid)
-    void toggleCloudStyle() { useParaboloidClouds = !useParaboloidClouds; }
-    bool isUsingParaboloidClouds() const { return useParaboloidClouds; }
+    // IEnvironmentControl implementation (partial)
+    void toggleCloudStyle() override { useParaboloidClouds = !useParaboloidClouds; }
+    bool isUsingParaboloidClouds() const override { return useParaboloidClouds; }
 
-    // Cloud coverage and density (synced to sky shader, cloud shadows, and cloud map LUT)
-    void setCloudCoverage(float coverage);
-    float getCloudCoverage() const { return cloudCoverage; }
+    void setCloudCoverage(float coverage) override;
+    float getCloudCoverage() const override { return cloudCoverage; }
 
-    void setCloudDensity(float density);
-    float getCloudDensity() const { return cloudDensity; }
+    void setCloudDensity(float density) override;
+    float getCloudDensity() const override { return cloudDensity; }
 
-    // Sky exposure (brightness multiplier for atmospheric scattering)
-    void setSkyExposure(float exposure);
-    float getSkyExposure() const;
+    void setSkyExposure(float exposure) override;
+    float getSkyExposure() const override;
 
-    // Cloud shadow control
-    void setCloudShadowEnabled(bool enabled);
-    bool isCloudShadowEnabled() const;
+    // IPostProcessControl implementation
+    void setCloudShadowEnabled(bool enabled) override;
+    bool isCloudShadowEnabled() const override;
 
-    // HDR/Post-processing control
-    void setHDREnabled(bool enabled) { hdrEnabled = enabled; }
-    bool isHDREnabled() const { return hdrEnabled; }
+    void setHDREnabled(bool enabled) override { hdrEnabled = enabled; }
+    bool isHDREnabled() const override { return hdrEnabled; }
 
-    // HDR pass control (skips entire scene rendering to HDR target)
-    void setHDRPassEnabled(bool enabled) { hdrPassEnabled = enabled; }
-    bool isHDRPassEnabled() const { return hdrPassEnabled; }
+    void setHDRPassEnabled(bool enabled) override { hdrPassEnabled = enabled; }
+    bool isHDRPassEnabled() const override { return hdrPassEnabled; }
 
-    // Bloom control
-    void setBloomEnabled(bool enabled);
-    bool isBloomEnabled() const;
+    void setBloomEnabled(bool enabled) override;
+    bool isBloomEnabled() const override;
 
-    // Auto-exposure control
-    void setAutoExposureEnabled(bool enabled);
-    bool isAutoExposureEnabled() const;
-    void setManualExposure(float ev);
-    float getManualExposure() const;
-    float getCurrentExposure() const;
+    void setAutoExposureEnabled(bool enabled) override;
+    bool isAutoExposureEnabled() const override;
+    void setManualExposure(float ev) override;
+    float getManualExposure() const override;
+    float getCurrentExposure() const override;
 
-    void setCloudShadowIntensity(float intensity);
-    float getCloudShadowIntensity() const;
+    void setCloudShadowIntensity(float intensity) override;
+    float getCloudShadowIntensity() const override;
 
-    // God ray quality control
-    void setGodRaysEnabled(bool enabled);
-    bool isGodRaysEnabled() const;
-    void setGodRayQuality(int quality);  // 0=Low, 1=Medium, 2=High
-    int getGodRayQuality() const;
+    void setGodRaysEnabled(bool enabled) override;
+    bool isGodRaysEnabled() const override;
+    void setGodRayQuality(int quality) override;  // 0=Low, 1=Medium, 2=High
+    int getGodRayQuality() const override;
 
-    // Froxel volumetric fog quality control
-    void setFroxelFilterQuality(bool highQuality);
-    bool isFroxelFilterHighQuality() const;
+    void setFroxelFilterQuality(bool highQuality) override;
+    bool isFroxelFilterHighQuality() const override;
 
-    // Local tone mapping (bilateral grid - Ghost of Tsushima technique)
-    void setLocalToneMapEnabled(bool enabled);
-    bool isLocalToneMapEnabled() const;
-    void setLocalToneMapContrast(float c);
-    float getLocalToneMapContrast() const;
-    void setLocalToneMapDetail(float d);
-    float getLocalToneMapDetail() const;
-    void setBilateralBlend(float b);
-    float getBilateralBlend() const;
+    void setLocalToneMapEnabled(bool enabled) override;
+    bool isLocalToneMapEnabled() const override;
+    void setLocalToneMapContrast(float c) override;
+    float getLocalToneMapContrast() const override;
+    void setLocalToneMapDetail(float d) override;
+    float getLocalToneMapDetail() const override;
+    void setBilateralBlend(float b) override;
+    float getBilateralBlend() const override;
 
-    // Terrain control
-    void setTerrainEnabled(bool enabled) { terrainEnabled = enabled; }
-    bool isTerrainEnabled() const { return terrainEnabled; }
-    void toggleTerrainWireframe();
-    bool isTerrainWireframeMode() const;
-    float getTerrainHeightAt(float x, float z) const;
-    uint32_t getTerrainNodeCount() const;
+    // ITerrainControl implementation
+    void setTerrainEnabled(bool enabled) override { terrainEnabled = enabled; }
+    bool isTerrainEnabled() const override { return terrainEnabled; }
+    void toggleTerrainWireframe() override;
+    bool isTerrainWireframeMode() const override;
+    float getTerrainHeightAt(float x, float z) const override;
+    uint32_t getTerrainNodeCount() const override;
 
-    // Terrain data access for physics integration
-    const TerrainSystem& getTerrainSystem() const;
-    TerrainSystem& getTerrainSystem();
+    const TerrainSystem& getTerrainSystem() const override;
+    TerrainSystem& getTerrainSystem() override;
 
     // Catmull-Clark subdivision control
     void toggleCatmullClarkWireframe();
     bool isCatmullClarkWireframeMode() const;
     CatmullClarkSystem& getCatmullClarkSystem();
 
-    // Weather control
-    void setWeatherIntensity(float intensity);
-    void setWeatherType(uint32_t type);
-    uint32_t getWeatherType() const;
-    float getIntensity() const;
+    // IWeatherControl implementation
+    void setWeatherIntensity(float intensity) override;
+    void setWeatherType(uint32_t type) override;
+    uint32_t getWeatherType() const override;
+    float getIntensity() const override;
 
-    // Fog control - Froxel volumetric fog
-    void setFogDensity(float density);
-    float getFogDensity() const;
-    void setFogEnabled(bool enabled);
-    bool isFogEnabled() const;
+    // IEnvironmentControl implementation (fog)
+    void setFogDensity(float density) override;
+    float getFogDensity() const override;
+    void setFogEnabled(bool enabled) override;
+    bool isFogEnabled() const override;
 
-    // Froxel fog extended parameters
-    void setFogBaseHeight(float h);
-    float getFogBaseHeight() const;
-    void setFogScaleHeight(float h);
-    float getFogScaleHeight() const;
-    void setFogAbsorption(float a);
-    float getFogAbsorption() const;
-    void setVolumetricFarPlane(float f);
-    float getVolumetricFarPlane() const;
-    void setTemporalBlend(float b);
-    float getTemporalBlend() const;
+    void setFogBaseHeight(float h) override;
+    float getFogBaseHeight() const override;
+    void setFogScaleHeight(float h) override;
+    float getFogScaleHeight() const override;
+    void setFogAbsorption(float a) override;
+    float getFogAbsorption() const override;
+    void setVolumetricFarPlane(float f) override;
+    float getVolumetricFarPlane() const override;
+    void setTemporalBlend(float b) override;
+    float getTemporalBlend() const override;
 
-    // Height fog layer parameters
-    void setLayerHeight(float h);
-    float getLayerHeight() const;
-    void setLayerThickness(float t);
-    float getLayerThickness() const;
-    void setLayerDensity(float d);
-    float getLayerDensity() const;
+    void setLayerHeight(float h) override;
+    float getLayerHeight() const override;
+    void setLayerThickness(float t) override;
+    float getLayerThickness() const override;
+    void setLayerDensity(float d) override;
+    float getLayerDensity() const override;
 
-    // Atmospheric scattering parameters
-    void setAtmosphereParams(const AtmosphereParams& params);
-    const AtmosphereParams& getAtmosphereParams() const;
+    void setAtmosphereParams(const AtmosphereParams& params) override;
+    const AtmosphereParams& getAtmosphereParams() const override;
     AtmosphereLUTSystem& getAtmosphereLUTSystem();
 
-    // Leaf control
-    void setLeafIntensity(float intensity);
-    float getLeafIntensity() const;
+    void setLeafIntensity(float intensity) override;
+    float getLeafIntensity() const override;
     void spawnConfetti(const glm::vec3& position, float velocity = 8.0f, float count = 100.0f, float coneAngle = 0.5f);
 
-    // Snow control
-    void setSnowAmount(float amount);
-    float getSnowAmount() const;
-    void setSnowColor(const glm::vec3& color);
-    const glm::vec3& getSnowColor() const;
+    // IWeatherControl implementation (snow)
+    void setSnowAmount(float amount) override;
+    float getSnowAmount() const override;
+    void setSnowColor(const glm::vec3& color) override;
+    const glm::vec3& getSnowColor() const override;
     void addSnowInteraction(const glm::vec3& position, float radius, float strength);
-    EnvironmentSettings& getEnvironmentSettings();
+    EnvironmentSettings& getEnvironmentSettings() override;
 
     // Scene access
     SceneManager& getSceneManager();
@@ -286,13 +300,12 @@ public:
     // Detritus system access for physics integration
     const DetritusSystem* getDetritusSystem() const;
 
-    // Tree system access for GUI
-    TreeSystem* getTreeSystem();
-    const TreeSystem* getTreeSystem() const;
+    // ITreeControl implementation
+    TreeSystem* getTreeSystem() override;
+    const TreeSystem* getTreeSystem() const override;
 
-    // Access to all subsystems
-    RendererSystems& getSystems() { return *systems_; }
-    const RendererSystems& getSystems() const { return *systems_; }
+    RendererSystems& getSystems() override { return *systems_; }
+    const RendererSystems& getSystems() const override { return *systems_; }
 
     // Player position for grass interaction (xyz = position, w = capsule radius)
     void setPlayerPosition(const glm::vec3& position, float radius);
@@ -301,12 +314,17 @@ public:
     // Access to systems for simulation
     WindSystem& getWindSystem();
     const WindSystem& getWindSystem() const;
-    WaterSystem& getWaterSystem();
-    const WaterSystem& getWaterSystem() const;
-    WaterTileCull& getWaterTileCull();
-    const WaterTileCull& getWaterTileCull() const;
+
+    // IWaterControl implementation
+    WaterSystem& getWaterSystem() override;
+    const WaterSystem& getWaterSystem() const override;
+    WaterTileCull& getWaterTileCull() override;
+    const WaterTileCull& getWaterTileCull() const override;
     const WaterPlacementData& getWaterPlacementData() const;
-    SceneBuilder& getSceneBuilder();
+
+    // ISceneControl / IPlayerControl implementation
+    SceneBuilder& getSceneBuilder() override;
+    const SceneBuilder& getSceneBuilder() const;
     Mesh& getFlagClothMesh();
     Mesh& getFlagPoleMesh();
     void uploadFlagClothMesh();
@@ -320,53 +338,44 @@ public:
     // Start a jump with trajectory prediction for animation sync
     void startCharacterJump(const glm::vec3& startPos, const glm::vec3& velocity, float gravity, const PhysicsWorld* physics);
 
-    // Celestial/astronomical settings
-    void setLocation(const GeographicLocation& location);
-    const GeographicLocation& getLocation() const;
-    void setDate(int year, int month, int day);
-    int getCurrentYear() const;
-    int getCurrentMonth() const;
-    int getCurrentDay() const;
+    // ITimeControl implementation (celestial/astronomical)
+    void setLocation(const GeographicLocation& location) override;
+    const GeographicLocation& getLocation() const override;
+    void setDate(int year, int month, int day) override;
+    int getCurrentYear() const override;
+    int getCurrentMonth() const override;
+    int getCurrentDay() const override;
     const CelestialCalculator& getCelestialCalculator() const;
 
-    // Moon phase override controls
-    void setMoonPhaseOverride(bool enabled);
-    bool isMoonPhaseOverrideEnabled() const;
-    void setMoonPhase(float phase);
-    float getMoonPhase() const;
-    float getCurrentMoonPhase() const;  // Actual phase (auto or manual)
+    void setMoonPhaseOverride(bool enabled) override;
+    bool isMoonPhaseOverrideEnabled() const override;
+    void setMoonPhase(float phase) override;
+    float getMoonPhase() const override;
+    float getCurrentMoonPhase() const override;
 
-    // Moon brightness controls
-    void setMoonBrightness(float brightness);
-    float getMoonBrightness() const;
-    void setMoonDiscIntensity(float intensity);
-    float getMoonDiscIntensity() const;
-    void setMoonEarthshine(float earthshine);
-    float getMoonEarthshine() const;
+    void setMoonBrightness(float brightness) override;
+    float getMoonBrightness() const override;
+    void setMoonDiscIntensity(float intensity) override;
+    float getMoonDiscIntensity() const override;
+    void setMoonEarthshine(float earthshine) override;
+    float getMoonEarthshine() const override;
 
-    // Eclipse controls
-    void setEclipseEnabled(bool enabled);
-    bool isEclipseEnabled() const;
-    void setEclipseAmount(float amount);
-    float getEclipseAmount() const;
+    void setEclipseEnabled(bool enabled) override;
+    bool isEclipseEnabled() const override;
+    void setEclipseAmount(float amount) override;
+    float getEclipseAmount() const override;
 
-    // Hi-Z occlusion culling control
-    void setHiZCullingEnabled(bool enabled);
-    bool isHiZCullingEnabled() const;
+    // IDebugControl implementation (Hi-Z culling)
+    void setHiZCullingEnabled(bool enabled) override;
+    bool isHiZCullingEnabled() const override;
 
-    // Culling stats (mirrors HiZSystem::CullingStats)
-    struct CullingStats {
-        uint32_t totalObjects;
-        uint32_t visibleObjects;
-        uint32_t frustumCulled;
-        uint32_t occlusionCulled;
-    };
-    CullingStats getHiZCullingStats() const;
+    // Note: CullingStats defined in IDebugControl, we use that
+    IDebugControl::CullingStats getHiZCullingStats() const override;
     uint32_t getVisibleObjectCount() const;
 
-    // Profiling access
-    Profiler& getProfiler();
-    const Profiler& getProfiler() const;
+    // IProfilerControl implementation
+    Profiler& getProfiler() override;
+    const Profiler& getProfiler() const override;
     void setProfilingEnabled(bool enabled);
     bool isProfilingEnabled() const;
 
@@ -376,19 +385,19 @@ public:
     std::string getShaderPath() const { return resourcePath + "/shaders"; }
     const std::string& getResourcePath() const { return resourcePath; }
 
-    // Physics debug visualization
-    DebugLineSystem& getDebugLineSystem();
-    const DebugLineSystem& getDebugLineSystem() const;
-    void setPhysicsDebugEnabled(bool enabled) { physicsDebugEnabled = enabled; }
-    bool isPhysicsDebugEnabled() const { return physicsDebugEnabled; }
+    // IDebugControl implementation (physics debug)
+    DebugLineSystem& getDebugLineSystem() override;
+    const DebugLineSystem& getDebugLineSystem() const override;
+    void setPhysicsDebugEnabled(bool enabled) override { physicsDebugEnabled = enabled; }
+    bool isPhysicsDebugEnabled() const override { return physicsDebugEnabled; }
 
-    // Performance toggles for debugging synchronization and bottlenecks
-    PerformanceToggles& getPerformanceToggles() { return perfToggles; }
-    const PerformanceToggles& getPerformanceToggles() const { return perfToggles; }
-    void syncPerformanceToggles();  // Apply toggle state to render pipeline stages
+    // IPerformanceControl implementation
+    PerformanceToggles& getPerformanceToggles() override { return perfToggles; }
+    const PerformanceToggles& getPerformanceToggles() const override { return perfToggles; }
+    void syncPerformanceToggles() override;
 #ifdef JPH_DEBUG_RENDERER
-    PhysicsDebugRenderer* getPhysicsDebugRenderer();
-    const PhysicsDebugRenderer* getPhysicsDebugRenderer() const;
+    PhysicsDebugRenderer* getPhysicsDebugRenderer() override;
+    const PhysicsDebugRenderer* getPhysicsDebugRenderer() const override;
 
     // Update physics debug visualization (call before render)
     void updatePhysicsDebug(PhysicsWorld& physics, const glm::vec3& cameraPos);

@@ -165,7 +165,14 @@
 #define BINDING_TREE_IMPOSTOR_ALBEDO       1   // Impostor albedo+alpha atlas
 #define BINDING_TREE_IMPOSTOR_NORMAL       2   // Impostor normal+depth+AO atlas
 #define BINDING_TREE_IMPOSTOR_SHADOW_MAP   3   // Shadow map
-#define BINDING_TREE_IMPOSTOR_INSTANCES    4   // Impostor instance SSBO
+#define BINDING_TREE_IMPOSTOR_INSTANCES    4   // Impostor instance SSBO (visible output)
+
+// Tree Impostor Cull Compute Descriptor Set
+#define BINDING_TREE_IMPOSTOR_CULL_INPUT       0   // All tree positions/data (input)
+#define BINDING_TREE_IMPOSTOR_CULL_OUTPUT      1   // Visible impostor instances (output)
+#define BINDING_TREE_IMPOSTOR_CULL_INDIRECT    2   // Indirect draw command
+#define BINDING_TREE_IMPOSTOR_CULL_UNIFORMS    3   // Culling uniforms
+#define BINDING_TREE_IMPOSTOR_CULL_ARCHETYPE   4   // Per-archetype data (sizes, offsets)
 
 // =============================================================================
 // Leaf Compute Shader Descriptor Set
@@ -509,6 +516,13 @@ constexpr uint32_t TREE_IMPOSTOR_ALBEDO   = BINDING_TREE_IMPOSTOR_ALBEDO;
 constexpr uint32_t TREE_IMPOSTOR_NORMAL   = BINDING_TREE_IMPOSTOR_NORMAL;
 constexpr uint32_t TREE_IMPOSTOR_SHADOW_MAP = BINDING_TREE_IMPOSTOR_SHADOW_MAP;
 constexpr uint32_t TREE_IMPOSTOR_INSTANCES = BINDING_TREE_IMPOSTOR_INSTANCES;
+
+// Tree Impostor Cull Compute
+constexpr uint32_t TREE_IMPOSTOR_CULL_INPUT     = BINDING_TREE_IMPOSTOR_CULL_INPUT;
+constexpr uint32_t TREE_IMPOSTOR_CULL_OUTPUT    = BINDING_TREE_IMPOSTOR_CULL_OUTPUT;
+constexpr uint32_t TREE_IMPOSTOR_CULL_INDIRECT  = BINDING_TREE_IMPOSTOR_CULL_INDIRECT;
+constexpr uint32_t TREE_IMPOSTOR_CULL_UNIFORMS  = BINDING_TREE_IMPOSTOR_CULL_UNIFORMS;
+constexpr uint32_t TREE_IMPOSTOR_CULL_ARCHETYPE = BINDING_TREE_IMPOSTOR_CULL_ARCHETYPE;
 
 // Leaf Compute
 constexpr uint32_t LEAF_COMPUTE_INPUT     = BINDING_LEAF_COMPUTE_INPUT;

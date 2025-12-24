@@ -73,6 +73,7 @@ layout(binding = BINDING_WATER_TEMPORAL_FOAM) uniform sampler2D temporalFoamMap;
 layout(binding = BINDING_WATER_CAUSTICS) uniform sampler2D causticsTexture;  // Phase 9: Underwater light patterns
 layout(binding = BINDING_WATER_SSR) uniform sampler2D ssrTexture;       // Phase 10: Screen-Space Reflections
 layout(binding = BINDING_WATER_SCENE_DEPTH) uniform sampler2D sceneDepthTexture; // Phase 11: Scene depth for refraction
+layout(binding = BINDING_WATER_ENV_CUBEMAP) uniform samplerCube envCubemap;  // Phase 2: Environment cubemap for SSR fallback
 
 // LOD tile array (high-res tiles near camera)
 layout(binding = BINDING_WATER_TILE_ARRAY) uniform sampler2DArray heightMapTiles;
@@ -104,6 +105,7 @@ layout(location = 3) in float fragWaveHeight;
 layout(location = 4) in float fragJacobian;  // Phase 13: Jacobian for foam detection
 layout(location = 5) in float fragWaveSlope; // Phase 17: Wave slope for SSS
 layout(location = 6) in float fragOceanFoam; // FFT ocean foam from vertex shader
+layout(location = 7) in float fragBreakingWave; // Phase 2.3: Breaking wave intensity (0-1)
 
 layout(location = 0) out vec4 outColor;
 
@@ -188,20 +190,51 @@ float fresnelSchlick(float cosTheta, float F0) {
     return F0 + (1.0 - F0) * pow(clamp(1.0 - cosTheta, 0.0, 1.0), fresnelPower);
 }
 
-// Sample environment reflection (simplified sky reflection)
-vec3 sampleEnvironmentReflection(vec3 reflectDir, vec3 sunDir, vec3 sunColor) {
+// Generate procedural sky color for fallback/blending
+vec3 getProceduralSkyColor(vec3 reflectDir, vec3 sunDir, float dayAmount) {
     // Simplified sky color based on reflection direction
     float skyGradient = smoothstep(-0.1, 0.5, reflectDir.y);
 
     // Day/night sky colors
-    float dayAmount = smoothstep(-0.05, 0.2, sunDir.y);
     vec3 daySkyLow = vec3(0.6, 0.7, 0.9);
     vec3 daySkyHigh = vec3(0.3, 0.5, 0.85);
     vec3 nightSky = vec3(0.02, 0.03, 0.08);
 
     vec3 skyLow = mix(nightSky, daySkyLow, dayAmount);
     vec3 skyHigh = mix(nightSky * 0.5, daySkyHigh, dayAmount);
-    vec3 skyColor = mix(skyLow, skyHigh, skyGradient);
+    return mix(skyLow, skyHigh, skyGradient);
+}
+
+// Sample environment reflection with cubemap and procedural sky blending
+// Phase 2: Uses environment cubemap for realistic reflections when SSR fails
+vec3 sampleEnvironmentReflection(vec3 reflectDir, vec3 sunDir, vec3 sunColor) {
+    // Calculate day/night factor for blending
+    float dayAmount = smoothstep(-0.05, 0.2, sunDir.y);
+
+    // Sample environment cubemap
+    // Convert reflection direction to cubemap coordinates (flip Y for Vulkan)
+    vec3 cubemapDir = vec3(reflectDir.x, reflectDir.y, reflectDir.z);
+    vec3 cubemapColor = texture(envCubemap, cubemapDir).rgb;
+
+    // Check if cubemap sample is valid (non-black = valid cubemap data)
+    // If cubemap is not available, it will be a placeholder with uniform color
+    float cubemapLuminance = dot(cubemapColor, vec3(0.299, 0.587, 0.114));
+    float cubemapValid = step(0.001, cubemapLuminance);
+
+    // Get procedural sky as fallback
+    vec3 proceduralSky = getProceduralSkyColor(reflectDir, sunDir, dayAmount);
+
+    // Blend cubemap with procedural sky based on:
+    // 1. Cubemap validity (use procedural if cubemap is placeholder)
+    // 2. Time of day (at night, blend more procedural sky for dynamic lighting)
+    // 3. Reflection direction (horizon reflections use more cubemap)
+    float horizonFactor = 1.0 - abs(reflectDir.y);  // More cubemap at horizon
+    float nightBlend = 1.0 - dayAmount * 0.7;  // More procedural at night for dynamic stars/moon
+
+    // Final blend: use cubemap when valid, procedural otherwise
+    // Also blend in procedural for time-of-day variation
+    float cubemapWeight = cubemapValid * mix(0.7, 0.9, horizonFactor) * dayAmount;
+    vec3 skyColor = mix(proceduralSky, cubemapColor, cubemapWeight);
 
     // Add sun reflection (specular highlight from sky)
     float sunDot = max(dot(reflectDir, sunDir), 0.0);
@@ -805,10 +838,40 @@ void main() {
         // Store for later use in alpha blending
     }
 
+    // =========================================================================
+    // PHASE 2.3: Breaking Wave Foam
+    // Foam generated at breaking wave crests (shoaling waves that exceed critical height)
+    // =========================================================================
+    float breakingFoamAmount = 0.0;
+    if (fragBreakingWave > 0.0) {
+        // Animated breaking foam pattern - turbulent, chaotic texture
+        float breakingTime = time * 3.0;  // Faster animation for breaking waves
+
+        // Multiple noise layers for turbulent foam appearance
+        vec2 breakingUV1 = fragWorldPos.xz * 0.3 + vec2(breakingTime * 0.4, breakingTime * 0.2);
+        vec2 breakingUV2 = fragWorldPos.xz * 0.5 - vec2(breakingTime * 0.3, breakingTime * 0.5);
+        vec2 breakingUV3 = fragWorldPos.xz * 0.8 + vec2(breakingTime * 0.2, -breakingTime * 0.3);
+
+        float breakingNoise1 = texture(foamNoiseTexture, breakingUV1).r;
+        float breakingNoise2 = texture(foamNoiseTexture, breakingUV2).r;
+        float breakingNoise3 = texture(foamNoiseTexture, breakingUV3).r;
+
+        // Combine for chaotic, turbulent appearance
+        float breakingNoise = breakingNoise1 * 0.5 + breakingNoise2 * 0.3 + breakingNoise3 * 0.2;
+        breakingNoise = smoothstep(0.3, 0.6, breakingNoise);
+
+        // Breaking foam intensity is modulated by the breaking wave strength and noise
+        breakingFoamAmount = fragBreakingWave * breakingNoise;
+
+        // Boost foam at the breaking crest
+        breakingFoamAmount = breakingFoamAmount * 1.5;
+        breakingFoamAmount = clamp(breakingFoamAmount, 0.0, 1.0);
+    }
+
     // Combine all foam sources
     // Include FFT ocean foam from vertex shader if available
     float fftFoam = fragOceanFoam * combinedFoamNoise;  // Modulate with noise for texture
-    totalFoamAmount = max(max(max(waveFoamAmount, shoreFoamAmount), flowFoamAmount), fftFoam);
+    totalFoamAmount = max(max(max(max(waveFoamAmount, shoreFoamAmount), flowFoamAmount), fftFoam), breakingFoamAmount);
     totalFoamAmount = clamp(totalFoamAmount, 0.0, 1.0);
 
     // Foam color varies slightly with depth

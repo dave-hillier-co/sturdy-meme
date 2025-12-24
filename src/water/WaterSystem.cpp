@@ -126,6 +126,7 @@ bool WaterSystem::createDescriptorSetLayout() {
     // 15: Tile info SSBO
     // 16-18: FFT Ocean cascade 1 (medium waves, 64m)
     // 19-21: FFT Ocean cascade 2 (small ripples, 16m)
+    // 22: Environment cubemap (Phase 2: SSR fallback)
 
     VkDescriptorSetLayout rawLayout = DescriptorManager::LayoutBuilder(device)
         .addUniformBuffer(VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT)  // 0: Main UBO
@@ -150,6 +151,7 @@ bool WaterSystem::createDescriptorSetLayout() {
         .addCombinedImageSampler(VK_SHADER_STAGE_VERTEX_BIT)    // 19: Ocean displacement (cascade 2)
         .addCombinedImageSampler(VK_SHADER_STAGE_VERTEX_BIT)    // 20: Ocean normal (cascade 2)
         .addCombinedImageSampler(VK_SHADER_STAGE_VERTEX_BIT)    // 21: Ocean foam (cascade 2)
+        .addCombinedImageSampler(VK_SHADER_STAGE_FRAGMENT_BIT)  // 22: Environment cubemap
         .build();
 
     if (rawLayout == VK_NULL_HANDLE) {
@@ -364,7 +366,9 @@ bool WaterSystem::createDescriptorSets(const std::vector<VkBuffer>& uniformBuffe
                                         VkSampler sceneDepthSampler,
                                         VkImageView tileArrayView,
                                         VkSampler tileSampler,
-                                        const std::array<VkBuffer, 3>& tileInfoBuffers) {
+                                        const std::array<VkBuffer, 3>& tileInfoBuffers,
+                                        VkImageView envCubemapView,
+                                        VkSampler envCubemapSampler) {
     // Store tile info buffers for per-frame updates (triple-buffered)
     tileInfoBuffers_ = tileInfoBuffers;
 
@@ -417,10 +421,18 @@ bool WaterSystem::createDescriptorSets(const std::vector<VkBuffer>& uniformBuffe
         writer.writeImage(20, displacementMapView, displacementMapSampler);  // Cascade 2 normal placeholder
         writer.writeImage(21, displacementMapView, displacementMapSampler);  // Cascade 2 foam placeholder
 
+        // Environment cubemap (binding 22) - Phase 2 SSR fallback
+        if (envCubemapView != VK_NULL_HANDLE && envCubemapSampler != VK_NULL_HANDLE) {
+            writer.writeImage(22, envCubemapView, envCubemapSampler);
+        } else {
+            // Use displacement map as placeholder (will fall back to procedural sky in shader)
+            writer.writeImage(22, displacementMapView, displacementMapSampler);
+        }
+
         writer.update();
     }
 
-    SDL_Log("Water descriptor sets created with terrain heightmap, flow map, displacement map, foam texture, temporal foam, caustics, SSR, scene depth, tile cache, and FFT cascade placeholders");
+    SDL_Log("Water descriptor sets created with terrain heightmap, flow map, displacement map, foam texture, temporal foam, caustics, SSR, scene depth, tile cache, FFT cascades, and environment cubemap");
     return true;
 }
 

@@ -98,6 +98,10 @@
 #define BINDING_TERRAIN_TILE_ARRAY     19   // sampler2DArray of loaded tiles
 #define BINDING_TERRAIN_TILE_INFO      20   // SSBO with tile bounds and count
 
+// Underwater caustics (Phase 2)
+#define BINDING_TERRAIN_CAUSTICS       21   // Caustics texture for underwater lighting
+#define BINDING_TERRAIN_CAUSTICS_UBO   22   // Caustics parameters (water level, scale, speed, intensity)
+
 // Virtual Texture bindings (terrain descriptor set)
 #define BINDING_VT_PAGE_TABLE          19   // VT indirection/page table texture (usampler2D)
 #define BINDING_VT_PHYSICAL_CACHE      20   // VT physical cache texture (sampler2D)
@@ -403,6 +407,9 @@
 #define BINDING_WATER_OCEAN_NORMAL_2      20   // Cascade 2 normal
 #define BINDING_WATER_OCEAN_FOAM_2        21   // Cascade 2 foam
 
+// Environment cubemap for reflection fallback (Phase 2)
+#define BINDING_WATER_ENV_CUBEMAP         22   // Environment cubemap for SSR fallback
+
 // =============================================================================
 // C++ Type-Safe Wrappers
 // =============================================================================
@@ -474,6 +481,8 @@ constexpr uint32_t TERRAIN_SNOW_UBO       = BINDING_TERRAIN_SNOW_UBO;
 constexpr uint32_t TERRAIN_CLOUD_SHADOW_UBO = BINDING_TERRAIN_CLOUD_SHADOW_UBO;
 constexpr uint32_t TERRAIN_TILE_ARRAY     = BINDING_TERRAIN_TILE_ARRAY;
 constexpr uint32_t TERRAIN_TILE_INFO      = BINDING_TERRAIN_TILE_INFO;
+constexpr uint32_t TERRAIN_CAUSTICS       = BINDING_TERRAIN_CAUSTICS;
+constexpr uint32_t TERRAIN_CAUSTICS_UBO   = BINDING_TERRAIN_CAUSTICS_UBO;
 
 // Virtual Texture
 constexpr uint32_t VT_PAGE_TABLE          = BINDING_VT_PAGE_TABLE;
@@ -720,6 +729,7 @@ constexpr uint32_t WATER_OCEAN_FOAM_1     = BINDING_WATER_OCEAN_FOAM_1;
 constexpr uint32_t WATER_OCEAN_DISP_2     = BINDING_WATER_OCEAN_DISP_2;
 constexpr uint32_t WATER_OCEAN_NORMAL_2   = BINDING_WATER_OCEAN_NORMAL_2;
 constexpr uint32_t WATER_OCEAN_FOAM_2     = BINDING_WATER_OCEAN_FOAM_2;
+constexpr uint32_t WATER_ENV_CUBEMAP      = BINDING_WATER_ENV_CUBEMAP;
 
 } // namespace Bindings
 

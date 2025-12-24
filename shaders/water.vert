@@ -63,6 +63,9 @@ layout(std140, binding = BINDING_WATER_UBO) uniform WaterUniforms {
 // Displacement map (Phase 4: Interactive splashes)
 layout(binding = BINDING_WATER_DISPLACEMENT) uniform sampler2D displacementMap;
 
+// Terrain height map (Phase 2.3: Breaking wave detection - for water depth calculation)
+layout(binding = BINDING_WATER_TERRAIN_HEIGHT) uniform sampler2D terrainHeightMap;
+
 // FFT Ocean displacement maps (3 cascades for multi-scale detail)
 // Cascade 0: Large swells (256m patch)
 layout(binding = BINDING_WATER_OCEAN_DISP) uniform sampler2D oceanDisplacement0;
@@ -98,6 +101,67 @@ layout(location = 3) out float fragWaveHeight;
 layout(location = 4) out float fragJacobian;  // Phase 13: Jacobian for foam detection
 layout(location = 5) out float fragWaveSlope; // Phase 17: Wave slope for SSS
 layout(location = 6) out float fragOceanFoam; // FFT ocean foam output
+layout(location = 7) out float fragBreakingWave; // Phase 2.3: Breaking wave intensity (0-1)
+
+// =========================================================================
+// PHASE 2.3: Wave Shoaling and Breaking Detection
+// =========================================================================
+
+// Convert world XZ position to terrain UV
+vec2 worldPosToTerrainUVVert(vec2 worldXZ) {
+    return (worldXZ / terrainSize) + 0.5;
+}
+
+// Calculate water depth at a given position
+float getWaterDepthVert(vec2 worldXZ) {
+    vec2 terrainUV = worldPosToTerrainUVVert(worldXZ);
+
+    // Check if inside terrain bounds
+    if (terrainUV.x < 0.0 || terrainUV.x > 1.0 || terrainUV.y < 0.0 || terrainUV.y > 1.0) {
+        return 100.0;  // Deep water outside terrain
+    }
+
+    float terrainHeight = texture(terrainHeightMap, terrainUV).r * terrainHeightScale;
+    return waterLevel - terrainHeight;  // Positive = underwater
+}
+
+// Wave shoaling: waves grow taller in shallow water
+// Based on energy conservation: H = H₀ × √(d₀/d) where d is depth
+// Also returns breaking wave intensity (0-1)
+float applyShoaling(float waveHeight, float waterDepth, float wavelength, out float breakingIntensity) {
+    breakingIntensity = 0.0;
+
+    // No shoaling in deep water (depth > wavelength/2)
+    float deepWaterDepth = wavelength * 0.5;
+    if (waterDepth > deepWaterDepth || waterDepth <= 0.0) {
+        return waveHeight;
+    }
+
+    // Shoaling factor: sqrt(deep depth / shallow depth)
+    // Clamp minimum depth to prevent extreme values
+    float minDepth = 0.5;  // Minimum depth for shoaling calculation
+    float effectiveDepth = max(waterDepth, minDepth);
+    float shoalingFactor = sqrt(deepWaterDepth / effectiveDepth);
+
+    // Limit shoaling to prevent unrealistic wave heights
+    shoalingFactor = min(shoalingFactor, 2.5);
+
+    float shoaledHeight = waveHeight * shoalingFactor;
+
+    // Breaking condition: wave breaks when height exceeds 0.78 × depth
+    // This is the McCowan criterion for wave breaking
+    float breakingThreshold = 0.78 * effectiveDepth;
+
+    if (shoaledHeight > breakingThreshold) {
+        // Calculate breaking intensity (0 = at threshold, 1 = 2x threshold)
+        breakingIntensity = smoothstep(breakingThreshold, breakingThreshold * 2.0, shoaledHeight);
+
+        // Limit wave height at breaking (waves can't exceed breaking height)
+        shoaledHeight = breakingThreshold;
+    }
+
+    return shoaledHeight;
+}
 
 // Gerstner wave function
 // Returns displacement and calculates tangent/bitangent for normal
@@ -289,6 +353,33 @@ void main() {
     float interactiveDisplacement = texture(displacementMap, displacementUV).r;
     worldPos.y += interactiveDisplacement * displacementScale;
 
+    // =========================================================================
+    // PHASE 2.3: Wave Shoaling and Breaking Detection
+    // Apply shoaling amplification in shallow water and detect breaking waves
+    // =========================================================================
+    float breakingIntensity = 0.0;
+
+    // Get water depth at this position
+    float waterDepth = getWaterDepthVert(worldPos.xz);
+
+    // Apply shoaling to the wave height
+    // Use primary wave wavelength for shoaling calculation
+    float primaryWavelength = push.useFFTOcean != 0 ? push.oceanSize0 * 0.5 : waveParams.y;
+    float originalWaveHeight = totalDisplacement.y;
+
+    if (waterDepth > 0.0 && waterDepth < primaryWavelength) {
+        float shoaledHeight = applyShoaling(abs(originalWaveHeight), waterDepth, primaryWavelength, breakingIntensity);
+
+        // Apply the shoaling amplification to the Y displacement
+        float shoalingMultiplier = (abs(originalWaveHeight) > 0.001)
+            ? shoaledHeight / abs(originalWaveHeight)
+            : 1.0;
+
+        // Update world position with shoaled height
+        worldPos.y += (shoaledHeight - abs(originalWaveHeight)) * sign(originalWaveHeight);
+        totalDisplacement.y = originalWaveHeight * shoalingMultiplier;
+    }
+
     // Output
     gl_Position = ubo.proj * ubo.view * worldPos;
     fragWorldPos = worldPos.xyz;
@@ -297,6 +388,7 @@ void main() {
     fragWaveHeight = totalDisplacement.y + interactiveDisplacement * displacementScale;
     fragJacobian = totalJacobian;  // Phase 13: Pass Jacobian for foam detection
     fragOceanFoam = oceanFoam;     // Pass FFT foam to fragment shader
+    fragBreakingWave = breakingIntensity;  // Phase 2.3: Breaking wave intensity
 
     // Phase 17: Calculate wave slope for SSS
     // Slope = how much the normal deviates from straight up

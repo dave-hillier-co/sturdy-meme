@@ -126,7 +126,9 @@ public:
                               VkSampler sceneDepthSampler,
                               VkImageView tileArrayView = VK_NULL_HANDLE,
                               VkSampler tileSampler = VK_NULL_HANDLE,
-                              const std::array<VkBuffer, 3>& tileInfoBuffers = {});
+                              const std::array<VkBuffer, 3>& tileInfoBuffers = {},
+                              VkImageView envCubemapView = VK_NULL_HANDLE,
+                              VkSampler envCubemapSampler = VK_NULL_HANDLE);
 
     // Update water uniforms (call each frame)
     void updateUniforms(uint32_t frameIndex);

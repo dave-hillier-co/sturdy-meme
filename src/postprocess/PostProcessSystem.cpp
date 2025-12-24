@@ -588,6 +588,13 @@ void PostProcessSystem::recordPostProcess(VkCommandBuffer cmd, uint32_t frameInd
     ubo->maxLogLuminance = maxLogLuminance;
     ubo->bilateralBlend = bilateralBlend;
 
+    // Water Volume Renderer - Underwater effects (Phase 2)
+    ubo->underwaterEnabled = isUnderwater_ ? 1.0f : 0.0f;
+    ubo->underwaterDepth = underwaterDepth_;
+    ubo->underwaterAbsorption = glm::vec4(underwaterAbsorption_, underwaterTurbidity_);
+    ubo->underwaterColor = underwaterColor_;
+    ubo->underwaterWaterLevel = underwaterWaterLevel_;
+
     // Store computed exposure for next frame
     lastAutoExposure = autoExposureEnabled ? computedExposure : manualExposure;
 

@@ -1081,6 +1081,17 @@ bool Renderer::render(const Camera& camera) {
     // Update water system uniforms
     systems_->water().updateUniforms(frame.frameIndex);
 
+    // Update underwater state for postprocess (Water Volume Renderer Phase 2)
+    auto underwaterParams = systems_->water().getUnderwaterParams(frame.cameraPosition);
+    systems_->postProcess().setUnderwaterState(
+        underwaterParams.isUnderwater,
+        underwaterParams.depth,
+        underwaterParams.absorptionCoeffs,
+        underwaterParams.turbidity,
+        underwaterParams.waterColor,
+        underwaterParams.waterLevel
+    );
+
     systems_->profiler().endCpuZone("SystemUpdates");
 
     // Begin command buffer recording

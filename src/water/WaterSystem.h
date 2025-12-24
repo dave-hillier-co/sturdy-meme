@@ -307,6 +307,42 @@ public:
     void setupMaterialTransition(WaterType from, WaterType to, const glm::vec2& center,
                                   float distance, BlendMode mode = BlendMode::Distance);
 
+    // =========================================================================
+    // Water Volume Renderer - Underwater Detection (Phase 2)
+    // =========================================================================
+
+    // Check if a world position is underwater (below water surface level)
+    bool isPositionUnderwater(const glm::vec3& worldPos) const {
+        return worldPos.y < waterUniforms.waterLevel;
+    }
+
+    // Get underwater depth (positive = below water, negative = above)
+    float getUnderwaterDepth(const glm::vec3& worldPos) const {
+        return waterUniforms.waterLevel - worldPos.y;
+    }
+
+    // Get water parameters for underwater rendering
+    // These are used by PostProcessSystem for underwater fog/absorption
+    struct UnderwaterParams {
+        bool isUnderwater;          // Is camera underwater
+        float depth;                // Camera depth below water surface
+        glm::vec3 absorptionCoeffs; // Beer-Lambert absorption (RGB)
+        float turbidity;            // Scattering/turbidity factor
+        glm::vec4 waterColor;       // Base water color
+        float waterLevel;           // Water surface height
+    };
+
+    UnderwaterParams getUnderwaterParams(const glm::vec3& cameraPos) const {
+        UnderwaterParams params{};
+        params.isUnderwater = isPositionUnderwater(cameraPos);
+        params.depth = getUnderwaterDepth(cameraPos);
+        params.absorptionCoeffs = glm::vec3(waterUniforms.scatteringCoeffs);
+        params.turbidity = waterUniforms.scatteringCoeffs.a;
+        params.waterColor = waterUniforms.waterColor;
+        params.waterLevel = waterUniforms.waterLevel;
+        return params;
+    }
+
 private:
     WaterSystem() = default;  // Private: use factory
 

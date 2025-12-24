@@ -1455,7 +1455,18 @@ void Renderer::recordShadowPass(VkCommandBuffer cmd, uint32_t frameIndex, float 
         // Render impostor shadows
         if (systems_->treeLOD()) {
             VkBuffer uniformBuffer = systems_->globalBuffers().uniformBuffers.buffers[frameIndex];
-            systems_->treeLOD()->renderImpostorShadows(cb, frameIndex, static_cast<int>(cascade), uniformBuffer);
+            auto* impostorCull = systems_->impostorCull();
+            if (impostorCull && impostorCull->getTreeCount() > 0) {
+                // Use GPU-culled indirect rendering
+                systems_->treeLOD()->renderImpostorShadowsGPUCulled(
+                    cb, frameIndex, static_cast<int>(cascade), uniformBuffer,
+                    impostorCull->getVisibleImpostorBuffer(),
+                    impostorCull->getIndirectDrawBuffer()
+                );
+            } else {
+                // Fall back to CPU-culled rendering
+                systems_->treeLOD()->renderImpostorShadows(cb, frameIndex, static_cast<int>(cascade), uniformBuffer);
+            }
         }
     };
 
@@ -1587,12 +1598,26 @@ void Renderer::recordSceneObjects(VkCommandBuffer cmd, uint32_t frameIndex) {
 
     // Render tree impostors for distant trees
     if (systems_->treeLOD()) {
-        systems_->treeLOD()->renderImpostors(
-            cmd, frameIndex,
-            systems_->globalBuffers().uniformBuffers.buffers[frameIndex],
-            systems_->shadow().getShadowImageView(),
-            systems_->shadow().getShadowSampler()
-        );
+        auto* impostorCull = systems_->impostorCull();
+        if (impostorCull && impostorCull->getTreeCount() > 0) {
+            // Use GPU-culled indirect rendering
+            systems_->treeLOD()->renderImpostorsGPUCulled(
+                cmd, frameIndex,
+                systems_->globalBuffers().uniformBuffers.buffers[frameIndex],
+                systems_->shadow().getShadowImageView(),
+                systems_->shadow().getShadowSampler(),
+                impostorCull->getVisibleImpostorBuffer(),
+                impostorCull->getIndirectDrawBuffer()
+            );
+        } else {
+            // Fall back to CPU-culled rendering
+            systems_->treeLOD()->renderImpostors(
+                cmd, frameIndex,
+                systems_->globalBuffers().uniformBuffers.buffers[frameIndex],
+                systems_->shadow().getShadowImageView(),
+                systems_->shadow().getShadowSampler()
+            );
+        }
     }
 }
 

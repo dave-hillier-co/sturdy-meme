@@ -1011,6 +1011,232 @@ void TreeLODSystem::renderImpostorShadows(VkCommandBuffer cmd, uint32_t frameInd
     vkCmdDrawIndexed(cmd, billboardIndexCount_, static_cast<uint32_t>(visibleImpostors_.size()), 0, 0, 0);
 }
 
+void TreeLODSystem::renderImpostorsGPUCulled(VkCommandBuffer cmd, uint32_t frameIndex,
+                                              VkBuffer uniformBuffer, VkImageView shadowMap, VkSampler shadowSampler,
+                                              VkBuffer gpuInstanceBuffer, VkBuffer indirectDrawBuffer) {
+    if (impostorAtlas_->getArchetypeCount() == 0) return;
+
+    const auto& settings = getLODSettings();
+    if (!settings.enableImpostors) return;
+
+    // Update descriptor sets with GPU-culled instance buffer
+    if (impostorDescriptorSets_.empty()) return;
+
+    VkImageView albedoView = impostorAtlas_->getAlbedoAtlasView(0);
+    VkImageView normalView = impostorAtlas_->getNormalAtlasView(0);
+    VkSampler atlasSampler = impostorAtlas_->getAtlasSampler();
+
+    if (albedoView == VK_NULL_HANDLE || normalView == VK_NULL_HANDLE) return;
+
+    std::array<VkWriteDescriptorSet, 5> writes{};
+
+    VkDescriptorBufferInfo uniformInfo{};
+    uniformInfo.buffer = uniformBuffer;
+    uniformInfo.offset = 0;
+    uniformInfo.range = VK_WHOLE_SIZE;
+
+    writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    writes[0].dstSet = impostorDescriptorSets_[frameIndex];
+    writes[0].dstBinding = 0;
+    writes[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    writes[0].descriptorCount = 1;
+    writes[0].pBufferInfo = &uniformInfo;
+
+    VkDescriptorImageInfo albedoInfo{};
+    albedoInfo.sampler = atlasSampler;
+    albedoInfo.imageView = albedoView;
+    albedoInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+    writes[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    writes[1].dstSet = impostorDescriptorSets_[frameIndex];
+    writes[1].dstBinding = 1;
+    writes[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    writes[1].descriptorCount = 1;
+    writes[1].pImageInfo = &albedoInfo;
+
+    VkDescriptorImageInfo normalInfo{};
+    normalInfo.sampler = atlasSampler;
+    normalInfo.imageView = normalView;
+    normalInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+    writes[2].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    writes[2].dstSet = impostorDescriptorSets_[frameIndex];
+    writes[2].dstBinding = 2;
+    writes[2].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    writes[2].descriptorCount = 1;
+    writes[2].pImageInfo = &normalInfo;
+
+    VkDescriptorImageInfo shadowInfo{};
+    shadowInfo.sampler = shadowSampler;
+    shadowInfo.imageView = shadowMap;
+    shadowInfo.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
+
+    writes[3].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    writes[3].dstSet = impostorDescriptorSets_[frameIndex];
+    writes[3].dstBinding = 3;
+    writes[3].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    writes[3].descriptorCount = 1;
+    writes[3].pImageInfo = &shadowInfo;
+
+    // Use GPU-culled instance buffer
+    VkDescriptorBufferInfo instanceInfo{};
+    instanceInfo.buffer = gpuInstanceBuffer;
+    instanceInfo.offset = 0;
+    instanceInfo.range = VK_WHOLE_SIZE;
+
+    writes[4].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    writes[4].dstSet = impostorDescriptorSets_[frameIndex];
+    writes[4].dstBinding = 4;
+    writes[4].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    writes[4].descriptorCount = 1;
+    writes[4].pBufferInfo = &instanceInfo;
+
+    vkUpdateDescriptorSets(device_, static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
+
+    // Bind pipeline
+    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, impostorPipeline_.get());
+
+    // Set viewport and scissor
+    VkViewport viewport{};
+    viewport.x = 0.0f;
+    viewport.y = 0.0f;
+    viewport.width = static_cast<float>(extent_.width);
+    viewport.height = static_cast<float>(extent_.height);
+    viewport.minDepth = 0.0f;
+    viewport.maxDepth = 1.0f;
+    vkCmdSetViewport(cmd, 0, 1, &viewport);
+
+    VkRect2D scissor{};
+    scissor.offset = {0, 0};
+    scissor.extent = extent_;
+    vkCmdSetScissor(cmd, 0, 1, &scissor);
+
+    // Bind descriptor sets
+    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, impostorPipelineLayout_.get(),
+                           0, 1, &impostorDescriptorSets_[frameIndex], 0, nullptr);
+
+    // Push constants
+    struct {
+        glm::vec4 cameraPos;
+        glm::vec4 lodParams;
+        glm::vec4 atlasParams;
+    } pushConstants;
+
+    pushConstants.cameraPos = glm::vec4(lastCameraPos_, settings.autumnHueShift);
+    pushConstants.lodParams = glm::vec4(
+        1.0f,
+        settings.impostorBrightness,
+        settings.normalStrength,
+        settings.enableDebugElevation ? settings.debugElevation : -999.0f
+    );
+
+    if (impostorAtlas_->getArchetypeCount() > 0) {
+        const auto* archetype = impostorAtlas_->getArchetype(0u);
+        float hSize = archetype ? archetype->boundingSphereRadius * 1.1f : 10.0f;
+        float vSize = archetype ? archetype->treeHeight * 0.5f * 1.1f : 10.0f;
+        float baseOffset = archetype ? archetype->baseOffset : 0.0f;
+        pushConstants.atlasParams = glm::vec4(hSize, vSize, baseOffset,
+            settings.debugShowCellIndex ? 1.0f : 0.0f);
+    }
+
+    vkCmdPushConstants(cmd, impostorPipelineLayout_.get(),
+                      VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+                      0, sizeof(pushConstants), &pushConstants);
+
+    // Bind vertex and index buffers
+    VkDeviceSize offset = 0;
+    vkCmdBindVertexBuffers(cmd, 0, 1, &billboardVertexBuffer_, &offset);
+    vkCmdBindIndexBuffer(cmd, billboardIndexBuffer_, 0, VK_INDEX_TYPE_UINT32);
+
+    // Draw using indirect buffer from GPU culling
+    vkCmdDrawIndexedIndirect(cmd, indirectDrawBuffer, 0, 1, sizeof(VkDrawIndexedIndirectCommand));
+}
+
+void TreeLODSystem::renderImpostorShadowsGPUCulled(VkCommandBuffer cmd, uint32_t frameIndex,
+                                                   int cascadeIndex, VkBuffer uniformBuffer,
+                                                   VkBuffer gpuInstanceBuffer, VkBuffer indirectDrawBuffer) {
+    if (impostorAtlas_->getArchetypeCount() == 0) return;
+    if (shadowPipeline_.get() == VK_NULL_HANDLE) return;
+    if (uniformBuffer == VK_NULL_HANDLE) return;
+
+    const auto& settings = getLODSettings();
+    if (!settings.enableImpostors) return;
+
+    // Update shadow descriptor set with GPU-culled instance buffer
+    if (shadowDescriptorSets_.empty()) return;
+
+    VkImageView albedoView = impostorAtlas_->getAlbedoAtlasView(0);
+    VkSampler atlasSampler = impostorAtlas_->getAtlasSampler();
+    if (albedoView == VK_NULL_HANDLE) return;
+
+    std::array<VkWriteDescriptorSet, 3> writes{};
+
+    VkDescriptorBufferInfo uniformInfo{};
+    uniformInfo.buffer = uniformBuffer;
+    uniformInfo.offset = 0;
+    uniformInfo.range = VK_WHOLE_SIZE;
+
+    writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    writes[0].dstSet = shadowDescriptorSets_[frameIndex];
+    writes[0].dstBinding = 0;
+    writes[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    writes[0].descriptorCount = 1;
+    writes[0].pBufferInfo = &uniformInfo;
+
+    VkDescriptorImageInfo albedoInfo{};
+    albedoInfo.sampler = atlasSampler;
+    albedoInfo.imageView = albedoView;
+    albedoInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+    writes[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    writes[1].dstSet = shadowDescriptorSets_[frameIndex];
+    writes[1].dstBinding = 1;
+    writes[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    writes[1].descriptorCount = 1;
+    writes[1].pImageInfo = &albedoInfo;
+
+    // GPU-culled instance buffer
+    VkDescriptorBufferInfo instanceInfo{};
+    instanceInfo.buffer = gpuInstanceBuffer;
+    instanceInfo.offset = 0;
+    instanceInfo.range = VK_WHOLE_SIZE;
+
+    writes[2].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    writes[2].dstSet = shadowDescriptorSets_[frameIndex];
+    writes[2].dstBinding = 2;
+    writes[2].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    writes[2].descriptorCount = 1;
+    writes[2].pBufferInfo = &instanceInfo;
+
+    vkUpdateDescriptorSets(device_, static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
+
+    // Bind shadow pipeline
+    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, shadowPipeline_.get());
+    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, shadowPipelineLayout_.get(),
+                           0, 1, &shadowDescriptorSets_[frameIndex], 0, nullptr);
+
+    // Push constants for shadow pass
+    struct {
+        glm::vec4 cameraPos;
+        int cascadeIndex;
+        float _pad[3];
+    } pushConstants;
+    pushConstants.cameraPos = glm::vec4(lastCameraPos_, 0.0f);
+    pushConstants.cascadeIndex = cascadeIndex;
+
+    vkCmdPushConstants(cmd, shadowPipelineLayout_.get(),
+                      VK_SHADER_STAGE_VERTEX_BIT,
+                      0, sizeof(pushConstants), &pushConstants);
+
+    // Bind vertex and index buffers
+    VkDeviceSize offset = 0;
+    vkCmdBindVertexBuffers(cmd, 0, 1, &billboardVertexBuffer_, &offset);
+    vkCmdBindIndexBuffer(cmd, billboardIndexBuffer_, 0, VK_INDEX_TYPE_UINT32);
+
+    // Draw using indirect buffer from GPU culling
+    vkCmdDrawIndexedIndirect(cmd, indirectDrawBuffer, 0, 1, sizeof(VkDrawIndexedIndirectCommand));
+}
+
 const TreeLODState& TreeLODSystem::getTreeLODState(uint32_t treeIndex) const {
     static TreeLODState defaultState;
     if (treeIndex < lodStates_.size()) {

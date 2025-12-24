@@ -106,6 +106,114 @@ When implementing any phase, verify:
 
 ---
 
+## Architectural Constraint: Lighting & Atmosphere Integration
+
+Trees must integrate with the engine's lighting and atmospheric systems to avoid visual discontinuities. All LOD levels and shader variants must honor these systems consistently.
+
+### Required Systems Integration
+
+| System | Purpose | Tree Integration |
+|--------|---------|------------------|
+| Cascaded Shadow Maps | Sun shadows (4 cascades) | Sample `shadowMapArray` in all tree shaders |
+| Aerial Perspective | Distance fog/haze | Apply `applyAerialPerspective()` based on view distance |
+| Volumetric Fog (Froxels) | Local fog volumes | Sample froxel grid for inscatter/transmittance |
+| Cloud Shadows | Soft cloud shadow projection | Sample cloud shadow map if enabled |
+| Atmosphere LUTs | Sky color, transmittance | Use precomputed LUTs for consistent sky lighting |
+| Time of Day | Sun position, color, intensity | Read from `ubo.sunDirection`, `ubo.sunColor` |
+
+### Current Implementation Status
+
+| Shader | Shadows | Aerial Perspective | Froxels | Cloud Shadows |
+|--------|---------|-------------------|---------|---------------|
+| `tree.frag` (branches) | Yes | Yes | No | No |
+| `tree_leaf.frag` | Yes | Partial | No | No |
+| `tree_impostor.frag` | Yes | **Missing** | No | No |
+| `tree_impostor_shadow.frag` | N/A | N/A | N/A | N/A |
+
+### Atmospheric Consistency Requirements
+
+All tree shaders must apply aerial perspective to match distant terrain and other objects:
+
+```glsl
+// REQUIRED in all tree fragment shaders
+#include "atmosphere_common.glsl"
+
+void main() {
+    // ... lighting calculations ...
+
+    // Apply aerial perspective for distance fog
+    vec3 cameraToFrag = fragWorldPos - ubo.cameraPosition.xyz;
+    float viewDist = length(cameraToFrag);
+    vec3 viewDir = normalize(cameraToFrag);
+    vec3 sunDir = normalize(-ubo.sunDirection.xyz);
+
+    color = applyAerialPerspective(
+        color,
+        ubo.cameraPosition.xyz,
+        viewDir,
+        viewDist,
+        sunDir,
+        ubo.sunColor.rgb
+    );
+
+    outColor = vec4(color, 1.0);
+}
+```
+
+### LOD Transition Lighting Match
+
+When cross-fading between geometry and impostors, lighting must match closely to avoid visible seams:
+
+1. **Same sun direction/color**: Both LODs read from `ubo.sunDirection`, `ubo.sunColor`
+2. **Same shadow sampling**: Both use `calculateCascadedShadow()` with same parameters
+3. **Same aerial perspective**: Both apply `applyAerialPerspective()` at same world position
+4. **Matched ambient**: Both use `ubo.ambientColor` for sky contribution
+
+### Impostor Lighting Considerations
+
+Impostors are pre-rendered captures that don't receive real-time lighting changes. To maintain consistency:
+
+1. **Neutral capture lighting**: Render impostor atlas with neutral directional light
+2. **Runtime relighting**: Apply current sun direction/color in impostor shader
+3. **Normal-based shading**: Use captured normal map for directional response
+4. **Atmosphere post-apply**: Apply aerial perspective after impostor color lookup
+
+```glsl
+// tree_impostor.frag - proper atmosphere integration
+vec3 color = impostor.rgb;  // Base captured color
+
+// Relight based on current sun
+color *= calculateRelighting(worldNormal, sunDir, sunColor);
+
+// Apply current atmosphere (CRITICAL for consistency)
+color = applyAerialPerspective(color, cameraPos, viewDir, viewDist, sunDir, sunColor);
+```
+
+### Shader Variant Atmospheric Requirements
+
+When creating shader LOD variants (Phase 4), all variants must include atmosphere:
+
+| Variant | Lighting | Atmosphere |
+|---------|----------|------------|
+| Full PBR | Full shadow + PBR | Full aerial perspective |
+| Simplified | Shadow + diffuse only | Full aerial perspective |
+| Minimal | Ambient only | **Still requires aerial perspective** |
+
+Removing aerial perspective from distant trees causes visible color discontinuity against terrain/sky.
+
+### Validation Checklist
+
+When implementing any phase, verify:
+
+- [ ] All tree shaders include `atmosphere_common.glsl`
+- [ ] `applyAerialPerspective()` is called in all fragment shaders
+- [ ] Shadow sampling uses same cascade parameters as terrain
+- [ ] Impostor shader applies atmosphere after color lookup
+- [ ] LOD transitions don't cause lighting pops
+- [ ] Time-of-day changes affect all LOD levels equally
+
+---
+
 ## Current System Overview
 
 The existing tree rendering system implements several modern GPU-driven techniques:

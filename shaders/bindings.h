@@ -205,6 +205,7 @@
 #define BINDING_TREE_IMPOSTOR_CULL_UNIFORMS    3   // Culling uniforms
 #define BINDING_TREE_IMPOSTOR_CULL_ARCHETYPE   4   // Per-archetype data (sizes, offsets)
 #define BINDING_TREE_IMPOSTOR_CULL_HIZ         5   // Hi-Z pyramid for occlusion culling
+#define BINDING_TREE_IMPOSTOR_CULL_VISIBILITY  6   // Visibility cache (Phase 5: Temporal Coherence)
 
 // =============================================================================
 // Leaf Compute Shader Descriptor Set
@@ -598,6 +599,7 @@ constexpr uint32_t TREE_IMPOSTOR_CULL_INDIRECT  = BINDING_TREE_IMPOSTOR_CULL_IND
 constexpr uint32_t TREE_IMPOSTOR_CULL_UNIFORMS  = BINDING_TREE_IMPOSTOR_CULL_UNIFORMS;
 constexpr uint32_t TREE_IMPOSTOR_CULL_ARCHETYPE = BINDING_TREE_IMPOSTOR_CULL_ARCHETYPE;
 constexpr uint32_t TREE_IMPOSTOR_CULL_HIZ       = BINDING_TREE_IMPOSTOR_CULL_HIZ;
+constexpr uint32_t TREE_IMPOSTOR_CULL_VISIBILITY = BINDING_TREE_IMPOSTOR_CULL_VISIBILITY;
 
 // Leaf Compute
 constexpr uint32_t LEAF_COMPUTE_INPUT     = BINDING_LEAF_COMPUTE_INPUT;

@@ -51,11 +51,20 @@ layout(binding = BINDING_TREE_IMPOSTOR_CULL_UNIFORMS) uniform ImpostorCullUnifor
     float errorThresholdFull;      // Screen error threshold for full detail (pixels)
     float errorThresholdImpostor;  // Screen error threshold for impostor (pixels)
     float errorThresholdCull;      // Screen error beyond which to cull
+    uint temporalUpdateMode;       // 0=full, 1=partial, 2=skip (Phase 5: Temporal Coherence)
+    uint temporalUpdateOffset;     // For partial: start index of trees to update
+    uint temporalUpdateCount;      // For partial: number of trees to update this frame
     uint _pad0;
 };
 
 // Hi-Z pyramid for occlusion culling
 layout(binding = BINDING_TREE_IMPOSTOR_CULL_HIZ) uniform sampler2D hiZPyramid;
+
+// Visibility cache for temporal coherence (Phase 5)
+// Packed bits: 1 = was visible as impostor last frame, 0 = was culled or rendered as geometry
+layout(std430, binding = BINDING_TREE_IMPOSTOR_CULL_VISIBILITY) buffer VisibilityCache {
+    uint visibilityBits[];
+};
 
 // Per-archetype sizing data
 struct ArchetypeData {
@@ -127,6 +136,23 @@ bool isOccludedHiZ(vec3 worldPos, float boundingRadius) {
     return treeDepth < occluderDepth - depthMargin;
 }
 
+// Helper functions for visibility cache bit manipulation
+bool getVisibilityCached(uint treeIdx) {
+    uint wordIdx = treeIdx / 32u;
+    uint bitIdx = treeIdx % 32u;
+    return (visibilityBits[wordIdx] & (1u << bitIdx)) != 0u;
+}
+
+void setVisibilityCached(uint treeIdx, bool visible) {
+    uint wordIdx = treeIdx / 32u;
+    uint bitIdx = treeIdx % 32u;
+    if (visible) {
+        atomicOr(visibilityBits[wordIdx], 1u << bitIdx);
+    } else {
+        atomicAnd(visibilityBits[wordIdx], ~(1u << bitIdx));
+    }
+}
+
 void main() {
     uint treeIdx = gl_GlobalInvocationID.x;
 
@@ -144,105 +170,149 @@ void main() {
         return;
     }
 
-    // Load tree data
+    // Phase 5: Temporal Coherence
+    // temporalUpdateMode: 0=full (recompute all), 1=partial (update subset), 2=skip (use cache)
+    bool needsCullingUpdate = true;
+
+    if (temporalUpdateMode == 2u) {
+        // Skip mode: camera stationary, use cached visibility entirely
+        needsCullingUpdate = false;
+    } else if (temporalUpdateMode == 1u) {
+        // Partial mode: only update trees in the specified range
+        needsCullingUpdate = (treeIdx >= temporalUpdateOffset &&
+                              treeIdx < temporalUpdateOffset + temporalUpdateCount);
+    }
+    // temporalUpdateMode == 0: full update, needsCullingUpdate stays true
+
+    // Load tree data (always needed for output if visible)
     TreeInputData tree = trees[treeIdx];
     vec3 treePos = tree.positionAndScale.xyz;
     float treeScale = tree.positionAndScale.w;
     float rotation = tree.rotationAndArchetype.x;
     uint archetypeIndex = floatBitsToUint(tree.rotationAndArchetype.y);
 
-    // Distance to camera
-    float distToCamera = getDistanceToCamera(treePos, cameraPosition.xyz);
-
     // Get archetype sizing data
     ArchetypeData arch = archetypes[archetypeIndex];
     float boundingRadius = arch.sizingData.w * treeScale;
     float vSize = arch.sizingData.y * treeScale;  // Vertical half-size
 
-    // LOD selection - either screen-space error or distance-based
-    bool shouldRenderAsImpostor = false;
-    bool shouldCull = false;
-
-    if (useScreenSpaceError != 0u) {
-        // Screen-space error LOD (Phase 4)
-        // Scale world error by tree scale (larger trees have proportionally larger errors)
-        float worldErrorFull = arch.lodErrorData.x * treeScale;
-        float worldErrorImpostor = arch.lodErrorData.y * treeScale;
-
-        float screenErrorFull = computeScreenError(worldErrorFull, distToCamera);
-        float screenErrorImpostor = computeScreenError(worldErrorImpostor, distToCamera);
-
-        // Tree should render as full geometry if full detail error is acceptable
-        // It should render as impostor if impostor error is acceptable but full is not
-        // It should be culled if even impostor error is too large
-        if (screenErrorFull <= errorThresholdFull) {
-            // Tree is close enough for full detail - skip impostor
-            return;
-        } else if (screenErrorImpostor > errorThresholdCull) {
-            // Tree is too far even for impostor (sub-pixel)
-            shouldCull = true;
-        } else {
-            // Tree should render as impostor
-            shouldRenderAsImpostor = true;
-        }
-    } else {
-        // Legacy distance-based LOD
-        // Skip trees too close (they render as full geometry)
-        if (distToCamera < fullDetailDistance - hysteresis) {
-            return;
-        }
-        // Skip trees too far
-        if (distToCamera > impostorDistance) {
-            shouldCull = true;
-        } else {
-            shouldRenderAsImpostor = true;
-        }
-    }
-
-    if (shouldCull) {
-        return;
-    }
-
-    // Calculate tree center (base position + vertical offset)
-    // Trees are positioned at their base, but extend upward
-    vec3 treeCenter = treePos + vec3(0.0, vSize, 0.0);
-
-    // Frustum culling with margin for billboard size
-    float margin = boundingRadius * 2.0;
-    if (!isInFrustum(frustumPlanes, treeCenter, margin)) {
-        return;
-    }
-
-    // Hi-Z occlusion culling (Phase 2: eliminate trees behind terrain/occluders)
-    // Use tree center for occlusion test, not base position
-    if (enableHiZ != 0u && isOccludedHiZ(treeCenter, boundingRadius)) {
-        return;
-    }
-
-    // Calculate blend factor for LOD transition
-    // 0 = pure geometry, 1 = pure impostor
+    bool isVisible = false;
     float blendFactor = 1.0;
-    if (useScreenSpaceError != 0u) {
-        // Screen-space error based blending
-        // Blend from full geometry to impostor based on screen error thresholds
-        float worldErrorFull = arch.lodErrorData.x * treeScale;
-        float screenErrorFull = computeScreenError(worldErrorFull, distToCamera);
 
-        // Blend between errorThresholdFull and errorThresholdImpostor
-        if (screenErrorFull < errorThresholdFull) {
-            blendFactor = 0.0;
-        } else if (screenErrorFull > errorThresholdImpostor) {
-            blendFactor = 1.0;
+    if (needsCullingUpdate) {
+        // Full culling computation
+        float distToCamera = getDistanceToCamera(treePos, cameraPosition.xyz);
+
+        // LOD selection - either screen-space error or distance-based
+        bool shouldRenderAsImpostor = false;
+        bool shouldCull = false;
+
+        if (useScreenSpaceError != 0u) {
+            // Screen-space error LOD (Phase 4)
+            float worldErrorFull = arch.lodErrorData.x * treeScale;
+            float worldErrorImpostor = arch.lodErrorData.y * treeScale;
+
+            float screenErrorFull = computeScreenError(worldErrorFull, distToCamera);
+            float screenErrorImpostor = computeScreenError(worldErrorImpostor, distToCamera);
+
+            if (screenErrorFull <= errorThresholdFull) {
+                // Tree is close enough for full detail - skip impostor
+                setVisibilityCached(treeIdx, false);
+                return;
+            } else if (screenErrorImpostor > errorThresholdCull) {
+                shouldCull = true;
+            } else {
+                shouldRenderAsImpostor = true;
+            }
         } else {
-            blendFactor = smoothstep(errorThresholdFull, errorThresholdImpostor, screenErrorFull);
+            // Legacy distance-based LOD
+            if (distToCamera < fullDetailDistance - hysteresis) {
+                setVisibilityCached(treeIdx, false);
+                return;
+            }
+            if (distToCamera > impostorDistance) {
+                shouldCull = true;
+            } else {
+                shouldRenderAsImpostor = true;
+            }
+        }
+
+        if (shouldCull) {
+            setVisibilityCached(treeIdx, false);
+            return;
+        }
+
+        // Calculate tree center
+        vec3 treeCenter = treePos + vec3(0.0, vSize, 0.0);
+
+        // Frustum culling
+        float margin = boundingRadius * 2.0;
+        if (!isInFrustum(frustumPlanes, treeCenter, margin)) {
+            setVisibilityCached(treeIdx, false);
+            return;
+        }
+
+        // Hi-Z occlusion culling
+        if (enableHiZ != 0u && isOccludedHiZ(treeCenter, boundingRadius)) {
+            setVisibilityCached(treeIdx, false);
+            return;
+        }
+
+        // Tree passed all culling tests
+        isVisible = true;
+        setVisibilityCached(treeIdx, true);
+
+        // Calculate blend factor
+        if (useScreenSpaceError != 0u) {
+            float worldErrorFull = arch.lodErrorData.x * treeScale;
+            float screenErrorFull = computeScreenError(worldErrorFull, distToCamera);
+
+            if (screenErrorFull < errorThresholdFull) {
+                blendFactor = 0.0;
+            } else if (screenErrorFull > errorThresholdImpostor) {
+                blendFactor = 1.0;
+            } else {
+                blendFactor = smoothstep(errorThresholdFull, errorThresholdImpostor, screenErrorFull);
+            }
+        } else {
+            float distToCamera = getDistanceToCamera(treePos, cameraPosition.xyz);
+            if (distToCamera < fullDetailDistance + blendRange) {
+                blendFactor = smoothstep(fullDetailDistance - hysteresis,
+                                          fullDetailDistance + blendRange,
+                                          distToCamera);
+            }
         }
     } else {
-        // Legacy distance-based blending
-        if (distToCamera < fullDetailDistance + blendRange) {
-            blendFactor = smoothstep(fullDetailDistance - hysteresis,
-                                      fullDetailDistance + blendRange,
-                                      distToCamera);
+        // Use cached visibility (skip or partial mode for non-updated trees)
+        isVisible = getVisibilityCached(treeIdx);
+
+        if (isVisible) {
+            // Recalculate blend factor (it depends on current camera position)
+            float distToCamera = getDistanceToCamera(treePos, cameraPosition.xyz);
+
+            if (useScreenSpaceError != 0u) {
+                float worldErrorFull = arch.lodErrorData.x * treeScale;
+                float screenErrorFull = computeScreenError(worldErrorFull, distToCamera);
+
+                if (screenErrorFull < errorThresholdFull) {
+                    blendFactor = 0.0;
+                } else if (screenErrorFull > errorThresholdImpostor) {
+                    blendFactor = 1.0;
+                } else {
+                    blendFactor = smoothstep(errorThresholdFull, errorThresholdImpostor, screenErrorFull);
+                }
+            } else {
+                if (distToCamera < fullDetailDistance + blendRange) {
+                    blendFactor = smoothstep(fullDetailDistance - hysteresis,
+                                              fullDetailDistance + blendRange,
+                                              distToCamera);
+                }
+            }
         }
+    }
+
+    if (!isVisible) {
+        return;
     }
 
     // This impostor is visible - atomically get output slot

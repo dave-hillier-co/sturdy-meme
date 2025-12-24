@@ -5,6 +5,7 @@
 #include "vegetation/TreeLODSystem.h"
 #include "vegetation/TreeImpostorAtlas.h"
 #include "vegetation/TreeRenderer.h"
+#include "vegetation/ImpostorCullSystem.h"
 #include "core/RendererSystems.h"
 
 #include <imgui.h>
@@ -154,6 +155,37 @@ void GuiTreeTab::render(ITreeControl& treeControl) {
                     ImGui::SetTooltip("Use efficient two-phase culling:\n"
                                       "1. Filter visible trees from cells\n"
                                       "2. Cull leaves only for visible trees");
+                }
+            }
+
+            // Temporal coherence toggle (Phase 5)
+            auto* impostorCull = treeControl.getSystems().impostorCull();
+            if (impostorCull) {
+                bool temporal = impostorCull->isTemporalEnabled();
+                if (ImGui::Checkbox("Temporal Coherence", &temporal)) {
+                    impostorCull->setTemporalEnabled(temporal);
+                }
+                if (ImGui::IsItemHovered()) {
+                    ImGui::SetTooltip("Reuse visibility data across frames:\n"
+                                      "- Skips culling when camera stationary\n"
+                                      "- Partial updates when moving slowly\n"
+                                      "- Full update on significant movement");
+                }
+                if (temporal) {
+                    auto& tempSettings = impostorCull->getTemporalSettings();
+                    ImGui::SliderFloat("Position Threshold", &tempSettings.positionThreshold, 1.0f, 20.0f, "%.1f m");
+                    if (ImGui::IsItemHovered()) {
+                        ImGui::SetTooltip("Camera movement distance that triggers full visibility update");
+                    }
+                    ImGui::SliderFloat("Rotation Threshold", &tempSettings.rotationThreshold, 2.0f, 30.0f, "%.1f deg");
+                    if (ImGui::IsItemHovered()) {
+                        ImGui::SetTooltip("Camera rotation angle that triggers full visibility update");
+                    }
+                    ImGui::SliderFloat("Partial Update", &tempSettings.partialUpdateFraction, 0.05f, 0.5f, "%.0f%%",
+                                       ImGuiSliderFlags_AlwaysClamp);
+                    if (ImGui::IsItemHovered()) {
+                        ImGui::SetTooltip("Fraction of trees updated per frame during partial mode");
+                    }
                 }
             }
 

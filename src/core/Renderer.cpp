@@ -44,6 +44,7 @@
 #include "TreeSystem.h"
 #include "TreeRenderer.h"
 #include "TreeLODSystem.h"
+#include "ImpostorCullSystem.h"
 #include "DetritusSystem.h"
 #include "UBOBuilder.h"
 #include "WaterGBuffer.h"
@@ -173,6 +174,42 @@ void Renderer::setupRenderPipeline() {
             ctx.cmd, ctx.frameIndex, *systems_->tree(),
             ctx.frame.cameraPosition, ctx.frame.frustumPlanes);
         systems_->profiler().endGpuZone(ctx.cmd, "TreeLeafCull");
+    });
+
+    // Tree impostor Hi-Z occlusion culling compute pass (Phase 2)
+    // Uses Hi-Z pyramid from previous frame for occlusion testing
+    renderPipeline.computeStage.addPass("impostorCull", [this](RenderContext& ctx) {
+        auto* impostorCull = systems_->impostorCull();
+        if (!impostorCull || !systems_->tree()) return;
+
+        systems_->profiler().beginGpuZone(ctx.cmd, "ImpostorCull");
+
+        // Get Hi-Z pyramid from previous frame for occlusion testing
+        VkImageView hiZView = systems_->hiZ().getHiZPyramidView();
+        VkSampler hiZSampler = systems_->hiZ().getHiZSampler();
+
+        // Get LOD settings for distance thresholds
+        float fullDetailDist = 50.0f;   // Default values
+        float impostorDist = 500.0f;
+        if (systems_->treeLOD()) {
+            const auto& lodSettings = systems_->treeLOD()->getLODSettings();
+            fullDetailDist = lodSettings.fullDetailDistance;
+            impostorDist = lodSettings.impostorDistance;
+        }
+
+        impostorCull->recordCulling(
+            ctx.cmd, ctx.frameIndex,
+            ctx.frame.cameraPosition,
+            ctx.frame.frustumPlanes,
+            ctx.frame.viewProj,
+            hiZView, hiZSampler,
+            fullDetailDist,
+            impostorDist,
+            5.0f,   // hysteresis
+            10.0f   // blend range
+        );
+
+        systems_->profiler().endGpuZone(ctx.cmd, "ImpostorCull");
     });
 
     // Water foam persistence compute pass
@@ -1418,7 +1455,18 @@ void Renderer::recordShadowPass(VkCommandBuffer cmd, uint32_t frameIndex, float 
         // Render impostor shadows
         if (systems_->treeLOD()) {
             VkBuffer uniformBuffer = systems_->globalBuffers().uniformBuffers.buffers[frameIndex];
-            systems_->treeLOD()->renderImpostorShadows(cb, frameIndex, static_cast<int>(cascade), uniformBuffer);
+            auto* impostorCull = systems_->impostorCull();
+            if (impostorCull && impostorCull->getTreeCount() > 0) {
+                // Use GPU-culled indirect rendering
+                systems_->treeLOD()->renderImpostorShadowsGPUCulled(
+                    cb, frameIndex, static_cast<int>(cascade), uniformBuffer,
+                    impostorCull->getVisibleImpostorBuffer(),
+                    impostorCull->getIndirectDrawBuffer()
+                );
+            } else {
+                // Fall back to CPU-culled rendering
+                systems_->treeLOD()->renderImpostorShadows(cb, frameIndex, static_cast<int>(cascade), uniformBuffer);
+            }
         }
     };
 
@@ -1550,12 +1598,26 @@ void Renderer::recordSceneObjects(VkCommandBuffer cmd, uint32_t frameIndex) {
 
     // Render tree impostors for distant trees
     if (systems_->treeLOD()) {
-        systems_->treeLOD()->renderImpostors(
-            cmd, frameIndex,
-            systems_->globalBuffers().uniformBuffers.buffers[frameIndex],
-            systems_->shadow().getShadowImageView(),
-            systems_->shadow().getShadowSampler()
-        );
+        auto* impostorCull = systems_->impostorCull();
+        if (impostorCull && impostorCull->getTreeCount() > 0) {
+            // Use GPU-culled indirect rendering
+            systems_->treeLOD()->renderImpostorsGPUCulled(
+                cmd, frameIndex,
+                systems_->globalBuffers().uniformBuffers.buffers[frameIndex],
+                systems_->shadow().getShadowImageView(),
+                systems_->shadow().getShadowSampler(),
+                impostorCull->getVisibleImpostorBuffer(),
+                impostorCull->getIndirectDrawBuffer()
+            );
+        } else {
+            // Fall back to CPU-culled rendering
+            systems_->treeLOD()->renderImpostors(
+                cmd, frameIndex,
+                systems_->globalBuffers().uniformBuffers.buffers[frameIndex],
+                systems_->shadow().getShadowImageView(),
+                systems_->shadow().getShadowSampler()
+            );
+        }
     }
 }
 

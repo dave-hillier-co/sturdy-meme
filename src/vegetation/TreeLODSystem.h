@@ -73,9 +73,20 @@ public:
     void renderImpostors(VkCommandBuffer cmd, uint32_t frameIndex,
                          VkBuffer uniformBuffer, VkImageView shadowMap, VkSampler shadowSampler);
 
+    // Render impostors using GPU-culled data (indirect drawing with Hi-Z occlusion)
+    // Call this instead of renderImpostors when ImpostorCullSystem is available
+    void renderImpostorsGPUCulled(VkCommandBuffer cmd, uint32_t frameIndex,
+                                  VkBuffer uniformBuffer, VkImageView shadowMap, VkSampler shadowSampler,
+                                  VkBuffer gpuInstanceBuffer, VkBuffer indirectDrawBuffer);
+
     // Render impostor shadows for a specific cascade
     void renderImpostorShadows(VkCommandBuffer cmd, uint32_t frameIndex,
                                int cascadeIndex, VkBuffer uniformBuffer);
+
+    // Render impostor shadows using GPU-culled data (indirect drawing with Hi-Z occlusion)
+    void renderImpostorShadowsGPUCulled(VkCommandBuffer cmd, uint32_t frameIndex,
+                                        int cascadeIndex, VkBuffer uniformBuffer,
+                                        VkBuffer gpuInstanceBuffer, VkBuffer indirectDrawBuffer);
 
     // Get LOD state for a specific tree
     const TreeLODState& getTreeLODState(uint32_t treeIndex) const;

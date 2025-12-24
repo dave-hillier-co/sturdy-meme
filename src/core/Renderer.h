@@ -22,6 +22,7 @@
 #include "VulkanRAII.h"
 #include "RendererSystems.h"
 #include "PerformanceToggles.h"
+#include "interfaces/IDebugControl.h"  // For IDebugControl::CullingStats
 
 // Forward declarations for interfaces
 class ILocationControl;
@@ -31,7 +32,6 @@ class IPostProcessControl;
 class ITerrainControl;
 class IWaterControl;
 class ITreeControl;
-class IDebugControl;
 class IProfilerControl;
 class IPerformanceControl;
 class ISceneControl;

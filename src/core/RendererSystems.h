@@ -7,16 +7,13 @@
 #include "InitContext.h"
 #include "CoreResources.h"
 
-// Forward declarations for control subsystems
-class LocationControlSubsystem;
+// Forward declarations for control subsystems (only those that coordinate multiple systems)
 class WeatherControlSubsystem;
 class EnvironmentControlSubsystem;
 class PostProcessControlSubsystem;
-class TerrainControlSubsystem;
 class WaterControlSubsystem;
 class TreeControlSubsystem;
 class DebugControlSubsystem;
-class ProfilerControlSubsystem;
 class PerformanceControlSubsystem;
 class SceneControlSubsystem;
 class PlayerControlSubsystem;
@@ -389,16 +386,15 @@ private:
     std::unique_ptr<PhysicsDebugRenderer> physicsDebugRenderer_;
 #endif
 
-    // Control subsystems (implement GUI-facing interfaces)
-    std::unique_ptr<LocationControlSubsystem> locationControl_;
+    // Control subsystems (only for interfaces that coordinate multiple systems)
+    // Note: ILocationControl -> CelestialCalculator, ITerrainControl -> TerrainSystem,
+    //       IProfilerControl -> Profiler implement their interfaces directly
     std::unique_ptr<WeatherControlSubsystem> weatherControl_;
     std::unique_ptr<EnvironmentControlSubsystem> environmentControl_;
     std::unique_ptr<PostProcessControlSubsystem> postProcessControl_;
-    std::unique_ptr<TerrainControlSubsystem> terrainControl_;
     std::unique_ptr<WaterControlSubsystem> waterControl_;
     std::unique_ptr<TreeControlSubsystem> treeControl_;
     std::unique_ptr<DebugControlSubsystem> debugControl_;
-    std::unique_ptr<ProfilerControlSubsystem> profilerControl_;
     std::unique_ptr<PerformanceControlSubsystem> performanceControl_;
     std::unique_ptr<SceneControlSubsystem> sceneControl_;
     std::unique_ptr<PlayerControlSubsystem> playerControl_;

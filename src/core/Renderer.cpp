@@ -2002,9 +2002,9 @@ float Renderer::getEclipseAmount() const { return systems_->time().getEclipseAmo
 // Hi-Z occlusion culling control
 void Renderer::setHiZCullingEnabled(bool enabled) { systems_->hiZ().setHiZEnabled(enabled); }
 bool Renderer::isHiZCullingEnabled() const { return systems_->hiZ().isHiZEnabled(); }
-Renderer::CullingStats Renderer::getHiZCullingStats() const {
+IDebugControl::CullingStats Renderer::getHiZCullingStats() const {
     auto stats = systems_->hiZ().getStats();
-    return CullingStats{stats.totalObjects, stats.visibleObjects, stats.frustumCulled, stats.occlusionCulled};
+    return IDebugControl::CullingStats{stats.totalObjects, stats.visibleObjects, stats.frustumCulled, stats.occlusionCulled};
 }
 uint32_t Renderer::getVisibleObjectCount() const { return systems_->hiZ().getVisibleCount(currentFrame); }
 

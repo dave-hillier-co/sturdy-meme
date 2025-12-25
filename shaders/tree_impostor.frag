@@ -138,10 +138,10 @@ void main() {
             albedoAlpha = albedo0 * w0 + albedo1 * w1 + albedo2 * w2;
             normalDepthAO = normal0 * w0 + normal1 * w1 + normal2 * w2;
 
-            // Better alpha handling for blending
+            // Better alpha handling for blending - bias toward max to prevent edge flickering
             float maxAlpha = max(max(albedo0.a, albedo1.a), albedo2.a);
             float blendedAlpha = albedo0.a * w0 + albedo1.a * w1 + albedo2.a * w2;
-            albedoAlpha.a = mix(blendedAlpha, maxAlpha, 0.5);
+            albedoAlpha.a = mix(blendedAlpha, maxAlpha, 0.7);
         } else {
             // Single frame lookup (no blending) - use fragTexCoord which is already computed
             vec3 atlasCoord = vec3(fragTexCoord, float(fragArchetypeIndex));

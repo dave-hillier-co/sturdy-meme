@@ -128,8 +128,10 @@ void main() {
             right = cross(up, forward);
         }
 
+        // Billboard quad has Y from 0 to 1; center it around origin so baseOffset
+        // (which is centerHeight) correctly positions the billboard center
         localPos = right * inPosition.x * hSize * 2.0 +
-                   up * inPosition.y * vSize * 2.0;
+                   up * (inPosition.y - 0.5) * vSize * 2.0;
         billboardCenter = treePos + vec3(0.0, baseOffset, 0.0);
     }
 

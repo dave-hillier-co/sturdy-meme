@@ -292,7 +292,7 @@ void main() {
         }
     } else {
         // Use cached visibility (skip or partial mode for non-updated trees)
-        // BUT always re-check frustum to catch trees that just entered the view
+        // BUT always re-check frustum AND LOD to prevent flickering
         vec3 treeCenter = treePos + vec3(0.0, vSize, 0.0);
         float margin = boundingRadius * 2.0;
         bool inFrustum = isInFrustum(frustumPlanes, treeCenter, margin);
@@ -301,34 +301,58 @@ void main() {
             // Tree is outside frustum - not visible regardless of cache
             isVisible = false;
         } else {
-            // Tree is in frustum - check cache for occlusion/LOD status
-            // If it was visible before, keep it visible
-            // If it was NOT visible but is now in frustum, make it visible
-            // (conservative: may show trees that would be occluded, but prevents pop-in)
-            bool wasCachedVisible = getVisibilityCached(treeIdx);
-            isVisible = wasCachedVisible || inFrustum;  // Show if newly in frustum
+            // Always re-check LOD even in partial/skip mode to prevent flickering
+            // This ensures trees don't flicker between impostor and full geometry
+            float distToCamera = getDistanceToCamera(treePos, cameraPosition.xyz);
+            bool shouldBeImpostor = true;
 
-            // Update cache if we're making a tree visible that wasn't before
-            if (!wasCachedVisible && isVisible) {
-                setVisibilityCached(treeIdx, true);
+            if (useScreenSpaceError != 0u) {
+                float worldErrorFull = arch.lodErrorData.x * treeScale;
+                float worldErrorImpostor = arch.lodErrorData.y * treeScale;
+                float screenErrorFull = computeScreenError(worldErrorFull, distToCamera);
+                float screenErrorImpostor = computeScreenError(worldErrorImpostor, distToCamera);
+
+                if (screenErrorFull > errorThresholdFull) {
+                    // Too close - should render as full geometry, not impostor
+                    shouldBeImpostor = false;
+                } else if (screenErrorImpostor < errorThresholdCull) {
+                    // Too far - should be culled entirely
+                    isVisible = false;
+                }
+            } else {
+                if (distToCamera < fullDetailDistance - hysteresis) {
+                    shouldBeImpostor = false;
+                } else if (distToCamera > impostorDistance) {
+                    isVisible = false;
+                }
+            }
+
+            if (!shouldBeImpostor) {
+                // Tree should be rendered as full geometry, not impostor
+                isVisible = false;
+            } else {
+                // Tree is in frustum and should be impostor - check cache
+                bool wasCachedVisible = getVisibilityCached(treeIdx);
+                isVisible = wasCachedVisible || inFrustum;
+
+                if (!wasCachedVisible && isVisible) {
+                    setVisibilityCached(treeIdx, true);
+                }
             }
         }
 
         if (isVisible) {
             // Recalculate blend factor (it depends on current camera position)
-            // blendFactor: 0.0 = full geometry only (close), 1.0 = impostor only (far)
             float distToCamera = getDistanceToCamera(treePos, cameraPosition.xyz);
 
             if (useScreenSpaceError != 0u) {
                 float worldErrorFull = arch.lodErrorData.x * treeScale;
                 float screenErrorFull = computeScreenError(worldErrorFull, distToCamera);
 
-                // High screen error = close = more geometry (low blend)
-                // Low screen error = far = more impostor (high blend)
                 if (screenErrorFull > errorThresholdFull) {
-                    blendFactor = 0.0;  // Close: full geometry
+                    blendFactor = 0.0;
                 } else if (screenErrorFull < errorThresholdImpostor) {
-                    blendFactor = 1.0;  // Far: full impostor
+                    blendFactor = 1.0;
                 } else {
                     blendFactor = 1.0 - smoothstep(errorThresholdImpostor, errorThresholdFull, screenErrorFull);
                 }

@@ -758,25 +758,32 @@ void TreeLODSystem::update(float deltaTime, const glm::vec3& cameraPos, const Tr
                 const auto& meshBounds = treeSystem.getBranchMesh(tree.meshIndex).getBounds();
                 glm::vec3 minB = meshBounds.min;
                 glm::vec3 maxB = meshBounds.max;
+                glm::vec3 extent = maxB - minB;
 
-                // Compute horizontal radius (max of X and Z half-extents)
-                float hRadius = std::max(std::abs(minB.x), std::abs(maxB.x));
-                hRadius = std::max(hRadius, std::max(std::abs(minB.z), std::abs(maxB.z)));
+                // Match the octahedral capture projection sizing
+                // Capture uses: max(mix(hRadius, sphereRadius, elevFactor) * 1.15, halfHeight * 1.15)
+                // Billboard needs the maximum size (at top-down view where elevFactor=1)
+                float horizontalRadius = std::max(extent.x, extent.z) * 0.5f;
+                float halfHeight = extent.y * 0.5f;
+                float boundingSphereRadius = glm::length(extent) * 0.5f;
 
-                // Tree height and base offset
-                float treeHeight = maxB.y - minB.y;
-                float baseOffset = minB.y;
+                // At max elevation, effectiveHSize approaches boundingSphereRadius
+                float maxHSize = boundingSphereRadius * 1.15f;
+                float maxVSize = halfHeight * 1.15f;
+                float projSize = std::max(maxHSize, maxVSize) * tree.scale;
 
-                // Scale by tree instance scale and add 10% margin
-                instance.hSize = hRadius * 1.1f * tree.scale;
-                instance.vSize = treeHeight * 0.5f * 1.1f * tree.scale;
-                instance.baseOffset = baseOffset * tree.scale;
+                instance.hSize = projSize;
+                instance.vSize = projSize;
+                // Center offset: tree center height relative to origin
+                float centerY = (minB.y + maxB.y) * 0.5f;
+                instance.baseOffset = centerY * tree.scale;
             } else {
                 // Fallback to archetype bounds if mesh not available
                 const auto* archetype = impostorAtlas_->getArchetype(state.archetypeIndex);
-                instance.hSize = (archetype ? archetype->boundingSphereRadius * 1.1f : 10.0f) * tree.scale;
-                instance.vSize = (archetype ? archetype->treeHeight * 0.5f * 1.1f : 10.0f) * tree.scale;
-                instance.baseOffset = (archetype ? archetype->baseOffset : 0.0f) * tree.scale;
+                float projSize = (archetype ? archetype->boundingSphereRadius * 1.15f : 10.0f) * tree.scale;
+                instance.hSize = projSize;
+                instance.vSize = projSize;
+                instance.baseOffset = (archetype ? archetype->centerHeight : 0.0f) * tree.scale;
             }
             visibleImpostors_.push_back(instance);
         }

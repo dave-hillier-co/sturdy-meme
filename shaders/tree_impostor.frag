@@ -8,6 +8,7 @@ const int NUM_CASCADES = 4;
 #include "ubo_common.glsl"
 #include "shadow_common.glsl"
 #include "color_common.glsl"
+#include "octahedral_mapping.glsl"
 
 layout(location = 0) in vec2 fragTexCoord;
 layout(location = 1) in vec3 fragWorldPos;
@@ -15,6 +16,11 @@ layout(location = 2) in float fragBlendFactor;
 layout(location = 3) flat in int fragCellIndex;
 layout(location = 4) in mat3 fragImpostorToWorld;
 layout(location = 7) flat in uint fragArchetypeIndex;
+
+// Octahedral mode inputs
+layout(location = 8) in vec2 fragOctaUV;
+layout(location = 9) in vec3 fragViewDir;
+layout(location = 10) flat in int fragUseOctahedral;
 
 layout(location = 0) out vec4 outColor;
 
@@ -27,25 +33,25 @@ layout(binding = BINDING_TREE_IMPOSTOR_SHADOW_MAP) uniform sampler2DArrayShadow 
 
 layout(push_constant) uniform PushConstants {
     vec4 cameraPos;     // xyz = camera position, w = autumnHueShift
-    vec4 lodParams;     // x = blend factor, y = brightness, z = normal strength, w = debug elevation
-    vec4 atlasParams;   // x = hSize, y = vSize, z = baseOffset, w = debugShowCellIndex
+    vec4 lodParams;     // x = useOctahedral, y = brightness, z = normal strength, w = debug elevation
+    vec4 atlasParams;   // x = enableFrameBlending, y = unused, z = unused, w = debugShowCellIndex
 } push;
 
-// Debug colors for 8 horizontal angles (rainbow-ish)
+// Debug colors for angles
 const vec3 debugColors[8] = vec3[8](
-    vec3(1.0, 0.0, 0.0),   // 0: Red (0°, +Z)
-    vec3(1.0, 0.5, 0.0),   // 1: Orange (45°)
-    vec3(1.0, 1.0, 0.0),   // 2: Yellow (90°, +X)
-    vec3(0.0, 1.0, 0.0),   // 3: Green (135°)
-    vec3(0.0, 1.0, 1.0),   // 4: Cyan (180°, -Z)
-    vec3(0.0, 0.0, 1.0),   // 5: Blue (225°)
-    vec3(0.5, 0.0, 1.0),   // 6: Purple (270°, -X)
-    vec3(1.0, 0.0, 1.0)    // 7: Magenta (315°)
+    vec3(1.0, 0.0, 0.0),   // Red
+    vec3(1.0, 0.5, 0.0),   // Orange
+    vec3(1.0, 1.0, 0.0),   // Yellow
+    vec3(0.0, 1.0, 0.0),   // Green
+    vec3(0.0, 1.0, 1.0),   // Cyan
+    vec3(0.0, 0.0, 1.0),   // Blue
+    vec3(0.5, 0.0, 1.0),   // Purple
+    vec3(1.0, 0.0, 1.0)    // Magenta
 );
 
 // Octahedral normal decoding
 vec3 decodeOctahedral(vec2 e) {
-    e = e * 2.0 - 1.0;  // Map from [0, 1] to [-1, 1]
+    e = e * 2.0 - 1.0;
     vec3 n = vec3(e.xy, 1.0 - abs(e.x) - abs(e.y));
     if (n.z < 0.0) {
         vec2 signNotZero = vec2(n.x >= 0.0 ? 1.0 : -1.0, n.y >= 0.0 ? 1.0 : -1.0);
@@ -62,20 +68,71 @@ const float bayerMatrix[16] = float[16](
     15.0/16.0, 7.0/16.0, 13.0/16.0,  5.0/16.0
 );
 
+// Sample octahedral atlas at a specific frame
+vec4 sampleOctahedralFrame(vec2 frameUV, uint archetype) {
+    return texture(albedoAlphaAtlas, vec3(frameUV, float(archetype)));
+}
+
+vec4 sampleOctahedralNormal(vec2 frameUV, uint archetype) {
+    return texture(normalDepthAOAtlas, vec3(frameUV, float(archetype)));
+}
+
 void main() {
-    // Sample impostor atlas array using archetype index as layer
-    vec3 atlasCoord = vec3(fragTexCoord, float(fragArchetypeIndex));
-    vec4 albedoAlpha = texture(albedoAlphaAtlas, atlasCoord);
-    vec4 normalDepthAO = texture(normalDepthAOAtlas, atlasCoord);
+    vec4 albedoAlpha;
+    vec4 normalDepthAO;
+
+    if (fragUseOctahedral != 0) {
+        // Octahedral mode with optional frame blending
+        bool enableBlending = push.atlasParams.x > 0.5;
+
+        if (enableBlending) {
+            // Get frame blend data for smooth interpolation
+            OctaFrameData frameData = octaGetFrameBlendData(fragViewDir, OCTA_GRID_SIZE, true);
+
+            // Sample all 3 frames
+            vec4 albedo0 = sampleOctahedralFrame(frameData.frameUV0, fragArchetypeIndex);
+            vec4 albedo1 = sampleOctahedralFrame(frameData.frameUV1, fragArchetypeIndex);
+            vec4 albedo2 = sampleOctahedralFrame(frameData.frameUV2, fragArchetypeIndex);
+
+            vec4 normal0 = sampleOctahedralNormal(frameData.frameUV0, fragArchetypeIndex);
+            vec4 normal1 = sampleOctahedralNormal(frameData.frameUV1, fragArchetypeIndex);
+            vec4 normal2 = sampleOctahedralNormal(frameData.frameUV2, fragArchetypeIndex);
+
+            // Blend based on weights
+            albedoAlpha = albedo0 * frameData.weight0 +
+                          albedo1 * frameData.weight1 +
+                          albedo2 * frameData.weight2;
+
+            normalDepthAO = normal0 * frameData.weight0 +
+                            normal1 * frameData.weight1 +
+                            normal2 * frameData.weight2;
+
+            // Improve alpha handling - use max alpha to avoid premature clipping
+            albedoAlpha.a = max(max(albedo0.a * frameData.weight0,
+                                    albedo1.a * frameData.weight1),
+                                albedo2.a * frameData.weight2) +
+                            min(min(albedo0.a * frameData.weight0,
+                                    albedo1.a * frameData.weight1),
+                                albedo2.a * frameData.weight2);
+        } else {
+            // Single frame lookup (no blending)
+            vec3 atlasCoord = vec3(fragOctaUV, float(fragArchetypeIndex));
+            albedoAlpha = texture(albedoAlphaAtlas, atlasCoord);
+            normalDepthAO = texture(normalDepthAOAtlas, atlasCoord);
+        }
+    } else {
+        // Legacy mode: direct texture lookup
+        vec3 atlasCoord = vec3(fragTexCoord, float(fragArchetypeIndex));
+        albedoAlpha = texture(albedoAlphaAtlas, atlasCoord);
+        normalDepthAO = texture(normalDepthAOAtlas, atlasCoord);
+    }
 
     // Alpha test
     if (albedoAlpha.a < 0.5) {
         discard;
     }
 
-    // LOD dithered transition - discard pixels based on blend factor
-    // When blend factor is low (geometry visible), discard more impostor pixels
-    // When blend factor is high (impostor visible), keep more impostor pixels
+    // LOD dithered transition
     if (fragBlendFactor < 0.99) {
         ivec2 pixelCoord = ivec2(gl_FragCoord.xy);
         int ditherIndex = (pixelCoord.x % 4) + (pixelCoord.y % 4) * 4;
@@ -99,7 +156,7 @@ void main() {
     // Get albedo and apply brightness adjustment
     vec3 albedo = albedoAlpha.rgb * push.lodParams.y;
 
-    // Apply autumn hue shift (cameraPos.w contains autumnHueShift)
+    // Apply autumn hue shift
     float autumnFactor = push.cameraPos.w;
     albedo = applyAutumnHueShift(albedo, autumnFactor);
 
@@ -124,7 +181,7 @@ void main() {
     float spec = pow(NdotH, 32.0) * (1.0 - roughness);
     vec3 specular = vec3(spec) * 0.1;
 
-    // Shadow sampling using cascaded shadow maps
+    // Shadow sampling
     float shadow = calculateCascadedShadow(
         fragWorldPos, worldNormal, lightDir,
         ubo.view, ubo.cascadeSplits, ubo.cascadeViewProj,
@@ -140,21 +197,19 @@ void main() {
 
     // Debug: show cell index as color
     if (push.atlasParams.w > 0.5) {
-        // Get horizontal cell index (0-7) from fragCellIndex
-        // Row 0: cells 0-7 are horizontal, cell 8 is top-down
-        // Row 1: cells 9-16 are elevated horizontal
-        int hIndex;
-        if (fragCellIndex == 8) {
-            // Top-down view - show as white
-            color = vec3(1.0);
-        } else if (fragCellIndex < 8) {
-            // Row 0 horizon view
-            hIndex = fragCellIndex;
-            color = debugColors[hIndex];
+        if (fragUseOctahedral != 0) {
+            // Octahedral mode: show grid position as color gradient
+            color = vec3(fragOctaUV.x, fragOctaUV.y, 0.5);
         } else {
-            // Row 1 elevated view - same color but darker
-            hIndex = fragCellIndex - 9;
-            color = debugColors[hIndex] * 0.7;
+            // Legacy mode: discrete cell colors
+            if (fragCellIndex == 8) {
+                color = vec3(1.0);  // Top-down = white
+            } else if (fragCellIndex < 8) {
+                color = debugColors[fragCellIndex];
+            } else {
+                int hIndex = fragCellIndex - 9;
+                color = debugColors[hIndex % 8] * 0.7;
+            }
         }
     }
 

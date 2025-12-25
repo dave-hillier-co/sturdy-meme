@@ -92,6 +92,29 @@ void GuiTreeTab::render(ITreeControl& treeControl) {
             }
 
             ImGui::Spacing();
+            ImGui::Separator();
+            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.6f, 0.8f, 1.0f, 1.0f));
+            ImGui::Text("Octahedral Impostor Mode (Phase 6):");
+            ImGui::PopStyleColor();
+            ImGui::Checkbox("Use Octahedral Mapping", &settings.useOctahedralMapping);
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("Use octahedral (hemi-sphere) impostor atlas instead of legacy 17-view.\n"
+                                  "Provides smoother view transitions and better angle coverage.\n"
+                                  "8x8 grid = 64 views vs 17 discrete views.");
+            }
+            if (settings.useOctahedralMapping) {
+                ImGui::Checkbox("Frame Blending", &settings.enableFrameBlending);
+                if (ImGui::IsItemHovered()) {
+                    ImGui::SetTooltip("Blend between 3 nearest frames for smooth transitions.\n"
+                                      "Eliminates popping when view angle changes.\n"
+                                      "Slightly more expensive (3 texture lookups).");
+                }
+                ImGui::TextColored(ImVec4(0.5f, 1.0f, 0.5f, 1.0f), "  Octahedral: 8x8 grid = 64 views");
+            } else {
+                ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.5f, 1.0f), "  Legacy: 2x9 grid = 17 views");
+            }
+
+            ImGui::Spacing();
             ImGui::Text("Debug:");
 
             // Show actual calculated elevation

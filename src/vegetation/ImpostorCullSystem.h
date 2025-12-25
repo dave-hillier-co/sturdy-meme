@@ -31,6 +31,9 @@ struct alignas(16) ImpostorCullUniforms {
     float errorThresholdFull;           // Screen error threshold for full detail (pixels)
     float errorThresholdImpostor;       // Screen error threshold for impostor (pixels)
     float errorThresholdCull;           // Screen error beyond which to cull
+    uint32_t temporalUpdateMode;        // 0=full, 1=partial, 2=skip (Phase 5)
+    uint32_t temporalUpdateOffset;      // For partial: start index of trees to update
+    uint32_t temporalUpdateCount;       // For partial: number of trees to update this frame
     uint32_t _pad0;
 };
 
@@ -108,6 +111,16 @@ public:
         float errorThresholdCull = 32.0f;
     };
 
+    // Temporal coherence settings (Phase 5)
+    struct TemporalSettings {
+        bool enabled = true;                    // Enable temporal coherence
+        float positionThreshold = 5.0f;         // Camera position change threshold for full update (meters)
+        float rotationThreshold = 10.0f;        // Camera rotation change threshold for full update (degrees)
+        float partialUpdateFraction = 0.1f;     // Fraction of trees to update per frame in partial mode
+        uint32_t framesSinceFullUpdate = 0;     // Counter for forcing periodic full updates
+        uint32_t maxFramesBetweenFullUpdates = 60;  // Force full update every N frames
+    };
+
     /**
      * Record compute dispatch for impostor culling.
      * Call after terrain depth pass and Hi-Z pyramid generation.
@@ -142,6 +155,12 @@ public:
     // Enable/disable Hi-Z culling
     void setHiZEnabled(bool enabled) { hiZEnabled_ = enabled; }
     bool isHiZEnabled() const { return hiZEnabled_; }
+
+    // Temporal coherence settings (Phase 5)
+    TemporalSettings& getTemporalSettings() { return temporalSettings_; }
+    const TemporalSettings& getTemporalSettings() const { return temporalSettings_; }
+    void setTemporalEnabled(bool enabled) { temporalSettings_.enabled = enabled; }
+    bool isTemporalEnabled() const { return temporalSettings_.enabled; }
 
     // Get tree count
     uint32_t getTreeCount() const { return treeCount_; }
@@ -198,11 +217,23 @@ private:
     // Uniform buffers (per-frame)
     BufferUtils::PerFrameBufferSet uniformBuffers_;
 
+    // Visibility cache buffer for temporal coherence (Phase 5)
+    // Stores 1 bit per tree: 1 = visible as impostor, 0 = not visible
+    VkBuffer visibilityCacheBuffer_ = VK_NULL_HANDLE;
+    VmaAllocation visibilityCacheAllocation_ = VK_NULL_HANDLE;
+    VkDeviceSize visibilityCacheBufferSize_ = 0;
+
     // State
     uint32_t treeCount_ = 0;
     uint32_t archetypeCount_ = 0;
     uint32_t lastVisibleCount_ = 0;
     bool hiZEnabled_ = true;
+
+    // Temporal coherence state (Phase 5)
+    TemporalSettings temporalSettings_;
+    glm::vec3 lastCameraPos_{0.0f};
+    glm::vec3 lastCameraDir_{0.0f, 0.0f, -1.0f};
+    uint32_t partialUpdateOffset_ = 0;  // Rolling offset for partial updates
 
     // Track if Hi-Z texture changed
     VkImageView lastHiZView_ = VK_NULL_HANDLE;

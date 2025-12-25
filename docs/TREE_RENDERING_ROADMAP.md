@@ -237,7 +237,7 @@ The existing tree rendering system implements several modern GPU-driven techniqu
 | Phase 2: Hi-Z Occlusion Culling | ✅ Complete | `ImpostorCullSystem`, integrated into `tree_impostor_cull.comp` |
 | Phase 3: Two-Phase Tree-to-Leaf Culling | ✅ Complete | `tree_filter.comp`, `tree_leaf_cull_phase3.comp` with UI toggle |
 | Phase 4: Screen-Space Error LOD | ✅ Complete | `TreeLODSettings.useScreenSpaceError`, FOV-aware LOD selection |
-| Phase 5: Temporal Coherence | ❌ Not Started | No visibility caching |
+| Phase 5: Temporal Coherence | ✅ Complete | `ImpostorCullSystem::TemporalSettings`, visibility cache with UI toggle |
 | Phase 6: Octahedral Impostor Mapping | ❌ Not Started | Still using 17-view atlas |
 
 ### Remaining Bottlenecks
@@ -656,9 +656,18 @@ struct TreeArchetypeLOD {
 
 ---
 
-## Phase 5: Temporal Coherence
+## Phase 5: Temporal Coherence ✅ COMPLETE
 
 **Goal**: Reuse visibility data across frames for stable camera views
+
+**Status**: Fully implemented in `ImpostorCullSystem.h/cpp` and `tree_impostor_cull.comp`.
+
+### Implementation Details
+
+- **Visibility cache**: GPU buffer storing 1 bit per tree (packed into `uint` words)
+- **Camera tracking**: Position and rotation delta calculation per frame
+- **Update modes**: Full (>5m or >10°), partial (10% round-robin), skip (stationary)
+- **UI controls**: Toggle + sliders for position/rotation thresholds and partial update fraction
 
 ### Design
 
@@ -813,18 +822,16 @@ vec4 sampleImpostor(vec3 viewDir, uint archetypeIndex) {
 | 2. Hi-Z Occlusion | ✅ Done | Phase 1 (optional) | Medium | `ImpostorCullSystem.h/cpp`, `tree_impostor_cull.comp` |
 | 3. Two-Phase Culling | ✅ Done | Phase 1 | High | `tree_filter.comp`, `tree_leaf_cull_phase3.comp`, `TreeRenderer.cpp` |
 | 4. Screen-Space Error LOD | ✅ Done | None | Medium | `TreeLODSettings`, `tree_impostor_cull.comp`, `TreeLODSystem.cpp` |
-| 5. Temporal Coherence | ❌ Next | Phase 1, 3 | Medium | `TreeRenderer.cpp`, culling shaders |
-| 6. Octahedral Impostors | ❌ Pending | None | High | `TreeImpostorAtlas.cpp`, `tree_impostor.vert/frag` |
+| 5. Temporal Coherence | ✅ Done | Phase 1, 3 | Medium | `ImpostorCullSystem.h/cpp`, `tree_impostor_cull.comp`, `GuiTreeTab.cpp` |
+| 6. Octahedral Impostors | ❌ Next | None | High | `TreeImpostorAtlas.cpp`, `tree_impostor.vert/frag` |
 
 ### Recommended Next Steps
 
-**Phase 5: Temporal Coherence** is the recommended next phase because:
-- Reduces per-frame culling overhead by reusing visibility from previous frames
-- Benefits from stable camera views (common in gameplay)
-- Complements the screen-space error system for smoother transitions
-
-After Phase 5:
-- **Phase 6** (Octahedral Impostors) - Memory reduction and smoother view transitions
+**Phase 6: Octahedral Impostor Mapping** is the recommended next phase because:
+- Replaces 17-view discrete atlas with continuous octahedral mapping
+- Reduces texture memory by ~60% through shared coverage
+- Eliminates angular seams when rotating around trees
+- Smoother view transitions with bilinear interpolation in spherical space
 
 ---
 

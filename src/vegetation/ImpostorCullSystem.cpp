@@ -79,12 +79,16 @@ void ImpostorCullSystem::cleanup() {
         vmaDestroyBuffer(allocator_, indirectDrawBuffer_, indirectDrawAllocation_);
         indirectDrawBuffer_ = VK_NULL_HANDLE;
     }
+    if (visibilityCacheBuffer_ != VK_NULL_HANDLE) {
+        vmaDestroyBuffer(allocator_, visibilityCacheBuffer_, visibilityCacheAllocation_);
+        visibilityCacheBuffer_ = VK_NULL_HANDLE;
+    }
 
     device_ = VK_NULL_HANDLE;
 }
 
 bool ImpostorCullSystem::createDescriptorSetLayout() {
-    std::array<VkDescriptorSetLayoutBinding, 6> bindings{};
+    std::array<VkDescriptorSetLayoutBinding, 7> bindings{};
 
     // Binding 0: Tree input data (SSBO)
     bindings[0].binding = BINDING_TREE_IMPOSTOR_CULL_INPUT;
@@ -121,6 +125,12 @@ bool ImpostorCullSystem::createDescriptorSetLayout() {
     bindings[5].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     bindings[5].descriptorCount = 1;
     bindings[5].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+
+    // Binding 6: Visibility cache (SSBO) - Phase 5: Temporal Coherence
+    bindings[6].binding = BINDING_TREE_IMPOSTOR_CULL_VISIBILITY;
+    bindings[6].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    bindings[6].descriptorCount = 1;
+    bindings[6].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
 
     VkDescriptorSetLayoutCreateInfo layoutInfo{};
     layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
@@ -244,6 +254,18 @@ bool ImpostorCullSystem::createBuffers() {
         return false;
     }
 
+    // Visibility cache buffer for temporal coherence (Phase 5)
+    // 1 bit per tree, packed into uint32_t words
+    visibilityCacheBufferSize_ = ((maxTrees_ + 31) / 32) * sizeof(uint32_t);
+    bufferInfo.size = visibilityCacheBufferSize_;
+    bufferInfo.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+    allocInfo.usage = VMA_MEMORY_USAGE_GPU_ONLY;
+
+    if (vmaCreateBuffer(allocator_, &bufferInfo, &allocInfo,
+                        &visibilityCacheBuffer_, &visibilityCacheAllocation_, nullptr) != VK_SUCCESS) {
+        return false;
+    }
+
     return true;
 }
 
@@ -323,7 +345,7 @@ void ImpostorCullSystem::updateArchetypeData(const TreeImpostorAtlas* atlas) {
 }
 
 void ImpostorCullSystem::updateDescriptorSets(uint32_t frameIndex, VkImageView hiZPyramidView, VkSampler hiZSampler) {
-    std::array<VkWriteDescriptorSet, 6> writes{};
+    std::array<VkWriteDescriptorSet, 7> writes{};
 
     // Tree input buffer
     VkDescriptorBufferInfo inputInfo{};
@@ -403,6 +425,19 @@ void ImpostorCullSystem::updateDescriptorSets(uint32_t frameIndex, VkImageView h
     writes[5].descriptorCount = 1;
     writes[5].pImageInfo = &hiZInfo;
 
+    // Visibility cache buffer (Phase 5: Temporal Coherence)
+    VkDescriptorBufferInfo visibilityInfo{};
+    visibilityInfo.buffer = visibilityCacheBuffer_;
+    visibilityInfo.offset = 0;
+    visibilityInfo.range = VK_WHOLE_SIZE;
+
+    writes[6].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    writes[6].dstSet = cullDescriptorSets_[frameIndex];
+    writes[6].dstBinding = BINDING_TREE_IMPOSTOR_CULL_VISIBILITY;
+    writes[6].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    writes[6].descriptorCount = 1;
+    writes[6].pBufferInfo = &visibilityInfo;
+
     vkUpdateDescriptorSets(device_, static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
 }
 
@@ -414,6 +449,49 @@ void ImpostorCullSystem::recordCulling(VkCommandBuffer cmd, uint32_t frameIndex,
                                         VkSampler hiZSampler,
                                         const LODParams& lodParams) {
     if (treeCount_ == 0) return;
+
+    // Phase 5: Temporal Coherence - determine update mode based on camera movement
+    uint32_t temporalUpdateMode = 0;  // 0=full, 1=partial, 2=skip
+    uint32_t temporalUpdateOffset = 0;
+    uint32_t temporalUpdateCount = 0;
+
+    if (temporalSettings_.enabled) {
+        // Calculate camera position delta
+        float posDelta = glm::length(cameraPos - lastCameraPos_);
+
+        // Extract camera forward direction from view matrix (third column negated)
+        glm::vec3 cameraDir = -glm::normalize(glm::vec3(viewProjMatrix[0][2], viewProjMatrix[1][2], viewProjMatrix[2][2]));
+        float rotDelta = glm::degrees(glm::acos(glm::clamp(glm::dot(cameraDir, lastCameraDir_), -1.0f, 1.0f)));
+
+        // Increment frame counter
+        temporalSettings_.framesSinceFullUpdate++;
+
+        // Determine update mode
+        if (posDelta > temporalSettings_.positionThreshold ||
+            rotDelta > temporalSettings_.rotationThreshold ||
+            temporalSettings_.framesSinceFullUpdate >= temporalSettings_.maxFramesBetweenFullUpdates) {
+            // Full update: camera moved significantly or periodic forced update
+            temporalUpdateMode = 0;
+            temporalSettings_.framesSinceFullUpdate = 0;
+        } else if (posDelta < 0.1f && rotDelta < 0.5f) {
+            // Skip update: camera nearly stationary
+            temporalUpdateMode = 2;
+        } else {
+            // Partial update: camera moving slowly, update a subset of trees
+            temporalUpdateMode = 1;
+            temporalUpdateCount = static_cast<uint32_t>(
+                static_cast<float>(treeCount_) * temporalSettings_.partialUpdateFraction);
+            temporalUpdateCount = std::max(temporalUpdateCount, 1u);
+            temporalUpdateOffset = partialUpdateOffset_;
+
+            // Advance rolling offset for next frame
+            partialUpdateOffset_ = (partialUpdateOffset_ + temporalUpdateCount) % treeCount_;
+        }
+
+        // Update camera tracking state
+        lastCameraPos_ = cameraPos;
+        lastCameraDir_ = cameraDir;
+    }
 
     // Update uniforms
     ImpostorCullUniforms uniforms{};
@@ -440,6 +518,10 @@ void ImpostorCullSystem::recordCulling(VkCommandBuffer cmd, uint32_t frameIndex,
     uniforms.errorThresholdFull = lodParams.errorThresholdFull;
     uniforms.errorThresholdImpostor = lodParams.errorThresholdImpostor;
     uniforms.errorThresholdCull = lodParams.errorThresholdCull;
+    // Temporal coherence parameters (Phase 5)
+    uniforms.temporalUpdateMode = temporalUpdateMode;
+    uniforms.temporalUpdateOffset = temporalUpdateOffset;
+    uniforms.temporalUpdateCount = temporalUpdateCount;
 
     // Upload uniforms
     void* data;

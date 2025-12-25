@@ -2,6 +2,21 @@
 
 Scaling the tree rendering system to support 1M+ tree instances, based on techniques from SpeedTree, Unreal Engine 5, Nanite, and AAA game development.
 
+## Current Status: 5/6 Phases Complete ✅
+
+The tree rendering optimization roadmap is nearly complete. All core GPU-driven culling and LOD systems are implemented:
+
+| Phase | Status |
+|-------|--------|
+| 1. Spatial Partitioning | ✅ Complete |
+| 2. Hi-Z Occlusion Culling | ✅ Complete |
+| 3. Two-Phase Tree-to-Leaf Culling | ✅ Complete |
+| 4. Screen-Space Error LOD | ✅ Complete |
+| 5. Temporal Coherence | ✅ Complete |
+| **6. Octahedral Impostor Mapping** | ❌ Remaining |
+
+**Only Phase 6 remains** - replacing the 17-view discrete impostor atlas with continuous octahedral mapping for smoother transitions and reduced memory.
+
 ## Core Philosophy: Screen-Space Error Budget
 
 Rather than using fixed distance thresholds for LOD selection, this roadmap adopts a **screen-space error metric** approach inspired by Nanite and modern terrain rendering:
@@ -240,10 +255,10 @@ The existing tree rendering system implements several modern GPU-driven techniqu
 | Phase 5: Temporal Coherence | ✅ Complete | `ImpostorCullSystem::TemporalSettings`, visibility cache with UI toggle |
 | Phase 6: Octahedral Impostor Mapping | ❌ Not Started | Still using 17-view atlas |
 
-### Remaining Bottlenecks
+### Remaining Work
 
-1. **No budget control**: Triangle count can explode in dense forest views
-2. **Uniform shader complexity**: Same PBR shader at all distances
+1. **Octahedral Impostors (Phase 6)**: Current 17-view discrete atlas could be replaced with continuous octahedral mapping for smoother transitions and ~60% memory reduction
+2. **Optional: Shader LOD variants**: Could add simplified PBR variants for distant trees (currently full PBR at all distances)
 
 ---
 

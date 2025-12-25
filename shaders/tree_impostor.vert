@@ -36,6 +36,7 @@ layout(location = 7) flat out uint fragArchetypeIndex;
 layout(location = 8) out vec2 fragOctaUV;           // Continuous octahedral UV
 layout(location = 9) out vec3 fragViewDir;          // View direction for frame lookup
 layout(location = 10) flat out int fragUseOctahedral;  // Mode flag
+layout(location = 11) out vec2 fragLocalUV;         // Billboard local UV for frame sampling
 
 // Legacy atlas layout constants
 const int CELLS_PER_ROW = 9;
@@ -143,14 +144,25 @@ void main() {
     fragArchetypeIndex = archetypeIndex;
     fragViewDir = rotatedViewDir;
 
-    if (useOctahedral) {
-        // Octahedral mode: compute continuous UV
-        fragOctaUV = hemiOctaEncode(rotatedViewDir);
+    // Pass local UV for frame blending
+    fragLocalUV = inTexCoord;
 
-        // Map local UV to atlas UV using octahedral coordinates
-        // The fragment shader will handle frame blending
-        fragTexCoord = fragOctaUV;
-        fragCellIndex = octaGetFrameIndex(rotatedViewDir, OCTA_GRID_SIZE, true);
+    if (useOctahedral) {
+        // Octahedral mode: compute which cell we're viewing from
+        vec2 octaUV = hemiOctaEncode(rotatedViewDir);
+        fragOctaUV = octaUV;
+
+        // Find the cell in the grid
+        float gridSize = float(OCTA_GRID_SIZE);
+        ivec2 cell = ivec2(floor(octaUV * gridSize));
+        cell = clamp(cell, ivec2(0), ivec2(OCTA_GRID_SIZE - 1));
+
+        // Map billboard's local UV (inTexCoord) to the cell position in atlas
+        // Each cell spans 1/gridSize of the atlas
+        vec2 atlasUV = (vec2(cell) + inTexCoord) / gridSize;
+        fragTexCoord = atlasUV;
+
+        fragCellIndex = cell.y * OCTA_GRID_SIZE + cell.x;
     } else {
         // Legacy mode: discrete cell selection
         vec2 toCameraHorizontal = normalize(toCamera.xz);

@@ -1869,3 +1869,22 @@ VkDescriptorSet TreeImpostorAtlas::getPreviewDescriptorSet(uint32_t archetypeInd
 
     return atlasTextures_[archetypeIndex].previewDescriptorSet;
 }
+
+VkDescriptorSet TreeImpostorAtlas::getOctahedralPreviewDescriptorSet(uint32_t archetypeIndex) {
+    if (archetypeIndex >= octaAtlasTextures_.size()) {
+        return VK_NULL_HANDLE;
+    }
+
+    // Lazy initialization for octahedral atlas preview
+    if (octaAtlasTextures_[archetypeIndex].previewDescriptorSet == VK_NULL_HANDLE) {
+        if (octaAtlasTextures_[archetypeIndex].albedoView.get() != VK_NULL_HANDLE) {
+            octaAtlasTextures_[archetypeIndex].previewDescriptorSet = ImGui_ImplVulkan_AddTexture(
+                atlasSampler_.get(),
+                octaAtlasTextures_[archetypeIndex].albedoView.get(),
+                VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
+            );
+        }
+    }
+
+    return octaAtlasTextures_[archetypeIndex].previewDescriptorSet;
+}

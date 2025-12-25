@@ -21,6 +21,7 @@ layout(location = 7) flat in uint fragArchetypeIndex;
 layout(location = 8) in vec2 fragOctaUV;
 layout(location = 9) in vec3 fragViewDir;
 layout(location = 10) flat in int fragUseOctahedral;
+layout(location = 11) in vec2 fragLocalUV;   // Billboard local UV for frame sampling
 
 layout(location = 0) out vec4 outColor;
 
@@ -84,39 +85,66 @@ void main() {
     if (fragUseOctahedral != 0) {
         // Octahedral mode with optional frame blending
         bool enableBlending = push.atlasParams.x > 0.5;
+        float gridSize = float(OCTA_GRID_SIZE);
 
         if (enableBlending) {
-            // Get frame blend data for smooth interpolation
-            OctaFrameData frameData = octaGetFrameBlendData(fragViewDir, OCTA_GRID_SIZE, true);
+            // Encode view direction to find which cells to blend
+            vec2 octaUV = hemiOctaEncode(fragViewDir);
+            vec2 scaledUV = octaUV * gridSize;
+            ivec2 cell = ivec2(floor(scaledUV));
+            cell = clamp(cell, ivec2(0), ivec2(OCTA_GRID_SIZE - 1));
+            vec2 frac = fract(scaledUV);
+
+            // Determine which triangle half we're in (for 3-frame blending)
+            bool upperTriangle = (frac.x + frac.y) < 1.0;
+
+            // Frame indices (cells)
+            ivec2 frame0 = cell;
+            ivec2 frame1 = clamp(cell + ivec2(1, 0), ivec2(0), ivec2(OCTA_GRID_SIZE - 1));
+            ivec2 frame2 = upperTriangle
+                ? clamp(cell + ivec2(0, 1), ivec2(0), ivec2(OCTA_GRID_SIZE - 1))
+                : clamp(cell + ivec2(1, 1), ivec2(0), ivec2(OCTA_GRID_SIZE - 1));
+
+            // Compute blend weights using barycentric-like interpolation
+            float w0, w1, w2;
+            if (upperTriangle) {
+                w0 = 1.0 - frac.x - frac.y;
+                w1 = frac.x;
+                w2 = frac.y;
+            } else {
+                w0 = frac.x + frac.y - 1.0;
+                w1 = 1.0 - frac.y;
+                w2 = 1.0 - frac.x;
+            }
+            // Normalize weights
+            float wSum = w0 + w1 + w2;
+            w0 /= wSum; w1 /= wSum; w2 /= wSum;
+
+            // Compute atlas UVs for each frame using the billboard's local UV
+            vec2 frameUV0 = (vec2(frame0) + fragLocalUV) / gridSize;
+            vec2 frameUV1 = (vec2(frame1) + fragLocalUV) / gridSize;
+            vec2 frameUV2 = (vec2(frame2) + fragLocalUV) / gridSize;
 
             // Sample all 3 frames
-            vec4 albedo0 = sampleOctahedralFrame(frameData.frameUV0, fragArchetypeIndex);
-            vec4 albedo1 = sampleOctahedralFrame(frameData.frameUV1, fragArchetypeIndex);
-            vec4 albedo2 = sampleOctahedralFrame(frameData.frameUV2, fragArchetypeIndex);
+            vec4 albedo0 = sampleOctahedralFrame(frameUV0, fragArchetypeIndex);
+            vec4 albedo1 = sampleOctahedralFrame(frameUV1, fragArchetypeIndex);
+            vec4 albedo2 = sampleOctahedralFrame(frameUV2, fragArchetypeIndex);
 
-            vec4 normal0 = sampleOctahedralNormal(frameData.frameUV0, fragArchetypeIndex);
-            vec4 normal1 = sampleOctahedralNormal(frameData.frameUV1, fragArchetypeIndex);
-            vec4 normal2 = sampleOctahedralNormal(frameData.frameUV2, fragArchetypeIndex);
+            vec4 normal0 = sampleOctahedralNormal(frameUV0, fragArchetypeIndex);
+            vec4 normal1 = sampleOctahedralNormal(frameUV1, fragArchetypeIndex);
+            vec4 normal2 = sampleOctahedralNormal(frameUV2, fragArchetypeIndex);
 
             // Blend based on weights
-            albedoAlpha = albedo0 * frameData.weight0 +
-                          albedo1 * frameData.weight1 +
-                          albedo2 * frameData.weight2;
+            albedoAlpha = albedo0 * w0 + albedo1 * w1 + albedo2 * w2;
+            normalDepthAO = normal0 * w0 + normal1 * w1 + normal2 * w2;
 
-            normalDepthAO = normal0 * frameData.weight0 +
-                            normal1 * frameData.weight1 +
-                            normal2 * frameData.weight2;
-
-            // Improve alpha handling - use max alpha to avoid premature clipping
-            albedoAlpha.a = max(max(albedo0.a * frameData.weight0,
-                                    albedo1.a * frameData.weight1),
-                                albedo2.a * frameData.weight2) +
-                            min(min(albedo0.a * frameData.weight0,
-                                    albedo1.a * frameData.weight1),
-                                albedo2.a * frameData.weight2);
+            // Better alpha handling for blending
+            float maxAlpha = max(max(albedo0.a, albedo1.a), albedo2.a);
+            float blendedAlpha = albedo0.a * w0 + albedo1.a * w1 + albedo2.a * w2;
+            albedoAlpha.a = mix(blendedAlpha, maxAlpha, 0.5);
         } else {
-            // Single frame lookup (no blending)
-            vec3 atlasCoord = vec3(fragOctaUV, float(fragArchetypeIndex));
+            // Single frame lookup (no blending) - use fragTexCoord which is already computed
+            vec3 atlasCoord = vec3(fragTexCoord, float(fragArchetypeIndex));
             albedoAlpha = texture(albedoAlphaAtlas, atlasCoord);
             normalDepthAO = texture(normalDepthAOAtlas, atlasCoord);
         }

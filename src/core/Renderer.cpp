@@ -1081,7 +1081,7 @@ bool Renderer::render(const Camera& camera) {
         screenParams.screenHeight = static_cast<float>(extent.height);
         // Extract tanHalfFOV from projection matrix: proj[1][1] = 1/tan(fov/2)
         screenParams.tanHalfFOV = 1.0f / frame.projection[1][1];
-        systems_->treeLOD()->update(frame.deltaTime, frame.cameraPosition, *systems_->tree(), screenParams);
+        systems_->treeLOD()->update(frame.frameIndex, frame.deltaTime, frame.cameraPosition, *systems_->tree(), screenParams);
     }
 
     // Update water system uniforms

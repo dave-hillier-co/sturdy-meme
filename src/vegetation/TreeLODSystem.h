@@ -10,6 +10,7 @@
 #include "TreeImpostorAtlas.h"
 #include "core/VulkanRAII.h"
 #include "core/DescriptorManager.h"
+#include "core/BufferUtils.h"
 
 class TreeSystem;
 
@@ -77,7 +78,7 @@ public:
     };
 
     // Update LOD states based on camera position
-    void update(float deltaTime, const glm::vec3& cameraPos, const TreeSystem& treeSystem,
+    void update(uint32_t frameIndex, float deltaTime, const glm::vec3& cameraPos, const TreeSystem& treeSystem,
                 const ScreenParams& screenParams = ScreenParams());
 
     // Render impostors (called after full geometry trees are rendered)
@@ -205,11 +206,11 @@ private:
     VmaAllocation billboardIndexAllocation_ = VK_NULL_HANDLE;
     uint32_t billboardIndexCount_ = 0;
 
-    // Instance buffer for impostor rendering
-    VkBuffer instanceBuffer_ = VK_NULL_HANDLE;
-    VmaAllocation instanceAllocation_ = VK_NULL_HANDLE;
+    // Instance buffers for impostor rendering (per-frame to avoid GPU race conditions)
+    BufferUtils::PerFrameBufferSet instanceBuffers_;
     VkDeviceSize instanceBufferSize_ = 0;
     size_t maxInstances_ = 0;
+    uint32_t currentFrameIndex_ = 0;  // Track which frame we're updating
 
     // Current frame data
     std::vector<ImpostorInstanceGPU> visibleImpostors_;

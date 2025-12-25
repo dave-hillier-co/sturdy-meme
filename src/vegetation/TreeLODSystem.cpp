@@ -30,9 +30,7 @@ TreeLODSystem::~TreeLODSystem() {
     if (billboardIndexBuffer_ != VK_NULL_HANDLE) {
         vmaDestroyBuffer(allocator_, billboardIndexBuffer_, billboardIndexAllocation_);
     }
-    if (instanceBuffer_ != VK_NULL_HANDLE) {
-        vmaDestroyBuffer(allocator_, instanceBuffer_, instanceAllocation_);
-    }
+    BufferUtils::destroyBuffers(allocator_, instanceBuffers_);
 }
 
 bool TreeLODSystem::initInternal(const InitInfo& info) {
@@ -614,16 +612,14 @@ bool TreeLODSystem::createInstanceBuffer(size_t maxInstances) {
     maxInstances_ = maxInstances;
     instanceBufferSize_ = maxInstances * sizeof(ImpostorInstanceGPU);
 
-    VkBufferCreateInfo bufferInfo{};
-    bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-    bufferInfo.size = instanceBufferSize_;
-    bufferInfo.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
-
-    VmaAllocationCreateInfo allocInfo{};
-    allocInfo.usage = VMA_MEMORY_USAGE_CPU_TO_GPU;
-
-    return vmaCreateBuffer(allocator_, &bufferInfo, &allocInfo,
-                           &instanceBuffer_, &instanceAllocation_, nullptr) == VK_SUCCESS;
+    // Create per-frame instance buffers to avoid GPU race conditions
+    return BufferUtils::PerFrameBufferBuilder()
+        .setAllocator(allocator_)
+        .setFrameCount(maxFramesInFlight_)
+        .setSize(instanceBufferSize_)
+        .setUsage(VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT)
+        .setMemoryUsage(VMA_MEMORY_USAGE_CPU_TO_GPU)
+        .build(instanceBuffers_);
 }
 
 // Helper function to compute screen-space error
@@ -632,8 +628,9 @@ static float computeScreenError(float worldError, float distance, float screenHe
     return worldError * screenHeight / (2.0f * distance * tanHalfFOV);
 }
 
-void TreeLODSystem::update(float deltaTime, const glm::vec3& cameraPos, const TreeSystem& treeSystem,
+void TreeLODSystem::update(uint32_t frameIndex, float deltaTime, const glm::vec3& cameraPos, const TreeSystem& treeSystem,
                            const ScreenParams& screenParams) {
+    currentFrameIndex_ = frameIndex;
     const auto& settings = getLODSettings();
     const auto& instances = treeSystem.getTreeInstances();
 
@@ -886,17 +883,19 @@ void TreeLODSystem::update(float deltaTime, const glm::vec3& cameraPos, const Tr
 void TreeLODSystem::updateInstanceBuffer(const std::vector<ImpostorInstanceGPU>& instances) {
     if (instances.empty()) return;
 
-    // Resize buffer if needed
+    // Resize buffers if needed (recreates all per-frame buffers)
     if (instances.size() > maxInstances_) {
-        vmaDestroyBuffer(allocator_, instanceBuffer_, instanceAllocation_);
+        BufferUtils::destroyBuffers(allocator_, instanceBuffers_);
         createInstanceBuffer(instances.size() * 2);
     }
 
-    // Upload instance data
-    void* data;
-    vmaMapMemory(allocator_, instanceAllocation_, &data);
-    memcpy(data, instances.data(), instances.size() * sizeof(ImpostorInstanceGPU));
-    vmaUnmapMemory(allocator_, instanceAllocation_);
+    // Upload instance data to current frame's buffer
+    if (currentFrameIndex_ < instanceBuffers_.buffers.size()) {
+        void* data;
+        vmaMapMemory(allocator_, instanceBuffers_.allocations[currentFrameIndex_], &data);
+        memcpy(data, instances.data(), instances.size() * sizeof(ImpostorInstanceGPU));
+        vmaUnmapMemory(allocator_, instanceBuffers_.allocations[currentFrameIndex_]);
+    }
 }
 
 void TreeLODSystem::updateDescriptorSets(uint32_t frameIndex, VkBuffer uniformBuffer,
@@ -958,9 +957,9 @@ void TreeLODSystem::updateDescriptorSets(uint32_t frameIndex, VkBuffer uniformBu
     writes[3].descriptorCount = 1;
     writes[3].pImageInfo = &shadowInfo;
 
-    // Instance buffer (use CPU instance buffer for CPU-culled path)
+    // Instance buffer (use per-frame CPU instance buffer for CPU-culled path)
     VkDescriptorBufferInfo instanceInfo{};
-    instanceInfo.buffer = instanceBuffer_;
+    instanceInfo.buffer = instanceBuffers_.buffers[frameIndex];
     instanceInfo.offset = 0;
     instanceInfo.range = VK_WHOLE_SIZE;
 
@@ -1038,8 +1037,8 @@ void TreeLODSystem::renderImpostors(VkCommandBuffer cmd, uint32_t frameIndex,
                       VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
                       0, sizeof(pushConstants), &pushConstants);
 
-    // Bind buffers
-    VkBuffer vertexBuffers[] = {billboardVertexBuffer_, instanceBuffer_};
+    // Bind buffers (use per-frame instance buffer)
+    VkBuffer vertexBuffers[] = {billboardVertexBuffer_, instanceBuffers_.buffers[frameIndex]};
     VkDeviceSize offsets[] = {0, 0};
     vkCmdBindVertexBuffers(cmd, 0, 2, vertexBuffers, offsets);
     vkCmdBindIndexBuffer(cmd, billboardIndexBuffer_, 0, VK_INDEX_TYPE_UINT32);
@@ -1093,9 +1092,9 @@ void TreeLODSystem::renderImpostorShadows(VkCommandBuffer cmd, uint32_t frameInd
             writes[1].descriptorCount = 1;
             writes[1].pImageInfo = &albedoInfo;
 
-            // Instance buffer (use CPU instance buffer for CPU-culled path)
+            // Instance buffer (use per-frame CPU instance buffer for CPU-culled path)
             VkDescriptorBufferInfo instanceInfo{};
-            instanceInfo.buffer = instanceBuffer_;
+            instanceInfo.buffer = instanceBuffers_.buffers[frameIndex];
             instanceInfo.offset = 0;
             instanceInfo.range = VK_WHOLE_SIZE;
 
@@ -1147,8 +1146,8 @@ void TreeLODSystem::renderImpostorShadows(VkCommandBuffer cmd, uint32_t frameInd
                       VK_SHADER_STAGE_VERTEX_BIT,
                       0, sizeof(pushConstants), &pushConstants);
 
-    // Bind buffers
-    VkBuffer vertexBuffers[] = {billboardVertexBuffer_, instanceBuffer_};
+    // Bind buffers (use per-frame instance buffer)
+    VkBuffer vertexBuffers[] = {billboardVertexBuffer_, instanceBuffers_.buffers[frameIndex]};
     VkDeviceSize offsets[] = {0, 0};
     vkCmdBindVertexBuffers(cmd, 0, 2, vertexBuffers, offsets);
     vkCmdBindIndexBuffer(cmd, billboardIndexBuffer_, 0, VK_INDEX_TYPE_UINT32);

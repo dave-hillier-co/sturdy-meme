@@ -26,22 +26,21 @@ struct ImpostorAtlasConfig {
     static constexpr int ATLAS_HEIGHT = VERTICAL_LEVELS * CELL_SIZE; // 512 pixels
 };
 
-// Octahedral impostor atlas configuration (continuous view mapping)
-// Uses octahedral projection for smooth interpolation across all view angles
-// Single square texture with hemispherical coverage
+// Octahedral impostor atlas configuration (grid-based view mapping)
+// Views arranged in a grid, indexed by octahedral UV at runtime
 struct OctahedralAtlasConfig {
-    static constexpr int RESOLUTION = 2048;           // Square texture resolution (was 512)
-    static constexpr int ATLAS_WIDTH = RESOLUTION;
-    static constexpr int ATLAS_HEIGHT = RESOLUTION;
-    static constexpr int CELL_SIZE = 128;             // Each view covers 128x128 pixels (was 64)
+    // Grid layout: columns × rows of discrete view cells
+    static constexpr int GRID_COLS = 8;               // Azimuth divisions (45° each)
+    static constexpr int GRID_ROWS = 4;               // Elevation divisions (0°, 30°, 60°, 90°)
+    static constexpr int TOTAL_VIEWS = GRID_COLS * GRID_ROWS;  // 32 views
 
-    // Capture settings: number of samples per axis for rendering
-    // More samples = better quality but slower generation
-    static constexpr int CAPTURE_SAMPLES = 32;        // 32x32 = 1024 view directions
+    // Cell and atlas dimensions
+    static constexpr int CELL_SIZE = 256;             // Each view is 256x256 pixels
+    static constexpr int ATLAS_WIDTH = GRID_COLS * CELL_SIZE;   // 2048 pixels
+    static constexpr int ATLAS_HEIGHT = GRID_ROWS * CELL_SIZE;  // 1024 pixels
 
-    // Elevation range for capture (degrees)
-    static constexpr float MIN_ELEVATION = 0.0f;      // Horizon
-    static constexpr float MAX_ELEVATION = 90.0f;     // Top-down
+    // Elevation angles for each row (degrees)
+    static constexpr float ROW_ELEVATIONS[GRID_ROWS] = {0.0f, 30.0f, 60.0f, 90.0f};
 };
 
 // A single tree archetype's impostor data
@@ -189,9 +188,10 @@ private:
         VkDescriptorSet branchDescSet,
         VkDescriptorSet leafDescSet);
 
-    // Render tree to octahedral atlas from a specific view direction
-    void renderToOctahedral(
+    // Render tree to a specific grid cell in the octahedral atlas
+    void renderToOctahedralCell(
         VkCommandBuffer cmd,
+        int col, int row,        // Grid cell position
         float azimuth,           // Horizontal angle (0-360)
         float elevation,         // Vertical angle (0 = horizon, 90 = top-down)
         const Mesh& branchMesh,
@@ -203,9 +203,6 @@ private:
         float baseY,
         VkDescriptorSet branchDescSet,
         VkDescriptorSet leafDescSet);
-
-    // Helper to compute octahedral UV from direction
-    static glm::vec2 octahedralEncode(glm::vec3 dir);
 
     bool createLeafCapturePipeline();
     bool createLeafQuadMesh();

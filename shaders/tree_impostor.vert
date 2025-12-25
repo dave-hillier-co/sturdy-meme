@@ -73,47 +73,47 @@ void main() {
     int cellIndex = 0;
 
     if (useOctahedral) {
-        // === OCTAHEDRAL MAPPING (Phase 6) ===
+        // === OCTAHEDRAL GRID MAPPING (Phase 6) ===
+        // Atlas layout: 8 columns (azimuth) × 4 rows (elevation)
+        // Each cell is 256x256, atlas is 2048x1024
+        const int GRID_COLS = 8;
+        const int GRID_ROWS = 4;
+        const float CELL_WIDTH = 1.0 / float(GRID_COLS);   // 0.125
+        const float CELL_HEIGHT = 1.0 / float(GRID_ROWS);  // 0.25
+
         // Convert view direction to impostor space (apply tree rotation)
         vec3 impostorDir = viewToImpostorSpace(viewDir, rotation);
 
-        // Compute octahedral UV (center of the rendered cell for this view)
-        vec2 centerUV = octahedralEncode(impostorDir);
+        // Compute azimuth angle (0-360°) from horizontal direction
+        float azimuth = atan(impostorDir.x, impostorDir.z);  // -PI to PI
+        azimuth = degrees(azimuth);
+        if (azimuth < 0.0) azimuth += 360.0;
 
-        // Each view was rendered to a 128x128 region in the 2048x2048 atlas
-        // The cell scale maps billboard UV [0,1] to the cell extent
-        const float CELL_SCALE = 128.0 / 2048.0;  // 0.0625
+        // Map azimuth to column index (0-7), with wrapping
+        float colF = azimuth / 45.0;  // 0-8
+        int col = int(mod(round(colF), float(GRID_COLS)));
 
-        // The billboard quad has:
-        // - inPosition.x in [-0.5, 0.5], scaled by hSize*2 for world position
-        // - inPosition.y in [0, 1], scaled by vSize*2 for world position
-        // - inTexCoord.x in [0, 1], inTexCoord.y in [1, 0] (y inverted)
-
-        // Map billboard UV to cell UV offset
-        // Center of billboard (inTexCoord = 0.5, 0.5) should sample center of cell
-        vec2 uvOffset = inTexCoord - vec2(0.5);
-
-        // Account for aspect ratio: the billboard has dimensions 2*hSize x 2*vSize
-        // but the atlas cell is square (64x64). We need to scale the offset so that
-        // the billboard's extent maps to the correct portion of the cell.
-        // If the tree is taller than wide (vSize > hSize), the horizontal extent
-        // uses less of the cell width.
-        float aspectRatio = hSize / max(vSize, 0.001);
-        if (aspectRatio < 1.0) {
-            // Tree is taller than wide - horizontal content is centered
-            uvOffset.x *= aspectRatio;
+        // Map elevation to row index (0-3)
+        // Row elevations: 0°, 30°, 60°, 90°
+        int row;
+        if (elevation >= 75.0) {
+            row = 3;  // Top-down (90°)
+        } else if (elevation >= 45.0) {
+            row = 2;  // 60°
+        } else if (elevation >= 15.0) {
+            row = 1;  // 30°
         } else {
-            // Tree is wider than tall - vertical content is centered
-            uvOffset.y /= aspectRatio;
+            row = 0;  // Horizon (0°)
         }
 
-        atlasUV = centerUV + uvOffset * CELL_SCALE;
+        // Compute cell UV (top-left corner of cell in atlas)
+        vec2 cellOrigin = vec2(float(col) * CELL_WIDTH, float(row) * CELL_HEIGHT);
 
-        // Clamp to valid atlas range
-        atlasUV = clamp(atlasUV, vec2(0.0), vec2(1.0));
+        // Map billboard inTexCoord to position within cell
+        atlasUV = cellOrigin + inTexCoord * vec2(CELL_WIDTH, CELL_HEIGHT);
 
         fragTexCoord = atlasUV;
-        fragCellIndex = -1;  // Not using cell index for octahedral
+        fragCellIndex = row * GRID_COLS + col;
     } else {
         // === LEGACY 17-VIEW MAPPING ===
         vec2 toCameraHorizontal = normalize(toCamera.xz);

@@ -276,32 +276,41 @@ void GuiTreeTab::render(ITreeControl& treeControl) {
 
                     // Preview popup window
                     if (ImGui::BeginPopup("OctAtlasPreview")) {
-                        ImGui::Text("Octahedral Impostor Atlas (%dx%d, continuous mapping)",
-                                   OctahedralAtlasConfig::ATLAS_WIDTH, OctahedralAtlasConfig::ATLAS_HEIGHT);
+                        ImGui::Text("Octahedral Grid Atlas (%dx%d, %dx%d cells)",
+                                   OctahedralAtlasConfig::ATLAS_WIDTH, OctahedralAtlasConfig::ATLAS_HEIGHT,
+                                   OctahedralAtlasConfig::GRID_COLS, OctahedralAtlasConfig::GRID_ROWS);
                         ImGui::Separator();
 
-                        // Draw atlas scaled to fit (512 display size for 2048 atlas)
-                        const float displayScale = 0.25f;  // Show at 1/4 scale
+                        // Draw atlas scaled to fit
+                        const float displayScale = 0.5f;  // Show at half scale
                         ImVec2 imageSize(OctahedralAtlasConfig::ATLAS_WIDTH * displayScale,
                                         OctahedralAtlasConfig::ATLAS_HEIGHT * displayScale);
 
                         ImVec2 cursorPos = ImGui::GetCursorScreenPos();
                         ImGui::Image(reinterpret_cast<ImTextureID>(octPreviewSet), imageSize);
 
-                        // Draw center cross to show UV origin
+                        // Draw grid lines to show cells
                         ImDrawList* drawList = ImGui::GetWindowDrawList();
-                        ImU32 crossColor = IM_COL32(255, 255, 255, 100);
-                        float centerX = cursorPos.x + imageSize.x * 0.5f;
-                        float centerY = cursorPos.y + imageSize.y * 0.5f;
-                        drawList->AddLine(ImVec2(centerX, cursorPos.y),
-                                         ImVec2(centerX, cursorPos.y + imageSize.y), crossColor);
-                        drawList->AddLine(ImVec2(cursorPos.x, centerY),
-                                         ImVec2(cursorPos.x + imageSize.x, centerY), crossColor);
+                        ImU32 gridColor = IM_COL32(255, 255, 255, 80);
+                        float cellW = imageSize.x / OctahedralAtlasConfig::GRID_COLS;
+                        float cellH = imageSize.y / OctahedralAtlasConfig::GRID_ROWS;
+
+                        // Vertical lines
+                        for (int x = 0; x <= OctahedralAtlasConfig::GRID_COLS; x++) {
+                            float px = cursorPos.x + x * cellW;
+                            drawList->AddLine(ImVec2(px, cursorPos.y),
+                                            ImVec2(px, cursorPos.y + imageSize.y), gridColor);
+                        }
+                        // Horizontal lines
+                        for (int y = 0; y <= OctahedralAtlasConfig::GRID_ROWS; y++) {
+                            float py = cursorPos.y + y * cellH;
+                            drawList->AddLine(ImVec2(cursorPos.x, py),
+                                            ImVec2(cursorPos.x + imageSize.x, py), gridColor);
+                        }
 
                         ImGui::Spacing();
-                        ImGui::Text("Center: top-down view (90 deg elevation)");
-                        ImGui::Text("Edges: horizon views (0 deg elevation)");
-                        ImGui::Text("Continuous octahedral projection allows smooth interpolation");
+                        ImGui::Text("Columns: 8 azimuth angles (0-315 deg, 45 deg steps)");
+                        ImGui::Text("Rows: 4 elevation angles (0, 30, 60, 90 deg)");
 
                         ImGui::EndPopup();
                     }

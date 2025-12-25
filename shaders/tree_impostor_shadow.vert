@@ -59,30 +59,40 @@ void main() {
     vec2 atlasUV;
 
     if (useOctahedral) {
-        // === OCTAHEDRAL MAPPING (Phase 6) ===
+        // === OCTAHEDRAL GRID MAPPING (Phase 6) ===
+        // Atlas layout: 8 columns (azimuth) × 4 rows (elevation)
+        const int GRID_COLS = 8;
+        const int GRID_ROWS = 4;
+        const float CELL_WIDTH = 1.0 / float(GRID_COLS);
+        const float CELL_HEIGHT = 1.0 / float(GRID_ROWS);
+
         // Convert sun direction to impostor space (apply tree rotation)
         vec3 impostorDir = viewToImpostorSpace(sunDir, rotation);
 
-        // Compute octahedral UV (center of the rendered cell for this view)
-        vec2 centerUV = octahedralEncode(impostorDir);
+        // Compute azimuth angle from horizontal direction
+        float azimuth = atan(impostorDir.x, impostorDir.z);
+        azimuth = degrees(azimuth);
+        if (azimuth < 0.0) azimuth += 360.0;
 
-        // Each view was rendered to a 128x128 region in the 2048x2048 atlas
-        const float CELL_SCALE = 128.0 / 2048.0;
+        // Map azimuth to column index
+        float colF = azimuth / 45.0;
+        int col = int(mod(round(colF), float(GRID_COLS)));
 
-        // Map billboard UV to cell UV offset
-        vec2 uvOffset = inTexCoord - vec2(0.5);
-
-        // Account for aspect ratio: billboard has dimensions 2*hSize x 2*vSize
-        // but the atlas cell is square (128x128)
-        float aspectRatio = hSize / max(vSize, 0.001);
-        if (aspectRatio < 1.0) {
-            uvOffset.x *= aspectRatio;
+        // Map elevation to row index
+        int row;
+        if (sunElevation >= 75.0) {
+            row = 3;
+        } else if (sunElevation >= 45.0) {
+            row = 2;
+        } else if (sunElevation >= 15.0) {
+            row = 1;
         } else {
-            uvOffset.y /= aspectRatio;
+            row = 0;
         }
 
-        atlasUV = centerUV + uvOffset * CELL_SCALE;
-        atlasUV = clamp(atlasUV, vec2(0.0), vec2(1.0));
+        // Compute cell UV
+        vec2 cellOrigin = vec2(float(col) * CELL_WIDTH, float(row) * CELL_HEIGHT);
+        atlasUV = cellOrigin + inTexCoord * vec2(CELL_WIDTH, CELL_HEIGHT);
         fragTexCoord = atlasUV;
     } else {
         // === LEGACY 17-VIEW MAPPING ===

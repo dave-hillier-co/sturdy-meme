@@ -1082,24 +1082,6 @@ bool TreeImpostorAtlas::createOctahedralAtlasResources(uint32_t archetypeIndex) 
     return true;
 }
 
-glm::vec2 TreeImpostorAtlas::octahedralEncode(glm::vec3 dir) {
-    // Project onto octahedron: |x| + |y| + |z| = 1
-    dir /= (std::abs(dir.x) + std::abs(dir.y) + std::abs(dir.z));
-
-    // For lower hemisphere (Y < 0), fold onto upper hemisphere
-    if (dir.y < 0.0f) {
-        float signX = dir.x >= 0.0f ? 1.0f : -1.0f;
-        float signZ = dir.z >= 0.0f ? 1.0f : -1.0f;
-        float newX = (1.0f - std::abs(dir.z)) * signX;
-        float newZ = (1.0f - std::abs(dir.x)) * signZ;
-        dir.x = newX;
-        dir.z = newZ;
-    }
-
-    // Map from [-1,1] to [0,1]
-    return glm::vec2(dir.x * 0.5f + 0.5f, dir.z * 0.5f + 0.5f);
-}
-
 bool TreeImpostorAtlas::createSampler() {
     VkSamplerCreateInfo samplerInfo{};
     samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
@@ -1425,22 +1407,19 @@ int32_t TreeImpostorAtlas::generateArchetype(
     vkCmdBindVertexBuffers(cmd, 0, 1, vertexBuffers, offsets);
     vkCmdBindIndexBuffer(cmd, branchMesh.getIndexBuffer(), 0, VK_INDEX_TYPE_UINT32);
 
-    // For octahedral atlas, we render multiple views covering the hemisphere
-    // Each view is rendered to a portion of the 512x512 atlas based on its octahedral UV
-    // We use a grid of views and let bilinear filtering interpolate at runtime
-    const int OCT_AZIMUTH_STEPS = 16;   // 16 horizontal angles (22.5 degrees each)
-    const int OCT_ELEVATION_STEPS = 8;  // 8 elevation levels from horizon to top-down
+    // For octahedral atlas, render views in a grid layout
+    // Grid: GRID_COLS columns (azimuth) × GRID_ROWS rows (elevation)
+    constexpr float ROW_ELEVATIONS[] = {0.0f, 30.0f, 60.0f, 90.0f};
 
-    for (int elev = 0; elev < OCT_ELEVATION_STEPS; elev++) {
-        // Elevation from 0 (horizon) to 90 (top-down)
-        float elevation = 90.0f * static_cast<float>(elev) / static_cast<float>(OCT_ELEVATION_STEPS - 1);
+    for (int row = 0; row < OctahedralAtlasConfig::GRID_ROWS; row++) {
+        float elevation = ROW_ELEVATIONS[row];
 
-        for (int az = 0; az < OCT_AZIMUTH_STEPS; az++) {
-            float azimuth = 360.0f * static_cast<float>(az) / static_cast<float>(OCT_AZIMUTH_STEPS);
+        for (int col = 0; col < OctahedralAtlasConfig::GRID_COLS; col++) {
+            float azimuth = 360.0f * static_cast<float>(col) / static_cast<float>(OctahedralAtlasConfig::GRID_COLS);
 
-            renderToOctahedral(cmd, azimuth, elevation, branchMesh, leafInstances,
-                              horizontalRadius, boundingSphereRadius, halfHeight,
-                              centerHeight, minBounds.y, captureDescSet, leafCaptureDescSet);
+            renderToOctahedralCell(cmd, col, row, azimuth, elevation, branchMesh, leafInstances,
+                                   horizontalRadius, boundingSphereRadius, halfHeight,
+                                   centerHeight, minBounds.y, captureDescSet, leafCaptureDescSet);
         }
     }
 
@@ -1653,8 +1632,9 @@ void TreeImpostorAtlas::renderToCell(
     }
 }
 
-void TreeImpostorAtlas::renderToOctahedral(
+void TreeImpostorAtlas::renderToOctahedralCell(
     VkCommandBuffer cmd,
+    int col, int row,
     float azimuth,
     float elevation,
     const Mesh& branchMesh,
@@ -1671,30 +1651,10 @@ void TreeImpostorAtlas::renderToOctahedral(
     float azimuthRad = glm::radians(azimuth);
     float elevationRad = glm::radians(elevation);
 
-    glm::vec3 viewDir(
-        std::cos(elevationRad) * std::sin(azimuthRad),
-        std::sin(elevationRad),
-        std::cos(elevationRad) * std::cos(azimuthRad)
-    );
-
-    // Compute octahedral UV for this view direction
-    glm::vec2 octUV = octahedralEncode(viewDir);
-
-    // Each view covers a region of the atlas based on the sampling density
-    // With 16 azimuth x 8 elevation steps, each cell is roughly:
-    // - horizontal: 512 / 16 = 32 pixels at equator, less at poles
-    // - vertical: similar, with adjustment for octahedral distortion
-
-    // Compute viewport region for this view
-    // Use cell size from config
+    // Compute viewport for this grid cell (discrete, non-overlapping)
     const int CELL_SIZE = OctahedralAtlasConfig::CELL_SIZE;
-
-    int viewportX = static_cast<int>(octUV.x * OctahedralAtlasConfig::ATLAS_WIDTH - CELL_SIZE / 2);
-    int viewportY = static_cast<int>(octUV.y * OctahedralAtlasConfig::ATLAS_HEIGHT - CELL_SIZE / 2);
-
-    // Clamp to atlas bounds
-    viewportX = std::max(0, std::min(viewportX, OctahedralAtlasConfig::ATLAS_WIDTH - CELL_SIZE));
-    viewportY = std::max(0, std::min(viewportY, OctahedralAtlasConfig::ATLAS_HEIGHT - CELL_SIZE));
+    int viewportX = col * CELL_SIZE;
+    int viewportY = row * CELL_SIZE;
 
     VkViewport viewport{};
     viewport.x = static_cast<float>(viewportX);

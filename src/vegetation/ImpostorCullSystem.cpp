@@ -71,14 +71,8 @@ void ImpostorCullSystem::cleanup() {
         vmaDestroyBuffer(allocator_, archetypeBuffer_, archetypeAllocation_);
         archetypeBuffer_ = VK_NULL_HANDLE;
     }
-    if (visibleImpostorBuffer_ != VK_NULL_HANDLE) {
-        vmaDestroyBuffer(allocator_, visibleImpostorBuffer_, visibleImpostorAllocation_);
-        visibleImpostorBuffer_ = VK_NULL_HANDLE;
-    }
-    if (indirectDrawBuffer_ != VK_NULL_HANDLE) {
-        vmaDestroyBuffer(allocator_, indirectDrawBuffer_, indirectDrawAllocation_);
-        indirectDrawBuffer_ = VK_NULL_HANDLE;
-    }
+    BufferUtils::destroyBuffers(allocator_, visibleImpostorBuffers_);
+    BufferUtils::destroyBuffers(allocator_, indirectDrawBuffers_);
     if (visibilityCacheBuffer_ != VK_NULL_HANDLE) {
         vmaDestroyBuffer(allocator_, visibilityCacheBuffer_, visibilityCacheAllocation_);
         visibilityCacheBuffer_ = VK_NULL_HANDLE;
@@ -222,25 +216,27 @@ bool ImpostorCullSystem::createBuffers() {
         return false;
     }
 
-    // Visible impostor output buffer
+    // Visible impostor output buffers (per-frame)
     visibleImpostorBufferSize_ = maxTrees_ * sizeof(ImpostorOutputData);
-    bufferInfo.size = visibleImpostorBufferSize_;
-    bufferInfo.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
-    allocInfo.usage = VMA_MEMORY_USAGE_GPU_ONLY;
-
-    if (vmaCreateBuffer(allocator_, &bufferInfo, &allocInfo,
-                        &visibleImpostorBuffer_, &visibleImpostorAllocation_, nullptr) != VK_SUCCESS) {
+    if (!BufferUtils::PerFrameBufferBuilder()
+            .setAllocator(allocator_)
+            .setFrameCount(maxFramesInFlight_)
+            .setSize(visibleImpostorBufferSize_)
+            .setUsage(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT)
+            .setMemoryUsage(VMA_MEMORY_USAGE_GPU_ONLY)
+            .build(visibleImpostorBuffers_)) {
         return false;
     }
 
-    // Indirect draw command buffer
-    bufferInfo.size = sizeof(VkDrawIndexedIndirectCommand);
-    bufferInfo.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT |
-                       VK_BUFFER_USAGE_TRANSFER_DST_BIT;
-    allocInfo.usage = VMA_MEMORY_USAGE_GPU_ONLY;
-
-    if (vmaCreateBuffer(allocator_, &bufferInfo, &allocInfo,
-                        &indirectDrawBuffer_, &indirectDrawAllocation_, nullptr) != VK_SUCCESS) {
+    // Indirect draw command buffers (per-frame)
+    if (!BufferUtils::PerFrameBufferBuilder()
+            .setAllocator(allocator_)
+            .setFrameCount(maxFramesInFlight_)
+            .setSize(sizeof(VkDrawIndexedIndirectCommand))
+            .setUsage(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT |
+                      VK_BUFFER_USAGE_TRANSFER_DST_BIT)
+            .setMemoryUsage(VMA_MEMORY_USAGE_GPU_ONLY)
+            .build(indirectDrawBuffers_)) {
         return false;
     }
 
@@ -365,9 +361,9 @@ void ImpostorCullSystem::updateDescriptorSets(uint32_t frameIndex, VkImageView h
     writes[0].descriptorCount = 1;
     writes[0].pBufferInfo = &inputInfo;
 
-    // Visible output buffer
+    // Visible output buffer (per-frame)
     VkDescriptorBufferInfo outputInfo{};
-    outputInfo.buffer = visibleImpostorBuffer_;
+    outputInfo.buffer = visibleImpostorBuffers_.buffers[frameIndex];
     outputInfo.offset = 0;
     outputInfo.range = VK_WHOLE_SIZE;
 
@@ -378,9 +374,9 @@ void ImpostorCullSystem::updateDescriptorSets(uint32_t frameIndex, VkImageView h
     writes[1].descriptorCount = 1;
     writes[1].pBufferInfo = &outputInfo;
 
-    // Indirect draw buffer
+    // Indirect draw buffer (per-frame)
     VkDescriptorBufferInfo indirectInfo{};
-    indirectInfo.buffer = indirectDrawBuffer_;
+    indirectInfo.buffer = indirectDrawBuffers_.buffers[frameIndex];
     indirectInfo.offset = 0;
     indirectInfo.range = VK_WHOLE_SIZE;
 
@@ -548,7 +544,7 @@ void ImpostorCullSystem::recordCulling(VkCommandBuffer cmd, uint32_t frameIndex,
     resetCmd.firstIndex = 0;
     resetCmd.vertexOffset = 0;
     resetCmd.firstInstance = 0;
-    vkCmdFillBuffer(cmd, indirectDrawBuffer_, 0, sizeof(VkDrawIndexedIndirectCommand), 0);
+    vkCmdFillBuffer(cmd, indirectDrawBuffers_.buffers[frameIndex], 0, sizeof(VkDrawIndexedIndirectCommand), 0);
 
     // Memory barrier to ensure fill is complete before compute
     VkMemoryBarrier fillBarrier{};

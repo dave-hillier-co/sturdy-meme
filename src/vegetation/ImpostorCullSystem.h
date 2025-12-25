@@ -144,9 +144,13 @@ public:
                        VkSampler hiZSampler,
                        const LODParams& lodParams);
 
-    // Get output buffers for rendering
-    VkBuffer getVisibleImpostorBuffer() const { return visibleImpostorBuffer_; }
-    VkBuffer getIndirectDrawBuffer() const { return indirectDrawBuffer_; }
+    // Get output buffers for rendering (per-frame to avoid race conditions)
+    VkBuffer getVisibleImpostorBuffer(uint32_t frameIndex) const {
+        return visibleImpostorBuffers_.buffers[frameIndex];
+    }
+    VkBuffer getIndirectDrawBuffer(uint32_t frameIndex) const {
+        return indirectDrawBuffers_.buffers[frameIndex];
+    }
 
     // Get visible impostor count (read from GPU - may be stale)
     uint32_t getVisibleCount() const { return lastVisibleCount_; }
@@ -207,14 +211,12 @@ private:
     VmaAllocation archetypeAllocation_ = VK_NULL_HANDLE;
     VkDeviceSize archetypeBufferSize_ = 0;
 
-    // Visible impostor output buffer
-    VkBuffer visibleImpostorBuffer_ = VK_NULL_HANDLE;
-    VmaAllocation visibleImpostorAllocation_ = VK_NULL_HANDLE;
+    // Visible impostor output buffers (per-frame to avoid GPU race conditions)
+    BufferUtils::PerFrameBufferSet visibleImpostorBuffers_;
     VkDeviceSize visibleImpostorBufferSize_ = 0;
 
-    // Indirect draw command buffer
-    VkBuffer indirectDrawBuffer_ = VK_NULL_HANDLE;
-    VmaAllocation indirectDrawAllocation_ = VK_NULL_HANDLE;
+    // Indirect draw command buffers (per-frame to avoid GPU race conditions)
+    BufferUtils::PerFrameBufferSet indirectDrawBuffers_;
 
     // Uniform buffers (per-frame)
     BufferUtils::PerFrameBufferSet uniformBuffers_;

@@ -82,69 +82,69 @@ void GuiTreeTab::render(ITreeControl& treeControl) {
                                       "When disabled, uses fixed distance thresholds.");
                 }
 
-            ImGui::Spacing();
-            if (settings.useScreenSpaceError) {
-                // Screen-space error LOD controls
-                ImGui::Text("Screen-Space Error Thresholds:");
-                ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f), "  (High error = close/large, Low error = far/small)");
-
-                ImGui::SliderFloat("Full Detail Error", &settings.errorThresholdFull, 0.5f, 20.0f, "%.1f px");
-                if (ImGui::IsItemHovered()) {
-                    ImGui::SetTooltip("Screen error threshold for full geometry.\n"
-                                      "Trees with error ABOVE this use full geometry.\n"
-                                      "Higher = use geometry only when very close.");
-                }
-
-                // Clamp impostor error to be less than full detail error
-                float maxImpostorError = settings.errorThresholdFull - 0.1f;
-                if (settings.errorThresholdImpostor > maxImpostorError) {
-                    settings.errorThresholdImpostor = maxImpostorError;
-                }
-                ImGui::SliderFloat("Impostor Error", &settings.errorThresholdImpostor, 0.1f, maxImpostorError, "%.2f px");
-                if (ImGui::IsItemHovered()) {
-                    ImGui::SetTooltip("Screen error threshold for impostor LOD.\n"
-                                      "Trees with error BELOW this use full impostor.\n"
-                                      "Blend occurs between Full Detail and Impostor thresholds.");
-                }
-
-                // Clamp cull error to be less than impostor error
-                float maxCullError = settings.errorThresholdImpostor - 0.01f;
-                if (settings.errorThresholdCull > maxCullError) {
-                    settings.errorThresholdCull = maxCullError;
-                }
-                ImGui::SliderFloat("Cull Error", &settings.errorThresholdCull, 0.01f, maxCullError, "%.3f px");
-                if (ImGui::IsItemHovered()) {
-                    ImGui::SetTooltip("Screen error threshold for culling.\n"
-                                      "Trees with error BELOW this are culled entirely.\n"
-                                      "Very small on screen = not worth rendering.");
-                }
-            } else {
-                // Distance-based LOD controls
-                ImGui::Text("Distance Thresholds:");
-                ImGui::SliderFloat("Full Detail Dist", &settings.fullDetailDistance, 0.0f, 500.0f, "%.1f m");
-                if (ImGui::IsItemHovered()) {
-                    ImGui::SetTooltip("Trees closer than this use full geometry.");
-                }
-                ImGui::SliderFloat("Impostor Dist", &settings.impostorDistance, 0.0f, 10000.0f, "%.0f m");
-                if (ImGui::IsItemHovered()) {
-                    ImGui::SetTooltip("Trees beyond this distance are culled.");
-                }
-                ImGui::SliderFloat("Hysteresis", &settings.hysteresis, 0.0f, 20.0f, "%.1f m");
-                if (ImGui::IsItemHovered()) {
-                    ImGui::SetTooltip("Dead zone to prevent flickering at LOD boundaries.");
-                }
-
                 ImGui::Spacing();
-                ImGui::Text("Blending:");
-                ImGui::SliderFloat("Blend Range", &settings.blendRange, 0.0f, 50.0f, "%.1f m");
-                if (ImGui::IsItemHovered()) {
-                    ImGui::SetTooltip("Distance over which to blend between geometry and impostor.");
+                if (settings.useScreenSpaceError) {
+                    // Screen-space error LOD controls
+                    ImGui::Text("Screen-Space Error Thresholds:");
+                    ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f), "  (High error = close/large, Low error = far/small)");
+
+                    ImGui::SliderFloat("Full Detail Error", &settings.errorThresholdFull, 0.5f, 20.0f, "%.1f px");
+                    if (ImGui::IsItemHovered()) {
+                        ImGui::SetTooltip("Screen error threshold for full geometry.\n"
+                                          "Trees with error ABOVE this use full geometry.\n"
+                                          "Higher = use geometry only when very close.");
+                    }
+
+                    // Clamp impostor error to be less than full detail error
+                    float maxImpostorError = settings.errorThresholdFull - 0.1f;
+                    if (settings.errorThresholdImpostor > maxImpostorError) {
+                        settings.errorThresholdImpostor = maxImpostorError;
+                    }
+                    ImGui::SliderFloat("Impostor Error", &settings.errorThresholdImpostor, 0.1f, maxImpostorError, "%.2f px");
+                    if (ImGui::IsItemHovered()) {
+                        ImGui::SetTooltip("Screen error threshold for impostor LOD.\n"
+                                          "Trees with error BELOW this use full impostor.\n"
+                                          "Blend occurs between Full Detail and Impostor thresholds.");
+                    }
+
+                    // Clamp cull error to be less than impostor error
+                    float maxCullError = settings.errorThresholdImpostor - 0.01f;
+                    if (settings.errorThresholdCull > maxCullError) {
+                        settings.errorThresholdCull = maxCullError;
+                    }
+                    ImGui::SliderFloat("Cull Error", &settings.errorThresholdCull, 0.01f, maxCullError, "%.3f px");
+                    if (ImGui::IsItemHovered()) {
+                        ImGui::SetTooltip("Screen error threshold for culling.\n"
+                                          "Trees with error BELOW this are culled entirely.\n"
+                                          "Very small on screen = not worth rendering.");
+                    }
+                } else {
+                    // Distance-based LOD controls
+                    ImGui::Text("Distance Thresholds:");
+                    ImGui::SliderFloat("Full Detail Dist", &settings.fullDetailDistance, 0.0f, 500.0f, "%.1f m");
+                    if (ImGui::IsItemHovered()) {
+                        ImGui::SetTooltip("Trees closer than this use full geometry.");
+                    }
+                    ImGui::SliderFloat("Impostor Dist", &settings.impostorDistance, 0.0f, 10000.0f, "%.0f m");
+                    if (ImGui::IsItemHovered()) {
+                        ImGui::SetTooltip("Trees beyond this distance are culled.");
+                    }
+                    ImGui::SliderFloat("Hysteresis", &settings.hysteresis, 0.0f, 20.0f, "%.1f m");
+                    if (ImGui::IsItemHovered()) {
+                        ImGui::SetTooltip("Dead zone to prevent flickering at LOD boundaries.");
+                    }
+
+                    ImGui::Spacing();
+                    ImGui::Text("Blending:");
+                    ImGui::SliderFloat("Blend Range", &settings.blendRange, 0.0f, 50.0f, "%.1f m");
+                    if (ImGui::IsItemHovered()) {
+                        ImGui::SetTooltip("Distance over which to blend between geometry and impostor.");
+                    }
+                    ImGui::SliderFloat("Blend Exponent", &settings.blendExponent, 0.0f, 3.0f, "%.2f");
+                    if (ImGui::IsItemHovered()) {
+                        ImGui::SetTooltip("Blend curve: 1.0 = linear, >1 = faster falloff.");
+                    }
                 }
-                ImGui::SliderFloat("Blend Exponent", &settings.blendExponent, 0.0f, 3.0f, "%.2f");
-                if (ImGui::IsItemHovered()) {
-                    ImGui::SetTooltip("Blend curve: 1.0 = linear, >1 = faster falloff.");
-                }
-            }
             } // End of Auto mode settings
 
             ImGui::Spacing();

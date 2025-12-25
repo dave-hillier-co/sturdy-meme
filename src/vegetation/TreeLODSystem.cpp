@@ -701,15 +701,16 @@ void TreeLODSystem::update(uint32_t frameIndex, float deltaTime, const glm::vec3
                     float halfHeight = treeHeight * 0.5f;
                     float boundingSphereRadius = glm::length(extent) * 0.5f;
                     // Use separate horizontal and vertical sizes
-                    float hSize = std::max(horizontalRadius, boundingSphereRadius) * 1.15f * tree.scale;
-                    float vSize = halfHeight * 1.15f * tree.scale;
+                    // hSize based on canopy radius only (not bounding sphere which includes height)
+                    // vSize uses smaller margin - tree doesn't need much vertical padding
+                    float hSize = horizontalRadius * 1.15f * tree.scale;
+                    float vSize = halfHeight * 1.02f * tree.scale;  // Only 2% margin
                     instance.hSize = hSize;
                     instance.vSize = vSize;
-                    // Center billboard at tree's visual center
-                    // The 1.15 margin provides room for tilted views - when billboard
-                    // tilts toward camera, tree needs extra space to fit within quad
-                    float centerY = (minB.y + maxB.y) * 0.5f;
-                    instance.baseOffset = centerY * tree.scale;
+                    // Position billboard so bottom is at tree base
+                    // Billboard extends from baseOffset-vSize to baseOffset+vSize
+                    // We want bottom at minB.y, so: baseOffset - vSize = minB.y
+                    instance.baseOffset = (minB.y * tree.scale) + vSize;
                 } else {
                     const auto* archetype = impostorAtlas_->getArchetype(state.archetypeIndex);
                     float projSize = (archetype ? archetype->boundingSphereRadius * 1.15f : 10.0f) * tree.scale;
@@ -830,14 +831,14 @@ void TreeLODSystem::update(uint32_t frameIndex, float deltaTime, const glm::vec3
                 float boundingSphereRadius = glm::length(extent) * 0.5f;
 
                 // Use separate horizontal and vertical sizes
-                float hSize = std::max(horizontalRadius, boundingSphereRadius) * 1.15f * tree.scale;
-                float vSize = halfHeight * 1.15f * tree.scale;
+                // hSize based on canopy radius only (not bounding sphere which includes height)
+                // vSize uses smaller margin - tree doesn't need much vertical padding
+                float hSize = horizontalRadius * 1.15f * tree.scale;
+                float vSize = halfHeight * 1.02f * tree.scale;  // Only 2% margin
                 instance.hSize = hSize;
                 instance.vSize = vSize;
-                // Center billboard at tree's visual center
-                // The 1.15 margin provides room for tilted views
-                float centerY = (minB.y + maxB.y) * 0.5f;
-                instance.baseOffset = centerY * tree.scale;
+                // Position billboard so bottom is at tree base
+                instance.baseOffset = (minB.y * tree.scale) + vSize;
             } else {
                 // Fallback to archetype bounds if mesh not available
                 const auto* archetype = impostorAtlas_->getArchetype(state.archetypeIndex);

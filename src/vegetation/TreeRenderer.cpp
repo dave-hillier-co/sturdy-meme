@@ -1458,6 +1458,11 @@ void TreeRenderer::recordLeafCulling(VkCommandBuffer cmd, uint32_t frameIndex,
         return;
     }
 
+    // Skip leaf culling in forced Impostor mode (leaves won't render anyway)
+    if (lodSystem && lodSystem->getLODSettings().simpleLODMode == SimpleLODMode::Impostor) {
+        return;
+    }
+
     const auto& leafRenderables = treeSystem.getLeafRenderables();
     const auto& leafDrawInfo = treeSystem.getLeafDrawInfo();
 
@@ -1942,6 +1947,11 @@ void TreeRenderer::render(VkCommandBuffer cmd, uint32_t frameIndex, float time,
         branchTreeIndex++;
     }
 
+    // Skip all leaf rendering in forced Impostor mode (only impostors should render)
+    if (lodSystem && lodSystem->getLODSettings().simpleLODMode == SimpleLODMode::Impostor) {
+        return;
+    }
+
     // Render leaves with instancing
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, leafPipeline_.get());
 
@@ -2072,7 +2082,10 @@ void TreeRenderer::renderShadows(VkCommandBuffer cmd, uint32_t frameIndex,
     }
 
     // Render leaf shadows with instancing (with alpha test)
-    if (!leafRenderables.empty() && leafShadowPipeline_.get() != VK_NULL_HANDLE) {
+    // Skip in forced Impostor mode (only impostor shadows should render)
+    bool skipLeafShadows = lodSystem &&
+                           lodSystem->getLODSettings().simpleLODMode == SimpleLODMode::Impostor;
+    if (!leafRenderables.empty() && leafShadowPipeline_.get() != VK_NULL_HANDLE && !skipLeafShadows) {
         vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, leafShadowPipeline_.get());
 
         const Mesh& sharedQuad = treeSystem.getSharedLeafQuadMesh();

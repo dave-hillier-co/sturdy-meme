@@ -3,6 +3,7 @@
 #include "TreeOptions.h"
 #include "Mesh.h"
 #include "ShaderLoader.h"
+#include "core/DescriptorManager.h"
 #include "shaders/bindings.h"
 
 #include <SDL3/SDL.h>
@@ -24,12 +25,7 @@ TreeLODSystem::~TreeLODSystem() {
 
     vkDeviceWaitIdle(device_);
 
-    if (billboardVertexBuffer_ != VK_NULL_HANDLE) {
-        vmaDestroyBuffer(allocator_, billboardVertexBuffer_, billboardVertexAllocation_);
-    }
-    if (billboardIndexBuffer_ != VK_NULL_HANDLE) {
-        vmaDestroyBuffer(allocator_, billboardIndexBuffer_, billboardIndexAllocation_);
-    }
+    // billboardVertexBuffer_ and billboardIndexBuffer_ are ManagedBuffer (RAII - auto-cleanup)
     BufferUtils::destroyBuffers(allocator_, instanceBuffers_);
 }
 
@@ -129,142 +125,54 @@ bool TreeLODSystem::createBillboardMesh() {
     std::array<uint32_t, 6> indices = {0, 1, 2, 2, 3, 0};
     billboardIndexCount_ = 6;
 
-    // Create vertex buffer
     VkDeviceSize vertexSize = sizeof(vertices);
+    VkDeviceSize indexSize = sizeof(indices);
+
+    // Create vertex buffer (RAII - ManagedBuffer auto-cleanup)
     VkBufferCreateInfo vertexBufferInfo{};
     vertexBufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
     vertexBufferInfo.size = vertexSize;
     vertexBufferInfo.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
 
-    VmaAllocationCreateInfo allocInfo{};
-    allocInfo.usage = VMA_MEMORY_USAGE_GPU_ONLY;
+    VmaAllocationCreateInfo gpuAllocInfo{};
+    gpuAllocInfo.usage = VMA_MEMORY_USAGE_GPU_ONLY;
 
-    if (vmaCreateBuffer(allocator_, &vertexBufferInfo, &allocInfo,
-                        &billboardVertexBuffer_, &billboardVertexAllocation_, nullptr) != VK_SUCCESS) {
+    if (!ManagedBuffer::create(allocator_, vertexBufferInfo, gpuAllocInfo, billboardVertexBuffer_)) {
         return false;
     }
 
-    // Create index buffer
-    VkDeviceSize indexSize = sizeof(indices);
+    // Create index buffer (RAII - ManagedBuffer auto-cleanup)
     VkBufferCreateInfo indexBufferInfo{};
     indexBufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
     indexBufferInfo.size = indexSize;
     indexBufferInfo.usage = VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
 
-    if (vmaCreateBuffer(allocator_, &indexBufferInfo, &allocInfo,
-                        &billboardIndexBuffer_, &billboardIndexAllocation_, nullptr) != VK_SUCCESS) {
+    if (!ManagedBuffer::create(allocator_, indexBufferInfo, gpuAllocInfo, billboardIndexBuffer_)) {
         return false;
     }
 
-    // Upload data via staging buffer
-    VkBuffer stagingBuffer;
-    VmaAllocation stagingAllocation;
-    VkDeviceSize stagingSize = vertexSize + indexSize;
+    // Upload data via staging buffer helper
+    std::vector<BufferUtils::StagingUpload> uploads = {
+        {vertices.data(), vertexSize, billboardVertexBuffer_.get()},
+        {indices.data(), indexSize, billboardIndexBuffer_.get()}
+    };
 
-    VkBufferCreateInfo stagingInfo{};
-    stagingInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-    stagingInfo.size = stagingSize;
-    stagingInfo.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
-
-    VmaAllocationCreateInfo stagingAllocInfo{};
-    stagingAllocInfo.usage = VMA_MEMORY_USAGE_CPU_ONLY;
-
-    if (vmaCreateBuffer(allocator_, &stagingInfo, &stagingAllocInfo,
-                        &stagingBuffer, &stagingAllocation, nullptr) != VK_SUCCESS) {
-        return false;
-    }
-
-    void* data;
-    vmaMapMemory(allocator_, stagingAllocation, &data);
-    memcpy(data, vertices.data(), vertexSize);
-    memcpy(static_cast<char*>(data) + vertexSize, indices.data(), indexSize);
-    vmaUnmapMemory(allocator_, stagingAllocation);
-
-    // Copy to GPU buffers
-    VkCommandBufferAllocateInfo cmdAllocInfo{};
-    cmdAllocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-    cmdAllocInfo.commandPool = commandPool_;
-    cmdAllocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-    cmdAllocInfo.commandBufferCount = 1;
-
-    VkCommandBuffer cmd;
-    vkAllocateCommandBuffers(device_, &cmdAllocInfo, &cmd);
-
-    VkCommandBufferBeginInfo beginInfo{};
-    beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-    beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-    vkBeginCommandBuffer(cmd, &beginInfo);
-
-    VkBufferCopy vertexCopy{};
-    vertexCopy.size = vertexSize;
-    vkCmdCopyBuffer(cmd, stagingBuffer, billboardVertexBuffer_, 1, &vertexCopy);
-
-    VkBufferCopy indexCopy{};
-    indexCopy.srcOffset = vertexSize;
-    indexCopy.size = indexSize;
-    vkCmdCopyBuffer(cmd, stagingBuffer, billboardIndexBuffer_, 1, &indexCopy);
-
-    vkEndCommandBuffer(cmd);
-
-    VkSubmitInfo submitInfo{};
-    submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-    submitInfo.commandBufferCount = 1;
-    submitInfo.pCommandBuffers = &cmd;
-
-    vkQueueSubmit(graphicsQueue_, 1, &submitInfo, VK_NULL_HANDLE);
-    vkQueueWaitIdle(graphicsQueue_);
-
-    vkFreeCommandBuffers(device_, commandPool_, 1, &cmd);
-    vmaDestroyBuffer(allocator_, stagingBuffer, stagingAllocation);
-
-    return true;
+    return BufferUtils::uploadViaStaging(allocator_, commandPool_, graphicsQueue_, uploads);
 }
 
 bool TreeLODSystem::createDescriptorSetLayout() {
-    std::array<VkDescriptorSetLayoutBinding, 5> bindings{};
-
-    // UBO
-    bindings[0].binding = BINDING_TREE_IMPOSTOR_UBO;
-    bindings[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    bindings[0].descriptorCount = 1;
-    bindings[0].stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
-
-    // Albedo atlas
-    bindings[1].binding = BINDING_TREE_IMPOSTOR_ALBEDO;
-    bindings[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    bindings[1].descriptorCount = 1;
-    bindings[1].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-
-    // Normal atlas
-    bindings[2].binding = BINDING_TREE_IMPOSTOR_NORMAL;
-    bindings[2].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    bindings[2].descriptorCount = 1;
-    bindings[2].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-
-    // Shadow map
-    bindings[3].binding = BINDING_TREE_IMPOSTOR_SHADOW_MAP;
-    bindings[3].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    bindings[3].descriptorCount = 1;
-    bindings[3].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-
-    // Instance buffer (SSBO for GPU-culled rendering)
-    bindings[4].binding = BINDING_TREE_IMPOSTOR_INSTANCES;
-    bindings[4].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    bindings[4].descriptorCount = 1;
-    bindings[4].stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
-
-    VkDescriptorSetLayoutCreateInfo layoutInfo{};
-    layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-    layoutInfo.bindingCount = static_cast<uint32_t>(bindings.size());
-    layoutInfo.pBindings = bindings.data();
-
-    VkDescriptorSetLayout layout;
-    if (vkCreateDescriptorSetLayout(device_, &layoutInfo, nullptr, &layout) != VK_SUCCESS) {
-        return false;
-    }
-    impostorDescriptorSetLayout_ = ManagedDescriptorSetLayout(makeUniqueDescriptorSetLayout(device_, layout));
-
-    return true;
+    return DescriptorManager::LayoutBuilder(device_)
+        .addBinding(BINDING_TREE_IMPOSTOR_UBO, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+                    VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT)
+        .addBinding(BINDING_TREE_IMPOSTOR_ALBEDO, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+                    VK_SHADER_STAGE_FRAGMENT_BIT)
+        .addBinding(BINDING_TREE_IMPOSTOR_NORMAL, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+                    VK_SHADER_STAGE_FRAGMENT_BIT)
+        .addBinding(BINDING_TREE_IMPOSTOR_SHADOW_MAP, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+                    VK_SHADER_STAGE_FRAGMENT_BIT)
+        .addBinding(BINDING_TREE_IMPOSTOR_INSTANCES, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+                    VK_SHADER_STAGE_VERTEX_BIT)
+        .buildManaged(impostorDescriptorSetLayout_);
 }
 
 bool TreeLODSystem::createPipeline() {
@@ -274,20 +182,10 @@ bool TreeLODSystem::createPipeline() {
     pushConstant.offset = 0;
     pushConstant.size = sizeof(glm::vec4) * 3;  // cameraPos, lodParams, atlasParams
 
-    VkDescriptorSetLayout layouts[] = {impostorDescriptorSetLayout_.get()};
-
-    VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
-    pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-    pipelineLayoutInfo.setLayoutCount = 1;
-    pipelineLayoutInfo.pSetLayouts = layouts;
-    pipelineLayoutInfo.pushConstantRangeCount = 1;
-    pipelineLayoutInfo.pPushConstantRanges = &pushConstant;
-
-    VkPipelineLayout pipelineLayout;
-    if (vkCreatePipelineLayout(device_, &pipelineLayoutInfo, nullptr, &pipelineLayout) != VK_SUCCESS) {
+    if (!DescriptorManager::createManagedPipelineLayout(
+            device_, impostorDescriptorSetLayout_.get(), impostorPipelineLayout_, {pushConstant})) {
         return false;
     }
-    impostorPipelineLayout_ = ManagedPipelineLayout(makeUniquePipelineLayout(device_, pipelineLayout));
 
     // Load shaders
     std::string shaderPath = resourcePath_ + "/shaders/";
@@ -399,7 +297,7 @@ bool TreeLODSystem::createPipeline() {
     pipelineInfo.pDepthStencilState = &depthStencil;
     pipelineInfo.pColorBlendState = &colorBlending;
     pipelineInfo.pDynamicState = &dynamicState;
-    pipelineInfo.layout = pipelineLayout;
+    pipelineInfo.layout = impostorPipelineLayout_.get();
     pipelineInfo.renderPass = hdrRenderPass_;
     pipelineInfo.subpass = 0;
 
@@ -425,38 +323,14 @@ bool TreeLODSystem::allocateDescriptorSets() {
 bool TreeLODSystem::createShadowDescriptorSetLayout() {
     // Shadow pass needs UBO (for cascade matrices), albedo atlas (for alpha testing),
     // and instance buffer (for GPU-culled rendering)
-    std::array<VkDescriptorSetLayoutBinding, 3> bindings{};
-
-    // UBO
-    bindings[0].binding = BINDING_TREE_IMPOSTOR_UBO;
-    bindings[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    bindings[0].descriptorCount = 1;
-    bindings[0].stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
-
-    // Albedo atlas (for alpha testing in fragment shader)
-    bindings[1].binding = BINDING_TREE_IMPOSTOR_ALBEDO;
-    bindings[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    bindings[1].descriptorCount = 1;
-    bindings[1].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-
-    // Instance buffer (SSBO for GPU-culled rendering)
-    bindings[2].binding = BINDING_TREE_IMPOSTOR_SHADOW_INSTANCES;
-    bindings[2].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    bindings[2].descriptorCount = 1;
-    bindings[2].stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
-
-    VkDescriptorSetLayoutCreateInfo layoutInfo{};
-    layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-    layoutInfo.bindingCount = static_cast<uint32_t>(bindings.size());
-    layoutInfo.pBindings = bindings.data();
-
-    VkDescriptorSetLayout layout;
-    if (vkCreateDescriptorSetLayout(device_, &layoutInfo, nullptr, &layout) != VK_SUCCESS) {
-        return false;
-    }
-    shadowDescriptorSetLayout_ = ManagedDescriptorSetLayout(makeUniqueDescriptorSetLayout(device_, layout));
-
-    return true;
+    return DescriptorManager::LayoutBuilder(device_)
+        .addBinding(BINDING_TREE_IMPOSTOR_UBO, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+                    VK_SHADER_STAGE_VERTEX_BIT)
+        .addBinding(BINDING_TREE_IMPOSTOR_ALBEDO, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+                    VK_SHADER_STAGE_FRAGMENT_BIT)
+        .addBinding(BINDING_TREE_IMPOSTOR_SHADOW_INSTANCES, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+                    VK_SHADER_STAGE_VERTEX_BIT)
+        .buildManaged(shadowDescriptorSetLayout_);
 }
 
 bool TreeLODSystem::createShadowPipeline() {
@@ -466,20 +340,10 @@ bool TreeLODSystem::createShadowPipeline() {
     pushConstant.offset = 0;
     pushConstant.size = sizeof(glm::vec4) * 3 + sizeof(int);  // cameraPos, lodParams, atlasParams, cascadeIndex
 
-    VkDescriptorSetLayout layouts[] = {shadowDescriptorSetLayout_.get()};
-
-    VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
-    pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-    pipelineLayoutInfo.setLayoutCount = 1;
-    pipelineLayoutInfo.pSetLayouts = layouts;
-    pipelineLayoutInfo.pushConstantRangeCount = 1;
-    pipelineLayoutInfo.pPushConstantRanges = &pushConstant;
-
-    VkPipelineLayout pipelineLayout;
-    if (vkCreatePipelineLayout(device_, &pipelineLayoutInfo, nullptr, &pipelineLayout) != VK_SUCCESS) {
+    if (!DescriptorManager::createManagedPipelineLayout(
+            device_, shadowDescriptorSetLayout_.get(), shadowPipelineLayout_, {pushConstant})) {
         return false;
     }
-    shadowPipelineLayout_ = ManagedPipelineLayout(makeUniquePipelineLayout(device_, pipelineLayout));
 
     // Load shadow shaders
     std::string shaderPath = resourcePath_ + "/shaders/";
@@ -585,7 +449,7 @@ bool TreeLODSystem::createShadowPipeline() {
     pipelineInfo.pDepthStencilState = &depthStencil;
     pipelineInfo.pColorBlendState = &colorBlending;
     pipelineInfo.pDynamicState = &dynamicState;
-    pipelineInfo.layout = pipelineLayout;
+    pipelineInfo.layout = shadowPipelineLayout_.get();
     pipelineInfo.renderPass = shadowRenderPass_;
     pipelineInfo.subpass = 0;
 
@@ -918,70 +782,14 @@ void TreeLODSystem::updateDescriptorSets(uint32_t frameIndex, VkBuffer uniformBu
     if (albedoView == VK_NULL_HANDLE || normalView == VK_NULL_HANDLE) return;
     if (instanceBuffers_.buffers[frameIndex] == VK_NULL_HANDLE) return;
 
-    std::array<VkWriteDescriptorSet, 5> writes{};
-
-    VkDescriptorBufferInfo uboInfo{};
-    uboInfo.buffer = uniformBuffer;
-    uboInfo.offset = 0;
-    uboInfo.range = VK_WHOLE_SIZE;
-
-    writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    writes[0].dstSet = impostorDescriptorSets_[frameIndex];
-    writes[0].dstBinding = BINDING_TREE_IMPOSTOR_UBO;
-    writes[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    writes[0].descriptorCount = 1;
-    writes[0].pBufferInfo = &uboInfo;
-
-    VkDescriptorImageInfo albedoInfo{};
-    albedoInfo.sampler = atlasSampler;
-    albedoInfo.imageView = albedoView;
-    albedoInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-
-    writes[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    writes[1].dstSet = impostorDescriptorSets_[frameIndex];
-    writes[1].dstBinding = BINDING_TREE_IMPOSTOR_ALBEDO;
-    writes[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    writes[1].descriptorCount = 1;
-    writes[1].pImageInfo = &albedoInfo;
-
-    VkDescriptorImageInfo normalInfo{};
-    normalInfo.sampler = atlasSampler;
-    normalInfo.imageView = normalView;
-    normalInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-
-    writes[2].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    writes[2].dstSet = impostorDescriptorSets_[frameIndex];
-    writes[2].dstBinding = BINDING_TREE_IMPOSTOR_NORMAL;
-    writes[2].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    writes[2].descriptorCount = 1;
-    writes[2].pImageInfo = &normalInfo;
-
-    VkDescriptorImageInfo shadowInfo{};
-    shadowInfo.sampler = shadowSampler;
-    shadowInfo.imageView = shadowMap;
-    shadowInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-
-    writes[3].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    writes[3].dstSet = impostorDescriptorSets_[frameIndex];
-    writes[3].dstBinding = BINDING_TREE_IMPOSTOR_SHADOW_MAP;
-    writes[3].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    writes[3].descriptorCount = 1;
-    writes[3].pImageInfo = &shadowInfo;
-
-    // Instance buffer (use per-frame CPU instance buffer for CPU-culled path)
-    VkDescriptorBufferInfo instanceInfo{};
-    instanceInfo.buffer = instanceBuffers_.buffers[frameIndex];
-    instanceInfo.offset = 0;
-    instanceInfo.range = VK_WHOLE_SIZE;
-
-    writes[4].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    writes[4].dstSet = impostorDescriptorSets_[frameIndex];
-    writes[4].dstBinding = BINDING_TREE_IMPOSTOR_INSTANCES;
-    writes[4].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    writes[4].descriptorCount = 1;
-    writes[4].pBufferInfo = &instanceInfo;
-
-    vkUpdateDescriptorSets(device_, static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
+    DescriptorManager::SetWriter(device_, impostorDescriptorSets_[frameIndex])
+        .writeBuffer(BINDING_TREE_IMPOSTOR_UBO, uniformBuffer, 0, VK_WHOLE_SIZE)
+        .writeImage(BINDING_TREE_IMPOSTOR_ALBEDO, albedoView, atlasSampler)
+        .writeImage(BINDING_TREE_IMPOSTOR_NORMAL, normalView, atlasSampler)
+        .writeImage(BINDING_TREE_IMPOSTOR_SHADOW_MAP, shadowMap, shadowSampler)
+        .writeBuffer(BINDING_TREE_IMPOSTOR_INSTANCES, instanceBuffers_.buffers[frameIndex],
+                     0, VK_WHOLE_SIZE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+        .update();
 }
 
 void TreeLODSystem::renderImpostors(VkCommandBuffer cmd, uint32_t frameIndex,
@@ -1064,10 +872,10 @@ void TreeLODSystem::renderImpostors(VkCommandBuffer cmd, uint32_t frameIndex,
                       0, sizeof(pushConstants), &pushConstants);
 
     // Bind buffers (use per-frame instance buffer)
-    VkBuffer vertexBuffers[] = {billboardVertexBuffer_, instanceBuffers_.buffers[frameIndex]};
+    VkBuffer vertexBuffers[] = {billboardVertexBuffer_.get(), instanceBuffers_.buffers[frameIndex]};
     VkDeviceSize offsets[] = {0, 0};
     vkCmdBindVertexBuffers(cmd, 0, 2, vertexBuffers, offsets);
-    vkCmdBindIndexBuffer(cmd, billboardIndexBuffer_, 0, VK_INDEX_TYPE_UINT32);
+    vkCmdBindIndexBuffer(cmd, billboardIndexBuffer_.get(), 0, VK_INDEX_TYPE_UINT32);
 
     // Draw instanced
     vkCmdDrawIndexed(cmd, billboardIndexCount_, static_cast<uint32_t>(visibleImpostors_.size()), 0, 0, 0);
@@ -1085,53 +893,16 @@ void TreeLODSystem::renderImpostorShadows(VkCommandBuffer cmd, uint32_t frameInd
 
     // Update shadow descriptor set with UBO, albedo atlas, and instance buffer
     if (!shadowDescriptorSets_.empty() && impostorAtlas_->getArchetypeCount() > 0) {
-        // Use the same array view as main rendering (octahedral when enabled)
         VkImageView albedoView = impostorAtlas_->getAlbedoAtlasArrayView();
         VkSampler atlasSampler = impostorAtlas_->getAtlasSampler();
 
         if (albedoView != VK_NULL_HANDLE) {
-            std::array<VkWriteDescriptorSet, 3> writes{};
-
-            // UBO
-            VkDescriptorBufferInfo uboInfo{};
-            uboInfo.buffer = uniformBuffer;
-            uboInfo.offset = 0;
-            uboInfo.range = VK_WHOLE_SIZE;
-
-            writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-            writes[0].dstSet = shadowDescriptorSets_[frameIndex];
-            writes[0].dstBinding = BINDING_TREE_IMPOSTOR_UBO;
-            writes[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-            writes[0].descriptorCount = 1;
-            writes[0].pBufferInfo = &uboInfo;
-
-            // Albedo atlas
-            VkDescriptorImageInfo albedoInfo{};
-            albedoInfo.sampler = atlasSampler;
-            albedoInfo.imageView = albedoView;
-            albedoInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-
-            writes[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-            writes[1].dstSet = shadowDescriptorSets_[frameIndex];
-            writes[1].dstBinding = BINDING_TREE_IMPOSTOR_ALBEDO;
-            writes[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-            writes[1].descriptorCount = 1;
-            writes[1].pImageInfo = &albedoInfo;
-
-            // Instance buffer (use per-frame CPU instance buffer for CPU-culled path)
-            VkDescriptorBufferInfo instanceInfo{};
-            instanceInfo.buffer = instanceBuffers_.buffers[frameIndex];
-            instanceInfo.offset = 0;
-            instanceInfo.range = VK_WHOLE_SIZE;
-
-            writes[2].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-            writes[2].dstSet = shadowDescriptorSets_[frameIndex];
-            writes[2].dstBinding = BINDING_TREE_IMPOSTOR_SHADOW_INSTANCES;
-            writes[2].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-            writes[2].descriptorCount = 1;
-            writes[2].pBufferInfo = &instanceInfo;
-
-            vkUpdateDescriptorSets(device_, static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
+            DescriptorManager::SetWriter(device_, shadowDescriptorSets_[frameIndex])
+                .writeBuffer(BINDING_TREE_IMPOSTOR_UBO, uniformBuffer, 0, VK_WHOLE_SIZE)
+                .writeImage(BINDING_TREE_IMPOSTOR_ALBEDO, albedoView, atlasSampler)
+                .writeBuffer(BINDING_TREE_IMPOSTOR_SHADOW_INSTANCES, instanceBuffers_.buffers[frameIndex],
+                             0, VK_WHOLE_SIZE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+                .update();
         }
     }
 
@@ -1173,10 +944,10 @@ void TreeLODSystem::renderImpostorShadows(VkCommandBuffer cmd, uint32_t frameInd
                       0, sizeof(pushConstants), &pushConstants);
 
     // Bind buffers (use per-frame instance buffer)
-    VkBuffer vertexBuffers[] = {billboardVertexBuffer_, instanceBuffers_.buffers[frameIndex]};
+    VkBuffer vertexBuffers[] = {billboardVertexBuffer_.get(), instanceBuffers_.buffers[frameIndex]};
     VkDeviceSize offsets[] = {0, 0};
     vkCmdBindVertexBuffers(cmd, 0, 2, vertexBuffers, offsets);
-    vkCmdBindIndexBuffer(cmd, billboardIndexBuffer_, 0, VK_INDEX_TYPE_UINT32);
+    vkCmdBindIndexBuffer(cmd, billboardIndexBuffer_.get(), 0, VK_INDEX_TYPE_UINT32);
 
     // Draw instanced
     vkCmdDrawIndexed(cmd, billboardIndexCount_, static_cast<uint32_t>(visibleImpostors_.size()), 0, 0, 0);
@@ -1200,70 +971,14 @@ void TreeLODSystem::renderImpostorsGPUCulled(VkCommandBuffer cmd, uint32_t frame
 
     if (albedoView == VK_NULL_HANDLE || normalView == VK_NULL_HANDLE) return;
 
-    std::array<VkWriteDescriptorSet, 5> writes{};
-
-    VkDescriptorBufferInfo uniformInfo{};
-    uniformInfo.buffer = uniformBuffer;
-    uniformInfo.offset = 0;
-    uniformInfo.range = VK_WHOLE_SIZE;
-
-    writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    writes[0].dstSet = impostorDescriptorSets_[frameIndex];
-    writes[0].dstBinding = BINDING_TREE_IMPOSTOR_UBO;
-    writes[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    writes[0].descriptorCount = 1;
-    writes[0].pBufferInfo = &uniformInfo;
-
-    VkDescriptorImageInfo albedoInfo{};
-    albedoInfo.sampler = atlasSampler;
-    albedoInfo.imageView = albedoView;
-    albedoInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-
-    writes[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    writes[1].dstSet = impostorDescriptorSets_[frameIndex];
-    writes[1].dstBinding = BINDING_TREE_IMPOSTOR_ALBEDO;
-    writes[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    writes[1].descriptorCount = 1;
-    writes[1].pImageInfo = &albedoInfo;
-
-    VkDescriptorImageInfo normalInfo{};
-    normalInfo.sampler = atlasSampler;
-    normalInfo.imageView = normalView;
-    normalInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-
-    writes[2].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    writes[2].dstSet = impostorDescriptorSets_[frameIndex];
-    writes[2].dstBinding = BINDING_TREE_IMPOSTOR_NORMAL;
-    writes[2].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    writes[2].descriptorCount = 1;
-    writes[2].pImageInfo = &normalInfo;
-
-    VkDescriptorImageInfo shadowInfo{};
-    shadowInfo.sampler = shadowSampler;
-    shadowInfo.imageView = shadowMap;
-    shadowInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-
-    writes[3].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    writes[3].dstSet = impostorDescriptorSets_[frameIndex];
-    writes[3].dstBinding = BINDING_TREE_IMPOSTOR_SHADOW_MAP;
-    writes[3].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    writes[3].descriptorCount = 1;
-    writes[3].pImageInfo = &shadowInfo;
-
-    // Use GPU-culled instance buffer
-    VkDescriptorBufferInfo instanceInfo{};
-    instanceInfo.buffer = gpuInstanceBuffer;
-    instanceInfo.offset = 0;
-    instanceInfo.range = VK_WHOLE_SIZE;
-
-    writes[4].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    writes[4].dstSet = impostorDescriptorSets_[frameIndex];
-    writes[4].dstBinding = BINDING_TREE_IMPOSTOR_INSTANCES;
-    writes[4].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    writes[4].descriptorCount = 1;
-    writes[4].pBufferInfo = &instanceInfo;
-
-    vkUpdateDescriptorSets(device_, static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
+    DescriptorManager::SetWriter(device_, impostorDescriptorSets_[frameIndex])
+        .writeBuffer(BINDING_TREE_IMPOSTOR_UBO, uniformBuffer, 0, VK_WHOLE_SIZE)
+        .writeImage(BINDING_TREE_IMPOSTOR_ALBEDO, albedoView, atlasSampler)
+        .writeImage(BINDING_TREE_IMPOSTOR_NORMAL, normalView, atlasSampler)
+        .writeImage(BINDING_TREE_IMPOSTOR_SHADOW_MAP, shadowMap, shadowSampler)
+        .writeBuffer(BINDING_TREE_IMPOSTOR_INSTANCES, gpuInstanceBuffer,
+                     0, VK_WHOLE_SIZE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+        .update();
 
     // Bind pipeline
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, impostorPipeline_.get());
@@ -1316,9 +1031,10 @@ void TreeLODSystem::renderImpostorsGPUCulled(VkCommandBuffer cmd, uint32_t frame
                       0, sizeof(pushConstants), &pushConstants);
 
     // Bind vertex and index buffers
+    VkBuffer vb = billboardVertexBuffer_.get();
     VkDeviceSize offset = 0;
-    vkCmdBindVertexBuffers(cmd, 0, 1, &billboardVertexBuffer_, &offset);
-    vkCmdBindIndexBuffer(cmd, billboardIndexBuffer_, 0, VK_INDEX_TYPE_UINT32);
+    vkCmdBindVertexBuffers(cmd, 0, 1, &vb, &offset);
+    vkCmdBindIndexBuffer(cmd, billboardIndexBuffer_.get(), 0, VK_INDEX_TYPE_UINT32);
 
     // Draw using indirect buffer from GPU culling
     vkCmdDrawIndexedIndirect(cmd, indirectDrawBuffer, 0, 1, sizeof(VkDrawIndexedIndirectCommand));
@@ -1342,46 +1058,12 @@ void TreeLODSystem::renderImpostorShadowsGPUCulled(VkCommandBuffer cmd, uint32_t
     VkSampler atlasSampler = impostorAtlas_->getAtlasSampler();
     if (albedoView == VK_NULL_HANDLE) return;
 
-    std::array<VkWriteDescriptorSet, 3> writes{};
-
-    VkDescriptorBufferInfo uniformInfo{};
-    uniformInfo.buffer = uniformBuffer;
-    uniformInfo.offset = 0;
-    uniformInfo.range = VK_WHOLE_SIZE;
-
-    writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    writes[0].dstSet = shadowDescriptorSets_[frameIndex];
-    writes[0].dstBinding = 0;
-    writes[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    writes[0].descriptorCount = 1;
-    writes[0].pBufferInfo = &uniformInfo;
-
-    VkDescriptorImageInfo albedoInfo{};
-    albedoInfo.sampler = atlasSampler;
-    albedoInfo.imageView = albedoView;
-    albedoInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-
-    writes[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    writes[1].dstSet = shadowDescriptorSets_[frameIndex];
-    writes[1].dstBinding = 1;
-    writes[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    writes[1].descriptorCount = 1;
-    writes[1].pImageInfo = &albedoInfo;
-
-    // GPU-culled instance buffer
-    VkDescriptorBufferInfo instanceInfo{};
-    instanceInfo.buffer = gpuInstanceBuffer;
-    instanceInfo.offset = 0;
-    instanceInfo.range = VK_WHOLE_SIZE;
-
-    writes[2].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    writes[2].dstSet = shadowDescriptorSets_[frameIndex];
-    writes[2].dstBinding = BINDING_TREE_IMPOSTOR_SHADOW_INSTANCES;
-    writes[2].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    writes[2].descriptorCount = 1;
-    writes[2].pBufferInfo = &instanceInfo;
-
-    vkUpdateDescriptorSets(device_, static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
+    DescriptorManager::SetWriter(device_, shadowDescriptorSets_[frameIndex])
+        .writeBuffer(BINDING_TREE_IMPOSTOR_UBO, uniformBuffer, 0, VK_WHOLE_SIZE)
+        .writeImage(BINDING_TREE_IMPOSTOR_ALBEDO, albedoView, atlasSampler)
+        .writeBuffer(BINDING_TREE_IMPOSTOR_SHADOW_INSTANCES, gpuInstanceBuffer,
+                     0, VK_WHOLE_SIZE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+        .update();
 
     // Bind shadow pipeline
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, shadowPipeline_.get());
@@ -1406,9 +1088,10 @@ void TreeLODSystem::renderImpostorShadowsGPUCulled(VkCommandBuffer cmd, uint32_t
                       0, sizeof(pushConstants), &pushConstants);
 
     // Bind vertex and index buffers
+    VkBuffer vb = billboardVertexBuffer_.get();
     VkDeviceSize offset = 0;
-    vkCmdBindVertexBuffers(cmd, 0, 1, &billboardVertexBuffer_, &offset);
-    vkCmdBindIndexBuffer(cmd, billboardIndexBuffer_, 0, VK_INDEX_TYPE_UINT32);
+    vkCmdBindVertexBuffers(cmd, 0, 1, &vb, &offset);
+    vkCmdBindIndexBuffer(cmd, billboardIndexBuffer_.get(), 0, VK_INDEX_TYPE_UINT32);
 
     // Draw using indirect buffer from GPU culling
     vkCmdDrawIndexedIndirect(cmd, indirectDrawBuffer, 0, 1, sizeof(VkDrawIndexedIndirectCommand));

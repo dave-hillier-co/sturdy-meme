@@ -207,11 +207,9 @@ private:
     std::vector<VkDescriptorSet> impostorDescriptorSets_;
     std::vector<VkDescriptorSet> shadowDescriptorSets_;
 
-    // Billboard quad mesh
-    VkBuffer billboardVertexBuffer_ = VK_NULL_HANDLE;
-    VmaAllocation billboardVertexAllocation_ = VK_NULL_HANDLE;
-    VkBuffer billboardIndexBuffer_ = VK_NULL_HANDLE;
-    VmaAllocation billboardIndexAllocation_ = VK_NULL_HANDLE;
+    // Billboard quad mesh (RAII - auto-cleanup on destruction)
+    ManagedBuffer billboardVertexBuffer_;
+    ManagedBuffer billboardIndexBuffer_;
     uint32_t billboardIndexCount_ = 0;
 
     // Instance buffers for impostor rendering (per-frame to avoid GPU race conditions)

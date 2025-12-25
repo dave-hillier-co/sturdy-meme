@@ -17,6 +17,9 @@ struct SingleBuffer {
     void* mappedPointer = nullptr;
 
     bool isValid() const { return buffer != VK_NULL_HANDLE; }
+
+    // Implicit conversion to VkBuffer for API compatibility
+    operator VkBuffer() const { return buffer; }
 };
 
 struct PerFrameBufferSet {
@@ -186,6 +189,40 @@ void destroyBuffer(VmaAllocator allocator, DynamicUniformBuffer& buffer);
 void destroyBuffers(VmaAllocator allocator, const PerFrameBufferSet& buffers);
 void destroyBuffers(VmaAllocator allocator, const DoubleBufferedBufferSet& buffers);
 void destroyImages(VkDevice device, VmaAllocator allocator, DoubleBufferedImageSet& images);
+
+/**
+ * Upload data to a GPU buffer via a temporary staging buffer.
+ * Creates a staging buffer, copies data, submits a transfer command, waits for completion,
+ * and destroys the staging buffer.
+ *
+ * @param allocator VMA allocator
+ * @param commandPool Command pool for transfer commands
+ * @param queue Queue to submit transfer commands to
+ * @param data Pointer to source data
+ * @param size Size of data in bytes
+ * @param dstBuffer Destination GPU buffer
+ * @return true on success, false on failure
+ */
+bool uploadViaStaging(VmaAllocator allocator, VkCommandPool commandPool, VkQueue queue,
+                      const void* data, VkDeviceSize size, VkBuffer dstBuffer);
+
+/**
+ * Upload data to multiple GPU buffers via a single staging buffer.
+ * More efficient than multiple uploadViaStaging calls when uploading to several buffers.
+ *
+ * @param allocator VMA allocator
+ * @param commandPool Command pool for transfer commands
+ * @param queue Queue to submit transfer commands to
+ * @param uploads Vector of (data, size, dstBuffer) tuples
+ * @return true on success, false on failure
+ */
+struct StagingUpload {
+    const void* data;
+    VkDeviceSize size;
+    VkBuffer dstBuffer;
+};
+bool uploadViaStaging(VmaAllocator allocator, VkCommandPool commandPool, VkQueue queue,
+                      const std::vector<StagingUpload>& uploads);
 
 }  // namespace BufferUtils
 

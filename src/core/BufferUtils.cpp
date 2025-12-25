@@ -1,5 +1,7 @@
 #include "BufferUtils.h"
 
+#include <cstring>
+
 namespace BufferUtils {
 namespace {
 void destroyCreatedBuffers(VmaAllocator allocator,
@@ -414,6 +416,180 @@ void destroyImages(VkDevice device, VmaAllocator allocator, DoubleBufferedImageS
         }
     }
     images = {};
+}
+
+bool uploadViaStaging(VmaAllocator allocator, VkCommandPool commandPool, VkQueue queue,
+                      const void* data, VkDeviceSize size, VkBuffer dstBuffer) {
+    if (!allocator || !data || size == 0 || dstBuffer == VK_NULL_HANDLE) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "uploadViaStaging: invalid parameters");
+        return false;
+    }
+
+    // Get device from allocator
+    VmaAllocatorInfo allocatorInfo;
+    vmaGetAllocatorInfo(allocator, &allocatorInfo);
+    VkDevice device = allocatorInfo.device;
+
+    // Create staging buffer
+    VkBufferCreateInfo stagingInfo{};
+    stagingInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+    stagingInfo.size = size;
+    stagingInfo.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+    stagingInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+    VmaAllocationCreateInfo stagingAllocInfo{};
+    stagingAllocInfo.usage = VMA_MEMORY_USAGE_CPU_ONLY;
+    stagingAllocInfo.flags = VMA_ALLOCATION_CREATE_MAPPED_BIT;
+
+    VkBuffer stagingBuffer;
+    VmaAllocation stagingAllocation;
+    VmaAllocationInfo allocationInfo;
+
+    if (vmaCreateBuffer(allocator, &stagingInfo, &stagingAllocInfo,
+                        &stagingBuffer, &stagingAllocation, &allocationInfo) != VK_SUCCESS) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "uploadViaStaging: failed to create staging buffer");
+        return false;
+    }
+
+    // Copy data to staging buffer
+    memcpy(allocationInfo.pMappedData, data, size);
+
+    // Allocate command buffer
+    VkCommandBufferAllocateInfo cmdAllocInfo{};
+    cmdAllocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+    cmdAllocInfo.commandPool = commandPool;
+    cmdAllocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+    cmdAllocInfo.commandBufferCount = 1;
+
+    VkCommandBuffer cmd;
+    if (vkAllocateCommandBuffers(device, &cmdAllocInfo, &cmd) != VK_SUCCESS) {
+        vmaDestroyBuffer(allocator, stagingBuffer, stagingAllocation);
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "uploadViaStaging: failed to allocate command buffer");
+        return false;
+    }
+
+    // Record copy command
+    VkCommandBufferBeginInfo beginInfo{};
+    beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+    beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+
+    vkBeginCommandBuffer(cmd, &beginInfo);
+
+    VkBufferCopy copyRegion{};
+    copyRegion.size = size;
+    vkCmdCopyBuffer(cmd, stagingBuffer, dstBuffer, 1, &copyRegion);
+
+    vkEndCommandBuffer(cmd);
+
+    // Submit and wait
+    VkSubmitInfo submitInfo{};
+    submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+    submitInfo.commandBufferCount = 1;
+    submitInfo.pCommandBuffers = &cmd;
+
+    vkQueueSubmit(queue, 1, &submitInfo, VK_NULL_HANDLE);
+    vkQueueWaitIdle(queue);
+
+    // Cleanup
+    vkFreeCommandBuffers(device, commandPool, 1, &cmd);
+    vmaDestroyBuffer(allocator, stagingBuffer, stagingAllocation);
+
+    return true;
+}
+
+bool uploadViaStaging(VmaAllocator allocator, VkCommandPool commandPool, VkQueue queue,
+                      const std::vector<StagingUpload>& uploads) {
+    if (!allocator || uploads.empty()) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "uploadViaStaging (batch): invalid parameters");
+        return false;
+    }
+
+    // Calculate total staging size
+    VkDeviceSize totalSize = 0;
+    for (const auto& upload : uploads) {
+        totalSize += upload.size;
+    }
+
+    // Get device from allocator
+    VmaAllocatorInfo allocatorInfo;
+    vmaGetAllocatorInfo(allocator, &allocatorInfo);
+    VkDevice device = allocatorInfo.device;
+
+    // Create single staging buffer for all uploads
+    VkBufferCreateInfo stagingInfo{};
+    stagingInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+    stagingInfo.size = totalSize;
+    stagingInfo.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+    stagingInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+    VmaAllocationCreateInfo stagingAllocInfo{};
+    stagingAllocInfo.usage = VMA_MEMORY_USAGE_CPU_ONLY;
+    stagingAllocInfo.flags = VMA_ALLOCATION_CREATE_MAPPED_BIT;
+
+    VkBuffer stagingBuffer;
+    VmaAllocation stagingAllocation;
+    VmaAllocationInfo allocationInfo;
+
+    if (vmaCreateBuffer(allocator, &stagingInfo, &stagingAllocInfo,
+                        &stagingBuffer, &stagingAllocation, &allocationInfo) != VK_SUCCESS) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "uploadViaStaging (batch): failed to create staging buffer");
+        return false;
+    }
+
+    // Copy all data to staging buffer
+    VkDeviceSize offset = 0;
+    for (const auto& upload : uploads) {
+        memcpy(static_cast<char*>(allocationInfo.pMappedData) + offset, upload.data, upload.size);
+        offset += upload.size;
+    }
+
+    // Allocate command buffer
+    VkCommandBufferAllocateInfo cmdAllocInfo{};
+    cmdAllocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+    cmdAllocInfo.commandPool = commandPool;
+    cmdAllocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+    cmdAllocInfo.commandBufferCount = 1;
+
+    VkCommandBuffer cmd;
+    if (vkAllocateCommandBuffers(device, &cmdAllocInfo, &cmd) != VK_SUCCESS) {
+        vmaDestroyBuffer(allocator, stagingBuffer, stagingAllocation);
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "uploadViaStaging (batch): failed to allocate command buffer");
+        return false;
+    }
+
+    // Record copy commands
+    VkCommandBufferBeginInfo beginInfo{};
+    beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+    beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+
+    vkBeginCommandBuffer(cmd, &beginInfo);
+
+    offset = 0;
+    for (const auto& upload : uploads) {
+        VkBufferCopy copyRegion{};
+        copyRegion.srcOffset = offset;
+        copyRegion.dstOffset = 0;
+        copyRegion.size = upload.size;
+        vkCmdCopyBuffer(cmd, stagingBuffer, upload.dstBuffer, 1, &copyRegion);
+        offset += upload.size;
+    }
+
+    vkEndCommandBuffer(cmd);
+
+    // Submit and wait
+    VkSubmitInfo submitInfo{};
+    submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+    submitInfo.commandBufferCount = 1;
+    submitInfo.pCommandBuffers = &cmd;
+
+    vkQueueSubmit(queue, 1, &submitInfo, VK_NULL_HANDLE);
+    vkQueueWaitIdle(queue);
+
+    // Cleanup
+    vkFreeCommandBuffers(device, commandPool, 1, &cmd);
+    vmaDestroyBuffer(allocator, stagingBuffer, stagingAllocation);
+
+    return true;
 }
 
 }  // namespace BufferUtils

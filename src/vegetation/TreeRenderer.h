@@ -305,25 +305,23 @@ private:
     uint32_t currentCullBufferSet_ = 0;
 
     // Output buffers for visible leaf instances (one per buffer set)
-    std::array<VkBuffer, CULL_BUFFER_SET_COUNT> cullOutputBuffers_{};
-    std::array<VmaAllocation, CULL_BUFFER_SET_COUNT> cullOutputAllocations_{};
+    BufferUtils::DoubleBufferedBufferSet cullOutputBuffers_;
     VkDeviceSize cullOutputBufferSize_ = 0;
 
     // Indirect draw command buffers (one per buffer set)
-    std::array<VkBuffer, CULL_BUFFER_SET_COUNT> cullIndirectBuffers_{};
-    std::array<VmaAllocation, CULL_BUFFER_SET_COUNT> cullIndirectAllocations_{};
+    BufferUtils::DoubleBufferedBufferSet cullIndirectBuffers_;
 
     // Uniform buffers for culling (per-frame)
     BufferUtils::PerFrameBufferSet cullUniformBuffers_;
 
     // Per-tree cull data buffer (SSBO with all tree transforms and offsets for compute)
-    VkBuffer treeDataBuffer_ = VK_NULL_HANDLE;
-    VmaAllocation treeDataAllocation_ = VK_NULL_HANDLE;
+    // RAII - auto-cleanup on destruction
+    ManagedBuffer treeDataBuffer_;
     VkDeviceSize treeDataBufferSize_ = 0;
 
     // Per-tree render data buffer (SSBO with tints, autumn, wind offset for vertex shader)
-    VkBuffer treeRenderDataBuffer_ = VK_NULL_HANDLE;
-    VmaAllocation treeRenderDataAllocation_ = VK_NULL_HANDLE;
+    // RAII - auto-cleanup on destruction
+    ManagedBuffer treeRenderDataBuffer_;
     VkDeviceSize treeRenderDataBufferSize_ = 0;
 
     // Culling parameters - should match tree LOD settings (fullDetailDistance = 250)
@@ -358,13 +356,13 @@ private:
     std::vector<VkDescriptorSet> cellCullDescriptorSets_;
 
     // Visible cell output buffer (indices of cells that passed frustum culling)
-    VkBuffer visibleCellBuffer_ = VK_NULL_HANDLE;
-    VmaAllocation visibleCellAllocation_ = VK_NULL_HANDLE;
+    // RAII - auto-cleanup on destruction
+    ManagedBuffer visibleCellBuffer_;
     VkDeviceSize visibleCellBufferSize_ = 0;
 
     // Indirect dispatch buffer for tree culling (set by cell culling)
-    VkBuffer cellCullIndirectBuffer_ = VK_NULL_HANDLE;
-    VmaAllocation cellCullIndirectAllocation_ = VK_NULL_HANDLE;
+    // RAII - auto-cleanup on destruction
+    ManagedBuffer cellCullIndirectBuffer_;
 
     // Uniform buffer for cell culling
     BufferUtils::PerFrameBufferSet cellCullUniformBuffers_;
@@ -395,13 +393,13 @@ private:
 
     // Visible tree output buffer (compacted list of visible trees)
     // Contains: [visibleTreeCount, VisibleTreeData[0], VisibleTreeData[1], ...]
-    VkBuffer visibleTreeBuffer_ = VK_NULL_HANDLE;
-    VmaAllocation visibleTreeAllocation_ = VK_NULL_HANDLE;
+    // RAII - auto-cleanup on destruction
+    ManagedBuffer visibleTreeBuffer_;
     VkDeviceSize visibleTreeBufferSize_ = 0;
 
     // Indirect dispatch buffer for leaf culling (set by tree filtering)
-    VkBuffer leafCullIndirectDispatch_ = VK_NULL_HANDLE;
-    VmaAllocation leafCullIndirectDispatchAllocation_ = VK_NULL_HANDLE;
+    // RAII - auto-cleanup on destruction
+    ManagedBuffer leafCullIndirectDispatch_;
 
     // Flag to enable two-phase culling
     bool twoPhaseLeafCullingEnabled_ = true;

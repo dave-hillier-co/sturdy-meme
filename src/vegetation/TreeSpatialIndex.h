@@ -7,6 +7,7 @@
 #include <cstdint>
 
 #include "TreeSystem.h"
+#include "core/VulkanRAII.h"
 
 // CPU-side cell structure
 struct TreeCell {
@@ -83,10 +84,10 @@ public:
     bool uploadToGPU();
 
     // Accessors for GPU buffers
-    VkBuffer getCellBuffer() const { return cellBuffer_; }
+    VkBuffer getCellBuffer() const { return cellBuffer_.get(); }
     VkDeviceSize getCellBufferSize() const { return cellBufferSize_; }
 
-    VkBuffer getSortedTreeBuffer() const { return sortedTreeBuffer_; }
+    VkBuffer getSortedTreeBuffer() const { return sortedTreeBuffer_.get(); }
     VkDeviceSize getSortedTreeBufferSize() const { return sortedTreeBufferSize_; }
 
     // Accessors for cell data
@@ -104,7 +105,7 @@ public:
     }
 
     // Check if buffers are valid
-    bool isValid() const { return cellBuffer_ != VK_NULL_HANDLE && sortedTreeBuffer_ != VK_NULL_HANDLE; }
+    bool isValid() const { return cellBuffer_.get() != VK_NULL_HANDLE && sortedTreeBuffer_.get() != VK_NULL_HANDLE; }
 
 private:
     TreeSpatialIndex() = default;
@@ -131,12 +132,10 @@ private:
     std::vector<SortedTreeEntry> sortedTrees_; // Trees sorted by cell
     uint32_t nonEmptyCellCount_ = 0;            // Number of cells with trees
 
-    // GPU buffers
-    VkBuffer cellBuffer_ = VK_NULL_HANDLE;
-    VmaAllocation cellAllocation_ = VK_NULL_HANDLE;
+    // GPU buffers (RAII - auto-cleanup on destruction)
+    ManagedBuffer cellBuffer_;
     VkDeviceSize cellBufferSize_ = 0;
 
-    VkBuffer sortedTreeBuffer_ = VK_NULL_HANDLE;
-    VmaAllocation sortedTreeAllocation_ = VK_NULL_HANDLE;
+    ManagedBuffer sortedTreeBuffer_;
     VkDeviceSize sortedTreeBufferSize_ = 0;
 };

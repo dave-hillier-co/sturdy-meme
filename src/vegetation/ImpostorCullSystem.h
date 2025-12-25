@@ -201,14 +201,12 @@ private:
     // Per-frame descriptor sets
     std::vector<VkDescriptorSet> cullDescriptorSets_;
 
-    // Tree input buffer (all trees)
-    VkBuffer treeInputBuffer_ = VK_NULL_HANDLE;
-    VmaAllocation treeInputAllocation_ = VK_NULL_HANDLE;
+    // Tree input buffer (all trees) - RAII auto-cleanup
+    ManagedBuffer treeInputBuffer_;
     VkDeviceSize treeInputBufferSize_ = 0;
 
-    // Archetype data buffer
-    VkBuffer archetypeBuffer_ = VK_NULL_HANDLE;
-    VmaAllocation archetypeAllocation_ = VK_NULL_HANDLE;
+    // Archetype data buffer - RAII auto-cleanup
+    ManagedBuffer archetypeBuffer_;
     VkDeviceSize archetypeBufferSize_ = 0;
 
     // Visible impostor output buffers (per-frame to avoid GPU race conditions)
@@ -223,8 +221,8 @@ private:
 
     // Visibility cache buffer for temporal coherence
     // Stores 1 bit per tree: 1 = visible as impostor, 0 = not visible
-    VkBuffer visibilityCacheBuffer_ = VK_NULL_HANDLE;
-    VmaAllocation visibilityCacheAllocation_ = VK_NULL_HANDLE;
+    // RAII auto-cleanup
+    ManagedBuffer visibilityCacheBuffer_;
     VkDeviceSize visibilityCacheBufferSize_ = 0;
 
     // State

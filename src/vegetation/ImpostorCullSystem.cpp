@@ -3,6 +3,7 @@
 #include "TreeImpostorAtlas.h"
 #include "ShaderLoader.h"
 #include "VulkanBarriers.h"
+#include "core/DescriptorManager.h"
 #include "shaders/bindings.h"
 
 #include <SDL3/SDL.h>
@@ -62,98 +63,38 @@ void ImpostorCullSystem::cleanup() {
     vkDeviceWaitIdle(device_);
 
     BufferUtils::destroyBuffers(allocator_, uniformBuffers_);
-
-    if (treeInputBuffer_ != VK_NULL_HANDLE) {
-        vmaDestroyBuffer(allocator_, treeInputBuffer_, treeInputAllocation_);
-        treeInputBuffer_ = VK_NULL_HANDLE;
-    }
-    if (archetypeBuffer_ != VK_NULL_HANDLE) {
-        vmaDestroyBuffer(allocator_, archetypeBuffer_, archetypeAllocation_);
-        archetypeBuffer_ = VK_NULL_HANDLE;
-    }
     BufferUtils::destroyBuffers(allocator_, visibleImpostorBuffers_);
     BufferUtils::destroyBuffers(allocator_, indirectDrawBuffers_);
-    if (visibilityCacheBuffer_ != VK_NULL_HANDLE) {
-        vmaDestroyBuffer(allocator_, visibilityCacheBuffer_, visibilityCacheAllocation_);
-        visibilityCacheBuffer_ = VK_NULL_HANDLE;
-    }
+    // treeInputBuffer_, archetypeBuffer_, visibilityCacheBuffer_ are ManagedBuffer (RAII - auto-cleanup)
 
     device_ = VK_NULL_HANDLE;
 }
 
 bool ImpostorCullSystem::createDescriptorSetLayout() {
-    std::array<VkDescriptorSetLayoutBinding, 7> bindings{};
-
-    // Binding 0: Tree input data (SSBO)
-    bindings[0].binding = BINDING_TREE_IMPOSTOR_CULL_INPUT;
-    bindings[0].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    bindings[0].descriptorCount = 1;
-    bindings[0].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
-
-    // Binding 1: Visible impostor output (SSBO)
-    bindings[1].binding = BINDING_TREE_IMPOSTOR_CULL_OUTPUT;
-    bindings[1].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    bindings[1].descriptorCount = 1;
-    bindings[1].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
-
-    // Binding 2: Indirect draw command (SSBO)
-    bindings[2].binding = BINDING_TREE_IMPOSTOR_CULL_INDIRECT;
-    bindings[2].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    bindings[2].descriptorCount = 1;
-    bindings[2].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
-
-    // Binding 3: Culling uniforms (UBO)
-    bindings[3].binding = BINDING_TREE_IMPOSTOR_CULL_UNIFORMS;
-    bindings[3].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    bindings[3].descriptorCount = 1;
-    bindings[3].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
-
-    // Binding 4: Archetype data (SSBO)
-    bindings[4].binding = BINDING_TREE_IMPOSTOR_CULL_ARCHETYPE;
-    bindings[4].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    bindings[4].descriptorCount = 1;
-    bindings[4].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
-
-    // Binding 5: Hi-Z pyramid (sampler2D)
-    bindings[5].binding = BINDING_TREE_IMPOSTOR_CULL_HIZ;
-    bindings[5].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    bindings[5].descriptorCount = 1;
-    bindings[5].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
-
-    // Binding 6: Visibility cache (SSBO) for temporal coherence
-    bindings[6].binding = BINDING_TREE_IMPOSTOR_CULL_VISIBILITY;
-    bindings[6].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    bindings[6].descriptorCount = 1;
-    bindings[6].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
-
-    VkDescriptorSetLayoutCreateInfo layoutInfo{};
-    layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-    layoutInfo.bindingCount = static_cast<uint32_t>(bindings.size());
-    layoutInfo.pBindings = bindings.data();
-
-    VkDescriptorSetLayout layout;
-    if (vkCreateDescriptorSetLayout(device_, &layoutInfo, nullptr, &layout) != VK_SUCCESS) {
-        return false;
-    }
-    cullDescriptorSetLayout_ = ManagedDescriptorSetLayout(makeUniqueDescriptorSetLayout(device_, layout));
-
-    return true;
+    return DescriptorManager::LayoutBuilder(device_)
+        .addBinding(BINDING_TREE_IMPOSTOR_CULL_INPUT, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+                    VK_SHADER_STAGE_COMPUTE_BIT)
+        .addBinding(BINDING_TREE_IMPOSTOR_CULL_OUTPUT, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+                    VK_SHADER_STAGE_COMPUTE_BIT)
+        .addBinding(BINDING_TREE_IMPOSTOR_CULL_INDIRECT, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+                    VK_SHADER_STAGE_COMPUTE_BIT)
+        .addBinding(BINDING_TREE_IMPOSTOR_CULL_UNIFORMS, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+                    VK_SHADER_STAGE_COMPUTE_BIT)
+        .addBinding(BINDING_TREE_IMPOSTOR_CULL_ARCHETYPE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+                    VK_SHADER_STAGE_COMPUTE_BIT)
+        .addBinding(BINDING_TREE_IMPOSTOR_CULL_HIZ, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+                    VK_SHADER_STAGE_COMPUTE_BIT)
+        .addBinding(BINDING_TREE_IMPOSTOR_CULL_VISIBILITY, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+                    VK_SHADER_STAGE_COMPUTE_BIT)
+        .buildManaged(cullDescriptorSetLayout_);
 }
 
 bool ImpostorCullSystem::createComputePipeline() {
-    // Create pipeline layout
-    VkDescriptorSetLayout layouts[] = {cullDescriptorSetLayout_.get()};
-
-    VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
-    pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-    pipelineLayoutInfo.setLayoutCount = 1;
-    pipelineLayoutInfo.pSetLayouts = layouts;
-
-    VkPipelineLayout pipelineLayout;
-    if (vkCreatePipelineLayout(device_, &pipelineLayoutInfo, nullptr, &pipelineLayout) != VK_SUCCESS) {
+    // Create pipeline layout (no push constants)
+    if (!DescriptorManager::createManagedPipelineLayout(
+            device_, cullDescriptorSetLayout_.get(), cullPipelineLayout_)) {
         return false;
     }
-    cullPipelineLayout_ = ManagedPipelineLayout(makeUniquePipelineLayout(device_, pipelineLayout));
 
     // Load compute shader
     std::string shaderPath = resourcePath_ + "/shaders/tree_impostor_cull.comp.spv";
@@ -172,7 +113,7 @@ bool ImpostorCullSystem::createComputePipeline() {
     VkComputePipelineCreateInfo pipelineInfo{};
     pipelineInfo.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
     pipelineInfo.stage = stageInfo;
-    pipelineInfo.layout = pipelineLayout;
+    pipelineInfo.layout = cullPipelineLayout_.get();
 
     VkPipeline pipeline;
     VkResult result = vkCreateComputePipelines(device_, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &pipeline);
@@ -193,26 +134,29 @@ bool ImpostorCullSystem::allocateDescriptorSets() {
 }
 
 bool ImpostorCullSystem::createBuffers() {
-    // Tree input buffer
+    // Tree input buffer (CPU-writable for uploading tree data) - RAII ManagedBuffer
     treeInputBufferSize_ = maxTrees_ * sizeof(TreeCullInputData);
-    VkBufferCreateInfo bufferInfo{};
-    bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-    bufferInfo.size = treeInputBufferSize_;
-    bufferInfo.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+    VkBufferCreateInfo treeInputInfo{};
+    treeInputInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+    treeInputInfo.size = treeInputBufferSize_;
+    treeInputInfo.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
 
-    VmaAllocationCreateInfo allocInfo{};
-    allocInfo.usage = VMA_MEMORY_USAGE_CPU_TO_GPU;
+    VmaAllocationCreateInfo cpuToGpuAlloc{};
+    cpuToGpuAlloc.usage = VMA_MEMORY_USAGE_CPU_TO_GPU;
+    cpuToGpuAlloc.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT;
 
-    if (vmaCreateBuffer(allocator_, &bufferInfo, &allocInfo,
-                        &treeInputBuffer_, &treeInputAllocation_, nullptr) != VK_SUCCESS) {
+    if (!ManagedBuffer::create(allocator_, treeInputInfo, cpuToGpuAlloc, treeInputBuffer_)) {
         return false;
     }
 
-    // Archetype buffer
+    // Archetype buffer (CPU-writable for uploading archetype data) - RAII ManagedBuffer
     archetypeBufferSize_ = maxArchetypes_ * sizeof(ArchetypeCullData);
-    bufferInfo.size = archetypeBufferSize_;
-    if (vmaCreateBuffer(allocator_, &bufferInfo, &allocInfo,
-                        &archetypeBuffer_, &archetypeAllocation_, nullptr) != VK_SUCCESS) {
+    VkBufferCreateInfo archetypeInfo{};
+    archetypeInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+    archetypeInfo.size = archetypeBufferSize_;
+    archetypeInfo.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+
+    if (!ManagedBuffer::create(allocator_, archetypeInfo, cpuToGpuAlloc, archetypeBuffer_)) {
         return false;
     }
 
@@ -250,15 +194,18 @@ bool ImpostorCullSystem::createBuffers() {
         return false;
     }
 
-    // Visibility cache buffer for temporal coherence
+    // Visibility cache buffer for temporal coherence (GPU-only) - RAII ManagedBuffer
     // 1 bit per tree, packed into uint32_t words
     visibilityCacheBufferSize_ = ((maxTrees_ + 31) / 32) * sizeof(uint32_t);
-    bufferInfo.size = visibilityCacheBufferSize_;
-    bufferInfo.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
-    allocInfo.usage = VMA_MEMORY_USAGE_GPU_ONLY;
+    VkBufferCreateInfo visibilityInfo{};
+    visibilityInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+    visibilityInfo.size = visibilityCacheBufferSize_;
+    visibilityInfo.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
 
-    if (vmaCreateBuffer(allocator_, &bufferInfo, &allocInfo,
-                        &visibilityCacheBuffer_, &visibilityCacheAllocation_, nullptr) != VK_SUCCESS) {
+    VmaAllocationCreateInfo gpuOnlyAlloc{};
+    gpuOnlyAlloc.usage = VMA_MEMORY_USAGE_GPU_ONLY;
+
+    if (!ManagedBuffer::create(allocator_, visibilityInfo, gpuOnlyAlloc, visibilityCacheBuffer_)) {
         return false;
     }
 
@@ -297,10 +244,11 @@ void ImpostorCullSystem::updateTreeData(const TreeSystem& treeSystem, const Tree
     }
 
     // Upload to GPU
-    void* data;
-    vmaMapMemory(allocator_, treeInputAllocation_, &data);
-    memcpy(data, inputData.data(), inputData.size() * sizeof(TreeCullInputData));
-    vmaUnmapMemory(allocator_, treeInputAllocation_);
+    void* data = treeInputBuffer_.map();
+    if (data) {
+        memcpy(data, inputData.data(), inputData.size() * sizeof(TreeCullInputData));
+        treeInputBuffer_.unmap();
+    }
 }
 
 void ImpostorCullSystem::updateArchetypeData(const TreeImpostorAtlas* atlas) {
@@ -339,107 +287,29 @@ void ImpostorCullSystem::updateArchetypeData(const TreeImpostorAtlas* atlas) {
     }
 
     // Upload to GPU
-    void* data;
-    vmaMapMemory(allocator_, archetypeAllocation_, &data);
-    memcpy(data, archetypeData.data(), archetypeData.size() * sizeof(ArchetypeCullData));
-    vmaUnmapMemory(allocator_, archetypeAllocation_);
+    void* data = archetypeBuffer_.map();
+    if (data) {
+        memcpy(data, archetypeData.data(), archetypeData.size() * sizeof(ArchetypeCullData));
+        archetypeBuffer_.unmap();
+    }
 }
 
 void ImpostorCullSystem::updateDescriptorSets(uint32_t frameIndex, VkImageView hiZPyramidView, VkSampler hiZSampler) {
-    std::array<VkWriteDescriptorSet, 7> writes{};
-
-    // Tree input buffer
-    VkDescriptorBufferInfo inputInfo{};
-    inputInfo.buffer = treeInputBuffer_;
-    inputInfo.offset = 0;
-    inputInfo.range = VK_WHOLE_SIZE;
-
-    writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    writes[0].dstSet = cullDescriptorSets_[frameIndex];
-    writes[0].dstBinding = BINDING_TREE_IMPOSTOR_CULL_INPUT;
-    writes[0].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    writes[0].descriptorCount = 1;
-    writes[0].pBufferInfo = &inputInfo;
-
-    // Visible output buffer (per-frame)
-    VkDescriptorBufferInfo outputInfo{};
-    outputInfo.buffer = visibleImpostorBuffers_.buffers[frameIndex];
-    outputInfo.offset = 0;
-    outputInfo.range = VK_WHOLE_SIZE;
-
-    writes[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    writes[1].dstSet = cullDescriptorSets_[frameIndex];
-    writes[1].dstBinding = BINDING_TREE_IMPOSTOR_CULL_OUTPUT;
-    writes[1].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    writes[1].descriptorCount = 1;
-    writes[1].pBufferInfo = &outputInfo;
-
-    // Indirect draw buffer (per-frame)
-    VkDescriptorBufferInfo indirectInfo{};
-    indirectInfo.buffer = indirectDrawBuffers_.buffers[frameIndex];
-    indirectInfo.offset = 0;
-    indirectInfo.range = VK_WHOLE_SIZE;
-
-    writes[2].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    writes[2].dstSet = cullDescriptorSets_[frameIndex];
-    writes[2].dstBinding = BINDING_TREE_IMPOSTOR_CULL_INDIRECT;
-    writes[2].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    writes[2].descriptorCount = 1;
-    writes[2].pBufferInfo = &indirectInfo;
-
-    // Uniform buffer
-    VkDescriptorBufferInfo uniformInfo{};
-    uniformInfo.buffer = uniformBuffers_.buffers[frameIndex];
-    uniformInfo.offset = 0;
-    uniformInfo.range = sizeof(ImpostorCullUniforms);
-
-    writes[3].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    writes[3].dstSet = cullDescriptorSets_[frameIndex];
-    writes[3].dstBinding = BINDING_TREE_IMPOSTOR_CULL_UNIFORMS;
-    writes[3].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    writes[3].descriptorCount = 1;
-    writes[3].pBufferInfo = &uniformInfo;
-
-    // Archetype buffer
-    VkDescriptorBufferInfo archetypeInfo{};
-    archetypeInfo.buffer = archetypeBuffer_;
-    archetypeInfo.offset = 0;
-    archetypeInfo.range = VK_WHOLE_SIZE;
-
-    writes[4].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    writes[4].dstSet = cullDescriptorSets_[frameIndex];
-    writes[4].dstBinding = BINDING_TREE_IMPOSTOR_CULL_ARCHETYPE;
-    writes[4].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    writes[4].descriptorCount = 1;
-    writes[4].pBufferInfo = &archetypeInfo;
-
-    // Hi-Z pyramid
-    VkDescriptorImageInfo hiZInfo{};
-    hiZInfo.sampler = hiZSampler;
-    hiZInfo.imageView = hiZPyramidView;
-    hiZInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-
-    writes[5].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    writes[5].dstSet = cullDescriptorSets_[frameIndex];
-    writes[5].dstBinding = BINDING_TREE_IMPOSTOR_CULL_HIZ;
-    writes[5].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    writes[5].descriptorCount = 1;
-    writes[5].pImageInfo = &hiZInfo;
-
-    // Visibility cache buffer for temporal coherence
-    VkDescriptorBufferInfo visibilityInfo{};
-    visibilityInfo.buffer = visibilityCacheBuffer_;
-    visibilityInfo.offset = 0;
-    visibilityInfo.range = VK_WHOLE_SIZE;
-
-    writes[6].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    writes[6].dstSet = cullDescriptorSets_[frameIndex];
-    writes[6].dstBinding = BINDING_TREE_IMPOSTOR_CULL_VISIBILITY;
-    writes[6].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    writes[6].descriptorCount = 1;
-    writes[6].pBufferInfo = &visibilityInfo;
-
-    vkUpdateDescriptorSets(device_, static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
+    DescriptorManager::SetWriter(device_, cullDescriptorSets_[frameIndex])
+        .writeBuffer(BINDING_TREE_IMPOSTOR_CULL_INPUT, treeInputBuffer_.get(),
+                     0, VK_WHOLE_SIZE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+        .writeBuffer(BINDING_TREE_IMPOSTOR_CULL_OUTPUT, visibleImpostorBuffers_.buffers[frameIndex],
+                     0, VK_WHOLE_SIZE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+        .writeBuffer(BINDING_TREE_IMPOSTOR_CULL_INDIRECT, indirectDrawBuffers_.buffers[frameIndex],
+                     0, VK_WHOLE_SIZE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+        .writeBuffer(BINDING_TREE_IMPOSTOR_CULL_UNIFORMS, uniformBuffers_.buffers[frameIndex],
+                     0, sizeof(ImpostorCullUniforms))
+        .writeBuffer(BINDING_TREE_IMPOSTOR_CULL_ARCHETYPE, archetypeBuffer_.get(),
+                     0, VK_WHOLE_SIZE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+        .writeImage(BINDING_TREE_IMPOSTOR_CULL_HIZ, hiZPyramidView, hiZSampler)
+        .writeBuffer(BINDING_TREE_IMPOSTOR_CULL_VISIBILITY, visibilityCacheBuffer_.get(),
+                     0, VK_WHOLE_SIZE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+        .update();
 }
 
 void ImpostorCullSystem::recordCulling(VkCommandBuffer cmd, uint32_t frameIndex,

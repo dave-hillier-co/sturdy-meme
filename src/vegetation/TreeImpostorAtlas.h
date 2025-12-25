@@ -64,7 +64,8 @@ enum class SimpleLODMode {
 // LOD settings with hysteresis support
 struct TreeLODSettings {
     // Simple LOD mode - overrides automatic LOD selection
-    SimpleLODMode simpleLODMode = SimpleLODMode::Auto;
+    // Default to FullDetail since Auto mode transitions are broken
+    SimpleLODMode simpleLODMode = SimpleLODMode::FullDetail;
 
     // Forest enable/disable
     bool enableForest = false;             // Disable forest by default for debugging

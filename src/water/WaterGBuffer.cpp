@@ -7,6 +7,8 @@
 #include <array>
 #include <algorithm>
 
+using namespace vk;  // Vulkan-Hpp type-safe wrappers
+
 std::unique_ptr<WaterGBuffer> WaterGBuffer::create(const InitInfo& info) {
     std::unique_ptr<WaterGBuffer> system(new WaterGBuffer());
     if (!system->initInternal(info)) {
@@ -121,116 +123,113 @@ void WaterGBuffer::resize(VkExtent2D newFullResExtent) {
 }
 
 bool WaterGBuffer::createImages() {
+    VmaAllocationCreateInfo vmaAllocInfo{};
+    vmaAllocInfo.usage = VMA_MEMORY_USAGE_GPU_ONLY;
+
     // Data image (RGBA8 - material data)
     {
-        VkImageCreateInfo imageInfo{};
-        imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
-        imageInfo.imageType = VK_IMAGE_TYPE_2D;
-        imageInfo.format = VK_FORMAT_R8G8B8A8_UNORM;
-        imageInfo.extent = {gbufferExtent.width, gbufferExtent.height, 1};
-        imageInfo.mipLevels = 1;
-        imageInfo.arrayLayers = 1;
-        imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
-        imageInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
-        imageInfo.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
-        imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-        imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        ImageCreateInfo imageInfo{
+            {},                                  // flags
+            ImageType::e2D,
+            Format::eR8G8B8A8Unorm,
+            Extent3D{gbufferExtent.width, gbufferExtent.height, 1},
+            1, 1,                                // mipLevels, arrayLayers
+            SampleCountFlagBits::e1,
+            ImageTiling::eOptimal,
+            ImageUsageFlagBits::eColorAttachment | ImageUsageFlagBits::eSampled,
+            SharingMode::eExclusive,
+            0, nullptr,                          // queueFamilyIndexCount, pQueueFamilyIndices
+            ImageLayout::eUndefined
+        };
 
-        VmaAllocationCreateInfo allocInfo{};
-        allocInfo.usage = VMA_MEMORY_USAGE_GPU_ONLY;
-
-        if (vmaCreateImage(allocator, &imageInfo, &allocInfo, &dataImage, &dataAllocation, nullptr) != VK_SUCCESS) {
+        auto vkImageInfo = static_cast<VkImageCreateInfo>(imageInfo);
+        if (vmaCreateImage(allocator, &vkImageInfo, &vmaAllocInfo, &dataImage, &dataAllocation, nullptr) != VK_SUCCESS) {
             return false;
         }
 
-        VkImageViewCreateInfo viewInfo{};
-        viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-        viewInfo.image = dataImage;
-        viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
-        viewInfo.format = VK_FORMAT_R8G8B8A8_UNORM;
-        viewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-        viewInfo.subresourceRange.baseMipLevel = 0;
-        viewInfo.subresourceRange.levelCount = 1;
-        viewInfo.subresourceRange.baseArrayLayer = 0;
-        viewInfo.subresourceRange.layerCount = 1;
+        ImageViewCreateInfo viewInfo{
+            {},                                  // flags
+            dataImage,
+            ImageViewType::e2D,
+            Format::eR8G8B8A8Unorm,
+            ComponentMapping{},                  // identity swizzle
+            ImageSubresourceRange{ImageAspectFlagBits::eColor, 0, 1, 0, 1}
+        };
 
-        if (vkCreateImageView(device, &viewInfo, nullptr, &dataImageView) != VK_SUCCESS) {
+        auto vkViewInfo = static_cast<VkImageViewCreateInfo>(viewInfo);
+        if (vkCreateImageView(device, &vkViewInfo, nullptr, &dataImageView) != VK_SUCCESS) {
             return false;
         }
     }
 
     // Normal image (RGBA16F - normals + depth)
     {
-        VkImageCreateInfo imageInfo{};
-        imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
-        imageInfo.imageType = VK_IMAGE_TYPE_2D;
-        imageInfo.format = VK_FORMAT_R16G16B16A16_SFLOAT;
-        imageInfo.extent = {gbufferExtent.width, gbufferExtent.height, 1};
-        imageInfo.mipLevels = 1;
-        imageInfo.arrayLayers = 1;
-        imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
-        imageInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
-        imageInfo.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
-        imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-        imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        ImageCreateInfo imageInfo{
+            {},                                  // flags
+            ImageType::e2D,
+            Format::eR16G16B16A16Sfloat,
+            Extent3D{gbufferExtent.width, gbufferExtent.height, 1},
+            1, 1,                                // mipLevels, arrayLayers
+            SampleCountFlagBits::e1,
+            ImageTiling::eOptimal,
+            ImageUsageFlagBits::eColorAttachment | ImageUsageFlagBits::eSampled,
+            SharingMode::eExclusive,
+            0, nullptr,                          // queueFamilyIndexCount, pQueueFamilyIndices
+            ImageLayout::eUndefined
+        };
 
-        VmaAllocationCreateInfo allocInfo{};
-        allocInfo.usage = VMA_MEMORY_USAGE_GPU_ONLY;
-
-        if (vmaCreateImage(allocator, &imageInfo, &allocInfo, &normalImage, &normalAllocation, nullptr) != VK_SUCCESS) {
+        auto vkImageInfo = static_cast<VkImageCreateInfo>(imageInfo);
+        if (vmaCreateImage(allocator, &vkImageInfo, &vmaAllocInfo, &normalImage, &normalAllocation, nullptr) != VK_SUCCESS) {
             return false;
         }
 
-        VkImageViewCreateInfo viewInfo{};
-        viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-        viewInfo.image = normalImage;
-        viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
-        viewInfo.format = VK_FORMAT_R16G16B16A16_SFLOAT;
-        viewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-        viewInfo.subresourceRange.baseMipLevel = 0;
-        viewInfo.subresourceRange.levelCount = 1;
-        viewInfo.subresourceRange.baseArrayLayer = 0;
-        viewInfo.subresourceRange.layerCount = 1;
+        ImageViewCreateInfo viewInfo{
+            {},                                  // flags
+            normalImage,
+            ImageViewType::e2D,
+            Format::eR16G16B16A16Sfloat,
+            ComponentMapping{},                  // identity swizzle
+            ImageSubresourceRange{ImageAspectFlagBits::eColor, 0, 1, 0, 1}
+        };
 
-        if (vkCreateImageView(device, &viewInfo, nullptr, &normalImageView) != VK_SUCCESS) {
+        auto vkViewInfo = static_cast<VkImageViewCreateInfo>(viewInfo);
+        if (vkCreateImageView(device, &vkViewInfo, nullptr, &normalImageView) != VK_SUCCESS) {
             return false;
         }
     }
 
     // Depth image (D32F - water-only depth)
     {
-        VkImageCreateInfo imageInfo{};
-        imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
-        imageInfo.imageType = VK_IMAGE_TYPE_2D;
-        imageInfo.format = VK_FORMAT_D32_SFLOAT;
-        imageInfo.extent = {gbufferExtent.width, gbufferExtent.height, 1};
-        imageInfo.mipLevels = 1;
-        imageInfo.arrayLayers = 1;
-        imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
-        imageInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
-        imageInfo.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
-        imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-        imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        ImageCreateInfo imageInfo{
+            {},                                  // flags
+            ImageType::e2D,
+            Format::eD32Sfloat,
+            Extent3D{gbufferExtent.width, gbufferExtent.height, 1},
+            1, 1,                                // mipLevels, arrayLayers
+            SampleCountFlagBits::e1,
+            ImageTiling::eOptimal,
+            ImageUsageFlagBits::eDepthStencilAttachment | ImageUsageFlagBits::eSampled,
+            SharingMode::eExclusive,
+            0, nullptr,                          // queueFamilyIndexCount, pQueueFamilyIndices
+            ImageLayout::eUndefined
+        };
 
-        VmaAllocationCreateInfo allocInfo{};
-        allocInfo.usage = VMA_MEMORY_USAGE_GPU_ONLY;
-
-        if (vmaCreateImage(allocator, &imageInfo, &allocInfo, &depthImage, &depthAllocation, nullptr) != VK_SUCCESS) {
+        auto vkImageInfo = static_cast<VkImageCreateInfo>(imageInfo);
+        if (vmaCreateImage(allocator, &vkImageInfo, &vmaAllocInfo, &depthImage, &depthAllocation, nullptr) != VK_SUCCESS) {
             return false;
         }
 
-        VkImageViewCreateInfo viewInfo{};
-        viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-        viewInfo.image = depthImage;
-        viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
-        viewInfo.format = VK_FORMAT_D32_SFLOAT;
-        viewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
-        viewInfo.subresourceRange.baseMipLevel = 0;
-        viewInfo.subresourceRange.levelCount = 1;
-        viewInfo.subresourceRange.baseArrayLayer = 0;
-        viewInfo.subresourceRange.layerCount = 1;
+        ImageViewCreateInfo viewInfo{
+            {},                                  // flags
+            depthImage,
+            ImageViewType::e2D,
+            Format::eD32Sfloat,
+            ComponentMapping{},                  // identity swizzle
+            ImageSubresourceRange{ImageAspectFlagBits::eDepth, 0, 1, 0, 1}
+        };
 
-        if (vkCreateImageView(device, &viewInfo, nullptr, &depthImageView) != VK_SUCCESS) {
+        auto vkViewInfo = static_cast<VkImageViewCreateInfo>(viewInfo);
+        if (vkCreateImageView(device, &vkViewInfo, nullptr, &depthImageView) != VK_SUCCESS) {
             return false;
         }
     }

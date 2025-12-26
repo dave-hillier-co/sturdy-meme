@@ -1,7 +1,7 @@
 #pragma once
 
 #include <memory>
-#include <vulkan/vulkan.h>
+#include <vulkan/vulkan.hpp>  // Vulkan-Hpp for type-safe enums and structs
 
 // Forward declarations
 class SnowMaskSystem;

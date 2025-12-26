@@ -1,7 +1,7 @@
 #pragma once
 
 #include <SDL3/SDL_log.h>
-#include <vulkan/vulkan.h>
+#include <vulkan/vulkan.hpp>  // Vulkan-Hpp for type-safe enums and structs
 #include <vk_mem_alloc.h>
 
 #include <cstdint>

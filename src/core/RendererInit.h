@@ -9,7 +9,7 @@
 #include <vector>
 #include <functional>
 #include <memory>
-#include <vulkan/vulkan.h>
+#include <vulkan/vulkan.hpp>  // Vulkan-Hpp for type-safe enums and structs
 #include <glm/glm.hpp>
 
 // Forward declarations to avoid circular dependencies

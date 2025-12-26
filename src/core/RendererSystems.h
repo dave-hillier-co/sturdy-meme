@@ -2,7 +2,7 @@
 
 #include <memory>
 #include <functional>
-#include <vulkan/vulkan.h>
+#include <vulkan/vulkan.hpp>  // Vulkan-Hpp for type-safe enums and structs
 
 #include "InitContext.h"
 #include "CoreResources.h"

@@ -1,7 +1,7 @@
 #pragma once
 
 #include "SystemLifecycleHelper.h"
-#include <vulkan/vulkan.h>
+#include <vulkan/vulkan.hpp>  // Vulkan-Hpp for type-safe enums and structs
 #include <vector>
 
 // Utility helper for particle-style systems that share lifecycle, pipeline, and double-buffer management.

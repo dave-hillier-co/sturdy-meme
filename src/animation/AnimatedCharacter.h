@@ -9,7 +9,7 @@
 #include "Mesh.h"
 #include "IKSolver.h"
 #include <vk_mem_alloc.h>
-#include <vulkan/vulkan.h>
+#include <vulkan/vulkan.hpp>  // Vulkan-Hpp for type-safe enums and structs
 #include <string>
 #include <vector>
 #include <memory>

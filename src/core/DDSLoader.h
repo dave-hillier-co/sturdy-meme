@@ -3,7 +3,7 @@
 
 #pragma once
 
-#include <vulkan/vulkan.h>
+#include <vulkan/vulkan.hpp>  // Vulkan-Hpp for type-safe enums and structs
 #include <cstdint>
 #include <vector>
 #include <string>

@@ -14,6 +14,7 @@ std::unique_ptr<TreeLeafCulling> TreeLeafCulling::create(const InitInfo& info) {
 }
 
 TreeLeafCulling::~TreeLeafCulling() {
+    // Cleanup triple-buffered output buffers
     for (size_t i = 0; i < cullOutputBuffers_.size(); ++i) {
         if (cullOutputBuffers_[i] != VK_NULL_HANDLE) {
             vmaDestroyBuffer(allocator_, cullOutputBuffers_[i], cullOutputAllocations_[i]);
@@ -25,41 +26,29 @@ TreeLeafCulling::~TreeLeafCulling() {
         }
     }
 
-    for (size_t i = 0; i < cullUniformBuffers_.buffers.size(); ++i) {
-        if (cullUniformBuffers_.buffers[i] != VK_NULL_HANDLE) {
-            vmaDestroyBuffer(allocator_, cullUniformBuffers_.buffers[i], cullUniformBuffers_.allocations[i]);
-        }
-    }
+    // Use helper for per-frame buffer sets
+    BufferUtils::destroyBuffers(allocator_, cullUniformBuffers_);
+    BufferUtils::destroyBuffers(allocator_, cellCullUniformBuffers_);
+    BufferUtils::destroyBuffers(allocator_, treeFilterUniformBuffers_);
 
+    // Cleanup single buffers
     if (treeDataBuffer_ != VK_NULL_HANDLE) {
         vmaDestroyBuffer(allocator_, treeDataBuffer_, treeDataAllocation_);
     }
     if (treeRenderDataBuffer_ != VK_NULL_HANDLE) {
         vmaDestroyBuffer(allocator_, treeRenderDataBuffer_, treeRenderDataAllocation_);
     }
-
     if (visibleCellBuffer_ != VK_NULL_HANDLE) {
         vmaDestroyBuffer(allocator_, visibleCellBuffer_, visibleCellAllocation_);
     }
     if (cellCullIndirectBuffer_ != VK_NULL_HANDLE) {
         vmaDestroyBuffer(allocator_, cellCullIndirectBuffer_, cellCullIndirectAllocation_);
     }
-    for (size_t i = 0; i < cellCullUniformBuffers_.buffers.size(); ++i) {
-        if (cellCullUniformBuffers_.buffers[i] != VK_NULL_HANDLE) {
-            vmaDestroyBuffer(allocator_, cellCullUniformBuffers_.buffers[i], cellCullUniformBuffers_.allocations[i]);
-        }
-    }
-
     if (visibleTreeBuffer_ != VK_NULL_HANDLE) {
         vmaDestroyBuffer(allocator_, visibleTreeBuffer_, visibleTreeAllocation_);
     }
     if (leafCullIndirectDispatch_ != VK_NULL_HANDLE) {
         vmaDestroyBuffer(allocator_, leafCullIndirectDispatch_, leafCullIndirectDispatchAllocation_);
-    }
-    for (size_t i = 0; i < treeFilterUniformBuffers_.buffers.size(); ++i) {
-        if (treeFilterUniformBuffers_.buffers[i] != VK_NULL_HANDLE) {
-            vmaDestroyBuffer(allocator_, treeFilterUniformBuffers_.buffers[i], treeFilterUniformBuffers_.allocations[i]);
-        }
     }
 }
 

@@ -6,6 +6,7 @@ const int NUM_CASCADES = 4;
 
 #include "bindings.glsl"
 #include "ubo_common.glsl"
+#include "quaternion.glsl"
 
 // Leaf particle states
 const uint STATE_INACTIVE = 0;
@@ -54,13 +55,6 @@ layout(location = 2) out vec3 fragWorldPos;
 layout(location = 3) flat out uint fragLeafType;
 layout(location = 4) flat out uint fragState;
 layout(location = 5) out float fragDistToCamera;
-
-// Rotate vector by quaternion
-vec3 rotateByQuat(vec3 v, vec4 q) {
-    vec3 qvec = q.xyz;
-    float qw = q.w;
-    return v + 2.0 * cross(qvec, cross(qvec, v) + qw * v);
-}
 
 void main() {
     // gl_InstanceIndex = which particle

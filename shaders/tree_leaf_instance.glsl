@@ -6,6 +6,8 @@
 #ifndef TREE_LEAF_INSTANCE_GLSL
 #define TREE_LEAF_INSTANCE_GLSL
 
+#include "quaternion.glsl"
+
 // Per-leaf instance data - 32 bytes per leaf
 // std430 layout for SSBO
 struct LeafInstance {
@@ -28,11 +30,5 @@ const vec2 LEAF_QUAD_UVS[4] = vec2[4](
     vec2(1.0, 1.0),  // Bottom-right
     vec2(1.0, 0.0)   // Top-right
 );
-
-// Rotate vector by quaternion
-vec3 rotateByQuat(vec3 v, vec4 q) {
-    vec3 t = 2.0 * cross(q.xyz, v);
-    return v + q.w * t + cross(q.xyz, t);
-}
 
 #endif // TREE_LEAF_INSTANCE_GLSL

@@ -62,7 +62,7 @@ void main() {
     vec3 scaledPos = inPosition * leafSize;
 
     // Rotate by world-space orientation quaternion
-    vec3 rotatedPos = rotateByQuatWorld(scaledPos, worldOrientation);
+    vec3 rotatedPos = rotateByQuat(scaledPos, worldOrientation);
 
     // World position (already in world space from compute shader)
     vec3 worldPos = worldPosition + rotatedPos;
@@ -93,7 +93,7 @@ void main() {
 
     // Compute normal from world-space orientation
     vec3 localNormal = vec3(0.0, 0.0, 1.0);
-    vec3 worldNormal = rotateByQuatWorld(localNormal, worldOrientation);
+    vec3 worldNormal = rotateByQuat(localNormal, worldOrientation);
     fragNormal = normalize(worldNormal);
 
     fragTexCoord = inTexCoord;

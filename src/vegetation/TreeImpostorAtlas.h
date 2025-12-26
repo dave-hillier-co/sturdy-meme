@@ -9,6 +9,7 @@
 #include <array>
 
 #include "TreeOptions.h"
+#include "CullCommon.h"
 #include "core/VulkanRAII.h"
 #include "core/DescriptorManager.h"
 
@@ -57,23 +58,23 @@ struct TreeImpostorArchetype {
 // LOD settings with hysteresis support
 struct TreeLODSettings {
     // Distance thresholds (used when useScreenSpaceError = false)
-    float fullDetailDistance = 250.0f;     // Full geometry below this
+    float fullDetailDistance = TreeLODConstants::FULL_DETAIL_DISTANCE;
     float impostorDistance = 50000.0f;     // Impostors visible up to this distance (very far)
 
     // Hysteresis (prevents flickering at LOD boundaries)
-    float hysteresis = 5.0f;               // Dead zone for LOD transitions
+    float hysteresis = TreeLODConstants::HYSTERESIS;
 
     // Blending characteristics
-    float blendRange = 10.0f;              // Distance over which to blend LODs
+    float blendRange = TreeLODConstants::BLEND_RANGE;
     float blendExponent = 1.0f;            // Blend curve (1.0 = linear)
 
     // Screen-space error LOD
     // Screen error is HIGH when close (object large on screen), LOW when far (object small)
     // Logic: close (high error) = full geometry, far (low error) = impostor/cull
     bool useScreenSpaceError = true;       // Use screen-space error instead of distance
-    float errorThresholdFull = 4.0f;       // Above this error: use full geometry (close trees)
-    float errorThresholdImpostor = 1.0f;   // Below this error: use full impostor (far trees)
-    float errorThresholdCull = 0.25f;      // Below this error: cull entirely (very far trees)
+    float errorThresholdFull = TreeLODConstants::ERROR_THRESHOLD_FULL;
+    float errorThresholdImpostor = TreeLODConstants::ERROR_THRESHOLD_IMPOSTOR;
+    float errorThresholdCull = TreeLODConstants::ERROR_THRESHOLD_CULL;
 
     // Impostor settings
     bool enableImpostors = true;

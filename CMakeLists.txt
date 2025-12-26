@@ -87,6 +87,7 @@ set(SOURCES
     src/vegetation/TreeGenerator.cpp
     src/vegetation/TreeOptions.cpp
     src/vegetation/TreeRenderer.cpp
+    src/vegetation/TreeLeafCulling.cpp
     src/vegetation/TreeImpostorAtlas.cpp
     src/vegetation/TreeLODSystem.cpp
     src/vegetation/TreeSpatialIndex.cpp

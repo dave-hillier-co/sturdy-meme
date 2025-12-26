@@ -169,7 +169,7 @@ void main() {
 
     // Calculate lighting directions
     vec3 V = normalize(ubo.cameraPosition.xyz - fragWorldPos);
-    vec3 L = normalize(-ubo.sunDirection.xyz);
+    vec3 L = normalize(ubo.sunDirection.xyz);  // sunDirection points toward sun
 
     // Shadow sampling
     float shadow = calculateCascadedShadow(

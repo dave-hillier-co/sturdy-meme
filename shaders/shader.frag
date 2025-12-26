@@ -149,8 +149,8 @@ vec3 calculatePBR(vec3 N, vec3 V, vec3 L, vec3 lightColor, float lightIntensity,
     float NoH = max(dot(N, H), 0.0);
     float VoH = max(dot(V, H), 0.0);
 
-    // Dielectric F0 (0.04 is typical for non-metals)
-    vec3 F0 = mix(vec3(0.04), albedo, metallic);
+    // Dielectric F0 (F0_DIELECTRIC is typical for non-metals)
+    vec3 F0 = mix(vec3(F0_DIELECTRIC), albedo, metallic);
 
     // Specular BRDF
     float D = D_GGX(NoH, roughness);
@@ -302,7 +302,7 @@ void main() {
     // Ambient lighting
     // For dielectrics: diffuse ambient from all directions
     // For metals: specular ambient (environment reflection approximation)
-    vec3 F0 = mix(vec3(0.04), albedo, metallic);
+    vec3 F0 = mix(vec3(F0_DIELECTRIC), albedo, metallic);
     vec3 ambientDiffuse = ubo.ambientColor.rgb * albedo * (1.0 - metallic);
     // Metals need higher ambient to simulate environment reflections
     // Rougher metals get more ambient, smoother metals rely more on direct specular

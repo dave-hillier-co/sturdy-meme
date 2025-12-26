@@ -330,7 +330,7 @@ void main() {
     vec3 H = normalize(V + L);
 
     // PBR calculations using common functions
-    vec3 F0 = vec3(0.04);  // Non-metallic
+    vec3 F0 = vec3(F0_DIELECTRIC);  // Non-metallic
     F0 = mix(F0, albedo, metallic);
 
     float NDF = D_GGX(max(dot(normal, H), 0.0), roughness);

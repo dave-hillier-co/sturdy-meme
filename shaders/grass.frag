@@ -178,7 +178,7 @@ void main() {
     float NoH = max(dot(N, H), 0.0);
     float VoH = max(dot(V, H), 0.0);
     float D = D_GGX(NoH, GRASS_ROUGHNESS);
-    vec3 F0 = vec3(0.04);  // Dielectric grass
+    vec3 F0 = vec3(F0_DIELECTRIC);  // Dielectric grass
     vec3 F = F_Schlick(VoH, F0);
     vec3 specular = D * F * GRASS_SPECULAR_STRENGTH;
 

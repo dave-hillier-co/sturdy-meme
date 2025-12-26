@@ -60,7 +60,7 @@ void main() {
 
     // View and light directions
     vec3 V = normalize(ubo.cameraPosition.xyz - fragWorldPos);
-    vec3 L = normalize(-ubo.sunDirection.xyz);
+    vec3 L = normalize(ubo.sunDirection.xyz);  // sunDirection points toward sun
 
     // Calculate shadow
     float shadow = calculateCascadedShadow(
@@ -83,7 +83,7 @@ void main() {
     vec3 cameraToFrag = fragWorldPos - ubo.cameraPosition.xyz;
     float viewDist = length(cameraToFrag);
     vec3 viewDir = normalize(cameraToFrag);
-    vec3 sunDir = normalize(-ubo.sunDirection.xyz);
+    vec3 sunDir = normalize(ubo.sunDirection.xyz);  // sunDirection points toward sun
     vec3 sunColor = ubo.sunColor.rgb * ubo.sunDirection.w;
     color = applyAerialPerspective(color, ubo.cameraPosition.xyz, viewDir, viewDist, sunDir, sunColor);
 

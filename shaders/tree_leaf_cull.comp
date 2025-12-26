@@ -1,6 +1,8 @@
 #version 450
 
 #extension GL_GOOGLE_include_directive : require
+#extension GL_KHR_shader_subgroup_ballot : require
+#extension GL_KHR_shader_subgroup_arithmetic : require
 
 #include "bindings.glsl"
 #include "instancing_common.glsl"
@@ -171,25 +173,38 @@ void main() {
     // Get leaf type for this tree (0=oak, 1=ash, 2=aspen, 3=pine)
     uint leafType = min(tree.leafTypeIndex, NUM_LEAF_TYPES - 1);
 
-    // Atomically reserve output slot within this leaf type's region
-    // Use compare-and-swap loop to safely enforce bounds without race condition
-    uint typeLocalSlot;
-    uint currentCount = drawCmds[leafType].instanceCount;
-    while (true) {
-        // Check if we have capacity before attempting to reserve
-        if (currentCount >= maxLeavesPerType) {
-            // Budget exhausted - this leaf doesn't get rendered
-            return;
+    // Use subgroup operations to batch atomic updates per leaf type
+    // This reduces contention by ~32x compared to per-thread atomics
+    uint typeLocalSlot = ~0u;
+
+    for (uint type = 0; type < NUM_LEAF_TYPES; type++) {
+        // Find all threads in this subgroup that want this leaf type
+        uvec4 typeMask = subgroupBallot(leafType == type);
+        uint typeCount = subgroupBallotBitCount(typeMask);
+
+        if (typeCount > 0) {
+            // Elect first matching thread to do the atomic for the whole subgroup
+            uint electedLane = subgroupBallotFindLSB(typeMask);
+            uint baseSlot = 0;
+
+            if (gl_SubgroupInvocationID == electedLane) {
+                baseSlot = atomicAdd(drawCmds[type].instanceCount, typeCount);
+            }
+
+            // Broadcast base slot to all threads
+            baseSlot = subgroupBroadcast(baseSlot, electedLane);
+
+            // Each thread computes its offset within the batch
+            if (leafType == type) {
+                uint laneOffset = subgroupBallotExclusiveBitCount(typeMask);
+                typeLocalSlot = baseSlot + laneOffset;
+            }
         }
-        // Try to atomically increment if count hasn't changed
-        uint prevCount = atomicCompSwap(drawCmds[leafType].instanceCount, currentCount, currentCount + 1);
-        if (prevCount == currentCount) {
-            // Successfully reserved slot
-            typeLocalSlot = currentCount;
-            break;
-        }
-        // Another thread modified the count, retry with new value
-        currentCount = prevCount;
+    }
+
+    // Check if our slot is within budget
+    if (typeLocalSlot >= maxLeavesPerType) {
+        return;
     }
 
     // Calculate global output slot: type's base offset + local slot

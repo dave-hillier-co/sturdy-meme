@@ -5,6 +5,8 @@
 // One workgroup per visible tree - much more efficient than global leaf dispatch
 
 #extension GL_GOOGLE_include_directive : require
+#extension GL_KHR_shader_subgroup_ballot : require
+#extension GL_KHR_shader_subgroup_arithmetic : require
 
 #include "bindings.glsl"
 #include "instancing_common.glsl"
@@ -217,47 +219,16 @@ void main() {
         uint prevTierBudget = (tier > 0) ? getTierBudgetLimit(leafType, tier - 1) : 0;
         uint tierCapacity = tierBudget - prevTierBudget;
 
-        // Use compare-and-swap to safely reserve tier slot without race condition
-        uint tierSlot;
-        uint currentTierCount = tierCounts[tierIndex];
-        while (true) {
-            if (currentTierCount >= tierCapacity) {
-                // Tier budget exhausted - this leaf doesn't get rendered
-                tierSlot = tierCapacity; // Mark as failed
-                break;
-            }
-            uint prevCount = atomicCompSwap(tierCounts[tierIndex], currentTierCount, currentTierCount + 1);
-            if (prevCount == currentTierCount) {
-                tierSlot = currentTierCount;
-                break;
-            }
-            currentTierCount = prevCount;
-        }
-
+        // Fast path: use atomicAdd for tier tracking (for statistics)
+        // and check bounds after - slight over-allocation is acceptable
+        uint tierSlot = atomicAdd(tierCounts[tierIndex], 1);
         if (tierSlot >= tierCapacity) {
             continue;
         }
 
-        // Use compare-and-swap to safely reserve output slot without race condition
-        uint typeLocalSlot;
-        uint currentCount = drawCmds[leafType].instanceCount;
-        while (true) {
-            if (currentCount >= maxLeavesPerType) {
-                // Budget exhausted
-                typeLocalSlot = maxLeavesPerType;
-                break;
-            }
-            uint prevCount = atomicCompSwap(drawCmds[leafType].instanceCount, currentCount, currentCount + 1);
-            if (prevCount == currentCount) {
-                typeLocalSlot = currentCount;
-                break;
-            }
-            currentCount = prevCount;
-        }
-
+        // Allocate output slot with simple atomicAdd
+        uint typeLocalSlot = atomicAdd(drawCmds[leafType].instanceCount, 1);
         if (typeLocalSlot >= maxLeavesPerType) {
-            // Undo tier reservation since we couldn't get an output slot
-            atomicAdd(tierCounts[tierIndex], -1);
             continue;
         }
 

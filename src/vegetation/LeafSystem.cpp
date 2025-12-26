@@ -167,7 +167,7 @@ bool LeafSystem::createComputePipeline(SystemLifecycleHelper::PipelineHandles& h
         return false;
     }
 
-    auto compShaderModule = ShaderLoader::createShaderModule(getDevice(), *compShaderCode);
+    auto compShaderModule = ShaderLoader::createShaderModuleManaged(getDevice(), *compShaderCode);
     if (!compShaderModule) {
         SDL_Log("Failed to create leaf compute shader module");
         return false;
@@ -176,7 +176,7 @@ bool LeafSystem::createComputePipeline(SystemLifecycleHelper::PipelineHandles& h
     VkPipelineShaderStageCreateInfo shaderStageInfo{};
     shaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
     shaderStageInfo.stage = VK_SHADER_STAGE_COMPUTE_BIT;
-    shaderStageInfo.module = *compShaderModule;
+    shaderStageInfo.module = compShaderModule->get();
     shaderStageInfo.pName = "main";
 
     VkPushConstantRange pushConstantRange{};
@@ -188,8 +188,7 @@ bool LeafSystem::createComputePipeline(SystemLifecycleHelper::PipelineHandles& h
         getDevice(), handles.descriptorSetLayout, {pushConstantRange});
     if (handles.pipelineLayout == VK_NULL_HANDLE) {
         SDL_Log("Failed to create leaf compute pipeline layout");
-        vkDestroyShaderModule(getDevice(), *compShaderModule, nullptr);
-        return false;
+        return false;  // compShaderModule auto-destroyed
     }
 
     VkComputePipelineCreateInfo pipelineInfo{};
@@ -200,8 +199,7 @@ bool LeafSystem::createComputePipeline(SystemLifecycleHelper::PipelineHandles& h
     VkResult result = vkCreateComputePipelines(getDevice(), VK_NULL_HANDLE, 1,
                                                &pipelineInfo, nullptr,
                                                &handles.pipeline);
-
-    vkDestroyShaderModule(getDevice(), *compShaderModule, nullptr);
+    // compShaderModule auto-destroyed when function returns
 
     if (result != VK_SUCCESS) {
         SDL_Log("Failed to create leaf compute pipeline");
@@ -239,26 +237,24 @@ bool LeafSystem::createGraphicsPipeline(SystemLifecycleHelper::PipelineHandles& 
         return false;
     }
 
-    auto vertShaderModule = ShaderLoader::createShaderModule(getDevice(), *vertShaderCode);
-    auto fragShaderModule = ShaderLoader::createShaderModule(getDevice(), *fragShaderCode);
+    auto vertShaderModule = ShaderLoader::createShaderModuleManaged(getDevice(), *vertShaderCode);
+    auto fragShaderModule = ShaderLoader::createShaderModuleManaged(getDevice(), *fragShaderCode);
 
     if (!vertShaderModule || !fragShaderModule) {
         SDL_Log("Failed to create leaf shader modules");
-        if (vertShaderModule) vkDestroyShaderModule(getDevice(), *vertShaderModule, nullptr);
-        if (fragShaderModule) vkDestroyShaderModule(getDevice(), *fragShaderModule, nullptr);
-        return false;
+        return false;  // RAII auto-destroys any successfully created modules
     }
 
     VkPipelineShaderStageCreateInfo vertShaderStageInfo{};
     vertShaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
     vertShaderStageInfo.stage = VK_SHADER_STAGE_VERTEX_BIT;
-    vertShaderStageInfo.module = *vertShaderModule;
+    vertShaderStageInfo.module = vertShaderModule->get();
     vertShaderStageInfo.pName = "main";
 
     VkPipelineShaderStageCreateInfo fragShaderStageInfo{};
     fragShaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
     fragShaderStageInfo.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
-    fragShaderStageInfo.module = *fragShaderModule;
+    fragShaderStageInfo.module = fragShaderModule->get();
     fragShaderStageInfo.pName = "main";
 
     VkPipelineShaderStageCreateInfo shaderStages[] = {vertShaderStageInfo, fragShaderStageInfo};
@@ -352,9 +348,7 @@ bool LeafSystem::createGraphicsPipeline(SystemLifecycleHelper::PipelineHandles& 
         getDevice(), handles.descriptorSetLayout, {pushConstantRange});
     if (handles.pipelineLayout == VK_NULL_HANDLE) {
         SDL_Log("Failed to create leaf graphics pipeline layout");
-        vkDestroyShaderModule(getDevice(), *fragShaderModule, nullptr);
-        vkDestroyShaderModule(getDevice(), *vertShaderModule, nullptr);
-        return false;
+        return false;  // RAII auto-destroys shader modules
     }
 
     VkGraphicsPipelineCreateInfo pipelineInfo{};
@@ -376,9 +370,7 @@ bool LeafSystem::createGraphicsPipeline(SystemLifecycleHelper::PipelineHandles& 
     VkResult result = vkCreateGraphicsPipelines(getDevice(), VK_NULL_HANDLE, 1,
                                                 &pipelineInfo, nullptr,
                                                 &handles.pipeline);
-
-    vkDestroyShaderModule(getDevice(), *fragShaderModule, nullptr);
-    vkDestroyShaderModule(getDevice(), *vertShaderModule, nullptr);
+    // Shader modules auto-destroyed when function returns
 
     if (result != VK_SUCCESS) {
         SDL_Log("Failed to create leaf graphics pipeline");

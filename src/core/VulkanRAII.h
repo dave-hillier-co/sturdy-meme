@@ -131,6 +131,10 @@ using UniqueSampler = std::unique_ptr<
     std::remove_pointer_t<VkSampler>,
     VkHandleDeleter<VkSampler, vkDestroySampler>>;
 
+using UniqueShaderModule = std::unique_ptr<
+    std::remove_pointer_t<VkShaderModule>,
+    VkHandleDeleter<VkShaderModule, vkDestroyShaderModule>>;
+
 // ============================================================================
 // Factory functions for creating Unique* handles
 // ============================================================================
@@ -177,6 +181,10 @@ inline UniqueDescriptorPool makeUniqueDescriptorPool(VkDevice device, VkDescript
 
 inline UniqueSampler makeUniqueSampler(VkDevice device, VkSampler sampler) {
     return UniqueSampler(sampler, {device});
+}
+
+inline UniqueShaderModule makeUniqueShaderModule(VkDevice device, VkShaderModule shaderModule) {
+    return UniqueShaderModule(shaderModule, {device});
 }
 
 // ============================================================================
@@ -1009,5 +1017,53 @@ public:
     VkResult resetFence() const {
         VkFence f = get();
         return vkResetFences(device(), 1, &f);
+    }
+};
+
+// ============================================================================
+// ManagedShaderModule - RAII wrapper for VkShaderModule (inherits from UniqueShaderModule)
+// ============================================================================
+// Shader modules are typically short-lived (destroyed after pipeline creation),
+// but RAII ensures cleanup on error paths and simplifies code.
+
+class ManagedShaderModule : public UniqueShaderModule {
+public:
+    using UniqueShaderModule::UniqueShaderModule;  // Inherit constructors
+
+    ManagedShaderModule() = default;
+
+    // Allow conversion from UniqueShaderModule
+    ManagedShaderModule(UniqueShaderModule&& other) noexcept
+        : UniqueShaderModule(std::move(other)) {}
+
+    static bool create(VkDevice device,
+                       const VkShaderModuleCreateInfo& createInfo,
+                       ManagedShaderModule& outModule) {
+        VkShaderModule shaderModule = VK_NULL_HANDLE;
+        VkResult vkResult = vkCreateShaderModule(device, &createInfo, nullptr, &shaderModule);
+        if (vkResult != VK_SUCCESS) {
+            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
+                "ManagedShaderModule::create failed: %d", vkResult);
+            return false;
+        }
+
+        outModule = ManagedShaderModule(makeUniqueShaderModule(device, shaderModule));
+        return true;
+    }
+
+    // Create from SPIR-V code
+    static bool createFromCode(VkDevice device,
+                               const std::vector<char>& code,
+                               ManagedShaderModule& outModule) {
+        VkShaderModuleCreateInfo createInfo{};
+        createInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+        createInfo.codeSize = code.size();
+        createInfo.pCode = reinterpret_cast<const uint32_t*>(code.data());
+        return create(device, createInfo, outModule);
+    }
+
+    // Adopt an existing raw shader module
+    static ManagedShaderModule fromRaw(VkDevice device, VkShaderModule shaderModule) {
+        return ManagedShaderModule(makeUniqueShaderModule(device, shaderModule));
     }
 };

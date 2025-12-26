@@ -258,7 +258,7 @@ bool GrassSystem::createDisplacementPipeline() {
         return false;
     }
 
-    auto compShaderModule = ShaderLoader::createShaderModule(getDevice(), *compShaderCode);
+    auto compShaderModule = ShaderLoader::createShaderModuleManaged(getDevice(), *compShaderCode);
     if (!compShaderModule) {
         SDL_Log("Failed to create displacement compute shader module");
         return false;
@@ -267,7 +267,7 @@ bool GrassSystem::createDisplacementPipeline() {
     VkPipelineShaderStageCreateInfo shaderStageInfo{};
     shaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
     shaderStageInfo.stage = VK_SHADER_STAGE_COMPUTE_BIT;
-    shaderStageInfo.module = *compShaderModule;
+    shaderStageInfo.module = compShaderModule->get();
     shaderStageInfo.pName = "main";
 
     VkComputePipelineCreateInfo pipelineInfo{};
@@ -275,14 +275,11 @@ bool GrassSystem::createDisplacementPipeline() {
     pipelineInfo.stage = shaderStageInfo;
     pipelineInfo.layout = displacementPipelineLayout_.get();
 
-    bool success = ManagedPipeline::createCompute(getDevice(), VK_NULL_HANDLE, pipelineInfo, displacementPipeline_);
-
-    vkDestroyShaderModule(getDevice(), *compShaderModule, nullptr);
-
-    if (!success) {
+    if (!ManagedPipeline::createCompute(getDevice(), VK_NULL_HANDLE, pipelineInfo, displacementPipeline_)) {
         SDL_Log("Failed to create displacement compute pipeline");
         return false;
     }
+    // compShaderModule automatically destroyed when it goes out of scope
 
     // Allocate per-frame displacement descriptor sets (double-buffered) using managed pool
     displacementDescriptorSets = getDescriptorPool()->allocate(displacementDescriptorSetLayout_.get(), getFramesInFlight());

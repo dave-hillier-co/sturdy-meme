@@ -102,17 +102,16 @@ bool TreeLeafCulling::createLeafCullPipeline() {
     }
 
     std::string shaderPath = resourcePath_ + "/shaders/tree_leaf_cull.comp.spv";
-    auto shaderModuleOpt = ShaderLoader::loadShaderModule(device_, shaderPath);
-    if (!shaderModuleOpt.has_value()) {
+    auto shaderModule = ShaderLoader::loadShaderModuleManaged(device_, shaderPath);
+    if (!shaderModule) {
         SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "TreeLeafCulling: Cull shader not found: %s", shaderPath.c_str());
         return false;
     }
-    VkShaderModule computeShaderModule = shaderModuleOpt.value();
 
     VkPipelineShaderStageCreateInfo shaderStageInfo{};
     shaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
     shaderStageInfo.stage = VK_SHADER_STAGE_COMPUTE_BIT;
-    shaderStageInfo.module = computeShaderModule;
+    shaderStageInfo.module = shaderModule->get();
     shaderStageInfo.pName = "main";
 
     VkComputePipelineCreateInfo pipelineInfo{};
@@ -120,15 +119,10 @@ bool TreeLeafCulling::createLeafCullPipeline() {
     pipelineInfo.stage = shaderStageInfo;
     pipelineInfo.layout = cullPipelineLayout_.get();
 
-    VkPipeline rawPipeline;
-    VkResult result = vkCreateComputePipelines(device_, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &rawPipeline);
-    vkDestroyShaderModule(device_, computeShaderModule, nullptr);
-
-    if (result != VK_SUCCESS) {
+    if (!ManagedPipeline::createCompute(device_, VK_NULL_HANDLE, pipelineInfo, cullPipeline_)) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "TreeLeafCulling: Failed to create cull compute pipeline");
         return false;
     }
-    cullPipeline_ = ManagedPipeline::fromRaw(device_, rawPipeline);
 
     SDL_Log("TreeLeafCulling: Created leaf culling compute pipeline");
     return true;
@@ -245,17 +239,16 @@ bool TreeLeafCulling::createCellCullPipeline() {
     }
 
     std::string shaderPath = resourcePath_ + "/shaders/tree_cell_cull.comp.spv";
-    auto shaderModuleOpt = ShaderLoader::loadShaderModule(device_, shaderPath);
-    if (!shaderModuleOpt.has_value()) {
+    auto shaderModule = ShaderLoader::loadShaderModuleManaged(device_, shaderPath);
+    if (!shaderModule) {
         SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "TreeLeafCulling: Cell cull shader not found: %s", shaderPath.c_str());
         return false;
     }
-    VkShaderModule computeShaderModule = shaderModuleOpt.value();
 
     VkPipelineShaderStageCreateInfo shaderStageInfo{};
     shaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
     shaderStageInfo.stage = VK_SHADER_STAGE_COMPUTE_BIT;
-    shaderStageInfo.module = computeShaderModule;
+    shaderStageInfo.module = shaderModule->get();
     shaderStageInfo.pName = "main";
 
     VkComputePipelineCreateInfo pipelineInfo{};
@@ -263,15 +256,10 @@ bool TreeLeafCulling::createCellCullPipeline() {
     pipelineInfo.stage = shaderStageInfo;
     pipelineInfo.layout = cellCullPipelineLayout_.get();
 
-    VkPipeline rawPipeline;
-    VkResult result = vkCreateComputePipelines(device_, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &rawPipeline);
-    vkDestroyShaderModule(device_, computeShaderModule, nullptr);
-
-    if (result != VK_SUCCESS) {
+    if (!ManagedPipeline::createCompute(device_, VK_NULL_HANDLE, pipelineInfo, cellCullPipeline_)) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "TreeLeafCulling: Failed to create cell cull compute pipeline");
         return false;
     }
-    cellCullPipeline_ = ManagedPipeline::fromRaw(device_, rawPipeline);
 
     SDL_Log("TreeLeafCulling: Created cell culling compute pipeline");
     return true;
@@ -366,17 +354,16 @@ bool TreeLeafCulling::createTreeFilterPipeline() {
     }
 
     std::string shaderPath = resourcePath_ + "/shaders/tree_filter.comp.spv";
-    auto shaderModuleOpt = ShaderLoader::loadShaderModule(device_, shaderPath);
-    if (!shaderModuleOpt.has_value()) {
+    auto shaderModule = ShaderLoader::loadShaderModuleManaged(device_, shaderPath);
+    if (!shaderModule) {
         SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "TreeLeafCulling: Tree filter shader not found: %s", shaderPath.c_str());
         return false;
     }
-    VkShaderModule computeShaderModule = shaderModuleOpt.value();
 
     VkPipelineShaderStageCreateInfo shaderStageInfo{};
     shaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
     shaderStageInfo.stage = VK_SHADER_STAGE_COMPUTE_BIT;
-    shaderStageInfo.module = computeShaderModule;
+    shaderStageInfo.module = shaderModule->get();
     shaderStageInfo.pName = "main";
 
     VkComputePipelineCreateInfo pipelineInfo{};
@@ -384,15 +371,10 @@ bool TreeLeafCulling::createTreeFilterPipeline() {
     pipelineInfo.stage = shaderStageInfo;
     pipelineInfo.layout = treeFilterPipelineLayout_.get();
 
-    VkPipeline rawPipeline;
-    VkResult result = vkCreateComputePipelines(device_, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &rawPipeline);
-    vkDestroyShaderModule(device_, computeShaderModule, nullptr);
-
-    if (result != VK_SUCCESS) {
+    if (!ManagedPipeline::createCompute(device_, VK_NULL_HANDLE, pipelineInfo, treeFilterPipeline_)) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "TreeLeafCulling: Failed to create tree filter compute pipeline");
         return false;
     }
-    treeFilterPipeline_ = ManagedPipeline::fromRaw(device_, rawPipeline);
 
     SDL_Log("TreeLeafCulling: Created tree filter compute pipeline");
     return true;
@@ -488,17 +470,16 @@ bool TreeLeafCulling::createTwoPhaseLeafCullPipeline() {
     }
 
     std::string shaderPath = resourcePath_ + "/shaders/tree_leaf_cull_phase3.comp.spv";
-    auto shaderModuleOpt = ShaderLoader::loadShaderModule(device_, shaderPath);
-    if (!shaderModuleOpt.has_value()) {
+    auto shaderModule = ShaderLoader::loadShaderModuleManaged(device_, shaderPath);
+    if (!shaderModule) {
         SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "TreeLeafCulling: Two-phase leaf cull shader not found: %s", shaderPath.c_str());
         return false;
     }
-    VkShaderModule computeShaderModule = shaderModuleOpt.value();
 
     VkPipelineShaderStageCreateInfo shaderStageInfo{};
     shaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
     shaderStageInfo.stage = VK_SHADER_STAGE_COMPUTE_BIT;
-    shaderStageInfo.module = computeShaderModule;
+    shaderStageInfo.module = shaderModule->get();
     shaderStageInfo.pName = "main";
 
     VkComputePipelineCreateInfo pipelineInfo{};
@@ -506,15 +487,10 @@ bool TreeLeafCulling::createTwoPhaseLeafCullPipeline() {
     pipelineInfo.stage = shaderStageInfo;
     pipelineInfo.layout = twoPhaseLeafCullPipelineLayout_.get();
 
-    VkPipeline rawPipeline;
-    VkResult result = vkCreateComputePipelines(device_, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &rawPipeline);
-    vkDestroyShaderModule(device_, computeShaderModule, nullptr);
-
-    if (result != VK_SUCCESS) {
+    if (!ManagedPipeline::createCompute(device_, VK_NULL_HANDLE, pipelineInfo, twoPhaseLeafCullPipeline_)) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "TreeLeafCulling: Failed to create two-phase leaf cull compute pipeline");
         return false;
     }
-    twoPhaseLeafCullPipeline_ = ManagedPipeline::fromRaw(device_, rawPipeline);
 
     SDL_Log("TreeLeafCulling: Created two-phase leaf culling compute pipeline");
     return true;

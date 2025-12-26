@@ -222,17 +222,18 @@ bool FoamBuffer::createComputePipeline() {
         sizeof(FoamPushConstants)
     };
 
-    // Pipeline layout
+    // Pipeline layout - use raw struct for VMA/raw Vulkan interop
     VkDescriptorSetLayout rawLayout = descriptorSetLayout.get();
-    PipelineLayoutCreateInfo pipelineLayoutInfo{
-        {},                                          // flags
-        1,                                           // setLayoutCount
-        &rawLayout,
-        1,                                           // pushConstantRangeCount
-        reinterpret_cast<const VkPushConstantRange*>(&pushConstantRange)
-    };
+    VkPushConstantRange vkPushConstantRange = static_cast<VkPushConstantRange>(pushConstantRange);
 
-    if (!ManagedPipelineLayout::create(device, static_cast<VkPipelineLayoutCreateInfo>(pipelineLayoutInfo), computePipelineLayout)) {
+    VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
+    pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+    pipelineLayoutInfo.setLayoutCount = 1;
+    pipelineLayoutInfo.pSetLayouts = &rawLayout;
+    pipelineLayoutInfo.pushConstantRangeCount = 1;
+    pipelineLayoutInfo.pPushConstantRanges = &vkPushConstantRange;
+
+    if (!ManagedPipelineLayout::create(device, pipelineLayoutInfo, computePipelineLayout)) {
         return false;
     }
 
@@ -294,18 +295,17 @@ bool FoamBuffer::createDescriptorSets() {
         return false;
     }
 
-    // Allocate descriptor sets (2 per frame for ping-pong)
+    // Allocate descriptor sets (2 per frame for ping-pong) - use raw struct for Vulkan interop
     std::vector<VkDescriptorSetLayout> layouts(setCount, descriptorSetLayout.get());
 
-    DescriptorSetAllocateInfo allocInfo{
-        descriptorPool,
-        setCount,
-        layouts.data()
-    };
+    VkDescriptorSetAllocateInfo allocInfo{};
+    allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+    allocInfo.descriptorPool = descriptorPool;
+    allocInfo.descriptorSetCount = setCount;
+    allocInfo.pSetLayouts = layouts.data();
 
     descriptorSets.resize(setCount);
-    auto vkAllocInfo = static_cast<VkDescriptorSetAllocateInfo>(allocInfo);
-    if (vkAllocateDescriptorSets(device, &vkAllocInfo, descriptorSets.data()) != VK_SUCCESS) {
+    if (vkAllocateDescriptorSets(device, &allocInfo, descriptorSets.data()) != VK_SUCCESS) {
         return false;
     }
 

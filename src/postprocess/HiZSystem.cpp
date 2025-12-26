@@ -294,7 +294,7 @@ bool HiZSystem::createBuffers() {
     objectBufferCapacity = MAX_OBJECTS;
 
     // Create indirect draw buffers (per frame)
-    VkDeviceSize indirectBufferSize = sizeof(DrawIndexedIndirectCommand) * MAX_OBJECTS;
+    VkDeviceSize indirectBufferSize = sizeof(::DrawIndexedIndirectCommand) * MAX_OBJECTS;
     bool success = BufferUtils::PerFrameBufferBuilder()
         .setAllocator(allocator)
         .setFrameCount(framesInFlight)

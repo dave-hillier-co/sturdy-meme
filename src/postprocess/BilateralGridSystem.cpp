@@ -99,7 +99,7 @@ bool BilateralGridSystem::createGridTextures() {
     ImageCreateInfo imageInfo{
         {},                              // flags
         ImageType::e3D,
-        GRID_FORMAT,
+        static_cast<Format>(GRID_FORMAT),
         Extent3D{GRID_WIDTH, GRID_HEIGHT, GRID_DEPTH},
         1,                               // mipLevels
         1,                               // arrayLayers
@@ -127,7 +127,7 @@ bool BilateralGridSystem::createGridTextures() {
             {},                          // flags
             gridImages[i],
             ImageViewType::e3D,
-            GRID_FORMAT,
+            static_cast<Format>(GRID_FORMAT),
             ComponentMapping{},          // identity swizzle
             ImageSubresourceRange{
                 ImageAspectFlagBits::eColor,

@@ -134,7 +134,7 @@ bool PostProcessSystem::createHDRRenderTarget() {
     ImageCreateInfo colorImageInfo{
         {},                                  // flags
         ImageType::e2D,
-        HDR_FORMAT,
+        static_cast<Format>(HDR_FORMAT),
         Extent3D{extent.width, extent.height, 1},
         1, 1,                                // mipLevels, arrayLayers
         SampleCountFlagBits::e1,
@@ -159,7 +159,7 @@ bool PostProcessSystem::createHDRRenderTarget() {
         {},                              // flags
         hdrColorImage,
         ImageViewType::e2D,
-        HDR_FORMAT,
+        static_cast<Format>(HDR_FORMAT),
         ComponentMapping{},              // identity swizzle
         ImageSubresourceRange{ImageAspectFlagBits::eColor, 0, 1, 0, 1}
     };
@@ -174,7 +174,7 @@ bool PostProcessSystem::createHDRRenderTarget() {
     ImageCreateInfo depthImageInfo{
         {},                                  // flags
         ImageType::e2D,
-        DEPTH_FORMAT,
+        static_cast<Format>(DEPTH_FORMAT),
         Extent3D{extent.width, extent.height, 1},
         1, 1,                                // mipLevels, arrayLayers
         SampleCountFlagBits::e1,
@@ -199,7 +199,7 @@ bool PostProcessSystem::createHDRRenderTarget() {
         {},                              // flags
         hdrDepthImage,
         ImageViewType::e2D,
-        DEPTH_FORMAT,
+        static_cast<Format>(DEPTH_FORMAT),
         ComponentMapping{},              // identity swizzle
         ImageSubresourceRange{ImageAspectFlagBits::eDepth, 0, 1, 0, 1}
     };
@@ -216,7 +216,7 @@ bool PostProcessSystem::createHDRRenderTarget() {
 bool PostProcessSystem::createHDRRenderPass() {
     AttachmentDescription colorAttachment{
         {},                                  // flags
-        HDR_FORMAT,
+        static_cast<Format>(HDR_FORMAT),
         SampleCountFlagBits::e1,
         AttachmentLoadOp::eClear,
         AttachmentStoreOp::eStore,
@@ -228,7 +228,7 @@ bool PostProcessSystem::createHDRRenderPass() {
 
     AttachmentDescription depthAttachment{
         {},                                  // flags
-        DEPTH_FORMAT,
+        static_cast<Format>(DEPTH_FORMAT),
         SampleCountFlagBits::e1,
         AttachmentLoadOp::eClear,
         AttachmentStoreOp::eStore,           // Store for sampling in post-process
@@ -279,17 +279,17 @@ bool PostProcessSystem::createHDRRenderPass() {
 bool PostProcessSystem::createHDRFramebuffer() {
     std::array<VkImageView, 2> attachments = {hdrColorView, hdrDepthView};
 
-    FramebufferCreateInfo framebufferInfo{
-        {},                                  // flags
-        hdrRenderPass,
-        attachments,
-        extent.width,
-        extent.height,
-        1                                    // layers
-    };
+    // Use raw struct for VkImageView array interop
+    VkFramebufferCreateInfo framebufferInfo{};
+    framebufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+    framebufferInfo.renderPass = hdrRenderPass;
+    framebufferInfo.attachmentCount = static_cast<uint32_t>(attachments.size());
+    framebufferInfo.pAttachments = attachments.data();
+    framebufferInfo.width = extent.width;
+    framebufferInfo.height = extent.height;
+    framebufferInfo.layers = 1;
 
-    auto vkFramebufferInfo = static_cast<VkFramebufferCreateInfo>(framebufferInfo);
-    if (vkCreateFramebuffer(device, &vkFramebufferInfo, nullptr, &hdrFramebuffer) != VK_SUCCESS) {
+    if (vkCreateFramebuffer(device, &framebufferInfo, nullptr, &hdrFramebuffer) != VK_SUCCESS) {
         SDL_Log("Failed to create HDR framebuffer");
         return false;
     }

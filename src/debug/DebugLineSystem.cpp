@@ -138,7 +138,7 @@ bool DebugLineSystem::createPipeline(VkRenderPass renderPass, const std::string&
     PipelineLayoutCreateInfo layoutInfo{
         {},                             // flags
         0, nullptr,                     // setLayouts
-        1, reinterpret_cast<const VkPushConstantRange*>(&pushConstantRange)
+        1, &pushConstantRange
     };
 
     auto vkLayoutInfo = static_cast<VkPipelineLayoutCreateInfo>(layoutInfo);

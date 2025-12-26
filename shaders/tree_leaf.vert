@@ -42,6 +42,7 @@ layout(location = 2) out vec3 fragWorldPos;
 layout(location = 3) out float fragLeafSize;
 layout(location = 4) out vec3 fragLeafTint;
 layout(location = 5) out float fragAutumnHueShift;
+layout(location = 6) out float fragLodBlendFactor;
 
 void main() {
     // Get world-space leaf instance data from SSBO
@@ -101,4 +102,5 @@ void main() {
     fragLeafSize = leafSize;
     fragLeafTint = leafTint;
     fragAutumnHueShift = autumnHueShift;
+    fragLodBlendFactor = tree.windPhaseAndLOD.y;
 }

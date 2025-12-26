@@ -42,10 +42,26 @@ float geometrySmith(vec3 N, vec3 V, vec3 L, float roughness) {
     return geometrySchlickGGX(NdotV, roughness) * geometrySchlickGGX(NdotL, roughness);
 }
 
-// Fresnel-Schlick approximation
+// Fresnel-Schlick approximation (standard power of 5)
 vec3 F_Schlick(float VoH, vec3 F0) {
     return F0 + (1.0 - F0) * pow(clamp(1.0 - VoH, 0.0, 1.0), 5.0);
 }
+
+// Fresnel-Schlick with scalar F0 (for water, glass, etc.)
+float F_SchlickScalar(float cosTheta, float F0) {
+    return F0 + (1.0 - F0) * pow(clamp(1.0 - cosTheta, 0.0, 1.0), 5.0);
+}
+
+// Fresnel-Schlick with parametric power (for artistic control)
+// power: typically 5.0 for physical accuracy, can be adjusted
+float F_SchlickPower(float cosTheta, float F0, float power) {
+    return F0 + (1.0 - F0) * pow(clamp(1.0 - cosTheta, 0.0, 1.0), power);
+}
+
+// Common F0 values for different materials
+const float F0_DIELECTRIC = 0.04;  // Non-metals (plastic, etc.)
+const float F0_WATER = 0.02;       // Water
+const float F0_GLASS = 0.04;       // Glass
 
 // ============================================================================
 // Light Attenuation and Falloff

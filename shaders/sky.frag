@@ -6,6 +6,7 @@
 #include "bindings.glsl"
 #include "ubo_common.glsl"
 #include "celestial_common.glsl"
+#include "fbm_common.glsl"
 
 // LUT dimensions (must match AtmosphereLUTSystem)
 const int TRANSMITTANCE_WIDTH = 256;
@@ -109,41 +110,12 @@ vec3 sampleSkyViewLUT(vec3 viewDir) {
     return texture(skyViewLUT, uv).rgb;
 }
 
-float hash(vec3 p) {
-    return fract(sin(dot(p, vec3(127.1, 311.7, 74.7))) * 43758.5453);
-}
+// Note: hash3D, noise3D, and fbmFixed3D are provided by fbm_common.glsl
+// The local hash() name is kept for starField() which uses a vec3 parameter
+#define hash(p) hash3D(p)
 
-// 3D value noise for cloud shapes
-float noise3D(vec3 p) {
-    vec3 i = floor(p);
-    vec3 f = fract(p);
-    f = f * f * (3.0 - 2.0 * f);  // Smoothstep
-
-    return mix(
-        mix(mix(hash(i + vec3(0, 0, 0)), hash(i + vec3(1, 0, 0)), f.x),
-            mix(hash(i + vec3(0, 1, 0)), hash(i + vec3(1, 1, 0)), f.x), f.y),
-        mix(mix(hash(i + vec3(0, 0, 1)), hash(i + vec3(1, 0, 1)), f.x),
-            mix(hash(i + vec3(0, 1, 1)), hash(i + vec3(1, 1, 1)), f.x), f.y),
-        f.z
-    );
-}
-
-// Fractal Brownian Motion for cloud detail
-float fbm(vec3 p, int octaves) {
-    float value = 0.0;
-    float amplitude = 0.5;
-    float frequency = 1.0;
-    float maxValue = 0.0;
-
-    for (int i = 0; i < octaves; i++) {
-        value += amplitude * noise3D(p * frequency);
-        maxValue += amplitude;
-        amplitude *= 0.5;
-        frequency *= 2.0;
-    }
-
-    return value / maxValue;
-}
+// Alias for backward compatibility with existing cloud code
+#define fbm(p, octaves) fbmFixed3D(p, octaves)
 
 // Cloud height gradient (cumulus shape - rounded bottom, flat top)
 float cloudHeightGradient(float heightFraction) {

@@ -9,7 +9,28 @@
  * Never go to 0 octaves because reflections look bad in the distance.
  */
 
-// High-quality noise function for FBM
+#ifndef FBM_COMMON_GLSL
+#define FBM_COMMON_GLSL
+
+// ============================================================================
+// Hash Functions
+// ============================================================================
+
+// 2D hash function
+float hash2D(vec2 p) {
+    return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
+}
+
+// 3D hash function
+float hash3D(vec3 p) {
+    return fract(sin(dot(p, vec3(127.1, 311.7, 74.7))) * 43758.5453);
+}
+
+// ============================================================================
+// 2D Noise Functions
+// ============================================================================
+
+// High-quality 2D noise function for FBM
 float fbmNoise(vec2 p) {
     vec2 i = floor(p);
     vec2 f = fract(p);
@@ -18,10 +39,10 @@ float fbmNoise(vec2 p) {
     vec2 u = f * f * f * (f * (f * 6.0 - 15.0) + 10.0);
 
     // Hash function for corner values
-    float a = fract(sin(dot(i, vec2(127.1, 311.7))) * 43758.5453);
-    float b = fract(sin(dot(i + vec2(1.0, 0.0), vec2(127.1, 311.7))) * 43758.5453);
-    float c = fract(sin(dot(i + vec2(0.0, 1.0), vec2(127.1, 311.7))) * 43758.5453);
-    float d = fract(sin(dot(i + vec2(1.0, 1.0), vec2(127.1, 311.7))) * 43758.5453);
+    float a = hash2D(i);
+    float b = hash2D(i + vec2(1.0, 0.0));
+    float c = hash2D(i + vec2(0.0, 1.0));
+    float d = hash2D(i + vec2(1.0, 1.0));
 
     return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
 }
@@ -140,3 +161,69 @@ vec3 fbmNormal(vec2 uv, float viewDistance, float nearDist, float farDist, float
     // Return normal perturbation
     return normalize(vec3(-dx * strength, 1.0, -dy * strength));
 }
+
+// ============================================================================
+// 3D Noise Functions
+// ============================================================================
+
+// 3D value noise with smoothstep interpolation
+float noise3D(vec3 p) {
+    vec3 i = floor(p);
+    vec3 f = fract(p);
+
+    // Smoothstep interpolation
+    f = f * f * (3.0 - 2.0 * f);
+
+    return mix(
+        mix(mix(hash3D(i + vec3(0, 0, 0)), hash3D(i + vec3(1, 0, 0)), f.x),
+            mix(hash3D(i + vec3(0, 1, 0)), hash3D(i + vec3(1, 1, 0)), f.x), f.y),
+        mix(mix(hash3D(i + vec3(0, 0, 1)), hash3D(i + vec3(1, 0, 1)), f.x),
+            mix(hash3D(i + vec3(0, 1, 1)), hash3D(i + vec3(1, 1, 1)), f.x), f.y),
+        f.z
+    );
+}
+
+// Standard 3D FBM with fixed octave count
+float fbmFixed3D(vec3 p, int octaves) {
+    float value = 0.0;
+    float amplitude = 0.5;
+    float frequency = 1.0;
+    float maxValue = 0.0;
+
+    for (int i = 0; i < octaves; i++) {
+        value += amplitude * noise3D(p * frequency);
+        maxValue += amplitude;
+        amplitude *= 0.5;
+        frequency *= 2.0;
+    }
+
+    return value / maxValue;
+}
+
+// LOD-aware 3D FBM with smooth octave transition
+float fbmLOD3D(vec3 p, float distanceFactor, int minOctaves, int maxOctaves) {
+    float octaveFloat = mix(float(maxOctaves), float(minOctaves), distanceFactor);
+    int octaveCount = int(floor(octaveFloat));
+    float octaveFrac = fract(octaveFloat);
+
+    float value = 0.0;
+    float amplitude = 0.5;
+    float frequency = 1.0;
+    float totalAmplitude = 0.0;
+
+    for (int i = 0; i < octaveCount; i++) {
+        value += amplitude * noise3D(p * frequency);
+        totalAmplitude += amplitude;
+        amplitude *= 0.5;
+        frequency *= 2.0;
+    }
+
+    if (octaveCount < maxOctaves && octaveFrac > 0.0) {
+        value += amplitude * noise3D(p * frequency) * (1.0 - octaveFrac);
+        totalAmplitude += amplitude * (1.0 - octaveFrac);
+    }
+
+    return value / max(totalAmplitude, 0.001);
+}
+
+#endif // FBM_COMMON_GLSL

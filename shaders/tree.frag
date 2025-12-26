@@ -7,6 +7,8 @@
 #include "ubo_common.glsl"
 #include "atmosphere_common.glsl"
 #include "tree_lighting_common.glsl"
+#include "dither_common.glsl"
+#include "normal_mapping_common.glsl"
 
 layout(binding = BINDING_TREE_GFX_SHADOW_MAP) uniform sampler2DArrayShadow shadowMapArray;
 layout(binding = BINDING_TREE_GFX_BARK_ALBEDO) uniform sampler2D barkAlbedo;
@@ -30,39 +32,14 @@ layout(location = 4) in float fragBranchLevel;
 
 layout(location = 0) out vec4 outColor;
 
-// Apply normal map using vertex tangent to build TBN matrix
-vec3 perturbNormal(vec3 N, vec4 tangent, vec2 texcoord) {
-    vec3 T = normalize(tangent.xyz);
-    T = normalize(T - dot(T, N) * N);
-    vec3 B = cross(N, T) * tangent.w;
-    mat3 TBN = mat3(T, B, N);
-
-    vec3 normalSample = texture(barkNormal, texcoord).rgb;
-    normalSample = normalSample * 2.0 - 1.0;
-
-    return normalize(TBN * normalSample);
-}
-
-// 4x4 Bayer dither matrix for LOD transition
-const float bayerMatrix[16] = float[16](
-    0.0/16.0,  8.0/16.0,  2.0/16.0, 10.0/16.0,
-    12.0/16.0, 4.0/16.0, 14.0/16.0,  6.0/16.0,
-    3.0/16.0, 11.0/16.0,  1.0/16.0,  9.0/16.0,
-    15.0/16.0, 7.0/16.0, 13.0/16.0,  5.0/16.0
-);
+// Note: perturbNormal is provided by normal_mapping_common.glsl
+// Note: Bayer dithering is provided by dither_common.glsl
 
 void main() {
     // LOD dithered fade-out - discard more pixels as blend factor increases
     // (inverse of impostor fade-in)
-    if (push.lodBlendFactor > 0.01) {
-        ivec2 pixelCoord = ivec2(gl_FragCoord.xy);
-        int ditherIndex = (pixelCoord.x % 4) + (pixelCoord.y % 4) * 4;
-        float ditherValue = bayerMatrix[ditherIndex];
-        // Discard if blend factor exceeds dither threshold
-        // At blendFactor=0.5, about half the pixels are discarded
-        if (push.lodBlendFactor > ditherValue) {
-            discard;
-        }
+    if (shouldDiscardForLOD(push.lodBlendFactor)) {
+        discard;
     }
 
     // Sample bark textures
@@ -72,7 +49,7 @@ void main() {
     // Normal mapping
     vec3 N = normalize(fragNormal);
     if (fragTangent.xyz != vec3(0.0)) {
-        N = perturbNormal(N, fragTangent, fragTexCoord);
+        N = perturbNormal(N, fragTangent, barkNormal, fragTexCoord);
     }
 
     // Sample PBR maps

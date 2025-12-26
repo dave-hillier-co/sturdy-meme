@@ -109,37 +109,7 @@ layout(location = 7) in float fragBreakingWave; // Phase 2.3: Breaking wave inte
 
 layout(location = 0) out vec4 outColor;
 
-// Procedural noise for water detail
-float hash(vec2 p) {
-    return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
-}
-
-float noise(vec2 p) {
-    vec2 i = floor(p);
-    vec2 f = fract(p);
-    f = f * f * (3.0 - 2.0 * f);
-
-    float a = hash(i);
-    float b = hash(i + vec2(1.0, 0.0));
-    float c = hash(i + vec2(0.0, 1.0));
-    float d = hash(i + vec2(1.0, 1.0));
-
-    return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
-}
-
-float fbm(vec2 p, int octaves) {
-    float value = 0.0;
-    float amplitude = 0.5;
-    float frequency = 1.0;
-
-    for (int i = 0; i < octaves; i++) {
-        value += amplitude * noise(p * frequency);
-        amplitude *= 0.5;
-        frequency *= 2.0;
-    }
-
-    return value;
-}
+// Note: Procedural noise functions (hash2D, fbmNoise, fbmFixed, fbmLOD) are provided by fbm_common.glsl
 
 // =========================================================================
 // PHASE 11: Dual Depth Buffer Functions
@@ -185,9 +155,10 @@ vec2 calculateRefractionOffset(vec2 screenUV, vec3 normal, float waterDepth, flo
     return normal.xz * refractionStrength;
 }
 
-// Schlick's Fresnel approximation
-float fresnelSchlick(float cosTheta, float F0) {
-    return F0 + (1.0 - F0) * pow(clamp(1.0 - cosTheta, 0.0, 1.0), fresnelPower);
+// Schlick's Fresnel approximation with configurable power
+// Uses F_SchlickPower from lighting_common.glsl with water-specific fresnelPower
+float fresnelSchlickWater(float cosTheta, float F0) {
+    return F_SchlickPower(cosTheta, F0, fresnelPower);
 }
 
 // Generate procedural sky color for fallback/blending
@@ -294,20 +265,7 @@ vec3 calculateWaterTransmission(float depth, vec3 absorption, float turbidity, f
     return transmitted + scatteredColor;
 }
 
-// GGX/Trowbridge-Reitz normal distribution function for specular
-float distributionGGX(float NdotH, float roughness) {
-    float a = roughness * roughness;
-    float a2 = a * a;
-    float NdotH2 = NdotH * NdotH;
-
-    float num = a2;
-    float denom = (NdotH2 * (a2 - 1.0) + 1.0);
-    denom = 3.14159265 * denom * denom;
-
-    return num / max(denom, 0.0001);
-}
-
-// Note: geometrySchlickGGX and geometrySmith are provided by lighting_common.glsl
+// Note: GGX functions (D_GGX, geometrySchlickGGX, geometrySmith) are provided by lighting_common.glsl
 
 // =========================================================================
 // VARIANCE-BASED SPECULAR FILTERING (Phase 6)
@@ -474,7 +432,7 @@ void main() {
     // FRESNEL & REFLECTION
     // =========================================================================
     float NdotV = max(dot(N, V), 0.0);
-    float fresnel = fresnelSchlick(NdotV, 0.02);  // Water F0 ~0.02
+    float fresnel = fresnelSchlickWater(NdotV, F0_WATER);  // Water F0 ~0.02
 
     vec3 R = reflect(-V, N);
 
@@ -666,9 +624,9 @@ void main() {
     float NdotL = max(dot(N, sunDir), 0.0);
 
     // GGX specular with Fresnel and geometry terms
-    float D = distributionGGX(NdotH, adjustedRoughness);
+    float D = D_GGX(NdotH, adjustedRoughness);
     float G = geometrySmith(N, V, sunDir, adjustedRoughness);
-    float F = fresnelSchlick(max(dot(H, V), 0.0), 0.02);
+    float F = fresnelSchlickWater(max(dot(H, V), 0.0), F0_WATER);
 
     // Cook-Torrance BRDF
     float specular = (D * G * F) / max(4.0 * NdotV * NdotL, 0.001);
@@ -678,7 +636,7 @@ void main() {
     vec3 moonH = normalize(V + moonDir);
     float moonNdotH = max(dot(N, moonH), 0.0);
     float moonNdotL = max(dot(N, moonDir), 0.0);
-    float moonD = distributionGGX(moonNdotH, adjustedRoughness + 0.1);  // Slightly rougher
+    float moonD = D_GGX(moonNdotH, adjustedRoughness + 0.1);  // Slightly rougher
     vec3 moonColor = ubo.moonColor.rgb * ubo.moonDirection.w;
     vec3 moonSpecular = moonColor * moonD * moonNdotL * 0.02;  // Much dimmer than sun
 

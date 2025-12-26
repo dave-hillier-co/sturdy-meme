@@ -8,6 +8,7 @@
 #include "atmosphere_common.glsl"
 #include "color_common.glsl"
 #include "tree_lighting_common.glsl"
+#include "dither_common.glsl"
 
 layout(binding = BINDING_TREE_GFX_SHADOW_MAP) uniform sampler2DArrayShadow shadowMapArray;
 layout(binding = BINDING_TREE_GFX_LEAF_ALBEDO) uniform sampler2D leafAlbedo;
@@ -28,25 +29,13 @@ layout(location = 6) in float fragLodBlendFactor;
 
 layout(location = 0) out vec4 outColor;
 
-// 4x4 Bayer dithering matrix (matches tree.frag and tree_impostor.frag)
-const float bayerMatrix[16] = float[16](
-    0.0/16.0,  8.0/16.0,  2.0/16.0, 10.0/16.0,
-    12.0/16.0, 4.0/16.0, 14.0/16.0,  6.0/16.0,
-    3.0/16.0, 11.0/16.0,  1.0/16.0,  9.0/16.0,
-    15.0/16.0, 7.0/16.0, 13.0/16.0,  5.0/16.0
-);
+// Note: Bayer dithering is provided by dither_common.glsl
 
 void main() {
     // LOD dithered fade-out - discard more pixels as blend factor increases
     // (matches tree.frag branch fade-out, inverse of impostor fade-in)
-    if (fragLodBlendFactor > 0.01) {
-        ivec2 pixelCoord = ivec2(gl_FragCoord.xy);
-        int ditherIndex = (pixelCoord.x % 4) + (pixelCoord.y % 4) * 4;
-        float ditherValue = bayerMatrix[ditherIndex];
-        // Discard if blend factor exceeds dither threshold
-        if (fragLodBlendFactor > ditherValue) {
-            discard;
-        }
+    if (shouldDiscardForLOD(fragLodBlendFactor)) {
+        discard;
     }
 
     // Sample leaf texture

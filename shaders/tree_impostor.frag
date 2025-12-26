@@ -10,6 +10,7 @@ const int NUM_CASCADES = 4;
 #include "color_common.glsl"
 #include "octahedral_mapping.glsl"
 #include "tree_lighting_common.glsl"
+#include "dither_common.glsl"
 
 layout(location = 0) in vec2 fragTexCoord;
 layout(location = 1) in vec3 fragWorldPos;
@@ -51,13 +52,7 @@ vec3 decodeOctahedral(vec2 e) {
     return normalize(n);
 }
 
-// 4x4 Bayer dither matrix for LOD transition
-const float bayerMatrix[16] = float[16](
-    0.0/16.0,  8.0/16.0,  2.0/16.0, 10.0/16.0,
-    12.0/16.0, 4.0/16.0, 14.0/16.0,  6.0/16.0,
-    3.0/16.0, 11.0/16.0,  1.0/16.0,  9.0/16.0,
-    15.0/16.0, 7.0/16.0, 13.0/16.0,  5.0/16.0
-);
+// Note: Bayer dithering is provided by dither_common.glsl
 
 // Sample octahedral atlas at a specific frame
 vec4 sampleOctahedralFrame(vec2 frameUV, uint archetype) {
@@ -150,14 +145,9 @@ void main() {
         discard;
     }
 
-    // LOD dithered transition
-    if (fragBlendFactor < 0.99) {
-        ivec2 pixelCoord = ivec2(gl_FragCoord.xy);
-        int ditherIndex = (pixelCoord.x % 4) + (pixelCoord.y % 4) * 4;
-        float ditherValue = bayerMatrix[ditherIndex];
-        if (fragBlendFactor < ditherValue) {
-            discard;
-        }
+    // LOD dithered transition (fade-in: blend 0=invisible, 1=visible)
+    if (shouldDiscardForLODFadeIn(fragBlendFactor)) {
+        discard;
     }
 
     // Decode normal from octahedral encoding

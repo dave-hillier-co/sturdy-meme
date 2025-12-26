@@ -13,6 +13,7 @@
 #include "ubo_snow.glsl"
 #include "ubo_cloud_shadow.glsl"
 #include "push_constants_common.glsl"
+#include "normal_mapping_common.glsl"
 
 layout(binding = BINDING_DIFFUSE_TEX) uniform sampler2D texSampler;
 layout(binding = BINDING_SHADOW_MAP) uniform sampler2DArrayShadow shadowMapArray;  // Changed to array for CSM
@@ -51,21 +52,7 @@ layout(location = 4) in vec4 fragColor;
 
 layout(location = 0) out vec4 outColor;
 
-// Apply normal map using vertex tangent to build TBN matrix
-vec3 perturbNormal(vec3 N, vec4 tangent, vec2 texcoord) {
-    vec3 T = normalize(tangent.xyz);
-    // Re-orthogonalize T with respect to N
-    T = normalize(T - dot(T, N) * N);
-    // Compute bitangent using handedness stored in tangent.w
-    vec3 B = cross(N, T) * tangent.w;
-
-    mat3 TBN = mat3(T, B, N);
-
-    vec3 normalSample = texture(normalMap, texcoord).rgb;
-    normalSample = normalSample * 2.0 - 1.0;
-
-    return normalize(TBN * normalSample);
-}
+// Note: perturbNormal is provided by normal_mapping_common.glsl
 
 // Helper function to create a look-at matrix
 mat4 lookAt(vec3 eye, vec3 center, vec3 up) {
@@ -246,7 +233,7 @@ void main() {
     vec3 V = normalize(ubo.cameraPosition.xyz - fragWorldPos);
 
     // Enable normal mapping for debugging
-    vec3 N = perturbNormal(geometricN, fragTangent, fragTexCoord);
+    vec3 N = perturbNormal(geometricN, fragTangent, normalMap, fragTexCoord);
 
     // Multiply texture color with vertex color (for glTF material baseColorFactor)
     vec3 albedo = texColor.rgb * fragColor.rgb;

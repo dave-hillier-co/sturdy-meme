@@ -1,4 +1,5 @@
 #include "LeafSystem.h"
+#include "CullCommon.h"
 #include "ShaderLoader.h"
 #include "DescriptorManager.h"
 #include "VulkanBarriers.h"
@@ -473,21 +474,7 @@ void LeafSystem::updateUniforms(uint32_t frameIndex, const glm::vec3& cameraPos,
     uniforms.cameraPosition = glm::vec4(cameraPos, 1.0f);
 
     // Extract frustum planes from view-projection matrix
-    glm::mat4 m = glm::transpose(viewProj);
-    uniforms.frustumPlanes[0] = m[3] + m[0];  // Left
-    uniforms.frustumPlanes[1] = m[3] - m[0];  // Right
-    uniforms.frustumPlanes[2] = m[3] + m[1];  // Bottom
-    uniforms.frustumPlanes[3] = m[3] - m[1];  // Top
-    uniforms.frustumPlanes[4] = m[3] + m[2];  // Near
-    uniforms.frustumPlanes[5] = m[3] - m[2];  // Far
-
-    // Normalize planes
-    for (int i = 0; i < 6; i++) {
-        float len = glm::length(glm::vec3(uniforms.frustumPlanes[i]));
-        if (len > 0.0001f) {
-            uniforms.frustumPlanes[i] /= len;
-        }
-    }
+    extractFrustumPlanes(viewProj, uniforms.frustumPlanes);
 
     // Player data for disruption
     uniforms.playerPosition = glm::vec4(playerPos, 0.5f);  // w = player collision radius

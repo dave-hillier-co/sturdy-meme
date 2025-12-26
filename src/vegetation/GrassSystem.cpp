@@ -1,4 +1,5 @@
 #include "GrassSystem.h"
+#include "CullCommon.h"
 #include "ShaderLoader.h"
 #include "PipelineBuilder.h"
 #include "DescriptorManager.h"
@@ -689,30 +690,7 @@ void GrassSystem::updateUniforms(uint32_t frameIndex, const glm::vec3& cameraPos
     uniforms.cameraPosition = glm::vec4(cameraPos, 1.0f);
 
     // Extract frustum planes from view-projection matrix
-    // Each plane equation: ax + by + cz + d = 0
-    // Using row-major extraction (GLM is column-major, so we transpose conceptually)
-    glm::mat4 m = glm::transpose(viewProj);
-
-    // Left:   row3 + row0
-    uniforms.frustumPlanes[0] = m[3] + m[0];
-    // Right:  row3 - row0
-    uniforms.frustumPlanes[1] = m[3] - m[0];
-    // Bottom: row3 + row1
-    uniforms.frustumPlanes[2] = m[3] + m[1];
-    // Top:    row3 - row1
-    uniforms.frustumPlanes[3] = m[3] - m[1];
-    // Near:   row3 + row2
-    uniforms.frustumPlanes[4] = m[3] + m[2];
-    // Far:    row3 - row2
-    uniforms.frustumPlanes[5] = m[3] - m[2];
-
-    // Normalize planes
-    for (int i = 0; i < 6; i++) {
-        float len = glm::length(glm::vec3(uniforms.frustumPlanes[i]));
-        if (len > 0.0001f) {
-            uniforms.frustumPlanes[i] /= len;
-        }
-    }
+    extractFrustumPlanes(viewProj, uniforms.frustumPlanes);
 
     // Update displacement region to follow camera
     displacementRegionCenter = glm::vec2(cameraPos.x, cameraPos.z);

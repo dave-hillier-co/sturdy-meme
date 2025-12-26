@@ -9,6 +9,7 @@
 #include <array>
 
 #include "TreeSpatialIndex.h"
+#include "CullCommon.h"
 #include "core/VulkanRAII.h"
 #include "core/DescriptorManager.h"
 #include "BufferUtils.h"
@@ -16,14 +17,6 @@
 // Forward declarations
 class TreeSystem;
 class TreeLODSystem;
-
-// Number of leaf types (must match tree_leaf_cull.comp NUM_LEAF_TYPES)
-constexpr uint32_t NUM_LEAF_TYPES = 4;
-// Leaf type indices (oak=0, ash=1, aspen=2, pine=3)
-constexpr uint32_t LEAF_TYPE_OAK = 0;
-constexpr uint32_t LEAF_TYPE_ASH = 1;
-constexpr uint32_t LEAF_TYPE_ASPEN = 2;
-constexpr uint32_t LEAF_TYPE_PINE = 3;
 
 // Uniforms for tree leaf culling compute shader (must match shader layout)
 struct TreeLeafCullUniforms {
@@ -118,9 +111,9 @@ public:
     };
 
     struct CullingParams {
-        float maxDrawDistance = 250.0f;
-        float lodTransitionStart = 150.0f;
-        float lodTransitionEnd = 250.0f;
+        float maxDrawDistance = TreeLODConstants::FULL_DETAIL_DISTANCE;
+        float lodTransitionStart = TreeLODConstants::LOD_TRANSITION_START;
+        float lodTransitionEnd = TreeLODConstants::LOD_TRANSITION_END;
         float maxLodDropRate = 0.75f;
     };
 

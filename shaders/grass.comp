@@ -1,6 +1,8 @@
 #version 450
 
 #extension GL_GOOGLE_include_directive : require
+#extension GL_KHR_shader_subgroup_ballot : require
+#extension GL_KHR_shader_subgroup_arithmetic : require
 
 #include "bindings.glsl"
 #include "terrain_height_common.glsl"
@@ -207,8 +209,18 @@ void main() {
     float instanceHash = hash(cell + vec2(500.0, 500.0));
     if (lodCull(distToCamera, uniforms.lodTransitionStart, uniforms.lodTransitionEnd, 0.75, instanceHash)) return;
 
-    // Atomically increment instance count and get our slot
-    uint slot = atomicAdd(drawCmd.instanceCount, 1);
+    // Use subgroup operations to batch atomic updates
+    // This reduces contention by ~32x compared to per-thread atomics
+    uvec4 activeMask = subgroupBallot(true);
+    uint activeCount = subgroupBallotBitCount(activeMask);
+    uint laneOffset = subgroupBallotExclusiveBitCount(activeMask);
+
+    uint baseSlot;
+    if (subgroupElect()) {
+        baseSlot = atomicAdd(drawCmd.instanceCount, activeCount);
+    }
+    baseSlot = subgroupBroadcastFirst(baseSlot);
+    uint slot = baseSlot + laneOffset;
 
     // Calculate clumping
     float clumpId, clumpDist;

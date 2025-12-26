@@ -1,6 +1,8 @@
 #version 450
 
 #extension GL_GOOGLE_include_directive : require
+#extension GL_KHR_shader_subgroup_ballot : require
+#extension GL_KHR_shader_subgroup_arithmetic : require
 
 #include "bindings.glsl"
 #include "instancing_common.glsl"
@@ -368,8 +370,18 @@ void main() {
         return;
     }
 
-    // This impostor is visible - atomically get output slot
-    uint outputSlot = atomicAdd(drawCmd.instanceCount, 1);
+    // Use subgroup operations to batch atomic updates
+    // This reduces contention by ~32x compared to per-thread atomics
+    uvec4 activeMask = subgroupBallot(true);
+    uint activeCount = subgroupBallotBitCount(activeMask);
+    uint laneOffset = subgroupBallotExclusiveBitCount(activeMask);
+
+    uint baseSlot;
+    if (subgroupElect()) {
+        baseSlot = atomicAdd(drawCmd.instanceCount, activeCount);
+    }
+    baseSlot = subgroupBroadcastFirst(baseSlot);
+    uint outputSlot = baseSlot + laneOffset;
 
     // Write visible impostor data
     // Use per-tree sizing from input data (already computed from actual mesh bounds)

@@ -189,6 +189,7 @@
 #define BINDING_TREE_GFX_LEAF_ALBEDO       8   // Leaf albedo texture
 #define BINDING_TREE_GFX_LEAF_INSTANCES    9   // Leaf instance SSBO (world-space)
 #define BINDING_TREE_GFX_TREE_DATA        10   // Tree render data SSBO (transforms, tints)
+#define BINDING_TREE_GFX_BRANCH_SHADOW_INSTANCES 11  // Branch shadow instance SSBO (model matrices)
 
 // Tree Impostor Descriptor Set
 #define BINDING_TREE_IMPOSTOR_UBO          0   // Scene uniforms
@@ -206,6 +207,16 @@
 #define BINDING_TREE_IMPOSTOR_CULL_ARCHETYPE   4   // Per-archetype data (sizes, offsets)
 #define BINDING_TREE_IMPOSTOR_CULL_HIZ         5   // Hi-Z pyramid for occlusion culling
 #define BINDING_TREE_IMPOSTOR_CULL_VISIBILITY  6   // Visibility cache (Phase 5: Temporal Coherence)
+
+// Tree Branch Shadow Culling Compute Descriptor Set
+#define BINDING_TREE_BRANCH_SHADOW_INPUT       0   // All tree transforms/data (input)
+#define BINDING_TREE_BRANCH_SHADOW_OUTPUT      1   // Visible branch instances (output)
+#define BINDING_TREE_BRANCH_SHADOW_INDIRECT    2   // Indirect draw commands (per archetype)
+#define BINDING_TREE_BRANCH_SHADOW_UNIFORMS    3   // Culling uniforms
+#define BINDING_TREE_BRANCH_SHADOW_GROUPS      4   // Mesh group metadata
+
+// Tree Branch Shadow Instanced Graphics (vertex shader reads from SSBO)
+#define BINDING_TREE_BRANCH_SHADOW_INSTANCES   9   // Instance SSBO for vertex shader
 
 // =============================================================================
 // Leaf Compute Shader Descriptor Set
@@ -583,6 +594,7 @@ constexpr uint32_t TREE_GFX_BARK_AO       = BINDING_TREE_GFX_BARK_AO;
 constexpr uint32_t TREE_GFX_LEAF_ALBEDO   = BINDING_TREE_GFX_LEAF_ALBEDO;
 constexpr uint32_t TREE_GFX_LEAF_INSTANCES = BINDING_TREE_GFX_LEAF_INSTANCES;
 constexpr uint32_t TREE_GFX_TREE_DATA = BINDING_TREE_GFX_TREE_DATA;
+constexpr uint32_t TREE_GFX_BRANCH_SHADOW_INSTANCES = BINDING_TREE_GFX_BRANCH_SHADOW_INSTANCES;
 
 // Tree Impostor
 constexpr uint32_t TREE_IMPOSTOR_UBO      = BINDING_TREE_IMPOSTOR_UBO;
@@ -600,6 +612,14 @@ constexpr uint32_t TREE_IMPOSTOR_CULL_UNIFORMS  = BINDING_TREE_IMPOSTOR_CULL_UNI
 constexpr uint32_t TREE_IMPOSTOR_CULL_ARCHETYPE = BINDING_TREE_IMPOSTOR_CULL_ARCHETYPE;
 constexpr uint32_t TREE_IMPOSTOR_CULL_HIZ       = BINDING_TREE_IMPOSTOR_CULL_HIZ;
 constexpr uint32_t TREE_IMPOSTOR_CULL_VISIBILITY = BINDING_TREE_IMPOSTOR_CULL_VISIBILITY;
+
+// Tree Branch Shadow Cull Compute
+constexpr uint32_t TREE_BRANCH_SHADOW_INPUT     = BINDING_TREE_BRANCH_SHADOW_INPUT;
+constexpr uint32_t TREE_BRANCH_SHADOW_OUTPUT    = BINDING_TREE_BRANCH_SHADOW_OUTPUT;
+constexpr uint32_t TREE_BRANCH_SHADOW_INDIRECT  = BINDING_TREE_BRANCH_SHADOW_INDIRECT;
+constexpr uint32_t TREE_BRANCH_SHADOW_UNIFORMS  = BINDING_TREE_BRANCH_SHADOW_UNIFORMS;
+constexpr uint32_t TREE_BRANCH_SHADOW_GROUPS    = BINDING_TREE_BRANCH_SHADOW_GROUPS;
+constexpr uint32_t TREE_BRANCH_SHADOW_INSTANCES = BINDING_TREE_BRANCH_SHADOW_INSTANCES;
 
 // Leaf Compute
 constexpr uint32_t LEAF_COMPUTE_INPUT     = BINDING_LEAF_COMPUTE_INPUT;

@@ -11,6 +11,7 @@
 #include "TreeSystem.h"
 #include "TreeLODSystem.h"
 #include "TreeLeafCulling.h"
+#include "TreeBranchCulling.h"
 #include "VulkanRAII.h"
 #include "DescriptorManager.h"
 
@@ -40,6 +41,12 @@ struct TreeBranchShadowPushConstants {
 struct TreeLeafShadowPushConstants {
     int32_t cascadeIndex;  // offset 0, size 4
     float alphaTest;       // offset 4, size 4
+};
+
+// Push constants for instanced branch shadow rendering
+struct TreeBranchShadowInstancedPushConstants {
+    uint32_t cascadeIndex;    // offset 0, size 4
+    uint32_t instanceOffset;  // offset 4, size 4
 };
 
 class TreeRenderer {
@@ -115,6 +122,22 @@ public:
                            const glm::vec3& cameraPos,
                            const glm::vec4* frustumPlanes);
 
+    // Record compute pass for branch shadow culling (call before shadow pass)
+    void recordBranchShadowCulling(VkCommandBuffer cmd, uint32_t frameIndex,
+                                   uint32_t cascadeIndex,
+                                   const glm::vec4* cascadeFrustumPlanes,
+                                   const glm::vec3& cameraPos,
+                                   const TreeLODSystem* lodSystem);
+
+    // Update branch culling data (call when trees change)
+    void updateBranchCullingData(const TreeSystem& treeSystem, const TreeLODSystem* lodSystem);
+
+    // Check if branch shadow culling is enabled
+    bool isBranchShadowCullingEnabled() const;
+
+    // Enable/disable branch shadow culling
+    void setBranchShadowCullingEnabled(bool enabled);
+
     // Initialize or update spatial index from tree data
     void updateSpatialIndex(const TreeSystem& treeSystem);
 
@@ -186,4 +209,13 @@ private:
 
     // Leaf Culling subsystem (handles all compute culling)
     std::unique_ptr<TreeLeafCulling> leafCulling_;
+
+    // Branch Shadow Culling subsystem (GPU-driven branch shadow instancing)
+    std::unique_ptr<TreeBranchCulling> branchShadowCulling_;
+
+    // Instanced branch shadow rendering pipeline
+    ManagedPipeline branchShadowInstancedPipeline_;
+    ManagedPipelineLayout branchShadowInstancedPipelineLayout_;
+    ManagedDescriptorSetLayout branchShadowInstancedDescriptorSetLayout_;
+    std::vector<VkDescriptorSet> branchShadowInstancedDescriptorSets_;
 };

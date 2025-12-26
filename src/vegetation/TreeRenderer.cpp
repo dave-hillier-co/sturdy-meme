@@ -57,6 +57,30 @@ bool TreeRenderer::initInternal(const InitInfo& info) {
         SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "TreeRenderer: Leaf culling not available, using direct rendering");
     }
 
+    // Create branch shadow culling subsystem
+    if (branchShadowInstancedPipeline_.get() != VK_NULL_HANDLE) {
+        TreeBranchCulling::InitInfo branchCullInfo{};
+        branchCullInfo.device = info.device;
+        branchCullInfo.physicalDevice = info.physicalDevice;
+        branchCullInfo.allocator = info.allocator;
+        branchCullInfo.descriptorPool = info.descriptorPool;
+        branchCullInfo.resourcePath = info.resourcePath;
+        branchCullInfo.maxFramesInFlight = info.maxFramesInFlight;
+
+        branchShadowCulling_ = TreeBranchCulling::create(branchCullInfo);
+        if (!branchShadowCulling_) {
+            SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "TreeRenderer: Branch shadow culling not available, using per-tree rendering");
+        } else {
+            // Allocate instanced shadow descriptor sets
+            branchShadowInstancedDescriptorSets_ = descriptorPool_->allocate(
+                branchShadowInstancedDescriptorSetLayout_.get(), info.maxFramesInFlight);
+            if (branchShadowInstancedDescriptorSets_.empty()) {
+                SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "TreeRenderer: Failed to allocate instanced shadow descriptor sets");
+                branchShadowCulling_.reset();
+            }
+        }
+    }
+
     SDL_Log("TreeRenderer initialized successfully");
     return true;
 }
@@ -240,6 +264,50 @@ bool TreeRenderer::createPipelines(const InitInfo& info) {
         return false;
     }
     leafShadowPipeline_ = ManagedPipeline::fromRaw(device_, rawLeafShadowPipeline);
+
+    // Create instanced branch shadow pipeline
+    // Descriptor layout: UBO (same as branch) + SSBO for instance matrices
+    DescriptorManager::LayoutBuilder instancedShadowBuilder(device_);
+    instancedShadowBuilder.addBinding(Bindings::TREE_GFX_UBO, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+                                      VK_SHADER_STAGE_VERTEX_BIT)
+                          .addBinding(Bindings::TREE_GFX_BRANCH_SHADOW_INSTANCES, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+                                      VK_SHADER_STAGE_VERTEX_BIT);
+
+    if (!instancedShadowBuilder.buildManaged(branchShadowInstancedDescriptorSetLayout_)) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create instanced branch shadow descriptor set layout");
+        return false;
+    }
+
+    VkPushConstantRange instancedShadowPushRange{};
+    instancedShadowPushRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+    instancedShadowPushRange.offset = 0;
+    instancedShadowPushRange.size = sizeof(TreeBranchShadowInstancedPushConstants);
+
+    if (!DescriptorManager::createManagedPipelineLayout(device_, branchShadowInstancedDescriptorSetLayout_.get(),
+                                                        branchShadowInstancedPipelineLayout_, {instancedShadowPushRange})) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create instanced branch shadow pipeline layout");
+        return false;
+    }
+
+    VkPipeline rawBranchShadowInstancedPipeline;
+    factory.reset();
+    success = factory
+        .applyPreset(GraphicsPipelineFactory::Preset::Shadow)
+        .setShaders(resourcePath_ + "/shaders/tree_branch_shadow_instanced.vert.spv",
+                    resourcePath_ + "/shaders/shadow.frag.spv")
+        .setVertexInput({bindingDescription},
+                        {attributeDescriptions.begin(), attributeDescriptions.end()})
+        .setRenderPass(info.shadowRenderPass)
+        .setPipelineLayout(branchShadowInstancedPipelineLayout_.get())
+        .setExtent({info.shadowMapSize, info.shadowMapSize})
+        .setDepthBias(1.25f, 1.75f)
+        .build(rawBranchShadowInstancedPipeline);
+
+    if (!success) {
+        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "Failed to create instanced branch shadow pipeline (GPU culling disabled)");
+    } else {
+        branchShadowInstancedPipeline_ = ManagedPipeline::fromRaw(device_, rawBranchShadowInstancedPipeline);
+    }
 
     SDL_Log("TreeRenderer: Created branch, leaf, and shadow pipelines");
     return true;
@@ -432,6 +500,59 @@ bool TreeRenderer::isTwoPhaseLeafCullingEnabled() const {
     return leafCulling_ && leafCulling_->isTwoPhaseEnabled();
 }
 
+void TreeRenderer::recordBranchShadowCulling(VkCommandBuffer cmd, uint32_t frameIndex,
+                                              uint32_t cascadeIndex,
+                                              const glm::vec4* cascadeFrustumPlanes,
+                                              const glm::vec3& cameraPos,
+                                              const TreeLODSystem* lodSystem) {
+    if (branchShadowCulling_ && branchShadowCulling_->isEnabled()) {
+        branchShadowCulling_->recordCulling(cmd, frameIndex, cascadeIndex,
+                                            cascadeFrustumPlanes, cameraPos, lodSystem);
+    }
+}
+
+void TreeRenderer::updateBranchCullingData(const TreeSystem& treeSystem, const TreeLODSystem* lodSystem) {
+    if (branchShadowCulling_) {
+        branchShadowCulling_->updateTreeData(treeSystem, lodSystem);
+
+        // Update descriptor sets with new instance buffer
+        if (!branchShadowInstancedDescriptorSets_.empty()) {
+            VkBuffer instanceBuffer = branchShadowCulling_->getInstanceBuffer();
+            if (instanceBuffer != VK_NULL_HANDLE) {
+                for (uint32_t i = 0; i < branchShadowInstancedDescriptorSets_.size(); ++i) {
+                    // Note: We need the UBO buffer from somewhere - this is updated per-frame
+                    // For now, we update only the instance buffer binding
+                    VkDescriptorBufferInfo instanceBufferInfo{};
+                    instanceBufferInfo.buffer = instanceBuffer;
+                    instanceBufferInfo.offset = 0;
+                    instanceBufferInfo.range = VK_WHOLE_SIZE;
+
+                    VkWriteDescriptorSet instanceWrite{};
+                    instanceWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+                    instanceWrite.dstSet = branchShadowInstancedDescriptorSets_[i];
+                    instanceWrite.dstBinding = Bindings::TREE_GFX_BRANCH_SHADOW_INSTANCES;
+                    instanceWrite.dstArrayElement = 0;
+                    instanceWrite.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+                    instanceWrite.descriptorCount = 1;
+                    instanceWrite.pBufferInfo = &instanceBufferInfo;
+
+                    vkUpdateDescriptorSets(device_, 1, &instanceWrite, 0, nullptr);
+                }
+            }
+        }
+    }
+}
+
+bool TreeRenderer::isBranchShadowCullingEnabled() const {
+    return branchShadowCulling_ && branchShadowCulling_->isEnabled() && branchShadowCulling_->isEnabledByUser();
+}
+
+void TreeRenderer::setBranchShadowCullingEnabled(bool enabled) {
+    if (branchShadowCulling_) {
+        branchShadowCulling_->setEnabled(enabled);
+    }
+}
+
 void TreeRenderer::render(VkCommandBuffer cmd, uint32_t frameIndex, float time,
                           const TreeSystem& treeSystem, const TreeLODSystem* lodSystem) {
     const auto& branchRenderables = treeSystem.getBranchRenderables();
@@ -557,40 +678,85 @@ void TreeRenderer::renderShadows(VkCommandBuffer cmd, uint32_t frameIndex,
     }
 
     // Render branch shadows
-    if (renderBranches && !branchRenderables.empty() && branchShadowPipeline_.get() != VK_NULL_HANDLE) {
-        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, branchShadowPipeline_.get());
+    if (renderBranches && !branchRenderables.empty()) {
+        bool useInstancedPath = isBranchShadowCullingEnabled() &&
+                                branchShadowInstancedPipeline_.get() != VK_NULL_HANDLE &&
+                                !branchShadowInstancedDescriptorSets_.empty() &&
+                                frameIndex < branchShadowInstancedDescriptorSets_.size() &&
+                                branchShadowCulling_->getIndirectBuffer() != VK_NULL_HANDLE;
 
-        std::string lastBarkType;
-        uint32_t branchTreeIndex = 0;
-        for (const auto& renderable : branchRenderables) {
-            if (lodSystem && !lodSystem->shouldRenderBranchShadow(branchTreeIndex, cascade)) {
+        if (useInstancedPath) {
+            // GPU-driven instanced branch shadow rendering
+            vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, branchShadowInstancedPipeline_.get());
+
+            VkDescriptorSet instancedSet = branchShadowInstancedDescriptorSets_[frameIndex];
+            vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                    branchShadowInstancedPipelineLayout_.get(), 0, 1, &instancedSet, 0, nullptr);
+
+            const auto& meshGroups = branchShadowCulling_->getMeshGroups();
+            for (size_t groupIdx = 0; groupIdx < meshGroups.size(); ++groupIdx) {
+                const auto& group = meshGroups[groupIdx];
+
+                // Get the mesh for this group
+                if (group.meshIndex < branchRenderables.size()) {
+                    const auto& renderable = branchRenderables[group.meshIndex];
+                    if (renderable.mesh) {
+                        VkBuffer vertexBuffers[] = {renderable.mesh->getVertexBuffer()};
+                        VkDeviceSize offsets[] = {0};
+                        vkCmdBindVertexBuffers(cmd, 0, 1, vertexBuffers, offsets);
+                        vkCmdBindIndexBuffer(cmd, renderable.mesh->getIndexBuffer(), 0, VK_INDEX_TYPE_UINT32);
+
+                        TreeBranchShadowInstancedPushConstants push{};
+                        push.cascadeIndex = cascade;
+                        push.instanceOffset = group.instanceOffset;
+
+                        vkCmdPushConstants(cmd, branchShadowInstancedPipelineLayout_.get(),
+                                           VK_SHADER_STAGE_VERTEX_BIT,
+                                           0, sizeof(TreeBranchShadowInstancedPushConstants), &push);
+
+                        vkCmdDrawIndexedIndirect(cmd, branchShadowCulling_->getIndirectBuffer(),
+                                                 group.indirectOffset, 1, sizeof(VkDrawIndexedIndirectCommand));
+                    }
+                }
+            }
+
+            branchShadowCulling_->swapBufferSets();
+        } else if (branchShadowPipeline_.get() != VK_NULL_HANDLE) {
+            // Fallback: per-tree branch shadow rendering
+            vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, branchShadowPipeline_.get());
+
+            std::string lastBarkType;
+            uint32_t branchTreeIndex = 0;
+            for (const auto& renderable : branchRenderables) {
+                if (lodSystem && !lodSystem->shouldRenderBranchShadow(branchTreeIndex, cascade)) {
+                    branchTreeIndex++;
+                    continue;
+                }
+
+                if (renderable.barkType != lastBarkType) {
+                    VkDescriptorSet branchSet = getBranchDescriptorSet(frameIndex, renderable.barkType);
+                    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                            branchShadowPipelineLayout_.get(), 0, 1, &branchSet, 0, nullptr);
+                    lastBarkType = renderable.barkType;
+                }
+
+                TreeBranchShadowPushConstants push{};
+                push.model = renderable.transform;
+                push.cascadeIndex = cascadeIndex;
+
+                vkCmdPushConstants(cmd, branchShadowPipelineLayout_.get(),
+                                   VK_SHADER_STAGE_VERTEX_BIT,
+                                   0, sizeof(TreeBranchShadowPushConstants), &push);
+
+                if (renderable.mesh) {
+                    VkBuffer vertexBuffers[] = {renderable.mesh->getVertexBuffer()};
+                    VkDeviceSize offsets[] = {0};
+                    vkCmdBindVertexBuffers(cmd, 0, 1, vertexBuffers, offsets);
+                    vkCmdBindIndexBuffer(cmd, renderable.mesh->getIndexBuffer(), 0, VK_INDEX_TYPE_UINT32);
+                    vkCmdDrawIndexed(cmd, renderable.mesh->getIndexCount(), 1, 0, 0, 0);
+                }
                 branchTreeIndex++;
-                continue;
             }
-
-            if (renderable.barkType != lastBarkType) {
-                VkDescriptorSet branchSet = getBranchDescriptorSet(frameIndex, renderable.barkType);
-                vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                                        branchShadowPipelineLayout_.get(), 0, 1, &branchSet, 0, nullptr);
-                lastBarkType = renderable.barkType;
-            }
-
-            TreeBranchShadowPushConstants push{};
-            push.model = renderable.transform;
-            push.cascadeIndex = cascadeIndex;
-
-            vkCmdPushConstants(cmd, branchShadowPipelineLayout_.get(),
-                               VK_SHADER_STAGE_VERTEX_BIT,
-                               0, sizeof(TreeBranchShadowPushConstants), &push);
-
-            if (renderable.mesh) {
-                VkBuffer vertexBuffers[] = {renderable.mesh->getVertexBuffer()};
-                VkDeviceSize offsets[] = {0};
-                vkCmdBindVertexBuffers(cmd, 0, 1, vertexBuffers, offsets);
-                vkCmdBindIndexBuffer(cmd, renderable.mesh->getIndexBuffer(), 0, VK_INDEX_TYPE_UINT32);
-                vkCmdDrawIndexed(cmd, renderable.mesh->getIndexCount(), 1, 0, 0, 0);
-            }
-            branchTreeIndex++;
         }
     }
 

@@ -305,6 +305,20 @@ void GuiTreeTab::render(ITreeControl& treeControl) {
                 }
             }
 
+            // GPU Branch Shadow Culling toggle
+            if (treeRenderer && treeRenderer->isBranchShadowCullingEnabled()) {
+                ImGui::Spacing();
+                bool gpuCulling = treeRenderer->isBranchShadowCullingEnabled();
+                if (ImGui::Checkbox("GPU Branch Shadow Culling", &gpuCulling)) {
+                    treeRenderer->setBranchShadowCullingEnabled(gpuCulling);
+                }
+                if (ImGui::IsItemHovered()) {
+                    ImGui::SetTooltip("Use GPU compute shader to cull branch shadows.\n"
+                                      "Reduces draw calls from O(n) per tree to O(archetypes).\n"
+                                      "Disable to use fallback per-tree rendering.");
+                }
+            }
+
             // Atlas preview
             auto* atlas = treeLOD->getImpostorAtlas();
             if (atlas && atlas->getArchetypeCount() > 0) {

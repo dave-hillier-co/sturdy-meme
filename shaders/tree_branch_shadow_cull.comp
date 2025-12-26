@@ -1,0 +1,154 @@
+#version 450
+
+#extension GL_GOOGLE_include_directive : require
+
+#include "bindings.glsl"
+
+layout(local_size_x = 256) in;
+
+// Input: all tree transforms
+struct BranchShadowInput {
+    vec4 positionAndScale;     // xyz = position, w = scale
+    vec4 rotationAndArchetype; // x = rotation (radians), y = meshIndex, z = archetypeIndex
+};
+
+layout(std430, binding = BINDING_TREE_BRANCH_SHADOW_INPUT) readonly buffer InputBuffer {
+    BranchShadowInput trees[];
+};
+
+// Output: visible branch instances with pre-computed model matrices
+struct BranchShadowInstance {
+    mat4 model;
+};
+
+layout(std430, binding = BINDING_TREE_BRANCH_SHADOW_OUTPUT) writeonly buffer OutputBuffer {
+    BranchShadowInstance instances[];
+};
+
+// Indirect draw commands (one per mesh group)
+struct DrawIndexedIndirectCommand {
+    uint indexCount;
+    uint instanceCount;
+    uint firstIndex;
+    int vertexOffset;
+    uint firstInstance;
+};
+
+layout(std430, binding = BINDING_TREE_BRANCH_SHADOW_INDIRECT) buffer IndirectBuffer {
+    DrawIndexedIndirectCommand drawCmds[];
+};
+
+// Mesh group metadata
+struct MeshGroupData {
+    uint meshIndex;
+    uint firstTree;
+    uint treeCount;
+    uint barkTypeIndex;
+    uint indexCount;
+    uint maxInstances;
+    uint outputOffset;
+    uint _pad0;
+};
+
+layout(std430, binding = BINDING_TREE_BRANCH_SHADOW_GROUPS) readonly buffer GroupBuffer {
+    MeshGroupData meshGroups[];
+};
+
+layout(binding = BINDING_TREE_BRANCH_SHADOW_UNIFORMS) uniform CullUniforms {
+    vec4 cameraPosition;
+    vec4 cascadeFrustumPlanes[6];
+    float fullDetailDistance;
+    float hysteresis;
+    uint cascadeIndex;
+    uint numTrees;
+    uint numMeshGroups;
+    uint _pad0;
+    uint _pad1;
+    uint _pad2;
+} uniforms;
+
+// Frustum culling test
+bool isInFrustum(vec3 center, float radius) {
+    for (int i = 0; i < 6; i++) {
+        vec4 plane = uniforms.cascadeFrustumPlanes[i];
+        float dist = dot(plane.xyz, center) + plane.w;
+        if (dist < -radius) {
+            return false;
+        }
+    }
+    return true;
+}
+
+void main() {
+    uint treeIdx = gl_GlobalInvocationID.x;
+
+    // Initialize indirect commands (first thread in first workgroup)
+    if (gl_LocalInvocationID.x == 0 && gl_WorkGroupID.x == 0) {
+        for (uint g = 0; g < uniforms.numMeshGroups; g++) {
+            drawCmds[g].indexCount = meshGroups[g].indexCount;
+            drawCmds[g].instanceCount = 0;
+            drawCmds[g].firstIndex = 0;
+            drawCmds[g].vertexOffset = 0;
+            drawCmds[g].firstInstance = 0;
+        }
+    }
+    barrier();
+    memoryBarrierBuffer();
+
+    if (treeIdx >= uniforms.numTrees) return;
+
+    BranchShadowInput tree = trees[treeIdx];
+    vec3 treePos = tree.positionAndScale.xyz;
+    float treeScale = tree.positionAndScale.w;
+
+    // LOD check: only render full geometry for close trees
+    float distToCamera = length(treePos - uniforms.cameraPosition.xyz);
+    if (distToCamera > uniforms.fullDetailDistance + uniforms.hysteresis) {
+        return; // Too far, will be rendered as impostor
+    }
+
+    // Estimate bounding radius (rough approximation based on tree height)
+    float boundingRadius = treeScale * 5.0;
+
+    // Frustum culling against cascade light frustum
+    vec3 boundingCenter = treePos + vec3(0.0, boundingRadius * 0.5, 0.0);
+    if (!isInFrustum(boundingCenter, boundingRadius)) {
+        return;
+    }
+
+    // Find mesh group for this tree
+    uint meshIdx = floatBitsToUint(tree.rotationAndArchetype.y);
+    uint groupIdx = 0;
+    for (uint g = 0; g < uniforms.numMeshGroups; g++) {
+        if (meshGroups[g].meshIndex == meshIdx) {
+            groupIdx = g;
+            break;
+        }
+    }
+
+    // Atomically get output slot
+    uint slot = atomicAdd(drawCmds[groupIdx].instanceCount, 1);
+    if (slot >= meshGroups[groupIdx].maxInstances) {
+        atomicAdd(drawCmds[groupIdx].instanceCount, -1);
+        return;
+    }
+
+    // Build model matrix
+    float rotation = tree.rotationAndArchetype.x;
+    float c = cos(rotation);
+    float s = sin(rotation);
+
+    mat4 model = mat4(1.0);
+    // Scale
+    model[0][0] = c * treeScale;
+    model[0][2] = s * treeScale;
+    model[1][1] = treeScale;
+    model[2][0] = -s * treeScale;
+    model[2][2] = c * treeScale;
+    // Translation
+    model[3] = vec4(treePos, 1.0);
+
+    // Write to output
+    uint outputIdx = meshGroups[groupIdx].outputOffset + slot;
+    instances[outputIdx].model = model;
+}

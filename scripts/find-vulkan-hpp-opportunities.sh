@@ -177,24 +177,115 @@ for prefix in "${!enum_mappings[@]}"; do
     fi
 done
 
-echo -e "${BOLD}6. CUSTOM RAII WRAPPERS${NC}"
-echo -e "${BOLD}-----------------------${NC}"
-echo "Your Managed* classes could be replaced with vk::raii::*"
+echo -e "${BOLD}6. VULKANRAII.H MIGRATION${NC}"
+echo -e "${BOLD}--------------------------${NC}"
+echo "Migrate from your custom VulkanRAII.h to Vulkan-Hpp"
 echo ""
 
-for managed in "ManagedPipeline" "ManagedPipelineLayout" "ManagedDescriptorSetLayout" \
-               "ManagedRenderPass" "ManagedFramebuffer" "ManagedImageView" \
-               "ManagedCommandPool" "ManagedFence" "ManagedSemaphore" "ManagedSampler"; do
-    count=$(grep -r --include="*.cpp" --include="*.h" -l "\b$managed\b" "$SRC_DIR" 2>/dev/null | wc -l)
+# 6a. Managed* wrapper classes
+echo -e "${YELLOW}Managed* Wrapper Classes:${NC}"
+declare -A managed_mappings=(
+    ["ManagedPipeline"]="vk::raii::Pipeline"
+    ["ManagedPipelineLayout"]="vk::raii::PipelineLayout"
+    ["ManagedDescriptorSetLayout"]="vk::raii::DescriptorSetLayout"
+    ["ManagedRenderPass"]="vk::raii::RenderPass"
+    ["ManagedFramebuffer"]="vk::raii::Framebuffer"
+    ["ManagedImageView"]="vk::raii::ImageView"
+    ["ManagedCommandPool"]="vk::raii::CommandPool"
+    ["ManagedFence"]="vk::raii::Fence"
+    ["ManagedSemaphore"]="vk::raii::Semaphore"
+    ["ManagedSampler"]="vk::raii::Sampler"
+    ["ManagedDescriptorPool"]="vk::raii::DescriptorPool"
+)
+
+for managed in "${!managed_mappings[@]}"; do
+    raii_type="${managed_mappings[$managed]}"
+    while IFS=: read -r file line content; do
+        rel_file="${file#$PROJECT_ROOT/}"
+        # Skip VulkanRAII.h itself
+        if [[ "$rel_file" == *"VulkanRAII.h"* ]]; then
+            continue
+        fi
+        report_finding "Managed→RAII" "$rel_file" "$line" \
+            "Replace $managed with $raii_type" \
+            "$managed pipeline; → $raii_type pipeline{device, createInfo};"
+    done < <(grep -rn --include="*.cpp" --include="*.h" -E "\b$managed\b" "$SRC_DIR" 2>/dev/null | head -5 || true)
+done
+
+# 6b. Unique* type aliases
+echo -e "${YELLOW}Unique* Type Aliases:${NC}"
+for unique_type in "UniquePipeline" "UniqueRenderPass" "UniquePipelineLayout" \
+                   "UniqueDescriptorSetLayout" "UniqueImageView" "UniqueFramebuffer" \
+                   "UniqueFence" "UniqueSemaphore" "UniqueCommandPool" "UniqueDescriptorPool" \
+                   "UniqueSampler"; do
+    raii_type="${unique_type/Unique/vk::raii::}"
+    count=$(grep -r --include="*.cpp" --include="*.h" -c "\b$unique_type\b" "$SRC_DIR" 2>/dev/null | awk -F: '{s+=$2} END {print s+0}')
     if [ "$count" -gt 0 ]; then
-        raii_type="${managed/Managed/vk::raii::}"
-        echo -e "${CYAN}[Custom RAII]${NC} $managed used in $count files"
-        echo -e "  ${YELLOW}→${NC} Can be replaced with $raii_type"
-        echo -e "  ${GREEN}Note:${NC} ManagedBuffer/ManagedImage may need VMA integration"
+        echo -e "${CYAN}[Unique→RAII]${NC} $unique_type used $count times"
+        echo -e "  ${YELLOW}→${NC} Replace with $raii_type"
         echo ""
         ((total_opportunities++)) || true
     fi
 done
+
+# 6c. VMA-integrated types (need special handling)
+echo -e "${YELLOW}VMA-Integrated Types (require custom handling):${NC}"
+for vma_type in "ManagedBuffer" "ManagedImage" "UniqueVmaBuffer" "UniqueVmaImage"; do
+    count=$(grep -r --include="*.cpp" --include="*.h" -c "\b$vma_type\b" "$SRC_DIR" 2>/dev/null | awk -F: '{s+=$2} END {print s+0}')
+    if [ "$count" -gt 0 ]; then
+        echo -e "${CYAN}[VMA Type]${NC} $vma_type used $count times"
+        echo -e "  ${YELLOW}→${NC} Keep as-is OR create vk::raii wrapper with VMA allocator"
+        echo -e "  ${GREEN}Note:${NC} Vulkan-Hpp doesn't include VMA - need custom integration"
+        echo ""
+        ((total_opportunities++)) || true
+    fi
+done
+
+# 6d. Custom deleters
+echo -e "${YELLOW}Custom Deleters:${NC}"
+deleter_count=$(grep -r --include="*.cpp" --include="*.h" -c "VkHandleDeleter\|VmaImageDeleter\|VmaBufferDeleter" "$SRC_DIR" 2>/dev/null | awk -F: '{s+=$2} END {print s+0}')
+if [ "$deleter_count" -gt 0 ]; then
+    echo -e "${CYAN}[Deleters]${NC} Custom deleters used $deleter_count times"
+    echo -e "  ${YELLOW}→${NC} vk::raii handles destruction automatically"
+    echo -e "  ${GREEN}Note:${NC} VMA deleters still needed for VMA-allocated resources"
+    echo ""
+    ((total_opportunities++)) || true
+fi
+
+# 6e. RAII scope helpers
+echo -e "${YELLOW}RAII Scope Helpers:${NC}"
+for helper in "CommandScope" "RenderPassScope" "ScopeGuard"; do
+    count=$(grep -r --include="*.cpp" --include="*.h" -c "\b$helper\b" "$SRC_DIR" 2>/dev/null | awk -F: '{s+=$2} END {print s+0}')
+    if [ "$count" -gt 0 ]; then
+        case "$helper" in
+            "CommandScope")
+                suggestion="Use vk::raii::CommandBuffer with RAII lifetime"
+                ;;
+            "RenderPassScope")
+                suggestion="Use vk::raii methods or keep for fluent builder pattern"
+                ;;
+            "ScopeGuard")
+                suggestion="Keep as-is - generic C++ utility not Vulkan-specific"
+                ;;
+        esac
+        echo -e "${CYAN}[Scope Helper]${NC} $helper used $count times"
+        echo -e "  ${YELLOW}→${NC} $suggestion"
+        echo ""
+        ((total_opportunities++)) || true
+    fi
+done
+
+# 6f. Factory methods that return raw handles
+echo -e "${YELLOW}Factory Methods Returning Raw Handles:${NC}"
+while IFS=: read -r file line content; do
+    rel_file="${file#$PROJECT_ROOT/}"
+    if [[ "$content" =~ (create[A-Z][a-zA-Z]*)\( ]]; then
+        func_name="${BASH_REMATCH[1]}"
+        report_finding "Factory" "$rel_file" "$line" \
+            "Consider returning vk::raii::* from $func_name" \
+            "VkBuffer ${func_name}(...) → vk::raii::Buffer ${func_name}(...)"
+    fi
+done < <(grep -rn --include="*.cpp" --include="*.h" -E "^(VkBuffer|VkImage|VkImageView|VkSampler|VkPipeline)\s+create[A-Z]" "$SRC_DIR" 2>/dev/null | head -10 || true)
 
 echo -e "${BOLD}7. FUNCTION POINTER LOADING${NC}"
 echo -e "${BOLD}---------------------------${NC}"

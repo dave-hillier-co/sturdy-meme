@@ -1350,6 +1350,45 @@ float TreeLODSystem::getBlendFactor(uint32_t treeIndex) const {
     return lodStates_[treeIndex].blendFactor;
 }
 
+bool TreeLODSystem::shouldRenderBranchShadow(uint32_t treeIndex, uint32_t cascadeIndex) const {
+    const auto& shadowSettings = getLODSettings().shadow;
+
+    // If cascade-aware LOD is disabled, use standard LOD check
+    if (!shadowSettings.enableCascadeLOD) {
+        return shouldRenderFullGeometry(treeIndex);
+    }
+
+    // Far cascades use impostors only - no branch geometry
+    if (cascadeIndex >= shadowSettings.geometryCascadeCutoff) {
+        return false;
+    }
+
+    // Near cascades use standard per-tree LOD
+    return shouldRenderFullGeometry(treeIndex);
+}
+
+bool TreeLODSystem::shouldRenderLeafShadow(uint32_t treeIndex, uint32_t cascadeIndex) const {
+    const auto& shadowSettings = getLODSettings().shadow;
+
+    // If cascade-aware LOD is disabled, use standard LOD check
+    if (!shadowSettings.enableCascadeLOD) {
+        return shouldRenderFullGeometry(treeIndex);
+    }
+
+    // Very far cascades skip leaf shadows entirely
+    if (cascadeIndex >= shadowSettings.leafCascadeCutoff) {
+        return false;
+    }
+
+    // Far cascades use impostors only - no leaf geometry
+    if (cascadeIndex >= shadowSettings.geometryCascadeCutoff) {
+        return false;
+    }
+
+    // Near cascades use standard per-tree LOD
+    return shouldRenderFullGeometry(treeIndex);
+}
+
 int32_t TreeLODSystem::generateImpostor(const std::string& name, const TreeOptions& options,
                                          const Mesh& branchMesh,
                                          const std::vector<LeafInstanceGPU>& leafInstances,

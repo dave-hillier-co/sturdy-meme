@@ -92,6 +92,21 @@ struct TreeLODSettings {
 
     // Seasonal effects (global for all impostors)
     float autumnHueShift = 0.0f;           // 0 = summer green, 1 = full autumn colors
+
+    // Shadow cascade settings
+    // Controls which cascades render full geometry vs impostors only
+    struct ShadowSettings {
+        // Cascade >= geometryCascadeCutoff uses impostors only (no branches/leaves)
+        // Default: cascades 0-1 get geometry, 2-3 get impostors only
+        uint32_t geometryCascadeCutoff = 2;
+
+        // Cascade >= leafCascadeCutoff skips leaf shadows entirely
+        // Default: cascade 3 has no leaf shadows (impostor shadows only)
+        uint32_t leafCascadeCutoff = 3;
+
+        // Whether to use cascade-aware shadow LOD
+        bool enableCascadeLOD = true;
+    } shadow;
 };
 
 class TreeImpostorAtlas {

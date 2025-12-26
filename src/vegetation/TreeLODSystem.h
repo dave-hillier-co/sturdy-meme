@@ -111,6 +111,11 @@ public:
     // Get blend factor for cross-fade (0 = full detail visible, 1 = impostor visible)
     float getBlendFactor(uint32_t treeIndex) const;
 
+    // Cascade-aware shadow LOD queries
+    // These consider both per-tree LOD state AND cascade-specific settings
+    bool shouldRenderBranchShadow(uint32_t treeIndex, uint32_t cascadeIndex) const;
+    bool shouldRenderLeafShadow(uint32_t treeIndex, uint32_t cascadeIndex) const;
+
     // Access to impostor atlas
     TreeImpostorAtlas* getImpostorAtlas() { return impostorAtlas_.get(); }
     const TreeImpostorAtlas* getImpostorAtlas() const { return impostorAtlas_.get(); }

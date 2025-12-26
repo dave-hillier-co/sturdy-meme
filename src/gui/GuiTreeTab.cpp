@@ -248,6 +248,63 @@ void GuiTreeTab::render(ITreeControl& treeControl) {
                 }
             }
 
+            // Shadow LOD Settings
+            ImGui::Spacing();
+            ImGui::Separator();
+            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.8f, 0.6f, 1.0f, 1.0f));
+            ImGui::Text("Shadow LOD:");
+            ImGui::PopStyleColor();
+
+            auto& shadowSettings = settings.shadow;
+            ImGui::Checkbox("Cascade-Aware Shadows", &shadowSettings.enableCascadeLOD);
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("Use different LOD levels for near vs far shadow cascades.\n"
+                                  "Far cascades use impostors only, reducing draw calls.");
+            }
+
+            if (shadowSettings.enableCascadeLOD) {
+                int geomCutoff = static_cast<int>(shadowSettings.geometryCascadeCutoff);
+                if (ImGui::SliderInt("Geometry Cutoff", &geomCutoff, 1, 4)) {
+                    shadowSettings.geometryCascadeCutoff = static_cast<uint32_t>(geomCutoff);
+                }
+                if (ImGui::IsItemHovered()) {
+                    ImGui::SetTooltip("Cascades 0-%d render full tree geometry.\n"
+                                      "Cascades %d-3 render impostors only.",
+                                      geomCutoff - 1, geomCutoff);
+                }
+
+                int leafCutoff = static_cast<int>(shadowSettings.leafCascadeCutoff);
+                if (ImGui::SliderInt("Leaf Cutoff", &leafCutoff, 1, 4)) {
+                    shadowSettings.leafCascadeCutoff = static_cast<uint32_t>(leafCutoff);
+                }
+                if (ImGui::IsItemHovered()) {
+                    ImGui::SetTooltip("Cascades 0-%d render leaf shadows.\n"
+                                      "Cascades %d-3 skip leaf shadows (branches/impostors only).",
+                                      leafCutoff - 1, leafCutoff);
+                }
+
+                // Show current cascade configuration
+                ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "Cascade config:");
+                for (int c = 0; c < 4; c++) {
+                    const char* mode;
+                    ImVec4 color;
+                    if (static_cast<uint32_t>(c) < shadowSettings.geometryCascadeCutoff) {
+                        if (static_cast<uint32_t>(c) < shadowSettings.leafCascadeCutoff) {
+                            mode = "full";
+                            color = ImVec4(0.5f, 1.0f, 0.5f, 1.0f);
+                        } else {
+                            mode = "branches";
+                            color = ImVec4(1.0f, 1.0f, 0.5f, 1.0f);
+                        }
+                    } else {
+                        mode = "impostor";
+                        color = ImVec4(1.0f, 0.5f, 0.5f, 1.0f);
+                    }
+                    ImGui::SameLine();
+                    ImGui::TextColored(color, "[%d:%s]", c, mode);
+                }
+            }
+
             // Atlas preview
             auto* atlas = treeLOD->getImpostorAtlas();
             if (atlas && atlas->getArchetypeCount() > 0) {

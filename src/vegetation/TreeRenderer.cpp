@@ -542,14 +542,28 @@ void TreeRenderer::renderShadows(VkCommandBuffer cmd, uint32_t frameIndex,
         return;
     }
 
+    const uint32_t cascade = static_cast<uint32_t>(cascadeIndex);
+
+    // Check if this cascade should skip geometry entirely (cascade-aware shadow LOD)
+    bool renderBranches = true;
+    bool renderLeaves = true;
+    if (lodSystem) {
+        const auto& shadowSettings = lodSystem->getLODSettings().shadow;
+        if (shadowSettings.enableCascadeLOD) {
+            renderBranches = cascade < shadowSettings.geometryCascadeCutoff;
+            renderLeaves = cascade < shadowSettings.leafCascadeCutoff &&
+                           cascade < shadowSettings.geometryCascadeCutoff;
+        }
+    }
+
     // Render branch shadows
-    if (!branchRenderables.empty() && branchShadowPipeline_.get() != VK_NULL_HANDLE) {
+    if (renderBranches && !branchRenderables.empty() && branchShadowPipeline_.get() != VK_NULL_HANDLE) {
         vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, branchShadowPipeline_.get());
 
         std::string lastBarkType;
         uint32_t branchTreeIndex = 0;
         for (const auto& renderable : branchRenderables) {
-            if (lodSystem && !lodSystem->shouldRenderFullGeometry(branchTreeIndex)) {
+            if (lodSystem && !lodSystem->shouldRenderBranchShadow(branchTreeIndex, cascade)) {
                 branchTreeIndex++;
                 continue;
             }
@@ -581,7 +595,7 @@ void TreeRenderer::renderShadows(VkCommandBuffer cmd, uint32_t frameIndex,
     }
 
     // Render leaf shadows with instancing
-    if (!leafRenderables.empty() && leafShadowPipeline_.get() != VK_NULL_HANDLE) {
+    if (renderLeaves && !leafRenderables.empty() && leafShadowPipeline_.get() != VK_NULL_HANDLE) {
         vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, leafShadowPipeline_.get());
 
         const Mesh& sharedQuad = treeSystem.getSharedLeafQuadMesh();
@@ -645,7 +659,7 @@ void TreeRenderer::renderShadows(VkCommandBuffer cmd, uint32_t frameIndex,
                     continue;
                 }
 
-                if (lodSystem && !lodSystem->shouldRenderFullGeometry(leafTreeIndex)) {
+                if (lodSystem && !lodSystem->shouldRenderLeafShadow(leafTreeIndex, cascade)) {
                     leafTreeIndex++;
                     continue;
                 }

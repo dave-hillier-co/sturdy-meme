@@ -12,21 +12,20 @@
 #include "core/VulkanRAII.h"
 #include "core/DescriptorManager.h"
 
-// Legacy impostor atlas configuration (17-view discrete)
+// Legacy impostor atlas configuration (17-view discrete) - DEPRECATED
+// TODO: Remove this once all legacy atlas code is deleted
 // Layout: 2 rows x 9 columns = 18 cells (17 used, 1 unused)
-// Row 0: 8 horizon views (0-315 degrees) + 1 top-down
-// Row 1: 8 elevated views (45 degrees elevation) + 1 unused
 struct ImpostorAtlasConfig {
-    static constexpr int HORIZONTAL_ANGLES = 8;       // Views around the tree (every 45 degrees)
-    static constexpr int VERTICAL_LEVELS = 2;         // Horizon + 45 degree elevation
-    static constexpr int CELLS_PER_ROW = 9;           // 8 angles + 1 (top-down or unused)
-    static constexpr int TOTAL_CELLS = 17;            // 8 + 8 + 1 top-down
-    static constexpr int CELL_SIZE = 256;             // Pixels per cell (increased from 128)
-    static constexpr int ATLAS_WIDTH = CELLS_PER_ROW * CELL_SIZE;   // 2304 pixels
-    static constexpr int ATLAS_HEIGHT = VERTICAL_LEVELS * CELL_SIZE; // 512 pixels
+    static constexpr int HORIZONTAL_ANGLES = 8;
+    static constexpr int VERTICAL_LEVELS = 2;
+    static constexpr int CELLS_PER_ROW = 9;
+    static constexpr int TOTAL_CELLS = 17;
+    static constexpr int CELL_SIZE = 256;
+    static constexpr int ATLAS_WIDTH = CELLS_PER_ROW * CELL_SIZE;
+    static constexpr int ATLAS_HEIGHT = VERTICAL_LEVELS * CELL_SIZE;
 };
 
-// Octahedral impostor atlas configuration
+// Octahedral impostor atlas configuration (preferred)
 // Uses hemi-octahedral mapping for continuous view coverage
 // Grid is NxN where each cell is a captured view direction
 struct OctahedralAtlasConfig {

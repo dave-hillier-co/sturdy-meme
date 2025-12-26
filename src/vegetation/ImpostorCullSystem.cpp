@@ -318,7 +318,8 @@ void ImpostorCullSystem::recordCulling(VkCommandBuffer cmd, uint32_t frameIndex,
                                         const glm::mat4& viewProjMatrix,
                                         VkImageView hiZPyramidView,
                                         VkSampler hiZSampler,
-                                        const LODParams& lodParams) {
+                                        const TreeLODSettings& lodSettings,
+                                        float tanHalfFOV) {
     if (treeCount_ == 0) return;
 
     // Temporal coherence - determine update mode based on camera movement
@@ -377,18 +378,18 @@ void ImpostorCullSystem::recordCulling(VkCommandBuffer cmd, uint32_t frameIndex,
         1.0f / static_cast<float>(extent_.width),
         1.0f / static_cast<float>(extent_.height)
     );
-    uniforms.fullDetailDistance = lodParams.fullDetailDistance;
-    uniforms.impostorDistance = lodParams.impostorDistance;
-    uniforms.hysteresis = lodParams.hysteresis;
-    uniforms.blendRange = lodParams.blendRange;
+    uniforms.fullDetailDistance = lodSettings.fullDetailDistance;
+    uniforms.impostorDistance = lodSettings.impostorDistance;
+    uniforms.hysteresis = lodSettings.hysteresis;
+    uniforms.blendRange = lodSettings.blendRange;
     uniforms.numTrees = treeCount_;
     uniforms.enableHiZ = (hiZEnabled_ && hiZPyramidView != VK_NULL_HANDLE) ? 1u : 0u;
-    // Screen-space error LOD parameters
-    uniforms.useScreenSpaceError = lodParams.useScreenSpaceError ? 1u : 0u;
-    uniforms.tanHalfFOV = lodParams.tanHalfFOV;
-    uniforms.errorThresholdFull = lodParams.errorThresholdFull;
-    uniforms.errorThresholdImpostor = lodParams.errorThresholdImpostor;
-    uniforms.errorThresholdCull = lodParams.errorThresholdCull;
+    // Screen-space error LOD parameters (from single source of truth: TreeLODSettings)
+    uniforms.useScreenSpaceError = lodSettings.useScreenSpaceError ? 1u : 0u;
+    uniforms.tanHalfFOV = tanHalfFOV;
+    uniforms.errorThresholdFull = lodSettings.errorThresholdFull;
+    uniforms.errorThresholdImpostor = lodSettings.errorThresholdImpostor;
+    uniforms.errorThresholdCull = lodSettings.errorThresholdCull;
     // Temporal coherence parameters
     uniforms.temporalUpdateMode = temporalUpdateMode;
     uniforms.temporalUpdateOffset = temporalUpdateOffset;

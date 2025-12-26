@@ -192,21 +192,10 @@ void Renderer::setupRenderPipeline() {
         VkImageView hiZView = systems_->hiZ().getHiZPyramidView();
         VkSampler hiZSampler = systems_->hiZ().getHiZSampler();
 
-        // Build LOD params from settings
-        ImpostorCullSystem::LODParams lodParams;
-        if (systems_->treeLOD()) {
-            const auto& lodSettings = systems_->treeLOD()->getLODSettings();
-            lodParams.fullDetailDistance = lodSettings.fullDetailDistance;
-            lodParams.impostorDistance = lodSettings.impostorDistance;
-            lodParams.hysteresis = lodSettings.hysteresis;
-            lodParams.blendRange = lodSettings.blendRange;
-            lodParams.useScreenSpaceError = lodSettings.useScreenSpaceError;
-            lodParams.errorThresholdFull = lodSettings.errorThresholdFull;
-            lodParams.errorThresholdImpostor = lodSettings.errorThresholdImpostor;
-            lodParams.errorThresholdCull = lodSettings.errorThresholdCull;
-        }
+        // Get LOD settings directly from TreeLODSystem (single source of truth)
+        const auto& lodSettings = systems_->treeLOD()->getLODSettings();
         // Extract tanHalfFOV from projection matrix: proj[1][1] = 1/tan(fov/2)
-        lodParams.tanHalfFOV = 1.0f / ctx.frame.projection[1][1];
+        float tanHalfFOV = 1.0f / ctx.frame.projection[1][1];
 
         impostorCull->recordCulling(
             ctx.cmd, ctx.frameIndex,
@@ -214,7 +203,7 @@ void Renderer::setupRenderPipeline() {
             ctx.frame.frustumPlanes,
             ctx.frame.viewProj,
             hiZView, hiZSampler,
-            lodParams
+            lodSettings, tanHalfFOV
         );
 
         systems_->profiler().endGpuZone(ctx.cmd, "ImpostorCull");

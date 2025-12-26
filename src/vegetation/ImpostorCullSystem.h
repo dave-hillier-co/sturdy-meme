@@ -10,9 +10,9 @@
 #include "core/VulkanRAII.h"
 #include "core/DescriptorManager.h"
 #include "core/BufferUtils.h"
+#include "TreeImpostorAtlas.h"  // For TreeLODSettings
 
 class TreeSystem;
-class TreeImpostorAtlas;
 
 // Uniforms for impostor culling compute shader (must match shader layout)
 struct alignas(16) ImpostorCullUniforms {
@@ -98,21 +98,6 @@ public:
      */
     void updateArchetypeData(const TreeImpostorAtlas* atlas);
 
-    // LOD parameters for screen-space error calculation
-    // Screen error is HIGH when close (object large on screen), LOW when far (object small)
-    // Logic: close (high error) = full geometry, far (low error) = impostor/cull
-    struct LODParams {
-        float fullDetailDistance = 250.0f;
-        float impostorDistance = 50000.0f;
-        float hysteresis = 5.0f;
-        float blendRange = 10.0f;
-        bool useScreenSpaceError = true;
-        float tanHalfFOV = 1.0f;  // tan(fov/2)
-        float errorThresholdFull = 4.0f;       // Above this error: use full geometry (close trees)
-        float errorThresholdImpostor = 1.0f;   // Below this error: use full impostor (far trees)
-        float errorThresholdCull = 0.25f;      // Below this error: cull entirely (very far trees)
-    };
-
     // Temporal coherence settings
     struct TemporalSettings {
         bool enabled = false;                   // Disable temporal coherence by default (can cause flickering)
@@ -134,7 +119,8 @@ public:
      * @param viewProjMatrix View-projection matrix
      * @param hiZPyramidView Hi-Z pyramid image view (nullptr to disable Hi-Z)
      * @param hiZSampler Sampler for Hi-Z pyramid
-     * @param lodParams LOD parameters including screen-space error settings
+     * @param lodSettings LOD settings from TreeLODSystem (single source of truth)
+     * @param tanHalfFOV tan(fov/2) from projection matrix for screen-space error
      */
     void recordCulling(VkCommandBuffer cmd, uint32_t frameIndex,
                        const glm::vec3& cameraPos,
@@ -142,7 +128,8 @@ public:
                        const glm::mat4& viewProjMatrix,
                        VkImageView hiZPyramidView,
                        VkSampler hiZSampler,
-                       const LODParams& lodParams);
+                       const TreeLODSettings& lodSettings,
+                       float tanHalfFOV);
 
     // Get output buffers for rendering (per-frame to avoid race conditions)
     VkBuffer getVisibleImpostorBuffer(uint32_t frameIndex) const {

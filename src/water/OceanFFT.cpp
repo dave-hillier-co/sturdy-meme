@@ -7,6 +7,9 @@
 #include <cmath>
 #include <array>
 
+// Use Vulkan-Hpp namespace for cleaner type-safe code
+using namespace vk;
+
 std::unique_ptr<OceanFFT> OceanFFT::create(const InitInfo& info) {
     std::unique_ptr<OceanFFT> ocean(new OceanFFT());
     if (!ocean->initInternal(info)) {
@@ -72,24 +75,27 @@ bool OceanFFT::initInternal(const InitInfo& info) {
         };
     }
 
-    // Create sampler for output textures
-    VkSamplerCreateInfo samplerInfo{};
-    samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
-    samplerInfo.magFilter = VK_FILTER_LINEAR;
-    samplerInfo.minFilter = VK_FILTER_LINEAR;
-    samplerInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
-    samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT;  // Tiling ocean
-    samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT;
-    samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
-    samplerInfo.mipLodBias = 0.0f;
-    samplerInfo.anisotropyEnable = VK_TRUE;
-    samplerInfo.maxAnisotropy = 16.0f;
-    samplerInfo.compareEnable = VK_FALSE;
-    samplerInfo.minLod = 0.0f;
-    samplerInfo.maxLod = 0.0f;
-    samplerInfo.borderColor = VK_BORDER_COLOR_FLOAT_OPAQUE_BLACK;
+    // Create sampler for output textures (using Vulkan-Hpp type-safe struct)
+    SamplerCreateInfo samplerInfo{
+        {},                                  // flags
+        Filter::eLinear,                     // magFilter
+        Filter::eLinear,                     // minFilter
+        SamplerMipmapMode::eLinear,
+        SamplerAddressMode::eRepeat,         // addressModeU - tiling ocean
+        SamplerAddressMode::eRepeat,         // addressModeV
+        SamplerAddressMode::eRepeat,         // addressModeW
+        0.0f,                                // mipLodBias
+        VK_TRUE,                             // anisotropyEnable
+        16.0f,                               // maxAnisotropy
+        VK_FALSE,                            // compareEnable
+        CompareOp::eNever,
+        0.0f,                                // minLod
+        0.0f,                                // maxLod
+        BorderColor::eFloatOpaqueBlack,
+        VK_FALSE                             // unnormalizedCoordinates
+    };
 
-    if (!ManagedSampler::create(device, samplerInfo, sampler)) {
+    if (!ManagedSampler::create(device, static_cast<VkSamplerCreateInfo>(samplerInfo), sampler)) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "OceanFFT: Failed to create sampler");
         return false;
     }
@@ -163,24 +169,27 @@ bool OceanFFT::initInternal(const InitContext& ctx, const OceanParams& oceanPara
         };
     }
 
-    // Create sampler for output textures
-    VkSamplerCreateInfo samplerInfo{};
-    samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
-    samplerInfo.magFilter = VK_FILTER_LINEAR;
-    samplerInfo.minFilter = VK_FILTER_LINEAR;
-    samplerInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
-    samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT;  // Tiling ocean
-    samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT;
-    samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
-    samplerInfo.mipLodBias = 0.0f;
-    samplerInfo.anisotropyEnable = VK_TRUE;
-    samplerInfo.maxAnisotropy = 16.0f;
-    samplerInfo.compareEnable = VK_FALSE;
-    samplerInfo.minLod = 0.0f;
-    samplerInfo.maxLod = 0.0f;
-    samplerInfo.borderColor = VK_BORDER_COLOR_FLOAT_OPAQUE_BLACK;
+    // Create sampler for output textures (using Vulkan-Hpp type-safe struct)
+    SamplerCreateInfo samplerInfo{
+        {},                                  // flags
+        Filter::eLinear,                     // magFilter
+        Filter::eLinear,                     // minFilter
+        SamplerMipmapMode::eLinear,
+        SamplerAddressMode::eRepeat,         // addressModeU - tiling ocean
+        SamplerAddressMode::eRepeat,         // addressModeV
+        SamplerAddressMode::eRepeat,         // addressModeW
+        0.0f,                                // mipLodBias
+        VK_TRUE,                             // anisotropyEnable
+        16.0f,                               // maxAnisotropy
+        VK_FALSE,                            // compareEnable
+        CompareOp::eNever,
+        0.0f,                                // minLod
+        0.0f,                                // maxLod
+        BorderColor::eFloatOpaqueBlack,
+        VK_FALSE                             // unnormalizedCoordinates
+    };
 
-    if (!ManagedSampler::create(device, samplerInfo, sampler)) {
+    if (!ManagedSampler::create(device, static_cast<VkSamplerCreateInfo>(samplerInfo), sampler)) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "OceanFFT: Failed to create sampler");
         return false;
     }

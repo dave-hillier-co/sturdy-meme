@@ -240,6 +240,12 @@ public:
     void setTwoPhaseLeafCulling(bool enabled) { twoPhaseLeafCullingEnabled_ = enabled; }
     bool isTwoPhaseLeafCullingEnabled() const { return twoPhaseLeafCullingEnabled_; }
 
+    // Double-buffer management: call at frame end to swap compute/render buffer sets
+    // After this call, graphics will read from what compute just wrote
+    void advanceBufferSet() {
+        cullBufferTracker_.advance();
+    }
+
     VkDevice getDevice() const { return device_; }
 
 private:
@@ -300,9 +306,11 @@ private:
     std::vector<VkDescriptorSet> cullDescriptorSets_;
 
     // Double-buffered output buffers (visible leaf instances after culling)
-    // Using double-buffering to avoid compute/graphics synchronization issues
+    // Using ping-pong pattern to avoid compute/graphics synchronization:
+    // - Compute writes to writeIndex, Graphics reads from readIndex
+    // - advanceBufferSet() swaps them at frame end
     static constexpr uint32_t CULL_BUFFER_SET_COUNT = 2;
-    uint32_t currentCullBufferSet_ = 0;
+    BufferUtils::PingPongTracker cullBufferTracker_;
 
     // Output buffers for visible leaf instances (one per buffer set)
     BufferUtils::DoubleBufferedBufferSet cullOutputBuffers_;

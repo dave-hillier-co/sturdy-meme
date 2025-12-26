@@ -1261,13 +1261,16 @@ bool Renderer::render(const Camera& camera) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to present swapchain image: %d", result);
     }
 
-    // Advance grass double-buffer sets after frame submission
+    // Advance double-buffer sets after frame submission
     // This swaps compute/render buffer sets so next frame can overlap:
     // - Next frame's compute writes to what was the render set
     // - Next frame's render reads from what was the compute set (now contains fresh data)
     systems_->grass().advanceBufferSet();
     systems_->weather().advanceBufferSet();
     systems_->leaf().advanceBufferSet();
+    if (systems_->treeRenderer()) {
+        systems_->treeRenderer()->advanceBufferSet();
+    }
 
     // Update water tile cull visibility tracking (uses absolute frame counter)
     systems_->waterTileCull().endFrame(currentFrame);

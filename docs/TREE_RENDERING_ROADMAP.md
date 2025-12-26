@@ -879,3 +879,157 @@ All six phases are now complete! Potential future improvements:
 - Draw cell bounding boxes
 - Show Hi-Z pyramid mip levels
 - Display culling statistics overlay
+
+---
+
+## Testing the Roadmap
+
+Before removing legacy code paths, validate all phases work correctly together.
+
+### Visual Quality Tests
+
+| Test | What to Check | How to Test |
+|------|---------------|-------------|
+| LOD transitions | No popping when moving toward/away from trees | Fly camera slowly through forest |
+| Impostor blending | Smooth rotation, no angular jumps | Orbit camera around single tree |
+| Shadow consistency | Shadows match geometry at LOD boundaries | View trees at transition distances |
+| Atmosphere match | Impostors blend with terrain/sky at distance | Look at horizon with trees |
+
+### Performance Comparison Tests
+
+Use the GUI Tree tab to toggle features and compare frame times:
+
+| Toggle | Location | What to Compare |
+|--------|----------|-----------------|
+| Two-Phase Leaf Culling | Tree tab | Frame time with dense foliage |
+| Use Screen-Space Error | Tree tab | LOD behavior when zooming (narrow FOV) |
+| Temporal Coherence | Tree tab | Frame time with stationary camera (watch for 1-frame flicker) |
+| Use Octahedral Mapping | Tree tab | Visual quality vs legacy 17-view |
+| Frame Blending | Tree tab | Angular transition smoothness |
+
+### Stress Test Scenarios
+
+| Scenario | Purpose | Camera Setup |
+|----------|---------|--------------|
+| Dense forest | Max visible tree count, leaf culling stress | Inside forest, look around 360 degrees |
+| Mountain overlook | Hi-Z occlusion benefit | On hill, forest in valley below |
+| Fast flyover | Temporal coherence stability | Move camera quickly over forest canopy |
+| Zoom test | Screen-space error correctness | Narrow FOV (zoom in), verify more detail retained |
+| Resolution change | Screen-space error adaptation | Compare 1080p vs higher resolution if possible |
+
+### Correctness Validation
+
+1. **Enable debug visualizations** in GUI:
+   - "Show Cell Index Colors" - verify spatial partitioning working
+   - "Override Elevation" - test octahedral atlas coverage at different angles
+
+2. **Check statistics overlay** for:
+   - Visible tree count (should be much less than total with culling)
+   - Impostor vs geometry ratio
+   - Culling time per phase
+
+### Regression Baseline
+
+Before cleanup, capture reference data:
+1. Screenshot at known camera positions with all features enabled
+2. Record frame times for each stress test scenario
+3. Note any visual artifacts or performance issues
+
+---
+
+## Legacy Code Cleanup Plan
+
+Once testing confirms all phases work correctly, remove legacy code paths to simplify maintenance.
+
+### Current Feature Toggles
+
+| Phase | Toggle | Default | Legacy Fallback |
+|-------|--------|---------|-----------------|
+| 2 | `hiZEnabled_` | `true` | Frustum-only culling |
+| 3 | `twoPhaseEnabled_` | `true` | `tree_leaf_cull.comp` (single-phase) |
+| 4 | `useScreenSpaceError` | `true` | Distance-based thresholds |
+| 5 | `temporalEnabled` | `false` | Full update each frame |
+| 6 | `useOctahedralMapping` | `true` | 17-view discrete atlas |
+| 6 | `enableFrameBlending` | `true` | No blending |
+
+### Safe to Remove (Debug-Only)
+
+These have no production impact:
+
+| Item | Location | Notes |
+|------|----------|-------|
+| `enableDebugElevation` | `TreeLODSettings` | UI testing only |
+| `debugElevation` | `TreeLODSettings` | UI testing only |
+| `debugShowCellIndex` | `TreeLODSettings` | Visualization only |
+| Atlas preview buttons | `GuiTreeTab.cpp` | Visualization only |
+
+### Cleanup Steps (In Order)
+
+#### Step 1: Remove Debug Flags
+- Delete `enableDebugElevation`, `debugElevation`, `debugShowCellIndex` from `TreeLODSettings`
+- Remove corresponding GUI controls from `GuiTreeTab.cpp`
+- Remove atlas preview UI section
+
+#### Step 2: Make Phase 3 (Two-Phase Culling) Default
+- Remove `twoPhaseEnabled_` toggle
+- Delete `tree_leaf_cull.comp` (legacy single-phase shader)
+- Remove `createLeafCullPipeline()` (single-phase pipeline creation)
+- Remove GUI toggle for "Two-Phase Leaf Culling"
+- Keep only `tree_filter.comp` + `tree_leaf_cull_phase3.comp`
+
+#### Step 3: Make Phase 4 (Screen-Space Error) Default
+- Remove `useScreenSpaceError` toggle
+- Delete distance-based LOD code paths (`fullDetailDistance`, `impostorDistance`, `hysteresis`)
+- Remove corresponding GUI sliders for distance-based LOD
+- Keep only screen-space error thresholds
+
+#### Step 4: Make Phase 6 (Octahedral) Default
+- Remove `useOctahedralMapping` toggle
+- Delete `ImpostorAtlasConfig` struct (legacy 17-view format)
+- Remove legacy atlas generation code
+- Keep only `OctahedralAtlasConfig` and octahedral rendering path
+
+#### Step 5: Evaluate Phase 5 (Temporal Coherence)
+- **Known issue**: 1-frame flickering with triple-buffering (noted in code)
+- Options:
+  - Fix the flickering issue and enable by default
+  - Keep as opt-in feature with toggle
+  - Remove if benefit doesn't justify complexity
+- Document decision in this file
+
+#### Step 6: Clean Up GUI
+- Remove comparison toggles that no longer have legacy paths
+- Simplify Tree tab to show only active feature settings
+- Keep performance-relevant sliders (error thresholds, etc.)
+
+### Files to Modify
+
+| File | Changes |
+|------|---------|
+| `src/vegetation/TreeImpostorAtlas.h` | Remove `ImpostorAtlasConfig`, debug flags from `TreeLODSettings` |
+| `src/vegetation/TreeLeafCulling.h/cpp` | Remove single-phase pipeline, `twoPhaseEnabled_` |
+| `src/vegetation/ImpostorCullSystem.h/cpp` | Remove distance-based LOD uniforms |
+| `src/gui/GuiTreeTab.cpp` | Remove legacy toggle UI, debug controls |
+| `shaders/tree_leaf_cull.comp` | **Delete file** |
+
+### Shaders After Cleanup
+
+| Keep | Purpose |
+|------|---------|
+| `tree_cell_cull.comp` | Phase 1: Spatial cell culling |
+| `tree_filter.comp` | Phase 3: Tree filtering |
+| `tree_leaf_cull_phase3.comp` | Phase 3: Per-tree leaf culling |
+| `tree_impostor_cull.comp` | Phases 2,4,5: Combined impostor culling |
+| `octahedral_mapping.glsl` | Phase 6: Octahedral UV encoding |
+| `tree_impostor.vert/frag` | Impostor rendering |
+
+| Delete | Reason |
+|--------|--------|
+| `tree_leaf_cull.comp` | Legacy single-phase culling |
+
+### Validation After Cleanup
+
+1. Build compiles without errors
+2. All stress test scenarios pass
+3. No visual regressions from baseline screenshots
+4. Frame times equal or better than before cleanup

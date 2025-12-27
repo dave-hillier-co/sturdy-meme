@@ -135,33 +135,33 @@ float getAlphaToCoverageValueFadeIn(float blendFactor) {
 // Staggered LOD Crossfade
 // ============================================================================
 // When transitioning between full geometry and impostor, we want:
-// - Trunk fades first (leads the transition)
-// - Leaves and impostor cross-fade together (impostor provides backdrop for leaves)
+// - Leaves and impostor cross-fade FIRST (impostor provides backdrop for leaves)
+// - Trunk fades LAST (stays visible until impostor trunk is ready)
 //
-// This prevents visual artifacts where the impostor disappears while leaves
-// are still dithering in, which is especially visible against the sky.
+// This prevents visual artifacts where leaves have no backdrop during crossfade,
+// which is especially visible against the sky.
 //
 // Blend factor convention: 0 = full geometry, 1 = full impostor
 
-// Trunk blend factor - leads the transition (fades out/in faster)
-// Maps [0, 0.6] to [0, 1], clamped
-// Result: trunk is fully faded by bf=0.6, giving leaves time to crossfade with impostor
-float computeTrunkBlendFactor(float blendFactor) {
-    return clamp(blendFactor / 0.6, 0.0, 1.0);
-}
-
-// Leaf blend factor - slightly delayed start
-// Maps [0.2, 1.0] to [0, 1], clamped
-// Result: leaves start fading after trunk has begun, finish at bf=1.0
+// Leaf blend factor - leads the transition (fades out first)
+// Maps [0, 0.8] to [0, 1], clamped
+// Result: leaves are fully faded by bf=0.8
 float computeLeafBlendFactor(float blendFactor) {
-    return clamp((blendFactor - 0.2) / 0.8, 0.0, 1.0);
+    return clamp(blendFactor / 0.8, 0.0, 1.0);
 }
 
 // Impostor blend factor - matches leaf timing for true crossfade
-// Same mapping as leaves: [0.2, 1.0] to [0, 1]
+// Same mapping as leaves: [0, 0.8] to [0, 1]
 // Result: impostor fades in sync with leaves for smooth leaf crossfade
 float computeImpostorBlendFactor(float blendFactor) {
-    return clamp((blendFactor - 0.2) / 0.8, 0.0, 1.0);
+    return clamp(blendFactor / 0.8, 0.0, 1.0);
+}
+
+// Trunk blend factor - trails the transition (fades out last)
+// Maps [0.7, 1.0] to [0, 1], clamped
+// Result: trunk stays visible until leaves/impostor crossfade is nearly done
+float computeTrunkBlendFactor(float blendFactor) {
+    return clamp((blendFactor - 0.7) / 0.3, 0.0, 1.0);
 }
 
 // Staggered LOD discard for trunk (fade-out: bf 0→1 means fade to invisible)

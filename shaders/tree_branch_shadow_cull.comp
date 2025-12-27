@@ -116,12 +116,19 @@ void main() {
         return; // Too far, will be rendered as impostor
     }
 
-    // Estimate bounding radius (rough approximation based on tree height)
-    float boundingRadius = treeScale * 5.0;
+    // Estimate bounding radius based on tree dimensions
+    // Trees are approximately 15 units tall per scale unit, with canopy spread
+    // Use generous radius to avoid culling nearby tree shadows too aggressively
+    float treeHeight = treeScale * 15.0;
+    float boundingRadius = treeHeight * 0.6;  // Radius covers height plus some horizontal extent
 
-    // Frustum culling against cascade light frustum
-    vec3 boundingCenter = treePos + vec3(0.0, boundingRadius * 0.5, 0.0);
-    if (!isInFrustum(boundingCenter, boundingRadius)) {
+    // Center the bounding sphere at tree center (roughly half height)
+    vec3 boundingCenter = treePos + vec3(0.0, treeHeight * 0.5, 0.0);
+
+    // Frustum culling against cascade light frustum with margin for shadow projection
+    // Shadows can extend beyond the tree depending on light angle
+    float shadowMargin = boundingRadius * 0.5;
+    if (!isInFrustum(boundingCenter, boundingRadius + shadowMargin)) {
         return;
     }
 

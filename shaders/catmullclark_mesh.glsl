@@ -2,11 +2,14 @@
 
 #include "bindings.glsl"
 
-// Mesh data structures (matching CPU-side)
+// Mesh data structures (matching CPU-side std430 layout)
 struct CCVertex {
     vec3 position;
+    float _pad0;       // Padding to align normal to 16 bytes
     vec3 normal;
+    float _pad1;       // Padding after normal
     vec2 uv;
+    vec2 _pad2;        // Padding to make struct 48 bytes
 };
 
 struct CCHalfedge {
@@ -21,16 +24,16 @@ struct CCFace {
     uint valence;
 };
 
-// Storage buffers (to be bound)
-layout(std140, binding = BINDING_CC_VERTEX_BUFFER) readonly buffer VertexBuffer {
+// Storage buffers (std430 layout for correct struct alignment)
+layout(std430, binding = BINDING_CC_VERTEX_BUFFER) readonly buffer VertexBuffer {
     CCVertex vertices[];
 };
 
-layout(std140, binding = BINDING_CC_HALFEDGE_BUFFER) readonly buffer HalfedgeBuffer {
+layout(std430, binding = BINDING_CC_HALFEDGE_BUFFER) readonly buffer HalfedgeBuffer {
     CCHalfedge halfedges[];
 };
 
-layout(std140, binding = BINDING_CC_FACE_BUFFER) readonly buffer FaceBuffer {
+layout(std430, binding = BINDING_CC_FACE_BUFFER) readonly buffer FaceBuffer {
     CCFace faces[];
 };
 

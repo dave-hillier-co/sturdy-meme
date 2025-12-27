@@ -17,7 +17,7 @@ layout(binding = BINDING_CC_SCENE_UBO) uniform SceneUBO {
     vec4 frustumPlanes[6];
 } scene;
 
-layout(std140, binding = BINDING_CC_CBT_BUFFER) readonly buffer CBTBuffer {
+layout(std430, binding = BINDING_CC_CBT_BUFFER) readonly buffer CBTBuffer {
     uint cbtData[];
 };
 

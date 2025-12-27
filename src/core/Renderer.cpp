@@ -833,9 +833,11 @@ bool Renderer::render(const Camera& camera) {
 
     // Shadow pass (skip when sun is below horizon or shadows disabled)
     if (lastSunIntensity > 0.001f && perfToggles.shadowPass) {
+        systems_->profiler().beginCpuZone("ShadowRecord");
         systems_->profiler().beginGpuZone(cmd, "ShadowPass");
         recordShadowPass(cmd, frame.frameIndex, frame.time, frame.cameraPosition);
         systems_->profiler().endGpuZone(cmd, "ShadowPass");
+        systems_->profiler().endCpuZone("ShadowRecord");
     }
 
     // Froxel volumetric fog and atmosphere updates via pipeline
@@ -1194,6 +1196,9 @@ RenderResources Renderer::buildRenderResources(uint32_t swapchainImageIndex) con
 // Render pass recording helpers - pure command recording, no state mutation
 
 void Renderer::recordShadowPass(VkCommandBuffer cmd, uint32_t frameIndex, float grassTime, const glm::vec3& cameraPosition) {
+    // Setup phase: build callbacks and collect shadow-casting objects
+    systems_->profiler().beginCpuZone("Shadow:Setup");
+
     // Delegate to the shadow system with callbacks for terrain and grass
     auto terrainCallback = [this, frameIndex](VkCommandBuffer cb, uint32_t cascade, const glm::mat4& lightMatrix) {
         if (terrainEnabled && perfToggles.terrainShadows) {
@@ -1291,10 +1296,16 @@ void Renderer::recordShadowPass(VkCommandBuffer cmd, uint32_t frameIndex, float 
     // MaterialId 0 is the first registered material (crate)
     const auto& materialRegistry = systems_->scene().getSceneBuilder().getMaterialRegistry();
     VkDescriptorSet shadowDescriptorSet = materialRegistry.getDescriptorSet(0, frameIndex);
+
+    systems_->profiler().endCpuZone("Shadow:Setup");
+
+    // Record all shadow cascades
+    systems_->profiler().beginCpuZone("Shadow:Cascades");
     systems_->shadow().recordShadowPass(cmd, frameIndex, shadowDescriptorSet,
                                    allObjects,
                                    terrainCallback, grassCallback, treeCallback, skinnedCallback,
                                    preCascadeComputeCallback);
+    systems_->profiler().endCpuZone("Shadow:Cascades");
 }
 
 void Renderer::recordSceneObjects(VkCommandBuffer cmd, uint32_t frameIndex) {

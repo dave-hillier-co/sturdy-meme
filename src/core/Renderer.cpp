@@ -606,19 +606,22 @@ bool Renderer::render(const Camera& camera) {
         return false;
     }
 
+    // Begin CPU profiling for this frame (must be before any CPU zones)
+    systems_->profiler().beginCpuFrame();
+
     // Frame synchronization - use non-blocking check first to avoid unnecessary waits
     // With triple buffering, the fence is often already signaled
-    systems_->profiler().beginCpuZone("FenceWait");
+    systems_->profiler().beginCpuZone("Wait:FenceSync");
     if (!inFlightFences[currentFrame].isSignaled()) {
         inFlightFences[currentFrame].wait();
     }
-    systems_->profiler().endCpuZone("FenceWait");
+    systems_->profiler().endCpuZone("Wait:FenceSync");
 
-    systems_->profiler().beginCpuZone("AcquireImage");
+    systems_->profiler().beginCpuZone("Wait:AcquireImage");
     uint32_t imageIndex;
     VkResult result = vkAcquireNextImageKHR(device, swapchain, UINT64_MAX,
                                             imageAvailableSemaphores[currentFrame].get(), VK_NULL_HANDLE, &imageIndex);
-    systems_->profiler().endCpuZone("AcquireImage");
+    systems_->profiler().endCpuZone("Wait:AcquireImage");
 
     if (result == VK_ERROR_OUT_OF_DATE_KHR) {
         handleResize();
@@ -806,6 +809,8 @@ bool Renderer::render(const Camera& camera) {
     systems_->profiler().endCpuZone("SystemUpdates");
 
     // Begin command buffer recording
+    systems_->profiler().beginCpuZone("CmdBufferRecord");
+
     vkResetCommandBuffer(commandBuffers[frame.frameIndex], 0);
 
     VkCommandBufferBeginInfo beginInfo{};
@@ -815,20 +820,24 @@ bool Renderer::render(const Camera& camera) {
     VkCommandBuffer cmd = commandBuffers[frame.frameIndex];
 
     // Begin GPU profiling frame
-    systems_->profiler().beginFrame(cmd, frame.frameIndex);
+    systems_->profiler().beginGpuFrame(cmd, frame.frameIndex);
 
     // Build render resources and context for pipeline stages
     RenderResources resources = buildRenderResources(imageIndex);
     RenderContext ctx(cmd, frame.frameIndex, frame, resources);
 
     // Execute all compute passes via pipeline
+    systems_->profiler().beginCpuZone("ComputeDispatch");
     renderPipeline.computeStage.execute(ctx);
+    systems_->profiler().endCpuZone("ComputeDispatch");
 
     // Shadow pass (skip when sun is below horizon or shadows disabled)
     if (lastSunIntensity > 0.001f && perfToggles.shadowPass) {
+        systems_->profiler().beginCpuZone("ShadowRecord");
         systems_->profiler().beginGpuZone(cmd, "ShadowPass");
         recordShadowPass(cmd, frame.frameIndex, frame.time, frame.cameraPosition);
         systems_->profiler().endGpuZone(cmd, "ShadowPass");
+        systems_->profiler().endCpuZone("ShadowRecord");
     }
 
     // Froxel volumetric fog and atmosphere updates via pipeline
@@ -863,7 +872,9 @@ bool Renderer::render(const Camera& camera) {
     // Note: HDRPass is not wrapped in a profiler zone because recordHDRPass()
     // contains granular HDR:* sub-zones. Nesting would confuse the profiler.
     if (hdrPassEnabled) {
+        systems_->profiler().beginCpuZone("RenderPassRecord");
         recordHDRPass(cmd, frame.frameIndex, frame.time);
+        systems_->profiler().endCpuZone("RenderPassRecord");
 
         // Screen-Space Reflections compute pass (Phase 10)
         // Computes SSR for next frame's water - uses current scene for temporal stability
@@ -914,11 +925,15 @@ bool Renderer::render(const Camera& camera) {
     systems_->profiler().endGpuZone(cmd, "PostProcess");
 
     // End GPU profiling frame
-    systems_->profiler().endFrame(cmd, frame.frameIndex);
+    systems_->profiler().endGpuFrame(cmd, frame.frameIndex);
 
     vkEndCommandBuffer(cmd);
 
+    systems_->profiler().endCpuZone("CmdBufferRecord");
+
     // Queue submission
+    systems_->profiler().beginCpuZone("QueueSubmit");
+
     VkSubmitInfo submitInfo{};
     submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
 
@@ -935,6 +950,8 @@ bool Renderer::render(const Camera& camera) {
     submitInfo.pSignalSemaphores = signalSemaphores;
 
     result = vkQueueSubmit(graphicsQueue, 1, &submitInfo, inFlightFences[currentFrame].get());
+    systems_->profiler().endCpuZone("QueueSubmit");
+
     if (result == VK_ERROR_DEVICE_LOST) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Device lost during queue submit");
         framebufferResized = true;
@@ -945,6 +962,8 @@ bool Renderer::render(const Camera& camera) {
     }
 
     // Present
+    systems_->profiler().beginCpuZone("Wait:Present");
+
     VkPresentInfoKHR presentInfo{};
     presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
     presentInfo.waitSemaphoreCount = 1;
@@ -956,6 +975,8 @@ bool Renderer::render(const Camera& camera) {
     presentInfo.pImageIndices = &imageIndex;
 
     result = vkQueuePresentKHR(presentQueue, &presentInfo);
+
+    systems_->profiler().endCpuZone("Wait:Present");
 
     if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR) {
         framebufferResized = true;
@@ -978,6 +999,10 @@ bool Renderer::render(const Camera& camera) {
     systems_->waterTileCull().endFrame(currentFrame);
 
     currentFrame = (currentFrame + 1) % MAX_FRAMES_IN_FLIGHT;
+
+    // End CPU profiling for this frame
+    systems_->profiler().endCpuFrame();
+
     return true;
 }
 
@@ -1171,6 +1196,9 @@ RenderResources Renderer::buildRenderResources(uint32_t swapchainImageIndex) con
 // Render pass recording helpers - pure command recording, no state mutation
 
 void Renderer::recordShadowPass(VkCommandBuffer cmd, uint32_t frameIndex, float grassTime, const glm::vec3& cameraPosition) {
+    // Setup phase: build callbacks and collect shadow-casting objects
+    systems_->profiler().beginCpuZone("Shadow:Setup");
+
     // Delegate to the shadow system with callbacks for terrain and grass
     auto terrainCallback = [this, frameIndex](VkCommandBuffer cb, uint32_t cascade, const glm::mat4& lightMatrix) {
         if (terrainEnabled && perfToggles.terrainShadows) {
@@ -1268,10 +1296,16 @@ void Renderer::recordShadowPass(VkCommandBuffer cmd, uint32_t frameIndex, float 
     // MaterialId 0 is the first registered material (crate)
     const auto& materialRegistry = systems_->scene().getSceneBuilder().getMaterialRegistry();
     VkDescriptorSet shadowDescriptorSet = materialRegistry.getDescriptorSet(0, frameIndex);
+
+    systems_->profiler().endCpuZone("Shadow:Setup");
+
+    // Record all shadow cascades
+    systems_->profiler().beginCpuZone("Shadow:Cascades");
     systems_->shadow().recordShadowPass(cmd, frameIndex, shadowDescriptorSet,
                                    allObjects,
                                    terrainCallback, grassCallback, treeCallback, skinnedCallback,
                                    preCascadeComputeCallback);
+    systems_->profiler().endCpuZone("Shadow:Cascades");
 }
 
 void Renderer::recordSceneObjects(VkCommandBuffer cmd, uint32_t frameIndex) {

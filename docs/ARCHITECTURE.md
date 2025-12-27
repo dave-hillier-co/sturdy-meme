@@ -117,6 +117,35 @@ Located in `/shaders/`:
 - **Common includes**: `*_common.glsl` (fbm, flow, lighting, atmosphere, terrain height)
 - **Generated**: `bindings.h`, `UBOs.h` (from SPIRV-Reflect)
 
+### Dithering (`dither_common.glsl`)
+
+LOD transitions use Interleaved Gradient Noise (IGN) instead of Bayer matrix dithering for organic-looking patterns without visible grid artifacts.
+
+Features:
+
+- `shouldDiscardForLOD(blendFactor)` - Standard LOD fade-out
+- `shouldDiscardForLODTemporal(blendFactor, frameTime)` - Temporal variation for TAA integration
+- `sharpenTransition()` - Narrows transition zone to ~30% for less visible dithering
+- `getAlphaToCoverageValue()` - For MSAA alpha-to-coverage (requires MSAA enabled)
+
+## MSAA and Alpha-to-Coverage
+
+The engine currently renders at 1x sample count (no MSAA). `GraphicsPipelineFactory` supports MSAA and alpha-to-coverage for future use:
+
+```cpp
+// Enable on vegetation pipelines (requires MSAA render targets)
+factory.setSampleCount(VK_SAMPLE_COUNT_4_BIT)
+       .setAlphaToCoverage(true);
+```
+
+To enable MSAA:
+
+1. Create MSAA color and depth attachments in render pass creation
+2. Add resolve attachments for the final image
+3. Update all pipelines rendering to MSAA passes with matching sample count
+4. Enable alpha-to-coverage on vegetation pipelines (trees, grass)
+5. Use `getAlphaToCoverageValue()` in shaders instead of `discard`
+
 Build: `cmake --preset debug && cmake --build build/debug`
 
 The `shader_reflect` tool (in `tools/`) parses compiled SPIR-V and outputs `generated/UBOs.h` with std140-aligned C++ structs.

@@ -41,6 +41,8 @@ GraphicsPipelineFactory& GraphicsPipelineFactory::reset() {
     depthBiasConstant = 0.0f;
     depthBiasSlope = 0.0f;
     sampleCount = VK_SAMPLE_COUNT_1_BIT;
+    alphaToCoverageEnable = false;
+    alphaToOneEnable = false;
     depthTestEnable = true;
     depthWriteEnable = true;
     depthCompareOp = VK_COMPARE_OP_LESS;
@@ -203,6 +205,16 @@ GraphicsPipelineFactory& GraphicsPipelineFactory::setLineWidth(float width) {
 
 GraphicsPipelineFactory& GraphicsPipelineFactory::setSampleCount(VkSampleCountFlagBits samples) {
     sampleCount = samples;
+    return *this;
+}
+
+GraphicsPipelineFactory& GraphicsPipelineFactory::setAlphaToCoverage(bool enable) {
+    alphaToCoverageEnable = enable;
+    return *this;
+}
+
+GraphicsPipelineFactory& GraphicsPipelineFactory::setAlphaToOne(bool enable) {
+    alphaToOneEnable = enable;
     return *this;
 }
 
@@ -477,6 +489,8 @@ bool GraphicsPipelineFactory::build(VkPipeline& pipeline) {
     multisampling.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
     multisampling.sampleShadingEnable = VK_FALSE;
     multisampling.rasterizationSamples = sampleCount;
+    multisampling.alphaToCoverageEnable = alphaToCoverageEnable ? VK_TRUE : VK_FALSE;
+    multisampling.alphaToOneEnable = alphaToOneEnable ? VK_TRUE : VK_FALSE;
 
     // Depth/stencil state
     VkPipelineDepthStencilStateCreateInfo depthStencil{};

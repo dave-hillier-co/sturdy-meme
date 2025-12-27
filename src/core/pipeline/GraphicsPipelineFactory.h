@@ -90,6 +90,8 @@ public:
 
     // Multisampling
     GraphicsPipelineFactory& setSampleCount(VkSampleCountFlagBits samples);
+    GraphicsPipelineFactory& setAlphaToCoverage(bool enable);
+    GraphicsPipelineFactory& setAlphaToOne(bool enable);
 
     // Depth/stencil
     GraphicsPipelineFactory& setDepthTest(bool enable);
@@ -153,6 +155,8 @@ private:
 
     // Multisampling state
     VkSampleCountFlagBits sampleCount = VK_SAMPLE_COUNT_1_BIT;
+    bool alphaToCoverageEnable = false;
+    bool alphaToOneEnable = false;
 
     // Depth/stencil state
     bool depthTestEnable = true;

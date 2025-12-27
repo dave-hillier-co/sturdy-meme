@@ -131,4 +131,55 @@ float getAlphaToCoverageValueFadeIn(float blendFactor) {
     return clamp(alpha, 0.0, 1.0);
 }
 
+// ============================================================================
+// Staggered LOD Crossfade
+// ============================================================================
+// When transitioning between full geometry and impostor, we want:
+// - Leaves and impostor cross-fade FIRST (impostor provides backdrop for leaves)
+// - Trunk fades LAST (stays visible until impostor trunk is ready)
+//
+// This prevents visual artifacts where leaves have no backdrop during crossfade,
+// which is especially visible against the sky.
+//
+// Blend factor convention: 0 = full geometry, 1 = full impostor
+
+// Leaf blend factor - leads the transition (fades out first)
+// Maps [0, 0.8] to [0, 1], clamped
+// Result: leaves are fully faded by bf=0.8
+float computeLeafBlendFactor(float blendFactor) {
+    return clamp(blendFactor / 0.8, 0.0, 1.0);
+}
+
+// Impostor blend factor - matches leaf timing for true crossfade
+// Same mapping as leaves: [0, 0.8] to [0, 1]
+// Result: impostor fades in sync with leaves for smooth leaf crossfade
+float computeImpostorBlendFactor(float blendFactor) {
+    return clamp(blendFactor / 0.8, 0.0, 1.0);
+}
+
+// Trunk blend factor - trails the transition (fades out last)
+// Maps [0.7, 1.0] to [0, 1], clamped
+// Result: trunk stays visible until leaves/impostor crossfade is nearly done
+float computeTrunkBlendFactor(float blendFactor) {
+    return clamp((blendFactor - 0.7) / 0.3, 0.0, 1.0);
+}
+
+// Staggered LOD discard for trunk (fade-out: bf 0→1 means fade to invisible)
+bool shouldDiscardForLODTrunk(float blendFactor) {
+    float trunkBf = computeTrunkBlendFactor(blendFactor);
+    return shouldDiscardForLOD(trunkBf);
+}
+
+// Staggered LOD discard for leaves (fade-out)
+bool shouldDiscardForLODLeaves(float blendFactor) {
+    float leafBf = computeLeafBlendFactor(blendFactor);
+    return shouldDiscardForLOD(leafBf);
+}
+
+// Staggered LOD discard for impostor (fade-in: bf 0→1 means fade to visible)
+bool shouldDiscardForLODImpostor(float blendFactor) {
+    float impostorBf = computeImpostorBlendFactor(blendFactor);
+    return shouldDiscardForLODFadeIn(impostorBf);
+}
+
 #endif // DITHER_COMMON_GLSL

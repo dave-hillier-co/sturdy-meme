@@ -162,6 +162,42 @@ void GuiTreeTab::render(ITreeControl& treeControl) {
                                       "1. Filter visible trees from cells\n"
                                       "2. Cull leaves only for visible trees");
                 }
+
+                // Debug culling toggles (for diagnosing flickering issues)
+                ImGui::Spacing();
+                ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.6f, 0.6f, 1.0f));
+                ImGui::Text("Debug Leaf Culling:");
+                ImGui::PopStyleColor();
+
+                auto& cullParams = treeRenderer->getCullingParams();
+
+                if (ImGui::Checkbox("Disable Frustum Culling", &cullParams.disableFrustumCulling)) {
+                }
+                if (ImGui::IsItemHovered()) {
+                    ImGui::SetTooltip("Skip frustum culling of leaves.\n"
+                                      "If flickering stops, frustum culling is the issue.");
+                }
+
+                if (ImGui::Checkbox("Disable Distance Culling", &cullParams.disableDistanceCulling)) {
+                }
+                if (ImGui::IsItemHovered()) {
+                    ImGui::SetTooltip("Skip distance-based culling of leaves.\n"
+                                      "If flickering stops, distance culling is the issue.");
+                }
+
+                if (ImGui::Checkbox("Disable LOD Dropping", &cullParams.disableLodDropping)) {
+                }
+                if (ImGui::IsItemHovered()) {
+                    ImGui::SetTooltip("Skip LOD-based blade dropping.\n"
+                                      "If flickering stops, LOD dropping is the issue.");
+                }
+
+                if (ImGui::Checkbox("Disable Tier Budget", &cullParams.disableTierBudget)) {
+                }
+                if (ImGui::IsItemHovered()) {
+                    ImGui::SetTooltip("Skip tier-based budget limiting.\n"
+                                      "If flickering stops, tier budget is the issue.");
+                }
             }
 
             // Temporal coherence toggle (Phase 5)

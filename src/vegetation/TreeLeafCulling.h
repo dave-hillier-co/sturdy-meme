@@ -29,7 +29,12 @@ struct TreeLeafCullUniforms {
     uint32_t numTrees;
     uint32_t totalLeafInstances;
     uint32_t maxLeavesPerType;
-    uint32_t _pad1;
+    // Debug flags packed into a single uint32_t
+    // Bit 0: disableFrustumCulling
+    // Bit 1: disableDistanceCulling
+    // Bit 2: disableLodDropping
+    // Bit 3: disableTierBudget
+    uint32_t debugFlags;
 };
 
 // Uniforms for cell culling compute shader
@@ -115,6 +120,12 @@ public:
         float lodTransitionStart = TreeLODConstants::LOD_TRANSITION_START;
         float lodTransitionEnd = TreeLODConstants::LOD_TRANSITION_END;
         float maxLodDropRate = 0.75f;
+
+        // Debug toggles for isolating flickering issues
+        bool disableFrustumCulling = false;
+        bool disableDistanceCulling = false;
+        bool disableLodDropping = false;
+        bool disableTierBudget = false;
     };
 
     static std::unique_ptr<TreeLeafCulling> create(const InitInfo& info);
@@ -144,9 +155,10 @@ public:
     void setTwoPhaseEnabled(bool enabled) { twoPhaseEnabled_ = enabled; }
     bool isTwoPhaseEnabled() const { return twoPhaseEnabled_; }
 
-    // Set culling parameters
+    // Set/get culling parameters
     void setParams(const CullingParams& params) { params_ = params; }
     const CullingParams& getParams() const { return params_; }
+    CullingParams& getParams() { return params_; }
 
     // Get output buffers for rendering (indexed by frame)
     VkBuffer getOutputBuffer(uint32_t frameIndex) const {

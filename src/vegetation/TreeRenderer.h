@@ -170,6 +170,10 @@ public:
     void setTwoPhaseLeafCulling(bool enabled);
     bool isTwoPhaseLeafCullingEnabled() const;
 
+    // Access culling parameters (for debug UI)
+    TreeLeafCulling::CullingParams& getCullingParams();
+    const TreeLeafCulling::CullingParams& getCullingParams() const;
+
     VkDevice getDevice() const { return device_; }
 
 private:

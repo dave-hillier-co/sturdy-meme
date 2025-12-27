@@ -521,6 +521,16 @@ bool TreeRenderer::isTwoPhaseLeafCullingEnabled() const {
     return leafCulling_ && leafCulling_->isTwoPhaseEnabled();
 }
 
+TreeLeafCulling::CullingParams& TreeRenderer::getCullingParams() {
+    static TreeLeafCulling::CullingParams defaultParams;
+    return leafCulling_ ? leafCulling_->getParams() : defaultParams;
+}
+
+const TreeLeafCulling::CullingParams& TreeRenderer::getCullingParams() const {
+    static TreeLeafCulling::CullingParams defaultParams;
+    return leafCulling_ ? leafCulling_->getParams() : defaultParams;
+}
+
 void TreeRenderer::recordBranchShadowCulling(VkCommandBuffer cmd, uint32_t frameIndex,
                                               uint32_t cascadeIndex,
                                               const glm::vec4* cascadeFrustumPlanes,

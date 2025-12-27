@@ -21,6 +21,12 @@ struct TreeCullData {
     uint _pad2;
 };
 
+// Debug flag bit positions (must match TreeLeafCullUniforms in C++)
+const uint DEBUG_DISABLE_FRUSTUM_CULLING = 1u;
+const uint DEBUG_DISABLE_DISTANCE_CULLING = 2u;
+const uint DEBUG_DISABLE_LOD_DROPPING = 4u;
+const uint DEBUG_DISABLE_TIER_BUDGET = 8u;
+
 // Cull a single leaf instance against frustum, distance, and LOD
 // Returns true if the leaf should be CULLED (not rendered)
 bool cullLeaf(
@@ -34,6 +40,7 @@ bool cullLeaf(
     float lodTransitionStart,
     float lodTransitionEnd,
     float maxLodDropRate,
+    uint debugFlags,
     out vec4 worldPos,
     out float leafSize,
     out float distToCamera
@@ -45,27 +52,33 @@ bool cullLeaf(
     float treeScale = length(treeModel[0].xyz);
     leafSize = leafSizeLocal * treeScale;
 
-    // Distance culling
+    // Distance culling (can be disabled for debugging)
     distToCamera = getDistanceToCamera(worldPos.xyz, cameraPos);
-    if (distToCamera > maxDrawDistance) {
-        return true;
+    if ((debugFlags & DEBUG_DISABLE_DISTANCE_CULLING) == 0u) {
+        if (distToCamera > maxDrawDistance) {
+            return true;
+        }
     }
 
-    // Frustum culling with margin for leaf billboard rotation
-    float margin = leafSize * 2.0;
-    if (!isInFrustum(frustumPlanes, worldPos.xyz, margin)) {
-        return true;
+    // Frustum culling with margin for leaf billboard rotation (can be disabled for debugging)
+    if ((debugFlags & DEBUG_DISABLE_FRUSTUM_CULLING) == 0u) {
+        float margin = leafSize * 2.0;
+        if (!isInFrustum(frustumPlanes, worldPos.xyz, margin)) {
+            return true;
+        }
     }
 
     // LOD blade dropping - use position-based hash for consistent results
     // Incorporate LOD blend factor for smooth transitions
     // The effectiveDropRate already includes lodBlendFactor to increase culling
-    // as the tree transitions toward impostor mode
-    float instanceHash = hash2D(leafLocalPos.xz);
-    float effectiveDropRate = maxLodDropRate + lodBlendFactor * (1.0 - maxLodDropRate);
-    if (lodCull(distToCamera, lodTransitionStart, lodTransitionEnd,
-                effectiveDropRate, instanceHash)) {
-        return true;
+    // as the tree transitions toward impostor mode (can be disabled for debugging)
+    if ((debugFlags & DEBUG_DISABLE_LOD_DROPPING) == 0u) {
+        float instanceHash = hash2D(leafLocalPos.xz);
+        float effectiveDropRate = maxLodDropRate + lodBlendFactor * (1.0 - maxLodDropRate);
+        if (lodCull(distToCamera, lodTransitionStart, lodTransitionEnd,
+                    effectiveDropRate, instanceHash)) {
+            return true;
+        }
     }
 
     return false;

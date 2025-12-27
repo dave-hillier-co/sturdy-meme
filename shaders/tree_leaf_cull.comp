@@ -44,7 +44,7 @@ layout(binding = BINDING_TREE_LEAF_CULL_UNIFORMS) uniform TreeLeafCullUniforms {
     uint numTrees;
     uint totalLeafInstances;
     uint maxLeavesPerType;
-    uint _pad1;
+    uint debugFlags;
 };
 
 void main() {
@@ -121,6 +121,7 @@ void main() {
         lodTransitionStart,
         lodTransitionEnd,
         maxLodDropRate,
+        debugFlags,
         worldPos,
         leafSize,
         distToCamera

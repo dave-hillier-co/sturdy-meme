@@ -741,6 +741,12 @@ void TreeLeafCulling::recordCulling(VkCommandBuffer cmd, uint32_t frameIndex,
     uniforms.numTrees = numTrees;
     uniforms.totalLeafInstances = totalLeafInstances;
     uniforms.maxLeavesPerType = maxLeavesPerType_;
+    // Pack debug flags into a single uint32
+    uniforms.debugFlags =
+        (params_.disableFrustumCulling ? 1u : 0u) |
+        (params_.disableDistanceCulling ? 2u : 0u) |
+        (params_.disableLodDropping ? 4u : 0u) |
+        (params_.disableTierBudget ? 8u : 0u);
 
     vkCmdUpdateBuffer(cmd, cullUniformBuffers_.buffers[frameIndex], 0,
                       sizeof(TreeLeafCullUniforms), &uniforms);

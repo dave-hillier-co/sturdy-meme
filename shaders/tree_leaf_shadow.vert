@@ -36,6 +36,7 @@ layout(push_constant) uniform PushConstants {
 } push;
 
 layout(location = 0) out vec2 fragTexCoord;
+layout(location = 1) out float fragLodBlendFactor;
 
 void main() {
     // Get world-space leaf instance data from SSBO
@@ -49,6 +50,7 @@ void main() {
     // Get tree render data
     TreeRenderData tree = treeData[treeIndex];
     float windPhaseOffset = tree.windPhaseAndLOD.x;
+    fragLodBlendFactor = tree.windPhaseAndLOD.y;
 
     // Extract wind parameters
     float windStrength = wind.windDirectionAndStrength.z;

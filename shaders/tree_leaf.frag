@@ -7,11 +7,32 @@
 #include "ubo_common.glsl"
 #include "atmosphere_common.glsl"
 #include "color_common.glsl"
-#include "tree_lighting_common.glsl"
 #include "dither_common.glsl"
+#include "vegetation_lighting_common.glsl"
+#include "snow_common.glsl"
+#include "cloud_shadow_common.glsl"
+
+// Override UBO bindings for tree leaf descriptor set
+#define SNOW_UBO_BINDING BINDING_TREE_GFX_SNOW_UBO
+#define CLOUD_SHADOW_UBO_BINDING BINDING_TREE_GFX_CLOUD_SHADOW_UBO
+
+#include "ubo_snow.glsl"
+#include "ubo_cloud_shadow.glsl"
 
 layout(binding = BINDING_TREE_GFX_SHADOW_MAP) uniform sampler2DArrayShadow shadowMapArray;
 layout(binding = BINDING_TREE_GFX_LEAF_ALBEDO) uniform sampler2D leafAlbedo;
+
+// Snow mask texture (world-space coverage)
+layout(binding = BINDING_TREE_GFX_SNOW_MASK) uniform sampler2D snowMaskTexture;
+
+// Cloud shadow map (R16F: 0=shadow, 1=no shadow)
+layout(binding = BINDING_TREE_GFX_CLOUD_SHADOW) uniform sampler2D cloudShadowMap;
+
+// Light buffer SSBO
+layout(std430, binding = BINDING_TREE_GFX_LIGHT_BUFFER) readonly buffer LightBuffer {
+    uvec4 lightCount;        // x = active light count
+    GPULight lights[MAX_LIGHTS];
+} lightBuffer;
 
 // Simplified push constants - no more per-tree data
 layout(push_constant) uniform PushConstants {
@@ -29,7 +50,20 @@ layout(location = 6) in float fragLodBlendFactor;
 
 layout(location = 0) out vec4 outColor;
 
-// Note: Bayer dithering is provided by dither_common.glsl
+// Calculate contribution from all dynamic lights for tree leaves
+vec3 calculateAllDynamicLightsLeaf(vec3 N, vec3 V, vec3 worldPos, vec3 albedo) {
+    vec3 totalLight = vec3(0.0);
+    uint numLights = min(lightBuffer.lightCount.x, MAX_LIGHTS);
+
+    for (uint i = 0; i < numLights; i++) {
+        totalLight += calculateDynamicLightVegetation(
+            lightBuffer.lights[i], N, V, worldPos, albedo,
+            VEGETATION_ROUGHNESS, VEGETATION_SSS_STRENGTH
+        );
+    }
+
+    return totalLight;
+}
 
 void main() {
     // LOD dithered fade-out using staggered crossfade
@@ -40,15 +74,15 @@ void main() {
     }
 
     // Sample leaf texture
-    vec4 albedo = texture(leafAlbedo, fragTexCoord);
+    vec4 albedoSample = texture(leafAlbedo, fragTexCoord);
 
     // Alpha test for leaf transparency
-    if (albedo.a < push.alphaTest) {
+    if (albedoSample.a < push.alphaTest) {
         discard;
     }
 
     // Apply tint and autumn hue shift (from vertex shader / tree data SSBO)
-    vec3 baseColor = albedo.rgb * fragLeafTint;
+    vec3 baseColor = albedoSample.rgb * fragLeafTint;
     baseColor = applyAutumnHueShift(baseColor, fragAutumnHueShift);
 
     // Use geometry normal (leaves are flat)
@@ -61,24 +95,72 @@ void main() {
 
     // View and light directions
     vec3 V = normalize(ubo.cameraPosition.xyz - fragWorldPos);
-    vec3 L = normalize(ubo.sunDirection.xyz);  // sunDirection points toward sun
+    vec3 sunL = normalize(ubo.sunDirection.xyz);  // sunDirection points toward sun
+    vec3 moonL = normalize(ubo.moonDirection.xyz);
 
-    // Calculate shadow
-    float shadow = calculateCascadedShadow(
-        fragWorldPos, N, L,
+    // === SNOW LAYER ===
+    vec3 albedo = baseColor;
+    float snowMaskCoverage = sampleSnowMask(snowMaskTexture, fragWorldPos,
+                                             snow.snowMaskParams.xy, snow.snowMaskParams.z);
+
+    // Calculate vegetation snow coverage - tips/leaves catch more snow
+    // Use 1.0 as affinity since leaves are tips
+    float snowCoverage = calculateVegetationSnowCoverage(snow.snowAmount, snowMaskCoverage, N, 1.0);
+
+    // Apply snow to leaf albedo
+    if (snowCoverage > 0.01) {
+        albedo = snowyVegetationColor(albedo, snow.snowColor.rgb, snowCoverage);
+    }
+
+    // === SHADOW CALCULATION ===
+    float terrainShadow = calculateCascadedShadow(
+        fragWorldPos, N, sunL,
         ubo.view, ubo.cascadeSplits, ubo.cascadeViewProj,
         ubo.shadowMapSize, shadowMapArray
     );
 
-    // Calculate lighting using common function
-    vec3 color = calculateTreeLeafLighting(
-        N, V, L,
-        baseColor,
-        shadow,
-        ubo.sunColor.rgb,
-        ubo.sunDirection.w,
-        ubo.ambientColor.rgb
+    // Cloud shadows
+    float cloudShadowFactor = 1.0;
+    if (cloudShadow.cloudShadowEnabled > 0.5) {
+        cloudShadowFactor = sampleCloudShadowSoft(cloudShadowMap, fragWorldPos, cloudShadow.cloudShadowMatrix);
+    }
+
+    // Combine terrain and cloud shadows
+    float shadow = combineShadows(terrainShadow, cloudShadowFactor);
+
+    // === SUN LIGHTING ===
+    vec3 sunLight = calculateVegetationSunLight(
+        N, V, sunL,
+        ubo.sunColor.rgb, ubo.sunDirection.w,
+        albedo, VEGETATION_ROUGHNESS, VEGETATION_SSS_STRENGTH,
+        shadow
     );
+
+    // === MOON LIGHTING ===
+    vec3 moonLight = calculateVegetationMoonLight(
+        N, V, moonL,
+        ubo.moonColor.rgb, ubo.moonDirection.w,
+        ubo.sunDirection.y,  // Sun altitude for twilight calculation
+        albedo, VEGETATION_SSS_STRENGTH
+    );
+
+    // === DYNAMIC LIGHTS ===
+    vec3 dynamicLights = calculateAllDynamicLightsLeaf(N, V, fragWorldPos, albedo);
+
+    // === RIM LIGHTING ===
+    vec3 rimLight = calculateVegetationRimLight(
+        N, V,
+        ubo.ambientColor.rgb, ubo.sunColor.rgb, ubo.sunDirection.w
+    );
+
+    // === AMBIENT LIGHTING ===
+    // For leaves, use a fixed height value (they're all "tips" of the tree)
+    float leafHeight = 0.8;  // Leaves are near the top
+    vec3 ambient = calculateHeightAmbient(ubo.ambientColor.rgb, albedo, leafHeight);
+    float ao = calculateVegetationAO(leafHeight);
+
+    // === COMBINE LIGHTING ===
+    vec3 color = (ambient + sunLight + moonLight + dynamicLights + rimLight) * ao;
 
     // Apply aerial perspective for distant leaves
     color = applyAerialPerspectiveSimple(color, fragWorldPos);

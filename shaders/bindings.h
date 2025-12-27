@@ -193,6 +193,11 @@
 #define BINDING_TREE_GFX_LEAF_INSTANCES    9   // Leaf instance SSBO (world-space)
 #define BINDING_TREE_GFX_TREE_DATA        10   // Tree render data SSBO (transforms, tints)
 #define BINDING_TREE_GFX_BRANCH_SHADOW_INSTANCES 11  // Branch shadow instance SSBO (model matrices)
+#define BINDING_TREE_GFX_LIGHT_BUFFER          12  // Light buffer SSBO for tree leaves
+#define BINDING_TREE_GFX_SNOW_MASK             13  // Snow mask texture for tree leaves
+#define BINDING_TREE_GFX_CLOUD_SHADOW          14  // Cloud shadow map for tree leaves
+#define BINDING_TREE_GFX_SNOW_UBO              15  // Snow UBO for tree leaves
+#define BINDING_TREE_GFX_CLOUD_SHADOW_UBO      16  // Cloud shadow UBO for tree leaves
 
 // Tree Impostor Descriptor Set
 #define BINDING_TREE_IMPOSTOR_UBO          0   // Scene uniforms
@@ -599,6 +604,11 @@ constexpr uint32_t TREE_GFX_LEAF_ALBEDO   = BINDING_TREE_GFX_LEAF_ALBEDO;
 constexpr uint32_t TREE_GFX_LEAF_INSTANCES = BINDING_TREE_GFX_LEAF_INSTANCES;
 constexpr uint32_t TREE_GFX_TREE_DATA = BINDING_TREE_GFX_TREE_DATA;
 constexpr uint32_t TREE_GFX_BRANCH_SHADOW_INSTANCES = BINDING_TREE_GFX_BRANCH_SHADOW_INSTANCES;
+constexpr uint32_t TREE_GFX_LIGHT_BUFFER  = BINDING_TREE_GFX_LIGHT_BUFFER;
+constexpr uint32_t TREE_GFX_SNOW_MASK     = BINDING_TREE_GFX_SNOW_MASK;
+constexpr uint32_t TREE_GFX_CLOUD_SHADOW  = BINDING_TREE_GFX_CLOUD_SHADOW;
+constexpr uint32_t TREE_GFX_SNOW_UBO      = BINDING_TREE_GFX_SNOW_UBO;
+constexpr uint32_t TREE_GFX_CLOUD_SHADOW_UBO = BINDING_TREE_GFX_CLOUD_SHADOW_UBO;
 
 // Tree Impostor
 constexpr uint32_t TREE_IMPOSTOR_UBO      = BINDING_TREE_IMPOSTOR_UBO;

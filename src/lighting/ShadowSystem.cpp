@@ -10,8 +10,6 @@
 #include <cmath>
 #include <limits>
 
-using namespace vk;
-
 // Factory implementations
 std::unique_ptr<ShadowSystem> ShadowSystem::create(const InitInfo& info) {
     auto system = std::unique_ptr<ShadowSystem>(new ShadowSystem());

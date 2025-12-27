@@ -1,7 +1,7 @@
 #pragma once
 
 #include "EnvironmentSettings.h"
-#include <vulkan/vulkan.hpp>
+#include <vulkan/vulkan.h>
 #include <vk_mem_alloc.h>
 #include <glm/glm.hpp>
 #include <array>

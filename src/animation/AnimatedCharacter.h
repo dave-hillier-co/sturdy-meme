@@ -9,7 +9,7 @@
 #include "Mesh.h"
 #include "IKSolver.h"
 #include <vk_mem_alloc.h>
-#include <vulkan/vulkan.hpp>
+#include <vulkan/vulkan.h>
 #include <string>
 #include <vector>
 #include <memory>

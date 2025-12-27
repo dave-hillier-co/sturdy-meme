@@ -2,7 +2,7 @@
 
 #include "RenderPipeline.h"
 #include "PerformanceToggles.h"
-#include <vulkan/vulkan.hpp>
+#include <vulkan/vulkan.h>
 #include <glm/glm.hpp>
 
 class RendererSystems;

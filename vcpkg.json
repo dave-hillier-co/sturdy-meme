@@ -21,7 +21,6 @@
       "platform": "linux"
     },
     "vulkan",
-    "vulkan-hpp",
     "glm",
     "stb",
     "vk-bootstrap",

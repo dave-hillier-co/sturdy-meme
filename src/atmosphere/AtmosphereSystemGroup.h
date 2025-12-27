@@ -1,7 +1,7 @@
 #pragma once
 
 #include <memory>
-#include <vulkan/vulkan.hpp>
+#include <vulkan/vulkan.h>
 
 // Forward declarations
 class SkySystem;

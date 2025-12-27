@@ -1,7 +1,7 @@
 #pragma once
 
 #include "VulkanRAII.h"
-#include <vulkan/vulkan.hpp>
+#include <vulkan/vulkan.h>
 #include <vk_mem_alloc.h>
 #include <glm/glm.hpp>
 #include <vector>

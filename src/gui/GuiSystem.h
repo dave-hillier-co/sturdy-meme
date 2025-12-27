@@ -1,6 +1,6 @@
 #pragma once
 
-#include <vulkan/vulkan.hpp>
+#include <vulkan/vulkan.h>
 #include <SDL3/SDL.h>
 #include <vk_mem_alloc.h>
 #include <glm/glm.hpp>

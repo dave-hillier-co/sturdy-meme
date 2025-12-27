@@ -2,7 +2,7 @@
 
 #include <memory>
 #include <functional>
-#include <vulkan/vulkan.hpp>
+#include <vulkan/vulkan.h>
 
 #include "InitContext.h"
 #include "CoreResources.h"

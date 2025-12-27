@@ -9,7 +9,7 @@
 #include <vector>
 #include <functional>
 #include <memory>
-#include <vulkan/vulkan.hpp>
+#include <vulkan/vulkan.h>
 #include <glm/glm.hpp>
 
 // Forward declarations to avoid circular dependencies

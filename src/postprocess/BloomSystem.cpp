@@ -9,8 +9,6 @@
 #include <cmath>
 #include <SDL3/SDL.h>
 
-using namespace vk;
-
 std::unique_ptr<BloomSystem> BloomSystem::create(const InitInfo& info) {
     auto system = std::unique_ptr<BloomSystem>(new BloomSystem());
     if (!system->initInternal(info)) {
@@ -126,17 +124,16 @@ bool BloomSystem::createMipChain() {
     // Create framebuffers for each mip level
     // Use downsampleRenderPass - both render passes have compatible attachments
     for (auto& mip : mipChain) {
-        FramebufferCreateInfo fbInfo{
-            {},
-            downsampleRenderPass_.get(),
-            1, reinterpret_cast<const ImageView*>(&mip.imageView),
-            mip.extent.width,
-            mip.extent.height,
-            1
-        };
+        VkFramebufferCreateInfo fbInfo = {};
+        fbInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+        fbInfo.renderPass = downsampleRenderPass_.get();
+        fbInfo.attachmentCount = 1;
+        fbInfo.pAttachments = &mip.imageView;
+        fbInfo.width = mip.extent.width;
+        fbInfo.height = mip.extent.height;
+        fbInfo.layers = 1;
 
-        auto vkFbInfo = static_cast<VkFramebufferCreateInfo>(fbInfo);
-        if (vkCreateFramebuffer(device, &vkFbInfo, nullptr, &mip.framebuffer) != VK_SUCCESS) {
+        if (vkCreateFramebuffer(device, &fbInfo, nullptr, &mip.framebuffer) != VK_SUCCESS) {
             return false;
         }
     }
@@ -145,75 +142,71 @@ bool BloomSystem::createMipChain() {
 }
 
 bool BloomSystem::createRenderPass() {
-    AttachmentReference colorRef{0, ImageLayout::eColorAttachmentOptimal};
+    VkAttachmentReference colorRef = {};
+    colorRef.attachment = 0;
+    colorRef.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 
-    SubpassDescription subpass{
-        {},
-        PipelineBindPoint::eGraphics,
-        0, nullptr,
-        1, &colorRef,
-        nullptr,
-        nullptr
-    };
+    VkSubpassDescription subpass = {};
+    subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+    subpass.colorAttachmentCount = 1;
+    subpass.pColorAttachments = &colorRef;
 
-    SubpassDependency dependency{
-        VK_SUBPASS_EXTERNAL, 0,
-        PipelineStageFlagBits::eColorAttachmentOutput,
-        PipelineStageFlagBits::eFragmentShader,
-        AccessFlagBits::eColorAttachmentWrite,
-        AccessFlagBits::eShaderRead
-    };
+    VkSubpassDependency dependency = {};
+    dependency.srcSubpass = VK_SUBPASS_EXTERNAL;
+    dependency.dstSubpass = 0;
+    dependency.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+    dependency.dstStageMask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+    dependency.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+    dependency.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
 
     // Downsample render pass - DONT_CARE since we're writing fresh data
     {
-        AttachmentDescription colorAttachment{
-            {},
-            static_cast<Format>(BLOOM_FORMAT),
-            SampleCountFlagBits::e1,
-            AttachmentLoadOp::eDontCare,
-            AttachmentStoreOp::eStore,
-            AttachmentLoadOp::eDontCare,
-            AttachmentStoreOp::eDontCare,
-            ImageLayout::eUndefined,
-            ImageLayout::eShaderReadOnlyOptimal
-        };
+        VkAttachmentDescription colorAttachment = {};
+        colorAttachment.format = BLOOM_FORMAT;
+        colorAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
+        colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+        colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+        colorAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+        colorAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+        colorAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        colorAttachment.finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
-        RenderPassCreateInfo renderPassInfo{
-            {},
-            colorAttachment,
-            subpass,
-            dependency
-        };
+        VkRenderPassCreateInfo renderPassInfo = {};
+        renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
+        renderPassInfo.attachmentCount = 1;
+        renderPassInfo.pAttachments = &colorAttachment;
+        renderPassInfo.subpassCount = 1;
+        renderPassInfo.pSubpasses = &subpass;
+        renderPassInfo.dependencyCount = 1;
+        renderPassInfo.pDependencies = &dependency;
 
-        auto vkRenderPassInfo = static_cast<VkRenderPassCreateInfo>(renderPassInfo);
-        if (!ManagedRenderPass::create(device, vkRenderPassInfo, downsampleRenderPass_)) {
+        if (!ManagedRenderPass::create(device, renderPassInfo, downsampleRenderPass_)) {
             return false;
         }
     }
 
     // Upsample render pass - LOAD to preserve downsampled content for additive blending
     {
-        AttachmentDescription colorAttachment{
-            {},
-            static_cast<Format>(BLOOM_FORMAT),
-            SampleCountFlagBits::e1,
-            AttachmentLoadOp::eLoad,
-            AttachmentStoreOp::eStore,
-            AttachmentLoadOp::eDontCare,
-            AttachmentStoreOp::eDontCare,
-            ImageLayout::eColorAttachmentOptimal,
-            ImageLayout::eShaderReadOnlyOptimal
-        };
+        VkAttachmentDescription colorAttachment = {};
+        colorAttachment.format = BLOOM_FORMAT;
+        colorAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
+        colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
+        colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+        colorAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+        colorAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+        colorAttachment.initialLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+        colorAttachment.finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
-        RenderPassCreateInfo renderPassInfo{
-            {},
-            colorAttachment,
-            subpass,
-            dependency
-        };
+        VkRenderPassCreateInfo renderPassInfo = {};
+        renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
+        renderPassInfo.attachmentCount = 1;
+        renderPassInfo.pAttachments = &colorAttachment;
+        renderPassInfo.subpassCount = 1;
+        renderPassInfo.pSubpasses = &subpass;
+        renderPassInfo.dependencyCount = 1;
+        renderPassInfo.pDependencies = &dependency;
 
-        auto vkRenderPassInfo = static_cast<VkRenderPassCreateInfo>(renderPassInfo);
-        if (!ManagedRenderPass::create(device, vkRenderPassInfo, upsampleRenderPass_)) {
+        if (!ManagedRenderPass::create(device, renderPassInfo, upsampleRenderPass_)) {
             return false;
         }
     }
@@ -229,21 +222,22 @@ bool BloomSystem::createSampler() {
 bool BloomSystem::createDescriptorSetLayouts() {
     // Both downsample and upsample use the same descriptor set layout
     // Binding 0: input texture (sampler2D)
-    DescriptorSetLayoutBinding binding{
-        0,
-        DescriptorType::eCombinedImageSampler,
-        1,
-        ShaderStageFlagBits::eFragment
-    };
+    VkDescriptorSetLayoutBinding binding{};
+    binding.binding = 0;
+    binding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    binding.descriptorCount = 1;
+    binding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
 
-    DescriptorSetLayoutCreateInfo layoutInfo{{}, binding};
+    VkDescriptorSetLayoutCreateInfo layoutInfo = {};
+    layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+    layoutInfo.bindingCount = 1;
+    layoutInfo.pBindings = &binding;
 
-    auto vkLayoutInfo = static_cast<VkDescriptorSetLayoutCreateInfo>(layoutInfo);
-    if (!ManagedDescriptorSetLayout::create(device, vkLayoutInfo, downsampleDescSetLayout_)) {
+    if (!ManagedDescriptorSetLayout::create(device, layoutInfo, downsampleDescSetLayout_)) {
         return false;
     }
 
-    if (!ManagedDescriptorSetLayout::create(device, vkLayoutInfo, upsampleDescSetLayout_)) {
+    if (!ManagedDescriptorSetLayout::create(device, layoutInfo, upsampleDescSetLayout_)) {
         return false;
     }
 
@@ -252,39 +246,37 @@ bool BloomSystem::createDescriptorSetLayouts() {
 
 bool BloomSystem::createPipelines() {
     // Create pipeline layouts with push constants
-    PushConstantRange downsamplePushConstantRange{
-        ShaderStageFlagBits::eFragment,
-        0,
-        sizeof(DownsamplePushConstants)
-    };
+    VkPushConstantRange downsamplePushConstantRange = {};
+    downsamplePushConstantRange.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+    downsamplePushConstantRange.offset = 0;
+    downsamplePushConstantRange.size = sizeof(DownsamplePushConstants);
 
     VkDescriptorSetLayout downsampleLayout = downsampleDescSetLayout_.get();
-    PipelineLayoutCreateInfo downsampleLayoutInfo{
-        {},
-        1, reinterpret_cast<const DescriptorSetLayout*>(&downsampleLayout),
-        1, &downsamplePushConstantRange
-    };
+    VkPipelineLayoutCreateInfo downsampleLayoutInfo = {};
+    downsampleLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+    downsampleLayoutInfo.setLayoutCount = 1;
+    downsampleLayoutInfo.pSetLayouts = &downsampleLayout;
+    downsampleLayoutInfo.pushConstantRangeCount = 1;
+    downsampleLayoutInfo.pPushConstantRanges = &downsamplePushConstantRange;
 
-    auto vkDownsampleLayoutInfo = static_cast<VkPipelineLayoutCreateInfo>(downsampleLayoutInfo);
-    if (!ManagedPipelineLayout::create(device, vkDownsampleLayoutInfo, downsamplePipelineLayout_)) {
+    if (!ManagedPipelineLayout::create(device, downsampleLayoutInfo, downsamplePipelineLayout_)) {
         return false;
     }
 
-    PushConstantRange upsamplePushConstantRange{
-        ShaderStageFlagBits::eFragment,
-        0,
-        sizeof(UpsamplePushConstants)
-    };
+    VkPushConstantRange upsamplePushConstantRange = {};
+    upsamplePushConstantRange.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+    upsamplePushConstantRange.offset = 0;
+    upsamplePushConstantRange.size = sizeof(UpsamplePushConstants);
 
     VkDescriptorSetLayout upsampleLayout = upsampleDescSetLayout_.get();
-    PipelineLayoutCreateInfo upsampleLayoutInfo{
-        {},
-        1, reinterpret_cast<const DescriptorSetLayout*>(&upsampleLayout),
-        1, &upsamplePushConstantRange
-    };
+    VkPipelineLayoutCreateInfo upsampleLayoutInfo = {};
+    upsampleLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+    upsampleLayoutInfo.setLayoutCount = 1;
+    upsampleLayoutInfo.pSetLayouts = &upsampleLayout;
+    upsampleLayoutInfo.pushConstantRangeCount = 1;
+    upsampleLayoutInfo.pPushConstantRanges = &upsamplePushConstantRange;
 
-    auto vkUpsampleLayoutInfo = static_cast<VkPipelineLayoutCreateInfo>(upsampleLayoutInfo);
-    if (!ManagedPipelineLayout::create(device, vkUpsampleLayoutInfo, upsamplePipelineLayout_)) {
+    if (!ManagedPipelineLayout::create(device, upsampleLayoutInfo, upsamplePipelineLayout_)) {
         return false;
     }
 

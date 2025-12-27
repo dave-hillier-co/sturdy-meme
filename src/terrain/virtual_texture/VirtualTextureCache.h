@@ -1,7 +1,7 @@
 #pragma once
 
 #include "VirtualTextureTypes.h"
-#include <vulkan/vulkan.hpp>
+#include <vulkan/vulkan.h>
 #include <vk_mem_alloc.h>
 #include <vector>
 #include <unordered_map>

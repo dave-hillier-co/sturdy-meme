@@ -304,12 +304,6 @@ float integrateExponentialFog(vec3 startPos, vec3 endPos) {
 
     float deltaH = h1 - h0;
 
-    // For nearly horizontal rays, use simple density * distance
-    if (abs(deltaH) < 0.01) {
-        float avgHeight = (h0 + h1) * 0.5;
-        return getHeightFogDensity(avgHeight) * distance;
-    }
-
     // Extract fog params from UBO
     float fogBaseHeight = ubo.heightFogParams.x;
     float fogScaleHeight = max(ubo.heightFogParams.y, 1.0);  // Prevent division by zero
@@ -322,10 +316,22 @@ float integrateExponentialFog(vec3 startPos, vec3 endPos) {
     float exp0 = clamp(-((h0 - fogBaseHeight)) * invScaleHeight, -40.0, 40.0);
     float exp1 = clamp(-((h1 - fogBaseHeight)) * invScaleHeight, -40.0, 40.0);
 
-    // Exponential fog component
-    float expIntegral = fogDensity * fogScaleHeight *
-        abs(exp(exp0) - exp(exp1)) /
-        max(abs(deltaH / distance), 0.001);
+    // Exponential fog component - use numerically stable formulation
+    // For near-horizontal rays (small deltaH), use average density * distance
+    // For non-horizontal rays, use analytical integration
+    // Smoothly blend to avoid discontinuity
+    float avgExpDensity = (exp(exp0) + exp(exp1)) * 0.5 * fogDensity;
+    float simpleIntegral = avgExpDensity * distance;
+
+    // Analytical integral (valid when deltaH is not too small)
+    float sinTheta = deltaH / distance;
+    float analyticalIntegral = fogDensity * fogScaleHeight *
+        abs(exp(exp0) - exp(exp1)) / max(abs(sinTheta), 0.0001);
+
+    // Smooth blend based on how horizontal the ray is
+    // Use simple method for near-horizontal, analytical for steeper rays
+    float blendFactor = smoothstep(0.0, 0.02, abs(sinTheta));
+    float expIntegral = mix(simpleIntegral, analyticalIntegral, blendFactor);
 
     // Sigmoidal component (approximate with average)
     float avgSigmoidal = (sigmoidalLayerDensity(h0) + sigmoidalLayerDensity(h1)) * 0.5;

@@ -162,23 +162,21 @@ void main() {
         uint leafType = min(visTree.leafTypeIndex, NUM_LEAF_TYPES - 1);
         uint tier = getDistanceTier(distToCamera);
 
-        // Tiered budget allocation:
-        // - Tier 0 (close): gets first 50% of slots
-        // - Tier 1 (medium): gets next 30% of slots
-        // - Tier 2 (far): gets remaining 20% of slots
-        // This ensures nearby trees always have leaves even when total budget is exhausted
+        // Tiered budget allocation with DETERMINISTIC selection:
+        // Instead of using atomicAdd order (non-deterministic), we use the leaf's
+        // position-based hash to decide if it fits in the budget. This ensures
+        // the same leaves are selected every frame, preventing flickering.
+        //
+        // The hash threshold is scaled by the tier's budget fraction.
+        // Tier 0 (close): 50% budget → hash threshold 0.5 (half of leaves pass)
+        // Tier 1 (medium): 30% budget → hash threshold 0.3
+        // Tier 2 (far): 20% budget → hash threshold 0.2
+        float tierBudgetFraction = TIER_BUDGET_FRACTIONS[tier];
+        float leafHash = hash2D(worldPos.xz);  // Use world position for consistent hash
 
-        uint tierIndex = leafType * NUM_DISTANCE_TIERS + tier;
-
-        // Calculate tier capacity
-        uint tierBudget = getTierBudgetLimit(leafType, tier);
-        uint prevTierBudget = (tier > 0) ? getTierBudgetLimit(leafType, tier - 1) : 0;
-        uint tierCapacity = tierBudget - prevTierBudget;
-
-        // Fast path: use atomicAdd for tier tracking (for statistics)
-        // and check bounds after - slight over-allocation is acceptable
-        uint tierSlot = atomicAdd(tierCounts[tierIndex], 1);
-        if (tierSlot >= tierCapacity) {
+        // Skip leaf if its hash exceeds the tier's budget fraction
+        // This gives deterministic, spatially-distributed selection
+        if (leafHash > tierBudgetFraction) {
             continue;
         }
 

@@ -104,10 +104,8 @@ float DistanceToPlanetSurface(float r, float mu, float planetRadius) {
 }
 
 // Check if ray from point at distance r with zenith angle mu intersects planet
-// Use small negative threshold (-0.02) to match sky.frag horizon blending range
-// This ensures LUT rays near horizon get proper scattering instead of black
 bool RayIntersectsPlanet(float r, float mu, float planetRadius) {
-    return mu < -0.02 && r * r * (mu * mu - 1.0) + planetRadius * planetRadius >= 0.0;
+    return mu < 0.0 && r * r * (mu * mu - 1.0) + planetRadius * planetRadius >= 0.0;
 }
 
 // UV to transmittance LUT parameters
@@ -213,15 +211,6 @@ ScatteringResult integrateAtmosphere(vec3 origin, vec3 dir, float maxDistance, i
     vec2 atmo = raySphereIntersect(origin, dir, ATMOSPHERE_RADIUS);
     float start = max(atmo.x, 0.0);
     float end = min(atmo.y, maxDistance);
-
-    if (end <= 0.0) {
-        return ScatteringResult(vec3(0.0), vec3(1.0));
-    }
-
-    vec2 planet = raySphereIntersect(origin, dir, PLANET_RADIUS);
-    if (planet.x > 0.0) {
-        end = min(end, planet.x);
-    }
 
     if (end <= start) {
         return ScatteringResult(vec3(0.0), vec3(1.0));
@@ -394,11 +383,6 @@ vec3 applyAerialPerspective(vec3 color, vec3 cameraPos, vec3 viewDir, float view
     // Place camera at correct altitude in atmosphere coordinate system
     vec3 origin = vec3(0.0, PLANET_RADIUS + cameraAltitudeKm, 0.0);
 
-    // Compute horizon blend to smooth transition at horizon
-    // viewDir.y near 0 means looking at horizon - blend more smoothly there
-    float horizonFactor = abs(viewDir.y);
-    float horizonBlend = smoothstep(0.0, 0.05, horizonFactor);
-
     // Integrate atmospheric scattering (km scale)
     ScatteringResult result = integrateAtmosphere(origin, normalize(viewDir), viewDistanceKm, 8, sunDir);
 
@@ -407,17 +391,12 @@ vec3 applyAerialPerspective(vec3 color, vec3 cameraPos, vec3 viewDir, float view
     float night = 1.0 - smoothstep(-0.05, 0.08, sunDir.y);
     scatterLight += night * vec3(0.01, 0.015, 0.03) * (1.0 - result.transmittance);
 
-    // Apply horizon smoothing to transmittance to avoid hard line
-    // Near horizon, reduce the atmospheric effect to match the sky shader's horizon handling
-    vec3 smoothTransmittance = mix(vec3(1.0), result.transmittance, horizonBlend);
-    vec3 smoothScatterLight = scatterLight * horizonBlend;
-
     // Combine: atmospheric scattering adds to fogged scene
     // Scale for large world: gradual ramp over long distances (reaches 0.5 at ~5000 units)
     float atmoBlend = clamp(viewDistance * 0.0001, 0.0, 0.7);
     // Smooth the blend curve for more natural transition
     atmoBlend = atmoBlend * atmoBlend * (3.0 - 2.0 * atmoBlend);  // Smoothstep-like
-    vec3 finalColor = mix(fogged, fogged * smoothTransmittance + smoothScatterLight, atmoBlend);
+    vec3 finalColor = mix(fogged, fogged * result.transmittance + scatterLight, atmoBlend);
 
     return finalColor;
 }

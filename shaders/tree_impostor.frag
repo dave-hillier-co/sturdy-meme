@@ -6,6 +6,7 @@ const int NUM_CASCADES = 4;
 
 #include "bindings.glsl"
 #include "ubo_common.glsl"
+#include "atmosphere_common.glsl"
 #include "shadow_common.glsl"
 #include "color_common.glsl"
 #include "octahedral_mapping.glsl"
@@ -188,6 +189,14 @@ void main() {
         ubo.sunDirection.w,
         ubo.ambientColor.rgb
     );
+
+    // Apply aerial perspective for distant impostors
+    vec3 cameraToFrag = fragWorldPos - ubo.cameraPosition.xyz;
+    float viewDist = length(cameraToFrag);
+    vec3 viewDir = normalize(cameraToFrag);
+    vec3 sunDir = normalize(ubo.sunDirection.xyz);
+    vec3 sunColor = ubo.sunColor.rgb * ubo.sunDirection.w;
+    color = applyAerialPerspective(color, ubo.cameraPosition.xyz, viewDir, viewDist, sunDir, sunColor);
 
     outColor = vec4(color, 1.0);
 }

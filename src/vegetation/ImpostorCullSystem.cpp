@@ -303,22 +303,21 @@ void ImpostorCullSystem::updateTreeData(const TreeSystem& treeSystem, const Tree
             0.0f, 0.0f
         );
 
-        // Compute per-tree sizing from actual mesh bounds (at scale=1)
+        // Compute per-tree sizing from full tree bounds (branches + leaves)
         if (tree.meshIndex < treeSystem.getMeshCount()) {
-            const auto& meshBounds = treeSystem.getBranchMesh(tree.meshIndex).getBounds();
-            glm::vec3 minB = meshBounds.min;
-            glm::vec3 maxB = meshBounds.max;
+            const auto& fullBounds = treeSystem.getFullTreeBounds(tree.meshIndex);
+            glm::vec3 minB = fullBounds.min;
+            glm::vec3 maxB = fullBounds.max;
             glm::vec3 extent = maxB - minB;
 
+            // Use horizontal radius for tighter billboard fit (not 3D bounding sphere)
             float horizontalRadius = std::max(extent.x, extent.z) * 0.5f;
             float halfHeight = extent.y * 0.5f;
-            float boundingSphereRadius = glm::length(extent) * 0.5f;
 
-            // Billboard sizing: hSize uses bounding sphere for horizontal coverage,
+            // Billboard sizing: hSize uses horizontal extent for tighter fit,
             // vSize uses half height to prevent ground penetration.
             // The billboard center is at centerHeight, and extends vSize up/down.
-            // If vSize > centerHeight, the billboard bottom would go below ground.
-            float hSize = boundingSphereRadius * TreeLODConstants::IMPOSTOR_SIZE_MARGIN;
+            float hSize = horizontalRadius * TreeLODConstants::IMPOSTOR_SIZE_MARGIN;
             float vSize = halfHeight * TreeLODConstants::IMPOSTOR_SIZE_MARGIN;
             float centerHeight = (minB.y + maxB.y) * 0.5f;
 

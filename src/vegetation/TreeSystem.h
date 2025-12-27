@@ -134,6 +134,9 @@ public:
     const std::vector<LeafInstanceGPU>& getLeafInstances(uint32_t meshIndex) const { return leafInstancesPerTree_[meshIndex]; }
     const TreeOptions& getTreeOptions(uint32_t meshIndex) const { return treeOptions_[meshIndex]; }
 
+    // Get full tree bounds (branches + leaves) for accurate imposter sizing
+    const AABB& getFullTreeBounds(uint32_t meshIndex) const { return fullTreeBounds_[meshIndex]; }
+
 private:
     TreeSystem() = default;  // Private: use factory
 
@@ -185,6 +188,9 @@ private:
 
     // Raw mesh data (stored for collision generation)
     std::vector<TreeMeshData> treeMeshData_;
+
+    // Full tree bounds (branches + leaves) per mesh - for accurate imposter sizing
+    std::vector<AABB> fullTreeBounds_;
 
     // Textures indexed by type name (e.g., "oak", "pine", "ash")
     // Using RAIIAdapter for automatic cleanup matching RockSystem pattern

@@ -677,7 +677,8 @@ bool Renderer::render(const Camera& camera) {
     systems_->wind().updateUniforms(frame.frameIndex);
 
     // Update tree renderer descriptor sets with current frame resources and textures
-    if (systems_->treeRenderer() && systems_->tree()) {
+    // Skip entirely after all descriptors are initialized (first MAX_FRAMES_IN_FLIGHT frames)
+    if (systems_->treeRenderer() && systems_->tree() && systems_->treeRenderer()->needsDescriptorUpdates()) {
         VkDescriptorBufferInfo windInfo = systems_->wind().getBufferInfo(frame.frameIndex);
 
         // Update descriptor sets for each bark texture type
@@ -731,6 +732,12 @@ bool Renderer::render(const Camera& camera) {
                     leafTex->getImageView(),
                     leafTex->getSampler());
             }
+        }
+
+        // After all frames have been processed, mark descriptors as fully initialized
+        // This happens after MAX_FRAMES_IN_FLIGHT iterations through the render loop
+        if (frame.frameIndex == MAX_FRAMES_IN_FLIGHT - 1) {
+            systems_->treeRenderer()->markAllDescriptorsInitialized();
         }
     }
 

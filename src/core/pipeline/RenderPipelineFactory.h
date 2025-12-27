@@ -2,7 +2,7 @@
 
 #include "RenderPipeline.h"
 #include "PerformanceToggles.h"
-#include <vulkan/vulkan.hpp>  // Vulkan-Hpp for type-safe enums and structs
+#include <vulkan/vulkan.hpp>
 #include <glm/glm.hpp>
 
 class RendererSystems;

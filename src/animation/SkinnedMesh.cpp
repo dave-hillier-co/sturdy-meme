@@ -3,7 +3,7 @@
 #include <SDL3/SDL_log.h>
 #include <cstring>
 
-using namespace vk;  // Vulkan-Hpp type-safe wrappers
+using namespace vk;
 
 void SkinnedMesh::setData(const SkinnedMeshData& data) {
     vertices = data.vertices;

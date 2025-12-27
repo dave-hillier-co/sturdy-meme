@@ -7,7 +7,6 @@
 #include <array>
 #include <cstring>
 
-// Use Vulkan-Hpp namespace for cleaner type-safe code
 using namespace vk;
 
 std::unique_ptr<FoamBuffer> FoamBuffer::create(const InitInfo& info) {
@@ -99,7 +98,7 @@ void FoamBuffer::cleanup() {
 
 bool FoamBuffer::createFoamBuffers() {
     // Create two foam buffers for ping-pong
-    // Using Vulkan-Hpp type-safe structs (sType auto-initialized)
+    // Using Vulkan-Hpp type-safe structs
     for (int i = 0; i < 2; i++) {
         ImageCreateInfo imageInfo{
             {},                              // flags
@@ -148,7 +147,7 @@ bool FoamBuffer::createFoamBuffers() {
         }
     }
 
-    // Create sampler using Vulkan-Hpp type-safe struct
+    // Create sampler
     SamplerCreateInfo samplerInfo{
         {},                                  // flags
         Filter::eLinear,                     // magFilter
@@ -193,7 +192,7 @@ bool FoamBuffer::createWakeBuffers() {
 }
 
 bool FoamBuffer::createComputePipeline() {
-    // Descriptor set layout using Vulkan-Hpp type-safe bindings
+    // Descriptor set layout
     std::array<DescriptorSetLayoutBinding, 4> bindings{{
         // Binding 0: Current foam buffer (storage image, read/write)
         {0, DescriptorType::eStorageImage, 1, ShaderStageFlagBits::eCompute},
@@ -245,7 +244,7 @@ bool FoamBuffer::createComputePipeline() {
         return true;  // Allow system to work without temporal foam
     }
 
-    // Using Vulkan-Hpp type-safe structs for pipeline creation
+    // 
     PipelineShaderStageCreateInfo shaderStage{
         {},                                          // flags
         ShaderStageFlagBits::eCompute,
@@ -276,7 +275,7 @@ bool FoamBuffer::createDescriptorSets() {
     // Create descriptor pool (need 2 sets for ping-pong, times frames in flight)
     uint32_t setCount = framesInFlight * 2;  // 2 for ping-pong per frame
 
-    // Using Vulkan-Hpp type-safe structs
+    // 
     std::array<DescriptorPoolSize, 3> poolSizes{{
         {DescriptorType::eStorageImage, setCount},
         {DescriptorType::eCombinedImageSampler, setCount * 2},  // prev foam + flow map

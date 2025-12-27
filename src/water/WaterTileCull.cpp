@@ -7,7 +7,7 @@
 #include <array>
 #include <cstring>
 
-using namespace vk;  // Vulkan-Hpp type-safe wrappers
+using namespace vk;
 
 std::unique_ptr<WaterTileCull> WaterTileCull::create(const InitInfo& info) {
     std::unique_ptr<WaterTileCull> system(new WaterTileCull());
@@ -235,7 +235,7 @@ bool WaterTileCull::createComputePipeline() {
 
     SDL_Log("WaterTileCull compute pipeline created");
 
-    // Create depth sampler for tile culling using Vulkan-Hpp
+    // Create depth sampler for tile culling
     SamplerCreateInfo samplerInfo{
         {},                                          // flags
         Filter::eNearest,                            // magFilter

@@ -6,7 +6,7 @@
 #include <cstring>
 #include <algorithm>
 
-using namespace vk;  // Vulkan-Hpp type-safe wrappers
+using namespace vk;
 
 namespace VirtualTexture {
 
@@ -138,7 +138,7 @@ bool VirtualTexturePageTable::createPageTableTextures(VkDevice device, VmaAlloca
     for (uint32_t mip = 0; mip < config.maxMipLevels; ++mip) {
         uint32_t tilesAtMip = config.getTilesAtMip(mip);
 
-        // Create page table image using Vulkan-Hpp
+        // Create page table image
         ImageCreateInfo imageInfo{
             {},                                          // flags
             ImageType::e2D,
@@ -164,7 +164,7 @@ bool VirtualTexturePageTable::createPageTableTextures(VkDevice device, VmaAlloca
             return false;
         }
 
-        // Create image view using Vulkan-Hpp
+        // Create image view
         ImageViewCreateInfo viewInfo{
             {},                                          // flags
             pageTableImages[mip],

@@ -6,7 +6,7 @@
 
 #include <SDL3/SDL.h>
 
-using namespace vk;  // Vulkan-Hpp type-safe wrappers
+using namespace vk;
 
 std::unique_ptr<SkinnedMeshRenderer> SkinnedMeshRenderer::create(const InitInfo& info) {
     std::unique_ptr<SkinnedMeshRenderer> system(new SkinnedMeshRenderer());

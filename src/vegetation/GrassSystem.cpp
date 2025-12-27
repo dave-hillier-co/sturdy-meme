@@ -10,7 +10,7 @@
 #include <cstring>
 #include <array>
 
-using namespace vk;  // Vulkan-Hpp type-safe wrappers
+using namespace vk;
 
 // Forward declare UniformBufferObject size (needed for descriptor set update)
 struct UniformBufferObject;
@@ -153,7 +153,7 @@ bool GrassSystem::createBuffers() {
 }
 
 bool GrassSystem::createDisplacementResources() {
-    // Create displacement texture (RG16F, 512x512) using Vulkan-Hpp
+    // Create displacement texture (RG16F, 512x512)
     ImageCreateInfo imageInfo{
         {},                                  // flags
         ImageType::e2D,
@@ -178,7 +178,7 @@ bool GrassSystem::createDisplacementResources() {
         return false;
     }
 
-    // Create image view using Vulkan-Hpp
+    // Create image view
     ImageViewCreateInfo viewInfo{
         {},                                  // flags
         displacementImage,
@@ -364,7 +364,7 @@ bool GrassSystem::createGraphicsPipeline(SystemLifecycleHelper::PipelineHandles&
         .addShaderStage(getShaderPath() + "/grass.frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT)
         .addPushConstantRange(VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(GrassPushConstants));
 
-    // No vertex input - procedural geometry from instance buffer (Vulkan-Hpp)
+    // No vertex input - procedural geometry from instance buffer
     PipelineVertexInputStateCreateInfo vertexInputInfo{};
 
     PipelineInputAssemblyStateCreateInfo inputAssembly{
@@ -484,7 +484,7 @@ bool GrassSystem::createShadowPipeline() {
         .addShaderStage(getShaderPath() + "/grass_shadow.frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT)
         .addPushConstantRange(VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(GrassPushConstants));
 
-    // No vertex input - procedural geometry from instance buffer (Vulkan-Hpp)
+    // No vertex input - procedural geometry from instance buffer
     PipelineVertexInputStateCreateInfo vertexInputInfo{};
 
     PipelineInputAssemblyStateCreateInfo inputAssembly{

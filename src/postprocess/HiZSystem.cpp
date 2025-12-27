@@ -8,7 +8,7 @@
 #include <cstring>
 #include <algorithm>
 
-using namespace vk;  // Vulkan-Hpp type-safe wrappers
+using namespace vk;
 
 std::unique_ptr<HiZSystem> HiZSystem::create(const InitInfo& info) {
     auto system = std::unique_ptr<HiZSystem>(new HiZSystem());

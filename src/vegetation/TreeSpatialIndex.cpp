@@ -4,7 +4,7 @@
 #include <unordered_map>
 #include <cmath>
 
-using namespace vk;  // Vulkan-Hpp type-safe wrappers
+using namespace vk;
 
 std::unique_ptr<TreeSpatialIndex> TreeSpatialIndex::create(const InitInfo& info) {
     auto index = std::unique_ptr<TreeSpatialIndex>(new TreeSpatialIndex());

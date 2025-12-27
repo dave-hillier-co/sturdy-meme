@@ -11,7 +11,7 @@
 #define STB_IMAGE_IMPLEMENTATION_SKIP  // Already implemented elsewhere
 #include <stb_image.h>
 
-using namespace vk;  // Vulkan-Hpp type-safe wrappers
+using namespace vk;
 
 std::unique_ptr<TerrainHeightMap> TerrainHeightMap::create(const InitInfo& info) {
     std::unique_ptr<TerrainHeightMap> heightMap(new TerrainHeightMap());
@@ -235,7 +235,7 @@ bool TerrainHeightMap::loadHeightDataFromFile(const std::string& path, float min
 }
 
 bool TerrainHeightMap::createGPUResources() {
-    // Create Vulkan image using Vulkan-Hpp
+    // Create Vulkan image
     ImageCreateInfo imageInfo{
         {},                                          // flags
         ImageType::e2D,
@@ -259,7 +259,7 @@ bool TerrainHeightMap::createGPUResources() {
         return false;
     }
 
-    // Create image view using Vulkan-Hpp
+    // Create image view
     ImageViewCreateInfo viewInfo{
         {},                                          // flags
         image,
@@ -310,7 +310,7 @@ bool TerrainHeightMap::createHoleMaskResources() {
         return false;
     }
 
-    // Create image view using Vulkan-Hpp
+    // Create image view
     ImageViewCreateInfo viewInfo{
         {},                                          // flags
         holeMaskImage,

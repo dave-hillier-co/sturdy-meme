@@ -6,7 +6,7 @@
 #include <SDL3/SDL.h>
 #include <array>
 
-using namespace vk;  // Vulkan-Hpp type-safe wrappers
+using namespace vk;
 
 std::unique_ptr<PostProcessSystem> PostProcessSystem::create(const InitInfo& info) {
     std::unique_ptr<PostProcessSystem> system(new PostProcessSystem());

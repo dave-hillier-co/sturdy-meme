@@ -7,7 +7,7 @@
 #include <cstring>
 #include <algorithm>
 
-using namespace vk;  // Vulkan-Hpp type-safe wrappers
+using namespace vk;
 
 std::unique_ptr<LeafSystem> LeafSystem::create(const InitInfo& info) {
     std::unique_ptr<LeafSystem> system(new LeafSystem());
@@ -259,7 +259,7 @@ bool LeafSystem::createGraphicsPipeline(SystemLifecycleHelper::PipelineHandles& 
         {{}, ShaderStageFlagBits::eFragment, *fragShaderModule, "main"}
     }};
 
-    // No vertex input - procedural geometry from instance buffer (Vulkan-Hpp)
+    // No vertex input - procedural geometry from instance buffer
     PipelineVertexInputStateCreateInfo vertexInputInfo{};
 
     PipelineInputAssemblyStateCreateInfo inputAssembly{

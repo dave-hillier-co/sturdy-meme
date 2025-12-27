@@ -1,7 +1,7 @@
 #pragma once
 
 #include <memory>
-#include <vulkan/vulkan.hpp>  // Vulkan-Hpp for type-safe enums and structs
+#include <vulkan/vulkan.hpp>
 
 // Forward declarations
 class WaterSystem;

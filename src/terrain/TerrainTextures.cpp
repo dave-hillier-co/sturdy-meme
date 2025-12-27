@@ -5,7 +5,7 @@
 #include <stb_image.h>
 #include <cstring>
 
-using namespace vk;  // Vulkan-Hpp type-safe wrappers
+using namespace vk;
 
 bool TerrainTextures::init(const InitInfo& info) {
     device = info.device;
@@ -51,7 +51,7 @@ bool TerrainTextures::createAlbedoTexture() {
     uint32_t width = static_cast<uint32_t>(texWidth);
     uint32_t height = static_cast<uint32_t>(texHeight);
 
-    // Create Vulkan image using Vulkan-Hpp
+    // Create Vulkan image
     ImageCreateInfo imageInfo{
         {},                                          // flags
         ImageType::e2D,
@@ -76,7 +76,7 @@ bool TerrainTextures::createAlbedoTexture() {
         return false;
     }
 
-    // Create image view using Vulkan-Hpp
+    // Create image view
     ImageViewCreateInfo viewInfo{
         {},                                          // flags
         albedoImage,
@@ -126,7 +126,7 @@ bool TerrainTextures::createGrassFarLODTexture() {
     uint32_t width = static_cast<uint32_t>(texWidth);
     uint32_t height = static_cast<uint32_t>(texHeight);
 
-    // Create Vulkan image using Vulkan-Hpp
+    // Create Vulkan image
     ImageCreateInfo imageInfo{
         {},                                          // flags
         ImageType::e2D,
@@ -151,7 +151,7 @@ bool TerrainTextures::createGrassFarLODTexture() {
         return false;
     }
 
-    // Create image view using Vulkan-Hpp
+    // Create image view
     ImageViewCreateInfo viewInfo{
         {},                                          // flags
         grassFarLODImage,

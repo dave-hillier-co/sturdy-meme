@@ -11,7 +11,7 @@
 #include <array>
 #include <imgui_impl_vulkan.h>
 
-using namespace vk;  // Vulkan-Hpp type-safe wrappers
+using namespace vk;
 
 std::unique_ptr<TreeImpostorAtlas> TreeImpostorAtlas::create(const InitInfo& info) {
     auto atlas = std::unique_ptr<TreeImpostorAtlas>(new TreeImpostorAtlas());

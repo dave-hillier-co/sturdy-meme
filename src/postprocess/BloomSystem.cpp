@@ -9,7 +9,7 @@
 #include <cmath>
 #include <SDL3/SDL.h>
 
-using namespace vk;  // Vulkan-Hpp type-safe wrappers
+using namespace vk;
 
 std::unique_ptr<BloomSystem> BloomSystem::create(const InitInfo& info) {
     auto system = std::unique_ptr<BloomSystem>(new BloomSystem());
@@ -127,12 +127,12 @@ bool BloomSystem::createMipChain() {
     // Use downsampleRenderPass - both render passes have compatible attachments
     for (auto& mip : mipChain) {
         FramebufferCreateInfo fbInfo{
-            {},                                      // flags
+            {},
             downsampleRenderPass_.get(),
             1, reinterpret_cast<const ImageView*>(&mip.imageView),
             mip.extent.width,
             mip.extent.height,
-            1                                        // layers
+            1
         };
 
         auto vkFbInfo = static_cast<VkFramebufferCreateInfo>(fbInfo);
@@ -148,16 +148,16 @@ bool BloomSystem::createRenderPass() {
     AttachmentReference colorRef{0, ImageLayout::eColorAttachmentOptimal};
 
     SubpassDescription subpass{
-        {},                              // flags
+        {},
         PipelineBindPoint::eGraphics,
-        0, nullptr,                      // inputAttachmentCount, pInputAttachments
-        1, &colorRef,                    // colorAttachmentCount, pColorAttachments
-        nullptr,                         // pResolveAttachments
-        nullptr                          // pDepthStencilAttachment
+        0, nullptr,
+        1, &colorRef,
+        nullptr,
+        nullptr
     };
 
     SubpassDependency dependency{
-        VK_SUBPASS_EXTERNAL, 0,          // srcSubpass, dstSubpass
+        VK_SUBPASS_EXTERNAL, 0,
         PipelineStageFlagBits::eColorAttachmentOutput,
         PipelineStageFlagBits::eFragmentShader,
         AccessFlagBits::eColorAttachmentWrite,
@@ -167,19 +167,19 @@ bool BloomSystem::createRenderPass() {
     // Downsample render pass - DONT_CARE since we're writing fresh data
     {
         AttachmentDescription colorAttachment{
-            {},                                  // flags
+            {},
             static_cast<Format>(BLOOM_FORMAT),
             SampleCountFlagBits::e1,
             AttachmentLoadOp::eDontCare,
             AttachmentStoreOp::eStore,
-            AttachmentLoadOp::eDontCare,         // stencilLoadOp
-            AttachmentStoreOp::eDontCare,        // stencilStoreOp
+            AttachmentLoadOp::eDontCare,
+            AttachmentStoreOp::eDontCare,
             ImageLayout::eUndefined,
             ImageLayout::eShaderReadOnlyOptimal
         };
 
         RenderPassCreateInfo renderPassInfo{
-            {},                              // flags
+            {},
             colorAttachment,
             subpass,
             dependency
@@ -194,19 +194,19 @@ bool BloomSystem::createRenderPass() {
     // Upsample render pass - LOAD to preserve downsampled content for additive blending
     {
         AttachmentDescription colorAttachment{
-            {},                                  // flags
+            {},
             static_cast<Format>(BLOOM_FORMAT),
             SampleCountFlagBits::e1,
             AttachmentLoadOp::eLoad,
             AttachmentStoreOp::eStore,
-            AttachmentLoadOp::eDontCare,         // stencilLoadOp
-            AttachmentStoreOp::eDontCare,        // stencilStoreOp
+            AttachmentLoadOp::eDontCare,
+            AttachmentStoreOp::eDontCare,
             ImageLayout::eColorAttachmentOptimal,
             ImageLayout::eShaderReadOnlyOptimal
         };
 
         RenderPassCreateInfo renderPassInfo{
-            {},                              // flags
+            {},
             colorAttachment,
             subpass,
             dependency
@@ -230,16 +230,13 @@ bool BloomSystem::createDescriptorSetLayouts() {
     // Both downsample and upsample use the same descriptor set layout
     // Binding 0: input texture (sampler2D)
     DescriptorSetLayoutBinding binding{
-        0,                                       // binding
+        0,
         DescriptorType::eCombinedImageSampler,
-        1,                                       // descriptorCount
+        1,
         ShaderStageFlagBits::eFragment
     };
 
-    DescriptorSetLayoutCreateInfo layoutInfo{
-        {},                                      // flags
-        binding
-    };
+    DescriptorSetLayoutCreateInfo layoutInfo{{}, binding};
 
     auto vkLayoutInfo = static_cast<VkDescriptorSetLayoutCreateInfo>(layoutInfo);
     if (!ManagedDescriptorSetLayout::create(device, vkLayoutInfo, downsampleDescSetLayout_)) {
@@ -263,7 +260,7 @@ bool BloomSystem::createPipelines() {
 
     VkDescriptorSetLayout downsampleLayout = downsampleDescSetLayout_.get();
     PipelineLayoutCreateInfo downsampleLayoutInfo{
-        {},                                      // flags
+        {},
         1, reinterpret_cast<const DescriptorSetLayout*>(&downsampleLayout),
         1, &downsamplePushConstantRange
     };
@@ -281,7 +278,7 @@ bool BloomSystem::createPipelines() {
 
     VkDescriptorSetLayout upsampleLayout = upsampleDescSetLayout_.get();
     PipelineLayoutCreateInfo upsampleLayoutInfo{
-        {},                                      // flags
+        {},
         1, reinterpret_cast<const DescriptorSetLayout*>(&upsampleLayout),
         1, &upsamplePushConstantRange
     };

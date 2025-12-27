@@ -9,7 +9,7 @@
 #include <cstring>
 #include <algorithm>
 
-using namespace vk;  // Vulkan-Hpp type-safe wrappers
+using namespace vk;
 
 // Check if a path ends with a specific extension (case-insensitive)
 static bool hasExtension(const std::string& path, const std::string& ext) {
@@ -90,7 +90,7 @@ bool Texture::load(const std::string& path, VmaAllocator allocator, VkDevice dev
 
     // stagingBuffer automatically destroyed here
 
-    // Create image view using Vulkan-Hpp
+    // Create image view
     ImageViewCreateInfo viewInfo{
         {},                                          // flags
         managedImage.get(),
@@ -107,7 +107,7 @@ bool Texture::load(const std::string& path, VmaAllocator allocator, VkDevice dev
         return false;
     }
 
-    // Create sampler using Vulkan-Hpp
+    // Create sampler
     SamplerCreateInfo samplerInfo{
         {},                                          // flags
         Filter::eLinear,                             // magFilter
@@ -187,7 +187,7 @@ bool Texture::loadDDS(const std::string& path, VmaAllocator allocator, VkDevice 
     memcpy(data, dds.data.data(), imageSize);
     stagingBuffer.unmap();
 
-    // Create image with BCn format using Vulkan-Hpp
+    // Create image with BCn format
     ImageCreateInfo imageInfo{
         {},                                          // flags
         ImageType::e2D,
@@ -228,7 +228,7 @@ bool Texture::loadDDS(const std::string& path, VmaAllocator allocator, VkDevice 
         return false;
     }
 
-    // Create image view using Vulkan-Hpp
+    // Create image view
     ImageViewCreateInfo viewInfo{
         {},                                          // flags
         image,
@@ -244,7 +244,7 @@ bool Texture::loadDDS(const std::string& path, VmaAllocator allocator, VkDevice 
         return false;
     }
 
-    // Create sampler using Vulkan-Hpp
+    // Create sampler
     SamplerCreateInfo samplerInfo{
         {},                                          // flags
         Filter::eLinear,                             // magFilter
@@ -323,7 +323,7 @@ bool Texture::createSolidColor(uint8_t r, uint8_t g, uint8_t b, uint8_t a,
         return false;
     }
 
-    // Create image view using Vulkan-Hpp
+    // Create image view
     ImageViewCreateInfo viewInfo{
         {},                                          // flags
         managedImage.get(),
@@ -340,7 +340,7 @@ bool Texture::createSolidColor(uint8_t r, uint8_t g, uint8_t b, uint8_t a,
         return false;
     }
 
-    // Create sampler using Vulkan-Hpp
+    // Create sampler
     SamplerCreateInfo samplerInfo{
         {},                                          // flags
         Filter::eNearest,                            // magFilter

@@ -7,7 +7,7 @@
 #include <algorithm>
 #include <cstring>
 
-using namespace vk;  // Vulkan-Hpp type-safe wrappers
+using namespace vk;
 
 std::unique_ptr<WaterDisplacement> WaterDisplacement::create(const InitInfo& info) {
     std::unique_ptr<WaterDisplacement> system(new WaterDisplacement());
@@ -106,7 +106,7 @@ void WaterDisplacement::cleanup() {
 }
 
 bool WaterDisplacement::createDisplacementMap() {
-    // Create current displacement map using Vulkan-Hpp
+    // Create current displacement map
     {
         ImageCreateInfo imageInfo{
             {},                                  // flags
@@ -184,7 +184,7 @@ bool WaterDisplacement::createDisplacementMap() {
         }
     }
 
-    // Create sampler using Vulkan-Hpp
+    // Create sampler
     SamplerCreateInfo samplerInfo{
         {},                                  // flags
         Filter::eLinear,                     // magFilter

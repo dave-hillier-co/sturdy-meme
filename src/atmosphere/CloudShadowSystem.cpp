@@ -8,7 +8,7 @@
 #include <array>
 #include <cstring>
 
-using namespace vk;  // Vulkan-Hpp type-safe wrappers
+using namespace vk;
 
 std::unique_ptr<CloudShadowSystem> CloudShadowSystem::create(const InitInfo& info) {
     std::unique_ptr<CloudShadowSystem> system(new CloudShadowSystem());

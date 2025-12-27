@@ -2,7 +2,7 @@
 
 #include "EnvironmentSettings.h"
 #include <glm/glm.hpp>
-#include <vulkan/vulkan.hpp>  // Vulkan-Hpp for type-safe enums and structs
+#include <vulkan/vulkan.hpp>
 #include <vk_mem_alloc.h>
 #include <vector>
 #include <memory>

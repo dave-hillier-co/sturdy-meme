@@ -1,6 +1,6 @@
 #include "BufferUtils.h"
 
-using namespace vk;  // Vulkan-Hpp type-safe wrappers
+using namespace vk;
 
 namespace BufferUtils {
 namespace {

@@ -7,7 +7,6 @@
 #include <cmath>
 #include <array>
 
-// Use Vulkan-Hpp namespace for cleaner type-safe code
 using namespace vk;
 
 std::unique_ptr<OceanFFT> OceanFFT::create(const InitInfo& info) {
@@ -75,7 +74,7 @@ bool OceanFFT::initInternal(const InitInfo& info) {
         };
     }
 
-    // Create sampler for output textures (using Vulkan-Hpp type-safe struct)
+    // Create sampler for output textures
     SamplerCreateInfo samplerInfo{
         {},                                  // flags
         Filter::eLinear,                     // magFilter
@@ -169,7 +168,7 @@ bool OceanFFT::initInternal(const InitContext& ctx, const OceanParams& oceanPara
         };
     }
 
-    // Create sampler for output textures (using Vulkan-Hpp type-safe struct)
+    // Create sampler for output textures
     SamplerCreateInfo samplerInfo{
         {},                                  // flags
         Filter::eLinear,                     // magFilter
@@ -261,7 +260,7 @@ void OceanFFT::cleanup() {
 
 bool OceanFFT::createImage(ManagedImage& image, ManagedImageView& view,
                            VkFormat format, uint32_t width, uint32_t height, VkImageUsageFlags usage) {
-    // Using Vulkan-Hpp type-safe structs for image creation
+    // 
     ImageCreateInfo imageInfo{
         {},                                          // flags
         ImageType::e2D,

@@ -10,7 +10,7 @@
 #include <cmath>
 #include <limits>
 
-using namespace vk;  // Vulkan-Hpp type-safe wrappers
+using namespace vk;
 
 // Factory implementations
 std::unique_ptr<ShadowSystem> ShadowSystem::create(const InitInfo& info) {

@@ -7,7 +7,7 @@
 #include <array>
 #include <algorithm>
 
-using namespace vk;  // Vulkan-Hpp type-safe wrappers
+using namespace vk;
 
 std::unique_ptr<WaterGBuffer> WaterGBuffer::create(const InitInfo& info) {
     std::unique_ptr<WaterGBuffer> system(new WaterGBuffer());
@@ -270,7 +270,7 @@ void WaterGBuffer::destroyImages() {
 }
 
 bool WaterGBuffer::createRenderPass() {
-    // Attachment descriptions using Vulkan-Hpp
+    // Attachment descriptions
     std::array<AttachmentDescription, 3> attachments{{
         // Data attachment (RGBA8)
         {

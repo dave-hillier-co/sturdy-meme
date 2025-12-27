@@ -2,7 +2,7 @@
 #include "VulkanResourceFactory.h"
 #include <SDL3/SDL_log.h>
 
-using namespace vk;  // Vulkan-Hpp type-safe wrappers
+using namespace vk;
 
 bool AtmosphereLUTSystem::createTransmittanceLUT() {
     ImageCreateInfo imageInfo{

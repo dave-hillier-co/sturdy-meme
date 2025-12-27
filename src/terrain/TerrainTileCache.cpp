@@ -10,7 +10,7 @@
 #include <algorithm>
 #include <cmath>
 
-using namespace vk;  // Vulkan-Hpp type-safe wrappers
+using namespace vk;
 
 std::unique_ptr<TerrainTileCache> TerrainTileCache::create(const InitInfo& info) {
     std::unique_ptr<TerrainTileCache> cache(new TerrainTileCache());
@@ -59,7 +59,7 @@ bool TerrainTileCache::initInternal(const InitInfo& info) {
         tileInfoMappedPtrs_[i] = tileInfoBuffers_[i].map();
     }
 
-    // Create tile array image (2D array texture with MAX_ACTIVE_TILES layers) using Vulkan-Hpp
+    // Create tile array image (2D array texture with MAX_ACTIVE_TILES layers)
     ImageCreateInfo imageInfo{
         {},                                          // flags
         ImageType::e2D,
@@ -84,7 +84,7 @@ bool TerrainTileCache::initInternal(const InitInfo& info) {
         return false;
     }
 
-    // Create image view for the tile array using Vulkan-Hpp
+    // Create image view for the tile array
     ImageViewCreateInfo viewInfo{
         {},                                          // flags
         tileArrayImage,

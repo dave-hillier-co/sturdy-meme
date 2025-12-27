@@ -3,7 +3,6 @@
 #include <SDL3/SDL.h>
 #include <cstring>
 
-// Use Vulkan-Hpp namespace for cleaner type-safe code
 using namespace vk;
 
 // UBO structures matching shader layouts
@@ -95,7 +94,7 @@ void BilateralGridSystem::cleanup() {
 }
 
 bool BilateralGridSystem::createGridTextures() {
-    // Using Vulkan-Hpp type-safe struct
+    // 
     ImageCreateInfo imageInfo{
         {},                              // flags
         ImageType::e3D,
@@ -162,7 +161,7 @@ void BilateralGridSystem::destroyGridResources() {
 }
 
 bool BilateralGridSystem::createSampler() {
-    // Using Vulkan-Hpp type-safe struct
+    // 
     SamplerCreateInfo samplerInfo{
         {},                                  // flags
         Filter::eLinear,                     // magFilter

@@ -8,7 +8,7 @@
 #include <cstring>
 #include <array>
 
-using namespace vk;  // Vulkan-Hpp type-safe wrappers
+using namespace vk;
 
 std::unique_ptr<VolumetricSnowSystem> VolumetricSnowSystem::create(const InitInfo& info) {
     std::unique_ptr<VolumetricSnowSystem> system(new VolumetricSnowSystem());

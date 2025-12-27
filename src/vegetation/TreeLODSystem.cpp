@@ -12,7 +12,7 @@
 #include <algorithm>
 #include <limits>
 
-using namespace vk;  // Vulkan-Hpp type-safe wrappers
+using namespace vk;
 
 std::unique_ptr<TreeLODSystem> TreeLODSystem::create(const InitInfo& info) {
     auto system = std::unique_ptr<TreeLODSystem>(new TreeLODSystem());

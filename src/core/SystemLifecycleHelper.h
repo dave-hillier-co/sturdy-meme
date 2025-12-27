@@ -2,7 +2,7 @@
 
 #include <functional>
 #include <string>
-#include <vulkan/vulkan.hpp>  // Vulkan-Hpp for type-safe enums and structs
+#include <vulkan/vulkan.hpp>
 #include <vk_mem_alloc.h>
 #include "DescriptorManager.h"
 

@@ -4,7 +4,6 @@
 #include <cstring>
 #include <algorithm>
 
-// Use Vulkan-Hpp namespace for cleaner type-safe code
 using namespace vk;
 
 // Private constructor
@@ -128,7 +127,7 @@ bool DebugLineSystem::createPipeline(VkRenderPass renderPass, const std::string&
         return false;
     }
 
-    // Push constant for view-projection matrix (using Vulkan-Hpp type-safe struct)
+    // Push constant for view-projection matrix
     PushConstantRange pushConstantRange{
         ShaderStageFlagBits::eVertex,
         0,                              // offset
@@ -149,7 +148,7 @@ bool DebugLineSystem::createPipeline(VkRenderPass renderPass, const std::string&
         return false;
     }
 
-    // Shader stages (using Vulkan-Hpp type-safe structs)
+    // Shader stages
     std::array<PipelineShaderStageCreateInfo, 2> shaderStages{{
         {{}, ShaderStageFlagBits::eVertex, *vertShader, "main"},
         {{}, ShaderStageFlagBits::eFragment, *fragShader, "main"}
@@ -478,7 +477,7 @@ void DebugLineSystem::uploadLines() {
 
             size_t newSize = std::max(requiredSize, INITIAL_BUFFER_SIZE);
 
-            // Using Vulkan-Hpp type-safe struct
+            // 
             BufferCreateInfo bufferInfo{
                 {},                             // flags
                 newSize,
@@ -518,7 +517,7 @@ void DebugLineSystem::uploadLines() {
 
             size_t newSize = std::max(requiredSize, INITIAL_BUFFER_SIZE);
 
-            // Using Vulkan-Hpp type-safe struct
+            // 
             BufferCreateInfo bufferInfo{
                 {},                             // flags
                 newSize,

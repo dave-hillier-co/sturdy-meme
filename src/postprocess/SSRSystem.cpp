@@ -7,7 +7,7 @@
 #include <array>
 #include <cstring>
 
-using namespace vk;  // Vulkan-Hpp type-safe wrappers
+using namespace vk;
 
 std::unique_ptr<SSRSystem> SSRSystem::create(const InitInfo& info) {
     auto system = std::unique_ptr<SSRSystem>(new SSRSystem());

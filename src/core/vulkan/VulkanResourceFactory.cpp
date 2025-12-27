@@ -2,7 +2,7 @@
 #include <SDL3/SDL_log.h>
 #include <array>
 
-using namespace vk;  // Vulkan-Hpp type-safe wrappers
+using namespace vk;
 
 // ============================================================================
 // SyncResources

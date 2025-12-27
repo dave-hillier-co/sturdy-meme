@@ -6,7 +6,7 @@
 #include "VirtualTextureFeedback.h"
 #include "VirtualTextureTileLoader.h"
 #include "RAIIAdapter.h"
-#include <vulkan/vulkan.hpp>  // Vulkan-Hpp for type-safe enums and structs
+#include <vulkan/vulkan.hpp>
 #include <vk_mem_alloc.h>
 #include <string>
 #include <vector>

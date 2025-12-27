@@ -3,7 +3,7 @@
 #include <SDL3/SDL_log.h>
 #include <vector>
 
-using namespace vk;  // Vulkan-Hpp type-safe wrappers
+using namespace vk;
 
 // Helper to create a compute pipeline from shader file
 static bool createComputePipelineHelper(

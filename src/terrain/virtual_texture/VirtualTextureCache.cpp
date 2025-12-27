@@ -5,7 +5,7 @@
 #include <algorithm>
 #include <cstring>
 
-using namespace vk;  // Vulkan-Hpp type-safe wrappers
+using namespace vk;
 
 namespace VirtualTexture {
 
@@ -99,7 +99,7 @@ bool VirtualTextureCache::createCacheTexture(VkDevice device, VmaAllocator alloc
                                               VkCommandPool commandPool, VkQueue queue) {
     Format cacheFormat = useCompression_ ? Format::eBc1RgbSrgbBlock : Format::eR8G8B8A8Srgb;
 
-    // Create cache image using Vulkan-Hpp
+    // Create cache image
     ImageCreateInfo imageInfo{
         {},                                          // flags
         ImageType::e2D,
@@ -124,7 +124,7 @@ bool VirtualTextureCache::createCacheTexture(VkDevice device, VmaAllocator alloc
         return false;
     }
 
-    // Create image view using Vulkan-Hpp
+    // Create image view
     ImageViewCreateInfo viewInfo{
         {},                                          // flags
         cacheImage,

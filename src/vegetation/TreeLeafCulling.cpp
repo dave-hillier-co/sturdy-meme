@@ -179,9 +179,13 @@ bool TreeLeafCulling::createLeafCullBuffers(uint32_t maxLeafInstances, uint32_t 
         }
     }
 
+    // Indirect buffer contains draw commands + tier counts for distance-based budget tracking
+    // Layout matches tree_leaf_cull_phase3.comp: DrawIndexedIndirectCommand[4] + tierCounts[12]
+    constexpr uint32_t NUM_DISTANCE_TIERS = 3;
     VkBufferCreateInfo indirectInfo{};
     indirectInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-    indirectInfo.size = NUM_LEAF_TYPES * sizeof(VkDrawIndexedIndirectCommand);
+    indirectInfo.size = NUM_LEAF_TYPES * sizeof(VkDrawIndexedIndirectCommand) +
+                        NUM_LEAF_TYPES * NUM_DISTANCE_TIERS * sizeof(uint32_t);
     indirectInfo.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT |
                          VK_BUFFER_USAGE_TRANSFER_DST_BIT;
     indirectInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
@@ -693,21 +697,30 @@ void TreeLeafCulling::recordCulling(VkCommandBuffer cmd, uint32_t frameIndex,
     }
 
     // Reset all 4 indirect draw commands (one per leaf type: oak, ash, aspen, pine)
+    // Also reset tier counts used by tree_leaf_cull_phase3.comp for distance-based budgets
     constexpr uint32_t NUM_LEAF_TYPES = 4;
-    VkDrawIndexedIndirectCommand resetCmds[NUM_LEAF_TYPES];
+    constexpr uint32_t NUM_DISTANCE_TIERS = 3;
+
+    // Buffer layout matches shader: DrawIndexedIndirectCommand[4] followed by tierCounts[12]
+    struct IndirectBufferData {
+        VkDrawIndexedIndirectCommand drawCmds[NUM_LEAF_TYPES];
+        uint32_t tierCounts[NUM_LEAF_TYPES * NUM_DISTANCE_TIERS];
+    } resetData{};
+
     for (uint32_t i = 0; i < NUM_LEAF_TYPES; ++i) {
-        resetCmds[i].indexCount = 6;       // Quad: 6 indices
-        resetCmds[i].instanceCount = 0;    // Will be set by compute shader
-        resetCmds[i].firstIndex = 0;
-        resetCmds[i].vertexOffset = 0;
-        resetCmds[i].firstInstance = i * maxLeavesPerType_;  // Base offset for each leaf type
+        resetData.drawCmds[i].indexCount = 6;       // Quad: 6 indices
+        resetData.drawCmds[i].instanceCount = 0;    // Will be set by compute shader
+        resetData.drawCmds[i].firstIndex = 0;
+        resetData.drawCmds[i].vertexOffset = 0;
+        resetData.drawCmds[i].firstInstance = i * maxLeavesPerType_;  // Base offset for each leaf type
     }
+    // tierCounts are zero-initialized by the struct initialization
 
     // Use frameIndex directly to select buffer (ensures compute output matches render input)
     uint32_t bufferIndex = frameIndex % maxFramesInFlight_;
 
     vkCmdUpdateBuffer(cmd, cullIndirectBuffers_[bufferIndex],
-                      0, sizeof(resetCmds), resetCmds);
+                      0, sizeof(resetData), &resetData);
 
     // Upload per-tree data
     vkCmdUpdateBuffer(cmd, treeDataBuffer_, 0,

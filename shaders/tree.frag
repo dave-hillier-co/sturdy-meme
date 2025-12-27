@@ -20,6 +20,7 @@ layout(push_constant) uniform PushConstants {
     mat4 model;
     float time;
     float lodBlendFactor;  // 0=full geometry, 1=full impostor
+    vec2 _pad;             // Explicit padding to align vec3 to 16 bytes
     vec3 barkTint;
     float roughnessScale;
 } push;

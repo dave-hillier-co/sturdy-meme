@@ -40,16 +40,16 @@ bool CatmullClarkMesh::uploadToGPU(VmaAllocator allocator) {
 CatmullClarkMesh CatmullClarkMesh::createCube() {
     CatmullClarkMesh mesh;
 
-    // Cube vertices (8 vertices)
+    // Cube vertices (8 vertices) - using Vertex constructor for proper padding
     mesh.vertices = {
-        {{-1, -1, -1}, {0, 0, -1}, {0, 0}},  // 0: back-bottom-left
-        {{ 1, -1, -1}, {0, 0, -1}, {1, 0}},  // 1: back-bottom-right
-        {{ 1,  1, -1}, {0, 0, -1}, {1, 1}},  // 2: back-top-right
-        {{-1,  1, -1}, {0, 0, -1}, {0, 1}},  // 3: back-top-left
-        {{-1, -1,  1}, {0, 0,  1}, {0, 0}},  // 4: front-bottom-left
-        {{ 1, -1,  1}, {0, 0,  1}, {1, 0}},  // 5: front-bottom-right
-        {{ 1,  1,  1}, {0, 0,  1}, {1, 1}},  // 6: front-top-right
-        {{-1,  1,  1}, {0, 0,  1}, {0, 1}},  // 7: front-top-left
+        Vertex({-1, -1, -1}, {0, 0, -1}, {0, 0}),  // 0: back-bottom-left
+        Vertex({ 1, -1, -1}, {0, 0, -1}, {1, 0}),  // 1: back-bottom-right
+        Vertex({ 1,  1, -1}, {0, 0, -1}, {1, 1}),  // 2: back-top-right
+        Vertex({-1,  1, -1}, {0, 0, -1}, {0, 1}),  // 3: back-top-left
+        Vertex({-1, -1,  1}, {0, 0,  1}, {0, 0}),  // 4: front-bottom-left
+        Vertex({ 1, -1,  1}, {0, 0,  1}, {1, 0}),  // 5: front-bottom-right
+        Vertex({ 1,  1,  1}, {0, 0,  1}, {1, 1}),  // 6: front-top-right
+        Vertex({-1,  1,  1}, {0, 0,  1}, {0, 1}),  // 7: front-top-left
     };
 
     // 6 faces, 4 halfedges per face = 24 halfedges
@@ -102,12 +102,12 @@ CatmullClarkMesh CatmullClarkMesh::createCube() {
 CatmullClarkMesh CatmullClarkMesh::createQuad() {
     CatmullClarkMesh mesh;
 
-    // Single quad (4 vertices)
+    // Single quad (4 vertices) - using Vertex constructor for proper padding
     mesh.vertices = {
-        {{-1, 0, -1}, {0, 1, 0}, {0, 0}},  // 0
-        {{ 1, 0, -1}, {0, 1, 0}, {1, 0}},  // 1
-        {{ 1, 0,  1}, {0, 1, 0}, {1, 1}},  // 2
-        {{-1, 0,  1}, {0, 1, 0}, {0, 1}},  // 3
+        Vertex({-1, 0, -1}, {0, 1, 0}, {0, 0}),  // 0
+        Vertex({ 1, 0, -1}, {0, 1, 0}, {1, 0}),  // 1
+        Vertex({ 1, 0,  1}, {0, 1, 0}, {1, 1}),  // 2
+        Vertex({-1, 0,  1}, {0, 1, 0}, {0, 1}),  // 3
     };
 
     // 4 halfedges for single face

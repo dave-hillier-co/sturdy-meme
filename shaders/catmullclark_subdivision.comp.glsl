@@ -16,19 +16,31 @@ layout(binding = BINDING_CC_SCENE_UBO) uniform SceneUBO {
     vec4 frustumPlanes[6];
 } scene;
 
-layout(std140, binding = BINDING_CC_CBT_BUFFER) buffer CBTBuffer {
+layout(std430, binding = BINDING_CC_CBT_BUFFER) buffer CBTBuffer {
     uint cbtData[];
 };
 
-layout(std140, binding = BINDING_CC_VERTEX_BUFFER) readonly buffer VertexBuffer {
-    vec3 vertexPositions[];
+// Vertex struct matching CPU-side std430 layout (48 bytes)
+struct CCVertex {
+    vec3 position;
+    float _pad0;
+    vec3 normal;
+    float _pad1;
+    vec2 uv;
+    vec2 _pad2;
 };
 
-layout(std140, binding = BINDING_CC_HALFEDGE_BUFFER) readonly buffer HalfedgeBuffer {
+layout(std430, binding = BINDING_CC_VERTEX_BUFFER) readonly buffer VertexBuffer {
+    CCVertex vertices[];
+};
+
+// Halfedge: 4 uints = 16 bytes, naturally aligned
+layout(std430, binding = BINDING_CC_HALFEDGE_BUFFER) readonly buffer HalfedgeBuffer {
     uvec4 halfedges[];  // {vertexID, nextID, twinID, faceID}
 };
 
-layout(std140, binding = BINDING_CC_FACE_BUFFER) readonly buffer FaceBuffer {
+// Face: 2 uints = 8 bytes
+layout(std430, binding = BINDING_CC_FACE_BUFFER) readonly buffer FaceBuffer {
     uvec2 faces[];  // {halfedgeID, valence}
 };
 

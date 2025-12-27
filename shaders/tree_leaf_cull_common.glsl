@@ -58,23 +58,17 @@ bool cullLeaf(
     }
 
     // LOD blade dropping - use position-based hash for consistent results
-    // Incorporate LOD blend factor for smooth transitions
+    // This handles distance-based leaf density reduction (fewer leaves when far away)
     float instanceHash = hash2D(leafLocalPos.xz);
-    float effectiveDropRate = maxLodDropRate + lodBlendFactor * (1.0 - maxLodDropRate);
     if (lodCull(distToCamera, lodTransitionStart, lodTransitionEnd,
-                effectiveDropRate, instanceHash)) {
+                maxLodDropRate, instanceHash)) {
         return true;
     }
 
-    // Additional stochastic culling based on LOD blend factor
-    // Use a power curve to make leaves fade out faster than the impostor fades in
-    // At blendFactor=0.5, about 75% of leaves should be culled (sqrt(0.5) ~ 0.71 threshold)
-    if (lodBlendFactor > 0.0) {
-        float adjustedBlend = sqrt(lodBlendFactor);
-        if (instanceHash < adjustedBlend) {
-            return true;
-        }
-    }
+    // NOTE: We do NOT cull leaves based on lodBlendFactor here!
+    // The fragment shader handles LOD crossfade via dithered discard (shouldDiscardForLODLeaves).
+    // This ensures leaves and impostors use the same screen-space dither pattern
+    // for proper synchronized crossfade.
 
     return false;
 }

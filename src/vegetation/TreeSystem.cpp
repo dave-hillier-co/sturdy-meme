@@ -4,6 +4,26 @@
 #include <glm/gtc/constants.hpp>
 #include <filesystem>
 
+namespace {
+// Compute full tree bounds including both branches and leaves
+AABB computeFullTreeBounds(const Mesh& branchMesh, const std::vector<LeafInstanceGPU>& leafInstances) {
+    // Start with branch mesh bounds
+    AABB bounds = branchMesh.getBounds();
+
+    // Expand to include all leaf instances (accounting for leaf size)
+    for (const auto& leaf : leafInstances) {
+        glm::vec3 leafPos = glm::vec3(leaf.positionAndSize);
+        float leafSize = leaf.positionAndSize.w;
+
+        // Expand bounds to include leaf quad extents
+        bounds.expand(leafPos - glm::vec3(leafSize));
+        bounds.expand(leafPos + glm::vec3(leafSize));
+    }
+
+    return bounds;
+}
+} // anonymous namespace
+
 std::unique_ptr<TreeSystem> TreeSystem::create(const InitInfo& info) {
     std::unique_ptr<TreeSystem> system(new TreeSystem());
     if (!system->initInternal(info)) {
@@ -92,6 +112,7 @@ void TreeSystem::cleanup() {
     treeInstances_.clear();
     treeOptions_.clear();
     treeMeshData_.clear();
+    fullTreeBounds_.clear();
 }
 
 bool TreeSystem::loadTextures(const InitInfo& info) {
@@ -524,11 +545,15 @@ uint32_t TreeSystem::addTree(const glm::vec3& position, float rotation, float sc
         return UINT32_MAX;
     }
 
+    // Compute full tree bounds (branches + leaves) before moving data
+    AABB fullBounds = computeFullTreeBounds(branchMesh, leafInstances);
+
     uint32_t meshIndex = static_cast<uint32_t>(branchMeshes_.size());
     branchMeshes_.push_back(std::move(branchMesh));
     leafInstancesPerTree_.push_back(std::move(leafInstances));
     treeOptions_.push_back(options);
     treeMeshData_.push_back(std::move(meshData));
+    fullTreeBounds_.push_back(fullBounds);
 
     TreeInstanceData instance;
     instance.position = position;
@@ -673,6 +698,9 @@ void TreeSystem::regenerateTree(uint32_t treeIndex) {
     std::vector<LeafInstanceGPU> leafInstances;
     TreeMeshData meshData;
     if (generateTreeMesh(treeOptions_[meshIndex], branchMesh, leafInstances, &meshData)) {
+        // Compute full bounds before moving data
+        AABB fullBounds = computeFullTreeBounds(branchMesh, leafInstances);
+
         if (meshIndex < branchMeshes_.size()) {
             branchMeshes_[meshIndex] = std::move(branchMesh);
         }
@@ -681,6 +709,9 @@ void TreeSystem::regenerateTree(uint32_t treeIndex) {
         }
         if (meshIndex < treeMeshData_.size()) {
             treeMeshData_[meshIndex] = std::move(meshData);
+        }
+        if (meshIndex < fullTreeBounds_.size()) {
+            fullTreeBounds_[meshIndex] = fullBounds;
         }
     }
 

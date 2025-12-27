@@ -753,21 +753,19 @@ void TreeLODSystem::update(float deltaTime, const glm::vec3& cameraPos, const Tr
             instance.archetypeIndex = state.archetypeIndex;
             instance.blendFactor = state.blendFactor;
 
-            // Use actual tree mesh bounds instead of archetype bounds
-            // Each tree has its own procedurally generated mesh with potentially different bounds
+            // Use full tree bounds (branches + leaves) for accurate imposter sizing
             if (tree.meshIndex < treeSystem.getMeshCount()) {
-                const auto& meshBounds = treeSystem.getBranchMesh(tree.meshIndex).getBounds();
-                glm::vec3 minB = meshBounds.min;
-                glm::vec3 maxB = meshBounds.max;
+                const auto& fullBounds = treeSystem.getFullTreeBounds(tree.meshIndex);
+                glm::vec3 minB = fullBounds.min;
+                glm::vec3 maxB = fullBounds.max;
                 glm::vec3 extent = maxB - minB;
 
-                // Billboard sizing: hSize uses bounding sphere for horizontal coverage,
+                // Billboard sizing: hSize uses horizontal extent for tighter fit,
                 // vSize uses half height to prevent ground penetration.
                 float horizontalRadius = std::max(extent.x, extent.z) * 0.5f;
                 float halfHeight = extent.y * 0.5f;
-                float boundingSphereRadius = glm::length(extent) * 0.5f;
 
-                float hSize = boundingSphereRadius * TreeLODConstants::IMPOSTOR_SIZE_MARGIN * tree.scale;
+                float hSize = horizontalRadius * TreeLODConstants::IMPOSTOR_SIZE_MARGIN * tree.scale;
                 float vSize = halfHeight * TreeLODConstants::IMPOSTOR_SIZE_MARGIN * tree.scale;
 
                 instance.hSize = hSize;

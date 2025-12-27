@@ -216,9 +216,10 @@ private:
 
     // Track which descriptor sets have been initialized (to avoid redundant updates)
     // Key format: "frameIndex:typeName"
+    // Note: Culled leaf descriptors are NOT cached since they must be updated each frame
+    // to bind the correct per-frame output buffer.
     std::unordered_set<std::string> initializedBarkDescriptors_;
     std::unordered_set<std::string> initializedLeafDescriptors_;
-    std::unordered_set<std::string> initializedCulledLeafDescriptors_;
 
     // Leaf Culling subsystem (handles all compute culling)
     std::unique_ptr<TreeLeafCulling> leafCulling_;

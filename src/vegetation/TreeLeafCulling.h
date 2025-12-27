@@ -148,18 +148,19 @@ public:
     void setParams(const CullingParams& params) { params_ = params; }
     const CullingParams& getParams() const { return params_; }
 
-    // Get output buffers for rendering (current buffer set)
-    VkBuffer getOutputBuffer() const {
-        return cullOutputBuffers_.empty() ? VK_NULL_HANDLE : cullOutputBuffers_[currentBufferSet_];
+    // Get output buffers for rendering (indexed by frame)
+    VkBuffer getOutputBuffer(uint32_t frameIndex) const {
+        return cullOutputBuffers_.empty() ? VK_NULL_HANDLE : cullOutputBuffers_[frameIndex % maxFramesInFlight_];
     }
-    VkBuffer getIndirectBuffer() const {
-        return cullIndirectBuffers_.empty() ? VK_NULL_HANDLE : cullIndirectBuffers_[currentBufferSet_];
+    VkBuffer getIndirectBuffer(uint32_t frameIndex) const {
+        return cullIndirectBuffers_.empty() ? VK_NULL_HANDLE : cullIndirectBuffers_[frameIndex % maxFramesInFlight_];
     }
     VkBuffer getTreeRenderDataBuffer() const { return treeRenderDataBuffer_; }
     uint32_t getMaxLeavesPerType() const { return maxLeavesPerType_; }
 
-    // Swap buffer sets (call after rendering completes)
-    void swapBufferSets() { currentBufferSet_ = (currentBufferSet_ + 1) % maxFramesInFlight_; }
+    // DEPRECATED: Buffer sets are now indexed by frameIndex directly
+    // This method is kept for compatibility but does nothing
+    void swapBufferSets() { /* No-op: buffer selection now uses frameIndex */ }
 
     VkDevice getDevice() const { return device_; }
 
@@ -198,7 +199,7 @@ private:
 
     // Triple-buffered output buffers (matches frames in flight)
     // Buffer set count MUST match frames in flight to avoid compute/graphics race conditions.
-    uint32_t currentBufferSet_ = 0;
+    // Buffer selection is done via frameIndex parameter, not a rotating currentBufferSet_.
 
     std::vector<VkBuffer> cullOutputBuffers_;
     std::vector<VmaAllocation> cullOutputAllocations_;

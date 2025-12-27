@@ -608,11 +608,13 @@ void TreeLeafCulling::updateSpatialIndex(const TreeSystem& treeSystem) {
 }
 
 void TreeLeafCulling::updateCullDescriptorSets(const TreeSystem& treeSystem) {
+    // Initialize each frame's descriptor set to point to its corresponding buffer
+    // The output/indirect bindings will be updated per-frame in recordCulling
     for (uint32_t f = 0; f < maxFramesInFlight_; ++f) {
         DescriptorManager::SetWriter writer(device_, cullDescriptorSets_[f]);
         writer.writeBuffer(Bindings::TREE_LEAF_CULL_INPUT, treeSystem.getLeafInstanceBuffer(), 0, VK_WHOLE_SIZE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
-              .writeBuffer(Bindings::TREE_LEAF_CULL_OUTPUT, cullOutputBuffers_[currentBufferSet_], 0, VK_WHOLE_SIZE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
-              .writeBuffer(Bindings::TREE_LEAF_CULL_INDIRECT, cullIndirectBuffers_[currentBufferSet_], 0, VK_WHOLE_SIZE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+              .writeBuffer(Bindings::TREE_LEAF_CULL_OUTPUT, cullOutputBuffers_[f], 0, VK_WHOLE_SIZE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+              .writeBuffer(Bindings::TREE_LEAF_CULL_INDIRECT, cullIndirectBuffers_[f], 0, VK_WHOLE_SIZE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
               .writeBuffer(Bindings::TREE_LEAF_CULL_UNIFORMS, cullUniformBuffers_.buffers[f], 0, sizeof(TreeLeafCullUniforms), VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER)
               .writeBuffer(Bindings::TREE_LEAF_CULL_TREES, treeDataBuffer_, 0, VK_WHOLE_SIZE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
               .update();
@@ -701,7 +703,10 @@ void TreeLeafCulling::recordCulling(VkCommandBuffer cmd, uint32_t frameIndex,
         resetCmds[i].firstInstance = i * maxLeavesPerType_;  // Base offset for each leaf type
     }
 
-    vkCmdUpdateBuffer(cmd, cullIndirectBuffers_[currentBufferSet_],
+    // Use frameIndex directly to select buffer (ensures compute output matches render input)
+    uint32_t bufferIndex = frameIndex % maxFramesInFlight_;
+
+    vkCmdUpdateBuffer(cmd, cullIndirectBuffers_[bufferIndex],
                       0, sizeof(resetCmds), resetCmds);
 
     // Upload per-tree data
@@ -735,11 +740,11 @@ void TreeLeafCulling::recordCulling(VkCommandBuffer cmd, uint32_t frameIndex,
     vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
                          0, 1, &barrier, 0, nullptr, 0, nullptr);
 
-    // Update compute descriptor sets to use current buffer set
+    // Update compute descriptor sets to use frame-indexed buffer
     {
         DescriptorManager::SetWriter writer(device_, cullDescriptorSets_[frameIndex]);
-        writer.writeBuffer(Bindings::TREE_LEAF_CULL_OUTPUT, cullOutputBuffers_[currentBufferSet_], 0, VK_WHOLE_SIZE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
-              .writeBuffer(Bindings::TREE_LEAF_CULL_INDIRECT, cullIndirectBuffers_[currentBufferSet_], 0, VK_WHOLE_SIZE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+        writer.writeBuffer(Bindings::TREE_LEAF_CULL_OUTPUT, cullOutputBuffers_[bufferIndex], 0, VK_WHOLE_SIZE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+              .writeBuffer(Bindings::TREE_LEAF_CULL_INDIRECT, cullIndirectBuffers_[bufferIndex], 0, VK_WHOLE_SIZE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
               .update();
     }
 
@@ -821,8 +826,8 @@ void TreeLeafCulling::recordCulling(VkCommandBuffer cmd, uint32_t frameIndex,
                 writer.writeBuffer(Bindings::LEAF_CULL_P3_VISIBLE_TREES, visibleTreeBuffer_, 0, VK_WHOLE_SIZE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
                       .writeBuffer(Bindings::LEAF_CULL_P3_ALL_TREES, treeDataBuffer_, 0, VK_WHOLE_SIZE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
                       .writeBuffer(Bindings::LEAF_CULL_P3_INPUT, treeSystem.getLeafInstanceBuffer(), 0, VK_WHOLE_SIZE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
-                      .writeBuffer(Bindings::LEAF_CULL_P3_OUTPUT, cullOutputBuffers_[currentBufferSet_], 0, VK_WHOLE_SIZE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
-                      .writeBuffer(Bindings::LEAF_CULL_P3_INDIRECT, cullIndirectBuffers_[currentBufferSet_], 0, VK_WHOLE_SIZE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+                      .writeBuffer(Bindings::LEAF_CULL_P3_OUTPUT, cullOutputBuffers_[bufferIndex], 0, VK_WHOLE_SIZE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+                      .writeBuffer(Bindings::LEAF_CULL_P3_INDIRECT, cullIndirectBuffers_[bufferIndex], 0, VK_WHOLE_SIZE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
                       .writeBuffer(Bindings::LEAF_CULL_P3_UNIFORMS, cullUniformBuffers_.buffers[frameIndex], 0, sizeof(TreeLeafCullUniforms), VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER)
                       .update();
 

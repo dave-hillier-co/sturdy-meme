@@ -45,7 +45,40 @@ public:
     Profiler& operator=(const Profiler&) = delete;
 
     /**
-     * Begin frame profiling (call after fence wait, before command buffer recording).
+     * Begin CPU frame profiling (call at very start of frame, before any CPU zones).
+     */
+    void beginCpuFrame() {
+        cpuProfiler.beginFrame();
+    }
+
+    /**
+     * Begin GPU frame profiling (call when command buffer is ready).
+     */
+    void beginGpuFrame(VkCommandBuffer cmd, uint32_t frameIndex) {
+        if (gpuProfiler_) {
+            gpuProfiler_->beginFrame(cmd, frameIndex);
+        }
+    }
+
+    /**
+     * End CPU frame profiling (call at end of frame, after present).
+     */
+    void endCpuFrame() {
+        cpuProfiler.endFrame();
+    }
+
+    /**
+     * End GPU frame profiling (call after command buffer recording, before submit).
+     */
+    void endGpuFrame(VkCommandBuffer cmd, uint32_t frameIndex) {
+        if (gpuProfiler_) {
+            gpuProfiler_->endFrame(cmd, frameIndex);
+        }
+    }
+
+    /**
+     * Legacy combined begin (for backwards compatibility).
+     * Prefer using beginCpuFrame() + beginGpuFrame() separately.
      */
     void beginFrame(VkCommandBuffer cmd, uint32_t frameIndex) {
         cpuProfiler.beginFrame();
@@ -55,7 +88,7 @@ public:
     }
 
     /**
-     * End frame profiling (call after command buffer recording, before submit).
+     * Legacy combined end (for backwards compatibility).
      */
     void endFrame(VkCommandBuffer cmd, uint32_t frameIndex) {
         if (gpuProfiler_) {

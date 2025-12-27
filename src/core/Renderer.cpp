@@ -606,6 +606,9 @@ bool Renderer::render(const Camera& camera) {
         return false;
     }
 
+    // Begin CPU profiling for this frame (must be before any CPU zones)
+    systems_->profiler().beginCpuFrame();
+
     // Frame synchronization - use non-blocking check first to avoid unnecessary waits
     // With triple buffering, the fence is often already signaled
     systems_->profiler().beginCpuZone("Wait:FenceSync");
@@ -817,7 +820,7 @@ bool Renderer::render(const Camera& camera) {
     VkCommandBuffer cmd = commandBuffers[frame.frameIndex];
 
     // Begin GPU profiling frame
-    systems_->profiler().beginFrame(cmd, frame.frameIndex);
+    systems_->profiler().beginGpuFrame(cmd, frame.frameIndex);
 
     // Build render resources and context for pipeline stages
     RenderResources resources = buildRenderResources(imageIndex);
@@ -920,7 +923,7 @@ bool Renderer::render(const Camera& camera) {
     systems_->profiler().endGpuZone(cmd, "PostProcess");
 
     // End GPU profiling frame
-    systems_->profiler().endFrame(cmd, frame.frameIndex);
+    systems_->profiler().endGpuFrame(cmd, frame.frameIndex);
 
     vkEndCommandBuffer(cmd);
 
@@ -994,6 +997,10 @@ bool Renderer::render(const Camera& camera) {
     systems_->waterTileCull().endFrame(currentFrame);
 
     currentFrame = (currentFrame + 1) % MAX_FRAMES_IN_FLIGHT;
+
+    // End CPU profiling for this frame
+    systems_->profiler().endCpuFrame();
+
     return true;
 }
 

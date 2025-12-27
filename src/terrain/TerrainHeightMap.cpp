@@ -3,6 +3,7 @@
 #include "VulkanBarriers.h"
 #include "VulkanResourceFactory.h"
 #include <SDL3/SDL.h>
+#include <vulkan/vulkan.hpp>
 #include <cstring>
 #include <cmath>
 #include <algorithm>
@@ -234,40 +235,39 @@ bool TerrainHeightMap::loadHeightDataFromFile(const std::string& path, float min
 
 bool TerrainHeightMap::createGPUResources() {
     // Create Vulkan image
-    VkImageCreateInfo imageInfo{};
-    imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
-    imageInfo.imageType = VK_IMAGE_TYPE_2D;
-    imageInfo.format = VK_FORMAT_R32_SFLOAT;
-    imageInfo.extent = {resolution, resolution, 1};
-    imageInfo.mipLevels = 1;
-    imageInfo.arrayLayers = 1;
-    imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
-    imageInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
-    imageInfo.usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
-    imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-    imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    auto imageInfo = vk::ImageCreateInfo{}
+        .setImageType(vk::ImageType::e2D)
+        .setFormat(vk::Format::eR32Sfloat)
+        .setExtent(vk::Extent3D{resolution, resolution, 1})
+        .setMipLevels(1)
+        .setArrayLayers(1)
+        .setSamples(vk::SampleCountFlagBits::e1)
+        .setTiling(vk::ImageTiling::eOptimal)
+        .setUsage(vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eTransferDst)
+        .setSharingMode(vk::SharingMode::eExclusive)
+        .setInitialLayout(vk::ImageLayout::eUndefined);
 
     VmaAllocationCreateInfo allocInfo{};
     allocInfo.usage = VMA_MEMORY_USAGE_AUTO;
 
-    if (vmaCreateImage(allocator, &imageInfo, &allocInfo, &image, &allocation, nullptr) != VK_SUCCESS) {
+    if (vmaCreateImage(allocator, reinterpret_cast<const VkImageCreateInfo*>(&imageInfo), &allocInfo, &image, &allocation, nullptr) != VK_SUCCESS) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create height map image");
         return false;
     }
 
     // Create image view
-    VkImageViewCreateInfo viewInfo{};
-    viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-    viewInfo.image = image;
-    viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
-    viewInfo.format = VK_FORMAT_R32_SFLOAT;
-    viewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-    viewInfo.subresourceRange.baseMipLevel = 0;
-    viewInfo.subresourceRange.levelCount = 1;
-    viewInfo.subresourceRange.baseArrayLayer = 0;
-    viewInfo.subresourceRange.layerCount = 1;
+    auto viewInfo = vk::ImageViewCreateInfo{}
+        .setImage(image)
+        .setViewType(vk::ImageViewType::e2D)
+        .setFormat(vk::Format::eR32Sfloat)
+        .setSubresourceRange(vk::ImageSubresourceRange{}
+            .setAspectMask(vk::ImageAspectFlagBits::eColor)
+            .setBaseMipLevel(0)
+            .setLevelCount(1)
+            .setBaseArrayLayer(0)
+            .setLayerCount(1));
 
-    if (vkCreateImageView(device, &viewInfo, nullptr, &imageView) != VK_SUCCESS) {
+    if (vkCreateImageView(device, reinterpret_cast<const VkImageViewCreateInfo*>(&viewInfo), nullptr, &imageView) != VK_SUCCESS) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create height map image view");
         return false;
     }
@@ -284,40 +284,39 @@ bool TerrainHeightMap::createGPUResources() {
 bool TerrainHeightMap::createHoleMaskResources() {
     // Create Vulkan image for hole mask (R8_UNORM: 0=solid, 255=hole)
     // Uses higher resolution than heightmap for finer hole detail
-    VkImageCreateInfo imageInfo{};
-    imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
-    imageInfo.imageType = VK_IMAGE_TYPE_2D;
-    imageInfo.format = VK_FORMAT_R8_UNORM;
-    imageInfo.extent = {holeMaskResolution, holeMaskResolution, 1};
-    imageInfo.mipLevels = 1;
-    imageInfo.arrayLayers = 1;
-    imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
-    imageInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
-    imageInfo.usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
-    imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-    imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    auto imageInfo = vk::ImageCreateInfo{}
+        .setImageType(vk::ImageType::e2D)
+        .setFormat(vk::Format::eR8Unorm)
+        .setExtent(vk::Extent3D{holeMaskResolution, holeMaskResolution, 1})
+        .setMipLevels(1)
+        .setArrayLayers(1)
+        .setSamples(vk::SampleCountFlagBits::e1)
+        .setTiling(vk::ImageTiling::eOptimal)
+        .setUsage(vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eTransferDst)
+        .setSharingMode(vk::SharingMode::eExclusive)
+        .setInitialLayout(vk::ImageLayout::eUndefined);
 
     VmaAllocationCreateInfo allocInfo{};
     allocInfo.usage = VMA_MEMORY_USAGE_AUTO;
 
-    if (vmaCreateImage(allocator, &imageInfo, &allocInfo, &holeMaskImage, &holeMaskAllocation, nullptr) != VK_SUCCESS) {
+    if (vmaCreateImage(allocator, reinterpret_cast<const VkImageCreateInfo*>(&imageInfo), &allocInfo, &holeMaskImage, &holeMaskAllocation, nullptr) != VK_SUCCESS) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create hole mask image");
         return false;
     }
 
     // Create image view
-    VkImageViewCreateInfo viewInfo{};
-    viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-    viewInfo.image = holeMaskImage;
-    viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
-    viewInfo.format = VK_FORMAT_R8_UNORM;
-    viewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-    viewInfo.subresourceRange.baseMipLevel = 0;
-    viewInfo.subresourceRange.levelCount = 1;
-    viewInfo.subresourceRange.baseArrayLayer = 0;
-    viewInfo.subresourceRange.layerCount = 1;
+    auto viewInfo = vk::ImageViewCreateInfo{}
+        .setImage(holeMaskImage)
+        .setViewType(vk::ImageViewType::e2D)
+        .setFormat(vk::Format::eR8Unorm)
+        .setSubresourceRange(vk::ImageSubresourceRange{}
+            .setAspectMask(vk::ImageAspectFlagBits::eColor)
+            .setBaseMipLevel(0)
+            .setLevelCount(1)
+            .setBaseArrayLayer(0)
+            .setLayerCount(1));
 
-    if (vkCreateImageView(device, &viewInfo, nullptr, &holeMaskImageView) != VK_SUCCESS) {
+    if (vkCreateImageView(device, reinterpret_cast<const VkImageViewCreateInfo*>(&viewInfo), nullptr, &holeMaskImageView) != VK_SUCCESS) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create hole mask image view");
         return false;
     }

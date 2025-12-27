@@ -109,7 +109,14 @@ public:
         VkImageView shadowMapView,
         VkSampler shadowSampler,
         VkImageView leafAlbedo,
-        VkSampler leafSampler);
+        VkSampler leafSampler,
+        VkBuffer lightBuffer,
+        VkImageView snowMaskView,
+        VkSampler snowMaskSampler,
+        VkImageView cloudShadowMapView,
+        VkSampler cloudShadowMapSampler,
+        VkBuffer snowBuffer,
+        VkBuffer cloudShadowBuffer);
 
     // Get descriptor set for a specific type (returns default if type not found)
     VkDescriptorSet getBranchDescriptorSet(uint32_t frameIndex, const std::string& barkType) const;

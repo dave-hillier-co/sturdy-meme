@@ -3,21 +3,21 @@
 #extension GL_GOOGLE_include_directive : require
 
 #include "bindings.glsl"
+
+// Override UBO bindings for tree leaf descriptor set BEFORE including UBO files
+#define SNOW_UBO_BINDING BINDING_TREE_GFX_SNOW_UBO
+#define CLOUD_SHADOW_UBO_BINDING BINDING_TREE_GFX_CLOUD_SHADOW_UBO
+
 #include "shadow_common.glsl"
 #include "ubo_common.glsl"
+#include "ubo_snow.glsl"
+#include "ubo_cloud_shadow.glsl"
 #include "atmosphere_common.glsl"
 #include "color_common.glsl"
 #include "dither_common.glsl"
 #include "vegetation_lighting_common.glsl"
 #include "snow_common.glsl"
 #include "cloud_shadow_common.glsl"
-
-// Override UBO bindings for tree leaf descriptor set
-#define SNOW_UBO_BINDING BINDING_TREE_GFX_SNOW_UBO
-#define CLOUD_SHADOW_UBO_BINDING BINDING_TREE_GFX_CLOUD_SHADOW_UBO
-
-#include "ubo_snow.glsl"
-#include "ubo_cloud_shadow.glsl"
 
 layout(binding = BINDING_TREE_GFX_SHADOW_MAP) uniform sampler2DArrayShadow shadowMapArray;
 layout(binding = BINDING_TREE_GFX_LEAF_ALBEDO) uniform sampler2D leafAlbedo;

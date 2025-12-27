@@ -733,7 +733,14 @@ bool Renderer::render(const Camera& camera) {
                     systems_->shadow().getShadowImageView(),
                     systems_->shadow().getShadowSampler(),
                     leafTex->getImageView(),
-                    leafTex->getSampler());
+                    leafTex->getSampler(),
+                    systems_->globalBuffers().lightBuffers.buffers[frame.frameIndex],
+                    systems_->snowMask().getSnowMaskView(),
+                    systems_->snowMask().getSnowMaskSampler(),
+                    systems_->cloudShadow().getShadowMapView(),
+                    systems_->cloudShadow().getShadowMapSampler(),
+                    systems_->globalBuffers().snowBuffers.buffers[frame.frameIndex],
+                    systems_->globalBuffers().cloudShadowBuffers.buffers[frame.frameIndex]);
             }
         }
     }

@@ -120,7 +120,17 @@ bool TreeRenderer::createDescriptorSetLayout() {
                .addBinding(Bindings::TREE_GFX_LEAF_INSTANCES, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
                            VK_SHADER_STAGE_VERTEX_BIT)
                .addBinding(Bindings::TREE_GFX_TREE_DATA, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-                           VK_SHADER_STAGE_VERTEX_BIT);
+                           VK_SHADER_STAGE_VERTEX_BIT)
+               .addBinding(Bindings::TREE_GFX_LIGHT_BUFFER, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+                           VK_SHADER_STAGE_FRAGMENT_BIT)
+               .addBinding(Bindings::TREE_GFX_SNOW_MASK, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+                           VK_SHADER_STAGE_FRAGMENT_BIT)
+               .addBinding(Bindings::TREE_GFX_CLOUD_SHADOW, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+                           VK_SHADER_STAGE_FRAGMENT_BIT)
+               .addBinding(Bindings::TREE_GFX_SNOW_UBO, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+                           VK_SHADER_STAGE_FRAGMENT_BIT)
+               .addBinding(Bindings::TREE_GFX_CLOUD_SHADOW_UBO, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+                           VK_SHADER_STAGE_FRAGMENT_BIT);
 
     if (!leafBuilder.buildManaged(leafDescriptorSetLayout_)) {
         return false;
@@ -435,7 +445,14 @@ void TreeRenderer::updateCulledLeafDescriptorSet(
     VkImageView shadowMapView,
     VkSampler shadowSampler,
     VkImageView leafAlbedo,
-    VkSampler leafSampler) {
+    VkSampler leafSampler,
+    VkBuffer lightBuffer,
+    VkImageView snowMaskView,
+    VkSampler snowMaskSampler,
+    VkImageView cloudShadowMapView,
+    VkSampler cloudShadowMapSampler,
+    VkBuffer snowBuffer,
+    VkBuffer cloudShadowBuffer) {
 
     // Skip redundant updates - descriptor bindings don't change per-frame
     std::string key = std::to_string(frameIndex) + ":" + leafType;
@@ -467,6 +484,11 @@ void TreeRenderer::updateCulledLeafDescriptorSet(
           .writeImage(Bindings::TREE_GFX_LEAF_ALBEDO, leafAlbedo, leafSampler)
           .writeBuffer(Bindings::TREE_GFX_LEAF_INSTANCES, leafCulling_->getOutputBuffer(), 0, VK_WHOLE_SIZE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
           .writeBuffer(Bindings::TREE_GFX_TREE_DATA, leafCulling_->getTreeRenderDataBuffer(), 0, VK_WHOLE_SIZE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+          .writeBuffer(Bindings::TREE_GFX_LIGHT_BUFFER, lightBuffer, 0, VK_WHOLE_SIZE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+          .writeImage(Bindings::TREE_GFX_SNOW_MASK, snowMaskView, snowMaskSampler)
+          .writeImage(Bindings::TREE_GFX_CLOUD_SHADOW, cloudShadowMapView, cloudShadowMapSampler)
+          .writeBuffer(Bindings::TREE_GFX_SNOW_UBO, snowBuffer, 0, VK_WHOLE_SIZE)
+          .writeBuffer(Bindings::TREE_GFX_CLOUD_SHADOW_UBO, cloudShadowBuffer, 0, VK_WHOLE_SIZE)
           .update();
 
     // Mark as initialized to skip redundant updates

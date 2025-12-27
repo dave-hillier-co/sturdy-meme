@@ -4,6 +4,7 @@
 #include <cstdio>
 #include <unordered_set>
 
+#include "Components.h"
 #include "TerrainSystem.h"
 #include "TerrainTileCache.h"
 #include "RockSystem.h"
@@ -195,7 +196,7 @@ bool Application::init(const std::string& title, int width, int height) {
         SDL_Log("Created %zu tree compound capsule colliders", treeInstances.size());
     }
 
-    // Create character controller for player at terrain height
+    // Create player entity and character controller
     float playerSpawnX = 0.0f, playerSpawnZ = 0.0f;
     float playerSpawnY = terrain.getHeightAt(playerSpawnX, playerSpawnZ) + 0.1f;
 
@@ -211,7 +212,11 @@ bool Application::init(const std::string& title, int width, int height) {
     SDL_Log("  TileCache.getHeightAt(): %.2f (found=%d)", heightFromTileCache, tileHasHeight ? 1 : 0);
     SDL_Log("  Player spawn Y (height + 0.1): %.2f", playerSpawnY);
 
-    physics().createCharacter(glm::vec3(playerSpawnX, playerSpawnY, playerSpawnZ), Player::CAPSULE_HEIGHT, Player::CAPSULE_RADIUS);
+    // Create player entity with ECS
+    world_.createPlayer(glm::vec3(playerSpawnX, playerSpawnY, playerSpawnZ));
+
+    physics().createCharacter(glm::vec3(playerSpawnX, playerSpawnY, playerSpawnZ),
+                              PlayerMovement::CAPSULE_HEIGHT, PlayerMovement::CAPSULE_RADIUS);
 
     SDL_Log("Physics initialized with %d active bodies", physics().getActiveBodyCount());
 
@@ -306,15 +311,21 @@ void Application::run() {
 
         // Process movement input for third-person mode
         glm::vec3 desiredVelocity(0.0f);
+        auto& playerTransform = world_.getPlayerTransform();
+        auto& playerMovement = world_.getPlayerMovement();
+
         if (input.isThirdPersonMode()) {
             // Handle orientation lock toggle
             if (input.wantsOrientationLockToggle()) {
-                player.toggleOrientationLock();
-                SDL_Log("Orientation lock: %s", player.isOrientationLocked() ? "ON" : "OFF");
+                playerMovement.orientationLocked = !playerMovement.orientationLocked;
+                if (playerMovement.orientationLocked) {
+                    playerMovement.lockedYaw = playerTransform.yaw;
+                }
+                SDL_Log("Orientation lock: %s", playerMovement.orientationLocked ? "ON" : "OFF");
             }
 
             // Temporarily lock orientation if holding trigger/middle mouse
-            bool effectiveLock = player.isOrientationLocked() || input.isOrientationLockHeld();
+            bool effectiveLock = playerMovement.orientationLocked || input.isOrientationLockHeld();
 
             glm::vec3 moveDir = input.getMovementDirection();
             if (glm::length(moveDir) > 0.001f) {
@@ -325,12 +336,15 @@ void Application::run() {
                 // Only rotate player to face movement direction if not locked
                 if (!effectiveLock) {
                     float newYaw = glm::degrees(atan2(moveDir.x, moveDir.z));
-                    float currentYaw = player.getYaw();
+                    float currentYaw = playerTransform.yaw;
                     float yawDiff = newYaw - currentYaw;
                     // Normalize yaw difference
                     while (yawDiff > 180.0f) yawDiff -= 360.0f;
                     while (yawDiff < -180.0f) yawDiff += 360.0f;
-                    player.rotate(yawDiff * 10.0f * deltaTime);  // Smooth rotation
+                    playerTransform.yaw += yawDiff * 10.0f * deltaTime;  // Smooth rotation
+                    // Keep yaw in reasonable range
+                    while (playerTransform.yaw > 360.0f) playerTransform.yaw -= 360.0f;
+                    while (playerTransform.yaw < 0.0f) playerTransform.yaw += 360.0f;
                 }
             }
         }
@@ -359,22 +373,22 @@ void Application::run() {
         glm::vec3 playerPos = physics().getCharacterPosition();
         physicsTerrainManager_.update(playerPos);
 
-        // Update player position from physics character controller
-        glm::vec3 physicsPos = playerPos;
+        // Sync player entity position from physics character controller
         glm::vec3 physicsVelocity = physics().getCharacterVelocity();
-        player.setPosition(physicsPos);
+        playerTransform.position = playerPos;
+        world_.setPlayerGrounded(physics().isCharacterOnGround());
 
         // Update breadcrumb tracker (Ghost of Tsushima respawn optimization)
         // Only track positions when player is grounded and not in water/hazards
-        if (physics().isCharacterOnGround()) {
-            breadcrumbTracker.update(physicsPos);
+        if (world_.isPlayerGrounded()) {
+            breadcrumbTracker.update(playerPos);
         }
 
         // Update scene object transforms from physics
         renderer_->getSystems().scene().update(physics());
 
         // Update player position for grass interaction (always, regardless of camera mode)
-        renderer_->setPlayerState(player.getPosition(), physicsVelocity, Player::CAPSULE_RADIUS);
+        renderer_->setPlayerState(playerTransform.position, physicsVelocity, PlayerMovement::CAPSULE_RADIUS);
 
         // Wait for previous frame's GPU work to complete before updating dynamic meshes.
         // This prevents race conditions where we destroy mesh buffers while the GPU
@@ -399,9 +413,9 @@ void Application::run() {
 
         // Update camera and player based on mode
         if (input.isThirdPersonMode()) {
-            camera.setThirdPersonTarget(player.getFocusPoint());
+            camera.setThirdPersonTarget(playerMovement.getFocusPoint(playerTransform.position));
             camera.updateThirdPerson(deltaTime);
-            renderer_->getSystems().scene().updatePlayerTransform(player.getModelMatrix());
+            renderer_->getSystems().scene().updatePlayerTransform(playerMovement.getModelMatrix(playerTransform));
 
             // Dynamic FOV: widen during sprinting for sense of speed
             float targetFov = 45.0f;  // Base FOV
@@ -568,7 +582,7 @@ void Application::processEvents() {
                     SDL_Log("Weather type: %s, Intensity: %.1f", weatherStatus.c_str(), sys.weatherState().getIntensity());
                 }
                 else if (event.key.scancode == SDL_SCANCODE_F) {
-                    glm::vec3 playerPos = player.getPosition();
+                    glm::vec3 playerPos = world_.getPlayerTransform().position;
                     sys.environmentControl().spawnConfetti(playerPos, 8.0f, 100.0f, 0.5f);
                     SDL_Log("Confetti!");
                 }
@@ -644,7 +658,9 @@ void Application::processEvents() {
         if (input.isThirdPersonMode()) {
             // Initialize third-person camera from current free camera position
             // This ensures smooth transition instead of snapping to origin
-            camera.initializeThirdPersonFromCurrentPosition(player.getFocusPoint());
+            auto& playerTransform = world_.getPlayerTransform();
+            auto& playerMovement = world_.getPlayerMovement();
+            camera.initializeThirdPersonFromCurrentPosition(playerMovement.getFocusPoint(playerTransform.position));
         } else {
             // Switching to free camera - just reset smoothing
             camera.resetSmoothing();
@@ -776,7 +792,8 @@ void Application::initPhysics() {
     // Create character controller for player at terrain height
     float playerX = 0.0f, playerZ = 0.0f;
     float playerTerrainY = getTerrainY(playerX, playerZ);
-    physics().createCharacter(glm::vec3(playerX, playerTerrainY + spawnOffset, playerZ), Player::CAPSULE_HEIGHT, Player::CAPSULE_RADIUS);
+    physics().createCharacter(glm::vec3(playerX, playerTerrainY + spawnOffset, playerZ),
+                              PlayerMovement::CAPSULE_HEIGHT, PlayerMovement::CAPSULE_RADIUS);
 
     SDL_Log("Physics initialized with %d active bodies", physics().getActiveBodyCount());
 }
@@ -852,7 +869,9 @@ void Application::updateCameraOcclusion(float deltaTime) {
     if (!input.isThirdPersonMode()) return;
 
     // Raycast from player focus point to camera position
-    glm::vec3 playerFocus = player.getFocusPoint();
+    const auto& playerTransform = world_.getPlayerTransform();
+    const auto& playerMovement = world_.getPlayerMovement();
+    glm::vec3 playerFocus = playerMovement.getFocusPoint(playerTransform.position);
     glm::vec3 cameraPos = camera.getPosition();
 
     std::vector<RaycastHit> hits = physics().castRayAllHits(playerFocus, cameraPos);
@@ -897,8 +916,8 @@ void Application::updateFlag(float deltaTime) {
 
     // Add player collision sphere
     glm::vec3 playerPos = physics().getCharacterPosition();
-    float playerRadius = Player::CAPSULE_RADIUS;
-    float playerHeight = Player::CAPSULE_HEIGHT;
+    float playerRadius = PlayerMovement::CAPSULE_RADIUS;
+    float playerHeight = PlayerMovement::CAPSULE_HEIGHT;
 
     // Add collision spheres for the player capsule (one at bottom, middle, and top)
     clothSim.addSphereCollision(playerPos + glm::vec3(0, playerRadius, 0), playerRadius);

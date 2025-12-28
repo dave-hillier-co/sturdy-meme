@@ -4,6 +4,7 @@
 #define CONSTANTS_COMMON_GLSL
 
 const float PI = 3.14159265359;
+const float TWO_PI = 6.28318530718;
 #define NUM_CASCADES 4
 
 // Planet geometry (fixed physical constants)

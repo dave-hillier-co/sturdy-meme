@@ -7,13 +7,12 @@
 #extension GL_GOOGLE_include_directive : require
 
 #include "bindings.glsl"
+#include "constants_common.glsl"
 
 layout(local_size_x = 4, local_size_y = 4, local_size_z = 1) in;
 
 layout(binding = BINDING_FROXEL_SCATTERING, rgba16f) readonly uniform image3D scatteringVolume;
 layout(binding = BINDING_FROXEL_INTEGRATED, rgba16f) writeonly uniform image3D integratedVolume;
-
-const int NUM_CASCADES = 4;
 
 layout(binding = BINDING_FROXEL_UNIFORMS) uniform FroxelUniforms {
     mat4 invViewProj;

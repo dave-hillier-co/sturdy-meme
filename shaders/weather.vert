@@ -3,9 +3,6 @@
 #extension GL_GOOGLE_include_directive : require
 
 #include "bindings.glsl"
-
-const int NUM_CASCADES = 4;
-
 #include "ubo_common.glsl"
 
 // Weather particle structure (must match CPU and compute shader)

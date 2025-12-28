@@ -3,6 +3,7 @@
 #extension GL_GOOGLE_include_directive : require
 
 #include "bindings.glsl"
+#include "constants_common.glsl"
 
 // Cloud Shadow Compute Shader
 // Generates a world-space cloud shadow map by ray-marching through the volumetric cloud layer
@@ -35,10 +36,8 @@ layout(push_constant) uniform PushConstants {
     uint quadrantIndex;  // 0-3: which quadrant to update this frame
 };
 
-const float PI = 3.14159265359;
-
 // Cloud layer parameters (matching sky.frag, in km for atmosphere calculations)
-const float PLANET_RADIUS = 6371.0;          // Earth radius in km
+// Note: PLANET_RADIUS is defined in constants_common.glsl
 const float CLOUD_LAYER_BOTTOM_KM = 1.5;     // Cloud layer bottom in km
 const float CLOUD_LAYER_TOP_KM = 4.0;        // Cloud layer top in km
 

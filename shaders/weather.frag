@@ -5,8 +5,6 @@
 
 #extension GL_GOOGLE_include_directive : require
 
-const int NUM_CASCADES = 4;
-
 #include "bindings.glsl"
 #include "ubo_common.glsl"
 

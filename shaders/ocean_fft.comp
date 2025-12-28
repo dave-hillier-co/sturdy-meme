@@ -16,6 +16,7 @@
 #extension GL_GOOGLE_include_directive : require
 
 #include "bindings.glsl"
+#include "constants_common.glsl"
 
 layout(local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
 
@@ -30,9 +31,6 @@ layout(push_constant) uniform PushConstants {
     int resolution;  // FFT size (must be power of 2)
     int inverse;     // 1 = inverse FFT, 0 = forward FFT
 };
-
-const float PI = 3.14159265359;
-const float TWO_PI = 6.28318530718;
 
 // Complex multiplication
 vec2 complexMul(vec2 a, vec2 b) {

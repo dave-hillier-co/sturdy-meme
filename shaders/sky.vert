@@ -2,8 +2,6 @@
 
 #extension GL_GOOGLE_include_directive : require
 
-const int NUM_CASCADES = 4;
-
 #include "ubo_common.glsl"
 
 layout(location = 0) out vec3 rayDir;

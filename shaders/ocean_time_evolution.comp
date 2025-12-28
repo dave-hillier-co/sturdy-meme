@@ -18,6 +18,7 @@
 #extension GL_GOOGLE_include_directive : require
 
 #include "bindings.glsl"
+#include "constants_common.glsl"
 
 layout(local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
 
@@ -37,9 +38,6 @@ layout(push_constant) uniform PushConstants {
     float oceanSize;
     float choppiness;  // Lambda - horizontal displacement scale (0.5 to 2.0 typical)
 };
-
-const float PI = 3.14159265359;
-const float TWO_PI = 6.28318530718;
 
 // Complex multiplication: (a + bi)(c + di) = (ac - bd) + (ad + bc)i
 vec2 complexMul(vec2 a, vec2 b) {

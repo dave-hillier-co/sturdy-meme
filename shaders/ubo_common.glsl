@@ -8,10 +8,7 @@
 #define UBO_COMMON_GLSL
 
 #include "bindings.glsl"
-
-#ifndef NUM_CASCADES
-#define NUM_CASCADES 4
-#endif
+#include "constants_common.glsl"
 
 #ifndef UBO_BINDING
 #define UBO_BINDING BINDING_UBO

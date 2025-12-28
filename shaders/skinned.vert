@@ -2,7 +2,6 @@
 
 #extension GL_GOOGLE_include_directive : require
 
-const int NUM_CASCADES = 4;
 const int MAX_BONES = 128;
 
 #include "bindings.glsl"

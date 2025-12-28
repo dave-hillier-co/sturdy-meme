@@ -590,6 +590,7 @@ void TreeRenderer::render(VkCommandBuffer cmd, uint32_t frameIndex, float time,
                           const TreeSystem& treeSystem, const TreeLODSystem* lodSystem) {
     const auto& branchRenderables = treeSystem.getBranchRenderables();
     const auto& leafRenderables = treeSystem.getLeafRenderables();
+    const auto& treeInstances = treeSystem.getTreeInstances();
 
     if (branchRenderables.empty() && leafRenderables.empty()) return;
 
@@ -625,12 +626,21 @@ void TreeRenderer::render(VkCommandBuffer cmd, uint32_t frameIndex, float time,
             vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
             0, push);
 
-        if (renderable.mesh) {
-            vk::Buffer vertexBuffers[] = {renderable.mesh->getVertexBuffer()};
+        // Select mesh based on LOD level (LOD0 or LOD1)
+        const Mesh* meshToRender = renderable.mesh;
+        if (lodSystem && lodSystem->shouldUseLOD1(branchTreeIndex) && branchTreeIndex < treeInstances.size()) {
+            uint32_t meshIndex = treeInstances[branchTreeIndex].meshIndex;
+            if (treeSystem.hasLOD1(meshIndex)) {
+                meshToRender = &treeSystem.getBranchMeshLOD1(meshIndex);
+            }
+        }
+
+        if (meshToRender && meshToRender->getIndexCount() > 0) {
+            vk::Buffer vertexBuffers[] = {meshToRender->getVertexBuffer()};
             vk::DeviceSize offsets[] = {0};
             vkCmd.bindVertexBuffers(0, vertexBuffers, offsets);
-            vkCmd.bindIndexBuffer(renderable.mesh->getIndexBuffer(), 0, vk::IndexType::eUint32);
-            vkCmd.drawIndexed(renderable.mesh->getIndexCount(), 1, 0, 0, 0);
+            vkCmd.bindIndexBuffer(meshToRender->getIndexBuffer(), 0, vk::IndexType::eUint32);
+            vkCmd.drawIndexed(meshToRender->getIndexCount(), 1, 0, 0, 0);
         }
         branchTreeIndex++;
     }

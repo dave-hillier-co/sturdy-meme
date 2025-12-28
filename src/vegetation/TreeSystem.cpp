@@ -1,4 +1,5 @@
 #include "TreeSystem.h"
+#include "TreeLODMeshGenerator.h"
 #include <SDL3/SDL.h>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/constants.hpp>
@@ -87,16 +88,21 @@ void TreeSystem::cleanup() {
     barkNormalMaps_.clear();
     leafTextures_.clear();
 
-    // Manually managed mesh vector
+    // Manually managed mesh vectors (LOD0 and LOD1)
     for (auto& mesh : branchMeshes_) {
         mesh.destroy(storedAllocator_);
     }
     branchMeshes_.clear();
 
+    for (auto& mesh : branchMeshesLOD1_) {
+        mesh.destroy(storedAllocator_);
+    }
+    branchMeshesLOD1_.clear();
+
     // Shared leaf quad mesh
     sharedLeafQuadMesh_.destroy(storedAllocator_);
 
-    // Leaf instance SSBO
+    // Leaf instance SSBO (LOD0)
     if (leafInstanceBuffer_ != VK_NULL_HANDLE) {
         vmaDestroyBuffer(storedAllocator_, leafInstanceBuffer_, leafInstanceAllocation_);
         leafInstanceBuffer_ = VK_NULL_HANDLE;
@@ -106,6 +112,17 @@ void TreeSystem::cleanup() {
     leafInstancesPerTree_.clear();
     allLeafInstances_.clear();
     leafDrawInfoPerTree_.clear();
+
+    // Leaf instance SSBO (LOD1)
+    if (leafInstanceBufferLOD1_ != VK_NULL_HANDLE) {
+        vmaDestroyBuffer(storedAllocator_, leafInstanceBufferLOD1_, leafInstanceAllocationLOD1_);
+        leafInstanceBufferLOD1_ = VK_NULL_HANDLE;
+        leafInstanceAllocationLOD1_ = VK_NULL_HANDLE;
+        leafInstanceBufferSizeLOD1_ = 0;
+    }
+    leafInstancesPerTreeLOD1_.clear();
+    allLeafInstancesLOD1_.clear();
+    leafDrawInfoPerTreeLOD1_.clear();
 
     branchRenderables_.clear();
     leafRenderables_.clear();
@@ -473,6 +490,171 @@ bool TreeSystem::uploadLeafInstanceBuffer() {
     return true;
 }
 
+bool TreeSystem::generateLOD1FromMeshData(const TreeMeshData& fullDetail, const TreeOptions& options,
+                                           Mesh& branchMeshLOD1, std::vector<LeafInstanceGPU>& leafInstancesLOD1) {
+    // Use medium detail config for LOD1
+    TreeLODMeshGenerator::LODConfig config = TreeLODMeshGenerator::LODConfig::mediumDetail();
+
+    // Simplify the full detail mesh
+    TreeMeshData lodMeshData = TreeLODMeshGenerator::simplify(fullDetail, options, config);
+
+    // Build branch mesh vertices (same code as generateTreeMesh but using simplified data)
+    std::vector<Vertex> branchVertices;
+    std::vector<uint32_t> branchIndices;
+
+    glm::vec2 textureScale = options.bark.textureScale;
+    float vRepeat = 1.0f / textureScale.y;
+
+    uint32_t indexOffset = 0;
+    for (const auto& branch : lodMeshData.branches) {
+        int segmentCount = branch.segmentCount;
+
+        for (size_t sectionIdx = 0; sectionIdx < branch.sections.size(); ++sectionIdx) {
+            const SectionData& section = branch.sections[sectionIdx];
+            float vCoord = (sectionIdx % 2 == 0) ? 0.0f : vRepeat;
+
+            for (int seg = 0; seg <= segmentCount; ++seg) {
+                float angle = 2.0f * glm::pi<float>() * static_cast<float>(seg) / static_cast<float>(segmentCount);
+
+                glm::vec3 localPos(std::cos(angle), 0.0f, std::sin(angle));
+                glm::vec3 localNormal = -localPos;
+
+                glm::vec3 worldOffset = section.orientation * (localPos * section.radius);
+                glm::vec3 worldNormal = glm::normalize(section.orientation * localNormal);
+
+                float uCoord = static_cast<float>(seg) / static_cast<float>(segmentCount) * textureScale.x;
+
+                Vertex v{};
+                v.position = section.origin + worldOffset;
+                v.normal = worldNormal;
+                v.texCoord = glm::vec2(uCoord, vCoord);
+                v.tangent = glm::vec4(
+                    glm::normalize(section.orientation * glm::vec3(0.0f, 1.0f, 0.0f)),
+                    1.0f
+                );
+                float normalizedLevel = static_cast<float>(branch.level) / 3.0f * 0.95f;
+                if (branch.level == 0) {
+                    v.color = glm::vec4(1.0f, 1.0f, 1.0f, 0.0f);
+                } else {
+                    v.color = glm::vec4(branch.origin, normalizedLevel);
+                }
+
+                branchVertices.push_back(v);
+            }
+        }
+
+        // Generate indices for this branch
+        uint32_t vertsPerRing = static_cast<uint32_t>(segmentCount + 1);
+        int sectionCount = static_cast<int>(branch.sections.size()) - 1;
+        for (int section = 0; section < sectionCount; ++section) {
+            for (int seg = 0; seg < segmentCount; ++seg) {
+                uint32_t v0 = indexOffset + section * vertsPerRing + seg;
+                uint32_t v1 = v0 + 1;
+                uint32_t v2 = v0 + vertsPerRing;
+                uint32_t v3 = v2 + 1;
+
+                branchIndices.push_back(v0);
+                branchIndices.push_back(v2);
+                branchIndices.push_back(v1);
+
+                branchIndices.push_back(v1);
+                branchIndices.push_back(v2);
+                branchIndices.push_back(v3);
+            }
+        }
+
+        indexOffset += static_cast<uint32_t>(branch.sections.size()) * vertsPerRing;
+    }
+
+    // Build leaf instance data
+    leafInstancesLOD1.clear();
+    for (const auto& leaf : lodMeshData.leaves) {
+        int quadsPerLeaf = (options.leaves.billboard == BillboardMode::Double) ? 2 : 1;
+
+        for (int quad = 0; quad < quadsPerLeaf; ++quad) {
+            float yRotation = (quad == 1) ? glm::half_pi<float>() : 0.0f;
+            glm::quat yQuat = glm::angleAxis(yRotation, glm::vec3(0.0f, 1.0f, 0.0f));
+            glm::quat finalQuat = leaf.orientation * yQuat;
+
+            LeafInstanceGPU instance;
+            instance.positionAndSize = glm::vec4(leaf.position, leaf.size);
+            instance.orientation = glm::vec4(finalQuat.x, finalQuat.y, finalQuat.z, finalQuat.w);
+            leafInstancesLOD1.push_back(instance);
+        }
+    }
+
+    // Create GPU mesh
+    if (!branchVertices.empty()) {
+        branchMeshLOD1.setCustomGeometry(branchVertices, branchIndices);
+        if (!branchMeshLOD1.upload(storedAllocator_, storedDevice_, storedCommandPool_, storedQueue_)) {
+            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to upload LOD1 branch mesh");
+            return false;
+        }
+    }
+
+    SDL_Log("TreeSystem: Created LOD1 mesh - %zu verts, %zu indices; %zu leaf instances",
+            branchVertices.size(), branchIndices.size(), leafInstancesLOD1.size());
+
+    return true;
+}
+
+bool TreeSystem::uploadLeafInstanceBufferLOD1() {
+    // Destroy old buffer if it exists
+    if (leafInstanceBufferLOD1_ != VK_NULL_HANDLE) {
+        vmaDestroyBuffer(storedAllocator_, leafInstanceBufferLOD1_, leafInstanceAllocationLOD1_);
+        leafInstanceBufferLOD1_ = VK_NULL_HANDLE;
+        leafInstanceAllocationLOD1_ = VK_NULL_HANDLE;
+    }
+
+    // Flatten all per-tree LOD1 leaf instances into a single array
+    allLeafInstancesLOD1_.clear();
+    leafDrawInfoPerTreeLOD1_.clear();
+
+    uint32_t currentOffset = 0;
+    for (size_t treeIdx = 0; treeIdx < leafInstancesPerTreeLOD1_.size(); ++treeIdx) {
+        const auto& treeLeaves = leafInstancesPerTreeLOD1_[treeIdx];
+
+        LeafDrawInfo drawInfo;
+        drawInfo.firstInstance = currentOffset;
+        drawInfo.instanceCount = static_cast<uint32_t>(treeLeaves.size());
+        leafDrawInfoPerTreeLOD1_.push_back(drawInfo);
+
+        allLeafInstancesLOD1_.insert(allLeafInstancesLOD1_.end(), treeLeaves.begin(), treeLeaves.end());
+        currentOffset += drawInfo.instanceCount;
+    }
+
+    if (allLeafInstancesLOD1_.empty()) {
+        leafInstanceBufferSizeLOD1_ = 0;
+        return true;
+    }
+
+    // Create storage buffer for LOD1 leaf instances
+    leafInstanceBufferSizeLOD1_ = sizeof(LeafInstanceGPU) * allLeafInstancesLOD1_.size();
+
+    VkBufferCreateInfo bufferInfo{};
+    bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+    bufferInfo.size = leafInstanceBufferSizeLOD1_;
+    bufferInfo.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+    bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+    VmaAllocationCreateInfo allocInfo{};
+    allocInfo.usage = VMA_MEMORY_USAGE_AUTO;
+    allocInfo.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT;
+
+    VmaAllocationInfo allocationInfo{};
+    if (vmaCreateBuffer(storedAllocator_, &bufferInfo, &allocInfo,
+                        &leafInstanceBufferLOD1_, &leafInstanceAllocationLOD1_, &allocationInfo) != VK_SUCCESS) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create LOD1 leaf instance SSBO");
+        return false;
+    }
+
+    memcpy(allocationInfo.pMappedData, allLeafInstancesLOD1_.data(), leafInstanceBufferSizeLOD1_);
+
+    SDL_Log("TreeSystem: Uploaded %zu LOD1 leaf instances to SSBO (%zu bytes)",
+            allLeafInstancesLOD1_.size(), static_cast<size_t>(leafInstanceBufferSizeLOD1_));
+    return true;
+}
+
 void TreeSystem::createSceneObjects() {
     branchRenderables_.clear();
     leafRenderables_.clear();
@@ -536,7 +718,7 @@ void TreeSystem::rebuildSceneObjects() {
 }
 
 uint32_t TreeSystem::addTree(const glm::vec3& position, float rotation, float scale, const TreeOptions& options) {
-    // Generate mesh and leaf instances for this tree
+    // Generate LOD0 mesh and leaf instances for this tree
     Mesh branchMesh;
     std::vector<LeafInstanceGPU> leafInstances;
     TreeMeshData meshData;
@@ -545,12 +727,21 @@ uint32_t TreeSystem::addTree(const glm::vec3& position, float rotation, float sc
         return UINT32_MAX;
     }
 
+    // Generate LOD1 (simplified) from the full detail mesh data
+    Mesh branchMeshLOD1;
+    std::vector<LeafInstanceGPU> leafInstancesLOD1;
+    if (!generateLOD1FromMeshData(meshData, options, branchMeshLOD1, leafInstancesLOD1)) {
+        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "TreeSystem: Failed to generate LOD1 mesh, using LOD0 only");
+    }
+
     // Compute full tree bounds (branches + leaves) before moving data
     AABB fullBounds = computeFullTreeBounds(branchMesh, leafInstances);
 
     uint32_t meshIndex = static_cast<uint32_t>(branchMeshes_.size());
     branchMeshes_.push_back(std::move(branchMesh));
+    branchMeshesLOD1_.push_back(std::move(branchMeshLOD1));
     leafInstancesPerTree_.push_back(std::move(leafInstances));
+    leafInstancesPerTreeLOD1_.push_back(std::move(leafInstancesLOD1));
     treeOptions_.push_back(options);
     treeMeshData_.push_back(std::move(meshData));
     fullTreeBounds_.push_back(fullBounds);
@@ -580,9 +771,12 @@ uint32_t TreeSystem::addTree(const glm::vec3& position, float rotation, float sc
     uint32_t treeIndex = static_cast<uint32_t>(treeInstances_.size());
     treeInstances_.push_back(instance);
 
-    // Upload leaf instances to GPU SSBO
+    // Upload leaf instances to GPU SSBO (both LOD0 and LOD1)
     if (!uploadLeafInstanceBuffer()) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "TreeSystem: Failed to upload leaf instance buffer");
+    }
+    if (!uploadLeafInstanceBufferLOD1()) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "TreeSystem: Failed to upload LOD1 leaf instance buffer");
     }
 
     rebuildSceneObjects();
@@ -688,12 +882,15 @@ void TreeSystem::regenerateTree(uint32_t treeIndex) {
     uint32_t meshIndex = treeInstances_[treeIndex].meshIndex;
     if (meshIndex >= treeOptions_.size()) return;
 
-    // Destroy old branch mesh
+    // Destroy old branch meshes (LOD0 and LOD1)
     if (meshIndex < branchMeshes_.size()) {
         branchMeshes_[meshIndex].destroy(storedAllocator_);
     }
+    if (meshIndex < branchMeshesLOD1_.size()) {
+        branchMeshesLOD1_[meshIndex].destroy(storedAllocator_);
+    }
 
-    // Generate new branch mesh and leaf instances
+    // Generate new branch mesh and leaf instances (LOD0)
     Mesh branchMesh;
     std::vector<LeafInstanceGPU> leafInstances;
     TreeMeshData meshData;
@@ -713,10 +910,23 @@ void TreeSystem::regenerateTree(uint32_t treeIndex) {
         if (meshIndex < fullTreeBounds_.size()) {
             fullTreeBounds_[meshIndex] = fullBounds;
         }
+
+        // Generate LOD1 from the new mesh data
+        Mesh branchMeshLOD1;
+        std::vector<LeafInstanceGPU> leafInstancesLOD1;
+        if (generateLOD1FromMeshData(treeMeshData_[meshIndex], treeOptions_[meshIndex], branchMeshLOD1, leafInstancesLOD1)) {
+            if (meshIndex < branchMeshesLOD1_.size()) {
+                branchMeshesLOD1_[meshIndex] = std::move(branchMeshLOD1);
+            }
+            if (meshIndex < leafInstancesPerTreeLOD1_.size()) {
+                leafInstancesPerTreeLOD1_[meshIndex] = std::move(leafInstancesLOD1);
+            }
+        }
     }
 
-    // Re-upload leaf instance buffer
+    // Re-upload leaf instance buffers (LOD0 and LOD1)
     uploadLeafInstanceBuffer();
+    uploadLeafInstanceBufferLOD1();
 
     rebuildSceneObjects();
 }

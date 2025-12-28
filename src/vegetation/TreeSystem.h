@@ -12,6 +12,7 @@
 
 #include "TreeOptions.h"
 #include "TreeGenerator.h"
+#include "TreeLODMeshGenerator.h"
 #include "TreeCollision.h"
 #include "Mesh.h"
 #include "Texture.h"
@@ -129,10 +130,24 @@ public:
     const Mesh& getSharedLeafQuadMesh() const { return sharedLeafQuadMesh_; }
     const std::vector<LeafDrawInfo>& getLeafDrawInfo() const { return leafDrawInfoPerTree_; }
 
-    // Accessors for impostor generation
+    // Accessors for impostor generation (LOD0 - full detail)
     const Mesh& getBranchMesh(uint32_t meshIndex) const { return branchMeshes_[meshIndex]; }
     const std::vector<LeafInstanceGPU>& getLeafInstances(uint32_t meshIndex) const { return leafInstancesPerTree_[meshIndex]; }
     const TreeOptions& getTreeOptions(uint32_t meshIndex) const { return treeOptions_[meshIndex]; }
+
+    // LOD1 (reduced detail) accessors - returns LOD0 data if LOD1 not available
+    bool hasLOD1(uint32_t meshIndex) const { return meshIndex < branchMeshesLOD1_.size(); }
+    const Mesh& getBranchMeshLOD1(uint32_t meshIndex) const {
+        return meshIndex < branchMeshesLOD1_.size() ? branchMeshesLOD1_[meshIndex] : branchMeshes_[meshIndex];
+    }
+    const std::vector<LeafInstanceGPU>& getLeafInstancesLOD1(uint32_t meshIndex) const {
+        return meshIndex < leafInstancesPerTreeLOD1_.size() ? leafInstancesPerTreeLOD1_[meshIndex] : leafInstancesPerTree_[meshIndex];
+    }
+
+    // Get LOD1 leaf draw info for rendering
+    const std::vector<LeafDrawInfo>& getLeafDrawInfoLOD1() const { return leafDrawInfoPerTreeLOD1_; }
+    VkBuffer getLeafInstanceBufferLOD1() const { return leafInstanceBufferLOD1_; }
+    VkDeviceSize getLeafInstanceBufferSizeLOD1() const { return leafInstanceBufferSizeLOD1_; }
 
     // Get full tree bounds (branches + leaves) for accurate imposter sizing
     const AABB& getFullTreeBounds(uint32_t meshIndex) const { return fullTreeBounds_[meshIndex]; }
@@ -145,8 +160,11 @@ private:
     bool loadTextures(const InitInfo& info);
     bool generateTreeMesh(const TreeOptions& options, Mesh& branchMesh, std::vector<LeafInstanceGPU>& leafInstances,
                           TreeMeshData* meshDataOut = nullptr);
+    bool generateLOD1FromMeshData(const TreeMeshData& fullDetail, const TreeOptions& options,
+                                   Mesh& branchMeshLOD1, std::vector<LeafInstanceGPU>& leafInstancesLOD1);
     bool createSharedLeafQuadMesh();
     bool uploadLeafInstanceBuffer();
+    bool uploadLeafInstanceBufferLOD1();
     void createSceneObjects();
     void rebuildSceneObjects();
 
@@ -166,25 +184,34 @@ private:
     TreeOptions defaultOptions_;
 
     // Tree meshes (branches only - leaves use instanced quad)
-    std::vector<Mesh> branchMeshes_;
+    // LOD0 = full detail, LOD1 = reduced detail (simplified from LOD0)
+    std::vector<Mesh> branchMeshes_;        // LOD0
+    std::vector<Mesh> branchMeshesLOD1_;    // LOD1 (simplified branches)
 
     // Shared leaf quad mesh (4 vertices, 6 indices) used for all leaf instances
     Mesh sharedLeafQuadMesh_;
 
     // Leaf instance data per tree (CPU-side, uploaded to GPU SSBO)
     // Each tree's leaves are stored contiguously: tree 0 leaves, tree 1 leaves, etc.
-    std::vector<std::vector<LeafInstanceGPU>> leafInstancesPerTree_;
+    std::vector<std::vector<LeafInstanceGPU>> leafInstancesPerTree_;       // LOD0
+    std::vector<std::vector<LeafInstanceGPU>> leafInstancesPerTreeLOD1_;   // LOD1 (fewer, larger leaves)
 
     // All leaf instances combined for GPU upload (flattened from leafInstancesPerTree_)
-    std::vector<LeafInstanceGPU> allLeafInstances_;
+    std::vector<LeafInstanceGPU> allLeafInstances_;        // LOD0
+    std::vector<LeafInstanceGPU> allLeafInstancesLOD1_;    // LOD1
 
     // Per-tree leaf instance offsets and counts for instanced drawing
-    std::vector<LeafDrawInfo> leafDrawInfoPerTree_;
+    std::vector<LeafDrawInfo> leafDrawInfoPerTree_;        // LOD0
+    std::vector<LeafDrawInfo> leafDrawInfoPerTreeLOD1_;    // LOD1
 
     // Leaf instance SSBO (storage buffer for GPU)
-    VkBuffer leafInstanceBuffer_ = VK_NULL_HANDLE;
+    VkBuffer leafInstanceBuffer_ = VK_NULL_HANDLE;         // LOD0
     VmaAllocation leafInstanceAllocation_ = VK_NULL_HANDLE;
     VkDeviceSize leafInstanceBufferSize_ = 0;
+
+    VkBuffer leafInstanceBufferLOD1_ = VK_NULL_HANDLE;     // LOD1
+    VmaAllocation leafInstanceAllocationLOD1_ = VK_NULL_HANDLE;
+    VkDeviceSize leafInstanceBufferSizeLOD1_ = 0;
 
     // Raw mesh data (stored for collision generation)
     std::vector<TreeMeshData> treeMeshData_;

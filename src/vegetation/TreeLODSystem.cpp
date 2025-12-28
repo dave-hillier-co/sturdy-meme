@@ -652,8 +652,14 @@ void TreeLODSystem::update(float deltaTime, const glm::vec3& cameraPos, const Tr
             // Determine LOD level based on screen error
             // High screen error = close = needs full geometry
             // Low screen error = far = can use impostor
+            // If reduced detail LOD is enabled, use LOD1 for intermediate distances
+            state.useLOD1 = false;
             if (screenErrorFull > settings.errorThresholdFull) {
                 newTarget = TreeLODState::Level::FullDetail;
+            } else if (settings.enableReducedDetailLOD && screenErrorFull > settings.errorThresholdReduced) {
+                // Use LOD1 (reduced geometry) at intermediate distances
+                newTarget = TreeLODState::Level::ReducedDetail;
+                state.useLOD1 = true;
             } else {
                 newTarget = TreeLODState::Level::Impostor;
             }
@@ -673,15 +679,34 @@ void TreeLODSystem::update(float deltaTime, const glm::vec3& cameraPos, const Tr
             }
         } else {
             // Legacy distance-based LOD
-            if (state.targetLevel == TreeLODState::Level::FullDetail) {
-                // Currently at full detail, check if should switch to impostor
-                if (distance > settings.fullDetailDistance + settings.hysteresis) {
-                    newTarget = TreeLODState::Level::Impostor;
-                }
-            } else {
-                // Currently at impostor, check if should switch to full detail
+            state.useLOD1 = false;
+            if (settings.enableReducedDetailLOD) {
+                // Three-tier LOD: FullDetail -> ReducedDetail -> Impostor
                 if (distance < settings.fullDetailDistance - settings.hysteresis) {
                     newTarget = TreeLODState::Level::FullDetail;
+                } else if (distance < settings.reducedDetailDistance - settings.hysteresis) {
+                    newTarget = TreeLODState::Level::ReducedDetail;
+                    state.useLOD1 = true;
+                } else if (distance > settings.reducedDetailDistance + settings.hysteresis) {
+                    newTarget = TreeLODState::Level::Impostor;
+                } else if (distance > settings.fullDetailDistance + settings.hysteresis) {
+                    // In hysteresis zone between full and reduced
+                    if (state.targetLevel == TreeLODState::Level::FullDetail) {
+                        newTarget = TreeLODState::Level::ReducedDetail;
+                        state.useLOD1 = true;
+                    }
+                }
+            } else {
+                // Two-tier LOD: FullDetail -> Impostor
+                if (state.targetLevel == TreeLODState::Level::FullDetail ||
+                    state.targetLevel == TreeLODState::Level::ReducedDetail) {
+                    if (distance > settings.fullDetailDistance + settings.hysteresis) {
+                        newTarget = TreeLODState::Level::Impostor;
+                    }
+                } else {
+                    if (distance < settings.fullDetailDistance - settings.hysteresis) {
+                        newTarget = TreeLODState::Level::FullDetail;
+                    }
                 }
             }
 
@@ -705,9 +730,9 @@ void TreeLODSystem::update(float deltaTime, const glm::vec3& cameraPos, const Tr
 
         state.targetLevel = newTarget;
 
-        // Determine current level based on blend factor
+        // Determine current level based on blend factor and LOD1 flag
         if (state.blendFactor < 0.01f) {
-            state.currentLevel = TreeLODState::Level::FullDetail;
+            state.currentLevel = state.useLOD1 ? TreeLODState::Level::ReducedDetail : TreeLODState::Level::FullDetail;
         } else if (state.blendFactor > 0.99f) {
             state.currentLevel = TreeLODState::Level::Impostor;
         } else {
@@ -1235,7 +1260,9 @@ const TreeLODState& TreeLODSystem::getTreeLODState(uint32_t treeIndex) const {
 bool TreeLODSystem::shouldRenderFullGeometry(uint32_t treeIndex) const {
     if (treeIndex >= lodStates_.size()) return true;
     const auto& state = lodStates_[treeIndex];
+    // Render geometry for FullDetail, ReducedDetail (LOD1), and Blending states
     return state.currentLevel == TreeLODState::Level::FullDetail ||
+           state.currentLevel == TreeLODState::Level::ReducedDetail ||
            state.currentLevel == TreeLODState::Level::Blending;
 }
 
@@ -1249,6 +1276,11 @@ bool TreeLODSystem::shouldRenderImpostor(uint32_t treeIndex) const {
 float TreeLODSystem::getBlendFactor(uint32_t treeIndex) const {
     if (treeIndex >= lodStates_.size()) return 0.0f;
     return lodStates_[treeIndex].blendFactor;
+}
+
+bool TreeLODSystem::shouldUseLOD1(uint32_t treeIndex) const {
+    if (treeIndex >= lodStates_.size()) return false;
+    return lodStates_[treeIndex].useLOD1;
 }
 
 bool TreeLODSystem::shouldRenderBranchShadow(uint32_t treeIndex, uint32_t cascadeIndex) const {

@@ -17,7 +17,8 @@ class TreeSystem;
 // Per-tree LOD state
 struct TreeLODState {
     enum class Level {
-        FullDetail,     // Full geometry rendering
+        FullDetail,     // Full geometry rendering (LOD0)
+        ReducedDetail,  // Simplified geometry (LOD1) - fewer branches, larger leaves
         Impostor,       // Billboard impostor only
         Blending        // Cross-fade between detail and impostor
     };
@@ -27,6 +28,7 @@ struct TreeLODState {
     float blendFactor = 0.0f;       // 0 = full detail, 1 = full impostor
     float lastDistance = 0.0f;
     uint32_t archetypeIndex = 0;    // Index into impostor atlas
+    bool useLOD1 = false;           // If true, use LOD1 mesh instead of LOD0
 };
 
 // GPU instance data for impostor rendering
@@ -112,6 +114,9 @@ public:
 
     // Get blend factor for cross-fade (0 = full detail visible, 1 = impostor visible)
     float getBlendFactor(uint32_t treeIndex) const;
+
+    // Check if tree should use LOD1 (reduced detail) mesh instead of LOD0 (full detail)
+    bool shouldUseLOD1(uint32_t treeIndex) const;
 
     // Cascade-aware shadow LOD queries
     // These consider both per-tree LOD state AND cascade-specific settings

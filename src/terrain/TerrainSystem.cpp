@@ -68,24 +68,26 @@ bool TerrainSystem::initInternal(const InitInfo& info, const TerrainConfig& cfg)
     }
 
     // Initialize height map
-    // When tile cache is available, LOD3 tiles are already uploaded to GPU,
-    // so the shader uses them directly. The global heightmap is just a placeholder.
+    // When tile cache is available, LOD3 tiles provide full coverage - global heightmap
+    // is just a minimal placeholder to satisfy shader binding requirements.
     TerrainHeightMap::InitInfo heightMapInfo{};
     heightMapInfo.device = device;
     heightMapInfo.allocator = allocator;
     heightMapInfo.graphicsQueue = graphicsQueue;
     heightMapInfo.commandPool = commandPool;
-    heightMapInfo.resolution = 512;
     heightMapInfo.terrainSize = config.size;
     heightMapInfo.heightScale = config.heightScale;
     heightMapInfo.minAltitude = config.minAltitude;
     heightMapInfo.maxAltitude = config.maxAltitude;
 
-    if (!hasTileCache) {
+    if (hasTileCache) {
+        // Tile cache provides full coverage - use minimal placeholder (4x4)
+        heightMapInfo.resolution = 4;
+    } else {
         // No tile cache - load from file for both physics and rendering
+        heightMapInfo.resolution = 512;
         heightMapInfo.heightmapPath = config.heightmapPath;
     }
-    // else: tile cache provides full coverage via LOD3 tiles uploaded to GPU
 
     heightMap = TerrainHeightMap::create(heightMapInfo);
     if (!heightMap) return false;

@@ -124,6 +124,14 @@ void TreeSystem::cleanup() {
     allLeafInstancesLOD1_.clear();
     leafDrawInfoPerTreeLOD1_.clear();
 
+    // Merged leaf instance SSBO (LOD0 + LOD1)
+    if (mergedLeafInstanceBuffer_ != VK_NULL_HANDLE) {
+        vmaDestroyBuffer(storedAllocator_, mergedLeafInstanceBuffer_, mergedLeafInstanceAllocation_);
+        mergedLeafInstanceBuffer_ = VK_NULL_HANDLE;
+        mergedLeafInstanceAllocation_ = VK_NULL_HANDLE;
+        mergedLeafInstanceBufferSize_ = 0;
+    }
+
     branchRenderables_.clear();
     leafRenderables_.clear();
     treeInstances_.clear();
@@ -655,6 +663,58 @@ bool TreeSystem::uploadLeafInstanceBufferLOD1() {
     return true;
 }
 
+bool TreeSystem::uploadMergedLeafInstanceBuffer() {
+    // Destroy old buffer if it exists
+    if (mergedLeafInstanceBuffer_ != VK_NULL_HANDLE) {
+        vmaDestroyBuffer(storedAllocator_, mergedLeafInstanceBuffer_, mergedLeafInstanceAllocation_);
+        mergedLeafInstanceBuffer_ = VK_NULL_HANDLE;
+        mergedLeafInstanceAllocation_ = VK_NULL_HANDLE;
+    }
+
+    // Calculate total size: [LOD0 leaves][LOD1 leaves]
+    size_t totalLeaves = allLeafInstances_.size() + allLeafInstancesLOD1_.size();
+    if (totalLeaves == 0) {
+        mergedLeafInstanceBufferSize_ = 0;
+        return true;
+    }
+
+    mergedLeafInstanceBufferSize_ = sizeof(LeafInstanceGPU) * totalLeaves;
+
+    VkBufferCreateInfo bufferInfo{};
+    bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+    bufferInfo.size = mergedLeafInstanceBufferSize_;
+    bufferInfo.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+    bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+    VmaAllocationCreateInfo allocInfo{};
+    allocInfo.usage = VMA_MEMORY_USAGE_AUTO;
+    allocInfo.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT;
+
+    VmaAllocationInfo allocationInfo{};
+    if (vmaCreateBuffer(storedAllocator_, &bufferInfo, &allocInfo,
+                        &mergedLeafInstanceBuffer_, &mergedLeafInstanceAllocation_, &allocationInfo) != VK_SUCCESS) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create merged leaf instance SSBO");
+        return false;
+    }
+
+    // Copy LOD0 leaves first
+    char* mappedPtr = static_cast<char*>(allocationInfo.pMappedData);
+    if (!allLeafInstances_.empty()) {
+        memcpy(mappedPtr, allLeafInstances_.data(), sizeof(LeafInstanceGPU) * allLeafInstances_.size());
+    }
+    // Copy LOD1 leaves after LOD0
+    if (!allLeafInstancesLOD1_.empty()) {
+        memcpy(mappedPtr + sizeof(LeafInstanceGPU) * allLeafInstances_.size(),
+               allLeafInstancesLOD1_.data(),
+               sizeof(LeafInstanceGPU) * allLeafInstancesLOD1_.size());
+    }
+
+    SDL_Log("TreeSystem: Uploaded merged leaf buffer (%zu LOD0 + %zu LOD1 = %zu total, %.2f MB)",
+            allLeafInstances_.size(), allLeafInstancesLOD1_.size(), totalLeaves,
+            static_cast<float>(mergedLeafInstanceBufferSize_) / (1024.0f * 1024.0f));
+    return true;
+}
+
 void TreeSystem::createSceneObjects() {
     branchRenderables_.clear();
     leafRenderables_.clear();
@@ -777,6 +837,9 @@ uint32_t TreeSystem::addTree(const glm::vec3& position, float rotation, float sc
     }
     if (!uploadLeafInstanceBufferLOD1()) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "TreeSystem: Failed to upload LOD1 leaf instance buffer");
+    }
+    if (!uploadMergedLeafInstanceBuffer()) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "TreeSystem: Failed to upload merged leaf instance buffer");
     }
 
     rebuildSceneObjects();
@@ -924,9 +987,10 @@ void TreeSystem::regenerateTree(uint32_t treeIndex) {
         }
     }
 
-    // Re-upload leaf instance buffers (LOD0 and LOD1)
+    // Re-upload leaf instance buffers (LOD0, LOD1, and merged)
     uploadLeafInstanceBuffer();
     uploadLeafInstanceBufferLOD1();
+    uploadMergedLeafInstanceBuffer();
 
     rebuildSceneObjects();
 }

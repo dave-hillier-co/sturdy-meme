@@ -149,6 +149,11 @@ public:
     VkBuffer getLeafInstanceBufferLOD1() const { return leafInstanceBufferLOD1_; }
     VkDeviceSize getLeafInstanceBufferSizeLOD1() const { return leafInstanceBufferSizeLOD1_; }
 
+    // Get merged leaf buffer (LOD0 + LOD1 concatenated) for GPU culling
+    VkBuffer getMergedLeafInstanceBuffer() const { return mergedLeafInstanceBuffer_; }
+    VkDeviceSize getMergedLeafInstanceBufferSize() const { return mergedLeafInstanceBufferSize_; }
+    uint32_t getLOD0LeafCount() const { return static_cast<uint32_t>(allLeafInstances_.size()); }
+
     // Get full tree bounds (branches + leaves) for accurate imposter sizing
     const AABB& getFullTreeBounds(uint32_t meshIndex) const { return fullTreeBounds_[meshIndex]; }
 
@@ -165,6 +170,7 @@ private:
     bool createSharedLeafQuadMesh();
     bool uploadLeafInstanceBuffer();
     bool uploadLeafInstanceBufferLOD1();
+    bool uploadMergedLeafInstanceBuffer();
     void createSceneObjects();
     void rebuildSceneObjects();
 
@@ -212,6 +218,11 @@ private:
     VkBuffer leafInstanceBufferLOD1_ = VK_NULL_HANDLE;     // LOD1
     VmaAllocation leafInstanceAllocationLOD1_ = VK_NULL_HANDLE;
     VkDeviceSize leafInstanceBufferSizeLOD1_ = 0;
+
+    // Merged leaf instance buffer (LOD0 + LOD1 concatenated) for GPU culling
+    VkBuffer mergedLeafInstanceBuffer_ = VK_NULL_HANDLE;
+    VmaAllocation mergedLeafInstanceAllocation_ = VK_NULL_HANDLE;
+    VkDeviceSize mergedLeafInstanceBufferSize_ = 0;
 
     // Raw mesh data (stored for collision generation)
     std::vector<TreeMeshData> treeMeshData_;

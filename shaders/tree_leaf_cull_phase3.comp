@@ -107,24 +107,9 @@ void main() {
     uint localIdx = gl_LocalInvocationID.x;     // Leaf index within this tree
     uint visibleTreeIdx = gl_WorkGroupID.x;     // Which visible tree we're processing
 
-    // First thread in first workgroup initializes indirect commands
-    if (gl_GlobalInvocationID.x == 0) {
-        for (uint i = 0; i < NUM_LEAF_TYPES; i++) {
-            drawCmds[i].indexCount = 6;
-            drawCmds[i].instanceCount = 0;
-            drawCmds[i].firstIndex = 0;
-            drawCmds[i].vertexOffset = 0;
-            drawCmds[i].firstInstance = i * maxLeavesPerType;
-        }
-        // Initialize tier counts
-        for (uint i = 0; i < NUM_LEAF_TYPES * NUM_DISTANCE_TIERS; i++) {
-            tierCounts[i] = 0;
-        }
-    }
-
-    // Ensure initialization is complete
-    barrier();
-    memoryBarrierBuffer();
+    // NOTE: Indirect command and tierCounts initialization is done on CPU side via vkCmdUpdateBuffer
+    // BEFORE dispatch. Shader-side init with barrier() only syncs within a workgroup,
+    // causing race conditions when multiple workgroups run in parallel.
 
     // Early exit if beyond visible tree count
     if (visibleTreeIdx >= visibleTreeCount) {

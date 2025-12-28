@@ -50,20 +50,9 @@ layout(binding = BINDING_TREE_LEAF_CULL_UNIFORMS) uniform TreeLeafCullUniforms {
 void main() {
     uint globalIdx = gl_GlobalInvocationID.x;
 
-    // First thread initializes all indirect commands
-    if (globalIdx == 0) {
-        for (uint i = 0; i < NUM_LEAF_TYPES; i++) {
-            drawCmds[i].indexCount = 6;
-            drawCmds[i].instanceCount = 0;
-            drawCmds[i].firstIndex = 0;
-            drawCmds[i].vertexOffset = 0;
-            drawCmds[i].firstInstance = i * maxLeavesPerType;
-        }
-    }
-
-    // Ensure initialization is complete before any thread proceeds
-    barrier();
-    memoryBarrierBuffer();
+    // NOTE: Indirect command initialization is done on CPU side via vkCmdUpdateBuffer
+    // BEFORE dispatch. Shader-side init with barrier() only syncs within a workgroup,
+    // causing race conditions when multiple workgroups run in parallel.
 
     // Early exit if beyond total leaf count
     if (globalIdx >= totalLeafInstances) {

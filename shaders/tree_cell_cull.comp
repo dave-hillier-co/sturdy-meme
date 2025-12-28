@@ -115,27 +115,17 @@ void main() {
     uint cellIdx = gl_GlobalInvocationID.x;
     uint localIdx = gl_LocalInvocationID.x;
 
-    // First thread initializes output buffers
-    if (cellIdx == 0) {
-        visibleCellCount = 0;
-        dispatchX = 0;
-        dispatchY = 1;
-        dispatchZ = 1;
-        totalVisibleTrees = 0;
-        for (uint i = 0; i < NUM_DISTANCE_BUCKETS; i++) {
-            bucketCounts[i] = 0;
-            bucketOffsets[i] = 0;
-        }
-    }
+    // NOTE: Output buffer initialization is done on CPU side via vkCmdFillBuffer/vkCmdUpdateBuffer
+    // BEFORE dispatch. Shader-side init with barrier() only syncs within a workgroup, causing
+    // race conditions when multiple workgroups run in parallel.
 
-    // Initialize shared memory
+    // Initialize shared memory for this workgroup
     if (localIdx < NUM_DISTANCE_BUCKETS) {
         sharedBucketCounts[localIdx] = 0;
     }
 
-    // Ensure initialization is complete before any thread proceeds
+    // Sync shared memory within workgroup
     barrier();
-    memoryBarrierBuffer();
 
     // Early exit if beyond cell count
     if (cellIdx >= numCells) {

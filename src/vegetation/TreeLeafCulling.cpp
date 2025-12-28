@@ -676,18 +676,27 @@ void TreeLeafCulling::recordCulling(VkCommandBuffer cmd, uint32_t frameIndex,
     }
 
     // Reset all 4 indirect draw commands (one per leaf type: oak, ash, aspen, pine)
+    // Also includes tierCounts for phase 3 distance-based budget allocation
     constexpr uint32_t NUM_LEAF_TYPES = 4;
-    VkDrawIndexedIndirectCommand resetCmds[NUM_LEAF_TYPES];
+    constexpr uint32_t NUM_DISTANCE_TIERS = 3;
+
+    // Structure matches shader's IndirectBuffer: drawCmds[4] followed by tierCounts[12]
+    struct {
+        VkDrawIndexedIndirectCommand drawCmds[NUM_LEAF_TYPES];
+        uint32_t tierCounts[NUM_LEAF_TYPES * NUM_DISTANCE_TIERS];
+    } indirectReset = {};
+
     for (uint32_t i = 0; i < NUM_LEAF_TYPES; ++i) {
-        resetCmds[i].indexCount = 6;       // Quad: 6 indices
-        resetCmds[i].instanceCount = 0;    // Will be set by compute shader
-        resetCmds[i].firstIndex = 0;
-        resetCmds[i].vertexOffset = 0;
-        resetCmds[i].firstInstance = i * maxLeavesPerType_;  // Base offset for each leaf type
+        indirectReset.drawCmds[i].indexCount = 6;       // Quad: 6 indices
+        indirectReset.drawCmds[i].instanceCount = 0;    // Will be set by compute shader
+        indirectReset.drawCmds[i].firstIndex = 0;
+        indirectReset.drawCmds[i].vertexOffset = 0;
+        indirectReset.drawCmds[i].firstInstance = i * maxLeavesPerType_;  // Base offset for each leaf type
     }
+    // tierCounts is already zero-initialized
 
     vkCmdUpdateBuffer(cmd, cullIndirectBuffers_[currentBufferSet_],
-                      0, sizeof(resetCmds), resetCmds);
+                      0, sizeof(indirectReset), &indirectReset);
 
     // Upload per-tree data
     vkCmdUpdateBuffer(cmd, treeDataBuffer_, 0,
@@ -742,6 +751,31 @@ void TreeLeafCulling::recordCulling(VkCommandBuffer cmd, uint32_t frameIndex,
         // Check if two-phase culling will be used so we can batch uniform updates
         bool useTwoPhase = twoPhaseEnabled_ && treeFilterPipeline_.get() != VK_NULL_HANDLE &&
                            visibleTreeBuffer_ != VK_NULL_HANDLE && !treeFilterDescriptorSets_.empty();
+
+        // Reset cell cull output buffers on CPU side BEFORE dispatch
+        // This is critical - shader-side initialization with barrier() only works within
+        // a workgroup, not across workgroups. Other workgroups may atomicAdd before
+        // workgroup 0 resets the counters, causing race conditions and flickering.
+
+        // Reset visible cell buffer: first uint is visibleCellCount
+        vkCmdFillBuffer(cmd, visibleCellBuffer_, 0, sizeof(uint32_t), 0);
+
+        // Reset cell cull indirect buffer: dispatchX/Y/Z, totalVisibleTrees, bucketCounts[8], bucketOffsets[8]
+        // Structure: { dispatchX=0, dispatchY=1, dispatchZ=1, totalVisibleTrees=0, bucketCounts[8]=0, bucketOffsets[8]=0 }
+        constexpr uint32_t NUM_DISTANCE_BUCKETS = 8;
+        uint32_t indirectReset[4 + NUM_DISTANCE_BUCKETS * 2] = {0, 1, 1, 0}; // dispatchX=0, Y=1, Z=1, totalTrees=0
+        // bucketCounts and bucketOffsets are already 0-initialized
+        vkCmdUpdateBuffer(cmd, cellCullIndirectBuffer_, 0, sizeof(indirectReset), indirectReset);
+
+        // If two-phase culling, also reset visible tree buffer and leaf cull indirect dispatch
+        if (useTwoPhase) {
+            // Reset visible tree buffer: first uint is visibleTreeCount
+            vkCmdFillBuffer(cmd, visibleTreeBuffer_, 0, sizeof(uint32_t), 0);
+
+            // Reset leaf cull indirect dispatch: { dispatchX=0, dispatchY=1, dispatchZ=1 }
+            uint32_t leafDispatchReset[3] = {0, 1, 1};
+            vkCmdUpdateBuffer(cmd, leafCullIndirectDispatch_, 0, sizeof(leafDispatchReset), leafDispatchReset);
+        }
 
         // Use vkCmdUpdateBuffer to avoid HOST→COMPUTE stall (keeps update on GPU timeline)
         vkCmdUpdateBuffer(cmd, cellCullUniformBuffers_.buffers[frameIndex], 0,

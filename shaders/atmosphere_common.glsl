@@ -212,15 +212,6 @@ ScatteringResult integrateAtmosphere(vec3 origin, vec3 dir, float maxDistance, i
     float start = max(atmo.x, 0.0);
     float end = min(atmo.y, maxDistance);
 
-    if (end <= 0.0) {
-        return ScatteringResult(vec3(0.0), vec3(1.0));
-    }
-
-    vec2 planet = raySphereIntersect(origin, dir, PLANET_RADIUS);
-    if (planet.x > 0.0) {
-        end = min(end, planet.x);
-    }
-
     if (end <= start) {
         return ScatteringResult(vec3(0.0), vec3(1.0));
     }
@@ -313,12 +304,6 @@ float integrateExponentialFog(vec3 startPos, vec3 endPos) {
 
     float deltaH = h1 - h0;
 
-    // For nearly horizontal rays, use simple density * distance
-    if (abs(deltaH) < 0.01) {
-        float avgHeight = (h0 + h1) * 0.5;
-        return getHeightFogDensity(avgHeight) * distance;
-    }
-
     // Extract fog params from UBO
     float fogBaseHeight = ubo.heightFogParams.x;
     float fogScaleHeight = max(ubo.heightFogParams.y, 1.0);  // Prevent division by zero
@@ -331,10 +316,22 @@ float integrateExponentialFog(vec3 startPos, vec3 endPos) {
     float exp0 = clamp(-((h0 - fogBaseHeight)) * invScaleHeight, -40.0, 40.0);
     float exp1 = clamp(-((h1 - fogBaseHeight)) * invScaleHeight, -40.0, 40.0);
 
-    // Exponential fog component
-    float expIntegral = fogDensity * fogScaleHeight *
-        abs(exp(exp0) - exp(exp1)) /
-        max(abs(deltaH / distance), 0.001);
+    // Exponential fog component - use numerically stable formulation
+    // For near-horizontal rays (small deltaH), use average density * distance
+    // For non-horizontal rays, use analytical integration
+    // Smoothly blend to avoid discontinuity
+    float avgExpDensity = (exp(exp0) + exp(exp1)) * 0.5 * fogDensity;
+    float simpleIntegral = avgExpDensity * distance;
+
+    // Analytical integral (valid when deltaH is not too small)
+    float sinTheta = deltaH / distance;
+    float analyticalIntegral = fogDensity * fogScaleHeight *
+        abs(exp(exp0) - exp(exp1)) / max(abs(sinTheta), 0.0001);
+
+    // Smooth blend based on how horizontal the ray is
+    // Use simple method for near-horizontal, analytical for steeper rays
+    float blendFactor = smoothstep(0.0, 0.02, abs(sinTheta));
+    float expIntegral = mix(simpleIntegral, analyticalIntegral, blendFactor);
 
     // Sigmoidal component (approximate with average)
     float avgSigmoidal = (sigmoidalLayerDensity(h0) + sigmoidalLayerDensity(h1)) * 0.5;
@@ -392,11 +389,6 @@ vec3 applyAerialPerspective(vec3 color, vec3 cameraPos, vec3 viewDir, float view
     // Place camera at correct altitude in atmosphere coordinate system
     vec3 origin = vec3(0.0, PLANET_RADIUS + cameraAltitudeKm, 0.0);
 
-    // Compute horizon blend to smooth transition at horizon
-    // viewDir.y near 0 means looking at horizon - blend more smoothly there
-    float horizonFactor = abs(viewDir.y);
-    float horizonBlend = smoothstep(0.0, 0.05, horizonFactor);
-
     // Integrate atmospheric scattering (km scale)
     ScatteringResult result = integrateAtmosphere(origin, normalize(viewDir), viewDistanceKm, 8, sunDir);
 
@@ -405,17 +397,12 @@ vec3 applyAerialPerspective(vec3 color, vec3 cameraPos, vec3 viewDir, float view
     float night = 1.0 - smoothstep(-0.05, 0.08, sunDir.y);
     scatterLight += night * vec3(0.01, 0.015, 0.03) * (1.0 - result.transmittance);
 
-    // Apply horizon smoothing to transmittance to avoid hard line
-    // Near horizon, reduce the atmospheric effect to match the sky shader's horizon handling
-    vec3 smoothTransmittance = mix(vec3(1.0), result.transmittance, horizonBlend);
-    vec3 smoothScatterLight = scatterLight * horizonBlend;
-
     // Combine: atmospheric scattering adds to fogged scene
     // Scale for large world: gradual ramp over long distances (reaches 0.5 at ~5000 units)
     float atmoBlend = clamp(viewDistance * 0.0001, 0.0, 0.7);
     // Smooth the blend curve for more natural transition
     atmoBlend = atmoBlend * atmoBlend * (3.0 - 2.0 * atmoBlend);  // Smoothstep-like
-    vec3 finalColor = mix(fogged, fogged * smoothTransmittance + smoothScatterLight, atmoBlend);
+    vec3 finalColor = mix(fogged, fogged * result.transmittance + scatterLight, atmoBlend);
 
     return finalColor;
 }

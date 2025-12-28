@@ -75,17 +75,38 @@ cmd.draw(3, 1, 0, 0);
 
 ---
 
-## Phase 2: Core Infrastructure Migration
+## Phase 2: Deprecate Core Infrastructure Files
 
-### 2.1 VulkanBarriers.h (160 usages)
-- Convert VkImageMemoryBarrier → vk::ImageMemoryBarrier
-- Convert VkBufferMemoryBarrier → vk::BufferMemoryBarrier
-- Convert VkMemoryBarrier → vk::MemoryBarrier
-- Convert vkCmdPipelineBarrier → cmd.pipelineBarrier()
+### 2.1 VulkanBarriers.h (160 usages) - DEPRECATE
 
-### 2.2 VulkanResourceFactory.cpp (94 usages)
-- Convert all resource creation to vulkan-hpp builder pattern
-- Update VmaCreateBuffer/VmaCreateImage calls with reinterpret_cast
+This file provides barrier convenience functions that vulkan-hpp handles natively:
+
+| Current | vulkan-hpp Replacement |
+|---------|------------------------|
+| `Barriers::computeToCompute(cmd)` | `cmd.pipelineBarrier(...)` with `vk::MemoryBarrier{}` |
+| `Barriers::transitionImage(...)` | `cmd.pipelineBarrier(...)` with `vk::ImageMemoryBarrier{}` |
+| `TrackedImage` | Inline layout tracking + vulkan-hpp barriers |
+| `BarrierBatch` | `cmd.pipelineBarrier()` with `std::vector<vk::ImageMemoryBarrier>` |
+| `ImageBarrier` | `vk::ImageMemoryBarrier{}` builder pattern |
+| `ScopedComputeBarrier` | RAII pattern at call sites if needed |
+
+**Migration approach**: Replace all Barriers:: calls at their call sites with direct vulkan-hpp barrier calls, then delete VulkanBarriers.h.
+
+### 2.2 VulkanResourceFactory.cpp (94 usages) - DEPRECATE
+
+This factory wraps vulkan-hpp with reinterpret_cast - unnecessary indirection:
+
+| Current | vulkan-hpp Replacement |
+|---------|------------------------|
+| `createCommandPool(device, ...)` | `vk::raii::CommandPool(device, createInfo)` |
+| `createSyncResources(...)` | `vk::raii::Semaphore`, `vk::raii::Fence` directly |
+| `createDepthResources(...)` | VMA + `vk::raii::ImageView` at call site |
+| `createFramebuffers(...)` | `vk::raii::Framebuffer` at call site |
+| `createRenderPass(...)` | `vk::raii::RenderPass` at call site |
+| `createStagingBuffer(...)` | `ManagedBuffer::create()` directly (keep VMA wrapper) |
+| `createSampler*(...)` | `vk::raii::Sampler` directly |
+
+**Migration approach**: Inline factory calls at their call sites using vk::raii constructors, then delete VulkanResourceFactory.cpp/.h.
 
 ---
 

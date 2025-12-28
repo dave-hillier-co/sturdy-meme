@@ -274,28 +274,16 @@ void TerrainTileCache::updateActiveTiles(const glm::vec3& cameraPos, float loadR
     float camX = cameraPos.x;
     float camZ = cameraPos.z;
 
-    // For each LOD level, determine which tiles should be loaded
-    for (uint32_t lod = 0; lod < numLODLevels; lod++) {
-        float lodMinDist = (lod == 0) ? 0.0f :
-                          (lod == 1) ? LOD0_MAX_DISTANCE :
-                          (lod == 2) ? LOD1_MAX_DISTANCE :
-                          LOD2_MAX_DISTANCE;
-        float lodMaxDist = (lod == 0) ? LOD0_MAX_DISTANCE :
-                          (lod == 1) ? LOD1_MAX_DISTANCE :
-                          (lod == 2) ? LOD2_MAX_DISTANCE :
-                          LOD3_MAX_DISTANCE;
-
-        // Skip this LOD if camera is outside its range
-        // (we still need tiles for areas within our loadRadius though)
+    // Process LODs from coarsest to finest - only request finer LODs when coarse coverage exists
+    // This ensures LOD3 loads first, then LOD2, etc.
+    for (int lodInt = static_cast<int>(numLODLevels) - 1; lodInt >= 0; lodInt--) {
+        uint32_t lod = static_cast<uint32_t>(lodInt);
 
         // Calculate tile size at this LOD
         uint32_t lodTilesX = tilesX >> lod;
         uint32_t lodTilesZ = tilesZ >> lod;
         if (lodTilesX < 1) lodTilesX = 1;
         if (lodTilesZ < 1) lodTilesZ = 1;
-
-        float tileWorldSizeX = terrainSize / lodTilesX;
-        float tileWorldSizeZ = terrainSize / lodTilesZ;
 
         // Calculate tile range to check around camera
         int32_t minTileX = static_cast<int32_t>(((camX - loadRadius) / terrainSize + 0.5f) * lodTilesX);
@@ -318,19 +306,36 @@ void TerrainTileCache::updateActiveTiles(const glm::vec3& cameraPos, float loadR
                 float dist = std::sqrt((tileCenterX - camX) * (tileCenterX - camX) +
                                        (tileCenterZ - camZ) * (tileCenterZ - camZ));
 
-                // Check if this tile should be at this LOD level
+                // Check if this tile should be at this LOD level based on distance
                 uint32_t idealLOD = getLODForDistance(dist);
-                if (idealLOD == lod && dist < loadRadius) {
-                    TileCoord coord{tx, tz};
-                    if (!isTileLoaded(coord, lod)) {
-                        tilesToLoad.push_back({coord, lod});
+                if (idealLOD != lod || dist >= loadRadius) {
+                    continue;
+                }
+
+                TileCoord coord{tx, tz};
+
+                // Skip if already GPU-loaded
+                if (isTileLoaded(coord, lod)) {
+                    continue;
+                }
+
+                // For non-coarsest LODs, only request if coarser LOD is already GPU-loaded
+                // This ensures progressive loading from LOD3 → LOD2 → LOD1 → LOD0
+                if (lod < numLODLevels - 1) {
+                    uint32_t coarserLOD = lod + 1;
+                    TileCoord coarserCoord = worldToTileCoord(tileCenterX, tileCenterZ, coarserLOD);
+                    if (!isTileLoaded(coarserCoord, coarserLOD)) {
+                        // Coarser LOD not ready yet, skip this finer tile
+                        continue;
                     }
                 }
+
+                tilesToLoad.push_back({coord, lod});
             }
         }
     }
 
-    // Find tiles to unload (too far from camera OR superseded by higher-detail LOD)
+    // Find tiles to unload (too far from camera)
     for (auto& [key, tile] : loadedTiles) {
         float tileCenterX = (tile.worldMinX + tile.worldMaxX) * 0.5f;
         float tileCenterZ = (tile.worldMinZ + tile.worldMaxZ) * 0.5f;
@@ -338,16 +343,9 @@ void TerrainTileCache::updateActiveTiles(const glm::vec3& cameraPos, float loadR
         float dist = std::sqrt((tileCenterX - camX) * (tileCenterX - camX) +
                                (tileCenterZ - camZ) * (tileCenterZ - camZ));
 
-        // Unload if too far OR if a higher-detail tile now covers this area
+        // Only unload if too far - keep coarse LODs as fallback
         if (dist > unloadRadius) {
             tilesToUnload.push_back(key);
-        } else if (tile.lod > 0) {
-            // Check if a higher-detail tile exists for this area
-            uint32_t higherLOD = tile.lod - 1;
-            TileCoord higherCoord = worldToTileCoord(tileCenterX, tileCenterZ, higherLOD);
-            if (isTileLoaded(higherCoord, higherLOD)) {
-                tilesToUnload.push_back(key);
-            }
         }
     }
 
@@ -367,10 +365,9 @@ void TerrainTileCache::updateActiveTiles(const glm::vec3& cameraPos, float loadR
     }
 
     // Sort tiles by LOD: higher LOD values (coarser detail) load FIRST
-    // This ensures LOD3 (coarsest) always loads before LOD0 (finest)
     std::sort(tilesToLoad.begin(), tilesToLoad.end(),
               [](const auto& a, const auto& b) {
-                  return a.second > b.second;  // Higher LOD = higher priority
+                  return a.second > b.second;
               });
 
     // Load new tiles (limit per frame to avoid stalls)
@@ -390,7 +387,7 @@ void TerrainTileCache::updateActiveTiles(const glm::vec3& cameraPos, float loadR
     stats_.pendingLoads = static_cast<uint32_t>(tilesToLoad.size()) - tilesLoadedThisFrame;
     stats_.tilesLoadedThisFrame = tilesLoadedThisFrame;
 
-    // Update active tiles list
+    // Update active tiles list (GPU-loaded tiles only)
     activeTiles.clear();
     for (auto& [key, tile] : loadedTiles) {
         if (tile.loaded) {

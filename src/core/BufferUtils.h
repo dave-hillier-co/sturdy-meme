@@ -58,7 +58,7 @@ namespace BufferUtils {
 class FrameIndexedBuffers {
 public:
     FrameIndexedBuffers() = default;
-    ~FrameIndexedBuffers() = default;
+    ~FrameIndexedBuffers() { destroy(); }
 
     // Non-copyable (contains Vulkan resources)
     FrameIndexedBuffers(const FrameIndexedBuffers&) = delete;

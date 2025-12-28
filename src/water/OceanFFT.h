@@ -199,8 +199,7 @@ private:
 
     void recordSpectrumGeneration(VkCommandBuffer cmd, Cascade& cascade, uint32_t seed);
     void recordTimeEvolution(VkCommandBuffer cmd, Cascade& cascade, float time);
-    void recordFFT(VkCommandBuffer cmd, Cascade& cascade, VkImage input, VkImageView inputView,
-                   VkImage output, VkImageView outputView);
+    void recordFFT(VkCommandBuffer cmd, Cascade& cascade, VkImage inOutImage, VkImageView inOutView);
     void recordDisplacementGeneration(VkCommandBuffer cmd, Cascade& cascade);
 
     // Device resources

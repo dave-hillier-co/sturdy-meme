@@ -38,6 +38,13 @@ void main() {
 
     if (coord.x >= resolution || coord.y >= resolution) return;
 
+    // Handle copy pass (stage == -1): just copy input to output
+    if (stage < 0) {
+        vec2 value = imageLoad(inputBuffer, coord).xy;
+        imageStore(outputBuffer, coord, vec4(value, 0.0, 0.0));
+        return;
+    }
+
     // Determine which dimension we're working on
     int index = (direction == 0) ? coord.x : coord.y;
 

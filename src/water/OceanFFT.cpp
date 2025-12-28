@@ -717,15 +717,14 @@ void OceanFFT::update(VkCommandBuffer cmd, uint32_t frameIndex, float time) {
         // Insert barrier between time evolution and FFT
         Barriers::computeToCompute(cmd);
 
-        // FFT for each displacement component
-        recordFFT(cmd, cascade, cascade.hktDy.get(), cascade.hktDyView.get(),
-                  cascade.fftPing.get(), cascade.fftPingView.get());
-        recordFFT(cmd, cascade, cascade.hktDx.get(), cascade.hktDxView.get(),
-                  cascade.fftPong.get(), cascade.fftPongView.get());
-        recordFFT(cmd, cascade, cascade.hktDz.get(), cascade.hktDzView.get(),
-                  cascade.fftPing.get(), cascade.fftPingView.get());
+        // FFT for each displacement component - result written back to hkt* textures
+        recordFFT(cmd, cascade, cascade.hktDy.get(), cascade.hktDyView.get());
+        Barriers::computeToCompute(cmd);
 
-        // Barrier before displacement generation
+        recordFFT(cmd, cascade, cascade.hktDx.get(), cascade.hktDxView.get());
+        Barriers::computeToCompute(cmd);
+
+        recordFFT(cmd, cascade, cascade.hktDz.get(), cascade.hktDzView.get());
         Barriers::computeToCompute(cmd);
 
         // Generate final displacement/normal/foam maps
@@ -828,11 +827,9 @@ void OceanFFT::recordTimeEvolution(VkCommandBuffer cmd, Cascade& cascade, float 
 }
 
 void OceanFFT::recordFFT(VkCommandBuffer cmd, Cascade& cascade,
-                         VkImage input, VkImageView inputView,
-                         VkImage output, VkImageView outputView) {
-    // Simplified FFT using ping-pong between input and ping/pong buffers
-    // For a proper implementation, we'd need to do horizontal then vertical FFT
-    // Each direction requires log2(N) butterfly passes
+                         VkImage inOutImage, VkImageView inOutView) {
+    // In-place FFT using ping-pong buffers internally
+    // Result is written back to inOutImage at the end
 
     int cascadeIndex = static_cast<int>(&cascade - &cascades[0]);
     int numStages = static_cast<int>(std::log2(params.resolution));
@@ -842,9 +839,9 @@ void OceanFFT::recordFFT(VkCommandBuffer cmd, Cascade& cascade,
     // Use pre-allocated FFT descriptor set for this cascade
     VkDescriptorSet fftDescSet = fftDescSets[cascadeIndex];
 
-    // Track which buffer has current data
-    VkImage currentInput = input;
-    VkImageView currentInputView = inputView;
+    // Track which buffer has current data - start with input, ping-pong through temp buffers
+    VkImage currentInput = inOutImage;
+    VkImageView currentInputView = inOutView;
     VkImage currentOutput = cascade.fftPing.get();
     VkImageView currentOutputView = cascade.fftPingView.get();
 
@@ -919,6 +916,26 @@ void OceanFFT::recordFFT(VkCommandBuffer cmd, Cascade& cascade,
             currentOutputView = cascade.fftPingView.get();
         }
     }
+
+    // Copy result back to original buffer if needed
+    // After all passes, currentInput holds the final result
+    if (currentInput != inOutImage) {
+        // Need to copy from temp buffer back to original
+        DescriptorManager::SetWriter(device, fftDescSet)
+            .writeStorageImage(Bindings::OCEAN_FFT_INPUT, currentInputView)
+            .writeStorageImage(Bindings::OCEAN_FFT_OUTPUT, inOutView)
+            .update();
+
+        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, fftPipelineLayout.get(),
+                                0, 1, &fftDescSet, 0, nullptr);
+
+        // Use stage=-1 to signal a simple copy pass (shader should handle this)
+        OceanFFTPushConstants pushData = {-1, 0, params.resolution, 0};
+        vkCmdPushConstants(cmd, fftPipelineLayout.get(), VK_SHADER_STAGE_COMPUTE_BIT,
+                           0, sizeof(pushData), &pushData);
+
+        vkCmdDispatch(cmd, groupCount, groupCount, 1);
+    }
 }
 
 void OceanFFT::recordDisplacementGeneration(VkCommandBuffer cmd, Cascade& cascade) {
@@ -934,11 +951,11 @@ void OceanFFT::recordDisplacementGeneration(VkCommandBuffer cmd, Cascade& cascad
                          0, VK_ACCESS_SHADER_WRITE_BIT)
         .submit();
 
-    // Update displacement descriptor set with current FFT results
+    // Update displacement descriptor set with FFT results from hkt* textures
     DescriptorManager::SetWriter(device, displacementDescSets[cascadeIndex])
-        .writeStorageImage(Bindings::OCEAN_DISP_DY, cascade.fftPingView.get())
-        .writeStorageImage(Bindings::OCEAN_DISP_DX, cascade.fftPongView.get())
-        .writeStorageImage(Bindings::OCEAN_DISP_DZ, cascade.fftPingView.get())
+        .writeStorageImage(Bindings::OCEAN_DISP_DY, cascade.hktDyView.get())
+        .writeStorageImage(Bindings::OCEAN_DISP_DX, cascade.hktDxView.get())
+        .writeStorageImage(Bindings::OCEAN_DISP_DZ, cascade.hktDzView.get())
         .writeStorageImage(Bindings::OCEAN_DISP_OUTPUT, cascade.displacementMapView.get())
         .writeStorageImage(Bindings::OCEAN_NORMAL_OUTPUT, cascade.normalMapView.get())
         .writeStorageImage(Bindings::OCEAN_FOAM_OUTPUT, cascade.foamMapView.get())

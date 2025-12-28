@@ -22,21 +22,20 @@ std::optional<std::vector<char>> readFile(const std::string& filename) {
     return buffer;
 }
 
-std::optional<VkShaderModule> createShaderModule(VkDevice device, const std::vector<char>& code) {
-    VkShaderModuleCreateInfo createInfo{};
-    createInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
-    createInfo.codeSize = code.size();
-    createInfo.pCode = reinterpret_cast<const uint32_t*>(code.data());
+std::optional<vk::ShaderModule> createShaderModule(vk::Device device, const std::vector<char>& code) {
+    auto createInfo = vk::ShaderModuleCreateInfo{}
+        .setCodeSize(code.size())
+        .setPCode(reinterpret_cast<const uint32_t*>(code.data()));
 
-    VkShaderModule shaderModule;
-    if (vkCreateShaderModule(device, &createInfo, nullptr, &shaderModule) != VK_SUCCESS) {
+    try {
+        return device.createShaderModule(createInfo);
+    } catch (const vk::SystemError& e) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create shader module: %s", e.what());
         return std::nullopt;
     }
-
-    return shaderModule;
 }
 
-std::optional<VkShaderModule> loadShaderModule(VkDevice device, const std::string& path) {
+std::optional<vk::ShaderModule> loadShaderModule(vk::Device device, const std::string& path) {
     auto code = readFile(path);
     if (!code) {
         return std::nullopt;

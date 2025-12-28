@@ -405,29 +405,29 @@ bool Renderer::createDescriptorSetLayout() {
 }
 
 bool Renderer::createGraphicsPipeline() {
-    VkDevice device = vulkanContext_->getDevice();
+    vk::Device device(vulkanContext_->getDevice());
     VkExtent2D swapchainExtent = vulkanContext_->getSwapchainExtent();
 
     // Create pipeline layout (still needed - factory expects it to be provided)
-    VkPushConstantRange pushConstantRange{};
-    pushConstantRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
-    pushConstantRange.offset = 0;
-    pushConstantRange.size = sizeof(PushConstants);
+    auto pushConstantRange = vk::PushConstantRange{}
+        .setStageFlags(vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment)
+        .setOffset(0)
+        .setSize(sizeof(PushConstants));
 
-    VkDescriptorSetLayout rawDescSetLayout = descriptorSetLayout.get();
-    VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
-    pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-    pipelineLayoutInfo.setLayoutCount = 1;
-    pipelineLayoutInfo.pSetLayouts = &rawDescSetLayout;
-    pipelineLayoutInfo.pushConstantRangeCount = 1;
-    pipelineLayoutInfo.pPushConstantRanges = &pushConstantRange;
+    vk::DescriptorSetLayout descSetLayouts[] = {descriptorSetLayout.get()};
 
-    VkPipelineLayout rawPipelineLayout = VK_NULL_HANDLE;
-    if (vkCreatePipelineLayout(device, &pipelineLayoutInfo, nullptr, &rawPipelineLayout) != VK_SUCCESS) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create pipeline layout");
+    auto pipelineLayoutInfo = vk::PipelineLayoutCreateInfo{}
+        .setSetLayouts(descSetLayouts)
+        .setPushConstantRanges(pushConstantRange);
+
+    vk::PipelineLayout rawPipelineLayout;
+    try {
+        rawPipelineLayout = device.createPipelineLayout(pipelineLayoutInfo);
+    } catch (const vk::SystemError& e) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create pipeline layout: %s", e.what());
         return false;
     }
-    pipelineLayout = ManagedPipelineLayout::fromRaw(device, rawPipelineLayout);
+    pipelineLayout = ManagedPipelineLayout::fromRaw(vulkanContext_->getDevice(), rawPipelineLayout);
 
     // Use factory for pipeline creation
     auto bindingDescription = Vertex::getBindingDescription();
@@ -827,11 +827,9 @@ bool Renderer::render(const Camera& camera) {
     // Begin command buffer recording
     systems_->profiler().beginCpuZone("CmdBufferRecord");
 
-    vkResetCommandBuffer(commandBuffers[frame.frameIndex], 0);
-
-    VkCommandBufferBeginInfo beginInfo{};
-    beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-    vkBeginCommandBuffer(commandBuffers[frame.frameIndex], &beginInfo);
+    vk::CommandBuffer vkCmd(commandBuffers[frame.frameIndex]);
+    vkCmd.reset();
+    vkCmd.begin(vk::CommandBufferBeginInfo{});
 
     VkCommandBuffer cmd = commandBuffers[frame.frameIndex];
 
@@ -871,11 +869,10 @@ bool Renderer::render(const Camera& camera) {
         systems_->waterGBuffer().beginRenderPass(cmd);
 
         // Bind G-buffer pipeline and descriptor set
-        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, systems_->waterGBuffer().getPipeline());
-        VkDescriptorSet gbufferDescSet = systems_->waterGBuffer().getDescriptorSet(frame.frameIndex);
-        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                                systems_->waterGBuffer().getPipelineLayout(), 0, 1,
-                                &gbufferDescSet, 0, nullptr);
+        vkCmd.bindPipeline(vk::PipelineBindPoint::eGraphics, systems_->waterGBuffer().getPipeline());
+        vk::DescriptorSet gbufferDescSet = systems_->waterGBuffer().getDescriptorSet(frame.frameIndex);
+        vkCmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics,
+                                 systems_->waterGBuffer().getPipelineLayout(), 0, gbufferDescSet, {});
 
         // Draw water mesh
         systems_->water().recordMeshDraw(cmd);
@@ -943,65 +940,65 @@ bool Renderer::render(const Camera& camera) {
     // End GPU profiling frame
     systems_->profiler().endGpuFrame(cmd, frame.frameIndex);
 
-    vkEndCommandBuffer(cmd);
+    vkCmd.end();
 
     systems_->profiler().endCpuZone("CmdBufferRecord");
 
     // Queue submission
     systems_->profiler().beginCpuZone("QueueSubmit");
 
-    VkSubmitInfo submitInfo{};
-    submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+    vk::Semaphore waitSemaphores[] = {imageAvailableSemaphores[currentFrame].get()};
+    vk::PipelineStageFlags waitStages[] = {vk::PipelineStageFlagBits::eColorAttachmentOutput};
+    vk::Semaphore signalSemaphores[] = {renderFinishedSemaphores[currentFrame].get()};
 
-    VkSemaphore waitSemaphores[] = {imageAvailableSemaphores[currentFrame].get()};
-    VkPipelineStageFlags waitStages[] = {VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
-    submitInfo.waitSemaphoreCount = 1;
-    submitInfo.pWaitSemaphores = waitSemaphores;
-    submitInfo.pWaitDstStageMask = waitStages;
-    submitInfo.commandBufferCount = 1;
-    submitInfo.pCommandBuffers = &cmd;
+    auto submitInfo = vk::SubmitInfo{}
+        .setWaitSemaphores(waitSemaphores)
+        .setWaitDstStageMask(waitStages)
+        .setCommandBuffers(vkCmd)
+        .setSignalSemaphores(signalSemaphores);
 
-    VkSemaphore signalSemaphores[] = {renderFinishedSemaphores[currentFrame].get()};
-    submitInfo.signalSemaphoreCount = 1;
-    submitInfo.pSignalSemaphores = signalSemaphores;
-
-    result = vkQueueSubmit(graphicsQueue, 1, &submitInfo, inFlightFences[currentFrame].get());
-    systems_->profiler().endCpuZone("QueueSubmit");
-
-    if (result == VK_ERROR_DEVICE_LOST) {
+    try {
+        vk::Queue(graphicsQueue).submit(submitInfo, inFlightFences[currentFrame].get());
+    } catch (const vk::DeviceLostError&) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Device lost during queue submit");
+        systems_->profiler().endCpuZone("QueueSubmit");
         framebufferResized = true;
         return false;
-    } else if (result != VK_SUCCESS) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to submit draw command buffer: %d", result);
+    } catch (const vk::SystemError& e) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to submit draw command buffer: %s", e.what());
+        systems_->profiler().endCpuZone("QueueSubmit");
         return false;
     }
+    systems_->profiler().endCpuZone("QueueSubmit");
 
     // Present
     systems_->profiler().beginCpuZone("Wait:Present");
 
-    VkPresentInfoKHR presentInfo{};
-    presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
-    presentInfo.waitSemaphoreCount = 1;
-    presentInfo.pWaitSemaphores = signalSemaphores;
+    vk::SwapchainKHR swapChains[] = {swapchain};
 
-    VkSwapchainKHR swapChains[] = {swapchain};
-    presentInfo.swapchainCount = 1;
-    presentInfo.pSwapchains = swapChains;
-    presentInfo.pImageIndices = &imageIndex;
+    auto presentInfo = vk::PresentInfoKHR{}
+        .setWaitSemaphores(signalSemaphores)
+        .setSwapchains(swapChains)
+        .setImageIndices(imageIndex);
 
-    result = vkQueuePresentKHR(presentQueue, &presentInfo);
+    try {
+        result = vk::Queue(presentQueue).presentKHR(presentInfo);
+        if (result == vk::Result::eSuboptimalKHR) {
+            framebufferResized = true;
+        }
+    } catch (const vk::OutOfDateKHRError&) {
+        framebufferResized = true;
+    } catch (const vk::SurfaceLostKHRError&) {
+        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "Surface lost during present, will recover");
+        framebufferResized = true;
+    } catch (const vk::DeviceLostError&) {
+        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "Device lost during present, will recover");
+        framebufferResized = true;
+    } catch (const vk::SystemError& e) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to present swapchain image: %s", e.what());
+    }
 
     systems_->profiler().endCpuZone("Wait:Present");
-
-    if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR) {
-        framebufferResized = true;
-    } else if (result == VK_ERROR_SURFACE_LOST_KHR || result == VK_ERROR_DEVICE_LOST) {
-        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "Surface/device lost during present, will recover");
-        framebufferResized = true;
-    } else if (result != VK_SUCCESS) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to present swapchain image: %d", result);
-    }
 
     // Advance grass double-buffer sets after frame submission
     // This swaps compute/render buffer sets so next frame can overlap:
@@ -1325,6 +1322,8 @@ void Renderer::recordShadowPass(VkCommandBuffer cmd, uint32_t frameIndex, float 
 }
 
 void Renderer::recordSceneObjects(VkCommandBuffer cmd, uint32_t frameIndex) {
+    vk::CommandBuffer vkCmd(cmd);
+
     // Get MaterialRegistry for descriptor set lookup
     const auto& materialRegistry = systems_->scene().getSceneBuilder().getMaterialRegistry();
 
@@ -1340,19 +1339,20 @@ void Renderer::recordSceneObjects(VkCommandBuffer cmd, uint32_t frameIndex) {
         push.pbrFlags = obj.pbrFlags;
         push.alphaTestThreshold = obj.alphaTestThreshold;
 
-        vkCmdPushConstants(cmd, pipelineLayout.get(),
-                          VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
-                          0, sizeof(PushConstants), &push);
+        vkCmd.pushConstants<PushConstants>(
+            pipelineLayout.get(),
+            vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
+            0, push);
 
-        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                                pipelineLayout.get(), 0, 1, &descSet, 0, nullptr);
+        vkCmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics,
+                                 pipelineLayout.get(), 0, vk::DescriptorSet(descSet), {});
 
-        VkBuffer vertexBuffers[] = {obj.mesh->getVertexBuffer()};
-        VkDeviceSize offsets[] = {0};
-        vkCmdBindVertexBuffers(cmd, 0, 1, vertexBuffers, offsets);
-        vkCmdBindIndexBuffer(cmd, obj.mesh->getIndexBuffer(), 0, VK_INDEX_TYPE_UINT32);
+        vk::Buffer vertexBuffers[] = {obj.mesh->getVertexBuffer()};
+        vk::DeviceSize offsets[] = {0};
+        vkCmd.bindVertexBuffers(0, vertexBuffers, offsets);
+        vkCmd.bindIndexBuffer(obj.mesh->getIndexBuffer(), 0, vk::IndexType::eUint32);
 
-        vkCmdDrawIndexed(cmd, obj.mesh->getIndexCount(), 1, 0, 0, 0);
+        vkCmd.drawIndexed(obj.mesh->getIndexCount(), 1, 0, 0, 0);
     };
 
     // Render scene manager objects using MaterialRegistry for descriptor set lookup
@@ -1425,21 +1425,19 @@ void Renderer::recordSceneObjects(VkCommandBuffer cmd, uint32_t frameIndex) {
 }
 
 void Renderer::recordHDRPass(VkCommandBuffer cmd, uint32_t frameIndex, float grassTime) {
-    VkRenderPassBeginInfo hdrPassInfo{};
-    hdrPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-    hdrPassInfo.renderPass = systems_->postProcess().getHDRRenderPass();
-    hdrPassInfo.framebuffer = systems_->postProcess().getHDRFramebuffer();
-    hdrPassInfo.renderArea.offset = {0, 0};
-    hdrPassInfo.renderArea.extent = systems_->postProcess().getExtent();
+    vk::CommandBuffer vkCmd(cmd);
 
-    std::array<VkClearValue, 2> clearValues{};
-    clearValues[0].color = {{0.0f, 0.0f, 0.0f, 1.0f}};
-    clearValues[1].depthStencil = {1.0f, 0};
+    std::array<vk::ClearValue, 2> clearValues{};
+    clearValues[0].color = vk::ClearColorValue{std::array<float, 4>{0.0f, 0.0f, 0.0f, 1.0f}};
+    clearValues[1].depthStencil = vk::ClearDepthStencilValue{1.0f, 0};
 
-    hdrPassInfo.clearValueCount = static_cast<uint32_t>(clearValues.size());
-    hdrPassInfo.pClearValues = clearValues.data();
+    auto hdrPassInfo = vk::RenderPassBeginInfo{}
+        .setRenderPass(systems_->postProcess().getHDRRenderPass())
+        .setFramebuffer(systems_->postProcess().getHDRFramebuffer())
+        .setRenderArea(vk::Rect2D{{0, 0}, systems_->postProcess().getExtent()})
+        .setClearValues(clearValues);
 
-    vkCmdBeginRenderPass(cmd, &hdrPassInfo, VK_SUBPASS_CONTENTS_INLINE);
+    vkCmd.beginRenderPass(hdrPassInfo, vk::SubpassContents::eInline);
 
     // Draw sky (with atmosphere LUT bindings)
     systems_->profiler().beginGpuZone(cmd, "HDR:Sky");
@@ -1460,7 +1458,7 @@ void Renderer::recordHDRPass(VkCommandBuffer cmd, uint32_t frameIndex, float gra
 
     // Draw scene objects (static meshes)
     systems_->profiler().beginGpuZone(cmd, "HDR:SceneObjects");
-    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, graphicsPipeline.get());
+    vkCmd.bindPipeline(vk::PipelineBindPoint::eGraphics, graphicsPipeline.get());
     recordSceneObjects(cmd, frameIndex);
     systems_->profiler().endGpuZone(cmd, "HDR:SceneObjects");
 
@@ -1506,19 +1504,19 @@ void Renderer::recordHDRPass(VkCommandBuffer cmd, uint32_t frameIndex, float gra
 #ifdef JPH_DEBUG_RENDERER
     if (physicsDebugEnabled && systems_->debugLine().hasLines()) {
         // Set up viewport and scissor for debug rendering
-        VkViewport viewport{};
-        viewport.x = 0.0f;
-        viewport.y = 0.0f;
-        viewport.width = static_cast<float>(systems_->postProcess().getExtent().width);
-        viewport.height = static_cast<float>(systems_->postProcess().getExtent().height);
-        viewport.minDepth = 0.0f;
-        viewport.maxDepth = 1.0f;
-        vkCmdSetViewport(cmd, 0, 1, &viewport);
+        auto viewport = vk::Viewport{}
+            .setX(0.0f)
+            .setY(0.0f)
+            .setWidth(static_cast<float>(systems_->postProcess().getExtent().width))
+            .setHeight(static_cast<float>(systems_->postProcess().getExtent().height))
+            .setMinDepth(0.0f)
+            .setMaxDepth(1.0f);
+        vkCmd.setViewport(0, viewport);
 
-        VkRect2D scissor{};
-        scissor.offset = {0, 0};
-        scissor.extent = systems_->postProcess().getExtent();
-        vkCmdSetScissor(cmd, 0, 1, &scissor);
+        auto scissor = vk::Rect2D{}
+            .setOffset({0, 0})
+            .setExtent(systems_->postProcess().getExtent());
+        vkCmd.setScissor(0, scissor);
 
         // Need to get viewProj from the current frame data
         // For now, use the last known values (could be improved by passing as parameter)
@@ -1526,7 +1524,7 @@ void Renderer::recordHDRPass(VkCommandBuffer cmd, uint32_t frameIndex, float gra
     }
 #endif
 
-    vkCmdEndRenderPass(cmd);
+    vkCmd.endRenderPass();
 }
 
 // ===== GPU Skinning Implementation =====

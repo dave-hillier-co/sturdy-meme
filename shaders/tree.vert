@@ -7,6 +7,7 @@ const int NUM_CASCADES = 4;
 #include "bindings.glsl"
 #include "ubo_common.glsl"
 #include "noise_common.glsl"
+#include "wind_animation_common.glsl"
 
 // Vertex attributes (matching Mesh::getAttributeDescriptions)
 layout(location = 0) in vec3 inPosition;
@@ -48,74 +49,29 @@ void main() {
     float tangentW = inTangent.w;
     vec2 texCoord = inTexCoord;
 
-    // Extract wind parameters
-    vec2 windDir = wind.windDirectionAndStrength.xy;
-    float windStrength = wind.windDirectionAndStrength.z;
-    float windSpeed = wind.windDirectionAndStrength.w;
-    float gustFreq = wind.windParams.x;
-    float gustAmp = wind.windParams.y;
-    float windScale = wind.windParams.z;
-    float windTime = wind.windParams.w;
-
-    // === GPU Gems 3 Style Wind Animation ===
+    // Extract wind parameters using common function
+    WindParams windParams = windExtractParams(wind.windDirectionAndStrength, wind.windParams);
 
     // Get tree base position for noise sampling (use model matrix translation)
     vec3 treeBaseWorld = vec3(push.model[3][0], push.model[3][1], push.model[3][2]);
 
-    // Per-tree phase offset from noise (so trees don't sway in sync)
-    float treePhase = simplex3(treeBaseWorld * 0.1) * 6.28318;
+    // Calculate tree oscillation using GPU Gems 3 style animation
+    TreeWindOscillation osc = windCalculateTreeOscillation(treeBaseWorld, windParams);
 
-    // Wind direction in 3D (XZ plane)
-    vec3 windDir3D = vec3(windDir.x, 0.0, windDir.y);
-
-    // Perpendicular to wind direction (for secondary sway)
-    vec3 windPerp3D = vec3(-windDir.y, 0.0, windDir.x);
-
-    // === Main Bending (Trunk Sway) ===
-    // Multi-frequency oscillation for natural motion
-    float mainBendTime = windTime * gustFreq;
-    float mainBend =
-        0.5 * sin(mainBendTime + treePhase) +
-        0.3 * sin(mainBendTime * 2.1 + treePhase * 1.3) +
-        0.2 * sin(mainBendTime * 3.7 + treePhase * 0.7);
-
-    // Secondary perpendicular sway (figure-8 motion)
-    float perpBend =
-        0.3 * sin(mainBendTime * 1.3 + treePhase + 1.57) +
-        0.2 * sin(mainBendTime * 2.7 + treePhase * 0.9);
-
-    // === Wind Direction-Relative Branch Motion ===
-    // Branches facing into wind move less, back-facing move more
+    // Wind direction-relative motion (branches facing wind move less)
     vec3 branchDir = normalize(localTangent);
     vec3 branchDirWorld = normalize(mat3(push.model) * branchDir);
-    float windAlignment = dot(branchDirWorld, windDir3D);
-    // windAlignment: 1 = facing wind, -1 = back to wind
-    // Scale: back-facing (1.5x), perpendicular (1.0x), wind-facing (0.5x)
-    float directionScale = mix(1.5, 0.5, (windAlignment + 1.0) * 0.5);
+    float directionScale = windCalculateDirectionScale(branchDirWorld, osc.windDir3D);
 
-    // === Branch Flexibility ===
-    // Higher branch level = more flexible (tips bend more than trunk)
-    // branchLevel 0 = trunk (stiff), 3 = tips (flexible)
-    float flexibility = 0.02 + branchLevel * 0.025;  // 0.02 to 0.095
+    // Branch flexibility (tips bend more than trunk)
+    float flexibility = windCalculateBranchFlexibility(branchLevel);
 
-    // === Apply Bending ===
-    // Offset from pivot point (bend happens around pivot)
+    // Apply bending around pivot point
     vec3 offsetFromPivot = localPos - pivotPoint;
-    float heightAbovePivot = max(0.0, offsetFromPivot.y);
+    vec3 bendOffset = windCalculateBendOffset(osc, offsetFromPivot, flexibility, windParams.strength, directionScale);
 
-    // Bend amount increases with height above pivot and flexibility
-    float bendAmount = heightAbovePivot * flexibility * windStrength * directionScale;
-
-    // Apply main bend in wind direction + perpendicular sway
-    vec3 bendOffset = windDir3D * mainBend * bendAmount +
-                      windPerp3D * perpBend * bendAmount * 0.5;
-
-    // === High-Frequency Detail Motion for Tips ===
-    // Small rapid oscillations on thinner branches
-    float detailFreq = windTime * gustFreq * 5.0;
-    float detailNoise = simplex3(vec3(localPos.x * 2.0, localPos.y * 2.0, detailFreq * 0.3));
-    float detailAmount = branchLevel * 0.01 * windStrength;
-    vec3 detailOffset = vec3(detailNoise, 0.0, detailNoise * 0.7) * detailAmount;
+    // High-frequency detail motion for tips
+    vec3 detailOffset = windCalculateDetailOffset(localPos, branchLevel, windParams.strength, windParams.gustFreq, windParams.time);
 
     // Combine all offsets
     vec3 animatedLocalPos = localPos + bendOffset + detailOffset;

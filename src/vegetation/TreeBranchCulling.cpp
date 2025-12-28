@@ -398,6 +398,30 @@ void TreeBranchCulling::recordCulling(VkCommandBuffer cmd, uint32_t frameIndex,
         return;
     }
 
+    // Reset indirect draw commands on CPU side BEFORE dispatch.
+    // This is critical: the shader's barrier() only syncs within a workgroup,
+    // so other workgroups may atomicAdd before workgroup 0 finishes initialization.
+    // This was the root cause of tree corruption/flickering in the woods.
+    std::vector<VkDrawIndexedIndirectCommand> resetCmds(meshGroups_.size());
+    for (size_t g = 0; g < meshGroups_.size(); ++g) {
+        resetCmds[g].indexCount = meshGroups_[g].indexCount;
+        resetCmds[g].instanceCount = 0;  // Will be incremented atomically by shader
+        resetCmds[g].firstIndex = 0;
+        resetCmds[g].vertexOffset = 0;
+        resetCmds[g].firstInstance = 0;
+    }
+    vkCmdUpdateBuffer(cmd, indirectBuffers_[frameIndex], 0,
+                      resetCmds.size() * sizeof(VkDrawIndexedIndirectCommand),
+                      resetCmds.data());
+
+    // Memory barrier to ensure buffer update completes before compute shader reads
+    VkMemoryBarrier resetBarrier{};
+    resetBarrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
+    resetBarrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+    resetBarrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
+    vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                         0, 1, &resetBarrier, 0, nullptr, 0, nullptr);
+
     // Update uniforms
     BranchShadowCullUniforms uniforms{};
     uniforms.cameraPosition = glm::vec4(cameraPos, 1.0f);

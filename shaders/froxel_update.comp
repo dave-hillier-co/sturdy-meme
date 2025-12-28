@@ -7,6 +7,12 @@
 #extension GL_GOOGLE_include_directive : require
 
 #include "bindings.glsl"
+#include "constants_common.glsl"
+#include "lighting_common.glsl"
+
+// Use froxel-specific light buffer binding
+#define DYNAMIC_LIGHT_BUFFER_BINDING BINDING_FROXEL_LIGHTS
+#include "dynamic_lights_common.glsl"
 
 layout(local_size_x = 4, local_size_y = 4, local_size_z = 4) in;
 
@@ -14,7 +20,7 @@ layout(binding = BINDING_FROXEL_SCATTERING, rgba16f) uniform image3D scatteringV
 layout(binding = BINDING_FROXEL_INTEGRATED, rgba16f) uniform image3D integratedVolume;  // Integrated volume (used by integration pass)
 layout(binding = BINDING_FROXEL_HISTORY, rgba16f) uniform readonly image3D historyVolume;  // Previous frame for temporal reprojection
 
-const int NUM_CASCADES = 4;
+// NUM_CASCADES is defined in constants_common.glsl
 
 layout(binding = BINDING_FROXEL_UNIFORMS) uniform FroxelUniforms {
     mat4 invViewProj;
@@ -36,31 +42,14 @@ const float TEMPORAL_BLEND_MAX = 0.97;  // Maximum history weight (high stabilit
 
 layout(binding = BINDING_FROXEL_SHADOW) uniform sampler2DArrayShadow shadowMap;
 
-// Light types (must match Light.h)
-const uint LIGHT_TYPE_POINT = 0;
-const uint LIGHT_TYPE_SPOT = 1;
-const uint MAX_LIGHTS = 16;
-
-// GPU light structure (must match Light.h)
-struct GPULight {
-    vec4 positionAndType;    // xyz = position, w = type (0=point, 1=spot)
-    vec4 directionAndCone;   // xyz = direction (for spot), w = outer cone angle (cos)
-    vec4 colorAndIntensity;  // rgb = color, a = intensity
-    vec4 radiusAndInnerCone; // x = radius, y = inner cone angle (cos), z = shadow map index, w = padding
-};
-
-// Light buffer SSBO
-layout(std430, binding = BINDING_FROXEL_LIGHTS) readonly buffer LightBuffer {
-    uvec4 lightCount;        // x = active light count
-    GPULight lights[MAX_LIGHTS];
-} lightBuffer;
+// Light types, GPULight struct, and light buffer are defined in dynamic_lights_common.glsl
 
 // Froxel grid constants
 const uint FROXEL_WIDTH = 128;
 const uint FROXEL_HEIGHT = 64;
 const uint FROXEL_DEPTH = 64;
 
-const float PI = 3.14159265359;
+// PI is defined in constants_common.glsl
 
 // Convert slice index to linear depth using exponential distribution
 float sliceToDepth(float slice) {
@@ -93,11 +82,10 @@ float getHazeDensity(vec3 worldPos) {
     return exponentialHeightDensity(height) + sigmoidalLayerDensity(height);
 }
 
-// Henyey-Greenstein phase function
+// henyeyGreensteinPhase is defined in dynamic_lights_common.glsl
+// Local alias for backward compatibility with sun lighting code
 float henyeyGreenstein(float cosTheta, float g) {
-    float g2 = g * g;
-    float denom = 1.0 + g2 - 2.0 * g * cosTheta;
-    return (1.0 - g2) / (4.0 * PI * pow(denom, 1.5));
+    return henyeyGreensteinPhase(cosTheta, g);
 }
 
 // Simple hash for temporal jittering
@@ -254,71 +242,15 @@ float sampleCascadeShadow(vec3 worldPos, float viewSpaceDepth) {
 // ============================================================================
 // Local Light Contribution (Phase 4.3.8)
 // Point and spot lights contribute to volumetric scattering
+// Uses shared functions from dynamic_lights_common.glsl for consistent attenuation
 // ============================================================================
 
-// Calculate point light attenuation (smooth falloff)
-float pointLightAttenuation(float distance, float radius) {
-    // Smooth attenuation with quadratic falloff
-    float att = 1.0 / (1.0 + distance * distance / (radius * radius * 0.25));
-    // Smooth fade at edge of radius
-    float fadeOut = 1.0 - smoothstep(radius * 0.5, radius, distance);
-    return att * fadeOut;
-}
-
-// Calculate spot light cone attenuation
-float spotLightAttenuation(vec3 lightDir, vec3 spotDir, float innerCos, float outerCos) {
-    float theta = dot(-lightDir, spotDir);
-    // Smooth falloff between inner and outer cone
-    return smoothstep(outerCos, innerCos, theta);
-}
-
 // Compute in-scattering from local lights at a world position
+// Uses calculateAllDynamicLightsVolumetric from shared include
 vec3 computeLocalLightScatter(vec3 worldPos, vec3 viewDir, float density) {
-    vec3 totalScatter = vec3(0.0);
-
-    uint numLights = lightBuffer.lightCount.x;
-    numLights = min(numLights, MAX_LIGHTS);
-
-    for (uint i = 0; i < numLights; i++) {
-        GPULight light = lightBuffer.lights[i];
-
-        vec3 lightPos = light.positionAndType.xyz;
-        uint lightType = uint(light.positionAndType.w);
-        vec3 lightColor = light.colorAndIntensity.rgb;
-        float intensity = light.colorAndIntensity.a;
-        float radius = light.radiusAndInnerCone.x;
-
-        // Vector from froxel to light
-        vec3 toLight = lightPos - worldPos;
-        float dist = length(toLight);
-
-        // Skip if outside light radius
-        if (dist > radius) continue;
-
-        vec3 lightDir = toLight / dist;
-
-        // Calculate attenuation based on light type
-        float attenuation = pointLightAttenuation(dist, radius);
-
-        if (lightType == LIGHT_TYPE_SPOT) {
-            vec3 spotDir = normalize(light.directionAndCone.xyz);
-            float outerCos = light.directionAndCone.w;
-            float innerCos = light.radiusAndInnerCone.y;
-            attenuation *= spotLightAttenuation(lightDir, spotDir, innerCos, outerCos);
-        }
-
-        // Skip if attenuation is negligible
-        if (attenuation < 0.001) continue;
-
-        // Phase function (Henyey-Greenstein) for light direction
-        float cosTheta = dot(viewDir, lightDir);
-        float phase = henyeyGreenstein(cosTheta, 0.6);  // Moderate forward scattering
-
-        // Accumulate in-scattering
-        totalScatter += lightColor * intensity * attenuation * phase * density;
-    }
-
-    return totalScatter;
+    // Use shared volumetric light calculation for consistent attenuation across all shaders
+    // phaseG = 0.6 for moderate forward scattering in fog
+    return calculateAllDynamicLightsVolumetric(worldPos, viewDir, density, 0.6);
 }
 
 void main() {

@@ -19,6 +19,9 @@
 #include "ubo_snow.glsl"
 #include "ubo_cloud_shadow.glsl"
 
+// Dynamic lights - no shadow sampling for grass (performance optimization)
+#include "dynamic_lights_common.glsl"
+
 // Grass system descriptor set layout:
 // binding 0: UBO (main rendering uniforms)
 // binding 1: instance buffer (SSBO) - vertex shader only
@@ -32,19 +35,7 @@
 
 layout(binding = BINDING_SHADOW_MAP) uniform sampler2DArrayShadow shadowMapArray;  // CSM shadow map
 
-// GPU light structure (must match CPU GPULight struct)
-struct GPULight {
-    vec4 positionAndType;    // xyz = position, w = type (0=point, 1=spot)
-    vec4 directionAndCone;   // xyz = direction (for spot), w = outer cone angle (cos)
-    vec4 colorAndIntensity;  // rgb = color, a = intensity
-    vec4 radiusAndInnerCone; // x = radius, y = inner cone angle (cos), z = shadow map index (-1 = no shadow), w = padding
-};
-
-// Light buffer SSBO
-layout(std430, binding = BINDING_LIGHT_BUFFER) readonly buffer LightBuffer {
-    uvec4 lightCount;        // x = active light count
-    GPULight lights[MAX_LIGHTS];
-} lightBuffer;
+// GPULight struct and light buffer are defined in dynamic_lights_common.glsl
 
 // Snow mask texture (world-space coverage)
 layout(binding = BINDING_GRASS_SNOW_MASK) uniform sampler2D snowMaskTexture;
@@ -68,56 +59,8 @@ const float GRASS_SPECULAR_STRENGTH = 0.15;  // Subtle specular highlights
 // Clump color variation parameters
 const float CLUMP_COLOR_INFLUENCE = 0.15;  // Subtle color variation (0-1)
 
-// Calculate contribution from a single dynamic light for grass
-vec3 calculateDynamicLightGrass(GPULight light, vec3 N, vec3 V, vec3 worldPos, vec3 albedo) {
-    vec3 lightPos = light.positionAndType.xyz;
-    uint lightType = uint(light.positionAndType.w);
-    vec3 lightColor = light.colorAndIntensity.rgb;
-    float lightIntensity = light.colorAndIntensity.a;
-    float lightRadius = light.radiusAndInnerCone.x;
-
-    if (lightIntensity <= 0.0) return vec3(0.0);
-
-    vec3 lightVec = lightPos - worldPos;
-    float distance = length(lightVec);
-    vec3 L = normalize(lightVec);
-
-    // Early out if beyond radius
-    if (lightRadius > 0.0 && distance > lightRadius) return vec3(0.0);
-
-    // Calculate attenuation
-    float attenuation = calculateAttenuation(distance, lightRadius);
-
-    // For spot lights, apply cone falloff
-    if (lightType == LIGHT_TYPE_SPOT) {
-        vec3 spotDir = normalize(light.directionAndCone.xyz);
-        float outerCone = light.directionAndCone.w;
-        float innerCone = light.radiusAndInnerCone.y;
-        float spotFalloff = calculateSpotFalloff(L, spotDir, innerCone, outerCone);
-        attenuation *= spotFalloff;
-    }
-
-    // Two-sided diffuse for grass
-    float NdotL = dot(N, L);
-    float diffuse = max(NdotL, 0.0) + max(-NdotL, 0.0) * 0.6;
-
-    // Add SSS for dynamic light
-    vec3 sss = calculateSSS(L, V, N, lightColor, albedo, GRASS_SSS_STRENGTH);
-
-    return (albedo * diffuse + sss) * lightColor * lightIntensity * attenuation;
-}
-
-// Calculate contribution from all dynamic lights for grass
-vec3 calculateAllDynamicLightsGrass(vec3 N, vec3 V, vec3 worldPos, vec3 albedo) {
-    vec3 totalLight = vec3(0.0);
-    uint numLights = min(lightBuffer.lightCount.x, MAX_LIGHTS);
-
-    for (uint i = 0; i < numLights; i++) {
-        totalLight += calculateDynamicLightGrass(lightBuffer.lights[i], N, V, worldPos, albedo);
-    }
-
-    return totalLight;
-}
+// Dynamic light calculation uses shared functions from dynamic_lights_common.glsl
+// calculateAllDynamicLightsVegetationNoShadow provides consistent vegetation lighting
 
 void main() {
     vec3 N = normalize(fragNormal);
@@ -202,7 +145,9 @@ void main() {
     vec3 moonLight = (albedo * moonDiffuse + moonSss) * ubo.moonColor.rgb * ubo.moonDirection.w;
 
     // === DYNAMIC LIGHTS (multiple point and spot lights) ===
-    vec3 dynamicLights = calculateAllDynamicLightsGrass(N, V, fragWorldPos, albedo);
+    // Uses shared function from dynamic_lights_common.glsl for consistent lighting
+    vec3 dynamicLights = calculateAllDynamicLightsVegetationNoShadow(N, V, fragWorldPos,
+                                                                      albedo, GRASS_ROUGHNESS, GRASS_SSS_STRENGTH);
 
     // === FRESNEL RIM LIGHTING ===
     // Grass blades catch light at grazing angles

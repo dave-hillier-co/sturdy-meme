@@ -15,6 +15,10 @@
 #include "push_constants_common.glsl"
 #include "normal_mapping_common.glsl"
 
+// Enable shadow sampling for dynamic lights
+#define DYNAMIC_LIGHTS_ENABLE_SHADOWS
+#include "dynamic_lights_common.glsl"
+
 layout(binding = BINDING_DIFFUSE_TEX) uniform sampler2D texSampler;
 layout(binding = BINDING_SHADOW_MAP) uniform sampler2DArrayShadow shadowMapArray;  // Changed to array for CSM
 layout(binding = BINDING_NORMAL_MAP) uniform sampler2D normalMap;
@@ -30,19 +34,7 @@ layout(binding = BINDING_METALLIC_MAP) uniform sampler2D metallicMap;
 layout(binding = BINDING_AO_MAP) uniform sampler2D aoMap;
 layout(binding = BINDING_HEIGHT_MAP) uniform sampler2D heightMap;
 
-// GPU light structure (must match CPU GPULight struct)
-struct GPULight {
-    vec4 positionAndType;    // xyz = position, w = type (0=point, 1=spot)
-    vec4 directionAndCone;   // xyz = direction (for spot), w = outer cone angle (cos)
-    vec4 colorAndIntensity;  // rgb = color, a = intensity
-    vec4 radiusAndInnerCone; // x = radius, y = inner cone angle (cos), z = shadow map index (-1 = no shadow), w = padding
-};
-
-// Light buffer SSBO
-layout(std430, binding = BINDING_LIGHT_BUFFER) readonly buffer LightBuffer {
-    uvec4 lightCount;        // x = active light count
-    GPULight lights[MAX_LIGHTS];
-} lightBuffer;
+// GPULight struct and light buffer are defined in dynamic_lights_common.glsl
 
 layout(location = 0) in vec3 fragNormal;
 layout(location = 1) in vec2 fragTexCoord;
@@ -89,57 +81,7 @@ mat4 perspective(float fovy, float aspect, float near, float far) {
     return result;
 }
 
-// Sample dynamic light shadow map
-float sampleDynamicShadow(GPULight light, vec3 worldPos) {
-    int shadowIndex = int(light.radiusAndInnerCone.z);
-
-    // No shadow if index is -1
-    if (shadowIndex < 0) return 1.0;
-
-    uint lightType = uint(light.positionAndType.w);
-    vec3 lightPos = light.positionAndType.xyz;
-
-    if (lightType == LIGHT_TYPE_POINT) {
-        // Point light - sample cube map
-        vec3 fragToLight = worldPos - lightPos;
-        float currentDepth = length(fragToLight);
-        float radius = light.radiusAndInnerCone.x;
-
-        // Normalize depth to [0,1] range based on light radius
-        float normalizedDepth = currentDepth / radius;
-
-        // Sample cube shadow map
-        vec4 shadowCoord = vec4(normalize(fragToLight), float(shadowIndex));
-        float shadow = texture(pointShadowMaps, shadowCoord, normalizedDepth);
-
-        return shadow;
-    }
-    else {  // LIGHT_TYPE_SPOT
-        // Spot light - sample 2D shadow map
-        vec3 spotDir = normalize(light.directionAndCone.xyz);
-
-        // Create light view-projection matrix
-        mat4 lightView = lookAt(lightPos, lightPos + spotDir, vec3(0.0, 1.0, 0.0));
-        float outerCone = light.directionAndCone.w;
-        float fov = acos(outerCone) * 2.0;
-        mat4 lightProj = perspective(fov, 1.0, 0.1, light.radiusAndInnerCone.x);
-
-        // Transform world position to light clip space
-        vec4 lightSpacePos = lightProj * lightView * vec4(worldPos, 1.0);
-        vec3 projCoords = lightSpacePos.xyz / lightSpacePos.w;
-
-        // Transform to [0,1] range
-        projCoords = projCoords * 0.5 + 0.5;
-
-        // Sample shadow map
-        vec4 shadowCoord = vec4(projCoords.xy, float(shadowIndex), projCoords.z);
-        float shadow = texture(spotShadowMaps, shadowCoord);
-
-        return shadow;
-    }
-}
-
-// Calculate PBR lighting for a single light
+// Calculate PBR lighting for sun/moon (directional lights)
 vec3 calculatePBR(vec3 N, vec3 V, vec3 L, vec3 lightColor, float lightIntensity, vec3 albedo, float shadow,
                   float roughness, float metallic) {
     vec3 H = normalize(V + L);
@@ -166,60 +108,8 @@ vec3 calculatePBR(vec3 N, vec3 V, vec3 L, vec3 lightColor, float lightIntensity,
     return (diffuse + specular) * lightColor * lightIntensity * NoL * shadow;
 }
 
-// Calculate contribution from a single dynamic light (point or spot)
-vec3 calculateDynamicLight(GPULight light, vec3 N, vec3 V, vec3 worldPos, vec3 albedo,
-                           float roughness, float metallic) {
-    vec3 lightPos = light.positionAndType.xyz;
-    uint lightType = uint(light.positionAndType.w);
-    vec3 lightColor = light.colorAndIntensity.rgb;
-    float lightIntensity = light.colorAndIntensity.a;
-    float lightRadius = light.radiusAndInnerCone.x;
-
-    // Skip if light is disabled
-    if (lightIntensity <= 0.0) return vec3(0.0);
-
-    // Calculate light direction and distance
-    vec3 lightVec = lightPos - worldPos;
-    float distance = length(lightVec);
-    vec3 L = normalize(lightVec);
-
-    // Early out if beyond radius
-    if (lightRadius > 0.0 && distance > lightRadius) return vec3(0.0);
-
-    // Calculate attenuation
-    float attenuation = calculateAttenuation(distance, lightRadius);
-
-    // For spot lights, apply cone falloff
-    if (lightType == LIGHT_TYPE_SPOT) {
-        vec3 spotDir = normalize(light.directionAndCone.xyz);
-        float outerCone = light.directionAndCone.w;
-        float innerCone = light.radiusAndInnerCone.y;
-        float spotFalloff = calculateSpotFalloff(L, spotDir, innerCone, outerCone);
-        attenuation *= spotFalloff;
-    }
-
-    // Sample shadow map
-    float shadow = sampleDynamicShadow(light, worldPos);
-    attenuation *= shadow;
-
-    // Calculate PBR lighting contribution with shadow
-    return calculatePBR(N, V, L, lightColor, lightIntensity * attenuation, albedo, 1.0,
-                        roughness, metallic);
-}
-
-// Calculate contribution from all dynamic lights
-vec3 calculateAllDynamicLights(vec3 N, vec3 V, vec3 worldPos, vec3 albedo,
-                               float roughness, float metallic) {
-    vec3 totalLight = vec3(0.0);
-    uint numLights = min(lightBuffer.lightCount.x, MAX_LIGHTS);
-
-    for (uint i = 0; i < numLights; i++) {
-        totalLight += calculateDynamicLight(lightBuffer.lights[i], N, V, worldPos, albedo,
-                                            roughness, metallic);
-    }
-
-    return totalLight;
-}
+// Dynamic light calculation uses shared functions from dynamic_lights_common.glsl
+// calculateAllDynamicLightsPBR is called with shadow map samplers
 
 void main() {
     vec4 texColor = texture(texSampler, fragTexCoord);
@@ -317,7 +207,9 @@ void main() {
     vec3 ambient = (ambientDiffuse + ambientSpecular) * ao;  // Apply AO to ambient lighting
 
     // Dynamic lights contribution (multiple point and spot lights)
-    vec3 dynamicLights = calculateAllDynamicLights(N, V, fragWorldPos, albedo, roughness, metallic);
+    // Uses shared function from dynamic_lights_common.glsl with shadow sampling
+    vec3 dynamicLights = calculateAllDynamicLightsPBR(N, V, fragWorldPos, albedo, roughness, metallic,
+                                                       pointShadowMaps, spotShadowMaps);
 
     vec3 finalColor = ambient + sunLight + moonLight + dynamicLights;
 

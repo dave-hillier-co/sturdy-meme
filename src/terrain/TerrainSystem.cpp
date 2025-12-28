@@ -46,7 +46,7 @@ bool TerrainSystem::initInternal(const InitInfo& info, const TerrainConfig& cfg)
 
     // Initialize tile cache FIRST for LOD-based height streaming (if configured)
     // This loads coarse LOD tiles at startup which provide full terrain coverage
-    bool hasTileCache = false;
+    std::vector<float> synthesizedHeightmap;
     if (!config.tileCacheDir.empty()) {
         TerrainTileCache::InitInfo tileCacheInfo{};
         tileCacheInfo.cacheDirectory = config.tileCacheDir;
@@ -63,12 +63,12 @@ bool TerrainSystem::initInternal(const InitInfo& info, const TerrainConfig& cfg)
             SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "Failed to initialize tile cache, using global heightmap only");
         } else {
             SDL_Log("Tile cache initialized: %s", config.tileCacheDir.c_str());
-            hasTileCache = true;
+            // Synthesize global heightmap from LOD3 tiles for the GPU shader fallback
+            synthesizedHeightmap = tileCache->synthesizeGlobalHeightmap(512);
         }
     }
 
-    // Initialize height map - if tile cache is available, it provides full coverage
-    // so we only need a minimal procedural fallback for the global heightmap
+    // Initialize height map - use synthesized data from tiles if available
     TerrainHeightMap::InitInfo heightMapInfo{};
     heightMapInfo.device = device;
     heightMapInfo.allocator = allocator;
@@ -80,11 +80,13 @@ bool TerrainSystem::initInternal(const InitInfo& info, const TerrainConfig& cfg)
     heightMapInfo.minAltitude = config.minAltitude;
     heightMapInfo.maxAltitude = config.maxAltitude;
 
-    if (!hasTileCache) {
-        // No tile cache - load from file
+    if (!synthesizedHeightmap.empty()) {
+        // Use data synthesized from tile cache - avoids loading the large file
+        heightMapInfo.externalData = &synthesizedHeightmap;
+    } else {
+        // Fall back to loading from file
         heightMapInfo.heightmapPath = config.heightmapPath;
     }
-    // else: tile cache provides full coverage via LOD3 tiles, use procedural fallback
 
     heightMap = TerrainHeightMap::create(heightMapInfo);
     if (!heightMap) return false;

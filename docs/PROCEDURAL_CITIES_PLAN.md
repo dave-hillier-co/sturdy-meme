@@ -205,6 +205,93 @@ This is the **critical integration milestone** where all layout systems connect:
 - Road-terrain blending (flatten terrain under roads)
 - Clear route from any settlement to any other
 
+#### Bridge & Ford Network (Water Crossings)
+
+Bridges are **expensive in pathfinding** - the high water penalty (1000.0) in `RoadPathfinder` represents construction cost. Once the network is generated, bridges become critical infrastructure that influences settlement patterns.
+
+| Crossing Type | Pathfinder Cost | Construction | Typical Use |
+|---------------|-----------------|--------------|-------------|
+| Ford | Moderate (100-300) | Minimal | Low traffic, shallow water |
+| Timber Bridge | High (500-800) | Significant | Village connections |
+| Stone Bridge | Very High (800-1200) | Major | Town connections, main roads |
+| Clapper Bridge | Moderate (200-400) | Modest | Footpaths, moorland streams |
+
+**Bridge Placement Logic**:
+
+```
+1. Water Crossing Detection → Identify where road path crosses water bodies
+2. Crossing Type Selection:
+   - Main roads (Town↔Town) → Prefer stone bridge
+   - Secondary roads (Town↔Village) → Timber bridge or ford
+   - Lanes (Village↔Hamlet) → Ford or timber
+   - Footpaths → Ford, stepping stones, or clapper
+3. Ford Viability Check:
+   - Water depth < 0.5m at crossing point
+   - River width < 20m
+   - Gentle bank slopes (< 15°)
+   - If viable AND low-traffic route → Use ford instead of bridge
+4. Bridge Site Optimization:
+   - Narrow river width preferred
+   - Stable banks (not marshland)
+   - Avoid flood plains
+```
+
+**Network Effects** (post-generation):
+
+| Effect | Description |
+|--------|-------------|
+| Bridge towns | Settlements near bridges gain importance (control point) |
+| Toll points | Bridges on major routes may have toll infrastructure |
+| Defense focus | Bridges are natural defensive positions |
+| Alternative fords | Shallow crossings may exist near bridges (local knowledge) |
+
+**Data Structure**:
+
+```cpp
+struct WaterCrossing {
+    uint32_t id;
+    uint32_t roadSegmentId;          // Which road segment this belongs to
+    glm::vec2 position;
+
+    enum class Type : uint8_t {
+        Ford,
+        SteppingStones,
+        ClapperBridge,      // Simple stone slabs
+        TimberBridge,
+        StoneBridge
+    } type;
+
+    float span;                       // Distance across water
+    float waterDepth;                 // At crossing point
+    bool hasTollPoint = false;
+    uint32_t nearestSettlementId;     // For bridge-town association
+};
+
+struct WaterCrossingNetwork {
+    std::vector<WaterCrossing> crossings;
+
+    // Query helpers
+    std::vector<uint32_t> getCrossingsNear(glm::vec2 pos, float radius) const;
+    std::vector<uint32_t> getBridgesOnRoute(uint32_t startSettlement, uint32_t endSettlement) const;
+};
+```
+
+**Historical Context** (1100-1300 AD South Coast):
+- Stone bridges rare and valuable (often have chapels)
+- Timber bridges common but require maintenance
+- Fords preferred where possible (no construction cost)
+- Bridge rights often controlled by monasteries or lords
+- Bridge settlements develop markets (captive traffic)
+
+**Integration with Settlement Scoring**:
+```cpp
+// Boost settlement score for bridge proximity
+if (nearBridge && bridgeOnMajorRoute) {
+    settlement.score += 0.15f;  // Bridge town bonus
+    settlement.type = promoteSettlementType(settlement.type);  // Hamlet→Village, etc.
+}
+```
+
 #### Farm Fields (Agricultural Zones)
 
 | Element | Representation |

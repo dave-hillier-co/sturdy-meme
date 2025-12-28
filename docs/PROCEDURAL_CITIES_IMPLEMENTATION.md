@@ -592,9 +592,99 @@ public:
         const TerrainInterface& terrain
     );
 };
+
+// ─────────────────────────────────────────────────────────────────────
+// WATER CROSSING DETECTION (Bridges & Fords)
+// ─────────────────────────────────────────────────────────────────────
+
+struct WaterCrossing {
+    uint32_t id;
+    uint32_t pathSegmentId;
+    glm::vec2 position;
+    glm::vec2 approachDir;           // Direction road approaches from
+
+    enum class Type : uint8_t {
+        Ford,               // Shallow water, road dips through
+        SteppingStones,     // Footpath crossing
+        ClapperBridge,      // Simple stone slabs (moorland)
+        TimberBridge,       // Wood construction
+        StoneBridge         // Masonry arch (expensive, durable)
+    } type;
+
+    float span;                      // Distance across water (meters)
+    float waterDepth;                // Depth at crossing point
+    float bankSlopeLeft;             // Slope of left bank
+    float bankSlopeRight;            // Slope of right bank
+    bool hasTollPoint = false;
+    uint32_t nearestSettlementId = UINT32_MAX;
+};
+
+class WaterCrossingDetector {
+public:
+    struct Config {
+        // Ford viability thresholds
+        float maxFordDepth = 0.5f;           // Max water depth for ford
+        float maxFordWidth = 20.0f;          // Max river width for ford
+        float maxFordBankSlope = 0.26f;      // ~15 degrees
+
+        // Pathfinder cost equivalents (for type selection)
+        float fordCostThreshold = 300.0f;
+        float timberBridgeCostThreshold = 800.0f;
+        // Above timber threshold → stone bridge
+    };
+
+    // Detect all water crossings in a path network
+    std::vector<WaterCrossing> detectCrossings(
+        const PathNetwork& roads,
+        const TerrainInterface& terrain,
+        const Config& config
+    );
+
+    // Classify crossing type based on road importance and water characteristics
+    WaterCrossing::Type classifyCrossing(
+        const PathSegment& segment,
+        float waterDepth,
+        float riverWidth,
+        float bankSlope,
+        const Config& config
+    );
+
+    // Check if ford is viable at location
+    bool isFordViable(
+        glm::vec2 position,
+        const TerrainInterface& terrain,
+        const Config& config
+    );
+
+private:
+    // Find where path crosses from land to water and back
+    std::vector<std::pair<glm::vec2, glm::vec2>> findWaterIntersections(
+        const PathSegment& segment,
+        const TerrainInterface& terrain
+    );
+};
+
+// Integration with settlement scoring
+class BridgeSettlementBooster {
+public:
+    // Adjust settlement scores based on bridge proximity
+    void applyBridgeBonus(
+        std::vector<Settlement>& settlements,
+        const std::vector<WaterCrossing>& crossings,
+        float searchRadius = 500.0f,
+        float majorRouteBonus = 0.15f,
+        float minorRouteBonus = 0.05f
+    );
+
+    // Identify "bridge towns" - settlements that grew around crossings
+    std::vector<uint32_t> identifyBridgeTowns(
+        const std::vector<Settlement>& settlements,
+        const std::vector<WaterCrossing>& crossings
+    );
+};
 ```
 
-**Key insight**: Streets, walls, quays, and field boundaries are all path networks with different properties. One system handles them all.
+**Key insight**: Streets, walls, quays, field boundaries, and water crossings are all path networks with different properties. One system handles them all.
 
 **Deliverables**:
 - [ ] PathNetwork class with node/segment management
@@ -603,6 +693,8 @@ public:
 - [ ] WallPathGenerator
 - [ ] QuayPathGenerator
 - [ ] Field boundary generation
+- [ ] WaterCrossingDetector (bridge/ford detection and classification)
+- [ ] BridgeSettlementBooster (settlement scoring based on crossings)
 
 ---
 

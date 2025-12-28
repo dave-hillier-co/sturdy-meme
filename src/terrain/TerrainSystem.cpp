@@ -44,7 +44,33 @@ bool TerrainSystem::initInternal(const InitInfo& info, const TerrainConfig& cfg)
     // Compute heightScale from altitude range
     config.heightScale = config.maxAltitude - config.minAltitude;
 
+    // Initialize tile cache FIRST for LOD-based height streaming (if configured)
+    // This loads coarse LOD tiles at startup, which we'll use for the global heightmap
+    bool useTileCacheForHeightmap = false;
+    if (!config.tileCacheDir.empty()) {
+        TerrainTileCache::InitInfo tileCacheInfo{};
+        tileCacheInfo.cacheDirectory = config.tileCacheDir;
+        tileCacheInfo.device = device;
+        tileCacheInfo.allocator = allocator;
+        tileCacheInfo.graphicsQueue = graphicsQueue;
+        tileCacheInfo.commandPool = commandPool;
+        tileCacheInfo.terrainSize = config.size;
+        tileCacheInfo.heightScale = config.heightScale;
+        tileCacheInfo.minAltitude = config.minAltitude;
+        tileCacheInfo.maxAltitude = config.maxAltitude;
+        tileCache = TerrainTileCache::create(tileCacheInfo);
+        if (!tileCache) {
+            SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "Failed to initialize tile cache, using global heightmap only");
+        } else {
+            SDL_Log("Tile cache initialized: %s", config.tileCacheDir.c_str());
+            // LOD3 tiles are loaded at startup in loadCoarseLODCoverage()
+            // We'll use these to synthesize the global heightmap
+            useTileCacheForHeightmap = true;
+        }
+    }
+
     // Initialize height map with RAII wrapper
+    // If tile cache is available, defer loading - we'll synthesize from coarse LOD tiles
     TerrainHeightMap::InitInfo heightMapInfo{};
     heightMapInfo.device = device;
     heightMapInfo.allocator = allocator;
@@ -53,11 +79,45 @@ bool TerrainSystem::initInternal(const InitInfo& info, const TerrainConfig& cfg)
     heightMapInfo.resolution = 512;
     heightMapInfo.terrainSize = config.size;
     heightMapInfo.heightScale = config.heightScale;
-    heightMapInfo.heightmapPath = config.heightmapPath;
     heightMapInfo.minAltitude = config.minAltitude;
     heightMapInfo.maxAltitude = config.maxAltitude;
+
+    if (useTileCacheForHeightmap) {
+        // Defer loading - we'll synthesize from tile cache
+        heightMapInfo.deferHeightmapLoad = true;
+        heightMapInfo.heightmapPath = "";  // Don't load from file
+    } else {
+        heightMapInfo.heightmapPath = config.heightmapPath;
+    }
+
     heightMap = TerrainHeightMap::create(heightMapInfo);
     if (!heightMap) return false;
+
+    // If using tile cache, synthesize global heightmap from coarse LOD tiles
+    if (useTileCacheForHeightmap && tileCache) {
+        auto globalData = tileCache->synthesizeGlobalHeightmap(512);
+        if (!globalData.empty()) {
+            if (!heightMap->setFromExternalData(globalData)) {
+                SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
+                             "Failed to set heightmap from tile cache, falling back to file");
+                // Try to load from file as fallback
+                heightMap.reset();
+                heightMapInfo.deferHeightmapLoad = false;
+                heightMapInfo.heightmapPath = config.heightmapPath;
+                heightMap = TerrainHeightMap::create(heightMapInfo);
+                if (!heightMap) return false;
+            }
+        } else {
+            SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                        "Could not synthesize heightmap from tiles, falling back to file");
+            // Try to load from file as fallback
+            heightMap.reset();
+            heightMapInfo.deferHeightmapLoad = false;
+            heightMapInfo.heightmapPath = config.heightmapPath;
+            heightMap = TerrainHeightMap::create(heightMapInfo);
+            if (!heightMap) return false;
+        }
+    }
 
     // Initialize textures with RAII wrapper
     TerrainTextures::InitInfo texturesInfo{};
@@ -96,27 +156,8 @@ bool TerrainSystem::initInternal(const InitInfo& info, const TerrainConfig& cfg)
         }
     }
 
-    // Initialize tile cache for LOD-based height streaming (if configured) with RAII wrapper
-    if (!config.tileCacheDir.empty()) {
-        TerrainTileCache::InitInfo tileCacheInfo{};
-        tileCacheInfo.cacheDirectory = config.tileCacheDir;
-        tileCacheInfo.device = device;
-        tileCacheInfo.allocator = allocator;
-        tileCacheInfo.graphicsQueue = graphicsQueue;
-        tileCacheInfo.commandPool = commandPool;
-        tileCacheInfo.terrainSize = config.size;
-        tileCacheInfo.heightScale = config.heightScale;
-        tileCacheInfo.minAltitude = config.minAltitude;
-        tileCacheInfo.maxAltitude = config.maxAltitude;
-        tileCache = TerrainTileCache::create(tileCacheInfo);
-        if (!tileCache) {
-            SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "Failed to initialize tile cache, using global heightmap only");
-        } else {
-            SDL_Log("Tile cache initialized: %s", config.tileCacheDir.c_str());
-            // LOD3 tiles are loaded at startup in loadCoarseLODCoverage()
-            // Higher LODs will be streamed in based on camera position
-        }
-    }
+    // NOTE: Tile cache is already initialized above (before heightmap)
+    // so we can synthesize the global heightmap from coarse LOD tiles
 
     // Initialize virtual texture system (if configured)
     if (config.useVirtualTexture && !config.virtualTextureTileDir.empty()) {

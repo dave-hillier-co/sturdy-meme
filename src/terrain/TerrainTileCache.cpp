@@ -961,3 +961,95 @@ int TerrainTileCache::getTileLODAt(int tileX, int tileZ) const {
     }
     return -1;  // No tile loaded
 }
+
+std::vector<float> TerrainTileCache::synthesizeGlobalHeightmap(uint32_t targetResolution) const {
+    // Synthesize a global heightmap from the coarsest LOD tiles
+    // This provides a unified fallback heightmap without loading the full source file
+    const uint32_t coarsestLOD = numLODLevels - 1;
+    uint32_t coarseTilesX = tilesX >> coarsestLOD;
+    uint32_t coarseTilesZ = tilesZ >> coarsestLOD;
+    if (coarseTilesX < 1) coarseTilesX = 1;
+    if (coarseTilesZ < 1) coarseTilesZ = 1;
+
+    SDL_Log("TerrainTileCache: Synthesizing global heightmap %ux%u from LOD%u tiles (%ux%u)",
+            targetResolution, targetResolution, coarsestLOD, coarseTilesX, coarseTilesZ);
+
+    // Check if we have all the coarse LOD tiles loaded
+    uint32_t missingTiles = 0;
+    for (uint32_t tz = 0; tz < coarseTilesZ; tz++) {
+        for (uint32_t tx = 0; tx < coarseTilesX; tx++) {
+            TileCoord coord{static_cast<int32_t>(tx), static_cast<int32_t>(tz)};
+            uint64_t key = makeTileKey(coord, coarsestLOD);
+            auto it = loadedTiles.find(key);
+            if (it == loadedTiles.end() || it->second.cpuData.empty()) {
+                missingTiles++;
+            }
+        }
+    }
+
+    if (missingTiles > 0) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
+                     "TerrainTileCache: Cannot synthesize global heightmap - missing %u LOD%u tiles",
+                     missingTiles, coarsestLOD);
+        return {};
+    }
+
+    // Allocate output buffer
+    std::vector<float> globalMap(targetResolution * targetResolution);
+
+    // Sample from coarse tiles using bilinear interpolation
+    for (uint32_t gy = 0; gy < targetResolution; gy++) {
+        for (uint32_t gx = 0; gx < targetResolution; gx++) {
+            // Convert global pixel to world position
+            float u = static_cast<float>(gx) / (targetResolution - 1);  // [0, 1]
+            float v = static_cast<float>(gy) / (targetResolution - 1);  // [0, 1]
+            float worldX = (u - 0.5f) * terrainSize;
+            float worldZ = (v - 0.5f) * terrainSize;
+
+            // Find which coarse tile covers this position
+            uint32_t tileX = static_cast<uint32_t>(u * coarseTilesX);
+            uint32_t tileZ = static_cast<uint32_t>(v * coarseTilesZ);
+            if (tileX >= coarseTilesX) tileX = coarseTilesX - 1;
+            if (tileZ >= coarseTilesZ) tileZ = coarseTilesZ - 1;
+
+            TileCoord coord{static_cast<int32_t>(tileX), static_cast<int32_t>(tileZ)};
+            uint64_t key = makeTileKey(coord, coarsestLOD);
+            auto it = loadedTiles.find(key);
+
+            if (it != loadedTiles.end() && !it->second.cpuData.empty()) {
+                const TerrainTile& tile = it->second;
+
+                // Calculate UV within this tile
+                float tileU = (worldX - tile.worldMinX) / (tile.worldMaxX - tile.worldMinX);
+                float tileV = (worldZ - tile.worldMinZ) / (tile.worldMaxZ - tile.worldMinZ);
+                tileU = std::clamp(tileU, 0.0f, 1.0f);
+                tileV = std::clamp(tileV, 0.0f, 1.0f);
+
+                // Sample with bilinear interpolation
+                float fx = tileU * (tileResolution - 1);
+                float fy = tileV * (tileResolution - 1);
+                int x0 = static_cast<int>(fx);
+                int y0 = static_cast<int>(fy);
+                int x1 = std::min(x0 + 1, static_cast<int>(tileResolution - 1));
+                int y1 = std::min(y0 + 1, static_cast<int>(tileResolution - 1));
+                float tx = fx - x0;
+                float ty = fy - y0;
+
+                float h00 = tile.cpuData[y0 * tileResolution + x0];
+                float h10 = tile.cpuData[y0 * tileResolution + x1];
+                float h01 = tile.cpuData[y1 * tileResolution + x0];
+                float h11 = tile.cpuData[y1 * tileResolution + x1];
+
+                float h0 = h00 * (1.0f - tx) + h10 * tx;
+                float h1 = h01 * (1.0f - tx) + h11 * tx;
+                globalMap[gy * targetResolution + gx] = h0 * (1.0f - ty) + h1 * ty;
+            } else {
+                // Should not happen since we checked above
+                globalMap[gy * targetResolution + gx] = 0.0f;
+            }
+        }
+    }
+
+    SDL_Log("TerrainTileCache: Successfully synthesized global heightmap from LOD%u tiles", coarsestLOD);
+    return globalMap;
+}

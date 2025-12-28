@@ -255,51 +255,46 @@ void GuiTerrainTab::render(ITerrainControl& terrainControl) {
 
         ImGui::Spacing();
 
-        // Mini tile grid visualization
+        // Mini tile grid visualization - shows LOD0 grid (32x32) with LOD coverage
         if (ImGui::CollapsingHeader("Tile Grid Visualization", ImGuiTreeNodeFlags_DefaultOpen)) {
             ImDrawList* drawList = ImGui::GetWindowDrawList();
             ImVec2 gridStart = ImGui::GetCursorScreenPos();
 
-            // Grid settings - show a simplified 8x8 view of the terrain
-            const int gridCells = 8;
-            const float cellSize = 20.0f;
+            // Get terrain grid dimensions (LOD0 = highest detail, typically 32x32)
+            uint32_t lod0TilesX = tileCachePtr->getLOD0TilesX();
+            uint32_t lod0TilesZ = tileCachePtr->getLOD0TilesZ();
+
+            // Grid settings - one cell per LOD0 tile, capped at 32 for display
+            const int gridCells = std::min(32u, std::max(lod0TilesX, lod0TilesZ));
+            const float cellSize = 5.0f;  // Smaller cells for 32x32 grid
             const float gridSize = gridCells * cellSize;
 
             // LOD colors for visualization
             ImU32 lodColorsU32[4] = {
-                IM_COL32(50, 200, 50, 255),   // LOD0 - bright green
+                IM_COL32(50, 200, 50, 255),   // LOD0 - bright green (highest detail)
                 IM_COL32(130, 230, 80, 255),  // LOD1 - yellow-green
                 IM_COL32(230, 180, 50, 255),  // LOD2 - orange
-                IM_COL32(180, 100, 50, 255)   // LOD3 - brown
+                IM_COL32(180, 100, 50, 255)   // LOD3 - brown (lowest detail)
             };
             ImU32 noTileColor = IM_COL32(50, 50, 60, 255);  // Dark gray - no tile
-            ImU32 gridLineColor = IM_COL32(80, 80, 100, 128);
 
-            // Get terrain grid dimensions
-            uint32_t lod0TilesX = tileCachePtr->getLOD0TilesX();
-            uint32_t lod0TilesZ = tileCachePtr->getLOD0TilesZ();
-
-            // Calculate scaling (how many LOD0 tiles per grid cell)
-            int tilesPerCell = std::max(1u, lod0TilesX / gridCells);
-
-            // Draw grid cells
+            // Draw grid cells - each cell represents one LOD0 tile position
             for (int gz = 0; gz < gridCells; gz++) {
                 for (int gx = 0; gx < gridCells; gx++) {
-                    // Map grid cell to terrain tile coordinates
-                    int tileX = gx * tilesPerCell + tilesPerCell / 2;
-                    int tileZ = gz * tilesPerCell + tilesPerCell / 2;
-
-                    // Get the LOD at this position
-                    int lod = tileCachePtr->getTileLODAt(tileX, tileZ);
+                    // Get the LOD at this LOD0 tile position
+                    int lod = tileCachePtr->getTileLODAt(gx, gz);
 
                     ImVec2 cellMin(gridStart.x + gx * cellSize, gridStart.y + gz * cellSize);
-                    ImVec2 cellMax(cellMin.x + cellSize - 1, cellMin.y + cellSize - 1);
+                    ImVec2 cellMax(cellMin.x + cellSize, cellMin.y + cellSize);
 
                     ImU32 cellColor = (lod >= 0 && lod < 4) ? lodColorsU32[lod] : noTileColor;
                     drawList->AddRectFilled(cellMin, cellMax, cellColor);
-                    drawList->AddRect(cellMin, cellMax, gridLineColor);
                 }
             }
+
+            // Draw grid border
+            drawList->AddRect(gridStart, ImVec2(gridStart.x + gridSize, gridStart.y + gridSize),
+                             IM_COL32(100, 100, 120, 255));
 
             // Reserve space for grid
             ImGui::Dummy(ImVec2(gridSize, gridSize));
@@ -314,6 +309,7 @@ void GuiTerrainTab::render(ITerrainControl& terrainControl) {
                 ImGui::SameLine();
                 ImGui::Text("L%d", i);
             }
+            ImGui::Text("Grid: %ux%u (LOD0 tiles)", lod0TilesX, lod0TilesZ);
         }
     } else {
         ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "Tile cache not available");

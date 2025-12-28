@@ -15,8 +15,7 @@
 #include "atmosphere_common.glsl"
 #include "color_common.glsl"
 #include "dither_common.glsl"
-#include "tree_lighting_common.glsl"
-#include "lighting_common.glsl"
+#include "vegetation_lighting_common.glsl"
 #include "snow_common.glsl"
 #include "cloud_shadow_common.glsl"
 
@@ -28,14 +27,6 @@ layout(binding = BINDING_TREE_GFX_SNOW_MASK) uniform sampler2D snowMaskTexture;
 
 // Cloud shadow map (R16F: 0=shadow, 1=no shadow)
 layout(binding = BINDING_TREE_GFX_CLOUD_SHADOW) uniform sampler2D cloudShadowMap;
-
-// GPU light structure (must match CPU GPULight struct)
-struct GPULight {
-    vec4 positionAndType;    // xyz = position, w = type (0=point, 1=spot)
-    vec4 directionAndCone;   // xyz = direction (for spot), w = outer cone angle (cos)
-    vec4 colorAndIntensity;  // rgb = color, a = intensity
-    vec4 radiusAndInnerCone; // x = radius, y = inner cone angle (cos), z = shadow map index (-1 = no shadow), w = padding
-};
 
 // Light buffer SSBO
 layout(std430, binding = BINDING_TREE_GFX_LIGHT_BUFFER) readonly buffer LightBuffer {
@@ -59,54 +50,16 @@ layout(location = 6) in float fragLodBlendFactor;
 
 layout(location = 0) out vec4 outColor;
 
-// Calculate contribution from a single dynamic light for tree leaves
-// Uses simple lighting to match impostor appearance
-vec3 calculateDynamicLightLeaf(GPULight light, vec3 N, vec3 worldPos, vec3 albedo) {
-    vec3 lightPos = light.positionAndType.xyz;
-    uint lightType = uint(light.positionAndType.w);
-    vec3 lightColor = light.colorAndIntensity.rgb;
-    float lightIntensity = light.colorAndIntensity.a;
-    float lightRadius = light.radiusAndInnerCone.x;
-
-    if (lightIntensity <= 0.0) return vec3(0.0);
-
-    vec3 lightVec = lightPos - worldPos;
-    float distance = length(lightVec);
-    vec3 L = normalize(lightVec);
-
-    // Early out if beyond radius
-    if (lightRadius > 0.0 && distance > lightRadius) return vec3(0.0);
-
-    // Calculate attenuation
-    float attenuation = calculateAttenuation(distance, lightRadius);
-
-    // For spot lights, apply cone falloff
-    if (lightType == LIGHT_TYPE_SPOT) {
-        vec3 spotDir = normalize(light.directionAndCone.xyz);
-        float outerCone = light.directionAndCone.w;
-        float innerCone = light.radiusAndInnerCone.y;
-        float spotFalloff = calculateSpotFalloff(L, spotDir, innerCone, outerCone);
-        attenuation *= spotFalloff;
-    }
-
-    // Simple diffuse + subsurface (matches calculateTreeLeafLighting)
-    float NdotL = max(dot(N, L), 0.0);
-    float NdotLBack = max(dot(-N, L), 0.0);
-    float subsurface = NdotLBack * 0.3;
-
-    // Energy-conserving diffuse
-    vec3 diffuse = albedo / PI;
-
-    return diffuse * lightColor * lightIntensity * (NdotL + subsurface) * attenuation;
-}
-
 // Calculate contribution from all dynamic lights for tree leaves
-vec3 calculateAllDynamicLightsLeaf(vec3 N, vec3 worldPos, vec3 albedo) {
+vec3 calculateAllDynamicLightsLeaf(vec3 N, vec3 V, vec3 worldPos, vec3 albedo) {
     vec3 totalLight = vec3(0.0);
     uint numLights = min(lightBuffer.lightCount.x, MAX_LIGHTS);
 
     for (uint i = 0; i < numLights; i++) {
-        totalLight += calculateDynamicLightLeaf(lightBuffer.lights[i], N, worldPos, albedo);
+        totalLight += calculateDynamicLightVegetation(
+            lightBuffer.lights[i], N, V, worldPos, albedo,
+            VEGETATION_ROUGHNESS, VEGETATION_SSS_STRENGTH
+        );
     }
 
     return totalLight;
@@ -143,6 +96,7 @@ void main() {
     // View and light directions
     vec3 V = normalize(ubo.cameraPosition.xyz - fragWorldPos);
     vec3 sunL = normalize(ubo.sunDirection.xyz);  // sunDirection points toward sun
+    vec3 moonL = normalize(ubo.moonDirection.xyz);
 
     // === SNOW LAYER ===
     vec3 albedo = baseColor;
@@ -175,20 +129,38 @@ void main() {
     float shadow = combineShadows(terrainShadow, cloudShadowFactor);
 
     // === SUN LIGHTING ===
-    // Use calculateTreeLeafLighting which matches the impostor lighting model
-    vec3 sunLight = calculateTreeLeafLighting(
+    vec3 sunLight = calculateVegetationSunLight(
         N, V, sunL,
-        albedo, shadow,
         ubo.sunColor.rgb, ubo.sunDirection.w,
-        ubo.ambientColor.rgb
+        albedo, VEGETATION_ROUGHNESS, VEGETATION_SSS_STRENGTH,
+        shadow
+    );
+
+    // === MOON LIGHTING ===
+    vec3 moonLight = calculateVegetationMoonLight(
+        N, V, moonL,
+        ubo.moonColor.rgb, ubo.moonDirection.w,
+        ubo.sunDirection.y,  // Sun altitude for twilight calculation
+        albedo, VEGETATION_SSS_STRENGTH
     );
 
     // === DYNAMIC LIGHTS ===
-    vec3 dynamicLights = calculateAllDynamicLightsLeaf(N, fragWorldPos, albedo);
+    vec3 dynamicLights = calculateAllDynamicLightsLeaf(N, V, fragWorldPos, albedo);
+
+    // === RIM LIGHTING ===
+    vec3 rimLight = calculateVegetationRimLight(
+        N, V,
+        ubo.ambientColor.rgb, ubo.sunColor.rgb, ubo.sunDirection.w
+    );
+
+    // === AMBIENT LIGHTING ===
+    // For leaves, use a fixed height value (they're all "tips" of the tree)
+    float leafHeight = 0.8;  // Leaves are near the top
+    vec3 ambient = calculateHeightAmbient(ubo.ambientColor.rgb, albedo, leafHeight);
+    float ao = calculateVegetationAO(leafHeight);
 
     // === COMBINE LIGHTING ===
-    // Note: ambient is already included in calculateTreeLeafLighting
-    vec3 color = sunLight + dynamicLights;
+    vec3 color = (ambient + sunLight + moonLight + dynamicLights + rimLight) * ao;
 
     // Apply aerial perspective for distant leaves
     color = applyAerialPerspectiveSimple(color, fragWorldPos);

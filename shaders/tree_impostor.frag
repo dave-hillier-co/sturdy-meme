@@ -10,7 +10,7 @@ const int NUM_CASCADES = 4;
 #include "shadow_common.glsl"
 #include "color_common.glsl"
 #include "octahedral_mapping.glsl"
-#include "tree_lighting_common.glsl"
+#include "vegetation_lighting_common.glsl"
 #include "dither_common.glsl"
 
 layout(location = 0) in vec2 fragTexCoord;
@@ -204,25 +204,50 @@ void main() {
 
     // Calculate lighting directions
     vec3 V = normalize(ubo.cameraPosition.xyz - fragWorldPos);
-    vec3 L = normalize(ubo.sunDirection.xyz);  // sunDirection points toward sun
+    vec3 sunL = normalize(ubo.sunDirection.xyz);  // sunDirection points toward sun
+    vec3 moonL = normalize(ubo.moonDirection.xyz);
 
     // Shadow sampling
     float shadow = calculateCascadedShadow(
-        fragWorldPos, worldNormal, L,
+        fragWorldPos, worldNormal, sunL,
         ubo.view, ubo.cascadeSplits, ubo.cascadeViewProj,
         ubo.shadowMapSize, shadowMapArray
     );
 
-    // Calculate lighting using common function
-    vec3 color = calculateTreeImpostorLighting(
-        worldNormal, V, L,
-        albedo,
-        ao,
-        shadow,
-        ubo.sunColor.rgb,
-        ubo.sunDirection.w,
-        ubo.ambientColor.rgb
+    // === SUN LIGHTING ===
+    // Use vegetation-style lighting to match tree leaves
+    vec3 sunLight = calculateVegetationSunLight(
+        worldNormal, V, sunL,
+        ubo.sunColor.rgb, ubo.sunDirection.w,
+        albedo, VEGETATION_ROUGHNESS, VEGETATION_SSS_STRENGTH,
+        shadow
     );
+
+    // === MOON LIGHTING ===
+    vec3 moonLight = calculateVegetationMoonLight(
+        worldNormal, V, moonL,
+        ubo.moonColor.rgb, ubo.moonDirection.w,
+        ubo.sunDirection.y,  // Sun altitude for twilight calculation
+        albedo, VEGETATION_SSS_STRENGTH
+    );
+
+    // === RIM LIGHTING ===
+    vec3 rimLight = calculateVegetationRimLight(
+        worldNormal, V,
+        ubo.ambientColor.rgb, ubo.sunColor.rgb, ubo.sunDirection.w
+    );
+
+    // === AMBIENT LIGHTING ===
+    // Use fixed height for impostors (they represent full tree canopy)
+    float impostorHeight = 0.8;
+    vec3 ambient = calculateHeightAmbient(ubo.ambientColor.rgb, albedo, impostorHeight);
+
+    // Apply baked AO from impostor atlas
+    float vegetationAO = calculateVegetationAO(impostorHeight);
+    float combinedAO = ao * vegetationAO;
+
+    // === COMBINE LIGHTING ===
+    vec3 color = (ambient + sunLight + moonLight + rimLight) * combinedAO;
 
     // Apply aerial perspective for distant impostors
     color = applyAerialPerspectiveSimple(color, fragWorldPos);

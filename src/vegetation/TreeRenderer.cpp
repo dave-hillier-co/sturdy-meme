@@ -437,12 +437,6 @@ void TreeRenderer::updateCulledLeafDescriptorSet(
     VkImageView leafAlbedo,
     VkSampler leafSampler) {
 
-    // Skip redundant updates - descriptor bindings don't change per-frame
-    std::string key = std::to_string(frameIndex) + ":" + leafType;
-    if (initializedCulledLeafDescriptors_.count(key)) {
-        return;
-    }
-
     // Skip if culling not available
     if (!leafCulling_ || leafCulling_->getOutputBuffer() == VK_NULL_HANDLE) {
         return;
@@ -460,6 +454,10 @@ void TreeRenderer::updateCulledLeafDescriptorSet(
 
     VkDescriptorSet dstSet = culledLeafDescriptorSets_[frameIndex][leafType];
 
+    // IMPORTANT: Must update SSBO bindings every frame because getOutputBuffer()
+    // returns a different buffer each frame due to triple-buffering.
+    // Previously this was cached, causing leaves to read from stale buffers
+    // and display with wrong textures (the "two textures on same leaves" bug).
     DescriptorManager::SetWriter writer(device_, dstSet);
     writer.writeBuffer(Bindings::TREE_GFX_UBO, uniformBuffer, 0, VK_WHOLE_SIZE)
           .writeImage(Bindings::TREE_GFX_SHADOW_MAP, shadowMapView, shadowSampler)
@@ -468,9 +466,6 @@ void TreeRenderer::updateCulledLeafDescriptorSet(
           .writeBuffer(Bindings::TREE_GFX_LEAF_INSTANCES, leafCulling_->getOutputBuffer(), 0, VK_WHOLE_SIZE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
           .writeBuffer(Bindings::TREE_GFX_TREE_DATA, leafCulling_->getTreeRenderDataBuffer(), 0, VK_WHOLE_SIZE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
           .update();
-
-    // Mark as initialized to skip redundant updates
-    initializedCulledLeafDescriptors_.insert(key);
 }
 
 VkDescriptorSet TreeRenderer::getBranchDescriptorSet(uint32_t frameIndex, const std::string& barkType) const {

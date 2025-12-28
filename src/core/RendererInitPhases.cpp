@@ -298,7 +298,7 @@ bool Renderer::initSubsystems(const InitContext& initCtx) {
     // Initialize TreeLODSystem for impostor rendering
     {
         TreeLODSystem::InitInfo treeLODInfo{};
-        treeLODInfo.raiiDevice = &vulkanContext.getRaiiDevice();
+        treeLODInfo.raiiDevice = &vulkanContext_->getRaiiDevice();
         treeLODInfo.device = device;
         treeLODInfo.physicalDevice = physicalDevice;
         treeLODInfo.allocator = allocator;

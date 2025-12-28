@@ -317,10 +317,10 @@ In-engine systems. See [IMPL_RUNTIME.md](IMPL_RUNTIME.md)
 *Reference: [IMPL_RUNTIME.md](IMPL_RUNTIME.md) §4.2*
 
 ### Renderer Integration
-- [ ] `SettlementSystem` class (following `TreeSystem` / `RockSystem` pattern)
-  - [ ] `create()` factory with InitInfo
-  - [ ] `getBuildingRenderables()` / `getWallRenderables()` / `getRoadRenderables()`
-  - [ ] Integration with existing render pipeline
+- [x] `SettlementSystem` class (following `TreeSystem` / `RockSystem` pattern)
+  - [x] `create()` factory with InitInfo
+  - [x] `getSceneObjects()` for building renderables (walls/roads TBD)
+  - [x] Integration with existing render pipeline
 - [ ] Material assignment from ConfigSystem
 - [ ] Lighting integration (interior light sources)
 
@@ -357,8 +357,8 @@ Progress checkpoints from [00_OVERVIEW.md](00_OVERVIEW.md)
 - [ ] **Character can walk from any settlement to any other**
 
 ### M3: Blockout Volumes
-- [ ] Extruded boxes for buildings (footprint × height)
-- [ ] Correct proportions and scale
+- [x] Extruded boxes for buildings (footprint × height)
+- [x] Correct proportions and scale
 - [ ] Collision geometry for gameplay
 - [ ] Wall extrusion
 
@@ -436,15 +436,15 @@ From [IMPL_OVERVIEW.md](IMPL_OVERVIEW.md) §6
 Key reuse points from [IMPL_RECONCILIATION.md](IMPL_RECONCILIATION.md)
 
 ### Direct Reuse
-- [ ] Use `BiomeGenerator` settlement positions directly
+- [x] Use `BiomeGenerator` settlement positions directly
 - [ ] Use `RoadPathfinder` for inter-settlement roads
 - [ ] Use `RoadSpline` / `RoadNetwork` for path geometry
-- [ ] Use `TerrainHeight` utilities for height conversion
-- [ ] Use existing `Mesh` primitives (cube, cylinder, etc.)
-- [ ] Follow `TreeSystem` / `RockSystem` patterns for runtime
+- [x] Use `TerrainHeight` utilities for height conversion
+- [x] Use existing `Mesh` primitives (cube, cylinder, etc.)
+- [x] Follow `TreeSystem` / `RockSystem` patterns for runtime
 
 ### Extensions Required
-- [ ] Extend `RoadType` enum with street types (Street, BackLane, Alley)
+- [x] Extend `RoadType` enum with street types (Street, BackLane, Alley)
 - [ ] Extend `Mesh` with polygon extrusion methods
 - [ ] Add `StreetPathfinder` extending `RoadPathfinder`
 
@@ -454,7 +454,7 @@ Key reuse points from [IMPL_RECONCILIATION.md](IMPL_RECONCILIATION.md)
 - [ ] `SpaceColonization` for organic street networks
 - [ ] `ShapeGrammar` for building geometry
 - [ ] `RoofGenerator` for roof meshes
-- [ ] `SettlementSystem` for runtime rendering
+- [x] `SettlementSystem` for runtime rendering
 
 ---
 
@@ -515,8 +515,8 @@ assets/
 Immediate progress with minimal new code:
 
 1. [ ] **SVG Export from BiomeGenerator** - export settlements as circles, roads as lines
-2. [ ] **Blockout cubes** - place `Mesh::createCube()` at settlement positions
-3. [ ] **Extend RoadType** - add Street/Lane/Alley to existing enum
+2. [x] **Blockout cubes** - place `Mesh::createCube()` at settlement positions
+3. [x] **Extend RoadType** - add Street/Lane/Alley to existing enum
 4. [ ] **Config files** - start JSON templates with nlohmann::json
 
 ---

@@ -173,11 +173,6 @@ public:
     uint32_t getLOD0TilesX() const { return tilesX; }
     uint32_t getLOD0TilesZ() const { return tilesZ; }
 
-    // Synthesize a global heightmap from the coarsest LOD tiles
-    // This is used to initialize the global TerrainHeightMap without loading the full file
-    // Returns an empty vector on failure
-    std::vector<float> synthesizeGlobalHeightmap(uint32_t targetResolution) const;
-
     // LOD distance thresholds (can be configured)
     static constexpr float LOD0_MAX_DISTANCE = 1000.0f;  // < 1km: LOD0
     static constexpr float LOD1_MAX_DISTANCE = 2000.0f;  // 1-2km: LOD1

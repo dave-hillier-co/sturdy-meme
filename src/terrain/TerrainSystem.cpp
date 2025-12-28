@@ -129,9 +129,6 @@ bool TerrainSystem::initInternal(const InitInfo& info, const TerrainConfig& cfg)
         }
     }
 
-    // NOTE: Tile cache is already initialized above (before heightmap)
-    // so we can synthesize the global heightmap from coarse LOD tiles
-
     // Initialize virtual texture system (if configured)
     if (config.useVirtualTexture && !config.virtualTextureTileDir.empty()) {
         virtualTexture = std::make_unique<VirtualTexture::VirtualTextureSystem>();

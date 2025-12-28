@@ -178,6 +178,7 @@ private:
     bool createTreeFilterBuffers(uint32_t maxTrees);
     bool createTwoPhaseLeafCullPipeline();
     bool createTwoPhaseLeafCullDescriptorSets();
+    void updateTwoPhaseLeafCullDescriptorSets(const TreeSystem& treeSystem);
 
     void updateCullDescriptorSets(const TreeSystem& treeSystem);
 
@@ -262,4 +263,5 @@ private:
 
     bool twoPhaseEnabled_ = true;
     bool descriptorSetsInitialized_ = false;
+    bool twoPhaseDescriptorSetsInitialized_ = false;
 };

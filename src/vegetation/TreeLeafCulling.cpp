@@ -472,6 +472,25 @@ bool TreeLeafCulling::createTwoPhaseLeafCullDescriptorSets() {
     return true;
 }
 
+void TreeLeafCulling::updateTwoPhaseLeafCullDescriptorSets(const TreeSystem& treeSystem) {
+    // Pre-configure all per-frame descriptor sets with their corresponding frame-indexed buffers.
+    // This MUST be done once during initialization, NOT every frame in recordCulling.
+    // Updating descriptor sets during command buffer recording can cause race conditions
+    // if the GPU is still reading from a previous frame's descriptor set.
+    for (uint32_t f = 0; f < maxFramesInFlight_; ++f) {
+        DescriptorManager::SetWriter writer(device_, twoPhaseLeafCullDescriptorSets_[f]);
+        writer.writeBuffer(Bindings::LEAF_CULL_P3_VISIBLE_TREES, visibleTreeBuffers_.getVk(f), 0, VK_WHOLE_SIZE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+              .writeBuffer(Bindings::LEAF_CULL_P3_ALL_TREES, treeDataBuffers_.getVk(f), 0, VK_WHOLE_SIZE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+              .writeBuffer(Bindings::LEAF_CULL_P3_INPUT, treeSystem.getLeafInstanceBuffer(), 0, VK_WHOLE_SIZE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+              .writeBuffer(Bindings::LEAF_CULL_P3_OUTPUT, cullOutputBuffers_.getVk(f), 0, VK_WHOLE_SIZE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+              .writeBuffer(Bindings::LEAF_CULL_P3_INDIRECT, cullIndirectBuffers_.getVk(f), 0, VK_WHOLE_SIZE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+              .writeBuffer(Bindings::LEAF_CULL_P3_UNIFORMS, cullUniformBuffers_.buffers[f], 0, sizeof(TreeLeafCullUniforms), VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER)
+              .update();
+    }
+    twoPhaseDescriptorSetsInitialized_ = true;
+    SDL_Log("TreeLeafCulling: Configured %u two-phase leaf cull descriptor sets", maxFramesInFlight_);
+}
+
 void TreeLeafCulling::updateSpatialIndex(const TreeSystem& treeSystem) {
     const auto& trees = treeSystem.getTreeInstances();
     const auto& leafRenderables = treeSystem.getLeafRenderables();
@@ -767,16 +786,14 @@ void TreeLeafCulling::recordCulling(VkCommandBuffer cmd, uint32_t frameIndex,
             vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
                                  0, 1, &treeFilterBarrier, 0, nullptr, 0, nullptr);
 
-            // Two-phase leaf culling - use frame-indexed buffers for proper triple-buffering
+            // Two-phase leaf culling - use pre-configured frame-indexed descriptor sets
             if (twoPhaseLeafCullPipeline_.get() != VK_NULL_HANDLE && !twoPhaseLeafCullDescriptorSets_.empty()) {
-                DescriptorManager::SetWriter writer(device_, twoPhaseLeafCullDescriptorSets_[frameIndex]);
-                writer.writeBuffer(Bindings::LEAF_CULL_P3_VISIBLE_TREES, visibleTreeBuffers_.getVk(frameIndex), 0, VK_WHOLE_SIZE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
-                      .writeBuffer(Bindings::LEAF_CULL_P3_ALL_TREES, treeDataBuffers_.getVk(frameIndex), 0, VK_WHOLE_SIZE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
-                      .writeBuffer(Bindings::LEAF_CULL_P3_INPUT, treeSystem.getLeafInstanceBuffer(), 0, VK_WHOLE_SIZE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
-                      .writeBuffer(Bindings::LEAF_CULL_P3_OUTPUT, cullOutputBuffers_.getVk(frameIndex), 0, VK_WHOLE_SIZE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
-                      .writeBuffer(Bindings::LEAF_CULL_P3_INDIRECT, cullIndirectBuffers_.getVk(frameIndex), 0, VK_WHOLE_SIZE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
-                      .writeBuffer(Bindings::LEAF_CULL_P3_UNIFORMS, cullUniformBuffers_.buffers[frameIndex], 0, sizeof(TreeLeafCullUniforms), VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER)
-                      .update();
+                // Initialize two-phase descriptor sets once when all buffers are available.
+                // This MUST NOT be done every frame - updating descriptor sets during command
+                // buffer recording causes race conditions with in-flight frames.
+                if (!twoPhaseDescriptorSetsInitialized_) {
+                    updateTwoPhaseLeafCullDescriptorSets(treeSystem);
+                }
 
                 vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, twoPhaseLeafCullPipeline_.get());
                 vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, twoPhaseLeafCullPipelineLayout_.get(),

@@ -127,6 +127,286 @@ The existing terrain cut system will be extended for:
 
 ---
 
+## Visual Milestones - Breadth-First Development
+
+Development follows a **breadth-first** approach: fill the entire world with low-fidelity content first, then progressively refine. This enables parallel development of gameplay, AI, and other systems against real (if rough) environments.
+
+### Milestone Overview
+
+```
+M1        M2          M3         M4          M5          M6         M7         M8
+Markers → Footprints → Blockout → Silhouette → Structure → Material → Facade → Props
+  ▼          ▼           ▼          ▼           ▼           ▼          ▼         ▼
+ ●●●       ▭▭▭         ▤▤▤        ⌂⌂⌂         🏠🏠🏠       ░░░       ▦▦▦       ⚐⚐⚐
+Dots      Flat        Boxes      Roofs       Types       Colors    Windows   Details
+on map    shapes      extruded   added       visible     applied   doors     placed
+```
+
+### Milestone 1: World Markers
+**Goal**: See settlement distribution across entire terrain
+
+| Element | Representation |
+|---------|---------------|
+| Settlement centers | Colored sphere/icon by type |
+| Settlement radius | Circle decal on terrain |
+| External roads | Line decals connecting settlements |
+| Castle locations | Distinct marker |
+
+**Deliverables**:
+- Settlement position data from BiomeGenerator visualized
+- Road network from RoadPathfinder rendered as lines
+- Debug visualization mode in engine
+
+**Enables**: Understanding of world layout, travel distances, strategic positions
+
+---
+
+### Milestone 2: Footprints
+**Goal**: See settlement extents and internal structure as 2D shapes
+
+| Element | Representation |
+|---------|---------------|
+| Building lots | Flat colored quads on terrain |
+| Street network | Flat road surface geometry |
+| Wall perimeter | Line showing wall path |
+| Key buildings | Different colors (church=gold, inn=brown, etc.) |
+
+**Deliverables**:
+- Settlement layout generator outputting lot positions
+- Street network as flat mesh
+- Terrain decals or flat geometry for all elements
+
+**Enables**: Pathfinding development, NPC placement testing, gameplay area sizing
+
+---
+
+### Milestone 3: Blockout Volumes
+**Goal**: 3D presence - correct mass and scale, no detail
+
+| Element | Representation |
+|---------|---------------|
+| Buildings | Extruded boxes (footprint × height) |
+| Walls | Extruded wall path (simple box section) |
+| Towers | Cylinders or box primitives |
+| Gates | Box with tunnel cutout |
+| Castle keep | Large box |
+
+**Visual quality**: Minecraft-like, but correct proportions
+
+**Deliverables**:
+- Procedural box mesh generation for each building
+- Simple wall extrusion
+- Collision geometry (usable for gameplay)
+
+**Enables**: First-person navigation, combat testing, siege mechanics prototyping
+
+---
+
+### Milestone 4: Silhouettes
+**Goal**: Recognizable medieval settlement from distance
+
+| Element | Representation |
+|---------|---------------|
+| Buildings | Box + pitched roof (gable/hipped) |
+| Church | Box + tower with simple spire |
+| Walls | Box section with flat-top crenellation |
+| Towers | Cylinder + crenellated top |
+| Gates | Arch shape in wall |
+| Castle keep | Stepped profile, corner turrets as boxes |
+
+**Visual quality**: Identifiable building types, good for impostor generation
+
+**Deliverables**:
+- Roof generation (straight skeleton or simplified)
+- Tower cap geometry
+- Basic crenellation pattern
+
+**Enables**: Long-distance visibility, impostor atlas generation, skyline composition
+
+---
+
+### Milestone 5: Structural Articulation
+**Goal**: Building types clearly distinguishable
+
+| Element | Representation |
+|---------|---------------|
+| Timber buildings | Visible frame lines on walls |
+| Stone buildings | Different wall profile |
+| Church | Buttresses, window openings (holes) |
+| Longhouse | Distinct proportions |
+| Castle | Forebuilding, spiral stair turret shapes |
+| Mill | Wheel or sail shapes attached |
+
+**Visual quality**: Can identify building function from medium distance
+
+**Deliverables**:
+- Building type-specific geometry rules
+- Structural element generation (beams, buttresses)
+- Opening placement (doors, windows as holes)
+
+**Enables**: Player orientation, building-specific gameplay, quest targeting
+
+---
+
+### Milestone 6: Material Assignment
+**Goal**: Color and material variation, sense of place
+
+| Element | Representation |
+|---------|---------------|
+| Walls | Base color by material (flint=grey, timber=brown, daub=cream) |
+| Roofs | Thatch=golden, tile=terracotta, slate=grey |
+| Timber | Dark brown/black beams |
+| Stone details | Lighter color for quoins, dressings |
+
+**Visual quality**: Distinct regional character, no texture detail yet
+
+**Deliverables**:
+- Material ID assignment per surface
+- Basic color palette per material
+- Procedural color variation (age, weathering tint)
+
+**Enables**: Atmosphere, regional identity, time-of-day lighting tests
+
+---
+
+### Milestone 7: Facade Detail
+**Goal**: Close-up visual interest
+
+| Element | Representation |
+|---------|---------------|
+| Windows | Geometry with frame, possibly shutters |
+| Doors | Planked door geometry |
+| Timber frame | 3D beam geometry (not just lines) |
+| Chimneys | Basic chimney stacks |
+| Church windows | Lancet/round arch shapes |
+| Signs | Inn signs, shop signs |
+
+**Visual quality**: Acceptable for gameplay camera distances
+
+**Deliverables**:
+- Window/door insertion system
+- Timber frame geometry generation
+- Chimney placement
+
+**Enables**: NPC interaction points, entry/exit visualization
+
+---
+
+### Milestone 8: Props and Ground Detail
+**Goal**: Lived-in feeling, environmental storytelling
+
+| Element | Representation |
+|---------|---------------|
+| Yard props | Carts, barrels, haystacks, tools |
+| Fences | Property boundaries |
+| Street furniture | Wells, market stalls, posts |
+| Ground variation | Mud, cobbles, grass patches |
+| Vegetation | Garden plots, trees |
+
+**Visual quality**: Rich environment for exploration
+
+**Deliverables**:
+- Prop placement system
+- Ground material variation
+- Vegetation integration with TreeSystem
+
+**Enables**: Looting, hiding spots, environmental puzzles
+
+---
+
+### Milestone 9: Interiors (Gameplay-Critical Only)
+**Goal**: Enterable buildings for gameplay
+
+| Element | Representation |
+|---------|---------------|
+| Room volumes | Correct floor plan |
+| Basic furniture | Table, bed, chest (blockout) |
+| Hearth | Fire location with light source |
+| Doorways | Portals between rooms |
+
+**Visual quality**: Functional for gameplay, not showcase
+
+**Deliverables**:
+- Floor plan generation
+- Interior wall placement
+- Basic furniture blockout
+
+**Enables**: Indoor combat, stealth, NPC schedules, looting
+
+---
+
+### Milestone 10: Polish
+**Goal**: Release quality for key areas
+
+| Element | Representation |
+|---------|---------------|
+| Full texture detail | PBR materials with normal maps |
+| Weathering | Moss, staining, wear |
+| Unique buildings | Hand-crafted hero assets |
+| Interior detail | Full furniture, props |
+| LOD system | Smooth transitions |
+| Lighting | Baked AO, interior lights |
+
+**Visual quality**: AAA for hero locations, good for everywhere
+
+**Deliverables**:
+- Texture generation/assignment
+- LOD mesh generation
+- Hand-crafted asset integration
+- Lighting bake
+
+---
+
+### Milestone Dependencies
+
+```
+                    ┌─────────────────────────────────────────────────┐
+                    │              PARALLEL WORKSTREAMS               │
+                    └─────────────────────────────────────────────────┘
+
+ SETTLEMENTS        M1 ──▶ M2 ──▶ M3 ──▶ M4 ──▶ M5 ──▶ M6 ──▶ M7 ──▶ M8 ──▶ M9 ──▶ M10
+                    │      │      │      │      │
+                    ▼      ▼      ▼      ▼      ▼
+ GAMEPLAY           ·······●──────●──────●──────●─────────────────────────────────────▶
+                           │      │      │
+                           │      ▼      │
+ AI/NPCs            ·······●──────●──────●────────────────────────────────────────────▶
+                           │      │
+                           ▼      ▼
+ COMBAT             ·······●──────●───────────────────────────────────────────────────▶
+                                  │
+                                  ▼
+ QUESTS             ··············●───────────────────────────────────────────────────▶
+
+ Legend: ● = Can begin development  ─▶ = Continues with refinement
+```
+
+### Recommended First Pass
+
+For fastest time-to-playable:
+
+1. **M1**: Generate all settlement markers (use existing BiomeGenerator output)
+2. **M2**: Generate footprints for 3-5 test settlements
+3. **M3**: Blockout those test settlements
+4. **M3.5**: Extend blockout to ALL settlements (wide coverage)
+5. **M4**: Add silhouettes to all (roofs, crenellations)
+6. **Continue breadth-first**: Each milestone covers entire world before next
+
+### Quality Tiers
+
+Not all areas need equal polish. Define tiers:
+
+| Tier | Areas | Target Milestone |
+|------|-------|-----------------|
+| **Hero** | Starting town, key story locations | M10 (full polish) |
+| **Primary** | Major towns, quest hubs | M8-M9 |
+| **Secondary** | Villages on main routes | M6-M7 |
+| **Background** | Distant hamlets, rarely visited | M4-M5 |
+
+This allows focused effort while maintaining world coverage.
+
+---
+
 ## Historical & Regional Context
 
 ### The High Medieval Period (c. 1100-1300 AD)
@@ -215,6 +495,11 @@ This era represents the peak of medieval English civilization before the Black D
 
 ## Table of Contents
 
+**Development Approach**
+- [Visual Milestones - Breadth-First Development](#visual-milestones---breadth-first-development)
+- [Historical & Regional Context](#historical--regional-context)
+
+**Implementation Phases** (ordered by milestone dependencies)
 1. [Plan Overview](#1-plan-overview)
 2. [Architecture & Design Principles](#2-architecture--design-principles)
 3. [Phase 1: Foundation & Data Structures](#3-phase-1-foundation--data-structures)

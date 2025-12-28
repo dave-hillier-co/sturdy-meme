@@ -6,6 +6,8 @@ const int NUM_CASCADES = 4;
 
 #include "bindings.glsl"
 #include "ubo_common.glsl"
+#include "noise_common.glsl"
+#include "wind_animation_common.glsl"
 #include "grass_blade_common.glsl"
 
 struct GrassInstance {
@@ -56,34 +58,34 @@ void main() {
     vec3 T, B;
     grassBuildTerrainBasis(terrainNormal, facing, T, B);
 
-    // Wind animation using noise-based wind system
-    vec2 windDir = wind.windDirectionAndStrength.xy;
-    float windTime = wind.windParams.w;
+    // Extract wind parameters using common function
+    WindParams windParams = windExtractParams(wind.windDirectionAndStrength, wind.windParams);
 
-    // Sample wind strength at this blade's position
+    // Sample wind strength at this blade's position using grass-specific wind function
     float windSample = grassSampleWind(
         vec2(basePos.x, basePos.z),
-        windDir,
-        wind.windDirectionAndStrength.z,  // windStrength
-        wind.windDirectionAndStrength.w,  // windSpeed
-        windTime,
-        wind.windParams.x,  // gustFreq
-        wind.windParams.y   // gustAmp
+        windParams.direction,
+        windParams.strength,
+        windParams.speed,
+        windParams.time,
+        windParams.gustFreq,
+        windParams.gustAmp
     );
 
-    // Per-blade phase offset for variation (prevents lockstep motion)
-    float windPhase = bladeHash * 6.28318;
-    float phaseOffset = sin(windTime * 2.5 + windPhase) * 0.3;
+    // Per-blade phase offset and wind angle calculation using common function
+    float grassPhaseOffset = windCalculateGrassOffset(
+        vec2(basePos.x, basePos.z),
+        windParams.direction,
+        bladeHash,
+        facing,
+        windParams
+    );
 
-    // Wind offset in wind direction (converted to local X space after rotation)
-    // The blade faces in the 'facing' direction, so we need to project wind onto blade space
-    float windAngle = atan(windDir.y, windDir.x);
+    // Wind offset combines sampled wind with phase offset
+    float windAngle = atan(windParams.direction.y, windParams.direction.x);
     float relativeWindAngle = windAngle - facing;
-
-    // Wind effect is stronger when wind is perpendicular to blade facing
-    // This creates more natural bending
-    float windEffect = (windSample + phaseOffset) * 0.25;
-    float windOffset = windEffect * cos(relativeWindAngle);
+    float windEffect = windSample * 0.25;
+    float windOffset = (windEffect + grassPhaseOffset * 0.25) * cos(relativeWindAngle);
 
     // Calculate blade deformation (fold/droop) - shared with shadow pass
     GrassBladeControlPoints cp = grassCalculateBladeDeformation(height, bladeHash, tilt, windOffset);

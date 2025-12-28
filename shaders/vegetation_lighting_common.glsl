@@ -101,10 +101,13 @@ vec3 calculateDynamicLightVegetation(
     // Two-sided diffuse for thin vegetation
     float diffuse = calculateTwoSidedDiffuse(dot(N, L));
 
+    // Energy-conserving diffuse (divide by PI to match impostor lighting)
+    vec3 diffuseContrib = (albedo / PI) * diffuse;
+
     // Add SSS for dynamic light
     vec3 sss = calculateSSS(L, V, N, lightColor, albedo, sssStrength);
 
-    return (albedo * diffuse + sss) * lightColor * lightIntensity * attenuation;
+    return (diffuseContrib + sss) * lightColor * lightIntensity * attenuation;
 }
 
 // ============================================================================
@@ -158,6 +161,9 @@ vec3 calculateVegetationMoonLight(
     float moonNdotL = dot(N, moonDir);
     float moonDiffuse = calculateTwoSidedDiffuse(moonNdotL);
 
+    // Energy-conserving diffuse (divide by PI to match impostor lighting)
+    vec3 diffuseContrib = (albedo / PI) * moonDiffuse;
+
     // Smooth transition: starts at sun altitude 10°, full effect at -6°
     float twilightFactor = smoothstep(0.17, -0.1, sunAltitude);
     float moonVisibility = smoothstep(-0.09, 0.1, moonDir.y);
@@ -165,7 +171,7 @@ vec3 calculateVegetationMoonLight(
 
     vec3 moonSss = calculateSSS(moonDir, V, N, moonColor, albedo, sssStrength) * 0.5 * moonSssFactor;
 
-    return (albedo * moonDiffuse + moonSss) * moonColor * moonIntensity;
+    return (diffuseContrib + moonSss) * moonColor * moonIntensity;
 }
 
 // ============================================================================
@@ -188,6 +194,9 @@ vec3 calculateVegetationSunLight(
     float sunNdotL = dot(N, sunDir);
     float sunDiffuse = calculateTwoSidedDiffuse(sunNdotL);
 
+    // Energy-conserving diffuse (divide by PI to match impostor lighting)
+    vec3 diffuseContrib = (albedo / PI) * sunDiffuse;
+
     // Specular highlight (subtle for vegetation)
     vec3 H = normalize(V + sunDir);
     float NoH = max(dot(N, H), 0.0);
@@ -200,7 +209,7 @@ vec3 calculateVegetationSunLight(
     // Subsurface scattering - light through vegetation when backlit
     vec3 sss = calculateSSS(sunDir, V, N, sunColor, albedo, sssStrength);
 
-    return (albedo * sunDiffuse + specular + sss) * sunColor * sunIntensity * shadow;
+    return (diffuseContrib + specular + sss) * sunColor * sunIntensity * shadow;
 }
 
 // ============================================================================

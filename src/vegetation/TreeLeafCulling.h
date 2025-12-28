@@ -179,6 +179,7 @@ private:
     bool createTwoPhaseLeafCullPipeline();
     bool createTwoPhaseLeafCullDescriptorSets();
     void updateTwoPhaseLeafCullDescriptorSets(const TreeSystem& treeSystem);
+    void updateTreeFilterDescriptorSets();
 
     void updateCullDescriptorSets(const TreeSystem& treeSystem);
 
@@ -264,4 +265,5 @@ private:
     bool twoPhaseEnabled_ = true;
     bool descriptorSetsInitialized_ = false;
     bool twoPhaseDescriptorSetsInitialized_ = false;
+    bool treeFilterDescriptorSetsInitialized_ = false;
 };

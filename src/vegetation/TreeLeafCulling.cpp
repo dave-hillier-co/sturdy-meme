@@ -392,8 +392,20 @@ bool TreeLeafCulling::createTreeFilterBuffers(uint32_t maxTrees) {
         return false;
     }
 
-    // Update descriptor sets with buffer bindings using SetWriter
-    // Each frame's descriptor set uses that frame's buffers for proper triple-buffering
+    // NOTE: Descriptor set bindings are NOT configured here because treeDataBuffers_
+    // doesn't exist yet (it's created lazily in recordCulling via createLeafCullBuffers).
+    // The bindings are configured later in updateTreeFilterDescriptorSets() after all
+    // required buffers exist.
+
+    SDL_Log("TreeLeafCulling: Allocated tree filter descriptor sets (max %u trees, %.2f KB visible tree buffer x %u frames)",
+            maxTrees, visibleTreeBufferSize_ / 1024.0f, maxFramesInFlight_);
+    return true;
+}
+
+void TreeLeafCulling::updateTreeFilterDescriptorSets() {
+    // Pre-configure all per-frame descriptor sets with their corresponding frame-indexed buffers.
+    // This MUST be done once after all required buffers exist, NOT during createTreeFilterBuffers
+    // where treeDataBuffers_ doesn't exist yet.
     for (uint32_t f = 0; f < maxFramesInFlight_; ++f) {
         DescriptorManager::SetWriter writer(device_, treeFilterDescriptorSets_[f]);
         writer.writeBuffer(Bindings::TREE_FILTER_ALL_TREES, treeDataBuffers_.getVk(f), 0, VK_WHOLE_SIZE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
@@ -405,10 +417,8 @@ bool TreeLeafCulling::createTreeFilterBuffers(uint32_t maxTrees) {
               .writeBuffer(Bindings::TREE_FILTER_UNIFORMS, treeFilterUniformBuffers_.buffers[f], 0, sizeof(TreeFilterUniforms), VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER)
               .update();
     }
-
-    SDL_Log("TreeLeafCulling: Created tree filter buffers (max %u trees, %.2f KB visible tree buffer x %u frames)",
-            maxTrees, visibleTreeBufferSize_ / 1024.0f, maxFramesInFlight_);
-    return true;
+    treeFilterDescriptorSetsInitialized_ = true;
+    SDL_Log("TreeLeafCulling: Configured %u tree filter descriptor sets", maxFramesInFlight_);
 }
 
 bool TreeLeafCulling::createTwoPhaseLeafCullPipeline() {
@@ -629,6 +639,14 @@ void TreeLeafCulling::recordCulling(VkCommandBuffer cmd, uint32_t frameIndex,
             return;
         }
         updateCullDescriptorSets(treeSystem);
+
+        // Now that treeDataBuffers_ exists, initialize tree filter descriptor sets if they were
+        // allocated earlier (during updateSpatialIndex -> createTreeFilterBuffers).
+        // The descriptor sets couldn't be bound during allocation because treeDataBuffers_
+        // didn't exist yet.
+        if (!treeFilterDescriptorSets_.empty() && !treeFilterDescriptorSetsInitialized_) {
+            updateTreeFilterDescriptorSets();
+        }
     }
 
     // Reset all 4 indirect draw commands (one per leaf type: oak, ash, aspen, pine)

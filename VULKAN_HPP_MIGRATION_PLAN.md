@@ -5,7 +5,8 @@
 - [x] **Phase 0**: Add `vk::raii::Device` to VulkanContext (foundation for vk::raii types)
 - [ ] Phase 1: Deprecate VulkanRAII.h custom wrappers
 - [ ] Phase 2: Deprecate VulkanBarriers.h and VulkanResourceFactory
-- [ ] Phase 3: Migrate high-usage files
+- [x] Phase 3.1: TreeImpostorAtlas.cpp migrated to vk::raii types
+- [ ] Phase 3: Migrate remaining high-usage files
 
 ---
 
@@ -121,11 +122,16 @@ This factory wraps vulkan-hpp with reinterpret_cast - unnecessary indirection:
 
 ## Phase 3: High-Usage Files Migration
 
-### 3.1 TreeImpostorAtlas.cpp (134 usages)
-- Replace ManagedImageView → vk::raii::ImageView
-- Replace ManagedFramebuffer → vk::raii::Framebuffer
-- Replace ManagedRenderPass → vk::raii::RenderPass
-- Convert all Vk* structs to vk::* builder pattern
+### 3.1 TreeImpostorAtlas.cpp (134 usages) ✅ DONE
+- ✅ Replace ManagedImageView → vk::raii::ImageView
+- ✅ Replace ManagedFramebuffer → vk::raii::Framebuffer
+- ✅ Replace ManagedRenderPass → vk::raii::RenderPass
+- ✅ Replace ManagedPipeline → vk::raii::Pipeline
+- ✅ Replace ManagedPipelineLayout → vk::raii::PipelineLayout
+- ✅ Replace ManagedDescriptorSetLayout → vk::raii::DescriptorSetLayout
+- ✅ Replace ManagedSampler → vk::raii::Sampler
+- ✅ Convert command buffer recording to vulkan-hpp method calls
+- ✅ Add raiiDevice to InitInfo
 
 ### 3.2 TreeLODSystem.cpp (121 usages)
 - Replace ManagedPipeline → vk::raii::Pipeline
@@ -186,18 +192,18 @@ Migrate all other files using Managed* types:
 
 ## Files to Migrate (Priority Order)
 
-| Priority | File | Usages | Primary Changes |
-|----------|------|--------|-----------------|
-| 1 | VulkanBarriers.h | 160 | Convert barrier structs/calls |
-| 2 | TreeImpostorAtlas.cpp | 134 | ImageView, Framebuffer, RenderPass |
-| 3 | TreeLODSystem.cpp | 121 | Pipeline, DescriptorSetLayout |
-| 4 | TreeRenderer.cpp | 103 | Pipeline, PipelineLayout |
-| 5 | VulkanResourceFactory.cpp | 94 | Resource creation patterns |
-| 6 | TerrainSystem.cpp | 91 | All Managed* types |
-| 7 | PostProcessSystem.cpp | 86 | Framebuffer, RenderPass |
-| 8 | GrassSystem.cpp | 81 | All Managed* types |
-| 9 | CatmullClarkSystem.cpp | 81 | Pipeline |
-| 10 | Remaining files | - | Clean up stragglers |
+| Priority | File | Usages | Status | Primary Changes |
+|----------|------|--------|--------|-----------------|
+| 1 | VulkanBarriers.h | 160 | Pending | Convert barrier structs/calls |
+| 2 | TreeImpostorAtlas.cpp | 134 | ✅ Done | ImageView, Framebuffer, RenderPass |
+| 3 | TreeLODSystem.cpp | 121 | Pending | Pipeline, DescriptorSetLayout |
+| 4 | TreeRenderer.cpp | 103 | Pending | Pipeline, PipelineLayout |
+| 5 | VulkanResourceFactory.cpp | 94 | Pending | Resource creation patterns |
+| 6 | TerrainSystem.cpp | 91 | Pending | All Managed* types |
+| 7 | PostProcessSystem.cpp | 86 | Pending | Framebuffer, RenderPass |
+| 8 | GrassSystem.cpp | 81 | Pending | All Managed* types |
+| 9 | CatmullClarkSystem.cpp | 81 | Pending | Pipeline |
+| 10 | Remaining files | - | Pending | Clean up stragglers |
 
 ---
 

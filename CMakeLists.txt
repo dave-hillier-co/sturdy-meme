@@ -55,6 +55,7 @@ set(SOURCES
     src/core/controls/SceneControlSubsystem.cpp
     src/core/controls/PlayerControlSubsystem.cpp
     src/core/vulkan/VulkanContext.cpp
+    src/core/LoadingRenderer.cpp
     src/core/Mesh.cpp
     src/core/BufferUtils.cpp
     src/core/Texture.cpp

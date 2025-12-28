@@ -600,9 +600,12 @@ void TreeLeafCulling::recordCulling(VkCommandBuffer cmd, uint32_t frameIndex,
     for (size_t treeIdx = 0; treeIdx < leafRenderables.size(); ++treeIdx) {
         const auto& renderable = leafRenderables[treeIdx];
 
+        // Use treeInstanceIndex for LOD lookups - this maps to lodStates_ which is indexed
+        // by treeInstances_, not leafRenderables_. This is critical because leafRenderables_
+        // may be a filtered subset of treeInstances_ (only trees with valid leaves).
         float lodBlendFactor = 0.0f;
-        if (lodSystem) {
-            lodBlendFactor = lodSystem->getBlendFactor(static_cast<uint32_t>(treeIdx));
+        if (lodSystem && renderable.treeInstanceIndex >= 0) {
+            lodBlendFactor = lodSystem->getBlendFactor(static_cast<uint32_t>(renderable.treeInstanceIndex));
         }
 
         uint32_t leafTypeIdx = LEAF_TYPE_OAK;

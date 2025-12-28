@@ -524,8 +524,9 @@ void TreeSystem::createSceneObjects() {
                 .withAutumnHueShift(opts.leaves.autumnHueShift)
                 .build();
 
-            // Store the mesh index so the renderer can look up leaf draw info
+            // Store indices for renderer lookups
             leafRenderable.leafInstanceIndex = static_cast<int>(instance.meshIndex);
+            leafRenderable.treeInstanceIndex = static_cast<int>(treeIdx);  // For LOD state lookup
             leafRenderables_.push_back(leafRenderable);
         }
     }

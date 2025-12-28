@@ -110,17 +110,9 @@ void main() {
     uint cellLocalIdx = gl_LocalInvocationID.x;  // Tree index within cell
     uint visibleCellIdx = gl_WorkGroupID.x;      // Which visible cell we're processing
 
-    // First thread in first workgroup initializes output buffers
-    if (gl_GlobalInvocationID.x == 0) {
-        visibleTreeCount = 0;
-        dispatchX = 0;
-        dispatchY = 1;
-        dispatchZ = 1;
-    }
-
-    // Ensure initialization is complete
-    barrier();
-    memoryBarrierBuffer();
+    // NOTE: visibleTreeCount and dispatch buffer are initialized on the CPU side
+    // via vkCmdUpdateBuffer before this shader runs. This avoids a cross-workgroup
+    // race condition (barrier() only syncs within a workgroup, not across workgroups).
 
     // Early exit if beyond visible cell count
     if (visibleCellIdx >= visibleCellCount) {

@@ -782,6 +782,24 @@ void TreeLeafCulling::recordCulling(VkCommandBuffer cmd, uint32_t frameIndex,
         bool useTwoPhase = twoPhaseEnabled_ && treeFilterPipeline_.get() != VK_NULL_HANDLE &&
                            visibleTreeBuffer_ != VK_NULL_HANDLE && !treeFilterDescriptorSets_.empty();
 
+        // Reset cell cull output buffers on CPU to avoid cross-workgroup race condition
+        // (barrier() only syncs within a workgroup, not across workgroups)
+        uint32_t zeroVisibleCells = 0;
+        vkCmdUpdateBuffer(cmd, visibleCellBuffer_, 0, sizeof(uint32_t), &zeroVisibleCells);
+
+        // Reset cell cull indirect buffer: dispatchX=0, dispatchY=1, dispatchZ=1, totalVisibleTrees=0,
+        // bucketCounts[8]=0, bucketOffsets[8]=0 (total 20 uint32_t values)
+        constexpr uint32_t NUM_DISTANCE_BUCKETS = 8;
+        struct CellCullIndirectReset {
+            uint32_t dispatchX = 0;
+            uint32_t dispatchY = 1;
+            uint32_t dispatchZ = 1;
+            uint32_t totalVisibleTrees = 0;
+            uint32_t bucketCounts[NUM_DISTANCE_BUCKETS] = {0};
+            uint32_t bucketOffsets[NUM_DISTANCE_BUCKETS] = {0};
+        } cellCullReset{};
+        vkCmdUpdateBuffer(cmd, cellCullIndirectBuffer_, 0, sizeof(cellCullReset), &cellCullReset);
+
         // Use vkCmdUpdateBuffer to avoid HOST→COMPUTE stall (keeps update on GPU timeline)
         vkCmdUpdateBuffer(cmd, cellCullUniformBuffers_.buffers[frameIndex], 0,
                           sizeof(TreeCellCullUniforms), &cellUniforms);
@@ -799,12 +817,21 @@ void TreeLeafCulling::recordCulling(VkCommandBuffer cmd, uint32_t frameIndex,
 
             vkCmdUpdateBuffer(cmd, treeFilterUniformBuffers_.buffers[frameIndex], 0,
                               sizeof(TreeFilterUniforms), &filterUniforms);
+
+            // Reset visible tree buffer and indirect dispatch buffer on CPU to avoid
+            // cross-workgroup race condition (barrier() only syncs within a workgroup)
+            uint32_t zeroCount = 0;
+            vkCmdUpdateBuffer(cmd, visibleTreeBuffer_, 0, sizeof(uint32_t), &zeroCount);
+
+            // Reset indirect dispatch: dispatchX = 0, dispatchY = 1, dispatchZ = 1
+            uint32_t indirectReset[3] = {0, 1, 1};
+            vkCmdUpdateBuffer(cmd, leafCullIndirectDispatch_, 0, sizeof(indirectReset), indirectReset);
         }
 
         VkMemoryBarrier cellUniformBarrier{};
         cellUniformBarrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
         cellUniformBarrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-        cellUniformBarrier.dstAccessMask = VK_ACCESS_UNIFORM_READ_BIT;
+        cellUniformBarrier.dstAccessMask = VK_ACCESS_UNIFORM_READ_BIT | VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
         vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
                              0, 1, &cellUniformBarrier, 0, nullptr, 0, nullptr);
 

@@ -33,13 +33,22 @@ bool TerrainHeightMap::initInternal(const InitInfo& info) {
     terrainSize = info.terrainSize;
     heightScale = info.heightScale;
 
-    // Either load from file or generate procedurally
+    // TerrainHeightMap provides a fallback heightmap for positions outside tile cache coverage.
+    // The tile cache's base LOD tiles (loaded from LOD3) should cover the entire terrain,
+    // so this is mainly used during initialization before tile cache is ready.
+    bool heightDataLoaded = false;
+
     if (!info.heightmapPath.empty()) {
-        if (!loadHeightDataFromFile(info.heightmapPath, info.minAltitude, info.maxAltitude)) {
-            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to load heightmap from file, falling back to procedural");
-            if (!generateHeightData()) return false;
+        if (loadHeightDataFromFile(info.heightmapPath, info.minAltitude, info.maxAltitude)) {
+            heightDataLoaded = true;
+        } else {
+            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to load heightmap from file");
         }
-    } else {
+    }
+
+    // Fallback: procedural generation
+    if (!heightDataLoaded) {
+        SDL_Log("Using procedural height data");
         if (!generateHeightData()) return false;
     }
 

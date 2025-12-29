@@ -189,7 +189,9 @@ public:
     VkBuffer getIndirectBuffer(uint32_t frameIndex) const {
         return cullIndirectBuffers_.getVk(frameIndex);
     }
-    VkBuffer getTreeRenderDataBuffer() const { return treeRenderDataBuffer_; }
+    VkBuffer getTreeRenderDataBuffer(uint32_t frameIndex) const {
+        return treeRenderDataBuffers_.getVk(frameIndex);
+    }
     uint32_t getMaxLeavesPerType() const { return maxLeavesPerType_; }
 
     VkDevice getDevice() const { return device_; }
@@ -237,12 +239,12 @@ private:
     BufferUtils::PerFrameBufferSet cullUniformBuffers_;  // CullingUniforms at binding 3
     BufferUtils::PerFrameBufferSet leafCullParamsBuffers_;  // LeafCullParams at binding 8
 
-    VkBuffer treeDataBuffer_ = VK_NULL_HANDLE;
-    VmaAllocation treeDataAllocation_ = VK_NULL_HANDLE;
+    // Triple-buffered tree data buffers to prevent race conditions.
+    // These are updated every frame via vkCmdUpdateBuffer, so they must be
+    // triple-buffered to avoid overwriting data that in-flight frames are reading.
+    BufferUtils::FrameIndexedBuffers treeDataBuffers_;
+    BufferUtils::FrameIndexedBuffers treeRenderDataBuffers_;
     VkDeviceSize treeDataBufferSize_ = 0;
-
-    VkBuffer treeRenderDataBuffer_ = VK_NULL_HANDLE;
-    VmaAllocation treeRenderDataAllocation_ = VK_NULL_HANDLE;
     VkDeviceSize treeRenderDataBufferSize_ = 0;
 
     uint32_t numTreesForIndirect_ = 0;
@@ -258,12 +260,13 @@ private:
     ManagedDescriptorSetLayout cellCullDescriptorSetLayout_;
     std::vector<VkDescriptorSet> cellCullDescriptorSets_;
 
-    VkBuffer visibleCellBuffer_ = VK_NULL_HANDLE;
-    VmaAllocation visibleCellAllocation_ = VK_NULL_HANDLE;
+    // Triple-buffered intermediate buffers to prevent race conditions.
+    // These are reset and written each frame, so they must be triple-buffered
+    // to avoid frame N+1 overwriting data that frame N is still reading.
+    BufferUtils::FrameIndexedBuffers visibleCellBuffers_;
     VkDeviceSize visibleCellBufferSize_ = 0;
 
-    VkBuffer cellCullIndirectBuffer_ = VK_NULL_HANDLE;
-    VmaAllocation cellCullIndirectAllocation_ = VK_NULL_HANDLE;
+    BufferUtils::FrameIndexedBuffers cellCullIndirectBuffers_;
 
     BufferUtils::PerFrameBufferSet cellCullUniformBuffers_;  // CullingUniforms at binding 3
     BufferUtils::PerFrameBufferSet cellCullParamsBuffers_;  // CellCullParams at binding 4
@@ -286,12 +289,11 @@ private:
 
     BufferUtils::PerFrameBufferSet leafCullP3ParamsBuffers_;  // LeafCullP3Params at binding 6
 
-    VkBuffer visibleTreeBuffer_ = VK_NULL_HANDLE;
-    VmaAllocation visibleTreeAllocation_ = VK_NULL_HANDLE;
+    // Triple-buffered intermediate buffers for two-phase culling
+    BufferUtils::FrameIndexedBuffers visibleTreeBuffers_;
     VkDeviceSize visibleTreeBufferSize_ = 0;
 
-    VkBuffer leafCullIndirectDispatch_ = VK_NULL_HANDLE;
-    VmaAllocation leafCullIndirectDispatchAllocation_ = VK_NULL_HANDLE;
+    BufferUtils::FrameIndexedBuffers leafCullIndirectDispatchBuffers_;
 
     bool twoPhaseEnabled_ = true;
     bool descriptorSetsInitialized_ = false;

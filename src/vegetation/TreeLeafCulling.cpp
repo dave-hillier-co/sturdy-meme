@@ -16,8 +16,9 @@ std::unique_ptr<TreeLeafCulling> TreeLeafCulling::create(const InitInfo& info) {
 }
 
 TreeLeafCulling::~TreeLeafCulling() {
-    // cullOutputBuffers_ and cullIndirectBuffers_ are FrameIndexedBuffers
-    // which clean up automatically via their destroy() method
+    // FrameIndexedBuffers clean up automatically via their destroy() method:
+    // - cullOutputBuffers_, cullIndirectBuffers_, treeDataBuffers_, treeRenderDataBuffers_
+    // - visibleCellBuffers_, cellCullIndirectBuffers_, visibleTreeBuffers_, leafCullIndirectDispatchBuffers_
 
     // Use helper for per-frame buffer sets
     BufferUtils::destroyBuffers(allocator_, cullUniformBuffers_);
@@ -27,26 +28,6 @@ TreeLeafCulling::~TreeLeafCulling() {
     BufferUtils::destroyBuffers(allocator_, treeFilterUniformBuffers_);
     BufferUtils::destroyBuffers(allocator_, treeFilterParamsBuffers_);
     BufferUtils::destroyBuffers(allocator_, leafCullP3ParamsBuffers_);
-
-    // Cleanup single buffers
-    if (treeDataBuffer_ != VK_NULL_HANDLE) {
-        vmaDestroyBuffer(allocator_, treeDataBuffer_, treeDataAllocation_);
-    }
-    if (treeRenderDataBuffer_ != VK_NULL_HANDLE) {
-        vmaDestroyBuffer(allocator_, treeRenderDataBuffer_, treeRenderDataAllocation_);
-    }
-    if (visibleCellBuffer_ != VK_NULL_HANDLE) {
-        vmaDestroyBuffer(allocator_, visibleCellBuffer_, visibleCellAllocation_);
-    }
-    if (cellCullIndirectBuffer_ != VK_NULL_HANDLE) {
-        vmaDestroyBuffer(allocator_, cellCullIndirectBuffer_, cellCullIndirectAllocation_);
-    }
-    if (visibleTreeBuffer_ != VK_NULL_HANDLE) {
-        vmaDestroyBuffer(allocator_, visibleTreeBuffer_, visibleTreeAllocation_);
-    }
-    if (leafCullIndirectDispatch_ != VK_NULL_HANDLE) {
-        vmaDestroyBuffer(allocator_, leafCullIndirectDispatch_, leafCullIndirectDispatchAllocation_);
-    }
 }
 
 bool TreeLeafCulling::init(const InitInfo& info) {
@@ -192,31 +173,22 @@ bool TreeLeafCulling::createLeafCullBuffers(uint32_t maxLeafInstances, uint32_t 
         return false;
     }
 
-    // Create single (non-triple-buffered) buffers for tree data
-    VmaAllocationCreateInfo allocInfo{};
-    allocInfo.usage = VMA_MEMORY_USAGE_GPU_ONLY;
-
+    // Triple-buffered tree data buffers to prevent race conditions.
+    // These are updated every frame via vkCmdUpdateBuffer, so they must be
+    // triple-buffered to avoid GPU reading from a buffer that another frame is writing to.
     treeDataBufferSize_ = numTrees * sizeof(TreeCullData);
-    auto treeDataInfo = vk::BufferCreateInfo{}
-        .setSize(treeDataBufferSize_)
-        .setUsage(vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eTransferDst)
-        .setSharingMode(vk::SharingMode::eExclusive);
-
-    if (vmaCreateBuffer(allocator_, reinterpret_cast<const VkBufferCreateInfo*>(&treeDataInfo), &allocInfo,
-                        &treeDataBuffer_, &treeDataAllocation_, nullptr) != VK_SUCCESS) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "TreeLeafCulling: Failed to create tree cull data buffer");
+    if (!treeDataBuffers_.resize(
+            allocator_, maxFramesInFlight_, treeDataBufferSize_,
+            vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eTransferDst)) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "TreeLeafCulling: Failed to create tree cull data buffers");
         return false;
     }
 
     treeRenderDataBufferSize_ = numTrees * sizeof(TreeRenderDataGPU);
-    auto treeRenderDataInfo = vk::BufferCreateInfo{}
-        .setSize(treeRenderDataBufferSize_)
-        .setUsage(vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eTransferDst)
-        .setSharingMode(vk::SharingMode::eExclusive);
-
-    if (vmaCreateBuffer(allocator_, reinterpret_cast<const VkBufferCreateInfo*>(&treeRenderDataInfo), &allocInfo,
-                        &treeRenderDataBuffer_, &treeRenderDataAllocation_, nullptr) != VK_SUCCESS) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "TreeLeafCulling: Failed to create tree render data buffer");
+    if (!treeRenderDataBuffers_.resize(
+            allocator_, maxFramesInFlight_, treeRenderDataBufferSize_,
+            vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eTransferDst)) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "TreeLeafCulling: Failed to create tree render data buffers");
         return false;
     }
 
@@ -290,32 +262,25 @@ bool TreeLeafCulling::createCellCullBuffers() {
     uint32_t numCells = spatialIndex_->getCellCount();
     visibleCellBufferSize_ = (numCells + 1) * sizeof(uint32_t);
 
-    auto bufferInfo = vk::BufferCreateInfo{}
-        .setSize(visibleCellBufferSize_)
-        .setUsage(vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eTransferDst)
-        .setSharingMode(vk::SharingMode::eExclusive);
-
-    VmaAllocationCreateInfo allocInfo{};
-    allocInfo.usage = VMA_MEMORY_USAGE_GPU_ONLY;
-
-    if (vmaCreateBuffer(allocator_, reinterpret_cast<const VkBufferCreateInfo*>(&bufferInfo), &allocInfo,
-                        &visibleCellBuffer_, &visibleCellAllocation_, nullptr) != VK_SUCCESS) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "TreeLeafCulling: Failed to create visible cell buffer");
+    // Triple-buffered visible cell buffer to prevent race conditions between frames
+    if (!visibleCellBuffers_.resize(
+            allocator_, maxFramesInFlight_, visibleCellBufferSize_,
+            vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eTransferDst)) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "TreeLeafCulling: Failed to create visible cell buffers");
         return false;
     }
 
-    // Indirect buffer now includes bucket counts/offsets for distance-sorted processing
+    // Triple-buffered indirect buffer to prevent race conditions between frames
+    // Includes bucket counts/offsets for distance-sorted processing
     // Layout: dispatchX, dispatchY, dispatchZ, totalVisibleTrees, bucketCounts[8], bucketOffsets[8]
     constexpr uint32_t NUM_DISTANCE_BUCKETS = 8;
-    auto indirectInfo = vk::BufferCreateInfo{}
-        .setSize((4 + NUM_DISTANCE_BUCKETS * 2) * sizeof(uint32_t))  // 20 uints = 80 bytes
-        .setUsage(vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eIndirectBuffer |
-                  vk::BufferUsageFlagBits::eTransferDst)
-        .setSharingMode(vk::SharingMode::eExclusive);
+    vk::DeviceSize indirectBufferSize = (4 + NUM_DISTANCE_BUCKETS * 2) * sizeof(uint32_t);  // 20 uints = 80 bytes
 
-    if (vmaCreateBuffer(allocator_, reinterpret_cast<const VkBufferCreateInfo*>(&indirectInfo), &allocInfo,
-                        &cellCullIndirectBuffer_, &cellCullIndirectAllocation_, nullptr) != VK_SUCCESS) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "TreeLeafCulling: Failed to create cell cull indirect buffer");
+    if (!cellCullIndirectBuffers_.resize(
+            allocator_, maxFramesInFlight_, indirectBufferSize,
+            vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eIndirectBuffer |
+            vk::BufferUsageFlagBits::eTransferDst)) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "TreeLeafCulling: Failed to create cell cull indirect buffers");
         return false;
     }
 
@@ -346,18 +311,19 @@ bool TreeLeafCulling::createCellCullBuffers() {
     }
 
     // Update descriptor sets with buffer bindings using SetWriter
+    // Each frame's descriptor set uses that frame's buffers for proper triple-buffering
     for (uint32_t f = 0; f < maxFramesInFlight_; ++f) {
         DescriptorManager::SetWriter writer(device_, cellCullDescriptorSets_[f]);
         writer.writeBuffer(Bindings::TREE_CELL_CULL_CELLS, spatialIndex_->getCellBuffer(), 0, VK_WHOLE_SIZE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
-              .writeBuffer(Bindings::TREE_CELL_CULL_VISIBLE, visibleCellBuffer_, 0, VK_WHOLE_SIZE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
-              .writeBuffer(Bindings::TREE_CELL_CULL_INDIRECT, cellCullIndirectBuffer_, 0, VK_WHOLE_SIZE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+              .writeBuffer(Bindings::TREE_CELL_CULL_VISIBLE, visibleCellBuffers_.getVk(f), 0, VK_WHOLE_SIZE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+              .writeBuffer(Bindings::TREE_CELL_CULL_INDIRECT, cellCullIndirectBuffers_.getVk(f), 0, VK_WHOLE_SIZE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
               .writeBuffer(Bindings::TREE_CELL_CULL_CULLING, cellCullUniformBuffers_.buffers[f], 0, sizeof(CullingUniforms), VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER)
               .writeBuffer(Bindings::TREE_CELL_CULL_PARAMS, cellCullParamsBuffers_.buffers[f], 0, sizeof(CellCullParams), VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER)
               .update();
     }
 
-    SDL_Log("TreeLeafCulling: Created cell culling buffers (%u cells, %.2f KB visible buffer)",
-            numCells, visibleCellBufferSize_ / 1024.0f);
+    SDL_Log("TreeLeafCulling: Created cell culling buffers (%u cells, %.2f KB visible buffer x %u frames)",
+            numCells, visibleCellBufferSize_ / 1024.0f, maxFramesInFlight_);
     return true;
 }
 
@@ -421,29 +387,21 @@ bool TreeLeafCulling::createTreeFilterBuffers(uint32_t maxTrees) {
 
     visibleTreeBufferSize_ = sizeof(uint32_t) + maxTrees * sizeof(VisibleTreeData);
 
-    auto bufferInfo = vk::BufferCreateInfo{}
-        .setSize(visibleTreeBufferSize_)
-        .setUsage(vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eTransferDst)
-        .setSharingMode(vk::SharingMode::eExclusive);
-
-    VmaAllocationCreateInfo allocInfo{};
-    allocInfo.usage = VMA_MEMORY_USAGE_GPU_ONLY;
-
-    if (vmaCreateBuffer(allocator_, reinterpret_cast<const VkBufferCreateInfo*>(&bufferInfo), &allocInfo,
-                        &visibleTreeBuffer_, &visibleTreeAllocation_, nullptr) != VK_SUCCESS) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "TreeLeafCulling: Failed to create visible tree buffer");
+    // Triple-buffered visible tree buffer to prevent race conditions between frames
+    if (!visibleTreeBuffers_.resize(
+            allocator_, maxFramesInFlight_, visibleTreeBufferSize_,
+            vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eTransferDst)) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "TreeLeafCulling: Failed to create visible tree buffers");
         return false;
     }
 
-    auto indirectInfo = vk::BufferCreateInfo{}
-        .setSize(3 * sizeof(uint32_t))
-        .setUsage(vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eIndirectBuffer |
-                  vk::BufferUsageFlagBits::eTransferDst)
-        .setSharingMode(vk::SharingMode::eExclusive);
-
-    if (vmaCreateBuffer(allocator_, reinterpret_cast<const VkBufferCreateInfo*>(&indirectInfo), &allocInfo,
-                        &leafCullIndirectDispatch_, &leafCullIndirectDispatchAllocation_, nullptr) != VK_SUCCESS) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "TreeLeafCulling: Failed to create leaf cull indirect dispatch buffer");
+    // Triple-buffered indirect dispatch buffer to prevent race conditions between frames
+    vk::DeviceSize indirectDispatchSize = 3 * sizeof(uint32_t);
+    if (!leafCullIndirectDispatchBuffers_.resize(
+            allocator_, maxFramesInFlight_, indirectDispatchSize,
+            vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eIndirectBuffer |
+            vk::BufferUsageFlagBits::eTransferDst)) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "TreeLeafCulling: Failed to create leaf cull indirect dispatch buffers");
         return false;
     }
 
@@ -474,21 +432,22 @@ bool TreeLeafCulling::createTreeFilterBuffers(uint32_t maxTrees) {
     }
 
     // Update descriptor sets with buffer bindings using SetWriter
+    // Each frame's descriptor set uses that frame's buffers for proper triple-buffering
     for (uint32_t f = 0; f < maxFramesInFlight_; ++f) {
         DescriptorManager::SetWriter writer(device_, treeFilterDescriptorSets_[f]);
-        writer.writeBuffer(Bindings::TREE_FILTER_ALL_TREES, treeDataBuffer_, 0, VK_WHOLE_SIZE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
-              .writeBuffer(Bindings::TREE_FILTER_VISIBLE_CELLS, visibleCellBuffer_, 0, VK_WHOLE_SIZE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+        writer.writeBuffer(Bindings::TREE_FILTER_ALL_TREES, treeDataBuffers_.getVk(f), 0, VK_WHOLE_SIZE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+              .writeBuffer(Bindings::TREE_FILTER_VISIBLE_CELLS, visibleCellBuffers_.getVk(f), 0, VK_WHOLE_SIZE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
               .writeBuffer(Bindings::TREE_FILTER_CELL_DATA, spatialIndex_->getCellBuffer(), 0, VK_WHOLE_SIZE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
               .writeBuffer(Bindings::TREE_FILTER_SORTED_TREES, spatialIndex_->getSortedTreeBuffer(), 0, VK_WHOLE_SIZE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
-              .writeBuffer(Bindings::TREE_FILTER_VISIBLE_TREES, visibleTreeBuffer_, 0, VK_WHOLE_SIZE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
-              .writeBuffer(Bindings::TREE_FILTER_INDIRECT, leafCullIndirectDispatch_, 0, VK_WHOLE_SIZE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+              .writeBuffer(Bindings::TREE_FILTER_VISIBLE_TREES, visibleTreeBuffers_.getVk(f), 0, VK_WHOLE_SIZE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+              .writeBuffer(Bindings::TREE_FILTER_INDIRECT, leafCullIndirectDispatchBuffers_.getVk(f), 0, VK_WHOLE_SIZE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
               .writeBuffer(Bindings::TREE_FILTER_CULLING, treeFilterUniformBuffers_.buffers[f], 0, sizeof(CullingUniforms), VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER)
               .writeBuffer(Bindings::TREE_FILTER_PARAMS, treeFilterParamsBuffers_.buffers[f], 0, sizeof(TreeFilterParams), VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER)
               .update();
     }
 
-    SDL_Log("TreeLeafCulling: Created tree filter buffers (max %u trees, %.2f KB visible tree buffer)",
-            maxTrees, visibleTreeBufferSize_ / 1024.0f);
+    SDL_Log("TreeLeafCulling: Created tree filter buffers (max %u trees, %.2f KB visible tree buffer x %u frames)",
+            maxTrees, visibleTreeBufferSize_ / 1024.0f, maxFramesInFlight_);
     return true;
 }
 
@@ -601,17 +560,17 @@ void TreeLeafCulling::updateSpatialIndex(const TreeSystem& treeSystem) {
         return;
     }
 
-    if (visibleCellBuffer_ == VK_NULL_HANDLE && cellCullPipeline_.get() != VK_NULL_HANDLE) {
+    if (visibleCellBuffers_.empty() && cellCullPipeline_.get() != VK_NULL_HANDLE) {
         createCellCullBuffers();
     }
 
-    if (visibleTreeBuffer_ == VK_NULL_HANDLE && treeFilterPipeline_.get() != VK_NULL_HANDLE &&
-        visibleCellBuffer_ != VK_NULL_HANDLE) {
+    if (visibleTreeBuffers_.empty() && treeFilterPipeline_.get() != VK_NULL_HANDLE &&
+        !visibleCellBuffers_.empty()) {
         createTreeFilterBuffers(static_cast<uint32_t>(trees.size()));
     }
 
     if (twoPhaseLeafCullDescriptorSets_.empty() && twoPhaseLeafCullPipeline_.get() != VK_NULL_HANDLE &&
-        visibleTreeBuffer_ != VK_NULL_HANDLE) {
+        !visibleTreeBuffers_.empty()) {
         createTwoPhaseLeafCullDescriptorSets();
     }
 
@@ -629,7 +588,7 @@ void TreeLeafCulling::updateCullDescriptorSets(const TreeSystem& treeSystem) {
               .writeBuffer(Bindings::TREE_LEAF_CULL_OUTPUT, cullOutputBuffers_.getVk(f), 0, VK_WHOLE_SIZE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
               .writeBuffer(Bindings::TREE_LEAF_CULL_INDIRECT, cullIndirectBuffers_.getVk(f), 0, VK_WHOLE_SIZE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
               .writeBuffer(Bindings::TREE_LEAF_CULL_CULLING, cullUniformBuffers_.buffers[f], 0, sizeof(CullingUniforms), VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER)
-              .writeBuffer(Bindings::TREE_LEAF_CULL_TREES, treeDataBuffer_, 0, VK_WHOLE_SIZE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+              .writeBuffer(Bindings::TREE_LEAF_CULL_TREES, treeDataBuffers_.getVk(f), 0, VK_WHOLE_SIZE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
               .writeBuffer(Bindings::TREE_LEAF_CULL_PARAMS, leafCullParamsBuffers_.buffers[f], 0, sizeof(LeafCullParams), VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER)
               .update();
     }
@@ -729,10 +688,10 @@ void TreeLeafCulling::recordCulling(VkCommandBuffer cmd, uint32_t frameIndex,
     vkCmdUpdateBuffer(cmd, cullIndirectBuffers_.getVk(frameIndex),
                       0, sizeof(indirectReset), &indirectReset);
 
-    // Upload per-tree data
-    vkCmdUpdateBuffer(cmd, treeDataBuffer_, 0,
+    // Upload per-tree data to frame-specific buffers (triple-buffered to avoid race conditions)
+    vkCmdUpdateBuffer(cmd, treeDataBuffers_.getVk(frameIndex), 0,
                       numTrees * sizeof(TreeCullData), treeDataList.data());
-    vkCmdUpdateBuffer(cmd, treeRenderDataBuffer_, 0,
+    vkCmdUpdateBuffer(cmd, treeRenderDataBuffers_.getVk(frameIndex), 0,
                       numTrees * sizeof(TreeRenderDataGPU), treeRenderDataList.data());
 
     // Upload global uniforms - split into CullingUniforms and LeafCullParams
@@ -786,31 +745,32 @@ void TreeLeafCulling::recordCulling(VkCommandBuffer cmd, uint32_t frameIndex,
 
         // Check if two-phase culling will be used so we can batch uniform updates
         bool useTwoPhase = twoPhaseEnabled_ && treeFilterPipeline_.get() != VK_NULL_HANDLE &&
-                           visibleTreeBuffer_ != VK_NULL_HANDLE && !treeFilterDescriptorSets_.empty();
+                           !visibleTreeBuffers_.empty() && !treeFilterDescriptorSets_.empty();
 
         // Reset cell cull output buffers on CPU side BEFORE dispatch
         // This is critical - shader-side initialization with barrier() only works within
         // a workgroup, not across workgroups. Other workgroups may atomicAdd before
         // workgroup 0 resets the counters, causing race conditions and flickering.
+        // Using frame-indexed buffers to prevent race conditions between in-flight frames.
 
         // Reset visible cell buffer: first uint is visibleCellCount
-        vkCmdFillBuffer(cmd, visibleCellBuffer_, 0, sizeof(uint32_t), 0);
+        vkCmdFillBuffer(cmd, visibleCellBuffers_.getVk(frameIndex), 0, sizeof(uint32_t), 0);
 
         // Reset cell cull indirect buffer: dispatchX/Y/Z, totalVisibleTrees, bucketCounts[8], bucketOffsets[8]
         // Structure: { dispatchX=0, dispatchY=1, dispatchZ=1, totalVisibleTrees=0, bucketCounts[8]=0, bucketOffsets[8]=0 }
         constexpr uint32_t NUM_DISTANCE_BUCKETS = 8;
-        uint32_t indirectReset[4 + NUM_DISTANCE_BUCKETS * 2] = {0, 1, 1, 0}; // dispatchX=0, Y=1, Z=1, totalTrees=0
+        uint32_t cellIndirectReset[4 + NUM_DISTANCE_BUCKETS * 2] = {0, 1, 1, 0}; // dispatchX=0, Y=1, Z=1, totalTrees=0
         // bucketCounts and bucketOffsets are already 0-initialized
-        vkCmdUpdateBuffer(cmd, cellCullIndirectBuffer_, 0, sizeof(indirectReset), indirectReset);
+        vkCmdUpdateBuffer(cmd, cellCullIndirectBuffers_.getVk(frameIndex), 0, sizeof(cellIndirectReset), cellIndirectReset);
 
         // If two-phase culling, also reset visible tree buffer and leaf cull indirect dispatch
         if (useTwoPhase) {
             // Reset visible tree buffer: first uint is visibleTreeCount
-            vkCmdFillBuffer(cmd, visibleTreeBuffer_, 0, sizeof(uint32_t), 0);
+            vkCmdFillBuffer(cmd, visibleTreeBuffers_.getVk(frameIndex), 0, sizeof(uint32_t), 0);
 
             // Reset leaf cull indirect dispatch: { dispatchX=0, dispatchY=1, dispatchZ=1 }
             uint32_t leafDispatchReset[3] = {0, 1, 1};
-            vkCmdUpdateBuffer(cmd, leafCullIndirectDispatch_, 0, sizeof(leafDispatchReset), leafDispatchReset);
+            vkCmdUpdateBuffer(cmd, leafCullIndirectDispatchBuffers_.getVk(frameIndex), 0, sizeof(leafDispatchReset), leafDispatchReset);
         }
 
         // Use vkCmdUpdateBuffer to avoid HOST→COMPUTE stall (keeps update on GPU timeline)
@@ -871,7 +831,7 @@ void TreeLeafCulling::recordCulling(VkCommandBuffer cmd, uint32_t frameIndex,
             vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, treeFilterPipelineLayout_.get(),
                                     0, 1, &treeFilterDescriptorSets_[frameIndex], 0, nullptr);
 
-            vkCmdDispatchIndirect(cmd, cellCullIndirectBuffer_, 0);
+            vkCmdDispatchIndirect(cmd, cellCullIndirectBuffers_.getVk(frameIndex), 0);
 
             VkMemoryBarrier treeFilterBarrier{};
             treeFilterBarrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
@@ -897,8 +857,8 @@ void TreeLeafCulling::recordCulling(VkCommandBuffer cmd, uint32_t frameIndex,
                                      0, 1, &p3UniformBarrier, 0, nullptr, 0, nullptr);
 
                 DescriptorManager::SetWriter writer(device_, twoPhaseLeafCullDescriptorSets_[frameIndex]);
-                writer.writeBuffer(Bindings::LEAF_CULL_P3_VISIBLE_TREES, visibleTreeBuffer_, 0, VK_WHOLE_SIZE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
-                      .writeBuffer(Bindings::LEAF_CULL_P3_ALL_TREES, treeDataBuffer_, 0, VK_WHOLE_SIZE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+                writer.writeBuffer(Bindings::LEAF_CULL_P3_VISIBLE_TREES, visibleTreeBuffers_.getVk(frameIndex), 0, VK_WHOLE_SIZE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+                      .writeBuffer(Bindings::LEAF_CULL_P3_ALL_TREES, treeDataBuffers_.getVk(frameIndex), 0, VK_WHOLE_SIZE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
                       .writeBuffer(Bindings::LEAF_CULL_P3_INPUT, treeSystem.getLeafInstanceBuffer(), 0, VK_WHOLE_SIZE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
                       .writeBuffer(Bindings::LEAF_CULL_P3_OUTPUT, cullOutputBuffers_.getVk(frameIndex), 0, VK_WHOLE_SIZE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
                       .writeBuffer(Bindings::LEAF_CULL_P3_INDIRECT, cullIndirectBuffers_.getVk(frameIndex), 0, VK_WHOLE_SIZE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
@@ -910,7 +870,7 @@ void TreeLeafCulling::recordCulling(VkCommandBuffer cmd, uint32_t frameIndex,
                 vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, twoPhaseLeafCullPipelineLayout_.get(),
                                         0, 1, &twoPhaseLeafCullDescriptorSets_[frameIndex], 0, nullptr);
 
-                vkCmdDispatchIndirect(cmd, leafCullIndirectDispatch_, 0);
+                vkCmdDispatchIndirect(cmd, leafCullIndirectDispatchBuffers_.getVk(frameIndex), 0);
 
                 barrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
                 barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_INDIRECT_COMMAND_READ_BIT;

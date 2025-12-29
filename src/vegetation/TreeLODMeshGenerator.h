@@ -68,10 +68,22 @@ private:
     /**
      * Generate leaves for the simplified branch set.
      * Places leaves only on branches that exist in the simplified mesh.
+     * NOTE: This approach has issues with leaf placement since simplified
+     * branches don't extend to the outer canopy. Use sampleLeavesFromLOD0 instead.
      */
     static std::vector<LeafData> generateLeavesForLOD(
         const std::vector<BranchData>& simplifiedBranches,
         const TreeOptions& options,
+        const LODConfig& config,
+        uint32_t seed);
+
+    /**
+     * Sample leaves from full detail set for LOD.
+     * This maintains correct spatial distribution by sampling a subset
+     * of existing leaves rather than generating new ones on simplified branches.
+     */
+    static std::vector<LeafData> sampleLeavesFromLOD0(
+        const std::vector<LeafData>& fullDetailLeaves,
         const LODConfig& config,
         uint32_t seed);
 };

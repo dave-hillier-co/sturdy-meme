@@ -12,14 +12,14 @@ TreeMeshData TreeLODMeshGenerator::simplify(const TreeMeshData& fullDetail,
     std::vector<size_t> keptBranchIndices;
     result.branches = simplifyBranches(fullDetail.branches, config, keptBranchIndices);
 
-    // Generate leaves for the simplified branches
-    // Use a fixed seed derived from tree options for consistency
+    // Sample leaves from full detail - this maintains correct spatial distribution
+    // by sampling existing leaves rather than generating new ones on simplified branches
     uint32_t seed = static_cast<uint32_t>(options.seed);
-    result.leaves = generateLeavesForLOD(result.branches, options, config, seed);
+    result.leaves = sampleLeavesFromLOD0(fullDetail.leaves, config, seed);
 
-    SDL_Log("TreeLODMeshGenerator: Simplified %zu branches to %zu, %zu leaves to %zu",
+    SDL_Log("TreeLODMeshGenerator: Simplified %zu branches to %zu, sampled %zu leaves from %zu",
             fullDetail.branches.size(), result.branches.size(),
-            fullDetail.leaves.size(), result.leaves.size());
+            result.leaves.size(), fullDetail.leaves.size());
 
     return result;
 }
@@ -167,6 +167,52 @@ std::vector<LeafData> TreeLODMeshGenerator::generateLeavesForLOD(
             result.push_back(leaf);
 
             --remainingLeaves;
+        }
+    }
+
+    return result;
+}
+
+std::vector<LeafData> TreeLODMeshGenerator::sampleLeavesFromLOD0(
+    const std::vector<LeafData>& fullDetailLeaves,
+    const LODConfig& config,
+    uint32_t seed) {
+
+    std::vector<LeafData> result;
+
+    if (fullDetailLeaves.empty() || config.leafDensity <= 0.0f) {
+        return result;
+    }
+
+    // Use RNG for consistent sampling
+    TreeRNG rng(seed + 54321);  // Different offset than other leaf generation
+
+    // Calculate target count based on density
+    size_t targetCount = static_cast<size_t>(fullDetailLeaves.size() * config.leafDensity);
+    if (targetCount == 0) {
+        return result;
+    }
+
+    // If we want most leaves, just scale them all
+    if (config.leafDensity >= 0.9f) {
+        result = fullDetailLeaves;
+        for (auto& leaf : result) {
+            leaf.size *= config.leafScale;
+        }
+        return result;
+    }
+
+    // Randomly sample leaves from the full set
+    // Use reservoir sampling-style approach for consistent results
+    result.reserve(targetCount);
+
+    for (size_t i = 0; i < fullDetailLeaves.size(); ++i) {
+        // Use a deterministic hash based on position for consistency across frames
+        float hash = rng.random(1.0f);
+        if (hash < config.leafDensity) {
+            LeafData leaf = fullDetailLeaves[i];
+            leaf.size *= config.leafScale;
+            result.push_back(leaf);
         }
     }
 

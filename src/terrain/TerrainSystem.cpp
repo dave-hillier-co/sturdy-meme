@@ -961,15 +961,19 @@ void TerrainSystem::recordShadowDraw(VkCommandBuffer cmd, uint32_t frameIndex,
 }
 
 float TerrainSystem::getHeightAt(float x, float z) const {
-    // First try the tile cache for high-res height data
+    // Use tile cache for height data - base LOD tiles cover entire terrain
     if (tileCache) {
         float tileHeight;
         if (tileCache->getHeightAt(x, z, tileHeight)) {
             return tileHeight;
         }
+        // This should never happen - base LOD tiles cover entire terrain
+        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                    "TerrainSystem::getHeightAt(%.1f, %.1f): tile cache miss - should never happen",
+                    x, z);
     }
 
-    // Fall back to global heightmap (coarse LOD)
+    // Fallback for positions outside terrain bounds
     return heightMap->getHeightAt(x, z);
 }
 

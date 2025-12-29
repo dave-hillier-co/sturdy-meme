@@ -1264,24 +1264,31 @@ void Renderer::recordShadowPass(VkCommandBuffer cmd, uint32_t frameIndex, float 
     // Delegate to the shadow system with callbacks for terrain and grass
     auto terrainCallback = [this, frameIndex](VkCommandBuffer cb, uint32_t cascade, const glm::mat4& lightMatrix) {
         if (terrainEnabled && perfToggles.terrainShadows) {
+            systems_->profiler().beginGpuZone(cb, "Shadow:Terrain");
             systems_->terrain().recordShadowDraw(cb, frameIndex, lightMatrix, static_cast<int>(cascade));
+            systems_->profiler().endGpuZone(cb, "Shadow:Terrain");
         }
     };
 
     auto grassCallback = [this, frameIndex, grassTime](VkCommandBuffer cb, uint32_t cascade, const glm::mat4& lightMatrix) {
         (void)lightMatrix;  // Grass uses cascade index only
         if (perfToggles.grassShadows) {
+            systems_->profiler().beginGpuZone(cb, "Shadow:Grass");
             systems_->grass().recordShadowDraw(cb, frameIndex, grassTime, cascade);
+            systems_->profiler().endGpuZone(cb, "Shadow:Grass");
         }
     };
 
     auto treeCallback = [this, frameIndex](VkCommandBuffer cb, uint32_t cascade, const glm::mat4& lightMatrix) {
         (void)lightMatrix;
         if (systems_->tree() && systems_->treeRenderer()) {
+            systems_->profiler().beginGpuZone(cb, "Shadow:Trees");
             systems_->treeRenderer()->renderShadows(cb, frameIndex, *systems_->tree(), static_cast<int>(cascade), systems_->treeLOD());
+            systems_->profiler().endGpuZone(cb, "Shadow:Trees");
         }
         // Render impostor shadows
         if (systems_->treeLOD()) {
+            systems_->profiler().beginGpuZone(cb, "Shadow:Impostors");
             VkBuffer uniformBuffer = systems_->globalBuffers().uniformBuffers.buffers[frameIndex];
             auto* impostorCull = systems_->impostorCull();
             if (impostorCull && impostorCull->getTreeCount() > 0) {
@@ -1295,6 +1302,7 @@ void Renderer::recordShadowPass(VkCommandBuffer cmd, uint32_t frameIndex, float 
                 // Fall back to CPU-culled rendering
                 systems_->treeLOD()->renderImpostorShadows(cb, frameIndex, static_cast<int>(cascade), uniformBuffer);
             }
+            systems_->profiler().endGpuZone(cb, "Shadow:Impostors");
         }
     };
 
@@ -1328,6 +1336,7 @@ void Renderer::recordShadowPass(VkCommandBuffer cmd, uint32_t frameIndex, float 
             const auto& sceneObjs = sceneBuilder.getRenderables();
             if (playerIndex >= sceneObjs.size()) return;
 
+            systems_->profiler().beginGpuZone(cb, "Shadow:Skinned");
             const Renderable& playerObj = sceneObjs[playerIndex];
             AnimatedCharacter& character = sceneBuilder.getAnimatedCharacter();
             SkinnedMesh& skinnedMesh = character.getSkinnedMesh();
@@ -1337,6 +1346,7 @@ void Renderer::recordShadowPass(VkCommandBuffer cmd, uint32_t frameIndex, float 
 
             // Record the skinned mesh shadow
             systems_->shadow().recordSkinnedMeshShadow(cb, cascade, playerObj.transform, skinnedMesh);
+            systems_->profiler().endGpuZone(cb, "Shadow:Skinned");
         };
     }
 

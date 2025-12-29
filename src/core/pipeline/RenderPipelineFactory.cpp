@@ -211,19 +211,30 @@ void RenderPipelineFactory::setupPipeline(
         UniformBufferObject* ubo = static_cast<UniformBufferObject*>(systems.globalBuffers().uniformBuffers.mappedPointers[ctx.frameIndex]);
         glm::vec3 sunColor = glm::vec3(ubo->sunColor);
 
+        // Froxel volumetric fog update
+        systems.profiler().beginGpuZone(ctx.cmd, "Atmosphere:Froxel");
         systems.froxel().recordFroxelUpdate(ctx.cmd, ctx.frameIndex,
                                             ctx.frame.view, ctx.frame.projection,
                                             ctx.frame.cameraPosition,
                                             ctx.frame.sunDirection, ctx.frame.sunIntensity, sunColor,
                                             systems.shadow().getCascadeMatrices().data(),
                                             ubo->cascadeSplits);
+        systems.profiler().endGpuZone(ctx.cmd, "Atmosphere:Froxel");
 
+        // Static LUT recomputation (if needed)
         if (systems.atmosphereLUT().needsRecompute()) {
+            systems.profiler().beginGpuZone(ctx.cmd, "Atmosphere:StaticLUT");
             systems.atmosphereLUT().recomputeStaticLUTs(ctx.cmd);
+            systems.profiler().endGpuZone(ctx.cmd, "Atmosphere:StaticLUT");
         }
 
+        // Sky view LUT update
+        systems.profiler().beginGpuZone(ctx.cmd, "Atmosphere:SkyView");
         systems.atmosphereLUT().updateSkyViewLUT(ctx.cmd, ctx.frameIndex, ctx.frame.sunDirection, ctx.frame.cameraPosition, 0.0f);
+        systems.profiler().endGpuZone(ctx.cmd, "Atmosphere:SkyView");
 
+        // Cloud map LUT update
+        systems.profiler().beginGpuZone(ctx.cmd, "Atmosphere:CloudMap");
         glm::vec2 windDir = systems.wind().getWindDirection();
         float windSpeed = systems.wind().getWindSpeed();
         float windTime = systems.wind().getTime();
@@ -232,6 +243,7 @@ void RenderPipelineFactory::setupPipeline(
                                           windTime * 0.002f,
                                           windDir.y * windSpeed * windTime * cloudTimeScale);
         systems.atmosphereLUT().updateCloudMapLUT(ctx.cmd, ctx.frameIndex, windOffset, windTime * cloudTimeScale);
+        systems.profiler().endGpuZone(ctx.cmd, "Atmosphere:CloudMap");
 
         systems.profiler().endGpuZone(ctx.cmd, "Atmosphere");
     });

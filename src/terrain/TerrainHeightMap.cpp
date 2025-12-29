@@ -418,61 +418,134 @@ void TerrainHeightMap::worldToHoleMaskTexel(float x, float z, int& texelX, int& 
     texelY = std::clamp(texelY, 0, static_cast<int>(holeMaskResolution - 1));
 }
 
+// Analytical hole query - tests against geometric primitives
 bool TerrainHeightMap::isHole(float x, float z) const {
-    int texelX, texelY;
-    worldToHoleMaskTexel(x, z, texelX, texelY);
-    return holeMaskCpuData[texelY * holeMaskResolution + texelX] > 127;
+    for (const auto& hole : holes_) {
+        if (hole.type == TerrainHole::Type::Circle) {
+            float dx = x - hole.centerX;
+            float dz = z - hole.centerZ;
+            if (dx * dx + dz * dz <= hole.radius * hole.radius) {
+                return true;
+            }
+        }
+    }
+    return false;
 }
 
-void TerrainHeightMap::setHole(float x, float z, bool hole) {
-    int texelX, texelY;
-    worldToHoleMaskTexel(x, z, texelX, texelY);
-    holeMaskCpuData[texelY * holeMaskResolution + texelX] = hole ? 255 : 0;
+void TerrainHeightMap::addHoleCircle(float centerX, float centerZ, float radius) {
+    TerrainHole hole;
+    hole.type = TerrainHole::Type::Circle;
+    hole.centerX = centerX;
+    hole.centerZ = centerZ;
+    hole.radius = radius;
+    holes_.push_back(hole);
+
+    // Rasterize to global coarse mask for GPU and mark dirty
+    rasterizeHolesToGlobalMask();
     holeMaskDirty = true;
+
+    SDL_Log("TerrainHeightMap: Added hole circle at (%.1f, %.1f) radius %.1f, total holes: %zu",
+            centerX, centerZ, radius, holes_.size());
 }
 
-void TerrainHeightMap::setHoleCircle(float centerX, float centerZ, float radius, bool hole) {
-    // Convert radius to texel space (using hole mask resolution)
-    float texelsPerUnit = static_cast<float>(holeMaskResolution - 1) / terrainSize;
-    int texelRadius = static_cast<int>(std::ceil(radius * texelsPerUnit));
+void TerrainHeightMap::removeHoleCircle(float centerX, float centerZ, float radius) {
+    auto it = std::remove_if(holes_.begin(), holes_.end(), [&](const TerrainHole& h) {
+        return h.type == TerrainHole::Type::Circle &&
+               std::abs(h.centerX - centerX) < 0.1f &&
+               std::abs(h.centerZ - centerZ) < 0.1f &&
+               std::abs(h.radius - radius) < 0.1f;
+    });
+    if (it != holes_.end()) {
+        holes_.erase(it, holes_.end());
+        rasterizeHolesToGlobalMask();
+        holeMaskDirty = true;
+        SDL_Log("TerrainHeightMap: Removed hole circle at (%.1f, %.1f), total holes: %zu",
+                centerX, centerZ, holes_.size());
+    }
+}
 
-    // Ensure at least 1 texel radius for small holes
-    if (texelRadius < 1) texelRadius = 1;
+// Rasterize all holes into global coarse mask for GPU rendering
+void TerrainHeightMap::rasterizeHolesToGlobalMask() {
+    // Clear mask
+    std::fill(holeMaskCpuData.begin(), holeMaskCpuData.end(), 0);
 
-    int centerTexelX, centerTexelY;
-    worldToHoleMaskTexel(centerX, centerZ, centerTexelX, centerTexelY);
+    // Rasterize each hole
+    for (const auto& hole : holes_) {
+        if (hole.type == TerrainHole::Type::Circle) {
+            float texelsPerUnit = static_cast<float>(holeMaskResolution - 1) / terrainSize;
+            int texelRadius = static_cast<int>(std::ceil(hole.radius * texelsPerUnit)) + 1;
 
-    int holesSet = 0;
+            int centerTexelX, centerTexelY;
+            worldToHoleMaskTexel(hole.centerX, hole.centerZ, centerTexelX, centerTexelY);
 
-    // Iterate over bounding box of circle
-    for (int dy = -texelRadius; dy <= texelRadius; dy++) {
-        for (int dx = -texelRadius; dx <= texelRadius; dx++) {
-            int tx = centerTexelX + dx;
-            int ty = centerTexelY + dy;
+            for (int dy = -texelRadius; dy <= texelRadius; dy++) {
+                for (int dx = -texelRadius; dx <= texelRadius; dx++) {
+                    int tx = centerTexelX + dx;
+                    int ty = centerTexelY + dy;
 
-            // Check bounds
-            if (tx < 0 || tx >= static_cast<int>(holeMaskResolution) ||
-                ty < 0 || ty >= static_cast<int>(holeMaskResolution)) {
-                continue;
+                    if (tx < 0 || tx >= static_cast<int>(holeMaskResolution) ||
+                        ty < 0 || ty >= static_cast<int>(holeMaskResolution)) {
+                        continue;
+                    }
+
+                    float worldX = (static_cast<float>(tx) / (holeMaskResolution - 1) - 0.5f) * terrainSize;
+                    float worldZ = (static_cast<float>(ty) / (holeMaskResolution - 1) - 0.5f) * terrainSize;
+                    float distSq = (worldX - hole.centerX) * (worldX - hole.centerX) +
+                                  (worldZ - hole.centerZ) * (worldZ - hole.centerZ);
+
+                    if (distSq <= hole.radius * hole.radius) {
+                        holeMaskCpuData[ty * holeMaskResolution + tx] = 255;
+                    }
+                }
+            }
+        }
+    }
+}
+
+// Rasterize holes for a specific tile at high resolution
+std::vector<uint8_t> TerrainHeightMap::rasterizeHolesForTile(
+    float tileMinX, float tileMinZ, float tileMaxX, float tileMaxZ, uint32_t tileResolution) const {
+
+    std::vector<uint8_t> tileMask(tileResolution * tileResolution, 0);
+
+    float tileWidth = tileMaxX - tileMinX;
+    float tileHeight = tileMaxZ - tileMinZ;
+
+    // For each hole, check if it intersects this tile
+    for (const auto& hole : holes_) {
+        if (hole.type == TerrainHole::Type::Circle) {
+            // Quick AABB check for circle-rectangle intersection
+            float closestX = std::clamp(hole.centerX, tileMinX, tileMaxX);
+            float closestZ = std::clamp(hole.centerZ, tileMinZ, tileMaxZ);
+            float dx = hole.centerX - closestX;
+            float dz = hole.centerZ - closestZ;
+            if (dx * dx + dz * dz > hole.radius * hole.radius) {
+                continue;  // Circle doesn't intersect tile
             }
 
-            // Check if within circle (in world space for accuracy)
-            float worldX = (static_cast<float>(tx) / (holeMaskResolution - 1) - 0.5f) * terrainSize;
-            float worldZ = (static_cast<float>(ty) / (holeMaskResolution - 1) - 0.5f) * terrainSize;
-            float distSq = (worldX - centerX) * (worldX - centerX) +
-                          (worldZ - centerZ) * (worldZ - centerZ);
+            // Rasterize circle into tile mask
+            // Shrink radius slightly to match GPU rendering (accounts for physics half-texel offset)
+            float shrinkAmount = tileWidth / tileResolution;  // ~1 sample spacing
+            float effectiveRadius = hole.radius - shrinkAmount;
+            if (effectiveRadius <= 0.0f) effectiveRadius = hole.radius * 0.5f;
+            float radiusSq = effectiveRadius * effectiveRadius;
 
-            if (distSq <= radius * radius) {
-                holeMaskCpuData[ty * holeMaskResolution + tx] = hole ? 255 : 0;
-                holesSet++;
+            for (uint32_t y = 0; y < tileResolution; y++) {
+                for (uint32_t x = 0; x < tileResolution; x++) {
+                    float worldX = tileMinX + (static_cast<float>(x) / (tileResolution - 1)) * tileWidth;
+                    float worldZ = tileMinZ + (static_cast<float>(y) / (tileResolution - 1)) * tileHeight;
+
+                    float distX = worldX - hole.centerX;
+                    float distZ = worldZ - hole.centerZ;
+                    if (distX * distX + distZ * distZ < radiusSq) {
+                        tileMask[y * tileResolution + x] = 255;
+                    }
+                }
             }
         }
     }
 
-    SDL_Log("setHoleCircle: center=(%.1f,%.1f) radius=%.1f texelRadius=%d centerTexel=(%d,%d) texelsSet=%d (holeMaskRes=%u)",
-            centerX, centerZ, radius, texelRadius, centerTexelX, centerTexelY, holesSet, holeMaskResolution);
-
-    holeMaskDirty = true;
+    return tileMask;
 }
 
 void TerrainHeightMap::uploadHoleMaskToGPU() {

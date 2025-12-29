@@ -260,12 +260,16 @@ public:
 
     // Hole mask for caves/wells (areas with no terrain)
     bool isHole(float x, float z) const { return heightMap->isHole(x, z); }
-    void setHole(float x, float z, bool isHole) { heightMap->setHole(x, z, isHole); }
-    void setHoleCircle(float centerX, float centerZ, float radius, bool isHole) {
-        heightMap->setHoleCircle(centerX, centerZ, radius, isHole);
+    void addHoleCircle(float centerX, float centerZ, float radius) {
+        heightMap->addHoleCircle(centerX, centerZ, radius);
+    }
+    void removeHoleCircle(float centerX, float centerZ, float radius) {
+        heightMap->removeHoleCircle(centerX, centerZ, radius);
     }
     void uploadHoleMaskToGPU() { heightMap->uploadHoleMaskToGPU(); }
-    const uint8_t* getHoleMaskData() const { return heightMap->getHoleMaskData(); }
+
+    // Access to underlying height map for physics hole queries
+    TerrainHeightMap* getHeightMap() { return heightMap.get(); }
 
     // Tile cache accessor for physics integration (returns nullptr if not enabled)
     TerrainTileCache* getTileCache() { return tileCache.get(); }

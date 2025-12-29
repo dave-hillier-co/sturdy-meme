@@ -149,7 +149,7 @@ bool Application::init(const std::string& title, int width, int height) {
         const auto& sceneBuilder = renderer_->getSystems().scene().getSceneBuilder();
         float wellX = sceneBuilder.getWellEntranceX();
         float wellZ = sceneBuilder.getWellEntranceZ();
-        terrain.setHoleCircle(wellX, wellZ, SceneBuilder::WELL_HOLE_RADIUS, true);
+        terrain.addHoleCircle(wellX, wellZ, SceneBuilder::WELL_HOLE_RADIUS);
         terrain.uploadHoleMaskToGPU();
         SDL_Log("Created terrain hole at well entrance (%.1f, %.1f) radius %.1f",
                 wellX, wellZ, SceneBuilder::WELL_HOLE_RADIUS);
@@ -173,6 +173,9 @@ bool Application::init(const std::string& title, int width, int height) {
 
             if (physicsTerrainManager_.init(physics(), *tileCache, config)) {
                 SDL_Log("Physics terrain tile manager initialized");
+
+                // Set terrain height map for hole queries
+                physicsTerrainManager_.setTerrainHeightMap(terrain.getHeightMap());
             } else {
                 SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to initialize physics terrain tile manager!");
             }

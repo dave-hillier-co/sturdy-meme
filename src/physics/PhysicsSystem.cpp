@@ -569,6 +569,70 @@ PhysicsBodyID PhysicsWorld::createTerrainHeightfieldAtPosition(const float* samp
     return body->GetID().GetIndexAndSequenceNumber();
 }
 
+PhysicsBodyID PhysicsWorld::createTerrainHeightfieldAtPosition(const float* samples, const uint8_t* holeMask,
+                                                                 uint32_t sampleCount, float tileWorldSize,
+                                                                 float heightScale, const glm::vec3& worldPosition) {
+    if (!samples || sampleCount < 2) {
+        SDL_Log("Invalid heightfield parameters");
+        return INVALID_BODY_ID;
+    }
+
+    JPH::BodyInterface& bodyInterface = physicsSystem->GetBodyInterface();
+
+    // Convert to world-space heights and apply hole mask
+    std::vector<float> joltSamples(sampleCount * sampleCount);
+    for (uint32_t i = 0; i < sampleCount * sampleCount; i++) {
+        bool isHole = holeMask && holeMask[i] > 127;
+        if (isHole) {
+            joltSamples[i] = JPH::HeightFieldShapeConstants::cNoCollisionValue;
+        } else {
+            joltSamples[i] = TerrainHeight::toWorld(samples[i], heightScale);
+        }
+    }
+
+    // XZ spacing
+    float xzScale = tileWorldSize / (sampleCount - 1);
+
+    // Half-texel offset to align with GPU texture sampling
+    float halfTexel = (tileWorldSize / sampleCount) * 0.5f;
+
+    JPH::HeightFieldShapeSettings heightFieldSettings(
+        joltSamples.data(),
+        JPH::Vec3(-tileWorldSize * 0.5f - halfTexel, 0.0f, -tileWorldSize * 0.5f - halfTexel),
+        JPH::Vec3(xzScale, 1.0f, xzScale),
+        sampleCount
+    );
+
+    heightFieldSettings.mMaterials.push_back(new JPH::PhysicsMaterial());
+
+    JPH::ShapeSettings::ShapeResult shapeResult = heightFieldSettings.Create();
+    if (!shapeResult.IsValid()) {
+        SDL_Log("Failed to create heightfield shape: %s", shapeResult.GetError().c_str());
+        return INVALID_BODY_ID;
+    }
+
+    // Create body at the specified world position
+    JPH::BodyCreationSettings bodySettings(
+        shapeResult.Get(),
+        JPH::RVec3(worldPosition.x, worldPosition.y, worldPosition.z),
+        JPH::Quat::sIdentity(),
+        JPH::EMotionType::Static,
+        PhysicsLayers::NON_MOVING
+    );
+    bodySettings.mFriction = 0.8f;
+    bodySettings.mRestitution = 0.0f;
+
+    JPH::Body* body = bodyInterface.CreateBody(bodySettings);
+    if (!body) {
+        SDL_Log("Failed to create heightfield body");
+        return INVALID_BODY_ID;
+    }
+
+    bodyInterface.AddBody(body->GetID(), JPH::EActivation::DontActivate);
+
+    return body->GetID().GetIndexAndSequenceNumber();
+}
+
 PhysicsBodyID PhysicsWorld::createBox(const glm::vec3& position, const glm::vec3& halfExtents,
                                        float mass, float friction, float restitution) {
     JPH::BodyInterface& bodyInterface = physicsSystem->GetBodyInterface();

@@ -9,6 +9,15 @@
 #include <memory>
 #include "VulkanRAII.h"
 
+// Hole definition - geometric primitive for terrain holes
+struct TerrainHole {
+    enum class Type { Circle };
+    Type type = Type::Circle;
+    float centerX = 0.0f;
+    float centerZ = 0.0f;
+    float radius = 0.0f;
+};
+
 // Height map for terrain - handles generation, GPU texture, and CPU queries
 // Also handles hole mask for caves/wells (areas with no collision/rendering)
 class TerrainHeightMap {
@@ -55,15 +64,25 @@ public:
     // Returns NO_GROUND if position is inside a hole
     float getHeightAt(float x, float z) const;
 
-    // Hole mask queries and modification
+    // Hole definitions - geometric primitives, rasterized per-tile on demand
+    void addHoleCircle(float centerX, float centerZ, float radius);
+    void removeHoleCircle(float centerX, float centerZ, float radius);
+    const std::vector<TerrainHole>& getHoles() const { return holes_; }
+
+    // Query if a point is inside any hole (analytical, not rasterized)
     bool isHole(float x, float z) const;
-    void setHole(float x, float z, bool isHole);
-    void setHoleCircle(float centerX, float centerZ, float radius, bool isHole);
-    void uploadHoleMaskToGPU();  // Call after modifying holes to sync with GPU
+
+    // Rasterize holes into a tile mask at specified resolution
+    // Returns mask where 255 = hole, 0 = solid
+    std::vector<uint8_t> rasterizeHolesForTile(float tileMinX, float tileMinZ,
+                                                float tileMaxX, float tileMaxZ,
+                                                uint32_t resolution) const;
+
+    // Legacy: coarse global hole mask for GPU (kept for compatibility)
+    void uploadHoleMaskToGPU();
 
     // Raw data accessors
     const float* getData() const { return cpuData.data(); }
-    const uint8_t* getHoleMaskData() const { return holeMaskCpuData.data(); }
     uint32_t getResolution() const { return resolution; }
     float getHeightScale() const { return heightScale; }
     float getTerrainSize() const { return terrainSize; }
@@ -80,6 +99,7 @@ private:
     bool createHoleMaskResources();
     bool uploadToGPU();
     bool uploadHoleMaskToGPUInternal();
+    void rasterizeHolesToGlobalMask();
 
     // Helper to convert world coords to texel coords
     void worldToTexel(float x, float z, int& texelX, int& texelY) const;
@@ -93,7 +113,7 @@ private:
     float terrainSize = 500.0f;
     float heightScale = 0.0f;
     uint32_t resolution = 512;
-    uint32_t holeMaskResolution = 2048;  // Higher res for finer hole detail (~8m/texel on 16km terrain)
+    uint32_t holeMaskResolution = 2048;  // Global coarse mask for GPU (~8m/texel)
 
     // GPU resources for height map
     VkImage image = VK_NULL_HANDLE;
@@ -107,8 +127,11 @@ private:
     VkImageView holeMaskImageView = VK_NULL_HANDLE;
     ManagedSampler holeMaskSampler;
 
-    // CPU-side data for collision queries
+    // CPU-side data
     std::vector<float> cpuData;
-    std::vector<uint8_t> holeMaskCpuData;  // 0 = solid, 255 = hole
-    bool holeMaskDirty = false;  // True if CPU data has been modified but not uploaded
+    std::vector<uint8_t> holeMaskCpuData;  // Global coarse mask: 0 = solid, 255 = hole
+    bool holeMaskDirty = false;
+
+    // Hole definitions - geometric primitives
+    std::vector<TerrainHole> holes_;
 };

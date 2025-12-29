@@ -45,6 +45,8 @@ bool TerrainSystem::initInternal(const InitInfo& info, const TerrainConfig& cfg)
     config.heightScale = config.maxAltitude - config.minAltitude;
 
     // Initialize height map with RAII wrapper
+    // Note: tileCacheDir is passed so TerrainHeightMap can load base_lod.png
+    // from the preprocessed tile cache instead of the full heightmap
     TerrainHeightMap::InitInfo heightMapInfo{};
     heightMapInfo.device = device;
     heightMapInfo.allocator = allocator;
@@ -54,6 +56,7 @@ bool TerrainSystem::initInternal(const InitInfo& info, const TerrainConfig& cfg)
     heightMapInfo.terrainSize = config.size;
     heightMapInfo.heightScale = config.heightScale;
     heightMapInfo.heightmapPath = config.heightmapPath;
+    heightMapInfo.tileCacheDir = config.tileCacheDir;  // Prefer base_lod.png from here
     heightMapInfo.minAltitude = config.minAltitude;
     heightMapInfo.maxAltitude = config.maxAltitude;
     heightMap = TerrainHeightMap::create(heightMapInfo);

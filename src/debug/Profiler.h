@@ -2,6 +2,8 @@
 
 #include "GpuProfiler.h"
 #include "CpuProfiler.h"
+#include "InitProfiler.h"
+#include "Flamegraph.h"
 #include "interfaces/IProfilerControl.h"
 #include <memory>
 #include <optional>
@@ -173,11 +175,181 @@ public:
     Profiler& getProfiler() override { return *this; }
     const Profiler& getProfiler() const override { return *this; }
 
+    // Flamegraph capture
+    /**
+     * Capture current CPU timing to flamegraph history.
+     * CPU profiler tracks hierarchy, so we get a proper tree structure.
+     * Call after endCpuFrame() to capture the completed frame.
+     */
+    void captureCpuFlamegraph() {
+        if (!capturePaused_) {
+            cpuFlamegraphHistory_.push(cpuProfiler.getFlamegraphCapture());
+        }
+    }
+
+    /**
+     * Capture current GPU timing to flamegraph history.
+     * Infers hierarchy from zone names using ':' as separator.
+     * E.g., "HDR:Sky" becomes a child of "HDR" if present, else a root.
+     * Call after endGpuFrame() results are available.
+     */
+    void captureGpuFlamegraph() {
+        if (!gpuProfiler_ || capturePaused_) return;
+
+        const auto& stats = gpuProfiler_->getResults();
+        FlamegraphCapture capture;
+        capture.totalTimeMs = stats.totalGpuTimeMs;
+        capture.frameNumber = frameNumber_;
+
+        // Helper to assign color hints
+        auto assignColorHint = [](FlamegraphNode& node, const std::string& name) {
+            if (name.find("Shadow") != std::string::npos) {
+                node.colorHint = FlamegraphColorHint::Shadow;
+            } else if (name.find("Water") != std::string::npos) {
+                node.colorHint = FlamegraphColorHint::Water;
+            } else if (name.find("Terrain") != std::string::npos) {
+                node.colorHint = FlamegraphColorHint::Terrain;
+            } else if (name.find("Post") != std::string::npos ||
+                       name.find("Bloom") != std::string::npos ||
+                       name.find("Tone") != std::string::npos ||
+                       name.find("HDR") != std::string::npos) {
+                node.colorHint = FlamegraphColorHint::PostProcess;
+            } else if (name.find("Atmosphere") != std::string::npos ||
+                       name.find("Froxel") != std::string::npos ||
+                       name.find("Sky") != std::string::npos) {
+                node.colorHint = FlamegraphColorHint::Atmosphere;
+            }
+        };
+
+        // Build hierarchy from zone names
+        // Parent zones (no ':') become roots, child zones (with ':') nest under matching parent
+        std::unordered_map<std::string, FlamegraphNode*> parentNodes;
+        std::unordered_map<std::string, float> parentOffsets;
+
+        float offset = 0.0f;
+        for (const auto& zone : stats.zones) {
+            FlamegraphNode node;
+            node.name = zone.name;
+            node.durationMs = zone.gpuTimeMs;
+            node.isWaitZone = false;
+            assignColorHint(node, zone.name);
+
+            // Check if this is a child zone (contains ':')
+            size_t colonPos = zone.name.find(':');
+            if (colonPos != std::string::npos) {
+                std::string parentName = zone.name.substr(0, colonPos);
+
+                // Find existing parent node
+                auto it = parentNodes.find(parentName);
+                if (it != parentNodes.end()) {
+                    // Add as child of parent, offset relative to parent start
+                    node.startMs = parentOffsets[parentName];
+                    parentOffsets[parentName] += zone.gpuTimeMs;
+                    it->second->children.push_back(std::move(node));
+                    continue;  // Don't add to roots
+                }
+            }
+
+            // This is a root zone (no ':' or no matching parent)
+            node.startMs = offset;
+            offset += zone.gpuTimeMs;
+
+            // If this could be a parent, track it
+            if (colonPos == std::string::npos) {
+                capture.roots.push_back(std::move(node));
+                parentNodes[zone.name] = &capture.roots.back();
+                parentOffsets[zone.name] = 0.0f;
+            } else {
+                capture.roots.push_back(std::move(node));
+            }
+        }
+
+        gpuFlamegraphHistory_.push(std::move(capture));
+    }
+
+    /**
+     * Capture init profiler results to flamegraph (single capture).
+     * Call after InitProfiler::finalize().
+     */
+    void captureInitFlamegraph() {
+        const auto& results = InitProfiler::get().getResults();
+        std::vector<std::tuple<std::string, float, float, int>> phases;
+        for (const auto& phase : results.phases) {
+            phases.emplace_back(phase.name, phase.timeMs, phase.percentOfTotal, phase.depth);
+        }
+        initFlamegraph_ = buildInitFlamegraph(results.totalTimeMs, phases);
+    }
+
+    /**
+     * Increment frame counter and auto-capture if interval reached.
+     * Call once per frame after profiling data is complete.
+     */
+    void advanceFrame() {
+        frameNumber_++;
+        framesSinceCapture_++;
+
+        // Auto-capture at interval
+        if (flamegraphEnabled_ && framesSinceCapture_ >= captureInterval_) {
+            captureCpuFlamegraph();
+            captureGpuFlamegraph();
+            framesSinceCapture_ = 0;
+        }
+    }
+
+    /**
+     * Force an immediate flamegraph capture.
+     */
+    void captureNow() {
+        captureCpuFlamegraph();
+        captureGpuFlamegraph();
+        framesSinceCapture_ = 0;
+    }
+
+    /**
+     * Get current frame number.
+     */
+    uint64_t getFrameNumber() const { return frameNumber_; }
+
+    /**
+     * Set the capture interval (capture every N frames).
+     */
+    void setCaptureInterval(uint32_t interval) { captureInterval_ = std::max(1u, interval); }
+    uint32_t getCaptureInterval() const { return captureInterval_; }
+
+    /**
+     * Enable/disable flamegraph capture.
+     */
+    void setFlamegraphEnabled(bool enabled) { flamegraphEnabled_ = enabled; }
+    bool isFlamegraphEnabled() const { return flamegraphEnabled_; }
+
+    /**
+     * Pause/resume flamegraph capture (for inspection).
+     */
+    void setCapturePaused(bool paused) { capturePaused_ = paused; }
+    bool isCapturePaused() const { return capturePaused_; }
+
+    // Flamegraph history access
+    const CpuFlamegraphHistory& getCpuFlamegraphHistory() const { return cpuFlamegraphHistory_; }
+    const GpuFlamegraphHistory& getGpuFlamegraphHistory() const { return gpuFlamegraphHistory_; }
+    const FlamegraphCapture& getInitFlamegraph() const { return initFlamegraph_; }
+
 private:
     Profiler() = default;  // Private: use factory
 
     std::optional<GpuProfiler> gpuProfiler_;
     CpuProfiler cpuProfiler;
+
+    // Flamegraph capture storage
+    CpuFlamegraphHistory cpuFlamegraphHistory_;
+    GpuFlamegraphHistory gpuFlamegraphHistory_;
+    FlamegraphCapture initFlamegraph_;
+    uint64_t frameNumber_ = 0;
+
+    // Flamegraph capture settings
+    uint32_t captureInterval_ = 30;      // Capture every N frames
+    uint32_t framesSinceCapture_ = 0;
+    bool flamegraphEnabled_ = true;
+    bool capturePaused_ = false;         // Pause capture for inspection
 };
 
 /**

@@ -797,22 +797,25 @@ void GuiSystem::renderTileLoaderWindow(GuiInterfaces& ui, const Camera& camera) 
         if (tileViewMode_ == TileViewMode::GPU) {
             const auto& activeTiles = tileCache->getActiveTiles();
             tileCount = static_cast<uint32_t>(activeTiles.size());
-            for (const TerrainTile* tile : activeTiles) {
-                if (!tile || !tile->loaded) continue;
 
-                uint32_t lod = tile->lod;
-                int scale = 1 << lod;
-                int baseX = tile->coord.x * scale;
-                int baseZ = tile->coord.z * scale;
+            // Process tiles in order: LOD3 -> LOD2 -> LOD1 -> LOD0
+            // This ensures finer detail always overwrites coarser
+            for (int targetLod = 3; targetLod >= 0; targetLod--) {
+                for (const TerrainTile* tile : activeTiles) {
+                    if (!tile || !tile->loaded || tile->lod != static_cast<uint32_t>(targetLod)) continue;
 
-                for (int dz = 0; dz < scale; dz++) {
-                    for (int dx = 0; dx < scale; dx++) {
-                        int gx = baseX + dx;
-                        int gz = baseZ + dz;
-                        if (gx >= 0 && gx < GRID_SIZE && gz >= 0 && gz < GRID_SIZE) {
-                            uint32_t key = (static_cast<uint32_t>(gx) << 16) | static_cast<uint32_t>(gz);
-                            auto it = tileMap.find(key);
-                            if (it == tileMap.end() || it->second > lod) {
+                    uint32_t lod = tile->lod;
+                    int scale = 1 << lod;
+                    int baseX = tile->coord.x * scale;
+                    int baseZ = tile->coord.z * scale;
+
+                    for (int dz = 0; dz < scale; dz++) {
+                        for (int dx = 0; dx < scale; dx++) {
+                            int gx = baseX + dx;
+                            int gz = baseZ + dz;
+                            if (gx >= 0 && gx < GRID_SIZE && gz >= 0 && gz < GRID_SIZE) {
+                                uint32_t key = (static_cast<uint32_t>(gx) << 16) | static_cast<uint32_t>(gz);
+                                // Just overwrite - we process coarse first, fine last
                                 tileMap[key] = lod;
                             }
                         }
@@ -822,22 +825,52 @@ void GuiSystem::renderTileLoaderWindow(GuiInterfaces& ui, const Camera& camera) 
         } else if (tileViewMode_ == TileViewMode::CPU) {
             auto cpuTiles = tileCache->getAllCPUTiles();
             tileCount = static_cast<uint32_t>(cpuTiles.size());
+
+            // Count tiles per LOD for diagnostics
+            int lodCounts[4] = {0, 0, 0, 0};
             for (const TerrainTile* tile : cpuTiles) {
-                if (!tile) continue;
+                if (tile && tile->lod < 4) lodCounts[tile->lod]++;
+            }
+            ImGui::Text("  Tiles: LOD0=%d LOD1=%d LOD2=%d LOD3=%d",
+                       lodCounts[0], lodCounts[1], lodCounts[2], lodCounts[3]);
 
-                uint32_t lod = tile->lod;
-                int scale = 1 << lod;
-                int baseX = tile->coord.x * scale;
-                int baseZ = tile->coord.z * scale;
+            // Button to copy tile info to clipboard
+            if (ImGui::Button("Copy Tiles to Clipboard")) {
+                std::string tileInfo;
+                for (int lod = 0; lod < 4; lod++) {
+                    tileInfo += "LOD" + std::to_string(lod) + ":\n";
+                    for (const TerrainTile* tile : cpuTiles) {
+                        if (tile && tile->lod == static_cast<uint32_t>(lod)) {
+                            int scale = 1 << lod;
+                            int baseX = tile->coord.x * scale;
+                            int baseZ = tile->coord.z * scale;
+                            tileInfo += "  coord(" + std::to_string(tile->coord.x) + "," + std::to_string(tile->coord.z) + ")";
+                            tileInfo += " -> grid(" + std::to_string(baseX) + "-" + std::to_string(baseX + scale - 1);
+                            tileInfo += "," + std::to_string(baseZ) + "-" + std::to_string(baseZ + scale - 1) + ")\n";
+                        }
+                    }
+                }
+                ImGui::SetClipboardText(tileInfo.c_str());
+            }
 
-                for (int dz = 0; dz < scale; dz++) {
-                    for (int dx = 0; dx < scale; dx++) {
-                        int gx = baseX + dx;
-                        int gz = baseZ + dz;
-                        if (gx >= 0 && gx < GRID_SIZE && gz >= 0 && gz < GRID_SIZE) {
-                            uint32_t key = (static_cast<uint32_t>(gx) << 16) | static_cast<uint32_t>(gz);
-                            auto it = tileMap.find(key);
-                            if (it == tileMap.end() || it->second > lod) {
+            // Process tiles in order: LOD3 -> LOD2 -> LOD1 -> LOD0
+            // This ensures finer detail always overwrites coarser
+            for (int targetLod = 3; targetLod >= 0; targetLod--) {
+                for (const TerrainTile* tile : cpuTiles) {
+                    if (!tile || tile->lod != static_cast<uint32_t>(targetLod)) continue;
+
+                    uint32_t lod = tile->lod;
+                    int scale = 1 << lod;
+                    int baseX = tile->coord.x * scale;
+                    int baseZ = tile->coord.z * scale;
+
+                    for (int dz = 0; dz < scale; dz++) {
+                        for (int dx = 0; dx < scale; dx++) {
+                            int gx = baseX + dx;
+                            int gz = baseZ + dz;
+                            if (gx >= 0 && gx < GRID_SIZE && gz >= 0 && gz < GRID_SIZE) {
+                                uint32_t key = (static_cast<uint32_t>(gx) << 16) | static_cast<uint32_t>(gz);
+                                // Just overwrite - we process coarse first, fine last
                                 tileMap[key] = lod;
                             }
                         }
@@ -847,20 +880,25 @@ void GuiSystem::renderTileLoaderWindow(GuiInterfaces& ui, const Camera& camera) 
         } else if (tileViewMode_ == TileViewMode::Physics && ui.physicsTerrainTiles) {
             const auto& physicsTiles = ui.physicsTerrainTiles->getLoadedTiles();
             tileCount = static_cast<uint32_t>(physicsTiles.size());
-            for (const auto& [key, entry] : physicsTiles) {
-                uint32_t lod = entry.lod;
-                int scale = 1 << lod;
-                int baseX = entry.tileX * scale;
-                int baseZ = entry.tileZ * scale;
 
-                for (int dz = 0; dz < scale; dz++) {
-                    for (int dx = 0; dx < scale; dx++) {
-                        int gx = baseX + dx;
-                        int gz = baseZ + dz;
-                        if (gx >= 0 && gx < GRID_SIZE && gz >= 0 && gz < GRID_SIZE) {
-                            uint32_t mapKey = (static_cast<uint32_t>(gx) << 16) | static_cast<uint32_t>(gz);
-                            auto it = tileMap.find(mapKey);
-                            if (it == tileMap.end() || it->second > lod) {
+            // Process tiles in order: LOD3 -> LOD2 -> LOD1 -> LOD0
+            // This ensures finer detail always overwrites coarser
+            for (int targetLod = 3; targetLod >= 0; targetLod--) {
+                for (const auto& [key, entry] : physicsTiles) {
+                    if (entry.lod != static_cast<uint32_t>(targetLod)) continue;
+
+                    uint32_t lod = entry.lod;
+                    int scale = 1 << lod;
+                    int baseX = entry.tileX * scale;
+                    int baseZ = entry.tileZ * scale;
+
+                    for (int dz = 0; dz < scale; dz++) {
+                        for (int dx = 0; dx < scale; dx++) {
+                            int gx = baseX + dx;
+                            int gz = baseZ + dz;
+                            if (gx >= 0 && gx < GRID_SIZE && gz >= 0 && gz < GRID_SIZE) {
+                                uint32_t mapKey = (static_cast<uint32_t>(gx) << 16) | static_cast<uint32_t>(gz);
+                                // Just overwrite - we process coarse first, fine last
                                 tileMap[mapKey] = lod;
                             }
                         }
@@ -901,6 +939,18 @@ void GuiSystem::renderTileLoaderWindow(GuiInterfaces& ui, const Camera& camera) 
 
                 drawList->AddRectFilled(cellMin, cellMax, color);
                 drawList->AddRect(cellMin, cellMax, gridLineColor);
+
+                // Tooltip on hover showing cell coords and LOD
+                if (ImGui::IsMouseHoveringRect(cellMin, cellMax)) {
+                    ImGui::BeginTooltip();
+                    ImGui::Text("Cell (%d, %d)", x, z);
+                    if (it != tileMap.end()) {
+                        ImGui::Text("LOD: %u", it->second);
+                    } else {
+                        ImGui::Text("Empty");
+                    }
+                    ImGui::EndTooltip();
+                }
             }
         }
 

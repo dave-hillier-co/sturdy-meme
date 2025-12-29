@@ -334,9 +334,12 @@ void TerrainTileCache::updateActiveTiles(const glm::vec3& cameraPos, float loadR
                 float dist = std::sqrt((tileCenterX - camX) * (tileCenterX - camX) +
                                        (tileCenterZ - camZ) * (tileCenterZ - camZ));
 
-                // Check if this tile should be at this LOD level
-                uint32_t idealLOD = getLODForDistance(dist);
-                if (idealLOD == lod && dist < loadRadius) {
+                // Load tile if any part of it is within this LOD's max distance
+                // and within the overall load radius.
+                // Each LOD level covers from 0 to lodMaxDist, with finer LODs
+                // preferred when available (handled by shader/sampling).
+                // This ensures no gaps at LOD boundaries.
+                if (dist < lodMaxDist && dist < loadRadius) {
                     TileCoord coord{tx, tz};
                     if (!isTileLoaded(coord, lod)) {
                         tilesToLoad.push_back({coord, lod});
@@ -346,7 +349,8 @@ void TerrainTileCache::updateActiveTiles(const glm::vec3& cameraPos, float loadR
         }
     }
 
-    // Find tiles to unload (too far from camera)
+    // Find tiles to unload (beyond their LOD's useful range)
+    // Each LOD has its own max distance - unload when beyond that + hysteresis
     // Never unload base LOD tiles - they're the fallback for the entire terrain
     for (auto& [key, tile] : loadedTiles) {
         // Skip base LOD tiles - they're never unloaded
@@ -358,7 +362,16 @@ void TerrainTileCache::updateActiveTiles(const glm::vec3& cameraPos, float loadR
         float dist = std::sqrt((tileCenterX - camX) * (tileCenterX - camX) +
                                (tileCenterZ - camZ) * (tileCenterZ - camZ));
 
-        if (dist > unloadRadius) {
+        // Get the max distance for this tile's LOD level
+        float lodMaxDist = (tile.lod == 0) ? LOD0_MAX_DISTANCE :
+                          (tile.lod == 1) ? LOD1_MAX_DISTANCE :
+                          (tile.lod == 2) ? LOD2_MAX_DISTANCE :
+                          LOD3_MAX_DISTANCE;
+
+        // Unload if beyond this LOD's range (with hysteresis to prevent thrashing)
+        // The coarser LOD tiles will still provide coverage
+        float unloadDist = lodMaxDist + (unloadRadius - loadRadius);
+        if (dist > unloadDist) {
             tilesToUnload.push_back(key);
         }
     }

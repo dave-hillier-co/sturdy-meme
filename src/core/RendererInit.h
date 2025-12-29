@@ -1,7 +1,6 @@
 #pragma once
 
 #include "InitContext.h"
-#include "VulkanContext.h"
 #include "DescriptorManager.h"
 #include "CoreResources.h"
 
@@ -32,10 +31,6 @@ class SSRSystem;
 class WaterTileCull;
 class WaterGBuffer;
 class TerrainSystem;
-class RockSystem;
-class CatmullClarkSystem;
-class HiZSystem;
-class DebugLineSystem;
 class ShadowSystem;
 class MaterialRegistry;
 class SkinnedMeshRenderer;
@@ -57,74 +52,20 @@ struct WaterSubsystems {
 };
 
 /**
- * RendererInit - Helper class for building InitContext and managing subsystem initialization
+ * RendererInit - Cross-cutting initialization helpers
  *
- * This centralizes the creation of InitContext and provides utilities for
- * initializing subsystems with consistent resource wiring.
+ * Contains initialization logic that spans multiple unrelated systems.
+ * For single-system initialization, use the system's own ::create() factory.
+ * For InitContext creation, use InitContext::build().
  *
  * Design principles:
- * - Static methods take specific system references rather than the whole Renderer
- * - InitContext provides common Vulkan resources
- * - Additional parameters for specific requirements (render passes, etc.)
+ * - Only include methods that touch multiple unrelated systems
+ * - Single-system init belongs in that system's factory method
  */
 class RendererInit {
 public:
-    /**
-     * Build an InitContext from VulkanContext and common resources.
-     * This is the single source of truth for creating the shared init context.
-     *
-     * @param poolSizes Optional pool sizes hint for systems that create their own pools
-     */
-    static InitContext buildContext(
-        const VulkanContext& vulkanContext,
-        VkCommandPool commandPool,
-        DescriptorManager::Pool* descriptorPool,
-        const std::string& resourcePath,
-        uint32_t framesInFlight,
-        std::optional<DescriptorPoolSizes> poolSizes = std::nullopt
-    ) {
-        InitContext ctx{};
-        ctx.device = vulkanContext.getDevice();
-        ctx.physicalDevice = vulkanContext.getPhysicalDevice();
-        ctx.allocator = vulkanContext.getAllocator();
-        ctx.graphicsQueue = vulkanContext.getGraphicsQueue();
-        ctx.commandPool = commandPool;
-        ctx.descriptorPool = descriptorPool;
-        ctx.shaderPath = resourcePath + "/shaders";
-        ctx.resourcePath = resourcePath;
-        ctx.framesInFlight = framesInFlight;
-        ctx.extent = vulkanContext.getSwapchainExtent();
-        ctx.poolSizesHint = poolSizes;
-        return ctx;
-    }
-
-    /**
-     * Update extent in an existing InitContext (e.g., after resize)
-     */
-    static void updateExtent(InitContext& ctx, VkExtent2D newExtent) {
-        ctx.extent = newExtent;
-    }
-
-    /**
-     * Create a modified InitContext with different extent (for systems that need different resolution)
-     */
-    static InitContext withExtent(const InitContext& ctx, VkExtent2D newExtent) {
-        InitContext modified = ctx;
-        modified.extent = newExtent;
-        return modified;
-    }
-
-    /**
-     * Create a modified InitContext with different shader path (rare, for testing)
-     */
-    static InitContext withShaderPath(const InitContext& ctx, const std::string& shaderPath) {
-        InitContext modified = ctx;
-        modified.shaderPath = shaderPath;
-        return modified;
-    }
-
     // ========================================================================
-    // Subsystem initialization methods
+    // Grouped subsystem initialization (creates multiple related systems)
     // ========================================================================
 
     /**
@@ -251,44 +192,9 @@ public:
         VkSampler depthSampler
     );
 
-    /**
-     * Initialize Hi-Z occlusion culling system via factory
-     * Returns true even if Hi-Z fails (it's optional)
-     */
-    static bool initHiZSystem(
-        RendererSystems& systems,
-        const InitContext& ctx,
-        VkFormat depthFormat,
-        VkImageView hdrDepthView,
-        VkSampler depthSampler
-    );
-
-    // Overload using HDRResources (still needs depthFormat and depthSampler)
-    static bool initHiZSystem(
-        RendererSystems& systems,
-        const InitContext& ctx,
-        VkFormat depthFormat,
-        const HDRResources& hdr,
-        VkSampler depthSampler
-    ) {
-        return initHiZSystem(systems, ctx, depthFormat, hdr.depthView, depthSampler);
-    }
-
-    /**
-     * Create debug line system for physics visualization (factory pattern)
-     */
-    static std::unique_ptr<DebugLineSystem> createDebugLineSystem(
-        const InitContext& ctx,
-        VkRenderPass hdrRenderPass
-    );
-
-    // Overload using HDRResources
-    static std::unique_ptr<DebugLineSystem> createDebugLineSystem(
-        const InitContext& ctx,
-        const HDRResources& hdr
-    ) {
-        return createDebugLineSystem(ctx, hdr.renderPass);
-    }
+    // ========================================================================
+    // Cross-cutting descriptor updates (touch multiple unrelated systems)
+    // ========================================================================
 
     /**
      * Update cloud shadow bindings across all descriptor sets

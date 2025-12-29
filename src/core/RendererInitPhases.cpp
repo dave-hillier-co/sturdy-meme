@@ -1002,8 +1002,11 @@ bool Renderer::initSubsystems(const InitContext& initCtx) {
     if (!createSyncObjects()) return false;
 
     // Create debug line system via factory
-    auto debugLineSystem = RendererInit::createDebugLineSystem(initCtx, core.hdr);
-    if (!debugLineSystem) return false;
+    auto debugLineSystem = DebugLineSystem::create(initCtx, core.hdr.renderPass);
+    if (!debugLineSystem) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create debug line system");
+        return false;
+    }
     systems_->setDebugLineSystem(std::move(debugLineSystem));
     SDL_Log("Debug line system initialized");
 

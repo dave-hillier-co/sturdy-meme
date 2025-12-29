@@ -9,7 +9,6 @@
 #include "BloomSystem.h"
 #include "BilateralGridSystem.h"
 #include "SSRSystem.h"
-#include "HiZSystem.h"
 
 // Atmosphere/weather systems
 #include "SnowMaskSystem.h"
@@ -23,7 +22,6 @@
 // Vegetation systems
 #include "GrassSystem.h"
 #include "LeafSystem.h"
-#include "RockSystem.h"
 
 // Water systems
 #include "WaterSystem.h"
@@ -37,11 +35,9 @@
 #include "TerrainSystem.h"
 
 // Other systems
-#include "CatmullClarkSystem.h"
 #include "ShadowSystem.h"
 #include "MaterialRegistry.h"
 #include "SkinnedMeshRenderer.h"
-#include "DebugLineSystem.h"
 
 #include <SDL3/SDL.h>
 
@@ -396,41 +392,6 @@ bool RendererInit::createWaterDescriptorSets(
     }
 
     return true;
-}
-
-bool RendererInit::initHiZSystem(
-    RendererSystems& systems,
-    const InitContext& ctx,
-    VkFormat depthFormat,
-    VkImageView hdrDepthView,
-    VkSampler depthSampler
-) {
-    auto hiZSystem = HiZSystem::create(ctx, depthFormat);
-    if (!hiZSystem) {
-        SDL_Log("Warning: Hi-Z system initialization failed, occlusion culling disabled");
-        return true;  // Don't fail - Hi-Z is optional
-    }
-
-    // Connect depth buffer to Hi-Z system
-    hiZSystem->setDepthBuffer(hdrDepthView, depthSampler);
-
-    // Store in RendererSystems
-    systems.setHiZ(std::move(hiZSystem));
-
-    return true;
-}
-
-std::unique_ptr<DebugLineSystem> RendererInit::createDebugLineSystem(
-    const InitContext& ctx,
-    VkRenderPass hdrRenderPass
-) {
-    auto system = DebugLineSystem::create(ctx, hdrRenderPass);
-    if (!system) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create debug line system");
-        return nullptr;
-    }
-    SDL_Log("Debug line system created");
-    return system;
 }
 
 void RendererInit::updateCloudShadowBindings(

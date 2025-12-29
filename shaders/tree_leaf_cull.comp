@@ -91,8 +91,9 @@ void main() {
         return;
     }
 
-    // Get input instance and cull
-    LeafInstance leaf = inputInstances[globalIdx];
+    // Get input instance using actual buffer offset (supports mixed LOD0/LOD1)
+    uint bufferIdx = tree.bufferOffset + localIdx;
+    LeafInstance leaf = inputInstances[bufferIdx];
     vec4 worldPos;
     float leafSize;
     float distToCamera;

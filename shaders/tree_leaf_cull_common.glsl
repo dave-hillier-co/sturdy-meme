@@ -11,12 +11,12 @@ const uint NUM_LEAF_TYPES = 4;
 // Per-tree culling data structure (shared layout)
 struct TreeCullData {
     mat4 treeModel;                // Tree's model matrix
-    uint inputFirstInstance;       // Offset into inputInstances for this tree
+    uint inputFirstInstance;       // Virtual contiguous offset (for binary search)
     uint inputInstanceCount;       // Number of input instances for this tree
     uint treeIndex;                // Index of this tree (for render data lookup)
     uint leafTypeIndex;            // Leaf type (0=oak, 1=ash, 2=aspen, 3=pine)
     float lodBlendFactor;          // LOD blend factor (0=full detail, 1=full impostor)
-    uint _pad0;                    // Padding for std430 alignment
+    uint bufferOffset;             // Actual offset into input buffer (may differ from inputFirstInstance for LOD1)
     uint _pad1;
     uint _pad2;
 };

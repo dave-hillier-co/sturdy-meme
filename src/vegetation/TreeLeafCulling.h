@@ -86,12 +86,12 @@ struct LeafCullP3Params {
 // Per-tree culling data (stored in SSBO, one entry per tree)
 struct TreeCullData {
     glm::mat4 treeModel;
-    uint32_t inputFirstInstance;
+    uint32_t inputFirstInstance;   // Virtual contiguous offset (for binary search)
     uint32_t inputInstanceCount;
     uint32_t treeIndex;
     uint32_t leafTypeIndex;
     float lodBlendFactor;
-    uint32_t _pad0;
+    uint32_t bufferOffset;         // Actual offset into input buffer (for LOD0/LOD1)
     uint32_t _pad1;
     uint32_t _pad2;
 };

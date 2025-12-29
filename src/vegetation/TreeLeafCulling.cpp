@@ -616,9 +616,11 @@ void TreeLeafCulling::recordCulling(VkCommandBuffer cmd, uint32_t frameIndex,
     if (leafRenderables.empty() || leafDrawInfoLOD0.empty()) return;
 
     // LOD1 leaves are stored after LOD0 leaves in the merged buffer
-    const uint32_t lod1Offset = treeSystem.getLOD0LeafCount();
+    const uint32_t lod1BufferOffset = treeSystem.getLOD0LeafCount();
 
     // Build per-tree data for batched culling
+    // inputFirstInstance = virtual contiguous offset (for binary search)
+    // bufferOffset = actual offset into merged buffer (LOD0 section or LOD1 section)
     std::vector<TreeCullData> treeDataList;
     std::vector<TreeRenderDataGPU> treeRenderDataList;
     treeDataList.reserve(leafRenderables.size());
@@ -627,6 +629,7 @@ void TreeLeafCulling::recordCulling(VkCommandBuffer cmd, uint32_t frameIndex,
     uint32_t numTrees = 0;
     uint32_t totalLeafInstances = 0;
     uint32_t lodTreeIndex = 0;
+    uint32_t virtualOffset = 0;  // Contiguous virtual offset for binary search
 
     for (const auto& renderable : leafRenderables) {
         if (renderable.leafInstanceIndex >= 0 &&
@@ -635,16 +638,16 @@ void TreeLeafCulling::recordCulling(VkCommandBuffer cmd, uint32_t frameIndex,
             // Check if this tree should use LOD1 leaves
             bool useLOD1 = lodSystem && lodSystem->shouldUseLOD1(lodTreeIndex);
             const LeafDrawInfo* drawInfo = nullptr;
-            uint32_t firstInstanceOffset = 0;
+            uint32_t actualBufferOffset = 0;
 
             if (useLOD1 && static_cast<size_t>(renderable.leafInstanceIndex) < leafDrawInfoLOD1.size()) {
                 // Use LOD1 leaves (fewer, larger leaves at distance)
                 drawInfo = &leafDrawInfoLOD1[renderable.leafInstanceIndex];
-                firstInstanceOffset = lod1Offset;  // LOD1 leaves are after LOD0 in merged buffer
+                actualBufferOffset = lod1BufferOffset + drawInfo->firstInstance;
             } else {
                 // Use LOD0 leaves (full detail)
                 drawInfo = &leafDrawInfoLOD0[renderable.leafInstanceIndex];
-                firstInstanceOffset = 0;
+                actualBufferOffset = drawInfo->firstInstance;
             }
 
             if (drawInfo->instanceCount > 0) {
@@ -660,11 +663,12 @@ void TreeLeafCulling::recordCulling(VkCommandBuffer cmd, uint32_t frameIndex,
 
                 TreeCullData treeData{};
                 treeData.treeModel = renderable.transform;
-                treeData.inputFirstInstance = drawInfo->firstInstance + firstInstanceOffset;
+                treeData.inputFirstInstance = virtualOffset;  // Contiguous for binary search
                 treeData.inputInstanceCount = drawInfo->instanceCount;
                 treeData.treeIndex = numTrees;
                 treeData.leafTypeIndex = leafTypeIdx;
                 treeData.lodBlendFactor = lodBlendFactor;
+                treeData.bufferOffset = actualBufferOffset;   // Actual buffer location
                 treeDataList.push_back(treeData);
 
                 TreeRenderDataGPU renderData{};
@@ -674,6 +678,7 @@ void TreeLeafCulling::recordCulling(VkCommandBuffer cmd, uint32_t frameIndex,
                 renderData.windOffsetAndLOD = glm::vec4(windOffset, lodBlendFactor, 0.0f, 0.0f);
                 treeRenderDataList.push_back(renderData);
 
+                virtualOffset += drawInfo->instanceCount;
                 totalLeafInstances += drawInfo->instanceCount;
                 numTrees++;
             }

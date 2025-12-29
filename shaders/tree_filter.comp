@@ -21,12 +21,12 @@ layout(local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
 // Per-tree culling data (from TreeRenderer - all trees)
 struct TreeCullData {
     mat4 treeModel;                // Tree's model matrix
-    uint inputFirstInstance;       // Offset into leaf instances for this tree
+    uint inputFirstInstance;       // Virtual contiguous offset (for binary search)
     uint inputInstanceCount;       // Number of leaves for this tree
     uint treeIndex;                // Index for render data lookup
     uint leafTypeIndex;            // Leaf type (0=oak, 1=ash, 2=aspen, 3=pine)
     float lodBlendFactor;          // LOD blend factor (0=full detail, 1=full impostor)
-    uint _pad0;
+    uint bufferOffset;             // Actual offset into input buffer
     uint _pad1;
     uint _pad2;
 };

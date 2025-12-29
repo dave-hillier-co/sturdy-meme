@@ -373,7 +373,8 @@ void Application::run() {
             systems.performanceControl(),
             systems.sceneControl(),
             systems.playerControl(),
-            systems.environmentSettings()
+            systems.environmentSettings(),
+            &physicsTerrainManager_
         };
         gui_->render(guiInterfaces, camera, lastDeltaTime, currentFps);
 

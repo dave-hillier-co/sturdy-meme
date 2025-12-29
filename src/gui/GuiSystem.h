@@ -113,4 +113,12 @@ private:
         bool showProfiler = false;
         bool showTileLoader = false;
     } windowStates;
+
+    // Tile loader visualization mode
+    enum class TileViewMode {
+        GPU,      // Active GPU tiles (loaded with GPU resources)
+        CPU,      // All tiles with CPU data (includes GPU + CPU-only + base LOD)
+        Physics   // Physics collision tiles (TODO: requires exposing PhysicsTerrainTileManager)
+    };
+    TileViewMode tileViewMode_ = TileViewMode::GPU;
 };

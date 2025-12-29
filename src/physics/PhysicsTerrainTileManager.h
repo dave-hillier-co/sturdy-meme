@@ -40,6 +40,9 @@ public:
     uint32_t getLoadedTileCount() const { return static_cast<uint32_t>(loadedTiles_.size()); }
     const Config& getConfig() const { return config_; }
 
+    // Get all loaded physics tiles (for debug visualization)
+    const std::unordered_map<uint64_t, PhysicsTileEntry>& getLoadedTiles() const { return loadedTiles_; }
+
 private:
     uint64_t makeTileKey(int32_t tileX, int32_t tileZ, uint32_t lod) const;
     bool loadPhysicsTile(int32_t tileX, int32_t tileZ, uint32_t lod);

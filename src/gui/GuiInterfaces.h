@@ -15,6 +15,7 @@ class IProfilerControl;
 class IPerformanceControl;
 class ISceneControl;
 class IPlayerControl;
+class PhysicsTerrainTileManager;
 struct EnvironmentSettings;
 
 /**
@@ -40,4 +41,5 @@ struct GuiInterfaces {
     ISceneControl& scene;
     IPlayerControl& player;
     EnvironmentSettings& environmentSettings;
+    PhysicsTerrainTileManager* physicsTerrainTiles = nullptr;  // Optional, may be null
 };

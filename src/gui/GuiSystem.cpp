@@ -35,6 +35,7 @@
 
 #include "terrain/TerrainSystem.h"
 #include "terrain/TerrainTileCache.h"
+#include "physics/PhysicsTerrainTileManager.h"
 
 #include <imgui.h>
 #include <imgui_impl_sdl3.h>
@@ -706,7 +707,7 @@ void GuiSystem::renderProfilerWindow(GuiInterfaces& ui) {
 void GuiSystem::renderTileLoaderWindow(GuiInterfaces& ui, const Camera& camera) {
     ImGui::SetNextWindowPos(ImVec2(320, 300), ImGuiCond_FirstUseEver);
     // Window size: 32x32 grid * 16px cells = 512x512, plus padding and title
-    ImGui::SetNextWindowSize(ImVec2(560, 600), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSize(ImVec2(560, 650), ImGuiCond_FirstUseEver);
 
     if (ImGui::Begin("Tile Loader", &windowStates.showTileLoader)) {
         const TerrainTileCache* tileCache = ui.terrain.getTerrainSystem().getTileCache();
@@ -716,6 +717,37 @@ void GuiSystem::renderTileLoaderWindow(GuiInterfaces& ui, const Camera& camera) 
             ImGui::End();
             return;
         }
+
+        // Mode selection
+        ImGui::Text("View Mode:");
+        ImGui::SameLine();
+        if (ImGui::RadioButton("GPU", tileViewMode_ == TileViewMode::GPU)) {
+            tileViewMode_ = TileViewMode::GPU;
+        }
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Active GPU tiles (uploaded to VRAM for shader sampling)");
+        }
+        ImGui::SameLine();
+        if (ImGui::RadioButton("CPU", tileViewMode_ == TileViewMode::CPU)) {
+            tileViewMode_ = TileViewMode::CPU;
+        }
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("All tiles with CPU data (includes GPU tiles + CPU-only + base LOD)");
+        }
+        ImGui::SameLine();
+        bool hasPhysics = ui.physicsTerrainTiles != nullptr;
+        ImGui::BeginDisabled(!hasPhysics);
+        if (ImGui::RadioButton("Physics", tileViewMode_ == TileViewMode::Physics)) {
+            tileViewMode_ = TileViewMode::Physics;
+        }
+        ImGui::EndDisabled();
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip(hasPhysics ?
+                "Physics collision tiles (Jolt heightfield bodies)" :
+                "Physics not initialized");
+        }
+
+        ImGui::Spacing();
 
         // Grid configuration
         constexpr int GRID_SIZE = 32;
@@ -757,8 +789,90 @@ void GuiSystem::renderTileLoaderWindow(GuiInterfaces& ui, const Camera& camera) 
         ImGui::Text("Camera: (%.0f, %.0f, %.0f)", camPos.x, camPos.y, camPos.z);
         ImGui::Text("Grid pos: (%.1f, %.1f)", playerGridX, playerGridZ);
 
+        // Create a lookup for loaded tiles: key = (x << 16 | z), value = lod
+        std::unordered_map<uint32_t, uint32_t> tileMap;  // (x,z) -> lod at LOD0 grid scale
+
+        // Get tiles based on view mode
+        uint32_t tileCount = 0;
+        if (tileViewMode_ == TileViewMode::GPU) {
+            const auto& activeTiles = tileCache->getActiveTiles();
+            tileCount = static_cast<uint32_t>(activeTiles.size());
+            for (const TerrainTile* tile : activeTiles) {
+                if (!tile || !tile->loaded) continue;
+
+                uint32_t lod = tile->lod;
+                int scale = 1 << lod;
+                int baseX = tile->coord.x * scale;
+                int baseZ = tile->coord.z * scale;
+
+                for (int dz = 0; dz < scale; dz++) {
+                    for (int dx = 0; dx < scale; dx++) {
+                        int gx = baseX + dx;
+                        int gz = baseZ + dz;
+                        if (gx >= 0 && gx < GRID_SIZE && gz >= 0 && gz < GRID_SIZE) {
+                            uint32_t key = (static_cast<uint32_t>(gx) << 16) | static_cast<uint32_t>(gz);
+                            auto it = tileMap.find(key);
+                            if (it == tileMap.end() || it->second > lod) {
+                                tileMap[key] = lod;
+                            }
+                        }
+                    }
+                }
+            }
+        } else if (tileViewMode_ == TileViewMode::CPU) {
+            auto cpuTiles = tileCache->getAllCPUTiles();
+            tileCount = static_cast<uint32_t>(cpuTiles.size());
+            for (const TerrainTile* tile : cpuTiles) {
+                if (!tile) continue;
+
+                uint32_t lod = tile->lod;
+                int scale = 1 << lod;
+                int baseX = tile->coord.x * scale;
+                int baseZ = tile->coord.z * scale;
+
+                for (int dz = 0; dz < scale; dz++) {
+                    for (int dx = 0; dx < scale; dx++) {
+                        int gx = baseX + dx;
+                        int gz = baseZ + dz;
+                        if (gx >= 0 && gx < GRID_SIZE && gz >= 0 && gz < GRID_SIZE) {
+                            uint32_t key = (static_cast<uint32_t>(gx) << 16) | static_cast<uint32_t>(gz);
+                            auto it = tileMap.find(key);
+                            if (it == tileMap.end() || it->second > lod) {
+                                tileMap[key] = lod;
+                            }
+                        }
+                    }
+                }
+            }
+        } else if (tileViewMode_ == TileViewMode::Physics && ui.physicsTerrainTiles) {
+            const auto& physicsTiles = ui.physicsTerrainTiles->getLoadedTiles();
+            tileCount = static_cast<uint32_t>(physicsTiles.size());
+            for (const auto& [key, entry] : physicsTiles) {
+                uint32_t lod = entry.lod;
+                int scale = 1 << lod;
+                int baseX = entry.tileX * scale;
+                int baseZ = entry.tileZ * scale;
+
+                for (int dz = 0; dz < scale; dz++) {
+                    for (int dx = 0; dx < scale; dx++) {
+                        int gx = baseX + dx;
+                        int gz = baseZ + dz;
+                        if (gx >= 0 && gx < GRID_SIZE && gz >= 0 && gz < GRID_SIZE) {
+                            uint32_t mapKey = (static_cast<uint32_t>(gx) << 16) | static_cast<uint32_t>(gz);
+                            auto it = tileMap.find(mapKey);
+                            if (it == tileMap.end() || it->second > lod) {
+                                tileMap[mapKey] = lod;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         // Tile statistics
-        ImGui::Text("Active tiles: %u / %u", tileCache->getActiveTileCount(), 64u);
+        const char* modeLabel = (tileViewMode_ == TileViewMode::GPU) ? "GPU" :
+                               (tileViewMode_ == TileViewMode::CPU) ? "CPU" : "Physics";
+        ImGui::Text("%s tiles: %u / %u", modeLabel, tileCount, 64u);
 
         ImGui::Spacing();
         ImGui::Separator();
@@ -767,38 +881,6 @@ void GuiSystem::renderTileLoaderWindow(GuiInterfaces& ui, const Camera& camera) 
         // Draw the tile grid
         ImDrawList* drawList = ImGui::GetWindowDrawList();
         ImVec2 gridOrigin = ImGui::GetCursorScreenPos();
-
-        // Create a lookup for loaded tiles: key = (x << 16 | z), value = lod
-        // We need to iterate through active tiles
-        std::unordered_map<uint32_t, uint32_t> tileMap;  // (x,z) -> lod at LOD0 grid scale
-
-        const auto& activeTiles = tileCache->getActiveTiles();
-        for (const TerrainTile* tile : activeTiles) {
-            if (!tile || !tile->loaded) continue;
-
-            uint32_t lod = tile->lod;
-            // Scale the tile coord to LOD0 grid space
-            // At LOD0: 32x32 tiles, at LOD1: 16x16, at LOD2: 8x8, at LOD3: 4x4
-            int scale = 1 << lod;  // 1, 2, 4, 8
-            int baseX = tile->coord.x * scale;
-            int baseZ = tile->coord.z * scale;
-
-            // Fill all cells this tile covers in the LOD0 grid
-            for (int dz = 0; dz < scale; dz++) {
-                for (int dx = 0; dx < scale; dx++) {
-                    int gx = baseX + dx;
-                    int gz = baseZ + dz;
-                    if (gx >= 0 && gx < GRID_SIZE && gz >= 0 && gz < GRID_SIZE) {
-                        uint32_t key = (static_cast<uint32_t>(gx) << 16) | static_cast<uint32_t>(gz);
-                        // Only store if we don't have a higher-detail (lower LOD) tile
-                        auto it = tileMap.find(key);
-                        if (it == tileMap.end() || it->second > lod) {
-                            tileMap[key] = lod;
-                        }
-                    }
-                }
-            }
-        }
 
         // Draw cells
         for (int z = 0; z < GRID_SIZE; z++) {

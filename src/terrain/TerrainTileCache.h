@@ -115,6 +115,10 @@ public:
     uint32_t getActiveTileCount() const { return static_cast<uint32_t>(activeTiles.size()); }
     const std::vector<TerrainTile*>& getActiveTiles() const { return activeTiles; }
 
+    // Get all tiles with CPU data (for debug visualization)
+    // Returns tiles in loadedTiles that have cpuData, regardless of GPU state
+    std::vector<const TerrainTile*> getAllCPUTiles() const;
+
     // Get tile info buffer for shader (triple-buffered for frames-in-flight sync)
     // IMPORTANT: Always use this per-frame version to avoid CPU-GPU sync issues.
     // The buffer is written by CPU during updateActiveTiles() and read by GPU shaders.

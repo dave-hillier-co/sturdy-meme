@@ -1102,3 +1102,14 @@ bool TerrainTileCache::sampleBaseLOD(float worldX, float worldZ, float& outHeigh
 
     return false;
 }
+
+std::vector<const TerrainTile*> TerrainTileCache::getAllCPUTiles() const {
+    std::vector<const TerrainTile*> result;
+    result.reserve(loadedTiles.size());
+    for (const auto& [key, tile] : loadedTiles) {
+        if (!tile.cpuData.empty()) {
+            result.push_back(&tile);
+        }
+    }
+    return result;
+}

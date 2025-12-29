@@ -85,17 +85,12 @@ void main() {
         right = cross(up, forward);
     }
 
-    // Position billboard vertex - center Y around origin so baseOffset positions correctly
-    vec3 localPos;
-    if (sunElevation > 67.5) {
-        // Top-down: use max size for both dimensions
-        float maxSize = max(hSize, vSize);
-        localPos = right * inPosition.x * maxSize * 2.0 +
-                   up * (inPosition.y - 0.5) * maxSize * 2.0;
-    } else {
-        localPos = right * inPosition.x * hSize * 2.0 +
-                   up * (inPosition.y - 0.5) * vSize * 2.0;
-    }
+    // Position billboard vertex - center Y around origin so baseOffset positions correctly.
+    // The atlas captures with a square ortho projection using max(hSize, vSize),
+    // so we must use the same size for both dimensions to match the texture content.
+    float billboardSize = max(hSize, vSize);
+    vec3 localPos = right * inPosition.x * billboardSize * 2.0 +
+                    up * (inPosition.y - 0.5) * billboardSize * 2.0;
 
     // Position billboard centered at tree's center height
     vec3 worldPos = treePos + vec3(0.0, baseOffset, 0.0) + localPos;

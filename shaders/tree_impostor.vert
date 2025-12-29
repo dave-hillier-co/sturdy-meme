@@ -108,13 +108,16 @@ void main() {
         }
 
         // Billboard quad has Y from 0 to 1; center it around origin so baseOffset
-        // (which is centerHeight) correctly positions the billboard center
-        localPos = right * inPosition.x * hSize * 2.0 +
-                   up * (inPosition.y - 0.5) * vSize * 2.0;
+        // (which is centerHeight) correctly positions the billboard center.
+        // The atlas captures with a square ortho projection using max(hSize, vSize),
+        // so we must use the same size for both dimensions to match the texture content.
+        float billboardSize = max(hSize, vSize);
+        localPos = right * inPosition.x * billboardSize * 2.0 +
+                   up * (inPosition.y - 0.5) * billboardSize * 2.0;
 
         // When tilted, the billboard center needs to move forward to keep the base grounded
         float tiltAngle = elevation > 5.0 ? radians(clamp(elevation, 0.0, 80.0)) : 0.0;
-        vec3 tiltCompensation = forward * vSize * sin(tiltAngle);
+        vec3 tiltCompensation = forward * billboardSize * sin(tiltAngle);
         billboardCenter = treePos + vec3(0.0, baseOffset, 0.0) + tiltCompensation;
     }
 

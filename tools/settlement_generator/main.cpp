@@ -1,18 +1,16 @@
-// Standalone biome map preprocessing tool
-// Generates biome classification from heightmap and erosion data
+// Standalone settlement generation tool
+// Generates settlement locations from heightmap and erosion data
 
-#include "BiomeGenerator.h"
-#include "SettlementSVG.h"
+#include "SettlementGenerator.h"
 #include <SDL3/SDL_log.h>
 #include <iostream>
 #include <string>
-#include <cstdlib>
 #include <filesystem>
 
 void printUsage(const char* programName) {
     std::cout << "Usage: " << programName << " <heightmap.png> <erosion_cache> <output_dir> [options]\n"
               << "\n"
-              << "Generates biome classification map for south coast of England terrain.\n"
+              << "Generates settlement locations for terrain based on geography.\n"
               << "\n"
               << "Arguments:\n"
               << "  heightmap.png    16-bit PNG heightmap file\n"
@@ -24,29 +22,24 @@ void printUsage(const char* programName) {
               << "  --terrain-size <value>      World size in meters (default: 16384.0)\n"
               << "  --min-altitude <value>      Min altitude in heightmap (default: 0.0)\n"
               << "  --max-altitude <value>      Max altitude in heightmap (default: 200.0)\n"
-              << "  --output-resolution <value> Biome map resolution (default: 1024)\n"
               << "  --num-settlements <value>   Target number of settlements (default: 20)\n"
+              << "  --biome-map <path>          Optional biome map for zone-aware placement\n"
+              << "  --svg-width <value>         SVG output width (default: 2048)\n"
+              << "  --svg-height <value>        SVG output height (default: 2048)\n"
               << "  --help                      Show this help message\n"
               << "\n"
               << "Output files:\n"
-              << "  biome_map.png      RGBA8 biome data (R=zone, G=subzone, B=settlement_dist)\n"
-              << "  biome_debug.png    Colored visualization of biome zones\n"
               << "  settlements.json   Settlement locations and metadata\n"
-              << "  settlements.svg    SVG visualization of settlement data\n"
+              << "  settlements.svg    SVG visualization with perimeter shapes\n"
               << "\n"
-              << "Biome zones (south coast of England):\n"
-              << "  0: Sea            - Below sea level\n"
-              << "  1: Beach          - Low coastal, gentle slope\n"
-              << "  2: Chalk Cliff    - Steep coastal slopes\n"
-              << "  3: Salt Marsh     - Low-lying coastal wetland\n"
-              << "  4: River          - River channels\n"
-              << "  5: Wetland        - Inland wet areas near rivers\n"
-              << "  6: Grassland      - Chalk downs, higher elevation\n"
-              << "  7: Agricultural   - Flat lowland fields\n"
-              << "  8: Woodland       - Valleys and sheltered slopes\n"
+              << "Settlement types:\n"
+              << "  Town            - Large settlements with markets (score > 60)\n"
+              << "  Village         - Medium settlements (score > 40)\n"
+              << "  Fishing Village - Coastal settlements with harbours\n"
+              << "  Hamlet          - Small rural settlements\n"
               << "\n"
               << "Example:\n"
-              << "  " << programName << " terrain.png ./erosion_cache ./biome_cache --sea-level 23\n";
+              << "  " << programName << " terrain.png ./erosion_cache ./settlements --num-settlements 30\n";
 }
 
 int main(int argc, char* argv[]) {
@@ -63,16 +56,10 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    BiomeConfig config{};
+    SettlementConfig config{};
     config.heightmapPath = argv[1];
     config.erosionCacheDir = argv[2];
     config.outputDir = argv[3];
-    config.seaLevel = 0.0f;
-    config.terrainSize = 16384.0f;
-    config.minAltitude = 0.0f;
-    config.maxAltitude = 200.0f;
-    config.outputResolution = 1024;
-    config.numSettlements = 20;
 
     // Parse optional arguments
     for (int i = 4; i < argc; i++) {
@@ -86,10 +73,14 @@ int main(int argc, char* argv[]) {
             config.minAltitude = std::stof(argv[++i]);
         } else if (arg == "--max-altitude" && i + 1 < argc) {
             config.maxAltitude = std::stof(argv[++i]);
-        } else if (arg == "--output-resolution" && i + 1 < argc) {
-            config.outputResolution = std::stoul(argv[++i]);
         } else if (arg == "--num-settlements" && i + 1 < argc) {
             config.numSettlements = std::stoul(argv[++i]);
+        } else if (arg == "--biome-map" && i + 1 < argc) {
+            config.biomeMapPath = argv[++i];
+        } else if (arg == "--svg-width" && i + 1 < argc) {
+            config.svgWidth = std::stoi(argv[++i]);
+        } else if (arg == "--svg-height" && i + 1 < argc) {
+            config.svgHeight = std::stoi(argv[++i]);
         } else {
             std::cerr << "Unknown option: " << arg << "\n";
             printUsage(argv[0]);
@@ -100,64 +91,52 @@ int main(int argc, char* argv[]) {
     // Create output directory if it doesn't exist
     std::filesystem::create_directories(config.outputDir);
 
-    SDL_Log("Biome Map Preprocessor");
-    SDL_Log("======================");
+    SDL_Log("Settlement Generator");
+    SDL_Log("====================");
     SDL_Log("Heightmap: %s", config.heightmapPath.c_str());
     SDL_Log("Erosion cache: %s", config.erosionCacheDir.c_str());
     SDL_Log("Output: %s", config.outputDir.c_str());
     SDL_Log("Sea level: %.1f m", config.seaLevel);
     SDL_Log("Terrain size: %.1f m", config.terrainSize);
     SDL_Log("Altitude range: %.1f to %.1f m", config.minAltitude, config.maxAltitude);
-    SDL_Log("Output resolution: %u x %u", config.outputResolution, config.outputResolution);
     SDL_Log("Target settlements: %u", config.numSettlements);
+    if (!config.biomeMapPath.empty()) {
+        SDL_Log("Biome map: %s", config.biomeMapPath.c_str());
+    }
 
-    BiomeGenerator generator;
+    SettlementGenerator generator;
 
-    SDL_Log("Generating biome map...");
+    SDL_Log("Generating settlements...");
 
     bool success = generator.generate(config, [](float progress, const std::string& status) {
         SDL_Log("[%3.0f%%] %s", progress * 100.0f, status.c_str());
     });
 
     if (!success) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Biome generation failed!");
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Settlement generation failed!");
         return 1;
     }
 
     // Save outputs
-    std::string biomeMapPath = config.outputDir + "/biome_map.png";
-    std::string debugPath = config.outputDir + "/biome_debug.png";
     std::string settlementsPath = config.outputDir + "/settlements.json";
-    std::string settlementsSvgPath = config.outputDir + "/settlements.svg";
-
-    if (!generator.saveBiomeMap(biomeMapPath)) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to save biome map!");
-        return 1;
-    }
-
-    if (!generator.saveDebugVisualization(debugPath)) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to save debug visualization!");
-        return 1;
-    }
+    std::string svgPath = config.outputDir + "/settlements.svg";
 
     if (!generator.saveSettlements(settlementsPath)) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to save settlements!");
         return 1;
     }
 
-    // Save settlement SVG visualization
-    writeSettlementsSVG(
-        settlementsSvgPath,
-        generator.getResult().settlements,
-        config.terrainSize
-    );
+    if (!generator.saveSettlementsSVG(svgPath)) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to save SVG!");
+        return 1;
+    }
 
-    SDL_Log("Biome generation complete!");
+    const auto& result = generator.getResult();
+    SDL_Log("Settlement generation complete!");
+    SDL_Log("Generated %zu settlements", result.settlements.size());
     SDL_Log("Output files:");
-    SDL_Log("  %s", biomeMapPath.c_str());
-    SDL_Log("  %s", debugPath.c_str());
     SDL_Log("  %s", settlementsPath.c_str());
-    SDL_Log("  %s", settlementsSvgPath.c_str());
+    SDL_Log("  %s", svgPath.c_str());
 
     return 0;
 }

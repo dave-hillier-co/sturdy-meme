@@ -352,16 +352,15 @@ void write_rivers_svg(
             scaled_points.push_back({p.x * scale_x, p.y * scale_y});
         }
 
-        // Simplify path to reduce complexity (epsilon scaled to output resolution)
-        auto simplified = simplify_path(scaled_points, scale_x);
-        if (simplified.size() < 2) continue;
+        if (scaled_points.size() < 2) continue;
 
         // Calculate river half-width based on max accumulation (scaled for output)
         double log_acc = std::log(static_cast<double>(river.max_accumulation) + 1.0);
         double half_width = (0.5 + 4.5 * (log_acc / log_max)) * scale_x * 0.5;
 
-        // Compute offset curves for left and right banks
-        auto [left_bank, right_bank] = compute_offset_curves(simplified, half_width);
+        // Compute offset curves for left and right banks using full resolution points
+        // (no simplification - preserves fine-grained terrain alignment)
+        auto [left_bank, right_bank] = compute_offset_curves(scaled_points, half_width);
 
         // Generate paths for both banks
         std::string left_path_d = generate_svg_path(left_bank, 0.5);

@@ -190,6 +190,41 @@ vec4 sampleFroxelFog(vec2 uv, float linearDepth) {
     vec3 inScatter = fogData.rgb * fogData.a;
     float transmittance = 1.0 - fogData.a;
 
+    // Extrapolate fog for sky pixels (beyond froxel far plane)
+    // This ensures fog properly affects the sky at infinite distance
+    if (linearDepth > ubo.froxelFarPlane) {
+        // Calculate how much fog density exists at the far boundary
+        // We estimate this from the transmittance gradient at the far slices
+        float farSlice = float(FROXEL_DEPTH - 1) / float(FROXEL_DEPTH);
+        float nearFarSlice = float(FROXEL_DEPTH - 2) / float(FROXEL_DEPTH);
+
+        vec4 fogFar = texture(froxelVolume, vec3(uv, farSlice));
+        vec4 fogNearFar = texture(froxelVolume, vec3(uv, nearFarSlice));
+
+        // Estimate the fog extinction rate at the boundary
+        // Use the difference in alpha between last two slices
+        float alphaFar = fogFar.a;
+        float alphaNearFar = fogNearFar.a;
+        float alphaDelta = max(alphaFar - alphaNearFar, 0.001);
+
+        // Estimate distance per slice at far end (exponential distribution)
+        float sliceDepthFar = ubo.froxelFarPlane * 0.1; // Approximate depth of last slice
+        float extinctionRate = alphaDelta / max(sliceDepthFar, 0.1);
+
+        // For sky, apply additional extinction based on a reasonable sky distance
+        // Use a soft asymptotic approach rather than infinite distance
+        float extraDistance = min(linearDepth - ubo.froxelFarPlane, ubo.froxelFarPlane * 2.0);
+        float extraExtinction = 1.0 - exp(-extinctionRate * extraDistance * 0.5);
+
+        // Blend in extra fog for sky: reduce transmittance further
+        // and add more in-scatter from the fog color at the boundary
+        vec3 fogColorAtBoundary = fogFar.rgb;
+        float skyFogBlend = extraExtinction;
+
+        transmittance *= (1.0 - skyFogBlend);
+        inScatter += fogColorAtBoundary * skyFogBlend * (1.0 - transmittance);
+    }
+
     return vec4(inScatter, transmittance);
 }
 

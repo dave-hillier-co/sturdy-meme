@@ -108,35 +108,37 @@ void PostProcessSystem::cleanup() {
 
     BufferUtils::destroyBuffers(allocator, uniformBuffers);
 
+    vk::Device vkDevice(device);
     for (auto& pipeline : compositePipelines) {
         if (pipeline != VK_NULL_HANDLE) {
-            vkDestroyPipeline(device, pipeline, nullptr);
+            vkDevice.destroyPipeline(pipeline);
             pipeline = VK_NULL_HANDLE;
         }
     }
     if (compositePipelineLayout != VK_NULL_HANDLE) {
-        vkDestroyPipelineLayout(device, compositePipelineLayout, nullptr);
+        vkDevice.destroyPipelineLayout(compositePipelineLayout);
         compositePipelineLayout = VK_NULL_HANDLE;
     }
     if (compositeDescriptorSetLayout != VK_NULL_HANDLE) {
-        vkDestroyDescriptorSetLayout(device, compositeDescriptorSetLayout, nullptr);
+        vkDevice.destroyDescriptorSetLayout(compositeDescriptorSetLayout);
         compositeDescriptorSetLayout = VK_NULL_HANDLE;
     }
 
     hdrSampler.reset();
     if (hdrRenderPass != VK_NULL_HANDLE) {
-        vkDestroyRenderPass(device, hdrRenderPass, nullptr);
+        vkDevice.destroyRenderPass(hdrRenderPass);
         hdrRenderPass = VK_NULL_HANDLE;
     }
 }
 
 void PostProcessSystem::destroyHDRResources() {
+    vk::Device vkDevice(device);
     if (hdrFramebuffer != VK_NULL_HANDLE) {
-        vkDestroyFramebuffer(device, hdrFramebuffer, nullptr);
+        vkDevice.destroyFramebuffer(hdrFramebuffer);
         hdrFramebuffer = VK_NULL_HANDLE;
     }
     if (hdrColorView != VK_NULL_HANDLE) {
-        vkDestroyImageView(device, hdrColorView, nullptr);
+        vkDevice.destroyImageView(hdrColorView);
         hdrColorView = VK_NULL_HANDLE;
     }
     if (hdrColorImage != VK_NULL_HANDLE) {
@@ -145,7 +147,7 @@ void PostProcessSystem::destroyHDRResources() {
         hdrColorAllocation = VK_NULL_HANDLE;
     }
     if (hdrDepthView != VK_NULL_HANDLE) {
-        vkDestroyImageView(device, hdrDepthView, nullptr);
+        vkDevice.destroyImageView(hdrDepthView);
         hdrDepthView = VK_NULL_HANDLE;
     }
     if (hdrDepthImage != VK_NULL_HANDLE) {
@@ -205,11 +207,13 @@ bool PostProcessSystem::createHDRRenderTarget() {
             .setBaseArrayLayer(0)
             .setLayerCount(1));
 
-    if (vkCreateImageView(device, reinterpret_cast<const VkImageViewCreateInfo*>(&colorViewInfo),
-            nullptr, &hdrColorView) != VK_SUCCESS) {
+    vk::Device vkDevice(device);
+    auto colorViewResult = vkDevice.createImageView(colorViewInfo);
+    if (!colorViewResult) {
         SDL_Log("Failed to create HDR color image view");
         return false;
     }
+    hdrColorView = colorViewResult;
 
     // Create HDR depth image
     auto depthImageInfo = vk::ImageCreateInfo{}
@@ -244,11 +248,12 @@ bool PostProcessSystem::createHDRRenderTarget() {
             .setBaseArrayLayer(0)
             .setLayerCount(1));
 
-    if (vkCreateImageView(device, reinterpret_cast<const VkImageViewCreateInfo*>(&depthViewInfo),
-            nullptr, &hdrDepthView) != VK_SUCCESS) {
+    auto depthViewResult = vkDevice.createImageView(depthViewInfo);
+    if (!depthViewResult) {
         SDL_Log("Failed to create HDR depth image view");
         return false;
     }
+    hdrDepthView = depthViewResult;
 
     return true;
 }
@@ -761,14 +766,15 @@ bool PostProcessSystem::createHistogramPipelines() {
             .setStage(stageInfo)
             .setLayout(histogramBuildPipelineLayout);
 
-        VkResult result = vkCreateComputePipelines(device, VK_NULL_HANDLE, 1,
-            reinterpret_cast<const VkComputePipelineCreateInfo*>(&pipelineInfo), nullptr, &histogramBuildPipeline);
-        vkDestroyShaderModule(device, *shaderModule, nullptr);
+        vk::Device vkDevice(device);
+        auto result = vkDevice.createComputePipeline(nullptr, pipelineInfo);
+        vkDevice.destroyShaderModule(*shaderModule);
 
-        if (result != VK_SUCCESS) {
+        if (result.result != vk::Result::eSuccess) {
             SDL_Log("Failed to create histogram build pipeline");
             return false;
         }
+        histogramBuildPipeline = result.value;
     }
 
     // ============================================
@@ -815,14 +821,15 @@ bool PostProcessSystem::createHistogramPipelines() {
             .setStage(stageInfo)
             .setLayout(histogramReducePipelineLayout);
 
-        VkResult result = vkCreateComputePipelines(device, VK_NULL_HANDLE, 1,
-            reinterpret_cast<const VkComputePipelineCreateInfo*>(&pipelineInfo), nullptr, &histogramReducePipeline);
-        vkDestroyShaderModule(device, *shaderModule, nullptr);
+        vk::Device vkDevice(device);
+        auto result = vkDevice.createComputePipeline(nullptr, pipelineInfo);
+        vkDevice.destroyShaderModule(*shaderModule);
 
-        if (result != VK_SUCCESS) {
+        if (result.result != vk::Result::eSuccess) {
             SDL_Log("Failed to create histogram reduce pipeline");
             return false;
         }
+        histogramReducePipeline = result.value;
     }
 
     return true;
@@ -872,30 +879,31 @@ void PostProcessSystem::destroyHistogramResources() {
     BufferUtils::destroyBuffers(allocator, exposureBuffers);
     BufferUtils::destroyBuffers(allocator, histogramParamsBuffers);
 
+    vk::Device vkDevice(device);
     if (histogramBuildPipeline != VK_NULL_HANDLE) {
-        vkDestroyPipeline(device, histogramBuildPipeline, nullptr);
+        vkDevice.destroyPipeline(histogramBuildPipeline);
         histogramBuildPipeline = VK_NULL_HANDLE;
     }
     if (histogramReducePipeline != VK_NULL_HANDLE) {
-        vkDestroyPipeline(device, histogramReducePipeline, nullptr);
+        vkDevice.destroyPipeline(histogramReducePipeline);
         histogramReducePipeline = VK_NULL_HANDLE;
     }
 
     if (histogramBuildPipelineLayout != VK_NULL_HANDLE) {
-        vkDestroyPipelineLayout(device, histogramBuildPipelineLayout, nullptr);
+        vkDevice.destroyPipelineLayout(histogramBuildPipelineLayout);
         histogramBuildPipelineLayout = VK_NULL_HANDLE;
     }
     if (histogramReducePipelineLayout != VK_NULL_HANDLE) {
-        vkDestroyPipelineLayout(device, histogramReducePipelineLayout, nullptr);
+        vkDevice.destroyPipelineLayout(histogramReducePipelineLayout);
         histogramReducePipelineLayout = VK_NULL_HANDLE;
     }
 
     if (histogramBuildDescLayout != VK_NULL_HANDLE) {
-        vkDestroyDescriptorSetLayout(device, histogramBuildDescLayout, nullptr);
+        vkDevice.destroyDescriptorSetLayout(histogramBuildDescLayout);
         histogramBuildDescLayout = VK_NULL_HANDLE;
     }
     if (histogramReduceDescLayout != VK_NULL_HANDLE) {
-        vkDestroyDescriptorSetLayout(device, histogramReduceDescLayout, nullptr);
+        vkDevice.destroyDescriptorSetLayout(histogramReduceDescLayout);
         histogramReduceDescLayout = VK_NULL_HANDLE;
     }
 }

@@ -582,13 +582,16 @@ void TreeLeafCulling::updateSpatialIndex(const TreeSystem& treeSystem) {
         createCellCullBuffers();
     }
 
+    // Note: Tree filter and two-phase leaf cull descriptor sets require treeDataBuffers_
+    // which is created lazily on first recordCulling() call. The spatial index is still
+    // useful - it will be used once recordCulling() creates the required buffers.
     if (visibleTreeBuffers_.empty() && treeFilterPipeline_.get() != VK_NULL_HANDLE &&
-        !visibleCellBuffers_.empty()) {
+        !visibleCellBuffers_.empty() && !treeDataBuffers_.empty()) {
         createTreeFilterBuffers(static_cast<uint32_t>(leafRenderables.size()));
     }
 
     if (twoPhaseLeafCullDescriptorSets_.empty() && twoPhaseLeafCullPipeline_.get() != VK_NULL_HANDLE &&
-        !visibleTreeBuffers_.empty()) {
+        !visibleTreeBuffers_.empty() && !treeDataBuffers_.empty()) {
         createTwoPhaseLeafCullDescriptorSets();
     }
 
@@ -714,6 +717,19 @@ void TreeLeafCulling::recordCulling(VkCommandBuffer cmd, uint32_t frameIndex,
             return;
         }
         updateCullDescriptorSets(treeSystem);
+
+        // Now that treeDataBuffers_ exists, create deferred two-phase culling resources
+        // (if spatial index was set up earlier via updateSpatialIndex)
+        if (spatialIndex_ && spatialIndex_->isValid()) {
+            if (visibleTreeBuffers_.empty() && treeFilterPipeline_.get() != VK_NULL_HANDLE &&
+                !visibleCellBuffers_.empty()) {
+                createTreeFilterBuffers(numTrees);
+            }
+            if (twoPhaseLeafCullDescriptorSets_.empty() && twoPhaseLeafCullPipeline_.get() != VK_NULL_HANDLE &&
+                !visibleTreeBuffers_.empty()) {
+                createTwoPhaseLeafCullDescriptorSets();
+            }
+        }
     }
 
     // Reset all 4 indirect draw commands (one per leaf type: oak, ash, aspen, pine)

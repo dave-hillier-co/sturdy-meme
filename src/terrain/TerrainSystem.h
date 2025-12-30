@@ -1,6 +1,6 @@
 #pragma once
 
-#include <vulkan/vulkan.h>
+#include <vulkan/vulkan.hpp>
 #include <vk_mem_alloc.h>
 #include <glm/glm.hpp>
 #include <vector>
@@ -126,25 +126,25 @@ struct TerrainConfig {
 class TerrainSystem : public ITerrainControl {
 public:
     struct InitInfo {
-        VkDevice device;
-        VkPhysicalDevice physicalDevice;
+        vk::Device device;
+        vk::PhysicalDevice physicalDevice;
         VmaAllocator allocator;
-        VkRenderPass renderPass;
-        VkRenderPass shadowRenderPass;
+        vk::RenderPass renderPass;
+        vk::RenderPass shadowRenderPass;
         DescriptorManager::Pool* descriptorPool;  // Auto-growing pool
-        VkExtent2D extent;
+        vk::Extent2D extent;
         uint32_t shadowMapSize;
         std::string shaderPath;
         std::string texturePath;
         uint32_t framesInFlight;
-        VkQueue graphicsQueue;
-        VkCommandPool commandPool;
+        vk::Queue graphicsQueue;
+        vk::CommandPool commandPool;
     };
 
     // System-specific params for InitContext-based init
     struct TerrainInitParams {
-        VkRenderPass renderPass;
-        VkRenderPass shadowRenderPass;
+        vk::RenderPass renderPass;
+        vk::RenderPass shadowRenderPass;
         uint32_t shadowMapSize;
         std::string texturePath;
     };
@@ -166,29 +166,30 @@ public:
     TerrainSystem& operator=(TerrainSystem&&) = delete;
 
     // Update extent for viewport (on window resize)
-    void setExtent(VkExtent2D newExtent) { extent = newExtent; }
+    void setExtent(vk::Extent2D newExtent) { extent = newExtent; }
+    void setExtent(VkExtent2D newExtent) { extent = vk::Extent2D{newExtent.width, newExtent.height}; }
 
     // Update terrain descriptor sets with shared resources
-    void updateDescriptorSets(VkDevice device,
-                              const std::vector<VkBuffer>& sceneUniformBuffers,
-                              VkImageView shadowMapView,
-                              VkSampler shadowSampler,
-                              const std::vector<VkBuffer>& snowUBOBuffers,
-                              const std::vector<VkBuffer>& cloudShadowUBOBuffers);
+    void updateDescriptorSets(vk::Device device,
+                              const std::vector<vk::Buffer>& sceneUniformBuffers,
+                              vk::ImageView shadowMapView,
+                              vk::Sampler shadowSampler,
+                              const std::vector<vk::Buffer>& snowUBOBuffers,
+                              const std::vector<vk::Buffer>& cloudShadowUBOBuffers);
 
     // Set snow mask texture for snow accumulation rendering
-    void setSnowMask(VkDevice device, VkImageView snowMaskView, VkSampler snowMaskSampler);
+    void setSnowMask(vk::Device device, vk::ImageView snowMaskView, vk::Sampler snowMaskSampler);
 
     // Set volumetric snow cascade textures
-    void setVolumetricSnowCascades(VkDevice device,
-                                    VkImageView cascade0View, VkImageView cascade1View, VkImageView cascade2View,
-                                    VkSampler cascadeSampler);
+    void setVolumetricSnowCascades(vk::Device device,
+                                    vk::ImageView cascade0View, vk::ImageView cascade1View, vk::ImageView cascade2View,
+                                    vk::Sampler cascadeSampler);
 
     // Set cloud shadow map texture
-    void setCloudShadowMap(VkDevice device, VkImageView cloudShadowView, VkSampler cloudShadowSampler);
+    void setCloudShadowMap(vk::Device device, vk::ImageView cloudShadowView, vk::Sampler cloudShadowSampler);
 
     // Set caustics texture for underwater light projection
-    void setCaustics(VkDevice device, VkImageView causticsView, VkSampler causticsSampler,
+    void setCaustics(vk::Device device, vk::ImageView causticsView, vk::Sampler causticsSampler,
                      float waterLevel = 0.0f, bool enabled = true);
 
     // Update terrain uniforms for a frame
@@ -200,17 +201,17 @@ public:
 
     // Record compute commands (subdivision update)
     // Pass optional GpuProfiler for detailed per-phase profiling
-    void recordCompute(VkCommandBuffer cmd, uint32_t frameIndex, GpuProfiler* profiler = nullptr);
+    void recordCompute(vk::CommandBuffer cmd, uint32_t frameIndex, GpuProfiler* profiler = nullptr);
 
     // Record terrain rendering
-    void recordDraw(VkCommandBuffer cmd, uint32_t frameIndex);
+    void recordDraw(vk::CommandBuffer cmd, uint32_t frameIndex);
 
     // Record shadow pass for terrain
-    void recordShadowDraw(VkCommandBuffer cmd, uint32_t frameIndex,
+    void recordShadowDraw(vk::CommandBuffer cmd, uint32_t frameIndex,
                           const glm::mat4& lightViewProj, int cascadeIndex);
 
     // Record shadow culling compute (call before recordShadowDraw for each cascade)
-    void recordShadowCull(VkCommandBuffer cmd, uint32_t frameIndex,
+    void recordShadowCull(vk::CommandBuffer cmd, uint32_t frameIndex,
                           const glm::mat4& lightViewProj, int cascadeIndex);
 
     // Shadow culling toggle
@@ -251,11 +252,11 @@ public:
 
     // Heightmap accessors for grass integration and water rendering
     // Uses tile cache base heightmap (combined from LOD3 tiles)
-    VkImageView getHeightMapView() const {
-        return tileCache ? tileCache->getBaseHeightMapView() : VK_NULL_HANDLE;
+    vk::ImageView getHeightMapView() const {
+        return tileCache ? vk::ImageView(tileCache->getBaseHeightMapView()) : vk::ImageView{};
     }
-    VkSampler getHeightMapSampler() const {
-        return tileCache ? tileCache->getBaseHeightMapSampler() : VK_NULL_HANDLE;
+    vk::Sampler getHeightMapSampler() const {
+        return tileCache ? vk::Sampler(tileCache->getBaseHeightMapSampler()) : vk::Sampler{};
     }
 
     // Hole mask for caves/wells (areas with no terrain)
@@ -276,14 +277,14 @@ public:
     const TerrainTileCache* getTileCache() const { return tileCache.get(); }
 
     // Tile cache GPU resource accessors (for grass/other systems)
-    VkImageView getTileArrayView() const {
-        return tileCache ? tileCache->getTileArrayView() : VK_NULL_HANDLE;
+    vk::ImageView getTileArrayView() const {
+        return tileCache ? vk::ImageView(tileCache->getTileArrayView()) : vk::ImageView{};
     }
-    VkSampler getTileSampler() const {
-        return tileCache ? tileCache->getSampler() : VK_NULL_HANDLE;
+    vk::Sampler getTileSampler() const {
+        return tileCache ? vk::Sampler(tileCache->getSampler()) : vk::Sampler{};
     }
-    VkBuffer getTileInfoBuffer(uint32_t frameIndex) const {
-        return tileCache ? tileCache->getTileInfoBuffer(frameIndex) : VK_NULL_HANDLE;
+    vk::Buffer getTileInfoBuffer(uint32_t frameIndex) const {
+        return tileCache ? vk::Buffer(tileCache->getTileInfoBuffer(frameIndex)) : vk::Buffer{};
     }
 
     // ITerrainControl implementation
@@ -324,19 +325,19 @@ private:
     void querySubgroupCapabilities();
 
     // Vulkan resources
-    VkDevice device = VK_NULL_HANDLE;
-    VkPhysicalDevice physicalDevice = VK_NULL_HANDLE;
+    vk::Device device;
+    vk::PhysicalDevice physicalDevice;
     VmaAllocator allocator = VK_NULL_HANDLE;
-    VkRenderPass renderPass = VK_NULL_HANDLE;
-    VkRenderPass shadowRenderPass = VK_NULL_HANDLE;
+    vk::RenderPass renderPass;
+    vk::RenderPass shadowRenderPass;
     DescriptorManager::Pool* descriptorPool = nullptr;
-    VkExtent2D extent = {0, 0};
+    vk::Extent2D extent{};
     uint32_t shadowMapSize = 0;
     std::string shaderPath;
     std::string texturePath;
     uint32_t framesInFlight = 0;
-    VkQueue graphicsQueue = VK_NULL_HANDLE;
-    VkCommandPool commandPool = VK_NULL_HANDLE;
+    vk::Queue graphicsQueue;
+    vk::CommandPool commandPool;
 
     // Composed subsystems (RAII-managed)
     std::unique_ptr<TerrainHeightMap> heightMap;
@@ -350,13 +351,13 @@ private:
     std::unique_ptr<TerrainPipelines> pipelines;  // All compute and graphics pipelines
 
     // Descriptor set layouts (needed for descriptor allocation)
-    VkDescriptorSetLayout computeDescriptorSetLayout = VK_NULL_HANDLE;
-    VkDescriptorSetLayout renderDescriptorSetLayout = VK_NULL_HANDLE;
+    vk::DescriptorSetLayout computeDescriptorSetLayout;
+    vk::DescriptorSetLayout renderDescriptorSetLayout;
 
     // Descriptor sets
-    std::vector<VkDescriptorSet> computeDescriptorSets;  // Per frame
-    std::vector<VkDescriptorSet> renderDescriptorSets;   // Per frame
-    std::vector<VkDescriptorSet> shadowDescriptorSets;   // Per frame
+    std::vector<vk::DescriptorSet> computeDescriptorSets;  // Per frame
+    std::vector<vk::DescriptorSet> renderDescriptorSets;   // Per frame
+    std::vector<vk::DescriptorSet> shadowDescriptorSets;   // Per frame
 
     // Configuration
     TerrainConfig config;

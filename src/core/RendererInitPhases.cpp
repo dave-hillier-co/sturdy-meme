@@ -233,8 +233,20 @@ bool Renderer::initSubsystems(const InitContext& initCtx) {
     // Note: grass.updateDescriptorSets is called later after CloudShadowSystem is created
 
     // Update terrain descriptor sets with shared resources
-    systems_->terrain().updateDescriptorSets(device, systems_->globalBuffers().uniformBuffers.buffers, systems_->shadow().getShadowImageView(), systems_->shadow().getShadowSampler(),
-                                        systems_->globalBuffers().snowBuffers.buffers, systems_->globalBuffers().cloudShadowBuffers.buffers);
+    // Convert raw VkBuffer vectors to vk::Buffer vectors
+    auto convertBuffers = [](const std::vector<VkBuffer>& raw) {
+        std::vector<vk::Buffer> result;
+        result.reserve(raw.size());
+        for (auto b : raw) result.push_back(vk::Buffer(b));
+        return result;
+    };
+    systems_->terrain().updateDescriptorSets(
+        vk::Device(device),
+        convertBuffers(systems_->globalBuffers().uniformBuffers.buffers),
+        vk::ImageView(systems_->shadow().getShadowImageView()),
+        vk::Sampler(systems_->shadow().getShadowSampler()),
+        convertBuffers(systems_->globalBuffers().snowBuffers.buffers),
+        convertBuffers(systems_->globalBuffers().cloudShadowBuffers.buffers));
 
     // Initialize rock system via factory
     RockSystem::InitInfo rockInfo{};

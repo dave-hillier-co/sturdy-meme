@@ -306,17 +306,25 @@ bool TerrainSystem::createRenderDescriptorSetLayout() {
 
 bool TerrainSystem::createDescriptorSets() {
     // Allocate compute descriptor sets using managed pool
-    computeDescriptorSets = descriptorPool->allocate(computeDescriptorSetLayout, framesInFlight);
-    if (computeDescriptorSets.size() != framesInFlight) {
+    auto rawComputeSets = descriptorPool->allocate(computeDescriptorSetLayout, framesInFlight);
+    if (rawComputeSets.size() != framesInFlight) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "TerrainSystem: Failed to allocate compute descriptor sets");
         return false;
     }
+    computeDescriptorSets.reserve(rawComputeSets.size());
+    for (auto set : rawComputeSets) {
+        computeDescriptorSets.push_back(vk::DescriptorSet(set));
+    }
 
     // Allocate render descriptor sets using managed pool
-    renderDescriptorSets = descriptorPool->allocate(renderDescriptorSetLayout, framesInFlight);
-    if (renderDescriptorSets.size() != framesInFlight) {
+    auto rawRenderSets = descriptorPool->allocate(renderDescriptorSetLayout, framesInFlight);
+    if (rawRenderSets.size() != framesInFlight) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "TerrainSystem: Failed to allocate render descriptor sets");
         return false;
+    }
+    renderDescriptorSets.reserve(rawRenderSets.size());
+    for (auto set : rawRenderSets) {
+        renderDescriptorSets.push_back(vk::DescriptorSet(set));
     }
 
     // Update compute descriptor sets
@@ -432,12 +440,12 @@ void TerrainSystem::extractFrustumPlanes(const glm::mat4& viewProj, glm::vec4 pl
     }
 }
 
-void TerrainSystem::updateDescriptorSets(VkDevice device,
-                                          const std::vector<VkBuffer>& sceneUniformBuffers,
-                                          VkImageView shadowMapView,
-                                          VkSampler shadowSampler,
-                                          const std::vector<VkBuffer>& snowUBOBuffers,
-                                          const std::vector<VkBuffer>& cloudShadowUBOBuffers) {
+void TerrainSystem::updateDescriptorSets(vk::Device device,
+                                          const std::vector<vk::Buffer>& sceneUniformBuffers,
+                                          vk::ImageView shadowMapView,
+                                          vk::Sampler shadowSampler,
+                                          const std::vector<vk::Buffer>& snowUBOBuffers,
+                                          const std::vector<vk::Buffer>& cloudShadowUBOBuffers) {
     for (uint32_t i = 0; i < framesInFlight; i++) {
         auto writer = DescriptorManager::SetWriter(device, renderDescriptorSets[i]);
 
@@ -545,7 +553,7 @@ void TerrainSystem::updateDescriptorSets(VkDevice device,
     }
 }
 
-void TerrainSystem::setSnowMask(VkDevice device, VkImageView snowMaskView, VkSampler snowMaskSampler) {
+void TerrainSystem::setSnowMask(vk::Device device, vk::ImageView snowMaskView, vk::Sampler snowMaskSampler) {
     for (uint32_t i = 0; i < framesInFlight; i++) {
         DescriptorManager::SetWriter(device, renderDescriptorSets[i])
             .writeImage(9, snowMaskView, snowMaskSampler)
@@ -553,9 +561,9 @@ void TerrainSystem::setSnowMask(VkDevice device, VkImageView snowMaskView, VkSam
     }
 }
 
-void TerrainSystem::setVolumetricSnowCascades(VkDevice device,
-                                               VkImageView cascade0View, VkImageView cascade1View, VkImageView cascade2View,
-                                               VkSampler cascadeSampler) {
+void TerrainSystem::setVolumetricSnowCascades(vk::Device device,
+                                               vk::ImageView cascade0View, vk::ImageView cascade1View, vk::ImageView cascade2View,
+                                               vk::Sampler cascadeSampler) {
     for (uint32_t i = 0; i < framesInFlight; i++) {
         DescriptorManager::SetWriter(device, renderDescriptorSets[i])
             .writeImage(10, cascade0View, cascadeSampler)
@@ -565,7 +573,7 @@ void TerrainSystem::setVolumetricSnowCascades(VkDevice device,
     }
 }
 
-void TerrainSystem::setCloudShadowMap(VkDevice device, VkImageView cloudShadowView, VkSampler cloudShadowSampler) {
+void TerrainSystem::setCloudShadowMap(vk::Device device, vk::ImageView cloudShadowView, vk::Sampler cloudShadowSampler) {
     for (uint32_t i = 0; i < framesInFlight; i++) {
         DescriptorManager::SetWriter(device, renderDescriptorSets[i])
             .writeImage(13, cloudShadowView, cloudShadowSampler)
@@ -573,7 +581,7 @@ void TerrainSystem::setCloudShadowMap(VkDevice device, VkImageView cloudShadowVi
     }
 }
 
-void TerrainSystem::setCaustics(VkDevice device, VkImageView causticsView, VkSampler causticsSampler,
+void TerrainSystem::setCaustics(vk::Device device, vk::ImageView causticsView, vk::Sampler causticsSampler,
                                  float waterLevel, bool enabled) {
     // Update texture binding (21)
     for (uint32_t i = 0; i < framesInFlight; i++) {
@@ -660,7 +668,7 @@ void TerrainSystem::updateUniforms(uint32_t frameIndex, const glm::vec3& cameraP
     }
 }
 
-void TerrainSystem::recordCompute(VkCommandBuffer cmd, uint32_t frameIndex, GpuProfiler* profiler) {
+void TerrainSystem::recordCompute(vk::CommandBuffer cmd, uint32_t frameIndex, GpuProfiler* profiler) {
     // Update tile info buffer binding to the correct frame's buffer (triple-buffered to avoid CPU-GPU sync)
     if (tileCache && tileCache->getTileInfoBuffer(frameIndex) != VK_NULL_HANDLE) {
         DescriptorManager::SetWriter(device, computeDescriptorSets[frameIndex])
@@ -685,7 +693,7 @@ void TerrainSystem::recordCompute(VkCommandBuffer cmd, uint32_t frameIndex, GpuP
     // Reset skip tracking
     cameraOptimizer.recordComputeExecuted();
 
-    vk::CommandBuffer vkCmd(cmd);
+    vk::CommandBuffer vkCmd = cmd;
 
     // 1. Dispatcher - set up indirect args
     if (profiler) profiler->beginZone(cmd, "Terrain:Dispatcher");
@@ -857,7 +865,7 @@ void TerrainSystem::recordCompute(VkCommandBuffer cmd, uint32_t frameIndex, GpuP
     Barriers::computeToIndirectDraw(cmd);
 }
 
-void TerrainSystem::recordDraw(VkCommandBuffer cmd, uint32_t frameIndex) {
+void TerrainSystem::recordDraw(vk::CommandBuffer cmd, uint32_t frameIndex) {
     // Update tile info buffer binding to the correct frame's buffer (triple-buffered to avoid CPU-GPU sync)
     if (tileCache && tileCache->getTileInfoBuffer(frameIndex) != VK_NULL_HANDLE) {
         DescriptorManager::SetWriter(device, renderDescriptorSets[frameIndex])
@@ -865,9 +873,9 @@ void TerrainSystem::recordDraw(VkCommandBuffer cmd, uint32_t frameIndex) {
             .update();
     }
 
-    vk::CommandBuffer vkCmd(cmd);
+    vk::CommandBuffer vkCmd = cmd;
 
-    VkPipeline pipeline;
+    vk::Pipeline pipeline;
     if (config.useMeshlets) {
         pipeline = wireframeMode ? pipelines->getMeshletWireframePipeline() : pipelines->getMeshletRenderPipeline();
     } else {
@@ -876,7 +884,7 @@ void TerrainSystem::recordDraw(VkCommandBuffer cmd, uint32_t frameIndex) {
     vkCmd.bindPipeline(vk::PipelineBindPoint::eGraphics, pipeline);
 
     vkCmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, pipelines->getRenderPipelineLayout(),
-                             0, vk::DescriptorSet(renderDescriptorSets[frameIndex]), {});
+                             0, renderDescriptorSets[frameIndex], {});
 
     auto viewport = vk::Viewport{}
         .setX(0.0f)
@@ -907,13 +915,13 @@ void TerrainSystem::recordDraw(VkCommandBuffer cmd, uint32_t frameIndex) {
     }
 }
 
-void TerrainSystem::recordShadowCull(VkCommandBuffer cmd, uint32_t frameIndex,
+void TerrainSystem::recordShadowCull(vk::CommandBuffer cmd, uint32_t frameIndex,
                                       const glm::mat4& lightViewProj, int cascadeIndex) {
     if (!shadowCullingEnabled || !pipelines->hasShadowCulling()) {
         return;
     }
 
-    vk::CommandBuffer vkCmd(cmd);
+    vk::CommandBuffer vkCmd = cmd;
 
     // Clear the shadow visible count to 0 and barrier for compute
     Barriers::clearBufferForCompute(cmd, (*buffers)->getShadowVisibleBuffer());
@@ -921,7 +929,7 @@ void TerrainSystem::recordShadowCull(VkCommandBuffer cmd, uint32_t frameIndex,
     // Bind shadow cull compute pipeline
     vkCmd.bindPipeline(vk::PipelineBindPoint::eCompute, pipelines->getShadowCullPipeline());
     vkCmd.bindDescriptorSets(vk::PipelineBindPoint::eCompute, pipelines->getShadowCullPipelineLayout(),
-                             0, vk::DescriptorSet(computeDescriptorSets[frameIndex]), {});
+                             0, computeDescriptorSets[frameIndex], {});
 
     // Set up push constants with frustum planes
     TerrainShadowCullPushConstants pc{};
@@ -943,12 +951,12 @@ void TerrainSystem::recordShadowCull(VkCommandBuffer cmd, uint32_t frameIndex,
     Barriers::computeToIndirectDraw(cmd);
 }
 
-void TerrainSystem::recordShadowDraw(VkCommandBuffer cmd, uint32_t frameIndex,
+void TerrainSystem::recordShadowDraw(vk::CommandBuffer cmd, uint32_t frameIndex,
                                       const glm::mat4& lightViewProj, int cascadeIndex) {
-    vk::CommandBuffer vkCmd(cmd);
+    vk::CommandBuffer vkCmd = cmd;
 
     // Choose pipeline: culled vs non-culled, meshlet vs direct
-    VkPipeline pipeline;
+    vk::Pipeline pipeline;
     bool useCulled = shadowCullingEnabled && pipelines->getShadowCulledPipeline() != VK_NULL_HANDLE;
 
     if (config.useMeshlets) {
@@ -959,7 +967,7 @@ void TerrainSystem::recordShadowDraw(VkCommandBuffer cmd, uint32_t frameIndex,
 
     vkCmd.bindPipeline(vk::PipelineBindPoint::eGraphics, pipeline);
     vkCmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, pipelines->getShadowPipelineLayout(),
-                             0, vk::DescriptorSet(renderDescriptorSets[frameIndex]), {});
+                             0, renderDescriptorSets[frameIndex], {});
 
     auto viewport = vk::Viewport{}
         .setX(0.0f)

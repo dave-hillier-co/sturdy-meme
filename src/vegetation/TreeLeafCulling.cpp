@@ -6,6 +6,7 @@
 #include "UBOs.h"
 #include <SDL3/SDL_log.h>
 #include <vulkan/vulkan.hpp>
+#include <algorithm>
 
 std::unique_ptr<TreeLeafCulling> TreeLeafCulling::create(const InitInfo& info) {
     auto culling = std::unique_ptr<TreeLeafCulling>(new TreeLeafCulling());
@@ -674,6 +675,37 @@ void TreeLeafCulling::recordCulling(VkCommandBuffer cmd, uint32_t frameIndex,
         lodTreeIndex++;
     }
     if (numTrees == 0 || totalLeafInstances == 0) return;
+
+    // CRITICAL: Sort trees by inputFirstInstance for binary search in shader.
+    // The binary search in tree_leaf_cull.comp assumes trees are sorted by their
+    // leaf instance ranges. If trees are in a different order (e.g., due to
+    // reordering of tree instances), the binary search will fail and assign
+    // leaves to the wrong trees, causing wrong leafTypeIndex lookups.
+    //
+    // We need to sort both treeDataList and treeRenderDataList together since
+    // treeIndex refers to the position in treeRenderDataList.
+
+    // Create sorted indices
+    std::vector<size_t> sortedIndices(numTrees);
+    for (size_t i = 0; i < numTrees; ++i) {
+        sortedIndices[i] = i;
+    }
+    std::sort(sortedIndices.begin(), sortedIndices.end(),
+              [&treeDataList](size_t a, size_t b) {
+                  return treeDataList[a].inputFirstInstance < treeDataList[b].inputFirstInstance;
+              });
+
+    // Create sorted copies
+    std::vector<TreeCullData> sortedTreeData(numTrees);
+    std::vector<TreeRenderDataGPU> sortedRenderData(numTrees);
+    for (size_t i = 0; i < numTrees; ++i) {
+        sortedTreeData[i] = treeDataList[sortedIndices[i]];
+        sortedRenderData[i] = treeRenderDataList[sortedIndices[i]];
+        // Update treeIndex to reflect new position in sorted buffer
+        sortedTreeData[i].treeIndex = static_cast<uint32_t>(i);
+    }
+    treeDataList = std::move(sortedTreeData);
+    treeRenderDataList = std::move(sortedRenderData);
 
     // Lazy initialization of cull buffers
     if (cullOutputBuffers_.empty()) {

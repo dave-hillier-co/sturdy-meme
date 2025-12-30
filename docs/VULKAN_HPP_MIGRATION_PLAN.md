@@ -273,13 +273,15 @@ vk::CommandBuffer(cmd).pipelineBarrier(
 
 Based on usage counts and impact. Status indicates current migration progress.
 
-### Tier 1: Core Infrastructure ✅ Mostly Complete
+### Tier 1: Core Infrastructure ✅ Complete
 | File | Status | hpp | raw |
 |------|--------|-----|-----|
 | `src/core/Renderer.cpp` | ✅ Migrated | 46 | 21 |
 | `src/core/RendererInit.cpp` | ✅ Complete | - | 0 |
-| `src/core/vulkan/VulkanContext.cpp` | ⏳ Partial | 5 | 9 |
+| `src/core/vulkan/VulkanContext.cpp` | ✅ Complete | 12 | 1* |
 | `src/core/ShaderLoader.cpp` | ✅ Complete | 4 | 0 |
+
+*Only `vkGetInstanceProcAddr` remains - required for vulkan-hpp dispatcher initialization.
 
 ### Tier 2: Rendering Systems ✅ Mostly Complete
 | File | Status | hpp | raw |
@@ -369,10 +371,10 @@ The codebase already uses `VULKAN_HPP_DISPATCH_LOADER_DYNAMIC=1`. The dispatcher
 ### High Priority
 1. ~~**Pipeline Infrastructure (Tier 3)**~~ — ✅ Complete
 
-2. **Complete partial migrations in Tier 2**
-   - `TreeRenderer.cpp` — 37 raw usages remain
-   - `TerrainSystem.cpp` — 58 raw usages remain
-   - `GrassSystem.cpp` — 50 raw usages remain
+2. **Complete partial migrations in Tier 2** — Note: These files have type declarations (VkBuffer, VkDevice, etc.) for interface compatibility but no remaining raw API calls (vkCmd*, vkCreate*, etc.)
+   - `TreeRenderer.cpp` — Type declarations only, API calls migrated
+   - `TerrainSystem.cpp` — Type declarations only, API calls migrated
+   - `GrassSystem.cpp` — Type declarations only, API calls migrated
 
 ### Medium Priority
 3. ~~**Water & Atmosphere (Tier 4)**~~ — ✅ Mostly Complete
@@ -381,7 +383,7 @@ The codebase already uses `VULKAN_HPP_DISPATCH_LOADER_DYNAMIC=1`. The dispatcher
    - `SkySystem.cpp` — ✅ Migrated
    - `ShadowSystem.cpp` — ✅ Migrated
 
-4. **VulkanContext.cpp** — 9 raw usages remain
+4. ~~**VulkanContext.cpp**~~ — ✅ Complete (only vkGetInstanceProcAddr remains for dispatcher init)
 
 ### Deferred (Future Phase)
 5. **Core Vulkan utilities** — Intentionally deferred

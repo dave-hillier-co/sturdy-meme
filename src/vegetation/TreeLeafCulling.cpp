@@ -679,36 +679,52 @@ void TreeLeafCulling::recordCulling(VkCommandBuffer cmd, uint32_t frameIndex,
     }
     if (numTrees == 0 || totalLeafInstances == 0) return;
 
-    // CRITICAL: Sort trees by inputFirstInstance for binary search in shader.
-    // The binary search in tree_leaf_cull.comp assumes trees are sorted by their
-    // leaf instance ranges. If trees are in a different order (e.g., due to
-    // reordering of tree instances), the binary search will fail and assign
-    // leaves to the wrong trees, causing wrong leafTypeIndex lookups.
-    //
-    // We need to sort both treeDataList and treeRenderDataList together since
-    // treeIndex refers to the position in treeRenderDataList.
+    // Check if two-phase culling will actually be used (spatial index path)
+    // The two-phase path uses direct index lookup via originalTreeIndex from the spatial index,
+    // so it does NOT need sorting. Only the single-phase fallback path uses binary search
+    // which requires trees to be sorted by inputFirstInstance.
+    // IMPORTANT: Must also check that descriptor sets are ready - on first frame they may not
+    // be created yet, in which case we fall back to single-phase and MUST sort.
+    bool useTwoPhase = twoPhaseEnabled_ &&
+                       isSpatialIndexEnabled() &&
+                       twoPhaseLeafCullPipeline_.get() != VK_NULL_HANDLE &&
+                       !twoPhaseLeafCullDescriptorSets_.empty() &&
+                       treeFilterPipeline_.get() != VK_NULL_HANDLE &&
+                       !treeFilterDescriptorSets_.empty() &&
+                       !visibleTreeBuffers_.empty();
 
-    // Create sorted indices
-    std::vector<size_t> sortedIndices(numTrees);
-    for (size_t i = 0; i < numTrees; ++i) {
-        sortedIndices[i] = i;
-    }
-    std::sort(sortedIndices.begin(), sortedIndices.end(),
-              [&treeDataList](size_t a, size_t b) {
-                  return treeDataList[a].inputFirstInstance < treeDataList[b].inputFirstInstance;
-              });
+    if (!useTwoPhase) {
+        // CRITICAL: Sort trees by inputFirstInstance for binary search in shader.
+        // The binary search in tree_leaf_cull.comp assumes trees are sorted by their
+        // leaf instance ranges. If trees are in a different order (e.g., due to
+        // reordering of tree instances), the binary search will fail and assign
+        // leaves to the wrong trees, causing wrong leafTypeIndex lookups.
+        //
+        // We need to sort both treeDataList and treeRenderDataList together since
+        // treeIndex refers to the position in treeRenderDataList.
 
-    // Create sorted copies
-    std::vector<TreeCullData> sortedTreeData(numTrees);
-    std::vector<TreeRenderDataGPU> sortedRenderData(numTrees);
-    for (size_t i = 0; i < numTrees; ++i) {
-        sortedTreeData[i] = treeDataList[sortedIndices[i]];
-        sortedRenderData[i] = treeRenderDataList[sortedIndices[i]];
-        // Update treeIndex to reflect new position in sorted buffer
-        sortedTreeData[i].treeIndex = static_cast<uint32_t>(i);
+        // Create sorted indices
+        std::vector<size_t> sortedIndices(numTrees);
+        for (size_t i = 0; i < numTrees; ++i) {
+            sortedIndices[i] = i;
+        }
+        std::sort(sortedIndices.begin(), sortedIndices.end(),
+                  [&treeDataList](size_t a, size_t b) {
+                      return treeDataList[a].inputFirstInstance < treeDataList[b].inputFirstInstance;
+                  });
+
+        // Create sorted copies
+        std::vector<TreeCullData> sortedTreeData(numTrees);
+        std::vector<TreeRenderDataGPU> sortedRenderData(numTrees);
+        for (size_t i = 0; i < numTrees; ++i) {
+            sortedTreeData[i] = treeDataList[sortedIndices[i]];
+            sortedRenderData[i] = treeRenderDataList[sortedIndices[i]];
+            // Update treeIndex to reflect new position in sorted buffer
+            sortedTreeData[i].treeIndex = static_cast<uint32_t>(i);
+        }
+        treeDataList = std::move(sortedTreeData);
+        treeRenderDataList = std::move(sortedRenderData);
     }
-    treeDataList = std::move(sortedTreeData);
-    treeRenderDataList = std::move(sortedRenderData);
 
     // Lazy initialization of cull buffers
     if (cullOutputBuffers_.empty()) {
@@ -810,9 +826,8 @@ void TreeLeafCulling::recordCulling(VkCommandBuffer cmd, uint32_t frameIndex,
         cellParams.numCells = spatialIndex_->getCellCount();
         cellParams.treesPerWorkgroup = 64;
 
-        // Check if two-phase culling will be used so we can batch uniform updates
-        bool useTwoPhase = twoPhaseEnabled_ && treeFilterPipeline_.get() != VK_NULL_HANDLE &&
-                           !visibleTreeBuffers_.empty() && !treeFilterDescriptorSets_.empty();
+        // Note: useTwoPhase was already determined at the start of recordCulling()
+        // to ensure consistent sorting/non-sorting of tree data for the chosen path.
 
         // Reset cell cull output buffers on CPU side BEFORE dispatch
         // This is critical - shader-side initialization with barrier() only works within

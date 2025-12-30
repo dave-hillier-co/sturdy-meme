@@ -204,14 +204,15 @@ bool TerrainSystem::initInternal(const InitContext& ctx, const TerrainInitParams
 
 void TerrainSystem::cleanup() {
     if (device == VK_NULL_HANDLE) return;  // Not initialized
-    vkDeviceWaitIdle(device);
+    vk::Device vkDevice(device);
+    vkDevice.waitIdle();
 
     // RAII-managed subsystems destroyed automatically via std::optional reset
     pipelines.reset();
 
     // Destroy descriptor set layouts
-    if (computeDescriptorSetLayout) vkDestroyDescriptorSetLayout(device, computeDescriptorSetLayout, nullptr);
-    if (renderDescriptorSetLayout) vkDestroyDescriptorSetLayout(device, renderDescriptorSetLayout, nullptr);
+    if (computeDescriptorSetLayout) vkDevice.destroyDescriptorSetLayout(computeDescriptorSetLayout);
+    if (renderDescriptorSetLayout) vkDevice.destroyDescriptorSetLayout(renderDescriptorSetLayout);
 
     // Reset all RAII-managed subsystems
     buffers.reset();
@@ -364,18 +365,16 @@ bool TerrainSystem::createDescriptorSets() {
 
 
 void TerrainSystem::querySubgroupCapabilities() {
-    VkPhysicalDeviceSubgroupProperties subgroupProps{};
-    subgroupProps.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SUBGROUP_PROPERTIES;
-
-    VkPhysicalDeviceProperties2 deviceProps2{};
-    deviceProps2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2;
+    auto subgroupProps = vk::PhysicalDeviceSubgroupProperties{};
+    auto deviceProps2 = vk::PhysicalDeviceProperties2{};
     deviceProps2.pNext = &subgroupProps;
 
-    vkGetPhysicalDeviceProperties2(physicalDevice, &deviceProps2);
+    vk::PhysicalDevice vkPhysDevice(physicalDevice);
+    vkPhysDevice.getProperties2(&deviceProps2);
 
     subgroupCaps.subgroupSize = subgroupProps.subgroupSize;
     subgroupCaps.hasSubgroupArithmetic =
-        (subgroupProps.supportedOperations & VK_SUBGROUP_FEATURE_ARITHMETIC_BIT) != 0;
+        (subgroupProps.supportedOperations & vk::SubgroupFeatureFlagBits::eArithmetic) != vk::SubgroupFeatureFlags{};
 
     SDL_Log("TerrainSystem: Subgroup size=%u, arithmetic=%s",
             subgroupCaps.subgroupSize,

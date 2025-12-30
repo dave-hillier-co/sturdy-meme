@@ -442,8 +442,8 @@ bool GrassSystem::createGraphicsPipeline(SystemLifecycleHelper::PipelineHandles&
         .setRasterizationSamples(vk::SampleCountFlagBits::e1);
 
     auto depthStencil = vk::PipelineDepthStencilStateCreateInfo{}
-        .setDepthTestEnable(VK_TRUE)
-        .setDepthWriteEnable(VK_TRUE)
+        .setDepthTestEnable(true)
+        .setDepthWriteEnable(true)
         .setDepthCompareOp(vk::CompareOp::eLess);
 
     auto colorBlendAttachment = vk::PipelineColorBlendAttachmentState{}
@@ -462,18 +462,17 @@ bool GrassSystem::createGraphicsPipeline(SystemLifecycleHelper::PipelineHandles&
         return false;
     }
 
-    VkGraphicsPipelineCreateInfo pipelineInfo{};
-    pipelineInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
-    pipelineInfo.pVertexInputState = reinterpret_cast<const VkPipelineVertexInputStateCreateInfo*>(&vertexInputInfo);
-    pipelineInfo.pInputAssemblyState = reinterpret_cast<const VkPipelineInputAssemblyStateCreateInfo*>(&inputAssembly);
-    pipelineInfo.pViewportState = reinterpret_cast<const VkPipelineViewportStateCreateInfo*>(&viewportState);
-    pipelineInfo.pRasterizationState = reinterpret_cast<const VkPipelineRasterizationStateCreateInfo*>(&rasterizer);
-    pipelineInfo.pMultisampleState = reinterpret_cast<const VkPipelineMultisampleStateCreateInfo*>(&multisampling);
-    pipelineInfo.pDepthStencilState = reinterpret_cast<const VkPipelineDepthStencilStateCreateInfo*>(&depthStencil);
-    pipelineInfo.pColorBlendState = reinterpret_cast<const VkPipelineColorBlendStateCreateInfo*>(&colorBlending);
-    pipelineInfo.pDynamicState = reinterpret_cast<const VkPipelineDynamicStateCreateInfo*>(&dynamicState);
-    pipelineInfo.renderPass = getRenderPass();
-    pipelineInfo.subpass = 0;
+    auto pipelineInfo = vk::GraphicsPipelineCreateInfo{}
+        .setPVertexInputState(&vertexInputInfo)
+        .setPInputAssemblyState(&inputAssembly)
+        .setPViewportState(&viewportState)
+        .setPRasterizationState(&rasterizer)
+        .setPMultisampleState(&multisampling)
+        .setPDepthStencilState(&depthStencil)
+        .setPColorBlendState(&colorBlending)
+        .setPDynamicState(&dynamicState)
+        .setRenderPass(getRenderPass())
+        .setSubpass(0);
 
     return builder.buildGraphicsPipeline(pipelineInfo, handles.pipelineLayout, handles.pipeline);
 }
@@ -523,7 +522,7 @@ bool GrassSystem::createShadowPipeline() {
         .setLineWidth(1.0f)
         .setCullMode(vk::CullModeFlagBits::eNone)  // No culling for grass
         .setFrontFace(vk::FrontFace::eCounterClockwise)
-        .setDepthBiasEnable(VK_TRUE)
+        .setDepthBiasEnable(true)
         .setDepthBiasConstantFactor(0.25f)
         .setDepthBiasSlopeFactor(0.75f);
 
@@ -531,8 +530,8 @@ bool GrassSystem::createShadowPipeline() {
         .setRasterizationSamples(vk::SampleCountFlagBits::e1);
 
     auto depthStencil = vk::PipelineDepthStencilStateCreateInfo{}
-        .setDepthTestEnable(VK_TRUE)
-        .setDepthWriteEnable(VK_TRUE)
+        .setDepthTestEnable(true)
+        .setDepthWriteEnable(true)
         .setDepthCompareOp(vk::CompareOp::eLess);
 
     // No color attachment for shadow pass
@@ -544,17 +543,16 @@ bool GrassSystem::createShadowPipeline() {
     }
     shadowPipelineLayout_ = ManagedPipelineLayout::fromRaw(getDevice(), rawPipelineLayout);
 
-    VkGraphicsPipelineCreateInfo pipelineInfo{};
-    pipelineInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
-    pipelineInfo.pVertexInputState = reinterpret_cast<const VkPipelineVertexInputStateCreateInfo*>(&vertexInputInfo);
-    pipelineInfo.pInputAssemblyState = reinterpret_cast<const VkPipelineInputAssemblyStateCreateInfo*>(&inputAssembly);
-    pipelineInfo.pViewportState = reinterpret_cast<const VkPipelineViewportStateCreateInfo*>(&viewportState);
-    pipelineInfo.pRasterizationState = reinterpret_cast<const VkPipelineRasterizationStateCreateInfo*>(&rasterizer);
-    pipelineInfo.pMultisampleState = reinterpret_cast<const VkPipelineMultisampleStateCreateInfo*>(&multisampling);
-    pipelineInfo.pDepthStencilState = reinterpret_cast<const VkPipelineDepthStencilStateCreateInfo*>(&depthStencil);
-    pipelineInfo.pColorBlendState = reinterpret_cast<const VkPipelineColorBlendStateCreateInfo*>(&colorBlending);
-    pipelineInfo.renderPass = shadowRenderPass;
-    pipelineInfo.subpass = 0;
+    auto pipelineInfo = vk::GraphicsPipelineCreateInfo{}
+        .setPVertexInputState(&vertexInputInfo)
+        .setPInputAssemblyState(&inputAssembly)
+        .setPViewportState(&viewportState)
+        .setPRasterizationState(&rasterizer)
+        .setPMultisampleState(&multisampling)
+        .setPDepthStencilState(&depthStencil)
+        .setPColorBlendState(&colorBlending)
+        .setRenderPass(shadowRenderPass)
+        .setSubpass(0);
 
     VkPipeline rawPipeline = VK_NULL_HANDLE;
     if (!builder.buildGraphicsPipeline(pipelineInfo, shadowPipelineLayout_.get(), rawPipeline)) {

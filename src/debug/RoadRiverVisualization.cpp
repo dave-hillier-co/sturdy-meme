@@ -4,20 +4,83 @@
 #include "../terrain/RoadNetworkLoader.h"
 #include "../water/WaterPlacementData.h"
 #include <glm/gtc/constants.hpp>
+#include <SDL3/SDL_log.h>
+#include <cmath>
 
 void RoadRiverVisualization::addToDebugLines(DebugLineSystem& debugLines) {
+    // Only update persistent lines when dirty
+    if (dirty_) {
+        rebuildCache();
+        dirty_ = false;
+
+        // Set as persistent lines - only uploaded when changed, not every frame
+        if (!cachedLineVertices_.empty()) {
+            debugLines.setPersistentLines(
+                reinterpret_cast<const DebugLineVertex*>(cachedLineVertices_.data()),
+                cachedLineVertices_.size()
+            );
+        } else {
+            debugLines.clearPersistentLines();
+        }
+    }
+    // No per-frame work needed - persistent lines are rendered automatically
+}
+
+void RoadRiverVisualization::rebuildCache() {
+    cachedLineVertices_.clear();
+
     if (config_.showRivers && waterData_ != nullptr) {
-        addRiverVisualization(debugLines);
+        buildRiverCones();
     }
 
     if (config_.showRoads && roadNetwork_ != nullptr) {
-        addRoadVisualization(debugLines);
+        buildRoadCones();
+    }
+
+    // 16 lines * 2 verts = 32 verts per cone
+    size_t estimatedCones = cachedLineVertices_.size() / 32;
+    SDL_Log("RoadRiverVisualization: cached %zu line vertices (~%zu cones)",
+            cachedLineVertices_.size(), estimatedCones);
+}
+
+void RoadRiverVisualization::addConeToCache(const glm::vec3& base, const glm::vec3& tip,
+                                             float radius, const glm::vec4& color) {
+    const int segments = 8;
+
+    // Calculate axis direction
+    glm::vec3 axis = tip - base;
+    float length = glm::length(axis);
+    if (length < 0.001f) return;
+    axis /= length;
+
+    // Find perpendicular vectors for the base circle
+    glm::vec3 up = (std::abs(axis.y) < 0.99f) ? glm::vec3(0, 1, 0) : glm::vec3(1, 0, 0);
+    glm::vec3 right = glm::normalize(glm::cross(axis, up));
+    glm::vec3 forward = glm::cross(right, axis);
+
+    // Generate circle points at base
+    glm::vec3 circlePoints[8];
+    for (int i = 0; i < segments; i++) {
+        float angle = (float(i) / segments) * glm::two_pi<float>();
+        glm::vec3 offset = (right * std::cos(angle) + forward * std::sin(angle)) * radius;
+        circlePoints[i] = base + offset;
+    }
+
+    // Add lines from base circle to tip
+    for (int i = 0; i < segments; i++) {
+        cachedLineVertices_.push_back({circlePoints[i], color});
+        cachedLineVertices_.push_back({tip, color});
+    }
+
+    // Add lines around base circle
+    for (int i = 0; i < segments; i++) {
+        cachedLineVertices_.push_back({circlePoints[i], color});
+        cachedLineVertices_.push_back({circlePoints[(i + 1) % segments], color});
     }
 }
 
-void RoadRiverVisualization::addRiverVisualization(DebugLineSystem& debugLines) {
+void RoadRiverVisualization::buildRiverCones() {
     const float spacing = config_.riverConeSpacing;
-    const float coneRadius = config_.coneRadius;
     const float coneLength = config_.coneLength;
     const float heightOffset = config_.heightAboveGround;
 
@@ -47,7 +110,7 @@ void RoadRiverVisualization::addRiverVisualization(DebugLineSystem& debugLines) 
                 glm::vec3 basePos = pos + glm::vec3(0.0f, heightOffset, 0.0f);
                 glm::vec3 tipPos = basePos + direction * coneLength;
 
-                debugLines.addCone(basePos, tipPos, coneRadius, config_.riverColor);
+                addConeToCache(basePos, tipPos, config_.coneRadius, config_.riverColor);
 
                 nextConeAt += spacing;
             }
@@ -57,11 +120,13 @@ void RoadRiverVisualization::addRiverVisualization(DebugLineSystem& debugLines) 
     }
 }
 
-void RoadRiverVisualization::addRoadVisualization(DebugLineSystem& debugLines) {
+void RoadRiverVisualization::buildRoadCones() {
     const float spacing = config_.roadConeSpacing;
-    const float coneRadius = config_.coneRadius;
     const float coneLength = config_.coneLength;
     const float heightOffset = config_.heightAboveGround;
+
+    // Road coordinates are in 0-terrainSize space, need to convert to centered world space
+    const float halfTerrain = roadNetwork_->terrainSize * 0.5f;
 
     for (const auto& road : roadNetwork_->roads) {
         if (road.controlPoints.size() < 2) continue;
@@ -85,19 +150,22 @@ void RoadRiverVisualization::addRoadVisualization(DebugLineSystem& debugLines) {
                 float t = (nextConeAt - accumulated) / segmentLen;
                 glm::vec2 posXZ = glm::mix(prevXZ, currXZ, t);
 
+                // Convert from 0-terrainSize to centered world coordinates
+                float worldX = posXZ.x - halfTerrain;
+                float worldZ = posXZ.y - halfTerrain;
+
                 // Get terrain height at this position
-                float terrainY = getTerrainHeight(posXZ.x, posXZ.y);
-                glm::vec3 basePos(posXZ.x, terrainY + heightOffset, posXZ.y);
+                float terrainY = getTerrainHeight(worldX, worldZ);
+                glm::vec3 basePos(worldX, terrainY + heightOffset, worldZ);
 
                 // Forward direction cone
                 glm::vec3 forwardDir(dir2D.x, 0.0f, dir2D.y);
                 glm::vec3 tipPosForward = basePos + forwardDir * coneLength;
-                debugLines.addCone(basePos, tipPosForward, coneRadius, config_.roadColor);
+                addConeToCache(basePos, tipPosForward, config_.coneRadius, config_.roadColor);
 
-                // Backward direction cone (offset slightly to side to not overlap)
-                glm::vec3 backwardDir = -forwardDir;
-                glm::vec3 tipPosBackward = basePos + backwardDir * coneLength;
-                debugLines.addCone(basePos, tipPosBackward, coneRadius, config_.roadColor);
+                // Backward direction cone
+                glm::vec3 tipPosBackward = basePos - forwardDir * coneLength;
+                addConeToCache(basePos, tipPosBackward, config_.coneRadius, config_.roadColor);
 
                 nextConeAt += spacing;
             }

@@ -5,6 +5,7 @@
 // - Roads: bidirectional cones (pair pointing in opposite directions)
 
 #include <glm/glm.hpp>
+#include <vector>
 
 class DebugLineSystem;
 class TerrainHeightMap;
@@ -35,23 +36,38 @@ public:
     RoadRiverVisualization() = default;
     ~RoadRiverVisualization() = default;
 
-    // Configure visualization parameters
-    void setConfig(const RoadRiverVisConfig& config) { config_ = config; }
+    // Configure visualization parameters (marks cache dirty)
+    void setConfig(const RoadRiverVisConfig& config) { config_ = config; dirty_ = true; }
     RoadRiverVisConfig& getConfig() { return config_; }
     const RoadRiverVisConfig& getConfig() const { return config_; }
 
-    // Set data sources
-    void setWaterData(const WaterPlacementData* waterData) { waterData_ = waterData; }
-    void setRoadNetwork(const RoadNetwork* roadNetwork) { roadNetwork_ = roadNetwork; }
-    void setTerrainHeightMap(const TerrainHeightMap* heightMap) { heightMap_ = heightMap; }
+    // Set data sources (marks cache dirty)
+    void setWaterData(const WaterPlacementData* waterData) { waterData_ = waterData; dirty_ = true; }
+    void setRoadNetwork(const RoadNetwork* roadNetwork) { roadNetwork_ = roadNetwork; dirty_ = true; }
+    void setTerrainHeightMap(const TerrainHeightMap* heightMap) { heightMap_ = heightMap; dirty_ = true; }
+
+    // Force rebuild of cached geometry
+    void invalidateCache() { dirty_ = true; }
 
     // Add visualization to debug line system
-    // Call this each frame before DebugLineSystem::uploadLines()
+    // Uses cached geometry, only rebuilds when dirty
     void addToDebugLines(DebugLineSystem& debugLines);
 
+    // Statistics
+    size_t getCachedLineVertexCount() const { return cachedLineVertices_.size(); }
+    size_t getEstimatedConeCount() const { return cachedLineVertices_.size() / 32; } // 16 lines * 2 verts = 32 verts/cone
+
 private:
-    void addRiverVisualization(DebugLineSystem& debugLines);
-    void addRoadVisualization(DebugLineSystem& debugLines);
+    // Cached vertex (matches DebugLineSystem format)
+    struct CachedVertex {
+        glm::vec3 position;
+        glm::vec4 color;
+    };
+
+    void rebuildCache();
+    void buildRiverCones();
+    void buildRoadCones();
+    void addConeToCache(const glm::vec3& base, const glm::vec3& tip, float radius, const glm::vec4& color);
 
     // Get height at world position from terrain height map
     float getTerrainHeight(float x, float z) const;
@@ -60,4 +76,8 @@ private:
     const WaterPlacementData* waterData_ = nullptr;
     const RoadNetwork* roadNetwork_ = nullptr;
     const TerrainHeightMap* heightMap_ = nullptr;
+
+    // Cached line vertices (pairs for each line segment)
+    std::vector<CachedVertex> cachedLineVertices_;
+    bool dirty_ = true;
 };

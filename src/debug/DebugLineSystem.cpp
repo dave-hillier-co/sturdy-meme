@@ -314,6 +314,31 @@ void DebugLineSystem::addLine(const glm::vec3& start, const glm::vec3& end, cons
     lineVertices.push_back({end, color});
 }
 
+void DebugLineSystem::reserveLines(size_t lineCount) {
+    lineVertices.reserve(lineVertices.size() + lineCount * 2);
+}
+
+void DebugLineSystem::reserveTriangles(size_t triangleCount) {
+    triangleVertices.reserve(triangleVertices.size() + triangleCount * 3);
+}
+
+void DebugLineSystem::appendLineVertices(const DebugLineVertex* vertices, size_t count) {
+    lineVertices.insert(lineVertices.end(), vertices, vertices + count);
+}
+
+void DebugLineSystem::appendTriangleVertices(const DebugLineVertex* vertices, size_t count) {
+    triangleVertices.insert(triangleVertices.end(), vertices, vertices + count);
+}
+
+void DebugLineSystem::setPersistentLines(const DebugLineVertex* vertices, size_t count) {
+    persistentLineVertices.assign(vertices, vertices + count);
+}
+
+void DebugLineSystem::clearPersistentLines() {
+    persistentLineVertices.clear();
+    persistentLineVertices.shrink_to_fit();
+}
+
 void DebugLineSystem::addTriangle(const glm::vec3& v0, const glm::vec3& v1, const glm::vec3& v2, const glm::vec4& color) {
     triangleVertices.push_back({v0, color});
     triangleVertices.push_back({v1, color});
@@ -482,9 +507,12 @@ void DebugLineSystem::uploadLines() {
 
     auto& frame = frameData[currentFrame];
 
-    // Upload lines
-    if (!lineVertices.empty()) {
-        size_t requiredSize = lineVertices.size() * sizeof(DebugLineVertex);
+    // Calculate total line vertices (persistent + per-frame)
+    size_t totalLineVertices = persistentLineVertices.size() + lineVertices.size();
+
+    // Upload lines (persistent + per-frame combined)
+    if (totalLineVertices > 0) {
+        size_t requiredSize = totalLineVertices * sizeof(DebugLineVertex);
 
         // Recreate buffer if too small
         if (frame.lineBufferSize < requiredSize) {
@@ -512,10 +540,18 @@ void DebugLineSystem::uploadLines() {
             frame.lineBufferSize = newSize;
         }
 
-        // Copy data
+        // Copy persistent lines first, then per-frame lines
         void* data;
         vmaMapMemory(allocator, frame.lineVertexAllocation, &data);
-        memcpy(data, lineVertices.data(), requiredSize);
+        char* dst = static_cast<char*>(data);
+        if (!persistentLineVertices.empty()) {
+            size_t persistentSize = persistentLineVertices.size() * sizeof(DebugLineVertex);
+            memcpy(dst, persistentLineVertices.data(), persistentSize);
+            dst += persistentSize;
+        }
+        if (!lineVertices.empty()) {
+            memcpy(dst, lineVertices.data(), lineVertices.size() * sizeof(DebugLineVertex));
+        }
         vmaUnmapMemory(allocator, frame.lineVertexAllocation);
     }
 
@@ -562,15 +598,16 @@ void DebugLineSystem::recordCommands(VkCommandBuffer cmd, const glm::mat4& viewP
 
     vk::CommandBuffer vkCmd(cmd);
 
-    // Draw lines
-    if (!lineVertices.empty() && frame.lineVertexBuffer != VK_NULL_HANDLE) {
+    // Draw lines (persistent + per-frame)
+    size_t totalLineVertices = persistentLineVertices.size() + lineVertices.size();
+    if (totalLineVertices > 0 && frame.lineVertexBuffer != VK_NULL_HANDLE) {
         vkCmd.bindPipeline(vk::PipelineBindPoint::eGraphics, linePipeline);
         vkCmd.pushConstants<glm::mat4>(pipelineLayout, vk::ShaderStageFlagBits::eVertex, 0, viewProj);
 
         vk::Buffer buffer(frame.lineVertexBuffer);
         vk::DeviceSize offset = 0;
         vkCmd.bindVertexBuffers(0, buffer, offset);
-        vkCmd.draw(static_cast<uint32_t>(lineVertices.size()), 1, 0, 0);
+        vkCmd.draw(static_cast<uint32_t>(totalLineVertices), 1, 0, 0);
     }
 
     // Draw triangles (as wireframe)

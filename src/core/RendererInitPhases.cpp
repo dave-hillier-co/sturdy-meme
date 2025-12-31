@@ -190,6 +190,10 @@ bool Renderer::initSubsystems(const InitContext& initCtx) {
     sceneInfo.getTerrainHeight = [this](float x, float z) {
         return systems_->terrain().getHeightAt(x, z);
     };
+    // Place scene at Town 1 settlement (market town with coastal/agricultural features)
+    // Settlement coords (9200, 3000) in 0-16384 space -> world coords by subtracting 8192
+    const float halfTerrain = 8192.0f;
+    sceneInfo.sceneOrigin = glm::vec2(9200.0f - halfTerrain, 3000.0f - halfTerrain);
 
     {
         INIT_PROFILE_PHASE("SceneManager");
@@ -1041,14 +1045,23 @@ bool Renderer::initSubsystems(const InitContext& initCtx) {
 
     // Load road network data and configure visualization
     {
-        std::string roadsPath = terrainDataPath + "/roads.bin";
-        std::string roadsJsonPath = terrainDataPath + "/roads.json";
+        // Try roads subdirectory first (standard layout), then root terrain_data
+        std::string roadsSubdir = terrainDataPath + "/roads";
+        std::string roadsPath = roadsSubdir + "/roads.bin";
+        std::string roadsJsonPath = roadsSubdir + "/roads.json";
+        std::string roadsPathAlt = terrainDataPath + "/roads.bin";
+        std::string roadsJsonPathAlt = terrainDataPath + "/roads.json";
+
         if (systems_->roadData().loadFromBinary(roadsPath)) {
             SDL_Log("Loaded road network from %s", roadsPath.c_str());
         } else if (systems_->roadData().loadFromJson(roadsJsonPath)) {
             SDL_Log("Loaded road network from %s", roadsJsonPath.c_str());
+        } else if (systems_->roadData().loadFromBinary(roadsPathAlt)) {
+            SDL_Log("Loaded road network from %s", roadsPathAlt.c_str());
+        } else if (systems_->roadData().loadFromJson(roadsJsonPathAlt)) {
+            SDL_Log("Loaded road network from %s", roadsJsonPathAlt.c_str());
         } else {
-            SDL_Log("No road network data found at %s (visualization disabled)", roadsPath.c_str());
+            SDL_Log("No road network data found (checked %s and %s)", roadsPath.c_str(), roadsPathAlt.c_str());
         }
 
         // Load water/river data

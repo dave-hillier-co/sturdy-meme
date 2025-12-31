@@ -263,7 +263,7 @@ private:
     ManagedPipeline graphicsPipeline;
 
     bool physicsDebugEnabled = false;
-    bool roadRiverVisEnabled = true;  // Road/river visualization enabled by default
+    bool roadRiverVisEnabled = true;  // Road/river visualization enabled
     glm::mat4 lastViewProj{1.0f};  // Cached view-projection for debug rendering
     bool useVolumetricSnow = true;  // Use new volumetric system by default
 

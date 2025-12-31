@@ -363,13 +363,20 @@ void FroxelSystem::recordFroxelUpdate(VkCommandBuffer cmd, uint32_t frameIndex,
     ubo->toSunDirection = glm::vec4(sunDir, sunIntensity);
     ubo->sunColor = glm::vec4(sunColor, 1.0f);
     ubo->fogParams = glm::vec4(fogBaseHeight, fogScaleHeight, fogDensity, fogAbsorption);
-    ubo->layerParams = glm::vec4(layerHeight, layerThickness, layerDensity, 0.0f);
+    ubo->layerParams = glm::vec4(layerHeight, layerThickness, layerDensity, waterLevel);
     // Disable temporal blending on the first frame to avoid sampling uninitialized history volume
     // frameCounter is 0 on first call, so first frame temporal blend should be 0
     float effectiveTemporalBlend = (frameCounter == 0) ? 0.0f : temporalBlend;
     ubo->gridParams = glm::vec4(volumetricFarPlane, DEPTH_DISTRIBUTION,
                                  static_cast<float>(frameCounter), effectiveTemporalBlend);
     ubo->shadowParams = glm::vec4(2048.0f, 0.001f, 1.0f, 0.0f);  // Shadow map size, bias, pcf radius
+    // Underwater fog parameters (passed to froxel shader for underwater volumetrics)
+    ubo->underwaterParams = glm::vec4(
+        underwaterDensity,
+        underwaterAbsorptionScale,
+        underwaterColorMult,
+        underwaterEnabled ? 1.0f : 0.0f
+    );
 
     // Store for next frame's temporal reprojection
     prevViewProj = viewProj;

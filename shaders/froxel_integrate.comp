@@ -23,9 +23,10 @@ layout(binding = BINDING_FROXEL_UNIFORMS) uniform FroxelUniforms {
     vec4 toSunDirection;
     vec4 sunColor;
     vec4 fogParams;
-    vec4 layerParams;
+    vec4 layerParams;       // x = layer height, y = layer thickness, z = layer density, w = water level
     vec4 gridParams;        // x = volumetric far, y = depth distribution
     vec4 shadowParams;
+    vec4 underwaterParams;  // x = underwater density, y = absorption scale, z = water color multiplier, w = enabled
 } ubo;
 
 // Froxel grid constants

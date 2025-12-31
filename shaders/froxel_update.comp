@@ -31,9 +31,10 @@ layout(binding = BINDING_FROXEL_UNIFORMS) uniform FroxelUniforms {
     vec4 toSunDirection;      // xyz = direction toward sun, w = intensity
     vec4 sunColor;
     vec4 fogParams;         // x = base height, y = scale height, z = density, w = absorption
-    vec4 layerParams;       // x = layer height, y = layer thickness, z = layer density
+    vec4 layerParams;       // x = layer height, y = layer thickness, z = layer density, w = water level
     vec4 gridParams;        // x = volumetric far, y = depth distribution, z = frame index, w = temporal blend
     vec4 shadowParams;      // x = shadow map size, y = shadow bias, z = pcf radius
+    vec4 underwaterParams;  // x = underwater density, y = absorption scale, z = water color multiplier, w = enabled
 } ubo;
 
 // Temporal reprojection blend factor
@@ -76,10 +77,45 @@ float sigmoidalLayerDensity(float height) {
     return layerDensity / (1.0 + exp(t * 2.0));
 }
 
+// Underwater fog density (when below water surface)
+float underwaterDensity(vec3 worldPos) {
+    float waterLevel = ubo.layerParams.w;
+
+    // Only apply underwater fog if enabled and below water level
+    if (ubo.underwaterParams.w < 0.5 || worldPos.y >= waterLevel) {
+        return 0.0;
+    }
+
+    // Depth below water surface
+    float depth = waterLevel - worldPos.y;
+
+    // Underwater fog density increases with depth (exponential falloff)
+    // Uses underwaterParams.x as base density, .y as absorption scale
+    float baseDensity = ubo.underwaterParams.x;
+    float absorptionScale = ubo.underwaterParams.y;
+
+    // Exponential density increase with depth (denser fog deeper underwater)
+    return baseDensity * (1.0 + depth * absorptionScale * 0.1);
+}
+
 // Combined fog density at height
 float getHazeDensity(vec3 worldPos) {
     float height = worldPos.y;
-    return exponentialHeightDensity(height) + sigmoidalLayerDensity(height);
+
+    // Atmospheric fog (above water)
+    float atmoDensity = exponentialHeightDensity(height) + sigmoidalLayerDensity(height);
+
+    // Underwater fog (below water surface)
+    float waterDensity = underwaterDensity(worldPos);
+
+    // Combine: if underwater, use water fog; otherwise use atmospheric fog
+    // Water fog dominates when below water level
+    float waterLevel = ubo.layerParams.w;
+    if (ubo.underwaterParams.w > 0.5 && worldPos.y < waterLevel) {
+        return waterDensity;
+    }
+
+    return atmoDensity;
 }
 
 // henyeyGreensteinPhase is defined in dynamic_lights_common.glsl
@@ -327,6 +363,10 @@ void main() {
     // Combine sun visibility with shadow
     float totalShadow = sunVisibility * shadow;
 
+    // Check if this froxel is underwater
+    float waterLevel = ubo.layerParams.w;
+    bool isUnderwater = (ubo.underwaterParams.w > 0.5) && (worldPos.y < waterLevel);
+
     // In-scattering from sun (attenuated by shadow)
     vec3 sunInScatter = sunLight * phase * totalShadow * density;
 
@@ -340,6 +380,25 @@ void main() {
 
     // Total in-scattering
     vec3 totalInScatter = sunInScatter + skyInScatter + localLightScatter;
+
+    // Apply underwater tinting if below water level
+    if (isUnderwater) {
+        // Water absorbs red/green light, leaving blue-green
+        // Use underwaterParams.z as the color multiplier
+        float colorMult = ubo.underwaterParams.z;
+        vec3 waterTint = vec3(0.1, 0.4, 0.5);  // Blue-green underwater tint
+
+        // Depth below water surface affects color absorption
+        float depth = waterLevel - worldPos.y;
+        float depthFactor = 1.0 - exp(-depth * 0.05);  // Exponential absorption
+
+        // Tint the scattered light toward water color
+        totalInScatter = mix(totalInScatter, totalInScatter * waterTint * colorMult, depthFactor);
+
+        // Add ambient water glow (scattered light from above)
+        vec3 ambientWater = waterTint * 0.02 * (1.0 - depthFactor * 0.5);
+        totalInScatter += ambientWater * density;
+    }
 
     // =========================================================================
     // Temporal Reprojection

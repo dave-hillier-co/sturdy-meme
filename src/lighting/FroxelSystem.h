@@ -96,6 +96,18 @@ public:
     void setLayerDensity(float d) override { layerDensity = d; resetTemporalHistory(); }
     float getLayerDensity() const override { return layerDensity; }
 
+    // Underwater fog parameters
+    void setWaterLevel(float level) { waterLevel = level; }
+    float getWaterLevel() const { return waterLevel; }
+    void setUnderwaterEnabled(bool e) { underwaterEnabled = e; resetTemporalHistory(); }
+    bool isUnderwaterEnabled() const { return underwaterEnabled; }
+    void setUnderwaterDensity(float d) { underwaterDensity = d; resetTemporalHistory(); }
+    float getUnderwaterDensity() const { return underwaterDensity; }
+    void setUnderwaterAbsorptionScale(float s) { underwaterAbsorptionScale = s; resetTemporalHistory(); }
+    float getUnderwaterAbsorptionScale() const { return underwaterAbsorptionScale; }
+    void setUnderwaterColorMult(float m) { underwaterColorMult = m; resetTemporalHistory(); }
+    float getUnderwaterColorMult() const { return underwaterColorMult; }
+
     // Reset temporal history (call when fog parameters change significantly)
     void resetTemporalHistory() { frameCounter = 0; }
 
@@ -181,6 +193,13 @@ private:
 
     // Temporal filtering (0 = disabled, 0.9 = typical value for stable fog)
     float temporalBlend = 0.9f;
+
+    // Underwater fog parameters
+    float waterLevel = 0.0f;              // Water surface Y position
+    bool underwaterEnabled = false;       // Is camera underwater
+    float underwaterDensity = 0.02f;      // Base underwater fog density
+    float underwaterAbsorptionScale = 0.5f;  // How quickly fog thickens with depth
+    float underwaterColorMult = 1.5f;     // Color intensity multiplier
 
     bool enabled = true;
 

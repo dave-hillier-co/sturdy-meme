@@ -893,6 +893,10 @@ bool Renderer::render(const Camera& camera) {
             underwaterParams.waterColor,
             underwaterParams.waterLevel
         );
+
+        // Update froxel system with underwater state for volumetric underwater fog
+        systems_->froxel().setWaterLevel(underwaterParams.waterLevel);
+        systems_->froxel().setUnderwaterEnabled(underwaterParams.isUnderwater);
         systems_->profiler().endCpuZone("SystemUpdates:Water");
     }
 

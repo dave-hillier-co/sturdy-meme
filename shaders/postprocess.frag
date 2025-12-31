@@ -611,21 +611,19 @@ vec3 applySnellsWindow(vec3 sceneColor, vec2 uv) {
 
 // Main underwater effect composition
 vec3 applyUnderwaterEffects(vec3 sceneColor, vec2 uv, float linearDepth) {
-    // Apply underwater fog/absorption
-    vec3 foggedColor = applyUnderwaterFog(sceneColor, linearDepth);
+    // When froxel fog is enabled, it handles underwater scattering/absorption
+    // We only apply Beer-Lambert absorption here as a supplement for distant objects
+    // The Snell's window effect is disabled as froxel volumetrics provide better
+    // underwater visuals without the harsh radial halo artifact
 
-    // Apply Snell's window effect (looking up from underwater)
-    // This effect is strongest when depth is moderate (not at surface)
-    float snellStrength = smoothstep(0.0, 2.0, ubo.underwaterDepth);
-    if (snellStrength > 0.01) {
-        vec3 snellColor = applySnellsWindow(foggedColor, uv);
-        foggedColor = mix(foggedColor, snellColor, snellStrength);
-    }
+    // Apply subtle Beer-Lambert absorption for depth cues on distant geometry
+    vec3 absorption = ubo.underwaterAbsorption.xyz;
+    float turbidity = ubo.underwaterAbsorption.w;
+    vec3 transmittance = exp(-absorption * (1.0 + turbidity * 0.3) * linearDepth * 0.1);
 
-    // Caustics on underwater surfaces would be handled in terrain shader
-    // God rays underwater would need separate underwater ray-marching
-
-    return foggedColor;
+    // Blend toward water color at distance
+    vec3 fogColor = ubo.underwaterColor.rgb * 0.3;
+    return sceneColor * transmittance + fogColor * (1.0 - transmittance);
 }
 
 void main() {
@@ -635,8 +633,9 @@ void main() {
     float depth = texture(depthInput, fragTexCoord).r;
     float linearDepth = linearizeDepth(depth);
 
-    // Apply froxel volumetric fog (Phase 4.3) - only when above water
-    if (ubo.froxelEnabled > 0.5 && ubo.underwaterEnabled < 0.5) {
+    // Apply froxel volumetric fog (Phase 4.3) - works both above and underwater
+    // Underwater fog density is added in froxel_update.comp when below water level
+    if (ubo.froxelEnabled > 0.5) {
         int debugMode = int(ubo.froxelDebugMode + 0.5);  // Round to nearest int
 
         if (debugMode > 0) {

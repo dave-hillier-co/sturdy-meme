@@ -19,7 +19,7 @@ Based on `./scripts/analyze-vulkan-usage.sh`:
 | TreeRenderer | ✅ Partially migrated | 57 hpp usages |
 | TerrainSystem | ✅ Partially migrated | 52 hpp usages |
 | PostProcessSystem | ✅ Mostly migrated | 131 hpp usages |
-| GrassSystem | ✅ Partially migrated | 78 hpp usages |
+| GrassSystem | ✅ **Full Type Migration** | 100+ hpp usages |
 | CatmullClarkSystem | ✅ Mostly migrated | 122 hpp usages |
 | OceanFFT | ✅ Mostly migrated | 97 hpp usages |
 | FroxelSystem | ✅ Mostly migrated | 57 hpp usages |
@@ -290,7 +290,7 @@ Based on usage counts and impact. Status indicates current migration progress.
 | `src/vegetation/TreeRenderer.cpp` | ✅ **Full Type Migration** | 100+ | 0 |
 | `src/terrain/TerrainSystem.cpp` | ✅ **Full Type Migration** | 100+ | 0 |
 | `src/postprocess/PostProcessSystem.cpp` | ✅ Migrated | 131 | 51 |
-| `src/vegetation/GrassSystem.cpp` | ⏳ Partial | 78 | 50 |
+| `src/vegetation/GrassSystem.cpp` | ✅ **Full Type Migration** | 100+ | 0 |
 | `src/subdivision/CatmullClarkSystem.cpp` | ✅ Migrated | 122 | 43 |
 
 ### Tier 3: Pipeline Infrastructure ✅ Complete
@@ -325,7 +325,7 @@ Files with highest remaining raw Vulkan usage:
 | `src/core/vulkan/VulkanRAII.h` | 135 |
 | `src/core/vulkan/VulkanResourceFactory.cpp` | 94 |
 | `src/vegetation/TreeLODSystem.cpp` | 89 |
-| `src/vegetation/GrassSystem.cpp` | 80 |
+| ~~`src/vegetation/GrassSystem.cpp`~~ | ✅ Fully migrated |
 | ~~`src/vegetation/TreeRenderer.cpp`~~ | ✅ Fully migrated |
 | ~~`src/terrain/TerrainSystem.cpp`~~ | ✅ Fully migrated |
 
@@ -374,45 +374,7 @@ The codebase already uses `VULKAN_HPP_DISPATCH_LOADER_DYNAMIC=1`. The dispatcher
 2. **Complete full type migrations in Tier 2** — Convert all raw Vulkan types (VkBuffer, VkDevice, etc.) to vulkan-hpp types (vk::Buffer, vk::Device, etc.) throughout:
    - `TreeRenderer.cpp` — ✅ **Complete** (all types migrated: InitInfo, member variables, function parameters)
    - `TerrainSystem.cpp` — ✅ **Complete** (all types migrated with backwards-compatible VkExtent2D overload)
-   - `GrassSystem.cpp` — ⏳ Interface types need migration (see details below)
-
-#### GrassSystem Migration Checklist
-
-**Header (`GrassSystem.h`):**
-- [ ] Change `#include <vulkan/vulkan.h>` → `#include <vulkan/vulkan.hpp>`
-- [ ] `InitInfo::VkRenderPass shadowRenderPass` → `vk::RenderPass`
-- [ ] `createWithDependencies()` parameters: `VkRenderPass hdrRenderPass`, `VkRenderPass shadowRenderPass` → `vk::RenderPass`
-- [ ] `setExtent(VkExtent2D)` → `setExtent(vk::Extent2D)`
-- [ ] `updateDescriptorSets()` — all parameters:
-  - `VkDevice device` → `vk::Device`
-  - `std::vector<VkBuffer>` → `std::vector<vk::Buffer>`
-  - `VkImageView` → `vk::ImageView`
-  - `VkSampler` → `vk::Sampler`
-  - `std::array<VkBuffer, 3>` → `std::array<vk::Buffer, 3>`
-- [ ] `recordDisplacementUpdate(VkCommandBuffer, ...)` → `vk::CommandBuffer`
-- [ ] `recordResetAndCompute(VkCommandBuffer, ...)` → `vk::CommandBuffer`
-- [ ] `recordDraw(VkCommandBuffer, ...)` → `vk::CommandBuffer`
-- [ ] `recordShadowDraw(VkCommandBuffer, ...)` → `vk::CommandBuffer`
-- [ ] `getDisplacementImageView()` return type → `vk::ImageView`
-- [ ] `getDisplacementSampler()` return type → `vk::Sampler`
-- [ ] `setSnowMask(VkDevice, VkImageView, VkSampler)` → `vk::Device`, `vk::ImageView`, `vk::Sampler`
-
-**Member variables:**
-- [ ] `VkDevice storedDevice` → `vk::Device`
-- [ ] `VkRenderPass storedRenderPass` → `vk::RenderPass`
-- [ ] `VkExtent2D storedExtent` → `vk::Extent2D`
-- [ ] `VkRenderPass shadowRenderPass` → `vk::RenderPass`
-- [ ] `VkImage displacementImage` → `vk::Image`
-- [ ] `VkImageView displacementImageView` → `vk::ImageView`
-- [ ] `std::vector<VkDescriptorSet>` → `std::vector<vk::DescriptorSet>`
-- [ ] `VkImageView terrainHeightMapView` → `vk::ImageView`
-- [ ] `VkSampler terrainHeightMapSampler` → `vk::Sampler`
-- [ ] `VkImageView tileArrayView` → `vk::ImageView`
-- [ ] `VkSampler tileSampler` → `vk::Sampler`
-- [ ] `TripleBuffered<VkBuffer> tileInfoBuffers_` → `TripleBuffered<vk::Buffer>`
-- [ ] `std::vector<VkBuffer> rendererUniformBuffers_` → `std::vector<vk::Buffer>`
-
-**Note:** `VmaAllocator` and `VmaAllocation` remain raw types (VMA compatibility).
+   - `GrassSystem.cpp` — ✅ **Complete** (all types migrated with backwards-compatible VkExtent2D and updateDescriptorSets overloads)
 
 ### Medium Priority
 3. ~~**Water & Atmosphere (Tier 4)**~~ — ✅ Mostly Complete

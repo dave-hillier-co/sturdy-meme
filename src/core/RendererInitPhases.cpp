@@ -239,8 +239,20 @@ bool Renderer::initSubsystems(const InitContext& initCtx) {
     // Note: grass.updateDescriptorSets is called later after CloudShadowSystem is created
 
     // Update terrain descriptor sets with shared resources
-    systems_->terrain().updateDescriptorSets(device, systems_->globalBuffers().uniformBuffers.buffers, systems_->shadow().getShadowImageView(), systems_->shadow().getShadowSampler(),
-                                        systems_->globalBuffers().snowBuffers.buffers, systems_->globalBuffers().cloudShadowBuffers.buffers);
+    // Convert raw VkBuffer vectors to vk::Buffer vectors
+    auto convertBuffers = [](const std::vector<VkBuffer>& raw) {
+        std::vector<vk::Buffer> result;
+        result.reserve(raw.size());
+        for (auto b : raw) result.push_back(vk::Buffer(b));
+        return result;
+    };
+    systems_->terrain().updateDescriptorSets(
+        vk::Device(device),
+        convertBuffers(systems_->globalBuffers().uniformBuffers.buffers),
+        vk::ImageView(systems_->shadow().getShadowImageView()),
+        vk::Sampler(systems_->shadow().getShadowSampler()),
+        convertBuffers(systems_->globalBuffers().snowBuffers.buffers),
+        convertBuffers(systems_->globalBuffers().cloudShadowBuffers.buffers));
 
     // Initialize rock system via factory
     RockSystem::InitInfo rockInfo{};
@@ -339,13 +351,13 @@ bool Renderer::initSubsystems(const InitContext& initCtx) {
     // Initialize TreeRenderer for dedicated tree shaders with wind animation
     {
         TreeRenderer::InitInfo treeRendererInfo{};
-        treeRendererInfo.device = device;
-        treeRendererInfo.physicalDevice = physicalDevice;
+        treeRendererInfo.device = vk::Device(device);
+        treeRendererInfo.physicalDevice = vk::PhysicalDevice(physicalDevice);
         treeRendererInfo.allocator = allocator;
-        treeRendererInfo.hdrRenderPass = systems_->postProcess().getHDRRenderPass();
-        treeRendererInfo.shadowRenderPass = systems_->shadow().getShadowRenderPass();
+        treeRendererInfo.hdrRenderPass = vk::RenderPass(systems_->postProcess().getHDRRenderPass());
+        treeRendererInfo.shadowRenderPass = vk::RenderPass(systems_->shadow().getShadowRenderPass());
         treeRendererInfo.descriptorPool = &*descriptorManagerPool;
-        treeRendererInfo.extent = systems_->postProcess().getExtent();
+        treeRendererInfo.extent = vk::Extent2D{systems_->postProcess().getExtent().width, systems_->postProcess().getExtent().height};
         treeRendererInfo.shadowMapSize = systems_->shadow().getShadowMapSize();
         treeRendererInfo.resourcePath = resourcePath;
         treeRendererInfo.maxFramesInFlight = MAX_FRAMES_IN_FLIGHT;

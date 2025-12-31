@@ -8,20 +8,19 @@
 #include <cmath>
 
 void RoadRiverVisualization::addToDebugLines(DebugLineSystem& debugLines) {
-    // Only update persistent lines when dirty
+    // Rebuild cache if dirty
     if (dirty_) {
         rebuildCache();
         dirty_ = false;
+    }
 
-        // Set as persistent lines - only uploaded when changed, not every frame
-        if (!cachedLineVertices_.empty()) {
-            debugLines.setPersistentLines(
-                reinterpret_cast<const DebugLineVertex*>(cachedLineVertices_.data()),
-                cachedLineVertices_.size()
-            );
-        } else {
-            debugLines.clearPersistentLines();
-        }
+    // Ensure persistent lines are set if we have cached data
+    // This handles re-enabling after being disabled (persistent lines were cleared)
+    if (!cachedLineVertices_.empty() && debugLines.getPersistentLineCount() == 0) {
+        debugLines.setPersistentLines(
+            reinterpret_cast<const DebugLineVertex*>(cachedLineVertices_.data()),
+            cachedLineVertices_.size()
+        );
     }
     // No per-frame work needed - persistent lines are rendered automatically
 }

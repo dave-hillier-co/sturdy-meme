@@ -41,6 +41,7 @@
 #include "DebugLineSystem.h"
 #include "RoadRiverVisualization.h"
 #include "HiZSystem.h"
+#include "interfaces/IDebugControl.h"
 // Vegetation
 #include "GrassSystem.h"
 #include "RockSystem.h"
@@ -207,7 +208,13 @@ void Renderer::setPlayerState(const glm::vec3& position, const glm::vec3& veloci
 }
 
 void Renderer::updateRoadRiverVisualization() {
-    if (!roadRiverVisEnabled) return;
+    if (!systems_->debugControl().isRoadRiverVisualizationEnabled()) {
+        // Clear persistent lines when disabled
+        if (systems_->debugLine().getPersistentLineCount() > 0) {
+            systems_->debugLine().clearPersistentLines();
+        }
+        return;
+    }
 
     // Add road/river visualization to debug lines
     systems_->roadRiverVis().addToDebugLines(systems_->debugLine());

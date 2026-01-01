@@ -77,6 +77,12 @@ int main(int argc, char* argv[]) {
 
     TerrainImporter importer;
 
+    // Check if cache is already valid - skip processing if so
+    if (importer.isCacheValid(config)) {
+        SDL_Log("Cache is up to date - skipping terrain preprocessing");
+        return 0;
+    }
+
     SDL_Log("Importing terrain heightmap...");
 
     bool success = importer.import(config, [](float progress, const std::string& status) {

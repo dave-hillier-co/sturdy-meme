@@ -11,10 +11,141 @@
 #include <fstream>
 #include <iostream>
 #include <string>
+#include <sstream>
 #include <filesystem>
+#include <cmath>
 
 using json = nlohmann::json;
 namespace fs = std::filesystem;
+
+// Cache validation - checks if outputs are up to date with inputs and config
+struct RoadCacheConfig {
+    std::string heightmapPath;
+    std::string biomemapPath;
+    std::string settlementsPath;
+    std::string outputDir;
+    float terrainSize;
+    float minAltitude;
+    float maxAltitude;
+    uint32_t gridResolution;
+    float simplifyEpsilon;
+    bool useColonization;
+};
+
+bool isRoadCacheValid(const RoadCacheConfig& config) {
+    std::string metaPath = config.outputDir + "/roads.meta";
+    std::ifstream file(metaPath);
+    if (!file.is_open()) {
+        return false;
+    }
+
+    std::string line;
+    uintmax_t cachedHeightmapSize = 0;
+    uintmax_t cachedBiomemapSize = 0;
+    uintmax_t cachedSettlementsSize = 0;
+    float cachedTerrainSize = 0;
+    float cachedMinAltitude = 0;
+    float cachedMaxAltitude = 0;
+    uint32_t cachedGridResolution = 0;
+    float cachedSimplifyEpsilon = 0;
+    bool cachedUseColonization = false;
+
+    while (std::getline(file, line)) {
+        std::istringstream iss(line);
+        std::string key;
+        if (std::getline(iss, key, '=')) {
+            std::string value;
+            std::getline(iss, value);
+
+            if (key == "heightmapSize") cachedHeightmapSize = std::stoull(value);
+            else if (key == "biomemapSize") cachedBiomemapSize = std::stoull(value);
+            else if (key == "settlementsSize") cachedSettlementsSize = std::stoull(value);
+            else if (key == "terrainSize") cachedTerrainSize = std::stof(value);
+            else if (key == "minAltitude") cachedMinAltitude = std::stof(value);
+            else if (key == "maxAltitude") cachedMaxAltitude = std::stof(value);
+            else if (key == "gridResolution") cachedGridResolution = std::stoul(value);
+            else if (key == "simplifyEpsilon") cachedSimplifyEpsilon = std::stof(value);
+            else if (key == "useColonization") cachedUseColonization = (value == "1");
+        }
+    }
+
+    // Check input files exist and sizes match
+    std::error_code ec;
+    if (!fs::exists(config.heightmapPath, ec)) return false;
+    if (!fs::exists(config.biomemapPath, ec)) return false;
+    if (!fs::exists(config.settlementsPath, ec)) return false;
+
+    uintmax_t heightmapSize = fs::file_size(config.heightmapPath, ec);
+    if (ec || heightmapSize != cachedHeightmapSize) {
+        SDL_Log("Roads cache: heightmap file size changed");
+        return false;
+    }
+
+    uintmax_t biomemapSize = fs::file_size(config.biomemapPath, ec);
+    if (ec || biomemapSize != cachedBiomemapSize) {
+        SDL_Log("Roads cache: biome map file size changed");
+        return false;
+    }
+
+    uintmax_t settlementsSize = fs::file_size(config.settlementsPath, ec);
+    if (ec || settlementsSize != cachedSettlementsSize) {
+        SDL_Log("Roads cache: settlements file size changed");
+        return false;
+    }
+
+    // Check config matches
+    if (std::abs(cachedTerrainSize - config.terrainSize) > 0.1f ||
+        std::abs(cachedMinAltitude - config.minAltitude) > 0.01f ||
+        std::abs(cachedMaxAltitude - config.maxAltitude) > 0.01f ||
+        cachedGridResolution != config.gridResolution ||
+        std::abs(cachedSimplifyEpsilon - config.simplifyEpsilon) > 0.01f ||
+        cachedUseColonization != config.useColonization) {
+        SDL_Log("Roads cache: configuration changed");
+        return false;
+    }
+
+    // Check output files exist
+    std::vector<std::string> outputs = {
+        "roads.json", "roads.bin", "roads_debug.png", "roads.svg"
+    };
+    for (const auto& output : outputs) {
+        std::string path = config.outputDir + "/" + output;
+        if (!fs::exists(path, ec)) {
+            SDL_Log("Roads cache: missing output %s", output.c_str());
+            return false;
+        }
+    }
+
+    return true;
+}
+
+bool saveRoadCacheMeta(const RoadCacheConfig& config) {
+    std::string metaPath = config.outputDir + "/roads.meta";
+    std::ofstream file(metaPath);
+    if (!file.is_open()) {
+        return false;
+    }
+
+    std::error_code ec;
+    uintmax_t heightmapSize = fs::file_size(config.heightmapPath, ec);
+    if (ec) return false;
+    uintmax_t biomemapSize = fs::file_size(config.biomemapPath, ec);
+    if (ec) return false;
+    uintmax_t settlementsSize = fs::file_size(config.settlementsPath, ec);
+    if (ec) return false;
+
+    file << "heightmapSize=" << heightmapSize << "\n";
+    file << "biomemapSize=" << biomemapSize << "\n";
+    file << "settlementsSize=" << settlementsSize << "\n";
+    file << "terrainSize=" << config.terrainSize << "\n";
+    file << "minAltitude=" << config.minAltitude << "\n";
+    file << "maxAltitude=" << config.maxAltitude << "\n";
+    file << "gridResolution=" << config.gridResolution << "\n";
+    file << "simplifyEpsilon=" << config.simplifyEpsilon << "\n";
+    file << "useColonization=" << (config.useColonization ? "1" : "0") << "\n";
+
+    return true;
+}
 
 void printUsage(const char* programName) {
     std::cout << "Usage: " << programName << " <heightmap.png> <biome_map.png> <settlements.json> <output_dir> [options]\n"
@@ -338,6 +469,24 @@ int main(int argc, char* argv[]) {
         }
     }
 
+    // Check if cache is valid - skip processing if so
+    RoadCacheConfig cacheConfig;
+    cacheConfig.heightmapPath = heightmapPath;
+    cacheConfig.biomemapPath = biomemapPath;
+    cacheConfig.settlementsPath = settlementsPath;
+    cacheConfig.outputDir = outputDir;
+    cacheConfig.terrainSize = config.terrainSize;
+    cacheConfig.minAltitude = config.minAltitude;
+    cacheConfig.maxAltitude = config.maxAltitude;
+    cacheConfig.gridResolution = config.gridResolution;
+    cacheConfig.simplifyEpsilon = config.simplifyEpsilon;
+    cacheConfig.useColonization = useColonization;
+
+    if (isRoadCacheValid(cacheConfig)) {
+        SDL_Log("Roads cache is up to date - skipping processing");
+        return 0;
+    }
+
     // Create output directory if needed
     fs::create_directories(outputDir);
 
@@ -474,6 +623,10 @@ int main(int argc, char* argv[]) {
 
     // Save roads SVG
     RoadGen::writeRoadsSVG(svgPath, network, settlements);
+
+    // Save cache metadata for future runs
+    cacheConfig.terrainSize = config.terrainSize;  // May have been updated from settlements
+    saveRoadCacheMeta(cacheConfig);
 
     SDL_Log("Road generation complete!");
     SDL_Log("Output files:");

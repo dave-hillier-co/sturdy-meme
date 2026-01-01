@@ -1,18 +1,20 @@
 #pragma once
 
 #include <vulkan/vulkan.h>
+#include <vulkan/vulkan_raii.hpp>
 #include <vk_mem_alloc.h>
 #include <glm/glm.hpp>
 #include <vector>
 #include <string>
 #include <cmath>
 #include <memory>
+#include <optional>
 
 #include "BufferUtils.h"
 #include "DescriptorManager.h"
 #include "InitContext.h"
 #include "Mesh.h"
-#include "VulkanRAII.h"
+#include "VmaResources.h"
 #include "core/ImageBuilder.h"
 
 // GPU-side object data for culling (matches shader struct)
@@ -69,6 +71,7 @@ public:
         std::string shaderPath;
         uint32_t framesInFlight;
         VkFormat depthFormat;       // Format of the source depth buffer
+        const vk::raii::Device* raiiDevice = nullptr;
     };
 
     /**
@@ -120,7 +123,7 @@ public:
 
     // Hi-Z pyramid access (for debugging/visualization and external occlusion culling)
     VkImageView getHiZPyramidView() const { return hiZPyramid.fullView.get(); }
-    VkSampler getHiZSampler() const { return hiZSampler.get(); }
+    VkSampler getHiZSampler() const { return hiZSampler_ ? **hiZSampler_ : VK_NULL_HANDLE; }
     VkImageView getHiZMipView(uint32_t mipLevel) const;
     uint32_t getMipLevelCount() const { return mipLevelCount; }
 
@@ -179,11 +182,12 @@ private:
     std::string shaderPath;
     uint32_t framesInFlight = 0;
     VkFormat depthFormat = VK_FORMAT_D32_SFLOAT;
+    const vk::raii::Device* raiiDevice_ = nullptr;
 
     // Hi-Z pyramid texture (R32_SFLOAT for max depth values)
     static constexpr VkFormat HIZ_FORMAT = VK_FORMAT_R32_SFLOAT;
     MipChainBuilder::Result hiZPyramid;                  // Image with per-mip views
-    ManagedSampler hiZSampler;                           // Sampler for Hi-Z reads
+    std::optional<vk::raii::Sampler> hiZSampler_;        // Sampler for Hi-Z reads
     uint32_t mipLevelCount = 0;
 
     // Source depth buffer reference
@@ -191,15 +195,15 @@ private:
     VkSampler sourceDepthSampler = VK_NULL_HANDLE;
 
     // Pyramid generation pipeline
-    ManagedDescriptorSetLayout pyramidDescSetLayout;
-    ManagedPipelineLayout pyramidPipelineLayout;
-    ManagedPipeline pyramidPipeline;
+    std::optional<vk::raii::DescriptorSetLayout> pyramidDescSetLayout_;
+    std::optional<vk::raii::PipelineLayout> pyramidPipelineLayout_;
+    std::optional<vk::raii::Pipeline> pyramidPipeline_;
     std::vector<VkDescriptorSet> pyramidDescSets;  // One per mip level
 
     // Culling pipeline
-    ManagedDescriptorSetLayout cullingDescSetLayout;
-    ManagedPipelineLayout cullingPipelineLayout;
-    ManagedPipeline cullingPipeline;
+    std::optional<vk::raii::DescriptorSetLayout> cullingDescSetLayout_;
+    std::optional<vk::raii::PipelineLayout> cullingPipelineLayout_;
+    std::optional<vk::raii::Pipeline> cullingPipeline_;
     std::vector<VkDescriptorSet> cullingDescSets;  // Per frame
 
     // Object data buffer (input to culling, RAII-managed)

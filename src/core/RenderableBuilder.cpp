@@ -71,6 +71,11 @@ RenderableBuilder& RenderableBuilder::withAutumnHueShift(float shift) {
     return *this;
 }
 
+RenderableBuilder& RenderableBuilder::withTreeInstanceIndex(int index) {
+    treeInstanceIndex_ = index;
+    return *this;
+}
+
 RenderableBuilder& RenderableBuilder::atPosition(const glm::vec3& position) {
     transform_ = glm::translate(glm::mat4(1.0f), position);
     return *this;
@@ -108,6 +113,7 @@ Renderable RenderableBuilder::build() const {
     renderable.alphaTestThreshold = alphaTestThreshold_;
     renderable.barkType = barkType_;
     renderable.leafType = leafType_;
+    renderable.treeInstanceIndex = treeInstanceIndex_;
     renderable.leafTint = leafTint_;
     renderable.autumnHueShift = autumnHueShift_;
 

@@ -775,9 +775,10 @@ void GrassSystem::updateUniforms(uint32_t frameIndex, const glm::vec3& cameraPos
     culling.cameraPosition = glm::vec4(cameraPos, 1.0f);
     extractFrustumPlanes(viewProj, culling.frustumPlanes);
     culling.maxDrawDistance = GrassConstants::MAX_DRAW_DISTANCE;
-    culling.lodTransitionStart = GrassConstants::LOD_TRANSITION_START;
-    culling.lodTransitionEnd = GrassConstants::LOD_TRANSITION_END;
-    culling.maxLodDropRate = GrassConstants::MAX_LOD_DROP_RATE;
+    // Disable legacy LOD dropping - now handled by tile-based LOD system
+    culling.lodTransitionStart = -1.0f;  // Sentinel: disabled
+    culling.lodTransitionEnd = -1.0f;
+    culling.maxLodDropRate = 0.0f;
     memcpy(uniformBuffers.mappedPointers[frameIndex], &culling, sizeof(CullingUniforms));
 
     // Fill GrassParams (grass-specific parameters)

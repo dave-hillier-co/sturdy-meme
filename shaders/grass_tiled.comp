@@ -275,11 +275,6 @@ void main() {
     // Frustum culling
     if (!isInFrustum(culling.frustumPlanes, worldPos, GRASS_FRUSTUM_MARGIN)) return;
 
-    // LOD blade dropping (existing distance-based dropping)
-    float instanceHash = hash(cell + vec2(500.0, 500.0));
-    if (isLodEnabled() && lodCull(distToCamera, culling.lodTransitionStart, culling.lodTransitionEnd,
-                                   culling.maxLodDropRate, instanceHash)) return;
-
     // LOD transition blade dropping (Ghost of Tsushima style)
     // Drop blades at LOD level boundaries for smooth transitions
     // Uses worldCell to determine if blade survives at next LOD level

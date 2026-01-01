@@ -180,8 +180,24 @@ void main() {
             continue;
         }
 
-        // Allocate output slot with simple atomicAdd
-        uint typeLocalSlot = atomicAdd(drawCmds[leafType].instanceCount, 1);
+        // Allocate output slot using compare-and-swap to prevent overflow
+        // We must NOT increment instanceCount if we can't write to the buffer
+        uint typeLocalSlot;
+        uint expected = drawCmds[leafType].instanceCount;
+        while (true) {
+            // Check if there's room before trying to claim a slot
+            if (expected >= leafP3Params.maxLeavesPerType) {
+                typeLocalSlot = expected; // Will fail the check below
+                break;
+            }
+            uint desired = expected + 1;
+            uint actual = atomicCompSwap(drawCmds[leafType].instanceCount, expected, desired);
+            if (actual == expected) {
+                typeLocalSlot = expected; // Successfully claimed this slot
+                break;
+            }
+            expected = actual; // Retry with updated value
+        }
         if (typeLocalSlot >= leafP3Params.maxLeavesPerType) {
             continue;
         }

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <vulkan/vulkan.hpp>
+#include <vulkan/vulkan_raii.hpp>
 #include <vk_mem_alloc.h>
 #include <glm/glm.hpp>
 #include <vector>
@@ -124,6 +125,7 @@ struct TerrainConfig {
 class TerrainSystem : public ITerrainControl {
 public:
     struct InitInfo {
+        const vk::raii::Device* raiiDevice = nullptr;
         vk::Device device;
         vk::PhysicalDevice physicalDevice;
         VmaAllocator allocator;
@@ -320,6 +322,7 @@ private:
     void querySubgroupCapabilities();
 
     // Vulkan resources
+    const vk::raii::Device* raiiDevice_ = nullptr;
     vk::Device device;
     vk::PhysicalDevice physicalDevice;
     VmaAllocator allocator = VK_NULL_HANDLE;

@@ -22,6 +22,7 @@ class VulkanContext;
  */
 struct InitContext {
     // Core Vulkan handles (from VulkanContext)
+    const vk::raii::Device* raiiDevice = nullptr;
     VkDevice device = VK_NULL_HANDLE;
     VkPhysicalDevice physicalDevice = VK_NULL_HANDLE;
     VmaAllocator allocator = VK_NULL_HANDLE;

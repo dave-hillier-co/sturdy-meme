@@ -1,14 +1,17 @@
 #pragma once
 
 #include <vulkan/vulkan.h>
+#include <vulkan/vulkan_raii.hpp>
 #include <vk_mem_alloc.h>
 #include <string>
-#include "VulkanRAII.h"
+#include <optional>
+#include "VmaResources.h"
 
 // Terrain textures - albedo and grass far LOD textures
 class TerrainTextures {
 public:
     struct InitInfo {
+        const vk::raii::Device* raiiDevice = nullptr;
         VkDevice device;
         VmaAllocator allocator;
         VkQueue graphicsQueue;
@@ -24,11 +27,11 @@ public:
 
     // Terrain albedo texture
     VkImageView getAlbedoView() const { return albedoView; }
-    VkSampler getAlbedoSampler() const { return albedoSampler.get(); }
+    VkSampler getAlbedoSampler() const { return albedoSampler_ ? **albedoSampler_ : VK_NULL_HANDLE; }
 
     // Grass far LOD texture (for terrain blending at distance)
     VkImageView getGrassFarLODView() const { return grassFarLODView; }
-    VkSampler getGrassFarLODSampler() const { return grassFarLODSampler.get(); }
+    VkSampler getGrassFarLODSampler() const { return grassFarLODSampler_ ? **grassFarLODSampler_ : VK_NULL_HANDLE; }
 
 private:
     bool createAlbedoTexture();
@@ -38,6 +41,7 @@ private:
     bool generateMipmaps(VkImage image, uint32_t width, uint32_t height, uint32_t mipLevels);
 
     // Init params
+    const vk::raii::Device* raiiDevice_ = nullptr;
     VkDevice device = VK_NULL_HANDLE;
     VmaAllocator allocator = VK_NULL_HANDLE;
     VkQueue graphicsQueue = VK_NULL_HANDLE;
@@ -48,13 +52,13 @@ private:
     VkImage albedoImage = VK_NULL_HANDLE;
     VmaAllocation albedoAllocation = VK_NULL_HANDLE;
     VkImageView albedoView = VK_NULL_HANDLE;
-    ManagedSampler albedoSampler;
+    std::optional<vk::raii::Sampler> albedoSampler_;
     uint32_t albedoMipLevels = 1;
 
     // Grass far LOD texture
     VkImage grassFarLODImage = VK_NULL_HANDLE;
     VmaAllocation grassFarLODAllocation = VK_NULL_HANDLE;
     VkImageView grassFarLODView = VK_NULL_HANDLE;
-    ManagedSampler grassFarLODSampler;
+    std::optional<vk::raii::Sampler> grassFarLODSampler_;
     uint32_t grassFarLODMipLevels = 1;
 };

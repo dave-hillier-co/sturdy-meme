@@ -1,6 +1,7 @@
 #pragma once
 
 #include <vulkan/vulkan.h>
+#include <vulkan/vulkan_raii.hpp>
 #include <vk_mem_alloc.h>
 #include <glm/glm.hpp>
 #include <array>
@@ -10,7 +11,8 @@
 #include <cstdint>
 #include <memory>
 #include <limits>
-#include "VulkanRAII.h"
+#include <optional>
+#include "VmaResources.h"
 #include "core/FrameBuffered.h"
 
 // Hole definition - geometric primitive for terrain holes (caves/wells)
@@ -75,6 +77,7 @@ struct TileInfoGPU {
 class TerrainTileCache {
 public:
     struct InitInfo {
+        const vk::raii::Device* raiiDevice = nullptr;
         std::string cacheDirectory;
         VkDevice device;
         VmaAllocator allocator;
@@ -119,7 +122,7 @@ public:
     bool isTileLoaded(TileCoord coord, uint32_t lod) const;
 
     // Get sampler for tile textures
-    VkSampler getSampler() const { return sampler.get(); }
+    VkSampler getSampler() const { return sampler_ ? **sampler_ : VK_NULL_HANDLE; }
 
     // Get tile array image view (sampler2DArray)
     VkImageView getTileArrayView() const { return tileArrayView; }
@@ -180,7 +183,7 @@ public:
 
     // Get base heightmap texture (combined from LOD3 tiles) for GPU fallback
     VkImageView getBaseHeightMapView() const { return baseHeightMapView_; }
-    VkSampler getBaseHeightMapSampler() const { return sampler.get(); }
+    VkSampler getBaseHeightMapSampler() const { return sampler_ ? **sampler_ : VK_NULL_HANDLE; }
 
     // Get base heightmap CPU data for fallback height queries
     const std::vector<float>& getBaseHeightMapData() const { return baseHeightMapCpuData_; }
@@ -188,7 +191,7 @@ public:
 
     // Hole mask GPU resource accessors
     VkImageView getHoleMaskView() const { return holeMaskImageView_; }
-    VkSampler getHoleMaskSampler() const { return holeMaskSampler_.get(); }
+    VkSampler getHoleMaskSampler() const { return holeMaskSampler_ ? **holeMaskSampler_ : VK_NULL_HANDLE; }
 
     // Hole management - geometric primitives rasterized on demand
     void addHoleCircle(float centerX, float centerZ, float radius);
@@ -250,11 +253,12 @@ private:
     uint64_t makeTileKey(TileCoord coord, uint32_t lod) const;
 
     // Vulkan resources
+    const vk::raii::Device* raiiDevice_ = nullptr;
     VkDevice device = VK_NULL_HANDLE;
     VmaAllocator allocator = VK_NULL_HANDLE;
     VkQueue graphicsQueue = VK_NULL_HANDLE;
     VkCommandPool commandPool = VK_NULL_HANDLE;
-    ManagedSampler sampler;
+    std::optional<vk::raii::Sampler> sampler_;
 
     // Tile info buffers for shader (RAII-managed, triple-buffered for frames-in-flight)
     TripleBuffered<ManagedBuffer> tileInfoBuffers_;
@@ -318,7 +322,7 @@ private:
     VkImage holeMaskImage_ = VK_NULL_HANDLE;
     VmaAllocation holeMaskAllocation_ = VK_NULL_HANDLE;
     VkImageView holeMaskImageView_ = VK_NULL_HANDLE;
-    ManagedSampler holeMaskSampler_;
+    std::optional<vk::raii::Sampler> holeMaskSampler_;
 
     // Hole mask CPU data and state
     std::vector<uint8_t> holeMaskCpuData_;

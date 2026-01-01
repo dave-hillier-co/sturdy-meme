@@ -27,6 +27,11 @@ TerrainSystem::~TerrainSystem() {
 }
 
 bool TerrainSystem::initInternal(const InitInfo& info, const TerrainConfig& cfg) {
+    if (!info.raiiDevice) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "TerrainSystem: raiiDevice is null");
+        return false;
+    }
+    raiiDevice_ = info.raiiDevice;
     device = info.device;
     physicalDevice = info.physicalDevice;
     allocator = info.allocator;
@@ -47,6 +52,7 @@ bool TerrainSystem::initInternal(const InitInfo& info, const TerrainConfig& cfg)
 
     // Initialize textures with RAII wrapper
     TerrainTextures::InitInfo texturesInfo{};
+    texturesInfo.raiiDevice = raiiDevice_;
     texturesInfo.device = device;
     texturesInfo.allocator = allocator;
     texturesInfo.graphicsQueue = graphicsQueue;
@@ -85,6 +91,7 @@ bool TerrainSystem::initInternal(const InitInfo& info, const TerrainConfig& cfg)
     // Initialize tile cache for LOD-based height streaming (if configured) with RAII wrapper
     if (!config.tileCacheDir.empty()) {
         TerrainTileCache::InitInfo tileCacheInfo{};
+        tileCacheInfo.raiiDevice = raiiDevice_;
         tileCacheInfo.cacheDirectory = config.tileCacheDir;
         tileCacheInfo.device = device;
         tileCacheInfo.allocator = allocator;
@@ -148,6 +155,7 @@ bool TerrainSystem::initInternal(const InitInfo& info, const TerrainConfig& cfg)
 
     // Initialize pipelines subsystem (RAII-managed)
     TerrainPipelines::InitInfo pipelineInfo{};
+    pipelineInfo.raiiDevice = raiiDevice_;
     pipelineInfo.device = device;
     pipelineInfo.physicalDevice = physicalDevice;
     pipelineInfo.renderPass = renderPass;
@@ -169,6 +177,7 @@ bool TerrainSystem::initInternal(const InitInfo& info, const TerrainConfig& cfg)
 
 bool TerrainSystem::initInternal(const InitContext& ctx, const TerrainInitParams& params, const TerrainConfig& cfg) {
     InitInfo info{};
+    info.raiiDevice = ctx.raiiDevice;
     info.device = ctx.device;
     info.physicalDevice = ctx.physicalDevice;
     info.allocator = ctx.allocator;

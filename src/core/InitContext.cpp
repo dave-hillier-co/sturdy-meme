@@ -10,6 +10,7 @@ InitContext InitContext::build(
     std::optional<DescriptorPoolSizes> poolSizes
 ) {
     InitContext ctx{};
+    ctx.raiiDevice = &vulkanContext.getRaiiDevice();
     ctx.device = vulkanContext.getDevice();
     ctx.physicalDevice = vulkanContext.getPhysicalDevice();
     ctx.allocator = vulkanContext.getAllocator();

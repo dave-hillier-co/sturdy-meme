@@ -13,7 +13,8 @@
 #include "BufferUtils.h"
 #include "DescriptorManager.h"
 #include "InitContext.h"
-#include "VulkanRAII.h"
+#include "VmaResources.h"
+#include <vulkan/vulkan_raii.hpp>
 #include "interfaces/IPostProcessState.h"
 
 // Forward declarations
@@ -55,6 +56,7 @@ public:
         VkFormat swapchainFormat;
         std::string shaderPath;
         uint32_t framesInFlight;
+        const vk::raii::Device* raiiDevice = nullptr;
     };
 
     /**
@@ -268,7 +270,8 @@ private:
     VmaAllocation hdrDepthAllocation = VK_NULL_HANDLE;
     VkImageView hdrDepthView = VK_NULL_HANDLE;
 
-    ManagedSampler hdrSampler;
+    const vk::raii::Device* raiiDevice_ = nullptr;
+    std::optional<vk::raii::Sampler> hdrSampler_;
     VkRenderPass hdrRenderPass = VK_NULL_HANDLE;
     VkFramebuffer hdrFramebuffer = VK_NULL_HANDLE;
 

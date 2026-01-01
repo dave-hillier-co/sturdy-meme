@@ -25,6 +25,7 @@ std::unique_ptr<BloomSystem> BloomSystem::create(const InitContext& ctx) {
     info.descriptorPool = ctx.descriptorPool;
     info.extent = ctx.extent;
     info.shaderPath = ctx.shaderPath;
+    info.raiiDevice = ctx.raiiDevice;
     return create(info);
 }
 
@@ -38,6 +39,12 @@ bool BloomSystem::initInternal(const InitInfo& info) {
     descriptorPool = info.descriptorPool;
     extent = info.extent;
     shaderPath = info.shaderPath;
+    raiiDevice_ = info.raiiDevice;
+
+    if (!raiiDevice_) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "BloomSystem requires raiiDevice");
+        return false;
+    }
 
     if (!createRenderPass()) return false;
     if (!createMipChain()) return false;
@@ -54,18 +61,18 @@ void BloomSystem::cleanup() {
 
     destroyMipChain();
 
-    // Reset RAII members before device is destroyed
-    upsamplePipeline_ = ManagedPipeline();
-    upsamplePipelineLayout_ = ManagedPipelineLayout();
-    upsampleDescSetLayout_ = ManagedDescriptorSetLayout();
+    // Reset RAII members (order matters - pipelines before layouts)
+    upsamplePipeline_.reset();
+    upsamplePipelineLayout_.reset();
+    upsampleDescSetLayout_.reset();
 
-    downsamplePipeline_ = ManagedPipeline();
-    downsamplePipelineLayout_ = ManagedPipelineLayout();
-    downsampleDescSetLayout_ = ManagedDescriptorSetLayout();
+    downsamplePipeline_.reset();
+    downsamplePipelineLayout_.reset();
+    downsampleDescSetLayout_.reset();
 
-    sampler_ = ManagedSampler();
-    upsampleRenderPass_ = ManagedRenderPass();
-    downsampleRenderPass_ = ManagedRenderPass();
+    sampler_.reset();
+    upsampleRenderPass_.reset();
+    downsampleRenderPass_.reset();
 
     downsampleDescSets.clear();
     upsampleDescSets.clear();
@@ -126,7 +133,7 @@ bool BloomSystem::createMipChain() {
     // Use downsampleRenderPass - both render passes have compatible attachments
     for (auto& mip : mipChain) {
         auto fbInfo = vk::FramebufferCreateInfo{}
-            .setRenderPass(downsampleRenderPass_.get())
+            .setRenderPass(**downsampleRenderPass_)
             .setAttachmentCount(1)
             .setPAttachments(reinterpret_cast<const vk::ImageView*>(&mip.imageView))
             .setWidth(mip.extent.width)
@@ -180,7 +187,10 @@ bool BloomSystem::createRenderPass() {
             .setDependencyCount(1)
             .setPDependencies(&dependency);
 
-        if (!ManagedRenderPass::create(device, reinterpret_cast<const VkRenderPassCreateInfo&>(renderPassInfo), downsampleRenderPass_)) {
+        try {
+            downsampleRenderPass_.emplace(*raiiDevice_, renderPassInfo);
+        } catch (const vk::SystemError& e) {
+            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create downsample render pass: %s", e.what());
             return false;
         }
     }
@@ -205,7 +215,10 @@ bool BloomSystem::createRenderPass() {
             .setDependencyCount(1)
             .setPDependencies(&dependency);
 
-        if (!ManagedRenderPass::create(device, reinterpret_cast<const VkRenderPassCreateInfo&>(renderPassInfo), upsampleRenderPass_)) {
+        try {
+            upsampleRenderPass_.emplace(*raiiDevice_, renderPassInfo);
+        } catch (const vk::SystemError& e) {
+            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create upsample render pass: %s", e.what());
             return false;
         }
     }
@@ -215,7 +228,8 @@ bool BloomSystem::createRenderPass() {
 
 bool BloomSystem::createSampler() {
     // Use the convenience factory for linear clamp sampler
-    return VulkanResourceFactory::createSamplerLinearClamp(device, sampler_);
+    sampler_ = VulkanResourceFactory::createSamplerLinearClamp(*raiiDevice_);
+    return sampler_.has_value();
 }
 
 bool BloomSystem::createDescriptorSetLayouts() {
@@ -231,11 +245,11 @@ bool BloomSystem::createDescriptorSetLayouts() {
         .setBindingCount(1)
         .setPBindings(&binding);
 
-    if (!ManagedDescriptorSetLayout::create(device, reinterpret_cast<const VkDescriptorSetLayoutCreateInfo&>(layoutInfo), downsampleDescSetLayout_)) {
-        return false;
-    }
-
-    if (!ManagedDescriptorSetLayout::create(device, reinterpret_cast<const VkDescriptorSetLayoutCreateInfo&>(layoutInfo), upsampleDescSetLayout_)) {
+    try {
+        downsampleDescSetLayout_.emplace(*raiiDevice_, layoutInfo);
+        upsampleDescSetLayout_.emplace(*raiiDevice_, layoutInfo);
+    } catch (const vk::SystemError& e) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create descriptor set layouts: %s", e.what());
         return false;
     }
 
@@ -249,14 +263,17 @@ bool BloomSystem::createPipelines() {
         .setOffset(0)
         .setSize(sizeof(DownsamplePushConstants));
 
-    VkDescriptorSetLayout downsampleLayout = downsampleDescSetLayout_.get();
+    vk::DescriptorSetLayout downsampleLayout = **downsampleDescSetLayout_;
     auto downsampleLayoutInfo = vk::PipelineLayoutCreateInfo{}
         .setSetLayoutCount(1)
-        .setPSetLayouts(reinterpret_cast<const vk::DescriptorSetLayout*>(&downsampleLayout))
+        .setPSetLayouts(&downsampleLayout)
         .setPushConstantRangeCount(1)
         .setPPushConstantRanges(&downsamplePushConstantRange);
 
-    if (!ManagedPipelineLayout::create(device, reinterpret_cast<const VkPipelineLayoutCreateInfo&>(downsampleLayoutInfo), downsamplePipelineLayout_)) {
+    try {
+        downsamplePipelineLayout_.emplace(*raiiDevice_, downsampleLayoutInfo);
+    } catch (const vk::SystemError& e) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create downsample pipeline layout: %s", e.what());
         return false;
     }
 
@@ -265,14 +282,17 @@ bool BloomSystem::createPipelines() {
         .setOffset(0)
         .setSize(sizeof(UpsamplePushConstants));
 
-    VkDescriptorSetLayout upsampleLayout = upsampleDescSetLayout_.get();
+    vk::DescriptorSetLayout upsampleLayout = **upsampleDescSetLayout_;
     auto upsampleLayoutInfo = vk::PipelineLayoutCreateInfo{}
         .setSetLayoutCount(1)
-        .setPSetLayouts(reinterpret_cast<const vk::DescriptorSetLayout*>(&upsampleLayout))
+        .setPSetLayouts(&upsampleLayout)
         .setPushConstantRangeCount(1)
         .setPPushConstantRanges(&upsamplePushConstantRange);
 
-    if (!ManagedPipelineLayout::create(device, reinterpret_cast<const VkPipelineLayoutCreateInfo&>(upsampleLayoutInfo), upsamplePipelineLayout_)) {
+    try {
+        upsamplePipelineLayout_.emplace(*raiiDevice_, upsampleLayoutInfo);
+    } catch (const vk::SystemError& e) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create upsample pipeline layout: %s", e.what());
         return false;
     }
 
@@ -283,23 +303,24 @@ bool BloomSystem::createPipelines() {
     bool success = factory
         .applyPreset(GraphicsPipelineFactory::Preset::FullscreenQuad)
         .setShaders(shaderPath + "/postprocess.vert.spv", shaderPath + "/bloom_downsample.frag.spv")
-        .setRenderPass(downsampleRenderPass_.get())
-        .setPipelineLayout(downsamplePipelineLayout_.get())
+        .setRenderPass(**downsampleRenderPass_)
+        .setPipelineLayout(**downsamplePipelineLayout_)
         .setDynamicViewport(true)
         .build(rawPipeline);
 
     if (!success) {
         return false;
     }
-    downsamplePipeline_ = ManagedPipeline::fromRaw(device, rawPipeline);
+    // Adopt the raw pipeline into RAII wrapper
+    downsamplePipeline_.emplace(*raiiDevice_, rawPipeline);
 
     // Create upsample pipeline with additive blending
     rawPipeline = VK_NULL_HANDLE;
     success = factory.reset()
         .applyPreset(GraphicsPipelineFactory::Preset::FullscreenQuad)
         .setShaders(shaderPath + "/postprocess.vert.spv", shaderPath + "/bloom_upsample.frag.spv")
-        .setRenderPass(upsampleRenderPass_.get())
-        .setPipelineLayout(upsamplePipelineLayout_.get())
+        .setRenderPass(**upsampleRenderPass_)
+        .setPipelineLayout(**upsamplePipelineLayout_)
         .setDynamicViewport(true)
         .setBlendMode(GraphicsPipelineFactory::BlendMode::Additive)
         .build(rawPipeline);
@@ -307,14 +328,15 @@ bool BloomSystem::createPipelines() {
     if (!success) {
         return false;
     }
-    upsamplePipeline_ = ManagedPipeline::fromRaw(device, rawPipeline);
+    // Adopt the raw pipeline into RAII wrapper
+    upsamplePipeline_.emplace(*raiiDevice_, rawPipeline);
 
     return true;
 }
 
 bool BloomSystem::createDescriptorSets() {
     // Allocate descriptor sets for downsample (one per mip level) using managed pool
-    downsampleDescSets = descriptorPool->allocate(downsampleDescSetLayout_.get(), static_cast<uint32_t>(mipChain.size()));
+    downsampleDescSets = descriptorPool->allocate(**downsampleDescSetLayout_, static_cast<uint32_t>(mipChain.size()));
     if (downsampleDescSets.size() != mipChain.size()) {
         SDL_Log("BloomSystem: Failed to allocate downsample descriptor sets");
         return false;
@@ -322,7 +344,7 @@ bool BloomSystem::createDescriptorSets() {
 
     // Allocate descriptor sets for upsample (one per mip level except the smallest)
     if (mipChain.size() > 1) {
-        upsampleDescSets = descriptorPool->allocate(upsampleDescSetLayout_.get(), static_cast<uint32_t>(mipChain.size() - 1));
+        upsampleDescSets = descriptorPool->allocate(**upsampleDescSetLayout_, static_cast<uint32_t>(mipChain.size() - 1));
         if (upsampleDescSets.size() != mipChain.size() - 1) {
             SDL_Log("BloomSystem: Failed to allocate upsample descriptor sets");
             return false;
@@ -351,13 +373,13 @@ void BloomSystem::recordBloomPass(VkCommandBuffer cmd, VkImageView hdrInput) {
         // Update descriptor set to sample from previous level
         VkImageView sourceView = (i == 0) ? hdrInput : mipChain[i - 1].imageView;
         DescriptorManager::SetWriter(device, downsampleDescSets[i])
-            .writeImage(0, sourceView, sampler_.get())
+            .writeImage(0, sourceView, **sampler_)
             .update();
 
         // Begin render pass
         vk::Extent2D mipExtent{mipChain[i].extent.width, mipChain[i].extent.height};
         auto renderPassInfo = vk::RenderPassBeginInfo{}
-            .setRenderPass(downsampleRenderPass_.get())
+            .setRenderPass(**downsampleRenderPass_)
             .setFramebuffer(mipChain[i].framebuffer)
             .setRenderArea(vk::Rect2D{{0, 0}, mipExtent});
 
@@ -379,8 +401,8 @@ void BloomSystem::recordBloomPass(VkCommandBuffer cmd, VkImageView hdrInput) {
         vkCmd.setScissor(0, scissor);
 
         // Bind pipeline and descriptor set
-        vkCmd.bindPipeline(vk::PipelineBindPoint::eGraphics, downsamplePipeline_.get());
-        vkCmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, downsamplePipelineLayout_.get(),
+        vkCmd.bindPipeline(vk::PipelineBindPoint::eGraphics, **downsamplePipeline_);
+        vkCmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, **downsamplePipelineLayout_,
                                  0, vk::DescriptorSet(downsampleDescSets[i]), {});
 
         // Push constants - use SOURCE resolution for texel size calculation
@@ -398,7 +420,7 @@ void BloomSystem::recordBloomPass(VkCommandBuffer cmd, VkImageView hdrInput) {
         pushConstants.isFirstPass = (i == 0) ? 1 : 0;
 
         vkCmd.pushConstants<DownsamplePushConstants>(
-            downsamplePipelineLayout_.get(),
+            **downsamplePipelineLayout_,
             vk::ShaderStageFlagBits::eFragment,
             0, pushConstants);
 
@@ -413,7 +435,7 @@ void BloomSystem::recordBloomPass(VkCommandBuffer cmd, VkImageView hdrInput) {
     for (int i = static_cast<int>(mipChain.size()) - 2; i >= 0; --i) {
         // Update descriptor set to sample from smaller mip (i+1)
         DescriptorManager::SetWriter(device, upsampleDescSets[i])
-            .writeImage(0, mipChain[i + 1].imageView, sampler_.get())
+            .writeImage(0, mipChain[i + 1].imageView, **sampler_)
             .update();
 
         // Transition current mip to color attachment for blending
@@ -425,7 +447,7 @@ void BloomSystem::recordBloomPass(VkCommandBuffer cmd, VkImageView hdrInput) {
         // Begin render pass with LOAD operation to preserve downsampled content
         vk::Extent2D mipExtent{mipChain[i].extent.width, mipChain[i].extent.height};
         auto renderPassInfo = vk::RenderPassBeginInfo{}
-            .setRenderPass(upsampleRenderPass_.get())
+            .setRenderPass(**upsampleRenderPass_)
             .setFramebuffer(mipChain[i].framebuffer)
             .setRenderArea(vk::Rect2D{{0, 0}, mipExtent});
 
@@ -447,8 +469,8 @@ void BloomSystem::recordBloomPass(VkCommandBuffer cmd, VkImageView hdrInput) {
         vkCmd.setScissor(0, scissor);
 
         // Bind pipeline and descriptor set
-        vkCmd.bindPipeline(vk::PipelineBindPoint::eGraphics, upsamplePipeline_.get());
-        vkCmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, upsamplePipelineLayout_.get(),
+        vkCmd.bindPipeline(vk::PipelineBindPoint::eGraphics, **upsamplePipeline_);
+        vkCmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, **upsamplePipelineLayout_,
                                  0, vk::DescriptorSet(upsampleDescSets[i]), {});
 
         // Push constants - use SOURCE resolution (the smaller mip being sampled)
@@ -458,7 +480,7 @@ void BloomSystem::recordBloomPass(VkCommandBuffer cmd, VkImageView hdrInput) {
         pushConstants.filterRadius = 1.0f;
 
         vkCmd.pushConstants<UpsamplePushConstants>(
-            upsamplePipelineLayout_.get(),
+            **upsamplePipelineLayout_,
             vk::ShaderStageFlagBits::eFragment,
             0, pushConstants);
 

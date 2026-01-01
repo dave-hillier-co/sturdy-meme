@@ -160,7 +160,12 @@ bool shouldDropForTileFadeIn(vec2 worldCell) {
     }
 
     // Calculate fade-in progress (0 at start, 1 when complete)
-    float fadeIn = clamp(tileAge / GRASS_TILE_FADE_IN_DURATION, 0.0, 1.0);
+    float t = clamp(tileAge / GRASS_TILE_FADE_IN_DURATION, 0.0, 1.0);
+
+    // Use smoothstep for gradual acceleration at start and deceleration at end
+    // Then add a small initial offset (0.05) so ~5% of grass appears on first frame
+    // This prevents the jarring 0% -> X% jump on the first visible frame
+    float fadeIn = smoothstep(0.0, 1.0, t) * 0.95 + 0.05;
 
     // Use position-based hash for smooth staggered appearance
     // Different offset than LOD transition to avoid correlation

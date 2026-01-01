@@ -130,14 +130,24 @@ void main() {
         // Get leaf type
         uint leafType = min(visTree.leafTypeIndex, NUM_LEAF_TYPES - 1);
 
+        // Use hash to deterministically select which leaves get buffer slots.
+        // This prevents flickering from atomic race conditions when near budget limit.
+        // Leaves with hash values above the threshold are dropped consistently.
+        //
+        // The hash was already computed in cullLeaf for LOD dropping.
+        // We reuse it here for budget priority - same hash = same priority each frame.
+        float instanceHash = hashLeafIndex(visTree.originalTreeIndex, i);
+
+        // Reserve some headroom (use 95% of budget) to avoid edge-case racing
+        float budgetFraction = 0.95;
+        if (instanceHash > budgetFraction) {
+            continue;  // Deterministically drop ~5% of leaves to stay under budget
+        }
+
         // Allocate output slot using atomicAdd
-        // The hash-based LOD dropping already ensures deterministic selection.
-        // If we exceed the buffer, we'll hit the safety check below - but with
-        // proper LOD dropping parameters, this should rarely happen.
         uint typeLocalSlot = atomicAdd(drawCmds[leafType].instanceCount, 1);
         if (typeLocalSlot >= leafP3Params.maxLeavesPerType) {
-            // Over budget - this leaf won't be rendered this frame
-            // This is a fallback; proper LOD settings should prevent reaching here
+            // Over budget - shouldn't happen often with the hash-based pre-filter
             continue;
         }
 

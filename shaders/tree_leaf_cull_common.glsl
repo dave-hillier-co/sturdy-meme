@@ -70,10 +70,16 @@ bool cullLeaf(
     // LOD-based leaf dropping using lodBlendFactor (from screen-space error system)
     // lodBlendFactor: 0 = full detail (close/large), 1 = full impostor (far/small)
     // Use stable integer-based hash to ensure same leaves dropped each frame.
-    // Drop rate scales with lodBlendFactor: at 0 drop nothing, at 1 drop 90%
+    //
+    // IMPORTANT: Quantize lodBlendFactor to discrete steps to prevent flickering.
+    // Without quantization, tiny camera movements cause lodBlendFactor to change
+    // slightly each frame, crossing different thresholds and dropping different leaves.
+    // With 10 steps (0.1 increments), leaves only change when crossing step boundaries.
+    float quantizedLOD = floor(lodBlendFactor * 10.0) / 10.0;
+
     float instanceHash = hashLeafIndex(treeIndex, leafIndexInTree);
     float maxDropRate = 0.9;  // Drop up to 90% of leaves as we approach impostor
-    float dropThreshold = lodBlendFactor * maxDropRate;
+    float dropThreshold = quantizedLOD * maxDropRate;
     if (instanceHash < dropThreshold) {
         return true;
     }

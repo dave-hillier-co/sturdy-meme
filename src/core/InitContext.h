@@ -26,6 +26,7 @@ struct InitContext {
     VkDevice device = VK_NULL_HANDLE;
     VkPhysicalDevice physicalDevice = VK_NULL_HANDLE;
     VmaAllocator allocator = VK_NULL_HANDLE;
+    const vk::raii::Device* raiiDevice = nullptr;
 
     // vulkan-hpp RAII device for creating vk::raii::* objects
     const vk::raii::Device* raiiDevice = nullptr;

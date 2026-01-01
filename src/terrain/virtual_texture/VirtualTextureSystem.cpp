@@ -5,13 +5,14 @@
 
 namespace VirtualTexture {
 
-bool VirtualTextureSystem::init(VkDevice device, VmaAllocator allocator,
-                                 VkCommandPool commandPool, VkQueue queue,
-                                 const std::string& tilePath,
-                                 const VirtualTextureConfig& cfg,
-                                 uint32_t framesInFlight) {
-    config = cfg;
-    framesInFlight_ = framesInFlight;
+bool VirtualTextureSystem::init(const InitInfo& info) {
+    if (!info.raiiDevice) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "VirtualTextureSystem::init requires raiiDevice");
+        return false;
+    }
+
+    config = info.config;
+    framesInFlight_ = info.framesInFlight;
 
     SDL_Log("Initializing VirtualTextureSystem...");
     SDL_Log("  Virtual size: %u px", config.virtualSizePixels);
@@ -21,9 +22,19 @@ bool VirtualTextureSystem::init(VkDevice device, VmaAllocator allocator,
     SDL_Log("  Frames in flight: %u", framesInFlight_);
 
     // Initialize cache with RAII wrapper
+    VirtualTextureCache::InitInfo cacheInfo;
+    cacheInfo.raiiDevice = info.raiiDevice;
+    cacheInfo.device = info.device;
+    cacheInfo.allocator = info.allocator;
+    cacheInfo.commandPool = info.commandPool;
+    cacheInfo.queue = info.queue;
+    cacheInfo.config = config;
+    cacheInfo.framesInFlight = framesInFlight_;
+    cacheInfo.useCompression = false;
+
     cache = RAIIAdapter<VirtualTextureCache>::create(
-        [&](auto& c) { return c.init(device, allocator, commandPool, queue, config, framesInFlight_); },
-        [device, allocator](auto& c) { c.destroy(device, allocator); }
+        [&](auto& c) { return c.init(cacheInfo); },
+        [device = info.device, allocator = info.allocator](auto& c) { c.destroy(device, allocator); }
     );
     if (!cache) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to initialize VT cache");
@@ -31,21 +42,30 @@ bool VirtualTextureSystem::init(VkDevice device, VmaAllocator allocator,
     }
 
     // Initialize page table
-    pageTable = VirtualTexturePageTable::create(device, allocator, commandPool, queue, config, framesInFlight_);
+    VirtualTexturePageTable::InitInfo ptInfo;
+    ptInfo.raiiDevice = info.raiiDevice;
+    ptInfo.device = info.device;
+    ptInfo.allocator = info.allocator;
+    ptInfo.commandPool = info.commandPool;
+    ptInfo.queue = info.queue;
+    ptInfo.config = config;
+    ptInfo.framesInFlight = framesInFlight_;
+
+    pageTable = VirtualTexturePageTable::create(ptInfo);
     if (!pageTable) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to initialize VT page table");
         return false;
     }
 
     // Initialize feedback (use framesInFlight for buffering)
-    feedback = VirtualTextureFeedback::create(device, allocator, 4096, framesInFlight_);
+    feedback = VirtualTextureFeedback::create(info.device, info.allocator, 4096, framesInFlight_);
     if (!feedback) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to initialize VT feedback");
         return false;
     }
 
     // Initialize tile loader
-    tileLoader = VirtualTextureTileLoader::create(tilePath, 2);
+    tileLoader = VirtualTextureTileLoader::create(info.tilePath, 2);
     if (!tileLoader) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to initialize VT tile loader");
         return false;

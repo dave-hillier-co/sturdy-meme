@@ -684,6 +684,14 @@ void TreeLeafCulling::recordCulling(VkCommandBuffer cmd, uint32_t frameIndex,
                 else if (renderable.leafType == "aspen") leafTypeIdx = LEAF_TYPE_ASPEN;
                 else if (renderable.leafType == "pine") leafTypeIdx = LEAF_TYPE_PINE;
 
+                static bool loggedOnce = false;
+                if (!loggedOnce && numTrees < 10) {
+                    SDL_Log("TreeLeafCulling: Tree %u: leafType='%s' -> leafTypeIdx=%u, firstInst=%u, count=%u",
+                            numTrees, renderable.leafType.c_str(), leafTypeIdx,
+                            drawInfo.firstInstance, drawInfo.instanceCount);
+                    if (numTrees == 9) loggedOnce = true;
+                }
+
                 TreeCullData treeData{};
                 treeData.treeModel = renderable.transform;
                 treeData.inputFirstInstance = drawInfo.firstInstance;
@@ -725,6 +733,7 @@ void TreeLeafCulling::recordCulling(VkCommandBuffer cmd, uint32_t frameIndex,
         sortedTreeData[i].treeIndex = static_cast<uint32_t>(i);  // Update treeIndex to match new position
         sortedRenderData[i] = treeRenderDataList[sortIndices[i]];
     }
+
     treeDataList = std::move(sortedTreeData);
     treeRenderDataList = std::move(sortedRenderData);
 

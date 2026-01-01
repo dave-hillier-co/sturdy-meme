@@ -450,8 +450,8 @@ void TreeRenderer::updateCulledLeafDescriptorSet(
     vk::ImageView leafAlbedo,
     vk::Sampler leafSampler) {
 
-    // Skip if culling not available
-    if (!leafCulling_ || leafCulling_->getOutputBuffer(frameIndex) == VK_NULL_HANDLE) {
+    // Skip if leaf culling system not available
+    if (!leafCulling_) {
         return;
     }
 
@@ -465,6 +465,13 @@ void TreeRenderer::updateCulledLeafDescriptorSet(
         culledLeafDescriptorSets_[frameIndex][leafType] = vk::DescriptorSet(sets[0]);
     }
 
+    // Only write buffers if they're valid (they're created lazily in recordCulling)
+    VkBuffer outputBuffer = leafCulling_->getOutputBuffer(frameIndex);
+    VkBuffer treeDataBuffer = leafCulling_->getTreeRenderDataBuffer(frameIndex);
+    if (outputBuffer == VK_NULL_HANDLE || treeDataBuffer == VK_NULL_HANDLE) {
+        return;
+    }
+
     vk::DescriptorSet dstSet = culledLeafDescriptorSets_[frameIndex][leafType];
 
     // IMPORTANT: Must update SSBO bindings every frame because getOutputBuffer(frameIndex)
@@ -476,8 +483,8 @@ void TreeRenderer::updateCulledLeafDescriptorSet(
           .writeImage(Bindings::TREE_GFX_SHADOW_MAP, shadowMapView, shadowSampler)
           .writeBuffer(Bindings::TREE_GFX_WIND_UBO, windBuffer, 0, VK_WHOLE_SIZE)
           .writeImage(Bindings::TREE_GFX_LEAF_ALBEDO, leafAlbedo, leafSampler)
-          .writeBuffer(Bindings::TREE_GFX_LEAF_INSTANCES, leafCulling_->getOutputBuffer(frameIndex), 0, VK_WHOLE_SIZE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
-          .writeBuffer(Bindings::TREE_GFX_TREE_DATA, leafCulling_->getTreeRenderDataBuffer(frameIndex), 0, VK_WHOLE_SIZE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+          .writeBuffer(Bindings::TREE_GFX_LEAF_INSTANCES, outputBuffer, 0, VK_WHOLE_SIZE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+          .writeBuffer(Bindings::TREE_GFX_TREE_DATA, treeDataBuffer, 0, VK_WHOLE_SIZE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
           .update();
 }
 
@@ -610,10 +617,11 @@ void TreeRenderer::render(vk::CommandBuffer cmd, uint32_t frameIndex, float time
     vkCmd.bindPipeline(vk::PipelineBindPoint::eGraphics, branchPipeline_.get());
 
     std::string lastBarkType;
-    uint32_t branchTreeIndex = 0;
     for (const auto& renderable : branchRenderables) {
-        if (lodSystem && !lodSystem->shouldRenderFullGeometry(branchTreeIndex)) {
-            branchTreeIndex++;
+        // Use treeInstanceIndex for accurate LOD lookup (handles index misalignment if trees are skipped)
+        uint32_t lodIndex = (renderable.treeInstanceIndex >= 0) ?
+                            static_cast<uint32_t>(renderable.treeInstanceIndex) : 0;
+        if (lodSystem && !lodSystem->shouldRenderFullGeometry(lodIndex)) {
             continue;
         }
 
@@ -627,7 +635,7 @@ void TreeRenderer::render(vk::CommandBuffer cmd, uint32_t frameIndex, float time
         TreeBranchPushConstants push{};
         push.model = renderable.transform;
         push.time = time;
-        push.lodBlendFactor = lodSystem ? lodSystem->getBlendFactor(branchTreeIndex) : 0.0f;
+        push.lodBlendFactor = lodSystem ? lodSystem->getBlendFactor(lodIndex) : 0.0f;
         push.barkTint = glm::vec3(1.0f);
         push.roughnessScale = renderable.roughness;
 
@@ -643,7 +651,6 @@ void TreeRenderer::render(vk::CommandBuffer cmd, uint32_t frameIndex, float time
             vkCmd.bindIndexBuffer(renderable.mesh->getIndexBuffer(), 0, vk::IndexType::eUint32);
             vkCmd.drawIndexed(renderable.mesh->getIndexCount(), 1, 0, 0, 0);
         }
-        branchTreeIndex++;
     }
 
     // Render leaves with instancing
@@ -773,10 +780,11 @@ void TreeRenderer::renderShadows(vk::CommandBuffer cmd, uint32_t frameIndex,
             vkCmd.bindPipeline(vk::PipelineBindPoint::eGraphics, branchShadowPipeline_.get());
 
             std::string lastBarkType;
-            uint32_t branchTreeIndex = 0;
             for (const auto& renderable : branchRenderables) {
-                if (lodSystem && !lodSystem->shouldRenderBranchShadow(branchTreeIndex, cascade)) {
-                    branchTreeIndex++;
+                // Use treeInstanceIndex for accurate LOD lookup
+                uint32_t lodIndex = (renderable.treeInstanceIndex >= 0) ?
+                                    static_cast<uint32_t>(renderable.treeInstanceIndex) : 0;
+                if (lodSystem && !lodSystem->shouldRenderBranchShadow(lodIndex, cascade)) {
                     continue;
                 }
 
@@ -804,7 +812,6 @@ void TreeRenderer::renderShadows(vk::CommandBuffer cmd, uint32_t frameIndex,
                     vkCmd.bindIndexBuffer(renderable.mesh->getIndexBuffer(), 0, vk::IndexType::eUint32);
                     vkCmd.drawIndexed(renderable.mesh->getIndexCount(), 1, 0, 0, 0);
                 }
-                branchTreeIndex++;
             }
         }
     }

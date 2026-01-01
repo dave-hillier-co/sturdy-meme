@@ -504,6 +504,7 @@ void TreeSystem::createSceneObjects() {
                 .withRoughness(0.7f)
                 .withMetallic(0.0f)
                 .withBarkType(opts.bark.type)
+                .withTreeInstanceIndex(static_cast<int>(treeIdx))
                 .build();
 
             branchRenderables_.push_back(branchRenderable);
@@ -523,6 +524,7 @@ void TreeSystem::createSceneObjects() {
                 .withLeafType(opts.leaves.type)
                 .withLeafTint(opts.leaves.tint)
                 .withAutumnHueShift(opts.leaves.autumnHueShift)
+                .withTreeInstanceIndex(static_cast<int>(treeIdx))
                 .build();
 
             // Store the mesh index so the renderer can look up leaf draw info

@@ -5,6 +5,7 @@
 #include "RoadPathfinder.h"
 #include "SpaceColonization.h"
 #include "RoadSVG.h"
+#include "StreetGenerator.h"
 #include <SDL3/SDL_log.h>
 #include <nlohmann/json.hpp>
 #include <lodepng.h>
@@ -165,6 +166,8 @@ void printUsage(const char* programName) {
               << "  --grid-resolution <value>   Pathfinding grid size (default: 512)\n"
               << "  --simplify-epsilon <value>  Path simplification threshold in meters (default: 10.0)\n"
               << "  --use-colonization          Use space colonization for network topology\n"
+              << "  --generate-streets          Generate intra-settlement street networks\n"
+              << "  --settlement-id <id>        Generate streets for specific settlement only\n"
               << "  --help                      Show this help message\n"
               << "\n"
               << "Output files:\n"
@@ -173,8 +176,14 @@ void printUsage(const char* programName) {
               << "  roads.svg           SVG visualization of roads\n"
               << "  network.svg         SVG of network topology (if --use-colonization)\n"
               << "\n"
+              << "Street generation output (per settlement):\n"
+              << "  settlement_<id>/streets.geojson  Street network\n"
+              << "  settlement_<id>/lots.geojson     Building lots\n"
+              << "  settlement_<id>/streets.svg      Debug visualization\n"
+              << "\n"
               << "Example:\n"
-              << "  " << programName << " terrain.png biome_map.png settlements.json ./generated\n";
+              << "  " << programName << " terrain.png biome_map.png settlements.json ./generated\n"
+              << "  " << programName << " terrain.png biome_map.png settlements.json ./generated --generate-streets\n";
 }
 
 bool loadSettlements(const std::string& path, std::vector<Settlement>& settlements, float& terrainSize) {
@@ -405,6 +414,8 @@ int main(int argc, char* argv[]) {
     config.simplifyEpsilon = 10.0f;
 
     bool useColonization = false;
+    bool generateStreets = false;
+    int32_t specificSettlementId = -1;  // -1 means all settlements
 
     // Parse optional arguments
     for (int i = 5; i < argc; i++) {
@@ -422,6 +433,11 @@ int main(int argc, char* argv[]) {
             config.simplifyEpsilon = std::stof(argv[++i]);
         } else if (arg == "--use-colonization") {
             useColonization = true;
+        } else if (arg == "--generate-streets") {
+            generateStreets = true;
+        } else if (arg == "--settlement-id" && i + 1 < argc) {
+            specificSettlementId = std::stoi(argv[++i]);
+            generateStreets = true;  // Implies street generation
         } else {
             std::cerr << "Unknown option: " << arg << "\n";
             printUsage(argv[0]);
@@ -590,6 +606,97 @@ int main(int argc, char* argv[]) {
     SDL_Log("  %s", svgPath.c_str());
     if (useColonization) {
         SDL_Log("  %s/network.svg", outputDir.c_str());
+    }
+
+    // Generate intra-settlement street networks if requested
+    if (generateStreets) {
+        SDL_Log("\n");
+        SDL_Log("Street Network Generation");
+        SDL_Log("=========================");
+
+        // Get terrain data from pathfinder
+        RoadGen::TerrainData terrainData;
+        terrainData.heights = pathfinder.getTerrainData().heights;
+        terrainData.width = pathfinder.getTerrainData().width;
+        terrainData.height = pathfinder.getTerrainData().height;
+        terrainData.biomeZones = pathfinder.getTerrainData().biomeZones;
+        terrainData.biomeWidth = pathfinder.getTerrainData().biomeWidth;
+        terrainData.biomeHeight = pathfinder.getTerrainData().biomeHeight;
+
+        RoadGen::StreetGenerator streetGen;
+        streetGen.init(terrainData, config.terrainSize);
+
+        RoadGen::StreetGenConfig streetConfig;
+        // Use default config values
+
+        int streetsGenerated = 0;
+        int streetsFailed = 0;
+
+        for (const auto& settlement : settlements) {
+            // Skip if specific settlement requested and this isn't it
+            if (specificSettlementId >= 0 &&
+                settlement.id != static_cast<uint32_t>(specificSettlementId)) {
+                continue;
+            }
+
+            // Skip hamlets (too small for street networks)
+            if (settlement.type == SettlementType::Hamlet) {
+                SDL_Log("Skipping hamlet %u (too small for street network)", settlement.id);
+                continue;
+            }
+
+            SDL_Log("Generating streets for %s %u at (%.0f, %.0f)...",
+                    settlement.type == SettlementType::Town ? "town" :
+                    settlement.type == SettlementType::Village ? "village" :
+                    settlement.type == SettlementType::FishingVillage ? "fishing village" : "settlement",
+                    settlement.id,
+                    settlement.position.x, settlement.position.y);
+
+            // Use seed based on settlement ID for reproducibility
+            streetConfig.seed = 12345 + settlement.id * 1000;
+
+            RoadGen::StreetNetwork streetNetwork;
+
+            bool streetSuccess = streetGen.generate(
+                settlement.position,
+                settlement.radius,
+                settlement.type,
+                network,
+                settlement.id,
+                streetConfig,
+                streetNetwork,
+                [&settlement](float progress, const std::string& status) {
+                    SDL_Log("  [%u] [%3.0f%%] %s", settlement.id, progress * 100.0f, status.c_str());
+                }
+            );
+
+            if (streetSuccess) {
+                // Create output directory for this settlement
+                std::string settlementDir = outputDir + "/settlement_" + std::to_string(settlement.id);
+                fs::create_directories(settlementDir);
+
+                // Save outputs
+                std::string streetsPath = settlementDir + "/streets.geojson";
+                std::string lotsPath = settlementDir + "/lots.geojson";
+                std::string streetsSvgPath = settlementDir + "/streets.svg";
+
+                RoadGen::saveStreetNetworkGeoJson(streetsPath, streetNetwork);
+                RoadGen::saveLotsGeoJson(lotsPath, streetNetwork);
+                RoadGen::saveStreetsSVG(streetsSvgPath, streetNetwork);
+
+                SDL_Log("  Generated %zu streets, %zu lots for settlement %u",
+                        streetNetwork.segments.size(), streetNetwork.lots.size(), settlement.id);
+
+                streetsGenerated++;
+            } else {
+                SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
+                    "  Failed to generate streets for settlement %u", settlement.id);
+                streetsFailed++;
+            }
+        }
+
+        SDL_Log("\nStreet generation complete: %d succeeded, %d failed",
+                streetsGenerated, streetsFailed);
     }
 
     return 0;

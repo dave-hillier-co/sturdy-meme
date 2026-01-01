@@ -182,6 +182,7 @@ add_executable(road_generator
     road_generator/RoadPathfinder.cpp
     road_generator/SpaceColonization.cpp
     road_generator/RoadSVG.cpp
+    road_generator/StreetGenerator.cpp
 )
 
 target_include_directories(road_generator PRIVATE

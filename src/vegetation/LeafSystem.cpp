@@ -50,7 +50,7 @@ bool LeafSystem::initInternal(const InitInfo& info) {
     hooks.createDescriptorSets = [this]() { return createDescriptorSets(); };
     hooks.destroyBuffers = [this](VmaAllocator allocator) { destroyBuffers(allocator); };
 
-    particleSystem = ParticleSystem::create(info, hooks, info.framesInFlight);
+    particleSystem = ParticleSystem::create(info, hooks, info.framesInFlight, &initializingPS);
 
     return particleSystem != nullptr;
 }

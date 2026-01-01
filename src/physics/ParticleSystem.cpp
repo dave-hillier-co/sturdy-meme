@@ -2,8 +2,13 @@
 #include <SDL3/SDL.h>
 #include <utility>
 
-std::unique_ptr<ParticleSystem> ParticleSystem::create(const InitInfo& info, const Hooks& hooks, uint32_t bufferSets) {
+std::unique_ptr<ParticleSystem> ParticleSystem::create(const InitInfo& info, const Hooks& hooks,
+                                                        uint32_t bufferSets, ParticleSystem** outPtr) {
     std::unique_ptr<ParticleSystem> system(new ParticleSystem());
+    // Set outPtr before init so hooks can reference the system
+    if (outPtr) {
+        *outPtr = system.get();
+    }
     if (!system->initInternal(info, hooks, bufferSets)) {
         return nullptr;
     }

@@ -13,7 +13,11 @@ public:
     using Hooks = SystemLifecycleHelper::Hooks;
 
     // Factory method - returns nullptr on failure
-    static std::unique_ptr<ParticleSystem> create(const InitInfo& info, const Hooks& hooks, uint32_t bufferSets = 2);
+    // The optional outPtr parameter allows callers to get a pointer to the system
+    // before initialization completes (needed for hooks that reference the system)
+    static std::unique_ptr<ParticleSystem> create(const InitInfo& info, const Hooks& hooks,
+                                                   uint32_t bufferSets = 2,
+                                                   ParticleSystem** outPtr = nullptr);
 
     ~ParticleSystem();
 

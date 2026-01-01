@@ -840,10 +840,14 @@ void TreeLeafCulling::recordCulling(VkCommandBuffer cmd, uint32_t frameIndex,
                                sizeof(TreeFilterParams), &filterParams);
         }
 
+        // Barrier for all buffer updates (uniforms AND storage buffers).
+        // CRITICAL: Must include SHADER_READ_BIT | SHADER_WRITE_BIT because we reset
+        // storage buffers (visibleCellBuffers_, visibleTreeBuffers_, etc.) via fillBuffer/updateBuffer.
+        // Without this, compute shaders may read stale data before the reset completes.
         VkMemoryBarrier cellUniformBarrier{};
         cellUniformBarrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
         cellUniformBarrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-        cellUniformBarrier.dstAccessMask = VK_ACCESS_UNIFORM_READ_BIT;
+        cellUniformBarrier.dstAccessMask = VK_ACCESS_UNIFORM_READ_BIT | VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
         vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
                              0, 1, &cellUniformBarrier, 0, nullptr, 0, nullptr);
 

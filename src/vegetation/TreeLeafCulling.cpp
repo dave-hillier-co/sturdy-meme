@@ -6,6 +6,8 @@
 #include "UBOs.h"
 #include <SDL3/SDL_log.h>
 #include <vulkan/vulkan.hpp>
+#include <algorithm>
+#include <numeric>
 
 std::unique_ptr<TreeLeafCulling> TreeLeafCulling::create(const InitInfo& info) {
     auto culling = std::unique_ptr<TreeLeafCulling>(new TreeLeafCulling());
@@ -312,9 +314,10 @@ bool TreeLeafCulling::createCellCullBuffers() {
 
     // Update descriptor sets with buffer bindings using SetWriter
     // Each frame's descriptor set uses that frame's buffers for proper triple-buffering
+    // Spatial index buffers are also triple-buffered to prevent race conditions
     for (uint32_t f = 0; f < maxFramesInFlight_; ++f) {
         DescriptorManager::SetWriter writer(device_, cellCullDescriptorSets_[f]);
-        writer.writeBuffer(Bindings::TREE_CELL_CULL_CELLS, spatialIndex_->getCellBuffer(), 0, VK_WHOLE_SIZE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+        writer.writeBuffer(Bindings::TREE_CELL_CULL_CELLS, spatialIndex_->getCellBuffer(f), 0, VK_WHOLE_SIZE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
               .writeBuffer(Bindings::TREE_CELL_CULL_VISIBLE, visibleCellBuffers_.getVk(f), 0, VK_WHOLE_SIZE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
               .writeBuffer(Bindings::TREE_CELL_CULL_INDIRECT, cellCullIndirectBuffers_.getVk(f), 0, VK_WHOLE_SIZE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
               .writeBuffer(Bindings::TREE_CELL_CULL_CULLING, cellCullUniformBuffers_.buffers[f], 0, sizeof(CullingUniforms), VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER)
@@ -385,6 +388,7 @@ bool TreeLeafCulling::createTreeFilterBuffers(uint32_t maxTrees) {
         return false;
     }
 
+    maxVisibleTrees_ = maxTrees;
     visibleTreeBufferSize_ = sizeof(uint32_t) + maxTrees * sizeof(VisibleTreeData);
 
     // Triple-buffered visible tree buffer to prevent race conditions between frames
@@ -433,12 +437,13 @@ bool TreeLeafCulling::createTreeFilterBuffers(uint32_t maxTrees) {
 
     // Update descriptor sets with buffer bindings using SetWriter
     // Each frame's descriptor set uses that frame's buffers for proper triple-buffering
+    // Spatial index buffers are also triple-buffered to prevent race conditions
     for (uint32_t f = 0; f < maxFramesInFlight_; ++f) {
         DescriptorManager::SetWriter writer(device_, treeFilterDescriptorSets_[f]);
         writer.writeBuffer(Bindings::TREE_FILTER_ALL_TREES, treeDataBuffers_.getVk(f), 0, VK_WHOLE_SIZE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
               .writeBuffer(Bindings::TREE_FILTER_VISIBLE_CELLS, visibleCellBuffers_.getVk(f), 0, VK_WHOLE_SIZE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
-              .writeBuffer(Bindings::TREE_FILTER_CELL_DATA, spatialIndex_->getCellBuffer(), 0, VK_WHOLE_SIZE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
-              .writeBuffer(Bindings::TREE_FILTER_SORTED_TREES, spatialIndex_->getSortedTreeBuffer(), 0, VK_WHOLE_SIZE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+              .writeBuffer(Bindings::TREE_FILTER_CELL_DATA, spatialIndex_->getCellBuffer(f), 0, VK_WHOLE_SIZE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+              .writeBuffer(Bindings::TREE_FILTER_SORTED_TREES, spatialIndex_->getSortedTreeBuffer(f), 0, VK_WHOLE_SIZE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
               .writeBuffer(Bindings::TREE_FILTER_VISIBLE_TREES, visibleTreeBuffers_.getVk(f), 0, VK_WHOLE_SIZE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
               .writeBuffer(Bindings::TREE_FILTER_INDIRECT, leafCullIndirectDispatchBuffers_.getVk(f), 0, VK_WHOLE_SIZE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
               .writeBuffer(Bindings::TREE_FILTER_CULLING, treeFilterUniformBuffers_.buffers[f], 0, sizeof(CullingUniforms), VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER)
@@ -539,6 +544,7 @@ void TreeLeafCulling::updateSpatialIndex(const TreeSystem& treeSystem) {
         indexInfo.allocator = allocator_;
         indexInfo.cellSize = 64.0f;
         indexInfo.worldSize = terrainSize_;
+        indexInfo.maxFramesInFlight = maxFramesInFlight_;
 
         spatialIndex_ = TreeSpatialIndex::create(indexInfo);
         if (!spatialIndex_) {
@@ -579,11 +585,37 @@ void TreeLeafCulling::updateSpatialIndex(const TreeSystem& treeSystem) {
 
     if (visibleCellBuffers_.empty() && cellCullPipeline_.get() != VK_NULL_HANDLE) {
         createCellCullBuffers();
+    } else if (!cellCullDescriptorSets_.empty()) {
+        // Spatial index buffers were recreated - update descriptor sets with new buffer handles
+        // This is necessary because uploadToGPU() destroys and recreates all buffers
+        for (uint32_t f = 0; f < maxFramesInFlight_; ++f) {
+            DescriptorManager::SetWriter writer(device_, cellCullDescriptorSets_[f]);
+            writer.writeBuffer(Bindings::TREE_CELL_CULL_CELLS, spatialIndex_->getCellBuffer(f), 0, VK_WHOLE_SIZE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+                  .update();
+        }
     }
 
-    if (visibleTreeBuffers_.empty() && treeFilterPipeline_.get() != VK_NULL_HANDLE &&
+    uint32_t requiredTreeCapacity = static_cast<uint32_t>(leafRenderables.size());
+    bool needsTreeFilterBuffers = visibleTreeBuffers_.empty() ||
+                                  requiredTreeCapacity > maxVisibleTrees_;
+
+    if (needsTreeFilterBuffers && treeFilterPipeline_.get() != VK_NULL_HANDLE &&
         !visibleCellBuffers_.empty()) {
-        createTreeFilterBuffers(static_cast<uint32_t>(leafRenderables.size()));
+        // Need to wait for GPU before destroying old buffers
+        if (!visibleTreeBuffers_.empty()) {
+            vkDeviceWaitIdle(device_);
+            SDL_Log("TreeLeafCulling: Resizing visible tree buffer from %u to %u trees",
+                    maxVisibleTrees_, requiredTreeCapacity);
+        }
+        createTreeFilterBuffers(requiredTreeCapacity);
+    } else if (!treeFilterDescriptorSets_.empty()) {
+        // Spatial index buffers were recreated - update descriptor sets with new buffer handles
+        for (uint32_t f = 0; f < maxFramesInFlight_; ++f) {
+            DescriptorManager::SetWriter writer(device_, treeFilterDescriptorSets_[f]);
+            writer.writeBuffer(Bindings::TREE_FILTER_CELL_DATA, spatialIndex_->getCellBuffer(f), 0, VK_WHOLE_SIZE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+                  .writeBuffer(Bindings::TREE_FILTER_SORTED_TREES, spatialIndex_->getSortedTreeBuffer(f), 0, VK_WHOLE_SIZE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+                  .update();
+        }
     }
 
     if (twoPhaseLeafCullDescriptorSets_.empty() && twoPhaseLeafCullPipeline_.get() != VK_NULL_HANDLE &&
@@ -675,6 +707,27 @@ void TreeLeafCulling::recordCulling(VkCommandBuffer cmd, uint32_t frameIndex,
     }
     if (numTrees == 0 || totalLeafInstances == 0) return;
 
+    // CRITICAL: Sort tree data by inputFirstInstance for binary search in shader.
+    // The shader's binary search assumes trees are sorted by their leaf instance range.
+    // If trees were added in non-sequential order, the search fails and defaults to
+    // tree 0 (usually oak), causing all leaves to render as oak.
+    std::vector<size_t> sortIndices(treeDataList.size());
+    std::iota(sortIndices.begin(), sortIndices.end(), 0);
+    std::sort(sortIndices.begin(), sortIndices.end(), [&](size_t a, size_t b) {
+        return treeDataList[a].inputFirstInstance < treeDataList[b].inputFirstInstance;
+    });
+
+    // Reorder both lists according to sorted indices
+    std::vector<TreeCullData> sortedTreeData(treeDataList.size());
+    std::vector<TreeRenderDataGPU> sortedRenderData(treeRenderDataList.size());
+    for (size_t i = 0; i < sortIndices.size(); ++i) {
+        sortedTreeData[i] = treeDataList[sortIndices[i]];
+        sortedTreeData[i].treeIndex = static_cast<uint32_t>(i);  // Update treeIndex to match new position
+        sortedRenderData[i] = treeRenderDataList[sortIndices[i]];
+    }
+    treeDataList = std::move(sortedTreeData);
+    treeRenderDataList = std::move(sortedRenderData);
+
     // Lazy initialization of cull buffers
     if (cullOutputBuffers_.empty()) {
         if (!createLeafCullBuffers(totalLeafInstances, numTrees)) {
@@ -682,6 +735,46 @@ void TreeLeafCulling::recordCulling(VkCommandBuffer cmd, uint32_t frameIndex,
             return;
         }
         updateCullDescriptorSets(treeSystem);
+    }
+
+    // CRITICAL: Check if tree count exceeds buffer capacity and resize if needed.
+    // Without this check, vkCmdUpdateBuffer writes out of bounds when trees are added,
+    // corrupting GPU memory and causing leaf type data to be misread (flickering oak leaves).
+    if (numTrees > numTreesForIndirect_) {
+        SDL_Log("TreeLeafCulling: Tree count increased from %u to %u, resizing buffers",
+                numTreesForIndirect_, numTrees);
+        vkDeviceWaitIdle(device_);  // Wait for in-flight frames before destroying buffers
+
+        // Resize tree data buffers
+        treeDataBufferSize_ = numTrees * sizeof(TreeCullData);
+        if (!treeDataBuffers_.resize(
+                allocator_, maxFramesInFlight_, treeDataBufferSize_,
+                vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eTransferDst)) {
+            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "TreeLeafCulling: Failed to resize tree data buffers");
+            return;
+        }
+
+        treeRenderDataBufferSize_ = numTrees * sizeof(TreeRenderDataGPU);
+        if (!treeRenderDataBuffers_.resize(
+                allocator_, maxFramesInFlight_, treeRenderDataBufferSize_,
+                vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eTransferDst)) {
+            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "TreeLeafCulling: Failed to resize tree render data buffers");
+            return;
+        }
+
+        numTreesForIndirect_ = numTrees;
+
+        // Must update descriptor sets since buffer handles changed
+        updateCullDescriptorSets(treeSystem);
+
+        // Also update tree filter descriptor sets if they exist (for two-phase culling)
+        if (!treeFilterDescriptorSets_.empty()) {
+            for (uint32_t f = 0; f < maxFramesInFlight_; ++f) {
+                DescriptorManager::SetWriter writer(device_, treeFilterDescriptorSets_[f]);
+                writer.writeBuffer(Bindings::TREE_FILTER_ALL_TREES, treeDataBuffers_.getVk(f), 0, VK_WHOLE_SIZE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+                      .update();
+            }
+        }
     }
 
     // Reset all 4 indirect draw commands (one per leaf type: oak, ash, aspen, pine)
@@ -814,6 +907,7 @@ void TreeLeafCulling::recordCulling(VkCommandBuffer cmd, uint32_t frameIndex,
 
             TreeFilterParams filterParams{};
             filterParams.maxTreesPerCell = 64;
+            filterParams.maxVisibleTrees = maxVisibleTrees_;
 
             vkCmd.updateBuffer(treeFilterUniformBuffers_.buffers[frameIndex], 0,
                                sizeof(CullingUniforms), &filterCulling);
@@ -821,10 +915,14 @@ void TreeLeafCulling::recordCulling(VkCommandBuffer cmd, uint32_t frameIndex,
                                sizeof(TreeFilterParams), &filterParams);
         }
 
+        // Barrier for all buffer updates (uniforms AND storage buffers).
+        // CRITICAL: Must include SHADER_READ_BIT | SHADER_WRITE_BIT because we reset
+        // storage buffers (visibleCellBuffers_, visibleTreeBuffers_, etc.) via fillBuffer/updateBuffer.
+        // Without this, compute shaders may read stale data before the reset completes.
         VkMemoryBarrier cellUniformBarrier{};
         cellUniformBarrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
         cellUniformBarrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-        cellUniformBarrier.dstAccessMask = VK_ACCESS_UNIFORM_READ_BIT;
+        cellUniformBarrier.dstAccessMask = VK_ACCESS_UNIFORM_READ_BIT | VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
         vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
                              0, 1, &cellUniformBarrier, 0, nullptr, 0, nullptr);
 

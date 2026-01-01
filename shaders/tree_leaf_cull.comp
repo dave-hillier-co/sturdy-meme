@@ -131,18 +131,43 @@ void main() {
             // Elect first matching thread to do the atomic for the whole subgroup
             uint electedLane = subgroupBallotFindLSB(typeMask);
             uint baseSlot = 0;
+            uint slotsAllocated = 0;
 
             if (gl_SubgroupInvocationID == electedLane) {
-                baseSlot = atomicAdd(drawCmds[type].instanceCount, typeCount);
+                // Use compare-and-swap to only allocate slots that will fit
+                // This prevents instanceCount from exceeding maxLeavesPerType
+                uint expected = drawCmds[type].instanceCount;
+                while (true) {
+                    uint available = (expected >= leafCullParams.maxLeavesPerType)
+                        ? 0
+                        : leafCullParams.maxLeavesPerType - expected;
+                    slotsAllocated = min(typeCount, available);
+                    if (slotsAllocated == 0) {
+                        baseSlot = expected; // Will exceed limit, no slots allocated
+                        break;
+                    }
+                    uint desired = expected + slotsAllocated;
+                    uint actual = atomicCompSwap(drawCmds[type].instanceCount, expected, desired);
+                    if (actual == expected) {
+                        baseSlot = expected; // Successfully allocated slots
+                        break;
+                    }
+                    expected = actual; // Retry with updated value
+                }
             }
 
-            // Broadcast base slot to all threads
+            // Broadcast base slot and allocated count to all threads
             baseSlot = subgroupBroadcast(baseSlot, electedLane);
+            slotsAllocated = subgroupBroadcast(slotsAllocated, electedLane);
 
             // Each thread computes its offset within the batch
             if (leafType == type) {
                 uint laneOffset = subgroupBallotExclusiveBitCount(typeMask);
-                typeLocalSlot = baseSlot + laneOffset;
+                // Only threads with laneOffset < slotsAllocated get a valid slot
+                if (laneOffset < slotsAllocated) {
+                    typeLocalSlot = baseSlot + laneOffset;
+                }
+                // else typeLocalSlot remains ~0u (will fail the bounds check)
             }
         }
     }

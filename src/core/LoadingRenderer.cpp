@@ -129,12 +129,7 @@ bool LoadingRenderer::createPipeline() {
         return false;
     }
 
-    // Wrap shader modules in RAII for automatic cleanup
-    vk::raii::ShaderModule vertShader(device, vk::ShaderModuleCreateInfo{}.setCode({}));
-    vk::raii::ShaderModule fragShader(device, vk::ShaderModuleCreateInfo{}.setCode({}));
-
-    // Actually, ShaderLoader returns raw VkShaderModule, so we need to destroy manually
-    // Let's use a scope guard pattern instead
+    // ShaderLoader returns raw VkShaderModule, clean up when done
     auto cleanupShaders = [&]() {
         vkDestroyShaderModule(rawDevice, *vertModule, nullptr);
         vkDestroyShaderModule(rawDevice, *fragModule, nullptr);

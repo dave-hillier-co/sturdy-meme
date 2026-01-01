@@ -50,13 +50,12 @@ GrassTile* GrassTileManager::getOrCreateTile(const GrassTile::TileCoord& coord) 
         return it->second.get();
     }
 
-    // Create new tile
+    // Create new tile (tiles are lightweight - shared buffers in manager)
     auto tile = std::make_unique<GrassTile>();
-    if (!tile->init(allocator_, coord, framesInFlight_)) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
-            "GrassTileManager: Failed to create tile at (%d, %d)", coord.x, coord.z);
-        return nullptr;
-    }
+    tile->init(coord);
+
+    SDL_Log("GrassTileManager: Created tile at (%d, %d), world origin (%.1f, %.1f)",
+        coord.x, coord.z, tile->getWorldOrigin().x, tile->getWorldOrigin().y);
 
     // Create descriptor sets for this tile
     GrassTile* tilePtr = tile.get();
@@ -274,6 +273,10 @@ void GrassTileManager::recordCompute(vk::CommandBuffer cmd, uint32_t frameIndex,
                                       uint32_t computeBufferSet) {
     if (!enabled_ || activeTiles_.empty()) return;
 
+    // Use computeBufferSet consistently for all buffer indexing (triple buffering)
+    // This ensures descriptor set N uses buffers N, avoiding synchronization issues
+    uint32_t bufferIndex = computeBufferSet;
+
     // Reset the shared indirect buffer once at the start (not per-tile)
     if (sharedIndirectBuffer_) {
         Barriers::clearBufferForComputeReadWrite(cmd,
@@ -288,7 +291,7 @@ void GrassTileManager::recordCompute(vk::CommandBuffer cmd, uint32_t frameIndex,
         auto it = tileDescriptorSets_.find(tile);
         if (it == tileDescriptorSets_.end()) continue;
 
-        vk::DescriptorSet descSet = it->second[computeBufferSet];
+        vk::DescriptorSet descSet = it->second[bufferIndex];
 
         // Update per-frame bindings (culling uniforms, tile info, grass params)
         // Also update shared buffers if they've changed
@@ -309,19 +312,19 @@ void GrassTileManager::recordCompute(vk::CommandBuffer cmd, uint32_t frameIndex,
                                VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
         }
 
-        if (!cullingUniformBuffers_.empty() && frameIndex < cullingUniformBuffers_.size()) {
-            writer.writeBuffer(2, cullingUniformBuffers_[frameIndex], 0,
+        if (!cullingUniformBuffers_.empty() && bufferIndex < cullingUniformBuffers_.size()) {
+            writer.writeBuffer(2, cullingUniformBuffers_[bufferIndex], 0,
                                sizeof(CullingUniforms));
         }
 
-        if (!tileInfoBuffers_.empty() && frameIndex < tileInfoBuffers_.size() &&
-            tileInfoBuffers_[frameIndex]) {
-            writer.writeBuffer(6, tileInfoBuffers_[frameIndex], 0, VK_WHOLE_SIZE,
+        if (!tileInfoBuffers_.empty() && bufferIndex < tileInfoBuffers_.size() &&
+            tileInfoBuffers_[bufferIndex]) {
+            writer.writeBuffer(6, tileInfoBuffers_[bufferIndex], 0, VK_WHOLE_SIZE,
                                VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
         }
 
-        if (!grassParamsBuffers_.empty() && frameIndex < grassParamsBuffers_.size()) {
-            writer.writeBuffer(7, grassParamsBuffers_[frameIndex], 0,
+        if (!grassParamsBuffers_.empty() && bufferIndex < grassParamsBuffers_.size()) {
+            writer.writeBuffer(7, grassParamsBuffers_[bufferIndex], 0,
                                sizeof(GrassParams));
         }
 

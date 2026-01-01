@@ -1,21 +1,19 @@
 #pragma once
 
 #include "GrassConstants.h"
-#include "BufferUtils.h"
-#include <vulkan/vulkan.hpp>
-#include <vk_mem_alloc.h>
 #include <glm/glm.hpp>
+#include <cstdint>
+#include <functional>
 
 /**
- * GrassTile - Manages a single grass tile's GPU resources
+ * GrassTile - Represents a grass tile in world space
  *
- * Each tile covers a TILE_SIZE x TILE_SIZE area of the world and contains
- * its own instance buffer and indirect draw buffer for grass blades.
+ * Each tile covers a TILE_SIZE x TILE_SIZE area of the world.
+ * Tiles are streamed around the camera and track their last-used frame
+ * for safe GPU resource management with triple buffering.
  *
- * The tile system follows Ghost of Tsushima's approach:
- * - Tiles are streamed around the camera
- * - Each tile has its own compute dispatch
- * - Double-buffering: compute to one set while rendering from another
+ * Note: All tiles share a common instance buffer managed by GrassTileManager.
+ * This class primarily tracks tile coordinates and usage for streaming.
  */
 class GrassTile {
 public:
@@ -42,29 +40,21 @@ public:
     };
 
     GrassTile() = default;
-    ~GrassTile();
+    ~GrassTile() = default;
 
-    // Non-copyable
-    GrassTile(const GrassTile&) = delete;
-    GrassTile& operator=(const GrassTile&) = delete;
-
-    // Movable
-    GrassTile(GrassTile&& other) noexcept;
-    GrassTile& operator=(GrassTile&& other) noexcept;
+    // Copyable and movable (no GPU resources to manage)
+    GrassTile(const GrassTile&) = default;
+    GrassTile& operator=(const GrassTile&) = default;
+    GrassTile(GrassTile&&) noexcept = default;
+    GrassTile& operator=(GrassTile&&) noexcept = default;
 
     /**
-     * Initialize tile resources
-     * @param allocator VMA allocator for buffer creation
-     * @param coord Tile coordinate in world grid
-     * @param bufferSetCount Number of buffer sets (for double-buffering)
-     * @return true on success
+     * Initialize tile with coordinate
      */
-    bool init(VmaAllocator allocator, TileCoord coord, uint32_t bufferSetCount);
-
-    /**
-     * Destroy tile resources
-     */
-    void destroy();
+    void init(TileCoord coord) {
+        coord_ = coord;
+        lastUsedFrame_ = 0;
+    }
 
     // Accessors
     TileCoord getCoord() const { return coord_; }
@@ -87,23 +77,9 @@ public:
     }
 
     /**
-     * Get instance buffer for a buffer set
-     */
-    vk::Buffer getInstanceBuffer(uint32_t setIndex) const {
-        return instanceBuffers_.buffers[setIndex];
-    }
-
-    /**
-     * Get indirect buffer for a buffer set
-     */
-    vk::Buffer getIndirectBuffer(uint32_t setIndex) const {
-        return indirectBuffers_.buffers[setIndex];
-    }
-
-    /**
      * Check if tile is initialized
      */
-    bool isValid() const { return allocator_ != VK_NULL_HANDLE; }
+    bool isValid() const { return true; }
 
     /**
      * Calculate squared distance from a world position to tile center
@@ -133,11 +109,6 @@ public:
     }
 
 private:
-    VmaAllocator allocator_ = VK_NULL_HANDLE;
     TileCoord coord_{0, 0};
     uint64_t lastUsedFrame_ = 0;
-
-    // Per-tile buffers (triple-buffered to match frames in flight)
-    BufferUtils::DoubleBufferedBufferSet instanceBuffers_;
-    BufferUtils::DoubleBufferedBufferSet indirectBuffers_;
 };

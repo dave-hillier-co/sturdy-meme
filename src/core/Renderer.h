@@ -19,7 +19,7 @@
 #include "FrameData.h"
 #include "RenderContext.h"
 #include "RenderPipeline.h"
-#include "VulkanRAII.h"
+#include "VmaResources.h"
 #include "RendererSystems.h"
 #include "PerformanceToggles.h"
 #include "TripleBuffering.h"
@@ -104,7 +104,7 @@ public:
     VkDevice getDevice() const { return vulkanContext_->getDevice(); }
     VkQueue getGraphicsQueue() const { return vulkanContext_->getGraphicsQueue(); }
     uint32_t getGraphicsQueueFamily() const { return vulkanContext_->getGraphicsQueueFamily(); }
-    VkRenderPass getSwapchainRenderPass() const { return renderPass.get(); }
+    VkRenderPass getSwapchainRenderPass() const { return **renderPass_; }
     uint32_t getSwapchainImageCount() const { return vulkanContext_->getSwapchainImageCount(); }
 
     // Access to VulkanContext
@@ -184,7 +184,7 @@ public:
     void updateRoadRiverVisualization();
 
     // Resource access
-    VkCommandPool getCommandPool() const { return commandPool.get(); }
+    VkCommandPool getCommandPool() const { return **commandPool_; }
     DescriptorManager::Pool* getDescriptorPool();
     std::string getShaderPath() const { return resourcePath + "/shaders"; }
     const std::string& getResourcePath() const { return resourcePath; }
@@ -256,10 +256,10 @@ private:
     // All rendering subsystems - managed with automatic lifecycle
     std::unique_ptr<RendererSystems> systems_;
 
-    ManagedRenderPass renderPass;
-    ManagedDescriptorSetLayout descriptorSetLayout;
-    ManagedPipelineLayout pipelineLayout;
-    ManagedPipeline graphicsPipeline;
+    std::optional<vk::raii::RenderPass> renderPass_;
+    std::optional<vk::raii::DescriptorSetLayout> descriptorSetLayout_;
+    std::optional<vk::raii::PipelineLayout> pipelineLayout_;
+    std::optional<vk::raii::Pipeline> graphicsPipeline_;
 
     bool physicsDebugEnabled = false;
     glm::mat4 lastViewProj{1.0f};  // Cached view-projection for debug rendering
@@ -271,13 +271,13 @@ private:
     // Render pipeline (stages abstraction - for future refactoring)
     RenderPipeline renderPipeline;
 
-    std::vector<ManagedFramebuffer> framebuffers;
-    ManagedCommandPool commandPool;
+    std::vector<vk::raii::Framebuffer> framebuffers_;
+    std::optional<vk::raii::CommandPool> commandPool_;
     std::vector<VkCommandBuffer> commandBuffers;
 
-    ManagedImage depthImage;
-    ManagedImageView depthImageView;
-    ManagedSampler depthSampler;  // For Hi-Z pyramid generation
+    ManagedImage depthImage_;
+    std::optional<vk::raii::ImageView> depthImageView_;
+    std::optional<vk::raii::Sampler> depthSampler_;  // For Hi-Z pyramid generation
     VkFormat depthFormat = VK_FORMAT_UNDEFINED;
 
     std::optional<DescriptorManager::Pool> descriptorManagerPool;

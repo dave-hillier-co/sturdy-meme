@@ -51,6 +51,7 @@ bool TreeRenderer::initInternal(const InitInfo& info) {
 
     // Create leaf culling subsystem
     TreeLeafCulling::InitInfo cullInfo{};
+    cullInfo.raiiDevice = info.raiiDevice;
     cullInfo.device = info.device;
     cullInfo.physicalDevice = info.physicalDevice;
     cullInfo.allocator = info.allocator;
@@ -66,6 +67,7 @@ bool TreeRenderer::initInternal(const InitInfo& info) {
     // Create branch shadow culling subsystem
     if (branchShadowInstancedPipeline_) {
         TreeBranchCulling::InitInfo branchCullInfo{};
+        branchCullInfo.raiiDevice = info.raiiDevice;
         branchCullInfo.device = info.device;
         branchCullInfo.physicalDevice = info.physicalDevice;
         branchCullInfo.allocator = info.allocator;

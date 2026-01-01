@@ -258,6 +258,12 @@ bool TreeLeafCulling::createCellCullBuffers() {
         return false;
     }
 
+    // Guard against null layout (shouldn't happen, but defensive check)
+    if (!cellCullDescriptorSetLayout_) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "TreeLeafCulling: Cell cull descriptor set layout is null");
+        return false;
+    }
+
     uint32_t numCells = spatialIndex_->getCellCount();
     visibleCellBufferSize_ = (numCells + 1) * sizeof(uint32_t);
 
@@ -381,6 +387,12 @@ bool TreeLeafCulling::createTreeFilterBuffers(uint32_t maxTrees) {
         return false;
     }
 
+    // Guard against null layout
+    if (!treeFilterDescriptorSetLayout_) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "TreeLeafCulling: Tree filter descriptor set layout is null");
+        return false;
+    }
+
     maxVisibleTrees_ = maxTrees;
     visibleTreeBufferSize_ = sizeof(uint32_t) + maxTrees * sizeof(VisibleTreeData);
 
@@ -497,6 +509,12 @@ bool TreeLeafCulling::createTwoPhaseLeafCullPipeline() {
 }
 
 bool TreeLeafCulling::createTwoPhaseLeafCullDescriptorSets() {
+    // Guard against null layout
+    if (!twoPhaseLeafCullDescriptorSetLayout_) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "TreeLeafCulling: Two-phase leaf cull descriptor set layout is null");
+        return false;
+    }
+
     // Create params buffer for phase 3
     if (!BufferUtils::PerFrameBufferBuilder()
             .setAllocator(allocator_)
@@ -588,8 +606,10 @@ void TreeLeafCulling::updateSpatialIndex(const TreeSystem& treeSystem) {
     bool needsTreeFilterBuffers = visibleTreeBuffers_.empty() ||
                                   requiredTreeCapacity > maxVisibleTrees_;
 
+    // Only create tree filter buffers if tree data buffers are already initialized
+    // (they get created lazily during first recordCulling call)
     if (needsTreeFilterBuffers && treeFilterPipeline_ &&
-        !visibleCellBuffers_.empty()) {
+        !visibleCellBuffers_.empty() && !treeDataBuffers_.empty()) {
         // Need to wait for GPU before destroying old buffers
         if (!visibleTreeBuffers_.empty()) {
             vkDeviceWaitIdle(device_);

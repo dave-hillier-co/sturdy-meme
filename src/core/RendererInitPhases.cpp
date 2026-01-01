@@ -400,6 +400,7 @@ bool Renderer::initSubsystems(const InitContext& initCtx) {
     // Initialize ImpostorCullSystem for GPU-driven impostor culling with Hi-Z
     {
         ImpostorCullSystem::InitInfo impostorCullInfo{};
+        impostorCullInfo.raiiDevice = &vulkanContext_->getRaiiDevice();
         impostorCullInfo.device = device;
         impostorCullInfo.physicalDevice = physicalDevice;
         impostorCullInfo.allocator = allocator;
@@ -666,6 +667,12 @@ bool Renderer::initSubsystems(const InitContext& initCtx) {
                 impostorCull->updateArchetypeData(treeLOD->getImpostorAtlas());
                 impostorCull->initializeDescriptorSets();
                 SDL_Log("ImpostorCullSystem: Updated with %u trees", impostorCull->getTreeCount());
+            }
+
+            // Update TreeRenderer with spatial index
+            // Note: updateBranchCullingData is called later in the render loop when needed
+            if (systems_->treeRenderer()) {
+                systems_->treeRenderer()->updateSpatialIndex(*treeSystem);
             }
 
             // Initialize TreeLODSystem descriptor sets now that impostors are generated

@@ -1,7 +1,7 @@
 #include "TripleBuffering.h"
 #include <SDL3/SDL_log.h>
 
-bool TripleBuffering::init(VkDevice device, uint32_t frameCount) {
+bool TripleBuffering::init(const vk::raii::Device& device, uint32_t frameCount) {
     if (frameCount == 0) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
             "TripleBuffering::init: frameCount must be > 0");
@@ -10,36 +10,40 @@ bool TripleBuffering::init(VkDevice device, uint32_t frameCount) {
 
     destroy();
 
+    // Store device pointer for fence operations
+    device_ = &device;
+
     // Use FrameBuffered's resize with a factory function
-    frames_.resize(frameCount, [device](uint32_t i) -> FrameSyncPrimitives {
-        FrameSyncPrimitives primitives;
+    try {
+        frames_.resize(frameCount, [&device](uint32_t i) -> FrameSyncPrimitives {
+            FrameSyncPrimitives primitives;
 
-        if (!ManagedSemaphore::create(device, primitives.imageAvailable)) {
-            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
-                "TripleBuffering::init: failed to create imageAvailable[%u]", i);
+            try {
+                primitives.imageAvailable.emplace(device, vk::SemaphoreCreateInfo{});
+                primitives.renderFinished.emplace(device, vk::SemaphoreCreateInfo{});
+
+                // Create fences in signaled state so first frame doesn't wait forever
+                auto fenceInfo = vk::FenceCreateInfo{}
+                    .setFlags(vk::FenceCreateFlagBits::eSignaled);
+                primitives.inFlightFence.emplace(device, fenceInfo);
+            } catch (const vk::SystemError& e) {
+                SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
+                    "TripleBuffering::init: failed to create sync primitives for frame %u: %s", i, e.what());
+            }
+
             return primitives;
-        }
-
-        if (!ManagedSemaphore::create(device, primitives.renderFinished)) {
-            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
-                "TripleBuffering::init: failed to create renderFinished[%u]", i);
-            return primitives;
-        }
-
-        // Create fences in signaled state so first frame doesn't wait forever
-        if (!ManagedFence::createSignaled(device, primitives.inFlightFence)) {
-            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
-                "TripleBuffering::init: failed to create inFlightFence[%u]", i);
-            return primitives;
-        }
-
-        return primitives;
-    });
+        });
+    } catch (const std::exception& e) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
+            "TripleBuffering::init: exception during resize: %s", e.what());
+        destroy();
+        return false;
+    }
 
     // Verify all primitives were created successfully
     for (uint32_t i = 0; i < frameCount; ++i) {
         const auto& p = frames_[i];
-        if (!p.imageAvailable.get() || !p.renderFinished.get() || !p.inFlightFence.get()) {
+        if (!p.imageAvailable || !p.renderFinished || !p.inFlightFence) {
             SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
                 "TripleBuffering::init: incomplete primitives for frame %u", i);
             destroy();
@@ -54,4 +58,5 @@ bool TripleBuffering::init(VkDevice device, uint32_t frameCount) {
 void TripleBuffering::destroy() {
     // RAII handles cleanup - just clear the FrameBuffered container
     frames_.clear();
+    device_ = nullptr;
 }

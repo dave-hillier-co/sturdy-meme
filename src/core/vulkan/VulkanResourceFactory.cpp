@@ -27,7 +27,10 @@ void VulkanResourceFactory::SyncResources::destroy(VkDevice device) {
 // ============================================================================
 
 void VulkanResourceFactory::DepthResources::destroy(VkDevice device, VmaAllocator allocator) {
-    sampler.reset();
+    if (sampler != VK_NULL_HANDLE) {
+        vkDestroySampler(device, sampler, nullptr);
+        sampler = VK_NULL_HANDLE;
+    }
     if (view != VK_NULL_HANDLE) {
         vkDestroyImageView(device, view, nullptr);
         view = VK_NULL_HANDLE;
@@ -401,7 +404,10 @@ bool VulkanResourceFactory::createRenderPass(
 // ============================================================================
 
 void VulkanResourceFactory::DepthArrayResources::destroy(VkDevice device, VmaAllocator allocator) {
-    sampler.reset();
+    if (sampler != VK_NULL_HANDLE) {
+        vkDestroySampler(device, sampler, nullptr);
+        sampler = VK_NULL_HANDLE;
+    }
     for (auto& view : layerViews) {
         if (view != VK_NULL_HANDLE) {
             vkDestroyImageView(device, view, nullptr);
@@ -730,7 +736,7 @@ bool VulkanResourceFactory::createDynamicVertexBuffer(VmaAllocator allocator, Vk
 // Sampler Factories
 // ============================================================================
 
-bool VulkanResourceFactory::createSamplerNearestClamp(VkDevice device, ManagedSampler& outSampler) {
+bool VulkanResourceFactory::createSamplerNearestClamp(VkDevice device, VkSampler& outSampler) {
     auto samplerInfo = vk::SamplerCreateInfo{}
         .setMagFilter(vk::Filter::eNearest)
         .setMinFilter(vk::Filter::eNearest)
@@ -741,10 +747,14 @@ bool VulkanResourceFactory::createSamplerNearestClamp(VkDevice device, ManagedSa
         .setMinLod(0.0f)
         .setMaxLod(0.0f);
 
-    return ManagedSampler::create(device, reinterpret_cast<const VkSamplerCreateInfo&>(samplerInfo), outSampler);
+    if (vkCreateSampler(device, reinterpret_cast<const VkSamplerCreateInfo*>(&samplerInfo), nullptr, &outSampler) != VK_SUCCESS) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create nearest-clamp sampler");
+        return false;
+    }
+    return true;
 }
 
-bool VulkanResourceFactory::createSamplerLinearClamp(VkDevice device, ManagedSampler& outSampler) {
+bool VulkanResourceFactory::createSamplerLinearClamp(VkDevice device, VkSampler& outSampler) {
     auto samplerInfo = vk::SamplerCreateInfo{}
         .setMagFilter(vk::Filter::eLinear)
         .setMinFilter(vk::Filter::eLinear)
@@ -755,10 +765,14 @@ bool VulkanResourceFactory::createSamplerLinearClamp(VkDevice device, ManagedSam
         .setMinLod(0.0f)
         .setMaxLod(VK_LOD_CLAMP_NONE);
 
-    return ManagedSampler::create(device, reinterpret_cast<const VkSamplerCreateInfo&>(samplerInfo), outSampler);
+    if (vkCreateSampler(device, reinterpret_cast<const VkSamplerCreateInfo*>(&samplerInfo), nullptr, &outSampler) != VK_SUCCESS) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create linear-clamp sampler");
+        return false;
+    }
+    return true;
 }
 
-bool VulkanResourceFactory::createSamplerLinearRepeat(VkDevice device, ManagedSampler& outSampler) {
+bool VulkanResourceFactory::createSamplerLinearRepeat(VkDevice device, VkSampler& outSampler) {
     auto samplerInfo = vk::SamplerCreateInfo{}
         .setMagFilter(vk::Filter::eLinear)
         .setMinFilter(vk::Filter::eLinear)
@@ -769,10 +783,14 @@ bool VulkanResourceFactory::createSamplerLinearRepeat(VkDevice device, ManagedSa
         .setMinLod(0.0f)
         .setMaxLod(VK_LOD_CLAMP_NONE);
 
-    return ManagedSampler::create(device, reinterpret_cast<const VkSamplerCreateInfo&>(samplerInfo), outSampler);
+    if (vkCreateSampler(device, reinterpret_cast<const VkSamplerCreateInfo*>(&samplerInfo), nullptr, &outSampler) != VK_SUCCESS) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create linear-repeat sampler");
+        return false;
+    }
+    return true;
 }
 
-bool VulkanResourceFactory::createSamplerLinearRepeatAnisotropic(VkDevice device, float maxAnisotropy, ManagedSampler& outSampler) {
+bool VulkanResourceFactory::createSamplerLinearRepeatAnisotropic(VkDevice device, float maxAnisotropy, VkSampler& outSampler) {
     auto samplerInfo = vk::SamplerCreateInfo{}
         .setMagFilter(vk::Filter::eLinear)
         .setMinFilter(vk::Filter::eLinear)
@@ -785,10 +803,14 @@ bool VulkanResourceFactory::createSamplerLinearRepeatAnisotropic(VkDevice device
         .setMinLod(0.0f)
         .setMaxLod(VK_LOD_CLAMP_NONE);
 
-    return ManagedSampler::create(device, reinterpret_cast<const VkSamplerCreateInfo&>(samplerInfo), outSampler);
+    if (vkCreateSampler(device, reinterpret_cast<const VkSamplerCreateInfo*>(&samplerInfo), nullptr, &outSampler) != VK_SUCCESS) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create linear-repeat-anisotropic sampler");
+        return false;
+    }
+    return true;
 }
 
-bool VulkanResourceFactory::createSamplerShadowComparison(VkDevice device, ManagedSampler& outSampler) {
+bool VulkanResourceFactory::createSamplerShadowComparison(VkDevice device, VkSampler& outSampler) {
     auto samplerInfo = vk::SamplerCreateInfo{}
         .setMagFilter(vk::Filter::eLinear)
         .setMinFilter(vk::Filter::eLinear)
@@ -800,7 +822,11 @@ bool VulkanResourceFactory::createSamplerShadowComparison(VkDevice device, Manag
         .setCompareEnable(vk::True)
         .setCompareOp(vk::CompareOp::eLess);
 
-    return ManagedSampler::create(device, reinterpret_cast<const VkSamplerCreateInfo&>(samplerInfo), outSampler);
+    if (vkCreateSampler(device, reinterpret_cast<const VkSamplerCreateInfo*>(&samplerInfo), nullptr, &outSampler) != VK_SUCCESS) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create shadow comparison sampler");
+        return false;
+    }
+    return true;
 }
 
 // ============================================================================

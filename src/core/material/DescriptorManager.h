@@ -5,10 +5,6 @@
 #include <unordered_map>
 #include <optional>
 
-// Forward declarations for RAII wrappers
-class ManagedDescriptorSetLayout;
-class ManagedPipelineLayout;
-
 // Configurable descriptor pool sizes with builder pattern and presets
 // These are per-set multipliers - actual pool size = count * setsPerPool
 struct DescriptorPoolSizes {
@@ -82,9 +78,6 @@ public:
 
         // Build and return raw handle (caller must manage lifetime)
         VkDescriptorSetLayout build();
-
-        // Build and return RAII-managed layout
-        bool buildManaged(ManagedDescriptorSetLayout& outLayout);
 
     private:
         VkDevice device;
@@ -189,19 +182,5 @@ public:
     static VkPipelineLayout createPipelineLayout(
         VkDevice device,
         VkDescriptorSetLayout setLayout,
-        const std::vector<VkPushConstantRange>& pushConstants = {});
-
-    // Helper: Create RAII-managed pipeline layout from descriptor set layouts
-    static bool createManagedPipelineLayout(
-        VkDevice device,
-        const std::vector<VkDescriptorSetLayout>& setLayouts,
-        ManagedPipelineLayout& outLayout,
-        const std::vector<VkPushConstantRange>& pushConstants = {});
-
-    // Helper: Create RAII-managed pipeline layout from a single layout
-    static bool createManagedPipelineLayout(
-        VkDevice device,
-        VkDescriptorSetLayout setLayout,
-        ManagedPipelineLayout& outLayout,
         const std::vector<VkPushConstantRange>& pushConstants = {});
 };

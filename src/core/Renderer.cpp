@@ -364,9 +364,8 @@ bool Renderer::createDepthResources() {
     }
     depthImage_ = ManagedImage::fromRaw(vulkanContext_->getAllocator(), depth.image, depth.allocation);
     depthImageView_.emplace(vulkanContext_->getRaiiDevice(), depth.view);
-    // Extract raw handle from ManagedSampler and wrap in vk::raii::Sampler
-    VkSampler rawSampler = depth.sampler.release();
-    depthSampler_.emplace(vulkanContext_->getRaiiDevice(), rawSampler);
+    // Wrap raw sampler in vk::raii::Sampler (takes ownership)
+    depthSampler_.emplace(vulkanContext_->getRaiiDevice(), depth.sampler);
     return true;
 }
 
@@ -406,7 +405,7 @@ bool Renderer::createCommandBuffers() {
 }
 
 bool Renderer::createSyncObjects() {
-    return frameSync_.init(vulkanContext_->getDevice(), MAX_FRAMES_IN_FLIGHT);
+    return frameSync_.init(vulkanContext_->getRaiiDevice(), MAX_FRAMES_IN_FLIGHT);
 }
 
 // Adds the common descriptor bindings shared between main and skinned layouts.

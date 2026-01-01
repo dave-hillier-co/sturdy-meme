@@ -1,5 +1,4 @@
 #include "DescriptorManager.h"
-#include "VulkanRAII.h"
 #include <SDL3/SDL.h>
 #include <stdexcept>
 
@@ -63,15 +62,6 @@ VkDescriptorSetLayout DescriptorManager::LayoutBuilder::build() {
     vk::Device vkDevice(device);
     vk::DescriptorSetLayout layout = vkDevice.createDescriptorSetLayout(layoutInfo);
     return layout;
-}
-
-bool DescriptorManager::LayoutBuilder::buildManaged(ManagedDescriptorSetLayout& outLayout) {
-    VkDescriptorSetLayout rawLayout = build();
-    if (rawLayout == VK_NULL_HANDLE) {
-        return false;
-    }
-    outLayout = ManagedDescriptorSetLayout::fromRaw(device, rawLayout);
-    return true;
 }
 
 // ============================================================================
@@ -379,29 +369,4 @@ VkPipelineLayout DescriptorManager::createPipelineLayout(
     VkDescriptorSetLayout setLayout,
     const std::vector<VkPushConstantRange>& pushConstants) {
     return createPipelineLayout(device, std::vector<VkDescriptorSetLayout>{setLayout}, pushConstants);
-}
-
-bool DescriptorManager::createManagedPipelineLayout(
-    VkDevice device,
-    const std::vector<VkDescriptorSetLayout>& setLayouts,
-    ManagedPipelineLayout& outLayout,
-    const std::vector<VkPushConstantRange>& pushConstants) {
-
-    VkPipelineLayout rawLayout = createPipelineLayout(device, setLayouts, pushConstants);
-    if (rawLayout == VK_NULL_HANDLE) {
-        return false;
-    }
-    outLayout = ManagedPipelineLayout::fromRaw(device, rawLayout);
-    return true;
-}
-
-bool DescriptorManager::createManagedPipelineLayout(
-    VkDevice device,
-    VkDescriptorSetLayout setLayout,
-    ManagedPipelineLayout& outLayout,
-    const std::vector<VkPushConstantRange>& pushConstants) {
-    return createManagedPipelineLayout(device,
-        std::vector<VkDescriptorSetLayout>{setLayout},
-        outLayout,
-        pushConstants);
 }

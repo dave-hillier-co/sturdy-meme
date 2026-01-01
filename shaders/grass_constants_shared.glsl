@@ -127,11 +127,18 @@ CONST_FLOAT_DERIVED(GRASS_TILED_COVERAGE, GRASS_TILED_COVERAGE_LOD2);
 // CULLING AND LOD
 // =============================================================================
 
-CONST_FLOAT(GRASS_MAX_DRAW_DISTANCE, 250.0);
 CONST_FLOAT(GRASS_FRUSTUM_MARGIN, 15.0);
-CONST_FLOAT(GRASS_LOD0_DISTANCE_END, 80.0);
-CONST_FLOAT(GRASS_LOD1_DISTANCE_END, 200.0);
-CONST_FLOAT(GRASS_LOD_TRANSITION_ZONE, 20.0);
+
+// LOD distance thresholds derived from tile coverage
+// Each LOD extends half its coverage from camera center
+// LOD 0: 86.4m coverage -> 43.2m from center
+// LOD 1: 172.8m coverage -> 86.4m from center
+CONST_FLOAT_DERIVED(GRASS_LOD0_DISTANCE_END, GRASS_TILED_COVERAGE_LOD0 * 0.5);
+CONST_FLOAT_DERIVED(GRASS_LOD1_DISTANCE_END, GRASS_TILED_COVERAGE_LOD1 * 0.5);
+CONST_FLOAT_DERIVED(GRASS_MAX_DRAW_DISTANCE, GRASS_TILED_COVERAGE_LOD2 * 0.5);
+
+// Transition zone as fraction of LOD 0 coverage (~10m for smooth blend)
+CONST_FLOAT_DERIVED(GRASS_LOD_TRANSITION_ZONE, GRASS_TILE_SIZE_LOD0 * 0.35);
 CONST_FLOAT(GRASS_LOD_TRANSITION_DROP_RATE, 0.75);
 
 // =============================================================================

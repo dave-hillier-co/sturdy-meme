@@ -2,10 +2,12 @@
 
 #include "VirtualTextureTypes.h"
 #include <vulkan/vulkan.h>
+#include <vulkan/vulkan_raii.hpp>
 #include <vk_mem_alloc.h>
 #include <vector>
 #include <unordered_map>
-#include "VulkanRAII.h"
+#include <optional>
+#include "VmaResources.h"
 
 namespace VirtualTexture {
 
@@ -25,11 +27,20 @@ public:
     VirtualTextureCache(const VirtualTextureCache&) = delete;
     VirtualTextureCache& operator=(const VirtualTextureCache&) = delete;
 
+    struct InitInfo {
+        const vk::raii::Device* raiiDevice = nullptr;
+        VkDevice device = VK_NULL_HANDLE;
+        VmaAllocator allocator = VK_NULL_HANDLE;
+        VkCommandPool commandPool = VK_NULL_HANDLE;
+        VkQueue queue = VK_NULL_HANDLE;
+        VirtualTextureConfig config;
+        uint32_t framesInFlight = 2;
+        bool useCompression = false;
+    };
+
     // Initialize the cache
     // Set useCompression=true to use BC1 format for the cache (4x smaller GPU memory)
-    bool init(VkDevice device, VmaAllocator allocator, VkCommandPool commandPool,
-              VkQueue queue, const VirtualTextureConfig& config, uint32_t framesInFlight = 2,
-              bool useCompression = false);
+    bool init(const InitInfo& info);
 
     // Cleanup resources
     void destroy(VkDevice device, VmaAllocator allocator);
@@ -75,7 +86,7 @@ public:
     VkImageView getCacheImageView() const { return cacheImageView; }
 
     // Get the sampler for the cache texture
-    VkSampler getCacheSampler() const { return cacheSampler.get(); }
+    VkSampler getCacheSampler() const { return cacheSampler_ ? **cacheSampler_ : VK_NULL_HANDLE; }
 
     // Get the slot index for a tile (UINT32_MAX if not found)
     uint32_t getTileSlotIndex(TileId id) const {
@@ -103,15 +114,16 @@ private:
 
     VirtualTextureConfig config;
     bool useCompression_ = false;  // BC1 compressed cache
+    const vk::raii::Device* raiiDevice_ = nullptr;
 
     // Physical cache texture
     VkImage cacheImage = VK_NULL_HANDLE;
     VmaAllocation cacheAllocation = VK_NULL_HANDLE;
     VkImageView cacheImageView = VK_NULL_HANDLE;
-    ManagedSampler cacheSampler;
+    std::optional<vk::raii::Sampler> cacheSampler_;
 
     // Per-frame staging buffers to avoid race conditions with in-flight frames
-    std::vector<ManagedBuffer> stagingBuffers_;
+    std::vector<VmaBuffer> stagingBuffers_;
     std::vector<void*> stagingMapped_;
     uint32_t framesInFlight_ = 2;
 

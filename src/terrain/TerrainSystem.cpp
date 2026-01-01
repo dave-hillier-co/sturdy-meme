@@ -30,6 +30,7 @@ bool TerrainSystem::initInternal(const InitInfo& info, const TerrainConfig& cfg)
     device = info.device;
     physicalDevice = info.physicalDevice;
     allocator = info.allocator;
+    raiiDevice_ = info.raiiDevice;
     renderPass = info.renderPass;
     shadowRenderPass = info.shadowRenderPass;
     descriptorPool = info.descriptorPool;
@@ -118,8 +119,17 @@ bool TerrainSystem::initInternal(const InitInfo& info, const TerrainConfig& cfg)
         vtConfig.borderPixels = 4;
         vtConfig.maxMipLevels = 6;
 
-        if (!virtualTexture->init(device, allocator, commandPool, graphicsQueue,
-                                   config.virtualTextureTileDir, vtConfig, framesInFlight)) {
+        VirtualTexture::VirtualTextureSystem::InitInfo vtInfo;
+        vtInfo.raiiDevice = raiiDevice_;
+        vtInfo.device = device;
+        vtInfo.allocator = allocator;
+        vtInfo.commandPool = commandPool;
+        vtInfo.queue = graphicsQueue;
+        vtInfo.tilePath = config.virtualTextureTileDir;
+        vtInfo.config = vtConfig;
+        vtInfo.framesInFlight = framesInFlight;
+
+        if (!virtualTexture->init(vtInfo)) {
             SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "Failed to initialize virtual texture system");
             virtualTexture.reset();
         } else {
@@ -172,6 +182,7 @@ bool TerrainSystem::initInternal(const InitContext& ctx, const TerrainInitParams
     info.device = ctx.device;
     info.physicalDevice = ctx.physicalDevice;
     info.allocator = ctx.allocator;
+    info.raiiDevice = ctx.raiiDevice;
     info.renderPass = params.renderPass;
     info.shadowRenderPass = params.shadowRenderPass;
     info.descriptorPool = ctx.descriptorPool;

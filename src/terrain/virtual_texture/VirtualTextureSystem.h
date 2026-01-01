@@ -7,6 +7,7 @@
 #include "VirtualTextureTileLoader.h"
 #include "RAIIAdapter.h"
 #include <vulkan/vulkan.h>
+#include <vulkan/vulkan_raii.hpp>
 #include <vk_mem_alloc.h>
 #include <string>
 #include <vector>
@@ -42,22 +43,22 @@ public:
     VirtualTextureSystem(const VirtualTextureSystem&) = delete;
     VirtualTextureSystem& operator=(const VirtualTextureSystem&) = delete;
 
+    struct InitInfo {
+        const vk::raii::Device* raiiDevice = nullptr;
+        VkDevice device = VK_NULL_HANDLE;
+        VmaAllocator allocator = VK_NULL_HANDLE;
+        VkCommandPool commandPool = VK_NULL_HANDLE;
+        VkQueue queue = VK_NULL_HANDLE;
+        std::string tilePath;
+        VirtualTextureConfig config;
+        uint32_t framesInFlight = 2;
+    };
+
     /**
      * Initialize the virtual texture system
-     * @param device Vulkan device
-     * @param allocator VMA allocator
-     * @param commandPool Command pool for one-time commands
-     * @param queue Graphics queue
-     * @param tilePath Path to pre-generated tile directory
-     * @param cfg Configuration options
-     * @param framesInFlight Number of frames in flight for synchronization
      * @return true on success
      */
-    bool init(VkDevice device, VmaAllocator allocator,
-              VkCommandPool commandPool, VkQueue queue,
-              const std::string& tilePath,
-              const VirtualTextureConfig& cfg = VirtualTextureConfig{},
-              uint32_t framesInFlight = 2);
+    bool init(const InitInfo& info);
 
     /**
      * Destroy all resources

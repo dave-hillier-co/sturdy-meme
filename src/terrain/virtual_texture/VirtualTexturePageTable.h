@@ -2,10 +2,12 @@
 
 #include "VirtualTextureTypes.h"
 #include <vulkan/vulkan.h>
+#include <vulkan/vulkan_raii.hpp>
 #include <vk_mem_alloc.h>
 #include <vector>
 #include <memory>
-#include "VulkanRAII.h"
+#include <optional>
+#include "VmaResources.h"
 
 namespace VirtualTexture {
 
@@ -18,14 +20,21 @@ namespace VirtualTexture {
  */
 class VirtualTexturePageTable {
 public:
+    struct InitInfo {
+        const vk::raii::Device* raiiDevice = nullptr;
+        VkDevice device = VK_NULL_HANDLE;
+        VmaAllocator allocator = VK_NULL_HANDLE;
+        VkCommandPool commandPool = VK_NULL_HANDLE;
+        VkQueue queue = VK_NULL_HANDLE;
+        VirtualTextureConfig config;
+        uint32_t framesInFlight = 2;
+    };
+
     /**
      * Factory: Create and initialize VirtualTexturePageTable.
      * Returns nullptr on failure.
      */
-    static std::unique_ptr<VirtualTexturePageTable> create(VkDevice device, VmaAllocator allocator,
-                                                            VkCommandPool commandPool, VkQueue queue,
-                                                            const VirtualTextureConfig& config,
-                                                            uint32_t framesInFlight = 2);
+    static std::unique_ptr<VirtualTexturePageTable> create(const InitInfo& info);
 
     ~VirtualTexturePageTable();
 
@@ -61,7 +70,7 @@ public:
     VkImageView getImageView(uint32_t mipLevel) const;
 
     // Get the sampler for the page table
-    VkSampler getSampler() const { return pageTableSampler.get(); }
+    VkSampler getSampler() const { return pageTableSampler_ ? **pageTableSampler_ : VK_NULL_HANDLE; }
 
     // Get the combined image view (array of all mip levels)
     VkImageView getCombinedImageView() const { return combinedImageView; }
@@ -69,8 +78,7 @@ public:
 private:
     VirtualTexturePageTable() = default;  // Private: use factory
 
-    bool initInternal(VkDevice device, VmaAllocator allocator, VkCommandPool commandPool,
-                      VkQueue queue, const VirtualTextureConfig& config, uint32_t framesInFlight);
+    bool initInternal(const InitInfo& info);
     void cleanup();
 
     // Create page table textures
@@ -86,6 +94,7 @@ private:
     VirtualTextureConfig config;
     VkDevice device_ = VK_NULL_HANDLE;
     VmaAllocator allocator_ = VK_NULL_HANDLE;
+    const vk::raii::Device* raiiDevice_ = nullptr;
 
     // One image per mip level
     std::vector<VkImage> pageTableImages;
@@ -94,10 +103,10 @@ private:
 
     // Combined image view (texture array)
     VkImageView combinedImageView = VK_NULL_HANDLE;
-    ManagedSampler pageTableSampler;
+    std::optional<vk::raii::Sampler> pageTableSampler_;
 
     // Per-frame staging buffers to avoid race conditions with in-flight frames
-    std::vector<ManagedBuffer> stagingBuffers_;
+    std::vector<VmaBuffer> stagingBuffers_;
     std::vector<void*> stagingMapped_;
     uint32_t framesInFlight_ = 2;
 

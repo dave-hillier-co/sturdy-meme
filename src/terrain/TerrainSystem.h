@@ -1,6 +1,7 @@
 #pragma once
 
 #include <vulkan/vulkan.hpp>
+#include <vulkan/vulkan_raii.hpp>
 #include <vk_mem_alloc.h>
 #include <glm/glm.hpp>
 #include <vector>
@@ -127,6 +128,7 @@ public:
         vk::Device device;
         vk::PhysicalDevice physicalDevice;
         VmaAllocator allocator;
+        const vk::raii::Device* raiiDevice = nullptr;
         vk::RenderPass renderPass;
         vk::RenderPass shadowRenderPass;
         DescriptorManager::Pool* descriptorPool;  // Auto-growing pool
@@ -323,6 +325,7 @@ private:
     vk::Device device;
     vk::PhysicalDevice physicalDevice;
     VmaAllocator allocator = VK_NULL_HANDLE;
+    const vk::raii::Device* raiiDevice_ = nullptr;
     vk::RenderPass renderPass;
     vk::RenderPass shadowRenderPass;
     DescriptorManager::Pool* descriptorPool = nullptr;

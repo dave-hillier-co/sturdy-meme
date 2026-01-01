@@ -1,12 +1,14 @@
 #pragma once
 
 #include "VirtualTextureTypes.h"
-#include "VulkanRAII.h"
 #include <vulkan/vulkan.h>
+#include <vulkan/vulkan_raii.hpp>
 #include <vk_mem_alloc.h>
 #include <vector>
 #include <unordered_set>
 #include <memory>
+#include <optional>
+#include "VmaResources.h"
 
 namespace VirtualTexture {
 
@@ -93,10 +95,10 @@ private:
     void cleanup();
 
     struct FrameBuffer {
-        ManagedBuffer feedbackBuffer;
-        ManagedBuffer counterBuffer;
-        ManagedBuffer readbackBuffer;
-        ManagedBuffer counterReadbackBuffer;
+        VmaBuffer feedbackBuffer;
+        VmaBuffer counterBuffer;
+        VmaBuffer readbackBuffer;
+        VmaBuffer counterReadbackBuffer;
         void* readbackMapped = nullptr;
         void* counterReadbackMapped = nullptr;
     };

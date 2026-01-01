@@ -13,6 +13,7 @@ InitContext InitContext::build(
     ctx.device = vulkanContext.getDevice();
     ctx.physicalDevice = vulkanContext.getPhysicalDevice();
     ctx.allocator = vulkanContext.getAllocator();
+    ctx.raiiDevice = &vulkanContext.getRaiiDevice();
     ctx.graphicsQueue = vulkanContext.getGraphicsQueue();
     ctx.commandPool = cmdPool;
     ctx.descriptorPool = descPool;

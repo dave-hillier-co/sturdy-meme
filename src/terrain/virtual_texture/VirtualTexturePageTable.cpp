@@ -1,19 +1,17 @@
 #include "VirtualTexturePageTable.h"
 #include "VulkanBarriers.h"
-#include "VulkanRAII.h"
+#include "VulkanHelpers.h"
 #include "VulkanResourceFactory.h"
+#include <vulkan/vulkan.hpp>
 #include <SDL3/SDL_log.h>
 #include <cstring>
 #include <algorithm>
 
 namespace VirtualTexture {
 
-std::unique_ptr<VirtualTexturePageTable> VirtualTexturePageTable::create(VkDevice device, VmaAllocator allocator,
-                                                                          VkCommandPool commandPool, VkQueue queue,
-                                                                          const VirtualTextureConfig& config,
-                                                                          uint32_t framesInFlight) {
+std::unique_ptr<VirtualTexturePageTable> VirtualTexturePageTable::create(const InitInfo& info) {
     std::unique_ptr<VirtualTexturePageTable> pageTable(new VirtualTexturePageTable());
-    if (!pageTable->initInternal(device, allocator, commandPool, queue, config, framesInFlight)) {
+    if (!pageTable->initInternal(info)) {
         return nullptr;
     }
     return pageTable;
@@ -23,13 +21,22 @@ VirtualTexturePageTable::~VirtualTexturePageTable() {
     cleanup();
 }
 
-bool VirtualTexturePageTable::initInternal(VkDevice device, VmaAllocator allocator,
-                                            VkCommandPool commandPool, VkQueue queue,
-                                            const VirtualTextureConfig& cfg, uint32_t framesInFlight) {
-    config = cfg;
-    device_ = device;
-    allocator_ = allocator;
-    framesInFlight_ = framesInFlight;
+bool VirtualTexturePageTable::initInternal(const InitInfo& info) {
+    if (!info.raiiDevice) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "VirtualTexturePageTable::initInternal requires raiiDevice");
+        return false;
+    }
+
+    raiiDevice_ = info.raiiDevice;
+    config = info.config;
+    device_ = info.device;
+    allocator_ = info.allocator;
+    framesInFlight_ = info.framesInFlight;
+
+    VkDevice device = info.device;
+    VmaAllocator allocator = info.allocator;
+    VkCommandPool commandPool = info.commandPool;
+    VkQueue queue = info.queue;
 
     // Calculate total entries and offsets for each mip level
     size_t totalEntries = 0;
@@ -88,7 +95,7 @@ void VirtualTexturePageTable::cleanup() {
     if (device_ == VK_NULL_HANDLE) return;  // Not initialized
     VkDevice device = device_;
     VmaAllocator allocator = allocator_;
-    // ManagedBuffer cleanup - unmap first
+    // VmaBuffer cleanup - unmap first
     for (size_t i = 0; i < stagingBuffers_.size(); ++i) {
         if (stagingMapped_[i]) {
             stagingBuffers_[i].unmap();
@@ -99,7 +106,7 @@ void VirtualTexturePageTable::cleanup() {
     stagingBuffers_.clear();
     stagingMapped_.clear();
 
-    pageTableSampler.reset();
+    pageTableSampler_.reset();
 
     if (combinedImageView != VK_NULL_HANDLE) {
         vkDestroyImageView(device, combinedImageView, nullptr);
@@ -201,7 +208,28 @@ bool VirtualTexturePageTable::createPageTableTextures(VkDevice device, VmaAlloca
 }
 
 bool VirtualTexturePageTable::createSampler(VkDevice device) {
-    return VulkanResourceFactory::createSamplerNearestClamp(device, pageTableSampler);
+    if (!raiiDevice_) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "VirtualTexturePageTable::createSampler requires raiiDevice");
+        return false;
+    }
+
+    auto samplerInfo = vk::SamplerCreateInfo{}
+        .setMagFilter(vk::Filter::eNearest)
+        .setMinFilter(vk::Filter::eNearest)
+        .setMipmapMode(vk::SamplerMipmapMode::eNearest)
+        .setAddressModeU(vk::SamplerAddressMode::eClampToEdge)
+        .setAddressModeV(vk::SamplerAddressMode::eClampToEdge)
+        .setAddressModeW(vk::SamplerAddressMode::eClampToEdge)
+        .setMinLod(0.0f)
+        .setMaxLod(0.0f);
+
+    try {
+        pageTableSampler_.emplace(*raiiDevice_, samplerInfo);
+    } catch (const vk::SystemError& e) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create page table sampler: %s", e.what());
+        return false;
+    }
+    return true;
 }
 
 size_t VirtualTexturePageTable::getEntryIndex(TileId id) const {

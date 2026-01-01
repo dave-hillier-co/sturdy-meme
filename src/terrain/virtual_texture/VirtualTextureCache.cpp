@@ -1,19 +1,28 @@
 #include "VirtualTextureCache.h"
 #include "VulkanBarriers.h"
 #include "VulkanResourceFactory.h"
+#include <vulkan/vulkan.hpp>
 #include <SDL3/SDL_log.h>
 #include <algorithm>
 #include <cstring>
 
 namespace VirtualTexture {
 
-bool VirtualTextureCache::init(VkDevice device, VmaAllocator allocator,
-                                VkCommandPool commandPool, VkQueue queue,
-                                const VirtualTextureConfig& cfg, uint32_t framesInFlight,
-                                bool useCompression) {
-    config = cfg;
-    framesInFlight_ = framesInFlight;
-    useCompression_ = useCompression;
+bool VirtualTextureCache::init(const InitInfo& info) {
+    if (!info.raiiDevice) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "VirtualTextureCache::init requires raiiDevice");
+        return false;
+    }
+
+    raiiDevice_ = info.raiiDevice;
+    config = info.config;
+    framesInFlight_ = info.framesInFlight;
+    useCompression_ = info.useCompression;
+
+    VkDevice device = info.device;
+    VmaAllocator allocator = info.allocator;
+    VkCommandPool commandPool = info.commandPool;
+    VkQueue queue = info.queue;
 
     // Initialize slot array
     uint32_t totalSlots = config.getTotalCacheSlots();
@@ -65,7 +74,7 @@ bool VirtualTextureCache::init(VkDevice device, VmaAllocator allocator,
 }
 
 void VirtualTextureCache::destroy(VkDevice device, VmaAllocator allocator) {
-    // ManagedBuffer cleanup - unmap first
+    // VmaBuffer cleanup - unmap first
     for (size_t i = 0; i < stagingBuffers_.size(); ++i) {
         if (stagingMapped_[i]) {
             stagingBuffers_[i].unmap();
@@ -76,7 +85,7 @@ void VirtualTextureCache::destroy(VkDevice device, VmaAllocator allocator) {
     stagingBuffers_.clear();
     stagingMapped_.clear();
 
-    cacheSampler.reset();
+    cacheSampler_.reset();
 
     if (cacheImageView != VK_NULL_HANDLE) {
         vkDestroyImageView(device, cacheImageView, nullptr);
@@ -173,7 +182,28 @@ bool VirtualTextureCache::createCacheTexture(VkDevice device, VmaAllocator alloc
 }
 
 bool VirtualTextureCache::createSampler(VkDevice device) {
-    return VulkanResourceFactory::createSamplerLinearClamp(device, cacheSampler);
+    if (!raiiDevice_) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "VirtualTextureCache::createSampler requires raiiDevice");
+        return false;
+    }
+
+    auto samplerInfo = vk::SamplerCreateInfo{}
+        .setMagFilter(vk::Filter::eLinear)
+        .setMinFilter(vk::Filter::eLinear)
+        .setMipmapMode(vk::SamplerMipmapMode::eLinear)
+        .setAddressModeU(vk::SamplerAddressMode::eClampToEdge)
+        .setAddressModeV(vk::SamplerAddressMode::eClampToEdge)
+        .setAddressModeW(vk::SamplerAddressMode::eClampToEdge)
+        .setMinLod(0.0f)
+        .setMaxLod(VK_LOD_CLAMP_NONE);
+
+    try {
+        cacheSampler_.emplace(*raiiDevice_, samplerInfo);
+    } catch (const vk::SystemError& e) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create cache sampler: %s", e.what());
+        return false;
+    }
+    return true;
 }
 
 CacheSlot* VirtualTextureCache::allocateSlot(TileId id, uint32_t currentFrame) {

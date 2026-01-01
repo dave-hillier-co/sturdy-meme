@@ -1,13 +1,15 @@
 #pragma once
 
 #include <vulkan/vulkan.h>
+#include <vulkan/vulkan_raii.hpp>
 #include <vk_mem_alloc.h>
 #include <glm/glm.hpp>
 #include <vector>
 #include <string>
 #include <memory>
+#include <optional>
 
-#include "VulkanRAII.h"
+#include "VmaResources.h"
 
 /**
  * FoamBuffer - Phase 14 & 16: Temporal Foam Persistence + Wake System
@@ -51,6 +53,7 @@ public:
         uint32_t framesInFlight;
         uint32_t resolution = 512;      // Foam buffer resolution
         float worldSize = 16384.0f;     // World size covered by foam buffer
+        const vk::raii::Device* raiiDevice = nullptr;
     };
 
     // Push constants for compute shader
@@ -90,7 +93,7 @@ public:
 
     // Get foam buffer for sampling in water shader
     VkImageView getFoamBufferView() const { return foamBufferView[currentBuffer]; }
-    VkSampler getSampler() const { return sampler.get(); }
+    VkSampler getSampler() const { return sampler_ ? **sampler_ : VK_NULL_HANDLE; }
 
     // Configuration
     void setWorldExtent(const glm::vec2& center, const glm::vec2& size);
@@ -136,6 +139,7 @@ private:
     VkCommandPool commandPool = VK_NULL_HANDLE;
     VkQueue computeQueue = VK_NULL_HANDLE;
     std::string shaderPath;
+    const vk::raii::Device* raiiDevice_ = nullptr;
 
     // Configuration
     uint32_t framesInFlight = 0;
@@ -156,12 +160,12 @@ private:
     int currentBuffer = 0;  // Which buffer to read from
 
     // Sampler (RAII-managed)
-    ManagedSampler sampler;
+    std::optional<vk::raii::Sampler> sampler_;
 
     // Compute pipeline (RAII-managed)
-    ManagedPipeline computePipeline;
-    ManagedPipelineLayout computePipelineLayout;
-    ManagedDescriptorSetLayout descriptorSetLayout;
+    std::optional<vk::raii::Pipeline> computePipeline_;
+    std::optional<vk::raii::PipelineLayout> computePipelineLayout_;
+    std::optional<vk::raii::DescriptorSetLayout> descriptorSetLayout_;
     VkDescriptorPool descriptorPool = VK_NULL_HANDLE;
     std::vector<VkDescriptorSet> descriptorSets;
 

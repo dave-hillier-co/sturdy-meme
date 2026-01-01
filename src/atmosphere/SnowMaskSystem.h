@@ -1,6 +1,7 @@
 #pragma once
 
 #include <vulkan/vulkan.h>
+#include <vulkan/vulkan_raii.hpp>
 #include <vk_mem_alloc.h>
 #include <glm/glm.hpp>
 #include <vector>
@@ -11,7 +12,6 @@
 #include "BufferUtils.h"
 #include "SystemLifecycleHelper.h"
 #include "EnvironmentSettings.h"
-#include "VulkanRAII.h"
 
 // Forward declarations
 class VolumetricSnowSystem;
@@ -79,7 +79,7 @@ public:
 
     // Accessors for other systems to bind the snow mask texture
     VkImageView getSnowMaskView() const { return snowMaskView; }
-    VkSampler getSnowMaskSampler() const { return snowMaskSampler.get(); }
+    VkSampler getSnowMaskSampler() const { return snowMaskSampler_ ? **snowMaskSampler_ : VK_NULL_HANDLE; }
 
     // Get mask parameters for shader uniforms
     glm::vec2 getMaskOrigin() const { return maskOrigin; }
@@ -116,7 +116,7 @@ private:
     VkImage snowMaskImage = VK_NULL_HANDLE;
     VmaAllocation snowMaskAllocation = VK_NULL_HANDLE;
     VkImageView snowMaskView = VK_NULL_HANDLE;
-    ManagedSampler snowMaskSampler;
+    std::optional<vk::raii::Sampler> snowMaskSampler_;
 
     // Uniform buffers (per frame)
     BufferUtils::PerFrameBufferSet uniformBuffers;

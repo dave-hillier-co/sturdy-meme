@@ -1,6 +1,7 @@
 #pragma once
 
 #include <vulkan/vulkan.h>
+#include <vulkan/vulkan_raii.hpp>
 #include <vk_mem_alloc.h>
 #include <string>
 #include <cstdint>
@@ -24,6 +25,9 @@ struct InitContext {
     VkDevice device = VK_NULL_HANDLE;
     VkPhysicalDevice physicalDevice = VK_NULL_HANDLE;
     VmaAllocator allocator = VK_NULL_HANDLE;
+
+    // vulkan-hpp RAII device for creating vk::raii::* objects
+    const vk::raii::Device* raiiDevice = nullptr;
 
     // Queue for one-time command submission (uploads, etc.)
     VkQueue graphicsQueue = VK_NULL_HANDLE;

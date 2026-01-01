@@ -38,7 +38,7 @@ bool VolumetricSnowSystem::initInternal(const InitInfo& info) {
 void VolumetricSnowSystem::cleanup() {
     if (!lifecycle.getDevice()) return;  // Not initialized
 
-    cascadeSampler.reset();
+    cascadeSampler_.reset();
 
     for (uint32_t i = 0; i < NUM_SNOW_CASCADES; i++) {
         if (cascadeViews[i]) {
@@ -128,8 +128,14 @@ bool VolumetricSnowSystem::createCascadeTextures() {
     }
 
     // Create shared sampler for all cascades
-    if (!VulkanResourceFactory::createSamplerLinearClamp(getDevice(), cascadeSampler)) {
-        SDL_Log("Failed to create volumetric snow cascade sampler");
+    if (auto* raiiDevice = lifecycle.getRaiiDevice(); raiiDevice) {
+        cascadeSampler_ = VulkanResourceFactory::createSamplerLinearClamp(*raiiDevice);
+        if (!cascadeSampler_) {
+            SDL_Log("Failed to create volumetric snow cascade sampler");
+            return false;
+        }
+    } else {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "RAII device not available for cascade sampler");
         return false;
     }
 

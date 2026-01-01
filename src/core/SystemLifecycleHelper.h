@@ -3,6 +3,7 @@
 #include <functional>
 #include <string>
 #include <vulkan/vulkan.h>
+#include <vulkan/vulkan_raii.hpp>
 #include <vk_mem_alloc.h>
 #include "DescriptorManager.h"
 
@@ -16,6 +17,7 @@ public:
         VkExtent2D extent;
         std::string shaderPath;
         uint32_t framesInFlight;
+        const vk::raii::Device* raiiDevice = nullptr;  // For vk::raii::* resource creation
     };
 
     struct PipelineHandles {
@@ -94,6 +96,7 @@ public:
     void setExtent(VkExtent2D newExtent) { initInfo.extent = newExtent; }
     const std::string& getShaderPath() const { return initInfo.shaderPath; }
     uint32_t getFramesInFlight() const { return initInfo.framesInFlight; }
+    const vk::raii::Device* getRaiiDevice() const { return initInfo.raiiDevice; }
 
     PipelineHandles& getComputePipeline() { return computePipeline; }
     PipelineHandles& getGraphicsPipeline() { return graphicsPipeline; }

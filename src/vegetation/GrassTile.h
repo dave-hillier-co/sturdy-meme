@@ -63,10 +63,13 @@ public:
 
     /**
      * Initialize tile with coordinate (includes LOD level)
+     * @param coord The tile coordinate
+     * @param creationTime The time when this tile was created (for fade-in effects)
      */
-    void init(TileCoord coord) {
+    void init(TileCoord coord, float creationTime = 0.0f) {
         coord_ = coord;
         lastUsedFrame_ = 0;
+        creationTime_ = creationTime;
     }
 
     // Accessors
@@ -137,6 +140,11 @@ public:
     uint64_t getLastUsedFrame() const { return lastUsedFrame_; }
 
     /**
+     * Get the time when this tile was created (for fade-in effects)
+     */
+    float getCreationTime() const { return creationTime_; }
+
+    /**
      * Check if tile is safe to unload (hasn't been used for N frames)
      * Uses triple buffering - wait at least 3 frames to ensure GPU isn't using it
      */
@@ -147,4 +155,5 @@ public:
 private:
     TileCoord coord_{0, 0, 0};
     uint64_t lastUsedFrame_ = 0;
+    float creationTime_ = 0.0f;  // Time when tile was created (for fade-in)
 };

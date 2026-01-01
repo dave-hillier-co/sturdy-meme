@@ -788,7 +788,7 @@ void GrassSystem::updateDescriptorSets(vk::Device dev, const std::vector<vk::Buf
 }
 
 void GrassSystem::updateUniforms(uint32_t frameIndex, const glm::vec3& cameraPos, const glm::mat4& viewProj,
-                                  float terrainSize, float terrainHeightScale) {
+                                  float terrainSize, float terrainHeightScale, float time) {
     // Fill CullingUniforms (shared culling parameters) using unified constants
     CullingUniforms culling{};
     culling.cameraPosition = glm::vec4(cameraPos, 1.0f);
@@ -820,7 +820,7 @@ void GrassSystem::updateUniforms(uint32_t frameIndex, const glm::vec3& cameraPos
     // Update active tiles in tiled mode based on camera position
     if (tiledModeEnabled_ && tileManager_) {
         frameCounter_++;
-        tileManager_->updateActiveTiles(cameraPos, frameCounter_);
+        tileManager_->updateActiveTiles(cameraPos, frameCounter_, time);
     }
 }
 
@@ -925,8 +925,8 @@ void GrassSystem::recordResetAndCompute(vk::CommandBuffer cmd, uint32_t frameInd
     grassPush.tileSize = GrassConstants::TILE_SIZE_LOD0;
     grassPush.spacingMult = 1.0f;
     grassPush.lodLevel = 0;
-    grassPush.padding[0] = 0.0f;
-    grassPush.padding[1] = 0.0f;
+    grassPush.tileLoadTime = 0.0f;  // Legacy mode: no fade-in needed
+    grassPush.padding = 0.0f;
     cmd.pushConstants<TiledGrassPushConstants>(
         getComputePipelineHandles().pipelineLayout,
         vk::ShaderStageFlagBits::eCompute,
@@ -998,8 +998,8 @@ void GrassSystem::recordDraw(vk::CommandBuffer cmd, uint32_t frameIndex, float t
     grassPush.tileSize = GrassConstants::TILE_SIZE_LOD0;
     grassPush.spacingMult = 1.0f;
     grassPush.lodLevel = 0;
-    grassPush.padding[0] = 0.0f;
-    grassPush.padding[1] = 0.0f;
+    grassPush.tileLoadTime = 0.0f;  // Not used in graphics pass
+    grassPush.padding = 0.0f;
     cmd.pushConstants<TiledGrassPushConstants>(
         getGraphicsPipelineHandles().pipelineLayout,
         vk::ShaderStageFlagBits::eVertex,

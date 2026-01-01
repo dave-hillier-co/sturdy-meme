@@ -31,7 +31,8 @@ layout(push_constant) uniform PushConstants {
     float tileSize;      // Tile size in world units (varies by LOD)
     float spacingMult;   // Spacing multiplier for this LOD
     uint lodLevel;       // LOD level (0 = high detail, 1 = medium, 2 = low)
-    float padding[2];
+    float tileLoadTime;  // Time when tile was loaded (not used in vertex shader)
+    float padding;
 } push;
 
 layout(location = 0) out vec3 fragColor;

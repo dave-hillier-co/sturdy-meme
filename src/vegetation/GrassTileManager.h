@@ -66,8 +66,9 @@ public:
      * Call this once per frame before compute/render
      * @param cameraPos Current camera position
      * @param frameNumber Current frame number (for tracking tile usage)
+     * @param currentTime Current time in seconds (for tile fade-in effects)
      */
-    void updateActiveTiles(const glm::vec3& cameraPos, uint64_t frameNumber);
+    void updateActiveTiles(const glm::vec3& cameraPos, uint64_t frameNumber, float currentTime);
 
     /**
      * Update descriptor sets with shared resources
@@ -180,6 +181,9 @@ private:
 
     // Frame tracking for tile unloading
     uint64_t currentFrame_ = 0;
+
+    // Current time (for tile fade-in)
+    float currentTime_ = 0.0f;
 
     // Shared buffers from GrassSystem (all tiles write to these)
     vk::Buffer sharedInstanceBuffer_;

@@ -167,6 +167,10 @@ CONST_FLOAT(GRASS_DISPLACEMENT_THRESHOLD, 0.01);
 CONST_FLOAT(GRASS_TILE_LOAD_MARGIN, 10.0);
 CONST_FLOAT(GRASS_TILE_UNLOAD_MARGIN, 20.0);
 
+// Fade-in duration when a new tile loads (seconds)
+// Grass blades stochastically appear over this duration to prevent popping
+CONST_FLOAT(GRASS_TILE_FADE_IN_DURATION, 0.5);
+
 // =============================================================================
 // RENDERING
 // =============================================================================

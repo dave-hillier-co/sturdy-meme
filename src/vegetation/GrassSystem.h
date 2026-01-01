@@ -37,7 +37,8 @@ struct TiledGrassPushConstants {
     float tileSize;      // Tile size in world units (varies by LOD: 64, 128, 256)
     float spacingMult;   // Spacing multiplier for this LOD (1.0, 2.0, 4.0)
     uint32_t lodLevel;   // LOD level (0 = high detail, 1 = medium, 2 = low)
-    float padding[2];    // Padding to align to 16 bytes
+    float tileLoadTime;  // Time when this tile was first loaded (for fade-in)
+    float padding;       // Padding to align to 16 bytes
 };
 
 // Displacement source for grass interaction (player, NPCs, etc.)
@@ -130,7 +131,7 @@ public:
                               const BufferUtils::DynamicUniformBuffer* dynamicRendererUBO = nullptr);
 
     void updateUniforms(uint32_t frameIndex, const glm::vec3& cameraPos, const glm::mat4& viewProj,
-                        float terrainSize, float terrainHeightScale);
+                        float terrainSize, float terrainHeightScale, float time);
     void updateDisplacementSources(const glm::vec3& playerPos, float playerRadius, float deltaTime);
     void recordDisplacementUpdate(vk::CommandBuffer cmd, uint32_t frameIndex);
     void recordResetAndCompute(vk::CommandBuffer cmd, uint32_t frameIndex, float time);

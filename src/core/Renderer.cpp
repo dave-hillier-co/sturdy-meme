@@ -823,7 +823,7 @@ bool Renderer::render(const Camera& camera) {
     {
         systems_->profiler().beginCpuZone("SystemUpdates:Grass");
         systems_->grass().updateUniforms(frame.frameIndex, frame.cameraPosition, frame.viewProj,
-                                   frame.terrainSize, frame.heightScale);
+                                   frame.terrainSize, frame.heightScale, frame.time);
         systems_->grass().updateDisplacementSources(frame.playerPosition, frame.playerCapsuleRadius, frame.deltaTime);
         systems_->profiler().endCpuZone("SystemUpdates:Grass");
     }

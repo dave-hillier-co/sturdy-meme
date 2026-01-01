@@ -54,7 +54,7 @@ GrassTile* GrassTileManager::getOrCreateTile(const GrassTile::TileCoord& coord) 
 
     // Create new tile (tiles are lightweight - shared buffers in manager)
     auto tile = std::make_unique<GrassTile>();
-    tile->init(coord);
+    tile->init(coord, currentTime_);
 
     SDL_Log("GrassTileManager: Created LOD%u tile at (%d, %d), world origin (%.1f, %.1f), size %.0fm",
         coord.lod, coord.x, coord.z, tile->getWorldOrigin().x, tile->getWorldOrigin().y,
@@ -125,9 +125,10 @@ bool GrassTileManager::isCoveredByHigherLod(const glm::vec2& worldPos, uint32_t 
     return false;
 }
 
-void GrassTileManager::updateActiveTiles(const glm::vec3& cameraPos, uint64_t frameNumber) {
+void GrassTileManager::updateActiveTiles(const glm::vec3& cameraPos, uint64_t frameNumber, float currentTime) {
     glm::vec2 cameraXZ(cameraPos.x, cameraPos.z);
     currentFrame_ = frameNumber;
+    currentTime_ = currentTime;
 
     // Clear active tiles list
     activeTiles_.clear();
@@ -404,8 +405,8 @@ void GrassTileManager::recordCompute(vk::CommandBuffer cmd, uint32_t frameIndex,
         push.tileSize = tile->getTileSize();
         push.spacingMult = tile->getSpacingMult();
         push.lodLevel = tile->getLodLevel();
-        push.padding[0] = 0.0f;
-        push.padding[1] = 0.0f;
+        push.tileLoadTime = tile->getCreationTime();
+        push.padding = 0.0f;
 
         cmd.pushConstants(computePipelineLayout_,
                           vk::ShaderStageFlagBits::eCompute,
@@ -456,8 +457,8 @@ void GrassTileManager::recordDraw(vk::CommandBuffer cmd, uint32_t frameIndex, fl
     push.tileSize = GrassConstants::TILE_SIZE_LOD0;  // Default, not used in vertex shader
     push.spacingMult = 1.0f;
     push.lodLevel = 0;
-    push.padding[0] = 0.0f;
-    push.padding[1] = 0.0f;
+    push.tileLoadTime = 0.0f;  // Not used in graphics pass
+    push.padding = 0.0f;
 
     cmd.pushConstants(graphicsPipelineLayout,
                       vk::ShaderStageFlagBits::eVertex,

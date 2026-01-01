@@ -1,8 +1,10 @@
 #pragma once
 
 #include <vulkan/vulkan.h>
+#include <vulkan/vulkan_raii.hpp>
 #include <vk_mem_alloc.h>
 #include <vector>
+#include <optional>
 #include "VulkanRAII.h"
 
 /**
@@ -302,4 +304,34 @@ public:
      * Create shadow map comparison sampler
      */
     static bool createSamplerShadowComparison(VkDevice device, ManagedSampler& outSampler);
+
+    // ========================================================================
+    // RAII Sampler Factories (vulkan-hpp raii types)
+    // ========================================================================
+
+    /**
+     * Create nearest-filtering sampler with clamp-to-edge (vk::raii version)
+     */
+    static std::optional<vk::raii::Sampler> createSamplerNearestClamp(const vk::raii::Device& device);
+
+    /**
+     * Create linear-filtering sampler with clamp-to-edge (vk::raii version)
+     */
+    static std::optional<vk::raii::Sampler> createSamplerLinearClamp(const vk::raii::Device& device);
+
+    /**
+     * Create linear-filtering sampler with repeat (vk::raii version)
+     */
+    static std::optional<vk::raii::Sampler> createSamplerLinearRepeat(const vk::raii::Device& device);
+
+    /**
+     * Create linear-filtering sampler with repeat and anisotropy (vk::raii version)
+     */
+    static std::optional<vk::raii::Sampler> createSamplerLinearRepeatAnisotropic(
+        const vk::raii::Device& device, float maxAnisotropy);
+
+    /**
+     * Create shadow map comparison sampler (vk::raii version)
+     */
+    static std::optional<vk::raii::Sampler> createSamplerShadowComparison(const vk::raii::Device& device);
 };

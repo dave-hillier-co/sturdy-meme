@@ -32,6 +32,7 @@ std::optional<SnowMaskSystem::Bundle> SnowMaskSystem::createWithDependencies(
     snowMaskInfo.extent = ctx.extent;
     snowMaskInfo.shaderPath = ctx.shaderPath;
     snowMaskInfo.framesInFlight = ctx.framesInFlight;
+    snowMaskInfo.raiiDevice = ctx.raiiDevice;
 
     auto snowMaskSystem = create(snowMaskInfo);
     if (!snowMaskSystem) {
@@ -48,6 +49,7 @@ std::optional<SnowMaskSystem::Bundle> SnowMaskSystem::createWithDependencies(
     volumetricSnowInfo.extent = ctx.extent;
     volumetricSnowInfo.shaderPath = ctx.shaderPath;
     volumetricSnowInfo.framesInFlight = ctx.framesInFlight;
+    volumetricSnowInfo.raiiDevice = ctx.raiiDevice;
 
     auto volumetricSnowSystem = VolumetricSnowSystem::create(volumetricSnowInfo);
     if (!volumetricSnowSystem) {
@@ -82,7 +84,7 @@ bool SnowMaskSystem::initInternal(const InitInfo& info) {
 void SnowMaskSystem::cleanup() {
     if (!lifecycle.getDevice()) return;  // Not initialized
 
-    snowMaskSampler.reset();
+    snowMaskSampler_.reset();
     if (snowMaskView) {
         vkDestroyImageView(lifecycle.getDevice(), snowMaskView, nullptr);
         snowMaskView = VK_NULL_HANDLE;
@@ -167,8 +169,14 @@ bool SnowMaskSystem::createSnowMaskTexture() {
     }
 
     // Create sampler for other systems to sample the snow mask
-    if (!VulkanResourceFactory::createSamplerLinearClamp(getDevice(), snowMaskSampler)) {
-        SDL_Log("Failed to create snow mask sampler");
+    if (auto* raiiDevice = lifecycle.getRaiiDevice(); raiiDevice) {
+        snowMaskSampler_ = VulkanResourceFactory::createSamplerLinearClamp(*raiiDevice);
+        if (!snowMaskSampler_) {
+            SDL_Log("Failed to create snow mask sampler");
+            return false;
+        }
+    } else {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "RAII device not available for snow mask sampler");
         return false;
     }
 

@@ -42,6 +42,7 @@ std::unique_ptr<BilateralGridSystem> BilateralGridSystem::create(const InitConte
     info.extent = ctx.extent;
     info.shaderPath = ctx.shaderPath;
     info.framesInFlight = ctx.framesInFlight;
+    info.raiiDevice = ctx.raiiDevice;
     return create(info);
 }
 
@@ -56,6 +57,12 @@ bool BilateralGridSystem::initInternal(const InitInfo& info) {
     extent = info.extent;
     shaderPath = info.shaderPath;
     framesInFlight = info.framesInFlight;
+    raiiDevice_ = info.raiiDevice;
+
+    if (!raiiDevice_) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "BilateralGridSystem requires raiiDevice");
+        return false;
+    }
 
     if (!createGridTextures()) return false;
     if (!createSampler()) return false;
@@ -80,15 +87,15 @@ void BilateralGridSystem::cleanup() {
     BufferUtils::destroyBuffers(allocator, buildUniformBuffers);
     BufferUtils::destroyBuffers(allocator, blurUniformBuffers);
 
-    buildDescriptorSetLayout.reset();
-    buildPipelineLayout.reset();
-    buildPipeline.reset();
+    buildDescriptorSetLayout_.reset();
+    buildPipelineLayout_.reset();
+    buildPipeline_.reset();
 
-    blurDescriptorSetLayout.reset();
-    blurPipelineLayout.reset();
-    blurPipeline.reset();
+    blurDescriptorSetLayout_.reset();
+    blurPipelineLayout_.reset();
+    blurPipeline_.reset();
 
-    gridSampler.reset();
+    gridSampler_.reset();
 
     device = VK_NULL_HANDLE;
 }
@@ -172,8 +179,7 @@ bool BilateralGridSystem::createSampler() {
         .setBorderColor(vk::BorderColor::eFloatOpaqueBlack);
 
     try {
-        auto sampler = vk::Device(device).createSampler(samplerInfo);
-        gridSampler = ManagedSampler::fromRaw(device, sampler);
+        gridSampler_.emplace(*raiiDevice_, samplerInfo);
     } catch (const vk::SystemError& e) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
                     "BilateralGridSystem: Failed to create sampler: %s", e.what());
@@ -212,8 +218,7 @@ bool BilateralGridSystem::createDescriptorSetLayout() {
             .setBindings(bindings);
 
         try {
-            auto layout = vk::Device(device).createDescriptorSetLayout(layoutInfo);
-            buildDescriptorSetLayout = ManagedDescriptorSetLayout::fromRaw(device, layout);
+            buildDescriptorSetLayout_.emplace(*raiiDevice_, layoutInfo);
         } catch (const vk::SystemError& e) {
             SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
                         "BilateralGridSystem: Failed to create build descriptor set layout: %s", e.what());
@@ -250,8 +255,7 @@ bool BilateralGridSystem::createDescriptorSetLayout() {
             .setBindings(bindings);
 
         try {
-            auto layout = vk::Device(device).createDescriptorSetLayout(layoutInfo);
-            blurDescriptorSetLayout = ManagedDescriptorSetLayout::fromRaw(device, layout);
+            blurDescriptorSetLayout_.emplace(*raiiDevice_, layoutInfo);
         } catch (const vk::SystemError& e) {
             SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
                         "BilateralGridSystem: Failed to create blur descriptor set layout: %s", e.what());
@@ -294,16 +298,12 @@ bool BilateralGridSystem::createUniformBuffers() {
 }
 
 bool BilateralGridSystem::createBuildPipeline() {
-    vk::Device vkDevice(device);
-
     // Pipeline layout
-    vk::DescriptorSetLayout setLayout(buildDescriptorSetLayout.get());
-    auto layoutInfo = vk::PipelineLayoutCreateInfo{}
-        .setSetLayouts(setLayout);
+    vk::DescriptorSetLayout layouts[] = { **buildDescriptorSetLayout_ };
+    auto layoutInfo = vk::PipelineLayoutCreateInfo{}.setSetLayouts(layouts);
 
     try {
-        auto pipelineLayout = vkDevice.createPipelineLayout(layoutInfo);
-        buildPipelineLayout = ManagedPipelineLayout::fromRaw(device, pipelineLayout);
+        buildPipelineLayout_.emplace(*raiiDevice_, layoutInfo);
     } catch (const vk::SystemError& e) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
                     "BilateralGridSystem: Failed to create build pipeline layout: %s", e.what());
@@ -327,31 +327,27 @@ bool BilateralGridSystem::createBuildPipeline() {
 
     auto pipelineInfo = vk::ComputePipelineCreateInfo{}
         .setStage(stageInfo)
-        .setLayout(buildPipelineLayout.get());
+        .setLayout(**buildPipelineLayout_);
 
-    auto result = vkDevice.createComputePipeline(nullptr, pipelineInfo);
-    vkDevice.destroyShaderModule(shaderModule);
-
-    if (result.result != vk::Result::eSuccess) {
+    VkPipeline rawPipeline = VK_NULL_HANDLE;
+    if (vkCreateComputePipelines(device, VK_NULL_HANDLE, 1, reinterpret_cast<const VkComputePipelineCreateInfo*>(&pipelineInfo), nullptr, &rawPipeline) != VK_SUCCESS) {
+        vkDestroyShaderModule(device, *shaderModuleOpt, nullptr);
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
                     "BilateralGridSystem: Failed to create build pipeline");
         return false;
     }
-    buildPipeline = ManagedPipeline::fromRaw(device, result.value);
+    buildPipeline_.emplace(*raiiDevice_, rawPipeline);
+    vkDestroyShaderModule(device, *shaderModuleOpt, nullptr);
     return true;
 }
 
 bool BilateralGridSystem::createBlurPipeline() {
-    vk::Device vkDevice(device);
-
     // Pipeline layout
-    vk::DescriptorSetLayout setLayout(blurDescriptorSetLayout.get());
-    auto layoutInfo = vk::PipelineLayoutCreateInfo{}
-        .setSetLayouts(setLayout);
+    vk::DescriptorSetLayout layouts[] = { **blurDescriptorSetLayout_ };
+    auto layoutInfo = vk::PipelineLayoutCreateInfo{}.setSetLayouts(layouts);
 
     try {
-        auto pipelineLayout = vkDevice.createPipelineLayout(layoutInfo);
-        blurPipelineLayout = ManagedPipelineLayout::fromRaw(device, pipelineLayout);
+        blurPipelineLayout_.emplace(*raiiDevice_, layoutInfo);
     } catch (const vk::SystemError& e) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
                     "BilateralGridSystem: Failed to create blur pipeline layout: %s", e.what());
@@ -366,26 +362,25 @@ bool BilateralGridSystem::createBlurPipeline() {
                     "BilateralGridSystem: Failed to load blur shader: %s", shaderFile.c_str());
         return false;
     }
-    vk::ShaderModule shaderModule(*shaderModuleOpt);
 
     auto stageInfo = vk::PipelineShaderStageCreateInfo{}
         .setStage(vk::ShaderStageFlagBits::eCompute)
-        .setModule(shaderModule)
+        .setModule(*shaderModuleOpt)
         .setPName("main");
 
     auto pipelineInfo = vk::ComputePipelineCreateInfo{}
         .setStage(stageInfo)
-        .setLayout(blurPipelineLayout.get());
+        .setLayout(**blurPipelineLayout_);
 
-    auto result = vkDevice.createComputePipeline(nullptr, pipelineInfo);
-    vkDevice.destroyShaderModule(shaderModule);
-
-    if (result.result != vk::Result::eSuccess) {
+    VkPipeline rawPipeline = VK_NULL_HANDLE;
+    if (vkCreateComputePipelines(device, VK_NULL_HANDLE, 1, reinterpret_cast<const VkComputePipelineCreateInfo*>(&pipelineInfo), nullptr, &rawPipeline) != VK_SUCCESS) {
+        vkDestroyShaderModule(device, *shaderModuleOpt, nullptr);
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
                     "BilateralGridSystem: Failed to create blur pipeline");
         return false;
     }
-    blurPipeline = ManagedPipeline::fromRaw(device, result.value);
+    blurPipeline_.emplace(*raiiDevice_, rawPipeline);
+    vkDestroyShaderModule(device, *shaderModuleOpt, nullptr);
     return true;
 }
 
@@ -393,7 +388,7 @@ bool BilateralGridSystem::createDescriptorSets() {
     // Build descriptor sets (one per frame)
     buildDescriptorSets.resize(framesInFlight);
     for (uint32_t i = 0; i < framesInFlight; i++) {
-        buildDescriptorSets[i] = descriptorPool->allocateSingle(buildDescriptorSetLayout.get());
+        buildDescriptorSets[i] = descriptorPool->allocateSingle(**buildDescriptorSetLayout_);
         if (buildDescriptorSets[i] == VK_NULL_HANDLE) {
             SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
                         "BilateralGridSystem: Failed to allocate build descriptor set %u", i);
@@ -407,9 +402,9 @@ bool BilateralGridSystem::createDescriptorSets() {
     blurDescriptorSetsZ.resize(framesInFlight);
 
     for (uint32_t i = 0; i < framesInFlight; i++) {
-        blurDescriptorSetsX[i] = descriptorPool->allocateSingle(blurDescriptorSetLayout.get());
-        blurDescriptorSetsY[i] = descriptorPool->allocateSingle(blurDescriptorSetLayout.get());
-        blurDescriptorSetsZ[i] = descriptorPool->allocateSingle(blurDescriptorSetLayout.get());
+        blurDescriptorSetsX[i] = descriptorPool->allocateSingle(**blurDescriptorSetLayout_);
+        blurDescriptorSetsY[i] = descriptorPool->allocateSingle(**blurDescriptorSetLayout_);
+        blurDescriptorSetsZ[i] = descriptorPool->allocateSingle(**blurDescriptorSetLayout_);
 
         if (blurDescriptorSetsX[i] == VK_NULL_HANDLE ||
             blurDescriptorSetsY[i] == VK_NULL_HANDLE ||
@@ -600,7 +595,7 @@ void BilateralGridSystem::recordBilateralGrid(VkCommandBuffer cmd, uint32_t fram
     auto hdrInfo = vk::DescriptorImageInfo{}
         .setImageLayout(vk::ImageLayout::eShaderReadOnlyOptimal)
         .setImageView(hdrInputView)
-        .setSampler(gridSampler.get());
+        .setSampler(**gridSampler_);
 
     auto gridInfo = vk::DescriptorImageInfo{}
         .setImageLayout(vk::ImageLayout::eGeneral)
@@ -637,8 +632,8 @@ void BilateralGridSystem::recordBilateralGrid(VkCommandBuffer cmd, uint32_t fram
 
     // Build pass
     vk::CommandBuffer vkCmd(cmd);
-    vkCmd.bindPipeline(vk::PipelineBindPoint::eCompute, buildPipeline.get());
-    vkCmd.bindDescriptorSets(vk::PipelineBindPoint::eCompute, buildPipelineLayout.get(),
+    vkCmd.bindPipeline(vk::PipelineBindPoint::eCompute, **buildPipeline_);
+    vkCmd.bindDescriptorSets(vk::PipelineBindPoint::eCompute, **buildPipelineLayout_,
                              0, vk::DescriptorSet(buildDescriptorSets[frameIndex]), {});
 
     // Dispatch one thread per input pixel
@@ -657,7 +652,7 @@ void BilateralGridSystem::recordBilateralGrid(VkCommandBuffer cmd, uint32_t fram
     blurUniforms.sigma = 2.0f;      // Wide blur
     blurUniforms.gridDims = glm::ivec4(GRID_WIDTH, GRID_HEIGHT, GRID_DEPTH, 0);
 
-    vkCmd.bindPipeline(vk::PipelineBindPoint::eCompute, blurPipeline.get());
+    vkCmd.bindPipeline(vk::PipelineBindPoint::eCompute, **blurPipeline_);
 
     uint32_t blurGroupsX = (GRID_WIDTH + 7) / 8;
     uint32_t blurGroupsY = (GRID_HEIGHT + 7) / 8;
@@ -669,7 +664,7 @@ void BilateralGridSystem::recordBilateralGrid(VkCommandBuffer cmd, uint32_t fram
     memcpy(data, &blurUniforms, sizeof(blurUniforms));
     vmaUnmapMemory(allocator, blurUniformBuffers.allocations[frameIndex]);
 
-    vkCmd.bindDescriptorSets(vk::PipelineBindPoint::eCompute, blurPipelineLayout.get(),
+    vkCmd.bindDescriptorSets(vk::PipelineBindPoint::eCompute, **blurPipelineLayout_,
                              0, vk::DescriptorSet(blurDescriptorSetsX[frameIndex]), {});
     vkCmd.dispatch(blurGroupsX, blurGroupsY, blurGroupsZ);
 
@@ -684,7 +679,7 @@ void BilateralGridSystem::recordBilateralGrid(VkCommandBuffer cmd, uint32_t fram
     memcpy(data, &blurUniforms, sizeof(blurUniforms));
     vmaUnmapMemory(allocator, blurUniformBuffers.allocations[frameIndex]);
 
-    vkCmd.bindDescriptorSets(vk::PipelineBindPoint::eCompute, blurPipelineLayout.get(),
+    vkCmd.bindDescriptorSets(vk::PipelineBindPoint::eCompute, **blurPipelineLayout_,
                              0, vk::DescriptorSet(blurDescriptorSetsY[frameIndex]), {});
     vkCmd.dispatch(blurGroupsX, blurGroupsY, blurGroupsZ);
 

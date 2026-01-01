@@ -1,17 +1,18 @@
 #pragma once
 
 #include <vulkan/vulkan.h>
+#include <vulkan/vulkan_raii.hpp>
 #include <vk_mem_alloc.h>
 #include <glm/glm.hpp>
 #include <vector>
 #include <string>
 #include <array>
 #include <memory>
+#include <optional>
 
 #include "BufferUtils.h"
 #include "SystemLifecycleHelper.h"
 #include "EnvironmentSettings.h"
-#include "VulkanRAII.h"
 
 /**
  * VolumetricSnowSystem - Cascaded heightfield snow accumulation
@@ -106,7 +107,7 @@ public:
     VkImageView getCascadeView(uint32_t cascade) const {
         return cascade < NUM_SNOW_CASCADES ? cascadeViews[cascade] : VK_NULL_HANDLE;
     }
-    VkSampler getCascadeSampler() const { return cascadeSampler.get(); }
+    VkSampler getCascadeSampler() const { return cascadeSampler_ ? **cascadeSampler_ : VK_NULL_HANDLE; }
 
     // Get cascade parameters for shader uniforms (origin, size)
     glm::vec2 getCascadeOrigin(uint32_t cascade) const {
@@ -157,7 +158,7 @@ private:
     std::array<VkImage, NUM_SNOW_CASCADES> cascadeImages{};
     std::array<VmaAllocation, NUM_SNOW_CASCADES> cascadeAllocations{};
     std::array<VkImageView, NUM_SNOW_CASCADES> cascadeViews{};
-    ManagedSampler cascadeSampler;
+    std::optional<vk::raii::Sampler> cascadeSampler_;
 
     // Cascade world-space parameters (updated based on camera position)
     std::array<glm::vec2, NUM_SNOW_CASCADES> cascadeOrigins{};

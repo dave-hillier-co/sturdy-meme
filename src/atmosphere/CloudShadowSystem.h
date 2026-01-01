@@ -1,14 +1,16 @@
 #pragma once
 
 #include <vulkan/vulkan.h>
+#include <vulkan/vulkan_raii.hpp>
 #include <vk_mem_alloc.h>
 #include <glm/glm.hpp>
 #include <vector>
 #include <string>
 #include <memory>
+#include <optional>
 #include "DescriptorManager.h"
 #include "InitContext.h"
-#include "VulkanRAII.h"
+#include "VmaResources.h"
 #include "BufferUtils.h"
 #include "interfaces/ICloudShadowControl.h"
 
@@ -40,6 +42,7 @@ public:
         uint32_t framesInFlight;
         VkImageView cloudMapLUTView;  // From AtmosphereLUTSystem
         VkSampler cloudMapLUTSampler; // From AtmosphereLUTSystem
+        const vk::raii::Device* raiiDevice = nullptr;
     };
 
     // Cloud shadow map dimensions
@@ -76,8 +79,8 @@ public:
                       const glm::vec3& cameraPos);
 
     // Accessors for shader binding
-    VkImageView getShadowMapView() const { return shadowMapView_.get(); }
-    VkSampler getShadowMapSampler() const { return shadowMapSampler.get(); }
+    VkImageView getShadowMapView() const { return shadowMapView_ ? **shadowMapView_ : VK_NULL_HANDLE; }
+    VkSampler getShadowMapSampler() const { return shadowMapSampler_ ? **shadowMapSampler_ : VK_NULL_HANDLE; }
 
     // Get the world-to-shadow-UV matrix for sampling in fragment shaders
     const glm::mat4& getWorldToShadowUV() const { return worldToShadowUV; }
@@ -113,20 +116,21 @@ private:
     DescriptorManager::Pool* descriptorPool = nullptr;
     std::string shaderPath;
     uint32_t framesInFlight = 0;
+    const vk::raii::Device* raiiDevice_ = nullptr;
 
     // External resources (not owned)
     VkImageView cloudMapLUTView = VK_NULL_HANDLE;
     VkSampler cloudMapLUTSampler = VK_NULL_HANDLE;
 
-    // Cloud shadow map (R16F - stores shadow attenuation 0=full shadow, 1=no shadow) - RAII-managed
-    ManagedImage shadowMap_;
-    ManagedImageView shadowMapView_;
-    ManagedSampler shadowMapSampler;
+    // Cloud shadow map (R16F - stores shadow attenuation 0=full shadow, 1=no shadow)
+    ManagedImage shadowMap_;  // VMA-managed image (keep as-is)
+    std::optional<vk::raii::ImageView> shadowMapView_;
+    std::optional<vk::raii::Sampler> shadowMapSampler_;
 
     // Compute pipeline (RAII-managed)
-    ManagedDescriptorSetLayout descriptorSetLayout;
-    ManagedPipelineLayout pipelineLayout;
-    ManagedPipeline computePipeline;
+    std::optional<vk::raii::DescriptorSetLayout> descriptorSetLayout_;
+    std::optional<vk::raii::PipelineLayout> pipelineLayout_;
+    std::optional<vk::raii::Pipeline> computePipeline_;
     std::vector<VkDescriptorSet> descriptorSets;
 
     // Uniform buffers (per frame)

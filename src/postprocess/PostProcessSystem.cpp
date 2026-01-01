@@ -27,6 +27,7 @@ std::unique_ptr<PostProcessSystem> PostProcessSystem::create(const InitContext& 
     info.swapchainFormat = swapchainFormat;
     info.shaderPath = ctx.shaderPath;
     info.framesInFlight = ctx.framesInFlight;
+    info.raiiDevice = ctx.raiiDevice;
     return create(info);
 }
 
@@ -82,6 +83,12 @@ bool PostProcessSystem::initInternal(const InitInfo& info) {
     swapchainFormat = info.swapchainFormat;
     shaderPath = info.shaderPath;
     framesInFlight = info.framesInFlight;
+    raiiDevice_ = info.raiiDevice;
+
+    if (!raiiDevice_) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "PostProcessSystem requires raiiDevice");
+        return false;
+    }
 
     if (!createHDRRenderTarget()) return false;
     if (!createHDRRenderPass()) return false;
@@ -124,7 +131,7 @@ void PostProcessSystem::cleanup() {
         compositeDescriptorSetLayout = VK_NULL_HANDLE;
     }
 
-    hdrSampler.reset();
+    hdrSampler_.reset();
     if (hdrRenderPass != VK_NULL_HANDLE) {
         vkDevice.destroyRenderPass(hdrRenderPass);
         hdrRenderPass = VK_NULL_HANDLE;
@@ -166,7 +173,7 @@ void PostProcessSystem::resize(VkExtent2D newExtent) {
     // Update descriptor sets with new image view
     for (size_t i = 0; i < framesInFlight; i++) {
         DescriptorManager::SetWriter(device, compositeDescriptorSets[i])
-            .writeImage(0, hdrColorView, hdrSampler.get())
+            .writeImage(0, hdrColorView, **hdrSampler_)
             .update();
     }
 }
@@ -341,7 +348,8 @@ bool PostProcessSystem::createHDRFramebuffer() {
 }
 
 bool PostProcessSystem::createSampler() {
-    if (!VulkanResourceFactory::createSamplerLinearClamp(device, hdrSampler)) {
+    hdrSampler_ = VulkanResourceFactory::createSamplerLinearClamp(*raiiDevice_);
+    if (!hdrSampler_) {
         SDL_Log("Failed to create HDR sampler");
         return false;
     }
@@ -401,9 +409,9 @@ bool PostProcessSystem::createDescriptorSets() {
     for (size_t i = 0; i < framesInFlight; i++) {
         DescriptorManager::SetWriter writer(device, compositeDescriptorSets[i]);
         writer
-            .writeImage(0, hdrColorView, hdrSampler.get())
+            .writeImage(0, hdrColorView, **hdrSampler_)
             .writeBuffer(1, uniformBuffers.buffers[i], 0, sizeof(PostProcessUniforms))
-            .writeImage(2, hdrDepthView, hdrSampler.get(), VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL);
+            .writeImage(2, hdrDepthView, **hdrSampler_, VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL);
 
         if (froxelVolumeView != VK_NULL_HANDLE && froxelSampler != VK_NULL_HANDLE) {
             writer.writeImage(3, froxelVolumeView, froxelSampler);

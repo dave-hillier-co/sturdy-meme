@@ -1,12 +1,13 @@
 #pragma once
 
 #include <vulkan/vulkan.h>
+#include <vulkan/vulkan_raii.hpp>
 #include <vk_mem_alloc.h>
 #include <glm/glm.hpp>
 #include <vector>
 #include <string>
 #include <memory>
-#include "VulkanRAII.h"
+#include <optional>
 
 /*
  * FlowMapGenerator - Generates flow maps for water rendering
@@ -39,6 +40,7 @@ public:
         VmaAllocator allocator;
         VkCommandPool commandPool;
         VkQueue queue;
+        const vk::raii::Device* raiiDevice = nullptr;
     };
 
     /**
@@ -74,7 +76,7 @@ public:
 
     // Access the generated flow map
     VkImageView getFlowMapView() const { return flowMapView; }
-    VkSampler getFlowMapSampler() const { return flowMapSampler.get(); }
+    VkSampler getFlowMapSampler() const { return flowMapSampler_ ? **flowMapSampler_ : VK_NULL_HANDLE; }
     VkImage getFlowMapImage() const { return flowMapImage; }
 
     // Get flow map data for CPU-side queries
@@ -113,11 +115,12 @@ private:
     VmaAllocator allocator = VK_NULL_HANDLE;
     VkCommandPool commandPool = VK_NULL_HANDLE;
     VkQueue queue = VK_NULL_HANDLE;
+    const vk::raii::Device* raiiDevice_ = nullptr;
 
     VkImage flowMapImage = VK_NULL_HANDLE;
     VmaAllocation flowMapAllocation = VK_NULL_HANDLE;
     VkImageView flowMapView = VK_NULL_HANDLE;
-    ManagedSampler flowMapSampler;
+    std::optional<vk::raii::Sampler> flowMapSampler_;
 
     // CPU-side flow data
     std::vector<glm::vec4> flowData;  // RGBA: flowX, flowZ, speed, shoreDist

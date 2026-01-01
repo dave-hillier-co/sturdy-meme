@@ -30,6 +30,12 @@ bool FoamBuffer::initInternal(const InitInfo& info) {
     framesInFlight = info.framesInFlight;
     resolution = info.resolution;
     worldSize = info.worldSize;
+    raiiDevice_ = info.raiiDevice;
+
+    if (!raiiDevice_) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "FoamBuffer requires raiiDevice");
+        return false;
+    }
 
     SDL_Log("FoamBuffer: Initializing with %dx%d resolution, %.1f world size",
             resolution, resolution, worldSize);
@@ -70,10 +76,10 @@ void FoamBuffer::cleanup() {
     }
 
     // RAII wrappers handle cleanup automatically - just reset them
-    descriptorSetLayout = ManagedDescriptorSetLayout();
-    computePipeline = ManagedPipeline();
-    computePipelineLayout = ManagedPipelineLayout();
-    sampler = ManagedSampler();
+    descriptorSetLayout_.reset();
+    computePipeline_.reset();
+    computePipelineLayout_.reset();
+    sampler_.reset();
 
     // Destroy foam buffers
     for (int i = 0; i < 2; i++) {
@@ -135,23 +141,28 @@ bool FoamBuffer::createFoamBuffers() {
     }
 
     // Create sampler
-    VkSamplerCreateInfo samplerInfo{};
-    samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
-    samplerInfo.magFilter = VK_FILTER_LINEAR;
-    samplerInfo.minFilter = VK_FILTER_LINEAR;
-    samplerInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST;
-    samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
-    samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
-    samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
-    samplerInfo.mipLodBias = 0.0f;
-    samplerInfo.anisotropyEnable = VK_FALSE;
-    samplerInfo.maxAnisotropy = 1.0f;
-    samplerInfo.compareEnable = VK_FALSE;
-    samplerInfo.minLod = 0.0f;
-    samplerInfo.maxLod = 0.0f;
-    samplerInfo.borderColor = VK_BORDER_COLOR_FLOAT_TRANSPARENT_BLACK;
+    auto samplerInfo = vk::SamplerCreateInfo{}
+        .setMagFilter(vk::Filter::eLinear)
+        .setMinFilter(vk::Filter::eLinear)
+        .setMipmapMode(vk::SamplerMipmapMode::eNearest)
+        .setAddressModeU(vk::SamplerAddressMode::eClampToEdge)
+        .setAddressModeV(vk::SamplerAddressMode::eClampToEdge)
+        .setAddressModeW(vk::SamplerAddressMode::eClampToEdge)
+        .setMipLodBias(0.0f)
+        .setAnisotropyEnable(VK_FALSE)
+        .setMaxAnisotropy(1.0f)
+        .setCompareEnable(VK_FALSE)
+        .setMinLod(0.0f)
+        .setMaxLod(0.0f)
+        .setBorderColor(vk::BorderColor::eFloatTransparentBlack);
 
-    return ManagedSampler::create(device, samplerInfo, sampler);
+    try {
+        sampler_.emplace(*raiiDevice_, samplerInfo);
+        return true;
+    } catch (const std::exception& e) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create foam sampler: %s", e.what());
+        return false;
+    }
 }
 
 bool FoamBuffer::createWakeBuffers() {
@@ -208,26 +219,27 @@ bool FoamBuffer::createComputePipeline() {
     layoutInfo.bindingCount = static_cast<uint32_t>(bindings.size());
     layoutInfo.pBindings = bindings.data();
 
-    if (!ManagedDescriptorSetLayout::create(device, layoutInfo, descriptorSetLayout)) {
+    VkDescriptorSetLayout rawLayout = VK_NULL_HANDLE;
+    if (vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, &rawLayout) != VK_SUCCESS) {
         return false;
     }
+    descriptorSetLayout_.emplace(*raiiDevice_, rawLayout);
 
     // Push constant range
-    VkPushConstantRange pushConstantRange{};
-    pushConstantRange.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
-    pushConstantRange.offset = 0;
-    pushConstantRange.size = sizeof(FoamPushConstants);
+    auto pushConstantRange = vk::PushConstantRange{}
+        .setStageFlags(vk::ShaderStageFlagBits::eCompute)
+        .setOffset(0)
+        .setSize(sizeof(FoamPushConstants));
 
     // Pipeline layout
-    VkDescriptorSetLayout rawLayout = descriptorSetLayout.get();
-    VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
-    pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-    pipelineLayoutInfo.setLayoutCount = 1;
-    pipelineLayoutInfo.pSetLayouts = &rawLayout;
-    pipelineLayoutInfo.pushConstantRangeCount = 1;
-    pipelineLayoutInfo.pPushConstantRanges = &pushConstantRange;
-
-    if (!ManagedPipelineLayout::create(device, pipelineLayoutInfo, computePipelineLayout)) {
+    try {
+        vk::DescriptorSetLayout layouts[] = { **descriptorSetLayout_ };
+        auto pipelineLayoutInfo = vk::PipelineLayoutCreateInfo{}
+            .setSetLayouts(layouts)
+            .setPushConstantRanges(pushConstantRange);
+        computePipelineLayout_.emplace(*raiiDevice_, pipelineLayoutInfo);
+    } catch (const std::exception& e) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create foam pipeline layout: %s", e.what());
         return false;
     }
 
@@ -239,24 +251,23 @@ bool FoamBuffer::createComputePipeline() {
         return true;  // Allow system to work without temporal foam
     }
 
-    VkPipelineShaderStageCreateInfo shaderStage{};
-    shaderStage.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-    shaderStage.stage = VK_SHADER_STAGE_COMPUTE_BIT;
-    shaderStage.module = *shaderModule;
-    shaderStage.pName = "main";
+    auto shaderStage = vk::PipelineShaderStageCreateInfo{}
+        .setStage(vk::ShaderStageFlagBits::eCompute)
+        .setModule(*shaderModule)
+        .setPName("main");
 
-    VkComputePipelineCreateInfo pipelineInfo{};
-    pipelineInfo.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
-    pipelineInfo.stage = shaderStage;
-    pipelineInfo.layout = computePipelineLayout.get();
+    auto pipelineInfo = vk::ComputePipelineCreateInfo{}
+        .setStage(shaderStage)
+        .setLayout(**computePipelineLayout_);
 
     VkPipeline rawPipeline = VK_NULL_HANDLE;
-    VkResult result = vkCreateComputePipelines(device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &rawPipeline);
+    VkResult result = vkCreateComputePipelines(device, VK_NULL_HANDLE, 1,
+        reinterpret_cast<const VkComputePipelineCreateInfo*>(&pipelineInfo), nullptr, &rawPipeline);
 
     vkDestroyShaderModule(device, *shaderModule, nullptr);
 
     if (result == VK_SUCCESS) {
-        computePipeline = ManagedPipeline::fromRaw(device, rawPipeline);
+        computePipeline_.emplace(*raiiDevice_, rawPipeline);
     }
 
     return result == VK_SUCCESS;
@@ -285,7 +296,7 @@ bool FoamBuffer::createDescriptorSets() {
     }
 
     // Allocate descriptor sets (2 per frame for ping-pong)
-    std::vector<VkDescriptorSetLayout> layouts(setCount, descriptorSetLayout.get());
+    std::vector<VkDescriptorSetLayout> layouts(setCount, **descriptorSetLayout_);
 
     VkDescriptorSetAllocateInfo allocInfo{};
     allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
@@ -304,7 +315,7 @@ bool FoamBuffer::createDescriptorSets() {
 
 void FoamBuffer::recordCompute(VkCommandBuffer cmd, uint32_t frameIndex, float deltaTime,
                                 VkImageView flowMapView, VkSampler flowMapSampler) {
-    if (!computePipeline.get()) return;
+    if (!computePipeline_) return;
 
     // Update wake uniform buffer for this frame
     if (!wakeUniformMapped.empty()) {
@@ -321,7 +332,7 @@ void FoamBuffer::recordCompute(VkCommandBuffer cmd, uint32_t frameIndex, float d
     // Update descriptor set using SetWriter
     DescriptorManager::SetWriter(device, descriptorSets[descSetIndex])
         .writeStorageImage(0, foamBufferView[writeBuffer])
-        .writeImage(1, foamBufferView[readBuffer], sampler.get())
+        .writeImage(1, foamBufferView[readBuffer], **sampler_)
         .writeImage(2, flowMapView, flowMapSampler)
         .writeBuffer(3, wakeUniformBuffers_[frameIndex].get(), 0, sizeof(WakeUniformData))
         .update();
@@ -337,8 +348,8 @@ void FoamBuffer::recordCompute(VkCommandBuffer cmd, uint32_t frameIndex, float d
 
     // Bind compute pipeline
     vk::CommandBuffer vkCmd(cmd);
-    vkCmd.bindPipeline(vk::PipelineBindPoint::eCompute, computePipeline.get());
-    vkCmd.bindDescriptorSets(vk::PipelineBindPoint::eCompute, computePipelineLayout.get(),
+    vkCmd.bindPipeline(vk::PipelineBindPoint::eCompute, **computePipeline_);
+    vkCmd.bindDescriptorSets(vk::PipelineBindPoint::eCompute, **computePipelineLayout_,
                              0, vk::DescriptorSet(descriptorSets[descSetIndex]), {});
 
     // Push constants
@@ -353,7 +364,7 @@ void FoamBuffer::recordCompute(VkCommandBuffer cmd, uint32_t frameIndex, float d
     pushConstants.padding[1] = 0.0f;
     pushConstants.padding[2] = 0.0f;
 
-    vkCmd.pushConstants<FoamPushConstants>(computePipelineLayout.get(),
+    vkCmd.pushConstants<FoamPushConstants>(**computePipelineLayout_,
                                             vk::ShaderStageFlagBits::eCompute, 0, pushConstants);
 
     // Dispatch compute shader

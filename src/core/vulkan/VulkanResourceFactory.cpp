@@ -802,3 +802,106 @@ bool VulkanResourceFactory::createSamplerShadowComparison(VkDevice device, Manag
 
     return ManagedSampler::create(device, reinterpret_cast<const VkSamplerCreateInfo&>(samplerInfo), outSampler);
 }
+
+// ============================================================================
+// RAII Sampler Factories (vulkan-hpp raii types)
+// ============================================================================
+
+std::optional<vk::raii::Sampler> VulkanResourceFactory::createSamplerNearestClamp(const vk::raii::Device& device) {
+    auto samplerInfo = vk::SamplerCreateInfo{}
+        .setMagFilter(vk::Filter::eNearest)
+        .setMinFilter(vk::Filter::eNearest)
+        .setMipmapMode(vk::SamplerMipmapMode::eNearest)
+        .setAddressModeU(vk::SamplerAddressMode::eClampToEdge)
+        .setAddressModeV(vk::SamplerAddressMode::eClampToEdge)
+        .setAddressModeW(vk::SamplerAddressMode::eClampToEdge)
+        .setMinLod(0.0f)
+        .setMaxLod(0.0f);
+
+    try {
+        return vk::raii::Sampler(device, samplerInfo);
+    } catch (const vk::SystemError& e) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create sampler: %s", e.what());
+        return std::nullopt;
+    }
+}
+
+std::optional<vk::raii::Sampler> VulkanResourceFactory::createSamplerLinearClamp(const vk::raii::Device& device) {
+    auto samplerInfo = vk::SamplerCreateInfo{}
+        .setMagFilter(vk::Filter::eLinear)
+        .setMinFilter(vk::Filter::eLinear)
+        .setMipmapMode(vk::SamplerMipmapMode::eLinear)
+        .setAddressModeU(vk::SamplerAddressMode::eClampToEdge)
+        .setAddressModeV(vk::SamplerAddressMode::eClampToEdge)
+        .setAddressModeW(vk::SamplerAddressMode::eClampToEdge)
+        .setMinLod(0.0f)
+        .setMaxLod(VK_LOD_CLAMP_NONE);
+
+    try {
+        return vk::raii::Sampler(device, samplerInfo);
+    } catch (const vk::SystemError& e) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create sampler: %s", e.what());
+        return std::nullopt;
+    }
+}
+
+std::optional<vk::raii::Sampler> VulkanResourceFactory::createSamplerLinearRepeat(const vk::raii::Device& device) {
+    auto samplerInfo = vk::SamplerCreateInfo{}
+        .setMagFilter(vk::Filter::eLinear)
+        .setMinFilter(vk::Filter::eLinear)
+        .setMipmapMode(vk::SamplerMipmapMode::eLinear)
+        .setAddressModeU(vk::SamplerAddressMode::eRepeat)
+        .setAddressModeV(vk::SamplerAddressMode::eRepeat)
+        .setAddressModeW(vk::SamplerAddressMode::eRepeat)
+        .setMinLod(0.0f)
+        .setMaxLod(VK_LOD_CLAMP_NONE);
+
+    try {
+        return vk::raii::Sampler(device, samplerInfo);
+    } catch (const vk::SystemError& e) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create sampler: %s", e.what());
+        return std::nullopt;
+    }
+}
+
+std::optional<vk::raii::Sampler> VulkanResourceFactory::createSamplerLinearRepeatAnisotropic(
+        const vk::raii::Device& device, float maxAnisotropy) {
+    auto samplerInfo = vk::SamplerCreateInfo{}
+        .setMagFilter(vk::Filter::eLinear)
+        .setMinFilter(vk::Filter::eLinear)
+        .setMipmapMode(vk::SamplerMipmapMode::eLinear)
+        .setAddressModeU(vk::SamplerAddressMode::eRepeat)
+        .setAddressModeV(vk::SamplerAddressMode::eRepeat)
+        .setAddressModeW(vk::SamplerAddressMode::eRepeat)
+        .setAnisotropyEnable(vk::True)
+        .setMaxAnisotropy(maxAnisotropy)
+        .setMinLod(0.0f)
+        .setMaxLod(VK_LOD_CLAMP_NONE);
+
+    try {
+        return vk::raii::Sampler(device, samplerInfo);
+    } catch (const vk::SystemError& e) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create sampler: %s", e.what());
+        return std::nullopt;
+    }
+}
+
+std::optional<vk::raii::Sampler> VulkanResourceFactory::createSamplerShadowComparison(const vk::raii::Device& device) {
+    auto samplerInfo = vk::SamplerCreateInfo{}
+        .setMagFilter(vk::Filter::eLinear)
+        .setMinFilter(vk::Filter::eLinear)
+        .setMipmapMode(vk::SamplerMipmapMode::eNearest)
+        .setAddressModeU(vk::SamplerAddressMode::eClampToBorder)
+        .setAddressModeV(vk::SamplerAddressMode::eClampToBorder)
+        .setAddressModeW(vk::SamplerAddressMode::eClampToBorder)
+        .setBorderColor(vk::BorderColor::eFloatOpaqueWhite)
+        .setCompareEnable(vk::True)
+        .setCompareOp(vk::CompareOp::eLess);
+
+    try {
+        return vk::raii::Sampler(device, samplerInfo);
+    } catch (const vk::SystemError& e) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create sampler: %s", e.what());
+        return std::nullopt;
+    }
+}

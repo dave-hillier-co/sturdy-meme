@@ -1,16 +1,18 @@
 #pragma once
 
 #include <vulkan/vulkan.h>
+#include <vulkan/vulkan_raii.hpp>
 #include <vk_mem_alloc.h>
 #include <glm/glm.hpp>
 #include <vector>
 #include <string>
 #include <memory>
+#include <optional>
 #include "UBOs.h"
 #include "BufferUtils.h"
 #include "DescriptorManager.h"
 #include "InitContext.h"
-#include "VulkanRAII.h"
+#include "VmaResources.h"
 #include "interfaces/IFogControl.h"
 
 // Froxel-based volumetric fog system (Phase 4.3)
@@ -30,6 +32,7 @@ public:
         VkImageView shadowMapView;       // Cascaded shadow map array view
         VkSampler shadowSampler;         // Shadow sampler with comparison
         std::vector<VkBuffer> lightBuffers;  // Per-frame light buffers for local light contribution
+        const vk::raii::Device* raiiDevice = nullptr;
     };
 
     // Froxel grid dimensions (from Phase 4.3)
@@ -67,10 +70,10 @@ public:
                            const glm::vec4& cascadeSplits);
 
     // Get the scattering volume (raw, pre-integration) - returns current frame's output
-    VkImageView getScatteringVolumeView() const { return scatteringVolumeViews_[frameCounter % 2].get(); }
+    VkImageView getScatteringVolumeView() const { return scatteringVolumeViews_[frameCounter % 2] ? **scatteringVolumeViews_[frameCounter % 2] : VK_NULL_HANDLE; }
     // Get the integrated volume for compositing (front-to-back integrated result)
-    VkImageView getIntegratedVolumeView() const { return integratedVolumeView_.get(); }
-    VkSampler getVolumeSampler() const { return volumeSampler.get(); }
+    VkImageView getIntegratedVolumeView() const { return integratedVolumeView_ ? **integratedVolumeView_ : VK_NULL_HANDLE; }
+    VkSampler getVolumeSampler() const { return volumeSampler_ ? **volumeSampler_ : VK_NULL_HANDLE; }
 
     // IFogControl implementation (reset temporal history on change for immediate feedback)
     void setEnabled(bool e) override { enabled = e; }
@@ -143,6 +146,7 @@ private:
     VkExtent2D extent = {0, 0};
     std::string shaderPath;
     uint32_t framesInFlight = 0;
+    const vk::raii::Device* raiiDevice_ = nullptr;
 
     // External resources (not owned)
     VkImageView shadowMapView = VK_NULL_HANDLE;
@@ -153,20 +157,20 @@ private:
     // Format: RGBA16F - stores in-scattered light / opacity
     // [0] = current write target, [1] = previous frame history (swapped each frame)
     ManagedImage scatteringVolumes_[2];
-    ManagedImageView scatteringVolumeViews_[2];
+    std::optional<vk::raii::ImageView> scatteringVolumeViews_[2];
 
     // Integrated scattering volume (front-to-back integrated) - RAII-managed
     ManagedImage integratedVolume_;
-    ManagedImageView integratedVolumeView_;
+    std::optional<vk::raii::ImageView> integratedVolumeView_;
 
     // Volume sampler (trilinear filtering)
-    ManagedSampler volumeSampler;
+    std::optional<vk::raii::Sampler> volumeSampler_;
 
     // Compute pipelines
-    ManagedDescriptorSetLayout froxelDescriptorSetLayout;
-    ManagedPipelineLayout froxelPipelineLayout;
-    ManagedPipeline froxelUpdatePipeline;
-    ManagedPipeline integrationPipeline;
+    std::optional<vk::raii::DescriptorSetLayout> froxelDescriptorSetLayout_;
+    std::optional<vk::raii::PipelineLayout> froxelPipelineLayout_;
+    std::optional<vk::raii::Pipeline> froxelUpdatePipeline_;
+    std::optional<vk::raii::Pipeline> integrationPipeline_;
 
     std::vector<VkDescriptorSet> froxelDescriptorSets;
 

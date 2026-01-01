@@ -309,6 +309,112 @@ public:
     static bool createSamplerShadowComparison(VkDevice device, VkSampler& outSampler);
 
     // ========================================================================
+    // RAII Command Pool & Buffers (vulkan-hpp raii types - preferred)
+    // ========================================================================
+
+    /**
+     * Create a command pool for the specified queue family (vk::raii version)
+     */
+    static std::optional<vk::raii::CommandPool> createCommandPool(
+        const vk::raii::Device& device,
+        uint32_t queueFamilyIndex,
+        vk::CommandPoolCreateFlags flags);
+
+    /**
+     * Allocate primary command buffers from a pool (vk::raii version)
+     */
+    static std::optional<vk::raii::CommandBuffers> createCommandBuffers(
+        const vk::raii::Device& device,
+        const vk::raii::CommandPool& pool,
+        uint32_t count);
+
+    // ========================================================================
+    // RAII Synchronization (vulkan-hpp raii types - preferred)
+    // ========================================================================
+
+    /**
+     * RAII sync resources for frame-in-flight rendering
+     */
+    struct RAIISyncResources {
+        std::vector<vk::raii::Semaphore> imageAvailableSemaphores;
+        std::vector<vk::raii::Semaphore> renderFinishedSemaphores;
+        std::vector<vk::raii::Fence> inFlightFences;
+    };
+
+    /**
+     * Create semaphores and fences for frame synchronization (vk::raii version)
+     */
+    static std::optional<RAIISyncResources> createSyncResources(
+        const vk::raii::Device& device,
+        uint32_t framesInFlight);
+
+    // ========================================================================
+    // RAII Render Pass (vulkan-hpp raii types - preferred)
+    // ========================================================================
+
+    /**
+     * Create a standard render pass for swapchain presentation with depth (vk::raii version)
+     * If config.depthOnly is true, creates a depth-only render pass (for shadow maps)
+     */
+    static std::optional<vk::raii::RenderPass> createRenderPass(
+        const vk::raii::Device& device,
+        const RenderPassConfig& config);
+
+    // ========================================================================
+    // RAII Framebuffers (vulkan-hpp raii types - preferred)
+    // ========================================================================
+
+    /**
+     * Create framebuffers for each swapchain image view (vk::raii version)
+     */
+    static std::optional<std::vector<vk::raii::Framebuffer>> createFramebuffers(
+        const vk::raii::Device& device,
+        const vk::raii::RenderPass& renderPass,
+        const std::vector<vk::ImageView>& swapchainImageViews,
+        vk::ImageView depthImageView,
+        vk::Extent2D extent);
+
+    /**
+     * Create framebuffers for depth-only rendering (vk::raii version)
+     */
+    static std::optional<std::vector<vk::raii::Framebuffer>> createDepthOnlyFramebuffers(
+        const vk::raii::Device& device,
+        const vk::raii::RenderPass& renderPass,
+        const std::vector<vk::ImageView>& depthImageViews,
+        vk::Extent2D extent);
+
+    // ========================================================================
+    // RAII Image View (vulkan-hpp raii types - preferred)
+    // ========================================================================
+
+    /**
+     * Create an image view for a depth image (vk::raii version)
+     */
+    static std::optional<vk::raii::ImageView> createDepthImageView(
+        const vk::raii::Device& device,
+        vk::Image image,
+        vk::Format format);
+
+    /**
+     * Create an image view for a 2D array or cube layer (vk::raii version)
+     */
+    static std::optional<vk::raii::ImageView> createDepthArrayLayerView(
+        const vk::raii::Device& device,
+        vk::Image image,
+        vk::Format format,
+        uint32_t layerIndex);
+
+    /**
+     * Create an array view for all layers (vk::raii version)
+     */
+    static std::optional<vk::raii::ImageView> createDepthArrayView(
+        const vk::raii::Device& device,
+        vk::Image image,
+        vk::Format format,
+        uint32_t layerCount,
+        bool cubeCompatible);
+
+    // ========================================================================
     // RAII Sampler Factories (vulkan-hpp raii types - preferred)
     // ========================================================================
 

@@ -44,6 +44,10 @@ bool TreeLeafCulling::init(const InitInfo& info) {
         return true; // Graceful degradation
     }
 
+    if (!createClampPipeline()) {
+        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "TreeLeafCulling: Clamp pipeline not available (instance counts may exceed budget)");
+    }
+
     if (!createCellCullPipeline()) {
         SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "TreeLeafCulling: Cell culling pipeline not available");
     }
@@ -108,6 +112,54 @@ bool TreeLeafCulling::createLeafCullPipeline() {
     cullPipeline_ = ManagedPipeline::fromRaw(device_, result.value);
 
     SDL_Log("TreeLeafCulling: Created leaf culling compute pipeline");
+    return true;
+}
+
+bool TreeLeafCulling::createClampPipeline() {
+    // Clamp pipeline uses same descriptor layout as cull pipeline (indirect buffer + params)
+    // We can reuse the cull descriptor set layout since bindings are compatible
+    DescriptorManager::LayoutBuilder builder(device_);
+    builder.addBinding(Bindings::TREE_LEAF_CULL_INDIRECT, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_COMPUTE_BIT)
+           .addBinding(Bindings::TREE_LEAF_CULL_PARAMS, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_COMPUTE_BIT);
+
+    if (!builder.buildManaged(clampDescriptorSetLayout_)) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "TreeLeafCulling: Failed to create clamp descriptor set layout");
+        return false;
+    }
+
+    if (!DescriptorManager::createManagedPipelineLayout(device_, clampDescriptorSetLayout_.get(), clampPipelineLayout_)) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "TreeLeafCulling: Failed to create clamp pipeline layout");
+        return false;
+    }
+
+    std::string shaderPath = resourcePath_ + "/shaders/tree_leaf_cull_clamp.comp.spv";
+    auto shaderModuleOpt = ShaderLoader::loadShaderModule(device_, shaderPath);
+    if (!shaderModuleOpt.has_value()) {
+        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "TreeLeafCulling: Clamp shader not found: %s", shaderPath.c_str());
+        return false;
+    }
+    VkShaderModule computeShaderModule = shaderModuleOpt.value();
+
+    auto shaderStageInfo = vk::PipelineShaderStageCreateInfo{}
+        .setStage(vk::ShaderStageFlagBits::eCompute)
+        .setModule(computeShaderModule)
+        .setPName("main");
+
+    auto pipelineInfo = vk::ComputePipelineCreateInfo{}
+        .setStage(shaderStageInfo)
+        .setLayout(clampPipelineLayout_.get());
+
+    vk::Device vkDevice(device_);
+    auto result = vkDevice.createComputePipeline(nullptr, pipelineInfo);
+    vkDevice.destroyShaderModule(computeShaderModule);
+
+    if (result.result != vk::Result::eSuccess) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "TreeLeafCulling: Failed to create clamp compute pipeline");
+        return false;
+    }
+    clampPipeline_ = ManagedPipeline::fromRaw(device_, result.value);
+
+    SDL_Log("TreeLeafCulling: Created instance count clamping compute pipeline");
     return true;
 }
 
@@ -196,6 +248,14 @@ bool TreeLeafCulling::createLeafCullBuffers(uint32_t maxLeafInstances, uint32_t 
     if (cullDescriptorSets_.empty()) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "TreeLeafCulling: Failed to allocate cull descriptor sets");
         return false;
+    }
+
+    // Allocate clamp descriptor sets if clamp pipeline is available
+    if (clampPipeline_.get() != VK_NULL_HANDLE) {
+        clampDescriptorSets_ = descriptorPool_->allocate(clampDescriptorSetLayout_.get(), maxFramesInFlight_);
+        if (clampDescriptorSets_.empty()) {
+            SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "TreeLeafCulling: Failed to allocate clamp descriptor sets");
+        }
     }
 
     SDL_Log("TreeLeafCulling: Created leaf culling buffers (max %u instances, %u trees, %.2f MB output)",
@@ -608,6 +668,14 @@ void TreeLeafCulling::updateCullDescriptorSets(const TreeSystem& treeSystem) {
               .writeBuffer(Bindings::TREE_LEAF_CULL_TREES, treeDataBuffers_.getVk(f), 0, VK_WHOLE_SIZE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
               .writeBuffer(Bindings::TREE_LEAF_CULL_PARAMS, leafCullParamsBuffers_.buffers[f], 0, sizeof(LeafCullParams), VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER)
               .update();
+
+        // Update clamp descriptor sets if available
+        if (!clampDescriptorSets_.empty() && f < clampDescriptorSets_.size()) {
+            DescriptorManager::SetWriter clampWriter(device_, clampDescriptorSets_[f]);
+            clampWriter.writeBuffer(Bindings::TREE_LEAF_CULL_INDIRECT, cullIndirectBuffers_.getVk(f), 0, VK_WHOLE_SIZE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+                       .writeBuffer(Bindings::TREE_LEAF_CULL_PARAMS, leafCullParamsBuffers_.buffers[f], 0, sizeof(LeafCullParams), VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER)
+                       .update();
+        }
     }
     descriptorSetsInitialized_ = true;
 }
@@ -891,6 +959,22 @@ void TreeLeafCulling::recordCulling(VkCommandBuffer cmd, uint32_t frameIndex,
 
                 vkCmd.dispatchIndirect(leafCullIndirectDispatchBuffers_.getVk(frameIndex), 0);
 
+                // Dispatch clamp shader to fix over-allocated instance counts
+                if (clampPipeline_.get() != VK_NULL_HANDLE && !clampDescriptorSets_.empty()) {
+                    // Barrier: wait for leaf cull writes before clamp reads/writes
+                    VkMemoryBarrier clampBarrier{};
+                    clampBarrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
+                    clampBarrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+                    clampBarrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
+                    vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                                         0, 1, &clampBarrier, 0, nullptr, 0, nullptr);
+
+                    vkCmd.bindPipeline(vk::PipelineBindPoint::eCompute, clampPipeline_.get());
+                    vkCmd.bindDescriptorSets(vk::PipelineBindPoint::eCompute, clampPipelineLayout_.get(),
+                                             0, vk::DescriptorSet(clampDescriptorSets_[frameIndex]), {});
+                    vkCmd.dispatch(1, 1, 1);  // 1 workgroup with 4 threads (one per leaf type)
+                }
+
                 barrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
                 barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_INDIRECT_COMMAND_READ_BIT;
                 vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
@@ -908,6 +992,22 @@ void TreeLeafCulling::recordCulling(VkCommandBuffer cmd, uint32_t frameIndex,
 
     uint32_t workgroupCount = (totalLeafInstances + 255) / 256;
     vkCmd.dispatch(workgroupCount, 1, 1);
+
+    // Dispatch clamp shader to fix over-allocated instance counts
+    if (clampPipeline_.get() != VK_NULL_HANDLE && !clampDescriptorSets_.empty()) {
+        // Barrier: wait for leaf cull writes before clamp reads/writes
+        VkMemoryBarrier clampBarrier{};
+        clampBarrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
+        clampBarrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+        clampBarrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
+        vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                             0, 1, &clampBarrier, 0, nullptr, 0, nullptr);
+
+        vkCmd.bindPipeline(vk::PipelineBindPoint::eCompute, clampPipeline_.get());
+        vkCmd.bindDescriptorSets(vk::PipelineBindPoint::eCompute, clampPipelineLayout_.get(),
+                                 0, vk::DescriptorSet(clampDescriptorSets_[frameIndex]), {});
+        vkCmd.dispatch(1, 1, 1);  // 1 workgroup with 4 threads (one per leaf type)
+    }
 
     barrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
     barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_INDIRECT_COMMAND_READ_BIT;

@@ -201,6 +201,7 @@ private:
     bool init(const InitInfo& info);
 
     bool createLeafCullPipeline();
+    bool createClampPipeline();
     bool createLeafCullBuffers(uint32_t maxLeafInstances, uint32_t numTrees);
     bool createCellCullPipeline();
     bool createCellCullBuffers();
@@ -249,6 +250,17 @@ private:
 
     uint32_t numTreesForIndirect_ = 0;
     uint32_t maxLeavesPerType_ = 0;
+
+    // =========================================================================
+    // Instance Count Clamping Pipeline
+    // =========================================================================
+    // Post-processing pass to clamp instance counts to maxLeavesPerType.
+    // This fixes over-allocation bugs where atomicAdd increments counts
+    // but the data write is skipped due to budget limits.
+    ManagedPipeline clampPipeline_;
+    ManagedPipelineLayout clampPipelineLayout_;
+    ManagedDescriptorSetLayout clampDescriptorSetLayout_;
+    std::vector<VkDescriptorSet> clampDescriptorSets_;
 
     // =========================================================================
     // Spatial Index & Cell Culling

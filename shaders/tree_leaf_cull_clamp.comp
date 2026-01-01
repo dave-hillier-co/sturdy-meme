@@ -1,0 +1,46 @@
+#version 450
+
+// Post-processing shader to clamp leaf instance counts to maxLeavesPerType
+// This fixes the bug where atomicAdd in the main culling shaders can over-allocate
+// when many threads compete for limited slots.
+//
+// Runs with 1 workgroup of NUM_LEAF_TYPES threads (4 threads total).
+// Each thread clamps one leaf type's instance count.
+
+#extension GL_GOOGLE_include_directive : require
+
+#include "bindings.glsl"
+#include "instancing_common.glsl"
+
+layout(local_size_x = 4, local_size_y = 1, local_size_z = 1) in;
+
+// Number of leaf types (oak=0, ash=1, aspen=2, pine=3)
+const uint NUM_LEAF_TYPES = 4;
+
+// Indirect draw commands buffer
+layout(std430, binding = BINDING_TREE_LEAF_CULL_INDIRECT) buffer IndirectBuffer {
+    DrawIndexedIndirectCommand drawCmds[NUM_LEAF_TYPES];
+};
+
+// Params with max leaves per type
+layout(std140, binding = BINDING_TREE_LEAF_CULL_PARAMS) uniform LeafCullParams {
+    uint numTrees;
+    uint totalLeafInstances;
+    uint maxLeavesPerType;
+    uint _pad1;
+} leafCullParams;
+
+void main() {
+    uint leafType = gl_LocalInvocationID.x;
+
+    if (leafType >= NUM_LEAF_TYPES) {
+        return;
+    }
+
+    // Clamp instance count to max budget
+    // This ensures we never try to render more instances than were actually written
+    uint currentCount = drawCmds[leafType].instanceCount;
+    if (currentCount > leafCullParams.maxLeavesPerType) {
+        drawCmds[leafType].instanceCount = leafCullParams.maxLeavesPerType;
+    }
+}

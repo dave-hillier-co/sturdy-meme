@@ -168,7 +168,8 @@ private:
     bool createGraphicsDescriptorSetLayout(SystemLifecycleHelper::PipelineHandles& handles);
     bool createGraphicsPipeline(SystemLifecycleHelper::PipelineHandles& handles);
     bool createDescriptorSets();
-    bool createExtraPipelines();
+    bool createExtraPipelines(SystemLifecycleHelper::PipelineHandles& computeHandles,
+                               SystemLifecycleHelper::PipelineHandles& graphicsHandles);
     void writeComputeDescriptorSets();  // Called after init to write compute descriptor sets
     void destroyBuffers(VmaAllocator allocator);
 

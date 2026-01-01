@@ -105,7 +105,10 @@ bool GrassSystem::initInternal(const InitInfo& info) {
     hooks.createGraphicsPipeline = [this, &initializingPS]() {
         return createGraphicsPipeline(initializingPS->getGraphicsPipelineHandles());
     };
-    hooks.createExtraPipelines = [this]() { return createExtraPipelines(); };
+    hooks.createExtraPipelines = [this, &initializingPS]() {
+        return createExtraPipelines(initializingPS->getComputePipelineHandles(),
+                                     initializingPS->getGraphicsPipelineHandles());
+    };
     hooks.createDescriptorSets = [this]() { return createDescriptorSets(); };
     hooks.destroyBuffers = [this](VmaAllocator allocator) { destroyBuffers(allocator); };
 
@@ -609,7 +612,8 @@ void GrassSystem::writeComputeDescriptorSets() {
     }
 }
 
-bool GrassSystem::createExtraPipelines() {
+bool GrassSystem::createExtraPipelines(SystemLifecycleHelper::PipelineHandles& computeHandles,
+                                        SystemLifecycleHelper::PipelineHandles& graphicsHandles) {
     if (!createDisplacementPipeline()) return false;
     if (!createShadowPipeline()) return false;
 
@@ -621,7 +625,7 @@ bool GrassSystem::createExtraPipelines() {
 
         // Use existing compute descriptor set layout and pipeline layout
         VkPipeline rawTiledPipeline = VK_NULL_HANDLE;
-        if (!builder.buildComputePipeline(getComputePipelineHandles().pipelineLayout, rawTiledPipeline)) {
+        if (!builder.buildComputePipeline(computeHandles.pipelineLayout, rawTiledPipeline)) {
             SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create tiled grass compute pipeline");
             return false;
         }
@@ -635,12 +639,12 @@ bool GrassSystem::createExtraPipelines() {
         tileInfo.descriptorPool = getDescriptorPool();
         tileInfo.framesInFlight = getFramesInFlight();
         tileInfo.shaderPath = getShaderPath();
-        tileInfo.computeDescriptorSetLayout = getComputePipelineHandles().descriptorSetLayout;
-        tileInfo.computePipelineLayout = getComputePipelineHandles().pipelineLayout;
+        tileInfo.computeDescriptorSetLayout = computeHandles.descriptorSetLayout;
+        tileInfo.computePipelineLayout = computeHandles.pipelineLayout;
         tileInfo.computePipeline = tiledComputePipeline_.get();
-        tileInfo.graphicsDescriptorSetLayout = getGraphicsPipelineHandles().descriptorSetLayout;
-        tileInfo.graphicsPipelineLayout = getGraphicsPipelineHandles().pipelineLayout;
-        tileInfo.graphicsPipeline = getGraphicsPipelineHandles().pipeline;
+        tileInfo.graphicsDescriptorSetLayout = graphicsHandles.descriptorSetLayout;
+        tileInfo.graphicsPipelineLayout = graphicsHandles.pipelineLayout;
+        tileInfo.graphicsPipeline = graphicsHandles.pipeline;
 
         tileManager_ = std::make_unique<GrassTileManager>();
         if (!tileManager_->init(tileInfo)) {

@@ -8,7 +8,7 @@
 #include "MaterialDescriptorFactory.h"
 #include "VulkanResourceFactory.h"
 #include "Bindings.h"
-#include "VulkanRAII.h"
+#include "VulkanHelpers.h"
 #include "InitProfiler.h"
 
 // Subsystem includes for render loop
@@ -135,7 +135,7 @@ bool Renderer::initInternal(const InitInfo& info) {
     // Build shared InitContext for subsystem initialization
     // Pass pool sizes hint so subsystems can create consistent pools if needed
     InitContext initCtx = InitContext::build(
-        *vulkanContext_, commandPool.get(), &*descriptorManagerPool,
+        *vulkanContext_, **commandPool_, &*descriptorManagerPool,
         resourcePath, MAX_FRAMES_IN_FLIGHT, config_.descriptorPoolSizes);
 
     // Phase 3: All subsystems (terrain, grass, weather, snow, water, etc.)
@@ -174,7 +174,7 @@ void Renderer::setupRenderPipeline() {
     state.physicsDebugEnabled = &physicsDebugEnabled;
     state.currentFrame = frameSync_.currentIndexPtr();
     state.lastViewProj = &lastViewProj;
-    state.graphicsPipeline = graphicsPipeline.get();
+    state.graphicsPipeline = **graphicsPipeline_;
 
     RenderPipelineFactory::setupPipeline(
         renderPipeline,
@@ -249,7 +249,7 @@ void Renderer::updatePhysicsDebug(PhysicsWorld& physics, const glm::vec3& camera
     // Create debug renderer on first use (after Jolt is initialized)
     if (!systems_->physicsDebugRenderer()) {
         InitContext initCtx = InitContext::build(
-            *vulkanContext_, commandPool.get(), &*descriptorManagerPool,
+            *vulkanContext_, **commandPool_, &*descriptorManagerPool,
             resourcePath, MAX_FRAMES_IN_FLIGHT);
         systems_->createPhysicsDebugRenderer(initCtx, systems_->postProcess().getHDRRenderPass());
     }
@@ -297,29 +297,29 @@ void Renderer::cleanup() {
 
         // RAII handles: graphicsPipeline, pipelineLayout, descriptorSetLayout
         SDL_Log("destroying graphicsPipeline");
-        graphicsPipeline = ManagedPipeline();
+        graphicsPipeline_.reset();
         SDL_Log("destroying pipelineLayout");
-        pipelineLayout = ManagedPipelineLayout();
+        pipelineLayout_.reset();
         SDL_Log("destroying descriptorSetLayout");
-        descriptorSetLayout = ManagedDescriptorSetLayout();
+        descriptorSetLayout_.reset();
         SDL_Log("descriptor layouts destroyed");
 
         // RAII handles: commandPool
         SDL_Log("destroying commandPool");
-        commandPool = ManagedCommandPool();
+        commandPool_.reset();
         SDL_Log("commandPool destroyed");
 
         // RAII handles: depth resources and framebuffers
         SDL_Log("clearing framebuffers");
-        framebuffers.clear();
+        framebuffers_.clear();
         SDL_Log("destroying depthSampler");
-        depthSampler = ManagedSampler();
+        depthSampler_.reset();
         SDL_Log("destroying depthImageView");
-        depthImageView = ManagedImageView();
+        depthImageView_.reset();
         SDL_Log("destroying depthImage");
-        depthImage = ManagedImage();
+        depthImage_.reset();
         SDL_Log("destroying renderPass");
-        renderPass = ManagedRenderPass();
+        renderPass_.reset();
         SDL_Log("render resources destroyed");
     }
 
@@ -330,11 +330,11 @@ void Renderer::cleanup() {
 
 void Renderer::destroyRenderResources() {
     // RAII handles all cleanup - just clear containers and reset managed objects
-    framebuffers.clear();
-    depthSampler = ManagedSampler();
-    depthImageView = ManagedImageView();
-    depthImage = ManagedImage();
-    renderPass = ManagedRenderPass();
+    framebuffers_.clear();
+    depthSampler_.reset();
+    depthImageView_.reset();
+    depthImage_.reset();
+    renderPass_.reset();
 }
 
 bool Renderer::createRenderPass() {
@@ -351,7 +351,7 @@ bool Renderer::createRenderPass() {
     if (!VulkanResourceFactory::createRenderPass(vulkanContext_->getDevice(), config, rawRenderPass)) {
         return false;
     }
-    renderPass = ManagedRenderPass::fromRaw(vulkanContext_->getDevice(), rawRenderPass);
+    renderPass_.emplace(vulkanContext_->getRaiiDevice(), rawRenderPass);
     return true;
 }
 
@@ -362,40 +362,47 @@ bool Renderer::createDepthResources() {
             vulkanContext_->getSwapchainExtent(), depthFormat, depth)) {
         return false;
     }
-    depthImage = ManagedImage::fromRaw(vulkanContext_->getAllocator(), depth.image, depth.allocation);
-    depthImageView = ManagedImageView::fromRaw(vulkanContext_->getDevice(), depth.view);
-    depthSampler = std::move(depth.sampler);
+    depthImage_ = ManagedImage::fromRaw(vulkanContext_->getAllocator(), depth.image, depth.allocation);
+    depthImageView_.emplace(vulkanContext_->getRaiiDevice(), depth.view);
+    // Extract raw handle from ManagedSampler and wrap in vk::raii::Sampler
+    VkSampler rawSampler = depth.sampler.release();
+    depthSampler_.emplace(vulkanContext_->getRaiiDevice(), rawSampler);
     return true;
 }
 
 bool Renderer::createFramebuffers() {
     std::vector<VkFramebuffer> rawFramebuffers;
     if (!VulkanResourceFactory::createFramebuffers(
-        vulkanContext_->getDevice(), renderPass.get(),
-        vulkanContext_->getSwapchainImageViews(), depthImageView.get(),
+        vulkanContext_->getDevice(), **renderPass_,
+        vulkanContext_->getSwapchainImageViews(), **depthImageView_,
         vulkanContext_->getSwapchainExtent(), rawFramebuffers)) {
         return false;
     }
 
-    framebuffers.clear();
-    framebuffers.reserve(rawFramebuffers.size());
+    framebuffers_.clear();
+    framebuffers_.reserve(rawFramebuffers.size());
     for (VkFramebuffer fb : rawFramebuffers) {
-        framebuffers.push_back(ManagedFramebuffer::fromRaw(vulkanContext_->getDevice(), fb));
+        framebuffers_.emplace_back(vulkanContext_->getRaiiDevice(), fb);
     }
     return true;
 }
 
 bool Renderer::createCommandPool() {
-    return ManagedCommandPool::create(
-        vulkanContext_->getDevice(),
-        vulkanContext_->getGraphicsQueueFamily(),
-        VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT,
-        commandPool);
+    try {
+        auto poolInfo = vk::CommandPoolCreateInfo{}
+            .setFlags(vk::CommandPoolCreateFlagBits::eResetCommandBuffer)
+            .setQueueFamilyIndex(vulkanContext_->getGraphicsQueueFamily());
+        commandPool_.emplace(vulkanContext_->getRaiiDevice(), poolInfo);
+        return true;
+    } catch (const vk::SystemError& e) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create command pool: %s", e.what());
+        return false;
+    }
 }
 
 bool Renderer::createCommandBuffers() {
     return VulkanResourceFactory::createCommandBuffers(
-        vulkanContext_->getDevice(), commandPool.get(), MAX_FRAMES_IN_FLIGHT, commandBuffers);
+        vulkanContext_->getDevice(), **commandPool_, MAX_FRAMES_IN_FLIGHT, commandBuffers);
 }
 
 bool Renderer::createSyncObjects() {
@@ -439,7 +446,7 @@ bool Renderer::createDescriptorSetLayout() {
         return false;
     }
 
-    descriptorSetLayout = ManagedDescriptorSetLayout::fromRaw(device, rawLayout);
+    descriptorSetLayout_.emplace(vulkanContext_->getRaiiDevice(), rawLayout);
     return true;
 }
 
@@ -453,20 +460,18 @@ bool Renderer::createGraphicsPipeline() {
         .setOffset(0)
         .setSize(sizeof(PushConstants));
 
-    vk::DescriptorSetLayout descSetLayouts[] = {descriptorSetLayout.get()};
+    vk::DescriptorSetLayout descSetLayouts[] = {**descriptorSetLayout_};
 
     auto pipelineLayoutInfo = vk::PipelineLayoutCreateInfo{}
         .setSetLayouts(descSetLayouts)
         .setPushConstantRanges(pushConstantRange);
 
-    vk::PipelineLayout rawPipelineLayout;
     try {
-        rawPipelineLayout = device.createPipelineLayout(pipelineLayoutInfo);
+        pipelineLayout_.emplace(vulkanContext_->getRaiiDevice(), pipelineLayoutInfo);
     } catch (const vk::SystemError& e) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create pipeline layout: %s", e.what());
         return false;
     }
-    pipelineLayout = ManagedPipelineLayout::fromRaw(vulkanContext_->getDevice(), rawPipelineLayout);
 
     // Use factory for pipeline creation
     auto bindingDescription = Vertex::getBindingDescription();
@@ -481,7 +486,7 @@ bool Renderer::createGraphicsPipeline() {
         .setVertexInput({bindingDescription},
                         {attributeDescriptions.begin(), attributeDescriptions.end()})
         .setRenderPass(systems_->postProcess().getHDRRenderPass())
-        .setPipelineLayout(pipelineLayout.get())
+        .setPipelineLayout(**pipelineLayout_)
         .setExtent(swapchainExtent)
         .setBlendMode(GraphicsPipelineFactory::BlendMode::Alpha)
         .build(rawPipeline);
@@ -491,7 +496,7 @@ bool Renderer::createGraphicsPipeline() {
         return false;
     }
 
-    graphicsPipeline = ManagedPipeline::fromRaw(device, rawPipeline);
+    graphicsPipeline_.emplace(vulkanContext_->getRaiiDevice(), rawPipeline);
     return true;
 }
 
@@ -552,7 +557,7 @@ bool Renderer::createDescriptorSets() {
     materialRegistry.createDescriptorSets(
         device,
         *descriptorManagerPool,
-        descriptorSetLayout.get(),
+        **descriptorSetLayout_,
         MAX_FRAMES_IN_FLIGHT,
         getCommonBindings);
 
@@ -563,14 +568,14 @@ bool Renderer::createDescriptorSets() {
 
     // Rock descriptor sets (RockSystem has its own textures, not in MaterialRegistry)
     // Note: rockSystem is not initialized at this point - allocation only, writing done in initPhase2
-    rockDescriptorSets = descriptorManagerPool->allocate(descriptorSetLayout.get(), MAX_FRAMES_IN_FLIGHT);
+    rockDescriptorSets = descriptorManagerPool->allocate(**descriptorSetLayout_, MAX_FRAMES_IN_FLIGHT);
     if (rockDescriptorSets.empty()) {
         SDL_Log("Failed to allocate rock descriptor sets");
         return false;
     }
 
     // Detritus descriptor sets (fallen branches - allocation only, writing done in initPhase2)
-    detritusDescriptorSets = descriptorManagerPool->allocate(descriptorSetLayout.get(), MAX_FRAMES_IN_FLIGHT);
+    detritusDescriptorSets = descriptorManagerPool->allocate(**descriptorSetLayout_, MAX_FRAMES_IN_FLIGHT);
     if (detritusDescriptorSets.empty()) {
         SDL_Log("Failed to allocate detritus descriptor sets");
         return false;
@@ -1030,7 +1035,7 @@ bool Renderer::render(const Camera& camera) {
     // Post-process pass (with optional GUI overlay callback)
     // Note: This is not in postStage because it needs framebuffer and guiRenderCallback
     systems_->profiler().beginGpuZone(cmd, "PostProcess");
-    systems_->postProcess().recordPostProcess(cmd, frame.frameIndex, framebuffers[imageIndex].get(), frame.deltaTime, guiRenderCallback);
+    systems_->postProcess().recordPostProcess(cmd, frame.frameIndex, *framebuffers_[imageIndex], frame.deltaTime, guiRenderCallback);
     systems_->profiler().endGpuZone(cmd, "PostProcess");
 
     // End GPU profiling frame
@@ -1138,13 +1143,13 @@ void Renderer::waitForPreviousFrame() {
 
 void Renderer::destroyDepthImageAndView() {
     // RAII handles cleanup - just reset the managed objects
-    depthImageView = ManagedImageView();
-    depthImage = ManagedImage();
+    depthImageView_.reset();
+    depthImage_.reset();
 }
 
 void Renderer::destroyFramebuffers() {
     // RAII handles cleanup - just clear the vector
-    framebuffers.clear();
+    framebuffers_.clear();
 }
 
 bool Renderer::recreateDepthResources(VkExtent2D newExtent) {
@@ -1161,8 +1166,8 @@ bool Renderer::recreateDepthResources(VkExtent2D newExtent) {
         return false;
     }
 
-    depthImage = ManagedImage::fromRaw(vulkanContext_->getAllocator(), rawImage, rawAllocation);
-    depthImageView = ManagedImageView::fromRaw(vulkanContext_->getDevice(), rawView);
+    depthImage_ = ManagedImage::fromRaw(vulkanContext_->getAllocator(), rawImage, rawAllocation);
+    depthImageView_.emplace(vulkanContext_->getRaiiDevice(), rawView);
     return true;
 }
 
@@ -1289,14 +1294,14 @@ RenderResources Renderer::buildRenderResources(uint32_t swapchainImageIndex) con
     resources.bloomSampler = systems_->bloom().getBloomSampler();
 
     // Swapchain target
-    resources.swapchainRenderPass = renderPass.get();
-    resources.swapchainFramebuffer = framebuffers[swapchainImageIndex].get();
+    resources.swapchainRenderPass = **renderPass_;
+    resources.swapchainFramebuffer = *framebuffers_[swapchainImageIndex];
     resources.swapchainExtent = {vulkanContext_->getWidth(), vulkanContext_->getHeight()};
 
     // Main scene pipeline
-    resources.graphicsPipeline = graphicsPipeline.get();
-    resources.pipelineLayout = pipelineLayout.get();
-    resources.descriptorSetLayout = descriptorSetLayout.get();
+    resources.graphicsPipeline = **graphicsPipeline_;
+    resources.pipelineLayout = **pipelineLayout_;
+    resources.descriptorSetLayout = **descriptorSetLayout_;
 
     return resources;
 }
@@ -1445,12 +1450,12 @@ void Renderer::recordSceneObjects(VkCommandBuffer cmd, uint32_t frameIndex) {
         push.alphaTestThreshold = obj.alphaTestThreshold;
 
         vkCmd.pushConstants<PushConstants>(
-            pipelineLayout.get(),
+            **pipelineLayout_,
             vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
             0, push);
 
         vkCmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics,
-                                 pipelineLayout.get(), 0, vk::DescriptorSet(descSet), {});
+                                 **pipelineLayout_, 0, vk::DescriptorSet(descSet), {});
 
         vk::Buffer vertexBuffers[] = {obj.mesh->getVertexBuffer()};
         vk::DeviceSize offsets[] = {0};
@@ -1566,7 +1571,7 @@ void Renderer::recordHDRPass(VkCommandBuffer cmd, uint32_t frameIndex, float gra
 
     // Draw scene objects (static meshes)
     systems_->profiler().beginGpuZone(cmd, "HDR:SceneObjects");
-    vkCmd.bindPipeline(vk::PipelineBindPoint::eGraphics, graphicsPipeline.get());
+    vkCmd.bindPipeline(vk::PipelineBindPoint::eGraphics, **graphicsPipeline_);
     recordSceneObjects(cmd, frameIndex);
     systems_->profiler().endGpuZone(cmd, "HDR:SceneObjects");
 

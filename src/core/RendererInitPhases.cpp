@@ -78,7 +78,7 @@ bool Renderer::initSubsystems(const InitContext& initCtx) {
     // Initialize post-processing systems (PostProcessSystem, BloomSystem, BilateralGridSystem)
     {
         INIT_PROFILE_PHASE("PostProcessing");
-        auto bundle = PostProcessSystem::createWithDependencies(initCtx, renderPass.get(), swapchainImageFormat);
+        auto bundle = PostProcessSystem::createWithDependencies(initCtx, **renderPass_, swapchainImageFormat);
         if (!bundle) {
             return false;
         }
@@ -129,7 +129,7 @@ bool Renderer::initSubsystems(const InitContext& initCtx) {
     // Initialize shadow system (needs descriptor set layouts for pipeline compatibility)
     {
         INIT_PROFILE_PHASE("ShadowSystem");
-        auto shadowSystem = ShadowSystem::create(initCtx, descriptorSetLayout.get(), systems_->skinnedMesh().getDescriptorSetLayout());
+        auto shadowSystem = ShadowSystem::create(initCtx, **descriptorSetLayout_, systems_->skinnedMesh().getDescriptorSetLayout());
         if (!shadowSystem) return false;
         systems_->setShadow(std::move(shadowSystem));
     }
@@ -182,7 +182,7 @@ bool Renderer::initSubsystems(const InitContext& initCtx) {
     SceneBuilder::InitInfo sceneInfo{};
     sceneInfo.allocator = allocator;
     sceneInfo.device = device;
-    sceneInfo.commandPool = commandPool.get();
+    sceneInfo.commandPool = **commandPool_;
     sceneInfo.graphicsQueue = graphicsQueue;
     sceneInfo.physicalDevice = physicalDevice;
     sceneInfo.resourcePath = resourcePath;
@@ -257,7 +257,7 @@ bool Renderer::initSubsystems(const InitContext& initCtx) {
     RockSystem::InitInfo rockInfo{};
     rockInfo.device = device;
     rockInfo.allocator = allocator;
-    rockInfo.commandPool = commandPool.get();
+    rockInfo.commandPool = **commandPool_;
     rockInfo.graphicsQueue = graphicsQueue;
     rockInfo.physicalDevice = physicalDevice;
     rockInfo.resourcePath = resourcePath;
@@ -292,7 +292,7 @@ bool Renderer::initSubsystems(const InitContext& initCtx) {
     TreeSystem::InitInfo treeInfo{};
     treeInfo.device = device;
     treeInfo.allocator = allocator;
-    treeInfo.commandPool = commandPool.get();
+    treeInfo.commandPool = **commandPool_;
     treeInfo.graphicsQueue = graphicsQueue;
     treeInfo.physicalDevice = physicalDevice;
     treeInfo.resourcePath = resourcePath;
@@ -380,7 +380,7 @@ bool Renderer::initSubsystems(const InitContext& initCtx) {
         treeLODInfo.allocator = allocator;
         treeLODInfo.hdrRenderPass = systems_->postProcess().getHDRRenderPass();
         treeLODInfo.shadowRenderPass = systems_->shadow().getShadowRenderPass();
-        treeLODInfo.commandPool = commandPool.get();
+        treeLODInfo.commandPool = **commandPool_;
         treeLODInfo.graphicsQueue = graphicsQueue;
         treeLODInfo.descriptorPool = &*descriptorManagerPool;
         treeLODInfo.extent = systems_->postProcess().getExtent();
@@ -688,7 +688,7 @@ bool Renderer::initSubsystems(const InitContext& initCtx) {
         DetritusSystem::InitInfo detritusInfo{};
         detritusInfo.device = device;
         detritusInfo.allocator = allocator;
-        detritusInfo.commandPool = commandPool.get();
+        detritusInfo.commandPool = **commandPool_;
         detritusInfo.graphicsQueue = graphicsQueue;
         detritusInfo.physicalDevice = physicalDevice;
         detritusInfo.resourcePath = resourcePath;
@@ -797,7 +797,7 @@ bool Renderer::initSubsystems(const InitContext& initCtx) {
 
         // Allocate descriptor sets for each bark type
         for (const auto& typeName : systems_->tree()->getBarkTextureTypes()) {
-            auto sets = descriptorManagerPool->allocate(descriptorSetLayout.get(), MAX_FRAMES_IN_FLIGHT);
+            auto sets = descriptorManagerPool->allocate(**descriptorSetLayout_, MAX_FRAMES_IN_FLIGHT);
             if (sets.empty()) {
                 SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to allocate bark descriptor sets for type: %s", typeName.c_str());
                 return false;
@@ -807,7 +807,7 @@ bool Renderer::initSubsystems(const InitContext& initCtx) {
 
         // Allocate descriptor sets for each leaf type
         for (const auto& typeName : systems_->tree()->getLeafTextureTypes()) {
-            auto sets = descriptorManagerPool->allocate(descriptorSetLayout.get(), MAX_FRAMES_IN_FLIGHT);
+            auto sets = descriptorManagerPool->allocate(**descriptorSetLayout_, MAX_FRAMES_IN_FLIGHT);
             if (sets.empty()) {
                 SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to allocate leaf descriptor sets for type: %s", typeName.c_str());
                 return false;
@@ -953,7 +953,7 @@ bool Renderer::initSubsystems(const InitContext& initCtx) {
     catmullClarkInfo.shaderPath = initCtx.shaderPath;
     catmullClarkInfo.framesInFlight = MAX_FRAMES_IN_FLIGHT;
     catmullClarkInfo.graphicsQueue = graphicsQueue;
-    catmullClarkInfo.commandPool = commandPool.get();
+    catmullClarkInfo.commandPool = **commandPool_;
     catmullClarkInfo.raiiDevice = &vulkanContext_->getRaiiDevice();
 
     CatmullClarkConfig catmullClarkConfig{};
@@ -984,7 +984,7 @@ bool Renderer::initSubsystems(const InitContext& initCtx) {
     } else {
         systems_->setHiZ(std::move(hiZSystem));
         // Connect depth buffer to Hi-Z system - use HDR depth where scene is rendered
-        systems_->hiZ().setDepthBuffer(core.hdr.depthView, depthSampler.get());
+        systems_->hiZ().setDepthBuffer(core.hdr.depthView, **depthSampler_);
 
         // Initialize object data for culling
         updateHiZObjectData();
@@ -1006,7 +1006,7 @@ bool Renderer::initSubsystems(const InitContext& initCtx) {
         waterInfo.shaderPath = initCtx.shaderPath;
         waterInfo.framesInFlight = MAX_FRAMES_IN_FLIGHT;
         waterInfo.extent = initCtx.extent;
-        waterInfo.commandPool = commandPool.get();
+        waterInfo.commandPool = **commandPool_;
         waterInfo.graphicsQueue = graphicsQueue;
         waterInfo.waterSize = 65536.0f;  // Extend well beyond terrain for horizon
         waterInfo.assetPath = resourcePath;
@@ -1025,7 +1025,7 @@ bool Renderer::initSubsystems(const InitContext& initCtx) {
     FlowMapGenerator::InitInfo flowInfo{};
     flowInfo.device = device;
     flowInfo.allocator = allocator;
-    flowInfo.commandPool = commandPool.get();
+    flowInfo.commandPool = **commandPool_;
     flowInfo.queue = graphicsQueue;
     flowInfo.raiiDevice = &vulkanContext_->getRaiiDevice();
 
@@ -1041,7 +1041,7 @@ bool Renderer::initSubsystems(const InitContext& initCtx) {
     dispInfo.device = device;
     dispInfo.physicalDevice = physicalDevice;
     dispInfo.allocator = allocator;
-    dispInfo.commandPool = commandPool.get();
+    dispInfo.commandPool = **commandPool_;
     dispInfo.computeQueue = graphicsQueue;
     dispInfo.framesInFlight = MAX_FRAMES_IN_FLIGHT;
     dispInfo.displacementResolution = 512;
@@ -1060,7 +1060,7 @@ bool Renderer::initSubsystems(const InitContext& initCtx) {
     foamInfo.device = device;
     foamInfo.physicalDevice = physicalDevice;
     foamInfo.allocator = allocator;
-    foamInfo.commandPool = commandPool.get();
+    foamInfo.commandPool = **commandPool_;
     foamInfo.computeQueue = graphicsQueue;
     foamInfo.shaderPath = initCtx.shaderPath;
     foamInfo.framesInFlight = MAX_FRAMES_IN_FLIGHT;
@@ -1080,7 +1080,7 @@ bool Renderer::initSubsystems(const InitContext& initCtx) {
     tileCullInfo.device = device;
     tileCullInfo.physicalDevice = physicalDevice;
     tileCullInfo.allocator = allocator;
-    tileCullInfo.commandPool = commandPool.get();
+    tileCullInfo.commandPool = **commandPool_;
     tileCullInfo.computeQueue = graphicsQueue;
     tileCullInfo.shaderPath = initCtx.shaderPath;
     tileCullInfo.framesInFlight = MAX_FRAMES_IN_FLIGHT;
@@ -1117,12 +1117,12 @@ bool Renderer::initSubsystems(const InitContext& initCtx) {
     // Initialize water subsystems (configure WaterSystem, generate flow map, create SSR)
     WaterSubsystems waterSubs{systems_->water(), systems_->waterDisplacement(), systems_->flowMap(), systems_->foam(), *systems_, systems_->waterTileCull(), systems_->waterGBuffer()};
     if (!RendererInit::initWaterSubsystems(waterSubs, initCtx, core.hdr.renderPass,
-                                            systems_->shadow(), systems_->terrain(), terrainConfig, systems_->postProcess(), depthSampler.get())) return false;
+                                            systems_->shadow(), systems_->terrain(), terrainConfig, systems_->postProcess(), **depthSampler_)) return false;
 
     // Create water descriptor sets
     if (!RendererInit::createWaterDescriptorSets(waterSubs, systems_->globalBuffers().uniformBuffers.buffers,
                                                   sizeof(UniformBufferObject), systems_->shadow(), systems_->terrain(),
-                                                  systems_->postProcess(), depthSampler.get())) return false;
+                                                  systems_->postProcess(), **depthSampler_)) return false;
 
     // Connect underwater caustics to terrain system (use foam texture as caustics pattern)
     // Must happen after water system is fully initialized

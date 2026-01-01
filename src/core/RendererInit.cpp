@@ -1,7 +1,7 @@
 #include <array>
 #include "RendererInit.h"
 #include "RendererSystems.h"
-#include "VulkanRAII.h"
+#include "VulkanHelpers.h"
 #include "MaterialDescriptorFactory.h"
 
 // Atmosphere systems

@@ -1,7 +1,9 @@
 #include "FlowMapGenerator.h"
 #include "VulkanBarriers.h"
 #include "VulkanResourceFactory.h"
+#include "VulkanHelpers.h"
 #include <SDL3/SDL.h>
+#include <vulkan/vulkan.hpp>
 #include <cstring>
 #include <algorithm>
 #include <queue>
@@ -24,6 +26,12 @@ bool FlowMapGenerator::initInternal(const InitInfo& info) {
     allocator = info.allocator;
     commandPool = info.commandPool;
     queue = info.queue;
+    raiiDevice_ = info.raiiDevice;
+
+    if (!raiiDevice_) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "FlowMapGenerator requires raiiDevice");
+        return false;
+    }
 
     if (!createSampler()) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create flow map sampler");
@@ -36,7 +44,7 @@ bool FlowMapGenerator::initInternal(const InitInfo& info) {
 void FlowMapGenerator::cleanup() {
     if (device == VK_NULL_HANDLE) return;
 
-    flowMapSampler.reset();
+    flowMapSampler_.reset();
 
     if (flowMapView != VK_NULL_HANDLE) {
         vkDestroyImageView(device, flowMapView, nullptr);
@@ -113,23 +121,28 @@ bool FlowMapGenerator::createImage(uint32_t resolution) {
 }
 
 bool FlowMapGenerator::createSampler() {
-    VkSamplerCreateInfo samplerInfo{};
-    samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
-    samplerInfo.magFilter = VK_FILTER_LINEAR;
-    samplerInfo.minFilter = VK_FILTER_LINEAR;
-    samplerInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
-    samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
-    samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
-    samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
-    samplerInfo.anisotropyEnable = VK_TRUE;
-    samplerInfo.maxAnisotropy = 4.0f;
-    samplerInfo.borderColor = VK_BORDER_COLOR_FLOAT_OPAQUE_BLACK;
-    samplerInfo.unnormalizedCoordinates = VK_FALSE;
-    samplerInfo.compareEnable = VK_FALSE;
-    samplerInfo.minLod = 0.0f;
-    samplerInfo.maxLod = 0.0f;
+    auto samplerInfo = vk::SamplerCreateInfo{}
+        .setMagFilter(vk::Filter::eLinear)
+        .setMinFilter(vk::Filter::eLinear)
+        .setMipmapMode(vk::SamplerMipmapMode::eLinear)
+        .setAddressModeU(vk::SamplerAddressMode::eClampToEdge)
+        .setAddressModeV(vk::SamplerAddressMode::eClampToEdge)
+        .setAddressModeW(vk::SamplerAddressMode::eClampToEdge)
+        .setAnisotropyEnable(VK_TRUE)
+        .setMaxAnisotropy(4.0f)
+        .setBorderColor(vk::BorderColor::eFloatOpaqueBlack)
+        .setUnnormalizedCoordinates(VK_FALSE)
+        .setCompareEnable(VK_FALSE)
+        .setMinLod(0.0f)
+        .setMaxLod(0.0f);
 
-    return ManagedSampler::create(device, samplerInfo, flowMapSampler);
+    try {
+        flowMapSampler_.emplace(*raiiDevice_, samplerInfo);
+        return true;
+    } catch (const std::exception& e) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create flow map sampler: %s", e.what());
+        return false;
+    }
 }
 
 void FlowMapGenerator::uploadToGPU() {

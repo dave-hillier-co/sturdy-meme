@@ -1,6 +1,7 @@
 #pragma once
 
 #include <vulkan/vulkan.h>
+#include <vulkan/vulkan_raii.hpp>
 #include <vk_mem_alloc.h>
 #include <string>
 #include <cstdint>
@@ -21,6 +22,7 @@ class VulkanContext;
  */
 struct InitContext {
     // Core Vulkan handles (from VulkanContext)
+    const vk::raii::Device* raiiDevice = nullptr;
     VkDevice device = VK_NULL_HANDLE;
     VkPhysicalDevice physicalDevice = VK_NULL_HANDLE;
     VmaAllocator allocator = VK_NULL_HANDLE;

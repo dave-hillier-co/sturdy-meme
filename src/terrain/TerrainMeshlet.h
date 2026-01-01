@@ -6,7 +6,7 @@
 #include <cstdint>
 #include <vector>
 #include <memory>
-#include "VulkanRAII.h"
+#include "VmaResources.h"
 
 // Pre-subdivided meshlet for terrain rendering
 // Each CBT leaf node is rendered as an instance of this meshlet,

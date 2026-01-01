@@ -19,6 +19,11 @@ std::unique_ptr<TerrainPipelines> TerrainPipelines::create(const InitInfo& info)
 }
 
 bool TerrainPipelines::initInternal(const InitInfo& info) {
+    if (!info.raiiDevice) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "TerrainPipelines: raiiDevice is null");
+        return false;
+    }
+    raiiDevice_ = info.raiiDevice;
     device = info.device;
     renderPass = info.renderPass;
     shadowRenderPass = info.shadowRenderPass;
@@ -62,7 +67,10 @@ bool TerrainPipelines::createDispatcherPipeline() {
         .setSetLayouts(setLayout)
         .setPushConstantRanges(pushConstantRange);
 
-    if (!ManagedPipelineLayout::create(device, *reinterpret_cast<const VkPipelineLayoutCreateInfo*>(&layoutInfo), dispatcherPipelineLayout_)) {
+    try {
+        dispatcherPipelineLayout_.emplace(*raiiDevice_, layoutInfo);
+    } catch (const vk::SystemError& e) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create dispatcher pipeline layout: %s", e.what());
         vk::Device(device).destroyShaderModule(*shaderModule);
         return false;
     }
@@ -74,13 +82,18 @@ bool TerrainPipelines::createDispatcherPipeline() {
 
     auto pipelineInfo = vk::ComputePipelineCreateInfo{}
         .setStage(stageInfo)
-        .setLayout(dispatcherPipelineLayout_.get());
+        .setLayout(**dispatcherPipelineLayout_);
 
-    bool success = ManagedPipeline::createCompute(device, VK_NULL_HANDLE,
-        *reinterpret_cast<const VkComputePipelineCreateInfo*>(&pipelineInfo), dispatcherPipeline_);
+    try {
+        dispatcherPipeline_.emplace(*raiiDevice_, nullptr, pipelineInfo);
+    } catch (const vk::SystemError& e) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create dispatcher pipeline: %s", e.what());
+        vk::Device(device).destroyShaderModule(*shaderModule);
+        return false;
+    }
     vk::Device(device).destroyShaderModule(*shaderModule);
 
-    return success;
+    return true;
 }
 
 bool TerrainPipelines::createSubdivisionPipeline() {
@@ -97,7 +110,10 @@ bool TerrainPipelines::createSubdivisionPipeline() {
         .setSetLayouts(setLayout)
         .setPushConstantRanges(pushConstantRange);
 
-    if (!ManagedPipelineLayout::create(device, *reinterpret_cast<const VkPipelineLayoutCreateInfo*>(&layoutInfo), subdivisionPipelineLayout_)) {
+    try {
+        subdivisionPipelineLayout_.emplace(*raiiDevice_, layoutInfo);
+    } catch (const vk::SystemError& e) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create subdivision pipeline layout: %s", e.what());
         vk::Device(device).destroyShaderModule(*shaderModule);
         return false;
     }
@@ -109,13 +125,18 @@ bool TerrainPipelines::createSubdivisionPipeline() {
 
     auto pipelineInfo = vk::ComputePipelineCreateInfo{}
         .setStage(stageInfo)
-        .setLayout(subdivisionPipelineLayout_.get());
+        .setLayout(**subdivisionPipelineLayout_);
 
-    bool success = ManagedPipeline::createCompute(device, VK_NULL_HANDLE,
-        *reinterpret_cast<const VkComputePipelineCreateInfo*>(&pipelineInfo), subdivisionPipeline_);
+    try {
+        subdivisionPipeline_.emplace(*raiiDevice_, nullptr, pipelineInfo);
+    } catch (const vk::SystemError& e) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create subdivision pipeline: %s", e.what());
+        vk::Device(device).destroyShaderModule(*shaderModule);
+        return false;
+    }
     vk::Device(device).destroyShaderModule(*shaderModule);
 
-    return success;
+    return true;
 }
 
 bool TerrainPipelines::createSumReductionPipelines() {
@@ -129,7 +150,10 @@ bool TerrainPipelines::createSumReductionPipelines() {
         .setSetLayouts(setLayout)
         .setPushConstantRanges(pushConstantRange);
 
-    if (!ManagedPipelineLayout::create(device, *reinterpret_cast<const VkPipelineLayoutCreateInfo*>(&layoutInfo), sumReductionPipelineLayout_)) {
+    try {
+        sumReductionPipelineLayout_.emplace(*raiiDevice_, layoutInfo);
+    } catch (const vk::SystemError& e) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create sum reduction pipeline layout: %s", e.what());
         return false;
     }
 
@@ -145,12 +169,16 @@ bool TerrainPipelines::createSumReductionPipelines() {
 
         auto pipelineInfo = vk::ComputePipelineCreateInfo{}
             .setStage(stageInfo)
-            .setLayout(sumReductionPipelineLayout_.get());
+            .setLayout(**sumReductionPipelineLayout_);
 
-        bool success = ManagedPipeline::createCompute(device, VK_NULL_HANDLE,
-            *reinterpret_cast<const VkComputePipelineCreateInfo*>(&pipelineInfo), sumReductionPrepassPipeline_);
+        try {
+            sumReductionPrepassPipeline_.emplace(*raiiDevice_, nullptr, pipelineInfo);
+        } catch (const vk::SystemError& e) {
+            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create sum reduction prepass pipeline: %s", e.what());
+            vk::Device(device).destroyShaderModule(*shaderModule);
+            return false;
+        }
         vk::Device(device).destroyShaderModule(*shaderModule);
-        if (!success) return false;
     }
 
     // Subgroup-optimized prepass pipeline (processes 13 levels instead of 5)
@@ -164,16 +192,15 @@ bool TerrainPipelines::createSumReductionPipelines() {
 
             auto pipelineInfo = vk::ComputePipelineCreateInfo{}
                 .setStage(stageInfo)
-                .setLayout(sumReductionPipelineLayout_.get());
+                .setLayout(**sumReductionPipelineLayout_);
 
-            bool success = ManagedPipeline::createCompute(device, VK_NULL_HANDLE,
-                *reinterpret_cast<const VkComputePipelineCreateInfo*>(&pipelineInfo), sumReductionPrepassSubgroupPipeline_);
-            vk::Device(device).destroyShaderModule(*shaderModule);
-            if (!success) {
-                SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "Failed to create subgroup prepass pipeline, using fallback");
-            } else {
+            try {
+                sumReductionPrepassSubgroupPipeline_.emplace(*raiiDevice_, nullptr, pipelineInfo);
                 SDL_Log("TerrainPipelines: Using subgroup-optimized sum reduction prepass");
+            } catch (const vk::SystemError&) {
+                SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "Failed to create subgroup prepass pipeline, using fallback");
             }
+            vk::Device(device).destroyShaderModule(*shaderModule);
         }
     }
 
@@ -189,12 +216,16 @@ bool TerrainPipelines::createSumReductionPipelines() {
 
         auto pipelineInfo = vk::ComputePipelineCreateInfo{}
             .setStage(stageInfo)
-            .setLayout(sumReductionPipelineLayout_.get());
+            .setLayout(**sumReductionPipelineLayout_);
 
-        bool success = ManagedPipeline::createCompute(device, VK_NULL_HANDLE,
-            *reinterpret_cast<const VkComputePipelineCreateInfo*>(&pipelineInfo), sumReductionPipeline_);
+        try {
+            sumReductionPipeline_.emplace(*raiiDevice_, nullptr, pipelineInfo);
+        } catch (const vk::SystemError& e) {
+            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create sum reduction pipeline: %s", e.what());
+            vk::Device(device).destroyShaderModule(*shaderModule);
+            return false;
+        }
         vk::Device(device).destroyShaderModule(*shaderModule);
-        if (!success) return false;
     }
 
     // Batched sum reduction pipeline (multi-level per dispatch using shared memory)
@@ -210,7 +241,10 @@ bool TerrainPipelines::createSumReductionPipelines() {
             .setSetLayouts(batchedSetLayout)
             .setPushConstantRanges(batchedPushConstantRange);
 
-        if (!ManagedPipelineLayout::create(device, *reinterpret_cast<const VkPipelineLayoutCreateInfo*>(&batchedLayoutInfo), sumReductionBatchedPipelineLayout_)) {
+        try {
+            sumReductionBatchedPipelineLayout_.emplace(*raiiDevice_, batchedLayoutInfo);
+        } catch (const vk::SystemError& e) {
+            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create batched sum reduction pipeline layout: %s", e.what());
             return false;
         }
 
@@ -224,12 +258,16 @@ bool TerrainPipelines::createSumReductionPipelines() {
 
         auto pipelineInfo = vk::ComputePipelineCreateInfo{}
             .setStage(stageInfo)
-            .setLayout(sumReductionBatchedPipelineLayout_.get());
+            .setLayout(**sumReductionBatchedPipelineLayout_);
 
-        bool success = ManagedPipeline::createCompute(device, VK_NULL_HANDLE,
-            *reinterpret_cast<const VkComputePipelineCreateInfo*>(&pipelineInfo), sumReductionBatchedPipeline_);
+        try {
+            sumReductionBatchedPipeline_.emplace(*raiiDevice_, nullptr, pipelineInfo);
+        } catch (const vk::SystemError& e) {
+            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create batched sum reduction pipeline: %s", e.what());
+            vk::Device(device).destroyShaderModule(*shaderModule);
+            return false;
+        }
         vk::Device(device).destroyShaderModule(*shaderModule);
-        if (!success) return false;
     }
 
     return true;
@@ -251,7 +289,10 @@ bool TerrainPipelines::createFrustumCullPipelines() {
             .setSetLayouts(setLayout)
             .setPushConstantRanges(pushConstantRange);
 
-        if (!ManagedPipelineLayout::create(device, *reinterpret_cast<const VkPipelineLayoutCreateInfo*>(&layoutInfo), frustumCullPipelineLayout_)) {
+        try {
+            frustumCullPipelineLayout_.emplace(*raiiDevice_, layoutInfo);
+        } catch (const vk::SystemError& e) {
+            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create frustum cull pipeline layout: %s", e.what());
             vk::Device(device).destroyShaderModule(*shaderModule);
             return false;
         }
@@ -263,12 +304,16 @@ bool TerrainPipelines::createFrustumCullPipelines() {
 
         auto pipelineInfo = vk::ComputePipelineCreateInfo{}
             .setStage(stageInfo)
-            .setLayout(frustumCullPipelineLayout_.get());
+            .setLayout(**frustumCullPipelineLayout_);
 
-        bool success = ManagedPipeline::createCompute(device, VK_NULL_HANDLE,
-            *reinterpret_cast<const VkComputePipelineCreateInfo*>(&pipelineInfo), frustumCullPipeline_);
+        try {
+            frustumCullPipeline_.emplace(*raiiDevice_, nullptr, pipelineInfo);
+        } catch (const vk::SystemError& e) {
+            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create frustum cull pipeline: %s", e.what());
+            vk::Device(device).destroyShaderModule(*shaderModule);
+            return false;
+        }
         vk::Device(device).destroyShaderModule(*shaderModule);
-        if (!success) return false;
     }
 
     // Prepare cull dispatch pipeline
@@ -286,7 +331,10 @@ bool TerrainPipelines::createFrustumCullPipelines() {
             .setSetLayouts(setLayout)
             .setPushConstantRanges(pushConstantRange);
 
-        if (!ManagedPipelineLayout::create(device, *reinterpret_cast<const VkPipelineLayoutCreateInfo*>(&layoutInfo), prepareDispatchPipelineLayout_)) {
+        try {
+            prepareDispatchPipelineLayout_.emplace(*raiiDevice_, layoutInfo);
+        } catch (const vk::SystemError& e) {
+            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create prepare dispatch pipeline layout: %s", e.what());
             vk::Device(device).destroyShaderModule(*shaderModule);
             return false;
         }
@@ -298,12 +346,16 @@ bool TerrainPipelines::createFrustumCullPipelines() {
 
         auto pipelineInfo = vk::ComputePipelineCreateInfo{}
             .setStage(stageInfo)
-            .setLayout(prepareDispatchPipelineLayout_.get());
+            .setLayout(**prepareDispatchPipelineLayout_);
 
-        bool success = ManagedPipeline::createCompute(device, VK_NULL_HANDLE,
-            *reinterpret_cast<const VkComputePipelineCreateInfo*>(&pipelineInfo), prepareDispatchPipeline_);
+        try {
+            prepareDispatchPipeline_.emplace(*raiiDevice_, nullptr, pipelineInfo);
+        } catch (const vk::SystemError& e) {
+            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create prepare dispatch pipeline: %s", e.what());
+            vk::Device(device).destroyShaderModule(*shaderModule);
+            return false;
+        }
         vk::Device(device).destroyShaderModule(*shaderModule);
-        if (!success) return false;
     }
 
     return true;
@@ -315,7 +367,10 @@ bool TerrainPipelines::createRenderPipeline() {
     auto layoutInfo = vk::PipelineLayoutCreateInfo{}
         .setSetLayouts(setLayout);
 
-    if (!ManagedPipelineLayout::create(device, *reinterpret_cast<const VkPipelineLayoutCreateInfo*>(&layoutInfo), renderPipelineLayout_)) {
+    try {
+        renderPipelineLayout_.emplace(*raiiDevice_, layoutInfo);
+    } catch (const vk::SystemError& e) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create render pipeline layout: %s", e.what());
         return false;
     }
 
@@ -325,11 +380,11 @@ bool TerrainPipelines::createRenderPipeline() {
            .addShaderStage(shaderPath + "/terrain/terrain.frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT);
 
     VkPipeline rawPipeline = VK_NULL_HANDLE;
-    if (!builder.buildGraphicsPipeline(PipelinePresets::filled(renderPass), renderPipelineLayout_.get(), rawPipeline)) {
+    if (!builder.buildGraphicsPipeline(PipelinePresets::filled(renderPass), **renderPipelineLayout_, rawPipeline)) {
         return false;
     }
-    // Wrap the raw pipeline - ManagedPipeline will handle cleanup
-    renderPipeline_ = ManagedPipeline::fromRaw(device, rawPipeline);
+    // Wrap the raw pipeline in vk::raii::Pipeline
+    renderPipeline_.emplace(*raiiDevice_, rawPipeline);
     return true;
 }
 
@@ -339,10 +394,10 @@ bool TerrainPipelines::createWireframePipeline() {
            .addShaderStage(shaderPath + "/terrain/terrain_wireframe.frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT);
 
     VkPipeline rawPipeline = VK_NULL_HANDLE;
-    if (!builder.buildGraphicsPipeline(PipelinePresets::wireframe(renderPass), renderPipelineLayout_.get(), rawPipeline)) {
+    if (!builder.buildGraphicsPipeline(PipelinePresets::wireframe(renderPass), **renderPipelineLayout_, rawPipeline)) {
         return false;
     }
-    wireframePipeline_ = ManagedPipeline::fromRaw(device, rawPipeline);
+    wireframePipeline_.emplace(*raiiDevice_, rawPipeline);
     return true;
 }
 
@@ -355,7 +410,7 @@ bool TerrainPipelines::createShadowPipeline() {
     if (!layoutBuilder.buildPipelineLayout({renderDescriptorSetLayout}, rawLayout)) {
         return false;
     }
-    shadowPipelineLayout_ = ManagedPipelineLayout::fromRaw(device, rawLayout);
+    shadowPipelineLayout_.emplace(*raiiDevice_, rawLayout);
 
     // Create shadow pipeline
     PipelineBuilder builder(device);
@@ -363,10 +418,10 @@ bool TerrainPipelines::createShadowPipeline() {
            .addShaderStage(shaderPath + "/terrain/terrain_shadow.frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT);
 
     VkPipeline rawPipeline = VK_NULL_HANDLE;
-    if (!builder.buildGraphicsPipeline(PipelinePresets::shadow(shadowRenderPass), shadowPipelineLayout_.get(), rawPipeline)) {
+    if (!builder.buildGraphicsPipeline(PipelinePresets::shadow(shadowRenderPass), **shadowPipelineLayout_, rawPipeline)) {
         return false;
     }
-    shadowPipeline_ = ManagedPipeline::fromRaw(device, rawPipeline);
+    shadowPipeline_.emplace(*raiiDevice_, rawPipeline);
     return true;
 }
 
@@ -379,10 +434,10 @@ bool TerrainPipelines::createMeshletRenderPipeline() {
     cfg.useMeshletVertexInput = true;
 
     VkPipeline rawPipeline = VK_NULL_HANDLE;
-    if (!builder.buildGraphicsPipeline(cfg, renderPipelineLayout_.get(), rawPipeline)) {
+    if (!builder.buildGraphicsPipeline(cfg, **renderPipelineLayout_, rawPipeline)) {
         return false;
     }
-    meshletRenderPipeline_ = ManagedPipeline::fromRaw(device, rawPipeline);
+    meshletRenderPipeline_.emplace(*raiiDevice_, rawPipeline);
     return true;
 }
 
@@ -395,10 +450,10 @@ bool TerrainPipelines::createMeshletWireframePipeline() {
     cfg.useMeshletVertexInput = true;
 
     VkPipeline rawPipeline = VK_NULL_HANDLE;
-    if (!builder.buildGraphicsPipeline(cfg, renderPipelineLayout_.get(), rawPipeline)) {
+    if (!builder.buildGraphicsPipeline(cfg, **renderPipelineLayout_, rawPipeline)) {
         return false;
     }
-    meshletWireframePipeline_ = ManagedPipeline::fromRaw(device, rawPipeline);
+    meshletWireframePipeline_.emplace(*raiiDevice_, rawPipeline);
     return true;
 }
 
@@ -411,10 +466,10 @@ bool TerrainPipelines::createMeshletShadowPipeline() {
     cfg.useMeshletVertexInput = true;
 
     VkPipeline rawPipeline = VK_NULL_HANDLE;
-    if (!builder.buildGraphicsPipeline(cfg, shadowPipelineLayout_.get(), rawPipeline)) {
+    if (!builder.buildGraphicsPipeline(cfg, **shadowPipelineLayout_, rawPipeline)) {
         return false;
     }
-    meshletShadowPipeline_ = ManagedPipeline::fromRaw(device, rawPipeline);
+    meshletShadowPipeline_.emplace(*raiiDevice_, rawPipeline);
     return true;
 }
 
@@ -437,9 +492,11 @@ bool TerrainPipelines::createShadowCullPipelines() {
         .setSetLayouts(setLayout)
         .setPushConstantRanges(pushConstantRange);
 
-    if (!ManagedPipelineLayout::create(device, *reinterpret_cast<const VkPipelineLayoutCreateInfo*>(&layoutInfo), shadowCullPipelineLayout_)) {
+    try {
+        shadowCullPipelineLayout_.emplace(*raiiDevice_, layoutInfo);
+    } catch (const vk::SystemError& e) {
         vk::Device(device).destroyShaderModule(*cullShaderModule);
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create shadow cull pipeline layout");
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create shadow cull pipeline layout: %s", e.what());
         return false;
     }
 
@@ -462,16 +519,16 @@ bool TerrainPipelines::createShadowCullPipelines() {
 
     auto pipelineInfo = vk::ComputePipelineCreateInfo{}
         .setStage(stageInfo)
-        .setLayout(shadowCullPipelineLayout_.get());
+        .setLayout(**shadowCullPipelineLayout_);
 
-    bool success = ManagedPipeline::createCompute(device, VK_NULL_HANDLE,
-        *reinterpret_cast<const VkComputePipelineCreateInfo*>(&pipelineInfo), shadowCullPipeline_);
-    vk::Device(device).destroyShaderModule(*cullShaderModule);
-
-    if (!success) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create shadow cull compute pipeline");
+    try {
+        shadowCullPipeline_.emplace(*raiiDevice_, nullptr, pipelineInfo);
+    } catch (const vk::SystemError& e) {
+        vk::Device(device).destroyShaderModule(*cullShaderModule);
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create shadow cull compute pipeline: %s", e.what());
         return false;
     }
+    vk::Device(device).destroyShaderModule(*cullShaderModule);
 
     vk::Device vkDevice(device);
 
@@ -542,7 +599,7 @@ bool TerrainPipelines::createShadowCullPipelines() {
         .setPDepthStencilState(&depthStencil)
         .setPColorBlendState(&colorBlending)
         .setPDynamicState(&dynamicState)
-        .setLayout(shadowPipelineLayout_.get())
+        .setLayout(**shadowPipelineLayout_)
         .setRenderPass(shadowRenderPass)
         .setSubpass(0);
 
@@ -554,7 +611,7 @@ bool TerrainPipelines::createShadowCullPipelines() {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create shadow culled graphics pipeline");
         return false;
     }
-    shadowCulledPipeline_ = ManagedPipeline::fromRaw(device, createResult.value);
+    shadowCulledPipeline_.emplace(*raiiDevice_, createResult.value);
 
     // Create meshlet shadow culled pipeline (if meshlets enabled)
     if (useMeshlets) {
@@ -596,7 +653,7 @@ bool TerrainPipelines::createShadowCullPipelines() {
             SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create meshlet shadow culled graphics pipeline");
             return false;
         }
-        meshletShadowCulledPipeline_ = ManagedPipeline::fromRaw(device, meshletCreateResult.value);
+        meshletShadowCulledPipeline_.emplace(*raiiDevice_, meshletCreateResult.value);
     }
 
     SDL_Log("TerrainPipelines: Shadow culling pipelines created successfully");

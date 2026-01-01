@@ -24,6 +24,11 @@ TerrainTileCache::~TerrainTileCache() {
 }
 
 bool TerrainTileCache::initInternal(const InitInfo& info) {
+    if (!info.raiiDevice) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "TerrainTileCache: raiiDevice is null");
+        return false;
+    }
+    raiiDevice_ = info.raiiDevice;
     cacheDirectory = info.cacheDirectory;
     device = info.device;
     allocator = info.allocator;
@@ -41,9 +46,20 @@ bool TerrainTileCache::initInternal(const InitInfo& info) {
         return false;
     }
 
-    // Create sampler for tile textures
-    if (!VulkanResourceFactory::createSamplerLinearClamp(device, sampler)) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "TerrainTileCache: Failed to create sampler");
+    // Create sampler for tile textures using vk::raii
+    auto samplerInfo = vk::SamplerCreateInfo{}
+        .setMagFilter(vk::Filter::eLinear)
+        .setMinFilter(vk::Filter::eLinear)
+        .setMipmapMode(vk::SamplerMipmapMode::eLinear)
+        .setAddressModeU(vk::SamplerAddressMode::eClampToEdge)
+        .setAddressModeV(vk::SamplerAddressMode::eClampToEdge)
+        .setAddressModeW(vk::SamplerAddressMode::eClampToEdge)
+        .setMinLod(0.0f)
+        .setMaxLod(VK_LOD_CLAMP_NONE);
+    try {
+        sampler_.emplace(*raiiDevice_, samplerInfo);
+    } catch (const vk::SystemError& e) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "TerrainTileCache: Failed to create sampler: %s", e.what());
         return false;
     }
 
@@ -227,7 +243,7 @@ void TerrainTileCache::cleanup() {
     holes_.clear();
 
     // Destroy sampler (RAII via reset)
-    sampler.reset();
+    sampler_.reset();
 }
 
 bool TerrainTileCache::loadMetadata() {
@@ -1219,9 +1235,20 @@ bool TerrainTileCache::createHoleMaskResources() {
         return false;
     }
 
-    // Create sampler (linear filtering for smooth edges)
-    if (!VulkanResourceFactory::createSamplerLinearClamp(device, holeMaskSampler_)) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "TerrainTileCache: Failed to create hole mask sampler");
+    // Create sampler (linear filtering for smooth edges) using vk::raii
+    auto samplerInfo = vk::SamplerCreateInfo{}
+        .setMagFilter(vk::Filter::eLinear)
+        .setMinFilter(vk::Filter::eLinear)
+        .setMipmapMode(vk::SamplerMipmapMode::eLinear)
+        .setAddressModeU(vk::SamplerAddressMode::eClampToEdge)
+        .setAddressModeV(vk::SamplerAddressMode::eClampToEdge)
+        .setAddressModeW(vk::SamplerAddressMode::eClampToEdge)
+        .setMinLod(0.0f)
+        .setMaxLod(VK_LOD_CLAMP_NONE);
+    try {
+        holeMaskSampler_.emplace(*raiiDevice_, samplerInfo);
+    } catch (const vk::SystemError& e) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "TerrainTileCache: Failed to create hole mask sampler: %s", e.what());
         return false;
     }
 

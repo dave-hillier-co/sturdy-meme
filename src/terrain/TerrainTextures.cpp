@@ -9,6 +9,11 @@
 #include <algorithm>
 
 bool TerrainTextures::init(const InitInfo& info) {
+    if (!info.raiiDevice) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "TerrainTextures: raiiDevice is null");
+        return false;
+    }
+    raiiDevice_ = info.raiiDevice;
     device = info.device;
     allocator = info.allocator;
     graphicsQueue = info.graphicsQueue;
@@ -24,11 +29,11 @@ bool TerrainTextures::init(const InitInfo& info) {
 
 void TerrainTextures::destroy(VkDevice device, VmaAllocator allocator) {
     // Samplers via RAII
-    albedoSampler.reset();
+    albedoSampler_.reset();
     if (albedoView) vkDestroyImageView(device, albedoView, nullptr);
     if (albedoImage) vmaDestroyImage(allocator, albedoImage, albedoAllocation);
 
-    grassFarLODSampler.reset();
+    grassFarLODSampler_.reset();
     if (grassFarLODView) vkDestroyImageView(device, grassFarLODView, nullptr);
     if (grassFarLODImage) vmaDestroyImage(allocator, grassFarLODImage, grassFarLODAllocation);
 
@@ -95,9 +100,22 @@ bool TerrainTextures::createAlbedoTexture() {
         return false;
     }
 
-    // Create sampler
-    if (!VulkanResourceFactory::createSamplerLinearRepeatAnisotropic(device, 16.0f, albedoSampler)) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create terrain albedo sampler");
+    // Create sampler using vk::raii
+    auto samplerInfo = vk::SamplerCreateInfo{}
+        .setMagFilter(vk::Filter::eLinear)
+        .setMinFilter(vk::Filter::eLinear)
+        .setMipmapMode(vk::SamplerMipmapMode::eLinear)
+        .setAddressModeU(vk::SamplerAddressMode::eRepeat)
+        .setAddressModeV(vk::SamplerAddressMode::eRepeat)
+        .setAddressModeW(vk::SamplerAddressMode::eRepeat)
+        .setAnisotropyEnable(vk::True)
+        .setMaxAnisotropy(16.0f)
+        .setMinLod(0.0f)
+        .setMaxLod(VK_LOD_CLAMP_NONE);
+    try {
+        albedoSampler_.emplace(*raiiDevice_, samplerInfo);
+    } catch (const vk::SystemError& e) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create terrain albedo sampler: %s", e.what());
         stbi_image_free(pixels);
         return false;
     }
@@ -179,9 +197,22 @@ bool TerrainTextures::createGrassFarLODTexture() {
         return false;
     }
 
-    // Create sampler
-    if (!VulkanResourceFactory::createSamplerLinearRepeatAnisotropic(device, 16.0f, grassFarLODSampler)) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create grass far LOD sampler");
+    // Create sampler using vk::raii
+    auto samplerInfo = vk::SamplerCreateInfo{}
+        .setMagFilter(vk::Filter::eLinear)
+        .setMinFilter(vk::Filter::eLinear)
+        .setMipmapMode(vk::SamplerMipmapMode::eLinear)
+        .setAddressModeU(vk::SamplerAddressMode::eRepeat)
+        .setAddressModeV(vk::SamplerAddressMode::eRepeat)
+        .setAddressModeW(vk::SamplerAddressMode::eRepeat)
+        .setAnisotropyEnable(vk::True)
+        .setMaxAnisotropy(16.0f)
+        .setMinLod(0.0f)
+        .setMaxLod(VK_LOD_CLAMP_NONE);
+    try {
+        grassFarLODSampler_.emplace(*raiiDevice_, samplerInfo);
+    } catch (const vk::SystemError& e) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create grass far LOD sampler: %s", e.what());
         stbi_image_free(pixels);
         return false;
     }

@@ -1,16 +1,17 @@
 #pragma once
 
 #include <vulkan/vulkan.h>
+#include <vulkan/vulkan_raii.hpp>
 #include <vk_mem_alloc.h>
 #include <glm/glm.hpp>
 #include <vector>
 #include <string>
 #include <memory>
+#include <optional>
 #include "UBOs.h"
 #include "BufferUtils.h"
 #include "DescriptorManager.h"
 #include "InitContext.h"
-#include "VulkanRAII.h"
 
 // Bilateral Grid Local Tone Mapping System
 // Ghost of Tsushima technique for detail-preserving contrast adjustment
@@ -32,6 +33,7 @@ public:
         VkExtent2D extent;
         std::string shaderPath;
         uint32_t framesInFlight;
+        const vk::raii::Device* raiiDevice = nullptr;
     };
 
     // Grid dimensions (GOT used 64x32x64)
@@ -67,7 +69,7 @@ public:
 
     // Get the blurred grid for sampling in post-process
     VkImageView getGridView() const { return gridViews[0]; }
-    VkSampler getGridSampler() const { return gridSampler.get(); }
+    VkSampler getGridSampler() const { return gridSampler_ ? **gridSampler_ : VK_NULL_HANDLE; }
 
     // Local tone mapping parameters
     void setEnabled(bool e) { enabled = e; }
@@ -117,6 +119,7 @@ private:
     VkExtent2D extent = {0, 0};
     std::string shaderPath;
     uint32_t framesInFlight = 0;
+    const vk::raii::Device* raiiDevice_ = nullptr;
 
     // Format for bilateral grid (stores weighted log-lum + weight)
     static constexpr VkFormat GRID_FORMAT = VK_FORMAT_R16G16B16A16_SFLOAT;
@@ -126,18 +129,18 @@ private:
     VmaAllocation gridAllocations[2] = {VK_NULL_HANDLE, VK_NULL_HANDLE};
     VkImageView gridViews[2] = {VK_NULL_HANDLE, VK_NULL_HANDLE};
 
-    ManagedSampler gridSampler;
+    std::optional<vk::raii::Sampler> gridSampler_;
 
     // Build pipeline (populates grid from HDR image)
-    ManagedDescriptorSetLayout buildDescriptorSetLayout;
-    ManagedPipelineLayout buildPipelineLayout;
-    ManagedPipeline buildPipeline;
+    std::optional<vk::raii::DescriptorSetLayout> buildDescriptorSetLayout_;
+    std::optional<vk::raii::PipelineLayout> buildPipelineLayout_;
+    std::optional<vk::raii::Pipeline> buildPipeline_;
     std::vector<VkDescriptorSet> buildDescriptorSets;
 
     // Blur pipeline (separable Gaussian along each axis)
-    ManagedDescriptorSetLayout blurDescriptorSetLayout;
-    ManagedPipelineLayout blurPipelineLayout;
-    ManagedPipeline blurPipeline;
+    std::optional<vk::raii::DescriptorSetLayout> blurDescriptorSetLayout_;
+    std::optional<vk::raii::PipelineLayout> blurPipelineLayout_;
+    std::optional<vk::raii::Pipeline> blurPipeline_;
     std::vector<VkDescriptorSet> blurDescriptorSetsX;  // X-axis blur
     std::vector<VkDescriptorSet> blurDescriptorSetsY;  // Y-axis blur
     std::vector<VkDescriptorSet> blurDescriptorSetsZ;  // Z-axis blur

@@ -26,6 +26,7 @@ std::unique_ptr<CloudShadowSystem> CloudShadowSystem::create(const InitContext& 
     info.framesInFlight = ctx.framesInFlight;
     info.cloudMapLUTView = cloudMapLUTView_;
     info.cloudMapLUTSampler = cloudMapLUTSampler_;
+    info.raiiDevice = ctx.raiiDevice;
     return create(info);
 }
 
@@ -41,6 +42,12 @@ bool CloudShadowSystem::initInternal(const InitInfo& info) {
     framesInFlight = info.framesInFlight;
     cloudMapLUTView = info.cloudMapLUTView;
     cloudMapLUTSampler = info.cloudMapLUTSampler;
+    raiiDevice_ = info.raiiDevice;
+
+    if (!raiiDevice_) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "CloudShadowSystem requires raiiDevice");
+        return false;
+    }
 
     if (!createShadowMap()) return false;
     if (!createSampler()) return false;
@@ -57,13 +64,13 @@ void CloudShadowSystem::cleanup() {
     if (!device) return;  // Not initialized
 
     // RAII wrappers handle cleanup automatically
-    computePipeline.reset();
-    pipelineLayout.reset();
-    descriptorSetLayout.reset();
+    computePipeline_.reset();
+    pipelineLayout_.reset();
+    descriptorSetLayout_.reset();
 
     BufferUtils::destroyBuffers(allocator, uniformBuffers);
 
-    shadowMapSampler.reset();
+    shadowMapSampler_.reset();
     shadowMapView_.reset();
     shadowMap_.reset();
 }
@@ -102,8 +109,10 @@ bool CloudShadowSystem::createShadowMap() {
             .setBaseArrayLayer(0)
             .setLayerCount(1));
 
-    if (!ManagedImageView::create(device, reinterpret_cast<const VkImageViewCreateInfo&>(viewInfo), shadowMapView_)) {
-        SDL_Log("Failed to create cloud shadow map view");
+    try {
+        shadowMapView_.emplace(*raiiDevice_, viewInfo);
+    } catch (const vk::SystemError& e) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create cloud shadow map view: %s", e.what());
         return false;
     }
 
@@ -112,7 +121,8 @@ bool CloudShadowSystem::createShadowMap() {
 
 bool CloudShadowSystem::createSampler() {
     // Bilinear filtering for smooth shadow edges
-    if (!VulkanResourceFactory::createSamplerLinearClamp(device, shadowMapSampler)) {
+    shadowMapSampler_ = VulkanResourceFactory::createSamplerLinearClamp(*raiiDevice_);
+    if (!shadowMapSampler_) {
         SDL_Log("Failed to create cloud shadow sampler");
         return false;
     }
@@ -142,12 +152,18 @@ bool CloudShadowSystem::createDescriptorSetLayout() {
     // 1: Cloud map LUT (sampled image from atmosphere system)
     // 2: Uniform buffer
 
-    if (!DescriptorManager::LayoutBuilder(device)
-            .addStorageImage(VK_SHADER_STAGE_COMPUTE_BIT)            // 0: Cloud shadow map
-            .addCombinedImageSampler(VK_SHADER_STAGE_COMPUTE_BIT)    // 1: Cloud map LUT
-            .addUniformBuffer(VK_SHADER_STAGE_COMPUTE_BIT)           // 2: Uniform buffer
-            .buildManaged(descriptorSetLayout)) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create cloud shadow descriptor set layout");
+    std::array<vk::DescriptorSetLayoutBinding, 3> bindings = {{
+        vk::DescriptorSetLayoutBinding{}.setBinding(0).setDescriptorType(vk::DescriptorType::eStorageImage).setDescriptorCount(1).setStageFlags(vk::ShaderStageFlagBits::eCompute),
+        vk::DescriptorSetLayoutBinding{}.setBinding(1).setDescriptorType(vk::DescriptorType::eCombinedImageSampler).setDescriptorCount(1).setStageFlags(vk::ShaderStageFlagBits::eCompute),
+        vk::DescriptorSetLayoutBinding{}.setBinding(2).setDescriptorType(vk::DescriptorType::eUniformBuffer).setDescriptorCount(1).setStageFlags(vk::ShaderStageFlagBits::eCompute)
+    }};
+
+    auto layoutInfo = vk::DescriptorSetLayoutCreateInfo{}.setBindings(bindings);
+
+    try {
+        descriptorSetLayout_.emplace(*raiiDevice_, layoutInfo);
+    } catch (const vk::SystemError& e) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create cloud shadow descriptor set layout: %s", e.what());
         return false;
     }
 
@@ -156,7 +172,7 @@ bool CloudShadowSystem::createDescriptorSetLayout() {
 
 bool CloudShadowSystem::createDescriptorSets() {
     // Allocate descriptor sets using managed pool
-    descriptorSets = descriptorPool->allocate(descriptorSetLayout.get(), framesInFlight);
+    descriptorSets = descriptorPool->allocate(**descriptorSetLayout_, framesInFlight);
     if (descriptorSets.size() != framesInFlight) {
         SDL_Log("Failed to allocate cloud shadow descriptor sets");
         return false;
@@ -165,7 +181,7 @@ bool CloudShadowSystem::createDescriptorSets() {
     // Update descriptor sets
     for (uint32_t i = 0; i < framesInFlight; i++) {
         DescriptorManager::SetWriter(device, descriptorSets[i])
-            .writeStorageImage(0, shadowMapView_.get())
+            .writeStorageImage(0, **shadowMapView_)
             .writeImage(1, cloudMapLUTView, cloudMapLUTSampler)
             .writeBuffer(2, uniformBuffers.buffers[i], 0, sizeof(CloudShadowUniforms))
             .update();
@@ -199,21 +215,33 @@ bool CloudShadowSystem::createComputePipeline() {
         .setOffset(0)
         .setSize(sizeof(uint32_t));  // quadrantIndex
 
-    if (!DescriptorManager::createManagedPipelineLayout(device, descriptorSetLayout.get(), pipelineLayout, {pushConstantRange})) {
+    // Create pipeline layout
+    vk::DescriptorSetLayout descLayout = **descriptorSetLayout_;
+    auto layoutInfo = vk::PipelineLayoutCreateInfo{}
+        .setSetLayoutCount(1)
+        .setPSetLayouts(&descLayout)
+        .setPushConstantRangeCount(1)
+        .setPPushConstantRanges(&pushConstantRange);
+
+    try {
+        pipelineLayout_.emplace(*raiiDevice_, layoutInfo);
+    } catch (const vk::SystemError& e) {
         vkDestroyShaderModule(device, *shaderModule, nullptr);
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create cloud shadow pipeline layout");
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create cloud shadow pipeline layout: %s", e.what());
         return false;
     }
 
     auto pipelineInfo = vk::ComputePipelineCreateInfo{}
         .setStage(stageInfo)
-        .setLayout(pipelineLayout.get());
+        .setLayout(**pipelineLayout_);
 
-    if (!ManagedPipeline::createCompute(device, VK_NULL_HANDLE, reinterpret_cast<const VkComputePipelineCreateInfo&>(pipelineInfo), computePipeline)) {
+    VkPipeline rawPipeline = VK_NULL_HANDLE;
+    if (vkCreateComputePipelines(device, VK_NULL_HANDLE, 1, reinterpret_cast<const VkComputePipelineCreateInfo*>(&pipelineInfo), nullptr, &rawPipeline) != VK_SUCCESS) {
         vkDestroyShaderModule(device, *shaderModule, nullptr);
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create cloud shadow compute pipeline");
         return false;
     }
+    computePipeline_.emplace(*raiiDevice_, rawPipeline);
 
     vkDestroyShaderModule(device, *shaderModule, nullptr);
     return true;
@@ -301,12 +329,12 @@ void CloudShadowSystem::recordUpdate(VkCommandBuffer cmd, uint32_t frameIndex,
 
     // Bind pipeline and descriptor set
     vk::CommandBuffer vkCmd(cmd);
-    vkCmd.bindPipeline(vk::PipelineBindPoint::eCompute, computePipeline.get());
+    vkCmd.bindPipeline(vk::PipelineBindPoint::eCompute, **computePipeline_);
     vkCmd.bindDescriptorSets(vk::PipelineBindPoint::eCompute,
-                             pipelineLayout.get(), 0, vk::DescriptorSet(descriptorSets[frameIndex]), {});
+                             **pipelineLayout_, 0, vk::DescriptorSet(descriptorSets[frameIndex]), {});
 
     // Push current quadrant index for temporal spreading
-    vkCmd.pushConstants<uint32_t>(pipelineLayout.get(), vk::ShaderStageFlagBits::eCompute, 0, quadrantIndex);
+    vkCmd.pushConstants<uint32_t>(**pipelineLayout_, vk::ShaderStageFlagBits::eCompute, 0, quadrantIndex);
 
     // Cycle quadrant for next frame (0->1->2->3->0...)
     quadrantIndex = (quadrantIndex + 1) % 4;

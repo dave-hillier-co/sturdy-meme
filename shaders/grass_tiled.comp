@@ -276,8 +276,15 @@ void main() {
     baseSlot = subgroupBroadcastFirst(baseSlot);
     uint slot = baseSlot + laneOffset;
 
-    // Clamp to max instances per tile
-    if (slot >= EFFECTIVE_MAX_INSTANCES) return;
+    // Clamp to max instances - prevent buffer overflow
+    if (slot >= EFFECTIVE_MAX_INSTANCES) {
+        // Cap the instance count to prevent draw from reading garbage
+        // This is a race but worst case we draw slightly fewer instances
+        if (subgroupElect()) {
+            atomicMin(drawCmd.instanceCount, EFFECTIVE_MAX_INSTANCES);
+        }
+        return;
+    }
 
     // Calculate clumping
     float clumpId, clumpDist;

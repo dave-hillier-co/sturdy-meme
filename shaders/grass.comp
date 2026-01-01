@@ -253,6 +253,15 @@ void main() {
     baseSlot = subgroupBroadcastFirst(baseSlot);
     uint slot = baseSlot + laneOffset;
 
+    // Clamp to max instances - prevent buffer overflow
+    if (slot >= EFFECTIVE_MAX_INSTANCES) {
+        // Cap the instance count to prevent draw from reading garbage
+        if (subgroupElect()) {
+            atomicMin(drawCmd.instanceCount, EFFECTIVE_MAX_INSTANCES);
+        }
+        return;
+    }
+
     // Calculate clumping using unified constants
     float clumpId, clumpDist;
     vec2 clumpCenter;

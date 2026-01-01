@@ -1,11 +1,12 @@
 #pragma once
 
 #include <vulkan/vulkan.h>
+#include <vulkan/vulkan.hpp>
 #include <vulkan/vulkan_raii.hpp>
 #include <vk_mem_alloc.h>
 #include <vector>
 #include <optional>
-#include "VulkanRAII.h"
+#include "VmaResources.h"
 
 /**
  * VulkanResourceFactory - Static factory methods for common Vulkan resource creation
@@ -37,12 +38,13 @@ public:
 
     /**
      * Depth buffer resources (image, allocation, view, sampler)
+     * Note: sampler ownership is typically transferred to caller via RAII wrapper
      */
     struct DepthResources {
         VkImage image = VK_NULL_HANDLE;
         VmaAllocation allocation = VK_NULL_HANDLE;
         VkImageView view = VK_NULL_HANDLE;
-        ManagedSampler sampler;
+        VkSampler sampler = VK_NULL_HANDLE;
         VkFormat format = VK_FORMAT_D32_SFLOAT;
 
         void destroy(VkDevice device, VmaAllocator allocator);
@@ -75,13 +77,14 @@ public:
 
     /**
      * Depth array resources (image, allocation, views, sampler)
+     * Note: sampler ownership is typically transferred to caller via RAII wrapper
      */
     struct DepthArrayResources {
         VkImage image = VK_NULL_HANDLE;
         VmaAllocation allocation = VK_NULL_HANDLE;
         VkImageView arrayView = VK_NULL_HANDLE;      // View of all layers (for shader sampling)
         std::vector<VkImageView> layerViews;         // Per-layer views (for rendering)
-        ManagedSampler sampler;
+        VkSampler sampler = VK_NULL_HANDLE;
 
         void destroy(VkDevice device, VmaAllocator allocator);
     };
@@ -277,36 +280,36 @@ public:
     static bool createDynamicVertexBuffer(VmaAllocator allocator, VkDeviceSize size, ManagedBuffer& outBuffer);
 
     // ========================================================================
-    // Sampler Factories
+    // Sampler Factories (raw VkSampler - caller manages lifetime)
     // ========================================================================
 
     /**
      * Create nearest-filtering sampler with clamp-to-edge (depth/integer textures)
      */
-    static bool createSamplerNearestClamp(VkDevice device, ManagedSampler& outSampler);
+    static bool createSamplerNearestClamp(VkDevice device, VkSampler& outSampler);
 
     /**
      * Create linear-filtering sampler with clamp-to-edge
      */
-    static bool createSamplerLinearClamp(VkDevice device, ManagedSampler& outSampler);
+    static bool createSamplerLinearClamp(VkDevice device, VkSampler& outSampler);
 
     /**
      * Create linear-filtering sampler with repeat (standard textures)
      */
-    static bool createSamplerLinearRepeat(VkDevice device, ManagedSampler& outSampler);
+    static bool createSamplerLinearRepeat(VkDevice device, VkSampler& outSampler);
 
     /**
      * Create linear-filtering sampler with repeat and anisotropy (terrain/high-quality textures)
      */
-    static bool createSamplerLinearRepeatAnisotropic(VkDevice device, float maxAnisotropy, ManagedSampler& outSampler);
+    static bool createSamplerLinearRepeatAnisotropic(VkDevice device, float maxAnisotropy, VkSampler& outSampler);
 
     /**
      * Create shadow map comparison sampler
      */
-    static bool createSamplerShadowComparison(VkDevice device, ManagedSampler& outSampler);
+    static bool createSamplerShadowComparison(VkDevice device, VkSampler& outSampler);
 
     // ========================================================================
-    // RAII Sampler Factories (vulkan-hpp raii types)
+    // RAII Sampler Factories (vulkan-hpp raii types - preferred)
     // ========================================================================
 
     /**

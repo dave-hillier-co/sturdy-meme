@@ -2,7 +2,6 @@
 #include "vulkan/VulkanContext.h"
 #include "ShaderLoader.h"
 #include <SDL3/SDL.h>
-#include <vulkan/vulkan.hpp>
 #include <chrono>
 
 std::unique_ptr<LoadingRenderer> LoadingRenderer::create(const InitInfo& info) {
@@ -43,214 +42,215 @@ bool LoadingRenderer::init(const InitInfo& info) {
 }
 
 bool LoadingRenderer::createRenderPass() {
-    VkDevice device = ctx_->getDevice();
-    VkFormat swapchainFormat = ctx_->getSwapchainImageFormat();
+    const auto& device = ctx_->getRaiiDevice();
+    vk::Format swapchainFormat = static_cast<vk::Format>(ctx_->getSwapchainImageFormat());
 
     // Single color attachment, no depth
-    VkAttachmentDescription colorAttachment{};
-    colorAttachment.format = swapchainFormat;
-    colorAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
-    colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-    colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-    colorAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-    colorAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-    colorAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-    colorAttachment.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+    auto colorAttachment = vk::AttachmentDescription{}
+        .setFormat(swapchainFormat)
+        .setSamples(vk::SampleCountFlagBits::e1)
+        .setLoadOp(vk::AttachmentLoadOp::eClear)
+        .setStoreOp(vk::AttachmentStoreOp::eStore)
+        .setStencilLoadOp(vk::AttachmentLoadOp::eDontCare)
+        .setStencilStoreOp(vk::AttachmentStoreOp::eDontCare)
+        .setInitialLayout(vk::ImageLayout::eUndefined)
+        .setFinalLayout(vk::ImageLayout::ePresentSrcKHR);
 
-    VkAttachmentReference colorAttachmentRef{};
-    colorAttachmentRef.attachment = 0;
-    colorAttachmentRef.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+    auto colorAttachmentRef = vk::AttachmentReference{}
+        .setAttachment(0)
+        .setLayout(vk::ImageLayout::eColorAttachmentOptimal);
 
-    VkSubpassDescription subpass{};
-    subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
-    subpass.colorAttachmentCount = 1;
-    subpass.pColorAttachments = &colorAttachmentRef;
+    auto subpass = vk::SubpassDescription{}
+        .setPipelineBindPoint(vk::PipelineBindPoint::eGraphics)
+        .setColorAttachments(colorAttachmentRef);
 
-    VkSubpassDependency dependency{};
-    dependency.srcSubpass = VK_SUBPASS_EXTERNAL;
-    dependency.dstSubpass = 0;
-    dependency.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-    dependency.srcAccessMask = 0;
-    dependency.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-    dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+    auto dependency = vk::SubpassDependency{}
+        .setSrcSubpass(VK_SUBPASS_EXTERNAL)
+        .setDstSubpass(0)
+        .setSrcStageMask(vk::PipelineStageFlagBits::eColorAttachmentOutput)
+        .setSrcAccessMask({})
+        .setDstStageMask(vk::PipelineStageFlagBits::eColorAttachmentOutput)
+        .setDstAccessMask(vk::AccessFlagBits::eColorAttachmentWrite);
 
-    VkRenderPassCreateInfo renderPassInfo{};
-    renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
-    renderPassInfo.attachmentCount = 1;
-    renderPassInfo.pAttachments = &colorAttachment;
-    renderPassInfo.subpassCount = 1;
-    renderPassInfo.pSubpasses = &subpass;
-    renderPassInfo.dependencyCount = 1;
-    renderPassInfo.pDependencies = &dependency;
+    auto renderPassInfo = vk::RenderPassCreateInfo{}
+        .setAttachments(colorAttachment)
+        .setSubpasses(subpass)
+        .setDependencies(dependency);
 
-    return ManagedRenderPass::create(device, renderPassInfo, renderPass_);
+    try {
+        renderPass_.emplace(device, renderPassInfo);
+        return true;
+    } catch (const vk::SystemError& e) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "LoadingRenderer: Failed to create render pass: %s", e.what());
+        return false;
+    }
 }
 
 bool LoadingRenderer::createFramebuffers() {
-    VkDevice device = ctx_->getDevice();
+    const auto& device = ctx_->getRaiiDevice();
     const auto& imageViews = ctx_->getSwapchainImageViews();
     VkExtent2D extent = ctx_->getSwapchainExtent();
 
     framebuffers_.clear();
-    framebuffers_.resize(imageViews.size());
+    framebuffers_.reserve(imageViews.size());
 
-    for (size_t i = 0; i < imageViews.size(); i++) {
-        VkFramebufferCreateInfo framebufferInfo{};
-        framebufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
-        framebufferInfo.renderPass = renderPass_.get();
-        framebufferInfo.attachmentCount = 1;
-        framebufferInfo.pAttachments = &imageViews[i];
-        framebufferInfo.width = extent.width;
-        framebufferInfo.height = extent.height;
-        framebufferInfo.layers = 1;
+    try {
+        for (size_t i = 0; i < imageViews.size(); i++) {
+            vk::ImageView vkImageView(imageViews[i]);
+            auto framebufferInfo = vk::FramebufferCreateInfo{}
+                .setRenderPass(**renderPass_)
+                .setAttachments(vkImageView)
+                .setWidth(extent.width)
+                .setHeight(extent.height)
+                .setLayers(1);
 
-        if (!ManagedFramebuffer::create(device, framebufferInfo, framebuffers_[i])) {
-            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "LoadingRenderer: Failed to create framebuffer %zu", i);
-            return false;
+            framebuffers_.emplace_back(device, framebufferInfo);
         }
+        return true;
+    } catch (const vk::SystemError& e) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "LoadingRenderer: Failed to create framebuffer: %s", e.what());
+        return false;
     }
-
-    return true;
 }
 
 bool LoadingRenderer::createPipeline() {
-    VkDevice device = ctx_->getDevice();
-    VkExtent2D extent = ctx_->getSwapchainExtent();
+    const auto& device = ctx_->getRaiiDevice();
+    VkDevice rawDevice = ctx_->getDevice();
 
     // Load shaders
     std::string vertPath = shaderPath_ + "/loading.vert.spv";
     std::string fragPath = shaderPath_ + "/loading.frag.spv";
 
-    auto vertModule = ShaderLoader::loadShaderModule(device, vertPath);
-    auto fragModule = ShaderLoader::loadShaderModule(device, fragPath);
+    auto vertModule = ShaderLoader::loadShaderModule(rawDevice, vertPath);
+    auto fragModule = ShaderLoader::loadShaderModule(rawDevice, fragPath);
 
     if (!vertModule || !fragModule) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "LoadingRenderer: Failed to load shaders");
         return false;
     }
 
-    // Shader stages
-    VkPipelineShaderStageCreateInfo vertStage{};
-    vertStage.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-    vertStage.stage = VK_SHADER_STAGE_VERTEX_BIT;
-    vertStage.module = *vertModule;
-    vertStage.pName = "main";
-
-    VkPipelineShaderStageCreateInfo fragStage{};
-    fragStage.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-    fragStage.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
-    fragStage.module = *fragModule;
-    fragStage.pName = "main";
-
-    VkPipelineShaderStageCreateInfo shaderStages[] = {vertStage, fragStage};
-
-    // No vertex input (positions are in shader)
-    VkPipelineVertexInputStateCreateInfo vertexInputInfo{};
-    vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
-
-    // Input assembly
-    VkPipelineInputAssemblyStateCreateInfo inputAssembly{};
-    inputAssembly.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
-    inputAssembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
-    inputAssembly.primitiveRestartEnable = VK_FALSE;
-
-    // Viewport and scissor (dynamic)
-    VkPipelineViewportStateCreateInfo viewportState{};
-    viewportState.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
-    viewportState.viewportCount = 1;
-    viewportState.scissorCount = 1;
-
-    // Rasterizer
-    VkPipelineRasterizationStateCreateInfo rasterizer{};
-    rasterizer.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
-    rasterizer.depthClampEnable = VK_FALSE;
-    rasterizer.rasterizerDiscardEnable = VK_FALSE;
-    rasterizer.polygonMode = VK_POLYGON_MODE_FILL;
-    rasterizer.lineWidth = 1.0f;
-    rasterizer.cullMode = VK_CULL_MODE_NONE;  // No culling for simple loading quad
-    rasterizer.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
-    rasterizer.depthBiasEnable = VK_FALSE;
-
-    // Multisampling (disabled)
-    VkPipelineMultisampleStateCreateInfo multisampling{};
-    multisampling.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
-    multisampling.sampleShadingEnable = VK_FALSE;
-    multisampling.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
-
-    // Color blending
-    VkPipelineColorBlendAttachmentState colorBlendAttachment{};
-    colorBlendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
-                                          VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
-    colorBlendAttachment.blendEnable = VK_FALSE;
-
-    VkPipelineColorBlendStateCreateInfo colorBlending{};
-    colorBlending.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
-    colorBlending.logicOpEnable = VK_FALSE;
-    colorBlending.attachmentCount = 1;
-    colorBlending.pAttachments = &colorBlendAttachment;
-
-    // Dynamic state
-    std::vector<VkDynamicState> dynamicStates = {
-        VK_DYNAMIC_STATE_VIEWPORT,
-        VK_DYNAMIC_STATE_SCISSOR
+    // ShaderLoader returns raw VkShaderModule, clean up when done
+    auto cleanupShaders = [&]() {
+        vkDestroyShaderModule(rawDevice, *vertModule, nullptr);
+        vkDestroyShaderModule(rawDevice, *fragModule, nullptr);
     };
 
-    VkPipelineDynamicStateCreateInfo dynamicState{};
-    dynamicState.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
-    dynamicState.dynamicStateCount = static_cast<uint32_t>(dynamicStates.size());
-    dynamicState.pDynamicStates = dynamicStates.data();
+    // Shader stages
+    std::array<vk::PipelineShaderStageCreateInfo, 2> shaderStages = {
+        vk::PipelineShaderStageCreateInfo{}
+            .setStage(vk::ShaderStageFlagBits::eVertex)
+            .setModule(*vertModule)
+            .setPName("main"),
+        vk::PipelineShaderStageCreateInfo{}
+            .setStage(vk::ShaderStageFlagBits::eFragment)
+            .setModule(*fragModule)
+            .setPName("main")
+    };
+
+    // No vertex input (positions are in shader)
+    auto vertexInputInfo = vk::PipelineVertexInputStateCreateInfo{};
+
+    // Input assembly
+    auto inputAssembly = vk::PipelineInputAssemblyStateCreateInfo{}
+        .setTopology(vk::PrimitiveTopology::eTriangleList)
+        .setPrimitiveRestartEnable(false);
+
+    // Viewport and scissor (dynamic)
+    auto viewportState = vk::PipelineViewportStateCreateInfo{}
+        .setViewportCount(1)
+        .setScissorCount(1);
+
+    // Rasterizer
+    auto rasterizer = vk::PipelineRasterizationStateCreateInfo{}
+        .setDepthClampEnable(false)
+        .setRasterizerDiscardEnable(false)
+        .setPolygonMode(vk::PolygonMode::eFill)
+        .setLineWidth(1.0f)
+        .setCullMode(vk::CullModeFlagBits::eNone)
+        .setFrontFace(vk::FrontFace::eCounterClockwise)
+        .setDepthBiasEnable(false);
+
+    // Multisampling (disabled)
+    auto multisampling = vk::PipelineMultisampleStateCreateInfo{}
+        .setSampleShadingEnable(false)
+        .setRasterizationSamples(vk::SampleCountFlagBits::e1);
+
+    // Color blending
+    auto colorBlendAttachment = vk::PipelineColorBlendAttachmentState{}
+        .setColorWriteMask(vk::ColorComponentFlagBits::eR | vk::ColorComponentFlagBits::eG |
+                           vk::ColorComponentFlagBits::eB | vk::ColorComponentFlagBits::eA)
+        .setBlendEnable(false);
+
+    auto colorBlending = vk::PipelineColorBlendStateCreateInfo{}
+        .setLogicOpEnable(false)
+        .setAttachments(colorBlendAttachment);
+
+    // Dynamic state
+    std::array<vk::DynamicState, 2> dynamicStates = {
+        vk::DynamicState::eViewport,
+        vk::DynamicState::eScissor
+    };
+
+    auto dynamicState = vk::PipelineDynamicStateCreateInfo{}
+        .setDynamicStates(dynamicStates);
 
     // Push constant range
-    VkPushConstantRange pushConstantRange{};
-    pushConstantRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
-    pushConstantRange.offset = 0;
-    pushConstantRange.size = sizeof(LoadingPushConstants);
+    auto pushConstantRange = vk::PushConstantRange{}
+        .setStageFlags(vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment)
+        .setOffset(0)
+        .setSize(sizeof(LoadingPushConstants));
 
     // Pipeline layout
-    VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
-    pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-    pipelineLayoutInfo.setLayoutCount = 0;
-    pipelineLayoutInfo.pushConstantRangeCount = 1;
-    pipelineLayoutInfo.pPushConstantRanges = &pushConstantRange;
+    auto pipelineLayoutInfo = vk::PipelineLayoutCreateInfo{}
+        .setPushConstantRanges(pushConstantRange);
 
-    if (!ManagedPipelineLayout::create(device, pipelineLayoutInfo, pipelineLayout_)) {
-        vkDestroyShaderModule(device, *vertModule, nullptr);
-        vkDestroyShaderModule(device, *fragModule, nullptr);
+    try {
+        pipelineLayout_.emplace(device, pipelineLayoutInfo);
+    } catch (const vk::SystemError& e) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "LoadingRenderer: Failed to create pipeline layout: %s", e.what());
+        cleanupShaders();
         return false;
     }
 
     // Create graphics pipeline
-    VkGraphicsPipelineCreateInfo pipelineInfo{};
-    pipelineInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
-    pipelineInfo.stageCount = 2;
-    pipelineInfo.pStages = shaderStages;
-    pipelineInfo.pVertexInputState = &vertexInputInfo;
-    pipelineInfo.pInputAssemblyState = &inputAssembly;
-    pipelineInfo.pViewportState = &viewportState;
-    pipelineInfo.pRasterizationState = &rasterizer;
-    pipelineInfo.pMultisampleState = &multisampling;
-    pipelineInfo.pColorBlendState = &colorBlending;
-    pipelineInfo.pDynamicState = &dynamicState;
-    pipelineInfo.layout = pipelineLayout_.get();
-    pipelineInfo.renderPass = renderPass_.get();
-    pipelineInfo.subpass = 0;
+    auto pipelineInfo = vk::GraphicsPipelineCreateInfo{}
+        .setStages(shaderStages)
+        .setPVertexInputState(&vertexInputInfo)
+        .setPInputAssemblyState(&inputAssembly)
+        .setPViewportState(&viewportState)
+        .setPRasterizationState(&rasterizer)
+        .setPMultisampleState(&multisampling)
+        .setPColorBlendState(&colorBlending)
+        .setPDynamicState(&dynamicState)
+        .setLayout(**pipelineLayout_)
+        .setRenderPass(**renderPass_)
+        .setSubpass(0);
 
-    bool success = ManagedPipeline::createGraphics(device, ctx_->getPipelineCache(), pipelineInfo, pipeline_);
-
-    // Clean up shader modules (no longer needed after pipeline creation)
-    vkDestroyShaderModule(device, *vertModule, nullptr);
-    vkDestroyShaderModule(device, *fragModule, nullptr);
-
-    return success;
+    try {
+        // Use nullptr for pipeline cache (loading screen doesn't benefit from caching)
+        auto result = device.createGraphicsPipelines(nullptr, pipelineInfo);
+        pipeline_.emplace(std::move(result.front()));
+        cleanupShaders();
+        return true;
+    } catch (const vk::SystemError& e) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "LoadingRenderer: Failed to create pipeline: %s", e.what());
+        cleanupShaders();
+        return false;
+    }
 }
 
 bool LoadingRenderer::createCommandPool() {
-    VkDevice device = ctx_->getDevice();
+    const auto& device = ctx_->getRaiiDevice();
     uint32_t queueFamily = ctx_->getGraphicsQueueFamily();
 
-    if (!ManagedCommandPool::create(device, queueFamily,
-                                    VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT,
-                                    commandPool_)) {
+    auto poolInfo = vk::CommandPoolCreateInfo{}
+        .setFlags(vk::CommandPoolCreateFlagBits::eResetCommandBuffer)
+        .setQueueFamilyIndex(queueFamily);
+
+    try {
+        commandPool_.emplace(device, poolInfo);
+    } catch (const vk::SystemError& e) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "LoadingRenderer: Failed to create command pool: %s", e.what());
         return false;
     }
 
@@ -260,11 +260,11 @@ bool LoadingRenderer::createCommandPool() {
 
     VkCommandBufferAllocateInfo allocInfo{};
     allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-    allocInfo.commandPool = commandPool_.get();
+    allocInfo.commandPool = **commandPool_;
     allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
     allocInfo.commandBufferCount = imageCount;
 
-    if (vkAllocateCommandBuffers(device, &allocInfo, commandBuffers_.data()) != VK_SUCCESS) {
+    if (vkAllocateCommandBuffers(ctx_->getDevice(), &allocInfo, commandBuffers_.data()) != VK_SUCCESS) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "LoadingRenderer: Failed to allocate command buffers");
         return false;
     }
@@ -273,19 +273,28 @@ bool LoadingRenderer::createCommandPool() {
 }
 
 bool LoadingRenderer::createSyncObjects() {
-    VkDevice device = ctx_->getDevice();
+    const auto& device = ctx_->getRaiiDevice();
 
-    if (!ManagedSemaphore::create(device, imageAvailableSemaphore_)) return false;
-    if (!ManagedSemaphore::create(device, renderFinishedSemaphore_)) return false;
-    if (!ManagedFence::createSignaled(device, inFlightFence_)) return false;
+    try {
+        imageAvailableSemaphore_.emplace(device, vk::SemaphoreCreateInfo{});
+        renderFinishedSemaphore_.emplace(device, vk::SemaphoreCreateInfo{});
 
-    return true;
+        auto fenceInfo = vk::FenceCreateInfo{}
+            .setFlags(vk::FenceCreateFlagBits::eSignaled);
+        inFlightFence_.emplace(device, fenceInfo);
+
+        return true;
+    } catch (const vk::SystemError& e) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "LoadingRenderer: Failed to create sync objects: %s", e.what());
+        return false;
+    }
 }
 
 bool LoadingRenderer::render() {
     if (!initialized_) return false;
 
-    VkDevice device = ctx_->getDevice();
+    const auto& device = ctx_->getRaiiDevice();
+    VkDevice rawDevice = ctx_->getDevice();
     VkExtent2D extent = ctx_->getSwapchainExtent();
 
     // Skip if window is minimized
@@ -294,13 +303,17 @@ bool LoadingRenderer::render() {
     }
 
     // Wait for previous frame
-    inFlightFence_.wait();
-    inFlightFence_.resetFence();
+    auto waitResult = device.waitForFences(**inFlightFence_, vk::True, UINT64_MAX);
+    if (waitResult != vk::Result::eSuccess) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "LoadingRenderer: Failed to wait for fence");
+        return false;
+    }
+    device.resetFences(**inFlightFence_);
 
     // Acquire swapchain image
     uint32_t imageIndex;
-    VkResult result = vkAcquireNextImageKHR(device, ctx_->getSwapchain(),
-                                            UINT64_MAX, imageAvailableSemaphore_.get(),
+    VkResult result = vkAcquireNextImageKHR(rawDevice, ctx_->getSwapchain(),
+                                            UINT64_MAX, **imageAvailableSemaphore_,
                                             VK_NULL_HANDLE, &imageIndex);
 
     if (result == VK_ERROR_OUT_OF_DATE_KHR) {
@@ -332,8 +345,8 @@ bool LoadingRenderer::render() {
     // Begin render pass
     vk::ClearValue clearColor(vk::ClearColorValue(std::array<float, 4>{0.02f, 0.02f, 0.05f, 1.0f}));
     auto renderPassInfo = vk::RenderPassBeginInfo{}
-        .setRenderPass(renderPass_.get())
-        .setFramebuffer(framebuffers_[imageIndex].get())
+        .setRenderPass(**renderPass_)
+        .setFramebuffer(*framebuffers_[imageIndex])
         .setRenderArea(vk::Rect2D{{0, 0}, vk::Extent2D{extent.width, extent.height}})
         .setClearValues(clearColor);
 
@@ -354,7 +367,7 @@ bool LoadingRenderer::render() {
     vkCmd.setScissor(0, scissor);
 
     // Bind pipeline and draw
-    vkCmd.bindPipeline(vk::PipelineBindPoint::eGraphics, pipeline_.get());
+    vkCmd.bindPipeline(vk::PipelineBindPoint::eGraphics, **pipeline_);
 
     // Push constants
     LoadingPushConstants pushConstants{};
@@ -364,7 +377,7 @@ bool LoadingRenderer::render() {
     pushConstants._pad = 0.0f;
 
     vkCmd.pushConstants<LoadingPushConstants>(
-        pipelineLayout_.get(),
+        **pipelineLayout_,
         vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
         0, pushConstants);
 
@@ -382,7 +395,7 @@ bool LoadingRenderer::render() {
     VkSubmitInfo submitInfo{};
     submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
 
-    VkSemaphore waitSemaphores[] = {imageAvailableSemaphore_.get()};
+    VkSemaphore waitSemaphores[] = {**imageAvailableSemaphore_};
     VkPipelineStageFlags waitStages[] = {VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
     submitInfo.waitSemaphoreCount = 1;
     submitInfo.pWaitSemaphores = waitSemaphores;
@@ -390,11 +403,11 @@ bool LoadingRenderer::render() {
     submitInfo.commandBufferCount = 1;
     submitInfo.pCommandBuffers = &cmd;
 
-    VkSemaphore signalSemaphores[] = {renderFinishedSemaphore_.get()};
+    VkSemaphore signalSemaphores[] = {**renderFinishedSemaphore_};
     submitInfo.signalSemaphoreCount = 1;
     submitInfo.pSignalSemaphores = signalSemaphores;
 
-    if (vkQueueSubmit(ctx_->getGraphicsQueue(), 1, &submitInfo, inFlightFence_.get()) != VK_SUCCESS) {
+    if (vkQueueSubmit(ctx_->getGraphicsQueue(), 1, &submitInfo, **inFlightFence_) != VK_SUCCESS) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "LoadingRenderer: Failed to submit draw command");
         return false;
     }
@@ -424,14 +437,14 @@ void LoadingRenderer::cleanup() {
     vkDeviceWaitIdle(device);
 
     // Free command buffers before destroying pool
-    if (!commandBuffers_.empty() && commandPool_.get() != VK_NULL_HANDLE) {
-        vkFreeCommandBuffers(device, commandPool_.get(),
+    if (!commandBuffers_.empty() && commandPool_) {
+        vkFreeCommandBuffers(device, **commandPool_,
                              static_cast<uint32_t>(commandBuffers_.size()),
                              commandBuffers_.data());
         commandBuffers_.clear();
     }
 
-    // RAII handles cleanup of other resources via destructors
+    // RAII handles cleanup of other resources via destructors (reset optional values)
     inFlightFence_.reset();
     renderFinishedSemaphore_.reset();
     imageAvailableSemaphore_.reset();

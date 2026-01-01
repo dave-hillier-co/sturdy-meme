@@ -27,17 +27,18 @@
 //
 
 #include "FrameBuffered.h"
-#include "vulkan/VulkanRAII.h"
-#include <vulkan/vulkan.h>
+#include <vulkan/vulkan.hpp>
+#include <vulkan/vulkan_raii.hpp>
+#include <optional>
 
 // ============================================================================
 // FrameSyncPrimitives - Per-frame synchronization resources
 // ============================================================================
 
 struct FrameSyncPrimitives {
-    ManagedSemaphore imageAvailable;
-    ManagedSemaphore renderFinished;
-    ManagedFence inFlightFence;
+    std::optional<vk::raii::Semaphore> imageAvailable;
+    std::optional<vk::raii::Semaphore> renderFinished;
+    std::optional<vk::raii::Fence> inFlightFence;
 
     // Non-copyable (Vulkan resources)
     FrameSyncPrimitives() = default;
@@ -75,13 +76,13 @@ public:
 
     // Initialize synchronization primitives for the specified frame count
     // Returns false on failure
-    bool init(VkDevice device, uint32_t frameCount = DEFAULT_FRAME_COUNT);
+    bool init(const vk::raii::Device& device, uint32_t frameCount = DEFAULT_FRAME_COUNT);
 
     // Clean up synchronization primitives
     void destroy();
 
     // Check if initialized
-    bool isInitialized() const { return !frames_.empty(); }
+    bool isInitialized() const { return !frames_.empty() && device_ != nullptr; }
 
     // =========================================================================
     // Frame Index Management (delegated to FrameBuffered)
@@ -105,42 +106,42 @@ public:
 
     // Get fence for current frame
     VkFence currentFence() const {
-        return frames_.current().inFlightFence.get();
+        return **frames_.current().inFlightFence;
     }
 
     // Get fence for any frame index
     VkFence fence(uint32_t frameIndex) const {
-        return frames_.at(frameIndex).inFlightFence.get();
+        return **frames_.at(frameIndex).inFlightFence;
     }
 
     // Check if current frame's fence is already signaled (non-blocking)
     bool isCurrentFenceSignaled() const {
-        return frames_.current().inFlightFence.isSignaled();
+        return frames_.current().inFlightFence->getStatus() == vk::Result::eSuccess;
     }
 
     // Wait for current frame's fence (blocks until signaled)
     void waitForCurrentFrame() const {
-        frames_.current().inFlightFence.wait();
+        (void)device_->waitForFences(**frames_.current().inFlightFence, vk::True, UINT64_MAX);
     }
 
     // Wait for current frame only if not already signaled (optimization)
     void waitForCurrentFrameIfNeeded() const {
-        if (!frames_.current().inFlightFence.isSignaled()) {
-            frames_.current().inFlightFence.wait();
+        if (!isCurrentFenceSignaled()) {
+            waitForCurrentFrame();
         }
     }
 
     // Wait for previous frame's fence (useful before destroying resources)
     void waitForPreviousFrame() const {
         const auto& prev = frames_.previous();
-        if (!prev.inFlightFence.isSignaled()) {
-            prev.inFlightFence.wait();
+        if (prev.inFlightFence->getStatus() != vk::Result::eSuccess) {
+            (void)device_->waitForFences(**prev.inFlightFence, vk::True, UINT64_MAX);
         }
     }
 
     // Reset current frame's fence (call before queue submit)
     void resetCurrentFence() const {
-        frames_.current().inFlightFence.resetFence();
+        device_->resetFences(**frames_.current().inFlightFence);
     }
 
     // =========================================================================
@@ -149,21 +150,21 @@ public:
 
     // Get image available semaphore for current frame
     VkSemaphore currentImageAvailableSemaphore() const {
-        return frames_.current().imageAvailable.get();
+        return **frames_.current().imageAvailable;
     }
 
     // Get render finished semaphore for current frame
     VkSemaphore currentRenderFinishedSemaphore() const {
-        return frames_.current().renderFinished.get();
+        return **frames_.current().renderFinished;
     }
 
     // Get semaphores for any frame index
     VkSemaphore imageAvailableSemaphore(uint32_t frameIndex) const {
-        return frames_.at(frameIndex).imageAvailable.get();
+        return **frames_.at(frameIndex).imageAvailable;
     }
 
     VkSemaphore renderFinishedSemaphore(uint32_t frameIndex) const {
-        return frames_.at(frameIndex).renderFinished.get();
+        return **frames_.at(frameIndex).renderFinished;
     }
 
     // =========================================================================
@@ -175,5 +176,6 @@ public:
     FrameBuffered<FrameSyncPrimitives>& frames() { return frames_; }
 
 private:
+    const vk::raii::Device* device_ = nullptr;
     FrameBuffered<FrameSyncPrimitives> frames_;
 };

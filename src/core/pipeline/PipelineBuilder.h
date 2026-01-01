@@ -4,11 +4,6 @@
 #include <vector>
 #include <string>
 
-// Forward declarations for RAII wrappers
-class ManagedDescriptorSetLayout;
-class ManagedPipelineLayout;
-class ManagedPipeline;
-
 // Configuration struct for graphics pipeline creation
 // Captures the common variations to eliminate repetitive Vulkan boilerplate
 struct GraphicsPipelineConfig {
@@ -65,16 +60,6 @@ public:
 
     // Simplified graphics pipeline creation using config struct
     bool buildGraphicsPipeline(const GraphicsPipelineConfig& config, VkPipelineLayout layout, VkPipeline& pipeline);
-
-    // RAII-managed versions - return managed wrappers instead of raw handles
-    bool buildManagedDescriptorSetLayout(ManagedDescriptorSetLayout& outLayout) const;
-    bool buildManagedPipelineLayout(const std::vector<VkDescriptorSetLayout>& setLayouts,
-                                     ManagedPipelineLayout& outLayout) const;
-    bool buildManagedComputePipeline(VkPipelineLayout layout, ManagedPipeline& outPipeline);
-    bool buildManagedGraphicsPipeline(const VkGraphicsPipelineCreateInfo& pipelineInfoBase,
-                                       VkPipelineLayout layout, ManagedPipeline& outPipeline);
-    bool buildManagedGraphicsPipeline(const GraphicsPipelineConfig& config,
-                                       VkPipelineLayout layout, ManagedPipeline& outPipeline);
 
 private:
     VkDevice device;

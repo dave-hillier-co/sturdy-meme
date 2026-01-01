@@ -1,11 +1,12 @@
 #pragma once
 
-#include <vulkan/vulkan.h>
+#include <vulkan/vulkan.hpp>
+#include <vulkan/vulkan_raii.hpp>
 #include <SDL3/SDL.h>
 #include <vector>
 #include <string>
 #include <memory>
-#include "vulkan/VulkanRAII.h"
+#include <optional>
 
 class VulkanContext;
 
@@ -88,18 +89,18 @@ private:
     VulkanContext* ctx_ = nullptr;  // Borrowed, not owned
     std::string shaderPath_;
 
-    // Render resources (all managed with RAII)
-    ManagedRenderPass renderPass_;
-    std::vector<ManagedFramebuffer> framebuffers_;
-    ManagedPipelineLayout pipelineLayout_;
-    ManagedPipeline pipeline_;
-    ManagedCommandPool commandPool_;
+    // Render resources (all managed with RAII via vulkan-hpp)
+    std::optional<vk::raii::RenderPass> renderPass_;
+    std::vector<vk::raii::Framebuffer> framebuffers_;
+    std::optional<vk::raii::PipelineLayout> pipelineLayout_;
+    std::optional<vk::raii::Pipeline> pipeline_;
+    std::optional<vk::raii::CommandPool> commandPool_;
     std::vector<VkCommandBuffer> commandBuffers_;
 
     // Sync objects
-    ManagedSemaphore imageAvailableSemaphore_;
-    ManagedSemaphore renderFinishedSemaphore_;
-    ManagedFence inFlightFence_;
+    std::optional<vk::raii::Semaphore> imageAvailableSemaphore_;
+    std::optional<vk::raii::Semaphore> renderFinishedSemaphore_;
+    std::optional<vk::raii::Fence> inFlightFence_;
 
     // State
     float startTime_ = 0.0f;

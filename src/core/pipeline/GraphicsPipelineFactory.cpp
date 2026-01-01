@@ -1,5 +1,4 @@
 #include "GraphicsPipelineFactory.h"
-#include "VulkanRAII.h"
 #include "ShaderLoader.h"
 #include <SDL3/SDL.h>
 
@@ -533,15 +532,6 @@ bool GraphicsPipelineFactory::build(VkPipeline& pipeline) {
     cleanup();
 
     pipeline = result.value[0];
-    return true;
-}
-
-bool GraphicsPipelineFactory::buildManaged(ManagedPipeline& outPipeline) {
-    VkPipeline rawPipeline = VK_NULL_HANDLE;
-    if (!build(rawPipeline)) {
-        return false;
-    }
-    outPipeline = ManagedPipeline::fromRaw(device, rawPipeline);
     return true;
 }
 

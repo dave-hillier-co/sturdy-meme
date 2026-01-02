@@ -830,6 +830,329 @@ bool VulkanResourceFactory::createSamplerShadowComparison(VkDevice device, VkSam
 }
 
 // ============================================================================
+// RAII Command Pool & Buffers (vulkan-hpp raii types)
+// ============================================================================
+
+std::optional<vk::raii::CommandPool> VulkanResourceFactory::createCommandPool(
+    const vk::raii::Device& device,
+    uint32_t queueFamilyIndex,
+    vk::CommandPoolCreateFlags flags)
+{
+    auto poolInfo = vk::CommandPoolCreateInfo{}
+        .setFlags(flags)
+        .setQueueFamilyIndex(queueFamilyIndex);
+
+    try {
+        return vk::raii::CommandPool(device, poolInfo);
+    } catch (const vk::SystemError& e) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create command pool: %s", e.what());
+        return std::nullopt;
+    }
+}
+
+std::optional<vk::raii::CommandBuffers> VulkanResourceFactory::createCommandBuffers(
+    const vk::raii::Device& device,
+    const vk::raii::CommandPool& pool,
+    uint32_t count)
+{
+    auto allocInfo = vk::CommandBufferAllocateInfo{}
+        .setCommandPool(*pool)
+        .setLevel(vk::CommandBufferLevel::ePrimary)
+        .setCommandBufferCount(count);
+
+    try {
+        return vk::raii::CommandBuffers(device, allocInfo);
+    } catch (const vk::SystemError& e) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to allocate command buffers: %s", e.what());
+        return std::nullopt;
+    }
+}
+
+// ============================================================================
+// RAII Synchronization (vulkan-hpp raii types)
+// ============================================================================
+
+std::optional<VulkanResourceFactory::RAIISyncResources> VulkanResourceFactory::createSyncResources(
+    const vk::raii::Device& device,
+    uint32_t framesInFlight)
+{
+    RAIISyncResources resources;
+    resources.imageAvailableSemaphores.reserve(framesInFlight);
+    resources.renderFinishedSemaphores.reserve(framesInFlight);
+    resources.inFlightFences.reserve(framesInFlight);
+
+    auto semaphoreInfo = vk::SemaphoreCreateInfo{};
+    auto fenceInfo = vk::FenceCreateInfo{}
+        .setFlags(vk::FenceCreateFlagBits::eSignaled);
+
+    try {
+        for (uint32_t i = 0; i < framesInFlight; i++) {
+            resources.imageAvailableSemaphores.emplace_back(device, semaphoreInfo);
+            resources.renderFinishedSemaphores.emplace_back(device, semaphoreInfo);
+            resources.inFlightFences.emplace_back(device, fenceInfo);
+        }
+        return resources;
+    } catch (const vk::SystemError& e) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create sync objects: %s", e.what());
+        return std::nullopt;
+    }
+}
+
+// ============================================================================
+// RAII Render Pass (vulkan-hpp raii types)
+// ============================================================================
+
+std::optional<vk::raii::RenderPass> VulkanResourceFactory::createRenderPass(
+    const vk::raii::Device& device,
+    const RenderPassConfig& config)
+{
+    try {
+        if (config.depthOnly) {
+            // Depth-only render pass (for shadow maps)
+            auto depthAttachment = vk::AttachmentDescription{}
+                .setFormat(static_cast<vk::Format>(config.depthFormat))
+                .setSamples(vk::SampleCountFlagBits::e1)
+                .setLoadOp(config.clearDepth ? vk::AttachmentLoadOp::eClear : vk::AttachmentLoadOp::eLoad)
+                .setStoreOp(config.storeDepth ? vk::AttachmentStoreOp::eStore : vk::AttachmentStoreOp::eDontCare)
+                .setStencilLoadOp(vk::AttachmentLoadOp::eDontCare)
+                .setStencilStoreOp(vk::AttachmentStoreOp::eDontCare)
+                .setInitialLayout(vk::ImageLayout::eUndefined)
+                .setFinalLayout(static_cast<vk::ImageLayout>(config.finalDepthLayout));
+
+            auto depthAttachmentRef = vk::AttachmentReference{}
+                .setAttachment(0)
+                .setLayout(vk::ImageLayout::eDepthStencilAttachmentOptimal);
+
+            auto subpass = vk::SubpassDescription{}
+                .setPipelineBindPoint(vk::PipelineBindPoint::eGraphics)
+                .setColorAttachmentCount(0)
+                .setPDepthStencilAttachment(&depthAttachmentRef);
+
+            auto dependency = vk::SubpassDependency{}
+                .setSrcSubpass(VK_SUBPASS_EXTERNAL)
+                .setDstSubpass(0)
+                .setSrcStageMask(vk::PipelineStageFlagBits::eFragmentShader)
+                .setSrcAccessMask(vk::AccessFlagBits::eShaderRead)
+                .setDstStageMask(vk::PipelineStageFlagBits::eEarlyFragmentTests)
+                .setDstAccessMask(vk::AccessFlagBits::eDepthStencilAttachmentWrite);
+
+            auto renderPassInfo = vk::RenderPassCreateInfo{}
+                .setAttachmentCount(1)
+                .setPAttachments(&depthAttachment)
+                .setSubpassCount(1)
+                .setPSubpasses(&subpass)
+                .setDependencyCount(1)
+                .setPDependencies(&dependency);
+
+            return vk::raii::RenderPass(device, renderPassInfo);
+        }
+
+        // Standard color + depth render pass
+        auto colorAttachment = vk::AttachmentDescription{}
+            .setFormat(static_cast<vk::Format>(config.colorFormat))
+            .setSamples(vk::SampleCountFlagBits::e1)
+            .setLoadOp(config.clearColor ? vk::AttachmentLoadOp::eClear : vk::AttachmentLoadOp::eLoad)
+            .setStoreOp(vk::AttachmentStoreOp::eStore)
+            .setStencilLoadOp(vk::AttachmentLoadOp::eDontCare)
+            .setStencilStoreOp(vk::AttachmentStoreOp::eDontCare)
+            .setInitialLayout(vk::ImageLayout::eUndefined)
+            .setFinalLayout(static_cast<vk::ImageLayout>(config.finalColorLayout));
+
+        auto depthAttachment = vk::AttachmentDescription{}
+            .setFormat(static_cast<vk::Format>(config.depthFormat))
+            .setSamples(vk::SampleCountFlagBits::e1)
+            .setLoadOp(config.clearDepth ? vk::AttachmentLoadOp::eClear : vk::AttachmentLoadOp::eLoad)
+            .setStoreOp(config.storeDepth ? vk::AttachmentStoreOp::eStore : vk::AttachmentStoreOp::eDontCare)
+            .setStencilLoadOp(vk::AttachmentLoadOp::eDontCare)
+            .setStencilStoreOp(vk::AttachmentStoreOp::eDontCare)
+            .setInitialLayout(vk::ImageLayout::eUndefined)
+            .setFinalLayout(static_cast<vk::ImageLayout>(config.finalDepthLayout));
+
+        auto colorAttachmentRef = vk::AttachmentReference{}
+            .setAttachment(0)
+            .setLayout(vk::ImageLayout::eColorAttachmentOptimal);
+
+        auto depthAttachmentRef = vk::AttachmentReference{}
+            .setAttachment(1)
+            .setLayout(vk::ImageLayout::eDepthStencilAttachmentOptimal);
+
+        auto subpass = vk::SubpassDescription{}
+            .setPipelineBindPoint(vk::PipelineBindPoint::eGraphics)
+            .setColorAttachmentCount(1)
+            .setPColorAttachments(&colorAttachmentRef)
+            .setPDepthStencilAttachment(&depthAttachmentRef);
+
+        auto dependency = vk::SubpassDependency{}
+            .setSrcSubpass(VK_SUBPASS_EXTERNAL)
+            .setDstSubpass(0)
+            .setSrcStageMask(vk::PipelineStageFlagBits::eColorAttachmentOutput | vk::PipelineStageFlagBits::eEarlyFragmentTests)
+            .setSrcAccessMask(vk::AccessFlags{})
+            .setDstStageMask(vk::PipelineStageFlagBits::eColorAttachmentOutput | vk::PipelineStageFlagBits::eEarlyFragmentTests)
+            .setDstAccessMask(vk::AccessFlagBits::eColorAttachmentWrite | vk::AccessFlagBits::eDepthStencilAttachmentWrite);
+
+        std::array<vk::AttachmentDescription, 2> attachments = {colorAttachment, depthAttachment};
+
+        auto renderPassInfo = vk::RenderPassCreateInfo{}
+            .setAttachmentCount(static_cast<uint32_t>(attachments.size()))
+            .setPAttachments(attachments.data())
+            .setSubpassCount(1)
+            .setPSubpasses(&subpass)
+            .setDependencyCount(1)
+            .setPDependencies(&dependency);
+
+        return vk::raii::RenderPass(device, renderPassInfo);
+    } catch (const vk::SystemError& e) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create render pass: %s", e.what());
+        return std::nullopt;
+    }
+}
+
+// ============================================================================
+// RAII Framebuffers (vulkan-hpp raii types)
+// ============================================================================
+
+std::optional<std::vector<vk::raii::Framebuffer>> VulkanResourceFactory::createFramebuffers(
+    const vk::raii::Device& device,
+    const vk::raii::RenderPass& renderPass,
+    const std::vector<vk::ImageView>& swapchainImageViews,
+    vk::ImageView depthImageView,
+    vk::Extent2D extent)
+{
+    std::vector<vk::raii::Framebuffer> framebuffers;
+    framebuffers.reserve(swapchainImageViews.size());
+
+    try {
+        for (size_t i = 0; i < swapchainImageViews.size(); i++) {
+            std::array<vk::ImageView, 2> attachments = {
+                swapchainImageViews[i],
+                depthImageView
+            };
+
+            auto framebufferInfo = vk::FramebufferCreateInfo{}
+                .setRenderPass(*renderPass)
+                .setAttachmentCount(static_cast<uint32_t>(attachments.size()))
+                .setPAttachments(attachments.data())
+                .setWidth(extent.width)
+                .setHeight(extent.height)
+                .setLayers(1);
+
+            framebuffers.emplace_back(device, framebufferInfo);
+        }
+        return framebuffers;
+    } catch (const vk::SystemError& e) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create framebuffer: %s", e.what());
+        return std::nullopt;
+    }
+}
+
+std::optional<std::vector<vk::raii::Framebuffer>> VulkanResourceFactory::createDepthOnlyFramebuffers(
+    const vk::raii::Device& device,
+    const vk::raii::RenderPass& renderPass,
+    const std::vector<vk::ImageView>& depthImageViews,
+    vk::Extent2D extent)
+{
+    std::vector<vk::raii::Framebuffer> framebuffers;
+    framebuffers.reserve(depthImageViews.size());
+
+    try {
+        for (size_t i = 0; i < depthImageViews.size(); i++) {
+            auto framebufferInfo = vk::FramebufferCreateInfo{}
+                .setRenderPass(*renderPass)
+                .setAttachmentCount(1)
+                .setPAttachments(&depthImageViews[i])
+                .setWidth(extent.width)
+                .setHeight(extent.height)
+                .setLayers(1);
+
+            framebuffers.emplace_back(device, framebufferInfo);
+        }
+        return framebuffers;
+    } catch (const vk::SystemError& e) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create depth-only framebuffer: %s", e.what());
+        return std::nullopt;
+    }
+}
+
+// ============================================================================
+// RAII Image View (vulkan-hpp raii types)
+// ============================================================================
+
+std::optional<vk::raii::ImageView> VulkanResourceFactory::createDepthImageView(
+    const vk::raii::Device& device,
+    vk::Image image,
+    vk::Format format)
+{
+    auto viewInfo = vk::ImageViewCreateInfo{}
+        .setImage(image)
+        .setViewType(vk::ImageViewType::e2D)
+        .setFormat(format)
+        .setSubresourceRange(vk::ImageSubresourceRange{}
+            .setAspectMask(vk::ImageAspectFlagBits::eDepth)
+            .setBaseMipLevel(0)
+            .setLevelCount(1)
+            .setBaseArrayLayer(0)
+            .setLayerCount(1));
+
+    try {
+        return vk::raii::ImageView(device, viewInfo);
+    } catch (const vk::SystemError& e) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create depth image view: %s", e.what());
+        return std::nullopt;
+    }
+}
+
+std::optional<vk::raii::ImageView> VulkanResourceFactory::createDepthArrayLayerView(
+    const vk::raii::Device& device,
+    vk::Image image,
+    vk::Format format,
+    uint32_t layerIndex)
+{
+    auto viewInfo = vk::ImageViewCreateInfo{}
+        .setImage(image)
+        .setViewType(vk::ImageViewType::e2D)
+        .setFormat(format)
+        .setSubresourceRange(vk::ImageSubresourceRange{}
+            .setAspectMask(vk::ImageAspectFlagBits::eDepth)
+            .setBaseMipLevel(0)
+            .setLevelCount(1)
+            .setBaseArrayLayer(layerIndex)
+            .setLayerCount(1));
+
+    try {
+        return vk::raii::ImageView(device, viewInfo);
+    } catch (const vk::SystemError& e) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create depth layer view: %s", e.what());
+        return std::nullopt;
+    }
+}
+
+std::optional<vk::raii::ImageView> VulkanResourceFactory::createDepthArrayView(
+    const vk::raii::Device& device,
+    vk::Image image,
+    vk::Format format,
+    uint32_t layerCount,
+    bool cubeCompatible)
+{
+    auto viewInfo = vk::ImageViewCreateInfo{}
+        .setImage(image)
+        .setViewType(cubeCompatible ? vk::ImageViewType::eCubeArray : vk::ImageViewType::e2DArray)
+        .setFormat(format)
+        .setSubresourceRange(vk::ImageSubresourceRange{}
+            .setAspectMask(vk::ImageAspectFlagBits::eDepth)
+            .setBaseMipLevel(0)
+            .setLevelCount(1)
+            .setBaseArrayLayer(0)
+            .setLayerCount(layerCount));
+
+    try {
+        return vk::raii::ImageView(device, viewInfo);
+    } catch (const vk::SystemError& e) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create depth array view: %s", e.what());
+        return std::nullopt;
+    }
+}
+
+// ============================================================================
 // RAII Sampler Factories (vulkan-hpp raii types)
 // ============================================================================
 

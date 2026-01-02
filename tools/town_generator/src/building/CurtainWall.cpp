@@ -22,6 +22,35 @@ CurtainWall::CurtainWall(bool real, Model* model, const std::vector<Patch*>& pat
 
     segments.resize(shape.size(), true);
     buildGates(real, model, reserved);
+
+    // Smooth wall shape AFTER gate finding (except reserved vertices and gates)
+    // This must happen after buildGates because entrance finding uses reference comparison
+    // with patch vertices, and smoothing creates new Point objects.
+    // Matches the visual intent of Haxe CurtainWall.hx lines 31-36
+    if (real && patches.size() > 1) {
+        float smoothFactor = std::min(1.0f, 40.0f / static_cast<float>(patches.size()));
+
+        auto isReserved = [&reserved](const Point& v) {
+            return std::find_if(reserved.begin(), reserved.end(),
+                [&v](const Point& p) { return p.equals(v); }) != reserved.end();
+        };
+
+        auto isGate = [this](const Point& v) {
+            return std::find_if(gates.begin(), gates.end(),
+                [&v](const Point& g) { return g.equals(v); }) != gates.end();
+        };
+
+        std::vector<Point> smoothed;
+        for (size_t i = 0; i < shape.size(); i++) {
+            const Point& v = shape[i];
+            if (isReserved(v) || isGate(v)) {
+                smoothed.push_back(v);
+            } else {
+                smoothed.push_back(shape.smoothVertex(v, smoothFactor));
+            }
+        }
+        shape.vertices = smoothed;
+    }
 }
 
 void CurtainWall::buildGates(bool real, Model* model, const std::vector<Point>& reserved) {

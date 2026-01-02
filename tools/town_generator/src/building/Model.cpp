@@ -430,30 +430,43 @@ void Model::optimizeJunctions() {
     for (auto* w : patchesToOptimize) {
         size_t index = 0;
         while (index < w->shape.size()) {
-            Point& v0 = w->shape[index];
-            Point& v1 = w->shape[(index + 1) % w->shape.size()];
+            size_t nextIndex = (index + 1) % w->shape.size();
 
-            if (!v0.equals(v1) && v0.distance(v1) < 8) {
-                for (auto* w1 : patchByVertex(v1)) {
+            // Store v1's index before any modifications - we need to track by index, not value
+            // since C++ uses value semantics unlike Haxe's reference semantics
+            Point v1Copy = w->shape[nextIndex];  // Copy v1's value before modifications
+            Point& v0 = w->shape[index];
+
+            if (!v0.equals(v1Copy) && v0.distance(v1Copy) < 8) {
+                // First update all other patches that share v1 to point to v0's future position
+                Point newPos = Point((v0.x + v1Copy.x) * 0.5f, (v0.y + v1Copy.y) * 0.5f);
+
+                for (auto* w1 : patchByVertex(v1Copy)) {
                     if (w1 != w) {
-                        int idx = w1->shape.indexOf(v1);
+                        int idx = w1->shape.indexOf(v1Copy);
                         if (idx != -1) {
-                            w1->shape[idx] = v0;
+                            w1->shape[idx] = newPos;
                             wards2clean.push_back(w1);
                         }
                     }
                 }
 
-                v0.addEq(v1);
-                v0.scaleEq(0.5f);
+                // Update v0 to the midpoint
+                v0 = newPos;
 
-                // Remove v1 from shape
-                int removeIdx = w->shape.indexOf(v1);
-                if (removeIdx != -1) {
-                    w->shape.remove(removeIdx);
+                // Remove v1 from shape by its known index
+                // Note: if nextIndex < index, removing it shifts index
+                if (nextIndex < w->shape.size()) {
+                    w->shape.remove(static_cast<int>(nextIndex));
+                    // If we removed an element before our current index, adjust
+                    if (nextIndex < index) {
+                        index--;
+                    }
                 }
+                // Don't increment index - we need to check the new vertex at current position
+            } else {
+                index++;
             }
-            index++;
         }
     }
 

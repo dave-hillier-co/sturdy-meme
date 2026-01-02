@@ -52,6 +52,17 @@ void SVGWriter::drawPolygon(const Polygon& poly, uint32_t fill, uint32_t stroke,
     content_ << "/>\n";
 }
 
+void SVGWriter::drawPolygonStrokeOnly(const Polygon& poly, uint32_t stroke, float strokeWidth) {
+    if (poly.empty()) return;
+
+    content_ << indent() << "<path d=\"" << pointsToPath(poly, true) << "\"";
+    content_ << " fill=\"none\"";
+    content_ << " stroke=\"" << colorToHex(stroke) << "\"";
+    content_ << " stroke-width=\"" << strokeWidth << "\"";
+    content_ << " stroke-linejoin=\"miter\"";
+    content_ << "/>\n";
+}
+
 void SVGWriter::drawPolyline(const Polygon& poly, uint32_t stroke, float strokeWidth,
                               const std::string& lineCap) {
     if (poly.size() < 2) return;

@@ -17,6 +17,7 @@ public:
     // Basic shape drawing
     void drawPolygon(const Polygon& poly, uint32_t fill, uint32_t stroke = 0xFFFFFFFF,
                      float strokeWidth = 0);
+    void drawPolygonStrokeOnly(const Polygon& poly, uint32_t stroke, float strokeWidth);
     void drawPolyline(const Polygon& poly, uint32_t stroke, float strokeWidth,
                       const std::string& lineCap = "round");
     void drawCircle(float cx, float cy, float r, uint32_t fill, uint32_t stroke = 0xFFFFFFFF,

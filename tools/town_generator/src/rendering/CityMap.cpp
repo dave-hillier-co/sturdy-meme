@@ -218,8 +218,8 @@ void CityMap::drawRoad(SVGWriter& svg, const Polygon& road) const {
 }
 
 void CityMap::drawWall(SVGWriter& svg, CurtainWall* wall, bool large) const {
-    // Draw wall outline
-    svg.drawPolygon(wall->shape, 0xFFFFFFFF, palette.dark, Brush::THICK_STROKE);
+    // Draw wall outline (stroke only, no fill - matches Haxe CityMap.hx lines 90-91)
+    svg.drawPolygonStrokeOnly(wall->shape, palette.dark, Brush::THICK_STROKE);
 
     // Draw gates
     for (const auto& gate : wall->gates) {

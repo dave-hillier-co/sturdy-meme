@@ -243,9 +243,9 @@ target_link_libraries(vegetation_generator PRIVATE
 target_compile_features(vegetation_generator PRIVATE cxx_std_17)
 
 # Medieval Fantasy City Generator (procedural city layouts)
+# Faithful port of watabou's TownGeneratorOS from Haxe to C++
 add_executable(city_generator
     city_generator/main.cpp
-    city_generator/Ward.cpp
 )
 
 target_include_directories(city_generator PRIVATE
@@ -254,7 +254,6 @@ target_include_directories(city_generator PRIVATE
 
 target_link_libraries(city_generator PRIVATE
     SDL3::SDL3
-    nlohmann_json::nlohmann_json
 )
 
 target_compile_features(city_generator PRIVATE cxx_std_17)

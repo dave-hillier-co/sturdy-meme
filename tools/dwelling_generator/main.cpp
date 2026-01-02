@@ -13,6 +13,7 @@ void printUsage(const char* programName) {
     SDL_Log("  -o, --output <path>    Output directory (default: current directory)");
     SDL_Log("  -s, --seed <number>    Random seed (default: time-based)");
     SDL_Log("  -f, --floors <number>  Number of floors (default: 1)");
+    SDL_Log("  --style <name>         Style: natural, mechanical, organic, gothic");
     SDL_Log("  --min-size <number>    Minimum cell dimension (default: 3)");
     SDL_Log("  --max-size <number>    Maximum cell dimension (default: 7)");
     SDL_Log("  --room-size <number>   Average room size in cells (default: 6)");
@@ -20,6 +21,12 @@ void printUsage(const char* programName) {
     SDL_Log("  --windows <0-1>        Window density (default: 0.7)");
     SDL_Log("  --show-grid            Show debug grid lines");
     SDL_Log("  -h, --help             Show this help message");
+    SDL_Log(" ");
+    SDL_Log("Styles:");
+    SDL_Log("  natural    - Default organic house layout");
+    SDL_Log("  mechanical - Regular rectangular rooms");
+    SDL_Log("  organic    - Irregular room shapes with variation");
+    SDL_Log("  gothic     - Castle-style with chapel, gallery, armoury");
     SDL_Log(" ");
     SDL_Log("Output files:");
     SDL_Log("  dwelling_floor_N.svg   Floor plan for each floor");
@@ -76,15 +83,38 @@ int main(int argc, char* argv[]) {
         else if (strcmp(argv[i], "--show-grid") == 0) {
             renderOptions.showGrid = true;
         }
+        else if (strcmp(argv[i], "--style") == 0 && i + 1 < argc) {
+            ++i;
+            if (strcmp(argv[i], "natural") == 0) {
+                params.style = dwelling::DwellingStyle::Natural;
+            } else if (strcmp(argv[i], "mechanical") == 0) {
+                params.style = dwelling::DwellingStyle::Mechanical;
+            } else if (strcmp(argv[i], "organic") == 0) {
+                params.style = dwelling::DwellingStyle::Organic;
+            } else if (strcmp(argv[i], "gothic") == 0) {
+                params.style = dwelling::DwellingStyle::Gothic;
+            } else {
+                SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "Unknown style: %s", argv[i]);
+            }
+        }
         else {
             SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "Unknown option: %s", argv[i]);
         }
+    }
+
+    const char* styleName = "natural";
+    switch (params.style) {
+        case dwelling::DwellingStyle::Mechanical: styleName = "mechanical"; break;
+        case dwelling::DwellingStyle::Organic: styleName = "organic"; break;
+        case dwelling::DwellingStyle::Gothic: styleName = "gothic"; break;
+        default: break;
     }
 
     SDL_Log("Dwelling Generator");
     SDL_Log("==================");
     SDL_Log("Seed: %u", params.seed);
     SDL_Log("Floors: %d", params.numFloors);
+    SDL_Log("Style: %s", styleName);
     SDL_Log("Cell size range: %d-%d", params.minCellSize, params.maxCellSize);
     SDL_Log("Average room size: %.1f cells", params.avgRoomSize);
     SDL_Log("Window density: %.0f%%", params.windowDensity * 100);
@@ -119,6 +149,12 @@ int main(int argc, char* argv[]) {
     {
         std::string filename = outputDir + "/dwelling_3d.svg";
         dwelling::writeOrthoViewSVG(filename, house, renderOptions);
+    }
+
+    // Write facade/elevation view
+    {
+        std::string filename = outputDir + "/dwelling_facade.svg";
+        dwelling::writeFacadeViewSVG(filename, house, renderOptions);
     }
 
     SDL_Log(" ");

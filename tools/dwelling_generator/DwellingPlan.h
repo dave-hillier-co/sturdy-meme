@@ -36,11 +36,19 @@ struct Window {
     Edge edge;              // Position on wall
 };
 
+// Staircase types
+enum class StairType {
+    Regular,    // Standard straight stairs
+    Spiral      // Spiral/circular staircase
+};
+
 // Staircase in a room
 struct Stair {
-    Cell cell;
-    Dir direction;
-    bool goingUp;
+    Cell cell;              // Position in grid
+    Dir direction;          // Direction stairs face
+    bool goingUp;           // Going up or down
+    StairType type = StairType::Regular;
+    Room* room = nullptr;   // Room containing the stair
 };
 
 // Room types
@@ -55,7 +63,18 @@ enum class RoomType {
     Study,
     Storage,
     Attic,
-    Cellar
+    Cellar,
+    // Additional types from original
+    Library,
+    Chapel,
+    Gallery,
+    Workshop,
+    Corridor,
+    Stairhall,
+    Armoury,
+    Salon,
+    Nursery,
+    Pantry
 };
 
 std::string roomTypeName(RoomType type);
@@ -96,17 +115,28 @@ private:
     std::string name_;
 };
 
+// Style tags for generation
+enum class DwellingStyle {
+    Natural,     // Default organic shapes
+    Mechanical,  // Prefer corners, more regular
+    Organic,     // Prefer walls, irregular
+    Gothic       // Use gothic room set
+};
+
 // Parameters for dwelling generation
 struct DwellingParams {
     int minCellSize = 3;      // Minimum cells in each dimension
     int maxCellSize = 7;      // Maximum cells in each dimension
     float avgRoomSize = 6.0f; // Average room size in cells
     float roomSizeChaos = 1.0f; // Variation in room sizes
-    bool preferCorners = false;
-    bool preferWalls = false;
-    bool regularRooms = false; // Prefer rectangular rooms
+    bool preferCorners = false;  // Mechanical style
+    bool preferWalls = false;    // Organic style
+    bool regularRooms = false;   // Prefer rectangular rooms
+    bool noNooks = false;        // Avoid hallway nooks
     float windowDensity = 0.7f;
     int numFloors = 1;
+    bool hasBasement = false;
+    DwellingStyle style = DwellingStyle::Natural;
     uint32_t seed = 12345;
 };
 
@@ -143,6 +173,12 @@ public:
 
     // Place windows on exterior walls
     void spawnWindows();
+
+    // Place stairs (for multi-floor buildings)
+    void spawnStairs(bool hasFloorAbove, bool hasFloorBelow);
+
+    // Set stair position (for alignment between floors)
+    void setStairPosition(const Cell& cell, Dir direction, StairType type, bool goingUp);
 
 private:
     // Recursive area division

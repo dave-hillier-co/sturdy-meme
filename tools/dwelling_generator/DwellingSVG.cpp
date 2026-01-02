@@ -20,6 +20,18 @@ static const char* getRoomColor(RoomType type) {
         case RoomType::Bathroom:   return "#afeeee";  // Pale turquoise
         case RoomType::Study:      return "#d3d3d3";  // Light gray
         case RoomType::Storage:    return "#c0c0c0";  // Silver
+        case RoomType::Library:    return "#d2b48c";  // Tan
+        case RoomType::Chapel:     return "#f0e68c";  // Khaki
+        case RoomType::Gallery:    return "#fafad2";  // Light goldenrod
+        case RoomType::Workshop:   return "#bc8f8f";  // Rosy brown
+        case RoomType::Corridor:   return "#dcdcdc";  // Gainsboro
+        case RoomType::Stairhall:  return "#d8bfd8";  // Thistle
+        case RoomType::Armoury:    return "#a9a9a9";  // Dark gray
+        case RoomType::Salon:      return "#ffe4c4";  // Bisque
+        case RoomType::Nursery:    return "#ffb6c1";  // Light pink
+        case RoomType::Pantry:     return "#f5f5dc";  // Beige
+        case RoomType::Attic:      return "#e0d8c8";  // Pale wood
+        case RoomType::Cellar:     return "#b0a090";  // Stone
         default:                   return "#f5f5dc";  // Beige
     }
 }
@@ -29,6 +41,125 @@ struct WallSegment {
     float x1, y1, x2, y2;
     bool isExterior;
 };
+
+// Door position for arc rendering
+struct DoorPosition {
+    float x, y;           // Hinge position
+    float angle;          // Door swing angle
+    float width;          // Door width
+    bool isExterior;
+    DoorType type;
+};
+
+// Generate SVG for regular stairs (series of lines)
+static std::string regularStairsSVG(float cx, float cy, float cellSize, Dir direction, bool goingUp,
+                                    const char* stairColor) {
+    std::ostringstream svg;
+    svg << std::fixed << std::setprecision(2);
+
+    float stairWidth = cellSize * 0.7f;
+    float stairLength = cellSize * 0.8f;
+    int numSteps = 5;
+    float stepSize = stairLength / numSteps;
+
+    // Calculate rotation based on direction
+    float angle = 0.0f;
+    switch (direction) {
+        case Dir::North: angle = -90.0f; break;
+        case Dir::East: angle = 0.0f; break;
+        case Dir::South: angle = 90.0f; break;
+        case Dir::West: angle = 180.0f; break;
+    }
+
+    svg << "    <g transform=\"translate(" << cx << "," << cy << ") rotate(" << angle << ")\">\n";
+
+    // Draw stair outline
+    svg << "      <rect x=\"" << (-stairLength / 2) << "\" y=\"" << (-stairWidth / 2)
+        << "\" width=\"" << stairLength << "\" height=\"" << stairWidth
+        << "\" fill=\"" << stairColor << "\" stroke=\"#666\" stroke-width=\"0.5\"/>\n";
+
+    // Draw step lines
+    for (int i = 1; i < numSteps; ++i) {
+        float x = -stairLength / 2 + i * stepSize;
+        svg << "      <line x1=\"" << x << "\" y1=\"" << (-stairWidth / 2)
+            << "\" x2=\"" << x << "\" y2=\"" << (stairWidth / 2)
+            << "\" stroke=\"#666\" stroke-width=\"0.5\"/>\n";
+    }
+
+    // Draw direction arrow
+    float arrowX = goingUp ? (stairLength / 4) : (-stairLength / 4);
+    float arrowSize = stairWidth * 0.2f;
+    svg << "      <path d=\"M " << (arrowX - arrowSize) << " 0 L " << (arrowX + arrowSize)
+        << " 0 M " << arrowX << " " << (-arrowSize) << " L " << (arrowX + arrowSize)
+        << " 0 L " << arrowX << " " << arrowSize
+        << "\" fill=\"none\" stroke=\"#333\" stroke-width=\"1\"/>\n";
+
+    svg << "    </g>\n";
+    return svg.str();
+}
+
+// Generate SVG for spiral stairs
+static std::string spiralStairsSVG(float cx, float cy, float cellSize, bool goingUp,
+                                   const char* stairColor) {
+    std::ostringstream svg;
+    svg << std::fixed << std::setprecision(2);
+
+    float radius = cellSize * 0.35f;
+    float innerRadius = radius * 0.3f;
+
+    // Draw outer circle
+    svg << "    <circle cx=\"" << cx << "\" cy=\"" << cy << "\" r=\"" << radius
+        << "\" fill=\"" << stairColor << "\" stroke=\"#666\" stroke-width=\"1\"/>\n";
+
+    // Draw inner circle (pole)
+    svg << "    <circle cx=\"" << cx << "\" cy=\"" << cy << "\" r=\"" << innerRadius
+        << "\" fill=\"#888\" stroke=\"#666\" stroke-width=\"0.5\"/>\n";
+
+    // Draw spiral lines (suggesting steps)
+    int numLines = 6;
+    for (int i = 0; i < numLines; ++i) {
+        float angle = (static_cast<float>(i) / numLines) * 2.0f * 3.14159f;
+        float x1 = cx + innerRadius * std::cos(angle);
+        float y1 = cy + innerRadius * std::sin(angle);
+        float x2 = cx + radius * std::cos(angle);
+        float y2 = cy + radius * std::sin(angle);
+        svg << "    <line x1=\"" << x1 << "\" y1=\"" << y1
+            << "\" x2=\"" << x2 << "\" y2=\"" << y2
+            << "\" stroke=\"#666\" stroke-width=\"0.5\"/>\n";
+    }
+
+    // Draw direction arrow (curved)
+    float arrowAngle = goingUp ? 0.0f : 3.14159f;
+    float ax = cx + (radius * 0.7f) * std::cos(arrowAngle);
+    float ay = cy + (radius * 0.7f) * std::sin(arrowAngle);
+    svg << "    <text x=\"" << ax << "\" y=\"" << (ay + 3)
+        << "\" font-size=\"8\" fill=\"#333\" text-anchor=\"middle\">"
+        << (goingUp ? "↑" : "↓") << "</text>\n";
+
+    return svg.str();
+}
+
+// Generate SVG path for door arc
+static std::string doorArcPath(const DoorPosition& door) {
+    if (door.type == DoorType::Doorway) return "";
+
+    float radius = door.width;
+    float startAngle = door.angle;
+    float endAngle = door.angle + 1.57f;  // 90 degrees
+
+    float x1 = door.x + radius * std::cos(startAngle);
+    float y1 = door.y + radius * std::sin(startAngle);
+    float x2 = door.x + radius * std::cos(endAngle);
+    float y2 = door.y + radius * std::sin(endAngle);
+
+    std::ostringstream path;
+    path << std::fixed << std::setprecision(2);
+    path << "M " << door.x << " " << door.y;
+    path << " L " << x1 << " " << y1;
+    path << " A " << radius << " " << radius << " 0 0 1 " << x2 << " " << y2;
+    path << " Z";
+    return path.str();
+}
 
 static std::vector<WallSegment> buildWallSegments(
     const Plan& plan,
@@ -314,6 +445,65 @@ void writeFloorPlanSVG(
         file << "  </g>\n\n";
     }
 
+    // Draw door arcs
+    if (options.doorMode == DoorMode::Arc) {
+        file << "  <g id=\"doors\" fill=\"none\" stroke=\"" << options.doorColor
+             << "\" stroke-width=\"1\">\n";
+        for (const Door& door : plan->doors()) {
+            if (door.type == DoorType::Doorway) continue;
+
+            float x1 = padding + door.edge.a.j * cellSize;
+            float y1 = padding + door.edge.a.i * cellSize;
+            float x2 = padding + door.edge.b.j * cellSize;
+            float y2 = padding + door.edge.b.i * cellSize;
+
+            // Door center and direction
+            float mx = (x1 + x2) / 2;
+            float my = (y1 + y2) / 2;
+            float dx = x2 - x1;
+            float dy = y2 - y1;
+            float len = std::sqrt(dx*dx + dy*dy);
+            if (len > 0) { dx /= len; dy /= len; }
+
+            float doorWidth = cellSize * 0.3f;
+            float hingeX = mx - dx * doorWidth * 0.4f;
+            float hingeY = my - dy * doorWidth * 0.4f;
+
+            // Calculate door swing arc
+            float perpX = -dy;
+            float perpY = dx;
+            float arcEndX = hingeX + perpX * doorWidth;
+            float arcEndY = hingeY + perpY * doorWidth;
+
+            // Draw door (line + arc)
+            file << "    <line x1=\"" << hingeX << "\" y1=\"" << hingeY
+                 << "\" x2=\"" << arcEndX << "\" y2=\"" << arcEndY
+                 << "\" stroke-width=\"2\"/>\n";
+
+            // Draw arc showing door swing
+            file << "    <path d=\"M " << (hingeX + dx * doorWidth * 0.8f) << " " << (hingeY + dy * doorWidth * 0.8f)
+                 << " A " << doorWidth << " " << doorWidth << " 0 0 1 " << arcEndX << " " << arcEndY
+                 << "\" stroke-dasharray=\"2,2\"/>\n";
+        }
+        file << "  </g>\n\n";
+    }
+
+    // Draw stairs
+    if (!plan->stairs().empty()) {
+        file << "  <g id=\"stairs\">\n";
+        for (const Stair& stair : plan->stairs()) {
+            float cx = padding + (stair.cell.j + 0.5f) * cellSize;
+            float cy = padding + (stair.cell.i + 0.5f) * cellSize;
+
+            if (stair.type == StairType::Spiral) {
+                file << spiralStairsSVG(cx, cy, cellSize, stair.goingUp, options.stairColor);
+            } else {
+                file << regularStairsSVG(cx, cy, cellSize, stair.direction, stair.goingUp, options.stairColor);
+            }
+        }
+        file << "  </g>\n\n";
+    }
+
     // Draw room labels
     if (options.showRoomLabels) {
         file << "  <g id=\"room-labels\" font-family=\"sans-serif\" font-size=\"10\" "
@@ -440,6 +630,17 @@ void writeAllFloorsSVG(
                  << "\" stroke=\"" << options.windowColor
                  << "\" stroke-width=\"" << (options.wallThickness * 1.5f)
                  << "\" stroke-linecap=\"round\"/>\n";
+        }
+
+        // Stairs
+        for (const Stair& stair : plan->stairs()) {
+            float cx = padding + (stair.cell.j + 0.5f) * cellSize;
+            float cy = padding + (stair.cell.i + 0.5f) * cellSize;
+            if (stair.type == StairType::Spiral) {
+                file << spiralStairsSVG(cx, cy, cellSize, stair.goingUp, options.stairColor);
+            } else {
+                file << regularStairsSVG(cx, cy, cellSize, stair.direction, stair.goingUp, options.stairColor);
+            }
         }
 
         // Floor label
@@ -640,6 +841,184 @@ void writeOrthoViewSVG(
     file << "</svg>\n";
 
     SDL_Log("Wrote ortho view SVG: %s", filename.c_str());
+}
+
+void writeFacadeViewSVG(
+    const std::string& filename,
+    const House& house,
+    const RenderOptions& options
+) {
+    std::ofstream file(filename);
+    if (!file) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Could not write to: %s", filename.c_str());
+        return;
+    }
+
+    float cellSize = options.cellSize;
+    float padding = options.padding;
+    float floorHeight = cellSize * 1.2f;  // Height of one floor in elevation view
+    int numFloors = house.numFloors();
+
+    // Find building width (from south-facing edges)
+    int minJ = house.gridWidth(), maxJ = 0;
+    const Plan* basePlan = house.floor(0);
+    if (!basePlan) return;
+
+    for (const Edge& e : basePlan->contour()) {
+        if (e.dir == Dir::South) {  // South-facing edges are visible
+            minJ = std::min(minJ, std::min(e.a.j, e.b.j));
+            maxJ = std::max(maxJ, std::max(e.a.j, e.b.j));
+        }
+    }
+
+    float buildingWidth = (maxJ - minJ) * cellSize;
+    float buildingHeight = numFloors * floorHeight;
+    float roofHeight = floorHeight * 0.5f;
+
+    float width = buildingWidth + padding * 4;
+    float height = buildingHeight + roofHeight + padding * 4;
+
+    file << std::fixed << std::setprecision(2);
+    file << "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n";
+    file << "<svg xmlns=\"http://www.w3.org/2000/svg\" "
+         << "width=\"" << width << "\" height=\"" << height << "\" "
+         << "viewBox=\"0 0 " << width << " " << height << "\">\n";
+
+    file << "  <!-- " << house.name() << " - Facade View -->\n\n";
+
+    // Background (sky)
+    file << "  <rect width=\"100%\" height=\"100%\" fill=\"#87CEEB\"/>\n";
+
+    // Ground
+    float groundY = height - padding;
+    file << "  <rect x=\"0\" y=\"" << groundY << "\" width=\"" << width
+         << "\" height=\"" << padding << "\" fill=\"#228B22\"/>\n\n";
+
+    float baseX = padding * 2;
+    float baseY = groundY;
+
+    // Draw each floor
+    for (int f = 0; f < numFloors; ++f) {
+        const Plan* plan = house.floor(f);
+        if (!plan) continue;
+
+        float floorTop = baseY - (f + 1) * floorHeight;
+        float floorBottom = baseY - f * floorHeight;
+
+        file << "  <g id=\"facade-floor-" << f << "\">\n";
+
+        // Find cells that have south-facing walls (are on the south edge of the building)
+        std::set<int> southWallColumns;
+        for (const Edge& e : plan->contour()) {
+            if (e.dir == Dir::South) {
+                // South-facing edge - the wall is visible from south
+                // The column is determined by the j coordinate
+                southWallColumns.insert(e.a.j);
+            }
+        }
+
+        // Merge adjacent columns into wall segments
+        std::vector<std::pair<int, int>> wallSegments;
+        int segStart = -1;
+        int lastCol = -2;
+        for (int col : southWallColumns) {
+            if (col == lastCol + 1) {
+                // Continue segment
+            } else {
+                // End previous segment if any
+                if (segStart >= 0) {
+                    wallSegments.push_back({segStart, lastCol + 1});
+                }
+                segStart = col;
+            }
+            lastCol = col;
+        }
+        if (segStart >= 0) {
+            wallSegments.push_back({segStart, lastCol + 1});
+        }
+
+        // Draw wall rectangles
+        for (const auto& seg : wallSegments) {
+            float x1 = baseX + (seg.first - minJ) * cellSize;
+            float x2 = baseX + (seg.second - minJ) * cellSize;
+
+            // Wall fill (brick-like texture via color)
+            const char* wallColor = (f == 0) ? "#8B4513" : "#A0522D";  // Darker base, lighter upper
+            file << "    <rect x=\"" << x1 << "\" y=\"" << floorTop
+                 << "\" width=\"" << (x2 - x1) << "\" height=\"" << floorHeight
+                 << "\" fill=\"" << wallColor << "\" stroke=\"#5a2d0a\" stroke-width=\"1\"/>\n";
+        }
+
+        // Draw windows on south-facing walls
+        for (const Window& window : plan->windows()) {
+            if (window.edge.dir == Dir::South) {
+                float wx = baseX + (window.edge.a.j - minJ + 0.5f) * cellSize;
+                float wy = floorTop + floorHeight * 0.25f;
+                float ww = cellSize * 0.6f;
+                float wh = floorHeight * 0.5f;
+
+                // Window frame
+                file << "    <rect x=\"" << (wx - ww / 2) << "\" y=\"" << wy
+                     << "\" width=\"" << ww << "\" height=\"" << wh
+                     << "\" fill=\"" << options.windowColor << "\" stroke=\"#333\" stroke-width=\"1\"/>\n";
+
+                // Window panes (cross)
+                file << "    <line x1=\"" << wx << "\" y1=\"" << wy
+                     << "\" x2=\"" << wx << "\" y2=\"" << (wy + wh)
+                     << "\" stroke=\"#333\" stroke-width=\"1\"/>\n";
+                file << "    <line x1=\"" << (wx - ww / 2) << "\" y1=\"" << (wy + wh / 2)
+                     << "\" x2=\"" << (wx + ww / 2) << "\" y2=\"" << (wy + wh / 2)
+                     << "\" stroke=\"#333\" stroke-width=\"1\"/>\n";
+            }
+        }
+
+        // Draw door on ground floor (entrance)
+        if (f == 0 && plan->entrance()) {
+            const Door* entrance = plan->entrance();
+            if (entrance->edge.dir == Dir::South) {
+                float dx = baseX + (entrance->edge.a.j - minJ + 0.5f) * cellSize;
+                float dw = cellSize * 0.5f;
+                float dh = floorHeight * 0.7f;
+
+                file << "    <rect x=\"" << (dx - dw / 2) << "\" y=\"" << (floorBottom - dh)
+                     << "\" width=\"" << dw << "\" height=\"" << dh
+                     << "\" fill=\"" << options.doorColor << "\" stroke=\"#333\" stroke-width=\"1\"/>\n";
+
+                // Door handle
+                file << "    <circle cx=\"" << (dx + dw / 4) << "\" cy=\"" << (floorBottom - dh / 2)
+                     << "\" r=\"2\" fill=\"#FFD700\"/>\n";
+            }
+        }
+
+        file << "  </g>\n\n";
+    }
+
+    // Draw roof
+    float roofTop = baseY - numFloors * floorHeight;
+    {
+        // Use full building width for roof
+        float roofX1 = baseX - cellSize * 0.2f;
+        float roofX2 = baseX + buildingWidth + cellSize * 0.2f;
+        float roofMid = (roofX1 + roofX2) / 2;
+
+        // Triangular roof
+        std::ostringstream roofPoints;
+        roofPoints << roofX1 << "," << roofTop << " "
+                  << roofMid << "," << (roofTop - roofHeight) << " "
+                  << roofX2 << "," << roofTop;
+
+        file << "  <polygon points=\"" << roofPoints.str()
+             << "\" fill=\"#8B0000\" stroke=\"#5a0a0a\" stroke-width=\"2\"/>\n";
+    }
+
+    // Title
+    file << "  <text x=\"" << (width / 2) << "\" y=\"25\" "
+         << "font-family=\"sans-serif\" font-size=\"14\" font-weight=\"bold\" "
+         << "text-anchor=\"middle\" fill=\"#333\">" << house.name() << " - Front Elevation</text>\n";
+
+    file << "</svg>\n";
+
+    SDL_Log("Wrote facade view SVG: %s", filename.c_str());
 }
 
 } // namespace dwelling

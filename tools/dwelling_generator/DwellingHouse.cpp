@@ -233,6 +233,13 @@ void House::createFloors() {
         plan->spawnWindows();
         floors_.push_back(std::move(plan));
     }
+
+    // Spawn stairs to connect floors
+    for (int f = 0; f < params_.numFloors; ++f) {
+        bool hasFloorAbove = (f < params_.numFloors - 1);
+        bool hasFloorBelow = (f > 0);
+        floors_[f]->spawnStairs(hasFloorAbove, hasFloorBelow);
+    }
 }
 
 } // namespace dwelling

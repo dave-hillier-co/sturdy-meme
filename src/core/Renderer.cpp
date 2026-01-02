@@ -340,7 +340,7 @@ bool Renderer::createRenderPass() {
     depthFormat = VK_FORMAT_D32_SFLOAT;
 
     VulkanResourceFactory::RenderPassConfig config{};
-    config.colorFormat = vulkanContext_->getVkSwapchainImageFormat();
+    config.colorFormat = static_cast<VkFormat>(vulkanContext_->getVkSwapchainImageFormat());
     config.depthFormat = depthFormat;
     config.finalColorLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
     config.finalDepthLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;  // For Hi-Z

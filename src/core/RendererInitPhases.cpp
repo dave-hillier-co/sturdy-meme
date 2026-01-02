@@ -73,7 +73,7 @@ bool Renderer::initSubsystems(const InitContext& initCtx) {
     VmaAllocator allocator = vulkanContext_->getAllocator();
     VkPhysicalDevice physicalDevice = vulkanContext_->getVkPhysicalDevice();
     VkQueue graphicsQueue = vulkanContext_->getVkGraphicsQueue();
-    VkFormat swapchainImageFormat = vulkanContext_->getVkSwapchainImageFormat();
+    VkFormat swapchainImageFormat = static_cast<VkFormat>(vulkanContext_->getVkSwapchainImageFormat());
 
     // Initialize post-processing systems (PostProcessSystem, BloomSystem, BilateralGridSystem)
     {

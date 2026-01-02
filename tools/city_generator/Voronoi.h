@@ -12,6 +12,7 @@
 #include "Geometry.h"
 #include <vector>
 #include <map>
+#include <set>
 #include <memory>
 #include <algorithm>
 
@@ -289,6 +290,70 @@ public:
         // Recurse for more iterations
         if (iterations > 1) {
             return relax(result, iterations - 1);
+        }
+
+        return result;
+    }
+
+    // Selective Lloyd relaxation - only move specific points by index
+    // This matches the original algorithm where only central wards are relaxed
+    static Voronoi relaxSelected(const Voronoi& voronoi, const std::vector<int>& indicesToRelax) {
+        auto interiorRegions = const_cast<Voronoi&>(voronoi).getInteriorRegions();
+
+        // Create a set of points to relax (excluding frame)
+        std::vector<Vec2> pointsToRelax;
+        std::vector<Vec2> nonFramePoints;
+
+        for (size_t i = 0; i < voronoi.points.size(); i++) {
+            bool isFrame = false;
+            for (const auto& fp : voronoi.frame) {
+                if (voronoi.points[i] == fp) {
+                    isFrame = true;
+                    break;
+                }
+            }
+            if (!isFrame) {
+                nonFramePoints.push_back(voronoi.points[i]);
+            }
+        }
+
+        // Mark which non-frame points should be relaxed
+        std::set<size_t> relaxSet(indicesToRelax.begin(), indicesToRelax.end());
+
+        // Collect new points
+        std::vector<Vec2> newPoints;
+        for (size_t i = 0; i < nonFramePoints.size(); i++) {
+            const Vec2& p = nonFramePoints[i];
+
+            if (relaxSet.count(i)) {
+                // Find the region for this point and move to center
+                bool found = false;
+                for (auto* region : interiorRegions) {
+                    if (region->seed == p) {
+                        newPoints.push_back(region->center());
+                        found = true;
+                        break;
+                    }
+                }
+                if (!found) {
+                    newPoints.push_back(p);
+                }
+            } else {
+                // Keep the point unchanged
+                newPoints.push_back(p);
+            }
+        }
+
+        // Rebuild Voronoi with new points
+        AABB bounds;
+        for (const auto& p : voronoi.points) bounds.expand(p);
+        float margin = std::max(bounds.size().x, bounds.size().y) * 0.25f;
+
+        Voronoi result(bounds.min.x - margin, bounds.min.y - margin,
+                       bounds.max.x + margin, bounds.max.y + margin);
+
+        for (const auto& p : newPoints) {
+            result.addPoint(p);
         }
 
         return result;

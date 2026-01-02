@@ -23,6 +23,7 @@
 #include <random>
 #include <optional>
 #include <cmath>
+#include <set>
 
 namespace city {
 
@@ -128,6 +129,8 @@ private:
     std::vector<Vec2> generateSpiralPoints(int count, float radius);
     void findNeighbors();
     void classifyPatches();
+    void optimizeJunctions();
+    void smoothStreets();
     Ward* createWard(Patch* patch, WardType type);
     WardType selectWardType(Patch* patch);
 };
@@ -152,6 +155,7 @@ inline void Model::generate(const CityParams& p) {
     buildWalls();
     classifyPatches();
     buildStreets();
+    smoothStreets();
     assignWards();
     createGeometry();
 }
@@ -188,25 +192,22 @@ inline void Model::generateBorder() {
     border = Polygon::regular(32, params.radius, {0, 0});
 }
 
-inline std::vector<Vec2> Model::generateSpiralPoints(int count, float radius) {
+inline std::vector<Vec2> Model::generateSpiralPoints(int count, float /* radius */) {
     std::vector<Vec2> points;
     points.reserve(count);
 
-    // Use Fermat's spiral for even distribution
-    float goldenAngle = 3.14159265f * (3.0f - std::sqrt(5.0f));
+    // Match original algorithm: sqrt(i) * 5 angle, increasing radius
+    // Original: a = sa + sqrt(i) * 5, r = (i == 0 ? 0 : 10 + i * (2 + random))
+    std::uniform_real_distribution<float> dist(0.0f, 1.0f);
+    float startAngle = dist(rng) * 2.0f * 3.14159265f;
 
     for (int i = 0; i < count; i++) {
-        float r = radius * std::sqrt(static_cast<float>(i) / count);
-        float theta = i * goldenAngle;
-
-        // Add some randomness
-        std::uniform_real_distribution<float> dist(-1.0f, 1.0f);
-        float jitterR = r * 0.1f * dist(rng);
-        float jitterTheta = 0.1f * dist(rng);
+        float a = startAngle + std::sqrt(static_cast<float>(i)) * 5.0f;
+        float r = (i == 0) ? 0.0f : (10.0f + i * (2.0f + dist(rng)));
 
         points.push_back({
-            (r + jitterR) * std::cos(theta + jitterTheta),
-            (r + jitterR) * std::sin(theta + jitterTheta)
+            std::cos(a) * r,
+            std::sin(a) * r
         });
     }
 
@@ -214,30 +215,67 @@ inline std::vector<Vec2> Model::generateSpiralPoints(int count, float radius) {
 }
 
 inline void Model::generatePatches() {
-    // Generate seed points
-    auto seeds = generateSpiralPoints(params.numPatches, params.radius * 0.9f);
+    // Generate seed points - original uses 8x numPatches
+    auto seeds = generateSpiralPoints(params.numPatches * 8, params.radius);
 
     // Build Voronoi diagram
     Voronoi voronoi = Voronoi::build(seeds);
 
-    // Relax for better distribution
-    for (int i = 0; i < params.relaxIterations; i++) {
-        voronoi = Voronoi::relax(voronoi);
+    // Selective relaxation: only relax central wards (first 3 points + nPatches)
+    // This matches the original algorithm
+    for (int iter = 0; iter < 3; iter++) {
+        std::vector<int> toRelax = {0, 1, 2};
+        if (params.numPatches < static_cast<int>(voronoi.points.size())) {
+            toRelax.push_back(params.numPatches);
+        }
+        voronoi = Voronoi::relaxSelected(voronoi, toRelax);
     }
+
+    // Sort points by distance from origin (as in original)
+    std::sort(voronoi.points.begin(), voronoi.points.end(),
+        [](const Vec2& a, const Vec2& b) {
+            return a.length() < b.length();
+        });
 
     // Create patches from Voronoi regions
     auto regions = voronoi.getInteriorRegions();
+
+    // Sort regions by distance from origin (as in original)
+    std::sort(regions.begin(), regions.end(),
+        [](Region* a, Region* b) {
+            return a->seed.length() < b->seed.length();
+        });
+
+    int count = 0;
     for (auto* region : regions) {
         auto patch = std::make_unique<Patch>(*region);
 
-        // Clip to city boundary
-        // For now, just check if centroid is within city
-        if (border.contains(patch->seed)) {
+        // First nPatches regions are inner city (matching original algorithm)
+        if (count < params.numPatches) {
             patch->withinCity = true;
+            patch->withinWalls = params.hasWalls;
+            innerPatches.push_back(patch.get());
+        }
+
+        // Set center from first patch (closest to origin)
+        if (count == 0) {
+            // Find vertex closest to origin
+            float minDist = std::numeric_limits<float>::max();
+            for (const auto& v : patch->shape.vertices) {
+                float dist = v.length();
+                if (dist < minDist) {
+                    minDist = dist;
+                    plazaCenter = v;
+                }
+            }
         }
 
         patches.push_back(std::move(patch));
+        count++;
     }
+
+    // Optimize junctions - merge close vertices
+    optimizeJunctions();
 }
 
 inline void Model::findNeighbors() {
@@ -252,65 +290,190 @@ inline void Model::findNeighbors() {
     }
 }
 
-inline void Model::buildWalls() {
-    if (!params.hasWalls) return;
+inline void Model::optimizeJunctions() {
+    // Merge vertices that are very close together
+    // This matches the original optimizeJunctions() function
+    const float MIN_EDGE_LENGTH = 8.0f;
 
-    // Collect patches that should be within walls
-    std::vector<Patch*> wallInner;
-    float wallDist = params.radius * params.wallRadius;
-
-    for (auto& patch : patches) {
-        if (patch->withinCity) {
-            float dist = Vec2::distance(patch->seed, getCenter());
-            if (dist < wallDist) {
-                wallInner.push_back(patch.get());
-                patch->withinWalls = true;
-            }
+    // Collect patches to optimize (inner + citadel)
+    std::vector<Patch*> patchesToOptimize;
+    for (auto& p : patches) {
+        if (p->withinCity) {
+            patchesToOptimize.push_back(p.get());
         }
     }
 
-    if (wallInner.empty()) return;
+    std::set<Patch*> patchesToClean;
 
-    // Build main wall
+    for (auto* w : patchesToOptimize) {
+        size_t index = 0;
+        while (index < w->shape.vertices.size()) {
+            Vec2& v0 = w->shape.vertices[index];
+            size_t nextIdx = (index + 1) % w->shape.vertices.size();
+            Vec2& v1 = w->shape.vertices[nextIdx];
+
+            if (!(v0 == v1) && Vec2::distance(v0, v1) < MIN_EDGE_LENGTH) {
+                // Find all patches that contain v1 and update them
+                for (auto& p : patches) {
+                    if (p.get() == w) continue;
+
+                    for (auto& v : p->shape.vertices) {
+                        if (v == v1) {
+                            v = v0;  // Will be updated to midpoint below
+                            patchesToClean.insert(p.get());
+                        }
+                    }
+                }
+
+                // Move v0 to midpoint
+                v0 = (v0 + v1) * 0.5f;
+
+                // Update v1 references to point to the new midpoint
+                for (auto* p : patchesToClean) {
+                    for (auto& v : p->shape.vertices) {
+                        if (v == v1) {
+                            v = v0;
+                        }
+                    }
+                }
+
+                // Remove v1 from this patch
+                w->shape.vertices.erase(w->shape.vertices.begin() + nextIdx);
+            }
+            index++;
+        }
+    }
+
+    // Remove duplicate vertices from patches that were modified
+    for (auto* p : patchesToClean) {
+        auto& verts = p->shape.vertices;
+        for (size_t i = 0; i < verts.size(); ) {
+            bool foundDup = false;
+            for (size_t j = i + 1; j < verts.size(); ) {
+                if (verts[i] == verts[j]) {
+                    verts.erase(verts.begin() + j);
+                    foundDup = true;
+                } else {
+                    j++;
+                }
+            }
+            if (!foundDup) i++;
+        }
+    }
+}
+
+inline void Model::smoothStreets() {
+    // Smooth street paths by averaging with neighbors
+    // This matches the original smoothStreet() function with factor 3
+    for (auto& street : streets) {
+        if (street.path.size() < 3) continue;
+
+        std::vector<Vec2> smoothed;
+        smoothed.reserve(street.path.size());
+
+        // Keep first and last vertices fixed
+        smoothed.push_back(street.path[0]);
+
+        for (size_t i = 1; i < street.path.size() - 1; i++) {
+            const Vec2& prev = street.path[i - 1];
+            const Vec2& curr = street.path[i];
+            const Vec2& next = street.path[i + 1];
+
+            // smoothVertexEq with factor 3: (prev + curr*3 + next) / 5
+            float f = 3.0f;
+            Vec2 sm = {
+                (prev.x + curr.x * f + next.x) / (2.0f + f),
+                (prev.y + curr.y * f + next.y) / (2.0f + f)
+            };
+            smoothed.push_back(sm);
+        }
+
+        smoothed.push_back(street.path.back());
+        street.path = std::move(smoothed);
+    }
+}
+
+inline void Model::buildWalls() {
+    // The wall is built around the inner patches (first nPatches)
+    // innerPatches was populated during generatePatches()
+
+    if (innerPatches.empty()) return;
+
+    // Build the border (wall or just outline)
+    wall.emplace();
+
     std::vector<Patch*> allPatches;
     for (auto& p : patches) allPatches.push_back(p.get());
 
-    wall.emplace();
-    wall->build(wallInner, allPatches, 2);
-    wall->buildGates(wallInner, params.minGateDistance, rng);
-    wall->buildTowers();
+    // Reserved points are citadel vertices (if any)
+    std::vector<Vec2> reserved;
+
+    wall->build(innerPatches, allPatches, params.hasWalls ? 2 : 0);
+
+    if (params.hasWalls) {
+        wall->buildGates(innerPatches, params.minGateDistance, rng);
+        wall->buildTowers();
+    }
 
     // Copy gates
     gates = wall->gates;
 
-    // Build citadel if requested
-    if (params.hasCitadel) {
-        std::vector<Patch*> citadelInner;
-        float citadelDist = params.radius * params.citadelRadius;
+    // Filter patches to only keep those within 3x wall radius
+    float wallRadius = wall->getRadius();
 
-        for (auto* patch : wallInner) {
-            float dist = Vec2::distance(patch->seed, getCenter());
-            if (dist < citadelDist) {
-                citadelInner.push_back(patch);
+    std::vector<std::unique_ptr<Patch>> filteredPatches;
+    std::vector<Patch*> newInnerPatches;
+
+    for (auto& patch : patches) {
+        // Check minimum distance from any vertex to center
+        float minDist = std::numeric_limits<float>::max();
+        for (const auto& v : patch->shape.vertices) {
+            minDist = std::min(minDist, v.length());
+        }
+
+        if (minDist < wallRadius * 3) {
+            if (patch->withinCity) {
+                newInnerPatches.push_back(patch.get());
+            }
+            filteredPatches.push_back(std::move(patch));
+        }
+    }
+    patches = std::move(filteredPatches);
+    innerPatches = std::move(newInnerPatches);
+
+    // Build citadel if requested (at position nPatches in the original)
+    if (params.hasCitadel && patches.size() > static_cast<size_t>(params.numPatches)) {
+        // The citadel patch is at index nPatches (just outside inner city)
+        // In our case, find a compact patch near center for citadel
+        Patch* citadelPatch = nullptr;
+        for (auto& patch : patches) {
+            if (!patch->withinCity && patch->shape.compactness() >= 0.7f) {
+                citadelPatch = patch.get();
+                break;
             }
         }
 
-        if (citadelInner.size() >= 3) {
+        if (citadelPatch) {
+            citadelPatch->withinCity = true;
+            std::vector<Patch*> citadelPatches = {citadelPatch};
             citadel.emplace();
-            citadel->build(citadelInner, allPatches, 1);
+            citadel->build(citadelPatches, allPatches, 1);
+            citadel->buildGates(citadelPatches, params.minGateDistance / 2, rng);
+            citadel->buildTowers();
+
+            // Add citadel gates to main gates list
+            gates.insert(gates.end(), citadel->gates.begin(), citadel->gates.end());
         }
     }
 }
 
 inline void Model::classifyPatches() {
-    // Mark which patches are within walls
-    for (auto& patch : patches) {
-        if (patch->withinCity) {
-            innerPatches.push_back(patch.get());
-
-            if (patch->withinWalls) {
-                wallPatches.push_back(patch.get());
-            }
+    // wallPatches = innerPatches for walled cities
+    // For unwalled cities, all innerPatches are also wallPatches
+    wallPatches.clear();
+    for (auto* patch : innerPatches) {
+        if (patch->withinWalls || !params.hasWalls) {
+            wallPatches.push_back(patch);
         }
     }
 }
@@ -369,7 +532,9 @@ inline void Model::buildStreets() {
         }
     }
 
-    topology.build(shapes, withinCity, blocked, &border);
+    // Pass wall shape as border (for categorizing inner/outer nodes)
+    const Polygon* borderShape = wall ? &wall->shape : nullptr;
+    topology.build(shapes, withinCity, blocked, borderShape);
 
     // Find or create plaza center
     if (params.hasPlaza) {
@@ -406,12 +571,12 @@ inline void Model::buildStreets() {
 
         // Find vertex closest to plaza center
         Vec2* centerVertex = nullptr;
-        minDist = std::numeric_limits<float>::max();
+        float minCenterDist = std::numeric_limits<float>::max();
 
         for (auto& [pt, node] : topology.pointToNode) {
             float dist = Vec2::distance(*pt, plazaCenter);
-            if (dist < minDist) {
-                minDist = dist;
+            if (dist < minCenterDist) {
+                minCenterDist = dist;
                 centerVertex = pt;
             }
         }
@@ -430,44 +595,89 @@ inline void Model::buildStreets() {
 }
 
 inline void Model::assignWards() {
-    // Create list of available ward types (with quantities)
-    std::vector<WardType> availableTypes;
+    // Original WARDS array sequence (matching Model.hx)
+    // This provides a specific distribution of ward types
+    static const std::vector<WardType> WARDS_SEQUENCE = {
+        WardType::Craftsmen, WardType::Craftsmen, WardType::Merchants, WardType::Craftsmen, WardType::Craftsmen, WardType::Cathedral,
+        WardType::Craftsmen, WardType::Craftsmen, WardType::Craftsmen, WardType::Craftsmen, WardType::Craftsmen,
+        WardType::Craftsmen, WardType::Craftsmen, WardType::Craftsmen, WardType::Administration, WardType::Craftsmen,
+        WardType::Slum, WardType::Craftsmen, WardType::Slum, WardType::Patriciate, WardType::Market,
+        WardType::Slum, WardType::Craftsmen, WardType::Craftsmen, WardType::Craftsmen, WardType::Slum,
+        WardType::Craftsmen, WardType::Craftsmen, WardType::Craftsmen, WardType::Military, WardType::Slum,
+        WardType::Craftsmen, WardType::Park, WardType::Patriciate, WardType::Market, WardType::Merchants
+    };
 
-    // Special wards (one each max)
-    if (params.hasCastle) availableTypes.push_back(WardType::Castle);
-    if (params.hasTemple) availableTypes.push_back(WardType::Cathedral);
-    if (params.hasPlaza) availableTypes.push_back(WardType::Market);
-
-    // Fill remaining with common ward types
-    while (availableTypes.size() < patches.size()) {
-        std::uniform_int_distribution<int> dist(0, 6);
-        switch (dist(rng)) {
-            case 0: availableTypes.push_back(WardType::Patriciate); break;
-            case 1: availableTypes.push_back(WardType::Craftsmen); break;
-            case 2: availableTypes.push_back(WardType::Merchants); break;
-            case 3: availableTypes.push_back(WardType::Slum); break;
-            case 4: availableTypes.push_back(WardType::Military); break;
-            case 5: availableTypes.push_back(WardType::Administration); break;
-            default: availableTypes.push_back(WardType::Craftsmen); break;
-        }
+    // Copy and shuffle slightly (as in original)
+    std::vector<WardType> availableTypes = WARDS_SEQUENCE;
+    int shuffleCount = static_cast<int>(availableTypes.size()) / 10;
+    for (int i = 0; i < shuffleCount; i++) {
+        std::uniform_int_distribution<size_t> dist(0, availableTypes.size() - 2);
+        size_t idx = dist(rng);
+        std::swap(availableTypes[idx], availableTypes[idx + 1]);
     }
 
-    // Assign wards greedily based on location ratings
+    // Collect unassigned inner patches
     std::vector<Patch*> unassigned;
-    for (auto& patch : patches) {
-        if (patch->withinCity) {
-            unassigned.push_back(patch.get());
+    for (auto* patch : innerPatches) {
+        unassigned.push_back(patch);
+    }
+
+    // First, assign plaza to central patch (if enabled)
+    if (params.hasPlaza && !unassigned.empty()) {
+        // Find the most central patch
+        Patch* centralPatch = nullptr;
+        float minDist = std::numeric_limits<float>::max();
+        for (auto* patch : unassigned) {
+            float dist = patch->seed.length();
+            if (dist < minDist) {
+                minDist = dist;
+                centralPatch = patch;
+            }
+        }
+        if (centralPatch) {
+            Ward* ward = createWard(centralPatch, WardType::Market);
+            centralPatch->ward = ward;
+            plaza = centralPatch->shape;
+            unassigned.erase(std::remove(unassigned.begin(), unassigned.end(), centralPatch), unassigned.end());
         }
     }
 
-    for (WardType type : availableTypes) {
-        if (unassigned.empty()) break;
+    // Assign gate wards to patches touching gates
+    std::uniform_real_distribution<float> gateProbDist(0.0f, 1.0f);
+    float gateProb = params.hasWalls ? 0.5f : 0.2f;
+
+    for (const auto& gate : gates) {
+        if (gateProbDist(rng) > gateProb) continue;
+
+        for (auto* patch : unassigned) {
+            bool touchesGate = false;
+            for (const auto& v : patch->shape.vertices) {
+                if (v == gate) {
+                    touchesGate = true;
+                    break;
+                }
+            }
+
+            if (touchesGate && !patch->ward) {
+                Ward* ward = createWard(patch, WardType::Gate);
+                patch->ward = ward;
+                unassigned.erase(std::remove(unassigned.begin(), unassigned.end(), patch), unassigned.end());
+                break;
+            }
+        }
+    }
+
+    // Assign wards from the sequence using rateLocation
+    size_t wardIdx = 0;
+    while (!unassigned.empty() && wardIdx < availableTypes.size()) {
+        WardType type = availableTypes[wardIdx++];
 
         // Find best patch for this ward type
         Patch* bestPatch = nullptr;
         float bestRating = std::numeric_limits<float>::infinity();
 
         for (Patch* patch : unassigned) {
+            if (patch->ward) continue;
             float rating = Ward::rateLocation(*this, *patch, type);
             if (rating < bestRating) {
                 bestRating = rating;
@@ -478,25 +688,57 @@ inline void Model::assignWards() {
         if (bestPatch && bestRating < std::numeric_limits<float>::infinity()) {
             Ward* ward = createWard(bestPatch, type);
             bestPatch->ward = ward;
-
-            // Remove from unassigned
-            unassigned.erase(
-                std::remove(unassigned.begin(), unassigned.end(), bestPatch),
-                unassigned.end());
+            unassigned.erase(std::remove(unassigned.begin(), unassigned.end(), bestPatch), unassigned.end());
         }
     }
 
-    // Assign remaining patches as common wards
+    // Assign remaining unassigned inner patches as slums
     for (Patch* patch : unassigned) {
-        WardType type = selectWardType(patch);
-        Ward* ward = createWard(patch, type);
-        patch->ward = ward;
+        if (!patch->ward) {
+            Ward* ward = createWard(patch, WardType::Slum);
+            patch->ward = ward;
+        }
     }
 
-    // Assign farms to outer patches
+    // Outskirts: assign gate wards to outer patches touching wall gates
+    if (params.hasWalls) {
+        float outskirtProb = 1.0f / std::max(1, params.numPatches - 5);
+        for (const auto& gate : wall->gates) {
+            if (gateProbDist(rng) < outskirtProb) continue;
+
+            for (auto& patch : patches) {
+                if (patch->ward) continue;
+
+                bool touchesGate = false;
+                for (const auto& v : patch->shape.vertices) {
+                    if (v == gate) {
+                        touchesGate = true;
+                        break;
+                    }
+                }
+
+                if (touchesGate) {
+                    patch->withinCity = true;
+                    Ward* ward = createWard(patch.get(), WardType::Gate);
+                    patch->ward = ward;
+                }
+            }
+        }
+    }
+
+    // Assign farms/empty wards to outer patches
+    std::uniform_real_distribution<float> farmDist(0.0f, 1.0f);
     for (auto& patch : patches) {
-        if (!patch->withinCity && !patch->ward) {
+        if (patch->ward) continue;
+
+        // 20% chance of farm if compact enough, otherwise empty ward
+        if (farmDist(rng) < 0.2f && patch->shape.compactness() >= 0.7f) {
             Ward* ward = createWard(patch.get(), WardType::Farm);
+            patch->ward = ward;
+        } else {
+            // Empty ward (just the patch shape, no buildings)
+            Ward* ward = createWard(patch.get(), WardType::Craftsmen);
+            ward->geometry.clear();  // Clear any generated buildings
             patch->ward = ward;
         }
     }

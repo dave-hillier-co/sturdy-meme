@@ -158,6 +158,7 @@ private:
 // - Each Voronoi vertex becomes a node
 // - Adjacent vertices in patches are linked
 // - Blocked points (walls, citadel) are excluded from pathfinding
+// - Vertices with same coordinates are merged into same node
 class Topology {
 public:
     std::map<Vec2*, Node*> pointToNode;
@@ -169,14 +170,47 @@ public:
 
     // Build topology from patch vertices
     // blockedPoints: vertices on walls/citadel that block paths
-    // borderShape: outer boundary of the city
+    // borderShape: wall shape (for categorizing inner/outer nodes)
     void build(const std::vector<std::vector<Vec2>*>& patchShapes,
                const std::vector<bool>& withinCity,
                const std::vector<Vec2>& blockedPoints,
                const Polygon* borderShape) {
 
-        std::set<Vec2*> blocked;  // Not used in current implementation
+        // First pass: create nodes for all unique positions
+        // Use position-based lookup to merge vertices with same coords
+        std::map<std::pair<int, int>, Node*> posToNode;  // Quantized position -> node
 
+        auto quantize = [](const Vec2& v) -> std::pair<int, int> {
+            // Quantize to 0.01 precision to handle floating point errors
+            return {static_cast<int>(v.x * 100), static_cast<int>(v.y * 100)};
+        };
+
+        auto isBlocked = [&blockedPoints](const Vec2& v) -> bool {
+            for (const auto& bp : blockedPoints) {
+                if (v == bp) return true;
+            }
+            return false;
+        };
+
+        // Create or find node for a vertex
+        auto getOrCreateNode = [&](Vec2* v) -> Node* {
+            if (isBlocked(*v)) return nullptr;
+
+            auto key = quantize(*v);
+            if (posToNode.count(key)) {
+                Node* n = posToNode[key];
+                pointToNode[v] = n;  // Also map this pointer to the node
+                return n;
+            }
+
+            Node* n = graph.add();
+            posToNode[key] = n;
+            pointToNode[v] = n;
+            nodeToPoint[n] = v;
+            return n;
+        };
+
+        // Build graph from patch edges
         for (size_t patchIdx = 0; patchIdx < patchShapes.size(); patchIdx++) {
             auto* shape = patchShapes[patchIdx];
             bool isWithinCity = withinCity[patchIdx];
@@ -184,41 +218,31 @@ public:
             if (shape->empty()) continue;
 
             Vec2* v1 = &shape->back();
-            Node* n1 = processPoint(v1, blockedPoints);
+            Node* n1 = getOrCreateNode(v1);
 
             for (size_t i = 0; i < shape->size(); i++) {
                 Vec2* v0 = v1;
                 v1 = &(*shape)[i];
                 Node* n0 = n1;
-                n1 = processPoint(v1, blockedPoints);
+                n1 = getOrCreateNode(v1);
 
-                // Categorize nodes as inner/outer
-                if (n0 && borderShape && !borderShape->contains(*v0)) {
-                    if (isWithinCity) {
-                        if (std::find(innerNodes.begin(), innerNodes.end(), n0) == innerNodes.end()) {
-                            innerNodes.push_back(n0);
-                        }
-                    } else {
-                        if (std::find(outerNodes.begin(), outerNodes.end(), n0) == outerNodes.end()) {
-                            outerNodes.push_back(n0);
-                        }
+                // Categorize nodes as inner/outer (not on wall)
+                if (n0 && (!borderShape || !borderShape->contains(*v0))) {
+                    auto& list = isWithinCity ? innerNodes : outerNodes;
+                    if (std::find(list.begin(), list.end(), n0) == list.end()) {
+                        list.push_back(n0);
                     }
                 }
 
-                if (n1 && borderShape && !borderShape->contains(*v1)) {
-                    if (isWithinCity) {
-                        if (std::find(innerNodes.begin(), innerNodes.end(), n1) == innerNodes.end()) {
-                            innerNodes.push_back(n1);
-                        }
-                    } else {
-                        if (std::find(outerNodes.begin(), outerNodes.end(), n1) == outerNodes.end()) {
-                            outerNodes.push_back(n1);
-                        }
+                if (n1 && (!borderShape || !borderShape->contains(*v1))) {
+                    auto& list = isWithinCity ? innerNodes : outerNodes;
+                    if (std::find(list.begin(), list.end(), n1) == list.end()) {
+                        list.push_back(n1);
                     }
                 }
 
                 // Link adjacent nodes
-                if (n0 && n1) {
+                if (n0 && n1 && n0 != n1) {
                     n0->link(n1, Vec2::distance(*v0, *v1));
                 }
             }
@@ -241,27 +265,6 @@ public:
             }
         }
         return result;
-    }
-
-private:
-    Node* processPoint(Vec2* v, const std::vector<Vec2>& blockedPoints) {
-        // Check if already processed
-        if (pointToNode.count(v)) {
-            return pointToNode[v];
-        }
-
-        // Check if blocked
-        for (const auto& bp : blockedPoints) {
-            if (*v == bp) {
-                return nullptr;
-            }
-        }
-
-        // Create new node
-        Node* n = graph.add();
-        pointToNode[v] = n;
-        nodeToPoint[n] = v;
-        return n;
     }
 };
 

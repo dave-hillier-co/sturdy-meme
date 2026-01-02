@@ -62,76 +62,95 @@ private:
 };
 
 // Implementation
-inline void CurtainWall::build(const std::vector<Patch*>& innerPatches,
-                               const std::vector<Patch*>& allPatches,
-                               int smooth) {
-    if (innerPatches.empty()) return;
 
-    // Collect all vertices from inner patches
-    std::vector<Vec2> wallVertices;
+// Find the circumference (outer boundary) of a set of patches
+// This matches the original findCircumference() in Model.hx
+inline Polygon findCircumference(const std::vector<Patch*>& patches) {
+    if (patches.empty()) return Polygon();
+    if (patches.size() == 1) return patches[0]->shape;
 
-    for (const auto* patch : innerPatches) {
-        for (size_t i = 0; i < patch->shape.size(); i++) {
-            const Vec2& v = patch->shape[i];
+    // Collect outer edges: an edge (a,b) is outer if no other patch has (b,a)
+    std::vector<Vec2> A, B;  // Edge start and end points
 
-            // Check if this vertex is on the outer edge
-            // (not shared by another inner patch on the opposite side)
-            bool isOuter = false;
+    for (const auto* p1 : patches) {
+        const auto& verts = p1->shape.vertices;
+        size_t len = verts.size();
 
-            // Count how many inner patches share this vertex
-            int innerCount = 0;
-            int outerCount = 0;
+        for (size_t i = 0; i < len; i++) {
+            const Vec2& a = verts[i];
+            const Vec2& b = verts[(i + 1) % len];
 
-            for (const auto* other : allPatches) {
-                for (const auto& ov : other->shape.vertices) {
-                    if (v == ov) {
-                        if (std::find(innerPatches.begin(), innerPatches.end(), other)
-                            != innerPatches.end()) {
-                            innerCount++;
-                        } else {
-                            outerCount++;
-                        }
+            // Check if any other patch has the reverse edge (b, a)
+            bool isOuter = true;
+            for (const auto* p2 : patches) {
+                if (p2 == p1) continue;
+
+                const auto& verts2 = p2->shape.vertices;
+                size_t len2 = verts2.size();
+                for (size_t j = 0; j < len2; j++) {
+                    // Looking for edge (b, a) in p2
+                    if (verts2[j] == b && verts2[(j + 1) % len2] == a) {
+                        isOuter = false;
                         break;
                     }
                 }
+                if (!isOuter) break;
             }
 
-            // It's an outer vertex if it touches at least one non-inner patch
-            if (outerCount > 0) {
-                // Check if already in list
-                bool found = false;
-                for (const auto& wv : wallVertices) {
-                    if (wv == v) {
-                        found = true;
-                        break;
-                    }
-                }
-                if (!found) {
-                    wallVertices.push_back(v);
-                }
+            if (isOuter) {
+                A.push_back(a);
+                B.push_back(b);
             }
         }
     }
 
-    if (wallVertices.size() < 3) return;
+    if (A.empty()) return Polygon();
 
-    // Sort vertices by angle from center to form proper polygon
-    Vec2 center{0, 0};
-    for (const auto& v : wallVertices) center += v;
-    center /= static_cast<float>(wallVertices.size());
+    // Chain edges together to form the circumference polygon
+    std::vector<Vec2> result;
+    size_t index = 0;
 
-    std::sort(wallVertices.begin(), wallVertices.end(),
-        [&center](const Vec2& a, const Vec2& b) {
-            float angleA = std::atan2(a.y - center.y, a.x - center.x);
-            float angleB = std::atan2(b.y - center.y, b.x - center.x);
-            return angleA < angleB;
-        });
+    do {
+        result.push_back(A[index]);
 
-    shape = Polygon(wallVertices);
+        // Find the edge that starts where this one ends
+        const Vec2& endPoint = B[index];
+        size_t nextIndex = 0;
+        bool found = false;
+        for (size_t i = 0; i < A.size(); i++) {
+            if (A[i] == endPoint) {
+                nextIndex = i;
+                found = true;
+                break;
+            }
+        }
 
-    // Smooth the wall shape
-    for (int i = 0; i < smooth; i++) {
-        shape.smoothVertices(0.3f);
+        if (!found) break;  // Broken chain
+        index = nextIndex;
+
+    } while (index != 0 && result.size() < A.size() + 1);
+
+    return Polygon(result);
+}
+
+inline void CurtainWall::build(const std::vector<Patch*>& innerPatches,
+                               const std::vector<Patch*>& /* allPatches */,
+                               int smooth) {
+    if (innerPatches.empty()) return;
+
+    if (innerPatches.size() == 1) {
+        shape = innerPatches[0]->shape;
+    } else {
+        // Find circumference of inner patches
+        shape = findCircumference(innerPatches);
+
+        // Smooth the wall vertices (as in original)
+        if (smooth > 0) {
+            float smoothFactor = std::min(1.0f, 40.0f / innerPatches.size());
+            for (int iter = 0; iter < smooth; iter++) {
+                shape.smoothVertices(smoothFactor);
+            }
+        }
     }
 
     // Initialize all segments as active

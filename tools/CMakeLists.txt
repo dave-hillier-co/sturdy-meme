@@ -241,3 +241,21 @@ target_link_libraries(vegetation_generator PRIVATE
 )
 
 target_compile_features(vegetation_generator PRIVATE cxx_std_17)
+
+# Dwelling generator (procedural building floor plans)
+# Ported from watabou's Dwellings (https://watabou.itch.io/dwellings)
+add_executable(dwelling_generator
+    dwelling_generator/main.cpp
+    dwelling_generator/DwellingGenerator.cpp
+)
+
+target_include_directories(dwelling_generator PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/dwelling_generator
+)
+
+target_link_libraries(dwelling_generator PRIVATE
+    SDL3::SDL3
+    nlohmann_json::nlohmann_json
+)
+
+target_compile_features(dwelling_generator PRIVATE cxx_std_17)

@@ -236,11 +236,13 @@ Polygon Model::findCircumference(const std::vector<Patch*>& wards) {
         return Polygon(wards[0]->shape.vertices);
     }
 
-    std::vector<Point> A;
-    std::vector<Point> B;
+    // Collect outer edges (edges not shared between two wards)
+    // An edge a->b is outer if there's no ward with the reverse edge b->a
+    std::vector<Point> A;  // Start points
+    std::vector<Point> B;  // End points
 
     for (auto* w1 : wards) {
-        w1->shape.forEdge([&A, &B, &wards, w1](const Point& a, const Point& b) {
+        w1->shape.forEdge([&A, &B, &wards](const Point& a, const Point& b) {
             bool outerEdge = true;
             for (auto* w2 : wards) {
                 if (w2->shape.findEdge(b, a) != -1) {
@@ -255,24 +257,67 @@ Polygon Model::findCircumference(const std::vector<Patch*>& wards) {
         });
     }
 
-    Polygon result;
-    size_t index = 0;
-    size_t iterations = 0;
-    const size_t maxIterations = A.size() + 10;
-    do {
-        result.push(A[index]);
-        // Find where B[index] appears in A
-        auto it = std::find_if(A.begin(), A.end(),
-            [&B, index](const Point& p) { return p.equals(B[index]); });
-        index = (it != A.end()) ? (it - A.begin()) : 0;
-        iterations++;
-        if (iterations > maxIterations) {
-            // Infinite loop detected - return partial result to allow retry
-            break;
-        }
-    } while (index != 0);
+    if (A.empty()) {
+        return Polygon();
+    }
 
-    return result;
+    // The algorithm traces the circumference by following edges.
+    // Due to C++ value semantics (vs Haxe reference semantics), vertices with
+    // identical coordinates may appear multiple times. We need to trace the
+    // LARGEST closed loop, not just any loop.
+    //
+    // Strategy: Try starting from each edge and find the largest loop.
+    Polygon bestResult;
+
+    std::vector<bool> globalUsed(A.size(), false);
+
+    for (size_t startIdx = 0; startIdx < A.size(); startIdx++) {
+        if (globalUsed[startIdx]) continue;
+
+        Polygon result;
+        std::vector<bool> visited(A.size(), false);
+        size_t index = startIdx;
+
+        do {
+            visited[index] = true;
+            result.push(A[index]);
+
+            // Find the next edge: one starting at B[index]
+            const Point& target = B[index];
+            size_t nextIndex = A.size();
+            for (size_t i = 0; i < A.size(); i++) {
+                if (A[i].equals(target)) {
+                    if (i == startIdx && visited[startIdx]) {
+                        // Loop completed back to start
+                        nextIndex = startIdx;
+                        break;
+                    }
+                    if (!visited[i]) {
+                        nextIndex = i;
+                        break;
+                    }
+                }
+            }
+
+            if (nextIndex == A.size()) {
+                break;
+            }
+
+            index = nextIndex;
+        } while (index != startIdx && result.size() < A.size());
+
+        // Mark all visited edges as globally used
+        for (size_t i = 0; i < A.size(); i++) {
+            if (visited[i]) globalUsed[i] = true;
+        }
+
+        // Keep the largest loop
+        if (result.size() > bestResult.size()) {
+            bestResult = result;
+        }
+    }
+
+    return bestResult;
 }
 
 std::vector<Patch*> Model::patchByVertex(const Point& v) {

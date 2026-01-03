@@ -2,6 +2,7 @@
 #include "town_generator/building/Model.h"
 #include "town_generator/building/CurtainWall.h"
 #include <algorithm>
+#include <limits>
 
 namespace town_generator {
 namespace building {
@@ -102,23 +103,64 @@ std::vector<geom::Point> Topology::buildPath(
     const geom::Point& to,
     const std::vector<geom::Node*>* exclude
 ) {
-    auto fromIt = pt2node.find(from);
-    auto toIt = pt2node.find(to);
+    // Find nodes for exact match or nearest node
+    geom::Node* fromNode = nullptr;
+    geom::Node* toNode = nullptr;
 
-    if (fromIt == pt2node.end() || toIt == pt2node.end()) {
+    auto fromIt = pt2node.find(from);
+    if (fromIt != pt2node.end()) {
+        fromNode = fromIt->second;
+    } else {
+        // Find nearest inner node
+        double minDist = std::numeric_limits<double>::infinity();
+        for (auto* n : inner) {
+            auto it = node2pt.find(n);
+            if (it != node2pt.end()) {
+                double d = geom::Point::distance(from, it->second);
+                if (d < minDist) {
+                    minDist = d;
+                    fromNode = n;
+                }
+            }
+        }
+    }
+
+    auto toIt = pt2node.find(to);
+    if (toIt != pt2node.end()) {
+        toNode = toIt->second;
+    } else {
+        // Find nearest inner node
+        double minDist = std::numeric_limits<double>::infinity();
+        for (auto* n : inner) {
+            auto it = node2pt.find(n);
+            if (it != node2pt.end()) {
+                double d = geom::Point::distance(to, it->second);
+                if (d < minDist) {
+                    minDist = d;
+                    toNode = n;
+                }
+            }
+        }
+    }
+
+    if (!fromNode || !toNode) {
         return {};
     }
 
-    auto path = graph_.aStar(fromIt->second, toIt->second, exclude);
+    auto path = graph_.aStar(fromNode, toNode, exclude);
 
     if (path.empty()) {
         return {};
     }
 
     std::vector<geom::Point> result;
+    // Include original 'from' point at start
+    result.push_back(from);
     for (auto* n : path) {
         result.push_back(node2pt[n]);
     }
+    // Include original 'to' point at end
+    result.push_back(to);
 
     return result;
 }

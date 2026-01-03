@@ -76,8 +76,23 @@ void CurtainWall::buildGates(bool real, Model* model, const std::vector<geom::Po
         }
     }
 
+    // If no entrances found with strict criteria, use all non-reserved vertices
     if (entrances.empty()) {
-        throw std::runtime_error("Bad walled area shape!");
+        for (const auto& v : shape) {
+            bool isReserved = std::find(reserved.begin(), reserved.end(), v) != reserved.end();
+            if (!isReserved) {
+                entrances.push_back(v);
+            }
+        }
+    }
+
+    if (entrances.empty()) {
+        // Last resort: just use the first vertex
+        if (shape.length() > 0) {
+            entrances.push_back(shape[0]);
+        } else {
+            return;  // Can't create gates on empty shape
+        }
     }
 
     // Select gates
@@ -223,7 +238,7 @@ bool CurtainWall::bordersBy(Patch* p, const geom::Point& v0, const geom::Point& 
         index = shape.findEdge(v1, v0);
     }
 
-    if (index != -1 && segments[index]) {
+    if (index != -1 && static_cast<size_t>(index) < segments.size() && segments[index]) {
         return true;
     }
 

@@ -260,3 +260,19 @@ target_link_libraries(dwelling_generator PRIVATE
 )
 
 target_compile_features(dwelling_generator PRIVATE cxx_std_17)
+# Medieval town layout generator (SVG output)
+add_executable(town_generator
+    town_generator/main.cpp
+    town_generator/building/Topology.cpp
+    town_generator/building/CurtainWall.cpp
+)
+
+target_include_directories(town_generator PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/town_generator
+)
+
+target_link_libraries(town_generator PRIVATE
+    SDL3::SDL3
+)
+
+target_compile_features(town_generator PRIVATE cxx_std_17)

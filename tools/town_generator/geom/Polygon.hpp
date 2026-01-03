@@ -434,8 +434,8 @@ public:
         }
     }
 
-    // Simplifies the polygons leaving only n vertices
-    void simplyfy(int n) {
+    // Simplifies the polygon leaving only n vertices
+    void simplify(int n) {
         int len = static_cast<int>(vertices.size());
         while (len > n) {
             int result = 0;
@@ -457,6 +457,28 @@ public:
             splice(result, 1);
             len--;
         }
+    }
+
+    // Filter out vertices that are too close together (short edges)
+    Polygon filterShort(float threshold) const {
+        if (vertices.empty()) return Polygon();
+
+        std::vector<PointPtr> result;
+        result.push_back(vertices[0]);
+
+        size_t i = 1;
+        PointPtr v0 = vertices[0];
+
+        while (i < vertices.size()) {
+            PointPtr v1;
+            do {
+                v1 = vertices[i++];
+            } while (Point::distance(*v0, *v1) < threshold && i < vertices.size());
+            result.push_back(v1);
+            v0 = v1;
+        }
+
+        return Polygon(result);
     }
 
     int findEdge(PointPtr a, PointPtr b) const {

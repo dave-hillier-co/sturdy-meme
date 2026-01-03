@@ -7,6 +7,7 @@
 #include "../utils/Random.h"
 #include "Patch.h"
 #include "Topology.h"
+#include "CurtainWall.h"
 #include <vector>
 #include <memory>
 #include <algorithm>
@@ -251,8 +252,11 @@ public:
             gates = selectedGates;
         }
 
-        // TODO: Create actual CurtainWall object
-        // wall = std::make_unique<CurtainWall>(true, *this, inner, std::vector<Point>());
+        // Create the curtain wall around inner patches
+        wall = std::make_unique<CurtainWall>(true, *this, inner, std::vector<Point>());
+
+        // Update gates from wall
+        gates = wall->gates;
     }
 
     /**
@@ -516,6 +520,12 @@ inline const Model::WardType Model::WARDS[Model::WARD_COUNT] = {
 #include "../wards/Park.h"
 #include "../wards/Market.h"
 #include "../wards/MilitaryWard.h"
+#include "../wards/PatriciateWard.h"
+#include "../wards/CraftsmenWard.h"
+#include "../wards/MerchantWard.h"
+#include "../wards/AdministrationWard.h"
+#include "../wards/GateWard.h"
+#include "../wards/Slum.h"
 
 // Implementation of Model::createWards() after ward includes
 inline void towngenerator::building::Model::createWards() {
@@ -547,29 +557,63 @@ inline void towngenerator::building::Model::createWards() {
             }
         }
 
-        // Default to common residential ward
+        // Assign ward types based on position and randomness
         if (!ward) {
-            // Randomize ward type based on position
             float distFromCenter = geom::Point::distance(patch->shape.centroid(), center);
             float cityRadius = std::sqrt(static_cast<float>(nPatches)) * 8.0f;
             float relDist = distFromCenter / cityRadius;
 
+            // Check if patch borders the wall (for GateWard)
+            bool bordersWall = false;
+            if (wall) {
+                bordersWall = wall->borders(*patch);
+            }
+
+            // Outer city (farms and slums)
             if (relDist > 0.7f) {
-                // Outer patches: farms
-                ward = std::make_unique<wards::Farm>(this, patch);
+                if (utils::Random::randomFloat() < 0.3f) {
+                    ward = std::make_unique<wards::Slum>(this, patch);
+                } else {
+                    ward = std::make_unique<wards::Farm>(this, patch);
+                }
             }
-            else if (utils::Random::randomFloat() < 0.15f) {
-                // Some patches become parks
-                ward = std::make_unique<wards::Park>(this, patch);
+            // Gate wards near walls
+            else if (bordersWall && utils::Random::randomFloat() < 0.4f) {
+                ward = std::make_unique<wards::GateWard>(this, patch);
             }
-            else if (utils::Random::randomFloat() < 0.2f) {
-                // Some patches become military
-                ward = std::make_unique<wards::MilitaryWard>(this, patch);
-            }
+            // Inner city variety
             else {
-                // Default: residential with varying chaos
-                float chaos = 0.2f + utils::Random::randomFloat() * 0.3f;
-                ward = std::make_unique<wards::CommonWard>(this, patch, 8.0f, chaos, chaos);
+                float roll = utils::Random::randomFloat();
+
+                if (roll < 0.08f) {
+                    // Parks (8%)
+                    ward = std::make_unique<wards::Park>(this, patch);
+                }
+                else if (roll < 0.16f) {
+                    // Military (8%)
+                    ward = std::make_unique<wards::MilitaryWard>(this, patch);
+                }
+                else if (roll < 0.26f) {
+                    // Craftsmen (10%)
+                    ward = std::make_unique<wards::CraftsmenWard>(this, patch);
+                }
+                else if (roll < 0.36f) {
+                    // Merchant (10%)
+                    ward = std::make_unique<wards::MerchantWard>(this, patch);
+                }
+                else if (roll < 0.44f) {
+                    // Patriciate/wealthy (8%)
+                    ward = std::make_unique<wards::PatriciateWard>(this, patch);
+                }
+                else if (roll < 0.50f) {
+                    // Administration (6%)
+                    ward = std::make_unique<wards::AdministrationWard>(this, patch);
+                }
+                else {
+                    // CommonWard residential (50%)
+                    float chaos = 0.2f + utils::Random::randomFloat() * 0.3f;
+                    ward = std::make_unique<wards::CommonWard>(this, patch, 8.0f, chaos, chaos);
+                }
             }
         }
 

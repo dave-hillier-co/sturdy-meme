@@ -101,61 +101,90 @@ public:
 private:
     /**
      * Build wall shape from border vertices of patches
+     * Port of Haxe Model.findCircumference()
      *
      * @param patches The patches enclosed by walls
      *
-     * Algorithm:
-     * 1. Collect all vertices from patch boundaries
-     * 2. Find the outer perimeter by identifying border edges
-     * 3. Order vertices to form a continuous polygon
+     * Algorithm (from original Haxe):
+     * 1. Special case: single patch uses its shape directly
+     * 2. Collect outer edges as directed segments (A[i] → B[i])
+     * 3. Build polygon by following the edge chain
      */
     void buildShape(const std::vector<Patch*>& patches) {
         if (patches.empty()) {
             return;
         }
 
-        std::vector<Point> borderVertices;
+        // Special case: single patch - use its shape directly
+        if (patches.size() == 1) {
+            shape = patches[0]->shape;
+            segments.resize(shape.vertices.size(), true);
+            return;
+        }
 
-        // Collect all unique border vertices
-        // A border edge is one that appears only once across all patches
+        // Collect outer edges as directed segments
+        // A[i] → B[i] represents edge from A[i] to B[i]
+        std::vector<Point> A;  // Edge start points
+        std::vector<Point> B;  // Edge end points
+
         for (const auto* patch : patches) {
-            for (size_t i = 0; i < patch->shape.vertices.size(); ++i) {
-                size_t j = (i + 1) % patch->shape.vertices.size();
+            size_t n = patch->shape.vertices.size();
+            for (size_t i = 0; i < n; ++i) {
+                size_t j = (i + 1) % n;
                 const Point& v0 = patch->shape.vertices[i];
                 const Point& v1 = patch->shape.vertices[j];
 
-                // Count how many patches share this edge
-                int sharedCount = 0;
+                // Check if this edge is shared with another patch in the set
+                bool isShared = false;
                 for (const auto* otherPatch : patches) {
                     if (otherPatch == patch) continue;
                     if (otherPatch->shape.findEdge(v0, v1) >= 0) {
-                        sharedCount++;
+                        isShared = true;
                         break;
                     }
                 }
 
-                // If edge is not shared, it's a border edge
-                if (sharedCount == 0) {
-                    // Add vertices if not already in list
-                    auto it0 = std::find_if(borderVertices.begin(), borderVertices.end(),
-                        [&v0](const Point& p) { return p.x == v0.x && p.y == v0.y; });
-                    if (it0 == borderVertices.end()) {
-                        borderVertices.push_back(v0);
-                    }
-
-                    auto it1 = std::find_if(borderVertices.begin(), borderVertices.end(),
-                        [&v1](const Point& p) { return p.x == v1.x && p.y == v1.y; });
-                    if (it1 == borderVertices.end()) {
-                        borderVertices.push_back(v1);
-                    }
+                // If not shared, it's an outer edge - add as directed segment
+                if (!isShared) {
+                    A.push_back(v0);
+                    B.push_back(v1);
                 }
             }
         }
 
-        // Create polygon from border vertices
-        // For a proper implementation, we would order these vertices to form a continuous perimeter
-        // For now, using the vertices as collected
-        shape = Polygon(borderVertices);
+        if (A.empty()) {
+            return;
+        }
+
+        // Build polygon by following the edge chain
+        // Port of Haxe: index = A.indexOf(B[index])
+        std::vector<Point> result;
+        size_t index = 0;
+
+        do {
+            result.push_back(A[index]);
+
+            // Find where B[index] appears in A to get next edge
+            const Point& target = B[index];
+            size_t nextIndex = 0;
+            bool found = false;
+            for (size_t i = 0; i < A.size(); ++i) {
+                if (A[i].equals(target)) {
+                    nextIndex = i;
+                    found = true;
+                    break;
+                }
+            }
+
+            if (!found) {
+                // Edge chain broken - stop here
+                break;
+            }
+            index = nextIndex;
+        } while (index != 0 && result.size() < A.size());
+
+        // Create polygon from traced vertices
+        shape = Polygon(result);
 
         // Initialize segments - all edges are walls initially
         segments.resize(shape.vertices.size(), true);

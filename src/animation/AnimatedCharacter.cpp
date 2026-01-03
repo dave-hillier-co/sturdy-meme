@@ -3,6 +3,7 @@
 #include "FBXLoader.h"
 #include "PhysicsSystem.h"
 #include "BoneMask.h"
+#include "FootPhaseTracker.h"
 #include <SDL3/SDL_log.h>
 #include <glm/gtc/matrix_transform.hpp>
 #include <algorithm>
@@ -295,34 +296,93 @@ void AnimatedCharacter::update(float deltaTime, VmaAllocator allocator, VkDevice
         animationPlayer.applyToSkeleton(skeleton);
     }
 
-    // Update foot locking state based on movement speed
-    // During idle, feet should lock in place to prevent IK sliding
-    // During movement, feet should follow the animation with IK ground adaptation
+    // Update foot phase tracking and IK weights
+    // Phase-aware approach: feet only get full IK during stance phase, reduced during swing
     constexpr float IDLE_THRESHOLD = 0.1f;
     constexpr float LOCK_BLEND_SPEED = 5.0f;  // How fast to blend into/out of lock
 
-    auto updateFootLock = [&](FootPlacementIK* foot) {
+    // Get current normalized animation time for phase tracking
+    float normalizedTime = 0.0f;
+    if (useStateMachine) {
+        const AnimationClip* currentClip = stateMachine.getCurrentClip();
+        if (currentClip && currentClip->duration > 0.0f) {
+            normalizedTime = stateMachine.getCurrentTime() / currentClip->duration;
+            normalizedTime = std::fmod(normalizedTime, 1.0f);
+            if (normalizedTime < 0.0f) normalizedTime += 1.0f;
+        }
+    }
+
+    // Get foot world positions for phase tracking
+    std::vector<glm::mat4> tempGlobalTransforms;
+    skeleton.computeGlobalTransforms(tempGlobalTransforms);
+
+    glm::vec3 leftFootWorldPos(0.0f), rightFootWorldPos(0.0f);
+    auto* leftFoot = ikSystem.getFootPlacement("LeftFoot");
+    auto* rightFoot = ikSystem.getFootPlacement("RightFoot");
+
+    if (leftFoot && leftFoot->footBoneIndex >= 0 &&
+        leftFoot->footBoneIndex < static_cast<int32_t>(tempGlobalTransforms.size())) {
+        glm::vec4 localPos = tempGlobalTransforms[leftFoot->footBoneIndex] * glm::vec4(0, 0, 0, 1);
+        leftFootWorldPos = glm::vec3(worldTransform * localPos);
+    }
+    if (rightFoot && rightFoot->footBoneIndex >= 0 &&
+        rightFoot->footBoneIndex < static_cast<int32_t>(tempGlobalTransforms.size())) {
+        glm::vec4 localPos = tempGlobalTransforms[rightFoot->footBoneIndex] * glm::vec4(0, 0, 0, 1);
+        rightFootWorldPos = glm::vec3(worldTransform * localPos);
+    }
+
+    // Update foot phase tracker
+    if (useFootPhaseTracking && movementSpeed > IDLE_THRESHOLD) {
+        footPhaseTracker.update(normalizedTime, deltaTime, leftFootWorldPos, rightFootWorldPos, worldTransform);
+    }
+
+    // Apply phase-aware IK weights and foot locking
+    auto updateFootLock = [&](FootPlacementIK* foot, bool isLeftFoot) {
         if (!foot || !foot->enabled) return;
 
-        float targetLockBlend = (movementSpeed < IDLE_THRESHOLD) ? 1.0f : 0.0f;
+        float targetLockBlend;
+        float targetWeight;
+
+        if (movementSpeed < IDLE_THRESHOLD) {
+            // Idle: full lock, full IK
+            targetLockBlend = 1.0f;
+            targetWeight = 1.0f;
+        } else if (useFootPhaseTracking && footPhaseTracker.hasTimingData()) {
+            // Use phase-aware values during locomotion
+            targetLockBlend = footPhaseTracker.getLockBlend(isLeftFoot);
+            targetWeight = footPhaseTracker.getIKWeight(isLeftFoot);
+        } else {
+            // Fallback: no lock during movement, moderate IK
+            targetLockBlend = 0.0f;
+            targetWeight = 0.5f;  // Partial IK for ground adaptation
+        }
 
         // Smoothly blend toward target lock state
         if (deltaTime > 0.0f) {
             float blendDelta = LOCK_BLEND_SPEED * deltaTime;
+
+            // Lock blend
             if (foot->lockBlend < targetLockBlend) {
                 foot->lockBlend = std::min(foot->lockBlend + blendDelta, targetLockBlend);
             } else if (foot->lockBlend > targetLockBlend) {
                 foot->lockBlend = std::max(foot->lockBlend - blendDelta, targetLockBlend);
-                // When unlocking, reset the lock so it re-establishes when stopping
                 if (foot->lockBlend < 0.1f) {
                     foot->isLocked = false;
                 }
             }
+
+            // IK weight - faster blending for responsiveness
+            float weightDelta = LOCK_BLEND_SPEED * 2.0f * deltaTime;
+            if (foot->weight < targetWeight) {
+                foot->weight = std::min(foot->weight + weightDelta, targetWeight);
+            } else if (foot->weight > targetWeight) {
+                foot->weight = std::max(foot->weight - weightDelta, targetWeight);
+            }
         }
     };
 
-    updateFootLock(ikSystem.getFootPlacement("LeftFoot"));
-    updateFootLock(ikSystem.getFootPlacement("RightFoot"));
+    updateFootLock(leftFoot, true);
+    updateFootLock(rightFoot, false);
 
     // Apply IK after animation sampling
     // Pass world transform so foot placement can query terrain in world space
@@ -445,6 +505,29 @@ void AnimatedCharacter::setupDefaultIKChains() {
     if (!hips.empty()) {
         if (ikSystem.setupPelvisAdjustment(skeleton, hips)) {
             SDL_Log("AnimatedCharacter: Setup pelvis adjustment");
+        }
+    }
+
+    // Analyze walk animation for foot phase timing
+    if (!leftFoot.empty() && !rightFoot.empty()) {
+        // Find the walk animation clip for analysis
+        const AnimationClip* walkClip = nullptr;
+        for (const auto& clip : animations) {
+            std::string lowerName = clip.name;
+            for (char& c : lowerName) c = std::tolower(c);
+            if (lowerName.find("walk") != std::string::npos) {
+                walkClip = &clip;
+                break;
+            }
+        }
+
+        if (walkClip) {
+            if (footPhaseTracker.analyzeAnimation(*walkClip, skeleton, leftFoot, rightFoot)) {
+                SDL_Log("AnimatedCharacter: Foot phase analysis complete");
+            }
+        } else {
+            SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                       "AnimatedCharacter: No walk animation found for foot phase analysis");
         }
     }
 

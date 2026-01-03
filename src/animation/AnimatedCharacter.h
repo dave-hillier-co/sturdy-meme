@@ -5,6 +5,7 @@
 #include "AnimationStateMachine.h"
 #include "AnimationLayerController.h"
 #include "BlendSpace.h"
+#include "FootPhaseTracker.h"
 #include "GLTFLoader.h"
 #include "Mesh.h"
 #include "IKSolver.h"
@@ -106,6 +107,14 @@ public:
     IKSystem& getIKSystem() { return ikSystem; }
     const IKSystem& getIKSystem() const { return ikSystem; }
 
+    // Foot Phase Tracker access (for phase-aware IK)
+    FootPhaseTracker& getFootPhaseTracker() { return footPhaseTracker; }
+    const FootPhaseTracker& getFootPhaseTracker() const { return footPhaseTracker; }
+
+    // Check if foot phase tracking is enabled
+    bool hasFootPhaseTracking() const { return useFootPhaseTracking; }
+    void setUseFootPhaseTracking(bool use) { useFootPhaseTracking = use; }
+
     // Animation Layer Controller access (advanced layer-based blending)
     AnimationLayerController& getLayerController() { return layerController; }
     const AnimationLayerController& getLayerController() const { return layerController; }
@@ -168,6 +177,10 @@ private:
 
     // IK system for procedural adjustments
     IKSystem ikSystem;
+
+    // Foot phase tracking for phase-aware IK
+    FootPhaseTracker footPhaseTracker;
+    bool useFootPhaseTracking = true;  // Enable by default
 
     // Materials loaded from FBX/glTF
     std::vector<MaterialInfo> materials;

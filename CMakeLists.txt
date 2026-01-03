@@ -182,6 +182,7 @@ set(SOURCES
     src/animation/AnimationLayerController.cpp
     src/animation/BlendSpace.cpp
     src/animation/BoneMask.cpp
+    src/animation/FootPhaseTracker.cpp
     # IK
     src/ik/IKSolver.cpp
     src/ik/IKUtils.cpp

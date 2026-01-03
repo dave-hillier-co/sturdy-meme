@@ -55,6 +55,16 @@ public:
     float getBlendFactor() const { return blendFactor; }
     bool isBlending() const { return blending; }
 
+    // Get current animation clip and time (for foot phase tracking)
+    const AnimationClip* getCurrentClip() const {
+        const State* state = findState(currentState);
+        return state ? state->clip : nullptr;
+    }
+    float getCurrentTime() const {
+        const State* state = findState(currentState);
+        return state ? state->time : 0.0f;
+    }
+
     // Event handling
     AnimationEventDispatcher& getEventDispatcher() { return eventDispatcher; }
     const AnimationEventDispatcher& getEventDispatcher() const { return eventDispatcher; }

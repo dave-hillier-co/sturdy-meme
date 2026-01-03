@@ -22,9 +22,14 @@ public:
         std::string buildingStroke;
         double buildingStrokeWidth;
 
-        std::string streetFill;
         std::string streetStroke;
         double streetStrokeWidth;
+
+        std::string arteryStroke;
+        double arteryStrokeWidth;
+
+        std::string roadStroke;
+        double roadStrokeWidth;
 
         std::string wallStroke;
         double wallStrokeWidth;
@@ -44,9 +49,12 @@ public:
             : buildingFill("#d4c4a8")
             , buildingStroke("#8b7355")
             , buildingStrokeWidth(0.5)
-            , streetFill("none")
             , streetStroke("#c8b89a")
-            , streetStrokeWidth(2.0)
+            , streetStrokeWidth(1.0)
+            , arteryStroke("#a89878")
+            , arteryStrokeWidth(2.0)
+            , roadStroke("#b8a888")
+            , roadStrokeWidth(1.5)
             , wallStroke("#5c4033")
             , wallStrokeWidth(3.0)
             , towerFill("#8b7355")

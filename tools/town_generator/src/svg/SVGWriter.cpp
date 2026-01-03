@@ -67,11 +67,32 @@ std::string SVGWriter::generate(const building::Model& model, const Style& style
     }
     svg << "  </g>\n";
 
-    // Streets
+    // Roads (outside walls)
+    svg << "  <g id=\"roads\">\n";
+    for (const auto& road : model.roads) {
+        svg << "    <path d=\"" << polylineToPath(road) << "\" ";
+        svg << "fill=\"none\" stroke=\"" << style.roadStroke << "\" ";
+        svg << "stroke-width=\"" << style.roadStrokeWidth << "\" ";
+        svg << "stroke-linecap=\"round\" stroke-linejoin=\"round\" ";
+        svg << "stroke-dasharray=\"2,2\"/>\n";
+    }
+    svg << "  </g>\n";
+
+    // Arteries (main streets)
+    svg << "  <g id=\"arteries\">\n";
+    for (const auto& artery : model.arteries) {
+        svg << "    <path d=\"" << polylineToPath(artery) << "\" ";
+        svg << "fill=\"none\" stroke=\"" << style.arteryStroke << "\" ";
+        svg << "stroke-width=\"" << style.arteryStrokeWidth << "\" ";
+        svg << "stroke-linecap=\"round\" stroke-linejoin=\"round\"/>\n";
+    }
+    svg << "  </g>\n";
+
+    // Streets (secondary)
     svg << "  <g id=\"streets\">\n";
     for (const auto& street : model.streets) {
         svg << "    <path d=\"" << polylineToPath(street) << "\" ";
-        svg << "fill=\"" << style.streetFill << "\" stroke=\"" << style.streetStroke << "\" ";
+        svg << "fill=\"none\" stroke=\"" << style.streetStroke << "\" ";
         svg << "stroke-width=\"" << style.streetStrokeWidth << "\" ";
         svg << "stroke-linecap=\"round\" stroke-linejoin=\"round\"/>\n";
     }

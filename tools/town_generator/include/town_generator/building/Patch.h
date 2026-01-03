@@ -21,6 +21,7 @@ class Patch {
 public:
     geom::Polygon shape;
     wards::Ward* ward = nullptr;
+    std::vector<Patch*> neighbors;  // Adjacent patches (share an edge)
 
     bool withinWalls = false;
     bool withinCity = false;

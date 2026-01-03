@@ -167,11 +167,16 @@ CurtainWall::CurtainWall(bool real, std::shared_ptr<Model> model,
     }
 
     // Smooth sections of wall near gates
+    // In Haxe, gate.set(...) mutates the Point in place, and since gates[]
+    // and shape[] share the same Point objects, both are updated.
+    // In C++ with value types, we must update both gates[i] and shape[idx].
     if (real) {
-        for (auto& gate : gates) {
-            int idx = shape.indexOf(gate);
+        for (size_t i = 0; i < gates.size(); ++i) {
+            int idx = shape.indexOf(gates[i]);
             if (idx != -1) {
-                shape[idx] = shape.smoothVertex(gate);
+                Point smoothed = shape.smoothVertex(gates[i]);
+                shape[idx] = smoothed;
+                gates[i] = smoothed;  // Also update the gate to match
             }
         }
     }

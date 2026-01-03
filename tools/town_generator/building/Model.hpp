@@ -589,19 +589,26 @@ private:
                 Point& v1 = w->shape[(index + 1) % w->shape.size()];
 
                 if (!(v0 == v1) && Point::distance(v0, v1) < 8.0f) {
+                    // Compute the midpoint first, before propagating to other patches
+                    // In Haxe, Point is a reference type so all patches sharing v0 would
+                    // see mutations automatically. In C++ with value types, we must
+                    // compute the final value first, then propagate it to all patches.
+                    Point midpoint = v0.add(v1).scale(0.5f);
+
+                    // Update v0 in the current patch to the midpoint
+                    v0.set(midpoint);
+
+                    // Propagate the midpoint to all other patches that contain v1
                     auto vertPatches = patchByVertex(v1);
                     for (auto& w1 : vertPatches) {
                         if (w1 != w) {
                             int idx = w1->shape.indexOf(v1);
                             if (idx != -1) {
-                                w1->shape[idx] = v0;
+                                w1->shape[idx] = midpoint;
                             }
                             wards2clean.push_back(w1);
                         }
                     }
-
-                    v0.addEq(v1);
-                    v0.scaleEq(0.5f);
 
                     w->shape.remove(v1);
                 }

@@ -36,6 +36,7 @@
 #include "GTAOSystem.h"
 #include "SDFAtlas.h"
 #include "SDFAOSystem.h"
+#include "SkyProbeSystem.h"
 #include "WaterTileCull.h"
 #include "WaterGBuffer.h"
 #include "ErosionDataLoader.h"
@@ -181,6 +182,10 @@ void RendererSystems::setSDFAtlas(std::unique_ptr<SDFAtlas> atlas) {
 
 void RendererSystems::setSDFAO(std::unique_ptr<SDFAOSystem> system) {
     sdfAOSystem_ = std::move(system);
+}
+
+void RendererSystems::setSkyProbe(std::unique_ptr<SkyProbeSystem> system) {
+    skyProbeSystem_ = std::move(system);
 }
 
 void RendererSystems::setSky(std::unique_ptr<SkySystem> system) {

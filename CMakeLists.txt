@@ -120,6 +120,7 @@ set(SOURCES
     # Lighting
     src/lighting/FroxelSystem.cpp
     src/lighting/ShadowSystem.cpp
+    src/lighting/SkyProbeSystem.cpp
     # Physics
     src/physics/PhysicsSystem.cpp
     src/physics/PhysicsTerrainTileManager.cpp
@@ -226,6 +227,7 @@ target_include_directories(${PROJECT_NAME} PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src/terrain/virtual_texture
     ${CMAKE_CURRENT_SOURCE_DIR}/src/vegetation
     ${CMAKE_CURRENT_SOURCE_DIR}/src/water
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/sdf
     ${CMAKE_CURRENT_SOURCE_DIR}/generated
     ${CMAKE_CURRENT_SOURCE_DIR}  # For shaders/bindings.h
     ${STB_INCLUDE_DIRS}
@@ -655,6 +657,7 @@ set(SHADER_FILES
     ${CMAKE_CURRENT_SOURCE_DIR}/shaders/gtao.comp.spv
     ${CMAKE_CURRENT_SOURCE_DIR}/shaders/gtao_spatial_filter.comp.spv
     ${CMAKE_CURRENT_SOURCE_DIR}/shaders/sdf_ao.comp.spv
+    ${CMAKE_CURRENT_SOURCE_DIR}/shaders/sky_probe_bake.comp.spv
     ${CMAKE_CURRENT_SOURCE_DIR}/shaders/water_tile_cull.comp.spv
     ${CMAKE_CURRENT_SOURCE_DIR}/shaders/debug_line.vert.spv
     ${CMAKE_CURRENT_SOURCE_DIR}/shaders/debug_line.frag.spv
@@ -917,6 +920,14 @@ if(SHADER_COMPILE_CMD)
         COMMENT "Compiling SDF-AO compute shader"
     )
 
+    # Sky Probe baking compute shader (cascaded sky visibility probes)
+    add_custom_command(
+        OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/shaders/sky_probe_bake.comp.spv
+        COMMAND ${GLSLANG_VALIDATOR} --target-env vulkan1.2 -V -o ${CMAKE_CURRENT_SOURCE_DIR}/shaders/sky_probe_bake.comp.spv ${CMAKE_CURRENT_SOURCE_DIR}/shaders/sky_probe_bake.comp
+        DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/shaders/sky_probe_bake.comp
+        COMMENT "Compiling sky probe bake compute shader"
+    )
+
     # Water tile cull compute shader (Phase 7: Screen-Space Tessellation)
     add_custom_command(
         OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/shaders/water_tile_cull.comp.spv
@@ -1074,6 +1085,10 @@ if(SHADER_COMPILE_CMD)
         ${CMAKE_CURRENT_SOURCE_DIR}/shaders/water_position.frag.spv
         ${CMAKE_CURRENT_SOURCE_DIR}/shaders/water_displacement.comp.spv
         ${CMAKE_CURRENT_SOURCE_DIR}/shaders/foam_blur.comp.spv
+        ${CMAKE_CURRENT_SOURCE_DIR}/shaders/gtao.comp.spv
+        ${CMAKE_CURRENT_SOURCE_DIR}/shaders/gtao_spatial_filter.comp.spv
+        ${CMAKE_CURRENT_SOURCE_DIR}/shaders/sdf_ao.comp.spv
+        ${CMAKE_CURRENT_SOURCE_DIR}/shaders/sky_probe_bake.comp.spv
         ${CMAKE_CURRENT_SOURCE_DIR}/shaders/terrain/terrain_dispatcher.comp.spv
         ${CMAKE_CURRENT_SOURCE_DIR}/shaders/terrain/terrain_subdivision.comp.spv
         ${CMAKE_CURRENT_SOURCE_DIR}/shaders/terrain/terrain_frustum_cull.comp.spv

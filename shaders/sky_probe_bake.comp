@@ -1,0 +1,201 @@
+#version 450
+
+/*
+ * sky_probe_bake.comp - Sky Visibility Probe Baking
+ *
+ * Traces rays from probe positions to compute sky visibility.
+ * Uses SDF atlas for occlusion testing.
+ *
+ * Output format: RGBA16F
+ * - Bent normal mode: RGB = bent normal, A = visibility
+ * - SH mode: Would need multiple output textures (not implemented here)
+ */
+
+#extension GL_GOOGLE_include_directive : require
+
+#include "constants_common.glsl"
+
+layout(local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
+
+// SDF atlas for occlusion
+layout(binding = 0) uniform sampler3D sdfAtlas;
+
+// SDF entry metadata
+struct SDFEntry {
+    vec4 boundsMin;
+    vec4 boundsMax;
+    vec4 invScale;
+    mat4 worldToLocal;
+};
+
+layout(binding = 1, std430) readonly buffer SDFEntries {
+    SDFEntry entries[];
+};
+
+// SDF instances
+struct SDFInstance {
+    uint entryIndex;
+    float padding[3];
+    mat4 transform;
+};
+
+layout(binding = 2, std430) readonly buffer SDFInstances {
+    SDFInstance instances[];
+};
+
+// Output probe texture
+layout(binding = 3, rgba16f) uniform writeonly image3D probeOutput;
+
+// Push constants
+layout(push_constant) uniform BakeParams {
+    vec4 cascadeOrigin;    // xyz = origin, w = spacing
+    vec4 cascadeParams;    // x = gridSize, y = layer offset, z = numSamples, w = numInstances
+    vec4 skyParams;        // x = sunZenith, y = sunAzimuth, z = turbidity, w = unused
+    uint probeStartIndex;
+    uint probeCount;
+    float padding[2];
+};
+
+// Sample SDF at world position
+float sampleGlobalSDF(vec3 worldPos) {
+    float minDist = 1000.0;
+    uint numInstances = uint(cascadeParams.w);
+
+    for (uint i = 0; i < numInstances && i < 64; i++) {
+        SDFInstance inst = instances[i];
+        SDFEntry entry = entries[inst.entryIndex];
+
+        // Transform to local space
+        vec4 localPos4 = inverse(inst.transform) * vec4(worldPos, 1.0);
+        vec3 localPos = localPos4.xyz;
+
+        // Check bounds
+        if (any(lessThan(localPos, entry.boundsMin.xyz)) ||
+            any(greaterThan(localPos, entry.boundsMax.xyz))) {
+            continue;
+        }
+
+        // Convert to UV
+        vec3 localUV = (localPos - entry.boundsMin.xyz) * entry.invScale.xyz;
+        float layerOffset = entry.invScale.w;
+        vec3 atlasUV = vec3(localUV.xy, (localUV.z + layerOffset) / 256.0);
+
+        float dist = texture(sdfAtlas, atlasUV).r;
+
+        // Scale to world
+        vec3 scale = vec3(length(inst.transform[0].xyz),
+                          length(inst.transform[1].xyz),
+                          length(inst.transform[2].xyz));
+        float avgScale = (scale.x + scale.y + scale.z) / 3.0;
+        dist *= avgScale;
+
+        minDist = min(minDist, dist);
+    }
+
+    return minDist;
+}
+
+// Generate hemisphere sample directions
+vec3 hemisphereDirection(uint sampleIndex, uint numSamples, vec3 normal) {
+    // Fibonacci spiral distribution
+    float phi = float(sampleIndex) * 2.399963229728653; // Golden angle
+    float cosTheta = 1.0 - (float(sampleIndex) + 0.5) / float(numSamples);
+    float sinTheta = sqrt(1.0 - cosTheta * cosTheta);
+
+    vec3 dir = vec3(
+        cos(phi) * sinTheta,
+        sin(phi) * sinTheta,
+        cosTheta
+    );
+
+    // Rotate to align with normal
+    vec3 tangent = abs(normal.y) < 0.999 ? vec3(0.0, 1.0, 0.0) : vec3(1.0, 0.0, 0.0);
+    vec3 bitangent = normalize(cross(normal, tangent));
+    tangent = cross(bitangent, normal);
+
+    return normalize(tangent * dir.x + bitangent * dir.y + normal * dir.z);
+}
+
+// Trace ray against SDF for visibility
+float traceVisibility(vec3 origin, vec3 dir, float maxDist) {
+    float t = 0.1; // Start offset
+    float visibility = 1.0;
+
+    for (int i = 0; i < 32; i++) {
+        vec3 p = origin + dir * t;
+        float d = sampleGlobalSDF(p);
+
+        if (d < 0.01) {
+            // Hit geometry
+            return 0.0;
+        }
+
+        // Soft shadow approximation
+        float penumbra = 4.0 * d / t;
+        visibility = min(visibility, penumbra);
+
+        t += max(d * 0.5, 0.1);
+        if (t > maxDist) break;
+    }
+
+    return clamp(visibility, 0.0, 1.0);
+}
+
+void main() {
+    uint probeIndex = gl_GlobalInvocationID.x;
+
+    if (probeIndex >= probeCount) {
+        return;
+    }
+
+    uint globalIndex = probeStartIndex + probeIndex;
+
+    // Convert linear index to 3D grid position
+    uint gridSize = uint(cascadeParams.x);
+    uint z = globalIndex / (gridSize * gridSize);
+    uint y = (globalIndex / gridSize) % gridSize;
+    uint x = globalIndex % gridSize;
+
+    // Calculate world position
+    float spacing = cascadeOrigin.w;
+    vec3 probePos = cascadeOrigin.xyz + vec3(float(x), float(y), float(z)) * spacing;
+    probePos += spacing * 0.5; // Center of cell
+
+    // Trace rays in hemisphere to compute visibility
+    uint numSamples = uint(cascadeParams.z);
+    vec3 bentNormal = vec3(0.0);
+    float totalVisibility = 0.0;
+
+    // Use upward hemisphere (sky direction)
+    vec3 up = vec3(0.0, 1.0, 0.0);
+
+    for (uint s = 0; s < numSamples; s++) {
+        vec3 dir = hemisphereDirection(s, numSamples, up);
+
+        // Trace ray
+        float vis = traceVisibility(probePos, dir, 50.0);
+
+        // Accumulate bent normal (visibility-weighted direction)
+        bentNormal += dir * vis;
+        totalVisibility += vis;
+    }
+
+    // Normalize
+    totalVisibility /= float(numSamples);
+
+    if (length(bentNormal) > 0.001) {
+        bentNormal = normalize(bentNormal);
+    } else {
+        bentNormal = up; // Default to up if fully occluded
+    }
+
+    // Encode bent normal to [0,1] range
+    vec3 encodedNormal = bentNormal * 0.5 + 0.5;
+
+    // Calculate output position in 3D texture
+    uint layerOffset = uint(cascadeParams.y);
+    ivec3 texCoord = ivec3(x, y, z + layerOffset);
+
+    // Write probe data
+    imageStore(probeOutput, texCoord, vec4(encodedNormal, totalVisibility));
+}

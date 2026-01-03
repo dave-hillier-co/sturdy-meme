@@ -69,6 +69,8 @@ class GTAOSystem;
 class SDFAtlas;
 class SDFAOSystem;
 struct SDFConfig;
+class SkyProbeSystem;
+struct SkyProbeConfig;
 class WaterTileCull;
 class WaterGBuffer;
 class ErosionDataLoader;
@@ -260,6 +262,11 @@ public:
     SDFAOSystem* sdfAO() { return sdfAOSystem_.get(); }
     const SDFAOSystem* sdfAO() const { return sdfAOSystem_.get(); }
     void setSDFAO(std::unique_ptr<SDFAOSystem> system);
+
+    // Sky Probes (cascaded sky visibility for global GI)
+    SkyProbeSystem* skyProbe() { return skyProbeSystem_.get(); }
+    const SkyProbeSystem* skyProbe() const { return skyProbeSystem_.get(); }
+    void setSkyProbe(std::unique_ptr<SkyProbeSystem> system);
 
     // Scene and resources
     SceneManager& scene() { return *sceneManager_; }
@@ -465,6 +472,9 @@ private:
     // SDF (Signed Distance Field) for building AO
     std::unique_ptr<SDFAtlas> sdfAtlas_;
     std::unique_ptr<SDFAOSystem> sdfAOSystem_;
+
+    // Sky Probes (cascaded sky visibility for global GI)
+    std::unique_ptr<SkyProbeSystem> skyProbeSystem_;
 
     // Infrastructure (needed throughout)
     std::unique_ptr<SceneManager> sceneManager_;

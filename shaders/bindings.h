@@ -475,6 +475,18 @@
 #define BINDING_SDF_AO_OUTPUT              5   // AO output image
 
 // =============================================================================
+// Sky Probe System Descriptor Set
+// =============================================================================
+#define BINDING_SKY_PROBE_TEXTURE          0   // 3D probe texture (sampler3D)
+#define BINDING_SKY_PROBE_CASCADE_INFO     1   // Cascade info UBO
+
+// Sky Probe Baking (compute)
+#define BINDING_SKY_PROBE_BAKE_SDF         0   // SDF atlas for occlusion
+#define BINDING_SKY_PROBE_BAKE_ENTRIES     1   // SDF entries SSBO
+#define BINDING_SKY_PROBE_BAKE_INSTANCES   2   // SDF instances SSBO
+#define BINDING_SKY_PROBE_BAKE_OUTPUT      3   // Probe output (storage image)
+
+// =============================================================================
 // C++ Type-Safe Wrappers
 // =============================================================================
 #ifdef __cplusplus
@@ -850,6 +862,14 @@ constexpr uint32_t SDF_AO_ATLAS           = BINDING_SDF_AO_ATLAS;
 constexpr uint32_t SDF_AO_ENTRIES         = BINDING_SDF_AO_ENTRIES;
 constexpr uint32_t SDF_AO_INSTANCES       = BINDING_SDF_AO_INSTANCES;
 constexpr uint32_t SDF_AO_OUTPUT          = BINDING_SDF_AO_OUTPUT;
+
+// Sky Probes
+constexpr uint32_t SKY_PROBE_TEXTURE      = BINDING_SKY_PROBE_TEXTURE;
+constexpr uint32_t SKY_PROBE_CASCADE_INFO = BINDING_SKY_PROBE_CASCADE_INFO;
+constexpr uint32_t SKY_PROBE_BAKE_SDF     = BINDING_SKY_PROBE_BAKE_SDF;
+constexpr uint32_t SKY_PROBE_BAKE_ENTRIES = BINDING_SKY_PROBE_BAKE_ENTRIES;
+constexpr uint32_t SKY_PROBE_BAKE_INSTANCES = BINDING_SKY_PROBE_BAKE_INSTANCES;
+constexpr uint32_t SKY_PROBE_BAKE_OUTPUT  = BINDING_SKY_PROBE_BAKE_OUTPUT;
 
 } // namespace Bindings
 

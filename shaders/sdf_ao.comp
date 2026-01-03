@@ -159,7 +159,7 @@ float traceSDFCone(vec3 origin, vec3 dir, float maxDist, float coneAngle) {
 
         // Cone occlusion: smaller distance relative to cone width = more occlusion
         float coneWidth = t * coneAngle;
-        float coneOcclusion = saturate(1.0 - d / coneWidth);
+        float coneOcclusion = clamp(1.0 - d / coneWidth, 0.0, 1.0);
 
         // Accumulate with distance falloff
         float falloff = 1.0 - t / maxDist;

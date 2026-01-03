@@ -4,8 +4,13 @@
 #include "building/Patch.h"
 #include "building/CurtainWall.h"
 #include "wards/Ward.h"
+#include "wards/Castle.h"
+#include "wards/Cathedral.h"
 #include "wards/Farm.h"
 #include "wards/Park.h"
+#include "wards/Market.h"
+#include "mapping/Palette.h"
+#include "mapping/Brush.h"
 #include "geom/Point.h"
 #include "geom/Polygon.h"
 #include <fstream>
@@ -22,29 +27,18 @@ using building::Model;
 using building::Patch;
 using building::CurtainWall;
 using wards::Ward;
+using mapping::Palette;
+using mapping::Brush;
 
 /**
  * SvgExporter - Export city model to SVG format
+ * Ported from Haxe CityMap.hx
  *
- * Generates SVG visualization of the generated medieval city
- * with proper layering and coloring matching the original town generator.
+ * Renders the city using the same layering and styling as the original
+ * TownGeneratorOS CityMap class.
  */
 class SvgExporter {
 public:
-    // ====================
-    // COLOR SCHEME (faithful to original)
-    // ====================
-
-    static constexpr const char* COLOR_BACKGROUND = "#e8dcc8";  // Parchment
-    static constexpr const char* COLOR_BUILDINGS = "#b8a080";   // Tan/brown
-    static constexpr const char* COLOR_STREETS = "#d0c0a0";     // Light tan
-    static constexpr const char* COLOR_WALLS = "#666666";       // Gray
-    static constexpr const char* COLOR_GATES = "#333333";       // Dark gray
-    static constexpr const char* COLOR_TOWERS = "#444444";      // Tower gray
-    static constexpr const char* COLOR_WATER = "#88aacc";       // Blue
-    static constexpr const char* COLOR_PARKS = "#a0c080";       // Green
-    static constexpr const char* COLOR_FARMS = "#d0e0b0";       // Light green
-
     // ====================
     // CONSTRUCTOR
     // ====================
@@ -52,9 +46,12 @@ public:
     /**
      * Constructor
      * @param model Reference to the city model to export
+     * @param palette Color palette to use (default: Palette::DEFAULT())
      */
-    explicit SvgExporter(const Model& model)
+    explicit SvgExporter(const Model& model, Palette palette = Palette::DEFAULT())
         : model_(model)
+        , palette_(palette)
+        , brush_(palette_)
         , minX_(0.0f)
         , minY_(0.0f)
         , maxX_(0.0f)
@@ -94,28 +91,25 @@ public:
         // Write background
         writeBackground(file, padding);
 
-        // Write city elements in proper layering order
-        // 1. Farm fields (background layer)
-        writeFarmFields(file);
+        // Rendering order matches CityMap.new():
+        // 1. Roads (main streets)
+        writeRoads(file);
 
-        // 2. Streets/arteries
-        writeStreets(file);
+        // 2. Patches (buildings by ward type)
+        writePatches(file);
 
-        // 3. Park areas
-        writeParks(file);
-
-        // 4. Buildings/city blocks
-        writeBuildings(file);
-
-        // 5. Walls (on top of buildings)
-        if (model_.wallsNeeded && model_.wall) {
-            writeWalls(file);
-            writeTowers(file);
-            writeGates(file);
+        // 3. Walls (if enabled)
+        if (model_.wall) {
+            writeWall(file, *model_.wall, false);
         }
 
-        // 6. Ward labels (top layer)
-        writeLabels(file);
+        // 4. Citadel walls (if exists)
+        if (model_.citadel && model_.citadel->ward) {
+            auto* castle = dynamic_cast<wards::Castle*>(model_.citadel->ward);
+            if (castle && castle->wall) {
+                writeWall(file, *castle->wall, true);
+            }
+        }
 
         // Close SVG
         file << "</svg>\n";
@@ -126,15 +120,14 @@ public:
 
 private:
     const Model& model_;
+    Palette palette_;
+    Brush brush_;
     float minX_, minY_, maxX_, maxY_;
 
     // ====================
     // HELPER METHODS - Bounds calculation
     // ====================
 
-    /**
-     * Calculate bounding box of entire city
-     */
     void calculateBounds() {
         bool first = true;
 
@@ -155,197 +148,232 @@ private:
     }
 
     // ====================
-    // HELPER METHODS - SVG element writers
+    // SVG ELEMENT WRITERS
     // ====================
 
-    /**
-     * Write background rectangle
-     */
     void writeBackground(std::ofstream& file, float padding) {
         float width = maxX_ - minX_ + (padding * 2);
         float height = maxY_ - minY_ + (padding * 2);
 
         file << "  <rect x=\"" << (minX_ - padding) << "\" y=\"" << (minY_ - padding) << "\" ";
         file << "width=\"" << width << "\" height=\"" << height << "\" ";
-        file << "fill=\"" << COLOR_BACKGROUND << "\" />\n";
+        file << "fill=\"" << Brush::colorToSvg(palette_.paper) << "\" />\n";
     }
 
     /**
-     * Write farm field polygons (entire patch area for Farm wards)
+     * Draw roads (main streets)
+     * Matches CityMap.drawRoad()
      */
-    void writeFarmFields(std::ofstream& file) {
-        file << "  <!-- Farm Fields -->\n";
+    void writeRoads(std::ofstream& file) {
+        file << "  <!-- Roads -->\n";
+        file << "  <g id=\"roads\">\n";
 
-        for (const auto& patch : model_.patches) {
-            if (patch.ward != nullptr) {
-                const char* label = patch.ward->getLabel();
-                if (label != nullptr && std::string(label) == "Farm") {
-                    // Draw the entire patch shape as farm field
-                    writePolygon(file, patch.shape, COLOR_FARMS, "1", "none");
-                }
-            }
-        }
-    }
+        for (const auto& road : model_.arteries) {
+            if (road.size() < 2) continue;
 
-    /**
-     * Write street/artery paths
-     */
-    void writeStreets(std::ofstream& file) {
-        file << "  <!-- Streets -->\n";
-
-        for (const auto& artery : model_.arteries) {
-            if (artery.size() < 2) continue;
-
-            file << "  <polyline points=\"";
-            for (size_t i = 0; i < artery.size(); ++i) {
+            // Outer stroke (medium color, wider)
+            float outerWidth = Ward::MAIN_STREET + Brush::NORMAL_STROKE;
+            file << "    <polyline points=\"";
+            for (size_t i = 0; i < road.size(); ++i) {
                 if (i > 0) file << " ";
-                file << artery[i].x << "," << artery[i].y;
+                file << road[i].x << "," << road[i].y;
             }
-            file << "\" stroke=\"" << COLOR_STREETS << "\" ";
-            file << "stroke-width=\"2\" fill=\"none\" ";
-            file << "stroke-linecap=\"round\" stroke-linejoin=\"round\" />\n";
+            file << "\" stroke=\"" << Brush::colorToSvg(palette_.medium) << "\" ";
+            file << "stroke-width=\"" << outerWidth << "\" fill=\"none\" ";
+            file << "stroke-linecap=\"butt\" stroke-linejoin=\"round\" />\n";
+
+            // Inner stroke (paper color, narrower)
+            float innerWidth = Ward::MAIN_STREET - Brush::NORMAL_STROKE;
+            file << "    <polyline points=\"";
+            for (size_t i = 0; i < road.size(); ++i) {
+                if (i > 0) file << " ";
+                file << road[i].x << "," << road[i].y;
+            }
+            file << "\" stroke=\"" << Brush::colorToSvg(palette_.paper) << "\" ";
+            file << "stroke-width=\"" << innerWidth << "\" fill=\"none\" ";
+            file << "stroke-linecap=\"butt\" stroke-linejoin=\"round\" />\n";
         }
+
+        file << "  </g>\n";
     }
 
     /**
-     * Write park areas (patch shape for Park wards)
+     * Draw patches by ward type
+     * Matches CityMap.new() switch statement
      */
-    void writeParks(std::ofstream& file) {
-        file << "  <!-- Parks -->\n";
+    void writePatches(std::ofstream& file) {
+        file << "  <!-- Patches -->\n";
+        file << "  <g id=\"patches\">\n";
 
         for (const auto& patch : model_.patches) {
-            if (patch.ward != nullptr) {
-                const char* label = patch.ward->getLabel();
-                if (label != nullptr && std::string(label) == "Park") {
-                    // Draw the entire patch shape as park
-                    writePolygon(file, patch.shape, COLOR_PARKS, "1", "none");
+            if (!patch.ward) continue;
+
+            const char* label = patch.ward->getLabel();
+            if (!label) continue;
+
+            std::string wardType(label);
+
+            if (wardType == "Castle") {
+                // Castle: thicker stroke
+                drawBuilding(file, patch.ward->geometry, palette_.light, palette_.dark,
+                            Brush::NORMAL_STROKE * 2);
+            }
+            else if (wardType == "Cathedral") {
+                // Cathedral: normal stroke
+                drawBuilding(file, patch.ward->geometry, palette_.light, palette_.dark,
+                            Brush::NORMAL_STROKE);
+            }
+            else if (wardType == "Park") {
+                // Park: medium fill, no stroke
+                brush_.setColor(palette_.medium, -1, 0);
+                for (const auto& grove : patch.ward->geometry) {
+                    writePolygon(file, grove, palette_.medium, 0, 0);
                 }
             }
-        }
-    }
-
-    /**
-     * Write building footprints from ward geometry
-     */
-    void writeBuildings(std::ofstream& file) {
-        file << "  <!-- Buildings -->\n";
-
-        for (const auto& patch : model_.patches) {
-            if (patch.ward != nullptr) {
-                const char* label = patch.ward->getLabel();
-
-                // Skip Farm and Park wards - they're already drawn
-                if (label != nullptr) {
-                    std::string wardType(label);
-                    if (wardType == "Farm" || wardType == "Park") {
-                        continue;
-                    }
-                }
-
-                // Draw all building polygons from ward geometry
+            else if (wardType == "Market" || wardType == "Craftsmen" ||
+                     wardType == "Merchant" || wardType == "Gate" ||
+                     wardType == "Slum" || wardType == "Administration" ||
+                     wardType == "Military" || wardType == "Patriciate" ||
+                     wardType == "Farm") {
+                // Standard wards: light fill with dark stroke
                 for (const auto& building : patch.ward->geometry) {
-                    writePolygon(file, building, COLOR_BUILDINGS, "0.5", "#000000");
+                    writePolygon(file, building, palette_.light, palette_.dark,
+                                Brush::NORMAL_STROKE);
                 }
             }
         }
+
+        file << "  </g>\n";
     }
 
     /**
-     * Write city walls
+     * Draw a building with outline effect
+     * Matches CityMap.drawBuilding()
      */
-    void writeWalls(std::ofstream& file) {
-        if (!model_.wall) return;
+    void drawBuilding(std::ofstream& file, const std::vector<Polygon>& blocks,
+                      uint32_t fill, uint32_t line, float thickness) {
+        // First pass: outer stroke
+        for (const auto& block : blocks) {
+            writePolygon(file, block, 0, line, thickness * 2);
+        }
 
-        file << "  <!-- Walls -->\n";
+        // Second pass: fill only
+        for (const auto& block : blocks) {
+            writePolygon(file, block, fill, 0, 0);
+        }
+    }
 
-        const auto& wall = *model_.wall;
-        const auto& vertices = wall.shape.vertices;
+    /**
+     * Draw wall with towers and gates
+     * Matches CityMap.drawWall()
+     */
+    void writeWall(std::ofstream& file, const CurtainWall& wall, bool large) {
+        file << "  <!-- Wall -->\n";
+        file << "  <g id=\"wall\">\n";
 
-        // Draw wall segments (skip gates)
-        for (size_t i = 0; i < vertices.size(); ++i) {
-            size_t j = (i + 1) % vertices.size();
+        // Draw wall outline
+        if (!wall.shape.vertices.empty()) {
+            file << "    <polygon points=\"";
+            for (size_t i = 0; i < wall.shape.vertices.size(); ++i) {
+                if (i > 0) file << " ";
+                file << wall.shape.vertices[i].x << "," << wall.shape.vertices[i].y;
+            }
+            file << "\" fill=\"none\" stroke=\"" << Brush::colorToSvg(palette_.dark) << "\" ";
+            file << "stroke-width=\"" << Brush::THICK_STROKE << "\" />\n";
+        }
 
-            // Check if this segment is a wall (not a gate)
-            if (i < wall.segments.size() && wall.segments[i]) {
-                file << "  <line x1=\"" << vertices[i].x << "\" y1=\"" << vertices[i].y << "\" ";
-                file << "x2=\"" << vertices[j].x << "\" y2=\"" << vertices[j].y << "\" ";
-                file << "stroke=\"" << COLOR_WALLS << "\" stroke-width=\"3\" ";
-                file << "stroke-linecap=\"round\" />\n";
+        // Draw gates
+        for (const auto& gate : wall.gates) {
+            drawGate(file, wall.shape, gate);
+        }
+
+        // Draw towers
+        float towerRadius = Brush::THICK_STROKE * (large ? 1.5f : 1.0f);
+        for (const auto& tower : wall.towers) {
+            drawTower(file, tower, towerRadius);
+        }
+
+        file << "  </g>\n";
+    }
+
+    /**
+     * Draw a tower
+     * Matches CityMap.drawTower()
+     */
+    void drawTower(std::ofstream& file, const Point& p, float r) {
+        file << "    <circle cx=\"" << p.x << "\" cy=\"" << p.y << "\" ";
+        file << "r=\"" << r << "\" fill=\"" << Brush::colorToSvg(palette_.dark) << "\" />\n";
+    }
+
+    /**
+     * Draw a gate
+     * Matches CityMap.drawGate()
+     */
+    void drawGate(std::ofstream& file, const Polygon& wall, const Point& gate) {
+        // Find direction along wall at gate position
+        Point dir = findWallDirection(wall, gate);
+        dir = dir.normalize(Brush::THICK_STROKE * 1.5f);
+
+        Point start = gate - dir;
+        Point end = gate + dir;
+
+        file << "    <line x1=\"" << start.x << "\" y1=\"" << start.y << "\" ";
+        file << "x2=\"" << end.x << "\" y2=\"" << end.y << "\" ";
+        file << "stroke=\"" << Brush::colorToSvg(palette_.dark) << "\" ";
+        file << "stroke-width=\"" << (Brush::THICK_STROKE * 2) << "\" ";
+        file << "stroke-linecap=\"butt\" />\n";
+    }
+
+    /**
+     * Find wall direction at a gate point
+     * Approximates wall.next(gate).subtract(wall.prev(gate))
+     */
+    Point findWallDirection(const Polygon& wall, const Point& gate) {
+        if (wall.vertices.size() < 2) return Point(1, 0);
+
+        // Find closest vertex
+        size_t closest = 0;
+        float minDist = Point::distance(wall.vertices[0], gate);
+        for (size_t i = 1; i < wall.vertices.size(); ++i) {
+            float d = Point::distance(wall.vertices[i], gate);
+            if (d < minDist) {
+                minDist = d;
+                closest = i;
             }
         }
+
+        size_t prev = (closest + wall.vertices.size() - 1) % wall.vertices.size();
+        size_t next = (closest + 1) % wall.vertices.size();
+
+        return wall.vertices[next] - wall.vertices[prev];
     }
 
     /**
-     * Write wall towers
-     */
-    void writeTowers(std::ofstream& file) {
-        if (!model_.wall) return;
-
-        file << "  <!-- Towers -->\n";
-
-        for (const auto& tower : model_.wall->towers) {
-            file << "  <circle cx=\"" << tower.x << "\" cy=\"" << tower.y << "\" ";
-            file << "r=\"2\" fill=\"" << COLOR_TOWERS << "\" ";
-            file << "stroke=\"#000000\" stroke-width=\"0.5\" />\n";
-        }
-    }
-
-    /**
-     * Write wall gates
-     */
-    void writeGates(std::ofstream& file) {
-        if (!model_.wall) return;
-
-        file << "  <!-- Gates -->\n";
-
-        for (const auto& gate : model_.wall->gates) {
-            file << "  <circle cx=\"" << gate.x << "\" cy=\"" << gate.y << "\" ";
-            file << "r=\"2.5\" fill=\"" << COLOR_GATES << "\" ";
-            file << "stroke=\"#000000\" stroke-width=\"0.5\" />\n";
-        }
-    }
-
-    /**
-     * Write ward labels
-     */
-    void writeLabels(std::ofstream& file) {
-        file << "  <!-- Ward Labels -->\n";
-
-        for (const auto& patch : model_.patches) {
-            if (patch.ward != nullptr) {
-                const char* label = patch.ward->getLabel();
-                if (label != nullptr) {
-                    Point centroid = patch.shape.centroid();
-
-                    file << "  <text x=\"" << centroid.x << "\" y=\"" << centroid.y << "\" ";
-                    file << "font-family=\"Arial, sans-serif\" font-size=\"8\" ";
-                    file << "fill=\"#333333\" opacity=\"0.6\" ";
-                    file << "text-anchor=\"middle\" dominant-baseline=\"middle\">";
-                    file << label << "</text>\n";
-                }
-            }
-        }
-    }
-
-    /**
-     * Write a polygon element
-     * @param file Output stream
-     * @param poly Polygon to draw
-     * @param fill Fill color
-     * @param strokeWidth Stroke width
-     * @param stroke Stroke color
+     * Write a polygon element with fill and stroke
      */
     void writePolygon(std::ofstream& file, const Polygon& poly,
-                      const char* fill, const char* strokeWidth, const char* stroke) {
+                      uint32_t fill, uint32_t stroke, float strokeWidth) {
         if (poly.vertices.empty()) return;
 
-        file << "  <polygon points=\"";
+        file << "    <polygon points=\"";
         for (size_t i = 0; i < poly.vertices.size(); ++i) {
             if (i > 0) file << " ";
             file << poly.vertices[i].x << "," << poly.vertices[i].y;
         }
-        file << "\" fill=\"" << fill << "\" ";
-        file << "stroke=\"" << stroke << "\" stroke-width=\"" << strokeWidth << "\" />\n";
+        file << "\"";
+
+        if (fill != 0) {
+            file << " fill=\"" << Brush::colorToSvg(fill) << "\"";
+        } else {
+            file << " fill=\"none\"";
+        }
+
+        if (strokeWidth > 0 && stroke != 0) {
+            file << " stroke=\"" << Brush::colorToSvg(stroke) << "\"";
+            file << " stroke-width=\"" << strokeWidth << "\"";
+        }
+
+        file << " />\n";
     }
 };
 

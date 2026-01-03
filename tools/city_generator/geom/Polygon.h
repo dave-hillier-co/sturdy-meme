@@ -182,16 +182,15 @@ public:
     }
 
     // Find edge index or -1
-    int findEdge(const Point& v0, const Point& v1) const {
+    // Uses epsilon-based comparison for geometric matching
+    int findEdge(const Point& v0, const Point& v1, float epsilon = EPSILON) const {
         size_t n = vertices.size();
         for (size_t i = 0; i < n; ++i) {
             size_t j = (i + 1) % n;
 
-            // Check if edge matches in either direction
-            bool forward = (vertices[i].x == v0.x && vertices[i].y == v0.y &&
-                          vertices[j].x == v1.x && vertices[j].y == v1.y);
-            bool backward = (vertices[i].x == v1.x && vertices[i].y == v1.y &&
-                           vertices[j].x == v0.x && vertices[j].y == v0.y);
+            // Check if edge matches in either direction using geometric equality
+            bool forward = vertices[i].equals(v0, epsilon) && vertices[j].equals(v1, epsilon);
+            bool backward = vertices[i].equals(v1, epsilon) && vertices[j].equals(v0, epsilon);
 
             if (forward || backward) {
                 return static_cast<int>(i);

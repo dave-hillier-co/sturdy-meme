@@ -17,7 +17,7 @@ namespace wards {
  */
 class Castle : public Ward {
 public:
-    std::unique_ptr<CurtainWall> wall;
+    std::unique_ptr<building::CurtainWall> wall;
 
     /**
      * Constructor
@@ -55,7 +55,7 @@ public:
 
         // Create curtain wall around this patch
         std::vector<Patch*> patches = {patch};
-        wall = std::make_unique<CurtainWall>(
+        wall = std::make_unique<building::CurtainWall>(
             true,           // realistic mode
             *model,         // city model
             patches,        // patches to enclose

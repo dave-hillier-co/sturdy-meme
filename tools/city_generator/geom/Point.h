@@ -5,6 +5,9 @@
 namespace towngenerator {
 namespace geom {
 
+// Global epsilon for geometric comparisons
+constexpr float EPSILON = 1e-6f;
+
 struct Point {
     float x;
     float y;
@@ -52,6 +55,74 @@ struct Point {
     // Rotate90 - returns perpendicular point (90 degrees counter-clockwise)
     Point rotate90() const {
         return Point(-y, x);
+    }
+
+    // Exact equality operator (for container compatibility)
+    // Use equals() for geometric comparison with epsilon
+    bool operator==(const Point& other) const {
+        return x == other.x && y == other.y;
+    }
+
+    bool operator!=(const Point& other) const {
+        return !(*this == other);
+    }
+
+    // Less-than for container compatibility (lexicographic order)
+    bool operator<(const Point& other) const {
+        if (x != other.x) return x < other.x;
+        return y < other.y;
+    }
+
+    // Epsilon-based geometric equality check
+    // Use this for geometric comparisons, NOT operator==
+    bool equals(const Point& other, float epsilon = EPSILON) const {
+        return std::abs(x - other.x) < epsilon && std::abs(y - other.y) < epsilon;
+    }
+
+    // Check if within distance threshold
+    bool near(const Point& other, float threshold) const {
+        return distance(*this, other) < threshold;
+    }
+
+    // Arithmetic operators
+    Point operator+(const Point& other) const {
+        return add(other);
+    }
+
+    Point operator-(const Point& other) const {
+        return subtract(other);
+    }
+
+    Point operator*(float factor) const {
+        return scale(factor);
+    }
+
+    Point operator/(float factor) const {
+        return Point(x / factor, y / factor);
+    }
+
+    Point& operator+=(const Point& other) {
+        x += other.x;
+        y += other.y;
+        return *this;
+    }
+
+    Point& operator-=(const Point& other) {
+        x -= other.x;
+        y -= other.y;
+        return *this;
+    }
+
+    Point& operator*=(float factor) {
+        x *= factor;
+        y *= factor;
+        return *this;
+    }
+
+    Point& operator/=(float factor) {
+        x /= factor;
+        y /= factor;
+        return *this;
     }
 };
 

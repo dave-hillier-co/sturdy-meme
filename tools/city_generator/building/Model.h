@@ -13,6 +13,9 @@
 #include <cmath>
 #include <limits>
 
+// Forward declarations for wards (full includes after Model class)
+namespace towngenerator { namespace wards { class Ward; } }
+
 namespace towngenerator {
 namespace building {
 
@@ -63,6 +66,7 @@ public:
     std::vector<Point> gates;           // Wall gate positions
     std::vector<std::vector<Point>> arteries;  // Main street paths from gates to center
     std::unique_ptr<Topology> topology; // Pathfinding graph
+    std::vector<std::unique_ptr<wards::Ward>> wardStorage; // Ward object storage
 
     // ====================
     // WARD TYPES
@@ -119,13 +123,11 @@ public:
     // ====================
 
     /**
-     * Assign ward types to patches
-     * For now, this is a stub that just marks patches
+     * Assign ward types to patches and create geometry
+     * Ported from Haxe Model.createWards()
+     * Implementation below after ward includes
      */
-    void createWards() {
-        // TODO: Full ward assignment logic
-        // For now, just mark all patches as having no ward
-    }
+    void createWards();
 
     /**
      * Orchestrates full city generation
@@ -504,3 +506,78 @@ inline const Model::WardType Model::WARDS[Model::WARD_COUNT] = {
 
 } // namespace building
 } // namespace towngenerator
+
+// Include ward headers after Model is fully defined to avoid circular dependencies
+#include "../wards/Ward.h"
+#include "../wards/CommonWard.h"
+#include "../wards/Castle.h"
+#include "../wards/Cathedral.h"
+#include "../wards/Farm.h"
+#include "../wards/Park.h"
+#include "../wards/Market.h"
+#include "../wards/MilitaryWard.h"
+
+// Implementation of Model::createWards() after ward includes
+inline void towngenerator::building::Model::createWards() {
+    wardStorage.clear();
+
+    for (auto* patch : inner) {
+        if (patch == nullptr) continue;
+
+        std::unique_ptr<wards::Ward> ward;
+
+        // Special patches: citadel and plaza
+        if (patch == citadel && citadelNeeded) {
+            ward = std::make_unique<wards::Castle>(this, patch);
+        }
+        else if (patch == plaza && plazaNeeded) {
+            ward = std::make_unique<wards::Market>(this, patch);
+        }
+        else if (templeNeeded && patch != citadel && patch != plaza) {
+            // First non-special inner patch becomes cathedral
+            bool hasCathedral = false;
+            for (const auto& w : wardStorage) {
+                if (dynamic_cast<wards::Cathedral*>(w.get())) {
+                    hasCathedral = true;
+                    break;
+                }
+            }
+            if (!hasCathedral) {
+                ward = std::make_unique<wards::Cathedral>(this, patch);
+            }
+        }
+
+        // Default to common residential ward
+        if (!ward) {
+            // Randomize ward type based on position
+            float distFromCenter = geom::Point::distance(patch->shape.centroid(), center);
+            float cityRadius = std::sqrt(static_cast<float>(nPatches)) * 8.0f;
+            float relDist = distFromCenter / cityRadius;
+
+            if (relDist > 0.7f) {
+                // Outer patches: farms
+                ward = std::make_unique<wards::Farm>(this, patch);
+            }
+            else if (utils::Random::randomFloat() < 0.15f) {
+                // Some patches become parks
+                ward = std::make_unique<wards::Park>(this, patch);
+            }
+            else if (utils::Random::randomFloat() < 0.2f) {
+                // Some patches become military
+                ward = std::make_unique<wards::MilitaryWard>(this, patch);
+            }
+            else {
+                // Default: residential with varying chaos
+                float chaos = 0.2f + utils::Random::randomFloat() * 0.3f;
+                ward = std::make_unique<wards::CommonWard>(this, patch, 8.0f, chaos, chaos);
+            }
+        }
+
+        // Generate building geometry
+        ward->createGeometry();
+
+        // Assign ward to patch
+        patch->ward = ward.get();
+        wardStorage.push_back(std::move(ward));
+    }
+}

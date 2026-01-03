@@ -9,9 +9,11 @@
 
 #include "utils/Random.h"
 #include "building/Model.h"
+#include "mapping/Palette.h"
 #include "SvgExporter.h"
 
 using namespace towngenerator;
+using mapping::Palette;
 
 void printUsage(const char* programName) {
     SDL_Log("Medieval Fantasy City Generator");
@@ -27,6 +29,7 @@ void printUsage(const char* programName) {
     SDL_Log("  --plaza           Enable central plaza (default: true)");
     SDL_Log("  --temple          Enable temple (default: true)");
     SDL_Log("  --output <path>   Output SVG file path (default: city.svg)");
+    SDL_Log("  --palette <name>  Color palette (default, blueprint, bw, ink, night, ancient, colour, simple)");
     SDL_Log("  --help            Show this usage message");
 }
 
@@ -39,6 +42,7 @@ int main(int argc, char* argv[]) {
     bool enablePlaza = true;
     bool enableTemple = true;
     std::string outputPath = "city.svg";
+    std::string paletteName = "default";
 
     // Parse command-line arguments
     for (int i = 1; i < argc; ++i) {
@@ -79,6 +83,14 @@ int main(int argc, char* argv[]) {
                 printUsage(argv[0]);
                 return 1;
             }
+        } else if (std::strcmp(argv[i], "--palette") == 0) {
+            if (i + 1 < argc) {
+                paletteName = argv[++i];
+            } else {
+                SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Error: --palette requires an argument");
+                printUsage(argv[0]);
+                return 1;
+            }
         } else {
             SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Unknown argument: %s", argv[i]);
             printUsage(argv[0]);
@@ -95,6 +107,7 @@ int main(int argc, char* argv[]) {
     SDL_Log("  Plaza: %s", enablePlaza ? "enabled" : "disabled");
     SDL_Log("  Temple: %s", enableTemple ? "enabled" : "disabled");
     SDL_Log("  Output: %s", outputPath.c_str());
+    SDL_Log("  Palette: %s", paletteName.c_str());
 
     // Initialize random number generator
     utils::Random::reset(seed);
@@ -109,8 +122,28 @@ int main(int argc, char* argv[]) {
     SDL_Log("  Patches: %zu", model.patches.size());
     SDL_Log("  Inner patches: %zu", model.inner.size());
 
+    // Select palette
+    Palette palette = Palette::DEFAULT();
+    if (paletteName == "blueprint") {
+        palette = Palette::BLUEPRINT();
+    } else if (paletteName == "bw") {
+        palette = Palette::BW();
+    } else if (paletteName == "ink") {
+        palette = Palette::INK();
+    } else if (paletteName == "night") {
+        palette = Palette::NIGHT();
+    } else if (paletteName == "ancient") {
+        palette = Palette::ANCIENT();
+    } else if (paletteName == "colour") {
+        palette = Palette::COLOUR();
+    } else if (paletteName == "simple") {
+        palette = Palette::SIMPLE();
+    } else if (paletteName != "default") {
+        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "Unknown palette '%s', using default", paletteName.c_str());
+    }
+
     // Export to SVG
-    SvgExporter exporter(model);
+    SvgExporter exporter(model, palette);
     if (exporter.exportToFile(outputPath)) {
         SDL_Log("SVG exported to: %s", outputPath.c_str());
     } else {

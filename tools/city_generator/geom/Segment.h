@@ -31,6 +31,26 @@ struct Segment {
     float length() const {
         return Point::distance(start, end);
     }
+
+    // Exact equality operator (for container compatibility)
+    bool operator==(const Segment& other) const {
+        return start == other.start && end == other.end;
+    }
+
+    bool operator!=(const Segment& other) const {
+        return !(*this == other);
+    }
+
+    // Less-than for container compatibility
+    bool operator<(const Segment& other) const {
+        if (start != other.start) return start < other.start;
+        return end < other.end;
+    }
+
+    // Epsilon-based geometric equality check
+    bool equals(const Segment& other, float epsilon = EPSILON) const {
+        return start.equals(other.start, epsilon) && end.equals(other.end, epsilon);
+    }
 };
 
 } // namespace geom

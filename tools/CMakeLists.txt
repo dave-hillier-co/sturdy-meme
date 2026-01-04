@@ -377,8 +377,13 @@ find_package(doctest CONFIG REQUIRED)
 add_executable(town_generator2_tests
     town_generator2/tests/test_main.cpp
     town_generator2/tests/test_polygon.cpp
+    town_generator2/tests/test_polygon_extended.cpp
     town_generator2/tests/test_voronoi.cpp
     town_generator2/tests/test_model.cpp
+    town_generator2/tests/test_geometry_utils.cpp
+    town_generator2/tests/test_mutations.cpp
+    town_generator2/tests/test_wards.cpp
+    town_generator2/tests/test_graph.cpp
     town_generator2/src/Model.cpp
     town_generator2/src/CurtainWall.cpp
     town_generator2/src/Topology.cpp

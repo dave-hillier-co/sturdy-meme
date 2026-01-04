@@ -73,7 +73,7 @@ void ShadowSystem::cleanup() {
 
     // CSM cleanup
     for (auto fb : cascadeFramebuffers) {
-        if (fb != VK_NULL_HANDLE) vkDestroyFramebuffer(device, fb, nullptr);
+        if (fb != VK_NULL_HANDLE) vkDevice.destroyFramebuffer(fb);
     }
     cascadeFramebuffers.clear();
     csmResources.destroy(device, allocator);
@@ -123,9 +123,10 @@ bool ShadowSystem::createShadowRenderPass() {
         .setDependencyCount(1)
         .setPDependencies(&dependency);
 
-    if (vkCreateRenderPass(device, reinterpret_cast<const VkRenderPassCreateInfo*>(&renderPassInfo),
-                           nullptr, &shadowRenderPass) != VK_SUCCESS) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create shadow render pass");
+    try {
+        shadowRenderPass = vk::Device(device).createRenderPass(renderPassInfo);
+    } catch (const vk::SystemError& e) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create shadow render pass: %s", e.what());
         return false;
     }
     return true;
@@ -142,19 +143,21 @@ bool ShadowSystem::createShadowResources() {
     }
 
     // Create framebuffers for each cascade
+    vk::Device vkDevice(device);
     cascadeFramebuffers.resize(NUM_SHADOW_CASCADES);
     for (uint32_t i = 0; i < NUM_SHADOW_CASCADES; i++) {
+        vk::ImageView layerView(csmResources.layerViews[i]);
         auto framebufferInfo = vk::FramebufferCreateInfo{}
             .setRenderPass(shadowRenderPass)
-            .setAttachmentCount(1)
-            .setPAttachments(reinterpret_cast<const vk::ImageView*>(&csmResources.layerViews[i]))
+            .setAttachments(layerView)
             .setWidth(SHADOW_MAP_SIZE)
             .setHeight(SHADOW_MAP_SIZE)
             .setLayers(1);
 
-        if (vkCreateFramebuffer(device, reinterpret_cast<const VkFramebufferCreateInfo*>(&framebufferInfo),
-                                nullptr, &cascadeFramebuffers[i]) != VK_SUCCESS) {
-            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create cascade framebuffer %u", i);
+        try {
+            cascadeFramebuffers[i] = vkDevice.createFramebuffer(framebufferInfo);
+        } catch (const vk::SystemError& e) {
+            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create cascade framebuffer %u: %s", i, e.what());
             return false;
         }
     }
@@ -235,18 +238,20 @@ bool ShadowSystem::createDynamicShadowResources() {
         }
 
         // Create point shadow framebuffers (only first 6 layers for now)
+        vk::Device vkDevice(device);
         pointShadowFramebuffers[frame].resize(6);
         for (uint32_t i = 0; i < 6; i++) {
+            vk::ImageView layerView(pointShadowResources[frame].layerViews[i]);
             auto framebufferInfo = vk::FramebufferCreateInfo{}
                 .setRenderPass(shadowRenderPass)
-                .setAttachmentCount(1)
-                .setPAttachments(reinterpret_cast<const vk::ImageView*>(&pointShadowResources[frame].layerViews[i]))
+                .setAttachments(layerView)
                 .setWidth(DYNAMIC_SHADOW_MAP_SIZE)
                 .setHeight(DYNAMIC_SHADOW_MAP_SIZE)
                 .setLayers(1);
 
-            if (vkCreateFramebuffer(device, reinterpret_cast<const VkFramebufferCreateInfo*>(&framebufferInfo),
-                                    nullptr, &pointShadowFramebuffers[frame][i]) != VK_SUCCESS) {
+            try {
+                pointShadowFramebuffers[frame][i] = vkDevice.createFramebuffer(framebufferInfo);
+            } catch (const vk::SystemError&) {
                 return false;
             }
         }
@@ -264,16 +269,17 @@ bool ShadowSystem::createDynamicShadowResources() {
         // Create spot shadow framebuffers
         spotShadowFramebuffers[frame].resize(MAX_SHADOW_CASTING_LIGHTS);
         for (uint32_t i = 0; i < MAX_SHADOW_CASTING_LIGHTS; i++) {
+            vk::ImageView layerView(spotShadowResources[frame].layerViews[i]);
             auto framebufferInfo = vk::FramebufferCreateInfo{}
                 .setRenderPass(shadowRenderPass)
-                .setAttachmentCount(1)
-                .setPAttachments(reinterpret_cast<const vk::ImageView*>(&spotShadowResources[frame].layerViews[i]))
+                .setAttachments(layerView)
                 .setWidth(DYNAMIC_SHADOW_MAP_SIZE)
                 .setHeight(DYNAMIC_SHADOW_MAP_SIZE)
                 .setLayers(1);
 
-            if (vkCreateFramebuffer(device, reinterpret_cast<const VkFramebufferCreateInfo*>(&framebufferInfo),
-                                    nullptr, &spotShadowFramebuffers[frame][i]) != VK_SUCCESS) {
+            try {
+                spotShadowFramebuffers[frame][i] = vkDevice.createFramebuffer(framebufferInfo);
+            } catch (const vk::SystemError&) {
                 return false;
             }
         }
@@ -283,13 +289,14 @@ bool ShadowSystem::createDynamicShadowResources() {
 }
 
 void ShadowSystem::destroyDynamicShadowResources() {
+    vk::Device vkDevice(device);
     for (uint32_t frame = 0; frame < framesInFlight; frame++) {
         for (auto fb : pointShadowFramebuffers[frame]) {
-            if (fb != VK_NULL_HANDLE) vkDestroyFramebuffer(device, fb, nullptr);
+            if (fb != VK_NULL_HANDLE) vkDevice.destroyFramebuffer(fb);
         }
         pointShadowFramebuffers[frame].clear();
         for (auto fb : spotShadowFramebuffers[frame]) {
-            if (fb != VK_NULL_HANDLE) vkDestroyFramebuffer(device, fb, nullptr);
+            if (fb != VK_NULL_HANDLE) vkDevice.destroyFramebuffer(fb);
         }
         spotShadowFramebuffers[frame].clear();
         if (frame < pointShadowResources.size()) pointShadowResources[frame].destroy(device, allocator);

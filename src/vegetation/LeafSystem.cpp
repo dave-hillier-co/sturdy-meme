@@ -179,16 +179,10 @@ bool LeafSystem::createComputePipeline(SystemLifecycleHelper::PipelineHandles& h
         return false;
     }
 
-    VkPipelineShaderStageCreateInfo shaderStageInfo{};
-    shaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-    shaderStageInfo.stage = VK_SHADER_STAGE_COMPUTE_BIT;
-    shaderStageInfo.module = *compShaderModule;
-    shaderStageInfo.pName = "main";
-
-    VkPushConstantRange pushConstantRange{};
-    pushConstantRange.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
-    pushConstantRange.offset = 0;
-    pushConstantRange.size = sizeof(LeafPushConstants);
+    auto pushConstantRange = vk::PushConstantRange{}
+        .setStageFlags(vk::ShaderStageFlagBits::eCompute)
+        .setOffset(0)
+        .setSize(sizeof(LeafPushConstants));
 
     vk::Device vkDevice(getDevice());
 
@@ -261,104 +255,74 @@ bool LeafSystem::createGraphicsPipeline(SystemLifecycleHelper::PipelineHandles& 
         return false;
     }
 
-    VkPipelineShaderStageCreateInfo vertShaderStageInfo{};
-    vertShaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-    vertShaderStageInfo.stage = VK_SHADER_STAGE_VERTEX_BIT;
-    vertShaderStageInfo.module = *vertShaderModule;
-    vertShaderStageInfo.pName = "main";
-
-    VkPipelineShaderStageCreateInfo fragShaderStageInfo{};
-    fragShaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-    fragShaderStageInfo.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
-    fragShaderStageInfo.module = *fragShaderModule;
-    fragShaderStageInfo.pName = "main";
-
-    VkPipelineShaderStageCreateInfo shaderStages[] = {vertShaderStageInfo, fragShaderStageInfo};
-
     // No vertex input - procedural geometry from instance buffer
-    VkPipelineVertexInputStateCreateInfo vertexInputInfo{};
-    vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
-    vertexInputInfo.vertexBindingDescriptionCount = 0;
-    vertexInputInfo.pVertexBindingDescriptions = nullptr;
-    vertexInputInfo.vertexAttributeDescriptionCount = 0;
-    vertexInputInfo.pVertexAttributeDescriptions = nullptr;
+    auto vertexInputInfo = vk::PipelineVertexInputStateCreateInfo{};
 
-    VkPipelineInputAssemblyStateCreateInfo inputAssembly{};
-    inputAssembly.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
-    inputAssembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP;
-    inputAssembly.primitiveRestartEnable = VK_FALSE;
+    auto inputAssembly = vk::PipelineInputAssemblyStateCreateInfo{}
+        .setTopology(vk::PrimitiveTopology::eTriangleStrip)
+        .setPrimitiveRestartEnable(false);
 
-    VkViewport viewport{};
-    viewport.x = 0.0f;
-    viewport.y = 0.0f;
-    viewport.width = static_cast<float>(getExtent().width);
-    viewport.height = static_cast<float>(getExtent().height);
-    viewport.minDepth = 0.0f;
-    viewport.maxDepth = 1.0f;
+    auto viewport = vk::Viewport{}
+        .setX(0.0f)
+        .setY(0.0f)
+        .setWidth(static_cast<float>(getExtent().width))
+        .setHeight(static_cast<float>(getExtent().height))
+        .setMinDepth(0.0f)
+        .setMaxDepth(1.0f);
 
-    VkRect2D scissor{};
-    scissor.offset = {0, 0};
-    scissor.extent = getExtent();
+    auto scissor = vk::Rect2D{}
+        .setOffset({0, 0})
+        .setExtent(vk::Extent2D{getExtent().width, getExtent().height});
 
-    VkPipelineViewportStateCreateInfo viewportState{};
-    viewportState.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
-    viewportState.viewportCount = 1;
-    viewportState.pViewports = &viewport;
-    viewportState.scissorCount = 1;
-    viewportState.pScissors = &scissor;
+    auto viewportState = vk::PipelineViewportStateCreateInfo{}
+        .setViewports(viewport)
+        .setScissors(scissor);
 
-    VkPipelineRasterizationStateCreateInfo rasterizer{};
-    rasterizer.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
-    rasterizer.depthClampEnable = VK_FALSE;
-    rasterizer.rasterizerDiscardEnable = VK_FALSE;
-    rasterizer.polygonMode = VK_POLYGON_MODE_FILL;
-    rasterizer.lineWidth = 1.0f;
-    rasterizer.cullMode = VK_CULL_MODE_NONE;  // No culling for leaves (visible from both sides)
-    rasterizer.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
-    rasterizer.depthBiasEnable = VK_FALSE;
+    auto rasterizer = vk::PipelineRasterizationStateCreateInfo{}
+        .setDepthClampEnable(false)
+        .setRasterizerDiscardEnable(false)
+        .setPolygonMode(vk::PolygonMode::eFill)
+        .setLineWidth(1.0f)
+        .setCullMode(vk::CullModeFlagBits::eNone)  // No culling for leaves (visible from both sides)
+        .setFrontFace(vk::FrontFace::eCounterClockwise)
+        .setDepthBiasEnable(false);
 
-    VkPipelineMultisampleStateCreateInfo multisampling{};
-    multisampling.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
-    multisampling.sampleShadingEnable = VK_FALSE;
-    multisampling.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+    auto multisampling = vk::PipelineMultisampleStateCreateInfo{}
+        .setSampleShadingEnable(false)
+        .setRasterizationSamples(vk::SampleCountFlagBits::e1);
 
-    VkPipelineDepthStencilStateCreateInfo depthStencil{};
-    depthStencil.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
-    depthStencil.depthTestEnable = VK_TRUE;
-    depthStencil.depthWriteEnable = VK_TRUE;  // Write depth for proper sorting
-    depthStencil.depthCompareOp = VK_COMPARE_OP_LESS;
-    depthStencil.depthBoundsTestEnable = VK_FALSE;
-    depthStencil.stencilTestEnable = VK_FALSE;
+    auto depthStencil = vk::PipelineDepthStencilStateCreateInfo{}
+        .setDepthTestEnable(true)
+        .setDepthWriteEnable(true)  // Write depth for proper sorting
+        .setDepthCompareOp(vk::CompareOp::eLess)
+        .setDepthBoundsTestEnable(false)
+        .setStencilTestEnable(false);
 
     // Alpha blending for leaf edges
-    VkPipelineColorBlendAttachmentState colorBlendAttachment{};
-    colorBlendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
-                                          VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
-    colorBlendAttachment.blendEnable = VK_TRUE;
-    colorBlendAttachment.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
-    colorBlendAttachment.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
-    colorBlendAttachment.colorBlendOp = VK_BLEND_OP_ADD;
-    colorBlendAttachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
-    colorBlendAttachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
-    colorBlendAttachment.alphaBlendOp = VK_BLEND_OP_ADD;
+    auto colorBlendAttachment = vk::PipelineColorBlendAttachmentState{}
+        .setColorWriteMask(vk::ColorComponentFlagBits::eR | vk::ColorComponentFlagBits::eG |
+                           vk::ColorComponentFlagBits::eB | vk::ColorComponentFlagBits::eA)
+        .setBlendEnable(true)
+        .setSrcColorBlendFactor(vk::BlendFactor::eSrcAlpha)
+        .setDstColorBlendFactor(vk::BlendFactor::eOneMinusSrcAlpha)
+        .setColorBlendOp(vk::BlendOp::eAdd)
+        .setSrcAlphaBlendFactor(vk::BlendFactor::eOne)
+        .setDstAlphaBlendFactor(vk::BlendFactor::eZero)
+        .setAlphaBlendOp(vk::BlendOp::eAdd);
 
-    VkPipelineColorBlendStateCreateInfo colorBlending{};
-    colorBlending.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
-    colorBlending.logicOpEnable = VK_FALSE;
-    colorBlending.attachmentCount = 1;
-    colorBlending.pAttachments = &colorBlendAttachment;
+    auto colorBlending = vk::PipelineColorBlendStateCreateInfo{}
+        .setLogicOpEnable(false)
+        .setAttachments(colorBlendAttachment);
 
     // Enable dynamic viewport and scissor for window resize handling
-    std::array<VkDynamicState, 2> dynamicStates = {VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR};
-    VkPipelineDynamicStateCreateInfo dynamicState{};
-    dynamicState.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
-    dynamicState.dynamicStateCount = static_cast<uint32_t>(dynamicStates.size());
-    dynamicState.pDynamicStates = dynamicStates.data();
+    std::array<vk::DynamicState, 2> dynamicStates = {vk::DynamicState::eViewport, vk::DynamicState::eScissor};
+    auto dynamicState = vk::PipelineDynamicStateCreateInfo{}
+        .setDynamicStates(dynamicStates);
 
-    VkPushConstantRange pushConstantRange{};
-    pushConstantRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
-    pushConstantRange.offset = 0;
-    pushConstantRange.size = sizeof(LeafPushConstants);
+    auto pushConstantRange = vk::PushConstantRange{}
+        .setStageFlags(vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment)
+        .setOffset(0)
+        .setSize(sizeof(LeafPushConstants));
 
     handles.pipelineLayout = DescriptorManager::createPipelineLayout(
         getDevice(), handles.descriptorSetLayout, {pushConstantRange});
@@ -369,7 +333,7 @@ bool LeafSystem::createGraphicsPipeline(SystemLifecycleHelper::PipelineHandles& 
         return false;
     }
 
-    std::array<vk::PipelineShaderStageCreateInfo, 2> vkShaderStages = {{
+    std::array<vk::PipelineShaderStageCreateInfo, 2> shaderStages = {{
         vk::PipelineShaderStageCreateInfo{}
             .setStage(vk::ShaderStageFlagBits::eVertex)
             .setModule(*vertShaderModule)
@@ -381,15 +345,15 @@ bool LeafSystem::createGraphicsPipeline(SystemLifecycleHelper::PipelineHandles& 
     }};
 
     auto pipelineInfo = vk::GraphicsPipelineCreateInfo{}
-        .setStages(vkShaderStages)
-        .setPVertexInputState(reinterpret_cast<const vk::PipelineVertexInputStateCreateInfo*>(&vertexInputInfo))
-        .setPInputAssemblyState(reinterpret_cast<const vk::PipelineInputAssemblyStateCreateInfo*>(&inputAssembly))
-        .setPViewportState(reinterpret_cast<const vk::PipelineViewportStateCreateInfo*>(&viewportState))
-        .setPRasterizationState(reinterpret_cast<const vk::PipelineRasterizationStateCreateInfo*>(&rasterizer))
-        .setPMultisampleState(reinterpret_cast<const vk::PipelineMultisampleStateCreateInfo*>(&multisampling))
-        .setPDepthStencilState(reinterpret_cast<const vk::PipelineDepthStencilStateCreateInfo*>(&depthStencil))
-        .setPColorBlendState(reinterpret_cast<const vk::PipelineColorBlendStateCreateInfo*>(&colorBlending))
-        .setPDynamicState(reinterpret_cast<const vk::PipelineDynamicStateCreateInfo*>(&dynamicState))
+        .setStages(shaderStages)
+        .setPVertexInputState(&vertexInputInfo)
+        .setPInputAssemblyState(&inputAssembly)
+        .setPViewportState(&viewportState)
+        .setPRasterizationState(&rasterizer)
+        .setPMultisampleState(&multisampling)
+        .setPDepthStencilState(&depthStencil)
+        .setPColorBlendState(&colorBlending)
+        .setPDynamicState(&dynamicState)
         .setLayout(handles.pipelineLayout)
         .setRenderPass(getRenderPass())
         .setSubpass(0);

@@ -354,5 +354,199 @@ geom::Polygon Ward::getInsetShape(double inset) {
     return patch->shape.shrink(distances);
 }
 
+void Ward::createAlleysWithParams(
+    const geom::Polygon& p,
+    const AlleyParams& params,
+    bool isInitialCall
+) {
+    if (p.length() < 3) return;
+
+    double area = std::abs(p.square());
+
+    // Initial call uses minSq * blockSize as threshold (faithful to mfcg.js line 13067-13068)
+    double threshold = isInitialCall
+        ? params.minSq * params.blockSize * std::pow(2.0, params.sizeChaos * (2.0 * utils::Random::floatVal() - 1.0))
+        : params.minSq * std::pow(2.0, params.sizeChaos * (2.0 * utils::Random::floatVal() - 1.0));
+
+    // If area is small enough, create a block
+    if (area < threshold) {
+        if (!utils::Random::boolVal(params.emptyProb)) {
+            geometry.push_back(p);
+        }
+        return;
+    }
+
+    // Find longest edge
+    size_t longestEdge = 0;
+    double longestLen = 0;
+    for (size_t i = 0; i < p.length(); ++i) {
+        geom::Point v = p.vectori(static_cast<int>(i));
+        double len = v.length();
+        if (len > longestLen) {
+            longestLen = len;
+            longestEdge = i;
+        }
+    }
+
+    // Calculate cut ratio based on gridChaos
+    double spread = 0.8 * params.gridChaos;
+    double ratio = (1.0 - spread) / 2.0 + utils::Random::floatVal() * spread;
+
+    // Angle spread for larger blocks
+    double angleSpread = M_PI / 6.0 * params.gridChaos * (area < params.minSq * 4 ? 0.0 : 1.0);
+    double angle = (utils::Random::floatVal() - 0.5) * angleSpread;
+
+    // Gap for alleys
+    double gap = ALLEY;
+
+    auto halves = building::Cutter::bisect(p, p[longestEdge], ratio, angle, gap);
+
+    if (halves.size() < 2) {
+        // Failed to bisect, treat as leaf
+        if (!utils::Random::boolVal(params.emptyProb)) {
+            geometry.push_back(p);
+        }
+        return;
+    }
+
+    // Store the alley cut line for rendering
+    if (halves.size() >= 2) {
+        // The cut is between the two halves - find shared edge
+        // For now, store centroid to centroid as approximation
+        std::vector<geom::Point> cutLine;
+        cutLine.push_back(halves[0].center());
+        cutLine.push_back(halves[1].center());
+        alleys.push_back(cutLine);
+    }
+
+    // Process each half
+    for (const auto& half : halves) {
+        double halfArea = std::abs(half.square());
+
+        // Check if this could be a church (medium-sized block, first one)
+        double churchThreshold = params.minSq * 4.0;
+        if (church.empty() && halfArea <= churchThreshold && halfArea >= params.minSq) {
+            createChurch(half);
+            continue;
+        }
+
+        // Recursive subdivision with non-initial threshold
+        createAlleysWithParams(half, params, false);
+    }
+}
+
+std::vector<geom::Point> Ward::semiSmooth(
+    const geom::Point& p0,
+    const geom::Point& p1,
+    const geom::Point& p2,
+    double minFront
+) {
+    // Faithful to mfcg.js semiSmooth function
+    // Smooths a corner (p0, p1, p2) into an arc if appropriate
+
+    double dist02 = geom::Point::distance(p0, p2);
+    double triArea = std::abs(geom::GeomUtils::triangleArea(p0, p1, p2));
+
+    // Skip if too thin
+    if (triArea / dist02 < 1.0 || triArea / (dist02 * dist02) < 0.01) {
+        return {p0, p2};
+    }
+
+    geom::Point v01 = p1.subtract(p0);
+    geom::Point v12 = p2.subtract(p1);
+    double len01 = v01.length();
+    double len12 = v12.length();
+    double minLen = std::min(len01, len12);
+
+    // Calculate angle-based probability
+    double dot = (v01.x * v12.x + v01.y * v12.y) / (len01 * len12);
+    double angleProb = (1.0 - dot) / 2.0;
+
+    // Random decision whether to smooth
+    if (utils::Random::floatVal() < angleProb) {
+        return {p0, p1, p2};  // Keep original corner
+    }
+
+    // Distance-based probability
+    double distProb = minFront / minLen;
+    if (utils::Random::floatVal() < distProb) {
+        return {p0, p1, p2};  // Keep original corner
+    }
+
+    // Create arc approximation
+    std::vector<geom::Point> result;
+    result.push_back(p0);
+
+    // Add arc points
+    if (len01 < len12) {
+        // Shorter segment is p0-p1
+        double t = len01 / len12;
+        geom::Point arcPoint(p1.x + v12.x * t, p1.y + v12.y * t);
+        result.push_back(arcPoint);
+    } else {
+        // Shorter segment is p1-p2
+        double t = -len12 / len01;
+        geom::Point arcPoint(p1.x + v01.x * t, p1.y + v01.y * t);
+        result.push_back(arcPoint);
+    }
+
+    result.push_back(p2);
+    return result;
+}
+
+void Ward::createChurch(const geom::Polygon& block) {
+    // Faithful to mfcg.js createChurch
+    // Creates a church building in a medium-sized block
+
+    if (block.length() < 3) return;
+
+    // Find oriented bounding box
+    auto obb = block.orientedBoundingBox();
+    if (obb.size() < 4) {
+        church = block;
+        return;
+    }
+
+    // Find longer axis
+    geom::Point v01 = obb[1].subtract(obb[0]);
+    geom::Point v12 = obb[2].subtract(obb[1]);
+    geom::Point axis = (v01.length() > v12.length()) ? v01 : v12;
+
+    // Calculate cut position
+    double axisLen = axis.length();
+    double cutRatio = 0.5;
+    if (axisLen > 0.01) {
+        double minRatio = patch ? (std::sqrt(15.0) / axisLen) : 0.3;  // minFront approximation
+        if (minRatio > 0.5) {
+            minRatio = 0.5;
+        }
+        // Average of 3 randoms for normal distribution approximation
+        double normal3 = (utils::Random::floatVal() + utils::Random::floatVal() +
+                         utils::Random::floatVal()) / 3.0;
+        cutRatio = minRatio + (1.0 - 2.0 * minRatio) * normal3;
+    }
+
+    // Cut the block
+    geom::Point cutStart(obb[1].x + axis.x * cutRatio, obb[1].y + axis.y * cutRatio);
+    geom::Point cutDir(-axis.y, axis.x);  // Perpendicular
+    geom::Point cutEnd = cutStart.add(cutDir);
+
+    auto halves = block.cut(cutStart, cutEnd);
+
+    // Pick the more compact half as the church
+    if (halves.empty()) {
+        church = block;
+    } else {
+        double maxCompact = -1;
+        for (const auto& half : halves) {
+            double compact = half.compactness();
+            if (compact > maxCompact) {
+                maxCompact = compact;
+                church = half;
+            }
+        }
+    }
+}
+
 } // namespace wards
 } // namespace town_generator

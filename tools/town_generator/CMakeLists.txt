@@ -44,6 +44,7 @@ set(WARD_SOURCES
     src/wards/Slum.cpp
     src/wards/Farm.cpp
     src/wards/Park.cpp
+    src/wards/Harbour.cpp
 )
 
 set(SVG_SOURCES

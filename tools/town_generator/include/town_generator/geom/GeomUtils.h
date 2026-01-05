@@ -3,6 +3,7 @@
 #include "town_generator/geom/Point.h"
 #include <cmath>
 #include <optional>
+#include <vector>
 
 namespace town_generator {
 namespace geom {
@@ -65,6 +66,39 @@ public:
         return (dx1 * y0 - dy1 * x0 + (y1 + dy1) * x1 - (x1 + dx1) * y1) /
                std::sqrt(dx1 * dx1 + dy1 * dy1);
     }
+
+    /**
+     * Signed area of triangle formed by three points
+     * Positive if CCW, negative if CW
+     */
+    static double triangleArea(const Point& p0, const Point& p1, const Point& p2) {
+        return 0.5 * ((p1.x - p0.x) * (p2.y - p0.y) - (p2.x - p0.x) * (p1.y - p0.y));
+    }
+
+    /**
+     * Largest Inscribed Rectangle (LIR) aligned with a given edge
+     * Based on mfcg.js Gb.lir algorithm
+     * Returns 4 corners of the largest rectangle that fits inside the polygon
+     * aligned to the edge starting at vertex index edgeIdx
+     */
+    static std::vector<Point> lir(const std::vector<Point>& poly, size_t edgeIdx);
+
+    /**
+     * Largest Inscribed Rectangle Axis-aligned (LIRA)
+     * Based on mfcg.js Gb.lira algorithm
+     * Tries lir for each edge and returns the one with largest area
+     */
+    static std::vector<Point> lira(const std::vector<Point>& poly);
+
+    /**
+     * Rotate points by angle
+     */
+    static std::vector<Point> rotatePoints(const std::vector<Point>& pts, double angle);
+
+    /**
+     * Calculate polygon area
+     */
+    static double polygonArea(const std::vector<Point>& poly);
 
     // Equality (stateless utility class)
     bool operator==(const GeomUtils& other) const { return true; }

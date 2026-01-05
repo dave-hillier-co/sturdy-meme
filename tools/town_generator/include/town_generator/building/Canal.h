@@ -1,0 +1,58 @@
+#pragma once
+
+#include "town_generator/geom/Point.h"
+#include "town_generator/geom/Polygon.h"
+#include <vector>
+#include <map>
+#include <memory>
+
+namespace town_generator {
+namespace building {
+
+class Model;
+class Patch;
+
+/**
+ * Canal - Water feature running through the city
+ * Faithful port from mfcg.js Canal class
+ *
+ * Canals are river-like features that can run through cities,
+ * with bridges at street crossings.
+ */
+class Canal {
+public:
+    // The path of the canal (sequence of edge origins)
+    std::vector<geom::Point> course;
+
+    // Width of the canal
+    double width = 4.0;
+
+    // Bridge locations (point -> street crossing)
+    std::map<geom::Point, geom::Point, std::function<bool(const geom::Point&, const geom::Point&)>> bridges;
+
+    // Reference to model
+    Model* model = nullptr;
+
+    Canal() : bridges([](const geom::Point& a, const geom::Point& b) {
+        if (a.x != b.x) return a.x < b.x;
+        return a.y < b.y;
+    }) {}
+
+    // Create a river canal from shore to interior
+    static std::unique_ptr<Canal> createRiver(Model* model);
+
+    // Build the canal course
+    void buildCourse(const geom::Point& start, const geom::Point& end);
+
+    // Find bridge locations where streets cross the canal
+    void findBridges();
+
+    // Get points along the canal for rendering
+    std::vector<geom::Point> getCenterline() const { return course; }
+
+    // Get polygon representing the canal water area
+    geom::Polygon getWaterPolygon() const;
+};
+
+} // namespace building
+} // namespace town_generator

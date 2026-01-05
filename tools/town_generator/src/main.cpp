@@ -15,12 +15,14 @@ void printUsage(const char* programName) {
     SDL_Log("  --seed <int>     Random seed (default: random)");
     SDL_Log("  --size <name>    City size: small, medium, large (default: medium)");
     SDL_Log("  --patches <int>  Number of patches (overrides --size)");
+    SDL_Log("  --coast          Generate a coastal city with harbour");
+    SDL_Log("  --no-coast       Generate an inland city (no water)");
     SDL_Log("  --help           Show this help message");
     SDL_Log("");
     SDL_Log("Examples:");
     SDL_Log("  %s city.svg", programName);
     SDL_Log("  %s --seed 12345 --size large city.svg", programName);
-    SDL_Log("  %s --patches 50 --seed 42 city.svg", programName);
+    SDL_Log("  %s --patches 50 --seed 42 --coast city.svg", programName);
 }
 
 int main(int argc, char* argv[]) {
@@ -28,6 +30,7 @@ int main(int argc, char* argv[]) {
     int seed = -1;
     int patches = 30;  // Medium city
     std::string outputFile;
+    int coastOverride = -1;  // -1 = use random, 0 = no coast, 1 = force coast
 
     // Parse arguments
     for (int i = 1; i < argc; ++i) {
@@ -68,6 +71,10 @@ int main(int argc, char* argv[]) {
                 SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Error: patches must be between 5 and 200");
                 return 1;
             }
+        } else if (arg == "--coast") {
+            coastOverride = 1;
+        } else if (arg == "--no-coast") {
+            coastOverride = 0;
         } else if (arg[0] == '-') {
             SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Error: Unknown option '%s'", arg.c_str());
             printUsage(argv[0]);
@@ -93,6 +100,14 @@ int main(int argc, char* argv[]) {
     // Generate the city
     try {
         town_generator::building::Model model(patches, seed);
+
+        // Apply coast override if specified
+        if (coastOverride == 1) {
+            model.coastNeeded = true;
+        } else if (coastOverride == 0) {
+            model.coastNeeded = false;
+        }
+
         model.build();
 
         // Write SVG output

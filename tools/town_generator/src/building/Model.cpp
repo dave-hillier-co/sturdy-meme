@@ -17,6 +17,7 @@
 #include "town_generator/wards/Slum.h"
 #include "town_generator/wards/Farm.h"
 #include "town_generator/wards/Park.h"
+#include "town_generator/wards/Harbour.h"
 #include <algorithm>
 #include <cmath>
 #include <limits>
@@ -34,6 +35,7 @@ Model::Model(int nPatches, int seed) : nPatches_(nPatches) {
     plazaNeeded = utils::Random::boolVal(0.8);
     citadelNeeded = utils::Random::boolVal(0.5);
     wallsNeeded = nPatches > 15;
+    coastNeeded = utils::Random::boolVal(0.3);  // 30% chance of coastal city
 }
 
 Model::~Model() {
@@ -171,17 +173,75 @@ void Model::buildPatches() {
         if (sharedVertices.size() < 3) continue;
 
         auto patch = std::make_unique<Patch>(geom::Polygon(sharedVertices));
-
-        // First nPatches_ are inner, rest are outer (faithful to Haxe)
-        bool isInner = (patchesCreated < nPatches_);
         patchesCreated++;
-
-        patch->withinCity = isInner;
-        patch->withinWalls = isInner && wallsNeeded;
 
         regionToPatch[region] = patch.get();
         patches.push_back(patch.get());
         ownedPatches_.push_back(std::move(patch));
+    }
+
+    // Calculate maxR for coast calculations (faithful to mfcg.js)
+    double maxR = 0;
+    for (const auto& p : patches) {
+        geom::Point c = p->shape.centroid();
+        double dist = std::sqrt(c.x * c.x + c.y * c.y);
+        maxR = std::max(maxR, dist);
+    }
+
+    // Apply coast mask if needed (faithful to mfcg.js buildPatches coastNeeded block)
+    if (coastNeeded) {
+        // Generate coast direction if not set
+        if (coastDir == 0.0) {
+            coastDir = std::floor(utils::Random::floatVal() * 20) / 10.0;  // 0-2 in 0.1 steps
+        }
+
+        double angle = coastDir * M_PI;
+        double cosA = std::cos(angle);
+        double sinA = std::sin(angle);
+
+        // Coast parameters
+        double coastOffset = 20.0 + utils::Random::floatVal() * 40.0;  // f in mfcg.js
+        double normal3 = (utils::Random::floatVal() + utils::Random::floatVal() +
+                         utils::Random::floatVal()) / 3.0 * 2.0 - 1.0;
+        double coastK = 0.3 * maxR * normal3;  // k in mfcg.js
+        double normal4 = (utils::Random::floatVal() + utils::Random::floatVal() +
+                         utils::Random::floatVal() + utils::Random::floatVal()) / 2.0 - 1.0;
+        double coastN = maxR * (0.2 + std::abs(normal4));  // n in mfcg.js
+
+        geom::Point coastCenter(coastN + coastOffset, coastK);
+
+        // Mark patches as water based on distance from coast center
+        for (auto* patch : patches) {
+            geom::Point c = patch->shape.centroid();
+            // Rotate centroid by coast angle
+            geom::Point rotated(c.x * cosA - c.y * sinA, c.y * cosA + c.x * sinA);
+
+            double u = geom::Point::distance(coastCenter, rotated) - coastN;
+            if (rotated.x > coastCenter.x) {
+                u = std::min(u, std::abs(rotated.y - coastK) - coastN);
+            }
+
+            // Simple fractal noise approximation (simplified from mfcg.js)
+            double fractalNoise = (utils::Random::floatVal() - 0.5) * 0.5;
+            double r = fractalNoise * coastN * std::sqrt(rotated.length() / maxR);
+
+            if (u + r < 0) {
+                patch->waterbody = true;
+            }
+        }
+    }
+
+    // Assign withinCity based on waterbody status
+    int cityPatchCount = 0;
+    for (auto* patch : patches) {
+        if (!patch->waterbody && cityPatchCount < nPatches_) {
+            patch->withinCity = true;
+            patch->withinWalls = wallsNeeded;
+            cityPatchCount++;
+        } else {
+            patch->withinCity = false;
+            patch->withinWalls = false;
+        }
     }
 
     // Establish neighbor relationships
@@ -675,22 +735,40 @@ void Model::createWards() {
 
         // Regular wards
         if (!ward) {
-            if (patch->withinCity) {
-                // Weighted random selection
-                double total = 0;
-                for (double w : weights) total += w;
-
-                double r = utils::Random::floatVal() * total;
-                double acc = 0;
-                for (size_t i = 0; i < wardTypes.size(); ++i) {
-                    acc += weights[i];
-                    if (r <= acc) {
-                        ward = wardTypes[i]();
+            if (patch->waterbody) {
+                // Water patches don't get wards - skip
+                continue;
+            } else if (patch->withinCity) {
+                // Check if this patch borders water - could be harbour
+                bool bordersWater = false;
+                for (auto* neighbor : patch->neighbors) {
+                    if (neighbor->waterbody) {
+                        bordersWater = true;
                         break;
                     }
                 }
 
-                if (!ward) ward = new wards::CommonWard();
+                if (bordersWater && coastNeeded && utils::Random::boolVal(0.5)) {
+                    // Harbour ward for waterfront patches
+                    ward = new wards::Harbour();
+                    patch->landing = true;
+                } else {
+                    // Weighted random selection
+                    double total = 0;
+                    for (double w : weights) total += w;
+
+                    double r = utils::Random::floatVal() * total;
+                    double acc = 0;
+                    for (size_t i = 0; i < wardTypes.size(); ++i) {
+                        acc += weights[i];
+                        if (r <= acc) {
+                            ward = wardTypes[i]();
+                            break;
+                        }
+                    }
+
+                    if (!ward) ward = new wards::CommonWard();
+                }
             } else {
                 // Outer patches are farms or parks
                 if (utils::Random::boolVal(0.7)) {

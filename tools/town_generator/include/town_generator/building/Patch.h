@@ -25,6 +25,8 @@ public:
 
     bool withinWalls = false;
     bool withinCity = false;
+    bool waterbody = false;    // True if this patch is water (sea, lake, river)
+    bool landing = false;      // True if this patch is a harbour landing
 
     Patch() = default;
 

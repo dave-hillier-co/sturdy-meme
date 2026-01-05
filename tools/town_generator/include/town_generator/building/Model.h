@@ -53,6 +53,14 @@ public:
     bool plazaNeeded = false;
     bool citadelNeeded = false;
     bool wallsNeeded = false;
+    bool coastNeeded = false;     // True if city has a coastline
+    double coastDir = 0.0;        // Direction of coast (0-2, multiplied by PI)
+
+    // Water features
+    geom::Polygon waterEdge;      // Boundary of water area
+    geom::Polygon earthEdge;      // Boundary of land area
+    geom::Polygon shore;          // Shore line where land meets water
+    bool riverNeeded = false;     // Whether to generate a river/canal
 
     // Owned wards and patches
     std::vector<std::unique_ptr<wards::Ward>> wards_;

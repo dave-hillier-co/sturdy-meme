@@ -19,6 +19,63 @@ namespace building {
 namespace wards {
 
 /**
+ * AlleyParams - Parameters for alley/building generation (from mfcg.js District.createParams)
+ * These control the recursive subdivision algorithm
+ */
+struct AlleyParams {
+    double minSq = 15.0;       // Minimum block area
+    double gridChaos = 0.5;    // How chaotic the grid is (0=regular, 1=chaotic)
+    double sizeChaos = 0.6;    // Variation in building sizes
+    double blockSize = 8.0;    // Multiplier for initial subdivision threshold
+    double emptyProb = 0.04;   // Probability of empty lots
+    double minFront = 4.0;     // Minimum frontage (sqrt(minSq))
+    double shapeFactor = 1.0;  // Shape factor for buildings
+    double inset = 0.3;        // Inset factor for building edges
+
+    // Compute minFront from minSq
+    void computeDerived() {
+        minFront = std::sqrt(minSq);
+    }
+
+    // Create default urban parameters (faithful to mfcg.js District.createParams)
+    static AlleyParams createUrban() {
+        AlleyParams p;
+        // minSq: 15 + 40 * abs(normal4 - 1)  where normal4 is avg of 4 randoms
+        double normal4 = (utils::Random::floatVal() + utils::Random::floatVal() +
+                         utils::Random::floatVal() + utils::Random::floatVal()) / 2.0 - 1.0;
+        p.minSq = 15.0 + 40.0 * std::abs(normal4);
+
+        // gridChaos: 0.2 + normal3 * 0.8
+        double normal3 = (utils::Random::floatVal() + utils::Random::floatVal() +
+                         utils::Random::floatVal()) / 3.0;
+        p.gridChaos = 0.2 + normal3 * 0.8;
+
+        // sizeChaos: 0.4 + normal3 * 0.6
+        normal3 = (utils::Random::floatVal() + utils::Random::floatVal() +
+                  utils::Random::floatVal()) / 3.0;
+        p.sizeChaos = 0.4 + normal3 * 0.6;
+
+        // shapeFactor: 0.25 + normal3 * 2
+        normal3 = (utils::Random::floatVal() + utils::Random::floatVal() +
+                  utils::Random::floatVal()) / 3.0;
+        p.shapeFactor = 0.25 + normal3 * 2.0;
+
+        // inset: 0.6 * (1 - abs(normal4))
+        normal4 = (utils::Random::floatVal() + utils::Random::floatVal() +
+                  utils::Random::floatVal() + utils::Random::floatVal()) / 2.0 - 1.0;
+        p.inset = 0.6 * (1.0 - std::abs(normal4));
+
+        // blockSize: 4 + 10 * normal3
+        normal3 = (utils::Random::floatVal() + utils::Random::floatVal() +
+                  utils::Random::floatVal()) / 3.0;
+        p.blockSize = 4.0 + 10.0 * normal3;
+
+        p.computeDerived();
+        return p;
+    }
+};
+
+/**
  * Ward - Base class for city districts, faithful port from Haxe TownGeneratorOS
  */
 class Ward {
@@ -32,6 +89,8 @@ public:
     building::Model* model = nullptr;
 
     std::vector<geom::Polygon> geometry;
+    std::vector<std::vector<geom::Point>> alleys;  // Alley cut lines for rendering
+    geom::Polygon church;  // Church building if created
 
     Ward() = default;
     virtual ~Ward() = default;
@@ -53,7 +112,7 @@ public:
     // Based on mfcg.js filterInner - buildings that touch perimeter are kept
     void filterInner(const geom::Polygon& blockShape);
 
-    // Create alleys recursively
+    // Create alleys recursively (legacy interface)
     void createAlleys(
         const geom::Polygon& p,
         double minArea,
@@ -62,6 +121,25 @@ public:
         double emptyProbability = 0.0,
         double split = 0.0
     );
+
+    // Create alleys with AlleyParams (faithful to mfcg.js createAlleys)
+    // Uses minSq * blockSize for initial subdivision threshold
+    void createAlleysWithParams(
+        const geom::Polygon& p,
+        const AlleyParams& params,
+        bool isInitialCall = true
+    );
+
+    // Semi-smooth alley corners into arcs (faithful to mfcg.js semiSmooth)
+    static std::vector<geom::Point> semiSmooth(
+        const geom::Point& p0,
+        const geom::Point& p1,
+        const geom::Point& p2,
+        double minFront
+    );
+
+    // Create a church in a medium-sized block (faithful to mfcg.js createChurch)
+    void createChurch(const geom::Polygon& block);
 
     // Create orthogonal building
     geom::Polygon createOrthoBuilding(
@@ -98,6 +176,7 @@ class GateWard;
 class Slum;
 class Farm;
 class Park;
+class Harbour;
 
 } // namespace wards
 } // namespace town_generator

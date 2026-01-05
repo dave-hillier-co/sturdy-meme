@@ -278,6 +278,8 @@ add_executable(town_generator
     town_generator/src/building/Cutter.cpp
     town_generator/src/building/Topology.cpp
     town_generator/src/building/CurtainWall.cpp
+    town_generator/src/building/District.cpp
+    town_generator/src/building/Canal.cpp
     town_generator/src/building/Model.cpp
     town_generator/src/wards/Ward.cpp
     town_generator/src/wards/Castle.cpp
@@ -293,6 +295,7 @@ add_executable(town_generator
     town_generator/src/wards/Slum.cpp
     town_generator/src/wards/Farm.cpp
     town_generator/src/wards/Park.cpp
+    town_generator/src/wards/Harbour.cpp
     town_generator/src/svg/SVGWriter.cpp
 )
 

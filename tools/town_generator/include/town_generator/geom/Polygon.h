@@ -525,6 +525,76 @@ public:
         return rect;
     }
 
+    // Get oriented bounding box (minimum area rectangle) - returns 4 corners
+    // Faithful to mfcg.js Gb.obb
+    std::vector<Point> orientedBoundingBox() const {
+        if (vertices_.size() < 3) {
+            return vertexValues();
+        }
+
+        // Find convex hull first (simplified - use polygon vertices directly)
+        // For a more accurate OBB, we'd compute the convex hull first
+
+        double minArea = std::numeric_limits<double>::max();
+        std::vector<Point> bestObb;
+
+        // Try each edge as a potential base for the OBB
+        size_t len = vertices_.size();
+        for (size_t i = 0; i < len; ++i) {
+            const Point& p0 = *vertices_[i];
+            const Point& p1 = *vertices_[(i + 1) % len];
+
+            // Edge direction
+            Point edge = p1.subtract(p0);
+            double edgeLen = edge.length();
+            if (edgeLen < 0.0001) continue;
+
+            // Normalize edge direction
+            Point dir(edge.x / edgeLen, edge.y / edgeLen);
+            Point perp(-dir.y, dir.x);
+
+            // Project all vertices onto these axes
+            double minProj = std::numeric_limits<double>::max();
+            double maxProj = std::numeric_limits<double>::lowest();
+            double minPerp = std::numeric_limits<double>::max();
+            double maxPerp = std::numeric_limits<double>::lowest();
+
+            for (const auto& v : vertices_) {
+                double proj = GeomUtils::scalar(v->x, v->y, dir.x, dir.y);
+                double perpProj = GeomUtils::scalar(v->x, v->y, perp.x, perp.y);
+                minProj = std::min(minProj, proj);
+                maxProj = std::max(maxProj, proj);
+                minPerp = std::min(minPerp, perpProj);
+                maxPerp = std::max(maxPerp, perpProj);
+            }
+
+            double area = (maxProj - minProj) * (maxPerp - minPerp);
+            if (area < minArea) {
+                minArea = area;
+                bestObb.clear();
+                // Four corners of the OBB
+                bestObb.push_back(Point(
+                    dir.x * minProj + perp.x * minPerp,
+                    dir.y * minProj + perp.y * minPerp
+                ));
+                bestObb.push_back(Point(
+                    dir.x * maxProj + perp.x * minPerp,
+                    dir.y * maxProj + perp.y * minPerp
+                ));
+                bestObb.push_back(Point(
+                    dir.x * maxProj + perp.x * maxPerp,
+                    dir.y * maxProj + perp.y * maxPerp
+                ));
+                bestObb.push_back(Point(
+                    dir.x * minProj + perp.x * maxPerp,
+                    dir.y * minProj + perp.y * maxPerp
+                ));
+            }
+        }
+
+        return bestObb;
+    }
+
     // Split polygon at two vertices - returns new polygons with new points
     std::vector<Polygon> split(const Point& p1, const Point& p2) const {
         return spliti(indexOf(p1), indexOf(p2));

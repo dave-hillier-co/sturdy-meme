@@ -53,14 +53,8 @@ std::vector<double> Ward::getCityBlock() {
 }
 
 void Ward::createGeometry() {
-    auto cityBlock = getCityBlock();
-    if (cityBlock.empty()) return;
-
-    auto block = patch->shape.shrink(cityBlock);
-    if (block.empty()) return;
-
-    // Default implementation: create simple buildings
-    createAlleys(block, 30, 0.6, 0.8, 0.1);
+    // Base Ward creates no buildings (faithful to Haxe)
+    // Subclasses override to create appropriate geometry
 }
 
 void Ward::filterOutskirts(std::vector<geom::Polygon>& buildings, double minDistance) {

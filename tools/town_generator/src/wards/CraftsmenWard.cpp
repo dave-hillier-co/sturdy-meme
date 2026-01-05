@@ -1,5 +1,6 @@
 #include "town_generator/wards/CraftsmenWard.h"
 #include "town_generator/building/Model.h"
+#include "town_generator/utils/Random.h"
 
 namespace town_generator {
 namespace wards {
@@ -13,8 +14,12 @@ void CraftsmenWard::createGeometry() {
     auto block = patch->shape.shrink(cityBlock);
     if (block.empty()) return;
 
-    // Medium density, moderate chaos - working class housing
-    createAlleys(block, 25, 0.4, 0.6, 0.05);
+    // Working class housing - variable density (faithful to Haxe)
+    // minSq: 10 + 80 * random^2 = 10-90
+    // gridChaos: 0.5 + random * 0.2 = 0.5-0.7
+    double minSq = 10 + 80 * utils::Random::floatVal() * utils::Random::floatVal();
+    double gridChaos = 0.5 + utils::Random::floatVal() * 0.2;
+    createAlleys(block, minSq, gridChaos, 0.6, 0.0);
 }
 
 } // namespace wards

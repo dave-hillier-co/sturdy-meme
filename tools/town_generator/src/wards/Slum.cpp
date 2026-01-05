@@ -1,5 +1,6 @@
 #include "town_generator/wards/Slum.h"
 #include "town_generator/building/Model.h"
+#include "town_generator/utils/Random.h"
 
 namespace town_generator {
 namespace wards {
@@ -13,8 +14,12 @@ void Slum::createGeometry() {
     auto block = patch->shape.shrink(cityBlock);
     if (block.empty()) return;
 
-    // High density, chaotic layout - cramped housing
-    createAlleys(block, 12, 0.8, 0.9, 0.02);
+    // Cramped housing - high density, chaotic (faithful to Haxe)
+    // minSq: 10 + 30 * random^2 = 10-40
+    // gridChaos: 0.6 + random * 0.4 = 0.6-1.0
+    double minSq = 10 + 30 * utils::Random::floatVal() * utils::Random::floatVal();
+    double gridChaos = 0.6 + utils::Random::floatVal() * 0.4;
+    createAlleys(block, minSq, gridChaos, 0.8, 0.03);
 }
 
 } // namespace wards

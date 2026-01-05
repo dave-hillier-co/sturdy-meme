@@ -1,6 +1,5 @@
 #include "town_generator/wards/Market.h"
 #include "town_generator/building/Model.h"
-#include "town_generator/building/Cutter.h"
 #include "town_generator/utils/Random.h"
 #include <cmath>
 
@@ -10,29 +9,56 @@ namespace wards {
 void Market::createGeometry() {
     if (!patch) return;
 
-    auto cityBlock = getCityBlock();
-    if (cityBlock.empty()) return;
+    // Market/plaza - open space with fountain or statue (faithful to Haxe)
+    bool statue = utils::Random::boolVal(0.6);
+    bool offset = statue || utils::Random::boolVal(0.3);
 
-    auto block = patch->shape.shrink(cityBlock);
-    if (block.empty()) return;
+    geom::PointPtr v0 = nullptr;
+    geom::PointPtr v1 = nullptr;
 
-    // Market has mostly open space with scattered stalls around the edge
-    auto ring = building::Cutter::ring(block, std::sqrt(std::abs(block.square())) * 0.15);
-
-    for (const auto& segment : ring) {
-        // Create small market stalls
-        createAlleys(segment, 15, 0.3, 0.5, 0.3);
+    if (statue || offset) {
+        // Find longest edge for rotation/offset reference
+        double maxLen = -1.0;
+        for (size_t i = 0; i < patch->shape.length(); ++i) {
+            geom::PointPtr p0 = patch->shape.ptr(i);
+            geom::PointPtr p1 = patch->shape.ptr((i + 1) % patch->shape.length());
+            double len = geom::Point::distance(*p0, *p1);
+            if (len > maxLen) {
+                maxLen = len;
+                v0 = p0;
+                v1 = p1;
+            }
+        }
     }
 
-    // Maybe add a central market building
-    if (utils::Random::boolVal(0.5)) {
-        geom::Point center = block.centroid();
-        double size = std::sqrt(std::abs(block.square())) * 0.15;
-        geom::Polygon marketHall = geom::Polygon::rect(size * 1.5, size);
-        marketHall.offset(center);
-        marketHall.rotate(utils::Random::floatVal() * M_PI);
-        geometry.push_back(marketHall);
+    geom::Polygon object;
+    if (statue) {
+        // Rectangular statue/monument
+        object = geom::Polygon::rect(1 + utils::Random::floatVal(), 1 + utils::Random::floatVal());
+        if (v0 && v1) {
+            double angle = std::atan2(v1->y - v0->y, v1->x - v0->x);
+            object.rotate(angle);
+        }
+    } else {
+        // Circular fountain
+        object = geom::Polygon::circle(1 + utils::Random::floatVal());
     }
+
+    if (offset && v0 && v1) {
+        // Offset toward the longest edge
+        geom::Point gravity((v0->x + v1->x) / 2, (v0->y + v1->y) / 2);
+        geom::Point centroid = patch->shape.centroid();
+        double t = 0.2 + utils::Random::floatVal() * 0.4;
+        geom::Point pos(
+            centroid.x + (gravity.x - centroid.x) * t,
+            centroid.y + (gravity.y - centroid.y) * t
+        );
+        object.offset(pos);
+    } else {
+        object.offset(patch->shape.centroid());
+    }
+
+    geometry.push_back(object);
 }
 
 } // namespace wards

@@ -137,10 +137,13 @@ void Ward::createAlleys(
                 geometry.push_back(half);
             }
         } else {
-            // Determine if we should create alleys in sub-blocks (faithful to town_generator2)
+            // Determine if we should create alleys in sub-blocks (faithful to Haxe)
             double r1 = utils::Random::floatVal();
             double r2 = utils::Random::floatVal();
-            bool shouldSplit = halfSq > minSq / (r1 * r2 + 0.001);  // +0.001 to avoid div by zero
+            // Haxe: half.square > minSq / (Random.float() * Random.float())
+            // When r1*r2 is very small, threshold becomes huge so shouldSplit=false
+            double divisor = r1 * r2;
+            bool shouldSplit = divisor > 0.0001 && halfSq > minSq / divisor;
             createAlleys(half, minSq, gridChaos, sizeChaos, emptyProb, shouldSplit ? 1.0 : 0.0);
         }
     }

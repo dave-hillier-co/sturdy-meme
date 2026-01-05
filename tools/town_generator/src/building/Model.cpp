@@ -506,6 +506,53 @@ void Model::buildWalls() {
     // Set wall reference only if walls are needed (wall == border for walled cities)
     if (wallsNeeded) {
         wall = border;
+
+        // Disable wall segments that border water or citadel
+        // (faithful to mfcg.js line 10830: if (d.data == Tc.COAST || d.twin.face.data == this.citadel))
+        for (size_t i = 0; i < wall->shape.length(); ++i) {
+            geom::PointPtr v0 = wall->shape.ptr(i);
+            geom::PointPtr v1 = wall->shape.ptr((i + 1) % wall->shape.length());
+
+            // Check if this edge borders water (any patch sharing this edge is waterbody)
+            bool bordersWater = false;
+            for (auto* patch : patches) {
+                if (patch->waterbody) {
+                    // Check if water patch shares this edge (in either direction)
+                    if ((patch->shape.containsPtr(v0) && patch->shape.containsPtr(v1))) {
+                        // Verify it's actually an adjacent edge
+                        int idx = patch->shape.indexOfPtr(v0);
+                        if (idx != -1) {
+                            size_t nextIdx = (idx + 1) % patch->shape.length();
+                            size_t prevIdx = (idx + patch->shape.length() - 1) % patch->shape.length();
+                            if (patch->shape.ptr(nextIdx) == v1 || patch->shape.ptr(prevIdx) == v1) {
+                                bordersWater = true;
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Check if this edge borders citadel
+            bool bordersCitadel = false;
+            if (citadel) {
+                if (citadel->shape.containsPtr(v0) && citadel->shape.containsPtr(v1)) {
+                    int idx = citadel->shape.indexOfPtr(v0);
+                    if (idx != -1) {
+                        size_t nextIdx = (idx + 1) % citadel->shape.length();
+                        size_t prevIdx = (idx + citadel->shape.length() - 1) % citadel->shape.length();
+                        if (citadel->shape.ptr(nextIdx) == v1 || citadel->shape.ptr(prevIdx) == v1) {
+                            bordersCitadel = true;
+                        }
+                    }
+                }
+            }
+
+            if (bordersWater || bordersCitadel) {
+                wall->segments[i] = false;
+            }
+        }
+
         wall->buildTowers();
     }
 

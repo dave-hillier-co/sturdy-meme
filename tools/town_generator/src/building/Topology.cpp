@@ -37,7 +37,14 @@ Topology::Topology(Model* model) : model_(model) {
     // Use the actual wall shape, not borderPatch (which is just a bounding rectangle)
     const auto& border = model_->border->shape;
 
+    // First pass: build the graph from all land patches
     for (auto* patch : model_->patches) {
+        // Skip water patches entirely - they don't participate in road graph
+        // (faithful to mfcg.js line 10534: d.withinCity || d.waterbody || a.push(d))
+        if (patch->waterbody) {
+            continue;
+        }
+
         bool withinCity = patch->withinCity;
 
         geom::PointPtr v1Ptr = patch->shape.lastPtr();
@@ -75,6 +82,48 @@ Topology::Topology(Model* model) : model_(model) {
 
             if (n0 != nullptr && n1 != nullptr) {
                 n0->link(n1, geom::Point::distance(*v0Ptr, *v1Ptr));
+            }
+        }
+    }
+
+    // Second pass: collect shore vertices and unlink them from the graph
+    // This matches mfcg.js excludePoints() which calls unlinkAll() on each point
+    // (faithful to mfcg.js lines 10538-10544, 12047-12053)
+    std::vector<geom::PointPtr> shoreVertices;
+    for (auto* patch : model_->patches) {
+        if (patch->waterbody) continue;
+
+        // For each vertex, check if it's shared with a water neighbor
+        for (size_t i = 0; i < patch->shape.length(); ++i) {
+            geom::PointPtr vPtr = patch->shape.ptr(i);
+
+            // Check if already processed
+            if (std::find(shoreVertices.begin(), shoreVertices.end(), vPtr) != shoreVertices.end()) {
+                continue;
+            }
+
+            // Check if this vertex is shared with any water patch
+            for (auto* neighbor : patch->neighbors) {
+                if (neighbor->waterbody && neighbor->shape.containsPtr(vPtr)) {
+                    shoreVertices.push_back(vPtr);
+
+                    // Unlink this node from the graph (like mfcg.js excludePoints -> unlinkAll)
+                    auto nodeIt = pt2node.find(vPtr);
+                    if (nodeIt != pt2node.end() && nodeIt->second != nullptr) {
+                        nodeIt->second->unlinkAll();
+
+                        // Also remove from inner/outer lists
+                        auto innerIt = std::find(inner.begin(), inner.end(), nodeIt->second);
+                        if (innerIt != inner.end()) {
+                            inner.erase(innerIt);
+                        }
+                        auto outerIt = std::find(outer.begin(), outer.end(), nodeIt->second);
+                        if (outerIt != outer.end()) {
+                            outer.erase(outerIt);
+                        }
+                    }
+                    break;
+                }
             }
         }
     }

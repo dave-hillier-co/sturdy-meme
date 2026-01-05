@@ -995,12 +995,14 @@ void Model::createWards() {
                     if (!ward) ward = new wards::CommonWard();
                 }
             } else {
-                // Outer patches are farms or parks
-                if (utils::Random::boolVal(0.7)) {
+                // Outer patches - most are empty (no ward), some are farms
+                // Reference mfcg.js only assigns farms to specific outer patches
+                if (utils::Random::boolVal(0.15)) {
                     ward = new wards::Farm();
-                } else {
+                } else if (utils::Random::boolVal(0.1)) {
                     ward = new wards::Park();
                 }
+                // Otherwise leave as nullptr - no buildings generated
             }
         }
 

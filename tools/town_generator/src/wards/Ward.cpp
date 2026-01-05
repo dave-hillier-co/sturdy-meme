@@ -10,6 +10,79 @@
 namespace town_generator {
 namespace wards {
 
+// Helper function to check if a patch edge overlaps with a road segment
+// Uses geometric proximity rather than exact vertex matching
+static bool edgeOverlapsRoadSegment(
+    const geom::Point& e0, const geom::Point& e1,  // Patch edge
+    const geom::Point& r0, const geom::Point& r1,  // Road segment
+    double tolerance = 0.5  // Distance tolerance for overlap
+) {
+    // Calculate edge and road vectors
+    geom::Point edgeVec(e1.x - e0.x, e1.y - e0.y);
+    geom::Point roadVec(r1.x - r0.x, r1.y - r0.y);
+
+    double edgeLen = std::sqrt(edgeVec.x * edgeVec.x + edgeVec.y * edgeVec.y);
+    double roadLen = std::sqrt(roadVec.x * roadVec.x + roadVec.y * roadVec.y);
+
+    if (edgeLen < 0.01 || roadLen < 0.01) return false;
+
+    // Normalize
+    edgeVec.x /= edgeLen;
+    edgeVec.y /= edgeLen;
+    roadVec.x /= roadLen;
+    roadVec.y /= roadLen;
+
+    // Check if edges are roughly parallel (dot product close to +/-1)
+    double dot = edgeVec.x * roadVec.x + edgeVec.y * roadVec.y;
+    if (std::abs(dot) < 0.9) return false;  // Not parallel enough
+
+    // Check distance from edge midpoint to road line
+    geom::Point edgeMid((e0.x + e1.x) / 2, (e0.y + e1.y) / 2);
+    double dist = geom::GeomUtils::distance2line(r0.x, r0.y, roadVec.x, roadVec.y, edgeMid.x, edgeMid.y);
+    if (dist > tolerance) return false;  // Too far from road
+
+    // Check if projections overlap
+    // Project edge endpoints onto road line
+    auto projectOntoRoad = [&](const geom::Point& p) -> double {
+        return (p.x - r0.x) * roadVec.x + (p.y - r0.y) * roadVec.y;
+    };
+
+    double proj0 = projectOntoRoad(e0);
+    double proj1 = projectOntoRoad(e1);
+    if (proj0 > proj1) std::swap(proj0, proj1);
+
+    // Road segment spans [0, roadLen]
+    // Check for overlap
+    double overlapStart = std::max(proj0, 0.0);
+    double overlapEnd = std::min(proj1, roadLen);
+
+    // Need significant overlap (at least 20% of edge length or 1 unit)
+    double minOverlap = std::min(edgeLen * 0.2, 1.0);
+    return (overlapEnd - overlapStart) > minOverlap;
+}
+
+// Check if a patch edge is on any road in the given street list
+static bool isEdgeOnRoad(
+    const geom::Point& v0, const geom::Point& v1,
+    const std::vector<std::vector<geom::PointPtr>>& roads
+) {
+    for (const auto& road : roads) {
+        if (road.size() < 2) continue;
+        for (size_t j = 0; j + 1 < road.size(); ++j) {
+            // First check exact match (fast path)
+            if ((*road[j] == v0 && *road[j + 1] == v1) ||
+                (*road[j] == v1 && *road[j + 1] == v0)) {
+                return true;
+            }
+            // Then check geometric overlap (for edges that don't exactly match)
+            if (edgeOverlapsRoadSegment(v0, v1, *road[j], *road[j + 1])) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
 std::vector<double> Ward::getCityBlock() {
     if (!patch || !model) return {};
 
@@ -44,20 +117,15 @@ std::vector<double> Ward::getCityBlock() {
             }
         }
 
-        // Check if edge is on main artery (arteries now use PointPtr)
-        for (const auto& artery : model->arteries) {
-            if (artery.size() < 2) continue;  // Need at least 2 points to form an edge
-            bool found = false;
-            for (size_t j = 0; j + 1 < artery.size(); ++j) {
-                // Compare dereferenced PointPtrs with Point values
-                if ((*artery[j] == v0 && *artery[j + 1] == v1) ||
-                    (*artery[j] == v1 && *artery[j + 1] == v0)) {
-                    insetDistances[i] = MAIN_STREET / 2;
-                    found = true;
-                    break;
-                }
-            }
-            if (found) break;
+        // Check if edge is on main artery using improved geometric detection
+        if (isEdgeOnRoad(v0, v1, model->arteries)) {
+            insetDistances[i] = MAIN_STREET / 2;
+            continue;
+        }
+
+        // Also check streets and roads (secondary roads get smaller inset)
+        if (isEdgeOnRoad(v0, v1, model->streets) || isEdgeOnRoad(v0, v1, model->roads)) {
+            insetDistances[i] = std::max(insetDistances[i], REGULAR_STREET / 2);
         }
     }
 
@@ -96,6 +164,38 @@ std::vector<double> Ward::getCityBlock() {
             insetDistances[i] = std::max(insetDistances[i], maxExclusion);
             size_t prevIdx = (i + len - 1) % len;
             insetDistances[prevIdx] = std::max(insetDistances[prevIdx], maxExclusion);
+        }
+    }
+
+    // Cross-ward boundary check: if neighboring patch has different ward type,
+    // apply additional buffer to prevent building overlaps
+    for (size_t i = 0; i < len; ++i) {
+        const geom::Point& v0 = patch->shape[i];
+        const geom::Point& v1 = patch->shape[(i + 1) % len];
+
+        // Find neighbor that shares this edge
+        for (const auto* neighbor : patch->neighbors) {
+            if (!neighbor || !neighbor->ward) continue;
+
+            // Check if neighbor shares this edge
+            bool sharesEdge = false;
+            for (size_t j = 0; j < neighbor->shape.length(); ++j) {
+                const geom::Point& n0 = neighbor->shape[j];
+                const geom::Point& n1 = neighbor->shape[(j + 1) % neighbor->shape.length()];
+                if ((n0 == v0 && n1 == v1) || (n0 == v1 && n1 == v0)) {
+                    sharesEdge = true;
+                    break;
+                }
+            }
+
+            if (sharesEdge) {
+                // If different ward type, apply additional buffer
+                if (neighbor->ward->getName() != getName()) {
+                    // Both wards will apply this buffer independently, creating proper separation
+                    insetDistances[i] = std::max(insetDistances[i], REGULAR_STREET / 2);
+                }
+                break;  // Found the neighbor for this edge
+            }
         }
     }
 
@@ -140,19 +240,10 @@ void Ward::filterOutskirts() {
 
     // Check each edge of the patch
     patch->shape.forEdge([&](const geom::Point& v1, const geom::Point& v2) {
-        // Check if edge is on a road/artery
-        bool onRoad = false;
-        for (const auto& artery : model->arteries) {
-            if (artery.size() < 2) continue;
-            for (size_t j = 0; j + 1 < artery.size(); ++j) {
-                if ((*artery[j] == v1 && *artery[j + 1] == v2) ||
-                    (*artery[j] == v2 && *artery[j + 1] == v1)) {
-                    onRoad = true;
-                    break;
-                }
-            }
-            if (onRoad) break;
-        }
+        // Check if edge is on a road/artery using improved geometric detection
+        bool onRoad = isEdgeOnRoad(v1, v2, model->arteries) ||
+                      isEdgeOnRoad(v1, v2, model->streets) ||
+                      isEdgeOnRoad(v1, v2, model->roads);
 
         if (onRoad) {
             addEdge(v1, v2, 1.0);

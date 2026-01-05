@@ -98,6 +98,15 @@ public:
     // Get ward name for display/SVG output
     virtual std::string getName() const { return "Ward"; }
 
+    // Check if ward has a church building
+    bool hasChurch() const { return church.length() > 0; }
+
+    // Get the church polygon (for special rendering)
+    const geom::Polygon& getChurch() const { return church; }
+
+    // Check if this ward type should be rendered as special/solid (churches, cathedrals, castles)
+    virtual bool isSpecialWard() const { return false; }
+
     // Get the city block after accounting for streets
     std::vector<double> getCityBlock();
 

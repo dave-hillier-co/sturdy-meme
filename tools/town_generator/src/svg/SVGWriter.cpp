@@ -188,14 +188,44 @@ std::string SVGWriter::generate(const building::Model& model, const Style& style
     };
 
     // Buildings (with ward-type tinting like mfcg.js)
+    // Skip special buildings here - they're rendered separately below
     svg << "  <g id=\"buildings\">\n";
     for (const auto& ward : model.wards_) {
+        // Skip special wards (Cathedral, Castle) - rendered as solid dark
+        if (ward->isSpecialWard()) continue;
+
         std::string wardColor = getWardTint(ward->getName());
         for (const auto& building : ward->geometry) {
+            // Skip the church building - rendered separately as special
+            if (ward->hasChurch() && &building == &ward->getChurch()) continue;
+
             svg << "    <path d=\"" << polygonToPath(building) << "\" ";
             svg << "fill=\"" << wardColor << "\" ";
             svg << "stroke=\"" << style.buildingStroke << "\" ";
             svg << "stroke-width=\"" << style.buildingStrokeWidth << "\"/>\n";
+        }
+    }
+    svg << "  </g>\n";
+
+    // Special buildings (churches, cathedrals, castles) - solid dark like mfcg.js
+    // Reference: mfcg.js hd.drawSolids() fills with K.colorWall
+    svg << "  <g id=\"special-buildings\">\n";
+    for (const auto& ward : model.wards_) {
+        // Churches from regular wards (CommonWard, CraftsmenWard, etc.)
+        if (ward->hasChurch()) {
+            svg << "    <path d=\"" << polygonToPath(ward->getChurch()) << "\" ";
+            svg << "fill=\"" << style.wallStroke << "\" ";
+            svg << "stroke=\"" << style.buildingStroke << "\" ";
+            svg << "stroke-width=\"" << style.buildingStrokeWidth << "\"/>\n";
+        }
+        // Cathedral and Castle wards - all geometry is special
+        if (ward->isSpecialWard()) {
+            for (const auto& building : ward->geometry) {
+                svg << "    <path d=\"" << polygonToPath(building) << "\" ";
+                svg << "fill=\"" << style.wallStroke << "\" ";
+                svg << "stroke=\"" << style.buildingStroke << "\" ";
+                svg << "stroke-width=\"" << style.buildingStrokeWidth << "\"/>\n";
+            }
         }
     }
     svg << "  </g>\n";

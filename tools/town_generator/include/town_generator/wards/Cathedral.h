@@ -13,6 +13,7 @@ public:
     Cathedral() = default;
 
     std::string getName() const override { return "Cathedral"; }
+    bool isSpecialWard() const override { return true; }
 
     void createGeometry() override;
 

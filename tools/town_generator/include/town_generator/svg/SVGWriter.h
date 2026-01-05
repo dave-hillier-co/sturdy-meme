@@ -16,63 +16,89 @@ namespace svg {
  */
 class SVGWriter {
 public:
-    // Style configuration
+    // Style configuration matching mfcg.js default palette
     struct Style {
-        std::string buildingFill;
-        std::string buildingStroke;
+        // Building colors
+        std::string buildingFill;       // colorRoof
+        std::string buildingStroke;     // colorDark
         double buildingStrokeWidth;
 
-        std::string streetStroke;
+        // Street colors - use dark ink for outlines
+        std::string streetStroke;       // colorDark
         double streetStrokeWidth;
 
-        std::string arteryStroke;
+        std::string arteryStroke;       // colorDark
         double arteryStrokeWidth;
 
-        std::string roadStroke;
+        std::string roadStroke;         // colorDark (for outlines)
         double roadStrokeWidth;
 
-        std::string wallStroke;
+        // Alley settings
+        std::string alleyStroke;        // colorDark
+        double alleyStrokeWidth;
+
+        // Wall colors
+        std::string wallStroke;         // colorDark (walls same as ink)
         double wallStrokeWidth;
 
-        std::string towerFill;
-        std::string towerStroke;
+        std::string towerFill;          // colorDark
+        std::string towerStroke;        // colorDark (for outline)
         double towerRadius;
+        double citadelTowerRadius;      // larger for citadel
 
-        std::string gateFill;
+        // Gate rendering (as gaps with flanking towers)
+        double gateWidth;               // gap width between flanking towers
 
+        // Patches (debug)
         std::string patchStroke;
         double patchStrokeWidth;
 
-        std::string backgroundColor;
+        // Background
+        std::string backgroundColor;    // colorPaper
 
-        std::string waterFill;
+        // Water
+        std::string waterFill;          // colorWater
         std::string waterStroke;
         double waterStrokeWidth;
         std::string shoreFill;
 
+        // Green areas (farms, parks)
+        std::string greenFill;          // colorGreen
+
+        // mfcg.js default palette values:
+        // colorPaper = 13419960 = #CCC6B8
+        // colorDark = 1710359 = #1A1917
+        // colorRoof = 10854549 = #A5A095
+        // colorWater = 8354417 = #7F7671
+        // colorGreen = 10854291 = #A5A013
+
         Style()
-            : buildingFill("#d4c4a8")
-            , buildingStroke("#5c4033")  // darker stroke for visible divisions
-            , buildingStrokeWidth(1.2)   // thicker to match 4x scale
-            , streetStroke("#0000ff")  // DEBUG: blue for streets/alleys
-            , streetStrokeWidth(1.0)
-            , arteryStroke("#ff0000")  // DEBUG: red for arteries/roads
-            , arteryStrokeWidth(2.0)
-            , roadStroke("#ff0000")    // DEBUG: red for roads
-            , roadStrokeWidth(1.5)
-            , wallStroke("#5c4033")
-            , wallStrokeWidth(3.0)
-            , towerFill("#8b7355")
-            , towerStroke("#5c4033")
-            , towerRadius(2.0)
-            , gateFill("#c8b89a")
+            : buildingFill("#A5A095")     // colorRoof - grayish
+            , buildingStroke("#1A1917")   // colorDark - ink
+            , buildingStrokeWidth(0.3)    // thin strokes like mfcg
+            , streetStroke("#1A1917")     // colorDark
+            , streetStrokeWidth(0.6)      // thin for alleys/minor streets
+            , arteryStroke("#1A1917")     // colorDark
+            , arteryStrokeWidth(1.0)      // slightly thicker for main streets
+            , roadStroke("#1A1917")       // colorDark
+            , roadStrokeWidth(0.8)
+            , alleyStroke("#1A1917")      // colorDark
+            , alleyStrokeWidth(0.4)       // thinner than streets
+            , wallStroke("#1A1917")       // colorDark (walls = ink)
+            , wallStrokeWidth(1.9)        // THICKNESS from mfcg
+            , towerFill("#1A1917")        // colorDark
+            , towerStroke("#1A1917")      // colorDark
+            , towerRadius(1.9)            // TOWER_RADIUS from mfcg
+            , citadelTowerRadius(2.5)     // LTOWER_RADIUS from mfcg
+            , gateWidth(6.0)              // wider gate opening
             , patchStroke("#e0d5c0")
             , patchStrokeWidth(0.3)
-            , backgroundColor("#f5f0e6")
-            , waterFill("#6eb5d4")       // light blue for water
-            , waterStroke("#4a99b5")     // darker blue for water edges
-            , waterStrokeWidth(0.5)
-            , shoreFill("#d4b896")       // sandy shore color
+            , backgroundColor("#CCC6B8")  // colorPaper - warm beige
+            , waterFill("#7F7671")        // colorWater
+            , waterStroke("#1A1917")      // colorDark
+            , waterStrokeWidth(0.3)
+            , shoreFill("#CCC6B8")        // same as paper
+            , greenFill("#A5A013")        // colorGreen
         {}
     };
 

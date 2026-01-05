@@ -764,6 +764,97 @@ public:
         return regular(16, r);
     }
 
+    // Smooth a closed polygon (like uc.smooth in mfcg.js)
+    // Each iteration moves vertices toward the average of their neighbors
+    // Fixed points are not moved
+    static Polygon smooth(const Polygon& poly, const std::vector<Point>* fixed = nullptr, int iterations = 1) {
+        if (poly.empty()) return Polygon();
+
+        std::vector<Point> current = poly.vertexValues();
+        size_t len = current.size();
+
+        for (int iter = 0; iter < iterations; ++iter) {
+            std::vector<Point> next;
+            next.reserve(len);
+
+            for (size_t i = 0; i < len; ++i) {
+                const Point& v = current[i];
+
+                // Check if this point is fixed
+                bool isFixed = false;
+                if (fixed) {
+                    for (const auto& f : *fixed) {
+                        if (Point::distance(v, f) < 0.01) {
+                            isFixed = true;
+                            break;
+                        }
+                    }
+                }
+
+                if (isFixed) {
+                    next.push_back(v);
+                } else {
+                    // lerp(lerp(prev, next), current) - average neighbors then average with self
+                    const Point& prev = current[(i + len - 1) % len];
+                    const Point& nextV = current[(i + 1) % len];
+                    Point neighborAvg((prev.x + nextV.x) / 2.0, (prev.y + nextV.y) / 2.0);
+                    next.emplace_back((neighborAvg.x + v.x) / 2.0, (neighborAvg.y + v.y) / 2.0);
+                }
+            }
+            current = std::move(next);
+        }
+
+        return Polygon(current);
+    }
+
+    // Smooth an open path (like uc.smoothOpen in mfcg.js)
+    // First and last points are always kept fixed
+    static std::vector<Point> smoothOpen(const std::vector<Point>& path, const std::vector<Point>* fixed = nullptr, int iterations = 1) {
+        if (path.size() < 3) return path;
+
+        std::vector<Point> current = path;
+        size_t len = current.size();
+
+        for (int iter = 0; iter < iterations; ++iter) {
+            std::vector<Point> next;
+            next.reserve(len);
+
+            for (size_t i = 0; i < len; ++i) {
+                const Point& v = current[i];
+
+                // First and last points are always fixed
+                if (i == 0 || i == len - 1) {
+                    next.push_back(v);
+                    continue;
+                }
+
+                // Check if this point is fixed
+                bool isFixed = false;
+                if (fixed) {
+                    for (const auto& f : *fixed) {
+                        if (Point::distance(v, f) < 0.01) {
+                            isFixed = true;
+                            break;
+                        }
+                    }
+                }
+
+                if (isFixed) {
+                    next.push_back(v);
+                } else {
+                    // lerp(lerp(prev, next), current)
+                    const Point& prev = current[i - 1];
+                    const Point& nextV = current[i + 1];
+                    Point neighborAvg((prev.x + nextV.x) / 2.0, (prev.y + nextV.y) / 2.0);
+                    next.emplace_back((neighborAvg.x + v.x) / 2.0, (neighborAvg.y + v.y) / 2.0);
+                }
+            }
+            current = std::move(next);
+        }
+
+        return current;
+    }
+
     // Access underlying vector of shared pointers
     std::vector<PointPtr>& vertices() { return vertices_; }
     const std::vector<PointPtr>& vertices() const { return vertices_; }

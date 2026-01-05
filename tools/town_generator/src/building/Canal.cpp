@@ -1,10 +1,12 @@
 #include "town_generator/building/Canal.h"
 #include "town_generator/building/Model.h"
 #include "town_generator/building/Patch.h"
+#include "town_generator/building/Topology.h"
 #include "town_generator/geom/GeomUtils.h"
 #include "town_generator/utils/Random.h"
 #include <algorithm>
 #include <cmath>
+#include <SDL3/SDL_log.h>
 
 namespace town_generator {
 namespace building {
@@ -18,60 +20,218 @@ std::unique_ptr<Canal> Canal::createRiver(Model* model) {
     // River width based on city size
     canal->width = 3.0 + utils::Random::floatVal() * 3.0;
 
-    // Find shore patches to start the river
-    std::vector<Patch*> shorePatches;
+    // For delta river (coastal cities), find shore vertices and build path to opposite edge
+    // Shore vertices are on the boundary between water and land patches
+
+    // Find vertices on the shore (shared between water and land patches)
+    std::vector<geom::PointPtr> shoreVertices;
     for (auto* patch : model->patches) {
         if (patch->waterbody) continue;
 
-        // Check if patch borders water
-        for (auto* neighbor : patch->neighbors) {
-            if (neighbor->waterbody) {
-                shorePatches.push_back(patch);
+        // Check each vertex of land patch
+        for (size_t i = 0; i < patch->shape.length(); ++i) {
+            geom::PointPtr vPtr = patch->shape.ptr(i);
+
+            // Check if this vertex is shared with a water patch
+            bool bordersWater = false;
+            int landNeighborCount = 0;
+            for (auto* neighbor : patch->neighbors) {
+                if (neighbor->shape.containsPtr(vPtr)) {
+                    if (neighbor->waterbody) {
+                        bordersWater = true;
+                    } else {
+                        landNeighborCount++;
+                    }
+                }
+            }
+
+            // A good shore vertex borders water AND is shared by multiple land patches
+            // (this ensures it's a junction point on the Voronoi graph)
+            if (bordersWater && landNeighborCount >= 1) {
+                // Avoid duplicates
+                bool found = false;
+                for (const auto& sv : shoreVertices) {
+                    if (sv == vPtr) {
+                        found = true;
+                        break;
+                    }
+                }
+                if (!found) {
+                    shoreVertices.push_back(vPtr);
+                }
+            }
+        }
+    }
+
+    if (shoreVertices.empty()) {
+        SDL_Log("Canal: No shore vertices found");
+        return nullptr;
+    }
+
+    // Sort shore vertices by distance from center (prefer vertices near city center for river entry)
+    std::sort(shoreVertices.begin(), shoreVertices.end(),
+        [](const geom::PointPtr& a, const geom::PointPtr& b) {
+            return a->length() < b->length();
+        });
+
+    // Find vertices on the opposite edge (horizon) - vertices that are far from water
+    // and on the outer boundary of the city
+    std::vector<geom::PointPtr> horizonVertices;
+    for (auto* patch : model->patches) {
+        if (patch->waterbody || patch->withinCity) continue;  // Only outer land patches
+
+        for (size_t i = 0; i < patch->shape.length(); ++i) {
+            geom::PointPtr vPtr = patch->shape.ptr(i);
+
+            // Check if this is an outer boundary vertex (few neighbors)
+            int neighborCount = 0;
+            bool isShore = false;
+            for (auto* neighbor : patch->neighbors) {
+                if (neighbor->shape.containsPtr(vPtr)) {
+                    neighborCount++;
+                    if (neighbor->waterbody) isShore = true;
+                }
+            }
+
+            // Skip if it's a shore vertex
+            if (isShore) continue;
+
+            // Vertices with few neighbors might be on outer edge
+            if (neighborCount <= 2) {
+                bool found = false;
+                for (const auto& hv : horizonVertices) {
+                    if (hv == vPtr) {
+                        found = true;
+                        break;
+                    }
+                }
+                if (!found) {
+                    horizonVertices.push_back(vPtr);
+                }
+            }
+        }
+    }
+
+    // If no horizon vertices found, try finding outer vertices from all land patches
+    if (horizonVertices.empty()) {
+        for (auto* patch : model->patches) {
+            if (patch->waterbody) continue;
+
+            for (size_t i = 0; i < patch->shape.length(); ++i) {
+                geom::PointPtr vPtr = patch->shape.ptr(i);
+
+                // Check distance from origin - far vertices are likely on horizon
+                double dist = vPtr->length();
+                if (dist > 400) {  // Far from center
+                    bool isShore = false;
+                    for (const auto& sv : shoreVertices) {
+                        if (sv == vPtr) {
+                            isShore = true;
+                            break;
+                        }
+                    }
+                    if (!isShore) {
+                        bool found = false;
+                        for (const auto& hv : horizonVertices) {
+                            if (hv == vPtr) {
+                                found = true;
+                                break;
+                            }
+                        }
+                        if (!found) {
+                            horizonVertices.push_back(vPtr);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    SDL_Log("Canal: Found %zu shore vertices, %zu horizon vertices",
+            shoreVertices.size(), horizonVertices.size());
+
+    if (horizonVertices.empty()) {
+        SDL_Log("Canal: No horizon vertices found, using simple path");
+        // Fallback to simple path from shore toward opposite direction
+        if (shoreVertices.empty()) return nullptr;
+
+        geom::Point start = *shoreVertices[0];
+        geom::Point center(0, 0);
+        geom::Point dir = center.subtract(start).norm(300);
+        geom::Point end = start.add(dir);
+
+        canal->buildCourse(start, end);
+        if (!canal->course.empty()) {
+            canal->smoothCourse(2);
+            canal->findBridges();
+            return canal;
+        }
+        return nullptr;
+    }
+
+    // Pick a shore vertex near the city center
+    geom::PointPtr startVertex = shoreVertices[0];
+
+    // Find the best horizon vertex - perpendicular to the shore direction
+    // Compute shore direction (tangent) at the start vertex
+    geom::Point shoreDir(0, 1);  // Default
+    for (auto* patch : model->patches) {
+        if (patch->waterbody) continue;
+        for (size_t i = 0; i < patch->shape.length(); ++i) {
+            if (patch->shape.ptr(i) == startVertex) {
+                size_t prev = (i == 0) ? patch->shape.length() - 1 : i - 1;
+                size_t next = (i + 1) % patch->shape.length();
+                shoreDir = patch->shape[next].subtract(patch->shape[prev]).norm(1);
                 break;
             }
         }
     }
 
-    if (shorePatches.empty()) {
-        // No shore patches - river not possible
-        return nullptr;
-    }
+    // Perpendicular to shore (inland direction)
+    geom::Point inlandDir(-shoreDir.y, shoreDir.x);
 
-    // Pick a random shore patch as start
-    size_t startIdx = static_cast<size_t>(utils::Random::floatVal() * shorePatches.size());
-    if (startIdx >= shorePatches.size()) startIdx = shorePatches.size() - 1;
+    // Find horizon vertex that is:
+    // 1. Somewhat aligned with inland direction (dot product > 0)
+    // 2. Far enough from start vertex (to make a proper river)
+    geom::PointPtr endVertex = nullptr;
+    double bestScore = -1000;
+    for (const auto& hv : horizonVertices) {
+        double dist = geom::Point::distance(*hv, *startVertex);
+        if (dist < 200) continue;  // Must be at least 200 units away
 
-    Patch* startPatch = shorePatches[startIdx];
+        geom::Point toHorizon = hv->subtract(*startVertex).norm(1);
+        double dotProduct = toHorizon.x * inlandDir.x + toHorizon.y * inlandDir.y;
 
-    // Find the shore edge on the start patch
-    geom::Point shorePoint;
-    bool foundShore = false;
-    for (size_t i = 0; i < startPatch->shape.length(); ++i) {
-        const geom::Point& v0 = startPatch->shape[i];
-        const geom::Point& v1 = startPatch->shape[(i + 1) % startPatch->shape.length()];
-
-        for (auto* neighbor : startPatch->neighbors) {
-            if (neighbor->waterbody &&
-                neighbor->shape.contains(v0) && neighbor->shape.contains(v1)) {
-                // This edge borders water
-                shorePoint = geom::GeomUtils::interpolate(v0, v1, 0.5);
-                foundShore = true;
-                break;
-            }
+        // Score combines alignment with distance
+        // Prefer far points that are roughly in the inland direction
+        double score = dotProduct * 0.5 + dist * 0.01;
+        if (score > bestScore) {
+            bestScore = score;
+            endVertex = hv;
         }
-        if (foundShore) break;
     }
 
-    if (!foundShore) {
+    if (!endVertex) {
+        SDL_Log("Canal: No suitable end vertex found");
         return nullptr;
     }
 
-    // Build course from shore toward city center
-    geom::Point endPoint = model->plaza
-        ? model->plaza->shape.centroid()
-        : model->patches[0]->shape.centroid();
+    double dist = geom::Point::distance(*startVertex, *endVertex);
+    SDL_Log("Canal: River from (%.0f, %.0f) to (%.0f, %.0f), distance %.0f",
+            startVertex->x, startVertex->y, endVertex->x, endVertex->y, dist);
 
-    canal->buildCourse(shorePoint, endPoint);
+    // Build course by following patch edges
+    canal->buildCourseAlongEdges(startVertex, endVertex);
+
+    if (canal->course.empty()) {
+        SDL_Log("Canal: Failed to build course");
+        return nullptr;
+    }
+
+    // Smooth the canal course (faithful to mfcg.js - rivers are smoothed)
+    canal->smoothCourse(2);
+
+    SDL_Log("Canal: Course has %zu points (smoothed)", canal->course.size());
     canal->findBridges();
 
     return canal;
@@ -80,7 +240,7 @@ std::unique_ptr<Canal> Canal::createRiver(Model* model) {
 void Canal::buildCourse(const geom::Point& start, const geom::Point& end) {
     course.clear();
 
-    // Simple straight canal with some randomness
+    // Simple straight canal with some waviness
     course.push_back(start);
 
     geom::Point dir = end.subtract(start);
@@ -102,13 +262,87 @@ void Canal::buildCourse(const geom::Point& start, const geom::Point& end) {
         geom::Point basePoint = start.add(dir.scale(t));
 
         // Add some waviness
-        double waveAmplitude = width * 0.5 * (utils::Random::floatVal() - 0.5);
+        double waveAmplitude = width * 2.0 * (utils::Random::floatVal() - 0.5);
         geom::Point waveOffset = perpDir.scale(waveAmplitude);
 
         course.push_back(basePoint.add(waveOffset));
     }
 
     course.push_back(end);
+}
+
+void Canal::buildCourseAlongEdges(const geom::PointPtr& start, const geom::PointPtr& end) {
+    course.clear();
+
+    // Walk from start toward end, following patch vertices
+    course.push_back(*start);
+
+    geom::Point current = *start;
+    geom::Point target = *end;
+
+    // Use vector to track visited points (check by coordinate proximity)
+    auto isVisited = [](const std::vector<geom::Point>& visited, const geom::Point& p) {
+        for (const auto& v : visited) {
+            if (geom::Point::distance(v, p) < 0.5) return true;
+        }
+        return false;
+    };
+    std::vector<geom::Point> visited;
+    visited.push_back(current);
+
+    int maxSteps = 200;
+
+    for (int step = 0; step < maxSteps; ++step) {
+        // Find patches containing the current point
+        std::vector<Patch*> containingPatches;
+        for (auto* patch : model->patches) {
+            if (patch->waterbody) continue;
+            for (size_t i = 0; i < patch->shape.length(); ++i) {
+                if (geom::Point::distance(patch->shape[i], current) < 0.5) {
+                    containingPatches.push_back(patch);
+                    break;
+                }
+            }
+        }
+
+        if (containingPatches.empty()) break;
+
+        // Find the best next vertex (makes most progress toward target)
+        geom::Point bestNext = current;
+        double bestProgress = -1000;
+
+        for (auto* patch : containingPatches) {
+            for (size_t i = 0; i < patch->shape.length(); ++i) {
+                const geom::Point& v = patch->shape[i];
+                if (isVisited(visited, v)) continue;
+
+                // Progress = how much closer to target
+                double progressToTarget = geom::Point::distance(current, target) -
+                                          geom::Point::distance(v, target);
+
+                // Add small random factor to prevent getting stuck
+                progressToTarget += utils::Random::floatVal() * 5.0;
+
+                if (progressToTarget > bestProgress) {
+                    bestProgress = progressToTarget;
+                    bestNext = v;
+                }
+            }
+        }
+
+        if (bestProgress <= -10) break;  // Stuck
+
+        course.push_back(bestNext);
+        visited.push_back(bestNext);
+        current = bestNext;
+
+        if (geom::Point::distance(current, target) < 5.0) {
+            break;  // Close enough
+        }
+    }
+
+    // Add the final target point
+    course.push_back(target);
 }
 
 void Canal::findBridges() {
@@ -154,6 +388,13 @@ void Canal::findBridges() {
             }
         }
     }
+}
+
+void Canal::smoothCourse(int iterations) {
+    if (course.size() < 3) return;
+
+    // Use Polygon::smoothOpen to smooth the course path
+    course = geom::Polygon::smoothOpen(course, nullptr, iterations);
 }
 
 geom::Polygon Canal::getWaterPolygon() const {

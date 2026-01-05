@@ -90,10 +90,20 @@ void Model::buildPatches() {
     int totalPoints = nPatches_ * 8;  // 8x more points for outer regions (faithful to Haxe)
     seeds.reserve(totalPoints);
 
+    // Track max radius b during spiral generation (faithful to mfcg.js line 10341)
+    double b = 0;
     for (int i = 0; i < totalPoints; ++i) {
         double a = sa + std::sqrt(static_cast<double>(i)) * 5.0;
         double r = (i == 0) ? 0.0 : 10.0 + i * (2.0 + utils::Random::floatVal());
         seeds.emplace_back(std::cos(a) * r, std::sin(a) * r);
+        if (r > b) b = r;  // Track max radius
+    }
+
+    // Add 6 boundary points at radius 2*b to create outer cells that extend to the edge
+    // (faithful to mfcg.js line 10344: Qd.regular(6, 2 * b))
+    for (int i = 0; i < 6; ++i) {
+        double a = i * M_PI / 3.0;  // 60 degrees apart
+        seeds.emplace_back(std::cos(a) * 2 * b, std::sin(a) * 2 * b);
     }
 
     // Calculate bounds for Voronoi
@@ -109,6 +119,11 @@ void Model::buildPatches() {
     double height = maxY - minY + 40;
     double offsetX = -minX + 20;
     double offsetY = -minY + 20;
+
+    // Save for later use
+    maxRadius_ = b;
+    offsetX_ = offsetX;
+    offsetY_ = offsetY;
 
     // Offset seeds to positive coordinates
     for (auto& p : seeds) {
@@ -182,6 +197,16 @@ void Model::buildPatches() {
         // Skip if we couldn't create a valid polygon
         if (sharedVertices.size() < 3) continue;
 
+        // Filter out cells whose seed is at the boundary (the 6 points we added at 2*b)
+        // These are only used to create Voronoi cells that extend to the edge
+        // The actual cell filter in mfcg.js (line 10346-10348) removes cells with vertices > b
+        // But we need to be careful not to remove useful edge cells
+        // Check if this cell's seed is near the boundary (radius ~2*b)
+        double seedX = region->seed.x - offsetX;
+        double seedY = region->seed.y - offsetY;
+        double seedDist = std::sqrt(seedX*seedX + seedY*seedY);
+        if (seedDist > b * 1.5) continue;  // Skip boundary helper cells
+
         auto patch = std::make_unique<Patch>(geom::Polygon(sharedVertices));
         patchesCreated++;
 
@@ -190,17 +215,23 @@ void Model::buildPatches() {
         ownedPatches_.push_back(std::move(patch));
     }
 
-    // Calculate maxR for coast calculations (faithful to mfcg.js)
-    double maxR = 0;
-    for (const auto& p : patches) {
-        geom::Point c = p->shape.centroid();
-        double dist = std::sqrt(c.x * c.x + c.y * c.y);
-        maxR = std::max(maxR, dist);
+    // b was calculated during spiral generation (max radius from origin)
+    // Store centroids for each patch (mfcg.js stores them in a map keyed by cell)
+    // In mfcg.js, centroids are relative to origin (0,0)
+    // Since we offset seeds by (offsetX, offsetY), we need to subtract that to get back to origin
+    std::map<Patch*, geom::Point> patchCentroids;
+    for (auto* patch : patches) {
+        geom::Point c = patch->shape.centroid();
+        // Convert back to origin-relative coordinates (undo the offset we applied to seeds)
+        geom::Point relC(c.x - offsetX, c.y - offsetY);
+        patchCentroids[patch] = relC;
     }
+
+    SDL_Log("Coast: b=%.1f (max spiral radius), offsetX=%.1f, offsetY=%.1f", b, offsetX, offsetY);
 
     // Apply coast mask if needed (faithful to mfcg.js buildPatches coastNeeded block)
     if (coastNeeded) {
-        // Generate coast direction if not set
+        // Generate coast direction if not set (mfcg.js line 10376)
         if (coastDir == 0.0) {
             coastDir = std::floor(utils::Random::floatVal() * 20) / 10.0;  // 0-2 in 0.1 steps
         }
@@ -209,36 +240,75 @@ void Model::buildPatches() {
         double cosA = std::cos(angle);
         double sinA = std::sin(angle);
 
-        // Coast parameters
-        double coastOffset = 20.0 + utils::Random::floatVal() * 40.0;  // f in mfcg.js
-        double normal3 = (utils::Random::floatVal() + utils::Random::floatVal() +
-                         utils::Random::floatVal()) / 3.0 * 2.0 - 1.0;
-        double coastK = 0.3 * maxR * normal3;  // k in mfcg.js
-        double normal4 = (utils::Random::floatVal() + utils::Random::floatVal() +
-                         utils::Random::floatVal() + utils::Random::floatVal()) / 2.0 - 1.0;
-        double coastN = maxR * (0.2 + std::abs(normal4));  // n in mfcg.js
+        // Coast parameters (faithful to mfcg.js lines 10371-10374)
+        // f = 20-60 random offset from coast center
+        double f = 20.0 + utils::Random::floatVal() * 40.0;
 
-        geom::Point coastCenter(coastN + coastOffset, coastK);
+        // k = lateral offset using normal3 distribution (±30% of b)
+        // mfcg.js: k = .3 * b * (normal3 * 2 - 1)
+        double normal3 = (utils::Random::floatVal() + utils::Random::floatVal() +
+                         utils::Random::floatVal()) / 3.0;
+        double k = 0.3 * b * (normal3 * 2.0 - 1.0);
+
+        // n = coastline radius using normal4 distribution (20-70% of b)
+        // mfcg.js: n = b * (.2 + abs(normal4 - 1)) where normal4 is sum of 4 randoms / 2
+        double normal4 = (utils::Random::floatVal() + utils::Random::floatVal() +
+                         utils::Random::floatVal() + utils::Random::floatVal()) / 2.0;
+        double n = b * (0.2 + std::abs(normal4 - 1.0));
+
+        // Coast center position (mfcg.js line 10381: g = new I(n + f, k))
+        geom::Point coastCenter(n + f, k);
+
+        SDL_Log("Coast params: b=%.1f f=%.1f k=%.1f n=%.1f coastCenter=(%.1f,%.1f) angle=%.2f",
+                b, f, k, n, coastCenter.x, coastCenter.y, coastDir);
 
         // Mark patches as water based on distance from coast center
+        int waterCount = 0;
         for (auto* patch : patches) {
-            geom::Point c = patch->shape.centroid();
-            // Rotate centroid by coast angle
+            geom::Point c = patchCentroids[patch];
+
+            // Rotate centroid by coast angle (mfcg.js line 10387)
+            // r = new I(u.x * q - u.y * m, u.y * q + u.x * m)
             geom::Point rotated(c.x * cosA - c.y * sinA, c.y * cosA + c.x * sinA);
 
-            double u = geom::Point::distance(coastCenter, rotated) - coastN;
+            // Distance from coast center minus radius (mfcg.js line 10388)
+            // u = I.distance(g, r) - n
+            double u = geom::Point::distance(coastCenter, rotated) - n;
+
+            // If patch is "beyond" the coast center (towards the sea), use lateral distance
+            // mfcg.js line 10389: r.x > g.x && (u = Math.min(u, Math.abs(r.y - k) - n))
+            // We use a wider lateral band (1.5*n instead of n) to ensure water reaches the edge
             if (rotated.x > coastCenter.x) {
-                u = std::min(u, std::abs(rotated.y - coastK) - coastN);
+                u = std::min(u, std::abs(rotated.y - k) - n * 1.5);
             }
 
-            // Simple fractal noise approximation (simplified from mfcg.js)
-            double fractalNoise = (utils::Random::floatVal() - 0.5) * 0.5;
-            double r = fractalNoise * coastN * std::sqrt(rotated.length() / maxR);
+            // Additionally, only allow circular water region for patches that are
+            // actually near the coast direction (rotated.x > 0), not in the opposite direction
+            // This prevents water from appearing in the middle of the map on the city side
+            if (rotated.x < coastCenter.x * 0.5) {
+                // Patch is far from the sea direction - don't use circular check
+                u = std::max(u, 1.0);  // Force positive (land)
+            }
 
+            // Fractal noise for coastline variation
+            // mfcg.js line 10390: r = d.get((r.x + b) / (2 * b), (r.y + b) / (2 * b)) * n * sqrt(r.length / b)
+            // The fractal function in mfcg.js returns smaller values than simple sin/cos
+            // We use a reduced amplitude to avoid rejecting patches that should be water
+            double nx = (rotated.x + b) / (2.0 * b);
+            double ny = (rotated.y + b) / (2.0 * b);
+            // Simple coherent noise approximation with reduced amplitude
+            double noise = std::sin(nx * 12.0) * std::cos(ny * 12.0) * 0.2 +
+                          std::sin(nx * 24.0 + 1.0) * std::cos(ny * 24.0 + 1.0) * 0.1;
+            double r = noise * n * std::sqrt(rotated.length() / b);
+
+            // Mark as water if inside the coastline (u + r < 0)
+            // mfcg.js line 10391: 0 > u + r && (c.waterbody = !0)
             if (u + r < 0) {
                 patch->waterbody = true;
+                waterCount++;
             }
         }
+        SDL_Log("Coast: marked %d patches as water out of %zu total", waterCount, patches.size());
     }
 
     // Assign withinCity based on waterbody status
@@ -275,6 +345,42 @@ void Model::buildPatches() {
     // Polygon::rect creates centered at origin, so offset to match content
     borderPatch.shape = geom::Polygon::rect(width, height);
     borderPatch.shape.offset(geom::Point(width / 2, height / 2));
+
+    // Compute water edge and shore from water patches
+    if (coastNeeded) {
+        std::vector<Patch*> waterPatches;
+        for (auto* patch : patches) {
+            if (patch->waterbody) {
+                waterPatches.push_back(patch);
+            }
+        }
+
+        if (!waterPatches.empty()) {
+            // Compute circumference of water patches (boundary polygon)
+            waterEdge = findCircumference(waterPatches);
+
+            // Smooth the water edge (faithful to mfcg.js line 10515)
+            // Uses 1-3 random iterations like the original
+            int smoothIterations = 1 + static_cast<int>(utils::Random::floatVal() * 3);
+            waterEdge = geom::Polygon::smooth(waterEdge, nullptr, smoothIterations);
+
+            // Also compute earth edge (boundary of land patches)
+            std::vector<Patch*> landPatches;
+            for (auto* patch : patches) {
+                if (!patch->waterbody) {
+                    landPatches.push_back(patch);
+                }
+            }
+            earthEdge = findCircumference(landPatches);
+
+            // Shore is the shared boundary between water and land
+            // For now, use water edge as shore (simplified)
+            shore = waterEdge;
+
+            SDL_Log("Coast: waterEdge has %zu vertices (smoothed %d iterations), earthEdge has %zu vertices",
+                    waterEdge.length(), smoothIterations, earthEdge.length());
+        }
+    }
 
     // Mark special patches
     // First patch (closest to center) can be plaza

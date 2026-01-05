@@ -41,11 +41,17 @@ public:
     // Create a river canal from shore to interior
     static std::unique_ptr<Canal> createRiver(Model* model);
 
-    // Build the canal course
+    // Build the canal course (simple straight with waviness)
     void buildCourse(const geom::Point& start, const geom::Point& end);
+
+    // Build the canal course following Voronoi edges
+    void buildCourseAlongEdges(const geom::PointPtr& start, const geom::PointPtr& end);
 
     // Find bridge locations where streets cross the canal
     void findBridges();
+
+    // Smooth the canal course (like mfcg.js smoothOpen)
+    void smoothCourse(int iterations = 1);
 
     // Get points along the canal for rendering
     std::vector<geom::Point> getCenterline() const { return course; }

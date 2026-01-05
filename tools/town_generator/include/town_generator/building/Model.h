@@ -101,6 +101,9 @@ public:
 
 private:
     int nPatches_;
+    double maxRadius_ = 0.0;  // Max spiral radius (b in mfcg.js)
+    double offsetX_ = 0.0;    // Offset to translate to positive coordinates
+    double offsetY_ = 0.0;
     std::unique_ptr<Topology> topology_;
 
     void buildPatches();

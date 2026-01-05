@@ -20,6 +20,9 @@ void MerchantWard::createGeometry() {
     double minSq = 4 * (50 + 60 * utils::Random::floatVal() * utils::Random::floatVal());
     double gridChaos = 0.5 + utils::Random::floatVal() * 0.3;
     createAlleys(block, minSq, gridChaos, 0.7, 0.15, 1.0);  // emptyProb=0.15
+
+    // Filter buildings to only keep those touching perimeter (creates empty centers)
+    filterInner(block);
 }
 
 } // namespace wards

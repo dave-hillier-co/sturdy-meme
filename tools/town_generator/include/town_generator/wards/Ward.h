@@ -48,6 +48,11 @@ public:
     // Filter buildings near outskirts (faithful to Haxe filterOutskirts)
     void filterOutskirts();
 
+    // Filter inner buildings that don't touch block perimeter
+    // Returns the inner (courtyard) lots, removes them from geometry
+    // Based on mfcg.js filterInner - buildings that touch perimeter are kept
+    void filterInner(const geom::Polygon& blockShape);
+
     // Create alleys recursively
     void createAlleys(
         const geom::Polygon& p,

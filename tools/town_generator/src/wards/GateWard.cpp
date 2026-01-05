@@ -20,6 +20,9 @@ void GateWard::createGeometry() {
     double minSq = 4 * (10 + 50 * utils::Random::floatVal() * utils::Random::floatVal());
     double gridChaos = 0.5 + utils::Random::floatVal() * 0.3;
     createAlleys(block, minSq, gridChaos, 0.7, 0.04, 1.0);  // emptyProb=0.04 (Haxe default)
+
+    // Filter buildings to only keep those touching perimeter (creates empty centers)
+    filterInner(block);
 }
 
 } // namespace wards

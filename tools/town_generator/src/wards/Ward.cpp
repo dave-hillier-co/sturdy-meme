@@ -185,6 +185,70 @@ void Ward::filterOutskirts() {
     }
 }
 
+void Ward::filterInner(const geom::Polygon& blockShape) {
+    // Based on mfcg.js filterInner:
+    // A building is considered "inner" (courtyard) if NONE of its vertices
+    // lie on any edge of the block shape.
+    // Only keep buildings that have at least one vertex touching the perimeter.
+
+    if (blockShape.length() < 3) return;
+
+    size_t blockLen = blockShape.length();
+
+    auto it = geometry.begin();
+    while (it != geometry.end()) {
+        bool touchesPerimeter = false;
+
+        // Check each vertex of the building
+        for (size_t vi = 0; vi < it->length() && !touchesPerimeter; ++vi) {
+            const geom::Point& v = (*it)[vi];
+
+            // Check against each edge of the block shape
+            geom::Point prevPoint = blockShape[blockLen - 1];
+            for (size_t ei = 0; ei < blockLen && !touchesPerimeter; ++ei) {
+                const geom::Point& currPoint = blockShape[ei];
+
+                // Check if vertex lies on this edge
+                double edgeDx = currPoint.x - prevPoint.x;
+                double edgeDy = currPoint.y - prevPoint.y;
+                double edgeLenSq = edgeDx * edgeDx + edgeDy * edgeDy;
+
+                if (edgeLenSq > 1e-9) {
+                    // Project point onto edge line
+                    double t = ((v.x - prevPoint.x) * edgeDx + (v.y - prevPoint.y) * edgeDy) / edgeLenSq;
+
+                    // Check if projection is within edge segment
+                    if (t >= 0.0 && t <= 1.0) {
+                        // Calculate distance from point to edge
+                        geom::Point projected(
+                            prevPoint.x + t * edgeDx,
+                            prevPoint.y + t * edgeDy
+                        );
+                        double distSq = (v.x - projected.x) * (v.x - projected.x) +
+                                       (v.y - projected.y) * (v.y - projected.y);
+
+                        // If very close to edge, consider it touching
+                        // Use 0.01 (squared distance) = ~0.1 unit tolerance
+                        // This accounts for floating point drift in recursive bisection
+                        if (distSq < 0.01) {
+                            touchesPerimeter = true;
+                        }
+                    }
+                }
+
+                prevPoint = currPoint;
+            }
+        }
+
+        // Keep only buildings that touch the perimeter
+        if (touchesPerimeter) {
+            ++it;
+        } else {
+            it = geometry.erase(it);
+        }
+    }
+}
+
 void Ward::createAlleys(
     const geom::Polygon& p,
     double minSq,

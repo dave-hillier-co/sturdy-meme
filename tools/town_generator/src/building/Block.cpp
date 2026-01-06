@@ -1,0 +1,483 @@
+#include "town_generator/building/Block.h"
+#include "town_generator/building/WardGroup.h"
+#include "town_generator/building/Cutter.h"
+#include "town_generator/geom/GeomUtils.h"
+#include "town_generator/utils/Random.h"
+#include <algorithm>
+#include <cmath>
+#include <SDL3/SDL_log.h>
+
+namespace town_generator {
+namespace building {
+
+Block::Block(const geom::Polygon& shape, WardGroup* group)
+    : shape(shape), group(group) {}
+
+double Block::getArea(const geom::Polygon& poly) {
+    auto it = cacheArea.find(&poly);
+    if (it != cacheArea.end()) {
+        return it->second;
+    }
+    double area = std::abs(poly.square());
+    cacheArea[&poly] = area;
+    return area;
+}
+
+std::vector<geom::Point> Block::getOBB(const geom::Polygon& poly) {
+    auto it = cacheOBB.find(&poly);
+    if (it != cacheOBB.end()) {
+        return it->second;
+    }
+    std::vector<geom::Point> obb = poly.orientedBoundingBox();
+    cacheOBB[&poly] = obb;
+    return obb;
+}
+
+geom::Point Block::getCenter() {
+    if (!centerComputed) {
+        center = shape.centroid();
+        centerComputed = true;
+    }
+    return center;
+}
+
+bool Block::isRectangle(const geom::Polygon& poly) {
+    // Faithful to mfcg.js Block.isRectangle (lines 12213-12219)
+    if (poly.length() != 4) return false;
+
+    double area = getArea(poly);
+    auto obb = getOBB(poly);
+
+    if (obb.size() < 4) return false;
+
+    // OBB area
+    geom::Point edge01 = obb[1].subtract(obb[0]);
+    geom::Point edge12 = obb[2].subtract(obb[1]);
+    double obbArea = edge01.length() * edge12.length();
+
+    if (obbArea < 0.001) return false;
+
+    return (area / obbArea) > 0.75;
+}
+
+bool Block::edgeConvergesWithBlock(const geom::Point& v0, const geom::Point& v1) const {
+    // Check if lot edge (v0, v1) converges with any block perimeter edge
+    // Faithful to mfcg.js qa.converge
+    size_t blockLen = shape.length();
+    for (size_t i = 0; i < blockLen; ++i) {
+        const geom::Point& b0 = shape[i];
+        const geom::Point& b1 = shape[(i + 1) % blockLen];
+
+        // Check if edges are on the same line and overlap
+        // Using geometric check similar to qa.converge
+        geom::Point lotDir = v1.subtract(v0);
+        geom::Point blockDir = b1.subtract(b0);
+
+        double lotLen = lotDir.length();
+        double blockLen = blockDir.length();
+
+        if (lotLen < 0.001 || blockLen < 0.001) continue;
+
+        // Normalize
+        lotDir = lotDir.scale(1.0 / lotLen);
+        blockDir = blockDir.scale(1.0 / blockLen);
+
+        // Check if parallel (dot product close to +/-1)
+        double dot = lotDir.x * blockDir.x + lotDir.y * blockDir.y;
+        if (std::abs(dot) < 0.99) continue;
+
+        // Check if on same line (distance from v0 to block edge line)
+        double dist = geom::GeomUtils::distance2line(b0.x, b0.y, blockDir.x, blockDir.y, v0.x, v0.y);
+        if (dist > 0.1) continue;
+
+        // Check if segments overlap
+        // Project v0 and v1 onto block edge
+        double t0 = ((v0.x - b0.x) * blockDir.x + (v0.y - b0.y) * blockDir.y);
+        double t1 = ((v1.x - b0.x) * blockDir.x + (v1.y - b0.y) * blockDir.y);
+
+        if (t0 > t1) std::swap(t0, t1);
+
+        // Block edge spans [0, blockLen]
+        // Need some overlap
+        double overlapStart = std::max(t0, 0.0);
+        double overlapEnd = std::min(t1, blockLen);
+
+        if (overlapEnd - overlapStart > 0.1) {
+            return true;
+        }
+    }
+    return false;
+}
+
+void Block::createLots() {
+    // Use TwistedBlock to create lots
+    if (!group) {
+        // No group, can't get parameters
+        lots.clear();
+        lots.push_back(shape);
+        return;
+    }
+
+    lots = TwistedBlock::createLots(this, group->alleys);
+}
+
+void Block::createRects() {
+    // Faithful to mfcg.js Block.createRects (lines 12177-12220)
+    if (lots.empty()) {
+        createLots();
+    }
+
+    rects.clear();
+    double inset = group ? group->alleys.inset : 0.3;
+    size_t blockLen = shape.length();
+
+    for (const auto& lot : lots) {
+        // Check if lot is already rectangular
+        if (isRectangle(lot)) {
+            rects.push_back(lot);
+            continue;
+        }
+
+        // Find if lot has an edge on the block perimeter
+        int perimeterEdge = -1;
+        size_t lotLen = lot.length();
+
+        for (size_t i = 0; i < lotLen; ++i) {
+            const geom::Point& v0 = lot[i];
+            const geom::Point& v1 = lot[(i + 1) % lotLen];
+
+            if (edgeConvergesWithBlock(v0, v1)) {
+                if (perimeterEdge == -1) {
+                    perimeterEdge = static_cast<int>(i);
+                } else {
+                    // Multiple perimeter edges - treat as rectangular
+                    rects.push_back(lot);
+                    perimeterEdge = -2;
+                    break;
+                }
+            }
+        }
+
+        if (perimeterEdge == -2) continue;  // Already added
+
+        // If no perimeter edge or multiple, use LIRA
+        double area = getArea(lot);
+        double minDim = std::max(1.2, std::sqrt(area) / 2.0);
+
+        std::vector<geom::Point> pts;
+        for (size_t i = 0; i < lot.length(); ++i) {
+            pts.push_back(lot[i]);
+        }
+
+        std::vector<geom::Point> rect;
+        if (perimeterEdge >= 0) {
+            // Use LIR aligned with perimeter edge
+            rect = geom::GeomUtils::lir(pts, perimeterEdge);
+        } else {
+            // Use LIRA (largest inscribed rectangle, any alignment)
+            rect = geom::GeomUtils::lira(pts);
+        }
+
+        // Validate rectangle dimensions
+        if (rect.size() >= 4) {
+            double rectLen01 = geom::Point::distance(rect[0], rect[1]);
+            double rectLen12 = geom::Point::distance(rect[1], rect[2]);
+
+            if (rectLen01 >= minDim && rectLen12 >= minDim) {
+                rects.push_back(geom::Polygon(rect));
+            } else {
+                // Rectangle too small, use original lot
+                rects.push_back(lot);
+            }
+        } else {
+            rects.push_back(lot);
+        }
+    }
+
+    // Apply shrink processing if enabled (mfcg.js "Shrink" processing mode)
+    // For now, skip this optional step
+}
+
+void Block::createBuildings() {
+    // Faithful to mfcg.js Block.createBuildings (lines 12221-12252)
+    if (rects.empty()) {
+        createRects();
+    }
+
+    buildings.clear();
+    double minSq = group ? group->alleys.minSq : 15.0;
+    double minBlockSq = minSq / 4.0;
+    double shapeFactor = group ? group->alleys.shapeFactor : 1.0;
+    double threshold = minBlockSq * shapeFactor;
+
+    for (const auto& rect : rects) {
+        // Simplify polygons with more than 4 vertices
+        std::vector<geom::Point> pts;
+        for (size_t i = 0; i < rect.length(); ++i) {
+            pts.push_back(rect[i]);
+        }
+
+        // If more than 4 vertices, simplify
+        if (pts.size() > 4) {
+            while (pts.size() > 4) {
+                // Find shortest edge
+                size_t shortestIdx = 0;
+                double shortestLen = std::numeric_limits<double>::max();
+                for (size_t i = 0; i < pts.size(); ++i) {
+                    size_t next = (i + 1) % pts.size();
+                    double len = geom::Point::distance(pts[i], pts[next]);
+                    if (len < shortestLen) {
+                        shortestLen = len;
+                        shortestIdx = i;
+                    }
+                }
+                pts.erase(pts.begin() + shortestIdx);
+            }
+        }
+
+        geom::Polygon building(pts);
+
+        // Create complex building using Dwellings-style algorithm
+        // For now, use the simplified rectangle
+        // TODO: Implement Jd.create for complex L-shaped buildings
+
+        buildings.push_back(building);
+    }
+}
+
+std::vector<geom::Polygon> Block::filterInner() {
+    // Faithful to mfcg.js Block.filterInner (lines 12253-12286)
+    // Remove lots that don't touch the block perimeter
+    // Return the removed (courtyard) lots
+
+    courtyard.clear();
+    std::vector<geom::Polygon> filtered;
+
+    size_t blockLen = shape.length();
+
+    for (const auto& lot : lots) {
+        bool touchesPerimeter = false;
+
+        // Check each vertex of the lot
+        for (size_t vi = 0; vi < lot.length() && !touchesPerimeter; ++vi) {
+            const geom::Point& v = lot[vi];
+
+            // Check if vertex lies on any edge of the block perimeter
+            geom::Point prevPoint = shape[blockLen - 1];
+            for (size_t ei = 0; ei < blockLen && !touchesPerimeter; ++ei) {
+                const geom::Point& currPoint = shape[ei];
+
+                // Calculate distance from vertex to edge
+                double edgeDx = currPoint.x - prevPoint.x;
+                double edgeDy = currPoint.y - prevPoint.y;
+                double edgeLenSq = edgeDx * edgeDx + edgeDy * edgeDy;
+
+                if (edgeLenSq > 1e-9) {
+                    double t = ((v.x - prevPoint.x) * edgeDx + (v.y - prevPoint.y) * edgeDy) / edgeLenSq;
+
+                    if (t >= 0.0 && t <= 1.0) {
+                        geom::Point projected(
+                            prevPoint.x + t * edgeDx,
+                            prevPoint.y + t * edgeDy
+                        );
+                        double distSq = (v.x - projected.x) * (v.x - projected.x) +
+                                       (v.y - projected.y) * (v.y - projected.y);
+
+                        if (distSq < 0.01) {
+                            touchesPerimeter = true;
+                        }
+                    }
+                }
+
+                prevPoint = currPoint;
+            }
+        }
+
+        if (touchesPerimeter) {
+            filtered.push_back(lot);
+        } else {
+            courtyard.push_back(lot);
+        }
+    }
+
+    lots = filtered;
+    return courtyard;
+}
+
+void Block::indentFronts() {
+    // Faithful to mfcg.js Block.indentFronts (lines 12287-12302)
+    // Push lots slightly toward block center for setback variation
+
+    geom::Point blockCenter = getCenter();
+
+    for (auto& lot : lots) {
+        double area = getArea(lot);
+        double indent = std::min(std::sqrt(area) / 3.0, 1.2) * utils::Random::floatVal();
+
+        if (indent < 0.5) continue;
+
+        geom::Point lotCenter = lot.centroid();
+        geom::Point dir = blockCenter.subtract(lotCenter);
+        double dirLen = dir.length();
+
+        if (dirLen < 0.001) continue;
+
+        dir = dir.scale(indent / dirLen);
+
+        // Translate the lot
+        std::vector<geom::Point> translated;
+        for (size_t i = 0; i < lot.length(); ++i) {
+            translated.push_back(lot[i].add(dir));
+        }
+
+        // Intersect with block shape to ensure it stays within bounds
+        // For now, just use the translated version
+        // TODO: Implement polygon intersection (ye.and)
+        lot = geom::Polygon(translated);
+    }
+}
+
+std::vector<geom::Point> Block::spawnTrees() {
+    // Faithful to mfcg.js Block.spawnTrees (lines 12303-12325)
+    std::vector<geom::Point> trees;
+
+    if (courtyard.empty() || !group) return trees;
+
+    double greenery = group->greenery;
+    bool isUrban = group->urban;
+
+    // Reduce greenery for non-urban areas
+    if (!isUrban) {
+        greenery *= 0.1;
+    }
+
+    // Spawn trees in courtyard areas based on greenery level
+    for (const auto& yard : courtyard) {
+        double area = std::abs(yard.square());
+        int numTrees = static_cast<int>(area * greenery / 10.0);
+
+        for (int i = 0; i < numTrees; ++i) {
+            // Generate random point inside courtyard
+            // Simple approach: use random barycentric coordinates of bounding box
+            auto bounds = yard.getBounds();
+            for (int attempt = 0; attempt < 10; ++attempt) {
+                double x = bounds.left + utils::Random::floatVal() * (bounds.right - bounds.left);
+                double y = bounds.top + utils::Random::floatVal() * (bounds.bottom - bounds.top);
+                geom::Point p(x, y);
+
+                if (yard.contains(p)) {
+                    trees.push_back(p);
+                    break;
+                }
+            }
+        }
+    }
+
+    return trees;
+}
+
+// TwistedBlock implementation
+
+std::vector<geom::Polygon> TwistedBlock::createLots(
+    Block* block,
+    const wards::AlleyParams& params
+) {
+    std::vector<geom::Polygon> result;
+
+    if (!block || block->shape.length() < 3) {
+        return result;
+    }
+
+    // Partition the block shape
+    partition(block->shape, params.minSq, params.sizeChaos, 0.5, result);
+
+    // Filter out lots that are too small or have bad shapes
+    std::vector<geom::Polygon> filtered;
+    double minArea = params.minSq / 4.0;
+
+    for (const auto& lot : result) {
+        if (lot.length() < 4) continue;
+
+        double area = std::abs(lot.square());
+        if (area < minArea) continue;
+
+        // Get OBB for shape validation
+        auto obb = lot.orientedBoundingBox();
+        if (obb.size() < 4) {
+            filtered.push_back(lot);
+            continue;
+        }
+
+        geom::Point edge01 = obb[1].subtract(obb[0]);
+        geom::Point edge12 = obb[2].subtract(obb[1]);
+        double len01 = edge01.length();
+        double len12 = edge12.length();
+
+        // Check minimum dimensions (1.2 in mfcg.js)
+        if (len01 < 1.2 || len12 < 1.2) continue;
+
+        // Check shape ratio
+        double obbArea = len01 * len12;
+        if (obbArea > 0.001 && (area / obbArea) < 0.5) continue;
+
+        filtered.push_back(lot);
+    }
+
+    return filtered;
+}
+
+void TwistedBlock::partition(
+    const geom::Polygon& shape,
+    double minSq,
+    double sizeChaos,
+    double minTurnOffset,
+    std::vector<geom::Polygon>& result
+) {
+    double area = std::abs(shape.square());
+
+    // Size threshold with chaos variation
+    double threshold = minSq * std::pow(2.0, 4.0 * sizeChaos * (utils::Random::floatVal() - 0.5));
+
+    // If area is below threshold, it's a lot
+    if (area < threshold || shape.length() < 3) {
+        result.push_back(shape);
+        return;
+    }
+
+    // Find longest edge for bisection
+    size_t longestEdge = 0;
+    double longestLen = 0;
+    for (size_t i = 0; i < shape.length(); ++i) {
+        geom::Point v = shape.vectori(static_cast<int>(i));
+        double len = v.length();
+        if (len > longestLen) {
+            longestLen = len;
+            longestEdge = i;
+        }
+    }
+
+    // Ratio with turn offset (faithful to mfcg.js TwistedBlock.minTurnOffset)
+    double ratio = minTurnOffset + utils::Random::floatVal() * (1.0 - 2.0 * minTurnOffset);
+
+    // Small angle variation for "twisted" effect
+    double angle = (utils::Random::floatVal() - 0.5) * M_PI / 8.0;
+
+    // Small gap (unlike alleys which have larger gaps)
+    double gap = 0.3;
+
+    auto halves = Cutter::bisect(shape, shape[longestEdge], ratio, angle, gap);
+
+    if (halves.size() < 2) {
+        // Bisection failed, this is a lot
+        result.push_back(shape);
+        return;
+    }
+
+    // Recursively partition each half
+    for (const auto& half : halves) {
+        partition(half, minSq, sizeChaos, minTurnOffset, result);
+    }
+}
+
+} // namespace building
+} // namespace town_generator

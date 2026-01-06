@@ -1016,9 +1016,117 @@ void Model::createWards() {
 }
 
 void Model::buildGeometry() {
+    // First, set edge data on all patches
+    setEdgeData();
+
+    // Create WardGroups for unified geometry generation
+    createWardGroups();
+
+    // Generate geometry for each ward
     for (size_t i = 0; i < wards_.size(); ++i) {
         wards_[i]->createGeometry();
     }
+}
+
+void Model::setEdgeData() {
+    // Set edge types on all patches (faithful to mfcg.js edge data assignment)
+    // Edge types: COAST, ROAD, WALL, CANAL, HORIZON, NONE
+
+    for (auto* patch : patches) {
+        size_t len = patch->shape.length();
+
+        for (size_t i = 0; i < len; ++i) {
+            const geom::Point& v0 = patch->shape[i];
+            const geom::Point& v1 = patch->shape[(i + 1) % len];
+
+            EdgeType edgeType = EdgeType::NONE;
+
+            // Check if edge borders water (COAST)
+            for (auto* neighbor : patch->neighbors) {
+                if (neighbor->waterbody) {
+                    int edgeIdx = neighbor->findEdgeIndex(v1, v0);  // Reverse direction for neighbor
+                    if (edgeIdx >= 0) {
+                        edgeType = EdgeType::COAST;
+                        break;
+                    }
+                }
+            }
+
+            // Check if edge is on wall (WALL)
+            if (edgeType == EdgeType::NONE && wall) {
+                if (wall->bordersBy(patch, v0, v1)) {
+                    edgeType = EdgeType::WALL;
+                }
+            }
+
+            // Check if edge is on a canal (CANAL)
+            if (edgeType == EdgeType::NONE) {
+                for (const auto& canal : canals) {
+                    if (canal->containsEdge(v0, v1)) {
+                        edgeType = EdgeType::CANAL;
+                        break;
+                    }
+                }
+            }
+
+            // Check if edge is on a road (ROAD)
+            if (edgeType == EdgeType::NONE) {
+                auto isOnRoad = [&](const std::vector<Street>& roads) {
+                    for (const auto& road : roads) {
+                        if (road.size() < 2) continue;
+                        for (size_t j = 0; j + 1 < road.size(); ++j) {
+                            if ((*road[j] == v0 && *road[j + 1] == v1) ||
+                                (*road[j] == v1 && *road[j + 1] == v0)) {
+                                return true;
+                            }
+                        }
+                    }
+                    return false;
+                };
+
+                if (isOnRoad(arteries) || isOnRoad(streets) || isOnRoad(roads)) {
+                    edgeType = EdgeType::ROAD;
+                }
+            }
+
+            // Check if edge is on map boundary (HORIZON)
+            // This is simplified - check if both vertices are near the border
+            if (edgeType == EdgeType::NONE && !patch->withinCity) {
+                auto bounds = borderPatch.shape.getBounds();
+                double margin = 10.0;
+                bool v0OnBorder = (v0.x < bounds.left + margin || v0.x > bounds.right - margin ||
+                                   v0.y < bounds.top + margin || v0.y > bounds.bottom - margin);
+                bool v1OnBorder = (v1.x < bounds.left + margin || v1.x > bounds.right - margin ||
+                                   v1.y < bounds.top + margin || v1.y > bounds.bottom - margin);
+                if (v0OnBorder && v1OnBorder) {
+                    edgeType = EdgeType::HORIZON;
+                }
+            }
+
+            patch->setEdgeType(i, edgeType);
+        }
+    }
+
+    SDL_Log("Model: Set edge data on %zu patches", patches.size());
+}
+
+void Model::createWardGroups() {
+    // Create WardGroups from adjacent patches with the same ward type
+    WardGroupBuilder builder(this);
+    wardGroups_ = builder.build();
+
+    SDL_Log("Model: Created %zu ward groups", wardGroups_.size());
+}
+
+double Model::getCanalWidth(const geom::Point& v) const {
+    // Get the canal width at a vertex (faithful to mfcg.js getCanalWidth)
+    for (const auto& canal : canals) {
+        double width = canal->getWidthAtVertex(v);
+        if (width > 0) {
+            return width;
+        }
+    }
+    return 0.0;
 }
 
 } // namespace building

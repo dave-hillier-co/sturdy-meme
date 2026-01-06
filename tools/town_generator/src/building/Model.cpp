@@ -100,6 +100,25 @@ void Model::buildPatches() {
         if (r > b) b = r;  // Track max radius
     }
 
+    // Plaza seed position override (faithful to mfcg.js line 10339-10342)
+    // When plazaNeeded, override seeds 1-4 to form a cross pattern for rectangular plaza
+    if (plazaNeeded && seeds.size() >= 5) {
+        utils::Random::save();  // Save random state so plaza doesn't affect subsequent randoms
+
+        double f = 8.0 + utils::Random::floatVal() * 8.0;  // 8-16 range
+        double h = f * (1.0 + utils::Random::floatVal());  // f to 2f range
+        b = std::max(b, h);  // Update max radius if needed
+
+        // Override seeds 1-4 to form a cross pattern centered at (0, 0)
+        // d is the starting angle (sa)
+        seeds[1] = geom::Point(std::cos(sa) * f, std::sin(sa) * f);                          // right
+        seeds[2] = geom::Point(std::cos(sa + M_PI/2) * h, std::sin(sa + M_PI/2) * h);       // up
+        seeds[3] = geom::Point(std::cos(sa + M_PI) * f, std::sin(sa + M_PI) * f);           // left
+        seeds[4] = geom::Point(std::cos(sa + 3*M_PI/2) * h, std::sin(sa + 3*M_PI/2) * h);   // down
+
+        utils::Random::restore();  // Restore random state
+    }
+
     // Add 6 boundary points at radius 2*b to create outer cells that extend to the edge
     // (faithful to mfcg.js line 10344: Qd.regular(6, 2 * b))
     for (int i = 0; i < 6; ++i) {

@@ -208,116 +208,108 @@ void Ward::createGeometry() {
 }
 
 void Ward::filterOutskirts() {
+    // Faithful to mfcg.js Ward.filter (lines 889-958)
+    // Uses edge-type-based density at vertices, interpolated to building centers
     if (!patch || !model) return;
 
-    // Simplified filterOutskirts - filter buildings based on distance from patch edges
-    // that are on roads or border other city patches.
+    size_t numVerts = patch->shape.length();
+    if (numVerts < 3) return;
 
-    // Structure to hold populated edge info
-    struct PopulatedEdge {
-        double x, y, dx, dy, d;
-    };
-    std::vector<PopulatedEdge> populatedEdges;
+    // Calculate density for each vertex based on:
+    // 1. If "inner" vertex (all adjacent patches are withinCity or waterbody), density = 1.0
+    // 2. Otherwise, max density from adjacent edges:
+    //    - ROAD edges: 0.3
+    //    - WALL edges: 0.5
+    //    - CANAL edges: 0.1
+    //    - Other edges: 0.0
+    std::vector<double> vertexDensity(numVerts, 0.0);
 
-    // Helper to add an edge with a distance factor
-    auto addEdge = [&](const geom::Point& v1, const geom::Point& v2, double factor) {
-        double dx = v2.x - v1.x;
-        double dy = v2.y - v1.y;
-
-        // Find max distance from any vertex to this edge line
-        double maxDist = 0;
-        for (size_t i = 0; i < patch->shape.length(); ++i) {
-            const geom::Point& v = patch->shape[i];
-            if (v == v1 || v == v2) continue;
-            double dist = geom::GeomUtils::distance2line(v1.x, v1.y, dx, dy, v.x, v.y);
-            maxDist = std::max(maxDist, dist * factor);
-        }
-
-        if (maxDist > 0) {
-            populatedEdges.push_back({v1.x, v1.y, dx, dy, maxDist});
-        }
-    };
-
-    // Check each edge of the patch
-    patch->shape.forEdge([&](const geom::Point& v1, const geom::Point& v2) {
-        // Check if edge is on a road/artery using improved geometric detection
-        bool onRoad = isEdgeOnRoad(v1, v2, model->arteries) ||
-                      isEdgeOnRoad(v1, v2, model->streets) ||
-                      isEdgeOnRoad(v1, v2, model->roads);
-
-        if (onRoad) {
-            addEdge(v1, v2, 1.0);
-        } else {
-            // For non-road edges, add with reduced factor if patch is within city
-            if (patch->withinCity) {
-                addEdge(v1, v2, 0.4);
-            }
-        }
-    });
-
-    // If no populated edges found, don't filter
-    if (populatedEdges.empty()) return;
-
-    // Calculate density for each vertex based on whether all adjacent patches are in city
-    std::vector<double> density;
-    for (size_t i = 0; i < patch->shape.length(); ++i) {
+    for (size_t i = 0; i < numVerts; ++i) {
         const geom::Point& v = patch->shape[i];
 
-        // Check if this is a gate vertex
-        bool isGate = false;
-        if (model->wall) {
-            for (const auto& gate : model->wall->gates) {
-                if (*gate == v) {
-                    isGate = true;
-                    break;
-                }
+        // Check if this is an "inner" vertex (all adjacent patches are withinCity or waterbody)
+        auto adjacentPatches = model->patchByVertex(v);
+        bool isInner = true;
+        for (auto* p : adjacentPatches) {
+            if (!p->withinCity && !p->waterbody) {
+                isInner = false;
+                break;
             }
         }
 
-        if (isGate) {
-            density.push_back(1.0);
-        } else {
-            // Check if all patches at this vertex are within city
-            auto patches = model->patchByVertex(v);
-            bool allWithinCity = true;
-            for (auto* p : patches) {
-                if (!p->withinCity) {
-                    allWithinCity = false;
-                    break;
-                }
-            }
-            density.push_back(allWithinCity ? 2.0 * utils::Random::floatVal() : 0.0);
+        if (isInner) {
+            vertexDensity[i] = 1.0;
+            continue;
         }
+
+        // Not inner - calculate density from adjacent edges
+        // Previous edge (i-1 to i) and current edge (i to i+1)
+        size_t prevIdx = (i + numVerts - 1) % numVerts;
+        const geom::Point& vPrev = patch->shape[prevIdx];
+        const geom::Point& vNext = patch->shape[(i + 1) % numVerts];
+
+        double maxDensity = 0.0;
+
+        // Check previous edge type
+        double prevDensity = 0.0;
+        if (model->wall && model->wall->bordersBy(patch, vPrev, v)) {
+            prevDensity = 0.5;  // WALL
+        } else if (isEdgeOnRoad(vPrev, v, model->arteries) ||
+                   isEdgeOnRoad(vPrev, v, model->streets) ||
+                   isEdgeOnRoad(vPrev, v, model->roads)) {
+            prevDensity = 0.3;  // ROAD
+        }
+        for (const auto& canal : model->canals) {
+            if (canal->containsEdge(vPrev, v)) {
+                prevDensity = std::max(prevDensity, 0.1);  // CANAL
+                break;
+            }
+        }
+        maxDensity = std::max(maxDensity, prevDensity);
+
+        // Check current edge type
+        double currDensity = 0.0;
+        if (model->wall && model->wall->bordersBy(patch, v, vNext)) {
+            currDensity = 0.5;  // WALL
+        } else if (isEdgeOnRoad(v, vNext, model->arteries) ||
+                   isEdgeOnRoad(v, vNext, model->streets) ||
+                   isEdgeOnRoad(v, vNext, model->roads)) {
+            currDensity = 0.3;  // ROAD
+        }
+        for (const auto& canal : model->canals) {
+            if (canal->containsEdge(v, vNext)) {
+                currDensity = std::max(currDensity, 0.1);  // CANAL
+                break;
+            }
+        }
+        maxDensity = std::max(maxDensity, currDensity);
+
+        vertexDensity[i] = maxDensity;
     }
 
-    // Filter buildings
+    // MFCG threshold calculation: density * sqrt(numFaces) - (0.5 * sqrt(numFaces) - 0.5)
+    // Where numFaces is the number of buildings
+    double sqrtFaces = std::sqrt(static_cast<double>(geometry.size()));
+    double offset = 0.5 * sqrtFaces - 0.5;
+
+    // Filter buildings based on interpolated density at center
     auto it = geometry.begin();
     while (it != geometry.end()) {
-        double minDist = 1.0;
+        // Get building center
+        geom::Point center = it->center();
 
-        // Find minimum distance ratio to any populated edge
-        for (const auto& edge : populatedEdges) {
-            for (size_t i = 0; i < it->length(); ++i) {
-                const geom::Point& v = (*it)[i];
-                double d = geom::GeomUtils::distance2line(edge.x, edge.y, edge.dx, edge.dy, v.x, v.y);
-                double dist = edge.d > 0 ? d / edge.d : 1.0;
-                minDist = std::min(minDist, dist);
-            }
+        // Interpolate density at center using barycentric coordinates
+        auto weights = patch->shape.interpolate(center);
+        double interpolatedDensity = 0.0;
+        for (size_t j = 0; j < weights.size() && j < vertexDensity.size(); ++j) {
+            interpolatedDensity += vertexDensity[j] * weights[j];
         }
 
-        // Interpolate density at building center
-        geom::Point c = it->center();
-        auto interp = patch->shape.interpolate(c);
-        double p = 0.0;
-        for (size_t j = 0; j < interp.size() && j < density.size(); ++j) {
-            p += density[j] * interp[j];
-        }
-        if (p > 0.001) {
-            minDist /= p;
-        }
+        // Calculate threshold: interpolatedDensity * sqrtFaces - offset
+        double threshold = interpolatedDensity * sqrtFaces - offset;
 
-        // Filter based on random threshold
-        if (utils::Random::fuzzy(1.0) > minDist) {
+        // Keep building if random < threshold (higher density = more likely to keep)
+        if (utils::Random::floatVal() < threshold) {
             ++it;
         } else {
             it = geometry.erase(it);
@@ -438,11 +430,15 @@ void Ward::createAlleys(
         }
 
         for (const auto& half : halves) {
-            double halfSq = half.square();
+            double halfSq = std::abs(half.square());
             double threshold = minSq * std::pow(2.0, 4.0 * sizeChaos * (utils::Random::floatVal() - 0.5));
 
             if (halfSq < threshold) {
-                if (!utils::Random::boolVal(emptyProb)) {
+                // Faithful to mfcg.js: check for church creation on medium-sized blocks
+                double churchThreshold = minSq * 4.0;
+                if (church.empty() && halfSq >= minSq && halfSq <= churchThreshold) {
+                    createChurch(half);
+                } else if (!utils::Random::boolVal(emptyProb)) {
                     addBuildingLot(half, minSq);
                 }
             } else {
@@ -529,7 +525,12 @@ void Ward::createAlleys(
         double threshold = minSq * std::pow(2.0, 4.0 * sizeChaos * (utils::Random::floatVal() - 0.5));
 
         if (halfSq < threshold) {
-            if (!utils::Random::boolVal(emptyProb)) {
+            // Faithful to mfcg.js: check for church creation on medium-sized blocks
+            // Church threshold is 4 * minSq (medium-sized blocks)
+            double churchThreshold = minSq * 4.0;
+            if (church.empty() && halfSq >= minSq && halfSq <= churchThreshold) {
+                createChurch(half);
+            } else if (!utils::Random::boolVal(emptyProb)) {
                 addBuildingLot(half, minSq);
             }
         } else {

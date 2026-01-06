@@ -41,7 +41,12 @@ public:
     std::vector<std::unique_ptr<Block>> blocks;
 
     // Whether this is an urban (walled) district
+    // Set to true if all border vertices are "inner" (within city or waterbody)
     bool urban = false;
+
+    // Inner vertices along the border (faithful to mfcg.js District.inner)
+    // A vertex is "inner" if withinWalls OR all adjacent patches are withinCity or waterbody
+    std::vector<geom::Point> inner;
 
     // The model this group belongs to
     Model* model = nullptr;
@@ -76,6 +81,12 @@ public:
 
     // Get the ward type name for this group
     std::string getTypeName() const;
+
+    // Check if a vertex is "inner" (all adjacent patches are withinCity or waterbody)
+    bool isInnerVertex(const geom::Point& v) const;
+
+    // Compute inner vertices from border (called after buildBorder)
+    void computeInnerVertices();
 };
 
 /**

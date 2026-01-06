@@ -23,6 +23,9 @@ void GateWard::createGeometry() {
 
     // Filter buildings to only keep those touching perimeter (creates empty centers)
     filterInner(block);
+
+    // Apply density-based filtering near walls/gates (faithful to mfcg.js Ward.filter)
+    filterOutskirts();
 }
 
 } // namespace wards

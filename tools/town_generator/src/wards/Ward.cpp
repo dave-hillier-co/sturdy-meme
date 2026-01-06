@@ -431,17 +431,25 @@ void Ward::createAlleys(
 
         for (const auto& half : halves) {
             double halfSq = std::abs(half.square());
-            double threshold = minSq * std::pow(2.0, 4.0 * sizeChaos * (utils::Random::floatVal() - 0.5));
+            // MFCG: threshold = minSq * pow(2, sizeChaos * (2*random - 1))
+            double threshold = minSq * std::pow(2.0, sizeChaos * (2.0 * utils::Random::floatVal() - 1.0));
+            double churchThreshold = 4.0 * threshold;
 
             if (halfSq < threshold) {
-                // Faithful to mfcg.js: check for church creation on medium-sized blocks
-                double churchThreshold = minSq * 4.0;
-                if (church.empty() && halfSq >= minSq && halfSq <= churchThreshold) {
-                    createChurch(half);
-                } else if (!utils::Random::boolVal(emptyProb)) {
+                // Small building (MFCG: h < b ? createBlock(f, true))
+                if (!utils::Random::boolVal(emptyProb)) {
+                    addBuildingLot(half, minSq);
+                }
+            } else if (church.empty() && halfSq <= churchThreshold) {
+                // Church-sized block (MFCG: church==null && h <= 4*b ? createChurch)
+                createChurch(half);
+            } else if (halfSq <= churchThreshold) {
+                // Medium block but already have church - regular building
+                if (!utils::Random::boolVal(emptyProb)) {
                     addBuildingLot(half, minSq);
                 }
             } else {
+                // Large block - recurse
                 double r1 = utils::Random::floatVal();
                 double r2 = utils::Random::floatVal();
                 double divisor = r1 * r2;
@@ -522,18 +530,25 @@ void Ward::createAlleys(
 
     for (const auto& half : halves) {
         double halfSq = std::abs(half.square());
-        double threshold = minSq * std::pow(2.0, 4.0 * sizeChaos * (utils::Random::floatVal() - 0.5));
+        // MFCG: threshold = minSq * pow(2, sizeChaos * (2*random - 1))
+        double threshold = minSq * std::pow(2.0, sizeChaos * (2.0 * utils::Random::floatVal() - 1.0));
+        double churchThreshold = 4.0 * threshold;
 
         if (halfSq < threshold) {
-            // Faithful to mfcg.js: check for church creation on medium-sized blocks
-            // Church threshold is 4 * minSq (medium-sized blocks)
-            double churchThreshold = minSq * 4.0;
-            if (church.empty() && halfSq >= minSq && halfSq <= churchThreshold) {
-                createChurch(half);
-            } else if (!utils::Random::boolVal(emptyProb)) {
+            // Small building (MFCG: h < b ? createBlock(f, true))
+            if (!utils::Random::boolVal(emptyProb)) {
+                addBuildingLot(half, minSq);
+            }
+        } else if (church.empty() && halfSq <= churchThreshold) {
+            // Church-sized block (MFCG: church==null && h <= 4*b ? createChurch)
+            createChurch(half);
+        } else if (halfSq <= churchThreshold) {
+            // Medium block but already have church - regular building
+            if (!utils::Random::boolVal(emptyProb)) {
                 addBuildingLot(half, minSq);
             }
         } else {
+            // Large block - recurse
             double r1 = utils::Random::floatVal();
             double r2 = utils::Random::floatVal();
             double divisor = r1 * r2;

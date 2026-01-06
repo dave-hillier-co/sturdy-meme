@@ -37,6 +37,7 @@ Model::Model(int nPatches, int seed) : nPatches_(nPatches) {
     citadelNeeded = utils::Random::boolVal(0.5);
     wallsNeeded = nPatches > 15;
     templeNeeded = utils::Random::boolVal(0.6);  // 60% chance of cathedral (faithful to mfcg.js)
+    shantyNeeded = wallsNeeded && utils::Random::boolVal(0.5);  // 50% if walled (faithful to mfcg.js)
     coastNeeded = utils::Random::boolVal(0.5);  // 50% chance of coastal city (faithful to mfcg.js)
     riverNeeded = coastNeeded && utils::Random::boolVal(0.67);  // 67% when coast is present
 
@@ -56,6 +57,7 @@ void Model::build() {
     buildPatches();
     optimizeJunctions();
     buildWalls();
+    buildDomains();  // Build horizon/shore edge classification
     buildStreets();
 
     // Build canals/rivers if needed (faithful to mfcg.js buildCanals)
@@ -67,6 +69,10 @@ void Model::build() {
     }
 
     createWards();
+    buildFarms();           // Apply sine-wave radial farm pattern
+    if (shantyNeeded) {
+        buildShantyTowns(); // Build shanty towns outside walls
+    }
     buildGeometry();
 }
 
@@ -613,6 +619,71 @@ void Model::buildWalls() {
     }
 }
 
+void Model::buildDomains() {
+    // Faithful to mfcg.js buildDomains (lines 795-831)
+    // Build horizon edges (outer boundary) and shore edges (land-water boundary)
+
+    horizonE.clear();
+    shoreE.clear();
+
+    // Find horizon edges: edges that have no neighboring patch on that side
+    // These form the outer boundary of the entire map
+    for (auto* patch : patches) {
+        size_t len = patch->shape.length();
+        for (size_t i = 0; i < len; ++i) {
+            const geom::Point& v0 = patch->shape[i];
+            const geom::Point& v1 = patch->shape[(i + 1) % len];
+
+            // Check if this edge has a neighbor
+            bool hasNeighbor = false;
+            for (auto* neighbor : patch->neighbors) {
+                // Check if neighbor shares this edge (reversed direction)
+                for (size_t j = 0; j < neighbor->shape.length(); ++j) {
+                    const geom::Point& n0 = neighbor->shape[j];
+                    const geom::Point& n1 = neighbor->shape[(j + 1) % neighbor->shape.length()];
+                    if ((n0 == v1 && n1 == v0) || (n0 == v0 && n1 == v1)) {
+                        hasNeighbor = true;
+                        break;
+                    }
+                }
+                if (hasNeighbor) break;
+            }
+
+            if (!hasNeighbor) {
+                horizonE.push_back({v0, v1});
+            }
+        }
+    }
+
+    // Find shore edges: edges between land and water patches
+    if (coastNeeded) {
+        for (auto* patch : patches) {
+            if (patch->waterbody) continue;  // Only process land patches
+
+            size_t len = patch->shape.length();
+            for (size_t i = 0; i < len; ++i) {
+                const geom::Point& v0 = patch->shape[i];
+                const geom::Point& v1 = patch->shape[(i + 1) % len];
+
+                // Check if this edge borders a water patch
+                for (auto* neighbor : patch->neighbors) {
+                    if (!neighbor->waterbody) continue;
+
+                    // Check if neighbor shares this edge
+                    for (size_t j = 0; j < neighbor->shape.length(); ++j) {
+                        const geom::Point& n0 = neighbor->shape[j];
+                        const geom::Point& n1 = neighbor->shape[(j + 1) % neighbor->shape.length()];
+                        if ((n0 == v1 && n1 == v0) || (n0 == v0 && n1 == v1)) {
+                            shoreE.push_back({v0, v1});
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 void Model::buildStreets() {
     if (inner.empty()) return;
 
@@ -1017,13 +1088,8 @@ void Model::createWards() {
                     if (!ward) ward = new wards::CommonWard();
                 }
             } else {
-                // Outer patches - most are empty (no ward), some are farms
-                // Reference mfcg.js only assigns farms to specific outer patches
-                // Parks are placed separately (see below)
-                if (utils::Random::boolVal(0.15)) {
-                    ward = new wards::Farm();
-                }
-                // Otherwise leave as nullptr - no buildings generated
+                // Outer patches - handled by buildFarms() with sine-wave radial pattern
+                // Leave as nullptr here - farms assigned later
             }
         }
 
@@ -1105,6 +1171,193 @@ void Model::createWards() {
             templePatch->ward = ward;
             wards_.emplace_back(ward);
         }
+    }
+}
+
+void Model::buildFarms() {
+    // Faithful to mfcg.js buildFarms (lines 1056-1070)
+    // Uses sine-wave radial pattern for organic farm placement
+
+    // Random parameters for sine-wave pattern
+    double normal3_a = (utils::Random::floatVal() + utils::Random::floatVal() +
+                        utils::Random::floatVal()) / 3.0;
+    double a = normal3_a * 2.0;  // Amplitude of first sine wave
+
+    double normal3_b = (utils::Random::floatVal() + utils::Random::floatVal() +
+                        utils::Random::floatVal()) / 3.0;
+    double b = normal3_b;  // Amplitude of second sine wave (double frequency)
+
+    double c = utils::Random::floatVal() * M_PI * 2.0;  // Phase shift 1
+    double d = utils::Random::floatVal() * M_PI * 2.0;  // Phase shift 2
+
+    // Find max distance from center to any inner patch vertex
+    geom::Point center(offsetX_, offsetY_);  // City center
+    double maxDist = 0.0;
+    for (auto* patch : inner) {
+        for (size_t i = 0; i < patch->shape.length(); ++i) {
+            double dist = geom::Point::distance(patch->shape[i], center);
+            maxDist = std::max(maxDist, dist);
+        }
+    }
+
+    // Helper to check if patch borders shore edges
+    auto bordersShore = [this](Patch* patch) -> bool {
+        for (size_t i = 0; i < patch->shape.length(); ++i) {
+            const geom::Point& v0 = patch->shape[i];
+            const geom::Point& v1 = patch->shape[(i + 1) % patch->shape.length()];
+            for (const auto& edge : shoreE) {
+                if ((edge.first == v0 && edge.second == v1) ||
+                    (edge.first == v1 && edge.second == v0)) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    };
+
+    // Apply sine-wave pattern to outer patches without wards
+    for (auto* patch : patches) {
+        if (patch->ward) continue;  // Already has a ward
+        if (patch->withinCity) continue;  // Only outer patches
+
+        if (patch->waterbody) {
+            // Water patches get base Ward (no buildings)
+            continue;
+        }
+
+        if (bordersShore(patch)) {
+            // Patches bordering shore become harbours
+            auto* ward = new wards::Harbour();
+            ward->patch = patch;
+            ward->model = this;
+            patch->ward = ward;
+            wards_.emplace_back(ward);
+            continue;
+        }
+
+        // Calculate position relative to center
+        geom::Point patchCenter = patch->shape.centroid();
+        geom::Point delta = patchCenter.subtract(center);
+        double angle = std::atan2(delta.y, delta.x);
+        double dist = delta.length();
+
+        // Sine-wave threshold: a * sin(angle + c) + b * sin(2*angle + d)
+        double threshold = a * std::sin(angle + c) + b * std::sin(2.0 * angle + d);
+
+        // If distance < (threshold + 1) * maxDist, it's a farm
+        if (dist < (threshold + 1.0) * maxDist) {
+            auto* ward = new wards::Farm();
+            ward->patch = patch;
+            ward->model = this;
+            patch->ward = ward;
+            wards_.emplace_back(ward);
+        }
+        // Otherwise leave as nullptr (no buildings)
+    }
+}
+
+void Model::buildShantyTowns() {
+    // Faithful to mfcg.js buildShantyTowns (lines 1071-1130)
+    // Creates shanty towns outside city walls near roads
+
+    // Helper to check if patch borders horizon (outer boundary)
+    auto bordersHorizon = [this](Patch* patch) -> bool {
+        for (size_t i = 0; i < patch->shape.length(); ++i) {
+            const geom::Point& v0 = patch->shape[i];
+            const geom::Point& v1 = patch->shape[(i + 1) % patch->shape.length()];
+            for (const auto& edge : horizonE) {
+                if ((edge.first == v0 && edge.second == v1) ||
+                    (edge.first == v1 && edge.second == v0)) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    };
+
+    // Helper to calculate distance-based score for shanty placement
+    geom::Point center(offsetX_, offsetY_);
+    auto calcScore = [&](Patch* patch) -> double {
+        geom::Point patchCenter = patch->shape.centroid();
+        double distToCenter = geom::Point::distance(patchCenter, center) * 3.0;
+
+        // Find minimum distance to any road
+        double minRoadDist = distToCenter;
+        for (const auto& road : roads) {
+            for (const auto& pointPtr : road) {
+                double d = geom::Point::distance(*pointPtr, patchCenter) * 2.0;
+                minRoadDist = std::min(minRoadDist, d);
+            }
+        }
+
+        // Find minimum distance to shore
+        for (const auto& edge : shoreE) {
+            double d = geom::Point::distance(edge.first, patchCenter);
+            minRoadDist = std::min(minRoadDist, d);
+        }
+
+        return minRoadDist * minRoadDist;
+    };
+
+    // Find candidate patches for shanty towns
+    std::vector<Patch*> candidates;
+    std::vector<double> scores;
+
+    for (auto* patch : patches) {
+        if (patch->withinCity) continue;
+        if (patch->waterbody) continue;
+        if (patch->ward) continue;
+        if (bordersHorizon(patch)) continue;
+
+        // Count how many city neighbors this patch has
+        int cityNeighbors = 0;
+        for (auto* neighbor : patch->neighbors) {
+            if (neighbor->withinCity) ++cityNeighbors;
+        }
+
+        // Need at least 2 city neighbors to be a shanty candidate
+        if (cityNeighbors >= 2) {
+            candidates.push_back(patch);
+            double score = static_cast<double>(cityNeighbors * cityNeighbors) / calcScore(patch);
+            scores.push_back(score);
+        }
+    }
+
+    // Randomly select patches to become shanty towns based on score
+    double r = utils::Random::floatVal();
+    int targetShanties = static_cast<int>(nPatches_ * (1.0 + r * r * r) * 0.5);
+
+    while (targetShanties > 0 && !candidates.empty()) {
+        // Calculate total score
+        double totalScore = 0.0;
+        for (double s : scores) totalScore += s;
+        if (totalScore <= 0.0) break;
+
+        // Weighted random selection
+        double pick = utils::Random::floatVal() * totalScore;
+        double acc = 0.0;
+        size_t selected = 0;
+        for (size_t i = 0; i < scores.size(); ++i) {
+            acc += scores[i];
+            if (pick <= acc) {
+                selected = i;
+                break;
+            }
+        }
+
+        // Create slum ward for selected patch
+        Patch* patch = candidates[selected];
+        auto* ward = new wards::Slum();
+        ward->patch = patch;
+        ward->model = this;
+        patch->ward = ward;
+        wards_.emplace_back(ward);
+
+        // Remove from candidates
+        candidates.erase(candidates.begin() + selected);
+        scores.erase(scores.begin() + selected);
+
+        --targetShanties;
     }
 }
 

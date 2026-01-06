@@ -36,6 +36,7 @@ Model::Model(int nPatches, int seed) : nPatches_(nPatches) {
     plazaNeeded = utils::Random::boolVal(0.8);
     citadelNeeded = utils::Random::boolVal(0.5);
     wallsNeeded = nPatches > 15;
+    templeNeeded = utils::Random::boolVal(0.6);  // 60% chance of cathedral (faithful to mfcg.js)
     coastNeeded = utils::Random::boolVal(0.5);  // 50% chance of coastal city (faithful to mfcg.js)
     riverNeeded = coastNeeded && utils::Random::boolVal(0.67);  // 67% when coast is present
 }
@@ -962,10 +963,7 @@ void Model::createWards() {
                 ward = new wards::Market();
                 marketAssigned = true;
             }
-            // Cathedral with small probability
-            else if (utils::Random::boolVal(0.1) && patch->withinWalls) {
-                ward = new wards::Cathedral();
-            }
+            // Cathedral placement is handled separately after other special wards (see below)
             // Gate wards near gates
             else if (!gates.empty()) {
                 for (const auto& gatePtr : gates) {
@@ -1030,6 +1028,31 @@ void Model::createWards() {
             ward->patch = patch;
             ward->model = this;
             patch->ward = ward;
+            wards_.emplace_back(ward);
+        }
+    }
+
+    // Cathedral placement (faithful to mfcg.js line 997)
+    // Find the inner patch with no ward that is closest to center
+    if (templeNeeded) {
+        Patch* templePatch = nullptr;
+        double minDist = std::numeric_limits<double>::max();
+
+        for (auto* patch : inner) {
+            if (!patch->ward) {
+                double dist = patch->shape.centroid().length();  // Distance from origin
+                if (dist < minDist) {
+                    minDist = dist;
+                    templePatch = patch;
+                }
+            }
+        }
+
+        if (templePatch) {
+            auto* ward = new wards::Cathedral();
+            ward->patch = templePatch;
+            ward->model = this;
+            templePatch->ward = ward;
             wards_.emplace_back(ward);
         }
     }

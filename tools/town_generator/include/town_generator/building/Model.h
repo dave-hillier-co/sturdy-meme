@@ -55,6 +55,7 @@ public:
     bool plazaNeeded = false;
     bool citadelNeeded = false;
     bool wallsNeeded = false;
+    bool templeNeeded = false;    // True if city has a cathedral/temple
     bool coastNeeded = false;     // True if city has a coastline
     double coastDir = 0.0;        // Direction of coast (0-2, multiplied by PI)
 

@@ -1,7 +1,9 @@
 #include "town_generator/wards/Park.h"
 #include "town_generator/building/Model.h"
+#include "town_generator/geom/GeomUtils.h"
 #include "town_generator/utils/Random.h"
 #include <cmath>
+#include <SDL3/SDL_log.h>
 
 namespace town_generator {
 namespace wards {
@@ -9,16 +11,251 @@ namespace wards {
 void Park::createGeometry() {
     if (!patch) return;
 
-    // Parks are mostly empty - maybe a small pavilion
-    if (utils::Random::boolVal(0.3)) {
-        geom::Point center = patch->shape.centroid();
-        double area = std::abs(patch->shape.square());
-        double size = std::sqrt(area) * 0.08;
+    auto cityBlock = getCityBlock();
+    if (cityBlock.empty()) return;
 
-        geom::Polygon pavilion = geom::Polygon::regular(6, size);
-        pavilion.offset(center);
-        geometry.push_back(pavilion);
+    // Shrink the shape by the city block insets
+    geom::Polygon available = patch->shape.shrink(cityBlock);
+    if (available.length() < 3) return;
+
+    // Create wavy boundary for organic look (faithful to mfcg.js Hf.render)
+    greenArea = createWavyBoundary(available);
+
+    // Add internal paths
+    createPaths();
+
+    // Add features (pavilion, fountain, benches)
+    addFeatures();
+
+    // Add features to geometry
+    for (const auto& feature : features) {
+        geometry.push_back(feature);
     }
+
+    // Spawn trees
+    trees = spawnTrees();
+
+    SDL_Log("Park: Created green area with %zu paths and %zu features, %zu trees",
+            paths.size(), features.size(), trees.size());
+}
+
+geom::Polygon Park::createWavyBoundary(const geom::Polygon& shape) {
+    // Faithful to mfcg.js Hf.render - creates wavy organic boundary
+    // by adding intermediate points with noise displacement
+
+    if (shape.length() < 3) return shape;
+
+    std::vector<geom::Point> wavyPoints;
+    size_t len = shape.length();
+
+    for (size_t i = 0; i < len; ++i) {
+        const geom::Point& v0 = shape[i];
+        const geom::Point& v1 = shape[(i + 1) % len];
+
+        // Add start point
+        wavyPoints.push_back(v0);
+
+        // Calculate edge length
+        double edgeLen = geom::Point::distance(v0, v1);
+        int numSegments = static_cast<int>(edgeLen / 3.0);  // One wave per ~3 units
+        if (numSegments < 1) numSegments = 1;
+        if (numSegments > 8) numSegments = 8;
+
+        // Add intermediate points with wave displacement
+        geom::Point edgeDir = v1.subtract(v0);
+        if (edgeLen > 0.01) {
+            edgeDir = edgeDir.scale(1.0 / edgeLen);
+        }
+        geom::Point perpDir(-edgeDir.y, edgeDir.x);
+
+        for (int j = 1; j < numSegments; ++j) {
+            double t = static_cast<double>(j) / numSegments;
+            geom::Point basePoint = geom::GeomUtils::interpolate(v0, v1, t);
+
+            // Sinusoidal wave with some noise
+            double wavePhase = t * numSegments * M_PI;
+            double waveAmp = 0.5 + 0.5 * utils::Random::floatVal();
+            double offset = std::sin(wavePhase) * waveAmp;
+
+            // Add random perturbation
+            offset += (utils::Random::floatVal() - 0.5) * 0.3;
+
+            geom::Point wavyPoint = basePoint.add(perpDir.scale(offset));
+            wavyPoints.push_back(wavyPoint);
+        }
+    }
+
+    // Smooth the result
+    geom::Polygon result(wavyPoints);
+    result = geom::Polygon::smooth(result);
+
+    return result;
+}
+
+void Park::createPaths() {
+    paths.clear();
+    if (greenArea.length() < 3) return;
+
+    geom::Point center = greenArea.centroid();
+    double area = std::abs(greenArea.square());
+    double radius = std::sqrt(area / M_PI);
+
+    // Create 1-3 paths from edges toward center
+    int numPaths = 1 + static_cast<int>(utils::Random::floatVal() * 2);
+    size_t len = greenArea.length();
+
+    for (int p = 0; p < numPaths && p < static_cast<int>(len); ++p) {
+        // Pick a random edge midpoint
+        size_t edgeIdx = static_cast<size_t>(utils::Random::floatVal() * len) % len;
+        const geom::Point& v0 = greenArea[edgeIdx];
+        const geom::Point& v1 = greenArea[(edgeIdx + 1) % len];
+
+        geom::Point edgeMid = geom::GeomUtils::interpolate(v0, v1, 0.3 + 0.4 * utils::Random::floatVal());
+
+        // Path from edge toward center (not all the way)
+        double pathLen = 0.4 + 0.3 * utils::Random::floatVal();
+        geom::Point pathEnd = geom::GeomUtils::interpolate(edgeMid, center, pathLen);
+
+        std::vector<geom::Point> path;
+        path.push_back(edgeMid);
+
+        // Add a few intermediate points with slight curves
+        int numPathPoints = 2 + static_cast<int>(utils::Random::floatVal() * 2);
+        for (int j = 1; j <= numPathPoints; ++j) {
+            double t = static_cast<double>(j) / (numPathPoints + 1);
+            geom::Point basePoint = geom::GeomUtils::interpolate(edgeMid, pathEnd, t);
+
+            // Slight curve
+            geom::Point toCenter = center.subtract(edgeMid);
+            geom::Point perpDir(-toCenter.y, toCenter.x);
+            if (toCenter.length() > 0.01) {
+                perpDir = perpDir.scale(1.0 / toCenter.length());
+            }
+
+            double curveOffset = std::sin(t * M_PI) * radius * 0.1 * (utils::Random::floatVal() - 0.5);
+            path.push_back(basePoint.add(perpDir.scale(curveOffset)));
+        }
+
+        path.push_back(pathEnd);
+        paths.push_back(path);
+    }
+}
+
+void Park::addFeatures() {
+    features.clear();
+    if (greenArea.length() < 3) return;
+
+    geom::Point center = greenArea.centroid();
+    double area = std::abs(greenArea.square());
+    double baseSize = std::sqrt(area) * 0.05;
+
+    // Maybe add a central feature (pavilion or fountain)
+    if (utils::Random::boolVal(0.5)) {
+        double featureSize = baseSize * (0.8 + 0.4 * utils::Random::floatVal());
+        int numSides = utils::Random::boolVal(0.5) ? 6 : 8;  // Hexagon or octagon
+
+        geom::Polygon feature = geom::Polygon::regular(numSides, featureSize);
+        feature.offset(center);
+        features.push_back(feature);
+    }
+
+    // Maybe add benches near paths
+    if (utils::Random::boolVal(0.3) && !paths.empty()) {
+        for (size_t i = 0; i < paths.size() && features.size() < 5; ++i) {
+            if (paths[i].size() < 2) continue;
+
+            // Pick a point along the path
+            size_t pathIdx = paths[i].size() / 2;
+            geom::Point benchPos = paths[i][pathIdx];
+
+            // Small rectangular bench
+            double benchLen = 0.8 + utils::Random::floatVal() * 0.4;
+            double benchWidth = 0.3;
+
+            // Direction along path
+            geom::Point pathDir;
+            if (pathIdx + 1 < paths[i].size()) {
+                pathDir = paths[i][pathIdx + 1].subtract(benchPos);
+            } else if (pathIdx > 0) {
+                pathDir = benchPos.subtract(paths[i][pathIdx - 1]);
+            } else {
+                pathDir = geom::Point(1, 0);
+            }
+            double pathLen = pathDir.length();
+            if (pathLen > 0.01) {
+                pathDir = pathDir.scale(1.0 / pathLen);
+            }
+            geom::Point perpDir(-pathDir.y, pathDir.x);
+
+            // Offset bench slightly from path
+            geom::Point offsetBenchPos = benchPos.add(perpDir.scale(1.0));
+
+            std::vector<geom::Point> benchVerts;
+            benchVerts.push_back(offsetBenchPos.add(pathDir.scale(-benchLen/2)).add(perpDir.scale(-benchWidth/2)));
+            benchVerts.push_back(offsetBenchPos.add(pathDir.scale(benchLen/2)).add(perpDir.scale(-benchWidth/2)));
+            benchVerts.push_back(offsetBenchPos.add(pathDir.scale(benchLen/2)).add(perpDir.scale(benchWidth/2)));
+            benchVerts.push_back(offsetBenchPos.add(pathDir.scale(-benchLen/2)).add(perpDir.scale(benchWidth/2)));
+
+            features.push_back(geom::Polygon(benchVerts));
+        }
+    }
+}
+
+std::vector<geom::Point> Park::spawnTrees() const {
+    // Faithful to mfcg.js spawnTrees - spawn trees within the green area
+    std::vector<geom::Point> result;
+
+    if (greenArea.length() < 3) return result;
+
+    double area = std::abs(greenArea.square());
+
+    // Greenery factor: higher = more trees
+    // Parks use greenery^1 not greenery^2 (from mfcg.js District.createParams)
+    double greeneryFactor = (utils::Random::floatVal() + utils::Random::floatVal() +
+                             utils::Random::floatVal()) / 3.0;
+
+    // Tree density based on area and greenery
+    int numTrees = static_cast<int>(area * greeneryFactor / 20.0);
+    if (numTrees < 3) numTrees = 3;
+    if (numTrees > 50) numTrees = 50;
+
+    auto bounds = greenArea.getBounds();
+
+    for (int i = 0; i < numTrees * 3 && static_cast<int>(result.size()) < numTrees; ++i) {
+        // Random point within bounds
+        double x = bounds.left + utils::Random::floatVal() * (bounds.right - bounds.left);
+        double y = bounds.top + utils::Random::floatVal() * (bounds.bottom - bounds.top);
+        geom::Point p(x, y);
+
+        // Check if point is within green area
+        if (greenArea.contains(p)) {
+            // Check if not too close to features
+            bool tooClose = false;
+            for (const auto& feature : features) {
+                if (geom::Point::distance(p, feature.centroid()) < 2.0) {
+                    tooClose = true;
+                    break;
+                }
+            }
+
+            // Check if not too close to paths
+            for (const auto& path : paths) {
+                for (const auto& pathPoint : path) {
+                    if (geom::Point::distance(p, pathPoint) < 1.5) {
+                        tooClose = true;
+                        break;
+                    }
+                }
+                if (tooClose) break;
+            }
+
+            if (!tooClose) {
+                result.push_back(p);
+            }
+        }
+    }
+
+    return result;
 }
 
 } // namespace wards

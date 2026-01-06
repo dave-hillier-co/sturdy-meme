@@ -1,8 +1,10 @@
 #include "town_generator/wards/Harbour.h"
 #include "town_generator/building/Model.h"
 #include "town_generator/building/Patch.h"
+#include "town_generator/building/EdgeData.h"
 #include "town_generator/utils/Random.h"
 #include "town_generator/geom/GeomUtils.h"
+#include <SDL3/SDL_log.h>
 
 namespace town_generator {
 namespace wards {
@@ -16,36 +18,61 @@ void Harbour::createGeometry() {
     auto block = patch->shape.shrink(cityBlock);
     if (block.empty()) return;
 
-    // Find edges that border water (neighbors that are waterbody)
+    // Find edges that border water using EdgeData
+    // (faithful to mfcg.js Harbour which uses edge data for COAST detection)
     std::vector<std::pair<geom::Point, geom::Point>> waterEdges;
+    size_t len = patch->shape.length();
 
-    for (size_t i = 0; i < patch->shape.length(); ++i) {
+    for (size_t i = 0; i < len; ++i) {
         const geom::Point& v0 = patch->shape[i];
-        const geom::Point& v1 = patch->shape[(i + 1) % patch->shape.length()];
+        const geom::Point& v1 = patch->shape[(i + 1) % len];
 
-        // Check if this edge borders a water patch
-        for (auto* neighbor : patch->neighbors) {
-            if (neighbor->waterbody) {
-                // Check if this edge is shared with the water neighbor
-                if (neighbor->shape.contains(v0) && neighbor->shape.contains(v1)) {
-                    waterEdges.push_back({v0, v1});
-                    break;
+        // Use edge data if available
+        building::EdgeType edgeType = patch->getEdgeType(i);
+        if (edgeType == building::EdgeType::COAST) {
+            waterEdges.push_back({v0, v1});
+        } else {
+            // Fallback: check neighbors
+            for (auto* neighbor : patch->neighbors) {
+                if (neighbor->waterbody) {
+                    if (neighbor->shape.contains(v0) && neighbor->shape.contains(v1)) {
+                        waterEdges.push_back({v0, v1});
+                        break;
+                    }
                 }
             }
         }
     }
 
+    // Mark patch as landing for correct inset calculations
+    patch->landing = true;
+
+    // Find the longest water edge (faithful to mfcg.js Harbour.createGeometry)
+    double longestLen = 0;
+    size_t longestIdx = 0;
+    for (size_t i = 0; i < waterEdges.size(); ++i) {
+        double edgeLen = geom::Point::distance(waterEdges[i].first, waterEdges[i].second);
+        if (edgeLen > longestLen) {
+            longestLen = edgeLen;
+            longestIdx = i;
+        }
+    }
+
     // Create pier structures along water edges
     piers.clear();
-    for (const auto& edge : waterEdges) {
+    for (size_t idx = 0; idx < waterEdges.size(); ++idx) {
+        const auto& edge = waterEdges[idx];
         double edgeLen = geom::Point::distance(edge.first, edge.second);
-        int numPiers = static_cast<int>(edgeLen / 6.0);  // One pier every ~6 units
 
+        // More piers on longer edges (especially the longest one)
+        double pierDensity = (idx == longestIdx) ? 4.0 : 6.0;
+        int numPiers = static_cast<int>(edgeLen / pierDensity);
         if (numPiers < 1) numPiers = 1;
+        if (numPiers > 5) numPiers = 5;  // Cap at 5 piers per edge
 
         geom::Point edgeDir = edge.second.subtract(edge.first);
         edgeDir = edgeDir.norm(1.0);
-        geom::Point perpDir(-edgeDir.y, edgeDir.x);
+        geom::Point perpDir(-edgeDir.y, edgeDir.x);  // Points into water
 
         double spacing = edgeLen / (numPiers + 1);
 
@@ -53,31 +80,38 @@ void Harbour::createGeometry() {
             double t = p * spacing / edgeLen;
             geom::Point pierBase = geom::GeomUtils::interpolate(edge.first, edge.second, t);
 
-            // Pier dimensions
-            double pierWidth = 1.0 + utils::Random::floatVal() * 0.5;
-            double pierLength = 3.0 + utils::Random::floatVal() * 3.0;
+            // Pier dimensions (faithful to mfcg.js: width 1-2, length 3-8)
+            double pierWidth = 1.0 + utils::Random::floatVal() * 1.0;
+            double pierLength = 3.0 + utils::Random::floatVal() * 5.0;
 
             // Create pier polygon (rectangle extending into water)
             std::vector<geom::Point> pierVerts;
-            pierVerts.push_back(pierBase.add(edgeDir.scale(-pierWidth / 2)));
-            pierVerts.push_back(pierBase.add(edgeDir.scale(pierWidth / 2)));
-            pierVerts.push_back(pierBase.add(edgeDir.scale(pierWidth / 2)).add(perpDir.scale(pierLength)));
-            pierVerts.push_back(pierBase.add(edgeDir.scale(-pierWidth / 2)).add(perpDir.scale(pierLength)));
+            geom::Point halfWidth = edgeDir.scale(pierWidth / 2);
+            pierVerts.push_back(pierBase.subtract(halfWidth));
+            pierVerts.push_back(pierBase.add(halfWidth));
+            pierVerts.push_back(pierBase.add(halfWidth).add(perpDir.scale(pierLength)));
+            pierVerts.push_back(pierBase.subtract(halfWidth).add(perpDir.scale(pierLength)));
 
             piers.push_back(geom::Polygon(pierVerts));
         }
     }
 
     // Create warehouses/buildings in the non-water part
-    // Use standard alley creation with harbour-specific parameters
-    double minSq = 4 * (30 + 60 * utils::Random::floatVal() * utils::Random::floatVal());
-    double gridChaos = 0.4 + utils::Random::floatVal() * 0.2;
-    createAlleys(block, minSq, gridChaos, 0.5, 0.1, 1.0);
+    // Harbour buildings are typically larger (warehouses)
+    // minSq: 40-100 (larger than residential)
+    double minSq = 4 * (40 + 60 * utils::Random::floatVal() * utils::Random::floatVal());
+    double gridChaos = 0.3 + utils::Random::floatVal() * 0.3;  // Less chaotic grid
+    createAlleys(block, minSq, gridChaos, 0.5, 0.05, 1.0);  // Lower empty probability
+
+    // Filter buildings near water edge for clearer waterfront
+    filterInner(block);
 
     // Add piers to geometry
     for (const auto& pier : piers) {
         geometry.push_back(pier);
     }
+
+    SDL_Log("Harbour: Created %zu piers and %zu buildings", piers.size(), geometry.size() - piers.size());
 }
 
 } // namespace wards

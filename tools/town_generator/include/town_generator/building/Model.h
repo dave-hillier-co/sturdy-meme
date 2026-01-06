@@ -6,6 +6,7 @@
 #include "town_generator/building/Patch.h"
 #include "town_generator/building/Topology.h"
 #include "town_generator/building/Canal.h"
+#include "town_generator/building/WardGroup.h"
 #include "town_generator/utils/Random.h"
 #include <vector>
 #include <memory>
@@ -68,6 +69,9 @@ public:
     std::vector<std::unique_ptr<wards::Ward>> wards_;
     std::vector<std::unique_ptr<Patch>> ownedPatches_;
 
+    // Ward groups for unified geometry generation
+    std::vector<std::unique_ptr<WardGroup>> wardGroups_;
+
     Model(int nPatches, int seed = -1);
     ~Model();
 
@@ -94,6 +98,9 @@ public:
     // Like Ic.split in mfcg.js - uses flood fill through neighbor relationships
     static std::vector<std::vector<Patch*>> splitIntoConnectedComponents(const std::vector<Patch*>& patches);
 
+    // Get canal width at a vertex/edge (faithful to mfcg.js getCanalWidth)
+    double getCanalWidth(const geom::Point& v) const;
+
     // Equality
     bool operator==(const Model& other) const {
         return patches.size() == other.patches.size();
@@ -117,6 +124,8 @@ private:
     void tidyUpRoads();
     void createWards();
     void buildGeometry();
+    void setEdgeData();      // Set edge types (COAST, ROAD, WALL, CANAL) on all patches
+    void createWardGroups(); // Create WardGroups from adjacent same-type patches
 
     static std::vector<geom::Point> generateRandomPoints(int count, double width, double height);
 };

@@ -26,6 +26,9 @@ set(BUILDING_SOURCES
     src/building/Cutter.cpp
     src/building/Topology.cpp
     src/building/CurtainWall.cpp
+    src/building/Canal.cpp
+    src/building/WardGroup.cpp
+    src/building/Block.cpp
     src/building/Model.cpp
 )
 

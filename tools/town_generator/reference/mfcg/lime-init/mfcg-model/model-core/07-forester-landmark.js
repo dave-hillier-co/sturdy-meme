@@ -3,38 +3,38 @@
  * Part 7/8: Forester and Landmark
  * Contains: Forester, Landmark classes
  */
-            g["com.watabou.mfcg.model.Forester"] = Ae;
-            Ae.__name__ = "com.watabou.mfcg.model.Forester";
-            Ae.fillArea = function(a, b) {
+            g["com.watabou.mfcg.model.Forester"] = Forester;
+            Forester.__name__ = "com.watabou.mfcg.model.Forester";
+            Forester.fillArea = function(a, b) {
                 null == b && (b = 1);
-                a = Ae.pattern.fill(new Yh(a));
+                a = Forester.pattern.fill(new FillablePoly(a));
                 for (var c = [], d = 0; d < a.length;) {
                     var f = a[d];
                     ++d;
-                    (Ae.noise.get(f.x, f.y) + 1) / 2 < b && c.push(f)
+                    (Forester.noise.get(f.x, f.y) + 1) / 2 < b && c.push(f)
                 }
                 return c
             };
-            Ae.fillLine = function(a, b, c) {
+            Forester.fillLine = function(a, b, c) {
                 null == c && (c = 1);
                 for (var d = Math.ceil(I.distance(a, b) / 3), f = [], h = 0; h < d;) {
                     var k = h++;
-                    k = qa.lerp(a,
+                    k = GeomUtils.lerp(a,
                         b, (k + (C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647) / d);
-                    (Ae.noise.get(k.x, k.y) + 1) / 2 < c && f.push(k)
+                    (Forester.noise.get(k.x, k.y) + 1) / 2 < c && f.push(k)
                 }
                 return f
             };
-            var di = function(a, b, c) {
+            var Landmark = function(a, b, c) {
                 null == c && (c = "Landmark");
                 this.model = a;
                 this.pos = b;
                 this.name = c;
                 this.assign()
             };
-            g["com.watabou.mfcg.model.Landmark"] = di;
-            di.__name__ = "com.watabou.mfcg.model.Landmark";
-            di.prototype = {
+            g["com.watabou.mfcg.model.Landmark"] = Landmark;
+            Landmark.__name__ = "com.watabou.mfcg.model.Landmark";
+            Landmark.prototype = {
                 assign: function() {
                     for (var a = 0, b = this.model.cells; a < b.length;) {
                         var c = b[a];
@@ -43,7 +43,7 @@
                     }
                 },
                 assignPoly: function(a) {
-                    if (Gb.rect(a).containsPoint(this.pos)) {
+                    if (PolyBounds.rect(a).containsPoint(this.pos)) {
                         var b = a.length;
                         this.p0 =
                             a[0];
@@ -51,7 +51,7 @@
                             var d = c++;
                             this.p1 = a[d - 1];
                             this.p2 = a[d];
-                            d = qa.barycentric(this.p0, this.p1, this.p2, this.pos);
+                            d = GeomUtils.barycentric(this.p0, this.p1, this.p2, this.pos);
                             if (0 <= d.x && 0 <= d.y && 0 <= d.z) return this.i0 = d.x, this.i1 = d.y, this.i2 = d.z, !0
                         }
                     }
@@ -68,7 +68,7 @@
                     b = this.i2;
                     this.pos = c.add(new I(a.x * b, a.y * b))
                 },
-                __class__: di
+                __class__: Landmark
             };
             var je = function(a) {
                 null == a && (a = []);
@@ -210,4 +210,4 @@
                 },
                 __class__: ec
             });
-            var Bb = function() {};
+            var ModelDispatcher = function() {};

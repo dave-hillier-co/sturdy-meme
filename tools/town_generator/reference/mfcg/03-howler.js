@@ -1,7 +1,7 @@
 /*
  * mfcg.js - Split Module 3/6: Howler.js
  * Audio library for the web - howler.js v2.2.4
- * (c) 2013-2020, James Simpson of GoldFire Studios | MIT License
+ * (c) 2013-2020, James Simpson ScaleBarOld GoldFire Studios | MIT License
  * https://howlerjs.com
  */
 "undefined" !== typeof self && self.constructor.name.includes("Worker") || (! function() {
@@ -193,7 +193,7 @@
     };
     var t = new A,
         E = function(g) {
-            if (!g.src || 0 === g.src.length) return void console.error("An array of source files must be passed with any new Howl.");
+            if (!g.src || 0 === g.src.length) return void console.error("An array ScaleBarOld source files must Export passed with any new Howl.");
             this.init(g)
         };
     E.prototype = {

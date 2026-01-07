@@ -3,14 +3,14 @@
  * Part 4/8: Mapping Views and Painters
  * Contains: BuildingPainter, FarmPainter, RiverView, RoadsView, Style, etc.
  */
-            g["com.watabou.mfcg.mapping.BuildingPainter"] = hd;
-            hd.__name__ = "com.watabou.mfcg.mapping.BuildingPainter";
-            hd.paint = function(a, b, c, d, f, h) {
+            g["com.watabou.mfcg.mapping.BuildingPainter"] = BuildingPainter;
+            BuildingPainter.__name__ = "com.watabou.mfcg.mapping.BuildingPainter";
+            BuildingPainter.paint = function(a, b, c, d, f, h) {
                 null == h && (h = !1);
                 null == f && (f = .5);
-                if (h && kc.drawSolid) hd.drawSolids(a, b);
+                if (h && PatchView.drawSolid) BuildingPainter.drawSolids(a, b);
                 else {
-                    kc.raised || (f = 0);
+                    PatchView.raised || (f = 0);
                     var k = K.getStrokeWidth(K.strokeNormal, !0),
                         n = 0;
                     if (0 < f) {
@@ -25,7 +25,7 @@
                                 c.reverse();
                                 a.beginFill(p);
                                 a.lineStyle(k, K.colorDark);
-                                Kb.drawPolygon(a, b.concat(c));
+                                GraphicsExtender.drawPolygon(a, b.concat(c));
                                 a.endFill();
                                 if (K.colorDark != p) {
                                     a.lineStyle(k, K.colorDark);
@@ -46,31 +46,31 @@
                             null != q && g(q)
                         }
                     }
-                    g = 1 < b.length && "Block" != kc.planMode && ba.get("weathered_roofs", !1) ? K.weathering / 100 : 0;
-                    for (f = 0; f < b.length;) h = b[f], ++f, q = 0 == g ? c : Gc.scale(c, Math.pow(2, (((C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647 + (C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647 + (C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647) / 3 * 2 - 1) * g)), m = hd.outlineNormal ? d : q, a.beginFill(q), 0 != n ? (a.lineStyle(k, m), Kb.drawPolygonAt(a, h, 0, n)) : (a.lineStyle(k, m, null, null,
-                        null, null, 1), Kb.drawPolygon(a, h)), a.endFill(), hd.outlineNormal && "Block" != kc.planMode && hd.drawRoof(a, h, n, k, m)
+                    g = 1 < b.length && "Block" != PatchView.planMode && State.get("weathered_roofs", !1) ? K.weathering / 100 : 0;
+                    for (f = 0; f < b.length;) h = b[f], ++f, q = 0 == g ? c : Color.scale(c, Math.pow(2, (((C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647 + (C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647 + (C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647) / 3 * 2 - 1) * g)), m = BuildingPainter.outlineNormal ? d : q, a.beginFill(q), 0 != n ? (a.lineStyle(k, m), GraphicsExtender.drawPolygonAt(a, h, 0, n)) : (a.lineStyle(k, m, null, null,
+                        null, null, 1), GraphicsExtender.drawPolygon(a, h)), a.endFill(), BuildingPainter.outlineNormal && "Block" != PatchView.planMode && BuildingPainter.drawRoof(a, h, n, k, m)
                 }
             };
-            hd.drawSolids = function(a, b) {
+            BuildingPainter.drawSolids = function(a, b) {
                 a.beginFill(K.colorWall);
-                hd.outlineSolid && K.colorDark != K.colorWall && a.lineStyle(K.getStrokeWidth(K.strokeNormal, !0), K.colorDark, null, null, null, null, 1);
+                BuildingPainter.outlineSolid && K.colorDark != K.colorWall && a.lineStyle(K.getStrokeWidth(K.strokeNormal, !0), K.colorDark, null, null, null, null, 1);
                 for (var c = 0; c < b.length;) {
                     var d = b[c];
                     ++c;
-                    Kb.drawPolygon(a, d)
+                    GraphicsExtender.drawPolygon(a, d)
                 }
                 a.endFill()
             };
-            hd.drawRoof = function(a, b, c, d, f) {
-                if ("Plain" != kc.roofStyle && !sb.preview) {
+            BuildingPainter.drawRoof = function(a, b, c, d, f) {
+                if ("Plain" != PatchView.roofStyle && !Main.preview) {
                     for (var h = [], k = 0; k < b.length;) {
                         var n = b[k];
                         ++k;
                         h.push(n.add(I.polar(.1 *
                             (((C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647 + (C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647 + (C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647) / 3 * 2 - 1), Math.PI * ((C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647))))
                     }
-                    k = new jf(h, !0);
-                    if ("Gable" == kc.roofStyle) {
+                    k = new SkeletonBuilder(h, !0);
+                    if ("Gable" == PatchView.roofStyle) {
                         if (0 < k.ribs.length) return;
                         k.addGables()
                     }
@@ -81,19 +81,19 @@
                     a.endFill()
                 }
             };
-            var Yk = function() {};
-            g["com.watabou.mfcg.mapping.FarmPainter"] = Yk;
-            Yk.__name__ = "com.watabou.mfcg.mapping.FarmPainter";
-            Yk.paint = function(a, b) {
-                var c = ba.get("farm_fileds", "Furrows");
-                if ("Hidden" != c && !sb.preview) {
+            var FarmPainter = function() {};
+            g["com.watabou.mfcg.mapping.FarmPainter"] = FarmPainter;
+            FarmPainter.__name__ = "com.watabou.mfcg.mapping.FarmPainter";
+            FarmPainter.paint = function(a, b) {
+                var c = State.get("farm_fileds", "Furrows");
+                if ("Hidden" != c && !Main.preview) {
                     a = a.get_graphics();
-                    var d = ba.get("outline_fields", !1);
+                    var d = State.get("outline_fields", !1);
                     if ("Plain" == c) {
                         a.beginFill(K.colorGreen);
                         d && a.lineStyle(K.getStrokeWidth(K.strokeNormal, !0), K.colorDark);
                         c = 0;
-                        for (var f = b.subPlots; c < f.length;) d = f[c], ++c, Kb.drawPolygon(a, d)
+                        for (var f = b.subPlots; c < f.length;) d = f[c], ++c, GraphicsExtender.drawPolygon(a, d)
                     } else {
                         a.lineStyle(K.getStrokeWidth(K.strokeNormal,
                             !0), K.colorGreen, null, null, null, 0);
@@ -107,14 +107,14 @@
                             a.lineTo(h.x, h.y)
                         }
                         if (d)
-                            for (c = 0, f = b.subPlots; c < f.length;) d = f[c], ++c, Kb.drawPolygon(a, d)
+                            for (c = 0, f = b.subPlots; c < f.length;) d = f[c], ++c, GraphicsExtender.drawPolygon(a, d)
                     }
                     a.endFill();
-                    d = kc.planMode;
-                    "Block" != d && "Hidden" != d && hd.paint(a, b.buildings, K.colorRoof, K.colorDark, .3)
+                    d = PatchView.planMode;
+                    "Block" != d && "Hidden" != d && BuildingPainter.paint(a, b.buildings, K.colorRoof, K.colorDark, .3)
                 }
             };
-            var fh = function(a) {
+            var Focus = function(a) {
                 this.faces = a;
                 this.edges = [];
                 this.vertices = [];
@@ -131,12 +131,12 @@
                     }
                 }
             };
-            g["com.watabou.mfcg.mapping.Focus"] = fh;
-            fh.__name__ = "com.watabou.mfcg.mapping.Focus";
-            fh.district = function(a) {
-                return new fh(a.faces)
+            g["com.watabou.mfcg.mapping.Focus"] = Focus;
+            Focus.__name__ = "com.watabou.mfcg.mapping.Focus";
+            Focus.district = function(a) {
+                return new Focus(a.faces)
             };
-            fh.prototype = {
+            Focus.prototype = {
                 getBounds: function() {
                     null == this.bounds && this.updateBounds();
                     return this.bounds
@@ -153,42 +153,42 @@
                     }
                     this.bounds = new na(a, b, c - a, d - b)
                 },
-                __class__: fh
+                __class__: Focus
             };
-            var ai = function(a) {
+            var FocusView = function(a) {
                 ka.call(this);
                 if (null != a) {
                     var b = this.get_graphics(),
                         c = 5 * K.lineInvScale;
-                    a = Ua.toPoly(a.faces[0].data.district.border);
+                    a = EdgeChain.toPoly(a.faces[0].data.district.border);
                     b.lineStyle(c, D.black, .4, !1, null, 0, 1);
-                    Kb.dashedPolyline(b, a, !0, [2 * c, 2 * c])
+                    GraphicsExtender.dashedPolyline(b, a, !0, [2 * c, 2 * c])
                 }
             };
-            g["com.watabou.mfcg.mapping.FocusView"] = ai;
-            ai.__name__ = "com.watabou.mfcg.mapping.FocusView";
-            ai.__super__ = ka;
-            ai.prototype = v(ka.prototype, {
-                __class__: ai
+            g["com.watabou.mfcg.mapping.FocusView"] = FocusView;
+            FocusView.__name__ = "com.watabou.mfcg.mapping.FocusView";
+            FocusView.__super__ = ka;
+            FocusView.prototype = v(ka.prototype, {
+                __class__: FocusView
             });
-            var bi = function(a) {
+            var FormalMap = function(a) {
                 ka.call(this);
                 this.model = a;
-                kc.planMode = sb.preview ? "Lots" : ba.get("display_mode", "Lots");
-                kc.roofStyle = ba.get("roof_style", "Plain");
-                kc.raised = ba.get("raised",
-                    !0) && !sb.preview;
-                kc.watercolours = ba.get("watercolours", !1);
-                kc.drawSolid = ba.get("draw_solids", !0);
-                hd.outlineNormal = ba.get("outline_buildings", !0) || sb.preview;
-                hd.outlineSolid = ba.get("outline_solids", !0) || sb.preview;
-                this.roads = new ie;
+                PatchView.planMode = Main.preview ? "Lots" : State.get("display_mode", "Lots");
+                PatchView.roofStyle = State.get("roof_style", "Plain");
+                PatchView.raised = State.get("raised",
+                    !0) && !Main.preview;
+                PatchView.watercolours = State.get("watercolours", !1);
+                PatchView.drawSolid = State.get("draw_solids", !0);
+                BuildingPainter.outlineNormal = State.get("outline_buildings", !0) || Main.preview;
+                BuildingPainter.outlineSolid = State.get("outline_solids", !0) || Main.preview;
+                this.roads = new RoadsView;
                 this.roads.update(a);
                 this.addChild(this.roads);
                 for (var b = 0, c = a.canals; b < c.length;) {
                     var d = c[b];
                     ++b;
-                    var f = new mg;
+                    var f = new RiverView;
                     f.update(a, d);
                     this.addChild(f)
                 }
@@ -225,19 +225,19 @@
                     }
                     c = f.concat(h)
                 }
-                for (b = 0; b < c.length;) n = c[b], ++b, d = new kc(n), d.draw() && (this.patches.push(d), this.addChild(d));
-                ba.get("show_trees", !1) && "Block" != kc.planMode && !sb.preview && this.addChild(new gc(a));
-                b = new ng;
+                for (b = 0; b < c.length;) n = c[b], ++b, d = new PatchView(n), d.draw() && (this.patches.push(d), this.addChild(d));
+                State.get("show_trees", !1) && "Block" != PatchView.planMode && !Main.preview && this.addChild(new TreesLayer(a));
+                b = new WallsView;
                 this.addChild(b);
                 null != a.wall && b.draw(a.wall, !1, a.focus);
-                null != a.citadel && b.draw(va.__cast(a.citadel.ward, xd).wall, !0, a.focus);
-                null != a.focus && this.addChild(new ai(a.focus));
+                null != a.citadel && b.draw(va.__cast(a.citadel.ward, Castle).wall, !0, a.focus);
+                null != a.focus && this.addChild(new FocusView(a.focus));
                 this.mouseEnabled = !1
             };
-            g["com.watabou.mfcg.mapping.FormalMap"] = bi;
-            bi.__name__ = "com.watabou.mfcg.mapping.FormalMap";
-            bi.__super__ = ka;
-            bi.prototype = v(ka.prototype, {
+            g["com.watabou.mfcg.mapping.FormalMap"] = FormalMap;
+            FormalMap.__name__ = "com.watabou.mfcg.mapping.FormalMap";
+            FormalMap.__super__ = ka;
+            FormalMap.prototype = v(ka.prototype, {
                 updateBounds: function(a, b, c, d) {
                     0 < this.model.shoreE.length && (null != this.water && this.removeChild(this.water), this.water = new md, this.drawWaterbody(this.water.get_graphics(),
                         a, b, c, d), this.addChildAt(this.water, 0))
@@ -249,9 +249,9 @@
                     for (var a = 0, b = this.get_numChildren(); a < b;) {
                         var c = a++,
                             d = this.getChildAt(c);
-                        if (d instanceof gc) {
+                        if (d instanceof TreesLayer) {
                             this.removeChild(d);
-                            this.addChildAt(new gc(this.model), c);
+                            this.addChildAt(new TreesLayer(this.model), c);
                             break
                         }
                     }
@@ -259,16 +259,16 @@
                 drawWaterbody: function(a, b, c, d, f) {
                     for (var h = this.model.getOcean(), k = (b + c) / 2, n = (d + f) / 2, p = [], g = 0; g < h.length;) {
                         var q = h[g];
-                        ++g; - 1 != this.model.horizon.indexOf(q) ? p.push(new I(q.x < k ? b : c, q.y < n ? d : f)) : p.push(new I(Fc.gate(q.x, b, c),
-                            Fc.gate(q.y, d, f)))
+                        ++g; - 1 != this.model.horizon.indexOf(q) ? p.push(new I(q.x < k ? b : c, q.y < n ? d : f)) : p.push(new I(MathUtils.gate(q.x, b, c),
+                            MathUtils.gate(q.y, d, f)))
                     }
                     h = p;
-                    ba.get("outline_water", !0) && a.lineStyle(K.getStrokeWidth(K.strokeNormal, !0), K.colorDark);
+                    State.get("outline_water", !0) && a.lineStyle(K.getStrokeWidth(K.strokeNormal, !0), K.colorDark);
                     a.beginFill(K.colorWater);
-                    Kb.drawPolygon(a, h);
+                    GraphicsExtender.drawPolygon(a, h);
                     a.endFill()
                 },
-                __class__: bi
+                __class__: FormalMap
             });
             var md = function() {
                 S.call(this);
@@ -287,41 +287,41 @@
                     get_graphics: "get_graphics"
                 })
             });
-            var kc = function(a) {
+            var PatchView = function(a) {
                 md.call(this);
                 this.patch = a;
                 a.view = this;
                 this.g = this.get_graphics()
             };
-            g["com.watabou.mfcg.mapping.PatchView"] = kc;
-            kc.__name__ = "com.watabou.mfcg.mapping.PatchView";
-            kc.__super__ = md;
-            kc.prototype = v(md.prototype, {
+            g["com.watabou.mfcg.mapping.PatchView"] = PatchView;
+            PatchView.__name__ = "com.watabou.mfcg.mapping.PatchView";
+            PatchView.__super__ = md;
+            PatchView.prototype = v(md.prototype, {
                 draw: function() {
                     this.g.clear();
                     var a = va.getClass(this.patch.ward);
                     switch (a) {
-                        case Pc:
-                        case xd:
-                        case Ne:
-                        case he:
+                        case Alleys:
+                        case Castle:
+                        case Cathedral:
+                        case Market:
                             var b = K.colorRoof,
                                 c = K.colorDark;
-                            if (kc.watercolours) {
+                            if (PatchView.watercolours) {
                                 var d = this.patch.ward.getColor();
                                 b = d;
-                                c = Gc.lerp(c, d, .3)
+                                c = Color.lerp(c, d, .3)
                             }
                             switch (a) {
-                                case Pc:
+                                case Alleys:
                                     var f = va.__cast(this.patch.ward,
-                                        Pc).group;
+                                        Alleys).group;
                                     if (f.core == this.patch.face)
                                         for (a = 0, d = f.blocks; a < d.length;) {
                                             var h = d[a];
                                             ++a;
                                             var k = h == f.church;
-                                            switch (kc.planMode) {
+                                            switch (PatchView.planMode) {
                                                 case "Block":
                                                     h = [h.shape];
                                                     break;
@@ -339,32 +339,32 @@
                                                 default:
                                                     h = []
                                             }
-                                            hd.paint(this.g, h, b, c, null, k)
+                                            BuildingPainter.paint(this.g, h, b, c, null, k)
                                         }
                                     break;
-                                case xd:
-                                    K.colorRoad != K.colorPaper && (this.g.beginFill(K.colorRoad), Kb.drawPolygon(this.g, this.patch.shape));
-                                    a = va.__cast(this.patch.ward, xd).building;
-                                    hd.paint(this.g, [a], b, c, 1, !0);
+                                case Castle:
+                                    K.colorRoad != K.colorPaper && (this.g.beginFill(K.colorRoad), GraphicsExtender.drawPolygon(this.g, this.patch.shape));
+                                    a = va.__cast(this.patch.ward, Castle).building;
+                                    BuildingPainter.paint(this.g, [a], b, c, 1, !0);
                                     break;
-                                case Ne:
-                                    a = va.__cast(this.patch.ward, Ne).building;
-                                    hd.paint(this.g, a, b, c, 1, !0);
+                                case Cathedral:
+                                    a = va.__cast(this.patch.ward, Cathedral).building;
+                                    BuildingPainter.paint(this.g, a, b, c, 1, !0);
                                     break;
-                                case he:
-                                    a = va.__cast(this.patch.ward, he), "Block" != kc.planMode && hd.paint(this.g, [a.monument], b, c, 0, !0)
+                                case Market:
+                                    a = va.__cast(this.patch.ward, Market), "Block" != PatchView.planMode && BuildingPainter.paint(this.g, [a.monument], b, c, 0, !0)
                             }
                             break;
-                        case yd:
-                            Yk.paint(this, this.patch.ward);
+                        case Farm:
+                            FarmPainter.paint(this, this.patch.ward);
                             break;
-                        case lf:
-                            b = ba.get("outline_water", !0);
+                        case Harbour:
+                            b = State.get("outline_water", !0);
                             a = 0;
-                            for (d = va.__cast(this.patch.ward, lf).piers; a < d.length;) c = d[a], ++a, this.drawPier(c, b);
+                            for (d = va.__cast(this.patch.ward, Harbour).piers; a < d.length;) c = d[a], ++a, this.drawPier(c, b);
                             break;
-                        case ce:
-                            this.drawGreen(va.__cast(this.patch.ward, ce).green);
+                        case Park:
+                            this.drawGreen(va.__cast(this.patch.ward, Park).green);
                             break;
                         default:
                             return !1
@@ -373,7 +373,7 @@
                 },
                 drawGreen: function(a) {
                     this.g.beginFill(K.colorGreen);
-                    Kb.drawPolygon(this.g, a)
+                    GraphicsExtender.drawPolygon(this.g, a)
                 },
                 drawPier: function(a, b) {
                     var c = a[0],
@@ -403,22 +403,22 @@
                     else this.g.lineStyle(1.2,
                         K.colorPaper, null, null, null, 0), f = this.g, f.moveTo(c.x, c.y), f.lineTo(d.x, d.y)
                 },
-                __class__: kc
+                __class__: PatchView
             });
-            var mg = function() {
+            var RiverView = function() {
                 ka.call(this)
             };
-            g["com.watabou.mfcg.mapping.RiverView"] = mg;
-            mg.__name__ = "com.watabou.mfcg.mapping.RiverView";
-            mg.getSegments = function(a, b) {
+            g["com.watabou.mfcg.mapping.RiverView"] = RiverView;
+            RiverView.__name__ = "com.watabou.mfcg.mapping.RiverView";
+            RiverView.getSegments = function(a, b) {
                 for (var c = [], d = null, f = 0, h = a.length; f < h;) {
                     var k = f++,
                         n = a[k]; - 1 != b.edges.indexOf(n) || -1 != b.edges.indexOf(n.twin) ? null == d ? (d = [n], c.push(d), 0 < k && d.splice(0, 0, a[k - 1])) : d.push(n) : (null != d && d.push(n), d = null)
                 }
                 return c
             };
-            mg.__super__ = ka;
-            mg.prototype = v(ka.prototype, {
+            RiverView.__super__ = ka;
+            RiverView.prototype = v(ka.prototype, {
                 update: function(a,
                     b) {
                     var c = 0 < a.shoreE.length,
@@ -433,21 +433,21 @@
                     }
                     h = d;
                     if (null != a.focus)
-                        for (f = mg.getSegments(b.course, a.focus), d = 0; d < f.length;) k = f[d], ++d, k = Ua.toPolyline(k), k = Hf.render(k, !1, 3, h), this.drawCourse(k, b.width);
-                    else k = Ua.toPolyline(b.course), c && (k[0] = qa.lerp(k[0], k[1])), k = Hf.render(k, !1, 3, h), this.drawCourse(k, b.width);
+                        for (f = RiverView.getSegments(b.course, a.focus), d = 0; d < f.length;) k = f[d], ++d, k = EdgeChain.toPolyline(k), k = Chaikin.render(k, !1, 3, h), this.drawCourse(k, b.width);
+                    else k = EdgeChain.toPolyline(b.course), c && (k[0] = GeomUtils.lerp(k[0], k[1])), k = Chaikin.render(k, !1, 3, h), this.drawCourse(k, b.width);
                     !c || null != a.focus && -1 == a.focus.vertices.indexOf(b.course[0].origin) || this.drawMouth(b);
                     c = (b.width + 1.2) / 2;
                     h = f = b.bridges;
                     for (f = f.keys(); f.hasNext();)
                         if (k = f.next(), d = h.get(k), n = k, k = d, null == a.focus || -1 != a.focus.vertices.indexOf(n)) {
                             d = n.point;
-                            var p = Ua.indexByOrigin(b.course, n),
+                            var p = EdgeChain.indexByOrigin(b.course, n),
                                 g = b.course[p];
                             g = g.next.origin.point.subtract(g.origin.point);
                             0 < p && (p = b.course[p - 1], p = p.next.origin.point.subtract(p.origin.point), g.x += p.x, g.y += p.y);
                             if (null == k) k = new I(-g.y, g.x), n = c, null == n && (n = 1), k = k.clone(), k.normalize(n), this.drawBridge(d.subtract(k), d.add(k), 1.2);
                             else {
-                                n = Ua.indexByOrigin(k, n);
+                                n = EdgeChain.indexByOrigin(k, n);
                                 if (0 == n) {
                                     g = new I(-g.y, g.x);
                                     p = c;
@@ -472,13 +472,13 @@
                 },
                 drawCourse: function(a, b) {
                     var c = this.get_graphics();
-                    ba.get("outline_water", !0) ? (c.lineStyle(b, K.colorDark, null, !1, null, 0), Kb.drawPolyline(c, a), c.lineStyle(b - 2 * K.getStrokeWidth(K.strokeNormal, !0), K.colorWater)) : c.lineStyle(b, K.colorWater);
-                    Kb.drawPolyline(c, a);
+                    State.get("outline_water", !0) ? (c.lineStyle(b, K.colorDark, null, !1, null, 0), GraphicsExtender.drawPolyline(c, a), c.lineStyle(b - 2 * K.getStrokeWidth(K.strokeNormal, !0), K.colorWater)) : c.lineStyle(b, K.colorWater);
+                    GraphicsExtender.drawPolyline(c, a);
                     c.endFill()
                 },
                 drawBridge: function(a, b, c) {
                     var d = this.get_graphics();
-                    if (ba.get("outline_roads", !0) || ba.get("outline_water",
+                    if (State.get("outline_roads", !0) || State.get("outline_water",
                             !0)) {
                         var f = K.getStrokeWidth(K.strokeNormal, !0);
                         d.lineStyle(c + f, K.colorDark, null, !1, null, 0);
@@ -499,7 +499,7 @@
                         n = k.next.origin.point.subtract(k.origin.point),
                         p = new I(.5 * n.x, .5 * n.y);
                     k = a.course[0];
-                    var g = qa.lerp(k.origin.point, k.next.origin.point,
+                    var g = GeomUtils.lerp(k.origin.point, k.next.origin.point,
                         .5);
                     n = new I(-p.y, p.x);
                     var q = c / 2;
@@ -507,9 +507,9 @@
                     n = n.clone();
                     n.normalize(q);
                     a = g.add(n);
-                    k = qa.lerp(f[(h + f.length - 1) % f.length], d);
+                    k = GeomUtils.lerp(f[(h + f.length - 1) % f.length], d);
                     var m = a.subtract(p),
-                        u = qa.lerp(k, d);
+                        u = GeomUtils.lerp(k, d);
                     n = new I(-p.y, p.x);
                     q = c / 2;
                     null == q && (q = 1);
@@ -517,50 +517,50 @@
                     n.normalize(q);
                     c = g.subtract(n);
                     p = c.subtract(p);
-                    n = qa.lerp(f[(h + 1) % f.length], d);
-                    g = qa.lerp(n, d);
+                    n = GeomUtils.lerp(f[(h + 1) % f.length], d);
+                    g = GeomUtils.lerp(n, d);
                     q = this.get_graphics();
                     q.beginFill(K.colorWater);
                     q.moveTo(a.x, a.y);
                     q.cubicCurveTo(m.x, m.y, u.x, u.y, k.x, k.y);
-                    kf.isConvexVertexi(f, h) && q.lineTo(d.x, d.y);
+                    PolyAccess.isConvexVertexi(f, h) && q.lineTo(d.x, d.y);
                     q.lineTo(n.x, n.y);
                     q.cubicCurveTo(g.x, g.y, p.x, p.y,
                         c.x, c.y);
                     q.endFill();
-                    ba.get("outline_water", !0) && (q.lineStyle(b, K.colorDark), q.moveTo(a.x, a.y), q.cubicCurveTo(m.x, m.y, u.x, u.y, k.x, k.y), q.moveTo(c.x, c.y), q.cubicCurveTo(p.x, p.y, g.x, g.y, n.x, n.y), q.moveTo(0, 0), q.endFill())
+                    State.get("outline_water", !0) && (q.lineStyle(b, K.colorDark), q.moveTo(a.x, a.y), q.cubicCurveTo(m.x, m.y, u.x, u.y, k.x, k.y), q.moveTo(c.x, c.y), q.cubicCurveTo(p.x, p.y, g.x, g.y, n.x, n.y), q.moveTo(0, 0), q.endFill())
                 },
-                __class__: mg
+                __class__: RiverView
             });
-            var ie = function() {
+            var RoadsView = function() {
                 ka.call(this);
                 this.outline = new ka;
                 this.addChild(this.outline);
                 this.fill = new ka;
                 this.addChild(this.fill)
             };
-            g["com.watabou.mfcg.mapping.RoadsView"] = ie;
-            ie.__name__ = "com.watabou.mfcg.mapping.RoadsView";
-            ie.smoothRoad = function(a, b) {
-                a = Hf.render(a, !1, 3, b);
+            g["com.watabou.mfcg.mapping.RoadsView"] = RoadsView;
+            RoadsView.__name__ = "com.watabou.mfcg.mapping.RoadsView";
+            RoadsView.smoothRoad = function(a, b) {
+                a = Chaikin.render(a, !1, 3, b);
                 for (var c = 0; c < b.length;) {
                     var d = b[c];
                     ++c;
-                    ie.cutCorner(a, d, 1)
+                    RoadsView.cutCorner(a, d, 1)
                 }
                 return a
             };
-            ie.cutCorner = function(a, b, c) {
+            RoadsView.cutCorner = function(a, b, c) {
                 var d = a.indexOf(b);
                 if (-1 != d && 0 != d && d != a.length - 1) {
                     var f = a[d - 1],
                         h = a[d + 1],
                         k = I.distance(f, b),
                         n = I.distance(b, h);
-                    k <= c / 2 || n <= c / 2 || (f = qa.lerp(f, b, (k - c) / k), b = qa.lerp(h, b, (n - c) / n), a.splice(d, 1), a.splice(d, 0, b), a.splice(d, 0, f))
+                    k <= c / 2 || n <= c / 2 || (f = GeomUtils.lerp(f, b, (k - c) / k), b = GeomUtils.lerp(h, b, (n - c) / n), a.splice(d, 1), a.splice(d, 0, b), a.splice(d, 0, f))
                 }
             };
-            ie.getSegments = function(a, b) {
+            RoadsView.getSegments = function(a, b) {
                 for (var c = [], d = null, f = 0, h = a.length; f < h;) {
                     var k = f++,
                         n = a[k]; - 1 != b.edges.indexOf(n) || -1 != b.edges.indexOf(n.twin) ? null == d ? (d = [n], c.push(d), 0 < k && d.splice(0, 0,
@@ -568,15 +568,15 @@
                 }
                 return c
             };
-            ie.__super__ = ka;
-            ie.prototype = v(ka.prototype, {
+            RoadsView.__super__ = ka;
+            RoadsView.prototype = v(ka.prototype, {
                 update: function(a) {
                     this.outline.removeChildren();
                     this.outline.get_graphics().clear();
                     this.fill.removeChildren();
                     this.fill.get_graphics().clear();
-                    var b = "Hidden" != ba.get("display_mode", "Lots"),
-                        c = ba.get("outline_roads", !0) ? K.getStrokeWidth(K.strokeNormal, !0) : 0;
+                    var b = "Hidden" != State.get("display_mode", "Lots"),
+                        c = State.get("outline_roads", !0) ? K.getStrokeWidth(K.strokeNormal, !0) : 0;
                     if (null == a.focus)
                         for (var d = 0, f = a.arteries; d < f.length;) {
                             var h = f[d];
@@ -586,11 +586,11 @@
                             for (d = 0, f = a.arteries; d < f.length;) {
                                 h = f[d];
                                 ++d;
-                                for (var k = 0, n = ie.getSegments(h, a.focus); k < n.length;) h = n[k], ++k, this.drawRoad(h, c, b)
+                                for (var k = 0, n = RoadsView.getSegments(h, a.focus); k < n.length;) h = n[k], ++k, this.drawRoad(h, c, b)
                             }
                     if (K.colorRoad != K.colorPaper)
-                        for (h = this.fill.get_graphics(), d = 0, f = a.cells; d < f.length;) k = f[d], ++d, k.ward instanceof he && (k = va.__cast(k.ward, he).space, h.beginFill(K.colorRoad), h.lineStyle(2, K.colorRoad), Kb.drawPolygon(h, k), h.endFill());
-                    if (ba.get("show_alleys", !1) && !sb.preview)
+                        for (h = this.fill.get_graphics(), d = 0, f = a.cells; d < f.length;) k = f[d], ++d, k.ward instanceof Market && (k = va.__cast(k.ward, Market).space, h.beginFill(K.colorRoad), h.lineStyle(2, K.colorRoad), GraphicsExtender.drawPolygon(h, k), h.endFill());
+                    if (State.get("show_alleys", !1) && !Main.preview)
                         for (h = 0 < c ? this.drawOutline(c) : this.drawFill(.6), d = 0, f = a.districts; d < f.length;)
                             for (n = f[d], ++d, k = 0, n = n.groups; k < n.length;) {
                                 var p = n[k];
@@ -601,15 +601,15 @@
                                         for (var g = 0, q = p.alleys; g < q.length;) {
                                             var m = q[g];
                                             ++g;
-                                            Kb.drawPolyline(h, m)
+                                            GraphicsExtender.drawPolyline(h, m)
                                         }
                                         g = 0;
-                                        for (p = p.border; g < p.length;) m = p[g], ++g, null == m.data && m.twin.face.data.ward instanceof Pc && (q = m.origin.point, m = m.next.origin.point, h.moveTo(q.x, q.y), h.lineTo(m.x, m.y))
+                                        for (p = p.border; g < p.length;) m = p[g], ++g, null == m.data && m.twin.face.data.ward instanceof Alleys && (q = m.origin.point, m = m.next.origin.point, h.moveTo(q.x, q.y), h.lineTo(m.x, m.y))
                                     }
                             }
                 },
                 drawRoad: function(a, b, c) {
-                    for (var d = Ua.toPolyline(a), f = [], h = [], k = 0, n = a.length; k < n;) {
+                    for (var d = EdgeChain.toPolyline(a), f = [], h = [], k = 0, n = a.length; k < n;) {
                         for (var p = k++, g = a[p].origin, q = !0, m = !0, u = 0, r = g.edges; u < r.length;) {
                             var l = r[u];
                             ++u;
@@ -618,9 +618,9 @@
                         m || f.push(g.point);
                         q || h.push(p)
                     }
-                    k = ie.smoothRoad(d, f);
+                    k = RoadsView.smoothRoad(d, f);
                     a = this.drawFill(2);
-                    Kb.drawPolyline(a, k);
+                    GraphicsExtender.drawPolyline(a, k);
                     if (0 < b)
                         if (a = this.drawOutline(2 + 2 * b), c) {
                             b = [];
@@ -633,10 +633,10 @@
                                 h[h.length - 1] < d.length - 1 && h.push(h[h.length - 1] + 1);
                                 n = [];
                                 for (u = 0; u < h.length;) p = h[u], ++u, n.push(d[p]);
-                                h = ie.smoothRoad(n, f);
-                                Kb.drawPolyline(a, h)
+                                h = RoadsView.smoothRoad(n, f);
+                                GraphicsExtender.drawPolyline(a, h)
                             }
-                        } else Kb.drawPolyline(a, k)
+                        } else GraphicsExtender.drawPolyline(a, k)
                 },
                 drawOutline: function(a) {
                     var b = new ka;
@@ -652,7 +652,7 @@
                     b.lineStyle(a, K.colorRoad);
                     return b
                 },
-                __class__: ie
+                __class__: RoadsView
             });
             var K = function() {};
             g["com.watabou.mfcg.mapping.Style"] = K;
@@ -675,22 +675,22 @@
                 }
             };
             K.spectrum = function(a, b, c) {
-                a = Gc.rgb2hsv(a);
-                return Gc.hsv(a.x - 360 * (c - 1) / c * K.tintStrength / 100 * (b / (c - 1) - .5), a.y, a.z)
+                a = Color.rgb2hsv(a);
+                return Color.hsv(a.x - 360 * (c - 1) / c * K.tintStrength / 100 * (b / (c - 1) - .5), a.y, a.z)
             };
             K.brightness = function(a, b, c) {
-                a = Gc.rgb2hsv(a);
-                return Gc.hsv(a.x, a.y, a.z + Math.min(a.z, 1 - a.z) * K.tintStrength / 50 * (b / (c - 1) - .5))
+                a = Color.rgb2hsv(a);
+                return Color.hsv(a.x, a.y, a.z + Math.min(a.z, 1 - a.z) * K.tintStrength / 50 * (b / (c - 1) - .5))
             };
             K.overlay = function(a, b, c) {
-                var d = Gc.rgb2hsv(a);
-                return Gc.lerp(a, Gc.hsv(d.x + 360 * b / c, d.y, d.z), K.tintStrength / 100)
+                var d = Color.rgb2hsv(a);
+                return Color.lerp(a, Color.hsv(d.x + 360 * b / c, d.y, d.z), K.tintStrength / 100)
             };
             K.setPalette = function(a, b) {
                 null == b && (b = !1);
                 null != a && (K.colorPaper = a.getColor("colorPaper"), K.colorLight = a.getColor("colorLight"),
                     K.colorDark = a.getColor("colorDark"), K.colorRoof = a.getColor("colorRoof", K.colorLight), K.colorWater = a.getColor("colorWater", K.colorPaper), K.colorGreen = a.getColor("colorGreen", K.colorPaper), K.colorRoad = a.getColor("colorRoad", K.colorPaper), K.colorWall = a.getColor("colorWall", K.colorDark), K.colorTree = a.getColor("colorTree", K.colorDark), K.colorLabel = a.getColor("colorLabel", K.colorDark), K.tintMethod = a.getString("tintMethod", K.tintMethods[0]), K.tintStrength = a.getInt("tintStrength", 50), K.weathering = a.getInt("weathering",
-                        20), b && ba.set("colors", a.data()))
+                        20), b && State.set("colors", a.data()))
             };
             K.fillForm = function(a) {
                 a.addTab("Colors");
@@ -711,19 +711,19 @@
                 a.addInt("weathering", "Weathering(%)", K.weathering, 0, 100)
             };
             K.restore = function() {
-                K.thinLines = ba.get("thin_lines", !0) || sb.preview;
-                var a = ba.get("colors");
-                null != a && K.setPalette(Xc.fromData(a), !1)
+                K.thinLines = State.get("thin_lines", !0) || Main.preview;
+                var a = State.get("colors");
+                null != a && K.setPalette(Palette.fromData(a), !1)
             };
-            var gc = function(a) {
+            var TreesLayer = function(a) {
                 var b = this;
                 ka.call(this);
                 this.trees = [];
                 this.treeGroups = [];
                 this.addCityTrees(a);
-                ba.get("show_forests", !1) && this.addForests(a);
+                State.get("show_forests", !1) && this.addForests(a);
                 var c =
-                    ba.get("outline_trees", !0);
+                    State.get("outline_trees", !0);
                 a = function(a, d) {
                     var f = b.addLayer();
                     if (c) {
@@ -731,14 +731,14 @@
                         for (var h = 0; h < d.length;) {
                             var k = d[h];
                             ++h;
-                            Kb.drawPolygon(f, k)
+                            GraphicsExtender.drawPolygon(f, k)
                         }
-                        for (h = 0; h < a.length;) k = a[h], ++h, Kb.drawPolygonAt(f, k.crown, k.pos.x, k.pos.y);
+                        for (h = 0; h < a.length;) k = a[h], ++h, GraphicsExtender.drawPolygonAt(f, k.crown, k.pos.x, k.pos.y);
                         f.endFill()
                     }
                     f.beginFill(K.colorTree);
-                    for (h = 0; h < d.length;) k = d[h], ++h, Kb.drawPolygon(f, k);
-                    for (h = 0; h < a.length;) k = a[h], ++h, f.beginFill(K.colorTree), Kb.drawPolygonAt(f, k.crown, k.pos.x, k.pos.y)
+                    for (h = 0; h < d.length;) k = d[h], ++h, GraphicsExtender.drawPolygon(f, k);
+                    for (h = 0; h < a.length;) k = a[h], ++h, f.beginFill(K.colorTree), GraphicsExtender.drawPolygonAt(f, k.crown, k.pos.x, k.pos.y)
                 };
                 a(this.trees, []);
                 for (var d = 0, f = this.treeGroups; d <
@@ -749,9 +749,9 @@
                 }
                 this.mouseChildren = this.mouseEnabled = !1
             };
-            g["com.watabou.mfcg.mapping.TreesLayer"] = gc;
-            gc.__name__ = "com.watabou.mfcg.mapping.TreesLayer";
-            gc.getForestFaces = function(a) {
+            g["com.watabou.mfcg.mapping.TreesLayer"] = TreesLayer;
+            TreesLayer.__name__ = "com.watabou.mfcg.mapping.TreesLayer";
+            TreesLayer.getForestFaces = function(a) {
                 if (null == a.focus) return a.dcel.faces;
                 var b = [],
                     c = 0;
@@ -768,39 +768,39 @@
                 }
                 return b
             };
-            gc.getForestOutlines = function(a) {
+            TreesLayer.getForestOutlines = function(a) {
                 for (var b = [], c = [], d = 0; d < a.length;) {
                     var f = a[d];
                     ++d;
-                    f.data.ward instanceof og && c.push(f)
+                    f.data.ward instanceof Wilderness && c.push(f)
                 }
-                for (; 0 < c.length;) a = Ic.floodFillEx(c[0], function(a) {
+                for (; 0 < c.length;) a = DCEL.floodFillEx(c[0], function(a) {
                     return -1 != c.indexOf(a.twin.face) ? null != a.data ? a.data == Tc.ROAD : !0 : !1
-                }), b.push(Ic.outline(a)), Z.removeAll(c, a);
+                }), b.push(DCEL.outline(a)), Z.removeAll(c, a);
                 return b
             };
-            gc.getTree = function() {
-                if (20 <= gc.cache.length) return Z.random(gc.cache);
+            TreesLayer.getTree = function() {
+                if (20 <= TreesLayer.cache.length) return Z.random(TreesLayer.cache);
                 var a = 1.5 * Math.pow(1.5, ((C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647 + (C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647 + (C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647) / 3 * 2 - 1);
-                a = gc.getCrown(a);
-                gc.cache.push(a);
+                a = TreesLayer.getCrown(a);
+                TreesLayer.cache.push(a);
                 return a
             };
-            gc.getCrown =
+            TreesLayer.getCrown =
                 function(a) {
                     for (var b = [], c = 0; 6 > c;) {
                         var d = c++;
                         d = 2 * Math.PI * (d + ((C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647 + (C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647 + (C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647) / 3) / 6;
                         b.push(I.polar(a * (1 - 4 / 6 * Math.abs(((C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647 + (C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647 + (C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647 + (C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647) / 2 - 1)), d))
                     }
-                    return mf.bloat(b, a * Math.sin(3 * Math.PI / 6))
+                    return Bloater.bloat(b, a * Math.sin(3 * Math.PI / 6))
                 };
-            gc.resetForests = function() {
-                gc.savedKey =
+            TreesLayer.resetForests = function() {
+                TreesLayer.savedKey =
                     null
             };
-            gc.__super__ = ka;
-            gc.prototype = v(ka.prototype, {
+            TreesLayer.__super__ = ka;
+            TreesLayer.prototype = v(ka.prototype, {
                 addLayer: function() {
                     var a = new md;
                     this.addChild(a);
@@ -819,20 +819,20 @@
                 },
                 addForests: function(a) {
                     var b = null == a.focus ? a.dcel.faces : a.focus.faces;
-                    if (b == gc.savedKey) this.treeGroups = gc.savedGroups;
+                    if (b == TreesLayer.savedKey) this.treeGroups = TreesLayer.savedGroups;
                     else {
-                        for (var c = gc.getForestOutlines(gc.getForestFaces(a)),
+                        for (var c = TreesLayer.getForestOutlines(TreesLayer.getForestFaces(a)),
                                 d = [], f = 0; f < c.length;) {
                             var h = c[f];
                             ++f;
                             for (var k = [], n = 0; n < h.length;) {
                                 var p = h[n];
                                 ++n;
-                                var g = Ua.toPoly(p);
-                                g = uc.simpleInset(g, this.getForestInsets(a, p));
-                                g = uc.resampleClosed(g, 20);
-                                g = uc.fractalizeClosed(g, 2, .5);
-                                g = Me.smoothClosed(g, 5);
+                                var g = EdgeChain.toPoly(p);
+                                g = PolyUtils.simpleInset(g, this.getForestInsets(a, p));
+                                g = PolyUtils.resampleClosed(g, 20);
+                                g = PolyUtils.fractalizeClosed(g, 2, .5);
+                                g = Cubic.smoothClosed(g, 5);
                                 k.push(g)
                             }
                             d.push({
@@ -846,7 +846,7 @@
                         d = 0;
                         for (f = this.treeGroups; d < f.length;)
                             for (c = f[d], ++d, k = 0, n = c.polies; k < n.length;)
-                                for (g = n[k], ++k, g = uc.resampleClosed(g, 3), h = 0; h < g.length;)
+                                for (g = n[k], ++k, g = PolyUtils.resampleClosed(g, 3), h = 0; h < g.length;)
                                     if (p = g[h], ++h, a.containsPoint(p)) {
                                         var q =
                                             I.polar(1.5 * ((C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647), 2 * Math.PI * ((C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647));
@@ -854,10 +854,10 @@
                                         p.y += q.y;
                                         c.trees.push({
                                             pos: p,
-                                            crown: gc.getTree()
+                                            crown: TreesLayer.getTree()
                                         })
-                                    } gc.savedKey = b;
-                        gc.savedGroups = this.treeGroups
+                                    } TreesLayer.savedKey = b;
+                        TreesLayer.savedGroups = this.treeGroups
                     }
                 },
                 getForestInsets: function(a, b) {
@@ -875,27 +875,27 @@
                             ++b;
                             this.trees.push({
                                 pos: c,
-                                crown: gc.getTree()
+                                crown: TreesLayer.getTree()
                             })
                         }
                 },
-                __class__: gc
+                __class__: TreesLayer
             });
-            var ng = function() {
+            var WallsView = function() {
                 ka.call(this);
-                this.towers = ba.get("towers", "Round");
-                this.outline = ba.get("outline_solids", !0) && K.colorWall != K.colorDark;
+                this.towers = State.get("towers", "Round");
+                this.outline = State.get("outline_solids", !0) && K.colorWall != K.colorDark;
                 this.stroke = K.getStrokeWidth(K.strokeNormal, !0)
             };
-            g["com.watabou.mfcg.mapping.WallsView"] = ng;
-            ng.__name__ = "com.watabou.mfcg.mapping.WallsView";
-            ng.__super__ = ka;
-            ng.prototype = v(ka.prototype, {
+            g["com.watabou.mfcg.mapping.WallsView"] = WallsView;
+            WallsView.__name__ = "com.watabou.mfcg.mapping.WallsView";
+            WallsView.__super__ = ka;
+            WallsView.prototype = v(ka.prototype, {
                 draw: function(a, b, c) {
-                    for (var d = pc.TOWER_RADIUS, f = a.edges.length, h = new pa, k = function(b, d) {
+                    for (var d = CurtainWall.TOWER_RADIUS, f = a.edges.length, h = new pa, k = function(b, d) {
                             if (null == c || -1 != c.vertices.indexOf(b)) {
                                 var k = b.point,
-                                    n = Ua.indexByOrigin(a.edges,
+                                    n = EdgeChain.indexByOrigin(a.edges,
                                         b),
                                     p = a.edges[(n + f - 1) % f];
                                 n = a.edges[n];
@@ -925,7 +925,7 @@
                         k(g, q.width)
                     }
                     k = this.get_graphics();
-                    k.lineStyle(pc.THICKNESS, K.colorWall);
+                    k.lineStyle(CurtainWall.THICKNESS, K.colorWall);
                     n = 0;
                     for (p = f; n < p;)
                         if (q = n++, g = a.edges[q],
@@ -944,11 +944,11 @@
                             u = g.next.origin;
                             m = h.h[u.__id__];
                             null == m ? g = u.point : (g = g.next.origin.point.subtract(g.origin.point), u = -d, null == u && (u = 1), g = g.clone(), g.normalize(u), g = m[0].add(g));
-                            this.outline && (k.lineStyle(pc.THICKNESS + this.stroke, K.colorDark), k.moveTo(q.x, q.y), k.lineTo(g.x,
-                                g.y), k.lineStyle(pc.THICKNESS - this.stroke, K.colorWall));
+                            this.outline && (k.lineStyle(CurtainWall.THICKNESS + this.stroke, K.colorDark), k.moveTo(q.x, q.y), k.lineTo(g.x,
+                                g.y), k.lineStyle(CurtainWall.THICKNESS - this.stroke, K.colorWall));
                             k.moveTo(q.x, q.y);
                             k.lineTo(g.x, g.y)
-                        } b = b ? pc.LTOWER_RADIUS : d;
+                        } b = b ? CurtainWall.LTOWER_RADIUS : d;
                     n = 0;
                     for (p = a.towers; n < p.length;) d = p[n], ++n, null != c && -1 == c.vertices.indexOf(d) || this.drawNormalTower(a, d.point, b);
                     for (g = h.iterator(); g.hasNext();) b = g.next(), this.drawGate(b)
@@ -961,7 +961,7 @@
                             k = f.indexOf(b);
                         a.bothSegments(k) ? (d = f[(k + 1) % h], f = f[(k + h - 1) % h].subtract(b), f.normalize(1), h = d.subtract(b), h.normalize(1),
                             d = 0 > f.x * h.y - f.y * h.x, f = f.add(h), h = d ? -1 : 1, null == h && (h = 1), f = f.clone(), f.normalize(h)) : (a.segments[k] ? f = f[k < f.length - 1 ? k + 1 : 0].subtract(f[k]) : (h = (k + h - 1) % h, f = f[h < f.length - 1 ? h + 1 : 0].subtract(f[h])), h = !0, null == h && (h = !1), f.setTo(f.y, -f.x), h && f.normalize(1))
-                    } else f = ng.drawNormalTower_unit;
+                    } else f = WallsView.drawNormalTower_unit;
                     this.drawTower(b, f, d, c)
                 },
                 drawTower: function(a, b, c, d) {
@@ -995,11 +995,11 @@
                             h.push(new I(-1.5 * d, d));
                             h.push(new I(-1.5 *
                                 d, -d));
-                            Kb.drawPolygon(f, h);
+                            GraphicsExtender.drawPolygon(f, h);
                             break;
                         case "Square":
                             d *= .9;
-                            f.drawRect(.5 * (d - pc.THICKNESS / 2) - d, -d, 2 * d, 2 * d);
+                            f.drawRect(.5 * (d - CurtainWall.THICKNESS / 2) - d, -d, 2 * d, 2 * d);
                             break;
                         default:
                             f.drawCircle(0, 0, d)
@@ -1010,7 +1010,7 @@
                     this.addChild(c)
                 },
                 drawGate: function(a) {
-                    var b = 2 * pc.TOWER_RADIUS,
+                    var b = 2 * CurtainWall.TOWER_RADIUS,
                         c = a[1].subtract(a[0]),
                         d = c.get_length();
                     a = a[0];
@@ -1028,9 +1028,9 @@
                     f.set_y(a.y);
                     this.addChild(f)
                 },
-                __class__: ng
+                __class__: WallsView
             });
-            var Fd = function(a, b) {
+            var Blueprint = function(a, b) {
                 this.export = this.style = null;
                 this.coastDir = NaN;
                 this.size = a;

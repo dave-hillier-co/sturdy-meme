@@ -3,9 +3,9 @@
  * Part 4/8: Curtain Wall
  * Contains: CurtainWall class (city walls)
  */
-            g["com.watabou.mfcg.model.CurtainWall"] = pc;
-            pc.__name__ = "com.watabou.mfcg.model.CurtainWall";
-            pc.prototype = {
+            g["com.watabou.mfcg.model.CurtainWall"] = CurtainWall;
+            CurtainWall.__name__ = "com.watabou.mfcg.model.CurtainWall";
+            CurtainWall.prototype = {
                 buildCityGates: function(a, b, c) {
                     this.gates = [];
                     for (var d = [], f = 0, h = this.edges; f < h.length;) {
@@ -14,7 +14,7 @@
                         d.push(-1 != c.indexOf(k.origin.point) || 2 > Z.intersect(b.cellsByVertex(k.origin), this.patches).length ? 0 : 1)
                     }
                     var n = d;
-                    if (0 == Z.sum(n)) throw hb.trace("" + this.length + " vertices of " +
+                    if (0 == Z.sum(n)) throw hb.trace("" + this.length + " vertices ScaleBarOld " +
                         this.patches.length + " patches, " + c.length + " are reserved.", {
                             fileName: "Source/com/watabou/mfcg/model/CurtainWall.hx",
                             lineNumber: 82,
@@ -42,7 +42,7 @@
                             q = -1 != m ? q[(m + 1) % q.length] : null;
                             Z.removeAll(h, this.shape);
                             if (0 < h.length) {
-                                g = [f[0].point.subtract(qa.lerp(g, q))];
+                                g = [f[0].point.subtract(GeomUtils.lerp(g, q))];
                                 h = Z.max(h, function(a, b) {
                                     return function(c) {
                                         c = c.subtract(b[0].point);
@@ -53,7 +53,7 @@
                                 f = [f.face, f.twin.face];
                                 h = b.cells;
                                 g = [];
-                                for (q = 0; q < f.length;) m = f[q], ++q, g.push(new ci(m));
+                                for (q = 0; q < f.length;) m = f[q], ++q, g.push(new Cell(m));
                                 Z.replace(h, k, g);
                                 for (h = 0; h < f.length;)
                                     for (k = f[h], ++h, q = g = k.halfEdge, m = !0; m;) k = q, q = q.next, m = q != g, null != k.twin && k.twin.data == Tc.WALL && (k.data = Tc.WALL)
@@ -64,7 +64,7 @@
                     }
                     if (0 == this.gates.length && 0 < p) throw new Vb("No gates created!");
                     if (a)
-                        for (d = 0, f = this.gates; d < f.length;) a = f[d], ++d, wd.set(a.point, uc.lerpVertex(this.shape, a.point))
+                        for (d = 0, f = this.gates; d < f.length;) a = f[d], ++d, PointExtender.set(a.point, PolyUtils.lerpVertex(this.shape, a.point))
                 },
                 buildCastleGate: function(a,
                     b) {
@@ -90,11 +90,11 @@
                             return I.distance(a.origin.point,
                                 a.next.origin.point)
                         }).origin]) : (f = Z.min(c, function(a) {
-                            return qa.lerp(a.origin.point, a.next.origin.point, .5).get_length()
+                            return GeomUtils.lerp(a.origin.point, a.next.origin.point, .5).get_length()
                         }), this.gates = [this.splitSegment(a, f)])
                     } else c = Z.min(c, function(a) {
                         return a.get_length()
-                    }), wd.set(c, uc.lerpVertex(this.shape, c)), this.gates = [a.dcel.vertices.h[c.__id__]]
+                    }), PointExtender.set(c, PolyUtils.lerpVertex(this.shape, c)), this.gates = [a.dcel.vertices.h[c.__id__]]
                 },
                 splitSegment: function(a, b) {
                     a = a.splitEdge(b);
@@ -102,7 +102,7 @@
                     this.edges = c;
                     this.shape = this.patches[0].shape;
                     this.length++;
-                    Ua.assignData(this.edges,
+                    EdgeChain.assignData(this.edges,
                         Tc.WALL, !1);
                     return a.origin
                 },
@@ -134,9 +134,9 @@
                     N.remove(this.towers, a)
                 },
                 getTowerRadius: function(a) {
-                    return this.real ? -1 != this.towers.indexOf(a) ? pc.LTOWER_RADIUS : -1 != this.gates.indexOf(a) ? 1 + 2 * pc.TOWER_RADIUS : 0 : 0
+                    return this.real ? -1 != this.towers.indexOf(a) ? CurtainWall.LTOWER_RADIUS : -1 != this.gates.indexOf(a) ? 1 + 2 * CurtainWall.TOWER_RADIUS : 0 : 0
                 },
-                __class__: pc
+                __class__: CurtainWall
             };
             var lc = y["com.watabou.mfcg.model.DistrictType"] = {
                 __ename__: "com.watabou.mfcg.model.DistrictType",
@@ -205,7 +205,7 @@
                 }
             };
             lc.__constructs__ = [lc.CENTER, lc.CASTLE, lc.DOCKS, lc.BRIDGE, lc.GATE, lc.BANK, lc.PARK, lc.SPRAWL, lc.REGULAR];
-            var Pe = function(a, b) {
+            var District = function(a, b) {
                 this.type = b;
                 this.city = a[0].ward.model;
                 b = [];

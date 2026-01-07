@@ -3,10 +3,10 @@
  * Part 8/8: Miscellaneous
  * Contains: ModelDispatcher, Topology, UnitSystem
  */
-            g["com.watabou.mfcg.model.ModelDispatcher"] = Bb;
-            Bb.__name__ = "com.watabou.mfcg.model.ModelDispatcher";
-            var gh = function(a) {
-                this.graph = new bk;
+            g["com.watabou.mfcg.model.ModelDispatcher"] = ModelDispatcher;
+            ModelDispatcher.__name__ = "com.watabou.mfcg.model.ModelDispatcher";
+            var Topology = function(a) {
+                this.graph = new Graph;
                 this.pt2node = new pa;
                 for (var b = 0; b < a.length;) {
                     var c = a[b];
@@ -24,13 +24,13 @@
                     }
                 }
             };
-            g["com.watabou.mfcg.model.Topology"] = gh;
-            gh.__name__ = "com.watabou.mfcg.model.Topology";
-            gh.prototype = {
+            g["com.watabou.mfcg.model.Topology"] = Topology;
+            Topology.__name__ = "com.watabou.mfcg.model.Topology";
+            Topology.prototype = {
                 getNode: function(a) {
                     if (null != this.pt2node.h.__keys__[a.__id__]) return this.pt2node.h[a.__id__];
                     var b = this.pt2node,
-                        c = this.graph.add(new ck(a));
+                        c = this.graph.add(new Node(a));
                     b.set(a, c);
                     return c
                 },
@@ -64,31 +64,31 @@
                         null != d && null != c && d.unlink(c)
                     }
                 },
-                __class__: gh
+                __class__: Topology
             };
-            var Db = function(a, b, c) {
+            var UnitSystem = function(a, b, c) {
                 this.unit = a;
                 this.iu2unit = b;
                 this.sub = c
             };
-            g["com.watabou.mfcg.model.UnitSystem"] = Db;
-            Db.__name__ = "com.watabou.mfcg.model.UnitSystem";
-            Db.__properties__ = {
+            g["com.watabou.mfcg.model.UnitSystem"] = UnitSystem;
+            UnitSystem.__name__ = "com.watabou.mfcg.model.UnitSystem";
+            UnitSystem.__properties__ = {
                 set_current: "set_current",
                 get_current: "get_current"
             };
-            Db.toggle = function() {
-                Db.set_current(Db.get_current() == Db.metric ? Db.imperial : Db.metric)
+            UnitSystem.toggle = function() {
+                UnitSystem.set_current(UnitSystem.get_current() == UnitSystem.metric ? UnitSystem.imperial : UnitSystem.metric)
             };
-            Db.get_current = function() {
-                return Db._current
+            UnitSystem.get_current = function() {
+                return UnitSystem._current
             };
-            Db.set_current = function(a) {
-                Db._current = a;
-                Bb.unitsChanged.dispatch();
-                return Db._current
+            UnitSystem.set_current = function(a) {
+                UnitSystem._current = a;
+                ModelDispatcher.unitsChanged.dispatch();
+                return UnitSystem._current
             };
-            Db.prototype = {
+            UnitSystem.prototype = {
                 measure: function(a) {
                     for (var b = this;;) {
                         var c = a / b.iu2unit;
@@ -107,16 +107,16 @@
                         else break;
                     return c * f.iu2unit
                 },
-                __class__: Db
+                __class__: UnitSystem
             };
-            var ii = function(a, b, c) {
+            var Block = function(a, b, c) {
                 null == c && (c = !1);
                 this.cacheOBB = new pa;
                 this.cacheArea = new pa;
                 this.group = a;
                 this.shape = b;
                 a = a.district.alleys;
-                c ? this.lots = [b] : (ba.get("no_triangles", !1), ba.get("lots_method", "Twisted"), this.lots = $k.createLots(this,
+                c ? this.lots = [b] : (State.get("no_triangles", !1), State.get("lots_method", "Twisted"), this.lots = $k.createLots(this,
                     a));
-                sb.preview || "Offset" != ba.get("processing") || this.indentFronts(this.lots)
+                Main.preview || "Offset" != State.get("processing") || this.indentFronts(this.lots)
             };

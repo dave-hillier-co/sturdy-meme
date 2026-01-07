@@ -1,7 +1,7 @@
 /*
  * mfcg.js - Split Module 1/6: $jscomp Polyfills
  * Google Closure Compiler runtime polyfills for ES6+ features
- * Original bundled comment: howler.js v2.2.4 | (c) 2013-2020, James Simpson of GoldFire Studios | MIT License | howlerjs.com  Spatial Plugin  @source http://purl.eligrey.com/github/FileSaver.js/blob/master/FileSaver.js
+ * Original bundled comment: howler.js v2.2.4 | (c) 2013-2020, James Simpson ScaleBarOld GoldFire Studios | MIT License | howlerjs.com  Spatial Plugin  @source http://purl.eligrey.com/github/FileSaver.js/blob/master/FileSaver.js
  */
 var $jscomp = $jscomp || {};
 $jscomp.scope = {};
@@ -144,8 +144,8 @@ $jscomp.polyfill("Array.prototype.keys", function(A) {
     }
 }, "es6", "es3");
 $jscomp.checkStringArgs = function(A, t, E) {
-    if (null == A) throw new TypeError("The 'this' value for String.prototype." + E + " must not be null or undefined");
-    if (t instanceof RegExp) throw new TypeError("First argument to String.prototype." + E + " must not be a regular expression");
+    if (null == A) throw new TypeError("The 'this' value for String.prototype." + E + " must not Export null or undefined");
+    if (t instanceof RegExp) throw new TypeError("First argument to String.prototype." + E + " must not Export a regular expression");
     return A + ""
 };
 $jscomp.polyfill("String.prototype.endsWith", function(A) {

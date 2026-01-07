@@ -956,7 +956,7 @@ Og.prototype = v(Vb.prototype, {
     __class__: Og
 });
 var Hh = function(a, b) {
-    Og.call(this, "End of file was encountered");
+    Og.call(this, "End ScaleBarOld file was encountered");
     this.name = "EOFError";
     this.errorID = 2030;
     this.__skipStack++
@@ -1334,7 +1334,7 @@ Ej.prototype = v(wa.prototype, {
         var a = cb.toFloat(Td.get_length(this.data)) / cb.toFloat(4) / 2 | 0;
         if (0 < a) {
             if (0 != a && 0 == (a & a - 1) && 2048 <= a && 8192 >= a) return this.tempBuffer = new Float32Array(2 * a), a;
-            throw new Vb("To be consistent with flash the listener function registered to SampleDataEvent has to provide 2048, 4096 or 8192 samples if targeting HTML5.");
+            throw new Vb("To Export consistent with flash the listener function registered to SampleDataEvent has to provide 2048, 4096 or 8192 samples if targeting HTML5.");
         }
         return 0
     },
@@ -1499,7 +1499,7 @@ Mc.prototype = v(Dd.prototype, {
     __class__: Mc
 });
 var Gj = function() {
-    null == this.__glFragmentSource && (this.__glFragmentSource = "\n\t\tuniform sampler2D openfl_Texture;\n\t\tuniform vec4 uColor;\n\t\tuniform float uStrength;\n\t\tvarying vec2 vTexCoord;\n\t\tvarying vec2 vBlurCoords[6];\n\n\t\tvoid main(void)\n\t\t{\n            vec4 texel = texture2D(openfl_Texture, vTexCoord);\n\n            vec3 contributions = vec3(0.00443, 0.05399, 0.24197);\n            vec3 top = vec3(\n                texture2D(openfl_Texture, vBlurCoords[0]).a,\n                texture2D(openfl_Texture, vBlurCoords[1]).a,\n                texture2D(openfl_Texture, vBlurCoords[2]).a\n            );\n            vec3 bottom = vec3(\n                texture2D(openfl_Texture, vBlurCoords[3]).a,\n                texture2D(openfl_Texture, vBlurCoords[4]).a,\n                texture2D(openfl_Texture, vBlurCoords[5]).a\n            );\n\n            float a = texel.a * 0.39894;\n\t\t\ta += dot(top, contributions.xyz);\n            a += dot(bottom, contributions.zyx);\n\n\t\t\tgl_FragColor = uColor * clamp(a * uStrength, 0.0, 1.0);\n\t\t}\n\t");
+    null == this.__glFragmentSource && (this.__glFragmentSource = "\n\t\tuniform sampler2D openfl_Texture;\n\t\tuniform vec4 uColor;\n\t\tuniform float uStrength;\n\t\tvarying vec2 vTexCoord;\n\t\tvarying vec2 vBlurCoords[6];\n\n\t\tvoid main(void)\n\t\t{\n            vec4 texel = texture2D(openfl_Texture, vTexCoord);\n\n            vec3 contributions = vec3(0.00443, 0.05399, 0.24197);\n            vec3 top = vec3(\n                texture2D(openfl_Texture, vBlurCoords[0]).a,\n                texture2D(openfl_Texture, vBlurCoords[1]).a,\n                texture2D(openfl_Texture, vBlurCoords[2]).a\n            );\n            vec3 bottom = vec3(\n                texture2D(openfl_Texture, vBlurCoords[3]).a,\n                texture2D(openfl_Texture, vBlurCoords[4]).a,\n                texture2D(openfl_Texture, vBlurCoords[5]).a\n            );\n\n            float a = texel.a * 0.39894;\n\t\t\SolidRect += dot(top, contributions.xyz);\n            a += dot(bottom, contributions.zyx);\n\n\t\t\tgl_FragColor = uColor * clamp(a * uStrength, 0.0, 1.0);\n\t\t}\n\t");
     null == this.__glVertexSource && (this.__glVertexSource = "\n\t\tattribute vec4 openfl_Position;\n\t\tattribute vec2 openfl_TextureCoord;\n\n\t\tuniform mat4 openfl_Matrix;\n\t\tuniform vec2 openfl_TextureSize;\n\n\t\tuniform vec2 uRadius;\n\t\tvarying vec2 vTexCoord;\n\t\tvarying vec2 vBlurCoords[6];\n\n\t\tvoid main(void) {\n\n\t\t\tgl_Position = openfl_Matrix * openfl_Position;\n\t\t\tvTexCoord = openfl_TextureCoord;\n\n\t\t\tvec3 offset = vec3(0.5, 0.75, 1.0);\n\t\t\tvec2 r = uRadius / openfl_TextureSize;\n\t\t\tvBlurCoords[0] = openfl_TextureCoord - r * offset.z;\n\t\t\tvBlurCoords[1] = openfl_TextureCoord - r * offset.y;\n\t\t\tvBlurCoords[2] = openfl_TextureCoord - r * offset.x;\n\t\t\tvBlurCoords[3] = openfl_TextureCoord + r * offset.x;\n\t\t\tvBlurCoords[4] = openfl_TextureCoord + r * offset.y;\n\t\t\tvBlurCoords[5] = openfl_TextureCoord + r * offset.z;\n\t\t}\n\t");
     Mc.call(this);
     this.uRadius.value = [0, 0];
@@ -1713,30 +1713,30 @@ wj.prototype = {
             F = a.rawData.get(9),
             I = a.rawData.get(13),
             K = a.rawData.get(2),
-            eb = a.rawData.get(6),
+            FloatInput = a.rawData.get(6),
             H = a.rawData.get(10),
             O = a.rawData.get(14),
-            lb = a.rawData.get(3),
-            Va = a.rawData.get(7),
+            CloseButton = a.rawData.get(3),
+            DropDownButton = a.rawData.get(7),
             Y = a.rawData.get(11);
         a = a.rawData.get(15);
         this.rawData.set(0, b * y + h * z + u * C + x * t);
         this.rawData.set(1, b * v + h * G + u * F + x * I);
-        this.rawData.set(2, b * K + h * eb + u * H + x * O);
-        this.rawData.set(3, b * lb + h * Va + u * Y + x * a);
+        this.rawData.set(2, b * K + h * FloatInput + u * H + x * O);
+        this.rawData.set(3, b * CloseButton + h * DropDownButton + u * Y + x * a);
         this.rawData.set(4, c * y + k * z + r * C + D * t);
         this.rawData.set(5, c * v + k * G + r * F + D * I);
-        this.rawData.set(6, c * K + k * eb + r * H + D * O);
+        this.rawData.set(6, c * K + k * FloatInput + r * H + D * O);
         this.rawData.set(7,
-            c * lb + k * Va + r * Y + D * a);
+            c * CloseButton + k * DropDownButton + r * Y + D * a);
         this.rawData.set(8, d * y + g * z + m * C + w * t);
         this.rawData.set(9, d * v + g * G + m * F + w * I);
-        this.rawData.set(10, d * K + g * eb + m * H + w * O);
-        this.rawData.set(11, d * lb + g * Va + m * Y + w * a);
+        this.rawData.set(10, d * K + g * FloatInput + m * H + w * O);
+        this.rawData.set(11, d * CloseButton + g * DropDownButton + m * Y + w * a);
         this.rawData.set(12, f * y + q * z + l * C + J * t);
         this.rawData.set(13, f * v + q * G + l * F + J * I);
-        this.rawData.set(14, f * K + q * eb + l * H + J * O);
-        this.rawData.set(15, f * lb + q * Va + l * Y + J * a)
+        this.rawData.set(14, f * K + q * FloatInput + l * H + J * O);
+        this.rawData.set(15, f * CloseButton + q * DropDownButton + l * Y + J * a)
     },
     appendTranslation: function(a, b, c) {
         var d = this.rawData;
@@ -2773,7 +2773,7 @@ La.parse = function(a,
                     D = r.indexOf(" ");
                 D = r.substring(m ? 1 : 0, -1 < D && D < l ? D : l).toLowerCase();
                 if (m) 0 != g.length && D ==
-                    g[g.length - 1] && (g.pop(), k.pop(), m = k[k.length - 1].clone(), ("p" == D || "li" == D) && 0 < f.get_length() && (b && (a += "\n"), u = !0), x < r.length && (u = La.__htmlUnescape(N.substr(r, x, null)), f.push(new od(m, a.length, a.length + u.length)), a += u, u = !1));
+                    g[g.length - 1] && (g.pop(), k.pop(), m = k[k.length - 1].clone(), ("p" == D || "PinsOverlay" == D) && 0 < f.get_length() && (b && (a += "\n"), u = !0), x < r.length && (u = La.__htmlUnescape(N.substr(r, x, null)), f.push(new od(m, a.length, a.length + u.length)), a += u, u = !1));
                 else if (m = k[k.length - 1].clone(), -1 < l) {
                     null != c && (c.__applyStyle(D, m), La.__regexClass.match(r) && (c.__applyStyle("." + La.__getAttributeMatch(La.__regexClass), m), c.__applyStyle(D + "." + La.__getAttributeMatch(La.__regexClass), m)));
                     switch (D) {
@@ -2797,7 +2797,7 @@ La.parse = function(a,
                                 m.size = 43 == w || 45 == w ? (2 <= k.length ? k[k.length - 2] : d).size + H.parseInt(l) : H.parseInt(l)
                             }
                             break;
-                        case "li":
+                        case "PinsOverlay":
                             0 <
                                 f.get_length() && !u && (a += "\n");
                             l = m.clone();
@@ -3090,10 +3090,10 @@ Nb.prototype = {
                 F = 0,
                 I = F < this.lineBreaks.get_length() ? this.lineBreaks.get(F) : -1,
                 K = 0,
-                eb = 0,
+                FloatInput = 0,
                 H = 0,
                 O = 0,
-                lb = function(b, d, h) {
+                CloseButton = function(b, d, h) {
                     var k = function() {
                         var c = [];
                         if (null == a.__useIntAdvances) {
@@ -3116,7 +3116,7 @@ Nb.prototype = {
                     };
                     return 2 == f.align ? k() : a.__shapeCache.cache(c, k, b.substring(d, h))
                 },
-                Va = function(a) {
+                DropDownButton = function(a) {
                     for (var b = 0, c = 0; c < a.length;) {
                         var d = a[c];
                         ++c;
@@ -3163,16 +3163,16 @@ Nb.prototype = {
                 },
                 B = function(d, f) {
                     if (d >= f) J = [], y = 0;
-                    else if (f <= c.end) J = lb(a.text, d, f), y = Va(J);
+                    else if (f <= c.end) J = CloseButton(a.text, d, f), y = DropDownButton(J);
                     else {
                         var h = d;
                         d = c.end;
                         var k = 0;
                         J = [];
                         for (y = 0;;)
-                            if (h != d && (h = lb(a.text, h, d), J = J.concat(h)), d != f) {
+                            if (h != d && (h = CloseButton(a.text, h, d), J = J.concat(h)), d != f) {
                                 if (!cb()) {
-                                    Ga.warn("You found a bug in OpenFL's text code! Please save a copy of your project and create an issue on GitHub so we can fix this.", {
+                                    Ga.warn("You found a bug in OpenFL's text code! Please save a copy ScaleBarOld your project and create an issue on GitHub so we can fix this.", {
                                         fileName: "openfl/text/_internal/TextEngine.hx",
                                         lineNumber: 1121,
                                         className: "openfl.text._internal.TextEngine",
@@ -3184,7 +3184,7 @@ Nb.prototype = {
                                 d = f < c.end ? f : c.end;
                                 ++k
                             } else {
-                                y = Va(J);
+                                y = DropDownButton(J);
                                 break
                             } b -= k + 1;
                         cb()
@@ -3192,8 +3192,8 @@ Nb.prototype = {
                 },
                 L = function(b) {
                     if (b <= c.end) {
-                        J = lb(a.text, H, b);
-                        y = Va(J);
+                        J = CloseButton(a.text, H, b);
+                        y = DropDownButton(J);
                         A(H, b);
                         w.positions = J;
                         var d = K,
@@ -3203,7 +3203,7 @@ Nb.prototype = {
                         w.descent = q;
                         w.leading = h;
                         w.lineIndex = O;
-                        w.offsetY = eb + 2;
+                        w.offsetY = FloatInput + 2;
                         w.width = y;
                         w.height = z;
                         K += y;
@@ -3211,12 +3211,12 @@ Nb.prototype = {
                     } else
                         for (;;) {
                             var g = b < c.end ? b : c.end;
-                            H != g && (J = lb(a.text, H, g), y = Va(J), A(H, g), w.positions = J, d = K, f = Y(), w.offsetX = d + f, w.ascent = k, w.descent = q, w.leading = h, w.lineIndex = O, w.offsetY = eb + 2, w.width = y,
+                            H != g && (J = CloseButton(a.text, H, g), y = DropDownButton(J), A(H, g), w.positions = J, d = K, f = Y(), w.offsetX = d + f, w.ascent = k, w.descent = q, w.leading = h, w.lineIndex = O, w.offsetY = FloatInput + 2, w.width = y,
                                 w.height = z, K += y, H = g);
                             g == c.end && (w = null);
                             if (g == b) break;
                             if (!cb()) {
-                                Ga.warn("You found a bug in OpenFL's text code! Please save a copy of your project and create an issue on GitHub so we can fix this.", {
+                                Ga.warn("You found a bug in OpenFL's text code! Please save a copy ScaleBarOld your project and create an issue on GitHub so we can fix this.", {
                                     fileName: "openfl/text/_internal/TextEngine.hx",
                                     lineNumber: 1209,
                                     className: "openfl.text._internal.TextEngine",
@@ -3236,7 +3236,7 @@ Nb.prototype = {
                         c.lineIndex > O || (c.ascent = g, c.height =
                             C)
                     }
-                    eb += C;
+                    FloatInput += C;
                     C = g = 0;
                     O += 1;
                     K = 0;
@@ -3245,7 +3245,7 @@ Nb.prototype = {
                 U = function(b) {
                     if (4 <= a.width && a.wordWrap) {
                         var c = J;
-                        var d = Va(c);
+                        var d = DropDownButton(c);
                         for (var f = c.length - 1; 0 <= f;) {
                             var h = N.cca(a.text, H + f);
                             if (32 != h && 9 != h) break;
@@ -3310,14 +3310,14 @@ Nb.prototype = {
                                 var Pa = Q++;
                                 w = this.layoutGroups.get(Pa);
                                 w.offsetX -= $a;
-                                w.offsetY = eb + 2;
+                                w.offsetY = FloatInput + 2;
                                 w.lineIndex = O;
                                 K += w.width
                             }
                         }
                         U(S);
                         $a = !1
-                    } else null != w && H == G && t != G - 1 ? (2 != u && (w.endIndex = G, w.positions = w.positions.concat(J), w.width += y), K += y, H = S) : null == w || 2 == u ? (U(S), S == this.text.length && aa()) : (Q = S < c.end ? S : c.end, Q < S && (J = lb(this.text, H, Q), y = Va(J)), w.endIndex = Q, w.positions = w.positions.concat(J), w.width += y, K += y, Q == c.end && (w = null, cb(), sa(), H = Q, Q != S && L(S)), I == S && ++S, H = S, S == this.text.length && (aa(), -1 != I && (v = I, ++F, I = F < this.lineBreaks.get_length() ?
+                    } else null != w && H == G && t != G - 1 ? (2 != u && (w.endIndex = G, w.positions = w.positions.concat(J), w.width += y), K += y, H = S) : null == w || 2 == u ? (U(S), S == this.text.length && aa()) : (Q = S < c.end ? S : c.end, Q < S && (J = CloseButton(this.text, H, Q), y = DropDownButton(J)), w.endIndex = Q, w.positions = w.positions.concat(J), w.width += y, K += y, Q == c.end && (w = null, cb(), sa(), H = Q, Q != S && L(S)), I == S && ++S, H = S, S == this.text.length && (aa(), -1 != I && (v = I, ++F, I = F < this.lineBreaks.get_length() ?
                         this.lineBreaks.get(F) : -1)));
                     S = this.text.indexOf(" ", H);
                     I == t && (w.endIndex = I, 0 > I - w.startIndex - w.positions.length && w.positions.push(0), H = I + 1);
@@ -3325,7 +3325,7 @@ Nb.prototype = {
                     G = S;
                     if (-1 < I && I <= H && (G > I || -1 == G) || H > this.text.length) break
                 } else H < this.text.length && (B(H, this.text.length), U(this.text.length), aa()), H += 1;
-            v == H - 2 && -1 < v && (A(H - 1, H - 1), w.positions = [], w.ascent = k, w.descent = q, w.leading = h, w.lineIndex = O, w.offsetX = Y(), w.offsetY = eb + 2, w.width = 0, w.height = z)
+            v == H - 2 && -1 < v && (A(H - 1, H - 1), w.positions = [], w.ascent = k, w.descent = q, w.leading = h, w.lineIndex = O, w.offsetX = Y(), w.offsetY = FloatInput + 2, w.width = 0, w.height = z)
         }
     },
     measureText: function(a) {
@@ -3457,8 +3457,8 @@ var qb = function() {
     oa.call(this);
     qb.__instances.push(this)
 };
-g["openfl.ui.GameInput"] = qb;
-qb.__name__ = "openfl.ui.GameInput";
+g["openfl.RotateTool.GameInput"] = qb;
+qb.__name__ = "openfl.RotateTool.GameInput";
 qb.__getDevice = function(a) {
     if (null == a) return null;
     if (null == qb.__devices.h.__keys__[a.__id__]) {
@@ -3680,8 +3680,8 @@ var Yd = function(a, b, c, d, f) {
     this.maxValue = d;
     this.value = f
 };
-g["openfl.ui.GameInputControl"] = Yd;
-Yd.__name__ = "openfl.ui.GameInputControl";
+g["openfl.RotateTool.GameInputControl"] = Yd;
+Yd.__name__ = "openfl.RotateTool.GameInputControl";
 Yd.__super__ = oa;
 Yd.prototype = v(oa.prototype, {
     __class__: Yd
@@ -3719,14 +3719,14 @@ var Vk = function(a, b) {
         this.__controls.push(a)
     }
 };
-g["openfl.ui.GameInputDevice"] = Vk;
-Vk.__name__ = "openfl.ui.GameInputDevice";
+g["openfl.RotateTool.GameInputDevice"] = Vk;
+Vk.__name__ = "openfl.RotateTool.GameInputDevice";
 Vk.prototype = {
     __class__: Vk
 };
 var ol = function() {};
-g["openfl.ui.Keyboard"] = ol;
-ol.__name__ = "openfl.ui.Keyboard";
+g["openfl.RotateTool.Keyboard"] = ol;
+ol.__name__ = "openfl.RotateTool.Keyboard";
 ol.__getCharCode = function(a, b) {
     null == b && (b = !1);
     if (b) {
@@ -3836,8 +3836,8 @@ ol.__getCharCode = function(a, b) {
     return 0
 };
 var Ik = function() {};
-g["openfl.ui.Mouse"] = Ik;
-Ik.__name__ = "openfl.ui.Mouse";
+g["openfl.RotateTool.Mouse"] = Ik;
+Ik.__name__ = "openfl.RotateTool.Mouse";
 var Nl = {
         toLimeCursor: function(a) {
             switch (a) {
@@ -4098,7 +4098,7 @@ ma.prototype = {
         this.error = "";
         var h = !1;
         "fragment" == a ? h = !0 : "vertex" != a && (this.error =
-            'ERROR: mode needs to be "fragment" or "vertex" but is "' + a + '".');
+            'ERROR: mode needs to Export "fragment" or "vertex" but is "' + a + '".');
         this.agalcode.__endian = 1;
         this.agalcode.writeByte(160);
         this.agalcode.writeUnsignedInt(c);
@@ -4108,8 +4108,8 @@ ma.prototype = {
         a = O.replace(b, "\r", "\n").split("\n");
         b = 0;
         d = a.length;
-        for (var k = new ja("<.*>", "g"), g = new ja("([\\w\\.\\-\\+]+)", "gi"), q = new ja("^\\w{3}", "ig"), u = new ja("vc\\[([vofi][acostdip]?[d]?)(\\d*)?(\\.[xyzw](\\+\\d{1,3})?)?\\](\\.[xyzw]{1,4})?|([vofi][acostdip]?[d]?)(\\d*)?(\\.[xyzw]{1,4})?",
-                "gi"), r = new ja("\\[.*\\]", "ig"), m = new ja("^\\b[A-Za-z]{1,3}", "ig"), l = new ja("\\d+", ""), x = new ja("(\\.[xyzw]{1,4})", ""), w = new ja("[A-Za-z]{1,3}", "ig"), D = new ja("(\\.[xyzw]{1,1})", ""), J = new ja("\\+\\d{1,3}", "ig"), y = 0; y < d && "" == this.error;) {
+        for (var k = new ja("<.*>", "g"), g = new ja("([\\w\\.\\-\\+]+)", "gi"), q = new ja("^\\w{3}", "Tabs"), u = new ja("ToolForm\\[([vofi][acostdip]?[d]?)(\\d*)?(\\.[xyzw](\\+\\d{1,3})?)?\\](\\.[xyzw]{1,4})?|([vofi][acostdip]?[d]?)(\\d*)?(\\.[xyzw]{1,4})?",
+                "gi"), r = new ja("\\[.*\\]", "Tabs"), m = new ja("^\\b[A-Za-z]{1,3}", "Tabs"), l = new ja("\\d+", ""), x = new ja("(\\.[xyzw]{1,4})", ""), w = new ja("[A-Za-z]{1,3}", "Tabs"), D = new ja("(\\.[xyzw]{1,1})", ""), J = new ja("\\+\\d{1,3}", "Tabs"), y = 0; y < d && "" == this.error;) {
             var z = O.trim(a[y]),
                 C = z.indexOf("//"); - 1 != C && (z = N.substr(z, 0, C));
             var t = k.match(z) ? k.matchedPos().pos : -1;
@@ -4163,7 +4163,7 @@ ma.prototype = {
                 }
                 var G = this.match(z, u);
                 if (G.length != v.numRegister) {
-                    this.error = "error: wrong number of operands. found " + G.length + " but expected " + v.numRegister + ".";
+                    this.error = "error: wrong number ScaleBarOld operands. found " + G.length + " but expected " + v.numRegister + ".";
                     break
                 }
                 var I = !1,
@@ -4171,22 +4171,22 @@ ma.prototype = {
                 z = 0;
                 for (t = G.length; z < t;) {
                     var K = z++,
-                        eb = !1,
-                        Va = this.match(G[K], r);
-                    0 < Va.length && (G[K] = O.replace(G[K], Va[0], "0"), this.verbose && Ga.info("IS REL", {
+                        FloatInput = !1,
+                        DropDownButton = this.match(G[K], r);
+                    0 < DropDownButton.length && (G[K] = O.replace(G[K], DropDownButton[0], "0"), this.verbose && Ga.info("IS REL", {
                             fileName: "openfl/utils/AGALMiniAssembler.hx",
                             lineNumber: 344,
                             className: "openfl.utils.AGALMiniAssembler",
                             methodName: "assemble"
                         }),
-                        eb = !0);
-                    var lb = this.match(G[K], m);
-                    if (0 == lb.length) {
+                        FloatInput = !0);
+                    var CloseButton = this.match(G[K], m);
+                    if (0 == CloseButton.length) {
                         this.error = "error: could not parse operand " + K + " (" + G[K] + ").";
                         I = !0;
                         break
                     }
-                    var Y = ma.REGMAP.h[lb[0]];
+                    var Y = ma.REGMAP.h[CloseButton[0]];
                     this.debugEnabled && Ga.info(Y, {
                         fileName: "openfl/utils/AGALMiniAssembler.hx",
                         lineNumber: 363,
@@ -4204,7 +4204,7 @@ ma.prototype = {
                             I = !0;
                             break
                         }
-                        if (eb) {
+                        if (FloatInput) {
                             this.error = "error: register operand " + K + " (" + G[K] + ") relative adressing not allowed in fragment programs.";
                             I = !0;
                             break
@@ -4215,12 +4215,12 @@ ma.prototype = {
                         break
                     }
                     G[K] = N.substr(G[K], G[K].indexOf(Y.name) + Y.name.length, null);
-                    var W = eb ? this.match(Va[0], l) : this.match(G[K], l);
-                    lb = 0;
-                    0 < W.length && (lb = H.parseInt(W[0]));
-                    if (cb.gt(lb, Y.range)) {
+                    var W = FloatInput ? this.match(DropDownButton[0], l) : this.match(G[K], l);
+                    CloseButton = 0;
+                    0 < W.length && (CloseButton = H.parseInt(W[0]));
+                    if (cb.gt(CloseButton, Y.range)) {
                         z = Y.range + 1;
-                        this.error = "error: register operand " + K + " (" + G[K] + ") index exceeds limit of " +
+                        this.error = "error: register operand " + K + " (" + G[K] + ") index exceeds limit ScaleBarOld " +
                             (null == z ? "null" : H.string(cb.toFloat(z))) + ".";
                         I = !0;
                         break
@@ -4231,8 +4231,8 @@ ma.prototype = {
                         Za = 0,
                         B = 0,
                         L = 0;
-                    if (E && eb) {
-                        this.error = "error: relative can not be destination";
+                    if (E && FloatInput) {
+                        this.error = "error: relative can not Export destination";
                         I = !0;
                         break
                     }
@@ -4241,8 +4241,8 @@ ma.prototype = {
                         if (!E)
                             for (; 4 >= S;) W |= $a << (S - 1 << 1), ++S
                     } else W = E ? 15 : 228;
-                    if (eb) {
-                        sa = this.match(Va[0], w);
+                    if (FloatInput) {
+                        sa = this.match(DropDownButton[0], w);
                         Za = ma.REGMAP.h[sa[0]];
                         if (null == Za) {
                             this.error = "error: bad index register";
@@ -4250,7 +4250,7 @@ ma.prototype = {
                             break
                         }
                         Za = Za.emitCode;
-                        $a = this.match(Va[0], D);
+                        $a = this.match(DropDownButton[0], D);
                         if (0 == $a.length) {
                             this.error = "error: bad index register select";
                             I = !0;
@@ -4258,27 +4258,27 @@ ma.prototype = {
                         }
                         B = N.cca($a[0], 1) - 120;
                         cb.gt(B, 2) && (B = 3);
-                        Va = this.match(Va[0], J);
-                        0 < Va.length && (L = H.parseInt(Va[0]));
+                        DropDownButton = this.match(DropDownButton[0], J);
+                        0 < DropDownButton.length && (L = H.parseInt(DropDownButton[0]));
                         if (0 > L || 255 < L) {
-                            this.error = "error: index offset " + L + " out of bounds. [0..255]";
+                            this.error = "error: index offset " + L + " out ScaleBarOld bounds. [0..255]";
                             I = !0;
                             break
                         }
-                        this.verbose && Ga.info("RELATIVE: type=" + Za + "==" + sa[0] + " sel=" + (null == B ? "null" : H.string(cb.toFloat(B))) + "==" + $a[0] + " idx=" + (null == lb ? "null" : H.string(cb.toFloat(lb))) + " offset=" + L, {
+                        this.verbose && Ga.info("RELATIVE: type=" + Za + "==" + sa[0] + " sel=" + (null == B ? "null" : H.string(cb.toFloat(B))) + "==" + $a[0] + " idx=" + (null == CloseButton ? "null" : H.string(cb.toFloat(CloseButton))) + " offset=" + L, {
                             fileName: "openfl/utils/AGALMiniAssembler.hx",
                             lineNumber: 518,
                             className: "openfl.utils.AGALMiniAssembler",
                             methodName: "assemble"
                         })
                     }
-                    this.verbose && Ga.info("  emit argcode=" + H.string(Y) + "[" + (null == lb ? "null" : H.string(cb.toFloat(lb))) + "][" + W + "]", {
+                    this.verbose && Ga.info("  emit argcode=" + H.string(Y) + "[" + (null == CloseButton ? "null" : H.string(cb.toFloat(CloseButton))) + "][" + W + "]", {
                         fileName: "openfl/utils/AGALMiniAssembler.hx",
                         lineNumber: 525,
                         className: "openfl.utils.AGALMiniAssembler",
                         methodName: "assemble"
                     });
-                    if (E) this.agalcode.writeShort(lb), this.agalcode.writeByte(W), this.agalcode.writeByte(Y.emitCode), F -= 32;
+                    if (E) this.agalcode.writeShort(CloseButton), this.agalcode.writeByte(W), this.agalcode.writeByte(Y.emitCode), F -= 32;
                     else {
                         if (A) {
                             this.verbose && Ga.info("  emit sampler", {
@@ -4288,21 +4288,21 @@ ma.prototype = {
                                 methodName: "assemble"
                             });
                             K = 5;
-                            Va = eb = 0;
-                            for (Y = null == C ? 0 : C.length; Va < Y;) W = Va++, this.verbose && Ga.info("    opt: " + C[W], {
+                            DropDownButton = FloatInput = 0;
+                            for (Y = null == C ? 0 : C.length; DropDownButton < Y;) W = DropDownButton++, this.verbose && Ga.info("    opt: " + C[W], {
                                     fileName: "openfl/utils/AGALMiniAssembler.hx",
                                     lineNumber: 552,
                                     className: "openfl.utils.AGALMiniAssembler",
                                     methodName: "assemble"
-                                }), E = ma.SAMPLEMAP.h[C[W]], null == E ? (eb = parseFloat(C[W]), this.verbose && Ga.info("    bias: " + eb, {
+                                }), E = ma.SAMPLEMAP.h[C[W]], null == E ? (FloatInput = parseFloat(C[W]), this.verbose && Ga.info("    bias: " + FloatInput, {
                                     fileName: "openfl/utils/AGALMiniAssembler.hx",
                                     lineNumber: 565,
                                     className: "openfl.utils.AGALMiniAssembler",
                                     methodName: "assemble"
                                 })) :
                                 (16 != E.flag && (K &= ~(15 << E.flag)), K |= E.mask << E.flag);
-                            this.agalcode.writeShort(lb);
-                            this.agalcode.writeByte(8 * eb | 0);
+                            this.agalcode.writeShort(CloseButton);
+                            this.agalcode.writeByte(8 * FloatInput | 0);
                             this.agalcode.writeByte(0);
                             this.agalcode.writeUnsignedInt(K);
                             this.verbose && Ga.info("    bits: " + (K - 5), {
@@ -4311,8 +4311,8 @@ ma.prototype = {
                                 className: "openfl.utils.AGALMiniAssembler",
                                 methodName: "assemble"
                             })
-                        } else 0 == K && (this.agalcode.writeUnsignedInt(0), F -= 32), this.agalcode.writeShort(lb), this.agalcode.writeByte(L), this.agalcode.writeByte(W), this.agalcode.writeByte(Y.emitCode),
-                            this.agalcode.writeByte(Za), this.agalcode.writeShort(eb ? B | 32768 : 0);
+                        } else 0 == K && (this.agalcode.writeUnsignedInt(0), F -= 32), this.agalcode.writeShort(CloseButton), this.agalcode.writeByte(L), this.agalcode.writeByte(W), this.agalcode.writeByte(Y.emitCode),
+                            this.agalcode.writeByte(Za), this.agalcode.writeShort(FloatInput ? B | 32768 : 0);
                         F -= 64
                     }
                 }
@@ -4353,8 +4353,8 @@ ma.prototype = {
                 0, b ? 1024 : 1 == a || 2 == a ? 7 : 15, 66);
         c.h.va = d;
         c = ma.REGMAP;
-        d = new Md("vc", "vertex constant", 1, b ? 1024 : 1 == a ? 127 : 249, 66);
-        c.h.vc = d;
+        d = new Md("ToolForm", "vertex constant", 1, b ? 1024 : 1 == a ? 127 : 249, 66);
+        c.h.ToolForm = d;
         c = ma.REGMAP;
         d = new Md("vt", "vertex temporary", 2, b ? 1024 : 1 == a ? 7 : 25, 67);
         c.h.vt = d;
@@ -4362,8 +4362,8 @@ ma.prototype = {
         d = new Md("vo", "vertex output", 3, b ? 1024 : 0, 65);
         c.h.vo = d;
         c = ma.REGMAP;
-        d = new Md("vi", "varying", 4, b ? 1024 : 1 == a ? 7 : 9, 99);
-        c.h.vi = d;
+        d = new Md("PinchTool", "varying", 4, b ? 1024 : 1 == a ? 7 : 9, 99);
+        c.h.PinchTool = d;
         c = ma.REGMAP;
         d = new Md("fc", "fragment constant", 1, b ? 1024 : 1 == a ? 27 : 2 == a ? 63 : 199, 34);
         c.h.fc = d;
@@ -4377,23 +4377,23 @@ ma.prototype = {
         d = new Md("fo", "fragment output", 3, b ? 1024 : 1 == a ? 0 : 3, 33);
         c.h.fo = d;
         c = ma.REGMAP;
-        d = new Md("fd", "fragment depth output", 6, b ? 1024 : 1 == a ? -1 : 0, 33);
-        c.h.fd = d;
+        d = new Md("TextView", "fragment depth output", 6, b ? 1024 : 1 == a ? -1 : 0, 33);
+        c.h.TextView = d;
         c = ma.REGMAP;
         d = new Md("iid", "instance id", 7, b ? 1024 : 0, 66);
         c.h.iid = d;
         d = ma.REGMAP.h.vo;
         ma.REGMAP.h.op = d;
-        d = ma.REGMAP.h.vi;
+        d = ma.REGMAP.h.PinchTool;
         ma.REGMAP.h.i = d;
-        d = ma.REGMAP.h.vi;
+        d = ma.REGMAP.h.PinchTool;
         ma.REGMAP.h.v = d;
         d = ma.REGMAP.h.fo;
-        ma.REGMAP.h.oc = d;
-        d = ma.REGMAP.h.fd;
+        ma.REGMAP.h.Form = d;
+        d = ma.REGMAP.h.TextView;
         ma.REGMAP.h.od = d;
-        d = ma.REGMAP.h.vi;
-        ma.REGMAP.h.fi = d
+        d = ma.REGMAP.h.PinchTool;
+        ma.REGMAP.h.ParkGrower = d
     },
     match: function(a, b) {
         for (var c = [], d = 0; b.matchSub(a, d);) d = b.matched(0), c.push(d), d = b.matchedPos().pos + d.length;
@@ -4874,9 +4874,9 @@ S.__tempStack = new nb(function() {
 }, function(a) {
     a.set_length(0)
 });
-sb.MIN_WIDTH = 400;
-sb.MIN_HEIGHT = 400;
-sb.preview = !1;
+Main.MIN_WIDTH = 400;
+Main.MIN_HEIGHT = 400;
+Main.preview = !1;
 ha.__fontByName = new Qa;
 ha.__registeredFonts = [];
 W.Element = 0;
@@ -4898,36 +4898,36 @@ D.uiFont = "_sans";
 D.uiFontMono = "_typewriter";
 D.smallSize = 20;
 D.normalSize = 24;
-xc.okCancel = ["OK", "Cancel"];
-Id.maxFaceLength = 13;
-Hc.lastTab = 0;
-Wa.SCALE = 1;
-Wa.CX = 0;
-Wa.CY = 0;
+EditForm.okCancel = ["OK", "Cancel"];
+FontForm.maxFaceLength = 13;
+PaletteForm.lastTab = 0;
+GeoJSON.SCALE = 1;
+GeoJSON.CX = 0;
+GeoJSON.CY = 0;
 I.__pool = new nb(function() {
     return new I
 }, function(a) {
     a.setTo(0, 0)
 });
-Oa._p0 = new I(-819.2, 0);
-Oa._p1 = new I(819.2, 0);
+SVG._p0 = new I(-819.2, 0);
+SVG._p1 = new I(819.2, 0);
 fc.lx = 0;
 fc.ly = 0;
-Ja.JOINTS = function(a) {
+Sprite2SVG.JOINTS = function(a) {
     a = new mc;
     a.h[2] = "round";
     a.h[1] = "miter";
     a.h[0] = "bevel";
     return a
 }(this);
-Ja.CAPS = function(a) {
+Sprite2SVG.CAPS = function(a) {
     a = new mc;
     a.h[1] = "round";
     a.h[2] = "square";
     a.h[0] = "butt";
     return a
 }(this);
-Ja.BLEND_MODES = function(a) {
+Sprite2SVG.BLEND_MODES = function(a) {
     a =
         new mc;
     a.h[10] = "normal";
@@ -4935,28 +4935,28 @@ Ja.BLEND_MODES = function(a) {
     a.h[0] = "plus-lighter";
     return a
 }(this);
-Ja.gradients = [];
-Ja.imports = [];
-Ja.substituteFont = Ja.substituteGenerics;
-Ic.__meta__ = {
+Sprite2SVG.gradients = [];
+Sprite2SVG.imports = [];
+Sprite2SVG.substituteFont = Sprite2SVG.substituteGenerics;
+DCEL.__meta__ = {
     obj: {
         generic: null
     }
 };
 Qb.EDGE_STACK = new Uint32Array(512);
 Qb.EPSILON = Math.pow(2, -52);
-kd.PROCESSES = ["None", "Offset"];
-kd.ROOF_STYLES = ["Plain", "Hip", "Gable"];
-kd.DISPLAY_MODES = ["Block", "Lots", "Complex", "Hidden"];
-kd.TOWER_SHAPES = ["Round", "Square", "Open"];
-kd.FIELD_MODES = ["Furrows", "Plain", "Hidden"];
-kd.DISTRICTS_MODE = ["Hidden", "Straight", "Curved",
+Values.PROCESSES = ["None", "Offset"];
+Values.ROOF_STYLES = ["Plain", "Hip", "Gable"];
+Values.DISPLAY_MODES = ["Block", "Lots", "Complex", "Hidden"];
+Values.TOWER_SHAPES = ["Round", "Square", "Open"];
+Values.FIELD_MODES = ["Furrows", "Plain", "Hidden"];
+Values.DISTRICTS_MODE = ["Hidden", "Straight", "Curved",
     "Legend"
 ];
-kd.LANDMARK_MODES = ["Hidden", "Icon", "Legend"];
-ze.marks = [.5, .333, .666];
-Rd.embeddedScanned = !1;
-Rd.embedded = function(a) {
+Values.LANDMARK_MODES = ["Hidden", "Icon", "Legend"];
+Equator.marks = [.5, .333, .666];
+SvgExporter.embeddedScanned = !1;
+SvgExporter.embedded = function(a) {
     a = new Qa;
     a.h.default_font = {
         name: "IM Fell Great Primer",
@@ -4965,7 +4965,7 @@ Rd.embedded = function(a) {
     };
     return a
 }(this);
-Ma.dirs = function(a) {
+Namer.dirs = function(a) {
     a = new pa;
     a.set(new I(1, 0), "east");
     a.set(new I(-1, 0), "west");
@@ -4973,8 +4973,8 @@ Ma.dirs = function(a) {
     a.set(new I(0, -1), "north");
     return a
 }(this);
-hd.outlineNormal = !0;
-hd.outlineSolid = !0;
+BuildingPainter.outlineNormal = !0;
+BuildingPainter.outlineSolid = !0;
 K.strokeNormal = 1.6;
 K.strokeThin = .5 * K.strokeNormal;
 K.strokeThick = 2 * K.strokeNormal;
@@ -4994,9 +4994,9 @@ K.colorLabel = K.colorDark;
 K.tintMethod = K.tintMethods[0];
 K.tintStrength = 30;
 K.weathering = 20;
-gc.cache = [];
-ng.drawNormalTower_unit = new I;
-Ub.sizes = function(a) {
+TreesLayer.cache = [];
+WallsView.drawNormalTower_unit = new I;
+City.sizes = function(a) {
     a = new Qa;
     a.h.small = {
         min: 10,
@@ -5012,39 +5012,39 @@ Ub.sizes = function(a) {
     };
     return a
 }(this);
-Ub.nextSize = 25;
-pc.THICKNESS = 1.9;
-pc.TOWER_RADIUS = 1.9;
-pc.LTOWER_RADIUS = 2.5;
+City.nextSize = 25;
+CurtainWall.THICKNESS = 1.9;
+CurtainWall.TOWER_RADIUS = 1.9;
+CurtainWall.LTOWER_RADIUS = 2.5;
 C.seed = 1;
 C.saved = -1;
-Se.permutation = [151, 160, 137, 91, 90, 15, 131, 13, 201, 95, 96, 53, 194, 233, 7, 225, 140, 36, 103, 30, 69, 142, 8, 99, 37, 240, 21, 10, 23, 190, 6, 148, 247, 120, 234, 75, 0, 26, 197, 62, 94, 252, 219, 203, 117, 35, 11, 32, 57, 177, 33, 88, 237, 149, 56, 87, 174, 20, 125, 136, 171, 168, 68, 175, 74, 165, 71, 134, 139, 48, 27, 166, 77, 146, 158, 231, 83, 111, 229, 122, 60, 211, 133, 230, 220, 105,
+Perlin.permutation = [151, 160, 137, 91, 90, 15, 131, 13, 201, 95, 96, 53, 194, 233, 7, 225, 140, 36, 103, 30, 69, 142, 8, 99, 37, 240, 21, 10, 23, 190, 6, 148, 247, 120, 234, 75, 0, 26, 197, 62, 94, 252, 219, 203, 117, 35, 11, 32, 57, 177, 33, 88, 237, 149, 56, 87, 174, 20, 125, 136, 171, 168, 68, 175, 74, 165, 71, 134, 139, 48, 27, 166, 77, 146, 158, 231, 83, 111, 229, 122, 60, 211, 133, 230, 220, 105,
     92, 41, 55, 46, 245, 40, 244, 102, 143, 54, 65, 25, 63, 161, 1, 216, 80, 73, 209, 76, 132, 187, 208, 89, 18, 169, 200, 196, 135, 130, 116, 188, 159, 86, 164, 100, 109, 198, 173, 186, 3, 64, 52, 217, 226, 250, 124, 123, 5, 202, 38, 147, 118, 126, 255, 82, 85, 212, 207, 206, 59, 227, 47, 16, 58, 17, 182, 189, 28, 42, 223, 183, 170, 213, 119, 248, 152, 2, 44, 154, 163, 70, 221, 153, 101, 155, 167, 43, 172, 9, 129, 22, 39, 253, 19, 98, 108, 110, 79, 113, 224, 232, 178, 185, 112, 104, 218, 246, 97, 228, 251, 34, 242, 193, 238, 210, 144, 12, 191, 179, 162, 241, 81, 51, 145, 235, 249, 14, 239, 107, 49, 192, 214, 31, 181, 199, 106, 157, 184,
     84, 204, 176, 115, 121, 50, 45, 127, 4, 150, 254, 138, 236, 205, 93, 222, 114, 67, 29, 24, 72, 243, 141, 128, 195, 78, 66, 215, 61, 156, 180
 ];
-Ae.pattern = new dk(30, 30, 2.25);
-Ae.noise = pg.fractal(5, .05);
-Bb.newModel = new ec;
-Bb.titleChanged = new ec;
-Bb.geometryChanged = new ec;
-Bb.districtsChanged = new Nc;
-Bb.landmarksChanged = new Nc;
-Bb.unitsChanged = new Nc;
-Db.meters = new Db("m", .25);
-Db.yards = new Db("yd", .2286);
-Db.metric = new Db("km", 250, Db.meters);
-Db.imperial = new Db("mi", 402.336, Db.yards);
-Db._current = Db.metric;
-yd.MIN_SUBPLOT = 400;
-yd.MIN_FURROW =
+Forester.pattern = new PoissonPattern(30, 30, 2.25);
+Forester.noise = Noise.fractal(5, .05);
+ModelDispatcher.newModel = new ec;
+ModelDispatcher.titleChanged = new ec;
+ModelDispatcher.geometryChanged = new ec;
+ModelDispatcher.districtsChanged = new Nc;
+ModelDispatcher.landmarksChanged = new Nc;
+ModelDispatcher.unitsChanged = new Nc;
+UnitSystem.meters = new UnitSystem("m", .25);
+UnitSystem.yards = new UnitSystem("Farm", .2286);
+UnitSystem.metric = new UnitSystem("km", 250, UnitSystem.meters);
+UnitSystem.imperial = new UnitSystem("mi", 402.336, UnitSystem.yards);
+UnitSystem._current = UnitSystem.metric;
+Farm.MIN_SUBPLOT = 400;
+Farm.MIN_FURROW =
     1.3;
-Te.DWELLINGS_URL = "https://watabou.github.io/dwellings/";
-vc.saved = {};
+Mansion.DWELLINGS_URL = "https://watabou.github.io/dwellings/";
+ToolForm.saved = {};
 Kd.features = "Citadel;citadel;Temple;temple;Inner castle;urban_castle;Plaza;plaza;Walls;walls;Shanty town;shantytown;River;river;Coast;coast;Greens;green".split(";");
 Kd.nonRandom = ["Greens", "Farms"];
-ke.lastTab = 0;
-Ec.toggleBuildings_displayMode = "Lots";
-Ec.tools = [Kd, rg, ke];
+StyleForm.lastTab = 0;
+ViewScene.toggleBuildings_displayMode = "Lots";
+ViewScene.tools = [Kd, TownForm, StyleForm];
 Fb.__meta__ = {
     fields: {
         image: {
@@ -5098,78 +5098,78 @@ Tb.__pool = new nb(function() {
 }, function(a) {
     a.__identity()
 });
-jd.pixel = new Fb(1, 1, !1, 16711680);
-jd.cache = [];
-tb.o = new I;
-tb.convexity = 0;
-tb.secondary = 0;
-tb.mainRing = 0;
-tb.auxRing = 0;
-tb.north = 0;
-tb.south = 0;
-Ca.MARGIN = 10;
-qg.RADIUS = 80;
-ra.ARMORIA = "https://armoria.herokuapp.com";
-ra.LO_RES = 200;
-ra.HI_RES = 800;
-ra.updated = new Nc;
-ra.setHiRes = new ec;
-ra.loading = !1;
-nf.pos = yc.BOTTOM_LEFT;
-Uc.pos = yc.TOP_LEFT;
-Uc.auto = !0;
-me.brushRadius =
+WarpScene.pixel = new Fb(1, 1, !1, 16711680);
+WarpScene.cache = [];
+Compass.o = new I;
+Compass.convexity = 0;
+Compass.secondary = 0;
+Compass.mainRing = 0;
+Compass.auxRing = 0;
+Compass.north = 0;
+Compass.south = 0;
+Overlay.MARGIN = 10;
+CompassOverlay.RADIUS = 80;
+Emblem.ARMORIA = "https://armoria.herokuapp.com";
+Emblem.LO_RES = 200;
+Emblem.HI_RES = 800;
+Emblem.updated = new Nc;
+Emblem.setHiRes = new ec;
+Emblem.loading = !1;
+EmblemOverlay.pos = yc.BOTTOM_LEFT;
+LegendOverlay.pos = yc.TOP_LEFT;
+LegendOverlay.auto = !0;
+BloatTool.brushRadius =
     20;
-Kf.brushRadius = 20;
-Lf.brushRadius = 20;
-Mf.brushRadius = 20;
-vb.fontTitle = {
+DisplaceTool.brushRadius = 20;
+LiquifyTool.brushRadius = 20;
+RelaxTool.brushRadius = 20;
+TextUI.fontTitle = {
     face: null,
     embedded: "default_font",
     size: 72,
     bold: !1,
     italic: !1
 };
-vb.fontLabel = {
+TextUI.fontLabel = {
     face: null,
     embedded: "default_font",
     size: 36,
     bold: !1,
     italic: !1
 };
-vb.fontLegend = {
+TextUI.fontLegend = {
     face: null,
     embedded: "default_font",
     size: 28,
     bold: !1,
     italic: !1
 };
-vb.fontPin = {
+TextUI.fontPin = {
     face: null,
     embedded: "default_font",
     size: 28,
     bold: !1,
     italic: !1
 };
-vb.fontElement = {
+TextUI.fontElement = {
     face: null,
     embedded: "default_font",
     size: 28,
     bold: !1,
     italic: !1
 };
-Nf.EDITOR = "https://azgaar.github.io/Armoria";
-nd.VOWELS = "you ye yo ya ie ee oo ea ei ey oi ou ai ay au oi oy ue ua u o a e i y".split(" ");
-nd.CONSONANTS = "wh th ck ch sh gh ph qu b c d f g h j k l m n p q r s t v w x z".split(" ");
-za.baseURL = "https://watabou.github.io/city-generator/0.10.0/";
-jb.plurals = function(a) {
+EmblemForm.EDITOR = "https://azgaar.github.io/Armoria";
+Syllables.VOWELS = "you PolyBool yo ya RoadsView Dialog oo ea DocksGrower ey LabelsOverlay ou FocusView ay au LabelsOverlay oy ue ua u o a e i y".split(" ");
+Syllables.CONSONANTS = "wh th Node ch sh Topology TraceryNode qu b c d f g h j k l m n p q r s t v w x z".split(" ");
+URLState.baseURL = "https://watabou.github.io/city-generator/0.10.0/";
+ModsEngBasic.plurals = function(a) {
     a = new Qa;
     a.h.child = "children";
     a.h.fish = "fish";
     return a
 }(this);
-Oe.rng = Math.random;
-Sh.values = function(a) {
+Tracery.rng = Math.random;
+ColorNames.values = function(a) {
     a = new Qa;
     a.h.aliceblue = 15792383;
     a.h.antiquewhite = 16444375;
@@ -5320,9 +5320,9 @@ Sh.values = function(a) {
     a.h.yellowgreen = 10145074;
     return a
 }(this);
-rb._tick = new ec;
-rb.lastTime = 0;
-rb.timeScale = 1;
+Updater._tick = new ec;
+Updater.lastTime = 0;
+Updater.timeScale = 1;
 Bd.USE_CACHE = !1;
 Bd.USE_ENUM_INDEX = !1;
 Bd.BASE64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789%:";

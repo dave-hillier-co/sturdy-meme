@@ -3,9 +3,9 @@
  * Part 5/8: District
  * Contains: District, DistrictBuilder, Grower classes
  */
-            g["com.watabou.mfcg.model.District"] = Pe;
-            Pe.__name__ = "com.watabou.mfcg.model.District";
-            Pe.check4holes = function(a) {
+            g["com.watabou.mfcg.model.District"] = District;
+            District.__name__ = "com.watabou.mfcg.model.District";
+            District.check4holes = function(a) {
                 for (var b = [],
                         c = [], d = 0; d < a.length;) {
                     var f = a[d];
@@ -23,7 +23,7 @@
                     for (++a, f = f.next; - 1 == b.indexOf(f);) f = f.twin.next; while (f != c);
                 return b.length > a
             };
-            Pe.updateColors = function(a) {
+            District.updateColors = function(a) {
                 var b = a.length;
                 if (1 == b) a[0].color = K.colorRoof;
                 else
@@ -32,7 +32,7 @@
                         a[d].color = K.getTint(K.colorRoof, d, b)
                     }
             };
-            Pe.prototype = {
+            District.prototype = {
                 createParams: function() {
                     this.alleys = {
                         minSq: 15 +
@@ -59,7 +59,7 @@
                             d = c != b;
                             a.push(f)
                         }
-                    } else a = Ic.circumference(null, this.faces);
+                    } else a = DCEL.circumference(null, this.faces);
                     this.border = a;
                     this.equator = this.ridge = null
                 },
@@ -67,12 +67,12 @@
                     for (var a = [], b = 0, c = this.faces; b < c.length;) {
                         var d = c[b];
                         ++b;
-                        d.data.ward instanceof Pc && a.push(d)
+                        d.data.ward instanceof Alleys && a.push(d)
                     }
                     b = a;
                     for (a = []; 0 < b.length;) {
                         var f = this.pickFaces(b);
-                        a.push(new Qe(f))
+                        a.push(new WardGroup(f))
                     }
                     this.groups = a;
                     a = 0;
@@ -83,11 +83,11 @@
                                 return null != a.data ? a.data != Tc.HORIZON :
                                     !1
                             }) ? c.push(d.point) : Z.some(this.city.cellsByVertex(d), function(a) {
-                                return !(a.ward instanceof Pc)
+                                return !(a.ward instanceof Alleys)
                             }) && c.push(d.point);
-                            f = Ua.toPoly(f.border);
-                            c = uc.smooth(f, c, 2);
-                            Sa.set(f, c)
+                            f = EdgeChain.toPoly(f.border);
+                            c = PolyUtils.smooth(f, c, 2);
+                            PolyCore.set(f, c)
                         }
                 },
                 pickFaces: function(a) {
@@ -110,7 +110,7 @@
                         if (Z.isEmpty(c)) break;
                         else c = Z.pick(c), N.remove(a, c), b.push(c)
                     }
-                    1 < b.length && Pe.check4holes(b) && (hb.trace("Hole in a group, we need to split it", {
+                    1 < b.length && District.check4holes(b) && (hb.trace("Hole in a group, we need to split it", {
                         fileName: "Source/com/watabou/mfcg/model/District.hx",
                         lineNumber: 175,
                         className: "com.watabou.mfcg.model.District",
@@ -119,20 +119,20 @@
                     return b
                 },
                 getRidge: function() {
-                    var a = Ua.toPoly(this.border).slice();
-                    uc.simplify(a);
-                    if ("Curved" == ba.get("districts", "Curved")) return null == this.ridge && (this.ridge = Xk.build(a)), this.ridge;
-                    null == this.equator && (this.equator = ze.build(a));
+                    var a = EdgeChain.toPoly(this.border).slice();
+                    PolyUtils.simplify(a);
+                    if ("Curved" == State.get("districts", "Curved")) return null == this.ridge && (this.ridge = Xk.build(a)), this.ridge;
+                    null == this.equator && (this.equator = Equator.build(a));
                     return this.equator
                 },
-                __class__: Pe
+                __class__: District
             };
-            var ik = function(a) {
+            var DistrictBuilder = function(a) {
                 this.model = a
             };
-            g["com.watabou.mfcg.model.DistrictBuilder"] = ik;
-            ik.__name__ = "com.watabou.mfcg.model.DistrictBuilder";
-            ik.prototype = {
+            g["com.watabou.mfcg.model.DistrictBuilder"] = DistrictBuilder;
+            DistrictBuilder.__name__ = "com.watabou.mfcg.model.DistrictBuilder";
+            DistrictBuilder.prototype = {
                 build: function() {
                     for (var a = this, b = [], c = 0, d = this.model.cells; c < d.length;) {
                         var f = d[c];
@@ -156,10 +156,10 @@
                                 c : a.getType(b)
                         })
                     };
-                    null != this.model.citadel && k(va.__cast(this.model.citadel.ward, xd).wall.gates[0], lc.CASTLE(this.model.citadel));
+                    null != this.model.citadel && k(va.__cast(this.model.citadel.ward, Castle).wall.gates[0], lc.CASTLE(this.model.citadel));
                     null != this.model.plaza ? d(this.model.plaza, lc.CENTER(this.model.plaza)) : k(this.model.dcel.vertices.h[this.model.center.__id__], lc.CENTER(null));
                     b = 0;
-                    for (c = this.unassigned; b < c.length;) f = c[b], ++b, f.ward instanceof ce && d(f, lc.PARK);
+                    for (c = this.unassigned; b < c.length;) f = c[b], ++b, f.ward instanceof Park && d(f, lc.PARK);
                     if (null != this.model.wall)
                         for (b = 0, c = this.model.wall.gates; b < c.length;) {
                             var n = c[b];
@@ -184,7 +184,7 @@
                     }
                     b = 0;
                     for (c = this.unassigned; b < c.length;)
-                        if (f = c[b], ++b, f.landing && f.ward instanceof Pc) {
+                        if (f = c[b], ++b, f.landing && f.ward instanceof Alleys) {
                             d(f, lc.DOCKS);
                             break
                         } b = 0;
@@ -201,10 +201,10 @@
                     b = 0;
                     for (c = this.districts; b < c.length;) d = c[b], ++b, d.updateGeometry(), d.createGroups();
                     this.sort(this.districts, this.model.cells[0]);
-                    Pe.updateColors(this.districts)
+                    District.updateColors(this.districts)
                 },
                 fromPatch: function(a, b) {
-                    return null == a.district ? (b = new Pe([a], b), this.districts.push(b), N.remove(this.unassigned, a), b) : null
+                    return null == a.district ? (b = new District([a], b), this.districts.push(b), N.remove(this.unassigned, a), b) : null
                 },
                 fromVertex: function(a,
                     b, c) {
@@ -218,13 +218,13 @@
                         null == h.district && a.push(h)
                     }
                     if (0 == a.length || c && a.length < d.length) return null;
-                    b = new Pe(a, b);
+                    b = new District(a, b);
                     this.districts.push(b);
                     Z.removeAll(this.unassigned, a);
                     return b
                 },
                 getType: function(a) {
-                    return a.ward instanceof xd ? lc.CASTLE(a) : a.ward instanceof ce ? lc.PARK : a.landing && a.ward instanceof Pc ? lc.DOCKS : -1 != this.model.inner.indexOf(a) ? lc.REGULAR : lc.SPRAWL
+                    return a.ward instanceof Castle ? lc.CASTLE(a) : a.ward instanceof Park ? lc.PARK : a.landing && a.ward instanceof Alleys ? lc.DOCKS : -1 != this.model.inner.indexOf(a) ? lc.REGULAR : lc.SPRAWL
                 },
                 growAll: function() {
                     for (var a = [], b =
@@ -242,11 +242,11 @@
                 getGrower: function(a) {
                     switch (a.type._hx_index) {
                         case 2:
-                            return new ei(a);
+                            return new DocksGrower(a);
                         case 6:
-                            return new fi(a);
+                            return new ParkGrower(a);
                         default:
-                            return new Re(a)
+                            return new Grower(a)
                     }
                 },
                 sort: function(a, b) {
@@ -254,11 +254,11 @@
                             new pa, d = 0; d < a.length;) {
                         var f = a[d];
                         ++d;
-                        null == f.equator && (f.equator = ze.build(Ua.toPoly(f.border)));
-                        c.set(f, qa.lerp(f.equator[0], f.equator[1]))
+                        null == f.equator && (f.equator = Equator.build(EdgeChain.toPoly(f.border)));
+                        c.set(f, GeomUtils.lerp(f.equator[0], f.equator[1]))
                     }
                     var h = c,
-                        k = Sa.centroid(b.shape);
+                        k = PolyCore.centroid(b.shape);
                     a.sort(function(a, b) {
                         a = I.distance(k, h.h[a.__id__]);
                         b = I.distance(k, h.h[b.__id__]);
@@ -277,9 +277,9 @@
                         h.h[c.__id__]) > I.distance(k, h.h[a[0].__id__]) ? a[0] : c, N.remove(a, n), b.push(n);
                     for (c = 0; c < b.length;) d = b[c], ++c, a.push(d)
                 },
-                __class__: ik
+                __class__: DistrictBuilder
             };
-            var Re = function(a) {
+            var Grower = function(a) {
                 this.district = a;
                 switch (a.type._hx_index) {
                     case 1:
@@ -299,9 +299,9 @@
                 }
                 this.rate = a
             };
-            g["com.watabou.mfcg.model.Grower"] = Re;
-            Re.__name__ = "com.watabou.mfcg.model.Grower";
-            Re.prototype = {
+            g["com.watabou.mfcg.model.Grower"] = Grower;
+            Grower.__name__ = "com.watabou.mfcg.model.Grower";
+            Grower.prototype = {
                 grow: function(a) {
                     if (0 == this.rate) return !1;
                     var b = 1 - this.rate;
@@ -337,32 +337,32 @@
                             return 1
                     } else return 1
                 },
-                __class__: Re
+                __class__: Grower
             };
-            var ei = function(a) {
-                Re.call(this, a)
+            var DocksGrower = function(a) {
+                Grower.call(this, a)
             };
-            g["com.watabou.mfcg.model.DocksGrower"] = ei;
-            ei.__name__ = "com.watabou.mfcg.model.DocksGrower";
-            ei.__super__ = Re;
-            ei.prototype = v(Re.prototype, {
+            g["com.watabou.mfcg.model.DocksGrower"] = DocksGrower;
+            DocksGrower.__name__ = "com.watabou.mfcg.model.DocksGrower";
+            DocksGrower.__super__ = Grower;
+            DocksGrower.prototype = v(Grower.prototype, {
                 validatePatch: function(a, b) {
-                    return b.landing && b.ward instanceof Pc ? 1 : 0
+                    return b.landing && b.ward instanceof Alleys ? 1 : 0
                 },
-                __class__: ei
+                __class__: DocksGrower
             });
-            var fi = function(a) {
-                Re.call(this, a)
+            var ParkGrower = function(a) {
+                Grower.call(this, a)
             };
-            g["com.watabou.mfcg.model.ParkGrower"] = fi;
-            fi.__name__ = "com.watabou.mfcg.model.ParkGrower";
-            fi.__super__ = Re;
-            fi.prototype = v(Re.prototype, {
+            g["com.watabou.mfcg.model.ParkGrower"] = ParkGrower;
+            ParkGrower.__name__ = "com.watabou.mfcg.model.ParkGrower";
+            ParkGrower.__super__ = Grower;
+            ParkGrower.prototype = v(Grower.prototype, {
                 validatePatch: function(a, b) {
-                    return b.ward instanceof ce ? 1 : 0
+                    return b.ward instanceof Park ? 1 : 0
                 },
-                __class__: fi
+                __class__: ParkGrower
             });
-            var pg = function() {
+            var Noise = function() {
                 this.components = []
             };

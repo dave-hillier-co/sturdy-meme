@@ -198,7 +198,7 @@
                 for (var v = Array.prototype.slice.call(arguments, 1); v.length;) {
                     var E = v.shift();
                     if (E) {
-                        if ("object" != typeof E) throw new TypeError(E + "must be non-object");
+                        if ("object" != typeof E) throw new TypeError(E + "must Export non-object");
                         for (var l in E) E.hasOwnProperty(l) && (t[l] = E[l])
                     }
                 }
@@ -516,7 +516,7 @@
                 this.wrap = this.pending = this.pending_out = this.pending_buf_size = 0;
                 this.gzhead = null;
                 this.gzindex = 0;
-                this.method = sb;
+                this.method = Main;
                 this.last_flush = -1;
                 this.w_mask = this.w_bits = this.w_size = 0;
                 this.window = null;
@@ -543,7 +543,7 @@
 
             function $a(g) {
                 var l;
-                return g && g.state ? (g.total_in = g.total_out = 0, g.data_type = bb, l = g.state, l.pending = 0, l.pending_out = 0, 0 > l.wrap && (l.wrap = -l.wrap), l.status = l.wrap ? ha : ca, g.adler = 2 === l.wrap ? 0 : 1, l.last_flush = Y, oa._tr_init(l), ab) : L(g, S)
+                return g && g.state ? (g.total_in = g.total_out = 0, g.data_type = Game, l = g.state, l.pending = 0, l.pending_out = 0, 0 > l.wrap && (l.wrap = -l.wrap), l.status = l.wrap ? ha : ca, g.adler = 2 === l.wrap ? 0 : 1, l.last_flush = Y, oa._tr_init(l), ab) : L(g, S)
             }
 
             function Pa(g) {
@@ -556,7 +556,7 @@
             function Sb(g, l, r, w, t, v) {
                 if (!g) return S;
                 var J = 1;
-                if (l === xa && (l = 6), 0 > w ? (J = 0, w = -w) : 15 < w && (J = 2, w -= 16), 1 > t || t > rc || r !== sb || 8 > w || 15 < w || 0 > l || 9 < l || 0 > v || v > ka) return L(g, S);
+                if (l === xa && (l = 6), 0 > w ? (J = 0, w = -w) : 15 < w && (J = 2, w -= 16), 1 > t || t > rc || r !== Main || 8 > w || 15 < w || 0 > l || 9 < l || 0 > v || v > ka) return L(g, S);
                 8 === w && (w = 9);
                 var x = new sa;
                 return g.state = x, x.strm = g, x.wrap = J, x.gzhead = null, x.w_bits = w, x.w_size = 1 << x.w_bits, x.w_mask = x.w_size - 1, x.hash_bits = t + 7, x.hash_size = 1 << x.hash_bits, x.hash_mask = x.hash_size - 1, x.hash_shift = ~~((x.hash_bits +
@@ -574,8 +574,8 @@
                 xa = -1,
                 kb = 1,
                 ka = 4,
-                bb = 2,
-                sb = 8,
+                Game = 2,
+                Main = 8,
                 rc = 9,
                 ja = 286,
                 N = 30,
@@ -608,7 +608,7 @@
                     ya : H) : (g.strstart > g.block_start && v(g, !1), T)
             }), new Za(4, 4, 8, 4, y), new Za(4, 5, 16, 8, y), new Za(4, 6, 32, 32, y), new Za(4, 4, 16, 16, G), new Za(8, 16, 32, 32, G), new Za(8, 16, 128, 128, G), new Za(8, 32, 128, 256, G), new Za(32, 128, 258, 1024, G), new Za(32, 258, 258, 4096, G)];
             B.deflateInit = function(g, l) {
-                return Sb(g, l, sb, 15, 8, 0)
+                return Sb(g, l, Main, 15, 8, 0)
             };
             B.deflateInit2 = Sb;
             B.deflateReset = Pa;
@@ -625,7 +625,7 @@
                     if (2 === w.wrap) g.adler = 0, ea(w, 31), ea(w, 139), ea(w, 8), w.gzhead ? (ea(w, (w.gzhead.text ? 1 : 0) + (w.gzhead.hcrc ? 2 : 0) + (w.gzhead.extra ? 4 : 0) + (w.gzhead.name ? 8 : 0) + (w.gzhead.comment ? 16 : 0)), ea(w, 255 & w.gzhead.time), ea(w, w.gzhead.time >> 8 & 255), ea(w, w.gzhead.time >> 16 & 255), ea(w, w.gzhead.time >> 24 & 255), ea(w, 9 === w.level ? 2 : 2 <= w.strategy || 2 >
                         w.level ? 4 : 0), ea(w, 255 & w.gzhead.os), w.gzhead.extra && w.gzhead.extra.length && (ea(w, 255 & w.gzhead.extra.length), ea(w, w.gzhead.extra.length >> 8 & 255)), w.gzhead.hcrc && (g.adler = la(g.adler, w.pending_buf, w.pending, 0)), w.gzindex = 0, w.status = 69) : (ea(w, 0), ea(w, 0), ea(w, 0), ea(w, 0), ea(w, 0), ea(w, 9 === w.level ? 2 : 2 <= w.strategy || 2 > w.level ? 4 : 0), ea(w, 3), w.status = ca);
                     else {
-                        var x = sb + (w.w_bits - 8 << 4) << 8;
+                        var x = Main + (w.w_bits - 8 << 4) << 8;
                         x |= (2 <= w.strategy || 2 > w.level ? 0 : 6 > w.level ? 1 : 6 === w.level ? 2 : 3) << 6;
                         0 !== w.strstart && (x |= 32);
                         w.status = ca;
@@ -1318,7 +1318,7 @@
                         }
                         if (30 === F.mode) break;
                         if (0 === F.lens[256]) {
-                            l.msg = "invalid code -- missing end-of-block";
+                            l.msg = "invalid code -- missing end-ScaleBarOld-block";
                             F.mode = 30;
                             break
                         }
@@ -1564,8 +1564,8 @@
             E.exports = function(l, g, r, t, B, E, sa, $a) {
                 var y, G, Za, oa, mb, la, nb = $a.bits,
                     Y, pa, ab, S, xa, kb = 0,
-                    ka, bb = null,
-                    sb = 0,
+                    ka, Game = null,
+                    Main = 0,
                     rc = new L.Buf16(16);
                 var ja = new L.Buf16(16);
                 var N = null,
@@ -1583,12 +1583,12 @@
                 ja[1] = 0;
                 for (Y = 1; 15 > Y; Y++) ja[Y + 1] = ja[Y] + rc[Y];
                 for (pa = 0; pa < t; pa++) 0 !== g[r + pa] && (sa[ja[g[r + pa]]++] = pa);
-                if (0 === l ? (bb = N = sa, oa = 19) : 1 === l ? (bb = M, sb -= 257, N = aa, F -= 257, oa = 256) : (bb = v, N = ea,
+                if (0 === l ? (Game = N = sa, oa = 19) : 1 === l ? (Game = M, Main -= 257, N = aa, F -= 257, oa = 256) : (Game = v, N = ea,
                         oa = -1), ka = 0, pa = 0, Y = nb, ja = E, S = Ab, xa = 0, Za = -1, kb = 1 << Ab, t = kb - 1, 1 === l && 852 < kb || 2 === l && 592 < kb) return 1;
                 for (var ib = 0;;) {
                     ib++;
                     var Aa = Y - xa;
-                    sa[pa] < oa ? (mb = 0, la = sa[pa]) : sa[pa] > oa ? (mb = N[F + sa[pa]], la = bb[sb + sa[pa]]) : (mb = 96, la = 0);
+                    sa[pa] < oa ? (mb = 0, la = sa[pa]) : sa[pa] > oa ? (mb = N[F + sa[pa]], la = Game[Main + sa[pa]]) : (mb = 96, la = 0);
                     y = 1 << Y - xa;
                     nb = G = 1 << S;
                     do G -= y, B[ja + (ka >> xa) + G] = Aa << 24 | mb << 16 | la | 0; while (0 !== G);
@@ -1653,7 +1653,7 @@
             }
 
             function ea(g, l, r) {
-                g.bi_valid > sb - r ? (g.bi_buf |= l << g.bi_valid & 65535, v(g, g.bi_buf), g.bi_buf = l >> sb - g.bi_valid, g.bi_valid += r - sb) : (g.bi_buf |= l << g.bi_valid & 65535, g.bi_valid += r)
+                g.bi_valid > Main - r ? (g.bi_buf |= l << g.bi_valid & 65535, v(g, g.bi_buf), g.bi_buf = l >> Main - g.bi_valid, g.bi_valid += r - Main) : (g.bi_buf |= l << g.bi_valid & 65535, g.bi_valid += r)
             }
 
             function l(g, l, r) {
@@ -1668,9 +1668,9 @@
 
             function r(l,
                 r, t) {
-                var w, v = Array(bb + 1),
+                var w, v = Array(Game + 1),
                     x = 0;
-                for (w = 1; w <= bb; w++) v[w] = x = x + t[w - 1] << 1;
+                for (w = 1; w <= Game; w++) v[w] = x = x + t[w - 1] << 1;
                 for (t = 0; t <= r; t++) w = l[2 * t + 1], 0 !== w && (l[2 * t] = g(v[w]++, w))
             }
 
@@ -1747,7 +1747,7 @@
                     L = l.stat_desc.extra_base,
                     M = l.stat_desc.max_length,
                     N = 0;
-                for (x = 0; x <= bb; x++) g.bl_count[x] = 0;
+                for (x = 0; x <= Game; x++) g.bl_count[x] = 0;
                 t[2 * g.heap[g.heap_max] + 1] = 0;
                 for (l = g.heap_max + 1; l < ka; l++) v = g.heap[l], x = t[2 * t[2 * v + 1] + 1] + 1, x > M && (x = M,
                     N++), t[2 * v + 1] = x, v > J || (g.bl_count[x]++, F = 0, v >= L && (F = H[v - L]), E = t[2 * v], g.opt_len += E * (x + F), G && (g.static_len += E * (y[2 * v + 1] + F)));
@@ -1826,8 +1826,8 @@
                 xa = 30,
                 kb = 19,
                 ka = 2 * S + 1,
-                bb = 15,
-                sb = 16,
+                Game = 15,
+                Main = 16,
                 rc = 256,
                 ja = 16,
                 N = 17,
@@ -1851,7 +1851,7 @@
             var H, wb, x, O = !1;
             B._tr_init = function(l) {
                 if (!O) {
-                    var t, v, B, F = Array(bb + 1);
+                    var t, v, B, F = Array(Game + 1);
                     for (B = v = 0; 28 > B; B++)
                         for (cd[B] = v, t = 0; t <
                             1 << Ab[B]; t++) T[v++] = B;
@@ -1860,15 +1860,15 @@
                         for (ya[B] = v, t = 0; t < 1 << ib[B]; t++) ca[v++] = B;
                     for (v >>= 7; B < xa; B++)
                         for (ya[B] = v << 7, t = 0; t < 1 << ib[B] - 7; t++) ca[256 + v++] = B;
-                    for (t = 0; t <= bb; t++) F[t] = 0;
+                    for (t = 0; t <= Game; t++) F[t] = 0;
                     for (t = 0; 143 >= t;) Na[2 * t + 1] = 8, t++, F[8]++;
                     for (; 255 >= t;) Na[2 * t + 1] = 9, t++, F[9]++;
                     for (; 279 >= t;) Na[2 * t + 1] = 7, t++, F[7]++;
                     for (; 287 >= t;) Na[2 * t + 1] = 8, t++, F[8]++;
                     r(Na, S + 1, F);
                     for (t = 0; t < xa; t++) ha[2 * t + 1] = 5, ha[2 * t] = g(t, 5);
-                    H = new M(Na, Ab, ab + 1, S, bb);
-                    wb = new M(ha, ib, 0, xa, bb);
+                    H = new M(Na, Ab, ab + 1, S, Game);
+                    wb = new M(ha, ib, 0, xa, Game);
                     x = new M([], Aa, 0, kb, 7);
                     O = !0
                 }

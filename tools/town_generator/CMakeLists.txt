@@ -19,6 +19,7 @@ set(GEOM_SOURCES
 set(UTILS_SOURCES
     src/utils/Random.cpp
     src/utils/MathUtils.cpp
+    src/utils/Forester.cpp
 )
 
 set(BUILDING_SOURCES
@@ -32,6 +33,7 @@ set(BUILDING_SOURCES
     src/building/Bisector.cpp
     src/building/Building.cpp
     src/building/District.cpp
+    src/building/Landmark.cpp
     src/building/City.cpp
 )
 
@@ -51,6 +53,7 @@ set(WARD_SOURCES
     src/wards/Farm.cpp
     src/wards/Park.cpp
     src/wards/Harbour.cpp
+    src/wards/Wilderness.cpp
 )
 
 set(SVG_SOURCES

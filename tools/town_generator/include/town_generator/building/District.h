@@ -66,23 +66,9 @@ public:
     void createGeometry();
 };
 
-/**
- * DistrictBuilder - Creates districts from a model's cells
- * Faithful port from mfcg.js DistrictBuilder
- */
-class DistrictBuilder {
-public:
-    explicit DistrictBuilder(City* model) : model_(model) {}
-
-    // Build all districts from cells
-    std::vector<std::unique_ptr<District>> build();
-
-private:
-    City* model_;
-
-    // Find all cells that can be grouped into a district starting from seed
-    std::vector<Cell*> growDistrict(Cell* seed, std::vector<Cell*>& unassigned);
-};
+// NOTE: DistrictBuilder functionality is provided by WardGroupBuilder in WardGroup.h
+// The WardGroupBuilder class groups adjacent cells of the same ward type and
+// handles block/lot generation. District is kept for naming/styling purposes.
 
 } // namespace building
 } // namespace town_generator

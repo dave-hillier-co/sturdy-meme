@@ -1,6 +1,6 @@
 #include "town_generator/building/Block.h"
 #include "town_generator/building/WardGroup.h"
-#include "town_generator/building/Cutter.h"
+#include "town_generator/building/Bisector.h"
 #include "town_generator/building/Building.h"
 #include "town_generator/geom/GeomUtils.h"
 #include "town_generator/utils/Random.h"
@@ -417,6 +417,7 @@ std::vector<geom::Point> Block::spawnTrees() {
 }
 
 // TwistedBlock implementation
+// Faithful port of mfcg.js TwistedBlock.createLots (lines 12272-12301)
 
 std::vector<geom::Polygon> TwistedBlock::createLots(
     Block* block,
@@ -428,14 +429,28 @@ std::vector<geom::Polygon> TwistedBlock::createLots(
         return result;
     }
 
+    // MFCG: new Bisector(a.shape, b.minSq, Math.max(4 * b.sizeChaos, 1.2))
+    double variance = std::max(4.0 * params.sizeChaos, 1.2);
+    Bisector bisector(block->shape, params.minSq, variance);
+    bisector.minTurnOffset = 0.5;  // MFCG: c.minTurnOffset = .5
+    // Note: NO getGap for lot subdivision (lots don't have gaps between them)
+
     // Partition the block shape
-    partition(block->shape, params.minSq, params.sizeChaos, 0.5, result);
+    std::vector<geom::Polygon> partitioned = bisector.partition();
+
+    // MFCG: d = a.filterInner(d) - filter out inner lots before valid-lot check
+    // Note: filterInner is called by Block::createLots after this returns,
+    // but MFCG calls it here. We pass the block so it can filter.
+    // Actually, filterInner modifies block->lots, so we need to handle this
+    // by having Block::createLots call filterInner on the returned lots.
+    // The order in MFCG is: partition -> filterInner -> valid-lot filter
 
     // Filter out lots that are too small or have bad shapes
-    std::vector<geom::Polygon> filtered;
+    // MFCG: b = b.minSq / 4 (minArea threshold)
     double minArea = params.minSq / 4.0;
 
-    for (const auto& lot : result) {
+    for (const auto& lot : partitioned) {
+        // MFCG: if (4 > h.length || k < b) k = !1
         if (lot.length() < 4) continue;
 
         double area = std::abs(lot.square());
@@ -444,7 +459,8 @@ std::vector<geom::Polygon> TwistedBlock::createLots(
         // Get OBB for shape validation
         auto obb = lot.orientedBoundingBox();
         if (obb.size() < 4) {
-            filtered.push_back(lot);
+            // Can't validate, include anyway
+            result.push_back(lot);
             continue;
         }
 
@@ -453,70 +469,16 @@ std::vector<geom::Polygon> TwistedBlock::createLots(
         double len01 = edge01.length();
         double len12 = edge12.length();
 
-        // Check minimum dimensions (1.2 in mfcg.js)
+        // MFCG: k = 1.2 <= n && 1.2 <= p && .5 < k / (n * p)
         if (len01 < 1.2 || len12 < 1.2) continue;
 
-        // Check shape ratio
         double obbArea = len01 * len12;
         if (obbArea > 0.001 && (area / obbArea) < 0.5) continue;
 
-        filtered.push_back(lot);
+        result.push_back(lot);
     }
 
-    return filtered;
-}
-
-void TwistedBlock::partition(
-    const geom::Polygon& shape,
-    double minSq,
-    double sizeChaos,
-    double minTurnOffset,
-    std::vector<geom::Polygon>& result
-) {
-    double area = std::abs(shape.square());
-
-    // Size threshold with chaos variation
-    double threshold = minSq * std::pow(2.0, 4.0 * sizeChaos * (utils::Random::floatVal() - 0.5));
-
-    // If area is below threshold, it's a lot
-    if (area < threshold || shape.length() < 3) {
-        result.push_back(shape);
-        return;
-    }
-
-    // Find longest edge for bisection
-    size_t longestEdge = 0;
-    double longestLen = 0;
-    for (size_t i = 0; i < shape.length(); ++i) {
-        geom::Point v = shape.vectori(static_cast<int>(i));
-        double len = v.length();
-        if (len > longestLen) {
-            longestLen = len;
-            longestEdge = i;
-        }
-    }
-
-    // Ratio with turn offset (faithful to mfcg.js TwistedBlock.minTurnOffset)
-    double ratio = minTurnOffset + utils::Random::floatVal() * (1.0 - 2.0 * minTurnOffset);
-
-    // Small angle variation for "twisted" effect
-    double angle = (utils::Random::floatVal() - 0.5) * M_PI / 8.0;
-
-    // Small gap (unlike alleys which have larger gaps)
-    double gap = 0.3;
-
-    auto halves = Cutter::bisect(shape, shape[longestEdge], ratio, angle, gap);
-
-    if (halves.size() < 2) {
-        // Bisection failed, this is a lot
-        result.push_back(shape);
-        return;
-    }
-
-    // Recursively partition each half
-    for (const auto& half : halves) {
-        partition(half, minSq, sizeChaos, minTurnOffset, result);
-    }
+    return result;
 }
 
 } // namespace building

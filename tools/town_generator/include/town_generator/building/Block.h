@@ -102,26 +102,15 @@ private:
  * TwistedBlock - Partitioning algorithm for irregular block shapes
  *
  * Faithful port from mfcg.js TwistedBlock (lines 12267-12325).
- * Creates building lots by recursive subdivision with non-axis-aligned cuts.
+ * Creates building lots using Bisector with minTurnOffset = 0.5.
  */
 class TwistedBlock {
 public:
-    // Create lots from a block shape
-    // minSq: minimum lot area
-    // sizeChaos: variation in lot sizes (0-1)
+    // Create lots from a block shape using Bisector
+    // Uses: Bisector(shape, minSq, max(4 * sizeChaos, 1.2)), minTurnOffset = 0.5
     static std::vector<geom::Polygon> createLots(
         Block* block,
         const wards::AlleyParams& params
-    );
-
-private:
-    // Recursive partitioning
-    static void partition(
-        const geom::Polygon& shape,
-        double minSq,
-        double sizeChaos,
-        double minTurnOffset,
-        std::vector<geom::Polygon>& result
     );
 };
 

@@ -1,13 +1,13 @@
 #include "town_generator/building/District.h"
-#include "town_generator/building/Model.h"
-#include "town_generator/wards/CommonWard.h"
+#include "town_generator/building/City.h"
+#include "town_generator/wards/Ward.h"
 #include <algorithm>
 #include <cmath>
 
 namespace town_generator {
 namespace building {
 
-District::District(Patch* startPatch, Model* model)
+District::District(Cell* startPatch, City* model)
     : model(model)
 {
     if (startPatch && startPatch->ward) {
@@ -18,10 +18,10 @@ District::District(Patch* startPatch, Model* model)
 }
 
 void District::build() {
-    if (patches.empty()) return;
+    if (cells.empty()) return;
 
-    // Create the combined border from all patches
-    border = Model::findCircumference(patches);
+    // Create the combined border from all cells
+    border = City::findCircumference(cells);
 
     // Create shared parameters
     createParams();
@@ -84,101 +84,15 @@ void District::createGeometry() {
     // For now, delegate to each patch's ward
     // In a more complete implementation, this would create unified geometry
     // across the district boundary
-    for (auto* patch : patches) {
+    for (auto* patch : cells) {
         if (patch->ward) {
             patch->ward->createGeometry();
         }
     }
 }
 
-// DistrictBuilder implementation
-
-std::vector<std::unique_ptr<District>> DistrictBuilder::build() {
-    std::vector<std::unique_ptr<District>> districts;
-
-    // Get all city patches
-    std::vector<Patch*> unassigned;
-    for (auto* patch : model_->patches) {
-        if (patch->withinCity && !patch->waterbody && patch->ward) {
-            unassigned.push_back(patch);
-        }
-    }
-
-    // Group patches into districts
-    while (!unassigned.empty()) {
-        Patch* seed = unassigned.front();
-
-        auto district = std::make_unique<District>(seed, model_);
-        district->patches = growDistrict(seed, unassigned);
-        district->build();
-
-        districts.push_back(std::move(district));
-    }
-
-    return districts;
-}
-
-std::vector<Patch*> DistrictBuilder::growDistrict(Patch* seed, std::vector<Patch*>& unassigned) {
-    std::vector<Patch*> result;
-    result.push_back(seed);
-
-    // Remove seed from unassigned
-    auto it = std::find(unassigned.begin(), unassigned.end(), seed);
-    if (it != unassigned.end()) {
-        unassigned.erase(it);
-    }
-
-    std::string seedType = seed->ward ? seed->ward->getName() : "";
-
-    // Grow by adding neighbors of same type
-    // Use probability to control district size (faithful to mfcg.js pickFaces)
-    bool keepGrowing = true;
-    while (keepGrowing && !unassigned.empty()) {
-        // Find neighbors of current district that match type
-        std::vector<Patch*> candidates;
-        for (auto* patch : result) {
-            for (auto* neighbor : patch->neighbors) {
-                // Check if neighbor is in unassigned and same type
-                auto neighborIt = std::find(unassigned.begin(), unassigned.end(), neighbor);
-                if (neighborIt != unassigned.end()) {
-                    std::string neighborType = neighbor->ward ? neighbor->ward->getName() : "";
-                    if (neighborType == seedType) {
-                        // Not already a candidate
-                        if (std::find(candidates.begin(), candidates.end(), neighbor) == candidates.end()) {
-                            candidates.push_back(neighbor);
-                        }
-                    }
-                }
-            }
-        }
-
-        if (candidates.empty()) {
-            break;
-        }
-
-        // Probability to stop growing increases with size (faithful to mfcg.js)
-        double stopProb = static_cast<double>(result.size() - 3) / result.size();
-        if (stopProb < 0) stopProb = 0;
-        if (result.size() > 1 && unassigned.size() > 1 && utils::Random::floatVal() < stopProb) {
-            break;
-        }
-
-        // Add a random candidate
-        size_t idx = static_cast<size_t>(utils::Random::floatVal() * candidates.size());
-        if (idx >= candidates.size()) idx = candidates.size() - 1;
-
-        Patch* chosen = candidates[idx];
-        result.push_back(chosen);
-
-        // Remove from unassigned
-        it = std::find(unassigned.begin(), unassigned.end(), chosen);
-        if (it != unassigned.end()) {
-            unassigned.erase(it);
-        }
-    }
-
-    return result;
-}
+// NOTE: DistrictBuilder functionality has been moved to WardGroupBuilder in WardGroup.cpp
+// The WardGroupBuilder class provides the same grouping and growth logic.
 
 } // namespace building
 } // namespace town_generator

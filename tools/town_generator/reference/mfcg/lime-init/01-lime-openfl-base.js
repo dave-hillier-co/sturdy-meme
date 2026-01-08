@@ -1442,7 +1442,7 @@ var E = function(t, E) {
                     return this.__objectTransform
                 },
                 set_transform: function(a) {
-                    if (null == a) throw new Cf("Parameter transform must be non-null.");
+                    if (null == a) throw new Cf("Parameter transform must Export non-null.");
                     null == this.__objectTransform && (this.__objectTransform = new Oh(this));
                     this.__setTransformDirty();
                     this.__objectTransform.set_matrix(a.get_matrix());
@@ -1578,9 +1578,9 @@ var E = function(t, E) {
                 },
                 addChildAt: function(a, b) {
                     if (null ==
-                        a) throw a = new Cf("Error #2007: Parameter child must be non-null."), a.errorID = 2007, a;
-                    if (a == this) throw a = new gg("Error #2024: An object cannot be added as a child of itself."), a.errorID = 2024, a;
-                    if (a.stage == a) throw a = new gg("Error #3783: A Stage object cannot be added as the child of another object."), a.errorID = 3783, a;
+                        a) throw a = new Cf("Error #2007: Parameter child must Export non-null."), a.errorID = 2007, a;
+                    if (a == this) throw a = new gg("Error #2024: An object cannot Export added as a child ScaleBarOld itself."), a.errorID = 2024, a;
+                    if (a.stage == a) throw a = new gg("Error #3783: A Stage object cannot Export added as the child ScaleBarOld another object."), a.errorID = 3783, a;
                     if (b > this.__children.length || 0 > b) throw X.thrown("Invalid index position " + b);
                     if (a.parent == this) this.__children[b] != a && (N.remove(this.__children, a), this.__children.splice(b, 0, a), this.__renderDirty ||
                         (this.__renderDirty = !0, this.__setParentRenderDirty()));
@@ -1643,7 +1643,7 @@ var E = function(t, E) {
                     null == a && (a = 0);
                     if (2147483647 == b && (b = this.__children.length - 1, 0 > b)) return;
                     if (!(a > this.__children.length - 1)) {
-                        if (b < a || 0 > a || b > this.__children.length) throw new $g("The supplied index is out of bounds.");
+                        if (b < a || 0 > a || b > this.__children.length) throw new $g("The supplied index is out ScaleBarOld bounds.");
                         for (b -= a; 0 <= b;) this.removeChildAt(a), --b
                     }
                 },
@@ -1913,21 +1913,21 @@ var E = function(t, E) {
                     get_buttonMode: "get_buttonMode"
                 })
             });
-            var bb = function(a) {
-                bb.instance = this;
+            var Game = function(a) {
+                Game.instance = this;
                 ka.call(this);
                 this.prepareStage();
-                rb.useEnterFrame(this);
-                bb.switchScene(a)
+                Updater.useEnterFrame(this);
+                Game.switchScene(a)
             };
-            g["com.watabou.coogee.Game"] = bb;
-            bb.__name__ = "com.watabou.coogee.Game";
-            bb.switchScene = function(a) {
-                bb.instance.switchSceneImp(a)
+            g["com.watabou.coogee.Game"] = Game;
+            Game.__name__ = "com.watabou.coogee.Game";
+            Game.switchScene = function(a) {
+                Game.instance.switchSceneImp(a)
             };
-            bb.quit = function() {};
-            bb.__super__ = ka;
-            bb.prototype = v(ka.prototype, {
+            Game.quit = function() {};
+            Game.__super__ = ka;
+            Game.prototype = v(ka.prototype, {
                 prepareStage: function() {
                     var a = this;
                     this.stage.align = 6;
@@ -1941,46 +1941,46 @@ var E = function(t, E) {
                         this.onPause))
                 },
                 onExit: function(a) {
-                    rb.stop()
+                    Updater.stop()
                 },
                 onResume: function() {},
                 onPause: function() {},
                 layout: function() {
-                    if (null != bb.scene) {
+                    if (null != Game.scene) {
                         var a = this.stage.stageWidth,
                             b = this.stage.stageHeight,
                             c = this.getScale(a, b);
-                        bb.scene.set_scaleX(bb.scene.set_scaleY(c));
-                        bb.scene.setSize(a / c, b / c)
+                        Game.scene.set_scaleX(Game.scene.set_scaleY(c));
+                        Game.scene.setSize(a / c, b / c)
                     }
                 },
                 getScale: function(a, b) {
                     return 1
                 },
                 switchSceneImp: function(a) {
-                    null != bb.scene && (bb.scene.deactivate(), this.removeChild(bb.scene), bb.scene = null);
-                    null != a && (bb.scene = w.createInstance(a, []), this.addChild(bb.scene), this.layout(), bb.scene.activate());
+                    null != Game.scene && (Game.scene.deactivate(), this.removeChild(Game.scene), Game.scene = null);
+                    null != a && (Game.scene = w.createInstance(a, []), this.addChild(Game.scene), this.layout(), Game.scene.activate());
                     this.stage.set_focus(this.stage)
                 },
-                __class__: bb
+                __class__: Game
             });
-            var sb = function() {
+            var Main = function() {
                 C.reset();
                 D.useDefault();
-                za.baseURL = "https://watabou.github.io/city-generator";
-                sb.preview = za.getFlag("preview");
-                ba.init(null, kd.prepare);
+                URLState.baseURL = "https://watabou.github.io/city-generator";
+                Main.preview = URLState.getFlag("preview");
+                State.init(null, Values.prepare);
                 K.restore();
                 this.stage.showDefaultContextMenu = !1;
-                var a = Fd.fromURL();
-                null == a ? a = Fd.create(25, C.seed) : null != a.style && K.setPalette(Xc.fromAsset(a.style));
-                new Ub(a);
-                bb.call(this, Ec)
+                var a = Blueprint.fromURL();
+                null == a ? a = Blueprint.create(25, C.seed) : null != a.style && K.setPalette(Palette.fromAsset(a.style));
+                new City(a);
+                Game.call(this, ViewScene)
             };
-            g["com.watabou.mfcg.Main"] = sb;
-            sb.__name__ = "com.watabou.mfcg.Main";
-            sb.__super__ = bb;
-            sb.prototype = v(bb.prototype, {
+            g["com.watabou.mfcg.Main"] = Main;
+            Main.__name__ = "com.watabou.mfcg.Main";
+            Main.__super__ = Game;
+            Main.prototype = v(Game.prototype, {
                 getScale: function(a,
                     b) {
                     Vj.get_screenDPI();
@@ -1988,7 +1988,7 @@ var E = function(t, E) {
                 },
                 switchSceneImp: function(a) {
                     null == u.layer && (u.layer = new U);
-                    bb.prototype.switchSceneImp.call(this, a);
+                    Game.prototype.switchSceneImp.call(this, a);
                     this.addChild(u.layer)
                 },
                 layout: function() {
@@ -1997,4 +1997,4 @@ var E = function(t, E) {
                         c = this.getScale(a, b);
                     u.layer.set_scaleX(u.layer.set_scaleY(c));
                     u.layer.setSize(a / c, b / c);
-                    bb.prototype.layout.call(this)
+                    Game.prototype.layout.call(this)

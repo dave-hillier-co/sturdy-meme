@@ -3,16 +3,16 @@
  * Part 3/8: City
  * Contains: City class (main city generation)
  */
-            g["com.watabou.mfcg.model.City"] = Ub;
-            Ub.__name__ = "com.watabou.mfcg.model.City";
-            Ub.prototype = {
+            g["com.watabou.mfcg.model.City"] = City;
+            City.__name__ = "com.watabou.mfcg.model.City";
+            City.prototype = {
                 rerollName: function() {
-                    return Ma.cityName(this)
+                    return Namer.cityName(this)
                 },
                 setName: function(a, b) {
                     this.bp.name = this.name = a;
                     this.bp.updateURL();
-                    Bb.titleChanged.dispatch(this.name)
+                    ModelDispatcher.titleChanged.dispatch(this.name)
                 },
                 build: function() {
                     this.streets = [];
@@ -87,7 +87,7 @@
                         b < n && (b = n)
                     }
                     this.plazaNeeded && (C.save(), f = 8 + (C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647 * 8, h = f * (1 + (C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647), b = Math.max(b, h), c[1] = I.polar(f, d), c[2] = I.polar(h, d + Math.PI / 2), c[3] = I.polar(f, d + Math.PI), c[4] = I.polar(h, d + 3 * Math.PI / 2), C.restore());
-                    h = (new Qb(c.concat(Qd.regular(6, 2 * b)))).getVoronoi();
+                    h = (new Qb(c.concat(PolyCreate.regular(6, 2 * b)))).getVoronoi();
                     for (f = h.keys(); f.hasNext();) c = f.next(), n = h.get(c),
                         Z.some(n, function(a) {
                             return a.get_length() > b
@@ -96,14 +96,14 @@
                     this.inner = [];
                     f = [];
                     for (n = h.iterator(); n.hasNext();) h = n.next(), f.push(h);
-                    this.dcel = new Ic(f);
+                    this.dcel = new DCEL(f);
                     var p = new pa;
                     f = 0;
                     for (h = this.dcel.faces; f < h.length;) {
                         var g = h[f];
                         ++f;
-                        c = new ci(g);
-                        n = Sa.centroid(c.shape);
+                        c = new Cell(g);
+                        n = PolyCore.centroid(c.shape);
                         p.set(c, n);
                         this.cells.push(c)
                     }
@@ -113,7 +113,7 @@
                     });
                     if (this.coastNeeded) {
                         C.save();
-                        d = pg.fractal(6);
+                        d = Noise.fractal(6);
                         f = 20 + (C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647 * 40;
                         k = .3 * b * (((C.seed = 48271 *
                             C.seed % 2147483647 | 0) / 2147483647 + (C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647 + (C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647) / 3 * 2 - 1);
@@ -143,7 +143,7 @@
                         return a.x * a.x + a.y *
                             a.y
                     });
-                    this.plazaNeeded && new he(this, this.plaza = this.inner[0]);
+                    this.plazaNeeded && new Market(this, this.plaza = this.inner[0]);
                     if (this.citadelNeeded) {
                         if (this.stadtburgNeeded) {
                             f = [];
@@ -178,7 +178,7 @@
                     }
                 },
                 optimizeJunctions: function() {
-                    var a = 3 * pc.LTOWER_RADIUS,
+                    var a = 3 * CurtainWall.LTOWER_RADIUS,
                         b = this.citadel;
                     for (b = null != b ? b.shape : null;;) {
                         for (var c = !1, d = 0, f = this.dcel.faces; d < f.length;) {
@@ -186,7 +186,7 @@
                             ++d;
                             var k = h.data.shape;
                             if (!(4 >= k.length)) {
-                                var n = Sa.perimeter(k);
+                                var n = PolyCore.perimeter(k);
                                 k =
                                     Math.max(a, n / k.length / 3);
                                 n = h = h.halfEdge;
@@ -214,10 +214,10 @@
                     C.save();
                     var a = this.waterEdge;
                     null != this.citadel && (a = a.concat(this.citadel.shape));
-                    this.border = new pc(this.wallsNeeded, this, this.inner, a);
+                    this.border = new CurtainWall(this.wallsNeeded, this, this.inner, a);
                     this.wallsNeeded && (this.wall = this.border, this.walls.push(this.wall));
                     this.gates = this.border.gates;
-                    null != this.citadel && (a = new xd(this, this.citadel), a.wall.buildTowers(), this.walls.push(a.wall), this.gates = this.gates.concat(a.wall.gates));
+                    null != this.citadel && (a = new Castle(this, this.citadel), a.wall.buildTowers(), this.walls.push(a.wall), this.gates = this.gates.concat(a.wall.gates));
                     C.restore()
                 },
                 cellsByVertex: function(a) {
@@ -234,10 +234,10 @@
                     var a = Z.find(this.dcel.edges, function(a) {
                         return null == a.twin
                     });
-                    this.horizonE = Ic.circumference(a, this.dcel.faces);
+                    this.horizonE = DCEL.circumference(a, this.dcel.faces);
                     if (6 > this.horizonE.length) throw X.thrown("Failed to build the horizon: " + this.horizonE.length);
-                    Ua.assignData(this.horizonE, Tc.HORIZON);
-                    this.horizon = Ua.toPoly(this.horizonE);
+                    EdgeChain.assignData(this.horizonE, Tc.HORIZON);
+                    this.horizon = EdgeChain.toPoly(this.horizonE);
                     if (this.coastNeeded) {
                         a = [];
                         for (var b = [], c = 0, d = this.dcel.faces; c < d.length;) {
@@ -245,26 +245,26 @@
                             ++c;
                             f.data.waterbody ? a.push(f) : b.push(f)
                         }
-                        b = Z.max(Ic.split(b), function(a) {
+                        b = Z.max(DCEL.split(b), function(a) {
                             return a.length
                         });
-                        a = Z.max(Ic.split(a), function(a) {
+                        a = Z.max(DCEL.split(a), function(a) {
                             return a.length
                         });
-                        this.earthEdgeE = Ic.circumference(null, b);
-                        this.earthEdge = Ua.toPoly(this.earthEdgeE);
-                        this.waterEdgeE = Ic.circumference(null, a);
+                        this.earthEdgeE = DCEL.circumference(null, b);
+                        this.earthEdge = EdgeChain.toPoly(this.earthEdgeE);
+                        this.waterEdgeE = DCEL.circumference(null, a);
                         if (Z.every(this.waterEdgeE, function(a) {
                                 return null != a.twin
                             })) throw X.thrown("Required water doesn't touch the horizon");
-                        this.waterEdge = Ua.toPoly(this.waterEdgeE);
-                        Sa.set(this.waterEdge, uc.smooth(this.waterEdge, null, Math.floor(1 + (C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647 * 3)));
+                        this.waterEdge = EdgeChain.toPoly(this.waterEdgeE);
+                        PolyCore.set(this.waterEdge, PolyUtils.smooth(this.waterEdge, null, Math.floor(1 + (C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647 * 3)));
                         for (a = 0; null != this.earthEdgeE[a].twin;) a = (a + 1) % this.earthEdgeE.length;
                         for (; null == this.earthEdgeE[a].twin;) a = (a + 1) % this.earthEdgeE.length;
                         this.shore = [];
                         this.shoreE = [];
                         do b = this.earthEdgeE[a], this.shoreE.push(b), this.shore.push(b.origin.point), a = (a + 1) % this.earthEdgeE.length; while (null != this.earthEdgeE[a].twin);
-                        Ua.assignData(this.shoreE, Tc.COAST)
+                        EdgeChain.assignData(this.shoreE, Tc.COAST)
                     } else this.earthEdgeE = this.horizonE, this.earthEdge = this.horizon, this.waterEdgeE = [], this.waterEdge = [], this.shoreE = [], this.shore = []
                 },
                 buildStreets: function() {
@@ -274,11 +274,11 @@
                         d.withinCity &&
                             a.push(d)
                     }
-                    var f = new gh(a);
+                    var f = new Topology(a);
                     a = [];
                     b = 0;
                     for (c = this.cells; b < c.length;) d = c[b], ++b, d.withinCity || d.waterbody || a.push(d);
-                    d = new gh(a);
+                    d = new Topology(a);
                     a = [];
                     b = 0;
                     for (c = this.shoreE; b < c.length;) {
@@ -293,7 +293,7 @@
                     for (b = this.walls; a < b.length;) {
                         var k = b[a];
                         ++a;
-                        Z.addAll(h, Ua.vertices(k.edges))
+                        Z.addAll(h, EdgeChain.vertices(k.edges))
                     }
                     0 < h.length && (Z.removeAll(h, this.gates), f.excludePoints(h), d.excludePoints(h));
                     h = Z.difference(this.earthEdgeE, this.shoreE);
@@ -338,7 +338,7 @@
                                         !p.withinWalls && p.bordersInside(this.shoreE) && c.push(p)
                                     }
                                     k = c;
-                                    for (c = 0; c < k.length;) n = k[c], ++c, n.landing = !0, n.withinCity = !0, new Pc(this, n), this.maxDocks--
+                                    for (c = 0; c < k.length;) n = k[c], ++c, n.landing = !0, n.withinCity = !0, new Alleys(this, n), this.maxDocks--
                                 }
                             }
                         } else hb.trace("Unable to build a street!", {
@@ -355,7 +355,7 @@
                         f = a
                     } else f = null;
                     a = 0;
-                    for (b = this.arteries; a < b.length;) d = b[a], ++a, Ua.assignData(d, Tc.ROAD), d = Ua.toPoly(d), Sa.set(d, uc.smoothOpen(d, f, 2))
+                    for (b = this.arteries; a < b.length;) d = b[a], ++a, EdgeChain.assignData(d, Tc.ROAD), d = EdgeChain.toPoly(d), PolyCore.set(d, PolyUtils.smoothOpen(d, f, 2))
                 },
                 tidyUpRoads: function() {
                     for (var a = [], b = 0, c = this.streets; b < c.length;) {
@@ -388,7 +388,7 @@
                 },
                 buildCanals: function() {
                     C.save();
-                    this.canals = this.riverNeeded ? [yb.createRiver(this)] : [];
+                    this.canals = this.riverNeeded ? [Canal.createRiver(this)] : [];
                     C.restore()
                 },
                 addHarbour: function(a) {
@@ -399,7 +399,7 @@
                         null != h.twin && c.push(h.twin.face.data)
                     }
                     for (; b < c.length;) a = c[b], ++b, a.waterbody &&
-                        null == a.ward && new lf(this, a)
+                        null == a.ward && new Harbour(this, a)
                 },
                 createWards: function() {
                     if (this.bp.greens) {
@@ -415,7 +415,7 @@
                                 for (d = 0; d < b.length;) {
                                     var f = b[d];
                                     ++d;
-                                    null == f.ward && (new ce(this, f), ++a)
+                                    null == f.ward && (new Park(this, f), ++a)
                                 }
                         }
                         d = (this.nPatches - 10) / 20;
@@ -426,25 +426,25 @@
                             for (d++;;)
                                 if (f =
                                     Z.random(this.inner), null == f.ward) {
-                                    new ce(this, f);
+                                    new Park(this, f);
                                     break
                                 }
                     }
                     if (0 < this.shoreE.length && 0 < this.maxDocks)
                         for (d = 0, a = this.inner; d < a.length && !(f = a[d], ++d, f.bordersInside(this.shoreE) && (f.landing = !0, 0 >= --this.maxDocks)););
                     this.templeNeeded && (f = Z.min(this.inner, function(a) {
-                        return null == a.ward ? Sa.center(a.shape).get_length() : Infinity
-                    }), new Ne(this, f));
+                        return null == a.ward ? PolyCore.center(a.shape).get_length() : Infinity
+                    }), new Cathedral(this, f));
                     d = 0;
-                    for (a = this.inner; d < a.length;) f = a[d], ++d, null == f.ward && new Pc(this, f);
+                    for (a = this.inner; d < a.length;) f = a[d], ++d, null == f.ward && new Alleys(this, f);
                     if (null != this.wall)
                         for (d = 0, a = this.wall.gates; d < a.length;)
                             if (b = a[d], ++d, c = 1 / (this.nPatches -
                                     5), null == c && (c = .5), !((C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647 < c))
-                                for (c = 0, b = this.cellsByVertex(b); c < b.length;) f = b[c], ++c, null == f.ward && (f.withinCity = !0, f.bordersInside(this.shoreE) && 0 < this.maxDocks-- && (f.landing = !0), new Pc(this, f));
+                                for (c = 0, b = this.cellsByVertex(b); c < b.length;) f = b[c], ++c, null == f.ward && (f.withinCity = !0, f.bordersInside(this.shoreE) && 0 < this.maxDocks-- && (f.landing = !0), new Alleys(this, f));
                     this.shantyNeeded && this.buildShantyTowns();
                     d = 0;
-                    for (a = Ua.vertices(this.shoreE); d < a.length;)
+                    for (a = EdgeChain.vertices(this.shoreE); d < a.length;)
                         for (f = a[d], ++d, c = 0, b = this.cellsByVertex(f); c < b.length;) {
                             var h = b[c];
                             ++c;
@@ -485,7 +485,7 @@
                         }
                     }
                     null != this.citadel && f(va.__cast(this.citadel.ward,
-                        xd).wall.shape);
+                        Castle).wall.shape);
                     this.bounds.setTo(a, c, b - a, d - c)
                 },
                 getViewport: function() {
@@ -504,7 +504,7 @@
                         }
                     }
                     h = 0;
-                    for (k = this.cells; h < k.length;) n = k[h], ++h, null == n.ward && (n.waterbody ? new Rb(this, n) : n.bordersInside(this.shoreE) ? new og(this, n) : (p = Sa.center(n.shape).subtract(this.center), g = Math.atan2(p.y, p.x), g = a * Math.sin(g + c) + b * Math.sin(2 * g + d), p.get_length() < (g + 1) * f ? new yd(this, n) : new og(this, n)))
+                    for (k = this.cells; h < k.length;) n = k[h], ++h, null == n.ward && (n.waterbody ? new Ward(this, n) : n.bordersInside(this.shoreE) ? new Wilderness(this, n) : (p = PolyCore.center(n.shape).subtract(this.center), g = Math.atan2(p.y, p.x), g = a * Math.sin(g + c) + b * Math.sin(2 * g + d), p.get_length() < (g + 1) * f ? new Farm(this, n) : new Wilderness(this, n)))
                 },
                 buildShantyTowns: function() {
                     for (var a =
@@ -541,7 +541,7 @@
                                         k = Z.count(k, function(a) {
                                             return a.withinCity
                                         });
-                                        1 < k && Z.add(b, P) && c.push(k * k / d(Sa.center(P.shape)))
+                                        1 < k && Z.add(b, P) && c.push(k * k / d(PolyCore.center(P.shape)))
                                     }
                                 }
                             }, h = 0, k = this.cells; h < k.length;) {
@@ -561,7 +561,7 @@
                         n = b[h];
                         n.withinCity = !0;
                         0 < this.maxDocks && n.bordersInside(this.shoreE) && (n.landing = !0, this.maxDocks--);
-                        new Pc(this, n);
+                        new Alleys(this, n);
                         c.splice(h, 1);
                         N.remove(b, n);
                         --p;
@@ -578,7 +578,7 @@
                         this.wall.buildTowers();
                         if (null != this.citadel)
                             for (a = 0, b = va.__cast(this.citadel.ward,
-                                    xd).wall.towers; a < b.length;) c = b[a], ++a, N.remove(this.wall.towers, c)
+                                    Castle).wall.towers; a < b.length;) c = b[a], ++a, N.remove(this.wall.towers, c)
                     }
                 },
                 getOcean: function() {
@@ -592,13 +592,13 @@
                             f = f.twin.face.data;
                             var k = !1,
                                 n = !1;
-                            f.landing ? k = !0 : f.withinCity && kf.isConvexVertexi(this.earthEdge, this.earthEdge.indexOf(h)) && (n = !0);
+                            f.landing ? k = !0 : f.withinCity && PolyAccess.isConvexVertexi(this.earthEdge, this.earthEdge.indexOf(h)) && (n = !0);
                             if (b || k) n = !0;
                             b = k;
                             n && a.push(h)
                         }
                     }
-                    return this.ocean = Hf.render(this.waterEdge, !0, 3, a)
+                    return this.ocean = Chaikin.render(this.waterEdge, !0, 3, a)
                 },
                 buildGeometry: function() {
                     for (var a = 0, b =
@@ -607,44 +607,44 @@
                         ++a;
                         c.updateState()
                     }
-                    Ma.reset();
+                    Namer.reset();
                     this.name = null != this.bp.name ? this.bp.name : this.rerollName();
-                    a = new ik(this);
+                    a = new DistrictBuilder(this);
                     a.build();
                     this.districts = a.districts;
-                    Ma.nameDistricts(this);
+                    Namer.nameDistricts(this);
                     a = 0;
                     for (b = this.cells; a < b.length;) c = b[a], ++a, c.ward.createGeometry()
                 },
                 rerollDistricts: function() {
-                    Ma.reset();
-                    Ma.nameDistricts(this);
-                    Bb.districtsChanged.dispatch()
+                    Namer.reset();
+                    Namer.nameDistricts(this);
+                    ModelDispatcher.districtsChanged.dispatch()
                 },
                 updateGeometry: function(a) {
                     for (var b = [], c = [], d = 0; d < a.length;) {
                         var f = a[d];
                         ++d;
-                        f.ward instanceof Pc ? Z.add(c, f.ward.group.core) : f.ward.createGeometry();
+                        f.ward instanceof Alleys ? Z.add(c, f.ward.group.core) : f.ward.createGeometry();
                         null != f.district && Z.add(b, f.district)
                     }
                     for (d = 0; d < c.length;) f = c[d], ++d, f.data.ward.createGeometry();
                     for (d = 0; d < b.length;) c = b[d], ++d, c.updateGeometry();
-                    gc.resetForests();
-                    Bb.geometryChanged.dispatch(1 == a.length ? a[0] : null)
+                    TreesLayer.resetForests();
+                    ModelDispatcher.geometryChanged.dispatch(1 == a.length ? a[0] : null)
                 },
                 updateLots: function() {
                     for (var a = 0, b = this.cells; a < b.length;) {
                         var c = b[a];
                         ++a;
-                        c.ward instanceof Pc && c.ward.createGeometry()
+                        c.ward instanceof Alleys && c.ward.createGeometry()
                     }
-                    Bb.geometryChanged.dispatch(null)
+                    ModelDispatcher.geometryChanged.dispatch(null)
                 },
                 addLandmark: function(a) {
-                    a = new di(this, a);
+                    a = new Landmark(this, a);
                     this.landmarks.push(a);
-                    Bb.landmarksChanged.dispatch();
+                    ModelDispatcher.landmarksChanged.dispatch();
                     return a
                 },
                 updateLandmarks: function() {
@@ -676,17 +676,17 @@
                             }
                         }
                     }
-                    for (c = 0; c < a.length;) h = a[c], ++c, d = Z.random(b), f = Sa.center(d), h = new di(this, f, h), this.landmarks.push(h), N.remove(b, d);
-                    Bb.landmarksChanged.dispatch()
+                    for (c = 0; c < a.length;) h = a[c], ++c, d = Z.random(b), f = PolyCore.center(d), h = new Landmark(this, f, h), this.landmarks.push(h), N.remove(b, d);
+                    ModelDispatcher.landmarksChanged.dispatch()
                 },
                 removeLandmark: function(a) {
                     N.remove(this.landmarks,
                         a);
-                    Bb.landmarksChanged.dispatch()
+                    ModelDispatcher.landmarksChanged.dispatch()
                 },
                 removeLandmarks: function() {
                     this.landmarks = [];
-                    Bb.landmarksChanged.dispatch()
+                    ModelDispatcher.landmarksChanged.dispatch()
                 },
                 countBuildings: function() {
                     for (var a = 0, b = 0, c = this.districts; b < c.length;) {
@@ -724,7 +724,7 @@
                     for (var b = 0, c = this.cells; b < c.length;) {
                         var d = c[b];
                         ++b;
-                        if (Gb.containsPoint(d.shape, a)) return d
+                        if (PolyBounds.containsPoint(d.shape, a)) return d
                     }
                     return null
                 },
@@ -741,7 +741,7 @@
                                 for (k = k.blocks; n < k.length;) {
                                     var p = k[n];
                                     ++n;
-                                    Gb.rect(p.shape).intersects(a) && ++b
+                                    PolyBounds.rect(p.shape).intersects(a) && ++b
                                 }
                             }
                         }
@@ -775,9 +775,9 @@
                             this.bp.coastDir : 0
                     }
                 },
-                __class__: Ub
+                __class__: City
             };
-            var pc = function(a, b, c, d) {
+            var CurtainWall = function(a, b, c, d) {
                 this.watergates = new pa;
                 this.real = !0;
                 this.patches = c;
@@ -793,10 +793,10 @@
                 } else {
                     f = [];
                     for (h = 0; h < c.length;) k = c[h], ++h, f.push(k.face);
-                    this.edges = Ic.circumference(null, f);
-                    this.shape = Ua.toPoly(this.edges)
+                    this.edges = DCEL.circumference(null, f);
+                    this.shape = EdgeChain.toPoly(this.edges)
                 }
-                a && (Ua.assignData(this.edges, Tc.WALL, !1), 1 < c.length && Sa.set(this.shape, uc.smooth(this.shape, d, 3)));
+                a && (EdgeChain.assignData(this.edges, Tc.WALL, !1), 1 < c.length && PolyCore.set(this.shape, PolyUtils.smooth(this.shape, d, 3)));
                 this.length = this.shape.length;
                 1 == c.length ?
                     this.buildCastleGate(b, d) : this.buildCityGates(a, b, d);

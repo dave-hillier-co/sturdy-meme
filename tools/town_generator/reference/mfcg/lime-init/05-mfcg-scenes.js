@@ -6,38 +6,38 @@
         a.build(Math.floor(20 + (C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647 * 20))
     });
     this.buttons.add(b);
-    b = new fb("Large");
+    b = new Button("Large");
     b.set_width(80);
     b.click.add(function() {
         a.build(Math.floor(40 + (C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647 * 40))
     });
     this.buttons.add(b);
     this.txtSize =
-        new tc;
+        new TextInput;
     this.txtSize.set_centered(!0);
     this.txtSize.set_width(80);
     this.txtSize.set_prompt("Size");
     this.txtSize.set_restrict("0-9");
     this.txtSize.enter.add(l(this, this.onCustomSize));
     this.buttons.add(this.txtSize);
-    b = new fb("Rebuild");
+    b = new Button("Rebuild");
     b.set_width(80);
     b.click.add(l(this, this.rebuild));
     this.buttons.add(b);
-    b = new fb("From URL");
+    b = new Button("From URL");
     b.set_width(80);
     b.click.add(l(this, this.fromURL));
     this.buttons.add(b);
-    this.bg = ta.light();
+    this.bg = SolidRect.light();
     this.add(this.tabs);
     this.add(this.bg);
     this.add(this.buttons)
 };
-g["com.watabou.mfcg.ui.forms.GenerateForm"] =
+g["com.watabou.mfcg.RotateTool.forms.GenerateForm"] =
     Kd;
-Kd.__name__ = "com.watabou.mfcg.ui.forms.GenerateForm";
-Kd.__super__ = vc;
-Kd.prototype = v(vc.prototype, {
+Kd.__name__ = "com.watabou.mfcg.RotateTool.forms.GenerateForm";
+Kd.__super__ = ToolForm;
+Kd.prototype = v(ToolForm.prototype, {
     getTitle: function() {
         return "Generate"
     },
@@ -48,27 +48,27 @@ Kd.prototype = v(vc.prototype, {
         this.bg.setSize(this.buttons.get_width(), this.rHeight)
     },
     onKey: function(a) {
-        if (13 == a) this.build(Ub.nextSize);
+        if (13 == a) this.build(City.nextSize);
         else return !1;
         return !0
     },
     getCheckBox: function(a, b) {
         b =
-            new ud(b);
-        b.set_value(ba.get(a));
+            new CheckBox(b);
+        b.set_value(State.get(a));
         return b
     },
     createFeaturesTab: function() {
         var a = this,
-            b = new gb;
+            b = new VBox;
         this.chkRandom = this.getCheckBox("random", "Random");
         this.chkRandom.changed.add(l(this, this.onRandom));
         b.add(this.chkRandom);
-        var c = ta.black();
+        var c = SolidRect.black();
         c.set_height(2);
         c.halign = "fill";
         b.add(c);
-        c = new Pd(2);
+        c = new Grid(2);
         c.setMargins(0, 8);
         var d = 0;
         for (this.chkFeatures = new Qa; d < Kd.features.length;) {
@@ -87,7 +87,7 @@ Kd.prototype = v(vc.prototype, {
             d += 2
         }
         b.add(c);
-        c = ta.black();
+        c = SolidRect.black();
         c.set_height(2);
         c.halign = "fill";
         return b
@@ -99,20 +99,20 @@ Kd.prototype = v(vc.prototype, {
     },
     createRoadsTab: function() {
         var a = this,
-            b = new Pd(2);
+            b = new Grid(2);
         b.setMargins(10,
             8);
-        this.chkDefault = new ud;
+        this.chkDefault = new CheckBox;
         b.add(this.chkDefault);
-        b.add(new Ib("Default number"));
+        b.add(new Label("Default number"));
         this.chkMaximum = this.getCheckBox("hub", null);
         b.add(this.chkMaximum);
-        b.add(new Ib("Maximum number"));
-        this.chkSpecific = new ud;
+        b.add(new Label("Maximum number"));
+        this.chkSpecific = new CheckBox;
         this.chkSpecific.valign = "center";
         b.add(this.chkSpecific);
-        var c = ba.get("gates");
-        this.txtGates = new tc(-1 < c ? null == c ? "null" : "" + c : "");
+        var c = State.get("gates");
+        this.txtGates = new TextInput(-1 < c ? null == c ? "null" : "" + c : "");
         this.txtGates.set_restrict("0-9");
         this.txtGates.set_prompt("Number");
         this.txtGates.set_width(100);
@@ -122,11 +122,11 @@ Kd.prototype = v(vc.prototype, {
             a.chkSpecific.set_value(!0)
         });
         this.txtGates.enter.add(function(b) {
-            a.build(Ub.nextSize)
+            a.build(City.nextSize)
         });
         b.add(this.txtGates);
-        c = -1 < c ? 2 : ba.get("hub") ? 1 : 0;
-        new hg([this.chkDefault, this.chkMaximum, this.chkSpecific], c);
+        c = -1 < c ? 2 : State.get("hub") ? 1 : 0;
+        new RadioGroup([this.chkDefault, this.chkMaximum, this.chkSpecific], c);
         return b
     },
     onCustomSize: function(a) {
@@ -134,48 +134,48 @@ Kd.prototype = v(vc.prototype, {
         null != a && 5 <= a && 200 >= a && this.build(a)
     },
     saveFeatures: function() {
-        ba.set("random", this.chkRandom.get_value());
+        State.set("random", this.chkRandom.get_value());
         for (var a = this.chkFeatures.h, b = Object.keys(a), c = b.length, d = 0; d < c;) {
             var f = b[d++];
-            ba.set(f, a[f].get_value())
+            State.set(f, a[f].get_value())
         }
-        ba.set("hub", this.chkMaximum.get_value());
-        ba.set("gates", this.chkSpecific.get_value() ? H.parseInt(this.txtGates.get_text()) : -1)
+        State.set("hub", this.chkMaximum.get_value());
+        State.set("gates", this.chkSpecific.get_value() ? H.parseInt(this.txtGates.get_text()) : -1)
     },
     build: function(a) {
         this.saveFeatures();
-        new Ub(Fd.create(a, C.seed));
-        bb.switchScene(Ec);
+        new City(Blueprint.create(a, C.seed));
+        Game.switchScene(ViewScene);
         this.stage.set_focus(this)
     },
     rebuild: function() {
         this.saveFeatures();
-        new Ub(Fd.similar(Ub.instance.bp));
-        bb.switchScene(Ec)
+        new City(Blueprint.similar(City.instance.bp));
+        Game.switchScene(ViewScene)
     },
     update: function() {
-        this.chkRandom.set_value(ba.get("random", !0));
+        this.chkRandom.set_value(State.get("random", !0));
         for (var a = this.chkFeatures.h, b = Object.keys(a), c = b.length, d = 0; d < c;) {
             var f = b[d++];
-            a[f].set_value(ba.get(f, !0))
+            a[f].set_value(State.get(f, !0))
         }
         this.onRandom(this.chkRandom.get_value());
-        a = ba.get("gates");
-        this.chkDefault.set_value(!ba.get("hub") && -1 >= a);
-        this.chkMaximum.set_value(ba.get("hub") && -1 >= a);
+        a = State.get("gates");
+        this.chkDefault.set_value(!State.get("hub") && -1 >= a);
+        this.chkMaximum.set_value(State.get("hub") && -1 >= a);
         this.chkSpecific.set_value(-1 < a) && this.txtGates.set_text(null == a ? "null" : "" + a)
     },
     fromURL: function() {
-        null == u.findWidnow(Jf) && u.showDialog(new Jf)
+        null == u.findWidnow(URLForm) && u.showDialog(new URLForm)
     },
     __class__: Kd
 });
-var rg = function() {
+var TownForm = function() {
     var a = this;
-    oc.call(this);
+    Form.call(this);
     this.setMargins(10, 8);
-    this.model = Ub.instance;
-    this.txtName = new tc(this.model.name);
+    this.model = City.instance;
+    this.txtName = new TextInput(this.model.name);
     this.txtName.set_centered(!0);
     this.txtName.enter.add(l(this, this.onEnterName));
     this.txtName.leave.add(function() {
@@ -183,61 +183,61 @@ var rg = function() {
     });
     this.txtName.set_width(200);
     this.add(this.txtName);
-    this.townInfo = new pi(this.model);
+    this.townInfo = new TownInfo(this.model);
     this.townInfo.halign = "center";
     this.add(this.townInfo);
     this.addSection("Reroll names");
     this.addButtonRow("Town", l(this, this.rerollName), "Districts", (G = this.model, l(G, G.rerollDistricts)));
-    this.addSection("Points of interest");
+    this.addSection("Points ScaleBarOld interest");
     this.addButtonRow("Load", l(this, this.onLoadPOIs), "Clear", l(this, this.onClearPOIs));
     this.addSeparator();
     this.addButtonRow("Warp", l(this, this.onWarp), "Overworld", l(this, this.onOverworld));
-    var b = new ed;
+    var b = new HBox;
     b.setMargins(0, 8);
-    var c = new fb("Permalink");
+    var c = new Button("Permalink");
     c.set_width(96);
     c.click.add(l(this, this.onCopyURL));
     b.add(c);
-    c = new fe("Export", ["PNG", "SVG", "JSON"]);
+    c = new MultiAction("Export", ["PNG", "SVG", "JSON"]);
     c.set_width(96);
     c.action.add(l(this, this.onExport));
     b.add(c);
     this.add(b);
-    Bb.newModel.add(l(this, this.onNewModel));
-    Bb.titleChanged.add(l(this, this.onTitleChanged));
-    Bb.geometryChanged.add(l(this, this.onGeometryChanged))
+    ModelDispatcher.newModel.add(l(this, this.onNewModel));
+    ModelDispatcher.titleChanged.add(l(this, this.onTitleChanged));
+    ModelDispatcher.geometryChanged.add(l(this, this.onGeometryChanged))
 };
-g["com.watabou.mfcg.ui.forms.TownForm"] = rg;
-rg.__name__ = "com.watabou.mfcg.ui.forms.TownForm";
-rg.__super__ = vc;
-rg.prototype = v(vc.prototype, {
+g["com.watabou.mfcg.RotateTool.forms.TownForm"] = TownForm;
+TownForm.__name__ = "com.watabou.mfcg.RotateTool.forms.TownForm";
+TownForm.__super__ = ToolForm;
+TownForm.prototype = v(ToolForm.prototype, {
     onHide: function() {
-        vc.prototype.onHide.call(this);
-        Bb.newModel.remove(l(this, this.onNewModel));
-        Bb.titleChanged.remove(l(this, this.onTitleChanged));
-        Bb.geometryChanged.remove(l(this, this.onGeometryChanged))
+        ToolForm.prototype.onHide.call(this);
+        ModelDispatcher.newModel.remove(l(this, this.onNewModel));
+        ModelDispatcher.titleChanged.remove(l(this, this.onTitleChanged));
+        ModelDispatcher.geometryChanged.remove(l(this, this.onGeometryChanged))
     },
     getTitle: function() {
         return "Settlement"
     },
     addSeparator: function() {
-        var a = ta.black();
+        var a = SolidRect.black();
         a.set_height(2);
         a.halign = "fill";
         this.add(a)
     },
     addSection: function(a) {
         this.addSeparator();
-        this.add(new Ib(a))
+        this.add(new Label(a))
     },
     addButtonRow: function(a, b, c, d) {
-        var f = new ed;
+        var f = new HBox;
         f.setMargins(0, 8);
-        a = new fb(a);
+        a = new Button(a);
         a.set_width(96);
         a.click.add(b);
         f.add(a);
-        b = new fb(c);
+        b = new Button(c);
         b.set_width(96);
         b.click.add(d);
         f.add(b);
@@ -268,7 +268,7 @@ rg.prototype = v(vc.prototype, {
         this.model.removeLandmarks()
     },
     onWarp: function() {
-        bb.switchScene(jd)
+        Game.switchScene(WarpScene)
     },
     onOverworld: function() {
         var a = new If("https://azgaar.github.io/Fantasy-Map-Generator/");
@@ -278,18 +278,18 @@ rg.prototype = v(vc.prototype, {
         Ra.getURL(a, "fmg")
     },
     onCopyURL: function() {
-        null == u.findWidnow(Jf) && u.showDialog(new Jf)
+        null == u.findWidnow(URLForm) && u.showDialog(new URLForm)
     },
     onExport: function(a) {
         switch (a) {
             case "JSON":
-                be.asJSON();
+                Export.asJSON();
                 break;
             case "PNG":
-                be.asPNG();
+                Export.asPNG();
                 break;
             case "SVG":
-                be.asSVG()
+                Export.asSVG()
         }
     },
     onNewModel: function(a) {
@@ -303,11 +303,11 @@ rg.prototype = v(vc.prototype, {
     onGeometryChanged: function(a) {
         this.townInfo.update(this.model)
     },
-    __class__: rg
+    __class__: TownForm
 });
-var ke = function() {
-    oc.call(this);
-    this.tabs = new ig;
+var StyleForm = function() {
+    Form.call(this);
+    this.tabs = new Tabs;
     this.tabs.set_rowSize(4);
     this.tabs.addTab("Graphics", this.colors());
     this.tabs.addTab("Elements", this.elements());
@@ -317,22 +317,22 @@ var ke = function() {
     this.tabs.addTab("Misc", this.misc());
     this.add(this.tabs);
     this.tabs.change.add(function(a) {
-        ke.lastTab = a
+        StyleForm.lastTab = a
     });
-    this.tabs.onTab(ke.lastTab)
+    this.tabs.onTab(StyleForm.lastTab)
 };
-g["com.watabou.mfcg.ui.forms.StyleForm"] = ke;
-ke.__name__ = "com.watabou.mfcg.ui.forms.StyleForm";
-ke.__super__ = vc;
-ke.prototype = v(vc.prototype, {
+g["com.watabou.mfcg.RotateTool.forms.StyleForm"] = StyleForm;
+StyleForm.__name__ = "com.watabou.mfcg.RotateTool.forms.StyleForm";
+StyleForm.__super__ = ToolForm;
+StyleForm.prototype = v(ToolForm.prototype, {
     getTitle: function() {
         return "Style"
     },
     addCheckbox: function(a, b, c, d, f) {
-        a = new ud(a);
-        a.set_value(ba.get(b, c));
+        a = new CheckBox(a);
+        a.set_value(State.get(b, c));
         a.changed.add(function(a) {
-            ba.set(b, a);
+            State.set(b, a);
             f(a)
         });
         d.add(a);
@@ -340,12 +340,12 @@ ke.prototype = v(vc.prototype, {
     },
     addDropDown: function(a, b, c, d, f) {
         this.addLabel(a, d);
-        a = Rc.ofStrings(c);
-        a.set_value(ba.get(b));
+        a = DropDown.ofStrings(c);
+        a.set_value(State.get(b));
         a.set_width(120);
         a.set_centered(!0);
         a.update.add(function(a) {
-            ba.set(b, a);
+            State.set(b, a);
             f(a)
         });
         d.add(a);
@@ -354,119 +354,119 @@ ke.prototype = v(vc.prototype, {
     addFont: function(a,
         b, c, d) {
         this.addLabel(a, d);
-        a = new fd(ba.get(b, c), Id.font2text, null, fd.editInForm(Id, a, this));
+        a = new TextView(State.get(b, c), FontForm.font2text, null, TextView.editInForm(FontForm, a, this));
         a.set_width(180);
         a.update.add(function(a) {
-            ba.set(b, a);
-            bb.switchScene(Ec)
+            State.set(b, a);
+            Game.switchScene(ViewScene)
         });
         d.add(a)
     },
     addSeparator: function(a) {
-        var b = ta.black();
+        var b = SolidRect.black();
         b.set_height(2);
         b.halign = "fill";
         a.add(b)
     },
     addLabel: function(a, b) {
-        a = new Ib(a);
+        a = new Label(a);
         a.valign = "center";
         b.add(a)
     },
     colors: function() {
-        var a = new gb;
+        var a = new VBox;
         a.setMargins(10, 8);
-        var b = new fb("Color scheme", ia.editColors);
+        var b = new Button("Color scheme", TownScene.editColors);
         a.add(b);
         this.addCheckbox("Thin lines", "thin_lines", !1, a, function(a) {
             K.thinLines = a;
-            bb.switchScene(Ec)
+            Game.switchScene(ViewScene)
         });
         this.addCheckbox("Tint districts", "watercolours", !1, a, function(a) {
-            ia.inst.drawMap()
+            TownScene.inst.drawMap()
         });
         this.addCheckbox("Weathered roofs", "weathered_roofs", !1, a, function(a) {
-            "Block" != ba.get("display_mode", "Lots") && ia.inst.drawMap()
+            "Block" != State.get("display_mode", "Lots") && TownScene.inst.drawMap()
         });
         return a
     },
     elements: function() {
-        var a = new gb;
+        var a = new VBox;
         a.setMargins(10, 8);
-        var b = new Pd(2);
+        var b = new Grid(2);
         b.setMargins(0, 8);
         this.addLabel("Font size", b);
-        var c = Rc.ofInts(["Small", "Medium", "Large"]);
-        c.set_value(ba.get("text_size", 1));
+        var c = DropDown.ofInts(["Small", "Medium", "Large"]);
+        c.set_value(State.get("text_size", 1));
         c.set_width(120);
         c.set_centered(!0);
         c.update.add(function(a) {
-            ba.set("text_size", a);
-            bb.switchScene(Ec)
+            State.set("text_size", a);
+            Game.switchScene(ViewScene)
         });
         b.add(c);
-        this.addDropDown("Districts", "districts", kd.DISTRICTS_MODE, b, function(a) {
-            ia.inst.layoutLabels()
+        this.addDropDown("Districts", "districts", Values.DISTRICTS_MODE, b, function(a) {
+            TownScene.inst.layoutLabels()
         });
-        this.addDropDown("Landmarks", "landmarks", kd.LANDMARK_MODES, b, function(a) {
-            ia.inst.toggleOverlays()
+        this.addDropDown("Landmarks", "landmarks", Values.LANDMARK_MODES, b, function(a) {
+            TownScene.inst.toggleOverlays()
         });
         a.add(b);
         this.addSeparator(a);
-        b = new Pd(3);
+        b = new Grid(3);
         b.setMargins(0, 10);
         this.addCheckbox("Title", "city_name", !0, b, function(a) {
-            ia.inst.toggleOverlays()
+            TownScene.inst.toggleOverlays()
         });
         this.addCheckbox("Scale bar", "scale_bar", !0, b, function(a) {
-            ia.inst.toggleOverlays()
+            TownScene.inst.toggleOverlays()
         });
         this.addCheckbox("Emblem", "emblem", !1, b, function(a) {
-            ia.inst.toggleOverlays()
+            TownScene.inst.toggleOverlays()
         });
         this.addCheckbox("Grid", "grid", !0, b, function(a) {
-            ia.inst.toggleOverlays()
+            TownScene.inst.toggleOverlays()
         });
         this.addCheckbox("Compass", "compass", !0, b, function(a) {
-            ia.inst.toggleOverlays()
+            TownScene.inst.toggleOverlays()
         });
         a.add(b);
         return a
     },
     buildings: function() {
-        var a = new gb;
+        var a = new VBox;
         a.setMargins(10, 8);
-        var b = new Pd(2);
+        var b = new Grid(2);
         b.setMargins(0, 8);
-        this.addDropDown("Display mode", "display_mode", kd.DISPLAY_MODES, b, function(a) {
-            ia.inst.drawMap()
+        this.addDropDown("Display mode", "display_mode", Values.DISPLAY_MODES, b, function(a) {
+            TownScene.inst.drawMap()
         });
-        this.addDropDown("Processing", "processing", kd.PROCESSES, b, function(a) {
-            Ub.instance.updateLots();
-            ia.inst.drawMap()
+        this.addDropDown("Processing", "processing", Values.PROCESSES, b, function(a) {
+            City.instance.updateLots();
+            TownScene.inst.drawMap()
         });
         this.addDropDown("Roofs", "roof_style",
-            kd.ROOF_STYLES, b,
+            Values.ROOF_STYLES, b,
             function(a) {
-                ia.inst.drawMap()
+                TownScene.inst.drawMap()
             });
         a.add(b);
         this.addCheckbox("Raised", "raised", !0, a, function(a) {
-            ia.inst.drawMap()
+            TownScene.inst.drawMap()
         });
         this.addCheckbox("Solids", "draw_solids", !0, a, function(a) {
-            ia.inst.drawMap()
+            TownScene.inst.drawMap()
         });
         return a
     },
     outline: function() {
-        var a = new ed;
+        var a = new HBox;
         a.setMargins(10, 20);
-        var b = new gb;
+        var b = new VBox;
         b.setMargins(0, 8);
         var c = Object.create(null),
             d = this.addCheckbox("Buildings", "outline_buildings", !0, b, function(a) {
-                ia.inst.drawMap()
+                TownScene.inst.drawMap()
             });
         c.outline_buildings = d;
         d = !1;
@@ -474,29 +474,29 @@ ke.prototype = v(vc.prototype, {
         d = this.addCheckbox("Solids", "outline_solids",
             d, b,
             function(a) {
-                ia.inst.drawMap()
+                TownScene.inst.drawMap()
             });
         c.outline_solids = d;
         d = this.addCheckbox("Water", "outline_water", !0, b, function(a) {
-            ia.inst.drawMap()
+            TownScene.inst.drawMap()
         });
         c.outline_water = d;
         d = this.addCheckbox("Roads", "outline_roads", !0, b, function(a) {
-            ia.inst.drawMap()
+            TownScene.inst.drawMap()
         });
         c.outline_roads = d;
         d = this.addCheckbox("Trees", "outline_trees", !0, b, function(a) {
-            ia.inst.drawMap()
+            TownScene.inst.drawMap()
         });
         c.outline_trees = d;
         d = !1;
         null == d && (d = !0);
         d = this.addCheckbox("Fields", "outline_fields", d, b, function(a) {
-            ia.inst.drawMap()
+            TownScene.inst.drawMap()
         });
         c.outline_fields = d;
         a.add(b);
-        b = new fb("Toggle all",
+        b = new Button("Toggle all",
             function() {
                 var a = c,
                     b = a,
@@ -509,95 +509,95 @@ ke.prototype = v(vc.prototype, {
                     var g = a[p++],
                         q = g;
                     d[g].set_value(b);
-                    ba.set(q, b)
+                    State.set(q, b)
                 }
-                ia.inst.drawMap()
+                TownScene.inst.drawMap()
             });
         a.add(b);
         return a
     },
     text: function() {
-        var a = new Pd(2);
+        var a = new Grid(2);
         a.setMargins(10, 8);
-        this.addFont("Title", "font_title", vb.fontTitle, a);
-        this.addFont("Labels", "font_label", vb.fontLabel, a);
-        this.addFont("Legend", "font_legend", vb.fontLegend, a);
-        this.addFont("Pins", "font_pin", vb.fontPin, a);
-        this.addFont("Elements", "font_element", vb.fontElement,
+        this.addFont("Title", "font_title", TextUI.fontTitle, a);
+        this.addFont("Labels", "font_label", TextUI.fontLabel, a);
+        this.addFont("Legend", "font_legend", TextUI.fontLegend, a);
+        this.addFont("Pins", "font_pin", TextUI.fontPin, a);
+        this.addFont("Elements", "font_element", TextUI.fontElement,
             a);
         return a
     },
     misc: function() {
-        var a = new gb;
+        var a = new VBox;
         a.setMargins(10, 8);
         var b = null;
         this.addCheckbox("Show alleys", "show_alleys", !1, a, function(a) {
-            ia.map.updateRoads()
+            TownScene.map.updateRoads()
         });
         this.addCheckbox("Show trees", "show_trees", !1, a, function(a) {
             b.set_enabled(a);
-            ia.inst.drawMap()
+            TownScene.inst.drawMap()
         });
         b = this.addCheckbox("Show forests", "show_forests", !1, a, function(a) {
-            ia.inst.drawMap()
+            TownScene.inst.drawMap()
         });
-        b.set_enabled(ba.get("show_trees", !1));
-        var c = new Pd(2);
+        b.set_enabled(State.get("show_trees", !1));
+        var c = new Grid(2);
         c.setMargins(0, 8);
-        this.addDropDown("Towers", "towers", kd.TOWER_SHAPES, c, function(a) {
-            ia.inst.drawMap()
+        this.addDropDown("Towers", "towers", Values.TOWER_SHAPES, c, function(a) {
+            TownScene.inst.drawMap()
         });
         this.addDropDown("Farm fields",
-            "farm_fileds", kd.FIELD_MODES, c,
+            "farm_fileds", Values.FIELD_MODES, c,
             function(a) {
-                ia.inst.drawMap()
+                TownScene.inst.drawMap()
             });
         a.add(c);
         return a
     },
-    __class__: ke
+    __class__: StyleForm
 });
-var Ec = function() {
+var ViewScene = function() {
     this.mouse = new I;
-    ia.call(this);
-    this.btnMenu = new fb("Menu", l(this, this.onMenu));
-    sb.preview || u.layer.addChild(this.btnMenu);
+    TownScene.call(this);
+    this.btnMenu = new Button("Menu", l(this, this.onMenu));
+    Main.preview || u.layer.addChild(this.btnMenu);
     this.fader = Ke.create(1, l(this, this.onFadeOut))
 };
-g["com.watabou.mfcg.scenes.ViewScene"] = Ec;
-Ec.__name__ = "com.watabou.mfcg.scenes.ViewScene";
-Ec.__super__ = ia;
-Ec.prototype = v(ia.prototype, {
+g["com.watabou.mfcg.scenes.ViewScene"] = ViewScene;
+ViewScene.__name__ = "com.watabou.mfcg.scenes.ViewScene";
+ViewScene.__super__ = TownScene;
+ViewScene.prototype = v(TownScene.prototype, {
     activate: function() {
-        ia.prototype.activate.call(this);
-        if (!sb.preview) {
-            u.layer.addChild(new le);
-            le.inst.awake.add(l(this, this.onAwake));
+        TownScene.prototype.activate.call(this);
+        if (!Main.preview) {
+            u.layer.addChild(new Tooltip);
+            Tooltip.inst.awake.add(l(this, this.onAwake));
             this.stage.addEventListener("mouseMove", l(this, this.onMouseMove));
             this.stage.addEventListener("click", l(this, this.onClick));
-            vc.loadSaved(Ec.tools);
-            var a = Ub.instance.bp;
+            ToolForm.loadSaved(ViewScene.tools);
+            var a = City.instance.bp;
             if (null != a.export) {
                 switch (a.export.toLowerCase()) {
                     case "json":
-                        be.asJSON();
+                        Export.asJSON();
                         break;
                     case "png":
-                        be.asPNG();
+                        Export.asPNG();
                         break;
                     case "svg":
-                        be.asSVG()
+                        Export.asSVG()
                 }
                 a.export = null
             }
         }
     },
     deactivate: function() {
-        ia.prototype.deactivate.call(this);
+        TownScene.prototype.deactivate.call(this);
         u.layer.removeChild(this.btnMenu);
         this.stage.removeEventListener("mouseMove", l(this, this.onMouseMove));
         this.stage.removeEventListener("click", l(this, this.onClick));
-        null != le.inst && u.layer.removeChild(le.inst)
+        null != Tooltip.inst && u.layer.removeChild(Tooltip.inst)
     },
     onKeyEvent: function(a, b) {
         if (b) switch (a) {
@@ -634,7 +634,7 @@ Ec.prototype = v(ia.prototype, {
                     this.toggleBuildings() : this.showBuildings();
                 break;
             case 67:
-                ia.editColors();
+                TownScene.editColors();
                 break;
             case 68:
                 this.toggleGrid();
@@ -652,59 +652,59 @@ Ec.prototype = v(ia.prototype, {
                 this.showOutlines();
                 break;
             case 83:
-                this.toggleWindow(ke);
+                this.toggleWindow(StyleForm);
                 break;
             case 84:
-                this.toggleWindow(rg);
+                this.toggleWindow(TownForm);
                 break;
             case 87:
                 this.onWarp();
                 break;
             default:
-                ia.prototype.onKeyEvent.call(this, a, b)
+                TownScene.prototype.onKeyEvent.call(this, a, b)
         }
     },
     layout: function() {
-        ia.prototype.layout.call(this);
+        TownScene.prototype.layout.call(this);
         this.btnMenu.set_x(u.layer.get_width() - this.btnMenu.get_width() -
             2);
         this.btnMenu.set_y(2)
     },
     onFadeOut: function(a) {
         a = 1 - a;
-        this.btnMenu.set_alpha(le.inst.set_alpha(a * a * (3 - 2 * a)))
+        this.btnMenu.set_alpha(Tooltip.inst.set_alpha(a * a * (3 - 2 * a)))
     },
     onAwake: function(a) {
         a ? (this.fader.stop(), this.onFadeOut(0)) : this.fader.start()
     },
     onMouseMove: function(a) {
-        Sd.__neq(a.target, this.stage) || (a = ia.map, this.mouse.setTo(a.get_mouseX(), a.get_mouseY()), a = this.patch = this.model.getCell(this.mouse), a = null != a ? a.ward.getLabel() : null, le.inst.set(a))
+        Sd.__neq(a.target, this.stage) || (a = TownScene.map, this.mouse.setTo(a.get_mouseX(), a.get_mouseY()), a = this.patch = this.model.getCell(this.mouse), a = null != a ? a.ward.getLabel() : null, Tooltip.inst.set(a))
     },
     onClick: function(a) {
         null != this.patch && (a.commandKey || a.controlKey ? this.patch.reroll() : a.shiftKey && (null !=
             this.model.focus ? this.zoomIn(null) : null != this.patch.district && this.zoomIn(this.patch.district)))
     },
     onMenu: function() {
-        this.onContext(ia.getMenu());
+        this.onContext(TownScene.getMenu());
         this.showMenu(this.btnMenu)
     },
     onWarp: function() {
-        bb.switchScene(jd)
+        Game.switchScene(WarpScene)
     },
     createOverlays: function() {
-        ia.prototype.createOverlays.call(this);
-        this.overlays.push(this.title = new qi(this));
+        TownScene.prototype.createOverlays.call(this);
+        this.overlays.push(this.title = new TitleOverlay(this));
         this.addChild(this.title);
-        this.overlays.push(this.emblem = new nf(this));
+        this.overlays.push(this.emblem = new EmblemOverlay(this));
         this.addChild(this.emblem)
     },
     toggleOverlays: function(a) {
         null == a && (a = !1);
-        ia.prototype.toggleOverlays.call(this,
+        TownScene.prototype.toggleOverlays.call(this,
             a);
-        this.title.set_visible(ba.get("city_name", !0) && !this.legend.get_visible());
-        this.emblem.set_visible(ba.get("emblem", !1) && !this.legend.get_visible());
-        if (sb.preview) {
+        this.title.set_visible(State.get("city_name", !0) && !this.legend.get_visible());
+        this.emblem.set_visible(State.get("emblem", !1) && !this.legend.get_visible());
+        if (Main.preview) {
             a = 0;
             for (var b = this.overlays; a < b.length;) {
                 var c = b[a];
@@ -714,7 +714,7 @@ Ec.prototype = v(ia.prototype, {
         }
     },
     arrangeOverlays: function() {
-        ia.prototype.arrangeOverlays.call(this);
+        TownScene.prototype.arrangeOverlays.call(this);
         var a = this.emblem;
         if (this.legend.get_visible()) switch (this.legend.get_position()._hx_index) {
             case 1:
@@ -746,11 +746,11 @@ Ec.prototype = v(ia.prototype, {
             a.addSeparator());
         a.addItem("New city", l(this, this.buildNew));
         a.addItem("Warp", l(this, this.onWarp));
-        a.addItem("Colors...", ia.editColors);
-        var c = new dd;
-        c.addItem("PNG", be.asPNG);
-        c.addItem("SVG", be.asSVG);
-        c.addItem("JSON", be.asJSON);
+        a.addItem("Colors...", TownScene.editColors);
+        var c = new Menu;
+        c.addItem("PNG", Export.asPNG);
+        c.addItem("SVG", Export.asSVG);
+        c.addItem("JSON", Export.asJSON);
         a.addSubmenu("Export as", c);
         a.addSeparator();
         c = function(c, f) {
@@ -759,26 +759,26 @@ Ec.prototype = v(ia.prototype, {
             }, null != u.findWidnow(f))
         };
         c("Generate", Kd);
-        c("Settlement", rg);
-        c("Style", ke);
+        c("Settlement", TownForm);
+        c("Style", StyleForm);
         a.addSeparator();
         a.addItem("Procgen Arcana", l(this, this.arcana))
     },
     toggleWindow: function(a) {
         var b =
             u.findWidnow(a);
-        null == b ? (a = w.createInstance(a, []), u.showDialog(a), a instanceof vc && va.__cast(a, vc).restore()) : b.hide()
+        null == b ? (a = w.createInstance(a, []), u.showDialog(a), a instanceof ToolForm && va.__cast(a, ToolForm).restore()) : b.hide()
     },
     addLandmark: function() {
-        "Hidden" == ba.get("landmarks") && (ba.set("landmarks", "Icon"), this.toggleOverlays());
+        "Hidden" == State.get("landmarks") && (State.set("landmarks", "Icon"), this.toggleOverlays());
         u.showDialog(new hh(this.model.addLandmark(this.mouse.clone())))
     },
     buildNew: function() {
-        new Ub(Fd.create(Ub.nextSize, C.seed));
-        bb.switchScene(Ec)
+        new City(Blueprint.create(City.nextSize, C.seed));
+        Game.switchScene(ViewScene)
     },
     toggleDistricts: function() {
-        switch (ba.get("districts", "Curved")) {
+        switch (State.get("districts", "Curved")) {
             case "Curved":
                 var a = "Legend";
                 break;
@@ -791,7 +791,7 @@ Ec.prototype = v(ia.prototype, {
             default:
                 a = "Curved"
         }
-        ba.set("districts", a);
+        State.set("districts", a);
         this.toggleOverlays();
         a = 0;
         for (var b = this.model.districts; a < b.length;) {
@@ -802,26 +802,26 @@ Ec.prototype = v(ia.prototype, {
         this.layoutLabels()
     },
     toggleGrid: function() {
-        ba.set("grid", !ba.get("grid", !0));
+        State.set("grid", !State.get("grid", !0));
         this.toggleOverlays()
     },
     toggleBuildings: function() {
-        "Hidden" == kc.planMode ? kc.planMode = Ec.toggleBuildings_displayMode : (Ec.toggleBuildings_displayMode = kc.planMode, kc.planMode = "Hidden");
-        ba.set("display_mode", kc.planMode);
-        ia.inst.drawMap()
+        "Hidden" == PatchView.planMode ? PatchView.planMode = ViewScene.toggleBuildings_displayMode : (ViewScene.toggleBuildings_displayMode = PatchView.planMode, PatchView.planMode = "Hidden");
+        State.set("display_mode", PatchView.planMode);
+        TownScene.inst.drawMap()
     },
     toggleAlleys: function() {
-        ba.set("show_alleys",
-            !ba.get("show_alleys", !1));
-        ia.map.updateRoads()
+        State.set("show_alleys",
+            !State.get("show_alleys", !1));
+        TownScene.map.updateRoads()
     },
     toggleThinLines: function() {
-        ba.set("thin_lines", K.thinLines = !K.thinLines);
-        bb.switchScene(Ec)
+        State.set("thin_lines", K.thinLines = !K.thinLines);
+        Game.switchScene(ViewScene)
     },
     showStyleTab: function(a) {
-        var b = u.findWidnow(ke);
-        null == b ? (b = new ke, u.showDialog(b), b.restore()) : b = b.content;
+        var b = u.findWidnow(StyleForm);
+        null == b ? (b = new StyleForm, u.showDialog(b), b.restore()) : b = b.content;
         b.tabs.onTab(a)
     },
     showElements: function() {
@@ -837,7 +837,7 @@ Ec.prototype = v(ia.prototype, {
         var a = new If("https://watabou.github.io/");
         Ra.navigateToURL(a, "arcana")
     },
-    __class__: Ec
+    __class__: ViewScene
 });
 var jg = function(a, b) {
     null == b && (b = 0);
@@ -2320,13 +2320,13 @@ Tb.prototype = {
         get_color: "get_color"
     }
 };
-var jd = function() {
+var WarpScene = function() {
     this.keyMap = new mc;
-    ia.call(this);
+    TownScene.call(this);
     this.brush = new md;
     this.brush.set_cacheAsBitmap(!0);
     this.addChild(this.brush);
-    this.btnMenu = new fb("Menu");
+    this.btnMenu = new Button("Menu");
     this.btnMenu.click.add(l(this, this.onMenu));
     this.addChild(this.btnMenu);
     this.nodePatches = new pa;
@@ -2347,41 +2347,41 @@ var jd = function() {
         }
     }
     k = this.keyMap;
-    h = new Kf(this);
+    h = new DisplaceTool(this);
     k.h[68] = h;
     k = this.keyMap;
-    h = new ui(this);
+    h = new RotateTool(this);
     k.h[82] = h;
     k = this.keyMap;
-    h = new Lf(this);
+    h = new LiquifyTool(this);
     k.h[76] = h;
     k = this.keyMap;
-    h = new Mf(this);
+    h = new RelaxTool(this);
     k.h[88] = h;
     k = this.keyMap;
-    h = new me(this);
+    h = new BloatTool(this);
     k.h[66] = h;
     k = this.keyMap;
-    h = new vi(this);
+    h = new PinchTool(this);
     k.h[80] = h;
     k = this.keyMap;
-    h = new wi(this);
+    h = new MeasureTool(this);
     k.h[77] = h;
     k = this.keyMap;
-    h = new xi(this);
+    h = new EqualizeTool(this);
     k.h[69] = h;
-    if (null == jd.lastTool) this.switchTool(this.keyMap.h[68]);
+    if (null == WarpScene.lastTool) this.switchTool(this.keyMap.h[68]);
     else
         for (a = this.keyMap.iterator(); a.hasNext();)
-            if (b = a.next(), va.getClass(b) == va.getClass(jd.lastTool)) {
+            if (b = a.next(), va.getClass(b) == va.getClass(WarpScene.lastTool)) {
                 this.switchTool(b);
                 break
             } this.mesh = new ka
 };
-g["com.watabou.mfcg.scenes.WarpScene"] = jd;
-jd.__name__ = "com.watabou.mfcg.scenes.WarpScene";
-jd.__super__ = ia;
-jd.prototype = v(ia.prototype, {
+g["com.watabou.mfcg.scenes.WarpScene"] = WarpScene;
+WarpScene.__name__ = "com.watabou.mfcg.scenes.WarpScene";
+WarpScene.__super__ = TownScene;
+WarpScene.prototype = v(TownScene.prototype, {
     onEsc: function() {
         this.onDiscard()
     },
@@ -2390,15 +2390,15 @@ jd.prototype = v(ia.prototype, {
             if (13 == a) {
                 if (b) this.onSave()
             } else b &&
-                this.keyMap.h.hasOwnProperty(a) ? this.switchTool(this.keyMap.h[a]) : ia.prototype.onKeyEvent.call(this, a, b)
+                this.keyMap.h.hasOwnProperty(a) ? this.switchTool(this.keyMap.h[a]) : TownScene.prototype.onKeyEvent.call(this, a, b)
     },
     switchTool: function(a) {
-        jd.lastTool = this.tool = a;
-        var b = ia.map;
+        WarpScene.lastTool = this.tool = a;
+        var b = TownScene.map;
         null != b && (a.activate(), a.onMove(b.get_mouseX(), b.get_mouseY()), q.show(a.getName()))
     },
     layout: function() {
-        ia.prototype.layout.call(this);
+        TownScene.prototype.layout.call(this);
         this.brush.set_x(this.get_mouseX());
         this.brush.set_y(this.get_mouseY());
         this.tool.activate();
@@ -2406,12 +2406,12 @@ jd.prototype = v(ia.prototype, {
         this.btnMenu.set_y(2)
     },
     recreateMap: function() {
-        ia.prototype.recreateMap.call(this);
-        ia.map.addChild(this.mesh);
-        ia.map.mouseChildren = !1
+        TownScene.prototype.recreateMap.call(this);
+        TownScene.map.addChild(this.mesh);
+        TownScene.map.mouseChildren = !1
     },
     createOverlays: function() {
-        ia.prototype.createOverlays.call(this);
+        TownScene.prototype.createOverlays.call(this);
         for (var a = 0, b = this.overlays; a < b.length;) {
             var c = b[a];
             ++a;
@@ -2420,8 +2420,8 @@ jd.prototype = v(ia.prototype, {
         }
     },
     activate: function() {
-        ia.prototype.activate.call(this);
-        for (var a = [], b = 0, c = Ec.tools; b < c.length;) {
+        TownScene.prototype.activate.call(this);
+        for (var a = [], b = 0, c = ViewScene.tools; b < c.length;) {
             var d = c[b];
             ++b;
             d = u.findWidnow(d);
@@ -2445,34 +2445,34 @@ jd.prototype = v(ia.prototype, {
         this.stage.removeEventListener("mouseUp", l(this, this.onMouseUp));
         this.stage.removeEventListener("mouseMove",
             l(this, this.onMouseMove));
-        ia.prototype.deactivate.call(this)
+        TownScene.prototype.deactivate.call(this)
     },
     updateBrush: function(a, b) {
         null == b && (b = .5);
         this.brush.get_graphics().clear();
-        0 < a && (this.brush.get_graphics().lineStyle(1, 52224), this.brush.get_graphics().drawCircle(0, 0, a * ia.map.get_scaleX()), this.brush.get_graphics().lineStyle(2, 52224), this.brush.get_graphics().drawCircle(0, 0, a * ia.map.get_scaleX() * b))
+        0 < a && (this.brush.get_graphics().lineStyle(1, 52224), this.brush.get_graphics().drawCircle(0, 0, a * TownScene.map.get_scaleX()), this.brush.get_graphics().lineStyle(2, 52224), this.brush.get_graphics().drawCircle(0, 0, a * TownScene.map.get_scaleX() * b))
     },
     onMouseWheel: function(a) {
-        this.tool.onWheel(ia.map.get_mouseX(), ia.map.get_mouseY(), a.delta)
+        this.tool.onWheel(TownScene.map.get_mouseX(), TownScene.map.get_mouseY(), a.delta)
     },
     onMouseMove: function(a) {
         this.brush.set_x(this.get_mouseX());
         this.brush.set_y(this.get_mouseY());
-        a = ia.map.get_mouseX();
-        var b = ia.map.get_mouseY();
+        a = TownScene.map.get_mouseX();
+        var b = TownScene.map.get_mouseY();
         if (this.down) this.tool.onDrag(a, b);
         else this.tool.onMove(a, b)
     },
     onMouseDown: function(a) {
         this.down = !0;
-        this.tool.onPress(ia.map.get_mouseX(), ia.map.get_mouseY())
+        this.tool.onPress(TownScene.map.get_mouseX(), TownScene.map.get_mouseY())
     },
     onMouseUp: function(a) {
         this.tool.onRelease();
         this.down = !1
     },
     onMenu: function() {
-        this.onContext(ia.getMenu());
+        this.onContext(TownScene.getMenu());
         this.showMenu(this.btnMenu)
     },
     onContext: function(a) {
@@ -2500,13 +2500,13 @@ jd.prototype = v(ia.prototype, {
     clearMesh: function() {
         for (var a = 0, b = this.mesh.get_numChildren(); a < b;) {
             var c = a++;
-            jd.cache.push(this.mesh.getChildAt(c))
+            WarpScene.cache.push(this.mesh.getChildAt(c))
         }
         this.mesh.removeChildren()
     },
     drawEdge: function(a, b, c) {
-        var d = 0 < jd.cache.length ?
-            jd.cache.pop() : new Nd(jd.pixel);
+        var d = 0 < WarpScene.cache.length ?
+            WarpScene.cache.pop() : new Nd(WarpScene.pixel);
         d.set_x(a.x);
         d.set_y(a.y);
         d.set_rotation(Math.atan2(b.y - a.y, b.x - a.x) / Math.PI * 180);
@@ -2516,7 +2516,7 @@ jd.prototype = v(ia.prototype, {
     },
     drawNode: function(a, b) {
         b *= K.lineInvScale;
-        var c = 0 < jd.cache.length ? jd.cache.pop() : new Nd(jd.pixel);
+        var c = 0 < WarpScene.cache.length ? WarpScene.cache.pop() : new Nd(WarpScene.pixel);
         c.set_alpha(1);
         c.set_rotation(0);
         c.set_scaleX(c.set_scaleY(2 * b));
@@ -2526,7 +2526,7 @@ jd.prototype = v(ia.prototype, {
     },
     onSave: function() {
         this.model.updateDimensions();
-        bb.switchScene(Ec)
+        Game.switchScene(ViewScene)
     },
     onDiscard: function() {
         for (var a = this.prevState.keys(); a.hasNext();) {
@@ -2536,41 +2536,41 @@ jd.prototype = v(ia.prototype, {
         }
         this.model.updateGeometry(this.model.cells);
         this.model.ocean = null;
-        bb.switchScene(Ec)
+        Game.switchScene(ViewScene)
     },
-    __class__: jd
+    __class__: WarpScene
 });
-var tb = function(a) {
+var Compass = function(a) {
     ka.call(this);
-    0 == tb.convexity && this.reroll();
+    0 == Compass.convexity && this.reroll();
     this.radius = a;
     this.update();
     this.label = new ka;
     this.addChild(this.label);
-    a = vb.getFormat("font_element", vb.fontElement, K.colorDark, 1.2857142857142858);
-    this.tf = vb.get("N", a);
+    a = TextUI.getFormat("font_element", TextUI.fontElement, K.colorDark, 1.2857142857142858);
+    this.tf = TextUI.get("N", a);
     this.tf.mouseEnabled = !1;
     this.label.addChild(this.tf);
     this.addEventListener("click", l(this, this.reset));
     this.addEventListener("mouseWheel", l(this, this.rotate))
 };
-g["com.watabou.mfcg.scenes.overlays.Compass"] = tb;
-tb.__name__ = "com.watabou.mfcg.scenes.overlays.Compass";
-tb.__super__ = ka;
-tb.prototype = v(ka.prototype, {
+g["com.watabou.mfcg.scenes.overlays.Compass"] = Compass;
+Compass.__name__ = "com.watabou.mfcg.scenes.overlays.Compass";
+Compass.__super__ = ka;
+Compass.prototype = v(ka.prototype, {
     reroll: function() {
-        tb.convexity = .1 + .2 * ((C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647);
+        Compass.convexity = .1 + .2 * ((C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647);
         var a = .9;
         null == a && (a = .5);
-        tb.secondary = (C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647 < a ? tb.convexity + (1 - tb.convexity) * (.1 + .9 * ((C.seed =
+        Compass.secondary = (C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647 < a ? Compass.convexity + (1 - Compass.convexity) * (.1 + .9 * ((C.seed =
             48271 * C.seed % 2147483647 | 0) / 2147483647)) : 0;
         a = .8;
         null == a && (a = .5);
-        (C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647 < a ? (tb.mainRing = tb.convexity + (1 - tb.convexity) * (((C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647 + (C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647 + (C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647) / 3), tb.auxRing = (C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647) : tb.mainRing = tb.auxRing = 0;
-        a = Math.pow(1 - tb.convexity, 2);
+        (C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647 < a ? (Compass.mainRing = Compass.convexity + (1 - Compass.convexity) * (((C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647 + (C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647 + (C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647) / 3), Compass.auxRing = (C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647) : Compass.mainRing = Compass.auxRing = 0;
+        a = Math.pow(1 - Compass.convexity, 2);
         null == a && (a = .5);
-        (C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647 < a ? (tb.north = 1.3 + .6 * (((C.seed =
-            48271 * C.seed % 2147483647 | 0) / 2147483647 + (C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647 + (C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647) / 3), a = .7, null == a && (a = .5), tb.south = (C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647 < a ? 1 + (tb.north - 1) * (((C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647 + (C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647 + (C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647) / 3) : 1) : tb.north = tb.south = 1
+        (C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647 < a ? (Compass.north = 1.3 + .6 * (((C.seed =
+            48271 * C.seed % 2147483647 | 0) / 2147483647 + (C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647 + (C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647) / 3), a = .7, null == a && (a = .5), Compass.south = (C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647 < a ? 1 + (Compass.north - 1) * (((C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647 + (C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647 + (C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647) / 3) : 1) : Compass.north = Compass.south = 1
     },
     update: function() {
         var a = this.get_graphics();
@@ -2578,19 +2578,19 @@ tb.prototype = v(ka.prototype, {
         a.beginFill(16711680, 0);
         a.drawCircle(0, 0, this.radius);
         a.endFill();
-        if (0 < tb.mainRing) {
+        if (0 < Compass.mainRing) {
             var b = !1;
             null == b && (b = !0);
             a.lineStyle(K.getStrokeWidth(K.strokeThick, b), K.colorDark);
-            a.drawCircle(0, 0, this.radius * tb.mainRing);
+            a.drawCircle(0, 0, this.radius * Compass.mainRing);
             b = !1;
             null == b && (b = !0);
             a.lineStyle(K.getStrokeWidth(K.strokeNormal, b), K.colorDark);
-            a.drawCircle(0, 0, this.radius * tb.auxRing);
+            a.drawCircle(0, 0, this.radius * Compass.auxRing);
             a.endFill()
         }
-        this.drawStar(tb.secondary, tb.convexity * tb.secondary, .5);
-        this.drawStar(1, tb.convexity, 0)
+        this.drawStar(Compass.secondary, Compass.convexity * Compass.secondary, .5);
+        this.drawStar(1, Compass.convexity, 0)
     },
     drawStar: function(a, b, c) {
         var d = this.get_graphics(),
@@ -2605,20 +2605,20 @@ tb.prototype = v(ka.prototype, {
         f.push(I.polar(this.radius * a, Math.PI / 2 * (3 + c)));
         f.push(I.polar(this.radius * b, Math.PI / 2 * (3 + c + .5)));
         d.beginFill(K.colorDark);
-        Kb.drawPolygon(d, [f[0], f[1], tb.o]);
-        Kb.drawPolygon(d, [f[2], f[3], tb.o]);
-        Kb.drawPolygon(d, [f[4], f[5], tb.o]);
-        Kb.drawPolygon(d, [f[6], f[7], tb.o]);
+        GraphicsExtender.drawPolygon(d, [f[0], f[1], Compass.o]);
+        GraphicsExtender.drawPolygon(d, [f[2], f[3], Compass.o]);
+        GraphicsExtender.drawPolygon(d, [f[4], f[5], Compass.o]);
+        GraphicsExtender.drawPolygon(d, [f[6], f[7], Compass.o]);
         d.beginFill(K.colorLight);
-        Kb.drawPolygon(d, [f[1], f[2], tb.o]);
-        Kb.drawPolygon(d, [f[3], f[4], tb.o]);
-        Kb.drawPolygon(d, [f[5], f[6], tb.o]);
-        Kb.drawPolygon(d, [f[7], f[0], tb.o]);
+        GraphicsExtender.drawPolygon(d, [f[1], f[2], Compass.o]);
+        GraphicsExtender.drawPolygon(d, [f[3], f[4], Compass.o]);
+        GraphicsExtender.drawPolygon(d, [f[5], f[6], Compass.o]);
+        GraphicsExtender.drawPolygon(d, [f[7], f[0], Compass.o]);
         d.endFill();
         a = !1;
         null == a && (a = !0);
         d.lineStyle(K.getStrokeWidth(K.strokeNormal, a), K.colorDark);
-        Kb.drawPolygon(d, f);
+        GraphicsExtender.drawPolygon(d, f);
         d.endFill()
     },
     updateLabel: function(a) {
@@ -2631,22 +2631,22 @@ tb.prototype = v(ka.prototype, {
         this.label.set_y(a.y)
     },
     reset: function(a) {
-        a.ctrlKey || a.commandKey ? this.updateNorth(Ub.instance.north = 0) : a.shiftKey && (this.reroll(), this.update())
+        a.ctrlKey || a.commandKey ? this.updateNorth(City.instance.north = 0) : a.shiftKey && (this.reroll(), this.update())
     },
     rotate: function(a) {
         var b = this.get_rotation();
         a = a.delta;
         this.set_rotation(b + 10 * (0 == a ? 0 : 0 > a ? -1 : 1));
         this.updateLabel((this.get_rotation() + 405) % 360 / 90 | 0);
-        Ub.instance.north = this.get_rotation()
+        City.instance.north = this.get_rotation()
     },
     updateNorth: function(a) {
         this.set_rotation(a);
         this.updateLabel((this.get_rotation() + 405) % 360 / 90 | 0)
     },
-    __class__: tb
+    __class__: Compass
 });
-var Ca = function(a) {
+var Overlay = function(a) {
     var b = this;
     U.call(this);
     this.scene = a;
@@ -2655,14 +2655,14 @@ var Ca = function(a) {
             b.onDestroy()
         });
     this.addEventListener("rightClick", function(a) {
-        b.onContext(ia.getMenu())
+        b.onContext(TownScene.getMenu())
     });
-    Bb.newModel.add(l(this, this.onNewModel))
+    ModelDispatcher.newModel.add(l(this, this.onNewModel))
 };
-g["com.watabou.mfcg.scenes.overlays.Overlay"] = Ca;
-Ca.__name__ = "com.watabou.mfcg.scenes.overlays.Overlay";
-Ca.__super__ = U;
-Ca.prototype = v(U.prototype, {
+g["com.watabou.mfcg.scenes.overlays.Overlay"] = Overlay;
+Overlay.__name__ = "com.watabou.mfcg.scenes.overlays.Overlay";
+Overlay.__super__ = U;
+Overlay.prototype = v(U.prototype, {
     map2layer: function(a, b) {
         return this.globalToLocal(a.localToGlobal(b))
     },
@@ -2678,41 +2678,41 @@ Ca.prototype = v(U.prototype, {
         this.model = a
     },
     onDestroy: function() {
-        Bb.newModel.remove(l(this, this.onNewModel))
+        ModelDispatcher.newModel.remove(l(this, this.onNewModel))
     },
-    __class__: Ca
+    __class__: Overlay
 });
-var qg = function(a) {
+var CompassOverlay = function(a) {
     this.pos = yc.BOTTOM_LEFT;
-    this.compass = new tb(qg.RADIUS);
-    Ca.call(this, a);
+    this.compass = new Compass(CompassOverlay.RADIUS);
+    Overlay.call(this, a);
     this.addChild(this.compass)
 };
-g["com.watabou.mfcg.scenes.overlays.CompassOverlay"] = qg;
-qg.__name__ = "com.watabou.mfcg.scenes.overlays.CompassOverlay";
-qg.__super__ = Ca;
-qg.prototype = v(Ca.prototype, {
+g["com.watabou.mfcg.scenes.overlays.CompassOverlay"] = CompassOverlay;
+CompassOverlay.__name__ = "com.watabou.mfcg.scenes.overlays.CompassOverlay";
+CompassOverlay.__super__ = Overlay;
+CompassOverlay.prototype = v(Overlay.prototype, {
     update: function(a) {
-        Ca.prototype.update.call(this, a);
+        Overlay.prototype.update.call(this, a);
         this.compass.updateNorth(a.north)
     },
     layout: function() {
         switch (this.pos._hx_index) {
             case 1:
                 this.compass.set_x(this.compass.radius +
-                    Ca.MARGIN);
-                this.compass.set_y(this.compass.radius + Ca.MARGIN);
+                    Overlay.MARGIN);
+                this.compass.set_y(this.compass.radius + Overlay.MARGIN);
                 break;
             case 2:
-                this.compass.set_x(this.rWidth - this.compass.radius - Ca.MARGIN);
-                this.compass.set_y(this.compass.radius + Ca.MARGIN);
+                this.compass.set_x(this.rWidth - this.compass.radius - Overlay.MARGIN);
+                this.compass.set_y(this.compass.radius + Overlay.MARGIN);
                 break;
             case 3:
-                this.compass.set_x(this.compass.radius + Ca.MARGIN);
-                this.compass.set_y(this.rHeight - this.compass.radius - Ca.MARGIN);
+                this.compass.set_x(this.compass.radius + Overlay.MARGIN);
+                this.compass.set_y(this.rHeight - this.compass.radius - Overlay.MARGIN);
                 break;
             case 4:
-                this.compass.set_x(this.rWidth - this.compass.radius - Ca.MARGIN), this.compass.set_y(this.rHeight - this.compass.radius - Ca.MARGIN)
+                this.compass.set_x(this.rWidth - this.compass.radius - Overlay.MARGIN), this.compass.set_y(this.rHeight - this.compass.radius - Overlay.MARGIN)
         }
     },
     set_position: function(a) {
@@ -2730,39 +2730,39 @@ qg.prototype = v(Ca.prototype, {
             b.compass.updateNorth(b.model.north = 0)
         });
         a.addItem("Hide", function() {
-            ba.set("compass", b.set_visible(!1))
+            State.set("compass", b.set_visible(!1))
         })
     },
-    __class__: qg
+    __class__: CompassOverlay
 });
-var tg = function() {
+var CurvedLabel = function() {
     ka.call(this);
     this.mouseEnabled = !0;
     this.mouseChildren = !1
 };
-g["com.watabou.mfcg.scenes.overlays.CurvedLabel"] = tg;
-tg.__name__ = "com.watabou.mfcg.scenes.overlays.CurvedLabel";
-tg.getRidgeSegment = function(a, b) {
+g["com.watabou.mfcg.scenes.overlays.CurvedLabel"] = CurvedLabel;
+CurvedLabel.__name__ = "com.watabou.mfcg.scenes.overlays.CurvedLabel";
+CurvedLabel.getRidgeSegment = function(a, b) {
     var c =
-        new yi(Hf.render(a, !1, 0)),
+        new PathTracker(Chaikin.render(a, !1, 0)),
         d = c.length(),
         f = .8 * d;
     b = (d - (f > b ? .5 * (f + b) : f)) / 2;
     c = c.getSegment(b, d - b);
-    uc.visvalingam(c, 3, 1.2);
+    PolyUtils.visvalingam(c, 3, 1.2);
     c.unshift(a[0]);
     c.push(a[a.length - 1]);
-    a = Me.smoothOpen(c, 4);
+    a = Cubic.smoothOpen(c, 4);
     a = a.slice(4, -4);
     a[0].x > a[a.length - 1].x && a.reverse();
     return a
 };
-tg.__super__ = ka;
-tg.prototype = v(ka.prototype, {
+CurvedLabel.__super__ = ka;
+CurvedLabel.prototype = v(ka.prototype, {
     setText: function(a) {
         this.removeChildren();
-        var b = vb.getFormat("font_label", vb.fontLabel, K.colorLabel),
-            c = vb.get(a, b);
+        var b = TextUI.getFormat("font_label", TextUI.fontLabel, K.colorLabel),
+            c = TextUI.get(a, b);
         this.length = c.get_textWidth();
         this.len = a.length;
         this.pos = [];
@@ -2772,14 +2772,14 @@ tg.prototype = v(ka.prototype, {
                 d++,
                 k = c.getCharBoundaries(h);
             this.pos.push(k.get_left() + k.width / 2);
-            h = new zi(a.charAt(h), b);
+            h = new CurvedLabel_Letter(a.charAt(h), b);
             this.letters.push(h);
             this.addChild(h)
         }
     },
     arrange: function(a) {
-        a = tg.getRidgeSegment(a, this.length);
-        var b = new yi(a),
+        a = CurvedLabel.getRidgeSegment(a, this.length);
+        var b = new PathTracker(a),
             c = b.length(),
             d = c / this.length,
             f = 0;
@@ -2807,119 +2807,119 @@ tg.prototype = v(ka.prototype, {
         var a = !1;
         null == a && (a = !0);
         a = K.getStrokeWidth(K.strokeThick, a);
-        this.outline = new jh(this, K.colorPaper, a, 8);
+        this.outline = new Outline(this, K.colorPaper, a, 8);
         this.addChildAt(this.outline, 0)
     },
     removeOutline: function() {
         null != this.outline && (this.removeChild(this.outline), this.outline = null)
     },
-    __class__: tg
+    __class__: CurvedLabel
 });
-var zi = function(a, b) {
+var CurvedLabel_Letter = function(a, b) {
     ka.call(this);
-    a = vb.get(a, b);
+    a = TextUI.get(a, b);
     a.set_x(-a.get_width() / 2);
     a.set_y(-a.get_height() / 2);
     this.addChild(a)
 };
-g["com.watabou.mfcg.scenes.overlays._CurvedLabel.Letter"] = zi;
-zi.__name__ = "com.watabou.mfcg.scenes.overlays._CurvedLabel.Letter";
-zi.__super__ = ka;
-zi.prototype = v(ka.prototype, {
-    __class__: zi
+g["com.watabou.mfcg.scenes.overlays._CurvedLabel.Letter"] = CurvedLabel_Letter;
+CurvedLabel_Letter.__name__ = "com.watabou.mfcg.scenes.overlays._CurvedLabel.Letter";
+CurvedLabel_Letter.__super__ = ka;
+CurvedLabel_Letter.prototype = v(ka.prototype, {
+    __class__: CurvedLabel_Letter
 });
-var ra = function() {
+var Emblem = function() {
     this.ready = new Nc;
     var a = this;
     U.call(this);
     this.bmp = new Nd(null, null, !0);
     this.addChild(this.bmp);
-    ra.seed = ba.get("emblem_seed", 1);
-    ra.coa = ba.get("emblem_coa");
-    ra.updated.add(l(this, this.onUpdated));
-    ra.setHiRes.add(l(this,
+    Emblem.seed = State.get("emblem_seed", 1);
+    Emblem.coa = State.get("emblem_coa");
+    Emblem.updated.add(l(this, this.onUpdated));
+    Emblem.setHiRes.add(l(this,
         this.onResolution));
     this.addEventListener("removed", function(b) {
-        ra.updated.remove(l(a, a.onUpdated));
-        ra.setHiRes.remove(l(a, a.onResolution))
+        Emblem.updated.remove(l(a, a.onUpdated));
+        Emblem.setHiRes.remove(l(a, a.onResolution))
     });
-    if (!ra.loading)
-        if (null == ra.loRes) ra.loadLo();
+    if (!Emblem.loading)
+        if (null == Emblem.loRes) Emblem.loadLo();
         else this.onUpdated()
 };
-g["com.watabou.mfcg.scenes.overlays.Emblem"] = ra;
-ra.__name__ = "com.watabou.mfcg.scenes.overlays.Emblem";
-ra.loadLo = function() {
-    ra.loading = !0;
-    Fb.loadFromFile(null == ra.coa ? "" + ra.ARMORIA + "/png/" + ra.LO_RES + "/" + ra.seed : "" + ra.ARMORIA + "/?format=png&size=" + ra.LO_RES + "&coa=" + ra.coa).onComplete(ra.onLoadLo).onError(ra.onError)
+g["com.watabou.mfcg.scenes.overlays.Emblem"] = Emblem;
+Emblem.__name__ = "com.watabou.mfcg.scenes.overlays.Emblem";
+Emblem.loadLo = function() {
+    Emblem.loading = !0;
+    Fb.loadFromFile(null == Emblem.coa ? "" + Emblem.ARMORIA + "/png/" + Emblem.LO_RES + "/" + Emblem.seed : "" + Emblem.ARMORIA + "/?format=png&size=" + Emblem.LO_RES + "&coa=" + Emblem.coa).onComplete(Emblem.onLoadLo).onError(Emblem.onError)
 };
-ra.onError = function(a) {
-    ra.loading = !1;
-    ra.setCOA(null)
+Emblem.onError = function(a) {
+    Emblem.loading = !1;
+    Emblem.setCOA(null)
 };
-ra.onLoadLo = function(a) {
-    ra.loading = !1;
-    null != ra.loRes && ra.loRes.dispose();
-    ra.loRes = a;
-    null == ra.hiRes && ra.loadHi();
-    null == ra.svg && ra.loadSvg();
-    ra.updated.dispatch()
+Emblem.onLoadLo = function(a) {
+    Emblem.loading = !1;
+    null != Emblem.loRes && Emblem.loRes.dispose();
+    Emblem.loRes = a;
+    null == Emblem.hiRes && Emblem.loadHi();
+    null == Emblem.svg && Emblem.loadSvg();
+    Emblem.updated.dispatch()
 };
-ra.loadHi = function() {
-    Fb.loadFromFile(null == ra.coa ? "" + ra.ARMORIA + "/png/" + ra.HI_RES + "/" + ra.seed : "" + ra.ARMORIA + "/?format=png&size=" + ra.HI_RES + "&coa=" + ra.coa).onComplete(ra.onLoadHi)
+Emblem.loadHi = function() {
+    Fb.loadFromFile(null == Emblem.coa ? "" + Emblem.ARMORIA + "/png/" + Emblem.HI_RES + "/" + Emblem.seed : "" + Emblem.ARMORIA + "/?format=png&size=" + Emblem.HI_RES + "&coa=" + Emblem.coa).onComplete(Emblem.onLoadHi)
 };
-ra.onLoadHi = function(a) {
-    null != ra.hiRes && ra.hiRes.dispose();
-    ra.hiRes = a
+Emblem.onLoadHi = function(a) {
+    null != Emblem.hiRes && Emblem.hiRes.dispose();
+    Emblem.hiRes = a
 };
-ra.loadSvg = function() {
+Emblem.loadSvg = function() {
     var a = null ==
-        ra.coa ? "" + ra.ARMORIA + "/svg/" + ra.LO_RES + "/" + ra.seed : "" + ra.ARMORIA + "/?format=svg&size=" + ra.LO_RES + "&coa=" + ra.coa,
+        Emblem.coa ? "" + Emblem.ARMORIA + "/svg/" + Emblem.LO_RES + "/" + Emblem.seed : "" + Emblem.ARMORIA + "/?format=svg&size=" + Emblem.LO_RES + "&coa=" + Emblem.coa,
         b = new Ai;
     b.addEventListener("complete", function(a) {
-        ra.onLoadSvg(b.data)
+        Emblem.onLoadSvg(b.data)
     });
-    b.addEventListener("ioError", ra.onIOError);
+    b.addEventListener("ioError", Emblem.onIOError);
     b.load(new If(a))
 };
-ra.onLoadSvg = function(a) {
-    ra.svg = W.parse(a).firstElement()
+Emblem.onLoadSvg = function(a) {
+    Emblem.svg = W.parse(a).firstElement()
 };
-ra.onIOError = function(a) {
-    if (0 == a.errorID) ra.onLoadSvg(a.text)
+Emblem.onIOError = function(a) {
+    if (0 == a.errorID) Emblem.onLoadSvg(a.text)
 };
-ra.setCOA = function(a) {
-    ba.set("emblem_coa", ra.coa = a);
-    ra.loRes = ra.hiRes = null;
-    ra.svg = null;
-    ra.loadLo()
+Emblem.setCOA = function(a) {
+    State.set("emblem_coa", Emblem.coa = a);
+    Emblem.loRes = Emblem.hiRes = null;
+    Emblem.svg = null;
+    Emblem.loadLo()
 };
-ra.setResoltion = function(a) {
-    ra.setHiRes.dispatch(a)
+Emblem.setResoltion = function(a) {
+    Emblem.setHiRes.dispatch(a)
 };
-ra.__super__ = U;
-ra.prototype = v(U.prototype, {
+Emblem.__super__ = U;
+Emblem.prototype = v(U.prototype, {
     customize: function() {
-        null == u.findWidnow(Nf) && u.showDialog(new Nf(this))
+        null == u.findWidnow(EmblemForm) && u.showDialog(new EmblemForm(this))
     },
     onUpdated: function() {
-        this.bmp.set_bitmapData(ra.loRes);
+        this.bmp.set_bitmapData(Emblem.loRes);
         this.rWidth = this.bmp.get_width();
         this.rHeight = this.bmp.get_height();
         this.ready.dispatch()
     },
     reroll: function() {
-        ba.set("emblem_seed", ra.seed = (new Date).getTime() % 2147483647 | 0);
-        ba.set("emblem_coa", ra.coa = null);
-        ra.loRes = ra.hiRes = null;
-        ra.svg = null;
-        ra.loadLo()
+        State.set("emblem_seed", Emblem.seed = (new Date).getTime() % 2147483647 | 0);
+        State.set("emblem_coa", Emblem.coa = null);
+        Emblem.loRes = Emblem.hiRes = null;
+        Emblem.svg = null;
+        Emblem.loadLo()
     },
     onResolution: function(a) {
-        a && null != ra.hiRes ? (this.bmp.set_bitmapData(ra.hiRes),
-            this.bmp.set_scaleX(this.bmp.set_scaleY(ra.LO_RES / ra.HI_RES)), this.bmp.smoothing = !0) : (this.bmp.set_bitmapData(ra.loRes), this.bmp.set_scaleX(this.bmp.set_scaleY(1)), a && q.show("High resolution emblem is not loaded"))
+        a && null != Emblem.hiRes ? (this.bmp.set_bitmapData(Emblem.hiRes),
+            this.bmp.set_scaleX(this.bmp.set_scaleY(Emblem.LO_RES / Emblem.HI_RES)), this.bmp.smoothing = !0) : (this.bmp.set_bitmapData(Emblem.loRes), this.bmp.set_scaleX(this.bmp.set_scaleY(1)), a && q.show("High resolution emblem is not loaded"))
     },
-    __class__: ra
+    __class__: Emblem
 });
 var yc = y["com.watabou.mfcg.scenes.overlays.Position"] = {
     __ename__: "com.watabou.mfcg.scenes.overlays.Position",
@@ -2956,59 +2956,59 @@ var yc = y["com.watabou.mfcg.scenes.overlays.Position"] = {
     }
 };
 yc.__constructs__ = [yc.UNDEFINED, yc.TOP_LEFT, yc.TOP_RIGHT, yc.BOTTOM_LEFT, yc.BOTTOM_RIGHT];
-var nf = function(a) {
+var EmblemOverlay = function(a) {
     this.emblem =
-        new ra;
+        new Emblem;
     this.emblem.ready.add(l(this, this.layout));
-    Ca.call(this, a);
+    Overlay.call(this, a);
     this.addChild(this.emblem)
 };
-g["com.watabou.mfcg.scenes.overlays.EmblemOverlay"] = nf;
-nf.__name__ = "com.watabou.mfcg.scenes.overlays.EmblemOverlay";
-nf.__super__ = Ca;
-nf.prototype = v(Ca.prototype, {
+g["com.watabou.mfcg.scenes.overlays.EmblemOverlay"] = EmblemOverlay;
+EmblemOverlay.__name__ = "com.watabou.mfcg.scenes.overlays.EmblemOverlay";
+EmblemOverlay.__super__ = Overlay;
+EmblemOverlay.prototype = v(Overlay.prototype, {
     layout: function() {
-        switch (nf.pos._hx_index) {
+        switch (EmblemOverlay.pos._hx_index) {
             case 1:
-                this.emblem.set_x(Ca.MARGIN);
-                this.emblem.set_y(Ca.MARGIN);
+                this.emblem.set_x(Overlay.MARGIN);
+                this.emblem.set_y(Overlay.MARGIN);
                 break;
             case 2:
-                this.emblem.set_x(this.rWidth - this.emblem.get_width() - Ca.MARGIN);
-                this.emblem.set_y(Ca.MARGIN);
+                this.emblem.set_x(this.rWidth - this.emblem.get_width() - Overlay.MARGIN);
+                this.emblem.set_y(Overlay.MARGIN);
                 break;
             case 3:
-                this.emblem.set_x(Ca.MARGIN);
-                this.emblem.set_y(this.rHeight - this.emblem.get_height() - Ca.MARGIN);
+                this.emblem.set_x(Overlay.MARGIN);
+                this.emblem.set_y(this.rHeight - this.emblem.get_height() - Overlay.MARGIN);
                 break;
             case 4:
-                this.emblem.set_x(this.rWidth - this.emblem.get_width() - Ca.MARGIN), this.emblem.set_y(this.rHeight - this.emblem.get_height() - Ca.MARGIN)
+                this.emblem.set_x(this.rWidth - this.emblem.get_width() - Overlay.MARGIN), this.emblem.set_y(this.rHeight - this.emblem.get_height() - Overlay.MARGIN)
         }
     },
     set_position: function(a) {
-        nf.pos != a && (nf.pos = a, this.layout());
+        EmblemOverlay.pos != a && (EmblemOverlay.pos = a, this.layout());
         return a
     },
     onContext: function(a) {
         a.addItem("Customize...", (G = this.emblem, l(G, G.customize)));
         a.addItem("Reroll", (G = this.emblem, l(G, G.reroll)));
         a.addItem("Hide", function() {
-            ba.set("emblem", !1)
+            State.set("emblem", !1)
         })
     },
     exportPNG: function(a) {
-        ra.setResoltion(a)
+        Emblem.setResoltion(a)
     },
-    __class__: nf
+    __class__: EmblemOverlay
 });
-var Bi = function() {
+var Frame = function() {
     this.padding = 10;
     U.call(this)
 };
-g["com.watabou.mfcg.scenes.overlays.Frame"] = Bi;
-Bi.__name__ = "com.watabou.mfcg.scenes.overlays.Frame";
-Bi.__super__ = U;
-Bi.prototype = v(U.prototype, {
+g["com.watabou.mfcg.scenes.overlays.Frame"] = Frame;
+Frame.__name__ = "com.watabou.mfcg.scenes.overlays.Frame";
+Frame.__super__ = U;
+Frame.prototype = v(U.prototype, {
     layout: function() {
         var a = K.colorDark,
             b = this.get_graphics();
@@ -3034,19 +3034,19 @@ Bi.prototype = v(U.prototype, {
         a.set_x(this.get_x() + this.padding);
         a.set_y(this.get_y() + this.padding)
     },
-    __class__: Bi
+    __class__: Frame
 });
-var ki = function(a) {
-    Ca.call(this, a);
-    Bb.unitsChanged.add(l(this, this.layout))
+var GridOverlay = function(a) {
+    Overlay.call(this, a);
+    ModelDispatcher.unitsChanged.add(l(this, this.layout))
 };
-g["com.watabou.mfcg.scenes.overlays.GridOverlay"] = ki;
-ki.__name__ = "com.watabou.mfcg.scenes.overlays.GridOverlay";
-ki.__super__ = Ca;
-ki.prototype = v(Ca.prototype, {
+g["com.watabou.mfcg.scenes.overlays.GridOverlay"] = GridOverlay;
+GridOverlay.__name__ = "com.watabou.mfcg.scenes.overlays.GridOverlay";
+GridOverlay.__super__ = Overlay;
+GridOverlay.prototype = v(Overlay.prototype, {
     onDestroy: function() {
-        Ca.prototype.onDestroy.call(this);
-        Bb.unitsChanged.remove(l(this, this.layout))
+        Overlay.prototype.onDestroy.call(this);
+        ModelDispatcher.unitsChanged.remove(l(this, this.layout))
     },
     layout: function() {
         var a = this.get_graphics();
@@ -3054,8 +3054,8 @@ ki.prototype = v(Ca.prototype, {
         var b = !1;
         null == b && (b = !0);
         a.lineStyle(K.getStrokeWidth(K.strokeThin, b), K.colorDark);
-        b = ia.map;
-        for (var c = Db.get_current().getPlank(b, 100), d = this.layer2map(b, new I), f = this.layer2map(b, new I(this.rWidth, this.rHeight)), h = new I, k = Math.ceil(d.x / c), n = Math.ceil(f.x / c); k < n;) {
+        b = TownScene.map;
+        for (var c = UnitSystem.get_current().getPlank(b, 100), d = this.layer2map(b, new I), f = this.layer2map(b, new I(this.rWidth, this.rHeight)), h = new I, k = Math.ceil(d.x / c), n = Math.ceil(f.x / c); k < n;) {
             var p = k++;
             h.setTo(p * c, 0);
             h = this.map2layer(b,
@@ -3066,23 +3066,23 @@ ki.prototype = v(Ca.prototype, {
         k = Math.ceil(d.y / c);
         for (n = Math.ceil(f.y / c); k < n;) p = k++, h.setTo(0, p * c), h = this.map2layer(b, h), a.moveTo(0, h.y), a.lineTo(this.rWidth, h.y)
     },
-    __class__: ki
+    __class__: GridOverlay
 });
-var oi = function(a) {
-    Ca.call(this, a);
-    Bb.districtsChanged.add(l(this, this.updateAll))
+var LabelsOverlay = function(a) {
+    Overlay.call(this, a);
+    ModelDispatcher.districtsChanged.add(l(this, this.updateAll))
 };
-g["com.watabou.mfcg.scenes.overlays.LabelsOverlay"] = oi;
-oi.__name__ = "com.watabou.mfcg.scenes.overlays.LabelsOverlay";
-oi.__super__ = Ca;
-oi.prototype = v(Ca.prototype, {
+g["com.watabou.mfcg.scenes.overlays.LabelsOverlay"] = LabelsOverlay;
+LabelsOverlay.__name__ = "com.watabou.mfcg.scenes.overlays.LabelsOverlay";
+LabelsOverlay.__super__ = Overlay;
+LabelsOverlay.prototype = v(Overlay.prototype, {
     onDestroy: function() {
-        Ca.prototype.onDestroy.call(this);
-        Bb.districtsChanged.remove(l(this,
+        Overlay.prototype.onDestroy.call(this);
+        ModelDispatcher.districtsChanged.remove(l(this,
             this.updateAll))
     },
     update: function(a) {
-        Ca.prototype.update.call(this, a);
+        Overlay.prototype.update.call(this, a);
         this.recreateLabels()
     },
     layout: function() {
@@ -3099,7 +3099,7 @@ oi.prototype = v(Ca.prototype, {
             var h = [f[d]];
             ++d;
             if (null == b || Z.intersects(h[0].faces, b.faces)) {
-                var k = [new tg];
+                var k = [new CurvedLabel];
                 this.updateDistrict(h[0], k[0]);
                 this.addChild(k[0]);
                 k[0].addEventListener("mouseDown",
@@ -3127,7 +3127,7 @@ oi.prototype = v(Ca.prototype, {
         for (var c = [], d = 0; d < a.length;) {
             var f = a[d];
             ++d;
-            c.push(this.map2layer(ia.map, f))
+            c.push(this.map2layer(TownScene.map, f))
         }
         b.arrange(c)
     },
@@ -3143,9 +3143,9 @@ oi.prototype = v(Ca.prototype, {
     edit: function(a, b) {
         var c = this;
         b.set_visible(!1);
-        var d = vb.getFormat("font_label", vb.fontLabel, K.colorLabel),
+        var d = TextUI.getFormat("font_label", TextUI.fontLabel, K.colorLabel),
             f = b.center();
-        new We(a.name, d, f, this.stage, null, function(d) {
+        new EditInPlace(a.name, d, f, this.stage, null, function(d) {
             a.name = "" != d ? d : "-";
             c.updateDistrict(a, b);
             c.layoutDistrict(a, b);
@@ -3156,7 +3156,7 @@ oi.prototype = v(Ca.prototype, {
     },
     context: function(a, b) {
         var c = this,
-            d = ia.getMenu();
+            d = TownScene.getMenu();
         d.addItem("Edit name", function() {
             c.edit(a, b)
         });
@@ -3177,22 +3177,22 @@ oi.prototype = v(Ca.prototype, {
                 for (a = this.labels.iterator(); a.hasNext();) b = a.next(), b.removeOutline(), b.set_filters([c])
             }
     },
-    __class__: oi
+    __class__: LabelsOverlay
 });
-var Ci = function() {
+var Legend = function() {
     this.resized = new Nc;
     U.call(this);
-    this.frame = new Bi;
+    this.frame = new Frame;
     this.add(this.frame);
-    this.vbox = new gb;
+    this.vbox = new VBox;
     this.add(this.vbox);
     this.layout()
 };
-g["com.watabou.mfcg.scenes.overlays.Legend"] = Ci;
-Ci.__name__ = "com.watabou.mfcg.scenes.overlays.Legend";
-Ci.__super__ =
+g["com.watabou.mfcg.scenes.overlays.Legend"] = Legend;
+Legend.__name__ = "com.watabou.mfcg.scenes.overlays.Legend";
+Legend.__super__ =
     U;
-Ci.prototype = v(U.prototype, {
+Legend.prototype = v(U.prototype, {
     layout: function() {
         this.frame.outline(this.vbox);
         this.rWidth = this.frame.get_width();
@@ -3211,22 +3211,22 @@ Ci.prototype = v(U.prototype, {
         this.vbox.add(a)
     },
     addItem: function(a, b) {
-        a = new kh(this, a, b);
+        a = new Legend_LegendItem(this, a, b);
         this.addView(a);
         return a
     },
     addTitle: function(a) {
-        a = new lh(this, a);
+        a = new Legend_TitleView(this, a);
         this.addView(a);
         return a
     },
     addEmblem: function() {
-        var a = new mh(this);
+        var a = new Legend_EmblemView(this);
         this.addView(a);
         return a
     },
     addSeparator: function() {
-        this.addView(new nh)
+        this.addView(new Legend_SeparatorView)
     },
     addScale: function() {
         this.scale = new oh(this);
@@ -3237,26 +3237,26 @@ Ci.prototype = v(U.prototype, {
         this.vbox.wipe();
         this.relayout()
     },
-    __class__: Ci
+    __class__: Legend
 });
-var ug = function() {};
-g["com.watabou.mfcg.scenes.overlays._Legend.Legendary"] = ug;
-ug.__name__ = "com.watabou.mfcg.scenes.overlays._Legend.Legendary";
-ug.__isInterface__ = !0;
-var kh = function(a, b, c) {
+var Legend_Legendary = function() {};
+g["com.watabou.mfcg.scenes.overlays._Legend.Legendary"] = Legend_Legendary;
+Legend_Legendary.__name__ = "com.watabou.mfcg.scenes.overlays._Legend.Legendary";
+Legend_Legendary.__isInterface__ = !0;
+var Legend_LegendItem = function(a, b, c) {
     this.context = new Nc;
     this.click = new Nc;
     var d = this;
     U.call(this);
     this.legend = a;
-    a = vb.getFormat("font_legend", vb.fontLegend, K.colorDark);
+    a = TextUI.getFormat("font_legend", TextUI.fontLegend, K.colorDark);
     var f = a.size,
         h = .5 * f;
-    this.tfSymb = vb.get(b + ".", a);
+    this.tfSymb = TextUI.get(b + ".", a);
     this.tfSymb.set_x(f - this.tfSymb.get_width());
     this.tfSymb.mouseEnabled = !1;
     this.addChild(this.tfSymb);
-    this.tfDesc = vb.get(c, a);
+    this.tfDesc = TextUI.get(c, a);
     this.tfDesc.set_x(f + h);
     this.tfDesc.set_selectable(!1);
     this.addChild(this.tfDesc);
@@ -3270,14 +3270,14 @@ var kh = function(a, b, c) {
             d.context.dispatch()
         })
 };
-g["com.watabou.mfcg.scenes.overlays._Legend.LegendItem"] = kh;
-kh.__name__ = "com.watabou.mfcg.scenes.overlays._Legend.LegendItem";
-kh.__interfaces__ = [ug];
-kh.__super__ = U;
-kh.prototype = v(U.prototype, {
+g["com.watabou.mfcg.scenes.overlays._Legend.LegendItem"] = Legend_LegendItem;
+Legend_LegendItem.__name__ = "com.watabou.mfcg.scenes.overlays._Legend.LegendItem";
+Legend_LegendItem.__interfaces__ = [Legend_Legendary];
+Legend_LegendItem.__super__ = U;
+Legend_LegendItem.prototype = v(U.prototype, {
     edit: function(a) {
         var b = this;
-        We.fromTextField(this.tfDesc, this, 1, function(c) {
+        EditInPlace.fromTextField(this.tfDesc, this, 1, function(c) {
             "" == c && (c = "-");
             b.tfDesc.set_text(c);
             var d = b.tfDesc.get_x(),
@@ -3287,17 +3287,17 @@ kh.prototype = v(U.prototype, {
             a(c)
         })
     },
-    __class__: kh
+    __class__: Legend_LegendItem
 });
-var lh = function(a, b) {
+var Legend_TitleView = function(a, b) {
     this.context = new Nc;
     this.click = new Nc;
     var c = this;
     U.call(this);
     this.legend = a;
     this.halign = "center";
-    a = vb.getFormat("font_title", vb.fontTitle, K.colorDark, .6666666666666666);
-    this.tf = vb.get(b, a);
+    a = TextUI.getFormat("font_title", TextUI.fontTitle, K.colorDark, .6666666666666666);
+    this.tf = TextUI.get(b, a);
     this.tf.set_selectable(!1);
     this.addChild(this.tf);
     this.rWidth = this.tf.get_width();
@@ -3309,14 +3309,14 @@ var lh = function(a, b) {
         c.context.dispatch()
     })
 };
-g["com.watabou.mfcg.scenes.overlays._Legend.TitleView"] = lh;
-lh.__name__ = "com.watabou.mfcg.scenes.overlays._Legend.TitleView";
-lh.__interfaces__ = [ug];
-lh.__super__ = U;
-lh.prototype = v(U.prototype, {
+g["com.watabou.mfcg.scenes.overlays._Legend.TitleView"] = Legend_TitleView;
+Legend_TitleView.__name__ = "com.watabou.mfcg.scenes.overlays._Legend.TitleView";
+Legend_TitleView.__interfaces__ = [Legend_Legendary];
+Legend_TitleView.__super__ = U;
+Legend_TitleView.prototype = v(U.prototype, {
     edit: function(a) {
         var b = this;
-        We.fromTextField(this.tf, this, 0, function(c) {
+        EditInPlace.fromTextField(this.tf, this, 0, function(c) {
             "" == c && (c = "-");
             b.tf.set_text(c);
             b.rWidth = b.tf.get_width();
@@ -3324,32 +3324,32 @@ lh.prototype = v(U.prototype, {
             null != a && a(c)
         })
     },
-    __class__: lh
+    __class__: Legend_TitleView
 });
-var nh = function() {
+var Legend_SeparatorView = function() {
     U.call(this);
     this.halign = "fill";
     var a = !1;
     null == a && (a = !0);
     this.set_height(K.getStrokeWidth(K.strokeNormal, a))
 };
-g["com.watabou.mfcg.scenes.overlays._Legend.SeparatorView"] = nh;
-nh.__name__ = "com.watabou.mfcg.scenes.overlays._Legend.SeparatorView";
-nh.__interfaces__ = [ug];
-nh.__super__ = U;
-nh.prototype = v(U.prototype, {
+g["com.watabou.mfcg.scenes.overlays._Legend.SeparatorView"] = Legend_SeparatorView;
+Legend_SeparatorView.__name__ = "com.watabou.mfcg.scenes.overlays._Legend.SeparatorView";
+Legend_SeparatorView.__interfaces__ = [Legend_Legendary];
+Legend_SeparatorView.__super__ = U;
+Legend_SeparatorView.prototype = v(U.prototype, {
     layout: function() {
         this.get_graphics().clear();
         this.get_graphics().beginFill(K.colorDark);
         this.get_graphics().drawRect(0, 0, this.rWidth, this.rHeight)
     },
-    __class__: nh
+    __class__: Legend_SeparatorView
 });
 var oh = function(a) {
     U.call(this);
     this.legend = a;
     this.halign = "center";
-    this.scalebar = Lb.create(!0);
+    this.scalebar = ScaleBar.create(!0);
     this.addChild(this.scalebar);
     this.addEventListener("click", l(this, this.onClick));
     this.addEventListener("rightClick", l(this, this.onContext))
@@ -3357,68 +3357,68 @@ var oh = function(a) {
 g["com.watabou.mfcg.scenes.overlays._Legend.ScaleBarView"] =
     oh;
 oh.__name__ = "com.watabou.mfcg.scenes.overlays._Legend.ScaleBarView";
-oh.__interfaces__ = [ug];
+oh.__interfaces__ = [Legend_Legendary];
 oh.__super__ = U;
 oh.prototype = v(U.prototype, {
     update: function() {
-        this.scalebar.update(ia.map);
+        this.scalebar.update(TownScene.map);
         this.rWidth = this.scalebar.get_width();
         this.rHeight = this.scalebar.get_height() - 4;
         this.scalebar.set_y(this.rHeight)
     },
     onClick: function(a) {
-        a.shiftKey ? (this.removeChild(this.scalebar), Lb.toggleView(), this.scalebar = Lb.create(!0), this.addChild(this.scalebar)) : Db.toggle();
+        a.shiftKey ? (this.removeChild(this.scalebar), ScaleBar.toggleView(), this.scalebar = ScaleBar.create(!0), this.addChild(this.scalebar)) : UnitSystem.toggle();
         this.update();
         this.legend.relayout()
     },
     onContext: function(a) {
         var b =
             this,
-            c = ia.getMenu();
+            c = TownScene.getMenu();
         a = function(a, f) {
             c.addItem(a, function() {
-                Db.set_current(f);
+                UnitSystem.set_current(f);
                 b.scalebar.update();
                 b.update();
                 b.legend.relayout()
-            }, Db.get_current() == f)
+            }, UnitSystem.get_current() == f)
         };
-        a("Metric units", Db.metric);
-        a("Imperial units", Db.imperial);
+        a("Metric units", UnitSystem.metric);
+        a("Imperial units", UnitSystem.imperial);
         a = function(a, f) {
             c.addItem(a, function() {
-                Lb.sbClass = f;
+                ScaleBar.sbClass = f;
                 b.removeChild(b.scalebar);
-                b.scalebar = Lb.create(!0);
+                b.scalebar = ScaleBar.create(!0);
                 b.addChild(b.scalebar);
                 b.update();
                 b.legend.relayout()
-            }, Lb.sbClass == f)
+            }, ScaleBar.sbClass == f)
         };
-        a("Default style", of);
+        a("Default style", ScaleBarOld);
         a("Alternative style", vg);
         c.addItem("Hide", function() {
-            ba.set("scale_bar", !1)
+            State.set("scale_bar", !1)
         })
     },
     __class__: oh
 });
-var mh = function(a) {
+var Legend_EmblemView = function(a) {
     U.call(this);
     this.legend = a;
     this.halign = "center";
-    this.emblem = new ra;
+    this.emblem = new Emblem;
     this.emblem.ready.add(l(this, this.layout));
     this.rWidth = this.emblem.get_width();
     this.rHeight = this.emblem.get_height();
     this.addChild(this.emblem);
     this.addEventListener("rightClick", l(this, this.onContext))
 };
-g["com.watabou.mfcg.scenes.overlays._Legend.EmblemView"] = mh;
-mh.__name__ = "com.watabou.mfcg.scenes.overlays._Legend.EmblemView";
-mh.__interfaces__ = [ug];
-mh.__super__ = U;
-mh.prototype = v(U.prototype, {
+g["com.watabou.mfcg.scenes.overlays._Legend.EmblemView"] = Legend_EmblemView;
+Legend_EmblemView.__name__ = "com.watabou.mfcg.scenes.overlays._Legend.EmblemView";
+Legend_EmblemView.__interfaces__ = [Legend_Legendary];
+Legend_EmblemView.__super__ = U;
+Legend_EmblemView.prototype = v(U.prototype, {
     layout: function() {
         this.rWidth =
             this.emblem.get_width();
@@ -3426,47 +3426,47 @@ mh.prototype = v(U.prototype, {
         this.legend.relayout()
     },
     onContext: function(a) {
-        a = ia.getMenu();
+        a = TownScene.getMenu();
         a.addItem("Customize...", (G = this.emblem, l(G, G.customize)));
         a.addItem("Reroll", (G = this.emblem, l(G, G.reroll)));
         a.addItem("Hide", function() {
-            ba.set("emblem", !1)
+            State.set("emblem", !1)
         })
     },
-    __class__: mh
+    __class__: Legend_EmblemView
 });
-var Uc = function(a) {
-    this.legend = new Ci;
+var LegendOverlay = function(a) {
+    this.legend = new Legend;
     this.legend.resized.add(l(this, this.layout));
-    Ca.call(this, a);
+    Overlay.call(this, a);
     this.addChild(this.legend);
-    Bb.titleChanged.add(l(this, this.onChangedStr));
-    Bb.districtsChanged.add(l(this,
+    ModelDispatcher.titleChanged.add(l(this, this.onChangedStr));
+    ModelDispatcher.districtsChanged.add(l(this,
         this.onChangedVoid));
-    Bb.landmarksChanged.add(l(this, this.onChangedVoid))
+    ModelDispatcher.landmarksChanged.add(l(this, this.onChangedVoid))
 };
-g["com.watabou.mfcg.scenes.overlays.LegendOverlay"] = Uc;
-Uc.__name__ = "com.watabou.mfcg.scenes.overlays.LegendOverlay";
-Uc.__super__ = Ca;
-Uc.prototype = v(Ca.prototype, {
+g["com.watabou.mfcg.scenes.overlays.LegendOverlay"] = LegendOverlay;
+LegendOverlay.__name__ = "com.watabou.mfcg.scenes.overlays.LegendOverlay";
+LegendOverlay.__super__ = Overlay;
+LegendOverlay.prototype = v(Overlay.prototype, {
     layout: function() {
-        Uc.auto && (Uc.pos = this.getAutoPos());
-        var a = this.pos2point(Uc.pos);
+        LegendOverlay.auto && (LegendOverlay.pos = this.getAutoPos());
+        var a = this.pos2point(LegendOverlay.pos);
         this.legend.set_x(a.x);
         this.legend.set_y(a.y);
         this.scene.arrangeOverlays()
     },
     get_position: function() {
-        return Uc.pos
+        return LegendOverlay.pos
     },
     set_position: function(a) {
-        Uc.auto = !1;
-        Uc.pos != a && (Uc.pos = a, this.layout());
+        LegendOverlay.auto = !1;
+        LegendOverlay.pos != a && (LegendOverlay.pos = a, this.layout());
         return a
     },
     getAutoPos: function() {
         var a = this,
-            b = ia.map;
+            b = TownScene.map;
         return null == b ? yc.TOP_LEFT : Z.min([yc.TOP_LEFT, yc.BOTTOM_LEFT, yc.BOTTOM_RIGHT, yc.TOP_RIGHT], function(c) {
             var d = a.pos2point(c);
             c = new I(d.x + a.legend.get_width(), d.y + a.legend.get_height());
@@ -3479,28 +3479,28 @@ Uc.prototype = v(Ca.prototype, {
     pos2point: function(a) {
         switch (a._hx_index) {
             case 1:
-                return new I(Ca.MARGIN, Ca.MARGIN);
+                return new I(Overlay.MARGIN, Overlay.MARGIN);
             case 2:
-                return new I(this.rWidth - this.legend.get_width() - Ca.MARGIN, Ca.MARGIN);
+                return new I(this.rWidth - this.legend.get_width() - Overlay.MARGIN, Overlay.MARGIN);
             case 3:
-                return new I(Ca.MARGIN,
-                    this.rHeight - this.legend.get_height() - Ca.MARGIN);
+                return new I(Overlay.MARGIN,
+                    this.rHeight - this.legend.get_height() - Overlay.MARGIN);
             case 4:
-                return new I(this.rWidth - this.legend.get_width() - Ca.MARGIN, this.rHeight - this.legend.get_height() - Ca.MARGIN);
+                return new I(this.rWidth - this.legend.get_width() - Overlay.MARGIN, this.rHeight - this.legend.get_height() - Overlay.MARGIN);
             default:
                 return null
         }
     },
     update: function(a) {
-        Ca.prototype.update.call(this, a);
+        Overlay.prototype.update.call(this, a);
         if (this.get_visible()) {
             this.legend.wipe();
-            var b = ia.getMenu(),
-                c = ba.get("city_name", 1),
-                d = ba.get("scale_bar", !0),
-                f = ba.get("emblem", !1),
-                h = "Legend" == ba.get("districts", "Curved") && 0 < a.districts.length,
-                k = "Legend" == ba.get("landmarks") && 0 < a.landmarks.length;
+            var b = TownScene.getMenu(),
+                c = State.get("city_name", 1),
+                d = State.get("scale_bar", !0),
+                f = State.get("emblem", !1),
+                h = "Legend" == State.get("districts", "Curved") && 0 < a.districts.length,
+                k = "Legend" == State.get("landmarks") && 0 < a.landmarks.length;
             if (c) {
                 c = this.legend.addTitle(a.name);
                 var n = function() {
@@ -3524,7 +3524,7 @@ Uc.prototype = v(Ca.prototype, {
                 for (f = a.districts.length; d < f;) {
                     h = d++;
                     var p = [a.districts[h]];
-                    h = Of.number(h);
+                    h = Pin.number(h);
                     var g = [function(a) {
                         return function(b) {
                             return a[0].name = b
@@ -3548,7 +3548,7 @@ Uc.prototype = v(Ca.prototype, {
                 k && this.legend.addSeparator()
             }
             if (k)
-                for (d = 0, f = a.landmarks.length; d < f;) h = d++, k = [a.landmarks[h]], h = Pf.letter(h), p = [function(a) {
+                for (d = 0, f = a.landmarks.length; d < f;) h = d++, k = [a.landmarks[h]], h = Marker.letter(h), p = [function(a) {
                     return function(b) {
                         return a[0].name = b
                     }
@@ -3573,33 +3573,33 @@ Uc.prototype = v(Ca.prototype, {
     },
     onContext: function(a) {
         var b = this,
-            c = new dd,
+            c = new Menu,
             d = yc.TOP_LEFT;
         c.addItem("Top-left", function() {
             b.set_position(d)
-        }, b.get_position() == d && !Uc.auto);
+        }, b.get_position() == d && !LegendOverlay.auto);
         var f = yc.TOP_RIGHT;
         c.addItem("Top-right", function() {
             b.set_position(f)
-        }, b.get_position() == f && !Uc.auto);
+        }, b.get_position() == f && !LegendOverlay.auto);
         var h = yc.BOTTOM_LEFT;
         c.addItem("Bottom-left", function() {
             b.set_position(h)
-        }, b.get_position() == h && !Uc.auto);
+        }, b.get_position() == h && !LegendOverlay.auto);
         var k = yc.BOTTOM_RIGHT;
         c.addItem("Bottom-right",
             function() {
                 b.set_position(k)
-            }, b.get_position() == k && !Uc.auto);
+            }, b.get_position() == k && !LegendOverlay.auto);
         c.addItem("Auto", function() {
-            Uc.auto = !0;
+            LegendOverlay.auto = !0;
             b.layout()
-        }, Uc.auto);
+        }, LegendOverlay.auto);
         a.addSeparator();
         a.addSubmenu("Position", c);
         a.addItem("Hide", function() {
-            "Legend" == ba.get("landmarks") && ba.set("landmarks", "Icon");
-            "Legend" == ba.get("districts", "Curved") ? ba.set("districts", "Curved") : ia.inst.toggleOverlays()
+            "Legend" == State.get("landmarks") && State.set("landmarks", "Icon");
+            "Legend" == State.get("districts", "Curved") ? State.set("districts", "Curved") : TownScene.inst.toggleOverlays()
         })
     },
     onChangedStr: function(a) {
@@ -3609,13 +3609,13 @@ Uc.prototype = v(Ca.prototype, {
         this.update(this.model)
     },
     onDestroy: function() {
-        Ca.prototype.onDestroy.call(this);
-        Bb.titleChanged.remove(l(this, this.onChangedStr));
-        Bb.districtsChanged.remove(l(this, this.onChangedVoid))
+        Overlay.prototype.onDestroy.call(this);
+        ModelDispatcher.titleChanged.remove(l(this, this.onChangedStr));
+        ModelDispatcher.districtsChanged.remove(l(this, this.onChangedVoid))
     },
-    __class__: Uc
+    __class__: LegendOverlay
 });
-var Pf = function(a) {
+var Marker = function(a) {
     this.moved = !1;
     ka.call(this);
     this.overlay = a;
@@ -3626,21 +3626,21 @@ var Pf = function(a) {
     this.addEventListener("rollOver", l(this, this.onRollOver));
     this.addEventListener("mouseDown", l(this, this.onMouseDown))
 };
-g["com.watabou.mfcg.scenes.overlays.Marker"] = Pf;
-Pf.__name__ =
+g["com.watabou.mfcg.scenes.overlays.Marker"] = Marker;
+Marker.__name__ =
     "com.watabou.mfcg.scenes.overlays.Marker";
-Pf.letter = function(a) {
+Marker.letter = function(a) {
     a = N.cca("a", 0) + a;
     return String.fromCodePoint(a)
 };
-Pf.__super__ = ka;
-Pf.prototype = v(ka.prototype, {
+Marker.__super__ = ka;
+Marker.prototype = v(ka.prototype, {
     set: function(a, b) {
         this.landmark = a;
         this.set_symbol(b)
     },
     draw: function() {
-        var a = vb.getFormat("font_pin", vb.fontPin, K.colorLabel, 1.1428571428571428),
+        var a = TextUI.getFormat("font_pin", TextUI.fontPin, K.colorLabel, 1.1428571428571428),
             b = .6666666666666666 * a.size,
             c = .16666666666666666 * Math.PI,
             d = Math.cos(c),
@@ -3666,7 +3666,7 @@ Pf.prototype = v(ka.prototype, {
         k = !1;
         null == k && (k = !0);
         d.drawCircle(0, -c, b - K.getStrokeWidth(K.strokeThick, k));
-        this.tf = vb.get("a", a);
+        this.tf = TextUI.get("a", a);
         this.tf.mouseEnabled = !1;
         this.tf.set_y(-c - this.tf.get_height() / 2);
         this.addChild(this.tf)
@@ -3681,7 +3681,7 @@ Pf.prototype = v(ka.prototype, {
         this.moved || (this.overlay.editMarker(this.landmark), a.stopPropagation())
     },
     onRollOver: function(a) {
-        le.inst.set(this.landmark.name)
+        Tooltip.inst.set(this.landmark.name)
     },
     onMouseDown: function(a) {
         this.stage.addEventListener("mouseMove", l(this, this.onMouseMove));
@@ -3705,45 +3705,45 @@ Pf.prototype = v(ka.prototype, {
     onContext: function(a) {
         this.overlay.landmark = this.landmark
     },
-    __class__: Pf,
+    __class__: Marker,
     __properties__: v(ka.prototype.__properties__, {
         set_symbol: "set_symbol"
     })
 });
 var mi = function(a) {
     var b = this;
-    Ca.call(this, a);
-    Bb.landmarksChanged.add(function() {
+    Overlay.call(this, a);
+    ModelDispatcher.landmarksChanged.add(function() {
         b.update(b.model)
     })
 };
 g["com.watabou.mfcg.scenes.overlays.MarkersOverlay"] =
     mi;
 mi.__name__ = "com.watabou.mfcg.scenes.overlays.MarkersOverlay";
-mi.__super__ = Ca;
-mi.prototype = v(Ca.prototype, {
+mi.__super__ = Overlay;
+mi.prototype = v(Overlay.prototype, {
     layout: function() {
-        Ca.prototype.layout.call(this);
+        Overlay.prototype.layout.call(this);
         this.sync()
     },
     sync: function() {
         for (var a = 0, b = this.get_numChildren(); a < b;) {
             var c = a++;
             c = this.getChildAt(c);
-            var d = this.map2layer(ia.map, c.landmark.pos);
+            var d = this.map2layer(TownScene.map, c.landmark.pos);
             c.set_x(d.x);
             c.set_y(d.y)
         }
     },
     update: function(a) {
-        Ca.prototype.update.call(this, a);
+        Overlay.prototype.update.call(this, a);
         for (var b = 0, c = a.landmarks.length; b < c;) {
             var d = b++,
                 f = a.landmarks[d],
                 h = this.getChildAt(d);
-            null == h && (h = new Pf(this), this.addChild(h));
-            h.set(f, Pf.letter(d));
-            null != ia.map && (d = this.map2layer(ia.map, f.pos), h.set_x(d.x), h.set_y(d.y))
+            null == h && (h = new Marker(this), this.addChild(h));
+            h.set(f, Marker.letter(d));
+            null != TownScene.map && (d = this.map2layer(TownScene.map, f.pos), h.set_x(d.x), h.set_y(d.y))
         }
         for (; this.get_numChildren() > a.landmarks.length;) this.removeChildAt(a.landmarks.length)
     },
@@ -3751,7 +3751,7 @@ mi.prototype = v(Ca.prototype, {
         u.showDialog(new hh(a, !1))
     },
     onDrag: function(a) {
-        var b = ia.map,
+        var b = TownScene.map,
             c = a.get_x(),
             d = a.get_y();
         a.landmark.pos = this.layer2map(b, new I(c, d));
@@ -3763,28 +3763,28 @@ mi.prototype = v(Ca.prototype, {
             b.editMarker(b.landmark)
         });
         a.addItem("Hide", function() {
-            ba.set("landmarks", "Hidden")
+            State.set("landmarks", "Hidden")
         })
     },
     __class__: mi
 });
-var li = function(a) {
-    Ca.call(this, a);
+var PinsOverlay = function(a) {
+    Overlay.call(this, a);
     this.mouseChildren = !1
 };
-g["com.watabou.mfcg.scenes.overlays.PinsOverlay"] = li;
-li.__name__ = "com.watabou.mfcg.scenes.overlays.PinsOverlay";
-li.__super__ = Ca;
-li.prototype = v(Ca.prototype, {
+g["com.watabou.mfcg.scenes.overlays.PinsOverlay"] = PinsOverlay;
+PinsOverlay.__name__ = "com.watabou.mfcg.scenes.overlays.PinsOverlay";
+PinsOverlay.__super__ = Overlay;
+PinsOverlay.prototype = v(Overlay.prototype, {
     layout: function() {
-        Ca.prototype.layout.call(this);
+        Overlay.prototype.layout.call(this);
         this.sync()
     },
     sync: function() {
         for (var a = 0, b = this.get_numChildren(); a < b;) {
             var c = a++;
             c = this.getChildAt(c);
-            var d = this.map2layer(ia.map, c.pos);
+            var d = this.map2layer(TownScene.map, c.pos);
             c.set_x(d.x);
             c.set_y(d.y)
         }
@@ -3794,18 +3794,18 @@ li.prototype = v(Ca.prototype, {
             var d =
                 b++,
                 f = a.districts[d];
-            d = Of.number(d);
-            null == f.equator && (f.equator = ze.build(Ua.toPoly(f.border)));
-            this.addChild(new Of(d, qa.lerp(f.equator[0], f.equator[1])))
+            d = Pin.number(d);
+            null == f.equator && (f.equator = Equator.build(EdgeChain.toPoly(f.border)));
+            this.addChild(new Pin(d, GeomUtils.lerp(f.equator[0], f.equator[1])))
         }
     },
-    __class__: li
+    __class__: PinsOverlay
 });
-var Of = function(a, b) {
+var Pin = function(a, b) {
     ka.call(this);
     this.pos = b;
-    b = vb.getFormat("font_pin", vb.fontPin, K.colorPaper);
-    this.tf = vb.get(a, b);
+    b = TextUI.getFormat("font_pin", TextUI.fontPin, K.colorPaper);
+    this.tf = TextUI.get(a, b);
     this.tf.set_x(-this.tf.get_width() / 2);
     this.tf.set_y(-this.tf.get_height() / 2);
     this.addChild(this.tf);
@@ -3818,39 +3818,39 @@ var Of = function(a, b) {
     null == c && (c = !0);
     b.drawCircle(0, 0, a - K.getStrokeWidth(K.strokeThick, c))
 };
-g["com.watabou.mfcg.scenes.overlays.Pin"] = Of;
-Of.__name__ = "com.watabou.mfcg.scenes.overlays.Pin";
-Of.number = function(a) {
+g["com.watabou.mfcg.scenes.overlays.Pin"] = Pin;
+Pin.__name__ = "com.watabou.mfcg.scenes.overlays.Pin";
+Pin.number = function(a) {
     return H.string(a + 1)
 };
-Of.__super__ = ka;
-Of.prototype = v(ka.prototype, {
-    __class__: Of
+Pin.__super__ = ka;
+Pin.prototype = v(ka.prototype, {
+    __class__: Pin
 });
-var Lb = function() {
+var ScaleBar = function() {
     this.scale = 0;
     ka.call(this);
-    this.format = vb.getFormat("font_element", vb.fontElement, K.colorDark)
+    this.format = TextUI.getFormat("font_element", TextUI.fontElement, K.colorDark)
 };
-g["com.watabou.mfcg.scenes.overlays.ScaleBar"] = Lb;
-Lb.__name__ = "com.watabou.mfcg.scenes.overlays.ScaleBar";
-Lb.toggleView = function() {
-    Lb.sbClass = Lb.sbClass != of ? of : vg
+g["com.watabou.mfcg.scenes.overlays.ScaleBar"] = ScaleBar;
+ScaleBar.__name__ = "com.watabou.mfcg.scenes.overlays.ScaleBar";
+ScaleBar.toggleView = function() {
+    ScaleBar.sbClass = ScaleBar.sbClass != ScaleBarOld ? ScaleBarOld : vg
 };
-Lb.create = function(a) {
+ScaleBar.create = function(a) {
     null == a && (a = !1);
-    null == Lb.sbClass && (Lb.sbClass = of);
-    return w.createInstance(Lb.sbClass, [a])
+    null == ScaleBar.sbClass && (ScaleBar.sbClass = ScaleBarOld);
+    return w.createInstance(ScaleBar.sbClass, [a])
 };
-Lb.__super__ = ka;
-Lb.prototype = v(ka.prototype, {
+ScaleBar.__super__ = ka;
+ScaleBar.prototype = v(ka.prototype, {
     update: function(a) {
         this.get_graphics().clear();
         var b = this.getMinSize();
         null != a && (this.scale = this.getScale(a));
-        for (Lb.units = Db.get_current();;)
-            if (a = Lb.units.iu2unit * this.scale, this.tickUnit = Math.pow(10, Math.ceil(Math.log(b / a) / Math.log(10))), this.tickPx = this.tickUnit * a, this.tickPx > 5 * b ? (this.tickUnit /=
-                    5, this.tickPx /= 5) : this.tickPx > 4 * b ? (this.tickUnit /= 4, this.tickPx /= 4) : this.tickPx > 2 * b && (this.tickUnit /= 2, this.tickPx /= 2), 1 >= this.tickUnit && null != Lb.units.sub) Lb.units = Lb.units.sub;
+        for (ScaleBar.units = UnitSystem.get_current();;)
+            if (a = ScaleBar.units.iu2unit * this.scale, this.tickUnit = Math.pow(10, Math.ceil(Math.log(b / a) / Math.log(10))), this.tickPx = this.tickUnit * a, this.tickPx > 5 * b ? (this.tickUnit /=
+                    5, this.tickPx /= 5) : this.tickPx > 4 * b ? (this.tickUnit /= 4, this.tickPx /= 4) : this.tickPx > 2 * b && (this.tickUnit /= 2, this.tickPx /= 2), 1 >= this.tickUnit && null != ScaleBar.units.sub) ScaleBar.units = ScaleBar.units.sub;
             else break
     },
     getMinSize: function() {
@@ -3858,7 +3858,7 @@ Lb.prototype = v(ka.prototype, {
     },
     createLabel: function(a) {
         null == a && (a = "");
-        a = vb.get(a, this.format);
+        a = TextUI.get(a, this.format);
         a.set_selectable(!1);
         return a
     },
@@ -3867,12 +3867,12 @@ Lb.prototype = v(ka.prototype, {
         for (c = a; null != c;) b *= c.get_scaleX(), c = c.parent;
         return b
     },
-    __class__: Lb
+    __class__: ScaleBar
 });
 var vg = function(a) {
     null == a && (a = !1);
     this.embeded = a;
-    Lb.call(this);
+    ScaleBar.call(this);
     this.black = K.colorDark;
     this.white = K.colorLight;
     this.grey = K.colorDark;
@@ -3898,10 +3898,10 @@ var vg = function(a) {
 g["com.watabou.mfcg.scenes.overlays.ScaleBarNew"] =
     vg;
 vg.__name__ = "com.watabou.mfcg.scenes.overlays.ScaleBarNew";
-vg.__super__ = Lb;
-vg.prototype = v(Lb.prototype, {
+vg.__super__ = ScaleBar;
+vg.prototype = v(ScaleBar.prototype, {
     update: function(a) {
-        Lb.prototype.update.call(this, a);
+        ScaleBar.prototype.update.call(this, a);
         a = (this.tickPx - 2) / 5;
         for (var b = 0; 5 > b;) {
             var c = b++,
@@ -3927,7 +3927,7 @@ vg.prototype = v(Lb.prototype, {
         this.get_graphics().moveTo(this.tickPx, -12);
         this.get_graphics().lineTo(this.tickPx, 0);
         a = this.embeded ? this.tfValues[3] : this.tfValues[4];
-        this.tfUnits.set_text(Lb.units.unit);
+        this.tfUnits.set_text(ScaleBar.units.unit);
         this.tfUnits.set_x(a.get_x() + a.get_width());
         this.tfUnits.set_y(a.get_y())
     },
@@ -3936,10 +3936,10 @@ vg.prototype = v(Lb.prototype, {
     },
     __class__: vg
 });
-var of = function(a) {
+var ScaleBarOld = function(a) {
     null == a && (a = !1);
     this.embeded = a;
-    Lb.call(this);
+    ScaleBar.call(this);
     this.tfZero = this.createLabel("0");
     this.addChild(this.tfZero);
     this.tfHalf = this.createLabel();
@@ -3949,12 +3949,12 @@ var of = function(a) {
     this.tfUnits = this.createLabel();
     this.addChild(this.tfUnits)
 };
-g["com.watabou.mfcg.scenes.overlays.ScaleBarOld"] = of;
-of.__name__ = "com.watabou.mfcg.scenes.overlays.ScaleBarOld";
-of.__super__ = Lb;
-of.prototype = v(Lb.prototype, {
+g["com.watabou.mfcg.scenes.overlays.ScaleBarOld"] = ScaleBarOld;
+ScaleBarOld.__name__ = "com.watabou.mfcg.scenes.overlays.ScaleBarOld";
+ScaleBarOld.__super__ = ScaleBar;
+ScaleBarOld.prototype = v(ScaleBar.prototype, {
     update: function(a) {
-        Lb.prototype.update.call(this,
+        ScaleBar.prototype.update.call(this,
             a);
         this.get_graphics().beginFill(16711680, 0);
         this.get_graphics().drawRect(0, -12, (this.tickPx | 0) + 1, 12);
@@ -3983,68 +3983,68 @@ of.prototype = v(Lb.prototype, {
         this.tfFull.set_x(this.tickPx - (this.embeded ?
             this.tfFull.get_width() - 2 : this.tfFull.get_width() / 2));
         this.tfFull.set_y(-12 - this.tfFull.get_height());
-        this.tfUnits.set_text(Lb.units.unit);
+        this.tfUnits.set_text(ScaleBar.units.unit);
         this.tfUnits.set_x(this.embeded ? this.tfZero.get_x() + this.tfZero.get_width() : this.tfFull.get_x() + this.tfFull.get_width());
         this.tfUnits.set_y(this.tfFull.get_y())
     },
     getMinSize: function() {
         return 150
     },
-    __class__: of
+    __class__: ScaleBarOld
 });
-var ni = function(a) {
-    this.scalebar = Lb.create();
-    Ca.call(this, a);
+var ScaleBarOverlay = function(a) {
+    this.scalebar = ScaleBar.create();
+    Overlay.call(this, a);
     this.addChild(this.scalebar)
 };
-g["com.watabou.mfcg.scenes.overlays.ScaleBarOverlay"] = ni;
-ni.__name__ =
+g["com.watabou.mfcg.scenes.overlays.ScaleBarOverlay"] = ScaleBarOverlay;
+ScaleBarOverlay.__name__ =
     "com.watabou.mfcg.scenes.overlays.ScaleBarOverlay";
-ni.__super__ = Ca;
-ni.prototype = v(Ca.prototype, {
+ScaleBarOverlay.__super__ = Overlay;
+ScaleBarOverlay.prototype = v(Overlay.prototype, {
     onContext: function(a) {
         var b = this,
             c = function(c, f) {
                 a.addItem(c, function() {
-                    Db.set_current(f);
+                    UnitSystem.set_current(f);
                     b.scalebar.update()
-                }, Db.get_current() == f)
+                }, UnitSystem.get_current() == f)
             };
-        c("Metric units", Db.metric);
-        c("Imperial units", Db.imperial);
+        c("Metric units", UnitSystem.metric);
+        c("Imperial units", UnitSystem.imperial);
         c = function(c, f) {
             a.addItem(c, function() {
-                Lb.sbClass = f;
+                ScaleBar.sbClass = f;
                 b.replace()
-            }, Lb.sbClass == f)
+            }, ScaleBar.sbClass == f)
         };
-        c("Default style", of);
+        c("Default style", ScaleBarOld);
         c("Alternative style", vg);
         a.addItem("Hide", function() {
-            ba.set("scale_bar", !1)
+            State.set("scale_bar", !1)
         })
     },
     replace: function() {
         null != this.scalebar &&
             this.removeChild(this.scalebar);
-        this.scalebar = Lb.create();
+        this.scalebar = ScaleBar.create();
         this.addChild(this.scalebar);
         this.layout()
     },
     update: function(a) {
-        this.scalebar.update(ia.map)
+        this.scalebar.update(TownScene.map)
     },
     layout: function() {
         this.update(null);
-        this.scalebar.set_x(Ca.MARGIN);
-        this.scalebar.set_y(this.rHeight - Ca.MARGIN)
+        this.scalebar.set_x(Overlay.MARGIN);
+        this.scalebar.set_y(this.rHeight - Overlay.MARGIN)
     },
-    __class__: ni
+    __class__: ScaleBarOverlay
 });
-var Di = function() {
+var Title = function() {
     ka.call(this);
     this.text = new sc;
-    this.text.set_defaultTextFormat(vb.getFormat("font_title", vb.fontTitle, K.colorDark));
+    this.text.set_defaultTextFormat(TextUI.getFormat("font_title", TextUI.fontTitle, K.colorDark));
     this.text.set_autoSize(1);
     this.addChild(this.text);
     this.mouseEnabled = !0;
@@ -4052,10 +4052,10 @@ var Di = function() {
     this.filterOn(!0);
     this.addEventListener("mouseDown", l(this, this.onClick))
 };
-g["com.watabou.mfcg.scenes.overlays.Title"] = Di;
-Di.__name__ = "com.watabou.mfcg.scenes.overlays.Title";
-Di.__super__ = ka;
-Di.prototype = v(ka.prototype, {
+g["com.watabou.mfcg.scenes.overlays.Title"] = Title;
+Title.__name__ = "com.watabou.mfcg.scenes.overlays.Title";
+Title.__super__ = ka;
+Title.prototype = v(ka.prototype, {
     setText: function(a) {
         this.text.set_text(a);
         this.text.set_x(-this.text.get_width() / 2);
@@ -4064,7 +4064,7 @@ Di.prototype = v(ka.prototype, {
     edit: function(a) {
         var b = this;
         this.set_visible(!1);
-        new We(a.name, this.text.get_defaultTextFormat(), new I(this.get_x(), this.get_y()), this.parent, null, function(c) {
+        new EditInPlace(a.name, this.text.get_defaultTextFormat(), new I(this.get_x(), this.get_y()), this.parent, null, function(c) {
             b.set_visible(!0);
             a.setName(c, !0)
         }, function() {
@@ -4072,7 +4072,7 @@ Di.prototype = v(ka.prototype, {
         })
     },
     onClick: function(a) {
-        var b = Ub.instance;
+        var b = City.instance;
         a.shiftKey ? b.setName(b.rerollName()) : this.edit(b)
     },
     filterOn: function(a) {
@@ -4080,34 +4080,34 @@ Di.prototype = v(ka.prototype, {
         var b = !1;
         null == b && (b = !0);
         b = K.getStrokeWidth(K.strokeThick, b);
-        a ? this.set_filters([new Sc(K.colorPaper, 1, 2 * b, 2 * b, 100)]) : (this.set_filters([]), this.outline = new jh(this.text, K.colorPaper, b, 8), this.addChildAt(this.outline, 0))
+        a ? this.set_filters([new Sc(K.colorPaper, 1, 2 * b, 2 * b, 100)]) : (this.set_filters([]), this.outline = new Outline(this.text, K.colorPaper, b, 8), this.addChildAt(this.outline, 0))
     },
-    __class__: Di
+    __class__: Title
 });
-var qi = function(a) {
-    this.title = new Di;
-    Ca.call(this, a);
+var TitleOverlay = function(a) {
+    this.title = new Title;
+    Overlay.call(this, a);
     this.addChild(this.title);
-    Bb.titleChanged.add(l(this, this.onChanged))
+    ModelDispatcher.titleChanged.add(l(this, this.onChanged))
 };
-g["com.watabou.mfcg.scenes.overlays.TitleOverlay"] = qi;
-qi.__name__ = "com.watabou.mfcg.scenes.overlays.TitleOverlay";
-qi.__super__ = Ca;
-qi.prototype = v(Ca.prototype, {
+g["com.watabou.mfcg.scenes.overlays.TitleOverlay"] = TitleOverlay;
+TitleOverlay.__name__ = "com.watabou.mfcg.scenes.overlays.TitleOverlay";
+TitleOverlay.__super__ = Overlay;
+TitleOverlay.prototype = v(Overlay.prototype, {
     layout: function() {
         this.title.set_x(this.rWidth / 2);
-        this.title.set_y(Ca.MARGIN + this.title.get_height() / 2)
+        this.title.set_y(Overlay.MARGIN + this.title.get_height() / 2)
     },
     update: function(a) {
-        Ca.prototype.update.call(this, a);
+        Overlay.prototype.update.call(this, a);
         this.title.setText(a.name)
     },
     onChanged: function(a) {
         this.title.setText(a)
     },
     onDestroy: function() {
-        Ca.prototype.onDestroy.call(this);
-        Bb.titleChanged.remove(l(this, this.onChanged))
+        Overlay.prototype.onDestroy.call(this);
+        ModelDispatcher.titleChanged.remove(l(this, this.onChanged))
     },
     onContext: function(a) {
         var b = this;
@@ -4119,13 +4119,13 @@ qi.prototype = v(Ca.prototype, {
             b.title.setText(b.model.name)
         });
         a.addItem("Hide", function() {
-            ba.set("city_name", !1)
+            State.set("city_name", !1)
         })
     },
     exportPNG: function(a) {
         this.title.filterOn(!a)
     },
-    __class__: qi
+    __class__: TitleOverlay
 });
 var Mb = function(a) {
     this.affectedPatches = [];
@@ -4157,7 +4157,7 @@ Mb.prototype = {
         this.cury = b
     },
     onWheel: function(a, b, c) {
-        this.radius = Fc.gate(this.radius *
+        this.radius = MathUtils.gate(this.radius *
             Math.pow(1.05, 0 == c ? 0 : 0 > c ? -1 : 1), 2, 100);
         this.scene.updateBrush(this.radius, 1 - this.softness);
         this.onMove(a, b)
@@ -4166,10 +4166,10 @@ Mb.prototype = {
         switch (a) {
             case 107:
             case 187:
-                return this.radius = Fc.gate(1.05 * this.radius, 2, 100), this.scene.updateBrush(this.radius, 1 - this.softness), !0;
+                return this.radius = MathUtils.gate(1.05 * this.radius, 2, 100), this.scene.updateBrush(this.radius, 1 - this.softness), !0;
             case 109:
             case 189:
-                return this.radius = Fc.gate(this.radius / 1.05, 2, 100), this.scene.updateBrush(this.radius, 1 - this.softness), !0;
+                return this.radius = MathUtils.gate(this.radius / 1.05, 2, 100), this.scene.updateBrush(this.radius, 1 - this.softness), !0;
             default:
                 return !1
         }
@@ -4190,7 +4190,7 @@ Mb.prototype = {
         for (var b = 0, c = this.affectedPatches; b < c.length;) {
             var d = c[b];
             ++b;
-            kf.forEdge(d.shape, function(b, c) {
+            PolyAccess.forEdge(d.shape, function(b, c) {
                 a.scene.drawEdge(b, c, 2 * ((null != a.affectedNodes.h.__keys__[b.__id__] ? a.affectedNodes.h[b.__id__] : 0) + (null != a.affectedNodes.h.__keys__[c.__id__] ? a.affectedNodes.h[c.__id__] :
                     0)) / 2)
             })
@@ -4199,19 +4199,19 @@ Mb.prototype = {
     },
     __class__: Mb
 };
-var me = function(a) {
+var BloatTool = function(a) {
     this.modifiedPatches = [];
     Mb.call(this, a)
 };
-g["com.watabou.mfcg.scenes.tools.BloatTool"] = me;
-me.__name__ = "com.watabou.mfcg.scenes.tools.BloatTool";
-me.__super__ = Mb;
-me.prototype = v(Mb.prototype, {
+g["com.watabou.mfcg.scenes.tools.BloatTool"] = BloatTool;
+BloatTool.__name__ = "com.watabou.mfcg.scenes.tools.BloatTool";
+BloatTool.__super__ = Mb;
+BloatTool.prototype = v(Mb.prototype, {
     getName: function() {
         return "Bloat"
     },
     activate: function() {
-        this.radius = me.brushRadius;
+        this.radius = BloatTool.brushRadius;
         this.softness = 0;
         this.scene.updateBrush(this.radius, 1 - this.softness)
     },
@@ -4242,7 +4242,7 @@ me.prototype = v(Mb.prototype, {
             h.x += a.x;
             h.y +=
                 a.y;
-            wd.set(f, h)
+            PointExtender.set(f, h)
         }
     },
     onPress: function(a, b) {
@@ -4250,23 +4250,23 @@ me.prototype = v(Mb.prototype, {
         this.modifiedPatches = []
     },
     onRelease: function() {
-        me.brushRadius = this.radius;
+        BloatTool.brushRadius = this.radius;
         this.scene.submit(this.modifiedPatches, !0)
     },
-    __class__: me
+    __class__: BloatTool
 });
-var Kf = function(a) {
+var DisplaceTool = function(a) {
     Mb.call(this, a)
 };
-g["com.watabou.mfcg.scenes.tools.DisplaceTool"] = Kf;
-Kf.__name__ = "com.watabou.mfcg.scenes.tools.DisplaceTool";
-Kf.__super__ = Mb;
-Kf.prototype = v(Mb.prototype, {
+g["com.watabou.mfcg.scenes.tools.DisplaceTool"] = DisplaceTool;
+DisplaceTool.__name__ = "com.watabou.mfcg.scenes.tools.DisplaceTool";
+DisplaceTool.__super__ = Mb;
+DisplaceTool.prototype = v(Mb.prototype, {
     getName: function() {
         return "Displace"
     },
     activate: function() {
-        this.radius = Kf.brushRadius;
+        this.radius = DisplaceTool.brushRadius;
         this.scene.updateBrush(this.radius,
             1 - this.softness)
     },
@@ -4291,7 +4291,7 @@ Kf.prototype = v(Mb.prototype, {
         this.scene.updateBrush(0)
     },
     onRelease: function() {
-        Kf.brushRadius = this.radius;
+        DisplaceTool.brushRadius = this.radius;
         this.scene.updateBrush(this.radius, 1 - this.softness);
         if (this.startx !=
             this.curx || this.starty != this.cury) {
@@ -4305,15 +4305,15 @@ Kf.prototype = v(Mb.prototype, {
             this.scene.submit(this.affectedPatches, a)
         }
     },
-    __class__: Kf
+    __class__: DisplaceTool
 });
-var xi = function(a) {
+var EqualizeTool = function(a) {
     Mb.call(this, a)
 };
-g["com.watabou.mfcg.scenes.tools.EqualizeTool"] = xi;
-xi.__name__ = "com.watabou.mfcg.scenes.tools.EqualizeTool";
-xi.__super__ = Mb;
-xi.prototype = v(Mb.prototype, {
+g["com.watabou.mfcg.scenes.tools.EqualizeTool"] = EqualizeTool;
+EqualizeTool.__name__ = "com.watabou.mfcg.scenes.tools.EqualizeTool";
+EqualizeTool.__super__ = Mb;
+EqualizeTool.prototype = v(Mb.prototype, {
     getName: function() {
         return "Equalize"
     },
@@ -4339,10 +4339,10 @@ xi.prototype = v(Mb.prototype, {
     onDrag: function(a, b) {
         Mb.prototype.onDrag.call(this, a, b);
         null != this.patch && (a = this.curx - this.prevx, b = this.cury - this.prevy, a =
-            Math.min(1, 2 * Math.sqrt(a * a + b * b) / Sa.perimeter(this.shape)), this.equalize(a), this.updateMesh())
+            Math.min(1, 2 * Math.sqrt(a * a + b * b) / PolyCore.perimeter(this.shape)), this.equalize(a), this.updateMesh())
     },
     equalize: function(a) {
-        for (var b = Sa.centroid(this.shape), c = this.shape[0].subtract(b), d = 1, f = this.len; d < f;) {
+        for (var b = PolyCore.centroid(this.shape), c = this.shape[0].subtract(b), d = 1, f = this.len; d < f;) {
             var h = d++,
                 k = this.shape[h].subtract(b),
                 n = 2 * -Math.PI * h / this.len,
@@ -4356,7 +4356,7 @@ xi.prototype = v(Mb.prototype, {
         c.x *= d;
         c.y *= d;
         d = 0;
-        for (f = this.len; d < f;) h = d++, n = 2 * Math.PI * h / this.len, p = Math.sin(n), n = Math.cos(n), wd.set(this.shape[h], qa.lerp(this.shape[h], b.add(new I(c.x *
+        for (f = this.len; d < f;) h = d++, n = 2 * Math.PI * h / this.len, p = Math.sin(n), n = Math.cos(n), PointExtender.set(this.shape[h], GeomUtils.lerp(this.shape[h], b.add(new I(c.x *
             n - c.y * p, c.y * n + c.x * p)), a))
     },
     onRelease: function() {
@@ -4380,21 +4380,21 @@ xi.prototype = v(Mb.prototype, {
                 this.scene.drawNode(d, 4)
             }
     },
-    __class__: xi
+    __class__: EqualizeTool
 });
-var Lf = function(a) {
+var LiquifyTool = function(a) {
     this.modifiedPatches = [];
     Mb.call(this, a)
 };
-g["com.watabou.mfcg.scenes.tools.LiquifyTool"] = Lf;
-Lf.__name__ = "com.watabou.mfcg.scenes.tools.LiquifyTool";
-Lf.__super__ = Mb;
-Lf.prototype = v(Mb.prototype, {
+g["com.watabou.mfcg.scenes.tools.LiquifyTool"] = LiquifyTool;
+LiquifyTool.__name__ = "com.watabou.mfcg.scenes.tools.LiquifyTool";
+LiquifyTool.__super__ = Mb;
+LiquifyTool.prototype = v(Mb.prototype, {
     getName: function() {
         return "Liquify"
     },
     activate: function() {
-        this.radius = Lf.brushRadius;
+        this.radius = LiquifyTool.brushRadius;
         this.softness = 0;
         this.scene.updateBrush(this.radius, 1 - this.softness)
     },
@@ -4420,7 +4420,7 @@ Lf.prototype = v(Mb.prototype, {
         this.modifiedPatches = []
     },
     onRelease: function() {
-        Lf.brushRadius = this.radius;
+        LiquifyTool.brushRadius = this.radius;
         this.scene.submit(this.modifiedPatches, !0)
     },
     affect: function(a) {
@@ -4432,15 +4432,15 @@ Lf.prototype = v(Mb.prototype, {
             d < this.radius && (this.affectedNodes.set(c, 1 - d / this.radius), Z.addAll(this.affectedPatches, this.scene.nodePatches.h[c.__id__]))
         }
     },
-    __class__: Lf
+    __class__: LiquifyTool
 });
-var wi = function(a) {
+var MeasureTool = function(a) {
     Mb.call(this, a)
 };
-g["com.watabou.mfcg.scenes.tools.MeasureTool"] = wi;
-wi.__name__ = "com.watabou.mfcg.scenes.tools.MeasureTool";
-wi.__super__ = Mb;
-wi.prototype = v(Mb.prototype, {
+g["com.watabou.mfcg.scenes.tools.MeasureTool"] = MeasureTool;
+MeasureTool.__name__ = "com.watabou.mfcg.scenes.tools.MeasureTool";
+MeasureTool.__super__ = Mb;
+MeasureTool.prototype = v(Mb.prototype, {
     getName: function() {
         return "Measure"
     },
@@ -4458,7 +4458,7 @@ wi.prototype = v(Mb.prototype, {
     onRelease: function() {
         if (this.startx != this.curx || this.starty != this.cury) {
             var a = I.distance(this.start, this.cur);
-            a = Db.get_current().measure(a);
+            a = UnitSystem.get_current().measure(a);
             var b = a.value;
             q.show((10 > b ? Math.round(10 * b) / 10 : Math.round(b)) + " " + a.system.unit)
         } else this.scene.clearMesh()
@@ -4475,36 +4475,36 @@ wi.prototype = v(Mb.prototype, {
             4);
         this.scene.drawNode(this.cur, 4)
     },
-    __class__: wi
+    __class__: MeasureTool
 });
-var vi = function(a) {
-    me.call(this, a)
+var PinchTool = function(a) {
+    BloatTool.call(this, a)
 };
-g["com.watabou.mfcg.scenes.tools.PinchTool"] = vi;
-vi.__name__ = "com.watabou.mfcg.scenes.tools.PinchTool";
-vi.__super__ = me;
-vi.prototype = v(me.prototype, {
+g["com.watabou.mfcg.scenes.tools.PinchTool"] = PinchTool;
+PinchTool.__name__ = "com.watabou.mfcg.scenes.tools.PinchTool";
+PinchTool.__super__ = BloatTool;
+PinchTool.prototype = v(BloatTool.prototype, {
     getName: function() {
         return "Pinch"
     },
     bloat: function(a, b) {
-        me.prototype.bloat.call(this, a, -b)
+        BloatTool.prototype.bloat.call(this, a, -b)
     },
-    __class__: vi
+    __class__: PinchTool
 });
-var Mf = function(a) {
+var RelaxTool = function(a) {
     this.modifiedPatches = [];
     Mb.call(this, a)
 };
-g["com.watabou.mfcg.scenes.tools.RelaxTool"] = Mf;
-Mf.__name__ = "com.watabou.mfcg.scenes.tools.RelaxTool";
-Mf.__super__ = Mb;
-Mf.prototype = v(Mb.prototype, {
+g["com.watabou.mfcg.scenes.tools.RelaxTool"] = RelaxTool;
+RelaxTool.__name__ = "com.watabou.mfcg.scenes.tools.RelaxTool";
+RelaxTool.__super__ = Mb;
+RelaxTool.prototype = v(Mb.prototype, {
     getName: function() {
         return "Relax"
     },
     activate: function() {
-        this.radius = Mf.brushRadius;
+        this.radius = RelaxTool.brushRadius;
         this.scene.updateBrush(this.radius, 1 - this.softness)
     },
     onMove: function(a, b) {
@@ -4549,12 +4549,12 @@ Mf.prototype = v(Mb.prototype, {
         this.modifiedPatches = []
     },
     onRelease: function() {
-        Mf.brushRadius = this.radius;
+        RelaxTool.brushRadius = this.radius;
         this.scene.submit(this.modifiedPatches, !0)
     },
-    __class__: Mf
+    __class__: RelaxTool
 });
-var ui = function(a) {
+var RotateTool = function(a) {
     Mb.call(this, a);
     var b = [],
         c = 0;
@@ -4565,10 +4565,10 @@ var ui = function(a) {
     }
     this.segments = b
 };
-g["com.watabou.mfcg.scenes.tools.RotateTool"] = ui;
-ui.__name__ = "com.watabou.mfcg.scenes.tools.RotateTool";
-ui.__super__ = Mb;
-ui.prototype = v(Mb.prototype, {
+g["com.watabou.mfcg.scenes.tools.RotateTool"] = RotateTool;
+RotateTool.__name__ = "com.watabou.mfcg.scenes.tools.RotateTool";
+RotateTool.__super__ = Mb;
+RotateTool.prototype = v(Mb.prototype, {
     getName: function() {
         return "Rotate"
     },
@@ -4597,7 +4597,7 @@ ui.prototype = v(Mb.prototype, {
                 c.next.origin.point, 2)
         }
     },
-    __class__: ui
+    __class__: RotateTool
 });
 var sc = function() {
     this.__renderedOnCanvasWhileOnDOM = this.__forceCachedBitmapUpdate = !1;
@@ -4727,7 +4727,7 @@ sc.prototype = v(xa.prototype, {
                     f.start = c;
                     break
                 } else f.start < b && f.end <= c ? (h = new od(f.format.clone(),
-                    b, c), h.format.__merge(a), this.__textEngine.textFormatRanges.insertAt(d + 1, h), f.end = b, d += 2) : (++d, Ga.warn("You found a bug in OpenFL's text code! Please save a copy of your project and create an issue on GitHub so we can fix this.", {
+                    b, c), h.format.__merge(a), this.__textEngine.textFormatRanges.insertAt(d + 1, h), f.end = b, d += 2) : (++d, Ga.warn("You found a bug in OpenFL's text code! Please save a copy ScaleBarOld your project and create an issue on GitHub so we can fix this.", {
                     fileName: "openfl/text/TextField.hx",
                     lineNumber: 1610,
                     className: "openfl.text.TextField",
@@ -4962,7 +4962,7 @@ sc.prototype = v(xa.prototype, {
             for (var f = 0, h; f < this.__textEngine.textFormatRanges.get_length();) {
                 h =
                     this.__textEngine.textFormatRanges.get(f);
-                if (a == b) h.start == h.end ? 0 != h.start ? Ga.warn("You found a bug in OpenFL's text code! Please save a copy of your project and create an issue on GitHub so we can fix this.", {
+                if (a == b) h.start == h.end ? 0 != h.start ? Ga.warn("You found a bug in OpenFL's text code! Please save a copy ScaleBarOld your project and create an issue on GitHub so we can fix this.", {
                     fileName: "openfl/text/TextField.hx",
                     lineNumber: 2184,
                     className: "openfl.text.TextField",
@@ -5150,7 +5150,7 @@ sc.prototype = v(xa.prototype, {
         return this.__isHTML ? this.__htmlText : this.__text
     },
     set_htmlText: function(a) {
-        if (null == a) throw a = new Cf("Error #2007: Parameter text must be non-null."), a.errorID = 2007, a;
+        if (null == a) throw a = new Cf("Error #2007: Parameter text must Export non-null."), a.errorID = 2007, a;
         this.__isHTML && this.__text == a || (this.__layoutDirty = this.__dirty = !0, this.__renderDirty || (this.__renderDirty = !0, this.__setParentRenderDirty()));
         this.__isHTML = !0;
         this.condenseWhite && (a = a.replace(/\s+/g, " "));
@@ -5219,7 +5219,7 @@ sc.prototype = v(xa.prototype, {
         return this.__text
     },
     set_text: function(a) {
-        if (null == a) throw a = new Cf("Error #2007: Parameter text must be non-null."),
+        if (null == a) throw a = new Cf("Error #2007: Parameter text must Export non-null."),
             a.errorID = 2007, a;
         if (null != this.__styleSheet) return this.set_htmlText(a);
         if (this.__isHTML || this.__text != a) this.__layoutDirty = this.__dirty = !0, this.__renderDirty || (this.__renderDirty = !0, this.__setParentRenderDirty());
@@ -5442,7 +5442,7 @@ sc.prototype = v(xa.prototype, {
         get_bottomScrollV: "get_bottomScrollV"
     })
 });
-var We = function(a, b, c, d, f, h, k) {
+var EditInPlace = function(a, b, c, d, f, h, k) {
     sc.call(this);
     this.onSubmit = h;
     this.onCancel = k;
@@ -5462,24 +5462,24 @@ var We = function(a, b, c, d, f, h, k) {
     this.set_x(c.x - this.get_width() / 2);
     this.set_y(c.y - this.get_height() / 2)
 };
-g["com.watabou.mfcg.ui.EditInPlace"] = We;
-We.__name__ = "com.watabou.mfcg.ui.EditInPlace";
-We.fromTextField = function(a, b, c, d) {
+g["com.watabou.mfcg.RotateTool.EditInPlace"] = EditInPlace;
+EditInPlace.__name__ = "com.watabou.mfcg.RotateTool.EditInPlace";
+EditInPlace.fromTextField = function(a, b, c, d) {
     var f =
         a.get_defaultTextFormat(),
         h = a.get_scaleX();
     f.size = f.size * h | 0;
     h = b.globalToLocal(a.localToGlobal(new I(a.get_width() / 2 / h, a.get_height() / 2 / h)));
     a.set_visible(!1);
-    return new We(a.get_text(), f, h, b, c, function(b) {
+    return new EditInPlace(a.get_text(), f, h, b, c, function(b) {
         a.set_visible(!0);
         d(b)
     }, function() {
         a.set_visible(!0)
     })
 };
-We.__super__ = sc;
-We.prototype = v(sc.prototype, {
+EditInPlace.__super__ = sc;
+EditInPlace.prototype = v(sc.prototype, {
     onFocusOut: function(a) {
         this.submit()
     },
@@ -5510,7 +5510,7 @@ We.prototype = v(sc.prototype, {
         this.finish();
         if (null != this.onCancel) this.onCancel()
     },
-    __class__: We
+    __class__: EditInPlace
 });
 var Nd = function(a, b, c) {
     null == c && (c = !1);
@@ -5588,7 +5588,7 @@ Nd.prototype = v(S.prototype, {
         get_bitmapData: "get_bitmapData"
     })
 });
-var jh = function(a, b, c, d) {
+var Outline = function(a, b, c, d) {
     null == d &&
         (d = 4);
     this.matrix = new ua;
@@ -5600,10 +5600,10 @@ var jh = function(a, b, c, d) {
     Nd.call(this);
     this.update(d)
 };
-g["com.watabou.mfcg.ui.Outline"] = jh;
-jh.__name__ = "com.watabou.mfcg.ui.Outline";
-jh.__super__ = Nd;
-jh.prototype = v(Nd.prototype, {
+g["com.watabou.mfcg.RotateTool.Outline"] = Outline;
+Outline.__name__ = "com.watabou.mfcg.RotateTool.Outline";
+Outline.__super__ = Nd;
+Outline.prototype = v(Nd.prototype, {
     update: function(a) {
         null == a && (a = 0);
         null != this.get_bitmapData() && this.get_bitmapData().dispose();
@@ -5632,28 +5632,28 @@ jh.prototype = v(Nd.prototype, {
         this.set_x(this.obj.get_x() + b.get_left() - this.size);
         this.set_y(this.obj.get_y() + b.get_top() - this.size)
     },
-    __class__: jh
+    __class__: Outline
 });
-var vb = function() {};
-g["com.watabou.mfcg.ui.Text"] = vb;
-vb.__name__ = "com.watabou.mfcg.ui.Text";
-vb.get = function(a, b) {
+var TextUI = function() {};
+g["com.watabou.mfcg.RotateTool.Text"] = TextUI;
+TextUI.__name__ = "com.watabou.mfcg.RotateTool.Text";
+TextUI.get = function(a, b) {
     var c = new sc;
     c.set_defaultTextFormat(b);
     c.set_autoSize(1);
     c.set_text(a);
     return c
 };
-vb.getFormat = function(a, b, c, d) {
+TextUI.getFormat = function(a, b, c, d) {
     null == d && (d = 1);
-    null != a && (b = ba.get(a, b));
+    null != a && (b = State.get(a, b));
     a = null != b.face ? b.face : ac.getFont(b.embedded).name;
-    d = Math.round(b.size * d * vb.getMultiplier());
+    d = Math.round(b.size * d * TextUI.getMultiplier());
     return new we(a, d, c,
         b.bold, b.italic)
 };
-vb.getMultiplier = function() {
-    switch (ba.get("text_size", 1)) {
+TextUI.getMultiplier = function() {
+    switch (State.get("text_size", 1)) {
         case 0:
             return .5;
         case 1:
@@ -5662,10 +5662,10 @@ vb.getMultiplier = function() {
             return 1
     }
 };
-var le = function() {
+var Tooltip = function() {
     this.isAwake = !1;
     this.awake = new ec;
-    le.inst = this;
+    Tooltip.inst = this;
     ka.call(this);
     this.border = new Nd(new Fb(1, 1, !1, D.black));
     this.addChild(this.border);
@@ -5675,20 +5675,20 @@ var le = function() {
     this.addChild(this.bg);
     var a = D.black;
     null == a && (a = 0);
-    this.tf = vb.get("", new we(ac.getFont("ui_font").name, 18, a));
+    this.tf = TextUI.get("", new we(ac.getFont("ui_font").name, 18, a));
     this.tf.set_x(6);
     this.tf.set_y(6);
     this.addChild(this.tf);
-    cl.onActivate(this, l(this, this.activation));
+    DisplayObjectExtender.onActivate(this, l(this, this.activation));
     this.set(null)
 };
-g["com.watabou.mfcg.ui.Tooltip"] = le;
-le.__name__ = "com.watabou.mfcg.ui.Tooltip";
-le.__super__ = ka;
-le.prototype = v(ka.prototype, {
+g["com.watabou.mfcg.RotateTool.Tooltip"] = Tooltip;
+Tooltip.__name__ = "com.watabou.mfcg.RotateTool.Tooltip";
+Tooltip.__super__ = ka;
+Tooltip.prototype = v(ka.prototype, {
     activation: function(a) {
-        a ? (this.stage.addEventListener("mouseMove", l(this, this.onMouseMove)), this.stage.addEventListener("mouseDown", l(this, this.onMouseMove)), this.timer = rb.wait(5, l(this, this.fallAsleep))) : (this.stage.removeEventListener("mouseMove", l(this, this.onMouseMove)), this.stage.removeEventListener("mouseDown",
-            l(this, this.onMouseMove)), null != this.timer && rb.cancel(this.timer))
+        a ? (this.stage.addEventListener("mouseMove", l(this, this.onMouseMove)), this.stage.addEventListener("mouseDown", l(this, this.onMouseMove)), this.timer = Updater.wait(5, l(this, this.fallAsleep))) : (this.stage.removeEventListener("mouseMove", l(this, this.onMouseMove)), this.stage.removeEventListener("mouseDown",
+            l(this, this.onMouseMove)), null != this.timer && Updater.cancel(this.timer))
     },
     onMouseMove: function(a) {
         this.set_x(this.parent.get_mouseX() + 16 / this.parent.get_scaleX());
@@ -5702,8 +5702,8 @@ le.prototype = v(ka.prototype, {
     },
     wakeUp: function() {
         this.isAwake || this.awake.dispatch(this.isAwake = !0);
-        null != this.timer && rb.cancel(this.timer);
-        this.timer = rb.wait(5, l(this, this.fallAsleep))
+        null != this.timer && Updater.cancel(this.timer);
+        this.timer = Updater.wait(5, l(this, this.fallAsleep))
     },
     set: function(a) {
         this.set_visible(null !=
@@ -5718,18 +5718,18 @@ le.prototype = v(ka.prototype, {
             this.bg.set_height(b - 2)
         }
     },
-    __class__: le
+    __class__: Tooltip
 });
-var Nf = function(a) {
+var EmblemForm = function(a) {
     var b = this;
-    ic.call(this, ["OK", "Cancel"]);
+    ButtonsForm.call(this, ["OK", "Cancel"]);
     this.emblem = a;
-    a = Nf.EDITOR;
-    null != ra.coa && (a += "?coa=" + ra.coa);
-    var c = new gb;
+    a = EmblemForm.EDITOR;
+    null != Emblem.coa && (a += "?coa=" + Emblem.coa);
+    var c = new VBox;
     c.setMargins(12, 10);
-    c.add(new Ib('Open <a href="' + a + '"><b>Armoria editor</b></a> and design your emblem.<br/><i>Copy COA String</i> there and paste it here.'));
-    this.input = new tc;
+    c.add(new Label('Open <a href="' + a + '"><b>Armoria editor</b></a> and design your emblem.<br/><i>Copy COA String</i> there and paste it here.'));
+    this.input = new TextInput;
     this.input.enter.add(function(a) {
         b.onEnter()
     });
@@ -5737,12 +5737,12 @@ var Nf = function(a) {
     this.input.halign = "fill";
     c.add(this.input);
     this.add(c);
-    null != ra.coa && this.input.set_text(ra.coa)
+    null != Emblem.coa && this.input.set_text(Emblem.coa)
 };
-g["com.watabou.mfcg.ui.forms.EmblemForm"] = Nf;
-Nf.__name__ = "com.watabou.mfcg.ui.forms.EmblemForm";
-Nf.__super__ = ic;
-Nf.prototype = v(ic.prototype, {
+g["com.watabou.mfcg.RotateTool.forms.EmblemForm"] = EmblemForm;
+EmblemForm.__name__ = "com.watabou.mfcg.RotateTool.forms.EmblemForm";
+EmblemForm.__super__ = ButtonsForm;
+EmblemForm.prototype = v(ButtonsForm.prototype, {
     getTitle: function() {
         return "Emblem"
     },
@@ -5756,24 +5756,24 @@ Nf.prototype = v(ic.prototype, {
     onButton: function(a) {
         "OK" ==
         a && this.update();
-        ic.prototype.onButton.call(this, a)
+        ButtonsForm.prototype.onButton.call(this, a)
     },
     update: function() {
-        ra.setCOA("" != this.input.get_text() ? this.input.get_text() : null)
+        Emblem.setCOA("" != this.input.get_text() ? this.input.get_text() : null)
     },
-    __class__: Nf
+    __class__: EmblemForm
 });
 var hh = function(a, b) {
     null == b && (b = !0);
     var c = this;
-    ic.call(this, ["OK", b ? "Cancel" : "Delete"]);
+    ButtonsForm.call(this, ["OK", b ? "Cancel" : "Delete"]);
     this.landmark = a;
     this.creating = b;
-    b = new ed;
-    var d = new Ib("Name");
+    b = new HBox;
+    var d = new Label("Name");
     d.valign = "center";
     b.add(d);
-    this.input = new tc(a.name);
+    this.input = new TextInput(a.name);
     this.input.set_width(200);
     this.input.enter.add(function(a) {
         c.onButton("OK")
@@ -5781,11 +5781,11 @@ var hh = function(a, b) {
     b.add(this.input);
     this.add(b)
 };
-g["com.watabou.mfcg.ui.forms.MarkerForm"] =
+g["com.watabou.mfcg.RotateTool.forms.MarkerForm"] =
     hh;
-hh.__name__ = "com.watabou.mfcg.ui.forms.MarkerForm";
-hh.__super__ = ic;
-hh.prototype = v(ic.prototype, {
+hh.__name__ = "com.watabou.mfcg.RotateTool.forms.MarkerForm";
+hh.__super__ = ButtonsForm;
+hh.prototype = v(ButtonsForm.prototype, {
     getTitle: function() {
         return "Landmark"
     },
@@ -5793,7 +5793,7 @@ hh.prototype = v(ic.prototype, {
         this.stage.set_focus(this.input)
     },
     onButton: function(a) {
-        var b = Ub.instance;
+        var b = City.instance;
         switch (a) {
             case "Cancel":
                 this.creating && b.removeLandmark(this.landmark);
@@ -5802,26 +5802,26 @@ hh.prototype = v(ic.prototype, {
                 b.removeLandmark(this.landmark);
                 break;
             case "OK":
-                this.landmark.name = this.input.get_text(), Bb.landmarksChanged.dispatch()
+                this.landmark.name = this.input.get_text(), ModelDispatcher.landmarksChanged.dispatch()
         }
         this.dialog.hide()
     },
     __class__: hh
 });
-var pi = function(a) {
+var TownInfo = function(a) {
     U.call(this);
     var b = D.format(D.uiFont, D.smallSize, D.black);
     b.align = 0;
-    this.tf = ld.get("", b);
+    this.tf = Text.get("", b);
     this.tf.set_x(-2);
     this.tf.set_y(-2);
     this.addChild(this.tf);
     this.update(a)
 };
-g["com.watabou.mfcg.ui.forms.TownInfo"] = pi;
-pi.__name__ = "com.watabou.mfcg.ui.forms.TownInfo";
-pi.__super__ = U;
-pi.prototype = v(U.prototype, {
+g["com.watabou.mfcg.RotateTool.forms.TownInfo"] = TownInfo;
+TownInfo.__name__ = "com.watabou.mfcg.RotateTool.forms.TownInfo";
+TownInfo.__super__ = U;
+TownInfo.prototype = v(U.prototype, {
     update: function(a) {
         var b = a.countBuildings();
         a = a.bp.pop;
@@ -5829,7 +5829,7 @@ pi.prototype = v(U.prototype, {
         var c = Math.pow(10, Math.floor(Math.log(a) / Math.log(10)) - 1);
         a = Math.ceil(a / c) * c | 0;
         this.tf.set_autoSize(1);
-        this.tf.set_text("Number of buildings: " + b +
+        this.tf.set_text("Number ScaleBarOld buildings: " + b +
             "\nPopulation: ~" + a);
         b = this.tf.get_width();
         a = this.tf.get_height();
@@ -5838,20 +5838,20 @@ pi.prototype = v(U.prototype, {
         this.tf.set_height(Math.ceil(a));
         this.setSize(this.tf.get_width() - 4, this.tf.get_height() - 4 - 1)
     },
-    __class__: pi
+    __class__: TownInfo
 });
-var Jf = function() {
+var URLForm = function() {
     var a = this,
         b = ["Copy", "Generate"];
     b = ["Generate"];
-    ic.call(this, b);
-    b = new gb;
-    var c = new gb;
+    ButtonsForm.call(this, b);
+    b = new VBox;
+    var c = new VBox;
     c.setMargins(0, 0);
-    c.add(new Ib("Copy this URL to restore the current map later."));
-    c.add(new Ib("Enter a stored URL here to restore a map."));
+    c.add(new Label("Copy this URL to restore the current map later."));
+    c.add(new Label("Enter a stored URL here to restore a map."));
     b.add(c);
-    this.input = new tc(za.getURL());
+    this.input = new TextInput(URLState.getURL());
     this.input.enter.add(function(b) {
         a.onEnter()
     });
@@ -5859,12 +5859,12 @@ var Jf = function() {
     this.input.set_width(400);
     b.add(this.input);
     this.add(b);
-    Bb.newModel.add(l(this, this.onNewModel))
+    ModelDispatcher.newModel.add(l(this, this.onNewModel))
 };
-g["com.watabou.mfcg.ui.forms.URLForm"] = Jf;
-Jf.__name__ = "com.watabou.mfcg.ui.forms.URLForm";
-Jf.__super__ = ic;
-Jf.prototype = v(ic.prototype, {
+g["com.watabou.mfcg.RotateTool.forms.URLForm"] = URLForm;
+URLForm.__name__ = "com.watabou.mfcg.RotateTool.forms.URLForm";
+URLForm.__super__ = ButtonsForm;
+URLForm.prototype = v(ButtonsForm.prototype, {
     getTitle: function() {
         return "Permalink"
     },
@@ -5872,7 +5872,7 @@ Jf.prototype = v(ic.prototype, {
         this.highlight()
     },
     onHide: function() {
-        Bb.newModel.remove(l(this, this.onNewModel))
+        ModelDispatcher.newModel.remove(l(this, this.onNewModel))
     },
     onEnter: function() {
         this.onButton("Generate")
@@ -5880,7 +5880,7 @@ Jf.prototype = v(ic.prototype, {
     onButton: function(a) {
         switch (a) {
             case "Copy":
-                Wk.write(za.getURL());
+                Buffer.write(URLState.getURL());
                 q.show("URL was copied to clipboard");
                 this.highlight();
                 break;
@@ -5889,18 +5889,18 @@ Jf.prototype = v(ic.prototype, {
                 this.highlight();
                 break;
             default:
-                ic.prototype.onButton.call(this, a)
+                ButtonsForm.prototype.onButton.call(this, a)
         }
     },
     onNewModel: function(a) {
-        this.input.set_text(za.getURL());
+        this.input.set_text(URLState.getURL());
         this.highlight()
     },
     generate: function() {
         var a = this.input.get_text();
-        za.fromString(a);
-        new Ub(Fd.fromURL());
-        bb.switchScene(Ec);
+        URLState.fromString(a);
+        new City(Blueprint.fromURL());
+        Game.switchScene(ViewScene);
         a = u.findForm(Kd);
         null != a && a.update()
     },
@@ -5908,9 +5908,9 @@ Jf.prototype = v(ic.prototype, {
         this.stage.set_focus(this.input);
         this.input.selecteAll()
     },
-    __class__: Jf
+    __class__: URLForm
 });
-var ji = function(a, b, c) {
+var Bisector = function(a, b, c) {
     null ==
         c && (c = 10);
     this.cuts = [];
@@ -5923,9 +5923,9 @@ var ji = function(a, b, c) {
     this.isAtomic = l(this, this.isSmallEnough);
     this.shape = a
 };
-g["com.watabou.mfcg.utils.Bisector"] = ji;
-ji.__name__ = "com.watabou.mfcg.utils.Bisector";
-ji.prototype = {
+g["com.watabou.mfcg.utils.Bisector"] = Bisector;
+Bisector.__name__ = "com.watabou.mfcg.utils.Bisector";
+Bisector.prototype = {
     partition: function() {
         return this.subdivide(this.shape)
     },
@@ -5949,7 +5949,7 @@ ji.prototype = {
     },
     isSmallEnough: function(a) {
         var b = this.minArea * Math.pow(this.variance, Math.abs(((C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647 + (C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647 + (C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647 + (C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647) / 2 - 1));
-        return Sa.area(a) < b
+        return PolyCore.area(a) < b
     },
     makeCut: function(a, b) {
         null == b && (b = 0);
@@ -5957,10 +5957,10 @@ ji.prototype = {
         var c = a.length;
         if (0 < b) {
             var d = I.polar(1, b / 10 * Math.PI * 2);
-            var f = Yc.rotateYX(a,
+            var f = PolyTransform.rotateYX(a,
                 d.y, d.x);
-            f = Yc.rotateYX(Gb.aabb(f), -d.y, d.x)
-        } else f = Gb.obb(a);
+            f = PolyTransform.rotateYX(PolyBounds.aabb(f), -d.y, d.x)
+        } else f = PolyBounds.obb(a);
         d = f[0];
         var h = f[1].subtract(d),
             k = f[3].subtract(d);
@@ -5969,8 +5969,8 @@ ji.prototype = {
             h = k;
             k = n
         }
-        f = Sa.centroid(a);
-        f = wd.project(h, f.subtract(d));
+        f = PolyCore.centroid(a);
+        f = PointExtender.project(h, f.subtract(d));
         f = (f + ((C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647 + (C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647 + (C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647) / 3) / 2;
         var p = new I(d.x + h.x * f, d.y + h.y * f);
         d = -1;
@@ -5980,7 +5980,7 @@ ji.prototype = {
             n = a[(r + 1) % c];
             var x = n.subtract(l);
             if (!(1E-10 > x.get_length()) &&
-                (n = qa.intersectLines(p.x, p.y, k.x, k.y, l.x, l.y, x.x, x.y), null != n && 0 < n.y && 1 > n.y)) {
+                (n = GeomUtils.intersectLines(p.x, p.y, k.x, k.y, l.x, l.y, x.x, x.y), null != n && 0 < n.y && 1 > n.y)) {
                 var D = x;
                 D = D.clone();
                 D.normalize(1);
@@ -5994,16 +5994,16 @@ ji.prototype = {
         p = null;
         k = -1;
         m = 0;
-        for (u = c; m < u;) r = m++, r != d && (l = a[r], n = a[(r + 1) % c], x = n.subtract(l), 1E-10 > x.get_length() || (n = qa.intersectLines(f.x, f.y, g.x, g.y, l.x, l.y, x.x, x.y), null != n && 0 < n.x && n.x < h && 0 < n.y && 1 > n.y && (h = n.x, p = x, k = r)));
+        for (u = c; m < u;) r = m++, r != d && (l = a[r], n = a[(r + 1) % c], x = n.subtract(l), 1E-10 > x.get_length() || (n = GeomUtils.intersectLines(f.x, f.y, g.x, g.y, l.x, l.y, x.x, x.y), null != n && 0 < n.x && n.x < h && 0 < n.y && 1 > n.y && (h = n.x, p = x, k = r)));
         if (-1 == k) throw X.thrown("CRITICAL: A bad poly was provided for besecting");
         m = g.x * p.y - g.y * p.x;
         D = m * m / (g.x * g.x + g.y * g.y) / (p.x * p.x + p.y * p.y);
-        if (.99 < D && (m = new I(f.x + g.x * h, f.y + g.y * h), l = [f, m], r = this.split(a.slice(), d, k, l), m = Sa.area(r[0]), u = Sa.area(r[1]), Math.max(m / u, u / m) < 2 * this.variance)) {
+        if (.99 < D && (m = new I(f.x + g.x * h, f.y + g.y * h), l = [f, m], r = this.split(a.slice(), d, k, l), m = PolyCore.area(r[0]), u = PolyCore.area(r[1]), Math.max(m / u, u / m) < 2 * this.variance)) {
             this.cuts.push(l);
             if (null != this.getGap) {
-                a = Qd.stripe(l, this.getGap(l));
+                a = PolyCreate.stripe(l, this.getGap(l));
                 m = [];
-                for (u = 0; u < r.length;) b = r[u], ++u, c = ye.and(b, Z.revert(a), !0), m.push(null != c ? c : b);
+                for (u = 0; u < r.length;) b = r[u], ++u, c = PolyBool.and(b, Z.revert(a), !0), m.push(null != c ? c : b);
                 r = m
             }
             return r
@@ -6018,10 +6018,10 @@ ji.prototype = {
         h = -Infinity;
         m = 0;
         for (u = c; m < u;)
-            if (r = m++, r != d && (l = a[r], n = a[(r + 1) % c], x = n.subtract(l), D = x.get_length(), !(1E-10 > D) && (n = qa.intersectLines(p.x, p.y, x.y, -x.x, l.x, l.y, x.x, x.y), 0 < n.x && 0 < n.y && 1 > n.y && (w = D = (g.x * x.y - g.y * x.x) / D, h < w)))) {
+            if (r = m++, r != d && (l = a[r], n = a[(r + 1) % c], x = n.subtract(l), D = x.get_length(), !(1E-10 > D) && (n = GeomUtils.intersectLines(p.x, p.y, x.y, -x.x, l.x, l.y, x.x, x.y), 0 < n.x && 0 < n.y && 1 > n.y && (w = D = (g.x * x.y - g.y * x.x) / D, h < w)))) {
                 for (var z = !0, J = 0, v = c; J < v;) {
                     var y = J++;
-                    if (y != r && y != d && (D = a[y], y = a[(y + 1) % c].subtract(D), !(1E-10 > y.get_length()) && (D = qa.intersectLines(p.x, p.y, x.y, -x.x, D.x, D.y, y.x, y.y), null != D && 0 <= D.x && 1 >=
+                    if (y != r && y != d && (D = a[y], y = a[(y + 1) % c].subtract(D), !(1E-10 > y.get_length()) && (D = GeomUtils.intersectLines(p.x, p.y, x.y, -x.x, D.x, D.y, y.x, y.y), null != D && 0 <= D.x && 1 >=
                             D.x && 0 <= D.y && 1 >= D.y))) {
                         z = !1;
                         break
@@ -6033,18 +6033,18 @@ ji.prototype = {
             l = this.processCut(c);
             m = 1;
             for (u = l.length - 2; m < u;)
-                if (r = m++, !Gb.containsPoint(a, l[r])) {
+                if (r = m++, !PolyBounds.containsPoint(a, l[r])) {
                     l = c;
                     break
                 } r = this.split(a.slice(), d, k, l);
-            m = Sa.area(r[0]);
-            u = Sa.area(r[1]);
+            m = PolyCore.area(r[0]);
+            u = PolyCore.area(r[1]);
             if (Math.max(m / u, u / m) > 2 * this.variance) return this.makeCut(a, b + 1);
             this.cuts.push(l);
             if (null != this.getGap) {
-                a = Qd.stripe(l, this.getGap(l));
+                a = PolyCreate.stripe(l, this.getGap(l));
                 m = [];
-                for (u = 0; u < r.length;) b = r[u], ++u, c = ye.and(b, Z.revert(a), !0), m.push(null != c ? c : b);
+                for (u = 0; u < r.length;) b = r[u], ++u, c = PolyBool.and(b, Z.revert(a), !0), m.push(null != c ? c : b);
                 r = m
             }
             return r
@@ -6090,20 +6090,20 @@ ji.prototype = {
         if (0 < this.minTurnOffset) {
             var b = a[0],
                 c = a[2];
-            return Math.abs(Sa.area(a)) / I.distance(b, c) < this.minTurnOffset ? [b, c] : a
+            return Math.abs(PolyCore.area(a)) / I.distance(b, c) < this.minTurnOffset ? [b, c] : a
         }
         return a
     },
-    __class__: ji
+    __class__: Bisector
 };
-var mf = function() {};
-g["com.watabou.mfcg.utils.Bloater"] = mf;
-mf.__name__ = "com.watabou.mfcg.utils.Bloater";
-mf.bloat = function(a, b) {
+var Bloater = function() {};
+g["com.watabou.mfcg.utils.Bloater"] = Bloater;
+Bloater.__name__ = "com.watabou.mfcg.utils.Bloater";
+Bloater.bloat = function(a, b) {
     for (var c = a.length, d = [], f = 0; f <
         c;) {
         var h = f++;
-        h = mf.extrudeEx(a[h], a[(h + 1) % c], b);
+        h = Bloater.extrudeEx(a[h], a[(h + 1) % c], b);
         for (var k = 0; k < h.length;) {
             var n = h[k];
             ++k;
@@ -6112,19 +6112,19 @@ mf.bloat = function(a, b) {
     }
     return d
 };
-mf.extrude = function(a, b, c) {
+Bloater.extrude = function(a, b, c) {
     var d = a.subtract(b);
     c = d.get_length() / c;
-    return .3 < c ? (d.setTo(-d.y, d.x), c = .5 * (1 > c ? c : 1), d.x *= c, d.y *= c, a = qa.lerp(a, b), a.x += d.x, a.y += d.y, a) : null
+    return .3 < c ? (d.setTo(-d.y, d.x), c = .5 * (1 > c ? c : 1), d.x *= c, d.y *= c, a = GeomUtils.lerp(a, b), a.x += d.x, a.y += d.y, a) : null
 };
-mf.extrudeEx = function(a, b, c) {
-    var d = mf.extrude(a, b, c);
-    return null == d ? [a] : mf.extrudeEx(a, d, c).concat(mf.extrudeEx(d, b, c))
+Bloater.extrudeEx = function(a, b, c) {
+    var d = Bloater.extrude(a, b, c);
+    return null == d ? [a] : Bloater.extrudeEx(a, d, c).concat(Bloater.extrudeEx(d, b, c))
 };
-var Zk = function() {};
-g["com.watabou.mfcg.utils.Cutter"] = Zk;
-Zk.__name__ = "com.watabou.mfcg.utils.Cutter";
-Zk.grid =
+var Cutter = function() {};
+g["com.watabou.mfcg.utils.Cutter"] = Cutter;
+Cutter.__name__ = "com.watabou.mfcg.utils.Cutter";
+Cutter.grid =
     function(a, b, c, d) {
         null == d && (d = 0);
         if (4 != a.length) throw new Vb("Not a quadrangle!");
@@ -6152,10 +6152,10 @@ Zk.grid =
         h = 0;
         for (k = c + 1; h < k;) {
             n = h++;
-            var l = qa.lerp(q, r, g[n]);
-            n = qa.lerp(m, u, g[n]);
+            var l = GeomUtils.lerp(q, r, g[n]);
+            n = GeomUtils.lerp(m, u, g[n]);
             a = [];
-            for (var x = 0, D = b + 1; x < D;) d = x++, a.push(qa.lerp(l, n, p[d]));
+            for (var x = 0, D = b + 1; x < D;) d = x++, a.push(GeomUtils.lerp(l, n, p[d]));
             f.push(a)
         }
         p = f;
@@ -6165,10 +6165,10 @@ Zk.grid =
             for (n = f++, k = 0, a = b; k < a;) d = k++, g.push([p[n][d], p[n][d + 1], p[n + 1][d + 1], p[n + 1][d]]);
         return g
     };
-var gk = function() {};
-g["com.watabou.mfcg.utils.GraphicsUtils"] = gk;
-gk.__name__ = "com.watabou.mfcg.utils.GraphicsUtils";
-gk.getMaxArea = function(a, b) {
+var GraphicsUtils = function() {};
+g["com.watabou.mfcg.utils.GraphicsUtils"] = GraphicsUtils;
+GraphicsUtils.__name__ = "com.watabou.mfcg.utils.GraphicsUtils";
+GraphicsUtils.getMaxArea = function(a, b) {
     null ==
         b && (b = !0);
     var c = 0,
@@ -6179,18 +6179,18 @@ gk.getMaxArea = function(a, b) {
         for (a = va.__cast(a, kb), b = 0, d = a.get_numChildren(); b < d;) {
             var f = b++;
             f = a.getChildAt(f);
-            c = Math.max(c, gk.getMaxArea(f))
+            c = Math.max(c, GraphicsUtils.getMaxArea(f))
         }
     return c
 };
-var yi = function(a) {
+var PathTracker = function(a) {
     this.path = a;
     this.size = a.length;
     this.reset()
 };
-g["com.watabou.mfcg.utils.PathTracker"] = yi;
-yi.__name__ = "com.watabou.mfcg.utils.PathTracker";
-yi.prototype = {
+g["com.watabou.mfcg.utils.PathTracker"] = PathTracker;
+PathTracker.__name__ = "com.watabou.mfcg.utils.PathTracker";
+PathTracker.prototype = {
     getPos: function(a) {
         for (a <
             this.offset && this.reset(); a > this.offset + this.curLength;) {
@@ -6199,7 +6199,7 @@ yi.prototype = {
             this.curVector = this.path[this.curIndex + 1].subtract(this.path[this.curIndex]);
             this.curLength = this.curVector.get_length()
         }
-        return qa.lerp(this.path[this.curIndex], this.path[this.curIndex + 1], (a - this.offset) / this.curLength)
+        return GeomUtils.lerp(this.path[this.curIndex], this.path[this.curIndex + 1], (a - this.offset) / this.curLength)
     },
     getSegment: function(a, b) {
         a = this.getPos(a);
@@ -6216,52 +6216,52 @@ yi.prototype = {
         this.curLength = this.curVector.get_length()
     },
     length: function() {
-        return Sa.$length(this.path)
+        return PolyCore.$length(this.path)
     },
     get_tangent: function() {
         return this.curVector
     },
-    __class__: yi,
+    __class__: PathTracker,
     __properties__: {
         get_tangent: "get_tangent"
     }
 };
-var uc = function() {};
-g["com.watabou.mfcg.utils.PolyUtils"] = uc;
-uc.__name__ = "com.watabou.mfcg.utils.PolyUtils";
-uc.lerpVertex = function(a, b) {
+var PolyUtils = function() {};
+g["com.watabou.mfcg.utils.PolyUtils"] = PolyUtils;
+PolyUtils.__name__ = "com.watabou.mfcg.utils.PolyUtils";
+PolyUtils.lerpVertex = function(a, b) {
     b = a.indexOf(b);
     var c = a.length;
-    return qa.lerp(a[(b + c - 1) % c], a[(b + 1) %
+    return GeomUtils.lerp(a[(b + c - 1) % c], a[(b + 1) %
         c])
 };
-uc.smooth = function(a, b, c) {
+PolyUtils.smooth = function(a, b, c) {
     null == c && (c = 1);
     for (var d = a.length, f = 0; f < c;) {
         f++;
         for (var h = [], k = 0, n = d; k < n;) {
             var p = k++,
                 g = a[p];
-            null != b && -1 != b.indexOf(g) ? h.push(g) : h.push(qa.lerp(qa.lerp(a[(p + d - 1) % d], a[(p + 1) % d]), g))
+            null != b && -1 != b.indexOf(g) ? h.push(g) : h.push(GeomUtils.lerp(GeomUtils.lerp(a[(p + d - 1) % d], a[(p + 1) % d]), g))
         }
         a = h
     }
     return a
 };
-uc.smoothOpen = function(a, b, c) {
+PolyUtils.smoothOpen = function(a, b, c) {
     null == c && (c = 1);
     for (var d = a.length, f = 0; f < c;) {
         f++;
         for (var h = [], k = 0, n = d; k < n;) {
             var p = k++,
                 g = a[p];
-            0 == p || p == d - 1 || null != b && -1 != b.indexOf(g) ? h.push(g) : h.push(qa.lerp(qa.lerp(a[p - 1], a[p + 1]), g))
+            0 == p || p == d - 1 || null != b && -1 != b.indexOf(g) ? h.push(g) : h.push(GeomUtils.lerp(GeomUtils.lerp(a[p - 1], a[p + 1]), g))
         }
         a = h
     }
     return a
 };
-uc.simpleInset = function(a, b) {
+PolyUtils.simpleInset = function(a, b) {
     for (var c = a.length,
             d = [], f = 0; f < c;) {
         var h = f++,
@@ -6281,7 +6281,7 @@ uc.simpleInset = function(a, b) {
     }
     return d
 };
-uc.inset = function(a, b) {
+PolyUtils.inset = function(a, b) {
     for (var c = a, d = a.length, f = 0, h = 0; h < d;) {
         var k = h++;
         if (b[k] != b[(k + d - 1) % d]) {
@@ -6294,12 +6294,12 @@ uc.inset = function(a, b) {
     for (var n = b[h];;) {
         do h = (h + 1) % d, k.push(a[h]); while (h != f && b[h] == n);
         if (0 != n)
-            if (k[0] != k[k.length - 1]) k = Qd.stripe(k, 2 * n), k = ye.and(c,
+            if (k[0] != k[k.length - 1]) k = PolyCreate.stripe(k, 2 * n), k = PolyBool.and(c,
                 Z.revert(k), !0), null != k && (c = k);
             else {
-                var p = Qd.stripe([k[0], k[1]], 2 * n);
-                p = ye.and(c, Z.revert(p), !0);
+                var p = PolyCreate.stripe([k[0], k[1]], 2 * n);
+                p = PolyBool.and(c, Z.revert(p), !0);
                 null != p && (c = p);
-                k = Qd.stripe(k.slice(1), 2 * n);
-                k = ye.and(c, Z.revert(k), !0);
+                k = PolyCreate.stripe(k.slice(1), 2 * n);
+                k = PolyBool.and(c, Z.revert(k), !0);
                 null != k && (c = k)

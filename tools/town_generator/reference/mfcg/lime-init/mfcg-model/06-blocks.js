@@ -3,9 +3,9 @@
  * Part 6/8: Block Types
  * Contains: Block, TwistedBlock
  */
-            g["com.watabou.mfcg.model.blocks.Block"] = ii;
-            ii.__name__ = "com.watabou.mfcg.model.blocks.Block";
-            ii.prototype = {
+            g["com.watabou.mfcg.model.blocks.Block"] = Block;
+            Block.__name__ = "com.watabou.mfcg.model.blocks.Block";
+            Block.prototype = {
                 createRects: function() {
                     this.rects = [];
                     for (var a = this.group.district.alleys.inset, b = this.shape.length, c = 0, d = this.lots; c < d.length;) {
@@ -19,7 +19,7 @@
                             for (var p = 0, g = n; p < g;) {
                                 for (var q = p++, m = f[q], u = f[(q + 1) % n], r = -1, l = 0, x = b; l < x;) {
                                     var D = l++;
-                                    if (qa.converge(m, u, this.shape[D],
+                                    if (GeomUtils.converge(m, u, this.shape[D],
                                             this.shape[(D + 1) % b])) {
                                         r = q;
                                         break
@@ -31,8 +31,8 @@
                                         break
                                     } else h = r
                             }
-                        k || (null != this.cacheArea.h.__keys__[f.__id__] ? k = this.cacheArea.h[f.__id__] : (k = this.cacheArea, n = Sa.area(f), k.set(f, n), k = n), h = -1 != h ? Gb.lir(f, h) : Gb.lira(f), k = Math.max(1.2, Math.sqrt(k) / 2), f = I.distance(h[0], h[1 % h.length]) >= k && I.distance(h[1], h[2 % h.length]) >= k ? h : f);
-                        if ("Shrink" == ba.get("processing") && (h = a * (1 - Math.abs(((C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647 + (C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647 + (C.seed = 48271 * C.seed % 2147483647 |
+                        k || (null != this.cacheArea.h.__keys__[f.__id__] ? k = this.cacheArea.h[f.__id__] : (k = this.cacheArea, n = PolyCore.area(f), k.set(f, n), k = n), h = -1 != h ? PolyBounds.lir(f, h) : PolyBounds.lira(f), k = Math.max(1.2, Math.sqrt(k) / 2), f = I.distance(h[0], h[1 % h.length]) >= k && I.distance(h[1], h[2 % h.length]) >= k ? h : f);
+                        if ("Shrink" == State.get("processing") && (h = a * (1 - Math.abs(((C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647 + (C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647 + (C.seed = 48271 * C.seed % 2147483647 |
                                 0) / 2147483647 + (C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647) / 2 - 1)), .3 < h)) {
                             k = f.length;
                             n = [];
@@ -44,20 +44,20 @@
                                 u = !1;
                                 r = 0;
                                 for (l = b; r < l;)
-                                    if (x = r++, qa.converge(q, m, this.shape[x], this.shape[(x + 1) % b])) {
+                                    if (x = r++, GeomUtils.converge(q, m, this.shape[x], this.shape[(x + 1) % b])) {
                                         u = !0;
                                         break
                                     } n.push(u ? 0 : h)
                             }
-                            f = gd.shrink(f, n)
+                            f = PolyCut.shrink(f, n)
                         }
                         this.rects.push(f)
                     }
                 },
                 isRectangle: function(a) {
                     if (4 != a.length) return !1;
-                    var b = Sa.area(a);
-                    a = Sa.rectArea(Gb.obb(a));
+                    var b = PolyCore.area(a);
+                    a = PolyCore.rectArea(PolyBounds.obb(a));
                     return .75 < b / a
                 },
                 createBuildings: function() {
@@ -73,13 +73,13 @@
                         ++b;
                         var h = function(b) {
                             return function(d) {
-                                d = Jd.create(d, c, !0, null, .6);
+                                d = Building.create(d, c, !0, null, .6);
                                 a.buildings.push(null != d ? d : b[0])
                             }
                         }(f);
                         if (4 < f[0].length) {
                             f = f[0].slice();
-                            do Sa.simplifyClosed(f); while (4 < f.length);
+                            do PolyCore.simplifyClosed(f); while (4 < f.length);
                             h(f)
                         } else 4 == f[0].length ? h(f[0]) : this.buildings.push(f[0])
                     }
@@ -103,7 +103,7 @@
                                         var l = u++;
                                         l = f[l];
                                         var x = ((l.x - g.x) * p + (l.y - g.y) * q) / m;
-                                        if (!(0 > x || 1 < x) && 1E-9 > I.distance(l, qa.lerp(g, h, x))) {
+                                        if (!(0 > x || 1 < x) && 1E-9 > I.distance(l, GeomUtils.lerp(g, h, x))) {
                                             f = !1;
                                             break a
                                         }
@@ -123,13 +123,13 @@
                         if (null != this.cacheArea.h.__keys__[f.__id__]) var h = this.cacheArea.h[f.__id__];
                         else {
                             h = this.cacheArea;
-                            var k = Sa.area(f);
+                            var k = PolyCore.area(f);
                             h.set(f, k);
                             h = k
                         }
                         h = Math.min(Math.sqrt(h) / 3, 1.2) *
                             ((C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647);
-                        .5 > h || (k = Sa.center(f), k = (null == this.center ? this.center = Sa.centroid(this.shape) : this.center).subtract(k), k.normalize(h), h = Yc.translate(this.shape, k.x, k.y), f = ye.and(f, h), null != f && 3 <= f.length && (a[d] = f))
+                        .5 > h || (k = PolyCore.center(f), k = (null == this.center ? this.center = PolyCore.centroid(this.shape) : this.center).subtract(k), k.normalize(h), h = PolyTransform.translate(this.shape, k.x, k.y), f = PolyBool.and(f, h), null != f && 3 <= f.length && (a[d] = f))
                     }
                 },
                 spawnTrees: function() {
@@ -140,7 +140,7 @@
                         for (var c = 0, d = this.courtyard; c < d.length;) {
                             var f = d[c];
                             ++c;
-                            f = Ae.fillArea(f, b);
+                            f = Forester.fillArea(f, b);
                             for (var h = 0; h < f.length;) {
                                 var k = f[h];
                                 ++h;
@@ -150,13 +150,13 @@
                     }
                     return a
                 },
-                __class__: ii
+                __class__: Block
             };
             var $k = function() {};
             g["com.watabou.mfcg.model.blocks.TwistedBlock"] = $k;
             $k.__name__ = "com.watabou.mfcg.model.blocks.TwistedBlock";
             $k.createLots = function(a, b) {
-                var c = new ji(a.shape, b.minSq, Math.max(4 * b.sizeChaos, 1.2));
+                var c = new Bisector(a.shape, b.minSq, Math.max(4 * b.sizeChaos, 1.2));
                 c.minTurnOffset = .5;
                 var d = c.partition();
                 d = a.filterInner(d);
@@ -168,7 +168,7 @@
                     if (null != a.cacheArea.h.__keys__[h.__id__]) var k = a.cacheArea.h[h.__id__];
                     else {
                         k = a.cacheArea;
-                        var n = Sa.area(h);
+                        var n = PolyCore.area(h);
                         k.set(h, n);
                         k = n
                     }
@@ -176,7 +176,7 @@
                     else {
                         if (null !=
                             a.cacheOBB.h.__keys__[h.__id__]) var p = a.cacheOBB.h[h.__id__];
-                        else n = a.cacheOBB, p = Gb.obb(h), n.set(h, p);
+                        else n = a.cacheOBB, p = PolyBounds.obb(h), n.set(h, p);
                         n = I.distance(p[0], p[1]);
                         p = I.distance(p[1], p[2]);
                         k = 1.2 <= n && 1.2 <= p && .5 < k / (n * p)
@@ -185,7 +185,7 @@
                 }
                 return c
             };
-            var Rb = function(a, b) {
+            var Ward = function(a, b) {
                 this.model = a;
                 this.patch = b;
                 b.ward = this

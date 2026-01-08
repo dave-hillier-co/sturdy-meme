@@ -3,16 +3,16 @@
  * Part 4/8: MFCG Core Model
  * Contains: com.watabou.mfcg.model.*, wards, blocks, districts
  */
-            g["com.watabou.mfcg.Buffer"] = Wk;
-            Wk.__name__ = "com.watabou.mfcg.Buffer";
-            Wk.write =
+            g["com.watabou.mfcg.Buffer"] = Buffer;
+            Buffer.__name__ = "com.watabou.mfcg.Buffer";
+            Buffer.write =
                 function(a) {
                     E.navigator.clipboard.writeText(a)
                 };
-            var kd = function() {};
-            g["com.watabou.mfcg.Values"] = kd;
-            kd.__name__ = "com.watabou.mfcg.Values";
-            kd.prepare = function(a) {
+            var Values = function() {};
+            g["com.watabou.mfcg.Values"] = Values;
+            Values.__name__ = "com.watabou.mfcg.Values";
+            Values.prepare = function(a) {
                 a.random = !0;
                 a.citadel = !0;
                 a.urban_castle = !1;
@@ -32,28 +32,28 @@
                 a.towers = "Round";
                 a.landmarks = "Icon"
             };
-            var ze = function() {};
-            g["com.watabou.mfcg.annotations.Equator"] = ze;
-            ze.__name__ = "com.watabou.mfcg.annotations.Equator";
-            ze.build = function(a) {
-                var b = Gb.aabb(a),
+            var Equator = function() {};
+            g["com.watabou.mfcg.annotations.Equator"] = Equator;
+            Equator.__name__ = "com.watabou.mfcg.annotations.Equator";
+            Equator.build = function(a) {
+                var b = PolyBounds.aabb(a),
                     c = b[0].subtract(b[3]);
                 b = b[1].subtract(b[0]);
-                var d = Sa.centroid(a);
-                d = ze.largestSpan(gd.pierce(a, d, d.add(c)));
+                var d = PolyCore.centroid(a);
+                d = Equator.largestSpan(PolyCut.pierce(a, d, d.add(c)));
                 c = d[0];
                 d = d[1];
-                for (var f = null, h = 0, k = 0, n = ze.marks; k < n.length;) {
+                for (var f = null, h = 0, k = 0, n = Equator.marks; k < n.length;) {
                     var p = n[k];
                     ++k;
-                    p = qa.lerp(c, d, p);
-                    p = ze.largestSpan(gd.pierce(a, p, p.add(b)));
+                    p = GeomUtils.lerp(c, d, p);
+                    p = Equator.largestSpan(PolyCut.pierce(a, p, p.add(b)));
                     var g = I.distance(p[0], p[1]);
                     h < g && (h = g, f = p)
                 }
                 return f
             };
-            ze.largestSpan = function(a) {
+            Equator.largestSpan = function(a) {
                 for (var b = 0, c = null, d = null, f = 0; f < a.length;) {
                     var h = a[f],
                         k = a[f + 1],
@@ -68,10 +68,10 @@
                 Xk;
             Xk.__name__ = "com.watabou.mfcg.annotations.Ridge";
             Xk.build = function(a) {
-                for (var b = new jf(a, !0); 0 < b.ribs.length;) {
+                for (var b = new SkeletonBuilder(a, !0); 0 < b.ribs.length;) {
                     for (var c = [], d = 0; d < a.length;) b = a[d], ++d, c.push(b.add(I.polar(1, 2 * Math.PI * ((C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647))));
                     a = c;
-                    b = new jf(a, !0)
+                    b = new SkeletonBuilder(a, !0)
                 }
                 var f = 0,
                     h = null,
@@ -93,16 +93,16 @@
                     p.length;) b = p[d], ++d, c.push(b.point);
                 return c
             };
-            var be = function() {};
-            g["com.watabou.mfcg.export.Export"] = be;
-            be.__name__ = "com.watabou.mfcg.export.Export";
-            be.asPNG = function() {
-                var a = Ub.instance,
+            var Export = function() {};
+            g["com.watabou.mfcg.export.Export"] = Export;
+            Export.__name__ = "com.watabou.mfcg.export.Export";
+            Export.asPNG = function() {
+                var a = City.instance,
                     b = a.getViewport(),
                     c = 40 * (null != a.focus ? .25 : 1),
                     d = b.width + c,
                     f = b.height + c;
-                b = gk.getMaxArea(ia.map);
+                b = GraphicsUtils.getMaxArea(TownScene.map);
                 c = Math.sqrt(Math.min(16777216 / (d * f), 67108864 / b));
                 var h = c * d | 0,
                     k = c * f | 0;
@@ -114,7 +114,7 @@
                     methodName: "asPNG",
                     customParams: [h, k]
                 });
-                c = ia.inst;
+                c = TownScene.inst;
                 k = c.rWidth;
                 var n = c.rHeight;
                 d *= c.get_mapScale();
@@ -123,7 +123,7 @@
                 f = h / d;
                 d = new ua;
                 d.scale(f, f);
-                f = ia.map;
+                f = TownScene.map;
                 h = 0;
                 for (var p = c.overlays; h < p.length;) {
                     var g = p[h];
@@ -137,35 +137,35 @@
                 for (p = c.overlays; h < p.length;) g = p[h], ++h, g.get_visible() && (q = g.get_transform().get_matrix().clone(), q.concat(d), b.draw(g, q, null, null, null, !0));
                 c.setSize(k, n);
                 c.resetOverlays();
-                ge.savePNG(b, a.name)
+                Exporter.savePNG(b, a.name)
             };
-            be.asSVG = function() {
-                var a = Ub.instance,
-                    b = Rd.export(a, ia.inst);
+            Export.asSVG = function() {
+                var a = City.instance,
+                    b = SvgExporter.export(a, TownScene.inst);
                 a = a.name;
-                ge.saveText('<?xml version="1.0" encoding="UTF-8" standalone="no"?>' + Df.print(b.root), "" + a + ".svg", "image/svg+xml")
+                Exporter.saveText('<?xml version="1.0" encoding="UTF-8" standalone="no"?>' + Df.print(b.root), "" + a + ".svg", "image/svg+xml")
             };
-            be.asJSON = function() {
-                var a = Ub.instance,
-                    b = lg.export(a);
+            Export.asJSON = function() {
+                var a = City.instance,
+                    b = JsonExporter.export(a);
                 a = a.name;
-                ge.saveText(b.stringify(), "" + a + ".json", "application/json")
+                Exporter.saveText(b.stringify(), "" + a + ".json", "application/json")
             };
-            var lg = function() {};
-            g["com.watabou.mfcg.export.JsonExporter"] = lg;
-            lg.__name__ = "com.watabou.mfcg.export.JsonExporter";
-            lg.export = function(a) {
-                Wa.SCALE = 4;
+            var JsonExporter = function() {};
+            g["com.watabou.mfcg.export.JsonExporter"] = JsonExporter;
+            JsonExporter.__name__ = "com.watabou.mfcg.export.JsonExporter";
+            JsonExporter.export = function(a) {
+                GeoJSON.SCALE = 4;
                 for (var b = [], c = [], d = [],
                         f = [], h = [], k = new pa, n = 0, p = a.cells; n < p.length;) {
                     var g = p[n];
                     ++n;
                     var q = g.ward;
                     switch (va.getClass(q)) {
-                        case Pc:
+                        case Alleys:
                             if (q.group.core == g.face) {
                                 var m = q.group.blocks;
-                                switch (ba.get("display_mode", "Lots")) {
+                                switch (State.get("display_mode", "Lots")) {
                                     case "Block":
                                         g = [];
                                         for (var u = 0; u < m.length;) q = m[u], ++u, g.push(q.shape);
@@ -196,123 +196,123 @@
                                 }
                             }
                             break;
-                        case xd:
-                            b.push(va.__cast(q, xd).building);
+                        case Castle:
+                            b.push(va.__cast(q, Castle).building);
                             break;
-                        case Ne:
-                            m = va.__cast(q, Ne).building;
+                        case Cathedral:
+                            m = va.__cast(q, Cathedral).building;
                             for (q = 0; q < m.length;) x = m[q], ++q, b.push(x);
                             break;
-                        case yd:
-                            m = va.__cast(q, yd);
+                        case Farm:
+                            m = va.__cast(q, Farm);
                             q = m.buildings;
                             for (x = 0; x < q.length;) g = q[x], ++x, b.push(g);
                             m = m.subPlots;
                             for (q = 0; q < m.length;) x = m[q], ++q, h.push(x);
                             break;
-                        case lf:
+                        case Harbour:
                             m = 0;
                             for (q = va.__cast(q,
-                                    lf).piers; m < q.length;) x = q[m], ++m, k.set(x, 1.2);
+                                    Harbour).piers; m < q.length;) x = q[m], ++m, k.set(x, 1.2);
                             break;
-                        case he:
-                            m = va.__cast(q, he);
+                        case Market:
+                            m = va.__cast(q, Market);
                             d.push(m.getAvailable());
                             null != m.monument && c.push(m.monument);
                             break;
-                        case ce:
-                            f.push(va.__cast(q, ce).green)
+                        case Park:
+                            f.push(va.__cast(q, Park).green)
                     }
                 }
                 n = [];
                 p = 0;
-                for (g = a.districts; p < g.length;) r = g[p], ++p, m = Wa.polygon(null, Ua.toPoly(r.border)), u = new Qa, u.h.name = r.name, m.props = u, n.push(m);
-                m = Wa.geometryCollection("districts", n);
+                for (g = a.districts; p < g.length;) r = g[p], ++p, m = GeoJSON.polygon(null, EdgeChain.toPoly(r.border)), u = new Qa, u.h.name = r.name, m.props = u, n.push(m);
+                m = GeoJSON.geometryCollection("districts", n);
                 n = new Qa;
                 n.h.id = "values";
-                n.h.roadWidth = 2 * Wa.SCALE;
-                n.h.towerRadius = pc.TOWER_RADIUS * Wa.SCALE;
-                n.h.wallThickness = pc.THICKNESS * Wa.SCALE;
+                n.h.roadWidth = 2 * GeoJSON.SCALE;
+                n.h.towerRadius = CurtainWall.TOWER_RADIUS * GeoJSON.SCALE;
+                n.h.wallThickness = CurtainWall.THICKNESS * GeoJSON.SCALE;
                 n.h.generator =
                     "mfcg";
                 n.h.version = A.current.meta.h.version;
                 q = n;
-                0 < a.canals.length && (q.h.riverWidth = a.canals[0].width * Wa.SCALE);
+                0 < a.canals.length && (q.h.riverWidth = a.canals[0].width * GeoJSON.SCALE);
                 n = 0;
                 for (p = a.canals; n < p.length;)
                     for (x = p[n], ++n, u = x.bridges.keys(); u.hasNext();) {
                         var w = u.next();
-                        null == x.bridges.h[w.__id__] && (r = x.width + 1.2, l = x.course, D = Ua.indexByOrigin(l, w), g = l[D], g = g.next.origin.point.subtract(g.origin.point), 0 < D && (l = l[D - 1], l = l.next.origin.point.subtract(l.origin.point), g.x += l.x, g.y += l.y), g = new I(-g.y, g.x), r /= 2, null == r && (r = 1), g = g.clone(), g.normalize(r), g = [w.point.subtract(g),
+                        null == x.bridges.h[w.__id__] && (r = x.width + 1.2, l = x.course, D = EdgeChain.indexByOrigin(l, w), g = l[D], g = g.next.origin.point.subtract(g.origin.point), 0 < D && (l = l[D - 1], l = l.next.origin.point.subtract(l.origin.point), g.x += l.x, g.y += l.y), g = new I(-g.y, g.x), r /= 2, null == r && (r = 1), g = g.clone(), g.normalize(r), g = [w.point.subtract(g),
                             w.point.add(g)
                         ], k.set(g, 1.2))
                     }
                 x = [];
-                if (ba.get("show_trees"))
+                if (State.get("show_trees"))
                     for (n = 0, p = a.cells; n < p.length;)
                         if (g = p[n], ++n, w = g.ward.spawnTrees(), null != w)
                             for (g = 0; g < w.length;) u = w[g], ++g, x.push(u);
                 n = [];
                 p = 0;
-                for (g = a.arteries; p < g.length;) D = g[p], ++p, w = Wa.lineString(null, Ua.toPolyline(D)), u = new Qa, u.h.width = 2 * Wa.SCALE, w.props = u, n.push(w);
+                for (g = a.arteries; p < g.length;) D = g[p], ++p, w = GeoJSON.lineString(null, EdgeChain.toPolyline(D)), u = new Qa, u.h.width = 2 * GeoJSON.SCALE, w.props = u, n.push(w);
                 w = n;
-                if (ba.get("show_alleys", !1))
+                if (State.get("show_alleys", !1))
                     for (n = 0, p = a.districts; n < p.length;)
                         for (r = p[n], ++n, g = 0, u = r.groups; g < u.length;)
                             for (l = u[g], ++g, r = 0, l = l.alleys; r < l.length;) {
                                 D = l[r];
                                 ++r;
-                                var z = Wa.lineString(null, D);
+                                var z = GeoJSON.lineString(null, D);
                                 D = new Qa;
-                                D.h.width = 1.2 * Wa.SCALE;
+                                D.h.width = 1.2 * GeoJSON.SCALE;
                                 z.props = D;
                                 w.push(z)
                             }
-                p = Wa.feature(null, q);
-                q = Wa.polygon("earth", Ua.toPoly(a.earthEdgeE));
-                u = Wa.geometryCollection("roads", w);
-                w = lg.multiThick("walls", a.walls, !0, function(a) {
+                p = GeoJSON.feature(null, q);
+                q = GeoJSON.polygon("earth", EdgeChain.toPoly(a.earthEdgeE));
+                u = GeoJSON.geometryCollection("roads", w);
+                w = JsonExporter.multiThick("walls", a.walls, !0, function(a) {
                     return a.shape
                 }, function(a) {
-                    return pc.THICKNESS
+                    return CurtainWall.THICKNESS
                 });
-                r = lg.multiThick("rivers", a.canals, null, function(a) {
-                    return Ua.toPolyline(a.course)
+                r = JsonExporter.multiThick("rivers", a.canals, null, function(a) {
+                    return EdgeChain.toPolyline(a.course)
                 }, function(a) {
                     return a.width
                 });
                 n = [];
                 for (g = k.keys(); g.hasNext();) l = g.next(), n.push(l);
-                b = Wa.featureCollection([p, q, u, w, r, lg.multiThick("planks", n, null, function(a) {
+                b = GeoJSON.featureCollection([p, q, u, w, r, JsonExporter.multiThick("planks", n, null, function(a) {
                         return a
                     },
                     function(a) {
                         return k.h[a.__id__]
-                    }), Wa.multiPolygon("buildings", b), Wa.multiPolygon("prisms", c), Wa.multiPolygon("squares", d), Wa.multiPolygon("greens", f), Wa.multiPolygon("fields", h), Wa.multiPoint("trees", x), m]);
-                0 < a.waterEdgeE.length && b.items.push(Wa.multiPolygon("water", [Ua.toPoly(a.waterEdgeE)]));
+                    }), GeoJSON.multiPolygon("buildings", b), GeoJSON.multiPolygon("prisms", c), GeoJSON.multiPolygon("squares", d), GeoJSON.multiPolygon("greens", f), GeoJSON.multiPolygon("fields", h), GeoJSON.multiPoint("trees", x), m]);
+                0 < a.waterEdgeE.length && b.items.push(GeoJSON.multiPolygon("water", [EdgeChain.toPoly(a.waterEdgeE)]));
                 return b
             };
-            lg.multiThick = function(a, b, c, d, f) {
+            JsonExporter.multiThick = function(a, b, c, d, f) {
                 null == c && (c = !1);
                 for (var h = [], k = 0; k < b.length;) {
                     var n = b[k];
                     ++k;
                     var p = d(n);
-                    p = c ? Wa.polygon(null, p) : Wa.lineString(null, p);
+                    p = c ? GeoJSON.polygon(null, p) : GeoJSON.lineString(null, p);
                     var g = new Qa;
-                    n = f(n) * Wa.SCALE;
+                    n = f(n) * GeoJSON.SCALE;
                     g.h.width = n;
                     p.props =
                         g;
                     h.push(p)
                 }
-                return Wa.geometryCollection(a, h)
+                return GeoJSON.geometryCollection(a, h)
             };
-            var Rd = function() {};
-            g["com.watabou.mfcg.export.SvgExporter"] = Rd;
-            Rd.__name__ = "com.watabou.mfcg.export.SvgExporter";
-            Rd.export = function(a, b) {
-                Ja.substituteFont = Rd.fixFontNames;
-                Ja.handleObject = Rd.detectEmblem;
+            var SvgExporter = function() {};
+            g["com.watabou.mfcg.export.SvgExporter"] = SvgExporter;
+            SvgExporter.__name__ = "com.watabou.mfcg.export.SvgExporter";
+            SvgExporter.export = function(a, b) {
+                Sprite2SVG.substituteFont = SvgExporter.fixFontNames;
+                Sprite2SVG.handleObject = SvgExporter.detectEmblem;
                 var c = a.getViewport(),
                     d = 40 * (null != a.focus ? .25 : 1);
                 a = c.height + d;
@@ -321,21 +321,21 @@
                 c = b.rWidth;
                 a = b.rHeight;
                 b.setSize(d, f);
-                d = Ja.create(d, f, K.colorPaper);
-                f = Ja.drawSprite(b);
-                Oa.clearTransform(f);
-                var h = Ja.getImports();
+                d = Sprite2SVG.create(d, f, K.colorPaper);
+                f = Sprite2SVG.drawSprite(b);
+                SVG.clearTransform(f);
+                var h = Sprite2SVG.getImports();
                 d.root.addChild(h);
-                h = Ja.getGradients();
+                h = Sprite2SVG.getGradients();
                 d.root.addChild(h);
                 d.root.addChild(f);
                 b.setSize(c, a);
                 return d
             };
-            Rd.fixFontNames = function(a) {
-                if (!Rd.embeddedScanned) {
-                    Rd.embeddedScanned = !0;
-                    for (var b = new Qa, c = Rd.embedded.h, d = Object.keys(c), f = d.length, h = 0; h < f;) {
+            SvgExporter.fixFontNames = function(a) {
+                if (!SvgExporter.embeddedScanned) {
+                    SvgExporter.embeddedScanned = !0;
+                    for (var b = new Qa, c = SvgExporter.embedded.h, d = Object.keys(c), f = d.length, h = 0; h < f;) {
                         var k = d[h++],
                             n = c[k];
                         k = ac.getFont(k).name; - 1 != n.name.indexOf(" ") && (n.name = "'" + n.name + "'");
@@ -345,49 +345,49 @@
                             generic: n.generic
                         }
                     }
-                    Rd.embedded = b
+                    SvgExporter.embedded = b
                 }
-                n = Rd.embedded.h[a];
-                return null != n ? (Ja.addImport(n.url), n.name + ", " + n.generic) : Ja.substituteGenerics(a)
+                n = SvgExporter.embedded.h[a];
+                return null != n ? (Sprite2SVG.addImport(n.url), n.name + ", " + n.generic) : Sprite2SVG.substituteGenerics(a)
             };
-            Rd.detectEmblem =
+            SvgExporter.detectEmblem =
                 function(a) {
-                    return a instanceof ra && null != ra.svg ? ra.svg : null
+                    return a instanceof Emblem && null != Emblem.svg ? Emblem.svg : null
                 };
-            var Ma = function() {};
-            g["com.watabou.mfcg.linguistics.Namer"] = Ma;
-            Ma.__name__ = "com.watabou.mfcg.linguistics.Namer";
-            Ma.reset = function() {
-                if (null == Ma.grammar) {
-                    Oe.rng = C.float;
-                    Ma.grammar = new hk(JSON.parse(ac.getText("grammar")));
-                    Ma.grammar.defaultSelector = $h;
-                    Ma.grammar.addModifiers(jb.get());
-                    var a = Ma.grammar,
+            var Namer = function() {};
+            g["com.watabou.mfcg.linguistics.Namer"] = Namer;
+            Namer.__name__ = "com.watabou.mfcg.linguistics.Namer";
+            Namer.reset = function() {
+                if (null == Namer.grammar) {
+                    Tracery.rng = C.float;
+                    Namer.grammar = new Grammar(JSON.parse(ac.getText("grammar")));
+                    Namer.grammar.defaultSelector = $h;
+                    Namer.grammar.addModifiers(ModsEngBasic.get());
+                    var a = Namer.grammar,
                         b = new Qa;
-                    b.h.merge = Ma.merge;
+                    b.h.merge = Namer.merge;
                     a.addModifiers(b);
-                    Ma.grammar.addExternal("word", Ma.word);
-                    Ma.grammar.addExternal("fantasy", Ma.fantasy);
-                    Ma.grammar.addExternal("given",
-                        Ma.given);
-                    Ma.english = new de(ac.getText("english").split(" "));
-                    Ma.elven = new de(ac.getText("elven").split(" "));
-                    Ma.male = new de(ac.getText("male").split(" "));
-                    Ma.female = new de(ac.getText("female").split(" "))
+                    Namer.grammar.addExternal("word", Namer.word);
+                    Namer.grammar.addExternal("fantasy", Namer.fantasy);
+                    Namer.grammar.addExternal("given",
+                        Namer.given);
+                    Namer.english = new Markov(ac.getText("english").split(" "));
+                    Namer.elven = new Markov(ac.getText("elven").split(" "));
+                    Namer.male = new Markov(ac.getText("male").split(" "));
+                    Namer.female = new Markov(ac.getText("female").split(" "))
                 }
-                Ma.grammar.clearState()
+                Namer.grammar.clearState()
             };
-            Ma.given = function() {
-                return (.5 > (C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647 ? Ma.male : Ma.female).generate(4)
+            Namer.given = function() {
+                return (.5 > (C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647 ? Namer.male : Namer.female).generate(4)
             };
-            Ma.word = function() {
-                return Ma.generate(Ma.english, 4, 3)
+            Namer.word = function() {
+                return Namer.generate(Namer.english, 4, 3)
             };
-            Ma.fantasy = function() {
-                return Ma.generate(Ma.elven)
+            Namer.fantasy = function() {
+                return Namer.generate(Namer.elven)
             };
-            Ma.generate = function(a, b, c) {
+            Namer.generate = function(a, b, c) {
                 null == c && (c = 4);
                 for (null == b &&
                     (b = 1);;) {
@@ -395,55 +395,55 @@
                     if (d.length >= b && -1 == a.source.indexOf(d)) return d
                 }
             };
-            Ma.cityName = function(a) {
-                var b = Ma.grammar,
+            Namer.cityName = function(a) {
+                var b = Namer.grammar,
                     c = a.bp.citadel;
                 null == c && (c = !0);
                 c ? Z.addAll(b.flags, (new ja(", +", "")).split("CASTLE")) : Z.removeAll(b.flags, (new ja(", +", "")).split("CASTLE"));
-                b = Ma.grammar;
+                b = Namer.grammar;
                 c = a.bp.walls;
                 null == c && (c = !0);
                 c ? Z.addAll(b.flags, (new ja(", +", "")).split("WALLS")) : Z.removeAll(b.flags, (new ja(", +", "")).split("WALLS"));
-                b = Ma.grammar;
+                b = Namer.grammar;
                 c = a.bp.temple;
                 null == c && (c = !0);
                 c ? Z.addAll(b.flags, (new ja(", +", "")).split("TEMPLE")) :
                     Z.removeAll(b.flags, (new ja(", +", "")).split("TEMPLE"));
-                b = Ma.grammar;
+                b = Namer.grammar;
                 c = a.bp.plaza;
                 null == c && (c = !0);
                 c ? Z.addAll(b.flags, (new ja(", +", "")).split("PLAZA")) : Z.removeAll(b.flags, (new ja(", +", "")).split("PLAZA"));
-                b = Ma.grammar;
+                b = Namer.grammar;
                 c = a.bp.shanty;
                 null == c && (c = !0);
                 c ? Z.addAll(b.flags, (new ja(", +", "")).split("SHANTY")) : Z.removeAll(b.flags, (new ja(", +", "")).split("SHANTY"));
-                b = Ma.grammar;
+                b = Namer.grammar;
                 c = a.bp.coast;
                 null == c && (c = !0);
                 c ? Z.addAll(b.flags, (new ja(", +", "")).split("COAST")) : Z.removeAll(b.flags, (new ja(", +", "")).split("COAST"));
-                b = Ma.grammar;
+                b = Namer.grammar;
                 c = a.bp.river;
                 null == c && (c = !0);
                 c ? Z.addAll(b.flags, (new ja(", +", "")).split("RIVER")) : Z.removeAll(b.flags, (new ja(", +", "")).split("RIVER"));
-                return eh.capitalizeAll(Ma.grammar.flatten("#city#"))
+                return StringUtils.capitalizeAll(Namer.grammar.flatten("#city#"))
             };
-            Ma.nameDistricts = function(a) {
+            Namer.nameDistricts = function(a) {
                 if (1 == a.districts.length) a.districts[0].name = a.name;
                 else {
                     var b = 1 == a.name.split(" ").length ? a.name : "city";
-                    Ma.grammar.pushRules("cityName", [null != b ? b : Ma.grammar.flatten("#cityName#")]);
+                    Namer.grammar.pushRules("cityName", [null != b ? b : Namer.grammar.flatten("#cityName#")]);
                     for (var c = 0, d = a.districts; c < d.length;) {
                         var f = [d[c]];
                         ++c;
-                        b = Ma.getDistrictNoun(f[0]);
-                        Ma.grammar.pushRules("districtNoun", [null != b ? b : Ma.grammar.flatten("#districtNoun#")]);
-                        b = Ma.getDirection(f[0]);
-                        Ma.grammar.pushRules("dir", [null != b ? b : Ma.grammar.flatten("#dir#")]);
-                        b = Ma.grammar;
+                        b = Namer.getDistrictNoun(f[0]);
+                        Namer.grammar.pushRules("districtNoun", [null != b ? b : Namer.grammar.flatten("#districtNoun#")]);
+                        b = Namer.getDirection(f[0]);
+                        Namer.grammar.pushRules("dir", [null != b ? b : Namer.grammar.flatten("#dir#")]);
+                        b = Namer.grammar;
                         var h = 1 == f[0].faces.length;
                         null == h && (h = !0);
                         h ? Z.addAll(b.flags, (new ja(", +", "")).split("COMPACT")) : Z.removeAll(b.flags, (new ja(", +", "")).split("COMPACT"));
-                        b = Ma.grammar;
+                        b = Namer.grammar;
                         h = 1 == Z.count(a.districts, function(a) {
                             return function(b) {
                                 return b.type == a[0].type
@@ -454,76 +454,76 @@
                             Z.removeAll(b.flags, (new ja(", +", "")).split("UNIQUE"));
                         switch (f[0].type._hx_index) {
                             case 0:
-                                b = Ma.grammar.flatten("#centralDistrict#");
+                                b = Namer.grammar.flatten("#centralDistrict#");
                                 break;
                             case 1:
-                                b = Ma.grammar.flatten("#castleDistrict#");
+                                b = Namer.grammar.flatten("#castleDistrict#");
                                 break;
                             case 2:
-                                b = Ma.grammar.flatten("#docksDistrict#");
+                                b = Namer.grammar.flatten("#docksDistrict#");
                                 break;
                             case 3:
-                                b = Ma.grammar.flatten("#bridgeDistrict#");
+                                b = Namer.grammar.flatten("#bridgeDistrict#");
                                 break;
                             case 4:
-                                b = Ma.grammar.flatten("#gateDistrict#");
+                                b = Namer.grammar.flatten("#gateDistrict#");
                                 break;
                             case 5:
-                                b = Ma.grammar.flatten("#bankDistrict#");
+                                b = Namer.grammar.flatten("#bankDistrict#");
                                 break;
                             case 6:
-                                b = Ma.grammar.flatten("#parkDistrict#");
+                                b = Namer.grammar.flatten("#parkDistrict#");
                                 break;
                             case 7:
-                                b = Ma.grammar.flatten("#sprawlDistrict#");
+                                b = Namer.grammar.flatten("#sprawlDistrict#");
                                 break;
                             default:
-                                b = Ma.grammar.flatten("#district#")
+                                b = Namer.grammar.flatten("#district#")
                         }
-                        Ma.grammar.popRules("dir");
-                        Ma.grammar.popRules("districtNoun");
-                        f[0].name = eh.capitalizeAll(b)
+                        Namer.grammar.popRules("dir");
+                        Namer.grammar.popRules("districtNoun");
+                        f[0].name = StringUtils.capitalizeAll(b)
                     }
-                    Ma.grammar.popRules("cityName")
+                    Namer.grammar.popRules("cityName")
                 }
             };
-            Ma.getDistrictNoun = function(a) {
+            Namer.getDistrictNoun = function(a) {
                 a = a.faces.length + Math.floor((C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647 * 3);
                 return 2 >= a ? "quarter" : 6 > a ? "ward" : 12 > a ? "district" : "town"
             };
-            Ma.getDirection = function(a) {
+            Namer.getDirection = function(a) {
                 var b = null,
                     c = -Infinity;
-                null == a.equator && (a.equator = ze.build(Ua.toPoly(a.border)));
-                a = qa.lerp(a.equator[0], a.equator[1]);
-                for (var d = Ma.dirs,
+                null == a.equator && (a.equator = Equator.build(EdgeChain.toPoly(a.border)));
+                a = GeomUtils.lerp(a.equator[0], a.equator[1]);
+                for (var d = Namer.dirs,
                         f = d.keys(); f.hasNext();) {
                     var h = f.next(),
                         k = d.get(h);
                     h = h.x * a.x + h.y * a.y;
                     c < h && (c = h, b = k)
                 }
-                return Ma.grammar.flatten("#" + b + "#")
+                return Namer.grammar.flatten("#" + b + "#")
             };
-            Ma.merge = function(a, b) {
+            Namer.merge = function(a, b) {
                 b = a.split(" ");
                 if (1 == b.length) return a;
                 for (var c = 0, d = 0; d < b.length;) {
                     var f = b[d];
                     ++d;
-                    c += nd.split(f).length
+                    c += Syllables.split(f).length
                 }
                 return 2 >= c ? b.join("") : a
             };
-            var hd = function() {};
-            g["com.watabou.mfcg.mapping.BuildingPainter"] = hd;
-            hd.__name__ = "com.watabou.mfcg.mapping.BuildingPainter";
-            hd.paint = function(a, b, c, d, f, h) {
+            var BuildingPainter = function() {};
+            g["com.watabou.mfcg.mapping.BuildingPainter"] = BuildingPainter;
+            BuildingPainter.__name__ = "com.watabou.mfcg.mapping.BuildingPainter";
+            BuildingPainter.paint = function(a, b, c, d, f, h) {
                 null == h && (h = !1);
                 null == f && (f = .5);
-                if (h && kc.drawSolid) hd.drawSolids(a, b);
+                if (h && PatchView.drawSolid) BuildingPainter.drawSolids(a, b);
                 else {
-                    kc.raised || (f = 0);
+                    PatchView.raised || (f = 0);
                     var k = K.getStrokeWidth(K.strokeNormal, !0),
                         n = 0;
                     if (0 < f) {
@@ -538,7 +538,7 @@
                                 c.reverse();
                                 a.beginFill(p);
                                 a.lineStyle(k, K.colorDark);
-                                Kb.drawPolygon(a, b.concat(c));
+                                GraphicsExtender.drawPolygon(a, b.concat(c));
                                 a.endFill();
                                 if (K.colorDark != p) {
                                     a.lineStyle(k, K.colorDark);
@@ -559,31 +559,31 @@
                             null != q && g(q)
                         }
                     }
-                    g = 1 < b.length && "Block" != kc.planMode && ba.get("weathered_roofs", !1) ? K.weathering / 100 : 0;
-                    for (f = 0; f < b.length;) h = b[f], ++f, q = 0 == g ? c : Gc.scale(c, Math.pow(2, (((C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647 + (C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647 + (C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647) / 3 * 2 - 1) * g)), m = hd.outlineNormal ? d : q, a.beginFill(q), 0 != n ? (a.lineStyle(k, m), Kb.drawPolygonAt(a, h, 0, n)) : (a.lineStyle(k, m, null, null,
-                        null, null, 1), Kb.drawPolygon(a, h)), a.endFill(), hd.outlineNormal && "Block" != kc.planMode && hd.drawRoof(a, h, n, k, m)
+                    g = 1 < b.length && "Block" != PatchView.planMode && State.get("weathered_roofs", !1) ? K.weathering / 100 : 0;
+                    for (f = 0; f < b.length;) h = b[f], ++f, q = 0 == g ? c : Color.scale(c, Math.pow(2, (((C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647 + (C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647 + (C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647) / 3 * 2 - 1) * g)), m = BuildingPainter.outlineNormal ? d : q, a.beginFill(q), 0 != n ? (a.lineStyle(k, m), GraphicsExtender.drawPolygonAt(a, h, 0, n)) : (a.lineStyle(k, m, null, null,
+                        null, null, 1), GraphicsExtender.drawPolygon(a, h)), a.endFill(), BuildingPainter.outlineNormal && "Block" != PatchView.planMode && BuildingPainter.drawRoof(a, h, n, k, m)
                 }
             };
-            hd.drawSolids = function(a, b) {
+            BuildingPainter.drawSolids = function(a, b) {
                 a.beginFill(K.colorWall);
-                hd.outlineSolid && K.colorDark != K.colorWall && a.lineStyle(K.getStrokeWidth(K.strokeNormal, !0), K.colorDark, null, null, null, null, 1);
+                BuildingPainter.outlineSolid && K.colorDark != K.colorWall && a.lineStyle(K.getStrokeWidth(K.strokeNormal, !0), K.colorDark, null, null, null, null, 1);
                 for (var c = 0; c < b.length;) {
                     var d = b[c];
                     ++c;
-                    Kb.drawPolygon(a, d)
+                    GraphicsExtender.drawPolygon(a, d)
                 }
                 a.endFill()
             };
-            hd.drawRoof = function(a, b, c, d, f) {
-                if ("Plain" != kc.roofStyle && !sb.preview) {
+            BuildingPainter.drawRoof = function(a, b, c, d, f) {
+                if ("Plain" != PatchView.roofStyle && !Main.preview) {
                     for (var h = [], k = 0; k < b.length;) {
                         var n = b[k];
                         ++k;
                         h.push(n.add(I.polar(.1 *
                             (((C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647 + (C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647 + (C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647) / 3 * 2 - 1), Math.PI * ((C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647))))
                     }
-                    k = new jf(h, !0);
-                    if ("Gable" == kc.roofStyle) {
+                    k = new SkeletonBuilder(h, !0);
+                    if ("Gable" == PatchView.roofStyle) {
                         if (0 < k.ribs.length) return;
                         k.addGables()
                     }
@@ -594,19 +594,19 @@
                     a.endFill()
                 }
             };
-            var Yk = function() {};
-            g["com.watabou.mfcg.mapping.FarmPainter"] = Yk;
-            Yk.__name__ = "com.watabou.mfcg.mapping.FarmPainter";
-            Yk.paint = function(a, b) {
-                var c = ba.get("farm_fileds", "Furrows");
-                if ("Hidden" != c && !sb.preview) {
+            var FarmPainter = function() {};
+            g["com.watabou.mfcg.mapping.FarmPainter"] = FarmPainter;
+            FarmPainter.__name__ = "com.watabou.mfcg.mapping.FarmPainter";
+            FarmPainter.paint = function(a, b) {
+                var c = State.get("farm_fileds", "Furrows");
+                if ("Hidden" != c && !Main.preview) {
                     a = a.get_graphics();
-                    var d = ba.get("outline_fields", !1);
+                    var d = State.get("outline_fields", !1);
                     if ("Plain" == c) {
                         a.beginFill(K.colorGreen);
                         d && a.lineStyle(K.getStrokeWidth(K.strokeNormal, !0), K.colorDark);
                         c = 0;
-                        for (var f = b.subPlots; c < f.length;) d = f[c], ++c, Kb.drawPolygon(a, d)
+                        for (var f = b.subPlots; c < f.length;) d = f[c], ++c, GraphicsExtender.drawPolygon(a, d)
                     } else {
                         a.lineStyle(K.getStrokeWidth(K.strokeNormal,
                             !0), K.colorGreen, null, null, null, 0);
@@ -620,14 +620,14 @@
                             a.lineTo(h.x, h.y)
                         }
                         if (d)
-                            for (c = 0, f = b.subPlots; c < f.length;) d = f[c], ++c, Kb.drawPolygon(a, d)
+                            for (c = 0, f = b.subPlots; c < f.length;) d = f[c], ++c, GraphicsExtender.drawPolygon(a, d)
                     }
                     a.endFill();
-                    d = kc.planMode;
-                    "Block" != d && "Hidden" != d && hd.paint(a, b.buildings, K.colorRoof, K.colorDark, .3)
+                    d = PatchView.planMode;
+                    "Block" != d && "Hidden" != d && BuildingPainter.paint(a, b.buildings, K.colorRoof, K.colorDark, .3)
                 }
             };
-            var fh = function(a) {
+            var Focus = function(a) {
                 this.faces = a;
                 this.edges = [];
                 this.vertices = [];
@@ -644,12 +644,12 @@
                     }
                 }
             };
-            g["com.watabou.mfcg.mapping.Focus"] = fh;
-            fh.__name__ = "com.watabou.mfcg.mapping.Focus";
-            fh.district = function(a) {
-                return new fh(a.faces)
+            g["com.watabou.mfcg.mapping.Focus"] = Focus;
+            Focus.__name__ = "com.watabou.mfcg.mapping.Focus";
+            Focus.district = function(a) {
+                return new Focus(a.faces)
             };
-            fh.prototype = {
+            Focus.prototype = {
                 getBounds: function() {
                     null == this.bounds && this.updateBounds();
                     return this.bounds
@@ -666,42 +666,42 @@
                     }
                     this.bounds = new na(a, b, c - a, d - b)
                 },
-                __class__: fh
+                __class__: Focus
             };
-            var ai = function(a) {
+            var FocusView = function(a) {
                 ka.call(this);
                 if (null != a) {
                     var b = this.get_graphics(),
                         c = 5 * K.lineInvScale;
-                    a = Ua.toPoly(a.faces[0].data.district.border);
+                    a = EdgeChain.toPoly(a.faces[0].data.district.border);
                     b.lineStyle(c, D.black, .4, !1, null, 0, 1);
-                    Kb.dashedPolyline(b, a, !0, [2 * c, 2 * c])
+                    GraphicsExtender.dashedPolyline(b, a, !0, [2 * c, 2 * c])
                 }
             };
-            g["com.watabou.mfcg.mapping.FocusView"] = ai;
-            ai.__name__ = "com.watabou.mfcg.mapping.FocusView";
-            ai.__super__ = ka;
-            ai.prototype = v(ka.prototype, {
-                __class__: ai
+            g["com.watabou.mfcg.mapping.FocusView"] = FocusView;
+            FocusView.__name__ = "com.watabou.mfcg.mapping.FocusView";
+            FocusView.__super__ = ka;
+            FocusView.prototype = v(ka.prototype, {
+                __class__: FocusView
             });
-            var bi = function(a) {
+            var FormalMap = function(a) {
                 ka.call(this);
                 this.model = a;
-                kc.planMode = sb.preview ? "Lots" : ba.get("display_mode", "Lots");
-                kc.roofStyle = ba.get("roof_style", "Plain");
-                kc.raised = ba.get("raised",
-                    !0) && !sb.preview;
-                kc.watercolours = ba.get("watercolours", !1);
-                kc.drawSolid = ba.get("draw_solids", !0);
-                hd.outlineNormal = ba.get("outline_buildings", !0) || sb.preview;
-                hd.outlineSolid = ba.get("outline_solids", !0) || sb.preview;
-                this.roads = new ie;
+                PatchView.planMode = Main.preview ? "Lots" : State.get("display_mode", "Lots");
+                PatchView.roofStyle = State.get("roof_style", "Plain");
+                PatchView.raised = State.get("raised",
+                    !0) && !Main.preview;
+                PatchView.watercolours = State.get("watercolours", !1);
+                PatchView.drawSolid = State.get("draw_solids", !0);
+                BuildingPainter.outlineNormal = State.get("outline_buildings", !0) || Main.preview;
+                BuildingPainter.outlineSolid = State.get("outline_solids", !0) || Main.preview;
+                this.roads = new RoadsView;
                 this.roads.update(a);
                 this.addChild(this.roads);
                 for (var b = 0, c = a.canals; b < c.length;) {
                     var d = c[b];
                     ++b;
-                    var f = new mg;
+                    var f = new RiverView;
                     f.update(a, d);
                     this.addChild(f)
                 }
@@ -738,19 +738,19 @@
                     }
                     c = f.concat(h)
                 }
-                for (b = 0; b < c.length;) n = c[b], ++b, d = new kc(n), d.draw() && (this.patches.push(d), this.addChild(d));
-                ba.get("show_trees", !1) && "Block" != kc.planMode && !sb.preview && this.addChild(new gc(a));
-                b = new ng;
+                for (b = 0; b < c.length;) n = c[b], ++b, d = new PatchView(n), d.draw() && (this.patches.push(d), this.addChild(d));
+                State.get("show_trees", !1) && "Block" != PatchView.planMode && !Main.preview && this.addChild(new TreesLayer(a));
+                b = new WallsView;
                 this.addChild(b);
                 null != a.wall && b.draw(a.wall, !1, a.focus);
-                null != a.citadel && b.draw(va.__cast(a.citadel.ward, xd).wall, !0, a.focus);
-                null != a.focus && this.addChild(new ai(a.focus));
+                null != a.citadel && b.draw(va.__cast(a.citadel.ward, Castle).wall, !0, a.focus);
+                null != a.focus && this.addChild(new FocusView(a.focus));
                 this.mouseEnabled = !1
             };
-            g["com.watabou.mfcg.mapping.FormalMap"] = bi;
-            bi.__name__ = "com.watabou.mfcg.mapping.FormalMap";
-            bi.__super__ = ka;
-            bi.prototype = v(ka.prototype, {
+            g["com.watabou.mfcg.mapping.FormalMap"] = FormalMap;
+            FormalMap.__name__ = "com.watabou.mfcg.mapping.FormalMap";
+            FormalMap.__super__ = ka;
+            FormalMap.prototype = v(ka.prototype, {
                 updateBounds: function(a, b, c, d) {
                     0 < this.model.shoreE.length && (null != this.water && this.removeChild(this.water), this.water = new md, this.drawWaterbody(this.water.get_graphics(),
                         a, b, c, d), this.addChildAt(this.water, 0))
@@ -762,9 +762,9 @@
                     for (var a = 0, b = this.get_numChildren(); a < b;) {
                         var c = a++,
                             d = this.getChildAt(c);
-                        if (d instanceof gc) {
+                        if (d instanceof TreesLayer) {
                             this.removeChild(d);
-                            this.addChildAt(new gc(this.model), c);
+                            this.addChildAt(new TreesLayer(this.model), c);
                             break
                         }
                     }
@@ -772,16 +772,16 @@
                 drawWaterbody: function(a, b, c, d, f) {
                     for (var h = this.model.getOcean(), k = (b + c) / 2, n = (d + f) / 2, p = [], g = 0; g < h.length;) {
                         var q = h[g];
-                        ++g; - 1 != this.model.horizon.indexOf(q) ? p.push(new I(q.x < k ? b : c, q.y < n ? d : f)) : p.push(new I(Fc.gate(q.x, b, c),
-                            Fc.gate(q.y, d, f)))
+                        ++g; - 1 != this.model.horizon.indexOf(q) ? p.push(new I(q.x < k ? b : c, q.y < n ? d : f)) : p.push(new I(MathUtils.gate(q.x, b, c),
+                            MathUtils.gate(q.y, d, f)))
                     }
                     h = p;
-                    ba.get("outline_water", !0) && a.lineStyle(K.getStrokeWidth(K.strokeNormal, !0), K.colorDark);
+                    State.get("outline_water", !0) && a.lineStyle(K.getStrokeWidth(K.strokeNormal, !0), K.colorDark);
                     a.beginFill(K.colorWater);
-                    Kb.drawPolygon(a, h);
+                    GraphicsExtender.drawPolygon(a, h);
                     a.endFill()
                 },
-                __class__: bi
+                __class__: FormalMap
             });
             var md = function() {
                 S.call(this);
@@ -800,41 +800,41 @@
                     get_graphics: "get_graphics"
                 })
             });
-            var kc = function(a) {
+            var PatchView = function(a) {
                 md.call(this);
                 this.patch = a;
                 a.view = this;
                 this.g = this.get_graphics()
             };
-            g["com.watabou.mfcg.mapping.PatchView"] = kc;
-            kc.__name__ = "com.watabou.mfcg.mapping.PatchView";
-            kc.__super__ = md;
-            kc.prototype = v(md.prototype, {
+            g["com.watabou.mfcg.mapping.PatchView"] = PatchView;
+            PatchView.__name__ = "com.watabou.mfcg.mapping.PatchView";
+            PatchView.__super__ = md;
+            PatchView.prototype = v(md.prototype, {
                 draw: function() {
                     this.g.clear();
                     var a = va.getClass(this.patch.ward);
                     switch (a) {
-                        case Pc:
-                        case xd:
-                        case Ne:
-                        case he:
+                        case Alleys:
+                        case Castle:
+                        case Cathedral:
+                        case Market:
                             var b = K.colorRoof,
                                 c = K.colorDark;
-                            if (kc.watercolours) {
+                            if (PatchView.watercolours) {
                                 var d = this.patch.ward.getColor();
                                 b = d;
-                                c = Gc.lerp(c, d, .3)
+                                c = Color.lerp(c, d, .3)
                             }
                             switch (a) {
-                                case Pc:
+                                case Alleys:
                                     var f = va.__cast(this.patch.ward,
-                                        Pc).group;
+                                        Alleys).group;
                                     if (f.core == this.patch.face)
                                         for (a = 0, d = f.blocks; a < d.length;) {
                                             var h = d[a];
                                             ++a;
                                             var k = h == f.church;
-                                            switch (kc.planMode) {
+                                            switch (PatchView.planMode) {
                                                 case "Block":
                                                     h = [h.shape];
                                                     break;
@@ -852,32 +852,32 @@
                                                 default:
                                                     h = []
                                             }
-                                            hd.paint(this.g, h, b, c, null, k)
+                                            BuildingPainter.paint(this.g, h, b, c, null, k)
                                         }
                                     break;
-                                case xd:
-                                    K.colorRoad != K.colorPaper && (this.g.beginFill(K.colorRoad), Kb.drawPolygon(this.g, this.patch.shape));
-                                    a = va.__cast(this.patch.ward, xd).building;
-                                    hd.paint(this.g, [a], b, c, 1, !0);
+                                case Castle:
+                                    K.colorRoad != K.colorPaper && (this.g.beginFill(K.colorRoad), GraphicsExtender.drawPolygon(this.g, this.patch.shape));
+                                    a = va.__cast(this.patch.ward, Castle).building;
+                                    BuildingPainter.paint(this.g, [a], b, c, 1, !0);
                                     break;
-                                case Ne:
-                                    a = va.__cast(this.patch.ward, Ne).building;
-                                    hd.paint(this.g, a, b, c, 1, !0);
+                                case Cathedral:
+                                    a = va.__cast(this.patch.ward, Cathedral).building;
+                                    BuildingPainter.paint(this.g, a, b, c, 1, !0);
                                     break;
-                                case he:
-                                    a = va.__cast(this.patch.ward, he), "Block" != kc.planMode && hd.paint(this.g, [a.monument], b, c, 0, !0)
+                                case Market:
+                                    a = va.__cast(this.patch.ward, Market), "Block" != PatchView.planMode && BuildingPainter.paint(this.g, [a.monument], b, c, 0, !0)
                             }
                             break;
-                        case yd:
-                            Yk.paint(this, this.patch.ward);
+                        case Farm:
+                            FarmPainter.paint(this, this.patch.ward);
                             break;
-                        case lf:
-                            b = ba.get("outline_water", !0);
+                        case Harbour:
+                            b = State.get("outline_water", !0);
                             a = 0;
-                            for (d = va.__cast(this.patch.ward, lf).piers; a < d.length;) c = d[a], ++a, this.drawPier(c, b);
+                            for (d = va.__cast(this.patch.ward, Harbour).piers; a < d.length;) c = d[a], ++a, this.drawPier(c, b);
                             break;
-                        case ce:
-                            this.drawGreen(va.__cast(this.patch.ward, ce).green);
+                        case Park:
+                            this.drawGreen(va.__cast(this.patch.ward, Park).green);
                             break;
                         default:
                             return !1
@@ -886,7 +886,7 @@
                 },
                 drawGreen: function(a) {
                     this.g.beginFill(K.colorGreen);
-                    Kb.drawPolygon(this.g, a)
+                    GraphicsExtender.drawPolygon(this.g, a)
                 },
                 drawPier: function(a, b) {
                     var c = a[0],
@@ -916,22 +916,22 @@
                     else this.g.lineStyle(1.2,
                         K.colorPaper, null, null, null, 0), f = this.g, f.moveTo(c.x, c.y), f.lineTo(d.x, d.y)
                 },
-                __class__: kc
+                __class__: PatchView
             });
-            var mg = function() {
+            var RiverView = function() {
                 ka.call(this)
             };
-            g["com.watabou.mfcg.mapping.RiverView"] = mg;
-            mg.__name__ = "com.watabou.mfcg.mapping.RiverView";
-            mg.getSegments = function(a, b) {
+            g["com.watabou.mfcg.mapping.RiverView"] = RiverView;
+            RiverView.__name__ = "com.watabou.mfcg.mapping.RiverView";
+            RiverView.getSegments = function(a, b) {
                 for (var c = [], d = null, f = 0, h = a.length; f < h;) {
                     var k = f++,
                         n = a[k]; - 1 != b.edges.indexOf(n) || -1 != b.edges.indexOf(n.twin) ? null == d ? (d = [n], c.push(d), 0 < k && d.splice(0, 0, a[k - 1])) : d.push(n) : (null != d && d.push(n), d = null)
                 }
                 return c
             };
-            mg.__super__ = ka;
-            mg.prototype = v(ka.prototype, {
+            RiverView.__super__ = ka;
+            RiverView.prototype = v(ka.prototype, {
                 update: function(a,
                     b) {
                     var c = 0 < a.shoreE.length,
@@ -946,21 +946,21 @@
                     }
                     h = d;
                     if (null != a.focus)
-                        for (f = mg.getSegments(b.course, a.focus), d = 0; d < f.length;) k = f[d], ++d, k = Ua.toPolyline(k), k = Hf.render(k, !1, 3, h), this.drawCourse(k, b.width);
-                    else k = Ua.toPolyline(b.course), c && (k[0] = qa.lerp(k[0], k[1])), k = Hf.render(k, !1, 3, h), this.drawCourse(k, b.width);
+                        for (f = RiverView.getSegments(b.course, a.focus), d = 0; d < f.length;) k = f[d], ++d, k = EdgeChain.toPolyline(k), k = Chaikin.render(k, !1, 3, h), this.drawCourse(k, b.width);
+                    else k = EdgeChain.toPolyline(b.course), c && (k[0] = GeomUtils.lerp(k[0], k[1])), k = Chaikin.render(k, !1, 3, h), this.drawCourse(k, b.width);
                     !c || null != a.focus && -1 == a.focus.vertices.indexOf(b.course[0].origin) || this.drawMouth(b);
                     c = (b.width + 1.2) / 2;
                     h = f = b.bridges;
                     for (f = f.keys(); f.hasNext();)
                         if (k = f.next(), d = h.get(k), n = k, k = d, null == a.focus || -1 != a.focus.vertices.indexOf(n)) {
                             d = n.point;
-                            var p = Ua.indexByOrigin(b.course, n),
+                            var p = EdgeChain.indexByOrigin(b.course, n),
                                 g = b.course[p];
                             g = g.next.origin.point.subtract(g.origin.point);
                             0 < p && (p = b.course[p - 1], p = p.next.origin.point.subtract(p.origin.point), g.x += p.x, g.y += p.y);
                             if (null == k) k = new I(-g.y, g.x), n = c, null == n && (n = 1), k = k.clone(), k.normalize(n), this.drawBridge(d.subtract(k), d.add(k), 1.2);
                             else {
-                                n = Ua.indexByOrigin(k, n);
+                                n = EdgeChain.indexByOrigin(k, n);
                                 if (0 == n) {
                                     g = new I(-g.y, g.x);
                                     p = c;
@@ -985,13 +985,13 @@
                 },
                 drawCourse: function(a, b) {
                     var c = this.get_graphics();
-                    ba.get("outline_water", !0) ? (c.lineStyle(b, K.colorDark, null, !1, null, 0), Kb.drawPolyline(c, a), c.lineStyle(b - 2 * K.getStrokeWidth(K.strokeNormal, !0), K.colorWater)) : c.lineStyle(b, K.colorWater);
-                    Kb.drawPolyline(c, a);
+                    State.get("outline_water", !0) ? (c.lineStyle(b, K.colorDark, null, !1, null, 0), GraphicsExtender.drawPolyline(c, a), c.lineStyle(b - 2 * K.getStrokeWidth(K.strokeNormal, !0), K.colorWater)) : c.lineStyle(b, K.colorWater);
+                    GraphicsExtender.drawPolyline(c, a);
                     c.endFill()
                 },
                 drawBridge: function(a, b, c) {
                     var d = this.get_graphics();
-                    if (ba.get("outline_roads", !0) || ba.get("outline_water",
+                    if (State.get("outline_roads", !0) || State.get("outline_water",
                             !0)) {
                         var f = K.getStrokeWidth(K.strokeNormal, !0);
                         d.lineStyle(c + f, K.colorDark, null, !1, null, 0);
@@ -1012,7 +1012,7 @@
                         n = k.next.origin.point.subtract(k.origin.point),
                         p = new I(.5 * n.x, .5 * n.y);
                     k = a.course[0];
-                    var g = qa.lerp(k.origin.point, k.next.origin.point,
+                    var g = GeomUtils.lerp(k.origin.point, k.next.origin.point,
                         .5);
                     n = new I(-p.y, p.x);
                     var q = c / 2;
@@ -1020,9 +1020,9 @@
                     n = n.clone();
                     n.normalize(q);
                     a = g.add(n);
-                    k = qa.lerp(f[(h + f.length - 1) % f.length], d);
+                    k = GeomUtils.lerp(f[(h + f.length - 1) % f.length], d);
                     var m = a.subtract(p),
-                        u = qa.lerp(k, d);
+                        u = GeomUtils.lerp(k, d);
                     n = new I(-p.y, p.x);
                     q = c / 2;
                     null == q && (q = 1);
@@ -1030,50 +1030,50 @@
                     n.normalize(q);
                     c = g.subtract(n);
                     p = c.subtract(p);
-                    n = qa.lerp(f[(h + 1) % f.length], d);
-                    g = qa.lerp(n, d);
+                    n = GeomUtils.lerp(f[(h + 1) % f.length], d);
+                    g = GeomUtils.lerp(n, d);
                     q = this.get_graphics();
                     q.beginFill(K.colorWater);
                     q.moveTo(a.x, a.y);
                     q.cubicCurveTo(m.x, m.y, u.x, u.y, k.x, k.y);
-                    kf.isConvexVertexi(f, h) && q.lineTo(d.x, d.y);
+                    PolyAccess.isConvexVertexi(f, h) && q.lineTo(d.x, d.y);
                     q.lineTo(n.x, n.y);
                     q.cubicCurveTo(g.x, g.y, p.x, p.y,
                         c.x, c.y);
                     q.endFill();
-                    ba.get("outline_water", !0) && (q.lineStyle(b, K.colorDark), q.moveTo(a.x, a.y), q.cubicCurveTo(m.x, m.y, u.x, u.y, k.x, k.y), q.moveTo(c.x, c.y), q.cubicCurveTo(p.x, p.y, g.x, g.y, n.x, n.y), q.moveTo(0, 0), q.endFill())
+                    State.get("outline_water", !0) && (q.lineStyle(b, K.colorDark), q.moveTo(a.x, a.y), q.cubicCurveTo(m.x, m.y, u.x, u.y, k.x, k.y), q.moveTo(c.x, c.y), q.cubicCurveTo(p.x, p.y, g.x, g.y, n.x, n.y), q.moveTo(0, 0), q.endFill())
                 },
-                __class__: mg
+                __class__: RiverView
             });
-            var ie = function() {
+            var RoadsView = function() {
                 ka.call(this);
                 this.outline = new ka;
                 this.addChild(this.outline);
                 this.fill = new ka;
                 this.addChild(this.fill)
             };
-            g["com.watabou.mfcg.mapping.RoadsView"] = ie;
-            ie.__name__ = "com.watabou.mfcg.mapping.RoadsView";
-            ie.smoothRoad = function(a, b) {
-                a = Hf.render(a, !1, 3, b);
+            g["com.watabou.mfcg.mapping.RoadsView"] = RoadsView;
+            RoadsView.__name__ = "com.watabou.mfcg.mapping.RoadsView";
+            RoadsView.smoothRoad = function(a, b) {
+                a = Chaikin.render(a, !1, 3, b);
                 for (var c = 0; c < b.length;) {
                     var d = b[c];
                     ++c;
-                    ie.cutCorner(a, d, 1)
+                    RoadsView.cutCorner(a, d, 1)
                 }
                 return a
             };
-            ie.cutCorner = function(a, b, c) {
+            RoadsView.cutCorner = function(a, b, c) {
                 var d = a.indexOf(b);
                 if (-1 != d && 0 != d && d != a.length - 1) {
                     var f = a[d - 1],
                         h = a[d + 1],
                         k = I.distance(f, b),
                         n = I.distance(b, h);
-                    k <= c / 2 || n <= c / 2 || (f = qa.lerp(f, b, (k - c) / k), b = qa.lerp(h, b, (n - c) / n), a.splice(d, 1), a.splice(d, 0, b), a.splice(d, 0, f))
+                    k <= c / 2 || n <= c / 2 || (f = GeomUtils.lerp(f, b, (k - c) / k), b = GeomUtils.lerp(h, b, (n - c) / n), a.splice(d, 1), a.splice(d, 0, b), a.splice(d, 0, f))
                 }
             };
-            ie.getSegments = function(a, b) {
+            RoadsView.getSegments = function(a, b) {
                 for (var c = [], d = null, f = 0, h = a.length; f < h;) {
                     var k = f++,
                         n = a[k]; - 1 != b.edges.indexOf(n) || -1 != b.edges.indexOf(n.twin) ? null == d ? (d = [n], c.push(d), 0 < k && d.splice(0, 0,
@@ -1081,15 +1081,15 @@
                 }
                 return c
             };
-            ie.__super__ = ka;
-            ie.prototype = v(ka.prototype, {
+            RoadsView.__super__ = ka;
+            RoadsView.prototype = v(ka.prototype, {
                 update: function(a) {
                     this.outline.removeChildren();
                     this.outline.get_graphics().clear();
                     this.fill.removeChildren();
                     this.fill.get_graphics().clear();
-                    var b = "Hidden" != ba.get("display_mode", "Lots"),
-                        c = ba.get("outline_roads", !0) ? K.getStrokeWidth(K.strokeNormal, !0) : 0;
+                    var b = "Hidden" != State.get("display_mode", "Lots"),
+                        c = State.get("outline_roads", !0) ? K.getStrokeWidth(K.strokeNormal, !0) : 0;
                     if (null == a.focus)
                         for (var d = 0, f = a.arteries; d < f.length;) {
                             var h = f[d];
@@ -1099,11 +1099,11 @@
                             for (d = 0, f = a.arteries; d < f.length;) {
                                 h = f[d];
                                 ++d;
-                                for (var k = 0, n = ie.getSegments(h, a.focus); k < n.length;) h = n[k], ++k, this.drawRoad(h, c, b)
+                                for (var k = 0, n = RoadsView.getSegments(h, a.focus); k < n.length;) h = n[k], ++k, this.drawRoad(h, c, b)
                             }
                     if (K.colorRoad != K.colorPaper)
-                        for (h = this.fill.get_graphics(), d = 0, f = a.cells; d < f.length;) k = f[d], ++d, k.ward instanceof he && (k = va.__cast(k.ward, he).space, h.beginFill(K.colorRoad), h.lineStyle(2, K.colorRoad), Kb.drawPolygon(h, k), h.endFill());
-                    if (ba.get("show_alleys", !1) && !sb.preview)
+                        for (h = this.fill.get_graphics(), d = 0, f = a.cells; d < f.length;) k = f[d], ++d, k.ward instanceof Market && (k = va.__cast(k.ward, Market).space, h.beginFill(K.colorRoad), h.lineStyle(2, K.colorRoad), GraphicsExtender.drawPolygon(h, k), h.endFill());
+                    if (State.get("show_alleys", !1) && !Main.preview)
                         for (h = 0 < c ? this.drawOutline(c) : this.drawFill(.6), d = 0, f = a.districts; d < f.length;)
                             for (n = f[d], ++d, k = 0, n = n.groups; k < n.length;) {
                                 var p = n[k];
@@ -1114,15 +1114,15 @@
                                         for (var g = 0, q = p.alleys; g < q.length;) {
                                             var m = q[g];
                                             ++g;
-                                            Kb.drawPolyline(h, m)
+                                            GraphicsExtender.drawPolyline(h, m)
                                         }
                                         g = 0;
-                                        for (p = p.border; g < p.length;) m = p[g], ++g, null == m.data && m.twin.face.data.ward instanceof Pc && (q = m.origin.point, m = m.next.origin.point, h.moveTo(q.x, q.y), h.lineTo(m.x, m.y))
+                                        for (p = p.border; g < p.length;) m = p[g], ++g, null == m.data && m.twin.face.data.ward instanceof Alleys && (q = m.origin.point, m = m.next.origin.point, h.moveTo(q.x, q.y), h.lineTo(m.x, m.y))
                                     }
                             }
                 },
                 drawRoad: function(a, b, c) {
-                    for (var d = Ua.toPolyline(a), f = [], h = [], k = 0, n = a.length; k < n;) {
+                    for (var d = EdgeChain.toPolyline(a), f = [], h = [], k = 0, n = a.length; k < n;) {
                         for (var p = k++, g = a[p].origin, q = !0, m = !0, u = 0, r = g.edges; u < r.length;) {
                             var l = r[u];
                             ++u;
@@ -1131,9 +1131,9 @@
                         m || f.push(g.point);
                         q || h.push(p)
                     }
-                    k = ie.smoothRoad(d, f);
+                    k = RoadsView.smoothRoad(d, f);
                     a = this.drawFill(2);
-                    Kb.drawPolyline(a, k);
+                    GraphicsExtender.drawPolyline(a, k);
                     if (0 < b)
                         if (a = this.drawOutline(2 + 2 * b), c) {
                             b = [];
@@ -1146,10 +1146,10 @@
                                 h[h.length - 1] < d.length - 1 && h.push(h[h.length - 1] + 1);
                                 n = [];
                                 for (u = 0; u < h.length;) p = h[u], ++u, n.push(d[p]);
-                                h = ie.smoothRoad(n, f);
-                                Kb.drawPolyline(a, h)
+                                h = RoadsView.smoothRoad(n, f);
+                                GraphicsExtender.drawPolyline(a, h)
                             }
-                        } else Kb.drawPolyline(a, k)
+                        } else GraphicsExtender.drawPolyline(a, k)
                 },
                 drawOutline: function(a) {
                     var b = new ka;
@@ -1165,7 +1165,7 @@
                     b.lineStyle(a, K.colorRoad);
                     return b
                 },
-                __class__: ie
+                __class__: RoadsView
             });
             var K = function() {};
             g["com.watabou.mfcg.mapping.Style"] = K;
@@ -1188,22 +1188,22 @@
                 }
             };
             K.spectrum = function(a, b, c) {
-                a = Gc.rgb2hsv(a);
-                return Gc.hsv(a.x - 360 * (c - 1) / c * K.tintStrength / 100 * (b / (c - 1) - .5), a.y, a.z)
+                a = Color.rgb2hsv(a);
+                return Color.hsv(a.x - 360 * (c - 1) / c * K.tintStrength / 100 * (b / (c - 1) - .5), a.y, a.z)
             };
             K.brightness = function(a, b, c) {
-                a = Gc.rgb2hsv(a);
-                return Gc.hsv(a.x, a.y, a.z + Math.min(a.z, 1 - a.z) * K.tintStrength / 50 * (b / (c - 1) - .5))
+                a = Color.rgb2hsv(a);
+                return Color.hsv(a.x, a.y, a.z + Math.min(a.z, 1 - a.z) * K.tintStrength / 50 * (b / (c - 1) - .5))
             };
             K.overlay = function(a, b, c) {
-                var d = Gc.rgb2hsv(a);
-                return Gc.lerp(a, Gc.hsv(d.x + 360 * b / c, d.y, d.z), K.tintStrength / 100)
+                var d = Color.rgb2hsv(a);
+                return Color.lerp(a, Color.hsv(d.x + 360 * b / c, d.y, d.z), K.tintStrength / 100)
             };
             K.setPalette = function(a, b) {
                 null == b && (b = !1);
                 null != a && (K.colorPaper = a.getColor("colorPaper"), K.colorLight = a.getColor("colorLight"),
                     K.colorDark = a.getColor("colorDark"), K.colorRoof = a.getColor("colorRoof", K.colorLight), K.colorWater = a.getColor("colorWater", K.colorPaper), K.colorGreen = a.getColor("colorGreen", K.colorPaper), K.colorRoad = a.getColor("colorRoad", K.colorPaper), K.colorWall = a.getColor("colorWall", K.colorDark), K.colorTree = a.getColor("colorTree", K.colorDark), K.colorLabel = a.getColor("colorLabel", K.colorDark), K.tintMethod = a.getString("tintMethod", K.tintMethods[0]), K.tintStrength = a.getInt("tintStrength", 50), K.weathering = a.getInt("weathering",
-                        20), b && ba.set("colors", a.data()))
+                        20), b && State.set("colors", a.data()))
             };
             K.fillForm = function(a) {
                 a.addTab("Colors");
@@ -1224,19 +1224,19 @@
                 a.addInt("weathering", "Weathering(%)", K.weathering, 0, 100)
             };
             K.restore = function() {
-                K.thinLines = ba.get("thin_lines", !0) || sb.preview;
-                var a = ba.get("colors");
-                null != a && K.setPalette(Xc.fromData(a), !1)
+                K.thinLines = State.get("thin_lines", !0) || Main.preview;
+                var a = State.get("colors");
+                null != a && K.setPalette(Palette.fromData(a), !1)
             };
-            var gc = function(a) {
+            var TreesLayer = function(a) {
                 var b = this;
                 ka.call(this);
                 this.trees = [];
                 this.treeGroups = [];
                 this.addCityTrees(a);
-                ba.get("show_forests", !1) && this.addForests(a);
+                State.get("show_forests", !1) && this.addForests(a);
                 var c =
-                    ba.get("outline_trees", !0);
+                    State.get("outline_trees", !0);
                 a = function(a, d) {
                     var f = b.addLayer();
                     if (c) {
@@ -1244,14 +1244,14 @@
                         for (var h = 0; h < d.length;) {
                             var k = d[h];
                             ++h;
-                            Kb.drawPolygon(f, k)
+                            GraphicsExtender.drawPolygon(f, k)
                         }
-                        for (h = 0; h < a.length;) k = a[h], ++h, Kb.drawPolygonAt(f, k.crown, k.pos.x, k.pos.y);
+                        for (h = 0; h < a.length;) k = a[h], ++h, GraphicsExtender.drawPolygonAt(f, k.crown, k.pos.x, k.pos.y);
                         f.endFill()
                     }
                     f.beginFill(K.colorTree);
-                    for (h = 0; h < d.length;) k = d[h], ++h, Kb.drawPolygon(f, k);
-                    for (h = 0; h < a.length;) k = a[h], ++h, f.beginFill(K.colorTree), Kb.drawPolygonAt(f, k.crown, k.pos.x, k.pos.y)
+                    for (h = 0; h < d.length;) k = d[h], ++h, GraphicsExtender.drawPolygon(f, k);
+                    for (h = 0; h < a.length;) k = a[h], ++h, f.beginFill(K.colorTree), GraphicsExtender.drawPolygonAt(f, k.crown, k.pos.x, k.pos.y)
                 };
                 a(this.trees, []);
                 for (var d = 0, f = this.treeGroups; d <
@@ -1262,9 +1262,9 @@
                 }
                 this.mouseChildren = this.mouseEnabled = !1
             };
-            g["com.watabou.mfcg.mapping.TreesLayer"] = gc;
-            gc.__name__ = "com.watabou.mfcg.mapping.TreesLayer";
-            gc.getForestFaces = function(a) {
+            g["com.watabou.mfcg.mapping.TreesLayer"] = TreesLayer;
+            TreesLayer.__name__ = "com.watabou.mfcg.mapping.TreesLayer";
+            TreesLayer.getForestFaces = function(a) {
                 if (null == a.focus) return a.dcel.faces;
                 var b = [],
                     c = 0;
@@ -1281,39 +1281,39 @@
                 }
                 return b
             };
-            gc.getForestOutlines = function(a) {
+            TreesLayer.getForestOutlines = function(a) {
                 for (var b = [], c = [], d = 0; d < a.length;) {
                     var f = a[d];
                     ++d;
-                    f.data.ward instanceof og && c.push(f)
+                    f.data.ward instanceof Wilderness && c.push(f)
                 }
-                for (; 0 < c.length;) a = Ic.floodFillEx(c[0], function(a) {
+                for (; 0 < c.length;) a = DCEL.floodFillEx(c[0], function(a) {
                     return -1 != c.indexOf(a.twin.face) ? null != a.data ? a.data == Tc.ROAD : !0 : !1
-                }), b.push(Ic.outline(a)), Z.removeAll(c, a);
+                }), b.push(DCEL.outline(a)), Z.removeAll(c, a);
                 return b
             };
-            gc.getTree = function() {
-                if (20 <= gc.cache.length) return Z.random(gc.cache);
+            TreesLayer.getTree = function() {
+                if (20 <= TreesLayer.cache.length) return Z.random(TreesLayer.cache);
                 var a = 1.5 * Math.pow(1.5, ((C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647 + (C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647 + (C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647) / 3 * 2 - 1);
-                a = gc.getCrown(a);
-                gc.cache.push(a);
+                a = TreesLayer.getCrown(a);
+                TreesLayer.cache.push(a);
                 return a
             };
-            gc.getCrown =
+            TreesLayer.getCrown =
                 function(a) {
                     for (var b = [], c = 0; 6 > c;) {
                         var d = c++;
                         d = 2 * Math.PI * (d + ((C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647 + (C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647 + (C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647) / 3) / 6;
                         b.push(I.polar(a * (1 - 4 / 6 * Math.abs(((C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647 + (C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647 + (C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647 + (C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647) / 2 - 1)), d))
                     }
-                    return mf.bloat(b, a * Math.sin(3 * Math.PI / 6))
+                    return Bloater.bloat(b, a * Math.sin(3 * Math.PI / 6))
                 };
-            gc.resetForests = function() {
-                gc.savedKey =
+            TreesLayer.resetForests = function() {
+                TreesLayer.savedKey =
                     null
             };
-            gc.__super__ = ka;
-            gc.prototype = v(ka.prototype, {
+            TreesLayer.__super__ = ka;
+            TreesLayer.prototype = v(ka.prototype, {
                 addLayer: function() {
                     var a = new md;
                     this.addChild(a);
@@ -1332,20 +1332,20 @@
                 },
                 addForests: function(a) {
                     var b = null == a.focus ? a.dcel.faces : a.focus.faces;
-                    if (b == gc.savedKey) this.treeGroups = gc.savedGroups;
+                    if (b == TreesLayer.savedKey) this.treeGroups = TreesLayer.savedGroups;
                     else {
-                        for (var c = gc.getForestOutlines(gc.getForestFaces(a)),
+                        for (var c = TreesLayer.getForestOutlines(TreesLayer.getForestFaces(a)),
                                 d = [], f = 0; f < c.length;) {
                             var h = c[f];
                             ++f;
                             for (var k = [], n = 0; n < h.length;) {
                                 var p = h[n];
                                 ++n;
-                                var g = Ua.toPoly(p);
-                                g = uc.simpleInset(g, this.getForestInsets(a, p));
-                                g = uc.resampleClosed(g, 20);
-                                g = uc.fractalizeClosed(g, 2, .5);
-                                g = Me.smoothClosed(g, 5);
+                                var g = EdgeChain.toPoly(p);
+                                g = PolyUtils.simpleInset(g, this.getForestInsets(a, p));
+                                g = PolyUtils.resampleClosed(g, 20);
+                                g = PolyUtils.fractalizeClosed(g, 2, .5);
+                                g = Cubic.smoothClosed(g, 5);
                                 k.push(g)
                             }
                             d.push({
@@ -1359,7 +1359,7 @@
                         d = 0;
                         for (f = this.treeGroups; d < f.length;)
                             for (c = f[d], ++d, k = 0, n = c.polies; k < n.length;)
-                                for (g = n[k], ++k, g = uc.resampleClosed(g, 3), h = 0; h < g.length;)
+                                for (g = n[k], ++k, g = PolyUtils.resampleClosed(g, 3), h = 0; h < g.length;)
                                     if (p = g[h], ++h, a.containsPoint(p)) {
                                         var q =
                                             I.polar(1.5 * ((C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647), 2 * Math.PI * ((C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647));
@@ -1367,10 +1367,10 @@
                                         p.y += q.y;
                                         c.trees.push({
                                             pos: p,
-                                            crown: gc.getTree()
+                                            crown: TreesLayer.getTree()
                                         })
-                                    } gc.savedKey = b;
-                        gc.savedGroups = this.treeGroups
+                                    } TreesLayer.savedKey = b;
+                        TreesLayer.savedGroups = this.treeGroups
                     }
                 },
                 getForestInsets: function(a, b) {
@@ -1388,27 +1388,27 @@
                             ++b;
                             this.trees.push({
                                 pos: c,
-                                crown: gc.getTree()
+                                crown: TreesLayer.getTree()
                             })
                         }
                 },
-                __class__: gc
+                __class__: TreesLayer
             });
-            var ng = function() {
+            var WallsView = function() {
                 ka.call(this);
-                this.towers = ba.get("towers", "Round");
-                this.outline = ba.get("outline_solids", !0) && K.colorWall != K.colorDark;
+                this.towers = State.get("towers", "Round");
+                this.outline = State.get("outline_solids", !0) && K.colorWall != K.colorDark;
                 this.stroke = K.getStrokeWidth(K.strokeNormal, !0)
             };
-            g["com.watabou.mfcg.mapping.WallsView"] = ng;
-            ng.__name__ = "com.watabou.mfcg.mapping.WallsView";
-            ng.__super__ = ka;
-            ng.prototype = v(ka.prototype, {
+            g["com.watabou.mfcg.mapping.WallsView"] = WallsView;
+            WallsView.__name__ = "com.watabou.mfcg.mapping.WallsView";
+            WallsView.__super__ = ka;
+            WallsView.prototype = v(ka.prototype, {
                 draw: function(a, b, c) {
-                    for (var d = pc.TOWER_RADIUS, f = a.edges.length, h = new pa, k = function(b, d) {
+                    for (var d = CurtainWall.TOWER_RADIUS, f = a.edges.length, h = new pa, k = function(b, d) {
                             if (null == c || -1 != c.vertices.indexOf(b)) {
                                 var k = b.point,
-                                    n = Ua.indexByOrigin(a.edges,
+                                    n = EdgeChain.indexByOrigin(a.edges,
                                         b),
                                     p = a.edges[(n + f - 1) % f];
                                 n = a.edges[n];
@@ -1438,7 +1438,7 @@
                         k(g, q.width)
                     }
                     k = this.get_graphics();
-                    k.lineStyle(pc.THICKNESS, K.colorWall);
+                    k.lineStyle(CurtainWall.THICKNESS, K.colorWall);
                     n = 0;
                     for (p = f; n < p;)
                         if (q = n++, g = a.edges[q],
@@ -1457,11 +1457,11 @@
                             u = g.next.origin;
                             m = h.h[u.__id__];
                             null == m ? g = u.point : (g = g.next.origin.point.subtract(g.origin.point), u = -d, null == u && (u = 1), g = g.clone(), g.normalize(u), g = m[0].add(g));
-                            this.outline && (k.lineStyle(pc.THICKNESS + this.stroke, K.colorDark), k.moveTo(q.x, q.y), k.lineTo(g.x,
-                                g.y), k.lineStyle(pc.THICKNESS - this.stroke, K.colorWall));
+                            this.outline && (k.lineStyle(CurtainWall.THICKNESS + this.stroke, K.colorDark), k.moveTo(q.x, q.y), k.lineTo(g.x,
+                                g.y), k.lineStyle(CurtainWall.THICKNESS - this.stroke, K.colorWall));
                             k.moveTo(q.x, q.y);
                             k.lineTo(g.x, g.y)
-                        } b = b ? pc.LTOWER_RADIUS : d;
+                        } b = b ? CurtainWall.LTOWER_RADIUS : d;
                     n = 0;
                     for (p = a.towers; n < p.length;) d = p[n], ++n, null != c && -1 == c.vertices.indexOf(d) || this.drawNormalTower(a, d.point, b);
                     for (g = h.iterator(); g.hasNext();) b = g.next(), this.drawGate(b)
@@ -1474,7 +1474,7 @@
                             k = f.indexOf(b);
                         a.bothSegments(k) ? (d = f[(k + 1) % h], f = f[(k + h - 1) % h].subtract(b), f.normalize(1), h = d.subtract(b), h.normalize(1),
                             d = 0 > f.x * h.y - f.y * h.x, f = f.add(h), h = d ? -1 : 1, null == h && (h = 1), f = f.clone(), f.normalize(h)) : (a.segments[k] ? f = f[k < f.length - 1 ? k + 1 : 0].subtract(f[k]) : (h = (k + h - 1) % h, f = f[h < f.length - 1 ? h + 1 : 0].subtract(f[h])), h = !0, null == h && (h = !1), f.setTo(f.y, -f.x), h && f.normalize(1))
-                    } else f = ng.drawNormalTower_unit;
+                    } else f = WallsView.drawNormalTower_unit;
                     this.drawTower(b, f, d, c)
                 },
                 drawTower: function(a, b, c, d) {
@@ -1508,11 +1508,11 @@
                             h.push(new I(-1.5 * d, d));
                             h.push(new I(-1.5 *
                                 d, -d));
-                            Kb.drawPolygon(f, h);
+                            GraphicsExtender.drawPolygon(f, h);
                             break;
                         case "Square":
                             d *= .9;
-                            f.drawRect(.5 * (d - pc.THICKNESS / 2) - d, -d, 2 * d, 2 * d);
+                            f.drawRect(.5 * (d - CurtainWall.THICKNESS / 2) - d, -d, 2 * d, 2 * d);
                             break;
                         default:
                             f.drawCircle(0, 0, d)
@@ -1523,7 +1523,7 @@
                     this.addChild(c)
                 },
                 drawGate: function(a) {
-                    var b = 2 * pc.TOWER_RADIUS,
+                    var b = 2 * CurtainWall.TOWER_RADIUS,
                         c = a[1].subtract(a[0]),
                         d = c.get_length();
                     a = a[0];
@@ -1541,22 +1541,22 @@
                     f.set_y(a.y);
                     this.addChild(f)
                 },
-                __class__: ng
+                __class__: WallsView
             });
-            var Fd = function(a, b) {
+            var Blueprint = function(a, b) {
                 this.export = this.style = null;
                 this.coastDir = NaN;
                 this.size = a;
                 this.seed = b
             };
-            g["com.watabou.mfcg.model.Blueprint"] = Fd;
-            Fd.__name__ = "com.watabou.mfcg.model.Blueprint";
-            Fd.create = function(a, b) {
-                b = new Fd(a, b);
+            g["com.watabou.mfcg.model.Blueprint"] = Blueprint;
+            Blueprint.__name__ = "com.watabou.mfcg.model.Blueprint";
+            Blueprint.create = function(a, b) {
+                b = new Blueprint(a, b);
                 b.name = null;
                 b.pop = 0;
-                b.greens = ba.get("green", !1);
-                b.random = ba.get("random", !0);
+                b.greens = State.get("green", !1);
+                b.random = State.get("random", !0);
                 if (b.random) {
                     var c = (a + 30) / 80;
                     null == c && (c = .5);
@@ -1582,65 +1582,65 @@
                     b.river = (C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647 <
                         c;
                     b.coast = .5 > (C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647
-                } else b.citadel = ba.get("citadel", !0), b.inner = ba.get("urban_castle", !1), b.plaza = ba.get("plaza", !0), b.temple = ba.get("temple", !0), b.walls = ba.get("walls", !0), b.shanty = ba.get("shantytown", !1), b.coast = ba.get("coast", !0), b.river = ba.get("river", !0);
-                b.hub = ba.get("hub", !1);
-                b.gates = ba.get("gates", -1);
+                } else b.citadel = State.get("citadel", !0), b.inner = State.get("urban_castle", !1), b.plaza = State.get("plaza", !0), b.temple = State.get("temple", !0), b.walls = State.get("walls", !0), b.shanty = State.get("shantytown", !1), b.coast = State.get("coast", !0), b.river = State.get("river", !0);
+                b.hub = State.get("hub", !1);
+                b.gates = State.get("gates", -1);
                 return b
             };
-            Fd.similar = function(a) {
-                var b = Fd.create(a.size, a.seed);
+            Blueprint.similar = function(a) {
+                var b = Blueprint.create(a.size, a.seed);
                 b.name = a.name;
                 return b
             };
-            Fd.fromURL = function() {
-                var a = za.getInt("size", 0),
-                    b = za.getInt("seed",
+            Blueprint.fromURL = function() {
+                var a = URLState.getInt("size", 0),
+                    b = URLState.getInt("seed",
                         C.seed);
                 if (0 == a || 0 == b) return null;
-                a = new Fd(a, b);
-                a.name = za.get("name");
-                a.pop = za.getInt("population", 0);
-                a.citadel = za.getFlag("citadel", !0);
-                a.inner = za.getFlag("urban_castle", !1);
-                a.plaza = za.getFlag("plaza", !0);
-                a.temple = za.getFlag("temple", !0);
-                a.walls = za.getFlag("walls", !0);
-                a.shanty = za.getFlag("shantytown", !1);
-                a.river = za.getFlag("river", !1);
-                a.coast = za.getFlag("coast", !0);
-                a.greens = za.getFlag("greens", !1);
-                a.hub = za.getFlag("hub", !1);
-                a.gates = za.getInt("gates", -1);
-                a.coastDir = parseFloat(za.get("sea", "0.0"));
-                a.export = za.get("export");
-                a.style = za.get("style");
+                a = new Blueprint(a, b);
+                a.name = URLState.get("name");
+                a.pop = URLState.getInt("population", 0);
+                a.citadel = URLState.getFlag("citadel", !0);
+                a.inner = URLState.getFlag("urban_castle", !1);
+                a.plaza = URLState.getFlag("plaza", !0);
+                a.temple = URLState.getFlag("temple", !0);
+                a.walls = URLState.getFlag("walls", !0);
+                a.shanty = URLState.getFlag("shantytown", !1);
+                a.river = URLState.getFlag("river", !1);
+                a.coast = URLState.getFlag("coast", !0);
+                a.greens = URLState.getFlag("greens", !1);
+                a.hub = URLState.getFlag("hub", !1);
+                a.gates = URLState.getInt("gates", -1);
+                a.coastDir = parseFloat(URLState.get("sea", "0.0"));
+                a.export = URLState.get("export");
+                a.style = URLState.get("style");
                 return a
             };
-            Fd.prototype = {
+            Blueprint.prototype = {
                 updateURL: function() {
-                    za.reset();
-                    za.set("size", this.size);
-                    za.set("seed", this.seed);
-                    null != this.name && za.set("name", this.name);
-                    0 < this.pop && za.set("population", this.pop);
-                    za.setFlag("citadel", this.citadel);
-                    za.setFlag("urban_castle", this.inner);
-                    za.setFlag("plaza", this.plaza);
-                    za.setFlag("temple", this.temple);
-                    za.setFlag("walls", this.walls);
-                    za.setFlag("shantytown", this.shanty);
-                    za.setFlag("coast", this.coast);
-                    za.setFlag("river", this.river);
-                    za.setFlag("greens", this.greens);
-                    this.hub ? za.setFlag("hub") : za.set("gates", this.gates);
-                    this.coast && za.set("sea", this.coastDir)
+                    URLState.reset();
+                    URLState.set("size", this.size);
+                    URLState.set("seed", this.seed);
+                    null != this.name && URLState.set("name", this.name);
+                    0 < this.pop && URLState.set("population", this.pop);
+                    URLState.setFlag("citadel", this.citadel);
+                    URLState.setFlag("urban_castle", this.inner);
+                    URLState.setFlag("plaza", this.plaza);
+                    URLState.setFlag("temple", this.temple);
+                    URLState.setFlag("walls", this.walls);
+                    URLState.setFlag("shantytown", this.shanty);
+                    URLState.setFlag("coast", this.coast);
+                    URLState.setFlag("river", this.river);
+                    URLState.setFlag("greens", this.greens);
+                    this.hub ? URLState.setFlag("hub") : URLState.set("gates", this.gates);
+                    this.coast && URLState.set("sea", this.coastDir)
                 },
-                __class__: Fd
+                __class__: Blueprint
             };
-            var Jd = function() {};
-            g["com.watabou.mfcg.model.Building"] = Jd;
-            Jd.__name__ = "com.watabou.mfcg.model.Building";
-            Jd.create = function(a, b, c, d, f) {
+            var Building = function() {};
+            g["com.watabou.mfcg.model.Building"] = Building;
+            Building.__name__ = "com.watabou.mfcg.model.Building";
+            Building.create = function(a, b, c, d, f) {
                 null == f && (f = 0);
                 null == d && (d = !1);
                 null == c && (c = !1);
@@ -1652,16 +1652,16 @@
                 b = Math.ceil(Math.min(b, n) / h);
                 h = Math.ceil(Math.min(k, p) / h);
                 if (1 >= b || 1 >= h) return null;
-                c = d ? Jd.getPlanSym(b, h) : c ? Jd.getPlanFront(b, h) : Jd.getPlan(b, h);
+                c = d ? Building.getPlanSym(b, h) : c ? Building.getPlanFront(b, h) : Building.getPlan(b, h);
                 for (d = k = 0; d < c.length;) p = c[d], ++d, p && ++k;
                 if (k >= b * h) return null;
-                a = Zk.grid(a, b, h, f);
+                a = Cutter.grid(a, b, h, f);
                 d = [];
                 f = 0;
                 for (b = a.length; f < b;) h = f++, c[h] && d.push(a[h]);
-                return Jd.circumference(d)
+                return Building.circumference(d)
             };
-            Jd.getPlan = function(a, b, c) {
+            Building.getPlan = function(a, b, c) {
                 null == c && (c = .5);
                 for (var d = a * b, f = [], h = 0, k = d; h < k;) h++, f.push(!1);
                 var n = Math.floor((C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647 * a),
@@ -1680,7 +1680,7 @@
                 }
                 return f
             };
-            Jd.getPlanFront = function(a, b) {
+            Building.getPlanFront = function(a, b) {
                 for (var c = a * b, d = [], f = 0, h = c; f < h;) {
                     var k = f++;
                     d.push(k < a)
@@ -1697,8 +1697,8 @@
                 }
                 return d
             };
-            Jd.getPlanSym = function(a, b) {
-                for (var c = Jd.getPlan(a, b, 0), d = 0; d < b;)
+            Building.getPlanSym = function(a, b) {
+                for (var c = Building.getPlan(a, b, 0), d = 0; d < b;)
                     for (var f = d++, h = 0, k = a; h < k;) {
                         var n = h++,
                             p = f * a + n;
@@ -1707,7 +1707,7 @@
                     }
                 return c
             };
-            Jd.circumference = function(a) {
+            Building.circumference = function(a) {
                 if (0 == a.length) return [];
                 if (1 == a.length) return a[0];
                 for (var b = [], c = [], d = 0; d < a.length;) {
@@ -1747,18 +1747,18 @@
                 for (d = 0; d < b.length;) f = b[d], ++d, N.remove(a, f);
                 return a
             };
-            var yb = function(a, b) {
-                var c = Ua.toPolyline(b);
+            var Canal = function(a, b) {
+                var c = EdgeChain.toPolyline(b);
                 if (0 < a.waterEdge.length) {
                     var d = c[0];
-                    wd.set(d, qa.lerp(d, c[1]));
+                    PointExtender.set(d, GeomUtils.lerp(d, c[1]));
                     var f = a.shore,
                         h = f.indexOf(d);
-                    2 <= h && wd.set(f[h - 1], qa.lerp(f[h - 1], qa.lerp(f[h - 2], d)));
-                    h < f.length - 2 && wd.set(f[h + 1], qa.lerp(f[h + 1], qa.lerp(f[h + 2], d)))
+                    2 <= h && PointExtender.set(f[h - 1], GeomUtils.lerp(f[h - 1], GeomUtils.lerp(f[h - 2], d)));
+                    h < f.length - 2 && PointExtender.set(f[h + 1], GeomUtils.lerp(f[h + 1], GeomUtils.lerp(f[h + 2], d)))
                 }
-                Sa.set(c, uc.smoothOpen(c, null, 1));
-                Ua.assignData(b,
+                PolyCore.set(c, PolyUtils.smoothOpen(c, null, 1));
+                EdgeChain.assignData(b,
                     Tc.CANAL);
                 if (null != a.wall) {
                     d = a.wall.shape;
@@ -1773,26 +1773,26 @@
                                 m = d.length,
                                 u = d[(p + m - 1) % m];
                             p = d[(p + 1) % m];
-                            u = qa.intersectLines(g.x, g.y, q.x, q.y, u.x, u.y, p.x - u.x, p.y - u.y).x;
+                            u = GeomUtils.intersectLines(g.x, g.y, q.x, q.y, u.x, u.y, p.x - u.x, p.y - u.y).x;
                             g = new I(g.x + q.x * u, g.y + q.y * u);
-                            wd.set(c[h], qa.lerp(n, g))
+                            PointExtender.set(c[h], GeomUtils.lerp(n, g))
                         }
                     }
                 }
                 this.city = a;
                 this.course = b
             };
-            g["com.watabou.mfcg.model.Canal"] = yb;
-            yb.__name__ = "com.watabou.mfcg.model.Canal";
-            yb.createRiver = function(a) {
-                yb.buildTopology(a);
-                var b = 0 < a.shoreE.length ? yb.deltaRiver(a) :
-                    yb.regularRiver(a);
-                if (null != b) return new yb(a, b);
+            g["com.watabou.mfcg.model.Canal"] = Canal;
+            Canal.__name__ = "com.watabou.mfcg.model.Canal";
+            Canal.createRiver = function(a) {
+                Canal.buildTopology(a);
+                var b = 0 < a.shoreE.length ? Canal.deltaRiver(a) :
+                    Canal.regularRiver(a);
+                if (null != b) return new Canal(a, b);
                 throw new Vb("Unable to build a canal!");
             };
-            yb.regularRiver = function(a) {
-                for (var b = Ua.vertices(a.horizonE), c = [], d = 0, f = b; d < f.length;) {
+            Canal.regularRiver = function(a) {
+                for (var b = EdgeChain.vertices(a.horizonE), c = [], d = 0, f = b; d < f.length;) {
                     var h = f[d];
                     ++d;
                     1 < a.cellsByVertex(h).length && c.push(h)
@@ -1812,15 +1812,15 @@
                         d > f && (d = f, n = h)
                     }
                     h = Z.random(a.dcel.vertices.h[a.center.__id__].edges).next.origin;
-                    c = yb.topology.buildPath(n, h);
-                    h = null != c ? yb.topology.buildPath(h, k) : null;
+                    c = Canal.topology.buildPath(n, h);
+                    h = null != c ? Canal.topology.buildPath(h, k) : null;
                     if (null != c && null != h)
                         for (d = 0, f = h.length; d < f;) {
                             p = d++;
                             var g = c.indexOf(h[p]);
                             if (-1 != g) {
                                 c = a.dcel.vertices2chain(h.slice(0, p).concat(c.slice(g)));
-                                if (yb.validateCourse(c)) return c;
+                                if (Canal.validateCourse(c)) return c;
                                 break
                             }
                         }
@@ -1835,7 +1835,7 @@
                 }
                 return null
             };
-            yb.deltaRiver = function(a) {
+            Canal.deltaRiver = function(a) {
                 for (var b = [], c = 1, d = a.shoreE.length - 1; c < d;) {
                     var f = c++,
                         h = a.shoreE[f].origin;
@@ -1846,7 +1846,7 @@
                 b = Z.sortBy(b, function(b) {
                     return a.shoreE[b].origin.point.get_length()
                 });
-                f = Ua.vertices(Z.difference(a.earthEdgeE, a.shoreE));
+                f = EdgeChain.vertices(Z.difference(a.earthEdgeE, a.shoreE));
                 c = [];
                 for (d = 0; d < f.length;) h = f[d], ++d, 1 < a.cellsByVertex(h).length && c.push(h);
                 for (f = c; 0 < b.length;) {
@@ -1867,8 +1867,8 @@
                         g = k.x * g.x + k.y * g.y;
                         p < g && (p = g, n = h)
                     }
-                    c = yb.topology.buildPath(n, d);
-                    if (null != c && (c = a.dcel.vertices2chain(c), yb.validateCourse(c))) return c;
+                    c = Canal.topology.buildPath(n, d);
+                    if (null != c && (c = a.dcel.vertices2chain(c), Canal.validateCourse(c))) return c;
                     hb.trace("discard", {
                         fileName: "Source/com/watabou/mfcg/model/Canal.hx",
                         lineNumber: 268,
@@ -1878,88 +1878,88 @@
                 }
                 return null
             };
-            yb.validateCourse = function(a) {
-                if (null == a || a.length < yb.model.earthEdge.length / 5) return !1;
+            Canal.validateCourse = function(a) {
+                if (null == a || a.length < Canal.model.earthEdge.length / 5) return !1;
                 for (var b = 1, c = a.length - 1; b < c;) {
                     var d = b++;
-                    if (null != Ua.edgeByOrigin(yb.model.shoreE, a[d].origin)) return !1
+                    if (null != EdgeChain.edgeByOrigin(Canal.model.shoreE, a[d].origin)) return !1
                 }
                 if (null !=
-                    yb.model.wall) {
-                    var f = yb.model.wall.edges;
+                    Canal.model.wall) {
+                    var f = Canal.model.wall.edges;
                     b = 0;
                     for (c = f.length; b < c;) {
                         d = b++;
                         var h = f[d];
-                        d = Ua.indexByOrigin(a, h.origin);
-                        if (0 < d && d < a.length - 1 && !yb.intersect(f, h, a, a[d])) return !1
+                        d = EdgeChain.indexByOrigin(a, h.origin);
+                        if (0 < d && d < a.length - 1 && !Canal.intersect(f, h, a, a[d])) return !1
                     }
                 }
                 b = 0;
-                for (c = yb.model.arteries; b < c.length;) {
+                for (c = Canal.model.arteries; b < c.length;) {
                     f = c[b];
                     ++b;
                     h = 1;
                     for (var k = f.length - 1; h < k;) {
                         d = h++;
                         var n = f[d];
-                        d = Ua.indexByOrigin(a, n.origin);
-                        if (0 < d && d < a.length - 1 && !yb.intersect(f, n, a, a[d])) return !1
+                        d = EdgeChain.indexByOrigin(a, n.origin);
+                        if (0 < d && d < a.length - 1 && !Canal.intersect(f, n, a, a[d])) return !1
                     }
                 }
                 return !0
             };
-            yb.intersect = function(a, b, c, d) {
-                a = Ua.prev(a, b);
-                c = Ua.prev(c, d);
+            Canal.intersect = function(a, b, c, d) {
+                a = EdgeChain.prev(a, b);
+                c = EdgeChain.prev(c, d);
                 do a = a.next.twin; while (a != c && a != b.twin && a != d.twin);
                 if (a == b.twin) return !1;
                 do a = a.next.twin; while (a != c && a != b.twin && a != d.twin);
                 return a == b.twin ? !0 : !1
             };
-            yb.buildTopology = function(a) {
-                if (a.cells != yb.patches) {
-                    yb.model = a;
-                    yb.patches = a.cells;
+            Canal.buildTopology = function(a) {
+                if (a.cells != Canal.patches) {
+                    Canal.model = a;
+                    Canal.patches = a.cells;
                     for (var b = [], c = 0, d = a.cells; c < d.length;) {
                         var f = d[c];
                         ++c;
                         f.waterbody || b.push(f)
                     }
-                    yb.topology = new gh(b);
-                    null != a.wall && yb.topology.excludePolygon(a.wall.edges);
-                    null != a.citadel && yb.topology.excludePoints(Ua.vertices(va.__cast(a.citadel.ward, xd).wall.edges));
-                    yb.topology.excludePoints(a.gates);
+                    Canal.topology = new Topology(b);
+                    null != a.wall && Canal.topology.excludePolygon(a.wall.edges);
+                    null != a.citadel && Canal.topology.excludePoints(EdgeChain.vertices(va.__cast(a.citadel.ward, Castle).wall.edges));
+                    Canal.topology.excludePoints(a.gates);
                     b = 0;
-                    for (c = a.arteries; b < c.length;) a = c[b], ++b, yb.topology.excludePolygon(a)
+                    for (c = a.arteries; b < c.length;) a = c[b], ++b, Canal.topology.excludePolygon(a)
                 }
             };
-            yb.prototype = {
+            Canal.prototype = {
                 updateState: function() {
                     this.gates = new pa;
-                    if (null != yb.model.wall)
-                        for (var a = 0, b = yb.model.wall.edges; a < b.length;) {
+                    if (null != Canal.model.wall)
+                        for (var a = 0, b = Canal.model.wall.edges; a < b.length;) {
                             var c = b[a];
                             ++a;
                             var d = c.origin,
-                                f = Ua.indexByOrigin(this.course, d);
-                            0 < f && f < this.course.length - 1 && (yb.model.wall.addWatergate(d, this), this.gates.set(d, yb.model.wall))
+                                f = EdgeChain.indexByOrigin(this.course, d);
+                            0 < f && f < this.course.length - 1 && (Canal.model.wall.addWatergate(d, this), this.gates.set(d, Canal.model.wall))
                         }
                     this.bridges = new pa;
                     a = 0;
-                    for (b = yb.model.arteries; a < b.length;) {
+                    for (b = Canal.model.arteries; a < b.length;) {
                         c = b[a];
                         ++a;
                         var h = 0;
                         for (d = c.length; h < d;) {
                             var k = h++,
                                 n = c[k];
-                            f = Ua.indexByOrigin(this.course, n.origin);
+                            f = EdgeChain.indexByOrigin(this.course, n.origin);
                             0 < f && f < this.course.length - 1 && (0 == k ? this.bridges.set(n.origin,
-                                c) : yb.intersect(c, n, this.course, this.course[f]) && this.bridges.set(n.origin, c))
+                                c) : Canal.intersect(c, n, this.course, this.course[f]) && this.bridges.set(n.origin, c))
                         }
                     }
-                    n = yb.model.inner;
+                    n = Canal.model.inner;
                     c = [];
                     a = 2;
                     for (b = this.course.length - 1; a < b;) f = a++, f = this.course[f], -1 == n.indexOf(f.face.data) && -1 == n.indexOf(f.twin.face.data) || Z.add(c, f.origin);
@@ -1968,7 +1968,7 @@
                     Z.removeAll(c, a);
                     f = c.length;
                     this.rural = 0 == f;
-                    this.width = (3 + yb.model.inner.length / 5) * (.8 + (C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647 * .4) * (this.rural ? 1.5 : 1);
+                    this.width = (3 + Canal.model.inner.length / 5) * (.8 + (C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647 * .4) * (this.rural ? 1.5 : 1);
                     if (!this.rural) {
                         h = 0;
                         b = n = this.bridges;
@@ -1990,11 +1990,11 @@
                             ++h
                         }
                     }
-                    Ua.assignData(this.course, Tc.CANAL)
+                    EdgeChain.assignData(this.course, Tc.CANAL)
                 },
-                __class__: yb
+                __class__: Canal
             };
-            var ci = function(a) {
+            var Cell = function(a) {
                 this.seed = -1;
                 this.district = null;
                 this.face = a;
@@ -2004,9 +2004,9 @@
                 this.waterbody = this.withinWalls = this.withinCity = !1;
                 this.seed = C.seed = 48271 * C.seed % 2147483647 | 0
             };
-            g["com.watabou.mfcg.model.Cell"] = ci;
-            ci.__name__ = "com.watabou.mfcg.model.Cell";
-            ci.prototype = {
+            g["com.watabou.mfcg.model.Cell"] = Cell;
+            Cell.__name__ = "com.watabou.mfcg.model.Cell";
+            Cell.prototype = {
                 bordersInside: function(a) {
                     for (var b = 0; b < a.length;) {
                         var c = a[b];
@@ -2021,9 +2021,9 @@
                 reroll: function() {
                     var a = null != this.ward.group ? this.ward.group.core.data : this;
                     a != this ? a.reroll() : this.isRerollable() &&
-                        (this.seed = C.seed, this.ward.createGeometry(), this.view.draw(), ia.map.updateRoads(), ia.map.updateTrees(), Bb.geometryChanged.dispatch(this))
+                        (this.seed = C.seed, this.ward.createGeometry(), this.view.draw(), TownScene.map.updateRoads(), TownScene.map.updateTrees(), ModelDispatcher.geometryChanged.dispatch(this))
                 },
-                __class__: ci
+                __class__: Cell
             };
             var Tc = y["com.watabou.mfcg.model.Edge"] = {
                 __ename__: "com.watabou.mfcg.model.Edge",
@@ -2060,13 +2060,13 @@
                 }
             };
             Tc.__constructs__ = [Tc.HORIZON, Tc.COAST, Tc.ROAD, Tc.WALL, Tc.CANAL];
-            var Ub = function(a) {
+            var City = function(a) {
                 this.bounds = new na;
                 this.bp = a;
                 var b = a.size,
                     c = a.seed;
                 if (0 != b) {
-                    0 < c && C.reset(c); - 1 == b && (b = Ub.nextSize);
+                    0 < c && C.reset(c); - 1 == b && (b = City.nextSize);
                     this.nPatches = b;
                     hb.trace(">> seed:" + C.seed + " size:" + b, {
                         fileName: "Source/com/watabou/mfcg/model/City.hx",
@@ -2074,11 +2074,11 @@
                         className: "com.watabou.mfcg.model.City",
                         methodName: "new"
                     });
-                    c = Ub.sizes.h;
+                    c = City.sizes.h;
                     for (var d = Object.keys(c), f = d.length, h = 0; h < f;) {
                         var k = c[d[h++]];
                         if (b >= k.min && b < k.max) {
-                            Ub.nextSize = k.min + Math.random() * (k.max - k.min) | 0;
+                            City.nextSize = k.min + Math.random() * (k.max - k.min) | 0;
                             break
                         }
                     }
@@ -2097,30 +2097,30 @@
                             lineNumber: 151,
                             className: "com.watabou.mfcg.model.City",
                             methodName: "new"
-                        }), this.build(), Ub.instance = this
+                        }), this.build(), City.instance = this
                     } catch (n) {
                         c = X.caught(n), hb.trace("*** " + H.string(c), {
                             fileName: "Source/com/watabou/mfcg/model/City.hx",
                             lineNumber: 156,
                             className: "com.watabou.mfcg.model.City",
                             methodName: "new"
-                        }), Ub.instance = null
+                        }), City.instance = null
                     }
-                    while (null == Ub.instance);
+                    while (null == City.instance);
                     a.updateURL();
-                    Bb.newModel.dispatch(this)
+                    ModelDispatcher.newModel.dispatch(this)
                 }
             };
-            g["com.watabou.mfcg.model.City"] = Ub;
-            Ub.__name__ = "com.watabou.mfcg.model.City";
-            Ub.prototype = {
+            g["com.watabou.mfcg.model.City"] = City;
+            City.__name__ = "com.watabou.mfcg.model.City";
+            City.prototype = {
                 rerollName: function() {
-                    return Ma.cityName(this)
+                    return Namer.cityName(this)
                 },
                 setName: function(a, b) {
                     this.bp.name = this.name = a;
                     this.bp.updateURL();
-                    Bb.titleChanged.dispatch(this.name)
+                    ModelDispatcher.titleChanged.dispatch(this.name)
                 },
                 build: function() {
                     this.streets = [];
@@ -2195,7 +2195,7 @@
                         b < n && (b = n)
                     }
                     this.plazaNeeded && (C.save(), f = 8 + (C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647 * 8, h = f * (1 + (C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647), b = Math.max(b, h), c[1] = I.polar(f, d), c[2] = I.polar(h, d + Math.PI / 2), c[3] = I.polar(f, d + Math.PI), c[4] = I.polar(h, d + 3 * Math.PI / 2), C.restore());
-                    h = (new Qb(c.concat(Qd.regular(6, 2 * b)))).getVoronoi();
+                    h = (new Qb(c.concat(PolyCreate.regular(6, 2 * b)))).getVoronoi();
                     for (f = h.keys(); f.hasNext();) c = f.next(), n = h.get(c),
                         Z.some(n, function(a) {
                             return a.get_length() > b
@@ -2204,14 +2204,14 @@
                     this.inner = [];
                     f = [];
                     for (n = h.iterator(); n.hasNext();) h = n.next(), f.push(h);
-                    this.dcel = new Ic(f);
+                    this.dcel = new DCEL(f);
                     var p = new pa;
                     f = 0;
                     for (h = this.dcel.faces; f < h.length;) {
                         var g = h[f];
                         ++f;
-                        c = new ci(g);
-                        n = Sa.centroid(c.shape);
+                        c = new Cell(g);
+                        n = PolyCore.centroid(c.shape);
                         p.set(c, n);
                         this.cells.push(c)
                     }
@@ -2221,7 +2221,7 @@
                     });
                     if (this.coastNeeded) {
                         C.save();
-                        d = pg.fractal(6);
+                        d = Noise.fractal(6);
                         f = 20 + (C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647 * 40;
                         k = .3 * b * (((C.seed = 48271 *
                             C.seed % 2147483647 | 0) / 2147483647 + (C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647 + (C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647) / 3 * 2 - 1);
@@ -2251,7 +2251,7 @@
                         return a.x * a.x + a.y *
                             a.y
                     });
-                    this.plazaNeeded && new he(this, this.plaza = this.inner[0]);
+                    this.plazaNeeded && new Market(this, this.plaza = this.inner[0]);
                     if (this.citadelNeeded) {
                         if (this.stadtburgNeeded) {
                             f = [];
@@ -2286,7 +2286,7 @@
                     }
                 },
                 optimizeJunctions: function() {
-                    var a = 3 * pc.LTOWER_RADIUS,
+                    var a = 3 * CurtainWall.LTOWER_RADIUS,
                         b = this.citadel;
                     for (b = null != b ? b.shape : null;;) {
                         for (var c = !1, d = 0, f = this.dcel.faces; d < f.length;) {
@@ -2294,7 +2294,7 @@
                             ++d;
                             var k = h.data.shape;
                             if (!(4 >= k.length)) {
-                                var n = Sa.perimeter(k);
+                                var n = PolyCore.perimeter(k);
                                 k =
                                     Math.max(a, n / k.length / 3);
                                 n = h = h.halfEdge;
@@ -2322,10 +2322,10 @@
                     C.save();
                     var a = this.waterEdge;
                     null != this.citadel && (a = a.concat(this.citadel.shape));
-                    this.border = new pc(this.wallsNeeded, this, this.inner, a);
+                    this.border = new CurtainWall(this.wallsNeeded, this, this.inner, a);
                     this.wallsNeeded && (this.wall = this.border, this.walls.push(this.wall));
                     this.gates = this.border.gates;
-                    null != this.citadel && (a = new xd(this, this.citadel), a.wall.buildTowers(), this.walls.push(a.wall), this.gates = this.gates.concat(a.wall.gates));
+                    null != this.citadel && (a = new Castle(this, this.citadel), a.wall.buildTowers(), this.walls.push(a.wall), this.gates = this.gates.concat(a.wall.gates));
                     C.restore()
                 },
                 cellsByVertex: function(a) {
@@ -2342,10 +2342,10 @@
                     var a = Z.find(this.dcel.edges, function(a) {
                         return null == a.twin
                     });
-                    this.horizonE = Ic.circumference(a, this.dcel.faces);
+                    this.horizonE = DCEL.circumference(a, this.dcel.faces);
                     if (6 > this.horizonE.length) throw X.thrown("Failed to build the horizon: " + this.horizonE.length);
-                    Ua.assignData(this.horizonE, Tc.HORIZON);
-                    this.horizon = Ua.toPoly(this.horizonE);
+                    EdgeChain.assignData(this.horizonE, Tc.HORIZON);
+                    this.horizon = EdgeChain.toPoly(this.horizonE);
                     if (this.coastNeeded) {
                         a = [];
                         for (var b = [], c = 0, d = this.dcel.faces; c < d.length;) {
@@ -2353,26 +2353,26 @@
                             ++c;
                             f.data.waterbody ? a.push(f) : b.push(f)
                         }
-                        b = Z.max(Ic.split(b), function(a) {
+                        b = Z.max(DCEL.split(b), function(a) {
                             return a.length
                         });
-                        a = Z.max(Ic.split(a), function(a) {
+                        a = Z.max(DCEL.split(a), function(a) {
                             return a.length
                         });
-                        this.earthEdgeE = Ic.circumference(null, b);
-                        this.earthEdge = Ua.toPoly(this.earthEdgeE);
-                        this.waterEdgeE = Ic.circumference(null, a);
+                        this.earthEdgeE = DCEL.circumference(null, b);
+                        this.earthEdge = EdgeChain.toPoly(this.earthEdgeE);
+                        this.waterEdgeE = DCEL.circumference(null, a);
                         if (Z.every(this.waterEdgeE, function(a) {
                                 return null != a.twin
                             })) throw X.thrown("Required water doesn't touch the horizon");
-                        this.waterEdge = Ua.toPoly(this.waterEdgeE);
-                        Sa.set(this.waterEdge, uc.smooth(this.waterEdge, null, Math.floor(1 + (C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647 * 3)));
+                        this.waterEdge = EdgeChain.toPoly(this.waterEdgeE);
+                        PolyCore.set(this.waterEdge, PolyUtils.smooth(this.waterEdge, null, Math.floor(1 + (C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647 * 3)));
                         for (a = 0; null != this.earthEdgeE[a].twin;) a = (a + 1) % this.earthEdgeE.length;
                         for (; null == this.earthEdgeE[a].twin;) a = (a + 1) % this.earthEdgeE.length;
                         this.shore = [];
                         this.shoreE = [];
                         do b = this.earthEdgeE[a], this.shoreE.push(b), this.shore.push(b.origin.point), a = (a + 1) % this.earthEdgeE.length; while (null != this.earthEdgeE[a].twin);
-                        Ua.assignData(this.shoreE, Tc.COAST)
+                        EdgeChain.assignData(this.shoreE, Tc.COAST)
                     } else this.earthEdgeE = this.horizonE, this.earthEdge = this.horizon, this.waterEdgeE = [], this.waterEdge = [], this.shoreE = [], this.shore = []
                 },
                 buildStreets: function() {
@@ -2382,11 +2382,11 @@
                         d.withinCity &&
                             a.push(d)
                     }
-                    var f = new gh(a);
+                    var f = new Topology(a);
                     a = [];
                     b = 0;
                     for (c = this.cells; b < c.length;) d = c[b], ++b, d.withinCity || d.waterbody || a.push(d);
-                    d = new gh(a);
+                    d = new Topology(a);
                     a = [];
                     b = 0;
                     for (c = this.shoreE; b < c.length;) {
@@ -2401,7 +2401,7 @@
                     for (b = this.walls; a < b.length;) {
                         var k = b[a];
                         ++a;
-                        Z.addAll(h, Ua.vertices(k.edges))
+                        Z.addAll(h, EdgeChain.vertices(k.edges))
                     }
                     0 < h.length && (Z.removeAll(h, this.gates), f.excludePoints(h), d.excludePoints(h));
                     h = Z.difference(this.earthEdgeE, this.shoreE);
@@ -2446,7 +2446,7 @@
                                         !p.withinWalls && p.bordersInside(this.shoreE) && c.push(p)
                                     }
                                     k = c;
-                                    for (c = 0; c < k.length;) n = k[c], ++c, n.landing = !0, n.withinCity = !0, new Pc(this, n), this.maxDocks--
+                                    for (c = 0; c < k.length;) n = k[c], ++c, n.landing = !0, n.withinCity = !0, new Alleys(this, n), this.maxDocks--
                                 }
                             }
                         } else hb.trace("Unable to build a street!", {
@@ -2463,7 +2463,7 @@
                         f = a
                     } else f = null;
                     a = 0;
-                    for (b = this.arteries; a < b.length;) d = b[a], ++a, Ua.assignData(d, Tc.ROAD), d = Ua.toPoly(d), Sa.set(d, uc.smoothOpen(d, f, 2))
+                    for (b = this.arteries; a < b.length;) d = b[a], ++a, EdgeChain.assignData(d, Tc.ROAD), d = EdgeChain.toPoly(d), PolyCore.set(d, PolyUtils.smoothOpen(d, f, 2))
                 },
                 tidyUpRoads: function() {
                     for (var a = [], b = 0, c = this.streets; b < c.length;) {
@@ -2496,7 +2496,7 @@
                 },
                 buildCanals: function() {
                     C.save();
-                    this.canals = this.riverNeeded ? [yb.createRiver(this)] : [];
+                    this.canals = this.riverNeeded ? [Canal.createRiver(this)] : [];
                     C.restore()
                 },
                 addHarbour: function(a) {
@@ -2507,7 +2507,7 @@
                         null != h.twin && c.push(h.twin.face.data)
                     }
                     for (; b < c.length;) a = c[b], ++b, a.waterbody &&
-                        null == a.ward && new lf(this, a)
+                        null == a.ward && new Harbour(this, a)
                 },
                 createWards: function() {
                     if (this.bp.greens) {
@@ -2523,7 +2523,7 @@
                                 for (d = 0; d < b.length;) {
                                     var f = b[d];
                                     ++d;
-                                    null == f.ward && (new ce(this, f), ++a)
+                                    null == f.ward && (new Park(this, f), ++a)
                                 }
                         }
                         d = (this.nPatches - 10) / 20;
@@ -2534,25 +2534,25 @@
                             for (d++;;)
                                 if (f =
                                     Z.random(this.inner), null == f.ward) {
-                                    new ce(this, f);
+                                    new Park(this, f);
                                     break
                                 }
                     }
                     if (0 < this.shoreE.length && 0 < this.maxDocks)
                         for (d = 0, a = this.inner; d < a.length && !(f = a[d], ++d, f.bordersInside(this.shoreE) && (f.landing = !0, 0 >= --this.maxDocks)););
                     this.templeNeeded && (f = Z.min(this.inner, function(a) {
-                        return null == a.ward ? Sa.center(a.shape).get_length() : Infinity
-                    }), new Ne(this, f));
+                        return null == a.ward ? PolyCore.center(a.shape).get_length() : Infinity
+                    }), new Cathedral(this, f));
                     d = 0;
-                    for (a = this.inner; d < a.length;) f = a[d], ++d, null == f.ward && new Pc(this, f);
+                    for (a = this.inner; d < a.length;) f = a[d], ++d, null == f.ward && new Alleys(this, f);
                     if (null != this.wall)
                         for (d = 0, a = this.wall.gates; d < a.length;)
                             if (b = a[d], ++d, c = 1 / (this.nPatches -
                                     5), null == c && (c = .5), !((C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647 < c))
-                                for (c = 0, b = this.cellsByVertex(b); c < b.length;) f = b[c], ++c, null == f.ward && (f.withinCity = !0, f.bordersInside(this.shoreE) && 0 < this.maxDocks-- && (f.landing = !0), new Pc(this, f));
+                                for (c = 0, b = this.cellsByVertex(b); c < b.length;) f = b[c], ++c, null == f.ward && (f.withinCity = !0, f.bordersInside(this.shoreE) && 0 < this.maxDocks-- && (f.landing = !0), new Alleys(this, f));
                     this.shantyNeeded && this.buildShantyTowns();
                     d = 0;
-                    for (a = Ua.vertices(this.shoreE); d < a.length;)
+                    for (a = EdgeChain.vertices(this.shoreE); d < a.length;)
                         for (f = a[d], ++d, c = 0, b = this.cellsByVertex(f); c < b.length;) {
                             var h = b[c];
                             ++c;
@@ -2593,7 +2593,7 @@
                         }
                     }
                     null != this.citadel && f(va.__cast(this.citadel.ward,
-                        xd).wall.shape);
+                        Castle).wall.shape);
                     this.bounds.setTo(a, c, b - a, d - c)
                 },
                 getViewport: function() {
@@ -2612,7 +2612,7 @@
                         }
                     }
                     h = 0;
-                    for (k = this.cells; h < k.length;) n = k[h], ++h, null == n.ward && (n.waterbody ? new Rb(this, n) : n.bordersInside(this.shoreE) ? new og(this, n) : (p = Sa.center(n.shape).subtract(this.center), g = Math.atan2(p.y, p.x), g = a * Math.sin(g + c) + b * Math.sin(2 * g + d), p.get_length() < (g + 1) * f ? new yd(this, n) : new og(this, n)))
+                    for (k = this.cells; h < k.length;) n = k[h], ++h, null == n.ward && (n.waterbody ? new Ward(this, n) : n.bordersInside(this.shoreE) ? new Wilderness(this, n) : (p = PolyCore.center(n.shape).subtract(this.center), g = Math.atan2(p.y, p.x), g = a * Math.sin(g + c) + b * Math.sin(2 * g + d), p.get_length() < (g + 1) * f ? new Farm(this, n) : new Wilderness(this, n)))
                 },
                 buildShantyTowns: function() {
                     for (var a =
@@ -2649,7 +2649,7 @@
                                         k = Z.count(k, function(a) {
                                             return a.withinCity
                                         });
-                                        1 < k && Z.add(b, P) && c.push(k * k / d(Sa.center(P.shape)))
+                                        1 < k && Z.add(b, P) && c.push(k * k / d(PolyCore.center(P.shape)))
                                     }
                                 }
                             }, h = 0, k = this.cells; h < k.length;) {
@@ -2669,7 +2669,7 @@
                         n = b[h];
                         n.withinCity = !0;
                         0 < this.maxDocks && n.bordersInside(this.shoreE) && (n.landing = !0, this.maxDocks--);
-                        new Pc(this, n);
+                        new Alleys(this, n);
                         c.splice(h, 1);
                         N.remove(b, n);
                         --p;
@@ -2686,7 +2686,7 @@
                         this.wall.buildTowers();
                         if (null != this.citadel)
                             for (a = 0, b = va.__cast(this.citadel.ward,
-                                    xd).wall.towers; a < b.length;) c = b[a], ++a, N.remove(this.wall.towers, c)
+                                    Castle).wall.towers; a < b.length;) c = b[a], ++a, N.remove(this.wall.towers, c)
                     }
                 },
                 getOcean: function() {
@@ -2700,13 +2700,13 @@
                             f = f.twin.face.data;
                             var k = !1,
                                 n = !1;
-                            f.landing ? k = !0 : f.withinCity && kf.isConvexVertexi(this.earthEdge, this.earthEdge.indexOf(h)) && (n = !0);
+                            f.landing ? k = !0 : f.withinCity && PolyAccess.isConvexVertexi(this.earthEdge, this.earthEdge.indexOf(h)) && (n = !0);
                             if (b || k) n = !0;
                             b = k;
                             n && a.push(h)
                         }
                     }
-                    return this.ocean = Hf.render(this.waterEdge, !0, 3, a)
+                    return this.ocean = Chaikin.render(this.waterEdge, !0, 3, a)
                 },
                 buildGeometry: function() {
                     for (var a = 0, b =
@@ -2715,44 +2715,44 @@
                         ++a;
                         c.updateState()
                     }
-                    Ma.reset();
+                    Namer.reset();
                     this.name = null != this.bp.name ? this.bp.name : this.rerollName();
-                    a = new ik(this);
+                    a = new DistrictBuilder(this);
                     a.build();
                     this.districts = a.districts;
-                    Ma.nameDistricts(this);
+                    Namer.nameDistricts(this);
                     a = 0;
                     for (b = this.cells; a < b.length;) c = b[a], ++a, c.ward.createGeometry()
                 },
                 rerollDistricts: function() {
-                    Ma.reset();
-                    Ma.nameDistricts(this);
-                    Bb.districtsChanged.dispatch()
+                    Namer.reset();
+                    Namer.nameDistricts(this);
+                    ModelDispatcher.districtsChanged.dispatch()
                 },
                 updateGeometry: function(a) {
                     for (var b = [], c = [], d = 0; d < a.length;) {
                         var f = a[d];
                         ++d;
-                        f.ward instanceof Pc ? Z.add(c, f.ward.group.core) : f.ward.createGeometry();
+                        f.ward instanceof Alleys ? Z.add(c, f.ward.group.core) : f.ward.createGeometry();
                         null != f.district && Z.add(b, f.district)
                     }
                     for (d = 0; d < c.length;) f = c[d], ++d, f.data.ward.createGeometry();
                     for (d = 0; d < b.length;) c = b[d], ++d, c.updateGeometry();
-                    gc.resetForests();
-                    Bb.geometryChanged.dispatch(1 == a.length ? a[0] : null)
+                    TreesLayer.resetForests();
+                    ModelDispatcher.geometryChanged.dispatch(1 == a.length ? a[0] : null)
                 },
                 updateLots: function() {
                     for (var a = 0, b = this.cells; a < b.length;) {
                         var c = b[a];
                         ++a;
-                        c.ward instanceof Pc && c.ward.createGeometry()
+                        c.ward instanceof Alleys && c.ward.createGeometry()
                     }
-                    Bb.geometryChanged.dispatch(null)
+                    ModelDispatcher.geometryChanged.dispatch(null)
                 },
                 addLandmark: function(a) {
-                    a = new di(this, a);
+                    a = new Landmark(this, a);
                     this.landmarks.push(a);
-                    Bb.landmarksChanged.dispatch();
+                    ModelDispatcher.landmarksChanged.dispatch();
                     return a
                 },
                 updateLandmarks: function() {
@@ -2784,17 +2784,17 @@
                             }
                         }
                     }
-                    for (c = 0; c < a.length;) h = a[c], ++c, d = Z.random(b), f = Sa.center(d), h = new di(this, f, h), this.landmarks.push(h), N.remove(b, d);
-                    Bb.landmarksChanged.dispatch()
+                    for (c = 0; c < a.length;) h = a[c], ++c, d = Z.random(b), f = PolyCore.center(d), h = new Landmark(this, f, h), this.landmarks.push(h), N.remove(b, d);
+                    ModelDispatcher.landmarksChanged.dispatch()
                 },
                 removeLandmark: function(a) {
                     N.remove(this.landmarks,
                         a);
-                    Bb.landmarksChanged.dispatch()
+                    ModelDispatcher.landmarksChanged.dispatch()
                 },
                 removeLandmarks: function() {
                     this.landmarks = [];
-                    Bb.landmarksChanged.dispatch()
+                    ModelDispatcher.landmarksChanged.dispatch()
                 },
                 countBuildings: function() {
                     for (var a = 0, b = 0, c = this.districts; b < c.length;) {
@@ -2832,7 +2832,7 @@
                     for (var b = 0, c = this.cells; b < c.length;) {
                         var d = c[b];
                         ++b;
-                        if (Gb.containsPoint(d.shape, a)) return d
+                        if (PolyBounds.containsPoint(d.shape, a)) return d
                     }
                     return null
                 },
@@ -2849,7 +2849,7 @@
                                 for (k = k.blocks; n < k.length;) {
                                     var p = k[n];
                                     ++n;
-                                    Gb.rect(p.shape).intersects(a) && ++b
+                                    PolyBounds.rect(p.shape).intersects(a) && ++b
                                 }
                             }
                         }
@@ -2883,9 +2883,9 @@
                             this.bp.coastDir : 0
                     }
                 },
-                __class__: Ub
+                __class__: City
             };
-            var pc = function(a, b, c, d) {
+            var CurtainWall = function(a, b, c, d) {
                 this.watergates = new pa;
                 this.real = !0;
                 this.patches = c;
@@ -2901,10 +2901,10 @@
                 } else {
                     f = [];
                     for (h = 0; h < c.length;) k = c[h], ++h, f.push(k.face);
-                    this.edges = Ic.circumference(null, f);
-                    this.shape = Ua.toPoly(this.edges)
+                    this.edges = DCEL.circumference(null, f);
+                    this.shape = EdgeChain.toPoly(this.edges)
                 }
-                a && (Ua.assignData(this.edges, Tc.WALL, !1), 1 < c.length && Sa.set(this.shape, uc.smooth(this.shape, d, 3)));
+                a && (EdgeChain.assignData(this.edges, Tc.WALL, !1), 1 < c.length && PolyCore.set(this.shape, PolyUtils.smooth(this.shape, d, 3)));
                 this.length = this.shape.length;
                 1 == c.length ?
                     this.buildCastleGate(b, d) : this.buildCityGates(a, b, d);
@@ -2913,9 +2913,9 @@
                 for (a = this.shape; h < a.length;) ++h, f.push(!0);
                 this.segments = f
             };
-            g["com.watabou.mfcg.model.CurtainWall"] = pc;
-            pc.__name__ = "com.watabou.mfcg.model.CurtainWall";
-            pc.prototype = {
+            g["com.watabou.mfcg.model.CurtainWall"] = CurtainWall;
+            CurtainWall.__name__ = "com.watabou.mfcg.model.CurtainWall";
+            CurtainWall.prototype = {
                 buildCityGates: function(a, b, c) {
                     this.gates = [];
                     for (var d = [], f = 0, h = this.edges; f < h.length;) {
@@ -2924,7 +2924,7 @@
                         d.push(-1 != c.indexOf(k.origin.point) || 2 > Z.intersect(b.cellsByVertex(k.origin), this.patches).length ? 0 : 1)
                     }
                     var n = d;
-                    if (0 == Z.sum(n)) throw hb.trace("" + this.length + " vertices of " +
+                    if (0 == Z.sum(n)) throw hb.trace("" + this.length + " vertices ScaleBarOld " +
                         this.patches.length + " patches, " + c.length + " are reserved.", {
                             fileName: "Source/com/watabou/mfcg/model/CurtainWall.hx",
                             lineNumber: 82,
@@ -2952,7 +2952,7 @@
                             q = -1 != m ? q[(m + 1) % q.length] : null;
                             Z.removeAll(h, this.shape);
                             if (0 < h.length) {
-                                g = [f[0].point.subtract(qa.lerp(g, q))];
+                                g = [f[0].point.subtract(GeomUtils.lerp(g, q))];
                                 h = Z.max(h, function(a, b) {
                                     return function(c) {
                                         c = c.subtract(b[0].point);
@@ -2963,7 +2963,7 @@
                                 f = [f.face, f.twin.face];
                                 h = b.cells;
                                 g = [];
-                                for (q = 0; q < f.length;) m = f[q], ++q, g.push(new ci(m));
+                                for (q = 0; q < f.length;) m = f[q], ++q, g.push(new Cell(m));
                                 Z.replace(h, k, g);
                                 for (h = 0; h < f.length;)
                                     for (k = f[h], ++h, q = g = k.halfEdge, m = !0; m;) k = q, q = q.next, m = q != g, null != k.twin && k.twin.data == Tc.WALL && (k.data = Tc.WALL)
@@ -2974,7 +2974,7 @@
                     }
                     if (0 == this.gates.length && 0 < p) throw new Vb("No gates created!");
                     if (a)
-                        for (d = 0, f = this.gates; d < f.length;) a = f[d], ++d, wd.set(a.point, uc.lerpVertex(this.shape, a.point))
+                        for (d = 0, f = this.gates; d < f.length;) a = f[d], ++d, PointExtender.set(a.point, PolyUtils.lerpVertex(this.shape, a.point))
                 },
                 buildCastleGate: function(a,
                     b) {
@@ -3000,11 +3000,11 @@
                             return I.distance(a.origin.point,
                                 a.next.origin.point)
                         }).origin]) : (f = Z.min(c, function(a) {
-                            return qa.lerp(a.origin.point, a.next.origin.point, .5).get_length()
+                            return GeomUtils.lerp(a.origin.point, a.next.origin.point, .5).get_length()
                         }), this.gates = [this.splitSegment(a, f)])
                     } else c = Z.min(c, function(a) {
                         return a.get_length()
-                    }), wd.set(c, uc.lerpVertex(this.shape, c)), this.gates = [a.dcel.vertices.h[c.__id__]]
+                    }), PointExtender.set(c, PolyUtils.lerpVertex(this.shape, c)), this.gates = [a.dcel.vertices.h[c.__id__]]
                 },
                 splitSegment: function(a, b) {
                     a = a.splitEdge(b);
@@ -3012,7 +3012,7 @@
                     this.edges = c;
                     this.shape = this.patches[0].shape;
                     this.length++;
-                    Ua.assignData(this.edges,
+                    EdgeChain.assignData(this.edges,
                         Tc.WALL, !1);
                     return a.origin
                 },
@@ -3044,9 +3044,9 @@
                     N.remove(this.towers, a)
                 },
                 getTowerRadius: function(a) {
-                    return this.real ? -1 != this.towers.indexOf(a) ? pc.LTOWER_RADIUS : -1 != this.gates.indexOf(a) ? 1 + 2 * pc.TOWER_RADIUS : 0 : 0
+                    return this.real ? -1 != this.towers.indexOf(a) ? CurtainWall.LTOWER_RADIUS : -1 != this.gates.indexOf(a) ? 1 + 2 * CurtainWall.TOWER_RADIUS : 0 : 0
                 },
-                __class__: pc
+                __class__: CurtainWall
             };
             var lc = y["com.watabou.mfcg.model.DistrictType"] = {
                 __ename__: "com.watabou.mfcg.model.DistrictType",
@@ -3115,7 +3115,7 @@
                 }
             };
             lc.__constructs__ = [lc.CENTER, lc.CASTLE, lc.DOCKS, lc.BRIDGE, lc.GATE, lc.BANK, lc.PARK, lc.SPRAWL, lc.REGULAR];
-            var Pe = function(a, b) {
+            var District = function(a, b) {
                 this.type = b;
                 this.city = a[0].ward.model;
                 b = [];
@@ -3128,9 +3128,9 @@
                 for (b = 0; b < a.length;) c = a[b], ++b, c.district = this;
                 this.createParams()
             };
-            g["com.watabou.mfcg.model.District"] = Pe;
-            Pe.__name__ = "com.watabou.mfcg.model.District";
-            Pe.check4holes = function(a) {
+            g["com.watabou.mfcg.model.District"] = District;
+            District.__name__ = "com.watabou.mfcg.model.District";
+            District.check4holes = function(a) {
                 for (var b = [],
                         c = [], d = 0; d < a.length;) {
                     var f = a[d];
@@ -3148,7 +3148,7 @@
                     for (++a, f = f.next; - 1 == b.indexOf(f);) f = f.twin.next; while (f != c);
                 return b.length > a
             };
-            Pe.updateColors = function(a) {
+            District.updateColors = function(a) {
                 var b = a.length;
                 if (1 == b) a[0].color = K.colorRoof;
                 else
@@ -3157,7 +3157,7 @@
                         a[d].color = K.getTint(K.colorRoof, d, b)
                     }
             };
-            Pe.prototype = {
+            District.prototype = {
                 createParams: function() {
                     this.alleys = {
                         minSq: 15 +
@@ -3184,7 +3184,7 @@
                             d = c != b;
                             a.push(f)
                         }
-                    } else a = Ic.circumference(null, this.faces);
+                    } else a = DCEL.circumference(null, this.faces);
                     this.border = a;
                     this.equator = this.ridge = null
                 },
@@ -3192,12 +3192,12 @@
                     for (var a = [], b = 0, c = this.faces; b < c.length;) {
                         var d = c[b];
                         ++b;
-                        d.data.ward instanceof Pc && a.push(d)
+                        d.data.ward instanceof Alleys && a.push(d)
                     }
                     b = a;
                     for (a = []; 0 < b.length;) {
                         var f = this.pickFaces(b);
-                        a.push(new Qe(f))
+                        a.push(new WardGroup(f))
                     }
                     this.groups = a;
                     a = 0;
@@ -3208,11 +3208,11 @@
                                 return null != a.data ? a.data != Tc.HORIZON :
                                     !1
                             }) ? c.push(d.point) : Z.some(this.city.cellsByVertex(d), function(a) {
-                                return !(a.ward instanceof Pc)
+                                return !(a.ward instanceof Alleys)
                             }) && c.push(d.point);
-                            f = Ua.toPoly(f.border);
-                            c = uc.smooth(f, c, 2);
-                            Sa.set(f, c)
+                            f = EdgeChain.toPoly(f.border);
+                            c = PolyUtils.smooth(f, c, 2);
+                            PolyCore.set(f, c)
                         }
                 },
                 pickFaces: function(a) {
@@ -3235,7 +3235,7 @@
                         if (Z.isEmpty(c)) break;
                         else c = Z.pick(c), N.remove(a, c), b.push(c)
                     }
-                    1 < b.length && Pe.check4holes(b) && (hb.trace("Hole in a group, we need to split it", {
+                    1 < b.length && District.check4holes(b) && (hb.trace("Hole in a group, we need to split it", {
                         fileName: "Source/com/watabou/mfcg/model/District.hx",
                         lineNumber: 175,
                         className: "com.watabou.mfcg.model.District",
@@ -3244,20 +3244,20 @@
                     return b
                 },
                 getRidge: function() {
-                    var a = Ua.toPoly(this.border).slice();
-                    uc.simplify(a);
-                    if ("Curved" == ba.get("districts", "Curved")) return null == this.ridge && (this.ridge = Xk.build(a)), this.ridge;
-                    null == this.equator && (this.equator = ze.build(a));
+                    var a = EdgeChain.toPoly(this.border).slice();
+                    PolyUtils.simplify(a);
+                    if ("Curved" == State.get("districts", "Curved")) return null == this.ridge && (this.ridge = Xk.build(a)), this.ridge;
+                    null == this.equator && (this.equator = Equator.build(a));
                     return this.equator
                 },
-                __class__: Pe
+                __class__: District
             };
-            var ik = function(a) {
+            var DistrictBuilder = function(a) {
                 this.model = a
             };
-            g["com.watabou.mfcg.model.DistrictBuilder"] = ik;
-            ik.__name__ = "com.watabou.mfcg.model.DistrictBuilder";
-            ik.prototype = {
+            g["com.watabou.mfcg.model.DistrictBuilder"] = DistrictBuilder;
+            DistrictBuilder.__name__ = "com.watabou.mfcg.model.DistrictBuilder";
+            DistrictBuilder.prototype = {
                 build: function() {
                     for (var a = this, b = [], c = 0, d = this.model.cells; c < d.length;) {
                         var f = d[c];
@@ -3281,10 +3281,10 @@
                                 c : a.getType(b)
                         })
                     };
-                    null != this.model.citadel && k(va.__cast(this.model.citadel.ward, xd).wall.gates[0], lc.CASTLE(this.model.citadel));
+                    null != this.model.citadel && k(va.__cast(this.model.citadel.ward, Castle).wall.gates[0], lc.CASTLE(this.model.citadel));
                     null != this.model.plaza ? d(this.model.plaza, lc.CENTER(this.model.plaza)) : k(this.model.dcel.vertices.h[this.model.center.__id__], lc.CENTER(null));
                     b = 0;
-                    for (c = this.unassigned; b < c.length;) f = c[b], ++b, f.ward instanceof ce && d(f, lc.PARK);
+                    for (c = this.unassigned; b < c.length;) f = c[b], ++b, f.ward instanceof Park && d(f, lc.PARK);
                     if (null != this.model.wall)
                         for (b = 0, c = this.model.wall.gates; b < c.length;) {
                             var n = c[b];
@@ -3309,7 +3309,7 @@
                     }
                     b = 0;
                     for (c = this.unassigned; b < c.length;)
-                        if (f = c[b], ++b, f.landing && f.ward instanceof Pc) {
+                        if (f = c[b], ++b, f.landing && f.ward instanceof Alleys) {
                             d(f, lc.DOCKS);
                             break
                         } b = 0;
@@ -3326,10 +3326,10 @@
                     b = 0;
                     for (c = this.districts; b < c.length;) d = c[b], ++b, d.updateGeometry(), d.createGroups();
                     this.sort(this.districts, this.model.cells[0]);
-                    Pe.updateColors(this.districts)
+                    District.updateColors(this.districts)
                 },
                 fromPatch: function(a, b) {
-                    return null == a.district ? (b = new Pe([a], b), this.districts.push(b), N.remove(this.unassigned, a), b) : null
+                    return null == a.district ? (b = new District([a], b), this.districts.push(b), N.remove(this.unassigned, a), b) : null
                 },
                 fromVertex: function(a,
                     b, c) {
@@ -3343,13 +3343,13 @@
                         null == h.district && a.push(h)
                     }
                     if (0 == a.length || c && a.length < d.length) return null;
-                    b = new Pe(a, b);
+                    b = new District(a, b);
                     this.districts.push(b);
                     Z.removeAll(this.unassigned, a);
                     return b
                 },
                 getType: function(a) {
-                    return a.ward instanceof xd ? lc.CASTLE(a) : a.ward instanceof ce ? lc.PARK : a.landing && a.ward instanceof Pc ? lc.DOCKS : -1 != this.model.inner.indexOf(a) ? lc.REGULAR : lc.SPRAWL
+                    return a.ward instanceof Castle ? lc.CASTLE(a) : a.ward instanceof Park ? lc.PARK : a.landing && a.ward instanceof Alleys ? lc.DOCKS : -1 != this.model.inner.indexOf(a) ? lc.REGULAR : lc.SPRAWL
                 },
                 growAll: function() {
                     for (var a = [], b =
@@ -3367,11 +3367,11 @@
                 getGrower: function(a) {
                     switch (a.type._hx_index) {
                         case 2:
-                            return new ei(a);
+                            return new DocksGrower(a);
                         case 6:
-                            return new fi(a);
+                            return new ParkGrower(a);
                         default:
-                            return new Re(a)
+                            return new Grower(a)
                     }
                 },
                 sort: function(a, b) {
@@ -3379,11 +3379,11 @@
                             new pa, d = 0; d < a.length;) {
                         var f = a[d];
                         ++d;
-                        null == f.equator && (f.equator = ze.build(Ua.toPoly(f.border)));
-                        c.set(f, qa.lerp(f.equator[0], f.equator[1]))
+                        null == f.equator && (f.equator = Equator.build(EdgeChain.toPoly(f.border)));
+                        c.set(f, GeomUtils.lerp(f.equator[0], f.equator[1]))
                     }
                     var h = c,
-                        k = Sa.centroid(b.shape);
+                        k = PolyCore.centroid(b.shape);
                     a.sort(function(a, b) {
                         a = I.distance(k, h.h[a.__id__]);
                         b = I.distance(k, h.h[b.__id__]);
@@ -3402,9 +3402,9 @@
                         h.h[c.__id__]) > I.distance(k, h.h[a[0].__id__]) ? a[0] : c, N.remove(a, n), b.push(n);
                     for (c = 0; c < b.length;) d = b[c], ++c, a.push(d)
                 },
-                __class__: ik
+                __class__: DistrictBuilder
             };
-            var Re = function(a) {
+            var Grower = function(a) {
                 this.district = a;
                 switch (a.type._hx_index) {
                     case 1:
@@ -3424,9 +3424,9 @@
                 }
                 this.rate = a
             };
-            g["com.watabou.mfcg.model.Grower"] = Re;
-            Re.__name__ = "com.watabou.mfcg.model.Grower";
-            Re.prototype = {
+            g["com.watabou.mfcg.model.Grower"] = Grower;
+            Grower.__name__ = "com.watabou.mfcg.model.Grower";
+            Grower.prototype = {
                 grow: function(a) {
                     if (0 == this.rate) return !1;
                     var b = 1 - this.rate;
@@ -3462,44 +3462,44 @@
                             return 1
                     } else return 1
                 },
-                __class__: Re
+                __class__: Grower
             };
-            var ei = function(a) {
-                Re.call(this, a)
+            var DocksGrower = function(a) {
+                Grower.call(this, a)
             };
-            g["com.watabou.mfcg.model.DocksGrower"] = ei;
-            ei.__name__ = "com.watabou.mfcg.model.DocksGrower";
-            ei.__super__ = Re;
-            ei.prototype = v(Re.prototype, {
+            g["com.watabou.mfcg.model.DocksGrower"] = DocksGrower;
+            DocksGrower.__name__ = "com.watabou.mfcg.model.DocksGrower";
+            DocksGrower.__super__ = Grower;
+            DocksGrower.prototype = v(Grower.prototype, {
                 validatePatch: function(a, b) {
-                    return b.landing && b.ward instanceof Pc ? 1 : 0
+                    return b.landing && b.ward instanceof Alleys ? 1 : 0
                 },
-                __class__: ei
+                __class__: DocksGrower
             });
-            var fi = function(a) {
-                Re.call(this, a)
+            var ParkGrower = function(a) {
+                Grower.call(this, a)
             };
-            g["com.watabou.mfcg.model.ParkGrower"] = fi;
-            fi.__name__ = "com.watabou.mfcg.model.ParkGrower";
-            fi.__super__ = Re;
-            fi.prototype = v(Re.prototype, {
+            g["com.watabou.mfcg.model.ParkGrower"] = ParkGrower;
+            ParkGrower.__name__ = "com.watabou.mfcg.model.ParkGrower";
+            ParkGrower.__super__ = Grower;
+            ParkGrower.prototype = v(Grower.prototype, {
                 validatePatch: function(a, b) {
-                    return b.ward instanceof ce ? 1 : 0
+                    return b.ward instanceof Park ? 1 : 0
                 },
-                __class__: fi
+                __class__: ParkGrower
             });
-            var pg = function() {
+            var Noise = function() {
                 this.components = []
             };
-            g["com.watabou.utils.Noise"] = pg;
-            pg.__name__ = "com.watabou.utils.Noise";
-            pg.fractal = function(a, b, c) {
+            g["com.watabou.utils.Noise"] = Noise;
+            Noise.__name__ = "com.watabou.utils.Noise";
+            Noise.fractal = function(a, b, c) {
                 null == c && (c = .5);
                 null == b && (b = 1);
                 null == a && (a = 1);
-                for (var d = new pg, f = 1, h = 0; h < a;) {
+                for (var d = new Noise, f = 1, h = 0; h < a;) {
                     h++;
-                    var k = new Se(C.seed = 48271 * C.seed % 2147483647 | 0);
+                    var k = new Perlin(C.seed = 48271 * C.seed % 2147483647 | 0);
                     k.gridSize = b;
                     k.amplitude = f;
                     d.components.push(k);
@@ -3508,7 +3508,7 @@
                 }
                 return d
             };
-            pg.prototype = {
+            Noise.prototype = {
                 get: function(a, b) {
                     for (var c = 0, d = 0, f =
                             this.components; d < f.length;) {
@@ -3518,7 +3518,7 @@
                     }
                     return c
                 },
-                __class__: pg
+                __class__: Noise
             };
             var C = function() {};
             g["com.watabou.utils.Random"] = C;
@@ -3536,25 +3536,25 @@
             C.float = function() {
                 return (C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647
             };
-            var Se = function(a) {
+            var Perlin = function(a) {
                 this.offsetX = this.offsetY =
                     0;
                 this.gridSize = this.amplitude = 1;
                 for (var b = [], c = 0; 256 > c;) {
                     var d = c++;
-                    b.push(Se.permutation[(d + a) % 256])
+                    b.push(Perlin.permutation[(d + a) % 256])
                 }
                 this.p = b;
                 this.p = this.p.concat(this.p);
-                if (null == Se.smooth) {
+                if (null == Perlin.smooth) {
                     b = [];
                     for (c = 0; 4096 > c;) d = c++, a = d / 4096, b.push(a * a * a * (a * (6 * a - 15) + 10));
-                    Se.smooth = b
+                    Perlin.smooth = b
                 }
             };
-            g["com.watabou.utils.Perlin"] = Se;
-            Se.__name__ = "com.watabou.utils.Perlin";
-            Se.prototype = {
+            g["com.watabou.utils.Perlin"] = Perlin;
+            Perlin.__name__ = "com.watabou.utils.Perlin";
+            Perlin.prototype = {
                 get: function(a, b) {
                     a = a * this.gridSize + this.offsetX;
                     0 > a && (a += 256);
@@ -3563,11 +3563,11 @@
                     var c = Math.floor(a),
                         d = c + 1,
                         f = a - c,
-                        h = Se.smooth[4096 * f | 0];
+                        h = Perlin.smooth[4096 * f | 0];
                     a = Math.floor(b);
                     var k = a + 1,
                         n = b - a,
-                        p = Se.smooth[4096 * n | 0];
+                        p = Perlin.smooth[4096 * n | 0];
                     b = this.p[this.p[d] + a];
                     var g = this.p[this.p[c] + k];
                     d = this.p[this.p[d] + k];
@@ -3643,41 +3643,41 @@
                     }
                     return this.amplitude * (k + (c + (b - c) * h - k) * p)
                 },
-                __class__: Se
+                __class__: Perlin
             };
-            var Ae = function() {};
-            g["com.watabou.mfcg.model.Forester"] = Ae;
-            Ae.__name__ = "com.watabou.mfcg.model.Forester";
-            Ae.fillArea = function(a, b) {
+            var Forester = function() {};
+            g["com.watabou.mfcg.model.Forester"] = Forester;
+            Forester.__name__ = "com.watabou.mfcg.model.Forester";
+            Forester.fillArea = function(a, b) {
                 null == b && (b = 1);
-                a = Ae.pattern.fill(new Yh(a));
+                a = Forester.pattern.fill(new FillablePoly(a));
                 for (var c = [], d = 0; d < a.length;) {
                     var f = a[d];
                     ++d;
-                    (Ae.noise.get(f.x, f.y) + 1) / 2 < b && c.push(f)
+                    (Forester.noise.get(f.x, f.y) + 1) / 2 < b && c.push(f)
                 }
                 return c
             };
-            Ae.fillLine = function(a, b, c) {
+            Forester.fillLine = function(a, b, c) {
                 null == c && (c = 1);
                 for (var d = Math.ceil(I.distance(a, b) / 3), f = [], h = 0; h < d;) {
                     var k = h++;
-                    k = qa.lerp(a,
+                    k = GeomUtils.lerp(a,
                         b, (k + (C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647) / d);
-                    (Ae.noise.get(k.x, k.y) + 1) / 2 < c && f.push(k)
+                    (Forester.noise.get(k.x, k.y) + 1) / 2 < c && f.push(k)
                 }
                 return f
             };
-            var di = function(a, b, c) {
+            var Landmark = function(a, b, c) {
                 null == c && (c = "Landmark");
                 this.model = a;
                 this.pos = b;
                 this.name = c;
                 this.assign()
             };
-            g["com.watabou.mfcg.model.Landmark"] = di;
-            di.__name__ = "com.watabou.mfcg.model.Landmark";
-            di.prototype = {
+            g["com.watabou.mfcg.model.Landmark"] = Landmark;
+            Landmark.__name__ = "com.watabou.mfcg.model.Landmark";
+            Landmark.prototype = {
                 assign: function() {
                     for (var a = 0, b = this.model.cells; a < b.length;) {
                         var c = b[a];
@@ -3686,7 +3686,7 @@
                     }
                 },
                 assignPoly: function(a) {
-                    if (Gb.rect(a).containsPoint(this.pos)) {
+                    if (PolyBounds.rect(a).containsPoint(this.pos)) {
                         var b = a.length;
                         this.p0 =
                             a[0];
@@ -3694,7 +3694,7 @@
                             var d = c++;
                             this.p1 = a[d - 1];
                             this.p2 = a[d];
-                            d = qa.barycentric(this.p0, this.p1, this.p2, this.pos);
+                            d = GeomUtils.barycentric(this.p0, this.p1, this.p2, this.pos);
                             if (0 <= d.x && 0 <= d.y && 0 <= d.z) return this.i0 = d.x, this.i1 = d.y, this.i2 = d.z, !0
                         }
                     }
@@ -3711,7 +3711,7 @@
                     b = this.i2;
                     this.pos = c.add(new I(a.x * b, a.y * b))
                 },
-                __class__: di
+                __class__: Landmark
             };
             var je = function(a) {
                 null == a && (a = []);
@@ -3853,11 +3853,11 @@
                 },
                 __class__: ec
             });
-            var Bb = function() {};
-            g["com.watabou.mfcg.model.ModelDispatcher"] = Bb;
-            Bb.__name__ = "com.watabou.mfcg.model.ModelDispatcher";
-            var gh = function(a) {
-                this.graph = new bk;
+            var ModelDispatcher = function() {};
+            g["com.watabou.mfcg.model.ModelDispatcher"] = ModelDispatcher;
+            ModelDispatcher.__name__ = "com.watabou.mfcg.model.ModelDispatcher";
+            var Topology = function(a) {
+                this.graph = new Graph;
                 this.pt2node = new pa;
                 for (var b = 0; b < a.length;) {
                     var c = a[b];
@@ -3875,13 +3875,13 @@
                     }
                 }
             };
-            g["com.watabou.mfcg.model.Topology"] = gh;
-            gh.__name__ = "com.watabou.mfcg.model.Topology";
-            gh.prototype = {
+            g["com.watabou.mfcg.model.Topology"] = Topology;
+            Topology.__name__ = "com.watabou.mfcg.model.Topology";
+            Topology.prototype = {
                 getNode: function(a) {
                     if (null != this.pt2node.h.__keys__[a.__id__]) return this.pt2node.h[a.__id__];
                     var b = this.pt2node,
-                        c = this.graph.add(new ck(a));
+                        c = this.graph.add(new Node(a));
                     b.set(a, c);
                     return c
                 },
@@ -3915,31 +3915,31 @@
                         null != d && null != c && d.unlink(c)
                     }
                 },
-                __class__: gh
+                __class__: Topology
             };
-            var Db = function(a, b, c) {
+            var UnitSystem = function(a, b, c) {
                 this.unit = a;
                 this.iu2unit = b;
                 this.sub = c
             };
-            g["com.watabou.mfcg.model.UnitSystem"] = Db;
-            Db.__name__ = "com.watabou.mfcg.model.UnitSystem";
-            Db.__properties__ = {
+            g["com.watabou.mfcg.model.UnitSystem"] = UnitSystem;
+            UnitSystem.__name__ = "com.watabou.mfcg.model.UnitSystem";
+            UnitSystem.__properties__ = {
                 set_current: "set_current",
                 get_current: "get_current"
             };
-            Db.toggle = function() {
-                Db.set_current(Db.get_current() == Db.metric ? Db.imperial : Db.metric)
+            UnitSystem.toggle = function() {
+                UnitSystem.set_current(UnitSystem.get_current() == UnitSystem.metric ? UnitSystem.imperial : UnitSystem.metric)
             };
-            Db.get_current = function() {
-                return Db._current
+            UnitSystem.get_current = function() {
+                return UnitSystem._current
             };
-            Db.set_current = function(a) {
-                Db._current = a;
-                Bb.unitsChanged.dispatch();
-                return Db._current
+            UnitSystem.set_current = function(a) {
+                UnitSystem._current = a;
+                ModelDispatcher.unitsChanged.dispatch();
+                return UnitSystem._current
             };
-            Db.prototype = {
+            UnitSystem.prototype = {
                 measure: function(a) {
                     for (var b = this;;) {
                         var c = a / b.iu2unit;
@@ -3958,22 +3958,22 @@
                         else break;
                     return c * f.iu2unit
                 },
-                __class__: Db
+                __class__: UnitSystem
             };
-            var ii = function(a, b, c) {
+            var Block = function(a, b, c) {
                 null == c && (c = !1);
                 this.cacheOBB = new pa;
                 this.cacheArea = new pa;
                 this.group = a;
                 this.shape = b;
                 a = a.district.alleys;
-                c ? this.lots = [b] : (ba.get("no_triangles", !1), ba.get("lots_method", "Twisted"), this.lots = $k.createLots(this,
+                c ? this.lots = [b] : (State.get("no_triangles", !1), State.get("lots_method", "Twisted"), this.lots = $k.createLots(this,
                     a));
-                sb.preview || "Offset" != ba.get("processing") || this.indentFronts(this.lots)
+                Main.preview || "Offset" != State.get("processing") || this.indentFronts(this.lots)
             };
-            g["com.watabou.mfcg.model.blocks.Block"] = ii;
-            ii.__name__ = "com.watabou.mfcg.model.blocks.Block";
-            ii.prototype = {
+            g["com.watabou.mfcg.model.blocks.Block"] = Block;
+            Block.__name__ = "com.watabou.mfcg.model.blocks.Block";
+            Block.prototype = {
                 createRects: function() {
                     this.rects = [];
                     for (var a = this.group.district.alleys.inset, b = this.shape.length, c = 0, d = this.lots; c < d.length;) {
@@ -3987,7 +3987,7 @@
                             for (var p = 0, g = n; p < g;) {
                                 for (var q = p++, m = f[q], u = f[(q + 1) % n], r = -1, l = 0, x = b; l < x;) {
                                     var D = l++;
-                                    if (qa.converge(m, u, this.shape[D],
+                                    if (GeomUtils.converge(m, u, this.shape[D],
                                             this.shape[(D + 1) % b])) {
                                         r = q;
                                         break
@@ -3999,8 +3999,8 @@
                                         break
                                     } else h = r
                             }
-                        k || (null != this.cacheArea.h.__keys__[f.__id__] ? k = this.cacheArea.h[f.__id__] : (k = this.cacheArea, n = Sa.area(f), k.set(f, n), k = n), h = -1 != h ? Gb.lir(f, h) : Gb.lira(f), k = Math.max(1.2, Math.sqrt(k) / 2), f = I.distance(h[0], h[1 % h.length]) >= k && I.distance(h[1], h[2 % h.length]) >= k ? h : f);
-                        if ("Shrink" == ba.get("processing") && (h = a * (1 - Math.abs(((C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647 + (C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647 + (C.seed = 48271 * C.seed % 2147483647 |
+                        k || (null != this.cacheArea.h.__keys__[f.__id__] ? k = this.cacheArea.h[f.__id__] : (k = this.cacheArea, n = PolyCore.area(f), k.set(f, n), k = n), h = -1 != h ? PolyBounds.lir(f, h) : PolyBounds.lira(f), k = Math.max(1.2, Math.sqrt(k) / 2), f = I.distance(h[0], h[1 % h.length]) >= k && I.distance(h[1], h[2 % h.length]) >= k ? h : f);
+                        if ("Shrink" == State.get("processing") && (h = a * (1 - Math.abs(((C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647 + (C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647 + (C.seed = 48271 * C.seed % 2147483647 |
                                 0) / 2147483647 + (C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647) / 2 - 1)), .3 < h)) {
                             k = f.length;
                             n = [];
@@ -4012,20 +4012,20 @@
                                 u = !1;
                                 r = 0;
                                 for (l = b; r < l;)
-                                    if (x = r++, qa.converge(q, m, this.shape[x], this.shape[(x + 1) % b])) {
+                                    if (x = r++, GeomUtils.converge(q, m, this.shape[x], this.shape[(x + 1) % b])) {
                                         u = !0;
                                         break
                                     } n.push(u ? 0 : h)
                             }
-                            f = gd.shrink(f, n)
+                            f = PolyCut.shrink(f, n)
                         }
                         this.rects.push(f)
                     }
                 },
                 isRectangle: function(a) {
                     if (4 != a.length) return !1;
-                    var b = Sa.area(a);
-                    a = Sa.rectArea(Gb.obb(a));
+                    var b = PolyCore.area(a);
+                    a = PolyCore.rectArea(PolyBounds.obb(a));
                     return .75 < b / a
                 },
                 createBuildings: function() {
@@ -4041,13 +4041,13 @@
                         ++b;
                         var h = function(b) {
                             return function(d) {
-                                d = Jd.create(d, c, !0, null, .6);
+                                d = Building.create(d, c, !0, null, .6);
                                 a.buildings.push(null != d ? d : b[0])
                             }
                         }(f);
                         if (4 < f[0].length) {
                             f = f[0].slice();
-                            do Sa.simplifyClosed(f); while (4 < f.length);
+                            do PolyCore.simplifyClosed(f); while (4 < f.length);
                             h(f)
                         } else 4 == f[0].length ? h(f[0]) : this.buildings.push(f[0])
                     }
@@ -4071,7 +4071,7 @@
                                         var l = u++;
                                         l = f[l];
                                         var x = ((l.x - g.x) * p + (l.y - g.y) * q) / m;
-                                        if (!(0 > x || 1 < x) && 1E-9 > I.distance(l, qa.lerp(g, h, x))) {
+                                        if (!(0 > x || 1 < x) && 1E-9 > I.distance(l, GeomUtils.lerp(g, h, x))) {
                                             f = !1;
                                             break a
                                         }
@@ -4091,13 +4091,13 @@
                         if (null != this.cacheArea.h.__keys__[f.__id__]) var h = this.cacheArea.h[f.__id__];
                         else {
                             h = this.cacheArea;
-                            var k = Sa.area(f);
+                            var k = PolyCore.area(f);
                             h.set(f, k);
                             h = k
                         }
                         h = Math.min(Math.sqrt(h) / 3, 1.2) *
                             ((C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647);
-                        .5 > h || (k = Sa.center(f), k = (null == this.center ? this.center = Sa.centroid(this.shape) : this.center).subtract(k), k.normalize(h), h = Yc.translate(this.shape, k.x, k.y), f = ye.and(f, h), null != f && 3 <= f.length && (a[d] = f))
+                        .5 > h || (k = PolyCore.center(f), k = (null == this.center ? this.center = PolyCore.centroid(this.shape) : this.center).subtract(k), k.normalize(h), h = PolyTransform.translate(this.shape, k.x, k.y), f = PolyBool.and(f, h), null != f && 3 <= f.length && (a[d] = f))
                     }
                 },
                 spawnTrees: function() {
@@ -4108,7 +4108,7 @@
                         for (var c = 0, d = this.courtyard; c < d.length;) {
                             var f = d[c];
                             ++c;
-                            f = Ae.fillArea(f, b);
+                            f = Forester.fillArea(f, b);
                             for (var h = 0; h < f.length;) {
                                 var k = f[h];
                                 ++h;
@@ -4118,13 +4118,13 @@
                     }
                     return a
                 },
-                __class__: ii
+                __class__: Block
             };
             var $k = function() {};
             g["com.watabou.mfcg.model.blocks.TwistedBlock"] = $k;
             $k.__name__ = "com.watabou.mfcg.model.blocks.TwistedBlock";
             $k.createLots = function(a, b) {
-                var c = new ji(a.shape, b.minSq, Math.max(4 * b.sizeChaos, 1.2));
+                var c = new Bisector(a.shape, b.minSq, Math.max(4 * b.sizeChaos, 1.2));
                 c.minTurnOffset = .5;
                 var d = c.partition();
                 d = a.filterInner(d);
@@ -4136,7 +4136,7 @@
                     if (null != a.cacheArea.h.__keys__[h.__id__]) var k = a.cacheArea.h[h.__id__];
                     else {
                         k = a.cacheArea;
-                        var n = Sa.area(h);
+                        var n = PolyCore.area(h);
                         k.set(h, n);
                         k = n
                     }
@@ -4144,7 +4144,7 @@
                     else {
                         if (null !=
                             a.cacheOBB.h.__keys__[h.__id__]) var p = a.cacheOBB.h[h.__id__];
-                        else n = a.cacheOBB, p = Gb.obb(h), n.set(h, p);
+                        else n = a.cacheOBB, p = PolyBounds.obb(h), n.set(h, p);
                         n = I.distance(p[0], p[1]);
                         p = I.distance(p[1], p[2]);
                         k = 1.2 <= n && 1.2 <= p && .5 < k / (n * p)
@@ -4153,26 +4153,26 @@
                 }
                 return c
             };
-            var Rb = function(a, b) {
+            var Ward = function(a, b) {
                 this.model = a;
                 this.patch = b;
                 b.ward = this
             };
-            g["com.watabou.mfcg.model.wards.Ward"] = Rb;
-            Rb.__name__ = "com.watabou.mfcg.model.wards.Ward";
-            Rb.inset = function(a, b, c) {
-                var d = uc.inset(a, b);
+            g["com.watabou.mfcg.model.wards.Ward"] = Ward;
+            Ward.__name__ = "com.watabou.mfcg.model.wards.Ward";
+            Ward.inset = function(a, b, c) {
+                var d = PolyUtils.inset(a, b);
                 if (null == d) return null;
                 for (var f = c.length, h = 0; h < f;) {
                     var k = h++,
                         n = c[k],
                         p = (k + f - 1) % f;
                     n > b[k] && n > b[p] && (k = a[k],
-                        n = Qd.regular(9, n, (C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647), Yc.asTranslate(n, k.x, k.y), n = ye.and(d, Z.revert(n), !0), null != n && (d = n))
+                        n = PolyCreate.regular(9, n, (C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647), PolyTransform.asTranslate(n, k.x, k.y), n = PolyBool.and(d, Z.revert(n), !0), null != n && (d = n))
                 }
                 return d
             };
-            Rb.prototype = {
+            Ward.prototype = {
                 createGeometry: function() {},
                 spawnTrees: function() {
                     return null
@@ -4195,7 +4195,7 @@
                             var m =
                                 q[g];
                             ++g;
-                            null != Ua.edgeByOrigin(m.course, k) && (n = Math.max(n, m.width))
+                            null != EdgeChain.edgeByOrigin(m.course, k) && (n = Math.max(n, m.width))
                         }
                         b.push(n)
                     }
@@ -4209,7 +4209,7 @@
                         a = h++;
                         k = c[a];
                         q = 0;
-                        for (d = this.model.canals; q < d.length;) m = d[q], ++q, null != Ua.edgeByOrigin(m.course, k.origin) && (b[a] = m.width / 2 + 1.2, k.origin == m.course[0].origin && (b[a] += 1.2));
+                        for (d = this.model.canals; q < d.length;) m = d[q], ++q, null != EdgeChain.edgeByOrigin(m.course, k.origin) && (b[a] = m.width / 2 + 1.2, k.origin == m.course[0].origin && (b[a] += 1.2));
                         if (null == k.data) p.push((k.twin.face.data == this.model.plaza ? 2 : 1.2) / 2);
                         else {
                             switch (k.data._hx_index) {
@@ -4221,7 +4221,7 @@
                                         1;
                                     break;
                                 case 3:
-                                    a = pc.THICKNESS / 2 + 1.2;
+                                    a = CurtainWall.THICKNESS / 2 + 1.2;
                                     break;
                                 case 4:
                                     a = this.model.getCanalWidth(k) / 2 + 1.2;
@@ -4232,7 +4232,7 @@
                             p.push(a)
                         }
                     }
-                    return Rb.inset(this.patch.shape, p, b)
+                    return Ward.inset(this.patch.shape, p, b)
                 },
                 getLabel: function() {
                     return null != this.patch.district ? this.patch.district.name : null
@@ -4241,16 +4241,16 @@
                     return null != this.patch.district ? this.patch.district.color : 0
                 },
                 onContext: function(a, b, c) {},
-                __class__: Rb
+                __class__: Ward
             };
-            var Pc = function(a, b) {
-                Rb.call(this, a, b)
+            var Alleys = function(a, b) {
+                Ward.call(this, a, b)
             };
-            g["com.watabou.mfcg.model.wards.Alleys"] = Pc;
-            Pc.__name__ = "com.watabou.mfcg.model.wards.Alleys";
-            Pc.__super__ =
-                Rb;
-            Pc.prototype = v(Rb.prototype, {
+            g["com.watabou.mfcg.model.wards.Alleys"] = Alleys;
+            Alleys.__name__ = "com.watabou.mfcg.model.wards.Alleys";
+            Alleys.__super__ =
+                Ward;
+            Alleys.prototype = v(Ward.prototype, {
                 createGeometry: function() {
                     this.group.core == this.patch.face && this.group.createGeometry();
                     this.trees = null
@@ -4273,12 +4273,12 @@
                     return this.trees
                 },
                 onContext: function(a, b, c) {
-                    var d = ba.get("display_mode", "Lots");
+                    var d = State.get("display_mode", "Lots");
                     if ("Block" != d) {
                         c = new I(b, c);
                         for (var f = 0, h = this.group.blocks; f <
                             h.length;)
-                            if (b = h[f], ++f, Gb.containsPoint(b.shape, c)) {
+                            if (b = h[f], ++f, PolyBounds.containsPoint(b.shape, c)) {
                                 switch (d) {
                                     case "Complex":
                                         d = b.buildings;
@@ -4290,14 +4290,14 @@
                                         d = b.lots
                                 }
                                 for (h = 0; h < d.length;)
-                                    if (f = [d[h]], ++h, Gb.containsPoint(f[0], c)) {
+                                    if (f = [d[h]], ++h, PolyBounds.containsPoint(f[0], c)) {
                                         c = [this.model.bp.seed];
                                         c[0] += this.model.cells.indexOf(this.patch);
                                         c[0] += this.group.blocks.indexOf(b);
                                         c[0] += d.indexOf(f[0]);
                                         a.addItem("Open in Dwellings", function(a, b) {
                                             return function() {
-                                                Te.openInDwellings(b[0], !0, a[0])
+                                                Mansion.openInDwellings(b[0], !0, a[0])
                                             }
                                         }(c, f));
                                         break
@@ -4305,10 +4305,10 @@
                             }
                     }
                 },
-                __class__: Pc
+                __class__: Alleys
             });
-            var xd = function(a, b) {
-                Rb.call(this, a, b);
+            var Castle = function(a, b) {
+                Ward.call(this, a, b);
                 for (var c = [], d = 0, f = b.shape; d < f.length;) {
                     var h = f[d];
                     ++d;
@@ -4316,16 +4316,16 @@
                         return !a.withinCity
                     }) && c.push(h)
                 }
-                this.wall = new pc(!0, a, [b], c);
+                this.wall = new CurtainWall(!0, a, [b], c);
                 this.adjustShape(this.model)
             };
-            g["com.watabou.mfcg.model.wards.Castle"] = xd;
-            xd.__name__ = "com.watabou.mfcg.model.wards.Castle";
-            xd.__super__ = Rb;
-            xd.prototype = v(Rb.prototype, {
+            g["com.watabou.mfcg.model.wards.Castle"] = Castle;
+            Castle.__name__ = "com.watabou.mfcg.model.wards.Castle";
+            Castle.__super__ = Ward;
+            Castle.prototype = v(Ward.prototype, {
                 adjustShape: function(a) {
                     var b = this.patch.shape,
-                        c = Sa.centroid(b),
+                        c = PolyCore.centroid(b),
                         d = 0,
                         f = 0,
                         h = function() {
@@ -4359,7 +4359,7 @@
                             if (q < k) {
                                 var m = g.subtract(c);
                                 q = Math.pow(q / k, -.25);
-                                wd.set(g, new I(c.x + m.x * q, c.y + m.y * q))
+                                PointExtender.set(g, new I(c.x + m.x * q, c.y + m.y * q))
                             }
                         }
                         h()
@@ -4368,7 +4368,7 @@
                         this.wall.gates[0];
                     a = [h.point];
                     2 == h.edges.length && (a.push(h.edges[0].next.origin.point), a.push(h.edges[1].next.origin.point));
-                    for (h = Sa.compactness(b); .75 > h;) {
+                    for (h = PolyCore.compactness(b); .75 > h;) {
                         hb.trace("Equalizing... " + h, {
                             fileName: "Source/com/watabou/mfcg/model/wards/Castle.hx",
                             lineNumber: 84,
@@ -4376,7 +4376,7 @@
                             methodName: "adjustShape"
                         });
                         this.equalize(c, .2, a);
-                        k = Sa.compactness(b);
+                        k = PolyCore.compactness(b);
                         if (.001 > Math.abs(k - h)) throw X.thrown("Bad citadel shape!");
                         h = k
                     }
@@ -4397,13 +4397,13 @@
                     h.x *= k;
                     h.y *= k;
                     k = 0;
-                    for (n = f; k < n;) p = k++, -1 == c.indexOf(d[p]) && (q = 2 * Math.PI * p / f, m = Math.sin(q), q = Math.cos(q), wd.set(d[p], qa.lerp(d[p], a.add(new I(h.x * q - h.y * m, h.y * q + h.x * m)), b)))
+                    for (n = f; k < n;) p = k++, -1 == c.indexOf(d[p]) && (q = 2 * Math.PI * p / f, m = Math.sin(q), q = Math.cos(q), PointExtender.set(d[p], GeomUtils.lerp(d[p], a.add(new I(h.x * q - h.y * m, h.y * q + h.x * m)), b)))
                 },
                 createGeometry: function() {
                     C.restore(this.patch.seed);
-                    var a = gd.shrinkEq(this.patch.shape, pc.THICKNESS + 2);
-                    a = Gb.lira(a);
-                    this.building = Jd.create(a, Sa.area(this.patch.shape) /
+                    var a = PolyCut.shrinkEq(this.patch.shape, CurtainWall.THICKNESS + 2);
+                    a = PolyBounds.lira(a);
+                    this.building = Building.create(a, PolyCore.area(this.patch.shape) /
                         25, null, null, .4);
                     null == this.building && (this.building = a)
                 },
@@ -4412,31 +4412,31 @@
                 },
                 onContext: function(a, b, c) {
                     var d = this;
-                    if (Gb.containsPoint(this.building, new I(b, c))) {
+                    if (PolyBounds.containsPoint(this.building, new I(b, c))) {
                         var f = this.model.bp.seed;
                         f += this.model.cells.indexOf(this.patch);
                         a.addItem("Open in Dwellings", function() {
-                            Te.openInDwellings(d.building, !0, f)
+                            Mansion.openInDwellings(d.building, !0, f)
                         })
                     }
                 },
-                __class__: xd
+                __class__: Castle
             });
-            var Ne = function(a, b) {
-                Rb.call(this, a, b)
+            var Cathedral = function(a, b) {
+                Ward.call(this, a, b)
             };
-            g["com.watabou.mfcg.model.wards.Cathedral"] = Ne;
-            Ne.__name__ = "com.watabou.mfcg.model.wards.Cathedral";
-            Ne.__super__ = Rb;
-            Ne.prototype =
-                v(Rb.prototype, {
+            g["com.watabou.mfcg.model.wards.Cathedral"] = Cathedral;
+            Cathedral.__name__ = "com.watabou.mfcg.model.wards.Cathedral";
+            Cathedral.__super__ = Ward;
+            Cathedral.prototype =
+                v(Ward.prototype, {
                     createGeometry: function() {
                         C.restore(this.patch.seed);
                         var a = this.getAvailable();
                         if (null == a) this.building = [];
                         else {
-                            a = Gb.lira(a);
-                            var b = Jd.create(a, 20, !1, !0, .2);
+                            a = PolyBounds.lira(a);
+                            var b = Building.create(a, 20, !1, !0, .2);
                             this.building = [null != b ? b : a]
                         }
                     },
@@ -4446,26 +4446,26 @@
                         for (var d = this.building; c < d.length;) {
                             var f = [d[c]];
                             ++c;
-                            if (Gb.containsPoint(f[0], b)) {
+                            if (PolyBounds.containsPoint(f[0], b)) {
                                 var h = [this.model.bp.seed];
                                 h[0] += this.model.cells.indexOf(this.patch);
                                 a.addItem("Open in Dwellings", function(a, b) {
                                     return function() {
-                                        Te.openInDwellings(b[0], !1, a[0])
+                                        Mansion.openInDwellings(b[0], !1, a[0])
                                     }
                                 }(h, f))
                             }
                         }
                     },
-                    __class__: Ne
+                    __class__: Cathedral
                 });
-            var yd = function(a, b) {
-                Rb.call(this, a, b)
+            var Farm = function(a, b) {
+                Ward.call(this, a, b)
             };
-            g["com.watabou.mfcg.model.wards.Farm"] = yd;
-            yd.__name__ = "com.watabou.mfcg.model.wards.Farm";
-            yd.__super__ = Rb;
-            yd.prototype = v(Rb.prototype, {
+            g["com.watabou.mfcg.model.wards.Farm"] = Farm;
+            Farm.__name__ = "com.watabou.mfcg.model.wards.Farm";
+            Farm.__super__ = Ward;
+            Farm.prototype = v(Ward.prototype, {
                 getAvailable: function() {
                     for (var a = this.patch.shape.length, b = [], c = this.patch.face.halfEdge, d = c, f = !0; f;) {
                         var h = d;
@@ -4491,15 +4491,15 @@
                         d = h++;
                         k = c[d];
                         f = 0;
-                        for (n = this.model.canals; f < n.length;) g = n[f], ++f, null != Ua.edgeByOrigin(g.course, k.origin) && (b[d] = g.width / 2 + 1.2, k.origin == g.course[0].origin && (b[d] += 1.2));
-                        if (null == k.data) p.push(null != k.twin && k.twin.face.data.ward instanceof yd ? 1 : 0);
+                        for (n = this.model.canals; f < n.length;) g = n[f], ++f, null != EdgeChain.edgeByOrigin(g.course, k.origin) && (b[d] = g.width / 2 + 1.2, k.origin == g.course[0].origin && (b[d] += 1.2));
+                        if (null == k.data) p.push(null != k.twin && k.twin.face.data.ward instanceof Farm ? 1 : 0);
                         else {
                             switch (k.data._hx_index) {
                                 case 2:
                                     k = 3;
                                     break;
                                 case 3:
-                                    k = 2 * pc.THICKNESS;
+                                    k = 2 * CurtainWall.THICKNESS;
                                     break;
                                 case 4:
                                     k = this.model.getCanalWidth(k) / 2 + 1.2;
@@ -4510,7 +4510,7 @@
                             p.push(k)
                         }
                     }
-                    return Rb.inset(this.patch.shape, p, b)
+                    return Ward.inset(this.patch.shape, p, b)
                 },
                 createGeometry: function() {
                     C.restore(this.patch.seed);
@@ -4521,7 +4521,7 @@
                         var f = c;
                         c = c.next;
                         d = c != a;
-                        null != f.twin && f.twin.face.data.ward instanceof Rb && b.push(f)
+                        null != f.twin && f.twin.face.data.ward instanceof Ward && b.push(f)
                     }
                     if (0 < b.length) {
                         a = [];
@@ -4538,7 +4538,7 @@
                                     for (g = 0; g < b.length;) {
                                         var m = b[g];
                                         ++g;
-                                        if (qa.converge(q, k, m.origin.point, m.next.origin.point)) {
+                                        if (GeomUtils.converge(q, k, m.origin.point, m.next.origin.point)) {
                                             h = !1;
                                             break a
                                         }
@@ -4552,8 +4552,8 @@
                     }
                     a = 0;
                     for (c = this.subPlots.length; a < c;)
-                        for (d = a++, b = this.subPlots[d], f = Gb.obb(b), b = this.subPlots[d] = this.round(b), d = I.distance(f[0], f[1 % f.length]), h = Math.ceil(d / yd.MIN_FURROW), d = 0, k = h; d < k;)
-                            for (p = (d++ + .5) / h, n = qa.lerp(f[0], f[1], p), p = qa.lerp(f[3], f[2], p), n = gd.pierce(b, n, p); 2 <= n.length;) p = n.shift(), q = n.shift(), 1.2 < I.distance(p, q) && this.furrows.push(new hf(p, q));
+                        for (d = a++, b = this.subPlots[d], f = PolyBounds.obb(b), b = this.subPlots[d] = this.round(b), d = I.distance(f[0], f[1 % f.length]), h = Math.ceil(d / Farm.MIN_FURROW), d = 0, k = h; d < k;)
+                            for (p = (d++ + .5) / h, n = GeomUtils.lerp(f[0], f[1], p), p = GeomUtils.lerp(f[3], f[2], p), n = PolyCut.pierce(b, n, p); 2 <= n.length;) p = n.shift(), q = n.shift(), 1.2 < I.distance(p, q) && this.furrows.push(new Segment(p, q));
                     a = [];
                     c = 0;
                     for (d = this.subPlots; c < d.length;) b = d[c], ++c, f = .2, null == f && (f = .5), (C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647 < f && a.push(this.getHousing(b));
@@ -4561,20 +4561,20 @@
                     this.trees = null
                 },
                 splitField: function(a) {
-                    if (Sa.area(a) < yd.MIN_SUBPLOT * (1 + Math.abs(((C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647 + (C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647 + (C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647 + (C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647) / 2 - 1))) return [a];
-                    var b = Gb.obb(a),
+                    if (PolyCore.area(a) < Farm.MIN_SUBPLOT * (1 + Math.abs(((C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647 + (C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647 + (C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647 + (C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647) / 2 - 1))) return [a];
+                    var b = PolyBounds.obb(a),
                         c = I.distance(b[1], b[0]) > I.distance(b[2], b[1]) ? 0 : 1,
                         d = .5 + .2 * (((C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647 + (C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647 + (C.seed = 48271 * C.seed % 2147483647 | 0) /
                             2147483647) / 3 * 2 - 1),
                         f = .5;
                     null == f && (f = .5);
                     f = Math.PI / 2 + ((C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647 < f ? 0 : Math.PI / 8 * (((C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647 + (C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647 + (C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647) / 3 * 2 - 1));
-                    d = qa.lerp(b[c], b[c + 1], d);
+                    d = GeomUtils.lerp(b[c], b[c + 1], d);
                     b = b[c < b.length - 1 ? c + 1 : 0].subtract(b[c]);
                     c = Math.sin(f);
                     f = Math.cos(f);
                     f = d.add(new I(b.x * f - b.y * c, b.y * f + b.x * c));
-                    a = gd.cut(a, d, f, 2);
+                    a = PolyCut.cut(a, d, f, 2);
                     d = [];
                     for (f = 0; f < a.length;)
                         for (b = a[f], ++f, b = this.splitField(b), c = 0; c < b.length;) {
@@ -4590,15 +4590,15 @@
                             h = a[f];
                         f = a[(f + 1) % c];
                         var k = I.distance(h, f);
-                        k < 2 * yd.MIN_FURROW ? b.push(qa.lerp(h, f)) : (b.push(qa.lerp(h, f, yd.MIN_FURROW / k)), b.push(qa.lerp(f, h, yd.MIN_FURROW / k)))
+                        k < 2 * Farm.MIN_FURROW ? b.push(GeomUtils.lerp(h, f)) : (b.push(GeomUtils.lerp(h, f, Farm.MIN_FURROW / k)), b.push(GeomUtils.lerp(f, h, Farm.MIN_FURROW / k)))
                     }
                     return b
                 },
                 getHousing: function(a) {
                     var b = 4 + (C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647,
                         c = 2 + (C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647,
-                        d = Qd.rect(b, c),
-                        f = kf.longest(a),
+                        d = PolyCreate.rect(b, c),
+                        f = PolyAccess.longest(a),
                         h = a[f < a.length - 1 ? f + 1 : 0].subtract(a[f]);
                     h = h.clone();
                     h.normalize(1);
@@ -4612,9 +4612,9 @@
                     c = new I(h.x * b, h.y * b);
                     a.x += c.x;
                     a.y += c.y;
-                    Yc.asRotateYX(d, k.y, k.x);
-                    Yc.asAdd(d, a);
-                    k = Jd.create(d, 4 + (C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647, null, null, .4);
+                    PolyTransform.asRotateYX(d, k.y, k.x);
+                    PolyTransform.asAdd(d, a);
+                    k = Building.create(d, 4 + (C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647, null, null, .4);
                     return null != k ? k : d
                 },
                 spawnTrees: function() {
@@ -4628,9 +4628,9 @@
                                 var n = k++,
                                     p = h;
                                 h = d[n];
-                                var g = 1 - qa.lerp(p, h).get_length() / a;
+                                var g = 1 - GeomUtils.lerp(p, h).get_length() / a;
                                 n = this.trees;
-                                p = Ae.fillLine(p, h, g);
+                                p = Forester.fillLine(p, h, g);
                                 for (g = 0; g < p.length;) {
                                     var q = p[g];
                                     ++g;
@@ -4645,34 +4645,34 @@
                     return "Farmland"
                 },
                 onContext: function(a, b, c) {
-                    if ("Block" != ba.get("display_mode", "Lots")) {
+                    if ("Block" != State.get("display_mode", "Lots")) {
                         b = new I(b, c);
                         c = 0;
                         for (var d = this.buildings; c < d.length;) {
                             var f = [d[c]];
                             ++c;
-                            if (Gb.containsPoint(f[0], b)) {
+                            if (PolyBounds.containsPoint(f[0], b)) {
                                 var h = [this.model.bp.seed];
                                 h[0] += this.model.cells.indexOf(this.patch);
                                 h[0] += this.buildings.indexOf(f[0]);
                                 a.addItem("Open in Dwellings", function(a, b) {
                                     return function() {
-                                        Te.openInDwellings(b[0], !1, a[0])
+                                        Mansion.openInDwellings(b[0], !1, a[0])
                                     }
                                 }(h, f))
                             }
                         }
                     }
                 },
-                __class__: yd
+                __class__: Farm
             });
-            var lf = function(a, b) {
-                Rb.call(this, a, b)
+            var Harbour = function(a, b) {
+                Ward.call(this, a, b)
             };
-            g["com.watabou.mfcg.model.wards.Harbour"] = lf;
-            lf.__name__ = "com.watabou.mfcg.model.wards.Harbour";
-            lf.__super__ = Rb;
-            lf.prototype = v(Rb.prototype, {
+            g["com.watabou.mfcg.model.wards.Harbour"] = Harbour;
+            Harbour.__name__ = "com.watabou.mfcg.model.wards.Harbour";
+            Harbour.__super__ = Ward;
+            Harbour.prototype = v(Ward.prototype, {
                 createGeometry: function() {
                     for (var a = [], b = 0, c = this.model.canals; b <
                         c.length;) {
@@ -4686,7 +4686,7 @@
                         d = this.model.getNeighbour(this.patch, f.origin);
                         if (null != d && d.landing) {
                             d = f.origin.point;
-                            var h = f.next.origin.point; - 1 != a.indexOf(f.origin) ? b.push(new hf(qa.lerp(f.origin.point, f.next.origin.point, .5), h)) : -1 != a.indexOf(f.next.origin) ? b.push(new hf(d, qa.lerp(f.origin.point, f.next.origin.point, .5))) : b.push(new hf(d, h))
+                            var h = f.next.origin.point; - 1 != a.indexOf(f.origin) ? b.push(new Segment(GeomUtils.lerp(f.origin.point, f.next.origin.point, .5), h)) : -1 != a.indexOf(f.next.origin) ? b.push(new Segment(d, GeomUtils.lerp(f.origin.point, f.next.origin.point, .5))) : b.push(new Segment(d, h))
                         }
                         f = f.next
                     } while (f != this.patch.face.halfEdge);
@@ -4704,7 +4704,7 @@
                         b = 0;
                         for (c = d; b < c;) {
                             b++;
-                            d = qa.lerp(f.start, f.end, k);
+                            d = GeomUtils.lerp(f.start, f.end, k);
                             h = f.end.subtract(f.start);
                             var p = new I(-h.y, h.x);
                             h = 8;
@@ -4721,31 +4721,31 @@
                 getLabel: function() {
                     return "Harbour"
                 },
-                __class__: lf
+                __class__: Harbour
             });
-            var Te = function() {};
-            g["com.watabou.mfcg.model.wards.Mansion"] = Te;
-            Te.__name__ = "com.watabou.mfcg.model.wards.Mansion";
-            Te.openInDwellings = function(a, b, c) {
-                a = new jk(a);
+            var Mansion = function() {};
+            g["com.watabou.mfcg.model.wards.Mansion"] = Mansion;
+            Mansion.__name__ = "com.watabou.mfcg.model.wards.Mansion";
+            Mansion.openInDwellings = function(a, b, c) {
+                a = new Mansion_Rect(a);
                 var d = Math.round(a.len0 / 1.5),
                     f = Math.round(a.len1 / 1.5);
                 11 < d && (f = Math.round(f / d * 11), d = 11);
                 1 > f && (d = Math.round(d / f), f = 1);
-                d = Fc.gatei(d, 1, 11);
-                f = Fc.gatei(f, 1, 11);
-                var h = new If(Te.DWELLINGS_URL);
+                d = MathUtils.gatei(d, 1, 11);
+                f = MathUtils.gatei(f, 1, 11);
+                var h = new If(Mansion.DWELLINGS_URL);
                 h.data = {
                     seed: c,
                     w: d,
                     h: f,
-                    plan: Te.getPlan(a, d, f),
+                    plan: Mansion.getPlan(a, d, f),
                     tags: b ? "tall" : "",
                     from: "city"
                 };
                 Ra.navigateToURL(h, "mfcg2pm_" + c)
             };
-            Te.getPlan = function(a, b, c) {
+            Mansion.getPlan = function(a, b, c) {
                 for (var d = "", f = 0, h = 0, k = 0; k < c;)
                     for (var n = k++, p = 0, g = b; p < g;) {
                         var q = p++,
@@ -4756,34 +4756,34 @@
                         u = a.v1;
                         r = (c - 1 - n + .5) / c;
                         m = new I(m.x + u.x * r, m.y + u.y * r);
-                        Gb.containsPoint(a.poly,
+                        PolyBounds.containsPoint(a.poly,
                             m) && (f |= 1 << (h & 3));
                         if (3 == (h & 3) || q == b - 1 && n == c - 1) d += O.hex(f), f = 0;
                         ++h
                     }
                 return d
             };
-            var jk = function(a) {
+            var Mansion_Rect = function(a) {
                 this.poly = a;
-                a = Gb.obb(a);
+                a = PolyBounds.obb(a);
                 this.o = a[0];
                 this.v0 = a[1].subtract(this.o);
                 this.v1 = a[3].subtract(this.o);
                 this.len0 = this.v0.get_length();
                 this.len1 = this.v1.get_length()
             };
-            g["com.watabou.mfcg.model.wards._Mansion.Rect"] = jk;
-            jk.__name__ = "com.watabou.mfcg.model.wards._Mansion.Rect";
-            jk.prototype = {
-                __class__: jk
+            g["com.watabou.mfcg.model.wards._Mansion.Rect"] = Mansion_Rect;
+            Mansion_Rect.__name__ = "com.watabou.mfcg.model.wards._Mansion.Rect";
+            Mansion_Rect.prototype = {
+                __class__: Mansion_Rect
             };
-            var he = function(a, b) {
-                Rb.call(this, a, b)
+            var Market = function(a, b) {
+                Ward.call(this, a, b)
             };
-            g["com.watabou.mfcg.model.wards.Market"] = he;
-            he.__name__ = "com.watabou.mfcg.model.wards.Market";
-            he.__super__ = Rb;
-            he.prototype = v(Rb.prototype, {
+            g["com.watabou.mfcg.model.wards.Market"] = Market;
+            Market.__name__ = "com.watabou.mfcg.model.wards.Market";
+            Market.__super__ = Ward;
+            Market.prototype = v(Ward.prototype, {
                 createGeometry: function() {
                     C.restore(this.patch.seed);
                     this.space = this.getAvailable();
@@ -4793,16 +4793,16 @@
                     b ? a = !0 : (a = .3, null == a && (a = .5), a = (C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647 < a);
                     var c = null,
                         d = null;
-                    if (b || a) d = kf.longest(this.space), c = this.space[d], d = this.space[(d + 1) % this.space.length];
+                    if (b || a) d = PolyAccess.longest(this.space), c = this.space[d], d = this.space[(d + 1) % this.space.length];
                     if (b) {
-                        b = this.monument = Qd.rect(1 + (C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647, 1 + (C.seed = 48271 * C.seed % 2147483647 |
+                        b = this.monument = PolyCreate.rect(1 + (C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647, 1 + (C.seed = 48271 * C.seed % 2147483647 |
                             0) / 2147483647);
                         var f = d.subtract(c);
                         f = Math.atan2(f.y, f.x);
-                        Yc.asRotateYX(b, Math.sin(f), Math.cos(f))
-                    } else this.monument = Qd.regular(8, 1 + (C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647);
-                    b = Sa.centroid(this.space);
-                    a ? (a = qa.lerp(c, d), Yc.asAdd(this.monument, qa.lerp(b, a, .2 + (C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647 * .4))) : Yc.asAdd(this.monument, b)
+                        PolyTransform.asRotateYX(b, Math.sin(f), Math.cos(f))
+                    } else this.monument = PolyCreate.regular(8, 1 + (C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647);
+                    b = PolyCore.centroid(this.space);
+                    a ? (a = GeomUtils.lerp(c, d), PolyTransform.asAdd(this.monument, GeomUtils.lerp(b, a, .2 + (C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647 * .4))) : PolyTransform.asAdd(this.monument, b)
                 },
                 getAvailable: function() {
                     for (var a = this.patch.shape.length, b = [], c = 0, d = a; c < d;) c++, b.push(0);
@@ -4824,43 +4824,43 @@
                         for (var n = 0, p = this.model.canals; n < p.length;) {
                             var g = p[n];
                             ++n;
-                            null != Ua.edgeByOrigin(g.course, k.origin) && (f[a] = g.width / 2, k.origin == g.course[0].origin && (f[a] += 1.2))
+                            null != EdgeChain.edgeByOrigin(g.course, k.origin) && (f[a] = g.width / 2, k.origin == g.course[0].origin && (f[a] += 1.2))
                         }
                         b.push(k.data == Tc.CANAL ? this.model.getCanalWidth(k) / 2 : 0)
                     }
-                    return Rb.inset(this.patch.shape, b, f)
+                    return Ward.inset(this.patch.shape, b, f)
                 },
-                __class__: he
+                __class__: Market
             });
-            var ce = function(a, b) {
-                Rb.call(this, a, b)
+            var Park = function(a, b) {
+                Ward.call(this, a, b)
             };
-            g["com.watabou.mfcg.model.wards.Park"] = ce;
-            ce.__name__ = "com.watabou.mfcg.model.wards.Park";
-            ce.__super__ = Rb;
-            ce.prototype = v(Rb.prototype, {
+            g["com.watabou.mfcg.model.wards.Park"] = Park;
+            Park.__name__ = "com.watabou.mfcg.model.wards.Park";
+            Park.__super__ = Ward;
+            Park.prototype = v(Ward.prototype, {
                 createGeometry: function() {
                     for (var a = this.getAvailable(), b = [], c = 0, d = a.length; c < d;) {
                         var f = c++,
                             h = a[f];
                         b.push(h);
-                        b.push(qa.lerp(h, a[(f + 1) % a.length]))
+                        b.push(GeomUtils.lerp(h, a[(f + 1) % a.length]))
                     }
-                    this.green = Hf.render(b, !0, 3);
+                    this.green = Chaikin.render(b, !0, 3);
                     this.trees = null
                 },
                 spawnTrees: function() {
-                    null == this.trees && (this.trees = Ae.fillArea(this.getAvailable(), this.patch.district.greenery));
+                    null == this.trees && (this.trees = Forester.fillArea(this.getAvailable(), this.patch.district.greenery));
                     return this.trees
                 },
-                __class__: ce
+                __class__: Park
             });
-            var Qe = function(a) {
+            var WardGroup = function(a) {
                 this.faces = a;
                 for (var b = 0; b < a.length;) {
                     var c = a[b];
                     ++b;
-                    va.__cast(c.data.ward, Pc).group = this
+                    va.__cast(c.data.ward, Alleys).group = this
                 }
                 this.core = a[0];
                 this.model = this.core.data.ward.model;
@@ -4870,7 +4870,7 @@
                     b = [];
                     for (var d = c = this.core.halfEdge, f = !0; f;) a = d, d = d.next, f = d != c, b.push(a);
                     this.border = b
-                } else this.border = a.length < this.district.faces.length ? Ic.circumference(null, a) : this.district.border, this.shape = Ua.toPoly(this.border);
+                } else this.border = a.length < this.district.faces.length ? DCEL.circumference(null, a) : this.district.border, this.shape = EdgeChain.toPoly(this.border);
                 this.inner = [];
                 this.blockM = new pa;
                 b = 0;
@@ -4878,15 +4878,15 @@
                     9);
                 this.urban = this.inner.length == this.border.length
             };
-            g["com.watabou.mfcg.model.wards.WardGroup"] = Qe;
-            Qe.__name__ = "com.watabou.mfcg.model.wards.WardGroup";
-            Qe.getCircle = function(a, b, c, d) {
-                c = qa.intersectLines(a.x, a.y, -b.y, b.x, c.x, c.y, -d.y, d.x);
+            g["com.watabou.mfcg.model.wards.WardGroup"] = WardGroup;
+            WardGroup.__name__ = "com.watabou.mfcg.model.wards.WardGroup";
+            WardGroup.getCircle = function(a, b, c, d) {
+                c = GeomUtils.intersectLines(a.x, a.y, -b.y, b.x, c.x, c.y, -d.y, d.x);
                 a = new I(a.x - b.y * c.x, a.y + b.x * c.x);
                 b = b.get_length() * c.x;
-                return new Ea(a, b)
+                return new Circle(a, b)
             };
-            Qe.getArc = function(a, b, c, d) {
+            WardGroup.getArc = function(a, b, c, d) {
                 b - c > Math.PI ? b -= 2 * Math.PI : c - b > Math.PI && (c -= 2 * Math.PI);
                 var f = Math.abs(a.r);
                 d = Math.abs(b - c) * f / d | 0;
@@ -4899,7 +4899,7 @@
     }
     return null
 };
-Qe.prototype = {
+WardGroup.prototype = {
     createGeometry: function() {
         C.restore(this.core.data.seed);
         var a = this.getAvailable();
@@ -4916,7 +4916,7 @@ Qe.prototype = {
                 this.alleys = [];
                 this.church = null;
                 var c = a.slice(),
-                    d = Sa.area(c),
+                    d = PolyCore.area(c),
                     f = this.district.alleys;
                 d > f.minSq *
                     Math.pow(2, f.sizeChaos * (2 * ((C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647) - 1)) * f.blockSize ? this.createAlleys(c) : this.createBlock(c);
@@ -4950,7 +4950,7 @@ Qe.prototype = {
             a = d++;
             f = this.border[a];
             n = 0;
-            for (h = this.model.canals; n < h.length;) p = h[n], ++n, null != Ua.edgeByOrigin(p.course, f.origin) && (b[a] = p.width / 2 + 1.2, f.origin == p.course[0].origin && (b[a] += 1.2));
+            for (h = this.model.canals; n < h.length;) p = h[n], ++n, null != EdgeChain.edgeByOrigin(p.course, f.origin) && (b[a] = p.width / 2 + 1.2, f.origin == p.course[0].origin && (b[a] += 1.2));
             if (null == f.data) c.push(f.twin.face.data == this.model.plaza ? 1 : .6);
             else {
                 switch (f.data._hx_index) {
@@ -4962,7 +4962,7 @@ Qe.prototype = {
                             1;
                         break;
                     case 3:
-                        n = pc.THICKNESS / 2 + 1.2;
+                        n = CurtainWall.THICKNESS / 2 + 1.2;
                         break;
                     case 4:
                         n = this.model.getCanalWidth(f) / 2 + 1.2;
@@ -4973,11 +4973,11 @@ Qe.prototype = {
                 c.push(n)
             }
         }
-        return Rb.inset(this.shape, c, b)
+        return Ward.inset(this.shape, c, b)
     },
     createAlleys: function(a) {
         var b = this.district.alleys,
-            c = new ji(a, b.minSq * b.blockSize, 16 * this.district.alleys.gridChaos);
+            c = new Bisector(a, b.minSq * b.blockSize, 16 * this.district.alleys.gridChaos);
         c.getGap = function(a) {
             return 1.2
         };
@@ -4987,7 +4987,7 @@ Qe.prototype = {
         for (var d = c.partition(); a < d.length;) {
             var f = d[a];
             ++a;
-            var h = Sa.area(f);
+            var h = PolyCore.area(f);
             b = this.district.alleys;
             b = b.minSq * Math.pow(2,
                 b.sizeChaos * (2 * ((C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647) - 1));
@@ -5002,7 +5002,7 @@ Qe.prototype = {
             c = a[1],
             d = a[2],
             f = I.distance(b, d),
-            h = Math.abs(Sa.area(a));
+            h = Math.abs(PolyCore.area(a));
         if (1 > h / f || .01 > h / (f * f)) return [b, d];
         h = c.subtract(b);
         var k = d.subtract(c),
@@ -5014,17 +5014,17 @@ Qe.prototype = {
         null == q && (q = .5);
         (C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647 < q ? g = !0 : (q = f / g, null == q && (q = .5), g = (C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647 < q);
         if (g) return a;
-        n < p ? (n /= p, c = new I(c.x + k.x * n, c.y + k.y * n), h = Qe.getCircle(b, h, c, k), n = b.subtract(h.c), k = Math.atan2(n.y, n.x), n = c.subtract(h.c), c = Math.atan2(n.y, n.x), f = Qe.getArc(h, k, c, f), null != f ? f.push(d) : f = a) : (n = -p / n, c = new I(c.x + h.x * n, c.y + h.y * n), h = Qe.getCircle(c, h, d, k), n = c.subtract(h.c), k = Math.atan2(n.y, n.x), n = d.subtract(h.c), c = Math.atan2(n.y, n.x), f = Qe.getArc(h, k,
+        n < p ? (n /= p, c = new I(c.x + k.x * n, c.y + k.y * n), h = WardGroup.getCircle(b, h, c, k), n = b.subtract(h.c), k = Math.atan2(n.y, n.x), n = c.subtract(h.c), c = Math.atan2(n.y, n.x), f = WardGroup.getArc(h, k, c, f), null != f ? f.push(d) : f = a) : (n = -p / n, c = new I(c.x + h.x * n, c.y + h.y * n), h = WardGroup.getCircle(c, h, d, k), n = c.subtract(h.c), k = Math.atan2(n.y, n.x), n = d.subtract(h.c), c = Math.atan2(n.y, n.x), f = WardGroup.getArc(h, k,
             c, f), null != f ? f.unshift(b) : f = a);
         return f
     },
     createBlock: function(a, b) {
         null == b && (b = !1);
-        a = new ii(this, a, b);
+        a = new Block(this, a, b);
         0 < a.lots.length && this.blocks.push(a)
     },
     createChurch: function(a) {
-        var b = Gb.obb(a),
+        var b = PolyBounds.obb(a),
             c = b[0].subtract(b[1]),
             d = b[2].subtract(b[1]);
         c = c.get_length() > d.get_length() ? c : d;
@@ -5034,11 +5034,11 @@ Qe.prototype = {
         b = new I(b.x + c.x * d, b.y +
             c.y * d);
         c = b.add(new I(-c.y, c.x));
-        a = gd.cut(a, b, c);
+        a = PolyCut.cut(a, b, c);
         a = Z.max(a, function(a) {
-            return Sa.compactness(a)
+            return PolyCore.compactness(a)
         });
-        this.church = new ii(this, a, !0);
+        this.church = new Block(this, a, !0);
         this.blocks.push(this.church)
     },
     filter: function() {
@@ -5099,7 +5099,7 @@ Qe.prototype = {
             c = b[d];
             ++d;
             p = [];
-            for (var g = 0, q = c.lots; g < q.length;) h = q[g], ++g, n = Sa.center(h), n = this.interpolate(n, a), isNaN(n) ? n = !1 : (n = n * f - k, null == n && (n = .5), n = (C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647 < n), n && p.push(h);
+            for (var g = 0, q = c.lots; g < q.length;) h = q[g], ++g, n = PolyCore.center(h), n = this.interpolate(n, a), isNaN(n) ? n = !1 : (n = n * f - k, null == n && (n = .5), n = (C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647 < n), n && p.push(h);
             c.lots = p
         }
         d = [];
@@ -5113,7 +5113,7 @@ Qe.prototype = {
     },
     getTris: function() {
         if (null == this.tris) {
-            for (var a = [], b = 0, c = xe.earcut(this.shape); b < c.length;) {
+            for (var a = [], b = 0, c = Triangulation.earcut(this.shape); b < c.length;) {
                 var d = c[b];
                 ++b;
                 a.push([this.shape[d[0]], this.shape[d[1]], this.shape[d[2]]])
@@ -5126,7 +5126,7 @@ Qe.prototype = {
         for (var c = 0, d = this.getTris(); c < d.length;) {
             var f = d[c];
             ++c;
-            var h = qa.barycentric(f[0], f[1], f[2], a);
+            var h = GeomUtils.barycentric(f[0], f[1], f[2], a);
             if (0 <= h.x && 0 <= h.y && 0 <= h.z) return h.x * b.h[f[0].__id__] + h.y * b.h[f[1].__id__] + h.z * b.h[f[2].__id__]
         }
         return NaN
@@ -5139,53 +5139,53 @@ Qe.prototype = {
             })
     },
     isBlockSized: function(a) {
-        var b = Sa.center(a);
-        a = Sa.area(a);
+        var b = PolyCore.center(a);
+        a = PolyCore.area(a);
         var c = this.district.alleys;
         b = c.minSq * c.blockSize * this.interpolate(b, this.blockM);
         return a < b
     },
-    __class__: Qe
+    __class__: WardGroup
 };
-var og = function(a, b) {
-    Rb.call(this, a, b)
+var Wilderness = function(a, b) {
+    Ward.call(this, a, b)
 };
-g["com.watabou.mfcg.model.wards.Wilderness"] = og;
-og.__name__ = "com.watabou.mfcg.model.wards.Wilderness";
-og.__super__ = Rb;
-og.prototype = v(Rb.prototype, {
-    __class__: og
+g["com.watabou.mfcg.model.wards.Wilderness"] = Wilderness;
+Wilderness.__name__ = "com.watabou.mfcg.model.wards.Wilderness";
+Wilderness.__super__ = Ward;
+Wilderness.prototype = v(Ward.prototype, {
+    __class__: Wilderness
 });
-var ia = function() {
-    Pb.call(this);
-    ia.inst = this;
-    this.model = Ub.instance;
+var TownScene = function() {
+    Scene.call(this);
+    TownScene.inst = this;
+    this.model = City.instance;
     this.createOverlays();
     this.updateOverlays();
     this.toggleOverlays();
-    sb.preview || this.keyEvent.add(l(this, this.onKeyEvent))
+    Main.preview || this.keyEvent.add(l(this, this.onKeyEvent))
 };
-g["com.watabou.mfcg.scenes.TownScene"] = ia;
-ia.__name__ = "com.watabou.mfcg.scenes.TownScene";
-ia.getMenu = function() {
-    null == ia.menu && (ia.menu = new dd);
-    return ia.menu
+g["com.watabou.mfcg.scenes.TownScene"] = TownScene;
+TownScene.__name__ = "com.watabou.mfcg.scenes.TownScene";
+TownScene.getMenu = function() {
+    null == TownScene.menu && (TownScene.menu = new Menu);
+    return TownScene.menu
 };
-ia.applyPalette = function(a) {
+TownScene.applyPalette = function(a) {
     K.setPalette(a, !0);
-    Pe.updateColors(Ub.instance.districts);
-    bb.switchScene(Ec)
+    District.updateColors(City.instance.districts);
+    Game.switchScene(ViewScene)
 };
-ia.editColors = function() {
-    if (null == u.findWidnow(Hc)) {
-        var a = new Hc(ia.applyPalette, "Default;default;Ink;ink;Black & White;bw;Vivid;vivid;Natural;natural;Modern;modern".split(";"));
-        a.getName = Hc.swatches(null, ["colorPaper", "colorRoof", "colorDark"]);
+TownScene.editColors = function() {
+    if (null == u.findWidnow(PaletteForm)) {
+        var a = new PaletteForm(TownScene.applyPalette, "Default;default;Ink;ink;Black & White;bw;Vivid;vivid;Natural;natural;Modern;modern".split(";"));
+        a.getName = PaletteForm.swatches(null, ["colorPaper", "colorRoof", "colorDark"]);
         K.fillForm(a);
         u.showDialog(a, "Color scheme")
     }
 };
-ia.__super__ = Pb;
-ia.prototype = v(Pb.prototype, {
+TownScene.__super__ = Scene;
+TownScene.prototype = v(Scene.prototype, {
     get_mapScale: function() {
         var a = this.model.getViewport(),
             b = 40 * (null != this.model.focus ? .25 : 1),
@@ -5197,18 +5197,18 @@ ia.prototype = v(Pb.prototype, {
         return 2 < c / a ? c / 2 : a
     },
     activate: function() {
-        Pb.prototype.activate.call(this);
+        Scene.prototype.activate.call(this);
         this.stage.set_color(K.colorPaper);
-        sb.preview ||
+        Main.preview ||
             this.stage.addEventListener("rightClick", l(this, this.onRightClick))
     },
     deactivate: function() {
-        Pb.prototype.deactivate.call(this);
-        ia.map = null;
+        Scene.prototype.deactivate.call(this);
+        TownScene.map = null;
         this.stage.removeEventListener("rightClick", l(this, this.onRightClick))
     },
     onRightClick: function(a) {
-        a = ia.getMenu();
+        a = TownScene.getMenu();
         a.addSeparator();
         this.onMapContext(a);
         a.addSeparator();
@@ -5218,26 +5218,26 @@ ia.prototype = v(Pb.prototype, {
     onContext: function(a) {},
     onMapContext: function(a) {},
     onEsc: function() {
-        u.hideMenu() || (null != this.model.focus ? this.zoomIn(null) : Pb.prototype.onEsc.call(this))
+        u.hideMenu() || (null != this.model.focus ? this.zoomIn(null) : Scene.prototype.onEsc.call(this))
     },
     onKeyEvent: function(a,
         b) {},
     createOverlays: function() {
         this.overlays = [];
-        this.overlays.push(this.grid = new ki(this));
+        this.overlays.push(this.grid = new GridOverlay(this));
         this.addChild(this.grid);
-        this.overlays.push(this.pins = new li(this));
+        this.overlays.push(this.pins = new PinsOverlay(this));
         this.addChild(this.pins);
         this.overlays.push(this.markers = new mi(this));
         this.addChild(this.markers);
-        this.overlays.push(this.scBar = new ni(this));
+        this.overlays.push(this.scBar = new ScaleBarOverlay(this));
         this.addChild(this.scBar);
-        this.overlays.push(this.compass = new qg(this));
+        this.overlays.push(this.compass = new CompassOverlay(this));
         this.addChild(this.compass);
-        this.overlays.push(this.legend = new Uc(this));
+        this.overlays.push(this.legend = new LegendOverlay(this));
         this.addChild(this.legend);
         this.overlays.push(this.labels =
-            new oi(this));
+            new LabelsOverlay(this));
         this.addChild(this.labels)
     },
     updateOverlays: function() {
@@ -5267,25 +5267,25 @@ ia.prototype = v(Pb.prototype, {
             c.setSize(this.rWidth,
                 this.rHeight)
         }
-        this.legend.update(Ub.instance)
+        this.legend.update(City.instance)
     },
     recreateMap: function() {
-        null != ia.map && this.removeChild(ia.map);
-        ia.map = new bi(this.model);
-        this.addChildAt(ia.map, 0)
+        null != TownScene.map && this.removeChild(TownScene.map);
+        TownScene.map = new FormalMap(this.model);
+        this.addChildAt(TownScene.map, 0)
     },
     layoutMap: function() {
         var a = this.model.getViewport(),
             b = this.get_mapScale(),
             c = 1 / b;
-        if (null == ia.map || K.lineInvScale != c) K.lineInvScale = c, this.recreateMap();
-        ia.map.set_scaleX(ia.map.set_scaleY(b));
-        ia.map.set_x(this.rWidth / 2 - (a.get_left() + a.get_right()) / 2 * b);
-        ia.map.set_y(this.rHeight / 2 - (a.get_top() + a.get_bottom()) / 2 * b);
-        a = ia.map.globalToLocal(this.localToGlobal(new I(0,
+        if (null == TownScene.map || K.lineInvScale != c) K.lineInvScale = c, this.recreateMap();
+        TownScene.map.set_scaleX(TownScene.map.set_scaleY(b));
+        TownScene.map.set_x(this.rWidth / 2 - (a.get_left() + a.get_right()) / 2 * b);
+        TownScene.map.set_y(this.rHeight / 2 - (a.get_top() + a.get_bottom()) / 2 * b);
+        a = TownScene.map.globalToLocal(this.localToGlobal(new I(0,
             0)));
-        b = ia.map.globalToLocal(this.localToGlobal(new I(this.rWidth, this.rHeight)));
-        ia.map.updateBounds(a.x, b.x, a.y, b.y)
+        b = TownScene.map.globalToLocal(this.localToGlobal(new I(this.rWidth, this.rHeight)));
+        TownScene.map.updateBounds(a.x, b.x, a.y, b.y)
     },
     layoutLabels: function() {
         this.labels.setSize(this.rWidth, this.rHeight);
@@ -5298,59 +5298,59 @@ ia.prototype = v(Pb.prototype, {
         this.layoutLabels()
     },
     showMenu: function(a) {
-        null != a ? u.showMenuAt(ia.menu, a.get_x() + a.rWidth, a.get_y() + a.rHeight + 2) : u.showMenu(ia.menu);
-        ia.menu = null
+        null != a ? u.showMenuAt(TownScene.menu, a.get_x() + a.rWidth, a.get_y() + a.rHeight + 2) : u.showMenu(TownScene.menu);
+        TownScene.menu = null
     },
     loadPreset: function(a) {
-        ia.applyPalette(Xc.fromAsset(a))
+        TownScene.applyPalette(Palette.fromAsset(a))
     },
     toggleOverlays: function(a) {
-        a = "Legend" == ba.get("districts", "Curved") || "Legend" == ba.get("landmarks");
+        a = "Legend" == State.get("districts", "Curved") || "Legend" == State.get("landmarks");
         this.legend.set_visible(a);
         this.legend.get_visible() && this.legend.update(this.model);
-        this.pins.set_visible("Legend" == ba.get("districts", "Curved"));
-        this.markers.set_visible("Hidden" != ba.get("landmarks"));
-        var b = ba.get("districts", "Curved");
+        this.pins.set_visible("Legend" == State.get("districts", "Curved"));
+        this.markers.set_visible("Hidden" != State.get("landmarks"));
+        var b = State.get("districts", "Curved");
         this.labels.set_visible("Straight" == b || "Curved" == b);
-        this.scBar.set_visible(ba.get("scale_bar", !0) && !a);
-        this.compass.set_visible(ba.get("compass", !0));
-        this.grid.set_visible(ba.get("grid",
+        this.scBar.set_visible(State.get("scale_bar", !0) && !a);
+        this.compass.set_visible(State.get("compass", !0));
+        this.grid.set_visible(State.get("grid",
             !0))
     },
     arrangeOverlays: function() {
         this.legend.get_visible() && this.legend.get_position() == yc.BOTTOM_RIGHT ? this.compass.set_position(yc.BOTTOM_LEFT) : this.compass.set_position(yc.BOTTOM_RIGHT)
     },
     zoomIn: function(a) {
-        a = null != a ? fh.district(a) : null;
+        a = null != a ? Focus.district(a) : null;
         this.model.focus = a;
         this.recreateMap();
         this.labels.update(this.model);
         this.layout()
     },
-    __class__: ia,
-    __properties__: v(Pb.prototype.__properties__, {
+    __class__: TownScene,
+    __properties__: v(Scene.prototype.__properties__, {
         get_mapScale: "get_mapScale"
     })
 });
-var vc = function() {
-    oc.call(this)
+var ToolForm = function() {
+    Form.call(this)
 };
-g["com.watabou.mfcg.ui.forms.ToolForm"] = vc;
-vc.__name__ =
-    "com.watabou.mfcg.ui.forms.ToolForm";
-vc.loadSaved = function(a) {
-    vc.saved = ba.get("tools");
-    null == vc.saved && (vc.saved = {});
+g["com.watabou.mfcg.RotateTool.forms.ToolForm"] = ToolForm;
+ToolForm.__name__ =
+    "com.watabou.mfcg.RotateTool.forms.ToolForm";
+ToolForm.loadSaved = function(a) {
+    ToolForm.saved = State.get("tools");
+    null == ToolForm.saved && (ToolForm.saved = {});
     if (null != a)
         for (var b = 0; b < a.length;) {
             var c = a[b];
             ++b;
-            var d = vc.saved[c.__name__];
+            var d = ToolForm.saved[c.__name__];
             null != d && d.visible && null == u.findWidnow(c) && (c = w.createInstance(c, []), u.showDialog(c), c.restore())
         }
 };
-vc.__super__ = oc;
-vc.prototype = v(oc.prototype, {
+ToolForm.__super__ = Form;
+ToolForm.prototype = v(Form.prototype, {
     onShow: function() {
         var a = this;
         this.dialog.onMove.add(l(this, this.onMove));
@@ -5376,43 +5376,43 @@ vc.prototype = v(oc.prototype, {
     save: function(a) {
         var b = this.dialog;
         b = new I(b.get_x() + b.rWidth / 2, b.get_y() + b.rHeight / 2);
-        vc.saved[this.id()] = {
+        ToolForm.saved[this.id()] = {
             x: b.x / u.layer.get_width(),
             y: b.y / u.layer.get_height(),
             visible: a,
             minimized: this.dialog.minimized
         };
-        ba.set("tools", vc.saved)
+        State.set("tools", ToolForm.saved)
     },
     restore: function() {
         var a = this.id();
-        a = vc.saved[a];
+        a = ToolForm.saved[a];
         null != a && (this.dialog.set_x(a.x * u.layer.get_width() -
             this.dialog.get_width() / 2 | 0), this.dialog.set_y(a.y * u.layer.get_height() - this.dialog.get_height() / 2 | 0), this.dialog.setMinimized(a.minimized), a = this.dialog.getAdjustment(), null != a && (this.dialog.set_x(a.x), this.dialog.set_y(a.y)));
         this.save(!0)
     },
     forceDisplay: function() {
-        vc.saved[this.id()].visible = !0
+        ToolForm.saved[this.id()].visible = !0
     },
-    __class__: vc
+    __class__: ToolForm
 });
 var Kd = function() {
     var a = this;
-    oc.call(this);
+    Form.call(this);
     var b = this.createFeaturesTab(),
         c = this.createRoadsTab();
-    this.tabs = new ig;
+    this.tabs = new Tabs;
     this.tabs.addTab("Features", b);
     this.tabs.addTab("Roads", c);
     this.buttons =
-        new gb;
+        new VBox;
     this.buttons.setMargins(10, 8);
-    b = new fb("Small");
+    b = new Button("Small");
     b.set_width(80);
     b.click.add(function() {
         a.build(Math.floor(10 + (C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647 * 10))
     });
     this.buttons.add(b);
-    b = new fb("Medium");
+    b = new Button("Medium");
     b.set_width(80);
     b.click.add(function() {

@@ -8,21 +8,21 @@
     }
     return c
 };
-uc.simplify = function(a, b, c) {
+PolyUtils.simplify = function(a, b, c) {
     null == c && (c = 1.01);
     null == b && (b = 0);
-    var d = Sa.area(a);
+    var d = PolyCore.area(a);
     0 == b && (b = d);
     for (var f = d, h = a.length; 3 <= h;) {
         for (var k = !1, n = 0; n < h;) {
-            var p = qa.triArea(a[(n + h - 1) % h], a[n], a[(n + 1) % h]),
+            var p = GeomUtils.triArea(a[(n + h - 1) % h], a[n], a[(n + 1) % h]),
                 g = (f - p) / d;
             Math.abs(p) < b && g < c && 1 / g < c ? (a.splice(n, 1), k = !0, f -= p, --h) : ++n
         }
         if (!k) break
     }
 };
-uc.visvalingam =
+PolyUtils.visvalingam =
     function(a, b, c) {
         null == c && (c = 1.1);
         null == b && (b = 2);
@@ -33,7 +33,7 @@ uc.visvalingam =
         var p = f;
         f = [];
         h = 0;
-        for (k = d; h < k;) n = h++, f.push(0 == n || n == d - 1 ? 0 : Math.abs(qa.triArea(a[n - 1], a[n], a[n + 1])));
+        for (k = d; h < k;) n = h++, f.push(0 == n || n == d - 1 ? 0 : Math.abs(GeomUtils.triArea(a[n - 1], a[n], a[n + 1])));
         k = f;
         var g = 0;
         for (f = 0; f < p.length;) h = p[f], ++f, g += h;
@@ -53,26 +53,26 @@ uc.visvalingam =
             p.splice(n, 1);
             p[n - 1] = h;
             k.splice(n, 1);
-            1 < n && (k[n - 1] = Math.abs(qa.triArea(a[n -
+            1 < n && (k[n - 1] = Math.abs(GeomUtils.triArea(a[n -
                 2], a[n - 1], a[n])));
-            n < d - 1 && (k[n] = Math.abs(qa.triArea(a[n - 1], a[n], a[n + 1])))
+            n < d - 1 && (k[n] = Math.abs(GeomUtils.triArea(a[n - 1], a[n], a[n + 1])))
         }
     };
-uc.resampleClosed = function(a, b) {
+PolyUtils.resampleClosed = function(a, b) {
     var c = a.length,
-        d = Sa.perimeter(a);
+        d = PolyCore.perimeter(a);
     b = d / Math.round(d / b);
     d = a[c - 1];
     for (var f = [d], h = b, k = 0, n = 0; n < c;) {
         var p = n++,
             g = d;
         d = a[p];
-        for (p = I.distance(g, d); k + p > h;) f.push(qa.lerp(g, d, (h - k) / p)), h += b;
+        for (p = I.distance(g, d); k + p > h;) f.push(GeomUtils.lerp(g, d, (h - k) / p)), h += b;
         k += p
     }
     return f
 };
-uc.fractalizeClosed = function(a, b, c) {
+PolyUtils.fractalizeClosed = function(a, b, c) {
     null == c && (c = .5);
     null == b && (b = 1);
     var d = [],
@@ -80,7 +80,7 @@ uc.fractalizeClosed = function(a, b, c) {
     f = function(a, b, h) {
         if (0 < h) {
             var k = new I(a.y - b.y, b.x - a.x),
-                n = qa.lerp(a, b),
+                n = GeomUtils.lerp(a, b),
                 p = c * (((C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647 +
                     (C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647 + (C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647) / 3 * 2 - 1);
             n.x += k.x * p;
@@ -99,9 +99,9 @@ uc.fractalizeClosed = function(a, b, c) {
     }
     return d
 };
-var de = function(a) {
+var Markov = function(a) {
     this.map = new Qa;
-    null == de.phonemes && (de.phonemes = nd.VOWELS.concat(nd.CONSONANTS), de.phonemes.sort(function(a, b) {
+    null == Markov.phonemes && (Markov.phonemes = Syllables.VOWELS.concat(Syllables.CONSONANTS), Markov.phonemes.sort(function(a, b) {
         return b.length - a.length
     }));
     this.source = a;
@@ -109,7 +109,7 @@ var de = function(a) {
         var c = a[b];
         ++b;
         if ("" != c) {
-            c = de.split(c.toLowerCase());
+            c = Markov.split(c.toLowerCase());
             for (var d = [], f = 0; f < c.length;) {
                 var h = c[f];
                 ++f;
@@ -123,12 +123,12 @@ var de = function(a) {
         }
     }
 };
-g["com.watabou.nlp.Markov"] = de;
-de.__name__ = "com.watabou.nlp.Markov";
-de.split = function(a) {
+g["com.watabou.nlp.Markov"] = Markov;
+Markov.__name__ = "com.watabou.nlp.Markov";
+Markov.split = function(a) {
     for (var b = [];
         "" != a;) {
-        for (var c = !1, d = 0, f = de.phonemes; d < f.length;) {
+        for (var c = !1, d = 0, f = Markov.phonemes; d < f.length;) {
             var h = f[d];
             ++d;
             if (N.substr(a, -h.length, null) == h) {
@@ -143,7 +143,7 @@ de.split = function(a) {
     }
     return b
 };
-de.prototype = {
+Markov.prototype = {
     generate: function(a) {
         for (null == a && (a = -1);;) {
             for (var b = "", c = [], d = Z.random(this.map.h[""]);
@@ -155,40 +155,40 @@ de.prototype = {
                 var f = c.join("");
                 d = Z.random(d.h[f])
             }
-            if (-1 == a || nd.splitWord(b).length <= a) return b
+            if (-1 == a || Syllables.splitWord(b).length <= a) return b
         }
     },
-    __class__: de
+    __class__: Markov
 };
-var nd = function() {};
-g["com.watabou.nlp.Syllables"] = nd;
-nd.__name__ = "com.watabou.nlp.Syllables";
-nd.split = function(a) {
+var Syllables = function() {};
+g["com.watabou.nlp.Syllables"] = Syllables;
+Syllables.__name__ = "com.watabou.nlp.Syllables";
+Syllables.split = function(a) {
     var b = [],
         c = 0;
     for (a = a.split(" "); c < a.length;) {
         var d =
             a[c];
         ++c;
-        "" != d && (b = b.concat(nd.splitWord(d)))
+        "" != d && (b = b.concat(Syllables.splitWord(d)))
     }
     return b
 };
-nd.splitWord = function(a) {
+Syllables.splitWord = function(a) {
     for (var b = []; 0 < a.length;) {
-        var c = 0 == b.length && "e" == N.substr(a, -1, null) ? nd.pinch(N.substr(a, 0, a.length - 1)) + "e" : nd.pinch(a);
+        var c = 0 == b.length && "e" == N.substr(a, -1, null) ? Syllables.pinch(N.substr(a, 0, a.length - 1)) + "e" : Syllables.pinch(a);
         b.unshift(c);
         a = N.substr(a, 0, a.length - c.length);
-        Z.every(nd.VOWELS, function(b) {
+        Z.every(Syllables.VOWELS, function(b) {
             return -1 == a.indexOf(b)
         }) && (b[0] = a + b[0], a = "")
     }
     return b
 };
-nd.pinch = function(a) {
-    for (var b = a.length - 1; 0 <= b && -1 == nd.VOWELS.indexOf(a.charAt(b));) --b;
+Syllables.pinch = function(a) {
+    for (var b = a.length - 1; 0 <= b && -1 == Syllables.VOWELS.indexOf(a.charAt(b));) --b;
     if (0 > b) return a;
-    for (var c = 0, d = nd.VOWELS; c < d.length;) {
+    for (var c = 0, d = Syllables.VOWELS; c < d.length;) {
         var f = d[c];
         ++c;
         if (N.substr(a,
@@ -199,21 +199,21 @@ nd.pinch = function(a) {
     }
     if (0 > b) return a;
     c = 0;
-    for (d = nd.CONSONANTS; c < d.length;)
+    for (d = Syllables.CONSONANTS; c < d.length;)
         if (f = d[c], ++c, N.substr(a, b - (f.length - 1), f.length) == f) return N.substr(a, b - (f.length - 1), null);
     return N.substr(a, b + 1, null)
 };
-var Ei = function() {
+var Process = function() {
     this.complete = new Nc
 };
-g["com.watabou.processes.Process"] = Ei;
-Ei.__name__ = "com.watabou.processes.Process";
-Ei.prototype = {
+g["com.watabou.processes.Process"] = Process;
+Process.__name__ = "com.watabou.processes.Process";
+Process.prototype = {
     onComplete: function(a) {
         null != a && this.complete.add(a);
         return this
     },
-    __class__: Ei
+    __class__: Process
 };
 var Ke = function() {
     this.complete = new Nc
@@ -232,8 +232,8 @@ Ke.run = function(a, b) {
     a.start();
     return a
 };
-Ke.__super__ = Ei;
-Ke.prototype = v(Ei.prototype, {
+Ke.__super__ = Process;
+Ke.prototype = v(Process.prototype, {
     start: function() {
         this.passed = 0;
         this.paused = !1;
@@ -244,12 +244,12 @@ Ke.prototype = v(Ei.prototype, {
         return this.pause()
     },
     resume: function() {
-        rb.get_tick().add(l(this, this.update));
+        Updater.get_tick().add(l(this, this.update));
         this.paused = !1;
         return this
     },
     pause: function() {
-        rb.get_tick().remove(l(this, this.update));
+        Updater.get_tick().remove(l(this, this.update));
         this.paused = !0;
         return this
     },
@@ -258,101 +258,101 @@ Ke.prototype = v(Ei.prototype, {
     },
     __class__: Ke
 });
-var ge = function() {};
-g["com.watabou.system.Exporter"] = ge;
-ge.__name__ = "com.watabou.system.Exporter";
-ge.saveBinary = function(a, b, c) {
-    b = ge.fixName(b);
+var Exporter = function() {};
+g["com.watabou.system.Exporter"] = Exporter;
+Exporter.__name__ = "com.watabou.system.Exporter";
+Exporter.saveBinary = function(a, b, c) {
+    b = Exporter.fixName(b);
     a = Td.toArrayBuffer(a);
     window.saveAs(new Blob([a], {
         type: c
     }), b, !0)
 };
-ge.saveText = function(a, b, c) {
-    b = ge.fixName(b);
+Exporter.saveText = function(a, b, c) {
+    b = Exporter.fixName(b);
     window.saveAs(new Blob([a], {
         type: c
     }), b, !0)
 };
-ge.savePNG =
+Exporter.savePNG =
     function(a, b) {
         a = a.encode(a.rect, new ri);
-        ge.saveBinary(a, b + ".png", "image/png")
+        Exporter.saveBinary(a, b + ".png", "image/png")
     };
-ge.fixName = function(a) {
+Exporter.fixName = function(a) {
     return (new ja("[ ']", "g")).split(a.toLowerCase()).join("_")
 };
-var ba = function() {};
-g["com.watabou.system.State"] = ba;
-ba.__name__ = "com.watabou.system.State";
-ba.init = function(a, b) {
-    null == ba.so && (null == a && (a = A.current.meta.h.packageName), ba.so = $c.getLocal(a), ba.data = ba.so.data, null != b && 0 == ya.fields(ba.data).length && b(ba.data))
+var State = function() {};
+g["com.watabou.system.State"] = State;
+State.__name__ = "com.watabou.system.State";
+State.init = function(a, b) {
+    null == State.so && (null == a && (a = A.current.meta.h.packageName), State.so = $c.getLocal(a), State.data = State.so.data, null != b && 0 == ya.fields(State.data).length && b(State.data))
 };
-ba.get = function(a, b) {
-    ba.init();
-    return Object.prototype.hasOwnProperty.call(ba.data,
-        a) ? ba.data[a] : b
+State.get = function(a, b) {
+    State.init();
+    return Object.prototype.hasOwnProperty.call(State.data,
+        a) ? State.data[a] : b
 };
-ba.set = function(a, b) {
-    ba.init();
-    ba.data[a] = b;
-    ba.so.flush()
+State.set = function(a, b) {
+    State.init();
+    State.data[a] = b;
+    State.so.flush()
 };
-var za = function() {};
-g["com.watabou.system.URLState"] = za;
-za.__name__ = "com.watabou.system.URLState";
-za.init = function() {
-    if (null == za.data) {
-        za.data = {};
+var URLState = function() {};
+g["com.watabou.system.URLState"] = URLState;
+URLState.__name__ = "com.watabou.system.URLState";
+URLState.init = function() {
+    if (null == URLState.data) {
+        URLState.data = {};
         var a = new URLSearchParams(E.location.search);
         null != a && a.forEach(function(a, c) {
-            return za.data[c] = a
+            return URLState.data[c] = a
         })
     }
 };
-za.reset = function() {
-    za.data = {};
-    za.update()
+URLState.reset = function() {
+    URLState.data = {};
+    URLState.update()
 };
-za.get = function(a, b) {
-    za.init();
-    return Object.prototype.hasOwnProperty.call(za.data, a) ? za.data[a] : b
+URLState.get = function(a, b) {
+    URLState.init();
+    return Object.prototype.hasOwnProperty.call(URLState.data, a) ? URLState.data[a] : b
 };
-za.getInt = function(a, b) {
+URLState.getInt = function(a, b) {
     null == b &&
         (b = 0);
-    za.init();
-    return Object.prototype.hasOwnProperty.call(za.data, a) ? H.parseInt(za.data[a]) : b
+    URLState.init();
+    return Object.prototype.hasOwnProperty.call(URLState.data, a) ? H.parseInt(URLState.data[a]) : b
 };
-za.getFlag = function(a, b) {
+URLState.getFlag = function(a, b) {
     null == b && (b = !1);
-    return 0 != za.getInt(a, b ? 1 : 0)
+    return 0 != URLState.getInt(a, b ? 1 : 0)
 };
-za.set = function(a, b) {
-    za.init();
-    za.data[a] = b;
-    za.update()
+URLState.set = function(a, b) {
+    URLState.init();
+    URLState.data[a] = b;
+    URLState.update()
 };
-za.setFlag = function(a, b) {
+URLState.setFlag = function(a, b) {
     null == b && (b = !0);
-    za.set(a, b ? "1" : "0")
+    URLState.set(a, b ? "1" : "0")
 };
-za.getParams = function() {
-    for (var a = "", b = za.data, c = ya.fields(b), d = 0; d < c.length;) {
+URLState.getParams = function() {
+    for (var a = "", b = URLState.data, c = ya.fields(b), d = 0; d < c.length;) {
         var f = c[d++];
         a += ("" == a ? "?" : "&") + ("" + f + "=" + H.string(b[f]))
     }
     return a
 };
-za.getURL = function() {
-    return za.baseURL + za.getParams()
+URLState.getURL = function() {
+    return URLState.baseURL + URLState.getParams()
 };
-za.update = function() {
-    window.history.replaceState(za.data,
-        "", za.getParams())
+URLState.update = function() {
+    window.history.replaceState(URLState.data,
+        "", URLState.getParams())
 };
-za.fromString = function(a) {
-    za.data = {};
+URLState.fromString = function(a) {
+    URLState.data = {};
     a = N.substr(a, a.indexOf("?") + 1, null).split("&");
     for (var b = 0; b < a.length;) {
         var c = a[b];
@@ -361,36 +361,36 @@ za.fromString = function(a) {
             f = N.substr(c, 0, d);
         c = N.substr(c, d + 1, null);
         c = decodeURIComponent(c.split("+").join(" "));
-        za.data[f] = c
+        URLState.data[f] = c
     }
-    za.update()
+    URLState.update()
 };
-var wg = function(a) {
+var RuleSelector = function(a) {
     this.ruleSet = a;
     this.clearState()
 };
-g["com.watabou.tracery.RuleSelector"] = wg;
-wg.__name__ = "com.watabou.tracery.RuleSelector";
-wg.prototype = {
+g["com.watabou.tracery.RuleSelector"] = RuleSelector;
+RuleSelector.__name__ = "com.watabou.tracery.RuleSelector";
+RuleSelector.prototype = {
     select: function() {
         var a = this.ruleSet.defaultRules,
-            b = Oe.rng() * a.length |
+            b = Tracery.rng() * a.length |
             0;
         return a[b]
     },
     clearState: function() {},
-    __class__: wg
+    __class__: RuleSelector
 };
 var $h = function(a) {
-    wg.call(this, a)
+    RuleSelector.call(this, a)
 };
 g["com.watabou.tracery.DeckRuleSelector"] = $h;
 $h.__name__ = "com.watabou.tracery.DeckRuleSelector";
-$h.__super__ = wg;
-$h.prototype = v(wg.prototype, {
+$h.__super__ = RuleSelector;
+$h.prototype = v(RuleSelector.prototype, {
     select: function() {
         0 == this.deck.length && this.clearState();
-        var a = Oe.rng() * this.deck.length | 0,
+        var a = Tracery.rng() * this.deck.length | 0,
             b = this.deck[a];
         this.deck.splice(a, 1);
         return b
@@ -400,22 +400,22 @@ $h.prototype = v(wg.prototype, {
     },
     __class__: $h
 });
-var Rf = function(a, b, c) {
+var Symbol = function(a, b, c) {
     this.grammar = a;
     this.key = b;
     this.baseRules =
         c;
     this.clearState()
 };
-g["com.watabou.tracery.Symbol"] = Rf;
-Rf.__name__ = "com.watabou.tracery.Symbol";
-Rf.prototype = {
+g["com.watabou.tracery.Symbol"] = Symbol;
+Symbol.__name__ = "com.watabou.tracery.Symbol";
+Symbol.prototype = {
     clearState: function() {
         this.stack = [this.baseRules];
         this.baseRules.clearState()
     },
     pushRules: function(a) {
-        this.pushRuleSet(new xg(this.grammar, a))
+        this.pushRuleSet(new RuleSet(this.grammar, a))
     },
     pushRuleSet: function(a) {
         this.stack.push(a)
@@ -434,32 +434,32 @@ Rf.prototype = {
     top: function() {
         return this.stack[this.stack.length - 1]
     },
-    __class__: Rf
+    __class__: Symbol
 };
-var Fi = function(a, b, c) {
-    Rf.call(this, a, b, new xg(a, []));
+var ExtSymbol = function(a, b, c) {
+    Symbol.call(this, a, b, new RuleSet(a, []));
     this.generator = c
 };
-g["com.watabou.tracery.ExtSymbol"] = Fi;
-Fi.__name__ = "com.watabou.tracery.ExtSymbol";
-Fi.__super__ = Rf;
-Fi.prototype = v(Rf.prototype, {
+g["com.watabou.tracery.ExtSymbol"] = ExtSymbol;
+ExtSymbol.__name__ = "com.watabou.tracery.ExtSymbol";
+ExtSymbol.__super__ = Symbol;
+ExtSymbol.prototype = v(Symbol.prototype, {
     selectRule: function() {
         return this.generator()
     },
-    __class__: Fi
+    __class__: ExtSymbol
 });
-var hk = function(a) {
+var Grammar = function(a) {
     this.autoID = 0;
-    this.defaultSelector = wg;
+    this.defaultSelector = RuleSelector;
     this.modifiers =
         new Qa;
     this.flags = [];
     this.loadFromRawObj(a)
 };
-g["com.watabou.tracery.Grammar"] = hk;
-hk.__name__ = "com.watabou.tracery.Grammar";
-hk.prototype = {
+g["com.watabou.tracery.Grammar"] = Grammar;
+Grammar.__name__ = "com.watabou.tracery.Grammar";
+Grammar.prototype = {
     clearState: function() {
         for (var a = this.symbols.h, b = Object.keys(a), c = b.length, d = 0; d < c;) a[b[d++]].clearState();
         this.flags = []
@@ -493,7 +493,7 @@ hk.prototype = {
                     methodName: "loadFromRawObj"
                 }));
                 d = this.symbols;
-                h = new Rf(this, f, new xg(this, this.unwrap(a, h)));
+                h = new Symbol(this, f, new RuleSet(this, this.unwrap(a, h)));
                 d.h[f] = h
             }
     },
@@ -518,7 +518,7 @@ hk.prototype = {
         return c
     },
     createRoot: function(a) {
-        return new ph(this, null, 0, {
+        return new TraceryNode(this, null, 0, {
             type: -1,
             raw: a
         })
@@ -547,8 +547,8 @@ hk.prototype = {
         if (Object.prototype.hasOwnProperty.call(this.symbols.h, a)) this.symbols.h[a].pushRules(b);
         else {
             var c = this.symbols;
-            b = new Rf(this,
-                a, new xg(this, b));
+            b = new Symbol(this,
+                a, new RuleSet(this, b));
             c.h[a] = b
         }
     },
@@ -612,60 +612,60 @@ hk.prototype = {
     },
     addExternal: function(a, b) {
         var c = this.symbols;
-        b = new Fi(this, a, b);
+        b = new ExtSymbol(this, a, b);
         c.h[a] = b
     },
-    __class__: hk
+    __class__: Grammar
 };
-var jb = function() {};
-g["com.watabou.tracery.ModsEngBasic"] = jb;
-jb.__name__ = "com.watabou.tracery.ModsEngBasic";
-jb.isVowel = function(a) {
+var ModsEngBasic = function() {};
+g["com.watabou.tracery.ModsEngBasic"] = ModsEngBasic;
+ModsEngBasic.__name__ = "com.watabou.tracery.ModsEngBasic";
+ModsEngBasic.isVowel = function(a) {
     return -1 != "ieaou".indexOf(a.toLowerCase())
 };
-jb.isAlphaNum = function(a) {
+ModsEngBasic.isAlphaNum = function(a) {
     return "a" <= a && "z" >= a || "A" <= a && "Z" >= a ? !0 : "0" <= a ? "9" >= a : !1
 };
-jb.isPlural = function(a) {
+ModsEngBasic.isPlural = function(a) {
     a = a.toLowerCase();
     return "s" == N.substr(a, -1, null) ? "ss" != N.substr(a, -2, null) : !1
 };
-jb.escapeRegExp = function(a) {
+ModsEngBasic.escapeRegExp = function(a) {
     return a.replace(/([.*+?^=!:${}()|\[\]/\\])/g, "\\$1")
 };
-jb.replace = function(a, b) {
-    var c = new RegExp(jb.escapeRegExp(b[0]), "g");
+ModsEngBasic.replace = function(a, b) {
+    var c = new RegExp(ModsEngBasic.escapeRegExp(b[0]), "g");
     return a.replace(c, b[1])
 };
-jb.capitalizeAll = function(a, b) {
+ModsEngBasic.capitalizeAll = function(a, b) {
     b = "";
     for (var c = !0, d = 0, f = a.length; d < f;) {
         var h =
             d++;
         h = a.charAt(h);
-        jb.isAlphaNum(h) || "'" == h ? c ? (b += h.toUpperCase(), c = !1) : b += h : (c = !0, b += h)
+        ModsEngBasic.isAlphaNum(h) || "'" == h ? c ? (b += h.toUpperCase(), c = !1) : b += h : (c = !0, b += h)
     }
     return b
 };
-jb.capitalize = function(a, b) {
+ModsEngBasic.capitalize = function(a, b) {
     return a.charAt(0).toUpperCase() + N.substr(a, 1, null)
 };
-jb.caps = function(a, b) {
+ModsEngBasic.caps = function(a, b) {
     return a.toUpperCase()
 };
-jb.a = function(a, b) {
+ModsEngBasic.a = function(a, b) {
     if (0 < a.length) {
         if ("u" == a.charAt(0).toLowerCase() && 2 < a.length && "i" == a.charAt(2).toLowerCase()) return "a " + a;
-        if (jb.isVowel(a.charAt(0))) return "an " + a
+        if (ModsEngBasic.isVowel(a.charAt(0))) return "an " + a
     }
     return "a " + a
 };
-jb.firstS = function(a, b) {
+ModsEngBasic.firstS = function(a, b) {
     a = a.split(" ");
-    return 1 == a.length ? jb.s(a[0], null) : jb.s(a[0], null) + " " + a.slice(1).join(" ")
+    return 1 == a.length ? ModsEngBasic.s(a[0], null) : ModsEngBasic.s(a[0], null) + " " + a.slice(1).join(" ")
 };
-jb.s = function(a, b) {
-    b = jb.plurals.h;
+ModsEngBasic.s = function(a, b) {
+    b = ModsEngBasic.plurals.h;
     for (var c = Object.keys(b), d = c.length, f = 0; f < d;) {
         var h = c[f++],
             k = h;
@@ -678,75 +678,75 @@ jb.s = function(a, b) {
     b = N.substr(a, -2, null);
     return "ch" == b || "sh" == b ? a + "es" : a + "s"
 };
-jb.possessive = function(a, b) {
+ModsEngBasic.possessive = function(a, b) {
     return "s" == N.substr(a, -1, null) ? a + "'" : a + "'s"
 };
-jb.ed = function(a, b) {
+ModsEngBasic.HBox = function(a, b) {
     switch (N.substr(a, -1, null)) {
         case "e":
             return a +
                 "d";
         case "h":
-            return a + "ed";
+            return a + "HBox";
         case "s":
-            return a + "ed";
+            return a + "HBox";
         case "x":
-            return a + "ed";
+            return a + "HBox";
         case "y":
-            return jb.isVowel(a.charAt(a.length - 2)) ? a + "d" : a.substring(0, a.length - 1) + "ied";
+            return ModsEngBasic.isVowel(a.charAt(a.length - 2)) ? a + "d" : a.substring(0, a.length - 1) + "ied";
         default:
-            return a + "ed"
+            return a + "HBox"
     }
 };
-jb.ing = function(a, b) {
+ModsEngBasic.ing = function(a, b) {
     return "e" == N.substr(a, -1, null) ? a.substring(0, a.length - 1) + "ing" : a + "ing"
 };
-jb.thiss = function(a, b) {
-    return jb.isPlural(a) ? "these" : "this"
+ModsEngBasic.thiss = function(a, b) {
+    return ModsEngBasic.isPlural(a) ? "these" : "this"
 };
-jb.they = function(a, b) {
-    return jb.isPlural(a) ? "they" : "it"
+ModsEngBasic.they = function(a, b) {
+    return ModsEngBasic.isPlural(a) ? "they" : "it"
 };
-jb.them = function(a, b) {
-    return jb.isPlural(a) ? "them" : "it"
+ModsEngBasic.them = function(a, b) {
+    return ModsEngBasic.isPlural(a) ? "them" : "it"
 };
-jb.is = function(a, b) {
-    return jb.isPlural(a) ? "are" : "is"
+ModsEngBasic.is = function(a, b) {
+    return ModsEngBasic.isPlural(a) ? "are" : "is"
 };
-jb.was = function(a, b) {
-    return jb.isPlural(a) ? "were" : "was"
+ModsEngBasic.was = function(a, b) {
+    return ModsEngBasic.isPlural(a) ? "were" : "was"
 };
-jb.get = function() {
+ModsEngBasic.get = function() {
     var a = new Qa;
-    a.h.replace = jb.replace;
-    a.h.possessive = jb.possessive;
-    a.h.capitalize = jb.capitalize;
-    a.h.capitalizeAll = jb.capitalizeAll;
-    a.h.caps = jb.caps;
-    a.h.firstS = jb.firstS;
-    a.h.s = jb.s;
-    a.h.a = jb.a;
-    a.h.ed = jb.ed;
-    a.h.ing = jb.ing;
-    a.h["this"] = jb.thiss;
-    a.h.they = jb.they;
-    a.h.them = jb.them;
-    a.h.is = jb.is;
-    a.h.was = jb.was;
+    a.h.replace = ModsEngBasic.replace;
+    a.h.possessive = ModsEngBasic.possessive;
+    a.h.capitalize = ModsEngBasic.capitalize;
+    a.h.capitalizeAll = ModsEngBasic.capitalizeAll;
+    a.h.caps = ModsEngBasic.caps;
+    a.h.firstS = ModsEngBasic.firstS;
+    a.h.s = ModsEngBasic.s;
+    a.h.a = ModsEngBasic.a;
+    a.h.HBox = ModsEngBasic.HBox;
+    a.h.ing = ModsEngBasic.ing;
+    a.h["this"] = ModsEngBasic.thiss;
+    a.h.they = ModsEngBasic.they;
+    a.h.them = ModsEngBasic.them;
+    a.h.is = ModsEngBasic.is;
+    a.h.was = ModsEngBasic.was;
     return a
 };
-var qh = function(a, b) {
+var NodeAction = function(a, b) {
     this.node = a;
     a = b.split(":");
     this.target = a[0];
     1 == a.length ? this.type = 2 : (this.rule = a[1], this.type = "POP" ==
         this.rule ? 1 : 0)
 };
-g["com.watabou.tracery.NodeAction"] = qh;
-qh.__name__ = "com.watabou.tracery.NodeAction";
-qh.prototype = {
+g["com.watabou.tracery.NodeAction"] = NodeAction;
+NodeAction.__name__ = "com.watabou.tracery.NodeAction";
+NodeAction.prototype = {
     createUndo: function() {
-        return 0 == this.type ? new qh(this.node, this.target + ":POP") : null
+        return 0 == this.type ? new NodeAction(this.node, this.target + ":POP") : null
     },
     activate: function() {
         var a = this.node.grammar;
@@ -755,7 +755,7 @@ qh.prototype = {
                 for (var b = this.rule.split(","), c = [], d = 0; d < b.length;) {
                     var f = b[d];
                     ++d;
-                    f = new ph(a, null, 0, {
+                    f = new TraceryNode(a, null, 0, {
                         type: -1,
                         raw: f
                     });
@@ -771,9 +771,9 @@ qh.prototype = {
                 a.execute(this.target)
         }
     },
-    __class__: qh
+    __class__: NodeAction
 };
-var xg = function(a, b) {
+var RuleSet = function(a, b) {
     this.grammar = a;
     a = [];
     for (var c = 0; c < b.length;) {
@@ -783,9 +783,9 @@ var xg = function(a, b) {
     }
     this.defaultRules = this.raw = a
 };
-g["com.watabou.tracery.RuleSet"] = xg;
-xg.__name__ = "com.watabou.tracery.RuleSet";
-xg.prototype = {
+g["com.watabou.tracery.RuleSet"] = RuleSet;
+RuleSet.__name__ = "com.watabou.tracery.RuleSet";
+RuleSet.prototype = {
     process: function(a) {
         var b = a.indexOf("{");
         if (-1 == b) return a;
@@ -813,18 +813,18 @@ xg.prototype = {
     clearState: function() {
         null != this.selector && this.selector.clearState()
     },
-    __class__: xg
+    __class__: RuleSet
 };
-var Oe = function() {};
-g["com.watabou.tracery.Tracery"] = Oe;
-Oe.__name__ = "com.watabou.tracery.Tracery";
-Oe.parseTag = function(a) {
+var Tracery = function() {};
+g["com.watabou.tracery.Tracery"] = Tracery;
+Tracery.__name__ = "com.watabou.tracery.Tracery";
+Tracery.parseTag = function(a) {
     for (var b = {
             symbol: null,
             preactions: [],
             postactions: [],
             modifiers: []
-        }, c = Oe.parse(a), d = null, f = 0; f < c.length;) {
+        }, c = Tracery.parse(a), d = null, f = 0; f < c.length;) {
         var h = c[f];
         ++f;
         if (0 == h.type)
@@ -835,7 +835,7 @@ Oe.parseTag = function(a) {
     null != d && (a = d.split("."), b.symbol = a[0], b.modifiers = a.slice(1));
     return b
 };
-Oe.parse = function(a) {
+Tracery.parse = function(a) {
     var b = 0,
         c = !1,
         d = [],
@@ -908,7 +908,7 @@ Oe.parse = function(a) {
     for (b = d; q < b.length;) c = b[q], ++q, (0 != c.type || 0 < c.raw.length) && g.push(c);
     return d = g
 };
-var ph = function(a, b, c, d) {
+var TraceryNode = function(a, b, c, d) {
     null == d.raw && (hb.trace("Empty input for node", {
         fileName: "com/watabou/tracery/TraceryNode.hx",
         lineNumber: 35,
@@ -923,18 +923,18 @@ var ph = function(a, b, c, d) {
     this.type = d.type;
     this.isExpanded = !1
 };
-g["com.watabou.tracery.TraceryNode"] = ph;
-ph.__name__ = "com.watabou.tracery.TraceryNode";
-ph.prototype = {
+g["com.watabou.tracery.TraceryNode"] = TraceryNode;
+TraceryNode.__name__ = "com.watabou.tracery.TraceryNode";
+TraceryNode.prototype = {
     expandChildren: function(a, b) {
         this.children = [];
         this.finishedText = "";
         this.childRule = a;
         if (null != a) {
-            a = Oe.parse(a);
+            a = Tracery.parse(a);
             for (var c = 0, d = a.length; c < d;) {
                 var f = c++,
-                    h = new ph(this.grammar, this, f, a[f]);
+                    h = new TraceryNode(this.grammar, this, f, a[f]);
                 this.children[f] = h;
                 b || h.expand(!1);
                 this.finishedText += h.finishedText
@@ -953,7 +953,7 @@ ph.prototype = {
                 this.finishedText = this.raw;
                 break;
             case 1:
-                var b = Oe.parseTag(this.raw);
+                var b = Tracery.parseTag(this.raw);
                 this.symbol = b.symbol;
                 this.modifiers = b.modifiers;
                 var c = [],
@@ -961,7 +961,7 @@ ph.prototype = {
                 for (b = b.preactions; d < b.length;) {
                     var f = b[d];
                     ++d;
-                    c.push(new qh(this, f))
+                    c.push(new NodeAction(this, f))
                 }
                 this.preactions = c;
                 this.postaction = [];
@@ -983,7 +983,7 @@ ph.prototype = {
                 for (d = this.postaction; c < d.length;) a = d[c], ++c, a.activate();
                 break;
             case 2:
-                this.action = new qh(this, this.raw);
+                this.action = new NodeAction(this, this.raw);
                 this.action.activate();
                 this.finishedText = "";
                 break;
@@ -992,7 +992,7 @@ ph.prototype = {
         }
     },
     clearEscapeChars: function() {},
-    __class__: ph
+    __class__: TraceryNode
 };
 var Z = function() {};
 g["com.watabou.utils.ArrayExtender"] = Z;
@@ -1166,11 +1166,11 @@ Z.sortBy = function(a, b) {
     for (f = a.length; d < f;) h = d++, c.push(a[k[h]]);
     return c
 };
-var Sh = function() {};
-g["com.watabou.utils.ColorNames"] = Sh;
-Sh.__name__ = "com.watabou.utils.ColorNames";
-Sh.get = function(a) {
-    for (var b = a >>> 16, c = a >>> 8 & 255, d = a & 255, f = "", h = 1E10, k = Sh.values.h, n = Object.keys(k), p = n.length, g = 0; g < p;) {
+var ColorNames = function() {};
+g["com.watabou.utils.ColorNames"] = ColorNames;
+ColorNames.__name__ = "com.watabou.utils.ColorNames";
+ColorNames.get = function(a) {
+    for (var b = a >>> 16, c = a >>> 8 & 255, d = a & 255, f = "", h = 1E10, k = ColorNames.values.h, n = Object.keys(k), p = n.length, g = 0; g < p;) {
         var q = n[g++],
             m = q;
         a = k[q];
@@ -1182,36 +1182,36 @@ Sh.get = function(a) {
     }
     return f
 };
-var cl = function() {};
-g["com.watabou.utils.DisplayObjectExtender"] = cl;
-cl.__name__ = "com.watabou.utils.DisplayObjectExtender";
-cl.onActivate = function(a, b) {
+var DisplayObjectExtender = function() {};
+g["com.watabou.utils.DisplayObjectExtender"] = DisplayObjectExtender;
+DisplayObjectExtender.__name__ = "com.watabou.utils.DisplayObjectExtender";
+DisplayObjectExtender.onActivate = function(a, b) {
     var c = function(a) {
         b("addedToStage" == a.type)
     };
     a.addEventListener("addedToStage", c);
     a.addEventListener("removedFromStage", c)
 };
-var Kb = function() {};
-g["com.watabou.utils.GraphicsExtender"] = Kb;
-Kb.__name__ = "com.watabou.utils.GraphicsExtender";
-Kb.drawPolygon = function(a, b) {
+var GraphicsExtender = function() {};
+g["com.watabou.utils.GraphicsExtender"] = GraphicsExtender;
+GraphicsExtender.__name__ = "com.watabou.utils.GraphicsExtender";
+GraphicsExtender.drawPolygon = function(a, b) {
     var c = b[b.length - 1];
     a.moveTo(c.x, c.y);
     for (var d = 0; d < b.length;) c = b[d], ++d, a.lineTo(c.x, c.y)
 };
-Kb.drawPolygonAt =
+GraphicsExtender.drawPolygonAt =
     function(a, b, c, d) {
         var f = b[b.length - 1];
         a.moveTo(f.x + c, f.y + d);
         for (var h = 0; h < b.length;) f = b[h], ++h, a.lineTo(f.x + c, f.y + d)
     };
-Kb.drawPolyline = function(a, b) {
+GraphicsExtender.drawPolyline = function(a, b) {
     var c = b[0];
     a.moveTo(c.x, c.y);
     for (var d = 1, f = b.length; d < f;) c = d++, c = b[c], a.lineTo(c.x, c.y)
 };
-Kb.dashedPolyline = function(a, b, c, d) {
+GraphicsExtender.dashedPolyline = function(a, b, c, d) {
     null == c && (c = !1);
     if (!(2 > b.length)) {
         var f = !0,
@@ -1230,22 +1230,22 @@ Kb.dashedPolyline = function(a, b, c, d) {
                 c = b[p];
                 k += q
             } else 0 < n && (g =
-                qa.lerp(g, c, (n - k) / q), f ? a.lineTo(g.x, g.y) : a.moveTo(g.x, g.y)), ++h >= d.length && (h = 0), n = d[h], k = 0, f = !f
+                GeomUtils.lerp(g, c, (n - k) / q), f ? a.lineTo(g.x, g.y) : a.moveTo(g.x, g.y)), ++h >= d.length && (h = 0), n = d[h], k = 0, f = !f
         }
     }
 };
-var Fc = function() {};
-g["com.watabou.utils.MathUtils"] = Fc;
-Fc.__name__ = "com.watabou.utils.MathUtils";
-Fc.gate = function(a, b, c) {
+var MathUtils = function() {};
+g["com.watabou.utils.MathUtils"] = MathUtils;
+MathUtils.__name__ = "com.watabou.utils.MathUtils";
+MathUtils.gate = function(a, b, c) {
     return a < b ? b : a < c ? a : c
 };
-Fc.cycle = function(a, b, c) {
+MathUtils.cycle = function(a, b, c) {
     for (; a < b;) a += c - b;
     for (; a > c;) a -= c - b;
     return a
 };
-Fc.gatei = function(a, b, c) {
+MathUtils.gatei = function(a, b, c) {
     return a < b ? b : a < c ? a : c
 };
 var jc = y["com.watabou.utils.ParamType"] = {
@@ -1295,23 +1295,23 @@ var jc = y["com.watabou.utils.ParamType"] = {
     }
 };
 jc.__constructs__ = [jc.COLOR, jc.MULTI, jc.FONT, jc.FLOAT, jc.INT, jc.STRING, jc.BOOL];
-var Xc = function() {
+var Palette = function() {
     this.params = []
 };
-g["com.watabou.utils.Palette"] = Xc;
-Xc.__name__ = "com.watabou.utils.Palette";
-Xc.float2str = function(a) {
+g["com.watabou.utils.Palette"] = Palette;
+Palette.__name__ = "com.watabou.utils.Palette";
+Palette.float2str = function(a) {
     a = null == a ? "null" : "" + a; - 1 == a.indexOf(".") && (a += ".0");
     return a
 };
-Xc.font2format = function(a) {
+Palette.font2format = function(a) {
     if (null == a) return null;
     var b = null != a.face ? a.face : null != a.embedded && ac.exists(a.embedded) ? ac.getFont(a.embedded).name : "_serif";
     return new we(b, a.size, 0, a.bold, a.italic)
 };
-Xc.fromData = function(a) {
+Palette.fromData = function(a) {
     for (var b =
-            new Xc, c = ya.fields(a), d = 0; d < c.length;) {
+            new Palette, c = ya.fields(a), d = 0; d < c.length;) {
         var f = c[d++],
             h = f;
         f = a[f];
@@ -1351,14 +1351,14 @@ Xc.fromData = function(a) {
     }
     return b
 };
-Xc.fromJSON = function(a) {
+Palette.fromJSON = function(a) {
     a = JSON.parse(a);
-    return Xc.fromData(a)
+    return Palette.fromData(a)
 };
-Xc.fromAsset = function(a) {
-    return ac.exists(a) ? Xc.fromJSON(ac.getText(a)) : null
+Palette.fromAsset = function(a) {
+    return ac.exists(a) ? Palette.fromJSON(ac.getText(a)) : null
 };
-Xc.prototype = {
+Palette.prototype = {
     getColor: function(a, b) {
         null == b && (b = 0);
         for (var c = 0, d = this.params; c < d.length;) {
@@ -1503,7 +1503,7 @@ Xc.prototype = {
                     a[d.id] = d.font;
                     break;
                 case 3:
-                    a[d.id] = Xc.float2str(d.float);
+                    a[d.id] = Palette.float2str(d.float);
                     break;
                 case 4:
                     a[d.id] = null == d.int ? "null" : "" + d.int;
@@ -1520,23 +1520,23 @@ Xc.prototype = {
     json: function() {
         return JSON.stringify(this.data(), null, "  ")
     },
-    __class__: Xc
+    __class__: Palette
 };
-var wd = function() {};
-g["com.watabou.utils.PointExtender"] = wd;
-wd.__name__ = "com.watabou.utils.PointExtender";
-wd.set = function(a, b) {
+var PointExtender = function() {};
+g["com.watabou.utils.PointExtender"] = PointExtender;
+PointExtender.__name__ = "com.watabou.utils.PointExtender";
+PointExtender.set = function(a, b) {
     a.x = b.x;
     a.y = b.y
 };
-wd.project = function(a, b) {
+PointExtender.project = function(a, b) {
     var c = a.get_length();
     return (a.x * b.x + a.y * b.y) / (c * c)
 };
-var gf = function() {};
-g["com.watabou.utils.SetUtils"] = gf;
-gf.__name__ = "com.watabou.utils.SetUtils";
-gf.fromArray = function(a) {
+var SetUtils = function() {};
+g["com.watabou.utils.SetUtils"] = SetUtils;
+SetUtils.__name__ = "com.watabou.utils.SetUtils";
+SetUtils.fromArray = function(a) {
     for (var b = new pa, c = 0; c < a.length;) {
         var d = a[c];
         ++c;
@@ -1544,14 +1544,14 @@ gf.fromArray = function(a) {
     }
     return b
 };
-gf.removeArr = function(a, b) {
+SetUtils.removeArr = function(a, b) {
     for (var c = 0; c < b.length;) {
         var d = b[c];
         ++c;
         a.remove(d)
     }
 };
-gf.isEmpty = function(a) {
+SetUtils.isEmpty = function(a) {
     for (a = a.iterator(); a.hasNext();) return a.next(), !1;
     return !0
 };
@@ -1573,102 +1573,102 @@ id.measure = function(a) {
     a();
     return id.next()
 };
-var eh = function() {};
-g["com.watabou.utils.StringUtils"] = eh;
-eh.__name__ = "com.watabou.utils.StringUtils";
-eh.capitalize = function(a) {
+var StringUtils = function() {};
+g["com.watabou.utils.StringUtils"] = StringUtils;
+StringUtils.__name__ = "com.watabou.utils.StringUtils";
+StringUtils.capitalize = function(a) {
     return N.substr(a, 0, 1).toUpperCase() + N.substr(a, 1, null)
 };
-eh.capitalizeAll = function(a) {
+StringUtils.capitalizeAll = function(a) {
     var b = [],
         c = 0;
     for (a = a.split(" "); c < a.length;) {
         var d = a[c];
         ++c;
-        b.push(eh.capitalize(d))
+        b.push(StringUtils.capitalize(d))
     }
     return b.join(" ")
 };
-var rb = function() {};
-g["com.watabou.utils.Updater"] = rb;
-rb.__name__ = "com.watabou.utils.Updater";
-rb.__properties__ = {
+var Updater = function() {};
+g["com.watabou.utils.Updater"] = Updater;
+Updater.__name__ = "com.watabou.utils.Updater";
+Updater.__properties__ = {
     get_tick: "get_tick"
 };
-rb.get_tick = function() {
-    null == rb.source && rb.useTimer(60);
-    return rb._tick
+Updater.get_tick = function() {
+    null == Updater.source && Updater.useTimer(60);
+    return Updater._tick
 };
-rb.fire = function() {
+Updater.fire = function() {
     var a = Ra.getTimer();
-    0 == rb.lastTime ? rb._tick.dispatch(0) : rb._tick.dispatch((a - rb.lastTime) / 1E3 * rb.timeScale);
-    rb.lastTime = a
+    0 == Updater.lastTime ? Updater._tick.dispatch(0) : Updater._tick.dispatch((a - Updater.lastTime) / 1E3 * Updater.timeScale);
+    Updater.lastTime = a
 };
-rb.useTimer = function(a) {
-    null != rb.source && rb.source.stop();
-    rb.source = new Gi(a)
+Updater.useTimer = function(a) {
+    null != Updater.source && Updater.source.stop();
+    Updater.source = new TimerEventDispatcher(a)
 };
-rb.useEnterFrame = function(a) {
+Updater.useEnterFrame = function(a) {
     null !=
-        rb.source && rb.source.stop();
-    rb.source = new Hi(a)
+        Updater.source && Updater.source.stop();
+    Updater.source = new FrameEventDispatcher(a)
 };
-rb.wait = function(a, b) {
+Updater.wait = function(a, b) {
     var c = 0,
         d = null;
     d = function(f) {
-        (c += f) >= a && (rb.get_tick().remove(d), b())
+        (c += f) >= a && (Updater.get_tick().remove(d), b())
     };
-    rb.get_tick().add(d);
+    Updater.get_tick().add(d);
     return d
 };
-rb.cancel = function(a) {
-    rb.get_tick().remove(a)
+Updater.cancel = function(a) {
+    Updater.get_tick().remove(a)
 };
-rb.stop = function() {
-    null != rb.source && (rb.source.stop(), rb.source = null)
+Updater.stop = function() {
+    null != Updater.source && (Updater.source.stop(), Updater.source = null)
 };
-var yg = function() {};
-g["com.watabou.utils.RecurringEventDispatcher"] = yg;
-yg.__name__ = "com.watabou.utils.RecurringEventDispatcher";
-yg.prototype = {
+var RecurringEventDispatcher = function() {};
+g["com.watabou.utils.RecurringEventDispatcher"] = RecurringEventDispatcher;
+RecurringEventDispatcher.__name__ = "com.watabou.utils.RecurringEventDispatcher";
+RecurringEventDispatcher.prototype = {
     stop: function() {},
-    __class__: yg
+    __class__: RecurringEventDispatcher
 };
-var Gi = function(a) {
+var TimerEventDispatcher = function(a) {
     this.timer = new Ii(a);
     this.timer.addEventListener("timer", l(this, this.onTimer));
     this.timer.start()
 };
-g["com.watabou.utils._Updater.TimerEventDispatcher"] = Gi;
-Gi.__name__ = "com.watabou.utils._Updater.TimerEventDispatcher";
-Gi.__super__ = yg;
-Gi.prototype = v(yg.prototype, {
+g["com.watabou.utils._Updater.TimerEventDispatcher"] = TimerEventDispatcher;
+TimerEventDispatcher.__name__ = "com.watabou.utils._Updater.TimerEventDispatcher";
+TimerEventDispatcher.__super__ = RecurringEventDispatcher;
+TimerEventDispatcher.prototype = v(RecurringEventDispatcher.prototype, {
     onTimer: function(a) {
-        rb.fire();
+        Updater.fire();
         a.updateAfterEvent()
     },
     stop: function() {
         this.timer.stop()
     },
-    __class__: Gi
+    __class__: TimerEventDispatcher
 });
-var Hi = function(a) {
+var FrameEventDispatcher = function(a) {
     this.dispObj = a;
     a.addEventListener("enterFrame", l(this, this.onEnterFrame))
 };
-g["com.watabou.utils._Updater.FrameEventDispatcher"] = Hi;
-Hi.__name__ =
+g["com.watabou.utils._Updater.FrameEventDispatcher"] = FrameEventDispatcher;
+FrameEventDispatcher.__name__ =
     "com.watabou.utils._Updater.FrameEventDispatcher";
-Hi.__super__ = yg;
-Hi.prototype = v(yg.prototype, {
+FrameEventDispatcher.__super__ = RecurringEventDispatcher;
+FrameEventDispatcher.prototype = v(RecurringEventDispatcher.prototype, {
     onEnterFrame: function(a) {
-        rb.fire()
+        Updater.fire()
     },
     stop: function() {
         this.dispObj.removeEventListener("enterFrame", l(this, this.onEnterFrame))
     },
-    __class__: Hi
+    __class__: FrameEventDispatcher
 });
 var ne = y["haxe.StackItem"] = {
     __ename__: "haxe.StackItem",
@@ -5796,21 +5796,21 @@ Cd.__stackBlurCanvasRGBA = function(a, b, c, d, f, h) {
             do {
                 var I = a[k];
                 p = m * I;
-                var eb = a[k + 1];
-                var O = m * eb;
+                var FloatInput = a[k + 1];
+                var O = m * FloatInput;
                 var H = a[k + 2];
-                var lb = m * H;
+                var CloseButton = m * H;
                 x = a[k + 3];
                 var K = m * x;
                 l = r;
                 w = m;
-                do l.r = I, l.g = eb, l.b = H, l.a = x, l = l.n; while (-1 < --w);
+                do l.r = I, l.g = FloatInput, l.b = H, l.a = x, l = l.n; while (-1 < --w);
                 x = 1;
-                for (D = m; x < D;) w = x++, w = k + ((g < w ? g : w) << 2), p += l.r = a[w], O += l.g = a[w + 1], lb += l.b = a[w + 2], K += l.a = a[w +
+                for (D = m; x < D;) w = x++, w = k + ((g < w ? g : w) << 2), p += l.r = a[w], O += l.g = a[w + 1], CloseButton += l.b = a[w + 2], K += l.a = a[w +
                     3], l = l.n;
                 D = r;
                 l = 0;
-                for (x = b; l < x;) w = l++, a[k++] = p * t >>> G, a[k++] = O * t >>> G, a[k++] = lb * t >>> G, a[k++] = K * t >>> G, w = w + d + 1, w = v + (w < g ? w : g) << 2, p -= D.r - (D.r = a[w]), O -= D.g - (D.g = a[w + 1]), lb -= D.b - (D.b = a[w + 2]), K -= D.a - (D.a = a[w + 3]), D = D.n;
+                for (x = b; l < x;) w = l++, a[k++] = p * t >>> G, a[k++] = O * t >>> G, a[k++] = CloseButton * t >>> G, a[k++] = K * t >>> G, w = w + d + 1, w = v + (w < g ? w : g) << 2, p -= D.r - (D.r = a[w]), O -= D.g - (D.g = a[w + 1]), CloseButton -= D.b - (D.b = a[w + 2]), K -= D.a - (D.a = a[w + 3]), D = D.n;
                 v += b
             } while (0 < --F);
             t = y;
@@ -5821,35 +5821,35 @@ Cd.__stackBlurCanvasRGBA = function(a, b, c, d, f, h) {
                 k = l << 2;
                 I = a[k];
                 p = u * I;
-                eb = a[k + 1];
-                O = u * eb;
+                FloatInput = a[k + 1];
+                O = u * FloatInput;
                 H = a[k + 2];
-                lb = u * H;
+                CloseButton = u * H;
                 x = a[k + 3];
                 K = u * x;
                 w = n;
                 k = 0;
-                for (D = u; k < D;) k++, w.r = I, w.g = eb, w.b = H, w.a = x, w = w.n;
+                for (D = u; k < D;) k++, w.r = I, w.g = FloatInput, w.b = H, w.a = x, w = w.n;
                 x = b;
                 D = 1;
-                for (I = f + 1; D < I;) eb = D++, k = x + l << 2, p += w.r = a[k], O += w.g = a[k + 1], lb += w.b = a[k + 2], K += w.a = a[k + 3], w = w.n, eb < q && (x += b);
+                for (I = f + 1; D < I;) FloatInput = D++, k = x + l << 2, p += w.r = a[k], O += w.g = a[k + 1], CloseButton += w.b = a[k + 2], K += w.a = a[k + 3], w = w.n, FloatInput < q && (x += b);
                 k = l;
                 D = n;
                 if (0 < h)
-                    for (I = 0, eb = c; I < eb;) H = I++, w = k << 2, x = K * t >>> G, a[w + 3] = x, 0 < x ? (a[w] = p * t >>> G, a[w + 1] = O * t >>> G, a[w + 2] = lb * t >>> G) : a[w] = a[w + 1] = a[w + 2] = 0, w = H + u, w = l + (w < q ? w : q) * b << 2, p -= D.r - (D.r = a[w]), O -= D.g - (D.g = a[w + 1]), lb -= D.b - (D.b = a[w + 2]), K -= D.a - (D.a = a[w + 3]), D = D.n, k += b;
+                    for (I = 0, FloatInput = c; I < FloatInput;) H = I++, w = k << 2, x = K * t >>> G, a[w + 3] = x, 0 < x ? (a[w] = p * t >>> G, a[w + 1] = O * t >>> G, a[w + 2] = CloseButton * t >>> G) : a[w] = a[w + 1] = a[w + 2] = 0, w = H + u, w = l + (w < q ? w : q) * b << 2, p -= D.r - (D.r = a[w]), O -= D.g - (D.g = a[w + 1]), CloseButton -= D.b - (D.b = a[w + 2]), K -= D.a - (D.a = a[w + 3]), D = D.n, k += b;
                 else
-                    for (var Va = 0, E = c; Va < E;) {
-                        var sa = Va++;
+                    for (var DropDownButton = 0, E = c; DropDownButton < E;) {
+                        var sa = DropDownButton++;
                         w = k << 2;
                         x = K * t >>> G;
                         a[w + 3] = x;
-                        0 < x ? (x = 255 / x, I = (p * t >>> G) * x | 0, eb = (O * t >>> G) * x | 0, H = (lb * t >>> G) * x | 0, a[w] = 255 < I ? 255 : I, a[w + 1] = 255 < eb ? 255 : eb, a[w + 2] = 255 < H ? 255 : H) : a[w] = a[w + 1] = a[w + 2] = 0;
+                        0 < x ? (x = 255 / x, I = (p * t >>> G) * x | 0, FloatInput = (O * t >>> G) * x | 0, H = (CloseButton * t >>> G) * x | 0, a[w] = 255 < I ? 255 : I, a[w + 1] = 255 < FloatInput ? 255 : FloatInput, a[w + 2] = 255 < H ? 255 : H) : a[w] = a[w + 1] = a[w + 2] = 0;
                         w = sa + u;
                         w = l + (w < q ? w : q) * b << 2;
                         p -= D.r - (D.r = a[w]);
                         O -= D.g -
                             (D.g = a[w + 1]);
-                        lb -= D.b - (D.b = a[w + 2]);
+                        CloseButton -= D.b - (D.b = a[w + 2]);
                         K -= D.a - (D.a = a[w + 3]);
                         D = D.n;
                         k += b
@@ -6894,29 +6894,29 @@ var Qc = {
                 G = pb.get(b, 9),
                 F = pb.get(b, 13),
                 I = pb.get(b, 2),
-                eb = pb.get(b, 6),
+                FloatInput = pb.get(b, 6),
                 O = pb.get(b, 10),
                 H = pb.get(b, 14),
-                lb = pb.get(b, 3),
+                CloseButton = pb.get(b, 3),
                 K = pb.get(b, 7),
-                Va = pb.get(b, 11);
+                DropDownButton = pb.get(b, 11);
             b = pb.get(b, 15);
             a[0] = c * z + k * J + q * y + l * C;
             a[1] = c * t + k * v + q * G + l * F;
-            a[2] = c * I + k * eb + q * O + l * H;
-            a[3] = c * lb + k * K + q * Va + l * b;
+            a[2] = c * I + k * FloatInput + q * O + l * H;
+            a[3] = c * CloseButton + k * K + q * DropDownButton + l * b;
             a[4] = d * z + n * J + m * y + D * C;
             a[5] = d * t + n * v + m * G + D * F;
-            a[6] = d * I + n * eb + m * O + D * H;
-            a[7] = d * lb + n * K + m * Va + D * b;
+            a[6] = d * I + n * FloatInput + m * O + D * H;
+            a[7] = d * CloseButton + n * K + m * DropDownButton + D * b;
             a[8] = f * z + p * J + u * y + x * C;
             a[9] = f * t + p * v + u * G + x * F;
-            a[10] = f * I + p * eb + u * O + x * H;
-            a[11] = f * lb + p * K + u * Va + x * b;
+            a[10] = f * I + p * FloatInput + u * O + x * H;
+            a[11] = f * CloseButton + p * K + u * DropDownButton + x * b;
             a[12] = h * z + g * J + r * y + w * C;
             a[13] = h * t + g * v + r * G + w * F;
-            a[14] = h * I + g * eb + r * O + w * H;
-            a[15] = h * lb + g * K + r * Va + w * b
+            a[14] = h * I + g * FloatInput + r * O + w * H;
+            a[15] = h * CloseButton + g * K + r * DropDownButton + w * b
         },
         createOrtho: function(a, b, c, d, f, h, k) {
             var n = 1 / (c - b),
@@ -7464,8 +7464,8 @@ var qc = function(a) {
     this.id = a;
     this.connected = !0
 };
-g["lime.ui.Gamepad"] = qc;
-qc.__name__ = "lime.ui.Gamepad";
+g["lime.RotateTool.Gamepad"] = qc;
+qc.__name__ = "lime.RotateTool.Gamepad";
 qc.__connect = function(a) {
     if (!qc.devices.h.hasOwnProperty(a)) {
         var b = new qc(a);
@@ -7492,8 +7492,8 @@ var nc = function(a) {
     this.id = a;
     this.connected = !0
 };
-g["lime.ui.Joystick"] = nc;
-nc.__name__ = "lime.ui.Joystick";
+g["lime.RotateTool.Joystick"] = nc;
+nc.__name__ = "lime.RotateTool.Joystick";
 nc.__connect = function(a) {
     if (!nc.devices.h.hasOwnProperty(a)) {
         var b = new nc(a);
@@ -7541,114 +7541,114 @@ var Xa = {
         }
     },
     cc =
-    y["lime.ui.MouseCursor"] = {
-        __ename__: "lime.ui.MouseCursor",
+    y["lime.RotateTool.MouseCursor"] = {
+        __ename__: "lime.RotateTool.MouseCursor",
         __constructs__: null,
         ARROW: {
             _hx_name: "ARROW",
             _hx_index: 0,
-            __enum__: "lime.ui.MouseCursor",
+            __enum__: "lime.RotateTool.MouseCursor",
             toString: r
         },
         CROSSHAIR: {
             _hx_name: "CROSSHAIR",
             _hx_index: 1,
-            __enum__: "lime.ui.MouseCursor",
+            __enum__: "lime.RotateTool.MouseCursor",
             toString: r
         },
         DEFAULT: {
             _hx_name: "DEFAULT",
             _hx_index: 2,
-            __enum__: "lime.ui.MouseCursor",
+            __enum__: "lime.RotateTool.MouseCursor",
             toString: r
         },
         MOVE: {
             _hx_name: "MOVE",
             _hx_index: 3,
-            __enum__: "lime.ui.MouseCursor",
+            __enum__: "lime.RotateTool.MouseCursor",
             toString: r
         },
         POINTER: {
             _hx_name: "POINTER",
             _hx_index: 4,
-            __enum__: "lime.ui.MouseCursor",
+            __enum__: "lime.RotateTool.MouseCursor",
             toString: r
         },
         RESIZE_NESW: {
             _hx_name: "RESIZE_NESW",
             _hx_index: 5,
-            __enum__: "lime.ui.MouseCursor",
+            __enum__: "lime.RotateTool.MouseCursor",
             toString: r
         },
         RESIZE_NS: {
             _hx_name: "RESIZE_NS",
             _hx_index: 6,
-            __enum__: "lime.ui.MouseCursor",
+            __enum__: "lime.RotateTool.MouseCursor",
             toString: r
         },
         RESIZE_NWSE: {
             _hx_name: "RESIZE_NWSE",
             _hx_index: 7,
-            __enum__: "lime.ui.MouseCursor",
+            __enum__: "lime.RotateTool.MouseCursor",
             toString: r
         },
         RESIZE_WE: {
             _hx_name: "RESIZE_WE",
             _hx_index: 8,
-            __enum__: "lime.ui.MouseCursor",
+            __enum__: "lime.RotateTool.MouseCursor",
             toString: r
         },
         TEXT: {
             _hx_name: "TEXT",
             _hx_index: 9,
-            __enum__: "lime.ui.MouseCursor",
+            __enum__: "lime.RotateTool.MouseCursor",
             toString: r
         },
         WAIT: {
             _hx_name: "WAIT",
             _hx_index: 10,
-            __enum__: "lime.ui.MouseCursor",
+            __enum__: "lime.RotateTool.MouseCursor",
             toString: r
         },
         WAIT_ARROW: {
             _hx_name: "WAIT_ARROW",
             _hx_index: 11,
-            __enum__: "lime.ui.MouseCursor",
+            __enum__: "lime.RotateTool.MouseCursor",
             toString: r
         },
         CUSTOM: {
             _hx_name: "CUSTOM",
             _hx_index: 12,
-            __enum__: "lime.ui.MouseCursor",
+            __enum__: "lime.RotateTool.MouseCursor",
             toString: r
         }
     };
 cc.__constructs__ = [cc.ARROW, cc.CROSSHAIR, cc.DEFAULT, cc.MOVE, cc.POINTER, cc.RESIZE_NESW, cc.RESIZE_NS, cc.RESIZE_NWSE, cc.RESIZE_WE, cc.TEXT, cc.WAIT, cc.WAIT_ARROW, cc.CUSTOM];
-var rf = y["lime.ui.MouseWheelMode"] = {
-    __ename__: "lime.ui.MouseWheelMode",
+var rf = y["lime.RotateTool.MouseWheelMode"] = {
+    __ename__: "lime.RotateTool.MouseWheelMode",
     __constructs__: null,
     PIXELS: {
         _hx_name: "PIXELS",
         _hx_index: 0,
-        __enum__: "lime.ui.MouseWheelMode",
+        __enum__: "lime.RotateTool.MouseWheelMode",
         toString: r
     },
     LINES: {
         _hx_name: "LINES",
         _hx_index: 1,
-        __enum__: "lime.ui.MouseWheelMode",
+        __enum__: "lime.RotateTool.MouseWheelMode",
         toString: r
     },
     PAGES: {
         _hx_name: "PAGES",
         _hx_index: 2,
-        __enum__: "lime.ui.MouseWheelMode",
+        __enum__: "lime.RotateTool.MouseWheelMode",
         toString: r
     },
     UNKNOWN: {
         _hx_name: "UNKNOWN",
         _hx_index: 3,
-        __enum__: "lime.ui.MouseWheelMode",
+        __enum__: "lime.RotateTool.MouseWheelMode",
         toString: r
     }
 };
@@ -7662,8 +7662,8 @@ var dc = function(a, b, c, d, f, h, k) {
     this.pressure = h;
     this.device = k
 };
-g["lime.ui.Touch"] = dc;
-dc.__name__ = "lime.ui.Touch";
+g["lime.RotateTool.Touch"] = dc;
+dc.__name__ = "lime.RotateTool.Touch";
 dc.prototype = {
     __class__: dc
 };
@@ -7707,8 +7707,8 @@ var Hg = function(a, b) {
     this.id = -1;
     this.__backend = new Ha(this)
 };
-g["lime.ui.Window"] = Hg;
-Hg.__name__ = "lime.ui.Window";
+g["lime.RotateTool.Window"] = Hg;
+Hg.__name__ = "lime.RotateTool.Window";
 Hg.prototype = {
     close: function() {
         this.__backend.close()
@@ -8351,7 +8351,7 @@ Fa.getAsset = function(a, b, c) {
                 className: "lime.utils.Assets",
                 methodName: "getAsset"
             })
-        } else Ga.error("There is no " + b + ' asset with an ID of "' + a + '"', {
+        } else Ga.error("There is no " + b + ' asset with an ID ScaleBarOld "' + a + '"', {
             fileName: "lime/utils/Assets.hx",
             lineNumber: 138,
             className: "lime.utils.Assets",
@@ -8405,13 +8405,13 @@ Fa.loadLibrary = function(a) {
         null == c ? b.error('Cannot load bundle for library "' +
             a + '"') : (c = Wb.fromBundle(c), null == c ? b.error('Cannot open library "' + a + '"') : (Fa.libraries.h[a] = c, c.onChange.add((G = Fa.onChange, l(G, G.dispatch))), b.completeWith(c.load())))
     }).onError(function(c) {
-        b.error('There is no asset library with an ID of "' + a + '"')
+        b.error('There is no asset library with an ID ScaleBarOld "' + a + '"')
     });
     else Object.prototype.hasOwnProperty.call(Fa.libraryPaths.h, a) ? (c = Fa.libraryPaths.h[a], d = Ud.directory(c)) : (O.endsWith(c, ".bundle") ? (d = c, c += "/library.json") : d = Ud.directory(c), c = Fa.__cacheBreak(c)), td.loadFromFile(c, d).onComplete(function(c) {
         null == c ?
             b.error('Cannot parse asset manifest for library "' + a + '"') : (c = Wb.fromManifest(c), null == c ? b.error('Cannot open library "' + a + '"') : (Fa.libraries.h[a] = c, c.onChange.add((G = Fa.onChange, l(G, G.dispatch))), b.completeWith(c.load())))
     }).onError(function(c) {
-        b.error('There is no asset library with an ID of "' + a + '"')
+        b.error('There is no asset library with an ID ScaleBarOld "' + a + '"')
     });
     return b.future
 };
@@ -10746,7 +10746,7 @@ Ed.prototype = {
                     }
                     b.prev = da.BEGIN_GRADIENT_FILL;
                     d = b;
-                    a.push(new nj(d.buffer.o[d.oPos], d.buffer.ii[d.iiPos], d.buffer.ff[d.ffPos], d.buffer.ii[d.iiPos + 1], d.buffer.o[d.oPos + 1], d.buffer.o[d.oPos + 2], d.buffer.o[d.oPos + 3], d.buffer.f[d.fPos]));
+                    a.push(new nj(d.buffer.o[d.oPos], d.buffer.Block[d.iiPos], d.buffer.MenuItem[d.ffPos], d.buffer.Block[d.iiPos + 1], d.buffer.o[d.oPos + 1], d.buffer.o[d.oPos + 2], d.buffer.o[d.oPos + 3], d.buffer.f[d.fPos]));
                     break;
                 case 3:
                     break;

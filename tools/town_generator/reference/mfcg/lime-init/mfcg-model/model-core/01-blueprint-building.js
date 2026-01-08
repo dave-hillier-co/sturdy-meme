@@ -8,14 +8,14 @@
  * Part 5/8: Core Model Classes
  * Contains: Blueprint, Building, Canal, Cell, City, District, Grower, etc.
  */
-            g["com.watabou.mfcg.model.Blueprint"] = Fd;
-            Fd.__name__ = "com.watabou.mfcg.model.Blueprint";
-            Fd.create = function(a, b) {
-                b = new Fd(a, b);
+            g["com.watabou.mfcg.model.Blueprint"] = Blueprint;
+            Blueprint.__name__ = "com.watabou.mfcg.model.Blueprint";
+            Blueprint.create = function(a, b) {
+                b = new Blueprint(a, b);
                 b.name = null;
                 b.pop = 0;
-                b.greens = ba.get("green", !1);
-                b.random = ba.get("random", !0);
+                b.greens = State.get("green", !1);
+                b.random = State.get("random", !0);
                 if (b.random) {
                     var c = (a + 30) / 80;
                     null == c && (c = .5);
@@ -41,65 +41,65 @@
                     b.river = (C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647 <
                         c;
                     b.coast = .5 > (C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647
-                } else b.citadel = ba.get("citadel", !0), b.inner = ba.get("urban_castle", !1), b.plaza = ba.get("plaza", !0), b.temple = ba.get("temple", !0), b.walls = ba.get("walls", !0), b.shanty = ba.get("shantytown", !1), b.coast = ba.get("coast", !0), b.river = ba.get("river", !0);
-                b.hub = ba.get("hub", !1);
-                b.gates = ba.get("gates", -1);
+                } else b.citadel = State.get("citadel", !0), b.inner = State.get("urban_castle", !1), b.plaza = State.get("plaza", !0), b.temple = State.get("temple", !0), b.walls = State.get("walls", !0), b.shanty = State.get("shantytown", !1), b.coast = State.get("coast", !0), b.river = State.get("river", !0);
+                b.hub = State.get("hub", !1);
+                b.gates = State.get("gates", -1);
                 return b
             };
-            Fd.similar = function(a) {
-                var b = Fd.create(a.size, a.seed);
+            Blueprint.similar = function(a) {
+                var b = Blueprint.create(a.size, a.seed);
                 b.name = a.name;
                 return b
             };
-            Fd.fromURL = function() {
-                var a = za.getInt("size", 0),
-                    b = za.getInt("seed",
+            Blueprint.fromURL = function() {
+                var a = URLState.getInt("size", 0),
+                    b = URLState.getInt("seed",
                         C.seed);
                 if (0 == a || 0 == b) return null;
-                a = new Fd(a, b);
-                a.name = za.get("name");
-                a.pop = za.getInt("population", 0);
-                a.citadel = za.getFlag("citadel", !0);
-                a.inner = za.getFlag("urban_castle", !1);
-                a.plaza = za.getFlag("plaza", !0);
-                a.temple = za.getFlag("temple", !0);
-                a.walls = za.getFlag("walls", !0);
-                a.shanty = za.getFlag("shantytown", !1);
-                a.river = za.getFlag("river", !1);
-                a.coast = za.getFlag("coast", !0);
-                a.greens = za.getFlag("greens", !1);
-                a.hub = za.getFlag("hub", !1);
-                a.gates = za.getInt("gates", -1);
-                a.coastDir = parseFloat(za.get("sea", "0.0"));
-                a.export = za.get("export");
-                a.style = za.get("style");
+                a = new Blueprint(a, b);
+                a.name = URLState.get("name");
+                a.pop = URLState.getInt("population", 0);
+                a.citadel = URLState.getFlag("citadel", !0);
+                a.inner = URLState.getFlag("urban_castle", !1);
+                a.plaza = URLState.getFlag("plaza", !0);
+                a.temple = URLState.getFlag("temple", !0);
+                a.walls = URLState.getFlag("walls", !0);
+                a.shanty = URLState.getFlag("shantytown", !1);
+                a.river = URLState.getFlag("river", !1);
+                a.coast = URLState.getFlag("coast", !0);
+                a.greens = URLState.getFlag("greens", !1);
+                a.hub = URLState.getFlag("hub", !1);
+                a.gates = URLState.getInt("gates", -1);
+                a.coastDir = parseFloat(URLState.get("sea", "0.0"));
+                a.export = URLState.get("export");
+                a.style = URLState.get("style");
                 return a
             };
-            Fd.prototype = {
+            Blueprint.prototype = {
                 updateURL: function() {
-                    za.reset();
-                    za.set("size", this.size);
-                    za.set("seed", this.seed);
-                    null != this.name && za.set("name", this.name);
-                    0 < this.pop && za.set("population", this.pop);
-                    za.setFlag("citadel", this.citadel);
-                    za.setFlag("urban_castle", this.inner);
-                    za.setFlag("plaza", this.plaza);
-                    za.setFlag("temple", this.temple);
-                    za.setFlag("walls", this.walls);
-                    za.setFlag("shantytown", this.shanty);
-                    za.setFlag("coast", this.coast);
-                    za.setFlag("river", this.river);
-                    za.setFlag("greens", this.greens);
-                    this.hub ? za.setFlag("hub") : za.set("gates", this.gates);
-                    this.coast && za.set("sea", this.coastDir)
+                    URLState.reset();
+                    URLState.set("size", this.size);
+                    URLState.set("seed", this.seed);
+                    null != this.name && URLState.set("name", this.name);
+                    0 < this.pop && URLState.set("population", this.pop);
+                    URLState.setFlag("citadel", this.citadel);
+                    URLState.setFlag("urban_castle", this.inner);
+                    URLState.setFlag("plaza", this.plaza);
+                    URLState.setFlag("temple", this.temple);
+                    URLState.setFlag("walls", this.walls);
+                    URLState.setFlag("shantytown", this.shanty);
+                    URLState.setFlag("coast", this.coast);
+                    URLState.setFlag("river", this.river);
+                    URLState.setFlag("greens", this.greens);
+                    this.hub ? URLState.setFlag("hub") : URLState.set("gates", this.gates);
+                    this.coast && URLState.set("sea", this.coastDir)
                 },
-                __class__: Fd
+                __class__: Blueprint
             };
-            var Jd = function() {};
-            g["com.watabou.mfcg.model.Building"] = Jd;
-            Jd.__name__ = "com.watabou.mfcg.model.Building";
-            Jd.create = function(a, b, c, d, f) {
+            var Building = function() {};
+            g["com.watabou.mfcg.model.Building"] = Building;
+            Building.__name__ = "com.watabou.mfcg.model.Building";
+            Building.create = function(a, b, c, d, f) {
                 null == f && (f = 0);
                 null == d && (d = !1);
                 null == c && (c = !1);
@@ -111,16 +111,16 @@
                 b = Math.ceil(Math.min(b, n) / h);
                 h = Math.ceil(Math.min(k, p) / h);
                 if (1 >= b || 1 >= h) return null;
-                c = d ? Jd.getPlanSym(b, h) : c ? Jd.getPlanFront(b, h) : Jd.getPlan(b, h);
+                c = d ? Building.getPlanSym(b, h) : c ? Building.getPlanFront(b, h) : Building.getPlan(b, h);
                 for (d = k = 0; d < c.length;) p = c[d], ++d, p && ++k;
                 if (k >= b * h) return null;
-                a = Zk.grid(a, b, h, f);
+                a = Cutter.grid(a, b, h, f);
                 d = [];
                 f = 0;
                 for (b = a.length; f < b;) h = f++, c[h] && d.push(a[h]);
-                return Jd.circumference(d)
+                return Building.circumference(d)
             };
-            Jd.getPlan = function(a, b, c) {
+            Building.getPlan = function(a, b, c) {
                 null == c && (c = .5);
                 for (var d = a * b, f = [], h = 0, k = d; h < k;) h++, f.push(!1);
                 var n = Math.floor((C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647 * a),
@@ -139,7 +139,7 @@
                 }
                 return f
             };
-            Jd.getPlanFront = function(a, b) {
+            Building.getPlanFront = function(a, b) {
                 for (var c = a * b, d = [], f = 0, h = c; f < h;) {
                     var k = f++;
                     d.push(k < a)
@@ -156,8 +156,8 @@
                 }
                 return d
             };
-            Jd.getPlanSym = function(a, b) {
-                for (var c = Jd.getPlan(a, b, 0), d = 0; d < b;)
+            Building.getPlanSym = function(a, b) {
+                for (var c = Building.getPlan(a, b, 0), d = 0; d < b;)
                     for (var f = d++, h = 0, k = a; h < k;) {
                         var n = h++,
                             p = f * a + n;
@@ -166,7 +166,7 @@
                     }
                 return c
             };
-            Jd.circumference = function(a) {
+            Building.circumference = function(a) {
                 if (0 == a.length) return [];
                 if (1 == a.length) return a[0];
                 for (var b = [], c = [], d = 0; d < a.length;) {
@@ -206,18 +206,18 @@
                 for (d = 0; d < b.length;) f = b[d], ++d, N.remove(a, f);
                 return a
             };
-            var yb = function(a, b) {
-                var c = Ua.toPolyline(b);
+            var Canal = function(a, b) {
+                var c = EdgeChain.toPolyline(b);
                 if (0 < a.waterEdge.length) {
                     var d = c[0];
-                    wd.set(d, qa.lerp(d, c[1]));
+                    PointExtender.set(d, GeomUtils.lerp(d, c[1]));
                     var f = a.shore,
                         h = f.indexOf(d);
-                    2 <= h && wd.set(f[h - 1], qa.lerp(f[h - 1], qa.lerp(f[h - 2], d)));
-                    h < f.length - 2 && wd.set(f[h + 1], qa.lerp(f[h + 1], qa.lerp(f[h + 2], d)))
+                    2 <= h && PointExtender.set(f[h - 1], GeomUtils.lerp(f[h - 1], GeomUtils.lerp(f[h - 2], d)));
+                    h < f.length - 2 && PointExtender.set(f[h + 1], GeomUtils.lerp(f[h + 1], GeomUtils.lerp(f[h + 2], d)))
                 }
-                Sa.set(c, uc.smoothOpen(c, null, 1));
-                Ua.assignData(b,
+                PolyCore.set(c, PolyUtils.smoothOpen(c, null, 1));
+                EdgeChain.assignData(b,
                     Tc.CANAL);
                 if (null != a.wall) {
                     d = a.wall.shape;
@@ -232,9 +232,9 @@
                                 m = d.length,
                                 u = d[(p + m - 1) % m];
                             p = d[(p + 1) % m];
-                            u = qa.intersectLines(g.x, g.y, q.x, q.y, u.x, u.y, p.x - u.x, p.y - u.y).x;
+                            u = GeomUtils.intersectLines(g.x, g.y, q.x, q.y, u.x, u.y, p.x - u.x, p.y - u.y).x;
                             g = new I(g.x + q.x * u, g.y + q.y * u);
-                            wd.set(c[h], qa.lerp(n, g))
+                            PointExtender.set(c[h], GeomUtils.lerp(n, g))
                         }
                     }
                 }

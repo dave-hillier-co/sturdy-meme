@@ -3,40 +3,40 @@
  * Part 3/8: Geometry Library
  * Contains: com.watabou.geom.*, Delaunator, polygon operations
  */
-            g["com.watabou.geom.Chaikin"] = Hf;
-            Hf.__name__ = "com.watabou.geom.Chaikin";
-            Hf.render = function(a, b, c, d) {
+            g["com.watabou.geom.Chaikin"] = Chaikin;
+            Chaikin.__name__ = "com.watabou.geom.Chaikin";
+            Chaikin.render = function(a, b, c, d) {
                 null == c && (c = 1);
                 for (var f = 0; f < c;) {
                     f++;
                     for (var h = [], k = a.length, n = 1, p = k - 1; n < p;) {
                         var P = n++,
                             g = a[P];
-                        null == d || -1 == d.indexOf(g) ? (h.push(qa.lerp(g, a[P - 1], .25)), h.push(qa.lerp(g, a[P + 1], .25))) : h.push(g)
+                        null == d || -1 == d.indexOf(g) ? (h.push(GeomUtils.lerp(g, a[P - 1], .25)), h.push(GeomUtils.lerp(g, a[P + 1], .25))) : h.push(g)
                     }
-                    b ? (n = a[k - 1], null == d || -1 == d.indexOf(n) ? (h.push(qa.lerp(n, a[k - 2], .25)), h.push(qa.lerp(n, a[0], .25))) : h.push(n), n = a[0], null ==
-                        d || -1 == d.indexOf(n) ? (h.push(qa.lerp(n, a[k - 1], .25)), h.push(qa.lerp(n, a[1], .25))) : h.push(n)) : (h.unshift(a[0]), h.push(a[k - 1]));
+                    b ? (n = a[k - 1], null == d || -1 == d.indexOf(n) ? (h.push(GeomUtils.lerp(n, a[k - 2], .25)), h.push(GeomUtils.lerp(n, a[0], .25))) : h.push(n), n = a[0], null ==
+                        d || -1 == d.indexOf(n) ? (h.push(GeomUtils.lerp(n, a[k - 1], .25)), h.push(GeomUtils.lerp(n, a[1], .25))) : h.push(n)) : (h.unshift(a[0]), h.push(a[k - 1]));
                     a = h
                 }
                 return a
             };
-            var Ea = function(a, b) {
+            var Circle = function(a, b) {
                 null == b && (b = 0);
                 this.c = a;
                 this.r = b
             };
-            g["com.watabou.geom.Circle"] = Ea;
-            Ea.__name__ = "com.watabou.geom.Circle";
-            Ea.prototype = {
-                __class__: Ea
+            g["com.watabou.geom.Circle"] = Circle;
+            Circle.__name__ = "com.watabou.geom.Circle";
+            Circle.prototype = {
+                __class__: Circle
             };
-            var Gc = function() {};
-            g["com.watabou.geom.Color"] = Gc;
-            Gc.__name__ = "com.watabou.geom.Color";
-            Gc.rgbfSafe = function(a, b, c) {
-                return (Fc.gate(255 * a, 0, 255) | 0) << 16 | (Fc.gate(255 * b, 0, 255) | 0) << 8 | Fc.gate(255 * c, 0, 255) | 0
+            var Color = function() {};
+            g["com.watabou.geom.Color"] = Color;
+            Color.__name__ = "com.watabou.geom.Color";
+            Color.rgbfSafe = function(a, b, c) {
+                return (MathUtils.gate(255 * a, 0, 255) | 0) << 16 | (MathUtils.gate(255 * b, 0, 255) | 0) << 8 | MathUtils.gate(255 * c, 0, 255) | 0
             };
-            Gc.lerp =
+            Color.lerp =
                 function(a, b, c) {
                     null == c && (c = .5);
                     var d = a >>> 8 & 255,
@@ -47,21 +47,21 @@
                     var n = 1 - c;
                     return (cb.toFloat(a >>> 16) * n + cb.toFloat(h) * c | 0) << 16 | (cb.toFloat(d) * n + cb.toFloat(k) * c | 0) << 8 | cb.toFloat(f) * n + cb.toFloat(b) * c | 0
                 };
-            Gc.scale = function(a, b) {
-                return Gc.rgbfSafe(cb.toFloat(a >>> 16) / cb.toFloat(255) * b, cb.toFloat(a >>> 8 & 255) / cb.toFloat(255) * b, cb.toFloat(a & 255) / cb.toFloat(255) * b)
+            Color.scale = function(a, b) {
+                return Color.rgbfSafe(cb.toFloat(a >>> 16) / cb.toFloat(255) * b, cb.toFloat(a >>> 8 & 255) / cb.toFloat(255) * b, cb.toFloat(a & 255) / cb.toFloat(255) * b)
             };
-            Gc.hsv = function(a, b, c) {
+            Color.hsv = function(a, b, c) {
                 var d = function(a) {
                         a -= 360 * Math.floor(a / 360);
-                        return Fc.gate(Math.abs(a / 60 - 3) - 1, 0, 1)
+                        return MathUtils.gate(Math.abs(a / 60 - 3) - 1, 0, 1)
                     },
                     f = d(a),
                     h = d(a - 120);
                 a =
                     d(a + 120);
-                return Gc.rgbfSafe((f * b + 1 - b) * c, (h * b + 1 - b) * c, (a * b + 1 - b) * c)
+                return Color.rgbfSafe((f * b + 1 - b) * c, (h * b + 1 - b) * c, (a * b + 1 - b) * c)
             };
-            Gc.rgb2hsv = function(a) {
+            Color.rgb2hsv = function(a) {
                 var b = cb.toFloat(a >>> 16) / cb.toFloat(255),
                     c = cb.toFloat(a >>> 8 & 255) / cb.toFloat(255);
                 a = cb.toFloat(a & 255) / cb.toFloat(255);
@@ -69,10 +69,10 @@
                     f = Math.max(b, Math.max(c, a));
                 return d == f ? new ch(0, 0, d) : new ch(60 * ((b == d ? 3 : a == d ? 1 : 5) - (b == d ? c - a : a == d ? b - c : a - b) / (f - d)), (f - d) / f, f)
             };
-            var Me = function() {};
-            g["com.watabou.geom.Cubic"] = Me;
-            Me.__name__ = "com.watabou.geom.Cubic";
-            Me.smoothOpen = function(a, b) {
+            var Cubic = function() {};
+            g["com.watabou.geom.Cubic"] = Cubic;
+            Cubic.__name__ = "com.watabou.geom.Cubic";
+            Cubic.smoothOpen = function(a, b) {
                 null == b && (b = 4);
                 var c =
                     function(a, b, c) {
@@ -120,11 +120,11 @@
                     f.push(n);
                     f.push(m)
                 }
-                b = Me.build(f, b);
+                b = Cubic.build(f, b);
                 b.push(a[d].clone());
                 return b
             };
-            Me.smoothClosed = function(a, b) {
+            Cubic.smoothClosed = function(a, b) {
                 null == b && (b = 4);
                 for (var c = a.length, d = [], f = 0; f < c;) {
                     var h = f++,
@@ -154,9 +154,9 @@
                     d.push(k);
                     d.push(g)
                 }
-                return Me.build(d, b)
+                return Cubic.build(d, b)
             };
-            Me.build = function(a, b) {
+            Cubic.build = function(a, b) {
                 null == b && (b = 4);
                 var c = a.length,
                     d = [],
@@ -169,12 +169,12 @@
                     d.push(h.clone());
                     for (var P = 1, g = b; P < g;) {
                         var m = P++;
-                        d.push(Me.cubic(h, k, n, p, m / b))
+                        d.push(Cubic.cubic(h, k, n, p, m / b))
                     }
                 } while (f < c);
                 return d
             };
-            Me.cubic = function(a, b, c, d, f) {
+            Cubic.cubic = function(a, b, c, d, f) {
                 var h = 1 - f,
                     k = h * h * h;
                 a = new I(a.x * k, a.y * k);
@@ -190,7 +190,7 @@
                 a.y += d.y * k;
                 return a
             };
-            var Ic = function(a, b) {
+            var DCEL = function(a, b) {
                 this.vertices = new pa;
                 this.edges = [];
                 this.faces = [];
@@ -200,11 +200,11 @@
                     for (var f = [], h = 0; h < d.length;) {
                         var k = d[h];
                         ++h;
-                        k = new kg(this.addVertex(k));
+                        k = new HalfEdge(this.addVertex(k));
                         this.edges.push(k);
                         f.push(k)
                     }
-                    h = new Wh(f[0]);
+                    h = new Face(f[0]);
                     this.faces.push(h);
                     var n = d.length;
                     d = 0;
@@ -227,9 +227,9 @@
                             } if (null != b)
                     for (c = 0, h = this.faces.length; c < h;) k = c++, this.faces[k].data = b[k]
             };
-            g["com.watabou.geom.DCEL"] = Ic;
-            Ic.__name__ = "com.watabou.geom.DCEL";
-            Ic.floodFill = function(a, b) {
+            g["com.watabou.geom.DCEL"] = DCEL;
+            DCEL.__name__ = "com.watabou.geom.DCEL";
+            DCEL.floodFill = function(a, b) {
                 var c = [];
                 a = [a];
                 var d = new pa;
@@ -250,7 +250,7 @@
                 }
                 return c
             };
-            Ic.floodFillEx = function(a, b) {
+            DCEL.floodFillEx = function(a, b) {
                 for (var c = [a], d = [], f = a = a.halfEdge, h = !0; h;) {
                     var k = f;
                     f = f.next;
@@ -262,8 +262,8 @@
                         for (c.push(a), f = a = a.halfEdge, h = !0; h;) k = f, f = f.next, h = f != a, null != k.twin && d.push(k);
                 return c
             };
-            Ic.split = function(a) {
-                for (var b = [], c = gf.fromArray(a); !gf.isEmpty(c);) {
+            DCEL.split = function(a) {
+                for (var b = [], c = SetUtils.fromArray(a); !SetUtils.isEmpty(c);) {
                     for (var d = null, f = 0; f < a.length;) {
                         var h = a[f];
                         ++f;
@@ -272,16 +272,16 @@
                             break
                         }
                     }
-                    d = Ic.floodFill(d, function(a) {
+                    d = DCEL.floodFill(d, function(a) {
                         return null != c.h.__keys__[a.__id__]
                     });
-                    gf.removeArr(c, d);
+                    SetUtils.removeArr(c, d);
                     b.push(d)
                 }
                 return b
             };
-            Ic.circumference = function(a, b) {
-                var c = gf.fromArray(b);
+            DCEL.circumference = function(a, b) {
+                var c = SetUtils.fromArray(b);
                 if (null == a)
                     for (var d = Infinity, f = 0; f < b.length;) {
                         var h = b[f];
@@ -300,8 +300,8 @@
                     for (p.push(P), P = P.next; null != P.twin && null != c.h.__keys__[P.twin.face.__id__];) P = P.twin.next; while (P != a);
                 return p
             };
-            Ic.outline = function(a) {
-                for (var b = gf.fromArray(a), c = [], d = 0; d < a.length;) {
+            DCEL.outline = function(a) {
+                for (var b = SetUtils.fromArray(a), c = [], d = 0; d < a.length;) {
                     var f =
                         a[d];
                     ++d;
@@ -313,16 +313,16 @@
                     }
                 }
                 b = null;
-                for (d = []; !Z.isEmpty(c);) f = Ic.circumference(c[0], a), Z.removeAll(c, f), 0 < Sa.area(Ua.toPoly(f)) ? b = f : d.push(f);
+                for (d = []; !Z.isEmpty(c);) f = DCEL.circumference(c[0], a), Z.removeAll(c, f), 0 < PolyCore.area(EdgeChain.toPoly(f)) ? b = f : d.push(f);
                 d.unshift(b);
                 return d
             };
-            Ic.prototype = {
+            DCEL.prototype = {
                 addVertex: function(a) {
                     var b = this.vertices.h[a.__id__];
                     if (null == b) {
                         b = this.vertices;
-                        var c = new ak(a);
+                        var c = new Vertex(a);
                         b.set(a, c);
                         return c
                     }
@@ -332,11 +332,11 @@
                     for (var b = a.length, c = [], d = 0; d < a.length;) {
                         var f = a[d];
                         ++d;
-                        f = new kg(f);
+                        f = new HalfEdge(f);
                         this.edges.push(f);
                         c.push(f)
                     }
-                    a = new Wh(c[0]);
+                    a = new Face(c[0]);
                     this.faces.push(a);
                     d = 0;
                     for (var h = b; d < h;) {
@@ -396,15 +396,15 @@
                     return null
                 },
                 splitEdge: function(a, b) {
-                    null == b && (b = qa.lerp(a.origin.point, a.next.origin.point));
+                    null == b && (b = GeomUtils.lerp(a.origin.point, a.next.origin.point));
                     var c = this.addVertex(b);
-                    b = new kg(c);
+                    b = new HalfEdge(c);
                     b.face = a.face;
                     b.next = a.next;
                     a.next = b;
                     this.edges.push(b);
                     var d = a.twin;
-                    null != d && (c = new kg(c), c.face = d.face, c.next = d.next, d.next = c, a.twin = c, b.twin = d, d.twin = b, c.twin = a, this.edges.push(c));
+                    null != d && (c = new HalfEdge(c), c.face = d.face, c.next = d.next, d.next = c, a.twin = c, b.twin = d, d.twin = b, c.twin = a, this.edges.push(c));
                     return b
                 },
                 collapseEdge: function(a) {
@@ -444,37 +444,37 @@
                     }
                     return b
                 },
-                __class__: Ic
+                __class__: DCEL
             };
-            var kg = function(a) {
+            var HalfEdge = function(a) {
                 this.origin = a;
                 a.edges.push(this)
             };
-            g["com.watabou.geom.HalfEdge"] = kg;
-            kg.__name__ = "com.watabou.geom.HalfEdge";
-            kg.prototype = {
+            g["com.watabou.geom.HalfEdge"] = HalfEdge;
+            HalfEdge.__name__ = "com.watabou.geom.HalfEdge";
+            HalfEdge.prototype = {
                 prev: function() {
                     for (var a =
                             this; a.next != this;) a = a.next;
                     return a
                 },
-                __class__: kg
+                __class__: HalfEdge
             };
-            var ak = function(a) {
+            var Vertex = function(a) {
                 this.edges = [];
                 this.point = a
             };
-            g["com.watabou.geom.Vertex"] = ak;
-            ak.__name__ = "com.watabou.geom.Vertex";
-            ak.prototype = {
-                __class__: ak
+            g["com.watabou.geom.Vertex"] = Vertex;
+            Vertex.__name__ = "com.watabou.geom.Vertex";
+            Vertex.prototype = {
+                __class__: Vertex
             };
-            var Wh = function(a) {
+            var Face = function(a) {
                 this.halfEdge = a
             };
-            g["com.watabou.geom.Face"] = Wh;
-            Wh.__name__ = "com.watabou.geom.Face";
-            Wh.prototype = {
+            g["com.watabou.geom.Face"] = Face;
+            Face.__name__ = "com.watabou.geom.Face";
+            Face.prototype = {
                 getNeighbours: function() {
                     for (var a = [], b = this.halfEdge, c = b, d = !0; d;) {
                         var f = c;
@@ -493,7 +493,7 @@
                     }
                     return a
                 },
-                __class__: Wh
+                __class__: Face
             };
             var Qb = function(a) {
                 this.points = a;
@@ -800,10 +800,10 @@
                 },
                 __class__: Qb
             };
-            var Ua = function() {};
-            g["com.watabou.geom.EdgeChain"] = Ua;
-            Ua.__name__ = "com.watabou.geom.EdgeChain";
-            Ua.toPoly = function(a) {
+            var EdgeChain = function() {};
+            g["com.watabou.geom.EdgeChain"] = EdgeChain;
+            EdgeChain.__name__ = "com.watabou.geom.EdgeChain";
+            EdgeChain.toPoly = function(a) {
                 for (var b = [], c = 0; c < a.length;) {
                     var d = a[c];
                     ++c;
@@ -811,7 +811,7 @@
                 }
                 return b
             };
-            Ua.toPolyline = function(a) {
+            EdgeChain.toPolyline = function(a) {
                 for (var b = [], c = 0; c < a.length;) {
                     var d = a[c];
                     ++c;
@@ -820,7 +820,7 @@
                 b.push(a[a.length - 1].next.origin.point);
                 return b
             };
-            Ua.assignData = function(a, b, c) {
+            EdgeChain.assignData = function(a, b, c) {
                 null == c && (c = !0);
                 for (var d = 0; d < a.length;) {
                     var f = a[d];
@@ -829,7 +829,7 @@
                     null == f.twin || !c && null != f.twin.data || (f.twin.data = b)
                 }
             };
-            Ua.vertices = function(a, b) {
+            EdgeChain.vertices = function(a, b) {
                 null == b && (b = !1);
                 for (var c = [], d = 0; d < a.length;) {
                     var f = a[d];
@@ -839,7 +839,7 @@
                 b && c.push(a[a.length - 1].next.origin);
                 return c
             };
-            Ua.edgeByOrigin = function(a, b) {
+            EdgeChain.edgeByOrigin = function(a, b) {
                 for (var c = 0; c < a.length;) {
                     var d = a[c];
                     ++c;
@@ -848,27 +848,27 @@
                 }
                 return null
             };
-            Ua.indexByOrigin = function(a, b) {
+            EdgeChain.indexByOrigin = function(a, b) {
                 for (var c = 0, d = a.length; c < d;) {
                     var f = c++;
                     if (a[f].origin == b) return f
                 }
                 return -1
             };
-            Ua.prev = function(a, b) {
+            EdgeChain.prev = function(a, b) {
                 b = a.indexOf(b);
                 return 0 < b ? a[b - 1] : a[a.length - 1]
             };
-            var qa = function() {};
-            g["com.watabou.geom.GeomUtils"] = qa;
-            qa.__name__ = "com.watabou.geom.GeomUtils";
-            qa.intersectLines = function(a, b, c, d, f, h, k, n) {
+            var GeomUtils = function() {};
+            g["com.watabou.geom.GeomUtils"] = GeomUtils;
+            GeomUtils.__name__ = "com.watabou.geom.GeomUtils";
+            GeomUtils.intersectLines = function(a, b, c, d, f, h, k, n) {
                 var p = c * n - d * k;
                 if (0 == p) return null;
                 p = (d * (f - a) - c * (h - b)) / p;
                 return new I(Math.abs(c) > Math.abs(d) ? (f - a + k * p) / c : (h - b + n * p) / d, p)
             };
-            qa.lerp = function(a, b, c) {
+            GeomUtils.lerp = function(a, b, c) {
                 null == c && (c = .5);
                 var d = a.x,
                     f = c;
@@ -878,29 +878,29 @@
                 null == a && (a = .5);
                 return new I(d + (b.x - d) * f, h + (b.y - h) * a)
             };
-            qa.converge = function(a, b, c, d) {
+            GeomUtils.converge = function(a, b, c, d) {
                 var f = b.x - a.x,
                     h = b.y - a.y;
                 a = b.x * a.y - b.y * a.x;
                 return 1E-9 > Math.abs(f * c.y - h * c.x - a) ? 1E-9 > Math.abs(f * d.y - h * d.x - a) : !1
             };
-            qa.barycentric = function(a, b, c, d) {
+            GeomUtils.barycentric = function(a, b, c, d) {
                 var f = a.subtract(d),
                     h = b.subtract(d);
                 d = c.subtract(d);
                 a = (a.x - b.x) * (a.y - c.y) - (a.y - b.y) * (a.x - c.x);
                 return new ch((h.x * d.y - h.y * d.x) / a, (d.x * f.y - d.y * f.x) / a, (f.x * h.y - f.y * h.x) / a)
             };
-            qa.triArea = function(a, b, c) {
+            GeomUtils.triArea = function(a, b, c) {
                 return .5 * ((a.x - c.x) * (b.y - a.y) - (a.x -
                     b.x) * (c.y - a.y))
             };
-            var bk = function() {
+            var Graph = function() {
                 this.nodes = []
             };
-            g["com.watabou.geom.Graph"] = bk;
-            bk.__name__ = "com.watabou.geom.Graph";
-            bk.prototype = {
+            g["com.watabou.geom.Graph"] = Graph;
+            Graph.__name__ = "com.watabou.geom.Graph";
+            Graph.prototype = {
                 add: function(a) {
                     this.nodes.push(a);
                     return a
@@ -937,15 +937,15 @@
                     for (var c = [b]; null != a.h.__keys__[b.__id__];) b = a.h[b.__id__], c.push(b);
                     return c
                 },
-                __class__: bk
+                __class__: Graph
             };
-            var ck = function(a) {
+            var Node = function(a) {
                 this.links = new pa;
                 this.data = a
             };
-            g["com.watabou.geom.Node"] = ck;
-            ck.__name__ = "com.watabou.geom.Node";
-            ck.prototype = {
+            g["com.watabou.geom.Node"] = Node;
+            Node.__name__ = "com.watabou.geom.Node";
+            Node.prototype = {
                 link: function(a, b, c) {
                     null == c && (c = !0);
                     null == b && (b = 1);
@@ -964,9 +964,9 @@
                         this.unlink(b)
                     }
                 },
-                __class__: ck
+                __class__: Node
             };
-            var dk = function(a, b, c, d) {
+            var PoissonPattern = function(a, b, c, d) {
                 null == d && (d = 0);
                 this.width = a;
                 this.height = b;
@@ -984,9 +984,9 @@
                         C.seed % 2147483647 | 0) / 2147483647))); this.step(););
                 0 < d && this.uneven(d)
             };
-            g["com.watabou.geom.PoissonPattern"] = dk;
-            dk.__name__ = "com.watabou.geom.PoissonPattern";
-            dk.prototype = {
+            g["com.watabou.geom.PoissonPattern"] = PoissonPattern;
+            PoissonPattern.__name__ = "com.watabou.geom.PoissonPattern";
+            PoissonPattern.prototype = {
                 emit: function(a) {
                     this.points.push(a);
                     this.queue.push(a);
@@ -1052,7 +1052,7 @@
                             }
                     return h
                 },
-                __class__: dk
+                __class__: PoissonPattern
             };
             var Xh = function() {};
             g["com.watabou.geom.IFillableShape"] =
@@ -1062,41 +1062,41 @@
             Xh.prototype = {
                 __class__: Xh
             };
-            var Yh = function(a) {
+            var FillablePoly = function(a) {
                 this.poly = a;
-                this.rect = Gb.rect(a)
+                this.rect = PolyBounds.rect(a)
             };
-            g["com.watabou.geom.FillablePoly"] = Yh;
-            Yh.__name__ = "com.watabou.geom.FillablePoly";
-            Yh.__interfaces__ = [Xh];
-            Yh.prototype = {
+            g["com.watabou.geom.FillablePoly"] = FillablePoly;
+            FillablePoly.__name__ = "com.watabou.geom.FillablePoly";
+            FillablePoly.__interfaces__ = [Xh];
+            FillablePoly.prototype = {
                 getBounds: function() {
                     return this.rect
                 },
                 validate: function(a) {
-                    return Gb.containsPoint(this.poly, a)
+                    return PolyBounds.containsPoint(this.poly, a)
                 },
                 validateRect: function(a, b, c, d) {
                     return !1
                 },
-                __class__: Yh
+                __class__: FillablePoly
             };
-            var hf = function(a, b) {
+            var Segment = function(a, b) {
                 this.start = a;
                 this.end = b
             };
-            g["com.watabou.geom.Segment"] = hf;
-            hf.__name__ = "com.watabou.geom.Segment";
-            hf.prototype = {
-                __class__: hf
+            g["com.watabou.geom.Segment"] = Segment;
+            Segment.__name__ = "com.watabou.geom.Segment";
+            Segment.prototype = {
+                __class__: Segment
             };
-            var jf = function(a, b) {
+            var SkeletonBuilder = function(a, b) {
                 null == b && (b = !1);
                 this.height = 0;
                 this.poly = a;
                 for (var c = a.length, d = [], f = 0, h = c; f < h;) {
                     var k = f++;
-                    d.push(new ek(a[k], a[(k + 1) % c]))
+                    d.push(new SkeletonBuilder_Segment(a[k], a[(k + 1) % c]))
                 }
                 this.segments = d;
                 this.leaves = new pa;
@@ -1106,18 +1106,18 @@
                     k = f++;
                     var n = new Zh(a[k]);
                     this.leaves.set(a[k], n);
-                    d.push(new dh(n, this.segments[k], this.segments[(k + c - 1) % c]))
+                    d.push(new Rib(n, this.segments[k], this.segments[(k + c - 1) % c]))
                 }
                 this.ribs = d;
                 this.bones = [];
                 b && this.run()
             };
-            g["com.watabou.geom.SkeletonBuilder"] = jf;
-            jf.__name__ = "com.watabou.geom.SkeletonBuilder";
-            jf.intersect = function(a, b) {
-                return qa.intersectLines(a.a.point.x, a.a.point.y, a.slope.x, a.slope.y, b.a.point.x, b.a.point.y, b.slope.x, b.slope.y)
+            g["com.watabou.geom.SkeletonBuilder"] = SkeletonBuilder;
+            SkeletonBuilder.__name__ = "com.watabou.geom.SkeletonBuilder";
+            SkeletonBuilder.intersect = function(a, b) {
+                return GeomUtils.intersectLines(a.a.point.x, a.a.point.y, a.slope.x, a.slope.y, b.a.point.x, b.a.point.y, b.slope.x, b.slope.y)
             };
-            jf.prototype = {
+            SkeletonBuilder.prototype = {
                 run: function() {
                     for (; this.step(););
                 },
@@ -1130,13 +1130,13 @@
                             p = null,
                             P = null,
                             g = k.right.lRib,
-                            m = jf.intersect(k, g);
+                            m = SkeletonBuilder.intersect(k, g);
                         if (null != m && 0 <= m.x && 0 <= m.y) {
                             var q = m.x + k.a.height;
                             n > q && (n = q, P = m, p = g)
                         }
                         m = k.left.rRib;
-                        g = jf.intersect(k, m);
+                        g = SkeletonBuilder.intersect(k, m);
                         null != g && 0 <= g.x && 0 <= g.y && n > g.x + k.a.height && (P = g, p = m);
                         null != P && (n = P.y + p.a.height, a > n && (a = n, b = k, c = p, d = P))
                     }
@@ -1144,7 +1144,7 @@
                 },
                 merge: function(a, b, c) {
                     c = new Zh(c, this.height, a, b);
-                    c = a.right == b.left ? new dh(c, a.left, b.right) : new dh(c, b.left, a.right);
+                    c = a.right == b.left ? new Rib(c, a.left, b.right) : new Rib(c, b.left, a.right);
                     this.ribs.push(c);
                     this.bones.push(a);
                     N.remove(this.ribs,
@@ -1164,9 +1164,9 @@
                             var h = d.b,
                                 k = h.point;
                             d = (d == this.root ? f == h.child1 ? h.child2 : f == h.child2 ? h.child1 : null : f == this.root ? d == h.child1 ? h.child2 : d == h.child2 ? h.child1 : null : h.parent).slope;
-                            h = qa.intersectLines(c.p0.x, c.p0.y, c.dir.x, c.dir.y, k.x, k.y, d.x, d.y);
+                            h = GeomUtils.intersectLines(c.p0.x, c.p0.y, c.dir.x, c.dir.y, k.x, k.y, d.x, d.y);
                             null != h && 0 < h.x && h.x < c.len && (d = c.p0, f = c.dir,
-                                h = h.x, d = new I(d.x + f.x * h, d.y + f.y * h), wd.set(k, d), this.gables.push(c))
+                                h = h.x, d = new I(d.x + f.x * h, d.y + f.y * h), PointExtender.set(k, d), this.gables.push(c))
                         }
                     }
                 },
@@ -1184,9 +1184,9 @@
                     for (var b = [a]; this.root.a != a && this.root.b != a;) a = a.parent.b, b.push(a);
                     return b
                 },
-                __class__: jf
+                __class__: SkeletonBuilder
             };
-            var dh = function(a, b, c) {
+            var Rib = function(a, b, c) {
                 this.a = a;
                 this.a.parent = this;
                 this.left = b;
@@ -1199,10 +1199,10 @@
                 c = a.x * b.x + a.y * b.y;
                 .99999 < c ? this.slope = new I(-a.y, a.x) : (c = Math.sqrt((1 + c) / 2), this.slope = b.subtract(a), this.slope.normalize(1 / c), null == this.a.child1 && 0 > a.x * b.y - a.y * b.x && (a = this.slope, a.x *= -1, a.y *= -1))
             };
-            g["com.watabou.geom.Rib"] = dh;
-            dh.__name__ = "com.watabou.geom.Rib";
-            dh.prototype = {
-                __class__: dh
+            g["com.watabou.geom.Rib"] = Rib;
+            Rib.__name__ = "com.watabou.geom.Rib";
+            Rib.prototype = {
+                __class__: Rib
             };
             var Zh = function(a, b, c, d) {
                 null == b && (b = 0);
@@ -1218,7 +1218,7 @@
             Zh.prototype = {
                 __class__: Zh
             };
-            var ek = function(a, b) {
+            var SkeletonBuilder_Segment = function(a, b) {
                 this.p0 = a;
                 this.p1 = b;
                 this.dir = b.subtract(a);
@@ -1228,37 +1228,37 @@
                 a.x *= b;
                 a.y *= b
             };
-            g["com.watabou.geom._SkeletonBuilder.Segment"] = ek;
-            ek.__name__ = "com.watabou.geom._SkeletonBuilder.Segment";
-            ek.prototype = {
-                __class__: ek
+            g["com.watabou.geom._SkeletonBuilder.Segment"] = SkeletonBuilder_Segment;
+            SkeletonBuilder_Segment.__name__ = "com.watabou.geom._SkeletonBuilder.Segment";
+            SkeletonBuilder_Segment.prototype = {
+                __class__: SkeletonBuilder_Segment
             };
-            var xe = function() {};
-            g["com.watabou.geom.Triangulation"] = xe;
-            xe.__name__ = "com.watabou.geom.Triangulation";
-            xe.earcut = function(a) {
+            var Triangulation = function() {};
+            g["com.watabou.geom.Triangulation"] = Triangulation;
+            Triangulation.__name__ = "com.watabou.geom.Triangulation";
+            Triangulation.earcut = function(a) {
                 var b = [];
-                xe.earcutLinked(xe.linkedList(a,
+                Triangulation.earcutLinked(Triangulation.linkedList(a,
                     0, a.length), b);
                 return b
             };
-            xe.linkedList = function(a, b, c) {
+            Triangulation.linkedList = function(a, b, c) {
                 for (var d = null; b < c;) {
                     var f = b++;
-                    d = new fk(f, a[f], d)
+                    d = new Triangulation_Node(f, a[f], d)
                 }
                 return d
             };
-            xe.earcutLinked = function(a, b) {
+            Triangulation.earcutLinked = function(a, b) {
                 if (null != a)
                     for (var c = a; a.prev != a.next;) {
                         var d = a.prev,
                             f = a.next;
-                        if (xe.isEar(a)) b.push([d.i, a.i, f.i]), a.remove(), c = a = f.next;
+                        if (Triangulation.isEar(a)) b.push([d.i, a.i, f.i]), a.remove(), c = a = f.next;
                         else if (a = f, a == c) break
                     }
             };
-            xe.isEar = function(a) {
+            Triangulation.isEar = function(a) {
                 var b = a.prev,
                     c = a.next,
                     d = b.p,
@@ -1266,14 +1266,14 @@
                     h = c.p;
                 if (0 <= (f.y - d.y) * (h.x - f.x) - (f.x - d.x) * (h.y - f.y)) return !1;
                 for (var k = a.next.next; k != a.prev;) {
-                    xe.pointInTriangle(b.p, a.p, c.p, k.p) ? (d = k.prev.p, f = k.p, h = k.next.p,
+                    Triangulation.pointInTriangle(b.p, a.p, c.p, k.p) ? (d = k.prev.p, f = k.p, h = k.next.p,
                         d = 0 <= (f.y - d.y) * (h.x - f.x) - (f.x - d.x) * (h.y - f.y)) : d = !1;
                     if (d) return !1;
                     k = k.next
                 }
                 return !0
             };
-            xe.pointInTriangle = function(a, b, c, d) {
+            Triangulation.pointInTriangle = function(a, b, c, d) {
                 var f = a.x;
                 a = a.y;
                 var h = b.x;
@@ -1284,24 +1284,24 @@
                 d = d.y;
                 return 0 <= (k - n) * (a - d) - (f - n) * (c - d) && 0 <= (f - n) * (b - d) - (h - n) * (a - d) ? 0 <= (h - n) * (c - d) - (k - n) * (b - d) : !1
             };
-            var fk = function(a, b, c) {
+            var Triangulation_Node = function(a, b, c) {
                 this.i = a;
                 this.p = b;
                 null == c ? (this.prev = this, this.next = this) : (this.next = c.next, this.prev = c, c.next.prev = this, c.next = this)
             };
-            g["com.watabou.geom._Triangulation.Node"] = fk;
-            fk.__name__ = "com.watabou.geom._Triangulation.Node";
-            fk.prototype = {
+            g["com.watabou.geom._Triangulation.Node"] = Triangulation_Node;
+            Triangulation_Node.__name__ = "com.watabou.geom._Triangulation.Node";
+            Triangulation_Node.prototype = {
                 remove: function() {
                     this.next.prev = this.prev;
                     this.prev.next = this.next
                 },
-                __class__: fk
+                __class__: Triangulation_Node
             };
-            var kf = function() {};
-            g["com.watabou.geom.polygons.PolyAccess"] = kf;
-            kf.__name__ = "com.watabou.geom.polygons.PolyAccess";
-            kf.longest = function(a) {
+            var PolyAccess = function() {};
+            g["com.watabou.geom.polygons.PolyAccess"] = PolyAccess;
+            PolyAccess.__name__ = "com.watabou.geom.polygons.PolyAccess";
+            PolyAccess.longest = function(a) {
                 for (var b = -1, c = 0, d = 0, f = a.length; d < f;) {
                     var h = d++,
                         k = I.distance(a[h], a[(h + 1) % a.length]);
@@ -1309,24 +1309,24 @@
                 }
                 return b
             };
-            kf.isConvexVertexi = function(a, b) {
+            PolyAccess.isConvexVertexi = function(a, b) {
                 var c = a.length,
                     d = a[(b + c - 1) % c],
                     f = a[b];
                 a = a[(b + 1) % c];
                 return 0 < (f.x - d.x) * (a.y - f.y) - (f.y - d.y) * (a.x - f.x)
             };
-            kf.forEdge = function(a,
+            PolyAccess.forEdge = function(a,
                 b) {
                 for (var c = a.length, d = 0; d < c;) {
                     var f = d++;
                     b(a[f], a[(f + 1) % c])
                 }
             };
-            var ye = function() {};
-            g["com.watabou.geom.polygons.PolyBool"] = ye;
-            ye.__name__ = "com.watabou.geom.polygons.PolyBool";
-            ye.augmentPolygons = function(a, b) {
+            var PolyBool = function() {};
+            g["com.watabou.geom.polygons.PolyBool"] = PolyBool;
+            PolyBool.__name__ = "com.watabou.geom.polygons.PolyBool";
+            PolyBool.augmentPolygons = function(a, b) {
                 for (var c = a.length, d = b.length, f = [], h = 0, k = c; h < k;) {
                     var n = h++;
                     f.push([])
@@ -1355,12 +1355,12 @@
                             z = b[(P + 1) % d],
                             J = w.x;
                         w = w.y;
-                        z = qa.intersectLines(u, r,
+                        z = GeomUtils.intersectLines(u, r,
                             l, D, J, w, z.x - J, z.y - w);
                         null != z && 0 <= z.x && 1 >= z.x && 0 <= z.y && 1 >= z.y && (z = {
                             a: z.x,
                             b: z.y,
-                            p: qa.lerp(m, q, z.x)
+                            p: GeomUtils.lerp(m, q, z.x)
                         }, p[n].push(z), g[P].push(z))
                     }
                 }
@@ -1382,13 +1382,13 @@
                             }), k = 0; k < d.length;) z = d[k], ++k, a.push(z.p);
                 return [P, a]
             };
-            ye.and = function(a, b, c) {
+            PolyBool.and = function(a, b, c) {
                 null == c && (c = !1);
                 var d =
-                    ye.augmentPolygons(a, b),
+                    PolyBool.augmentPolygons(a, b),
                     f = d[0],
                     h = d[1];
-                if (f.length == a.length) return Gb.containsPoint(a, b[0]) ? c ? a : b : Gb.containsPoint(b, a[0], c) ? c ? null : a : c ? a : null;
+                if (f.length == a.length) return PolyBounds.containsPoint(a, b[0]) ? c ? a : b : PolyBounds.containsPoint(b, a[0], c) ? c ? null : a : c ? a : null;
                 d = f;
                 for (var k = h, n = [], p = -1, g = null, q = 0, m = f.length; q < m;) {
                     var u = q++;
@@ -1398,8 +1398,8 @@
                         break
                     }
                 }
-                a = qa.lerp(g, f[(p + 1) % f.length]);
-                Gb.containsPoint(b, a, c) || (d = h, k = f, p = h.indexOf(g));
+                a = GeomUtils.lerp(g, f[(p + 1) % f.length]);
+                PolyBounds.containsPoint(b, a, c) || (d = h, k = f, p = h.indexOf(g));
                 for (;;) {
                     n.push(d[p]);
                     b = (p + 1) % d.length;
@@ -1408,11 +1408,11 @@
                     c = k.indexOf(c); - 1 != c ? (p = c, b = d, d = k, k = b) : p = b
                 }
             };
-            var Gb = function() {};
+            var PolyBounds = function() {};
             g["com.watabou.geom.polygons.PolyBounds"] =
-                Gb;
-            Gb.__name__ = "com.watabou.geom.polygons.PolyBounds";
-            Gb.rect = function(a) {
+                PolyBounds;
+            PolyBounds.__name__ = "com.watabou.geom.polygons.PolyBounds";
+            PolyBounds.rect = function(a) {
                 for (var b = Infinity, c = Infinity, d = -Infinity, f = -Infinity, h = 0; h < a.length;) {
                     var k = a[h];
                     ++h;
@@ -1425,7 +1425,7 @@
                 }
                 return new na(b, c, d - b, f - c)
             };
-            Gb.aabb = function(a) {
+            PolyBounds.aabb = function(a) {
                 for (var b = Infinity, c = Infinity, d = -Infinity, f = -Infinity, h = 0; h < a.length;) {
                     var k = a[h];
                     ++h;
@@ -1438,8 +1438,8 @@
                 }
                 return [new I(b, c), new I(d, c), new I(d, f), new I(b, f)]
             };
-            Gb.obb = function(a) {
-                a = Gb.convexHull(a);
+            PolyBounds.obb = function(a) {
+                a = PolyBounds.convexHull(a);
                 for (var b = Infinity, c = null, d = null, f = a.length, h = 0; h < f;) {
                     var k = h++,
                         n = a[k];
@@ -1461,10 +1461,10 @@
                         b > p && (b = p, c = [new I(k, q), new I(m, q), new I(m, u), new I(k, u)], d = n)
                     }
                 }
-                Yc.asRotateYX(c, d.y, d.x);
+                PolyTransform.asRotateYX(c, d.y, d.x);
                 return c
             };
-            Gb.lir = function(a, b) {
+            PolyBounds.lir = function(a, b) {
                 var c = function(a, b, c, d, f, h, k) {
                         b = (b - f) / k;
                         return new I((d -
@@ -1474,7 +1474,7 @@
                     f = a[b < a.length - 1 ? b + 1 : 0].subtract(a[b]);
                 f = f.clone();
                 f.normalize(1);
-                var h = Yc.rotateYX(a, f.y, -f.x),
+                var h = PolyTransform.rotateYX(a, f.y, -f.x),
                     k = h[b];
                 a = k.y;
                 k = k.x;
@@ -1483,7 +1483,7 @@
                     var u = q++,
                         r = h[u];
                     u = h[(u + 1) % d];
-                    u.x > r.x && (u.y < r.y && u.x > b && p.push(new hf(r, u)), u.y > r.y && r.x < k && g.push(new hf(r, u)))
+                    u.x > r.x && (u.y < r.y && u.x > b && p.push(new Segment(r, u)), u.y > r.y && r.x < k && g.push(new Segment(r, u)))
                 }
                 h = d = 0;
                 r = a;
@@ -1524,18 +1524,18 @@
                     m = (a - xb) * (l - D);
                     m > u && (d = l, h = D, r = xb, u = m)
                 }
-                return Yc.rotateYX([new I(d, a), new I(h, a), new I(h, r), new I(d, r)], -f.y, -f.x)
+                return PolyTransform.rotateYX([new I(d, a), new I(h, a), new I(h, r), new I(d, r)], -f.y, -f.x)
             };
-            Gb.lira = function(a) {
+            PolyBounds.lira = function(a) {
                 for (var b = -Infinity, c = null, d = 0, f = a.length; d < f;) {
                     var h = d++;
-                    h = Gb.lir(a, h);
-                    var k = Sa.area(h);
+                    h = PolyBounds.lir(a, h);
+                    var k = PolyCore.area(h);
                     b < k && (b = k, c = h)
                 }
                 return c
             };
-            Gb.convexHull = function(a) {
+            PolyBounds.convexHull = function(a) {
                 var b = a.length;
                 if (3 > b) return null;
                 if (3 == b) return a;
@@ -1569,7 +1569,7 @@
                     c.unshift(f)
                 }
             };
-            Gb.containsPoint = function(a, b, c) {
+            PolyBounds.containsPoint = function(a, b, c) {
                 null == c && (c = !1);
                 var d = b.x;
                 b = b.y;
@@ -1588,10 +1588,10 @@
                 }
                 return c
             };
-            var Sa = function() {};
-            g["com.watabou.geom.polygons.PolyCore"] = Sa;
-            Sa.__name__ = "com.watabou.geom.polygons.PolyCore";
-            Sa.area = function(a) {
+            var PolyCore = function() {};
+            g["com.watabou.geom.polygons.PolyCore"] = PolyCore;
+            PolyCore.__name__ = "com.watabou.geom.polygons.PolyCore";
+            PolyCore.area = function(a) {
                 for (var b = a.length, c = a[b - 1], d = a[0], f = c.x * d.y - d.x * c.y, h = 1; h < b;) {
                     var k = h++;
                     c = d;
@@ -1600,10 +1600,10 @@
                 }
                 return .5 * f
             };
-            Sa.rectArea = function(a) {
+            PolyCore.rectArea = function(a) {
                 return I.distance(a[0], a[1]) * I.distance(a[1], a[2])
             };
-            Sa.perimeter = function(a) {
+            PolyCore.perimeter = function(a) {
                 for (var b = a.length, c = a[b - 1], d = a[0], f = I.distance(c, d), h = 1; h < b;) {
                     var k = h++;
                     c = d;
@@ -1612,7 +1612,7 @@
                 }
                 return f
             };
-            Sa.$length = function(a) {
+            PolyCore.$length = function(a) {
                 for (var b = 0, c = 1, d = a.length; c < d;) {
                     var f =
                         c++;
@@ -1620,7 +1620,7 @@
                 }
                 return b
             };
-            Sa.center = function(a) {
+            PolyCore.center = function(a) {
                 for (var b = a.length, c = a[0].clone(), d = 1; d < b;) {
                     var f = d++;
                     f = a[f];
@@ -1632,7 +1632,7 @@
                 c.y *= a;
                 return c
             };
-            Sa.centroid = function(a) {
+            PolyCore.centroid = function(a) {
                 if (1 == a.length) return a[0];
                 for (var b = 0, c = 0, d = 0, f = a[a.length - 1], h = 0, k = a.length; h < k;) {
                     var n = h++,
@@ -1646,11 +1646,11 @@
                 a = 1 / (3 * d);
                 return new I(a * b, a * c)
             };
-            Sa.compactness = function(a) {
-                var b = Sa.perimeter(a);
-                return 4 * Math.PI * Sa.area(a) / (b * b)
+            PolyCore.compactness = function(a) {
+                var b = PolyCore.perimeter(a);
+                return 4 * Math.PI * PolyCore.area(a) / (b * b)
             };
-            Sa.simplifyClosed = function(a) {
+            PolyCore.simplifyClosed = function(a) {
                 for (var b = -1, c = Infinity, d = a.length, f = a[d - 2], h = a[d - 1], k = 0; k < d;) {
                     var n = k++,
                         p = f;
@@ -1661,21 +1661,21 @@
                 }
                 a.splice(b, 1)
             };
-            Sa.set = function(a, b) {
+            PolyCore.set = function(a, b) {
                 for (var c = 0, d = a.length; c < d;) {
                     var f = c++;
-                    wd.set(a[f], b[f])
+                    PointExtender.set(a[f], b[f])
                 }
             };
-            var Qd = function() {};
-            g["com.watabou.geom.polygons.PolyCreate"] = Qd;
-            Qd.__name__ = "com.watabou.geom.polygons.PolyCreate";
-            Qd.rect = function(a, b) {
+            var PolyCreate = function() {};
+            g["com.watabou.geom.polygons.PolyCreate"] = PolyCreate;
+            PolyCreate.__name__ = "com.watabou.geom.polygons.PolyCreate";
+            PolyCreate.rect = function(a, b) {
                 a /= 2;
                 b /= 2;
                 return [new I(-a, -b), new I(a, -b), new I(a, b), new I(-a, b)]
             };
-            Qd.regular = function(a, b, c) {
+            PolyCreate.regular = function(a, b, c) {
                 null == c && (c = 0);
                 for (var d = [], f = 0; f < a;) {
                     var h = f++;
@@ -1683,7 +1683,7 @@
                 }
                 return d
             };
-            Qd.stripe = function(a, b, c) {
+            PolyCreate.stripe = function(a, b, c) {
                 null == c && (c = 1);
                 var d = b / 2,
                     f = a.length;
@@ -1711,10 +1711,10 @@
                 0 < c ? (g = new I(p.x * d, p.y * d), q = new I(-g.y, g.x), a = n.add(new I(g.x * c, g.y * c)), b.push(a.subtract(q)), h.push(a.add(q))) : (m = new I(p.x * d, p.y * d), q = new I(-m.y, m.x), b.push(n.subtract(q)), h.push(n.add(q)));
                 return b.concat(Z.revert(h))
             };
-            var gd = function() {};
-            g["com.watabou.geom.polygons.PolyCut"] = gd;
-            gd.__name__ = "com.watabou.geom.polygons.PolyCut";
-            gd.pierce = function(a, b, c) {
+            var PolyCut = function() {};
+            g["com.watabou.geom.polygons.PolyCut"] = PolyCut;
+            PolyCut.__name__ = "com.watabou.geom.polygons.PolyCut";
+            PolyCut.pierce = function(a, b, c) {
                 for (var d = b.x, f = b.y, h = c.x - d, k = c.y - f, n = a.length,
                         p = [], g = 0, q = n; g < q;) {
                     var m = g++,
@@ -1722,7 +1722,7 @@
                     m = a[(m + 1) % n];
                     var r = u.x;
                     u = u.y;
-                    u = qa.intersectLines(d, f, h, k, r, u, m.x - r, m.y - u);
+                    u = GeomUtils.intersectLines(d, f, h, k, r, u, m.x - r, m.y - u);
                     null != u && 0 <= u.y && 1 >= u.y && p.push(u.x)
                 }
                 p.sort(function(a, b) {
@@ -1730,10 +1730,10 @@
                     return 0 == a ? 0 : 0 > a ? -1 : 1
                 });
                 g = [];
-                for (q = 0; q < p.length;) u = p[q], ++q, g.push(qa.lerp(b, c, u));
+                for (q = 0; q < p.length;) u = p[q], ++q, g.push(GeomUtils.lerp(b, c, u));
                 return g
             };
-            gd.cut = function(a, b, c, d, f) {
+            PolyCut.cut = function(a, b, c, d, f) {
                 null == f && (f = 0);
                 null == d && (d = 0);
                 var h = b.x,
@@ -1753,17 +1753,17 @@
                         D = a[(r + 1) % g],
                         x = l.x;
                     l = l.y;
-                    D = qa.intersectLines(h, k, n, p, x, l, D.x - x, D.y - l);
+                    D = GeomUtils.intersectLines(h, k, n, p, x, l, D.x - x, D.y - l);
                     null !=
                         D && 0 <= D.y && 1 >= D.y && (q.push(D), u.set(D, r))
                 }
                 return 2 <= q.length ? (q.sort(function(a, b) {
                     a = a.x - b.x;
                     return 0 == a ? 0 : 0 > a ? -1 : 1
-                }), m = q[0], r = q[1], q = u.h[m.__id__], u = u.h[r.__id__], 0 == f ? (h = qa.lerp(b, c, m.x), c = qa.lerp(b, c, r.x), b = q < u ? a.slice(q + 1, u + 1) : a.slice(q + 1).concat(a.slice(0, u + 1)), b.unshift(h), b.push(c), f = q < u ? a.slice(u + 1).concat(a.slice(0, q + 1)) : a.slice(u + 1, q + 1), f.unshift(c), f.push(h)) : (h = m.y < f ? a[q] : m.y > 1 - f ? a[(q + 1) % g] : qa.lerp(b, c, m.x), c = r.y < f ? a[u] : r.y > 1 - f ? a[(u + 1) % g] : qa.lerp(b, c, r.x), b = q < u ? a.slice(q + 1, u + 1) : a.slice(q +
-                    1).concat(a.slice(0, u + 1)), h != b[0] && b.unshift(h), c != b[b.length - 1] && b.push(c), f = q < u ? a.slice(u + 1).concat(a.slice(0, q + 1)) : a.slice(u + 1, q + 1), c != f[0] && f.unshift(c), h != f[f.length - 1] && f.push(h)), 0 < d && (b = gd.peel(b, c, d / 2), f = gd.peel(f, h, d / 2)), a = a[q < a.length - 1 ? q + 1 : 0].subtract(a[q]), 0 < n * a.y - p * a.x ? [b, f] : [f, b]) : [a]
+                }), m = q[0], r = q[1], q = u.h[m.__id__], u = u.h[r.__id__], 0 == f ? (h = GeomUtils.lerp(b, c, m.x), c = GeomUtils.lerp(b, c, r.x), b = q < u ? a.slice(q + 1, u + 1) : a.slice(q + 1).concat(a.slice(0, u + 1)), b.unshift(h), b.push(c), f = q < u ? a.slice(u + 1).concat(a.slice(0, q + 1)) : a.slice(u + 1, q + 1), f.unshift(c), f.push(h)) : (h = m.y < f ? a[q] : m.y > 1 - f ? a[(q + 1) % g] : GeomUtils.lerp(b, c, m.x), c = r.y < f ? a[u] : r.y > 1 - f ? a[(u + 1) % g] : GeomUtils.lerp(b, c, r.x), b = q < u ? a.slice(q + 1, u + 1) : a.slice(q +
+                    1).concat(a.slice(0, u + 1)), h != b[0] && b.unshift(h), c != b[b.length - 1] && b.push(c), f = q < u ? a.slice(u + 1).concat(a.slice(0, q + 1)) : a.slice(u + 1, q + 1), c != f[0] && f.unshift(c), h != f[f.length - 1] && f.push(h)), 0 < d && (b = PolyCut.peel(b, c, d / 2), f = PolyCut.peel(f, h, d / 2)), a = a[q < a.length - 1 ? q + 1 : 0].subtract(a[q]), 0 < n * a.y - p * a.x ? [b, f] : [f, b]) : [a]
             };
-            gd.peel = function(a, b, c) {
+            PolyCut.peel = function(a, b, c) {
                 var d = a.indexOf(b);
                 d = a[d == a.length - 1 ? 0 : d + 1];
                 var f = d.subtract(b);
@@ -1772,9 +1772,9 @@
                 f = f.clone();
                 f.normalize(c);
                 c = f;
-                return gd.cut(a, b.add(c), d.add(c))[0]
+                return PolyCut.cut(a, b.add(c), d.add(c))[0]
             };
-            gd.shrink =
+            PolyCut.shrink =
                 function(a, b) {
                     for (var c = a.slice(), d = a.length, f = 0; f < d;) {
                         var h = f++,
@@ -1788,19 +1788,19 @@
                             p = p.clone();
                             p.normalize(k);
                             k = p;
-                            c = gd.cut(c, n.add(k), h.add(k))[0]
+                            c = PolyCut.cut(c, n.add(k), h.add(k))[0]
                         }
                     }
                     return c
                 };
-            gd.shrinkEq = function(a, b) {
+            PolyCut.shrinkEq = function(a, b) {
                 for (var c = [], d = 0; d < a.length;) ++d, c.push(b);
-                return gd.shrink(a, c)
+                return PolyCut.shrink(a, c)
             };
-            var Yc = function() {};
-            g["com.watabou.geom.polygons.PolyTransform"] = Yc;
-            Yc.__name__ = "com.watabou.geom.polygons.PolyTransform";
-            Yc.translate = function(a, b, c) {
+            var PolyTransform = function() {};
+            g["com.watabou.geom.polygons.PolyTransform"] = PolyTransform;
+            PolyTransform.__name__ = "com.watabou.geom.polygons.PolyTransform";
+            PolyTransform.translate = function(a, b, c) {
                 for (var d = [], f = 0; f < a.length;) {
                     var h =
                         a[f];
@@ -1809,7 +1809,7 @@
                 }
                 return d
             };
-            Yc.asTranslate = function(a, b, c) {
+            PolyTransform.asTranslate = function(a, b, c) {
                 for (var d = 0; d < a.length;) {
                     var f = a[d];
                     ++d;
@@ -1817,10 +1817,10 @@
                     f.y += c
                 }
             };
-            Yc.asAdd = function(a, b) {
-                Yc.asTranslate(a, b.x, b.y)
+            PolyTransform.asAdd = function(a, b) {
+                PolyTransform.asTranslate(a, b.x, b.y)
             };
-            Yc.rotateYX = function(a, b, c) {
+            PolyTransform.rotateYX = function(a, b, c) {
                 for (var d = [], f = 0; f < a.length;) {
                     var h = a[f];
                     ++f;
@@ -1828,11 +1828,11 @@
                 }
                 return d
             };
-            Yc.asRotateYX = function(a, b, c) {
+            PolyTransform.asRotateYX = function(a, b, c) {
                 for (var d = 0; d < a.length;) {
                     var f = a[d];
                     ++d;
                     f.setTo(f.x * c - f.y * b, f.y * c + f.x * b)
                 }
             };
-            var Wk = function() {};
+            var Buffer = function() {};

@@ -3,21 +3,21 @@
  * Part 7/8: Ward Types
  * Contains: Ward, Alleys, Castle, Cathedral, Farm, Harbour, Mansion, etc.
  */
-            g["com.watabou.mfcg.model.wards.Ward"] = Rb;
-            Rb.__name__ = "com.watabou.mfcg.model.wards.Ward";
-            Rb.inset = function(a, b, c) {
-                var d = uc.inset(a, b);
+            g["com.watabou.mfcg.model.wards.Ward"] = Ward;
+            Ward.__name__ = "com.watabou.mfcg.model.wards.Ward";
+            Ward.inset = function(a, b, c) {
+                var d = PolyUtils.inset(a, b);
                 if (null == d) return null;
                 for (var f = c.length, h = 0; h < f;) {
                     var k = h++,
                         n = c[k],
                         p = (k + f - 1) % f;
                     n > b[k] && n > b[p] && (k = a[k],
-                        n = Qd.regular(9, n, (C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647), Yc.asTranslate(n, k.x, k.y), n = ye.and(d, Z.revert(n), !0), null != n && (d = n))
+                        n = PolyCreate.regular(9, n, (C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647), PolyTransform.asTranslate(n, k.x, k.y), n = PolyBool.and(d, Z.revert(n), !0), null != n && (d = n))
                 }
                 return d
             };
-            Rb.prototype = {
+            Ward.prototype = {
                 createGeometry: function() {},
                 spawnTrees: function() {
                     return null
@@ -40,7 +40,7 @@
                             var m =
                                 q[g];
                             ++g;
-                            null != Ua.edgeByOrigin(m.course, k) && (n = Math.max(n, m.width))
+                            null != EdgeChain.edgeByOrigin(m.course, k) && (n = Math.max(n, m.width))
                         }
                         b.push(n)
                     }
@@ -54,7 +54,7 @@
                         a = h++;
                         k = c[a];
                         q = 0;
-                        for (d = this.model.canals; q < d.length;) m = d[q], ++q, null != Ua.edgeByOrigin(m.course, k.origin) && (b[a] = m.width / 2 + 1.2, k.origin == m.course[0].origin && (b[a] += 1.2));
+                        for (d = this.model.canals; q < d.length;) m = d[q], ++q, null != EdgeChain.edgeByOrigin(m.course, k.origin) && (b[a] = m.width / 2 + 1.2, k.origin == m.course[0].origin && (b[a] += 1.2));
                         if (null == k.data) p.push((k.twin.face.data == this.model.plaza ? 2 : 1.2) / 2);
                         else {
                             switch (k.data._hx_index) {
@@ -66,7 +66,7 @@
                                         1;
                                     break;
                                 case 3:
-                                    a = pc.THICKNESS / 2 + 1.2;
+                                    a = CurtainWall.THICKNESS / 2 + 1.2;
                                     break;
                                 case 4:
                                     a = this.model.getCanalWidth(k) / 2 + 1.2;
@@ -77,7 +77,7 @@
                             p.push(a)
                         }
                     }
-                    return Rb.inset(this.patch.shape, p, b)
+                    return Ward.inset(this.patch.shape, p, b)
                 },
                 getLabel: function() {
                     return null != this.patch.district ? this.patch.district.name : null
@@ -86,16 +86,16 @@
                     return null != this.patch.district ? this.patch.district.color : 0
                 },
                 onContext: function(a, b, c) {},
-                __class__: Rb
+                __class__: Ward
             };
-            var Pc = function(a, b) {
-                Rb.call(this, a, b)
+            var Alleys = function(a, b) {
+                Ward.call(this, a, b)
             };
-            g["com.watabou.mfcg.model.wards.Alleys"] = Pc;
-            Pc.__name__ = "com.watabou.mfcg.model.wards.Alleys";
-            Pc.__super__ =
-                Rb;
-            Pc.prototype = v(Rb.prototype, {
+            g["com.watabou.mfcg.model.wards.Alleys"] = Alleys;
+            Alleys.__name__ = "com.watabou.mfcg.model.wards.Alleys";
+            Alleys.__super__ =
+                Ward;
+            Alleys.prototype = v(Ward.prototype, {
                 createGeometry: function() {
                     this.group.core == this.patch.face && this.group.createGeometry();
                     this.trees = null
@@ -118,12 +118,12 @@
                     return this.trees
                 },
                 onContext: function(a, b, c) {
-                    var d = ba.get("display_mode", "Lots");
+                    var d = State.get("display_mode", "Lots");
                     if ("Block" != d) {
                         c = new I(b, c);
                         for (var f = 0, h = this.group.blocks; f <
                             h.length;)
-                            if (b = h[f], ++f, Gb.containsPoint(b.shape, c)) {
+                            if (b = h[f], ++f, PolyBounds.containsPoint(b.shape, c)) {
                                 switch (d) {
                                     case "Complex":
                                         d = b.buildings;
@@ -135,14 +135,14 @@
                                         d = b.lots
                                 }
                                 for (h = 0; h < d.length;)
-                                    if (f = [d[h]], ++h, Gb.containsPoint(f[0], c)) {
+                                    if (f = [d[h]], ++h, PolyBounds.containsPoint(f[0], c)) {
                                         c = [this.model.bp.seed];
                                         c[0] += this.model.cells.indexOf(this.patch);
                                         c[0] += this.group.blocks.indexOf(b);
                                         c[0] += d.indexOf(f[0]);
                                         a.addItem("Open in Dwellings", function(a, b) {
                                             return function() {
-                                                Te.openInDwellings(b[0], !0, a[0])
+                                                Mansion.openInDwellings(b[0], !0, a[0])
                                             }
                                         }(c, f));
                                         break
@@ -150,10 +150,10 @@
                             }
                     }
                 },
-                __class__: Pc
+                __class__: Alleys
             });
-            var xd = function(a, b) {
-                Rb.call(this, a, b);
+            var Castle = function(a, b) {
+                Ward.call(this, a, b);
                 for (var c = [], d = 0, f = b.shape; d < f.length;) {
                     var h = f[d];
                     ++d;
@@ -161,16 +161,16 @@
                         return !a.withinCity
                     }) && c.push(h)
                 }
-                this.wall = new pc(!0, a, [b], c);
+                this.wall = new CurtainWall(!0, a, [b], c);
                 this.adjustShape(this.model)
             };
-            g["com.watabou.mfcg.model.wards.Castle"] = xd;
-            xd.__name__ = "com.watabou.mfcg.model.wards.Castle";
-            xd.__super__ = Rb;
-            xd.prototype = v(Rb.prototype, {
+            g["com.watabou.mfcg.model.wards.Castle"] = Castle;
+            Castle.__name__ = "com.watabou.mfcg.model.wards.Castle";
+            Castle.__super__ = Ward;
+            Castle.prototype = v(Ward.prototype, {
                 adjustShape: function(a) {
                     var b = this.patch.shape,
-                        c = Sa.centroid(b),
+                        c = PolyCore.centroid(b),
                         d = 0,
                         f = 0,
                         h = function() {
@@ -204,7 +204,7 @@
                             if (q < k) {
                                 var m = g.subtract(c);
                                 q = Math.pow(q / k, -.25);
-                                wd.set(g, new I(c.x + m.x * q, c.y + m.y * q))
+                                PointExtender.set(g, new I(c.x + m.x * q, c.y + m.y * q))
                             }
                         }
                         h()
@@ -213,7 +213,7 @@
                         this.wall.gates[0];
                     a = [h.point];
                     2 == h.edges.length && (a.push(h.edges[0].next.origin.point), a.push(h.edges[1].next.origin.point));
-                    for (h = Sa.compactness(b); .75 > h;) {
+                    for (h = PolyCore.compactness(b); .75 > h;) {
                         hb.trace("Equalizing... " + h, {
                             fileName: "Source/com/watabou/mfcg/model/wards/Castle.hx",
                             lineNumber: 84,
@@ -221,7 +221,7 @@
                             methodName: "adjustShape"
                         });
                         this.equalize(c, .2, a);
-                        k = Sa.compactness(b);
+                        k = PolyCore.compactness(b);
                         if (.001 > Math.abs(k - h)) throw X.thrown("Bad citadel shape!");
                         h = k
                     }
@@ -242,13 +242,13 @@
                     h.x *= k;
                     h.y *= k;
                     k = 0;
-                    for (n = f; k < n;) p = k++, -1 == c.indexOf(d[p]) && (q = 2 * Math.PI * p / f, m = Math.sin(q), q = Math.cos(q), wd.set(d[p], qa.lerp(d[p], a.add(new I(h.x * q - h.y * m, h.y * q + h.x * m)), b)))
+                    for (n = f; k < n;) p = k++, -1 == c.indexOf(d[p]) && (q = 2 * Math.PI * p / f, m = Math.sin(q), q = Math.cos(q), PointExtender.set(d[p], GeomUtils.lerp(d[p], a.add(new I(h.x * q - h.y * m, h.y * q + h.x * m)), b)))
                 },
                 createGeometry: function() {
                     C.restore(this.patch.seed);
-                    var a = gd.shrinkEq(this.patch.shape, pc.THICKNESS + 2);
-                    a = Gb.lira(a);
-                    this.building = Jd.create(a, Sa.area(this.patch.shape) /
+                    var a = PolyCut.shrinkEq(this.patch.shape, CurtainWall.THICKNESS + 2);
+                    a = PolyBounds.lira(a);
+                    this.building = Building.create(a, PolyCore.area(this.patch.shape) /
                         25, null, null, .4);
                     null == this.building && (this.building = a)
                 },
@@ -257,31 +257,31 @@
                 },
                 onContext: function(a, b, c) {
                     var d = this;
-                    if (Gb.containsPoint(this.building, new I(b, c))) {
+                    if (PolyBounds.containsPoint(this.building, new I(b, c))) {
                         var f = this.model.bp.seed;
                         f += this.model.cells.indexOf(this.patch);
                         a.addItem("Open in Dwellings", function() {
-                            Te.openInDwellings(d.building, !0, f)
+                            Mansion.openInDwellings(d.building, !0, f)
                         })
                     }
                 },
-                __class__: xd
+                __class__: Castle
             });
-            var Ne = function(a, b) {
-                Rb.call(this, a, b)
+            var Cathedral = function(a, b) {
+                Ward.call(this, a, b)
             };
-            g["com.watabou.mfcg.model.wards.Cathedral"] = Ne;
-            Ne.__name__ = "com.watabou.mfcg.model.wards.Cathedral";
-            Ne.__super__ = Rb;
-            Ne.prototype =
-                v(Rb.prototype, {
+            g["com.watabou.mfcg.model.wards.Cathedral"] = Cathedral;
+            Cathedral.__name__ = "com.watabou.mfcg.model.wards.Cathedral";
+            Cathedral.__super__ = Ward;
+            Cathedral.prototype =
+                v(Ward.prototype, {
                     createGeometry: function() {
                         C.restore(this.patch.seed);
                         var a = this.getAvailable();
                         if (null == a) this.building = [];
                         else {
-                            a = Gb.lira(a);
-                            var b = Jd.create(a, 20, !1, !0, .2);
+                            a = PolyBounds.lira(a);
+                            var b = Building.create(a, 20, !1, !0, .2);
                             this.building = [null != b ? b : a]
                         }
                     },
@@ -291,26 +291,26 @@
                         for (var d = this.building; c < d.length;) {
                             var f = [d[c]];
                             ++c;
-                            if (Gb.containsPoint(f[0], b)) {
+                            if (PolyBounds.containsPoint(f[0], b)) {
                                 var h = [this.model.bp.seed];
                                 h[0] += this.model.cells.indexOf(this.patch);
                                 a.addItem("Open in Dwellings", function(a, b) {
                                     return function() {
-                                        Te.openInDwellings(b[0], !1, a[0])
+                                        Mansion.openInDwellings(b[0], !1, a[0])
                                     }
                                 }(h, f))
                             }
                         }
                     },
-                    __class__: Ne
+                    __class__: Cathedral
                 });
-            var yd = function(a, b) {
-                Rb.call(this, a, b)
+            var Farm = function(a, b) {
+                Ward.call(this, a, b)
             };
-            g["com.watabou.mfcg.model.wards.Farm"] = yd;
-            yd.__name__ = "com.watabou.mfcg.model.wards.Farm";
-            yd.__super__ = Rb;
-            yd.prototype = v(Rb.prototype, {
+            g["com.watabou.mfcg.model.wards.Farm"] = Farm;
+            Farm.__name__ = "com.watabou.mfcg.model.wards.Farm";
+            Farm.__super__ = Ward;
+            Farm.prototype = v(Ward.prototype, {
                 getAvailable: function() {
                     for (var a = this.patch.shape.length, b = [], c = this.patch.face.halfEdge, d = c, f = !0; f;) {
                         var h = d;
@@ -336,15 +336,15 @@
                         d = h++;
                         k = c[d];
                         f = 0;
-                        for (n = this.model.canals; f < n.length;) g = n[f], ++f, null != Ua.edgeByOrigin(g.course, k.origin) && (b[d] = g.width / 2 + 1.2, k.origin == g.course[0].origin && (b[d] += 1.2));
-                        if (null == k.data) p.push(null != k.twin && k.twin.face.data.ward instanceof yd ? 1 : 0);
+                        for (n = this.model.canals; f < n.length;) g = n[f], ++f, null != EdgeChain.edgeByOrigin(g.course, k.origin) && (b[d] = g.width / 2 + 1.2, k.origin == g.course[0].origin && (b[d] += 1.2));
+                        if (null == k.data) p.push(null != k.twin && k.twin.face.data.ward instanceof Farm ? 1 : 0);
                         else {
                             switch (k.data._hx_index) {
                                 case 2:
                                     k = 3;
                                     break;
                                 case 3:
-                                    k = 2 * pc.THICKNESS;
+                                    k = 2 * CurtainWall.THICKNESS;
                                     break;
                                 case 4:
                                     k = this.model.getCanalWidth(k) / 2 + 1.2;
@@ -355,7 +355,7 @@
                             p.push(k)
                         }
                     }
-                    return Rb.inset(this.patch.shape, p, b)
+                    return Ward.inset(this.patch.shape, p, b)
                 },
                 createGeometry: function() {
                     C.restore(this.patch.seed);
@@ -366,7 +366,7 @@
                         var f = c;
                         c = c.next;
                         d = c != a;
-                        null != f.twin && f.twin.face.data.ward instanceof Rb && b.push(f)
+                        null != f.twin && f.twin.face.data.ward instanceof Ward && b.push(f)
                     }
                     if (0 < b.length) {
                         a = [];
@@ -383,7 +383,7 @@
                                     for (g = 0; g < b.length;) {
                                         var m = b[g];
                                         ++g;
-                                        if (qa.converge(q, k, m.origin.point, m.next.origin.point)) {
+                                        if (GeomUtils.converge(q, k, m.origin.point, m.next.origin.point)) {
                                             h = !1;
                                             break a
                                         }
@@ -397,8 +397,8 @@
                     }
                     a = 0;
                     for (c = this.subPlots.length; a < c;)
-                        for (d = a++, b = this.subPlots[d], f = Gb.obb(b), b = this.subPlots[d] = this.round(b), d = I.distance(f[0], f[1 % f.length]), h = Math.ceil(d / yd.MIN_FURROW), d = 0, k = h; d < k;)
-                            for (p = (d++ + .5) / h, n = qa.lerp(f[0], f[1], p), p = qa.lerp(f[3], f[2], p), n = gd.pierce(b, n, p); 2 <= n.length;) p = n.shift(), q = n.shift(), 1.2 < I.distance(p, q) && this.furrows.push(new hf(p, q));
+                        for (d = a++, b = this.subPlots[d], f = PolyBounds.obb(b), b = this.subPlots[d] = this.round(b), d = I.distance(f[0], f[1 % f.length]), h = Math.ceil(d / Farm.MIN_FURROW), d = 0, k = h; d < k;)
+                            for (p = (d++ + .5) / h, n = GeomUtils.lerp(f[0], f[1], p), p = GeomUtils.lerp(f[3], f[2], p), n = PolyCut.pierce(b, n, p); 2 <= n.length;) p = n.shift(), q = n.shift(), 1.2 < I.distance(p, q) && this.furrows.push(new Segment(p, q));
                     a = [];
                     c = 0;
                     for (d = this.subPlots; c < d.length;) b = d[c], ++c, f = .2, null == f && (f = .5), (C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647 < f && a.push(this.getHousing(b));
@@ -406,20 +406,20 @@
                     this.trees = null
                 },
                 splitField: function(a) {
-                    if (Sa.area(a) < yd.MIN_SUBPLOT * (1 + Math.abs(((C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647 + (C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647 + (C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647 + (C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647) / 2 - 1))) return [a];
-                    var b = Gb.obb(a),
+                    if (PolyCore.area(a) < Farm.MIN_SUBPLOT * (1 + Math.abs(((C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647 + (C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647 + (C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647 + (C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647) / 2 - 1))) return [a];
+                    var b = PolyBounds.obb(a),
                         c = I.distance(b[1], b[0]) > I.distance(b[2], b[1]) ? 0 : 1,
                         d = .5 + .2 * (((C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647 + (C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647 + (C.seed = 48271 * C.seed % 2147483647 | 0) /
                             2147483647) / 3 * 2 - 1),
                         f = .5;
                     null == f && (f = .5);
                     f = Math.PI / 2 + ((C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647 < f ? 0 : Math.PI / 8 * (((C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647 + (C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647 + (C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647) / 3 * 2 - 1));
-                    d = qa.lerp(b[c], b[c + 1], d);
+                    d = GeomUtils.lerp(b[c], b[c + 1], d);
                     b = b[c < b.length - 1 ? c + 1 : 0].subtract(b[c]);
                     c = Math.sin(f);
                     f = Math.cos(f);
                     f = d.add(new I(b.x * f - b.y * c, b.y * f + b.x * c));
-                    a = gd.cut(a, d, f, 2);
+                    a = PolyCut.cut(a, d, f, 2);
                     d = [];
                     for (f = 0; f < a.length;)
                         for (b = a[f], ++f, b = this.splitField(b), c = 0; c < b.length;) {
@@ -435,15 +435,15 @@
                             h = a[f];
                         f = a[(f + 1) % c];
                         var k = I.distance(h, f);
-                        k < 2 * yd.MIN_FURROW ? b.push(qa.lerp(h, f)) : (b.push(qa.lerp(h, f, yd.MIN_FURROW / k)), b.push(qa.lerp(f, h, yd.MIN_FURROW / k)))
+                        k < 2 * Farm.MIN_FURROW ? b.push(GeomUtils.lerp(h, f)) : (b.push(GeomUtils.lerp(h, f, Farm.MIN_FURROW / k)), b.push(GeomUtils.lerp(f, h, Farm.MIN_FURROW / k)))
                     }
                     return b
                 },
                 getHousing: function(a) {
                     var b = 4 + (C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647,
                         c = 2 + (C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647,
-                        d = Qd.rect(b, c),
-                        f = kf.longest(a),
+                        d = PolyCreate.rect(b, c),
+                        f = PolyAccess.longest(a),
                         h = a[f < a.length - 1 ? f + 1 : 0].subtract(a[f]);
                     h = h.clone();
                     h.normalize(1);
@@ -457,9 +457,9 @@
                     c = new I(h.x * b, h.y * b);
                     a.x += c.x;
                     a.y += c.y;
-                    Yc.asRotateYX(d, k.y, k.x);
-                    Yc.asAdd(d, a);
-                    k = Jd.create(d, 4 + (C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647, null, null, .4);
+                    PolyTransform.asRotateYX(d, k.y, k.x);
+                    PolyTransform.asAdd(d, a);
+                    k = Building.create(d, 4 + (C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647, null, null, .4);
                     return null != k ? k : d
                 },
                 spawnTrees: function() {
@@ -473,9 +473,9 @@
                                 var n = k++,
                                     p = h;
                                 h = d[n];
-                                var g = 1 - qa.lerp(p, h).get_length() / a;
+                                var g = 1 - GeomUtils.lerp(p, h).get_length() / a;
                                 n = this.trees;
-                                p = Ae.fillLine(p, h, g);
+                                p = Forester.fillLine(p, h, g);
                                 for (g = 0; g < p.length;) {
                                     var q = p[g];
                                     ++g;
@@ -490,34 +490,34 @@
                     return "Farmland"
                 },
                 onContext: function(a, b, c) {
-                    if ("Block" != ba.get("display_mode", "Lots")) {
+                    if ("Block" != State.get("display_mode", "Lots")) {
                         b = new I(b, c);
                         c = 0;
                         for (var d = this.buildings; c < d.length;) {
                             var f = [d[c]];
                             ++c;
-                            if (Gb.containsPoint(f[0], b)) {
+                            if (PolyBounds.containsPoint(f[0], b)) {
                                 var h = [this.model.bp.seed];
                                 h[0] += this.model.cells.indexOf(this.patch);
                                 h[0] += this.buildings.indexOf(f[0]);
                                 a.addItem("Open in Dwellings", function(a, b) {
                                     return function() {
-                                        Te.openInDwellings(b[0], !1, a[0])
+                                        Mansion.openInDwellings(b[0], !1, a[0])
                                     }
                                 }(h, f))
                             }
                         }
                     }
                 },
-                __class__: yd
+                __class__: Farm
             });
-            var lf = function(a, b) {
-                Rb.call(this, a, b)
+            var Harbour = function(a, b) {
+                Ward.call(this, a, b)
             };
-            g["com.watabou.mfcg.model.wards.Harbour"] = lf;
-            lf.__name__ = "com.watabou.mfcg.model.wards.Harbour";
-            lf.__super__ = Rb;
-            lf.prototype = v(Rb.prototype, {
+            g["com.watabou.mfcg.model.wards.Harbour"] = Harbour;
+            Harbour.__name__ = "com.watabou.mfcg.model.wards.Harbour";
+            Harbour.__super__ = Ward;
+            Harbour.prototype = v(Ward.prototype, {
                 createGeometry: function() {
                     for (var a = [], b = 0, c = this.model.canals; b <
                         c.length;) {
@@ -531,7 +531,7 @@
                         d = this.model.getNeighbour(this.patch, f.origin);
                         if (null != d && d.landing) {
                             d = f.origin.point;
-                            var h = f.next.origin.point; - 1 != a.indexOf(f.origin) ? b.push(new hf(qa.lerp(f.origin.point, f.next.origin.point, .5), h)) : -1 != a.indexOf(f.next.origin) ? b.push(new hf(d, qa.lerp(f.origin.point, f.next.origin.point, .5))) : b.push(new hf(d, h))
+                            var h = f.next.origin.point; - 1 != a.indexOf(f.origin) ? b.push(new Segment(GeomUtils.lerp(f.origin.point, f.next.origin.point, .5), h)) : -1 != a.indexOf(f.next.origin) ? b.push(new Segment(d, GeomUtils.lerp(f.origin.point, f.next.origin.point, .5))) : b.push(new Segment(d, h))
                         }
                         f = f.next
                     } while (f != this.patch.face.halfEdge);
@@ -549,7 +549,7 @@
                         b = 0;
                         for (c = d; b < c;) {
                             b++;
-                            d = qa.lerp(f.start, f.end, k);
+                            d = GeomUtils.lerp(f.start, f.end, k);
                             h = f.end.subtract(f.start);
                             var p = new I(-h.y, h.x);
                             h = 8;
@@ -566,31 +566,31 @@
                 getLabel: function() {
                     return "Harbour"
                 },
-                __class__: lf
+                __class__: Harbour
             });
-            var Te = function() {};
-            g["com.watabou.mfcg.model.wards.Mansion"] = Te;
-            Te.__name__ = "com.watabou.mfcg.model.wards.Mansion";
-            Te.openInDwellings = function(a, b, c) {
-                a = new jk(a);
+            var Mansion = function() {};
+            g["com.watabou.mfcg.model.wards.Mansion"] = Mansion;
+            Mansion.__name__ = "com.watabou.mfcg.model.wards.Mansion";
+            Mansion.openInDwellings = function(a, b, c) {
+                a = new Mansion_Rect(a);
                 var d = Math.round(a.len0 / 1.5),
                     f = Math.round(a.len1 / 1.5);
                 11 < d && (f = Math.round(f / d * 11), d = 11);
                 1 > f && (d = Math.round(d / f), f = 1);
-                d = Fc.gatei(d, 1, 11);
-                f = Fc.gatei(f, 1, 11);
-                var h = new If(Te.DWELLINGS_URL);
+                d = MathUtils.gatei(d, 1, 11);
+                f = MathUtils.gatei(f, 1, 11);
+                var h = new If(Mansion.DWELLINGS_URL);
                 h.data = {
                     seed: c,
                     w: d,
                     h: f,
-                    plan: Te.getPlan(a, d, f),
+                    plan: Mansion.getPlan(a, d, f),
                     tags: b ? "tall" : "",
                     from: "city"
                 };
                 Ra.navigateToURL(h, "mfcg2pm_" + c)
             };
-            Te.getPlan = function(a, b, c) {
+            Mansion.getPlan = function(a, b, c) {
                 for (var d = "", f = 0, h = 0, k = 0; k < c;)
                     for (var n = k++, p = 0, g = b; p < g;) {
                         var q = p++,
@@ -601,34 +601,34 @@
                         u = a.v1;
                         r = (c - 1 - n + .5) / c;
                         m = new I(m.x + u.x * r, m.y + u.y * r);
-                        Gb.containsPoint(a.poly,
+                        PolyBounds.containsPoint(a.poly,
                             m) && (f |= 1 << (h & 3));
                         if (3 == (h & 3) || q == b - 1 && n == c - 1) d += O.hex(f), f = 0;
                         ++h
                     }
                 return d
             };
-            var jk = function(a) {
+            var Mansion_Rect = function(a) {
                 this.poly = a;
-                a = Gb.obb(a);
+                a = PolyBounds.obb(a);
                 this.o = a[0];
                 this.v0 = a[1].subtract(this.o);
                 this.v1 = a[3].subtract(this.o);
                 this.len0 = this.v0.get_length();
                 this.len1 = this.v1.get_length()
             };
-            g["com.watabou.mfcg.model.wards._Mansion.Rect"] = jk;
-            jk.__name__ = "com.watabou.mfcg.model.wards._Mansion.Rect";
-            jk.prototype = {
-                __class__: jk
+            g["com.watabou.mfcg.model.wards._Mansion.Rect"] = Mansion_Rect;
+            Mansion_Rect.__name__ = "com.watabou.mfcg.model.wards._Mansion.Rect";
+            Mansion_Rect.prototype = {
+                __class__: Mansion_Rect
             };
-            var he = function(a, b) {
-                Rb.call(this, a, b)
+            var Market = function(a, b) {
+                Ward.call(this, a, b)
             };
-            g["com.watabou.mfcg.model.wards.Market"] = he;
-            he.__name__ = "com.watabou.mfcg.model.wards.Market";
-            he.__super__ = Rb;
-            he.prototype = v(Rb.prototype, {
+            g["com.watabou.mfcg.model.wards.Market"] = Market;
+            Market.__name__ = "com.watabou.mfcg.model.wards.Market";
+            Market.__super__ = Ward;
+            Market.prototype = v(Ward.prototype, {
                 createGeometry: function() {
                     C.restore(this.patch.seed);
                     this.space = this.getAvailable();
@@ -638,16 +638,16 @@
                     b ? a = !0 : (a = .3, null == a && (a = .5), a = (C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647 < a);
                     var c = null,
                         d = null;
-                    if (b || a) d = kf.longest(this.space), c = this.space[d], d = this.space[(d + 1) % this.space.length];
+                    if (b || a) d = PolyAccess.longest(this.space), c = this.space[d], d = this.space[(d + 1) % this.space.length];
                     if (b) {
-                        b = this.monument = Qd.rect(1 + (C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647, 1 + (C.seed = 48271 * C.seed % 2147483647 |
+                        b = this.monument = PolyCreate.rect(1 + (C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647, 1 + (C.seed = 48271 * C.seed % 2147483647 |
                             0) / 2147483647);
                         var f = d.subtract(c);
                         f = Math.atan2(f.y, f.x);
-                        Yc.asRotateYX(b, Math.sin(f), Math.cos(f))
-                    } else this.monument = Qd.regular(8, 1 + (C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647);
-                    b = Sa.centroid(this.space);
-                    a ? (a = qa.lerp(c, d), Yc.asAdd(this.monument, qa.lerp(b, a, .2 + (C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647 * .4))) : Yc.asAdd(this.monument, b)
+                        PolyTransform.asRotateYX(b, Math.sin(f), Math.cos(f))
+                    } else this.monument = PolyCreate.regular(8, 1 + (C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647);
+                    b = PolyCore.centroid(this.space);
+                    a ? (a = GeomUtils.lerp(c, d), PolyTransform.asAdd(this.monument, GeomUtils.lerp(b, a, .2 + (C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647 * .4))) : PolyTransform.asAdd(this.monument, b)
                 },
                 getAvailable: function() {
                     for (var a = this.patch.shape.length, b = [], c = 0, d = a; c < d;) c++, b.push(0);
@@ -669,43 +669,43 @@
                         for (var n = 0, p = this.model.canals; n < p.length;) {
                             var g = p[n];
                             ++n;
-                            null != Ua.edgeByOrigin(g.course, k.origin) && (f[a] = g.width / 2, k.origin == g.course[0].origin && (f[a] += 1.2))
+                            null != EdgeChain.edgeByOrigin(g.course, k.origin) && (f[a] = g.width / 2, k.origin == g.course[0].origin && (f[a] += 1.2))
                         }
                         b.push(k.data == Tc.CANAL ? this.model.getCanalWidth(k) / 2 : 0)
                     }
-                    return Rb.inset(this.patch.shape, b, f)
+                    return Ward.inset(this.patch.shape, b, f)
                 },
-                __class__: he
+                __class__: Market
             });
-            var ce = function(a, b) {
-                Rb.call(this, a, b)
+            var Park = function(a, b) {
+                Ward.call(this, a, b)
             };
-            g["com.watabou.mfcg.model.wards.Park"] = ce;
-            ce.__name__ = "com.watabou.mfcg.model.wards.Park";
-            ce.__super__ = Rb;
-            ce.prototype = v(Rb.prototype, {
+            g["com.watabou.mfcg.model.wards.Park"] = Park;
+            Park.__name__ = "com.watabou.mfcg.model.wards.Park";
+            Park.__super__ = Ward;
+            Park.prototype = v(Ward.prototype, {
                 createGeometry: function() {
                     for (var a = this.getAvailable(), b = [], c = 0, d = a.length; c < d;) {
                         var f = c++,
                             h = a[f];
                         b.push(h);
-                        b.push(qa.lerp(h, a[(f + 1) % a.length]))
+                        b.push(GeomUtils.lerp(h, a[(f + 1) % a.length]))
                     }
-                    this.green = Hf.render(b, !0, 3);
+                    this.green = Chaikin.render(b, !0, 3);
                     this.trees = null
                 },
                 spawnTrees: function() {
-                    null == this.trees && (this.trees = Ae.fillArea(this.getAvailable(), this.patch.district.greenery));
+                    null == this.trees && (this.trees = Forester.fillArea(this.getAvailable(), this.patch.district.greenery));
                     return this.trees
                 },
-                __class__: ce
+                __class__: Park
             });
-            var Qe = function(a) {
+            var WardGroup = function(a) {
                 this.faces = a;
                 for (var b = 0; b < a.length;) {
                     var c = a[b];
                     ++b;
-                    va.__cast(c.data.ward, Pc).group = this
+                    va.__cast(c.data.ward, Alleys).group = this
                 }
                 this.core = a[0];
                 this.model = this.core.data.ward.model;
@@ -715,7 +715,7 @@
                     b = [];
                     for (var d = c = this.core.halfEdge, f = !0; f;) a = d, d = d.next, f = d != c, b.push(a);
                     this.border = b
-                } else this.border = a.length < this.district.faces.length ? Ic.circumference(null, a) : this.district.border, this.shape = Ua.toPoly(this.border);
+                } else this.border = a.length < this.district.faces.length ? DCEL.circumference(null, a) : this.district.border, this.shape = EdgeChain.toPoly(this.border);
                 this.inner = [];
                 this.blockM = new pa;
                 b = 0;
@@ -723,15 +723,15 @@
                     9);
                 this.urban = this.inner.length == this.border.length
             };
-            g["com.watabou.mfcg.model.wards.WardGroup"] = Qe;
-            Qe.__name__ = "com.watabou.mfcg.model.wards.WardGroup";
-            Qe.getCircle = function(a, b, c, d) {
-                c = qa.intersectLines(a.x, a.y, -b.y, b.x, c.x, c.y, -d.y, d.x);
+            g["com.watabou.mfcg.model.wards.WardGroup"] = WardGroup;
+            WardGroup.__name__ = "com.watabou.mfcg.model.wards.WardGroup";
+            WardGroup.getCircle = function(a, b, c, d) {
+                c = GeomUtils.intersectLines(a.x, a.y, -b.y, b.x, c.x, c.y, -d.y, d.x);
                 a = new I(a.x - b.y * c.x, a.y + b.x * c.x);
                 b = b.get_length() * c.x;
-                return new Ea(a, b)
+                return new Circle(a, b)
             };
-            Qe.getArc = function(a, b, c, d) {
+            WardGroup.getArc = function(a, b, c, d) {
                 b - c > Math.PI ? b -= 2 * Math.PI : c - b > Math.PI && (c -= 2 * Math.PI);
                 var f = Math.abs(a.r);
                 d = Math.abs(b - c) * f / d | 0;
@@ -744,7 +744,7 @@
     }
     return null
 };
-Qe.prototype = {
+WardGroup.prototype = {
     createGeometry: function() {
         C.restore(this.core.data.seed);
         var a = this.getAvailable();
@@ -761,7 +761,7 @@ Qe.prototype = {
                 this.alleys = [];
                 this.church = null;
                 var c = a.slice(),
-                    d = Sa.area(c),
+                    d = PolyCore.area(c),
                     f = this.district.alleys;
                 d > f.minSq *
                     Math.pow(2, f.sizeChaos * (2 * ((C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647) - 1)) * f.blockSize ? this.createAlleys(c) : this.createBlock(c);
@@ -795,7 +795,7 @@ Qe.prototype = {
             a = d++;
             f = this.border[a];
             n = 0;
-            for (h = this.model.canals; n < h.length;) p = h[n], ++n, null != Ua.edgeByOrigin(p.course, f.origin) && (b[a] = p.width / 2 + 1.2, f.origin == p.course[0].origin && (b[a] += 1.2));
+            for (h = this.model.canals; n < h.length;) p = h[n], ++n, null != EdgeChain.edgeByOrigin(p.course, f.origin) && (b[a] = p.width / 2 + 1.2, f.origin == p.course[0].origin && (b[a] += 1.2));
             if (null == f.data) c.push(f.twin.face.data == this.model.plaza ? 1 : .6);
             else {
                 switch (f.data._hx_index) {
@@ -807,7 +807,7 @@ Qe.prototype = {
                             1;
                         break;
                     case 3:
-                        n = pc.THICKNESS / 2 + 1.2;
+                        n = CurtainWall.THICKNESS / 2 + 1.2;
                         break;
                     case 4:
                         n = this.model.getCanalWidth(f) / 2 + 1.2;
@@ -818,11 +818,11 @@ Qe.prototype = {
                 c.push(n)
             }
         }
-        return Rb.inset(this.shape, c, b)
+        return Ward.inset(this.shape, c, b)
     },
     createAlleys: function(a) {
         var b = this.district.alleys,
-            c = new ji(a, b.minSq * b.blockSize, 16 * this.district.alleys.gridChaos);
+            c = new Bisector(a, b.minSq * b.blockSize, 16 * this.district.alleys.gridChaos);
         c.getGap = function(a) {
             return 1.2
         };
@@ -832,7 +832,7 @@ Qe.prototype = {
         for (var d = c.partition(); a < d.length;) {
             var f = d[a];
             ++a;
-            var h = Sa.area(f);
+            var h = PolyCore.area(f);
             b = this.district.alleys;
             b = b.minSq * Math.pow(2,
                 b.sizeChaos * (2 * ((C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647) - 1));
@@ -847,7 +847,7 @@ Qe.prototype = {
             c = a[1],
             d = a[2],
             f = I.distance(b, d),
-            h = Math.abs(Sa.area(a));
+            h = Math.abs(PolyCore.area(a));
         if (1 > h / f || .01 > h / (f * f)) return [b, d];
         h = c.subtract(b);
         var k = d.subtract(c),
@@ -859,17 +859,17 @@ Qe.prototype = {
         null == q && (q = .5);
         (C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647 < q ? g = !0 : (q = f / g, null == q && (q = .5), g = (C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647 < q);
         if (g) return a;
-        n < p ? (n /= p, c = new I(c.x + k.x * n, c.y + k.y * n), h = Qe.getCircle(b, h, c, k), n = b.subtract(h.c), k = Math.atan2(n.y, n.x), n = c.subtract(h.c), c = Math.atan2(n.y, n.x), f = Qe.getArc(h, k, c, f), null != f ? f.push(d) : f = a) : (n = -p / n, c = new I(c.x + h.x * n, c.y + h.y * n), h = Qe.getCircle(c, h, d, k), n = c.subtract(h.c), k = Math.atan2(n.y, n.x), n = d.subtract(h.c), c = Math.atan2(n.y, n.x), f = Qe.getArc(h, k,
+        n < p ? (n /= p, c = new I(c.x + k.x * n, c.y + k.y * n), h = WardGroup.getCircle(b, h, c, k), n = b.subtract(h.c), k = Math.atan2(n.y, n.x), n = c.subtract(h.c), c = Math.atan2(n.y, n.x), f = WardGroup.getArc(h, k, c, f), null != f ? f.push(d) : f = a) : (n = -p / n, c = new I(c.x + h.x * n, c.y + h.y * n), h = WardGroup.getCircle(c, h, d, k), n = c.subtract(h.c), k = Math.atan2(n.y, n.x), n = d.subtract(h.c), c = Math.atan2(n.y, n.x), f = WardGroup.getArc(h, k,
             c, f), null != f ? f.unshift(b) : f = a);
         return f
     },
     createBlock: function(a, b) {
         null == b && (b = !1);
-        a = new ii(this, a, b);
+        a = new Block(this, a, b);
         0 < a.lots.length && this.blocks.push(a)
     },
     createChurch: function(a) {
-        var b = Gb.obb(a),
+        var b = PolyBounds.obb(a),
             c = b[0].subtract(b[1]),
             d = b[2].subtract(b[1]);
         c = c.get_length() > d.get_length() ? c : d;
@@ -879,11 +879,11 @@ Qe.prototype = {
         b = new I(b.x + c.x * d, b.y +
             c.y * d);
         c = b.add(new I(-c.y, c.x));
-        a = gd.cut(a, b, c);
+        a = PolyCut.cut(a, b, c);
         a = Z.max(a, function(a) {
-            return Sa.compactness(a)
+            return PolyCore.compactness(a)
         });
-        this.church = new ii(this, a, !0);
+        this.church = new Block(this, a, !0);
         this.blocks.push(this.church)
     },
     filter: function() {
@@ -944,7 +944,7 @@ Qe.prototype = {
             c = b[d];
             ++d;
             p = [];
-            for (var g = 0, q = c.lots; g < q.length;) h = q[g], ++g, n = Sa.center(h), n = this.interpolate(n, a), isNaN(n) ? n = !1 : (n = n * f - k, null == n && (n = .5), n = (C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647 < n), n && p.push(h);
+            for (var g = 0, q = c.lots; g < q.length;) h = q[g], ++g, n = PolyCore.center(h), n = this.interpolate(n, a), isNaN(n) ? n = !1 : (n = n * f - k, null == n && (n = .5), n = (C.seed = 48271 * C.seed % 2147483647 | 0) / 2147483647 < n), n && p.push(h);
             c.lots = p
         }
         d = [];
@@ -958,7 +958,7 @@ Qe.prototype = {
     },
     getTris: function() {
         if (null == this.tris) {
-            for (var a = [], b = 0, c = xe.earcut(this.shape); b < c.length;) {
+            for (var a = [], b = 0, c = Triangulation.earcut(this.shape); b < c.length;) {
                 var d = c[b];
                 ++b;
                 a.push([this.shape[d[0]], this.shape[d[1]], this.shape[d[2]]])
@@ -971,7 +971,7 @@ Qe.prototype = {
         for (var c = 0, d = this.getTris(); c < d.length;) {
             var f = d[c];
             ++c;
-            var h = qa.barycentric(f[0], f[1], f[2], a);
+            var h = GeomUtils.barycentric(f[0], f[1], f[2], a);
             if (0 <= h.x && 0 <= h.y && 0 <= h.z) return h.x * b.h[f[0].__id__] + h.y * b.h[f[1].__id__] + h.z * b.h[f[2].__id__]
         }
         return NaN
@@ -984,29 +984,29 @@ Qe.prototype = {
             })
     },
     isBlockSized: function(a) {
-        var b = Sa.center(a);
-        a = Sa.area(a);
+        var b = PolyCore.center(a);
+        a = PolyCore.area(a);
         var c = this.district.alleys;
         b = c.minSq * c.blockSize * this.interpolate(b, this.blockM);
         return a < b
     },
-    __class__: Qe
+    __class__: WardGroup
 };
-var og = function(a, b) {
-    Rb.call(this, a, b)
+var Wilderness = function(a, b) {
+    Ward.call(this, a, b)
 };
-g["com.watabou.mfcg.model.wards.Wilderness"] = og;
-og.__name__ = "com.watabou.mfcg.model.wards.Wilderness";
-og.__super__ = Rb;
-og.prototype = v(Rb.prototype, {
-    __class__: og
+g["com.watabou.mfcg.model.wards.Wilderness"] = Wilderness;
+Wilderness.__name__ = "com.watabou.mfcg.model.wards.Wilderness";
+Wilderness.__super__ = Ward;
+Wilderness.prototype = v(Ward.prototype, {
+    __class__: Wilderness
 });
-var ia = function() {
-    Pb.call(this);
-    ia.inst = this;
-    this.model = Ub.instance;
+var TownScene = function() {
+    Scene.call(this);
+    TownScene.inst = this;
+    this.model = City.instance;
     this.createOverlays();
     this.updateOverlays();
     this.toggleOverlays();
-    sb.preview || this.keyEvent.add(l(this, this.onKeyEvent))
+    Main.preview || this.keyEvent.add(l(this, this.onKeyEvent))
 };

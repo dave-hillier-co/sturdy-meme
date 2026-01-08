@@ -19,10 +19,11 @@ set(GEOM_SOURCES
 set(UTILS_SOURCES
     src/utils/Random.cpp
     src/utils/MathUtils.cpp
+    src/utils/Forester.cpp
 )
 
 set(BUILDING_SOURCES
-    src/building/Patch.cpp
+    src/building/Cell.cpp
     src/building/Cutter.cpp
     src/building/Topology.cpp
     src/building/CurtainWall.cpp
@@ -31,25 +32,22 @@ set(BUILDING_SOURCES
     src/building/Block.cpp
     src/building/Bisector.cpp
     src/building/Building.cpp
-    src/building/Model.cpp
+    src/building/District.cpp
+    src/building/Landmark.cpp
+    src/building/City.cpp
 )
 
 set(WARD_SOURCES
     src/wards/Ward.cpp
+    src/wards/Alleys.cpp
     src/wards/Castle.cpp
     src/wards/Cathedral.cpp
     src/wards/Market.cpp
-    src/wards/CraftsmenWard.cpp
-    src/wards/MerchantWard.cpp
-    src/wards/PatriciateWard.cpp
-    src/wards/CommonWard.cpp
-    src/wards/AdministrationWard.cpp
-    src/wards/MilitaryWard.cpp
-    src/wards/GateWard.cpp
     src/wards/Slum.cpp
     src/wards/Farm.cpp
     src/wards/Park.cpp
     src/wards/Harbour.cpp
+    src/wards/Wilderness.cpp
 )
 
 set(SVG_SOURCES

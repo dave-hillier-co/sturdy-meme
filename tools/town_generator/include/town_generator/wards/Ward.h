@@ -2,7 +2,7 @@
 
 #include "town_generator/geom/Point.h"
 #include "town_generator/geom/Polygon.h"
-#include "town_generator/building/Patch.h"
+#include "town_generator/building/Cell.h"
 #include "town_generator/utils/Random.h"
 #include <vector>
 #include <string>
@@ -12,7 +12,7 @@
 namespace town_generator {
 
 namespace building {
-    class Model;
+    class City;
     class CurtainWall;
     class Block;
 }
@@ -86,8 +86,8 @@ public:
     static constexpr double REGULAR_STREET = 2.0;
     static constexpr double ALLEY = 1.2;
 
-    building::Patch* patch = nullptr;
-    building::Model* model = nullptr;
+    building::Cell* patch = nullptr;
+    building::City* model = nullptr;
 
     std::vector<geom::Polygon> geometry;
     std::vector<std::vector<geom::Point>> alleys;  // Alley cut lines for rendering
@@ -174,21 +174,16 @@ protected:
     bool isRectangle(const geom::Polygon& poly) const;
 };
 
-// Forward declarations of all ward types
+// Forward declarations of all ward types (faithful to MFCG)
+class Alleys;
 class Castle;
 class Cathedral;
-class Market;
-class CraftsmenWard;
-class MerchantWard;
-class PatriciateWard;
-class CommonWard;
-class AdministrationWard;
-class MilitaryWard;
-class GateWard;
-class Slum;
 class Farm;
-class Park;
 class Harbour;
+class Market;
+class Park;
+class Slum;
+class Wilderness;
 
 } // namespace wards
 } // namespace town_generator

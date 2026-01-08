@@ -154,10 +154,15 @@ void WardGroup::createGeometry() {
     // Create Block objects from shapes
     blocks.clear();
     size_t totalBuildings = 0;
-    for (const auto& shape : blockShapes) {
+    for (size_t bi = 0; bi < blockShapes.size(); ++bi) {
+        const auto& shape = blockShapes[bi];
+        SDL_Log("WardGroup: Creating block %zu/%zu with %zu vertices", bi + 1, blockShapes.size(), shape.length());
         auto block = std::make_unique<Block>(shape, this);
+        SDL_Log("WardGroup: Block %zu - calling createLots", bi + 1);
         block->createLots();
+        SDL_Log("WardGroup: Block %zu - calling createRects", bi + 1);
         block->createRects();
+        SDL_Log("WardGroup: Block %zu - calling createBuildings", bi + 1);
         block->createBuildings();
         totalBuildings += block->buildings.size();
         blocks.push_back(std::move(block));

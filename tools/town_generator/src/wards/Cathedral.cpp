@@ -17,11 +17,8 @@ void Cathedral::createGeometry() {
 
     geometry.clear();
 
-    // Get available area after street/wall insets
-    auto cityBlock = getCityBlock();
-    if (cityBlock.empty()) return;
-
-    geom::Polygon available = patch->shape.shrink(cityBlock);
+    // Get available area after street/wall insets with tower corner rounding
+    geom::Polygon available = getAvailable();
     if (available.length() < 3) return;
 
     // Convert to vector for GeomUtils functions

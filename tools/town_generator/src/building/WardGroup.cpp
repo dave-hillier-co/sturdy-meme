@@ -269,7 +269,7 @@ std::vector<double> WardGroup::getAvailable() const {
                 if (neighbor->group == this) continue;
 
                 // Check if neighbor shares this edge
-                if (neighbor->shape.hasEdge(v0, v1) || neighbor->shape.hasEdge(v1, v0)) {
+                if (neighbor->shape.findEdge(v0, v1) != -1 || neighbor->shape.findEdge(v1, v0) != -1) {
                     if (neighbor->landing) {
                         return true;
                     }

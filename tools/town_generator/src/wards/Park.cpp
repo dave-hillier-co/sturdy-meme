@@ -11,11 +11,8 @@ namespace wards {
 void Park::createGeometry() {
     if (!patch) return;
 
-    auto cityBlock = getCityBlock();
-    if (cityBlock.empty()) return;
-
-    // Shrink the shape by the city block insets
-    geom::Polygon available = patch->shape.shrink(cityBlock);
+    // Get available area after street/wall insets with tower corner rounding
+    geom::Polygon available = getAvailable();
     if (available.length() < 3) return;
 
     // Create wavy boundary for organic look (faithful to mfcg.js Hf.render)

@@ -13,12 +13,10 @@ void Wilderness::createGeometry() {
     // Wilderness has no buildings, just a green area
     geometry.clear();
 
-    // Get the available area (slight inset from roads/walls)
-    auto cityBlock = getCityBlock();
-    if (cityBlock.empty()) {
-        greenArea = patch->shape;
-    } else {
-        greenArea = patch->shape.shrink(cityBlock);
+    // Get available area after street/wall insets with tower corner rounding
+    greenArea = getAvailable();
+    if (greenArea.length() < 3) {
+        greenArea = patch->shape;  // Fallback to full shape if inset fails
     }
 
     // Trees are generated on demand via spawnTrees()

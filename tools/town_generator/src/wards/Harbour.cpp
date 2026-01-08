@@ -12,11 +12,9 @@ namespace wards {
 void Harbour::createGeometry() {
     if (!patch || !model) return;
 
-    auto cityBlock = getCityBlock();
-    if (cityBlock.empty()) return;
-
-    auto block = patch->shape.shrink(cityBlock);
-    if (block.empty()) return;
+    // Get available area after street/wall insets with tower corner rounding
+    geom::Polygon block = getAvailable();
+    if (block.length() < 3) return;
 
     // Find edges that border water using EdgeData
     // (faithful to mfcg.js Harbour which uses edge data for COAST detection)

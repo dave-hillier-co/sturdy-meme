@@ -8,11 +8,9 @@ namespace wards {
 void Slum::createGeometry() {
     if (!patch) return;
 
-    auto cityBlock = getCityBlock();
-    if (cityBlock.empty()) return;
-
-    auto block = patch->shape.shrink(cityBlock);
-    if (block.empty()) return;
+    // Get available area after street/wall insets with tower corner rounding
+    geom::Polygon block = getAvailable();
+    if (block.length() < 3) return;
 
     // MFCG SPRAWL type parameters (line 11321):
     // - gridChaos *= 0.5 (more regular layout)

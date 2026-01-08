@@ -60,6 +60,39 @@ Vulkan rendering engine for realistic outdoor environments. Core flow: `Applicat
 
 Each stage holds lambdas populated by Renderer, allowing stages to orchestrate system rendering without owning systems directly.
 
+## Threading & Parallelism
+
+Multi-threaded infrastructure for async loading and parallel command recording:
+
+### Core Components
+- `TaskScheduler` (`src/core/threading/`) - Thread pool with IO affinity
+- `AsyncTransferManager` (`src/core/vulkan/`) - Non-blocking GPU transfers with dedicated transfer queue
+- `ThreadedCommandPool` (`src/core/vulkan/`) - Per-thread, per-frame command pools
+- `FrameGraph` (`src/core/pipeline/`) - Dependency-driven render pass scheduling
+- `AsyncTextureUploader` (`src/core/loading/`) - Non-blocking texture uploads
+
+### FrameGraph Execution
+The FrameGraph compiles render passes into execution levels based on dependencies:
+```
+Level 0: Compute
+Level 1: Shadow, Froxel, WaterGBuffer (parallel)
+Level 2: HDR
+Level 3: SSR, WaterTileCull, HiZ, BilateralGrid (parallel)
+Level 4: Bloom
+Level 5: PostProcess
+```
+
+### Secondary Command Buffers
+HDR pass uses parallel secondary command buffer recording with 3 slots:
+- Slot 0: Sky + Terrain + Catmull-Clark
+- Slot 1: Scene Objects + Skinned Character
+- Slot 2: Grass + Water + Leaves + Weather
+
+### Thread Safety
+- Per-frame descriptor sets and uniform buffers avoid synchronization
+- Systems record to command buffers without locks (read-only immutable resources)
+- Resource creation/destruction queued to main thread
+
 ## Key Patterns
 
 ### Builder Pattern

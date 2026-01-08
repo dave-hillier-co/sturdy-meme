@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cmath>
 #include <map>
+#include <SDL3/SDL_log.h>
 
 namespace town_generator {
 namespace building {
@@ -279,6 +280,8 @@ geom::Polygon Building::create(
     if (cols > MAX_GRID_SIZE) cols = MAX_GRID_SIZE;
     if (rows > MAX_GRID_SIZE) rows = MAX_GRID_SIZE;
 
+    SDL_Log("Building::create grid %dx%d, cellSize=%.2f", cols, rows, cellSize);
+
     // Generate cell plan
     std::vector<bool> plan;
     if (symmetric) {
@@ -301,7 +304,9 @@ geom::Polygon Building::create(
     }
 
     // Generate grid cells (using Cutter::grid, faithful to MFCG)
+    SDL_Log("Building::create calling Cutter::grid");
     auto gridCells = Cutter::grid(quad, cols, rows, gap);
+    SDL_Log("Building::create Cutter::grid returned %zu cells", gridCells.size());
 
     // Collect filled cells
     std::vector<geom::Polygon> filledPolygons;
@@ -310,9 +315,11 @@ geom::Polygon Building::create(
             filledPolygons.push_back(gridCells[i]);
         }
     }
+    SDL_Log("Building::create %zu filled cells, calling circumference", filledPolygons.size());
 
     // Compute circumference
     auto outline = circumference(filledPolygons);
+    SDL_Log("Building::create circumference returned %zu points", outline.size());
 
     if (outline.size() < 3) {
         return geom::Polygon();  // Failed to create outline

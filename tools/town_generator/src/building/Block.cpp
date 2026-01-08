@@ -242,13 +242,17 @@ void Block::createBuildings() {
         createRects();
     }
 
+    SDL_Log("Block::createBuildings() processing %zu rects", rects.size());
+
     buildings.clear();
     double minSq = group ? group->alleys.minSq : 15.0;
     double minBlockSq = minSq / 4.0;
     double shapeFactor = group ? group->alleys.shapeFactor : 1.0;
     double threshold = minBlockSq * shapeFactor;
 
-    for (const auto& rect : rects) {
+    for (size_t ri = 0; ri < rects.size(); ++ri) {
+        const auto& rect = rects[ri];
+        SDL_Log("Block::createBuildings() rect %zu/%zu with %zu vertices", ri + 1, rects.size(), rect.length());
         geom::Polygon simplified = rect;
 
         // If more than 4 vertices, simplify to 4 using PolyCore.simplifyClosed algorithm
@@ -261,7 +265,9 @@ void Block::createBuildings() {
         // Faithful to mfcg.js: Building.create(d, c, true, null, 0.6)
         // where c = minSq/4 * shapeFactor
         if (simplified.length() == 4) {
+            SDL_Log("Block::createBuildings() calling Building::create for rect %zu", ri + 1);
             geom::Polygon lshaped = Building::create(simplified, threshold, true, false, 0.6);
+            SDL_Log("Block::createBuildings() Building::create returned %zu vertices", lshaped.length());
             if (lshaped.length() >= 3) {
                 buildings.push_back(lshaped);
             } else {

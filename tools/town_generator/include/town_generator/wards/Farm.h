@@ -36,7 +36,7 @@ public:
 
 private:
     // Get available area after accounting for roads, walls, and neighboring ward types
-    geom::Polygon getAvailable();
+    geom::Polygon getAvailable() override;
 
     // Recursively split field into subplots
     std::vector<geom::Polygon> splitField(const geom::Polygon& field);

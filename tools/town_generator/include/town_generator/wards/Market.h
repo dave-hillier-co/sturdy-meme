@@ -22,7 +22,7 @@ public:
      * Faithful to mfcg.js Market.getAvailable (lines 652-677)
      * Market fills the entire patch except for canal edges
      */
-    geom::Polygon getAvailable();
+    geom::Polygon getAvailable() override;
 
     // Monument/fountain placed in the space
     geom::Polygon space;

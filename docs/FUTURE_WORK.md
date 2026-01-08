@@ -168,6 +168,25 @@ When it rains, surfaces should show wetness effects:
 
 ---
 
+## Advanced Threading
+
+Potential parallelism improvements beyond current FrameGraph and secondary command buffer infrastructure:
+
+### Physics on Worker Threads
+- Move physics simulation to TaskScheduler workers
+- Double-buffer physics state for read during render
+- Interpolate physics results for smooth visuals
+
+### AI/Gameplay on Worker Threads
+- Parallel AI decision-making with job batching
+- Lock-free message passing to main thread
+
+### Animation Updates Parallel to Rendering
+- Skeletal animation blending on workers
+- Pose buffer synchronized at frame boundaries
+
+---
+
 ## Platform Considerations
 
 See `MOLTENVK_CONSTRAINTS.md` for macOS/iOS specific constraints:

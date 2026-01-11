@@ -754,24 +754,73 @@ geom::Polygon Ward::inset(
     const std::vector<double>& edgeInsets,
     const std::vector<double>& towerRadii
 ) {
-    // Simplified from mfcg.js Ward.inset (lines 8-19 in 07-wards.js)
-    // Only does basic polygon inset - tower corner clipping requires PolyBool
-    // which we don't have a proper implementation for yet
+    // Faithful to mfcg.js Ward.inset (lines 8-19 in 07-wards.js)
+    // 1. Apply basic polygon inset with per-edge amounts
+    // 2. For each vertex where tower radius > both adjacent edge insets:
+    //    - Create a regular 9-gon (nonagon) centered at original vertex
+    //    - Subtract it from the inset polygon to create rounded tower corners
 
     if (poly.length() < 3 || edgeInsets.size() != poly.length()) {
         return poly;
     }
 
-    // Basic polygon inset by per-edge amounts
+    // Step 1: Basic polygon inset by per-edge amounts
+    // mfcg.js: var d = PolyUtils.inset(a, b);
     geom::Polygon insetPoly = poly.shrink(edgeInsets);
     if (insetPoly.length() < 3) {
         return insetPoly;
     }
 
-    // TODO: Tower corner clipping requires proper boolean polygon operations
-    // mfcg.js uses PolyBool.and(d, Z.revert(n), !0) for subtraction
-    // For now, skip tower clipping and return the basic inset
-    (void)towerRadii;  // Unused for now
+    // Step 2: Tower corner clipping
+    // mfcg.js: for each vertex k where towerRadii[k] > edgeInsets[k] && towerRadii[k] > edgeInsets[(k-1) % len]
+    size_t len = poly.length();
+    if (towerRadii.size() != len) {
+        return insetPoly;
+    }
+
+    for (size_t k = 0; k < len; ++k) {
+        double towerRadius = towerRadii[k];
+        size_t prevIdx = (k + len - 1) % len;
+
+        // Only clip if tower radius exceeds both adjacent edge insets
+        // mfcg.js: n > b[k] && n > b[p]
+        if (towerRadius > edgeInsets[k] && towerRadius > edgeInsets[prevIdx]) {
+            // Get the original vertex position (before inset)
+            const geom::Point& vertexPos = poly[k];
+
+            // Create a regular 9-gon (nonagon) at the vertex position
+            // mfcg.js: n = PolyCreate.regular(9, n, random())
+            // The random rotation gives visual variety
+            double randomAngle = utils::Random::floatVal() * 2.0 * M_PI;
+
+            std::vector<geom::Point> nonagon;
+            nonagon.reserve(9);
+            for (int i = 0; i < 9; ++i) {
+                double angle = randomAngle + static_cast<double>(i) / 9.0 * 2.0 * M_PI;
+                nonagon.emplace_back(
+                    vertexPos.x + towerRadius * std::cos(angle),
+                    vertexPos.y + towerRadius * std::sin(angle)
+                );
+            }
+
+            // Reverse the nonagon winding for subtraction
+            // mfcg.js: Z.revert(n)
+            std::vector<geom::Point> nonagonReversed = geom::GeomUtils::reverse(nonagon);
+
+            // Subtract the nonagon from the inset polygon
+            // mfcg.js: n = PolyBool.and(d, Z.revert(n), !0)
+            std::vector<geom::Point> insetPts = insetPoly.vertexValues();
+            std::vector<geom::Point> clipped = geom::GeomUtils::polygonIntersection(
+                insetPts, nonagonReversed, true  // subtract = true
+            );
+
+            // Only update if clipping succeeded
+            // mfcg.js: null != n && (d = n)
+            if (clipped.size() >= 3) {
+                insetPoly = geom::Polygon(clipped);
+            }
+        }
+    }
 
     return insetPoly;
 }

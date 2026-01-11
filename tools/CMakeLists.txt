@@ -292,7 +292,6 @@ add_executable(town_generator
     town_generator/src/wards/Castle.cpp
     town_generator/src/wards/Cathedral.cpp
     town_generator/src/wards/Market.cpp
-    town_generator/src/wards/Slum.cpp
     town_generator/src/wards/Farm.cpp
     town_generator/src/wards/Park.cpp
     town_generator/src/wards/Harbour.cpp

@@ -43,7 +43,6 @@ set(WARD_SOURCES
     src/wards/Castle.cpp
     src/wards/Cathedral.cpp
     src/wards/Market.cpp
-    src/wards/Slum.cpp
     src/wards/Farm.cpp
     src/wards/Park.cpp
     src/wards/Harbour.cpp

@@ -95,34 +95,34 @@ void WardGroup::createParams() {
 }
 
 void WardGroup::createGeometry() {
-    SDL_Log("WardGroup::createGeometry() starting for %zu cells", cells.size());
-
     if (border.length() < 3) {
         buildBorder();
     }
 
     if (border.length() < 3) {
-        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "WardGroup: Cannot create geometry with invalid border");
         return;
     }
 
-    SDL_Log("WardGroup: border built with %zu vertices", border.length());
-
     createParams();
-
-    SDL_Log("WardGroup: params created, computing available area");
 
     // Get available area after street/wall insets
     // Calculate per-edge insets based on what's adjacent (roads, walls, etc.)
     std::vector<double> insets = getAvailable();
-    geom::Polygon available = border.shrink(insets);
+    double borderArea = std::abs(border.square());
 
-    if (available.length() < 3) {
-        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "WardGroup: Available area too small after inset");
+    // Faithful to MFCG: use shrink() for convex polygons, buffer() for concave
+    // Reference: Ward.hx getCityBlock() - patch.shape.isConvex() ? shrink() : buffer()
+    geom::Polygon available;
+    if (border.isConvex()) {
+        available = border.shrink(insets);
+    } else {
+        available = border.buffer(insets);
+    }
+    double availableArea = (available.length() >= 3) ? std::abs(available.square()) : 0.0;
+
+    if (available.length() < 3 || availableArea < alleys.minSq / 4) {
         return;
     }
-
-    SDL_Log("WardGroup: available area has %zu vertices, starting bisector", available.length());
 
     // Create blocks using Bisector (faithful to mfcg.js createAlleys)
     // MFCG: new Bisector(shape, alleys.minSq * alleys.blockSize, 16 * alleys.gridChaos)
@@ -144,32 +144,20 @@ void WardGroup::createGeometry() {
     }
 
     // Partition the area into blocks
-    SDL_Log("WardGroup: starting bisector partition");
     std::vector<geom::Polygon> blockShapes = bisector.partition();
-    SDL_Log("WardGroup: bisector partition complete, %zu blocks", blockShapes.size());
 
     // Store alley cuts for SVG rendering
     alleyCuts = bisector.cuts;
 
     // Create Block objects from shapes
     blocks.clear();
-    size_t totalBuildings = 0;
-    for (size_t bi = 0; bi < blockShapes.size(); ++bi) {
-        const auto& shape = blockShapes[bi];
-        SDL_Log("WardGroup: Creating block %zu/%zu with %zu vertices", bi + 1, blockShapes.size(), shape.length());
+    for (const auto& shape : blockShapes) {
         auto block = std::make_unique<Block>(shape, this);
-        SDL_Log("WardGroup: Block %zu - calling createLots", bi + 1);
         block->createLots();
-        SDL_Log("WardGroup: Block %zu - calling createRects", bi + 1);
         block->createRects();
-        SDL_Log("WardGroup: Block %zu - calling createBuildings", bi + 1);
         block->createBuildings();
-        totalBuildings += block->buildings.size();
         blocks.push_back(std::move(block));
     }
-
-    SDL_Log("WardGroup: Created %zu blocks with %zu buildings, %zu alley cuts from %zu cells",
-            blocks.size(), totalBuildings, alleyCuts.size(), cells.size());
 }
 
 std::vector<geom::Point> WardGroup::spawnTrees() {
@@ -401,24 +389,19 @@ std::vector<std::unique_ptr<WardGroup>> WardGroupBuilder::build() {
     std::vector<std::unique_ptr<WardGroup>> groups;
 
     // Get all city cells with wards that support grouping
-    // Faithful to MFCG: only Alleys and Slum wards are grouped
+    // Faithful to MFCG: only Alleys wards are grouped into WardGroups
     std::vector<Cell*> unassigned;
     size_t alleysCount = 0;
-    size_t slumCount = 0;
     for (auto* patch : model_->cells) {
         if (patch->withinCity && !patch->waterbody && patch->ward) {
             std::string wardName = patch->ward->getName();
             if (wardName == "Alleys") {
                 unassigned.push_back(patch);
                 ++alleysCount;
-            } else if (wardName == "Slum") {
-                unassigned.push_back(patch);
-                ++slumCount;
             }
         }
     }
-    SDL_Log("WardGroupBuilder: Found %zu Alleys wards, %zu Slum wards to group",
-            alleysCount, slumCount);
+    SDL_Log("WardGroupBuilder: Found %zu Alleys wards to group", alleysCount);
 
     // Group cells into WardGroups
     while (!unassigned.empty()) {

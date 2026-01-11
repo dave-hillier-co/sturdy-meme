@@ -367,55 +367,11 @@ std::vector<geom::Polygon> Bisector::applyGap(
     const std::vector<geom::Polygon>& halves,
     const std::vector<geom::Point>& cutLine
 ) {
-    // Faithful to MFCG: uses PolyCreate.stripe + PolyBool.and(half, revert(stripe))
-    // Creates a stripe polygon along the cut line, then subtracts it from each half
-
-    if (!getGap || halves.size() < 2 || cutLine.size() < 2) {
-        return halves;
-    }
-
-    double gap = getGap(cutLine);
-    if (gap <= 0) {
-        return halves;
-    }
-
-    // Create stripe polygon along the cut line (MFCG: PolyCreate.stripe)
-    std::vector<geom::Point> stripePoly = geom::GeomUtils::stripe(cutLine, gap, 1.0);
-
-    if (stripePoly.size() < 3) {
-        return halves;
-    }
-
-    // Reverse the stripe for subtraction (MFCG: revert(stripe))
-    std::vector<geom::Point> stripeReversed = geom::GeomUtils::reverse(stripePoly);
-
-    std::vector<geom::Polygon> result;
-
-    for (const auto& half : halves) {
-        // Get polygon vertices
-        std::vector<geom::Point> halfPts = half.vertexValues();
-
-        if (halfPts.size() < 3) {
-            result.push_back(half);
-            continue;
-        }
-
-        // Boolean AND with reversed stripe (MFCG: PolyBool.and(half, revert(stripe)))
-        // This effectively subtracts the stripe from the polygon
-        std::vector<geom::Point> clipped = geom::GeomUtils::polygonIntersection(
-            halfPts, stripeReversed, true  // subtract = true
-        );
-
-        if (clipped.size() >= 3) {
-            result.push_back(geom::Polygon(clipped));
-        } else {
-            // Fallback: if boolean operation fails, try simple shrink approach
-            // This can happen with complex polygon shapes
-            result.push_back(half);
-        }
-    }
-
-    return result;
+    // For now, skip gap application entirely - the uniform shrink was creating
+    // very skewed building lots. The buildings will be slightly closer together
+    // but will have proper shapes.
+    // TODO: Implement proper polygon boolean subtraction for gap application
+    return halves;
 }
 
 std::vector<geom::Polygon> Bisector::split(

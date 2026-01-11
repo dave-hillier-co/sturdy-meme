@@ -205,7 +205,6 @@ class Farm;
 class Harbour;
 class Market;
 class Park;
-class Slum;
 class Wilderness;
 
 } // namespace wards

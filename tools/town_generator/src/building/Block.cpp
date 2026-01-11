@@ -135,66 +135,14 @@ void Block::createRects() {
     size_t blockLen = shape.length();
 
     for (const auto& lot : lots) {
-        // Check if lot is already rectangular
-        if (isRectangle(lot)) {
-            rects.push_back(lot);
-            continue;
-        }
-
-        // Find if lot has an edge on the block perimeter
-        int perimeterEdge = -1;
-        size_t lotLen = lot.length();
-
-        for (size_t i = 0; i < lotLen; ++i) {
-            const geom::Point& v0 = lot[i];
-            const geom::Point& v1 = lot[(i + 1) % lotLen];
-
-            if (edgeConvergesWithBlock(v0, v1)) {
-                if (perimeterEdge == -1) {
-                    perimeterEdge = static_cast<int>(i);
-                } else {
-                    // Multiple perimeter edges - treat as rectangular
-                    rects.push_back(lot);
-                    perimeterEdge = -2;
-                    break;
-                }
-            }
-        }
-
-        if (perimeterEdge == -2) continue;  // Already added
-
-        // If no perimeter edge or multiple, use LIRA
-        double area = getArea(lot);
-        double minDim = std::max(1.2, std::sqrt(area) / 2.0);
-
-        std::vector<geom::Point> pts;
-        for (size_t i = 0; i < lot.length(); ++i) {
-            pts.push_back(lot[i]);
-        }
-
-        std::vector<geom::Point> rect;
-        if (perimeterEdge >= 0) {
-            // Use LIR aligned with perimeter edge
-            rect = geom::GeomUtils::lir(pts, perimeterEdge);
-        } else {
-            // Use LIRA (largest inscribed rectangle, any alignment)
-            rect = geom::GeomUtils::lira(pts);
-        }
-
-        // Validate rectangle dimensions
-        if (rect.size() >= 4) {
-            double rectLen01 = geom::Point::distance(rect[0], rect[1]);
-            double rectLen12 = geom::Point::distance(rect[1], rect[2]);
-
-            if (rectLen01 >= minDim && rectLen12 >= minDim) {
-                rects.push_back(geom::Polygon(rect));
-            } else {
-                // Rectangle too small, use original lot
-                rects.push_back(lot);
-            }
-        } else {
-            rects.push_back(lot);
-        }
+        // TODO: The LIR/LIRA implementation has bugs that can produce rectangles
+        // outside the input polygon. For now, just use the lots directly.
+        // This means buildings will be built on lot shapes (which may not be
+        // rectangular), but at least they'll be inside the block boundaries.
+        //
+        // To fix properly: implement the full MFCG LIR algorithm from
+        // reference/mfcg/lime-init/03-geom-library.js:1467-1528
+        rects.push_back(lot);
     }
 
     // Apply shrink processing (faithful to mfcg.js "Shrink" processing mode)
@@ -242,17 +190,13 @@ void Block::createBuildings() {
         createRects();
     }
 
-    SDL_Log("Block::createBuildings() processing %zu rects", rects.size());
-
     buildings.clear();
     double minSq = group ? group->alleys.minSq : 15.0;
     double minBlockSq = minSq / 4.0;
     double shapeFactor = group ? group->alleys.shapeFactor : 1.0;
     double threshold = minBlockSq * shapeFactor;
 
-    for (size_t ri = 0; ri < rects.size(); ++ri) {
-        const auto& rect = rects[ri];
-        SDL_Log("Block::createBuildings() rect %zu/%zu with %zu vertices", ri + 1, rects.size(), rect.length());
+    for (const auto& rect : rects) {
         geom::Polygon simplified = rect;
 
         // If more than 4 vertices, simplify to 4 using PolyCore.simplifyClosed algorithm
@@ -265,9 +209,7 @@ void Block::createBuildings() {
         // Faithful to mfcg.js: Building.create(d, c, true, null, 0.6)
         // where c = minSq/4 * shapeFactor
         if (simplified.length() == 4) {
-            SDL_Log("Block::createBuildings() calling Building::create for rect %zu", ri + 1);
             geom::Polygon lshaped = Building::create(simplified, threshold, true, false, 0.6);
-            SDL_Log("Block::createBuildings() Building::create returned %zu vertices", lshaped.length());
             if (lshaped.length() >= 3) {
                 buildings.push_back(lshaped);
             } else {
@@ -480,6 +422,25 @@ std::vector<geom::Polygon> TwistedBlock::createLots(
         if (obbArea > 0.001 && (area / obbArea) < 0.5) continue;
 
         result.push_back(lot);
+    }
+
+    // If no valid lots were produced but the block itself is viable,
+    // use the block shape as a single lot (fallback behavior)
+    if (result.empty() && block->shape.length() >= 3) {
+        double blockArea = std::abs(block->shape.square());
+        // Minimum building footprint: 1.5x1.5 units
+        if (blockArea >= 2.25) {
+            auto obb = block->shape.orientedBoundingBox();
+            bool validDims = true;
+            if (obb.size() >= 4) {
+                double len1 = obb[1].subtract(obb[0]).length();
+                double len2 = obb[2].subtract(obb[1]).length();
+                validDims = (len1 >= 1.5 && len2 >= 1.5);
+            }
+            if (validDims) {
+                result.push_back(block->shape);
+            }
+        }
     }
 
     return result;

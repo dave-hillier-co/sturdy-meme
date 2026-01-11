@@ -86,6 +86,36 @@ std::string SVGWriter::generate(const building::City& model, const Style& style)
     svg << "width=\"" << width << "\" height=\"" << height << "\" ";
     svg << "fill=\"" << style.backgroundColor << "\"/>\n";
 
+    // DIAGNOSTIC: Ward type ground colors (MFCG ward types only)
+    // This helps visualize which cells belong to which ward types
+    auto getWardGroundColor = [](const std::string& wardName) -> std::string {
+        if (wardName == "Alleys") return "#E8D4B8";      // Tan/beige for residential
+        if (wardName == "Market") return "#F5DEB3";      // Wheat for market
+        if (wardName == "Cathedral") return "#DDA0DD";   // Plum for cathedral
+        if (wardName == "Castle") return "#B0C4DE";      // Light steel blue for castle
+        if (wardName == "Park") return "#90EE90";        // Light green for park
+        if (wardName == "Farm") return "#98FB98";        // Pale green for farm
+        if (wardName == "Harbour") return "#87CEEB";     // Sky blue for harbour
+        if (wardName == "Wilderness") return "#228B22";  // Forest green for wilderness
+        return "#DCDCDC";  // Gainsboro (light gray) for unknown
+    };
+
+    svg << "  <g id=\"ward-ground-diagnostic\">\n";
+    for (const auto& cell : model.cells) {
+        if (cell->ward && !cell->waterbody) {
+            std::string wardName = cell->ward->getName();
+            std::string color = getWardGroundColor(wardName);
+            svg << "    <path d=\"" << polygonToPath(cell->shape) << "\" ";
+            svg << "fill=\"" << color << "\" stroke=\"#888\" stroke-width=\"0.2\" opacity=\"0.7\">\n";
+            svg << "      <title>" << wardName;
+            if (cell->withinWalls) svg << " (walled)";
+            if (cell->withinCity) svg << " (city)";
+            svg << "</title>\n";
+            svg << "    </path>\n";
+        }
+    }
+    svg << "  </g>\n";
+
     // Farm fields (green background for Farm wards) - rendered first, below water
     svg << "  <g id=\"farms\">\n";
     for (const auto& ward : model.wards_) {
@@ -158,7 +188,7 @@ std::string SVGWriter::generate(const building::City& model, const Style& style)
 
     // Alleys (from WardGroups and individual wards)
     svg << "  <g id=\"alleys\">\n";
-    // Render alley cuts from WardGroups (Alleys/Slum wards)
+    // Render alley cuts from WardGroups (Alleys wards)
     for (const auto& group : model.wardGroups_) {
         for (const auto& alley : group->alleyCuts) {
             svg << "    <path d=\"" << polylineToPath(alley) << "\" ";
@@ -170,7 +200,7 @@ std::string SVGWriter::generate(const building::City& model, const Style& style)
     // Render alleys from non-grouped wards (Farm, etc.)
     for (const auto& ward : model.wards_) {
         std::string wardName = ward->getName();
-        if (wardName == "Alleys" || wardName == "Slum") continue;  // Already rendered from WardGroups
+        if (wardName == "Alleys") continue;  // Already rendered from WardGroups
         for (const auto& alley : ward->alleys) {
             svg << "    <path d=\"" << polylineToPath(alley) << "\" ";
             svg << "fill=\"none\" stroke=\"" << style.alleyStroke << "\" ";
@@ -180,24 +210,19 @@ std::string SVGWriter::generate(const building::City& model, const Style& style)
     }
     svg << "  </g>\n";
 
-    // Helper to get a tinted roof color based on ward type
+    // Helper to get a tinted roof color based on ward type (MFCG ward types only)
     // Uses slight hue/brightness shifts like mfcg.js tinting
     auto getWardTint = [&](const std::string& name) -> std::string {
         // Base color is #A5A095 (RGB: 165, 160, 149)
         // Apply slight tints to differentiate ward types
-        if (name == "Craftsmen") return "#A89A8A";    // warmer/browner
-        if (name == "Merchant") return "#B0A890";     // slightly golden
-        if (name == "Patriciate") return "#9A9590";   // cooler/grayer
-        if (name == "Slum") return "#9E9080";         // darker/muddier
-        if (name == "Common") return "#A8A095";       // neutral
-        if (name == "Gate") return "#A09590";         // slightly darker
+        if (name == "Alleys") return "#A5A095";       // base tan
         if (name == "Market") return "#B0A898";       // warmer
         if (name == "Cathedral") return "#A5A0A0";    // cooler, slight purple
         if (name == "Castle") return "#909090";       // gray stone
-        if (name == "Administration") return "#A8A090"; // slight gold
-        if (name == "Military") return "#959595";     // gray
         if (name == "Farm") return "#A5A095";         // base (buildings on green)
         if (name == "Park") return "#A5A095";         // base
+        if (name == "Harbour") return "#A5A095";      // base
+        if (name == "Wilderness") return "#A5A095";   // base
         return style.buildingFill;                    // default
     };
 
@@ -205,7 +230,7 @@ std::string SVGWriter::generate(const building::City& model, const Style& style)
     // Skip special buildings here - they're rendered separately below
     svg << "  <g id=\"buildings\">\n";
 
-    // Render buildings from WardGroups (Alleys/Slum wards)
+    // Render buildings from WardGroups (Alleys wards)
     // This is faithful to MFCG where geometry is created per-group, not per-ward
     std::string alleysColor = getWardTint("Alleys");
     for (const auto& group : model.wardGroups_) {
@@ -224,9 +249,9 @@ std::string SVGWriter::generate(const building::City& model, const Style& style)
         // Skip special wards (Cathedral, Castle) - rendered as solid dark
         if (ward->isSpecialWard()) continue;
 
-        // Skip Alleys/Slum wards - already rendered from WardGroups above
+        // Skip Alleys wards - already rendered from WardGroups above
         std::string wardName = ward->getName();
-        if (wardName == "Alleys" || wardName == "Slum") continue;
+        if (wardName == "Alleys") continue;
 
         std::string wardColor = getWardTint(wardName);
         for (const auto& building : ward->geometry) {
@@ -396,6 +421,30 @@ std::string SVGWriter::generate(const building::City& model, const Style& style)
         renderWall(model.citadel, true);
         svg << "  </g>\n";
     }
+
+    // DIAGNOSTIC: Legend for ward colors (MFCG ward types only)
+    svg << "  <g id=\"legend\" transform=\"translate(" << (minX + 10) << "," << (minY + 10) << ")\">\n";
+    svg << "    <rect x=\"0\" y=\"0\" width=\"120\" height=\"140\" fill=\"white\" stroke=\"#333\" stroke-width=\"0.5\" opacity=\"0.9\"/>\n";
+    svg << "    <text x=\"5\" y=\"15\" font-size=\"8\" font-weight=\"bold\">Ward Types</text>\n";
+
+    std::vector<std::pair<std::string, std::string>> legendItems = {
+        {"Alleys", "#E8D4B8"},
+        {"Market", "#F5DEB3"},
+        {"Cathedral", "#DDA0DD"},
+        {"Castle", "#B0C4DE"},
+        {"Park", "#90EE90"},
+        {"Farm", "#98FB98"},
+        {"Harbour", "#87CEEB"},
+        {"Wilderness", "#228B22"},
+    };
+
+    int y = 25;
+    for (const auto& item : legendItems) {
+        svg << "    <rect x=\"5\" y=\"" << y << "\" width=\"10\" height=\"10\" fill=\"" << item.second << "\" stroke=\"#888\" stroke-width=\"0.3\"/>\n";
+        svg << "    <text x=\"20\" y=\"" << (y + 8) << "\" font-size=\"6\">" << item.first << "</text>\n";
+        y += 13;
+    }
+    svg << "  </g>\n";
 
     svg << "</svg>\n";
 

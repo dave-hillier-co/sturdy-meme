@@ -11,7 +11,10 @@ namespace town_generator {
 namespace building {
 
 std::vector<bool> Building::getPlan(int width, int height, double stopProb) {
-    // Faithful to mfcg.js Jd.getPlan (lines 9809-9828)
+    // Faithful to mfcg.js Jd.getPlan (lines 123-141)
+    // Grows a connected region from a random start cell until it reaches
+    // all 4 edges of the grid, then stops with probability based on stopProb.
+    // Creates L/T/U-shaped building footprints.
     int total = width * height;
     std::vector<bool> plan(total, false);
 
@@ -19,14 +22,20 @@ std::vector<bool> Building::getPlan(int width, int height, double stopProb) {
     int startX = static_cast<int>(utils::Random::floatVal() * width);
     int startY = static_cast<int>(utils::Random::floatVal() * height);
     plan[startX + startY * width] = true;
-    int filled = total - 1;
+    int remaining = total - 1;
 
     // Track filled region bounds
     int minX = startX, maxX = startX;
     int minY = startY, maxY = startY;
 
-    // Grow the filled region
-    while (true) {
+    // MFCG uses infinite loop - keep going until reaching all edges
+    // Safety limit: if we've tried 10000 times, give up
+    constexpr int MAX_SAFETY = 10000;
+    int iterations = 0;
+
+    while (iterations < MAX_SAFETY) {
+        ++iterations;
+
         int x = static_cast<int>(utils::Random::floatVal() * width);
         int y = static_cast<int>(utils::Random::floatVal() * height);
         int idx = x + y * width;
@@ -46,39 +55,58 @@ std::vector<bool> Building::getPlan(int width, int height, double stopProb) {
                 if (y > maxY) maxY = y;
 
                 plan[idx] = true;
-                --filled;
+                --remaining;
             }
         }
 
-        // Check stopping condition
+        // MFCG stopping condition: only stop after region reaches all 4 edges
+        // canGrow = (minX > 0 || maxX < width-1 || minY > 0 || maxY < height-1)
         bool canGrow = (minX > 0 || maxX < width - 1 || minY > 0 || maxY < height - 1);
-        if (!canGrow) {
-            if (filled > 0) {
-                if (utils::Random::floatVal() >= stopProb) break;
+
+        bool shouldContinue;
+        if (canGrow) {
+            // Haven't reached all edges yet - keep going
+            shouldContinue = true;
+        } else {
+            // At all edges
+            if (remaining > 0) {
+                // Still have cells - use stopProb (continue if Random < stopProb)
+                shouldContinue = utils::Random::floatVal() < stopProb;
             } else {
-                break;
+                // No cells remaining
+                shouldContinue = false;
             }
         }
+
+        if (!shouldContinue) break;
     }
 
     return plan;
 }
 
 std::vector<bool> Building::getPlanFront(int width, int height) {
-    // Faithful to mfcg.js Jd.getPlanFront (lines 9829-9848)
+    // Faithful to mfcg.js Jd.getPlanFront (lines 142-158)
+    // Like getPlan but starts with the entire front row filled.
+    // Creates buildings that have frontage on one side.
     int total = width * height;
     std::vector<bool> plan(total, false);
 
-    // Fill front row
+    // Fill front row (y=0)
     for (int x = 0; x < width; ++x) {
         plan[x] = true;
     }
-    int filled = total - width;
-
+    int remaining = total - width;  // Cells remaining after front row
     int maxY = 0;
+    int filledCount = width;
 
-    // Grow from front
-    while (true) {
+    // MFCG uses infinite loop - keep going until reaching back edge
+    // Safety limit: if we've tried 10000 times, give up (should never hit this)
+    constexpr int MAX_SAFETY = 10000;
+    int iterations = 0;
+
+    while (iterations < MAX_SAFETY) {
+        ++iterations;
+
         int x = static_cast<int>(utils::Random::floatVal() * width);
         int y = 1 + static_cast<int>(utils::Random::floatVal() * (height - 1));
         int idx = x + y * width;
@@ -92,16 +120,28 @@ std::vector<bool> Building::getPlanFront(int width, int height) {
             if (adjacent) {
                 if (y > maxY) maxY = y;
                 plan[idx] = true;
-                --filled;
+                --remaining;
+                ++filledCount;
             }
         }
 
-        // Check stopping
-        bool canGrow = maxY < height - 1;
-        if (!canGrow) {
-            if (filled > 0 && utils::Random::floatVal() >= 0.5) break;
-            if (filled <= 0) break;
+        // MFCG stopping logic: only check after reaching back edge
+        bool shouldContinue;
+        if (maxY >= height - 1) {
+            // Reached the back edge
+            if (remaining > 0) {
+                // 50% chance to stop (continue if Random < 0.5)
+                shouldContinue = utils::Random::floatVal() < 0.5;
+            } else {
+                // No cells remaining
+                shouldContinue = false;
+            }
+        } else {
+            // Haven't reached back edge yet - keep going
+            shouldContinue = true;
         }
+
+        if (!shouldContinue) break;
     }
 
     return plan;
@@ -280,8 +320,6 @@ geom::Polygon Building::create(
     if (cols > MAX_GRID_SIZE) cols = MAX_GRID_SIZE;
     if (rows > MAX_GRID_SIZE) rows = MAX_GRID_SIZE;
 
-    SDL_Log("Building::create grid %dx%d, cellSize=%.2f", cols, rows, cellSize);
-
     // Generate cell plan
     std::vector<bool> plan;
     if (symmetric) {
@@ -304,9 +342,7 @@ geom::Polygon Building::create(
     }
 
     // Generate grid cells (using Cutter::grid, faithful to MFCG)
-    SDL_Log("Building::create calling Cutter::grid");
     auto gridCells = Cutter::grid(quad, cols, rows, gap);
-    SDL_Log("Building::create Cutter::grid returned %zu cells", gridCells.size());
 
     // Collect filled cells
     std::vector<geom::Polygon> filledPolygons;
@@ -315,11 +351,9 @@ geom::Polygon Building::create(
             filledPolygons.push_back(gridCells[i]);
         }
     }
-    SDL_Log("Building::create %zu filled cells, calling circumference", filledPolygons.size());
 
     // Compute circumference
     auto outline = circumference(filledPolygons);
-    SDL_Log("Building::create circumference returned %zu points", outline.size());
 
     if (outline.size() < 3) {
         return geom::Polygon();  // Failed to create outline

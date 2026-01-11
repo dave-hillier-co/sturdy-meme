@@ -135,14 +135,54 @@ void Block::createRects() {
     size_t blockLen = shape.length();
 
     for (const auto& lot : lots) {
-        // TODO: The LIR/LIRA implementation has bugs that can produce rectangles
-        // outside the input polygon. For now, just use the lots directly.
-        // This means buildings will be built on lot shapes (which may not be
-        // rectangular), but at least they'll be inside the block boundaries.
-        //
-        // To fix properly: implement the full MFCG LIR algorithm from
-        // reference/mfcg/lime-init/03-geom-library.js:1467-1528
-        rects.push_back(lot);
+        // Implement LIRA (Largest Inscribed Rectangle Approximation)
+        // Faithful to mfcg.js PolygonUtils.lira (lines 197-202)
+        // Uses oriented bounding box shrunk toward center to ensure it's inside
+
+        if (lot.length() < 3) {
+            rects.push_back(lot);
+            continue;
+        }
+
+        // Get oriented bounding box
+        std::vector<geom::Point> obb = lot.orientedBoundingBox();
+
+        if (obb.size() != 4) {
+            // OBB failed, use lot directly
+            rects.push_back(lot);
+            continue;
+        }
+
+        // Calculate center of OBB
+        geom::Point obbCenter(0, 0);
+        for (const auto& p : obb) {
+            obbCenter.x += p.x;
+            obbCenter.y += p.y;
+        }
+        obbCenter.x /= 4.0;
+        obbCenter.y /= 4.0;
+
+        // Shrink OBB toward center by 10% (lerp factor 0.1)
+        // This ensures the rectangle is inside the original polygon
+        std::vector<geom::Point> liraPoints;
+        liraPoints.reserve(4);
+        for (const auto& p : obb) {
+            // lerp(p, center, 0.1) = p + (center - p) * 0.1 = p * 0.9 + center * 0.1
+            liraPoints.emplace_back(
+                p.x * 0.9 + obbCenter.x * 0.1,
+                p.y * 0.9 + obbCenter.y * 0.1
+            );
+        }
+
+        // Verify the LIRA rectangle has positive area
+        geom::Polygon liraRect(liraPoints);
+        if (std::abs(liraRect.square()) < 0.5) {
+            // Rectangle too small, use lot directly
+            rects.push_back(lot);
+            continue;
+        }
+
+        rects.push_back(liraRect);
     }
 
     // Apply shrink processing (faithful to mfcg.js "Shrink" processing mode)

@@ -221,18 +221,55 @@ std::string SVGWriter::generate(const building::City& model, const Style& style)
     // Skip special buildings here - they're rendered separately below
     svg << "  <g id=\"buildings\">\n";
 
+    // Helper to generate distinct colors for ward groups
+    // Uses HSL with varying hue to create visually distinct colors
+    auto getGroupColor = [](size_t groupIndex) -> std::string {
+        // Base saturation and lightness for building colors
+        double s = 0.25;  // Low saturation for muted colors
+        double l = 0.65;  // Medium-light for visibility
+
+        // Spread hues across the spectrum, using golden ratio for good distribution
+        double hue = std::fmod(groupIndex * 137.508, 360.0);  // Golden angle in degrees
+
+        // Convert HSL to RGB
+        double c = (1.0 - std::abs(2.0 * l - 1.0)) * s;
+        double x = c * (1.0 - std::abs(std::fmod(hue / 60.0, 2.0) - 1.0));
+        double m = l - c / 2.0;
+
+        double r, g, b;
+        if (hue < 60) { r = c; g = x; b = 0; }
+        else if (hue < 120) { r = x; g = c; b = 0; }
+        else if (hue < 180) { r = 0; g = c; b = x; }
+        else if (hue < 240) { r = 0; g = x; b = c; }
+        else if (hue < 300) { r = x; g = 0; b = c; }
+        else { r = c; g = 0; b = x; }
+
+        int ri = static_cast<int>((r + m) * 255);
+        int gi = static_cast<int>((g + m) * 255);
+        int bi = static_cast<int>((b + m) * 255);
+
+        std::ostringstream hex;
+        hex << "#" << std::hex << std::setfill('0')
+            << std::setw(2) << ri
+            << std::setw(2) << gi
+            << std::setw(2) << bi;
+        return hex.str();
+    };
+
     // Render buildings from WardGroups (Alleys wards)
-    // This is faithful to MFCG where geometry is created per-group, not per-ward
-    std::string alleysColor = getWardTint("Alleys");
+    // Each ward group gets a distinct color to help visualize the subdivision
+    size_t groupIdx = 0;
     for (const auto& group : model.wardGroups_) {
+        std::string groupColor = getGroupColor(groupIdx);
         for (const auto& block : group->blocks) {
             for (const auto& building : block->buildings) {
                 svg << "    <path d=\"" << polygonToPath(building) << "\" ";
-                svg << "fill=\"" << alleysColor << "\" ";
+                svg << "fill=\"" << groupColor << "\" ";
                 svg << "stroke=\"" << style.buildingStroke << "\" ";
                 svg << "stroke-width=\"" << style.buildingStrokeWidth << "\"/>\n";
             }
         }
+        ++groupIdx;
     }
 
     // Render buildings from non-grouped wards (Farm, Harbour, Market, Park, etc.)

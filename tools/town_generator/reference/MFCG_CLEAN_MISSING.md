@@ -4,7 +4,9 @@ This document compares the clean ES6 module implementation (`mfcg-clean/`) with 
 
 ## Summary
 
-The clean implementation covers most core city generation functionality but is missing several utility classes, growth algorithms, and name generation features.
+~~The clean implementation covers most core city generation functionality but is missing several utility classes, growth algorithms, and name generation features.~~
+
+**UPDATE (2026-01-12):** All high-priority and medium-priority missing classes have been implemented. See "Implementation Status" section below.
 
 ---
 
@@ -112,4 +114,36 @@ If implementing missing functionality:
 
 ---
 
+## Implementation Status
+
+The following classes have been implemented and added to the clean implementation:
+
+### Implemented (2026-01-12)
+
+| Class | File | Status |
+|-------|------|--------|
+| `Grower` | `model/Grower.js` | ✅ Implemented |
+| `DocksGrower` | `model/Grower.js` | ✅ Implemented |
+| `ParkGrower` | `model/Grower.js` | ✅ Implemented |
+| `Landmark` | `model/Landmark.js` | ✅ Implemented |
+| `PolyBool` | `geometry/PolyBool.js` | ✅ Implemented |
+| `Bloater` | `utils/Bloater.js` | ✅ Implemented |
+| `Cutter` | `utils/Cutter.js` | ✅ Implemented |
+| `PathTracker` | `utils/PathTracker.js` | ✅ Implemented |
+| `Syllables` | `linguistics/Syllables.js` | ✅ Implemented |
+| `Markov` | `linguistics/Markov.js` | ✅ Implemented |
+| `Namer` | `linguistics/Namer.js` | ✅ Implemented |
+
+### Still Missing (Low Priority)
+
+| Class | Purpose | Notes |
+|-------|---------|-------|
+| `Mansion` | Links to Dwellings tool | UI/export feature only |
+| `UnitSystem` | Metric/imperial conversion | UI feature only |
+| `Values` | Default configuration | UI defaults |
+| `Grammar`/`Tracery` | Full grammar-based generation | Simplified in Namer |
+
+---
+
 *Analysis performed: 2026-01-12*
+*Implementation completed: 2026-01-12*

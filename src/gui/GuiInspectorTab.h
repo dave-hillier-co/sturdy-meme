@@ -79,6 +79,20 @@ public:
         renderMusicTrackComponent(registry, selectedEntity);
         renderAudioMixerGroupComponent(registry, selectedEntity);
         renderAudioOcclusionComponent(registry, selectedEntity);
+        renderTriggerVolumeComponent(registry, selectedEntity);
+        renderTriggerableComponent(registry, selectedEntity);
+        renderNavMeshAgentComponent(registry, selectedEntity);
+        renderWaypointPathComponent(registry, selectedEntity);
+        renderInteractableComponent(registry, selectedEntity);
+        renderCanInteractComponent(registry, selectedEntity);
+        renderPickupComponent(registry, selectedEntity);
+        renderDoorComponent(registry, selectedEntity);
+        renderSwitchComponent(registry, selectedEntity);
+        renderSpawnPointComponent(registry, selectedEntity);
+        renderCheckpointComponent(registry, selectedEntity);
+        renderDamageZoneComponent(registry, selectedEntity);
+        renderDialogueTriggerComponent(registry, selectedEntity);
+        renderQuestMarkerComponent(registry, selectedEntity);
         renderTagComponents(registry, selectedEntity);
 
         ImGui::Separator();
@@ -1526,6 +1540,563 @@ private:
         }
     }
 
+    // ========================================================================
+    // Gameplay Component Editors (Phase 9)
+    // ========================================================================
+
+    void renderTriggerVolumeComponent(entt::registry& registry, entt::entity entity) {
+        if (!registry.all_of<TriggerVolume>(entity)) return;
+
+        if (renderComponentHeader("Trigger Volume")) {
+            auto& trigger = registry.get<TriggerVolume>(entity);
+
+            const char* shapes[] = {"Box", "Sphere", "Capsule"};
+            int shape = static_cast<int>(trigger.shape);
+            if (ImGui::Combo("Shape", &shape, shapes, IM_ARRAYSIZE(shapes))) {
+                trigger.shape = static_cast<TriggerVolume::Shape>(shape);
+            }
+
+            if (trigger.shape == TriggerVolume::Shape::Box) {
+                editVec3("Extents", trigger.extents);
+            } else if (trigger.shape == TriggerVolume::Shape::Sphere) {
+                ImGui::DragFloat("Radius", &trigger.radius, 0.1f, 0.1f, 100.0f, "%.1f m");
+            } else if (trigger.shape == TriggerVolume::Shape::Capsule) {
+                ImGui::DragFloat("Radius", &trigger.radius, 0.1f, 0.1f, 100.0f, "%.1f m");
+                ImGui::DragFloat("Height", &trigger.height, 0.1f, 0.1f, 100.0f, "%.1f m");
+            }
+
+            ImGui::Separator();
+            ImGui::Text("Trigger Settings");
+
+            int mask = static_cast<int>(trigger.triggerMask);
+            if (ImGui::InputInt("Trigger Mask", &mask)) {
+                trigger.triggerMask = static_cast<uint32_t>(std::max(0, mask));
+            }
+
+            ImGui::Checkbox("Trigger Once", &trigger.triggerOnce);
+            if (trigger.triggerOnce) {
+                ImGui::SameLine();
+                ImGui::TextDisabled("(%s)", trigger.triggered ? "Triggered" : "Waiting");
+            }
+
+            ImGui::DragFloat("Stay Interval", &trigger.stayEventInterval, 0.01f, 0.0f, 1.0f, "%.2f s");
+
+            if (ImGui::TreeNode("Events")) {
+                int onEnter = static_cast<int>(trigger.onEnterEvent);
+                if (ImGui::InputInt("On Enter Event", &onEnter)) {
+                    trigger.onEnterEvent = static_cast<uint32_t>(onEnter);
+                }
+                int onExit = static_cast<int>(trigger.onExitEvent);
+                if (ImGui::InputInt("On Exit Event", &onExit)) {
+                    trigger.onExitEvent = static_cast<uint32_t>(onExit);
+                }
+                ImGui::TreePop();
+            }
+
+            // Status
+            ImGui::Separator();
+            ImGui::TextDisabled("Entities Inside: %zu", trigger.entitiesInside.size());
+        }
+    }
+
+    void renderTriggerableComponent(entt::registry& registry, entt::entity entity) {
+        if (!registry.all_of<Triggerable>(entity)) return;
+
+        if (renderComponentHeader("Triggerable")) {
+            auto& triggerable = registry.get<Triggerable>(entity);
+
+            int layer = static_cast<int>(triggerable.triggerLayer);
+            if (ImGui::InputInt("Trigger Layer", &layer)) {
+                triggerable.triggerLayer = static_cast<uint32_t>(std::max(0, layer));
+            }
+
+            // Show InsideTrigger status
+            if (registry.all_of<InsideTrigger>(entity)) {
+                auto& inside = registry.get<InsideTrigger>(entity);
+                ImGui::Separator();
+                ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "INSIDE TRIGGER");
+                ImGui::TextDisabled("Current Trigger: %u", static_cast<uint32_t>(inside.currentTrigger));
+                ImGui::TextDisabled("Time Inside: %.1f s", inside.timeInside);
+            }
+        }
+    }
+
+    void renderNavMeshAgentComponent(entt::registry& registry, entt::entity entity) {
+        if (!registry.all_of<NavMeshAgent>(entity)) return;
+
+        if (renderComponentHeader("NavMesh Agent")) {
+            auto& agent = registry.get<NavMeshAgent>(entity);
+
+            int navMeshId = static_cast<int>(agent.navMesh);
+            if (ImGui::InputInt("NavMesh Handle", &navMeshId)) {
+                agent.navMesh = static_cast<NavMeshHandle>(std::max(0, navMeshId));
+            }
+
+            ImGui::Separator();
+            ImGui::Text("Movement");
+            ImGui::DragFloat("Speed", &agent.speed, 0.1f, 0.1f, 20.0f, "%.1f m/s");
+            ImGui::DragFloat("Acceleration", &agent.acceleration, 0.1f, 0.1f, 50.0f, "%.1f m/s2");
+            ImGui::DragFloat("Angular Speed", &agent.angularSpeed, 1.0f, 10.0f, 720.0f, "%.0f deg/s");
+            ImGui::DragFloat("Stop Distance", &agent.stoppingDistance, 0.1f, 0.0f, 10.0f, "%.1f m");
+            ImGui::DragFloat("Height", &agent.height, 0.1f, 0.1f, 5.0f, "%.1f m");
+            ImGui::DragFloat("Radius", &agent.radius, 0.05f, 0.1f, 2.0f, "%.2f m");
+
+            ImGui::Separator();
+            ImGui::Text("Avoidance");
+            ImGui::Checkbox("Avoidance Enabled", &agent.avoidanceEnabled);
+            if (agent.avoidanceEnabled) {
+                int priority = static_cast<int>(agent.avoidancePriority);
+                if (ImGui::InputInt("Avoidance Priority", &priority)) {
+                    agent.avoidancePriority = static_cast<uint32_t>(std::clamp(priority, 0, 99));
+                }
+            }
+
+            ImGui::Separator();
+            ImGui::Text("Pathfinding");
+            ImGui::Checkbox("Auto Repath", &agent.autoRepath);
+            ImGui::Checkbox("Auto Braking", &agent.autoBraking);
+
+            editVec3("Destination", agent.destination);
+            if (ImGui::Button("Set Destination")) {
+                agent.pathPending = true;
+                agent.status = NavMeshAgent::Status::Moving;
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Stop")) {
+                agent.hasPath = false;
+                agent.pathPending = false;
+                agent.currentPath.clear();
+                agent.status = NavMeshAgent::Status::Idle;
+            }
+
+            // Status
+            ImGui::Separator();
+            const char* statusNames[] = {"Idle", "Moving", "Arrived", "Path Not Found", "Stuck"};
+            ImGui::Text("Status: %s", statusNames[static_cast<int>(agent.status)]);
+            ImGui::TextDisabled("Has Path: %s", agent.hasPath ? "Yes" : "No");
+            ImGui::TextDisabled("Path Points: %zu", agent.currentPath.size());
+            ImGui::TextDisabled("Current Index: %zu", agent.currentPathIndex);
+            ImGui::TextDisabled("Velocity: (%.1f, %.1f, %.1f)", agent.velocity.x, agent.velocity.y, agent.velocity.z);
+        }
+    }
+
+    void renderWaypointPathComponent(entt::registry& registry, entt::entity entity) {
+        if (!registry.all_of<WaypointPath>(entity)) return;
+
+        if (renderComponentHeader("Waypoint Path")) {
+            auto& path = registry.get<WaypointPath>(entity);
+
+            ImGui::Text("Waypoints: %zu", path.waypoints.size());
+            ImGui::Checkbox("Loop", &path.loop);
+            ImGui::Checkbox("Reverse at End", &path.reverseAtEnd);
+            ImGui::DragFloat("Default Speed", &path.defaultSpeed, 0.1f, 0.1f, 20.0f, "%.1f m/s");
+            ImGui::DragFloat("Default Wait", &path.defaultWaitTime, 0.1f, 0.0f, 60.0f, "%.1f s");
+
+            if (ImGui::TreeNode("Waypoints")) {
+                for (size_t i = 0; i < path.waypoints.size(); i++) {
+                    ImGui::PushID(static_cast<int>(i));
+                    if (registry.valid(path.waypoints[i])) {
+                        std::string name = "Waypoint";
+                        if (registry.all_of<EntityInfo>(path.waypoints[i])) {
+                            name = registry.get<EntityInfo>(path.waypoints[i]).name;
+                        }
+                        ImGui::Text("%zu: %s (ID: %u)", i, name.c_str(),
+                                   static_cast<uint32_t>(path.waypoints[i]));
+                    } else {
+                        ImGui::TextDisabled("%zu: Invalid", i);
+                    }
+                    ImGui::SameLine();
+                    if (ImGui::SmallButton("X")) {
+                        path.waypoints.erase(path.waypoints.begin() + i);
+                    }
+                    ImGui::PopID();
+                }
+                ImGui::TreePop();
+            }
+        }
+    }
+
+    void renderInteractableComponent(entt::registry& registry, entt::entity entity) {
+        if (!registry.all_of<Interactable>(entity)) return;
+
+        if (renderComponentHeader("Interactable")) {
+            auto& interact = registry.get<Interactable>(entity);
+
+            const char* types[] = {"Generic", "Pickup", "Door", "Switch", "NPC", "Container", "Readable", "Usable"};
+            int type = static_cast<int>(interact.type);
+            if (ImGui::Combo("Type", &type, types, IM_ARRAYSIZE(types))) {
+                interact.type = static_cast<Interactable::Type>(type);
+            }
+
+            char promptBuffer[64];
+            strcpy(promptBuffer, interact.promptText.c_str());
+            if (ImGui::InputText("Prompt Text", promptBuffer, sizeof(promptBuffer))) {
+                interact.promptText = promptBuffer;
+            }
+
+            ImGui::DragFloat("Radius", &interact.interactionRadius, 0.1f, 0.1f, 20.0f, "%.1f m");
+            ImGui::DragFloat("Angle", &interact.interactionAngle, 1.0f, 0.0f, 360.0f, "%.0f deg");
+            editVec3("Interaction Point", interact.interactionPoint);
+
+            ImGui::Checkbox("Can Interact", &interact.canInteract);
+            ImGui::InputInt("Priority", &interact.priority);
+
+            // Status
+            ImGui::Separator();
+            if (interact.highlighted) {
+                ImGui::TextColored(ImVec4(1.0f, 1.0f, 0.0f, 1.0f), "HIGHLIGHTED");
+            }
+            if (interact.interacting) {
+                ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "INTERACTING");
+            }
+        }
+    }
+
+    void renderCanInteractComponent(entt::registry& registry, entt::entity entity) {
+        if (!registry.all_of<CanInteract>(entity)) return;
+
+        if (renderComponentHeader("Can Interact")) {
+            auto& canInteract = registry.get<CanInteract>(entity);
+
+            ImGui::DragFloat("Range", &canInteract.interactionRange, 0.1f, 0.1f, 20.0f, "%.1f m");
+            ImGui::Checkbox("Interaction Enabled", &canInteract.interactionEnabled);
+
+            // Current target
+            ImGui::Separator();
+            if (canInteract.currentTarget != entt::null && registry.valid(canInteract.currentTarget)) {
+                std::string name = "Unknown";
+                if (registry.all_of<EntityInfo>(canInteract.currentTarget)) {
+                    name = registry.get<EntityInfo>(canInteract.currentTarget).name;
+                }
+                ImGui::Text("Target: %s", name.c_str());
+            } else {
+                ImGui::TextDisabled("Target: None");
+            }
+
+            if (canInteract.interactingWith != entt::null) {
+                std::string name = "Unknown";
+                if (registry.valid(canInteract.interactingWith) &&
+                    registry.all_of<EntityInfo>(canInteract.interactingWith)) {
+                    name = registry.get<EntityInfo>(canInteract.interactingWith).name;
+                }
+                ImGui::Text("Interacting With: %s", name.c_str());
+            }
+        }
+    }
+
+    void renderPickupComponent(entt::registry& registry, entt::entity entity) {
+        if (!registry.all_of<Pickup>(entity)) return;
+
+        if (renderComponentHeader("Pickup")) {
+            auto& pickup = registry.get<Pickup>(entity);
+
+            char idBuffer[64];
+            strcpy(idBuffer, pickup.itemId.c_str());
+            if (ImGui::InputText("Item ID", idBuffer, sizeof(idBuffer))) {
+                pickup.itemId = idBuffer;
+            }
+
+            int qty = static_cast<int>(pickup.quantity);
+            if (ImGui::InputInt("Quantity", &qty)) {
+                pickup.quantity = static_cast<uint32_t>(std::max(1, qty));
+            }
+
+            ImGui::Checkbox("Respawns", &pickup.respawns);
+            if (pickup.respawns) {
+                ImGui::DragFloat("Respawn Time", &pickup.respawnTime, 0.5f, 1.0f, 300.0f, "%.0f s");
+            }
+
+            ImGui::Separator();
+            ImGui::Text("Visual Effects");
+            ImGui::Checkbox("Bobbing", &pickup.bobbing);
+            if (pickup.bobbing) {
+                ImGui::DragFloat("Bob Height", &pickup.bobHeight, 0.01f, 0.0f, 1.0f, "%.2f m");
+                ImGui::DragFloat("Bob Speed", &pickup.bobSpeed, 0.1f, 0.1f, 10.0f, "%.1f");
+            }
+            ImGui::Checkbox("Rotating", &pickup.rotating);
+            if (pickup.rotating) {
+                ImGui::DragFloat("Rotate Speed", &pickup.rotateSpeed, 1.0f, 0.0f, 360.0f, "%.0f deg/s");
+            }
+
+            // Status
+            ImGui::Separator();
+            if (pickup.pickedUp) {
+                ImGui::TextColored(ImVec4(0.5f, 0.5f, 0.5f, 1.0f), "PICKED UP");
+                if (pickup.respawns) {
+                    ImGui::TextDisabled("Respawn in: %.1f s", pickup.respawnTime - pickup.timeSincePickup);
+                }
+            } else {
+                ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "AVAILABLE");
+            }
+        }
+    }
+
+    void renderDoorComponent(entt::registry& registry, entt::entity entity) {
+        if (!registry.all_of<Door>(entity)) return;
+
+        if (renderComponentHeader("Door")) {
+            auto& door = registry.get<Door>(entity);
+
+            const char* states[] = {"Closed", "Opening", "Open", "Closing"};
+            ImGui::Text("State: %s", states[static_cast<int>(door.state)]);
+
+            ImGui::Separator();
+            ImGui::Text("Settings");
+
+            ImGui::Checkbox("Sliding", &door.sliding);
+            if (door.sliding) {
+                ImGui::DragFloat("Slide Distance", &door.slideDistance, 0.1f, 0.1f, 10.0f, "%.1f m");
+                editVec3("Slide Direction", door.slideDirection, 0.01f);
+            } else {
+                ImGui::DragFloat("Open Angle", &door.openAngle, 1.0f, 1.0f, 180.0f, "%.0f deg");
+            }
+
+            ImGui::DragFloat("Open Speed", &door.openSpeed, 0.1f, 0.1f, 10.0f, "%.1f");
+
+            ImGui::Checkbox("Locked", &door.locked);
+            if (door.locked) {
+                char keyBuffer[64];
+                strcpy(keyBuffer, door.requiredKeyId.c_str());
+                if (ImGui::InputText("Required Key", keyBuffer, sizeof(keyBuffer))) {
+                    door.requiredKeyId = keyBuffer;
+                }
+            }
+
+            ImGui::Checkbox("Auto Close", &door.autoClose);
+            if (door.autoClose) {
+                ImGui::DragFloat("Auto Close Delay", &door.autoCloseDelay, 0.5f, 0.5f, 30.0f, "%.1f s");
+            }
+
+            // Current state
+            ImGui::Separator();
+            if (door.sliding) {
+                ImGui::TextDisabled("Current Slide: %.2f m", door.currentSlide);
+            } else {
+                ImGui::TextDisabled("Current Angle: %.1f deg", door.currentAngle);
+            }
+
+            // Controls
+            if (ImGui::Button("Toggle")) {
+                if (door.state == Door::State::Closed || door.state == Door::State::Closing) {
+                    door.state = Door::State::Opening;
+                } else {
+                    door.state = Door::State::Closing;
+                }
+            }
+        }
+    }
+
+    void renderSwitchComponent(entt::registry& registry, entt::entity entity) {
+        if (!registry.all_of<Switch>(entity)) return;
+
+        if (renderComponentHeader("Switch")) {
+            auto& sw = registry.get<Switch>(entity);
+
+            const char* types[] = {"Toggle", "Hold", "One Shot"};
+            int type = static_cast<int>(sw.type);
+            if (ImGui::Combo("Type", &type, types, IM_ARRAYSIZE(types))) {
+                sw.type = static_cast<Switch::Type>(type);
+            }
+
+            ImGui::Checkbox("On", &sw.isOn);
+            ImGui::DragFloat("Cooldown", &sw.cooldown, 0.1f, 0.0f, 10.0f, "%.1f s");
+
+            // Target entity
+            ImGui::Separator();
+            if (sw.targetEntity != entt::null && registry.valid(sw.targetEntity)) {
+                std::string name = "Unknown";
+                if (registry.all_of<EntityInfo>(sw.targetEntity)) {
+                    name = registry.get<EntityInfo>(sw.targetEntity).name;
+                }
+                ImGui::Text("Target: %s (ID: %u)", name.c_str(), static_cast<uint32_t>(sw.targetEntity));
+            } else {
+                ImGui::TextDisabled("Target: None");
+            }
+
+            // Events
+            if (ImGui::TreeNode("Events")) {
+                int onActivate = static_cast<int>(sw.onActivateEvent);
+                if (ImGui::InputInt("On Activate", &onActivate)) {
+                    sw.onActivateEvent = static_cast<uint32_t>(onActivate);
+                }
+                int onDeactivate = static_cast<int>(sw.onDeactivateEvent);
+                if (ImGui::InputInt("On Deactivate", &onDeactivate)) {
+                    sw.onDeactivateEvent = static_cast<uint32_t>(onDeactivate);
+                }
+                ImGui::TreePop();
+            }
+
+            // Status
+            ImGui::Separator();
+            ImGui::TextDisabled("Cooldown Timer: %.1f s", sw.cooldownTimer);
+        }
+    }
+
+    void renderSpawnPointComponent(entt::registry& registry, entt::entity entity) {
+        if (!registry.all_of<SpawnPoint>(entity)) return;
+
+        if (renderComponentHeader("Spawn Point")) {
+            auto& spawn = registry.get<SpawnPoint>(entity);
+
+            char typeBuffer[64];
+            strcpy(typeBuffer, spawn.entityType.c_str());
+            if (ImGui::InputText("Entity Type", typeBuffer, sizeof(typeBuffer))) {
+                spawn.entityType = typeBuffer;
+            }
+
+            int maxEntities = static_cast<int>(spawn.maxEntities);
+            if (ImGui::InputInt("Max Entities", &maxEntities)) {
+                spawn.maxEntities = static_cast<uint32_t>(std::max(1, maxEntities));
+            }
+
+            ImGui::DragFloat("Respawn Delay", &spawn.respawnDelay, 0.5f, 0.0f, 300.0f, "%.1f s");
+            ImGui::DragFloat("Spawn Radius", &spawn.spawnRadius, 0.5f, 0.0f, 50.0f, "%.1f m");
+
+            ImGui::Checkbox("Active", &spawn.active);
+            ImGui::Checkbox("Initial Spawn", &spawn.initialSpawn);
+            ImGui::Checkbox("Spawn on Activate", &spawn.spawnOnActivate);
+
+            // Status
+            ImGui::Separator();
+            ImGui::TextDisabled("Current Entities: %zu", spawn.spawnedEntities.size());
+            ImGui::TextDisabled("Next Spawn: %.1f s", spawn.nextSpawnTime);
+        }
+    }
+
+    void renderCheckpointComponent(entt::registry& registry, entt::entity entity) {
+        if (!registry.all_of<Checkpoint>(entity)) return;
+
+        if (renderComponentHeader("Checkpoint")) {
+            auto& checkpoint = registry.get<Checkpoint>(entity);
+
+            int id = static_cast<int>(checkpoint.checkpointId);
+            if (ImGui::InputInt("Checkpoint ID", &id)) {
+                checkpoint.checkpointId = static_cast<uint32_t>(std::max(0, id));
+            }
+
+            ImGui::Checkbox("Activated", &checkpoint.activated);
+            ImGui::Checkbox("Is Respawn Point", &checkpoint.isRespawnPoint);
+            ImGui::Checkbox("Save Game", &checkpoint.saveGame);
+
+            editVec3("Respawn Offset", checkpoint.respawnOffset);
+
+            // Status
+            if (checkpoint.activated) {
+                ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "ACTIVATED");
+            }
+        }
+    }
+
+    void renderDamageZoneComponent(entt::registry& registry, entt::entity entity) {
+        if (!registry.all_of<DamageZone>(entity)) return;
+
+        if (renderComponentHeader("Damage Zone")) {
+            auto& zone = registry.get<DamageZone>(entity);
+
+            const char* damageTypes[] = {"Generic", "Fire", "Ice", "Poison", "Electric", "Void"};
+            int type = static_cast<int>(zone.damageType);
+            if (ImGui::Combo("Damage Type", &type, damageTypes, IM_ARRAYSIZE(damageTypes))) {
+                zone.damageType = static_cast<DamageZone::DamageType>(type);
+            }
+
+            ImGui::DragFloat("Damage/Second", &zone.damagePerSecond, 1.0f, 0.0f, 1000.0f, "%.0f");
+            ImGui::DragFloat("Tick Rate", &zone.tickRate, 0.1f, 0.1f, 5.0f, "%.1f s");
+            editVec3("Extents", zone.extents);
+
+            ImGui::Checkbox("Active", &zone.active);
+
+            int mask = static_cast<int>(zone.affectsMask);
+            if (ImGui::InputInt("Affects Mask", &mask)) {
+                zone.affectsMask = static_cast<uint32_t>(std::max(0, mask));
+            }
+
+            // Status
+            ImGui::Separator();
+            ImGui::TextDisabled("Entities Inside: %zu", zone.entitiesInside.size());
+        }
+    }
+
+    void renderDialogueTriggerComponent(entt::registry& registry, entt::entity entity) {
+        if (!registry.all_of<DialogueTrigger>(entity)) return;
+
+        if (renderComponentHeader("Dialogue Trigger")) {
+            auto& dialogue = registry.get<DialogueTrigger>(entity);
+
+            int dialogueId = static_cast<int>(dialogue.dialogue);
+            if (ImGui::InputInt("Dialogue Handle", &dialogueId)) {
+                dialogue.dialogue = static_cast<DialogueHandle>(std::max(0, dialogueId));
+            }
+
+            int startNode = static_cast<int>(dialogue.startNode);
+            if (ImGui::InputInt("Start Node", &startNode)) {
+                dialogue.startNode = static_cast<uint32_t>(std::max(0, startNode));
+            }
+
+            ImGui::Checkbox("Automatic", &dialogue.automatic);
+            ImGui::Checkbox("One Shot", &dialogue.oneShot);
+            if (dialogue.oneShot) {
+                ImGui::SameLine();
+                ImGui::TextDisabled("(%s)", dialogue.triggered ? "Used" : "Available");
+            }
+
+            if (ImGui::TreeNode("Conditions")) {
+                for (size_t i = 0; i < dialogue.conditions.size(); i++) {
+                    char buffer[64];
+                    strcpy(buffer, dialogue.conditions[i].c_str());
+                    ImGui::PushID(static_cast<int>(i));
+                    if (ImGui::InputText("##cond", buffer, sizeof(buffer))) {
+                        dialogue.conditions[i] = buffer;
+                    }
+                    ImGui::SameLine();
+                    if (ImGui::SmallButton("X")) {
+                        dialogue.conditions.erase(dialogue.conditions.begin() + i);
+                    }
+                    ImGui::PopID();
+                }
+                if (ImGui::Button("+ Add Condition")) {
+                    dialogue.conditions.push_back("");
+                }
+                ImGui::TreePop();
+            }
+        }
+    }
+
+    void renderQuestMarkerComponent(entt::registry& registry, entt::entity entity) {
+        if (!registry.all_of<QuestMarker>(entity)) return;
+
+        if (renderComponentHeader("Quest Marker")) {
+            auto& marker = registry.get<QuestMarker>(entity);
+
+            char questBuffer[64];
+            strcpy(questBuffer, marker.questId.c_str());
+            if (ImGui::InputText("Quest ID", questBuffer, sizeof(questBuffer))) {
+                marker.questId = questBuffer;
+            }
+
+            char objectiveBuffer[64];
+            strcpy(objectiveBuffer, marker.objectiveId.c_str());
+            if (ImGui::InputText("Objective ID", objectiveBuffer, sizeof(objectiveBuffer))) {
+                marker.objectiveId = objectiveBuffer;
+            }
+
+            const char* markerTypes[] = {"Destination", "Interact", "Kill", "Collect", "Escort", "Area", "Hidden"};
+            int type = static_cast<int>(marker.type);
+            if (ImGui::Combo("Type", &type, markerTypes, IM_ARRAYSIZE(markerTypes))) {
+                marker.type = static_cast<QuestMarker::Type>(type);
+            }
+
+            ImGui::Checkbox("Show On Map", &marker.showOnMap);
+            ImGui::Checkbox("Show On Compass", &marker.showOnCompass);
+            ImGui::Checkbox("Show Distance", &marker.showDistance);
+
+            editColor3("Color", marker.color);
+
+            // Status
+            ImGui::Separator();
+            ImGui::TextDisabled("Active: %s", marker.active ? "Yes" : "No");
+        }
+    }
+
     void renderTagComponents(entt::registry& registry, entt::entity entity) {
         // Collect all tag components
         std::vector<std::string> tags;
@@ -1549,6 +2120,11 @@ private:
         if (registry.all_of<IsLightProbe>(entity)) tags.push_back("Light Probe");
         if (registry.all_of<IsAudioSource>(entity)) tags.push_back("Audio Source");
         if (registry.all_of<ActiveAudioListener>(entity)) tags.push_back("Active Audio Listener");
+        if (registry.all_of<IsTrigger>(entity)) tags.push_back("Trigger");
+        if (registry.all_of<IsInteractable>(entity)) tags.push_back("Interactable");
+        if (registry.all_of<IsSpawnPoint>(entity)) tags.push_back("Spawn Point");
+        if (registry.all_of<IsDialogueNPC>(entity)) tags.push_back("Dialogue NPC");
+        if (registry.all_of<OnNavMesh>(entity)) tags.push_back("On NavMesh");
 
         if (!tags.empty()) {
             if (renderComponentHeader("Tags")) {
@@ -1884,6 +2460,108 @@ private:
             if (!registry.all_of<AudioOcclusion>(entity)) {
                 if (ImGui::MenuItem("Audio Occlusion")) {
                     registry.emplace<AudioOcclusion>(entity);
+                }
+            }
+
+            ImGui::Separator();
+            ImGui::TextDisabled("Gameplay");
+
+            if (!registry.all_of<TriggerVolume>(entity)) {
+                if (ImGui::MenuItem("Trigger Volume")) {
+                    registry.emplace<TriggerVolume>(entity);
+                    registry.emplace_or_replace<IsTrigger>(entity);
+                    registry.emplace_or_replace<AABBBounds>(entity);
+                }
+            }
+            if (!registry.all_of<Triggerable>(entity)) {
+                if (ImGui::MenuItem("Triggerable")) {
+                    registry.emplace<Triggerable>(entity);
+                }
+            }
+            if (!registry.all_of<NavMeshAgent>(entity)) {
+                if (ImGui::MenuItem("NavMesh Agent")) {
+                    registry.emplace<NavMeshAgent>(entity);
+                }
+            }
+            if (!registry.all_of<WaypointPath>(entity)) {
+                if (ImGui::MenuItem("Waypoint Path")) {
+                    registry.emplace<WaypointPath>(entity);
+                }
+            }
+            if (!registry.all_of<Interactable>(entity)) {
+                if (ImGui::MenuItem("Interactable")) {
+                    registry.emplace<Interactable>(entity);
+                    registry.emplace_or_replace<IsInteractable>(entity);
+                }
+            }
+            if (!registry.all_of<CanInteract>(entity)) {
+                if (ImGui::MenuItem("Can Interact")) {
+                    registry.emplace<CanInteract>(entity);
+                }
+            }
+            if (!registry.all_of<Pickup>(entity)) {
+                if (ImGui::MenuItem("Pickup")) {
+                    registry.emplace<Pickup>(entity);
+                    if (!registry.all_of<Interactable>(entity)) {
+                        Interactable interact;
+                        interact.type = Interactable::Type::Pickup;
+                        interact.promptText = "Pick up";
+                        registry.emplace<Interactable>(entity, interact);
+                        registry.emplace_or_replace<IsInteractable>(entity);
+                    }
+                }
+            }
+            if (!registry.all_of<Door>(entity)) {
+                if (ImGui::MenuItem("Door")) {
+                    registry.emplace<Door>(entity);
+                    if (!registry.all_of<Interactable>(entity)) {
+                        Interactable interact;
+                        interact.type = Interactable::Type::Door;
+                        interact.promptText = "Open";
+                        registry.emplace<Interactable>(entity, interact);
+                        registry.emplace_or_replace<IsInteractable>(entity);
+                    }
+                }
+            }
+            if (!registry.all_of<Switch>(entity)) {
+                if (ImGui::MenuItem("Switch")) {
+                    registry.emplace<Switch>(entity);
+                    if (!registry.all_of<Interactable>(entity)) {
+                        Interactable interact;
+                        interact.type = Interactable::Type::Switch;
+                        interact.promptText = "Activate";
+                        registry.emplace<Interactable>(entity, interact);
+                        registry.emplace_or_replace<IsInteractable>(entity);
+                    }
+                }
+            }
+            if (!registry.all_of<SpawnPoint>(entity)) {
+                if (ImGui::MenuItem("Spawn Point")) {
+                    registry.emplace<SpawnPoint>(entity);
+                    registry.emplace_or_replace<IsSpawnPoint>(entity);
+                }
+            }
+            if (!registry.all_of<Checkpoint>(entity)) {
+                if (ImGui::MenuItem("Checkpoint")) {
+                    registry.emplace<Checkpoint>(entity);
+                }
+            }
+            if (!registry.all_of<DamageZone>(entity)) {
+                if (ImGui::MenuItem("Damage Zone")) {
+                    registry.emplace<DamageZone>(entity);
+                    registry.emplace_or_replace<IsTrigger>(entity);
+                    registry.emplace_or_replace<AABBBounds>(entity);
+                }
+            }
+            if (!registry.all_of<DialogueTrigger>(entity)) {
+                if (ImGui::MenuItem("Dialogue Trigger")) {
+                    registry.emplace<DialogueTrigger>(entity);
+                    registry.emplace_or_replace<IsDialogueNPC>(entity);
+                }
+            }
+            if (!registry.all_of<QuestMarker>(entity)) {
+                if (ImGui::MenuItem("Quest Marker")) {
+                    registry.emplace<QuestMarker>(entity);
                 }
             }
 

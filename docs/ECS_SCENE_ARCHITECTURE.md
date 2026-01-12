@@ -323,10 +323,20 @@ void LightSystem::gatherLights(entt::registry& registry, LightBuffer& buffer) {
 - [x] AudioIntegration.h (factory functions, spatial audio calculations, music system)
 
 ### Phase 9: Gameplay Systems
-- [ ] TriggerVolume (generic trigger zones for gameplay events)
-- [ ] NavMeshAgent (AI pathfinding with navigation mesh)
-- [ ] Interactable (player interaction targets)
-- [ ] GameplayIntegration.h (trigger callbacks, interaction system)
+- [x] TriggerVolume (box, sphere, capsule triggers with enter/exit/stay events)
+- [x] Triggerable, InsideTrigger (entities that can activate triggers)
+- [x] NavMeshAgent (AI pathfinding with speed, acceleration, avoidance, status)
+- [x] Waypoint, WaypointPath, OnNavMesh (pathfinding waypoints and status)
+- [x] Interactable, CanInteract (interaction system with radius, angle, priority)
+- [x] Pickup (collectable items with bobbing, respawn, quantity)
+- [x] Door (hinged/sliding doors with locked state, auto-close)
+- [x] Switch (toggle, hold, one-shot switches with target entities)
+- [x] SpawnPoint, IsSpawnPoint (entity spawners with respawn delay)
+- [x] Checkpoint (save/respawn points with activation state)
+- [x] DamageZone (area damage with type: fire, ice, poison, electric, void)
+- [x] DialogueTrigger, IsDialogueNPC (dialogue system hooks)
+- [x] QuestMarker (objective markers with map/compass display)
+- [x] GameplayIntegration.h (trigger callbacks, interaction system, door/pickup updates)
 
 ## Resource Management
 

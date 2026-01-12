@@ -60,6 +60,11 @@ public:
         renderWindZoneComponent(registry, selectedEntity);
         renderWeatherZoneComponent(registry, selectedEntity);
         renderFogVolumeComponent(registry, selectedEntity);
+        renderOcclusionCullableComponent(registry, selectedEntity);
+        renderCullBoundingSphereComponent(registry, selectedEntity);
+        renderOccluderComponent(registry, selectedEntity);
+        renderVisibilityCellComponent(registry, selectedEntity);
+        renderCullingGroupComponent(registry, selectedEntity);
         renderTagComponents(registry, selectedEntity);
 
         ImGui::Separator();
@@ -945,6 +950,106 @@ private:
         }
     }
 
+    // ========================================================================
+    // Occlusion Culling Component Editors (Phase 6)
+    // ========================================================================
+
+    void renderOcclusionCullableComponent(entt::registry& registry, entt::entity entity) {
+        if (!registry.all_of<OcclusionCullable>(entity)) return;
+
+        if (renderComponentHeader("Occlusion Cullable")) {
+            auto& cullable = registry.get<OcclusionCullable>(entity);
+
+            ImGui::TextDisabled("Cull Index: %u", cullable.cullIndex);
+            ImGui::TextDisabled("Was Visible: %s", cullable.wasVisibleLastFrame ? "Yes" : "No");
+            ImGui::TextDisabled("Invisible Frames: %u", cullable.invisibleFrames);
+
+            // Status indicator
+            if (cullable.wasVisibleLastFrame) {
+                ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "VISIBLE");
+            } else {
+                ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.0f, 1.0f), "CULLED");
+            }
+        }
+    }
+
+    void renderCullBoundingSphereComponent(entt::registry& registry, entt::entity entity) {
+        if (!registry.all_of<CullBoundingSphere>(entity)) return;
+
+        if (renderComponentHeader("Cull Bounding Sphere")) {
+            auto& sphere = registry.get<CullBoundingSphere>(entity);
+
+            editVec3("Center Offset", sphere.center);
+            ImGui::DragFloat("Radius", &sphere.radius, 0.1f, 0.01f, 1000.0f, "%.2f m");
+        }
+    }
+
+    void renderOccluderComponent(entt::registry& registry, entt::entity entity) {
+        if (!registry.all_of<Occluder>(entity)) return;
+
+        if (renderComponentHeader("Occluder")) {
+            auto& occluder = registry.get<Occluder>(entity);
+
+            const char* shapes[] = {"Box", "Convex Hull", "Portal"};
+            int shape = static_cast<int>(occluder.shape);
+            if (ImGui::Combo("Shape", &shape, shapes, IM_ARRAYSIZE(shapes))) {
+                occluder.shape = static_cast<Occluder::Shape>(shape);
+            }
+
+            ImGui::Checkbox("Always Occlude", &occluder.alwaysOcclude);
+
+            // Show occluder status
+            bool isOccluder = registry.all_of<IsOccluder>(entity);
+            ImGui::TextDisabled("Active: %s", isOccluder ? "Yes" : "No");
+        }
+    }
+
+    void renderVisibilityCellComponent(entt::registry& registry, entt::entity entity) {
+        if (!registry.all_of<VisibilityCell>(entity)) return;
+
+        if (renderComponentHeader("Visibility Cell")) {
+            auto& cell = registry.get<VisibilityCell>(entity);
+
+            int cellId = static_cast<int>(cell.cellId);
+            if (ImGui::InputInt("Cell ID", &cellId)) {
+                cell.cellId = static_cast<uint32_t>(std::max(0, cellId));
+            }
+
+            editVec3("Center", cell.center);
+            editVec3("Extents", cell.extents);
+
+            ImGui::Text("PVS Cells: %zu", cell.potentiallyVisibleCells.size());
+
+            if (ImGui::TreeNode("Visible Cells")) {
+                for (size_t i = 0; i < cell.potentiallyVisibleCells.size(); i++) {
+                    ImGui::Text("  Cell %u", cell.potentiallyVisibleCells[i]);
+                }
+                if (cell.potentiallyVisibleCells.empty()) {
+                    ImGui::TextDisabled("  (none)");
+                }
+                ImGui::TreePop();
+            }
+        }
+    }
+
+    void renderCullingGroupComponent(entt::registry& registry, entt::entity entity) {
+        if (!registry.all_of<CullingGroup>(entity)) return;
+
+        if (renderComponentHeader("Culling Group")) {
+            auto& group = registry.get<CullingGroup>(entity);
+
+            int groupId = static_cast<int>(group.groupId);
+            if (ImGui::InputInt("Group ID", &groupId)) {
+                group.groupId = static_cast<uint32_t>(std::max(0, groupId));
+            }
+
+            int priority = static_cast<int>(group.priority);
+            if (ImGui::InputInt("Priority", &priority)) {
+                group.priority = static_cast<uint32_t>(std::max(0, priority));
+            }
+        }
+    }
+
     void renderTagComponents(entt::registry& registry, entt::entity entity) {
         // Collect all tag components
         std::vector<std::string> tags;
@@ -961,6 +1066,9 @@ private:
         if (registry.all_of<MainCamera>(entity)) tags.push_back("Main Camera");
         if (registry.all_of<StaticObject>(entity)) tags.push_back("Static");
         if (registry.all_of<WasVisible>(entity)) tags.push_back("Was Visible");
+        if (registry.all_of<NeverCull>(entity)) tags.push_back("Never Cull");
+        if (registry.all_of<ShadowOnly>(entity)) tags.push_back("Shadow Only");
+        if (registry.all_of<IsOccluder>(entity)) tags.push_back("Is Occluder");
 
         if (!tags.empty()) {
             if (renderComponentHeader("Tags")) {
@@ -1166,6 +1274,47 @@ private:
             if (!registry.all_of<FogVolume>(entity)) {
                 if (ImGui::MenuItem("Fog Volume")) {
                     registry.emplace<FogVolume>(entity);
+                }
+            }
+
+            ImGui::Separator();
+            ImGui::TextDisabled("Occlusion Culling");
+
+            if (!registry.all_of<OcclusionCullable>(entity)) {
+                if (ImGui::MenuItem("Occlusion Cullable")) {
+                    registry.emplace<OcclusionCullable>(entity);
+                    registry.emplace_or_replace<CullBoundingSphere>(entity);
+                }
+            }
+            if (!registry.all_of<CullBoundingSphere>(entity)) {
+                if (ImGui::MenuItem("Cull Bounding Sphere")) {
+                    registry.emplace<CullBoundingSphere>(entity);
+                }
+            }
+            if (!registry.all_of<Occluder>(entity)) {
+                if (ImGui::MenuItem("Occluder")) {
+                    registry.emplace<Occluder>(entity);
+                    registry.emplace_or_replace<IsOccluder>(entity);
+                }
+            }
+            if (!registry.all_of<VisibilityCell>(entity)) {
+                if (ImGui::MenuItem("Visibility Cell")) {
+                    registry.emplace<VisibilityCell>(entity);
+                }
+            }
+            if (!registry.all_of<CullingGroup>(entity)) {
+                if (ImGui::MenuItem("Culling Group")) {
+                    registry.emplace<CullingGroup>(entity);
+                }
+            }
+            if (!registry.all_of<NeverCull>(entity)) {
+                if (ImGui::MenuItem("Never Cull (Tag)")) {
+                    registry.emplace<NeverCull>(entity);
+                }
+            }
+            if (!registry.all_of<ShadowOnly>(entity)) {
+                if (ImGui::MenuItem("Shadow Only (Tag)")) {
+                    registry.emplace<ShadowOnly>(entity);
                 }
             }
 

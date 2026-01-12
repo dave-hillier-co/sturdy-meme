@@ -72,7 +72,7 @@ void Harbour::createGeometry() {
 
         geom::Point edgeDir = edge.second.subtract(edge.first);
         edgeDir = edgeDir.norm(1.0);
-        geom::Point perpDir(-edgeDir.y, edgeDir.x);  // Points into water
+        geom::Point perpDir(edgeDir.y, -edgeDir.x);  // Points outward into water (CCW polygon)
 
         double spacing = edgeLen / (numPiers + 1);
 

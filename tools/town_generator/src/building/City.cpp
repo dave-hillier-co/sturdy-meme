@@ -534,6 +534,25 @@ void City::buildWalls() {
     std::vector<Cell*> citadelPatches;
     std::vector<geom::PointPtr> reservedPoints;  // Points that shouldn't be modified (by pointer identity)
 
+    // Add water edge vertices to reserved points to prevent gates on water
+    // (faithful to mfcg.js: excludePoints = this.waterEdge.slice())
+    for (auto* patch : inner) {
+        for (auto* neighbor : patch->neighbors) {
+            if (neighbor && neighbor->waterbody) {
+                // Find shared edge vertices between land patch and water patch
+                for (size_t i = 0; i < patch->shape.length(); ++i) {
+                    geom::PointPtr v = patch->shape.ptr(i);
+                    if (neighbor->shape.containsPtr(v)) {
+                        // This vertex is on the water boundary
+                        if (std::find(reservedPoints.begin(), reservedPoints.end(), v) == reservedPoints.end()) {
+                            reservedPoints.push_back(v);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     if (citadelNeeded && wallsNeeded && !inner.empty()) {
         // Use the first inner patch (closest to center) for citadel
         citadelPatch = inner[0];

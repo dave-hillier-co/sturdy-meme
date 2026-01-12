@@ -9,6 +9,7 @@
 #include "town_generator/geom/SkeletonBuilder.h"
 #include "town_generator/building/Blueprint.h"
 #include "town_generator/utils/Bloater.h"
+#include "town_generator/utils/PathTracker.h"
 #include <iostream>
 #include <vector>
 #include <cassert>
@@ -203,6 +204,79 @@ void testBloater() {
     std::cout << "Bloater: Deflate passed\n";
 }
 
+void testPathTracker() {
+    // Create a simple path: L-shape
+    std::vector<Point> path = {
+        Point(0, 0),
+        Point(10, 0),
+        Point(10, 10)
+    };
+
+    PathTracker tracker(path);
+
+    // Test total length
+    double length = tracker.getTotalLength();
+    assert(std::abs(length - 20.0) < 0.001);  // 10 + 10
+    std::cout << "PathTracker: Total length = " << length << "\n";
+
+    // Test getPos at start
+    auto pos0 = tracker.getPos(0);
+    assert(pos0.has_value());
+    assert(std::abs(pos0->x - 0) < 0.001);
+    assert(std::abs(pos0->y - 0) < 0.001);
+    std::cout << "PathTracker: Position at 0 = (" << pos0->x << ", " << pos0->y << ")\n";
+
+    // Test getPos at midpoint of first segment
+    auto pos5 = tracker.getPos(5);
+    assert(pos5.has_value());
+    assert(std::abs(pos5->x - 5) < 0.001);
+    assert(std::abs(pos5->y - 0) < 0.001);
+    std::cout << "PathTracker: Position at 5 = (" << pos5->x << ", " << pos5->y << ")\n";
+
+    // Test getPos at corner
+    auto pos10 = tracker.getPos(10);
+    assert(pos10.has_value());
+    assert(std::abs(pos10->x - 10) < 0.001);
+    assert(std::abs(pos10->y - 0) < 0.001);
+    std::cout << "PathTracker: Position at 10 = (" << pos10->x << ", " << pos10->y << ")\n";
+
+    // Test getPos on second segment
+    auto pos15 = tracker.getPos(15);
+    assert(pos15.has_value());
+    assert(std::abs(pos15->x - 10) < 0.001);
+    assert(std::abs(pos15->y - 5) < 0.001);
+    std::cout << "PathTracker: Position at 15 = (" << pos15->x << ", " << pos15->y << ")\n";
+
+    // Test getPos past end
+    auto posPastEnd = tracker.getPos(25);
+    assert(!posPastEnd.has_value());
+    std::cout << "PathTracker: Position past end returns nullopt\n";
+
+    // Test sample
+    auto samples = tracker.sample(5);
+    assert(samples.size() == 5);
+    std::cout << "PathTracker: Sampled " << samples.size() << " points\n";
+
+    // Test sampleSpaced
+    auto spaced = tracker.sampleSpaced(5.0);
+    assert(spaced.size() >= 4);  // Should have at least 4 points (0, 5, 10, 15)
+    std::cout << "PathTracker: Spaced sample has " << spaced.size() << " points\n";
+
+    // Test tangent
+    tracker.reset();
+    tracker.getPos(5);  // Move to middle of first segment
+    auto tangent = tracker.getTangentNormalized();
+    assert(std::abs(tangent.x - 1) < 0.001);  // Should be (1, 0)
+    assert(std::abs(tangent.y - 0) < 0.001);
+    std::cout << "PathTracker: Tangent at 5 = (" << tangent.x << ", " << tangent.y << ")\n";
+
+    // Test normal
+    auto normal = tracker.getNormal();
+    assert(std::abs(normal.x - 0) < 0.001);  // Should be (0, 1)
+    assert(std::abs(normal.y - 1) < 0.001);
+    std::cout << "PathTracker: Normal at 5 = (" << normal.x << ", " << normal.y << ")\n";
+}
+
 int main() {
     std::cout << "=== Testing New Geometry and Building Classes ===\n\n";
 
@@ -225,6 +299,9 @@ int main() {
     std::cout << "\n";
 
     testBloater();
+    std::cout << "\n";
+
+    testPathTracker();
     std::cout << "\n";
 
     std::cout << "=== All Tests Passed ===\n";

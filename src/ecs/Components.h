@@ -753,3 +753,75 @@ struct FogVolume {
     float heightFalloff{0.01f};            // Fog density falloff with height
     bool isGlobal{false};
 };
+
+// ============================================================================
+// Occlusion Culling Components (Phase 6)
+// ============================================================================
+
+// Marks entity for GPU occlusion culling via Hi-Z system
+struct OcclusionCullable {
+    uint32_t cullIndex{~0u};              // Index in culling system's object buffer
+    bool wasVisibleLastFrame{true};       // Cached visibility result
+    uint32_t invisibleFrames{0};          // Frames since last visible (for hysteresis)
+};
+
+// Bounding sphere for fast culling tests
+struct CullBoundingSphere {
+    glm::vec3 center{0.0f};               // Local space center offset
+    float radius{1.0f};
+};
+
+// Occlusion query result (GPU async query)
+struct OcclusionQueryResult {
+    uint32_t queryIndex{~0u};             // Index in query pool
+    bool queryPending{false};             // Waiting for GPU result
+    uint32_t samplesPassed{0};            // Pixels visible (0 = occluded)
+};
+
+// Portal/occluder for visibility determination
+struct OcclusionPortal {
+    std::vector<glm::vec3> vertices;      // Portal polygon vertices
+    glm::vec3 normal{0.0f, 0.0f, 1.0f};   // Portal facing direction
+    bool twoSided{false};                 // Visible from both sides
+};
+
+// Large occluder hint (buildings, terrain features)
+struct Occluder {
+    enum class Shape : uint8_t {
+        Box,
+        ConvexHull,
+        Portal
+    };
+    Shape shape{Shape::Box};
+    bool alwaysOcclude{false};            // Force as occluder even if small
+};
+
+// Software rasterization occluder data
+struct SoftwareOccluder {
+    std::vector<glm::vec3> vertices;
+    std::vector<uint32_t> indices;
+    float conservativeExpand{0.0f};       // Expand silhouette for conservative culling
+};
+
+// Visibility cell/sector for precomputed visibility (PVS-like)
+struct VisibilityCell {
+    uint32_t cellId{0};
+    glm::vec3 center{0.0f};
+    glm::vec3 extents{10.0f};
+    std::vector<uint32_t> potentiallyVisibleCells;  // Cell IDs visible from here
+};
+
+// Tag: entity should never be culled (always rendered)
+struct NeverCull {};
+
+// Tag: entity is a shadow-only object (culled from main view but not shadow)
+struct ShadowOnly {};
+
+// Tag: entity participates in occlusion culling as occluder
+struct IsOccluder {};
+
+// Culling group for batch processing
+struct CullingGroup {
+    uint32_t groupId{0};                  // Group ID for batch culling
+    uint32_t priority{0};                 // Higher = cull first
+};

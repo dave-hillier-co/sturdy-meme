@@ -65,6 +65,13 @@ public:
         renderOccluderComponent(registry, selectedEntity);
         renderVisibilityCellComponent(registry, selectedEntity);
         renderCullingGroupComponent(registry, selectedEntity);
+        renderDecalComponent(registry, selectedEntity);
+        renderSpriteRendererComponent(registry, selectedEntity);
+        renderRenderTargetComponent(registry, selectedEntity);
+        renderReflectionProbeComponent(registry, selectedEntity);
+        renderLightProbeComponent(registry, selectedEntity);
+        renderLightProbeVolumeComponent(registry, selectedEntity);
+        renderPortalSurfaceComponent(registry, selectedEntity);
         renderTagComponents(registry, selectedEntity);
 
         ImGui::Separator();
@@ -1050,6 +1057,249 @@ private:
         }
     }
 
+    // ========================================================================
+    // Extended Rendering Component Editors (Phase 7)
+    // ========================================================================
+
+    void renderDecalComponent(entt::registry& registry, entt::entity entity) {
+        if (!registry.all_of<Decal>(entity)) return;
+
+        if (renderComponentHeader("Decal")) {
+            auto& decal = registry.get<Decal>(entity);
+
+            int matId = static_cast<int>(decal.material);
+            if (ImGui::InputInt("Material Handle", &matId)) {
+                decal.material = static_cast<MaterialHandle>(std::max(0, matId));
+            }
+
+            editVec3("Size", decal.size);
+            ImGui::DragFloat("Fade Distance", &decal.fadeDistance, 0.5f, 0.0f, 100.0f, "%.1f m");
+            ImGui::DragFloat("Angle Fade", &decal.angleFade, 0.01f, 0.0f, 1.0f);
+            ImGui::DragFloat("Depth Bias", &decal.depthBias, 0.0001f, 0.0f, 0.01f, "%.4f");
+            ImGui::InputInt("Sort Order", &decal.sortOrder);
+
+            ImGui::Separator();
+            ImGui::Text("Affects:");
+            ImGui::Checkbox("Albedo", &decal.affectsAlbedo);
+            ImGui::SameLine();
+            ImGui::Checkbox("Normal", &decal.affectsNormal);
+            ImGui::SameLine();
+            ImGui::Checkbox("Roughness", &decal.affectsRoughness);
+        }
+    }
+
+    void renderSpriteRendererComponent(entt::registry& registry, entt::entity entity) {
+        if (!registry.all_of<SpriteRenderer>(entity)) return;
+
+        if (renderComponentHeader("Sprite Renderer")) {
+            auto& sprite = registry.get<SpriteRenderer>(entity);
+
+            int texId = static_cast<int>(sprite.texture);
+            if (ImGui::InputInt("Texture Handle", &texId)) {
+                sprite.texture = static_cast<TextureHandle>(std::max(0, texId));
+            }
+
+            int atlasId = static_cast<int>(sprite.atlasTexture);
+            if (ImGui::InputInt("Atlas Texture", &atlasId)) {
+                sprite.atlasTexture = static_cast<TextureHandle>(std::max(0, atlasId));
+            }
+
+            float size[2] = {sprite.size.x, sprite.size.y};
+            if (ImGui::DragFloat2("Size", size, 0.1f, 0.01f, 100.0f)) {
+                sprite.size = glm::vec2(size[0], size[1]);
+            }
+
+            float color[4] = {sprite.color.r, sprite.color.g, sprite.color.b, sprite.color.a};
+            if (ImGui::ColorEdit4("Color", color)) {
+                sprite.color = glm::vec4(color[0], color[1], color[2], color[3]);
+            }
+
+            const char* modes[] = {"None", "Face Camera", "Face Camera Y", "Fixed"};
+            int mode = static_cast<int>(sprite.mode);
+            if (ImGui::Combo("Billboard Mode", &mode, modes, IM_ARRAYSIZE(modes))) {
+                sprite.mode = static_cast<SpriteRenderer::Mode>(mode);
+            }
+
+            if (ImGui::TreeNode("Animation")) {
+                int frames = static_cast<int>(sprite.frameCount);
+                if (ImGui::InputInt("Frame Count", &frames)) {
+                    sprite.frameCount = static_cast<uint32_t>(std::max(1, frames));
+                }
+
+                int current = static_cast<int>(sprite.currentFrame);
+                if (ImGui::SliderInt("Current Frame", &current, 0, static_cast<int>(sprite.frameCount) - 1)) {
+                    sprite.currentFrame = static_cast<uint32_t>(current);
+                }
+
+                ImGui::DragFloat("FPS", &sprite.framesPerSecond, 1.0f, 0.1f, 60.0f);
+                ImGui::Checkbox("Animating", &sprite.animating);
+                ImGui::SameLine();
+                ImGui::Checkbox("Loop", &sprite.loopAnimation);
+                ImGui::TreePop();
+            }
+
+            if (ImGui::TreeNode("Rendering")) {
+                ImGui::Checkbox("Casts Shadow", &sprite.castsShadow);
+                ImGui::Checkbox("Receives Shadow", &sprite.receiveShadow);
+                ImGui::DragFloat("Sort Offset", &sprite.sortOffset, 0.01f, -10.0f, 10.0f);
+                ImGui::TreePop();
+            }
+        }
+    }
+
+    void renderRenderTargetComponent(entt::registry& registry, entt::entity entity) {
+        if (!registry.all_of<RenderTarget>(entity)) return;
+
+        if (renderComponentHeader("Render Target")) {
+            auto& rt = registry.get<RenderTarget>(entity);
+
+            int w = static_cast<int>(rt.width);
+            int h = static_cast<int>(rt.height);
+            if (ImGui::InputInt("Width", &w)) {
+                rt.width = static_cast<uint32_t>(std::clamp(w, 1, 4096));
+            }
+            if (ImGui::InputInt("Height", &h)) {
+                rt.height = static_cast<uint32_t>(std::clamp(h, 1, 4096));
+            }
+
+            const char* formats[] = {"RGBA8", "RGBA16F", "R32F", "Depth"};
+            int format = static_cast<int>(rt.colorFormat);
+            if (ImGui::Combo("Format", &format, formats, IM_ARRAYSIZE(formats))) {
+                rt.colorFormat = static_cast<RenderTarget::Format>(format);
+            }
+
+            ImGui::Checkbox("Has Depth", &rt.hasDepth);
+
+            const char* updateModes[] = {"Every Frame", "On Demand", "Interval"};
+            int updateMode = static_cast<int>(rt.updateMode);
+            if (ImGui::Combo("Update Mode", &updateMode, updateModes, IM_ARRAYSIZE(updateModes))) {
+                rt.updateMode = static_cast<RenderTarget::UpdateMode>(updateMode);
+            }
+
+            if (rt.updateMode == RenderTarget::UpdateMode::Interval) {
+                ImGui::DragFloat("Update Interval", &rt.updateInterval, 0.01f, 0.0f, 10.0f, "%.2f s");
+            }
+
+            if (rt.updateMode == RenderTarget::UpdateMode::OnDemand) {
+                if (ImGui::Button("Request Update")) {
+                    rt.needsUpdate = true;
+                }
+            }
+        }
+    }
+
+    void renderReflectionProbeComponent(entt::registry& registry, entt::entity entity) {
+        if (!registry.all_of<ReflectionProbe>(entity)) return;
+
+        if (renderComponentHeader("Reflection Probe")) {
+            auto& probe = registry.get<ReflectionProbe>(entity);
+
+            editVec3("Extents", probe.extents);
+            ImGui::DragFloat("Blend Distance", &probe.blendDistance, 0.1f, 0.0f, 20.0f, "%.1f m");
+            ImGui::DragFloat("Intensity", &probe.intensity, 0.1f, 0.0f, 5.0f);
+            ImGui::InputInt("Priority", &probe.priority);
+
+            const char* resolutions[] = {"64 (Low)", "128 (Medium)", "256 (High)", "512 (Very High)"};
+            int res = static_cast<int>(probe.resolution);
+            if (ImGui::Combo("Resolution", &res, resolutions, IM_ARRAYSIZE(resolutions))) {
+                probe.resolution = static_cast<ReflectionProbe::Resolution>(res);
+            }
+
+            ImGui::Checkbox("Use Box Projection", &probe.useBoxProjection);
+            if (probe.useBoxProjection) {
+                editVec3("Box Offset", probe.boxProjection);
+            }
+
+            ImGui::Separator();
+            ImGui::Checkbox("Realtime", &probe.realtime);
+            if (probe.realtime) {
+                ImGui::DragFloat("Update Interval", &probe.updateInterval, 0.1f, 0.0f, 10.0f, "%.1f s");
+            }
+
+            if (ImGui::Button("Force Capture")) {
+                probe.needsCapture = true;
+            }
+        }
+    }
+
+    void renderLightProbeComponent(entt::registry& registry, entt::entity entity) {
+        if (!registry.all_of<LightProbe>(entity)) return;
+
+        if (renderComponentHeader("Light Probe")) {
+            auto& probe = registry.get<LightProbe>(entity);
+
+            ImGui::DragFloat("Influence", &probe.influence, 0.5f, 0.1f, 100.0f, "%.1f m");
+            ImGui::DragFloat("Blend Distance", &probe.blendDistance, 0.1f, 0.0f, 20.0f, "%.1f m");
+            ImGui::InputInt("Priority", &probe.priority);
+
+            ImGui::Separator();
+            ImGui::Checkbox("Realtime", &probe.realtime);
+            if (probe.realtime) {
+                ImGui::DragFloat("Update Interval", &probe.updateInterval, 0.1f, 0.1f, 10.0f, "%.1f s");
+            }
+
+            if (ImGui::Button("Force Capture")) {
+                probe.needsCapture = true;
+            }
+
+            // Show ambient (L00) coefficient
+            if (ImGui::TreeNode("SH Coefficients")) {
+                ImGui::TextDisabled("Ambient (L00):");
+                float ambient[3] = {probe.shCoefficients[0].r, probe.shCoefficients[0].g, probe.shCoefficients[0].b};
+                if (ImGui::ColorEdit3("##ambient", ambient)) {
+                    probe.shCoefficients[0] = glm::vec3(ambient[0], ambient[1], ambient[2]);
+                }
+                ImGui::TreePop();
+            }
+        }
+    }
+
+    void renderLightProbeVolumeComponent(entt::registry& registry, entt::entity entity) {
+        if (!registry.all_of<LightProbeVolume>(entity)) return;
+
+        if (renderComponentHeader("Light Probe Volume")) {
+            auto& volume = registry.get<LightProbeVolume>(entity);
+
+            editVec3("Extents", volume.extents);
+
+            int count[3] = {volume.probeCount.x, volume.probeCount.y, volume.probeCount.z};
+            if (ImGui::InputInt3("Probe Count", count)) {
+                volume.probeCount = glm::ivec3(
+                    std::max(1, count[0]),
+                    std::max(1, count[1]),
+                    std::max(1, count[2])
+                );
+            }
+
+            ImGui::DragFloat("Probe Spacing", &volume.probeSpacing, 0.5f, 0.5f, 50.0f, "%.1f m");
+            ImGui::Checkbox("Interpolate", &volume.interpolate);
+
+            int totalProbes = volume.probeCount.x * volume.probeCount.y * volume.probeCount.z;
+            ImGui::TextDisabled("Total probes: %d", totalProbes);
+        }
+    }
+
+    void renderPortalSurfaceComponent(entt::registry& registry, entt::entity entity) {
+        if (!registry.all_of<PortalSurface>(entity)) return;
+
+        if (renderComponentHeader("Portal Surface")) {
+            auto& portal = registry.get<PortalSurface>(entity);
+
+            ImGui::Checkbox("Is Mirror", &portal.isMirror);
+
+            if (!portal.isMirror) {
+                uint32_t targetId = (portal.targetPortal != entt::null) ?
+                    static_cast<uint32_t>(portal.targetPortal) : ~0u;
+                ImGui::TextDisabled("Target Portal: %s",
+                    (portal.targetPortal != entt::null) ?
+                        std::to_string(targetId).c_str() : "None");
+            }
+
+            ImGui::Checkbox("Two Sided", &portal.twoSided);
+            ImGui::DragFloat("Clip Plane Offset", &portal.clipPlaneOffset, 0.001f, 0.0f, 0.1f, "%.3f");
+        }
+    }
+
     void renderTagComponents(entt::registry& registry, entt::entity entity) {
         // Collect all tag components
         std::vector<std::string> tags;
@@ -1069,6 +1319,8 @@ private:
         if (registry.all_of<NeverCull>(entity)) tags.push_back("Never Cull");
         if (registry.all_of<ShadowOnly>(entity)) tags.push_back("Shadow Only");
         if (registry.all_of<IsOccluder>(entity)) tags.push_back("Is Occluder");
+        if (registry.all_of<IsReflectionProbe>(entity)) tags.push_back("Reflection Probe");
+        if (registry.all_of<IsLightProbe>(entity)) tags.push_back("Light Probe");
 
         if (!tags.empty()) {
             if (renderComponentHeader("Tags")) {
@@ -1315,6 +1567,53 @@ private:
             if (!registry.all_of<ShadowOnly>(entity)) {
                 if (ImGui::MenuItem("Shadow Only (Tag)")) {
                     registry.emplace<ShadowOnly>(entity);
+                }
+            }
+
+            ImGui::Separator();
+            ImGui::TextDisabled("Extended Rendering");
+
+            if (!registry.all_of<Decal>(entity)) {
+                if (ImGui::MenuItem("Decal")) {
+                    registry.emplace<Decal>(entity);
+                    registry.emplace_or_replace<AABBBounds>(entity);
+                }
+            }
+            if (!registry.all_of<SpriteRenderer>(entity)) {
+                if (ImGui::MenuItem("Sprite Renderer")) {
+                    registry.emplace<SpriteRenderer>(entity);
+                    registry.emplace_or_replace<BoundingSphere>(entity);
+                }
+            }
+            if (!registry.all_of<RenderTarget>(entity)) {
+                if (ImGui::MenuItem("Render Target")) {
+                    registry.emplace<RenderTarget>(entity);
+                }
+            }
+            if (!registry.all_of<ReflectionProbe>(entity)) {
+                if (ImGui::MenuItem("Reflection Probe")) {
+                    registry.emplace<ReflectionProbe>(entity);
+                    registry.emplace_or_replace<IsReflectionProbe>(entity);
+                    registry.emplace_or_replace<AABBBounds>(entity);
+                }
+            }
+            if (!registry.all_of<LightProbe>(entity)) {
+                if (ImGui::MenuItem("Light Probe")) {
+                    registry.emplace<LightProbe>(entity);
+                    registry.emplace_or_replace<IsLightProbe>(entity);
+                    registry.emplace_or_replace<BoundingSphere>(entity);
+                }
+            }
+            if (!registry.all_of<LightProbeVolume>(entity)) {
+                if (ImGui::MenuItem("Light Probe Volume")) {
+                    registry.emplace<LightProbeVolume>(entity);
+                }
+            }
+            if (!registry.all_of<PortalSurface>(entity)) {
+                if (ImGui::MenuItem("Portal/Mirror")) {
+                    registry.emplace<PortalSurface>(entity);
+                    registry.emplace_or_replace<RenderTarget>(entity);
+                    registry.emplace_or_replace<MeshRenderer>(entity);
                 }
             }
 

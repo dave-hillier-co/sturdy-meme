@@ -739,3 +739,169 @@ struct CullingGroup {
     uint32_t groupId{0};                  // Group ID for batch culling
     uint32_t priority{0};                 // Higher = cull first
 };
+
+// ============================================================================
+// Extended Rendering Components (Phase 7)
+// ============================================================================
+
+// Handle for cubemap textures
+using CubemapHandle = uint32_t;
+constexpr CubemapHandle InvalidCubemap = ~0u;
+
+// Handle for render targets
+using RenderTargetHandle = uint32_t;
+constexpr RenderTargetHandle InvalidRenderTarget = ~0u;
+
+// Decal projection component - projects textures onto surfaces
+struct Decal {
+    MaterialHandle material{InvalidMaterial};
+    glm::vec3 size{1.0f, 1.0f, 1.0f};     // Projection box size
+    float fadeDistance{5.0f};              // Distance to start fading
+    float angleFade{0.5f};                 // Fade based on surface angle (0=no fade, 1=aggressive)
+    float depthBias{0.001f};               // Avoid z-fighting
+    int sortOrder{0};                      // Draw order for overlapping decals
+    bool affectsAlbedo{true};
+    bool affectsNormal{true};
+    bool affectsRoughness{false};
+};
+
+// Sprite renderer for billboard sprites
+struct SpriteRenderer {
+    TextureHandle texture{InvalidTexture};
+    TextureHandle atlasTexture{InvalidTexture};  // Optional texture atlas
+    glm::vec2 size{1.0f, 1.0f};            // World-space size
+    glm::vec4 color{1.0f};                 // Tint color with alpha
+    glm::vec4 uvRect{0.0f, 0.0f, 1.0f, 1.0f};  // UV coordinates (for atlas)
+
+    // Billboard mode
+    enum class Mode : uint8_t {
+        None,           // No billboarding
+        FaceCamera,     // Full billboarding (face camera)
+        FaceCameraY,    // Vertical axis only (cylindrical)
+        Fixed           // Fixed orientation
+    };
+    Mode mode{Mode::FaceCamera};
+
+    // Animation (for sprite sheets)
+    uint32_t frameCount{1};
+    uint32_t currentFrame{0};
+    float framesPerSecond{12.0f};
+    float frameTime{0.0f};
+    bool animating{false};
+    bool loopAnimation{true};
+
+    // Rendering
+    bool castsShadow{false};
+    bool receiveShadow{true};
+    float sortOffset{0.0f};                // Depth sorting bias
+};
+
+// Render target for render-to-texture functionality
+struct RenderTarget {
+    RenderTargetHandle handle{InvalidRenderTarget};
+    uint32_t width{512};
+    uint32_t height{512};
+
+    // Format options
+    enum class Format : uint8_t {
+        RGBA8,
+        RGBA16F,
+        R32F,
+        Depth
+    };
+    Format colorFormat{Format::RGBA8};
+    bool hasDepth{true};
+
+    // Update settings
+    enum class UpdateMode : uint8_t {
+        EveryFrame,
+        OnDemand,
+        Interval
+    };
+    UpdateMode updateMode{UpdateMode::EveryFrame};
+    float updateInterval{0.0f};            // Seconds between updates
+    float timeSinceUpdate{0.0f};
+    bool needsUpdate{true};
+
+    // Associated camera (if null, uses entity's CameraComponent)
+    entt::entity cameraEntity{entt::null};
+};
+
+// Reflection probe for local environment reflections
+struct ReflectionProbe {
+    CubemapHandle cubemap{InvalidCubemap};
+    glm::vec3 extents{10.0f};              // Probe influence box size
+    glm::vec3 boxProjection{0.0f};         // Box projection center offset
+    float blendDistance{1.0f};             // Fade distance at edges
+    float intensity{1.0f};
+    int priority{0};                       // Higher = more important
+
+    // Capture settings
+    enum class Resolution : uint8_t {
+        Low = 0,       // 64
+        Medium = 1,    // 128
+        High = 2,      // 256
+        VeryHigh = 3   // 512
+    };
+    Resolution resolution{Resolution::Medium};
+
+    // Update mode
+    bool realtime{false};                  // Dynamic reflections
+    float updateInterval{0.0f};            // Seconds between updates (if realtime)
+    float timeSinceCapture{0.0f};
+    bool needsCapture{true};
+
+    // Filtering
+    bool useBoxProjection{true};           // Use box projection for parallax correction
+    uint32_t cullingMask{~0u};             // Layer mask for what to reflect
+};
+
+// Light probe for indirect diffuse lighting (spherical harmonics)
+struct LightProbe {
+    // SH9 coefficients for irradiance (3 bands = 9 coefficients per color channel)
+    glm::vec3 shCoefficients[9]{
+        glm::vec3(0.5f),  // L00 (ambient)
+        glm::vec3(0.0f),  // L1-1
+        glm::vec3(0.0f),  // L10
+        glm::vec3(0.0f),  // L11
+        glm::vec3(0.0f),  // L2-2
+        glm::vec3(0.0f),  // L2-1
+        glm::vec3(0.0f),  // L20
+        glm::vec3(0.0f),  // L21
+        glm::vec3(0.0f)   // L22
+    };
+
+    float influence{10.0f};                // Radius of influence
+    float blendDistance{2.0f};             // Fade at edges
+    int priority{0};                       // For overlapping probes
+
+    // Capture settings
+    bool needsCapture{true};
+    bool realtime{false};
+    float updateInterval{1.0f};
+    float timeSinceCapture{0.0f};
+};
+
+// Light probe group for interpolation
+struct LightProbeVolume {
+    glm::vec3 extents{20.0f};              // Volume size
+    glm::ivec3 probeCount{4, 2, 4};        // Probes per axis
+    float probeSpacing{5.0f};              // Auto-calculated from extents/count
+    bool interpolate{true};                // Trilinear interpolation between probes
+};
+
+// Tag: entity is a reflection probe (for queries)
+struct IsReflectionProbe {};
+
+// Tag: entity is a light probe
+struct IsLightProbe {};
+
+// Portal/mirror surface for render-to-texture views
+struct PortalSurface {
+    entt::entity targetPortal{entt::null}; // Linked portal for teleportation
+    entt::entity viewCamera{entt::null};   // Camera for rendering portal view
+    RenderTargetHandle renderTarget{InvalidRenderTarget};
+    bool isMirror{false};                  // True = mirror, False = portal
+    bool twoSided{false};
+    float clipPlaneOffset{0.01f};          // Oblique near plane offset
+};

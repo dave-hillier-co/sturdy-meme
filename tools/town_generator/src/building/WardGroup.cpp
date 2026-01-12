@@ -109,10 +109,13 @@ void WardGroup::createGeometry() {
     // Calculate per-edge insets based on what's adjacent (roads, walls, etc.)
     std::vector<double> insets = getAvailable();
 
+    double borderArea = std::abs(border.square());
+
     // Faithful to MFCG: use shrink() for convex polygons, buffer() for concave
     // Reference: Ward.hx getCityBlock() - patch.shape.isConvex() ? shrink() : buffer()
     geom::Polygon available;
-    if (border.isConvex()) {
+    bool isConvex = border.isConvex();
+    if (isConvex) {
         available = border.shrink(insets);
     } else {
         available = border.buffer(insets);
@@ -140,9 +143,12 @@ void WardGroup::createGeometry() {
         utils::Bisector bisector(available.vertexValues(), bisectorMinArea, bisectorVariance);
 
         // Set gap callback to create alleys between blocks
-        bisector.getGap = [](const std::vector<geom::Point>&) {
-            return 1.2;  // Alley width
-        };
+        // Note: Disabled for now because polygonIntersection with subtract=true
+        // doesn't properly compute polygon subtraction (A - B)
+        // TODO: Implement proper polygon boolean subtraction
+        // bisector.getGap = [](const std::vector<geom::Point>&) {
+        //     return 1.2;  // Alley width
+        // };
 
         // Partition into blocks
         blockShapes = bisector.partition();
@@ -155,11 +161,22 @@ void WardGroup::createGeometry() {
     }
 
     // Create Block objects from shapes
+    // Shrink each block slightly to create gaps between blocks (alley effect)
+    constexpr double BLOCK_INSET = 0.6;  // Half of ALLEY width (1.2)
+
     blocks.clear();
     for (const auto& shape : blockShapes) {
         if (shape.size() < 3) continue;
 
-        double blockArea = std::abs(geom::GeomUtils::polygonArea(shape));
+        // Shrink the block to create alley gaps
+        geom::Polygon blockPoly(shape);
+        geom::Polygon shrunkBlock = blockPoly.bufferEq(-BLOCK_INSET);
+        if (shrunkBlock.length() < 3) {
+            // Block too small to shrink, use original
+            shrunkBlock = blockPoly;
+        }
+
+        double blockArea = std::abs(shrunkBlock.square());
 
         // Determine if this is a small block
         // Faithful to mfcg.js: blocks smaller than threshold are "small"
@@ -167,8 +184,7 @@ void WardGroup::createGeometry() {
             std::pow(2.0, alleys.sizeChaos * (2.0 * utils::Random::floatVal() - 1.0));
         bool isSmall = blockArea < smallThreshold;
 
-        geom::Polygon blockPoly(shape);
-        auto block = std::make_unique<Block>(blockPoly, this);
+        auto block = std::make_unique<Block>(shrunkBlock, this);
         block->createLots();
         block->createRects();
         block->createBuildings();

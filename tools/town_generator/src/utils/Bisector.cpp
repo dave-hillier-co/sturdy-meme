@@ -287,22 +287,7 @@ std::vector<std::vector<geom::Point>> Bisector::makeCut(
 
         if (ratio < 2.0 * variance) {
             cuts.push_back(cutLine);
-
-            // Apply gap if callback is set
-            if (getGap) {
-                double gap = getGap(cutLine);
-                if (gap > 0) {
-                    auto stripe = geom::GeomUtils::stripe(cutLine, gap);
-                    auto stripeRev = revert(stripe);
-
-                    std::vector<std::vector<geom::Point>> gapped;
-                    for (const auto& part : result) {
-                        auto clipped = geom::GeomUtils::polygonIntersection(part, stripeRev, true);
-                        gapped.push_back(clipped.empty() ? part : clipped);
-                    }
-                    return gapped;
-                }
-            }
+            // Note: Gap application disabled - blocks are shrunk after subdivision instead
             return result;
         }
     }
@@ -397,22 +382,7 @@ std::vector<std::vector<geom::Point>> Bisector::makeCut(
         }
 
         cuts.push_back(processedCut);
-
-        // Apply gap if callback is set
-        if (getGap) {
-            double gap = getGap(processedCut);
-            if (gap > 0) {
-                auto stripe = geom::GeomUtils::stripe(processedCut, gap);
-                auto stripeRev = revert(stripe);
-
-                std::vector<std::vector<geom::Point>> gapped;
-                for (const auto& part : result) {
-                    auto clipped = geom::GeomUtils::polygonIntersection(part, stripeRev, true);
-                    gapped.push_back(clipped.empty() ? part : clipped);
-                }
-                return gapped;
-            }
-        }
+        // Note: Gap application disabled - blocks are shrunk after subdivision instead
         return result;
     }
 

@@ -9,10 +9,10 @@
 #include "town_generator/wards/Cathedral.h"
 #include "town_generator/wards/Market.h"
 #include "town_generator/wards/Alleys.h"
-#include "town_generator/wards/Slum.h"
 #include "town_generator/wards/Farm.h"
 #include "town_generator/wards/Park.h"
 #include "town_generator/wards/Harbour.h"
+#include "town_generator/wards/Wilderness.h"
 #include <algorithm>
 #include <cmath>
 #include <limits>
@@ -234,6 +234,11 @@ void City::buildPatches() {
 
         auto patch = std::make_unique<Cell>(geom::Polygon(sharedVertices));
         patchesCreated++;
+
+        // Faithful to MFCG: this.seed = C.seed = 48271 * C.seed % 2147483647
+        // Advance the RNG and store the current seed for this cell
+        utils::Random::floatVal();  // Advance the RNG
+        patch->seed = utils::Random::getSeed();  // Store the seed state
 
         regionToPatch[region] = patch.get();
         cells.push_back(patch.get());
@@ -1188,8 +1193,9 @@ void City::buildFarms() {
         }
 
         if (bordersShore(patch)) {
-            // Patches bordering shore become harbours
-            auto* ward = new wards::Harbour();
+            // MFCG: Shore-adjacent outer cells become Wilderness (not Harbour)
+            // Reference: 03-city.js line 503: n.bordersInside(this.shoreE) ? new Wilderness(this, n)
+            auto* ward = new wards::Wilderness();
             ward->patch = patch;
             ward->model = this;
             patch->ward = ward;
@@ -1307,9 +1313,9 @@ void City::buildShantyTowns() {
             }
         }
 
-        // Create slum ward for selected patch
+        // Create Alleys ward for selected patch (MFCG uses Alleys for shanty towns)
         Cell* patch = candidates[selected];
-        auto* ward = new wards::Slum();
+        auto* ward = new wards::Alleys();
         ward->patch = patch;
         ward->model = this;
         patch->ward = ward;
@@ -1332,9 +1338,12 @@ void City::buildGeometry() {
     createWardGroups();
 
     // Generate geometry for each ward
+    SDL_Log("City: Starting geometry creation for %zu wards", wards_.size());
     for (size_t i = 0; i < wards_.size(); ++i) {
+        SDL_Log("City: Creating geometry for ward %zu (%s)", i, wards_[i]->getName().c_str());
         wards_[i]->createGeometry();
     }
+    SDL_Log("City: Geometry creation complete");
 }
 
 void City::setEdgeData() {

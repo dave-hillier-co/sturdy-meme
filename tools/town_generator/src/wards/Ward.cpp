@@ -1,9 +1,7 @@
 #include "town_generator/wards/Ward.h"
 #include "town_generator/building/City.h"
 #include "town_generator/building/CurtainWall.h"
-#include "town_generator/building/Cutter.h"
 #include "town_generator/building/Block.h"
-#include "town_generator/building/Bisector.h"
 #include "town_generator/geom/GeomUtils.h"
 #include <algorithm>
 #include <cmath>
@@ -202,6 +200,115 @@ std::vector<double> Ward::getCityBlock() {
     }
 
     return insetDistances;
+}
+
+geom::Polygon Ward::getAvailable() {
+    // Faithful to mfcg.js Ward.getAvailable (lines 25-80 in 07-wards.js)
+    // Computes tower radii, edge insets, and applies Ward.inset() for corner rounding
+    if (!patch || !model) return geom::Polygon();
+
+    size_t len = patch->shape.length();
+    if (len < 3) return patch->shape;
+
+    // Step 1: Compute per-vertex tower radii (for corner rounding)
+    // mfcg.js lines 26-46: collects max tower radius at each vertex from walls and canals
+    std::vector<double> towerRadii(len, 0.0);
+    for (size_t i = 0; i < len; ++i) {
+        const geom::Point& v = patch->shape[i];
+        double maxRadius = 0.0;
+
+        // Check tower radius from all walls
+        if (model->wall) {
+            double r = model->wall->getTowerRadius(v);
+            maxRadius = std::max(maxRadius, r);
+        }
+        if (model->citadel) {
+            double r = model->citadel->getTowerRadius(v);
+            maxRadius = std::max(maxRadius, r);
+        }
+
+        // Check canal width at vertex (used as exclusion radius)
+        for (const auto& canal : model->canals) {
+            double canalWidth = canal->getWidthAtVertex(v);
+            if (canalWidth > 0) {
+                maxRadius = std::max(maxRadius, canalWidth);
+            }
+        }
+
+        towerRadii[i] = maxRadius;
+    }
+
+    // Step 2: Compute per-edge insets
+    // mfcg.js lines 47-78: computes insets based on edge type (ARTERY, STREET, WALL, CANAL)
+    std::vector<double> edgeInsets(len, 0.0);
+    for (size_t i = 0; i < len; ++i) {
+        const geom::Point& v0 = patch->shape[i];
+        const geom::Point& v1 = patch->shape[(i + 1) % len];
+
+        // Handle canal edge start vertex exclusions
+        // mfcg.js lines 53-57: canal exclusions at vertex
+        for (const auto& canal : model->canals) {
+            double canalWidth = canal->getWidthAtVertex(v0);
+            if (canalWidth > 0) {
+                towerRadii[i] = std::max(towerRadii[i], canalWidth / 2.0 + ALLEY);
+                // If this is start of canal, add extra
+                if (!canal->course.empty() && canal->course[0] == v0) {
+                    towerRadii[i] += ALLEY;
+                }
+            }
+        }
+
+        // Determine edge type and inset
+        // mfcg.js lines 58-78 with edge data switch
+        double inset = ALLEY / 2.0;  // Default for internal edges
+
+        // Check if on wall
+        if (model->wall && model->wall->bordersBy(patch, v0, v1)) {
+            inset = building::CurtainWall::THICKNESS / 2.0 + ALLEY;
+        } else if (model->citadel && model->citadel->bordersBy(patch, v0, v1)) {
+            inset = building::CurtainWall::THICKNESS / 2.0 + ALLEY;
+        }
+        // Check if on canal
+        else {
+            bool onCanal = false;
+            for (const auto& canal : model->canals) {
+                if (canal->containsEdge(v0, v1)) {
+                    inset = canal->width / 2.0 + ALLEY;
+                    onCanal = true;
+                    break;
+                }
+            }
+
+            if (!onCanal) {
+                // Check if on artery - landing gives 2.0, otherwise 1.2
+                if (isEdgeOnRoad(v0, v1, model->arteries)) {
+                    inset = patch->landing ? 2.0 : 1.2;
+                }
+                // Check if on street
+                else if (isEdgeOnRoad(v0, v1, model->streets) || isEdgeOnRoad(v0, v1, model->roads)) {
+                    inset = 1.0;
+                }
+                // Check if neighbor is plaza
+                else {
+                    for (const auto* neighbor : patch->neighbors) {
+                        if (neighbor && neighbor == model->plaza) {
+                            // Check if shares this edge
+                            if (neighbor->shape.findEdge(v0, v1) != -1 ||
+                                neighbor->shape.findEdge(v1, v0) != -1) {
+                                inset = 1.0;  // Plaza edge
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        edgeInsets[i] = inset;
+    }
+
+    // Step 3: Apply Ward.inset with tower corner rounding
+    return Ward::inset(patch->shape, edgeInsets, towerRadii);
 }
 
 void Ward::createGeometry() {
@@ -640,6 +747,82 @@ std::vector<geom::Point> Ward::semiSmooth(
     return result;
 }
 
+geom::Polygon Ward::inset(
+    const geom::Polygon& poly,
+    const std::vector<double>& edgeInsets,
+    const std::vector<double>& towerRadii
+) {
+    // Faithful to mfcg.js Ward.inset (lines 8-19 in 07-wards.js)
+    // 1. Apply basic polygon inset with per-edge amounts
+    // 2. For each vertex where tower radius > both adjacent edge insets:
+    //    - Create a regular 9-gon (nonagon) centered at original vertex
+    //    - Subtract it from the inset polygon to create rounded tower corners
+
+    if (poly.length() < 3 || edgeInsets.size() != poly.length()) {
+        return poly;
+    }
+
+    // Step 1: Basic polygon inset by per-edge amounts
+    // mfcg.js: var d = PolyUtils.inset(a, b);
+    geom::Polygon insetPoly = poly.shrink(edgeInsets);
+    if (insetPoly.length() < 3) {
+        return insetPoly;
+    }
+
+    // Step 2: Tower corner clipping
+    // mfcg.js: for each vertex k where towerRadii[k] > edgeInsets[k] && towerRadii[k] > edgeInsets[(k-1) % len]
+    size_t len = poly.length();
+    if (towerRadii.size() != len) {
+        return insetPoly;
+    }
+
+    for (size_t k = 0; k < len; ++k) {
+        double towerRadius = towerRadii[k];
+        size_t prevIdx = (k + len - 1) % len;
+
+        // Only clip if tower radius exceeds both adjacent edge insets
+        // mfcg.js: n > b[k] && n > b[p]
+        if (towerRadius > edgeInsets[k] && towerRadius > edgeInsets[prevIdx]) {
+            // Get the original vertex position (before inset)
+            const geom::Point& vertexPos = poly[k];
+
+            // Create a regular 9-gon (nonagon) at the vertex position
+            // mfcg.js: n = PolyCreate.regular(9, n, random())
+            // The random rotation gives visual variety
+            double randomAngle = utils::Random::floatVal() * 2.0 * M_PI;
+
+            std::vector<geom::Point> nonagon;
+            nonagon.reserve(9);
+            for (int i = 0; i < 9; ++i) {
+                double angle = randomAngle + static_cast<double>(i) / 9.0 * 2.0 * M_PI;
+                nonagon.emplace_back(
+                    vertexPos.x + towerRadius * std::cos(angle),
+                    vertexPos.y + towerRadius * std::sin(angle)
+                );
+            }
+
+            // Reverse the nonagon winding for subtraction
+            // mfcg.js: Z.revert(n)
+            std::vector<geom::Point> nonagonReversed = geom::GeomUtils::reverse(nonagon);
+
+            // Subtract the nonagon from the inset polygon
+            // mfcg.js: n = PolyBool.and(d, Z.revert(n), !0)
+            std::vector<geom::Point> insetPts = insetPoly.vertexValues();
+            std::vector<geom::Point> clipped = geom::GeomUtils::polygonIntersection(
+                insetPts, nonagonReversed, true  // subtract = true
+            );
+
+            // Only update if clipping succeeded
+            // mfcg.js: null != n && (d = n)
+            if (clipped.size() >= 3) {
+                insetPoly = geom::Polygon(clipped);
+            }
+        }
+    }
+
+    return insetPoly;
+}
+
 void Ward::createChurch(const geom::Polygon& block) {
     // Faithful to mfcg.js createChurch
     // Creates a church building in a medium-sized block
@@ -728,62 +911,9 @@ void Ward::createBlock(const geom::Polygon& shape, bool isSmall) {
 }
 
 void Ward::createAlleys(const geom::Polygon& shape, const AlleyParams& params) {
-    // Faithful to mfcg.js createAlleys (lines 13124-13145)
-    // Uses Bisector for proper partitioning
-
-    // Create bisector with minArea = minSq * blockSize, variance = 16 * gridChaos
-    double minArea = params.minSq * params.blockSize;
-    double variance = 16.0 * params.gridChaos;
-
-    building::Bisector bisector(shape, minArea, variance);
-
-    // Set gap callback (returns ALLEY)
-    bisector.getGap = [](const std::vector<geom::Point>&) { return ALLEY; };
-
-    // Set processCut to semiSmooth (optional, can be nullptr)
-    double minFront = params.minFront;
-    bisector.processCut = [minFront](const std::vector<geom::Point>& pts) {
-        if (pts.size() >= 3) {
-            return Ward::semiSmooth(pts[0], pts[1], pts[2], minFront);
-        }
-        return pts;
-    };
-
-    // For non-urban wards, use isBlockSized check
-    if (!urban) {
-        bisector.isAtomic = [this, &params](const geom::Polygon& p) {
-            return isBlockSized(p, params);
-        };
-    }
-
-    // Partition
-    auto partitions = bisector.partition();
-
-    // Store alley cuts for rendering
-    for (const auto& cut : bisector.cuts) {
-        alleys.push_back(cut);
-    }
-
-    // Process each partition
-    for (const auto& partition : partitions) {
-        double area = std::abs(partition.square());
-
-        // Calculate threshold with random variation (faithful to mfcg.js line 13138-13139)
-        double threshold = params.minSq * std::pow(2.0,
-            params.sizeChaos * (2.0 * utils::Random::floatVal() - 1.0));
-        double churchThreshold = 4.0 * threshold;
-
-        if (area < threshold) {
-            // Small block - create Block with isSmall=true
-            createBlock(partition, true);
-        } else if (church.empty() && area <= churchThreshold) {
-            // Church-sized block - create church
-            createChurch(partition);
-        } else {
-            // Regular block - create Block with isSmall=false
-            createBlock(partition, false);
-        }
-    }
+    // Simplified createAlleys - faithful to mfcg-clean WardGroup.js
+    // Just create a single block from the shape
+    createBlock(shape, false);
 }
 
 bool Ward::isBlockSized(const geom::Polygon& shape, const AlleyParams& params) {

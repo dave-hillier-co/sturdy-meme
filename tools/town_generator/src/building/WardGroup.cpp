@@ -2,8 +2,8 @@
 #include "town_generator/building/Block.h"
 #include "town_generator/building/City.h"
 #include "town_generator/building/CurtainWall.h"
-#include "town_generator/building/Bisector.h"
 #include "town_generator/utils/Random.h"
+#include "town_generator/utils/Bisector.h"
 #include "town_generator/wards/Ward.h"
 #include <algorithm>
 #include <cmath>
@@ -100,7 +100,6 @@ void WardGroup::createGeometry() {
     }
 
     if (border.length() < 3) {
-        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "WardGroup: Cannot create geometry with invalid border");
         return;
     }
 
@@ -109,52 +108,91 @@ void WardGroup::createGeometry() {
     // Get available area after street/wall insets
     // Calculate per-edge insets based on what's adjacent (roads, walls, etc.)
     std::vector<double> insets = getAvailable();
-    geom::Polygon available = border.shrink(insets);
 
-    if (available.length() < 3) {
-        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "WardGroup: Available area too small after inset");
+    double borderArea = std::abs(border.square());
+
+    // Faithful to MFCG: use shrink() for convex polygons, buffer() for concave
+    // Reference: Ward.hx getCityBlock() - patch.shape.isConvex() ? shrink() : buffer()
+    geom::Polygon available;
+    bool isConvex = border.isConvex();
+    if (isConvex) {
+        available = border.shrink(insets);
+    } else {
+        available = border.buffer(insets);
+    }
+    double availableArea = (available.length() >= 3) ? std::abs(available.square()) : 0.0;
+
+    if (available.length() < 3 || availableArea < alleys.minSq / 4) {
         return;
     }
 
-    // Create blocks using Bisector (faithful to mfcg.js createAlleys)
-    // MFCG: new Bisector(shape, alleys.minSq * alleys.blockSize, 16 * alleys.gridChaos)
-    double minArea = alleys.minSq * alleys.blockSize;
-    double variance = 16.0 * alleys.gridChaos;
-    Bisector bisector(available, minArea, variance);
+    // Faithful to mfcg.js WardGroup.createGeometry (lines 762-777)
+    // Check if area is large enough to need subdivision
+    double threshold = alleys.minSq *
+        std::pow(2.0, alleys.sizeChaos * (2.0 * utils::Random::floatVal() - 1.0)) *
+        alleys.blockSize;
 
-    // Set gap callback (returns Ward::ALLEY = 1.2)
-    bisector.getGap = [](const std::vector<geom::Point>&) {
-        return wards::Ward::ALLEY;
-    };
+    std::vector<std::vector<geom::Point>> blockShapes;
 
-    // For non-urban areas, use isBlockSized as atomic check
-    if (!urban) {
-        double blockSizeThreshold = alleys.minSq * alleys.blockSize;
-        bisector.isAtomic = [blockSizeThreshold](const geom::Polygon& shape) {
-            return std::abs(shape.square()) < blockSizeThreshold;
-        };
+    if (availableArea > threshold) {
+        // Use Bisector to subdivide into blocks
+        // Faithful to mfcg.js createAlleys (lines 823-844)
+        double bisectorMinArea = alleys.minSq * alleys.blockSize;
+        double bisectorVariance = 16.0 * alleys.gridChaos;
+
+        utils::Bisector bisector(available.vertexValues(), bisectorMinArea, bisectorVariance);
+
+        // Set gap callback to create alleys between blocks
+        // Note: Disabled for now because polygonIntersection with subtract=true
+        // doesn't properly compute polygon subtraction (A - B)
+        // TODO: Implement proper polygon boolean subtraction
+        // bisector.getGap = [](const std::vector<geom::Point>&) {
+        //     return 1.2;  // Alley width
+        // };
+
+        // Partition into blocks
+        blockShapes = bisector.partition();
+
+        // Store cuts as alleys
+        alleyPaths = bisector.cuts;
+    } else {
+        // Small area - single block
+        blockShapes.push_back(available.vertexValues());
     }
 
-    // Partition the area into blocks
-    std::vector<geom::Polygon> blockShapes = bisector.partition();
-
-    // Store alley cuts for SVG rendering
-    alleyCuts = bisector.cuts;
-
     // Create Block objects from shapes
+    // Shrink each block slightly to create gaps between blocks (alley effect)
+    constexpr double BLOCK_INSET = 0.6;  // Half of ALLEY width (1.2)
+
     blocks.clear();
-    size_t totalBuildings = 0;
     for (const auto& shape : blockShapes) {
-        auto block = std::make_unique<Block>(shape, this);
+        if (shape.size() < 3) continue;
+
+        // Shrink the block to create alley gaps
+        geom::Polygon blockPoly(shape);
+        geom::Polygon shrunkBlock = blockPoly.bufferEq(-BLOCK_INSET);
+        if (shrunkBlock.length() < 3) {
+            // Block too small to shrink, use original
+            shrunkBlock = blockPoly;
+        }
+
+        double blockArea = std::abs(shrunkBlock.square());
+
+        // Determine if this is a small block
+        // Faithful to mfcg.js: blocks smaller than threshold are "small"
+        double smallThreshold = alleys.minSq *
+            std::pow(2.0, alleys.sizeChaos * (2.0 * utils::Random::floatVal() - 1.0));
+        bool isSmall = blockArea < smallThreshold;
+
+        auto block = std::make_unique<Block>(shrunkBlock, this);
         block->createLots();
         block->createRects();
         block->createBuildings();
-        totalBuildings += block->buildings.size();
-        blocks.push_back(std::move(block));
-    }
 
-    SDL_Log("WardGroup: Created %zu blocks with %zu buildings, %zu alley cuts from %zu cells",
-            blocks.size(), totalBuildings, alleyCuts.size(), cells.size());
+        if (!block->buildings.empty()) {
+            blocks.push_back(std::move(block));
+        }
+    }
 }
 
 std::vector<geom::Point> WardGroup::spawnTrees() {
@@ -252,12 +290,32 @@ std::vector<double> WardGroup::getAvailable() const {
     // - ARTERY without landing: 1.2
     // - STREET: 1.0
     // - WALL: THICKNESS/2 + 1.2 ≈ 2.15
-    // - Plaza edge: 1.0
+    // - CANAL: canalWidth/2 + 1.2
     // - Default: 0.6
-    constexpr double INSET_ARTERY = 1.2;  // 2.0 for landing, 1.2 otherwise
+    constexpr double INSET_ARTERY_LANDING = 2.0;
+    constexpr double INSET_ARTERY = 1.2;
     constexpr double INSET_STREET = 1.0;
     constexpr double INSET_WALL = 2.15;   // THICKNESS/2 + 1.2
     constexpr double INSET_DEFAULT = 0.6; // ALLEY / 2
+
+    // Helper to check if edge borders a landing cell
+    auto hasLandingNeighbor = [this](const geom::Point& v0, const geom::Point& v1) -> bool {
+        // Find cells that share this edge but are NOT in our group
+        for (Cell* cell : cells) {
+            for (Cell* neighbor : cell->neighbors) {
+                // Skip cells that are in our group
+                if (neighbor->group == this) continue;
+
+                // Check if neighbor shares this edge
+                if (neighbor->shape.findEdge(v0, v1) != -1 || neighbor->shape.findEdge(v1, v0) != -1) {
+                    if (neighbor->landing) {
+                        return true;
+                    }
+                }
+            }
+        }
+        return false;
+    };
 
     for (size_t i = 0; i < border.length(); ++i) {
         const geom::Point& v0 = border[i];
@@ -283,13 +341,32 @@ std::vector<double> WardGroup::getAvailable() const {
                 inset = INSET_WALL;
             }
         }
-        // Check if edge is on main artery
-        else if (isEdgeOnRoad(v0, v1, model->arteries)) {
-            inset = INSET_ARTERY;
-        }
-        // Check streets and roads
-        else if (isEdgeOnRoad(v0, v1, model->streets) || isEdgeOnRoad(v0, v1, model->roads)) {
-            inset = INSET_STREET;
+        // Check canals - use canal width / 2 + 1.2
+        else {
+            bool onCanal = false;
+            for (const auto& canal : model->canals) {
+                if (canal->containsEdge(v0, v1)) {
+                    inset = canal->width / 2.0 + 1.2;
+                    onCanal = true;
+                    break;
+                }
+            }
+
+            if (!onCanal) {
+                // Check if edge is on main artery
+                if (isEdgeOnRoad(v0, v1, model->arteries)) {
+                    // Faithful to mfcg.js: check if adjacent cell is a landing
+                    if (hasLandingNeighbor(v0, v1)) {
+                        inset = INSET_ARTERY_LANDING;
+                    } else {
+                        inset = INSET_ARTERY;
+                    }
+                }
+                // Check streets and roads
+                else if (isEdgeOnRoad(v0, v1, model->streets) || isEdgeOnRoad(v0, v1, model->roads)) {
+                    inset = INSET_STREET;
+                }
+            }
         }
         // Default: INSET_DEFAULT (0.6)
         // Note: We don't check for internal edges here because the border is already
@@ -347,24 +424,19 @@ std::vector<std::unique_ptr<WardGroup>> WardGroupBuilder::build() {
     std::vector<std::unique_ptr<WardGroup>> groups;
 
     // Get all city cells with wards that support grouping
-    // Faithful to MFCG: only Alleys and Slum wards are grouped
+    // Faithful to MFCG: only Alleys wards are grouped into WardGroups
     std::vector<Cell*> unassigned;
     size_t alleysCount = 0;
-    size_t slumCount = 0;
     for (auto* patch : model_->cells) {
         if (patch->withinCity && !patch->waterbody && patch->ward) {
             std::string wardName = patch->ward->getName();
             if (wardName == "Alleys") {
                 unassigned.push_back(patch);
                 ++alleysCount;
-            } else if (wardName == "Slum") {
-                unassigned.push_back(patch);
-                ++slumCount;
             }
         }
     }
-    SDL_Log("WardGroupBuilder: Found %zu Alleys wards, %zu Slum wards to group",
-            alleysCount, slumCount);
+    SDL_Log("WardGroupBuilder: Found %zu Alleys wards to group", alleysCount);
 
     // Group cells into WardGroups
     while (!unassigned.empty()) {

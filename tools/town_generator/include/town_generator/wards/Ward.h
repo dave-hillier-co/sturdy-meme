@@ -110,8 +110,16 @@ public:
     // Check if this ward type should be rendered as special/solid (churches, cathedrals, castles)
     virtual bool isSpecialWard() const { return false; }
 
-    // Get the city block after accounting for streets
+    // Get the city block after accounting for streets (returns per-edge insets)
     std::vector<double> getCityBlock();
+
+    /**
+     * Get available space after applying street/wall insets and tower corner rounding
+     * Faithful to mfcg.js Ward.getAvailable (lines 25-80 in 07-wards.js)
+     *
+     * @return The available polygon with proper insets and rounded tower corners
+     */
+    virtual geom::Polygon getAvailable();
 
     // Create geometry (buildings)
     virtual void createGeometry();
@@ -131,6 +139,21 @@ public:
         const geom::Point& p1,
         const geom::Point& p2,
         double minFront
+    );
+
+    /**
+     * Inset a polygon with per-edge amounts and tower corner rounding
+     * Faithful to mfcg.js Ward.inset (lines 8-19 in 07-wards.js)
+     *
+     * @param poly The polygon to inset
+     * @param edgeInsets Per-edge inset amounts (same length as poly)
+     * @param towerRadii Per-vertex tower radii for corner rounding (same length as poly)
+     * @return The inset polygon with rounded corners at tower positions
+     */
+    static geom::Polygon inset(
+        const geom::Polygon& poly,
+        const std::vector<double>& edgeInsets,
+        const std::vector<double>& towerRadii
     );
 
     // Create a church in a medium-sized block (faithful to mfcg.js createChurch)
@@ -182,7 +205,6 @@ class Farm;
 class Harbour;
 class Market;
 class Park;
-class Slum;
 class Wilderness;
 
 } // namespace wards

@@ -12,11 +12,9 @@ namespace wards {
 void Harbour::createGeometry() {
     if (!patch || !model) return;
 
-    auto cityBlock = getCityBlock();
-    if (cityBlock.empty()) return;
-
-    auto block = patch->shape.shrink(cityBlock);
-    if (block.empty()) return;
+    // Get available area after street/wall insets with tower corner rounding
+    geom::Polygon block = getAvailable();
+    if (block.length() < 3) return;
 
     // Find edges that border water using EdgeData
     // (faithful to mfcg.js Harbour which uses edge data for COAST detection)
@@ -48,6 +46,7 @@ void Harbour::createGeometry() {
     patch->landing = true;
 
     // Find the longest water edge (faithful to mfcg.js Harbour.createGeometry)
+    // mfcg.js: f = Z.max(b, function(a) { return I.distance(a.start, a.end) })
     double longestLen = 0;
     size_t longestIdx = 0;
     for (size_t i = 0; i < waterEdges.size(); ++i) {
@@ -58,26 +57,24 @@ void Harbour::createGeometry() {
         }
     }
 
-    // Create pier structures along water edges
+    // Create pier structures ONLY on the longest water edge
+    // Faithful to mfcg.js: piers are only created on the longest water edge
     piers.clear();
-    for (size_t idx = 0; idx < waterEdges.size(); ++idx) {
-        const auto& edge = waterEdges[idx];
-        double edgeLen = geom::Point::distance(edge.first, edge.second);
+    if (!waterEdges.empty() && longestLen > 0) {
+        const auto& edge = waterEdges[longestIdx];
 
-        // More piers on longer edges (especially the longest one)
-        double pierDensity = (idx == longestIdx) ? 4.0 : 6.0;
-        int numPiers = static_cast<int>(edgeLen / pierDensity);
+        // Number of piers = floor(edgeLength / 6) (faithful to mfcg.js: d = h / 6 | 0)
+        int numPiers = static_cast<int>(longestLen / 6.0);
         if (numPiers < 1) numPiers = 1;
-        if (numPiers > 5) numPiers = 5;  // Cap at 5 piers per edge
 
         geom::Point edgeDir = edge.second.subtract(edge.first);
         edgeDir = edgeDir.norm(1.0);
         geom::Point perpDir(-edgeDir.y, edgeDir.x);  // Points into water
 
-        double spacing = edgeLen / (numPiers + 1);
+        double spacing = longestLen / (numPiers + 1);
 
         for (int p = 1; p <= numPiers; ++p) {
-            double t = p * spacing / edgeLen;
+            double t = p * spacing / longestLen;
             geom::Point pierBase = geom::GeomUtils::interpolate(edge.first, edge.second, t);
 
             // Pier dimensions (faithful to mfcg.js: width 1-2, length 3-8)

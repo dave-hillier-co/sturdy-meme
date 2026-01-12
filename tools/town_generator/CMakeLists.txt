@@ -20,17 +20,16 @@ set(UTILS_SOURCES
     src/utils/Random.cpp
     src/utils/MathUtils.cpp
     src/utils/Forester.cpp
+    src/utils/Bisector.cpp
 )
 
 set(BUILDING_SOURCES
     src/building/Cell.cpp
-    src/building/Cutter.cpp
     src/building/Topology.cpp
     src/building/CurtainWall.cpp
     src/building/Canal.cpp
     src/building/WardGroup.cpp
     src/building/Block.cpp
-    src/building/Bisector.cpp
     src/building/Building.cpp
     src/building/District.cpp
     src/building/Landmark.cpp
@@ -43,7 +42,6 @@ set(WARD_SOURCES
     src/wards/Castle.cpp
     src/wards/Cathedral.cpp
     src/wards/Market.cpp
-    src/wards/Slum.cpp
     src/wards/Farm.cpp
     src/wards/Park.cpp
     src/wards/Harbour.cpp

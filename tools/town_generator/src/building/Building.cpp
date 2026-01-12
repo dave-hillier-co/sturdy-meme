@@ -1,5 +1,4 @@
 #include "town_generator/building/Building.h"
-#include "town_generator/building/Cutter.h"
 #include "town_generator/geom/GeomUtils.h"
 #include "town_generator/utils/Random.h"
 #include <algorithm>
@@ -10,7 +9,10 @@ namespace town_generator {
 namespace building {
 
 std::vector<bool> Building::getPlan(int width, int height, double stopProb) {
-    // Faithful to mfcg.js Jd.getPlan (lines 9809-9828)
+    // Faithful to mfcg.js Jd.getPlan (lines 123-141)
+    // Grows a connected region from a random start cell until it reaches
+    // all 4 edges of the grid, then stops with probability based on stopProb.
+    // Creates L/T/U-shaped building footprints.
     int total = width * height;
     std::vector<bool> plan(total, false);
 
@@ -18,14 +20,20 @@ std::vector<bool> Building::getPlan(int width, int height, double stopProb) {
     int startX = static_cast<int>(utils::Random::floatVal() * width);
     int startY = static_cast<int>(utils::Random::floatVal() * height);
     plan[startX + startY * width] = true;
-    int filled = total - 1;
+    int remaining = total - 1;
 
     // Track filled region bounds
     int minX = startX, maxX = startX;
     int minY = startY, maxY = startY;
 
-    // Grow the filled region
-    while (true) {
+    // MFCG uses infinite loop - keep going until reaching all edges
+    // Safety limit: if we've tried 10000 times, give up
+    constexpr int MAX_SAFETY = 10000;
+    int iterations = 0;
+
+    while (iterations < MAX_SAFETY) {
+        ++iterations;
+
         int x = static_cast<int>(utils::Random::floatVal() * width);
         int y = static_cast<int>(utils::Random::floatVal() * height);
         int idx = x + y * width;
@@ -45,39 +53,58 @@ std::vector<bool> Building::getPlan(int width, int height, double stopProb) {
                 if (y > maxY) maxY = y;
 
                 plan[idx] = true;
-                --filled;
+                --remaining;
             }
         }
 
-        // Check stopping condition
+        // MFCG stopping condition: only stop after region reaches all 4 edges
+        // canGrow = (minX > 0 || maxX < width-1 || minY > 0 || maxY < height-1)
         bool canGrow = (minX > 0 || maxX < width - 1 || minY > 0 || maxY < height - 1);
-        if (!canGrow) {
-            if (filled > 0) {
-                if (utils::Random::floatVal() >= stopProb) break;
+
+        bool shouldContinue;
+        if (canGrow) {
+            // Haven't reached all edges yet - keep going
+            shouldContinue = true;
+        } else {
+            // At all edges
+            if (remaining > 0) {
+                // Still have cells - use stopProb (continue if Random < stopProb)
+                shouldContinue = utils::Random::floatVal() < stopProb;
             } else {
-                break;
+                // No cells remaining
+                shouldContinue = false;
             }
         }
+
+        if (!shouldContinue) break;
     }
 
     return plan;
 }
 
 std::vector<bool> Building::getPlanFront(int width, int height) {
-    // Faithful to mfcg.js Jd.getPlanFront (lines 9829-9848)
+    // Faithful to mfcg.js Jd.getPlanFront (lines 142-158)
+    // Like getPlan but starts with the entire front row filled.
+    // Creates buildings that have frontage on one side.
     int total = width * height;
     std::vector<bool> plan(total, false);
 
-    // Fill front row
+    // Fill front row (y=0)
     for (int x = 0; x < width; ++x) {
         plan[x] = true;
     }
-    int filled = total - width;
-
+    int remaining = total - width;  // Cells remaining after front row
     int maxY = 0;
+    int filledCount = width;
 
-    // Grow from front
-    while (true) {
+    // MFCG uses infinite loop - keep going until reaching back edge
+    // Safety limit: if we've tried 10000 times, give up (should never hit this)
+    constexpr int MAX_SAFETY = 10000;
+    int iterations = 0;
+
+    while (iterations < MAX_SAFETY) {
+        ++iterations;
+
         int x = static_cast<int>(utils::Random::floatVal() * width);
         int y = 1 + static_cast<int>(utils::Random::floatVal() * (height - 1));
         int idx = x + y * width;
@@ -91,16 +118,28 @@ std::vector<bool> Building::getPlanFront(int width, int height) {
             if (adjacent) {
                 if (y > maxY) maxY = y;
                 plan[idx] = true;
-                --filled;
+                --remaining;
+                ++filledCount;
             }
         }
 
-        // Check stopping
-        bool canGrow = maxY < height - 1;
-        if (!canGrow) {
-            if (filled > 0 && utils::Random::floatVal() >= 0.5) break;
-            if (filled <= 0) break;
+        // MFCG stopping logic: only check after reaching back edge
+        bool shouldContinue;
+        if (maxY >= height - 1) {
+            // Reached the back edge
+            if (remaining > 0) {
+                // 50% chance to stop (continue if Random < 0.5)
+                shouldContinue = utils::Random::floatVal() < 0.5;
+            } else {
+                // No cells remaining
+                shouldContinue = false;
+            }
+        } else {
+            // Haven't reached back edge yet - keep going
+            shouldContinue = true;
         }
+
+        if (!shouldContinue) break;
     }
 
     return plan;
@@ -190,8 +229,12 @@ std::vector<geom::Point> Building::circumference(const std::vector<geom::Polygon
     geom::Point next = ends[startIdx];
     result.push_back(current);
 
-    // Follow the chain
-    while (result.size() < starts.size() + 1) {
+    // Follow the chain with safety limit
+    constexpr size_t MAX_ITERATIONS = 1000;
+    size_t iterations = 0;
+    while (result.size() < starts.size() + 1 && iterations < MAX_ITERATIONS) {
+        ++iterations;
+
         // Find point close to result[0] (loop closed)
         if (std::abs(next.x - result[0].x) < 1e-6 &&
             std::abs(next.y - result[0].y) < 1e-6) {
@@ -269,6 +312,12 @@ geom::Polygon Building::create(
         return geom::Polygon();  // Too small
     }
 
+    // Limit grid size to prevent excessive computation
+    // mfcg.js typically produces small grids (2-5 cells per side)
+    constexpr int MAX_GRID_SIZE = 8;
+    if (cols > MAX_GRID_SIZE) cols = MAX_GRID_SIZE;
+    if (rows > MAX_GRID_SIZE) rows = MAX_GRID_SIZE;
+
     // Generate cell plan
     std::vector<bool> plan;
     if (symmetric) {
@@ -290,8 +339,29 @@ geom::Polygon Building::create(
         return geom::Polygon();  // No L-shape possible
     }
 
-    // Generate grid cells (using Cutter::grid, faithful to MFCG)
-    auto gridCells = Cutter::grid(quad, cols, rows, gap);
+    // Generate grid cells - inline grid function (simplified from Cutter::grid)
+    std::vector<geom::Polygon> gridCells;
+    {
+        geom::Point p0 = quad[0], p1 = quad[1], p2 = quad[2], p3 = quad[3];
+        for (int r = 0; r < rows; ++r) {
+            double r0 = static_cast<double>(r) / rows;
+            double r1 = static_cast<double>(r + 1) / rows;
+            geom::Point left0 = geom::GeomUtils::lerp(p0, p3, r0);
+            geom::Point right0 = geom::GeomUtils::lerp(p1, p2, r0);
+            geom::Point left1 = geom::GeomUtils::lerp(p0, p3, r1);
+            geom::Point right1 = geom::GeomUtils::lerp(p1, p2, r1);
+            for (int c = 0; c < cols; ++c) {
+                double c0 = static_cast<double>(c) / cols;
+                double c1 = static_cast<double>(c + 1) / cols;
+                gridCells.push_back(geom::Polygon({
+                    geom::GeomUtils::lerp(left0, right0, c0),
+                    geom::GeomUtils::lerp(left0, right0, c1),
+                    geom::GeomUtils::lerp(left1, right1, c1),
+                    geom::GeomUtils::lerp(left1, right1, c0)
+                }));
+            }
+        }
+    }
 
     // Collect filled cells
     std::vector<geom::Polygon> filledPolygons;

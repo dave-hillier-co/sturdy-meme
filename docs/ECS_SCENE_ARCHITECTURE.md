@@ -356,6 +356,156 @@ void LightSystem::gatherLights(entt::registry& registry, LightBuffer& buffer) {
 - [x] LootTable (probabilistic loot drops)
 - [x] Tags: IsProjectile, HasStatusEffects, Invulnerable, Stunned, Dead, IsTeamMember, Targetable, NoGravity, CustomPhysics
 
+### Future: Component Simplification
+
+The current components are verbose. Extract reusable building blocks:
+
+#### Reusable Building Blocks
+
+```cpp
+// Spatial volume (used by triggers, zones, fog, grass, etc.)
+struct Volume {
+    glm::vec3 extents{10.0f};
+    bool isGlobal{false};
+};
+
+// Grid cell (used by terrain, grass tiles)
+struct GridCell {
+    int32_t x{0}, z{0};
+    uint32_t lod{0};
+};
+
+// Mesh instance (used by trees, rocks, detritus)
+struct MeshVariant {
+    uint32_t variant{0};
+    float scale{1.0f};
+    glm::vec3 rotation{0.0f};
+};
+
+// Shadow/collision flags (shared by many renderables)
+struct RenderFlags {
+    bool castsShadow{true};
+    bool hasCollision{true};
+};
+
+// Timed behavior (replaces duration/elapsed in Timer, Lifetime, Cooldown)
+struct Timed {
+    float duration{1.0f};
+    float elapsed{0.0f};
+    bool paused{false};
+    float progress() const { return duration > 0 ? elapsed / duration : 1.0f; }
+};
+
+// Event reference (replaces uint32_t onXxxEvent fields)
+struct EventRef {
+    uint32_t eventId{~0u};
+    bool hasEvent() const { return eventId != ~0u; }
+};
+
+// Priority ordering (used by lights, cameras, sounds, interactables)
+struct Priority {
+    int value{0};                      // Higher = more important
+};
+
+// Shape definition (used by triggers, emitters, zones)
+enum class ShapeType : uint8_t { Box, Sphere, Capsule, Cone };
+struct Shape {
+    ShapeType type{ShapeType::Box};
+    glm::vec3 extents{1.0f};           // Half-extents for box
+    float radius{1.0f};                // For sphere/capsule/cone
+    float height{2.0f};                // For capsule/cone
+};
+
+// Speed settings (used by agents, followers, movers)
+struct SpeedSettings {
+    float speed{3.5f};
+    float acceleration{8.0f};
+    float angularSpeed{120.0f};        // Degrees per second
+};
+```
+
+#### Pattern Usage Summary
+
+| Building Block | Used By |
+|---------------|---------|
+| `Volume` | TriggerVolume, GrassVolume, FogVolume, WeatherZone, AmbientSoundZone, ReverbZone, DamageZone |
+| `GridCell` | TerrainPatch, GrassTile |
+| `MeshVariant` | TreeInstance, RockInstance, DetritusInstance |
+| `RenderFlags` | TreeInstance, RockInstance, MeshRenderer |
+| `Timed` | Timer, Lifetime, Cooldown, StatusEffect, AnimationState |
+| `EventRef` | TriggerVolume, Interactable, Switch, Timer, Lifetime, DelayedAction, DamageReceiver |
+| `Priority` | LightBase, CameraComponent, AudioSource, Interactable, ReflectionProbe |
+| `Shape` | TriggerVolume, ParticleEmitter |
+| `SpeedSettings` | NavMeshAgent, FollowTarget, MovementSettings |
+
+#### Complex Components to Decompose
+
+**WaterSurface (30+ fields) → Composition:**
+- `Water` (height, depth, color)
+- `WaterWaves` (amplitude, length, steepness, speed)
+- `WaterMaterial` (roughness, absorption, scattering, fresnel)
+- `WaterFlow` (strength, speed, hasFlowMap)
+- `WaterFeatures` (FFT, caustics, foam)
+- `WaterTidal` (enabled, range)
+
+**NavMeshAgent (25+ fields) → Composition:**
+- `NavAgent` (navMesh, destination, status)
+- `MovementSpeed` (speed, acceleration, angularSpeed) - reuse existing
+- `Avoidance` (enabled, priority, radius)
+- `OffMeshLinks` (canJump, canClimb, maxJump, maxClimb)
+
+**DamageDealer → Composition:**
+- `Damage` (amount, type)
+- `Knockback` (force) - optional
+- `CriticalHit` (chance, multiplier) - optional
+- `AppliesEffect` (effectId, chance) - optional
+
+#### Composite Presets (Factory Functions)
+
+For usability, provide presets that combine building blocks:
+
+```cpp
+namespace Presets {
+    // Creates: Water + WaterWaves + WaterFlow
+    entt::entity createRiver(registry, position, controlPoints, width);
+
+    // Creates: Water + WaterWaves + WaterFeatures(FFT, foam)
+    entt::entity createOcean(registry, position, size);
+
+    // Creates: Water only (calm)
+    entt::entity createLake(registry, position, radius);
+
+    // Creates: MeshVariant + RenderFlags + TreeArchetype + TreeLODState
+    entt::entity createTree(registry, position, archetype);
+
+    // Creates: Health + DamageReceiver + Team + Target + ThreatTable
+    entt::entity createCombatant(registry, position, team);
+
+    // Creates: Damage + Knockback + CriticalHit
+    entt::entity createWeapon(registry, baseDamage, type);
+
+    // Creates: Projectile + Damage + Lifetime + Velocity
+    entt::entity createProjectile(registry, owner, position, direction, speed, damage);
+
+    // Creates: TriggerVolume + Volume + IsTrigger
+    entt::entity createTrigger(registry, position, extents);
+
+    // Creates: Interactable + Pickup + IsInteractable
+    entt::entity createPickup(registry, position, itemId, quantity);
+
+    // Creates: Interactable + Door + IsInteractable
+    entt::entity createDoor(registry, position, openAngle, locked);
+}
+```
+
+#### Migration Path
+
+1. Keep existing monolithic components working
+2. Add building block components alongside
+3. Refactor existing components to use building blocks internally
+4. Update factory functions to use composition
+5. Deprecate redundant fields in monolithic components
+
 ## Resource Management
 
 ### Handle System

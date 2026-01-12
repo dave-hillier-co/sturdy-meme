@@ -1090,3 +1090,333 @@ struct IsAudioSource {};
 struct InAmbientZone {
     entt::entity zone{entt::null};
 };
+
+// ============================================================================
+// Gameplay Components (Phase 9)
+// ============================================================================
+
+// Handle for navigation mesh data
+using NavMeshHandle = uint32_t;
+constexpr NavMeshHandle InvalidNavMesh = ~0u;
+
+// Handle for dialogue/quest data
+using DialogueHandle = uint32_t;
+constexpr DialogueHandle InvalidDialogue = ~0u;
+
+// Trigger volume for gameplay events
+struct TriggerVolume {
+    glm::vec3 extents{5.0f};               // Half-extents of trigger box
+
+    // Trigger shape
+    enum class Shape : uint8_t {
+        Box,
+        Sphere,
+        Capsule
+    };
+    Shape shape{Shape::Box};
+    float radius{5.0f};                    // For sphere/capsule
+    float height{2.0f};                    // For capsule
+
+    // Filtering
+    uint32_t triggerMask{1};               // Which layers can trigger
+    bool triggerOnce{false};               // Only fire once then disable
+    bool triggered{false};                 // Has been triggered (for triggerOnce)
+
+    // Events (indices into event system)
+    uint32_t onEnterEvent{~0u};            // Event to fire on enter
+    uint32_t onExitEvent{~0u};             // Event to fire on exit
+    uint32_t onStayEvent{~0u};             // Event to fire each frame while inside
+
+    // State tracking
+    std::vector<entt::entity> entitiesInside;
+    float stayEventInterval{0.0f};         // How often to fire stay event (0 = every frame)
+    float timeSinceStayEvent{0.0f};
+
+    // Tags for filtering
+    std::string requiredTag;               // Only entities with this tag can trigger
+};
+
+// Tag: entity can trigger TriggerVolumes
+struct Triggerable {
+    uint32_t triggerLayer{1};              // Which trigger masks this can activate
+};
+
+// Tag: entity is currently inside a trigger
+struct InsideTrigger {
+    std::vector<entt::entity> triggers;    // List of triggers entity is inside
+};
+
+// Navigation mesh agent for AI pathfinding
+struct NavMeshAgent {
+    NavMeshHandle navMesh{InvalidNavMesh}; // Which navmesh to use
+
+    // Movement properties
+    float speed{3.5f};                     // Movement speed (m/s)
+    float acceleration{8.0f};              // Acceleration (m/s²)
+    float angularSpeed{120.0f};            // Rotation speed (deg/s)
+    float stoppingDistance{0.1f};          // Distance to stop from destination
+    float radius{0.5f};                    // Agent radius for avoidance
+    float height{2.0f};                    // Agent height
+
+    // Path state
+    glm::vec3 destination{0.0f};
+    std::vector<glm::vec3> currentPath;
+    uint32_t currentPathIndex{0};
+    bool hasPath{false};
+    bool pathPending{false};               // Waiting for path calculation
+
+    // Status
+    enum class Status : uint8_t {
+        Idle,
+        Moving,
+        Arrived,
+        PathNotFound,
+        Stuck
+    };
+    Status status{Status::Idle};
+
+    // Avoidance
+    bool avoidanceEnabled{true};
+    int avoidancePriority{50};             // Higher = less likely to move aside
+    float avoidanceRadius{1.0f};           // Radius for agent avoidance
+
+    // Auto-braking
+    bool autoBraking{true};                // Slow down near destination
+    float autoRepath{true};                // Recalculate path if blocked
+    float repathInterval{0.5f};            // How often to repath (seconds)
+    float timeSinceRepath{0.0f};
+
+    // Off-mesh links (jumping, climbing, etc.)
+    bool canJump{false};
+    bool canClimb{false};
+    float maxJumpDistance{2.0f};
+    float maxClimbHeight{1.0f};
+
+    // Current movement
+    glm::vec3 velocity{0.0f};
+    glm::vec3 desiredVelocity{0.0f};
+};
+
+// Tag: entity is on a nav mesh
+struct OnNavMesh {
+    uint32_t polyRef{0};                   // Current polygon reference
+    glm::vec3 nearestPoint{0.0f};          // Snapped position on navmesh
+};
+
+// Waypoint for patrol/movement paths
+struct Waypoint {
+    float waitTime{0.0f};                  // Time to wait at this point
+    float speed{-1.0f};                    // Speed override (-1 = use agent speed)
+    std::string action;                    // Action to perform at waypoint
+};
+
+// Waypoint path component
+struct WaypointPath {
+    std::vector<glm::vec3> points;
+    std::vector<Waypoint> waypointData;    // Optional per-point data
+    uint32_t currentIndex{0};
+    bool looping{true};
+    bool pingPong{false};                  // Go back and forth
+    bool reversed{false};                  // Currently going backwards (for pingPong)
+    float waitTimer{0.0f};                 // Current wait time
+};
+
+// Interactable object (can be activated by player)
+struct Interactable {
+    // Interaction settings
+    float interactionRadius{2.0f};         // How close player must be
+    float interactionAngle{120.0f};        // Field of view required (degrees, 360 = any)
+    glm::vec3 interactionPoint{0.0f};      // Offset from transform for interaction focus
+
+    // State
+    bool canInteract{true};                // Currently interactable
+    bool highlighted{false};               // Being looked at
+    bool interacting{false};               // Currently in interaction
+
+    // Type
+    enum class Type : uint8_t {
+        Generic,
+        Pickup,
+        Door,
+        Switch,
+        NPC,
+        Container,
+        Readable,
+        Usable
+    };
+    Type type{Type::Generic};
+
+    // Interaction requirements
+    std::string requiredItem;              // Item needed to interact
+    std::string requiredState;             // State check (e.g., "door_unlocked")
+
+    // Events
+    uint32_t onInteractEvent{~0u};
+    uint32_t onHighlightEvent{~0u};
+    uint32_t onUnhighlightEvent{~0u};
+
+    // UI
+    std::string promptText{"Interact"};    // Text shown to player
+    std::string iconName;                  // Icon to display
+    int priority{0};                       // Higher = shown first if multiple
+};
+
+// Tag: entity can interact with Interactables
+struct CanInteract {
+    float interactionRange{3.0f};          // Max interaction distance
+    entt::entity currentTarget{entt::null}; // Currently highlighted interactable
+    entt::entity interactingWith{entt::null}; // Currently interacting with
+};
+
+// Pickup item
+struct Pickup {
+    std::string itemId;                    // Item identifier
+    uint32_t quantity{1};
+    bool respawns{false};
+    float respawnTime{30.0f};
+    float timeSincePickup{0.0f};
+    bool pickedUp{false};
+
+    // Visual feedback
+    bool bobbing{true};
+    float bobSpeed{2.0f};
+    float bobHeight{0.1f};
+    bool rotating{true};
+    float rotateSpeed{45.0f};
+};
+
+// Door/gate that can open/close
+struct Door {
+    enum class State : uint8_t {
+        Closed,
+        Opening,
+        Open,
+        Closing
+    };
+    State state{State::Closed};
+
+    float openAngle{90.0f};                // Rotation when open (degrees)
+    float openSpeed{90.0f};                // Speed of opening (deg/s or m/s)
+    float currentAngle{0.0f};
+
+    bool locked{false};
+    std::string keyId;                     // Key item needed
+    bool autoClose{false};
+    float autoCloseDelay{5.0f};
+    float timeSinceOpened{0.0f};
+
+    // Sliding door
+    bool sliding{false};
+    glm::vec3 slideDirection{1.0f, 0.0f, 0.0f};
+    float slideDistance{2.0f};
+    float currentSlide{0.0f};
+};
+
+// Switch/lever/button
+struct Switch {
+    enum class Type : uint8_t {
+        Toggle,                            // On/Off
+        Momentary,                         // Returns to off
+        Sequence                           // Multi-state
+    };
+    Type type{Type::Toggle};
+
+    bool activated{false};
+    int currentState{0};                   // For sequence switches
+    int maxStates{2};
+
+    entt::entity targetEntity{entt::null}; // What this switch controls
+    std::string targetAction;              // Action to perform on target
+
+    float momentaryDuration{0.5f};         // How long momentary stays on
+    float momentaryTimer{0.0f};
+};
+
+// Spawn point for entities
+struct SpawnPoint {
+    std::string entityType;                // What to spawn
+    float respawnDelay{10.0f};
+    int maxSpawned{1};                     // Max alive at once
+    int currentSpawned{0};
+    float spawnRadius{0.5f};               // Random offset
+    bool enabled{true};
+    float timeSinceSpawn{0.0f};
+
+    std::vector<entt::entity> spawnedEntities;
+};
+
+// Checkpoint/save point
+struct Checkpoint {
+    uint32_t checkpointId{0};
+    bool activated{false};
+    bool isRespawnPoint{true};
+    glm::vec3 respawnOffset{0.0f, 1.0f, 0.0f};  // Offset from checkpoint position
+};
+
+// Damage zone (lava, poison, etc.)
+struct DamageZone {
+    float damagePerSecond{10.0f};
+    glm::vec3 extents{5.0f};
+
+    enum class DamageType : uint8_t {
+        Generic,
+        Fire,
+        Ice,
+        Poison,
+        Electric,
+        Fall
+    };
+    DamageType damageType{DamageType::Generic};
+
+    float damageInterval{0.5f};            // Time between damage ticks
+    float timeSinceDamage{0.0f};
+    bool affectsPlayer{true};
+    bool affectsNPCs{true};
+};
+
+// Dialogue trigger/NPC conversation
+struct DialogueTrigger {
+    DialogueHandle dialogue{InvalidDialogue};
+    bool canTalk{true};
+    bool inConversation{false};
+    float conversationRange{3.0f};
+
+    // Conditions
+    std::string requiredQuest;             // Quest state required
+    std::string requiredFlag;              // Game flag required
+    int requiredReputation{0};             // Minimum reputation
+
+    // State
+    uint32_t currentNodeId{0};             // Current dialogue node
+    bool hasBeenTalkedTo{false};
+};
+
+// Quest giver/objective marker
+struct QuestMarker {
+    std::string questId;
+    enum class MarkerType : uint8_t {
+        QuestGiver,
+        Objective,
+        TurnIn,
+        PointOfInterest
+    };
+    MarkerType type{MarkerType::QuestGiver};
+
+    bool showOnMap{true};
+    bool showInWorld{true};
+    float visibilityDistance{100.0f};
+
+    glm::vec3 markerColor{1.0f, 0.8f, 0.0f};  // Yellow by default
+};
+
+// Tag: entity is a gameplay trigger (for queries)
+struct IsTrigger {};
+
+// Tag: entity is an interactable (for queries)
+struct IsInteractable {};
+
+// Tag: entity is a spawn point
+struct IsSpawnPoint {};
+
+// Tag: entity is an NPC that can be talked to
+struct IsDialogueNPC {};

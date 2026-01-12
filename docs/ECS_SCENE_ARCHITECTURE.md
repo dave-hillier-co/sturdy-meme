@@ -302,11 +302,14 @@ void LightSystem::gatherLights(entt::registry& registry, LightBuffer& buffer) {
 - [x] Multi-camera support (CameraComponent with priority)
 
 ### Phase 7: Extended Rendering
-- [ ] Decal component (projected textures on surfaces)
-- [ ] SpriteRenderer (billboard sprites with atlas support)
-- [ ] RenderTarget (render-to-texture for cameras, mirrors, portals)
-- [ ] ReflectionProbe (local cubemap reflections)
-- [ ] LightProbe (spherical harmonics for indirect lighting)
+- [x] Decal component (projected textures on surfaces)
+- [x] SpriteRenderer (billboard sprites with atlas support)
+- [x] RenderTarget (render-to-texture for cameras, mirrors, portals)
+- [x] ReflectionProbe (local cubemap reflections)
+- [x] LightProbe (spherical harmonics for indirect lighting)
+- [x] LightProbeVolume (grid of probes for interpolation)
+- [x] PortalSurface (portals and mirrors)
+- [x] RenderingIntegration.h with factory functions and utilities
 
 ### Phase 8: Audio
 - [ ] AudioSource (spatial 3D audio emitter)

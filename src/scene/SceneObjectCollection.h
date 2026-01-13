@@ -43,6 +43,8 @@ public:
         float roughness = 0.7f;
         float metallic = 0.0f;
         bool castsShadow = true;
+
+        static MaterialProperties defaults() { return {0.7f, 0.0f, true}; }
     };
 
     SceneObjectCollection() = default;
@@ -57,7 +59,7 @@ public:
     /**
      * Initialize with Vulkan context for resource management
      */
-    void init(const InitInfo& info, const MaterialProperties& matProps = {});
+    void init(const InitInfo& info, const MaterialProperties& matProps = MaterialProperties::defaults());
 
     /**
      * Set the meshes for this collection (transfers ownership)

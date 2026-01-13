@@ -476,7 +476,7 @@ void Application::run() {
             if (input.wantsOrientationLockToggle()) {
                 playerMovement.orientationLocked = !playerMovement.orientationLocked;
                 if (playerMovement.orientationLocked) {
-                    playerMovement.lockedYaw = playerTransform.yaw;
+                    playerMovement.lockedYaw = playerTransform.getYaw();
                 }
                 SDL_Log("Orientation lock: %s", playerMovement.orientationLocked ? "ON" : "OFF");
             }

@@ -91,8 +91,9 @@ void Block::createLots() {
 }
 
 void Block::createRects() {
-    // Simplified LIRA - faithful to mfcg-clean PolygonUtils.lira
-    // Algorithm: Get OBB, shrink 10% toward center
+    // Faithful to mfcg.js Block.createRects (lines 12123-12170)
+    // Converts lots to rectangles using LIRA (largest inscribed rectangle),
+    // then applies "Shrink" processing for gaps between buildings
 
     if (lots.empty()) {
         createLots();
@@ -100,54 +101,128 @@ void Block::createRects() {
 
     rects.clear();
 
+    double inset = group ? group->alleys.inset : 0.3;
+    size_t blockLen = shape.length();
+
     for (const auto& lot : lots) {
         if (lot.length() < 3) {
             rects.push_back(lot);
             continue;
         }
 
-        // Get oriented bounding box
-        std::vector<geom::Point> obb = lot.orientedBoundingBox();
+        geom::Polygon rect = lot;
 
-        if (obb.size() != 4) {
-            // OBB failed, use lot directly
+        // Faithful to mfcg.js lines 12131-12148
+        // If lot is already a rectangle, skip LIRA calculation
+        if (!isRectangle(lot)) {
+            // Find which edge of lot touches the block perimeter (for front edge)
+            int frontEdge = -1;
+            size_t lotLen = lot.length();
+            for (size_t li = 0; li < lotLen; ++li) {
+                const geom::Point& lv0 = lot[li];
+                const geom::Point& lv1 = lot[(li + 1) % lotLen];
+
+                for (size_t bi = 0; bi < blockLen; ++bi) {
+                    const geom::Point& bv0 = shape[bi];
+                    const geom::Point& bv1 = shape[(bi + 1) % blockLen];
+
+                    // Check if edges converge (are collinear and overlapping)
+                    if (geom::GeomUtils::converge(lv0, lv1, bv0, bv1)) {
+                        frontEdge = static_cast<int>(li);
+                        break;
+                    }
+                }
+                if (frontEdge != -1) break;
+            }
+
+            // Get largest inscribed rectangle
+            std::vector<geom::Point> lotPts;
+            for (size_t i = 0; i < lot.length(); ++i) {
+                lotPts.push_back(lot[i]);
+            }
+
+            std::vector<geom::Point> lirRect;
+            if (frontEdge != -1) {
+                // Use LIR aligned to front edge
+                lirRect = geom::GeomUtils::lir(lotPts, frontEdge);
+            } else {
+                // Use LIRA (axis-aligned)
+                lirRect = geom::GeomUtils::lira(lotPts);
+            }
+
+            if (lirRect.size() == 4) {
+                // Check minimum dimensions - mfcg.js line 12148
+                double lotArea = std::abs(lot.square());
+                double minDim = std::max(1.2, std::sqrt(lotArea) / 2.0);
+                double w = geom::Point::distance(lirRect[0], lirRect[1]);
+                double h = geom::Point::distance(lirRect[1], lirRect[2]);
+
+                if (w >= minDim && h >= minDim) {
+                    rect = geom::Polygon(lirRect);
+                }
+                // else keep original lot shape
+            }
+        }
+
+        // Apply "Shrink" processing (faithful to mfcg.js lines 35-52)
+        // Shrink edges that DON'T touch the block perimeter
+        // This creates gaps between adjacent buildings
+        double shrinkAmount = inset * (1.0 - std::abs(
+            (utils::Random::floatVal() + utils::Random::floatVal() +
+             utils::Random::floatVal() + utils::Random::floatVal()) / 2.0 - 1.0));
+
+        if (shrinkAmount > 0.3) {
+            size_t rectLen = rect.length();
+            std::vector<double> shrinkAmounts(rectLen, 0.0);
+
+            // For each edge, check if it touches the block perimeter
+            for (size_t i = 0; i < rectLen; ++i) {
+                const geom::Point& e0 = rect[i];
+                const geom::Point& e1 = rect[(i + 1) % rectLen];
+
+                bool touchesBlock = false;
+                for (size_t j = 0; j < blockLen && !touchesBlock; ++j) {
+                    const geom::Point& b0 = shape[j];
+                    const geom::Point& b1 = shape[(j + 1) % blockLen];
+
+                    // Check if edges converge (are parallel and overlapping)
+                    // Simplified: check if edge midpoints are close to block edge
+                    geom::Point eMid((e0.x + e1.x) / 2, (e0.y + e1.y) / 2);
+
+                    // Project midpoint onto block edge
+                    double bLen = geom::Point::distance(b0, b1);
+                    if (bLen < 0.001) continue;
+
+                    geom::Point bDir((b1.x - b0.x) / bLen, (b1.y - b0.y) / bLen);
+                    double t = (eMid.x - b0.x) * bDir.x + (eMid.y - b0.y) * bDir.y;
+
+                    if (t >= 0 && t <= bLen) {
+                        geom::Point proj(b0.x + t * bDir.x, b0.y + t * bDir.y);
+                        double dist = geom::Point::distance(eMid, proj);
+                        if (dist < 0.5) {
+                            touchesBlock = true;
+                        }
+                    }
+                }
+
+                // Edges that don't touch block get shrunk
+                shrinkAmounts[i] = touchesBlock ? 0.0 : shrinkAmount;
+            }
+
+            // Apply shrink to create the final rect
+            rect = rect.shrink(shrinkAmounts);
+        }
+
+        if (rect.length() >= 3 && std::abs(rect.square()) > 0.5) {
+            rects.push_back(rect);
+        } else {
             rects.push_back(lot);
-            continue;
         }
-
-        // Calculate center of OBB
-        geom::Point obbCenter(0, 0);
-        for (const auto& p : obb) {
-            obbCenter.x += p.x;
-            obbCenter.y += p.y;
-        }
-        obbCenter.x /= 4.0;
-        obbCenter.y /= 4.0;
-
-        // Shrink OBB toward center by 10% (lerp factor 0.1)
-        std::vector<geom::Point> liraPoints;
-        liraPoints.reserve(4);
-        for (const auto& p : obb) {
-            liraPoints.emplace_back(
-                p.x * 0.9 + obbCenter.x * 0.1,
-                p.y * 0.9 + obbCenter.y * 0.1
-            );
-        }
-
-        // Verify the LIRA rectangle has positive area
-        geom::Polygon liraRect(liraPoints);
-        if (std::abs(liraRect.square()) < 0.5) {
-            // Rectangle too small, use lot directly
-            rects.push_back(lot);
-            continue;
-        }
-
-        rects.push_back(liraRect);
     }
 }
 
 void Block::createBuildings() {
-    // Faithful to mfcg.js Block.createBuildings (lines 4031-4053)
+    // Faithful to mfcg.js Block.createBuildings (lines 12177-12199)
     if (rects.empty()) {
         createRects();
     }
@@ -165,15 +240,42 @@ void Block::createBuildings() {
             continue;
         }
 
-        // Try to create complex building using Building.create
-        // Faithful to: Building.create(d, c, !0, null, .6)
-        // hasFront=true, symmetric=null(false), gap=0.6
-        geom::Polygon building = Building::create(rect, threshold, true, false, 0.6);
+        // Faithful to mfcg.js lines 12194-12198:
+        // - If >4 vertices: simplify to 4, then call Building.create
+        // - If =4 vertices: call Building.create
+        // - If <4 vertices: use rect as-is
 
-        if (building.length() >= 3) {
-            buildings.push_back(building);
+        if (rect.length() > 4) {
+            // Simplify polygon to quad using simplifyClosed
+            // Faithful to: do PolyCore.simplifyClosed(f); while (4 < f.length);
+            geom::Polygon simplified = rect.simplifyClosed(4);
+
+            if (simplified.length() == 4) {
+                // Try Building.create with simplified quad
+                geom::Polygon building = Building::create(simplified, threshold, true, false, 0.6);
+                if (building.length() >= 3) {
+                    buildings.push_back(building);
+                } else {
+                    buildings.push_back(simplified);
+                }
+            } else {
+                // Simplification failed, use original
+                buildings.push_back(rect);
+            }
+        } else if (rect.length() == 4) {
+            // Quad - try Building.create
+            // Faithful to: Building.create(d, c, !0, null, .6)
+            // hasFront=true, symmetric=null(false), gap=0.6
+            geom::Polygon building = Building::create(rect, threshold, true, false, 0.6);
+
+            if (building.length() >= 3) {
+                buildings.push_back(building);
+            } else {
+                // Building creation failed, use rectangle directly
+                buildings.push_back(rect);
+            }
         } else {
-            // Building creation failed, use rectangle directly
+            // <4 vertices - use rect as-is (no Building.create)
             buildings.push_back(rect);
         }
     }

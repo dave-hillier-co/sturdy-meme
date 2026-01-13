@@ -675,6 +675,50 @@ public:
     // Simplify polygon to n vertices
     void simplify(int n);
 
+    // Simplify polygon by iteratively removing the vertex with smallest contribution
+    // Returns a new polygon with at most targetVertices vertices
+    // Faithful to mfcg.js PolyCore.simplifyClosed (line 7966)
+    Polygon simplifyClosed(size_t targetVertices) const {
+        if (vertices_.size() <= targetVertices) {
+            return Polygon(vertexValues());
+        }
+
+        std::vector<Point> current = vertexValues();
+
+        while (current.size() > targetVertices) {
+            // Find vertex with smallest triangle area (least contribution)
+            int removeIdx = -1;
+            double minArea = std::numeric_limits<double>::infinity();
+            size_t len = current.size();
+
+            Point f = current[len - 2];
+            Point h = current[len - 1];
+
+            for (size_t n = 0; n < len; ++n) {
+                Point p = f;
+                f = h;
+                h = current[n];
+
+                // Triangle area using shoelace formula: |x0(y1-y2) + x1(y2-y0) + x2(y0-y1)| / 2
+                double area = std::abs(p.x * (f.y - h.y) + f.x * (h.y - p.y) + h.x * (p.y - f.y));
+
+                if (area < minArea) {
+                    minArea = area;
+                    // The vertex to remove is the "middle" one (f), which is at index (n-1+len)%len
+                    removeIdx = (n == 0) ? static_cast<int>(len - 1) : static_cast<int>(n - 1);
+                }
+            }
+
+            if (removeIdx >= 0 && removeIdx < static_cast<int>(current.size())) {
+                current.erase(current.begin() + removeIdx);
+            } else {
+                break;  // Safety: couldn't find vertex to remove
+            }
+        }
+
+        return Polygon(current);
+    }
+
     // Interpolation weights for a point
     std::vector<double> interpolate(const Point& p) const {
         double sum = 0.0;

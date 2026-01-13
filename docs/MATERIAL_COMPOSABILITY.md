@@ -189,10 +189,20 @@ vec4 evaluateMaterial(MaterialUBO mat, vec2 uv, vec3 worldPos, vec3 normal) {
   - Terrain-specific helpers (grass, rock, snow, sand factors)
   - Shore/water edge blending functions
 
-### Phase 4: Liquid Effects on Terrain (Pending)
-- Allow LiquidComponent on terrain materials
-- Enable puddles, rivers, wet areas
-- Flow map support for terrain
+### Phase 4: Liquid Effects on Terrain ✓
+- Created `terrain_liquid_common.glsl` with:
+  - `calculatePuddlePresence()`: Height/slope-aware puddle detection
+  - `applyPuddleEffect()`: Water absorption, reflection, Fresnel
+  - `calculateRainRipples()`: Animated ripple normals
+  - `applyWetSurface()`: Simple dampness without standing water
+  - `applyStreamEffect()`: Flowing water with animation
+  - `applyShoreWetness()`: Graduated wetness near water bodies
+  - `applyTerrainLiquidEffects()`: Combined effect application
+- Created `TerrainLiquidUBO.h`:
+  - GPU-compatible struct for puddles, streams, wetness
+  - Weather presets: dryConditions, lightRain, heavyRain, afterRain
+  - Integration with LiquidComponent presets
+- Added BINDING_TERRAIN_LIQUID_UBO (29)
 
 ### Phase 5: Generalize to All Renderables (Pending)
 - Extend MaterialRegistry to support component composition

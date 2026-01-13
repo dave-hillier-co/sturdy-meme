@@ -109,6 +109,9 @@
 // Weathering UBO (terrain descriptor set - composable material system)
 #define BINDING_TERRAIN_WEATHERING_UBO 23   // Weathering parameters (wetness, dirt, moss)
 
+// Terrain Liquid UBO (terrain descriptor set - composable material system)
+#define BINDING_TERRAIN_LIQUID_UBO     29   // Puddles, streams, wet areas on terrain
+
 // Virtual Texture bindings (terrain descriptor set)
 #define BINDING_VT_PAGE_TABLE          24   // VT indirection/page table texture (usampler2D)
 #define BINDING_VT_PHYSICAL_CACHE      25   // VT physical cache texture (sampler2D)
@@ -533,6 +536,7 @@ constexpr uint32_t TERRAIN_TILE_INFO      = BINDING_TERRAIN_TILE_INFO;
 constexpr uint32_t TERRAIN_CAUSTICS       = BINDING_TERRAIN_CAUSTICS;
 constexpr uint32_t TERRAIN_CAUSTICS_UBO   = BINDING_TERRAIN_CAUSTICS_UBO;
 constexpr uint32_t TERRAIN_WEATHERING_UBO = BINDING_TERRAIN_WEATHERING_UBO;
+constexpr uint32_t TERRAIN_LIQUID_UBO = BINDING_TERRAIN_LIQUID_UBO;
 
 // Virtual Texture
 constexpr uint32_t VT_PAGE_TABLE          = BINDING_VT_PAGE_TABLE;

@@ -165,27 +165,36 @@ vec4 evaluateMaterial(MaterialUBO mat, vec2 uv, vec3 worldPos, vec3 normal) {
 
 ## Implementation Phases
 
-### Phase 1: Extract LiquidComponent
-- Create `LiquidComponent` struct separate from WaterUBO
-- Keep WaterSystem working by composing from LiquidComponent
-- Add liquid-related flags enum
+### Phase 1: Extract LiquidComponent ✓
+- Created `LiquidComponent` struct in `MaterialComponents.h`
+- 10 presets: ocean, coastalOcean, river, muddyRiver, clearStream, lake, swamp, tropical, puddle, wetSurface
+- WaterSystem updated with `setPrimaryLiquid/setSecondaryLiquid` API
+- Backward compatible with existing WaterMaterial via `WaterMaterialAdapter`
 
-### Phase 2: WeatheringComponent for Terrain
-- Extract snow/wetness into WeatheringComponent
-- Apply to terrain shader
-- Unify with existing snow mask system
+### Phase 2: WeatheringComponent Infrastructure ✓
+- Created `weathering_common.glsl` with wetness, dirt, moss functions
+- Created `ubo_weathering.glsl` and `WeatheringUBO.h` for GPU upload
+- Added shader bindings (BINDING_WEATHERING_UBO, BINDING_TERRAIN_WEATHERING_UBO)
+- Complements existing volumetric snow system
 
-### Phase 3: MaterialLayer System
-- Create MaterialLayer struct and blending infrastructure
-- Implement blend modes (height, mask, slope, noise)
-- Apply to terrain for multi-material support
+### Phase 3: MaterialLayer System ✓
+- Created `MaterialLayer.h` with:
+  - `BlendMode` enum: Height, Slope, Mask, Noise, Distance, Directional, Altitude
+  - `BlendParams` struct with mode-specific parameters
+  - `MaterialLayerStack` for managing multiple layers
+  - `MaterialLayerUBO` for GPU upload (up to 4 layers)
+- Created `material_layer_common.glsl` with:
+  - Blend factor calculation for all modes
+  - FBM noise for procedural blending
+  - Terrain-specific helpers (grass, rock, snow, sand factors)
+  - Shore/water edge blending functions
 
-### Phase 4: Liquid Effects on Terrain
+### Phase 4: Liquid Effects on Terrain (Pending)
 - Allow LiquidComponent on terrain materials
 - Enable puddles, rivers, wet areas
 - Flow map support for terrain
 
-### Phase 5: Generalize to All Renderables
+### Phase 5: Generalize to All Renderables (Pending)
 - Extend MaterialRegistry to support component composition
 - Update scene object shaders to use unified material evaluation
 - Full composability across all surface types

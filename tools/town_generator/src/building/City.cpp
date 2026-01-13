@@ -1444,8 +1444,12 @@ void City::buildGeometry() {
 }
 
 void City::setEdgeData() {
-    // Set edge types on all cells (faithful to mfcg.js edge data assignment)
+    // Set edge types on all cells and DCEL half-edges (faithful to mfcg.js edge data assignment)
     // Edge types: COAST, ROAD, WALL, CANAL, HORIZON, NONE
+    //
+    // This propagates edge data to DCEL half-edges so Ward code can use
+    // face.edges() with edge.getData<EdgeType>() instead of geometric detection.
+    // Reference: mfcg-clean uses EdgeChain.assignData() to set edge.data
 
     for (auto* patch : cells) {
         size_t len = patch->shape.length();
@@ -1518,11 +1522,26 @@ void City::setEdgeData() {
                 }
             }
 
+            // Set edge type on Cell's edgeData map
             patch->setEdgeType(i, edgeType);
+
+            // Also set edge type on DCEL half-edge (faithful to mfcg.js EdgeChain.assignData)
+            if (patch->face && patch->face->halfEdge) {
+                // Find the DCEL half-edge corresponding to this cell edge
+                // Cell edge i goes from shape[i] to shape[(i+1) % len]
+                // We need to find the half-edge with origin at shape[i]
+                geom::PointPtr originPtr = patch->shape.ptr(i);
+                for (const auto& edge : patch->face->edges()) {
+                    if (edge->origin && edge->origin->point == originPtr) {
+                        edge->setData(edgeType);
+                        break;
+                    }
+                }
+            }
         }
     }
 
-    SDL_Log("City: Set edge data on %zu cells", cells.size());
+    SDL_Log("City: Set edge data on %zu cells and DCEL half-edges", cells.size());
 }
 
 void City::createWardGroups() {

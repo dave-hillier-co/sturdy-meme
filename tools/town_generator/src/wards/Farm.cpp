@@ -1,6 +1,8 @@
 #include "town_generator/wards/Farm.h"
 #include "town_generator/building/City.h"
 #include "town_generator/building/CurtainWall.h"
+#include "town_generator/building/EdgeData.h"
+#include "town_generator/geom/DCEL.h"
 #include "town_generator/utils/Random.h"
 #include "town_generator/geom/GeomUtils.h"
 #include <cmath>
@@ -13,6 +15,7 @@ geom::Polygon Farm::getAvailable() {
     if (!patch || !model) return {};
 
     // Farm-specific getAvailable (mfcg.js lines 12615-12659)
+    // Uses DCEL edge data for edge type lookup
     // Farms use smaller insets when bordering other farms
     size_t len = patch->shape.length();
     std::vector<double> insetDistances(len, 0.0);
@@ -46,52 +49,85 @@ geom::Polygon Farm::getAvailable() {
         }
     }
 
-    // Per-edge insets based on what borders the edge
-    for (size_t i = 0; i < len; ++i) {
-        const geom::Point& v0 = patch->shape[i];
-        const geom::Point& v1 = patch->shape[(i + 1) % len];
+    // Per-edge insets using DCEL edge data
+    if (patch->face && patch->face->halfEdge) {
+        size_t edgeIdx = 0;
+        for (const auto& edge : patch->face->edges()) {
+            if (edgeIdx >= len) break;
 
-        // Check if edge is on canal
-        for (const auto& canal : model->canals) {
-            if (canal->containsEdge(v0, v1)) {
-                double canalInset = canal->width / 2.0 + ALLEY;
-                insetDistances[i] = std::max(insetDistances[i], canalInset);
-                break;
+            building::EdgeType edgeType = edge->getData<building::EdgeType>();
+
+            // Handle canal edges
+            if (edgeType == building::EdgeType::CANAL) {
+                const geom::Point& v0 = patch->shape[edgeIdx];
+                double canalInset = model->getCanalWidth(v0) / 2.0 + ALLEY;
+                insetDistances[edgeIdx] = std::max(insetDistances[edgeIdx], canalInset);
             }
+
+            // Check neighboring cells using DCEL twin
+            auto twin = edge->getTwin();
+            if (twin) {
+                auto twinFace = twin->getFace();
+                if (twinFace && twinFace->data) {
+                    auto* neighbor = static_cast<building::Cell*>(twinFace->data);
+                    if (neighbor->ward) {
+                        Farm* farmNeighbor = dynamic_cast<Farm*>(neighbor->ward);
+                        if (farmNeighbor) {
+                            // Neighbor is also a Farm - minimal inset
+                            insetDistances[edgeIdx] = std::max(insetDistances[edgeIdx], 1.0);
+                        } else {
+                            // Neighbor is other ward type - larger inset
+                            insetDistances[edgeIdx] = std::max(insetDistances[edgeIdx], 2.0);
+                        }
+                    } else {
+                        // No ward assigned yet - use minimal inset
+                        insetDistances[edgeIdx] = std::max(insetDistances[edgeIdx], 1.0);
+                    }
+                }
+            }
+
+            ++edgeIdx;
         }
+    } else {
+        // Fallback: use Cell's edgeData and manual neighbor checking
+        for (size_t i = 0; i < len; ++i) {
+            const geom::Point& v0 = patch->shape[i];
+            const geom::Point& v1 = patch->shape[(i + 1) % len];
 
-        // Check neighboring cells - if neighbor is also Farm, use smaller inset (1.0)
-        // If neighbor is other ward type, use larger inset (2.0)
-        for (const auto* neighbor : patch->neighbors) {
-            if (!neighbor) continue;
+            // Check edge type from Cell's edgeData
+            building::EdgeType edgeType = patch->getEdgeType(i);
+            if (edgeType == building::EdgeType::CANAL) {
+                double canalInset = model->getCanalWidth(v0) / 2.0 + ALLEY;
+                insetDistances[i] = std::max(insetDistances[i], canalInset);
+            }
 
-            // Check if neighbor shares this edge
-            bool sharesEdge = false;
-            for (size_t j = 0; j < neighbor->shape.length(); ++j) {
-                const geom::Point& n0 = neighbor->shape[j];
-                const geom::Point& n1 = neighbor->shape[(j + 1) % neighbor->shape.length()];
-                if ((n0 == v0 && n1 == v1) || (n0 == v1 && n1 == v0)) {
-                    sharesEdge = true;
+            // Manual neighbor check
+            for (const auto* neighbor : patch->neighbors) {
+                if (!neighbor) continue;
+
+                bool sharesEdge = false;
+                for (size_t j = 0; j < neighbor->shape.length(); ++j) {
+                    const geom::Point& n0 = neighbor->shape[j];
+                    const geom::Point& n1 = neighbor->shape[(j + 1) % neighbor->shape.length()];
+                    if ((n0 == v0 && n1 == v1) || (n0 == v1 && n1 == v0)) {
+                        sharesEdge = true;
+                        break;
+                    }
+                }
+
+                if (sharesEdge) {
+                    if (neighbor->ward) {
+                        Farm* farmNeighbor = dynamic_cast<Farm*>(neighbor->ward);
+                        if (farmNeighbor) {
+                            insetDistances[i] = std::max(insetDistances[i], 1.0);
+                        } else {
+                            insetDistances[i] = std::max(insetDistances[i], 2.0);
+                        }
+                    } else {
+                        insetDistances[i] = std::max(insetDistances[i], 1.0);
+                    }
                     break;
                 }
-            }
-
-            if (sharesEdge) {
-                // Check neighbor ward type (faithful to mfcg.js line 12641)
-                if (neighbor->ward) {
-                    Farm* farmNeighbor = dynamic_cast<Farm*>(neighbor->ward);
-                    if (farmNeighbor) {
-                        // Neighbor is also a Farm - minimal inset
-                        insetDistances[i] = std::max(insetDistances[i], 1.0);
-                    } else {
-                        // Neighbor is other ward type - larger inset
-                        insetDistances[i] = std::max(insetDistances[i], 2.0);
-                    }
-                } else {
-                    // No ward assigned yet - use minimal inset
-                    insetDistances[i] = std::max(insetDistances[i], 1.0);
-                }
-                break;
             }
         }
     }

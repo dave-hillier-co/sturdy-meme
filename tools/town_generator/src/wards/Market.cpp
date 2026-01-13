@@ -1,5 +1,7 @@
 #include "town_generator/wards/Market.h"
 #include "town_generator/building/City.h"
+#include "town_generator/building/EdgeData.h"
+#include "town_generator/geom/DCEL.h"
 #include "town_generator/utils/Random.h"
 #include <cmath>
 
@@ -8,6 +10,7 @@ namespace wards {
 
 geom::Polygon Market::getAvailable() {
     // Faithful to mfcg.js Market.getAvailable (lines 652-677)
+    // Uses DCEL edge data for edge type lookup
     // Market fills the entire patch, only insets for canal edges
     if (!patch || !model) return patch ? patch->shape : geom::Polygon();
 
@@ -19,25 +22,53 @@ geom::Polygon Market::getAvailable() {
     // Per-vertex canal exclusions (for corner handling)
     std::vector<double> vertexExclusions(len, 0.0);
 
-    // Check each edge for canal type
-    for (size_t i = 0; i < len; ++i) {
-        const geom::Point& v0 = patch->shape[i];
-        const geom::Point& v1 = patch->shape[(i + 1) % len];
+    // Use DCEL edge data if available
+    if (patch->face && patch->face->halfEdge) {
+        size_t edgeIdx = 0;
+        for (const auto& edge : patch->face->edges()) {
+            if (edgeIdx >= len) break;
 
-        // Check if edge is on a canal - use canal width / 2
-        for (const auto& canal : model->canals) {
-            if (canal->containsEdge(v0, v1)) {
-                edgeInsets[i] = canal->width / 2.0;
-                break;
+            building::EdgeType edgeType = edge->getData<building::EdgeType>();
+            const geom::Point& v0 = patch->shape[edgeIdx];
+
+            // Handle canal edges
+            if (edgeType == building::EdgeType::CANAL) {
+                edgeInsets[edgeIdx] = model->getCanalWidth(v0) / 2.0;
             }
 
             // Check canal vertex exclusions
-            double canalWidth = canal->getWidthAtVertex(v0);
-            if (canalWidth > 0) {
-                vertexExclusions[i] = std::max(vertexExclusions[i], canalWidth / 2.0);
-                // If this is the start of the canal, add extra offset
-                if (!canal->course.empty() && canal->course[0] == v0) {
-                    vertexExclusions[i] += ALLEY;
+            for (const auto& canal : model->canals) {
+                double canalWidth = canal->getWidthAtVertex(v0);
+                if (canalWidth > 0) {
+                    vertexExclusions[edgeIdx] = std::max(vertexExclusions[edgeIdx], canalWidth / 2.0);
+                    // If this is the start of the canal, add extra offset
+                    if (!canal->course.empty() && canal->course[0] == v0) {
+                        vertexExclusions[edgeIdx] += ALLEY;
+                    }
+                }
+            }
+
+            ++edgeIdx;
+        }
+    } else {
+        // Fallback: use Cell's edgeData and manual canal checking
+        for (size_t i = 0; i < len; ++i) {
+            const geom::Point& v0 = patch->shape[i];
+
+            // Check edge type from Cell's edgeData
+            building::EdgeType edgeType = patch->getEdgeType(i);
+            if (edgeType == building::EdgeType::CANAL) {
+                edgeInsets[i] = model->getCanalWidth(v0) / 2.0;
+            }
+
+            // Check canal vertex exclusions
+            for (const auto& canal : model->canals) {
+                double canalWidth = canal->getWidthAtVertex(v0);
+                if (canalWidth > 0) {
+                    vertexExclusions[i] = std::max(vertexExclusions[i], canalWidth / 2.0);
+                    if (!canal->course.empty() && canal->course[0] == v0) {
+                        vertexExclusions[i] += ALLEY;
+                    }
                 }
             }
         }

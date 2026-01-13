@@ -40,7 +40,7 @@ class ComputePipelineBuilder {
 public:
     // Construct with RAII device (preferred)
     explicit ComputePipelineBuilder(const vk::raii::Device& device)
-        : raiiDevice_(&device), rawDevice_(**device) {}
+        : raiiDevice_(&device), rawDevice_(static_cast<VkDevice>(*device)) {}
 
     // Construct with raw device (for gradual migration)
     explicit ComputePipelineBuilder(VkDevice device)
@@ -165,7 +165,9 @@ public:
 
         std::optional<vk::raii::Pipeline> result;
         try {
-            result = raiiDevice_->createComputePipeline(pipelineCache_, pipelineInfo);
+            // Note: RAII createComputePipeline requires vk::raii::PipelineCache, not vk::PipelineCache
+            // For now, pass nullptr. If pipeline cache is needed, use buildRawIntoRaii() instead.
+            result = raiiDevice_->createComputePipeline(nullptr, pipelineInfo);
         } catch (const vk::SystemError& e) {
             SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
                 "ComputePipelineBuilder: Failed to create pipeline: %s", e.what());

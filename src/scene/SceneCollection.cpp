@@ -38,6 +38,20 @@ void SceneCollection::registerMaterial(const std::string& name, SceneMaterial& m
     SDL_Log("SceneCollection: Registered external material '%s'", name.c_str());
 }
 
+void SceneCollection::registerRenderables(const std::string& name, std::vector<Renderable>& renderables) {
+    if (hasMaterial(name) || registeredRenderables_.find(name) != registeredRenderables_.end()) {
+        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+            "SceneCollection: '%s' already exists, skipping renderables registration", name.c_str());
+        return;
+    }
+
+    registeredRenderables_[name] = &renderables;
+    materialOrder_.push_back(name);
+
+    SDL_Log("SceneCollection: Registered external renderables '%s' (%zu objects)",
+            name.c_str(), renderables.size());
+}
+
 SceneMaterial* SceneCollection::getMaterial(const std::string& name) {
     // Check owned materials first
     auto it = materials_.find(name);
@@ -70,7 +84,7 @@ bool SceneCollection::hasMaterial(const std::string& name) const {
 std::vector<Renderable> SceneCollection::collectAllSceneObjects() const {
     std::vector<Renderable> all;
 
-    // Reserve space (both owned and registered)
+    // Reserve space (owned materials, registered materials, and registered renderables)
     size_t total = 0;
     for (const auto& [name, material] : materials_) {
         total += material->getSceneObjects().size();
@@ -78,14 +92,25 @@ std::vector<Renderable> SceneCollection::collectAllSceneObjects() const {
     for (const auto& [name, material] : registeredMaterials_) {
         total += material->getSceneObjects().size();
     }
+    for (const auto& [name, renderables] : registeredRenderables_) {
+        total += renderables->size();
+    }
     all.reserve(total);
 
     // Collect in registration order for deterministic behavior
     for (const auto& name : materialOrder_) {
+        // Check SceneMaterial first
         const SceneMaterial* material = getMaterial(name);
         if (material) {
             const auto& objects = material->getSceneObjects();
             all.insert(all.end(), objects.begin(), objects.end());
+            continue;
+        }
+
+        // Check registered renderables
+        auto rendIt = registeredRenderables_.find(name);
+        if (rendIt != registeredRenderables_.end()) {
+            all.insert(all.end(), rendIt->second->begin(), rendIt->second->end());
         }
     }
 
@@ -137,6 +162,7 @@ void SceneCollection::cleanup() {
     }
     materials_.clear();
     registeredMaterials_.clear();
+    registeredRenderables_.clear();
     materialOrder_.clear();
     descriptorSets_.clear();
     initialized_ = false;

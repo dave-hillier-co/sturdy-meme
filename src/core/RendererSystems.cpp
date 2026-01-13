@@ -270,6 +270,10 @@ void RendererSystems::setDetritus(std::unique_ptr<DetritusSystem> system) {
 
 void RendererSystems::setScene(std::unique_ptr<SceneManager> system) {
     sceneManager_ = std::move(system);
+    // Note: Scene renderables are NOT registered with SceneCollection because they
+    // require special handling (player character filtering for skinned shadow rendering).
+    // SceneCollection is used for procedural materials (rock, detritus) that don't need
+    // per-object filtering.
 }
 
 void RendererSystems::setSkinnedMesh(std::unique_ptr<SkinnedMeshRenderer> system) {

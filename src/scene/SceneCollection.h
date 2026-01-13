@@ -73,6 +73,14 @@ public:
     void registerMaterial(const std::string& name, SceneMaterial& material);
 
     /**
+     * Register external renderables by material name (non-owning)
+     * Use this for systems like SceneBuilder that have their own renderable management.
+     * @param name Material name for grouping
+     * @param renderables Reference to renderable vector (must outlive this collection)
+     */
+    void registerRenderables(const std::string& name, std::vector<Renderable>& renderables);
+
+    /**
      * Get a material by name (returns nullptr if not found)
      * Searches both owned and registered materials.
      */
@@ -148,6 +156,9 @@ private:
 
     // Non-owning references to external materials (registered via registerMaterial)
     std::unordered_map<std::string, SceneMaterial*> registeredMaterials_;
+
+    // Non-owning references to external renderables (registered via registerRenderables)
+    std::unordered_map<std::string, std::vector<Renderable>*> registeredRenderables_;
 
     // Preserve creation/registration order for deterministic iteration
     std::vector<std::string> materialOrder_;

@@ -140,7 +140,7 @@ public:
      * If the texture is already loaded, returns the cached shared_ptr.
      */
     std::shared_ptr<Texture> loadTexture(const std::string& path,
-                                         const TextureLoadConfig& config = {});
+                                         const TextureLoadConfig& config = TextureLoadConfig{});
 
     /**
      * Create a solid color texture.

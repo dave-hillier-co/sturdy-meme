@@ -133,11 +133,11 @@ bool Renderer::initInternal(const InitInfo& info) {
     {
         INIT_PROFILE_PHASE("AssetRegistry");
         assetRegistry_.init(
-            vulkanContext_->getDevice(),
-            vulkanContext_->getPhysicalDevice(),
+            vulkanContext_->getVkDevice(),
+            vulkanContext_->getVkPhysicalDevice(),
             vulkanContext_->getAllocator(),
             **commandPool_,
-            vulkanContext_->getGraphicsQueue());
+            vulkanContext_->getVkGraphicsQueue());
     }
 
     // Phase 2: Descriptor infrastructure (layouts, pools)
@@ -841,8 +841,8 @@ bool Renderer::createDescriptorSets() {
         common.shadowMapSampler = systems_->shadow().getShadowSampler();
         common.lightBuffer = systems_->globalBuffers().lightBuffers.buffers[frameIndex];
         common.lightBufferSize = sizeof(LightBuffer);
-        common.emissiveMapView = systems_->scene().getSceneBuilder().getDefaultEmissiveMap().getImageView();
-        common.emissiveMapSampler = systems_->scene().getSceneBuilder().getDefaultEmissiveMap().getSampler();
+        common.emissiveMapView = systems_->scene().getSceneBuilder().getDefaultEmissiveMap()->getImageView();
+        common.emissiveMapSampler = systems_->scene().getSceneBuilder().getDefaultEmissiveMap()->getSampler();
         common.pointShadowView = systems_->shadow().getPointShadowArrayView(frameIndex);
         common.pointShadowSampler = systems_->shadow().getPointShadowSampler();
         common.spotShadowView = systems_->shadow().getSpotShadowArrayView(frameIndex);
@@ -856,8 +856,8 @@ bool Renderer::createDescriptorSets() {
         common.cloudShadowUboBufferSize = sizeof(CloudShadowUBO);
         // Cloud shadow texture is added later in init() after cloudShadowSystem is initialized
         // Placeholder texture for unused PBR bindings (13-16)
-        common.placeholderTextureView = systems_->scene().getSceneBuilder().getWhiteTexture().getImageView();
-        common.placeholderTextureSampler = systems_->scene().getSceneBuilder().getWhiteTexture().getSampler();
+        common.placeholderTextureView = systems_->scene().getSceneBuilder().getWhiteTexture()->getImageView();
+        common.placeholderTextureSampler = systems_->scene().getSceneBuilder().getWhiteTexture()->getSampler();
         return common;
     };
 
@@ -2136,8 +2136,8 @@ bool Renderer::initSkinnedMeshRenderer() {
 }
 
 bool Renderer::createSkinnedMeshRendererDescriptorSets() {
-    const auto& whiteTexture = systems_->scene().getSceneBuilder().getWhiteTexture();
-    const auto& emissiveMap = systems_->scene().getSceneBuilder().getDefaultEmissiveMap();
+    const auto* whiteTexture = systems_->scene().getSceneBuilder().getWhiteTexture();
+    const auto* emissiveMap = systems_->scene().getSceneBuilder().getDefaultEmissiveMap();
     const auto& sceneBuilder = systems_->scene().getSceneBuilder();
     const auto& materialRegistry = sceneBuilder.getMaterialRegistry();
 
@@ -2151,10 +2151,10 @@ bool Renderer::createSkinnedMeshRendererDescriptorSets() {
 
     // Get the player's actual material from MaterialRegistry based on their materialId
     // This fixes the race condition where player could have different material based on FBX load success
-    VkImageView playerDiffuseView = whiteTexture.getImageView();
-    VkSampler playerDiffuseSampler = whiteTexture.getSampler();
-    VkImageView playerNormalView = whiteTexture.getImageView();
-    VkSampler playerNormalSampler = whiteTexture.getSampler();
+    VkImageView playerDiffuseView = whiteTexture->getImageView();
+    VkSampler playerDiffuseSampler = whiteTexture->getSampler();
+    VkImageView playerNormalView = whiteTexture->getImageView();
+    VkSampler playerNormalSampler = whiteTexture->getSampler();
 
     const auto& sceneObjects = sceneBuilder.getRenderables();
     size_t playerIndex = sceneBuilder.getPlayerObjectIndex();
@@ -2178,16 +2178,16 @@ bool Renderer::createSkinnedMeshRendererDescriptorSets() {
     resources.globalBufferManager = &systems_->globalBuffers();
     resources.shadowMapView = systems_->shadow().getShadowImageView();
     resources.shadowMapSampler = systems_->shadow().getShadowSampler();
-    resources.emissiveMapView = emissiveMap.getImageView();
-    resources.emissiveMapSampler = emissiveMap.getSampler();
+    resources.emissiveMapView = emissiveMap->getImageView();
+    resources.emissiveMapSampler = emissiveMap->getSampler();
     resources.pointShadowViews = &pointShadowViews;
     resources.pointShadowSampler = systems_->shadow().getPointShadowSampler();
     resources.spotShadowViews = &spotShadowViews;
     resources.spotShadowSampler = systems_->shadow().getSpotShadowSampler();
     resources.snowMaskView = systems_->snowMask().getSnowMaskView();
     resources.snowMaskSampler = systems_->snowMask().getSnowMaskSampler();
-    resources.whiteTextureView = whiteTexture.getImageView();
-    resources.whiteTextureSampler = whiteTexture.getSampler();
+    resources.whiteTextureView = whiteTexture->getImageView();
+    resources.whiteTextureSampler = whiteTexture->getSampler();
     resources.playerDiffuseView = playerDiffuseView;
     resources.playerDiffuseSampler = playerDiffuseSampler;
     resources.playerNormalView = playerNormalView;

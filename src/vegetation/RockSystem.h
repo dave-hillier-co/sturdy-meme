@@ -7,6 +7,7 @@
 #include <string>
 #include <functional>
 #include <memory>
+#include <entt/entt.hpp>
 
 #include "Mesh.h"
 #include "Texture.h"
@@ -29,8 +30,9 @@ struct RockConfig {
     float materialMetallic = 0.0f;    // PBR metallic for rendering
 };
 
-// A single rock instance in the scene
-struct RockInstance {
+// Local struct for physics queries (returned by getRockInstances)
+// Note: Actual rock data is stored in ECS (RockInstance component in Components.h)
+struct RockInstanceData {
     glm::vec3 position;
     float rotation;         // Y-axis rotation
     float scale;            // Uniform scale factor
@@ -48,6 +50,7 @@ public:
         std::string resourcePath;
         std::function<float(float, float)> getTerrainHeight;  // Terrain height query
         float terrainSize;
+        entt::registry* registry = nullptr;  // ECS registry for rock entities
     };
 
     /**
@@ -72,12 +75,12 @@ public:
     Texture& getRockTexture() { return *rockTexture; }
     Texture& getRockNormalMap() { return *rockNormalMap; }
 
-    // Get rock count for statistics
-    size_t getRockCount() const { return rockInstances.size(); }
+    // Get rock count for statistics (queries ECS)
+    size_t getRockCount() const;
     size_t getMeshVariationCount() const { return rockMeshes.size(); }
 
-    // Get rock instances for physics integration
-    const std::vector<RockInstance>& getRockInstances() const { return rockInstances; }
+    // Get rock instances for physics integration (builds from ECS)
+    std::vector<RockInstanceData> getRockInstances() const;
 
     // Get rock meshes for physics collision shapes
     const std::vector<Mesh>& getRockMeshes() const { return rockMeshes; }
@@ -101,6 +104,9 @@ private:
     VmaAllocator storedAllocator = VK_NULL_HANDLE;
     VkDevice storedDevice = VK_NULL_HANDLE;
 
+    // ECS registry for rock entities (not owned)
+    entt::registry* registry_ = nullptr;
+
     // Rock mesh variations
     std::vector<Mesh> rockMeshes;
 
@@ -108,9 +114,6 @@ private:
     std::unique_ptr<Texture> rockTexture;
     std::unique_ptr<Texture> rockNormalMap;
 
-    // Rock instances (positions, rotations, etc.)
-    std::vector<RockInstance> rockInstances;
-
-    // Scene objects for rendering
+    // Scene objects for rendering (built from ECS queries)
     std::vector<Renderable> sceneObjects;
 };

@@ -1,4 +1,6 @@
 #include "RockSystem.h"
+#include "../ecs/Components.h"
+#include "../ecs/EnvironmentIntegration.h"
 #include <SDL3/SDL_log.h>
 #include <glm/gtc/matrix_transform.hpp>
 #include <algorithm>
@@ -20,6 +22,12 @@ bool RockSystem::initInternal(const InitInfo& info, const RockConfig& cfg) {
     config = cfg;
     storedAllocator = info.allocator;
     storedDevice = info.device;
+    registry_ = info.registry;
+
+    if (!registry_) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "RockSystem: No ECS registry provided");
+        return false;
+    }
 
     if (!loadTextures(info)) {
         SDL_Log("RockSystem: Failed to load textures");
@@ -35,7 +43,7 @@ bool RockSystem::initInternal(const InitInfo& info, const RockConfig& cfg) {
     createSceneObjects();
 
     SDL_Log("RockSystem: Initialized with %zu rocks (%zu mesh variations)",
-            rockInstances.size(), rockMeshes.size());
+            getRockCount(), rockMeshes.size());
 
     return true;
 }
@@ -53,7 +61,7 @@ void RockSystem::cleanup() {
     }
     rockMeshes.clear();
 
-    rockInstances.clear();
+    // Note: ECS entities are managed by the registry, not cleaned up here
     sceneObjects.clear();
 }
 
@@ -107,7 +115,8 @@ float RockSystem::hashPosition(float x, float z, uint32_t seed) const {
 }
 
 void RockSystem::generateRockPlacements(const InitInfo& info) {
-    rockInstances.clear();
+    // Collect existing rock positions for distance checking
+    std::vector<glm::vec3> placedPositions;
 
     // Use Poisson disk-like sampling for natural rock distribution
     const int totalRocks = config.rockVariations * config.rocksPerVariation;
@@ -157,9 +166,9 @@ void RockSystem::generateRockPlacements(const InitInfo& info) {
 
         // Check distance from existing rocks
         bool tooClose = false;
-        for (const auto& existing : rockInstances) {
-            float dx = x - existing.position.x;
-            float dz = z - existing.position.z;
+        for (const auto& existingPos : placedPositions) {
+            float dx = x - existingPos.x;
+            float dz = z - existingPos.z;
             if (dx * dx + dz * dz < minDistSq) {
                 tooClose = true;
                 break;
@@ -181,19 +190,33 @@ void RockSystem::generateRockPlacements(const InitInfo& info) {
             continue;
         }
 
-        // Create rock instance
-        RockInstance rock;
-        rock.position = glm::vec3(x, y, z);
-        rock.rotation = hashPosition(x, z, 33333) * 2.0f * 3.14159f;
+        // Calculate rock properties
+        glm::vec3 position(x, y, z);
+        float rotation = hashPosition(x, z, 33333) * 2.0f * 3.14159f;
 
         // Random scale within configured range
         float t = hashPosition(x, z, 44444);
-        rock.scale = config.minRadius + t * (config.maxRadius - config.minRadius);
+        float scale = config.minRadius + t * (config.maxRadius - config.minRadius);
 
         // Assign mesh variation
-        rock.meshVariation = placed % config.rockVariations;
+        uint32_t meshVariation = placed % config.rockVariations;
 
-        rockInstances.push_back(rock);
+        // Add slight random tilt for natural appearance
+        float tiltX = (hashPosition(x, z, 55555) - 0.5f) * 0.15f;
+        float tiltZ = (hashPosition(x, z, 66666) - 0.5f) * 0.15f;
+        glm::vec3 eulerRotation(tiltX, rotation, tiltZ);
+
+        // Create ECS entity
+        EnvironmentECS::createRock(
+            *registry_,
+            position,
+            meshVariation,
+            scale,
+            eulerRotation,
+            "Rock_" + std::to_string(placed)
+        );
+
+        placedPositions.push_back(position);
         placed++;
     }
 
@@ -202,31 +225,64 @@ void RockSystem::generateRockPlacements(const InitInfo& info) {
 
 void RockSystem::createSceneObjects() {
     sceneObjects.clear();
-    sceneObjects.reserve(rockInstances.size());
 
-    for (const auto& rock : rockInstances) {
-        // Build transform matrix: scale, rotate, translate
-        glm::mat4 transform = glm::translate(glm::mat4(1.0f), rock.position);
-        transform = glm::rotate(transform, rock.rotation, glm::vec3(0.0f, 1.0f, 0.0f));
+    if (!registry_) return;
 
-        // Add slight random tilt for natural appearance
-        float tiltX = (hashPosition(rock.position.x, rock.position.z, 55555) - 0.5f) * 0.15f;
-        float tiltZ = (hashPosition(rock.position.x, rock.position.z, 66666) - 0.5f) * 0.15f;
-        transform = glm::rotate(transform, tiltX, glm::vec3(1.0f, 0.0f, 0.0f));
-        transform = glm::rotate(transform, tiltZ, glm::vec3(0.0f, 0.0f, 1.0f));
+    // Query all rock entities from ECS
+    auto view = registry_->view<RockInstance, Transform>();
+    sceneObjects.reserve(view.size_hint());
 
-        transform = glm::scale(transform, glm::vec3(rock.scale));
+    for (auto [entity, rock, transform] : view.each()) {
+        // Build transform matrix: translate, rotate (Euler), scale
+        glm::mat4 mat = glm::translate(glm::mat4(1.0f), transform.position);
+
+        // Apply Euler rotations (stored in rock.rotation as vec3)
+        mat = glm::rotate(mat, rock.rotation.y, glm::vec3(0.0f, 1.0f, 0.0f));  // Yaw
+        mat = glm::rotate(mat, rock.rotation.x, glm::vec3(1.0f, 0.0f, 0.0f));  // Pitch/tilt
+        mat = glm::rotate(mat, rock.rotation.z, glm::vec3(0.0f, 0.0f, 1.0f));  // Roll/tilt
+
+        mat = glm::scale(mat, glm::vec3(rock.scale));
 
         // Sink rock slightly into ground
-        transform[3][1] -= rock.scale * 0.15f;
+        mat[3][1] -= rock.scale * 0.15f;
+
+        // Bounds check mesh variant
+        uint32_t meshIdx = rock.meshVariant;
+        if (meshIdx >= rockMeshes.size()) {
+            meshIdx = 0;
+        }
 
         sceneObjects.push_back(RenderableBuilder()
-            .withTransform(transform)
-            .withMesh(&rockMeshes[rock.meshVariation])
+            .withTransform(mat)
+            .withMesh(&rockMeshes[meshIdx])
             .withTexture(rockTexture.get())
             .withRoughness(config.materialRoughness)
             .withMetallic(config.materialMetallic)
-            .withCastsShadow(true)
+            .withCastsShadow(rock.castsShadow)
             .build());
     }
+}
+
+size_t RockSystem::getRockCount() const {
+    if (!registry_) return 0;
+    return registry_->view<RockInstance>().size();
+}
+
+std::vector<RockInstanceData> RockSystem::getRockInstances() const {
+    std::vector<RockInstanceData> result;
+    if (!registry_) return result;
+
+    auto view = registry_->view<RockInstance, Transform>();
+    result.reserve(view.size_hint());
+
+    for (auto [entity, rock, transform] : view.each()) {
+        RockInstanceData data;
+        data.position = transform.position;
+        data.rotation = rock.rotation.y;  // Y-axis rotation for physics
+        data.scale = rock.scale;
+        data.meshVariation = static_cast<int>(rock.meshVariant);
+        result.push_back(data);
+    }
+
+    return result;
 }

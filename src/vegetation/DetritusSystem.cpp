@@ -1,4 +1,6 @@
 #include "DetritusSystem.h"
+#include "../ecs/Components.h"
+#include "../ecs/EnvironmentIntegration.h"
 #include <SDL3/SDL_log.h>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/constants.hpp>
@@ -21,6 +23,12 @@ bool DetritusSystem::initInternal(const InitInfo& info, const DetritusConfig& cf
     config_ = cfg;
     storedAllocator_ = info.allocator;
     storedDevice_ = info.device;
+    registry_ = info.registry;
+
+    if (!registry_) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "DetritusSystem: No ECS registry provided");
+        return false;
+    }
 
     if (!loadTextures(info)) {
         SDL_Log("DetritusSystem: Failed to load textures");
@@ -36,7 +44,7 @@ bool DetritusSystem::initInternal(const InitInfo& info, const DetritusConfig& cf
     createSceneObjects();
 
     SDL_Log("DetritusSystem: Initialized with %zu pieces (%zu mesh variations)",
-            instances_.size(), meshes_.size());
+            getDetritusCount(), meshes_.size());
 
     return true;
 }
@@ -54,7 +62,7 @@ void DetritusSystem::cleanup() {
     }
     meshes_.clear();
 
-    instances_.clear();
+    // Note: ECS entities are managed by the registry, not cleaned up here
     sceneObjects_.clear();
 }
 
@@ -158,8 +166,6 @@ float DetritusSystem::hashPosition(float x, float z, uint32_t seed) const {
 }
 
 void DetritusSystem::generatePlacements(const InitInfo& info) {
-    instances_.clear();
-
     const int totalMeshes = config_.branchVariations + config_.forkedVariations;
 
     // If no tree positions provided, skip placement
@@ -209,9 +215,8 @@ void DetritusSystem::generatePlacements(const InitInfo& info) {
                 continue;
             }
 
-            // Create detritus instance
-            DetritusInstance instance;
-            instance.position = glm::vec3(x, y, z);
+            // Calculate detritus properties
+            glm::vec3 position(x, y, z);
 
             // Rotation: fallen branches lie on the ground with random orientations
             float yaw = hashPosition(x, z, 33333) * 2.0f * 3.14159f;
@@ -220,17 +225,26 @@ void DetritusSystem::generatePlacements(const InitInfo& info) {
             // we rotate around X (pitch) by ~π/2.
             float pitch = glm::half_pi<float>() - 0.1f + (hashPosition(x, z, 44444) - 0.5f) * 0.2f;
             float roll = (hashPosition(x, z, 55555) - 0.5f) * 0.3f;
-
-            instance.rotation = glm::vec3(pitch, yaw, roll);
+            glm::vec3 rotation(pitch, yaw, roll);
 
             // Random scale
             float t = hashPosition(x, z, 66666);
-            instance.scale = 0.7f + t * 0.6f;
+            float scale = 0.7f + t * 0.6f;
 
             // Assign mesh variation
-            instance.meshVariation = placed % totalMeshes;
+            uint32_t meshVariation = placed % totalMeshes;
 
-            instances_.push_back(instance);
+            // Create ECS entity
+            EnvironmentECS::createDetritus(
+                *registry_,
+                position,
+                meshVariation,
+                scale,
+                rotation,
+                entt::null,  // No source tree entity reference for now
+                "Detritus_" + std::to_string(placed)
+            );
+
             placed++;
         }
     }
@@ -241,26 +255,61 @@ void DetritusSystem::generatePlacements(const InitInfo& info) {
 
 void DetritusSystem::createSceneObjects() {
     sceneObjects_.clear();
-    sceneObjects_.reserve(instances_.size());
 
-    for (const auto& instance : instances_) {
+    if (!registry_) return;
+
+    // Query all detritus entities from ECS
+    auto view = registry_->view<DetritusInstance, Transform>();
+    sceneObjects_.reserve(view.size_hint());
+
+    for (auto [entity, detritus, transform] : view.each()) {
         // Build transform: translate, rotate (Euler: pitch, yaw, roll), scale
-        glm::mat4 transform = glm::translate(glm::mat4(1.0f), instance.position);
+        glm::mat4 mat = glm::translate(glm::mat4(1.0f), transform.position);
 
         // Apply rotations (Y-X-Z order for Euler angles)
-        transform = glm::rotate(transform, instance.rotation.y, glm::vec3(0.0f, 1.0f, 0.0f));  // Yaw
-        transform = glm::rotate(transform, instance.rotation.x, glm::vec3(1.0f, 0.0f, 0.0f));  // Pitch
-        transform = glm::rotate(transform, instance.rotation.z, glm::vec3(0.0f, 0.0f, 1.0f));  // Roll
+        mat = glm::rotate(mat, detritus.rotation.y, glm::vec3(0.0f, 1.0f, 0.0f));  // Yaw
+        mat = glm::rotate(mat, detritus.rotation.x, glm::vec3(1.0f, 0.0f, 0.0f));  // Pitch
+        mat = glm::rotate(mat, detritus.rotation.z, glm::vec3(0.0f, 0.0f, 1.0f));  // Roll
 
-        transform = glm::scale(transform, glm::vec3(instance.scale));
+        mat = glm::scale(mat, glm::vec3(detritus.scale));
+
+        // Bounds check mesh variant
+        uint32_t meshIdx = detritus.meshVariant;
+        if (meshIdx >= meshes_.size()) {
+            meshIdx = 0;
+        }
 
         sceneObjects_.push_back(RenderableBuilder()
-            .withTransform(transform)
-            .withMesh(&meshes_[instance.meshVariation])
+            .withTransform(mat)
+            .withMesh(&meshes_[meshIdx])
             .withTexture(barkTexture_.get())
             .withRoughness(config_.materialRoughness)
             .withMetallic(config_.materialMetallic)
             .withCastsShadow(true)
             .build());
     }
+}
+
+size_t DetritusSystem::getDetritusCount() const {
+    if (!registry_) return 0;
+    return registry_->view<DetritusInstance>().size();
+}
+
+std::vector<DetritusInstanceData> DetritusSystem::getInstances() const {
+    std::vector<DetritusInstanceData> result;
+    if (!registry_) return result;
+
+    auto view = registry_->view<DetritusInstance, Transform>();
+    result.reserve(view.size_hint());
+
+    for (auto [entity, detritus, transform] : view.each()) {
+        DetritusInstanceData data;
+        data.position = transform.position;
+        data.rotation = detritus.rotation;
+        data.scale = detritus.scale;
+        data.meshVariation = static_cast<int>(detritus.meshVariant);
+        result.push_back(data);
+    }
+
+    return result;
 }

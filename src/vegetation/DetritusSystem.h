@@ -7,6 +7,7 @@
 #include <string>
 #include <functional>
 #include <memory>
+#include <entt/entt.hpp>
 
 #include "BranchGenerator.h"
 #include "Mesh.h"
@@ -31,8 +32,9 @@ struct DetritusConfig {
     float materialMetallic = 0.0f;    // PBR metallic for rendering
 };
 
-// A single detritus instance in the scene
-struct DetritusInstance {
+// Local struct for physics queries (returned by getInstances)
+// Note: Actual detritus data is stored in ECS (DetritusInstance component in Components.h)
+struct DetritusInstanceData {
     glm::vec3 position;
     glm::vec3 rotation;     // Euler angles (x, y, z)
     float scale;            // Uniform scale factor
@@ -51,6 +53,7 @@ public:
         std::function<float(float, float)> getTerrainHeight;  // Terrain height query
         float terrainSize;
         std::vector<glm::vec3> treePositions;  // Tree positions to scatter detritus near
+        entt::registry* registry = nullptr;  // ECS registry for detritus entities
     };
 
     /**
@@ -75,12 +78,12 @@ public:
     Texture& getBarkTexture() { return *barkTexture_; }
     Texture& getBarkNormalMap() { return *barkNormalMap_; }
 
-    // Get count for statistics
-    size_t getDetritusCount() const { return instances_.size(); }
+    // Get count for statistics (queries ECS)
+    size_t getDetritusCount() const;
     size_t getMeshVariationCount() const { return meshes_.size(); }
 
-    // Get instances for physics integration
-    const std::vector<DetritusInstance>& getInstances() const { return instances_; }
+    // Get instances for physics integration (builds from ECS)
+    std::vector<DetritusInstanceData> getInstances() const;
 
     // Get meshes for physics collision shapes
     const std::vector<Mesh>& getMeshes() const { return meshes_; }
@@ -109,6 +112,9 @@ private:
     VmaAllocator storedAllocator_ = VK_NULL_HANDLE;
     VkDevice storedDevice_ = VK_NULL_HANDLE;
 
+    // ECS registry for detritus entities (not owned)
+    entt::registry* registry_ = nullptr;
+
     // Branch mesh variations
     std::vector<Mesh> meshes_;
 
@@ -116,9 +122,6 @@ private:
     std::unique_ptr<Texture> barkTexture_;
     std::unique_ptr<Texture> barkNormalMap_;
 
-    // Detritus instances (positions, rotations, etc.)
-    std::vector<DetritusInstance> instances_;
-
-    // Scene objects for rendering
+    // Scene objects for rendering (built from ECS queries)
     std::vector<Renderable> sceneObjects_;
 };

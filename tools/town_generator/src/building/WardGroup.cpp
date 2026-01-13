@@ -7,6 +7,7 @@
 #include "town_generator/wards/Ward.h"
 #include <algorithm>
 #include <cmath>
+#include <limits>
 #include <SDL3/SDL_log.h>
 
 namespace town_generator {
@@ -42,6 +43,9 @@ void WardGroup::buildBorder() {
 
     // Compute inner vertices after building border (faithful to mfcg.js)
     computeInnerVertices();
+
+    // Build blockM map and triangulation after inner vertices are computed
+    buildBlockM();
 }
 
 void WardGroup::createParams() {
@@ -154,8 +158,13 @@ void WardGroup::createGeometry() {
         return wards::Ward::semiSmooth(cut[0], cut[1], cut[2], minFront);
     };
 
-    // Additional callback not yet implemented:
-    // - isAtomic: for non-urban, uses isBlockSized (requires blockM interpolation map)
+    // Set isAtomic callback for non-urban areas - faithful to mfcg.js (line 13131)
+    // Non-urban uses isBlockSized which allows larger lots at city fringe
+    if (!urban) {
+        bisector.isAtomic = [this](const std::vector<geom::Point>& poly) -> bool {
+            return this->isBlockSized(poly);
+        };
+    }
 
     // Partition into building-sized lots
     auto buildingShapes = bisector.partition();
@@ -449,6 +458,177 @@ double WardGroup::interpolateDensity(const geom::Point& p, const std::vector<dou
         return weightedSum / totalWeight;
     }
     return 1.0;
+}
+
+void WardGroup::buildBlockM() {
+    // Faithful to mfcg.js WardGroup constructor (lines 13021-13024)
+    // Build blockM map: inner vertices = 1, fringe vertices = 9
+    blockM.clear();
+
+    if (border.length() < 3) return;
+
+    for (size_t i = 0; i < border.length(); ++i) {
+        const geom::Point& v = border[i];
+
+        // Check if this vertex is in the inner set
+        bool isInner = false;
+        for (const geom::Point& innerV : inner) {
+            if (std::abs(innerV.x - v.x) < 0.001 && std::abs(innerV.y - v.y) < 0.001) {
+                isInner = true;
+                break;
+            }
+        }
+
+        // Use integer key for map (multiply by 1000 for precision)
+        std::pair<int, int> key{static_cast<int>(v.x * 1000), static_cast<int>(v.y * 1000)};
+        blockM[key] = isInner ? 1.0 : 9.0;
+    }
+
+    // Build triangulation using ear clipping
+    triangulation.clear();
+    if (border.length() < 3) return;
+
+    // Simple ear clipping triangulation
+    std::vector<size_t> indices;
+    for (size_t i = 0; i < border.length(); ++i) {
+        indices.push_back(i);
+    }
+
+    while (indices.size() > 3) {
+        bool earFound = false;
+
+        for (size_t i = 0; i < indices.size(); ++i) {
+            size_t prev = (i + indices.size() - 1) % indices.size();
+            size_t next = (i + 1) % indices.size();
+
+            const geom::Point& p0 = border[indices[prev]];
+            const geom::Point& p1 = border[indices[i]];
+            const geom::Point& p2 = border[indices[next]];
+
+            // Check if this is a convex vertex (ear candidate)
+            double cross = (p1.x - p0.x) * (p2.y - p0.y) - (p1.y - p0.y) * (p2.x - p0.x);
+            if (cross <= 0) continue;  // Not convex (assuming CCW winding)
+
+            // Check if any other vertex is inside this triangle
+            bool isEar = true;
+            for (size_t j = 0; j < indices.size(); ++j) {
+                if (j == prev || j == i || j == next) continue;
+
+                const geom::Point& p = border[indices[j]];
+
+                // Point-in-triangle test using barycentric coordinates
+                double denom = (p1.y - p2.y) * (p0.x - p2.x) + (p2.x - p1.x) * (p0.y - p2.y);
+                if (std::abs(denom) < 1e-10) continue;
+
+                double b0 = ((p1.y - p2.y) * (p.x - p2.x) + (p2.x - p1.x) * (p.y - p2.y)) / denom;
+                double b1 = ((p2.y - p0.y) * (p.x - p2.x) + (p0.x - p2.x) * (p.y - p2.y)) / denom;
+                double b2 = 1.0 - b0 - b1;
+
+                if (b0 >= 0 && b1 >= 0 && b2 >= 0) {
+                    isEar = false;
+                    break;
+                }
+            }
+
+            if (isEar) {
+                // Add triangle
+                triangulation.push_back({indices[prev], indices[i], indices[next]});
+
+                // Remove the ear vertex
+                indices.erase(indices.begin() + static_cast<long>(i));
+                earFound = true;
+                break;
+            }
+        }
+
+        if (!earFound) {
+            // No ear found - polygon may be degenerate
+            break;
+        }
+    }
+
+    // Add the final triangle
+    if (indices.size() == 3) {
+        triangulation.push_back({indices[0], indices[1], indices[2]});
+    }
+}
+
+double WardGroup::interpolate(const geom::Point& p, const std::map<std::pair<int, int>, double>& values) const {
+    // Faithful to mfcg.js WardGroup.interpolate (lines 13271-13278)
+    // Uses barycentric interpolation within triangulated border
+
+    for (const auto& tri : triangulation) {
+        const geom::Point& a = border[tri[0]];
+        const geom::Point& b = border[tri[1]];
+        const geom::Point& c = border[tri[2]];
+
+        // Compute barycentric coordinates
+        double denom = (b.y - c.y) * (a.x - c.x) + (c.x - b.x) * (a.y - c.y);
+        if (std::abs(denom) < 1e-10) continue;
+
+        double baryA = ((b.y - c.y) * (p.x - c.x) + (c.x - b.x) * (p.y - c.y)) / denom;
+        double baryB = ((c.y - a.y) * (p.x - c.x) + (a.x - c.x) * (p.y - c.y)) / denom;
+        double baryC = 1.0 - baryA - baryB;
+
+        // Check if point is inside this triangle
+        if (baryA >= -0.001 && baryB >= -0.001 && baryC >= -0.001) {
+            // Get values for each vertex
+            std::pair<int, int> keyA{static_cast<int>(a.x * 1000), static_cast<int>(a.y * 1000)};
+            std::pair<int, int> keyB{static_cast<int>(b.x * 1000), static_cast<int>(b.y * 1000)};
+            std::pair<int, int> keyC{static_cast<int>(c.x * 1000), static_cast<int>(c.y * 1000)};
+
+            double valA = 0.0, valB = 0.0, valC = 0.0;
+            auto itA = values.find(keyA);
+            auto itB = values.find(keyB);
+            auto itC = values.find(keyC);
+            if (itA != values.end()) valA = itA->second;
+            if (itB != values.end()) valB = itB->second;
+            if (itC != values.end()) valC = itC->second;
+
+            return baryA * valA + baryB * valB + baryC * valC;
+        }
+    }
+
+    return std::numeric_limits<double>::quiet_NaN();
+}
+
+bool WardGroup::isBlockSized(const std::vector<geom::Point>& poly) const {
+    // Faithful to mfcg.js WardGroup.isBlockSized (lines 13287-13292)
+    // Returns true if polygon is small enough to stop subdivision
+    // Uses blockM interpolation to allow larger lots at city fringe
+
+    if (poly.size() < 3) return true;
+
+    // Calculate area
+    double area = 0.0;
+    size_t n = poly.size();
+    for (size_t i = 0; i < n; ++i) {
+        const geom::Point& p1 = poly[i];
+        const geom::Point& p2 = poly[(i + 1) % n];
+        area += (p1.x * p2.y - p2.x * p1.y);
+    }
+    area = std::abs(area) / 2.0;
+
+    // Calculate centroid
+    double cx = 0.0, cy = 0.0;
+    for (const auto& p : poly) {
+        cx += p.x;
+        cy += p.y;
+    }
+    cx /= static_cast<double>(n);
+    cy /= static_cast<double>(n);
+    geom::Point center(cx, cy);
+
+    // Interpolate blockM value at center
+    double blockMultiplier = interpolate(center, blockM);
+    if (std::isnan(blockMultiplier)) {
+        blockMultiplier = 1.0;  // Default to 1 if interpolation fails
+    }
+
+    // Calculate threshold: minSq * blockSize * blockMultiplier
+    double threshold = alleys.minSq * alleys.blockSize * blockMultiplier;
+
+    return area < threshold;
 }
 
 void WardGroup::filter() {

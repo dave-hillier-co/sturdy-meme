@@ -7,6 +7,8 @@
 #include "town_generator/wards/Ward.h"
 #include <vector>
 #include <memory>
+#include <map>
+#include <array>
 
 namespace town_generator {
 namespace building {
@@ -63,6 +65,15 @@ public:
     // Alley paths (cuts from Bisector)
     std::vector<std::vector<geom::Point>> alleyPaths;
 
+    // Block size multiplier map (vertex -> multiplier)
+    // Inner vertices get 1, outer/fringe vertices get 9
+    // Faithful to mfcg.js blockM (lines 13021-13024)
+    std::map<std::pair<int, int>, double> blockM;
+
+    // Cached triangulation of border for interpolation
+    // Each triangle is 3 indices into border vertices
+    std::vector<std::array<size_t, 3>> triangulation;
+
     WardGroup() = default;
     explicit WardGroup(City* model);
 
@@ -102,6 +113,18 @@ public:
     // Faithful to mfcg.js WardGroup.filter (lines 13190-13259)
     // Uses edge-type based density per vertex, interpolated to building centers
     void filter();
+
+    // Build the blockM map and triangulation (called after computeInnerVertices)
+    // Faithful to mfcg.js WardGroup constructor (lines 13021-13024)
+    void buildBlockM();
+
+    // Interpolate a value at a point using barycentric coordinates within triangulated border
+    // Faithful to mfcg.js WardGroup.interpolate (lines 13271-13278)
+    double interpolate(const geom::Point& p, const std::map<std::pair<int, int>, double>& values) const;
+
+    // Check if a polygon is small enough to stop subdivision (for non-urban areas)
+    // Faithful to mfcg.js WardGroup.isBlockSized (lines 13287-13292)
+    bool isBlockSized(const std::vector<geom::Point>& poly) const;
 
 private:
     // Get edge type density (mfcg.js: ROAD=0.3, WALL=0.5, CANAL=0.1, other=0)

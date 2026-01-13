@@ -322,8 +322,8 @@ void GuiSceneGraphTab::render(ISceneControl& sceneControl, SceneGraphTabState& s
                     ImGui::Spacing();
                     ImGui::Text("Mesh Info");
                     ImGui::Indent();
-                    ImGui::Text("Index Count: %u", selected.mesh->indexCount);
-                    ImGui::Text("Vertex Count: %u", selected.mesh->vertexCount);
+                    ImGui::Text("Index Count: %u", selected.mesh->getIndexCount());
+                    ImGui::Text("Vertex Count: %zu", selected.mesh->getVertices().size());
                     ImGui::Unindent();
                 }
 

@@ -74,6 +74,7 @@ set(SOURCES
     src/core/material/DescriptorManager.cpp
     src/core/material/MaterialDescriptorFactory.cpp
     src/core/material/MaterialRegistry.cpp
+    src/core/asset/AssetRegistry.cpp
     src/core/RenderableBuilder.cpp
     # Atmosphere
     src/atmosphere/TimeSystem.cpp
@@ -212,6 +213,7 @@ target_include_directories(${PROJECT_NAME} PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src/core/threading
     ${CMAKE_CURRENT_SOURCE_DIR}/src/core/pipeline
     ${CMAKE_CURRENT_SOURCE_DIR}/src/core/material
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/core/asset
     ${CMAKE_CURRENT_SOURCE_DIR}/src/debug
     ${CMAKE_CURRENT_SOURCE_DIR}/src/ecs
     ${CMAKE_CURRENT_SOURCE_DIR}/src/gui

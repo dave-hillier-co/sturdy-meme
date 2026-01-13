@@ -6,6 +6,7 @@
 #include "TreeSystem.h"
 #include "Mesh.h"
 #include "OctahedralMapping.h"
+#include "core/vulkan/VmaResources.h"
 
 #include <SDL3/SDL.h>
 #include <glm/gtc/matrix_transform.hpp>
@@ -287,18 +288,12 @@ bool TreeImpostorAtlas::createAtlasResources(uint32_t archetypeIndex) {
 }
 
 bool TreeImpostorAtlas::createSampler() {
-    auto samplerInfo = vk::SamplerCreateInfo{}
-        .setMagFilter(vk::Filter::eLinear)
-        .setMinFilter(vk::Filter::eLinear)
-        .setAddressModeU(vk::SamplerAddressMode::eClampToEdge)
-        .setAddressModeV(vk::SamplerAddressMode::eClampToEdge)
-        .setAddressModeW(vk::SamplerAddressMode::eClampToEdge)
-        .setAnisotropyEnable(true)
-        .setMaxAnisotropy(4.0f)
-        .setBorderColor(vk::BorderColor::eFloatTransparentBlack)
-        .setMipmapMode(vk::SamplerMipmapMode::eLinear);
-
-    atlasSampler_.emplace(*raiiDevice_, samplerInfo);
+    auto sampler = SamplerFactory::createSamplerLinearClampAnisotropic(*raiiDevice_, 4.0f);
+    if (!sampler) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "TreeImpostorAtlas: Failed to create sampler");
+        return false;
+    }
+    atlasSampler_ = std::move(*sampler);
     return true;
 }
 

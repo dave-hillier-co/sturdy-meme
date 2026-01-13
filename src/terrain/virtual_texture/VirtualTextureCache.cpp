@@ -274,22 +274,12 @@ bool VirtualTextureCache::createSampler(VkDevice device) {
         return false;
     }
 
-    auto samplerInfo = vk::SamplerCreateInfo{}
-        .setMagFilter(vk::Filter::eLinear)
-        .setMinFilter(vk::Filter::eLinear)
-        .setMipmapMode(vk::SamplerMipmapMode::eLinear)
-        .setAddressModeU(vk::SamplerAddressMode::eClampToEdge)
-        .setAddressModeV(vk::SamplerAddressMode::eClampToEdge)
-        .setAddressModeW(vk::SamplerAddressMode::eClampToEdge)
-        .setMinLod(0.0f)
-        .setMaxLod(VK_LOD_CLAMP_NONE);
-
-    try {
-        cacheSampler_.emplace(*raiiDevice_, samplerInfo);
-    } catch (const vk::SystemError& e) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create cache sampler: %s", e.what());
+    auto sampler = SamplerFactory::createSamplerLinearClamp(*raiiDevice_);
+    if (!sampler) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create cache sampler");
         return false;
     }
+    cacheSampler_ = std::move(*sampler);
     return true;
 }
 

@@ -245,25 +245,12 @@ bool WaterTileCull::createComputePipeline() {
     SDL_Log("WaterTileCull compute pipeline created");
 
     // Create depth sampler for tile culling
-    auto samplerInfo = vk::SamplerCreateInfo{}
-        .setMagFilter(vk::Filter::eNearest)
-        .setMinFilter(vk::Filter::eNearest)
-        .setMipmapMode(vk::SamplerMipmapMode::eNearest)
-        .setAddressModeU(vk::SamplerAddressMode::eClampToEdge)
-        .setAddressModeV(vk::SamplerAddressMode::eClampToEdge)
-        .setAddressModeW(vk::SamplerAddressMode::eClampToEdge)
-        .setMipLodBias(0.0f)
-        .setAnisotropyEnable(VK_FALSE)
-        .setCompareEnable(VK_FALSE)
-        .setMinLod(0.0f)
-        .setMaxLod(0.0f);
-
-    try {
-        depthSampler_.emplace(*raiiDevice_, samplerInfo);
-    } catch (const vk::SystemError& e) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create tile cull depth sampler: %s", e.what());
+    auto sampler = SamplerFactory::createSamplerNearestClamp(*raiiDevice_);
+    if (!sampler) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create tile cull depth sampler");
         return false;
     }
+    depthSampler_ = std::move(*sampler);
 
     return true;
 }

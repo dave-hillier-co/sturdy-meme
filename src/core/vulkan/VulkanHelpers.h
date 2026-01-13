@@ -204,6 +204,7 @@ inline bool createDepthResources(
     }
 
     // Create depth sampler for Hi-Z pyramid generation
+    // Note: Equivalent to SamplerFactory::createSamplerNearestClamp() for RAII code paths
     auto samplerInfo = vk::SamplerCreateInfo{}
         .setMagFilter(vk::Filter::eNearest)
         .setMinFilter(vk::Filter::eNearest)
@@ -389,6 +390,7 @@ inline bool createDepthArrayResources(
     }
 
     if (config.createSampler) {
+        // Note: Equivalent to SamplerFactory::createSamplerShadowComparison() for RAII code paths
         auto samplerInfo = vk::SamplerCreateInfo{}
             .setMagFilter(vk::Filter::eLinear)
             .setMinFilter(vk::Filter::eLinear)

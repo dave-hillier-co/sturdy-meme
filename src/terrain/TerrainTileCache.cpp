@@ -46,22 +46,13 @@ bool TerrainTileCache::initInternal(const InitInfo& info) {
         return false;
     }
 
-    // Create sampler for tile textures using vk::raii
-    auto samplerInfo = vk::SamplerCreateInfo{}
-        .setMagFilter(vk::Filter::eLinear)
-        .setMinFilter(vk::Filter::eLinear)
-        .setMipmapMode(vk::SamplerMipmapMode::eLinear)
-        .setAddressModeU(vk::SamplerAddressMode::eClampToEdge)
-        .setAddressModeV(vk::SamplerAddressMode::eClampToEdge)
-        .setAddressModeW(vk::SamplerAddressMode::eClampToEdge)
-        .setMinLod(0.0f)
-        .setMaxLod(VK_LOD_CLAMP_NONE);
-    try {
-        sampler_.emplace(*raiiDevice_, samplerInfo);
-    } catch (const vk::SystemError& e) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "TerrainTileCache: Failed to create sampler: %s", e.what());
+    // Create sampler for tile textures using factory
+    auto sampler = SamplerFactory::createSamplerLinearClamp(*raiiDevice_);
+    if (!sampler) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "TerrainTileCache: Failed to create sampler");
         return false;
     }
+    sampler_ = std::move(*sampler);
 
     // Create tile info buffers for shader using VulkanResourceFactory (triple-buffered)
     // Layout: uint activeTileCount, uint padding[3], TileInfoGPU tiles[MAX_ACTIVE_TILES]
@@ -1405,22 +1396,13 @@ bool TerrainTileCache::createHoleMaskResources() {
         return false;
     }
 
-    // Create sampler (linear filtering for smooth edges) using vk::raii
-    auto samplerInfo = vk::SamplerCreateInfo{}
-        .setMagFilter(vk::Filter::eLinear)
-        .setMinFilter(vk::Filter::eLinear)
-        .setMipmapMode(vk::SamplerMipmapMode::eLinear)
-        .setAddressModeU(vk::SamplerAddressMode::eClampToEdge)
-        .setAddressModeV(vk::SamplerAddressMode::eClampToEdge)
-        .setAddressModeW(vk::SamplerAddressMode::eClampToEdge)
-        .setMinLod(0.0f)
-        .setMaxLod(VK_LOD_CLAMP_NONE);
-    try {
-        holeMaskSampler_.emplace(*raiiDevice_, samplerInfo);
-    } catch (const vk::SystemError& e) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "TerrainTileCache: Failed to create hole mask sampler: %s", e.what());
+    // Create sampler (linear filtering for smooth edges) using factory
+    auto holeSampler = SamplerFactory::createSamplerLinearClamp(*raiiDevice_);
+    if (!holeSampler) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "TerrainTileCache: Failed to create hole mask sampler");
         return false;
     }
+    holeMaskSampler_ = std::move(*holeSampler);
 
     return true;
 }

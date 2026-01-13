@@ -79,28 +79,13 @@ bool OceanFFT::initInternal(const InitInfo& info) {
         };
     }
 
-    // Create sampler for output textures
-    auto samplerInfo = vk::SamplerCreateInfo{}
-        .setMagFilter(vk::Filter::eLinear)
-        .setMinFilter(vk::Filter::eLinear)
-        .setMipmapMode(vk::SamplerMipmapMode::eLinear)
-        .setAddressModeU(vk::SamplerAddressMode::eRepeat)  // Tiling ocean
-        .setAddressModeV(vk::SamplerAddressMode::eRepeat)
-        .setAddressModeW(vk::SamplerAddressMode::eRepeat)
-        .setMipLodBias(0.0f)
-        .setAnisotropyEnable(VK_TRUE)
-        .setMaxAnisotropy(16.0f)
-        .setCompareEnable(VK_FALSE)
-        .setMinLod(0.0f)
-        .setMaxLod(0.0f)
-        .setBorderColor(vk::BorderColor::eFloatOpaqueBlack);
-
-    try {
-        sampler_.emplace(*raiiDevice_, samplerInfo);
-    } catch (const vk::SystemError& e) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "OceanFFT: Failed to create sampler: %s", e.what());
+    // Create sampler for output textures (tiling ocean with anisotropic filtering)
+    auto sampler = SamplerFactory::createSamplerLinearRepeatAnisotropic(*raiiDevice_, 16.0f, 0.0f);
+    if (!sampler) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "OceanFFT: Failed to create sampler");
         return false;
     }
+    sampler_ = std::move(*sampler);
 
     // Create compute pipelines
     if (!createComputePipelines()) {
@@ -177,28 +162,13 @@ bool OceanFFT::initInternal(const InitContext& ctx, const OceanParams& oceanPara
         };
     }
 
-    // Create sampler for output textures
-    auto samplerInfo2 = vk::SamplerCreateInfo{}
-        .setMagFilter(vk::Filter::eLinear)
-        .setMinFilter(vk::Filter::eLinear)
-        .setMipmapMode(vk::SamplerMipmapMode::eLinear)
-        .setAddressModeU(vk::SamplerAddressMode::eRepeat)  // Tiling ocean
-        .setAddressModeV(vk::SamplerAddressMode::eRepeat)
-        .setAddressModeW(vk::SamplerAddressMode::eRepeat)
-        .setMipLodBias(0.0f)
-        .setAnisotropyEnable(VK_TRUE)
-        .setMaxAnisotropy(16.0f)
-        .setCompareEnable(VK_FALSE)
-        .setMinLod(0.0f)
-        .setMaxLod(0.0f)
-        .setBorderColor(vk::BorderColor::eFloatOpaqueBlack);
-
-    try {
-        sampler_.emplace(*raiiDevice_, samplerInfo2);
-    } catch (const vk::SystemError& e) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "OceanFFT: Failed to create sampler: %s", e.what());
+    // Create sampler for output textures (tiling ocean with anisotropic filtering)
+    auto sampler2 = SamplerFactory::createSamplerLinearRepeatAnisotropic(*raiiDevice_, 16.0f, 0.0f);
+    if (!sampler2) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "OceanFFT: Failed to create sampler");
         return false;
     }
+    sampler_ = std::move(*sampler2);
 
     // Create compute pipelines
     if (!createComputePipelines()) {

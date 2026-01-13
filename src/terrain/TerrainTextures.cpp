@@ -169,25 +169,14 @@ bool TerrainTextures::createAlbedoTexture() {
         return false;
     }
 
-    // Create sampler using vk::raii
-    auto samplerInfo = vk::SamplerCreateInfo{}
-        .setMagFilter(vk::Filter::eLinear)
-        .setMinFilter(vk::Filter::eLinear)
-        .setMipmapMode(vk::SamplerMipmapMode::eLinear)
-        .setAddressModeU(vk::SamplerAddressMode::eRepeat)
-        .setAddressModeV(vk::SamplerAddressMode::eRepeat)
-        .setAddressModeW(vk::SamplerAddressMode::eRepeat)
-        .setAnisotropyEnable(vk::True)
-        .setMaxAnisotropy(16.0f)
-        .setMinLod(0.0f)
-        .setMaxLod(VK_LOD_CLAMP_NONE);
-    try {
-        albedoSampler_.emplace(*raiiDevice_, samplerInfo);
-    } catch (const vk::SystemError& e) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create terrain albedo sampler: %s", e.what());
+    // Create sampler using factory
+    auto albedoSampler = SamplerFactory::createSamplerLinearRepeatAnisotropic(*raiiDevice_, 16.0f);
+    if (!albedoSampler) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create terrain albedo sampler");
         stbi_image_free(pixels);
         return false;
     }
+    albedoSampler_ = std::move(*albedoSampler);
 
     // Upload base level texture to GPU
     if (!uploadImageDataMipLevel(albedoImage, pixels, width, height, VK_FORMAT_R8G8B8A8_SRGB, 4, 0)) {
@@ -266,25 +255,14 @@ bool TerrainTextures::createGrassFarLODTexture() {
         return false;
     }
 
-    // Create sampler using vk::raii
-    auto samplerInfo = vk::SamplerCreateInfo{}
-        .setMagFilter(vk::Filter::eLinear)
-        .setMinFilter(vk::Filter::eLinear)
-        .setMipmapMode(vk::SamplerMipmapMode::eLinear)
-        .setAddressModeU(vk::SamplerAddressMode::eRepeat)
-        .setAddressModeV(vk::SamplerAddressMode::eRepeat)
-        .setAddressModeW(vk::SamplerAddressMode::eRepeat)
-        .setAnisotropyEnable(vk::True)
-        .setMaxAnisotropy(16.0f)
-        .setMinLod(0.0f)
-        .setMaxLod(VK_LOD_CLAMP_NONE);
-    try {
-        grassFarLODSampler_.emplace(*raiiDevice_, samplerInfo);
-    } catch (const vk::SystemError& e) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create grass far LOD sampler: %s", e.what());
+    // Create sampler using factory
+    auto grassSampler = SamplerFactory::createSamplerLinearRepeatAnisotropic(*raiiDevice_, 16.0f);
+    if (!grassSampler) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create grass far LOD sampler");
         stbi_image_free(pixels);
         return false;
     }
+    grassFarLODSampler_ = std::move(*grassSampler);
 
     // Upload base level texture to GPU
     if (!uploadImageDataMipLevel(grassFarLODImage, pixels, width, height, VK_FORMAT_R8G8B8A8_SRGB, 4, 0)) {

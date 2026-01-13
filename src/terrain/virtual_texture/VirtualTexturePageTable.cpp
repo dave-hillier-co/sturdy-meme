@@ -227,22 +227,12 @@ bool VirtualTexturePageTable::createSampler(VkDevice device) {
         return false;
     }
 
-    auto samplerInfo = vk::SamplerCreateInfo{}
-        .setMagFilter(vk::Filter::eNearest)
-        .setMinFilter(vk::Filter::eNearest)
-        .setMipmapMode(vk::SamplerMipmapMode::eNearest)
-        .setAddressModeU(vk::SamplerAddressMode::eClampToEdge)
-        .setAddressModeV(vk::SamplerAddressMode::eClampToEdge)
-        .setAddressModeW(vk::SamplerAddressMode::eClampToEdge)
-        .setMinLod(0.0f)
-        .setMaxLod(0.0f);
-
-    try {
-        pageTableSampler_.emplace(*raiiDevice_, samplerInfo);
-    } catch (const vk::SystemError& e) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create page table sampler: %s", e.what());
+    auto sampler = SamplerFactory::createSamplerNearestClamp(*raiiDevice_);
+    if (!sampler) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create page table sampler");
         return false;
     }
+    pageTableSampler_ = std::move(*sampler);
     return true;
 }
 

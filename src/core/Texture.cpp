@@ -201,6 +201,7 @@ bool Texture::loadInternal(const std::string& path, VmaAllocator allocator, VkDe
     }
 
     // Create sampler using vulkan-hpp builder
+    // Note: Equivalent to SamplerFactory::createSamplerLinearRepeatLimitedMip(device, 0.0f) for RAII code paths
     auto samplerInfo = vk::SamplerCreateInfo{}
         .setMagFilter(vk::Filter::eLinear)
         .setMinFilter(vk::Filter::eLinear)
@@ -334,6 +335,7 @@ bool Texture::loadDDS(const std::string& path, VmaAllocator allocator, VkDevice 
     }
 
     // Create sampler using vulkan-hpp builder
+    // Note: Equivalent to SamplerFactory::createSamplerLinearRepeatLimitedMip(device, mipLevels) for RAII code paths
     auto samplerInfo = vk::SamplerCreateInfo{}
         .setMagFilter(vk::Filter::eLinear)
         .setMinFilter(vk::Filter::eLinear)
@@ -430,6 +432,7 @@ bool Texture::createSolidColorInternal(uint8_t r, uint8_t g, uint8_t b, uint8_t 
     }
 
     // Create sampler using vulkan-hpp builder
+    // Note: Equivalent to SamplerFactory::createSamplerNearestRepeat() for RAII code paths
     auto samplerInfo = vk::SamplerCreateInfo{}
         .setMagFilter(vk::Filter::eNearest)
         .setMinFilter(vk::Filter::eNearest)
@@ -796,6 +799,8 @@ bool Texture::loadWithMipmapsInternal(const std::string& path, VmaAllocator allo
     }
 
     // Create sampler with mipmapping and optional anisotropy using vulkan-hpp builder
+    // Note: For RAII code paths, use SamplerFactory::createSamplerLinearClampAnisotropic(device, 8.0f, mipLevels)
+    //       for anisotropic mode, or SamplerFactory::createSamplerLinearClampLimitedMip(device, mipLevels) without anisotropy
     auto samplerInfo = vk::SamplerCreateInfo{}
         .setMagFilter(vk::Filter::eLinear)
         .setMinFilter(vk::Filter::eLinear)

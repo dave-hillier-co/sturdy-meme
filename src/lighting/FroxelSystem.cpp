@@ -2,6 +2,7 @@
 #include "ShaderLoader.h"
 #include "DescriptorManager.h"
 #include "core/vulkan/BarrierHelpers.h"
+#include "core/vulkan/VmaResources.h"
 #include <SDL3/SDL_log.h>
 #include <vulkan/vulkan.hpp>
 #include <glm/gtc/matrix_transform.hpp>
@@ -190,27 +191,12 @@ bool FroxelSystem::createIntegratedVolume() {
 }
 
 bool FroxelSystem::createSampler() {
-    auto samplerInfo = vk::SamplerCreateInfo{}
-        .setMagFilter(vk::Filter::eLinear)
-        .setMinFilter(vk::Filter::eLinear)
-        .setMipmapMode(vk::SamplerMipmapMode::eLinear)
-        .setAddressModeU(vk::SamplerAddressMode::eClampToEdge)
-        .setAddressModeV(vk::SamplerAddressMode::eClampToEdge)
-        .setAddressModeW(vk::SamplerAddressMode::eClampToEdge)
-        .setMipLodBias(0.0f)
-        .setAnisotropyEnable(VK_FALSE)
-        .setCompareEnable(VK_FALSE)
-        .setMinLod(0.0f)
-        .setMaxLod(0.0f)
-        .setBorderColor(vk::BorderColor::eFloatTransparentBlack);
-
-    try {
-        volumeSampler_.emplace(*raiiDevice_, samplerInfo);
-    } catch (const std::exception& e) {
-        SDL_Log("Failed to create volume sampler: %s", e.what());
+    auto sampler = SamplerFactory::createSamplerLinearClampLimitedMip(*raiiDevice_, 0.0f);
+    if (!sampler) {
+        SDL_Log("Failed to create volume sampler");
         return false;
     }
-
+    volumeSampler_ = std::move(*sampler);
     return true;
 }
 

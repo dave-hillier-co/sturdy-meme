@@ -491,7 +491,7 @@ inline std::optional<vk::raii::Sampler> createSamplerLinearRepeat(const vk::raii
 }
 
 inline std::optional<vk::raii::Sampler> createSamplerLinearRepeatAnisotropic(
-        const vk::raii::Device& device, float maxAnisotropy) {
+        const vk::raii::Device& device, float maxAnisotropy, float maxLod = VK_LOD_CLAMP_NONE) {
     auto samplerInfo = vk::SamplerCreateInfo{}
         .setMagFilter(vk::Filter::eLinear)
         .setMinFilter(vk::Filter::eLinear)
@@ -502,7 +502,7 @@ inline std::optional<vk::raii::Sampler> createSamplerLinearRepeatAnisotropic(
         .setAnisotropyEnable(vk::True)
         .setMaxAnisotropy(maxAnisotropy)
         .setMinLod(0.0f)
-        .setMaxLod(VK_LOD_CLAMP_NONE);
+        .setMaxLod(maxLod);
 
     try {
         return vk::raii::Sampler(device, samplerInfo);
@@ -589,6 +589,70 @@ inline std::optional<vk::raii::Sampler> createSamplerLinearBorder(
         .setBorderColor(borderColor)
         .setMinLod(0.0f)
         .setMaxLod(VK_LOD_CLAMP_NONE);
+
+    try {
+        return vk::raii::Sampler(device, samplerInfo);
+    } catch (const vk::SystemError& e) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create sampler: %s", e.what());
+        return std::nullopt;
+    }
+}
+
+// Linear sampler with clamp and anisotropy (for textures that need high quality sampling)
+inline std::optional<vk::raii::Sampler> createSamplerLinearClampAnisotropic(
+        const vk::raii::Device& device, float maxAnisotropy, float maxLod = VK_LOD_CLAMP_NONE) {
+    auto samplerInfo = vk::SamplerCreateInfo{}
+        .setMagFilter(vk::Filter::eLinear)
+        .setMinFilter(vk::Filter::eLinear)
+        .setMipmapMode(vk::SamplerMipmapMode::eLinear)
+        .setAddressModeU(vk::SamplerAddressMode::eClampToEdge)
+        .setAddressModeV(vk::SamplerAddressMode::eClampToEdge)
+        .setAddressModeW(vk::SamplerAddressMode::eClampToEdge)
+        .setAnisotropyEnable(vk::True)
+        .setMaxAnisotropy(maxAnisotropy)
+        .setMinLod(0.0f)
+        .setMaxLod(maxLod);
+
+    try {
+        return vk::raii::Sampler(device, samplerInfo);
+    } catch (const vk::SystemError& e) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create sampler: %s", e.what());
+        return std::nullopt;
+    }
+}
+
+// Nearest sampler with repeat (for solid color textures and similar)
+inline std::optional<vk::raii::Sampler> createSamplerNearestRepeat(const vk::raii::Device& device) {
+    auto samplerInfo = vk::SamplerCreateInfo{}
+        .setMagFilter(vk::Filter::eNearest)
+        .setMinFilter(vk::Filter::eNearest)
+        .setMipmapMode(vk::SamplerMipmapMode::eNearest)
+        .setAddressModeU(vk::SamplerAddressMode::eRepeat)
+        .setAddressModeV(vk::SamplerAddressMode::eRepeat)
+        .setAddressModeW(vk::SamplerAddressMode::eRepeat)
+        .setMinLod(0.0f)
+        .setMaxLod(0.0f);
+
+    try {
+        return vk::raii::Sampler(device, samplerInfo);
+    } catch (const vk::SystemError& e) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create sampler: %s", e.what());
+        return std::nullopt;
+    }
+}
+
+// Linear sampler with repeat and limited mip range (for simple textures without mipmaps)
+inline std::optional<vk::raii::Sampler> createSamplerLinearRepeatLimitedMip(
+        const vk::raii::Device& device, float maxLod = 0.0f) {
+    auto samplerInfo = vk::SamplerCreateInfo{}
+        .setMagFilter(vk::Filter::eLinear)
+        .setMinFilter(vk::Filter::eLinear)
+        .setMipmapMode(vk::SamplerMipmapMode::eLinear)
+        .setAddressModeU(vk::SamplerAddressMode::eRepeat)
+        .setAddressModeV(vk::SamplerAddressMode::eRepeat)
+        .setAddressModeW(vk::SamplerAddressMode::eRepeat)
+        .setMinLod(0.0f)
+        .setMaxLod(maxLod);
 
     try {
         return vk::raii::Sampler(device, samplerInfo);

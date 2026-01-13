@@ -120,28 +120,13 @@ bool FlowMapGenerator::createImage(uint32_t resolution) {
 }
 
 bool FlowMapGenerator::createSampler() {
-    auto samplerInfo = vk::SamplerCreateInfo{}
-        .setMagFilter(vk::Filter::eLinear)
-        .setMinFilter(vk::Filter::eLinear)
-        .setMipmapMode(vk::SamplerMipmapMode::eLinear)
-        .setAddressModeU(vk::SamplerAddressMode::eClampToEdge)
-        .setAddressModeV(vk::SamplerAddressMode::eClampToEdge)
-        .setAddressModeW(vk::SamplerAddressMode::eClampToEdge)
-        .setAnisotropyEnable(VK_TRUE)
-        .setMaxAnisotropy(4.0f)
-        .setBorderColor(vk::BorderColor::eFloatOpaqueBlack)
-        .setUnnormalizedCoordinates(VK_FALSE)
-        .setCompareEnable(VK_FALSE)
-        .setMinLod(0.0f)
-        .setMaxLod(0.0f);
-
-    try {
-        flowMapSampler_.emplace(*raiiDevice_, samplerInfo);
-        return true;
-    } catch (const std::exception& e) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create flow map sampler: %s", e.what());
+    auto sampler = SamplerFactory::createSamplerLinearClampAnisotropic(*raiiDevice_, 4.0f, 0.0f);
+    if (!sampler) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create flow map sampler");
         return false;
     }
+    flowMapSampler_ = std::move(*sampler);
+    return true;
 }
 
 void FlowMapGenerator::uploadToGPU() {

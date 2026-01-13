@@ -1,5 +1,6 @@
 #pragma once
 
+#include "WeakCache.h"
 #include "../Texture.h"
 #include "../Mesh.h"
 #include "../ShaderLoader.h"
@@ -10,8 +11,6 @@
 
 #include <memory>
 #include <string>
-#include <unordered_map>
-#include <mutex>
 
 // Configuration for texture loading (defined outside class for default argument support)
 struct TextureLoadConfig {
@@ -229,15 +228,8 @@ private:
     VkCommandPool commandPool_ = VK_NULL_HANDLE;
     VkQueue queue_ = VK_NULL_HANDLE;
 
-    // Asset caches - weak_ptr for deduplication without preventing cleanup
-    std::unordered_map<std::string, std::weak_ptr<Texture>> textureCache_;
-    std::unordered_map<std::string, std::weak_ptr<Mesh>> meshCache_;
-    std::unordered_map<std::string, std::weak_ptr<ShaderModule>> shaderCache_;
-
-    // Statistics
-    mutable size_t textureCacheHits_ = 0;
-    mutable size_t shaderCacheHits_ = 0;
-
-    // Thread safety
-    mutable std::mutex mutex_;
+    // Asset caches (thread-safe with automatic cleanup of expired entries)
+    WeakCache<Texture> textureCache_;
+    WeakCache<Mesh> meshCache_;
+    WeakCache<ShaderModule> shaderCache_;
 };

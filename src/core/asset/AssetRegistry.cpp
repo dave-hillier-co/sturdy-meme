@@ -4,8 +4,6 @@
 void AssetRegistry::init(VkDevice device, VkPhysicalDevice physicalDevice,
                          VmaAllocator allocator, VkCommandPool commandPool,
                          VkQueue queue) {
-    std::lock_guard<std::mutex> lock(mutex_);
-
     device_ = device;
     physicalDevice_ = physicalDevice;
     allocator_ = allocator;
@@ -21,17 +19,9 @@ void AssetRegistry::init(VkDevice device, VkPhysicalDevice physicalDevice,
 
 std::shared_ptr<Texture> AssetRegistry::loadTexture(const std::string& path,
                                                     const TextureLoadConfig& config) {
-    std::lock_guard<std::mutex> lock(mutex_);
-
     // Check cache first
-    auto it = textureCache_.find(path);
-    if (it != textureCache_.end()) {
-        if (auto texture = it->second.lock()) {
-            textureCacheHits_++;
-            return texture;
-        }
-        // Weak ptr expired, remove stale entry
-        textureCache_.erase(it);
+    if (auto cached = textureCache_.get(path)) {
+        return cached;
     }
 
     // Load the texture
@@ -54,7 +44,7 @@ std::shared_ptr<Texture> AssetRegistry::loadTexture(const std::string& path,
 
     // Convert to shared_ptr and cache
     auto texture = std::shared_ptr<Texture>(texPtr.release());
-    textureCache_[path] = texture;
+    textureCache_.put(path, texture);
 
     SDL_Log("AssetRegistry: Loaded texture '%s'", path.c_str());
     return texture;
@@ -62,17 +52,10 @@ std::shared_ptr<Texture> AssetRegistry::loadTexture(const std::string& path,
 
 std::shared_ptr<Texture> AssetRegistry::createSolidColorTexture(
     uint8_t r, uint8_t g, uint8_t b, uint8_t a, const std::string& name) {
-    std::lock_guard<std::mutex> lock(mutex_);
-
     // Check cache if name provided
     if (!name.empty()) {
-        auto it = textureCache_.find(name);
-        if (it != textureCache_.end()) {
-            if (auto texture = it->second.lock()) {
-                textureCacheHits_++;
-                return texture;
-            }
-            textureCache_.erase(it);
+        if (auto cached = textureCache_.get(name)) {
+            return cached;
         }
     }
 
@@ -87,35 +70,21 @@ std::shared_ptr<Texture> AssetRegistry::createSolidColorTexture(
 
     auto texture = std::shared_ptr<Texture>(texPtr.release());
 
-    // Cache with name if provided
     if (!name.empty()) {
-        textureCache_[name] = texture;
+        textureCache_.put(name, texture);
     }
 
     return texture;
 }
 
 void AssetRegistry::registerTexture(std::shared_ptr<Texture> texture, const std::string& name) {
-    if (!texture || name.empty()) {
-        return;
+    if (texture && !name.empty()) {
+        textureCache_.put(name, texture);
     }
-
-    std::lock_guard<std::mutex> lock(mutex_);
-    textureCache_[name] = texture;
 }
 
 std::shared_ptr<Texture> AssetRegistry::getTexture(const std::string& path) {
-    std::lock_guard<std::mutex> lock(mutex_);
-
-    auto it = textureCache_.find(path);
-    if (it != textureCache_.end()) {
-        if (auto texture = it->second.lock()) {
-            return texture;
-        }
-        // Expired, clean up
-        textureCache_.erase(it);
-    }
-    return nullptr;
+    return textureCache_.get(path);
 }
 
 // ============================================================================
@@ -124,16 +93,10 @@ std::shared_ptr<Texture> AssetRegistry::getTexture(const std::string& path) {
 
 std::shared_ptr<Mesh> AssetRegistry::createMesh(const MeshConfig& config,
                                                 const std::string& name) {
-    std::lock_guard<std::mutex> lock(mutex_);
-
     // Check cache if name provided
     if (!name.empty()) {
-        auto it = meshCache_.find(name);
-        if (it != meshCache_.end()) {
-            if (auto mesh = it->second.lock()) {
-                return mesh;
-            }
-            meshCache_.erase(it);
+        if (auto cached = meshCache_.get(name)) {
+            return cached;
         }
     }
 
@@ -173,9 +136,8 @@ std::shared_ptr<Mesh> AssetRegistry::createMesh(const MeshConfig& config,
         return nullptr;
     }
 
-    // Cache with name if provided
     if (!name.empty()) {
-        meshCache_[name] = mesh;
+        meshCache_.put(name, mesh);
     }
 
     SDL_Log("AssetRegistry: Created mesh '%s'", name.empty() ? "unnamed" : name.c_str());
@@ -186,8 +148,6 @@ std::shared_ptr<Mesh> AssetRegistry::createCustomMesh(
     const std::vector<Vertex>& vertices,
     const std::vector<uint32_t>& indices,
     const std::string& name) {
-    std::lock_guard<std::mutex> lock(mutex_);
-
     auto mesh = std::make_shared<Mesh>();
     mesh->setCustomGeometry(vertices, indices);
 
@@ -198,32 +158,20 @@ std::shared_ptr<Mesh> AssetRegistry::createCustomMesh(
     }
 
     if (!name.empty()) {
-        meshCache_[name] = mesh;
+        meshCache_.put(name, mesh);
     }
 
     return mesh;
 }
 
 void AssetRegistry::registerMesh(std::shared_ptr<Mesh> mesh, const std::string& name) {
-    if (!mesh || name.empty()) {
-        return;
+    if (mesh && !name.empty()) {
+        meshCache_.put(name, mesh);
     }
-
-    std::lock_guard<std::mutex> lock(mutex_);
-    meshCache_[name] = mesh;
 }
 
 std::shared_ptr<Mesh> AssetRegistry::getMesh(const std::string& name) {
-    std::lock_guard<std::mutex> lock(mutex_);
-
-    auto it = meshCache_.find(name);
-    if (it != meshCache_.end()) {
-        if (auto mesh = it->second.lock()) {
-            return mesh;
-        }
-        meshCache_.erase(it);
-    }
-    return nullptr;
+    return meshCache_.get(name);
 }
 
 // ============================================================================
@@ -231,17 +179,9 @@ std::shared_ptr<Mesh> AssetRegistry::getMesh(const std::string& name) {
 // ============================================================================
 
 std::shared_ptr<AssetRegistry::ShaderModule> AssetRegistry::loadShader(const std::string& path) {
-    std::lock_guard<std::mutex> lock(mutex_);
-
     // Check cache first
-    auto it = shaderCache_.find(path);
-    if (it != shaderCache_.end()) {
-        if (auto shader = it->second.lock()) {
-            shaderCacheHits_++;
-            return shader;
-        }
-        // Weak ptr expired, remove stale entry
-        shaderCache_.erase(it);
+    if (auto cached = shaderCache_.get(path)) {
+        return cached;
     }
 
     // Load shader
@@ -252,25 +192,16 @@ std::shared_ptr<AssetRegistry::ShaderModule> AssetRegistry::loadShader(const std
         return nullptr;
     }
 
-    // Wrap in RAII container - destructor will call vkDestroyShaderModule
+    // Wrap in RAII container
     auto shader = std::make_shared<ShaderModule>(*module, device_);
-    shaderCache_[path] = shader;
+    shaderCache_.put(path, shader);
 
     SDL_Log("AssetRegistry: Loaded shader '%s'", path.c_str());
     return shader;
 }
 
 std::shared_ptr<AssetRegistry::ShaderModule> AssetRegistry::getShader(const std::string& path) {
-    std::lock_guard<std::mutex> lock(mutex_);
-
-    auto it = shaderCache_.find(path);
-    if (it != shaderCache_.end()) {
-        if (auto shader = it->second.lock()) {
-            return shader;
-        }
-        shaderCache_.erase(it);
-    }
-    return nullptr;
+    return shaderCache_.get(path);
 }
 
 // ============================================================================
@@ -278,54 +209,22 @@ std::shared_ptr<AssetRegistry::ShaderModule> AssetRegistry::getShader(const std:
 // ============================================================================
 
 AssetRegistry::Stats AssetRegistry::getStats() const {
-    std::lock_guard<std::mutex> lock(mutex_);
-
     Stats stats;
-    // Count non-expired entries
-    for (const auto& [path, wp] : textureCache_) {
-        if (!wp.expired()) stats.textureCount++;
-    }
-    for (const auto& [name, wp] : meshCache_) {
-        if (!wp.expired()) stats.meshCount++;
-    }
-    for (const auto& [path, wp] : shaderCache_) {
-        if (!wp.expired()) stats.shaderCount++;
-    }
-    stats.textureCacheHits = textureCacheHits_;
-    stats.shaderCacheHits = shaderCacheHits_;
+    stats.textureCount = textureCache_.size();
+    stats.meshCount = meshCache_.size();
+    stats.shaderCount = shaderCache_.size();
+    stats.textureCacheHits = textureCache_.hits();
+    stats.shaderCacheHits = shaderCache_.hits();
     return stats;
 }
 
 void AssetRegistry::pruneExpiredEntries() {
-    std::lock_guard<std::mutex> lock(mutex_);
+    size_t texturesPruned = textureCache_.prune();
+    size_t meshesPruned = meshCache_.prune();
+    size_t shadersPruned = shaderCache_.prune();
 
-    // Remove expired texture entries
-    for (auto it = textureCache_.begin(); it != textureCache_.end();) {
-        if (it->second.expired()) {
-            SDL_Log("AssetRegistry: Pruned expired texture '%s'", it->first.c_str());
-            it = textureCache_.erase(it);
-        } else {
-            ++it;
-        }
-    }
-
-    // Remove expired mesh entries
-    for (auto it = meshCache_.begin(); it != meshCache_.end();) {
-        if (it->second.expired()) {
-            SDL_Log("AssetRegistry: Pruned expired mesh '%s'", it->first.c_str());
-            it = meshCache_.erase(it);
-        } else {
-            ++it;
-        }
-    }
-
-    // Remove expired shader entries
-    for (auto it = shaderCache_.begin(); it != shaderCache_.end();) {
-        if (it->second.expired()) {
-            SDL_Log("AssetRegistry: Pruned expired shader '%s'", it->first.c_str());
-            it = shaderCache_.erase(it);
-        } else {
-            ++it;
-        }
+    if (texturesPruned > 0 || meshesPruned > 0 || shadersPruned > 0) {
+        SDL_Log("AssetRegistry: Pruned %zu textures, %zu meshes, %zu shaders",
+                texturesPruned, meshesPruned, shadersPruned);
     }
 }

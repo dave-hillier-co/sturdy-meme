@@ -5,6 +5,7 @@
 #include <glm/gtc/quaternion.hpp>
 #include <entt/entt.hpp>
 #include <cstdint>
+#include <cmath>
 #include <vector>
 #include <string>
 #include "PhysicsSystem.h"
@@ -14,6 +15,33 @@
 struct Transform {
     glm::vec3 position{0.0f};
     glm::quat rotation{1.0f, 0.0f, 0.0f, 0.0f};  // Identity quaternion
+
+    // ========================================================================
+    // Factory methods
+    // ========================================================================
+
+    // Create with position only (identity rotation)
+    static Transform withPosition(const glm::vec3& pos) {
+        Transform t;
+        t.position = pos;
+        return t;
+    }
+
+    // Create with position and yaw (degrees)
+    static Transform withYaw(const glm::vec3& pos, float yawDegrees) {
+        Transform t;
+        t.position = pos;
+        t.rotation = glm::angleAxis(glm::radians(yawDegrees), glm::vec3(0.0f, 1.0f, 0.0f));
+        return t;
+    }
+
+    // Create with position and quaternion rotation
+    static Transform withRotation(const glm::vec3& pos, const glm::quat& rot) {
+        Transform t;
+        t.position = pos;
+        t.rotation = rot;
+        return t;
+    }
 
     // ========================================================================
     // Quaternion-based rotation (preferred for full 3D rotation)
@@ -112,7 +140,7 @@ struct PlayerMovement {
     glm::mat4 getModelMatrix(const Transform& transform) const {
         glm::mat4 model = glm::mat4(1.0f);
         model = glm::translate(model, transform.position + glm::vec3(0.0f, CAPSULE_HEIGHT * 0.5f, 0.0f));
-        float effectiveYaw = orientationLocked ? lockedYaw : transform.yaw;
+        float effectiveYaw = orientationLocked ? lockedYaw : transform.getYaw();
         model = glm::rotate(model, glm::radians(effectiveYaw), glm::vec3(0.0f, 1.0f, 0.0f));
         return model;
     }
@@ -146,10 +174,42 @@ struct PointLight : LightBase {
 };
 
 // Spot light - directional cone light
+// Direction is derived from the entity's Transform rotation (uses negative forward vector)
+// Default rotation points light downward (-Y axis)
 struct SpotLight : LightBase {
-    glm::vec3 direction{0.0f, -1.0f, 0.0f};
     float innerConeAngle{30.0f};  // Degrees
     float outerConeAngle{45.0f};  // Degrees
+
+    // Get light direction from transform (lights point in -forward direction)
+    // This matches common convention where default rotation points light downward
+    static glm::vec3 getDirection(const Transform& transform) {
+        // Default identity rotation: light points down (-Y)
+        // Rotations modify this direction
+        return glm::vec3(glm::mat4_cast(transform.rotation) * glm::vec4(0.0f, -1.0f, 0.0f, 0.0f));
+    }
+
+    // Create rotation quaternion to point light in a specific direction
+    static glm::quat rotationFromDirection(const glm::vec3& direction) {
+        glm::vec3 dir = glm::normalize(direction);
+        // Default direction is -Y (down)
+        glm::vec3 defaultDir(0.0f, -1.0f, 0.0f);
+
+        // Handle edge case: direction is exactly opposite
+        float dot = glm::dot(defaultDir, dir);
+        if (dot < -0.9999f) {
+            // Rotate 180 degrees around X axis
+            return glm::angleAxis(glm::pi<float>(), glm::vec3(1.0f, 0.0f, 0.0f));
+        }
+        // Handle edge case: direction is already default
+        if (dot > 0.9999f) {
+            return glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
+        }
+
+        // General case: compute rotation from default to target direction
+        glm::vec3 axis = glm::normalize(glm::cross(defaultDir, dir));
+        float angle = std::acos(glm::clamp(dot, -1.0f, 1.0f));
+        return glm::angleAxis(angle, axis);
+    }
 };
 
 // Tag for enabled lights (removed when light is disabled)

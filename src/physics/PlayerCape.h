@@ -9,6 +9,7 @@
 #include <vector>
 
 class WindSystem;
+class SceneNode;
 
 // Body collider definition for cape collision
 struct BodyCollider {
@@ -67,7 +68,27 @@ public:
     // Setup default attachments (shoulders/upper back)
     void setupDefaultAttachments();
 
-    // Update cape simulation
+    // ========================================================================
+    // Scene Graph Attachment
+    // ========================================================================
+
+    // Attach cape to a scene node (e.g., character's scene node)
+    // The cape will use the node's world transform automatically
+    void setAttachmentNode(SceneNode* node) { attachmentNode_ = node; }
+    SceneNode* getAttachmentNode() const { return attachmentNode_; }
+
+    // ========================================================================
+    // Update Methods
+    // ========================================================================
+
+    // Update cape simulation using attached scene node
+    // Requires setAttachmentNode() to be called first
+    // skeleton: character skeleton with current pose
+    // deltaTime: time since last frame
+    // windSystem: optional wind for cloth movement
+    void update(const Skeleton& skeleton, float deltaTime, const WindSystem* windSystem = nullptr);
+
+    // Update cape simulation with explicit world transform (legacy method)
     // skeleton: character skeleton with current pose
     // worldTransform: character world transform
     // deltaTime: time since last frame
@@ -107,6 +128,7 @@ private:
     std::vector<BodyCollider> bodyColliders;
     std::vector<CapeAttachment> attachments;
     std::vector<glm::mat4> cachedGlobalTransforms;  // Cache bone transforms
+    SceneNode* attachmentNode_ = nullptr;           // Optional scene graph attachment
 
     int clothWidth = 0;
     int clothHeight = 0;

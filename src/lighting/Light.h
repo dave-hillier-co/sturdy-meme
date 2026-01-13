@@ -1,9 +1,11 @@
 #pragma once
 
 #include <glm/glm.hpp>
+#include <glm/gtc/quaternion.hpp>
 #include <vector>
 #include <algorithm>
 #include <cstdint>
+#include "scene/RotationUtils.h"
 
 // Maximum number of lights supported in the shader
 static constexpr uint32_t MAX_LIGHTS = 16;
@@ -30,10 +32,11 @@ struct LightBuffer {
 };
 
 // CPU-side light representation with additional metadata
+// Supports both direct direction or quaternion rotation for spot lights
 struct Light {
     LightType type = LightType::Point;
     glm::vec3 position = glm::vec3(0.0f);
-    glm::vec3 direction = glm::vec3(0.0f, -1.0f, 0.0f);  // For spots
+    glm::quat rotation = glm::quat(1.0f, 0.0f, 0.0f, 0.0f);  // For spots - identity = pointing down
     glm::vec3 color = glm::vec3(1.0f);
     float intensity = 1.0f;
     float radius = 10.0f;         // Falloff radius
@@ -48,12 +51,78 @@ struct Light {
     float priority = 1.0f;        // Higher = more important, less likely to be culled
     bool enabled = true;
 
+    // ========================================================================
+    // Direction helpers (delegates to RotationUtils)
+    // ========================================================================
+
+    glm::vec3 getDirection() const {
+        return RotationUtils::directionFromRotation(rotation);
+    }
+
+    void setDirection(const glm::vec3& dir) {
+        rotation = RotationUtils::rotationFromDirection(dir);
+    }
+
+    static glm::quat rotationFromDirection(const glm::vec3& direction) {
+        return RotationUtils::rotationFromDirection(direction);
+    }
+
+    // ========================================================================
+    // Factory methods
+    // ========================================================================
+
+    // Create a point light
+    static Light createPointLight(const glm::vec3& pos, const glm::vec3& col = glm::vec3(1.0f),
+                                   float intens = 1.0f, float rad = 10.0f) {
+        Light light;
+        light.type = LightType::Point;
+        light.position = pos;
+        light.color = col;
+        light.intensity = intens;
+        light.radius = rad;
+        return light;
+    }
+
+    // Create a spot light with direction vector
+    static Light createSpotLight(const glm::vec3& pos, const glm::vec3& dir,
+                                  const glm::vec3& col = glm::vec3(1.0f),
+                                  float intens = 1.0f, float rad = 15.0f,
+                                  float innerAngle = 30.0f, float outerAngle = 45.0f) {
+        Light light;
+        light.type = LightType::Spot;
+        light.position = pos;
+        light.rotation = rotationFromDirection(dir);
+        light.color = col;
+        light.intensity = intens;
+        light.radius = rad;
+        light.innerConeAngle = innerAngle;
+        light.outerConeAngle = outerAngle;
+        return light;
+    }
+
+    // Create a spot light with rotation quaternion
+    static Light createSpotLightWithRotation(const glm::vec3& pos, const glm::quat& rot,
+                                              const glm::vec3& col = glm::vec3(1.0f),
+                                              float intens = 1.0f, float rad = 15.0f,
+                                              float innerAngle = 30.0f, float outerAngle = 45.0f) {
+        Light light;
+        light.type = LightType::Spot;
+        light.position = pos;
+        light.rotation = rot;
+        light.color = col;
+        light.intensity = intens;
+        light.radius = rad;
+        light.innerConeAngle = innerAngle;
+        light.outerConeAngle = outerAngle;
+        return light;
+    }
+
     // Convert to GPU format
     GPULight toGPU() const {
         GPULight gpu{};
         gpu.positionAndType = glm::vec4(position, static_cast<float>(type));
         gpu.directionAndCone = glm::vec4(
-            glm::normalize(direction),
+            glm::normalize(getDirection()),
             glm::cos(glm::radians(outerConeAngle))
         );
         gpu.colorAndIntensity = glm::vec4(color, intensity);

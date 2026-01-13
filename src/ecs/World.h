@@ -14,7 +14,7 @@ public:
     // Create player entity with all required components
     entt::entity createPlayer(const glm::vec3& position, float yaw = 0.0f) {
         auto entity = registry_.create();
-        registry_.emplace<Transform>(entity, Transform{position, yaw});
+        registry_.emplace<Transform>(entity, Transform::withYaw(position, yaw));
         registry_.emplace<Velocity>(entity);
         registry_.emplace<PlayerTag>(entity);
         registry_.emplace<PlayerMovement>(entity);
@@ -87,7 +87,7 @@ public:
                                    float radius = 10.0f) {
         auto entity = registry_.create();
 
-        registry_.emplace<Transform>(entity, Transform{position, 0.0f});
+        registry_.emplace<Transform>(entity, Transform::withPosition(position));
         PointLight light;
         light.color = color;
         light.intensity = intensity;
@@ -99,6 +99,7 @@ public:
     }
 
     // Create a spot light entity
+    // Direction is stored as rotation in the Transform component
     entt::entity createSpotLight(const glm::vec3& position,
                                   const glm::vec3& direction,
                                   const glm::vec3& color = glm::vec3{1.0f},
@@ -108,11 +109,13 @@ public:
                                   float radius = 15.0f) {
         auto entity = registry_.create();
 
-        registry_.emplace<Transform>(entity, Transform{position, 0.0f});
+        // Store direction as rotation in transform
+        glm::quat rotation = SpotLight::rotationFromDirection(direction);
+        registry_.emplace<Transform>(entity, Transform::withRotation(position, rotation));
+
         SpotLight light;
         light.color = color;
         light.intensity = intensity;
-        light.direction = glm::normalize(direction);
         light.innerConeAngle = innerAngle;
         light.outerConeAngle = outerAngle;
         light.radius = radius;
@@ -164,7 +167,7 @@ public:
                             float yaw = 0.0f) {
         auto entity = registry_.create();
 
-        registry_.emplace<Transform>(entity, Transform{position, yaw});
+        registry_.emplace<Transform>(entity, Transform::withYaw(position, yaw));
         registry_.emplace<Velocity>(entity);
         registry_.emplace<NPCTag>(entity);
         registry_.emplace<AIState>(entity);

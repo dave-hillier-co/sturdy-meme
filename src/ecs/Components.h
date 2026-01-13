@@ -2,30 +2,105 @@
 
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtc/quaternion.hpp>
 #include <entt/entt.hpp>
 #include <cstdint>
 #include <vector>
 #include <string>
 #include "PhysicsSystem.h"
+#include "scene/RotationUtils.h"
 
 // Core transform component - position and rotation for entities
+// Supports both quaternion (full 3D) and yaw-only (Y-axis) rotation
 struct Transform {
     glm::vec3 position{0.0f};
-    float yaw{0.0f};  // Horizontal rotation in degrees
+    glm::quat rotation{1.0f, 0.0f, 0.0f, 0.0f};  // Identity quaternion
 
-    glm::vec3 getForward() const {
-        float rad = glm::radians(yaw);
-        return glm::vec3(sin(rad), 0.0f, cos(rad));
+    // ========================================================================
+    // Factory methods
+    // ========================================================================
+
+    // Create with position only (identity rotation)
+    static Transform withPosition(const glm::vec3& pos) {
+        Transform t;
+        t.position = pos;
+        return t;
     }
 
-    glm::vec3 getRight() const {
-        float rad = glm::radians(yaw + 90.0f);
-        return glm::vec3(sin(rad), 0.0f, cos(rad));
+    // Create with position and yaw (degrees)
+    static Transform withYaw(const glm::vec3& pos, float yawDegrees) {
+        Transform t;
+        t.position = pos;
+        t.rotation = glm::angleAxis(glm::radians(yawDegrees), glm::vec3(0.0f, 1.0f, 0.0f));
+        return t;
+    }
+
+    // Create with position and quaternion rotation
+    static Transform withRotation(const glm::vec3& pos, const glm::quat& rot) {
+        Transform t;
+        t.position = pos;
+        t.rotation = rot;
+        return t;
+    }
+
+    // ========================================================================
+    // Quaternion-based rotation (preferred for full 3D rotation)
+    // ========================================================================
+
+    void setRotation(const glm::quat& rot) { rotation = rot; }
+    const glm::quat& getRotation() const { return rotation; }
+
+    // ========================================================================
+    // Yaw-based rotation (backward compatibility for Y-axis only rotation)
+    // ========================================================================
+
+    // Get yaw in degrees (extracted from quaternion)
+    float getYaw() const {
+        glm::vec3 euler = glm::eulerAngles(rotation);
+        return glm::degrees(euler.y);
+    }
+
+    // Set yaw in degrees (creates Y-axis rotation quaternion)
+    void setYaw(float yawDegrees) {
+        rotation = glm::angleAxis(glm::radians(yawDegrees), glm::vec3(0.0f, 1.0f, 0.0f));
     }
 
     void normalizeYaw() {
-        while (yaw > 360.0f) yaw -= 360.0f;
-        while (yaw < 0.0f) yaw += 360.0f;
+        // Quaternions are already normalized, but we can re-normalize if needed
+        rotation = glm::normalize(rotation);
+    }
+
+    // ========================================================================
+    // Direction vectors
+    // ========================================================================
+
+    glm::vec3 getForward() const {
+        return glm::vec3(glm::mat4_cast(rotation) * glm::vec4(0.0f, 0.0f, 1.0f, 0.0f));
+    }
+
+    glm::vec3 getRight() const {
+        return glm::vec3(glm::mat4_cast(rotation) * glm::vec4(1.0f, 0.0f, 0.0f, 0.0f));
+    }
+
+    glm::vec3 getUp() const {
+        return glm::vec3(glm::mat4_cast(rotation) * glm::vec4(0.0f, 1.0f, 0.0f, 0.0f));
+    }
+
+    // ========================================================================
+    // Transform matrix
+    // ========================================================================
+
+    glm::mat4 getMatrix() const {
+        glm::mat4 transform = glm::translate(glm::mat4(1.0f), position);
+        transform = transform * glm::mat4_cast(rotation);
+        return transform;
+    }
+
+    glm::mat4 getMatrixWithScale(float scale) const {
+        glm::mat4 transform = glm::translate(glm::mat4(1.0f), position);
+        transform = transform * glm::mat4_cast(rotation);
+        transform = glm::scale(transform, glm::vec3(scale));
+        return transform;
     }
 };
 
@@ -65,7 +140,7 @@ struct PlayerMovement {
     glm::mat4 getModelMatrix(const Transform& transform) const {
         glm::mat4 model = glm::mat4(1.0f);
         model = glm::translate(model, transform.position + glm::vec3(0.0f, CAPSULE_HEIGHT * 0.5f, 0.0f));
-        float effectiveYaw = orientationLocked ? lockedYaw : transform.yaw;
+        float effectiveYaw = orientationLocked ? lockedYaw : transform.getYaw();
         model = glm::rotate(model, glm::radians(effectiveYaw), glm::vec3(0.0f, 1.0f, 0.0f));
         return model;
     }
@@ -99,10 +174,21 @@ struct PointLight : LightBase {
 };
 
 // Spot light - directional cone light
+// Direction is derived from the entity's Transform rotation
+// Default rotation points light downward (-Y axis)
 struct SpotLight : LightBase {
-    glm::vec3 direction{0.0f, -1.0f, 0.0f};
     float innerConeAngle{30.0f};  // Degrees
     float outerConeAngle{45.0f};  // Degrees
+
+    // Get light direction from transform
+    static glm::vec3 getDirection(const Transform& transform) {
+        return RotationUtils::directionFromRotation(transform.rotation);
+    }
+
+    // Create rotation quaternion to point light in a specific direction
+    static glm::quat rotationFromDirection(const glm::vec3& direction) {
+        return RotationUtils::rotationFromDirection(direction);
+    }
 };
 
 // Tag for enabled lights (removed when light is disabled)

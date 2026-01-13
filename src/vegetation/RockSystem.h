@@ -11,6 +11,9 @@
 #include "Mesh.h"
 #include "Texture.h"
 #include "RenderableBuilder.h"
+#include "scene/SceneObjectCollection.h"
+#include "scene/SceneObjectInstance.h"
+#include "scene/DeterministicRandom.h"
 #include <optional>
 
 // Configuration for rock generation and placement
@@ -27,14 +30,6 @@ struct RockConfig {
     int subdivisions = 3;             // Icosphere subdivision level (3 = ~320 triangles)
     float materialRoughness = 0.7f;   // PBR roughness for rendering
     float materialMetallic = 0.0f;    // PBR metallic for rendering
-};
-
-// A single rock instance in the scene
-struct RockInstance {
-    glm::vec3 position;
-    float rotation;         // Y-axis rotation
-    float scale;            // Uniform scale factor
-    int meshVariation;      // Which mesh to use
 };
 
 class RockSystem {
@@ -65,22 +60,22 @@ public:
     RockSystem& operator=(RockSystem&&) = delete;
 
     // Get scene objects for rendering (integrated with existing pipeline)
-    const std::vector<Renderable>& getSceneObjects() const { return sceneObjects; }
-    std::vector<Renderable>& getSceneObjects() { return sceneObjects; }
+    const std::vector<Renderable>& getSceneObjects() const { return collection_.getSceneObjects(); }
+    std::vector<Renderable>& getSceneObjects() { return collection_.getSceneObjects(); }
 
     // Access to textures for descriptor set binding
-    Texture& getRockTexture() { return *rockTexture; }
-    Texture& getRockNormalMap() { return *rockNormalMap; }
+    Texture& getRockTexture() { return *collection_.getDiffuseTexture(); }
+    Texture& getRockNormalMap() { return *collection_.getNormalTexture(); }
 
     // Get rock count for statistics
-    size_t getRockCount() const { return rockInstances.size(); }
-    size_t getMeshVariationCount() const { return rockMeshes.size(); }
+    size_t getRockCount() const { return collection_.getInstanceCount(); }
+    size_t getMeshVariationCount() const { return collection_.getMeshVariationCount(); }
 
-    // Get rock instances for physics integration
-    const std::vector<RockInstance>& getRockInstances() const { return rockInstances; }
+    // Get rock instances for physics integration (returns unified SceneObjectInstance)
+    const std::vector<SceneObjectInstance>& getRockInstances() const { return collection_.getInstances(); }
 
     // Get rock meshes for physics collision shapes
-    const std::vector<Mesh>& getRockMeshes() const { return rockMeshes; }
+    const std::vector<Mesh>& getRockMeshes() const { return collection_.getMeshes(); }
 
 private:
     RockSystem() = default;  // Private: use factory
@@ -92,25 +87,8 @@ private:
     void generateRockPlacements(const InitInfo& info);
     void createSceneObjects();
 
-    // Hash function for deterministic random placement
-    float hashPosition(float x, float z, uint32_t seed) const;
+    RockConfig config_;
 
-    RockConfig config;
-
-    // Stored for RAII cleanup
-    VmaAllocator storedAllocator = VK_NULL_HANDLE;
-    VkDevice storedDevice = VK_NULL_HANDLE;
-
-    // Rock mesh variations
-    std::vector<Mesh> rockMeshes;
-
-    // Rock textures (RAII-managed)
-    std::unique_ptr<Texture> rockTexture;
-    std::unique_ptr<Texture> rockNormalMap;
-
-    // Rock instances (positions, rotations, etc.)
-    std::vector<RockInstance> rockInstances;
-
-    // Scene objects for rendering
-    std::vector<Renderable> sceneObjects;
+    // Scene object collection (composition pattern)
+    SceneObjectCollection collection_;
 };

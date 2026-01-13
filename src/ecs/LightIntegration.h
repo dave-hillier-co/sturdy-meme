@@ -84,11 +84,14 @@ public:
             angleFactor = 0.25f + 0.75f * angleFactor;
             float effectiveWeight = (light.priority * angleFactor) / (dist + 1.0f);
 
+            // Get direction from transform rotation
+            glm::vec3 direction = SpotLight::getDirection(transform);
+
             // Convert to GPU format
             GPULight gpu{};
             gpu.positionAndType = glm::vec4(transform.position, 1.0f);  // 1 = spot
             gpu.directionAndCone = glm::vec4(
-                glm::normalize(light.direction),
+                glm::normalize(direction),
                 glm::cos(glm::radians(light.outerConeAngle))
             );
             gpu.colorAndIntensity = glm::vec4(light.color, light.intensity);
@@ -187,7 +190,7 @@ public:
             Light light;
             light.type = LightType::Spot;
             light.position = transform.position;
-            light.direction = ecsLight.direction;
+            light.rotation = transform.rotation;  // Use rotation directly
             light.color = ecsLight.color;
             light.intensity = ecsLight.intensity;
             light.radius = ecsLight.radius;

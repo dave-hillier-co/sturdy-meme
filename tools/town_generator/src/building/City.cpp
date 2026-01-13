@@ -1623,10 +1623,11 @@ geom::Polygon City::getOcean() const {
         }
     }
 
-    // Apply smoothing with fixed points (3 iterations like the reference)
+    // Apply Chaikin smoothing with fixed points (3 iterations like the reference)
+    // Chaikin subdivision creates smoother curves by adding midpoints
     // Fixed points won't move, preserving alignment at landing/shore areas
-    // Non-fixed points get smoothed for a natural coastline appearance
-    return geom::Polygon::smooth(waterEdge, &fixedPoints, 3);
+    // Reference: mfcg.js line 10855: Chaikin.render(this.waterEdge, !0, 3, a)
+    return geom::Polygon::chaikin(waterEdge, true, 3, &fixedPoints);
 }
 
 } // namespace building

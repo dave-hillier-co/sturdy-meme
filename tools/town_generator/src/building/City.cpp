@@ -1582,50 +1582,93 @@ geom::Polygon City::getOcean() const {
     // Faithful to mfcg.js getOcean() (lines 10838-10855)
     // Returns the ocean polygon for rendering, smoothed except at landing areas
     // This ensures piers align properly with the rendered water boundary
+    //
+    // Reference logic:
+    // - Fix boundary edges (no twin)
+    // - Fix vertices at landing cells (pier connection points)
+    // - Fix vertices adjacent to landing cells (sequence preservation)
+    // - Fix convex vertices on earthEdge within city (sharp coast corners)
 
     if (waterEdge.length() == 0) {
         return geom::Polygon();
     }
 
     // Collect vertices that should NOT be smoothed (fixed points)
-    // These are vertices at landing cell boundaries where piers connect
     std::vector<geom::Point> fixedPoints;
 
-    // Find all vertices of landing cells that are on the water edge
-    // These are the dock/pier connection points that must stay fixed
-    for (const auto* cell : cells) {
-        if (!cell->landing) continue;
+    // Build a map of water edge vertices to their neighbor cell info
+    // We need to know: is this vertex on a landing cell? is the cell within city?
+    struct VertexInfo {
+        bool isLanding = false;
+        bool withinCity = false;
+        bool onEarthEdge = false;
+        int earthEdgeIndex = -1;
+    };
+    std::vector<VertexInfo> vertexInfos(waterEdge.length());
 
-        // Check each vertex of this landing cell
-        for (size_t i = 0; i < cell->shape.length(); ++i) {
-            const geom::Point& v = cell->shape[i];
+    // For each water edge vertex, find neighbor cells and classify
+    for (size_t j = 0; j < waterEdge.length(); ++j) {
+        const geom::Point& v = waterEdge[j];
 
-            // Check if this vertex is on the water edge (exact match since both use same Voronoi vertices)
-            for (size_t j = 0; j < waterEdge.length(); ++j) {
-                if (geom::Point::distance(v, waterEdge[j]) < 0.01) {
-                    fixedPoints.push_back(waterEdge[j]);
+        // Check all cells for this vertex
+        for (const auto* cell : cells) {
+            if (cell->waterbody) continue;  // Skip water cells
+
+            // Check if this vertex is on the cell's boundary
+            for (size_t i = 0; i < cell->shape.length(); ++i) {
+                if (geom::Point::distance(cell->shape[i], v) < 0.01) {
+                    // Found a land cell at this vertex
+                    if (cell->landing) {
+                        vertexInfos[j].isLanding = true;
+                    }
+                    if (cell->withinCity) {
+                        vertexInfos[j].withinCity = true;
+                    }
                     break;
                 }
             }
         }
-    }
 
-    // Also fix vertices at shore edges (land-water boundary)
-    // These ensure the coastline stays aligned where buildings face water
-    for (const auto& edge : shoreE) {
-        for (size_t j = 0; j < waterEdge.length(); ++j) {
-            if (geom::Point::distance(edge.first, waterEdge[j]) < 0.01) {
-                fixedPoints.push_back(waterEdge[j]);
-            }
-            if (geom::Point::distance(edge.second, waterEdge[j]) < 0.01) {
-                fixedPoints.push_back(waterEdge[j]);
+        // Check if on earth edge and get index for convex check
+        for (size_t i = 0; i < earthEdge.length(); ++i) {
+            if (geom::Point::distance(earthEdge[i], v) < 0.01) {
+                vertexInfos[j].onEarthEdge = true;
+                vertexInfos[j].earthEdgeIndex = static_cast<int>(i);
+                break;
             }
         }
     }
 
+    // Now apply the reference logic: fix points based on landing and convex criteria
+    bool prevWasLanding = false;
+    for (size_t j = 0; j < waterEdge.length(); ++j) {
+        const VertexInfo& info = vertexInfos[j];
+        bool shouldFix = false;
+
+        if (info.isLanding) {
+            // Landing cell vertex - always fix for pier alignment
+            shouldFix = true;
+        } else if (info.withinCity && info.onEarthEdge && info.earthEdgeIndex >= 0) {
+            // Within city and on earth edge - fix if convex (sharp corner)
+            if (earthEdge.isConvexVertexi(info.earthEdgeIndex)) {
+                shouldFix = true;
+            }
+        }
+
+        // If previous vertex was landing, also fix this one (sequence preservation)
+        // This ensures smooth transition at dock edges
+        if (prevWasLanding) {
+            shouldFix = true;
+        }
+
+        if (shouldFix) {
+            fixedPoints.push_back(waterEdge[j]);
+        }
+
+        prevWasLanding = info.isLanding;
+    }
+
     // Apply Chaikin smoothing with fixed points (3 iterations like the reference)
-    // Chaikin subdivision creates smoother curves by adding midpoints
-    // Fixed points won't move, preserving alignment at landing/shore areas
     // Reference: mfcg.js line 10855: Chaikin.render(this.waterEdge, !0, 3, a)
     return geom::Polygon::chaikin(waterEdge, true, 3, &fixedPoints);
 }

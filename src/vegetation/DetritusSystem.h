@@ -12,6 +12,9 @@
 #include "Mesh.h"
 #include "Texture.h"
 #include "RenderableBuilder.h"
+#include "scene/SceneObjectCollection.h"
+#include "scene/SceneObjectInstance.h"
+#include "scene/DeterministicRandom.h"
 #include <optional>
 
 // Configuration for detritus generation and placement
@@ -29,14 +32,6 @@ struct DetritusConfig {
     int maxChildren = 3;              // Maximum child branches
     float materialRoughness = 0.85f;  // PBR roughness for rendering
     float materialMetallic = 0.0f;    // PBR metallic for rendering
-};
-
-// A single detritus instance in the scene
-struct DetritusInstance {
-    glm::vec3 position;
-    glm::vec3 rotation;     // Euler angles (x, y, z)
-    float scale;            // Uniform scale factor
-    int meshVariation;      // Which mesh to use
 };
 
 class DetritusSystem {
@@ -68,22 +63,22 @@ public:
     DetritusSystem& operator=(DetritusSystem&&) = delete;
 
     // Get scene objects for rendering (integrated with existing pipeline)
-    const std::vector<Renderable>& getSceneObjects() const { return sceneObjects_; }
-    std::vector<Renderable>& getSceneObjects() { return sceneObjects_; }
+    const std::vector<Renderable>& getSceneObjects() const { return collection_.getSceneObjects(); }
+    std::vector<Renderable>& getSceneObjects() { return collection_.getSceneObjects(); }
 
     // Access to textures for descriptor set binding
-    Texture& getBarkTexture() { return *barkTexture_; }
-    Texture& getBarkNormalMap() { return *barkNormalMap_; }
+    Texture& getBarkTexture() { return *collection_.getDiffuseTexture(); }
+    Texture& getBarkNormalMap() { return *collection_.getNormalTexture(); }
 
     // Get count for statistics
-    size_t getDetritusCount() const { return instances_.size(); }
-    size_t getMeshVariationCount() const { return meshes_.size(); }
+    size_t getDetritusCount() const { return collection_.getInstanceCount(); }
+    size_t getMeshVariationCount() const { return collection_.getMeshVariationCount(); }
 
-    // Get instances for physics integration
-    const std::vector<DetritusInstance>& getInstances() const { return instances_; }
+    // Get instances for physics integration (returns unified SceneObjectInstance)
+    const std::vector<SceneObjectInstance>& getInstances() const { return collection_.getInstances(); }
 
     // Get meshes for physics collision shapes
-    const std::vector<Mesh>& getMeshes() const { return meshes_; }
+    const std::vector<Mesh>& getMeshes() const { return collection_.getMeshes(); }
 
 private:
     DetritusSystem() = default;  // Private: use factory
@@ -95,30 +90,9 @@ private:
     void generatePlacements(const InitInfo& info);
     void createSceneObjects();
 
-    // Generate mesh from branch data
-    bool generateMeshFromBranches(const GeneratedBranch& branchData, Mesh& outMesh,
-                                  const InitInfo& info);
-
-    // Hash function for deterministic random placement
-    float hashPosition(float x, float z, uint32_t seed) const;
-
     DetritusConfig config_;
     BranchGenerator generator_;
 
-    // Stored for RAII cleanup
-    VmaAllocator storedAllocator_ = VK_NULL_HANDLE;
-    VkDevice storedDevice_ = VK_NULL_HANDLE;
-
-    // Branch mesh variations
-    std::vector<Mesh> meshes_;
-
-    // Textures (RAII-managed)
-    std::unique_ptr<Texture> barkTexture_;
-    std::unique_ptr<Texture> barkNormalMap_;
-
-    // Detritus instances (positions, rotations, etc.)
-    std::vector<DetritusInstance> instances_;
-
-    // Scene objects for rendering
-    std::vector<Renderable> sceneObjects_;
+    // Scene object collection (composition pattern)
+    SceneObjectCollection collection_;
 };

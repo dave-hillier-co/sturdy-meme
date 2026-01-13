@@ -287,12 +287,10 @@ bool Application::init(const std::string& title, int width, int height) {
             positions.push_back(v.position);
         }
 
-        // Create rotation quaternion from Y-axis rotation
-        glm::quat rotation = glm::angleAxis(rock.rotation, glm::vec3(0.0f, 1.0f, 0.0f));
-
+        // SceneObjectInstance already stores rotation as quaternion
         // Create convex hull from mesh vertices with rock's scale
         physics().createStaticConvexHull(colliderPos, positions.data(), positions.size(),
-                                       rock.scale, rotation);
+                                       rock.scale, rock.rotation);
     }
     SDL_Log("Created %zu rock convex hull colliders", rockInstances.size());
 
@@ -313,12 +311,10 @@ bool Application::init(const std::string& title, int width, int height) {
                 positions.push_back(v.position);
             }
 
-            // Create rotation quaternion from euler angles (x, y, z)
-            glm::quat rotation = glm::quat(detritus.rotation);
-
+            // SceneObjectInstance already stores rotation as quaternion
             // Create convex hull from mesh vertices with detritus scale
             physics().createStaticConvexHull(detritus.position, positions.data(), positions.size(),
-                                           detritus.scale, rotation);
+                                           detritus.scale, detritus.rotation);
         }
         SDL_Log("Created %zu detritus convex hull colliders", detritusInstances.size());
     }

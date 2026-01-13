@@ -238,6 +238,10 @@ void RendererSystems::setCatmullClark(std::unique_ptr<CatmullClarkSystem> system
 
 void RendererSystems::setRock(std::unique_ptr<RockSystem> system) {
     rockSystem_ = std::move(system);
+    // Register rock material with scene collection for unified iteration
+    if (rockSystem_) {
+        sceneCollection_.registerMaterial("rock", rockSystem_->getMaterial());
+    }
 }
 
 void RendererSystems::setTree(std::unique_ptr<TreeSystem> system) {
@@ -258,6 +262,10 @@ void RendererSystems::setImpostorCull(std::unique_ptr<ImpostorCullSystem> system
 
 void RendererSystems::setDetritus(std::unique_ptr<DetritusSystem> system) {
     detritusSystem_ = std::move(system);
+    // Register detritus material with scene collection for unified iteration
+    if (detritusSystem_) {
+        sceneCollection_.registerMaterial("detritus", detritusSystem_->getMaterial());
+    }
 }
 
 void RendererSystems::setScene(std::unique_ptr<SceneManager> system) {

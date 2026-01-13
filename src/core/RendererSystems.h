@@ -8,6 +8,7 @@
 #include "CoreResources.h"
 #include "AtmosphereSystemGroup.h"
 #include "VegetationSystemGroup.h"
+#include "scene/SceneCollection.h"
 #include "WaterSystemGroup.h"
 #include "SnowSystemGroup.h"
 
@@ -240,6 +241,10 @@ public:
     const DetritusSystem* detritus() const { return detritusSystem_.get(); }
     void setDetritus(std::unique_ptr<DetritusSystem> system);
 
+    // Scene collection (materials grouped by name: rock, detritus, etc.)
+    SceneCollection& sceneCollection() { return sceneCollection_; }
+    const SceneCollection& sceneCollection() const { return sceneCollection_; }
+
     // Culling and optimization
     HiZSystem& hiZ() { return *hiZSystem_; }
     const HiZSystem& hiZ() const { return *hiZSystem_; }
@@ -318,7 +323,8 @@ public:
             treeLODSystem_.get(),
             impostorCullSystem_.get(),
             detritusSystem_.get(),
-            rockSystem_.get()
+            rockSystem_.get(),
+            &sceneCollection_
         };
     }
 
@@ -439,6 +445,9 @@ private:
     std::unique_ptr<TreeLODSystem> treeLODSystem_;
     std::unique_ptr<ImpostorCullSystem> impostorCullSystem_;
     std::unique_ptr<DetritusSystem> detritusSystem_;
+
+    // Scene collection (materials from rock, detritus, etc.)
+    SceneCollection sceneCollection_;
 
     // Tier 2 - Culling
     std::unique_ptr<HiZSystem> hiZSystem_;

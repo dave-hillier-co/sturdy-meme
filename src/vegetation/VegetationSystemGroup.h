@@ -11,6 +11,7 @@ class TreeLODSystem;
 class ImpostorCullSystem;
 class DetritusSystem;
 class RockSystem;
+class SceneCollection;
 
 /**
  * VegetationSystemGroup - Groups vegetation-related rendering systems
@@ -45,6 +46,7 @@ struct VegetationSystemGroup {
     SYSTEM_MEMBER(ImpostorCullSystem, impostorCull);
     SYSTEM_MEMBER(DetritusSystem, detritus);
     SYSTEM_MEMBER(RockSystem, rock);
+    SceneCollection* sceneCollection_ = nullptr;
 
     // Required system accessors
     REQUIRED_SYSTEM_ACCESSORS(GrassSystem, grass)
@@ -57,6 +59,11 @@ struct VegetationSystemGroup {
     OPTIONAL_SYSTEM_ACCESSORS(TreeLODSystem, treeLOD, TreeLOD)
     OPTIONAL_SYSTEM_ACCESSORS(ImpostorCullSystem, impostorCull, ImpostorCull)
     OPTIONAL_SYSTEM_ACCESSORS(DetritusSystem, detritus, Detritus)
+
+    // Scene collection (materials: rock, detritus, etc.)
+    SceneCollection* sceneCollection() { return sceneCollection_; }
+    const SceneCollection* sceneCollection() const { return sceneCollection_; }
+    bool hasSceneCollection() const { return sceneCollection_ != nullptr; }
 
     // Validation (only required systems)
     bool isValid() const {

@@ -33,6 +33,8 @@ set(SOURCES
     src/scene/SceneBuilder.cpp
     src/scene/SceneManager.cpp
     src/scene/SceneObjectCollection.cpp
+    src/scene/SceneMaterial.cpp
+    src/scene/SceneCollection.cpp
     src/scene/Camera.cpp
     src/scene/InputSystem.cpp
     # Core

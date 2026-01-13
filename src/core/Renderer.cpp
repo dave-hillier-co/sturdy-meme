@@ -1773,15 +1773,17 @@ void Renderer::recordShadowPass(VkCommandBuffer cmd, uint32_t frameIndex, float 
         }
     };
 
-    // Combine scene objects and rock objects for shadow rendering
+    // Combine scene objects and materials for shadow rendering
     // Skip player character - it's rendered separately with skinned shadow pipeline
     std::vector<Renderable> allObjects;
     const auto& sceneObjects = systems_->scene().getRenderables();
     size_t playerIndex = systems_->scene().getSceneBuilder().getPlayerObjectIndex();
     bool hasCharacter = systems_->scene().getSceneBuilder().hasCharacter();
 
-    size_t detritusCount = systems_->detritus() ? systems_->detritus()->getSceneObjects().size() : 0;
-    allObjects.reserve(sceneObjects.size() + systems_->rock().getSceneObjects().size() + detritusCount);
+    // Collect all material objects (rock, detritus, etc.) via SceneCollection
+    const auto materialObjects = systems_->sceneCollection().collectAllSceneObjects();
+
+    allObjects.reserve(sceneObjects.size() + materialObjects.size());
     for (size_t i = 0; i < sceneObjects.size(); ++i) {
         // Skip player character - rendered with skinned shadow pipeline
         if (hasCharacter && i == playerIndex) {
@@ -1789,10 +1791,8 @@ void Renderer::recordShadowPass(VkCommandBuffer cmd, uint32_t frameIndex, float 
         }
         allObjects.push_back(sceneObjects[i]);
     }
-    allObjects.insert(allObjects.end(), systems_->rock().getSceneObjects().begin(), systems_->rock().getSceneObjects().end());
-    if (systems_->detritus()) {
-        allObjects.insert(allObjects.end(), systems_->detritus()->getSceneObjects().begin(), systems_->detritus()->getSceneObjects().end());
-    }
+    // Add all material-based objects (rock, detritus, etc.)
+    allObjects.insert(allObjects.end(), materialObjects.begin(), materialObjects.end());
 
     // Skinned character shadow callback (renders with GPU skinning)
     ShadowSystem::DrawCallback skinnedCallback = nullptr;

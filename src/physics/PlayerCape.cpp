@@ -1,5 +1,6 @@
 #include "PlayerCape.h"
 #include "WindSystem.h"
+#include "scene/SceneNode.h"
 #include <SDL3/SDL_log.h>
 
 void PlayerCape::create(int width, int height, float spacing) {
@@ -266,6 +267,19 @@ void PlayerCape::initializeFromSkeleton(const Skeleton& skeleton, const glm::mat
 
     positionsInitialized = true;
     SDL_Log("PlayerCape: Initialized cloth positions from skeleton");
+}
+
+void PlayerCape::update(const Skeleton& skeleton, float deltaTime, const WindSystem* windSystem) {
+    if (!initialized) return;
+    if (!attachmentNode_) {
+        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                    "PlayerCape::update called without attachment node; use setAttachmentNode() first");
+        return;
+    }
+
+    // Get world transform from attached scene node
+    glm::mat4 worldTransform = attachmentNode_->getWorldMatrix();
+    update(skeleton, worldTransform, deltaTime, windSystem);
 }
 
 void PlayerCape::update(const Skeleton& skeleton, const glm::mat4& worldTransform,

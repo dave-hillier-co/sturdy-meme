@@ -654,6 +654,46 @@ void Ward::addBuildingLot(const geom::Polygon& lot, double minSq) {
     geometry.push_back(building);
 }
 
+// Helper: getArc with spacing-based segment count (faithful to mfcg.js WardGroup.getArc)
+// mfcg.js line 13035-13047: d = Math.abs(b - c) * f / d | 0
+static std::vector<geom::Point> getArcWithSpacing(
+    const geom::GeomUtils::Circle& circle,
+    double startAngle,
+    double endAngle,
+    double spacing
+) {
+    // Normalize angle difference (mfcg.js lines 13036-13037)
+    double angleDiff = endAngle - startAngle;
+    if (angleDiff > M_PI) startAngle += 2 * M_PI;
+    else if (angleDiff < -M_PI) endAngle += 2 * M_PI;
+
+    double radius = std::abs(circle.r);
+    if (radius < 0.001 || spacing < 0.001) {
+        return {};
+    }
+
+    // Calculate number of segments based on arc length and spacing
+    // mfcg.js: d = Math.abs(b - c) * f / d | 0
+    double arcLength = std::abs(endAngle - startAngle) * radius;
+    int numSegments = static_cast<int>(arcLength / spacing);
+
+    // Need at least 3 segments for a valid arc (mfcg.js: 2 < d)
+    if (numSegments < 3) {
+        return {};
+    }
+
+    std::vector<geom::Point> result;
+    for (int i = 0; i < numSegments; ++i) {
+        double t = static_cast<double>(i) / (numSegments - 1);
+        double angle = startAngle + (endAngle - startAngle) * t;
+        result.push_back(geom::Point(
+            circle.c.x + radius * std::cos(angle),
+            circle.c.y + radius * std::sin(angle)
+        ));
+    }
+
+    return result;
+}
 
 std::vector<geom::Point> Ward::semiSmooth(
     const geom::Point& p0,
@@ -661,7 +701,7 @@ std::vector<geom::Point> Ward::semiSmooth(
     const geom::Point& p2,
     double minFront
 ) {
-    // Faithful to mfcg.js semiSmooth function (using Qe.getCircle, Qe.getArc)
+    // Faithful to mfcg.js semiSmooth function (lines 13146-13165)
     // Smooths a corner (p0, p1, p2) into an arc if appropriate
 
     double dist02 = geom::Point::distance(p0, p2);
@@ -674,6 +714,7 @@ std::vector<geom::Point> Ward::semiSmooth(
     double triArea = std::abs(geom::GeomUtils::triangleArea(p0, p1, p2));
 
     // Skip if too thin (mfcg.js line 13152: 1 > h / f || .01 > h / (f * f))
+    // Return simplified 2-point line
     if (triArea / dist02 < 1.0 || triArea / (dist02 * dist02) < 0.01) {
         return {p0, p2};
     }
@@ -690,73 +731,81 @@ std::vector<geom::Point> Ward::semiSmooth(
 
     double minLen = std::min(len01, len12);
 
-    // Calculate angle-based probability
+    // Calculate angle-based probability (mfcg.js line 13159)
+    // q = (1 - dot) / 2
     double dot = (v01.x * v12.x + v01.y * v12.y) / (len01 * len12);
     double angleProb = (1.0 - dot) / 2.0;
 
-    // Random decision whether to smooth
+    // Random decision whether to smooth (mfcg.js line 13161)
     if (utils::Random::floatVal() < angleProb) {
         return {p0, p1, p2};  // Keep original corner
     }
 
-    // Distance-based probability
+    // Distance-based probability (mfcg.js line 13161 second part)
     double distProb = minFront / minLen;
     if (utils::Random::floatVal() < distProb) {
         return {p0, p1, p2};  // Keep original corner
     }
 
-    // Create arc using getCircle and getArc (faithful to mfcg.js)
+    // Create arc using getCircle and getArc (mfcg.js lines 13163-13164)
     std::vector<geom::Point> result;
-    result.push_back(p0);
-
-    // Determine arc endpoints based on shorter segment
-    geom::Point arcStart, arcEnd;
-    geom::Point dir1, dir2;
 
     if (len01 < len12) {
-        // Shorter segment is p0-p1: arc from p0 to point on p1-p2
-        double t = len01 / len12;
-        arcStart = p0;
-        arcEnd = geom::Point(p1.x + v12.x * t, p1.y + v12.y * t);
-        dir1 = v01.norm(1.0);
-        dir2 = v12.norm(1.0);
-    } else {
-        // Shorter segment is p1-p2: arc from point on p0-p1 to p2
-        double t = len12 / len01;
-        arcStart = geom::Point(p1.x - v01.x * t, p1.y - v01.y * t);
-        arcEnd = p2;
-        dir1 = v01.norm(1.0);
-        dir2 = v12.norm(1.0);
-    }
+        // Shorter segment is p0-p1 (mfcg.js: n < p)
+        // Arc from p0 (b) to point on p1-p2
+        double t = len01 / len12;  // n /= p
+        geom::Point arcEnd(p1.x + v12.x * t, p1.y + v12.y * t);  // c = new I(c.x + k.x * n, ...)
 
-    // Get circle passing through arc endpoints
-    auto circle = geom::GeomUtils::getCircle(arcStart, dir1, arcEnd, dir2);
+        // Get circle: WardGroup.getCircle(b, h, c, k) = getCircle(p0, v01, arcEnd, v12)
+        auto circle = geom::GeomUtils::getCircle(p0, v01, arcEnd, v12);
 
-    if (circle.r > 0.001) {
         // Calculate angles
-        geom::Point toStart = arcStart.subtract(circle.c);
+        geom::Point toStart = p0.subtract(circle.c);
         geom::Point toEnd = arcEnd.subtract(circle.c);
         double startAngle = std::atan2(toStart.y, toStart.x);
         double endAngle = std::atan2(toEnd.y, toEnd.x);
 
-        // Get arc points (4 segments for smooth curve)
-        auto arcPoints = geom::GeomUtils::getArc(circle, startAngle, endAngle, 4);
+        // Get arc points with minFront as spacing parameter
+        auto arcPoints = getArcWithSpacing(circle, startAngle, endAngle, minFront);
 
         if (!arcPoints.empty()) {
-            // Add arc points (skip first as it's arcStart which is close to p0)
-            for (size_t i = 1; i < arcPoints.size(); ++i) {
-                result.push_back(arcPoints[i]);
-            }
+            // f = arcPoints, then f.push(d) adds p2 at end
+            result = arcPoints;
+            result.push_back(p2);
         } else {
-            // Arc failed, use simple midpoint
-            result.push_back(geom::GeomUtils::lerp(arcStart, arcEnd));
+            // Arc failed, return original
+            return {p0, p1, p2};
         }
     } else {
-        // Circle failed, use simple approach
-        result.push_back(geom::GeomUtils::lerp(arcStart, arcEnd));
+        // Shorter segment is p1-p2 (mfcg.js: n >= p)
+        // Arc from point on p0-p1 to p2
+        double t = len12 / len01;  // n = -p / n (but we use positive for position calc)
+        geom::Point arcStart(p1.x - v01.x * t, p1.y - v01.y * t);  // c = new I(c.x + h.x * n, ...)
+
+        // Get circle: WardGroup.getCircle(c, h, d, k) = getCircle(arcStart, v01, p2, v12)
+        auto circle = geom::GeomUtils::getCircle(arcStart, v01, p2, v12);
+
+        // Calculate angles
+        geom::Point toStart = arcStart.subtract(circle.c);
+        geom::Point toEnd = p2.subtract(circle.c);
+        double startAngle = std::atan2(toStart.y, toStart.x);
+        double endAngle = std::atan2(toEnd.y, toEnd.x);
+
+        // Get arc points with minFront as spacing parameter
+        auto arcPoints = getArcWithSpacing(circle, startAngle, endAngle, minFront);
+
+        if (!arcPoints.empty()) {
+            // f = arcPoints, then f.unshift(b) adds p0 at beginning
+            result.push_back(p0);
+            for (const auto& pt : arcPoints) {
+                result.push_back(pt);
+            }
+        } else {
+            // Arc failed, return original
+            return {p0, p1, p2};
+        }
     }
 
-    result.push_back(p2);
     return result;
 }
 

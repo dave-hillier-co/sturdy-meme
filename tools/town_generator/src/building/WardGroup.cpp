@@ -144,10 +144,18 @@ void WardGroup::createGeometry() {
         return 1.2;
     };
 
-    // Additional callbacks not yet implemented:
-    // - processCut: calls semiSmooth (needs fix for variable-length results)
+    // Set processCut callback - faithful to mfcg.js (line 13130)
+    // Calls semiSmooth to create rounded alley corners
+    double minFront = alleys.minFront;
+    bisector.processCut = [minFront](const std::vector<geom::Point>& cut) -> std::vector<geom::Point> {
+        if (cut.size() != 3) {
+            return cut;  // Only process 3-point cuts
+        }
+        return wards::Ward::semiSmooth(cut[0], cut[1], cut[2], minFront);
+    };
+
+    // Additional callback not yet implemented:
     // - isAtomic: for non-urban, uses isBlockSized (requires blockM interpolation map)
-    (void)alleys;  // Used for bisectorMinArea/Variance above
 
     // Partition into building-sized lots
     auto buildingShapes = bisector.partition();

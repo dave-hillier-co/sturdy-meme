@@ -757,7 +757,7 @@ bool PostProcessSystem::createHistogramPipelines() {
         ComputePipelineBuilder builder(device);
         if (!builder.setShader(shaderPath + "/histogram_build.comp.spv")
                     .setPipelineLayout(histogramBuildPipelineLayout)
-                    .build(histogramBuildPipeline)) {
+                    .buildRaw(histogramBuildPipeline)) {
             SDL_Log("Failed to create histogram build pipeline");
             return false;
         }
@@ -788,7 +788,7 @@ bool PostProcessSystem::createHistogramPipelines() {
         ComputePipelineBuilder builder(device);
         if (!builder.setShader(shaderPath + "/histogram_reduce.comp.spv")
                     .setPipelineLayout(histogramReducePipelineLayout)
-                    .build(histogramReducePipeline)) {
+                    .buildRaw(histogramReducePipeline)) {
             SDL_Log("Failed to create histogram reduce pipeline");
             return false;
         }

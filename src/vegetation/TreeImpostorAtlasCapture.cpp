@@ -7,6 +7,7 @@
 #include "Mesh.h"
 #include "ShaderLoader.h"
 #include "OctahedralMapping.h"
+#include "core/vulkan/PipelineLayoutBuilder.h"
 
 #include <SDL3/SDL.h>
 #include <glm/gtc/matrix_transform.hpp>
@@ -93,17 +94,17 @@ bool TreeImpostorAtlas::createCapturePipeline() {
     auto layoutInfo = vk::DescriptorSetLayoutCreateInfo{}.setBindings(bindings);
     captureDescriptorSetLayout_.emplace(*raiiDevice_, layoutInfo);
 
-    auto pushConstant = vk::PushConstantRange{}
-        .setStageFlags(vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment)
-        .setOffset(0)
-        .setSize(sizeof(glm::mat4) * 2 + sizeof(glm::vec4));
-
-    vk::DescriptorSetLayout dsl = **captureDescriptorSetLayout_;
-    auto pipelineLayoutInfo = vk::PipelineLayoutCreateInfo{}
-        .setSetLayouts(dsl)
-        .setPushConstantRanges(pushConstant);
-
-    capturePipelineLayout_.emplace(*raiiDevice_, pipelineLayoutInfo);
+    auto layoutOpt = PipelineLayoutBuilder(*raiiDevice_)
+        .addDescriptorSetLayout(**captureDescriptorSetLayout_)
+        .addPushConstantRange(
+            vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
+            sizeof(glm::mat4) * 2 + sizeof(glm::vec4))
+        .build();
+    if (!layoutOpt) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "TreeImpostorAtlas: Failed to create capture pipeline layout");
+        return false;
+    }
+    capturePipelineLayout_ = std::move(layoutOpt);
 
     std::string shaderPath = resourcePath_ + "/shaders/";
     auto vertModule = ShaderLoader::loadShaderModule(device_, shaderPath + "tree_impostor_capture.vert.spv");
@@ -226,17 +227,17 @@ bool TreeImpostorAtlas::createLeafCapturePipeline() {
     auto layoutInfo = vk::DescriptorSetLayoutCreateInfo{}.setBindings(bindings);
     leafCaptureDescriptorSetLayout_.emplace(*raiiDevice_, layoutInfo);
 
-    auto pushConstant = vk::PushConstantRange{}
-        .setStageFlags(vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment)
-        .setOffset(0)
-        .setSize(sizeof(glm::mat4) * 2 + sizeof(glm::vec4) + sizeof(int32_t));
-
-    vk::DescriptorSetLayout dsl = **leafCaptureDescriptorSetLayout_;
-    auto pipelineLayoutInfo = vk::PipelineLayoutCreateInfo{}
-        .setSetLayouts(dsl)
-        .setPushConstantRanges(pushConstant);
-
-    leafCapturePipelineLayout_.emplace(*raiiDevice_, pipelineLayoutInfo);
+    auto leafLayoutOpt = PipelineLayoutBuilder(*raiiDevice_)
+        .addDescriptorSetLayout(**leafCaptureDescriptorSetLayout_)
+        .addPushConstantRange(
+            vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
+            sizeof(glm::mat4) * 2 + sizeof(glm::vec4) + sizeof(int32_t))
+        .build();
+    if (!leafLayoutOpt) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "TreeImpostorAtlas: Failed to create leaf capture pipeline layout");
+        return false;
+    }
+    leafCapturePipelineLayout_ = std::move(leafLayoutOpt);
 
     std::string shaderPath = resourcePath_ + "/shaders/";
     auto vertModule = ShaderLoader::loadShaderModule(device_, shaderPath + "tree_impostor_capture_leaf.vert.spv");

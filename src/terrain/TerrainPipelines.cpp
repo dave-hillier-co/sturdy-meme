@@ -4,6 +4,7 @@
 #include "PipelineBuilder.h"
 #include "ComputePipelineBuilder.h"
 #include "DescriptorManager.h"
+#include "core/vulkan/PipelineLayoutBuilder.h"
 #include <SDL3/SDL.h>
 #include <glm/glm.hpp>
 #include <array>
@@ -55,22 +56,15 @@ bool TerrainPipelines::initInternal(const InitInfo& info) {
 }
 
 bool TerrainPipelines::createDispatcherPipeline() {
-    auto pushConstantRange = vk::PushConstantRange{}
-        .setStageFlags(vk::ShaderStageFlagBits::eCompute)
-        .setOffset(0)
-        .setSize(sizeof(TerrainDispatcherPushConstants));
-
-    vk::DescriptorSetLayout setLayout(computeDescriptorSetLayout);
-    auto layoutInfo = vk::PipelineLayoutCreateInfo{}
-        .setSetLayouts(setLayout)
-        .setPushConstantRanges(pushConstantRange);
-
-    try {
-        dispatcherPipelineLayout_.emplace(*raiiDevice_, layoutInfo);
-    } catch (const vk::SystemError& e) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create dispatcher pipeline layout: %s", e.what());
+    auto layoutOpt = PipelineLayoutBuilder(*raiiDevice_)
+        .addDescriptorSetLayout(computeDescriptorSetLayout)
+        .addPushConstantRange<TerrainDispatcherPushConstants>(vk::ShaderStageFlagBits::eCompute)
+        .build();
+    if (!layoutOpt) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create dispatcher pipeline layout");
         return false;
     }
+    dispatcherPipelineLayout_ = std::move(layoutOpt);
 
     return ComputePipelineBuilder(*raiiDevice_)
         .setShader(shaderPath + "/terrain/terrain_dispatcher.comp.spv")
@@ -79,22 +73,15 @@ bool TerrainPipelines::createDispatcherPipeline() {
 }
 
 bool TerrainPipelines::createSubdivisionPipeline() {
-    auto pushConstantRange = vk::PushConstantRange{}
-        .setStageFlags(vk::ShaderStageFlagBits::eCompute)
-        .setOffset(0)
-        .setSize(sizeof(TerrainSubdivisionPushConstants));
-
-    vk::DescriptorSetLayout setLayout(computeDescriptorSetLayout);
-    auto layoutInfo = vk::PipelineLayoutCreateInfo{}
-        .setSetLayouts(setLayout)
-        .setPushConstantRanges(pushConstantRange);
-
-    try {
-        subdivisionPipelineLayout_.emplace(*raiiDevice_, layoutInfo);
-    } catch (const vk::SystemError& e) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create subdivision pipeline layout: %s", e.what());
+    auto layoutOpt = PipelineLayoutBuilder(*raiiDevice_)
+        .addDescriptorSetLayout(computeDescriptorSetLayout)
+        .addPushConstantRange<TerrainSubdivisionPushConstants>(vk::ShaderStageFlagBits::eCompute)
+        .build();
+    if (!layoutOpt) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create subdivision pipeline layout");
         return false;
     }
+    subdivisionPipelineLayout_ = std::move(layoutOpt);
 
     return ComputePipelineBuilder(*raiiDevice_)
         .setShader(shaderPath + "/terrain/terrain_subdivision.comp.spv")
@@ -103,22 +90,15 @@ bool TerrainPipelines::createSubdivisionPipeline() {
 }
 
 bool TerrainPipelines::createSumReductionPipelines() {
-    auto pushConstantRange = vk::PushConstantRange{}
-        .setStageFlags(vk::ShaderStageFlagBits::eCompute)
-        .setOffset(0)
-        .setSize(sizeof(TerrainSumReductionPushConstants));
-
-    vk::DescriptorSetLayout setLayout(computeDescriptorSetLayout);
-    auto layoutInfo = vk::PipelineLayoutCreateInfo{}
-        .setSetLayouts(setLayout)
-        .setPushConstantRanges(pushConstantRange);
-
-    try {
-        sumReductionPipelineLayout_.emplace(*raiiDevice_, layoutInfo);
-    } catch (const vk::SystemError& e) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create sum reduction pipeline layout: %s", e.what());
+    auto layoutOpt = PipelineLayoutBuilder(*raiiDevice_)
+        .addDescriptorSetLayout(computeDescriptorSetLayout)
+        .addPushConstantRange<TerrainSumReductionPushConstants>(vk::ShaderStageFlagBits::eCompute)
+        .build();
+    if (!layoutOpt) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create sum reduction pipeline layout");
         return false;
     }
+    sumReductionPipelineLayout_ = std::move(layoutOpt);
 
     ComputePipelineBuilder builder(*raiiDevice_);
 
@@ -151,23 +131,15 @@ bool TerrainPipelines::createSumReductionPipelines() {
 
     // Batched sum reduction pipeline (multi-level per dispatch using shared memory)
     {
-        // Create pipeline layout for batched push constants
-        auto batchedPushConstantRange = vk::PushConstantRange{}
-            .setStageFlags(vk::ShaderStageFlagBits::eCompute)
-            .setOffset(0)
-            .setSize(sizeof(TerrainSumReductionBatchedPushConstants));
-
-        vk::DescriptorSetLayout batchedSetLayout(computeDescriptorSetLayout);
-        auto batchedLayoutInfo = vk::PipelineLayoutCreateInfo{}
-            .setSetLayouts(batchedSetLayout)
-            .setPushConstantRanges(batchedPushConstantRange);
-
-        try {
-            sumReductionBatchedPipelineLayout_.emplace(*raiiDevice_, batchedLayoutInfo);
-        } catch (const vk::SystemError& e) {
-            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create batched sum reduction pipeline layout: %s", e.what());
+        auto batchedLayoutOpt = PipelineLayoutBuilder(*raiiDevice_)
+            .addDescriptorSetLayout(computeDescriptorSetLayout)
+            .addPushConstantRange<TerrainSumReductionBatchedPushConstants>(vk::ShaderStageFlagBits::eCompute)
+            .build();
+        if (!batchedLayoutOpt) {
+            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create batched sum reduction pipeline layout");
             return false;
         }
+        sumReductionBatchedPipelineLayout_ = std::move(batchedLayoutOpt);
 
         if (!builder.reset()
                 .setShader(shaderPath + "/terrain/terrain_sum_reduction_batched.comp.spv")
@@ -185,22 +157,15 @@ bool TerrainPipelines::createFrustumCullPipelines() {
 
     // Frustum cull pipeline (with push constants for dispatch calculation)
     {
-        auto pushConstantRange = vk::PushConstantRange{}
-            .setStageFlags(vk::ShaderStageFlagBits::eCompute)
-            .setOffset(0)
-            .setSize(sizeof(TerrainFrustumCullPushConstants));
-
-        vk::DescriptorSetLayout setLayout(computeDescriptorSetLayout);
-        auto layoutInfo = vk::PipelineLayoutCreateInfo{}
-            .setSetLayouts(setLayout)
-            .setPushConstantRanges(pushConstantRange);
-
-        try {
-            frustumCullPipelineLayout_.emplace(*raiiDevice_, layoutInfo);
-        } catch (const vk::SystemError& e) {
-            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create frustum cull pipeline layout: %s", e.what());
+        auto layoutOpt = PipelineLayoutBuilder(*raiiDevice_)
+            .addDescriptorSetLayout(computeDescriptorSetLayout)
+            .addPushConstantRange<TerrainFrustumCullPushConstants>(vk::ShaderStageFlagBits::eCompute)
+            .build();
+        if (!layoutOpt) {
+            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create frustum cull pipeline layout");
             return false;
         }
+        frustumCullPipelineLayout_ = std::move(layoutOpt);
 
         if (!builder.setShader(shaderPath + "/terrain/terrain_frustum_cull.comp.spv")
                 .setPipelineLayout(**frustumCullPipelineLayout_)
@@ -211,22 +176,15 @@ bool TerrainPipelines::createFrustumCullPipelines() {
 
     // Prepare cull dispatch pipeline
     {
-        auto pushConstantRange = vk::PushConstantRange{}
-            .setStageFlags(vk::ShaderStageFlagBits::eCompute)
-            .setOffset(0)
-            .setSize(sizeof(TerrainPrepareCullDispatchPushConstants));
-
-        vk::DescriptorSetLayout setLayout(computeDescriptorSetLayout);
-        auto layoutInfo = vk::PipelineLayoutCreateInfo{}
-            .setSetLayouts(setLayout)
-            .setPushConstantRanges(pushConstantRange);
-
-        try {
-            prepareDispatchPipelineLayout_.emplace(*raiiDevice_, layoutInfo);
-        } catch (const vk::SystemError& e) {
-            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create prepare dispatch pipeline layout: %s", e.what());
+        auto layoutOpt = PipelineLayoutBuilder(*raiiDevice_)
+            .addDescriptorSetLayout(computeDescriptorSetLayout)
+            .addPushConstantRange<TerrainPrepareCullDispatchPushConstants>(vk::ShaderStageFlagBits::eCompute)
+            .build();
+        if (!layoutOpt) {
+            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create prepare dispatch pipeline layout");
             return false;
         }
+        prepareDispatchPipelineLayout_ = std::move(layoutOpt);
 
         if (!builder.reset()
                 .setShader(shaderPath + "/terrain/terrain_prepare_cull_dispatch.comp.spv")
@@ -241,16 +199,14 @@ bool TerrainPipelines::createFrustumCullPipelines() {
 
 bool TerrainPipelines::createRenderPipeline() {
     // Create render pipeline layout (shared by render and wireframe pipelines)
-    vk::DescriptorSetLayout setLayout(renderDescriptorSetLayout);
-    auto layoutInfo = vk::PipelineLayoutCreateInfo{}
-        .setSetLayouts(setLayout);
-
-    try {
-        renderPipelineLayout_.emplace(*raiiDevice_, layoutInfo);
-    } catch (const vk::SystemError& e) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create render pipeline layout: %s", e.what());
+    auto layoutOpt = PipelineLayoutBuilder(*raiiDevice_)
+        .addDescriptorSetLayout(renderDescriptorSetLayout)
+        .build();
+    if (!layoutOpt) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create render pipeline layout");
         return false;
     }
+    renderPipelineLayout_ = std::move(layoutOpt);
 
     // Create filled render pipeline
     PipelineBuilder builder(device);
@@ -353,22 +309,15 @@ bool TerrainPipelines::createMeshletShadowPipeline() {
 
 bool TerrainPipelines::createShadowCullPipelines() {
     // Pipeline layout for shadow cull compute
-    auto pushConstantRange = vk::PushConstantRange{}
-        .setStageFlags(vk::ShaderStageFlagBits::eCompute)
-        .setOffset(0)
-        .setSize(sizeof(TerrainShadowCullPushConstants));
-
-    vk::DescriptorSetLayout setLayout(computeDescriptorSetLayout);
-    auto layoutInfo = vk::PipelineLayoutCreateInfo{}
-        .setSetLayouts(setLayout)
-        .setPushConstantRanges(pushConstantRange);
-
-    try {
-        shadowCullPipelineLayout_.emplace(*raiiDevice_, layoutInfo);
-    } catch (const vk::SystemError& e) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create shadow cull pipeline layout: %s", e.what());
+    auto layoutOpt = PipelineLayoutBuilder(*raiiDevice_)
+        .addDescriptorSetLayout(computeDescriptorSetLayout)
+        .addPushConstantRange<TerrainShadowCullPushConstants>(vk::ShaderStageFlagBits::eCompute)
+        .build();
+    if (!layoutOpt) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create shadow cull pipeline layout");
         return false;
     }
+    shadowCullPipelineLayout_ = std::move(layoutOpt);
 
     // Create shadow cull compute pipeline with specialization constant
     if (!ComputePipelineBuilder(*raiiDevice_)

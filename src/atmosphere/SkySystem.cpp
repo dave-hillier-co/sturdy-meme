@@ -3,6 +3,7 @@
 #include "GraphicsPipelineFactory.h"
 #include "DescriptorManager.h"
 #include "UBOs.h"
+#include "core/vulkan/PipelineLayoutBuilder.h"
 #include <vulkan/vulkan.hpp>
 #include <SDL3/SDL.h>
 #include <array>
@@ -89,16 +90,14 @@ bool SkySystem::createDescriptorSetLayout() {
     descriptorSetLayout_.emplace(*raiiDevice_, rawLayout);
 
     // Create pipeline layout
-    vk::DescriptorSetLayout layouts[] = { **descriptorSetLayout_ };
-    auto layoutInfo = vk::PipelineLayoutCreateInfo{}
-        .setSetLayouts(layouts);
-
-    try {
-        pipelineLayout_.emplace(*raiiDevice_, layoutInfo);
-    } catch (const vk::SystemError& e) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create sky pipeline layout: %s", e.what());
+    auto layoutOpt = PipelineLayoutBuilder(*raiiDevice_)
+        .addDescriptorSetLayout(**descriptorSetLayout_)
+        .build();
+    if (!layoutOpt) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create sky pipeline layout");
         return false;
     }
+    pipelineLayout_ = std::move(layoutOpt);
 
     return true;
 }

@@ -4,6 +4,7 @@
 #include "DescriptorManager.h"
 #include "Mesh.h"
 #include "Bindings.h"
+#include "core/vulkan/PipelineLayoutBuilder.h"
 #include <SDL3/SDL_log.h>
 #include <vulkan/vulkan.hpp>
 #include <algorithm>
@@ -148,28 +149,28 @@ bool TreeRenderer::createDescriptorSetLayout() {
 }
 
 bool TreeRenderer::createPipelines(const InitInfo& info) {
-    // Create pipeline layouts with push constants
-    auto branchPushRange = vk::PushConstantRange{}
-        .setStageFlags(vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment)
-        .setOffset(0)
-        .setSize(sizeof(TreeBranchPushConstants));
+    // Create pipeline layouts with push constants using PipelineLayoutBuilder
+    auto branchLayoutOpt = PipelineLayoutBuilder(*raiiDevice_)
+        .addDescriptorSetLayout(**branchDescriptorSetLayout_)
+        .addPushConstantRange<TreeBranchPushConstants>(
+            vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment)
+        .build();
+    if (!branchLayoutOpt) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create branch pipeline layout");
+        return false;
+    }
+    branchPipelineLayout_ = std::move(branchLayoutOpt);
 
-    vk::DescriptorSetLayout branchDSL = **branchDescriptorSetLayout_;
-    auto branchLayoutInfo = vk::PipelineLayoutCreateInfo{}
-        .setSetLayouts(branchDSL)
-        .setPushConstantRanges(branchPushRange);
-    branchPipelineLayout_.emplace(*raiiDevice_, branchLayoutInfo);
-
-    auto leafPushRange = vk::PushConstantRange{}
-        .setStageFlags(vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment)
-        .setOffset(0)
-        .setSize(sizeof(TreeLeafPushConstants));
-
-    vk::DescriptorSetLayout leafDSL = **leafDescriptorSetLayout_;
-    auto leafLayoutInfo = vk::PipelineLayoutCreateInfo{}
-        .setSetLayouts(leafDSL)
-        .setPushConstantRanges(leafPushRange);
-    leafPipelineLayout_.emplace(*raiiDevice_, leafLayoutInfo);
+    auto leafLayoutOpt = PipelineLayoutBuilder(*raiiDevice_)
+        .addDescriptorSetLayout(**leafDescriptorSetLayout_)
+        .addPushConstantRange<TreeLeafPushConstants>(
+            vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment)
+        .build();
+    if (!leafLayoutOpt) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create leaf pipeline layout");
+        return false;
+    }
+    leafPipelineLayout_ = std::move(leafLayoutOpt);
 
     // Get vertex input descriptions from Vertex
     auto bindingDescription = Vertex::getBindingDescription();
@@ -220,25 +221,26 @@ bool TreeRenderer::createPipelines(const InitInfo& info) {
     leafPipeline_.emplace(*raiiDevice_, rawLeafPipeline);
 
     // Create shadow pipeline layouts
-    auto branchShadowPushRange = vk::PushConstantRange{}
-        .setStageFlags(vk::ShaderStageFlagBits::eVertex)
-        .setOffset(0)
-        .setSize(sizeof(TreeBranchShadowPushConstants));
+    auto branchShadowLayoutOpt = PipelineLayoutBuilder(*raiiDevice_)
+        .addDescriptorSetLayout(**branchDescriptorSetLayout_)
+        .addPushConstantRange<TreeBranchShadowPushConstants>(vk::ShaderStageFlagBits::eVertex)
+        .build();
+    if (!branchShadowLayoutOpt) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create branch shadow pipeline layout");
+        return false;
+    }
+    branchShadowPipelineLayout_ = std::move(branchShadowLayoutOpt);
 
-    auto branchShadowLayoutInfo = vk::PipelineLayoutCreateInfo{}
-        .setSetLayouts(branchDSL)
-        .setPushConstantRanges(branchShadowPushRange);
-    branchShadowPipelineLayout_.emplace(*raiiDevice_, branchShadowLayoutInfo);
-
-    auto leafShadowPushRange = vk::PushConstantRange{}
-        .setStageFlags(vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment)
-        .setOffset(0)
-        .setSize(sizeof(TreeLeafShadowPushConstants));
-
-    auto leafShadowLayoutInfo = vk::PipelineLayoutCreateInfo{}
-        .setSetLayouts(leafDSL)
-        .setPushConstantRanges(leafShadowPushRange);
-    leafShadowPipelineLayout_.emplace(*raiiDevice_, leafShadowLayoutInfo);
+    auto leafShadowLayoutOpt = PipelineLayoutBuilder(*raiiDevice_)
+        .addDescriptorSetLayout(**leafDescriptorSetLayout_)
+        .addPushConstantRange<TreeLeafShadowPushConstants>(
+            vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment)
+        .build();
+    if (!leafShadowLayoutOpt) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create leaf shadow pipeline layout");
+        return false;
+    }
+    leafShadowPipelineLayout_ = std::move(leafShadowLayoutOpt);
 
     // Create branch shadow pipeline
     VkPipeline rawBranchShadowPipeline;
@@ -298,16 +300,15 @@ bool TreeRenderer::createPipelines(const InitInfo& info) {
     }
     branchShadowInstancedDescriptorSetLayout_.emplace(*raiiDevice_, rawInstancedLayout);
 
-    auto instancedShadowPushRange = vk::PushConstantRange{}
-        .setStageFlags(vk::ShaderStageFlagBits::eVertex)
-        .setOffset(0)
-        .setSize(sizeof(TreeBranchShadowInstancedPushConstants));
-
-    vk::DescriptorSetLayout instancedDSL = **branchShadowInstancedDescriptorSetLayout_;
-    auto instancedShadowLayoutInfo = vk::PipelineLayoutCreateInfo{}
-        .setSetLayouts(instancedDSL)
-        .setPushConstantRanges(instancedShadowPushRange);
-    branchShadowInstancedPipelineLayout_.emplace(*raiiDevice_, instancedShadowLayoutInfo);
+    auto instancedLayoutOpt = PipelineLayoutBuilder(*raiiDevice_)
+        .addDescriptorSetLayout(**branchShadowInstancedDescriptorSetLayout_)
+        .addPushConstantRange<TreeBranchShadowInstancedPushConstants>(vk::ShaderStageFlagBits::eVertex)
+        .build();
+    if (!instancedLayoutOpt) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create instanced shadow pipeline layout");
+        return false;
+    }
+    branchShadowInstancedPipelineLayout_ = std::move(instancedLayoutOpt);
 
     VkPipeline rawBranchShadowInstancedPipeline;
     factory.reset();

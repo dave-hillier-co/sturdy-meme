@@ -5,6 +5,7 @@
 #include "core/pipeline/ComputePipelineBuilder.h"
 #include "core/vulkan/PipelineLayoutBuilder.h"
 #include "core/vulkan/BarrierHelpers.h"
+#include "core/ImageBuilder.h"
 #include <SDL3/SDL_log.h>
 #include <vulkan/vulkan.hpp>
 #include <algorithm>
@@ -115,76 +116,30 @@ void WaterDisplacement::cleanup() {
 bool WaterDisplacement::createDisplacementMap() {
     // Create current displacement map
     {
-        auto imageInfo = vk::ImageCreateInfo{}
-            .setImageType(vk::ImageType::e2D)
-            .setFormat(vk::Format::eR16Sfloat)
-            .setExtent(vk::Extent3D{displacementResolution, displacementResolution, 1})
-            .setMipLevels(1)
-            .setArrayLayers(1)
-            .setSamples(vk::SampleCountFlagBits::e1)
-            .setTiling(vk::ImageTiling::eOptimal)
-            .setUsage(vk::ImageUsageFlagBits::eStorage | vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eTransferDst)
-            .setSharingMode(vk::SharingMode::eExclusive)
-            .setInitialLayout(vk::ImageLayout::eUndefined);
-
-        VmaAllocationCreateInfo allocInfo{};
-        allocInfo.usage = VMA_MEMORY_USAGE_GPU_ONLY;
-
-        if (vmaCreateImage(allocator, reinterpret_cast<const VkImageCreateInfo*>(&imageInfo), &allocInfo, &displacementMap, &displacementAllocation, nullptr) != VK_SUCCESS) {
+        ManagedImage image;
+        if (!ImageBuilder(allocator)
+                .setExtent(displacementResolution, displacementResolution)
+                .setFormat(VK_FORMAT_R16_SFLOAT)
+                .setUsage(VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT)
+                .setGpuOnly()
+                .build(device, image, displacementMapView)) {
             return false;
         }
-
-        auto viewInfo = vk::ImageViewCreateInfo{}
-            .setImage(displacementMap)
-            .setViewType(vk::ImageViewType::e2D)
-            .setFormat(vk::Format::eR16Sfloat)
-            .setSubresourceRange(vk::ImageSubresourceRange{}
-                .setAspectMask(vk::ImageAspectFlagBits::eColor)
-                .setBaseMipLevel(0)
-                .setLevelCount(1)
-                .setBaseArrayLayer(0)
-                .setLayerCount(1));
-
-        if (vkCreateImageView(device, reinterpret_cast<const VkImageViewCreateInfo*>(&viewInfo), nullptr, &displacementMapView) != VK_SUCCESS) {
-            return false;
-        }
+        image.releaseToRaw(displacementMap, displacementAllocation);
     }
 
     // Create previous frame displacement map (for temporal blending)
     {
-        auto imageInfo = vk::ImageCreateInfo{}
-            .setImageType(vk::ImageType::e2D)
-            .setFormat(vk::Format::eR16Sfloat)
-            .setExtent(vk::Extent3D{displacementResolution, displacementResolution, 1})
-            .setMipLevels(1)
-            .setArrayLayers(1)
-            .setSamples(vk::SampleCountFlagBits::e1)
-            .setTiling(vk::ImageTiling::eOptimal)
-            .setUsage(vk::ImageUsageFlagBits::eStorage | vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eTransferDst)
-            .setSharingMode(vk::SharingMode::eExclusive)
-            .setInitialLayout(vk::ImageLayout::eUndefined);
-
-        VmaAllocationCreateInfo allocInfo{};
-        allocInfo.usage = VMA_MEMORY_USAGE_GPU_ONLY;
-
-        if (vmaCreateImage(allocator, reinterpret_cast<const VkImageCreateInfo*>(&imageInfo), &allocInfo, &prevDisplacementMap, &prevDisplacementAllocation, nullptr) != VK_SUCCESS) {
+        ManagedImage image;
+        if (!ImageBuilder(allocator)
+                .setExtent(displacementResolution, displacementResolution)
+                .setFormat(VK_FORMAT_R16_SFLOAT)
+                .setUsage(VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT)
+                .setGpuOnly()
+                .build(device, image, prevDisplacementMapView)) {
             return false;
         }
-
-        auto viewInfo = vk::ImageViewCreateInfo{}
-            .setImage(prevDisplacementMap)
-            .setViewType(vk::ImageViewType::e2D)
-            .setFormat(vk::Format::eR16Sfloat)
-            .setSubresourceRange(vk::ImageSubresourceRange{}
-                .setAspectMask(vk::ImageAspectFlagBits::eColor)
-                .setBaseMipLevel(0)
-                .setLevelCount(1)
-                .setBaseArrayLayer(0)
-                .setLayerCount(1));
-
-        if (vkCreateImageView(device, reinterpret_cast<const VkImageViewCreateInfo*>(&viewInfo), nullptr, &prevDisplacementMapView) != VK_SUCCESS) {
-            return false;
-        }
+        image.releaseToRaw(prevDisplacementMap, prevDisplacementAllocation);
     }
 
     // Create sampler using factory

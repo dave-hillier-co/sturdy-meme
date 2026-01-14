@@ -3,6 +3,7 @@
 #include "DescriptorManager.h"
 #include "ComputePipelineBuilder.h"
 #include "VmaResources.h"
+#include "core/ImageBuilder.h"
 #include "shaders/bindings.h"
 #include <SDL_log.h>
 #include <cmath>
@@ -240,44 +241,12 @@ void OceanFFT::cleanup() {
 
 bool OceanFFT::createImage(ManagedImage& image, std::optional<vk::raii::ImageView>& view,
                            VkFormat format, uint32_t width, uint32_t height, VkImageUsageFlags usage) {
-    auto imageInfo = vk::ImageCreateInfo{}
-        .setImageType(vk::ImageType::e2D)
-        .setFormat(static_cast<vk::Format>(format))
-        .setExtent(vk::Extent3D{width, height, 1})
-        .setMipLevels(1)
-        .setArrayLayers(1)
-        .setSamples(vk::SampleCountFlagBits::e1)
-        .setTiling(vk::ImageTiling::eOptimal)
-        .setUsage(static_cast<vk::ImageUsageFlags>(usage))
-        .setSharingMode(vk::SharingMode::eExclusive)
-        .setInitialLayout(vk::ImageLayout::eUndefined);
-
-    VmaAllocationCreateInfo allocInfo{};
-    allocInfo.usage = VMA_MEMORY_USAGE_GPU_ONLY;
-
-    if (!ManagedImage::create(allocator, *reinterpret_cast<const VkImageCreateInfo*>(&imageInfo), allocInfo, image)) {
-        return false;
-    }
-
-    auto viewInfo = vk::ImageViewCreateInfo{}
-        .setImage(image.get())
-        .setViewType(vk::ImageViewType::e2D)
-        .setFormat(static_cast<vk::Format>(format))
-        .setSubresourceRange(vk::ImageSubresourceRange{}
-            .setAspectMask(vk::ImageAspectFlagBits::eColor)
-            .setBaseMipLevel(0)
-            .setLevelCount(1)
-            .setBaseArrayLayer(0)
-            .setLayerCount(1));
-
-    try {
-        view.emplace(*raiiDevice_, viewInfo);
-    } catch (const vk::SystemError& e) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "OceanFFT: Failed to create image view: %s", e.what());
-        return false;
-    }
-
-    return true;
+    return ImageBuilder(allocator)
+        .setExtent(width, height)
+        .setFormat(format)
+        .setUsage(usage)
+        .setGpuOnly()
+        .build(*raiiDevice_, image, view);
 }
 
 bool OceanFFT::createCascade(Cascade& cascade, const CascadeConfig& config) {

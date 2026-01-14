@@ -7,6 +7,7 @@
 #include "VmaResources.h"
 #include "CommandBufferUtils.h"
 #include "core/vulkan/BarrierHelpers.h"
+#include "core/ImageBuilder.h"
 #include <SDL3/SDL.h>
 #include <array>
 #include <vulkan/vulkan.hpp>
@@ -182,87 +183,32 @@ void PostProcessSystem::resize(VkExtent2D newExtent) {
 
 bool PostProcessSystem::createHDRRenderTarget() {
     // Create HDR color image
-    auto colorImageInfo = vk::ImageCreateInfo{}
-        .setImageType(vk::ImageType::e2D)
-        .setExtent(vk::Extent3D{extent.width, extent.height, 1})
-        .setMipLevels(1)
-        .setArrayLayers(1)
-        .setFormat(static_cast<vk::Format>(HDR_FORMAT))
-        .setTiling(vk::ImageTiling::eOptimal)
-        .setInitialLayout(vk::ImageLayout::eUndefined)
-        .setUsage(vk::ImageUsageFlagBits::eColorAttachment |
-                  vk::ImageUsageFlagBits::eSampled |
-                  vk::ImageUsageFlagBits::eStorage)
-        .setSamples(vk::SampleCountFlagBits::e1)
-        .setSharingMode(vk::SharingMode::eExclusive);
-
-    VmaAllocationCreateInfo colorAllocInfo{};
-    colorAllocInfo.usage = VMA_MEMORY_USAGE_AUTO;
-
-    if (vmaCreateImage(allocator, reinterpret_cast<const VkImageCreateInfo*>(&colorImageInfo), &colorAllocInfo,
-                       &hdrColorImage, &hdrColorAllocation, nullptr) != VK_SUCCESS) {
-        SDL_Log("Failed to create HDR color image");
-        return false;
+    {
+        ManagedImage image;
+        if (!ImageBuilder(allocator)
+                .setExtent(extent.width, extent.height)
+                .setFormat(HDR_FORMAT)
+                .setUsage(VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_STORAGE_BIT)
+                .build(device, image, hdrColorView)) {
+            SDL_Log("Failed to create HDR color image");
+            return false;
+        }
+        image.releaseToRaw(hdrColorImage, hdrColorAllocation);
     }
-
-    auto colorViewInfo = vk::ImageViewCreateInfo{}
-        .setImage(hdrColorImage)
-        .setViewType(vk::ImageViewType::e2D)
-        .setFormat(static_cast<vk::Format>(HDR_FORMAT))
-        .setSubresourceRange(vk::ImageSubresourceRange{}
-            .setAspectMask(vk::ImageAspectFlagBits::eColor)
-            .setBaseMipLevel(0)
-            .setLevelCount(1)
-            .setBaseArrayLayer(0)
-            .setLayerCount(1));
-
-    vk::Device vkDevice(device);
-    auto colorViewResult = vkDevice.createImageView(colorViewInfo);
-    if (!colorViewResult) {
-        SDL_Log("Failed to create HDR color image view");
-        return false;
-    }
-    hdrColorView = colorViewResult;
 
     // Create HDR depth image
-    auto depthImageInfo = vk::ImageCreateInfo{}
-        .setImageType(vk::ImageType::e2D)
-        .setExtent(vk::Extent3D{extent.width, extent.height, 1})
-        .setMipLevels(1)
-        .setArrayLayers(1)
-        .setFormat(static_cast<vk::Format>(DEPTH_FORMAT))
-        .setTiling(vk::ImageTiling::eOptimal)
-        .setInitialLayout(vk::ImageLayout::eUndefined)
-        .setUsage(vk::ImageUsageFlagBits::eDepthStencilAttachment | vk::ImageUsageFlagBits::eSampled)
-        .setSamples(vk::SampleCountFlagBits::e1)
-        .setSharingMode(vk::SharingMode::eExclusive);
-
-    VmaAllocationCreateInfo depthAllocInfo{};
-    depthAllocInfo.usage = VMA_MEMORY_USAGE_AUTO;
-
-    if (vmaCreateImage(allocator, reinterpret_cast<const VkImageCreateInfo*>(&depthImageInfo), &depthAllocInfo,
-                       &hdrDepthImage, &hdrDepthAllocation, nullptr) != VK_SUCCESS) {
-        SDL_Log("Failed to create HDR depth image");
-        return false;
+    {
+        ManagedImage image;
+        if (!ImageBuilder(allocator)
+                .setExtent(extent.width, extent.height)
+                .setFormat(DEPTH_FORMAT)
+                .setUsage(VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT)
+                .build(device, image, hdrDepthView, VK_IMAGE_ASPECT_DEPTH_BIT)) {
+            SDL_Log("Failed to create HDR depth image");
+            return false;
+        }
+        image.releaseToRaw(hdrDepthImage, hdrDepthAllocation);
     }
-
-    auto depthViewInfo = vk::ImageViewCreateInfo{}
-        .setImage(hdrDepthImage)
-        .setViewType(vk::ImageViewType::e2D)
-        .setFormat(static_cast<vk::Format>(DEPTH_FORMAT))
-        .setSubresourceRange(vk::ImageSubresourceRange{}
-            .setAspectMask(vk::ImageAspectFlagBits::eDepth)
-            .setBaseMipLevel(0)
-            .setLevelCount(1)
-            .setBaseArrayLayer(0)
-            .setLayerCount(1));
-
-    auto depthViewResult = vkDevice.createImageView(depthViewInfo);
-    if (!depthViewResult) {
-        SDL_Log("Failed to create HDR depth image view");
-        return false;
-    }
-    hdrDepthView = depthViewResult;
 
     return true;
 }

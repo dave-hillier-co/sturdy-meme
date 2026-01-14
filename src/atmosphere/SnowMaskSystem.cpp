@@ -6,6 +6,7 @@
 #include "VmaResources.h"
 #include "DescriptorManager.h"
 #include "core/vulkan/BarrierHelpers.h"
+#include "core/ImageBuilder.h"
 #include <SDL3/SDL.h>
 #include <vulkan/vulkan.hpp>
 #include <cstring>
@@ -130,43 +131,16 @@ bool SnowMaskSystem::createBuffers() {
 
 bool SnowMaskSystem::createSnowMaskTexture() {
     // Create snow mask texture (R16F, single channel for coverage 0-1)
-    auto imageInfo = vk::ImageCreateInfo{}
-        .setImageType(vk::ImageType::e2D)
-        .setExtent(vk::Extent3D{SNOW_MASK_SIZE, SNOW_MASK_SIZE, 1})
-        .setMipLevels(1)
-        .setArrayLayers(1)
-        .setFormat(vk::Format::eR16Sfloat)  // R16F for coverage value
-        .setTiling(vk::ImageTiling::eOptimal)
-        .setInitialLayout(vk::ImageLayout::eUndefined)
-        .setUsage(vk::ImageUsageFlagBits::eStorage | vk::ImageUsageFlagBits::eSampled)
-        .setSharingMode(vk::SharingMode::eExclusive)
-        .setSamples(vk::SampleCountFlagBits::e1);
-
-    VmaAllocationCreateInfo allocInfo{};
-    allocInfo.usage = VMA_MEMORY_USAGE_AUTO;
-
-    if (vmaCreateImage(getAllocator(), reinterpret_cast<const VkImageCreateInfo*>(&imageInfo), &allocInfo,
-                       &snowMaskImage, &snowMaskAllocation, nullptr) != VK_SUCCESS) {
+    ManagedImage image;
+    if (!ImageBuilder(getAllocator())
+            .setExtent(SNOW_MASK_SIZE, SNOW_MASK_SIZE)
+            .setFormat(VK_FORMAT_R16_SFLOAT)
+            .setUsage(VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT)
+            .build(getDevice(), image, snowMaskView)) {
         SDL_Log("Failed to create snow mask image");
         return false;
     }
-
-    // Create image view
-    auto viewInfo = vk::ImageViewCreateInfo{}
-        .setImage(snowMaskImage)
-        .setViewType(vk::ImageViewType::e2D)
-        .setFormat(vk::Format::eR16Sfloat)
-        .setSubresourceRange(vk::ImageSubresourceRange{}
-            .setAspectMask(vk::ImageAspectFlagBits::eColor)
-            .setBaseMipLevel(0)
-            .setLevelCount(1)
-            .setBaseArrayLayer(0)
-            .setLayerCount(1));
-
-    if (vkCreateImageView(getDevice(), reinterpret_cast<const VkImageViewCreateInfo*>(&viewInfo), nullptr, &snowMaskView) != VK_SUCCESS) {
-        SDL_Log("Failed to create snow mask image view");
-        return false;
-    }
+    image.releaseToRaw(snowMaskImage, snowMaskAllocation);
 
     // Create sampler for other systems to sample the snow mask
     if (auto* raiiDevice = lifecycle.getRaiiDevice(); raiiDevice) {

@@ -4,6 +4,7 @@
 #include "ShaderLoader.h"
 #include "DescriptorManager.h"
 #include "core/vulkan/VmaResources.h"
+#include "core/ImageBuilder.h"
 #include <SDL3/SDL_log.h>
 #include <vulkan/vulkan.hpp>
 #include <array>
@@ -134,113 +135,41 @@ void WaterGBuffer::resize(VkExtent2D newFullResExtent) {
 bool WaterGBuffer::createImages() {
     // Data image (RGBA8 - material data)
     {
-        auto imageInfo = vk::ImageCreateInfo{}
-            .setImageType(vk::ImageType::e2D)
-            .setFormat(vk::Format::eR8G8B8A8Unorm)
-            .setExtent(vk::Extent3D{gbufferExtent.width, gbufferExtent.height, 1})
-            .setMipLevels(1)
-            .setArrayLayers(1)
-            .setSamples(vk::SampleCountFlagBits::e1)
-            .setTiling(vk::ImageTiling::eOptimal)
-            .setUsage(vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eSampled)
-            .setSharingMode(vk::SharingMode::eExclusive)
-            .setInitialLayout(vk::ImageLayout::eUndefined);
-
-        VmaAllocationCreateInfo allocInfo{};
-        allocInfo.usage = VMA_MEMORY_USAGE_GPU_ONLY;
-
-        if (vmaCreateImage(allocator, reinterpret_cast<const VkImageCreateInfo*>(&imageInfo), &allocInfo, &dataImage, &dataAllocation, nullptr) != VK_SUCCESS) {
+        ManagedImage image;
+        if (!ImageBuilder(allocator)
+                .setExtent(gbufferExtent.width, gbufferExtent.height)
+                .setFormat(VK_FORMAT_R8G8B8A8_UNORM)
+                .setUsage(VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT)
+                .build(device, image, dataImageView)) {
             return false;
         }
-
-        auto viewInfo = vk::ImageViewCreateInfo{}
-            .setImage(dataImage)
-            .setViewType(vk::ImageViewType::e2D)
-            .setFormat(vk::Format::eR8G8B8A8Unorm)
-            .setSubresourceRange(vk::ImageSubresourceRange{}
-                .setAspectMask(vk::ImageAspectFlagBits::eColor)
-                .setBaseMipLevel(0)
-                .setLevelCount(1)
-                .setBaseArrayLayer(0)
-                .setLayerCount(1));
-
-        if (vkCreateImageView(device, reinterpret_cast<const VkImageViewCreateInfo*>(&viewInfo), nullptr, &dataImageView) != VK_SUCCESS) {
-            return false;
-        }
+        image.releaseToRaw(dataImage, dataAllocation);
     }
 
     // Normal image (RGBA16F - normals + depth)
     {
-        auto imageInfo = vk::ImageCreateInfo{}
-            .setImageType(vk::ImageType::e2D)
-            .setFormat(vk::Format::eR16G16B16A16Sfloat)
-            .setExtent(vk::Extent3D{gbufferExtent.width, gbufferExtent.height, 1})
-            .setMipLevels(1)
-            .setArrayLayers(1)
-            .setSamples(vk::SampleCountFlagBits::e1)
-            .setTiling(vk::ImageTiling::eOptimal)
-            .setUsage(vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eSampled)
-            .setSharingMode(vk::SharingMode::eExclusive)
-            .setInitialLayout(vk::ImageLayout::eUndefined);
-
-        VmaAllocationCreateInfo allocInfo{};
-        allocInfo.usage = VMA_MEMORY_USAGE_GPU_ONLY;
-
-        if (vmaCreateImage(allocator, reinterpret_cast<const VkImageCreateInfo*>(&imageInfo), &allocInfo, &normalImage, &normalAllocation, nullptr) != VK_SUCCESS) {
+        ManagedImage image;
+        if (!ImageBuilder(allocator)
+                .setExtent(gbufferExtent.width, gbufferExtent.height)
+                .setFormat(VK_FORMAT_R16G16B16A16_SFLOAT)
+                .setUsage(VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT)
+                .build(device, image, normalImageView)) {
             return false;
         }
-
-        auto viewInfo = vk::ImageViewCreateInfo{}
-            .setImage(normalImage)
-            .setViewType(vk::ImageViewType::e2D)
-            .setFormat(vk::Format::eR16G16B16A16Sfloat)
-            .setSubresourceRange(vk::ImageSubresourceRange{}
-                .setAspectMask(vk::ImageAspectFlagBits::eColor)
-                .setBaseMipLevel(0)
-                .setLevelCount(1)
-                .setBaseArrayLayer(0)
-                .setLayerCount(1));
-
-        if (vkCreateImageView(device, reinterpret_cast<const VkImageViewCreateInfo*>(&viewInfo), nullptr, &normalImageView) != VK_SUCCESS) {
-            return false;
-        }
+        image.releaseToRaw(normalImage, normalAllocation);
     }
 
     // Depth image (D32F - water-only depth)
     {
-        auto imageInfo = vk::ImageCreateInfo{}
-            .setImageType(vk::ImageType::e2D)
-            .setFormat(vk::Format::eD32Sfloat)
-            .setExtent(vk::Extent3D{gbufferExtent.width, gbufferExtent.height, 1})
-            .setMipLevels(1)
-            .setArrayLayers(1)
-            .setSamples(vk::SampleCountFlagBits::e1)
-            .setTiling(vk::ImageTiling::eOptimal)
-            .setUsage(vk::ImageUsageFlagBits::eDepthStencilAttachment | vk::ImageUsageFlagBits::eSampled)
-            .setSharingMode(vk::SharingMode::eExclusive)
-            .setInitialLayout(vk::ImageLayout::eUndefined);
-
-        VmaAllocationCreateInfo allocInfo{};
-        allocInfo.usage = VMA_MEMORY_USAGE_GPU_ONLY;
-
-        if (vmaCreateImage(allocator, reinterpret_cast<const VkImageCreateInfo*>(&imageInfo), &allocInfo, &depthImage, &depthAllocation, nullptr) != VK_SUCCESS) {
+        ManagedImage image;
+        if (!ImageBuilder(allocator)
+                .setExtent(gbufferExtent.width, gbufferExtent.height)
+                .setFormat(VK_FORMAT_D32_SFLOAT)
+                .setUsage(VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT)
+                .build(device, image, depthImageView, VK_IMAGE_ASPECT_DEPTH_BIT)) {
             return false;
         }
-
-        auto viewInfo = vk::ImageViewCreateInfo{}
-            .setImage(depthImage)
-            .setViewType(vk::ImageViewType::e2D)
-            .setFormat(vk::Format::eD32Sfloat)
-            .setSubresourceRange(vk::ImageSubresourceRange{}
-                .setAspectMask(vk::ImageAspectFlagBits::eDepth)
-                .setBaseMipLevel(0)
-                .setLevelCount(1)
-                .setBaseArrayLayer(0)
-                .setLayerCount(1));
-
-        if (vkCreateImageView(device, reinterpret_cast<const VkImageViewCreateInfo*>(&viewInfo), nullptr, &depthImageView) != VK_SUCCESS) {
-            return false;
-        }
+        image.releaseToRaw(depthImage, depthAllocation);
     }
 
     return true;

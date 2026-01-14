@@ -1,237 +1,91 @@
 #include "AtmosphereLUTSystem.h"
 #include "VmaResources.h"
+#include "core/ImageBuilder.h"
 #include <SDL3/SDL_log.h>
 #include <vulkan/vulkan.hpp>
 
 bool AtmosphereLUTSystem::createTransmittanceLUT() {
-    auto imageInfo = vk::ImageCreateInfo{}
-        .setImageType(vk::ImageType::e2D)
-        .setFormat(vk::Format::eR16G16B16A16Sfloat)
-        .setExtent(vk::Extent3D{TRANSMITTANCE_WIDTH, TRANSMITTANCE_HEIGHT, 1})
-        .setMipLevels(1)
-        .setArrayLayers(1)
-        .setSamples(vk::SampleCountFlagBits::e1)
-        .setTiling(vk::ImageTiling::eOptimal)
-        .setUsage(vk::ImageUsageFlagBits::eStorage | vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eTransferSrc)
-        .setSharingMode(vk::SharingMode::eExclusive)
-        .setInitialLayout(vk::ImageLayout::eUndefined);
-
-    VmaAllocationCreateInfo allocInfo{};
-    allocInfo.usage = VMA_MEMORY_USAGE_GPU_ONLY;
-
-    if (vmaCreateImage(allocator, reinterpret_cast<const VkImageCreateInfo*>(&imageInfo), &allocInfo,
-                       &transmittanceLUT, &transmittanceLUTAllocation, nullptr) != VK_SUCCESS) {
+    ManagedImage image;
+    if (!ImageBuilder(allocator)
+            .setExtent(TRANSMITTANCE_WIDTH, TRANSMITTANCE_HEIGHT)
+            .setFormat(VK_FORMAT_R16G16B16A16_SFLOAT)
+            .setUsage(VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT)
+            .build(device, image, transmittanceLUTView)) {
         SDL_Log("Failed to create transmittance LUT");
         return false;
     }
-
-    auto viewInfo = vk::ImageViewCreateInfo{}
-        .setImage(transmittanceLUT)
-        .setViewType(vk::ImageViewType::e2D)
-        .setFormat(vk::Format::eR16G16B16A16Sfloat)
-        .setSubresourceRange(vk::ImageSubresourceRange{}
-            .setAspectMask(vk::ImageAspectFlagBits::eColor)
-            .setBaseMipLevel(0)
-            .setLevelCount(1)
-            .setBaseArrayLayer(0)
-            .setLayerCount(1));
-
-    try {
-        transmittanceLUTView = vk::Device(device).createImageView(viewInfo);
-    } catch (const vk::SystemError& e) {
-        SDL_Log("Failed to create transmittance LUT view: %s", e.what());
-        return false;
-    }
-
+    image.releaseToRaw(transmittanceLUT, transmittanceLUTAllocation);
     return true;
 }
 
 bool AtmosphereLUTSystem::createMultiScatterLUT() {
-    auto imageInfo = vk::ImageCreateInfo{}
-        .setImageType(vk::ImageType::e2D)
-        .setFormat(vk::Format::eR16G16Sfloat)
-        .setExtent(vk::Extent3D{MULTISCATTER_SIZE, MULTISCATTER_SIZE, 1})
-        .setMipLevels(1)
-        .setArrayLayers(1)
-        .setSamples(vk::SampleCountFlagBits::e1)
-        .setTiling(vk::ImageTiling::eOptimal)
-        .setUsage(vk::ImageUsageFlagBits::eStorage | vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eTransferSrc)
-        .setSharingMode(vk::SharingMode::eExclusive)
-        .setInitialLayout(vk::ImageLayout::eUndefined);
-
-    VmaAllocationCreateInfo allocInfo{};
-    allocInfo.usage = VMA_MEMORY_USAGE_GPU_ONLY;
-
-    if (vmaCreateImage(allocator, reinterpret_cast<const VkImageCreateInfo*>(&imageInfo), &allocInfo,
-                       &multiScatterLUT, &multiScatterLUTAllocation, nullptr) != VK_SUCCESS) {
+    ManagedImage image;
+    if (!ImageBuilder(allocator)
+            .setExtent(MULTISCATTER_SIZE, MULTISCATTER_SIZE)
+            .setFormat(VK_FORMAT_R16G16_SFLOAT)
+            .setUsage(VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT)
+            .build(device, image, multiScatterLUTView)) {
         SDL_Log("Failed to create multi-scatter LUT");
         return false;
     }
-
-    auto viewInfo = vk::ImageViewCreateInfo{}
-        .setImage(multiScatterLUT)
-        .setViewType(vk::ImageViewType::e2D)
-        .setFormat(vk::Format::eR16G16Sfloat)
-        .setSubresourceRange(vk::ImageSubresourceRange{}
-            .setAspectMask(vk::ImageAspectFlagBits::eColor)
-            .setBaseMipLevel(0)
-            .setLevelCount(1)
-            .setBaseArrayLayer(0)
-            .setLayerCount(1));
-
-    try {
-        multiScatterLUTView = vk::Device(device).createImageView(viewInfo);
-    } catch (const vk::SystemError& e) {
-        SDL_Log("Failed to create multi-scatter LUT view: %s", e.what());
-        return false;
-    }
-
+    image.releaseToRaw(multiScatterLUT, multiScatterLUTAllocation);
     return true;
 }
 
 bool AtmosphereLUTSystem::createSkyViewLUT() {
-    auto imageInfo = vk::ImageCreateInfo{}
-        .setImageType(vk::ImageType::e2D)
-        .setFormat(vk::Format::eR16G16B16A16Sfloat)
-        .setExtent(vk::Extent3D{SKYVIEW_WIDTH, SKYVIEW_HEIGHT, 1})
-        .setMipLevels(1)
-        .setArrayLayers(1)
-        .setSamples(vk::SampleCountFlagBits::e1)
-        .setTiling(vk::ImageTiling::eOptimal)
-        .setUsage(vk::ImageUsageFlagBits::eStorage | vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eTransferSrc)
-        .setSharingMode(vk::SharingMode::eExclusive)
-        .setInitialLayout(vk::ImageLayout::eUndefined);
-
-    VmaAllocationCreateInfo allocInfo{};
-    allocInfo.usage = VMA_MEMORY_USAGE_GPU_ONLY;
-
-    if (vmaCreateImage(allocator, reinterpret_cast<const VkImageCreateInfo*>(&imageInfo), &allocInfo,
-                       &skyViewLUT, &skyViewLUTAllocation, nullptr) != VK_SUCCESS) {
+    ManagedImage image;
+    if (!ImageBuilder(allocator)
+            .setExtent(SKYVIEW_WIDTH, SKYVIEW_HEIGHT)
+            .setFormat(VK_FORMAT_R16G16B16A16_SFLOAT)
+            .setUsage(VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT)
+            .build(device, image, skyViewLUTView)) {
         SDL_Log("Failed to create sky-view LUT");
         return false;
     }
-
-    auto viewInfo = vk::ImageViewCreateInfo{}
-        .setImage(skyViewLUT)
-        .setViewType(vk::ImageViewType::e2D)
-        .setFormat(vk::Format::eR16G16B16A16Sfloat)
-        .setSubresourceRange(vk::ImageSubresourceRange{}
-            .setAspectMask(vk::ImageAspectFlagBits::eColor)
-            .setBaseMipLevel(0)
-            .setLevelCount(1)
-            .setBaseArrayLayer(0)
-            .setLayerCount(1));
-
-    try {
-        skyViewLUTView = vk::Device(device).createImageView(viewInfo);
-    } catch (const vk::SystemError& e) {
-        SDL_Log("Failed to create sky-view LUT view: %s", e.what());
-        return false;
-    }
-
+    image.releaseToRaw(skyViewLUT, skyViewLUTAllocation);
     return true;
 }
 
 bool AtmosphereLUTSystem::createIrradianceLUTs() {
     // Create Rayleigh Irradiance LUT (64×16, RGBA16F)
-    auto imageInfo = vk::ImageCreateInfo{}
-        .setImageType(vk::ImageType::e2D)
-        .setFormat(vk::Format::eR16G16B16A16Sfloat)
-        .setExtent(vk::Extent3D{IRRADIANCE_WIDTH, IRRADIANCE_HEIGHT, 1})
-        .setMipLevels(1)
-        .setArrayLayers(1)
-        .setSamples(vk::SampleCountFlagBits::e1)
-        .setTiling(vk::ImageTiling::eOptimal)
-        .setUsage(vk::ImageUsageFlagBits::eStorage | vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eTransferSrc)
-        .setSharingMode(vk::SharingMode::eExclusive)
-        .setInitialLayout(vk::ImageLayout::eUndefined);
-
-    VmaAllocationCreateInfo allocInfo{};
-    allocInfo.usage = VMA_MEMORY_USAGE_GPU_ONLY;
-
-    if (vmaCreateImage(allocator, reinterpret_cast<const VkImageCreateInfo*>(&imageInfo), &allocInfo,
-                       &rayleighIrradianceLUT, &rayleighIrradianceLUTAllocation, nullptr) != VK_SUCCESS) {
+    ManagedImage rayleighImage;
+    if (!ImageBuilder(allocator)
+            .setExtent(IRRADIANCE_WIDTH, IRRADIANCE_HEIGHT)
+            .setFormat(VK_FORMAT_R16G16B16A16_SFLOAT)
+            .setUsage(VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT)
+            .build(device, rayleighImage, rayleighIrradianceLUTView)) {
         SDL_Log("Failed to create Rayleigh irradiance LUT");
         return false;
     }
-
-    auto viewInfo = vk::ImageViewCreateInfo{}
-        .setImage(rayleighIrradianceLUT)
-        .setViewType(vk::ImageViewType::e2D)
-        .setFormat(vk::Format::eR16G16B16A16Sfloat)
-        .setSubresourceRange(vk::ImageSubresourceRange{}
-            .setAspectMask(vk::ImageAspectFlagBits::eColor)
-            .setBaseMipLevel(0)
-            .setLevelCount(1)
-            .setBaseArrayLayer(0)
-            .setLayerCount(1));
-
-    try {
-        rayleighIrradianceLUTView = vk::Device(device).createImageView(viewInfo);
-    } catch (const vk::SystemError& e) {
-        SDL_Log("Failed to create Rayleigh irradiance LUT view: %s", e.what());
-        return false;
-    }
+    rayleighImage.releaseToRaw(rayleighIrradianceLUT, rayleighIrradianceLUTAllocation);
 
     // Create Mie Irradiance LUT (same dimensions and format)
-    if (vmaCreateImage(allocator, reinterpret_cast<const VkImageCreateInfo*>(&imageInfo), &allocInfo,
-                       &mieIrradianceLUT, &mieIrradianceLUTAllocation, nullptr) != VK_SUCCESS) {
+    ManagedImage mieImage;
+    if (!ImageBuilder(allocator)
+            .setExtent(IRRADIANCE_WIDTH, IRRADIANCE_HEIGHT)
+            .setFormat(VK_FORMAT_R16G16B16A16_SFLOAT)
+            .setUsage(VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT)
+            .build(device, mieImage, mieIrradianceLUTView)) {
         SDL_Log("Failed to create Mie irradiance LUT");
         return false;
     }
-
-    viewInfo.setImage(mieIrradianceLUT);
-    try {
-        mieIrradianceLUTView = vk::Device(device).createImageView(viewInfo);
-    } catch (const vk::SystemError& e) {
-        SDL_Log("Failed to create Mie irradiance LUT view: %s", e.what());
-        return false;
-    }
+    mieImage.releaseToRaw(mieIrradianceLUT, mieIrradianceLUTAllocation);
 
     return true;
 }
 
 bool AtmosphereLUTSystem::createCloudMapLUT() {
     // Cloud Map LUT (256×256, RGBA16F) - Paraboloid projection
-    auto imageInfo = vk::ImageCreateInfo{}
-        .setImageType(vk::ImageType::e2D)
-        .setFormat(vk::Format::eR16G16B16A16Sfloat)
-        .setExtent(vk::Extent3D{CLOUDMAP_SIZE, CLOUDMAP_SIZE, 1})
-        .setMipLevels(1)
-        .setArrayLayers(1)
-        .setSamples(vk::SampleCountFlagBits::e1)
-        .setTiling(vk::ImageTiling::eOptimal)
-        .setUsage(vk::ImageUsageFlagBits::eStorage | vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eTransferSrc)
-        .setSharingMode(vk::SharingMode::eExclusive)
-        .setInitialLayout(vk::ImageLayout::eUndefined);
-
-    VmaAllocationCreateInfo allocInfo{};
-    allocInfo.usage = VMA_MEMORY_USAGE_GPU_ONLY;
-
-    if (vmaCreateImage(allocator, reinterpret_cast<const VkImageCreateInfo*>(&imageInfo), &allocInfo,
-                       &cloudMapLUT, &cloudMapLUTAllocation, nullptr) != VK_SUCCESS) {
+    ManagedImage image;
+    if (!ImageBuilder(allocator)
+            .setExtent(CLOUDMAP_SIZE, CLOUDMAP_SIZE)
+            .setFormat(VK_FORMAT_R16G16B16A16_SFLOAT)
+            .setUsage(VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT)
+            .build(device, image, cloudMapLUTView)) {
         SDL_Log("Failed to create cloud map LUT");
         return false;
     }
-
-    auto viewInfo = vk::ImageViewCreateInfo{}
-        .setImage(cloudMapLUT)
-        .setViewType(vk::ImageViewType::e2D)
-        .setFormat(vk::Format::eR16G16B16A16Sfloat)
-        .setSubresourceRange(vk::ImageSubresourceRange{}
-            .setAspectMask(vk::ImageAspectFlagBits::eColor)
-            .setBaseMipLevel(0)
-            .setLevelCount(1)
-            .setBaseArrayLayer(0)
-            .setLayerCount(1));
-
-    try {
-        cloudMapLUTView = vk::Device(device).createImageView(viewInfo);
-    } catch (const vk::SystemError& e) {
-        SDL_Log("Failed to create cloud map LUT view: %s", e.what());
-        return false;
-    }
-
+    image.releaseToRaw(cloudMapLUT, cloudMapLUTAllocation);
     return true;
 }
 

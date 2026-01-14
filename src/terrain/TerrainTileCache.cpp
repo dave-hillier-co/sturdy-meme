@@ -2,6 +2,7 @@
 #include "TerrainHeight.h"
 #include "CommandBufferUtils.h"
 #include "VmaResources.h"
+#include "core/ImageBuilder.h"
 #include <SDL3/SDL.h>
 #include <vulkan/vulkan.hpp>
 #include <stb_image.h>
@@ -67,42 +68,18 @@ bool TerrainTileCache::initInternal(const InitInfo& info) {
     }
 
     // Create tile array image (2D array texture with MAX_ACTIVE_TILES layers)
-    auto imageInfo = vk::ImageCreateInfo{}
-        .setImageType(vk::ImageType::e2D)
-        .setFormat(vk::Format::eR32Sfloat)  // 32-bit float for height values
-        .setExtent(vk::Extent3D{tileResolution, tileResolution, 1})
-        .setMipLevels(1)
-        .setArrayLayers(MAX_ACTIVE_TILES)
-        .setSamples(vk::SampleCountFlagBits::e1)
-        .setTiling(vk::ImageTiling::eOptimal)
-        .setUsage(vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eTransferDst)
-        .setSharingMode(vk::SharingMode::eExclusive)
-        .setInitialLayout(vk::ImageLayout::eUndefined);
-
-    VmaAllocationCreateInfo imgAllocInfo{};
-    imgAllocInfo.usage = VMA_MEMORY_USAGE_AUTO;
-
-    if (vmaCreateImage(allocator, reinterpret_cast<const VkImageCreateInfo*>(&imageInfo), &imgAllocInfo, &tileArrayImage,
-                      &tileArrayAllocation, nullptr) != VK_SUCCESS) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "TerrainTileCache: Failed to create tile array image");
-        return false;
-    }
-
-    // Create image view for the tile array
-    auto viewInfo = vk::ImageViewCreateInfo{}
-        .setImage(tileArrayImage)
-        .setViewType(vk::ImageViewType::e2DArray)
-        .setFormat(vk::Format::eR32Sfloat)
-        .setSubresourceRange(vk::ImageSubresourceRange{}
-            .setAspectMask(vk::ImageAspectFlagBits::eColor)
-            .setBaseMipLevel(0)
-            .setLevelCount(1)
-            .setBaseArrayLayer(0)
-            .setLayerCount(MAX_ACTIVE_TILES));
-
-    if (vkCreateImageView(device, reinterpret_cast<const VkImageViewCreateInfo*>(&viewInfo), nullptr, &tileArrayView) != VK_SUCCESS) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "TerrainTileCache: Failed to create tile array image view");
-        return false;
+    {
+        ManagedImage image;
+        if (!ImageBuilder(allocator)
+                .setExtent(tileResolution, tileResolution)
+                .setFormat(VK_FORMAT_R32_SFLOAT)
+                .setArrayLayers(MAX_ACTIVE_TILES)
+                .setUsage(VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT)
+                .build(device, image, tileArrayView)) {
+            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "TerrainTileCache: Failed to create tile array image");
+            return false;
+        }
+        image.releaseToRaw(tileArrayImage, tileArrayAllocation);
     }
 
     // Transition tile array to shader read layout
@@ -566,44 +543,16 @@ bool TerrainTileCache::loadTile(TileCoord coord, uint32_t lod) {
 }
 
 bool TerrainTileCache::createTileGPUResources(TerrainTile& tile) {
-    // Create Vulkan image
-    auto imageInfo = vk::ImageCreateInfo{}
-        .setImageType(vk::ImageType::e2D)
-        .setFormat(vk::Format::eR32Sfloat)
-        .setExtent(vk::Extent3D{tileResolution, tileResolution, 1})
-        .setMipLevels(1)
-        .setArrayLayers(1)
-        .setSamples(vk::SampleCountFlagBits::e1)
-        .setTiling(vk::ImageTiling::eOptimal)
-        .setUsage(vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eTransferDst)
-        .setSharingMode(vk::SharingMode::eExclusive)
-        .setInitialLayout(vk::ImageLayout::eUndefined);
-
-    VmaAllocationCreateInfo allocInfo{};
-    allocInfo.usage = VMA_MEMORY_USAGE_AUTO;
-
-    if (vmaCreateImage(allocator, reinterpret_cast<const VkImageCreateInfo*>(&imageInfo), &allocInfo, &tile.image, &tile.allocation, nullptr) != VK_SUCCESS) {
+    ManagedImage image;
+    if (!ImageBuilder(allocator)
+            .setExtent(tileResolution, tileResolution)
+            .setFormat(VK_FORMAT_R32_SFLOAT)
+            .setUsage(VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT)
+            .build(device, image, tile.imageView)) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "TerrainTileCache: Failed to create tile image");
         return false;
     }
-
-    // Create image view
-    auto viewInfo = vk::ImageViewCreateInfo{}
-        .setImage(tile.image)
-        .setViewType(vk::ImageViewType::e2D)
-        .setFormat(vk::Format::eR32Sfloat)
-        .setSubresourceRange(vk::ImageSubresourceRange{}
-            .setAspectMask(vk::ImageAspectFlagBits::eColor)
-            .setBaseMipLevel(0)
-            .setLevelCount(1)
-            .setBaseArrayLayer(0)
-            .setLayerCount(1));
-
-    if (vkCreateImageView(device, reinterpret_cast<const VkImageViewCreateInfo*>(&viewInfo), nullptr, &tile.imageView) != VK_SUCCESS) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "TerrainTileCache: Failed to create tile image view");
-        return false;
-    }
-
+    image.releaseToRaw(tile.image, tile.allocation);
     return true;
 }
 
@@ -1164,43 +1113,17 @@ bool TerrainTileCache::createBaseHeightMap() {
     }
 
     // Create GPU image
-    auto imageInfo = vk::ImageCreateInfo{}
-        .setImageType(vk::ImageType::e2D)
-        .setFormat(vk::Format::eR32Sfloat)
-        .setExtent(vk::Extent3D{baseHeightMapResolution_, baseHeightMapResolution_, 1})
-        .setMipLevels(1)
-        .setArrayLayers(1)
-        .setSamples(vk::SampleCountFlagBits::e1)
-        .setTiling(vk::ImageTiling::eOptimal)
-        .setUsage(vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eTransferDst)
-        .setSharingMode(vk::SharingMode::eExclusive)
-        .setInitialLayout(vk::ImageLayout::eUndefined);
-
-    VmaAllocationCreateInfo allocInfo{};
-    allocInfo.usage = VMA_MEMORY_USAGE_AUTO;
-
-    if (vmaCreateImage(allocator, reinterpret_cast<const VkImageCreateInfo*>(&imageInfo),
-                       &allocInfo, &baseHeightMapImage_, &baseHeightMapAllocation_, nullptr) != VK_SUCCESS) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "TerrainTileCache: Failed to create base heightmap image");
-        return false;
-    }
-
-    // Create image view
-    auto viewInfo = vk::ImageViewCreateInfo{}
-        .setImage(baseHeightMapImage_)
-        .setViewType(vk::ImageViewType::e2D)
-        .setFormat(vk::Format::eR32Sfloat)
-        .setSubresourceRange(vk::ImageSubresourceRange{}
-            .setAspectMask(vk::ImageAspectFlagBits::eColor)
-            .setBaseMipLevel(0)
-            .setLevelCount(1)
-            .setBaseArrayLayer(0)
-            .setLayerCount(1));
-
-    if (vkCreateImageView(device, reinterpret_cast<const VkImageViewCreateInfo*>(&viewInfo),
-                          nullptr, &baseHeightMapView_) != VK_SUCCESS) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "TerrainTileCache: Failed to create base heightmap view");
-        return false;
+    {
+        ManagedImage image;
+        if (!ImageBuilder(allocator)
+                .setExtent(baseHeightMapResolution_, baseHeightMapResolution_)
+                .setFormat(VK_FORMAT_R32_SFLOAT)
+                .setUsage(VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT)
+                .build(device, image, baseHeightMapView_)) {
+            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "TerrainTileCache: Failed to create base heightmap image");
+            return false;
+        }
+        image.releaseToRaw(baseHeightMapImage_, baseHeightMapAllocation_);
     }
 
     // Upload to GPU
@@ -1357,43 +1280,17 @@ std::vector<const TerrainTile*> TerrainTileCache::getAllCPUTiles() const {
 
 bool TerrainTileCache::createHoleMaskResources() {
     // Create Vulkan image for hole mask (R8_UNORM: 0=solid, 255=hole)
-    auto imageInfo = vk::ImageCreateInfo{}
-        .setImageType(vk::ImageType::e2D)
-        .setFormat(vk::Format::eR8Unorm)
-        .setExtent(vk::Extent3D{holeMaskResolution_, holeMaskResolution_, 1})
-        .setMipLevels(1)
-        .setArrayLayers(1)
-        .setSamples(vk::SampleCountFlagBits::e1)
-        .setTiling(vk::ImageTiling::eOptimal)
-        .setUsage(vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eTransferDst)
-        .setSharingMode(vk::SharingMode::eExclusive)
-        .setInitialLayout(vk::ImageLayout::eUndefined);
-
-    VmaAllocationCreateInfo allocInfo{};
-    allocInfo.usage = VMA_MEMORY_USAGE_AUTO;
-
-    if (vmaCreateImage(allocator, reinterpret_cast<const VkImageCreateInfo*>(&imageInfo), &allocInfo,
-                       &holeMaskImage_, &holeMaskAllocation_, nullptr) != VK_SUCCESS) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "TerrainTileCache: Failed to create hole mask image");
-        return false;
-    }
-
-    // Create image view
-    auto viewInfo = vk::ImageViewCreateInfo{}
-        .setImage(holeMaskImage_)
-        .setViewType(vk::ImageViewType::e2D)
-        .setFormat(vk::Format::eR8Unorm)
-        .setSubresourceRange(vk::ImageSubresourceRange{}
-            .setAspectMask(vk::ImageAspectFlagBits::eColor)
-            .setBaseMipLevel(0)
-            .setLevelCount(1)
-            .setBaseArrayLayer(0)
-            .setLayerCount(1));
-
-    if (vkCreateImageView(device, reinterpret_cast<const VkImageViewCreateInfo*>(&viewInfo), nullptr,
-                          &holeMaskImageView_) != VK_SUCCESS) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "TerrainTileCache: Failed to create hole mask image view");
-        return false;
+    {
+        ManagedImage image;
+        if (!ImageBuilder(allocator)
+                .setExtent(holeMaskResolution_, holeMaskResolution_)
+                .setFormat(VK_FORMAT_R8_UNORM)
+                .setUsage(VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT)
+                .build(device, image, holeMaskImageView_)) {
+            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "TerrainTileCache: Failed to create hole mask image");
+            return false;
+        }
+        image.releaseToRaw(holeMaskImage_, holeMaskAllocation_);
     }
 
     // Create sampler (linear filtering for smooth edges) using factory

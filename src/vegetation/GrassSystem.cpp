@@ -9,6 +9,7 @@
 #include "UBOs.h"
 #include "VmaResources.h"
 #include "core/vulkan/BarrierHelpers.h"
+#include "core/ImageBuilder.h"
 #include <vulkan/vulkan.hpp>
 #include <SDL3/SDL.h>
 #include <cstring>
@@ -224,46 +225,17 @@ bool GrassSystem::createBuffers() {
 
 bool GrassSystem::createDisplacementResources() {
     // Create displacement texture (RG16F, using unified constant for size)
-    auto imageInfo = vk::ImageCreateInfo{}
-        .setImageType(vk::ImageType::e2D)
-        .setExtent(vk::Extent3D{GrassConstants::DISPLACEMENT_TEXTURE_SIZE, GrassConstants::DISPLACEMENT_TEXTURE_SIZE, 1})
-        .setMipLevels(1)
-        .setArrayLayers(1)
-        .setFormat(vk::Format::eR16G16Sfloat)  // RG16F for XZ displacement
-        .setTiling(vk::ImageTiling::eOptimal)
-        .setInitialLayout(vk::ImageLayout::eUndefined)
-        .setUsage(vk::ImageUsageFlagBits::eStorage | vk::ImageUsageFlagBits::eSampled)
-        .setSharingMode(vk::SharingMode::eExclusive)
-        .setSamples(vk::SampleCountFlagBits::e1);
-
-    VmaAllocationCreateInfo allocInfo{};
-    allocInfo.usage = VMA_MEMORY_USAGE_AUTO;
-
-    VkImage rawImage = VK_NULL_HANDLE;
-    if (vmaCreateImage(getAllocator(), reinterpret_cast<const VkImageCreateInfo*>(&imageInfo), &allocInfo,
-                       &rawImage, &displacementAllocation_, nullptr) != VK_SUCCESS) {
-        SDL_Log("Failed to create displacement image");
-        return false;
-    }
-    displacementImage_ = rawImage;
-
-    // Create image view
-    auto viewInfo = vk::ImageViewCreateInfo{}
-        .setImage(displacementImage_)
-        .setViewType(vk::ImageViewType::e2D)
-        .setFormat(vk::Format::eR16G16Sfloat)
-        .setSubresourceRange(vk::ImageSubresourceRange{}
-            .setAspectMask(vk::ImageAspectFlagBits::eColor)
-            .setBaseMipLevel(0)
-            .setLevelCount(1)
-            .setBaseArrayLayer(0)
-            .setLayerCount(1));
-
-    try {
-        displacementImageView_ = getDevice().createImageView(viewInfo);
-    } catch (const vk::SystemError& e) {
-        SDL_Log("Failed to create displacement image view: %s", e.what());
-        return false;
+    {
+        ManagedImage image;
+        if (!ImageBuilder(getAllocator())
+                .setExtent(GrassConstants::DISPLACEMENT_TEXTURE_SIZE, GrassConstants::DISPLACEMENT_TEXTURE_SIZE)
+                .setFormat(VK_FORMAT_R16G16_SFLOAT)
+                .setUsage(VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT)
+                .build(getDevice(), image, displacementImageView_)) {
+            SDL_Log("Failed to create displacement image");
+            return false;
+        }
+        image.releaseToRaw(displacementImage_, displacementAllocation_);
     }
 
     // Create sampler for grass compute shader to sample displacement

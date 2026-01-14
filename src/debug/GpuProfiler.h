@@ -6,6 +6,8 @@
 #include <unordered_map>
 #include <array>
 #include <optional>
+#include <mutex>
+#include <atomic>
 
 /**
  * GPU Profiler using Vulkan timestamp queries.
@@ -123,10 +125,11 @@ private:
     bool enabled = true;
 
     // Current frame state
-    uint32_t currentQueryIndex = 0;
+    std::atomic<uint32_t> currentQueryIndex{0};
     uint32_t currentFrameIndex = 0;
     std::unordered_map<std::string, ZoneInfo> activeZones;
     std::vector<std::string> currentFrameZoneOrder;
+    mutable std::mutex zoneMutex_;  // Protects activeZones and currentFrameZoneOrder for thread-safe zone tracking
 
     // Per-frame data for result collection
     std::unordered_map<uint32_t, uint32_t> frameQueryCounts;

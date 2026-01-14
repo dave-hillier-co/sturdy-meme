@@ -30,7 +30,7 @@ GpuProfiler::GpuProfiler(GpuProfiler&& other) noexcept
     , maxZones(other.maxZones)
     , framesInFlight(other.framesInFlight)
     , enabled(other.enabled)
-    , currentQueryIndex(other.currentQueryIndex)
+    , currentQueryIndex(other.currentQueryIndex.load(std::memory_order_relaxed))
     , currentFrameIndex(other.currentFrameIndex)
     , activeZones(std::move(other.activeZones))
     , currentFrameZoneOrder(std::move(other.currentFrameZoneOrder))
@@ -59,7 +59,7 @@ GpuProfiler& GpuProfiler::operator=(GpuProfiler&& other) noexcept {
         maxZones = other.maxZones;
         framesInFlight = other.framesInFlight;
         enabled = other.enabled;
-        currentQueryIndex = other.currentQueryIndex;
+        currentQueryIndex.store(other.currentQueryIndex.load(std::memory_order_relaxed), std::memory_order_relaxed);
         currentFrameIndex = other.currentFrameIndex;
         activeZones = std::move(other.activeZones);
         currentFrameZoneOrder = std::move(other.currentFrameZoneOrder);
@@ -140,9 +140,12 @@ void GpuProfiler::beginFrame(VkCommandBuffer cmd, uint32_t frameIndex) {
     collectResults(frameIndex);
 
     // Reset state for this frame
-    currentQueryIndex = 0;
-    activeZones.clear();
-    currentFrameZoneOrder.clear();
+    currentQueryIndex.store(0, std::memory_order_relaxed);
+    {
+        std::lock_guard<std::mutex> lock(zoneMutex_);
+        activeZones.clear();
+        currentFrameZoneOrder.clear();
+    }
     currentFrameIndex = frameIndex;
 
     vk::CommandBuffer vkCmd(cmd);
@@ -151,7 +154,7 @@ void GpuProfiler::beginFrame(VkCommandBuffer cmd, uint32_t frameIndex) {
     vkCmd.resetQueryPool(queryPools[frameIndex], 0, (maxZones * QUERIES_PER_ZONE) + 2);
 
     // Write frame start timestamp
-    frameStartQuery = currentQueryIndex++;
+    frameStartQuery = currentQueryIndex.fetch_add(1, std::memory_order_relaxed);
     vkCmd.writeTimestamp(vk::PipelineStageFlagBits::eTopOfPipe, queryPools[frameIndex], frameStartQuery);
 }
 
@@ -161,26 +164,34 @@ void GpuProfiler::endFrame(VkCommandBuffer cmd, uint32_t frameIndex) {
     vk::CommandBuffer vkCmd(cmd);
 
     // Write frame end timestamp
-    frameEndQuery = currentQueryIndex++;
+    frameEndQuery = currentQueryIndex.fetch_add(1, std::memory_order_relaxed);
     vkCmd.writeTimestamp(vk::PipelineStageFlagBits::eBottomOfPipe, queryPools[frameIndex], frameEndQuery);
 
     // Store the query count and zone order for this frame for later collection
-    frameQueryCounts[frameIndex] = currentQueryIndex;
-    frameZoneOrders[frameIndex] = currentFrameZoneOrder;
+    frameQueryCounts[frameIndex] = currentQueryIndex.load(std::memory_order_relaxed);
+    {
+        std::lock_guard<std::mutex> lock(zoneMutex_);
+        frameZoneOrders[frameIndex] = currentFrameZoneOrder;
+    }
 }
 
 void GpuProfiler::beginZone(VkCommandBuffer cmd, const char* zoneName) {
     if (!enabled || queryPools.empty()) return;
 
-    if (currentQueryIndex >= (maxZones * QUERIES_PER_ZONE)) {
+    uint32_t queryIdx = currentQueryIndex.load(std::memory_order_relaxed);
+    if (queryIdx >= (maxZones * QUERIES_PER_ZONE)) {
         SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "GPU Profiler: max zones exceeded");
         return;
     }
 
     ZoneInfo zone;
-    zone.startQueryIndex = currentQueryIndex++;
-    activeZones[zoneName] = zone;
-    currentFrameZoneOrder.push_back(zoneName);
+    zone.startQueryIndex = currentQueryIndex.fetch_add(1, std::memory_order_relaxed);
+
+    {
+        std::lock_guard<std::mutex> lock(zoneMutex_);
+        activeZones[zoneName] = zone;
+        currentFrameZoneOrder.push_back(zoneName);
+    }
 
     vk::CommandBuffer vkCmd(cmd);
 
@@ -192,19 +203,24 @@ void GpuProfiler::beginZone(VkCommandBuffer cmd, const char* zoneName) {
 void GpuProfiler::endZone(VkCommandBuffer cmd, const char* zoneName) {
     if (!enabled || queryPools.empty()) return;
 
-    auto it = activeZones.find(zoneName);
-    if (it == activeZones.end()) {
-        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "GPU Profiler: endZone called without beginZone for '%s'", zoneName);
-        return;
-    }
+    uint32_t endQueryIdx;
+    {
+        std::lock_guard<std::mutex> lock(zoneMutex_);
+        auto it = activeZones.find(zoneName);
+        if (it == activeZones.end()) {
+            SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "GPU Profiler: endZone called without beginZone for '%s'", zoneName);
+            return;
+        }
 
-    it->second.endQueryIndex = currentQueryIndex++;
+        endQueryIdx = currentQueryIndex.fetch_add(1, std::memory_order_relaxed);
+        it->second.endQueryIndex = endQueryIdx;
+    }
 
     vk::CommandBuffer vkCmd(cmd);
 
     // Write end timestamp - use ALL_COMMANDS to capture actual work completion
     vkCmd.writeTimestamp(vk::PipelineStageFlagBits::eAllCommands,
-                         queryPools[currentFrameIndex], it->second.endQueryIndex);
+                         queryPools[currentFrameIndex], endQueryIdx);
 }
 
 void GpuProfiler::collectResults(uint32_t frameIndex) {

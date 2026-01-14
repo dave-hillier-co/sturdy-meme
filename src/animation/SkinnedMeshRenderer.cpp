@@ -3,6 +3,7 @@
 #include "AnimatedCharacter.h"
 #include "Bindings.h"
 #include "UBOs.h"
+#include "core/vulkan/PipelineLayoutBuilder.h"
 
 #include <vulkan/vulkan.hpp>
 #include <SDL3/SDL.h>
@@ -76,23 +77,17 @@ bool SkinnedMeshRenderer::createDescriptorSetLayout() {
 }
 
 bool SkinnedMeshRenderer::createPipeline() {
-    // Create pipeline layout using vulkan-hpp builder
-    auto pushConstantRange = vk::PushConstantRange{}
-        .setStageFlags(vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment)
-        .setOffset(0)
-        .setSize(sizeof(PushConstants));
-
-    vk::DescriptorSetLayout layouts[] = { **descriptorSetLayout_ };
-    auto layoutInfo = vk::PipelineLayoutCreateInfo{}
-        .setSetLayouts(layouts)
-        .setPushConstantRanges(pushConstantRange);
-
-    try {
-        pipelineLayout_.emplace(*raiiDevice_, layoutInfo);
-    } catch (const vk::SystemError& e) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create skinned pipeline layout: %s", e.what());
+    // Create pipeline layout using PipelineLayoutBuilder
+    auto layoutOpt = PipelineLayoutBuilder(*raiiDevice_)
+        .addDescriptorSetLayout(**descriptorSetLayout_)
+        .addPushConstantRange<PushConstants>(
+            vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment)
+        .build();
+    if (!layoutOpt) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create skinned pipeline layout");
         return false;
     }
+    pipelineLayout_ = std::move(layoutOpt);
 
     // Use factory for pipeline creation with SkinnedVertex input
     auto bindingDescription = SkinnedVertex::getBindingDescription();

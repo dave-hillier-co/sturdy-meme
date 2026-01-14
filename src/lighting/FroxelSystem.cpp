@@ -4,6 +4,7 @@
 #include "core/vulkan/BarrierHelpers.h"
 #include "core/vulkan/VmaResources.h"
 #include "core/pipeline/ComputePipelineBuilder.h"
+#include "core/vulkan/PipelineLayoutBuilder.h"
 #include <SDL3/SDL_log.h>
 #include <vulkan/vulkan.hpp>
 #include <glm/gtc/matrix_transform.hpp>
@@ -224,14 +225,14 @@ bool FroxelSystem::createDescriptorSetLayout() {
     }
     froxelDescriptorSetLayout_.emplace(*raiiDevice_, rawLayout);
 
-    try {
-        vk::DescriptorSetLayout layouts[] = { **froxelDescriptorSetLayout_ };
-        auto layoutInfo = vk::PipelineLayoutCreateInfo{}.setSetLayouts(layouts);
-        froxelPipelineLayout_.emplace(*raiiDevice_, layoutInfo);
-    } catch (const std::exception& e) {
-        SDL_Log("Failed to create froxel pipeline layout: %s", e.what());
+    auto layoutOpt = PipelineLayoutBuilder(*raiiDevice_)
+        .addDescriptorSetLayout(**froxelDescriptorSetLayout_)
+        .build();
+    if (!layoutOpt) {
+        SDL_Log("Failed to create froxel pipeline layout");
         return false;
     }
+    froxelPipelineLayout_ = std::move(layoutOpt);
 
     return true;
 }

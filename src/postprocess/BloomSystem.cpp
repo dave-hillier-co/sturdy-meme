@@ -4,6 +4,7 @@
 #include "DescriptorManager.h"
 #include "core/ImageBuilder.h"
 #include "core/vulkan/BarrierHelpers.h"
+#include "core/vulkan/PipelineLayoutBuilder.h"
 #include <vulkan/vulkan.hpp>
 #include <array>
 #include <algorithm>
@@ -257,44 +258,26 @@ bool BloomSystem::createDescriptorSetLayouts() {
 }
 
 bool BloomSystem::createPipelines() {
-    // Create pipeline layouts with push constants using vulkan-hpp builders
-    auto downsamplePushConstantRange = vk::PushConstantRange{}
-        .setStageFlags(vk::ShaderStageFlagBits::eFragment)
-        .setOffset(0)
-        .setSize(sizeof(DownsamplePushConstants));
-
-    vk::DescriptorSetLayout downsampleLayout = **downsampleDescSetLayout_;
-    auto downsampleLayoutInfo = vk::PipelineLayoutCreateInfo{}
-        .setSetLayoutCount(1)
-        .setPSetLayouts(&downsampleLayout)
-        .setPushConstantRangeCount(1)
-        .setPPushConstantRanges(&downsamplePushConstantRange);
-
-    try {
-        downsamplePipelineLayout_.emplace(*raiiDevice_, downsampleLayoutInfo);
-    } catch (const vk::SystemError& e) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create downsample pipeline layout: %s", e.what());
+    // Create pipeline layouts with push constants using PipelineLayoutBuilder
+    auto downsampleLayoutOpt = PipelineLayoutBuilder(*raiiDevice_)
+        .addDescriptorSetLayout(**downsampleDescSetLayout_)
+        .addPushConstantRange<DownsamplePushConstants>(vk::ShaderStageFlagBits::eFragment)
+        .build();
+    if (!downsampleLayoutOpt) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create downsample pipeline layout");
         return false;
     }
+    downsamplePipelineLayout_ = std::move(downsampleLayoutOpt);
 
-    auto upsamplePushConstantRange = vk::PushConstantRange{}
-        .setStageFlags(vk::ShaderStageFlagBits::eFragment)
-        .setOffset(0)
-        .setSize(sizeof(UpsamplePushConstants));
-
-    vk::DescriptorSetLayout upsampleLayout = **upsampleDescSetLayout_;
-    auto upsampleLayoutInfo = vk::PipelineLayoutCreateInfo{}
-        .setSetLayoutCount(1)
-        .setPSetLayouts(&upsampleLayout)
-        .setPushConstantRangeCount(1)
-        .setPPushConstantRanges(&upsamplePushConstantRange);
-
-    try {
-        upsamplePipelineLayout_.emplace(*raiiDevice_, upsampleLayoutInfo);
-    } catch (const vk::SystemError& e) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create upsample pipeline layout: %s", e.what());
+    auto upsampleLayoutOpt = PipelineLayoutBuilder(*raiiDevice_)
+        .addDescriptorSetLayout(**upsampleDescSetLayout_)
+        .addPushConstantRange<UpsamplePushConstants>(vk::ShaderStageFlagBits::eFragment)
+        .build();
+    if (!upsampleLayoutOpt) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create upsample pipeline layout");
         return false;
     }
+    upsamplePipelineLayout_ = std::move(upsampleLayoutOpt);
 
     // Create downsample pipeline using factory
     GraphicsPipelineFactory factory(device);

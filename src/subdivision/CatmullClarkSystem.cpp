@@ -3,6 +3,7 @@
 #include "ShaderLoader.h"
 #include "BufferUtils.h"
 #include "VmaResources.h"
+#include "core/vulkan/PipelineLayoutBuilder.h"
 #include <SDL3/SDL.h>
 #include <glm/gtc/matrix_transform.hpp>
 #include <vulkan/vulkan.hpp>
@@ -291,24 +292,17 @@ bool CatmullClarkSystem::createSubdivisionPipeline() {
 
     vk::Device vkDevice(device);
 
-    // Push constants for subdivision parameters
-    auto pushConstantRange = vk::PushConstantRange{}
-        .setStageFlags(vk::ShaderStageFlagBits::eCompute)
-        .setOffset(0)
-        .setSize(sizeof(CatmullClarkSubdivisionPushConstants));
-
-    vk::DescriptorSetLayout setLayout(**computeDescriptorSetLayout_);
-    auto layoutInfo = vk::PipelineLayoutCreateInfo{}
-        .setSetLayouts(setLayout)
-        .setPushConstantRanges(pushConstantRange);
-
-    try {
-        subdivisionPipelineLayout_.emplace(*raiiDevice_, layoutInfo);
-    } catch (const vk::SystemError& e) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create subdivision pipeline layout: %s", e.what());
+    // Create pipeline layout with push constants for subdivision parameters
+    auto layoutOpt = PipelineLayoutBuilder(*raiiDevice_)
+        .addDescriptorSetLayout(**computeDescriptorSetLayout_)
+        .addPushConstantRange<CatmullClarkSubdivisionPushConstants>(vk::ShaderStageFlagBits::eCompute)
+        .build();
+    if (!layoutOpt) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create subdivision pipeline layout");
         vkDevice.destroyShaderModule(*shaderModule);
         return false;
     }
+    subdivisionPipelineLayout_ = std::move(layoutOpt);
 
     auto stageInfo = vk::PipelineShaderStageCreateInfo{}
         .setStage(vk::ShaderStageFlagBits::eCompute)
@@ -390,25 +384,18 @@ bool CatmullClarkSystem::createRenderPipeline() {
     auto dynamicState = vk::PipelineDynamicStateCreateInfo{}
         .setDynamicStates(dynamicStates);
 
-    // Push constants for model matrix
-    auto pushConstantRange = vk::PushConstantRange{}
-        .setStageFlags(vk::ShaderStageFlagBits::eVertex)
-        .setOffset(0)
-        .setSize(sizeof(CatmullClarkPushConstants));
-
-    vk::DescriptorSetLayout setLayout(**renderDescriptorSetLayout_);
-    auto layoutInfo = vk::PipelineLayoutCreateInfo{}
-        .setSetLayouts(setLayout)
-        .setPushConstantRanges(pushConstantRange);
-
-    try {
-        renderPipelineLayout_.emplace(*raiiDevice_, layoutInfo);
-    } catch (const vk::SystemError& e) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create render pipeline layout: %s", e.what());
+    // Create pipeline layout with push constants for model matrix
+    auto renderLayoutOpt = PipelineLayoutBuilder(*raiiDevice_)
+        .addDescriptorSetLayout(**renderDescriptorSetLayout_)
+        .addPushConstantRange<CatmullClarkPushConstants>(vk::ShaderStageFlagBits::eVertex)
+        .build();
+    if (!renderLayoutOpt) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create render pipeline layout");
         vkDevice.destroyShaderModule(*vertModule);
         vkDevice.destroyShaderModule(*fragModule);
         return false;
     }
+    renderPipelineLayout_ = std::move(renderLayoutOpt);
 
     auto pipelineInfo = vk::GraphicsPipelineCreateInfo{}
         .setStages(shaderStages)

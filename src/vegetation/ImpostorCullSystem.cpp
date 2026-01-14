@@ -3,6 +3,7 @@
 #include "TreeImpostorAtlas.h"
 #include "ShaderLoader.h"
 #include "shaders/bindings.h"
+#include "core/vulkan/PipelineLayoutBuilder.h"
 
 #include <SDL3/SDL.h>
 #include <vulkan/vulkan.hpp>
@@ -152,12 +153,14 @@ bool ImpostorCullSystem::createDescriptorSetLayout() {
 
 bool ImpostorCullSystem::createComputePipeline() {
     // Create pipeline layout
-    vk::DescriptorSetLayout layouts[] = {**cullDescriptorSetLayout_};
-
-    auto pipelineLayoutInfo = vk::PipelineLayoutCreateInfo{}
-        .setSetLayouts(layouts);
-
-    cullPipelineLayout_.emplace(*raiiDevice_, pipelineLayoutInfo);
+    auto layoutOpt = PipelineLayoutBuilder(*raiiDevice_)
+        .addDescriptorSetLayout(**cullDescriptorSetLayout_)
+        .build();
+    if (!layoutOpt) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "ImpostorCullSystem: Failed to create pipeline layout");
+        return false;
+    }
+    cullPipelineLayout_ = std::move(layoutOpt);
 
     // Load compute shader
     std::string shaderPath = resourcePath_ + "/shaders/tree_impostor_cull.comp.spv";

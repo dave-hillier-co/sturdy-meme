@@ -4,6 +4,7 @@
 #include "ShaderLoader.h"
 #include "Bindings.h"
 #include "UBOs.h"
+#include "core/vulkan/PipelineLayoutBuilder.h"
 #include <SDL3/SDL_log.h>
 #include <vulkan/vulkan.hpp>
 #include <algorithm>
@@ -84,9 +85,14 @@ bool TreeLeafCulling::createLeafCullPipeline() {
     }
     cullDescriptorSetLayout_.emplace(*raiiDevice_, rawLayout);
 
-    vk::DescriptorSetLayout dsl = **cullDescriptorSetLayout_;
-    auto pipelineLayoutInfo = vk::PipelineLayoutCreateInfo{}.setSetLayouts(dsl);
-    cullPipelineLayout_.emplace(*raiiDevice_, pipelineLayoutInfo);
+    auto layoutOpt = PipelineLayoutBuilder(*raiiDevice_)
+        .addDescriptorSetLayout(**cullDescriptorSetLayout_)
+        .build();
+    if (!layoutOpt) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "TreeLeafCulling: Failed to create cull pipeline layout");
+        return false;
+    }
+    cullPipelineLayout_ = std::move(layoutOpt);
 
     std::string shaderPath = resourcePath_ + "/shaders/tree_leaf_cull.comp.spv";
     auto shaderModuleOpt = ShaderLoader::loadShaderModule(device_, shaderPath);
@@ -222,9 +228,14 @@ bool TreeLeafCulling::createCellCullPipeline() {
     }
     cellCullDescriptorSetLayout_.emplace(*raiiDevice_, rawLayout);
 
-    vk::DescriptorSetLayout dsl = **cellCullDescriptorSetLayout_;
-    auto pipelineLayoutInfo = vk::PipelineLayoutCreateInfo{}.setSetLayouts(dsl);
-    cellCullPipelineLayout_.emplace(*raiiDevice_, pipelineLayoutInfo);
+    auto layoutOpt = PipelineLayoutBuilder(*raiiDevice_)
+        .addDescriptorSetLayout(**cellCullDescriptorSetLayout_)
+        .build();
+    if (!layoutOpt) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "TreeLeafCulling: Failed to create cell cull pipeline layout");
+        return false;
+    }
+    cellCullPipelineLayout_ = std::move(layoutOpt);
 
     std::string shaderPath = resourcePath_ + "/shaders/tree_cell_cull.comp.spv";
     auto shaderModuleOpt = ShaderLoader::loadShaderModule(device_, shaderPath);
@@ -351,9 +362,14 @@ bool TreeLeafCulling::createTreeFilterPipeline() {
     }
     treeFilterDescriptorSetLayout_.emplace(*raiiDevice_, rawLayout);
 
-    vk::DescriptorSetLayout dsl = **treeFilterDescriptorSetLayout_;
-    auto pipelineLayoutInfo = vk::PipelineLayoutCreateInfo{}.setSetLayouts(dsl);
-    treeFilterPipelineLayout_.emplace(*raiiDevice_, pipelineLayoutInfo);
+    auto layoutOpt = PipelineLayoutBuilder(*raiiDevice_)
+        .addDescriptorSetLayout(**treeFilterDescriptorSetLayout_)
+        .build();
+    if (!layoutOpt) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "TreeLeafCulling: Failed to create tree filter pipeline layout");
+        return false;
+    }
+    treeFilterPipelineLayout_ = std::move(layoutOpt);
 
     std::string shaderPath = resourcePath_ + "/shaders/tree_filter.comp.spv";
     auto shaderModuleOpt = ShaderLoader::loadShaderModule(device_, shaderPath);
@@ -478,9 +494,14 @@ bool TreeLeafCulling::createTwoPhaseLeafCullPipeline() {
     }
     twoPhaseLeafCullDescriptorSetLayout_.emplace(*raiiDevice_, rawLayout);
 
-    vk::DescriptorSetLayout dsl = **twoPhaseLeafCullDescriptorSetLayout_;
-    auto pipelineLayoutInfo = vk::PipelineLayoutCreateInfo{}.setSetLayouts(dsl);
-    twoPhaseLeafCullPipelineLayout_.emplace(*raiiDevice_, pipelineLayoutInfo);
+    auto layoutOpt = PipelineLayoutBuilder(*raiiDevice_)
+        .addDescriptorSetLayout(**twoPhaseLeafCullDescriptorSetLayout_)
+        .build();
+    if (!layoutOpt) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "TreeLeafCulling: Failed to create two-phase leaf cull pipeline layout");
+        return false;
+    }
+    twoPhaseLeafCullPipelineLayout_ = std::move(layoutOpt);
 
     std::string shaderPath = resourcePath_ + "/shaders/tree_leaf_cull_phase3.comp.spv";
     auto shaderModuleOpt = ShaderLoader::loadShaderModule(device_, shaderPath);

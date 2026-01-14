@@ -8,7 +8,7 @@ bool AtmosphereLUTSystem::createComputePipelines() {
     // Create transmittance pipeline
     if (!builder.setShader(shaderPath + "/transmittance_lut.comp.spv")
                 .setPipelineLayout(transmittancePipelineLayout)
-                .build(transmittancePipeline)) {
+                .buildRaw(transmittancePipeline)) {
         SDL_Log("Failed to create transmittance pipeline");
         return false;
     }
@@ -17,7 +17,7 @@ bool AtmosphereLUTSystem::createComputePipelines() {
     if (!builder.reset()
                 .setShader(shaderPath + "/multiscatter_lut.comp.spv")
                 .setPipelineLayout(multiScatterPipelineLayout)
-                .build(multiScatterPipeline)) {
+                .buildRaw(multiScatterPipeline)) {
         SDL_Log("Failed to create multi-scatter pipeline");
         return false;
     }
@@ -26,7 +26,7 @@ bool AtmosphereLUTSystem::createComputePipelines() {
     if (!builder.reset()
                 .setShader(shaderPath + "/skyview_lut.comp.spv")
                 .setPipelineLayout(skyViewPipelineLayout)
-                .build(skyViewPipeline)) {
+                .buildRaw(skyViewPipeline)) {
         SDL_Log("Failed to create sky-view pipeline");
         return false;
     }
@@ -35,7 +35,7 @@ bool AtmosphereLUTSystem::createComputePipelines() {
     if (!builder.reset()
                 .setShader(shaderPath + "/irradiance_lut.comp.spv")
                 .setPipelineLayout(irradiancePipelineLayout)
-                .build(irradiancePipeline)) {
+                .buildRaw(irradiancePipeline)) {
         SDL_Log("Failed to create irradiance pipeline");
         return false;
     }
@@ -44,7 +44,7 @@ bool AtmosphereLUTSystem::createComputePipelines() {
     if (!builder.reset()
                 .setShader(shaderPath + "/cloudmap_lut.comp.spv")
                 .setPipelineLayout(cloudMapPipelineLayout)
-                .build(cloudMapPipeline)) {
+                .buildRaw(cloudMapPipeline)) {
         SDL_Log("Failed to create cloud map pipeline");
         return false;
     }

@@ -3,6 +3,7 @@
 #include "DescriptorManager.h"
 #include "VmaResources.h"
 #include "core/vulkan/BarrierHelpers.h"
+#include "core/vulkan/PipelineLayoutBuilder.h"
 #include "core/pipeline/ComputePipelineBuilder.h"
 #include <SDL3/SDL_log.h>
 #include <vulkan/vulkan.hpp>
@@ -192,39 +193,21 @@ bool CloudShadowSystem::createDescriptorSets() {
 }
 
 bool CloudShadowSystem::createComputePipeline() {
-    // Push constant for temporal spreading quadrant index
-    auto pushConstantRange = vk::PushConstantRange{}
-        .setStageFlags(vk::ShaderStageFlagBits::eCompute)
-        .setOffset(0)
-        .setSize(sizeof(uint32_t));  // quadrantIndex
-
-    // Create pipeline layout
-    vk::DescriptorSetLayout descLayout = **descriptorSetLayout_;
-    auto layoutInfo = vk::PipelineLayoutCreateInfo{}
-        .setSetLayoutCount(1)
-        .setPSetLayouts(&descLayout)
-        .setPushConstantRangeCount(1)
-        .setPPushConstantRanges(&pushConstantRange);
-
-    try {
-        pipelineLayout_.emplace(*raiiDevice_, layoutInfo);
-    } catch (const vk::SystemError& e) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create cloud shadow pipeline layout: %s", e.what());
+    // Create pipeline layout with push constant for temporal spreading quadrant index
+    auto layoutOpt = PipelineLayoutBuilder(*raiiDevice_)
+        .addDescriptorSetLayout(**descriptorSetLayout_)
+        .addPushConstantRange(vk::ShaderStageFlagBits::eCompute, sizeof(uint32_t))  // quadrantIndex
+        .build();
+    if (!layoutOpt) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create cloud shadow pipeline layout");
         return false;
     }
+    pipelineLayout_ = std::move(layoutOpt);
 
-    // Create compute pipeline
-    VkPipeline rawPipeline = VK_NULL_HANDLE;
-    ComputePipelineBuilder builder(device);
-    if (!builder.setShader(shaderPath + "/cloud_shadow.comp.spv")
-                .setPipelineLayout(**pipelineLayout_)
-                .build(rawPipeline)) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create cloud shadow compute pipeline");
-        return false;
-    }
-    computePipeline_.emplace(*raiiDevice_, rawPipeline);
-
-    return true;
+    return ComputePipelineBuilder(*raiiDevice_)
+        .setShader(shaderPath + "/cloud_shadow.comp.spv")
+        .setPipelineLayout(**pipelineLayout_)
+        .buildInto(computePipeline_);
 }
 
 void CloudShadowSystem::updateWorldToShadowMatrix(const glm::vec3& sunDir, const glm::vec3& cameraPos) {

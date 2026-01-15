@@ -5,6 +5,7 @@
 #include "Mesh.h"
 #include "ShaderLoader.h"
 #include "shaders/bindings.h"
+#include "core/vulkan/PipelineLayoutBuilder.h"
 
 #include <SDL3/SDL.h>
 #include <vulkan/vulkan.hpp>
@@ -260,19 +261,18 @@ bool TreeLODSystem::createDescriptorSetLayout() {
 }
 
 bool TreeLODSystem::createPipeline() {
-    // Pipeline layout with push constants
-    auto pushConstant = vk::PushConstantRange{}
-        .setStageFlags(vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment)
-        .setOffset(0)
-        .setSize(sizeof(glm::vec4) * 3);  // cameraPos, lodParams, atlasParams
-
-    vk::DescriptorSetLayout layouts[] = {**impostorDescriptorSetLayout_};
-
-    auto pipelineLayoutInfo = vk::PipelineLayoutCreateInfo{}
-        .setSetLayouts(layouts)
-        .setPushConstantRanges(pushConstant);
-
-    impostorPipelineLayout_.emplace(*raiiDevice_, pipelineLayoutInfo);
+    // Pipeline layout with push constants: cameraPos, lodParams, atlasParams
+    auto layoutOpt = PipelineLayoutBuilder(*raiiDevice_)
+        .addDescriptorSetLayout(**impostorDescriptorSetLayout_)
+        .addPushConstantRange(
+            vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
+            sizeof(glm::vec4) * 3)  // cameraPos, lodParams, atlasParams
+        .build();
+    if (!layoutOpt) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "TreeLODSystem: Failed to create impostor pipeline layout");
+        return false;
+    }
+    impostorPipelineLayout_ = std::move(layoutOpt);
 
     // Load shaders
     std::string shaderPath = resourcePath_ + "/shaders/";
@@ -426,18 +426,17 @@ bool TreeLODSystem::createShadowDescriptorSetLayout() {
 
 bool TreeLODSystem::createShadowPipeline() {
     // Push constants: cameraPos, lodParams, atlasParams, cascadeIndex
-    auto pushConstant = vk::PushConstantRange{}
-        .setStageFlags(vk::ShaderStageFlagBits::eVertex)
-        .setOffset(0)
-        .setSize(sizeof(glm::vec4) * 3 + sizeof(int));  // cameraPos, lodParams, atlasParams, cascadeIndex
-
-    vk::DescriptorSetLayout layouts[] = {**shadowDescriptorSetLayout_};
-
-    auto pipelineLayoutInfo = vk::PipelineLayoutCreateInfo{}
-        .setSetLayouts(layouts)
-        .setPushConstantRanges(pushConstant);
-
-    shadowPipelineLayout_.emplace(*raiiDevice_, pipelineLayoutInfo);
+    auto layoutOpt = PipelineLayoutBuilder(*raiiDevice_)
+        .addDescriptorSetLayout(**shadowDescriptorSetLayout_)
+        .addPushConstantRange(
+            vk::ShaderStageFlagBits::eVertex,
+            sizeof(glm::vec4) * 3 + sizeof(int))  // cameraPos, lodParams, atlasParams, cascadeIndex
+        .build();
+    if (!layoutOpt) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "TreeLODSystem: Failed to create shadow pipeline layout");
+        return false;
+    }
+    shadowPipelineLayout_ = std::move(layoutOpt);
 
     // Load shadow shaders
     std::string shaderPath = resourcePath_ + "/shaders/";

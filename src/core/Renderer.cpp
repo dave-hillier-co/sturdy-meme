@@ -10,6 +10,7 @@
 #include "VmaResources.h"
 #include "Bindings.h"
 #include "InitProfiler.h"
+#include "core/vulkan/PipelineLayoutBuilder.h"
 
 // Subsystem includes for render loop
 // Core systems
@@ -761,24 +762,17 @@ bool Renderer::createGraphicsPipeline() {
     vk::Device device(vulkanContext_->getVkDevice());
     VkExtent2D swapchainExtent = vulkanContext_->getVkSwapchainExtent();
 
-    // Create pipeline layout (still needed - factory expects it to be provided)
-    auto pushConstantRange = vk::PushConstantRange{}
-        .setStageFlags(vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment)
-        .setOffset(0)
-        .setSize(sizeof(PushConstants));
-
-    vk::DescriptorSetLayout descSetLayouts[] = {**descriptorSetLayout_};
-
-    auto pipelineLayoutInfo = vk::PipelineLayoutCreateInfo{}
-        .setSetLayouts(descSetLayouts)
-        .setPushConstantRanges(pushConstantRange);
-
-    try {
-        pipelineLayout_.emplace(vulkanContext_->getRaiiDevice(), pipelineLayoutInfo);
-    } catch (const vk::SystemError& e) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create pipeline layout: %s", e.what());
+    // Create pipeline layout using PipelineLayoutBuilder
+    auto layoutOpt = PipelineLayoutBuilder(vulkanContext_->getRaiiDevice())
+        .addDescriptorSetLayout(**descriptorSetLayout_)
+        .addPushConstantRange<PushConstants>(
+            vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment)
+        .build();
+    if (!layoutOpt) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create pipeline layout");
         return false;
     }
+    pipelineLayout_ = std::move(layoutOpt);
 
     // Use factory for pipeline creation
     auto bindingDescription = Vertex::getBindingDescription();

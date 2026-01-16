@@ -5,19 +5,17 @@
 #include <glm/gtc/quaternion.hpp>
 #include <optional>
 #include <functional>
-#include "SceneNode.h"
+#include "Transform.h"
 
 /**
- * Camera - First-person and third-person camera with SceneNode integration
- *
- * Includes a SceneNode for:
- * - Parent-child relationships (e.g., camera attached to vehicle)
- * - Consistent transform API with rest of scene graph
- * - Optional target node following in third-person mode
+ * Camera - First-person and third-person camera
  *
  * Supports two modes:
  * - Free camera: Direct position/rotation control
  * - Third-person: Orbits around a target with smoothing
+ *
+ * For third-person mode, can optionally follow a target via callback
+ * (e.g., bind to a TransformHierarchy node's world position).
  */
 class Camera {
 public:
@@ -42,7 +40,11 @@ public:
     // Third-person camera controls
     // ========================================================================
     void setThirdPersonTarget(const glm::vec3& target);
-    void setThirdPersonTargetNode(SceneNode* targetNode);  // Follow a scene node
+
+    // Follow a dynamic target via callback (e.g., from TransformHierarchy)
+    // Example: camera.setThirdPersonTargetCallback([&]{ return hierarchy.getWorldPosition(handle); });
+    using WorldPositionCallback = std::function<glm::vec3()>;
+    void setThirdPersonTargetCallback(WorldPositionCallback callback);
     void orbitYaw(float delta);
     void orbitPitch(float delta);
     void adjustDistance(float delta);
@@ -93,22 +95,14 @@ public:
     float getSmoothedDistance() const { return smoothedDistance_; }
 
     // ========================================================================
-    // Scene graph integration
+    // Transform access
     // ========================================================================
 
-    // Get the camera's scene node for parent-child relationships
-    // Example: Attach camera to a vehicle node
-    SceneNode& getNode() { return node_; }
-    const SceneNode& getNode() const { return node_; }
-
-    // Sync node transform from camera state (call after camera updates)
-    void syncNodeTransform();
+    // Get camera transform (position + rotation as quaternion)
+    Transform getTransform() const;
 
 private:
     void updateVectors();
-
-    // Scene node for hierarchy (optional parent attachment)
-    SceneNode node_;
 
     // Core transform state
     glm::vec3 position_;
@@ -129,7 +123,7 @@ private:
 
     // Third-person camera settings
     glm::vec3 thirdPersonTarget_;
-    std::optional<std::reference_wrapper<SceneNode>> thirdPersonTargetNode_;  // Optional: follow a scene node
+    WorldPositionCallback thirdPersonTargetCallback_;  // Optional: dynamic target position
     float thirdPersonDistance_;
     float thirdPersonMinDistance_;
     float thirdPersonMaxDistance_;

@@ -17,13 +17,15 @@ std::unique_ptr<TerrainTextures> TerrainTextures::create(const InitInfo& info) {
 }
 
 TerrainTextures::~TerrainTextures() {
+    if (!device) return;
+    vk::Device vkDevice(device);
     // Samplers via RAII
     albedoSampler_.reset();
-    if (albedoView) vkDestroyImageView(device, albedoView, nullptr);
+    if (albedoView) vkDevice.destroyImageView(albedoView);
     if (albedoImage) vmaDestroyImage(allocator, albedoImage, albedoAllocation);
 
     grassFarLODSampler_.reset();
-    if (grassFarLODView) vkDestroyImageView(device, grassFarLODView, nullptr);
+    if (grassFarLODView) vkDevice.destroyImageView(grassFarLODView);
     if (grassFarLODImage) vmaDestroyImage(allocator, grassFarLODImage, grassFarLODAllocation);
 }
 
@@ -57,12 +59,15 @@ TerrainTextures::TerrainTextures(TerrainTextures&& other) noexcept
 TerrainTextures& TerrainTextures::operator=(TerrainTextures&& other) noexcept {
     if (this != &other) {
         // Clean up current resources
-        albedoSampler_.reset();
-        if (albedoView) vkDestroyImageView(device, albedoView, nullptr);
-        if (albedoImage) vmaDestroyImage(allocator, albedoImage, albedoAllocation);
-        grassFarLODSampler_.reset();
-        if (grassFarLODView) vkDestroyImageView(device, grassFarLODView, nullptr);
-        if (grassFarLODImage) vmaDestroyImage(allocator, grassFarLODImage, grassFarLODAllocation);
+        if (device) {
+            vk::Device vkDevice(device);
+            albedoSampler_.reset();
+            if (albedoView) vkDevice.destroyImageView(albedoView);
+            if (albedoImage) vmaDestroyImage(allocator, albedoImage, albedoAllocation);
+            grassFarLODSampler_.reset();
+            if (grassFarLODView) vkDevice.destroyImageView(grassFarLODView);
+            if (grassFarLODImage) vmaDestroyImage(allocator, grassFarLODImage, grassFarLODAllocation);
+        }
 
         // Move from other
         raiiDevice_ = other.raiiDevice_;
@@ -163,8 +168,11 @@ bool TerrainTextures::createAlbedoTexture() {
             .setBaseArrayLayer(0)
             .setLayerCount(1));
 
-    if (vkCreateImageView(device, reinterpret_cast<const VkImageViewCreateInfo*>(&viewInfo), nullptr, &albedoView) != VK_SUCCESS) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create terrain albedo image view");
+    vk::Device vkDevice(device);
+    try {
+        albedoView = static_cast<VkImageView>(vkDevice.createImageView(viewInfo));
+    } catch (const vk::SystemError& e) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create terrain albedo image view: %s", e.what());
         stbi_image_free(pixels);
         return false;
     }
@@ -249,8 +257,11 @@ bool TerrainTextures::createGrassFarLODTexture() {
             .setBaseArrayLayer(0)
             .setLayerCount(1));
 
-    if (vkCreateImageView(device, reinterpret_cast<const VkImageViewCreateInfo*>(&viewInfo), nullptr, &grassFarLODView) != VK_SUCCESS) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create grass far LOD image view");
+    vk::Device vkDevice(device);
+    try {
+        grassFarLODView = static_cast<VkImageView>(vkDevice.createImageView(viewInfo));
+    } catch (const vk::SystemError& e) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create grass far LOD image view: %s", e.what());
         stbi_image_free(pixels);
         return false;
     }

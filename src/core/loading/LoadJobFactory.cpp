@@ -274,22 +274,25 @@ UploadedTexture StagedResourceUploader::uploadTexture(const StagedTexture& stage
         }
     }
 
-    // Create image view using C API (vulkan-hpp structured binding not always available)
-    VkImageViewCreateInfo viewInfo{};
-    viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-    viewInfo.image = managedImage.get();
-    viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
-    viewInfo.format = imageFormat;
-    viewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-    viewInfo.subresourceRange.baseMipLevel = 0;
-    viewInfo.subresourceRange.levelCount = 1;
-    viewInfo.subresourceRange.baseArrayLayer = 0;
-    viewInfo.subresourceRange.layerCount = 1;
+    // Create image view using vulkan-hpp
+    auto viewInfo = vk::ImageViewCreateInfo{}
+        .setImage(managedImage.get())
+        .setViewType(vk::ImageViewType::e2D)
+        .setFormat(static_cast<vk::Format>(imageFormat))
+        .setSubresourceRange(vk::ImageSubresourceRange{}
+            .setAspectMask(vk::ImageAspectFlagBits::eColor)
+            .setBaseMipLevel(0)
+            .setLevelCount(1)
+            .setBaseArrayLayer(0)
+            .setLayerCount(1));
 
     VkImageView imageView;
-    if (vkCreateImageView(ctx_.device, &viewInfo, nullptr, &imageView) != VK_SUCCESS) {
+    vk::Device vkDevice(ctx_.device);
+    try {
+        imageView = static_cast<VkImageView>(vkDevice.createImageView(viewInfo));
+    } catch (const vk::SystemError& e) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
-                    "Failed to create image view for '%s'", staged.name.c_str());
+                    "Failed to create image view for '%s': %s", staged.name.c_str(), e.what());
         return result;
     }
 
@@ -392,6 +395,7 @@ void AsyncTextureUploader::shutdown() {
     // Wait for all pending transfers and clean up
     {
         std::lock_guard<std::mutex> lock(pendingMutex_);
+        vk::Device vkDevice(device_);
         for (auto& [id, upload] : pendingUploads_) {
             // Wait for transfer to complete before destroying resources
             if (upload.transferHandle.isValid()) {
@@ -400,7 +404,7 @@ void AsyncTextureUploader::shutdown() {
 
             // Clean up GPU resources
             if (upload.view != VK_NULL_HANDLE) {
-                vkDestroyImageView(device_, upload.view, nullptr);
+                vkDevice.destroyImageView(upload.view);
             }
             // ManagedImage destructor handles image cleanup
         }
@@ -438,22 +442,25 @@ AsyncTextureHandle AsyncTextureUploader::submitTexture(const StagedTexture& stag
         return {};
     }
 
-    // Create image view immediately (also fast)
-    VkImageViewCreateInfo viewInfo{};
-    viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-    viewInfo.image = managedImage.get();
-    viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
-    viewInfo.format = imageFormat;
-    viewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-    viewInfo.subresourceRange.baseMipLevel = 0;
-    viewInfo.subresourceRange.levelCount = 1;
-    viewInfo.subresourceRange.baseArrayLayer = 0;
-    viewInfo.subresourceRange.layerCount = 1;
+    // Create image view immediately using vulkan-hpp
+    auto viewInfo = vk::ImageViewCreateInfo{}
+        .setImage(managedImage.get())
+        .setViewType(vk::ImageViewType::e2D)
+        .setFormat(static_cast<vk::Format>(imageFormat))
+        .setSubresourceRange(vk::ImageSubresourceRange{}
+            .setAspectMask(vk::ImageAspectFlagBits::eColor)
+            .setBaseMipLevel(0)
+            .setLevelCount(1)
+            .setBaseArrayLayer(0)
+            .setLayerCount(1));
 
     VkImageView imageView;
-    if (vkCreateImageView(device_, &viewInfo, nullptr, &imageView) != VK_SUCCESS) {
+    vk::Device vkDevice(device_);
+    try {
+        imageView = static_cast<VkImageView>(vkDevice.createImageView(viewInfo));
+    } catch (const vk::SystemError& e) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
-            "AsyncTextureUploader: Failed to create image view for '%s'", staged.name.c_str());
+            "AsyncTextureUploader: Failed to create image view for '%s': %s", staged.name.c_str(), e.what());
         return {};
     }
 
@@ -471,7 +478,7 @@ AsyncTextureHandle AsyncTextureUploader::submitTexture(const StagedTexture& stag
     if (!transferHandle.isValid()) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
             "AsyncTextureUploader: Failed to submit transfer for '%s'", staged.name.c_str());
-        vkDestroyImageView(device_, imageView, nullptr);
+        vkDevice.destroyImageView(imageView);
         return {};
     }
 

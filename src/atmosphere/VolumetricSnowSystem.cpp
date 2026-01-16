@@ -40,9 +40,10 @@ void VolumetricSnowSystem::cleanup() {
 
     cascadeSampler_.reset();
 
+    vk::Device vkDevice(lifecycle.getDevice());
     for (uint32_t i = 0; i < NUM_SNOW_CASCADES; i++) {
         if (cascadeViews[i]) {
-            vkDestroyImageView(lifecycle.getDevice(), cascadeViews[i], nullptr);
+            vkDevice.destroyImageView(cascadeViews[i]);
             cascadeViews[i] = VK_NULL_HANDLE;
         }
         if (cascadeImages[i]) {
@@ -121,8 +122,11 @@ bool VolumetricSnowSystem::createCascadeTextures() {
                 .setBaseArrayLayer(0)
                 .setLayerCount(1));
 
-        if (vkCreateImageView(getDevice(), reinterpret_cast<const VkImageViewCreateInfo*>(&viewInfo), nullptr, &cascadeViews[i]) != VK_SUCCESS) {
-            SDL_Log("Failed to create volumetric snow cascade %d image view", i);
+        vk::Device vkDevice(getDevice());
+        try {
+            cascadeViews[i] = static_cast<VkImageView>(vkDevice.createImageView(viewInfo));
+        } catch (const vk::SystemError& e) {
+            SDL_Log("Failed to create volumetric snow cascade %d image view: %s", i, e.what());
             return false;
         }
     }

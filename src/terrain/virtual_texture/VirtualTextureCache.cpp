@@ -30,9 +30,12 @@ VirtualTextureCache::~VirtualTextureCache() {
 
     cacheSampler_.reset();
 
-    if (cacheImageView != VK_NULL_HANDLE) {
-        vkDestroyImageView(device_, cacheImageView, nullptr);
-        cacheImageView = VK_NULL_HANDLE;
+    if (device_) {
+        vk::Device vkDevice(device_);
+        if (cacheImageView != VK_NULL_HANDLE) {
+            vkDevice.destroyImageView(cacheImageView);
+            cacheImageView = VK_NULL_HANDLE;
+        }
     }
 
     if (cacheImage != VK_NULL_HANDLE) {
@@ -77,8 +80,11 @@ VirtualTextureCache& VirtualTextureCache::operator=(VirtualTextureCache&& other)
             stagingBuffers_[i].reset();
         }
         cacheSampler_.reset();
-        if (cacheImageView != VK_NULL_HANDLE) {
-            vkDestroyImageView(device_, cacheImageView, nullptr);
+        if (device_) {
+            vk::Device vkDevice(device_);
+            if (cacheImageView != VK_NULL_HANDLE) {
+                vkDevice.destroyImageView(cacheImageView);
+            }
         }
         if (cacheImage != VK_NULL_HANDLE) {
             vmaDestroyImage(allocator_, cacheImage, cacheAllocation);
@@ -203,19 +209,23 @@ bool VirtualTextureCache::createCacheTexture(VkDevice device, VmaAllocator alloc
         return false;
     }
 
-    // Create image view
-    VkImageViewCreateInfo viewInfo{};
-    viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-    viewInfo.image = cacheImage;
-    viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
-    viewInfo.format = cacheFormat;
-    viewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-    viewInfo.subresourceRange.baseMipLevel = 0;
-    viewInfo.subresourceRange.levelCount = 1;
-    viewInfo.subresourceRange.baseArrayLayer = 0;
-    viewInfo.subresourceRange.layerCount = 1;
+    // Create image view using vulkan-hpp
+    auto viewInfo = vk::ImageViewCreateInfo{}
+        .setImage(cacheImage)
+        .setViewType(vk::ImageViewType::e2D)
+        .setFormat(static_cast<vk::Format>(cacheFormat))
+        .setSubresourceRange(vk::ImageSubresourceRange{}
+            .setAspectMask(vk::ImageAspectFlagBits::eColor)
+            .setBaseMipLevel(0)
+            .setLevelCount(1)
+            .setBaseArrayLayer(0)
+            .setLayerCount(1));
 
-    if (vkCreateImageView(device, &viewInfo, nullptr, &cacheImageView) != VK_SUCCESS) {
+    vk::Device vkDevice(device);
+    try {
+        cacheImageView = static_cast<VkImageView>(vkDevice.createImageView(viewInfo));
+    } catch (const vk::SystemError& e) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create VT cache image view: %s", e.what());
         return false;
     }
 

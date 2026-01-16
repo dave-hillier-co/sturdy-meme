@@ -381,17 +381,20 @@ bool DoubleBufferedImageBuilder::build(DoubleBufferedImageSet& outImages) const 
                 .setBaseArrayLayer(0)
                 .setLayerCount(1));
 
-        if (vkCreateImageView(device, reinterpret_cast<const VkImageViewCreateInfo*>(&viewInfo), nullptr, &result.views[i]) != VK_SUCCESS) {
+        vk::Device vkDevice(device);
+        auto viewResult = vkDevice.createImageView(viewInfo);
+        if (viewResult == vk::ImageView{}) {
             SDL_Log("Failed to create double-buffered image view %d", i);
             // Clean up views and images
             for (int j = 0; j < i; j++) {
-                vkDestroyImageView(device, result.views[j], nullptr);
+                vkDevice.destroyImageView(result.views[j]);
             }
             for (int j = 0; j < 2; j++) {
                 vmaDestroyImage(allocator, result.images[j], result.allocations[j]);
             }
             return false;
         }
+        result.views[i] = static_cast<VkImageView>(viewResult);
     }
 
     outImages = result;
@@ -401,9 +404,10 @@ bool DoubleBufferedImageBuilder::build(DoubleBufferedImageSet& outImages) const 
 void destroyImages(VkDevice device, VmaAllocator allocator, DoubleBufferedImageSet& images) {
     if (!device || !allocator) return;
 
+    vk::Device vkDevice(device);
     for (int i = 0; i < 2; i++) {
         if (images.views[i] != VK_NULL_HANDLE) {
-            vkDestroyImageView(device, images.views[i], nullptr);
+            vkDevice.destroyImageView(images.views[i]);
         }
         if (images.images[i] != VK_NULL_HANDLE) {
             vmaDestroyImage(allocator, images.images[i], images.allocations[i]);

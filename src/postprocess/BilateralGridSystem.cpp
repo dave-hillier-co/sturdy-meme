@@ -433,11 +433,10 @@ void BilateralGridSystem::recordClearGrid(VkCommandBuffer cmd) {
         .setImage(gridImages[0])
         .setSubresourceRange(subresourceRange);
 
-    vkCmdPipelineBarrier(cmd,
-                        VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
-                        VK_PIPELINE_STAGE_TRANSFER_BIT,
-                        0, 0, nullptr, 0, nullptr, 1,
-                        reinterpret_cast<const VkImageMemoryBarrier*>(&barrier));
+    vk::CommandBuffer vkCmdBarrier(cmd);
+    vkCmdBarrier.pipelineBarrier(
+        vk::PipelineStageFlagBits::eTopOfPipe, vk::PipelineStageFlagBits::eTransfer,
+        {}, {}, {}, barrier);
 
     // Clear to zero
     vk::CommandBuffer vkCmd(cmd);
@@ -475,12 +474,9 @@ void BilateralGridSystem::recordClearGrid(VkCommandBuffer cmd) {
         .setSubresourceRange(subresourceRange);
 
     // Single barrier call for both transitions (TRANSFER covers TOP_OF_PIPE)
-    vkCmdPipelineBarrier(cmd,
-                        VK_PIPELINE_STAGE_TRANSFER_BIT,
-                        VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-                        0, 0, nullptr, 0, nullptr,
-                        static_cast<uint32_t>(barriers.size()),
-                        reinterpret_cast<const VkImageMemoryBarrier*>(barriers.data()));
+    vkCmd.pipelineBarrier(
+        vk::PipelineStageFlagBits::eTransfer, vk::PipelineStageFlagBits::eComputeShader,
+        {}, {}, {}, barriers);
 }
 
 void BilateralGridSystem::recordBilateralGrid(VkCommandBuffer cmd, uint32_t frameIndex,

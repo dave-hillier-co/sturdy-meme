@@ -272,8 +272,11 @@ public:
                 .setBaseArrayLayer(0)
                 .setLayerCount(imageInfo_.arrayLayers));
 
-        if (vkCreateImageView(device, reinterpret_cast<const VkImageViewCreateInfo*>(&viewInfo), nullptr, &outView) != VK_SUCCESS) {
-            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "ImageBuilder: Failed to create image view");
+        try {
+            vk::Device vkDevice(device);
+            outView = static_cast<VkImageView>(vkDevice.createImageView(viewInfo));
+        } catch (const vk::SystemError& e) {
+            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "ImageBuilder: Failed to create image view: %s", e.what());
             outImage.reset();
             return false;
         }

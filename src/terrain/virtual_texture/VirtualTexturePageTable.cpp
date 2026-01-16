@@ -107,14 +107,15 @@ void VirtualTexturePageTable::cleanup() {
 
     pageTableSampler_.reset();
 
+    vk::Device vkDevice(device);
     if (combinedImageView != VK_NULL_HANDLE) {
-        vkDestroyImageView(device, combinedImageView, nullptr);
+        vkDevice.destroyImageView(combinedImageView);
         combinedImageView = VK_NULL_HANDLE;
     }
 
     for (auto view : pageTableViews) {
         if (view != VK_NULL_HANDLE) {
-            vkDestroyImageView(device, view, nullptr);
+            vkDevice.destroyImageView(view);
         }
     }
     pageTableViews.clear();
@@ -167,20 +168,23 @@ bool VirtualTexturePageTable::createPageTableTextures(VkDevice device, VmaAlloca
             return false;
         }
 
-        // Create image view
-        VkImageViewCreateInfo viewInfo{};
-        viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-        viewInfo.image = pageTableImages[mip];
-        viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
-        viewInfo.format = VK_FORMAT_R8G8B8A8_UINT;
-        viewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-        viewInfo.subresourceRange.baseMipLevel = 0;
-        viewInfo.subresourceRange.levelCount = 1;
-        viewInfo.subresourceRange.baseArrayLayer = 0;
-        viewInfo.subresourceRange.layerCount = 1;
+        // Create image view using vulkan-hpp
+        auto viewInfo = vk::ImageViewCreateInfo{}
+            .setImage(pageTableImages[mip])
+            .setViewType(vk::ImageViewType::e2D)
+            .setFormat(vk::Format::eR8G8B8A8Uint)
+            .setSubresourceRange(vk::ImageSubresourceRange{}
+                .setAspectMask(vk::ImageAspectFlagBits::eColor)
+                .setBaseMipLevel(0)
+                .setLevelCount(1)
+                .setBaseArrayLayer(0)
+                .setLayerCount(1));
 
-        if (vkCreateImageView(device, &viewInfo, nullptr, &pageTableViews[mip]) != VK_SUCCESS) {
-            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create page table view for mip %u", mip);
+        vk::Device vkDevice(device);
+        try {
+            pageTableViews[mip] = static_cast<VkImageView>(vkDevice.createImageView(viewInfo));
+        } catch (const vk::SystemError& e) {
+            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create page table view for mip %u: %s", mip, e.what());
             return false;
         }
     }

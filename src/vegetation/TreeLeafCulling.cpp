@@ -859,12 +859,11 @@ void TreeLeafCulling::recordCulling(VkCommandBuffer cmd, uint32_t frameIndex,
                        sizeof(LeafCullParams), &leafParams);
 
     // Barrier for buffer updates
-    VkMemoryBarrier barrier{};
-    barrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
-    barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-    barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT | VK_ACCESS_UNIFORM_READ_BIT;
-    vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-                         0, 1, &barrier, 0, nullptr, 0, nullptr);
+    auto barrier = vk::MemoryBarrier{}
+        .setSrcAccessMask(vk::AccessFlagBits::eTransferWrite)
+        .setDstAccessMask(vk::AccessFlagBits::eShaderRead | vk::AccessFlagBits::eShaderWrite | vk::AccessFlagBits::eUniformRead);
+    vkCmd.pipelineBarrier(vk::PipelineStageFlagBits::eTransfer, vk::PipelineStageFlagBits::eComputeShader,
+                          {}, barrier, {}, {});
 
     // Descriptor sets are pre-configured during initialization to use buffer[frameIndex]
     // (see updateCullDescriptorSets), so no per-frame update needed here.
@@ -950,12 +949,11 @@ void TreeLeafCulling::recordCulling(VkCommandBuffer cmd, uint32_t frameIndex,
         // CRITICAL: Must include SHADER_READ_BIT | SHADER_WRITE_BIT because we reset
         // storage buffers (visibleCellBuffers_, visibleTreeBuffers_, etc.) via fillBuffer/updateBuffer.
         // Without this, compute shaders may read stale data before the reset completes.
-        VkMemoryBarrier cellUniformBarrier{};
-        cellUniformBarrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
-        cellUniformBarrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-        cellUniformBarrier.dstAccessMask = VK_ACCESS_UNIFORM_READ_BIT | VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
-        vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-                             0, 1, &cellUniformBarrier, 0, nullptr, 0, nullptr);
+        auto cellUniformBarrier = vk::MemoryBarrier{}
+            .setSrcAccessMask(vk::AccessFlagBits::eTransferWrite)
+            .setDstAccessMask(vk::AccessFlagBits::eUniformRead | vk::AccessFlagBits::eShaderRead | vk::AccessFlagBits::eShaderWrite);
+        vkCmd.pipelineBarrier(vk::PipelineStageFlagBits::eTransfer, vk::PipelineStageFlagBits::eComputeShader,
+                              {}, cellUniformBarrier, {}, {});
 
         vkCmd.bindPipeline(vk::PipelineBindPoint::eCompute, **cellCullPipeline_);
         vkCmd.bindDescriptorSets(vk::PipelineBindPoint::eCompute, **cellCullPipelineLayout_,
@@ -968,12 +966,11 @@ void TreeLeafCulling::recordCulling(VkCommandBuffer cmd, uint32_t frameIndex,
         // Uniforms were already updated above, so we only need COMPUTE→COMPUTE barrier
         if (useTwoPhase) {
             // Single barrier: wait for cell cull shader writes before tree filter reads
-            VkMemoryBarrier cellBarrier{};
-            cellBarrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
-            cellBarrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
-            cellBarrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_INDIRECT_COMMAND_READ_BIT;
-            vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-                                 0, 1, &cellBarrier, 0, nullptr, 0, nullptr);
+            auto cellBarrier = vk::MemoryBarrier{}
+                .setSrcAccessMask(vk::AccessFlagBits::eShaderWrite)
+                .setDstAccessMask(vk::AccessFlagBits::eShaderRead | vk::AccessFlagBits::eIndirectCommandRead);
+            vkCmd.pipelineBarrier(vk::PipelineStageFlagBits::eComputeShader, vk::PipelineStageFlagBits::eComputeShader,
+                                  {}, cellBarrier, {}, {});
 
             vkCmd.bindPipeline(vk::PipelineBindPoint::eCompute, **treeFilterPipeline_);
             vkCmd.bindDescriptorSets(vk::PipelineBindPoint::eCompute, **treeFilterPipelineLayout_,
@@ -981,12 +978,11 @@ void TreeLeafCulling::recordCulling(VkCommandBuffer cmd, uint32_t frameIndex,
 
             vkCmd.dispatchIndirect(cellCullIndirectBuffers_.getVk(frameIndex), 0);
 
-            VkMemoryBarrier treeFilterBarrier{};
-            treeFilterBarrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
-            treeFilterBarrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
-            treeFilterBarrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_INDIRECT_COMMAND_READ_BIT;
-            vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-                                 0, 1, &treeFilterBarrier, 0, nullptr, 0, nullptr);
+            auto treeFilterBarrier = vk::MemoryBarrier{}
+                .setSrcAccessMask(vk::AccessFlagBits::eShaderWrite)
+                .setDstAccessMask(vk::AccessFlagBits::eShaderRead | vk::AccessFlagBits::eIndirectCommandRead);
+            vkCmd.pipelineBarrier(vk::PipelineStageFlagBits::eComputeShader, vk::PipelineStageFlagBits::eComputeShader,
+                                  {}, treeFilterBarrier, {}, {});
 
             // Two-phase leaf culling
             if (twoPhaseLeafCullPipeline_ && !twoPhaseLeafCullDescriptorSets_.empty()) {
@@ -997,12 +993,11 @@ void TreeLeafCulling::recordCulling(VkCommandBuffer cmd, uint32_t frameIndex,
                 vkCmd.updateBuffer(leafCullP3ParamsBuffers_.buffers[frameIndex], 0,
                                    sizeof(LeafCullP3Params), &p3Params);
 
-                VkMemoryBarrier p3UniformBarrier{};
-                p3UniformBarrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
-                p3UniformBarrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-                p3UniformBarrier.dstAccessMask = VK_ACCESS_UNIFORM_READ_BIT;
-                vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-                                     0, 1, &p3UniformBarrier, 0, nullptr, 0, nullptr);
+                auto p3UniformBarrier = vk::MemoryBarrier{}
+                    .setSrcAccessMask(vk::AccessFlagBits::eTransferWrite)
+                    .setDstAccessMask(vk::AccessFlagBits::eUniformRead);
+                vkCmd.pipelineBarrier(vk::PipelineStageFlagBits::eTransfer, vk::PipelineStageFlagBits::eComputeShader,
+                                      {}, p3UniformBarrier, {}, {});
 
                 DescriptorManager::SetWriter writer(device_, twoPhaseLeafCullDescriptorSets_[frameIndex]);
                 writer.writeBuffer(Bindings::LEAF_CULL_P3_VISIBLE_TREES, visibleTreeBuffers_.getVk(frameIndex), 0, VK_WHOLE_SIZE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
@@ -1020,11 +1015,11 @@ void TreeLeafCulling::recordCulling(VkCommandBuffer cmd, uint32_t frameIndex,
 
                 vkCmd.dispatchIndirect(leafCullIndirectDispatchBuffers_.getVk(frameIndex), 0);
 
-                barrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
-                barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_INDIRECT_COMMAND_READ_BIT;
-                vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-                                     VK_PIPELINE_STAGE_DRAW_INDIRECT_BIT | VK_PIPELINE_STAGE_VERTEX_SHADER_BIT,
-                                     0, 1, &barrier, 0, nullptr, 0, nullptr);
+                barrier.setSrcAccessMask(vk::AccessFlagBits::eShaderWrite)
+                       .setDstAccessMask(vk::AccessFlagBits::eShaderRead | vk::AccessFlagBits::eIndirectCommandRead);
+                vkCmd.pipelineBarrier(vk::PipelineStageFlagBits::eComputeShader,
+                                      vk::PipelineStageFlagBits::eDrawIndirect | vk::PipelineStageFlagBits::eVertexShader,
+                                      {}, barrier, {}, {});
                 return;
             }
         }
@@ -1038,9 +1033,9 @@ void TreeLeafCulling::recordCulling(VkCommandBuffer cmd, uint32_t frameIndex,
     uint32_t workgroupCount = (totalLeafInstances + 255) / 256;
     vkCmd.dispatch(workgroupCount, 1, 1);
 
-    barrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
-    barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_INDIRECT_COMMAND_READ_BIT;
-    vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-                         VK_PIPELINE_STAGE_DRAW_INDIRECT_BIT | VK_PIPELINE_STAGE_VERTEX_SHADER_BIT,
-                         0, 1, &barrier, 0, nullptr, 0, nullptr);
+    barrier.setSrcAccessMask(vk::AccessFlagBits::eShaderWrite)
+           .setDstAccessMask(vk::AccessFlagBits::eShaderRead | vk::AccessFlagBits::eIndirectCommandRead);
+    vkCmd.pipelineBarrier(vk::PipelineStageFlagBits::eComputeShader,
+                          vk::PipelineStageFlagBits::eDrawIndirect | vk::PipelineStageFlagBits::eVertexShader,
+                          {}, barrier, {}, {});
 }

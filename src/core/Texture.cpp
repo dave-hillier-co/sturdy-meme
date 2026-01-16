@@ -194,14 +194,16 @@ bool Texture::loadInternal(const std::string& path, VmaAllocator allocator, VkDe
             .setBaseArrayLayer(0)
             .setLayerCount(1));
 
-    VkImageView createdView;
-    if (vkCreateImageView(device, reinterpret_cast<const VkImageViewCreateInfo*>(&viewInfo), nullptr, &createdView) != VK_SUCCESS) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create image view for texture: %s", path.c_str());
+    vk::Device vkDevice(device);
+    vk::ImageView createdView;
+    try {
+        createdView = vkDevice.createImageView(viewInfo);
+    } catch (const vk::SystemError& e) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create image view for texture: %s (%s)", path.c_str(), e.what());
         return false;
     }
 
     // Create sampler using vulkan-hpp builder
-    // Note: Equivalent to SamplerFactory::createSamplerLinearRepeatLimitedMip(device, 0.0f) for RAII code paths
     auto samplerInfo = vk::SamplerCreateInfo{}
         .setMagFilter(vk::Filter::eLinear)
         .setMinFilter(vk::Filter::eLinear)
@@ -219,17 +221,19 @@ bool Texture::loadInternal(const std::string& path, VmaAllocator allocator, VkDe
         .setMinLod(0.0f)
         .setMaxLod(0.0f);
 
-    VkSampler createdSampler;
-    if (vkCreateSampler(device, reinterpret_cast<const VkSamplerCreateInfo*>(&samplerInfo), nullptr, &createdSampler) != VK_SUCCESS) {
-        vkDestroyImageView(device, createdView, nullptr);
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create sampler for texture: %s", path.c_str());
+    vk::Sampler createdSampler;
+    try {
+        createdSampler = vkDevice.createSampler(samplerInfo);
+    } catch (const vk::SystemError& e) {
+        vkDevice.destroyImageView(createdView);
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create sampler for texture: %s (%s)", path.c_str(), e.what());
         return false;
     }
 
     // Success - transfer ownership to member variables
     managedImage.releaseToRaw(image, allocation);
-    imageView = createdView;
-    sampler = createdSampler;
+    imageView = static_cast<VkImageView>(createdView);
+    sampler = static_cast<VkSampler>(createdSampler);
 
     return true;
 }
@@ -329,13 +333,15 @@ bool Texture::loadDDS(const std::string& path, VmaAllocator allocator, VkDevice 
             .setBaseArrayLayer(0)
             .setLayerCount(1));
 
-    if (vkCreateImageView(device, reinterpret_cast<const VkImageViewCreateInfo*>(&viewInfo), nullptr, &imageView) != VK_SUCCESS) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create image view for DDS texture: %s", path.c_str());
+    vk::Device vkDevice(device);
+    try {
+        imageView = static_cast<VkImageView>(vkDevice.createImageView(viewInfo));
+    } catch (const vk::SystemError& e) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create image view for DDS texture: %s (%s)", path.c_str(), e.what());
         return false;
     }
 
     // Create sampler using vulkan-hpp builder
-    // Note: Equivalent to SamplerFactory::createSamplerLinearRepeatLimitedMip(device, mipLevels) for RAII code paths
     auto samplerInfo = vk::SamplerCreateInfo{}
         .setMagFilter(vk::Filter::eLinear)
         .setMinFilter(vk::Filter::eLinear)
@@ -353,8 +359,10 @@ bool Texture::loadDDS(const std::string& path, VmaAllocator allocator, VkDevice 
         .setMinLod(0.0f)
         .setMaxLod(static_cast<float>(dds.mipLevels));
 
-    if (vkCreateSampler(device, reinterpret_cast<const VkSamplerCreateInfo*>(&samplerInfo), nullptr, &sampler) != VK_SUCCESS) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create sampler for DDS texture: %s", path.c_str());
+    try {
+        sampler = static_cast<VkSampler>(vkDevice.createSampler(samplerInfo));
+    } catch (const vk::SystemError& e) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create sampler for DDS texture: %s (%s)", path.c_str(), e.what());
         return false;
     }
 
@@ -425,14 +433,16 @@ bool Texture::createSolidColorInternal(uint8_t r, uint8_t g, uint8_t b, uint8_t 
             .setBaseArrayLayer(0)
             .setLayerCount(1));
 
-    VkImageView createdView;
-    if (vkCreateImageView(device, reinterpret_cast<const VkImageViewCreateInfo*>(&viewInfo), nullptr, &createdView) != VK_SUCCESS) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create image view for solid color texture");
+    vk::Device vkDevice(device);
+    vk::ImageView createdView;
+    try {
+        createdView = vkDevice.createImageView(viewInfo);
+    } catch (const vk::SystemError& e) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create image view for solid color texture: %s", e.what());
         return false;
     }
 
     // Create sampler using vulkan-hpp builder
-    // Note: Equivalent to SamplerFactory::createSamplerNearestRepeat() for RAII code paths
     auto samplerInfo = vk::SamplerCreateInfo{}
         .setMagFilter(vk::Filter::eNearest)
         .setMinFilter(vk::Filter::eNearest)
@@ -450,17 +460,19 @@ bool Texture::createSolidColorInternal(uint8_t r, uint8_t g, uint8_t b, uint8_t 
         .setMinLod(0.0f)
         .setMaxLod(0.0f);
 
-    VkSampler createdSampler;
-    if (vkCreateSampler(device, reinterpret_cast<const VkSamplerCreateInfo*>(&samplerInfo), nullptr, &createdSampler) != VK_SUCCESS) {
-        vkDestroyImageView(device, createdView, nullptr);
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create sampler for solid color texture");
+    vk::Sampler createdSampler;
+    try {
+        createdSampler = vkDevice.createSampler(samplerInfo);
+    } catch (const vk::SystemError& e) {
+        vkDevice.destroyImageView(createdView);
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create sampler for solid color texture: %s", e.what());
         return false;
     }
 
     // Success - transfer ownership to member variables
     managedImage.releaseToRaw(image, allocation);
-    imageView = createdView;
-    sampler = createdSampler;
+    imageView = static_cast<VkImageView>(createdView);
+    sampler = static_cast<VkSampler>(createdSampler);
 
     return true;
 }
@@ -719,9 +731,10 @@ bool Texture::loadWithMipmapsInternal(const std::string& path, VmaAllocator allo
             .setSrcAccessMask(vk::AccessFlags{})
             .setDstAccessMask(vk::AccessFlagBits::eTransferWrite);
 
-        vkCmdPipelineBarrier(cmd.get(),
-            VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0,
-            0, nullptr, 0, nullptr, 1, reinterpret_cast<const VkImageMemoryBarrier*>(&barrier));
+        vk::CommandBuffer vkCmd(cmd.get());
+        vkCmd.pipelineBarrier(
+            vk::PipelineStageFlagBits::eTopOfPipe, vk::PipelineStageFlagBits::eTransfer,
+            {}, {}, {}, barrier);
 
         if (!cmd.end()) return false;
     }
@@ -773,9 +786,10 @@ bool Texture::loadWithMipmapsInternal(const std::string& path, VmaAllocator allo
             .setSrcAccessMask(vk::AccessFlagBits::eTransferWrite)
             .setDstAccessMask(vk::AccessFlagBits::eShaderRead);
 
-        vkCmdPipelineBarrier(cmd.get(),
-            VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0,
-            0, nullptr, 0, nullptr, 1, reinterpret_cast<const VkImageMemoryBarrier*>(&barrier));
+        vk::CommandBuffer vkCmd(cmd.get());
+        vkCmd.pipelineBarrier(
+            vk::PipelineStageFlagBits::eTransfer, vk::PipelineStageFlagBits::eFragmentShader,
+            {}, {}, {}, barrier);
 
         if (!cmd.end()) return false;
     }
@@ -792,15 +806,16 @@ bool Texture::loadWithMipmapsInternal(const std::string& path, VmaAllocator allo
             .setBaseArrayLayer(0)
             .setLayerCount(1));
 
-    VkImageView createdView;
-    if (vkCreateImageView(device, reinterpret_cast<const VkImageViewCreateInfo*>(&viewInfo), nullptr, &createdView) != VK_SUCCESS) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create image view for texture: %s", path.c_str());
+    vk::Device vkDevice(device);
+    vk::ImageView createdView;
+    try {
+        createdView = vkDevice.createImageView(viewInfo);
+    } catch (const vk::SystemError& e) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create image view for texture: %s (%s)", path.c_str(), e.what());
         return false;
     }
 
     // Create sampler with mipmapping and optional anisotropy using vulkan-hpp builder
-    // Note: For RAII code paths, use SamplerFactory::createSamplerLinearClampAnisotropic(device, 8.0f, mipLevels)
-    //       for anisotropic mode, or SamplerFactory::createSamplerLinearClampLimitedMip(device, mipLevels) without anisotropy
     auto samplerInfo = vk::SamplerCreateInfo{}
         .setMagFilter(vk::Filter::eLinear)
         .setMinFilter(vk::Filter::eLinear)
@@ -818,17 +833,19 @@ bool Texture::loadWithMipmapsInternal(const std::string& path, VmaAllocator allo
         .setMinLod(0.0f)
         .setMaxLod(static_cast<float>(mipLevels));
 
-    VkSampler createdSampler;
-    if (vkCreateSampler(device, reinterpret_cast<const VkSamplerCreateInfo*>(&samplerInfo), nullptr, &createdSampler) != VK_SUCCESS) {
-        vkDestroyImageView(device, createdView, nullptr);
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create sampler for texture: %s", path.c_str());
+    vk::Sampler createdSampler;
+    try {
+        createdSampler = vkDevice.createSampler(samplerInfo);
+    } catch (const vk::SystemError& e) {
+        vkDevice.destroyImageView(createdView);
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create sampler for texture: %s (%s)", path.c_str(), e.what());
         return false;
     }
 
     // Transfer ownership
     managedImage.releaseToRaw(image, allocation);
-    imageView = createdView;
-    sampler = createdSampler;
+    imageView = static_cast<VkImageView>(createdView);
+    sampler = static_cast<VkSampler>(createdSampler);
 
     SDL_Log("Loaded texture with %u mip levels: %s (%dx%d)", mipLevels, path.c_str(), width, height);
     return true;

@@ -67,7 +67,8 @@ bool SSRSystem::initInternal(const InitInfo& info) {
 void SSRSystem::cleanup() {
     if (device == VK_NULL_HANDLE) return;
 
-    vkDeviceWaitIdle(device);
+    vk::Device vkDevice(device);
+    vkDevice.waitIdle();
 
     // Clear descriptor sets (pool is shared and managed externally)
     descriptorSets.clear();
@@ -87,7 +88,7 @@ void SSRSystem::cleanup() {
 
     // Destroy intermediate buffer
     if (ssrIntermediateView != VK_NULL_HANDLE) {
-        vkDestroyImageView(device, ssrIntermediateView, nullptr);
+        vkDevice.destroyImageView(ssrIntermediateView);
         ssrIntermediateView = VK_NULL_HANDLE;
     }
     if (ssrIntermediate != VK_NULL_HANDLE) {
@@ -99,7 +100,7 @@ void SSRSystem::cleanup() {
     // Destroy SSR buffers
     for (int i = 0; i < 2; i++) {
         if (ssrResultView[i] != VK_NULL_HANDLE) {
-            vkDestroyImageView(device, ssrResultView[i], nullptr);
+            vkDevice.destroyImageView(ssrResultView[i]);
             ssrResultView[i] = VK_NULL_HANDLE;
         }
         if (ssrResult[i] != VK_NULL_HANDLE) {
@@ -118,10 +119,11 @@ void SSRSystem::resize(VkExtent2D newExtent) {
     }
 
     extent = newExtent;
+    vk::Device vkDevice(device);
 
     // Recreate intermediate buffer
     if (ssrIntermediateView != VK_NULL_HANDLE) {
-        vkDestroyImageView(device, ssrIntermediateView, nullptr);
+        vkDevice.destroyImageView(ssrIntermediateView);
         ssrIntermediateView = VK_NULL_HANDLE;
     }
     if (ssrIntermediate != VK_NULL_HANDLE) {
@@ -132,7 +134,7 @@ void SSRSystem::resize(VkExtent2D newExtent) {
     // Recreate SSR buffers at new size
     for (int i = 0; i < 2; i++) {
         if (ssrResultView[i] != VK_NULL_HANDLE) {
-            vkDestroyImageView(device, ssrResultView[i], nullptr);
+            vkDevice.destroyImageView(ssrResultView[i]);
             ssrResultView[i] = VK_NULL_HANDLE;
         }
         if (ssrResult[i] != VK_NULL_HANDLE) {
@@ -187,9 +189,11 @@ bool SSRSystem::createSSRBuffers() {
                 .setBaseArrayLayer(0)
                 .setLayerCount(1));
 
-        if (vkCreateImageView(device, reinterpret_cast<const VkImageViewCreateInfo*>(&viewInfo),
-                              nullptr, &ssrResultView[i]) != VK_SUCCESS) {
-            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create SSR result image view %d", i);
+        vk::Device vkDevice(device);
+        try {
+            ssrResultView[i] = static_cast<VkImageView>(vkDevice.createImageView(viewInfo));
+        } catch (const vk::SystemError& e) {
+            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create SSR result image view %d: %s", i, e.what());
             return false;
         }
     }
@@ -213,9 +217,11 @@ bool SSRSystem::createSSRBuffers() {
                 .setBaseArrayLayer(0)
                 .setLayerCount(1));
 
-        if (vkCreateImageView(device, reinterpret_cast<const VkImageViewCreateInfo*>(&viewInfo),
-                              nullptr, &ssrIntermediateView) != VK_SUCCESS) {
-            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create SSR intermediate image view");
+        vk::Device vkDevice(device);
+        try {
+            ssrIntermediateView = static_cast<VkImageView>(vkDevice.createImageView(viewInfo));
+        } catch (const vk::SystemError& e) {
+            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create SSR intermediate image view: %s", e.what());
             return false;
         }
     }

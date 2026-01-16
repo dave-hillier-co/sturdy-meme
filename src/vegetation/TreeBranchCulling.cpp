@@ -385,12 +385,13 @@ void TreeBranchCulling::recordCulling(VkCommandBuffer cmd, uint32_t frameIndex,
     }
 
     // Memory barrier to ensure buffer update completes before compute shader reads
-    VkMemoryBarrier resetBarrier{};
-    resetBarrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
-    resetBarrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-    resetBarrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
-    vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-                         0, 1, &resetBarrier, 0, nullptr, 0, nullptr);
+    auto resetBarrier = vk::MemoryBarrier{}
+        .setSrcAccessMask(vk::AccessFlagBits::eTransferWrite)
+        .setDstAccessMask(vk::AccessFlagBits::eShaderRead | vk::AccessFlagBits::eShaderWrite);
+    vk::CommandBuffer vkCmdBarrier(cmd);
+    vkCmdBarrier.pipelineBarrier(
+        vk::PipelineStageFlagBits::eTransfer, vk::PipelineStageFlagBits::eComputeShader,
+        {}, resetBarrier, {}, {});
 
     // Update uniforms
     BranchShadowCullUniforms uniforms{};
@@ -422,15 +423,14 @@ void TreeBranchCulling::recordCulling(VkCommandBuffer cmd, uint32_t frameIndex,
     vkCmd.dispatch(numWorkgroups, 1, 1);
 
     // Memory barrier: compute writes -> graphics reads
-    VkMemoryBarrier barrier{};
-    barrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
-    barrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
-    barrier.dstAccessMask = VK_ACCESS_INDIRECT_COMMAND_READ_BIT | VK_ACCESS_SHADER_READ_BIT;
+    auto barrier = vk::MemoryBarrier{}
+        .setSrcAccessMask(vk::AccessFlagBits::eShaderWrite)
+        .setDstAccessMask(vk::AccessFlagBits::eIndirectCommandRead | vk::AccessFlagBits::eShaderRead);
 
-    vkCmdPipelineBarrier(cmd,
-                         VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-                         VK_PIPELINE_STAGE_DRAW_INDIRECT_BIT | VK_PIPELINE_STAGE_VERTEX_SHADER_BIT,
-                         0, 1, &barrier, 0, nullptr, 0, nullptr);
+    vkCmd.pipelineBarrier(
+        vk::PipelineStageFlagBits::eComputeShader,
+        vk::PipelineStageFlagBits::eDrawIndirect | vk::PipelineStageFlagBits::eVertexShader,
+        {}, barrier, {}, {});
 }
 
 VkBuffer TreeBranchCulling::getInstanceBuffer(uint32_t frameIndex) const {

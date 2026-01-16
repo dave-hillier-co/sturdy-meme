@@ -239,6 +239,7 @@ void Renderer::setupFrameGraph() {
         .name = "Compute",
         .execute = [this](FrameGraph::RenderContext& ctx) {
             RenderContext* renderCtx = static_cast<RenderContext*>(ctx.userData);
+            if (!renderCtx) return;
             systems_->profiler().beginCpuZone("ComputeDispatch");
             renderPipeline.computeStage.execute(*renderCtx);
             systems_->profiler().endCpuZone("ComputeDispatch");
@@ -253,6 +254,7 @@ void Renderer::setupFrameGraph() {
         .name = "Shadow",
         .execute = [this, lastSunIntensity](FrameGraph::RenderContext& ctx) {
             RenderContext* renderCtx = static_cast<RenderContext*>(ctx.userData);
+            if (!renderCtx) return;
             if (*lastSunIntensity > 0.001f && perfToggles.shadowPass) {
                 systems_->profiler().beginCpuZone("ShadowRecord");
                 systems_->profiler().beginGpuZone(ctx.commandBuffer, "ShadowPass");
@@ -273,6 +275,7 @@ void Renderer::setupFrameGraph() {
         .name = "Froxel",
         .execute = [this](FrameGraph::RenderContext& ctx) {
             RenderContext* renderCtx = static_cast<RenderContext*>(ctx.userData);
+            if (!renderCtx) return;
             systems_->postProcess().setCameraPlanes(
                 renderCtx->frame.nearPlane, renderCtx->frame.farPlane);
             if (renderPipeline.froxelStageFn && (perfToggles.froxelFog || perfToggles.atmosphereLUT)) {
@@ -323,6 +326,7 @@ void Renderer::setupFrameGraph() {
         .name = "HDR",
         .execute = [this](FrameGraph::RenderContext& ctx) {
             RenderContext* renderCtx = static_cast<RenderContext*>(ctx.userData);
+            if (!renderCtx) return;
             if (hdrPassEnabled) {
                 systems_->profiler().beginCpuZone("RenderPassRecord");
                 if (ctx.secondaryBuffers && !ctx.secondaryBuffers->empty()) {
@@ -342,6 +346,7 @@ void Renderer::setupFrameGraph() {
         .secondarySlots = 3,  // 3 parallel recording slots
         .secondaryRecord = [this](FrameGraph::RenderContext& ctx, uint32_t slot) {
             RenderContext* renderCtx = static_cast<RenderContext*>(ctx.userData);
+            if (!renderCtx) return;
             recordHDRPassSecondarySlot(ctx.commandBuffer, ctx.frameIndex,
                                        renderCtx->frame.time, slot);
         }
@@ -352,6 +357,7 @@ void Renderer::setupFrameGraph() {
         .name = "SSR",
         .execute = [this](FrameGraph::RenderContext& ctx) {
             RenderContext* renderCtx = static_cast<RenderContext*>(ctx.userData);
+            if (!renderCtx) return;
             if (hdrPassEnabled && perfToggles.ssr && systems_->ssr().isEnabled()) {
                 systems_->profiler().beginGpuZone(ctx.commandBuffer, "SSR");
                 systems_->ssr().recordCompute(ctx.commandBuffer, ctx.frameIndex,
@@ -372,6 +378,9 @@ void Renderer::setupFrameGraph() {
         .name = "WaterTileCull",
         .execute = [this](FrameGraph::RenderContext& ctx) {
             RenderContext* renderCtx = static_cast<RenderContext*>(ctx.userData);
+            // Defensive null check: userData must be valid RenderContext pointer.
+            // O3 may assume non-null and optimize in ways that crash if invalid.
+            if (!renderCtx) return;
             if (hdrPassEnabled && perfToggles.waterTileCull && systems_->waterTileCull().isEnabled()) {
                 systems_->profiler().beginGpuZone(ctx.commandBuffer, "WaterTileCull");
                 glm::mat4 viewProj = renderCtx->frame.projection * renderCtx->frame.view;
@@ -393,6 +402,7 @@ void Renderer::setupFrameGraph() {
         .execute = [this](FrameGraph::RenderContext& ctx) {
             if (renderPipeline.postStage.hiZRecordFn) {
                 RenderContext* renderCtx = static_cast<RenderContext*>(ctx.userData);
+                if (!renderCtx) return;
                 renderPipeline.postStage.hiZRecordFn(*renderCtx);
             }
         },
@@ -407,6 +417,7 @@ void Renderer::setupFrameGraph() {
         .execute = [this](FrameGraph::RenderContext& ctx) {
             if (systems_->postProcess().isBloomEnabled() && renderPipeline.postStage.bloomRecordFn) {
                 RenderContext* renderCtx = static_cast<RenderContext*>(ctx.userData);
+                if (!renderCtx) return;
                 renderPipeline.postStage.bloomRecordFn(*renderCtx);
             }
         },
@@ -436,6 +447,7 @@ void Renderer::setupFrameGraph() {
         .name = "PostProcess",
         .execute = [this](FrameGraph::RenderContext& ctx) {
             RenderContext* renderCtx = static_cast<RenderContext*>(ctx.userData);
+            if (!renderCtx) return;
             systems_->profiler().beginGpuZone(ctx.commandBuffer, "PostProcess");
             systems_->postProcess().recordPostProcess(ctx.commandBuffer, ctx.frameIndex,
                 *framebuffers_[ctx.imageIndex], renderCtx->frame.deltaTime, guiRenderCallback);

@@ -266,7 +266,9 @@ void WaterTileCull::recordTileCull(VkCommandBuffer cmd, uint32_t frameIndex,
                                     const glm::vec3& cameraPos,
                                     float waterLevel,
                                     VkImageView depthView) {
-    if (!enabled || descriptorSets.empty()) {
+    // Bounds check: frameIndex must be within descriptorSets range.
+    // Without this, O3 vectorization of OOB access can cause crashes.
+    if (!enabled || frameIndex >= descriptorSets.size()) {
         return;
     }
 

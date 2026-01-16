@@ -3,6 +3,7 @@
 #include "VmaResources.h"
 #include "DescriptorManager.h"
 #include "core/pipeline/ComputePipelineBuilder.h"
+#include "core/vulkan/PipelineLayoutBuilder.h"
 #include <SDL3/SDL.h>
 #include <vulkan/vulkan.hpp>
 #include <array>
@@ -181,20 +182,12 @@ bool WaterTileCull::createComputePipeline() {
         return false;
     }
 
-    // Push constant range
-    auto pushConstantRange = vk::PushConstantRange{}
-        .setStageFlags(vk::ShaderStageFlagBits::eCompute)
-        .setOffset(0)
-        .setSize(sizeof(TileCullPushConstants));
-
-    auto pipelineLayoutInfo = vk::PipelineLayoutCreateInfo{}
-        .setSetLayouts(**descriptorSetLayout_)
-        .setPushConstantRanges(pushConstantRange);
-
-    try {
-        computePipelineLayout_.emplace(*raiiDevice_, pipelineLayoutInfo);
-    } catch (const vk::SystemError& e) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create tile cull pipeline layout: %s", e.what());
+    // Pipeline layout using builder
+    if (!PipelineLayoutBuilder(*raiiDevice_)
+            .addDescriptorSetLayout(**descriptorSetLayout_)
+            .addPushConstantRange<TileCullPushConstants>(vk::ShaderStageFlagBits::eCompute)
+            .buildInto(computePipelineLayout_)) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create tile cull pipeline layout");
         return false;
     }
 

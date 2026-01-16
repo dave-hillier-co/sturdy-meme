@@ -22,6 +22,9 @@ class AnimatedCharacter;
 // Skinned mesh renderer - handles GPU skinning pipeline and bone matrices
 class SkinnedMeshRenderer {
 public:
+    // Passkey for controlled construction via make_unique
+    struct ConstructToken { explicit ConstructToken() = default; };
+
     // Callback type for adding common descriptor bindings
     using AddCommonBindingsCallback = std::function<void(DescriptorManager::LayoutBuilder&)>;
 
@@ -70,6 +73,8 @@ public:
      */
     static std::unique_ptr<SkinnedMeshRenderer> create(const InitInfo& info);
 
+    explicit SkinnedMeshRenderer(ConstructToken) {}
+
     ~SkinnedMeshRenderer();
 
     // Non-copyable, non-movable
@@ -101,8 +106,6 @@ public:
     VkDescriptorSet getDescriptorSet(uint32_t frameIndex) const { return descriptorSets[frameIndex]; }
 
 private:
-    SkinnedMeshRenderer() = default;  // Private: use factory
-
     bool initInternal(const InitInfo& info);
     void cleanup();
     bool createDescriptorSetLayout();

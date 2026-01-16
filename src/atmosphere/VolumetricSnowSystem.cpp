@@ -10,7 +10,7 @@
 #include <vector>
 
 std::unique_ptr<VolumetricSnowSystem> VolumetricSnowSystem::create(const InitInfo& info) {
-    std::unique_ptr<VolumetricSnowSystem> system(new VolumetricSnowSystem());
+    auto system = std::make_unique<VolumetricSnowSystem>(ConstructToken{});
     if (!system->initInternal(info)) {
         return nullptr;
     }

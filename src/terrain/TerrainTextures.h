@@ -11,6 +11,9 @@
 // Terrain textures - albedo and grass far LOD textures
 class TerrainTextures {
 public:
+    // Passkey for controlled construction via make_unique
+    struct ConstructToken { explicit ConstructToken() = default; };
+
     struct InitInfo {
         const vk::raii::Device* raiiDevice = nullptr;
         VkDevice device;
@@ -22,6 +25,8 @@ public:
 
     // Factory method - returns nullptr on failure
     static std::unique_ptr<TerrainTextures> create(const InitInfo& info);
+
+    explicit TerrainTextures(ConstructToken) {}
 
     ~TerrainTextures();
 
@@ -40,7 +45,6 @@ public:
     VkSampler getGrassFarLODSampler() const { return grassFarLODSampler_ ? **grassFarLODSampler_ : VK_NULL_HANDLE; }
 
 private:
-    TerrainTextures() = default;
     bool initInternal(const InitInfo& info);
     bool createAlbedoTexture();
     bool createGrassFarLODTexture();

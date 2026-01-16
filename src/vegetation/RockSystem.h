@@ -34,6 +34,9 @@ struct RockConfig {
 
 class RockSystem {
 public:
+    // Passkey for controlled construction via make_unique
+    struct ConstructToken { explicit ConstructToken() = default; };
+
     struct InitInfo {
         VkDevice device;
         VmaAllocator allocator;
@@ -50,6 +53,8 @@ public:
      * Returns nullptr on failure.
      */
     static std::unique_ptr<RockSystem> create(const InitInfo& info, const RockConfig& config = {});
+
+    explicit RockSystem(ConstructToken) {}
 
     ~RockSystem();
 
@@ -78,8 +83,6 @@ public:
     const std::vector<Mesh>& getRockMeshes() const { return collection_.getMeshes(); }
 
 private:
-    RockSystem() = default;  // Private: use factory
-
     bool initInternal(const InitInfo& info, const RockConfig& config);
     void cleanup();
     bool createRockMeshes(const InitInfo& info);

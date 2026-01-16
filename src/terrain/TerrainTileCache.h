@@ -76,6 +76,9 @@ struct TileInfoGPU {
 // Terrain tile cache - manages LOD-based tile streaming
 class TerrainTileCache {
 public:
+    // Passkey for controlled construction via make_unique
+    struct ConstructToken { explicit ConstructToken() = default; };
+
     struct InitInfo {
         const vk::raii::Device* raiiDevice = nullptr;
         std::string cacheDirectory;
@@ -97,6 +100,8 @@ public:
      * Returns nullptr on failure.
      */
     static std::unique_ptr<TerrainTileCache> create(const InitInfo& info);
+
+    explicit TerrainTileCache(ConstructToken) {}
 
     ~TerrainTileCache();
 
@@ -217,8 +222,6 @@ public:
     static constexpr float LOD3_MAX_DISTANCE = 8000.0f;  // 4-8km: LOD3
 
 private:
-    TerrainTileCache() = default;  // Private: use factory
-
     bool initInternal(const InitInfo& info);
     void cleanup();
 

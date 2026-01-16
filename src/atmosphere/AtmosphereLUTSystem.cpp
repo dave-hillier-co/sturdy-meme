@@ -2,7 +2,7 @@
 #include <SDL3/SDL_log.h>
 
 std::unique_ptr<AtmosphereLUTSystem> AtmosphereLUTSystem::create(const InitInfo& info) {
-    std::unique_ptr<AtmosphereLUTSystem> system(new AtmosphereLUTSystem());
+    auto system = std::make_unique<AtmosphereLUTSystem>(ConstructToken{});
     if (!system->initInternal(info)) {
         return nullptr;
     }

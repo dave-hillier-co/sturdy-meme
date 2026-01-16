@@ -11,7 +11,7 @@
 #include <cstring>
 
 std::unique_ptr<FoamBuffer> FoamBuffer::create(const InitInfo& info) {
-    std::unique_ptr<FoamBuffer> system(new FoamBuffer());
+    auto system = std::make_unique<FoamBuffer>(ConstructToken{});
     if (!system->initInternal(info)) {
         return nullptr;
     }

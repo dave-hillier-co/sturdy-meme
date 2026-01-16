@@ -8,6 +8,9 @@
 
 class TerrainBuffers {
 public:
+    // Passkey for controlled construction via make_unique
+    struct ConstructToken { explicit ConstructToken() = default; };
+
     struct InitInfo {
         VmaAllocator allocator;
         uint32_t framesInFlight;
@@ -16,6 +19,8 @@ public:
 
     // Factory method - returns nullptr on failure
     static std::unique_ptr<TerrainBuffers> create(const InitInfo& info);
+
+    explicit TerrainBuffers(ConstructToken) {}
 
     ~TerrainBuffers();
 
@@ -55,7 +60,6 @@ public:
     void* getMaterialLayerMappedPtr(uint32_t frameIndex) const { return materialLayerUniforms.mappedPointers[frameIndex]; }
 
 private:
-    TerrainBuffers() = default;
     bool initInternal(const InitInfo& info);
     bool createUniformBuffers(const InitInfo& info);
     bool createIndirectBuffers(const InitInfo& info);

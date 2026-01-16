@@ -8,7 +8,7 @@
 #include <algorithm>
 
 std::unique_ptr<LeafSystem> LeafSystem::create(const InitInfo& info) {
-    std::unique_ptr<LeafSystem> system(new LeafSystem());
+    auto system = std::make_unique<LeafSystem>(ConstructToken{});
     if (!system->initInternal(info)) {
         return nullptr;
     }

@@ -9,7 +9,7 @@ namespace VirtualTexture {
 
 std::unique_ptr<VirtualTextureFeedback> VirtualTextureFeedback::create(VkDevice device, VmaAllocator allocator,
                                                                         uint32_t maxEntries, uint32_t frameCount) {
-    std::unique_ptr<VirtualTextureFeedback> feedback(new VirtualTextureFeedback());
+    auto feedback = std::make_unique<VirtualTextureFeedback>(ConstructToken{});
     if (!feedback->initInternal(device, allocator, maxEntries, frameCount)) {
         return nullptr;
     }

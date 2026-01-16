@@ -12,7 +12,7 @@
 #include <cstring>
 
 std::unique_ptr<WaterDisplacement> WaterDisplacement::create(const InitInfo& info) {
-    std::unique_ptr<WaterDisplacement> system(new WaterDisplacement());
+    auto system = std::make_unique<WaterDisplacement>(ConstructToken{});
     if (!system->initInternal(info)) {
         return nullptr;
     }

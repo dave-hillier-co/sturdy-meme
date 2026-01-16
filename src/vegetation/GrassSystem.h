@@ -60,6 +60,9 @@ struct GrassInstance {
 
 class GrassSystem {
 public:
+    // Passkey for controlled construction via make_unique
+    struct ConstructToken { explicit ConstructToken() = default; };
+
     struct InitInfo : public ParticleSystem::InitInfo {
         vk::RenderPass shadowRenderPass;
         uint32_t shadowMapSize;
@@ -70,6 +73,8 @@ public:
      * Returns nullptr on failure.
      */
     static std::unique_ptr<GrassSystem> create(const InitInfo& info);
+
+    explicit GrassSystem(ConstructToken) {}
 
     /**
      * Bundle of grass-related systems
@@ -157,8 +162,6 @@ public:
     GrassTileManager* getTileManager() const { return tileManager_.get(); }
 
 private:
-    GrassSystem() = default;  // Private: use factory
-
     bool initInternal(const InitInfo& info);
     void cleanup();
 

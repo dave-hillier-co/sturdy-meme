@@ -22,6 +22,9 @@ static constexpr uint32_t FROXEL_NUM_CASCADES = 4;
 
 class FroxelSystem : public IFogControl {
 public:
+    // Passkey for controlled construction via make_unique
+    struct ConstructToken { explicit ConstructToken() = default; };
+
     struct InitInfo {
         VkDevice device;
         VmaAllocator allocator;
@@ -50,6 +53,8 @@ public:
     static std::unique_ptr<FroxelSystem> create(const InitInfo& info);
     static std::unique_ptr<FroxelSystem> create(const InitContext& ctx, VkImageView shadowMapView, VkSampler shadowSampler,
                                                  const std::vector<VkBuffer>& lightBuffers);
+
+    explicit FroxelSystem(ConstructToken) {}
 
     ~FroxelSystem();
 
@@ -206,8 +211,6 @@ private:
     float underwaterColorMult = 1.5f;     // Color intensity multiplier
 
     bool enabled = true;
-
-    FroxelSystem() = default;  // Private: use factory
 
     bool initInternal(const InitInfo& info);
     void cleanup();

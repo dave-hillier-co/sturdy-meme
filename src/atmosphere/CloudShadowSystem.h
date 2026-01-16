@@ -35,6 +35,9 @@ struct alignas(16) CloudShadowUniforms {
 
 class CloudShadowSystem : public ICloudShadowControl {
 public:
+    // Passkey for controlled construction via make_unique
+    struct ConstructToken { explicit ConstructToken() = default; };
+
     struct InitInfo {
         VkDevice device;
         VmaAllocator allocator;
@@ -151,7 +154,7 @@ private:
     // Temporal spreading: update 1/4 of shadow map per frame
     uint32_t quadrantIndex = 0;  // Cycles 0-3
 
-    CloudShadowSystem() = default;  // Private: use factory
+    explicit CloudShadowSystem(ConstructToken) {}
 
     bool initInternal(const InitInfo& info);
     void cleanup();

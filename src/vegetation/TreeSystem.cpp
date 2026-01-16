@@ -26,7 +26,7 @@ AABB computeFullTreeBounds(const Mesh& branchMesh, const std::vector<LeafInstanc
 } // anonymous namespace
 
 std::unique_ptr<TreeSystem> TreeSystem::create(const InitInfo& info) {
-    std::unique_ptr<TreeSystem> system(new TreeSystem());
+    auto system = std::make_unique<TreeSystem>(ConstructToken{});
     if (!system->initInternal(info)) {
         return nullptr;
     }

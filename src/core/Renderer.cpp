@@ -79,7 +79,7 @@
 #include <chrono>
 
 std::unique_ptr<Renderer> Renderer::create(const InitInfo& info) {
-    std::unique_ptr<Renderer> instance(new Renderer());
+    auto instance = std::make_unique<Renderer>(ConstructToken{});
     if (!instance->initInternal(info)) {
         return nullptr;
     }

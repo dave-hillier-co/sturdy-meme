@@ -14,7 +14,7 @@
 std::unique_ptr<TerrainSystem> TerrainSystem::create(const InitContext& ctx,
                                                       const TerrainInitParams& params,
                                                       const TerrainConfig& config) {
-    std::unique_ptr<TerrainSystem> system(new TerrainSystem());
+    auto system = std::make_unique<TerrainSystem>(ConstructToken{});
     if (!system->initInternal(ctx, params, config)) {
         return nullptr;
     }

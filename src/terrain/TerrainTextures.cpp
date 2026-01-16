@@ -9,7 +9,7 @@
 #include <algorithm>
 
 std::unique_ptr<TerrainTextures> TerrainTextures::create(const InitInfo& info) {
-    std::unique_ptr<TerrainTextures> textures(new TerrainTextures());
+    auto textures = std::make_unique<TerrainTextures>(ConstructToken{});
     if (!textures->initInternal(info)) {
         return nullptr;
     }

@@ -5,7 +5,7 @@
 #include <utility>
 
 std::unique_ptr<TerrainBuffers> TerrainBuffers::create(const InitInfo& info) {
-    std::unique_ptr<TerrainBuffers> buffers(new TerrainBuffers());
+    auto buffers = std::make_unique<TerrainBuffers>(ConstructToken{});
     if (!buffers->initInternal(info)) {
         return nullptr;
     }

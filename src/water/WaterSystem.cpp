@@ -9,7 +9,7 @@
 #include <cstring>
 
 std::unique_ptr<WaterSystem> WaterSystem::create(const InitInfo& info) {
-    std::unique_ptr<WaterSystem> system(new WaterSystem());
+    auto system = std::make_unique<WaterSystem>(ConstructToken{});
     if (!system->initInternal(info)) {
         return nullptr;
     }

@@ -112,7 +112,7 @@ uint32_t CatmullClarkCBT::calculateBufferSize(int maxDepth, int faceCount) {
 }
 
 std::unique_ptr<CatmullClarkCBT> CatmullClarkCBT::create(const InitInfo& info) {
-    std::unique_ptr<CatmullClarkCBT> cbt(new CatmullClarkCBT());
+    auto cbt = std::make_unique<CatmullClarkCBT>(ConstructToken{});
     if (!cbt->initInternal(info)) {
         return nullptr;
     }

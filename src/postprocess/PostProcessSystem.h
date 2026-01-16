@@ -47,6 +47,9 @@ struct ExposureData {
 
 class PostProcessSystem : public IPostProcessState {
 public:
+    // Passkey for controlled construction via make_unique
+    struct ConstructToken { explicit ConstructToken() = default; };
+
     struct InitInfo {
         VkDevice device;
         VmaAllocator allocator;
@@ -65,6 +68,8 @@ public:
      */
     static std::unique_ptr<PostProcessSystem> create(const InitInfo& info);
     static std::unique_ptr<PostProcessSystem> create(const InitContext& ctx, VkRenderPass outputRenderPass, VkFormat swapchainFormat);
+
+    explicit PostProcessSystem(ConstructToken) {}
 
     /**
      * Bundle of all post-processing related systems
@@ -220,8 +225,6 @@ public:
     float getUnderwaterWaterLevel() const { return underwaterWaterLevel_; }
 
 private:
-    PostProcessSystem() = default;  // Private: use factory
-
     bool initInternal(const InitInfo& info);
     void cleanup();
 

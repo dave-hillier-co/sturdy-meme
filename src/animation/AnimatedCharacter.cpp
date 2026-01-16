@@ -16,7 +16,7 @@ bool endsWith(const std::string& str, const std::string& suffix) {
 }
 
 std::unique_ptr<AnimatedCharacter> AnimatedCharacter::create(const InitInfo& info) {
-    std::unique_ptr<AnimatedCharacter> instance(new AnimatedCharacter());
+    auto instance = std::make_unique<AnimatedCharacter>(ConstructToken{});
     if (!instance->loadInternal(info)) {
         return nullptr;
     }

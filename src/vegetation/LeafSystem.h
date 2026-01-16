@@ -48,6 +48,9 @@ struct LeafPushConstants {
 
 class LeafSystem : public ILeafControl {
 public:
+    // Passkey for controlled construction via make_unique
+    struct ConstructToken { explicit ConstructToken() = default; };
+
     using InitInfo = ParticleSystem::InitInfo;
 
     /**
@@ -55,6 +58,8 @@ public:
      * Returns nullptr on failure.
      */
     static std::unique_ptr<LeafSystem> create(const InitInfo& info);
+
+    explicit LeafSystem(ConstructToken) {}
 
     ~LeafSystem();
 
@@ -196,8 +201,6 @@ private:
     // Particle counts
     static constexpr uint32_t MAX_PARTICLES = 100000;
     static constexpr uint32_t WORKGROUP_SIZE = 256;
-
-    LeafSystem() = default;  // Private: use factory
 
     bool initInternal(const InitInfo& info);
     void cleanup();

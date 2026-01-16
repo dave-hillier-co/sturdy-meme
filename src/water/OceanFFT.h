@@ -53,6 +53,9 @@ struct OceanDisplacementPushConstants {
 
 class OceanFFT {
 public:
+    // Passkey for controlled construction via make_unique
+    struct ConstructToken { explicit ConstructToken() = default; };
+
     // Ocean simulation parameters
     struct OceanParams {
         int resolution = 256;           // FFT resolution (256 or 512)
@@ -95,6 +98,8 @@ public:
      */
     static std::unique_ptr<OceanFFT> create(const InitInfo& info);
     static std::unique_ptr<OceanFFT> create(const InitContext& ctx, const OceanParams& params, bool useCascades = true);
+
+    explicit OceanFFT(ConstructToken) {}
 
     ~OceanFFT();
 
@@ -148,8 +153,6 @@ public:
     void markSpectrumDirty() { spectrumDirty = true; }
 
 private:
-    OceanFFT() = default;  // Private: use factory
-
     bool initInternal(const InitInfo& info);
     bool initInternal(const InitContext& ctx, const OceanParams& params, bool useCascades);
     void cleanup();

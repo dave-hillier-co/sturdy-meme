@@ -22,6 +22,9 @@ namespace VirtualTexture {
  */
 class VirtualTextureTileLoader {
 public:
+    // Passkey for controlled construction via make_unique
+    struct ConstructToken { explicit ConstructToken() = default; };
+
     using TileLoadedCallback = std::function<void(const LoadedTile&)>;
 
     /**
@@ -84,9 +87,9 @@ public:
     uint32_t getLoadedCount() const;
     uint64_t getTotalBytesLoaded() const { return totalBytesLoaded.load(); }
 
-private:
-    VirtualTextureTileLoader() = default;  // Private: use factory
+    explicit VirtualTextureTileLoader(ConstructToken) {}
 
+private:
     bool initInternal(const std::string& basePath, uint32_t workerCount);
     void cleanup();
 

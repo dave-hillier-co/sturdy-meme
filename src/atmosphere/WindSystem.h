@@ -14,6 +14,9 @@
 // Implements a scrolling Perlin noise wind model as described in Ghost of Tsushima's wind system
 class WindSystem {
 public:
+    // Passkey for controlled construction via make_unique
+    struct ConstructToken { explicit ConstructToken() = default; };
+
     // Initialization parameters
     struct InitInfo {
         VkDevice device;
@@ -76,9 +79,9 @@ public:
     // Get the total elapsed time (for shader synchronization)
     float getTime() const { return totalTime; }
 
-private:
-    WindSystem() = default;  // Private: use factory
+    explicit WindSystem(ConstructToken) {}
 
+private:
     bool initInternal(const InitInfo& info);
     void cleanup();
 

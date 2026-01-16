@@ -5,7 +5,7 @@
 #include <cmath>
 
 std::unique_ptr<WindSystem> WindSystem::create(const InitInfo& info) {
-    std::unique_ptr<WindSystem> system(new WindSystem());
+    auto system = std::make_unique<WindSystem>(ConstructToken{});
     if (!system->initInternal(info)) {
         return nullptr;
     }

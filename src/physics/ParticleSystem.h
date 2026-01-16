@@ -9,6 +9,9 @@
 // Prefer composition: systems can embed this helper to centralize common logic while keeping effect-specific code separate.
 class ParticleSystem {
 public:
+    // Passkey for controlled construction via make_unique
+    struct ConstructToken { explicit ConstructToken() = default; };
+
     using InitInfo = SystemLifecycleHelper::InitInfo;
     using Hooks = SystemLifecycleHelper::Hooks;
 
@@ -18,6 +21,8 @@ public:
     static std::unique_ptr<ParticleSystem> create(const InitInfo& info, const Hooks& hooks,
                                                    uint32_t bufferSets = 2,
                                                    ParticleSystem** outPtr = nullptr);
+
+    explicit ParticleSystem(ConstructToken) {}
 
     ~ParticleSystem();
 
@@ -55,7 +60,6 @@ public:
     uint32_t getFramesInFlight() const { return lifecycle.getFramesInFlight(); }
 
 private:
-    ParticleSystem() = default;
     bool initInternal(const InitInfo& info, const Hooks& hooks, uint32_t bufferSets);
 
     SystemLifecycleHelper lifecycle;

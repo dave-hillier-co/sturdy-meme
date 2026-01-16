@@ -125,7 +125,7 @@ void TerrainMeshlet::generateMeshletGeometry(uint32_t level,
 }
 
 std::unique_ptr<TerrainMeshlet> TerrainMeshlet::create(const InitInfo& info) {
-    std::unique_ptr<TerrainMeshlet> meshlet(new TerrainMeshlet());
+    auto meshlet = std::make_unique<TerrainMeshlet>(ConstructToken{});
     if (!meshlet->initInternal(info)) {
         return nullptr;
     }

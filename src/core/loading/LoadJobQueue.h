@@ -170,10 +170,15 @@ struct LoadProgress {
  */
 class LoadJobQueue {
 public:
+    // Passkey for controlled construction via make_unique
+    struct ConstructToken { explicit ConstructToken() = default; };
+
     /**
      * Factory: Create and start the job queue with worker threads
      */
     static std::unique_ptr<LoadJobQueue> create(uint32_t workerCount = 2);
+
+    explicit LoadJobQueue(ConstructToken) {}
 
     ~LoadJobQueue();
 
@@ -225,7 +230,6 @@ public:
     void shutdown();
 
 private:
-    LoadJobQueue() = default;
     bool init(uint32_t workerCount);
     void workerLoop();
 

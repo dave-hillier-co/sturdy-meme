@@ -33,6 +33,9 @@ struct SnowInteractionSource {
 
 class SnowMaskSystem {
 public:
+    // Passkey for controlled construction via make_unique
+    struct ConstructToken { explicit ConstructToken() = default; };
+
     using InitInfo = SystemLifecycleHelper::InitInfo;
 
     /**
@@ -141,7 +144,7 @@ private:
 
     bool isFirstFrame = true;  // Track first frame for layout transitions
 
-    SnowMaskSystem() = default;  // Private: use factory
+    explicit SnowMaskSystem(ConstructToken) {}
 
     bool initInternal(const InitInfo& info);
     void cleanup();

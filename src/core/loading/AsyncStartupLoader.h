@@ -29,6 +29,9 @@ namespace Loading {
  */
 class AsyncStartupLoader {
 public:
+    // Passkey for controlled construction via make_unique
+    struct ConstructToken { explicit ConstructToken() = default; };
+
     struct InitInfo {
         VulkanContext* vulkanContext = nullptr;
         LoadingRenderer* loadingRenderer = nullptr;  // Optional, for progress display
@@ -40,6 +43,8 @@ public:
      * Factory: Create and initialize the loader
      */
     static std::unique_ptr<AsyncStartupLoader> create(const InitInfo& info);
+
+    explicit AsyncStartupLoader(ConstructToken) {}
 
     ~AsyncStartupLoader();
 
@@ -116,7 +121,6 @@ public:
     void shutdown();
 
 private:
-    AsyncStartupLoader() = default;
     bool init(const InitInfo& info);
 
     // Helper to build full path

@@ -4,7 +4,7 @@
 namespace Loading {
 
 std::unique_ptr<LoadJobQueue> LoadJobQueue::create(uint32_t workerCount) {
-    std::unique_ptr<LoadJobQueue> queue(new LoadJobQueue());
+    auto queue = std::make_unique<LoadJobQueue>(ConstructToken{});
     if (!queue->init(workerCount)) {
         return nullptr;
     }

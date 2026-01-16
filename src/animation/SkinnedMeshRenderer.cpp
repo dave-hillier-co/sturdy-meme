@@ -9,7 +9,7 @@
 #include <SDL3/SDL.h>
 
 std::unique_ptr<SkinnedMeshRenderer> SkinnedMeshRenderer::create(const InitInfo& info) {
-    std::unique_ptr<SkinnedMeshRenderer> system(new SkinnedMeshRenderer());
+    auto system = std::make_unique<SkinnedMeshRenderer>(ConstructToken{});
     if (!system->initInternal(info)) {
         return nullptr;
     }

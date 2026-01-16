@@ -4,7 +4,7 @@
 
 std::unique_ptr<ParticleSystem> ParticleSystem::create(const InitInfo& info, const Hooks& hooks,
                                                         uint32_t bufferSets, ParticleSystem** outPtr) {
-    std::unique_ptr<ParticleSystem> system(new ParticleSystem());
+    auto system = std::make_unique<ParticleSystem>(ConstructToken{});
     // Set outPtr before init so hooks can reference the system
     if (outPtr) {
         *outPtr = system.get();

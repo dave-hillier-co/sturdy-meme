@@ -41,6 +41,9 @@ struct CatmullClarkConfig {
 
 class CatmullClarkSystem {
 public:
+    // Passkey for controlled construction via make_unique
+    struct ConstructToken { explicit ConstructToken() = default; };
+
     struct InitInfo {
         VkDevice device;
         VkPhysicalDevice physicalDevice;
@@ -60,6 +63,8 @@ public:
      * Returns nullptr on failure.
      */
     static std::unique_ptr<CatmullClarkSystem> create(const InitInfo& info, const CatmullClarkConfig& config = {});
+
+    explicit CatmullClarkSystem(ConstructToken) {}
 
     ~CatmullClarkSystem();
 
@@ -94,8 +99,6 @@ public:
     bool isWireframeMode() const { return wireframeMode; }
 
 private:
-    CatmullClarkSystem() = default;  // Private: use factory
-
     bool initInternal(const InitInfo& info, const CatmullClarkConfig& config);
     void cleanup();
     // Initialization helpers

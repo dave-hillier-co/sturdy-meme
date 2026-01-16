@@ -36,6 +36,9 @@ struct DetritusConfig {
 
 class DetritusSystem {
 public:
+    // Passkey for controlled construction via make_unique
+    struct ConstructToken { explicit ConstructToken() = default; };
+
     struct InitInfo {
         VkDevice device;
         VmaAllocator allocator;
@@ -53,6 +56,8 @@ public:
      * Returns nullptr on failure.
      */
     static std::unique_ptr<DetritusSystem> create(const InitInfo& info, const DetritusConfig& config = {});
+
+    explicit DetritusSystem(ConstructToken) {}
 
     ~DetritusSystem();
 
@@ -81,8 +86,6 @@ public:
     const std::vector<Mesh>& getMeshes() const { return collection_.getMeshes(); }
 
 private:
-    DetritusSystem() = default;  // Private: use factory
-
     bool initInternal(const InitInfo& info, const DetritusConfig& config);
     void cleanup();
     bool createBranchMeshes(const InitInfo& info);

@@ -5,7 +5,7 @@
 #include <cmath>
 
 std::unique_ptr<RockSystem> RockSystem::create(const InitInfo& info, const RockConfig& config) {
-    std::unique_ptr<RockSystem> system(new RockSystem());
+    auto system = std::make_unique<RockSystem>(ConstructToken{});
     if (!system->initInternal(info, config)) {
         return nullptr;
     }

@@ -21,12 +21,17 @@ struct DebugLineVertex {
 // System for rendering debug lines and triangles using Vulkan
 class DebugLineSystem {
 public:
+    // Passkey for controlled construction via make_unique
+    struct ConstructToken { explicit ConstructToken() = default; };
+
     // Factory: returns nullptr on failure
     static std::unique_ptr<DebugLineSystem> create(VkDevice device, VmaAllocator allocator,
                                                     VkRenderPass renderPass,
                                                     const std::string& shaderPath,
                                                     uint32_t framesInFlight);
     static std::unique_ptr<DebugLineSystem> create(const InitContext& ctx, VkRenderPass renderPass);
+
+    explicit DebugLineSystem(ConstructToken) {}
 
     // Destructor handles cleanup
     ~DebugLineSystem();
@@ -79,8 +84,6 @@ public:
     size_t getTriangleCount() const { return triangleVertices.size() / 3; }
 
 private:
-    DebugLineSystem();  // Private: only factory can construct
-
     bool initInternal(VkDevice device, VmaAllocator allocator, VkRenderPass renderPass,
                       const std::string& shaderPath, uint32_t framesInFlight);
     bool createPipeline(VkRenderPass renderPass, const std::string& shaderPath);

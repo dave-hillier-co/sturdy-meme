@@ -10,7 +10,7 @@
 #include <cmath>
 
 std::unique_ptr<FlowMapGenerator> FlowMapGenerator::create(const InitInfo& info) {
-    std::unique_ptr<FlowMapGenerator> system(new FlowMapGenerator());
+    auto system = std::make_unique<FlowMapGenerator>(ConstructToken{});
     if (!system->initInternal(info)) {
         return nullptr;
     }

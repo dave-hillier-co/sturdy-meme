@@ -9,7 +9,7 @@
 namespace VirtualTexture {
 
 std::unique_ptr<VirtualTextureCache> VirtualTextureCache::create(const InitInfo& info) {
-    std::unique_ptr<VirtualTextureCache> cache(new VirtualTextureCache());
+    auto cache = std::make_unique<VirtualTextureCache>(ConstructToken{});
     if (!cache->initInternal(info)) {
         return nullptr;
     }

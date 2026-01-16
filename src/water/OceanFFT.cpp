@@ -11,7 +11,7 @@
 #include <vulkan/vulkan.hpp>
 
 std::unique_ptr<OceanFFT> OceanFFT::create(const InitInfo& info) {
-    std::unique_ptr<OceanFFT> ocean(new OceanFFT());
+    auto ocean = std::make_unique<OceanFFT>(ConstructToken{});
     if (!ocean->initInternal(info)) {
         return nullptr;
     }
@@ -19,7 +19,7 @@ std::unique_ptr<OceanFFT> OceanFFT::create(const InitInfo& info) {
 }
 
 std::unique_ptr<OceanFFT> OceanFFT::create(const InitContext& ctx, const OceanParams& params, bool useCascades) {
-    std::unique_ptr<OceanFFT> ocean(new OceanFFT());
+    auto ocean = std::make_unique<OceanFFT>(ConstructToken{});
     if (!ocean->initInternal(ctx, params, useCascades)) {
         return nullptr;
     }

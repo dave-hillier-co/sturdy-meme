@@ -4,6 +4,7 @@
 #include "ShaderLoader.h"
 #include "DescriptorManager.h"
 #include "core/vulkan/VmaResources.h"
+#include "core/vulkan/PipelineLayoutBuilder.h"
 #include "core/ImageBuilder.h"
 #include <SDL3/SDL_log.h>
 #include <vulkan/vulkan.hpp>
@@ -397,13 +398,10 @@ bool WaterGBuffer::createDescriptorSetLayout() {
 }
 
 bool WaterGBuffer::createPipelineLayout() {
-    auto pipelineLayoutInfo = vk::PipelineLayoutCreateInfo{}
-        .setSetLayouts(**descriptorSetLayout_);
-
-    try {
-        pipelineLayout_.emplace(*raiiDevice_, pipelineLayoutInfo);
-    } catch (const vk::SystemError& e) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "WaterGBuffer: Failed to create pipeline layout: %s", e.what());
+    if (!PipelineLayoutBuilder(*raiiDevice_)
+            .addDescriptorSetLayout(**descriptorSetLayout_)
+            .buildInto(pipelineLayout_)) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "WaterGBuffer: Failed to create pipeline layout");
         return false;
     }
 

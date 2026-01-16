@@ -13,6 +13,7 @@ class TerrainTextures {
 public:
     // Passkey for controlled construction via make_unique
     struct ConstructToken { explicit ConstructToken() = default; };
+    explicit TerrainTextures(ConstructToken) {}
 
     struct InitInfo {
         const vk::raii::Device* raiiDevice = nullptr;
@@ -26,7 +27,6 @@ public:
     // Factory method - returns nullptr on failure
     static std::unique_ptr<TerrainTextures> create(const InitInfo& info);
 
-    explicit TerrainTextures(ConstructToken) {}
 
     ~TerrainTextures();
 

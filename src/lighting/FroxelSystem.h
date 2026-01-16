@@ -24,6 +24,7 @@ class FroxelSystem : public IFogControl {
 public:
     // Passkey for controlled construction via make_unique
     struct ConstructToken { explicit ConstructToken() = default; };
+    explicit FroxelSystem(ConstructToken) {}
 
     struct InitInfo {
         VkDevice device;
@@ -54,7 +55,6 @@ public:
     static std::unique_ptr<FroxelSystem> create(const InitContext& ctx, VkImageView shadowMapView, VkSampler shadowSampler,
                                                  const std::vector<VkBuffer>& lightBuffers);
 
-    explicit FroxelSystem(ConstructToken) {}
 
     ~FroxelSystem();
 

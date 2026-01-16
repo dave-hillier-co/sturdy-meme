@@ -66,6 +66,7 @@ class HiZSystem {
 public:
     // Passkey for controlled construction via make_unique
     struct ConstructToken { explicit ConstructToken() = default; };
+    explicit HiZSystem(ConstructToken) {}
 
     struct InitInfo {
         VkDevice device;
@@ -144,7 +145,6 @@ public:
     };
     CullingStats getStats() const { return stats; }
 
-    explicit HiZSystem(ConstructToken) {}
 
 private:
     bool initInternal(const InitInfo& info);

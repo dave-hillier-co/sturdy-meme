@@ -49,6 +49,7 @@ class PostProcessSystem : public IPostProcessState {
 public:
     // Passkey for controlled construction via make_unique
     struct ConstructToken { explicit ConstructToken() = default; };
+    explicit PostProcessSystem(ConstructToken) {}
 
     struct InitInfo {
         VkDevice device;
@@ -69,7 +70,6 @@ public:
     static std::unique_ptr<PostProcessSystem> create(const InitInfo& info);
     static std::unique_ptr<PostProcessSystem> create(const InitContext& ctx, VkRenderPass outputRenderPass, VkFormat swapchainFormat);
 
-    explicit PostProcessSystem(ConstructToken) {}
 
     /**
      * Bundle of all post-processing related systems

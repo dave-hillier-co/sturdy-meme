@@ -16,6 +16,7 @@ class SkySystem {
 public:
     // Passkey for controlled construction via make_unique
     struct ConstructToken { explicit ConstructToken() = default; };
+    explicit SkySystem(ConstructToken) {}
 
     struct InitInfo {
         VkDevice device;
@@ -54,7 +55,6 @@ public:
     // Record sky rendering commands
     void recordDraw(VkCommandBuffer cmd, uint32_t frameIndex);
 
-    explicit SkySystem(ConstructToken) {}
 
 private:
     bool initInternal(const InitInfo& info);

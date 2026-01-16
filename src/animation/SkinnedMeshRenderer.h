@@ -24,6 +24,7 @@ class SkinnedMeshRenderer {
 public:
     // Passkey for controlled construction via make_unique
     struct ConstructToken { explicit ConstructToken() = default; };
+    explicit SkinnedMeshRenderer(ConstructToken) {}
 
     // Callback type for adding common descriptor bindings
     using AddCommonBindingsCallback = std::function<void(DescriptorManager::LayoutBuilder&)>;
@@ -73,7 +74,6 @@ public:
      */
     static std::unique_ptr<SkinnedMeshRenderer> create(const InitInfo& info);
 
-    explicit SkinnedMeshRenderer(ConstructToken) {}
 
     ~SkinnedMeshRenderer();
 

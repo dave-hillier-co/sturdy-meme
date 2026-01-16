@@ -16,6 +16,7 @@ class WindSystem {
 public:
     // Passkey for controlled construction via make_unique
     struct ConstructToken { explicit ConstructToken() = default; };
+    explicit WindSystem(ConstructToken) {}
 
     // Initialization parameters
     struct InitInfo {
@@ -79,7 +80,6 @@ public:
     // Get the total elapsed time (for shader synchronization)
     float getTime() const { return totalTime; }
 
-    explicit WindSystem(ConstructToken) {}
 
 private:
     bool initInternal(const InitInfo& info);

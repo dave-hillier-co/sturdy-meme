@@ -172,13 +172,13 @@ class LoadJobQueue {
 public:
     // Passkey for controlled construction via make_unique
     struct ConstructToken { explicit ConstructToken() = default; };
+    explicit LoadJobQueue(ConstructToken) {}
 
     /**
      * Factory: Create and start the job queue with worker threads
      */
     static std::unique_ptr<LoadJobQueue> create(uint32_t workerCount = 2);
 
-    explicit LoadJobQueue(ConstructToken) {}
 
     ~LoadJobQueue();
 

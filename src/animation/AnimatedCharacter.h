@@ -35,6 +35,7 @@ class AnimatedCharacter {
 public:
     // Passkey for controlled construction via make_unique
     struct ConstructToken { explicit ConstructToken() = default; };
+    explicit AnimatedCharacter(ConstructToken) {}
 
     struct InitInfo {
         std::string path;
@@ -50,7 +51,6 @@ public:
      */
     static std::unique_ptr<AnimatedCharacter> create(const InitInfo& info);
 
-    explicit AnimatedCharacter(ConstructToken) {}
 
     ~AnimatedCharacter();
 

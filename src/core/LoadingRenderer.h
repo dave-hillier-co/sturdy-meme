@@ -35,6 +35,7 @@ class LoadingRenderer {
 public:
     // Passkey for controlled construction via make_unique
     struct ConstructToken { explicit ConstructToken() = default; };
+    explicit LoadingRenderer(ConstructToken) {}
 
     struct InitInfo {
         VulkanContext* vulkanContext;  // Borrowed, not owned
@@ -47,7 +48,6 @@ public:
      */
     static std::unique_ptr<LoadingRenderer> create(const InitInfo& info);
 
-    explicit LoadingRenderer(ConstructToken) {}
 
     ~LoadingRenderer();
 

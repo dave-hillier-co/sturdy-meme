@@ -47,6 +47,7 @@ class TreeSpatialIndex {
 public:
     // Passkey for controlled construction via make_unique
     struct ConstructToken { explicit ConstructToken() = default; };
+    explicit TreeSpatialIndex(ConstructToken) {}
 
     struct InitInfo {
         VkDevice device;
@@ -119,7 +120,6 @@ public:
                !sortedTreeBuffers_.empty() && sortedTreeBuffers_[0] != VK_NULL_HANDLE;
     }
 
-    explicit TreeSpatialIndex(ConstructToken) {}
 
 private:
     bool initInternal(const InitInfo& info);

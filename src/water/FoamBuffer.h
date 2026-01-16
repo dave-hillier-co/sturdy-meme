@@ -45,6 +45,7 @@ class FoamBuffer {
 public:
     // Passkey for controlled construction via make_unique
     struct ConstructToken { explicit ConstructToken() = default; };
+    explicit FoamBuffer(ConstructToken) {}
 
     struct InitInfo {
         VkDevice device;
@@ -81,7 +82,6 @@ public:
      */
     static std::unique_ptr<FoamBuffer> create(const InitInfo& info);
 
-    explicit FoamBuffer(ConstructToken) {}
 
     ~FoamBuffer();
 

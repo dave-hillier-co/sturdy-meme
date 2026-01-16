@@ -28,6 +28,7 @@ class FlowMapGenerator {
 public:
     // Passkey for controlled construction via make_unique
     struct ConstructToken { explicit ConstructToken() = default; };
+    explicit FlowMapGenerator(ConstructToken) {}
 
     struct Config {
         uint32_t resolution = 512;       // Flow map resolution
@@ -52,7 +53,6 @@ public:
      */
     static std::unique_ptr<FlowMapGenerator> create(const InitInfo& info);
 
-    explicit FlowMapGenerator(ConstructToken) {}
 
     ~FlowMapGenerator();
 

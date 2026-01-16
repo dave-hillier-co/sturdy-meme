@@ -68,6 +68,7 @@ class AtmosphereLUTSystem {
 public:
     // Passkey for controlled construction via make_unique
     struct ConstructToken { explicit ConstructToken() = default; };
+    explicit AtmosphereLUTSystem(ConstructToken) {}
 
     struct InitInfo {
         VkDevice device;
@@ -296,8 +297,6 @@ private:
     static constexpr float ALTITUDE_THRESHOLD = 0.1f;        // Altitude change in km
     static constexpr float WIND_OFFSET_THRESHOLD = 0.001f;   // Wind offset change
     static constexpr float CLOUD_PARAM_THRESHOLD = 0.001f;   // Cloud coverage/density change
-
-    explicit AtmosphereLUTSystem(ConstructToken) {}
 
     bool initInternal(const InitInfo& info);
     void cleanup();

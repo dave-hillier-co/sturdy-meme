@@ -44,6 +44,7 @@ class Renderer {
 public:
     // Passkey for controlled construction via make_unique
     struct ConstructToken { explicit ConstructToken() = default; };
+    explicit Renderer(ConstructToken) {}
 
     // Configuration for renderer initialization
     struct Config {
@@ -68,7 +69,6 @@ public:
      */
     static std::unique_ptr<Renderer> create(const InitInfo& info);
 
-    explicit Renderer(ConstructToken) {}
 
     ~Renderer();
 

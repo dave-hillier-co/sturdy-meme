@@ -66,6 +66,7 @@ class TreeBranchCulling {
 public:
     // Passkey for controlled construction via make_unique
     struct ConstructToken { explicit ConstructToken() = default; };
+    explicit TreeBranchCulling(ConstructToken) {}
 
     struct InitInfo {
         VkDevice device;
@@ -119,7 +120,6 @@ public:
 
     VkDevice getDevice() const { return device_; }
 
-    explicit TreeBranchCulling(ConstructToken) {}
 
 private:
     bool init(const InitInfo& info);

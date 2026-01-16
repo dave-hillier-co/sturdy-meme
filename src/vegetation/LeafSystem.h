@@ -50,6 +50,7 @@ class LeafSystem : public ILeafControl {
 public:
     // Passkey for controlled construction via make_unique
     struct ConstructToken { explicit ConstructToken() = default; };
+    explicit LeafSystem(ConstructToken) {}
 
     using InitInfo = ParticleSystem::InitInfo;
 
@@ -59,7 +60,6 @@ public:
      */
     static std::unique_ptr<LeafSystem> create(const InitInfo& info);
 
-    explicit LeafSystem(ConstructToken) {}
 
     ~LeafSystem();
 

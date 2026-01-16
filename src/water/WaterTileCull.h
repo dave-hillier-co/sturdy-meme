@@ -27,6 +27,7 @@ class WaterTileCull {
 public:
     // Passkey for controlled construction via make_unique
     struct ConstructToken { explicit ConstructToken() = default; };
+    explicit WaterTileCull(ConstructToken) {}
 
     struct InitInfo {
         VkDevice device;
@@ -79,7 +80,6 @@ public:
      */
     static std::unique_ptr<WaterTileCull> create(const InitInfo& info);
 
-    explicit WaterTileCull(ConstructToken) {}
 
     ~WaterTileCull();
 

@@ -11,6 +11,7 @@ class TerrainCBT {
 public:
     // Passkey for controlled construction via make_unique
     struct ConstructToken { explicit ConstructToken() = default; };
+    explicit TerrainCBT(ConstructToken) {}
 
     struct InitInfo {
         VmaAllocator allocator;
@@ -21,7 +22,6 @@ public:
     // Factory method - returns nullptr on failure
     static std::unique_ptr<TerrainCBT> create(const InitInfo& info);
 
-    explicit TerrainCBT(ConstructToken) {}
 
     ~TerrainCBT() = default;
 

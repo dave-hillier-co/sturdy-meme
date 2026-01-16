@@ -43,6 +43,7 @@ class CatmullClarkSystem {
 public:
     // Passkey for controlled construction via make_unique
     struct ConstructToken { explicit ConstructToken() = default; };
+    explicit CatmullClarkSystem(ConstructToken) {}
 
     struct InitInfo {
         VkDevice device;
@@ -64,7 +65,6 @@ public:
      */
     static std::unique_ptr<CatmullClarkSystem> create(const InitInfo& info, const CatmullClarkConfig& config = {});
 
-    explicit CatmullClarkSystem(ConstructToken) {}
 
     ~CatmullClarkSystem();
 

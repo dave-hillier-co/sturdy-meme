@@ -55,6 +55,7 @@ class OceanFFT {
 public:
     // Passkey for controlled construction via make_unique
     struct ConstructToken { explicit ConstructToken() = default; };
+    explicit OceanFFT(ConstructToken) {}
 
     // Ocean simulation parameters
     struct OceanParams {
@@ -99,7 +100,6 @@ public:
     static std::unique_ptr<OceanFFT> create(const InitInfo& info);
     static std::unique_ptr<OceanFFT> create(const InitContext& ctx, const OceanParams& params, bool useCascades = true);
 
-    explicit OceanFFT(ConstructToken) {}
 
     ~OceanFFT();
 

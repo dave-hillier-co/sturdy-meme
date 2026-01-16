@@ -14,6 +14,7 @@ class BloomSystem {
 public:
     // Passkey for controlled construction via make_unique
     struct ConstructToken { explicit ConstructToken() = default; };
+    explicit BloomSystem(ConstructToken) {}
 
     // Legacy InitInfo - kept for backward compatibility during migration
     struct InitInfo {
@@ -52,7 +53,6 @@ public:
     void setIntensity(float i) { intensity = i; }
     float getIntensity() const { return intensity; }
 
-    explicit BloomSystem(ConstructToken) {}
 
 private:
     bool initInternal(const InitInfo& info);

@@ -134,6 +134,7 @@ class TreeLeafCulling {
 public:
     // Passkey for controlled construction via make_unique
     struct ConstructToken { explicit ConstructToken() = default; };
+    explicit TreeLeafCulling(ConstructToken) {}
 
     struct InitInfo {
         const vk::raii::Device* raiiDevice = nullptr;
@@ -203,7 +204,6 @@ public:
 
     VkDevice getDevice() const { return device_; }
 
-    explicit TreeLeafCulling(ConstructToken) {}
 
 private:
     bool init(const InitInfo& info);

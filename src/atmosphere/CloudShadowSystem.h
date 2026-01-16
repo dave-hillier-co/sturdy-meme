@@ -37,6 +37,7 @@ class CloudShadowSystem : public ICloudShadowControl {
 public:
     // Passkey for controlled construction via make_unique
     struct ConstructToken { explicit ConstructToken() = default; };
+    explicit CloudShadowSystem(ConstructToken) {}
 
     struct InitInfo {
         VkDevice device;
@@ -153,8 +154,6 @@ private:
 
     // Temporal spreading: update 1/4 of shadow map per frame
     uint32_t quadrantIndex = 0;  // Cycles 0-3
-
-    explicit CloudShadowSystem(ConstructToken) {}
 
     bool initInternal(const InitInfo& info);
     void cleanup();

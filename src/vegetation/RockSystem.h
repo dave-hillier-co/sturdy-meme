@@ -36,6 +36,7 @@ class RockSystem {
 public:
     // Passkey for controlled construction via make_unique
     struct ConstructToken { explicit ConstructToken() = default; };
+    explicit RockSystem(ConstructToken) {}
 
     struct InitInfo {
         VkDevice device;
@@ -54,7 +55,6 @@ public:
      */
     static std::unique_ptr<RockSystem> create(const InitInfo& info, const RockConfig& config = {});
 
-    explicit RockSystem(ConstructToken) {}
 
     ~RockSystem();
 

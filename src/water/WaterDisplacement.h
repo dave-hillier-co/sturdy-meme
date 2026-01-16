@@ -27,6 +27,7 @@ class WaterDisplacement {
 public:
     // Passkey for controlled construction via make_unique
     struct ConstructToken { explicit ConstructToken() = default; };
+    explicit WaterDisplacement(ConstructToken) {}
 
     struct InitInfo {
         VkDevice device;
@@ -66,7 +67,6 @@ public:
      */
     static std::unique_ptr<WaterDisplacement> create(const InitInfo& info);
 
-    explicit WaterDisplacement(ConstructToken) {}
 
     ~WaterDisplacement();
 

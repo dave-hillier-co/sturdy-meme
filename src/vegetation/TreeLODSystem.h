@@ -46,6 +46,7 @@ class TreeLODSystem {
 public:
     // Passkey for controlled construction via make_unique
     struct ConstructToken { explicit ConstructToken() = default; };
+    explicit TreeLODSystem(ConstructToken) {}
 
     struct InitInfo {
         const vk::raii::Device* raiiDevice;  // vulkan-hpp RAII device
@@ -165,7 +166,6 @@ public:
     };
     const DebugInfo& getDebugInfo() const { return debugInfo_; }
 
-    explicit TreeLODSystem(ConstructToken) {}
 
 private:
     bool initInternal(const InitInfo& info);

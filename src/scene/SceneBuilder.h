@@ -25,6 +25,7 @@ class SceneBuilder {
 public:
     // Passkey for controlled construction via make_unique
     struct ConstructToken { explicit ConstructToken() = default; };
+    explicit SceneBuilder(ConstructToken) {}
 
     // Function type for querying terrain height at world position (x, z)
     using HeightQueryFunc = std::function<float(float, float)>;
@@ -47,7 +48,6 @@ public:
      */
     static std::unique_ptr<SceneBuilder> create(const InitInfo& info);
 
-    explicit SceneBuilder(ConstructToken) {}
 
     ~SceneBuilder();
 

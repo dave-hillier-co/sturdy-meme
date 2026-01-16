@@ -25,6 +25,7 @@ class VirtualTextureFeedback {
 public:
     // Passkey for controlled construction via make_unique
     struct ConstructToken { explicit ConstructToken() = default; };
+    explicit VirtualTextureFeedback(ConstructToken) {}
 
     /**
      * Factory: Create and initialize VirtualTextureFeedback.
@@ -90,7 +91,6 @@ public:
 
     uint32_t getMaxEntries() const { return maxEntries; }
 
-    explicit VirtualTextureFeedback(ConstructToken) {}
 
 private:
     bool initInternal(VkDevice device, VmaAllocator allocator,

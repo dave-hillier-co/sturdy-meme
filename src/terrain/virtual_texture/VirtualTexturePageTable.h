@@ -22,6 +22,7 @@ class VirtualTexturePageTable {
 public:
     // Passkey for controlled construction via make_unique
     struct ConstructToken { explicit ConstructToken() = default; };
+    explicit VirtualTexturePageTable(ConstructToken) {}
 
     struct InitInfo {
         const vk::raii::Device* raiiDevice = nullptr;
@@ -78,7 +79,6 @@ public:
     // Get the combined image view (array of all mip levels)
     VkImageView getCombinedImageView() const { return combinedImageView; }
 
-    explicit VirtualTexturePageTable(ConstructToken) {}
 
 private:
     bool initInternal(const InitInfo& info);

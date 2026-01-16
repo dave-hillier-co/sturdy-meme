@@ -28,6 +28,7 @@ class BilateralGridSystem {
 public:
     // Passkey for controlled construction via make_unique
     struct ConstructToken { explicit ConstructToken() = default; };
+    explicit BilateralGridSystem(ConstructToken) {}
 
     struct InitInfo {
         VkDevice device;
@@ -92,7 +93,6 @@ public:
     float getMinLogLuminance() const { return MIN_LOG_LUMINANCE; }
     float getMaxLogLuminance() const { return MAX_LOG_LUMINANCE; }
 
-    explicit BilateralGridSystem(ConstructToken) {}
 
 private:
     bool initInternal(const InitInfo& info);

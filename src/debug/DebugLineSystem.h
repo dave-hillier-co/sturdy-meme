@@ -23,6 +23,7 @@ class DebugLineSystem {
 public:
     // Passkey for controlled construction via make_unique
     struct ConstructToken { explicit ConstructToken() = default; };
+    explicit DebugLineSystem(ConstructToken) {}
 
     // Factory: returns nullptr on failure
     static std::unique_ptr<DebugLineSystem> create(VkDevice device, VmaAllocator allocator,
@@ -31,7 +32,6 @@ public:
                                                     uint32_t framesInFlight);
     static std::unique_ptr<DebugLineSystem> create(const InitContext& ctx, VkRenderPass renderPass);
 
-    explicit DebugLineSystem(ConstructToken) {}
 
     // Destructor handles cleanup
     ~DebugLineSystem();

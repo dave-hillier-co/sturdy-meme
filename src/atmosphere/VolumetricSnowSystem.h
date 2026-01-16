@@ -75,6 +75,7 @@ class VolumetricSnowSystem {
 public:
     // Passkey for controlled construction via make_unique
     struct ConstructToken { explicit ConstructToken() = default; };
+    explicit VolumetricSnowSystem(ConstructToken) {}
 
     using InitInfo = SystemLifecycleHelper::InitInfo;
 
@@ -191,8 +192,6 @@ private:
     static constexpr uint32_t WORKGROUP_SIZE = 16;  // 16x16 workgroups
 
     std::array<bool, NUM_SNOW_CASCADES> isFirstFrame{true, true, true};
-
-    explicit VolumetricSnowSystem(ConstructToken) {}
 
     bool initInternal(const InitInfo& info);
     void cleanup();

@@ -10,6 +10,7 @@ class TerrainBuffers {
 public:
     // Passkey for controlled construction via make_unique
     struct ConstructToken { explicit ConstructToken() = default; };
+    explicit TerrainBuffers(ConstructToken) {}
 
     struct InitInfo {
         VmaAllocator allocator;
@@ -20,7 +21,6 @@ public:
     // Factory method - returns nullptr on failure
     static std::unique_ptr<TerrainBuffers> create(const InitInfo& info);
 
-    explicit TerrainBuffers(ConstructToken) {}
 
     ~TerrainBuffers();
 

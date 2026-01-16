@@ -27,6 +27,7 @@ class ThreadedTreeGenerator {
 public:
     // Passkey for controlled construction via make_unique
     struct ConstructToken { explicit ConstructToken() = default; };
+    explicit ThreadedTreeGenerator(ConstructToken) {}
 
     /**
      * Request for tree generation
@@ -71,7 +72,6 @@ public:
      */
     static std::unique_ptr<ThreadedTreeGenerator> create(uint32_t workerCount = 4);
 
-    explicit ThreadedTreeGenerator(ConstructToken) {}
 
     ~ThreadedTreeGenerator();
 

@@ -24,6 +24,7 @@ class Profiler : public IProfilerControl {
 public:
     // Passkey for controlled construction via make_unique
     struct ConstructToken { explicit ConstructToken() = default; };
+    explicit Profiler(ConstructToken) {}
 
     /**
      * Factory: Create a profiler instance.
@@ -41,7 +42,6 @@ public:
         return profiler;
     }
 
-    explicit Profiler(ConstructToken) {}
 
     ~Profiler() {
         gpuProfiler_.reset();

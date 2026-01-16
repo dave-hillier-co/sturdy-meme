@@ -42,6 +42,7 @@ class WeatherSystem : public IWeatherState {
 public:
     // Passkey for controlled construction via make_unique
     struct ConstructToken { explicit ConstructToken() = default; };
+    explicit WeatherSystem(ConstructToken) {}
 
     using InitInfo = ParticleSystem::InitInfo;
 
@@ -112,7 +113,6 @@ public:
     // Weather control
     void setGroundLevel(float level) { groundLevel = level; }
 
-    explicit WeatherSystem(ConstructToken) {}
 
 private:
     bool initInternal(const InitInfo& info);

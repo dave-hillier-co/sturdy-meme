@@ -70,6 +70,7 @@ class ImpostorCullSystem {
 public:
     // Passkey for controlled construction via make_unique
     struct ConstructToken { explicit ConstructToken() = default; };
+    explicit ImpostorCullSystem(ConstructToken) {}
 
     struct InitInfo {
         const vk::raii::Device* raiiDevice = nullptr;
@@ -177,7 +178,6 @@ public:
     // Initialize static descriptor set bindings (call once after buffers are created)
     void initializeDescriptorSets();
 
-    explicit ImpostorCullSystem(ConstructToken) {}
 
 private:
     bool initInternal(const InitInfo& info);

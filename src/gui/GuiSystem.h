@@ -19,6 +19,7 @@ class GuiSystem {
 public:
     // Passkey for controlled construction via make_unique
     struct ConstructToken { explicit ConstructToken() = default; };
+    explicit GuiSystem(ConstructToken) {}
 
     /**
      * Factory: Create and initialize GUI system.
@@ -56,7 +57,6 @@ public:
     PlayerSettings& getPlayerSettings() { return playerSettings; }
     const PlayerSettings& getPlayerSettings() const { return playerSettings; }
 
-    explicit GuiSystem(ConstructToken) {}
 
 private:
     bool initInternal(SDL_Window* window, VkInstance instance, VkPhysicalDevice physicalDevice,

@@ -23,6 +23,7 @@ class VirtualTextureCache {
 public:
     // Passkey for controlled construction via make_unique
     struct ConstructToken { explicit ConstructToken() = default; };
+    explicit VirtualTextureCache(ConstructToken) {}
 
     struct InitInfo {
         const vk::raii::Device* raiiDevice = nullptr;
@@ -102,7 +103,6 @@ public:
     uint32_t getSlotCount() const { return static_cast<uint32_t>(slots.size()); }
     uint32_t getUsedSlotCount() const;
 
-    explicit VirtualTextureCache(ConstructToken) {}
 
 private:
     bool initInternal(const InitInfo& info);

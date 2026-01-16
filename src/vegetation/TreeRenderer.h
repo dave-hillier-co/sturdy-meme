@@ -58,6 +58,7 @@ class TreeRenderer {
 public:
     // Passkey for controlled construction via make_unique
     struct ConstructToken { explicit ConstructToken() = default; };
+    explicit TreeRenderer(ConstructToken) {}
 
     struct InitInfo {
         const vk::raii::Device* raiiDevice = nullptr;
@@ -182,7 +183,6 @@ public:
 
     vk::Device getDevice() const { return device_; }
 
-    explicit TreeRenderer(ConstructToken) {}
 
 private:
     bool initInternal(const InitInfo& info);

@@ -11,6 +11,7 @@ class ParticleSystem {
 public:
     // Passkey for controlled construction via make_unique
     struct ConstructToken { explicit ConstructToken() = default; };
+    explicit ParticleSystem(ConstructToken) {}
 
     using InitInfo = SystemLifecycleHelper::InitInfo;
     using Hooks = SystemLifecycleHelper::Hooks;
@@ -22,7 +23,6 @@ public:
                                                    uint32_t bufferSets = 2,
                                                    ParticleSystem** outPtr = nullptr);
 
-    explicit ParticleSystem(ConstructToken) {}
 
     ~ParticleSystem();
 

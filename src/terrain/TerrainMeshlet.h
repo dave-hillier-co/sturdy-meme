@@ -20,6 +20,7 @@ class TerrainMeshlet {
 public:
     // Passkey for controlled construction via make_unique
     struct ConstructToken { explicit ConstructToken() = default; };
+    explicit TerrainMeshlet(ConstructToken) {}
 
     struct InitInfo {
         VmaAllocator allocator;
@@ -33,7 +34,6 @@ public:
      */
     static std::unique_ptr<TerrainMeshlet> create(const InitInfo& info);
 
-    explicit TerrainMeshlet(ConstructToken) {}
 
     ~TerrainMeshlet() = default;
 

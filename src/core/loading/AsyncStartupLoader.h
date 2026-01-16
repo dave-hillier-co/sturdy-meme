@@ -31,6 +31,7 @@ class AsyncStartupLoader {
 public:
     // Passkey for controlled construction via make_unique
     struct ConstructToken { explicit ConstructToken() = default; };
+    explicit AsyncStartupLoader(ConstructToken) {}
 
     struct InitInfo {
         VulkanContext* vulkanContext = nullptr;
@@ -44,7 +45,6 @@ public:
      */
     static std::unique_ptr<AsyncStartupLoader> create(const InitInfo& info);
 
-    explicit AsyncStartupLoader(ConstructToken) {}
 
     ~AsyncStartupLoader();
 

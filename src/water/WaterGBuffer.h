@@ -25,6 +25,7 @@ class WaterGBuffer {
 public:
     // Passkey for controlled construction via make_unique
     struct ConstructToken { explicit ConstructToken() = default; };
+    explicit WaterGBuffer(ConstructToken) {}
 
     struct InitInfo {
         VkDevice device;
@@ -58,7 +59,6 @@ public:
      */
     static std::unique_ptr<WaterGBuffer> create(const InitInfo& info);
 
-    explicit WaterGBuffer(ConstructToken) {}
 
     ~WaterGBuffer();
 

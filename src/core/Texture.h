@@ -9,6 +9,7 @@ class Texture {
 public:
     // Passkey for controlled construction via make_unique
     struct ConstructToken { explicit ConstructToken() = default; };
+    explicit Texture(ConstructToken) {}
 
     // Factory methods - return nullptr on failure
     static std::unique_ptr<Texture> loadFromFile(const std::string& path, VmaAllocator allocator, VkDevice device,
@@ -21,7 +22,6 @@ public:
                                                       VmaAllocator allocator, VkDevice device,
                                                       VkCommandPool commandPool, VkQueue queue);
 
-    explicit Texture(ConstructToken) {}
 
     ~Texture();
 

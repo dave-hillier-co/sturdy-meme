@@ -135,6 +135,7 @@ class TerrainSystem : public ITerrainControl {
 public:
     // Passkey for controlled construction via make_unique
     struct ConstructToken { explicit ConstructToken() = default; };
+    explicit TerrainSystem(ConstructToken) {}
 
     struct InitInfo {
         const vk::raii::Device* raiiDevice = nullptr;
@@ -169,7 +170,6 @@ public:
                                                   const TerrainInitParams& params,
                                                   const TerrainConfig& config = {});
 
-    explicit TerrainSystem(ConstructToken) {}
 
     ~TerrainSystem();
 

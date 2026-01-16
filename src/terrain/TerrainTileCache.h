@@ -78,6 +78,7 @@ class TerrainTileCache {
 public:
     // Passkey for controlled construction via make_unique
     struct ConstructToken { explicit ConstructToken() = default; };
+    explicit TerrainTileCache(ConstructToken) {}
 
     struct InitInfo {
         const vk::raii::Device* raiiDevice = nullptr;
@@ -101,7 +102,6 @@ public:
      */
     static std::unique_ptr<TerrainTileCache> create(const InitInfo& info);
 
-    explicit TerrainTileCache(ConstructToken) {}
 
     ~TerrainTileCache();
 

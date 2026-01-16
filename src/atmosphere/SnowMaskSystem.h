@@ -35,6 +35,7 @@ class SnowMaskSystem {
 public:
     // Passkey for controlled construction via make_unique
     struct ConstructToken { explicit ConstructToken() = default; };
+    explicit SnowMaskSystem(ConstructToken) {}
 
     using InitInfo = SystemLifecycleHelper::InitInfo;
 
@@ -143,8 +144,6 @@ private:
     static constexpr uint32_t WORKGROUP_SIZE = 16;  // 16x16 workgroups
 
     bool isFirstFrame = true;  // Track first frame for layout transitions
-
-    explicit SnowMaskSystem(ConstructToken) {}
 
     bool initInternal(const InitInfo& info);
     void cleanup();

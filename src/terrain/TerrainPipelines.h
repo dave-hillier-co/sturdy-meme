@@ -15,6 +15,7 @@ class TerrainPipelines {
 public:
     // Passkey for controlled construction via make_unique
     struct ConstructToken { explicit ConstructToken() = default; };
+    explicit TerrainPipelines(ConstructToken) {}
 
     struct InitInfo {
         const vk::raii::Device* raiiDevice = nullptr;
@@ -36,7 +37,6 @@ public:
      */
     static std::unique_ptr<TerrainPipelines> create(const InitInfo& info);
 
-    explicit TerrainPipelines(ConstructToken) {}
 
     ~TerrainPipelines() = default;
 

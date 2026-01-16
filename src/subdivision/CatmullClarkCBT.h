@@ -13,6 +13,7 @@ class CatmullClarkCBT {
 public:
     // Passkey for controlled construction via make_unique
     struct ConstructToken { explicit ConstructToken() = default; };
+    explicit CatmullClarkCBT(ConstructToken) {}
 
     struct InitInfo {
         VmaAllocator allocator;
@@ -26,7 +27,6 @@ public:
      */
     static std::unique_ptr<CatmullClarkCBT> create(const InitInfo& info);
 
-    explicit CatmullClarkCBT(ConstructToken) {}
 
     ~CatmullClarkCBT() = default;
 

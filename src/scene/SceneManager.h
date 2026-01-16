@@ -12,6 +12,7 @@ class SceneManager {
 public:
     // Passkey for controlled construction via make_unique
     struct ConstructToken { explicit ConstructToken() = default; };
+    explicit SceneManager(ConstructToken) {}
 
     /**
      * Factory: Create and initialize SceneManager.
@@ -19,7 +20,6 @@ public:
      */
     static std::unique_ptr<SceneManager> create(SceneBuilder::InitInfo& builderInfo);
 
-    explicit SceneManager(ConstructToken) {}
 
     ~SceneManager();
 

@@ -38,6 +38,7 @@ class DetritusSystem {
 public:
     // Passkey for controlled construction via make_unique
     struct ConstructToken { explicit ConstructToken() = default; };
+    explicit DetritusSystem(ConstructToken) {}
 
     struct InitInfo {
         VkDevice device;
@@ -57,7 +58,6 @@ public:
      */
     static std::unique_ptr<DetritusSystem> create(const InitInfo& info, const DetritusConfig& config = {});
 
-    explicit DetritusSystem(ConstructToken) {}
 
     ~DetritusSystem();
 

@@ -31,6 +31,7 @@ class ShadowSystem {
 public:
     // Passkey for controlled construction via make_unique
     struct ConstructToken { explicit ConstructToken() = default; };
+    explicit ShadowSystem(ConstructToken) {}
 
     // Configuration for shadow system initialization
     struct InitInfo {
@@ -121,7 +122,6 @@ public:
                               const DrawCallback& skinnedDrawCallback,
                               const std::vector<Light>& visibleLights);
 
-    explicit ShadowSystem(ConstructToken) {}
 
 private:
     bool initInternal(const InitInfo& info);

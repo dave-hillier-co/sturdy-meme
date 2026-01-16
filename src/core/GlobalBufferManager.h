@@ -27,6 +27,7 @@ class GlobalBufferManager {
 public:
     // Passkey for controlled construction via make_unique
     struct ConstructToken { explicit ConstructToken() = default; };
+    explicit GlobalBufferManager(ConstructToken) {}
 
     /**
      * Factory: Create and initialize buffer manager.
@@ -41,7 +42,6 @@ public:
         return manager;
     }
 
-    explicit GlobalBufferManager(ConstructToken) {}
 
     ~GlobalBufferManager() {
         cleanup();

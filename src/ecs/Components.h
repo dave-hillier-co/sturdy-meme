@@ -10,17 +10,19 @@
 #include "PhysicsSystem.h"
 #include "scene/RotationUtils.h"
 
-// Core transform component - position and rotation for entities
+// Core transform component - position, rotation, and scale for entities
 // Supports both quaternion (full 3D) and yaw-only (Y-axis) rotation
+// When used with Hierarchy component, this represents LOCAL transform (relative to parent)
 struct Transform {
     glm::vec3 position{0.0f};
     glm::quat rotation{1.0f, 0.0f, 0.0f, 0.0f};  // Identity quaternion
+    glm::vec3 scale{1.0f};
 
     // ========================================================================
     // Factory methods
     // ========================================================================
 
-    // Create with position only (identity rotation)
+    // Create with position only (identity rotation, unit scale)
     static Transform withPosition(const glm::vec3& pos) {
         Transform t;
         t.position = pos;
@@ -40,6 +42,23 @@ struct Transform {
         Transform t;
         t.position = pos;
         t.rotation = rot;
+        return t;
+    }
+
+    // Create with position, rotation, and scale
+    static Transform withAll(const glm::vec3& pos, const glm::quat& rot, const glm::vec3& s) {
+        Transform t;
+        t.position = pos;
+        t.rotation = rot;
+        t.scale = s;
+        return t;
+    }
+
+    // Create with position and uniform scale
+    static Transform withScale(const glm::vec3& pos, float uniformScale) {
+        Transform t;
+        t.position = pos;
+        t.scale = glm::vec3(uniformScale);
         return t;
     }
 
@@ -87,22 +106,113 @@ struct Transform {
     }
 
     // ========================================================================
-    // Transform matrix
+    // Transform matrix (local)
     // ========================================================================
 
+    // Get local transform matrix (T * R * S)
     glm::mat4 getMatrix() const {
         glm::mat4 transform = glm::translate(glm::mat4(1.0f), position);
         transform = transform * glm::mat4_cast(rotation);
+        transform = glm::scale(transform, scale);
         return transform;
     }
 
-    glm::mat4 getMatrixWithScale(float scale) const {
+    // Get local matrix with uniform scale override
+    glm::mat4 getMatrixWithScale(float uniformScale) const {
         glm::mat4 transform = glm::translate(glm::mat4(1.0f), position);
         transform = transform * glm::mat4_cast(rotation);
-        transform = glm::scale(transform, glm::vec3(scale));
+        transform = glm::scale(transform, glm::vec3(uniformScale));
         return transform;
     }
+
+    // ========================================================================
+    // Scale accessors
+    // ========================================================================
+
+    void setScale(const glm::vec3& s) { scale = s; }
+    void setScale(float uniformScale) { scale = glm::vec3(uniformScale); }
+    const glm::vec3& getScale() const { return scale; }
 };
+
+// ============================================================================
+// Hierarchy Component - Parent-child relationships for transforms
+// ============================================================================
+
+// Hierarchy component - defines parent-child relationships between entities
+// When an entity has a Hierarchy, its Transform is treated as LOCAL (relative to parent)
+// Entities without Hierarchy or with parent=null have Transform as WORLD transform
+struct Hierarchy {
+    entt::entity parent{entt::null};
+    std::vector<entt::entity> children;
+
+    // Depth in hierarchy (0 = root). Used for correct update ordering.
+    uint32_t depth{0};
+
+    // Factory for root entity (no parent)
+    static Hierarchy root() {
+        return Hierarchy{};
+    }
+
+    // Factory with parent
+    static Hierarchy withParent(entt::entity p) {
+        Hierarchy h;
+        h.parent = p;
+        return h;
+    }
+
+    bool hasParent() const { return parent != entt::null; }
+    bool hasChildren() const { return !children.empty(); }
+};
+
+// World transform component - cached world-space matrix for entities with hierarchy
+// Updated by the transform hierarchy system each frame
+// For entities without Hierarchy, this is the same as Transform::getMatrix()
+struct alignas(16) WorldTransform {
+    glm::mat4 matrix{1.0f};
+
+    // Decomposed world transform (extracted from matrix when needed)
+    glm::vec3 getWorldPosition() const {
+        return glm::vec3(matrix[3]);
+    }
+
+    glm::quat getWorldRotation() const {
+        glm::vec3 scale;
+        scale.x = glm::length(glm::vec3(matrix[0]));
+        scale.y = glm::length(glm::vec3(matrix[1]));
+        scale.z = glm::length(glm::vec3(matrix[2]));
+
+        glm::mat3 rotMat(
+            glm::vec3(matrix[0]) / scale.x,
+            glm::vec3(matrix[1]) / scale.y,
+            glm::vec3(matrix[2]) / scale.z
+        );
+        return glm::quat_cast(rotMat);
+    }
+
+    glm::vec3 getWorldScale() const {
+        return glm::vec3(
+            glm::length(glm::vec3(matrix[0])),
+            glm::length(glm::vec3(matrix[1])),
+            glm::length(glm::vec3(matrix[2]))
+        );
+    }
+
+    // Direction vectors in world space
+    glm::vec3 getForward() const {
+        return glm::normalize(glm::vec3(matrix[2]));
+    }
+
+    glm::vec3 getRight() const {
+        return glm::normalize(glm::vec3(matrix[0]));
+    }
+
+    glm::vec3 getUp() const {
+        return glm::normalize(glm::vec3(matrix[1]));
+    }
+};
+
+// Tag component to mark hierarchy as dirty (needs update)
+struct HierarchyDirty {};
 
 // Velocity for physics-driven entities
 struct Velocity {

@@ -2,6 +2,7 @@
 
 #include "Components.h"
 #include "Systems.h"
+#include "TransformHierarchy.h"
 #include <entt/entt.hpp>
 
 // Thin wrapper around entt::registry providing convenient entity creation
@@ -211,17 +212,126 @@ public:
     }
 
     // ========================================================================
+    // Transform Hierarchy
+    // ========================================================================
+
+    // Create an entity as a child of another entity
+    entt::entity createChildEntity(entt::entity parent,
+                                    const glm::vec3& localPosition = glm::vec3(0.0f),
+                                    const glm::quat& localRotation = glm::quat(1.0f, 0.0f, 0.0f, 0.0f),
+                                    const glm::vec3& localScale = glm::vec3(1.0f)) {
+        auto entity = registry_.create();
+        registry_.emplace<Transform>(entity, Transform::withAll(localPosition, localRotation, localScale));
+        registry_.emplace<Hierarchy>(entity, Hierarchy::withParent(parent));
+        registry_.emplace<WorldTransform>(entity);
+
+        // Add to parent's children list
+        if (registry_.valid(parent)) {
+            if (!registry_.all_of<Hierarchy>(parent)) {
+                registry_.emplace<Hierarchy>(parent, Hierarchy::root());
+            }
+            registry_.get<Hierarchy>(parent).children.push_back(entity);
+        }
+
+        // Update depth
+        TransformHierarchy::updateDepth(registry_, entity);
+
+        return entity;
+    }
+
+    // Create a root entity with hierarchy support (can have children)
+    entt::entity createHierarchyRoot(const glm::vec3& position = glm::vec3(0.0f),
+                                      const glm::quat& rotation = glm::quat(1.0f, 0.0f, 0.0f, 0.0f),
+                                      const glm::vec3& scale = glm::vec3(1.0f)) {
+        auto entity = registry_.create();
+        registry_.emplace<Transform>(entity, Transform::withAll(position, rotation, scale));
+        registry_.emplace<Hierarchy>(entity, Hierarchy::root());
+        registry_.emplace<WorldTransform>(entity);
+        return entity;
+    }
+
+    // Set parent of an entity
+    void setParent(entt::entity child, entt::entity parent) {
+        TransformHierarchy::setParent(registry_, child, parent);
+    }
+
+    // Remove entity from parent (make it a root)
+    void removeFromParent(entt::entity entity) {
+        TransformHierarchy::removeFromParent(registry_, entity);
+    }
+
+    // Get parent of an entity
+    entt::entity getParent(entt::entity entity) const {
+        if (!registry_.valid(entity) || !registry_.all_of<Hierarchy>(entity)) {
+            return entt::null;
+        }
+        return registry_.get<Hierarchy>(entity).parent;
+    }
+
+    // Get children of an entity
+    std::vector<entt::entity> getChildren(entt::entity entity) const {
+        if (!registry_.valid(entity) || !registry_.all_of<Hierarchy>(entity)) {
+            return {};
+        }
+        return registry_.get<Hierarchy>(entity).children;
+    }
+
+    // Get the world transform matrix for an entity
+    const glm::mat4& getWorldMatrix(entt::entity entity) {
+        return TransformHierarchy::ensureWorldTransform(registry_, entity);
+    }
+
+    // Get world position of an entity
+    glm::vec3 getWorldPosition(entt::entity entity) {
+        const glm::mat4& world = getWorldMatrix(entity);
+        return glm::vec3(world[3]);
+    }
+
+    // Set world position of an entity (calculates required local position)
+    void setWorldPosition(entt::entity entity, const glm::vec3& worldPos) {
+        TransformHierarchy::setWorldPosition(registry_, entity, worldPos);
+    }
+
+    // Set local position of an entity (relative to parent)
+    void setLocalPosition(entt::entity entity, const glm::vec3& localPos) {
+        TransformHierarchy::setLocalPosition(registry_, entity, localPos);
+    }
+
+    // Set local rotation of an entity (relative to parent)
+    void setLocalRotation(entt::entity entity, const glm::quat& localRot) {
+        TransformHierarchy::setLocalRotation(registry_, entity, localRot);
+    }
+
+    // Set local scale of an entity (relative to parent)
+    void setLocalScale(entt::entity entity, const glm::vec3& localScale) {
+        TransformHierarchy::setLocalScale(registry_, entity, localScale);
+    }
+
+    // Make entity look at a target in world space
+    void lookAt(entt::entity entity, const glm::vec3& target) {
+        TransformHierarchy::lookAt(registry_, entity, target);
+    }
+
+    // ========================================================================
     // Extended Update
     // ========================================================================
 
-    // Update all extended systems (lights and AI)
+    // Update all extended systems (hierarchy, lights, and AI)
     void updateExtended(float deltaTime) {
+        // Transform hierarchy system - must run before light attachments
+        TransformHierarchy::transformHierarchySystem(registry_);
+
         // Light systems
         lightAttachmentSystem(registry_);
 
         // AI systems
         aiStateTimerSystem(registry_, deltaTime);
         patrolSystem(registry_, deltaTime);
+    }
+
+    // Update only the transform hierarchy (for use in specific update loops)
+    void updateTransformHierarchy() {
+        TransformHierarchy::transformHierarchySystem(registry_);
     }
 
 private:

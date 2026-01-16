@@ -2,6 +2,7 @@
 
 #include <entt/entt.hpp>
 #include "Components.h"
+#include "TransformHierarchy.h"
 
 // ============================================================================
 // Light Systems

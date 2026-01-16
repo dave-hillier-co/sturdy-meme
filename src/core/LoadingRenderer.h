@@ -33,6 +33,9 @@ class VulkanContext;
  */
 class LoadingRenderer {
 public:
+    // Passkey for controlled construction via make_unique
+    struct ConstructToken { explicit ConstructToken() = default; };
+
     struct InitInfo {
         VulkanContext* vulkanContext;  // Borrowed, not owned
         std::string shaderPath;
@@ -43,6 +46,8 @@ public:
      * Returns nullptr on failure.
      */
     static std::unique_ptr<LoadingRenderer> create(const InitInfo& info);
+
+    explicit LoadingRenderer(ConstructToken) {}
 
     ~LoadingRenderer();
 
@@ -70,8 +75,6 @@ public:
     void setProgress(float progress) { progress_ = progress; }
 
 private:
-    LoadingRenderer() = default;
-
     bool init(const InitInfo& info);
     bool createRenderPass();
     bool createFramebuffers();

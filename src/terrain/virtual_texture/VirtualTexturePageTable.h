@@ -20,6 +20,9 @@ namespace VirtualTexture {
  */
 class VirtualTexturePageTable {
 public:
+    // Passkey for controlled construction via make_unique
+    struct ConstructToken { explicit ConstructToken() = default; };
+
     struct InitInfo {
         const vk::raii::Device* raiiDevice = nullptr;
         VkDevice device = VK_NULL_HANDLE;
@@ -75,9 +78,9 @@ public:
     // Get the combined image view (array of all mip levels)
     VkImageView getCombinedImageView() const { return combinedImageView; }
 
-private:
-    VirtualTexturePageTable() = default;  // Private: use factory
+    explicit VirtualTexturePageTable(ConstructToken) {}
 
+private:
     bool initInternal(const InitInfo& info);
     void cleanup();
 

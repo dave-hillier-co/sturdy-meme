@@ -13,7 +13,7 @@
 using ShaderLoader::loadShaderModule;
 
 std::unique_ptr<TerrainPipelines> TerrainPipelines::create(const InitInfo& info) {
-    std::unique_ptr<TerrainPipelines> pipelines(new TerrainPipelines());
+    auto pipelines = std::make_unique<TerrainPipelines>(ConstructToken{});
     if (!pipelines->initInternal(info)) {
         return nullptr;
     }

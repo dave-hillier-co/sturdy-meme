@@ -25,6 +25,9 @@
  */
 class ThreadedTreeGenerator {
 public:
+    // Passkey for controlled construction via make_unique
+    struct ConstructToken { explicit ConstructToken() = default; };
+
     /**
      * Request for tree generation
      */
@@ -67,6 +70,8 @@ public:
      * @param workerCount Number of worker threads (default: 4)
      */
     static std::unique_ptr<ThreadedTreeGenerator> create(uint32_t workerCount = 4);
+
+    explicit ThreadedTreeGenerator(ConstructToken) {}
 
     ~ThreadedTreeGenerator();
 
@@ -118,7 +123,6 @@ public:
     uint32_t getCompletedCount() const { return completedCount_.load(); }
 
 private:
-    ThreadedTreeGenerator() = default;
     bool init(uint32_t workerCount);
 
     std::unique_ptr<Loading::LoadJobQueue> jobQueue_;

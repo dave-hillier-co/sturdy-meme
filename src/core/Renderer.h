@@ -42,6 +42,9 @@ constexpr uint32_t PBR_HAS_HEIGHT_MAP    = (1u << 3);
 
 class Renderer {
 public:
+    // Passkey for controlled construction via make_unique
+    struct ConstructToken { explicit ConstructToken() = default; };
+
     // Configuration for renderer initialization
     struct Config {
         uint32_t setsPerPool = 64;
@@ -64,6 +67,8 @@ public:
      * Returns nullptr on failure.
      */
     static std::unique_ptr<Renderer> create(const InitInfo& info);
+
+    explicit Renderer(ConstructToken) {}
 
     ~Renderer();
 
@@ -217,8 +222,6 @@ public:
 #endif
 
 private:
-    Renderer() = default;  // Private: use factory
-
     bool initInternal(const InitInfo& info);
     void cleanup();
 

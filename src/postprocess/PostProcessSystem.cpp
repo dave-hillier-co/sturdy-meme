@@ -13,7 +13,7 @@
 #include <vulkan/vulkan.hpp>
 
 std::unique_ptr<PostProcessSystem> PostProcessSystem::create(const InitInfo& info) {
-    std::unique_ptr<PostProcessSystem> system(new PostProcessSystem());
+    auto system = std::make_unique<PostProcessSystem>(ConstructToken{});
     if (!system->initInternal(info)) {
         return nullptr;
     }

@@ -5,7 +5,7 @@
 #include <cstring>
 
 std::unique_ptr<ThreadedTreeGenerator> ThreadedTreeGenerator::create(uint32_t workerCount) {
-    std::unique_ptr<ThreadedTreeGenerator> gen(new ThreadedTreeGenerator());
+    auto gen = std::make_unique<ThreadedTreeGenerator>(ConstructToken{});
     if (!gen->init(workerCount)) {
         return nullptr;
     }

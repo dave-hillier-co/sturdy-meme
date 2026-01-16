@@ -12,7 +12,7 @@
 #include <algorithm>
 
 std::unique_ptr<WaterGBuffer> WaterGBuffer::create(const InitInfo& info) {
-    std::unique_ptr<WaterGBuffer> system(new WaterGBuffer());
+    auto system = std::make_unique<WaterGBuffer>(ConstructToken{});
     if (!system->initInternal(info)) {
         return nullptr;
     }

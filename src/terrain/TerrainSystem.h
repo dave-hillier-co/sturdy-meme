@@ -133,6 +133,9 @@ struct TerrainConfig {
 
 class TerrainSystem : public ITerrainControl {
 public:
+    // Passkey for controlled construction via make_unique
+    struct ConstructToken { explicit ConstructToken() = default; };
+
     struct InitInfo {
         const vk::raii::Device* raiiDevice = nullptr;
         vk::Device device;
@@ -165,6 +168,8 @@ public:
     static std::unique_ptr<TerrainSystem> create(const InitContext& ctx,
                                                   const TerrainInitParams& params,
                                                   const TerrainConfig& config = {});
+
+    explicit TerrainSystem(ConstructToken) {}
 
     ~TerrainSystem();
 
@@ -326,8 +331,6 @@ public:
     bool setMeshletSubdivisionLevel(int level);  // Returns true if successful, reinitializes meshlet
 
 private:
-    TerrainSystem() = default;  // Private: use factory
-
     bool initInternal(const InitInfo& info, const TerrainConfig& config);
     bool initInternal(const InitContext& ctx, const TerrainInitParams& params, const TerrainConfig& config);
     void cleanup();

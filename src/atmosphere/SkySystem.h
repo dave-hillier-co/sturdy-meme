@@ -14,6 +14,9 @@ class AtmosphereLUTSystem;
 
 class SkySystem {
 public:
+    // Passkey for controlled construction via make_unique
+    struct ConstructToken { explicit ConstructToken() = default; };
+
     struct InitInfo {
         VkDevice device;
         VmaAllocator allocator;
@@ -51,9 +54,9 @@ public:
     // Record sky rendering commands
     void recordDraw(VkCommandBuffer cmd, uint32_t frameIndex);
 
-private:
-    SkySystem() = default;  // Private: use factory
+    explicit SkySystem(ConstructToken) {}
 
+private:
     bool initInternal(const InitInfo& info);
     void cleanup();
 

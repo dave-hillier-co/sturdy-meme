@@ -9,7 +9,7 @@
 namespace Loading {
 
 std::unique_ptr<AsyncStartupLoader> AsyncStartupLoader::create(const InitInfo& info) {
-    std::unique_ptr<AsyncStartupLoader> loader(new AsyncStartupLoader());
+    auto loader = std::make_unique<AsyncStartupLoader>(ConstructToken{});
     if (!loader->init(info)) {
         return nullptr;
     }

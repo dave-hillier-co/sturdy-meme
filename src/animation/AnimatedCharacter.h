@@ -33,6 +33,9 @@ struct SkeletonDebugData {
 // Uses GPU skinning for performance (bone matrices uploaded to UBO each frame)
 class AnimatedCharacter {
 public:
+    // Passkey for controlled construction via make_unique
+    struct ConstructToken { explicit ConstructToken() = default; };
+
     struct InitInfo {
         std::string path;
         VmaAllocator allocator;
@@ -46,6 +49,8 @@ public:
      * Returns nullptr on failure.
      */
     static std::unique_ptr<AnimatedCharacter> create(const InitInfo& info);
+
+    explicit AnimatedCharacter(ConstructToken) {}
 
     ~AnimatedCharacter();
 
@@ -152,8 +157,6 @@ public:
     bool isLoaded() const { return loaded; }
 
 private:
-    AnimatedCharacter() = default;  // Private: use factory
-
     bool loadInternal(const InitInfo& info);
     void cleanup();
 

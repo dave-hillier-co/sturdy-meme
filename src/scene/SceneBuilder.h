@@ -23,6 +23,9 @@ class AssetRegistry;
 // Holds all scene resources (meshes, textures) and provides scene objects
 class SceneBuilder {
 public:
+    // Passkey for controlled construction via make_unique
+    struct ConstructToken { explicit ConstructToken() = default; };
+
     // Function type for querying terrain height at world position (x, z)
     using HeightQueryFunc = std::function<float(float, float)>;
 
@@ -43,6 +46,8 @@ public:
      * Returns nullptr on failure.
      */
     static std::unique_ptr<SceneBuilder> create(const InitInfo& info);
+
+    explicit SceneBuilder(ConstructToken) {}
 
     ~SceneBuilder();
 
@@ -117,8 +122,6 @@ public:
     void startCharacterJump(const glm::vec3& startPos, const glm::vec3& velocity, float gravity, const class PhysicsWorld* physics);
 
 private:
-    SceneBuilder() = default;  // Private: use factory
-
     bool initInternal(const InitInfo& info);
     void cleanup();
 

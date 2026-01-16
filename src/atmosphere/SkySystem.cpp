@@ -9,7 +9,7 @@
 #include <array>
 
 std::unique_ptr<SkySystem> SkySystem::create(const InitInfo& info) {
-    std::unique_ptr<SkySystem> system(new SkySystem());
+    auto system = std::make_unique<SkySystem>(ConstructToken{});
     if (!system->initInternal(info)) {
         return nullptr;
     }

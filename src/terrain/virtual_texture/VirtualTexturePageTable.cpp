@@ -9,7 +9,7 @@
 namespace VirtualTexture {
 
 std::unique_ptr<VirtualTexturePageTable> VirtualTexturePageTable::create(const InitInfo& info) {
-    std::unique_ptr<VirtualTexturePageTable> pageTable(new VirtualTexturePageTable());
+    auto pageTable = std::make_unique<VirtualTexturePageTable>(ConstructToken{});
     if (!pageTable->initInternal(info)) {
         return nullptr;
     }

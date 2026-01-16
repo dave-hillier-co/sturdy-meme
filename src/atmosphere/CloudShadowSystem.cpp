@@ -12,7 +12,7 @@
 #include <cstring>
 
 std::unique_ptr<CloudShadowSystem> CloudShadowSystem::create(const InitInfo& info) {
-    std::unique_ptr<CloudShadowSystem> system(new CloudShadowSystem());
+    auto system = std::make_unique<CloudShadowSystem>(ConstructToken{});
     if (!system->initInternal(info)) {
         return nullptr;
     }

@@ -25,6 +25,9 @@
 
 class WaterTileCull {
 public:
+    // Passkey for controlled construction via make_unique
+    struct ConstructToken { explicit ConstructToken() = default; };
+
     struct InitInfo {
         VkDevice device;
         VkPhysicalDevice physicalDevice;
@@ -76,6 +79,8 @@ public:
      */
     static std::unique_ptr<WaterTileCull> create(const InitInfo& info);
 
+    explicit WaterTileCull(ConstructToken) {}
+
     ~WaterTileCull();
 
     // Non-copyable, non-movable
@@ -116,8 +121,6 @@ public:
     void endFrame(uint32_t frameIndex);
 
 private:
-    WaterTileCull() = default;  // Private: use factory
-
     bool initInternal(const InitInfo& info);
     void cleanup();
 

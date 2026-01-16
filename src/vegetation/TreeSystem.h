@@ -75,6 +75,9 @@ struct TreeInstanceData {
 
 class TreeSystem {
 public:
+    // Passkey for controlled construction via make_unique
+    struct ConstructToken { explicit ConstructToken() = default; };
+
     struct InitInfo {
         VkDevice device;
         VmaAllocator allocator;
@@ -91,6 +94,8 @@ public:
      * Returns nullptr on failure.
      */
     static std::unique_ptr<TreeSystem> create(const InitInfo& info);
+
+    explicit TreeSystem(ConstructToken) {}
 
     ~TreeSystem();
 
@@ -201,8 +206,6 @@ public:
     const AABB& getFullTreeBounds(uint32_t meshIndex) const { return fullTreeBounds_[meshIndex]; }
 
 private:
-    TreeSystem() = default;  // Private: use factory
-
     bool initInternal(const InitInfo& info);
     void cleanup();
     bool loadTextures(const InitInfo& info);

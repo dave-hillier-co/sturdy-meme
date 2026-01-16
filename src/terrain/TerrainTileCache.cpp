@@ -13,7 +13,7 @@
 #include <cmath>
 
 std::unique_ptr<TerrainTileCache> TerrainTileCache::create(const InitInfo& info) {
-    std::unique_ptr<TerrainTileCache> cache(new TerrainTileCache());
+    auto cache = std::make_unique<TerrainTileCache>(ConstructToken{});
     if (!cache->initInternal(info)) {
         return nullptr;
     }

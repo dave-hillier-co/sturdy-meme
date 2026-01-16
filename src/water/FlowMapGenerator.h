@@ -26,6 +26,9 @@
 
 class FlowMapGenerator {
 public:
+    // Passkey for controlled construction via make_unique
+    struct ConstructToken { explicit ConstructToken() = default; };
+
     struct Config {
         uint32_t resolution = 512;       // Flow map resolution
         float worldSize = 16384.0f;      // World size in meters
@@ -48,6 +51,8 @@ public:
      * Returns nullptr on failure.
      */
     static std::unique_ptr<FlowMapGenerator> create(const InitInfo& info);
+
+    explicit FlowMapGenerator(ConstructToken) {}
 
     ~FlowMapGenerator();
 
@@ -92,8 +97,6 @@ public:
     uint32_t getResolution() const { return currentResolution; }
 
 private:
-    FlowMapGenerator() = default;  // Private: use factory
-
     bool initInternal(const InitInfo& info);
     void cleanup();
 

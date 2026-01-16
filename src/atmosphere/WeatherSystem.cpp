@@ -11,7 +11,7 @@
 #include <array>
 
 std::unique_ptr<WeatherSystem> WeatherSystem::create(const InitInfo& info) {
-    std::unique_ptr<WeatherSystem> system(new WeatherSystem());
+    auto system = std::make_unique<WeatherSystem>(ConstructToken{});
     if (!system->initInternal(info)) {
         return nullptr;
     }

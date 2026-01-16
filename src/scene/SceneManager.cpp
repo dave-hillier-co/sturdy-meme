@@ -2,7 +2,7 @@
 #include <SDL3/SDL.h>
 
 std::unique_ptr<SceneManager> SceneManager::create(SceneBuilder::InitInfo& builderInfo) {
-    std::unique_ptr<SceneManager> system(new SceneManager());
+    auto system = std::make_unique<SceneManager>(ConstructToken{});
     if (!system->initInternal(builderInfo)) {
         return nullptr;
     }

@@ -9,6 +9,9 @@
 // Concurrent Binary Tree (CBT) buffer for terrain subdivision
 class TerrainCBT {
 public:
+    // Passkey for controlled construction via make_unique
+    struct ConstructToken { explicit ConstructToken() = default; };
+
     struct InitInfo {
         VmaAllocator allocator;
         int maxDepth;
@@ -17,6 +20,8 @@ public:
 
     // Factory method - returns nullptr on failure
     static std::unique_ptr<TerrainCBT> create(const InitInfo& info);
+
+    explicit TerrainCBT(ConstructToken) {}
 
     ~TerrainCBT() = default;
 
@@ -32,7 +37,6 @@ public:
     int getMaxDepth() const { return maxDepth; }
 
 private:
-    TerrainCBT() = default;
     bool initInternal(const InitInfo& info);
     static uint32_t calculateBufferSize(int maxDepth);
 

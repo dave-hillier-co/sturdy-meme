@@ -6,7 +6,7 @@
 #include <cmath>
 
 std::unique_ptr<DetritusSystem> DetritusSystem::create(const InitInfo& info, const DetritusConfig& config) {
-    std::unique_ptr<DetritusSystem> system(new DetritusSystem());
+    auto system = std::make_unique<DetritusSystem>(ConstructToken{});
     if (!system->initInternal(info, config)) {
         return nullptr;
     }

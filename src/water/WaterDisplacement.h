@@ -25,6 +25,9 @@
  */
 class WaterDisplacement {
 public:
+    // Passkey for controlled construction via make_unique
+    struct ConstructToken { explicit ConstructToken() = default; };
+
     struct InitInfo {
         VkDevice device;
         VkPhysicalDevice physicalDevice;
@@ -62,6 +65,8 @@ public:
      * Returns nullptr on failure.
      */
     static std::unique_ptr<WaterDisplacement> create(const InitInfo& info);
+
+    explicit WaterDisplacement(ConstructToken) {}
 
     ~WaterDisplacement();
 
@@ -103,8 +108,6 @@ public:
     size_t getParticleCount() const { return particles.size(); }
 
 private:
-    WaterDisplacement() = default;  // Private: use factory
-
     bool initInternal(const InitInfo& info);
     void cleanup();
 

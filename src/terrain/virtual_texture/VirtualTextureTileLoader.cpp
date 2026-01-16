@@ -8,7 +8,7 @@
 namespace VirtualTexture {
 
 std::unique_ptr<VirtualTextureTileLoader> VirtualTextureTileLoader::create(const std::string& basePath, uint32_t workerCount) {
-    std::unique_ptr<VirtualTextureTileLoader> loader(new VirtualTextureTileLoader());
+    auto loader = std::make_unique<VirtualTextureTileLoader>(ConstructToken{});
     if (!loader->initInternal(basePath, workerCount)) {
         return nullptr;
     }

@@ -10,7 +10,7 @@
 #include <cstring>
 
 std::unique_ptr<WaterTileCull> WaterTileCull::create(const InitInfo& info) {
-    std::unique_ptr<WaterTileCull> system(new WaterTileCull());
+    auto system = std::make_unique<WaterTileCull>(ConstructToken{});
     if (!system->initInternal(info)) {
         return nullptr;
     }

@@ -43,6 +43,9 @@ struct WakeSource {
 
 class FoamBuffer {
 public:
+    // Passkey for controlled construction via make_unique
+    struct ConstructToken { explicit ConstructToken() = default; };
+
     struct InitInfo {
         VkDevice device;
         VkPhysicalDevice physicalDevice;
@@ -77,6 +80,8 @@ public:
      * Returns nullptr on failure.
      */
     static std::unique_ptr<FoamBuffer> create(const InitInfo& info);
+
+    explicit FoamBuffer(ConstructToken) {}
 
     ~FoamBuffer();
 
@@ -123,8 +128,6 @@ public:
     uint32_t getWakeCount() const { return wakeCount; }
 
 private:
-    FoamBuffer() = default;  // Private: use factory
-
     bool initInternal(const InitInfo& info);
     void cleanup();
 

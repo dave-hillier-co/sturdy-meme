@@ -5,7 +5,7 @@
 #include <chrono>
 
 std::unique_ptr<LoadingRenderer> LoadingRenderer::create(const InitInfo& info) {
-    std::unique_ptr<LoadingRenderer> instance(new LoadingRenderer());
+    auto instance = std::make_unique<LoadingRenderer>(ConstructToken{});
     if (!instance->init(info)) {
         return nullptr;
     }

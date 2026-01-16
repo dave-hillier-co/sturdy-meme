@@ -21,6 +21,9 @@ class ShadowSystem;
 
 class WaterSystem {
 public:
+    // Passkey for controlled construction via make_unique
+    struct ConstructToken { explicit ConstructToken() = default; };
+
     struct InitInfo {
         VkDevice device;
         VkPhysicalDevice physicalDevice;
@@ -99,6 +102,8 @@ public:
      * Returns nullptr on failure.
      */
     static std::unique_ptr<WaterSystem> create(const InitInfo& info);
+
+    explicit WaterSystem(ConstructToken) {}
 
     ~WaterSystem();
 
@@ -355,8 +360,6 @@ public:
     }
 
 private:
-    WaterSystem() = default;  // Private: use factory
-
     bool initInternal(const InitInfo& info);
     void cleanup();
 

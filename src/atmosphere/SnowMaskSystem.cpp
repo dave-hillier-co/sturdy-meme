@@ -13,7 +13,7 @@
 #include <array>
 
 std::unique_ptr<SnowMaskSystem> SnowMaskSystem::create(const InitInfo& info) {
-    std::unique_ptr<SnowMaskSystem> system(new SnowMaskSystem());
+    auto system = std::make_unique<SnowMaskSystem>(ConstructToken{});
     if (!system->initInternal(info)) {
         return nullptr;
     }

@@ -18,6 +18,9 @@
 // - Frame fences handle synchronization naturally
 class TerrainMeshlet {
 public:
+    // Passkey for controlled construction via make_unique
+    struct ConstructToken { explicit ConstructToken() = default; };
+
     struct InitInfo {
         VmaAllocator allocator;
         uint32_t subdivisionLevel;  // Number of LEB subdivisions (e.g., 4 = 16 triangles, 6 = 64 triangles)
@@ -29,6 +32,8 @@ public:
      * Returns nullptr on failure.
      */
     static std::unique_ptr<TerrainMeshlet> create(const InitInfo& info);
+
+    explicit TerrainMeshlet(ConstructToken) {}
 
     ~TerrainMeshlet() = default;
 
@@ -76,8 +81,6 @@ public:
     uint32_t getPendingUploadFrames() const { return pendingUploadFrames_; }
 
 private:
-    TerrainMeshlet() = default;  // Private: use factory
-
     bool initInternal(const InitInfo& info);
 
     // Generate meshlet geometry using LEB subdivision

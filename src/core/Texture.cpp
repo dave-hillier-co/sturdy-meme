@@ -28,7 +28,7 @@ static bool hasExtension(const std::string& path, const std::string& ext) {
 std::unique_ptr<Texture> Texture::loadFromFile(const std::string& path, VmaAllocator allocator, VkDevice device,
                                                 VkCommandPool commandPool, VkQueue queue, VkPhysicalDevice physicalDevice,
                                                 bool useSRGB) {
-    std::unique_ptr<Texture> texture(new Texture());
+    auto texture = std::make_unique<Texture>(ConstructToken{});
     if (!texture->loadInternal(path, allocator, device, commandPool, queue, physicalDevice, useSRGB)) {
         return nullptr;
     }
@@ -38,7 +38,7 @@ std::unique_ptr<Texture> Texture::loadFromFile(const std::string& path, VmaAlloc
 std::unique_ptr<Texture> Texture::loadFromFileWithMipmaps(const std::string& path, VmaAllocator allocator, VkDevice device,
                                                            VkCommandPool commandPool, VkQueue queue, VkPhysicalDevice physicalDevice,
                                                            bool useSRGB, bool enableAnisotropy) {
-    std::unique_ptr<Texture> texture(new Texture());
+    auto texture = std::make_unique<Texture>(ConstructToken{});
     if (!texture->loadWithMipmapsInternal(path, allocator, device, commandPool, queue, physicalDevice, useSRGB, enableAnisotropy)) {
         return nullptr;
     }
@@ -48,7 +48,7 @@ std::unique_ptr<Texture> Texture::loadFromFileWithMipmaps(const std::string& pat
 std::unique_ptr<Texture> Texture::createSolidColor(uint8_t r, uint8_t g, uint8_t b, uint8_t a,
                                                     VmaAllocator allocator, VkDevice device,
                                                     VkCommandPool commandPool, VkQueue queue) {
-    std::unique_ptr<Texture> texture(new Texture());
+    auto texture = std::make_unique<Texture>(ConstructToken{});
     if (!texture->createSolidColorInternal(r, g, b, a, allocator, device, commandPool, queue)) {
         return nullptr;
     }

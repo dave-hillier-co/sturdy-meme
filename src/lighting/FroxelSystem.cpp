@@ -12,7 +12,7 @@
 #include <cmath>
 
 std::unique_ptr<FroxelSystem> FroxelSystem::create(const InitInfo& info) {
-    std::unique_ptr<FroxelSystem> system(new FroxelSystem());
+    auto system = std::make_unique<FroxelSystem>(ConstructToken{});
     if (!system->initInternal(info)) {
         return nullptr;
     }

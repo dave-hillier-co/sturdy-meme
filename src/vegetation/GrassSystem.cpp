@@ -20,7 +20,7 @@
 struct UniformBufferObject;
 
 std::unique_ptr<GrassSystem> GrassSystem::create(const InitInfo& info) {
-    std::unique_ptr<GrassSystem> system(new GrassSystem());
+    auto system = std::make_unique<GrassSystem>(ConstructToken{});
     if (!system->initInternal(info)) {
         return nullptr;
     }

@@ -7,6 +7,9 @@
 
 class Texture {
 public:
+    // Passkey for controlled construction via make_unique
+    struct ConstructToken { explicit ConstructToken() = default; };
+
     // Factory methods - return nullptr on failure
     static std::unique_ptr<Texture> loadFromFile(const std::string& path, VmaAllocator allocator, VkDevice device,
                                                   VkCommandPool commandPool, VkQueue queue, VkPhysicalDevice physicalDevice,
@@ -17,6 +20,8 @@ public:
     static std::unique_ptr<Texture> createSolidColor(uint8_t r, uint8_t g, uint8_t b, uint8_t a,
                                                       VmaAllocator allocator, VkDevice device,
                                                       VkCommandPool commandPool, VkQueue queue);
+
+    explicit Texture(ConstructToken) {}
 
     ~Texture();
 
@@ -30,8 +35,6 @@ public:
     VkSampler getSampler() const { return sampler; }
 
 private:
-    Texture() = default;
-
     bool loadInternal(const std::string& path, VmaAllocator allocator, VkDevice device,
                       VkCommandPool commandPool, VkQueue queue, VkPhysicalDevice physicalDevice,
                       bool useSRGB);

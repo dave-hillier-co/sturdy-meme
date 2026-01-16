@@ -66,6 +66,9 @@ struct CloudMapUniforms {
 
 class AtmosphereLUTSystem {
 public:
+    // Passkey for controlled construction via make_unique
+    struct ConstructToken { explicit ConstructToken() = default; };
+
     struct InitInfo {
         VkDevice device;
         VmaAllocator allocator;
@@ -294,7 +297,7 @@ private:
     static constexpr float WIND_OFFSET_THRESHOLD = 0.001f;   // Wind offset change
     static constexpr float CLOUD_PARAM_THRESHOLD = 0.001f;   // Cloud coverage/density change
 
-    AtmosphereLUTSystem() = default;  // Private: use factory
+    explicit AtmosphereLUTSystem(ConstructToken) {}
 
     bool initInternal(const InitInfo& info);
     void cleanup();

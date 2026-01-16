@@ -73,6 +73,9 @@ struct VolumetricSnowInteraction {
 
 class VolumetricSnowSystem {
 public:
+    // Passkey for controlled construction via make_unique
+    struct ConstructToken { explicit ConstructToken() = default; };
+
     using InitInfo = SystemLifecycleHelper::InitInfo;
 
     /**
@@ -189,7 +192,7 @@ private:
 
     std::array<bool, NUM_SNOW_CASCADES> isFirstFrame{true, true, true};
 
-    VolumetricSnowSystem() = default;  // Private: use factory
+    explicit VolumetricSnowSystem(ConstructToken) {}
 
     bool initInternal(const InitInfo& info);
     void cleanup();

@@ -13,6 +13,9 @@ class TerrainMeshlet;
 // Extracted from TerrainSystem to reduce complexity
 class TerrainPipelines {
 public:
+    // Passkey for controlled construction via make_unique
+    struct ConstructToken { explicit ConstructToken() = default; };
+
     struct InitInfo {
         const vk::raii::Device* raiiDevice = nullptr;
         VkDevice device;
@@ -32,6 +35,8 @@ public:
      * Returns nullptr on failure.
      */
     static std::unique_ptr<TerrainPipelines> create(const InitInfo& info);
+
+    explicit TerrainPipelines(ConstructToken) {}
 
     ~TerrainPipelines() = default;
 
@@ -84,8 +89,6 @@ public:
     bool hasShadowCulling() const { return shadowCullPipeline_.has_value(); }
 
 private:
-    TerrainPipelines() = default;  // Private: use factory
-
     bool initInternal(const InitInfo& info);
 
     // Pipeline creation helpers

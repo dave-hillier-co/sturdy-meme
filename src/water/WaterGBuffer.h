@@ -23,6 +23,9 @@
  */
 class WaterGBuffer {
 public:
+    // Passkey for controlled construction via make_unique
+    struct ConstructToken { explicit ConstructToken() = default; };
+
     struct InitInfo {
         VkDevice device;
         VkPhysicalDevice physicalDevice;
@@ -54,6 +57,8 @@ public:
      * Returns nullptr on failure.
      */
     static std::unique_ptr<WaterGBuffer> create(const InitInfo& info);
+
+    explicit WaterGBuffer(ConstructToken) {}
 
     ~WaterGBuffer();
 
@@ -99,8 +104,6 @@ public:
     void clear(VkCommandBuffer cmd);
 
 private:
-    WaterGBuffer() = default;  // Private: use factory
-
     bool initInternal(const InitInfo& info);
     void cleanup();
 

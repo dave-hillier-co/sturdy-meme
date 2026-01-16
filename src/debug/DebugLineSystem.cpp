@@ -5,15 +5,12 @@
 #include <cstring>
 #include <algorithm>
 
-// Private constructor
-DebugLineSystem::DebugLineSystem() = default;
-
 // Factory methods
 std::unique_ptr<DebugLineSystem> DebugLineSystem::create(VkDevice device, VmaAllocator allocator,
                                                           VkRenderPass renderPass,
                                                           const std::string& shaderPath,
                                                           uint32_t framesInFlight) {
-    std::unique_ptr<DebugLineSystem> system(new DebugLineSystem());
+    auto system = std::make_unique<DebugLineSystem>(ConstructToken{});
     if (!system->initInternal(device, allocator, renderPass, shaderPath, framesInFlight)) {
         return nullptr;
     }

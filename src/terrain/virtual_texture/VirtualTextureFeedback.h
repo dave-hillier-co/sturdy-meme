@@ -23,6 +23,9 @@ namespace VirtualTexture {
  */
 class VirtualTextureFeedback {
 public:
+    // Passkey for controlled construction via make_unique
+    struct ConstructToken { explicit ConstructToken() = default; };
+
     /**
      * Factory: Create and initialize VirtualTextureFeedback.
      * Returns nullptr on failure.
@@ -87,9 +90,9 @@ public:
 
     uint32_t getMaxEntries() const { return maxEntries; }
 
-private:
-    VirtualTextureFeedback() = default;  // Private: use factory
+    explicit VirtualTextureFeedback(ConstructToken) {}
 
+private:
     bool initInternal(VkDevice device, VmaAllocator allocator,
                       uint32_t maxEntries, uint32_t frameCount);
     void cleanup();

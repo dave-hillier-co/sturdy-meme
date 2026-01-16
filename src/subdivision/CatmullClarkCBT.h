@@ -11,6 +11,9 @@
 // Based on the implementation from https://github.com/jdupuy/LongestEdgeBisection2D
 class CatmullClarkCBT {
 public:
+    // Passkey for controlled construction via make_unique
+    struct ConstructToken { explicit ConstructToken() = default; };
+
     struct InitInfo {
         VmaAllocator allocator;
         int maxDepth;        // Maximum subdivision depth (e.g., 20)
@@ -22,6 +25,8 @@ public:
      * Returns nullptr on failure.
      */
     static std::unique_ptr<CatmullClarkCBT> create(const InitInfo& info);
+
+    explicit CatmullClarkCBT(ConstructToken) {}
 
     ~CatmullClarkCBT() = default;
 
@@ -38,8 +43,6 @@ public:
     int getFaceCount() const { return faceCount; }
 
 private:
-    CatmullClarkCBT() = default;  // Private: use factory
-
     bool initInternal(const InitInfo& info);
 
     static uint32_t calculateBufferSize(int maxDepth, int faceCount);

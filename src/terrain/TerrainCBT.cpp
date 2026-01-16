@@ -108,7 +108,7 @@ uint32_t TerrainCBT::calculateBufferSize(int maxDepth) {
 }
 
 std::unique_ptr<TerrainCBT> TerrainCBT::create(const InitInfo& info) {
-    std::unique_ptr<TerrainCBT> cbt(new TerrainCBT());
+    auto cbt = std::make_unique<TerrainCBT>(ConstructToken{});
     if (!cbt->initInternal(info)) {
         return nullptr;
     }

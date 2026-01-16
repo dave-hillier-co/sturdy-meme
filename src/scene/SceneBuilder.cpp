@@ -4,7 +4,7 @@
 #include <SDL3/SDL_log.h>
 
 std::unique_ptr<SceneBuilder> SceneBuilder::create(const InitInfo& info) {
-    std::unique_ptr<SceneBuilder> instance(new SceneBuilder());
+    auto instance = std::make_unique<SceneBuilder>(ConstructToken{});
     if (!instance->initInternal(info)) {
         return nullptr;
     }

@@ -14,7 +14,7 @@
 using ShaderLoader::loadShaderModule;
 
 std::unique_ptr<CatmullClarkSystem> CatmullClarkSystem::create(const InitInfo& info, const CatmullClarkConfig& config) {
-    std::unique_ptr<CatmullClarkSystem> system(new CatmullClarkSystem());
+    auto system = std::make_unique<CatmullClarkSystem>(ConstructToken{});
     if (!system->initInternal(info, config)) {
         return nullptr;
     }

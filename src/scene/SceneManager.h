@@ -10,11 +10,16 @@
 // Centralized scene management - handles visual objects, physics bodies, and lighting
 class SceneManager {
 public:
+    // Passkey for controlled construction via make_unique
+    struct ConstructToken { explicit ConstructToken() = default; };
+
     /**
      * Factory: Create and initialize SceneManager.
      * Returns nullptr on failure.
      */
     static std::unique_ptr<SceneManager> create(SceneBuilder::InitInfo& builderInfo);
+
+    explicit SceneManager(ConstructToken) {}
 
     ~SceneManager();
 
@@ -60,8 +65,6 @@ public:
     const glm::vec3& getOrbLightPosition() const { return orbLightPosition; }
 
 private:
-    SceneManager() = default;  // Private: use factory
-
     bool initInternal(SceneBuilder::InitInfo& builderInfo);
     void cleanup();
     void initializeScenePhysics(PhysicsWorld& physics);

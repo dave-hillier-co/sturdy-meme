@@ -297,6 +297,76 @@ public:
         return entity;
     }
 
+    // ========================================================================
+    // Scene Entities - Static scene objects with ECS transforms
+    // ========================================================================
+
+    // Create a simple scene entity (static object like terrain, water, etc.)
+    // These don't need Hierarchy unless they have children
+    entt::entity createSceneEntity(const glm::vec3& position = glm::vec3(0.0f),
+                                    const glm::quat& rotation = glm::quat(1.0f, 0.0f, 0.0f, 0.0f),
+                                    const glm::vec3& scale = glm::vec3(1.0f)) {
+        auto entity = registry_.create();
+        registry_.emplace<Transform>(entity, Transform::withAll(position, rotation, scale));
+        registry_.emplace<WorldTransform>(entity);
+        return entity;
+    }
+
+    // Create scene entity with uniform scale
+    entt::entity createSceneEntity(const glm::vec3& position, const glm::quat& rotation, float uniformScale) {
+        return createSceneEntity(position, rotation, glm::vec3(uniformScale));
+    }
+
+    // Create scene entity from position and Y rotation (common for rocks, trees)
+    entt::entity createSceneEntityYRot(const glm::vec3& position, float yRotationRadians, float uniformScale = 1.0f) {
+        glm::quat rotation = glm::angleAxis(yRotationRadians, glm::vec3(0.0f, 1.0f, 0.0f));
+        return createSceneEntity(position, rotation, glm::vec3(uniformScale));
+    }
+
+    // Create terrain root entity (typically one per scene)
+    entt::entity createTerrainEntity(const glm::vec3& position = glm::vec3(0.0f)) {
+        auto entity = createSceneEntity(position);
+        registry_.emplace<TerrainTag>(entity);
+        return entity;
+    }
+
+    // Create water entity
+    entt::entity createWaterEntity(const glm::vec3& position, float waterLevel) {
+        auto entity = createSceneEntity(glm::vec3(position.x, waterLevel, position.z));
+        registry_.emplace<WaterTag>(entity);
+        return entity;
+    }
+
+    // Create vegetation entity (tree, bush, etc.)
+    entt::entity createVegetationEntity(const glm::vec3& position, const glm::quat& rotation, float scale) {
+        auto entity = createSceneEntity(position, rotation, glm::vec3(scale));
+        registry_.emplace<VegetationTag>(entity);
+        return entity;
+    }
+
+    // Create rock entity
+    entt::entity createRockEntity(const glm::vec3& position, const glm::quat& rotation, float scale) {
+        auto entity = createSceneEntity(position, rotation, glm::vec3(scale));
+        registry_.emplace<RockTag>(entity);
+        return entity;
+    }
+
+    // Create general prop entity
+    entt::entity createPropEntity(const glm::vec3& position,
+                                   const glm::quat& rotation = glm::quat(1.0f, 0.0f, 0.0f, 0.0f),
+                                   const glm::vec3& scale = glm::vec3(1.0f)) {
+        auto entity = createSceneEntity(position, rotation, scale);
+        registry_.emplace<PropTag>(entity);
+        return entity;
+    }
+
+    // Query helpers for scene entities
+    auto findAllTerrain() { return registry_.view<TerrainTag, Transform>(); }
+    auto findAllWater() { return registry_.view<WaterTag, Transform>(); }
+    auto findAllVegetation() { return registry_.view<VegetationTag, Transform>(); }
+    auto findAllRocks() { return registry_.view<RockTag, Transform>(); }
+    auto findAllProps() { return registry_.view<PropTag, Transform>();}
+
     // Set parent of an entity
     void setParent(entt::entity child, entt::entity parent) {
         TransformHierarchy::setParent(registry_, child, parent);

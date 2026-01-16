@@ -3,6 +3,7 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/quaternion.hpp>
 #include <glm/gtc/matrix_transform.hpp>
+#include <entt/entt.hpp>
 
 /**
  * SceneObjectInstance - Unified transform representation for scene objects
@@ -10,6 +11,9 @@
  * Uses quaternion for rotation to support both Y-axis only rotation (rocks)
  * and full 3D rotation (detritus, future objects). Provides helper methods
  * for common rotation patterns.
+ *
+ * Can optionally be linked to an ECS entity for hierarchy support.
+ * When linked, the entity's WorldTransform is used for rendering.
  */
 struct SceneObjectInstance {
     glm::vec3 position{0.0f};
@@ -17,10 +21,20 @@ struct SceneObjectInstance {
     float scale{1.0f};
     uint32_t meshVariation{0};
 
+    // Optional ECS entity link - when set, transform comes from entity's WorldTransform
+    entt::entity entity{entt::null};
+
     SceneObjectInstance() = default;
 
     SceneObjectInstance(const glm::vec3& pos, const glm::quat& rot, float s, uint32_t mesh)
         : position(pos), rotation(rot), scale(s), meshVariation(mesh) {}
+
+    // Create linked to an ECS entity
+    SceneObjectInstance(entt::entity e, uint32_t mesh = 0)
+        : meshVariation(mesh), entity(e) {}
+
+    // Check if this instance is linked to an ECS entity
+    bool hasEntity() const { return entity != entt::null; }
 
     // Convenience: Create with Y-axis rotation only (radians)
     static SceneObjectInstance withYRotation(const glm::vec3& pos, float yRotation, float scale, uint32_t mesh) {

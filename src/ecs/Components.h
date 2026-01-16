@@ -342,6 +342,25 @@ struct alignas(16) ModelMatrix {
 };
 
 // ============================================================================
+// Scene Object Tags - For categorizing static scene entities
+// ============================================================================
+
+// Tag for terrain entities (ground, heightmap-based geometry)
+struct TerrainTag {};
+
+// Tag for water entities (ocean, lakes, rivers)
+struct WaterTag {};
+
+// Tag for vegetation entities (trees, bushes, grass roots)
+struct VegetationTag {};
+
+// Tag for rock entities (boulders, stones)
+struct RockTag {};
+
+// Tag for general prop entities (buildings, decorations, etc.)
+struct PropTag {};
+
+// ============================================================================
 // NPC/AI Components
 // ============================================================================
 

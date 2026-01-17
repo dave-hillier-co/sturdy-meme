@@ -17,7 +17,7 @@
 #include "Profiler.h"
 #include "AnimatedCharacter.h"
 #include "SkinnedMesh.h"
-#include "FrustumUtils.h"
+#include "CullCommon.h"  // For extractFrustumPlanes
 
 ShadowPassRecorder::ShadowPassRecorder(RendererSystems& systems)
     : systems_(systems)

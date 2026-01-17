@@ -3,7 +3,7 @@
 #include "UBOBuilder.h"
 #include "GlobalBufferManager.h"
 #include "TimeSystem.h"
-#include "CelestialCalculator.h"
+#include "CelestialCalculator.h"  // Also provides DateTime
 #include "WaterSystem.h"
 #include "ShadowSystem.h"
 #include "WeatherSystem.h"
@@ -11,7 +11,6 @@
 #include "SceneManager.h"
 #include "controls/EnvironmentControlSubsystem.h"
 #include "Camera.h"
-#include "DateTime.h"
 
 UBOUpdater::Result UBOUpdater::update(
     RendererSystems& systems,

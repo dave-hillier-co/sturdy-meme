@@ -23,9 +23,9 @@ public:
     // These are pointers to resources owned by Renderer
     struct Config {
         bool terrainEnabled = true;
-        vk::Pipeline* sceneObjectsPipeline = nullptr;   // Legacy graphics pipeline
-        vk::PipelineLayout* pipelineLayout = nullptr;   // Legacy pipeline layout
-        glm::mat4* lastViewProj = nullptr;              // For debug line rendering
+        const vk::Pipeline* sceneObjectsPipeline = nullptr;       // Legacy graphics pipeline
+        const vk::PipelineLayout* pipelineLayout = nullptr;       // Legacy pipeline layout
+        glm::mat4* lastViewProj = nullptr;                        // For debug line rendering
     };
 
     explicit HDRPassRecorder(RendererSystems& systems);

@@ -1,6 +1,6 @@
 #include "RendererCore.h"
 #include "VulkanContext.h"
-#include "profiling/QueueSubmitDiagnostics.h"
+#include "QueueSubmitDiagnostics.h"
 #include "TaskScheduler.h"
 #include <SDL3/SDL.h>
 #include <chrono>

@@ -42,6 +42,7 @@ set(SOURCES
     src/core/RendererInit.cpp
     src/core/RendererInitPhases.cpp
     src/core/CoreResources.cpp
+    src/core/SystemWiring.cpp
     src/core/ResizeCoordinator.cpp
     src/core/UBOBuilder.cpp
     src/core/RendererSystems.cpp
@@ -156,6 +157,7 @@ set(SOURCES
     src/physics/PhysicsDebugRenderer.cpp
     # Terrain
     src/terrain/TerrainSystem.cpp
+    src/terrain/TerrainFactory.cpp
     src/terrain/TerrainBuffers.cpp
     src/terrain/TerrainCameraOptimizer.cpp
     src/terrain/TerrainEffects.cpp

@@ -261,12 +261,6 @@ private:
     // Pure calculation helpers (no state mutation)
     glm::vec2 calculateSunScreenPos(const Camera& camera, const glm::vec3& sunDir) const;
 
-    // Build per-frame shared state from camera and timing
-    FrameData buildFrameData(const Camera& camera, float deltaTime, float time) const;
-
-    // Build render resources snapshot for pipeline stages
-    RenderResources buildRenderResources(uint32_t swapchainImageIndex) const;
-
     std::string resourcePath;
     Config config_;  // Renderer configuration
 

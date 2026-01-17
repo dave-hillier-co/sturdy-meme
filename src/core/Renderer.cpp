@@ -13,6 +13,7 @@
 #include "core/vulkan/PipelineLayoutBuilder.h"
 #include "core/pipeline/FrameGraphBuilder.h"
 #include "core/FrameUpdater.h"
+#include "core/FrameDataBuilder.h"
 #include "interfaces/IPlayerControl.h"
 
 // Subsystem includes for render loop
@@ -791,7 +792,8 @@ bool Renderer::render(const Camera& camera) {
     systems_->profiler().endCpuZone("UniformUpdates");
 
     // Build per-frame shared state
-    FrameData frame = buildFrameData(camera, timing.deltaTime, timing.elapsedTime);
+    FrameData frame = FrameDataBuilder::buildFrameData(
+        camera, *systems_, frameSync_.currentIndex(), timing.deltaTime, timing.elapsedTime);
 
     // Cache view-projection for debug rendering
     lastViewProj = frame.viewProj;
@@ -841,7 +843,10 @@ bool Renderer::render(const Camera& camera) {
     systems_->profiler().beginGpuFrame(cmd, frame.frameIndex);
 
     // Build render resources and context for frame graph passes
-    RenderResources resources = buildRenderResources(imageIndex);
+    RenderResources resources = FrameDataBuilder::buildRenderResources(
+        *systems_, imageIndex, framebuffers_,
+        **renderPass_, {vulkanContext_->getWidth(), vulkanContext_->getHeight()},
+        **graphicsPipeline_, **pipelineLayout_, **descriptorSetLayout_);
     RenderContext ctx(cmd, frame.frameIndex, frame, resources, &cmdDiag);
 
     // Execute frame graph - dependency-driven scheduling with parallel execution
@@ -1059,119 +1064,6 @@ glm::vec2 Renderer::calculateSunScreenPos(const Camera& camera, const glm::vec3&
         sunScreenPos.y = 1.0f - sunScreenPos.y;
     }
     return sunScreenPos;
-}
-
-FrameData Renderer::buildFrameData(const Camera& camera, float deltaTime, float time) const {
-    FrameData frame;
-
-    frame.frameIndex = frameSync_.currentIndex();
-    frame.deltaTime = deltaTime;
-    frame.time = time;
-    frame.timeOfDay = systems_->time().getTimeOfDay();
-
-    frame.cameraPosition = camera.getPosition();
-    frame.view = camera.getViewMatrix();
-    frame.projection = camera.getProjectionMatrix();
-    frame.viewProj = frame.projection * frame.view;
-    frame.nearPlane = camera.getNearPlane();
-    frame.farPlane = camera.getFarPlane();
-
-    // Extract frustum planes from view-projection matrix (normalized)
-    glm::mat4 m = glm::transpose(frame.viewProj);
-    frame.frustumPlanes[0] = m[3] + m[0];  // Left
-    frame.frustumPlanes[1] = m[3] - m[0];  // Right
-    frame.frustumPlanes[2] = m[3] + m[1];  // Bottom
-    frame.frustumPlanes[3] = m[3] - m[1];  // Top
-    frame.frustumPlanes[4] = m[3] + m[2];  // Near
-    frame.frustumPlanes[5] = m[3] - m[2];  // Far
-    for (int i = 0; i < 6; ++i) {
-        float len = glm::length(glm::vec3(frame.frustumPlanes[i]));
-        if (len > 0.0f) {
-            frame.frustumPlanes[i] /= len;
-        }
-    }
-
-    // Get sun direction from last computed UBO (already computed in updateUniformBuffer)
-    UniformBufferObject* ubo = static_cast<UniformBufferObject*>(systems_->globalBuffers().uniformBuffers.mappedPointers[frameSync_.currentIndex()]);
-    frame.sunDirection = glm::normalize(glm::vec3(ubo->toSunDirection));
-    frame.sunIntensity = ubo->toSunDirection.w;
-
-    // Get player state from PlayerControlSubsystem
-    const auto& playerControl = systems_->playerControl();
-    frame.playerPosition = playerControl.getPlayerPosition();
-    frame.playerVelocity = playerControl.getPlayerVelocity();
-    frame.playerCapsuleRadius = playerControl.getPlayerCapsuleRadius();
-
-    const auto& terrainConfig = systems_->terrain().getConfig();
-    frame.terrainSize = terrainConfig.size;
-    frame.heightScale = terrainConfig.heightScale;
-
-    // Populate wind/weather/snow data
-    const auto& envSettings = systems_->wind().getEnvironmentSettings();
-    frame.windDirection = envSettings.windDirection;
-    frame.windStrength = envSettings.windStrength;
-    frame.windSpeed = envSettings.windSpeed;
-    frame.gustFrequency = envSettings.gustFrequency;
-    frame.gustAmplitude = envSettings.gustAmplitude;
-
-    frame.weatherType = systems_->weather().getWeatherType();
-    frame.weatherIntensity = systems_->weather().getIntensity();
-
-    frame.snowAmount = systems_->environmentSettings().snowAmount;
-    frame.snowColor = systems_->environmentSettings().snowColor;
-
-    // Lighting data
-    frame.sunColor = glm::vec3(ubo->sunColor);
-    frame.moonDirection = glm::normalize(glm::vec3(ubo->moonDirection));
-    frame.moonIntensity = ubo->moonDirection.w;
-
-    return frame;
-}
-
-RenderResources Renderer::buildRenderResources(uint32_t swapchainImageIndex) const {
-    RenderResources resources;
-
-    // HDR target (from PostProcessSystem)
-    resources.hdrRenderPass = systems_->postProcess().getHDRRenderPass();
-    resources.hdrFramebuffer = systems_->postProcess().getHDRFramebuffer();
-    resources.hdrExtent = systems_->postProcess().getExtent();
-    resources.hdrColorView = systems_->postProcess().getHDRColorView();
-    resources.hdrDepthView = systems_->postProcess().getHDRDepthView();
-
-    // Shadow resources (from ShadowSystem)
-    resources.shadowRenderPass = systems_->shadow().getShadowRenderPass();
-    resources.shadowMapView = systems_->shadow().getShadowImageView();
-    resources.shadowSampler = systems_->shadow().getShadowSampler();
-    resources.shadowPipeline = systems_->shadow().getShadowPipeline();
-    resources.shadowPipelineLayout = systems_->shadow().getShadowPipelineLayout();
-
-    // Copy cascade matrices
-    const auto& cascadeMatrices = systems_->shadow().getCascadeMatrices();
-    for (size_t i = 0; i < cascadeMatrices.size(); ++i) {
-        resources.cascadeMatrices[i] = cascadeMatrices[i];
-    }
-
-    // Copy cascade split depths
-    const auto& splitDepths = systems_->shadow().getCascadeSplitDepths();
-    for (size_t i = 0; i < std::min(splitDepths.size(), size_t(4)); ++i) {
-        resources.cascadeSplitDepths[i] = splitDepths[i];
-    }
-
-    // Bloom output (from BloomSystem)
-    resources.bloomOutput = systems_->bloom().getBloomOutput();
-    resources.bloomSampler = systems_->bloom().getBloomSampler();
-
-    // Swapchain target
-    resources.swapchainRenderPass = **renderPass_;
-    resources.swapchainFramebuffer = *framebuffers_[swapchainImageIndex];
-    resources.swapchainExtent = {vulkanContext_->getWidth(), vulkanContext_->getHeight()};
-
-    // Main scene pipeline
-    resources.graphicsPipeline = **graphicsPipeline_;
-    resources.pipelineLayout = **pipelineLayout_;
-    resources.descriptorSetLayout = **descriptorSetLayout_;
-
-    return resources;
 }
 
 // Render pass recording helpers - pure command recording, no state mutation

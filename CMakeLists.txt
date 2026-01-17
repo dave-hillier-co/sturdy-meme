@@ -70,6 +70,7 @@ set(SOURCES
     src/core/passes/HDRPassRecorder.cpp
     src/core/passes/PostPasses.cpp
     src/core/FrameUpdater.cpp
+    src/core/FrameDataBuilder.cpp
     src/core/updaters/VegetationUpdater.cpp
     src/core/updaters/AtmosphereUpdater.cpp
     src/core/updaters/EnvironmentUpdater.cpp

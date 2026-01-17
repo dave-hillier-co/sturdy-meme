@@ -805,7 +805,7 @@ if(SHADER_COMPILE_CMD)
         tree_impostor_capture_leaf.vert
         tree_impostor_shadow.vert tree_impostor_shadow.frag
         hiz_culling.comp
-        bloom_compute.comp bloom_upsample_compute.comp godrays_compute.comp
+        bloom_compute.comp bloom_upsample_compute.comp bloom_spd.comp godrays_compute.comp
     )
 
     foreach(SHADER ${SHADERS_WITH_BINDINGS})

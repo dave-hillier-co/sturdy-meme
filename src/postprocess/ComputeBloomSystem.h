@@ -17,9 +17,12 @@
  * eliminating 11 render pass transitions and providing better GPU utilization.
  *
  * Performance improvements:
- * - No render pass begin/end overhead (was 11 render passes)
+ * - No render pass begin/end overhead (was 11 render passes -> 0)
  * - Better cache utilization with compute dispatch
  * - All mip levels use storage images instead of framebuffers
+ * - Half-res first pass option (bloom starts at 1/4 resolution)
+ * - Reduced mip levels (5 instead of 6, mip 5 is 1/1024 of screen)
+ * - Optional async compute overlap with other GPU work
  */
 class ComputeBloomSystem {
 public:
@@ -33,6 +36,10 @@ public:
         VkExtent2D extent;
         std::string shaderPath;
         const vk::raii::Device* raiiDevice = nullptr;
+        bool halfResFirstPass = true;   // Start bloom at half-res (recommended)
+        bool useAsyncCompute = false;   // Use async compute queue if available
+        VkQueue asyncComputeQueue = VK_NULL_HANDLE;
+        uint32_t asyncComputeQueueFamily = 0;
     };
 
     static std::unique_ptr<ComputeBloomSystem> create(const InitInfo& info);
@@ -63,6 +70,11 @@ public:
     void setIntensity(float i) { intensity_ = i; }
     float getIntensity() const { return intensity_; }
 
+    // Async compute support
+    bool isAsyncComputeEnabled() const { return useAsyncCompute_ && asyncComputeQueue_ != VK_NULL_HANDLE; }
+    VkQueue getAsyncComputeQueue() const { return asyncComputeQueue_; }
+    uint32_t getAsyncComputeQueueFamily() const { return asyncComputeQueueFamily_; }
+
 private:
     bool initInternal(const InitInfo& info);
     void cleanup();
@@ -89,7 +101,12 @@ private:
     const vk::raii::Device* raiiDevice_ = nullptr;
 
     static constexpr VkFormat BLOOM_FORMAT = VK_FORMAT_R16G16B16A16_SFLOAT;
-    static constexpr uint32_t MAX_MIP_LEVELS = 6;
+    static constexpr uint32_t MAX_MIP_LEVELS = 5;  // Reduced from 6 - mip 4 is already 1/512 of screen
+
+    bool halfResFirstPass_ = true;  // Start bloom extraction at half resolution
+    bool useAsyncCompute_ = false;
+    VkQueue asyncComputeQueue_ = VK_NULL_HANDLE;
+    uint32_t asyncComputeQueueFamily_ = 0;
 
     std::vector<MipLevel> mipChain_;
     std::optional<vk::raii::Sampler> sampler_;

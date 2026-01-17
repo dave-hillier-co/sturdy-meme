@@ -41,6 +41,10 @@ bool ComputeBloomSystem::initInternal(const InitInfo& info) {
     extent_ = info.extent;
     shaderPath_ = info.shaderPath;
     raiiDevice_ = info.raiiDevice;
+    halfResFirstPass_ = info.halfResFirstPass;
+    useAsyncCompute_ = info.useAsyncCompute;
+    asyncComputeQueue_ = info.asyncComputeQueue;
+    asyncComputeQueueFamily_ = info.asyncComputeQueueFamily;
 
     if (!raiiDevice_) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "ComputeBloomSystem requires raiiDevice");
@@ -53,7 +57,10 @@ bool ComputeBloomSystem::initInternal(const InitInfo& info) {
     if (!createPipelines()) return false;
     if (!createDescriptorSets()) return false;
 
-    SDL_Log("ComputeBloomSystem: Initialized with compute-based bloom (no render passes)");
+    SDL_Log("ComputeBloomSystem: Initialized with compute-based bloom");
+    SDL_Log("  - Half-res first pass: %s", halfResFirstPass_ ? "enabled" : "disabled");
+    SDL_Log("  - Mip levels: %zu", mipChain_.size());
+    SDL_Log("  - Async compute: %s", useAsyncCompute_ ? "enabled" : "disabled");
     return true;
 }
 
@@ -90,6 +97,14 @@ void ComputeBloomSystem::resize(VkExtent2D newExtent) {
 bool ComputeBloomSystem::createMipChain() {
     uint32_t width = extent_.width;
     uint32_t height = extent_.height;
+
+    // Half-res first pass: start bloom chain at 1/4 resolution instead of 1/2
+    // This reduces pixel shader work by 4x for the first downsample pass
+    // Visual quality is nearly identical since bloom is inherently blurry
+    if (halfResFirstPass_) {
+        width = std::max(1u, width / 2);
+        height = std::max(1u, height / 2);
+    }
 
     for (uint32_t i = 0; i < MAX_MIP_LEVELS && (width > 1 || height > 1); ++i) {
         width = std::max(1u, width / 2);
@@ -139,10 +154,13 @@ bool ComputeBloomSystem::createMipChain() {
         mipChain_.push_back(mip);
     }
 
-    SDL_Log("ComputeBloomSystem: Created %zu mip levels, first mip: %ux%u",
-            mipChain_.size(),
-            mipChain_.empty() ? 0 : mipChain_[0].extent.width,
-            mipChain_.empty() ? 0 : mipChain_[0].extent.height);
+    SDL_Log("ComputeBloomSystem: Created %zu mip levels (half-res first pass: %s)",
+            mipChain_.size(), halfResFirstPass_ ? "yes" : "no");
+    if (!mipChain_.empty()) {
+        SDL_Log("  First mip: %ux%u, Last mip: %ux%u",
+                mipChain_[0].extent.width, mipChain_[0].extent.height,
+                mipChain_.back().extent.width, mipChain_.back().extent.height);
+    }
 
     return true;
 }

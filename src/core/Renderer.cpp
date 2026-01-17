@@ -46,9 +46,9 @@
 // Animation and debug
 #include "SkinnedMeshRenderer.h"
 #include "DebugLineSystem.h"
-#include "RoadRiverVisualization.h"
 #include "HiZSystem.h"
 #include "interfaces/IDebugControl.h"
+#include "controls/DebugControlSubsystem.h"
 #include "threading/TaskScheduler.h"
 // Vegetation
 #include "GrassSystem.h"
@@ -240,37 +240,6 @@ void Renderer::setupFrameGraph() {
 
 // Note: initCoreVulkanResources(), initDescriptorInfrastructure(), initSubsystems(),
 // and initResizeCoordinator() are implemented in RendererInitPhases.cpp
-
-void Renderer::updateRoadRiverVisualization() {
-    if (!systems_->debugControl().isRoadRiverVisualizationEnabled()) {
-        // Clear persistent lines when disabled
-        if (systems_->debugLine().getPersistentLineCount() > 0) {
-            systems_->debugLine().clearPersistentLines();
-        }
-        return;
-    }
-
-    // Sync individual road/river toggles to visualization config
-    auto& config = systems_->roadRiverVis().getConfig();
-    bool needsRebuild = false;
-
-    if (config.showRoads != systems_->debugControl().isRoadVisualizationEnabled()) {
-        config.showRoads = systems_->debugControl().isRoadVisualizationEnabled();
-        needsRebuild = true;
-    }
-    if (config.showRivers != systems_->debugControl().isRiverVisualizationEnabled()) {
-        config.showRivers = systems_->debugControl().isRiverVisualizationEnabled();
-        needsRebuild = true;
-    }
-
-    if (needsRebuild) {
-        systems_->roadRiverVis().invalidateCache();
-        systems_->debugLine().clearPersistentLines();
-    }
-
-    // Add road/river visualization to debug lines
-    systems_->roadRiverVis().addToDebugLines(systems_->debugLine());
-}
 
 #ifdef JPH_DEBUG_RENDERER
 void Renderer::updatePhysicsDebug(PhysicsWorld& physics, const glm::vec3& cameraPos) {
@@ -745,8 +714,8 @@ bool Renderer::render(const Camera& camera) {
         systems_->debugLine().beginFrame(frameSync_.currentIndex());
     }
 
-    // Add road/river visualization to debug lines
-    updateRoadRiverVisualization();
+    // Add road/river visualization to debug lines (delegated to DebugControlSubsystem)
+    systems_->debugControlSubsystem().updateRoadRiverVisualization();
 
     // Upload debug lines if any are present
     if (systems_->debugLine().hasLines()) {

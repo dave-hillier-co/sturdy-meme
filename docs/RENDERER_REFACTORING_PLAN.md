@@ -102,7 +102,7 @@ private:
 - [ ] Step 3: Move Vulkan infrastructure to VulkanContext
 - [x] Step 4: Extract FrameDataBuilder utility
 - [x] Step 5: Move state sync to control subsystems (already done in main branch)
-- [ ] Step 6: Move debug visualization
+- [x] Step 6: Move debug visualization (updateRoadRiverVisualization moved to DebugControlSubsystem)
 - [ ] Step 7: Move Hi-Z object data
 - [ ] Step 8: Cleanup legacy pipeline
 - [ ] Step 9: Remove interface accessors

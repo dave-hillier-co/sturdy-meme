@@ -298,6 +298,9 @@ void Renderer::cleanup() {
         asyncTransferManager_.shutdown();
         threadedCommandPool_.shutdown();
 
+        // Destroy RendererCore before its dependencies
+        rendererCore_.destroy();
+
         // RAII handles cleanup of sync objects via TripleBuffering
         frameSync_.destroy();
 

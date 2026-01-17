@@ -22,6 +22,7 @@
 #include "RendererSystems.h"
 #include "PerformanceToggles.h"
 #include "TripleBuffering.h"
+#include "RendererCore.h"
 #include "vulkan/AsyncTransferManager.h"
 #include "vulkan/ThreadedCommandPool.h"
 #include "pipeline/FrameGraph.h"
@@ -298,6 +299,9 @@ private:
 
     // Triple buffering: frame synchronization and indexing
     TripleBuffering frameSync_;
+
+    // Core frame execution (owns the frame loop mechanics)
+    RendererCore rendererCore_;
 
     // Multi-threading infrastructure
     AsyncTransferManager asyncTransferManager_;

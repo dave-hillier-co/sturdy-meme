@@ -38,6 +38,7 @@ set(SOURCES
     src/scene/InputSystem.cpp
     # Core
     src/core/Renderer.cpp
+    src/core/RendererCore.cpp
     src/core/RendererInit.cpp
     src/core/RendererInitPhases.cpp
     src/core/CoreResources.cpp

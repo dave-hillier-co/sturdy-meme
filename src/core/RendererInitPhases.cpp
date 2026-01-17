@@ -591,6 +591,18 @@ bool Renderer::initSubsystems(const InitContext& initCtx) {
 
     if (!createSyncObjects()) return false;
 
+    // Initialize RendererCore (core frame loop execution)
+    {
+        RendererCore::InitParams coreParams;
+        coreParams.vulkanContext = vulkanContext_.get();
+        coreParams.frameGraph = &frameGraph_;
+        coreParams.frameSync = &frameSync_;
+        if (!rendererCore_.init(coreParams)) {
+            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to initialize RendererCore");
+            return false;
+        }
+    }
+
     // Create debug line system via factory
     auto debugLineSystem = DebugLineSystem::create(initCtx, core.hdr.renderPass);
     if (!debugLineSystem) {

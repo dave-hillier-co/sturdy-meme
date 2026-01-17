@@ -116,7 +116,7 @@ public:
     vk::Device getDevice() const { return vulkanContext_->getVkDevice(); }
     vk::Queue getGraphicsQueue() const { return vulkanContext_->getVkGraphicsQueue(); }
     uint32_t getGraphicsQueueFamily() const { return vulkanContext_->getGraphicsQueueFamily(); }
-    VkRenderPass getSwapchainRenderPass() const { return **renderPass_; }
+    VkRenderPass getSwapchainRenderPass() const { return vulkanContext_->getRenderPass(); }
     uint32_t getSwapchainImageCount() const { return vulkanContext_->getSwapchainImageCount(); }
 
     // Access to VulkanContext
@@ -151,7 +151,7 @@ public:
     bool isPhysicsDebugEnabled() const { return physicsDebugEnabled; }
 
     // Resource access
-    VkCommandPool getCommandPool() const { return **commandPool_; }
+    VkCommandPool getCommandPool() const { return vulkanContext_->getCommandPool(); }
     DescriptorManager::Pool* getDescriptorPool();
     std::string getShaderPath() const { return resourcePath + "/shaders"; }
     const std::string& getResourcePath() const { return resourcePath; }
@@ -182,26 +182,17 @@ private:
     void cleanup();
 
     // High-level initialization phases
-    bool initCoreVulkanResources();       // render pass, depth, framebuffers, command pool
+    bool initCoreVulkanResources();       // swapchain resources, command pool, threading
     bool initDescriptorInfrastructure();  // layouts, pools, sets
     bool initSubsystems(const InitContext& initCtx);  // terrain, grass, weather, snow, water, etc.
     void initResizeCoordinator();         // resize registration
 
-    bool createRenderPass();
-    void destroyRenderResources();
-    void destroyDepthImageAndView();  // Helper for resize (keeps sampler)
-    void destroyFramebuffers();       // Helper for resize
-    bool recreateDepthResources(VkExtent2D newExtent);  // Helper for resize
-    bool createFramebuffers();
-    bool createCommandPool();
-    bool createCommandBuffers();
     bool createSyncObjects();
     bool createDescriptorSetLayout();
     void addCommonDescriptorBindings(DescriptorManager::LayoutBuilder& builder);
     bool createGraphicsPipeline();
     bool createDescriptorPool();
     bool createDescriptorSets();
-    bool createDepthResources();
 
     // Render pass recording helpers (pure - only record commands, no state mutation)
     void recordShadowPass(VkCommandBuffer cmd, uint32_t frameIndex, float grassTime, const glm::vec3& cameraPosition);
@@ -221,7 +212,6 @@ private:
     // All rendering subsystems - managed with automatic lifecycle
     std::unique_ptr<RendererSystems> systems_;
 
-    std::optional<vk::raii::RenderPass> renderPass_;
     std::optional<vk::raii::DescriptorSetLayout> descriptorSetLayout_;
     std::optional<vk::raii::PipelineLayout> pipelineLayout_;
     std::optional<vk::raii::Pipeline> graphicsPipeline_;
@@ -233,14 +223,6 @@ private:
     // Performance toggles for debugging
     PerformanceToggles perfToggles;
 
-    std::vector<vk::raii::Framebuffer> framebuffers_;
-    std::optional<vk::raii::CommandPool> commandPool_;
-    std::vector<VkCommandBuffer> commandBuffers;
-
-    ManagedImage depthImage_;
-    std::optional<vk::raii::ImageView> depthImageView_;
-    std::optional<vk::raii::Sampler> depthSampler_;  // For Hi-Z pyramid generation
-    VkFormat depthFormat = VK_FORMAT_UNDEFINED;
 
     std::optional<DescriptorManager::Pool> descriptorManagerPool;
 

@@ -143,7 +143,7 @@ bool Renderer::initInternal(const InitInfo& info) {
             vulkanContext_->getVkDevice(),
             vulkanContext_->getVkPhysicalDevice(),
             vulkanContext_->getAllocator(),
-            **commandPool_,
+            vulkanContext_->getCommandPool(),
             vulkanContext_->getVkGraphicsQueue());
     }
 
@@ -156,7 +156,7 @@ bool Renderer::initInternal(const InitInfo& info) {
     // Build shared InitContext for subsystem initialization
     // Pass pool sizes hint so subsystems can create consistent pools if needed
     InitContext initCtx = InitContext::build(
-        *vulkanContext_, **commandPool_, &*descriptorManagerPool,
+        *vulkanContext_, vulkanContext_->getCommandPool(), &*descriptorManagerPool,
         resourcePath, MAX_FRAMES_IN_FLIGHT, config_.descriptorPoolSizes);
 
     // Phase 3: All subsystems (terrain, grass, weather, snow, water, etc.)
@@ -229,7 +229,7 @@ void Renderer::setupFrameGraph() {
     state.hdrPassEnabled = &hdrPassEnabled;
     state.terrainEnabled = &terrainEnabled;
     state.perfToggles = &perfToggles;
-    state.framebuffers = &framebuffers_;
+    state.framebuffers = &vulkanContext_->getFramebuffers();
 
     // Use FrameGraphBuilder to configure all passes and dependencies
     if (!FrameGraphBuilder::build(frameGraph_, *systems_, callbacks, state)) {
@@ -252,7 +252,7 @@ void Renderer::updatePhysicsDebug(PhysicsWorld& physics, const glm::vec3& camera
     // Create debug renderer on first use (after Jolt is initialized)
     if (!systems_->physicsDebugRenderer()) {
         InitContext initCtx = InitContext::build(
-            *vulkanContext_, **commandPool_, &*descriptorManagerPool,
+            *vulkanContext_, vulkanContext_->getCommandPool(), &*descriptorManagerPool,
             resourcePath, MAX_FRAMES_IN_FLIGHT);
         systems_->createPhysicsDebugRenderer(initCtx, systems_->postProcess().getHDRRenderPass());
     }
@@ -315,114 +315,13 @@ void Renderer::cleanup() {
         descriptorSetLayout_.reset();
         SDL_Log("descriptor layouts destroyed");
 
-        // RAII handles: commandPool
-        SDL_Log("destroying commandPool");
-        commandPool_.reset();
-        SDL_Log("commandPool destroyed");
-
-        // RAII handles: depth resources and framebuffers
-        SDL_Log("clearing framebuffers");
-        framebuffers_.clear();
-        SDL_Log("destroying depthSampler");
-        depthSampler_.reset();
-        SDL_Log("destroying depthImageView");
-        depthImageView_.reset();
-        SDL_Log("destroying depthImage");
-        depthImage_.reset();
-        SDL_Log("destroying renderPass");
-        renderPass_.reset();
-        SDL_Log("render resources destroyed");
+        // Note: command pool, render pass, depth resources, and framebuffers
+        // are now owned by VulkanContext and cleaned up in its shutdown()
     }
 
     SDL_Log("calling vulkanContext_->shutdown");
     vulkanContext_->shutdown();
     SDL_Log("vulkanContext shutdown complete");
-}
-
-void Renderer::destroyRenderResources() {
-    // RAII handles all cleanup - just clear containers and reset managed objects
-    framebuffers_.clear();
-    depthSampler_.reset();
-    depthImageView_.reset();
-    depthImage_.reset();
-    renderPass_.reset();
-}
-
-bool Renderer::createRenderPass() {
-    depthFormat = VK_FORMAT_D32_SFLOAT;
-
-    RenderPassConfig config{};
-    config.colorFormat = static_cast<VkFormat>(vulkanContext_->getVkSwapchainImageFormat());
-    config.depthFormat = depthFormat;
-    config.finalColorLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
-    config.finalDepthLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;  // For Hi-Z
-    config.storeDepth = true;  // For Hi-Z pyramid generation
-
-    auto result = ::createRenderPass(vulkanContext_->getRaiiDevice(), config);
-    if (!result) {
-        return false;
-    }
-    renderPass_.emplace(std::move(*result));
-    return true;
-}
-
-bool Renderer::createDepthResources() {
-    DepthResources depth;
-    vk::Extent2D extent{vulkanContext_->getVkSwapchainExtent().width,
-                        vulkanContext_->getVkSwapchainExtent().height};
-    if (!::createDepthResources(
-            vulkanContext_->getRaiiDevice(), vulkanContext_->getAllocator(),
-            extent, static_cast<vk::Format>(depthFormat), depth)) {
-        return false;
-    }
-    // Move RAII resources from temporary DepthResources to member fields
-    depthImage_ = std::move(depth.image);
-    depthImageView_ = std::move(depth.view);
-    depthSampler_ = std::move(depth.sampler);
-    return true;
-}
-
-bool Renderer::createFramebuffers() {
-    auto result = ::createFramebuffers(
-        vulkanContext_->getRaiiDevice(), *renderPass_,
-        vulkanContext_->getSwapchainImageViews(), **depthImageView_,
-        vulkanContext_->getVkSwapchainExtent());
-    if (!result) {
-        return false;
-    }
-
-    framebuffers_ = std::move(*result);
-    return true;
-}
-
-bool Renderer::createCommandPool() {
-    try {
-        auto poolInfo = vk::CommandPoolCreateInfo{}
-            .setFlags(vk::CommandPoolCreateFlagBits::eResetCommandBuffer)
-            .setQueueFamilyIndex(vulkanContext_->getGraphicsQueueFamily());
-        commandPool_.emplace(vulkanContext_->getRaiiDevice(), poolInfo);
-        return true;
-    } catch (const vk::SystemError& e) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create command pool: %s", e.what());
-        return false;
-    }
-}
-
-bool Renderer::createCommandBuffers() {
-    commandBuffers.resize(MAX_FRAMES_IN_FLIGHT);
-
-    auto allocInfo = vk::CommandBufferAllocateInfo{}
-        .setCommandPool(**commandPool_)
-        .setLevel(vk::CommandBufferLevel::ePrimary)
-        .setCommandBufferCount(MAX_FRAMES_IN_FLIGHT);
-
-    if (vkAllocateCommandBuffers(vulkanContext_->getVkDevice(),
-            reinterpret_cast<const VkCommandBufferAllocateInfo*>(&allocInfo),
-            commandBuffers.data()) != VK_SUCCESS) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to allocate command buffers");
-        return false;
-    }
-    return true;
 }
 
 bool Renderer::createSyncObjects() {
@@ -732,11 +631,10 @@ bool Renderer::render(const Camera& camera) {
     systems_->profiler().beginCpuZone("CmdBufferRecord");
     auto recordStart = std::chrono::high_resolution_clock::now();
 
-    vk::CommandBuffer vkCmd(commandBuffers[frame.frameIndex]);
+    VkCommandBuffer cmd = vulkanContext_->getCommandBuffer(frame.frameIndex);
+    vk::CommandBuffer vkCmd(cmd);
     vkCmd.reset();
     vkCmd.begin(vk::CommandBufferBeginInfo{});
-
-    VkCommandBuffer cmd = commandBuffers[frame.frameIndex];
 
     // Get reference to diagnostics for command counting
     auto& cmdDiag = systems_->profiler().getQueueSubmitDiagnostics();
@@ -753,8 +651,8 @@ bool Renderer::render(const Camera& camera) {
 
     // Build render resources and context for frame graph passes
     RenderResources resources = FrameDataBuilder::buildRenderResources(
-        *systems_, imageIndex, framebuffers_,
-        **renderPass_, {vulkanContext_->getWidth(), vulkanContext_->getHeight()},
+        *systems_, imageIndex, vulkanContext_->getFramebuffers(),
+        vulkanContext_->getRenderPass(), {vulkanContext_->getWidth(), vulkanContext_->getHeight()},
         **graphicsPipeline_, **pipelineLayout_, **descriptorSetLayout_);
     RenderContext ctx(cmd, frame.frameIndex, frame, resources, &cmdDiag);
 
@@ -917,36 +815,6 @@ void Renderer::waitForPreviousFrame() {
     // This prevents race conditions where we destroy mesh buffers while the GPU
     // is still reading them from the previous frame's commands.
     frameSync_.waitForPreviousFrame();
-}
-
-void Renderer::destroyDepthImageAndView() {
-    // RAII handles cleanup - just reset the managed objects
-    depthImageView_.reset();
-    depthImage_.reset();
-}
-
-void Renderer::destroyFramebuffers() {
-    // RAII handles cleanup - just clear the vector
-    framebuffers_.clear();
-}
-
-bool Renderer::recreateDepthResources(VkExtent2D newExtent) {
-    destroyDepthImageAndView();
-
-    vk::Extent2D extent{newExtent.width, newExtent.height};
-    VmaImage newImage;
-    std::optional<vk::raii::ImageView> newView;
-
-    if (!::createDepthImageAndView(
-        vulkanContext_->getRaiiDevice(), vulkanContext_->getAllocator(),
-        extent, static_cast<vk::Format>(depthFormat),
-        newImage, newView)) {
-        return false;
-    }
-
-    depthImage_ = std::move(newImage);
-    depthImageView_ = std::move(newView);
-    return true;
 }
 
 bool Renderer::handleResize() {

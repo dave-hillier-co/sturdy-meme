@@ -60,10 +60,11 @@
 #include <SDL3/SDL.h>
 
 bool Renderer::initCoreVulkanResources() {
-    if (!createRenderPass()) return false;
-    if (!createDepthResources()) return false;
-    if (!createFramebuffers()) return false;
-    if (!createCommandPool()) return false;
+    // Create swapchain-dependent resources (render pass, depth buffer, framebuffers)
+    if (!vulkanContext_->createSwapchainResources()) return false;
+
+    // Create command pool and buffers
+    if (!vulkanContext_->createCommandPoolAndBuffers(MAX_FRAMES_IN_FLIGHT)) return false;
 
     // Initialize multi-threading infrastructure (from video architecture)
     {
@@ -114,7 +115,7 @@ bool Renderer::initSubsystems(const InitContext& initCtx) {
     // Initialize post-processing systems (PostProcessSystem, BloomSystem, BilateralGridSystem)
     {
         INIT_PROFILE_PHASE("PostProcessing");
-        auto bundle = PostProcessSystem::createWithDependencies(initCtx, **renderPass_, swapchainImageFormat);
+        auto bundle = PostProcessSystem::createWithDependencies(initCtx, vulkanContext_->getRenderPass(), swapchainImageFormat);
         if (!bundle) {
             return false;
         }
@@ -210,7 +211,7 @@ bool Renderer::initSubsystems(const InitContext& initCtx) {
     SceneBuilder::InitInfo sceneInfo{};
     sceneInfo.allocator = allocator;
     sceneInfo.device = device;
-    sceneInfo.commandPool = **commandPool_;
+    sceneInfo.commandPool = vulkanContext_->getCommandPool();
     sceneInfo.graphicsQueue = graphicsQueue;
     sceneInfo.physicalDevice = physicalDevice;
     sceneInfo.resourcePath = resourcePath;
@@ -354,7 +355,7 @@ bool Renderer::initSubsystems(const InitContext& initCtx) {
 
         VegetationContentGenerator vegGen(vegConfig);
         VegetationContentGenerator::DetritusCreateInfo detritusInfo{
-            device, allocator, **commandPool_, graphicsQueue, physicalDevice
+            device, allocator, vulkanContext_->getCommandPool(), graphicsQueue, physicalDevice
         };
         auto detritusSystem = vegGen.createDetritusSystem(detritusInfo, *systems_->tree());
         if (detritusSystem) {
@@ -506,7 +507,7 @@ bool Renderer::initSubsystems(const InitContext& initCtx) {
     catmullClarkInfo.shaderPath = initCtx.shaderPath;
     catmullClarkInfo.framesInFlight = MAX_FRAMES_IN_FLIGHT;
     catmullClarkInfo.graphicsQueue = graphicsQueue;
-    catmullClarkInfo.commandPool = **commandPool_;
+    catmullClarkInfo.commandPool = vulkanContext_->getCommandPool();
     catmullClarkInfo.raiiDevice = &vulkanContext_->getRaiiDevice();
 
     CatmullClarkConfig catmullClarkConfig{};
@@ -530,14 +531,14 @@ bool Renderer::initSubsystems(const InitContext& initCtx) {
     if (!systems_->sky().createDescriptorSets(systems_->globalBuffers().uniformBuffers.buffers, sizeof(UniformBufferObject), systems_->atmosphereLUT())) return false;
 
     // Initialize Hi-Z occlusion culling system via factory
-    auto hiZSystem = HiZSystem::create(initCtx, depthFormat);
+    auto hiZSystem = HiZSystem::create(initCtx, vulkanContext_->getDepthFormat());
     if (!hiZSystem) {
         SDL_Log("Warning: Hi-Z system initialization failed, occlusion culling disabled");
         // Continue without Hi-Z - it's an optional optimization
     } else {
         systems_->setHiZ(std::move(hiZSystem));
         // Connect depth buffer to Hi-Z system - use HDR depth where scene is rendered
-        systems_->hiZ().setDepthBuffer(core.hdr.depthView, **depthSampler_);
+        systems_->hiZ().setDepthBuffer(core.hdr.depthView, vulkanContext_->getDepthSampler());
 
         // Initialize object data for culling
         updateHiZObjectData();
@@ -572,12 +573,12 @@ bool Renderer::initSubsystems(const InitContext& initCtx) {
     // Initialize water subsystems (configure WaterSystem, generate flow map)
     WaterSubsystems waterSubs{systems_->water(), systems_->waterDisplacement(), systems_->flowMap(), systems_->foam(), *systems_, systems_->waterTileCull(), systems_->waterGBuffer()};
     if (!RendererInit::initWaterSubsystems(waterSubs, initCtx, core.hdr.renderPass,
-                                            systems_->shadow(), systems_->terrain(), terrainConfig, systems_->postProcess(), **depthSampler_)) return false;
+                                            systems_->shadow(), systems_->terrain(), terrainConfig, systems_->postProcess(), vulkanContext_->getDepthSampler())) return false;
 
     // Create water descriptor sets
     if (!RendererInit::createWaterDescriptorSets(waterSubs, systems_->globalBuffers().uniformBuffers.buffers,
                                                   sizeof(UniformBufferObject), systems_->shadow(), systems_->terrain(),
-                                                  systems_->postProcess(), **depthSampler_)) return false;
+                                                  systems_->postProcess(), vulkanContext_->getDepthSampler())) return false;
 
     // Connect underwater caustics to terrain system (use foam texture as caustics pattern)
     // Must happen after water system is fully initialized
@@ -725,17 +726,9 @@ void Renderer::initResizeCoordinator() {
             return {0, 0};
         }
 
-        SDL_Log("Window resized to %ux%u", newExtent.width, newExtent.height);
-
-        // Recreate depth resources
-        if (!recreateDepthResources(newExtent)) {
-            return {0, 0};
-        }
-
-        // Recreate framebuffers
-        destroyFramebuffers();
-        if (!createFramebuffers()) {
-            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to recreate framebuffers during resize");
+        // Recreate swapchain-dependent resources (depth buffer and framebuffers)
+        if (!vulkanContext_->recreateSwapchainResources()) {
+            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to recreate swapchain resources during resize");
             return {0, 0};
         }
 

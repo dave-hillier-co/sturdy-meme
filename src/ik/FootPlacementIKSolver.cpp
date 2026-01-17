@@ -148,37 +148,65 @@ void FootPlacementIKSolver::solve(
             // Compute the foot's world rotation from its current local rotation
             glm::quat footWorldRot = parentWorldRot * currentLocalRot;
 
-            // The foot's current "up" direction in skeleton space
-            // For Mixamo feet, +Z points up from the foot (perpendicular to sole)
-            glm::vec3 footCurrentUp = footWorldRot * glm::vec3(0.0f, 0.0f, 1.0f);
+            // For Mixamo feet:
+            // +Y points forward (toe direction)
+            // +Z points up from the foot (perpendicular to sole)
+            // We need to constrain BOTH axes to prevent awkward twisting:
+            // 1. Foot "up" (+Z) should align with ground normal
+            // 2. Foot "forward" (+Y) should stay in the character's forward plane
 
-            // Calculate rotation needed to align foot up with ground normal
-            float dot = glm::dot(footCurrentUp, targetUp);
+            // Get the foot's current forward direction (toe direction) in skeleton space
+            glm::vec3 footCurrentForward = footWorldRot * glm::vec3(0.0f, 1.0f, 0.0f);
 
-            // Compute alignment rotation
-            glm::quat alignDelta = glm::quat(1, 0, 0, 0);  // Identity
-            if (dot < 0.9999f && dot > -0.9999f) {
-                glm::vec3 axis = glm::cross(footCurrentUp, targetUp);
-                if (glm::length2(axis) > 0.0001f) {
-                    float angle = std::acos(glm::clamp(dot, -1.0f, 1.0f));
-                    // Clamp to max foot rotation angle
-                    angle = glm::clamp(angle, -foot.maxFootAngle, foot.maxFootAngle);
-                    alignDelta = glm::angleAxis(angle, glm::normalize(axis));
-                }
+            // Project the foot's forward onto the ground plane (perpendicular to target up)
+            // This gives us a stable forward direction that lies on the slope
+            glm::vec3 projectedForward = footCurrentForward - glm::dot(footCurrentForward, targetUp) * targetUp;
+
+            // Handle edge case where forward is parallel to normal
+            if (glm::length2(projectedForward) < 0.0001f) {
+                // Fallback: use character's forward direction
+                glm::vec3 charForward = glm::vec3(0.0f, 0.0f, -1.0f);  // Default forward in skeleton space
+                projectedForward = charForward - glm::dot(charForward, targetUp) * targetUp;
+            }
+            projectedForward = glm::normalize(projectedForward);
+
+            // Compute right vector to complete the orthonormal basis
+            glm::vec3 targetRight = glm::normalize(glm::cross(projectedForward, targetUp));
+
+            // Recompute forward to ensure orthogonality
+            glm::vec3 targetForward = glm::cross(targetUp, targetRight);
+
+            // Build target rotation matrix from basis vectors
+            // For Mixamo: X=right, Y=forward, Z=up
+            glm::mat3 targetRotMat;
+            targetRotMat[0] = targetRight;    // X axis
+            targetRotMat[1] = targetForward;  // Y axis (toe direction)
+            targetRotMat[2] = targetUp;       // Z axis (sole normal)
+
+            glm::quat targetWorldRot = glm::quat_cast(targetRotMat);
+
+            // Check angle between current and target rotation
+            float angleDiff = glm::angle(footWorldRot * glm::inverse(targetWorldRot));
+
+            // Apply max angle limit - blend toward target only up to maxFootAngle
+            glm::quat alignedWorldRot;
+            if (angleDiff > foot.maxFootAngle) {
+                float blendFactor = foot.maxFootAngle / angleDiff;
+                alignedWorldRot = glm::slerp(footWorldRot, targetWorldRot, blendFactor);
+            } else {
+                alignedWorldRot = targetWorldRot;
             }
 
-            // Apply alignment in world space, then convert back to local
-            glm::quat alignedWorldRot = alignDelta * footWorldRot;
+            // Convert back to local space
             glm::quat alignedLocalRot = glm::inverse(parentWorldRot) * alignedWorldRot;
 
             // Smooth blend to the aligned rotation
-            glm::quat targetLocalRot = alignedLocalRot;
             if (deltaTime > 0.0f) {
                 float blendT = glm::clamp(8.0f * deltaTime, 0.0f, 1.0f);
-                glm::quat blendedRot = glm::slerp(currentLocalRot, targetLocalRot, blendT);
+                glm::quat blendedRot = glm::slerp(currentLocalRot, alignedLocalRot, blendT);
                 footJoint.localTransform = IKUtils::composeTransform(t, blendedRot, s);
             } else {
-                footJoint.localTransform = IKUtils::composeTransform(t, targetLocalRot, s);
+                footJoint.localTransform = IKUtils::composeTransform(t, alignedLocalRot, s);
             }
         }
     }

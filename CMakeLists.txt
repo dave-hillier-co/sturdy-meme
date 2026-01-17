@@ -81,7 +81,6 @@ set(SOURCES
     src/core/HierarchicalPose.cpp
     src/core/PoseBlend.cpp
     src/core/NodeMask.cpp
-    src/core/LODLayerController.cpp
     # Atmosphere
     src/atmosphere/TimeSystem.cpp
     src/atmosphere/CelestialCalculator.cpp
@@ -105,8 +104,6 @@ set(SOURCES
     src/vegetation/RockSystem.cpp
     src/vegetation/TreeSystem.cpp
     src/vegetation/TreeGenerator.cpp
-    src/vegetation/TreeSkeleton.cpp
-    src/vegetation/TreeWindPose.cpp
     src/vegetation/ThreadedTreeGenerator.cpp
     src/vegetation/TreeOptions.cpp
     src/vegetation/TreeRenderer.cpp

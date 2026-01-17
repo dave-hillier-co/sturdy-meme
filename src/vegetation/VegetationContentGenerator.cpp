@@ -8,7 +8,6 @@
 #include "ThreadedTreeGenerator.h"
 #include "TreeOptions.h"
 #include "DetritusSystem.h"
-#include "DetritusConfig.h"
 #include <SDL3/SDL.h>
 #include <filesystem>
 #include <cmath>

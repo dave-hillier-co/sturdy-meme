@@ -76,7 +76,10 @@ public:
         std::string resourcePath;
         uint32_t maxFramesInFlight;
         uint32_t maxTrees = 10000;
-        uint32_t maxMeshGroups = 16;
+        // Each unique tree mesh needs its own group. Since trees can have
+        // unique procedural meshes, this must be large enough to accommodate
+        // all trees. Must match MAX_MESH_GROUPS in tree_branch_shadow_cull.comp.
+        uint32_t maxMeshGroups = 512;
         const vk::raii::Device* raiiDevice = nullptr;
     };
 

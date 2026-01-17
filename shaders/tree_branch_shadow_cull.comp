@@ -67,7 +67,10 @@ layout(binding = BINDING_TREE_BRANCH_SHADOW_UNIFORMS) uniform CullUniforms {
 // Frustum culling uses isSphereInFrustum from cull_compute_common.glsl
 
 // Maximum mesh groups to prevent GPU hang from garbage uniform data
-const uint MAX_MESH_GROUPS = 16u;
+// Must match maxMeshGroups in TreeBranchCulling::InitInfo
+// Each unique tree mesh needs its own group, so this must be large enough
+// to accommodate all trees when they have unique procedural meshes
+const uint MAX_MESH_GROUPS = 512u;
 
 void main() {
     uint treeIdx = gl_GlobalInvocationID.x;

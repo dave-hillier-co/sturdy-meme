@@ -1096,6 +1096,18 @@ bool Renderer::render(const Camera& camera) {
         systems_->profiler().endCpuZone("SystemUpdates:Wind");
     }
 
+    // Tree animation update (CPU-side pose calculation synchronized with wind)
+    if (systems_->tree()) {
+        systems_->profiler().beginCpuZone("SystemUpdates:TreeAnimation");
+        systems_->tree()->updateAnimation(
+            frame.deltaTime,
+            systems_->wind().getWindDirection(),
+            systems_->wind().getWindStrength(),
+            systems_->wind().getGustFrequency(),
+            systems_->wind().getTime());
+        systems_->profiler().endCpuZone("SystemUpdates:TreeAnimation");
+    }
+
     // Update tree renderer descriptor sets with current frame resources and textures
     // Each update function internally tracks if it was already initialized and skips redundant updates
     if (systems_->treeRenderer() && systems_->tree()) {

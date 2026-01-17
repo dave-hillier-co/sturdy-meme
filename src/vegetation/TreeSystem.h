@@ -15,6 +15,7 @@
 #include "TreeOptions.h"
 #include "TreeGenerator.h"
 #include "TreeSkeleton.h"
+#include "TreeAnimatedHierarchy.h"
 #include "TreeCollision.h"
 #include "Mesh.h"
 #include "Texture.h"
@@ -156,6 +157,24 @@ public:
     void loadPreset(const std::string& name);
     void setPreset(const TreeOptions& preset);
 
+    // Animation update - call each frame to update CPU-side tree poses
+    // windDirection: normalized 2D wind direction
+    // windStrength: wind intensity (0 = calm, 1 = normal, 2+ = storm)
+    // gustFrequency: frequency of wind gusts
+    // time: total elapsed time for animation synchronization
+    void updateAnimation(float deltaTime, const glm::vec2& windDirection,
+                        float windStrength, float gustFrequency, float time);
+
+    // Get animated hierarchy for a tree instance (for collision, physics, etc.)
+    const TreeAnimatedHierarchy& getAnimatedHierarchy(uint32_t instanceIndex) const {
+        return treeAnimations_[instanceIndex];
+    }
+
+    // Get current animated pose for a tree instance
+    const HierarchyPose& getAnimatedPose(uint32_t instanceIndex) const {
+        return treeAnimations_[instanceIndex].currentPose();
+    }
+
     // Statistics
     size_t getTreeCount() const { return treeInstances_.size(); }
     size_t getMeshCount() const { return branchMeshes_.size(); }
@@ -270,6 +289,9 @@ private:
     // Tree instances (positions, rotations, etc.)
     std::vector<TreeInstanceData> treeInstances_;
     int selectedTreeIndex_ = -1;
+
+    // Per-instance animated hierarchies for CPU-side pose calculation
+    std::vector<TreeAnimatedHierarchy> treeAnimations_;
 
     // Scene objects for rendering
     std::vector<Renderable> branchRenderables_;

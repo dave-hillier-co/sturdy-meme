@@ -568,6 +568,12 @@ uint32_t TreeSystem::addTree(const glm::vec3& position, float rotation, float sc
     uint32_t treeIndex = static_cast<uint32_t>(treeInstances_.size());
     treeInstances_.push_back(instance);
 
+    // Initialize animated hierarchy for this tree instance
+    TreeAnimatedHierarchy animation;
+    animation.initialize(treeSkeletons_[meshIndex], position);
+    animation.enableWindLayer();
+    treeAnimations_.push_back(std::move(animation));
+
     // Upload leaf instances to GPU SSBO
     if (!uploadLeafInstanceBuffer()) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "TreeSystem: Failed to upload leaf instance buffer");
@@ -619,6 +625,7 @@ uint32_t TreeSystem::addTreeFromStagedData(
     leafInstancesPerTree_.push_back(std::move(leafInstances));
     treeOptions_.push_back(options);
     treeMeshData_.push_back(TreeMeshData{});  // Empty mesh data for staged trees
+    treeSkeletons_.push_back(TreeSkeleton{});  // Empty skeleton for staged trees
     fullTreeBounds_.push_back(fullBounds);
 
     TreeInstanceData instance;
@@ -629,6 +636,11 @@ uint32_t TreeSystem::addTreeFromStagedData(
 
     uint32_t treeIndex = static_cast<uint32_t>(treeInstances_.size());
     treeInstances_.push_back(instance);
+
+    // Initialize empty animated hierarchy for staged trees (no skeleton data available)
+    TreeAnimatedHierarchy animation;
+    // Don't call initialize() - staged trees don't have skeleton data
+    treeAnimations_.push_back(std::move(animation));
 
     // Note: Don't upload leaf buffer or rebuild scene objects here
     // Caller should call finalizeLeafInstanceBuffer() after adding all trees
@@ -648,8 +660,11 @@ bool TreeSystem::finalizeLeafInstanceBuffer() {
 void TreeSystem::removeTree(uint32_t index) {
     if (index >= treeInstances_.size()) return;
 
-    // Remove instance
+    // Remove instance and animation
     treeInstances_.erase(treeInstances_.begin() + index);
+    if (index < treeAnimations_.size()) {
+        treeAnimations_.erase(treeAnimations_.begin() + index);
+    }
 
     // Update selected index
     if (selectedTreeIndex_ == static_cast<int>(index)) {
@@ -737,6 +752,37 @@ void TreeSystem::setPreset(const TreeOptions& preset) {
     }
 }
 
+void TreeSystem::updateAnimation(float deltaTime, const glm::vec2& windDirection,
+                                  float windStrength, float gustFrequency, float time) {
+    // Build wind params from inputs
+    TreeWindParams windParams;
+    windParams.direction = windDirection;
+    windParams.strength = windStrength;
+    windParams.gustFrequency = gustFrequency;
+    windParams.time = time;
+
+    // Update each tree's animation
+    for (size_t i = 0; i < treeAnimations_.size(); ++i) {
+        TreeAnimatedHierarchy& anim = treeAnimations_[i];
+
+        // Skip uninitialized animations (staged trees without skeleton data)
+        if (anim.skeleton().empty()) {
+            continue;
+        }
+
+        // Update wind parameters
+        anim.setWindParams(windParams);
+
+        // Calculate LOD factor based on distance (if needed)
+        // For now, use full detail (LOD factor = 0)
+        // Could be extended to use camera distance
+        anim.setLODFactor(0.0f);
+
+        // Update the animation
+        anim.update(deltaTime);
+    }
+}
+
 void TreeSystem::regenerateTree(uint32_t treeIndex) {
     if (treeIndex >= treeInstances_.size()) return;
 
@@ -773,6 +819,14 @@ void TreeSystem::regenerateTree(uint32_t treeIndex) {
         }
         if (meshIndex < fullTreeBounds_.size()) {
             fullTreeBounds_[meshIndex] = fullBounds;
+        }
+
+        // Re-initialize animation with new skeleton
+        if (treeIndex < treeAnimations_.size() && meshIndex < treeSkeletons_.size()) {
+            glm::vec3 position = treeInstances_[treeIndex].transform.getPosition();
+            treeAnimations_[treeIndex] = TreeAnimatedHierarchy{};
+            treeAnimations_[treeIndex].initialize(treeSkeletons_[meshIndex], position);
+            treeAnimations_[treeIndex].enableWindLayer();
         }
     }
 

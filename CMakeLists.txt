@@ -61,6 +61,8 @@ set(SOURCES
     src/core/vulkan/ThreadedCommandPool.cpp
     src/core/threading/TaskScheduler.cpp
     src/core/pipeline/FrameGraph.cpp
+    src/core/pipeline/FrameGraphBuilder.cpp
+    src/core/FrameUpdater.cpp
     src/core/LoadingRenderer.cpp
     src/core/loading/LoadJobQueue.cpp
     src/core/loading/AsyncStartupLoader.cpp

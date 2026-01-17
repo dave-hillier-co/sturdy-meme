@@ -386,6 +386,64 @@ void HiZSystem::updateObjectData(const std::vector<CullObjectData>& objects) {
     objectDataBuffer_.unmap();
 }
 
+void HiZSystem::gatherObjects(const std::vector<Renderable>& sceneObjects,
+                               const std::vector<Renderable>& rockObjects) {
+    std::vector<CullObjectData> cullObjects;
+
+    // Gather scene objects for culling
+    for (size_t i = 0; i < sceneObjects.size(); ++i) {
+        const auto& obj = sceneObjects[i];
+        if (obj.mesh == nullptr) continue;
+
+        // Get local AABB and transform to world space
+        const AABB& localBounds = obj.mesh->getBounds();
+        AABB worldBounds = localBounds.transformed(obj.transform);
+
+        CullObjectData cullData{};
+
+        // Calculate bounding sphere from transformed AABB
+        glm::vec3 center = worldBounds.getCenter();
+        glm::vec3 extents = worldBounds.getExtents();
+        float radius = glm::length(extents);
+
+        cullData.boundingSphere = glm::vec4(center, radius);
+        cullData.aabbMin = glm::vec4(worldBounds.min, 0.0f);
+        cullData.aabbMax = glm::vec4(worldBounds.max, 0.0f);
+        cullData.meshIndex = static_cast<uint32_t>(i);
+        cullData.firstIndex = 0;  // Single mesh per object
+        cullData.indexCount = obj.mesh->getIndexCount();
+        cullData.vertexOffset = 0;
+
+        cullObjects.push_back(cullData);
+    }
+
+    // Also add procedural rocks
+    for (size_t i = 0; i < rockObjects.size(); ++i) {
+        const auto& obj = rockObjects[i];
+        if (obj.mesh == nullptr) continue;
+
+        const AABB& localBounds = obj.mesh->getBounds();
+        AABB worldBounds = localBounds.transformed(obj.transform);
+
+        CullObjectData cullData{};
+        glm::vec3 center = worldBounds.getCenter();
+        glm::vec3 extents = worldBounds.getExtents();
+        float radius = glm::length(extents);
+
+        cullData.boundingSphere = glm::vec4(center, radius);
+        cullData.aabbMin = glm::vec4(worldBounds.min, 0.0f);
+        cullData.aabbMax = glm::vec4(worldBounds.max, 0.0f);
+        cullData.meshIndex = static_cast<uint32_t>(sceneObjects.size() + i);
+        cullData.firstIndex = 0;
+        cullData.indexCount = obj.mesh->getIndexCount();
+        cullData.vertexOffset = 0;
+
+        cullObjects.push_back(cullData);
+    }
+
+    updateObjectData(cullObjects);
+}
+
 void HiZSystem::recordPyramidGeneration(VkCommandBuffer cmd, uint32_t frameIndex) {
     if (sourceDepthView == VK_NULL_HANDLE) {
         return;

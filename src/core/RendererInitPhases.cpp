@@ -541,7 +541,8 @@ bool Renderer::initSubsystems(const InitContext& initCtx) {
         systems_->hiZ().setDepthBuffer(core.hdr.depthView, vulkanContext_->getDepthSampler());
 
         // Initialize object data for culling
-        updateHiZObjectData();
+        systems_->hiZ().gatherObjects(systems_->scene().getRenderables(),
+                                       systems_->rock().getSceneObjects());
     }
 
     // Initialize profiler for GPU and CPU timing

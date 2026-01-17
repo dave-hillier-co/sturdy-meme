@@ -5,6 +5,8 @@
 #include <vector>
 #include <functional>
 #include <memory>
+#include <vulkan/vulkan.h>
+#include <vk_mem_alloc.h>
 
 // Forward declarations
 class TreeSystem;
@@ -82,6 +84,21 @@ public:
         const std::vector<VkBuffer>& uniformBuffers,
         VkImageView shadowView,
         VkSampler shadowSampler);
+
+    /**
+     * Create detritus system with fallen branches near trees.
+     * Call after trees are generated.
+     */
+    struct DetritusCreateInfo {
+        VkDevice device;
+        VmaAllocator allocator;
+        VkCommandPool commandPool;
+        VkQueue graphicsQueue;
+        VkPhysicalDevice physicalDevice;
+    };
+    std::unique_ptr<DetritusSystem> createDetritusSystem(
+        const DetritusCreateInfo& info,
+        const TreeSystem& treeSystem);
 
     /**
      * Get detritus configuration based on tree positions.

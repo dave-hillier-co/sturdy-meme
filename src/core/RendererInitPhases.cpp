@@ -22,6 +22,7 @@
 #include "AtmosphereLUTSystem.h"
 #include "CloudShadowSystem.h"
 #include "AtmosphereSystemGroup.h"
+#include "SnowSystemGroup.h"
 #include "HiZSystem.h"
 #include "CatmullClarkSystem.h"
 #include "RockSystem.h"
@@ -232,14 +233,16 @@ bool Renderer::initSubsystems(const InitContext& initCtx) {
         systems_->setScene(std::move(sceneManager));
     }
 
-    // Initialize snow subsystems (SnowMaskSystem, VolumetricSnowSystem)
+    // Create all snow and weather systems using SnowSystemGroup factory
     {
-        auto bundle = SnowMaskSystem::createWithDependencies(initCtx, core.hdr.renderPass);
-        if (!bundle) {
-            return false;
-        }
-        systems_->setSnowMask(std::move(bundle->snowMask));
-        systems_->setVolumetricSnow(std::move(bundle->volumetricSnow));
+        SnowSystemGroup::CreateDeps snowDeps{initCtx, core.hdr.renderPass};
+        auto snowBundle = SnowSystemGroup::createAll(snowDeps);
+        if (!snowBundle) return false;
+
+        systems_->setSnowMask(std::move(snowBundle->snowMask));
+        systems_->setVolumetricSnow(std::move(snowBundle->volumetricSnow));
+        systems_->setWeather(std::move(snowBundle->weather));
+        systems_->setLeaf(std::move(snowBundle->leaf));
     }
 
     if (!createDescriptorSets()) return false;
@@ -343,47 +346,19 @@ bool Renderer::initSubsystems(const InitContext& initCtx) {
     }
 
     // Initialize detritus system (fallen branches scattered near trees)
-    {
-        DetritusSystem::InitInfo detritusInfo{};
-        detritusInfo.device = device;
-        detritusInfo.allocator = allocator;
-        detritusInfo.commandPool = **commandPool_;
-        detritusInfo.graphicsQueue = graphicsQueue;
-        detritusInfo.physicalDevice = physicalDevice;
-        detritusInfo.resourcePath = resourcePath;
-        detritusInfo.terrainSize = core.terrain.size;
-        detritusInfo.getTerrainHeight = core.terrain.getHeightAt;
+    if (systems_->tree()) {
+        VegetationContentGenerator::Config vegConfig;
+        vegConfig.resourcePath = resourcePath;
+        vegConfig.getTerrainHeight = core.terrain.getHeightAt;
+        vegConfig.terrainSize = core.terrain.size;
 
-        // Gather tree positions for scattering detritus nearby
-        if (systems_->tree()) {
-            const auto& treeInstances = systems_->tree()->getTreeInstances();
-            detritusInfo.treePositions.reserve(treeInstances.size());
-            for (const auto& tree : treeInstances) {
-                detritusInfo.treePositions.push_back(tree.position());
-            }
-        }
-
-        DetritusConfig detritusConfig{};
-        detritusConfig.branchVariations = 8;
-        detritusConfig.branchesPerVariation = 4;
-        detritusConfig.minLength = 0.5f;
-        detritusConfig.maxLength = 2.5f;
-        detritusConfig.minRadius = 0.03f;
-        detritusConfig.maxRadius = 0.12f;
-        detritusConfig.placementRadius = 8.0f;  // Scatter within 8m of each tree
-        detritusConfig.minDistanceBetween = 1.5f;
-        detritusConfig.breakChance = 0.7f;
-        detritusConfig.maxChildren = 3;
-        detritusConfig.materialRoughness = 0.85f;
-        detritusConfig.materialMetallic = 0.0f;
-
-        auto detritusSystem = DetritusSystem::create(detritusInfo, detritusConfig);
+        VegetationContentGenerator vegGen(vegConfig);
+        VegetationContentGenerator::DetritusCreateInfo detritusInfo{
+            device, allocator, **commandPool_, graphicsQueue, physicalDevice
+        };
+        auto detritusSystem = vegGen.createDetritusSystem(detritusInfo, *systems_->tree());
         if (detritusSystem) {
             systems_->setDetritus(std::move(detritusSystem));
-            SDL_Log("DetritusSystem initialized with %zu fallen branches near %zu trees",
-                    systems_->detritus()->getDetritusCount(), detritusInfo.treePositions.size());
-        } else {
-            SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "DetritusSystem creation failed (non-fatal)");
         }
     }
 
@@ -524,16 +499,6 @@ bool Renderer::initSubsystems(const InitContext& initCtx) {
                 factory.writeDescriptorSet(treeLeafDescriptorSets[typeName][i], common, leafMat);
             }
         }
-    }
-
-    // Initialize weather and leaf subsystems
-    {
-        auto bundle = WeatherSystem::createWithDependencies(initCtx, core.hdr.renderPass);
-        if (!bundle) {
-            return false;
-        }
-        systems_->setWeather(std::move(bundle->weather));
-        systems_->setLeaf(std::move(bundle->leaf));
     }
 
     // Connect leaf system to environment settings

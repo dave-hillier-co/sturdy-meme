@@ -3,6 +3,7 @@
 #include "FrameGraph.h"
 #include "RenderPipeline.h"
 #include "PerformanceToggles.h"
+#include <vulkan/vulkan_raii.hpp>
 #include <functional>
 
 class RendererSystems;

@@ -150,16 +150,7 @@ bool RendererInit::initWaterSubsystems(
         water.flowMapGenerator.generateRadialFlow(flowConfig, glm::vec2(0.0f));
     }
 
-    // SSR system is now created by WaterSystemGroup::createAll() before this function is called
-    // Only create it here as a fallback if it doesn't exist
-    if (!water.rendererSystems.ssr()) {
-        auto ssrSystem = SSRSystem::create(ctx);
-        if (ssrSystem) {
-            water.rendererSystems.setSSR(std::move(ssrSystem));
-        } else {
-            SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "Failed to initialize SSR system - continuing without SSR");
-        }
-    }
+    // SSR system is created by WaterSystemGroup::createAll() before this function
 
     return true;
 }

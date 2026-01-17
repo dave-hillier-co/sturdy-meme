@@ -148,15 +148,17 @@ void FootPlacementIKSolver::solve(
             // Compute the foot's world rotation from its current local rotation
             glm::quat footWorldRot = parentWorldRot * currentLocalRot;
 
-            // For Mixamo feet:
-            // +Y points forward (toe direction)
-            // +Z points up from the foot (perpendicular to sole)
-            // We need to constrain BOTH axes to prevent awkward twisting:
-            // 1. Foot "up" (+Z) should align with ground normal
-            // 2. Foot "forward" (+Y) should stay in the character's forward plane
+            // Foot bone axis convention (matching ClimbingIKSolver):
+            // +X = right
+            // +Y = up (perpendicular to sole, pointing away from ground)
+            // +Z = forward (toe direction)
+            //
+            // We need to constrain BOTH up and forward axes to prevent awkward twisting:
+            // 1. Foot "up" (+Y) should align with ground normal
+            // 2. Foot "forward" (+Z) should stay in the character's forward plane
 
             // Get the foot's current forward direction (toe direction) in skeleton space
-            glm::vec3 footCurrentForward = footWorldRot * glm::vec3(0.0f, 1.0f, 0.0f);
+            glm::vec3 footCurrentForward = footWorldRot * glm::vec3(0.0f, 0.0f, 1.0f);
 
             // Project the foot's forward onto the ground plane (perpendicular to target up)
             // This gives us a stable forward direction that lies on the slope
@@ -164,24 +166,24 @@ void FootPlacementIKSolver::solve(
 
             // Handle edge case where forward is parallel to normal
             if (glm::length2(projectedForward) < 0.0001f) {
-                // Fallback: use character's forward direction
-                glm::vec3 charForward = glm::vec3(0.0f, 0.0f, -1.0f);  // Default forward in skeleton space
-                projectedForward = charForward - glm::dot(charForward, targetUp) * targetUp;
+                // Fallback: use world +Z projected onto ground plane
+                glm::vec3 defaultForward = glm::vec3(0.0f, 0.0f, 1.0f);
+                projectedForward = defaultForward - glm::dot(defaultForward, targetUp) * targetUp;
             }
             projectedForward = glm::normalize(projectedForward);
 
-            // Compute right vector to complete the orthonormal basis
-            glm::vec3 targetRight = glm::normalize(glm::cross(projectedForward, targetUp));
+            // Compute right vector: right = up × forward
+            glm::vec3 targetRight = glm::normalize(glm::cross(targetUp, projectedForward));
 
-            // Recompute forward to ensure orthogonality
-            glm::vec3 targetForward = glm::cross(targetUp, targetRight);
+            // Recompute forward to ensure orthogonality: forward = right × up
+            glm::vec3 targetForward = glm::cross(targetRight, targetUp);
 
             // Build target rotation matrix from basis vectors
-            // For Mixamo: X=right, Y=forward, Z=up
+            // Column order: [X=right, Y=up, Z=forward]
             glm::mat3 targetRotMat;
-            targetRotMat[0] = targetRight;    // X axis
-            targetRotMat[1] = targetForward;  // Y axis (toe direction)
-            targetRotMat[2] = targetUp;       // Z axis (sole normal)
+            targetRotMat[0] = targetRight;    // X axis (right)
+            targetRotMat[1] = targetUp;       // Y axis (sole normal, pointing up)
+            targetRotMat[2] = targetForward;  // Z axis (toe direction)
 
             glm::quat targetWorldRot = glm::quat_cast(targetRotMat);
 

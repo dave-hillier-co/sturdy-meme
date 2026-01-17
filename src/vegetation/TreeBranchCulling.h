@@ -76,7 +76,7 @@ public:
         std::string resourcePath;
         uint32_t maxFramesInFlight;
         uint32_t maxTrees = 10000;
-        uint32_t maxMeshGroups = 16;
+        uint32_t maxMeshGroups = 0;  // 0 means use maxTrees (worst case: one mesh per tree)
         const vk::raii::Device* raiiDevice = nullptr;
     };
 

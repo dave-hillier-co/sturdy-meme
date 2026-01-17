@@ -66,14 +66,11 @@ layout(binding = BINDING_TREE_BRANCH_SHADOW_UNIFORMS) uniform CullUniforms {
 
 // Frustum culling uses isSphereInFrustum from cull_compute_common.glsl
 
-// Maximum mesh groups to prevent GPU hang from garbage uniform data
-const uint MAX_MESH_GROUPS = 16u;
-
 void main() {
     uint treeIdx = gl_GlobalInvocationID.x;
 
-    // Clamp to prevent infinite loop if uniform data is garbage
-    uint safeNumMeshGroups = min(uniforms.numMeshGroups, MAX_MESH_GROUPS);
+    // numMeshGroups is validated on CPU side before dispatch
+    uint numMeshGroups = uniforms.numMeshGroups;
 
     // NOTE: Indirect command initialization is done on CPU side via vkCmdUpdateBuffer
     // BEFORE dispatch. Shader-side init with barrier() only syncs within a workgroup,
@@ -81,7 +78,7 @@ void main() {
     // may atomicAdd before workgroup 0 finishes zeroing the counters).
 
     // Early exit if no work to do (also prevents buffer access with uninitialized data)
-    if (treeIdx >= uniforms.numTrees || safeNumMeshGroups == 0) return;
+    if (treeIdx >= uniforms.numTrees || numMeshGroups == 0) return;
 
     BranchShadowInput tree = trees[treeIdx];
     vec3 treePos = tree.positionAndScale.xyz;
@@ -109,10 +106,10 @@ void main() {
         return;
     }
 
-    // Find mesh group for this tree (use clamped value to prevent GPU hang)
+    // Find mesh group for this tree
     uint meshIdx = floatBitsToUint(tree.rotationAndArchetype.y);
     uint groupIdx = 0;
-    for (uint g = 0; g < safeNumMeshGroups; g++) {
+    for (uint g = 0; g < numMeshGroups; g++) {
         if (meshGroups[g].meshIndex == meshIdx) {
             groupIdx = g;
             break;
@@ -123,7 +120,7 @@ void main() {
     uint slot = ~0u;
     uint maxInstances = meshGroups[groupIdx].maxInstances;
 
-    for (uint g = 0; g < MAX_MESH_GROUPS; g++) {
+    for (uint g = 0; g < numMeshGroups; g++) {
         uvec4 groupMask = subgroupBallot(groupIdx == g);
         uint groupCount = subgroupBallotBitCount(groupMask);
 

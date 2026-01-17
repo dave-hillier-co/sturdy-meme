@@ -43,7 +43,8 @@ bool TreeBranchCulling::init(const InitInfo& info) {
     resourcePath_ = info.resourcePath;
     maxFramesInFlight_ = info.maxFramesInFlight;
     maxTrees_ = info.maxTrees;
-    maxMeshGroups_ = info.maxMeshGroups;
+    // Default maxMeshGroups to maxTrees (worst case: one unique mesh per tree)
+    maxMeshGroups_ = info.maxMeshGroups > 0 ? info.maxMeshGroups : info.maxTrees;
     raiiDevice_ = info.raiiDevice;
 
     if (!raiiDevice_) {
@@ -305,14 +306,6 @@ void TreeBranchCulling::updateTreeData(const TreeSystem& treeSystem, const TreeL
         else if (barkType == "oak") group.barkTypeIndex = 1;
         else if (barkType == "pine") group.barkTypeIndex = 2;
         else if (barkType == "willow") group.barkTypeIndex = 3;
-
-        // Check mesh group capacity
-        if (meshGroups_.size() >= maxMeshGroups_) {
-            SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
-                        "TreeBranchCulling: Mesh group count exceeds capacity %u, skipping remaining groups",
-                        maxMeshGroups_);
-            break;
-        }
 
         meshGroups_.push_back(group);
 

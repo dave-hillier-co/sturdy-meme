@@ -1,18 +1,23 @@
 #pragma once
 
+#include "../core/NodeMask.h"
 #include "GLTFLoader.h"
 #include <vector>
 #include <string>
 #include <unordered_set>
 
-// Bone mask defines per-bone weights for animation layer blending
-// Weight of 1.0 = fully affected by layer, 0.0 = not affected
+// Bone mask defines per-bone weights for animation layer blending.
+// Weight of 1.0 = fully affected by layer, 0.0 = not affected.
+// Composes a generic NodeMask with skeleton-specific factory methods.
 class BoneMask {
 public:
     BoneMask() = default;
 
     // Create a mask for a given skeleton size (all weights = 1.0 by default)
     explicit BoneMask(size_t boneCount, float defaultWeight = 1.0f);
+
+    // Create from an existing NodeMask
+    explicit BoneMask(NodeMask mask);
 
     // Create from skeleton with specific bones enabled
     static BoneMask fromBoneNames(const Skeleton& skeleton,
@@ -29,38 +34,42 @@ public:
     static BoneMask spine(const Skeleton& skeleton);
     static BoneMask head(const Skeleton& skeleton);
 
-    // Access weights
-    float getWeight(size_t boneIndex) const;
-    void setWeight(size_t boneIndex, float weight);
+    // Access weights (delegates to internal NodeMask)
+    float getWeight(size_t boneIndex) const { return mask_.getWeight(boneIndex); }
+    void setWeight(size_t boneIndex, float weight) { mask_.setWeight(boneIndex, weight); }
 
     // Set weight for a bone and optionally its children
     void setWeightByName(const Skeleton& skeleton, const std::string& boneName,
                          float weight, bool includeChildren = true);
 
     // Get all weights (for use with blendMasked)
-    const std::vector<float>& getWeights() const { return weights; }
-    std::vector<float>& getWeights() { return weights; }
+    const std::vector<float>& getWeights() const { return mask_.getWeights(); }
+    std::vector<float>& getWeights() { return mask_.getWeights(); }
 
     // Resize the mask
-    void resize(size_t count, float defaultWeight = 1.0f);
+    void resize(size_t count, float defaultWeight = 1.0f) { mask_.resize(count, defaultWeight); }
 
     // Size
-    size_t size() const { return weights.size(); }
+    size_t size() const { return mask_.size(); }
 
     // Invert the mask (1 - weight for each bone)
-    BoneMask inverted() const;
+    BoneMask inverted() const { return BoneMask(mask_.inverted()); }
 
     // Multiply all weights by a factor
-    void scale(float factor);
+    void scale(float factor) { mask_.scale(factor); }
 
     // Combine masks (multiply weights)
-    BoneMask operator*(const BoneMask& other) const;
+    BoneMask operator*(const BoneMask& other) const { return BoneMask(mask_ * other.mask_); }
 
     // Combine masks (add weights, clamped to [0,1])
-    BoneMask operator+(const BoneMask& other) const;
+    BoneMask operator+(const BoneMask& other) const { return BoneMask(mask_ + other.mask_); }
+
+    // Access the underlying NodeMask
+    const NodeMask& getNodeMask() const { return mask_; }
+    NodeMask& getNodeMask() { return mask_; }
 
 private:
-    std::vector<float> weights;
+    NodeMask mask_;
 
     // Helper to find bones by name pattern
     static void collectBonesByPattern(const Skeleton& skeleton,

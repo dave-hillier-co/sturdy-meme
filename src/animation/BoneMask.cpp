@@ -66,24 +66,11 @@ static bool containsPattern(const std::string& name, const std::string& pattern)
 }
 
 BoneMask::BoneMask(size_t boneCount, float defaultWeight)
-    : weights(boneCount, defaultWeight) {
+    : mask_(boneCount, defaultWeight) {
 }
 
-void BoneMask::resize(size_t count, float defaultWeight) {
-    weights.resize(count, defaultWeight);
-}
-
-float BoneMask::getWeight(size_t boneIndex) const {
-    if (boneIndex < weights.size()) {
-        return weights[boneIndex];
-    }
-    return 0.0f;
-}
-
-void BoneMask::setWeight(size_t boneIndex, float weight) {
-    if (boneIndex < weights.size()) {
-        weights[boneIndex] = std::clamp(weight, 0.0f, 1.0f);
-    }
+BoneMask::BoneMask(NodeMask mask)
+    : mask_(std::move(mask)) {
 }
 
 void BoneMask::collectBonesByPattern(const Skeleton& skeleton,
@@ -287,36 +274,4 @@ BoneMask BoneMask::head(const Skeleton& skeleton) {
     }
 
     return mask;
-}
-
-BoneMask BoneMask::inverted() const {
-    BoneMask result(weights.size());
-    for (size_t i = 0; i < weights.size(); ++i) {
-        result.weights[i] = 1.0f - weights[i];
-    }
-    return result;
-}
-
-void BoneMask::scale(float factor) {
-    for (float& w : weights) {
-        w = std::clamp(w * factor, 0.0f, 1.0f);
-    }
-}
-
-BoneMask BoneMask::operator*(const BoneMask& other) const {
-    size_t count = std::min(weights.size(), other.weights.size());
-    BoneMask result(count);
-    for (size_t i = 0; i < count; ++i) {
-        result.weights[i] = weights[i] * other.weights[i];
-    }
-    return result;
-}
-
-BoneMask BoneMask::operator+(const BoneMask& other) const {
-    size_t count = std::min(weights.size(), other.weights.size());
-    BoneMask result(count);
-    for (size_t i = 0; i < count; ++i) {
-        result.weights[i] = std::clamp(weights[i] + other.weights[i], 0.0f, 1.0f);
-    }
-    return result;
 }

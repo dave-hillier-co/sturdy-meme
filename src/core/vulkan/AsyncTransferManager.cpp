@@ -368,7 +368,7 @@ bool AsyncTransferManager::isComplete(TransferHandle handle) const {
     for (const auto& transfer : pendingTransfers_) {
         if (transfer.id == handle.id) {
             // Non-blocking check using timeline semaphore counter
-            uint64_t currentValue = device_.getSemaphoreCounterValue(**transferTimeline_);
+            uint64_t currentValue = transferTimeline_->getCounterValue();
             return currentValue >= transfer.timelineValue;
         }
     }
@@ -411,7 +411,7 @@ void AsyncTransferManager::processPendingTransfers() {
         std::lock_guard<std::mutex> lock(transferMutex_);
 
         // Get current timeline value once (non-blocking)
-        uint64_t currentValue = device_.getSemaphoreCounterValue(**transferTimeline_);
+        uint64_t currentValue = transferTimeline_->getCounterValue();
 
         auto it = pendingTransfers_.begin();
         while (it != pendingTransfers_.end()) {

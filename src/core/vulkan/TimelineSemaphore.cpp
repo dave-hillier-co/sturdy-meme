@@ -36,8 +36,8 @@ uint64_t TimelineSemaphore::getCounterValue() const {
         return 0;
     }
 
-    // vkGetSemaphoreCounterValue is non-blocking
-    return device_->getSemaphoreCounterValue(**semaphore_);
+    // vkGetSemaphoreCounterValue is non-blocking - call on semaphore object
+    return semaphore_->getCounterValue();
 }
 
 vk::Result TimelineSemaphore::wait(uint64_t value, uint64_t timeoutNs) const {

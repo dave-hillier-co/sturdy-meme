@@ -94,8 +94,8 @@ uint64_t TripleBuffering::getTimelineCounterValue() const {
         return 0;
     }
 
-    // vkGetSemaphoreCounterValue is non-blocking
-    return device_->getSemaphoreCounterValue(**frameTimeline_);
+    // vkGetSemaphoreCounterValue is non-blocking - call on semaphore object
+    return frameTimeline_->getCounterValue();
 }
 
 void TripleBuffering::waitForCurrentFrame() const {

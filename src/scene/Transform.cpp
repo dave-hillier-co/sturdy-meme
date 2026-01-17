@@ -96,9 +96,23 @@ const glm::mat4& TransformHierarchy::getWorldMatrix(TransformHandle handle) {
 
     Node& node = nodes_[handle.index];
     if (node.dirty) {
-        updateWorldMatrixRecursive(handle.index);
+        updateSingleNode(handle.index);
     }
     return node.worldMatrix;
+}
+
+void TransformHierarchy::updateSingleNode(uint32_t index) {
+    Node& node = nodes_[index];
+    if (!node.dirty) return;
+
+    // Walk up to update parent first
+    if (node.parent.isValid() && isValid(node.parent)) {
+        updateSingleNode(node.parent.index);
+        node.worldMatrix = nodes_[node.parent.index].worldMatrix * node.local.toMatrix();
+    } else {
+        node.worldMatrix = node.local.toMatrix();
+    }
+    node.dirty = false;
 }
 
 glm::vec3 TransformHierarchy::getWorldPosition(TransformHandle handle) {
@@ -195,22 +209,20 @@ void TransformHierarchy::propagateDirty(uint32_t index) {
 }
 
 void TransformHierarchy::updateWorldMatrixRecursive(uint32_t index) {
+    // Used by batch updateWorldMatrices() - assumes we're called top-down from roots
     Node& node = nodes_[index];
 
     if (node.dirty) {
-        glm::mat4 localMat = node.local.toMatrix();
-
         if (node.parent.isValid() && isValid(node.parent)) {
-            // Ensure parent is up to date first
-            updateWorldMatrixRecursive(node.parent.index);
-            node.worldMatrix = nodes_[node.parent.index].worldMatrix * localMat;
+            // Parent should already be up to date (we go top-down)
+            node.worldMatrix = nodes_[node.parent.index].worldMatrix * node.local.toMatrix();
         } else {
-            node.worldMatrix = localMat;
+            node.worldMatrix = node.local.toMatrix();
         }
         node.dirty = false;
     }
 
-    // Update children
+    // Recurse to children
     for (auto& child : node.children) {
         if (isValid(child)) {
             updateWorldMatrixRecursive(child.index);

@@ -182,7 +182,8 @@ private:
     };
 
     void propagateDirty(uint32_t index);
-    void updateWorldMatrixRecursive(uint32_t index);
+    void updateSingleNode(uint32_t index);  // On-demand: walks up only
+    void updateWorldMatrixRecursive(uint32_t index);  // Batch: walks down from roots
     uint32_t allocateNode();
 
     std::vector<Node> nodes_;

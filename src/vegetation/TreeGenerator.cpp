@@ -77,6 +77,11 @@ TreeMeshData TreeGenerator::generate(const TreeOptions& options) {
         if (options.type == TreeType::Deciduous) {
             const SectionData& lastSection = processedBranch.sections.back();
             if (branch.level < options.branch.levels) {
+                // Calculate parent's full sway at tip for terminal branch inheritance
+                float parentFlexibility = 0.04f + static_cast<float>(branch.level) * 0.06f;
+                float parentOwnSway = branch.length * parentFlexibility;
+                float terminalInheritedSway = branch.inheritedSwayFactor + parentOwnSway;
+
                 // Add terminal branch from tip
                 Branch child;
                 child.origin = lastSection.origin;
@@ -86,12 +91,19 @@ TreeMeshData TreeGenerator::generate(const TreeOptions& options) {
                 child.level = branch.level + 1;
                 child.sectionCount = processedBranch.sectionCount;  // Same as parent
                 child.segmentCount = processedBranch.segmentCount;
+                child.inheritedSwayFactor = terminalInheritedSway;
                 branchQueue.push(child);
             } else {
                 // At final level - just add a single leaf at the tip
                 generateLeaf(lastSection.origin, lastSection.orientation, options, rng, meshData);
             }
         }
+
+        // Calculate parent's total sway factor at its tip for child inheritance
+        // Flexibility formula matches shader: 0.04 + branchLevel * 0.06
+        float parentFlexibility = 0.04f + static_cast<float>(branch.level) * 0.06f;
+        float parentOwnSway = branch.length * parentFlexibility;
+        float parentTotalSwayAtTip = branch.inheritedSwayFactor + parentOwnSway;
 
         // Generate leaves on final level branches
         if (branch.level == options.branch.levels) {
@@ -102,6 +114,7 @@ TreeMeshData TreeGenerator::generate(const TreeOptions& options) {
                 options.branch.children[branch.level],
                 branch.level + 1,
                 processedBranch.sections,
+                parentTotalSwayAtTip,
                 options, rng, branchQueue);
         }
     }
@@ -119,6 +132,7 @@ void TreeGenerator::processBranch(const Branch& branch, const TreeOptions& optio
     branchData.level = branch.level;
     branchData.sectionCount = branch.sectionCount;
     branchData.segmentCount = branch.segmentCount;
+    branchData.inheritedSwayFactor = branch.inheritedSwayFactor;
 
     glm::quat sectionOrientation = branch.orientation;
     glm::vec3 sectionOrigin = branch.origin;
@@ -208,6 +222,7 @@ void TreeGenerator::processBranch(const Branch& branch, const TreeOptions& optio
 
 void TreeGenerator::generateChildBranches(int count, int level,
                                           const std::vector<SectionData>& sections,
+                                          float parentTotalSwayAtTip,
                                           const TreeOptions& options, TreeRNG& rng,
                                           std::queue<Branch>& branchQueue) {
     float radialOffset = rng.random();
@@ -258,6 +273,10 @@ void TreeGenerator::generateChildBranches(int count, int level,
             childLength *= (1.0f - childStart);
         }
 
+        // Calculate inherited sway factor - interpolate parent's sway at attachment point
+        // childStart is 0-1 along parent, so parent's sway at this point is proportional
+        float inheritedSway = parentTotalSwayAtTip * childStart;
+
         Branch child;
         child.origin = childOrigin;
         child.orientation = childOrientation;
@@ -266,6 +285,7 @@ void TreeGenerator::generateChildBranches(int count, int level,
         child.level = level;
         child.sectionCount = options.branch.sections[level];
         child.segmentCount = options.branch.segments[level];
+        child.inheritedSwayFactor = inheritedSway;
 
         branchQueue.push(child);
     }

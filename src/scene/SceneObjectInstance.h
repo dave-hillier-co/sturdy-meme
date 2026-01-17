@@ -27,15 +27,10 @@ struct SceneObjectInstance {
         return SceneObjectInstance(pos, Transform::fromEuler(eulerAngles), scale, mesh);
     }
 
-    // Accessors for backward compatibility
+    // Accessors (uniform scale)
     const glm::vec3& position() const { return transform.position; }
     const glm::quat& rotation() const { return transform.rotation; }
-    float scale() const { return transform.scale.x; }  // Uniform scale
-
-    // Mutators
-    void setPosition(const glm::vec3& pos) { transform.position = pos; }
-    void setRotation(const glm::quat& rot) { transform.rotation = rot; }
-    void setScale(float s) { transform.scale = glm::vec3(s); }
+    float scale() const { return transform.scale.x; }
 
     // Build 4x4 transform matrix
     glm::mat4 getTransformMatrix() const {

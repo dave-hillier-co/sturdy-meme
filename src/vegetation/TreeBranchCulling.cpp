@@ -330,7 +330,7 @@ void TreeBranchCulling::updateTreeData(const TreeSystem& treeSystem, const TreeL
         const auto& inst = instances[i];
         // Get the pre-computed bounding radius for this mesh (local-space)
         float boundingRadius = meshBoundingRadius[inst.meshIndex];
-        inputData[i].positionAndScale = glm::vec4(inst.position, inst.scale);
+        inputData[i].positionAndScale = glm::vec4(inst.position(), inst.scale());
         inputData[i].rotationAndArchetype = glm::vec4(
             inst.getYRotation(),
             glm::uintBitsToFloat(inst.meshIndex),

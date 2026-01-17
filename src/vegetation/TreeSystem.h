@@ -19,6 +19,7 @@
 #include "Texture.h"
 #include "RenderableBuilder.h"
 #include "BufferUtils.h"
+#include "scene/Transform.h"
 
 // GPU leaf instance data - matches shaders/tree_leaf_instance.glsl
 // std430 layout: 32 bytes per instance
@@ -36,9 +37,7 @@ struct LeafDrawInfo {
 
 // A single tree instance in the scene
 struct TreeInstanceData {
-    glm::vec3 position;
-    glm::quat rotation{1.0f, 0.0f, 0.0f, 0.0f};  // Full quaternion rotation (default identity)
-    float scale{1.0f};      // Uniform scale factor
+    Transform transform;
     uint32_t meshIndex{0};  // Which tree mesh to use
     uint32_t archetypeIndex{0}; // Which impostor archetype to use (0=oak, 1=pine, 2=ash, 3=aspen)
     bool isSelected{false}; // Is this the currently editable tree
@@ -49,28 +48,25 @@ struct TreeInstanceData {
     static TreeInstanceData withYRotation(const glm::vec3& pos, float yRotation, float s,
                                            uint32_t mesh, uint32_t archetype) {
         TreeInstanceData data;
-        data.position = pos;
-        data.rotation = glm::angleAxis(yRotation, glm::vec3(0.0f, 1.0f, 0.0f));
-        data.scale = s;
+        data.transform = Transform(pos, Transform::yRotation(yRotation), s);
         data.meshIndex = mesh;
         data.archetypeIndex = archetype;
-        data.isSelected = false;
         return data;
     }
 
-    // Get Y-axis rotation in radians (for backward compatibility)
+    // Accessors for backward compatibility
+    const glm::vec3& position() const { return transform.position; }
+    const glm::quat& rotation() const { return transform.rotation; }
+    float scale() const { return transform.scale.x; }
+
+    // Get Y-axis rotation in radians
     float getYRotation() const {
-        glm::vec3 euler = glm::eulerAngles(rotation);
+        glm::vec3 euler = glm::eulerAngles(transform.rotation);
         return euler.y;
     }
 
     // Get transform matrix
-    glm::mat4 getTransformMatrix() const {
-        glm::mat4 transform = glm::translate(glm::mat4(1.0f), position);
-        transform = transform * glm::mat4_cast(rotation);
-        transform = glm::scale(transform, glm::vec3(scale));
-        return transform;
-    }
+    glm::mat4 getTransformMatrix() const { return transform.toMatrix(); }
 };
 
 class TreeSystem {

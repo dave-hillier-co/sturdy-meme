@@ -595,7 +595,7 @@ void TreeLODSystem::update(float deltaTime, const glm::vec3& cameraPos, const Tr
             }
         }
 
-        float distance = glm::distance(cameraPos, tree.position);
+        float distance = glm::distance(cameraPos, tree.position());
         state.lastDistance = distance;
 
         // Determine target LOD level and blend factor
@@ -605,8 +605,8 @@ void TreeLODSystem::update(float deltaTime, const glm::vec3& cameraPos, const Tr
             // Screen-space error based LOD
             // Get archetype world error values
             const auto* archetype = impostorAtlas_->getArchetype(state.archetypeIndex);
-            float worldErrorFull = 0.1f * tree.scale;  // ~10cm branch thickness, scaled
-            float worldErrorImpostor = (archetype ? archetype->boundingSphereRadius * 0.1f : 1.0f) * tree.scale;
+            float worldErrorFull = 0.1f * tree.scale();  // ~10cm branch thickness, scaled
+            float worldErrorImpostor = (archetype ? archetype->boundingSphereRadius * 0.1f : 1.0f) * tree.scale();
 
             float screenErrorFull = computeScreenError(worldErrorFull, distance,
                                                         screenParams.screenHeight, screenParams.tanHalfFOV);
@@ -685,8 +685,8 @@ void TreeLODSystem::update(float deltaTime, const glm::vec3& cameraPos, const Tr
         // Collect visible impostors (CPU fallback path only)
         if (settings.enableImpostors && state.blendFactor > 0.0f && state.archetypeIndex < impostorAtlas_->getArchetypeCount()) {
             ImpostorInstanceGPU instance;
-            instance.position = tree.position;
-            instance.scale = tree.scale;
+            instance.position = tree.position();
+            instance.scale = tree.scale();
             instance.rotation = tree.getYRotation();  // GPU needs Y-axis rotation as float
             instance.archetypeIndex = state.archetypeIndex;
             instance.blendFactor = state.blendFactor;
@@ -703,22 +703,22 @@ void TreeLODSystem::update(float deltaTime, const glm::vec3& cameraPos, const Tr
                 float horizontalRadius = std::max(extent.x, extent.z) * 0.5f;
                 float halfHeight = extent.y * 0.5f;
 
-                float hSize = horizontalRadius * TreeLODConstants::IMPOSTOR_SIZE_MARGIN * tree.scale;
-                float vSize = halfHeight * TreeLODConstants::IMPOSTOR_SIZE_MARGIN * tree.scale;
+                float hSize = horizontalRadius * TreeLODConstants::IMPOSTOR_SIZE_MARGIN * tree.scale();
+                float vSize = halfHeight * TreeLODConstants::IMPOSTOR_SIZE_MARGIN * tree.scale();
 
                 instance.hSize = hSize;
                 instance.vSize = vSize;
                 // Center offset: tree center height relative to origin
                 float centerY = (minB.y + maxB.y) * 0.5f;
-                instance.baseOffset = centerY * tree.scale;
+                instance.baseOffset = centerY * tree.scale();
             } else {
                 // Fallback to archetype bounds if mesh not available
                 const auto* archetype = impostorAtlas_->getArchetype(state.archetypeIndex);
-                float hSize = (archetype ? archetype->boundingSphereRadius * TreeLODConstants::IMPOSTOR_SIZE_MARGIN : 10.0f) * tree.scale;
-                float vSize = (archetype ? archetype->treeHeight * 0.5f * TreeLODConstants::IMPOSTOR_SIZE_MARGIN : 10.0f) * tree.scale;
+                float hSize = (archetype ? archetype->boundingSphereRadius * TreeLODConstants::IMPOSTOR_SIZE_MARGIN : 10.0f) * tree.scale();
+                float vSize = (archetype ? archetype->treeHeight * 0.5f * TreeLODConstants::IMPOSTOR_SIZE_MARGIN : 10.0f) * tree.scale();
                 instance.hSize = hSize;
                 instance.vSize = vSize;
-                instance.baseOffset = (archetype ? archetype->centerHeight : 0.0f) * tree.scale;
+                instance.baseOffset = (archetype ? archetype->centerHeight : 0.0f) * tree.scale();
             }
             visibleImpostors_.push_back(instance);
         }
@@ -732,13 +732,13 @@ void TreeLODSystem::update(float deltaTime, const glm::vec3& cameraPos, const Tr
         debugInfo_.cameraPos = cameraPos;
         debugInfo_.nearestTreeDistance = std::numeric_limits<float>::max();
         for (const auto& tree : instances) {
-            float dist = glm::distance(cameraPos, tree.position);
+            float dist = glm::distance(cameraPos, tree.position());
             if (dist < debugInfo_.nearestTreeDistance) {
                 debugInfo_.nearestTreeDistance = dist;
-                debugInfo_.nearestTreePos = tree.position;
+                debugInfo_.nearestTreePos = tree.position();
 
                 // Calculate elevation angle (same as shader)
-                glm::vec3 toTree = tree.position - cameraPos;
+                glm::vec3 toTree = tree.position() - cameraPos;
                 float toTreeDist = glm::length(toTree);
                 if (toTreeDist > 0.001f) {
                     debugInfo_.calculatedElevation = glm::degrees(std::asin(glm::clamp(-toTree.y / toTreeDist, -1.0f, 1.0f)));

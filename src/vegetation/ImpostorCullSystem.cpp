@@ -279,7 +279,7 @@ void ImpostorCullSystem::updateTreeData(const TreeSystem& treeSystem, const Tree
 
     for (size_t i = 0; i < trees.size(); i++) {
         const auto& tree = trees[i];
-        inputData[i].positionAndScale = glm::vec4(tree.position, tree.scale);
+        inputData[i].positionAndScale = glm::vec4(tree.position(), tree.scale());
 
         // Use the tree's stored archetype index (set based on leaf type)
         uint32_t archetypeIndex = tree.archetypeIndex;

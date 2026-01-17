@@ -17,7 +17,8 @@
 #include "SkinnedMeshRenderer.h"
 #include "SceneManager.h"
 #include "WaterSystem.h"
-#include "RendererInit.h"
+#include "MaterialDescriptorFactory.h"
+#include "MaterialRegistry.h"
 #include "UBOs.h"
 
 SystemWiring::SystemWiring(VkDevice device, uint32_t framesInFlight)
@@ -163,16 +164,30 @@ void SystemWiring::wireCloudShadowToTerrain(RendererSystems& systems) {
 
 void SystemWiring::wireCloudShadowBindings(RendererSystems& systems) {
     auto& cloudShadow = systems.cloudShadow();
+    VkImageView cloudShadowView = cloudShadow.getShadowMapView();
+    VkSampler cloudShadowSampler = cloudShadow.getShadowMapSampler();
 
-    RendererInit::updateCloudShadowBindings(
-        device_,
-        systems.scene().getSceneBuilder().getMaterialRegistry(),
-        systems.rock(),
-        systems.detritus(),
-        systems.skinnedMesh(),
-        cloudShadow.getShadowMapView(),
-        cloudShadow.getShadowMapSampler(),
-        framesInFlight_);
+    // Update MaterialRegistry-managed descriptor sets
+    systems.scene().getSceneBuilder().getMaterialRegistry().updateCloudShadowBinding(
+        device_, cloudShadowView, cloudShadowSampler);
+
+    // Update descriptor sets owned by systems (rocks, detritus)
+    MaterialDescriptorFactory factory(device_);
+    if (systems.rock().hasDescriptorSets()) {
+        for (uint32_t i = 0; i < framesInFlight_; i++) {
+            factory.updateCloudShadowBinding(systems.rock().getDescriptorSet(i),
+                                              cloudShadowView, cloudShadowSampler);
+        }
+    }
+    if (systems.detritus() && systems.detritus()->hasDescriptorSets()) {
+        for (uint32_t i = 0; i < framesInFlight_; i++) {
+            factory.updateCloudShadowBinding(systems.detritus()->getDescriptorSet(i),
+                                              cloudShadowView, cloudShadowSampler);
+        }
+    }
+
+    // Update skinned mesh renderer cloud shadow binding
+    systems.skinnedMesh().updateCloudShadowBinding(cloudShadowView, cloudShadowSampler);
 }
 
 void SystemWiring::wireCausticsToTerrain(RendererSystems& systems) {

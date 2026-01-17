@@ -4,7 +4,6 @@
 #include <array>
 #include <filesystem>
 #include "Renderer.h"
-#include "RendererInit.h"
 #include "MaterialDescriptorFactory.h"
 #include "PostProcessSystem.h"
 #include "BloomSystem.h"
@@ -463,15 +462,13 @@ bool Renderer::initSubsystems(const InitContext& initCtx) {
         if (waterBundle->gBuffer) systems_->setWaterGBuffer(std::move(waterBundle->gBuffer));
     }
 
-    // Initialize water subsystems (configure WaterSystem, generate flow map)
-    WaterSubsystems waterSubs{systems_->water(), systems_->waterDisplacement(), systems_->flowMap(), systems_->foam(), *systems_, systems_->waterTileCull(), systems_->waterGBuffer()};
-    if (!RendererInit::initWaterSubsystems(waterSubs, initCtx, core.hdr.renderPass,
-                                            systems_->shadow(), systems_->terrain(), terrainConfig, systems_->postProcess(), vulkanContext_->getDepthSampler())) return false;
+    // Configure water subsystems (water level, wave properties, flow map)
+    if (!WaterSystemGroup::configureSubsystems(*systems_, terrainConfig)) return false;
 
     // Create water descriptor sets
-    if (!RendererInit::createWaterDescriptorSets(waterSubs, systems_->globalBuffers().uniformBuffers.buffers,
-                                                  sizeof(UniformBufferObject), systems_->shadow(), systems_->terrain(),
-                                                  systems_->postProcess(), vulkanContext_->getDepthSampler())) return false;
+    if (!WaterSystemGroup::createDescriptorSets(*systems_, systems_->globalBuffers().uniformBuffers.buffers,
+                                                 sizeof(UniformBufferObject), systems_->shadow(), systems_->terrain(),
+                                                 systems_->postProcess(), vulkanContext_->getDepthSampler())) return false;
 
     // Wire underwater caustics (must happen after water system is fully initialized)
     wiring.wireCausticsToTerrain(*systems_);

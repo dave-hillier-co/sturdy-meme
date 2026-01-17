@@ -1,6 +1,5 @@
 #define VMA_IMPLEMENTATION
 #include "Renderer.h"
-#include "RendererInit.h"
 #include "RendererSystems.h"
 #include "MaterialDescriptorFactory.h"
 #include "InitProfiler.h"

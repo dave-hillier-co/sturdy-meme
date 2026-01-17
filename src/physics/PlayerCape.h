@@ -7,9 +7,9 @@
 #include <glm/gtc/matrix_transform.hpp>
 #include <string>
 #include <vector>
+#include <functional>
 
 class WindSystem;
-class SceneNode;
 
 // Body collider definition for cape collision
 struct BodyCollider {
@@ -69,13 +69,13 @@ public:
     void setupDefaultAttachments();
 
     // ========================================================================
-    // Scene Graph Attachment
+    // Transform Attachment
     // ========================================================================
 
-    // Attach cape to a scene node (e.g., character's scene node)
-    // The cape will use the node's world transform automatically
-    void setAttachmentNode(SceneNode* node) { attachmentNode_ = node; }
-    SceneNode* getAttachmentNode() const { return attachmentNode_; }
+    // Set callback to get world transform (e.g., from TransformHierarchy)
+    // Example: cape.setWorldTransformCallback([&]{ return hierarchy.getWorldMatrix(handle); });
+    using WorldTransformCallback = std::function<glm::mat4()>;
+    void setWorldTransformCallback(WorldTransformCallback callback) { worldTransformCallback_ = std::move(callback); }
 
     // ========================================================================
     // Update Methods
@@ -128,7 +128,7 @@ private:
     std::vector<BodyCollider> bodyColliders;
     std::vector<CapeAttachment> attachments;
     std::vector<glm::mat4> cachedGlobalTransforms;  // Cache bone transforms
-    SceneNode* attachmentNode_ = nullptr;           // Optional scene graph attachment
+    WorldTransformCallback worldTransformCallback_;  // Optional dynamic world transform
 
     int clothWidth = 0;
     int clothHeight = 0;

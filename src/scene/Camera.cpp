@@ -3,8 +3,7 @@
 #include <cmath>
 
 Camera::Camera()
-    : node_("Camera")
-    , position_(0.0f, 1.5f, 5.0f)
+    : position_(0.0f, 1.5f, 5.0f)
     , worldUp_(0.0f, 1.0f, 0.0f)
     , yaw_(-90.0f)
     , pitch_(0.0f)
@@ -28,7 +27,6 @@ Camera::Camera()
     , targetFov_(45.0f)
 {
     updateVectors();
-    syncNodeTransform();
 }
 
 void Camera::setAspectRatio(float aspect) {
@@ -37,7 +35,6 @@ void Camera::setAspectRatio(float aspect) {
 
 void Camera::setPosition(const glm::vec3& pos) {
     position_ = pos;
-    syncNodeTransform();
 }
 
 void Camera::setYaw(float newYaw) {
@@ -45,7 +42,6 @@ void Camera::setYaw(float newYaw) {
     targetYaw_ = newYaw;
     smoothedYaw_ = newYaw;
     updateVectors();
-    syncNodeTransform();
 }
 
 void Camera::setPitch(float newPitch) {
@@ -53,7 +49,6 @@ void Camera::setPitch(float newPitch) {
     targetPitch_ = pitch_;
     smoothedPitch_ = pitch_;
     updateVectors();
-    syncNodeTransform();
 }
 
 void Camera::setRotation(float yaw, float pitch) {
@@ -64,35 +59,29 @@ void Camera::setRotation(float yaw, float pitch) {
     smoothedYaw_ = yaw_;
     smoothedPitch_ = pitch_;
     updateVectors();
-    syncNodeTransform();
 }
 
 void Camera::moveForward(float delta) {
     position_ += front_ * delta;
-    syncNodeTransform();
 }
 
 void Camera::moveRight(float delta) {
     position_ += right_ * delta;
-    syncNodeTransform();
 }
 
 void Camera::moveUp(float delta) {
     position_ += worldUp_ * delta;
-    syncNodeTransform();
 }
 
 void Camera::rotatePitch(float delta) {
     pitch_ += delta;
     pitch_ = std::clamp(pitch_, -89.0f, 89.0f);
     updateVectors();
-    syncNodeTransform();
 }
 
 void Camera::rotateYaw(float delta) {
     yaw_ += delta;
     updateVectors();
-    syncNodeTransform();
 }
 
 glm::mat4 Camera::getViewMatrix() const {
@@ -122,21 +111,16 @@ void Camera::updateVectors() {
     up_ = glm::normalize(glm::cross(right_, front_));
 }
 
-void Camera::syncNodeTransform() {
-    node_.setPosition(position_);
-    node_.setRotation(getRotation());
+Transform Camera::getTransform() const {
+    return Transform(position_, getRotation());
 }
 
 void Camera::setThirdPersonTarget(const glm::vec3& target) {
     thirdPersonTarget_ = target;
 }
 
-void Camera::setThirdPersonTargetNode(SceneNode* targetNode) {
-    if (targetNode) {
-        thirdPersonTargetNode_.emplace(*targetNode);
-    } else {
-        thirdPersonTargetNode_.reset();
-    }
+void Camera::setThirdPersonTargetCallback(WorldPositionCallback callback) {
+    thirdPersonTargetCallback_ = std::move(callback);
 }
 
 void Camera::orbitYaw(float delta) {
@@ -161,9 +145,9 @@ void Camera::updateThirdPerson(float deltaTime) {
     // Reset collision adjustment - will be set by applyCollisionDistance if needed
     collisionAdjustedDistance_ = -1.0f;
 
-    // If following a scene node, get its world position
-    if (thirdPersonTargetNode_) {
-        thirdPersonTarget_ = thirdPersonTargetNode_->get().getWorldPosition();
+    // If following a dynamic target, update position from callback
+    if (thirdPersonTargetCallback_) {
+        thirdPersonTarget_ = thirdPersonTargetCallback_();
     }
 
     // Exponential smoothing formula: smoothed += (target - smoothed) * (1 - exp(-speed * deltaTime))
@@ -209,8 +193,6 @@ void Camera::updateThirdPerson(float deltaTime) {
     front_ = glm::normalize(smoothedTarget_ - position_);
     right_ = glm::normalize(glm::cross(front_, worldUp_));
     up_ = glm::normalize(glm::cross(right_, front_));
-
-    syncNodeTransform();
 }
 
 void Camera::applyCollisionDistance(float distance) {
@@ -231,8 +213,6 @@ void Camera::applyCollisionDistance(float distance) {
         front_ = glm::normalize(smoothedTarget_ - position_);
         right_ = glm::normalize(glm::cross(front_, worldUp_));
         up_ = glm::normalize(glm::cross(right_, front_));
-
-        syncNodeTransform();
     }
 }
 
@@ -288,6 +268,4 @@ void Camera::initializeThirdPersonFromCurrentPosition(const glm::vec3& target) {
     yaw_ = calculatedYaw;
     pitch_ = calculatedPitch;
     thirdPersonDistance_ = distance;
-
-    syncNodeTransform();
 }

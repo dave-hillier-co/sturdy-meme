@@ -34,6 +34,7 @@ set(SOURCES
     src/scene/SceneMaterial.cpp
     src/scene/SceneCollection.cpp
     src/scene/Camera.cpp
+    src/scene/Transform.cpp
     src/scene/InputSystem.cpp
     # Core
     src/core/Renderer.cpp
@@ -1180,12 +1181,14 @@ if(BUILD_TESTS)
         tests/test_virtual_texture_types.cpp
         tests/test_virtual_texture_loader.cpp
         tests/test_tile_grid_logic.cpp
+        tests/test_transform.cpp
         # Source files needed by tests
         src/atmosphere/CelestialCalculator.cpp
         src/ik/IKUtils.cpp
         src/terrain/ErosionDataLoader.cpp
         src/terrain/RoadNetworkLoader.cpp
         src/terrain/virtual_texture/VirtualTextureTileLoader.cpp
+        src/scene/Transform.cpp
     )
 
     target_include_directories(vulkan_game_tests PRIVATE

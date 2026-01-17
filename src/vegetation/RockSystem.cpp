@@ -154,8 +154,8 @@ void RockSystem::generateRockPlacements(const InitInfo& info) {
         // Check distance from existing instances
         bool tooClose = false;
         for (const auto& existing : instances) {
-            float dx = x - existing.position.x;
-            float dz = z - existing.position.z;
+            float dx = x - existing.position().x;
+            float dz = z - existing.position().z;
             if (dx * dx + dz * dz < minDistSq) {
                 tooClose = true;
                 break;
@@ -199,22 +199,21 @@ void RockSystem::generateRockPlacements(const InitInfo& info) {
 void RockSystem::createSceneObjects() {
     // Use transform modifier to add tilt and sink rocks into ground
     material_.rebuildSceneObjects([](const SceneObjectInstance& instance, const glm::mat4& baseTransform) {
-        glm::mat4 transform = baseTransform;
+        const auto& t = instance.transform;
 
         // Add slight random tilt for natural appearance
-        float tiltX = (DeterministicRandom::hashPosition(instance.position.x, instance.position.z, 55555) - 0.5f) * 0.15f;
-        float tiltZ = (DeterministicRandom::hashPosition(instance.position.x, instance.position.z, 66666) - 0.5f) * 0.15f;
+        float tiltX = (DeterministicRandom::hashPosition(t.position.x, t.position.z, 55555) - 0.5f) * 0.15f;
+        float tiltZ = (DeterministicRandom::hashPosition(t.position.x, t.position.z, 66666) - 0.5f) * 0.15f;
 
         // Apply tilt after base transform rotation but before scale
-        // We need to decompose, apply tilt, and recompose
-        glm::mat4 tiltedTransform = glm::translate(glm::mat4(1.0f), instance.position);
-        tiltedTransform = tiltedTransform * glm::mat4_cast(instance.rotation);
+        glm::mat4 tiltedTransform = glm::translate(glm::mat4(1.0f), t.position);
+        tiltedTransform = tiltedTransform * glm::mat4_cast(t.rotation);
         tiltedTransform = glm::rotate(tiltedTransform, tiltX, glm::vec3(1.0f, 0.0f, 0.0f));
         tiltedTransform = glm::rotate(tiltedTransform, tiltZ, glm::vec3(0.0f, 0.0f, 1.0f));
-        tiltedTransform = glm::scale(tiltedTransform, glm::vec3(instance.scale));
+        tiltedTransform = glm::scale(tiltedTransform, t.scale);
 
         // Sink rock slightly into ground
-        tiltedTransform[3][1] -= instance.scale * 0.15f;
+        tiltedTransform[3][1] -= t.scale.x * 0.15f;
 
         return tiltedTransform;
     });

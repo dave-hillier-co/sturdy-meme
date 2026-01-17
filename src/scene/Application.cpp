@@ -272,8 +272,8 @@ bool Application::init(const std::string& title, int width, int height) {
 
     for (const auto& rock : rockInstances) {
         // Rock position is adjusted down by 15% of scale in rendering
-        glm::vec3 colliderPos = rock.position;
-        colliderPos.y -= rock.scale * 0.15f;
+        glm::vec3 colliderPos = rock.position();
+        colliderPos.y -= rock.scale() * 0.15f;
 
         // Get the mesh for this rock variation
         const Mesh& mesh = rockMeshes[rock.meshVariation];
@@ -286,10 +286,9 @@ bool Application::init(const std::string& title, int width, int height) {
             positions.push_back(v.position);
         }
 
-        // SceneObjectInstance already stores rotation as quaternion
         // Create convex hull from mesh vertices with rock's scale
         physics().createStaticConvexHull(colliderPos, positions.data(), positions.size(),
-                                       rock.scale, rock.rotation);
+                                       rock.scale(), rock.rotation());
     }
     SDL_Log("Created %zu rock convex hull colliders", rockInstances.size());
 
@@ -310,10 +309,9 @@ bool Application::init(const std::string& title, int width, int height) {
                 positions.push_back(v.position);
             }
 
-            // SceneObjectInstance already stores rotation as quaternion
             // Create convex hull from mesh vertices with detritus scale
-            physics().createStaticConvexHull(detritus.position, positions.data(), positions.size(),
-                                           detritus.scale, detritus.rotation);
+            physics().createStaticConvexHull(detritus.position(), positions.data(), positions.size(),
+                                           detritus.scale(), detritus.rotation());
         }
         SDL_Log("Created %zu detritus convex hull colliders", detritusInstances.size());
     }

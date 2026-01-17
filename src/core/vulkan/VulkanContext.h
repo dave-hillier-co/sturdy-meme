@@ -8,6 +8,7 @@
 #include <vector>
 #include <memory>
 #include "PipelineCache.h"
+#include "VmaResources.h"
 
 /**
  * VulkanContext encapsulates core Vulkan setup:
@@ -50,6 +51,15 @@ public:
     void destroySwapchain();
     bool recreateSwapchain();
 
+    // Swapchain-dependent resource creation (render pass, depth buffer, framebuffers)
+    bool createSwapchainResources();
+    void destroySwapchainResources();
+    bool recreateSwapchainResources();
+
+    // Command pool and buffers
+    bool createCommandPoolAndBuffers(uint32_t frameCount);
+    void destroyCommandPoolAndBuffers();
+
     void waitIdle();
 
     // RAII access for vulkan-hpp raii types (preferred for new code)
@@ -80,6 +90,24 @@ public:
     uint32_t getWidth() const { return swapchainExtent.width; }
     uint32_t getHeight() const { return swapchainExtent.height; }
 
+    // Swapchain-dependent resource getters
+    VkRenderPass getRenderPass() const { return renderPass_ ? **renderPass_ : VK_NULL_HANDLE; }
+    const vk::raii::RenderPass& getRaiiRenderPass() const { return *renderPass_; }
+    VkImageView getDepthImageView() const { return depthImageView_ ? **depthImageView_ : VK_NULL_HANDLE; }
+    VkSampler getDepthSampler() const { return depthSampler_ ? **depthSampler_ : VK_NULL_HANDLE; }
+    VkFormat getDepthFormat() const { return depthFormat_; }
+    const std::vector<vk::raii::Framebuffer>& getFramebuffers() const { return framebuffers_; }
+    std::vector<vk::raii::Framebuffer>& getFramebuffers() { return framebuffers_; }
+    uint32_t getFramebufferCount() const { return static_cast<uint32_t>(framebuffers_.size()); }
+
+    // Command pool/buffer getters
+    VkCommandPool getCommandPool() const { return commandPool_ ? **commandPool_ : VK_NULL_HANDLE; }
+    const vk::raii::CommandPool& getRaiiCommandPool() const { return *commandPool_; }
+    const std::vector<VkCommandBuffer>& getCommandBuffers() const { return commandBuffers_; }
+    VkCommandBuffer getCommandBuffer(uint32_t frameIndex) const {
+        return frameIndex < commandBuffers_.size() ? commandBuffers_[frameIndex] : VK_NULL_HANDLE;
+    }
+
     const vkb::Device& getVkbDevice() const { return vkbDevice; }
 
     // Check if validation layers are enabled (useful for diagnostics)
@@ -101,6 +129,12 @@ private:
     bool createLogicalDevice();
     bool createAllocator();
     bool createPipelineCache();
+
+    // Internal helpers for swapchain resource creation
+    bool createRenderPass();
+    bool createDepthResources();
+    bool createFramebuffers();
+    bool recreateDepthResources();
 
     SDL_Window* window = nullptr;
     bool instanceReady = false;
@@ -135,4 +169,16 @@ private:
     std::unique_ptr<vk::raii::Instance> raiiInstance_;
     std::unique_ptr<vk::raii::PhysicalDevice> raiiPhysicalDevice_;
     std::unique_ptr<vk::raii::Device> raiiDevice_;
+
+    // Swapchain-dependent resources (render pass, depth buffer, framebuffers)
+    std::optional<vk::raii::RenderPass> renderPass_;
+    VmaImage depthImage_;
+    std::optional<vk::raii::ImageView> depthImageView_;
+    std::optional<vk::raii::Sampler> depthSampler_;
+    VkFormat depthFormat_ = VK_FORMAT_D32_SFLOAT;
+    std::vector<vk::raii::Framebuffer> framebuffers_;
+
+    // Command pool and buffers
+    std::optional<vk::raii::CommandPool> commandPool_;
+    std::vector<VkCommandBuffer> commandBuffers_;
 };

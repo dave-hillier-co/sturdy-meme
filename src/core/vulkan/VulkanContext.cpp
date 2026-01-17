@@ -1,4 +1,5 @@
 #include "VulkanContext.h"
+#include "VulkanHelpers.h"
 #include <vulkan/vulkan.hpp>
 #include <vulkan/vulkan_raii.hpp>
 #include <SDL3/SDL_vulkan.h>
@@ -50,6 +51,12 @@ void VulkanContext::shutdown() {
     if (device != VK_NULL_HANDLE) {
         vk::Device(device).waitIdle();
     }
+
+    // Destroy command pool and buffers before swapchain resources
+    destroyCommandPoolAndBuffers();
+
+    // Destroy swapchain-dependent resources (render pass, depth buffer, framebuffers)
+    destroySwapchainResources();
 
     destroySwapchain();
 
@@ -333,4 +340,166 @@ uint32_t VulkanContext::getTransferQueueFamily() const {
 
 bool VulkanContext::createPipelineCache() {
     return pipelineCache.init(*raiiDevice_, "pipeline_cache.bin");
+}
+
+// ============================================================================
+// Swapchain-dependent resource creation
+// ============================================================================
+
+bool VulkanContext::createRenderPass() {
+    depthFormat_ = VK_FORMAT_D32_SFLOAT;
+
+    RenderPassConfig config{};
+    config.colorFormat = swapchainImageFormat;
+    config.depthFormat = depthFormat_;
+    config.finalColorLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+    config.finalDepthLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;  // For Hi-Z
+    config.storeDepth = true;  // For Hi-Z pyramid generation
+
+    auto result = ::createRenderPass(*raiiDevice_, config);
+    if (!result) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create render pass");
+        return false;
+    }
+    renderPass_.emplace(std::move(*result));
+    return true;
+}
+
+bool VulkanContext::createDepthResources() {
+    DepthResources depth;
+    vk::Extent2D extent{swapchainExtent.width, swapchainExtent.height};
+    if (!::createDepthResources(*raiiDevice_, allocator, extent,
+                                 static_cast<vk::Format>(depthFormat_), depth)) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create depth resources");
+        return false;
+    }
+    // Move RAII resources from temporary DepthResources to member fields
+    depthImage_ = std::move(depth.image);
+    depthImageView_ = std::move(depth.view);
+    depthSampler_ = std::move(depth.sampler);
+    return true;
+}
+
+bool VulkanContext::createFramebuffers() {
+    if (!renderPass_ || !depthImageView_) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Cannot create framebuffers: render pass or depth view not ready");
+        return false;
+    }
+
+    auto result = ::createFramebuffers(*raiiDevice_, *renderPass_,
+                                        swapchainImageViews, **depthImageView_,
+                                        swapchainExtent);
+    if (!result) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create framebuffers");
+        return false;
+    }
+
+    framebuffers_ = std::move(*result);
+    return true;
+}
+
+bool VulkanContext::recreateDepthResources() {
+    // Destroy existing depth resources (keep sampler - format doesn't change)
+    depthImageView_.reset();
+    depthImage_.reset();
+
+    vk::Extent2D extent{swapchainExtent.width, swapchainExtent.height};
+    VmaImage newImage;
+    std::optional<vk::raii::ImageView> newView;
+
+    if (!::createDepthImageAndView(*raiiDevice_, allocator, extent,
+                                    static_cast<vk::Format>(depthFormat_),
+                                    newImage, newView)) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to recreate depth resources");
+        return false;
+    }
+
+    depthImage_ = std::move(newImage);
+    depthImageView_ = std::move(newView);
+    return true;
+}
+
+bool VulkanContext::createSwapchainResources() {
+    if (!createRenderPass()) return false;
+    if (!createDepthResources()) return false;
+    if (!createFramebuffers()) return false;
+    SDL_Log("Swapchain resources created (render pass, depth buffer, framebuffers)");
+    return true;
+}
+
+void VulkanContext::destroySwapchainResources() {
+    // RAII handles cleanup - just clear containers and reset managed objects
+    framebuffers_.clear();
+    depthSampler_.reset();
+    depthImageView_.reset();
+    depthImage_.reset();
+    renderPass_.reset();
+}
+
+bool VulkanContext::recreateSwapchainResources() {
+    // Handle minimized window (extent = 0)
+    if (swapchainExtent.width == 0 || swapchainExtent.height == 0) {
+        return true;  // Nothing to do for minimized window
+    }
+
+    // Recreate depth resources for new extent
+    if (!recreateDepthResources()) {
+        return false;
+    }
+
+    // Recreate framebuffers for new swapchain
+    framebuffers_.clear();
+    if (!createFramebuffers()) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to recreate framebuffers during resize");
+        return false;
+    }
+
+    SDL_Log("Swapchain resources recreated for %ux%u", swapchainExtent.width, swapchainExtent.height);
+    return true;
+}
+
+// ============================================================================
+// Command pool and buffers
+// ============================================================================
+
+bool VulkanContext::createCommandPoolAndBuffers(uint32_t frameCount) {
+    if (frameCount == 0) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Cannot create command buffers: frame count is 0");
+        return false;
+    }
+
+    try {
+        auto poolInfo = vk::CommandPoolCreateInfo{}
+            .setFlags(vk::CommandPoolCreateFlagBits::eResetCommandBuffer)
+            .setQueueFamilyIndex(getGraphicsQueueFamily());
+        commandPool_.emplace(*raiiDevice_, poolInfo);
+
+        commandBuffers_.resize(frameCount);
+
+        auto allocInfo = vk::CommandBufferAllocateInfo{}
+            .setCommandPool(**commandPool_)
+            .setLevel(vk::CommandBufferLevel::ePrimary)
+            .setCommandBufferCount(frameCount);
+
+        if (vkAllocateCommandBuffers(device,
+                reinterpret_cast<const VkCommandBufferAllocateInfo*>(&allocInfo),
+                commandBuffers_.data()) != VK_SUCCESS) {
+            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to allocate command buffers");
+            commandPool_.reset();
+            commandBuffers_.clear();
+            return false;
+        }
+
+        SDL_Log("Command pool and %u command buffers created", frameCount);
+        return true;
+    } catch (const vk::SystemError& e) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create command pool: %s", e.what());
+        return false;
+    }
+}
+
+void VulkanContext::destroyCommandPoolAndBuffers() {
+    // Command buffers are implicitly freed when pool is destroyed
+    commandBuffers_.clear();
+    commandPool_.reset();
 }

@@ -99,7 +99,7 @@ private:
 - [x] Step 0: Extract RendererCore class
 - [x] Step 1: Extract render pass recorders (ShadowPassRecorder, HDRPassRecorder)
 - [x] Step 2: Move UBO updates to UBOUpdater (following existing updater pattern)
-- [ ] Step 3: Move Vulkan infrastructure to VulkanContext (deferred - requires significant API changes)
+- [x] Step 3: Move Vulkan infrastructure to VulkanContext
 - [x] Step 4: Extract FrameDataBuilder utility
 - [x] Step 5: Move state sync to control subsystems (already done in main branch)
 - [x] Step 6: Move debug visualization (updateRoadRiverVisualization moved to DebugControlSubsystem)

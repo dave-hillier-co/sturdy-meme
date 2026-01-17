@@ -328,8 +328,7 @@ bool Application::init(const std::string& title, int width, int height) {
             auto capsules = treeSystem->getTreeCollisionCapsules(static_cast<uint32_t>(i), treeCollisionConfig);
 
             if (!capsules.empty()) {
-                // TreeInstanceData already stores rotation as quaternion
-                physics().createStaticCompoundCapsules(tree.position, capsules, tree.rotation);
+                physics().createStaticCompoundCapsules(tree.position(), capsules, tree.rotation());
             }
         }
         SDL_Log("Created %zu tree compound capsule colliders", treeInstances.size());

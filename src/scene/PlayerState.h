@@ -1,14 +1,18 @@
 #pragma once
 
+#include "Transform.h"
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/quaternion.hpp>
 
-// Core transform component - position and rotation
-// Supports both quaternion (full 3D) and yaw-only (Y-axis) rotation
-struct PlayerTransform {
-    glm::vec3 position{0.0f};
-    glm::quat rotation{1.0f, 0.0f, 0.0f, 0.0f};  // Identity quaternion
+/**
+ * PlayerTransform - Player-specific transform with degree-based yaw helpers
+ *
+ * Extends Transform with convenience methods for player-facing APIs
+ * that use degrees rather than radians.
+ */
+struct PlayerTransform : Transform {
+    using Transform::Transform;  // Inherit constructors
 
     // Create with position only (identity rotation)
     static PlayerTransform withPosition(const glm::vec3& pos) {
@@ -21,7 +25,7 @@ struct PlayerTransform {
     static PlayerTransform withYaw(const glm::vec3& pos, float yawDegrees) {
         PlayerTransform t;
         t.position = pos;
-        t.rotation = glm::angleAxis(glm::radians(yawDegrees), glm::vec3(0.0f, 1.0f, 0.0f));
+        t.rotation = yRotation(glm::radians(yawDegrees));
         return t;
     }
 
@@ -31,20 +35,16 @@ struct PlayerTransform {
         return glm::degrees(euler.y);
     }
 
-    // Set yaw in degrees (creates Y-axis rotation quaternion)
+    // Set yaw in degrees
     void setYaw(float yawDegrees) {
-        rotation = glm::angleAxis(glm::radians(yawDegrees), glm::vec3(0.0f, 1.0f, 0.0f));
+        rotation = yRotation(glm::radians(yawDegrees));
     }
 
-    glm::vec3 getForward() const {
-        return glm::vec3(glm::mat4_cast(rotation) * glm::vec4(0.0f, 0.0f, 1.0f, 0.0f));
-    }
+    // Alias for Transform::forward() - kept for API compatibility
+    glm::vec3 getForward() const { return forward(); }
 
-    glm::mat4 getMatrix() const {
-        glm::mat4 transform = glm::translate(glm::mat4(1.0f), position);
-        transform = transform * glm::mat4_cast(rotation);
-        return transform;
-    }
+    // Alias for Transform::toMatrix() - kept for API compatibility
+    glm::mat4 getMatrix() const { return toMatrix(); }
 };
 
 // Player-specific movement settings and state

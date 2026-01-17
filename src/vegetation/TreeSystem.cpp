@@ -542,9 +542,7 @@ uint32_t TreeSystem::addTree(const glm::vec3& position, float rotation, float sc
     fullTreeBounds_.push_back(fullBounds);
 
     TreeInstanceData instance;
-    instance.position = position;
-    instance.rotation = glm::angleAxis(rotation, glm::vec3(0.0f, 1.0f, 0.0f));  // Convert Y-axis float to quaternion
-    instance.scale = scale;
+    instance.transform = Transform(position, Transform::yRotation(rotation), scale);
     instance.meshIndex = meshIndex;
     instance.isSelected = false;
 
@@ -620,9 +618,7 @@ uint32_t TreeSystem::addTreeFromStagedData(
     fullTreeBounds_.push_back(fullBounds);
 
     TreeInstanceData instance;
-    instance.position = position;
-    instance.rotation = glm::angleAxis(rotation, glm::vec3(0.0f, 1.0f, 0.0f));  // Convert Y-axis float to quaternion
-    instance.scale = scale;
+    instance.transform = Transform(position, Transform::yRotation(rotation), scale);
     instance.meshIndex = meshIndex;
     instance.isSelected = false;
     instance.archetypeIndex = archetypeIndex;
@@ -808,14 +804,14 @@ std::vector<PhysicsWorld::CapsuleData> TreeSystem::getTreeCollisionCapsules(
         PhysicsWorld::CapsuleData scaled;
 
         // Scale the local position (still relative to tree origin at 0,0,0)
-        scaled.localPosition = local.localPosition * instance.scale;
+        scaled.localPosition = local.localPosition * instance.scale();
 
         // Keep the local rotation unchanged
         scaled.localRotation = local.localRotation;
 
         // Scale the capsule dimensions
-        scaled.halfHeight = local.halfHeight * instance.scale;
-        scaled.radius = local.radius * instance.scale;
+        scaled.halfHeight = local.halfHeight * instance.scale();
+        scaled.radius = local.radius * instance.scale();
 
         scaledCapsules.push_back(scaled);
     }

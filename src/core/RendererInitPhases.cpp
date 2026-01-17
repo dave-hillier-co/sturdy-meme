@@ -739,7 +739,7 @@ bool Renderer::initSubsystems(const InitContext& initCtx) {
             const auto& treeInstances = systems_->tree()->getTreeInstances();
             detritusInfo.treePositions.reserve(treeInstances.size());
             for (const auto& tree : treeInstances) {
-                detritusInfo.treePositions.push_back(tree.position);
+                detritusInfo.treePositions.push_back(tree.position());
             }
         }
 

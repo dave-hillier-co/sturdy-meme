@@ -27,11 +27,11 @@ layout(push_constant) uniform PushConstants {
 
 void main() {
     vec3 localPos = inPosition;
-    // Branch level stored in vertex color alpha (0-1, where 0 = trunk, 1 = tip branches)
+    // Vertex color layout (precomputed during mesh generation):
+    // R = total sway factor (inherited + own, precomputed from hierarchy)
+    // A = branch level (0-0.95 for levels 0-3)
+    float totalSwayFactor = inColor.r;
     float branchLevel = inColor.a * 3.0;  // Scale back to 0-3 range
-    // Pivot point for rotation stored in RGB (local space)
-    vec3 pivotPoint = inColor.rgb;
-    vec3 localTangent = inTangent.xyz;
 
     // Extract wind parameters using common function
     WindParams windParams = windExtractParams(wind.windDirectionAndStrength, wind.windParams);
@@ -42,34 +42,17 @@ void main() {
     // Calculate tree oscillation using GPU Gems 3 style animation
     TreeWindOscillation osc = windCalculateTreeOscillation(treeBaseWorld, windParams);
 
-    // Wind direction-relative motion
-    vec3 branchDir = normalize(localTangent);
-    vec3 branchDirWorld = normalize(mat3(push.model) * branchDir);
-    float directionScale = windCalculateDirectionScale(branchDirWorld, osc.windDir3D);
-
-    // Branch flexibility
-    float flexibility = windCalculateBranchFlexibility(branchLevel);
-
-    // Apply bending around pivot point
-    vec3 offsetFromPivot = localPos - pivotPoint;
-
-    // Calculate inherited sway from ALL ancestor branches (hierarchical)
-    // Formula: cumulativeFlex = 0.04 * L + 0.03 * L * (L-1) where L = branchLevel
-    float pivotHeight = pivotPoint.y;
-    float cumulativeFlexibility = 0.04 * branchLevel + 0.03 * branchLevel * (branchLevel - 1.0);
-    float inheritedAmount = pivotHeight * cumulativeFlexibility * windParams.strength;
-    vec3 inheritedSway = osc.windDir3D * osc.mainBend * inheritedAmount +
-                         osc.windPerp3D * osc.perpBend * inheritedAmount * 0.5;
-
-    // Calculate this branch's own sway
-    vec3 branchSway = windCalculateBendOffset(osc, offsetFromPivot, flexibility, windParams.strength, directionScale);
+    // Apply precomputed sway factor - this includes both inherited and own sway
+    float swayAmount = totalSwayFactor * windParams.strength;
+    vec3 totalSway = osc.windDir3D * osc.mainBend * swayAmount +
+                     osc.windPerp3D * osc.perpBend * swayAmount * 0.5;
 
     // Detail motion
     vec3 detailOffset = windCalculateDetailOffset(localPos, branchLevel, windParams.strength, windParams.gustFreq, windParams.time);
 
     // Transform to world space FIRST, then apply world-space wind offsets
     vec4 worldPos = push.model * vec4(localPos, 1.0);
-    worldPos.xyz += inheritedSway + branchSway + detailOffset;
+    worldPos.xyz += totalSway + detailOffset;
 
     gl_Position = ubo.cascadeViewProj[push.cascadeIndex] * worldPos;
 }

@@ -61,6 +61,9 @@ public:
     bool& showRoads() { return showRoads_; }
     bool& showRivers() { return showRivers_; }
 
+    // Update road/river debug visualization (called per-frame)
+    void updateRoadRiverVisualization();
+
 private:
     DebugLineSystem& debugLine_;
     HiZSystem& hiZ_;

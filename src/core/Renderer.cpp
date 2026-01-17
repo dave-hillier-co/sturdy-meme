@@ -13,6 +13,8 @@
 #include "core/vulkan/PipelineLayoutBuilder.h"
 #include "core/pipeline/FrameGraphBuilder.h"
 #include "core/FrameUpdater.h"
+#include "core/FrameDataBuilder.h"
+#include "core/updaters/UBOUpdater.h"
 #include "interfaces/IPlayerControl.h"
 
 // Subsystem includes for render loop
@@ -44,9 +46,9 @@
 // Animation and debug
 #include "SkinnedMeshRenderer.h"
 #include "DebugLineSystem.h"
-#include "RoadRiverVisualization.h"
 #include "HiZSystem.h"
 #include "interfaces/IDebugControl.h"
+#include "controls/DebugControlSubsystem.h"
 #include "threading/TaskScheduler.h"
 // Vegetation
 #include "GrassSystem.h"
@@ -175,6 +177,25 @@ bool Renderer::initInternal(const InitInfo& info) {
         initResizeCoordinator();
     }
 
+    // Initialize pass recorders (must be after systems_ is set up)
+    {
+        INIT_PROFILE_PHASE("PassRecorders");
+        shadowPassRecorder_ = std::make_unique<ShadowPassRecorder>(*systems_);
+        ShadowPassRecorder::Config shadowConfig;
+        shadowConfig.terrainEnabled = terrainEnabled;
+        shadowConfig.perfToggles = &perfToggles;
+        shadowPassRecorder_->setConfig(shadowConfig);
+
+        hdrPassRecorder_ = std::make_unique<HDRPassRecorder>(*systems_);
+        HDRPassRecorder::Config hdrConfig;
+        hdrConfig.terrainEnabled = terrainEnabled;
+        hdrConfig.sceneObjectsPipeline = graphicsPipeline_ ? &(**graphicsPipeline_) : nullptr;
+        hdrConfig.pipelineLayout = pipelineLayout_ ? &(**pipelineLayout_) : nullptr;
+        hdrConfig.lastViewProj = &lastViewProj;
+        hdrPassRecorder_->setConfig(hdrConfig);
+    }
+    SDL_Log("Pass recorders initialized");
+
     // Setup frame graph with dependencies
     {
         INIT_PROFILE_PHASE("FrameGraph");
@@ -219,37 +240,6 @@ void Renderer::setupFrameGraph() {
 
 // Note: initCoreVulkanResources(), initDescriptorInfrastructure(), initSubsystems(),
 // and initResizeCoordinator() are implemented in RendererInitPhases.cpp
-
-void Renderer::updateRoadRiverVisualization() {
-    if (!systems_->debugControl().isRoadRiverVisualizationEnabled()) {
-        // Clear persistent lines when disabled
-        if (systems_->debugLine().getPersistentLineCount() > 0) {
-            systems_->debugLine().clearPersistentLines();
-        }
-        return;
-    }
-
-    // Sync individual road/river toggles to visualization config
-    auto& config = systems_->roadRiverVis().getConfig();
-    bool needsRebuild = false;
-
-    if (config.showRoads != systems_->debugControl().isRoadVisualizationEnabled()) {
-        config.showRoads = systems_->debugControl().isRoadVisualizationEnabled();
-        needsRebuild = true;
-    }
-    if (config.showRivers != systems_->debugControl().isRiverVisualizationEnabled()) {
-        config.showRivers = systems_->debugControl().isRiverVisualizationEnabled();
-        needsRebuild = true;
-    }
-
-    if (needsRebuild) {
-        systems_->roadRiverVis().invalidateCache();
-        systems_->debugLine().clearPersistentLines();
-    }
-
-    // Add road/river visualization to debug lines
-    systems_->roadRiverVis().addToDebugLines(systems_->debugLine());
-}
 
 #ifdef JPH_DEBUG_RENDERER
 void Renderer::updatePhysicsDebug(PhysicsWorld& physics, const glm::vec3& cameraPos) {
@@ -297,6 +287,9 @@ void Renderer::cleanup() {
         asyncTextureUploader_.shutdown();  // Must shutdown before transfer manager
         asyncTransferManager_.shutdown();
         threadedCommandPool_.shutdown();
+
+        // Destroy RendererCore before its dependencies
+        rendererCore_.destroy();
 
         // RAII handles cleanup of sync objects via TripleBuffering
         frameSync_.destroy();
@@ -520,13 +513,6 @@ bool Renderer::createGraphicsPipeline() {
     return true;
 }
 
-void Renderer::updateLightBuffer(uint32_t currentImage, const Camera& camera) {
-    LightBuffer buffer{};
-    glm::mat4 viewProj = camera.getProjectionMatrix() * camera.getViewMatrix();
-    systems_->scene().getLightManager().buildLightBuffer(buffer, camera.getPosition(), camera.getFront(), viewProj, lightCullRadius);
-    systems_->globalBuffers().updateLightBuffer(currentImage, buffer);
-}
-
 bool Renderer::createDescriptorPool() {
     VkDevice device = vulkanContext_->getVkDevice();
 
@@ -590,69 +576,6 @@ bool Renderer::createDescriptorSets() {
     // They are created in initPhase2 when the systems are initialized
 
     return true;
-}
-
-
-void Renderer::updateUniformBuffer(uint32_t currentImage, const Camera& camera) {
-    // Get current time of day from time system (already updated in render())
-    float currentTimeOfDay = systems_->time().getTimeOfDay();
-
-    // Pure calculations via UBOBuilder
-    UBOBuilder::LightingParams lighting = systems_->uboBuilder().calculateLightingParams(currentTimeOfDay);
-    systems_->time().setCurrentMoonPhase(lighting.moonPhase);  // Track current effective phase
-
-    // Calculate and apply tide based on celestial positions
-    DateTime dateTime = DateTime::fromTimeOfDay(currentTimeOfDay, systems_->time().getCurrentYear(),
-                                                 systems_->time().getCurrentMonth(), systems_->time().getCurrentDay());
-    TideInfo tide = systems_->celestial().calculateTide(dateTime);
-    systems_->water().updateTide(tide.height);
-
-    // Update cascade matrices via shadow system
-    systems_->shadow().updateCascadeMatrices(lighting.sunDir, camera);
-
-    // Build UBO data via UBOBuilder (pure calculation)
-    // Get cloud parameters from EnvironmentControlSubsystem (authoritative source)
-    auto& envControl = systems_->environmentControl();
-    UBOBuilder::MainUBOConfig mainConfig{};
-    mainConfig.showCascadeDebug = showCascadeDebug;
-    mainConfig.useParaboloidClouds = envControl.isUsingParaboloidClouds();
-    mainConfig.cloudCoverage = envControl.getCloudCoverage();
-    mainConfig.cloudDensity = envControl.getCloudDensity();
-    mainConfig.skyExposure = envControl.getSkyExposure();
-    mainConfig.shadowsEnabled = perfToggles.shadowPass;  // Skip shadow sampling when shadows disabled
-    UniformBufferObject ubo = systems_->uboBuilder().buildUniformBufferData(camera, lighting, currentTimeOfDay, mainConfig);
-
-    UBOBuilder::SnowConfig snowConfig{};
-    snowConfig.useVolumetricSnow = useVolumetricSnow;
-    snowConfig.showSnowDepthDebug = showSnowDepthDebug;
-    snowConfig.maxSnowHeight = MAX_SNOW_HEIGHT;
-    SnowUBO snowUbo = systems_->uboBuilder().buildSnowUBOData(snowConfig);
-
-    // Set rain wetness from weather system (composable material system integration)
-    // Weather type 0 = rain, type 1 = snow - rain causes wetness on vegetation
-    if (systems_->weather().getWeatherType() == 0) {
-        snowUbo.rainWetness = systems_->weather().getIntensity();
-    } else {
-        snowUbo.rainWetness = 0.0f;
-    }
-
-    CloudShadowUBO cloudShadowUbo = systems_->uboBuilder().buildCloudShadowUBOData();
-
-    // State mutations - use GlobalBufferManager for buffer updates
-    lastSunIntensity = lighting.sunIntensity;
-    systems_->globalBuffers().updateUniformBuffer(currentImage, ubo);
-    systems_->globalBuffers().updateSnowBuffer(currentImage, snowUbo);
-    systems_->globalBuffers().updateCloudShadowBuffer(currentImage, cloudShadowUbo);
-
-    // Update light buffer with camera-based culling
-    updateLightBuffer(currentImage, camera);
-
-    // Calculate sun screen position (pure) and update post-process (state mutation)
-    glm::vec2 sunScreenPos = calculateSunScreenPos(camera, lighting.sunDir);
-    systems_->postProcess().setSunScreenPos(sunScreenPos);
-
-    // Update HDR enabled state
-    systems_->postProcess().setHDREnabled(hdrEnabled);
 }
 
 bool Renderer::render(const Camera& camera) {
@@ -743,10 +666,19 @@ bool Renderer::render(const Camera& camera) {
     // Track UBO bandwidth
     CommandCounter bandwidthCounter(&qsDiag);
 
-    // Update uniform buffer data
+    // Update uniform buffer data via UBOUpdater
     {
         systems_->profiler().beginCpuZone("UniformUpdates:UBO");
-        updateUniformBuffer(frameSync_.currentIndex(), camera);
+        UBOUpdater::Config uboConfig;
+        uboConfig.showCascadeDebug = showCascadeDebug;
+        uboConfig.useVolumetricSnow = useVolumetricSnow;
+        uboConfig.showSnowDepthDebug = showSnowDepthDebug;
+        uboConfig.shadowsEnabled = perfToggles.shadowPass;
+        uboConfig.hdrEnabled = hdrEnabled;
+        uboConfig.maxSnowHeight = MAX_SNOW_HEIGHT;
+        uboConfig.lightCullRadius = lightCullRadius;
+        auto uboResult = UBOUpdater::update(*systems_, frameSync_.currentIndex(), camera, uboConfig);
+        lastSunIntensity = uboResult.sunIntensity;
         // Track bandwidth: main UBO + dynamic UBO copy + snow + cloudShadow + lights
         bandwidthCounter.recordUboUpdate(sizeof(UniformBufferObject) * 2);  // regular + dynamic
         bandwidthCounter.recordUboUpdate(sizeof(SnowUBO));
@@ -769,7 +701,8 @@ bool Renderer::render(const Camera& camera) {
     systems_->profiler().endCpuZone("UniformUpdates");
 
     // Build per-frame shared state
-    FrameData frame = buildFrameData(camera, timing.deltaTime, timing.elapsedTime);
+    FrameData frame = FrameDataBuilder::buildFrameData(
+        camera, *systems_, frameSync_.currentIndex(), timing.deltaTime, timing.elapsedTime);
 
     // Cache view-projection for debug rendering
     lastViewProj = frame.viewProj;
@@ -781,8 +714,8 @@ bool Renderer::render(const Camera& camera) {
         systems_->debugLine().beginFrame(frameSync_.currentIndex());
     }
 
-    // Add road/river visualization to debug lines
-    updateRoadRiverVisualization();
+    // Add road/river visualization to debug lines (delegated to DebugControlSubsystem)
+    systems_->debugControlSubsystem().updateRoadRiverVisualization();
 
     // Upload debug lines if any are present
     if (systems_->debugLine().hasLines()) {
@@ -819,7 +752,10 @@ bool Renderer::render(const Camera& camera) {
     systems_->profiler().beginGpuFrame(cmd, frame.frameIndex);
 
     // Build render resources and context for frame graph passes
-    RenderResources resources = buildRenderResources(imageIndex);
+    RenderResources resources = FrameDataBuilder::buildRenderResources(
+        *systems_, imageIndex, framebuffers_,
+        **renderPass_, {vulkanContext_->getWidth(), vulkanContext_->getHeight()},
+        **graphicsPipeline_, **pipelineLayout_, **descriptorSetLayout_);
     RenderContext ctx(cmd, frame.frameIndex, frame, resources, &cmdDiag);
 
     // Execute frame graph - dependency-driven scheduling with parallel execution
@@ -1024,615 +960,57 @@ bool Renderer::handleResize() {
     return success;
 }
 
-// Pure calculation helper - sun screen position for god rays
-
-glm::vec2 Renderer::calculateSunScreenPos(const Camera& camera, const glm::vec3& sunDir) const {
-    glm::vec3 sunWorldPos = camera.getPosition() + sunDir * 1000.0f;
-    glm::vec4 sunClipPos = camera.getProjectionMatrix() * camera.getViewMatrix() * glm::vec4(sunWorldPos, 1.0f);
-
-    glm::vec2 sunScreenPos(0.5f, 0.5f);
-    if (sunClipPos.w > 0.0f) {
-        glm::vec3 sunNDC = glm::vec3(sunClipPos) / sunClipPos.w;
-        sunScreenPos = glm::vec2(sunNDC.x * 0.5f + 0.5f, sunNDC.y * 0.5f + 0.5f);
-        sunScreenPos.y = 1.0f - sunScreenPos.y;
-    }
-    return sunScreenPos;
-}
-
-FrameData Renderer::buildFrameData(const Camera& camera, float deltaTime, float time) const {
-    FrameData frame;
-
-    frame.frameIndex = frameSync_.currentIndex();
-    frame.deltaTime = deltaTime;
-    frame.time = time;
-    frame.timeOfDay = systems_->time().getTimeOfDay();
-
-    frame.cameraPosition = camera.getPosition();
-    frame.view = camera.getViewMatrix();
-    frame.projection = camera.getProjectionMatrix();
-    frame.viewProj = frame.projection * frame.view;
-    frame.nearPlane = camera.getNearPlane();
-    frame.farPlane = camera.getFarPlane();
-
-    // Extract frustum planes from view-projection matrix (normalized)
-    glm::mat4 m = glm::transpose(frame.viewProj);
-    frame.frustumPlanes[0] = m[3] + m[0];  // Left
-    frame.frustumPlanes[1] = m[3] - m[0];  // Right
-    frame.frustumPlanes[2] = m[3] + m[1];  // Bottom
-    frame.frustumPlanes[3] = m[3] - m[1];  // Top
-    frame.frustumPlanes[4] = m[3] + m[2];  // Near
-    frame.frustumPlanes[5] = m[3] - m[2];  // Far
-    for (int i = 0; i < 6; ++i) {
-        float len = glm::length(glm::vec3(frame.frustumPlanes[i]));
-        if (len > 0.0f) {
-            frame.frustumPlanes[i] /= len;
-        }
-    }
-
-    // Get sun direction from last computed UBO (already computed in updateUniformBuffer)
-    UniformBufferObject* ubo = static_cast<UniformBufferObject*>(systems_->globalBuffers().uniformBuffers.mappedPointers[frameSync_.currentIndex()]);
-    frame.sunDirection = glm::normalize(glm::vec3(ubo->toSunDirection));
-    frame.sunIntensity = ubo->toSunDirection.w;
-
-    // Get player state from PlayerControlSubsystem
-    const auto& playerControl = systems_->playerControl();
-    frame.playerPosition = playerControl.getPlayerPosition();
-    frame.playerVelocity = playerControl.getPlayerVelocity();
-    frame.playerCapsuleRadius = playerControl.getPlayerCapsuleRadius();
-
-    const auto& terrainConfig = systems_->terrain().getConfig();
-    frame.terrainSize = terrainConfig.size;
-    frame.heightScale = terrainConfig.heightScale;
-
-    // Populate wind/weather/snow data
-    const auto& envSettings = systems_->wind().getEnvironmentSettings();
-    frame.windDirection = envSettings.windDirection;
-    frame.windStrength = envSettings.windStrength;
-    frame.windSpeed = envSettings.windSpeed;
-    frame.gustFrequency = envSettings.gustFrequency;
-    frame.gustAmplitude = envSettings.gustAmplitude;
-
-    frame.weatherType = systems_->weather().getWeatherType();
-    frame.weatherIntensity = systems_->weather().getIntensity();
-
-    frame.snowAmount = systems_->environmentSettings().snowAmount;
-    frame.snowColor = systems_->environmentSettings().snowColor;
-
-    // Lighting data
-    frame.sunColor = glm::vec3(ubo->sunColor);
-    frame.moonDirection = glm::normalize(glm::vec3(ubo->moonDirection));
-    frame.moonIntensity = ubo->moonDirection.w;
-
-    return frame;
-}
-
-RenderResources Renderer::buildRenderResources(uint32_t swapchainImageIndex) const {
-    RenderResources resources;
-
-    // HDR target (from PostProcessSystem)
-    resources.hdrRenderPass = systems_->postProcess().getHDRRenderPass();
-    resources.hdrFramebuffer = systems_->postProcess().getHDRFramebuffer();
-    resources.hdrExtent = systems_->postProcess().getExtent();
-    resources.hdrColorView = systems_->postProcess().getHDRColorView();
-    resources.hdrDepthView = systems_->postProcess().getHDRDepthView();
-
-    // Shadow resources (from ShadowSystem)
-    resources.shadowRenderPass = systems_->shadow().getShadowRenderPass();
-    resources.shadowMapView = systems_->shadow().getShadowImageView();
-    resources.shadowSampler = systems_->shadow().getShadowSampler();
-    resources.shadowPipeline = systems_->shadow().getShadowPipeline();
-    resources.shadowPipelineLayout = systems_->shadow().getShadowPipelineLayout();
-
-    // Copy cascade matrices
-    const auto& cascadeMatrices = systems_->shadow().getCascadeMatrices();
-    for (size_t i = 0; i < cascadeMatrices.size(); ++i) {
-        resources.cascadeMatrices[i] = cascadeMatrices[i];
-    }
-
-    // Copy cascade split depths
-    const auto& splitDepths = systems_->shadow().getCascadeSplitDepths();
-    for (size_t i = 0; i < std::min(splitDepths.size(), size_t(4)); ++i) {
-        resources.cascadeSplitDepths[i] = splitDepths[i];
-    }
-
-    // Bloom output (from BloomSystem)
-    resources.bloomOutput = systems_->bloom().getBloomOutput();
-    resources.bloomSampler = systems_->bloom().getBloomSampler();
-
-    // Swapchain target
-    resources.swapchainRenderPass = **renderPass_;
-    resources.swapchainFramebuffer = *framebuffers_[swapchainImageIndex];
-    resources.swapchainExtent = {vulkanContext_->getWidth(), vulkanContext_->getHeight()};
-
-    // Main scene pipeline
-    resources.graphicsPipeline = **graphicsPipeline_;
-    resources.pipelineLayout = **pipelineLayout_;
-    resources.descriptorSetLayout = **descriptorSetLayout_;
-
-    return resources;
-}
-
 // Render pass recording helpers - pure command recording, no state mutation
 
 void Renderer::recordShadowPass(VkCommandBuffer cmd, uint32_t frameIndex, float grassTime, const glm::vec3& cameraPosition) {
-    // Setup phase: build callbacks and collect shadow-casting objects
-    systems_->profiler().beginCpuZone("Shadow:Setup");
+    // Update config in case terrainEnabled changed at runtime
+    ShadowPassRecorder::Config config;
+    config.terrainEnabled = terrainEnabled;
+    config.perfToggles = &perfToggles;
+    shadowPassRecorder_->setConfig(config);
 
-    // Delegate to the shadow system with callbacks for terrain and grass
-    auto terrainCallback = [this, frameIndex](VkCommandBuffer cb, uint32_t cascade, const glm::mat4& lightMatrix) {
-        if (terrainEnabled && perfToggles.terrainShadows) {
-            systems_->profiler().beginGpuZone(cb, "Shadow:Terrain");
-            systems_->terrain().recordShadowDraw(cb, frameIndex, lightMatrix, static_cast<int>(cascade));
-            systems_->profiler().endGpuZone(cb, "Shadow:Terrain");
-        }
-    };
-
-    auto grassCallback = [this, frameIndex, grassTime](VkCommandBuffer cb, uint32_t cascade, const glm::mat4& lightMatrix) {
-        (void)lightMatrix;  // Grass uses cascade index only
-        if (perfToggles.grassShadows) {
-            systems_->profiler().beginGpuZone(cb, "Shadow:Grass");
-            systems_->grass().recordShadowDraw(cb, frameIndex, grassTime, cascade);
-            systems_->profiler().endGpuZone(cb, "Shadow:Grass");
-        }
-    };
-
-    auto treeCallback = [this, frameIndex](VkCommandBuffer cb, uint32_t cascade, const glm::mat4& lightMatrix) {
-        (void)lightMatrix;
-        if (systems_->tree() && systems_->treeRenderer()) {
-            systems_->profiler().beginGpuZone(cb, "Shadow:Trees");
-            systems_->treeRenderer()->renderShadows(cb, frameIndex, *systems_->tree(), static_cast<int>(cascade), systems_->treeLOD());
-            systems_->profiler().endGpuZone(cb, "Shadow:Trees");
-        }
-        // Render impostor shadows
-        if (systems_->treeLOD()) {
-            systems_->profiler().beginGpuZone(cb, "Shadow:Impostors");
-            VkBuffer uniformBuffer = systems_->globalBuffers().uniformBuffers.buffers[frameIndex];
-            auto* impostorCull = systems_->impostorCull();
-            if (impostorCull && impostorCull->getTreeCount() > 0) {
-                // Use GPU-culled indirect rendering
-                systems_->treeLOD()->renderImpostorShadowsGPUCulled(
-                    cb, frameIndex, static_cast<int>(cascade), uniformBuffer,
-                    impostorCull->getVisibleImpostorBuffer(),
-                    impostorCull->getIndirectDrawBuffer()
-                );
-            } else {
-                // Fall back to CPU-culled rendering
-                systems_->treeLOD()->renderImpostorShadows(cb, frameIndex, static_cast<int>(cascade), uniformBuffer);
-            }
-            systems_->profiler().endGpuZone(cb, "Shadow:Impostors");
-        }
-    };
-
-    // Combine scene objects and rock objects for shadow rendering
-    // Skip player character - it's rendered separately with skinned shadow pipeline
-    std::vector<Renderable> allObjects;
-    const auto& sceneObjects = systems_->scene().getRenderables();
-    size_t playerIndex = systems_->scene().getSceneBuilder().getPlayerObjectIndex();
-    bool hasCharacter = systems_->scene().getSceneBuilder().hasCharacter();
-
-    size_t detritusCount = systems_->detritus() ? systems_->detritus()->getSceneObjects().size() : 0;
-    size_t rockCount = systems_->rock().getSceneObjects().size();
-    allObjects.reserve(sceneObjects.size() + rockCount + detritusCount);
-    for (size_t i = 0; i < sceneObjects.size(); ++i) {
-        // Skip player character - rendered with skinned shadow pipeline
-        if (hasCharacter && i == playerIndex) {
-            continue;
-        }
-        allObjects.push_back(sceneObjects[i]);
-    }
-    allObjects.insert(allObjects.end(), systems_->rock().getSceneObjects().begin(), systems_->rock().getSceneObjects().end());
-    if (systems_->detritus()) {
-        allObjects.insert(allObjects.end(), systems_->detritus()->getSceneObjects().begin(), systems_->detritus()->getSceneObjects().end());
-    }
-
-    // Skinned character shadow callback (renders with GPU skinning)
-    ShadowSystem::DrawCallback skinnedCallback = nullptr;
-    if (hasCharacter) {
-        skinnedCallback = [this, frameIndex, playerIndex](VkCommandBuffer cb, uint32_t cascade, const glm::mat4& lightMatrix) {
-            (void)lightMatrix;  // Not used, cascade matrices are in UBO
-            SceneBuilder& sceneBuilder = systems_->scene().getSceneBuilder();
-            const auto& sceneObjs = sceneBuilder.getRenderables();
-            if (playerIndex >= sceneObjs.size()) return;
-
-            systems_->profiler().beginGpuZone(cb, "Shadow:Skinned");
-            const Renderable& playerObj = sceneObjs[playerIndex];
-            AnimatedCharacter& character = sceneBuilder.getAnimatedCharacter();
-            SkinnedMesh& skinnedMesh = character.getSkinnedMesh();
-
-            // Bind skinned shadow pipeline with descriptor set that has bone matrices
-            systems_->shadow().bindSkinnedShadowPipeline(cb, systems_->skinnedMesh().getDescriptorSet(frameIndex));
-
-            // Record the skinned mesh shadow
-            systems_->shadow().recordSkinnedMeshShadow(cb, cascade, playerObj.transform, skinnedMesh);
-            systems_->profiler().endGpuZone(cb, "Shadow:Skinned");
-        };
-    }
-
-    // Pre-cascade compute callback for GPU culling (runs before each cascade's render pass)
-    ShadowSystem::ComputeCallback preCascadeComputeCallback = [this, cameraPosition](
-        VkCommandBuffer cb, uint32_t frame, uint32_t cascade, const glm::mat4& lightMatrix) {
-        if (systems_->treeRenderer() && systems_->tree() && systems_->treeLOD()) {
-            // Extract frustum planes from the light view-projection matrix
-            glm::vec4 cascadeFrustumPlanes[6];
-            extractFrustumPlanes(lightMatrix, cascadeFrustumPlanes);
-
-            // Record GPU culling pass for branch shadows
-            systems_->treeRenderer()->recordBranchShadowCulling(
-                cb, frame, cascade, cascadeFrustumPlanes, cameraPosition, systems_->treeLOD());
-        }
-    };
-
-    // Use any MaterialRegistry descriptor set for shadow pass (only needs common bindings/UBO)
-    // MaterialId 0 is the first registered material (crate)
-    const auto& materialRegistry = systems_->scene().getSceneBuilder().getMaterialRegistry();
-    VkDescriptorSet shadowDescriptorSet = materialRegistry.getDescriptorSet(0, frameIndex);
-
-    systems_->profiler().endCpuZone("Shadow:Setup");
-
-    // Record all shadow cascades
-    systems_->profiler().beginCpuZone("Shadow:Cascades");
-    systems_->shadow().recordShadowPass(cmd, frameIndex, shadowDescriptorSet,
-                                   allObjects,
-                                   terrainCallback, grassCallback, treeCallback, skinnedCallback,
-                                   preCascadeComputeCallback);
-    systems_->profiler().endCpuZone("Shadow:Cascades");
-}
-
-void Renderer::recordSceneObjects(VkCommandBuffer cmd, uint32_t frameIndex) {
-    vk::CommandBuffer vkCmd(cmd);
-
-    // Get MaterialRegistry for descriptor set lookup
-    const auto& materialRegistry = systems_->scene().getSceneBuilder().getMaterialRegistry();
-
-    // Helper lambda to render a scene object with a descriptor set
-    auto renderObject = [&](const Renderable& obj, VkDescriptorSet descSet) {
-        PushConstants push{};
-        push.model = obj.transform;
-        push.roughness = obj.roughness;
-        push.metallic = obj.metallic;
-        push.emissiveIntensity = obj.emissiveIntensity;
-        push.opacity = obj.opacity;
-        push.emissiveColor = glm::vec4(obj.emissiveColor, 1.0f);
-        push.pbrFlags = obj.pbrFlags;
-        push.alphaTestThreshold = obj.alphaTestThreshold;
-
-        vkCmd.pushConstants<PushConstants>(
-            **pipelineLayout_,
-            vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
-            0, push);
-
-        vkCmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics,
-                                 **pipelineLayout_, 0, vk::DescriptorSet(descSet), {});
-
-        vk::Buffer vertexBuffers[] = {obj.mesh->getVertexBuffer()};
-        vk::DeviceSize offsets[] = {0};
-        vkCmd.bindVertexBuffers(0, vertexBuffers, offsets);
-        vkCmd.bindIndexBuffer(obj.mesh->getIndexBuffer(), 0, vk::IndexType::eUint32);
-
-        vkCmd.drawIndexed(obj.mesh->getIndexCount(), 1, 0, 0, 0);
-    };
-
-    // Render scene manager objects using MaterialRegistry for descriptor set lookup
-    const auto& sceneObjects = systems_->scene().getRenderables();
-    size_t playerIndex = systems_->scene().getSceneBuilder().getPlayerObjectIndex();
-    bool hasCharacter = systems_->scene().getSceneBuilder().hasCharacter();
-
-    // Build sorted indices by materialId to minimize descriptor set switches
-    std::vector<size_t> sortedIndices(sceneObjects.size());
-    std::iota(sortedIndices.begin(), sortedIndices.end(), 0);
-    std::sort(sortedIndices.begin(), sortedIndices.end(), [&](size_t a, size_t b) {
-        return sceneObjects[a].materialId < sceneObjects[b].materialId;
-    });
-
-    MaterialId lastMaterialId = INVALID_MATERIAL_ID;
-    VkDescriptorSet currentDescSet = VK_NULL_HANDLE;
-
-    for (size_t i : sortedIndices) {
-        // Skip player character (rendered separately with GPU skinning)
-        if (hasCharacter && i == playerIndex) {
-            continue;
-        }
-
-        const auto& obj = sceneObjects[i];
-
-        // Only update descriptor set when material changes
-        if (obj.materialId != lastMaterialId) {
-            currentDescSet = materialRegistry.getDescriptorSet(obj.materialId, frameIndex);
-            if (currentDescSet == VK_NULL_HANDLE) {
-                // Skip objects with invalid materialId
-                SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
-                    "Skipping object with invalid materialId %u", obj.materialId);
-                continue;
-            }
-            lastMaterialId = obj.materialId;
-        }
-        renderObject(obj, currentDescSet);
-    }
-
-    // Render procedural rocks (RockSystem owns its own descriptor sets)
-    if (systems_->rock().hasDescriptorSets()) {
-        VkDescriptorSet rockDescSet = systems_->rock().getDescriptorSet(frameIndex);
-        for (const auto& rock : systems_->rock().getSceneObjects()) {
-            renderObject(rock, rockDescSet);
-        }
-    }
-
-    // Render woodland detritus (DetritusSystem owns its own descriptor sets)
-    if (systems_->detritus() && systems_->detritus()->hasDescriptorSets()) {
-        VkDescriptorSet detritusDescSet = systems_->detritus()->getDescriptorSet(frameIndex);
-        for (const auto& detritus : systems_->detritus()->getSceneObjects()) {
-            renderObject(detritus, detritusDescSet);
-        }
-    }
-
-    // Render procedural trees using dedicated TreeRenderer with wind animation
-    if (systems_->tree() && systems_->treeRenderer()) {
-        systems_->treeRenderer()->render(cmd, frameIndex, systems_->wind().getTime(), *systems_->tree(), systems_->treeLOD());
-    }
-
-    // Render tree impostors for distant trees
-    if (systems_->treeLOD()) {
-        auto* impostorCull = systems_->impostorCull();
-        if (impostorCull && impostorCull->getTreeCount() > 0) {
-            // Use GPU-culled indirect rendering
-            systems_->treeLOD()->renderImpostorsGPUCulled(
-                cmd, frameIndex,
-                systems_->globalBuffers().uniformBuffers.buffers[frameIndex],
-                systems_->shadow().getShadowImageView(),
-                systems_->shadow().getShadowSampler(),
-                impostorCull->getVisibleImpostorBuffer(),
-                impostorCull->getIndirectDrawBuffer()
-            );
-        } else {
-            // Fall back to CPU-culled rendering
-            systems_->treeLOD()->renderImpostors(
-                cmd, frameIndex,
-                systems_->globalBuffers().uniformBuffers.buffers[frameIndex],
-                systems_->shadow().getShadowImageView(),
-                systems_->shadow().getShadowSampler()
-            );
-        }
-    }
+    // Delegate to the recorder
+    shadowPassRecorder_->record(cmd, frameIndex, grassTime, cameraPosition);
 }
 
 void Renderer::recordHDRPass(VkCommandBuffer cmd, uint32_t frameIndex, float grassTime) {
-    vk::CommandBuffer vkCmd(cmd);
+    // Update config in case state changed at runtime
+    HDRPassRecorder::Config config;
+    config.terrainEnabled = terrainEnabled;
+    config.sceneObjectsPipeline = graphicsPipeline_ ? &(**graphicsPipeline_) : nullptr;
+    config.pipelineLayout = pipelineLayout_ ? &(**pipelineLayout_) : nullptr;
+    config.lastViewProj = &lastViewProj;
+    hdrPassRecorder_->setConfig(config);
 
-    // Wrap entire HDR pass in a GPU zone to measure total time
-    systems_->profiler().beginGpuZone(cmd, "HDRPass");
-
-    std::array<vk::ClearValue, 2> clearValues{};
-    clearValues[0].color = vk::ClearColorValue{std::array<float, 4>{0.0f, 0.0f, 0.0f, 1.0f}};
-    clearValues[1].depthStencil = vk::ClearDepthStencilValue{1.0f, 0};
-
-    VkExtent2D rawExtent = systems_->postProcess().getExtent();
-    vk::Extent2D hdrExtent = vk::Extent2D{}.setWidth(rawExtent.width).setHeight(rawExtent.height);
-
-    auto hdrPassInfo = vk::RenderPassBeginInfo{}
-        .setRenderPass(systems_->postProcess().getHDRRenderPass())
-        .setFramebuffer(systems_->postProcess().getHDRFramebuffer())
-        .setRenderArea(vk::Rect2D{{0, 0}, hdrExtent})
-        .setClearValues(clearValues);
-
-    vkCmd.beginRenderPass(hdrPassInfo, vk::SubpassContents::eInline);
-
-    // Draw sky (with atmosphere LUT bindings)
-    systems_->profiler().beginGpuZone(cmd, "HDR:Sky");
-    systems_->sky().recordDraw(cmd, frameIndex);
-    systems_->profiler().endGpuZone(cmd, "HDR:Sky");
-
-    // Draw terrain (LEB adaptive tessellation)
-    if (terrainEnabled) {
-        systems_->profiler().beginGpuZone(cmd, "HDR:Terrain");
-        systems_->terrain().recordDraw(cmd, frameIndex);
-        systems_->profiler().endGpuZone(cmd, "HDR:Terrain");
-    }
-
-    // Draw Catmull-Clark subdivision surfaces
-    systems_->profiler().beginGpuZone(cmd, "HDR:CatmullClark");
-    systems_->catmullClark().recordDraw(cmd, frameIndex);
-    systems_->profiler().endGpuZone(cmd, "HDR:CatmullClark");
-
-    // Draw scene objects (static meshes)
-    systems_->profiler().beginGpuZone(cmd, "HDR:SceneObjects");
-    vkCmd.bindPipeline(vk::PipelineBindPoint::eGraphics, **graphicsPipeline_);
-    recordSceneObjects(cmd, frameIndex);
-    systems_->profiler().endGpuZone(cmd, "HDR:SceneObjects");
-
-    // Draw skinned character with GPU skinning
-    systems_->profiler().beginGpuZone(cmd, "HDR:SkinnedChar");
-    {
-        SceneBuilder& sceneBuilder = systems_->scene().getSceneBuilder();
-        if (sceneBuilder.hasCharacter()) {
-            const auto& sceneObjects = sceneBuilder.getRenderables();
-            size_t playerIndex = sceneBuilder.getPlayerObjectIndex();
-            if (playerIndex < sceneObjects.size()) {
-                const Renderable& playerObj = sceneObjects[playerIndex];
-                systems_->skinnedMesh().record(cmd, frameIndex, playerObj, sceneBuilder.getAnimatedCharacter());
-            }
-        }
-    }
-    systems_->profiler().endGpuZone(cmd, "HDR:SkinnedChar");
-
-    // Draw grass
-    systems_->profiler().beginGpuZone(cmd, "HDR:Grass");
-    systems_->grass().recordDraw(cmd, frameIndex, grassTime);
-    systems_->profiler().endGpuZone(cmd, "HDR:Grass");
-
-    // Draw water surface (after opaque geometry, blended)
-    // Use temporal tile culling: skip if no tiles were visible last frame
-    if (!systems_->hasWaterTileCull() ||
-        systems_->waterTileCull().wasWaterVisibleLastFrame(frameIndex)) {
-        systems_->profiler().beginGpuZone(cmd, "HDR:Water");
-        systems_->water().recordDraw(cmd, frameIndex);
-        systems_->profiler().endGpuZone(cmd, "HDR:Water");
-    }
-
-    // Draw falling leaves - after grass, before weather
-    systems_->profiler().beginGpuZone(cmd, "HDR:Leaves");
-    systems_->leaf().recordDraw(cmd, frameIndex, grassTime);
-    systems_->profiler().endGpuZone(cmd, "HDR:Leaves");
-
-    // Draw weather particles (rain/snow) - after opaque geometry
-    systems_->profiler().beginGpuZone(cmd, "HDR:Weather");
-    systems_->weather().recordDraw(cmd, frameIndex, grassTime);
-    systems_->profiler().endGpuZone(cmd, "HDR:Weather");
-
-    // Draw debug lines (if any are present - includes physics debug and road/river visualization)
-    if (systems_->debugLine().hasLines()) {
-        // Set up viewport and scissor for debug rendering
-        auto viewport = vk::Viewport{}
-            .setX(0.0f)
-            .setY(0.0f)
-            .setWidth(static_cast<float>(systems_->postProcess().getExtent().width))
-            .setHeight(static_cast<float>(systems_->postProcess().getExtent().height))
-            .setMinDepth(0.0f)
-            .setMaxDepth(1.0f);
-        vkCmd.setViewport(0, viewport);
-
-        VkExtent2D debugExtent = systems_->postProcess().getExtent();
-        auto scissor = vk::Rect2D{}
-            .setOffset({0, 0})
-            .setExtent(vk::Extent2D{}.setWidth(debugExtent.width).setHeight(debugExtent.height));
-        vkCmd.setScissor(0, scissor);
-
-        // Need to get viewProj from the current frame data
-        // For now, use the last known values (could be improved by passing as parameter)
-        systems_->debugLine().recordCommands(cmd, lastViewProj);
-    }
-
-    vkCmd.endRenderPass();
-
-    systems_->profiler().endGpuZone(cmd, "HDRPass");
+    // Delegate to the recorder
+    hdrPassRecorder_->record(cmd, frameIndex, grassTime);
 }
 
 void Renderer::recordHDRPassWithSecondaries(VkCommandBuffer cmd, uint32_t frameIndex, float grassTime,
                                             const std::vector<vk::CommandBuffer>& secondaries) {
-    vk::CommandBuffer vkCmd(cmd);
+    // Update config in case state changed at runtime
+    HDRPassRecorder::Config config;
+    config.terrainEnabled = terrainEnabled;
+    config.sceneObjectsPipeline = graphicsPipeline_ ? &(**graphicsPipeline_) : nullptr;
+    config.pipelineLayout = pipelineLayout_ ? &(**pipelineLayout_) : nullptr;
+    config.lastViewProj = &lastViewProj;
+    hdrPassRecorder_->setConfig(config);
 
-    // Wrap entire HDR pass in a GPU zone to measure total time
-    systems_->profiler().beginGpuZone(cmd, "HDRPass");
-
-    std::array<vk::ClearValue, 2> clearValues{};
-    clearValues[0].color = vk::ClearColorValue{std::array<float, 4>{0.0f, 0.0f, 0.0f, 1.0f}};
-    clearValues[1].depthStencil = vk::ClearDepthStencilValue{1.0f, 0};
-
-    VkExtent2D rawExtent = systems_->postProcess().getExtent();
-    vk::Extent2D hdrExtent = vk::Extent2D{}.setWidth(rawExtent.width).setHeight(rawExtent.height);
-
-    auto hdrPassInfo = vk::RenderPassBeginInfo{}
-        .setRenderPass(systems_->postProcess().getHDRRenderPass())
-        .setFramebuffer(systems_->postProcess().getHDRFramebuffer())
-        .setRenderArea(vk::Rect2D{{0, 0}, hdrExtent})
-        .setClearValues(clearValues);
-
-    // Begin render pass with secondary command buffer execution
-    vkCmd.beginRenderPass(hdrPassInfo, vk::SubpassContents::eSecondaryCommandBuffers);
-
-    // Execute all pre-recorded secondary command buffers
-    // Secondary buffers include all draw calls including debug lines
-    if (!secondaries.empty()) {
-        vkCmd.executeCommands(secondaries);
-    }
-
-    vkCmd.endRenderPass();
-
-    systems_->profiler().endGpuZone(cmd, "HDRPass");
+    // Delegate to the recorder
+    hdrPassRecorder_->recordWithSecondaries(cmd, frameIndex, grassTime, secondaries);
 }
 
 void Renderer::recordHDRPassSecondarySlot(VkCommandBuffer cmd, uint32_t frameIndex, float grassTime, uint32_t slot) {
-    vk::CommandBuffer vkCmd(cmd);
+    // Update config in case state changed at runtime
+    HDRPassRecorder::Config config;
+    config.terrainEnabled = terrainEnabled;
+    config.sceneObjectsPipeline = graphicsPipeline_ ? &(**graphicsPipeline_) : nullptr;
+    config.pipelineLayout = pipelineLayout_ ? &(**pipelineLayout_) : nullptr;
+    config.lastViewProj = &lastViewProj;
+    hdrPassRecorder_->setConfig(config);
 
-    // Each slot records a group of draw calls to a secondary command buffer
-    // The secondary buffer has already been begun with render pass inheritance
-
-    switch (slot) {
-    case 0:
-        // Slot 0: Sky + Terrain + Catmull-Clark (geometry base)
-        systems_->profiler().beginGpuZone(cmd, "HDR:Sky");
-        systems_->sky().recordDraw(cmd, frameIndex);
-        systems_->profiler().endGpuZone(cmd, "HDR:Sky");
-
-        if (terrainEnabled) {
-            systems_->profiler().beginGpuZone(cmd, "HDR:Terrain");
-            systems_->terrain().recordDraw(cmd, frameIndex);
-            systems_->profiler().endGpuZone(cmd, "HDR:Terrain");
-        }
-
-        systems_->profiler().beginGpuZone(cmd, "HDR:CatmullClark");
-        systems_->catmullClark().recordDraw(cmd, frameIndex);
-        systems_->profiler().endGpuZone(cmd, "HDR:CatmullClark");
-        break;
-
-    case 1:
-        // Slot 1: Scene Objects + Skinned Character (scene meshes)
-        systems_->profiler().beginGpuZone(cmd, "HDR:SceneObjects");
-        vkCmd.bindPipeline(vk::PipelineBindPoint::eGraphics, **graphicsPipeline_);
-        recordSceneObjects(cmd, frameIndex);
-        systems_->profiler().endGpuZone(cmd, "HDR:SceneObjects");
-
-        systems_->profiler().beginGpuZone(cmd, "HDR:SkinnedChar");
-        {
-            SceneBuilder& sceneBuilder = systems_->scene().getSceneBuilder();
-            if (sceneBuilder.hasCharacter()) {
-                const auto& sceneObjects = sceneBuilder.getRenderables();
-                size_t playerIndex = sceneBuilder.getPlayerObjectIndex();
-                if (playerIndex < sceneObjects.size()) {
-                    const Renderable& playerObj = sceneObjects[playerIndex];
-                    systems_->skinnedMesh().record(cmd, frameIndex, playerObj, sceneBuilder.getAnimatedCharacter());
-                }
-            }
-        }
-        systems_->profiler().endGpuZone(cmd, "HDR:SkinnedChar");
-        break;
-
-    case 2:
-        // Slot 2: Grass + Water + Leaves + Weather + Debug lines (vegetation/effects/debug)
-        systems_->profiler().beginGpuZone(cmd, "HDR:Grass");
-        systems_->grass().recordDraw(cmd, frameIndex, grassTime);
-        systems_->profiler().endGpuZone(cmd, "HDR:Grass");
-
-        if (!systems_->hasWaterTileCull() ||
-            systems_->waterTileCull().wasWaterVisibleLastFrame(frameIndex)) {
-            systems_->profiler().beginGpuZone(cmd, "HDR:Water");
-            systems_->water().recordDraw(cmd, frameIndex);
-            systems_->profiler().endGpuZone(cmd, "HDR:Water");
-        }
-
-        systems_->profiler().beginGpuZone(cmd, "HDR:Leaves");
-        systems_->leaf().recordDraw(cmd, frameIndex, grassTime);
-        systems_->profiler().endGpuZone(cmd, "HDR:Leaves");
-
-        systems_->profiler().beginGpuZone(cmd, "HDR:Weather");
-        systems_->weather().recordDraw(cmd, frameIndex, grassTime);
-        systems_->profiler().endGpuZone(cmd, "HDR:Weather");
-
-        // Debug lines (recorded in secondary buffer for thread safety)
-        if (systems_->debugLine().hasLines()) {
-            VkExtent2D debugExtent = systems_->postProcess().getExtent();
-            auto viewport = vk::Viewport{}
-                .setX(0.0f)
-                .setY(0.0f)
-                .setWidth(static_cast<float>(debugExtent.width))
-                .setHeight(static_cast<float>(debugExtent.height))
-                .setMinDepth(0.0f)
-                .setMaxDepth(1.0f);
-            vkCmd.setViewport(0, viewport);
-
-            auto scissor = vk::Rect2D{}
-                .setOffset({0, 0})
-                .setExtent(vk::Extent2D{}.setWidth(debugExtent.width).setHeight(debugExtent.height));
-            vkCmd.setScissor(0, scissor);
-
-            systems_->debugLine().recordCommands(cmd, lastViewProj);
-        }
-        break;
-
-    default:
-        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
-            "recordHDRPassSecondarySlot: Unknown slot %u", slot);
-        break;
-    }
+    // Delegate to the recorder
+    hdrPassRecorder_->recordSecondarySlot(cmd, frameIndex, grassTime, slot);
 }
 
 // ===== GPU Skinning Implementation =====
@@ -1778,42 +1156,6 @@ void Renderer::updateHiZObjectData() {
     }
 
     systems_->hiZ().updateObjectData(cullObjects);
-}
-
-// ============================================================================
-// Cloud and sky exposure control - delegates to EnvironmentControlSubsystem
-// ============================================================================
-
-void Renderer::setCloudCoverage(float coverage) {
-    systems_->environmentControl().setCloudCoverage(coverage);
-}
-
-float Renderer::getCloudCoverage() const {
-    return systems_->environmentControl().getCloudCoverage();
-}
-
-void Renderer::setCloudDensity(float density) {
-    systems_->environmentControl().setCloudDensity(density);
-}
-
-float Renderer::getCloudDensity() const {
-    return systems_->environmentControl().getCloudDensity();
-}
-
-void Renderer::setSkyExposure(float exposure) {
-    systems_->environmentControl().setSkyExposure(exposure);
-}
-
-float Renderer::getSkyExposure() const {
-    return systems_->environmentControl().getSkyExposure();
-}
-
-void Renderer::toggleCloudStyle() {
-    systems_->environmentControl().toggleCloudStyle();
-}
-
-bool Renderer::isUsingParaboloidClouds() const {
-    return systems_->environmentControl().isUsingParaboloidClouds();
 }
 
 // Resource access

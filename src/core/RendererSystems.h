@@ -391,6 +391,9 @@ public:
     const ITreeControl& treeControl() const;
     IDebugControl& debugControl();
     const IDebugControl& debugControl() const;
+    // Direct access for internal callers that need concrete type
+    DebugControlSubsystem& debugControlSubsystem();
+    const DebugControlSubsystem& debugControlSubsystem() const;
     IProfilerControl& profilerControl();
     const IProfilerControl& profilerControl() const;
     IPerformanceControl& performanceControl();

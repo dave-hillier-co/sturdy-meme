@@ -437,6 +437,8 @@ const ITreeControl& RendererSystems::treeControl() const { return *treeControl_;
 
 IDebugControl& RendererSystems::debugControl() { return *debugControl_; }
 const IDebugControl& RendererSystems::debugControl() const { return *debugControl_; }
+DebugControlSubsystem& RendererSystems::debugControlSubsystem() { return *debugControl_; }
+const DebugControlSubsystem& RendererSystems::debugControlSubsystem() const { return *debugControl_; }
 
 IProfilerControl& RendererSystems::profilerControl() { return *profiler_; }
 const IProfilerControl& RendererSystems::profilerControl() const { return *profiler_; }

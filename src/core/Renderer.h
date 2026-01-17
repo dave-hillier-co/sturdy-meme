@@ -22,11 +22,14 @@
 #include "RendererSystems.h"
 #include "PerformanceToggles.h"
 #include "TripleBuffering.h"
+#include "RendererCore.h"
 #include "vulkan/AsyncTransferManager.h"
 #include "vulkan/ThreadedCommandPool.h"
 #include "pipeline/FrameGraph.h"
 #include "loading/LoadJobFactory.h"
 #include "asset/AssetRegistry.h"
+#include "passes/ShadowPassRecorder.h"
+#include "passes/HDRPassRecorder.h"
 
 // Forward declarations
 class PhysicsWorld;
@@ -120,34 +123,6 @@ public:
     VulkanContext& getVulkanContext() { return *vulkanContext_; }
     const VulkanContext& getVulkanContext() const { return *vulkanContext_; }
 
-    // Interface accessors - provide access to GUI-facing control interfaces via RendererSystems
-    ILocationControl& getLocationControl() { return systems_->locationControl(); }
-    const ILocationControl& getLocationControl() const { return systems_->locationControl(); }
-    IWeatherState& getWeatherState() { return systems_->weatherState(); }
-    const IWeatherState& getWeatherState() const { return systems_->weatherState(); }
-    IEnvironmentControl& getEnvironmentControl() { return systems_->environmentControl(); }
-    const IEnvironmentControl& getEnvironmentControl() const { return systems_->environmentControl(); }
-    IPostProcessState& getPostProcessState() { return systems_->postProcessState(); }
-    const IPostProcessState& getPostProcessState() const { return systems_->postProcessState(); }
-    ICloudShadowControl& getCloudShadowControl() { return systems_->cloudShadowControl(); }
-    const ICloudShadowControl& getCloudShadowControl() const { return systems_->cloudShadowControl(); }
-    ITerrainControl& getTerrainControl() { return systems_->terrainControl(); }
-    const ITerrainControl& getTerrainControl() const { return systems_->terrainControl(); }
-    IWaterControl& getWaterControl() { return systems_->waterControl(); }
-    const IWaterControl& getWaterControl() const { return systems_->waterControl(); }
-    ITreeControl& getTreeControl() { return systems_->treeControl(); }
-    const ITreeControl& getTreeControl() const { return systems_->treeControl(); }
-    IDebugControl& getDebugControl() { return systems_->debugControl(); }
-    const IDebugControl& getDebugControl() const { return systems_->debugControl(); }
-    IProfilerControl& getProfilerControl() { return systems_->profilerControl(); }
-    const IProfilerControl& getProfilerControl() const { return systems_->profilerControl(); }
-    IPerformanceControl& getPerformanceControl() { return systems_->performanceControl(); }
-    const IPerformanceControl& getPerformanceControl() const { return systems_->performanceControl(); }
-    ISceneControl& getSceneControl() { return systems_->sceneControl(); }
-    const ISceneControl& getSceneControl() const { return systems_->sceneControl(); }
-    IPlayerControl& getPlayerControl() { return systems_->playerControl(); }
-    const IPlayerControl& getPlayerControl() const { return systems_->playerControl(); }
-
     // GUI rendering callback (called during swapchain render pass)
     using GuiRenderCallback = std::function<void(VkCommandBuffer)>;
     void setGuiRenderCallback(GuiRenderCallback callback) { guiRenderCallback = callback; }
@@ -164,30 +139,16 @@ public:
     void setTerrainEnabled(bool enabled) { terrainEnabled = enabled; }
     bool isTerrainEnabled() const { return terrainEnabled; }
 
-    // Cloud parameters - delegated to EnvironmentControlSubsystem (authoritative source)
-    void setCloudCoverage(float coverage);
-    float getCloudCoverage() const;
-    void setCloudDensity(float density);
-    float getCloudDensity() const;
-    void setSkyExposure(float exposure);
-    float getSkyExposure() const;
-
     // Debug visualization toggles (local state)
     void toggleCascadeDebug() { showCascadeDebug = !showCascadeDebug; }
     bool isShowingCascadeDebug() const { return showCascadeDebug; }
     void toggleSnowDepthDebug() { showSnowDepthDebug = !showSnowDepthDebug; }
     bool isShowingSnowDepthDebug() const { return showSnowDepthDebug; }
-    void toggleCloudStyle();
-    bool isUsingParaboloidClouds() const;
 
 
     // Physics debug (local state)
     void setPhysicsDebugEnabled(bool enabled) { physicsDebugEnabled = enabled; }
     bool isPhysicsDebugEnabled() const { return physicsDebugEnabled; }
-
-    // Road/river visualization (uses debug line system)
-    // Delegates to DebugControlSubsystem - use getDebugControl() for GUI access
-    void updateRoadRiverVisualization();
 
     // Resource access
     VkCommandPool getCommandPool() const { return **commandPool_; }
@@ -242,28 +203,15 @@ private:
     bool createDescriptorSets();
     bool createDepthResources();
 
-
-    void updateUniformBuffer(uint32_t currentImage, const Camera& camera);
-
     // Render pass recording helpers (pure - only record commands, no state mutation)
     void recordShadowPass(VkCommandBuffer cmd, uint32_t frameIndex, float grassTime, const glm::vec3& cameraPosition);
     void recordHDRPass(VkCommandBuffer cmd, uint32_t frameIndex, float grassTime);
     void recordHDRPassWithSecondaries(VkCommandBuffer cmd, uint32_t frameIndex, float grassTime,
                                       const std::vector<vk::CommandBuffer>& secondaries);
     void recordHDRPassSecondarySlot(VkCommandBuffer cmd, uint32_t frameIndex, float grassTime, uint32_t slot);
-    void recordSceneObjects(VkCommandBuffer cmd, uint32_t frameIndex);
 
     // Setup frame graph passes with dependencies
     void setupFrameGraph();
-
-    // Pure calculation helpers (no state mutation)
-    glm::vec2 calculateSunScreenPos(const Camera& camera, const glm::vec3& sunDir) const;
-
-    // Build per-frame shared state from camera and timing
-    FrameData buildFrameData(const Camera& camera, float deltaTime, float time) const;
-
-    // Build render resources snapshot for pipeline stages
-    RenderResources buildRenderResources(uint32_t swapchainImageIndex) const;
 
     std::string resourcePath;
     Config config_;  // Renderer configuration
@@ -299,6 +247,13 @@ private:
     // Triple buffering: frame synchronization and indexing
     TripleBuffering frameSync_;
 
+    // Core frame execution (owns the frame loop mechanics)
+    RendererCore rendererCore_;
+
+    // Pass recorders (encapsulate pass recording logic extracted from Renderer)
+    std::unique_ptr<ShadowPassRecorder> shadowPassRecorder_;
+    std::unique_ptr<HDRPassRecorder> hdrPassRecorder_;
+
     // Multi-threading infrastructure
     AsyncTransferManager asyncTransferManager_;
     ThreadedCommandPool threadedCommandPool_;
@@ -331,8 +286,6 @@ private:
 
     // GUI rendering callback
     GuiRenderCallback guiRenderCallback;
-
-    void updateLightBuffer(uint32_t currentImage, const Camera& camera);
 
     // Skinned mesh rendering
     bool initSkinnedMeshRenderer();

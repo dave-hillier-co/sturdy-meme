@@ -5,8 +5,6 @@
 #include "core/pipeline/ComputePipelineBuilder.h"
 #include "core/vulkan/PipelineLayoutBuilder.h"
 #include "core/vulkan/BarrierHelpers.h"
-#include "scene/SceneManager.h"
-#include "vegetation/RockSystem.h"
 #include <SDL3/SDL_log.h>
 #include <vulkan/vulkan.hpp>
 #include <array>
@@ -388,11 +386,11 @@ void HiZSystem::updateObjectData(const std::vector<CullObjectData>& objects) {
     objectDataBuffer_.unmap();
 }
 
-void HiZSystem::gatherObjects(const SceneManager& scene, const RockSystem& rock) {
+void HiZSystem::gatherObjects(const std::vector<Renderable>& sceneObjects,
+                               const std::vector<Renderable>& rockObjects) {
     std::vector<CullObjectData> cullObjects;
 
     // Gather scene objects for culling
-    const auto& sceneObjects = scene.getRenderables();
     for (size_t i = 0; i < sceneObjects.size(); ++i) {
         const auto& obj = sceneObjects[i];
         if (obj.mesh == nullptr) continue;
@@ -420,7 +418,6 @@ void HiZSystem::gatherObjects(const SceneManager& scene, const RockSystem& rock)
     }
 
     // Also add procedural rocks
-    const auto& rockObjects = rock.getSceneObjects();
     for (size_t i = 0; i < rockObjects.size(); ++i) {
         const auto& obj = rockObjects[i];
         if (obj.mesh == nullptr) continue;

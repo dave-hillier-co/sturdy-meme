@@ -103,6 +103,7 @@ set(SOURCES
     src/vegetation/TreeSystem.cpp
     src/vegetation/TreeGenerator.cpp
     src/vegetation/ThreadedTreeGenerator.cpp
+    src/vegetation/VegetationContentGenerator.cpp
     src/vegetation/TreeOptions.cpp
     src/vegetation/TreeRenderer.cpp
     src/vegetation/TreeLeafCulling.cpp

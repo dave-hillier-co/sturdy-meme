@@ -38,6 +38,7 @@
 #include "FoamBuffer.h"
 #include "WaterTileCull.h"
 #include "WaterGBuffer.h"
+#include "WaterSystemGroup.h"
 #include "SSRSystem.h"
 #include "DebugLineSystem.h"
 #include "Profiler.h"
@@ -773,127 +774,29 @@ bool Renderer::initSubsystems(const InitContext& initCtx) {
     // Factory always returns valid profiler - GPU may be disabled if init fails
     systems_->setProfiler(Profiler::create(device, physicalDevice, MAX_FRAMES_IN_FLIGHT));
 
-    // Create WaterSystem via factory before initializing other water subsystems
+    // Create all water systems using WaterSystemGroup factory
     {
-        INIT_PROFILE_PHASE("WaterSystem");
-        WaterSystem::InitInfo waterInfo{};
-        waterInfo.device = device;
-        waterInfo.physicalDevice = physicalDevice;
-        waterInfo.allocator = allocator;
-        waterInfo.descriptorPool = initCtx.descriptorPool;
-        waterInfo.hdrRenderPass = core.hdr.renderPass;
-        waterInfo.shaderPath = initCtx.shaderPath;
-        waterInfo.framesInFlight = MAX_FRAMES_IN_FLIGHT;
-        waterInfo.extent = initCtx.extent;
-        waterInfo.commandPool = **commandPool_;
-        waterInfo.graphicsQueue = graphicsQueue;
-        waterInfo.waterSize = 65536.0f;  // Extend well beyond terrain for horizon
-        waterInfo.assetPath = resourcePath;
-        waterInfo.raiiDevice = &vulkanContext_->getRaiiDevice();
+        INIT_PROFILE_PHASE("WaterSystems");
+        WaterSystemGroup::CreateDeps waterDeps{
+            initCtx,
+            core.hdr.renderPass,
+            65536.0f,  // waterSize - extend well beyond terrain for horizon
+            resourcePath
+        };
 
-        auto waterSystem = WaterSystem::create(waterInfo);
-        if (!waterSystem) {
-            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create WaterSystem");
-            return false;
-        }
-        systems_->setWater(std::move(waterSystem));
+        auto waterBundle = WaterSystemGroup::createAll(waterDeps);
+        if (!waterBundle) return false;
+
+        systems_->setWater(std::move(waterBundle->system));
+        systems_->setFlowMap(std::move(waterBundle->flowMap));
+        systems_->setWaterDisplacement(std::move(waterBundle->displacement));
+        systems_->setFoam(std::move(waterBundle->foam));
+        systems_->setSSR(std::move(waterBundle->ssr));
+        if (waterBundle->tileCull) systems_->setWaterTileCull(std::move(waterBundle->tileCull));
+        if (waterBundle->gBuffer) systems_->setWaterGBuffer(std::move(waterBundle->gBuffer));
     }
 
-    // Create water subsystems via factories before constructing WaterSubsystems struct
-    // FlowMapGenerator
-    FlowMapGenerator::InitInfo flowInfo{};
-    flowInfo.device = device;
-    flowInfo.allocator = allocator;
-    flowInfo.commandPool = **commandPool_;
-    flowInfo.queue = graphicsQueue;
-    flowInfo.raiiDevice = &vulkanContext_->getRaiiDevice();
-
-    auto flowMapGenerator = FlowMapGenerator::create(flowInfo);
-    if (!flowMapGenerator) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create FlowMapGenerator");
-        return false;
-    }
-    systems_->setFlowMap(std::move(flowMapGenerator));
-
-    // WaterDisplacement
-    WaterDisplacement::InitInfo dispInfo{};
-    dispInfo.device = device;
-    dispInfo.physicalDevice = physicalDevice;
-    dispInfo.allocator = allocator;
-    dispInfo.commandPool = **commandPool_;
-    dispInfo.computeQueue = graphicsQueue;
-    dispInfo.framesInFlight = MAX_FRAMES_IN_FLIGHT;
-    dispInfo.displacementResolution = 512;
-    dispInfo.worldSize = 65536.0f;
-    dispInfo.raiiDevice = &vulkanContext_->getRaiiDevice();
-
-    auto waterDisplacement = WaterDisplacement::create(dispInfo);
-    if (!waterDisplacement) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create WaterDisplacement");
-        return false;
-    }
-    systems_->setWaterDisplacement(std::move(waterDisplacement));
-
-    // FoamBuffer
-    FoamBuffer::InitInfo foamInfo{};
-    foamInfo.device = device;
-    foamInfo.physicalDevice = physicalDevice;
-    foamInfo.allocator = allocator;
-    foamInfo.commandPool = **commandPool_;
-    foamInfo.computeQueue = graphicsQueue;
-    foamInfo.shaderPath = initCtx.shaderPath;
-    foamInfo.framesInFlight = MAX_FRAMES_IN_FLIGHT;
-    foamInfo.resolution = 512;
-    foamInfo.worldSize = 65536.0f;
-    foamInfo.raiiDevice = &vulkanContext_->getRaiiDevice();
-
-    auto foamBuffer = FoamBuffer::create(foamInfo);
-    if (!foamBuffer) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create FoamBuffer");
-        return false;
-    }
-    systems_->setFoam(std::move(foamBuffer));
-
-    // WaterTileCull
-    WaterTileCull::InitInfo tileCullInfo{};
-    tileCullInfo.device = device;
-    tileCullInfo.physicalDevice = physicalDevice;
-    tileCullInfo.allocator = allocator;
-    tileCullInfo.commandPool = **commandPool_;
-    tileCullInfo.computeQueue = graphicsQueue;
-    tileCullInfo.shaderPath = initCtx.shaderPath;
-    tileCullInfo.framesInFlight = MAX_FRAMES_IN_FLIGHT;
-    tileCullInfo.extent = initCtx.extent;
-    tileCullInfo.tileSize = 32;
-    tileCullInfo.raiiDevice = &vulkanContext_->getRaiiDevice();
-
-    auto waterTileCull = WaterTileCull::create(tileCullInfo);
-    if (waterTileCull) {
-        systems_->setWaterTileCull(std::move(waterTileCull));
-    } else {
-        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "Failed to create WaterTileCull - continuing without");
-    }
-
-    // WaterGBuffer
-    WaterGBuffer::InitInfo gbufferInfo{};
-    gbufferInfo.device = device;
-    gbufferInfo.physicalDevice = physicalDevice;
-    gbufferInfo.allocator = allocator;
-    gbufferInfo.fullResExtent = initCtx.extent;
-    gbufferInfo.resolutionScale = 0.5f;
-    gbufferInfo.framesInFlight = MAX_FRAMES_IN_FLIGHT;
-    gbufferInfo.shaderPath = initCtx.shaderPath;
-    gbufferInfo.descriptorPool = initCtx.descriptorPool;
-    gbufferInfo.raiiDevice = &vulkanContext_->getRaiiDevice();
-
-    auto waterGBuffer = WaterGBuffer::create(gbufferInfo);
-    if (waterGBuffer) {
-        systems_->setWaterGBuffer(std::move(waterGBuffer));
-    } else {
-        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "Failed to create WaterGBuffer - continuing without");
-    }
-
-    // Initialize water subsystems (configure WaterSystem, generate flow map, create SSR)
+    // Initialize water subsystems (configure WaterSystem, generate flow map)
     WaterSubsystems waterSubs{systems_->water(), systems_->waterDisplacement(), systems_->flowMap(), systems_->foam(), *systems_, systems_->waterTileCull(), systems_->waterGBuffer()};
     if (!RendererInit::initWaterSubsystems(waterSubs, initCtx, core.hdr.renderPass,
                                             systems_->shadow(), systems_->terrain(), terrainConfig, systems_->postProcess(), **depthSampler_)) return false;

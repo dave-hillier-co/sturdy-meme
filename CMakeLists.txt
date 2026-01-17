@@ -154,6 +154,7 @@ set(SOURCES
     src/water/WaterDisplacement.cpp
     src/water/FoamBuffer.cpp
     src/water/WaterTileCull.cpp
+    src/water/WaterSystemGroup.cpp
     # GUI
     src/gui/GuiSystem.cpp
     src/gui/GuiTimeTab.cpp

@@ -79,16 +79,20 @@ public:
     // tileWorldSize: tile extent in world units
     // heightScale: multiplier for height values
     // worldPosition: center of tile in world coordinates
+    // useHalfTexelOffset: apply half-texel offset for GPU texture alignment (default true)
+    //                     set to false for tiles with overlap pixels that align to boundaries
     PhysicsBodyID createTerrainHeightfieldAtPosition(const float* samples, uint32_t sampleCount,
                                                       float tileWorldSize, float heightScale,
-                                                      const glm::vec3& worldPosition);
+                                                      const glm::vec3& worldPosition,
+                                                      bool useHalfTexelOffset = true);
 
     // Terrain heightfield at position with hole mask support
     // holeMask: row-major uint8_t values, same dimensions as height samples
     //           values > 127 indicate holes (no collision)
     PhysicsBodyID createTerrainHeightfieldAtPosition(const float* samples, const uint8_t* holeMask,
                                                       uint32_t sampleCount, float tileWorldSize,
-                                                      float heightScale, const glm::vec3& worldPosition);
+                                                      float heightScale, const glm::vec3& worldPosition,
+                                                      bool useHalfTexelOffset = true);
 
     // Dynamic rigid bodies
     PhysicsBodyID createBox(const glm::vec3& position, const glm::vec3& halfExtents,

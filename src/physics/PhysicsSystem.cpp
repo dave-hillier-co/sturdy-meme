@@ -275,16 +275,18 @@ PhysicsBodyID PhysicsWorld::createTerrainHeightfield(const float* samples, const
 
 PhysicsBodyID PhysicsWorld::createTerrainHeightfieldAtPosition(const float* samples, uint32_t sampleCount,
                                                                  float tileWorldSize, float heightScale,
-                                                                 const glm::vec3& worldPosition) {
+                                                                 const glm::vec3& worldPosition,
+                                                                 bool useHalfTexelOffset) {
     return createHeightfieldInternal(samples, nullptr, sampleCount, tileWorldSize, heightScale,
-                                     worldPosition, true);
+                                     worldPosition, useHalfTexelOffset);
 }
 
 PhysicsBodyID PhysicsWorld::createTerrainHeightfieldAtPosition(const float* samples, const uint8_t* holeMask,
                                                                  uint32_t sampleCount, float tileWorldSize,
-                                                                 float heightScale, const glm::vec3& worldPosition) {
+                                                                 float heightScale, const glm::vec3& worldPosition,
+                                                                 bool useHalfTexelOffset) {
     return createHeightfieldInternal(samples, holeMask, sampleCount, tileWorldSize, heightScale,
-                                     worldPosition, true);
+                                     worldPosition, useHalfTexelOffset);
 }
 
 PhysicsBodyID PhysicsWorld::createBox(const glm::vec3& position, const glm::vec3& halfExtents,

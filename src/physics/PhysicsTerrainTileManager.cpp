@@ -110,7 +110,8 @@ bool PhysicsTerrainTileManager::loadPhysicsTile(int32_t tileX, int32_t tileZ, ui
     float tileWorldSize = tile->worldMaxX - tile->worldMinX;
 
     // Create Jolt heightfield body at tile position
-    uint32_t sampleCount = tileCache_->get().getTileResolution();
+    // Infer sample count from actual tile data (handles tiles with overlap pixels)
+    uint32_t sampleCount = static_cast<uint32_t>(std::sqrt(tile->cpuData.size()));
 
     // Generate per-tile hole mask from tile cache
     std::vector<uint8_t> tileHoleMask = tileCache_->get().rasterizeHolesForTile(
@@ -118,13 +119,16 @@ bool PhysicsTerrainTileManager::loadPhysicsTile(int32_t tileX, int32_t tileZ, ui
         tile->worldMaxX, tile->worldMaxZ,
         sampleCount);
 
+    // Tiles with overlap pixels have samples that align directly to world boundaries
+    // (sample 0 at worldMin, sample N-1 at worldMax), so disable half-texel offset
     PhysicsBodyID bodyID = physics_->get().createTerrainHeightfieldAtPosition(
         tile->cpuData.data(),
         tileHoleMask.data(),
         sampleCount,
         tileWorldSize,
         config_.heightScale,
-        glm::vec3(tileCenterX, 0.0f, tileCenterZ)
+        glm::vec3(tileCenterX, 0.0f, tileCenterZ),
+        false  // useHalfTexelOffset - disabled for overlap tiles
     );
 
     if (bodyID == INVALID_BODY_ID) {

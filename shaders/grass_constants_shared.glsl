@@ -63,9 +63,10 @@ CONST_FLOAT_DERIVED(GRASS_HEIGHT_RANGE, GRASS_HEIGHT_MAX - GRASS_HEIGHT_MIN);
 // =============================================================================
 
 // Tile grid size - each tile covers a square area of the world
-// Ghost of Tsushima renders ~83k blades from ~1M considered with 100k budget
-// 128 x 128 grid at 0.2m spacing = 25.6m x 25.6m per tile
-CONST_UINT(GRASS_TILE_GRID_SIZE, 128);
+// Ghost of Tsushima: ~1M potential blades, renders ~83k with 100k budget
+// 200 x 200 grid = 40k per tile, 5x5 tiles = 1M potential blades
+// 200 x 0.2m spacing = 40m per tile, 5x5 = 200m coverage
+CONST_UINT(GRASS_TILE_GRID_SIZE, 200);
 
 // Dispatch size in workgroups per tile
 CONST_UINT_DERIVED(GRASS_TILE_DISPATCH_SIZE, (GRASS_TILE_GRID_SIZE + GRASS_WORKGROUP_SIZE - 1) / GRASS_WORKGROUP_SIZE);

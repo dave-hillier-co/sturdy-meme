@@ -183,8 +183,8 @@ void main() {
         drawCmd.vertexCount = GRASS_VERTICES_PER_BLADE;
     }
 
-    // Bounds check - use tile grid size
-    if (gridX >= GRASS_TILE_GRID_SIZE || gridZ >= GRASS_TILE_GRID_SIZE) return;
+    // Bounds check - extend by 1 to cover tile edge (prevents gaps between tiles)
+    if (gridX > GRASS_TILE_GRID_SIZE || gridZ > GRASS_TILE_GRID_SIZE) return;
 
     // Calculate world position relative to tile origin
     float x = push.tileOriginX + float(gridX) * push.spacing;

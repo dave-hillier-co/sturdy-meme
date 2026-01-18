@@ -383,9 +383,9 @@ Each phase should include:
 | 1 - DisplacementSystem | ✅ Complete | Extracted to standalone system |
 | 2 - VegetationRenderContext | ✅ Complete | Context struct introduced |
 | 3 - ParticleSystem decoupling | ✅ Complete | GrassSystem uses SystemLifecycleHelper + BufferSetManager directly |
-| 4 - TileManager split | Pending | |
+| 4 - TileManager split | ✅ Complete | GrassTileTracker (logic) + GrassTileResourcePool (Vulkan) |
 | 5 - LOD Strategy | Pending | |
-| 6 - Async Loading | Pending | |
+| 6 - Async Loading | ✅ Complete | GrassTileLoadQueue with priority and frame budget |
 | 7 - Debug Viz | Pending | |
 
 ---

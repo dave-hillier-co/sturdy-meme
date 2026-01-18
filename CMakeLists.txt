@@ -115,6 +115,8 @@ set(SOURCES
     src/vegetation/GrassTile.cpp
     src/vegetation/VegetationRenderContext.cpp
     src/vegetation/GrassTileManager.cpp
+    src/vegetation/GrassTileTracker.cpp
+    src/vegetation/GrassTileResourcePool.cpp
     src/vegetation/LeafSystem.cpp
     src/vegetation/RockSystem.cpp
     src/vegetation/TreeSystem.cpp

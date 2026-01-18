@@ -1,0 +1,761 @@
+[Music]
+my name is eric woley and i'm a graphics
+programmer at sucker punch productions
+this talk is about the procedural grass
+systems we used in ghost tsushima to
+achieve our art direction goals
+a quick note barring some unforeseen
+circumstance i'll be available in the
+live q a chat for this video when it's
+presented so feel free to put any
+questions you have during the talk there
+and we'll answer them as soon as i am
+able
+ghost that tsushima is set on the island
+of tsushima off the coast of ancient
+japan and from early on one of the
+primary goals was to portray the natural
+beauty of the island
+this meant a lot of foliage
+giant forests of gently swing trees
+endless rolling hills of grass and
+everything in between
+art direction also decided to lean into
+a painted feel where instead of having
+fields of many intermingled types of
+flowers shrubs and ferns for instance we
+opted to have large swaths of a single
+type of flower as if painted there by
+giant brush stroke
+very
+very early on we experimented with
+traditional grass cards
+these ended up not being desirable for
+our goals for a couple of reasons
+first wind was something we really
+wanted to push on and having our
+animation tied to the entire grass card
+was very limiting second
+overdraw was problematic for the density
+of foliage we were looking to have in
+our world
+around this time we found an excellent
+blog post by altera called procedural
+grass rendering that inspired a lot of
+our approach i'll have a link to their
+blog post at the end of the talk and i
+definitely recommend you check it out
+so here's what we came up with
+the scene considers just over 1 million
+blades of grass and renders about 83 000
+of them
+each individually animating with the
+wind and taking about two and a half
+milliseconds end to end
+the grass is highly artist configurable
+we use the same grass system for our
+giant fields of pampus grass our burnt
+out fields and our huge fields of
+flowers
+the grass interacts with our wind system
+to help give the player a sense of
+direction to support our guiding wind
+mechanic where the direction of the wind
+shows the player where to go
+the grass reacts to the player and
+enemies moving through it too
+so here's how i'm hoping to organize
+this talk
+we'll talk first about what our compute
+shaders produce and how that information
+gets passed around then we'll go into
+our vertex shaders and how they handle
+things followed by how we determine our
+material data and our pixel shaders
+the last section is a bit of a grab bag
+of things that help pull the whole
+system together in an actual production
+engine
+so let's get started
+the first step for us is chopping the
+world up into tiles
+these tiles contain a suite of textures
+for things like the height of the
+terrain the material to render the
+terrain as and for our purposes here
+what type of grass to put at that
+location and how tall it should be
+those tiles are further subdivided into
+the tiles we actually render
+they sample from subsections of the
+textures in their parent tiles
+the textures are 5 12 by 5 12 which ends
+up meaning we have one texel every 39
+centimeters or so
+for each render tile we run one compute
+shader
+each lane in the compute shader gets a
+position on a grid within the tile and
+adds a random offset to pick our blade's
+position
+once we know where it is we do distance
+calling and frustum calling
+after that we sample from our previously
+mentioned textures to determine what
+types of grass it is and how tall it
+should be
+planes that either have the null grass
+type or have a height of zero are
+dropped
+now that we're fairly certain we have a
+grass blade we do occlusion calling late
+in the project we found this to be a
+small performance in the majority of
+shots
+each grass blade has a specific type
+which determines what artist authored
+parameters it uses
+each tile has a 512x512 texture that
+maps each tile position to a grass type
+stored as an 8-bit index into an array
+of grass parameters
+we can't do a bi-linear sample on this
+data since interpolating between up to
+four different indices is meaningless
+this is what it looks like if we do a
+simple point sample
+you can fairly clearly see the text of
+the texture that control the grass type
+so instead we do a gather then we
+randomly choose one of the grass types
+weighted by our position relative to the
+center of the four textiles this gives
+us a smoother dither transition than if
+we just did a point sample which is
+important for making it less obvious
+that we're driving our grass type from a
+low resolution texture
+now for each lane that's still active we
+fill in 16 floats of per blade instance
+data
+three floats for position and two for
+the facing direction of the blade
+this 2d facing vector determines the
+direction the blade of grass is pointing
+we put the strength of the wind at the
+blade's position which drives animation
+we place a per blade position based hash
+that drives various things on the blade
+including animation
+the type of grass it is which determines
+which set of artist author parameters to
+use
+clumping information which i'll go into
+more detail on in a second here
+and lastly various parameters for
+controlling the shape of the blade
+these parameters are influenced by upper
+blade hash what clump the blade belongs
+to the wind slope of the underlying
+terrain things moving through the grass
+and pushing it out of the way the
+position of the camera and more
+the way the blades interact with those
+things are all driven by artist author
+parameters and are different for each
+type of grass
+i want to draw attention to the clump
+values i mentioned in the previous slide
+before we added our clumping code all of
+our fields looked mostly like grass
+you'd want to golf on you could increase
+the randomness per blade to make it look
+messier but it didn't look more like a
+natural field
+it just looked random
+real fields vary maybe this area is in
+shadow in the morning and the grass
+grows less maybe this area has a bit
+more nitrogen in the soil and the grass
+grows taller
+to try and emulate this we decided to
+organize the grass into clumps and use
+which clump the blade belongs to to
+affect the other parameters
+we achieved this by using a procedural
+voronoi algorithm
+for any given position in our 2d space
+we look at the nearest nine points on a
+grid
+each point is jittered according to hash
+to give it variation
+then we assign this 2d sample point to
+the nearest points clump
+with this shared clump and our distance
+to it we can influence the various grass
+parameters
+we're going to adjust the height
+we can have the clump all point in the
+same direction
+we can pull the blades closer to the
+clump point
+we can make the blades all face away
+from the clump point
+or combinations of all those things
+so here's an overview of what our shader
+flow looks like overall
+our first compute shader fills in our
+instance data and accumulates our blade
+count
+a second compute shader which runs once
+the first is finished moves that blade
+count to the indirect draw arguments for
+this tile's draw call
+the second compute shooter runs just one
+wavefront and takes almost no time
+once it finishes and the indirect draw
+args are ready to go the vertex shaders
+will kick off and render according to
+the instance data
+finally the pixel shader just has to do
+the shading
+we don't process all the tiles at the
+same time though as the memory cost
+would be very high
+instead our instance data buffer can
+hold eight tiles worth of grass data
+we first run four tiles through their
+compute shaders then while their vertex
+and pixel shaders run we run the next
+four tiles through their compute shaders
+this double buffer strategy keeps the
+gpu busy and doesn't eat up our memory
+budget
+all right
+now that we've got a hand on our compute
+onto the vertex shader
+the vertex shaders are drawn with an
+instanced indexed draw call and no
+vertex streams they generate their
+output data just from their index and
+instance id
+each tile is one draw call and is either
+low load or high load
+lot grass has 15 verts per blade while
+the low lot has 7.
+for each vert we need to know a 0 to 1
+value for where it lies along the length
+of the blade and if it's on the left
+side or the right side it's worth noting
+at this point that the curvature of our
+grass blades isn't very well distributed
+and we therefore might not want to have
+our verts evenly distributed either
+to help with this we have an artist
+configurable parameter that lets them
+rescale where the verts go along the
+blade
+transitioning seamlessly between the two
+lods is a little bit tricky
+since our grass can have very high
+curvature there can be popping when we
+move to a lower number of verts to
+alleviate this the high lot blends
+towards the low lod as it nears it
+it's also worth mentioning that the low
+lot tiles are twice the size of the high
+lot tiles but have the same number of
+grass blades this means their grass
+blades are spread out twice as far
+to make the seamless the high lot tiles
+lot out three out of every four grass
+plates before they transition to the low
+lot tiles
+normally all of our verts are spent on a
+single blade but if the grass is short
+enough we fold the verts to form two
+blades instead
+this is one of the great ideas we got
+from altera and it really helps make
+areas of short grass denser
+so in addition to the placement along
+the blade in the left or right side of
+the blade there's also a which of the
+two blades mi variable we determine from
+the vertex id
+because the number of verts in our grasp
+blade is odd one of the blades end up
+having one less vertex than the other
+this causes us to have a weird triangle
+on one side
+for the low lods lower vertex count
+blade we don't have a tip because it's
+pretty noticeable how low poly it was
+when animating even at a distance
+[Music]
+now that we know which type of grass
+blade we are and relevant details about
+our vertex we have to decide where our
+vertex goes in world space
+the shape of each grass blade is a cubic
+bezier curve this has a lot of useful
+properties
+vertex positions along the blade are
+trivial to calculate
+the derivatives are also trivial to
+calculate which makes our normals very
+easy to determine
+and the control points give us a lot of
+control over the shape of the blade this
+makes it easy to animate the grass and
+also have lots of different shapes of
+grass
+but where do we place our bezier control
+points
+to start we decide the position of the
+tip relative to the base
+this is controlled by the tilt parameter
+from earlier as well as the facing
+next we define the midpoint which is
+controlled by the bend parameter if bend
+is zero the midpoint lies along the line
+between base and tip
+values larger than zero push it up and
+away from that line
+for split blades we keep the same
+general shape but push the two blades
+apart this keeps them facing the same
+general direction while still increasing
+coverage
+now that we know where our control
+points are it's straightforward to
+determine our world space position for
+our vertex
+we take our zero to one value that
+determines where we are along the blade
+and feed that into our bezier curve
+function
+next we take our facing direction flip
+the x and y and negate one to find a
+normal orthogonal to our facing
+we step our vertex in the normal
+direction the distance depending on the
+width of the blade calculated in the
+compute shader and scaled by where we
+are along the blade we want to taper
+down as we reach the tip
+next to find the vertex normal we find
+the derivative of the bezier curve at
+our position and cross it with the
+normal we just found
+but how do we make it move
+quick aside about our wind system we
+decided early on that we wanted to have
+a unified wind system that could be
+sampled on cpu and gpu and had
+relatively minimal overhead
+to that end
+we aim for simplicity
+this the wind is effectively 2d purlin
+noise shaped by user parameters and
+scrolled in the direction that the wind
+is blowing the purlin noise gives us a
+single wind push force value at a
+location which we combined with our 2d
+wind direction vector to use as an input
+to our various systems that react to the
+wind
+for grass in some particle systems we do
+an additional layer of purlin noise to
+get more complex motion
+if you want to know more about our wind
+check out my colleague bill rockenbeck's
+talk blowing from the west
+so back to our grass blade
+our facing was already influenced by the
+wind in the compute shader so now we
+just do some simple bobbing up and down
+this bobbing is a simple sine wave where
+the phase offset is affected by the per
+blade hash as well as the position along
+the grass blade to give the motion a
+swaying look the per blade hash offset
+ensures each blade's motion is different
+it's important to note at this point
+that the arc length of the bezier curve
+is not very easy to calculate and hard
+to control as the blade animates the arc
+length definitely varies
+however if the animation is kept
+relatively constrained this isn't
+noticeable
+that's the high level gist of how it's
+put together but there's a couple more
+pieces that helped sell the field
+first we tilt the normals of the grass
+blades outward a bit this helps give the
+grass blades a more natural rounded look
+and is a lot cheaper than adding more
+birds
+we also ran into difficulties making the
+fields look full enough adding more
+grass blades was of course an option but
+a rather expensive one
+instead we slightly shift the blade's
+verts in view space when the blade's
+normal is orthogonal to the view vector
+this subtly thickens the grass blade
+from the user's view with both excuse me
+which both means we spend less time
+rasterizing very thin triangles and the
+field has a fuller look
+we also struggled with very aliased
+specular highlights in the mid to far
+distance especially in the rain
+the normals of the grass blades at the
+distance end up varying dramatically in
+screen space and since the grass is very
+glossy
+there was a lot of noise as the grass
+animated it ended up glittering
+to help with this as the distance of the
+camera increases we start to learn the
+outputted normal towards a common normal
+for the grass clump this helps maintain
+the shape of the field while still
+reducing noise
+additionally we reduce gloss in the
+pixel shader
+this is reasonable if you think of gloss
+as a representation of how the surface
+normals vary at subpixel detail
+since the normal variance is increasing
+we reduce gloss
+so we have our grass blades and they're
+verts now we just have to shade those
+triangles
+our grass outputs to our deferred
+renderer's g buffers so all we have to
+do is come up with our material data
+the gloss is a simple 1d texture that we
+stretch across the width of the blade
+and repeat down the length
+for diffuse we have two textures
+the first works the same as gloss and
+gives the vein that runs down the grass
+blade and some variation over the width
+the second is a 2d texture that contains
+the actual color information
+the v dimension of the texture gives the
+color as it changes with the length of
+the blade
+this lets the base of the blade of grass
+be dark and fade to a light color higher
+up for instance
+the u dimension of the texture is
+controlled by the clump the grass blade
+belongs to rather than each individual
+blade having its own random color this
+lets us have splashes of variation
+throughout a field that can be
+controlled by artist preference
+in practice
+the color differences between clumps is
+authored to be very small to maintain
+our painted look but in the future i
+think this is worth more experimentation
+for translucency and immune occlusion we
+output constant values that vary over
+the length of the grass blade
+the translucency is fairly low at the
+base of the grass blade where it's
+thickest and reduces towards the tip
+ao functions the same
+being dark near the base or the light is
+likely to be colluded by other grass
+blades and lighter towards the tip
+okay so the question you probably have
+is why do we output ao values at all
+instead of just rying on ssao well our
+grass doesn't write velocity to our
+velocity buffer
+the stateless nature of the grass blades
+makes it a bit difficult but doable
+to find the position of the previous
+frame's vertex we'd need to cache off
+last frame's wind data since when speed
+and direction can be changing we'd also
+need to have the displacement buffer
+from last frame in case the player was
+walking over this grass
+and since a lot of wind and displacement
+information is processed in the compute
+shader we'd need to store the process
+data per blade for the vertex shutters
+to consume this is all very possible but
+the performance and memory constraints
+made it impractical
+that said if we did produce the velocity
+data for our temporally accumulated ssao
+to consume the way the grass works makes
+it a poor target for temporally
+accumulated effects
+the grass blades constantly wave back
+and forth over each other occluding and
+disoccluding non-stop so even if we did
+spend the perf to get correct velocities
+our ao would end up a splotchy and
+glittery mass
+so we have lots of sufficiently
+convincing grass blades but fields are
+not just endless blades of grass most of
+the time
+to complete the appearance we also
+procedurally place full artist authored
+assets throughout the fields
+this lets us easily add things like
+spider lilies tiny flowers or most often
+pampers grass
+our growth systems use a gpu instance
+draw system instead of creating full
+game objects
+the growth systems effectively output a
+stream of minimal data just position
+orientation and calling information and
+then draws large number of assets from
+that for more information on our growth
+systems check out my colleague matt
+pullman's talk samurai landscapes
+building and rendering sushima island on
+ps4
+when we load a tile we run a compute
+shader that generates the same data
+stream for the procedural grass field
+assets that the growth systems use
+we keep the nearest 3x3 tiles to the
+camera in memory and drop anything out
+of that so we don't burn too much
+keeping distant assets around
+the placement algorithm works similar to
+the grass blades
+a position in the tile randomly
+generates it then checks to see if the
+type of grass at that spot matches its
+type
+if so it adds procedural transform data
+to the stream to be rendered later
+i initially had just stubbed in the
+random jitter to come back and try and
+do something more complex but by the
+time i found time to do so the artist
+had already used the system to place
+these rice crops
+which worked pretty great so i just left
+it as is
+one of the biggest struggles we had with
+grass was how to handle very far lods
+the island of tsushima has locations the
+player can get to that let them see
+almost the entire island at once and
+rendering grass blades out that far is
+obviously impractical
+i experimented with some view dependent
+ways of running the terrain that were
+driven by the clump information after
+all
+if the clump normal if the clumps drive
+the normals they should be able to
+control the far view where the normal is
+dominant
+unfortunately this ended up being
+impractically expensive additionally
+once we later added the artist authored
+assets i mentioned a bit ago this
+approach wouldn't have worked large
+fields of bright red spider lilies would
+have lotted out to green grass
+so instead we chose to render an artist
+authored texture at that place in the
+terrain instead of the underlying
+material
+this approach is inexpensive and works
+well enough
+but there is still room for improvement
+here
+in ghost the player can hide in the
+grass to surprise assassinate mongols
+and be generally sneaky since all of our
+grass data is stored on gpu friendly
+textures that aren't convenient to
+access on cpu whenever we load a tile we
+run a compute shader that copies some
+information from our fast gpu textures
+to more cpu friendly ones
+from this height information we generate
+fizz meshes that gameplay can raycast
+against to determine if the player is
+visible or not
+we originally returned the height of the
+grass unmodified but found that this
+could be pretty inconsistent
+instead each type of grass is either
+flagged as stealth grass or decorative
+grass and returns a constant height
+based on that
+for consistency reasons
+excuse me
+for consistency reasons each
+stealthgrass type has pampers flowers in
+it but the actual stealthiness comes
+from the grass itself
+we also had to do some special
+optimizations for shadows
+we do support running the full compute
+and vertex pixel shader pipe for shadow
+casting lights but it's very expensive
+considering it has to run for each light
+at least once
+though we do this in some rare cases we
+generally rely on an imposter system
+that uses the underlying terrain
+effectively we raise the verts of the
+terrain to match the height of the grass
+at that location then offset the depth
+we write out to the shadow map in a
+dithered pattern
+when we combine this with our shadow
+filtering we end up the result that
+roughly matches the shadow density of
+the grass it's not without its issues
+though the discrete nature of the proxy
+mesh can end up with hard edges that are
+difficult to resolve
+but in the majority of scenes in the
+grain in the in the game the results
+were good and the perf was great
+more fine detail we relied on screen
+space shadows to make up the difference
+screen space shadows can't understand
+the thickness of objects
+but our grass is super thin anyway
+they're limited to short range and
+screen space but our grass is pretty
+small on screen space the majority of
+the time
+they don't account for off-screen
+geometry but again with our graphs being
+small
+nothing off screen is going to have a
+huge impact on what's on screen anyway
+so between our imposter geometry and the
+screen space shadows we end up with a
+decent quality shadows that don't blow
+our perf budget
+and here's the in-game result
+moving forward there's a few
+improvements to the system that i'd like
+to make
+first and many times during production
+an artist will be placing an asset that
+they wanted grass on but we were
+strictly limited to grass on terrain
+assets have an option to sample the
+terrain materials when intersecting the
+ground and blend the material to the
+terrain's material to have smooth
+transitions from the height map
+controlled terrain to artist authored
+assets
+but since the grass couldn't be placed
+on those assets there was often an
+awkward edge or worse grass poking out
+from underneath the asset
+in the future i think it would be
+worthwhile to have artist author
+geometry flagged as a grass surface that
+we can procedurally grow blades from
+then the transition between assets and
+the terrain could be truly seamless
+second the cubic bezier vertices we
+produce now are quite flexible and fast
+but there are a lot of other types of
+dense foliage that we could procedurally
+place ferns ginkgo leaves or even small
+rocks could have a very similar vertex
+count to our current grass but would be
+more difficult to procedurally generate
+artist driven assets support especially
+when combined with being able to grow it
+on arbitrary surfaces could be very
+powerful
+maybe we could grow fur cards for high
+detailed animals
+i'm not sure but it's something i want
+to experiment with in the future
+third because each rendered tile is
+twice the size of the previous tile by
+the time we've switched to the next toss
+size up we've dropped three out of every
+four grass blades
+each tile has the same number of grass
+blades which is nice and simple
+however this means that we're tied to
+lotting out three-fourths of our grass
+blades at a distance that isn't very
+easy to change
+in the future we want to disassociate
+the lotting out from the size of a tile
+more so we can push our grass distance
+out more easily
+so that's how we rendered huge fields of
+grass within our frame budget and met
+our art direction goals we used compute
+shaders to generate per grass blade
+instance data that was highly artist
+configurable then used indirect draw
+calls to get almost a hundred thousand
+bezier curves on screen we supplemented
+these simple grass blades with
+procedurally placed artist assets and
+used very simple imposters for shadows
+and flower laws
+although there's still improvements to
+be made we're happy with the results we
+managed to achieve
+if you have any questions about we did
+or how we did it feel free to reach out
+to me on twitter i'd love to answer any
+questions you have
+i also want to thank a bunch of people
+who worked on the grass and ghosted
+tsushimo with me
+jasmine petrie for doing all the hard
+work of the initial prototype and then
+letting me just make things wiggle for a
+couple of years
+bill rockingbeck for helping me fix
+countless floating point precision
+issues adrian bentley for letting me
+break down his office door and berate
+him with questions matt pullman for
+making the whole thing actually usable
+for artists
+tom lowe for all his awesome shadow work
+dave elder for his great offline terrain
+ao baking
+and joanna wang for endlessly tweaking
+the two score parameters it took to make
+a rat's nest of vertices look like
+actual grass
+and as a last note i'd like to point out
+that we're hiring
+we have graphics and gameplay programmer
+positions we're looking to pick people
+up for so if you're interested by what
+we're working on please reach out
+thank you so much for watching my talk
+and i hope you have a good day
+and here's the altera blog post i
+promised earlier you should definitely
+check it out
+[Music]

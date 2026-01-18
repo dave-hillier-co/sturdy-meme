@@ -6,7 +6,7 @@
 #include "GraphicsPipelineFactory.h"
 #include "debug/QueueSubmitDiagnostics.h"
 #include "shaders/bindings.h"
-#include "core/InitInfoBuilder.h"
+#include "core/vulkan/DescriptorSetLayoutBuilder.h"
 #include <vulkan/vulkan.hpp>
 #include <SDL3/SDL.h>
 #include <algorithm>
@@ -27,9 +27,15 @@ std::unique_ptr<ShadowSystem> ShadowSystem::create(const InitInfo& info) {
 std::unique_ptr<ShadowSystem> ShadowSystem::create(const InitContext& ctx,
                                                     VkDescriptorSetLayout mainDescriptorSetLayout_,
                                                     VkDescriptorSetLayout skinnedDescriptorSetLayout_) {
-    InitInfo info = InitInfoBuilder::fromContext<InitInfo>(ctx);
+    InitInfo info;
+    info.raiiDevice = ctx.raiiDevice;
+    info.device = ctx.device;
+    info.physicalDevice = ctx.physicalDevice;
+    info.allocator = ctx.allocator;
     info.mainDescriptorSetLayout = mainDescriptorSetLayout_;
     info.skinnedDescriptorSetLayout = skinnedDescriptorSetLayout_;
+    info.shaderPath = ctx.shaderPath;
+    info.framesInFlight = ctx.framesInFlight;
     return create(info);
 }
 
@@ -330,21 +336,14 @@ bool ShadowSystem::createInstancedShadowResources() {
     vk::Device vkDevice(initInfo_.device);
 
     // Create descriptor set layout for instanced shadow rendering
-    auto instanceBufferBinding = vk::DescriptorSetLayoutBinding{}
-        .setBinding(Bindings::SHADOW_INSTANCES)
-        .setDescriptorType(vk::DescriptorType::eStorageBuffer)
-        .setDescriptorCount(1)
-        .setStageFlags(vk::ShaderStageFlagBits::eVertex);
-
-    auto layoutInfo = vk::DescriptorSetLayoutCreateInfo{}
-        .setBindings(instanceBufferBinding);
-
-    try {
-        instancedShadowDescriptorSetLayout = vkDevice.createDescriptorSetLayout(layoutInfo);
-    } catch (const vk::SystemError& e) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create instanced shadow descriptor set layout: %s", e.what());
+    auto layoutOpt = DescriptorSetLayoutBuilder()
+        .addBinding(BindingBuilder::storageBuffer(Bindings::SHADOW_INSTANCES, vk::ShaderStageFlagBits::eVertex))
+        .build(*raiiDevice);
+    if (!layoutOpt) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create instanced shadow descriptor set layout");
         return false;
     }
+    instancedShadowDescriptorSetLayout = **layoutOpt;
 
     // Create per-frame instance buffers (persistently mapped for fast CPU writes)
     instanceBuffers.resize(initInfo_.framesInFlight);

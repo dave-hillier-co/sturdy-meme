@@ -6,6 +6,7 @@
 #include "core/InitInfoBuilder.h"
 #include "core/vulkan/BarrierHelpers.h"
 #include "core/vulkan/PipelineLayoutBuilder.h"
+#include "core/vulkan/DescriptorSetLayoutBuilder.h"
 #include <vulkan/vulkan.hpp>
 #include <array>
 #include <algorithm>
@@ -230,22 +231,18 @@ bool BloomSystem::createSampler() {
 
 bool BloomSystem::createDescriptorSetLayouts() {
     // Both downsample and upsample use the same descriptor set layout
-    // Binding 0: input texture (sampler2D) - using vulkan-hpp builder
-    auto binding = vk::DescriptorSetLayoutBinding{}
-        .setBinding(0)
-        .setDescriptorType(vk::DescriptorType::eCombinedImageSampler)
-        .setDescriptorCount(1)
-        .setStageFlags(vk::ShaderStageFlagBits::eFragment);
+    // Binding 0: input texture (sampler2D)
+    if (!DescriptorSetLayoutBuilder()
+            .addBinding(BindingBuilder::combinedImageSampler(0, vk::ShaderStageFlagBits::eFragment))
+            .buildInto(*raiiDevice_, downsampleDescSetLayout_)) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create downsample descriptor set layout");
+        return false;
+    }
 
-    auto layoutInfo = vk::DescriptorSetLayoutCreateInfo{}
-        .setBindingCount(1)
-        .setPBindings(&binding);
-
-    try {
-        downsampleDescSetLayout_.emplace(*raiiDevice_, layoutInfo);
-        upsampleDescSetLayout_.emplace(*raiiDevice_, layoutInfo);
-    } catch (const vk::SystemError& e) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create descriptor set layouts: %s", e.what());
+    if (!DescriptorSetLayoutBuilder()
+            .addBinding(BindingBuilder::combinedImageSampler(0, vk::ShaderStageFlagBits::eFragment))
+            .buildInto(*raiiDevice_, upsampleDescSetLayout_)) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create upsample descriptor set layout");
         return false;
     }
 

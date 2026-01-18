@@ -101,39 +101,50 @@ bool GrassSystem::initInternal(const InitInfo& info) {
         return false;
     }
 
-    // Pointer to the ParticleSystem being initialized (for hooks to access)
-    ParticleSystem* initializingPS = nullptr;
+    // Initialize buffer set manager for double/triple-buffered resources
+    bufferSets_ = BufferSetManager(info.framesInFlight);
 
+    // Set up lifecycle hooks - references to lifecycle_ are valid since it's a member
     SystemLifecycleHelper::Hooks hooks{};
     hooks.createBuffers = [this]() { return createBuffers(); };
-    hooks.createComputeDescriptorSetLayout = [this, &initializingPS]() {
-        return createComputeDescriptorSetLayout(initializingPS->getComputePipelineHandles());
+    hooks.createComputeDescriptorSetLayout = [this]() {
+        return createComputeDescriptorSetLayout(lifecycle_.getComputePipeline());
     };
-    hooks.createComputePipeline = [this, &initializingPS]() {
-        return createComputePipeline(initializingPS->getComputePipelineHandles());
+    hooks.createComputePipeline = [this]() {
+        return createComputePipeline(lifecycle_.getComputePipeline());
     };
-    hooks.createGraphicsDescriptorSetLayout = [this, &initializingPS]() {
-        return createGraphicsDescriptorSetLayout(initializingPS->getGraphicsPipelineHandles());
+    hooks.createGraphicsDescriptorSetLayout = [this]() {
+        return createGraphicsDescriptorSetLayout(lifecycle_.getGraphicsPipeline());
     };
-    hooks.createGraphicsPipeline = [this, &initializingPS]() {
-        return createGraphicsPipeline(initializingPS->getGraphicsPipelineHandles());
+    hooks.createGraphicsPipeline = [this]() {
+        return createGraphicsPipeline(lifecycle_.getGraphicsPipeline());
     };
-    hooks.createExtraPipelines = [this, &initializingPS]() {
-        return createExtraPipelines(initializingPS->getComputePipelineHandles(),
-                                     initializingPS->getGraphicsPipelineHandles());
+    hooks.createExtraPipelines = [this]() {
+        return createExtraPipelines(lifecycle_.getComputePipeline(),
+                                     lifecycle_.getGraphicsPipeline());
     };
     hooks.createDescriptorSets = [this]() { return createDescriptorSets(); };
     hooks.destroyBuffers = [this](VmaAllocator allocator) { destroyBuffers(allocator); };
 
-    particleSystem = ParticleSystem::create(info, hooks, info.framesInFlight, &initializingPS);
+    // Build lifecycle init info from GrassSystem::InitInfo
+    SystemLifecycleHelper::InitInfo lifecycleInfo{};
+    lifecycleInfo.device = info.device;
+    lifecycleInfo.allocator = info.allocator;
+    lifecycleInfo.renderPass = info.renderPass;
+    lifecycleInfo.descriptorPool = info.descriptorPool;
+    lifecycleInfo.extent = VkExtent2D{info.extent.width, info.extent.height};
+    lifecycleInfo.shaderPath = info.shaderPath;
+    lifecycleInfo.framesInFlight = info.framesInFlight;
+    lifecycleInfo.raiiDevice = info.raiiDevice;
 
-    if (!particleSystem) {
+    if (!lifecycle_.init(lifecycleInfo, hooks)) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "GrassSystem: lifecycle_.init() failed");
         return false;
     }
 
-    SDL_Log("GrassSystem::init() - particleSystem created successfully");
+    SDL_Log("GrassSystem::init() - lifecycle initialized successfully");
 
-    // Write compute descriptor sets now that particleSystem is fully initialized
+    // Write compute descriptor sets now that lifecycle is fully initialized
     writeComputeDescriptorSets();
     SDL_Log("GrassSystem::init() - done writing compute descriptor sets");
     return true;
@@ -150,7 +161,8 @@ void GrassSystem::cleanup() {
 
     // Note: DisplacementSystem is owned externally, not cleaned up here
 
-    particleSystem.reset();
+    // Destroy lifecycle resources (pipelines and buffers)
+    lifecycle_.destroy();
 
     device_ = nullptr;
     raiiDevice_ = nullptr;
@@ -413,38 +425,56 @@ bool GrassSystem::createShadowPipeline() {
 }
 
 bool GrassSystem::createDescriptorSets() {
-    // Note: Standard compute/graphics descriptor sets are allocated by ParticleSystem::init()
-    // after all hooks complete. This hook only allocates GrassSystem-specific descriptor sets.
-    // Compute descriptor set updates happen later in writeComputeDescriptorSets() called after init.
-
-    SDL_Log("GrassSystem::createDescriptorSets - pool=%p, shadowLayout=%p", (void*)getDescriptorPool(), (void*)**shadowDescriptorSetLayout_);
-    SDL_Log("GrassSystem::createDescriptorSets - about to allocate shadow sets");
-
-    // Allocate shadow descriptor sets for all buffer sets (matches frames in flight)
+    // Allocate compute, graphics, and shadow descriptor sets for all buffer sets
     uint32_t bufferSetCount = getFramesInFlight();
-    shadowDescriptorSets_.resize(bufferSetCount);
 
+    SDL_Log("GrassSystem::createDescriptorSets - pool=%p, bufferSetCount=%u", (void*)getDescriptorPool(), bufferSetCount);
+
+    // Allocate compute descriptor sets
+    computeDescriptorSets_.resize(bufferSetCount);
     for (uint32_t set = 0; set < bufferSetCount; set++) {
-        SDL_Log("GrassSystem::createDescriptorSets - allocating shadow set %u", set);
-        shadowDescriptorSets_[set] = getDescriptorPool()->allocateSingle(**shadowDescriptorSetLayout_);
-        SDL_Log("GrassSystem::createDescriptorSets - allocated shadow set %u", set);
-        if (!shadowDescriptorSets_[set]) {
-            SDL_Log("Failed to allocate grass shadow descriptor set (set %u)", set);
+        computeDescriptorSets_[set] = getDescriptorPool()->allocateSingle(lifecycle_.getComputePipeline().descriptorSetLayout);
+        if (!computeDescriptorSets_[set]) {
+            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to allocate grass compute descriptor set (set %u)", set);
             return false;
         }
     }
+    SDL_Log("GrassSystem::createDescriptorSets - allocated %u compute sets", bufferSetCount);
+
+    // Allocate graphics descriptor sets
+    graphicsDescriptorSets_.resize(bufferSetCount);
+    for (uint32_t set = 0; set < bufferSetCount; set++) {
+        graphicsDescriptorSets_[set] = getDescriptorPool()->allocateSingle(lifecycle_.getGraphicsPipeline().descriptorSetLayout);
+        if (!graphicsDescriptorSets_[set]) {
+            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to allocate grass graphics descriptor set (set %u)", set);
+            return false;
+        }
+    }
+    SDL_Log("GrassSystem::createDescriptorSets - allocated %u graphics sets", bufferSetCount);
+
+    // Allocate shadow descriptor sets
+    SDL_Log("GrassSystem::createDescriptorSets - shadowLayout=%p", (void*)**shadowDescriptorSetLayout_);
+    shadowDescriptorSets_.resize(bufferSetCount);
+    for (uint32_t set = 0; set < bufferSetCount; set++) {
+        shadowDescriptorSets_[set] = getDescriptorPool()->allocateSingle(**shadowDescriptorSetLayout_);
+        if (!shadowDescriptorSets_[set]) {
+            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to allocate grass shadow descriptor set (set %u)", set);
+            return false;
+        }
+    }
+    SDL_Log("GrassSystem::createDescriptorSets - allocated %u shadow sets", bufferSetCount);
 
     return true;
 }
 
 void GrassSystem::writeComputeDescriptorSets() {
     // Write compute descriptor sets with instance and indirect buffers
-    // Called after ParticleSystem is fully initialized and descriptor sets are allocated
+    // Called after lifecycle is fully initialized and descriptor sets are allocated
     // Note: Tile cache resources are written later in updateDescriptorSets when available
-    uint32_t bufferSetCount = particleSystem->getBufferSetCount();
+    uint32_t bufferSetCount = getBufferSetCount();
     for (uint32_t set = 0; set < bufferSetCount; set++) {
         // Use non-fluent pattern to avoid copy semantics bug with DescriptorManager::SetWriter
-        DescriptorManager::SetWriter writer(getDevice(), particleSystem->getComputeDescriptorSet(set));
+        DescriptorManager::SetWriter writer(getDevice(), getComputeDescriptorSet(set));
         writer.writeBuffer(0, instanceBuffers.buffers[set], 0, sizeof(GrassInstance) * GrassConstants::MAX_INSTANCES, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
         writer.writeBuffer(1, indirectBuffers.buffers[set], 0, sizeof(VkDrawIndirectCommand), VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
         writer.writeBuffer(2, uniformBuffers.buffers[0], 0, sizeof(CullingUniforms));
@@ -531,10 +561,10 @@ void GrassSystem::updateDescriptorSets(vk::Device dev, const std::vector<vk::Buf
     // Update compute descriptor sets with terrain heightmap, displacement, and tile cache
     // Note: Bindings 0, 1, 2 are already written in writeComputeDescriptorSets() - only write new bindings here
     // Note: tile info buffer (binding 6) is updated per-frame in recordResetAndCompute
-    uint32_t bufferSetCount = particleSystem->getBufferSetCount();
+    uint32_t bufferSetCount = getBufferSetCount();
     for (uint32_t set = 0; set < bufferSetCount; set++) {
         // Use non-fluent pattern to avoid copy semantics bug with DescriptorManager::SetWriter
-        DescriptorManager::SetWriter computeWriter(dev, particleSystem->getComputeDescriptorSet(set));
+        DescriptorManager::SetWriter computeWriter(dev, getComputeDescriptorSet(set));
         computeWriter.writeImage(3, terrainHeightMapView_, terrainHeightMapSampler_);
         if (displacementSystem_) {
             computeWriter.writeImage(4, displacementSystem_->getImageView(), displacementSystem_->getSampler());
@@ -555,7 +585,7 @@ void GrassSystem::updateDescriptorSets(vk::Device dev, const std::vector<vk::Buf
     // Update graphics and shadow descriptor sets for all buffer sets
     for (uint32_t set = 0; set < bufferSetCount; set++) {
         // Graphics descriptor set - use non-fluent pattern
-        DescriptorManager::SetWriter graphicsWriter(dev, particleSystem->getGraphicsDescriptorSet(set));
+        DescriptorManager::SetWriter graphicsWriter(dev, getGraphicsDescriptorSet(set));
         // Use dynamic UBO if available (avoids per-frame descriptor updates)
         if (dynamicRendererUBO && dynamicRendererUBO->isValid()) {
             graphicsWriter.writeBuffer(0, dynamicRendererUBO->buffer, 0, dynamicRendererUBO->alignedSize,
@@ -654,7 +684,7 @@ void GrassSystem::updateUniforms(uint32_t frameIndex, const glm::vec3& cameraPos
 
 void GrassSystem::recordResetAndCompute(vk::CommandBuffer cmd, uint32_t frameIndex, float time) {
     // Double-buffer: compute writes to computeBufferSet
-    uint32_t writeSet = particleSystem->getComputeBufferSet();
+    uint32_t writeSet = getComputeBufferSet();
 
     // Ensure CPU writes to tile info buffer are visible to GPU before compute dispatch
     auto hostBarrier = vk::MemoryBarrier{}
@@ -679,7 +709,7 @@ void GrassSystem::recordResetAndCompute(vk::CommandBuffer cmd, uint32_t frameInd
     // Legacy non-tiled mode (fallback)
     // Update compute descriptor set with per-frame buffers only
     // Note: Static images (bindings 3, 4, 5) are already bound in updateDescriptorSets()
-    DescriptorManager::SetWriter writer(getDevice(), particleSystem->getComputeDescriptorSet(writeSet));
+    DescriptorManager::SetWriter writer(getDevice(), getComputeDescriptorSet(writeSet));
     writer.writeBuffer(2, uniformBuffers.buffers[frameIndex], 0, sizeof(CullingUniforms));
     writer.writeBuffer(7, paramsBuffers.buffers[frameIndex], 0, sizeof(GrassParams));
 
@@ -699,7 +729,7 @@ void GrassSystem::recordResetAndCompute(vk::CommandBuffer cmd, uint32_t frameInd
 
     // Dispatch grass compute shader using the compute buffer set
     cmd.bindPipeline(vk::PipelineBindPoint::eCompute, getComputePipelineHandles().pipeline);
-    VkDescriptorSet computeSet = particleSystem->getComputeDescriptorSet(writeSet);
+    VkDescriptorSet computeSet = getComputeDescriptorSet(writeSet);
     cmd.bindDescriptorSets(vk::PipelineBindPoint::eCompute,
                            getComputePipelineHandles().pipelineLayout, 0,
                            vk::DescriptorSet(computeSet), {});
@@ -736,7 +766,7 @@ void GrassSystem::recordResetAndCompute(vk::CommandBuffer cmd, uint32_t frameInd
 
 void GrassSystem::recordDraw(vk::CommandBuffer cmd, uint32_t frameIndex, float time) {
     // Double-buffer: graphics reads from renderBufferSet (previous frame's compute output)
-    uint32_t readSet = particleSystem->getRenderBufferSet();
+    uint32_t readSet = getRenderBufferSet();
 
     // Set dynamic viewport and scissor to handle window resize
     vk::Extent2D ext = getExtent();
@@ -756,7 +786,7 @@ void GrassSystem::recordDraw(vk::CommandBuffer cmd, uint32_t frameIndex, float t
 
     // Use tiled mode if enabled and tile manager is available
     if (tiledModeEnabled_ && tileManager_) {
-        VkDescriptorSet graphicsSet = particleSystem->getGraphicsDescriptorSet(readSet);
+        VkDescriptorSet graphicsSet = getGraphicsDescriptorSet(readSet);
         tileManager_->recordDraw(cmd, frameIndex, time, readSet,
                                   getGraphicsPipelineHandles().pipeline,
                                   getGraphicsPipelineHandles().pipelineLayout,
@@ -769,7 +799,7 @@ void GrassSystem::recordDraw(vk::CommandBuffer cmd, uint32_t frameIndex, float t
     // Legacy non-tiled mode
     cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, getGraphicsPipelineHandles().pipeline);
 
-    VkDescriptorSet graphicsSet = particleSystem->getGraphicsDescriptorSet(readSet);
+    VkDescriptorSet graphicsSet = getGraphicsDescriptorSet(readSet);
 
     // Use dynamic offset for binding 0 (renderer UBO) if dynamic buffer is available
     if (dynamicRendererUBO_ && dynamicRendererUBO_->isValid()) {
@@ -803,7 +833,7 @@ void GrassSystem::recordDraw(vk::CommandBuffer cmd, uint32_t frameIndex, float t
 
 void GrassSystem::recordShadowDraw(vk::CommandBuffer cmd, uint32_t frameIndex, float time, uint32_t cascadeIndex) {
     // Double-buffer: shadow pass reads from renderBufferSet (same as main draw)
-    uint32_t readSet = particleSystem->getRenderBufferSet();
+    uint32_t readSet = getRenderBufferSet();
 
     // Update shadow descriptor set to use this frame's renderer UBO
     // Bounds check: frameIndex must be within range, not just non-empty
@@ -832,9 +862,9 @@ void GrassSystem::recordShadowDraw(vk::CommandBuffer cmd, uint32_t frameIndex, f
 
 void GrassSystem::setSnowMask(vk::Device device, vk::ImageView snowMaskView, vk::Sampler snowMaskSampler) {
     // Update graphics descriptor sets with snow mask texture
-    uint32_t bufferSetCount = particleSystem->getBufferSetCount();
+    uint32_t bufferSetCount = getBufferSetCount();
     for (uint32_t setIndex = 0; setIndex < bufferSetCount; setIndex++) {
-        DescriptorManager::SetWriter(device, particleSystem->getGraphicsDescriptorSet(setIndex))
+        DescriptorManager::SetWriter(device, getGraphicsDescriptorSet(setIndex))
             .writeImage(5, snowMaskView, snowMaskSampler)
             .update();
     }
@@ -885,7 +915,7 @@ void GrassSystem::updateDescriptorSets(VkDevice device, const std::vector<VkBuff
 }
 
 void GrassSystem::advanceBufferSet() {
-    particleSystem->advanceBufferSet();
+    bufferSets_.advance();
 }
 
 vk::ImageView GrassSystem::getDisplacementImageView() const {

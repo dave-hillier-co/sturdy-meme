@@ -12,7 +12,8 @@
 #include <optional>
 
 #include "BufferUtils.h"
-#include "ParticleSystem.h"
+#include "SystemLifecycleHelper.h"
+#include "BufferSetManager.h"
 #include "UBOs.h"
 #include "VmaResources.h"
 #include "core/FrameBuffered.h"
@@ -52,7 +53,15 @@ public:
     // Passkey for controlled construction via make_unique
     struct ConstructToken { explicit ConstructToken() = default; };
 
-    struct InitInfo : public ParticleSystem::InitInfo {
+    struct InitInfo {
+        vk::Device device;
+        VmaAllocator allocator;
+        vk::RenderPass renderPass;
+        DescriptorManager::Pool* descriptorPool;
+        vk::Extent2D extent;
+        std::string shaderPath;
+        uint32_t framesInFlight;
+        const vk::raii::Device* raiiDevice = nullptr;
         vk::RenderPass shadowRenderPass;
         uint32_t shadowMapSize;
     };
@@ -93,8 +102,8 @@ public:
     GrassSystem& operator=(GrassSystem&&) = delete;
 
     // Update extent for viewport (on window resize)
-    void setExtent(vk::Extent2D newExtent) { particleSystem->setExtent(VkExtent2D{newExtent.width, newExtent.height}); }
-    void setExtent(VkExtent2D newExtent) { particleSystem->setExtent(newExtent); }  // Backward-compatible overload
+    void setExtent(vk::Extent2D newExtent) { extent_ = newExtent; }
+    void setExtent(VkExtent2D newExtent) { extent_ = vk::Extent2D{newExtent.width, newExtent.height}; }  // Backward-compatible overload
 
     void updateDescriptorSets(vk::Device device, const std::vector<vk::Buffer>& uniformBuffers,
                               vk::ImageView shadowMapView, vk::Sampler shadowSampler,
@@ -167,21 +176,36 @@ private:
     void writeComputeDescriptorSets();  // Called after init to write compute descriptor sets
     void destroyBuffers(VmaAllocator allocator);
 
-    // Accessors - use stored initInfo during init, particleSystem after init completes
+    // Accessors
     vk::Device getDevice() const { return device_; }
     VmaAllocator getAllocator() const { return allocator_; }
     vk::RenderPass getRenderPass() const { return renderPass_; }
     DescriptorManager::Pool* getDescriptorPool() const { return descriptorPool_; }
-    vk::Extent2D getExtent() const { return particleSystem ? vk::Extent2D{particleSystem->getExtent().width, particleSystem->getExtent().height} : extent_; }
+    vk::Extent2D getExtent() const { return extent_; }
     const std::string& getShaderPath() const { return shaderPath_; }
     uint32_t getFramesInFlight() const { return framesInFlight_; }
 
-    SystemLifecycleHelper::PipelineHandles& getComputePipelineHandles() { return particleSystem->getComputePipelineHandles(); }
-    SystemLifecycleHelper::PipelineHandles& getGraphicsPipelineHandles() { return particleSystem->getGraphicsPipelineHandles(); }
+    SystemLifecycleHelper::PipelineHandles& getComputePipelineHandles() { return lifecycle_.getComputePipeline(); }
+    SystemLifecycleHelper::PipelineHandles& getGraphicsPipelineHandles() { return lifecycle_.getGraphicsPipeline(); }
 
-    std::unique_ptr<ParticleSystem> particleSystem;
+    // Buffer set management (double/triple-buffered resources)
+    uint32_t getComputeBufferSet() const { return bufferSets_.getComputeSet(); }
+    uint32_t getRenderBufferSet() const { return bufferSets_.getRenderSet(); }
+    uint32_t getBufferSetCount() const { return bufferSets_.getSetCount(); }
 
-    // Stored init info (available during initialization before particleSystem is created)
+    // Descriptor set access
+    VkDescriptorSet getComputeDescriptorSet(uint32_t index) const { return computeDescriptorSets_[index]; }
+    VkDescriptorSet getGraphicsDescriptorSet(uint32_t index) const { return graphicsDescriptorSets_[index]; }
+
+    // Core components (same as ParticleSystem - composed from identical parts)
+    SystemLifecycleHelper lifecycle_;
+    BufferSetManager bufferSets_;
+
+    // Compute and graphics descriptor sets (one per buffer set)
+    std::vector<VkDescriptorSet> computeDescriptorSets_;
+    std::vector<VkDescriptorSet> graphicsDescriptorSets_;
+
+    // Stored init info
     vk::Device device_;
     VmaAllocator allocator_ = VK_NULL_HANDLE;
     vk::RenderPass renderPass_;

@@ -376,6 +376,20 @@ Each phase should include:
 
 ---
 
+## Progress
+
+| Phase | Status | Notes |
+|-------|--------|-------|
+| 1 - DisplacementSystem | ✅ Complete | Extracted to standalone system |
+| 2 - VegetationRenderContext | ✅ Complete | Context struct introduced |
+| 3 - ParticleSystem decoupling | ✅ Complete | GrassSystem uses SystemLifecycleHelper + BufferSetManager directly |
+| 4 - TileManager split | Pending | |
+| 5 - LOD Strategy | Pending | |
+| 6 - Async Loading | Pending | |
+| 7 - Debug Viz | Pending | |
+
+---
+
 ## Notes
 
 - Each phase should be a separate branch/PR

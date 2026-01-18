@@ -19,7 +19,6 @@ find_package(fastgltf CONFIG REQUIRED)
 find_package(unofficial-openfbx CONFIG REQUIRED)
 find_package(lodepng CONFIG REQUIRED)
 find_package(nlohmann_json CONFIG REQUIRED)
-find_package(Fruit CONFIG REQUIRED)
 
 find_path(STB_INCLUDE_DIRS "stb_image.h")
 
@@ -28,12 +27,6 @@ add_subdirectory(tools)
 
 set(SOURCES
     src/main.cpp
-    # DI Module
-    src/di/CoreModule.cpp
-    src/di/InfrastructureModule.cpp
-    src/di/SystemsModule.cpp
-    src/di/AppComponent.cpp
-    src/di/RendererFactory.cpp
     # Scene
     src/scene/Application.cpp
     src/scene/SceneBuilder.cpp
@@ -259,7 +252,6 @@ add_executable(${PROJECT_NAME} ${SOURCES})
 
 target_include_directories(${PROJECT_NAME} PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/di
     ${CMAKE_CURRENT_SOURCE_DIR}/src/animation
     ${CMAKE_CURRENT_SOURCE_DIR}/src/atmosphere
     ${CMAKE_CURRENT_SOURCE_DIR}/src/core
@@ -300,7 +292,6 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     unoffical::openfbx::openfbx
     lodepng
     nlohmann_json::nlohmann_json
-    Fruit::Fruit
 )
 
 # Enable Jolt Physics debug renderer for visualization

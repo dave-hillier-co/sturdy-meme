@@ -110,6 +110,7 @@ set(SOURCES
     src/atmosphere/AtmosphereSystemGroup.cpp
     src/atmosphere/SnowSystemGroup.cpp
     # Vegetation
+    src/vegetation/DisplacementSystem.cpp
     src/vegetation/GrassSystem.cpp
     src/vegetation/GrassTile.cpp
     src/vegetation/GrassTileManager.cpp

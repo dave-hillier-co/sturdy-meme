@@ -43,6 +43,7 @@ struct PerformanceToggles;
 class SkySystem;
 class GrassSystem;
 class WindSystem;
+class DisplacementSystem;
 class WeatherSystem;
 class LeafSystem;
 class PostProcessSystem;
@@ -179,6 +180,9 @@ public:
     WindSystem& wind() { return *windSystem_; }
     const WindSystem& wind() const { return *windSystem_; }
     void setWind(std::unique_ptr<WindSystem> system);
+    DisplacementSystem& displacement() { return *displacementSystem_; }
+    const DisplacementSystem& displacement() const { return *displacementSystem_; }
+    void setDisplacement(std::unique_ptr<DisplacementSystem> system);
     WeatherSystem& weather() { return *weatherSystem_; }
     const WeatherSystem& weather() const { return *weatherSystem_; }
     void setWeather(std::unique_ptr<WeatherSystem> system);
@@ -311,13 +315,14 @@ public:
     }
 
     /**
-     * Get the vegetation system group (grass, wind, trees, rocks, detritus)
+     * Get the vegetation system group (grass, wind, displacement, trees, rocks, detritus)
      * Returns a lightweight struct with non-owning references to the systems.
      */
     VegetationSystemGroup vegetation() {
         return VegetationSystemGroup{
             grassSystem_.get(),
             windSystem_.get(),
+            displacementSystem_.get(),
             treeSystem_.get(),
             treeRenderer_.get(),
             treeLODSystem_.get(),
@@ -423,6 +428,7 @@ private:
     // Tier 2 - Environment
     std::unique_ptr<GrassSystem> grassSystem_;
     std::unique_ptr<WindSystem> windSystem_;
+    std::unique_ptr<DisplacementSystem> displacementSystem_;
     std::unique_ptr<WeatherSystem> weatherSystem_;
     std::unique_ptr<LeafSystem> leafSystem_;
 

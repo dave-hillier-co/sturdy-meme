@@ -9,6 +9,7 @@
 #include "SkySystem.h"
 #include "GrassSystem.h"
 #include "WindSystem.h"
+#include "DisplacementSystem.h"
 #include "WeatherSystem.h"
 #include "LeafSystem.h"
 #include "PostProcessSystem.h"
@@ -175,6 +176,10 @@ void RendererSystems::setSky(std::unique_ptr<SkySystem> system) {
 
 void RendererSystems::setWind(std::unique_ptr<WindSystem> system) {
     windSystem_ = std::move(system);
+}
+
+void RendererSystems::setDisplacement(std::unique_ptr<DisplacementSystem> system) {
+    displacementSystem_ = std::move(system);
 }
 
 void RendererSystems::setWeather(std::unique_ptr<WeatherSystem> system) {

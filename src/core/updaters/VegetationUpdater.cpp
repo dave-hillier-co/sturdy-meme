@@ -2,6 +2,7 @@
 #include "RendererSystems.h"
 #include "Profiler.h"
 
+#include "DisplacementSystem.h"
 #include "GrassSystem.h"
 #include "TreeSystem.h"
 #include "TreeRenderer.h"
@@ -23,9 +24,14 @@ void VegetationUpdater::update(RendererSystems& systems, const FrameData& frame,
 
 void VegetationUpdater::updateGrass(RendererSystems& systems, const FrameData& frame) {
     systems.profiler().beginCpuZone("Update:Grass");
+
+    // Update displacement system (shared by grass and leaves)
+    systems.displacement().updateRegionCenter(frame.cameraPosition);
+    systems.displacement().updateSources(frame.playerPosition, frame.playerCapsuleRadius, frame.deltaTime);
+
+    // Update grass uniforms
     systems.grass().updateUniforms(frame.frameIndex, frame.cameraPosition, frame.viewProj,
                                    frame.terrainSize, frame.heightScale, frame.time);
-    systems.grass().updateDisplacementSources(frame.playerPosition, frame.playerCapsuleRadius, frame.deltaTime);
     systems.profiler().endCpuZone("Update:Grass");
 }
 

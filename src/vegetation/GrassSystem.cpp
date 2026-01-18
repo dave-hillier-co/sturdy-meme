@@ -1,4 +1,5 @@
 #include "GrassSystem.h"
+#include "DisplacementSystem.h"
 #include "GrassTileManager.h"
 #include "WindSystem.h"
 #include "InitContext.h"
@@ -146,20 +147,8 @@ void GrassSystem::cleanup() {
     shadowPipeline_.reset();
     shadowPipelineLayout_.reset();
     shadowDescriptorSetLayout_.reset();
-    displacementPipeline_.reset();
-    displacementPipelineLayout_.reset();
-    displacementDescriptorSetLayout_.reset();
-    displacementSampler_.reset();
 
-    if (displacementImageView_) {
-        device_.destroyImageView(displacementImageView_);
-        displacementImageView_ = nullptr;
-    }
-    if (displacementImage_ && allocator_) {
-        vmaDestroyImage(allocator_, displacementImage_, displacementAllocation_);
-        displacementImage_ = nullptr;
-        displacementAllocation_ = VK_NULL_HANDLE;
-    }
+    // Note: DisplacementSystem is owned externally, not cleaned up here
 
     particleSystem.reset();
 
@@ -168,9 +157,6 @@ void GrassSystem::cleanup() {
 }
 
 void GrassSystem::destroyBuffers(VmaAllocator alloc) {
-    BufferUtils::destroyBuffers(alloc, displacementSourceBuffers);
-    BufferUtils::destroyBuffers(alloc, displacementUniformBuffers);
-
     BufferUtils::destroyBuffers(alloc, instanceBuffers);
     BufferUtils::destroyBuffers(alloc, indirectBuffers);
     BufferUtils::destroyBuffers(alloc, uniformBuffers);
@@ -222,115 +208,6 @@ bool GrassSystem::createBuffers() {
              .build(paramsBuffers)) {
         SDL_Log("Failed to create grass params buffers");
         return false;
-    }
-
-    return createDisplacementResources();
-}
-
-bool GrassSystem::createDisplacementResources() {
-    // Create displacement texture (RG16F, using unified constant for size)
-    {
-        ManagedImage image;
-        VkImageView rawView = VK_NULL_HANDLE;
-        if (!ImageBuilder(getAllocator())
-                .setExtent(GrassConstants::DISPLACEMENT_TEXTURE_SIZE, GrassConstants::DISPLACEMENT_TEXTURE_SIZE)
-                .setFormat(VK_FORMAT_R16G16_SFLOAT)
-                .setUsage(VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT)
-                .build(static_cast<VkDevice>(getDevice()), image, rawView)) {
-            SDL_Log("Failed to create displacement image");
-            return false;
-        }
-        displacementImageView_ = rawView;
-        VkImage rawImage = VK_NULL_HANDLE;
-        image.releaseToRaw(rawImage, displacementAllocation_);
-        displacementImage_ = rawImage;
-    }
-
-    // Create sampler for grass compute shader to sample displacement
-    displacementSampler_ = SamplerFactory::createSamplerLinearClamp(*raiiDevice_);
-    if (!displacementSampler_) {
-        SDL_Log("Failed to create displacement sampler");
-        return false;
-    }
-
-    VkDeviceSize sourceBufferSize = sizeof(DisplacementSource) * GrassConstants::MAX_DISPLACEMENT_SOURCES;
-    VkDeviceSize uniformBufferSize = sizeof(DisplacementUniforms);
-
-    BufferUtils::PerFrameBufferBuilder sourceBuilder;
-    if (!sourceBuilder.setAllocator(getAllocator())
-             .setFrameCount(getFramesInFlight())
-             .setSize(sourceBufferSize)
-             .setUsage(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT)
-             .build(displacementSourceBuffers)) {
-        SDL_Log("Failed to create displacement source buffers");
-        return false;
-    }
-
-    BufferUtils::PerFrameBufferBuilder uniformBuilder;
-    if (!uniformBuilder.setAllocator(getAllocator())
-             .setFrameCount(getFramesInFlight())
-             .setSize(uniformBufferSize)
-             .build(displacementUniformBuffers)) {
-        SDL_Log("Failed to create displacement uniform buffers");
-        return false;
-    }
-
-    return true;
-}
-
-bool GrassSystem::createDisplacementPipeline() {
-    // Create descriptor set layout for displacement update compute shader
-    // 0: Displacement map (storage image, read-write)
-    // 1: Source buffer (SSBO)
-    // 2: Displacement uniforms
-
-    VkDescriptorSetLayout rawDescSetLayout = DescriptorManager::LayoutBuilder(getDevice())
-        .addStorageImage(VK_SHADER_STAGE_COMPUTE_BIT)      // 0: Displacement map
-        .addStorageBuffer(VK_SHADER_STAGE_COMPUTE_BIT)     // 1: Source buffer
-        .addUniformBuffer(VK_SHADER_STAGE_COMPUTE_BIT)     // 2: Displacement uniforms
-        .build();
-
-    if (rawDescSetLayout == VK_NULL_HANDLE) {
-        SDL_Log("Failed to create displacement descriptor set layout");
-        return false;
-    }
-    // Adopt raw handle into RAII wrapper
-    displacementDescriptorSetLayout_.emplace(*raiiDevice_, rawDescSetLayout);
-
-    VkPipelineLayout rawPipelineLayout = DescriptorManager::createPipelineLayout(
-        getDevice(), **displacementDescriptorSetLayout_);
-    if (rawPipelineLayout == VK_NULL_HANDLE) {
-        SDL_Log("Failed to create displacement pipeline layout");
-        return false;
-    }
-    displacementPipelineLayout_.emplace(*raiiDevice_, rawPipelineLayout);
-
-    if (!ComputePipelineBuilder(*raiiDevice_)
-            .setShader(getShaderPath() + "/grass_displacement.comp.spv")
-            .setPipelineLayout(**displacementPipelineLayout_)
-            .buildInto(displacementPipeline_)) {
-        SDL_Log("Failed to create displacement compute pipeline");
-        return false;
-    }
-
-    // Allocate per-frame displacement descriptor sets (double-buffered) using managed pool
-    auto rawSets = getDescriptorPool()->allocate(**displacementDescriptorSetLayout_, getFramesInFlight());
-    if (rawSets.empty()) {
-        SDL_Log("Failed to allocate displacement descriptor sets");
-        return false;
-    }
-    displacementDescriptorSets_.resize(rawSets.size());
-    for (size_t i = 0; i < rawSets.size(); ++i) {
-        displacementDescriptorSets_[i] = rawSets[i];
-    }
-
-    // Update each per-frame descriptor set with image and per-frame buffers
-    for (uint32_t i = 0; i < getFramesInFlight(); ++i) {
-        DescriptorManager::SetWriter(getDevice(), displacementDescriptorSets_[i])
-            .writeStorageImage(0, displacementImageView_)
-            .writeBuffer(1, displacementSourceBuffers.buffers[i], 0, sizeof(DisplacementSource) * GrassConstants::MAX_DISPLACEMENT_SOURCES, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
-            .writeBuffer(2, displacementUniformBuffers.buffers[i], 0, sizeof(DisplacementUniforms))
-            .update();
     }
 
     return true;
@@ -578,7 +455,7 @@ void GrassSystem::writeComputeDescriptorSets() {
 
 bool GrassSystem::createExtraPipelines(SystemLifecycleHelper::PipelineHandles& computeHandles,
                                         SystemLifecycleHelper::PipelineHandles& graphicsHandles) {
-    if (!createDisplacementPipeline()) return false;
+    // Note: Displacement pipeline is now in DisplacementSystem
     if (!createShadowPipeline()) return false;
 
     // Create tiled grass compute pipeline
@@ -659,7 +536,9 @@ void GrassSystem::updateDescriptorSets(vk::Device dev, const std::vector<vk::Buf
         // Use non-fluent pattern to avoid copy semantics bug with DescriptorManager::SetWriter
         DescriptorManager::SetWriter computeWriter(dev, particleSystem->getComputeDescriptorSet(set));
         computeWriter.writeImage(3, terrainHeightMapView_, terrainHeightMapSampler_);
-        computeWriter.writeImage(4, displacementImageView_, **displacementSampler_);
+        if (displacementSystem_) {
+            computeWriter.writeImage(4, displacementSystem_->getImageView(), displacementSystem_->getSampler());
+        }
 
         // Tile cache bindings (5 and 6) - for high-res terrain sampling
         if (tileArrayView_) {
@@ -721,9 +600,11 @@ void GrassSystem::updateDescriptorSets(vk::Device dev, const std::vector<vk::Buf
             tileInfoArray[i] = tileInfoBuffers_[i];
         }
 
+        vk::ImageView dispView = displacementSystem_ ? displacementSystem_->getImageView() : vk::ImageView{};
+        vk::Sampler dispSampler = displacementSystem_ ? displacementSystem_->getSampler() : vk::Sampler{};
         tileManager_->updateDescriptorSets(
             terrainHeightMapView_, terrainHeightMapSampler_,
-            displacementImageView_, **displacementSampler_,
+            dispView, dispSampler,
             tileArrayView_, tileSampler_,
             tileInfoArray,
             vkCullingBuffers,
@@ -748,14 +629,16 @@ void GrassSystem::updateUniforms(uint32_t frameIndex, const glm::vec3& cameraPos
     // Fill GrassParams (grass-specific parameters)
     GrassParams params{};
 
-    // Update displacement region to follow camera
-    displacementRegionCenter = glm::vec2(cameraPos.x, cameraPos.z);
-
-    // Displacement region info for grass compute shader using unified constants
-    // xy = world center, z = region size, w = texel size (derived from DISPLACEMENT_REGION_SIZE / DISPLACEMENT_TEXTURE_SIZE)
-    params.displacementRegion = glm::vec4(displacementRegionCenter.x, displacementRegionCenter.y,
-                                          GrassConstants::DISPLACEMENT_REGION_SIZE,
-                                          GrassConstants::DISPLACEMENT_TEXEL_SIZE);
+    // Displacement region info for grass compute shader
+    // xy = world center, z = region size, w = texel size
+    if (displacementSystem_) {
+        params.displacementRegion = displacementSystem_->getRegionVec4();
+    } else {
+        // Fallback: center on camera with default constants
+        params.displacementRegion = glm::vec4(cameraPos.x, cameraPos.z,
+                                              GrassConstants::DISPLACEMENT_REGION_SIZE,
+                                              GrassConstants::DISPLACEMENT_TEXEL_SIZE);
+    }
 
     // Terrain parameters for heightmap sampling
     params.terrainSize = terrainSize;
@@ -767,52 +650,6 @@ void GrassSystem::updateUniforms(uint32_t frameIndex, const glm::vec3& cameraPos
         frameCounter_++;
         tileManager_->updateActiveTiles(cameraPos, frameCounter_, time);
     }
-}
-
-void GrassSystem::updateDisplacementSources(const glm::vec3& playerPos, float playerRadius, float deltaTime) {
-    // Clear previous sources
-    currentDisplacementSources.clear();
-
-    // Add player as displacement source
-    DisplacementSource playerSource;
-    playerSource.positionAndRadius = glm::vec4(playerPos, playerRadius * 2.0f);  // Influence radius larger than capsule
-    playerSource.strengthAndVelocity = glm::vec4(1.0f, 0.0f, 0.0f, 0.0f);  // Full strength, no velocity for now
-    currentDisplacementSources.push_back(playerSource);
-
-    // Future: Add NPCs, projectiles, etc. here
-}
-
-void GrassSystem::recordDisplacementUpdate(vk::CommandBuffer cmd, uint32_t frameIndex) {
-    // Copy displacement sources to per-frame buffer (double-buffered)
-    memcpy(displacementSourceBuffers.mappedPointers[frameIndex], currentDisplacementSources.data(),
-           sizeof(DisplacementSource) * currentDisplacementSources.size());
-
-    // Update displacement uniforms using unified constants
-    DisplacementUniforms dispUniforms;
-    dispUniforms.regionCenter = glm::vec4(displacementRegionCenter.x, displacementRegionCenter.y,
-                                          GrassConstants::DISPLACEMENT_REGION_SIZE,
-                                          GrassConstants::DISPLACEMENT_TEXEL_SIZE);
-    const EnvironmentSettings fallbackSettings{};
-    const EnvironmentSettings& settings = environmentSettings ? *environmentSettings : fallbackSettings;
-    dispUniforms.params = glm::vec4(settings.grassDisplacementDecay, settings.grassMaxDisplacement, 1.0f / 60.0f,
-                                    static_cast<float>(currentDisplacementSources.size()));
-    memcpy(displacementUniformBuffers.mappedPointers[frameIndex], &dispUniforms, sizeof(DisplacementUniforms));
-
-    // Transition displacement image to general layout if needed (first frame)
-    // For subsequent frames, it should already be in GENERAL layout
-    BarrierHelpers::imageToGeneral(cmd, displacementImage_);
-
-    // Dispatch displacement update compute shader using per-frame descriptor set (double-buffered)
-    cmd.bindPipeline(vk::PipelineBindPoint::eCompute, **displacementPipeline_);
-    cmd.bindDescriptorSets(vk::PipelineBindPoint::eCompute,
-                           **displacementPipelineLayout_, 0,
-                           displacementDescriptorSets_[frameIndex], {});
-
-    // Dispatch using derived constant: DISPLACEMENT_DISPATCH_SIZE = DISPLACEMENT_TEXTURE_SIZE / WORKGROUP_SIZE
-    cmd.dispatch(GrassConstants::DISPLACEMENT_DISPATCH_SIZE, GrassConstants::DISPLACEMENT_DISPATCH_SIZE, 1);
-
-    // Barrier: displacement compute write -> grass compute read
-    BarrierHelpers::imageToShaderRead(cmd, displacementImage_, vk::PipelineStageFlagBits::eComputeShader);
 }
 
 void GrassSystem::recordResetAndCompute(vk::CommandBuffer cmd, uint32_t frameIndex, float time) {
@@ -1049,4 +886,12 @@ void GrassSystem::updateDescriptorSets(VkDevice device, const std::vector<VkBuff
 
 void GrassSystem::advanceBufferSet() {
     particleSystem->advanceBufferSet();
+}
+
+vk::ImageView GrassSystem::getDisplacementImageView() const {
+    return displacementSystem_ ? displacementSystem_->getImageView() : vk::ImageView{};
+}
+
+vk::Sampler GrassSystem::getDisplacementSampler() const {
+    return displacementSystem_ ? displacementSystem_->getSampler() : vk::Sampler{};
 }

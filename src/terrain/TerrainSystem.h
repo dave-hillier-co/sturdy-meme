@@ -111,11 +111,8 @@ struct TerrainConfig {
     float splitThreshold = 24.0f;     // Screen pixels to trigger split (with hysteresis)
     float mergeThreshold = 8.0f;      // Screen pixels to trigger merge
     uint32_t spreadFactor = 2;        // Temporal spreading: process 1/N triangles per frame (1 = all)
-    float minAltitude = -15.0f;         // Altitude for height value 0
-    float maxAltitude = 220.0f;       // Altitude for height value 65535
-
-    // Computed height scale (maxAltitude - minAltitude), set during init
-    float heightScale = 0.0f;
+    float heightScale = 235.0f;       // Maximum terrain height in world units (h=1 -> worldY=heightScale)
+    float seaLevel = 15.0f;           // Sea level in world units
 
     // Meshlet settings
     bool useMeshlets = true;          // Enable meshlet-based rendering for higher detail

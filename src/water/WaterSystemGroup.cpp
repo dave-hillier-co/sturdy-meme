@@ -156,7 +156,7 @@ bool WaterSystemGroup::configureSubsystems(
     RendererSystems& systems,
     const TerrainConfig& terrainConfig
 ) {
-    float seaLevel = -terrainConfig.minAltitude;
+    float seaLevel = terrainConfig.seaLevel;
 
     // Configure water surface
     auto& water = systems.water();

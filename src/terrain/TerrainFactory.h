@@ -41,9 +41,9 @@ public:
         float splitThreshold = 100.0f;
         float mergeThreshold = 50.0f;
 
-        // Altitude range (Isle of Wight)
-        float minAltitude = -15.0f;
-        float maxAltitude = 220.0f;
+        // Height scale: h=1 maps to this world height
+        float heightScale = 235.0f;
+        float seaLevel = 15.0f;
 
         // LOD tile streaming
         float tileLoadRadius = 2000.0f;

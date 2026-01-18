@@ -38,8 +38,6 @@ bool TerrainTileCache::initInternal(const InitInfo& info) {
     commandPool = info.commandPool;
     terrainSize = info.terrainSize;
     heightScale = info.heightScale;
-    minAltitude = info.minAltitude;
-    maxAltitude = info.maxAltitude;
 
     // Load metadata from cache
     if (!loadMetadata()) {
@@ -252,19 +250,19 @@ bool TerrainTileCache::loadMetadata() {
             else if (key == "tilesZ") tilesZ = std::stoul(value);
             else if (key == "sourceWidth") sourceWidth = std::stoul(value);
             else if (key == "sourceHeight") sourceHeight = std::stoul(value);
-            else if (key == "minAltitude") minAltitude = std::stof(value);
-            else if (key == "maxAltitude") maxAltitude = std::stof(value);
+            else if (key == "heightScale") heightScale = std::stof(value);
             else if (key == "tileOverlap") tileOverlap = std::stoul(value);
+            // Legacy: compute heightScale from altitude range if present in old metadata
+            else if (key == "minAltitude" || key == "maxAltitude") {
+                // Ignore - heightScale should be set directly
+            }
         }
     }
 
     // Calculate stored tile resolution (includes overlap for seamless boundaries)
     storedTileResolution = tileResolution + tileOverlap;
-    SDL_Log("TerrainTileCache: Tile resolution %u, stored with +%u overlap = %u",
-            tileResolution, tileOverlap, storedTileResolution);
-
-    // Recalculate height scale from altitude range
-    heightScale = maxAltitude - minAltitude;
+    SDL_Log("TerrainTileCache: Tile resolution %u, stored with +%u overlap = %u, heightScale=%.1f",
+            tileResolution, tileOverlap, storedTileResolution, heightScale);
 
     return true;
 }
@@ -731,7 +729,7 @@ bool TerrainTileCache::getHeightAt(float worldX, float worldZ, float& outHeight)
         if (worldX < tile.worldMinX || worldX >= tile.worldMaxX ||
             worldZ < tile.worldMinZ || worldZ >= tile.worldMaxZ) return false;
 
-        // Calculate UV within tile
+        // Calculate UV within tile (maps world bounds to [0,1])
         float u = (worldX - tile.worldMinX) / (tile.worldMaxX - tile.worldMinX);
         float v = (worldZ - tile.worldMinZ) / (tile.worldMaxZ - tile.worldMinZ);
 

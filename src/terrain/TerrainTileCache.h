@@ -69,9 +69,7 @@ public:
         VkQueue graphicsQueue;
         VkCommandPool commandPool;
         float terrainSize;      // Total terrain size in world units
-        float heightScale;      // Height scale for altitude conversion
-        float minAltitude;      // Minimum altitude (for height value 0)
-        float maxAltitude;      // Maximum altitude (for height value 65535)
+        float heightScale;      // Height scale: h=1 -> worldY=heightScale
     };
 
     // Special return value indicating a hole in terrain (no ground)
@@ -143,7 +141,6 @@ public:
     uint32_t getTilesZ() const { return tilesZ; }
     float getTerrainSize() const { return terrainSize; }
     float getHeightScale() const { return heightScale; }
-    float getMinAltitude() const { return minAltitude; }
 
     // Get a loaded tile by coordinate and LOD (returns nullptr if not loaded)
     const TerrainTile* getLoadedTile(TileCoord coord, uint32_t lod) const;
@@ -265,9 +262,7 @@ private:
     // Configuration from metadata
     std::string cacheDirectory;
     float terrainSize = 16384.0f;
-    float heightScale = 0.0f;
-    float minAltitude = -15.0f;
-    float maxAltitude = 220.0f;
+    float heightScale = 235.0f;
     uint32_t tileResolution = 512;       // Nominal tile resolution (for world bounds)
     uint32_t storedTileResolution = 513; // Actual stored resolution (with +1 overlap)
     uint32_t tileOverlap = 1;            // Overlap pixels for seamless boundaries

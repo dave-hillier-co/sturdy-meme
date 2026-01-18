@@ -22,8 +22,8 @@ TerrainConfig TerrainFactory::buildTerrainConfig(const Config& config) {
     terrainConfig.targetEdgePixels = config.targetEdgePixels;
     terrainConfig.splitThreshold = config.splitThreshold;
     terrainConfig.mergeThreshold = config.mergeThreshold;
-    terrainConfig.minAltitude = config.minAltitude;
-    terrainConfig.maxAltitude = config.maxAltitude;
+    terrainConfig.heightScale = config.heightScale;
+    terrainConfig.seaLevel = config.seaLevel;
 
     // LOD tile streaming
     terrainConfig.tileCacheDir = config.resourcePath + "/terrain_data";

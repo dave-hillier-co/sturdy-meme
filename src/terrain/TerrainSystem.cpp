@@ -49,9 +49,6 @@ bool TerrainSystem::initInternal(const InitInfo& info, const TerrainConfig& cfg)
     commandPool = info.commandPool;
     config = cfg;
 
-    // Compute heightScale from altitude range
-    config.heightScale = config.maxAltitude - config.minAltitude;
-
     // Initialize textures with RAII wrapper
     TerrainTextures::InitInfo texturesInfo{};
     texturesInfo.raiiDevice = raiiDevice_;
@@ -95,8 +92,6 @@ bool TerrainSystem::initInternal(const InitInfo& info, const TerrainConfig& cfg)
         tileCacheInfo.commandPool = commandPool;
         tileCacheInfo.terrainSize = config.size;
         tileCacheInfo.heightScale = config.heightScale;
-        tileCacheInfo.minAltitude = config.minAltitude;
-        tileCacheInfo.maxAltitude = config.maxAltitude;
         tileCache = TerrainTileCache::create(tileCacheInfo);
         if (!tileCache) {
             SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "Failed to initialize tile cache, using global heightmap only");

@@ -40,6 +40,7 @@ public:
         AssetRegistry* assetRegistry = nullptr;  // Centralized asset management
         HeightQueryFunc getTerrainHeight;  // Optional: query terrain height for object placement
         glm::vec2 sceneOrigin = glm::vec2(0.0f);  // World XZ offset for scene objects
+        bool deferRenderables = false;  // If true, don't create renderables during init
     };
 
     /**
@@ -62,6 +63,13 @@ public:
     std::vector<Renderable>& getRenderables() { return sceneObjects; }
     size_t getPlayerObjectIndex() const { return playerObjectIndex; }
     size_t getEmissiveOrbIndex() const { return emissiveOrbIndex; }
+
+    // Check if renderables have been created (false if deferred and not yet triggered)
+    bool hasRenderables() const { return renderablesCreated_; }
+
+    // Create renderables now (for deferred creation mode)
+    // Call this when terrain is ready if deferRenderables was true during init
+    void createRenderablesDeferred();
 
     // Get indices of objects that need physics bodies
     // SceneManager uses this instead of hardcoded indices
@@ -193,6 +201,9 @@ private:
 
     // Scene origin offset (world XZ position where scene objects are placed)
     glm::vec2 sceneOrigin = glm::vec2(0.0f);
+
+    // Track whether renderables have been created (for deferred mode)
+    bool renderablesCreated_ = false;
 
     // Material registry for data-driven material management
     MaterialRegistry materialRegistry;

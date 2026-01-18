@@ -34,6 +34,7 @@
 #include "ImpostorCullSystem.h"
 #include "VegetationContentGenerator.h"
 #include "VegetationSystemGroup.h"
+#include "DeferredTerrainObjects.h"
 #include "WaterSystem.h"
 #include "WaterDisplacement.h"
 #include "FlowMapGenerator.h"
@@ -196,6 +197,8 @@ bool Renderer::initSubsystems(const InitContext& initCtx) {
     // Settlement coords (9200, 3000) in 0-16384 space -> world coords by subtracting 8192
     const float halfTerrain = 8192.0f;
     sceneInfo.sceneOrigin = glm::vec2(9200.0f - halfTerrain, 3000.0f - halfTerrain);
+    // Defer scene object creation until terrain is fully loaded
+    sceneInfo.deferRenderables = true;
 
     {
         INIT_PROFILE_PHASE("SceneManager");
@@ -270,53 +273,33 @@ bool Renderer::initSubsystems(const InitContext& initCtx) {
     // Wire terrain descriptors (UBOs, shadow maps, snow/cloud buffers)
     wiring.wireTerrainDescriptors(*systems_);
 
-    // Generate vegetation content using VegetationContentGenerator
+    // Defer vegetation content generation (trees, detritus) until terrain is fully loaded
+    // This improves startup time by allowing initial render before vegetation is populated
     {
-        VegetationContentGenerator::Config vegConfig;
-        vegConfig.resourcePath = resourcePath;
-        vegConfig.getTerrainHeight = core.terrain.getHeightAt;
-        vegConfig.terrainSize = core.terrain.size;
+        DeferredTerrainObjects::Config deferredConfig;
+        deferredConfig.resourcePath = resourcePath;
+        deferredConfig.terrainSize = core.terrain.size;
+        deferredConfig.getTerrainHeight = core.terrain.getHeightAt;
+        deferredConfig.sceneOrigin = sceneInfo.sceneOrigin;
+        deferredConfig.forestCenter = glm::vec2(sceneInfo.sceneOrigin.x + 200.0f, sceneInfo.sceneOrigin.y + 100.0f);
+        deferredConfig.forestRadius = 80.0f;
+        deferredConfig.maxTrees = 500;
+        deferredConfig.uniformBuffers = systems_->globalBuffers().uniformBuffers.buffers;
+        deferredConfig.shadowView = systems_->shadow().getShadowImageView();
+        deferredConfig.shadowSampler = systems_->shadow().getShadowSampler();
+        deferredConfig.device = device;
+        deferredConfig.allocator = allocator;
+        deferredConfig.commandPool = vulkanContext_->getCommandPool();
+        deferredConfig.graphicsQueue = graphicsQueue;
+        deferredConfig.physicalDevice = physicalDevice;
+        deferredConfig.descriptorPool = descriptorInfra_.getDescriptorPool();
+        deferredConfig.descriptorSetLayout = descriptorInfra_.getVkDescriptorSetLayout();
+        deferredConfig.framesInFlight = MAX_FRAMES_IN_FLIGHT;
 
-        VegetationContentGenerator vegGen(vegConfig);
-
-        // Generate demo trees and forest
-        if (systems_->tree()) {
-            vegGen.generateDemoTrees(*systems_->tree(), sceneInfo.sceneOrigin);
-
-            const glm::vec2 forestCenter(sceneInfo.sceneOrigin.x + 200.0f, sceneInfo.sceneOrigin.y + 100.0f);
-            vegGen.generateForest(*systems_->tree(), forestCenter, 80.0f, 500);
-
-            // Generate impostor archetypes
-            if (systems_->treeLOD()) {
-                vegGen.generateImpostorArchetypes(*systems_->tree(), *systems_->treeLOD());
-            }
-
-            // Finalize tree systems
-            vegGen.finalizeTreeSystems(
-                *systems_->tree(),
-                systems_->treeLOD(),
-                systems_->impostorCull(),
-                systems_->treeRenderer(),
-                systems_->globalBuffers().uniformBuffers.buffers,
-                systems_->shadow().getShadowImageView(),
-                systems_->shadow().getShadowSampler());
-        }
-    }
-
-    // Initialize detritus system (fallen branches scattered near trees)
-    if (systems_->tree()) {
-        VegetationContentGenerator::Config vegConfig;
-        vegConfig.resourcePath = resourcePath;
-        vegConfig.getTerrainHeight = core.terrain.getHeightAt;
-        vegConfig.terrainSize = core.terrain.size;
-
-        VegetationContentGenerator vegGen(vegConfig);
-        VegetationContentGenerator::DetritusCreateInfo detritusInfo{
-            device, allocator, vulkanContext_->getCommandPool(), graphicsQueue, physicalDevice
-        };
-        auto detritusSystem = vegGen.createDetritusSystem(detritusInfo, *systems_->tree());
-        if (detritusSystem) {
-            systems_->setDetritus(std::move(detritusSystem));
+        auto deferredObjects = DeferredTerrainObjects::create(deferredConfig);
+        if (deferredObjects) {
+            systems_->setDeferredTerrainObjects(std::move(deferredObjects));
+            SDL_Log("Deferred terrain objects configured - will generate on first frame");
         }
     }
 
@@ -353,17 +336,9 @@ bool Renderer::initSubsystems(const InitContext& initCtx) {
         return false;
     }
 
-    // Create detritus descriptor sets (ScatterSystem owns them)
-    if (systems_->detritus()) {
-        if (!systems_->detritus()->createDescriptorSets(
-                device,
-                *descriptorInfra_.getDescriptorPool(),
-                descriptorInfra_.getVkDescriptorSetLayout(),
-                MAX_FRAMES_IN_FLIGHT,
-                getCommonBindings)) {
-            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create detritus ScatterSystem descriptor sets");
-            return false;
-        }
+    // Set common bindings function for deferred terrain objects (used when creating detritus)
+    if (systems_->deferredTerrainObjects()) {
+        systems_->deferredTerrainObjects()->setCommonBindingsFunc(getCommonBindings);
     }
 
     // Note: Tree descriptor sets are managed internally by TreeRenderer

@@ -2,6 +2,7 @@
 #include "ShaderLoader.h"
 #include "core/InitInfoBuilder.h"
 #include "core/vulkan/SamplerFactory.h"
+#include "core/vulkan/DescriptorSetLayoutBuilder.h"
 #include "core/pipeline/ComputePipelineBuilder.h"
 #include "core/vulkan/PipelineLayoutBuilder.h"
 #include "core/vulkan/BarrierHelpers.h"
@@ -174,77 +175,25 @@ bool BilateralGridSystem::createSampler() {
 
 bool BilateralGridSystem::createDescriptorSetLayout() {
     // Build layout: HDR input (sampler) + grid output (storage image) + uniforms
-    {
-        std::array<vk::DescriptorSetLayoutBinding, 3> bindings{};
-
-        // HDR input texture
-        bindings[0] = vk::DescriptorSetLayoutBinding{}
-            .setBinding(0)
-            .setDescriptorType(vk::DescriptorType::eCombinedImageSampler)
-            .setDescriptorCount(1)
-            .setStageFlags(vk::ShaderStageFlagBits::eCompute);
-
-        // Grid output (storage image)
-        bindings[1] = vk::DescriptorSetLayoutBinding{}
-            .setBinding(1)
-            .setDescriptorType(vk::DescriptorType::eStorageImage)
-            .setDescriptorCount(1)
-            .setStageFlags(vk::ShaderStageFlagBits::eCompute);
-
-        // Uniforms
-        bindings[2] = vk::DescriptorSetLayoutBinding{}
-            .setBinding(2)
-            .setDescriptorType(vk::DescriptorType::eUniformBuffer)
-            .setDescriptorCount(1)
-            .setStageFlags(vk::ShaderStageFlagBits::eCompute);
-
-        auto layoutInfo = vk::DescriptorSetLayoutCreateInfo{}
-            .setBindings(bindings);
-
-        try {
-            buildDescriptorSetLayout_.emplace(*raiiDevice_, layoutInfo);
-        } catch (const vk::SystemError& e) {
-            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
-                        "BilateralGridSystem: Failed to create build descriptor set layout: %s", e.what());
-            return false;
-        }
+    if (!DescriptorSetLayoutBuilder()
+            .addBinding(BindingBuilder::combinedImageSampler(0, vk::ShaderStageFlagBits::eCompute))
+            .addBinding(BindingBuilder::storageImage(1, vk::ShaderStageFlagBits::eCompute))
+            .addBinding(BindingBuilder::uniformBuffer(2, vk::ShaderStageFlagBits::eCompute))
+            .buildInto(*raiiDevice_, buildDescriptorSetLayout_)) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
+                    "BilateralGridSystem: Failed to create build descriptor set layout");
+        return false;
     }
 
     // Blur layout: grid src (storage image) + grid dst (storage image) + uniforms
-    {
-        std::array<vk::DescriptorSetLayoutBinding, 3> bindings{};
-
-        // Grid source
-        bindings[0] = vk::DescriptorSetLayoutBinding{}
-            .setBinding(0)
-            .setDescriptorType(vk::DescriptorType::eStorageImage)
-            .setDescriptorCount(1)
-            .setStageFlags(vk::ShaderStageFlagBits::eCompute);
-
-        // Grid destination
-        bindings[1] = vk::DescriptorSetLayoutBinding{}
-            .setBinding(1)
-            .setDescriptorType(vk::DescriptorType::eStorageImage)
-            .setDescriptorCount(1)
-            .setStageFlags(vk::ShaderStageFlagBits::eCompute);
-
-        // Uniforms
-        bindings[2] = vk::DescriptorSetLayoutBinding{}
-            .setBinding(2)
-            .setDescriptorType(vk::DescriptorType::eUniformBuffer)
-            .setDescriptorCount(1)
-            .setStageFlags(vk::ShaderStageFlagBits::eCompute);
-
-        auto layoutInfo = vk::DescriptorSetLayoutCreateInfo{}
-            .setBindings(bindings);
-
-        try {
-            blurDescriptorSetLayout_.emplace(*raiiDevice_, layoutInfo);
-        } catch (const vk::SystemError& e) {
-            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
-                        "BilateralGridSystem: Failed to create blur descriptor set layout: %s", e.what());
-            return false;
-        }
+    if (!DescriptorSetLayoutBuilder()
+            .addBinding(BindingBuilder::storageImage(0, vk::ShaderStageFlagBits::eCompute))
+            .addBinding(BindingBuilder::storageImage(1, vk::ShaderStageFlagBits::eCompute))
+            .addBinding(BindingBuilder::uniformBuffer(2, vk::ShaderStageFlagBits::eCompute))
+            .buildInto(*raiiDevice_, blurDescriptorSetLayout_)) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
+                    "BilateralGridSystem: Failed to create blur descriptor set layout");
+        return false;
     }
 
     return true;

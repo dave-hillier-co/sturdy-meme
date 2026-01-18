@@ -7,6 +7,7 @@
 #include "QueueSubmitDiagnostics.h"
 #include "shaders/bindings.h"
 #include "core/vulkan/PipelineLayoutBuilder.h"
+#include "core/vulkan/DescriptorSetLayoutBuilder.h"
 #include "core/vulkan/DescriptorWriter.h"
 
 #include <SDL3/SDL.h>
@@ -221,45 +222,13 @@ bool TreeLODSystem::createBillboardMesh() {
 }
 
 bool TreeLODSystem::createDescriptorSetLayout() {
-    std::array<vk::DescriptorSetLayoutBinding, 5> bindings = {{
-        // UBO
-        vk::DescriptorSetLayoutBinding{}
-            .setBinding(BINDING_TREE_IMPOSTOR_UBO)
-            .setDescriptorType(vk::DescriptorType::eUniformBuffer)
-            .setDescriptorCount(1)
-            .setStageFlags(vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment),
-        // Albedo atlas
-        vk::DescriptorSetLayoutBinding{}
-            .setBinding(BINDING_TREE_IMPOSTOR_ALBEDO)
-            .setDescriptorType(vk::DescriptorType::eCombinedImageSampler)
-            .setDescriptorCount(1)
-            .setStageFlags(vk::ShaderStageFlagBits::eFragment),
-        // Normal atlas
-        vk::DescriptorSetLayoutBinding{}
-            .setBinding(BINDING_TREE_IMPOSTOR_NORMAL)
-            .setDescriptorType(vk::DescriptorType::eCombinedImageSampler)
-            .setDescriptorCount(1)
-            .setStageFlags(vk::ShaderStageFlagBits::eFragment),
-        // Shadow map
-        vk::DescriptorSetLayoutBinding{}
-            .setBinding(BINDING_TREE_IMPOSTOR_SHADOW_MAP)
-            .setDescriptorType(vk::DescriptorType::eCombinedImageSampler)
-            .setDescriptorCount(1)
-            .setStageFlags(vk::ShaderStageFlagBits::eFragment),
-        // Instance buffer (SSBO for GPU-culled rendering)
-        vk::DescriptorSetLayoutBinding{}
-            .setBinding(BINDING_TREE_IMPOSTOR_INSTANCES)
-            .setDescriptorType(vk::DescriptorType::eStorageBuffer)
-            .setDescriptorCount(1)
-            .setStageFlags(vk::ShaderStageFlagBits::eVertex)
-    }};
-
-    auto layoutInfo = vk::DescriptorSetLayoutCreateInfo{}
-        .setBindings(bindings);
-
-    impostorDescriptorSetLayout_.emplace(*raiiDevice_, layoutInfo);
-
-    return true;
+    return DescriptorSetLayoutBuilder()
+        .addBinding(BindingBuilder::uniformBuffer(BINDING_TREE_IMPOSTOR_UBO, BindingBuilder::VertexFragment))
+        .addBinding(BindingBuilder::combinedImageSampler(BINDING_TREE_IMPOSTOR_ALBEDO, vk::ShaderStageFlagBits::eFragment))
+        .addBinding(BindingBuilder::combinedImageSampler(BINDING_TREE_IMPOSTOR_NORMAL, vk::ShaderStageFlagBits::eFragment))
+        .addBinding(BindingBuilder::combinedImageSampler(BINDING_TREE_IMPOSTOR_SHADOW_MAP, vk::ShaderStageFlagBits::eFragment))
+        .addBinding(BindingBuilder::storageBuffer(BINDING_TREE_IMPOSTOR_INSTANCES, vk::ShaderStageFlagBits::eVertex))
+        .buildInto(*raiiDevice_, impostorDescriptorSetLayout_);
 }
 
 bool TreeLODSystem::createPipeline() {
@@ -395,35 +364,11 @@ bool TreeLODSystem::allocateDescriptorSets() {
 }
 
 bool TreeLODSystem::createShadowDescriptorSetLayout() {
-    // Shadow pass needs UBO (for cascade matrices), albedo atlas (for alpha testing),
-    // and instance buffer (for GPU-culled rendering)
-    std::array<vk::DescriptorSetLayoutBinding, 3> bindings = {{
-        // UBO
-        vk::DescriptorSetLayoutBinding{}
-            .setBinding(BINDING_TREE_IMPOSTOR_UBO)
-            .setDescriptorType(vk::DescriptorType::eUniformBuffer)
-            .setDescriptorCount(1)
-            .setStageFlags(vk::ShaderStageFlagBits::eVertex),
-        // Albedo atlas (for alpha testing in fragment shader)
-        vk::DescriptorSetLayoutBinding{}
-            .setBinding(BINDING_TREE_IMPOSTOR_ALBEDO)
-            .setDescriptorType(vk::DescriptorType::eCombinedImageSampler)
-            .setDescriptorCount(1)
-            .setStageFlags(vk::ShaderStageFlagBits::eFragment),
-        // Instance buffer (SSBO for GPU-culled rendering)
-        vk::DescriptorSetLayoutBinding{}
-            .setBinding(BINDING_TREE_IMPOSTOR_SHADOW_INSTANCES)
-            .setDescriptorType(vk::DescriptorType::eStorageBuffer)
-            .setDescriptorCount(1)
-            .setStageFlags(vk::ShaderStageFlagBits::eVertex)
-    }};
-
-    auto layoutInfo = vk::DescriptorSetLayoutCreateInfo{}
-        .setBindings(bindings);
-
-    shadowDescriptorSetLayout_.emplace(*raiiDevice_, layoutInfo);
-
-    return true;
+    return DescriptorSetLayoutBuilder()
+        .addBinding(BindingBuilder::uniformBuffer(BINDING_TREE_IMPOSTOR_UBO, vk::ShaderStageFlagBits::eVertex))
+        .addBinding(BindingBuilder::combinedImageSampler(BINDING_TREE_IMPOSTOR_ALBEDO, vk::ShaderStageFlagBits::eFragment))
+        .addBinding(BindingBuilder::storageBuffer(BINDING_TREE_IMPOSTOR_SHADOW_INSTANCES, vk::ShaderStageFlagBits::eVertex))
+        .buildInto(*raiiDevice_, shadowDescriptorSetLayout_);
 }
 
 bool TreeLODSystem::createShadowPipeline() {

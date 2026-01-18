@@ -5,6 +5,7 @@
 #include "DescriptorManager.h"
 #include "core/vulkan/SamplerFactory.h"
 #include "core/vulkan/PipelineLayoutBuilder.h"
+#include "core/vulkan/DescriptorSetLayoutBuilder.h"
 #include "core/ImageBuilder.h"
 #include <SDL3/SDL_log.h>
 #include <vulkan/vulkan.hpp>
@@ -356,40 +357,13 @@ void WaterGBuffer::clear(VkCommandBuffer cmd) {
 }
 
 bool WaterGBuffer::createDescriptorSetLayout() {
-    std::array<vk::DescriptorSetLayoutBinding, 4> bindings = {
-        // Binding 0: Main UBO
-        vk::DescriptorSetLayoutBinding{}
-            .setBinding(0)
-            .setDescriptorType(vk::DescriptorType::eUniformBuffer)
-            .setDescriptorCount(1)
-            .setStageFlags(vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment),
-        // Binding 1: Water UBO
-        vk::DescriptorSetLayoutBinding{}
-            .setBinding(1)
-            .setDescriptorType(vk::DescriptorType::eUniformBuffer)
-            .setDescriptorCount(1)
-            .setStageFlags(vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment),
-        // Binding 3: Terrain height map
-        vk::DescriptorSetLayoutBinding{}
-            .setBinding(3)
-            .setDescriptorType(vk::DescriptorType::eCombinedImageSampler)
-            .setDescriptorCount(1)
-            .setStageFlags(vk::ShaderStageFlagBits::eFragment),
-        // Binding 4: Flow map
-        vk::DescriptorSetLayoutBinding{}
-            .setBinding(4)
-            .setDescriptorType(vk::DescriptorType::eCombinedImageSampler)
-            .setDescriptorCount(1)
-            .setStageFlags(vk::ShaderStageFlagBits::eFragment)
-    };
-
-    auto layoutInfo = vk::DescriptorSetLayoutCreateInfo{}
-        .setBindings(bindings);
-
-    try {
-        descriptorSetLayout_.emplace(*raiiDevice_, layoutInfo);
-    } catch (const vk::SystemError& e) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "WaterGBuffer: Failed to create descriptor set layout: %s", e.what());
+    if (!DescriptorSetLayoutBuilder()
+            .addBinding(BindingBuilder::uniformBuffer(0, BindingBuilder::VertexFragment))
+            .addBinding(BindingBuilder::uniformBuffer(1, BindingBuilder::VertexFragment))
+            .addBinding(BindingBuilder::combinedImageSampler(3, vk::ShaderStageFlagBits::eFragment))
+            .addBinding(BindingBuilder::combinedImageSampler(4, vk::ShaderStageFlagBits::eFragment))
+            .buildInto(*raiiDevice_, descriptorSetLayout_)) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "WaterGBuffer: Failed to create descriptor set layout");
         return false;
     }
 

@@ -99,6 +99,18 @@ public:
     // Returns false if no tile covers this position (caller should use global fallback)
     bool getHeightAt(float worldX, float worldZ, float& outHeight) const;
 
+    // Diagnostic info about which tile was used for a height query
+    struct HeightQueryInfo {
+        float height;
+        int32_t tileX, tileZ;
+        uint32_t lod;
+        const char* source;  // "active", "loaded", or "baseLOD"
+        bool found;
+    };
+
+    // Debug version of getHeightAt that also returns tile info
+    HeightQueryInfo getHeightAtDebug(float worldX, float worldZ) const;
+
     // Get the tile coordinate for a world position at a given LOD
     TileCoord worldToTileCoord(float worldX, float worldZ, uint32_t lod) const;
 

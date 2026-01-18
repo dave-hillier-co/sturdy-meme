@@ -23,8 +23,16 @@ float terrainHeightToWorld(float h, float heightScale) {
 }
 
 // Sample terrain height from heightmap and convert to world units
+// Applies half-texel correction to match CPU sampleBilinear which maps UV [0,1] to index [0, N-1]
 float sampleTerrainHeight(sampler2D heightMap, vec2 uv, float heightScale) {
-    return texture(heightMap, uv).r * heightScale;
+    // Heightmaps have N samples spanning N-1 intervals (samples at pixel corners)
+    // GPU texture() samples at texel centers, so remap UV to match CPU convention:
+    // UV 0.0 -> texel 0 center, UV 1.0 -> texel (N-1) center
+    // Formula: correctedUV = (UV * (N-1) + 0.5) / N
+    ivec2 texSize = textureSize(heightMap, 0);
+    float N = float(texSize.x);
+    vec2 correctedUV = (uv * (N - 1.0) + 0.5) / N;
+    return texture(heightMap, correctedUV).r * heightScale;
 }
 
 // Convert world XZ position to heightmap UV coordinates

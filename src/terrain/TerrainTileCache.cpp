@@ -505,6 +505,12 @@ void TerrainTileCache::updateActiveTiles(const glm::vec3& cameraPos, float loadR
         }
     }
 
+    // Sort active tiles by LOD (lower LOD = higher resolution) so GPU checks LOD0 first
+    // This matches CPU getHeightAt() which also prioritizes LOD0 tiles
+    std::sort(activeTiles.begin(), activeTiles.end(), [](const TerrainTile* a, const TerrainTile* b) {
+        return a->lod < b->lod;
+    });
+
     // Update tile info buffer
     updateTileInfoBuffer();
 }
@@ -724,7 +730,7 @@ bool TerrainTileCache::isTileLoaded(TileCoord coord, uint32_t lod) const {
 
 bool TerrainTileCache::getHeightAt(float worldX, float worldZ, float& outHeight) const {
     // Helper to sample height from a tile using TerrainHeight bilinear sampling
-    auto sampleTile = [&](const TerrainTile& tile) -> bool {
+    auto sampleTile = [&](const TerrainTile& tile, const char* source) -> bool {
         if (tile.cpuData.empty()) return false;
         if (worldX < tile.worldMinX || worldX >= tile.worldMaxX ||
             worldZ < tile.worldMinZ || worldZ >= tile.worldMaxZ) return false;
@@ -739,24 +745,123 @@ bool TerrainTileCache::getHeightAt(float worldX, float worldZ, float& outHeight)
         // Sample and convert to world height using TerrainHeight helpers
         outHeight = TerrainHeight::sampleWorldHeight(u, v, tile.cpuData.data(),
                                                       actualRes, heightScale);
+
+        // Debug: Log first few height queries to verify sampling
+        static int debugCount = 0;
+        if (debugCount < 5) {
+            SDL_Log("getHeightAt(%.1f, %.1f): %s LOD%u tile(%d,%d) uv(%.4f,%.4f) res=%u h=%.2f",
+                    worldX, worldZ, source, tile.lod, tile.coord.x, tile.coord.z,
+                    u, v, actualRes, outHeight);
+            debugCount++;
+        }
         return true;
     };
 
     // First check active tiles (GPU tiles - highest priority)
-    for (const TerrainTile* tile : activeTiles) {
-        if (sampleTile(*tile)) return true;
+    // Sort by LOD to prefer LOD0 (highest resolution)
+    std::vector<const TerrainTile*> sortedActive(activeTiles.begin(), activeTiles.end());
+    std::sort(sortedActive.begin(), sortedActive.end(), [](const TerrainTile* a, const TerrainTile* b) {
+        return a->lod < b->lod;  // Lower LOD number = higher resolution
+    });
+    for (const TerrainTile* tile : sortedActive) {
+        if (sampleTile(*tile, "active")) return true;
     }
 
     // Also check all loaded tiles (includes CPU-only tiles from physics preloading)
     // This ensures physics and CPU queries use the same high-res tile data
+    // Prioritize LOD0 tiles to match physics heightfield resolution
+    std::vector<const TerrainTile*> sortedLoaded;
     for (const auto& [key, tile] : loadedTiles) {
-        // Skip base LOD tiles here - we'll check them as fallback
-        if (tile.lod == baseLOD_) continue;
-        if (sampleTile(tile)) return true;
+        if (tile.lod == baseLOD_) continue;  // Skip base LOD - checked as fallback
+        sortedLoaded.push_back(&tile);
+    }
+    std::sort(sortedLoaded.begin(), sortedLoaded.end(), [](const TerrainTile* a, const TerrainTile* b) {
+        return a->lod < b->lod;  // Lower LOD number = higher resolution
+    });
+    for (const TerrainTile* tile : sortedLoaded) {
+        if (sampleTile(*tile, "loaded")) return true;
     }
 
     // Fallback to base LOD tiles (always loaded, covers entire terrain)
     return sampleBaseLOD(worldX, worldZ, outHeight);
+}
+
+TerrainTileCache::HeightQueryInfo TerrainTileCache::getHeightAtDebug(float worldX, float worldZ) const {
+    HeightQueryInfo info{};
+    info.found = false;
+    info.height = 0.0f;
+    info.tileX = 0;
+    info.tileZ = 0;
+    info.lod = 0;
+    info.source = "none";
+
+    // Helper to sample height from a tile
+    auto sampleTile = [&](const TerrainTile& tile, const char* source) -> bool {
+        if (tile.cpuData.empty()) return false;
+        if (worldX < tile.worldMinX || worldX >= tile.worldMaxX ||
+            worldZ < tile.worldMinZ || worldZ >= tile.worldMaxZ) return false;
+
+        float u = (worldX - tile.worldMinX) / (tile.worldMaxX - tile.worldMinX);
+        float v = (worldZ - tile.worldMinZ) / (tile.worldMaxZ - tile.worldMinZ);
+        uint32_t actualRes = static_cast<uint32_t>(std::sqrt(tile.cpuData.size()));
+
+        info.height = TerrainHeight::sampleWorldHeight(u, v, tile.cpuData.data(), actualRes, heightScale);
+        info.tileX = tile.coord.x;
+        info.tileZ = tile.coord.z;
+        info.lod = tile.lod;
+        info.source = source;
+        info.found = true;
+        return true;
+    };
+
+    // Check active tiles first (sorted by LOD to prefer highest resolution)
+    std::vector<const TerrainTile*> sortedActive(activeTiles.begin(), activeTiles.end());
+    std::sort(sortedActive.begin(), sortedActive.end(), [](const TerrainTile* a, const TerrainTile* b) {
+        return a->lod < b->lod;
+    });
+    for (const TerrainTile* tile : sortedActive) {
+        if (sampleTile(*tile, "active")) return info;
+    }
+
+    // Check loaded tiles (sorted by LOD, excluding baseLOD)
+    std::vector<const TerrainTile*> sortedLoaded;
+    for (const auto& [key, tile] : loadedTiles) {
+        if (tile.lod == baseLOD_) continue;
+        sortedLoaded.push_back(&tile);
+    }
+    std::sort(sortedLoaded.begin(), sortedLoaded.end(), [](const TerrainTile* a, const TerrainTile* b) {
+        return a->lod < b->lod;
+    });
+    for (const TerrainTile* tile : sortedLoaded) {
+        if (sampleTile(*tile, "loaded")) return info;
+    }
+
+    // Fallback to base LOD
+    if (!baseTiles_.empty()) {
+        uint32_t baseTilesX = tilesX >> baseLOD_;
+        uint32_t baseTilesZ = tilesZ >> baseLOD_;
+        if (baseTilesX < 1) baseTilesX = 1;
+        if (baseTilesZ < 1) baseTilesZ = 1;
+
+        float invTerrainSize = 1.0f / terrainSize;
+        float normX = (worldX * invTerrainSize) + 0.5f;
+        float normZ = (worldZ * invTerrainSize) + 0.5f;
+        normX = std::clamp(normX, 0.0f, 0.9999f);
+        normZ = std::clamp(normZ, 0.0f, 0.9999f);
+
+        uint32_t tx = static_cast<uint32_t>(normX * baseTilesX);
+        uint32_t tz = static_cast<uint32_t>(normZ * baseTilesZ);
+        uint32_t tileIndex = tz * baseTilesX + tx;
+
+        if (tileIndex < baseTiles_.size()) {
+            const TerrainTile* tile = baseTiles_[tileIndex];
+            if (tile && !tile->cpuData.empty()) {
+                sampleTile(*tile, "baseLOD");
+            }
+        }
+    }
+
+    return info;
 }
 
 void TerrainTileCache::copyTileToArrayLayer(TerrainTile* tile, uint32_t layerIndex) {
@@ -1199,6 +1304,15 @@ bool TerrainTileCache::sampleBaseLOD(float worldX, float worldZ, float& outHeigh
 
     outHeight = TerrainHeight::sampleWorldHeight(u, v, tile->cpuData.data(),
                                                   actualRes, heightScale);
+
+    // Debug: Log first few height queries from base LOD
+    static int baseLodDebugCount = 0;
+    if (baseLodDebugCount < 5) {
+        SDL_Log("getHeightAt(%.1f, %.1f): baseLOD LOD%u tile(%d,%d) uv(%.4f,%.4f) res=%u h=%.2f",
+                worldX, worldZ, tile->lod, tile->coord.x, tile->coord.z,
+                u, v, actualRes, outHeight);
+        baseLodDebugCount++;
+    }
     return true;
 }
 

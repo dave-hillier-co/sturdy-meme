@@ -47,7 +47,16 @@ float sampleHeightWithTileCache(sampler2D heightMapGlobal, sampler2DArray height
         // Use the stored layer index instead of assuming tile position == layer index
         int layerIdx = tiles[tileIdx].layerIndex.x;
         if (layerIdx >= 0) {
-            float h = texture(heightMapTiles, vec3(tileUV, float(layerIdx))).r;
+            // Get tile texture resolution and apply half-texel correction
+            // Tiles have N samples (e.g., 513) spanning N-1 intervals (e.g., 512 world units)
+            // CPU sampleBilinear maps UV [0,1] to sample index [0, N-1]
+            // GPU texture() samples at texel centers, so we need to remap:
+            // UV 0.0 -> texel 0 center, UV 1.0 -> texel (N-1) center
+            // Formula: correctedUV = (UV * (N-1) + 0.5) / N
+            ivec2 tileSize = textureSize(heightMapTiles, 0).xy;
+            float N = float(tileSize.x);
+            vec2 correctedUV = (tileUV * (N - 1.0) + 0.5) / N;
+            float h = texture(heightMapTiles, vec3(correctedUV, float(layerIdx))).r;
             return terrainHeightToWorld(h, heightScale);
         }
     }

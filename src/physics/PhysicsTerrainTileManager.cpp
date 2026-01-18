@@ -119,6 +119,18 @@ bool PhysicsTerrainTileManager::loadPhysicsTile(int32_t tileX, int32_t tileZ, ui
         tile->worldMaxX, tile->worldMaxZ,
         sampleCount);
 
+    // Debug: Log tile bounds and sample count for first few tiles
+    static int debugTileCount = 0;
+    if (debugTileCount < 3) {
+        SDL_Log("Physics tile (%d,%d): bounds [%.0f,%.0f]-[%.0f,%.0f] size=%.0f samples=%u center=(%.0f,%.0f)",
+                tileX, tileZ,
+                tile->worldMinX, tile->worldMinZ,
+                tile->worldMaxX, tile->worldMaxZ,
+                tileWorldSize, sampleCount,
+                tileCenterX, tileCenterZ);
+        debugTileCount++;
+    }
+
     // Tiles with overlap pixels have samples that align directly to world boundaries
     // (sample 0 at worldMin, sample N-1 at worldMax), so disable half-texel offset
     PhysicsBodyID bodyID = physics_->get().createTerrainHeightfieldAtPosition(

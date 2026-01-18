@@ -192,6 +192,7 @@ void GuiTerrainTab::render(ITerrainControl& terrainControl) {
 
     // Height query demo
     ImGui::Text("Height at origin: %.2f", terrainControl.getTerrainHeightAt(0.0f, 0.0f));
+    ImGui::Text("Press 9 for height diagnostic (CPU vs Physics)");
 
     ImGui::Spacing();
     ImGui::Separator();

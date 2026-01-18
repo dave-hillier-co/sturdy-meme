@@ -257,6 +257,16 @@ public:
     // Get terrain height at world position (CPU-side, for collision)
     float getHeightAt(float x, float z) const;
 
+    // Debug version that returns tile info along with height
+    struct HeightQueryInfo {
+        float height;
+        int32_t tileX, tileZ;
+        uint32_t lod;
+        const char* source;
+        bool found;
+    };
+    HeightQueryInfo getHeightAtDebug(float x, float z) const;
+
     // Get raw heightmap data for flow map generation and other CPU-side uses
     // Uses tile cache base heightmap (combined from LOD3 tiles)
     const float* getHeightMapData() const {

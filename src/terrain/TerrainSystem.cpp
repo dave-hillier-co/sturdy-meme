@@ -1087,6 +1087,29 @@ float TerrainSystem::getHeightAt(float x, float z) const {
     return 0.0f;
 }
 
+TerrainSystem::HeightQueryInfo TerrainSystem::getHeightAtDebug(float x, float z) const {
+    HeightQueryInfo result{};
+    result.found = false;
+    result.height = 0.0f;
+    result.tileX = 0;
+    result.tileZ = 0;
+    result.lod = 0;
+    result.source = "none";
+
+    if (!tileCache) {
+        return result;
+    }
+
+    auto cacheInfo = tileCache->getHeightAtDebug(x, z);
+    result.height = cacheInfo.height;
+    result.tileX = cacheInfo.tileX;
+    result.tileZ = cacheInfo.tileZ;
+    result.lod = cacheInfo.lod;
+    result.source = cacheInfo.source;
+    result.found = cacheInfo.found;
+    return result;
+}
+
 bool TerrainSystem::setMeshletSubdivisionLevel(int level) {
     if (level < 0 || level > 6) {
         SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,

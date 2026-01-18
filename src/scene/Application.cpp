@@ -28,6 +28,7 @@
 #include "core/interfaces/IWeatherState.h"
 #include "core/interfaces/ITerrainControl.h"
 #include "core/interfaces/IPlayerControl.h"
+#include "DebugLineSystem.h"
 
 #ifdef JPH_DEBUG_RENDERER
 #include "PhysicsDebugRenderer.h"
@@ -254,6 +255,16 @@ bool Application::init(const std::string& title, int width, int height) {
 
             if (physicsTerrainManager_.init(physics(), *tileCache, config)) {
                 SDL_Log("Physics terrain tile manager initialized");
+
+                // Pre-load physics terrain tiles around scene origin (where objects are placed)
+                // Scene is at Town 1: settlement coords (9200, 3000) -> world coords (1008, -5192)
+                const float halfTerrain = 8192.0f;
+                glm::vec3 sceneSpawnPos(9200.0f - halfTerrain, 0.0f, 3000.0f - halfTerrain);
+                for (int i = 0; i < 50; i++) {  // Load up to 50 tiles synchronously
+                    physicsTerrainManager_.update(sceneSpawnPos);
+                }
+                SDL_Log("Pre-loaded physics terrain tiles around scene origin (%.0f, %.0f)",
+                        sceneSpawnPos.x, sceneSpawnPos.z);
             } else {
                 SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to initialize physics terrain tile manager!");
             }
@@ -341,6 +352,13 @@ bool Application::init(const std::string& title, int width, int height) {
     const float settlementZ = 3000.0f;
     float playerSpawnX = settlementX - halfTerrain;  // 1008
     float playerSpawnZ = settlementZ - halfTerrain;  // -5192
+
+    // Pre-load high-res tiles around spawn before querying height
+    // This ensures we get LOD0 height data instead of low-res base LOD fallback
+    if (auto* tileCachePtr = terrain.getTileCache()) {
+        tileCachePtr->preloadTilesAround(playerSpawnX, playerSpawnZ, 600.0f);
+    }
+
     float playerSpawnY = terrain.getHeightAt(playerSpawnX, playerSpawnZ) + 0.1f;
 
     // Debug: Sample terrain height at spawn position using different methods
@@ -781,6 +799,80 @@ void Application::processEvents() {
                 else if (event.key.scancode == SDL_SCANCODE_T) {
                     sys.terrainControl().toggleTerrainWireframe();
                     SDL_Log("Terrain wireframe: %s", sys.terrainControl().isTerrainWireframeMode() ? "ON" : "OFF");
+                }
+                else if (event.key.scancode == SDL_SCANCODE_9) {
+                    // Terrain height diagnostic - compare CPU height vs physics raycast
+                    // Samples on a grid at integer positions (should align with physics samples)
+                    auto& debugLines = sys.debugControl().getDebugLineSystem();
+                    debugLines.clearPersistentLines();
+
+                    // Use scene origin (where objects are placed) as center for diagnostic
+                    // Scene is at Town 1: settlement coords (9200, 3000) -> world coords (1008, -5192)
+                    const float halfTerrain = 8192.0f;
+                    float centerX = 9200.0f - halfTerrain;  // 1008
+                    float centerZ = 3000.0f - halfTerrain;  // -5192
+
+                    int gridSize = 5;  // 5x5 grid of samples at 1m spacing
+                    float rayStartY = 500.0f;
+
+                    SDL_Log("=== Terrain Height Diagnostic (center=%.0f,%.0f grid=%dx%d) ===",
+                            centerX, centerZ, gridSize, gridSize);
+                    SDL_Log("Format: (x,z) cpu=H phys=H diff=D [tile info] hits=N");
+
+                    for (int gz = -gridSize/2; gz <= gridSize/2; gz++) {
+                        for (int gx = -gridSize/2; gx <= gridSize/2; gx++) {
+                            float x = centerX + gx;
+                            float z = centerZ + gz;
+
+                            // CPU height with debug info
+                            auto cpuInfo = sys.terrain().getHeightAtDebug(x, z);
+                            float cpuH = cpuInfo.height;
+
+                            // Physics height via raycast - get ALL hits to see overlapping tiles
+                            glm::vec3 rayFrom(x, rayStartY, z);
+                            glm::vec3 rayTo(x, -100.0f, z);
+                            auto hits = physics().castRayAllHits(rayFrom, rayTo);
+
+                            // Sort by Y to get highest hit
+                            float physicsH = cpuH;  // Default if no hit
+                            bool hasPhysicsHit = false;
+                            size_t numHits = hits.size();
+
+                            // Log all hits if multiple (indicates overlapping tiles)
+                            if (numHits > 1) {
+                                SDL_Log("  (%.0f, %.0f) MULTIPLE HITS (%zu):", x, z, numHits);
+                                for (size_t i = 0; i < numHits; i++) {
+                                    SDL_Log("    hit[%zu] y=%.3f bodyId=%u",
+                                            i, hits[i].position.y, hits[i].bodyId);
+                                }
+                            }
+
+                            for (const auto& hit : hits) {
+                                if (hit.hit && hit.position.y > physicsH - 50.0f) {
+                                    physicsH = hit.position.y;
+                                    hasPhysicsHit = true;
+                                    break;
+                                }
+                            }
+
+                            float diff = physicsH - cpuH;
+                            SDL_Log("  (%.0f, %.0f) cpu=%.3f phys=%.3f diff=%.4f [%s LOD%u tile(%d,%d)] hits=%zu%s",
+                                    x, z, cpuH, physicsH, diff,
+                                    cpuInfo.source, cpuInfo.lod, cpuInfo.tileX, cpuInfo.tileZ,
+                                    numHits, hasPhysicsHit ? "" : " (no hit)");
+
+                            // Add debug sphere at CPU height (green)
+                            debugLines.addSphere(glm::vec3(x, cpuH, z), 0.3f, glm::vec4(0.0f, 1.0f, 0.0f, 1.0f), 8);
+
+                            // Add debug sphere at physics height (red) - only if different
+                            if (std::abs(diff) > 0.001f && hasPhysicsHit) {
+                                debugLines.addSphere(glm::vec3(x, physicsH, z), 0.25f, glm::vec4(1.0f, 0.0f, 0.0f, 1.0f), 8);
+                            }
+                        }
+                    }
+
+                    SDL_Log("=== End Diagnostic (Green=CPU, Red=Physics) ===");
+                    SDL_Log("Press 9 again to re-run, spheres visible in debug mode");
                 }
                 break;
             }

@@ -323,6 +323,14 @@ public:
         return tileCache ? vk::Buffer(tileCache->getTileInfoBuffer(frameIndex)) : vk::Buffer{};
     }
 
+    // Hole mask accessors (for grass/other systems to avoid terrain cutouts)
+    vk::ImageView getHoleMaskView() const {
+        return tileCache ? vk::ImageView(tileCache->getHoleMaskView()) : vk::ImageView{};
+    }
+    vk::Sampler getHoleMaskSampler() const {
+        return tileCache ? vk::Sampler(tileCache->getHoleMaskSampler()) : vk::Sampler{};
+    }
+
     // ITerrainControl implementation
     void setTerrainEnabled(bool enabled) override { terrainEnabled_ = enabled; }
     bool isTerrainEnabled() const override { return terrainEnabled_; }

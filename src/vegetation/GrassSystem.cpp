@@ -234,7 +234,8 @@ bool GrassSystem::createComputeDescriptorSetLayout(SystemLifecycleHelper::Pipeli
         .addDescriptorBinding(4, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_COMPUTE_BIT)  // displacement map
         .addDescriptorBinding(5, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_COMPUTE_BIT)  // tile array
         .addDescriptorBinding(6, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT)          // tile info
-        .addDescriptorBinding(7, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT);         // GrassParams
+        .addDescriptorBinding(7, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT)          // GrassParams
+        .addDescriptorBinding(8, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_COMPUTE_BIT); // hole mask
 
     return builder.buildDescriptorSetLayout(handles.descriptorSetLayout);
 }
@@ -539,7 +540,9 @@ void GrassSystem::updateDescriptorSets(vk::Device dev, const std::vector<vk::Buf
                                         vk::ImageView tileArrayViewParam,
                                         vk::Sampler tileSamplerParam,
                                         const std::array<vk::Buffer, 3>& tileInfoBuffersParam,
-                                        const BufferUtils::DynamicUniformBuffer* dynamicRendererUBO) {
+                                        const BufferUtils::DynamicUniformBuffer* dynamicRendererUBO,
+                                        vk::ImageView holeMaskViewParam,
+                                        vk::Sampler holeMaskSamplerParam) {
     // Store terrain heightmap info for compute descriptor set updates
     terrainHeightMapView_ = terrainHeightMapViewParam;
     terrainHeightMapSampler_ = terrainHeightMapSamplerParam;
@@ -551,6 +554,10 @@ void GrassSystem::updateDescriptorSets(vk::Device dev, const std::vector<vk::Buf
     for (size_t i = 0; i < tileInfoBuffersParam.size(); ++i) {
         tileInfoBuffers_[i] = tileInfoBuffersParam[i];
     }
+
+    // Store hole mask resources
+    holeMaskView_ = holeMaskViewParam;
+    holeMaskSampler_ = holeMaskSamplerParam;
 
     // Store renderer uniform buffers (kept for backward compatibility)
     rendererUniformBuffers_ = rendererUniformBuffers;
@@ -577,6 +584,11 @@ void GrassSystem::updateDescriptorSets(vk::Device dev, const std::vector<vk::Buf
         // Write initial tile info buffer (frame 0) - will be updated per-frame
         if (!tileInfoBuffers_.empty() && tileInfoBuffers_[0]) {
             computeWriter.writeBuffer(6, tileInfoBuffers_[0], 0, VK_WHOLE_SIZE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
+        }
+
+        // Hole mask binding (8) - for terrain cutouts (caves, wells)
+        if (holeMaskView_) {
+            computeWriter.writeImage(8, holeMaskView_, holeMaskSampler_);
         }
 
         computeWriter.update();

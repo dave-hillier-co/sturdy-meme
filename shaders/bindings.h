@@ -136,6 +136,7 @@
 #define BINDING_GRASS_COMPUTE_TILE_ARRAY   5   // LOD tile array (high-res tiles near camera)
 #define BINDING_GRASS_COMPUTE_TILE_INFO    6   // Tile info SSBO
 #define BINDING_GRASS_COMPUTE_PARAMS       7   // Grass-specific params (terrain, displacement region)
+#define BINDING_GRASS_COMPUTE_HOLE_MASK    8   // Terrain hole mask (caves, wells)
 
 // =============================================================================
 // Grass Displacement Compute Shader Descriptor Set
@@ -569,6 +570,7 @@ constexpr uint32_t GRASS_COMPUTE_DISPLACEMENT = BINDING_GRASS_COMPUTE_DISPLACEME
 constexpr uint32_t GRASS_COMPUTE_TILE_ARRAY  = BINDING_GRASS_COMPUTE_TILE_ARRAY;
 constexpr uint32_t GRASS_COMPUTE_TILE_INFO   = BINDING_GRASS_COMPUTE_TILE_INFO;
 constexpr uint32_t GRASS_COMPUTE_PARAMS      = BINDING_GRASS_COMPUTE_PARAMS;
+constexpr uint32_t GRASS_COMPUTE_HOLE_MASK   = BINDING_GRASS_COMPUTE_HOLE_MASK;
 
 // Grass Displacement
 constexpr uint32_t GRASS_DISP_OUTPUT      = BINDING_GRASS_DISP_OUTPUT;

@@ -120,7 +120,9 @@ public:
                               vk::ImageView tileArrayView = {},
                               vk::Sampler tileSampler = {},
                               const std::array<vk::Buffer, 3>& tileInfoBuffers = {},
-                              const BufferUtils::DynamicUniformBuffer* dynamicRendererUBO = nullptr);
+                              const BufferUtils::DynamicUniformBuffer* dynamicRendererUBO = nullptr,
+                              vk::ImageView holeMaskView = {},
+                              vk::Sampler holeMaskSampler = {});
 
     void updateUniforms(uint32_t frameIndex, const glm::vec3& cameraPos, const glm::mat4& viewProj,
                         float terrainSize, float terrainHeightScale, float time);
@@ -250,6 +252,10 @@ private:
     vk::ImageView tileArrayView_;
     vk::Sampler tileSampler_;
     TripleBuffered<vk::Buffer> tileInfoBuffers_;  // Triple-buffered for frames-in-flight sync
+
+    // Hole mask for terrain cutouts (caves, wells)
+    vk::ImageView holeMaskView_;
+    vk::Sampler holeMaskSampler_;
 
     // Renderer uniform buffers for per-frame descriptor updates (stores reference from updateDescriptorSets)
     std::vector<vk::Buffer> rendererUniformBuffers_;

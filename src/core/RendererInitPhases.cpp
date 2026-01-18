@@ -14,6 +14,7 @@
 #include "ShadowSystem.h"
 #include "TerrainSystem.h"
 #include "GrassSystem.h"
+#include "DisplacementSystem.h"
 #include "WeatherSystem.h"
 #include "SnowMaskSystem.h"
 #include "VolumetricSnowSystem.h"
@@ -588,7 +589,7 @@ bool Renderer::initSubsystems(const InitContext& initCtx) {
     {
         RendererCore::InitParams coreParams;
         coreParams.vulkanContext = vulkanContext_.get();
-        coreParams.frameGraph = &frameGraph_;
+        coreParams.frameGraph = &renderingInfra_.frameGraph();
         coreParams.frameSync = &frameSync_;
         if (!rendererCore_.init(coreParams)) {
             SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to initialize RendererCore");

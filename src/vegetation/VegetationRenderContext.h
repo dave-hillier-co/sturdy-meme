@@ -74,75 +74,76 @@ struct VegetationRenderContext {
     static VegetationRenderContext fromSystems(
         RendererSystems& systems,
         const FrameData& frame);
+};
 
-    /**
-     * Builder for constructing VegetationRenderContext with fluent API.
-     * Use when you need fine-grained control over context construction.
-     */
-    class Builder {
-    public:
-        Builder& setFrameIndex(uint32_t index) { ctx_.frameIndex = index; return *this; }
-        Builder& setTime(float t) { ctx_.time = t; return *this; }
-        Builder& setDeltaTime(float dt) { ctx_.deltaTime = dt; return *this; }
+/**
+ * Builder for constructing VegetationRenderContext with fluent API.
+ * Use when you need fine-grained control over context construction.
+ * Defined outside VegetationRenderContext to avoid incomplete type issues.
+ */
+class VegetationRenderContextBuilder {
+public:
+    VegetationRenderContextBuilder& setFrameIndex(uint32_t index) { ctx_.frameIndex = index; return *this; }
+    VegetationRenderContextBuilder& setTime(float t) { ctx_.time = t; return *this; }
+    VegetationRenderContextBuilder& setDeltaTime(float dt) { ctx_.deltaTime = dt; return *this; }
 
-        Builder& setCameraPosition(const glm::vec3& pos) { ctx_.cameraPosition = pos; return *this; }
-        Builder& setViewMatrix(const glm::mat4& view) { ctx_.viewMatrix = view; return *this; }
-        Builder& setProjectionMatrix(const glm::mat4& proj) { ctx_.projectionMatrix = proj; return *this; }
-        Builder& setViewProjection(const glm::mat4& view, const glm::mat4& proj) {
-            ctx_.viewMatrix = view;
-            ctx_.projectionMatrix = proj;
-            ctx_.viewProjectionMatrix = proj * view;
-            return *this;
-        }
-        Builder& setViewProjectionMatrix(const glm::mat4& viewProj) {
-            ctx_.viewProjectionMatrix = viewProj;
-            return *this;
-        }
+    VegetationRenderContextBuilder& setCameraPosition(const glm::vec3& pos) { ctx_.cameraPosition = pos; return *this; }
+    VegetationRenderContextBuilder& setViewMatrix(const glm::mat4& view) { ctx_.viewMatrix = view; return *this; }
+    VegetationRenderContextBuilder& setProjectionMatrix(const glm::mat4& proj) { ctx_.projectionMatrix = proj; return *this; }
+    VegetationRenderContextBuilder& setViewProjection(const glm::mat4& view, const glm::mat4& proj) {
+        ctx_.viewMatrix = view;
+        ctx_.projectionMatrix = proj;
+        ctx_.viewProjectionMatrix = proj * view;
+        return *this;
+    }
+    VegetationRenderContextBuilder& setViewProjectionMatrix(const glm::mat4& viewProj) {
+        ctx_.viewProjectionMatrix = viewProj;
+        return *this;
+    }
 
-        Builder& setTerrainInfo(float size, float heightScale) {
-            ctx_.terrainSize = size;
-            ctx_.terrainHeightScale = heightScale;
-            return *this;
-        }
+    VegetationRenderContextBuilder& setTerrainInfo(float size, float heightScale) {
+        ctx_.terrainSize = size;
+        ctx_.terrainHeightScale = heightScale;
+        return *this;
+    }
 
-        Builder& setWindUBO(vk::Buffer buffer, vk::DeviceSize offset = 0) {
-            ctx_.windUBO = buffer;
-            ctx_.windUBOOffset = offset;
-            return *this;
-        }
+    VegetationRenderContextBuilder& setWindUBO(vk::Buffer buffer, vk::DeviceSize offset = 0) {
+        ctx_.windUBO = buffer;
+        ctx_.windUBOOffset = offset;
+        return *this;
+    }
 
-        Builder& setDisplacement(vk::ImageView view, vk::Sampler sampler, const glm::vec4& region) {
-            ctx_.displacementView = view;
-            ctx_.displacementSampler = sampler;
-            ctx_.displacementRegion = region;
-            return *this;
-        }
+    VegetationRenderContextBuilder& setDisplacement(vk::ImageView view, vk::Sampler sampler, const glm::vec4& region) {
+        ctx_.displacementView = view;
+        ctx_.displacementSampler = sampler;
+        ctx_.displacementRegion = region;
+        return *this;
+    }
 
-        Builder& setShadowMap(vk::ImageView view, vk::Sampler sampler) {
-            ctx_.shadowMapView = view;
-            ctx_.shadowMapSampler = sampler;
-            return *this;
-        }
+    VegetationRenderContextBuilder& setShadowMap(vk::ImageView view, vk::Sampler sampler) {
+        ctx_.shadowMapView = view;
+        ctx_.shadowMapSampler = sampler;
+        return *this;
+    }
 
-        Builder& setCloudShadow(vk::ImageView view, vk::Sampler sampler) {
-            ctx_.cloudShadowView = view;
-            ctx_.cloudShadowSampler = sampler;
-            return *this;
-        }
+    VegetationRenderContextBuilder& setCloudShadow(vk::ImageView view, vk::Sampler sampler) {
+        ctx_.cloudShadowView = view;
+        ctx_.cloudShadowSampler = sampler;
+        return *this;
+    }
 
-        Builder& setEnvironment(const EnvironmentSettings* env) {
-            ctx_.environment = env;
-            return *this;
-        }
+    VegetationRenderContextBuilder& setEnvironment(const EnvironmentSettings* env) {
+        ctx_.environment = env;
+        return *this;
+    }
 
-        Builder& setRendererUBOOffset(uint32_t offset) {
-            ctx_.rendererUBOOffset = offset;
-            return *this;
-        }
+    VegetationRenderContextBuilder& setRendererUBOOffset(uint32_t offset) {
+        ctx_.rendererUBOOffset = offset;
+        return *this;
+    }
 
-        VegetationRenderContext build() const { return ctx_; }
+    VegetationRenderContext build() const { return ctx_; }
 
-    private:
-        VegetationRenderContext ctx_;
-    };
+private:
+    VegetationRenderContext ctx_;
 };

@@ -2,11 +2,11 @@
 #include "GrassConstants.h"
 #include <cmath>
 #include <algorithm>
-
-namespace {
+#include <vector>
 
 /**
  * ConfigurableGrassLODStrategy - Configurable implementation of IGrassLODStrategy
+ * (Not in anonymous namespace to allow unique_ptr conversion to base class)
  */
 class ConfigurableGrassLODStrategy : public IGrassLODStrategy {
 public:
@@ -127,8 +127,6 @@ public:
 private:
     Config config_;
 };
-
-} // anonymous namespace
 
 std::unique_ptr<IGrassLODStrategy> createDefaultGrassLODStrategy() {
     ConfigurableGrassLODStrategy::Config config;

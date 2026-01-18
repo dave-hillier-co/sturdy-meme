@@ -72,6 +72,15 @@ public:
         return graphicsPipeline_ ? **graphicsPipeline_ : vk::Pipeline{};
     }
 
+    // Pointer accessors for cases where persistent references are needed
+    const vk::Pipeline* getGraphicsPipelinePtr() const {
+        return graphicsPipeline_ ? &static_cast<const vk::Pipeline&>(**graphicsPipeline_) : nullptr;
+    }
+
+    const vk::PipelineLayout* getPipelineLayoutPtr() const {
+        return pipelineLayout_ ? &static_cast<const vk::PipelineLayout&>(**pipelineLayout_) : nullptr;
+    }
+
     DescriptorManager::Pool* getDescriptorPool() {
         return descriptorManagerPool_.has_value() ? &*descriptorManagerPool_ : nullptr;
     }

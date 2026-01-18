@@ -4,6 +4,7 @@
 #include "BufferUtils.h"
 #include "DescriptorManager.h"
 #include <vulkan/vulkan.hpp>
+#include <vulkan/vulkan_raii.hpp>
 #include <vk_mem_alloc.h>
 #include <glm/glm.hpp>
 #include <vector>

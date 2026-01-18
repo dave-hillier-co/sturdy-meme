@@ -43,7 +43,7 @@ VegetationRenderContext VegetationRenderContext::fromSystems(
 
     // Cloud shadow
     ctx.cloudShadowView = systems.cloudShadow().getShadowMapView();
-    ctx.cloudShadowSampler = systems.cloudShadow().getSampler();
+    ctx.cloudShadowSampler = systems.cloudShadow().getShadowMapSampler();
 
     // Environment settings
     ctx.environment = &systems.wind().getEnvironmentSettings();

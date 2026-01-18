@@ -6,6 +6,7 @@
 #include "core/vulkan/SamplerFactory.h"
 #include "core/vulkan/PipelineLayoutBuilder.h"
 #include "core/vulkan/DescriptorSetLayoutBuilder.h"
+#include "core/vulkan/RenderPassBuilder.h"
 #include "core/ImageBuilder.h"
 #include <SDL3/SDL_log.h>
 #include <vulkan/vulkan.hpp>
@@ -203,80 +204,18 @@ void WaterGBuffer::destroyImages() {
 }
 
 bool WaterGBuffer::createRenderPass() {
-    // Attachment descriptions
-    std::array<vk::AttachmentDescription, 3> attachments = {
-        // Data attachment (RGBA8)
-        vk::AttachmentDescription{}
-            .setFormat(vk::Format::eR8G8B8A8Unorm)
-            .setSamples(vk::SampleCountFlagBits::e1)
-            .setLoadOp(vk::AttachmentLoadOp::eClear)
-            .setStoreOp(vk::AttachmentStoreOp::eStore)
-            .setStencilLoadOp(vk::AttachmentLoadOp::eDontCare)
-            .setStencilStoreOp(vk::AttachmentStoreOp::eDontCare)
-            .setInitialLayout(vk::ImageLayout::eUndefined)
-            .setFinalLayout(vk::ImageLayout::eShaderReadOnlyOptimal),
-        // Normal attachment (RGBA16F)
-        vk::AttachmentDescription{}
-            .setFormat(vk::Format::eR16G16B16A16Sfloat)
-            .setSamples(vk::SampleCountFlagBits::e1)
-            .setLoadOp(vk::AttachmentLoadOp::eClear)
-            .setStoreOp(vk::AttachmentStoreOp::eStore)
-            .setStencilLoadOp(vk::AttachmentLoadOp::eDontCare)
-            .setStencilStoreOp(vk::AttachmentStoreOp::eDontCare)
-            .setInitialLayout(vk::ImageLayout::eUndefined)
-            .setFinalLayout(vk::ImageLayout::eShaderReadOnlyOptimal),
-        // Depth attachment (D32F)
-        vk::AttachmentDescription{}
-            .setFormat(vk::Format::eD32Sfloat)
-            .setSamples(vk::SampleCountFlagBits::e1)
-            .setLoadOp(vk::AttachmentLoadOp::eClear)
-            .setStoreOp(vk::AttachmentStoreOp::eStore)
-            .setStencilLoadOp(vk::AttachmentLoadOp::eDontCare)
-            .setStencilStoreOp(vk::AttachmentStoreOp::eDontCare)
-            .setInitialLayout(vk::ImageLayout::eUndefined)
-            .setFinalLayout(vk::ImageLayout::eDepthStencilReadOnlyOptimal)
-    };
-
-    // Subpass
-    std::array<vk::AttachmentReference, 2> colorRefs = {
-        vk::AttachmentReference{0, vk::ImageLayout::eColorAttachmentOptimal},
-        vk::AttachmentReference{1, vk::ImageLayout::eColorAttachmentOptimal}
-    };
-
-    vk::AttachmentReference depthRef{2, vk::ImageLayout::eDepthStencilAttachmentOptimal};
-
-    auto subpass = vk::SubpassDescription{}
-        .setPipelineBindPoint(vk::PipelineBindPoint::eGraphics)
-        .setColorAttachments(colorRefs)
-        .setPDepthStencilAttachment(&depthRef);
-
-    // Subpass dependencies
-    std::array<vk::SubpassDependency, 2> dependencies = {
-        vk::SubpassDependency{}
-            .setSrcSubpass(VK_SUBPASS_EXTERNAL)
-            .setDstSubpass(0)
-            .setSrcStageMask(vk::PipelineStageFlagBits::eFragmentShader)
-            .setDstStageMask(vk::PipelineStageFlagBits::eColorAttachmentOutput | vk::PipelineStageFlagBits::eEarlyFragmentTests)
-            .setSrcAccessMask(vk::AccessFlagBits::eShaderRead)
-            .setDstAccessMask(vk::AccessFlagBits::eColorAttachmentWrite | vk::AccessFlagBits::eDepthStencilAttachmentWrite),
-        vk::SubpassDependency{}
-            .setSrcSubpass(0)
-            .setDstSubpass(VK_SUBPASS_EXTERNAL)
-            .setSrcStageMask(vk::PipelineStageFlagBits::eColorAttachmentOutput | vk::PipelineStageFlagBits::eLateFragmentTests)
-            .setDstStageMask(vk::PipelineStageFlagBits::eFragmentShader)
-            .setSrcAccessMask(vk::AccessFlagBits::eColorAttachmentWrite | vk::AccessFlagBits::eDepthStencilAttachmentWrite)
-            .setDstAccessMask(vk::AccessFlagBits::eShaderRead)
-    };
-
-    auto renderPassInfo = vk::RenderPassCreateInfo{}
-        .setAttachments(attachments)
-        .setSubpasses(subpass)
-        .setDependencies(dependencies);
-
-    try {
-        renderPass_.emplace(*raiiDevice_, renderPassInfo);
-    } catch (const vk::SystemError& e) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "WaterGBuffer: Failed to create render pass: %s", e.what());
+    // G-buffer with 2 color attachments (data + normals) and depth
+    // All written then sampled in subsequent passes
+    if (!RenderPassBuilder()
+            .addColorAttachment(AttachmentBuilder::color(vk::Format::eR8G8B8A8Unorm)
+                .finalLayout(vk::ImageLayout::eShaderReadOnlyOptimal))
+            .addColorAttachment(AttachmentBuilder::color(vk::Format::eR16G16B16A16Sfloat)
+                .finalLayout(vk::ImageLayout::eShaderReadOnlyOptimal))
+            .setDepthAttachment(AttachmentBuilder::depth(vk::Format::eD32Sfloat)
+                .storeOp(vk::AttachmentStoreOp::eStore)
+                .finalLayout(vk::ImageLayout::eDepthStencilReadOnlyOptimal))
+            .buildInto(*raiiDevice_, renderPass_)) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "WaterGBuffer: Failed to create render pass");
         return false;
     }
     return true;

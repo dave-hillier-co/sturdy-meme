@@ -101,7 +101,7 @@ RendererSystems::RendererSystems()
     // waterGBuffer_ created via factory in RendererInitPhases
     // Tier 2 - Geometry
     // catmullClarkSystem_ created via factory in RendererInitPhases
-    // rockSystem_ created via factory in RendererInitPhases
+    // rocksSystem_ created via factory in RendererInitPhases
     // Tier 2 - Culling
     // hiZSystem_ created via factory in RendererInit
     // Infrastructure
@@ -329,7 +329,7 @@ void RendererSystems::destroy(VkDevice device, VmaAllocator allocator) {
     // Geometry/Vegetation
     detritusSystem_.reset();  // RAII cleanup via destructor
     catmullClarkSystem_.reset();  // RAII cleanup via destructor
-    rockSystem_.reset();  // RAII cleanup via destructor
+    rocksSystem_.reset();  // RAII cleanup via destructor
     treeLODSystem_.reset();  // RAII cleanup via destructor
     impostorCullSystem_.reset();  // RAII cleanup via destructor
     treeRenderer_.reset();  // RAII cleanup via destructor

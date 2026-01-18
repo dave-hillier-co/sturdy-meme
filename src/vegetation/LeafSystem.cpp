@@ -2,6 +2,7 @@
 #include "CullCommon.h"
 #include "ShaderLoader.h"
 #include "DescriptorManager.h"
+#include "core/vulkan/BarrierHelpers.h"
 #include <SDL3/SDL.h>
 #include <vulkan/vulkan.hpp>
 #include <cstring>
@@ -377,28 +378,31 @@ bool LeafSystem::createDescriptorSets() {
     return true;
 }
 
-void LeafSystem::updateDescriptorSets(VkDevice dev, const std::vector<VkBuffer>& rendererUniformBuffers,
-                                       const std::vector<VkBuffer>& windBuffers,
-                                       VkImageView terrainHeightMapView,
-                                       VkSampler terrainHeightMapSampler,
-                                       VkImageView displacementMapViewParam,
-                                       VkSampler displacementMapSamplerParam,
-                                       VkImageView tileArrayView,
-                                       VkSampler tileSampler,
-                                       const std::array<VkBuffer, 3>& tileInfoBuffersParam,
+void LeafSystem::updateDescriptorSets(vk::Device dev, const std::vector<vk::Buffer>& rendererUniformBuffers,
+                                       const std::vector<vk::Buffer>& windBuffers,
+                                       vk::ImageView terrainHeightMapView,
+                                       vk::Sampler terrainHeightMapSampler,
+                                       vk::ImageView displacementMapViewParam,
+                                       vk::Sampler displacementMapSamplerParam,
+                                       vk::ImageView tileArrayView,
+                                       vk::Sampler tileSampler,
+                                       const std::array<vk::Buffer, 3>& tileInfoBuffersParam,
                                        const BufferUtils::DynamicUniformBuffer* dynamicRendererUBO) {
     // Store displacement texture references
-    this->displacementMapView = displacementMapViewParam;
-    this->displacementMapSampler = displacementMapSamplerParam;
+    this->displacementMapView = static_cast<VkImageView>(displacementMapViewParam);
+    this->displacementMapSampler = static_cast<VkSampler>(displacementMapSamplerParam);
 
     // Store tile info buffers (triple-buffered for frames-in-flight sync)
     tileInfoBuffers_.resize(tileInfoBuffersParam.size());
     for (size_t i = 0; i < tileInfoBuffersParam.size(); ++i) {
-        tileInfoBuffers_[i] = tileInfoBuffersParam[i];
+        tileInfoBuffers_[i] = static_cast<VkBuffer>(tileInfoBuffersParam[i]);
     }
 
     // Store renderer uniform buffers (kept for backward compatibility)
-    this->rendererUniformBuffers_ = rendererUniformBuffers;
+    this->rendererUniformBuffers_.resize(rendererUniformBuffers.size());
+    for (size_t i = 0; i < rendererUniformBuffers.size(); ++i) {
+        rendererUniformBuffers_[i] = static_cast<VkBuffer>(rendererUniformBuffers[i]);
+    }
 
     // Store dynamic renderer UBO reference for per-frame binding with dynamic offsets
     this->dynamicRendererUBO_ = dynamicRendererUBO;
@@ -542,11 +546,7 @@ void LeafSystem::recordResetAndCompute(VkCommandBuffer cmd, uint32_t frameIndex,
 
     // Reset indirect buffer before compute dispatch
     vkCmd.fillBuffer(indirectBuffers.buffers[writeSet], 0, sizeof(VkDrawIndirectCommand), 0);
-    auto transferBarrier = vk::MemoryBarrier{}
-        .setSrcAccessMask(vk::AccessFlagBits::eTransferWrite)
-        .setDstAccessMask(vk::AccessFlagBits::eShaderRead);
-    vkCmd.pipelineBarrier(vk::PipelineStageFlagBits::eTransfer, vk::PipelineStageFlagBits::eComputeShader,
-                          {}, transferBarrier, {}, {});
+    BarrierHelpers::fillBufferToCompute(vkCmd);
 
     // Dispatch leaf compute shader
     vkCmd.bindPipeline(vk::PipelineBindPoint::eCompute, getComputePipelineHandles().pipeline);
@@ -565,12 +565,7 @@ void LeafSystem::recordResetAndCompute(VkCommandBuffer cmd, uint32_t frameIndex,
     vkCmd.dispatch(workgroupCount, 1, 1);
 
     // Memory barrier: compute write -> vertex shader read and indirect read
-    auto computeBarrier = vk::MemoryBarrier{}
-        .setSrcAccessMask(vk::AccessFlagBits::eShaderWrite)
-        .setDstAccessMask(vk::AccessFlagBits::eIndirectCommandRead | vk::AccessFlagBits::eVertexAttributeRead);
-    vkCmd.pipelineBarrier(vk::PipelineStageFlagBits::eComputeShader,
-                          vk::PipelineStageFlagBits::eDrawIndirect | vk::PipelineStageFlagBits::eVertexInput,
-                          {}, computeBarrier, {}, {});
+    BarrierHelpers::computeToIndirectDrawAndVertex(vkCmd);
 }
 
 void LeafSystem::recordDraw(VkCommandBuffer cmd, uint32_t frameIndex, float time) {

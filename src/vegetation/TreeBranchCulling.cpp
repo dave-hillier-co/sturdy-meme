@@ -4,6 +4,8 @@
 #include "ShaderLoader.h"
 #include "ComputePipelineBuilder.h"
 #include "Bindings.h"
+#include "core/ComputeShaderCommon.h"
+#include "core/vulkan/BarrierHelpers.h"
 #include <SDL3/SDL_log.h>
 #include <vulkan/vulkan.hpp>
 #include <cstring>
@@ -401,13 +403,8 @@ void TreeBranchCulling::recordCulling(VkCommandBuffer cmd, uint32_t frameIndex,
     }
 
     // Memory barrier to ensure buffer update completes before compute shader reads
-    auto resetBarrier = vk::MemoryBarrier{}
-        .setSrcAccessMask(vk::AccessFlagBits::eTransferWrite)
-        .setDstAccessMask(vk::AccessFlagBits::eShaderRead | vk::AccessFlagBits::eShaderWrite);
     vk::CommandBuffer vkCmdBarrier(cmd);
-    vkCmdBarrier.pipelineBarrier(
-        vk::PipelineStageFlagBits::eTransfer, vk::PipelineStageFlagBits::eComputeShader,
-        {}, resetBarrier, {}, {});
+    BarrierHelpers::fillBufferToCompute(vkCmdBarrier);
 
     // Update uniforms
     BranchShadowCullUniforms uniforms{};
@@ -434,19 +431,12 @@ void TreeBranchCulling::recordCulling(VkCommandBuffer cmd, uint32_t frameIndex,
     vkCmd.bindDescriptorSets(vk::PipelineBindPoint::eCompute, **cullPipelineLayout_,
                              0, vk::DescriptorSet(cullDescriptorSets_[frameIndex]), {});
 
-    // Dispatch: one workgroup per 256 trees
-    uint32_t numWorkgroups = (numTrees_ + 255) / 256;
+    // Dispatch: one workgroup per WORKGROUP_SIZE_1D trees
+    uint32_t numWorkgroups = ComputeConstants::getDispatchCount1D(numTrees_);
     vkCmd.dispatch(numWorkgroups, 1, 1);
 
     // Memory barrier: compute writes -> graphics reads
-    auto barrier = vk::MemoryBarrier{}
-        .setSrcAccessMask(vk::AccessFlagBits::eShaderWrite)
-        .setDstAccessMask(vk::AccessFlagBits::eIndirectCommandRead | vk::AccessFlagBits::eShaderRead);
-
-    vkCmd.pipelineBarrier(
-        vk::PipelineStageFlagBits::eComputeShader,
-        vk::PipelineStageFlagBits::eDrawIndirect | vk::PipelineStageFlagBits::eVertexShader,
-        {}, barrier, {}, {});
+    BarrierHelpers::computeToIndirectDrawAndShader(vkCmd);
 }
 
 VkBuffer TreeBranchCulling::getInstanceBuffer(uint32_t frameIndex) const {

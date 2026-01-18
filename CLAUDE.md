@@ -8,6 +8,7 @@
 - always ensure that the build both compiles and runs without crashing before considering it done
 - shaders can be compiled by running cmake
 - prefer to use RAII and smart pointers
+- do not use init destroy patterns
 - UBO structs are automatically generated from shaders during the cmake build. The `shader_reflect` tool (in `tools/`) parses compiled SPIR-V files using SPIRV-Reflect and outputs `generated/UBOs.h` with std140-aligned C++ structs matching the shader uniform buffer layouts.
 - compile with `cmake --preset debug && cmake --build build/debug`
 - run with `./run-debug.sh` do not attempt to combine with timeouts or sleeps

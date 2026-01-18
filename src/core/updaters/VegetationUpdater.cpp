@@ -17,6 +17,7 @@
 #include "DeferredTerrainObjects.h"
 #include "TerrainSystem.h"
 #include "ScatterSystem.h"
+#include "SceneManager.h"
 
 #include <cmath>
 
@@ -49,8 +50,9 @@ void VegetationUpdater::tryGenerateDeferredObjects(RendererSystems& systems) {
     // Get a reference to detritus unique_ptr for the output
     std::unique_ptr<ScatterSystem> detritusSystem;
 
-    // Try to generate the deferred content
+    // Try to generate the deferred content (scene objects, trees, detritus)
     bool generated = deferred->tryGenerate(
+        &systems.scene(),  // SceneManager for deferred scene object creation
         systems.tree(),
         systems.treeLOD(),
         systems.impostorCull(),

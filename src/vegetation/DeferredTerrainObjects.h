@@ -14,6 +14,7 @@ class TreeLODSystem;
 class ImpostorCullSystem;
 class TreeRenderer;
 class ScatterSystem;
+class SceneManager;
 
 /**
  * DeferredTerrainObjects - Defers creation of trees, rocks, and detritus
@@ -79,6 +80,7 @@ public:
     /**
      * Attempt to generate terrain objects if not already done and terrain is ready.
      *
+     * @param sceneManager SceneManager to trigger deferred scene object creation
      * @param tree TreeSystem to populate with trees
      * @param treeLOD Optional TreeLODSystem for impostor generation
      * @param impostorCull Optional ImpostorCullSystem
@@ -90,6 +92,7 @@ public:
      * @return True if generation completed this frame, false otherwise
      */
     bool tryGenerate(
+        SceneManager* sceneManager,
         TreeSystem* tree,
         TreeLODSystem* treeLOD,
         ImpostorCullSystem* impostorCull,

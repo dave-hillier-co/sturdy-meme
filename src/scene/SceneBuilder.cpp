@@ -32,8 +32,25 @@ bool SceneBuilder::initInternal(const InitInfo& info) {
     if (!createMeshes(info)) return false;
     if (!loadTextures(info)) return false;
     registerMaterials();
-    createRenderables();
+
+    // Create renderables now or defer for later
+    if (!info.deferRenderables) {
+        createRenderables();
+        renderablesCreated_ = true;
+    } else {
+        SDL_Log("SceneBuilder: Deferring renderables creation until terrain is ready");
+    }
     return true;
+}
+
+void SceneBuilder::createRenderablesDeferred() {
+    if (renderablesCreated_) {
+        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "SceneBuilder: Renderables already created");
+        return;
+    }
+    SDL_Log("SceneBuilder: Creating deferred renderables now");
+    createRenderables();
+    renderablesCreated_ = true;
 }
 
 void SceneBuilder::registerMaterials() {

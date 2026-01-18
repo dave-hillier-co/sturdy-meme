@@ -197,6 +197,8 @@ bool Renderer::initSubsystems(const InitContext& initCtx) {
     // Settlement coords (9200, 3000) in 0-16384 space -> world coords by subtracting 8192
     const float halfTerrain = 8192.0f;
     sceneInfo.sceneOrigin = glm::vec2(9200.0f - halfTerrain, 3000.0f - halfTerrain);
+    // Defer scene object creation until terrain is fully loaded
+    sceneInfo.deferRenderables = true;
 
     {
         INIT_PROFILE_PHASE("SceneManager");

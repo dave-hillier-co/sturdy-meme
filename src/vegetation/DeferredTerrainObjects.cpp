@@ -1,4 +1,5 @@
-// DeferredTerrainObjects.cpp - Deferred vegetation content generation
+// DeferredTerrainObjects.cpp - Deferred terrain object generation
+// Handles scene objects, trees, and detritus creation after terrain is ready
 
 #include "DeferredTerrainObjects.h"
 #include "TreeSystem.h"
@@ -6,6 +7,8 @@
 #include "ImpostorCullSystem.h"
 #include "TreeRenderer.h"
 #include "ScatterSystem.h"
+#include "SceneManager.h"
+#include "SceneBuilder.h"
 #include <SDL3/SDL.h>
 
 std::unique_ptr<DeferredTerrainObjects> DeferredTerrainObjects::create(const Config& config) {
@@ -22,6 +25,7 @@ bool DeferredTerrainObjects::initInternal(const Config& config) {
 }
 
 bool DeferredTerrainObjects::tryGenerate(
+    SceneManager* sceneManager,
     TreeSystem* tree,
     TreeLODSystem* treeLOD,
     ImpostorCullSystem* impostorCull,
@@ -43,7 +47,16 @@ bool DeferredTerrainObjects::tryGenerate(
     // Mark as generating (for progress tracking if needed)
     generating_ = true;
 
-    SDL_Log("DeferredTerrainObjects: Terrain ready, generating vegetation content...");
+    SDL_Log("DeferredTerrainObjects: Terrain ready, generating scene and vegetation content...");
+
+    // First, create scene objects (player, crates, etc.) now that terrain heights are available
+    if (sceneManager) {
+        SceneBuilder& builder = sceneManager->getSceneBuilder();
+        if (!builder.hasRenderables()) {
+            builder.createRenderablesDeferred();
+            SDL_Log("DeferredTerrainObjects: Scene objects created");
+        }
+    }
 
     // Create vegetation content generator
     VegetationContentGenerator::Config vegConfig;

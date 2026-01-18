@@ -97,30 +97,28 @@ float grassPerlinNoise(float x, float y) {
 // gustAmp: gust amplitude
 float grassSampleWind(vec2 worldPos, vec2 windDir, float windStrength, float windSpeed,
                       float windTime, float gustFreq, float gustAmp) {
-    // Project position onto wind direction - this is the key to rolling waves
-    // Waves travel along this axis, creating bands perpendicular to wind
+    // Project position onto wind direction - waves travel along this axis
     float alongWind = dot(worldPos, windDir);
 
-    // Primary rolling wave - large scale waves traveling in wind direction
-    // Wavelength ~8m (0.8 frequency), travels at windSpeed
-    float primaryWave = sin(alongWind * 0.8 - windTime * windSpeed * 0.5);
+    // Noise modulates the wave phase - creates organic variation in wave shape
+    // without breaking the rolling wave structure
+    float phaseNoise = grassPerlinNoise(worldPos.x * 0.1, worldPos.y * 0.1) * 2.0;
 
-    // Secondary wave - adds complexity, different wavelength ~5m
-    float secondaryWave = sin(alongWind * 1.3 - windTime * windSpeed * 0.7) * 0.4;
+    // Primary rolling wave with noise-modulated phase
+    float primaryPhase = alongWind * 0.8 + phaseNoise;
+    float primaryWave = sin(primaryPhase - windTime * windSpeed * 0.5);
 
-    // Combine waves (primary dominant)
-    float wavePattern = (primaryWave + secondaryWave) * 0.5 + 0.5; // Normalize to 0-1
+    // Secondary wave at different frequency, also noise-modulated
+    float secondaryPhase = alongWind * 1.3 + phaseNoise * 0.7;
+    float secondaryWave = sin(secondaryPhase - windTime * windSpeed * 0.7) * 0.4;
 
-    // Add subtle noise variation along wave fronts (perpendicular to wind)
-    // This prevents waves from looking too uniform/artificial
-    vec2 perpDir = vec2(-windDir.y, windDir.x);
-    float acrossWind = dot(worldPos, perpDir);
-    float variation = grassPerlinNoise(acrossWind * 0.15, alongWind * 0.05) * 0.3;
+    // Combine waves and normalize to 0-1
+    float wavePattern = (primaryWave + secondaryWave) * 0.5 + 0.5;
 
     // Time-varying gust affects overall intensity
     float gust = (sin(windTime * gustFreq * GRASS_TWO_PI) * 0.5 + 0.5) * gustAmp;
 
-    return (wavePattern + variation + gust) * windStrength;
+    return (wavePattern + gust) * windStrength;
 }
 
 // Quadratic Bezier evaluation

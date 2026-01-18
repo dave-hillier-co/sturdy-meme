@@ -708,10 +708,12 @@ void SceneBuilder::updateWeaponTransforms(const glm::mat4& characterWorldTransfo
         // Combine with character world transform
         glm::mat4 weaponWorld = characterWorldTransform * boneGlobal;
 
-        // Offset sword so it extends from the hand:
-        // - Rotate to point along the hand's direction (along Y axis of the bone)
-        // - Translate so the base is at the hand position
-        glm::mat4 swordOffset = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.4f, 0.0f));
+        // Cylinder is created with height along Y axis, centered at origin.
+        // For Mixamo rigs, hand's Z axis points along fingers.
+        // Rotate -90° around X to align sword with finger direction (Z axis)
+        // Then offset along Z so sword extends from grip
+        glm::mat4 swordOffset = glm::rotate(glm::mat4(1.0f), glm::radians(-90.0f), glm::vec3(1.0f, 0.0f, 0.0f));
+        swordOffset = glm::translate(swordOffset, glm::vec3(0.0f, 0.4f, 0.0f));  // Offset along sword length
         sceneObjects[swordIndex].transform = weaponWorld * swordOffset;
     }
 
@@ -723,11 +725,9 @@ void SceneBuilder::updateWeaponTransforms(const glm::mat4& characterWorldTransfo
         // Combine with character world transform
         glm::mat4 weaponWorld = characterWorldTransform * boneGlobal;
 
-        // Offset shield so it's on the forearm:
-        // - Rotate 90 degrees to face forward (shield face perpendicular to arm)
-        // - Translate slightly up the arm
-        glm::mat4 shieldOffset = glm::rotate(glm::mat4(1.0f), glm::radians(90.0f), glm::vec3(1.0f, 0.0f, 0.0f));
-        shieldOffset = glm::translate(shieldOffset, glm::vec3(0.0f, -0.15f, 0.0f));
+        // Shield is a flat cylinder - rotate so face points outward (along Z)
+        // No rotation needed for face direction, just position on forearm
+        glm::mat4 shieldOffset = glm::mat4(1.0f);
         sceneObjects[shieldIndex].transform = weaponWorld * shieldOffset;
     }
 }

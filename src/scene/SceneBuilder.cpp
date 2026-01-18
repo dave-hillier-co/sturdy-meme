@@ -96,6 +96,7 @@ void SceneBuilder::cleanup() {
     flagPoleMesh.reset();
     swordMesh.reset();
     shieldMesh.reset();
+    axisLineMesh.reset();
 
     // Manually managed meshes (dynamic - re-uploaded during runtime)
     flagClothMesh.releaseGPUResources();
@@ -136,6 +137,11 @@ bool SceneBuilder::createMeshes(const InitInfo& info) {
     shieldMesh = std::make_unique<Mesh>();
     shieldMesh->createCylinder(0.2f, 0.03f, 16);
     if (!shieldMesh->upload(info.allocator, info.device, info.commandPool, info.graphicsQueue)) return false;
+
+    // Axis line mesh for debug visualization (thin cylinder: 0.005m radius, 0.15m length)
+    axisLineMesh = std::make_unique<Mesh>();
+    axisLineMesh->createCylinder(0.005f, 0.15f, 8);
+    if (!axisLineMesh->upload(info.allocator, info.device, info.commandPool, info.graphicsQueue)) return false;
 
     // Flag cloth mesh will be initialized later by ClothSimulation
     // (it's dynamic and will be updated each frame)
@@ -556,6 +562,50 @@ void SceneBuilder::createRenderables() {
         SDL_Log("SceneBuilder: Added shield renderable at index %zu", shieldIndex);
     }
 
+    // Debug axis indicators for right hand (R=X, G=Y, B=Z)
+    if (hasAnimatedCharacter && rightHandBoneIndex >= 0) {
+        // X axis - Red
+        rightHandAxisX = sceneObjects.size();
+        sceneObjects.push_back(RenderableBuilder()
+            .withTransform(glm::mat4(1.0f))
+            .withMesh(axisLineMesh.get())
+            .withTexture(whiteTex)
+            .withMaterialId(whiteMaterialId)
+            .withRoughness(1.0f)
+            .withMetallic(0.0f)
+            .withEmissiveColor(glm::vec3(1.0f, 0.0f, 0.0f))
+            .withEmissiveIntensity(5.0f)
+            .withCastsShadow(false)
+            .build());
+        // Y axis - Green
+        rightHandAxisY = sceneObjects.size();
+        sceneObjects.push_back(RenderableBuilder()
+            .withTransform(glm::mat4(1.0f))
+            .withMesh(axisLineMesh.get())
+            .withTexture(whiteTex)
+            .withMaterialId(whiteMaterialId)
+            .withRoughness(1.0f)
+            .withMetallic(0.0f)
+            .withEmissiveColor(glm::vec3(0.0f, 1.0f, 0.0f))
+            .withEmissiveIntensity(5.0f)
+            .withCastsShadow(false)
+            .build());
+        // Z axis - Blue
+        rightHandAxisZ = sceneObjects.size();
+        sceneObjects.push_back(RenderableBuilder()
+            .withTransform(glm::mat4(1.0f))
+            .withMesh(axisLineMesh.get())
+            .withTexture(whiteTex)
+            .withMaterialId(whiteMaterialId)
+            .withRoughness(1.0f)
+            .withMetallic(0.0f)
+            .withEmissiveColor(glm::vec3(0.0f, 0.0f, 1.0f))
+            .withEmissiveIntensity(5.0f)
+            .withCastsShadow(false)
+            .build());
+        SDL_Log("SceneBuilder: Added debug axis indicators for right hand");
+    }
+
     // Flag pole - 3m pole, center at 1.5m above ground
     auto [flagPoleX, flagPoleZ] = worldPos(5.0f, 0.0f);
     flagPoleIndex = sceneObjects.size();
@@ -729,6 +779,31 @@ void SceneBuilder::updateWeaponTransforms(const glm::mat4& worldTransform) {
         shieldOffset = glm::translate(shieldOffset, glm::vec3(0.0f, wristToPalmOffset, 0.0f));  // Offset to forearm
 
         sceneObjects[shieldIndex].transform = boneWorld * shieldOffset;
+    }
+
+    // Debug axis indicators for right hand - cylinder points along Y, so rotate to each axis
+    if (rightHandBoneIndex >= 0) {
+        glm::mat4 boneWorld = worldTransform * globalTransforms[rightHandBoneIndex];
+
+        // X axis (Red) - rotate 90° around Z to point Y toward X
+        if (rightHandAxisX < sceneObjects.size()) {
+            glm::mat4 xOffset = glm::rotate(glm::mat4(1.0f), glm::radians(-90.0f), glm::vec3(0.0f, 0.0f, 1.0f));
+            xOffset = glm::translate(xOffset, glm::vec3(0.0f, 0.075f, 0.0f));  // Center the line
+            sceneObjects[rightHandAxisX].transform = boneWorld * xOffset;
+        }
+
+        // Y axis (Green) - no rotation needed, cylinder already points along Y
+        if (rightHandAxisY < sceneObjects.size()) {
+            glm::mat4 yOffset = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.075f, 0.0f));  // Center the line
+            sceneObjects[rightHandAxisY].transform = boneWorld * yOffset;
+        }
+
+        // Z axis (Blue) - rotate 90° around X to point Y toward Z
+        if (rightHandAxisZ < sceneObjects.size()) {
+            glm::mat4 zOffset = glm::rotate(glm::mat4(1.0f), glm::radians(90.0f), glm::vec3(1.0f, 0.0f, 0.0f));
+            zOffset = glm::translate(zOffset, glm::vec3(0.0f, 0.075f, 0.0f));  // Center the line
+            sceneObjects[rightHandAxisZ].transform = boneWorld * zOffset;
+        }
     }
 }
 

@@ -162,6 +162,7 @@ private:
     std::unique_ptr<Mesh> flagPoleMesh;
     std::unique_ptr<Mesh> swordMesh;   // Long cylinder for sword
     std::unique_ptr<Mesh> shieldMesh;  // Flat cylinder for shield
+    std::unique_ptr<Mesh> axisLineMesh; // Thin cylinder for debug axis visualization
 
     // Meshes (dynamic - manually managed, re-uploaded during runtime)
     Mesh flagClothMesh;
@@ -195,6 +196,10 @@ private:
     size_t emissiveOrbIndex = 0;  // Glowing orb that has a corresponding light
     size_t swordIndex = 0;        // Player sword renderable index
     size_t shieldIndex = 0;       // Player shield renderable index
+    // Debug axis indicators (R=X, G=Y, B=Z) for right hand
+    size_t rightHandAxisX = 0;
+    size_t rightHandAxisY = 0;
+    size_t rightHandAxisZ = 0;
     int32_t rightHandBoneIndex = -1;  // Bone index for sword attachment
     int32_t leftHandBoneIndex = -1;   // Bone index for shield attachment
 

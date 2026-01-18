@@ -12,6 +12,7 @@ class SnowMaskSystem;
 class VolumetricSnowSystem;
 class WeatherSystem;
 class LeafSystem;
+class VulkanServices;
 
 /**
  * SnowSystemGroup - Groups snow and weather-related rendering systems
@@ -74,8 +75,23 @@ struct SnowSystemGroup {
     };
 
     /**
+     * Dependencies with VulkanServices (DI-friendly version).
+     */
+    struct CreateDepsDI {
+        const VulkanServices& services;
+        VkRenderPass hdrRenderPass;
+    };
+
+    /**
      * Factory: Create all snow and weather systems.
      * Returns nullopt on failure.
      */
     static std::optional<Bundle> createAll(const CreateDeps& deps);
+
+    /**
+     * Factory: Create all snow and weather systems (DI version).
+     * Uses VulkanServices for common Vulkan resources.
+     * Returns nullopt on failure.
+     */
+    static std::optional<Bundle> createAll(const CreateDepsDI& deps);
 };

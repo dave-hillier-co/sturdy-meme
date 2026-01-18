@@ -1,6 +1,7 @@
 #include "PostProcessSystem.h"
 #include "BloomSystem.h"
 #include "BilateralGridSystem.h"
+#include "VulkanServices.h"
 #include "ShaderLoader.h"
 #include "DescriptorManager.h"
 #include "core/pipeline/ComputePipelineBuilder.h"
@@ -56,6 +57,76 @@ std::optional<PostProcessSystem::Bundle> PostProcessSystem::createWithDependenci
 
     // Create bilateral grid system (for local tone mapping)
     auto bilateralGridSystem = BilateralGridSystem::create(ctx);
+    if (!bilateralGridSystem) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to initialize BilateralGridSystem");
+        return std::nullopt;
+    }
+
+    // Wire bloom texture to post-process system
+    postProcessSystem->setBloomTexture(bloomSystem->getBloomOutput(), bloomSystem->getBloomSampler());
+
+    // Wire bilateral grid to post-process system
+    postProcessSystem->setBilateralGrid(bilateralGridSystem->getGridView(), bilateralGridSystem->getGridSampler());
+
+    return Bundle{
+        std::move(postProcessSystem),
+        std::move(bloomSystem),
+        std::move(bilateralGridSystem)
+    };
+}
+
+std::optional<PostProcessSystem::Bundle> PostProcessSystem::createWithDependencies(
+    const VulkanServices& services,
+    VkRenderPass finalRenderPass,
+    VkFormat swapchainImageFormat
+) {
+    // Create post-process system using VulkanServices
+    InitInfo info{
+        .device = services.device(),
+        .allocator = services.allocator(),
+        .outputRenderPass = finalRenderPass,
+        .descriptorPool = services.descriptorPool(),
+        .extent = services.extent(),
+        .swapchainFormat = swapchainImageFormat,
+        .shaderPath = services.shaderPath(),
+        .framesInFlight = services.framesInFlight(),
+        .raiiDevice = services.raiiDevice()
+    };
+
+    auto postProcessSystem = create(info);
+    if (!postProcessSystem) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to initialize PostProcessSystem");
+        return std::nullopt;
+    }
+
+    // Create bloom system
+    BloomSystem::InitInfo bloomInfo{
+        .device = services.device(),
+        .allocator = services.allocator(),
+        .descriptorPool = services.descriptorPool(),
+        .extent = services.extent(),
+        .shaderPath = services.shaderPath(),
+        .raiiDevice = services.raiiDevice()
+    };
+
+    auto bloomSystem = BloomSystem::create(bloomInfo);
+    if (!bloomSystem) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to initialize BloomSystem");
+        return std::nullopt;
+    }
+
+    // Create bilateral grid system
+    BilateralGridSystem::InitInfo gridInfo{
+        .device = services.device(),
+        .allocator = services.allocator(),
+        .descriptorPool = services.descriptorPool(),
+        .extent = services.extent(),
+        .shaderPath = services.shaderPath(),
+        .framesInFlight = services.framesInFlight(),
+        .raiiDevice = services.raiiDevice()
+    };
+
+    auto bilateralGridSystem = BilateralGridSystem::create(gridInfo);
     if (!bilateralGridSystem) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to initialize BilateralGridSystem");
         return std::nullopt;

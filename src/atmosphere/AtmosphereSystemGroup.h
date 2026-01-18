@@ -14,6 +14,7 @@ class FroxelSystem;
 class AtmosphereLUTSystem;
 class CloudShadowSystem;
 class PostProcessSystem;
+class VulkanServices;
 
 /**
  * AtmosphereSystemGroup - Groups atmosphere-related rendering systems
@@ -97,6 +98,22 @@ struct AtmosphereSystemGroup {
      * Note: LUT computation happens inside this factory.
      */
     static std::optional<Bundle> createAll(const CreateDeps& deps);
+
+    /**
+     * Dependencies using VulkanServices (DI-friendly).
+     */
+    struct CreateDepsDI {
+        const VulkanServices& services;
+        VkRenderPass hdrRenderPass;
+        VkImageView shadowMapView;
+        VkSampler shadowSampler;
+        const std::vector<VkBuffer>& lightBuffers;
+    };
+
+    /**
+     * Factory: Create using VulkanServices (DI-friendly).
+     */
+    static std::optional<Bundle> createAll(const CreateDepsDI& deps);
 
     /**
      * Wire atmosphere systems to dependent systems.

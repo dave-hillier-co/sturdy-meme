@@ -21,6 +21,7 @@ class ShadowSystem;
 class TerrainSystem;
 class PostProcessSystem;
 class RendererSystems;
+class VulkanServices;
 
 /**
  * WaterSystemGroup - Groups water-related rendering systems
@@ -115,6 +116,21 @@ struct WaterSystemGroup {
      * additional wiring after other systems are ready.
      */
     static std::optional<Bundle> createAll(const CreateDeps& deps);
+
+    /**
+     * Dependencies using VulkanServices (DI-friendly).
+     */
+    struct CreateDepsDI {
+        const VulkanServices& services;
+        VkRenderPass hdrRenderPass;
+        float waterSize = 65536.0f;
+        std::string assetPath;
+    };
+
+    /**
+     * Factory: Create using VulkanServices (DI-friendly).
+     */
+    static std::optional<Bundle> createAll(const CreateDepsDI& deps);
 
     // ========================================================================
     // Configuration methods (call after systems are in RendererSystems)

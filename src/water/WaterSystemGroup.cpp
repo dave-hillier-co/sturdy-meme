@@ -12,6 +12,7 @@
 #include "ShadowSystem.h"
 #include "TerrainSystem.h"
 #include "PostProcessSystem.h"
+#include "VulkanServices.h"
 #include <SDL3/SDL.h>
 #include <array>
 
@@ -149,6 +150,140 @@ std::optional<WaterSystemGroup::Bundle> WaterSystemGroup::createAll(
     }
 
     SDL_Log("WaterSystemGroup: All systems created successfully");
+    return bundle;
+}
+
+std::optional<WaterSystemGroup::Bundle> WaterSystemGroup::createAll(
+    const CreateDepsDI& deps
+) {
+    Bundle bundle;
+    const auto& s = deps.services;
+
+    // 1. Create WaterSystem
+    WaterSystem::InitInfo waterInfo{
+        .device = s.device(),
+        .physicalDevice = s.physicalDevice(),
+        .allocator = s.allocator(),
+        .descriptorPool = s.descriptorPool(),
+        .hdrRenderPass = deps.hdrRenderPass,
+        .shaderPath = s.shaderPath(),
+        .framesInFlight = s.framesInFlight(),
+        .extent = s.extent(),
+        .commandPool = s.commandPool(),
+        .graphicsQueue = s.graphicsQueue(),
+        .waterSize = deps.waterSize,
+        .assetPath = deps.assetPath,
+        .raiiDevice = s.raiiDevice()
+    };
+    bundle.system = WaterSystem::create(waterInfo);
+    if (!bundle.system) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "WaterSystemGroup: Failed to create WaterSystem");
+        return std::nullopt;
+    }
+
+    // 2. Create FlowMapGenerator
+    FlowMapGenerator::InitInfo flowInfo{
+        .device = s.device(),
+        .allocator = s.allocator(),
+        .commandPool = s.commandPool(),
+        .queue = s.graphicsQueue(),
+        .raiiDevice = s.raiiDevice()
+    };
+    bundle.flowMap = FlowMapGenerator::create(flowInfo);
+    if (!bundle.flowMap) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "WaterSystemGroup: Failed to create FlowMapGenerator");
+        return std::nullopt;
+    }
+
+    // 3. Create WaterDisplacement
+    WaterDisplacement::InitInfo dispInfo{
+        .device = s.device(),
+        .physicalDevice = s.physicalDevice(),
+        .allocator = s.allocator(),
+        .commandPool = s.commandPool(),
+        .computeQueue = s.graphicsQueue(),
+        .framesInFlight = s.framesInFlight(),
+        .displacementResolution = 512,
+        .worldSize = deps.waterSize,
+        .raiiDevice = s.raiiDevice()
+    };
+    bundle.displacement = WaterDisplacement::create(dispInfo);
+    if (!bundle.displacement) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "WaterSystemGroup: Failed to create WaterDisplacement");
+        return std::nullopt;
+    }
+
+    // 4. Create FoamBuffer
+    FoamBuffer::InitInfo foamInfo{
+        .device = s.device(),
+        .physicalDevice = s.physicalDevice(),
+        .allocator = s.allocator(),
+        .commandPool = s.commandPool(),
+        .computeQueue = s.graphicsQueue(),
+        .shaderPath = s.shaderPath(),
+        .framesInFlight = s.framesInFlight(),
+        .resolution = 512,
+        .worldSize = deps.waterSize,
+        .raiiDevice = s.raiiDevice()
+    };
+    bundle.foam = FoamBuffer::create(foamInfo);
+    if (!bundle.foam) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "WaterSystemGroup: Failed to create FoamBuffer");
+        return std::nullopt;
+    }
+
+    // 5. Create SSRSystem
+    SSRSystem::InitInfo ssrInfo{
+        .device = s.device(),
+        .allocator = s.allocator(),
+        .descriptorPool = s.descriptorPool(),
+        .extent = s.extent(),
+        .shaderPath = s.shaderPath(),
+        .framesInFlight = s.framesInFlight(),
+        .raiiDevice = s.raiiDevice()
+    };
+    bundle.ssr = SSRSystem::create(ssrInfo);
+    if (!bundle.ssr) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "WaterSystemGroup: Failed to create SSRSystem");
+        return std::nullopt;
+    }
+
+    // 6. Create WaterTileCull (optional)
+    WaterTileCull::InitInfo cullInfo{
+        .device = s.device(),
+        .physicalDevice = s.physicalDevice(),
+        .allocator = s.allocator(),
+        .commandPool = s.commandPool(),
+        .computeQueue = s.graphicsQueue(),
+        .shaderPath = s.shaderPath(),
+        .framesInFlight = s.framesInFlight(),
+        .extent = s.extent(),
+        .tileSize = 32,
+        .raiiDevice = s.raiiDevice()
+    };
+    bundle.tileCull = WaterTileCull::create(cullInfo);
+    if (!bundle.tileCull) {
+        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "WaterSystemGroup: WaterTileCull creation failed (non-fatal)");
+    }
+
+    // 7. Create WaterGBuffer (optional)
+    WaterGBuffer::InitInfo gBufInfo{
+        .device = s.device(),
+        .physicalDevice = s.physicalDevice(),
+        .allocator = s.allocator(),
+        .fullResExtent = s.extent(),
+        .resolutionScale = 0.5f,
+        .framesInFlight = s.framesInFlight(),
+        .shaderPath = s.shaderPath(),
+        .descriptorPool = s.descriptorPool(),
+        .raiiDevice = s.raiiDevice()
+    };
+    bundle.gBuffer = WaterGBuffer::create(gBufInfo);
+    if (!bundle.gBuffer) {
+        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "WaterSystemGroup: WaterGBuffer creation failed (non-fatal)");
+    }
+
+    SDL_Log("WaterSystemGroup: All systems created successfully (DI)");
     return bundle;
 }
 

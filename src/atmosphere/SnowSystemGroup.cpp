@@ -5,6 +5,7 @@
 #include "VolumetricSnowSystem.h"
 #include "WeatherSystem.h"
 #include "LeafSystem.h"
+#include "di/VulkanServices.h"
 #include <SDL3/SDL.h>
 
 std::optional<SnowSystemGroup::Bundle> SnowSystemGroup::createAll(
@@ -36,4 +37,17 @@ std::optional<SnowSystemGroup::Bundle> SnowSystemGroup::createAll(
 
     SDL_Log("SnowSystemGroup: All systems created successfully");
     return bundle;
+}
+
+std::optional<SnowSystemGroup::Bundle> SnowSystemGroup::createAll(
+    const CreateDepsDI& deps
+) {
+    // Convert VulkanServices to InitContext and delegate to the original method
+    InitContext ctx = deps.services.toInitContext();
+    CreateDeps legacyDeps{ctx, deps.hdrRenderPass};
+    auto result = createAll(legacyDeps);
+    if (result) {
+        SDL_Log("SnowSystemGroup: All systems created successfully (DI)");
+    }
+    return result;
 }

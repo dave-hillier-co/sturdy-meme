@@ -10,6 +10,7 @@
 #include "DescriptorManager.h"
 
 class VulkanContext;
+struct InitContext;
 
 /**
  * VulkanServices - Consolidated Vulkan resources for dependency injection
@@ -114,6 +115,16 @@ public:
     void setExtent(uint32_t width, uint32_t height) {
         extent_ = VkExtent2D{width, height};
     }
+
+    // ========================================================================
+    // Conversion to InitContext (for gradual migration)
+    // ========================================================================
+
+    /**
+     * Convert to InitContext for systems that still use the old interface.
+     * This enables gradual migration without changing all callsites at once.
+     */
+    InitContext toInitContext() const;
 
 private:
     VkDevice device_ = VK_NULL_HANDLE;

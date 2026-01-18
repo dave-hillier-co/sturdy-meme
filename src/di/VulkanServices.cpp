@@ -1,5 +1,6 @@
 #include "VulkanServices.h"
 #include "vulkan/VulkanContext.h"
+#include "core/InitContext.h"
 
 VulkanServices::VulkanServices(
     const VulkanContext& context,
@@ -45,4 +46,20 @@ VulkanServices::VulkanServices(
     , framesInFlight_(framesInFlight)
     , extent_(extent)
 {
+}
+
+InitContext VulkanServices::toInitContext() const {
+    InitContext ctx;
+    ctx.raiiDevice = raiiDevice_;
+    ctx.device = device_;
+    ctx.physicalDevice = physicalDevice_;
+    ctx.allocator = allocator_;
+    ctx.graphicsQueue = graphicsQueue_;
+    ctx.commandPool = commandPool_;
+    ctx.descriptorPool = descriptorPool_;
+    ctx.shaderPath = shaderPath_;
+    ctx.resourcePath = resourcePath_;
+    ctx.framesInFlight = framesInFlight_;
+    ctx.extent = extent_;
+    return ctx;
 }

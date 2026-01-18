@@ -21,6 +21,7 @@
 // Forward declarations
 class BloomSystem;
 class BilateralGridSystem;
+class VulkanServices;
 
 // Histogram reduce compute shader parameters
 struct HistogramReduceParams {
@@ -87,6 +88,15 @@ public:
      */
     static std::optional<Bundle> createWithDependencies(
         const InitContext& ctx,
+        VkRenderPass finalRenderPass,
+        VkFormat swapchainImageFormat
+    );
+
+    /**
+     * Factory: Create using VulkanServices (DI-friendly).
+     */
+    static std::optional<Bundle> createWithDependencies(
+        const VulkanServices& services,
         VkRenderPass finalRenderPass,
         VkFormat swapchainImageFormat
     );

@@ -36,8 +36,9 @@
 // INSTANCE BUDGET (Primary constraint - everything else derives from this)
 // =============================================================================
 
-// Total instance buffer size (~100k target like Ghost of Tsushima)
-CONST_UINT(GRASS_MAX_INSTANCES, 100000);
+// Total instance buffer size (Ghost of Tsushima renders ~83k from 1M potential)
+// Increased to 150k to prevent flickering at limit
+CONST_UINT(GRASS_MAX_INSTANCES, 150000);
 
 // Fraction of budget allocated to LOD 0 tiles (rest for LOD 1/2)
 CONST_FLOAT(GRASS_LOD0_BUDGET_FRACTION, 0.8);

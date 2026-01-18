@@ -695,40 +695,51 @@ void SceneBuilder::startCharacterJump(const glm::vec3& startPos, const glm::vec3
 void SceneBuilder::updateWeaponTransforms(const glm::mat4& characterWorldTransform) {
     if (!hasAnimatedCharacter) return;
 
-    // Compute global bone transforms
+    // Compute global bone transforms (in skeleton/model space)
     const auto& skeleton = animatedCharacter->getSkeleton();
     std::vector<glm::mat4> globalTransforms;
     skeleton.computeGlobalTransforms(globalTransforms);
 
+    // Helper to build weapon transform from bone
+    // The bone's global transform is in model space - we need to extract position
+    // and transform it to world space, then combine with bone orientation
+    auto buildWeaponTransform = [&](int32_t boneIndex, const glm::mat4& localOffset) -> glm::mat4 {
+        const glm::mat4& boneGlobal = globalTransforms[boneIndex];
+
+        // Extract bone position in model space and transform to world
+        glm::vec4 boneLocalPos = boneGlobal * glm::vec4(0.0f, 0.0f, 0.0f, 1.0f);
+        glm::vec4 boneWorldPos = characterWorldTransform * boneLocalPos;
+
+        // Extract bone orientation (rotation part only, no translation)
+        glm::mat3 boneRotation = glm::mat3(boneGlobal);
+        glm::mat3 worldRotation = glm::mat3(characterWorldTransform);
+        glm::mat3 finalRotation = worldRotation * boneRotation;
+
+        // Build final transform: position + rotation + local offset
+        glm::mat4 result = glm::mat4(finalRotation);
+        result[3] = boneWorldPos;
+
+        return result * localOffset;
+    };
+
     // Update sword transform (attached to right hand)
     if (rightHandBoneIndex >= 0 && swordIndex < sceneObjects.size()) {
-        // Get the right hand bone's global transform
-        glm::mat4 boneGlobal = globalTransforms[rightHandBoneIndex];
-
-        // Combine with character world transform
-        glm::mat4 weaponWorld = characterWorldTransform * boneGlobal;
-
         // Cylinder is created with height along Y axis, centered at origin.
         // For Mixamo rigs, hand's Z axis points along fingers.
         // Rotate -90° around X to align sword with finger direction (Z axis)
-        // Then offset along Z so sword extends from grip
+        // Then offset along the sword so it extends from grip
         glm::mat4 swordOffset = glm::rotate(glm::mat4(1.0f), glm::radians(-90.0f), glm::vec3(1.0f, 0.0f, 0.0f));
-        swordOffset = glm::translate(swordOffset, glm::vec3(0.0f, 0.4f, 0.0f));  // Offset along sword length
-        sceneObjects[swordIndex].transform = weaponWorld * swordOffset;
+        swordOffset = glm::translate(swordOffset, glm::vec3(0.0f, 0.4f, 0.0f));
+
+        sceneObjects[swordIndex].transform = buildWeaponTransform(rightHandBoneIndex, swordOffset);
     }
 
     // Update shield transform (attached to left hand)
     if (leftHandBoneIndex >= 0 && shieldIndex < sceneObjects.size()) {
-        // Get the left hand bone's global transform
-        glm::mat4 boneGlobal = globalTransforms[leftHandBoneIndex];
-
-        // Combine with character world transform
-        glm::mat4 weaponWorld = characterWorldTransform * boneGlobal;
-
-        // Shield is a flat cylinder - rotate so face points outward (along Z)
-        // No rotation needed for face direction, just position on forearm
+        // Shield is a flat cylinder - no rotation needed, just attach to hand
         glm::mat4 shieldOffset = glm::mat4(1.0f);
-        sceneObjects[shieldIndex].transform = weaponWorld * shieldOffset;
+
+        sceneObjects[shieldIndex].transform = buildWeaponTransform(leftHandBoneIndex, shieldOffset);
     }
 }
 

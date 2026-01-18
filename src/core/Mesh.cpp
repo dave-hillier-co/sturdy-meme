@@ -461,9 +461,10 @@ void Mesh::createCylinder(float radius, float height, int segments) {
     }
 
     for (int i = 0; i < segments; ++i) {
+        // CCW winding when viewed from above (+Y) for front face
         indices.push_back(topCenterIdx);
-        indices.push_back(topCenterIdx + i + 1);
         indices.push_back(topCenterIdx + ((i + 1) % segments) + 1);
+        indices.push_back(topCenterIdx + i + 1);
     }
 
     // Add bottom cap
@@ -479,9 +480,10 @@ void Mesh::createCylinder(float radius, float height, int segments) {
     }
 
     for (int i = 0; i < segments; ++i) {
+        // CCW winding when viewed from below (-Y) for front face
         indices.push_back(bottomCenterIdx);
-        indices.push_back(bottomCenterIdx + ((i + 1) % segments) + 1);
         indices.push_back(bottomCenterIdx + i + 1);
+        indices.push_back(bottomCenterIdx + ((i + 1) % segments) + 1);
     }
     calculateBounds();
 }

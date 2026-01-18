@@ -3,6 +3,7 @@
 #include "core/InitInfoBuilder.h"
 #include "core/vulkan/SamplerFactory.h"
 #include "core/vulkan/DescriptorSetLayoutBuilder.h"
+#include "core/vulkan/DescriptorWriter.h"
 #include "core/pipeline/ComputePipelineBuilder.h"
 #include "core/vulkan/PipelineLayoutBuilder.h"
 #include "core/vulkan/BarrierHelpers.h"
@@ -451,38 +452,14 @@ void BilateralGridSystem::recordBilateralGrid(VkCommandBuffer cmd, uint32_t fram
         .setImageView(hdrInputView)
         .setSampler(**gridSampler_);
 
-    auto gridInfo = vk::DescriptorImageInfo{}
-        .setImageLayout(vk::ImageLayout::eGeneral)
-        .setImageView(gridViews[0]);
+    auto gridInfo = makeStorageImageInfo(gridViews[0]);
+    auto bufferInfo = makeBufferInfo(buildUniformBuffers.buffers[frameIndex], sizeof(BilateralBuildUniforms));
 
-    auto bufferInfo = vk::DescriptorBufferInfo{}
-        .setBuffer(buildUniformBuffers.buffers[frameIndex])
-        .setOffset(0)
-        .setRange(sizeof(BilateralBuildUniforms));
-
-    std::array<vk::WriteDescriptorSet, 3> writes{};
-    writes[0] = vk::WriteDescriptorSet{}
-        .setDstSet(buildDescriptorSets[frameIndex])
-        .setDstBinding(0)
-        .setDescriptorCount(1)
-        .setDescriptorType(vk::DescriptorType::eCombinedImageSampler)
-        .setPImageInfo(&hdrInfo);
-
-    writes[1] = vk::WriteDescriptorSet{}
-        .setDstSet(buildDescriptorSets[frameIndex])
-        .setDstBinding(1)
-        .setDescriptorCount(1)
-        .setDescriptorType(vk::DescriptorType::eStorageImage)
-        .setPImageInfo(&gridInfo);
-
-    writes[2] = vk::WriteDescriptorSet{}
-        .setDstSet(buildDescriptorSets[frameIndex])
-        .setDstBinding(2)
-        .setDescriptorCount(1)
-        .setDescriptorType(vk::DescriptorType::eUniformBuffer)
-        .setPBufferInfo(&bufferInfo);
-
-    vk::Device(device).updateDescriptorSets(writes, {});
+    DescriptorWriter()
+        .add(WriteBuilder::combinedImageSampler(0, hdrInfo))
+        .add(WriteBuilder::storageImage(1, gridInfo))
+        .add(WriteBuilder::uniformBuffer(2, bufferInfo))
+        .update(device, buildDescriptorSets[frameIndex]);
 
     // Build pass
     vk::CommandBuffer vkCmd(cmd);

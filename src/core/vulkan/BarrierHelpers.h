@@ -245,6 +245,36 @@ inline void computeToVertexInput(vk::CommandBuffer cmd) {
 }
 
 /**
+ * Barrier after compute write before indirect draw + vertex attribute read
+ * Common pattern for GPU-driven rendering with vertex buffers
+ */
+inline void computeToIndirectDrawAndVertex(vk::CommandBuffer cmd) {
+    auto memBarrier = vk::MemoryBarrier{}
+        .setSrcAccessMask(vk::AccessFlagBits::eShaderWrite)
+        .setDstAccessMask(vk::AccessFlagBits::eIndirectCommandRead | vk::AccessFlagBits::eVertexAttributeRead);
+
+    cmd.pipelineBarrier(
+        vk::PipelineStageFlagBits::eComputeShader,
+        vk::PipelineStageFlagBits::eDrawIndirect | vk::PipelineStageFlagBits::eVertexInput,
+        {}, memBarrier, {}, {});
+}
+
+/**
+ * Barrier after compute write before indirect draw + shader read (storage buffer in vertex shader)
+ * Common pattern for GPU-driven rendering with storage buffer instance data
+ */
+inline void computeToIndirectDrawAndShader(vk::CommandBuffer cmd) {
+    auto memBarrier = vk::MemoryBarrier{}
+        .setSrcAccessMask(vk::AccessFlagBits::eShaderWrite)
+        .setDstAccessMask(vk::AccessFlagBits::eIndirectCommandRead | vk::AccessFlagBits::eShaderRead);
+
+    cmd.pipelineBarrier(
+        vk::PipelineStageFlagBits::eComputeShader,
+        vk::PipelineStageFlagBits::eDrawIndirect | vk::PipelineStageFlagBits::eVertexShader,
+        {}, memBarrier, {}, {});
+}
+
+/**
  * Buffer barrier between compute passes
  */
 inline void bufferComputeToCompute(

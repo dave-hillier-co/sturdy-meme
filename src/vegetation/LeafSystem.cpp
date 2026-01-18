@@ -2,6 +2,7 @@
 #include "CullCommon.h"
 #include "ShaderLoader.h"
 #include "DescriptorManager.h"
+#include "core/vulkan/BarrierHelpers.h"
 #include <SDL3/SDL.h>
 #include <vulkan/vulkan.hpp>
 #include <cstring>
@@ -545,11 +546,7 @@ void LeafSystem::recordResetAndCompute(VkCommandBuffer cmd, uint32_t frameIndex,
 
     // Reset indirect buffer before compute dispatch
     vkCmd.fillBuffer(indirectBuffers.buffers[writeSet], 0, sizeof(VkDrawIndirectCommand), 0);
-    auto transferBarrier = vk::MemoryBarrier{}
-        .setSrcAccessMask(vk::AccessFlagBits::eTransferWrite)
-        .setDstAccessMask(vk::AccessFlagBits::eShaderRead);
-    vkCmd.pipelineBarrier(vk::PipelineStageFlagBits::eTransfer, vk::PipelineStageFlagBits::eComputeShader,
-                          {}, transferBarrier, {}, {});
+    BarrierHelpers::fillBufferToCompute(vkCmd);
 
     // Dispatch leaf compute shader
     vkCmd.bindPipeline(vk::PipelineBindPoint::eCompute, getComputePipelineHandles().pipeline);
@@ -568,12 +565,7 @@ void LeafSystem::recordResetAndCompute(VkCommandBuffer cmd, uint32_t frameIndex,
     vkCmd.dispatch(workgroupCount, 1, 1);
 
     // Memory barrier: compute write -> vertex shader read and indirect read
-    auto computeBarrier = vk::MemoryBarrier{}
-        .setSrcAccessMask(vk::AccessFlagBits::eShaderWrite)
-        .setDstAccessMask(vk::AccessFlagBits::eIndirectCommandRead | vk::AccessFlagBits::eVertexAttributeRead);
-    vkCmd.pipelineBarrier(vk::PipelineStageFlagBits::eComputeShader,
-                          vk::PipelineStageFlagBits::eDrawIndirect | vk::PipelineStageFlagBits::eVertexInput,
-                          {}, computeBarrier, {}, {});
+    BarrierHelpers::computeToIndirectDrawAndVertex(vkCmd);
 }
 
 void LeafSystem::recordDraw(VkCommandBuffer cmd, uint32_t frameIndex, float time) {

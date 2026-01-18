@@ -4,6 +4,7 @@
 #include "ShaderLoader.h"
 #include "shaders/bindings.h"
 #include "core/vulkan/PipelineLayoutBuilder.h"
+#include "core/vulkan/BarrierHelpers.h"
 #include "core/ComputeShaderCommon.h"
 
 #include <SDL3/SDL.h>
@@ -541,13 +542,7 @@ void ImpostorCullSystem::recordCulling(VkCommandBuffer cmd, uint32_t frameIndex,
                              visibilityCacheBuffers_.getVk(frameIndex), copyRegion);
 
         // Barrier to ensure copy completes before compute shader reads/writes
-        auto copyBarrier = vk::MemoryBarrier{}
-            .setSrcAccessMask(vk::AccessFlagBits::eTransferWrite)
-            .setDstAccessMask(vk::AccessFlagBits::eShaderRead | vk::AccessFlagBits::eShaderWrite);
-        vkCmdCopy.pipelineBarrier(
-            vk::PipelineStageFlagBits::eTransfer,
-            vk::PipelineStageFlagBits::eComputeShader,
-            {}, copyBarrier, nullptr, nullptr);
+        BarrierHelpers::fillBufferToCompute(vkCmdCopy);
     }
 
     // Update uniforms
@@ -607,13 +602,7 @@ void ImpostorCullSystem::recordCulling(VkCommandBuffer cmd, uint32_t frameIndex,
 
     // Memory barrier to ensure fill is complete before compute
     vk::CommandBuffer vkCmd(cmd);
-    auto fillBarrier = vk::MemoryBarrier{}
-        .setSrcAccessMask(vk::AccessFlagBits::eTransferWrite)
-        .setDstAccessMask(vk::AccessFlagBits::eShaderRead | vk::AccessFlagBits::eShaderWrite);
-    vkCmd.pipelineBarrier(
-        vk::PipelineStageFlagBits::eTransfer,
-        vk::PipelineStageFlagBits::eComputeShader,
-        {}, fillBarrier, nullptr, nullptr);
+    BarrierHelpers::fillBufferToCompute(vkCmd);
 
     // Bind pipeline and descriptor set
     vkCmd.bindPipeline(vk::PipelineBindPoint::eCompute, **cullPipeline_);
@@ -626,13 +615,7 @@ void ImpostorCullSystem::recordCulling(VkCommandBuffer cmd, uint32_t frameIndex,
     vkCmd.dispatch(workgroupCount, 1, 1);
 
     // Memory barrier for compute output -> indirect draw
-    auto computeBarrier = vk::MemoryBarrier{}
-        .setSrcAccessMask(vk::AccessFlagBits::eShaderWrite)
-        .setDstAccessMask(vk::AccessFlagBits::eIndirectCommandRead | vk::AccessFlagBits::eVertexAttributeRead);
-    vkCmd.pipelineBarrier(
-        vk::PipelineStageFlagBits::eComputeShader,
-        vk::PipelineStageFlagBits::eDrawIndirect | vk::PipelineStageFlagBits::eVertexInput,
-        {}, computeBarrier, nullptr, nullptr);
+    BarrierHelpers::computeToIndirectDrawAndVertex(vkCmd);
 }
 
 void ImpostorCullSystem::setExtent(VkExtent2D newExtent) {

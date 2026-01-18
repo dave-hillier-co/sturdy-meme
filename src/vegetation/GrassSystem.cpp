@@ -704,11 +704,7 @@ void GrassSystem::recordResetAndCompute(vk::CommandBuffer cmd, uint32_t frameInd
 
     // Reset indirect buffer before compute dispatch
     cmd.fillBuffer(indirectBuffers.buffers[writeSet], 0, sizeof(VkDrawIndirectCommand), 0);
-    auto clearBarrier = vk::MemoryBarrier{}
-        .setSrcAccessMask(vk::AccessFlagBits::eTransferWrite)
-        .setDstAccessMask(vk::AccessFlagBits::eShaderRead | vk::AccessFlagBits::eShaderWrite);
-    cmd.pipelineBarrier(vk::PipelineStageFlagBits::eTransfer, vk::PipelineStageFlagBits::eComputeShader,
-                        {}, clearBarrier, {}, {});
+    BarrierHelpers::fillBufferToCompute(cmd);
 
     // Bind the tiled compute pipeline
     vk::Pipeline computePipeline = getComputePipelineHandles().pipeline;
@@ -760,13 +756,10 @@ void GrassSystem::recordResetAndCompute(vk::CommandBuffer cmd, uint32_t frameInd
         }
     }
 
-    // Memory barrier: compute write -> vertex shader read and indirect read
-    auto computeBarrier = vk::MemoryBarrier{}
-        .setSrcAccessMask(vk::AccessFlagBits::eShaderWrite)
-        .setDstAccessMask(vk::AccessFlagBits::eShaderRead | vk::AccessFlagBits::eIndirectCommandRead);
-    cmd.pipelineBarrier(vk::PipelineStageFlagBits::eComputeShader,
-                        vk::PipelineStageFlagBits::eDrawIndirect | vk::PipelineStageFlagBits::eVertexShader,
-                        {}, computeBarrier, {}, {});
+    // Memory barrier: compute write -> vertex shader read (storage buffer) and indirect read
+    // Note: This barrier ensures the compute results are visible when we draw from this buffer
+    // in the NEXT frame (after advanceBufferSet swaps the sets)
+    BarrierHelpers::computeToIndirectDrawAndShader(cmd);
 }
 
 void GrassSystem::recordDraw(vk::CommandBuffer cmd, uint32_t frameIndex, float time) {

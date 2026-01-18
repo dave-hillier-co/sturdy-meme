@@ -4,6 +4,7 @@
 #include "InitContext.h"
 #include "ShaderLoader.h"
 #include "PipelineBuilder.h"
+#include "core/vulkan/BarrierHelpers.h"
 #include <SDL3/SDL.h>
 #include <vulkan/vulkan.hpp>
 #include <cstring>
@@ -413,11 +414,7 @@ void WeatherSystem::recordResetAndCompute(VkCommandBuffer cmd, uint32_t frameInd
     // Reset indirect buffer before compute dispatch
     vk::CommandBuffer vkCmd(cmd);
     vkCmd.fillBuffer(indirectBuffers.buffers[writeSet], 0, sizeof(VkDrawIndirectCommand), 0);
-    auto transferBarrier = vk::MemoryBarrier{}
-        .setSrcAccessMask(vk::AccessFlagBits::eTransferWrite)
-        .setDstAccessMask(vk::AccessFlagBits::eShaderRead | vk::AccessFlagBits::eShaderWrite);
-    vkCmd.pipelineBarrier(vk::PipelineStageFlagBits::eTransfer, vk::PipelineStageFlagBits::eComputeShader,
-                          {}, transferBarrier, {}, {});
+    BarrierHelpers::fillBufferToCompute(vkCmd);
 
     // Dispatch weather compute shader
     auto& computePipeline = getComputePipelineHandles();
@@ -438,12 +435,7 @@ void WeatherSystem::recordResetAndCompute(VkCommandBuffer cmd, uint32_t frameInd
     vkCmd.dispatch(workgroupCount, 1, 1);
 
     // Memory barrier: compute write -> vertex shader read and indirect read
-    auto computeBarrier = vk::MemoryBarrier{}
-        .setSrcAccessMask(vk::AccessFlagBits::eShaderWrite)
-        .setDstAccessMask(vk::AccessFlagBits::eShaderRead | vk::AccessFlagBits::eIndirectCommandRead);
-    vkCmd.pipelineBarrier(vk::PipelineStageFlagBits::eComputeShader,
-                          vk::PipelineStageFlagBits::eDrawIndirect | vk::PipelineStageFlagBits::eVertexShader,
-                          {}, computeBarrier, {}, {});
+    BarrierHelpers::computeToIndirectDrawAndShader(vkCmd);
 }
 
 void WeatherSystem::recordDraw(VkCommandBuffer cmd, uint32_t frameIndex, float time) {

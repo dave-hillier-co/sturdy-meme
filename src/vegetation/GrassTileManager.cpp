@@ -206,16 +206,16 @@ void GrassTileManager::recordCompute(vk::CommandBuffer cmd, uint32_t frameIndex,
             static_cast<float>(tileData.coord.z) * tileSize
         );
 
-        // Push constants
+        // Push constants - simplified for continuous stochastic culling
         TiledGrassPushConstants push{};
         push.time = time;
         push.tileOriginX = tileOrigin.x;
         push.tileOriginZ = tileOrigin.y;
         push.tileSize = tileSize;
-        push.spacingMult = spacingMult;
-        push.lodLevel = tileData.coord.lod;
-        push.tileLoadTime = tileData.creationTime;
-        push.padding = 0.0f;
+        push.spacing = GrassConstants::SPACING;  // Always use base spacing
+        push.tileIndex = static_cast<uint32_t>(tileData.coord.lod);
+        push.unused1 = 0.0f;
+        push.unused2 = 0.0f;
 
         cmd.pushConstants(computePipelineLayout_,
                           vk::ShaderStageFlagBits::eCompute,
@@ -259,16 +259,16 @@ void GrassTileManager::recordDraw(vk::CommandBuffer cmd, uint32_t frameIndex, fl
                                graphicsDescriptorSet, {});
     }
 
-    // Push constants
+    // Push constants - simplified for continuous stochastic culling
     TiledGrassPushConstants push{};
     push.time = time;
     push.tileOriginX = 0.0f;
     push.tileOriginZ = 0.0f;
-    push.tileSize = GrassConstants::TILE_SIZE_LOD0;
-    push.spacingMult = 1.0f;
-    push.lodLevel = 0;
-    push.tileLoadTime = 0.0f;
-    push.padding = 0.0f;
+    push.tileSize = GrassConstants::TILE_SIZE;
+    push.spacing = GrassConstants::SPACING;
+    push.tileIndex = 0;
+    push.unused1 = 0.0f;
+    push.unused2 = 0.0f;
 
     cmd.pushConstants(graphicsPipelineLayout,
                       vk::ShaderStageFlagBits::eVertex,

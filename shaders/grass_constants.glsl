@@ -16,9 +16,7 @@
 // GLSL-SPECIFIC DERIVED VALUES
 // =============================================================================
 
-// Legacy non-tiled grid (kept for compatibility with grass.comp)
-const uint GRASS_GRID_SIZE = 1000;
-const uint GRASS_DISPATCH_SIZE = (GRASS_GRID_SIZE + GRASS_WORKGROUP_SIZE - 1) / GRASS_WORKGROUP_SIZE;
+// Coverage size derived from grid
 const float GRASS_COVERAGE_SIZE = float(GRASS_GRID_SIZE) * GRASS_SPACING;
 const float GRASS_DENSITY = 1.0 / (GRASS_SPACING * GRASS_SPACING);
 

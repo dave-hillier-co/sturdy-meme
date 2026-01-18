@@ -711,7 +711,10 @@ void GrassSystem::recordResetAndCompute(vk::CommandBuffer cmd, uint32_t frameInd
                         {}, clearBarrier, {}, {});
 
     // Bind the tiled compute pipeline
-    vk::Pipeline computePipeline = tiledComputePipeline_ ? **tiledComputePipeline_ : getComputePipelineHandles().pipeline;
+    vk::Pipeline computePipeline = getComputePipelineHandles().pipeline;
+    if (tiledComputePipeline_.has_value()) {
+        computePipeline = **tiledComputePipeline_;
+    }
     cmd.bindPipeline(vk::PipelineBindPoint::eCompute, computePipeline);
     VkDescriptorSet computeSet = getComputeDescriptorSet(writeSet);
     cmd.bindDescriptorSets(vk::PipelineBindPoint::eCompute,

@@ -111,6 +111,9 @@ void SceneBuilder::cleanup() {
     sphereMesh.reset();
     capsuleMesh.reset();
     flagPoleMesh.reset();
+    swordMesh.reset();
+    shieldMesh.reset();
+    axisLineMesh.reset();
 
     // Manually managed meshes (dynamic - re-uploaded during runtime)
     flagClothMesh.releaseGPUResources();
@@ -141,6 +144,21 @@ bool SceneBuilder::createMeshes(const InitInfo& info) {
     flagPoleMesh = std::make_unique<Mesh>();
     flagPoleMesh->createCylinder(0.05f, 3.0f, 16);
     if (!flagPoleMesh->upload(info.allocator, info.device, info.commandPool, info.graphicsQueue)) return false;
+
+    // Sword mesh (long thin cylinder: 0.02m radius, 0.8m length)
+    swordMesh = std::make_unique<Mesh>();
+    swordMesh->createCylinder(0.02f, 0.8f, 12);
+    if (!swordMesh->upload(info.allocator, info.device, info.commandPool, info.graphicsQueue)) return false;
+
+    // Shield mesh (flat wide cylinder: 0.2m radius, 0.03m thickness)
+    shieldMesh = std::make_unique<Mesh>();
+    shieldMesh->createCylinder(0.2f, 0.03f, 16);
+    if (!shieldMesh->upload(info.allocator, info.device, info.commandPool, info.graphicsQueue)) return false;
+
+    // Axis line mesh for debug visualization (thin cylinder: 0.005m radius, 0.15m length)
+    axisLineMesh = std::make_unique<Mesh>();
+    axisLineMesh->createCylinder(0.005f, 0.15f, 8);
+    if (!axisLineMesh->upload(info.allocator, info.device, info.commandPool, info.graphicsQueue)) return false;
 
     // Flag cloth mesh will be initialized later by ClothSimulation
     // (it's dynamic and will be updated each frame)
@@ -212,6 +230,36 @@ bool SceneBuilder::createMeshes(const InitInfo& info) {
         capeMesh.upload(info.allocator, info.device, info.commandPool, info.graphicsQueue);
         hasCapeEnabled = true;
         SDL_Log("SceneBuilder: Initialized player cape");
+
+        // Find hand bone indices for weapon attachment
+        const auto& skeleton = animatedCharacter->getSkeleton();
+        // Use middle finger bones for better hand positioning (Mixamo uses "mixamorig:" prefix)
+        const std::vector<std::string> rightHandNames = {
+            "mixamorig:RightHandMiddle1", "RightHandMiddle1",  // Middle finger base
+            "mixamorig:RightHand", "RightHand", "R_Hand", "hand.R"  // Fallback to wrist
+        };
+        const std::vector<std::string> leftHandNames = {
+            "mixamorig:LeftHandMiddle1", "LeftHandMiddle1",  // Middle finger base
+            "mixamorig:LeftHand", "LeftHand", "L_Hand", "hand.L"  // Fallback to wrist
+        };
+
+        for (const auto& name : rightHandNames) {
+            rightHandBoneIndex = skeleton.findJointIndex(name);
+            if (rightHandBoneIndex >= 0) {
+                SDL_Log("SceneBuilder: Found right hand bone '%s' at index %d", name.c_str(), rightHandBoneIndex);
+                break;
+            }
+        }
+        for (const auto& name : leftHandNames) {
+            leftHandBoneIndex = skeleton.findJointIndex(name);
+            if (leftHandBoneIndex >= 0) {
+                SDL_Log("SceneBuilder: Found left hand bone '%s' at index %d", name.c_str(), leftHandBoneIndex);
+                break;
+            }
+        }
+        if (rightHandBoneIndex < 0 || leftHandBoneIndex < 0) {
+            SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "SceneBuilder: Could not find hand bones for weapon attachment");
+        }
     } else {
         hasAnimatedCharacter = false;
         SDL_Log("SceneBuilder: Failed to load FBX character, using capsule fallback");
@@ -509,6 +557,122 @@ void SceneBuilder::createRenderables() {
             .build());
     }
 
+    // Player weapons - attached to hand bones, transforms updated each frame
+    if (hasAnimatedCharacter && rightHandBoneIndex >= 0) {
+        swordIndex = sceneObjects.size();
+        sceneObjects.push_back(RenderableBuilder()
+            .withTransform(glm::mat4(1.0f))  // Updated per frame
+            .withMesh(swordMesh.get())
+            .withTexture(metalTex)
+            .withMaterialId(metalMaterialId)
+            .withRoughness(0.2f)
+            .withMetallic(0.95f)
+            .withCastsShadow(true)
+            .build());
+        SDL_Log("SceneBuilder: Added sword renderable at index %zu", swordIndex);
+    }
+    if (hasAnimatedCharacter && leftHandBoneIndex >= 0) {
+        shieldIndex = sceneObjects.size();
+        sceneObjects.push_back(RenderableBuilder()
+            .withTransform(glm::mat4(1.0f))  // Updated per frame
+            .withMesh(shieldMesh.get())
+            .withTexture(metalTex)
+            .withMaterialId(metalMaterialId)
+            .withRoughness(0.3f)
+            .withMetallic(0.9f)
+            .withCastsShadow(true)
+            .build());
+        SDL_Log("SceneBuilder: Added shield renderable at index %zu", shieldIndex);
+    }
+
+    // Debug axis indicators for right hand (R=X, G=Y, B=Z)
+    if (hasAnimatedCharacter && rightHandBoneIndex >= 0) {
+        // X axis - Red
+        rightHandAxisX = sceneObjects.size();
+        sceneObjects.push_back(RenderableBuilder()
+            .withTransform(glm::mat4(1.0f))
+            .withMesh(axisLineMesh.get())
+            .withTexture(whiteTex)
+            .withMaterialId(whiteMaterialId)
+            .withRoughness(1.0f)
+            .withMetallic(0.0f)
+            .withEmissiveColor(glm::vec3(1.0f, 0.0f, 0.0f))
+            .withEmissiveIntensity(5.0f)
+            .withCastsShadow(false)
+            .build());
+        // Y axis - Green
+        rightHandAxisY = sceneObjects.size();
+        sceneObjects.push_back(RenderableBuilder()
+            .withTransform(glm::mat4(1.0f))
+            .withMesh(axisLineMesh.get())
+            .withTexture(whiteTex)
+            .withMaterialId(whiteMaterialId)
+            .withRoughness(1.0f)
+            .withMetallic(0.0f)
+            .withEmissiveColor(glm::vec3(0.0f, 1.0f, 0.0f))
+            .withEmissiveIntensity(5.0f)
+            .withCastsShadow(false)
+            .build());
+        // Z axis - Blue
+        rightHandAxisZ = sceneObjects.size();
+        sceneObjects.push_back(RenderableBuilder()
+            .withTransform(glm::mat4(1.0f))
+            .withMesh(axisLineMesh.get())
+            .withTexture(whiteTex)
+            .withMaterialId(whiteMaterialId)
+            .withRoughness(1.0f)
+            .withMetallic(0.0f)
+            .withEmissiveColor(glm::vec3(0.0f, 0.0f, 1.0f))
+            .withEmissiveIntensity(5.0f)
+            .withCastsShadow(false)
+            .build());
+        SDL_Log("SceneBuilder: Added debug axis indicators for right hand");
+    }
+
+    // Debug axis indicators for left hand (R=X, G=Y, B=Z)
+    if (hasAnimatedCharacter && leftHandBoneIndex >= 0) {
+        // X axis - Red
+        leftHandAxisX = sceneObjects.size();
+        sceneObjects.push_back(RenderableBuilder()
+            .withTransform(glm::mat4(1.0f))
+            .withMesh(axisLineMesh.get())
+            .withTexture(whiteTex)
+            .withMaterialId(whiteMaterialId)
+            .withRoughness(1.0f)
+            .withMetallic(0.0f)
+            .withEmissiveColor(glm::vec3(1.0f, 0.0f, 0.0f))
+            .withEmissiveIntensity(5.0f)
+            .withCastsShadow(false)
+            .build());
+        // Y axis - Green
+        leftHandAxisY = sceneObjects.size();
+        sceneObjects.push_back(RenderableBuilder()
+            .withTransform(glm::mat4(1.0f))
+            .withMesh(axisLineMesh.get())
+            .withTexture(whiteTex)
+            .withMaterialId(whiteMaterialId)
+            .withRoughness(1.0f)
+            .withMetallic(0.0f)
+            .withEmissiveColor(glm::vec3(0.0f, 1.0f, 0.0f))
+            .withEmissiveIntensity(5.0f)
+            .withCastsShadow(false)
+            .build());
+        // Z axis - Blue
+        leftHandAxisZ = sceneObjects.size();
+        sceneObjects.push_back(RenderableBuilder()
+            .withTransform(glm::mat4(1.0f))
+            .withMesh(axisLineMesh.get())
+            .withTexture(whiteTex)
+            .withMaterialId(whiteMaterialId)
+            .withRoughness(1.0f)
+            .withMetallic(0.0f)
+            .withEmissiveColor(glm::vec3(0.0f, 0.0f, 1.0f))
+            .withEmissiveIntensity(5.0f)
+            .withCastsShadow(false)
+            .build());
+        SDL_Log("SceneBuilder: Added debug axis indicators for left hand");
+    }
+
     // Flag pole - 3m pole, center at 1.5m above ground
     auto [flagPoleX, flagPoleZ] = worldPos(5.0f, 0.0f);
     flagPoleIndex = sceneObjects.size();
@@ -638,11 +802,132 @@ void SceneBuilder::updateAnimatedCharacter(float deltaTime, VmaAllocator allocat
             sceneObjects[capeIndex].mesh = &capeMesh;
         }
     }
+
+    // Update weapon transforms using the same worldTransform as the cape
+    updateWeaponTransforms(worldTransform);
 }
 
 void SceneBuilder::startCharacterJump(const glm::vec3& startPos, const glm::vec3& velocity, float gravity, const PhysicsWorld* physics) {
     if (!hasAnimatedCharacter) return;
     animatedCharacter->startJump(startPos, velocity, gravity, physics);
+}
+
+void SceneBuilder::updateWeaponTransforms(const glm::mat4& worldTransform) {
+    if (!hasAnimatedCharacter) return;
+
+    // Compute global bone transforms (same as cape uses)
+    const auto& skeleton = animatedCharacter->getSkeleton();
+    std::vector<glm::mat4> globalTransforms;
+    skeleton.computeGlobalTransforms(globalTransforms);
+
+    // Hide transform (scale to zero)
+    glm::mat4 hideTransform = glm::scale(glm::mat4(1.0f), glm::vec3(0.0f));
+
+    // Update sword transform (attached to right hand)
+    if (swordIndex < sceneObjects.size()) {
+        if (showSword_ && rightHandBoneIndex >= 0) {
+            glm::mat4 boneWorld = worldTransform * globalTransforms[rightHandBoneIndex];
+
+            // Cylinder has height along Y. We want it to point along bone's -X axis.
+            // Rotate 90° around Z to tip Y toward -X, then offset along sword length
+            glm::mat4 swordOffset = glm::rotate(glm::mat4(1.0f), glm::radians(90.0f), glm::vec3(0.0f, 0.0f, 1.0f));
+            swordOffset = glm::translate(swordOffset, glm::vec3(0.0f, 0.4f, 0.0f));  // Offset along sword length only
+
+            sceneObjects[swordIndex].transform = boneWorld * swordOffset;
+        } else {
+            sceneObjects[swordIndex].transform = hideTransform;
+        }
+    }
+
+    // Update shield transform (attached to left hand)
+    if (shieldIndex < sceneObjects.size()) {
+        if (showShield_ && leftHandBoneIndex >= 0) {
+            glm::mat4 boneWorld = worldTransform * globalTransforms[leftHandBoneIndex];
+
+            // Shield flat face (cylinder Y axis) should point outward along -Z (blue axis)
+            // Rotate -90° around X to make Y point toward -Z
+            glm::mat4 shieldOffset = glm::rotate(glm::mat4(1.0f), glm::radians(-90.0f), glm::vec3(1.0f, 0.0f, 0.0f));
+
+            sceneObjects[shieldIndex].transform = boneWorld * shieldOffset;
+        } else {
+            sceneObjects[shieldIndex].transform = hideTransform;
+        }
+    }
+
+    // Debug axis indicators for right hand - cylinder points along Y, so rotate to each axis
+    if (rightHandBoneIndex >= 0) {
+        glm::mat4 boneWorld = worldTransform * globalTransforms[rightHandBoneIndex];
+
+        // Hide axes by scaling to 0 when disabled
+        glm::mat4 hideTransform = glm::scale(glm::mat4(1.0f), glm::vec3(0.0f));
+
+        // X axis (Red) - rotate 90° around Z to point Y toward X
+        if (rightHandAxisX < sceneObjects.size()) {
+            if (showWeaponAxes_) {
+                glm::mat4 xOffset = glm::rotate(glm::mat4(1.0f), glm::radians(-90.0f), glm::vec3(0.0f, 0.0f, 1.0f));
+                xOffset = glm::translate(xOffset, glm::vec3(0.0f, 0.075f, 0.0f));
+                sceneObjects[rightHandAxisX].transform = boneWorld * xOffset;
+            } else {
+                sceneObjects[rightHandAxisX].transform = hideTransform;
+            }
+        }
+
+        // Y axis (Green) - no rotation needed, cylinder already points along Y
+        if (rightHandAxisY < sceneObjects.size()) {
+            if (showWeaponAxes_) {
+                glm::mat4 yOffset = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.075f, 0.0f));
+                sceneObjects[rightHandAxisY].transform = boneWorld * yOffset;
+            } else {
+                sceneObjects[rightHandAxisY].transform = hideTransform;
+            }
+        }
+
+        // Z axis (Blue) - rotate 90° around X to point Y toward Z
+        if (rightHandAxisZ < sceneObjects.size()) {
+            if (showWeaponAxes_) {
+                glm::mat4 zOffset = glm::rotate(glm::mat4(1.0f), glm::radians(90.0f), glm::vec3(1.0f, 0.0f, 0.0f));
+                zOffset = glm::translate(zOffset, glm::vec3(0.0f, 0.075f, 0.0f));
+                sceneObjects[rightHandAxisZ].transform = boneWorld * zOffset;
+            } else {
+                sceneObjects[rightHandAxisZ].transform = hideTransform;
+            }
+        }
+    }
+
+    // Debug axis indicators for left hand
+    if (leftHandBoneIndex >= 0) {
+        glm::mat4 boneWorld = worldTransform * globalTransforms[leftHandBoneIndex];
+        glm::mat4 hideTransform = glm::scale(glm::mat4(1.0f), glm::vec3(0.0f));
+
+        if (leftHandAxisX < sceneObjects.size()) {
+            if (showWeaponAxes_) {
+                glm::mat4 xOffset = glm::rotate(glm::mat4(1.0f), glm::radians(-90.0f), glm::vec3(0.0f, 0.0f, 1.0f));
+                xOffset = glm::translate(xOffset, glm::vec3(0.0f, 0.075f, 0.0f));
+                sceneObjects[leftHandAxisX].transform = boneWorld * xOffset;
+            } else {
+                sceneObjects[leftHandAxisX].transform = hideTransform;
+            }
+        }
+
+        if (leftHandAxisY < sceneObjects.size()) {
+            if (showWeaponAxes_) {
+                glm::mat4 yOffset = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.075f, 0.0f));
+                sceneObjects[leftHandAxisY].transform = boneWorld * yOffset;
+            } else {
+                sceneObjects[leftHandAxisY].transform = hideTransform;
+            }
+        }
+
+        if (leftHandAxisZ < sceneObjects.size()) {
+            if (showWeaponAxes_) {
+                glm::mat4 zOffset = glm::rotate(glm::mat4(1.0f), glm::radians(90.0f), glm::vec3(1.0f, 0.0f, 0.0f));
+                zOffset = glm::translate(zOffset, glm::vec3(0.0f, 0.075f, 0.0f));
+                sceneObjects[leftHandAxisZ].transform = boneWorld * zOffset;
+            } else {
+                sceneObjects[leftHandAxisZ].transform = hideTransform;
+            }
+        }
+    }
 }
 
 // Texture accessors (return raw pointer from shared_ptr)

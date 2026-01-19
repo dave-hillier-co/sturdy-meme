@@ -102,6 +102,16 @@ public:
     bool hasCape() const { return hasCapeEnabled; }
     void setCapeEnabled(bool enabled) { hasCapeEnabled = enabled; }
 
+    // Weapon visibility
+    void setShowSword(bool show) { showSword_ = show; }
+    bool getShowSword() const { return showSword_; }
+    void setShowShield(bool show) { showShield_ = show; }
+    bool getShowShield() const { return showShield_; }
+
+    // Weapon debug axes
+    void setShowWeaponAxes(bool show) { showWeaponAxes_ = show; }
+    bool getShowWeaponAxes() const { return showWeaponAxes_; }
+
     // Well entrance position (for creating terrain hole)
     float getWellEntranceX() const { return wellEntranceX; }
     float getWellEntranceZ() const { return wellEntranceZ; }
@@ -117,6 +127,15 @@ public:
     AnimatedCharacter& getAnimatedCharacter() { return *animatedCharacter; }
     const AnimatedCharacter& getAnimatedCharacter() const { return *animatedCharacter; }
     bool hasCharacter() const { return hasAnimatedCharacter; }
+
+    // Player weapons access
+    bool hasWeapons() const { return rightHandBoneIndex >= 0 && leftHandBoneIndex >= 0; }
+    size_t getSwordIndex() const { return swordIndex; }
+    size_t getShieldIndex() const { return shieldIndex; }
+
+    // Update weapon transforms based on character bone positions
+    // Call after updating animated character each frame
+    void updateWeaponTransforms(const glm::mat4& characterWorldTransform);
 
     // Update animated character (call each frame)
     // movementSpeed: horizontal speed for animation state selection
@@ -159,6 +178,9 @@ private:
     std::unique_ptr<Mesh> sphereMesh;
     std::unique_ptr<Mesh> capsuleMesh;
     std::unique_ptr<Mesh> flagPoleMesh;
+    std::unique_ptr<Mesh> swordMesh;   // Long cylinder for sword
+    std::unique_ptr<Mesh> shieldMesh;  // Flat cylinder for shield
+    std::unique_ptr<Mesh> axisLineMesh; // Thin cylinder for debug axis visualization
 
     // Meshes (dynamic - manually managed, re-uploaded during runtime)
     Mesh flagClothMesh;
@@ -171,6 +193,11 @@ private:
     // Player cape (cloth simulation attached to character)
     PlayerCape playerCape;
     bool hasCapeEnabled = false;
+
+    // Weapon visibility and debug visualization
+    bool showSword_ = true;
+    bool showShield_ = true;
+    bool showWeaponAxes_ = false;
 
     // Textures (managed via AssetRegistry with shared_ptr)
     std::shared_ptr<Texture> crateTexture_;
@@ -190,6 +217,17 @@ private:
     size_t wellEntranceIndex = 0;
     size_t capeIndex = 0;
     size_t emissiveOrbIndex = 0;  // Glowing orb that has a corresponding light
+    size_t swordIndex = 0;        // Player sword renderable index
+    size_t shieldIndex = 0;       // Player shield renderable index
+    // Debug axis indicators (R=X, G=Y, B=Z) for hands
+    size_t rightHandAxisX = 0;
+    size_t rightHandAxisY = 0;
+    size_t rightHandAxisZ = 0;
+    size_t leftHandAxisX = 0;
+    size_t leftHandAxisY = 0;
+    size_t leftHandAxisZ = 0;
+    int32_t rightHandBoneIndex = -1;  // Bone index for sword attachment
+    int32_t leftHandBoneIndex = -1;   // Bone index for shield attachment
 
     // Indices of objects that should have physics bodies (dynamic objects)
     // Objects NOT in this list are either static (lights, flags) or handled separately (player)

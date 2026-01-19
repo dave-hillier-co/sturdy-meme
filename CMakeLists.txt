@@ -19,6 +19,7 @@ find_package(fastgltf CONFIG REQUIRED)
 find_package(unofficial-openfbx CONFIG REQUIRED)
 find_package(lodepng CONFIG REQUIRED)
 find_package(nlohmann_json CONFIG REQUIRED)
+find_package(Fruit CONFIG REQUIRED)
 
 find_path(STB_INCLUDE_DIRS "stb_image.h")
 
@@ -58,6 +59,8 @@ set(SOURCES
     src/core/controls/DebugControlSubsystem.cpp
     src/core/controls/SceneControlSubsystem.cpp
     src/core/controls/PlayerControlSubsystem.cpp
+    # Dependency Injection (Fruit)
+    src/core/di/FruitComponents.cpp
     src/core/vulkan/VulkanContext.cpp
     src/core/vulkan/AsyncTransferManager.cpp
     src/core/vulkan/ThreadedCommandPool.cpp
@@ -256,6 +259,7 @@ target_include_directories(${PROJECT_NAME} PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src/animation
     ${CMAKE_CURRENT_SOURCE_DIR}/src/atmosphere
     ${CMAKE_CURRENT_SOURCE_DIR}/src/core
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/core/di
     ${CMAKE_CURRENT_SOURCE_DIR}/src/core/vulkan
     ${CMAKE_CURRENT_SOURCE_DIR}/src/core/threading
     ${CMAKE_CURRENT_SOURCE_DIR}/src/core/pipeline
@@ -293,6 +297,7 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     unoffical::openfbx::openfbx
     lodepng
     nlohmann_json::nlohmann_json
+    Fruit::Fruit
 )
 
 # Enable Jolt Physics debug renderer for visualization

@@ -216,9 +216,15 @@ bool SceneBuilder::createMeshes(const InitInfo& info) {
 
         // Find hand bone indices for weapon attachment
         const auto& skeleton = animatedCharacter->getSkeleton();
-        // Try common bone name patterns (Mixamo uses "mixamorig:" prefix)
-        const std::vector<std::string> rightHandNames = {"RightHand", "mixamorig:RightHand", "R_Hand", "hand.R"};
-        const std::vector<std::string> leftHandNames = {"LeftHand", "mixamorig:LeftHand", "L_Hand", "hand.L"};
+        // Use middle finger bones for better hand positioning (Mixamo uses "mixamorig:" prefix)
+        const std::vector<std::string> rightHandNames = {
+            "mixamorig:RightHandMiddle1", "RightHandMiddle1",  // Middle finger base
+            "mixamorig:RightHand", "RightHand", "R_Hand", "hand.R"  // Fallback to wrist
+        };
+        const std::vector<std::string> leftHandNames = {
+            "mixamorig:LeftHandMiddle1", "LeftHandMiddle1",  // Middle finger base
+            "mixamorig:LeftHand", "LeftHand", "L_Hand", "hand.L"  // Fallback to wrist
+        };
 
         for (const auto& name : rightHandNames) {
             rightHandBoneIndex = skeleton.findJointIndex(name);
@@ -817,9 +823,9 @@ void SceneBuilder::updateWeaponTransforms(const glm::mat4& worldTransform) {
     if (leftHandBoneIndex >= 0 && shieldIndex < sceneObjects.size()) {
         glm::mat4 boneWorld = worldTransform * globalTransforms[leftHandBoneIndex];
 
-        // Shield flat face (cylinder Y axis) should point outward along -X
-        // Rotate 90° around Z to make Y point toward -X
-        glm::mat4 shieldOffset = glm::rotate(glm::mat4(1.0f), glm::radians(90.0f), glm::vec3(0.0f, 0.0f, 1.0f));
+        // Shield flat face (cylinder Y axis) should point outward along +X (red axis)
+        // Rotate -90° around Z to make Y point toward +X
+        glm::mat4 shieldOffset = glm::rotate(glm::mat4(1.0f), glm::radians(-90.0f), glm::vec3(0.0f, 0.0f, 1.0f));
         shieldOffset = glm::translate(shieldOffset, glm::vec3(0.0f, wristToPalmOffset, 0.0f));
 
         sceneObjects[shieldIndex].transform = boneWorld * shieldOffset;

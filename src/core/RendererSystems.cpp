@@ -1,5 +1,4 @@
-// RendererSystems.cpp - Subsystem lifecycle management
-// Groups all rendering subsystems with automatic lifecycle via unique_ptr
+// RendererSystems.cpp - Google Fruit DI-based subsystem management
 
 #include "RendererSystems.h"
 #include "CoreResources.h"
@@ -17,6 +16,7 @@
 #include "FroxelSystem.h"
 #include "AtmosphereLUTSystem.h"
 #include "TerrainSystem.h"
+#include "TerrainFactory.h"
 #include "CatmullClarkSystem.h"
 #include "SnowMaskSystem.h"
 #include "VolumetricSnowSystem.h"
@@ -45,6 +45,9 @@
 #include "ResizeCoordinator.h"
 #include "ShadowSystem.h"
 #include "SceneManager.h"
+#include "SceneBuilder.h"
+#include "AssetRegistry.h"
+#include "DescriptorInfrastructure.h"
 #include "GlobalBufferManager.h"
 #include "SkinnedMeshRenderer.h"
 #include "TimeSystem.h"
@@ -53,7 +56,7 @@
 #include "VulkanContext.h"
 #include "PerformanceToggles.h"
 
-// Include control subsystem headers (only those that coordinate multiple systems)
+// Control subsystems
 #include "controls/EnvironmentControlSubsystem.h"
 #include "controls/WaterControlSubsystem.h"
 #include "controls/TreeControlSubsystem.h"
@@ -62,315 +65,103 @@
 #include "controls/PerformanceControlSubsystem.h"
 #include "controls/SceneControlSubsystem.h"
 #include "controls/PlayerControlSubsystem.h"
-// Note: ILocationControl -> CelestialCalculator, ITerrainControl -> TerrainSystem,
-//       IProfilerControl -> Profiler, IWeatherState -> WeatherSystem,
-//       IPostProcessState -> PostProcessSystem, ICloudShadowControl -> CloudShadowSystem
-//       implement their interfaces directly
 
 #ifdef JPH_DEBUG_RENDERER
 #include "PhysicsDebugRenderer.h"
 #endif
 
+#include "core/vulkan/CommandBufferUtils.h"
 #include <SDL3/SDL_log.h>
+#include <glm/glm.hpp>
 
-RendererSystems::RendererSystems()
-    // Tier 1
-    // postProcessSystem_ created via factory in RendererInitPhases
-    // bloomSystem_ created via factory in RendererInitPhases
-    // shadowSystem_ created via factory in RendererInitPhases
-    // terrainSystem_ created via factory in RendererInitPhases
-    // Tier 2 - Sky/Atmosphere
-    // skySystem_ created via factory in RendererInitPhases
-    // atmosphereLUTSystem_ created via factory in RendererInitPhases
-    // froxelSystem_ created via factory in RendererInitPhases
-    // cloudShadowSystem_ created via factory in RendererInitPhases
-    // Tier 2 - Environment
-    // grassSystem_ created via factory in RendererInitPhases
-    // windSystem_ created via factory in RendererInitPhases
-    // weatherSystem_ created via factory in RendererInitPhases
-    // leafSystem_ created via factory in RendererInitPhases
-    // Tier 2 - Snow
-    // snowMaskSystem_ created via factory in RendererInitPhases
-    // volumetricSnowSystem_ created via factory in RendererInitPhases
-    // Tier 2 - Water
-    // waterSystem_ created via factory in RendererInitPhases
-    // waterDisplacement_ created via factory in RendererInitPhases
-    // flowMapGenerator_ created via factory in RendererInitPhases
-    // foamBuffer_ created via factory in RendererInitPhases
-    // ssrSystem_ created via factory in RendererInit
-    // waterTileCull_ created via factory in RendererInitPhases
-    // waterGBuffer_ created via factory in RendererInitPhases
-    // Tier 2 - Geometry
-    // catmullClarkSystem_ created via factory in RendererInitPhases
-    // rocksSystem_ created via factory in RendererInitPhases
-    // Tier 2 - Culling
-    // hiZSystem_ created via factory in RendererInit
-    // Infrastructure
-    // sceneManager_ created via factory in RendererInitPhases
-    // globalBufferManager_ created via factory in RendererInitPhases
-    : erosionDataLoader_(std::make_unique<ErosionDataLoader>())
-    , roadNetworkLoader_(std::make_unique<RoadNetworkLoader>())
-    , roadRiverVisualization_(std::make_unique<RoadRiverVisualization>())
-    // skinnedMeshRenderer_ created via factory in RendererInitPhases
-    // Tools
-    // debugLineSystem_ created via factory in RendererInit
-    // profiler_ created via Profiler::create() factory in RendererInitPhases
-    // Coordination
-    , resizeCoordinator_(std::make_unique<ResizeCoordinator>())
-    , uboBuilder_(std::make_unique<UBOBuilder>())
-    // Time
-    , timeSystem_(std::make_unique<TimeSystem>())
-    , celestialCalculator_(std::make_unique<CelestialCalculator>())
-    , environmentSettings_(std::make_unique<EnvironmentSettings>())
+// ============================================================================
+// RendererSystems Fruit-Injectable Constructor
+// ============================================================================
+
+RendererSystems::RendererSystems(
+    PostProcessSystem* postProcess,
+    BloomSystem* bloom,
+    BilateralGridSystem* bilateralGrid,
+    ShadowSystem* shadow,
+    TerrainSystem* terrain,
+    GlobalBufferManager* globalBuffers,
+    SkinnedMeshRenderer* skinnedMesh,
+    SkySystem* sky,
+    AtmosphereLUTSystem* atmosphereLUT,
+    FroxelSystem* froxel,
+    CloudShadowSystem* cloudShadow,
+    SnowMaskSystem* snowMask,
+    VolumetricSnowSystem* volumetricSnow,
+    WeatherSystem* weather,
+    LeafSystem* leaf,
+    WindSystem* wind,
+    DisplacementSystem* displacement,
+    GrassSystem* grass,
+    CatmullClarkSystem* catmullClark,
+    HiZSystem* hiZ,
+    WaterDisplacement* waterDisplacement,
+    FlowMapGenerator* flowMap,
+    FoamBuffer* foam,
+    SSRSystem* ssr,
+    WaterTileCull* waterTileCull,
+    WaterGBuffer* waterGBuffer,
+    WaterSystem* water,
+    SceneManager* scene,
+    Profiler* profiler,
+    DebugLineSystem* debugLine,
+    TimeSystem* time,
+    CelestialCalculator* celestial,
+    UBOBuilder* uboBuilder,
+    ResizeCoordinator* resizeCoordinator,
+    ErosionDataLoader* erosionData,
+    RoadNetworkLoader* roadData,
+    RoadRiverVisualization* roadRiverVis,
+    EnvironmentSettings* environmentSettings
+) :
+    postProcessSystem_(postProcess),
+    bloomSystem_(bloom),
+    bilateralGridSystem_(bilateralGrid),
+    shadowSystem_(shadow),
+    terrainSystem_(terrain),
+    globalBufferManager_(globalBuffers),
+    skinnedMeshRenderer_(skinnedMesh),
+    skySystem_(sky),
+    atmosphereLUTSystem_(atmosphereLUT),
+    froxelSystem_(froxel),
+    cloudShadowSystem_(cloudShadow),
+    snowMaskSystem_(snowMask),
+    volumetricSnowSystem_(volumetricSnow),
+    weatherSystem_(weather),
+    leafSystem_(leaf),
+    windSystem_(wind),
+    displacementSystem_(displacement),
+    grassSystem_(grass),
+    catmullClarkSystem_(catmullClark),
+    hiZSystem_(hiZ),
+    waterDisplacement_(waterDisplacement),
+    flowMapGenerator_(flowMap),
+    foamBuffer_(foam),
+    ssrSystem_(ssr),
+    waterTileCull_(waterTileCull),
+    waterGBuffer_(waterGBuffer),
+    waterSystem_(water),
+    sceneManager_(scene),
+    profiler_(profiler),
+    debugLineSystem_(debugLine),
+    timeSystem_(time),
+    celestialCalculator_(celestial),
+    uboBuilder_(uboBuilder),
+    resizeCoordinator_(resizeCoordinator),
+    erosionDataLoader_(erosionData),
+    roadNetworkLoader_(roadData),
+    roadRiverVisualization_(roadRiverVis),
+    environmentSettings_(environmentSettings)
 {
+    SDL_Log("RendererSystems created via Fruit DI");
 }
 
 RendererSystems::~RendererSystems() {
-    // unique_ptrs handle destruction automatically in reverse order
-    // No manual cleanup needed - this is the benefit of RAII
-}
-
-void RendererSystems::setDebugLineSystem(std::unique_ptr<DebugLineSystem> system) {
-    debugLineSystem_ = std::move(system);
-}
-
-void RendererSystems::setProfiler(std::unique_ptr<Profiler> profiler) {
-    profiler_ = std::move(profiler);
-}
-
-void RendererSystems::setGlobalBuffers(std::unique_ptr<GlobalBufferManager> buffers) {
-    globalBufferManager_ = std::move(buffers);
-}
-
-void RendererSystems::setShadow(std::unique_ptr<ShadowSystem> system) {
-    shadowSystem_ = std::move(system);
-}
-
-void RendererSystems::setTerrain(std::unique_ptr<TerrainSystem> system) {
-    terrainSystem_ = std::move(system);
-}
-
-void RendererSystems::setPostProcess(std::unique_ptr<PostProcessSystem> system) {
-    postProcessSystem_ = std::move(system);
-}
-
-void RendererSystems::setBloom(std::unique_ptr<BloomSystem> system) {
-    bloomSystem_ = std::move(system);
-}
-
-void RendererSystems::setBilateralGrid(std::unique_ptr<BilateralGridSystem> system) {
-    bilateralGridSystem_ = std::move(system);
-}
-
-void RendererSystems::setSSR(std::unique_ptr<SSRSystem> system) {
-    ssrSystem_ = std::move(system);
-}
-
-void RendererSystems::setHiZ(std::unique_ptr<HiZSystem> system) {
-    hiZSystem_ = std::move(system);
-}
-
-void RendererSystems::setSky(std::unique_ptr<SkySystem> system) {
-    skySystem_ = std::move(system);
-}
-
-void RendererSystems::setWind(std::unique_ptr<WindSystem> system) {
-    windSystem_ = std::move(system);
-}
-
-void RendererSystems::setDisplacement(std::unique_ptr<DisplacementSystem> system) {
-    displacementSystem_ = std::move(system);
-}
-
-void RendererSystems::setWeather(std::unique_ptr<WeatherSystem> system) {
-    weatherSystem_ = std::move(system);
-}
-
-void RendererSystems::setGrass(std::unique_ptr<GrassSystem> system) {
-    grassSystem_ = std::move(system);
-}
-
-void RendererSystems::setFroxel(std::unique_ptr<FroxelSystem> system) {
-    froxelSystem_ = std::move(system);
-}
-
-void RendererSystems::setAtmosphereLUT(std::unique_ptr<AtmosphereLUTSystem> system) {
-    atmosphereLUTSystem_ = std::move(system);
-}
-
-void RendererSystems::setCloudShadow(std::unique_ptr<CloudShadowSystem> system) {
-    cloudShadowSystem_ = std::move(system);
-}
-
-void RendererSystems::setSnowMask(std::unique_ptr<SnowMaskSystem> system) {
-    snowMaskSystem_ = std::move(system);
-}
-
-void RendererSystems::setVolumetricSnow(std::unique_ptr<VolumetricSnowSystem> system) {
-    volumetricSnowSystem_ = std::move(system);
-}
-
-void RendererSystems::setLeaf(std::unique_ptr<LeafSystem> system) {
-    leafSystem_ = std::move(system);
-}
-
-void RendererSystems::setWater(std::unique_ptr<WaterSystem> system) {
-    waterSystem_ = std::move(system);
-}
-
-void RendererSystems::setWaterDisplacement(std::unique_ptr<WaterDisplacement> system) {
-    waterDisplacement_ = std::move(system);
-}
-
-void RendererSystems::setFlowMap(std::unique_ptr<FlowMapGenerator> system) {
-    flowMapGenerator_ = std::move(system);
-}
-
-void RendererSystems::setFoam(std::unique_ptr<FoamBuffer> system) {
-    foamBuffer_ = std::move(system);
-}
-
-void RendererSystems::setWaterTileCull(std::unique_ptr<WaterTileCull> system) {
-    waterTileCull_ = std::move(system);
-}
-
-void RendererSystems::setWaterGBuffer(std::unique_ptr<WaterGBuffer> system) {
-    waterGBuffer_ = std::move(system);
-}
-
-void RendererSystems::setCatmullClark(std::unique_ptr<CatmullClarkSystem> system) {
-    catmullClarkSystem_ = std::move(system);
-}
-
-void RendererSystems::setRocks(std::unique_ptr<ScatterSystem> system) {
-    // Unregister old material if exists
-    if (rocksSystem_) {
-        sceneCollection_.unregisterMaterial(&rocksSystem_->getMaterial());
-    }
-    rocksSystem_ = std::move(system);
-    // Register new material
-    if (rocksSystem_) {
-        sceneCollection_.registerMaterial(&rocksSystem_->getMaterial());
-    }
-}
-
-void RendererSystems::setTree(std::unique_ptr<TreeSystem> system) {
-    treeSystem_ = std::move(system);
-}
-
-void RendererSystems::setTreeRenderer(std::unique_ptr<TreeRenderer> renderer) {
-    treeRenderer_ = std::move(renderer);
-}
-
-void RendererSystems::setTreeLOD(std::unique_ptr<TreeLODSystem> system) {
-    treeLODSystem_ = std::move(system);
-}
-
-void RendererSystems::setImpostorCull(std::unique_ptr<ImpostorCullSystem> system) {
-    impostorCullSystem_ = std::move(system);
-}
-
-void RendererSystems::setDetritus(std::unique_ptr<ScatterSystem> system) {
-    // Unregister old material if exists
-    if (detritusSystem_) {
-        sceneCollection_.unregisterMaterial(&detritusSystem_->getMaterial());
-    }
-    detritusSystem_ = std::move(system);
-    // Register new material
-    if (detritusSystem_) {
-        sceneCollection_.registerMaterial(&detritusSystem_->getMaterial());
-    }
-}
-
-void RendererSystems::setDeferredTerrainObjects(std::unique_ptr<DeferredTerrainObjects> deferred) {
-    deferredTerrainObjects_ = std::move(deferred);
-}
-
-void RendererSystems::setScene(std::unique_ptr<SceneManager> system) {
-    sceneManager_ = std::move(system);
-}
-
-void RendererSystems::setSkinnedMesh(std::unique_ptr<SkinnedMeshRenderer> system) {
-    skinnedMeshRenderer_ = std::move(system);
-}
-
-bool RendererSystems::init(const InitContext& /*initCtx*/,
-                            VkRenderPass /*swapchainRenderPass*/,
-                            VkFormat /*swapchainImageFormat*/,
-                            VkDescriptorSetLayout /*mainDescriptorSetLayout*/,
-                            VkFormat /*depthFormat*/,
-                            VkSampler /*depthSampler*/,
-                            const std::string& /*resourcePath*/) {
-    // NOTE: This centralized init is not currently used.
-    // Initialization is done via RendererInitPhases.cpp which calls each subsystem directly.
-    // This stub exists for potential future refactoring.
-    SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "RendererSystems::init() is not implemented - use RendererInitPhases instead");
-    return false;
-}
-
-void RendererSystems::destroy(VkDevice device, VmaAllocator allocator) {
-    // Note: initialized_ flag is not used since initialization is done
-    // via RendererInitPhases.cpp, not RendererSystems::init()
-    SDL_Log("RendererSystems::destroy starting");
-
-    // Destroy in reverse dependency order
-    // Tier 2+ first, then Tier 1
-
-    // debugLineSystem_ cleanup handled by destructor (RAII)
-    debugLineSystem_.reset();
-
-    // Water
-    waterGBuffer_.reset();  // RAII cleanup via destructor
-    waterTileCull_.reset();  // RAII cleanup via destructor
-    ssrSystem_.reset();  // RAII cleanup via destructor
-    foamBuffer_.reset();  // RAII cleanup via destructor
-    flowMapGenerator_.reset();  // RAII cleanup via destructor
-    waterDisplacement_.reset();  // RAII cleanup via destructor
-    waterSystem_.reset();  // RAII cleanup via destructor
-
-    profiler_.reset();
-    hiZSystem_.reset();  // RAII cleanup via destructor
-
-    // Geometry/Vegetation
-    deferredTerrainObjects_.reset();  // RAII cleanup via destructor
-    detritusSystem_.reset();  // RAII cleanup via destructor
-    catmullClarkSystem_.reset();  // RAII cleanup via destructor
-    rocksSystem_.reset();  // RAII cleanup via destructor
-    treeLODSystem_.reset();  // RAII cleanup via destructor
-    impostorCullSystem_.reset();  // RAII cleanup via destructor
-    treeRenderer_.reset();  // RAII cleanup via destructor
-    treeSystem_.reset();  // RAII cleanup via destructor
-
-    // Atmosphere
-    cloudShadowSystem_.reset();  // RAII cleanup via destructor
-    atmosphereLUTSystem_.reset();  // RAII cleanup via destructor
-    froxelSystem_.reset();  // RAII cleanup via destructor
-
-    // Weather/Snow
-    leafSystem_.reset();  // RAII cleanup via destructor
-    weatherSystem_.reset();  // RAII cleanup via destructor
-    volumetricSnowSystem_.reset();  // RAII cleanup via destructor
-    snowMaskSystem_.reset();  // RAII cleanup via destructor
-
-    // Grass/Wind
-    windSystem_.reset();  // RAII cleanup via destructor
-    grassSystem_.reset();  // RAII cleanup via destructor
-
-    sceneManager_.reset();  // RAII cleanup via destructor
-    globalBufferManager_.reset();  // RAII cleanup via destructor
-    roadRiverVisualization_.reset();  // RAII cleanup via destructor
-    roadNetworkLoader_.reset();  // RAII cleanup via destructor
-
-    // Tier 1
-    skySystem_.reset();  // RAII cleanup via destructor
-    terrainSystem_.reset();  // RAII cleanup via destructor
-    shadowSystem_.reset();  // RAII cleanup via destructor
-    skinnedMeshRenderer_.reset();  // RAII cleanup via destructor
-    bilateralGridSystem_.reset();  // RAII cleanup via destructor
-    bloomSystem_.reset();  // RAII cleanup via destructor
-    postProcessSystem_.reset();  // RAII cleanup via destructor
-
-    SDL_Log("RendererSystems::destroy complete");
+    SDL_Log("RendererSystems destructor called");
 }
 
 CoreResources RendererSystems::getCoreResources(uint32_t framesInFlight) const {
@@ -378,10 +169,62 @@ CoreResources RendererSystems::getCoreResources(uint32_t framesInFlight) const {
                                   *terrainSystem_, framesInFlight);
 }
 
+// ============================================================================
+// Late-bound system setters
+// ============================================================================
+
+void RendererSystems::setRocks(std::unique_ptr<ScatterSystem> system) {
+    if (rocksSystemOwned_) {
+        sceneCollection_.unregisterMaterial(&rocksSystemOwned_->getMaterial());
+    }
+    rocksSystemOwned_ = std::move(system);
+    rocksSystem_ = rocksSystemOwned_.get();
+    if (rocksSystemOwned_) {
+        sceneCollection_.registerMaterial(&rocksSystemOwned_->getMaterial());
+    }
+}
+
+void RendererSystems::setTree(std::unique_ptr<TreeSystem> system) {
+    treeSystemOwned_ = std::move(system);
+    treeSystem_ = treeSystemOwned_.get();
+}
+
+void RendererSystems::setTreeRenderer(std::unique_ptr<TreeRenderer> renderer) {
+    treeRendererOwned_ = std::move(renderer);
+    treeRenderer_ = treeRendererOwned_.get();
+}
+
+void RendererSystems::setTreeLOD(std::unique_ptr<TreeLODSystem> system) {
+    treeLODSystemOwned_ = std::move(system);
+    treeLODSystem_ = treeLODSystemOwned_.get();
+}
+
+void RendererSystems::setImpostorCull(std::unique_ptr<ImpostorCullSystem> system) {
+    impostorCullSystemOwned_ = std::move(system);
+    impostorCullSystem_ = impostorCullSystemOwned_.get();
+}
+
+void RendererSystems::setDetritus(std::unique_ptr<ScatterSystem> system) {
+    if (detritusSystemOwned_) {
+        sceneCollection_.unregisterMaterial(&detritusSystemOwned_->getMaterial());
+    }
+    detritusSystemOwned_ = std::move(system);
+    detritusSystem_ = detritusSystemOwned_.get();
+    if (detritusSystemOwned_) {
+        sceneCollection_.registerMaterial(&detritusSystemOwned_->getMaterial());
+    }
+}
+
+void RendererSystems::setDeferredTerrainObjects(std::unique_ptr<DeferredTerrainObjects> deferred) {
+    deferredTerrainObjectsOwned_ = std::move(deferred);
+    deferredTerrainObjects_ = deferredTerrainObjectsOwned_.get();
+}
+
 #ifdef JPH_DEBUG_RENDERER
 void RendererSystems::createPhysicsDebugRenderer(const InitContext& /*ctx*/, VkRenderPass /*hdrRenderPass*/) {
-    physicsDebugRenderer_ = std::make_unique<PhysicsDebugRenderer>();
-    physicsDebugRenderer_->init();
+    physicsDebugRendererOwned_ = std::make_unique<PhysicsDebugRenderer>();
+    physicsDebugRendererOwned_->init();
+    physicsDebugRenderer_ = physicsDebugRendererOwned_.get();
 }
 #endif
 
@@ -390,38 +233,28 @@ void RendererSystems::createPhysicsDebugRenderer(const InitContext& /*ctx*/, VkR
 // ============================================================================
 
 void RendererSystems::initControlSubsystems(VulkanContext& vulkanContext, PerformanceToggles& perfToggles) {
-    // Systems that directly implement their interfaces:
-    // - CelestialCalculator implements ILocationControl
-    // - TerrainSystem implements ITerrainControl
-    // - Profiler implements IProfilerControl
-    // - WeatherSystem implements IWeatherState
-    // - PostProcessSystem implements IPostProcessState
-    // - CloudShadowSystem implements ICloudShadowControl
-
-    // Subsystems that coordinate multiple systems:
     environmentControl_ = std::make_unique<EnvironmentControlSubsystem>(
         *froxelSystem_, *atmosphereLUTSystem_, *leafSystem_, *cloudShadowSystem_,
         *postProcessSystem_, *environmentSettings_);
-    waterControl_ = std::make_unique<WaterControlSubsystem>(*waterSystem_, *waterTileCull_);
-    treeControl_ = std::make_unique<TreeControlSubsystem>(treeSystem_.get(), *this);
-    grassControl_ = std::make_unique<GrassControlAdapter>(*grassSystem_);
-    debugControl_ = std::make_unique<DebugControlSubsystem>(*debugLineSystem_, *hiZSystem_, *this);
-    performanceControl_ = std::make_unique<PerformanceControlSubsystem>(perfToggles, nullptr);
-    sceneControl_ = std::make_unique<SceneControlSubsystem>(*sceneManager_, vulkanContext);
-    playerControl_ = std::make_unique<PlayerControlSubsystem>(*sceneManager_);
+    waterControlSubsystem_ = std::make_unique<WaterControlSubsystem>(*waterSystem_, *waterTileCull_);
+    treeControlSubsystem_ = std::make_unique<TreeControlSubsystem>(treeSystem_, *this);
+    grassControlAdapter_ = std::make_unique<GrassControlAdapter>(*grassSystem_);
+    debugControlSubsystem_ = std::make_unique<DebugControlSubsystem>(*debugLineSystem_, *hiZSystem_, *this);
+    performanceControlSubsystem_ = std::make_unique<PerformanceControlSubsystem>(perfToggles, nullptr);
+    sceneControlSubsystem_ = std::make_unique<SceneControlSubsystem>(*sceneManager_, vulkanContext);
+    playerControlSubsystem_ = std::make_unique<PlayerControlSubsystem>(*sceneManager_);
 
     controlsInitialized_ = true;
     SDL_Log("Control subsystems initialized");
 }
 
 void RendererSystems::setPerformanceSyncCallback(std::function<void()> callback) {
-    if (performanceControl_) {
-        performanceControl_->setSyncCallback(callback);
+    if (performanceControlSubsystem_) {
+        performanceControlSubsystem_->setSyncCallback(callback);
     }
 }
 
 // Control subsystem accessors
-// Systems that directly implement their interfaces:
 ILocationControl& RendererSystems::locationControl() { return *celestialCalculator_; }
 const ILocationControl& RendererSystems::locationControl() const { return *celestialCalculator_; }
 
@@ -440,28 +273,393 @@ const ICloudShadowControl& RendererSystems::cloudShadowControl() const { return 
 ITerrainControl& RendererSystems::terrainControl() { return *terrainSystem_; }
 const ITerrainControl& RendererSystems::terrainControl() const { return *terrainSystem_; }
 
-IWaterControl& RendererSystems::waterControl() { return *waterControl_; }
-const IWaterControl& RendererSystems::waterControl() const { return *waterControl_; }
+IWaterControl& RendererSystems::waterControl() { return *waterControlSubsystem_; }
+const IWaterControl& RendererSystems::waterControl() const { return *waterControlSubsystem_; }
 
-ITreeControl& RendererSystems::treeControl() { return *treeControl_; }
-const ITreeControl& RendererSystems::treeControl() const { return *treeControl_; }
+ITreeControl& RendererSystems::treeControl() { return *treeControlSubsystem_; }
+const ITreeControl& RendererSystems::treeControl() const { return *treeControlSubsystem_; }
 
-IGrassControl& RendererSystems::grassControl() { return *grassControl_; }
-const IGrassControl& RendererSystems::grassControl() const { return *grassControl_; }
+IGrassControl& RendererSystems::grassControl() { return *grassControlAdapter_; }
+const IGrassControl& RendererSystems::grassControl() const { return *grassControlAdapter_; }
 
-IDebugControl& RendererSystems::debugControl() { return *debugControl_; }
-const IDebugControl& RendererSystems::debugControl() const { return *debugControl_; }
-DebugControlSubsystem& RendererSystems::debugControlSubsystem() { return *debugControl_; }
-const DebugControlSubsystem& RendererSystems::debugControlSubsystem() const { return *debugControl_; }
+IDebugControl& RendererSystems::debugControl() { return *debugControlSubsystem_; }
+const IDebugControl& RendererSystems::debugControl() const { return *debugControlSubsystem_; }
+DebugControlSubsystem& RendererSystems::debugControlSubsystem() { return *debugControlSubsystem_; }
+const DebugControlSubsystem& RendererSystems::debugControlSubsystem() const { return *debugControlSubsystem_; }
 
 IProfilerControl& RendererSystems::profilerControl() { return *profiler_; }
 const IProfilerControl& RendererSystems::profilerControl() const { return *profiler_; }
 
-IPerformanceControl& RendererSystems::performanceControl() { return *performanceControl_; }
-const IPerformanceControl& RendererSystems::performanceControl() const { return *performanceControl_; }
+IPerformanceControl& RendererSystems::performanceControl() { return *performanceControlSubsystem_; }
+const IPerformanceControl& RendererSystems::performanceControl() const { return *performanceControlSubsystem_; }
 
-ISceneControl& RendererSystems::sceneControl() { return *sceneControl_; }
-const ISceneControl& RendererSystems::sceneControl() const { return *sceneControl_; }
+ISceneControl& RendererSystems::sceneControl() { return *sceneControlSubsystem_; }
+const ISceneControl& RendererSystems::sceneControl() const { return *sceneControlSubsystem_; }
 
-IPlayerControl& RendererSystems::playerControl() { return *playerControl_; }
-const IPlayerControl& RendererSystems::playerControl() const { return *playerControl_; }
+IPlayerControl& RendererSystems::playerControl() { return *playerControlSubsystem_; }
+const IPlayerControl& RendererSystems::playerControl() const { return *playerControlSubsystem_; }
+
+// ============================================================================
+// Fruit Component - Individual System Providers
+// ============================================================================
+
+fruit::Component<RendererSystems> getRendererSystemsComponent(
+    const InitContext& ctx,
+    VkRenderPass swapchainRenderPass,
+    VkFormat swapchainImageFormat,
+    VkDescriptorSetLayout mainLayout,
+    VkDescriptorSetLayout skinnedLayout,
+    VkFormat depthFormat,
+    VkSampler depthSampler,
+    const std::string& resourcePath,
+    uint32_t framesInFlight,
+    AssetRegistry* assetRegistry,
+    glm::vec2 sceneOrigin,
+    DescriptorManager::Pool* descriptorPool,
+    VkExtent2D swapchainExtent,
+    vk::raii::Device* raiiDevice
+) {
+    return fruit::createComponent()
+        // Bind configuration values
+        .bindInstance(di::SwapchainRenderPass{swapchainRenderPass})
+        .bindInstance(di::SwapchainFormat{swapchainImageFormat})
+        .bindInstance(di::MainDescriptorSetLayout{mainLayout})
+        .bindInstance(di::SkinnedDescriptorSetLayout{skinnedLayout})
+        .bindInstance(di::DepthFormat{depthFormat})
+        .bindInstance(di::DepthSampler{depthSampler})
+        .bindInstance(di::ResourcePath{resourcePath})
+        .bindInstance(di::FramesInFlight{framesInFlight})
+        .bindInstance(di::SceneOriginConfig{sceneOrigin})
+        .bindInstance(di::AssetRegistryPtr{assetRegistry})
+        .bindInstance(di::DescriptorPoolPtr{descriptorPool})
+        .bindInstance(di::SwapchainExtent{swapchainExtent})
+        .bindInstance(di::RaiiDevicePtr{raiiDevice})
+        .bindInstance(ctx)
+
+        // PostProcessBundleHolder (creates PostProcess, Bloom, BilateralGrid together)
+        .registerProvider([](const InitContext& ctx,
+                            const di::SwapchainRenderPass& swapRP,
+                            const di::SwapchainFormat& swapFormat) -> di::PostProcessBundleHolder* {
+            SDL_Log("FruitDI: Creating PostProcessBundleHolder");
+            auto bundle = PostProcessSystem::createWithDependencies(
+                ctx, swapRP.renderPass, swapFormat.format);
+            if (!bundle) return nullptr;
+            auto holder = new di::PostProcessBundleHolder();
+            holder->postProcessOwned = std::move(bundle->postProcess);
+            holder->bloomOwned = std::move(bundle->bloom);
+            holder->bilateralGridOwned = std::move(bundle->bilateralGrid);
+            holder->postProcess = holder->postProcessOwned.get();
+            holder->bloom = holder->bloomOwned.get();
+            holder->bilateralGrid = holder->bilateralGridOwned.get();
+            return holder;
+        })
+        .registerProvider([](di::PostProcessBundleHolder* holder) -> PostProcessSystem* {
+            return holder ? holder->postProcess : nullptr;
+        })
+        .registerProvider([](di::PostProcessBundleHolder* holder) -> BloomSystem* {
+            return holder ? holder->bloom : nullptr;
+        })
+        .registerProvider([](di::PostProcessBundleHolder* holder) -> BilateralGridSystem* {
+            return holder ? holder->bilateralGrid : nullptr;
+        })
+        .registerProvider([](PostProcessSystem* pp) -> di::HDRRenderPass {
+            return di::HDRRenderPass{pp ? static_cast<VkRenderPass>(pp->getHDRRenderPass()) : VK_NULL_HANDLE};
+        })
+
+        // ShadowSystem
+        .registerProvider([](const InitContext& ctx,
+                            const di::MainDescriptorSetLayout& mainLayout,
+                            const di::SkinnedDescriptorSetLayout& skinnedLayout) -> ShadowSystem* {
+            SDL_Log("FruitDI: Creating ShadowSystem");
+            auto shadow = ShadowSystem::create(ctx, mainLayout.layout, skinnedLayout.layout);
+            return shadow ? shadow.release() : nullptr;
+        })
+        .registerProvider([](ShadowSystem* shadow) -> di::ShadowRenderPass {
+            return di::ShadowRenderPass{shadow ? static_cast<VkRenderPass>(shadow->getShadowRenderPass()) : VK_NULL_HANDLE};
+        })
+
+        // GlobalBufferManager
+        .registerProvider([](const InitContext& ctx,
+                            const di::FramesInFlight& frames) -> GlobalBufferManager* {
+            SDL_Log("FruitDI: Creating GlobalBufferManager");
+            auto buffers = GlobalBufferManager::create(ctx.allocator, ctx.physicalDevice, frames.count);
+            return buffers ? buffers.release() : nullptr;
+        })
+
+        // TerrainSystem
+        .registerProvider([](const InitContext& ctx,
+                            const di::HDRRenderPass& hdrRP,
+                            const di::ShadowRenderPass& shadowRP,
+                            ShadowSystem* shadow,
+                            const di::ResourcePath& resourcePath) -> TerrainSystem* {
+            SDL_Log("FruitDI: Creating TerrainSystem");
+            TerrainFactory::Config config{};
+            config.hdrRenderPass = hdrRP.renderPass;
+            config.shadowRenderPass = shadowRP.renderPass;
+            config.shadowMapSize = shadow ? shadow->getShadowMapSize() : 2048;
+            config.resourcePath = resourcePath.path;
+            auto terrain = TerrainFactory::create(ctx, config);
+            return terrain ? terrain.release() : nullptr;
+        })
+
+        // SkinnedMeshRenderer
+        .registerProvider([](const InitContext& ctx,
+                            const di::HDRRenderPass& hdrRP,
+                            const di::DescriptorPoolPtr& descPool,
+                            const di::SwapchainExtent& extent,
+                            const di::RaiiDevicePtr& raiiDev,
+                            const di::ResourcePath& resourcePath,
+                            const di::FramesInFlight& frames) -> SkinnedMeshRenderer* {
+            SDL_Log("FruitDI: Creating SkinnedMeshRenderer");
+            SkinnedMeshRenderer::InitInfo info{};
+            info.device = ctx.device;
+            info.raiiDevice = static_cast<vk::raii::Device*>(raiiDev.device);
+            info.allocator = ctx.allocator;
+            info.descriptorPool = static_cast<DescriptorManager::Pool*>(descPool.pool);
+            info.renderPass = hdrRP.renderPass;
+            info.extent = extent.extent;
+            info.shaderPath = resourcePath.path + "/shaders";
+            info.framesInFlight = frames.count;
+            info.addCommonBindings = [](DescriptorManager::LayoutBuilder& builder) {
+                DescriptorInfrastructure::addCommonDescriptorBindings(builder);
+            };
+            auto renderer = SkinnedMeshRenderer::create(info);
+            return renderer ? renderer.release() : nullptr;
+        })
+
+        // SkySystem
+        .registerProvider([](const InitContext& ctx,
+                            const di::HDRRenderPass& hdrRP) -> SkySystem* {
+            SDL_Log("FruitDI: Creating SkySystem");
+            auto sky = SkySystem::create(ctx, hdrRP.renderPass);
+            return sky ? sky.release() : nullptr;
+        })
+
+        // AtmosphereLUTSystem
+        .registerProvider([](const InitContext& ctx) -> AtmosphereLUTSystem* {
+            SDL_Log("FruitDI: Creating AtmosphereLUTSystem");
+            auto lut = AtmosphereLUTSystem::create(ctx);
+            if (lut) {
+                CommandScope cmdScope(ctx.device, ctx.commandPool, ctx.graphicsQueue);
+                if (cmdScope.begin()) {
+                    lut->computeTransmittanceLUT(cmdScope.get());
+                    lut->computeMultiScatterLUT(cmdScope.get());
+                    lut->computeIrradianceLUT(cmdScope.get());
+                    glm::vec3 sunDir = glm::vec3(0.0f, 0.707f, 0.707f);
+                    lut->computeSkyViewLUT(cmdScope.get(), sunDir, glm::vec3(0.0f), 0.0f);
+                    lut->computeCloudMapLUT(cmdScope.get(), glm::vec3(0.0f), 0.0f);
+                    cmdScope.end();
+                }
+                lut->exportLUTsAsPNG(ctx.resourcePath);
+            }
+            return lut ? lut.release() : nullptr;
+        })
+
+        // FroxelSystem
+        .registerProvider([](const InitContext& ctx,
+                            ShadowSystem* shadow,
+                            GlobalBufferManager* globalBuffers) -> FroxelSystem* {
+            SDL_Log("FruitDI: Creating FroxelSystem");
+            if (!shadow || !globalBuffers) return nullptr;
+            auto froxel = FroxelSystem::create(
+                ctx,
+                static_cast<VkImageView>(shadow->getShadowImageView()),
+                static_cast<VkSampler>(shadow->getShadowSampler()),
+                globalBuffers->lightBuffers.buffers);
+            return froxel ? froxel.release() : nullptr;
+        })
+
+        // CloudShadowSystem
+        .registerProvider([](const InitContext& ctx,
+                            AtmosphereLUTSystem* atmosphereLUT) -> CloudShadowSystem* {
+            SDL_Log("FruitDI: Creating CloudShadowSystem");
+            if (!atmosphereLUT) return nullptr;
+            auto cloudShadow = CloudShadowSystem::create(
+                ctx,
+                atmosphereLUT->getCloudMapLUTView(),
+                atmosphereLUT->getLUTSampler());
+            return cloudShadow ? cloudShadow.release() : nullptr;
+        })
+
+        // SnowMaskSystem
+        .registerProvider([](const InitContext& ctx) -> SnowMaskSystem* {
+            SDL_Log("FruitDI: Creating SnowMaskSystem");
+            auto snowMask = SnowMaskSystem::create(ctx);
+            return snowMask ? snowMask.release() : nullptr;
+        })
+
+        // VolumetricSnowSystem
+        .registerProvider([](const InitContext& ctx) -> VolumetricSnowSystem* {
+            SDL_Log("FruitDI: Creating VolumetricSnowSystem");
+            auto volumetricSnow = VolumetricSnowSystem::create(ctx);
+            return volumetricSnow ? volumetricSnow.release() : nullptr;
+        })
+
+        // WeatherSystem
+        .registerProvider([](const InitContext& ctx,
+                            const di::HDRRenderPass& hdrRP) -> WeatherSystem* {
+            SDL_Log("FruitDI: Creating WeatherSystem");
+            auto weather = WeatherSystem::create(ctx, hdrRP.renderPass);
+            return weather ? weather.release() : nullptr;
+        })
+
+        // LeafSystem
+        .registerProvider([](const InitContext& ctx,
+                            const di::HDRRenderPass& hdrRP) -> LeafSystem* {
+            SDL_Log("FruitDI: Creating LeafSystem");
+            auto leaf = LeafSystem::create(ctx, hdrRP.renderPass);
+            return leaf ? leaf.release() : nullptr;
+        })
+
+        // WindSystem
+        .registerProvider([](const InitContext& ctx) -> WindSystem* {
+            SDL_Log("FruitDI: Creating WindSystem");
+            auto wind = WindSystem::create(ctx);
+            return wind ? wind.release() : nullptr;
+        })
+
+        // DisplacementSystem
+        .registerProvider([](const InitContext& ctx) -> DisplacementSystem* {
+            SDL_Log("FruitDI: Creating DisplacementSystem");
+            auto displacement = DisplacementSystem::create(ctx);
+            return displacement ? displacement.release() : nullptr;
+        })
+
+        // GrassSystem
+        .registerProvider([](const InitContext& ctx,
+                            const di::HDRRenderPass& hdrRP,
+                            const di::ShadowRenderPass& shadowRP,
+                            ShadowSystem* shadow) -> GrassSystem* {
+            SDL_Log("FruitDI: Creating GrassSystem");
+            uint32_t shadowMapSize = shadow ? shadow->getShadowMapSize() : 2048;
+            auto grass = GrassSystem::create(ctx, hdrRP.renderPass, shadowRP.renderPass, shadowMapSize);
+            return grass ? grass.release() : nullptr;
+        })
+
+        // CatmullClarkSystem
+        .registerProvider([](const InitContext& ctx,
+                            const di::HDRRenderPass& hdrRP,
+                            GlobalBufferManager* globalBuffers,
+                            const di::ResourcePath& resourcePath) -> CatmullClarkSystem* {
+            SDL_Log("FruitDI: Creating CatmullClarkSystem");
+            auto catmullClark = CatmullClarkSystem::create(
+                ctx, hdrRP.renderPass,
+                globalBuffers->uniformBuffers.buffers,
+                resourcePath.path);
+            return catmullClark ? catmullClark.release() : nullptr;
+        })
+
+        // HiZSystem
+        .registerProvider([](const InitContext& ctx,
+                            const di::DepthFormat& depthFormat) -> HiZSystem* {
+            SDL_Log("FruitDI: Creating HiZSystem");
+            auto hiZ = HiZSystem::create(ctx, depthFormat.format);
+            return hiZ ? hiZ.release() : nullptr;
+        })
+
+        // Water systems
+        .registerProvider([](const InitContext& ctx) -> WaterDisplacement* {
+            SDL_Log("FruitDI: Creating WaterDisplacement");
+            auto displacement = WaterDisplacement::create(ctx);
+            return displacement ? displacement.release() : nullptr;
+        })
+        .registerProvider([](const InitContext& ctx) -> FlowMapGenerator* {
+            SDL_Log("FruitDI: Creating FlowMapGenerator");
+            auto flowMap = FlowMapGenerator::create(ctx);
+            return flowMap ? flowMap.release() : nullptr;
+        })
+        .registerProvider([](const InitContext& ctx) -> FoamBuffer* {
+            SDL_Log("FruitDI: Creating FoamBuffer");
+            auto foam = FoamBuffer::create(ctx);
+            return foam ? foam.release() : nullptr;
+        })
+        .registerProvider([](const InitContext& ctx) -> SSRSystem* {
+            SDL_Log("FruitDI: Creating SSRSystem");
+            auto ssr = SSRSystem::create(ctx);
+            return ssr ? ssr.release() : nullptr;
+        })
+        .registerProvider([](const InitContext& ctx) -> WaterTileCull* {
+            SDL_Log("FruitDI: Creating WaterTileCull");
+            auto tileCull = WaterTileCull::create(ctx);
+            return tileCull ? tileCull.release() : nullptr;
+        })
+        .registerProvider([](const InitContext& ctx) -> WaterGBuffer* {
+            SDL_Log("FruitDI: Creating WaterGBuffer");
+            auto gBuffer = WaterGBuffer::create(ctx);
+            return gBuffer ? gBuffer.release() : nullptr;
+        })
+        .registerProvider([](const InitContext& ctx,
+                            const di::HDRRenderPass& hdrRP) -> WaterSystem* {
+            SDL_Log("FruitDI: Creating WaterSystem");
+            auto water = WaterSystem::create(ctx, hdrRP.renderPass);
+            return water ? water.release() : nullptr;
+        })
+
+        // SceneManager
+        .registerProvider([](const InitContext& ctx,
+                            TerrainSystem* terrain,
+                            const di::ResourcePath& resourcePath,
+                            const di::SceneOriginConfig& sceneOriginCfg,
+                            const di::AssetRegistryPtr& assetRegistryPtr) -> SceneManager* {
+            SDL_Log("FruitDI: Creating SceneManager");
+            if (!terrain) return nullptr;
+
+            SceneBuilder::InitInfo sceneInfo{};
+            sceneInfo.allocator = ctx.allocator;
+            sceneInfo.device = ctx.device;
+            sceneInfo.commandPool = ctx.commandPool;
+            sceneInfo.graphicsQueue = ctx.graphicsQueue;
+            sceneInfo.physicalDevice = ctx.physicalDevice;
+            sceneInfo.resourcePath = resourcePath.path;
+            sceneInfo.assetRegistry = assetRegistryPtr.registry;
+            sceneInfo.getTerrainHeight = [terrain](float x, float z) {
+                return terrain->getHeightAt(x, z);
+            };
+            sceneInfo.sceneOrigin = sceneOriginCfg.origin;
+            sceneInfo.deferRenderables = true;
+
+            auto sceneManager = SceneManager::create(sceneInfo);
+            return sceneManager ? sceneManager.release() : nullptr;
+        })
+
+        // Profiler
+        .registerProvider([](const InitContext& ctx,
+                            const di::FramesInFlight& frames) -> Profiler* {
+            SDL_Log("FruitDI: Creating Profiler");
+            return Profiler::create(ctx.device, ctx.physicalDevice, frames.count).release();
+        })
+
+        // DebugLineSystem
+        .registerProvider([](const InitContext& ctx,
+                            const di::HDRRenderPass& hdrRP) -> DebugLineSystem* {
+            SDL_Log("FruitDI: Creating DebugLineSystem");
+            auto debugLine = DebugLineSystem::create(ctx, hdrRP.renderPass);
+            return debugLine ? debugLine.release() : nullptr;
+        })
+
+        // Simple infrastructure systems
+        .registerProvider([]() -> TimeSystem* {
+            return new TimeSystem();
+        })
+        .registerProvider([]() -> CelestialCalculator* {
+            return new CelestialCalculator();
+        })
+        .registerProvider([]() -> UBOBuilder* {
+            return new UBOBuilder();
+        })
+        .registerProvider([]() -> ResizeCoordinator* {
+            return new ResizeCoordinator();
+        })
+        .registerProvider([]() -> ErosionDataLoader* {
+            return new ErosionDataLoader();
+        })
+        .registerProvider([]() -> RoadNetworkLoader* {
+            return new RoadNetworkLoader();
+        })
+        .registerProvider([]() -> RoadRiverVisualization* {
+            return new RoadRiverVisualization();
+        })
+        .registerProvider([]() -> EnvironmentSettings* {
+            return new EnvironmentSettings();
+        });
+}

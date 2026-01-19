@@ -3,6 +3,8 @@
 #include <memory>
 #include <functional>
 #include <vulkan/vulkan.h>
+#include <fruit/fruit.h>
+#include <glm/glm.hpp>
 
 #include "InitContext.h"
 #include "CoreResources.h"
@@ -13,7 +15,7 @@
 #include "GeometrySystemGroup.h"
 #include "scene/SceneCollection.h"
 
-// Forward declarations for control subsystems (only those that coordinate multiple systems)
+// Forward declarations for control subsystems
 class EnvironmentControlSubsystem;
 class WaterControlSubsystem;
 class TreeControlSubsystem;
@@ -93,182 +95,185 @@ struct TerrainConfig;
 class PhysicsDebugRenderer;
 #endif
 
+namespace di {
+
+// Injectable wrapper types for Vulkan handles
+struct SwapchainRenderPass { VkRenderPass renderPass; };
+struct HDRRenderPass { VkRenderPass renderPass; };
+struct ShadowRenderPass { VkRenderPass renderPass; };
+struct SwapchainFormat { VkFormat format; };
+struct DepthFormat { VkFormat format; };
+struct DepthSampler { VkSampler sampler; };
+struct MainDescriptorSetLayout { VkDescriptorSetLayout layout; };
+struct SkinnedDescriptorSetLayout { VkDescriptorSetLayout layout; };
+struct ResourcePath { std::string path; };
+struct FramesInFlight { uint32_t count; };
+struct SceneOriginConfig { glm::vec2 origin; };
+struct AssetRegistryPtr { AssetRegistry* registry; };
+struct DescriptorPoolPtr { void* pool; };  // DescriptorManager::Pool*
+struct SwapchainExtent { VkExtent2D extent; };
+struct RaiiDevicePtr { void* device; };  // vk::raii::Device*
+
+// Bundle holder for PostProcess systems (created together)
+// Fruit owns this struct, which in turn owns the systems
+struct PostProcessBundleHolder {
+    PostProcessSystem* postProcess = nullptr;
+    BloomSystem* bloom = nullptr;
+    BilateralGridSystem* bilateralGrid = nullptr;
+
+    // Actual ownership
+    std::unique_ptr<PostProcessSystem> postProcessOwned;
+    std::unique_ptr<BloomSystem> bloomOwned;
+    std::unique_ptr<BilateralGridSystem> bilateralGridOwned;
+};
+
+} // namespace di
+
 /**
- * RendererSystems - Owns all rendering subsystems with automatic lifecycle management
+ * RendererSystems - Owns all rendering subsystems via Google Fruit DI
  *
- * Design goals:
- * - Groups related systems together
- * - Uses unique_ptr for automatic cleanup
- * - Reduces Renderer's direct knowledge of subsystem internals
- * - Provides typed access when needed
- *
- * Lifecycle:
- * - Create with create() factory method
- * - Initialize with init() after VulkanContext is ready
- * - Destroy automatically via destructor
+ * Design:
+ * - All systems are created and owned by Fruit injector
+ * - No setters for DI-managed systems
+ * - Systems are accessed via raw pointers (injector owns the memory)
+ * - Late-bound systems (trees, detritus) use separate ownership
  */
 class RendererSystems {
 public:
-    RendererSystems();
-    ~RendererSystems();
-
-    // Non-copyable, non-movable (owns complex GPU resources)
+    // Non-copyable, non-movable
     RendererSystems(const RendererSystems&) = delete;
     RendererSystems& operator=(const RendererSystems&) = delete;
     RendererSystems(RendererSystems&&) = delete;
     RendererSystems& operator=(RendererSystems&&) = delete;
 
-    /**
-     * Initialize all subsystems in proper dependency order
-     * Returns false if any critical system fails to initialize
-     */
-    bool init(const InitContext& initCtx,
-              VkRenderPass swapchainRenderPass,
-              VkFormat swapchainImageFormat,
-              VkDescriptorSetLayout mainDescriptorSetLayout,
-              VkFormat depthFormat,
-              VkSampler depthSampler,
-              const std::string& resourcePath);
+    ~RendererSystems();
 
     /**
-     * Destroy all subsystems in reverse dependency order
+     * Fruit-injectable constructor.
+     * The injector provides all systems automatically.
      */
-    void destroy(VkDevice device, VmaAllocator allocator);
+    INJECT(RendererSystems(
+        PostProcessSystem* postProcess,
+        BloomSystem* bloom,
+        BilateralGridSystem* bilateralGrid,
+        ShadowSystem* shadow,
+        TerrainSystem* terrain,
+        GlobalBufferManager* globalBuffers,
+        SkinnedMeshRenderer* skinnedMesh,
+        SkySystem* sky,
+        AtmosphereLUTSystem* atmosphereLUT,
+        FroxelSystem* froxel,
+        CloudShadowSystem* cloudShadow,
+        SnowMaskSystem* snowMask,
+        VolumetricSnowSystem* volumetricSnow,
+        WeatherSystem* weather,
+        LeafSystem* leaf,
+        WindSystem* wind,
+        DisplacementSystem* displacement,
+        GrassSystem* grass,
+        CatmullClarkSystem* catmullClark,
+        HiZSystem* hiZ,
+        WaterDisplacement* waterDisplacement,
+        FlowMapGenerator* flowMap,
+        FoamBuffer* foam,
+        SSRSystem* ssr,
+        WaterTileCull* waterTileCull,
+        WaterGBuffer* waterGBuffer,
+        WaterSystem* water,
+        SceneManager* scene,
+        Profiler* profiler,
+        DebugLineSystem* debugLine,
+        TimeSystem* time,
+        CelestialCalculator* celestial,
+        UBOBuilder* uboBuilder,
+        ResizeCoordinator* resizeCoordinator,
+        ErosionDataLoader* erosionData,
+        RoadNetworkLoader* roadData,
+        RoadRiverVisualization* roadRiverVis,
+        EnvironmentSettings* environmentSettings
+    ));
 
     /**
      * Get tier-1 core resources for dependent system initialization
-     * Only valid after init() completes Phase 1
      */
     CoreResources getCoreResources(uint32_t framesInFlight) const;
 
     // ========================================================================
-    // System accessors (for external coordination)
+    // System accessors (Fruit owns all these systems)
     // ========================================================================
 
     // Tier 1 - Core rendering
     PostProcessSystem& postProcess() { return *postProcessSystem_; }
     const PostProcessSystem& postProcess() const { return *postProcessSystem_; }
-    void setPostProcess(std::unique_ptr<PostProcessSystem> system);
     BloomSystem& bloom() { return *bloomSystem_; }
     const BloomSystem& bloom() const { return *bloomSystem_; }
-    void setBloom(std::unique_ptr<BloomSystem> system);
     BilateralGridSystem& bilateralGrid() { return *bilateralGridSystem_; }
     const BilateralGridSystem& bilateralGrid() const { return *bilateralGridSystem_; }
-    void setBilateralGrid(std::unique_ptr<BilateralGridSystem> system);
     ShadowSystem& shadow() { return *shadowSystem_; }
     const ShadowSystem& shadow() const { return *shadowSystem_; }
-    void setShadow(std::unique_ptr<ShadowSystem> system);
     TerrainSystem& terrain() { return *terrainSystem_; }
     const TerrainSystem& terrain() const { return *terrainSystem_; }
-    void setTerrain(std::unique_ptr<TerrainSystem> system);
+
+    // Infrastructure
+    GlobalBufferManager& globalBuffers() { return *globalBufferManager_; }
+    const GlobalBufferManager& globalBuffers() const { return *globalBufferManager_; }
+    SkinnedMeshRenderer& skinnedMesh() { return *skinnedMeshRenderer_; }
+    const SkinnedMeshRenderer& skinnedMesh() const { return *skinnedMeshRenderer_; }
 
     // Sky and atmosphere
     SkySystem& sky() { return *skySystem_; }
     const SkySystem& sky() const { return *skySystem_; }
-    void setSky(std::unique_ptr<SkySystem> system);
     AtmosphereLUTSystem& atmosphereLUT() { return *atmosphereLUTSystem_; }
     const AtmosphereLUTSystem& atmosphereLUT() const { return *atmosphereLUTSystem_; }
-    void setAtmosphereLUT(std::unique_ptr<AtmosphereLUTSystem> system);
     FroxelSystem& froxel() { return *froxelSystem_; }
     const FroxelSystem& froxel() const { return *froxelSystem_; }
-    void setFroxel(std::unique_ptr<FroxelSystem> system);
     CloudShadowSystem& cloudShadow() { return *cloudShadowSystem_; }
     const CloudShadowSystem& cloudShadow() const { return *cloudShadowSystem_; }
-    void setCloudShadow(std::unique_ptr<CloudShadowSystem> system);
 
     // Environment (grass, wind, weather)
     GrassSystem& grass() { return *grassSystem_; }
     const GrassSystem& grass() const { return *grassSystem_; }
-    void setGrass(std::unique_ptr<GrassSystem> system);
     WindSystem& wind() { return *windSystem_; }
     const WindSystem& wind() const { return *windSystem_; }
-    void setWind(std::unique_ptr<WindSystem> system);
     DisplacementSystem& displacement() { return *displacementSystem_; }
     const DisplacementSystem& displacement() const { return *displacementSystem_; }
-    void setDisplacement(std::unique_ptr<DisplacementSystem> system);
     WeatherSystem& weather() { return *weatherSystem_; }
     const WeatherSystem& weather() const { return *weatherSystem_; }
-    void setWeather(std::unique_ptr<WeatherSystem> system);
     LeafSystem& leaf() { return *leafSystem_; }
     const LeafSystem& leaf() const { return *leafSystem_; }
-    void setLeaf(std::unique_ptr<LeafSystem> system);
 
     // Snow
     SnowMaskSystem& snowMask() { return *snowMaskSystem_; }
     const SnowMaskSystem& snowMask() const { return *snowMaskSystem_; }
-    void setSnowMask(std::unique_ptr<SnowMaskSystem> system);
     VolumetricSnowSystem& volumetricSnow() { return *volumetricSnowSystem_; }
     const VolumetricSnowSystem& volumetricSnow() const { return *volumetricSnowSystem_; }
-    void setVolumetricSnow(std::unique_ptr<VolumetricSnowSystem> system);
 
     // Water
     WaterSystem& water() { return *waterSystem_; }
     const WaterSystem& water() const { return *waterSystem_; }
-    void setWater(std::unique_ptr<WaterSystem> system);
     WaterDisplacement& waterDisplacement() { return *waterDisplacement_; }
     const WaterDisplacement& waterDisplacement() const { return *waterDisplacement_; }
-    void setWaterDisplacement(std::unique_ptr<WaterDisplacement> system);
     FlowMapGenerator& flowMap() { return *flowMapGenerator_; }
     const FlowMapGenerator& flowMap() const { return *flowMapGenerator_; }
-    void setFlowMap(std::unique_ptr<FlowMapGenerator> system);
     FoamBuffer& foam() { return *foamBuffer_; }
     const FoamBuffer& foam() const { return *foamBuffer_; }
-    void setFoam(std::unique_ptr<FoamBuffer> system);
     SSRSystem& ssr() { return *ssrSystem_; }
     const SSRSystem& ssr() const { return *ssrSystem_; }
-    void setSSR(std::unique_ptr<SSRSystem> system);
     WaterTileCull& waterTileCull() { return *waterTileCull_; }
     const WaterTileCull& waterTileCull() const { return *waterTileCull_; }
     bool hasWaterTileCull() const { return waterTileCull_ != nullptr; }
-    void setWaterTileCull(std::unique_ptr<WaterTileCull> system);
     WaterGBuffer& waterGBuffer() { return *waterGBuffer_; }
     const WaterGBuffer& waterGBuffer() const { return *waterGBuffer_; }
-    void setWaterGBuffer(std::unique_ptr<WaterGBuffer> system);
 
     // Geometry processing
     CatmullClarkSystem& catmullClark() { return *catmullClarkSystem_; }
     const CatmullClarkSystem& catmullClark() const { return *catmullClarkSystem_; }
-    void setCatmullClark(std::unique_ptr<CatmullClarkSystem> system);
-    ScatterSystem& rocks() { return *rocksSystem_; }
-    const ScatterSystem& rocks() const { return *rocksSystem_; }
-    void setRocks(std::unique_ptr<ScatterSystem> system);
-    TreeSystem* tree() { return treeSystem_.get(); }
-    const TreeSystem* tree() const { return treeSystem_.get(); }
-    void setTree(std::unique_ptr<TreeSystem> system);
-    TreeRenderer* treeRenderer() { return treeRenderer_.get(); }
-    const TreeRenderer* treeRenderer() const { return treeRenderer_.get(); }
-    void setTreeRenderer(std::unique_ptr<TreeRenderer> renderer);
-    TreeLODSystem* treeLOD() { return treeLODSystem_.get(); }
-    const TreeLODSystem* treeLOD() const { return treeLODSystem_.get(); }
-    void setTreeLOD(std::unique_ptr<TreeLODSystem> system);
-    ImpostorCullSystem* impostorCull() { return impostorCullSystem_.get(); }
-    const ImpostorCullSystem* impostorCull() const { return impostorCullSystem_.get(); }
-    void setImpostorCull(std::unique_ptr<ImpostorCullSystem> system);
-    ScatterSystem* detritus() { return detritusSystem_.get(); }
-    const ScatterSystem* detritus() const { return detritusSystem_.get(); }
-    void setDetritus(std::unique_ptr<ScatterSystem> system);
-
-    // Deferred terrain object generation (trees, rocks, detritus)
-    DeferredTerrainObjects* deferredTerrainObjects() { return deferredTerrainObjects_.get(); }
-    const DeferredTerrainObjects* deferredTerrainObjects() const { return deferredTerrainObjects_.get(); }
-    void setDeferredTerrainObjects(std::unique_ptr<DeferredTerrainObjects> deferred);
-
-    // Scene collection for unified material iteration (used by shadow pass)
-    SceneCollection& sceneCollection() { return sceneCollection_; }
-    const SceneCollection& sceneCollection() const { return sceneCollection_; }
-
-    // Culling and optimization
     HiZSystem& hiZ() { return *hiZSystem_; }
     const HiZSystem& hiZ() const { return *hiZSystem_; }
-    void setHiZ(std::unique_ptr<HiZSystem> system);
 
     // Scene and resources
     SceneManager& scene() { return *sceneManager_; }
     const SceneManager& scene() const { return *sceneManager_; }
-    void setScene(std::unique_ptr<SceneManager> system);
-    GlobalBufferManager& globalBuffers() { return *globalBufferManager_; }
-    const GlobalBufferManager& globalBuffers() const { return *globalBufferManager_; }
-    void setGlobalBuffers(std::unique_ptr<GlobalBufferManager> buffers);
     ErosionDataLoader& erosionData() { return *erosionDataLoader_; }
     const ErosionDataLoader& erosionData() const { return *erosionDataLoader_; }
     RoadNetworkLoader& roadData() { return *roadNetworkLoader_; }
@@ -276,16 +281,9 @@ public:
     RoadRiverVisualization& roadRiverVis() { return *roadRiverVisualization_; }
     const RoadRiverVisualization& roadRiverVis() const { return *roadRiverVisualization_; }
 
-    // Animation and skinning
-    SkinnedMeshRenderer& skinnedMesh() { return *skinnedMeshRenderer_; }
-    const SkinnedMeshRenderer& skinnedMesh() const { return *skinnedMeshRenderer_; }
-    void setSkinnedMesh(std::unique_ptr<SkinnedMeshRenderer> system);
-
     // Tools and debug
     DebugLineSystem& debugLine() { return *debugLineSystem_; }
     const DebugLineSystem& debugLine() const { return *debugLineSystem_; }
-    void setDebugLineSystem(std::unique_ptr<DebugLineSystem> system);
-    void setProfiler(std::unique_ptr<Profiler> profiler);
     Profiler& profiler() { return *profiler_; }
     const Profiler& profiler() const { return *profiler_; }
 
@@ -306,96 +304,88 @@ public:
     const EnvironmentSettings& environmentSettings() const { return *environmentSettings_; }
 
     // ========================================================================
-    // System group accessors (reduce coupling by grouping related systems)
+    // Late-bound systems (not created by Fruit - need terrain data first)
     // ========================================================================
 
-    /**
-     * Get the atmosphere system group (sky, froxel, atmosphereLUT, cloudShadow)
-     * Returns a lightweight struct with non-owning references to the systems.
-     */
+    ScatterSystem& rocks() { return *rocksSystem_; }
+    const ScatterSystem& rocks() const { return *rocksSystem_; }
+    void setRocks(std::unique_ptr<ScatterSystem> system);
+
+    TreeSystem* tree() { return treeSystem_; }
+    const TreeSystem* tree() const { return treeSystem_; }
+    void setTree(std::unique_ptr<TreeSystem> system);
+
+    TreeRenderer* treeRenderer() { return treeRenderer_; }
+    const TreeRenderer* treeRenderer() const { return treeRenderer_; }
+    void setTreeRenderer(std::unique_ptr<TreeRenderer> renderer);
+
+    TreeLODSystem* treeLOD() { return treeLODSystem_; }
+    const TreeLODSystem* treeLOD() const { return treeLODSystem_; }
+    void setTreeLOD(std::unique_ptr<TreeLODSystem> system);
+
+    ImpostorCullSystem* impostorCull() { return impostorCullSystem_; }
+    const ImpostorCullSystem* impostorCull() const { return impostorCullSystem_; }
+    void setImpostorCull(std::unique_ptr<ImpostorCullSystem> system);
+
+    ScatterSystem* detritus() { return detritusSystem_; }
+    const ScatterSystem* detritus() const { return detritusSystem_; }
+    void setDetritus(std::unique_ptr<ScatterSystem> system);
+
+    DeferredTerrainObjects* deferredTerrainObjects() { return deferredTerrainObjects_; }
+    const DeferredTerrainObjects* deferredTerrainObjects() const { return deferredTerrainObjects_; }
+    void setDeferredTerrainObjects(std::unique_ptr<DeferredTerrainObjects> deferred);
+
+    // Scene collection for unified material iteration
+    SceneCollection& sceneCollection() { return sceneCollection_; }
+    const SceneCollection& sceneCollection() const { return sceneCollection_; }
+
+    // ========================================================================
+    // System group accessors
+    // ========================================================================
+
     AtmosphereSystemGroup atmosphere() {
         return AtmosphereSystemGroup{
-            skySystem_.get(),
-            froxelSystem_.get(),
-            atmosphereLUTSystem_.get(),
-            cloudShadowSystem_.get()
+            skySystem_, froxelSystem_, atmosphereLUTSystem_, cloudShadowSystem_
         };
     }
 
-    /**
-     * Get the vegetation system group (grass, wind, displacement, trees, rocks, detritus)
-     * Returns a lightweight struct with non-owning references to the systems.
-     */
     VegetationSystemGroup vegetation() {
         return VegetationSystemGroup{
-            grassSystem_.get(),
-            windSystem_.get(),
-            displacementSystem_.get(),
-            treeSystem_.get(),
-            treeRenderer_.get(),
-            treeLODSystem_.get(),
-            impostorCullSystem_.get(),
-            rocksSystem_.get(),
-            detritusSystem_.get()
+            grassSystem_, windSystem_, displacementSystem_,
+            treeSystem_, treeRenderer_, treeLODSystem_, impostorCullSystem_,
+            rocksSystem_, detritusSystem_
         };
     }
 
-    /**
-     * Get the water system group (water surface, displacement, foam, SSR)
-     * Returns a lightweight struct with non-owning references to the systems.
-     */
     WaterSystemGroup waterGroup() {
         return WaterSystemGroup{
-            waterSystem_.get(),
-            waterDisplacement_.get(),
-            flowMapGenerator_.get(),
-            foamBuffer_.get(),
-            ssrSystem_.get(),
-            waterTileCull_.get(),
-            waterGBuffer_.get()
+            waterSystem_, waterDisplacement_, flowMapGenerator_,
+            foamBuffer_, ssrSystem_, waterTileCull_, waterGBuffer_
         };
     }
 
-    /**
-     * Get the snow/weather system group (snow mask, volumetric, weather, leaves)
-     * Returns a lightweight struct with non-owning references to the systems.
-     */
     SnowSystemGroup snowGroup() {
         return SnowSystemGroup{
-            snowMaskSystem_.get(),
-            volumetricSnowSystem_.get(),
-            weatherSystem_.get(),
-            leafSystem_.get()
+            snowMaskSystem_, volumetricSnowSystem_, weatherSystem_, leafSystem_
         };
     }
 
-    /**
-     * Get the geometry system group (Catmull-Clark subdivision, procedural meshes)
-     * Returns a lightweight struct with non-owning references to the systems.
-     */
     GeometrySystemGroup geometry() {
-        return GeometrySystemGroup{
-            catmullClarkSystem_.get()
-        };
+        return GeometrySystemGroup{catmullClarkSystem_};
     }
 
 #ifdef JPH_DEBUG_RENDERER
-    PhysicsDebugRenderer* physicsDebugRenderer() { return physicsDebugRenderer_.get(); }
-    const PhysicsDebugRenderer* physicsDebugRenderer() const { return physicsDebugRenderer_.get(); }
+    PhysicsDebugRenderer* physicsDebugRenderer() { return physicsDebugRenderer_; }
+    const PhysicsDebugRenderer* physicsDebugRenderer() const { return physicsDebugRenderer_; }
     void createPhysicsDebugRenderer(const InitContext& ctx, VkRenderPass hdrRenderPass);
 #endif
 
     // ========================================================================
-    // Control subsystem accessors (implement GUI-facing interfaces)
+    // Control subsystem accessors
     // ========================================================================
 
-    /**
-     * Initialize control subsystems after all other subsystems are ready.
-     * Must be called after init() and after VulkanContext is available.
-     */
     void initControlSubsystems(VulkanContext& vulkanContext, PerformanceToggles& perfToggles);
 
-    // Control subsystem accessors - return interface references
     ILocationControl& locationControl();
     const ILocationControl& locationControl() const;
     IWeatherState& weatherState();
@@ -416,7 +406,6 @@ public:
     const IGrassControl& grassControl() const;
     IDebugControl& debugControl();
     const IDebugControl& debugControl() const;
-    // Direct access for internal callers that need concrete type
     DebugControlSubsystem& debugControlSubsystem();
     const DebugControlSubsystem& debugControlSubsystem() const;
     IProfilerControl& profilerControl();
@@ -428,100 +417,106 @@ public:
     IPlayerControl& playerControl();
     const IPlayerControl& playerControl() const;
 
-    // Set the sync callback for performance control (must be called after initControlSubsystems)
     void setPerformanceSyncCallback(std::function<void()> callback);
 
 private:
-    // Tier 1 - Core rendering systems (initialize first)
-    std::unique_ptr<PostProcessSystem> postProcessSystem_;
-    std::unique_ptr<BloomSystem> bloomSystem_;
-    std::unique_ptr<BilateralGridSystem> bilateralGridSystem_;
-    std::unique_ptr<ShadowSystem> shadowSystem_;
-    std::unique_ptr<TerrainSystem> terrainSystem_;
+    // Fruit-injected systems (Fruit owns memory)
+    PostProcessSystem* postProcessSystem_;
+    BloomSystem* bloomSystem_;
+    BilateralGridSystem* bilateralGridSystem_;
+    ShadowSystem* shadowSystem_;
+    TerrainSystem* terrainSystem_;
+    GlobalBufferManager* globalBufferManager_;
+    SkinnedMeshRenderer* skinnedMeshRenderer_;
+    SkySystem* skySystem_;
+    AtmosphereLUTSystem* atmosphereLUTSystem_;
+    FroxelSystem* froxelSystem_;
+    CloudShadowSystem* cloudShadowSystem_;
+    SnowMaskSystem* snowMaskSystem_;
+    VolumetricSnowSystem* volumetricSnowSystem_;
+    WeatherSystem* weatherSystem_;
+    LeafSystem* leafSystem_;
+    WindSystem* windSystem_;
+    DisplacementSystem* displacementSystem_;
+    GrassSystem* grassSystem_;
+    CatmullClarkSystem* catmullClarkSystem_;
+    HiZSystem* hiZSystem_;
+    WaterDisplacement* waterDisplacement_;
+    FlowMapGenerator* flowMapGenerator_;
+    FoamBuffer* foamBuffer_;
+    SSRSystem* ssrSystem_;
+    WaterTileCull* waterTileCull_;
+    WaterGBuffer* waterGBuffer_;
+    WaterSystem* waterSystem_;
+    SceneManager* sceneManager_;
+    Profiler* profiler_;
+    DebugLineSystem* debugLineSystem_;
+    TimeSystem* timeSystem_;
+    CelestialCalculator* celestialCalculator_;
+    UBOBuilder* uboBuilder_;
+    ResizeCoordinator* resizeCoordinator_;
+    ErosionDataLoader* erosionDataLoader_;
+    RoadNetworkLoader* roadNetworkLoader_;
+    RoadRiverVisualization* roadRiverVisualization_;
+    EnvironmentSettings* environmentSettings_;
 
-    // Tier 2 - Sky and atmosphere
-    std::unique_ptr<SkySystem> skySystem_;
-    std::unique_ptr<AtmosphereLUTSystem> atmosphereLUTSystem_;
-    std::unique_ptr<FroxelSystem> froxelSystem_;
-    std::unique_ptr<CloudShadowSystem> cloudShadowSystem_;
+    // Late-bound systems (owned here, not by Fruit)
+    std::unique_ptr<ScatterSystem> rocksSystemOwned_;
+    ScatterSystem* rocksSystem_ = nullptr;
+    std::unique_ptr<TreeSystem> treeSystemOwned_;
+    TreeSystem* treeSystem_ = nullptr;
+    std::unique_ptr<TreeRenderer> treeRendererOwned_;
+    TreeRenderer* treeRenderer_ = nullptr;
+    std::unique_ptr<TreeLODSystem> treeLODSystemOwned_;
+    TreeLODSystem* treeLODSystem_ = nullptr;
+    std::unique_ptr<ImpostorCullSystem> impostorCullSystemOwned_;
+    ImpostorCullSystem* impostorCullSystem_ = nullptr;
+    std::unique_ptr<ScatterSystem> detritusSystemOwned_;
+    ScatterSystem* detritusSystem_ = nullptr;
+    std::unique_ptr<DeferredTerrainObjects> deferredTerrainObjectsOwned_;
+    DeferredTerrainObjects* deferredTerrainObjects_ = nullptr;
 
-    // Tier 2 - Environment
-    std::unique_ptr<GrassSystem> grassSystem_;
-    std::unique_ptr<WindSystem> windSystem_;
-    std::unique_ptr<DisplacementSystem> displacementSystem_;
-    std::unique_ptr<WeatherSystem> weatherSystem_;
-    std::unique_ptr<LeafSystem> leafSystem_;
-
-    // Tier 2 - Snow
-    std::unique_ptr<SnowMaskSystem> snowMaskSystem_;
-    std::unique_ptr<VolumetricSnowSystem> volumetricSnowSystem_;
-
-    // Tier 2 - Water
-    std::unique_ptr<WaterSystem> waterSystem_;
-    std::unique_ptr<WaterDisplacement> waterDisplacement_;
-    std::unique_ptr<FlowMapGenerator> flowMapGenerator_;
-    std::unique_ptr<FoamBuffer> foamBuffer_;
-    std::unique_ptr<SSRSystem> ssrSystem_;
-    std::unique_ptr<WaterTileCull> waterTileCull_;
-    std::unique_ptr<WaterGBuffer> waterGBuffer_;
-
-    // Tier 2 - Geometry
-    std::unique_ptr<CatmullClarkSystem> catmullClarkSystem_;
-    std::unique_ptr<ScatterSystem> rocksSystem_;
-    std::unique_ptr<TreeSystem> treeSystem_;
-    std::unique_ptr<TreeRenderer> treeRenderer_;
-    std::unique_ptr<TreeLODSystem> treeLODSystem_;
-    std::unique_ptr<ImpostorCullSystem> impostorCullSystem_;
-    std::unique_ptr<ScatterSystem> detritusSystem_;
-
-    // Deferred terrain object generation
-    std::unique_ptr<DeferredTerrainObjects> deferredTerrainObjects_;
-
-    // Scene collection for unified material iteration
     SceneCollection sceneCollection_;
 
-    // Tier 2 - Culling
-    std::unique_ptr<HiZSystem> hiZSystem_;
-
-    // Infrastructure (needed throughout)
-    std::unique_ptr<SceneManager> sceneManager_;
-    std::unique_ptr<GlobalBufferManager> globalBufferManager_;
-    std::unique_ptr<ErosionDataLoader> erosionDataLoader_;
-    std::unique_ptr<RoadNetworkLoader> roadNetworkLoader_;
-    std::unique_ptr<RoadRiverVisualization> roadRiverVisualization_;
-    std::unique_ptr<SkinnedMeshRenderer> skinnedMeshRenderer_;
-
-    // Tools and debug
-    std::unique_ptr<DebugLineSystem> debugLineSystem_;
-    std::unique_ptr<Profiler> profiler_;
-
-    // Coordination
-    std::unique_ptr<ResizeCoordinator> resizeCoordinator_;
-    std::unique_ptr<UBOBuilder> uboBuilder_;
-
-    // Time and environment
-    std::unique_ptr<TimeSystem> timeSystem_;
-    std::unique_ptr<CelestialCalculator> celestialCalculator_;
-    std::unique_ptr<EnvironmentSettings> environmentSettings_;
-
 #ifdef JPH_DEBUG_RENDERER
-    std::unique_ptr<PhysicsDebugRenderer> physicsDebugRenderer_;
+    std::unique_ptr<PhysicsDebugRenderer> physicsDebugRendererOwned_;
+    PhysicsDebugRenderer* physicsDebugRenderer_ = nullptr;
 #endif
 
-    // Control subsystems (only for interfaces that coordinate multiple systems)
-    // Note: ILocationControl -> CelestialCalculator, ITerrainControl -> TerrainSystem,
-    //       IProfilerControl -> Profiler, IWeatherState -> WeatherSystem,
-    //       IPostProcessState -> PostProcessSystem, ICloudShadowControl -> CloudShadowSystem
-    //       implement their interfaces directly
+    // Control subsystems
     std::unique_ptr<EnvironmentControlSubsystem> environmentControl_;
-    std::unique_ptr<WaterControlSubsystem> waterControl_;
-    std::unique_ptr<TreeControlSubsystem> treeControl_;
-    std::unique_ptr<GrassControlAdapter> grassControl_;
-    std::unique_ptr<DebugControlSubsystem> debugControl_;
-    std::unique_ptr<PerformanceControlSubsystem> performanceControl_;
-    std::unique_ptr<SceneControlSubsystem> sceneControl_;
-    std::unique_ptr<PlayerControlSubsystem> playerControl_;
+    std::unique_ptr<WaterControlSubsystem> waterControlSubsystem_;
+    std::unique_ptr<TreeControlSubsystem> treeControlSubsystem_;
+    std::unique_ptr<GrassControlAdapter> grassControlAdapter_;
+    std::unique_ptr<DebugControlSubsystem> debugControlSubsystem_;
+    std::unique_ptr<PerformanceControlSubsystem> performanceControlSubsystem_;
+    std::unique_ptr<SceneControlSubsystem> sceneControlSubsystem_;
+    std::unique_ptr<PlayerControlSubsystem> playerControlSubsystem_;
 
-    bool initialized_ = false;
     bool controlsInitialized_ = false;
 };
+
+// ============================================================================
+// Fruit Component Declaration
+// ============================================================================
+
+class AssetRegistry;  // Forward declaration
+
+namespace DescriptorManager { class Pool; }  // Forward declaration
+
+fruit::Component<RendererSystems> getRendererSystemsComponent(
+    const InitContext& ctx,
+    VkRenderPass swapchainRenderPass,
+    VkFormat swapchainImageFormat,
+    VkDescriptorSetLayout mainLayout,
+    VkDescriptorSetLayout skinnedLayout,
+    VkFormat depthFormat,
+    VkSampler depthSampler,
+    const std::string& resourcePath,
+    uint32_t framesInFlight,
+    AssetRegistry* assetRegistry,
+    glm::vec2 sceneOrigin,
+    DescriptorManager::Pool* descriptorPool,
+    VkExtent2D swapchainExtent,
+    vk::raii::Device* raiiDevice
+);

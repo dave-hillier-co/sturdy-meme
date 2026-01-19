@@ -8,6 +8,7 @@
 #include <functional>
 #include <optional>
 #include <memory>
+#include <fruit/fruit.h>
 
 #include "Camera.h"
 #include "VulkanContext.h"
@@ -189,8 +190,11 @@ private:
 
     std::unique_ptr<VulkanContext> vulkanContext_;
 
-    // All rendering subsystems - managed with automatic lifecycle
-    std::unique_ptr<RendererSystems> systems_;
+    // Fruit DI injector - owns all rendering subsystems
+    std::unique_ptr<fruit::Injector<RendererSystems>> injector_;
+
+    // All rendering subsystems - Fruit owns the memory
+    RendererSystems* systems_ = nullptr;
 
     // Descriptor and pipeline infrastructure (extracted from Renderer)
     DescriptorInfrastructure descriptorInfra_;

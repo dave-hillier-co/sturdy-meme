@@ -8,6 +8,7 @@
 #include "shaders/bindings.h"
 #include "core/vulkan/DescriptorSetLayoutBuilder.h"
 #include "core/vulkan/RenderPassBuilder.h"
+#include "core/vulkan/DescriptorWriter.h"
 #include <vulkan/vulkan.hpp>
 #include <SDL3/SDL.h>
 #include <algorithm>
@@ -364,18 +365,10 @@ bool ShadowSystem::createInstancedShadowResources() {
 
     // Update descriptor sets with buffer bindings
     for (uint32_t i = 0; i < framesInFlight; i++) {
-        auto bufferInfoDS = vk::DescriptorBufferInfo{}
-            .setBuffer(instanceBuffers[i])
-            .setOffset(0)
-            .setRange(VK_WHOLE_SIZE);
-
-        auto writeDS = vk::WriteDescriptorSet{}
-            .setDstSet(instancedShadowDescriptorSets[i])
-            .setDstBinding(Bindings::SHADOW_INSTANCES)
-            .setDescriptorType(vk::DescriptorType::eStorageBuffer)
-            .setBufferInfo(bufferInfoDS);
-
-        vkDevice.updateDescriptorSets(writeDS, nullptr);
+        DescriptorWriter()
+            .add(WriteBuilder::storageBuffer(Bindings::SHADOW_INSTANCES,
+                makeBufferInfo(instanceBuffers[i], VK_WHOLE_SIZE)))
+            .update(device, instancedShadowDescriptorSets[i]);
     }
 
     SDL_Log("Created instanced shadow resources: %u frames, %u max instances", framesInFlight, MAX_SHADOW_INSTANCES);

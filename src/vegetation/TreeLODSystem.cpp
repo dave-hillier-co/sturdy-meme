@@ -790,33 +790,20 @@ void TreeLODSystem::initializeDescriptorSets(const std::vector<VkBuffer>& unifor
 }
 
 void TreeLODSystem::initializeGPUCulledDescriptors(VkBuffer gpuInstanceBuffer) {
-    vk::Device vkDevice(device_);
+    auto instanceInfo = makeBufferInfo(gpuInstanceBuffer, VK_WHOLE_SIZE);
 
     // Update the instance buffer binding to use GPU-culled buffer instead of CPU buffer
     for (uint32_t frameIndex = 0; frameIndex < maxFramesInFlight_; ++frameIndex) {
-        auto instanceInfo = vk::DescriptorBufferInfo{}
-            .setBuffer(gpuInstanceBuffer)
-            .setOffset(0)
-            .setRange(VK_WHOLE_SIZE);
-
         // Update main descriptor set
-        auto mainWrite = vk::WriteDescriptorSet{}
-            .setDstSet(impostorDescriptorSets_[frameIndex])
-            .setDstBinding(BINDING_TREE_IMPOSTOR_INSTANCES)
-            .setDescriptorType(vk::DescriptorType::eStorageBuffer)
-            .setBufferInfo(instanceInfo);
-
-        vkDevice.updateDescriptorSets(mainWrite, nullptr);
+        DescriptorWriter()
+            .add(WriteBuilder::storageBuffer(BINDING_TREE_IMPOSTOR_INSTANCES, instanceInfo))
+            .update(device_, impostorDescriptorSets_[frameIndex]);
 
         // Update shadow descriptor set
         if (!shadowDescriptorSets_.empty()) {
-            auto shadowWrite = vk::WriteDescriptorSet{}
-                .setDstSet(shadowDescriptorSets_[frameIndex])
-                .setDstBinding(BINDING_TREE_IMPOSTOR_SHADOW_INSTANCES)
-                .setDescriptorType(vk::DescriptorType::eStorageBuffer)
-                .setBufferInfo(instanceInfo);
-
-            vkDevice.updateDescriptorSets(shadowWrite, nullptr);
+            DescriptorWriter()
+                .add(WriteBuilder::storageBuffer(BINDING_TREE_IMPOSTOR_SHADOW_INSTANCES, instanceInfo))
+                .update(device_, shadowDescriptorSets_[frameIndex]);
         }
     }
 

@@ -31,6 +31,7 @@ set(SOURCES
     # DI
     src/di/VulkanServices.cpp
     src/di/VulkanComponent.cpp
+    src/di/CoreSystemsFactory.cpp
     # Scene
     src/scene/Application.cpp
     src/scene/SceneBuilder.cpp

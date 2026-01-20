@@ -287,11 +287,10 @@ void Renderer::cleanup() {
         // RAII handles cleanup of sync objects via TripleBuffering
         frameSync_.destroy();
 
-        // Destroy all subsystems via RendererSystems
-        if (systems_) {
-            systems_->destroy(device, allocator);
-            systems_.reset();
-        }
+        // Destroy all subsystems via Fruit injector
+        // The injector owns all Fruit-managed systems; destroying it cleans them up
+        systems_ = nullptr;
+        injector_.reset();
 
         // Clean up descriptor infrastructure (pool, layouts, pipeline)
         descriptorInfra_.cleanup();
@@ -771,25 +770,8 @@ void Renderer::recordHDRPassSecondarySlot(VkCommandBuffer cmd, uint32_t frameInd
 // ===== GPU Skinning Implementation =====
 
 bool Renderer::initSkinnedMeshRenderer() {
-    SkinnedMeshRenderer::InitInfo info{};
-    info.device = vulkanContext_->getVkDevice();
-    info.raiiDevice = &vulkanContext_->getRaiiDevice();
-    info.allocator = vulkanContext_->getAllocator();
-    info.descriptorPool = descriptorInfra_.getDescriptorPool();
-    info.renderPass = systems_->postProcess().getHDRRenderPass();
-    info.extent = vulkanContext_->getVkSwapchainExtent();
-    info.shaderPath = resourcePath + "/shaders";
-    info.framesInFlight = MAX_FRAMES_IN_FLIGHT;
-    info.addCommonBindings = [](DescriptorManager::LayoutBuilder& builder) {
-        DescriptorInfrastructure::addCommonDescriptorBindings(builder);
-    };
-
-    auto skinnedMeshRenderer = SkinnedMeshRenderer::create(info);
-    if (!skinnedMeshRenderer) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create SkinnedMeshRenderer");
-        return false;
-    }
-    systems_->setSkinnedMesh(std::move(skinnedMeshRenderer));
+    // SkinnedMeshRenderer is now created by Fruit DI in getRendererSystemsComponent()
+    // This function is kept for interface compatibility but does nothing
     return true;
 }
 

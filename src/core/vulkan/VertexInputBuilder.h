@@ -179,10 +179,26 @@ public:
     }
 
     // ========================================================================
-    // Stereotypes
+    // Factories and Stereotypes
     // ========================================================================
 
-    // Per-vertex data (most common)
+    // Generic per-vertex binding with explicit stride
+    static constexpr VertexBindingBuilder vertex(uint32_t bind, uint32_t strideBytes) {
+        return VertexBindingBuilder()
+            .binding(bind)
+            .stride(strideBytes)
+            .inputRate(vk::VertexInputRate::eVertex);
+    }
+
+    // Generic per-instance binding with explicit stride
+    static constexpr VertexBindingBuilder instance(uint32_t bind, uint32_t strideBytes) {
+        return VertexBindingBuilder()
+            .binding(bind)
+            .stride(strideBytes)
+            .inputRate(vk::VertexInputRate::eInstance);
+    }
+
+    // Per-vertex data (most common) - uses sizeof(VertexType)
     template<typename VertexType>
     static constexpr VertexBindingBuilder perVertex(uint32_t bind = 0) {
         return VertexBindingBuilder()

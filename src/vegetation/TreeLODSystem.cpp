@@ -270,7 +270,7 @@ bool TreeLODSystem::createPipeline() {
     // Vertex input: billboard vertex (binding 0) + instance data (binding 1)
     auto vertexInput = VertexInputBuilder()
         // Binding 0: per-vertex (position + texcoord)
-        .addBinding(VertexBindingBuilder(0, sizeof(glm::vec3) + sizeof(glm::vec2)))
+        .addBinding(VertexBindingBuilder::vertex(0, sizeof(glm::vec3) + sizeof(glm::vec2)))
         .addAttribute(AttributeBuilder::vec3(0, 0, 0))                      // position
         .addAttribute(AttributeBuilder::vec2(1, 0, sizeof(glm::vec3)))      // texcoord
         // Binding 1: per-instance
@@ -397,7 +397,7 @@ bool TreeLODSystem::createShadowPipeline() {
     // Vertex input: only billboard quad vertices (instances come from SSBO)
     // Position (vec3) + TexCoord (vec2)
     auto vertexInput = VertexInputBuilder()
-        .addBinding(VertexBindingBuilder(0, sizeof(glm::vec3) + sizeof(glm::vec2)))
+        .addBinding(VertexBindingBuilder::vertex(0, sizeof(glm::vec3) + sizeof(glm::vec2)))
         .addAttribute(AttributeBuilder::vec3(0, 0, 0))                    // inPosition
         .addAttribute(AttributeBuilder::vec2(1, 0, sizeof(glm::vec3)));   // inTexCoord
     auto vertexInputInfo = vertexInput.build();

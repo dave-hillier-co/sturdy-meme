@@ -87,6 +87,36 @@ public:
     }
 
     // ========================================================================
+    // Generic factories - for custom configurations
+    // ========================================================================
+
+    // Generic color attachment (clear, store, undefined->color attachment optimal)
+    // Use when you need full control via builder methods
+    static constexpr AttachmentBuilder color(vk::Format fmt) {
+        return AttachmentBuilder()
+            .format(fmt)
+            .loadOp(vk::AttachmentLoadOp::eClear)
+            .storeOp(vk::AttachmentStoreOp::eStore)
+            .stencilLoadOp(vk::AttachmentLoadOp::eDontCare)
+            .stencilStoreOp(vk::AttachmentStoreOp::eDontCare)
+            .initialLayout(vk::ImageLayout::eUndefined)
+            .finalLayout(vk::ImageLayout::eColorAttachmentOptimal);
+    }
+
+    // Generic depth attachment (clear, store, undefined->depth attachment optimal)
+    // Use when you need full control via builder methods
+    static constexpr AttachmentBuilder depth(vk::Format fmt) {
+        return AttachmentBuilder()
+            .format(fmt)
+            .loadOp(vk::AttachmentLoadOp::eClear)
+            .storeOp(vk::AttachmentStoreOp::eStore)
+            .stencilLoadOp(vk::AttachmentLoadOp::eDontCare)
+            .stencilStoreOp(vk::AttachmentStoreOp::eDontCare)
+            .initialLayout(vk::ImageLayout::eUndefined)
+            .finalLayout(vk::ImageLayout::eDepthStencilAttachmentOptimal);
+    }
+
+    // ========================================================================
     // Stereotypes - predefined attachment configurations
     // ========================================================================
 

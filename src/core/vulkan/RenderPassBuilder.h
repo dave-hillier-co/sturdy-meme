@@ -396,8 +396,8 @@ public:
         }
 
         // Create dependency
-        vk::PipelineStageFlagBits srcStage = vk::PipelineStageFlagBits::eColorAttachmentOutput;
-        vk::PipelineStageFlagBits dstStage = vk::PipelineStageFlagBits::eColorAttachmentOutput;
+        vk::PipelineStageFlags srcStage = vk::PipelineStageFlagBits::eColorAttachmentOutput;
+        vk::PipelineStageFlags dstStage = vk::PipelineStageFlagBits::eColorAttachmentOutput;
         vk::AccessFlags srcAccess = {};
         vk::AccessFlags dstAccess = vk::AccessFlagBits::eColorAttachmentWrite;
 

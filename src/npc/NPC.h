@@ -7,9 +7,11 @@
 #include <vector>
 #include <cstdint>
 #include <string>
+#include <memory>
 
 // Forward declarations
 class PhysicsWorld;
+class BehaviorTree;
 
 // Unique identifier for NPCs
 using NPCID = uint32_t;
@@ -106,6 +108,9 @@ struct NPC {
 
     // Configuration
     HostilityConfig config;
+
+    // Behavior tree (owned by NPC)
+    std::unique_ptr<BehaviorTree> behaviorTree;
 
     // Visual state (for rendering feedback)
     float alertLevel = 0.0f;        // 0 = calm, 1 = fully alert (for visual indicators)

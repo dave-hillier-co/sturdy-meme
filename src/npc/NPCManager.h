@@ -49,6 +49,9 @@ public:
     void applyAreaDamage(const glm::vec3& center, float radius, float damage,
                          const glm::vec3& attackerPosition);
 
+    // Apply damage to a single NPC
+    void applyDamage(NPC& npc, float damage, const glm::vec3& attackerPosition);
+
     // Set event callback
     void setEventCallback(NPCEventCallback callback) { eventCallback_ = std::move(callback); }
 

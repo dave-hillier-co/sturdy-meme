@@ -1,9 +1,11 @@
 #include "NPCManager.h"
-#include "NPCBehavior.h"
+#include "BehaviorTree.h"
+#include "NPCBehaviorTrees.h"
 #include "physics/PhysicsSystem.h"
 #include <SDL3/SDL_log.h>
 #include <algorithm>
 #include <sstream>
+#include <cmath>
 
 NPCID NPCManager::spawn(const NPCSpawnInfo& info) {
     NPC npc;
@@ -19,15 +21,19 @@ NPCID NPCManager::spawn(const NPCSpawnInfo& info) {
     npc.config = info.config;
     npc.patrolPath = info.patrolPath;
 
+    // Create behavior tree based on hostility type
+    npc.behaviorTree = NPCBehaviorTrees::CreateBehaviorTree(info.hostility);
+
+    NPCID spawnedId = npc.id;
     npcs_.push_back(std::move(npc));
 
-    SDL_Log("Spawned NPC '%s' (ID: %u) at (%.1f, %.1f, %.1f) with hostility %d",
-            info.name.c_str(), npc.id,
+    SDL_Log("Spawned NPC '%s' (ID: %u) at (%.1f, %.1f, %.1f) with hostility %d [BehaviorTree]",
+            info.name.c_str(), spawnedId,
             info.position.x, info.position.y, info.position.z,
             static_cast<int>(info.hostility));
 
-    fireEvent(npc.id, "spawned");
-    return npc.id;
+    fireEvent(spawnedId, "spawned");
+    return spawnedId;
 }
 
 void NPCManager::remove(NPCID id) {
@@ -48,17 +54,36 @@ void NPCManager::update(float deltaTime, const glm::vec3& playerPosition, Physic
             continue;
         }
 
-        // Update behavior and get desired velocity
-        glm::vec3 velocity = NPCBehavior::update(npc, deltaTime, playerPosition, physics);
+        // Update perception first (this feeds data to the behavior tree)
+        npc.perception.update(deltaTime, npc.transform.position, npc.transform.forward(),
+                              playerPosition, npc.config, physics);
 
-        // Apply velocity to position (simple integration - could use physics character controllers)
-        if (glm::length(velocity) > 0.001f) {
-            npc.transform.position += velocity * deltaTime;
+        // Update attack cooldown
+        npc.attackCooldownTimer = std::max(0.0f, npc.attackCooldownTimer - deltaTime);
 
-            // Keep on terrain (would need terrain height query here)
-            // For now, just keep Y at spawn height
-            npc.transform.position.y = npc.spawnPosition.y;
+        // Update behavior tree
+        if (npc.behaviorTree) {
+            npc.behaviorTree->tick(&npc, playerPosition, physics, deltaTime);
         }
+
+        // Apply velocity to position
+        if (glm::length(npc.velocity) > 0.001f) {
+            npc.transform.position += npc.velocity * deltaTime;
+        }
+
+        // Update alert level for visual feedback (smooth transition)
+        float targetAlert = 0.0f;
+        if (npc.behaviorState == BehaviorState::Attack) {
+            targetAlert = 1.0f;
+        } else if (npc.behaviorState == BehaviorState::Chase || npc.behaviorState == BehaviorState::Flee) {
+            targetAlert = 0.7f;
+        } else if (npc.perception.awareness > npc.config.detectionThreshold) {
+            targetAlert = npc.perception.awareness * 0.5f;
+        }
+        npc.alertLevel += (targetAlert - npc.alertLevel) * (1.0f - std::exp(-5.0f * deltaTime));
+
+        // Update state timer
+        npc.stateTimer += deltaTime;
     }
 }
 
@@ -114,8 +139,38 @@ void NPCManager::applyAreaDamage(const glm::vec3& center, float radius, float da
         float falloff = 1.0f - (dist / radius);
         float actualDamage = damage * falloff;
 
-        NPCBehavior::applyDamage(*npc, actualDamage, attackerPosition);
+        applyDamage(*npc, actualDamage, attackerPosition);
     }
+}
+
+void NPCManager::applyDamage(NPC& npc, float damage, const glm::vec3& attackerPosition) {
+    npc.health = std::max(0.0f, npc.health - damage);
+
+    if (npc.health <= 0.0f) {
+        SDL_Log("NPC %s died", npc.name.c_str());
+        fireEvent(npc.id, "died");
+        return;
+    }
+
+    // Become hostile when attacked (unless afraid)
+    if (npc.hostility != HostilityLevel::Afraid) {
+        if (npc.hostility != HostilityLevel::Hostile) {
+            npc.hostility = HostilityLevel::Hostile;
+            npc.lastTrigger = HostilityTrigger::PlayerAttack;
+            npc.hostilityTimer = 0.0f;
+
+            // Recreate behavior tree for new hostility
+            npc.behaviorTree = NPCBehaviorTrees::CreateBehaviorTree(HostilityLevel::Hostile);
+        }
+    }
+
+    // Update perception with attacker position
+    npc.perception.lastKnownPosition = attackerPosition;
+    npc.perception.hasLastKnownPosition = true;
+    npc.perception.awareness = 1.0f;  // Full awareness when attacked
+
+    SDL_Log("NPC %s took %.1f damage (%.1f remaining)", npc.name.c_str(), damage, npc.health);
+    fireEvent(npc.id, "damaged");
 }
 
 size_t NPCManager::getAliveCount() const {
@@ -138,7 +193,7 @@ void NPCManager::clear() {
 std::string NPCManager::getDebugSummary() const {
     std::ostringstream ss;
     ss << "NPCs: " << getAliveCount() << "/" << npcs_.size() << " alive, "
-       << getHostileCount() << " hostile";
+       << getHostileCount() << " hostile [BehaviorTree AI]";
 
     if (!npcs_.empty()) {
         ss << "\n";
@@ -146,10 +201,14 @@ std::string NPCManager::getDebugSummary() const {
             ss << "  [" << npc.id << "] " << npc.name
                << " H:" << static_cast<int>(npc.hostility)
                << " S:" << static_cast<int>(npc.behaviorState)
+               << " A:" << static_cast<int>(npc.perception.awareness * 100) << "%"
                << " HP:" << static_cast<int>(npc.health) << "/"
                << static_cast<int>(npc.maxHealth);
             if (npc.perception.canSeePlayer) {
-                ss << " (sees player)";
+                ss << " [SEES]";
+            }
+            if (npc.behaviorTree) {
+                ss << " [BT]";
             }
             ss << "\n";
         }

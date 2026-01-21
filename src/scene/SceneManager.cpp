@@ -46,7 +46,21 @@ float SceneManager::getTerrainHeight(float x, float z) const {
 }
 
 void SceneManager::initPhysics(PhysicsWorld& physics) {
-    initializeScenePhysics(physics);
+    // Store physics pointer for deferred initialization callback
+    storedPhysics_ = &physics;
+
+    // Register callback for when deferred renderables are created
+    sceneBuilder->setOnRenderablesCreated([this]() {
+        if (storedPhysics_ && scenePhysicsBodies.empty()) {
+            SDL_Log("SceneManager: Deferred renderables created, initializing physics bodies...");
+            initializeScenePhysics(*storedPhysics_);
+        }
+    });
+
+    // Initialize immediately if renderables already exist
+    if (sceneBuilder->hasRenderables()) {
+        initializeScenePhysics(physics);
+    }
 }
 
 void SceneManager::initTerrainPhysics(PhysicsWorld& physics, const float* heightSamples,
@@ -189,13 +203,6 @@ void SceneManager::initializeSceneLights() {
 void SceneManager::updatePhysicsToScene(PhysicsWorld& physics) {
     // Update scene object transforms from physics simulation
     auto& sceneObjects = sceneBuilder->getRenderables();
-
-    // Check if physics needs initialization (deferred renderables were just created)
-    if (scenePhysicsBodies.empty() && !sceneObjects.empty()) {
-        SDL_Log("SceneManager: Deferred renderables detected, initializing physics bodies...");
-        initializeScenePhysics(physics);
-    }
-
     size_t emissiveOrbIndex = sceneBuilder->getEmissiveOrbIndex();
 
     for (size_t i = 0; i < scenePhysicsBodies.size() && i < sceneObjects.size(); i++) {

@@ -70,11 +70,8 @@ public:
     // Get the generated LOD data
     const SkinnedMeshLODs& getLODs() const { return lodData_; }
 
-    // Save LODs to output directory as GLTF files
-    bool saveGLTF(const std::string& outputDir) const;
-
-    // Save LODs to a single JSON manifest + binary data
-    bool saveBinary(const std::string& outputPath) const;
+    // Save LODs to output directory as GLB files (one per LOD level)
+    bool saveGLB(const std::string& outputDir) const;
 
     // Get statistics
     struct Statistics {

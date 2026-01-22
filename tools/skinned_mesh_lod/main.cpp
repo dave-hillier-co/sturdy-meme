@@ -1,6 +1,6 @@
 // Skinned mesh LOD generator tool
 // Generates multiple levels of detail for skinned meshes while preserving bone weights
-// Outputs binary LOD data or per-LOD files with manifest
+// Outputs GLB files (standard glTF binary format) for each LOD level
 
 #include "MeshSimplifier.h"
 #include <SDL3/SDL_log.h>
@@ -14,6 +14,7 @@ void printUsage(const char* programName) {
               << "\n"
               << "Generates LOD (Level of Detail) meshes for skinned character models.\n"
               << "Preserves bone weights and skeleton data during simplification.\n"
+              << "Outputs standard GLB (binary glTF) files that work with any 3D software.\n"
               << "\n"
               << "Arguments:\n"
               << "  input_file           Input mesh file (GLTF/GLB format)\n"
@@ -26,7 +27,6 @@ void printUsage(const char* programName) {
               << "                       Lower = more accurate but fewer reductions\n"
               << "  --lock-boundary      Preserve mesh boundary edges (default: enabled)\n"
               << "  --no-lock-boundary   Allow boundary edges to be simplified\n"
-              << "  --binary             Output single binary file instead of per-LOD files\n"
               << "  --help               Show this help message\n"
               << "\n"
               << "LOD Ratios:\n"
@@ -35,23 +35,21 @@ void printUsage(const char* programName) {
               << "  0.25  = Quarter detail (25% triangles)\n"
               << "  0.125 = Eighth detail (12.5% triangles)\n"
               << "\n"
-              << "Output files (default mode):\n"
-              << "  <name>_manifest.json   LOD manifest with statistics\n"
-              << "  <name>_lod0.bin        Full detail mesh data\n"
-              << "  <name>_lod1.bin        First LOD reduction\n"
-              << "  ...                    Additional LOD levels\n"
+              << "Output files:\n"
+              << "  <name>_lods.json     LOD manifest with statistics and file list\n"
+              << "  <name>_lod0.glb      Full detail mesh (GLB format)\n"
+              << "  <name>_lod1.glb      First LOD reduction (GLB format)\n"
+              << "  ...                  Additional LOD levels\n"
               << "\n"
-              << "Output file (--binary mode):\n"
-              << "  <name>_lods.smld       Single binary with all LODs\n"
-              << "\n"
-              << "Binary format (SMLD):\n"
-              << "  - Header: magic 'SMLD', version, LOD count, joint count\n"
-              << "  - Skeleton: joint names, parent indices, transforms\n"
-              << "  - Per-LOD: level, ratios, vertex/index data\n"
+              << "GLB files contain:\n"
+              << "  - Complete skinned mesh with vertex attributes\n"
+              << "  - Skeleton hierarchy with joint transforms\n"
+              << "  - Inverse bind matrices for skinning\n"
+              << "  - Standard format readable by Blender, game engines, etc.\n"
               << "\n"
               << "Example:\n"
               << "  " << programName << " character.glb ./output --lods 1.0,0.5,0.25\n"
-              << "  " << programName << " character.glb ./output --binary --error 0.02\n";
+              << "  " << programName << " character.glb ./output --error 0.02\n";
 }
 
 std::vector<float> parseRatios(const std::string& str) {
@@ -98,7 +96,6 @@ int main(int argc, char* argv[]) {
     std::string outputDir = argv[2];
 
     LODConfig config;
-    bool binaryOutput = false;
 
     // Parse optional arguments
     for (int i = 3; i < argc; i++) {
@@ -116,8 +113,6 @@ int main(int argc, char* argv[]) {
             config.lockBoundary = true;
         } else if (arg == "--no-lock-boundary") {
             config.lockBoundary = false;
-        } else if (arg == "--binary") {
-            binaryOutput = true;
         } else {
             SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Unknown option: %s", arg.c_str());
             printUsage(argv[0]);
@@ -138,7 +133,7 @@ int main(int argc, char* argv[]) {
     }
     SDL_Log("Target error: %.4f", config.targetError);
     SDL_Log("Lock boundary: %s", config.lockBoundary ? "yes" : "no");
-    SDL_Log("Output format: %s", binaryOutput ? "binary" : "per-LOD files");
+    SDL_Log("Output format: GLB (binary glTF)");
 
     MeshSimplifier simplifier;
 
@@ -177,18 +172,10 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    // Save output
-    if (binaryOutput) {
-        std::string binaryPath = outputDir + "/" + simplifier.getLODs().name + "_lods.smld";
-        if (!simplifier.saveBinary(binaryPath)) {
-            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to save binary output!");
-            return 1;
-        }
-    } else {
-        if (!simplifier.saveGLTF(outputDir)) {
-            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to save output files!");
-            return 1;
-        }
+    // Save output as GLB files
+    if (!simplifier.saveGLB(outputDir)) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to save GLB files!");
+        return 1;
     }
 
     // Print statistics

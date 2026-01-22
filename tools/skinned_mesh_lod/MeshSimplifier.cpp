@@ -503,142 +503,440 @@ void MeshSimplifier::normalizeBoneWeights(LODMeshData& mesh) {
     }
 }
 
-bool MeshSimplifier::saveGLTF(const std::string& outputDir) const {
+bool MeshSimplifier::saveGLB(const std::string& outputDir) const {
     // Create output directory
     std::filesystem::create_directories(outputDir);
 
-    // For each LOD, we'll save a separate GLTF file
-    // This is a simplified output - a full implementation would write proper GLTF
+    // Save each LOD as a separate GLB file
     for (const auto& lod : lodData_.lods) {
         std::string filename = outputDir + "/" + lodData_.name + "_lod" +
-                              std::to_string(lod.lodLevel) + ".bin";
+                              std::to_string(lod.lodLevel) + ".glb";
 
-        // Write binary vertex + index data
+        // Build binary buffer with all mesh data
+        std::vector<uint8_t> binBuffer;
+        size_t bufferOffset = 0;
+
+        // Helper to align buffer to 4-byte boundary
+        auto alignBuffer = [&binBuffer]() {
+            while (binBuffer.size() % 4 != 0) {
+                binBuffer.push_back(0);
+            }
+        };
+
+        // Calculate mesh bounds for accessor min/max
+        glm::vec3 posMin(FLT_MAX), posMax(-FLT_MAX);
+        for (const auto& v : lod.vertices) {
+            posMin = glm::min(posMin, v.position);
+            posMax = glm::max(posMax, v.position);
+        }
+
+        // Write indices to buffer
+        size_t indicesOffset = binBuffer.size();
+        size_t indicesSize = lod.indices.size() * sizeof(uint32_t);
+        binBuffer.resize(binBuffer.size() + indicesSize);
+        std::memcpy(binBuffer.data() + indicesOffset, lod.indices.data(), indicesSize);
+        alignBuffer();
+
+        // Write positions to buffer
+        size_t positionsOffset = binBuffer.size();
+        size_t positionsSize = lod.vertices.size() * sizeof(glm::vec3);
+        binBuffer.resize(binBuffer.size() + positionsSize);
+        for (size_t i = 0; i < lod.vertices.size(); ++i) {
+            std::memcpy(binBuffer.data() + positionsOffset + i * sizeof(glm::vec3),
+                       &lod.vertices[i].position, sizeof(glm::vec3));
+        }
+        alignBuffer();
+
+        // Write normals to buffer
+        size_t normalsOffset = binBuffer.size();
+        size_t normalsSize = lod.vertices.size() * sizeof(glm::vec3);
+        binBuffer.resize(binBuffer.size() + normalsSize);
+        for (size_t i = 0; i < lod.vertices.size(); ++i) {
+            std::memcpy(binBuffer.data() + normalsOffset + i * sizeof(glm::vec3),
+                       &lod.vertices[i].normal, sizeof(glm::vec3));
+        }
+        alignBuffer();
+
+        // Write texcoords to buffer
+        size_t texcoordsOffset = binBuffer.size();
+        size_t texcoordsSize = lod.vertices.size() * sizeof(glm::vec2);
+        binBuffer.resize(binBuffer.size() + texcoordsSize);
+        for (size_t i = 0; i < lod.vertices.size(); ++i) {
+            std::memcpy(binBuffer.data() + texcoordsOffset + i * sizeof(glm::vec2),
+                       &lod.vertices[i].texCoord, sizeof(glm::vec2));
+        }
+        alignBuffer();
+
+        // Write tangents to buffer
+        size_t tangentsOffset = binBuffer.size();
+        size_t tangentsSize = lod.vertices.size() * sizeof(glm::vec4);
+        binBuffer.resize(binBuffer.size() + tangentsSize);
+        for (size_t i = 0; i < lod.vertices.size(); ++i) {
+            std::memcpy(binBuffer.data() + tangentsOffset + i * sizeof(glm::vec4),
+                       &lod.vertices[i].tangent, sizeof(glm::vec4));
+        }
+        alignBuffer();
+
+        // Write bone indices (JOINTS_0) as unsigned short vec4
+        size_t jointsOffset = binBuffer.size();
+        size_t jointsSize = lod.vertices.size() * sizeof(uint16_t) * 4;
+        binBuffer.resize(binBuffer.size() + jointsSize);
+        for (size_t i = 0; i < lod.vertices.size(); ++i) {
+            uint16_t joints[4] = {
+                static_cast<uint16_t>(lod.vertices[i].boneIndices.x),
+                static_cast<uint16_t>(lod.vertices[i].boneIndices.y),
+                static_cast<uint16_t>(lod.vertices[i].boneIndices.z),
+                static_cast<uint16_t>(lod.vertices[i].boneIndices.w)
+            };
+            std::memcpy(binBuffer.data() + jointsOffset + i * sizeof(joints), joints, sizeof(joints));
+        }
+        alignBuffer();
+
+        // Write bone weights (WEIGHTS_0) as float vec4
+        size_t weightsOffset = binBuffer.size();
+        size_t weightsSize = lod.vertices.size() * sizeof(glm::vec4);
+        binBuffer.resize(binBuffer.size() + weightsSize);
+        for (size_t i = 0; i < lod.vertices.size(); ++i) {
+            std::memcpy(binBuffer.data() + weightsOffset + i * sizeof(glm::vec4),
+                       &lod.vertices[i].boneWeights, sizeof(glm::vec4));
+        }
+        alignBuffer();
+
+        // Write inverse bind matrices for skeleton
+        size_t ibmOffset = binBuffer.size();
+        size_t ibmSize = lodData_.skeleton.size() * sizeof(glm::mat4);
+        binBuffer.resize(binBuffer.size() + ibmSize);
+        for (size_t i = 0; i < lodData_.skeleton.size(); ++i) {
+            std::memcpy(binBuffer.data() + ibmOffset + i * sizeof(glm::mat4),
+                       &lodData_.skeleton[i].inverseBindMatrix, sizeof(glm::mat4));
+        }
+        alignBuffer();
+
+        // Build GLTF JSON structure
+        nlohmann::json gltf;
+        gltf["asset"]["version"] = "2.0";
+        gltf["asset"]["generator"] = "skinned_mesh_lod tool";
+
+        // Buffer
+        gltf["buffers"] = nlohmann::json::array();
+        gltf["buffers"].push_back({{"byteLength", binBuffer.size()}});
+
+        // Buffer views
+        int bvIndex = 0;
+        gltf["bufferViews"] = nlohmann::json::array();
+
+        // Indices buffer view
+        gltf["bufferViews"].push_back({
+            {"buffer", 0},
+            {"byteOffset", indicesOffset},
+            {"byteLength", indicesSize},
+            {"target", 34963}  // ELEMENT_ARRAY_BUFFER
+        });
+        int indicesBV = bvIndex++;
+
+        // Positions buffer view
+        gltf["bufferViews"].push_back({
+            {"buffer", 0},
+            {"byteOffset", positionsOffset},
+            {"byteLength", positionsSize},
+            {"target", 34962}  // ARRAY_BUFFER
+        });
+        int positionsBV = bvIndex++;
+
+        // Normals buffer view
+        gltf["bufferViews"].push_back({
+            {"buffer", 0},
+            {"byteOffset", normalsOffset},
+            {"byteLength", normalsSize},
+            {"target", 34962}
+        });
+        int normalsBV = bvIndex++;
+
+        // Texcoords buffer view
+        gltf["bufferViews"].push_back({
+            {"buffer", 0},
+            {"byteOffset", texcoordsOffset},
+            {"byteLength", texcoordsSize},
+            {"target", 34962}
+        });
+        int texcoordsBV = bvIndex++;
+
+        // Tangents buffer view
+        gltf["bufferViews"].push_back({
+            {"buffer", 0},
+            {"byteOffset", tangentsOffset},
+            {"byteLength", tangentsSize},
+            {"target", 34962}
+        });
+        int tangentsBV = bvIndex++;
+
+        // Joints buffer view
+        gltf["bufferViews"].push_back({
+            {"buffer", 0},
+            {"byteOffset", jointsOffset},
+            {"byteLength", jointsSize},
+            {"target", 34962}
+        });
+        int jointsBV = bvIndex++;
+
+        // Weights buffer view
+        gltf["bufferViews"].push_back({
+            {"buffer", 0},
+            {"byteOffset", weightsOffset},
+            {"byteLength", weightsSize},
+            {"target", 34962}
+        });
+        int weightsBV = bvIndex++;
+
+        // Inverse bind matrices buffer view (no target for non-vertex data)
+        gltf["bufferViews"].push_back({
+            {"buffer", 0},
+            {"byteOffset", ibmOffset},
+            {"byteLength", ibmSize}
+        });
+        int ibmBV = bvIndex++;
+
+        // Accessors
+        int accIndex = 0;
+        gltf["accessors"] = nlohmann::json::array();
+
+        // Indices accessor
+        gltf["accessors"].push_back({
+            {"bufferView", indicesBV},
+            {"componentType", 5125},  // UNSIGNED_INT
+            {"count", lod.indices.size()},
+            {"type", "SCALAR"}
+        });
+        int indicesAcc = accIndex++;
+
+        // Positions accessor
+        gltf["accessors"].push_back({
+            {"bufferView", positionsBV},
+            {"componentType", 5126},  // FLOAT
+            {"count", lod.vertices.size()},
+            {"type", "VEC3"},
+            {"min", {posMin.x, posMin.y, posMin.z}},
+            {"max", {posMax.x, posMax.y, posMax.z}}
+        });
+        int positionsAcc = accIndex++;
+
+        // Normals accessor
+        gltf["accessors"].push_back({
+            {"bufferView", normalsBV},
+            {"componentType", 5126},
+            {"count", lod.vertices.size()},
+            {"type", "VEC3"}
+        });
+        int normalsAcc = accIndex++;
+
+        // Texcoords accessor
+        gltf["accessors"].push_back({
+            {"bufferView", texcoordsBV},
+            {"componentType", 5126},
+            {"count", lod.vertices.size()},
+            {"type", "VEC2"}
+        });
+        int texcoordsAcc = accIndex++;
+
+        // Tangents accessor
+        gltf["accessors"].push_back({
+            {"bufferView", tangentsBV},
+            {"componentType", 5126},
+            {"count", lod.vertices.size()},
+            {"type", "VEC4"}
+        });
+        int tangentsAcc = accIndex++;
+
+        // Joints accessor
+        gltf["accessors"].push_back({
+            {"bufferView", jointsBV},
+            {"componentType", 5123},  // UNSIGNED_SHORT
+            {"count", lod.vertices.size()},
+            {"type", "VEC4"}
+        });
+        int jointsAcc = accIndex++;
+
+        // Weights accessor
+        gltf["accessors"].push_back({
+            {"bufferView", weightsBV},
+            {"componentType", 5126},
+            {"count", lod.vertices.size()},
+            {"type", "VEC4"}
+        });
+        int weightsAcc = accIndex++;
+
+        // Inverse bind matrices accessor
+        gltf["accessors"].push_back({
+            {"bufferView", ibmBV},
+            {"componentType", 5126},
+            {"count", lodData_.skeleton.size()},
+            {"type", "MAT4"}
+        });
+        int ibmAcc = accIndex++;
+
+        // Mesh
+        gltf["meshes"] = nlohmann::json::array();
+        nlohmann::json primitive;
+        primitive["attributes"]["POSITION"] = positionsAcc;
+        primitive["attributes"]["NORMAL"] = normalsAcc;
+        primitive["attributes"]["TEXCOORD_0"] = texcoordsAcc;
+        primitive["attributes"]["TANGENT"] = tangentsAcc;
+        primitive["attributes"]["JOINTS_0"] = jointsAcc;
+        primitive["attributes"]["WEIGHTS_0"] = weightsAcc;
+        primitive["indices"] = indicesAcc;
+        primitive["mode"] = 4;  // TRIANGLES
+
+        gltf["meshes"].push_back({
+            {"name", lodData_.name + "_lod" + std::to_string(lod.lodLevel)},
+            {"primitives", nlohmann::json::array({primitive})}
+        });
+
+        // Nodes for skeleton
+        gltf["nodes"] = nlohmann::json::array();
+        std::vector<int> jointNodeIndices;
+
+        for (size_t i = 0; i < lodData_.skeleton.size(); ++i) {
+            const auto& joint = lodData_.skeleton[i];
+
+            // Decompose local transform to TRS
+            glm::vec3 translation = glm::vec3(joint.localTransform[3]);
+            glm::vec3 scale;
+            scale.x = glm::length(glm::vec3(joint.localTransform[0]));
+            scale.y = glm::length(glm::vec3(joint.localTransform[1]));
+            scale.z = glm::length(glm::vec3(joint.localTransform[2]));
+
+            glm::mat3 rotMat(
+                glm::vec3(joint.localTransform[0]) / scale.x,
+                glm::vec3(joint.localTransform[1]) / scale.y,
+                glm::vec3(joint.localTransform[2]) / scale.z
+            );
+            glm::quat rotation = glm::quat_cast(rotMat);
+
+            nlohmann::json node;
+            node["name"] = joint.name;
+            node["translation"] = {translation.x, translation.y, translation.z};
+            node["rotation"] = {rotation.x, rotation.y, rotation.z, rotation.w};
+            node["scale"] = {scale.x, scale.y, scale.z};
+
+            gltf["nodes"].push_back(node);
+            jointNodeIndices.push_back(static_cast<int>(i));
+        }
+
+        // Add children to parent nodes
+        for (size_t i = 0; i < lodData_.skeleton.size(); ++i) {
+            int parent = lodData_.skeleton[i].parentIndex;
+            if (parent >= 0 && parent < static_cast<int>(lodData_.skeleton.size())) {
+                if (!gltf["nodes"][parent].contains("children")) {
+                    gltf["nodes"][parent]["children"] = nlohmann::json::array();
+                }
+                gltf["nodes"][parent]["children"].push_back(static_cast<int>(i));
+            }
+        }
+
+        // Mesh node (references mesh and skin)
+        int meshNodeIndex = static_cast<int>(gltf["nodes"].size());
+        gltf["nodes"].push_back({
+            {"name", lodData_.name},
+            {"mesh", 0},
+            {"skin", 0}
+        });
+
+        // Skin
+        gltf["skins"] = nlohmann::json::array();
+        gltf["skins"].push_back({
+            {"inverseBindMatrices", ibmAcc},
+            {"joints", jointNodeIndices},
+            {"name", lodData_.name + "_skin"}
+        });
+
+        // Find root joints (joints with no parent in skeleton)
+        std::vector<int> rootJoints;
+        for (size_t i = 0; i < lodData_.skeleton.size(); ++i) {
+            if (lodData_.skeleton[i].parentIndex < 0) {
+                rootJoints.push_back(static_cast<int>(i));
+            }
+        }
+
+        // Scene
+        std::vector<int> sceneNodes = rootJoints;
+        sceneNodes.push_back(meshNodeIndex);
+
+        gltf["scenes"] = nlohmann::json::array();
+        gltf["scenes"].push_back({
+            {"name", "Scene"},
+            {"nodes", sceneNodes}
+        });
+        gltf["scene"] = 0;
+
+        // Serialize JSON
+        std::string jsonStr = gltf.dump();
+
+        // Pad JSON to 4-byte alignment
+        while (jsonStr.size() % 4 != 0) {
+            jsonStr += ' ';
+        }
+
+        // Write GLB file
         std::ofstream file(filename, std::ios::binary);
         if (!file) {
             SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create file: %s", filename.c_str());
             return false;
         }
 
-        // Header: vertex count, index count
-        uint32_t vertexCount = static_cast<uint32_t>(lod.vertices.size());
-        uint32_t indexCount = static_cast<uint32_t>(lod.indices.size());
-        file.write(reinterpret_cast<const char*>(&vertexCount), sizeof(vertexCount));
-        file.write(reinterpret_cast<const char*>(&indexCount), sizeof(indexCount));
+        // GLB Header (12 bytes)
+        uint32_t glbMagic = 0x46546C67;  // "glTF"
+        uint32_t glbVersion = 2;
+        uint32_t glbLength = 12 + 8 + static_cast<uint32_t>(jsonStr.size()) + 8 + static_cast<uint32_t>(binBuffer.size());
 
-        // Vertices
-        file.write(reinterpret_cast<const char*>(lod.vertices.data()),
-                   lod.vertices.size() * sizeof(SkinnedVertexData));
+        file.write(reinterpret_cast<const char*>(&glbMagic), 4);
+        file.write(reinterpret_cast<const char*>(&glbVersion), 4);
+        file.write(reinterpret_cast<const char*>(&glbLength), 4);
 
-        // Indices
-        file.write(reinterpret_cast<const char*>(lod.indices.data()),
-                   lod.indices.size() * sizeof(uint32_t));
+        // JSON Chunk
+        uint32_t jsonChunkLength = static_cast<uint32_t>(jsonStr.size());
+        uint32_t jsonChunkType = 0x4E4F534A;  // "JSON"
+        file.write(reinterpret_cast<const char*>(&jsonChunkLength), 4);
+        file.write(reinterpret_cast<const char*>(&jsonChunkType), 4);
+        file.write(jsonStr.data(), jsonStr.size());
+
+        // BIN Chunk
+        uint32_t binChunkLength = static_cast<uint32_t>(binBuffer.size());
+        uint32_t binChunkType = 0x004E4942;  // "BIN\0"
+        file.write(reinterpret_cast<const char*>(&binChunkLength), 4);
+        file.write(reinterpret_cast<const char*>(&binChunkType), 4);
+        file.write(reinterpret_cast<const char*>(binBuffer.data()), binBuffer.size());
 
         file.close();
-        SDL_Log("Saved LOD %u to %s", lod.lodLevel, filename.c_str());
+        SDL_Log("Saved LOD %u to %s (%zu vertices, %zu triangles)",
+                lod.lodLevel, filename.c_str(), lod.vertices.size(), lod.indices.size() / 3);
     }
 
-    // Write manifest JSON
+    // Also write a manifest JSON for convenience (lists all LOD files)
     nlohmann::json manifest;
     manifest["name"] = lodData_.name;
+    manifest["format"] = "glb";
     manifest["lodCount"] = lodData_.lods.size();
 
-    // LOD info
     nlohmann::json lodsJson = nlohmann::json::array();
     for (const auto& lod : lodData_.lods) {
         nlohmann::json lodJson;
         lodJson["level"] = lod.lodLevel;
+        lodJson["file"] = lodData_.name + "_lod" + std::to_string(lod.lodLevel) + ".glb";
         lodJson["targetRatio"] = lod.targetRatio;
         lodJson["actualRatio"] = lod.actualRatio;
         lodJson["vertices"] = lod.vertices.size();
         lodJson["triangles"] = lod.indices.size() / 3;
-        lodJson["file"] = lodData_.name + "_lod" + std::to_string(lod.lodLevel) + ".bin";
         lodsJson.push_back(lodJson);
     }
     manifest["lods"] = lodsJson;
 
-    // Skeleton info
-    nlohmann::json skeletonJson = nlohmann::json::array();
-    for (const auto& joint : lodData_.skeleton) {
-        nlohmann::json jointJson;
-        jointJson["name"] = joint.name;
-        jointJson["parent"] = joint.parentIndex;
-        skeletonJson.push_back(jointJson);
-    }
-    manifest["skeleton"] = skeletonJson;
-
-    std::string manifestPath = outputDir + "/" + lodData_.name + "_manifest.json";
+    std::string manifestPath = outputDir + "/" + lodData_.name + "_lods.json";
     std::ofstream manifestFile(manifestPath);
-    if (!manifestFile) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create manifest: %s", manifestPath.c_str());
-        return false;
-    }
-    manifestFile << manifest.dump(2);
-    manifestFile.close();
-
-    SDL_Log("Saved manifest to %s", manifestPath.c_str());
-    return true;
-}
-
-bool MeshSimplifier::saveBinary(const std::string& outputPath) const {
-    std::ofstream file(outputPath, std::ios::binary);
-    if (!file) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create file: %s", outputPath.c_str());
-        return false;
+    if (manifestFile) {
+        manifestFile << manifest.dump(2);
+        manifestFile.close();
+        SDL_Log("Saved LOD manifest to %s", manifestPath.c_str());
     }
 
-    // Magic number and version
-    const char magic[4] = {'S', 'M', 'L', 'D'}; // Skinned Mesh LOD Data
-    uint32_t version = 1;
-    file.write(magic, 4);
-    file.write(reinterpret_cast<const char*>(&version), sizeof(version));
-
-    // LOD count
-    uint32_t lodCount = static_cast<uint32_t>(lodData_.lods.size());
-    file.write(reinterpret_cast<const char*>(&lodCount), sizeof(lodCount));
-
-    // Joint count
-    uint32_t jointCount = static_cast<uint32_t>(lodData_.skeleton.size());
-    file.write(reinterpret_cast<const char*>(&jointCount), sizeof(jointCount));
-
-    // Write skeleton
-    for (const auto& joint : lodData_.skeleton) {
-        // Name length and name
-        uint32_t nameLen = static_cast<uint32_t>(joint.name.size());
-        file.write(reinterpret_cast<const char*>(&nameLen), sizeof(nameLen));
-        file.write(joint.name.data(), nameLen);
-
-        // Parent index
-        file.write(reinterpret_cast<const char*>(&joint.parentIndex), sizeof(joint.parentIndex));
-
-        // Inverse bind matrix (16 floats)
-        file.write(reinterpret_cast<const char*>(&joint.inverseBindMatrix), sizeof(glm::mat4));
-
-        // Local transform (16 floats)
-        file.write(reinterpret_cast<const char*>(&joint.localTransform), sizeof(glm::mat4));
-    }
-
-    // Write each LOD
-    for (const auto& lod : lodData_.lods) {
-        uint32_t vertexCount = static_cast<uint32_t>(lod.vertices.size());
-        uint32_t indexCount = static_cast<uint32_t>(lod.indices.size());
-
-        file.write(reinterpret_cast<const char*>(&lod.lodLevel), sizeof(lod.lodLevel));
-        file.write(reinterpret_cast<const char*>(&lod.targetRatio), sizeof(lod.targetRatio));
-        file.write(reinterpret_cast<const char*>(&lod.actualRatio), sizeof(lod.actualRatio));
-        file.write(reinterpret_cast<const char*>(&vertexCount), sizeof(vertexCount));
-        file.write(reinterpret_cast<const char*>(&indexCount), sizeof(indexCount));
-
-        // Vertices
-        file.write(reinterpret_cast<const char*>(lod.vertices.data()),
-                   lod.vertices.size() * sizeof(SkinnedVertexData));
-
-        // Indices
-        file.write(reinterpret_cast<const char*>(lod.indices.data()),
-                   lod.indices.size() * sizeof(uint32_t));
-    }
-
-    file.close();
-    SDL_Log("Saved binary LOD data to %s", outputPath.c_str());
     return true;
 }

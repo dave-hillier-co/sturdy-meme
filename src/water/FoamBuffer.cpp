@@ -147,38 +147,15 @@ bool FoamBuffer::createWakeBuffers() {
 
 bool FoamBuffer::createComputePipeline() {
     // Descriptor set layout
-    std::array<vk::DescriptorSetLayoutBinding, 4> bindings = {
-        // Binding 0: Current foam buffer (storage image, read/write)
-        vk::DescriptorSetLayoutBinding{}
-            .setBinding(0)
-            .setDescriptorType(vk::DescriptorType::eStorageImage)
-            .setDescriptorCount(1)
-            .setStageFlags(vk::ShaderStageFlagBits::eCompute),
-        // Binding 1: Previous foam buffer (sampled image, read)
-        vk::DescriptorSetLayoutBinding{}
-            .setBinding(1)
-            .setDescriptorType(vk::DescriptorType::eCombinedImageSampler)
-            .setDescriptorCount(1)
-            .setStageFlags(vk::ShaderStageFlagBits::eCompute),
-        // Binding 2: Flow map (sampled image, for advection)
-        vk::DescriptorSetLayoutBinding{}
-            .setBinding(2)
-            .setDescriptorType(vk::DescriptorType::eCombinedImageSampler)
-            .setDescriptorCount(1)
-            .setStageFlags(vk::ShaderStageFlagBits::eCompute),
-        // Binding 3: Wake sources uniform buffer (Phase 16)
-        vk::DescriptorSetLayoutBinding{}
-            .setBinding(3)
-            .setDescriptorType(vk::DescriptorType::eUniformBuffer)
-            .setDescriptorCount(1)
-            .setStageFlags(vk::ShaderStageFlagBits::eCompute)
-    };
-
-    auto layoutInfo = vk::DescriptorSetLayoutCreateInfo{}
-        .setBindings(bindings);
-
+    VkDescriptorSetLayout rawLayout = VK_NULL_HANDLE;
     try {
-        descriptorSetLayout_.emplace(*raiiDevice_, layoutInfo);
+        rawLayout = DescriptorManager::DescriptorLayoutBuilder(device)
+            .addStorageImage(VK_SHADER_STAGE_COMPUTE_BIT, 1, 0)
+            .addCombinedImageSampler(VK_SHADER_STAGE_COMPUTE_BIT, 1, 1)
+            .addCombinedImageSampler(VK_SHADER_STAGE_COMPUTE_BIT, 1, 2)
+            .addUniformBuffer(VK_SHADER_STAGE_COMPUTE_BIT, 1, 3)
+            .build();
+        descriptorSetLayout_.emplace(*raiiDevice_, rawLayout);
     } catch (const vk::SystemError& e) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create foam descriptor set layout: %s", e.what());
         return false;

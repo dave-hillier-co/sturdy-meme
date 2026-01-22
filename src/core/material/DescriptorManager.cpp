@@ -3,6 +3,76 @@
 #include <stdexcept>
 
 // ============================================================================
+// DescriptorLayoutBuilder Implementation
+// ============================================================================
+
+DescriptorManager::DescriptorLayoutBuilder::DescriptorLayoutBuilder(VkDevice device)
+    : device(device) {}
+
+DescriptorManager::DescriptorLayoutBuilder DescriptorManager::DescriptorLayoutBuilder::addUniformBuffer(
+    VkShaderStageFlags stages, uint32_t count, std::optional<uint32_t> binding) const {
+    return addBinding(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, stages, count, binding);
+}
+
+DescriptorManager::DescriptorLayoutBuilder DescriptorManager::DescriptorLayoutBuilder::addDynamicUniformBuffer(
+    VkShaderStageFlags stages, uint32_t count, std::optional<uint32_t> binding) const {
+    return addBinding(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, stages, count, binding);
+}
+
+DescriptorManager::DescriptorLayoutBuilder DescriptorManager::DescriptorLayoutBuilder::addStorageBuffer(
+    VkShaderStageFlags stages, uint32_t count, std::optional<uint32_t> binding) const {
+    return addBinding(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, stages, count, binding);
+}
+
+DescriptorManager::DescriptorLayoutBuilder DescriptorManager::DescriptorLayoutBuilder::addCombinedImageSampler(
+    VkShaderStageFlags stages, uint32_t count, std::optional<uint32_t> binding) const {
+    return addBinding(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, stages, count, binding);
+}
+
+DescriptorManager::DescriptorLayoutBuilder DescriptorManager::DescriptorLayoutBuilder::addStorageImage(
+    VkShaderStageFlags stages, uint32_t count, std::optional<uint32_t> binding) const {
+    return addBinding(VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, stages, count, binding);
+}
+
+DescriptorManager::DescriptorLayoutBuilder DescriptorManager::DescriptorLayoutBuilder::addBinding(
+    uint32_t binding, VkDescriptorType type, VkShaderStageFlags stages, uint32_t count) const {
+    return addBinding(type, stages, count, binding);
+}
+
+DescriptorManager::DescriptorLayoutBuilder DescriptorManager::DescriptorLayoutBuilder::addBinding(
+    VkDescriptorType type, VkShaderStageFlags stages, uint32_t count,
+    std::optional<uint32_t> binding) const {
+
+    DescriptorLayoutBuilder next = *this;
+    uint32_t resolvedBinding = binding.value_or(next.nextBinding);
+
+    VkDescriptorSetLayoutBinding layoutBinding{};
+    layoutBinding.binding = resolvedBinding;
+    layoutBinding.descriptorType = type;
+    layoutBinding.descriptorCount = count;
+    layoutBinding.stageFlags = stages;
+    layoutBinding.pImmutableSamplers = nullptr;
+
+    next.bindings.push_back(layoutBinding);
+
+    if (resolvedBinding >= next.nextBinding) {
+        next.nextBinding = resolvedBinding + 1;
+    }
+
+    return next;
+}
+
+VkDescriptorSetLayout DescriptorManager::DescriptorLayoutBuilder::build() const {
+    auto layoutInfo = vk::DescriptorSetLayoutCreateInfo{}
+        .setBindingCount(static_cast<uint32_t>(bindings.size()))
+        .setPBindings(reinterpret_cast<const vk::DescriptorSetLayoutBinding*>(bindings.data()));
+
+    vk::Device vkDevice(device);
+    vk::DescriptorSetLayout layout = vkDevice.createDescriptorSetLayout(layoutInfo);
+    return layout;
+}
+
+// ============================================================================
 // LayoutBuilder Implementation
 // ============================================================================
 

@@ -324,27 +324,13 @@ bool OceanFFT::createComputePipelines() {
     // Spectrum Generation Pipeline
     // =========================================================================
     {
-        std::array<vk::DescriptorSetLayoutBinding, 3> spectrumBindings = {
-            vk::DescriptorSetLayoutBinding{}
-                .setBinding(Bindings::OCEAN_SPECTRUM_H0)
-                .setDescriptorType(vk::DescriptorType::eStorageImage)
-                .setDescriptorCount(1)
-                .setStageFlags(vk::ShaderStageFlagBits::eCompute),
-            vk::DescriptorSetLayoutBinding{}
-                .setBinding(Bindings::OCEAN_SPECTRUM_OMEGA)
-                .setDescriptorType(vk::DescriptorType::eStorageImage)
-                .setDescriptorCount(1)
-                .setStageFlags(vk::ShaderStageFlagBits::eCompute),
-            vk::DescriptorSetLayoutBinding{}
-                .setBinding(Bindings::OCEAN_SPECTRUM_PARAMS)
-                .setDescriptorType(vk::DescriptorType::eUniformBuffer)
-                .setDescriptorCount(1)
-                .setStageFlags(vk::ShaderStageFlagBits::eCompute)
-        };
-
-        auto layoutInfo = vk::DescriptorSetLayoutCreateInfo{}.setBindings(spectrumBindings);
         try {
-            spectrumDescLayout_.emplace(*raiiDevice_, layoutInfo);
+            VkDescriptorSetLayout rawLayout = DescriptorManager::DescriptorLayoutBuilder(device)
+                .addStorageImage(VK_SHADER_STAGE_COMPUTE_BIT, 1, Bindings::OCEAN_SPECTRUM_H0)
+                .addStorageImage(VK_SHADER_STAGE_COMPUTE_BIT, 1, Bindings::OCEAN_SPECTRUM_OMEGA)
+                .addUniformBuffer(VK_SHADER_STAGE_COMPUTE_BIT, 1, Bindings::OCEAN_SPECTRUM_PARAMS)
+                .build();
+            spectrumDescLayout_.emplace(*raiiDevice_, rawLayout);
         } catch (const vk::SystemError& e) {
             SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "OceanFFT: Failed to create spectrum descriptor layout: %s", e.what());
             return false;
@@ -369,37 +355,15 @@ bool OceanFFT::createComputePipelines() {
     // Time Evolution Pipeline
     // =========================================================================
     {
-        std::array<vk::DescriptorSetLayoutBinding, 5> timeBindings = {
-            vk::DescriptorSetLayoutBinding{}
-                .setBinding(Bindings::OCEAN_HKT_DY)
-                .setDescriptorType(vk::DescriptorType::eStorageImage)
-                .setDescriptorCount(1)
-                .setStageFlags(vk::ShaderStageFlagBits::eCompute),
-            vk::DescriptorSetLayoutBinding{}
-                .setBinding(Bindings::OCEAN_HKT_DX)
-                .setDescriptorType(vk::DescriptorType::eStorageImage)
-                .setDescriptorCount(1)
-                .setStageFlags(vk::ShaderStageFlagBits::eCompute),
-            vk::DescriptorSetLayoutBinding{}
-                .setBinding(Bindings::OCEAN_HKT_DZ)
-                .setDescriptorType(vk::DescriptorType::eStorageImage)
-                .setDescriptorCount(1)
-                .setStageFlags(vk::ShaderStageFlagBits::eCompute),
-            vk::DescriptorSetLayoutBinding{}
-                .setBinding(Bindings::OCEAN_H0_INPUT)
-                .setDescriptorType(vk::DescriptorType::eCombinedImageSampler)
-                .setDescriptorCount(1)
-                .setStageFlags(vk::ShaderStageFlagBits::eCompute),
-            vk::DescriptorSetLayoutBinding{}
-                .setBinding(Bindings::OCEAN_OMEGA_INPUT)
-                .setDescriptorType(vk::DescriptorType::eCombinedImageSampler)
-                .setDescriptorCount(1)
-                .setStageFlags(vk::ShaderStageFlagBits::eCompute)
-        };
-
-        auto layoutInfo = vk::DescriptorSetLayoutCreateInfo{}.setBindings(timeBindings);
         try {
-            timeEvolutionDescLayout_.emplace(*raiiDevice_, layoutInfo);
+            VkDescriptorSetLayout rawLayout = DescriptorManager::DescriptorLayoutBuilder(device)
+                .addStorageImage(VK_SHADER_STAGE_COMPUTE_BIT, 1, Bindings::OCEAN_HKT_DY)
+                .addStorageImage(VK_SHADER_STAGE_COMPUTE_BIT, 1, Bindings::OCEAN_HKT_DX)
+                .addStorageImage(VK_SHADER_STAGE_COMPUTE_BIT, 1, Bindings::OCEAN_HKT_DZ)
+                .addCombinedImageSampler(VK_SHADER_STAGE_COMPUTE_BIT, 1, Bindings::OCEAN_H0_INPUT)
+                .addCombinedImageSampler(VK_SHADER_STAGE_COMPUTE_BIT, 1, Bindings::OCEAN_OMEGA_INPUT)
+                .build();
+            timeEvolutionDescLayout_.emplace(*raiiDevice_, rawLayout);
         } catch (const vk::SystemError& e) {
             SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "OceanFFT: Failed to create time evolution descriptor layout: %s", e.what());
             return false;
@@ -425,22 +389,12 @@ bool OceanFFT::createComputePipelines() {
     // FFT Pipeline
     // =========================================================================
     {
-        std::array<vk::DescriptorSetLayoutBinding, 2> fftBindings = {
-            vk::DescriptorSetLayoutBinding{}
-                .setBinding(Bindings::OCEAN_FFT_INPUT)
-                .setDescriptorType(vk::DescriptorType::eStorageImage)
-                .setDescriptorCount(1)
-                .setStageFlags(vk::ShaderStageFlagBits::eCompute),
-            vk::DescriptorSetLayoutBinding{}
-                .setBinding(Bindings::OCEAN_FFT_OUTPUT)
-                .setDescriptorType(vk::DescriptorType::eStorageImage)
-                .setDescriptorCount(1)
-                .setStageFlags(vk::ShaderStageFlagBits::eCompute)
-        };
-
-        auto layoutInfo = vk::DescriptorSetLayoutCreateInfo{}.setBindings(fftBindings);
         try {
-            fftDescLayout_.emplace(*raiiDevice_, layoutInfo);
+            VkDescriptorSetLayout rawLayout = DescriptorManager::DescriptorLayoutBuilder(device)
+                .addStorageImage(VK_SHADER_STAGE_COMPUTE_BIT, 1, Bindings::OCEAN_FFT_INPUT)
+                .addStorageImage(VK_SHADER_STAGE_COMPUTE_BIT, 1, Bindings::OCEAN_FFT_OUTPUT)
+                .build();
+            fftDescLayout_.emplace(*raiiDevice_, rawLayout);
         } catch (const vk::SystemError& e) {
             SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "OceanFFT: Failed to create FFT descriptor layout: %s", e.what());
             return false;
@@ -466,42 +420,16 @@ bool OceanFFT::createComputePipelines() {
     // Displacement Generation Pipeline
     // =========================================================================
     {
-        std::array<vk::DescriptorSetLayoutBinding, 6> dispBindings = {
-            vk::DescriptorSetLayoutBinding{}
-                .setBinding(Bindings::OCEAN_DISP_DY)
-                .setDescriptorType(vk::DescriptorType::eStorageImage)
-                .setDescriptorCount(1)
-                .setStageFlags(vk::ShaderStageFlagBits::eCompute),
-            vk::DescriptorSetLayoutBinding{}
-                .setBinding(Bindings::OCEAN_DISP_DX)
-                .setDescriptorType(vk::DescriptorType::eStorageImage)
-                .setDescriptorCount(1)
-                .setStageFlags(vk::ShaderStageFlagBits::eCompute),
-            vk::DescriptorSetLayoutBinding{}
-                .setBinding(Bindings::OCEAN_DISP_DZ)
-                .setDescriptorType(vk::DescriptorType::eStorageImage)
-                .setDescriptorCount(1)
-                .setStageFlags(vk::ShaderStageFlagBits::eCompute),
-            vk::DescriptorSetLayoutBinding{}
-                .setBinding(Bindings::OCEAN_DISP_OUTPUT)
-                .setDescriptorType(vk::DescriptorType::eStorageImage)
-                .setDescriptorCount(1)
-                .setStageFlags(vk::ShaderStageFlagBits::eCompute),
-            vk::DescriptorSetLayoutBinding{}
-                .setBinding(Bindings::OCEAN_NORMAL_OUTPUT)
-                .setDescriptorType(vk::DescriptorType::eStorageImage)
-                .setDescriptorCount(1)
-                .setStageFlags(vk::ShaderStageFlagBits::eCompute),
-            vk::DescriptorSetLayoutBinding{}
-                .setBinding(Bindings::OCEAN_FOAM_OUTPUT)
-                .setDescriptorType(vk::DescriptorType::eStorageImage)
-                .setDescriptorCount(1)
-                .setStageFlags(vk::ShaderStageFlagBits::eCompute)
-        };
-
-        auto layoutInfo = vk::DescriptorSetLayoutCreateInfo{}.setBindings(dispBindings);
         try {
-            displacementDescLayout_.emplace(*raiiDevice_, layoutInfo);
+            VkDescriptorSetLayout rawLayout = DescriptorManager::DescriptorLayoutBuilder(device)
+                .addStorageImage(VK_SHADER_STAGE_COMPUTE_BIT, 1, Bindings::OCEAN_DISP_DY)
+                .addStorageImage(VK_SHADER_STAGE_COMPUTE_BIT, 1, Bindings::OCEAN_DISP_DX)
+                .addStorageImage(VK_SHADER_STAGE_COMPUTE_BIT, 1, Bindings::OCEAN_DISP_DZ)
+                .addStorageImage(VK_SHADER_STAGE_COMPUTE_BIT, 1, Bindings::OCEAN_DISP_OUTPUT)
+                .addStorageImage(VK_SHADER_STAGE_COMPUTE_BIT, 1, Bindings::OCEAN_NORMAL_OUTPUT)
+                .addStorageImage(VK_SHADER_STAGE_COMPUTE_BIT, 1, Bindings::OCEAN_FOAM_OUTPUT)
+                .build();
+            displacementDescLayout_.emplace(*raiiDevice_, rawLayout);
         } catch (const vk::SystemError& e) {
             SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "OceanFFT: Failed to create displacement descriptor layout: %s", e.what());
             return false;

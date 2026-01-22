@@ -145,44 +145,15 @@ bool CatmullClarkSystem::createIndirectBuffers() {
 }
 
 bool CatmullClarkSystem::createComputeDescriptorSetLayout() {
-    std::array<vk::DescriptorSetLayoutBinding, 5> bindings = {
-        // Binding 0: Scene UBO
-        vk::DescriptorSetLayoutBinding{}
-            .setBinding(0)
-            .setDescriptorType(vk::DescriptorType::eUniformBuffer)
-            .setDescriptorCount(1)
-            .setStageFlags(vk::ShaderStageFlagBits::eCompute),
-        // Binding 1: CBT buffer
-        vk::DescriptorSetLayoutBinding{}
-            .setBinding(1)
-            .setDescriptorType(vk::DescriptorType::eStorageBuffer)
-            .setDescriptorCount(1)
-            .setStageFlags(vk::ShaderStageFlagBits::eCompute),
-        // Binding 2: Mesh vertices
-        vk::DescriptorSetLayoutBinding{}
-            .setBinding(2)
-            .setDescriptorType(vk::DescriptorType::eStorageBuffer)
-            .setDescriptorCount(1)
-            .setStageFlags(vk::ShaderStageFlagBits::eCompute),
-        // Binding 3: Mesh halfedges
-        vk::DescriptorSetLayoutBinding{}
-            .setBinding(3)
-            .setDescriptorType(vk::DescriptorType::eStorageBuffer)
-            .setDescriptorCount(1)
-            .setStageFlags(vk::ShaderStageFlagBits::eCompute),
-        // Binding 4: Mesh faces
-        vk::DescriptorSetLayoutBinding{}
-            .setBinding(4)
-            .setDescriptorType(vk::DescriptorType::eStorageBuffer)
-            .setDescriptorCount(1)
-            .setStageFlags(vk::ShaderStageFlagBits::eCompute)
-    };
-
-    auto layoutInfo = vk::DescriptorSetLayoutCreateInfo{}
-        .setBindings(bindings);
-
     try {
-        computeDescriptorSetLayout_.emplace(*raiiDevice_, layoutInfo);
+        VkDescriptorSetLayout rawLayout = DescriptorManager::DescriptorLayoutBuilder(device)
+            .addUniformBuffer(VK_SHADER_STAGE_COMPUTE_BIT, 1, 0)
+            .addStorageBuffer(VK_SHADER_STAGE_COMPUTE_BIT, 1, 1)
+            .addStorageBuffer(VK_SHADER_STAGE_COMPUTE_BIT, 1, 2)
+            .addStorageBuffer(VK_SHADER_STAGE_COMPUTE_BIT, 1, 3)
+            .addStorageBuffer(VK_SHADER_STAGE_COMPUTE_BIT, 1, 4)
+            .build();
+        computeDescriptorSetLayout_.emplace(*raiiDevice_, rawLayout);
     } catch (const vk::SystemError& e) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create compute descriptor set layout: %s", e.what());
         return false;
@@ -192,44 +163,15 @@ bool CatmullClarkSystem::createComputeDescriptorSetLayout() {
 }
 
 bool CatmullClarkSystem::createRenderDescriptorSetLayout() {
-    std::array<vk::DescriptorSetLayoutBinding, 5> bindings = {
-        // Binding 0: Scene UBO
-        vk::DescriptorSetLayoutBinding{}
-            .setBinding(0)
-            .setDescriptorType(vk::DescriptorType::eUniformBuffer)
-            .setDescriptorCount(1)
-            .setStageFlags(vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment),
-        // Binding 1: CBT buffer
-        vk::DescriptorSetLayoutBinding{}
-            .setBinding(1)
-            .setDescriptorType(vk::DescriptorType::eStorageBuffer)
-            .setDescriptorCount(1)
-            .setStageFlags(vk::ShaderStageFlagBits::eVertex),
-        // Binding 2: Mesh vertices
-        vk::DescriptorSetLayoutBinding{}
-            .setBinding(2)
-            .setDescriptorType(vk::DescriptorType::eStorageBuffer)
-            .setDescriptorCount(1)
-            .setStageFlags(vk::ShaderStageFlagBits::eVertex),
-        // Binding 3: Mesh halfedges
-        vk::DescriptorSetLayoutBinding{}
-            .setBinding(3)
-            .setDescriptorType(vk::DescriptorType::eStorageBuffer)
-            .setDescriptorCount(1)
-            .setStageFlags(vk::ShaderStageFlagBits::eVertex),
-        // Binding 4: Mesh faces
-        vk::DescriptorSetLayoutBinding{}
-            .setBinding(4)
-            .setDescriptorType(vk::DescriptorType::eStorageBuffer)
-            .setDescriptorCount(1)
-            .setStageFlags(vk::ShaderStageFlagBits::eVertex)
-    };
-
-    auto layoutInfo = vk::DescriptorSetLayoutCreateInfo{}
-        .setBindings(bindings);
-
     try {
-        renderDescriptorSetLayout_.emplace(*raiiDevice_, layoutInfo);
+        VkDescriptorSetLayout rawLayout = DescriptorManager::DescriptorLayoutBuilder(device)
+            .addUniformBuffer(VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 1, 0)
+            .addStorageBuffer(VK_SHADER_STAGE_VERTEX_BIT, 1, 1)
+            .addStorageBuffer(VK_SHADER_STAGE_VERTEX_BIT, 1, 2)
+            .addStorageBuffer(VK_SHADER_STAGE_VERTEX_BIT, 1, 3)
+            .addStorageBuffer(VK_SHADER_STAGE_VERTEX_BIT, 1, 4)
+            .build();
+        renderDescriptorSetLayout_.emplace(*raiiDevice_, rawLayout);
     } catch (const vk::SystemError& e) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create render descriptor set layout: %s", e.what());
         return false;

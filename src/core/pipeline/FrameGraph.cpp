@@ -1,4 +1,5 @@
 #include "FrameGraph.h"
+#include "core/FrameContext.h"
 #include "threading/TaskScheduler.h"
 #include "vulkan/ThreadedCommandPool.h"
 #include <SDL3/SDL_log.h>
@@ -188,7 +189,7 @@ bool FrameGraph::compile() {
     return true;
 }
 
-void FrameGraph::execute(RenderContext& context, TaskScheduler* scheduler) {
+void FrameGraph::execute(FrameContext& context, TaskScheduler* scheduler) {
     if (!compiled_) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
             "FrameGraph: Cannot execute - not compiled");
@@ -261,7 +262,7 @@ void FrameGraph::execute(RenderContext& context, TaskScheduler* scheduler) {
 }
 
 void FrameGraph::executeWithSecondaryBuffers(
-    RenderContext& context,
+    FrameContext& context,
     const Pass& pass,
     TaskScheduler* scheduler) {
 
@@ -326,8 +327,8 @@ void FrameGraph::executeWithSecondaryBuffers(
                     .setPInheritanceInfo(&inheritance));
 
                 // Create context for this secondary buffer
-                RenderContext secondaryCtx = context;
-                secondaryCtx.commandBuffer = secondary;
+                FrameContext secondaryCtx = context;
+                secondaryCtx.cmd = static_cast<VkCommandBuffer>(secondary);
 
                 // Record commands for this slot
                 config.secondaryRecord(secondaryCtx, slot);

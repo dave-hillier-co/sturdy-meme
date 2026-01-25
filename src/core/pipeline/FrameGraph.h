@@ -8,6 +8,8 @@
 #include <unordered_map>
 #include <unordered_set>
 
+#include "core/FrameContext.h"
+
 class TaskScheduler;
 class TaskGroup;
 class ThreadedCommandPool;
@@ -31,9 +33,9 @@ struct QueueSubmitDiagnostics;
  *
  * Usage:
  *   FrameGraph graph;
- *   auto compute = graph.addPass("Compute", [](RenderContext& ctx) { ... });
- *   auto shadow = graph.addPass("Shadow", [](RenderContext& ctx) { ... });
- *   auto hdr = graph.addPass("HDR", [](RenderContext& ctx) { ... });
+ *   auto compute = graph.addPass("Compute", [](FrameContext& ctx) { ... });
+ *   auto shadow = graph.addPass("Shadow", [](FrameContext& ctx) { ... });
+ *   auto hdr = graph.addPass("HDR", [](FrameContext& ctx) { ... });
  *
  *   graph.addDependency(shadow, compute);  // Shadow depends on Compute
  *   graph.addDependency(hdr, shadow);      // HDR depends on Shadow
@@ -46,44 +48,19 @@ public:
     using PassId = uint32_t;
     static constexpr PassId INVALID_PASS = UINT32_MAX;
 
-    /**
-     * Render context passed to each pass.
-     * Contains frame-specific state needed for rendering.
-     */
-    struct RenderContext {
-        vk::CommandBuffer commandBuffer;
-        uint32_t frameIndex = 0;
-        uint32_t imageIndex = 0;
-        float deltaTime = 0.0f;
+    // Use the unified FrameContext from FrameContext.h
+    // Legacy alias for backward compatibility
+    using RenderContext = FrameContext;
 
-        // Additional context can be added via user data
-        void* userData = nullptr;
-
-        // Secondary command buffer support (Phase 4)
-        // Set these before executing passes that use secondary buffers
-        ThreadedCommandPool* threadedCommandPool = nullptr;
-        vk::RenderPass renderPass;       // For secondary buffer inheritance
-        vk::Framebuffer framebuffer;     // For secondary buffer inheritance
-
-        // Filled by executeWithSecondaryBuffers() - contains recorded secondary buffers
-        // The execute function should call commandBuffer.executeCommands(secondaryBuffers)
-        // inside the render pass
-        std::vector<vk::CommandBuffer>* secondaryBuffers = nullptr;
-
-        // Command diagnostics - passes should increment these counters
-        // when recording commands (draw calls, dispatches, etc.)
-        QueueSubmitDiagnostics* diagnostics = nullptr;
-    };
-
-    using PassFunction = std::function<void(RenderContext&)>;
+    using PassFunction = std::function<void(FrameContext&)>;
 
     /**
      * Secondary recording function for parallel command buffer recording.
      * Called for each secondary buffer slot with a thread-allocated command buffer.
-     * @param ctx The render context (commandBuffer field is the secondary buffer)
+     * @param ctx The frame context (cmd field is the secondary buffer)
      * @param slotIndex Which slot is being recorded (0 to numSlots-1)
      */
-    using SecondaryRecordFunction = std::function<void(RenderContext& ctx, uint32_t slotIndex)>;
+    using SecondaryRecordFunction = std::function<void(FrameContext& ctx, uint32_t slotIndex)>;
 
     /**
      * Pass configuration for parallel recording.
@@ -160,10 +137,10 @@ public:
 
     /**
      * Execute all enabled passes in dependency order.
-     * @param context Render context for the current frame
+     * @param context Frame context for the current frame
      * @param scheduler Optional task scheduler for parallel execution
      */
-    void execute(RenderContext& context, TaskScheduler* scheduler = nullptr);
+    void execute(FrameContext& context, TaskScheduler* scheduler = nullptr);
 
     /**
      * Get pass by name.
@@ -208,7 +185,7 @@ private:
     bool topologicalSort(std::vector<std::vector<PassId>>& levels);
 
     // Execute a pass using secondary command buffers for parallel recording
-    void executeWithSecondaryBuffers(RenderContext& context, const Pass& pass, TaskScheduler* scheduler);
+    void executeWithSecondaryBuffers(FrameContext& context, const Pass& pass, TaskScheduler* scheduler);
 
     std::vector<Pass> passes_;
     std::unordered_map<std::string, PassId> nameToId_;

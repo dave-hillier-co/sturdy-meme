@@ -44,7 +44,7 @@ HDRPassRecorder::HDRPassRecorder(RendererSystems& systems)
 {
 }
 
-void HDRPassRecorder::record(VkCommandBuffer cmd, uint32_t frameIndex, float time) {
+void HDRPassRecorder::record(VkCommandBuffer cmd, uint32_t frameIndex, float time, const Params& params) {
     vk::CommandBuffer vkCmd(cmd);
 
     // Wrap entire HDR pass in a GPU zone to measure total time
@@ -71,7 +71,7 @@ void HDRPassRecorder::record(VkCommandBuffer cmd, uint32_t frameIndex, float tim
     resources_.profiler->endGpuZone(cmd, "HDR:Sky");
 
     // Draw terrain (LEB adaptive tessellation)
-    if (config_.terrainEnabled) {
+    if (params.terrainEnabled) {
         resources_.profiler->beginGpuZone(cmd, "HDR:Terrain");
         resources_.terrain->recordDraw(cmd, frameIndex);
         resources_.profiler->endGpuZone(cmd, "HDR:Terrain");
@@ -84,10 +84,10 @@ void HDRPassRecorder::record(VkCommandBuffer cmd, uint32_t frameIndex, float tim
 
     // Draw scene objects (static meshes)
     resources_.profiler->beginGpuZone(cmd, "HDR:SceneObjects");
-    if (config_.sceneObjectsPipeline) {
-        vkCmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *config_.sceneObjectsPipeline);
+    if (params.sceneObjectsPipeline) {
+        vkCmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *params.sceneObjectsPipeline);
     }
-    recordSceneObjects(cmd, frameIndex);
+    recordSceneObjects(cmd, frameIndex, params);
     resources_.profiler->endGpuZone(cmd, "HDR:SceneObjects");
 
     // Draw skinned characters with GPU skinning (player + NPCs)
@@ -140,7 +140,7 @@ void HDRPassRecorder::record(VkCommandBuffer cmd, uint32_t frameIndex, float tim
     resources_.profiler->endGpuZone(cmd, "HDR:Weather");
 
     // Draw debug lines (if any are present - includes physics debug and road/river visualization)
-    recordDebugLines(cmd);
+    recordDebugLines(cmd, params.viewProj);
 
     vkCmd.endRenderPass();
 
@@ -148,7 +148,9 @@ void HDRPassRecorder::record(VkCommandBuffer cmd, uint32_t frameIndex, float tim
 }
 
 void HDRPassRecorder::recordWithSecondaries(VkCommandBuffer cmd, uint32_t frameIndex, float time,
-                                            const std::vector<vk::CommandBuffer>& secondaries) {
+                                            const std::vector<vk::CommandBuffer>& secondaries,
+                                            const Params& params) {
+    (void)params;  // Not used for secondary execution, only for recording
     vk::CommandBuffer vkCmd(cmd);
 
     // Wrap entire HDR pass in a GPU zone to measure total time
@@ -181,7 +183,8 @@ void HDRPassRecorder::recordWithSecondaries(VkCommandBuffer cmd, uint32_t frameI
     resources_.profiler->endGpuZone(cmd, "HDRPass");
 }
 
-void HDRPassRecorder::recordSecondarySlot(VkCommandBuffer cmd, uint32_t frameIndex, float time, uint32_t slot) {
+void HDRPassRecorder::recordSecondarySlot(VkCommandBuffer cmd, uint32_t frameIndex, float time,
+                                          uint32_t slot, const Params& params) {
     vk::CommandBuffer vkCmd(cmd);
 
     // Each slot records a group of draw calls to a secondary command buffer
@@ -194,7 +197,7 @@ void HDRPassRecorder::recordSecondarySlot(VkCommandBuffer cmd, uint32_t frameInd
         resources_.sky->recordDraw(cmd, frameIndex);
         resources_.profiler->endGpuZone(cmd, "HDR:Sky");
 
-        if (config_.terrainEnabled) {
+        if (params.terrainEnabled) {
             resources_.profiler->beginGpuZone(cmd, "HDR:Terrain");
             resources_.terrain->recordDraw(cmd, frameIndex);
             resources_.profiler->endGpuZone(cmd, "HDR:Terrain");
@@ -208,10 +211,10 @@ void HDRPassRecorder::recordSecondarySlot(VkCommandBuffer cmd, uint32_t frameInd
     case 1:
         // Slot 1: Scene Objects + Skinned Character (scene meshes)
         resources_.profiler->beginGpuZone(cmd, "HDR:SceneObjects");
-        if (config_.sceneObjectsPipeline) {
-            vkCmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *config_.sceneObjectsPipeline);
+        if (params.sceneObjectsPipeline) {
+            vkCmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *params.sceneObjectsPipeline);
         }
-        recordSceneObjects(cmd, frameIndex);
+        recordSceneObjects(cmd, frameIndex, params);
         resources_.profiler->endGpuZone(cmd, "HDR:SceneObjects");
 
         resources_.profiler->beginGpuZone(cmd, "HDR:SkinnedChar");
@@ -260,13 +263,13 @@ void HDRPassRecorder::recordSecondarySlot(VkCommandBuffer cmd, uint32_t frameInd
         resources_.snow.weather().recordDraw(cmd, frameIndex, time);
         resources_.profiler->endGpuZone(cmd, "HDR:Weather");
 
-        recordDebugLines(cmd);
+        recordDebugLines(cmd, params.viewProj);
         break;
     }
 }
 
-void HDRPassRecorder::recordSceneObjects(VkCommandBuffer cmd, uint32_t frameIndex) {
-    if (!config_.pipelineLayout) {
+void HDRPassRecorder::recordSceneObjects(VkCommandBuffer cmd, uint32_t frameIndex, const Params& params) {
+    if (!params.pipelineLayout) {
         SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "HDRPassRecorder: pipelineLayout not set");
         return;
     }
@@ -289,12 +292,12 @@ void HDRPassRecorder::recordSceneObjects(VkCommandBuffer cmd, uint32_t frameInde
         push.alphaTestThreshold = obj.alphaTestThreshold;
 
         vkCmd.pushConstants<PushConstants>(
-            *config_.pipelineLayout,
+            *params.pipelineLayout,
             vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
             0, push);
 
         vkCmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics,
-                                 *config_.pipelineLayout, 0, vk::DescriptorSet(descSet), {});
+                                 *params.pipelineLayout, 0, vk::DescriptorSet(descSet), {});
 
         vk::Buffer vertexBuffers[] = {obj.mesh->getVertexBuffer()};
         vk::DeviceSize offsets[] = {0};
@@ -405,7 +408,7 @@ void HDRPassRecorder::recordSceneObjects(VkCommandBuffer cmd, uint32_t frameInde
     }
 }
 
-void HDRPassRecorder::recordDebugLines(VkCommandBuffer cmd) {
+void HDRPassRecorder::recordDebugLines(VkCommandBuffer cmd, const glm::mat4& viewProj) {
     if (!resources_.debugLine->hasLines()) {
         return;
     }
@@ -428,8 +431,43 @@ void HDRPassRecorder::recordDebugLines(VkCommandBuffer cmd) {
         .setExtent(vk::Extent2D{}.setWidth(debugExtent.width).setHeight(debugExtent.height));
     vkCmd.setScissor(0, scissor);
 
-    // Need to get viewProj from the config (stored by Renderer)
-    // For now, use identity if not set (could be improved by always passing viewProj)
-    glm::mat4 viewProj = config_.lastViewProj ? *config_.lastViewProj : glm::mat4(1.0f);
     resources_.debugLine->recordCommands(cmd, viewProj);
+}
+
+// ============================================================================
+// Legacy API implementations (deprecated)
+// ============================================================================
+
+void HDRPassRecorder::record(VkCommandBuffer cmd, uint32_t frameIndex, float time) {
+    Params params;
+    params.terrainEnabled = legacyConfig_.terrainEnabled;
+    params.sceneObjectsPipeline = legacyConfig_.sceneObjectsPipeline;
+    params.pipelineLayout = legacyConfig_.pipelineLayout;
+    if (legacyConfig_.lastViewProj) {
+        params.viewProj = *legacyConfig_.lastViewProj;
+    }
+    record(cmd, frameIndex, time, params);
+}
+
+void HDRPassRecorder::recordWithSecondaries(VkCommandBuffer cmd, uint32_t frameIndex, float time,
+                                            const std::vector<vk::CommandBuffer>& secondaries) {
+    Params params;
+    params.terrainEnabled = legacyConfig_.terrainEnabled;
+    params.sceneObjectsPipeline = legacyConfig_.sceneObjectsPipeline;
+    params.pipelineLayout = legacyConfig_.pipelineLayout;
+    if (legacyConfig_.lastViewProj) {
+        params.viewProj = *legacyConfig_.lastViewProj;
+    }
+    recordWithSecondaries(cmd, frameIndex, time, secondaries, params);
+}
+
+void HDRPassRecorder::recordSecondarySlot(VkCommandBuffer cmd, uint32_t frameIndex, float time, uint32_t slot) {
+    Params params;
+    params.terrainEnabled = legacyConfig_.terrainEnabled;
+    params.sceneObjectsPipeline = legacyConfig_.sceneObjectsPipeline;
+    params.pipelineLayout = legacyConfig_.pipelineLayout;
+    if (legacyConfig_.lastViewProj) {
+        params.viewProj = *legacyConfig_.lastViewProj;
+    }
+    recordSecondarySlot(cmd, frameIndex, time, slot, params);
 }

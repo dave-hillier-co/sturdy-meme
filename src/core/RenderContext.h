@@ -49,10 +49,13 @@ struct RenderResources {
 };
 
 /**
- * RenderContext - Unified execution context for render stages
+ * RenderContext - Execution context for render stages (legacy)
  *
- * Passed to all stage execute() methods. Contains everything a stage
+ * Passed to stage execute() methods. Contains everything a stage
  * needs to record commands without querying external state.
+ *
+ * Note: New code should prefer FrameContext from FrameContext.h
+ * which provides a more flexible interface with optional resources.
  */
 struct RenderContext {
     VkCommandBuffer cmd = VK_NULL_HANDLE;

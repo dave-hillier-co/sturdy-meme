@@ -33,7 +33,7 @@ public:
         VkCommandPool commandPool = VK_NULL_HANDLE;
         VkQueue queue = VK_NULL_HANDLE;
         VirtualTextureConfig config;
-        uint32_t framesInFlight = 2;
+        uint32_t framesInFlight = 3;
         bool useCompression = false;
     };
 
@@ -133,7 +133,7 @@ private:
     // Per-frame staging buffers to avoid race conditions with in-flight frames
     std::vector<VmaBuffer> stagingBuffers_;
     std::vector<void*> stagingMapped_;
-    uint32_t framesInFlight_ = 2;
+    uint32_t framesInFlight_ = 3;
 
     // Cache slot management
     std::vector<CacheSlot> slots;

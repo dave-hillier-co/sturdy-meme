@@ -109,7 +109,7 @@ Systems initialized via explicit `init(InitContext&, SystemInitInfo&)`:
 ### System Lifecycle
 - `init()` → `destroy()` with predictable ordering
 - Systems register with `ResizeCoordinator` for window resize callbacks
-- Double-buffering for uniform buffers (MAX_FRAMES_IN_FLIGHT = 2)
+- Triple-buffering for uniform buffers (MAX_FRAMES_IN_FLIGHT = 3)
 
 ### RAII Resource Management
 `VulkanRAII.h` provides automatic cleanup wrappers:

@@ -10,14 +10,80 @@
 #include <meshoptimizer.h>
 #include <nlohmann/json.hpp>
 #include <SDL3/SDL_log.h>
+#include <ofbx.h>
 
 #include <filesystem>
 #include <fstream>
 #include <unordered_map>
 #include <algorithm>
 #include <cstring>
+#include <memory>
 
 namespace {
+
+// FBX helper functions
+std::vector<uint8_t> readFile(const std::string& path) {
+    std::ifstream file(path, std::ios::binary | std::ios::ate);
+    if (!file) {
+        return {};
+    }
+    std::streamsize size = file.tellg();
+    file.seekg(0);
+    std::vector<uint8_t> data(static_cast<size_t>(size));
+    file.read(reinterpret_cast<char*>(data.data()), size);
+    return data;
+}
+
+glm::mat4 convertFBXMatrix(const ofbx::DMatrix& m) {
+    return glm::mat4(
+        static_cast<float>(m.m[0]),  static_cast<float>(m.m[1]),  static_cast<float>(m.m[2]),  static_cast<float>(m.m[3]),
+        static_cast<float>(m.m[4]),  static_cast<float>(m.m[5]),  static_cast<float>(m.m[6]),  static_cast<float>(m.m[7]),
+        static_cast<float>(m.m[8]),  static_cast<float>(m.m[9]),  static_cast<float>(m.m[10]), static_cast<float>(m.m[11]),
+        static_cast<float>(m.m[12]), static_cast<float>(m.m[13]), static_cast<float>(m.m[14]), static_cast<float>(m.m[15])
+    );
+}
+
+glm::vec3 convertFBXVec3(const ofbx::DVec3& v) {
+    return glm::vec3(static_cast<float>(v.x), static_cast<float>(v.y), static_cast<float>(v.z));
+}
+
+glm::vec3 convertFBXVec3(const ofbx::Vec3& v) {
+    return glm::vec3(v.x, v.y, v.z);
+}
+
+glm::vec2 convertFBXVec2(const ofbx::Vec2& v) {
+    return glm::vec2(v.x, v.y);
+}
+
+// Convert Euler angles (degrees) to quaternion using XYZ intrinsic order
+glm::quat eulerToQuat(const glm::vec3& eulerDeg) {
+    glm::vec3 eulerRad = glm::radians(eulerDeg);
+    glm::quat qX = glm::angleAxis(eulerRad.x, glm::vec3(1.0f, 0.0f, 0.0f));
+    glm::quat qY = glm::angleAxis(eulerRad.y, glm::vec3(0.0f, 1.0f, 0.0f));
+    glm::quat qZ = glm::angleAxis(eulerRad.z, glm::vec3(0.0f, 0.0f, 1.0f));
+    return qZ * qY * qX;
+}
+
+// Strip Mixamo bone name prefix
+std::string normalizeBoneName(const char* name) {
+    if (!name) return "";
+    std::string str(name);
+    const std::string prefix = "mixamorig:";
+    if (str.find(prefix) == 0) {
+        return str.substr(prefix.length());
+    }
+    return str;
+}
+
+// Custom deleter for ofbx::IScene
+struct SceneDeleter {
+    void operator()(ofbx::IScene* scene) const {
+        if (scene) {
+            scene->destroy();
+        }
+    }
+};
+using ScenePtr = std::unique_ptr<ofbx::IScene, SceneDeleter>;
 
 glm::mat4 toMat4(const std::array<float, 16>& arr) {
     return glm::mat4(
@@ -352,11 +418,252 @@ bool MeshSimplifier::loadGLTF(const std::string& path) {
 }
 
 bool MeshSimplifier::loadFBX(const std::string& path) {
-    // FBX loading would go here - for now just return false
-    // The main use case is GLTF which is more common for web/game assets
-    SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
-                 "FBX loading not yet implemented in LOD tool. Use GLTF format.");
-    return false;
+    auto fileData = readFile(path);
+    if (fileData.empty()) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to read file: %s", path.c_str());
+        return false;
+    }
+
+    ScenePtr scene(ofbx::load(
+        fileData.data(),
+        static_cast<ofbx::usize>(fileData.size()),
+        static_cast<ofbx::u16>(ofbx::LoadFlags::NONE)
+    ));
+
+    if (!scene) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to parse FBX: %s", path.c_str());
+        return false;
+    }
+
+    std::filesystem::path filePath(path);
+    lodData_.name = filePath.stem().string();
+
+    // Build bone mapping from all skins/clusters
+    std::unordered_map<const ofbx::Object*, int32_t> boneToIndex;
+    std::vector<const ofbx::Object*> boneObjects;
+
+    int meshCount = scene->getMeshCount();
+    for (int meshIdx = 0; meshIdx < meshCount; ++meshIdx) {
+        const ofbx::Mesh* mesh = scene->getMesh(meshIdx);
+        const ofbx::Skin* skin = mesh->getSkin();
+        if (!skin) continue;
+
+        int clusterCount = skin->getClusterCount();
+        for (int i = 0; i < clusterCount; ++i) {
+            const ofbx::Cluster* cluster = skin->getCluster(i);
+            const ofbx::Object* bone = cluster->getLink();
+            if (bone && boneToIndex.find(bone) == boneToIndex.end()) {
+                int32_t index = static_cast<int32_t>(boneObjects.size());
+                boneToIndex[bone] = index;
+                boneObjects.push_back(bone);
+            }
+        }
+    }
+
+    // Build skeleton
+    lodData_.skeleton.resize(boneObjects.size());
+    std::vector<glm::mat4> globalBindPose(boneObjects.size(), glm::mat4(1.0f));
+
+    for (size_t i = 0; i < boneObjects.size(); ++i) {
+        const ofbx::Object* bone = boneObjects[i];
+        JointData& joint = lodData_.skeleton[i];
+        joint.name = normalizeBoneName(bone->name);
+        joint.parentIndex = -1;
+
+        // Find parent
+        const ofbx::Object* parent = bone->getParent();
+        if (parent) {
+            auto it = boneToIndex.find(parent);
+            if (it != boneToIndex.end()) {
+                joint.parentIndex = it->second;
+            }
+        }
+
+        joint.localTransform = glm::mat4(1.0f);
+        joint.inverseBindMatrix = glm::mat4(1.0f);
+    }
+
+    stats_.skeletonJoints = lodData_.skeleton.size();
+    SDL_Log("Found %zu bones", boneObjects.size());
+
+    // Create LOD 0 (original mesh)
+    LODMeshData lod0;
+    lod0.lodLevel = 0;
+    lod0.targetRatio = 1.0f;
+    lod0.actualRatio = 1.0f;
+
+    // Process meshes
+    for (int meshIdx = 0; meshIdx < meshCount; ++meshIdx) {
+        const ofbx::Mesh* mesh = scene->getMesh(meshIdx);
+        const ofbx::GeometryData& geomData = mesh->getGeometryData();
+
+        if (!geomData.hasVertices()) continue;
+
+        ofbx::Vec3Attributes positions = geomData.getPositions();
+        ofbx::Vec3Attributes normals = geomData.getNormals();
+        ofbx::Vec2Attributes uvs = geomData.getUVs();
+        ofbx::Vec3Attributes tangentsAttr = geomData.getTangents();
+
+        int partitionCount = geomData.getPartitionCount();
+        if (partitionCount == 0) continue;
+
+        // Initialize bone weight storage per position value index
+        std::vector<std::vector<std::pair<int32_t, float>>> vertexBoneWeights(positions.values_count);
+
+        // Load bone weights from skin
+        const ofbx::Skin* skin = mesh->getSkin();
+        if (skin) {
+            int clusterCount = skin->getClusterCount();
+            for (int clusterIdx = 0; clusterIdx < clusterCount; ++clusterIdx) {
+                const ofbx::Cluster* cluster = skin->getCluster(clusterIdx);
+                const ofbx::Object* bone = cluster->getLink();
+                if (!bone) continue;
+
+                auto boneIt = boneToIndex.find(bone);
+                if (boneIt == boneToIndex.end()) continue;
+
+                int32_t boneIndex = boneIt->second;
+
+                // Get bind pose transforms from cluster
+                ofbx::DMatrix transformLink = cluster->getTransformLinkMatrix();
+                glm::mat4 globalBind = convertFBXMatrix(transformLink);
+                globalBindPose[boneIndex] = globalBind;
+                lodData_.skeleton[boneIndex].inverseBindMatrix = glm::inverse(globalBind);
+
+                // Get weights
+                int weightCount = cluster->getIndicesCount();
+                const int* indices = cluster->getIndices();
+                const double* weights = cluster->getWeights();
+
+                for (int w = 0; w < weightCount; ++w) {
+                    int vertIdx = indices[w];
+                    float weight = static_cast<float>(weights[w]);
+                    if (vertIdx >= 0 && vertIdx < positions.values_count && weight > 0.0001f) {
+                        vertexBoneWeights[vertIdx].push_back({boneIndex, weight});
+                    }
+                }
+            }
+        }
+
+        // Sort and limit bone influences to 4 per vertex
+        for (auto& boneWeights : vertexBoneWeights) {
+            std::sort(boneWeights.begin(), boneWeights.end(),
+                [](const auto& a, const auto& b) { return a.second > b.second; });
+            if (boneWeights.size() > 4) {
+                boneWeights.resize(4);
+            }
+        }
+
+        // Process all partitions
+        for (int partIdx = 0; partIdx < partitionCount; ++partIdx) {
+            ofbx::GeometryPartition partition = geomData.getPartition(partIdx);
+
+            for (int polyIdx = 0; polyIdx < partition.polygon_count; ++polyIdx) {
+                const ofbx::GeometryPartition::Polygon& polygon = partition.polygons[polyIdx];
+
+                std::vector<int> triIndices(partition.max_polygon_triangles * 3);
+                ofbx::u32 numIndices = ofbx::triangulate(geomData, polygon, triIndices.data());
+                ofbx::u32 numTris = numIndices / 3;
+
+                for (ofbx::u32 tri = 0; tri < numTris; ++tri) {
+                    for (int v = 0; v < 3; ++v) {
+                        int vertexIndex = triIndices[tri * 3 + v];
+
+                        if (vertexIndex < 0 || vertexIndex >= positions.count) continue;
+
+                        SkinnedVertexData vertex{};
+
+                        vertex.position = convertFBXVec3(positions.get(vertexIndex));
+
+                        int posIdx = positions.indices ? positions.indices[vertexIndex] : vertexIndex;
+
+                        if (normals.values && normals.count > 0) {
+                            vertex.normal = convertFBXVec3(normals.get(vertexIndex));
+                        } else {
+                            vertex.normal = glm::vec3(0, 1, 0);
+                        }
+
+                        if (uvs.values && uvs.count > 0) {
+                            vertex.texCoord = convertFBXVec2(uvs.get(vertexIndex));
+                            vertex.texCoord.y = 1.0f - vertex.texCoord.y; // Flip V
+                        }
+
+                        if (tangentsAttr.values && tangentsAttr.count > 0) {
+                            glm::vec3 t = convertFBXVec3(tangentsAttr.get(vertexIndex));
+                            vertex.tangent = glm::vec4(t, 1.0f);
+                        }
+
+                        // Bone weights
+                        if (posIdx >= 0 && posIdx < static_cast<int>(vertexBoneWeights.size())) {
+                            const auto& boneWeights = vertexBoneWeights[posIdx];
+                            vertex.boneIndices = glm::uvec4(0);
+                            vertex.boneWeights = glm::vec4(0.0f);
+
+                            if (boneWeights.empty()) {
+                                vertex.boneWeights = glm::vec4(1.0f, 0.0f, 0.0f, 0.0f);
+                            } else {
+                                float totalWeight = 0.0f;
+                                for (size_t j = 0; j < boneWeights.size() && j < 4; ++j) {
+                                    vertex.boneIndices[j] = static_cast<uint32_t>(boneWeights[j].first);
+                                    vertex.boneWeights[j] = boneWeights[j].second;
+                                    totalWeight += boneWeights[j].second;
+                                }
+                                if (totalWeight > 0.0001f) {
+                                    vertex.boneWeights /= totalWeight;
+                                }
+                            }
+                        } else {
+                            vertex.boneWeights = glm::vec4(1.0f, 0.0f, 0.0f, 0.0f);
+                        }
+
+                        vertex.color = glm::vec4(1.0f);
+
+                        lod0.indices.push_back(static_cast<uint32_t>(lod0.vertices.size()));
+                        lod0.vertices.push_back(vertex);
+                    }
+                }
+            }
+        }
+    }
+
+    if (lod0.vertices.empty()) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "No vertices loaded from %s", path.c_str());
+        return false;
+    }
+
+    // Compute local transforms from global bind poses
+    for (size_t i = 0; i < lodData_.skeleton.size(); ++i) {
+        JointData& joint = lodData_.skeleton[i];
+        if (joint.parentIndex >= 0 && joint.parentIndex < static_cast<int32_t>(globalBindPose.size())) {
+            glm::mat4 parentGlobal = globalBindPose[joint.parentIndex];
+            glm::mat4 parentInverse = glm::inverse(parentGlobal);
+            joint.localTransform = parentInverse * globalBindPose[i];
+        } else {
+            joint.localTransform = globalBindPose[i];
+        }
+    }
+
+    // Calculate tangents if not present
+    bool hasTangents = false;
+    for (const auto& v : lod0.vertices) {
+        if (glm::length(glm::vec3(v.tangent)) > 0.001f) {
+            hasTangents = true;
+            break;
+        }
+    }
+    if (!hasTangents) {
+        calculateTangents(lod0.vertices, lod0.indices);
+    }
+
+    stats_.originalVertices = lod0.vertices.size();
+    stats_.originalTriangles = lod0.indices.size() / 3;
+
+    lodData_.lods.push_back(std::move(lod0));
+
+    SDL_Log("Loaded FBX mesh '%s': %zu vertices, %zu triangles, %zu joints",
+            lodData_.name.c_str(), stats_.originalVertices, stats_.originalTriangles, stats_.skeletonJoints);
+
+    return true;
 }
 
 bool MeshSimplifier::generateLODs(const LODConfig& config, ProgressCallback progress) {

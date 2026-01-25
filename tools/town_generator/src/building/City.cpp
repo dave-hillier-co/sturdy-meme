@@ -1392,7 +1392,23 @@ void City::buildSlums() {
     std::vector<Cell*> candidates;
     std::vector<double> scores;
 
+    // Helper to check if a cell is near a road
+    auto isNearRoad = [&](Cell* patch) -> bool {
+        geom::Point patchCenter = patch->shape.centroid();
+        const double roadThreshold = 5.0;  // Distance threshold to consider "near road"
+        for (const auto& road : roads) {
+            for (const auto& pointPtr : road) {
+                double d = geom::Point::distance(*pointPtr, patchCenter);
+                if (d < roadThreshold) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    };
+
     // Helper function to find slum candidates adjacent to a withinCity cell
+    // Modified: Only allows slums on sides adjacent to walls or roads
     // Reference: mfcg.js lines 10781-10800 - function f(f)
     auto findCandidates = [&](Cell* cityCell) {
         for (auto* neighbor : cityCell->neighbors) {
@@ -1404,6 +1420,21 @@ void City::buildSlums() {
 
             // Skip if already a candidate
             if (std::find(candidates.begin(), candidates.end(), neighbor) != candidates.end()) {
+                continue;
+            }
+
+            // Check if this neighbor is adjacent to a withinWalls cell (against the wall)
+            bool adjacentToWall = false;
+            for (auto* n : neighbor->neighbors) {
+                if (n->withinWalls) {
+                    adjacentToWall = true;
+                    break;
+                }
+            }
+
+            // Only allow slums on sides adjacent to walls or roads
+            // This prevents slums from forming on outward-facing sides
+            if (!adjacentToWall && !isNearRoad(neighbor)) {
                 continue;
             }
 

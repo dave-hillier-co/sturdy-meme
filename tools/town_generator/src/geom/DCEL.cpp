@@ -210,7 +210,10 @@ std::vector<HalfEdgePtr> DCEL::circumference(const HalfEdgePtr& startEdge,
         if (!face || !face->halfEdge) continue;
 
         auto edge = face->halfEdge;
+        int edgeCount = 0;
+        const int maxEdges = 10000;  // Safety limit for malformed DCEL
         do {
+            if (++edgeCount > maxEdges) break;  // Safety break
             // Edge is on boundary if twin is null or twin's face is not in set
             auto twinEdge = edge->getTwin();
             if (!twinEdge) {
@@ -256,7 +259,14 @@ std::vector<HalfEdgePtr> DCEL::circumference(const HalfEdgePtr& startEdge,
         // Find next boundary edge
         // Walk around the destination vertex to find the next boundary edge
         auto next = current->next;
+        int safetyCounter = 0;
+        const int maxIterations = static_cast<int>(boundaryEdges.size()) * 2 + 100;
         while (next && boundarySet.find(next.get()) == boundarySet.end()) {
+            if (++safetyCounter > maxIterations) {
+                // Safety break to prevent infinite loop in malformed DCEL
+                next = nullptr;
+                break;
+            }
             auto nextTwin = next->getTwin();
             if (nextTwin) {
                 next = nextTwin->next;
@@ -305,7 +315,10 @@ std::vector<std::vector<FacePtr>> DCEL::split(const std::vector<FacePtr>& faceLi
             // Add adjacent faces that are in the face set
             if (current->halfEdge) {
                 auto edge = current->halfEdge;
+                int edgeCount = 0;
+                const int maxEdges = 10000;  // Safety limit
                 do {
+                    if (++edgeCount > maxEdges) break;  // Safety break
                     auto twinEdge = edge->getTwin();
                     if (twinEdge) {
                         auto neighborFace = twinEdge->getFace();

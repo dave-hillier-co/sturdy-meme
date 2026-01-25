@@ -94,8 +94,9 @@ void ShadowSystem::cleanup() {
     // Instanced shadow cleanup
     destroyInstancedShadowResources();
 
-    // Render pass
-    if (shadowRenderPass != VK_NULL_HANDLE) vkDevice.destroyRenderPass(shadowRenderPass);
+    // Render pass - handled by RAII shadowRenderPass_ member
+    shadowRenderPass_.reset();
+    shadowRenderPass = VK_NULL_HANDLE;
 
     device = VK_NULL_HANDLE;
 }

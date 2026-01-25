@@ -131,10 +131,9 @@ void PostProcessSystem::cleanup() {
     }
 
     hdrSampler_.reset();
-    if (hdrRenderPass != VK_NULL_HANDLE) {
-        vkDevice.destroyRenderPass(hdrRenderPass);
-        hdrRenderPass = VK_NULL_HANDLE;
-    }
+    // Render pass - handled by RAII hdrRenderPass_ member
+    hdrRenderPass_.reset();
+    hdrRenderPass = VK_NULL_HANDLE;
 }
 
 void PostProcessSystem::destroyHDRResources() {

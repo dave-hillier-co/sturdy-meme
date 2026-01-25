@@ -61,6 +61,35 @@ struct DescriptorPoolSizes {
 
 class DescriptorManager {
 public:
+    // Immutable builder for descriptor set layouts with optional explicit bindings
+    class DescriptorLayoutBuilder {
+    public:
+        explicit DescriptorLayoutBuilder(VkDevice device);
+
+        DescriptorLayoutBuilder addUniformBuffer(VkShaderStageFlags stages, uint32_t count = 1,
+                                                 std::optional<uint32_t> binding = std::nullopt) const;
+        DescriptorLayoutBuilder addDynamicUniformBuffer(VkShaderStageFlags stages, uint32_t count = 1,
+                                                        std::optional<uint32_t> binding = std::nullopt) const;
+        DescriptorLayoutBuilder addStorageBuffer(VkShaderStageFlags stages, uint32_t count = 1,
+                                                 std::optional<uint32_t> binding = std::nullopt) const;
+        DescriptorLayoutBuilder addCombinedImageSampler(VkShaderStageFlags stages, uint32_t count = 1,
+                                                        std::optional<uint32_t> binding = std::nullopt) const;
+        DescriptorLayoutBuilder addStorageImage(VkShaderStageFlags stages, uint32_t count = 1,
+                                                std::optional<uint32_t> binding = std::nullopt) const;
+
+        DescriptorLayoutBuilder addBinding(uint32_t binding, VkDescriptorType type,
+                                           VkShaderStageFlags stages, uint32_t count = 1) const;
+        DescriptorLayoutBuilder addBinding(VkDescriptorType type, VkShaderStageFlags stages,
+                                           uint32_t count = 1, std::optional<uint32_t> binding = std::nullopt) const;
+
+        VkDescriptorSetLayout build() const;
+
+    private:
+        VkDevice device;
+        std::vector<VkDescriptorSetLayoutBinding> bindings;
+        uint32_t nextBinding = 0;
+    };
+
     // Builder for creating descriptor set layouts with a declarative API
     class LayoutBuilder {
     public:

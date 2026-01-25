@@ -158,26 +158,15 @@ bool WaterTileCull::createComputePipeline() {
     // 2: Counter buffer (storage)
     // 3: Indirect draw buffer (storage)
 
-    auto makeComputeBinding = [](uint32_t binding, vk::DescriptorType type) {
-        return vk::DescriptorSetLayoutBinding{}
-            .setBinding(binding)
-            .setDescriptorType(type)
-            .setDescriptorCount(1)
-            .setStageFlags(vk::ShaderStageFlagBits::eCompute);
-    };
-
-    std::array<vk::DescriptorSetLayoutBinding, 4> bindings = {
-        makeComputeBinding(0, vk::DescriptorType::eCombinedImageSampler),
-        makeComputeBinding(1, vk::DescriptorType::eStorageBuffer),
-        makeComputeBinding(2, vk::DescriptorType::eStorageBuffer),
-        makeComputeBinding(3, vk::DescriptorType::eStorageBuffer)
-    };
-
-    auto layoutInfo = vk::DescriptorSetLayoutCreateInfo{}
-        .setBindings(bindings);
-
+    VkDescriptorSetLayout rawLayout = VK_NULL_HANDLE;
     try {
-        descriptorSetLayout_.emplace(*raiiDevice_, layoutInfo);
+        rawLayout = DescriptorManager::DescriptorLayoutBuilder(device)
+            .addCombinedImageSampler(VK_SHADER_STAGE_COMPUTE_BIT, 1, 0)
+            .addStorageBuffer(VK_SHADER_STAGE_COMPUTE_BIT, 1, 1)
+            .addStorageBuffer(VK_SHADER_STAGE_COMPUTE_BIT, 1, 2)
+            .addStorageBuffer(VK_SHADER_STAGE_COMPUTE_BIT, 1, 3)
+            .build();
+        descriptorSetLayout_.emplace(*raiiDevice_, rawLayout);
     } catch (const vk::SystemError& e) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create tile cull descriptor set layout: %s", e.what());
         return false;

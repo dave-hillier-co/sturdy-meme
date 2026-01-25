@@ -165,32 +165,14 @@ bool WaterDisplacement::createParticleBuffer() {
 
 bool WaterDisplacement::createComputePipeline() {
     // Descriptor set layout
-    std::array<vk::DescriptorSetLayoutBinding, 3> bindings = {
-        // Binding 0: Current displacement map (storage image, write)
-        vk::DescriptorSetLayoutBinding{}
-            .setBinding(0)
-            .setDescriptorType(vk::DescriptorType::eStorageImage)
-            .setDescriptorCount(1)
-            .setStageFlags(vk::ShaderStageFlagBits::eCompute),
-        // Binding 1: Previous displacement map (sampled image, read)
-        vk::DescriptorSetLayoutBinding{}
-            .setBinding(1)
-            .setDescriptorType(vk::DescriptorType::eCombinedImageSampler)
-            .setDescriptorCount(1)
-            .setStageFlags(vk::ShaderStageFlagBits::eCompute),
-        // Binding 2: Particle buffer (SSBO)
-        vk::DescriptorSetLayoutBinding{}
-            .setBinding(2)
-            .setDescriptorType(vk::DescriptorType::eStorageBuffer)
-            .setDescriptorCount(1)
-            .setStageFlags(vk::ShaderStageFlagBits::eCompute)
-    };
-
-    auto layoutInfo = vk::DescriptorSetLayoutCreateInfo{}
-        .setBindings(bindings);
-
+    VkDescriptorSetLayout rawLayout = VK_NULL_HANDLE;
     try {
-        descriptorSetLayout_.emplace(*raiiDevice_, layoutInfo);
+        rawLayout = DescriptorManager::DescriptorLayoutBuilder(device)
+            .addStorageImage(VK_SHADER_STAGE_COMPUTE_BIT, 1, 0)
+            .addCombinedImageSampler(VK_SHADER_STAGE_COMPUTE_BIT, 1, 1)
+            .addStorageBuffer(VK_SHADER_STAGE_COMPUTE_BIT, 1, 2)
+            .build();
+        descriptorSetLayout_.emplace(*raiiDevice_, rawLayout);
     } catch (const vk::SystemError& e) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create displacement descriptor set layout: %s", e.what());
         return false;

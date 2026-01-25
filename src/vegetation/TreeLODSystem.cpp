@@ -233,6 +233,12 @@ bool TreeLODSystem::createDescriptorSetLayout() {
 }
 
 bool TreeLODSystem::createPipeline() {
+    // Validate render pass before attempting pipeline creation
+    if (hdrRenderPass_ == VK_NULL_HANDLE) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "TreeLODSystem: hdrRenderPass_ is null - cannot create pipeline");
+        return false;
+    }
+
     // Pipeline layout with push constants: cameraPos, lodParams, atlasParams
     auto layoutOpt = PipelineLayoutBuilder(*raiiDevice_)
         .addDescriptorSetLayout(**impostorDescriptorSetLayout_)

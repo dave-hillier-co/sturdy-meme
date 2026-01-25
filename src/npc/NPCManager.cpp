@@ -244,7 +244,12 @@ void NPCManager::updateAnimations(float deltaTime, SkinnedMeshRenderer& renderer
         return;  // No shared character set, can't animate NPCs
     }
 
-    // Assign bone slots and update animation for each NPC
+    // Reset bone slots for all NPCs first
+    for (auto& npc : npcs_) {
+        npc.boneSlot = 0;  // 0 means not assigned (slot 0 is reserved for player)
+    }
+
+    // Assign bone slots and update animation only for VISIBLE NPCs
     // Slot 0 is reserved for the player
     uint32_t nextSlot = 1;
 
@@ -253,9 +258,14 @@ void NPCManager::updateAnimations(float deltaTime, SkinnedMeshRenderer& renderer
             continue;
         }
 
+        // Only process visible NPCs (Bulk and Real states)
+        if (!npc.isVisible()) {
+            continue;
+        }
+
         // Skip if we've run out of slots
         if (nextSlot >= MAX_SKINNED_CHARACTERS) {
-            SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "Too many NPCs for skinned rendering");
+            SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "Too many visible NPCs for skinned rendering");
             break;
         }
 

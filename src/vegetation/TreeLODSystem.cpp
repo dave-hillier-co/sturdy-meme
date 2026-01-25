@@ -563,13 +563,20 @@ void TreeLODSystem::updateTreeLODState(TreeLODState& state, float distance, floa
 
 void TreeLODSystem::buildImpostorInstance(ImpostorInstanceGPU& instance, const TreeInstanceData& tree,
                                            const TreeLODState& state, const TreeSystem& treeSystem) {
-    instance.position = tree.position();
-    instance.scale = tree.scale();
-    instance.rotation = tree.getYRotation();
-    instance.archetypeIndex = state.archetypeIndex;
-    instance.blendFactor = state.blendFactor;
+    // Pack position and scale into vec4
+    instance.positionAndScale = glm::vec4(tree.position(), tree.scale());
+
+    // Pack rotation and archetype into vec4
+    // Note: archetype is stored as float for shader compatibility
+    instance.rotationAndArchetype = glm::vec4(
+        tree.getYRotation(),
+        static_cast<float>(state.archetypeIndex),
+        state.blendFactor,
+        0.0f  // reserved
+    );
 
     // Use full tree bounds (branches + leaves) for accurate imposter sizing
+    float hSize, vSize, baseOffset;
     if (tree.meshIndex < treeSystem.getMeshCount()) {
         const auto& fullBounds = treeSystem.getFullTreeBounds(tree.meshIndex);
         glm::vec3 extent = fullBounds.max - fullBounds.min;
@@ -577,16 +584,19 @@ void TreeLODSystem::buildImpostorInstance(ImpostorInstanceGPU& instance, const T
         float horizontalRadius = std::max(extent.x, extent.z) * 0.5f;
         float halfHeight = extent.y * 0.5f;
 
-        instance.hSize = horizontalRadius * TreeLODConstants::IMPOSTOR_SIZE_MARGIN * tree.scale();
-        instance.vSize = halfHeight * TreeLODConstants::IMPOSTOR_SIZE_MARGIN * tree.scale();
-        instance.baseOffset = (fullBounds.min.y + fullBounds.max.y) * 0.5f * tree.scale();
+        hSize = horizontalRadius * TreeLODConstants::IMPOSTOR_SIZE_MARGIN * tree.scale();
+        vSize = halfHeight * TreeLODConstants::IMPOSTOR_SIZE_MARGIN * tree.scale();
+        baseOffset = (fullBounds.min.y + fullBounds.max.y) * 0.5f * tree.scale();
     } else {
         // Fallback to archetype bounds
         const auto* archetype = impostorAtlas_->getArchetype(state.archetypeIndex);
-        instance.hSize = (archetype ? archetype->boundingSphereRadius * TreeLODConstants::IMPOSTOR_SIZE_MARGIN : 10.0f) * tree.scale();
-        instance.vSize = (archetype ? archetype->treeHeight * 0.5f * TreeLODConstants::IMPOSTOR_SIZE_MARGIN : 10.0f) * tree.scale();
-        instance.baseOffset = (archetype ? archetype->centerHeight : 0.0f) * tree.scale();
+        hSize = (archetype ? archetype->boundingSphereRadius * TreeLODConstants::IMPOSTOR_SIZE_MARGIN : 10.0f) * tree.scale();
+        vSize = (archetype ? archetype->treeHeight * 0.5f * TreeLODConstants::IMPOSTOR_SIZE_MARGIN : 10.0f) * tree.scale();
+        baseOffset = (archetype ? archetype->centerHeight : 0.0f) * tree.scale();
     }
+
+    // Pack size and offset into vec4
+    instance.sizeAndOffset = glm::vec4(hSize, vSize, baseOffset, 0.0f);
 }
 
 ImpostorPushConstants TreeLODSystem::buildImpostorPushConstants() const {

@@ -278,8 +278,8 @@ bool TreeLODSystem::createPipeline() {
     // Instance data comes from SSBO (InstanceBuffer), not vertex attributes
     auto vertexInput = VertexInputBuilder()
         .addBinding(VertexBindingBuilder::vertex(0, sizeof(glm::vec3) + sizeof(glm::vec2)))
-        .addAttribute(AttributeBuilder::vec3(0, 0, 0))                 // inPosition
-        .addAttribute(AttributeBuilder::vec2(1, 0, sizeof(glm::vec3))); // inTexCoord
+        .addAttribute(AttributeBuilder::vec3(0, 0))                   // inPosition at offset 0
+        .addAttribute(AttributeBuilder::vec2(1, sizeof(glm::vec3)));  // inTexCoord at offset 12
     auto vertexInputInfo = vertexInput.build();
 
     auto inputAssembly = vk::PipelineInputAssemblyStateCreateInfo{}
@@ -395,8 +395,8 @@ bool TreeLODSystem::createShadowPipeline() {
     // Position (vec3) + TexCoord (vec2)
     auto vertexInput = VertexInputBuilder()
         .addBinding(VertexBindingBuilder::vertex(0, sizeof(glm::vec3) + sizeof(glm::vec2)))
-        .addAttribute(AttributeBuilder::vec3(0, 0, 0))                    // inPosition
-        .addAttribute(AttributeBuilder::vec2(1, 0, sizeof(glm::vec3)));   // inTexCoord
+        .addAttribute(AttributeBuilder::vec3(0, 0))                   // inPosition at offset 0
+        .addAttribute(AttributeBuilder::vec2(1, sizeof(glm::vec3)));  // inTexCoord at offset 12
     auto vertexInputInfo = vertexInput.build();
 
     auto inputAssembly = vk::PipelineInputAssemblyStateCreateInfo{}

@@ -155,8 +155,8 @@ bool DebugLineSystem::createPipeline(VkRenderPass renderPass, const std::string&
     // Vertex input: position (vec3) + color (vec4)
     auto vertexInput = VertexInputBuilder()
         .addBinding(VertexBindingBuilder::perVertex<DebugLineVertex>(0))
-        .addAttribute(AttributeBuilder::vec3(0, 0, offsetof(DebugLineVertex, position)))
-        .addAttribute(AttributeBuilder::vec4(1, 0, offsetof(DebugLineVertex, color)));
+        .addAttribute(AttributeBuilder::vec3(0, offsetof(DebugLineVertex, position)))
+        .addAttribute(AttributeBuilder::vec4(1, offsetof(DebugLineVertex, color)));
 
     auto vertexInputInfo = vertexInput.build();
 

@@ -30,10 +30,6 @@ struct alignas(16) ShadowPushConstants {
 
 class ShadowSystem {
 public:
-    // Passkey for controlled construction via make_unique
-    struct ConstructToken { explicit ConstructToken() = default; };
-    ShadowSystem(ConstructToken, const InitInfo& info);
-
     // Configuration for shadow system initialization
     struct InitInfo {
         const vk::raii::Device* raiiDevice = nullptr;  // For RAII resource creation
@@ -45,6 +41,10 @@ public:
         std::string shaderPath;
         uint32_t framesInFlight;
     };
+
+    // Passkey for controlled construction via make_unique
+    struct ConstructToken { explicit ConstructToken() = default; };
+    ShadowSystem(ConstructToken, const InitInfo& info);
 
     /**
      * Factory: Create and initialize shadow system.

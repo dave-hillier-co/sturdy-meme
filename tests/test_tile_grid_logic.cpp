@@ -455,6 +455,57 @@ TEST_SUITE("rasterizeHolesForTile") {
             CHECK(val == 0);
         }
     }
+
+    TEST_CASE("small hole is inflated for GPU bilinear sampling") {
+        // Simulates the well hole scenario: 5m radius hole on 16384m terrain with 2048 resolution
+        // Texel size = 16384 / 2048 = 8m
+        // Without inflation, a 5m hole would only mark 1 texel and GPU bilinear sampling
+        // at positions offset from texel center would give values < 0.5 threshold
+        const float terrainSize = 16384.0f;
+        const uint32_t resolution = 2048;
+        const float halfTerrain = terrainSize * 0.5f;
+        const float texelSize = terrainSize / resolution;  // 8m
+
+        // Hole at center of terrain, radius smaller than texel size
+        std::vector<TerrainHole> holes = {
+            {0.0f, 0.0f, 5.0f}  // 5m radius, less than 8m texel size
+        };
+
+        auto mask = rasterizeHolesForTile(-halfTerrain, -halfTerrain, halfTerrain, halfTerrain,
+                                          resolution, holes);
+
+        // Find center texel (resolution/2, resolution/2)
+        const uint32_t centerCol = resolution / 2;
+        const uint32_t centerRow = resolution / 2;
+
+        // Count marked texels around the center
+        int markedCount = 0;
+        for (int dy = -2; dy <= 2; dy++) {
+            for (int dx = -2; dx <= 2; dx++) {
+                uint32_t col = centerCol + dx;
+                uint32_t row = centerRow + dy;
+                if (mask[row * resolution + col] == 255) {
+                    markedCount++;
+                }
+            }
+        }
+
+        // With inflation, multiple texels should be marked (not just 1)
+        // The effective radius is 5m + 8m = 13m, which should mark ~3x3 texels
+        CHECK(markedCount >= 4);  // At minimum, should mark center + adjacent texels
+
+        // Verify center texel is marked
+        CHECK(mask[centerRow * resolution + centerCol] == 255);
+
+        // Verify adjacent texels are also marked (for bilinear sampling to work)
+        // At least some adjacent texels should be marked
+        int adjacentMarked = 0;
+        if (mask[(centerRow-1) * resolution + centerCol] == 255) adjacentMarked++;
+        if (mask[(centerRow+1) * resolution + centerCol] == 255) adjacentMarked++;
+        if (mask[centerRow * resolution + (centerCol-1)] == 255) adjacentMarked++;
+        if (mask[centerRow * resolution + (centerCol+1)] == 255) adjacentMarked++;
+        CHECK(adjacentMarked >= 2);  // At least 2 adjacent texels should be marked
+    }
 }
 
 // ============================================================================

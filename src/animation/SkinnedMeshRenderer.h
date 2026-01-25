@@ -23,6 +23,17 @@ class AnimatedCharacter;
 // Slot 0 is reserved for the player character
 constexpr uint32_t MAX_SKINNED_CHARACTERS = 32;
 
+// PBR material properties for skinned characters
+struct SkinnedMaterialProps {
+    float roughness = 0.5f;
+    float metallic = 0.0f;
+    float emissiveIntensity = 0.0f;
+    float opacity = 1.0f;
+    glm::vec4 emissiveColor = glm::vec4(1.0f);
+    uint32_t pbrFlags = 0;
+    float alphaTestThreshold = 0.0f;
+};
+
 // Skinned mesh renderer - handles GPU skinning pipeline and bone matrices
 class SkinnedMeshRenderer {
 public:
@@ -108,9 +119,15 @@ public:
     // Record draw commands for NPC with custom tint color
     // slot: the bone matrices slot (must call updateBoneMatricesForSlot first)
     // tintColor: RGB tint multiplier for hostility visualization
+    // Uses player's material properties set via setPlayerMaterialProps()
     void recordNPC(VkCommandBuffer cmd, uint32_t frameIndex, uint32_t slot,
                    const glm::mat4& transform, const glm::vec4& tintColor,
                    AnimatedCharacter& character);
+
+    // Set the material properties from the player character
+    // These properties are used for all NPC rendering to match player appearance
+    void setPlayerMaterialProps(const SkinnedMaterialProps& props) { playerMaterialProps_ = props; }
+    const SkinnedMaterialProps& getPlayerMaterialProps() const { return playerMaterialProps_; }
 
     // Reset character slot allocation for new frame
     void resetCharacterSlots(uint32_t frameIndex);
@@ -156,4 +173,7 @@ private:
     // Dynamic uniform buffer support for multiple characters
     uint32_t boneBufferAlignment_ = 256;  // Minimum UBO alignment (queried from device)
     uint32_t alignedBoneBufferSize_ = 0;  // sizeof(BoneMatricesUBO) rounded up to alignment
+
+    // Player material properties used for NPC rendering
+    SkinnedMaterialProps playerMaterialProps_;
 };

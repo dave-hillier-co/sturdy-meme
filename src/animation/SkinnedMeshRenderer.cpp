@@ -265,6 +265,15 @@ void SkinnedMeshRenderer::record(VkCommandBuffer cmd, uint32_t frameIndex,
                                   const Renderable& playerObj, AnimatedCharacter& character) {
     vk::CommandBuffer vkCmd(cmd);
 
+    // Store player's material properties for NPC rendering
+    playerMaterialProps_.roughness = playerObj.roughness;
+    playerMaterialProps_.metallic = playerObj.metallic;
+    playerMaterialProps_.emissiveIntensity = playerObj.emissiveIntensity;
+    playerMaterialProps_.opacity = playerObj.opacity;
+    playerMaterialProps_.emissiveColor = glm::vec4(playerObj.emissiveColor, 1.0f);
+    playerMaterialProps_.pbrFlags = playerObj.pbrFlags;
+    playerMaterialProps_.alphaTestThreshold = playerObj.alphaTestThreshold;
+
     // Bind skinned pipeline
     vkCmd.bindPipeline(vk::PipelineBindPoint::eGraphics, **pipeline_);
 
@@ -376,15 +385,16 @@ void SkinnedMeshRenderer::recordNPC(VkCommandBuffer cmd, uint32_t frameIndex, ui
                              vk::DescriptorSet(descriptorSets[frameIndex]),
                              dynamicOffset);
 
-    // Push constants with NPC tint color
+    // Push constants using player's material properties for consistent appearance
     PushConstants push{};
     push.model = transform;
-    push.roughness = 0.7f;  // Default NPC material properties
-    push.metallic = 0.0f;
-    push.emissiveIntensity = 0.0f;
-    push.opacity = 1.0f;
-    push.emissiveColor = glm::vec4(1.0f);
-    push.pbrFlags = 0;
+    push.roughness = playerMaterialProps_.roughness;
+    push.metallic = playerMaterialProps_.metallic;
+    push.emissiveIntensity = playerMaterialProps_.emissiveIntensity;
+    push.opacity = playerMaterialProps_.opacity;
+    push.emissiveColor = playerMaterialProps_.emissiveColor;
+    push.pbrFlags = playerMaterialProps_.pbrFlags;
+    push.alphaTestThreshold = playerMaterialProps_.alphaTestThreshold;
     push.tintColor = tintColor;  // Apply hostility tint color
 
     vkCmd.pushConstants<PushConstants>(

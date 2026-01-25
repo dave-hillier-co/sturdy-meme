@@ -23,6 +23,10 @@
 // Forward declarations
 class PhysicsWorld;
 
+namespace Loading {
+    class AsyncSystemLoader;
+}
+
 // PBR texture flags - indicates which optional PBR textures are bound
 // Must match definitions in push_constants_common.glsl
 constexpr uint32_t PBR_HAS_ROUGHNESS_MAP = (1u << 0);
@@ -61,6 +65,11 @@ public:
         // When provided, renderer will call this between initialization phases
         // to allow the caller to render a loading screen with progress updates
         ProgressCallback progressCallback;
+
+        // Enable async subsystem initialization (non-blocking loading screen)
+        // When true, heavy subsystems are loaded on background threads while
+        // the loading screen continues to render. This improves perceived startup time.
+        bool asyncInit = false;
     };
 
     /**
@@ -170,14 +179,34 @@ public:
     void updatePhysicsDebug(PhysicsWorld& physics, const glm::vec3& cameraPos);
 #endif
 
+    /**
+     * Create async system loader for background initialization
+     * Returns a loader that the caller can poll while rendering loading screen
+     * Caller must call pollAsyncInit() until isAsyncInitComplete() returns true
+     */
+    static std::unique_ptr<class Loading::AsyncSystemLoader> createAsyncLoader(const InitInfo& info);
+
+    /**
+     * Check if async initialization is complete
+     */
+    bool isAsyncInitComplete() const { return asyncInitComplete_; }
+
+    /**
+     * Poll async loader for completions - call from main thread
+     * Returns true if all initialization is complete
+     */
+    bool pollAsyncInit();
+
 private:
     bool initInternal(const InitInfo& info);
+    bool initInternalAsync(const InitInfo& info);  // Async initialization path
     void cleanup();
 
     // High-level initialization phases
     bool initCoreVulkanResources();       // swapchain resources, command pool, threading
     bool initDescriptorInfrastructure();  // layouts, pools, sets
     bool initSubsystems(const InitContext& initCtx);  // terrain, grass, weather, snow, water, etc.
+    bool initSubsystemsAsync(const InitContext& initCtx);  // Async version using AsyncSystemLoader
     void initResizeCoordinator();         // resize registration
 
     bool createSyncObjects();
@@ -250,6 +279,11 @@ private:
 
     // Progress callback for async loading (stored during init)
     ProgressCallback progressCallback_;
+
+    // Async initialization state
+    std::unique_ptr<Loading::AsyncSystemLoader> asyncLoader_;
+    bool asyncInitComplete_ = true;  // True when not using async, or when async is done
+    bool asyncInitStarted_ = false;
 
     // Skinned mesh rendering
     bool initSkinnedMeshRenderer();

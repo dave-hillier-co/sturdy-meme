@@ -8,6 +8,7 @@
 #include "core/FrameUpdater.h"
 #include "core/FrameDataBuilder.h"
 #include "core/updaters/UBOUpdater.h"
+#include "core/loading/AsyncSystemLoader.h"
 #include "interfaces/IPlayerControl.h"
 #include "UBOs.h"
 #include "FrameData.h"
@@ -81,8 +82,17 @@
 
 std::unique_ptr<Renderer> Renderer::create(const InitInfo& info) {
     auto instance = std::make_unique<Renderer>(ConstructToken{});
-    if (!instance->initInternal(info)) {
-        return nullptr;
+
+    if (info.asyncInit) {
+        // Async initialization path - starts background loading
+        if (!instance->initInternalAsync(info)) {
+            return nullptr;
+        }
+    } else {
+        // Synchronous initialization path (original behavior)
+        if (!instance->initInternal(info)) {
+            return nullptr;
+        }
     }
     return instance;
 }
@@ -877,3 +887,222 @@ bool Renderer::createSkinnedMeshRendererDescriptorSets() {
 
 // Resource access
 DescriptorManager::Pool* Renderer::getDescriptorPool() { return descriptorInfra_.getDescriptorPool(); }
+
+// ===== Async Initialization Implementation =====
+
+bool Renderer::initInternalAsync(const InitInfo& info) {
+    INIT_PROFILE_PHASE("Renderer");
+
+    resourcePath = info.resourcePath;
+    config_ = info.config;
+    progressCallback_ = info.progressCallback;
+
+    // Helper to report progress
+    auto reportProgress = [this](float progress, const char* phase) {
+        if (progressCallback_) {
+            progressCallback_(progress, phase);
+        }
+    };
+
+    reportProgress(0.0f, "Initializing...");
+
+    // Create subsystems container
+    systems_ = std::make_unique<RendererSystems>();
+
+    // Initialize Vulkan context (must be synchronous - needed for everything else)
+    {
+        INIT_PROFILE_PHASE("VulkanContext");
+        if (info.vulkanContext) {
+            vulkanContext_ = std::move(const_cast<std::unique_ptr<VulkanContext>&>(info.vulkanContext));
+            if (!vulkanContext_->isDeviceReady()) {
+                if (!vulkanContext_->initDevice(info.window)) {
+                    SDL_Log("Failed to complete Vulkan device initialization");
+                    return false;
+                }
+            }
+        } else {
+            vulkanContext_ = std::make_unique<VulkanContext>();
+            if (!vulkanContext_->init(info.window)) {
+                SDL_Log("Failed to initialize Vulkan context");
+                return false;
+            }
+        }
+    }
+
+    // Phase 1: Core Vulkan resources (synchronous - quick)
+    reportProgress(0.05f, "Creating Vulkan resources");
+    {
+        INIT_PROFILE_PHASE("CoreVulkanResources");
+        if (!initCoreVulkanResources()) return false;
+    }
+
+    // Initialize asset registry (synchronous - quick)
+    reportProgress(0.08f, "Initializing asset registry");
+    {
+        INIT_PROFILE_PHASE("AssetRegistry");
+        renderingInfra_.initAssetRegistry(
+            vulkanContext_->getVkDevice(),
+            vulkanContext_->getVkPhysicalDevice(),
+            vulkanContext_->getAllocator(),
+            vulkanContext_->getCommandPool(),
+            vulkanContext_->getVkGraphicsQueue());
+    }
+
+    // Phase 2: Descriptor infrastructure (synchronous - quick)
+    reportProgress(0.10f, "Creating descriptor infrastructure");
+    {
+        INIT_PROFILE_PHASE("DescriptorInfrastructure");
+        if (!initDescriptorInfrastructure()) return false;
+    }
+
+    // Build InitContext for subsystem initialization
+    InitContext initCtx = InitContext::build(
+        *vulkanContext_, vulkanContext_->getCommandPool(), descriptorInfra_.getDescriptorPool(),
+        resourcePath, MAX_FRAMES_IN_FLIGHT, config_.descriptorPoolSizes);
+
+    // Phase 3: Start async subsystem initialization
+    reportProgress(0.12f, "Starting async subsystem loading");
+    asyncInitComplete_ = false;
+    asyncInitStarted_ = true;
+
+    // Create async loader and set up tasks
+    Loading::AsyncSystemLoader::InitInfo loaderInfo;
+    loaderInfo.vulkanContext = vulkanContext_.get();
+    loaderInfo.loadingRenderer = nullptr;  // We handle rendering separately
+    loaderInfo.workerCount = 0;  // Auto-detect
+
+    asyncLoader_ = Loading::AsyncSystemLoader::create(loaderInfo);
+    if (!asyncLoader_) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create AsyncSystemLoader");
+        // Fall back to synchronous initialization
+        if (!initSubsystems(initCtx)) return false;
+        asyncInitComplete_ = true;
+    } else {
+        // Start async subsystem initialization
+        if (!initSubsystemsAsync(initCtx)) {
+            return false;
+        }
+        asyncLoader_->start();
+    }
+
+    return true;
+}
+
+bool Renderer::pollAsyncInit() {
+    if (asyncInitComplete_) {
+        return true;  // Already complete
+    }
+
+    if (!asyncLoader_) {
+        asyncInitComplete_ = true;
+        return true;
+    }
+
+    // Poll for completed tasks
+    asyncLoader_->pollCompletions();
+
+    // Update progress callback
+    if (progressCallback_) {
+        auto progress = asyncLoader_->getProgress();
+        // Map 0.0-1.0 to 0.12-0.95 (subsystem init range)
+        float mappedProgress = 0.12f + progress.progress * 0.83f;
+        progressCallback_(mappedProgress, progress.currentPhase.c_str());
+    }
+
+    // Check if all tasks are complete
+    if (asyncLoader_->isComplete()) {
+        if (asyncLoader_->hasError()) {
+            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
+                        "Async init failed: %s", asyncLoader_->getErrorMessage().c_str());
+            asyncInitComplete_ = true;
+            return false;  // Indicate failure
+        }
+
+        // Finalize initialization (quick synchronous steps)
+        SDL_Log("Async subsystem loading complete, finalizing...");
+
+        // Phase 4: Control subsystems
+        if (progressCallback_) progressCallback_(0.95f, "Initializing controls");
+        {
+            INIT_PROFILE_PHASE("ControlSubsystems");
+            initControlSubsystems();
+        }
+
+        // Phase 5: Resize coordinator
+        if (progressCallback_) progressCallback_(0.96f, "Configuring resize handler");
+        {
+            INIT_PROFILE_PHASE("ResizeCoordinator");
+            initResizeCoordinator();
+        }
+
+        // Initialize pass recorders
+        if (progressCallback_) progressCallback_(0.97f, "Creating pass recorders");
+        {
+            INIT_PROFILE_PHASE("PassRecorders");
+            shadowPassRecorder_ = std::make_unique<ShadowPassRecorder>(*systems_);
+            ShadowPassRecorder::Config shadowConfig;
+            shadowConfig.terrainEnabled = terrainEnabled;
+            shadowConfig.perfToggles = &perfToggles;
+            shadowPassRecorder_->setConfig(shadowConfig);
+
+            hdrPassRecorder_ = std::make_unique<HDRPassRecorder>(*systems_);
+            HDRPassRecorder::Config hdrConfig;
+            hdrConfig.terrainEnabled = terrainEnabled;
+            hdrConfig.sceneObjectsPipeline = descriptorInfra_.getGraphicsPipelinePtr();
+            hdrConfig.pipelineLayout = descriptorInfra_.getPipelineLayoutPtr();
+            hdrConfig.lastViewProj = &lastViewProj;
+            hdrPassRecorder_->setConfig(hdrConfig);
+        }
+        SDL_Log("Pass recorders initialized");
+
+        // Setup frame graph
+        if (progressCallback_) progressCallback_(0.99f, "Configuring frame graph");
+        {
+            INIT_PROFILE_PHASE("FrameGraph");
+            setupFrameGraph();
+        }
+        SDL_Log("Frame graph configured");
+
+        if (progressCallback_) progressCallback_(1.0f, "Ready");
+
+        // Clean up async loader
+        asyncLoader_->shutdown();
+        asyncLoader_.reset();
+
+        asyncInitComplete_ = true;
+        SDL_Log("Async initialization complete");
+    }
+
+    return asyncInitComplete_;
+}
+
+bool Renderer::initSubsystemsAsync(const InitContext& initCtx) {
+    // This method sets up async tasks for heavy subsystem initialization
+    // Tasks declare dependencies to ensure correct initialization order
+
+    // For now, fall back to synchronous initialization but wrapped in the async framework
+    // This provides the infrastructure for future parallelization
+
+    // Add a single task that does all subsystem init on a background thread
+    // GPU work (descriptor sets, pipelines) must happen on main thread
+    Loading::SystemInitTask subsystemsTask;
+    subsystemsTask.id = "subsystems";
+    subsystemsTask.displayName = "Initializing subsystems";
+    subsystemsTask.weight = 1.0f;
+
+    // Store InitContext for use in the task
+    // Note: InitContext contains pointers that must remain valid
+    const InitContext* ctxPtr = &initCtx;
+
+    // CPU work: Nothing for now - subsystems need GPU access
+    subsystemsTask.cpuWork = nullptr;
+
+    // GPU work: All subsystem initialization (runs on main thread)
+    subsystemsTask.gpuWork = [this, ctxPtr]() -> bool {
+        return initSubsystems(*ctxPtr);
+    };
+
+    asyncLoader_->addTask(std::move(subsystemsTask));
+
+    return true;
+}

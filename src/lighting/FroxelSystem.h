@@ -22,10 +22,6 @@ static constexpr uint32_t FROXEL_NUM_CASCADES = 4;
 
 class FroxelSystem : public IFogControl {
 public:
-    // Passkey for controlled construction via make_unique
-    struct ConstructToken { explicit ConstructToken() = default; };
-    FroxelSystem(ConstructToken, const InitInfo& info);
-
     struct InitInfo {
         VkDevice device;
         VmaAllocator allocator;
@@ -38,6 +34,10 @@ public:
         std::vector<VkBuffer> lightBuffers;  // Per-frame light buffers for local light contribution
         const vk::raii::Device* raiiDevice = nullptr;
     };
+
+    // Passkey for controlled construction via make_unique
+    struct ConstructToken { explicit ConstructToken() = default; };
+    FroxelSystem(ConstructToken, const InitInfo& info);
 
     // Froxel grid dimensions (from Phase 4.3)
     static constexpr uint32_t FROXEL_WIDTH = 128;

@@ -13,6 +13,8 @@
 #include "Light.h"
 #include "UBOs.h"
 
+class VulkanContext;
+
 /**
  * GlobalBufferManager - Manages per-frame shared GPU buffers
  *
@@ -43,6 +45,9 @@ public:
         }
         return manager;
     }
+    static std::unique_ptr<GlobalBufferManager> createWithDependencies(VulkanContext& vulkanContext,
+                                                                        uint32_t frameCount,
+                                                                        uint32_t maxBones = 128);
 
 
     ~GlobalBufferManager() {

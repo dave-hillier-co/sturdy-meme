@@ -49,9 +49,7 @@ std::unique_ptr<SkinnedMeshRenderer> provideSkinnedMeshRenderer(
 std::unique_ptr<GlobalBufferManager> provideGlobalBufferManager(
     VulkanContext& vulkanContext,
     uint32_t framesInFlight) {
-    auto buffers = GlobalBufferManager::create(vulkanContext.getAllocator(),
-                                               vulkanContext.getVkPhysicalDevice(),
-                                               framesInFlight);
+    auto buffers = GlobalBufferManager::createWithDependencies(vulkanContext, framesInFlight);
     if (!buffers) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to initialize GlobalBufferManager");
     }
@@ -66,9 +64,10 @@ std::unique_ptr<ShadowSystem> provideShadowSystem(
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "ShadowSystem requires a valid SkinnedMeshRenderer");
         return nullptr;
     }
-    auto shadowSystem = ShadowSystem::create(initContext,
-                                             mainDescriptorSetLayout,
-                                             skinnedMesh->getDescriptorSetLayout());
+    auto shadowSystem = ShadowSystem::createWithDependencies(
+        initContext,
+        mainDescriptorSetLayout,
+        skinnedMesh.get());
     if (!shadowSystem) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to initialize ShadowSystem");
     }

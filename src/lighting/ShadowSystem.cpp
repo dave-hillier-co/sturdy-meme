@@ -4,6 +4,7 @@
 #include "Mesh.h"
 #include "PipelineBuilder.h"
 #include "GraphicsPipelineFactory.h"
+#include "SkinnedMeshRenderer.h"
 #include "debug/QueueSubmitDiagnostics.h"
 #include "shaders/bindings.h"
 #include <vulkan/vulkan.hpp>
@@ -36,6 +37,17 @@ std::unique_ptr<ShadowSystem> ShadowSystem::create(const InitContext& ctx,
     info.shaderPath = ctx.shaderPath;
     info.framesInFlight = ctx.framesInFlight;
     return create(info);
+}
+
+std::unique_ptr<ShadowSystem> ShadowSystem::createWithDependencies(
+    const InitContext& ctx,
+    VkDescriptorSetLayout mainDescriptorSetLayout,
+    const SkinnedMeshRenderer* skinnedRenderer) {
+    VkDescriptorSetLayout skinnedLayout = VK_NULL_HANDLE;
+    if (skinnedRenderer) {
+        skinnedLayout = skinnedRenderer->getDescriptorSetLayout();
+    }
+    return ShadowSystem::create(ctx, mainDescriptorSetLayout, skinnedLayout);
 }
 
 // Destructor

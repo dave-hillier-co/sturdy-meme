@@ -91,6 +91,7 @@ set(SOURCES
     src/core/DoubleBufferedBuffer.cpp
     src/core/DynamicUniformBuffer.cpp
     src/core/DoubleBufferedImage.cpp
+    src/core/GlobalBufferManager.cpp
     src/core/FrameIndexedBuffers.cpp
     src/core/TripleBuffering.cpp
     src/core/Texture.cpp

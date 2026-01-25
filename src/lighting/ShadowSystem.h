@@ -17,6 +17,8 @@
 #include "SkinnedMesh.h"
 #include "VulkanHelpers.h"
 
+class SkinnedMeshRenderer;
+
 // Number of cascades for CSM
 static constexpr uint32_t NUM_SHADOW_CASCADES = 4;
 
@@ -54,6 +56,10 @@ public:
     static std::unique_ptr<ShadowSystem> create(const InitContext& ctx,
                                                  VkDescriptorSetLayout mainDescriptorSetLayout,
                                                  VkDescriptorSetLayout skinnedDescriptorSetLayout = VK_NULL_HANDLE);
+    static std::unique_ptr<ShadowSystem> createWithDependencies(
+        const InitContext& ctx,
+        VkDescriptorSetLayout mainDescriptorSetLayout,
+        const SkinnedMeshRenderer* skinnedRenderer);
 
     ~ShadowSystem();
 

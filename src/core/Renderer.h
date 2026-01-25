@@ -12,6 +12,7 @@
 #include "Camera.h"
 #include "VulkanContext.h"
 #include "RendererSystems.h"
+#include "InitContext.h"
 #include "PerformanceToggles.h"
 #include "TripleBuffering.h"
 #include "RendererCore.h"
@@ -39,7 +40,7 @@ class Renderer {
 public:
     // Passkey for controlled construction via make_unique
     struct ConstructToken { explicit ConstructToken() = default; };
-    explicit Renderer(ConstructToken) {}
+    explicit Renderer(ConstructToken);
 
     // Configuration for renderer initialization
     struct Config {
@@ -206,7 +207,7 @@ private:
     bool initCoreVulkanResources();       // swapchain resources, command pool, threading
     bool initDescriptorInfrastructure();  // layouts, pools, sets
     bool initSubsystems(const InitContext& initCtx);  // terrain, grass, weather, snow, water, etc.
-    bool initSubsystemsAsync(const InitContext& initCtx);  // Async version using AsyncSystemLoader
+    bool initSubsystemsAsync();  // Async version using AsyncSystemLoader (uses asyncInitContext_)
     void initResizeCoordinator();         // resize registration
 
     bool createSyncObjects();
@@ -282,6 +283,7 @@ private:
 
     // Async initialization state
     std::unique_ptr<Loading::AsyncSystemLoader> asyncLoader_;
+    InitContext asyncInitContext_;  // Stored for async task access
     bool asyncInitComplete_ = true;  // True when not using async, or when async is done
     bool asyncInitStarted_ = false;
 

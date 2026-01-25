@@ -54,6 +54,7 @@
 #include "TreeRenderer.h"
 #include "TreeLODSystem.h"
 #include "ImpostorCullSystem.h"
+#include "DisplacementSystem.h"
 #include "CullCommon.h"  // For extractFrustumPlanes
 // Water
 #include "WaterSystem.h"
@@ -114,6 +115,8 @@ std::unique_ptr<Renderer> Renderer::create(const InitInfo& info) {
     }
     return instance;
 }
+
+Renderer::Renderer(ConstructToken) {}
 
 Renderer::~Renderer() {
     cleanup();
@@ -973,8 +976,8 @@ bool Renderer::initInternalAsync(const InitInfo& info) {
         if (!initDescriptorInfrastructure()) return false;
     }
 
-    // Build InitContext for subsystem initialization
-    InitContext initCtx = InitContext::build(
+    // Build InitContext for subsystem initialization and store for async access
+    asyncInitContext_ = InitContext::build(
         *vulkanContext_, vulkanContext_->getCommandPool(), descriptorInfra_.getDescriptorPool(),
         resourcePath, MAX_FRAMES_IN_FLIGHT, config_.descriptorPoolSizes);
 
@@ -993,11 +996,11 @@ bool Renderer::initInternalAsync(const InitInfo& info) {
     if (!asyncLoader_) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create AsyncSystemLoader");
         // Fall back to synchronous initialization
-        if (!initSubsystems(initCtx)) return false;
+        if (!initSubsystems(asyncInitContext_)) return false;
         asyncInitComplete_ = true;
     } else {
         // Start async subsystem initialization
-        if (!initSubsystemsAsync(initCtx)) {
+        if (!initSubsystemsAsync()) {
             return false;
         }
         asyncLoader_->start();
@@ -1094,7 +1097,7 @@ bool Renderer::pollAsyncInit() {
     return asyncInitComplete_;
 }
 
-bool Renderer::initSubsystemsAsync(const InitContext& initCtx) {
+bool Renderer::initSubsystemsAsync() {
     // This method sets up async tasks for heavy subsystem initialization
     // Tasks declare dependencies to ensure correct initialization order
     //
@@ -1124,9 +1127,8 @@ bool Renderer::initSubsystemsAsync(const InitContext& initCtx) {
     VkQueue graphicsQueue = vulkanContext_->getVkGraphicsQueue();
     VkFormat swapchainImageFormat = static_cast<VkFormat>(vulkanContext_->getVkSwapchainImageFormat());
 
-    // Store context and resources for lambda captures
-    // These are stored as members since InitContext lifetime is limited
-    const InitContext* ctxPtr = &initCtx;
+    // Use member asyncInitContext_ - it persists for the lifetime of async tasks
+    const InitContext* ctxPtr = &asyncInitContext_;
 
     // ========== TASK: Core Systems (Tier 0) ==========
     // Must run first - creates render passes and core GPU resources

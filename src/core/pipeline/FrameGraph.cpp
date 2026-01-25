@@ -328,7 +328,7 @@ void FrameGraph::executeWithSecondaryBuffers(
 
                 // Create context for this secondary buffer
                 FrameContext secondaryCtx = context;
-                secondaryCtx.cmd = static_cast<VkCommandBuffer>(secondary);
+                secondaryCtx.commandBuffer = secondary;
 
                 // Record commands for this slot
                 config.secondaryRecord(secondaryCtx, slot);

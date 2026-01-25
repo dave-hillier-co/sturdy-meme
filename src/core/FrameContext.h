@@ -33,7 +33,8 @@ struct RenderResources;
  *
  * Usage:
  *   void MyPass::record(FrameContext& ctx) {
- *       vkCmdBindPipeline(ctx.cmd, ...);
+ *       vkCmdBindPipeline(ctx.cmd(), ...);  // Raw VkCommandBuffer
+ *       ctx.commandBuffer.bindPipeline(...); // vulkan-hpp style
  *       // Access frame state via ctx.frame()
  *       auto& camera = ctx.frame();
  *       // Use frame index for buffer selection
@@ -46,11 +47,11 @@ struct FrameContext {
     // ========================================================================
 
     /// Command buffer for recording (primary or secondary)
-    /// Use cmd for raw Vulkan calls, commandBuffer for vulkan-hpp calls
-    VkCommandBuffer cmd = VK_NULL_HANDLE;
+    /// vulkan-hpp type for compatibility with existing code
+    vk::CommandBuffer commandBuffer;
 
-    /// vulkan-hpp accessor for command buffer (for compatibility with FrameGraph)
-    vk::CommandBuffer commandBuffer() const { return vk::CommandBuffer(cmd); }
+    /// Raw VkCommandBuffer accessor for C API calls
+    VkCommandBuffer cmd() const { return static_cast<VkCommandBuffer>(commandBuffer); }
 
     /// Frame index for buffer selection (0 to MAX_FRAMES_IN_FLIGHT-1)
     uint32_t frameIndex = 0;
@@ -112,9 +113,15 @@ struct FrameContext {
     /// Default constructor (for delayed initialization)
     FrameContext() : frameData_(&defaultFrameData_) {}
 
-    /// Construct with required fields
+    /// Construct with required fields (VkCommandBuffer)
     FrameContext(VkCommandBuffer cmdBuffer, uint32_t frame, const FrameData& data)
-        : cmd(cmdBuffer)
+        : commandBuffer(cmdBuffer)
+        , frameIndex(frame)
+        , frameData_(&data) {}
+
+    /// Construct with required fields (vk::CommandBuffer)
+    FrameContext(vk::CommandBuffer cmdBuffer, uint32_t frame, const FrameData& data)
+        : commandBuffer(cmdBuffer)
         , frameIndex(frame)
         , frameData_(&data) {}
 
@@ -123,7 +130,7 @@ struct FrameContext {
                  float dt, float t, const FrameData& data,
                  const RenderResources* res = nullptr,
                  QueueSubmitDiagnostics* diag = nullptr)
-        : cmd(cmdBuffer)
+        : commandBuffer(cmdBuffer)
         , frameIndex(frame)
         , imageIndex(image)
         , deltaTime(dt)

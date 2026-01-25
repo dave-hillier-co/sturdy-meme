@@ -153,6 +153,10 @@ bool AnimatedCharacter::loadInternal(const InitInfo& info) {
     }
 
     loaded = true;
+
+    // Build bone LOD masks for skeleton simplification at distance
+    buildBoneLODMasks();
+
     return true;
 }
 
@@ -276,6 +280,21 @@ void AnimatedCharacter::update(float deltaTime, VmaAllocator allocator, VkDevice
                                 const glm::mat4& worldTransform) {
     if (!loaded) return;
 
+    // LOD optimization: skip full animation update if flagged
+    // When skipped, we use cached bone matrices from the last full update
+    if (skipAnimationUpdate_ && !cachedBoneMatrices_.empty()) {
+        // Still need to advance time for state machine continuity, but at reduced rate
+        // This prevents animation from "jumping" when we return to full updates
+        if (useLayerController) {
+            layerController.update(deltaTime * 0.1f);  // Minimal time advance
+        } else if (useStateMachine) {
+            stateMachine.update(deltaTime * 0.1f, movementSpeed, isGrounded, isJumping);
+        } else {
+            animationPlayer.update(deltaTime * 0.1f);
+        }
+        return;
+    }
+
     // Reset skeleton to bind pose before applying animation
     // This ensures joints not affected by the current animation keep their bind pose
     for (size_t i = 0; i < skeleton.joints.size(); ++i) {
@@ -395,15 +414,52 @@ void AnimatedCharacter::update(float deltaTime, VmaAllocator allocator, VkDevice
 }
 
 void AnimatedCharacter::computeBoneMatrices(std::vector<glm::mat4>& outBoneMatrices) const {
+    // If animation update was skipped and we have cached matrices, use those
+    if (skipAnimationUpdate_ && !cachedBoneMatrices_.empty()) {
+        outBoneMatrices = cachedBoneMatrices_;
+        return;
+    }
+
     // First compute global transforms
     std::vector<glm::mat4> globalTransforms;
     skeleton.computeGlobalTransforms(globalTransforms);
 
     // Then multiply by inverse bind matrices to get final bone matrices
     outBoneMatrices.resize(skeleton.joints.size());
+
+    // Apply bone LOD: inactive bones use their parent's final matrix
+    // This makes them rigidly follow the parent instead of animating independently
+    const bool useBoneLOD = boneLODMasksBuilt_ && lodLevel_ > 0;
+    const BoneLODMask* lodMask = useBoneLOD ? &boneLODMasks_[lodLevel_] : nullptr;
+
+    // First pass: compute all active bones (parents should come before children in skeleton)
     for (size_t i = 0; i < skeleton.joints.size(); ++i) {
-        outBoneMatrices[i] = globalTransforms[i] * skeleton.joints[i].inverseBindMatrix;
+        bool isActive = !lodMask || i >= MAX_LOD_BONES || lodMask->isBoneActive(static_cast<uint32_t>(i));
+        if (isActive) {
+            // Active bone: normal computation
+            outBoneMatrices[i] = globalTransforms[i] * skeleton.joints[i].inverseBindMatrix;
+        }
     }
+
+    // Second pass: inactive bones copy their parent's final matrix
+    // This ensures vertices weighted to this bone move with the parent
+    if (lodMask) {
+        for (size_t i = 0; i < skeleton.joints.size(); ++i) {
+            if (i < MAX_LOD_BONES && !lodMask->isBoneActive(static_cast<uint32_t>(i))) {
+                int32_t parentIdx = skeleton.joints[i].parentIndex;
+                if (parentIdx >= 0 && parentIdx < static_cast<int32_t>(outBoneMatrices.size())) {
+                    // Use parent's final bone matrix - this makes vertices follow the parent
+                    outBoneMatrices[i] = outBoneMatrices[parentIdx];
+                } else {
+                    // No parent, use identity transform
+                    outBoneMatrices[i] = glm::mat4(1.0f);
+                }
+            }
+        }
+    }
+
+    // Cache the computed bone matrices for LOD animation skipping
+    cachedBoneMatrices_ = outBoneMatrices;
 }
 
 void AnimatedCharacter::setupDefaultIKChains() {
@@ -608,4 +664,82 @@ void AnimatedCharacter::setUseBlendSpace(bool use) {
     } else {
         SDL_Log("AnimatedCharacter: Blend space mode disabled, using discrete state transitions");
     }
+}
+
+void AnimatedCharacter::setLODLevel(uint32_t level) {
+    if (level >= CHARACTER_LOD_LEVELS) {
+        level = CHARACTER_LOD_LEVELS - 1;
+    }
+    lodLevel_ = level;
+
+    // Build bone LOD masks on first use
+    if (!boneLODMasksBuilt_) {
+        buildBoneLODMasks();
+    }
+}
+
+void AnimatedCharacter::buildBoneLODMasks() {
+    if (!loaded || skeleton.joints.empty()) {
+        return;
+    }
+
+    size_t numBones = skeleton.joints.size();
+
+    // Categorize each bone by name
+    boneCategories_.resize(numBones);
+    for (size_t i = 0; i < numBones; ++i) {
+        boneCategories_[i] = categorizeBone(skeleton.joints[i].name);
+    }
+
+    // Build LOD masks - each LOD includes bones up to its category threshold
+    for (uint32_t lod = 0; lod < CHARACTER_LOD_LEVELS; ++lod) {
+        boneLODMasks_[lod].activeBones.reset();
+        boneLODMasks_[lod].activeBoneCount = 0;
+
+        for (size_t i = 0; i < numBones && i < MAX_LOD_BONES; ++i) {
+            BoneCategory cat = boneCategories_[i];
+            uint32_t minLOD = getMinLODForCategory(cat);
+
+            // Bone is active if current LOD <= minLOD for its category
+            if (lod <= minLOD) {
+                boneLODMasks_[lod].activeBones.set(i);
+                boneLODMasks_[lod].activeBoneCount++;
+            }
+        }
+    }
+
+    // Log bone LOD info with category breakdown
+    SDL_Log("AnimatedCharacter: Built bone LOD masks for %zu bones", numBones);
+
+    const char* categoryNames[] = {"Core", "Limb", "Extremity", "Finger", "Face", "Secondary"};
+    uint32_t categoryCounts[6] = {0};
+    for (size_t i = 0; i < numBones; ++i) {
+        uint32_t cat = static_cast<uint32_t>(boneCategories_[i]);
+        if (cat < 6) categoryCounts[cat]++;
+    }
+
+    SDL_Log("  Bone categories: Core=%u, Limb=%u, Extremity=%u, Finger=%u, Face=%u, Secondary=%u",
+            categoryCounts[0], categoryCounts[1], categoryCounts[2],
+            categoryCounts[3], categoryCounts[4], categoryCounts[5]);
+
+    for (uint32_t lod = 0; lod < CHARACTER_LOD_LEVELS; ++lod) {
+        SDL_Log("  LOD%u: %u active bones", lod, boneLODMasks_[lod].activeBoneCount);
+    }
+
+    boneLODMasksBuilt_ = true;
+}
+
+uint32_t AnimatedCharacter::getActiveBoneCount() const {
+    if (!boneLODMasksBuilt_ || lodLevel_ >= CHARACTER_LOD_LEVELS) {
+        return static_cast<uint32_t>(skeleton.joints.size());
+    }
+    return boneLODMasks_[lodLevel_].activeBoneCount;
+}
+
+const BoneLODMask& AnimatedCharacter::getBoneLODMask(uint32_t lod) const {
+    static BoneLODMask defaultMask;
+    if (lod >= CHARACTER_LOD_LEVELS) {
+        return defaultMask;
+    }
+    return boneLODMasks_[lod];
 }

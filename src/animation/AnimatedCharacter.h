@@ -6,6 +6,7 @@
 #include "AnimationLayerController.h"
 #include "BlendSpace.h"
 #include "FootPhaseTracker.h"
+#include "CharacterLOD.h"
 #include "GLTFLoader.h"
 #include "Mesh.h"
 #include "IKSolver.h"
@@ -13,6 +14,7 @@
 #include <vulkan/vulkan.h>
 #include <string>
 #include <vector>
+#include <array>
 #include <memory>
 
 // Debug data for skeleton visualization
@@ -108,6 +110,26 @@ public:
     // Get bone matrices for GPU skinning
     void computeBoneMatrices(std::vector<glm::mat4>& outBoneMatrices) const;
 
+    // LOD support - animation update control
+    // When skipAnimation is true, reuses cached bone matrices from last frame
+    void setSkipAnimationUpdate(bool skip) { skipAnimationUpdate_ = skip; }
+    bool isAnimationUpdateSkipped() const { return skipAnimationUpdate_; }
+
+    // Get cached bone matrices (used when animation update is skipped)
+    const std::vector<glm::mat4>& getCachedBoneMatrices() const { return cachedBoneMatrices_; }
+    bool hasCachedBoneMatrices() const { return !cachedBoneMatrices_.empty(); }
+
+    // Get current LOD level (for external use)
+    uint32_t getLODLevel() const { return lodLevel_; }
+    void setLODLevel(uint32_t level);
+
+    // Bone LOD - builds masks for which bones are active at each LOD
+    void buildBoneLODMasks();
+    uint32_t getActiveBoneCount() const;  // Returns active bones at current LOD
+    uint32_t getTotalBoneCount() const { return static_cast<uint32_t>(skeleton.joints.size()); }
+    const BoneLODMask& getBoneLODMask(uint32_t lod) const;
+    const std::vector<BoneCategory>& getBoneCategories() const { return boneCategories_; }
+
     // IK System access
     IKSystem& getIKSystem() { return ikSystem; }
     const IKSystem& getIKSystem() const { return ikSystem; }
@@ -197,4 +219,14 @@ private:
 
     bool loaded = false;
     bool needsUpload = false;
+
+    // LOD support
+    bool skipAnimationUpdate_ = false;
+    uint32_t lodLevel_ = 0;
+    mutable std::vector<glm::mat4> cachedBoneMatrices_;
+
+    // Bone LOD support
+    std::vector<BoneCategory> boneCategories_;  // Category for each bone
+    std::array<BoneLODMask, CHARACTER_LOD_LEVELS> boneLODMasks_;  // Which bones active at each LOD
+    bool boneLODMasksBuilt_ = false;
 };

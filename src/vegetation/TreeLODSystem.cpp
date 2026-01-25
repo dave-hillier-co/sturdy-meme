@@ -274,22 +274,12 @@ bool TreeLODSystem::createPipeline() {
             .setPName("main")
     }};
 
-    // Vertex input: billboard vertex (binding 0) + instance data (binding 1)
+    // Vertex input: billboard vertex only (position + texcoord)
+    // Instance data comes from SSBO (InstanceBuffer), not vertex attributes
     auto vertexInput = VertexInputBuilder()
-        // Binding 0: per-vertex (position + texcoord)
         .addBinding(VertexBindingBuilder::vertex(0, sizeof(glm::vec3) + sizeof(glm::vec2)))
-        .addAttribute(AttributeBuilder::vec3(0, 0, 0))                      // position
-        .addAttribute(AttributeBuilder::vec2(1, 0, sizeof(glm::vec3)))      // texcoord
-        // Binding 1: per-instance
-        .addBinding(VertexBindingBuilder::perInstance<ImpostorInstanceGPU>(1))
-        .addAttribute(AttributeBuilder::vec3(2, 1, offsetof(ImpostorInstanceGPU, position)))
-        .addAttribute(AttributeBuilder::float1(3, 1, offsetof(ImpostorInstanceGPU, scale)))
-        .addAttribute(AttributeBuilder::float1(4, 1, offsetof(ImpostorInstanceGPU, rotation)))
-        .addAttribute(AttributeBuilder::uint1(5, 1, offsetof(ImpostorInstanceGPU, archetypeIndex)))
-        .addAttribute(AttributeBuilder::float1(6, 1, offsetof(ImpostorInstanceGPU, blendFactor)))
-        .addAttribute(AttributeBuilder::float1(7, 1, offsetof(ImpostorInstanceGPU, hSize)))
-        .addAttribute(AttributeBuilder::float1(8, 1, offsetof(ImpostorInstanceGPU, vSize)))
-        .addAttribute(AttributeBuilder::float1(9, 1, offsetof(ImpostorInstanceGPU, baseOffset)));
+        .addAttribute(AttributeBuilder::vec3(0, 0, 0))                 // inPosition
+        .addAttribute(AttributeBuilder::vec2(1, 0, sizeof(glm::vec3))); // inTexCoord
     auto vertexInputInfo = vertexInput.build();
 
     auto inputAssembly = vk::PipelineInputAssemblyStateCreateInfo{}

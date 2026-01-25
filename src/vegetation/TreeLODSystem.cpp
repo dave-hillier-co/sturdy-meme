@@ -238,6 +238,7 @@ bool TreeLODSystem::createPipeline() {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "TreeLODSystem: hdrRenderPass_ is null - cannot create pipeline");
         return false;
     }
+    SDL_Log("TreeLODSystem: Creating pipeline with hdrRenderPass=%p", (void*)hdrRenderPass_);
 
     // Pipeline layout with push constants: cameraPos, lodParams, atlasParams
     auto layoutOpt = PipelineLayoutBuilder(*raiiDevice_)

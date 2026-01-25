@@ -12,11 +12,52 @@
 #include "UBOs.h"
 #include "core/vulkan/BarrierHelpers.h"
 #include "core/ImageBuilder.h"
+#include "vulkan/PipelineLayoutBuilder.h"
 #include <vulkan/vulkan.hpp>
 #include <SDL3/SDL.h>
 #include <cstring>
 #include <cmath>
 #include <array>
+
+namespace {
+struct DescriptorBindingInfo {
+    uint32_t binding;
+    VkDescriptorType type;
+    VkShaderStageFlags stageFlags;
+    uint32_t count = 1;
+};
+
+VkDescriptorSetLayout buildDescriptorSetLayout(
+    VkDevice device,
+    const DescriptorBindingInfo* bindings,
+    size_t bindingCount
+) {
+    DescriptorManager::LayoutBuilder builder(device);
+    for (size_t i = 0; i < bindingCount; ++i) {
+        const auto& binding = bindings[i];
+        builder.addBinding(binding.binding, binding.type, binding.stageFlags, binding.count);
+    }
+    return builder.build();
+}
+
+std::optional<VkPipelineLayout> buildPipelineLayoutRaw(
+    const vk::raii::Device& device,
+    vk::DescriptorSetLayout layout,
+    vk::ShaderStageFlags pushStages,
+    uint32_t pushSize
+) {
+    auto layoutOpt = PipelineLayoutBuilder(device)
+        .addDescriptorSetLayout(layout)
+        .addPushConstantRange(pushStages, pushSize)
+        .build();
+
+    if (!layoutOpt) {
+        return std::nullopt;
+    }
+
+    return layoutOpt->release();
+}
+}  // namespace
 
 // Forward declare UniformBufferObject size (needed for descriptor set update)
 struct UniformBufferObject;
@@ -226,34 +267,60 @@ bool GrassSystem::createBuffers() {
 }
 
 bool GrassSystem::createComputeDescriptorSetLayout(SystemLifecycleHelper::PipelineHandles& handles) {
-    PipelineBuilder builder(getDevice());
-    builder.addDescriptorBinding(0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT)    // instance buffer
-        .addDescriptorBinding(1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT)       // indirect buffer
-        .addDescriptorBinding(2, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT)       // CullingUniforms
-        .addDescriptorBinding(3, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_COMPUTE_BIT)  // terrain heightmap
-        .addDescriptorBinding(4, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_COMPUTE_BIT)  // displacement map
-        .addDescriptorBinding(5, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_COMPUTE_BIT)  // tile array
-        .addDescriptorBinding(6, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT)          // tile info
-        .addDescriptorBinding(7, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT)          // GrassParams
-        .addDescriptorBinding(8, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_COMPUTE_BIT); // hole mask
+    const std::array<DescriptorBindingInfo, 9> bindings = {{
+        {0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_COMPUTE_BIT},          // instance buffer
+        {1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_COMPUTE_BIT},          // indirect buffer
+        {2, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_COMPUTE_BIT},          // CullingUniforms
+        {3, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_COMPUTE_BIT},  // terrain heightmap
+        {4, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_COMPUTE_BIT},  // displacement map
+        {5, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_COMPUTE_BIT},  // tile array
+        {6, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_COMPUTE_BIT},          // tile info
+        {7, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_COMPUTE_BIT},          // GrassParams
+        {8, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_COMPUTE_BIT}   // hole mask
+    }};
 
-    return builder.buildDescriptorSetLayout(handles.descriptorSetLayout);
-}
+    handles.descriptorSetLayout =
+        buildDescriptorSetLayout(getDevice(), bindings.data(), bindings.size());
 
-bool GrassSystem::createComputePipeline(SystemLifecycleHelper::PipelineHandles& handles) {
-    PipelineBuilder builder(getDevice());
-    builder.addShaderStage(getShaderPath() + "/grass.comp.spv", VK_SHADER_STAGE_COMPUTE_BIT)
-        .addPushConstantRange(VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(TiledGrassPushConstants));
-
-    if (!builder.buildPipelineLayout({handles.descriptorSetLayout}, handles.pipelineLayout)) {
+    if (handles.descriptorSetLayout == VK_NULL_HANDLE) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create grass compute descriptor set layout");
         return false;
     }
 
-    return builder.buildComputePipeline(handles.pipelineLayout, handles.pipeline);
+    return true;
+}
+
+bool GrassSystem::createComputePipeline(SystemLifecycleHelper::PipelineHandles& handles) {
+    if (!raiiDevice_) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "GrassSystem requires raiiDevice for compute pipeline");
+        return false;
+    }
+
+    auto layoutOpt = buildPipelineLayoutRaw(
+        *raiiDevice_,
+        vk::DescriptorSetLayout(handles.descriptorSetLayout),
+        vk::ShaderStageFlagBits::eCompute,
+        sizeof(TiledGrassPushConstants));
+
+    if (!layoutOpt) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create grass compute pipeline layout");
+        return false;
+    }
+
+    handles.pipelineLayout = *layoutOpt;
+
+    ComputePipelineBuilder builder(*raiiDevice_);
+    if (!builder.setShader(getShaderPath() + "/grass.comp.spv")
+             .setPipelineLayout(handles.pipelineLayout)
+             .buildRaw(handles.pipeline)) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create grass compute pipeline");
+        return false;
+    }
+
+    return true;
 }
 
 bool GrassSystem::createGraphicsDescriptorSetLayout(SystemLifecycleHelper::PipelineHandles& handles) {
-    PipelineBuilder builder(getDevice());
     // Grass system descriptor set layout:
     // binding 0: UBO (main rendering uniforms) - DYNAMIC to avoid per-frame descriptor updates
     // binding 1: instance buffer (SSBO) - vertex shader only
@@ -264,25 +331,34 @@ bool GrassSystem::createGraphicsDescriptorSetLayout(SystemLifecycleHelper::Pipel
     // binding 6: cloud shadow map (sampler)
     // binding 10: snow UBO
     // binding 11: cloud shadow UBO
-    builder.addDescriptorBinding(0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, 1,
-                                 VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT)
-        .addDescriptorBinding(1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT)
-        .addDescriptorBinding(2, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT)
-        .addDescriptorBinding(3, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT)
-        .addDescriptorBinding(4, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_FRAGMENT_BIT)
-        .addDescriptorBinding(5, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT)
-        .addDescriptorBinding(6, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT)
-        .addDescriptorBinding(10, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_FRAGMENT_BIT)
-        .addDescriptorBinding(11, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_FRAGMENT_BIT);
+    const std::array<DescriptorBindingInfo, 9> bindings = {{
+        {0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC,
+         VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT},
+        {1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_VERTEX_BIT},
+        {2, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT},
+        {3, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_VERTEX_BIT},
+        {4, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_FRAGMENT_BIT},
+        {5, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT},
+        {6, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT},
+        {10, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_FRAGMENT_BIT},
+        {11, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_FRAGMENT_BIT}
+    }};
 
-    return builder.buildDescriptorSetLayout(handles.descriptorSetLayout);
+    handles.descriptorSetLayout =
+        buildDescriptorSetLayout(getDevice(), bindings.data(), bindings.size());
+
+    if (handles.descriptorSetLayout == VK_NULL_HANDLE) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create grass graphics descriptor set layout");
+        return false;
+    }
+
+    return true;
 }
 
 bool GrassSystem::createGraphicsPipeline(SystemLifecycleHelper::PipelineHandles& handles) {
     PipelineBuilder builder(getDevice());
     builder.addShaderStage(getShaderPath() + "/grass.vert.spv", VK_SHADER_STAGE_VERTEX_BIT)
-        .addShaderStage(getShaderPath() + "/grass.frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT)
-        .addPushConstantRange(VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(TiledGrassPushConstants));
+        .addShaderStage(getShaderPath() + "/grass.frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT);
 
     // No vertex input - procedural geometry from instance buffer
     auto vertexInputInfo = vk::PipelineVertexInputStateCreateInfo{};
@@ -320,9 +396,23 @@ bool GrassSystem::createGraphicsPipeline(SystemLifecycleHelper::PipelineHandles&
     auto dynamicState = vk::PipelineDynamicStateCreateInfo{}
         .setDynamicStates(dynamicStates);
 
-    if (!builder.buildPipelineLayout({handles.descriptorSetLayout}, handles.pipelineLayout)) {
+    if (!raiiDevice_) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "GrassSystem requires raiiDevice for graphics pipeline");
         return false;
     }
+
+    auto layoutOpt = buildPipelineLayoutRaw(
+        *raiiDevice_,
+        vk::DescriptorSetLayout(handles.descriptorSetLayout),
+        vk::ShaderStageFlagBits::eVertex,
+        sizeof(TiledGrassPushConstants));
+
+    if (!layoutOpt) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create grass graphics pipeline layout");
+        return false;
+    }
+
+    handles.pipelineLayout = *layoutOpt;
 
     auto pipelineInfo = vk::GraphicsPipelineCreateInfo{}
         .setPVertexInputState(&vertexInputInfo)
@@ -340,22 +430,24 @@ bool GrassSystem::createGraphicsPipeline(SystemLifecycleHelper::PipelineHandles&
 }
 
 bool GrassSystem::createShadowPipeline() {
-    PipelineBuilder layoutBuilder(getDevice());
-    layoutBuilder.addDescriptorBinding(0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT)
-        .addDescriptorBinding(1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT)
-        .addDescriptorBinding(2, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT);
+    const std::array<DescriptorBindingInfo, 3> bindings = {{
+        {0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_VERTEX_BIT},
+        {1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_VERTEX_BIT},
+        {2, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_VERTEX_BIT}
+    }};
 
-    VkDescriptorSetLayout rawDescSetLayout = VK_NULL_HANDLE;
-    if (!layoutBuilder.buildDescriptorSetLayout(rawDescSetLayout)) {
+    VkDescriptorSetLayout rawDescSetLayout =
+        buildDescriptorSetLayout(getDevice(), bindings.data(), bindings.size());
+    if (rawDescSetLayout == VK_NULL_HANDLE) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create grass shadow descriptor set layout");
         return false;
     }
-    // Adopt raw handle into RAII wrapper
+
     shadowDescriptorSetLayout_.emplace(*raiiDevice_, rawDescSetLayout);
 
     PipelineBuilder builder(getDevice());
     builder.addShaderStage(getShaderPath() + "/grass_shadow.vert.spv", VK_SHADER_STAGE_VERTEX_BIT)
-        .addShaderStage(getShaderPath() + "/grass_shadow.frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT)
-        .addPushConstantRange(VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(GrassPushConstants));
+        .addShaderStage(getShaderPath() + "/grass_shadow.frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT);
 
     // No vertex input - procedural geometry from instance buffer
     auto vertexInputInfo = vk::PipelineVertexInputStateCreateInfo{};
@@ -399,11 +491,17 @@ bool GrassSystem::createShadowPipeline() {
     // No color attachment for shadow pass
     auto colorBlending = vk::PipelineColorBlendStateCreateInfo{};
 
-    VkPipelineLayout rawPipelineLayout = VK_NULL_HANDLE;
-    if (!builder.buildPipelineLayout({**shadowDescriptorSetLayout_}, rawPipelineLayout)) {
+    auto layoutOpt = PipelineLayoutBuilder(*raiiDevice_)
+        .addDescriptorSetLayout(**shadowDescriptorSetLayout_)
+        .addPushConstantRange<GrassPushConstants>(vk::ShaderStageFlagBits::eVertex)
+        .build();
+
+    if (!layoutOpt) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create grass shadow pipeline layout");
         return false;
     }
-    shadowPipelineLayout_.emplace(*raiiDevice_, rawPipelineLayout);
+
+    shadowPipelineLayout_ = std::move(layoutOpt);
 
     auto pipelineInfo = vk::GraphicsPipelineCreateInfo{}
         .setPVertexInputState(&vertexInputInfo)
@@ -491,13 +589,11 @@ bool GrassSystem::createExtraPipelines(SystemLifecycleHelper::PipelineHandles& c
 
     // Create tiled grass compute pipeline
     if (tiledModeEnabled_) {
-        PipelineBuilder builder(getDevice());
-        builder.addShaderStage(getShaderPath() + "/grass_tiled.comp.spv", VK_SHADER_STAGE_COMPUTE_BIT)
-            .addPushConstantRange(VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(TiledGrassPushConstants));
-
-        // Use existing compute descriptor set layout and pipeline layout
+        ComputePipelineBuilder builder(*raiiDevice_);
         VkPipeline rawTiledPipeline = VK_NULL_HANDLE;
-        if (!builder.buildComputePipeline(computeHandles.pipelineLayout, rawTiledPipeline)) {
+        if (!builder.setShader(getShaderPath() + "/grass_tiled.comp.spv")
+                 .setPipelineLayout(computeHandles.pipelineLayout)
+                 .buildRaw(rawTiledPipeline)) {
             SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create tiled grass compute pipeline");
             return false;
         }

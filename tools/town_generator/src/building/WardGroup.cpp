@@ -240,6 +240,12 @@ void WardGroup::createGeometry() {
             blocks.push_back(std::move(block));
         }
     }
+
+    // Filter buildings at city fringe for non-urban (slum) wards
+    // Faithful to mfcg.js: this.urban || this.filter()
+    if (!urban) {
+        filter();
+    }
 }
 
 std::vector<geom::Point> WardGroup::spawnTrees() {
@@ -477,6 +483,26 @@ double WardGroup::getEdgeDensity(size_t edgeIdx) const {
         isEdgeOnRoad(v0, v1, model->streets) ||
         isEdgeOnRoad(v0, v1, model->roads)) {
         return 0.3;
+    }
+
+    // Also check if edge is NEAR a road (roads don't always align with cell edges)
+    // This ensures slums along roads have buildings facing the road
+    geom::Point midpoint((v0.x + v1.x) / 2.0, (v0.y + v1.y) / 2.0);
+    constexpr double ROAD_THRESHOLD = 5.0;
+
+    auto isNearRoad = [&](const std::vector<City::Street>& roads) -> bool {
+        for (const auto& road : roads) {
+            for (const auto& pointPtr : road) {
+                if (geom::Point::distance(*pointPtr, midpoint) < ROAD_THRESHOLD) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    };
+
+    if (isNearRoad(model->arteries) || isNearRoad(model->streets) || isNearRoad(model->roads)) {
+        return 0.3;  // Treat as road edge
     }
 
     return 0.0;

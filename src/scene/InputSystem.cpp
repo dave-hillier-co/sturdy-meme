@@ -190,24 +190,26 @@ void InputSystem::processFreeCameraKeyboard(float deltaTime, const bool* keyStat
 
 void InputSystem::processThirdPersonKeyboard(float deltaTime, float cameraYaw, const bool* keyState) {
     // Calculate movement direction based on camera facing
+    // Forward direction = (sin(yaw), 0, cos(yaw)) so yaw=0 means facing +Z
+    // Right direction = (cos(yaw), 0, -sin(yaw))
     float moveX = 0.0f;
     float moveZ = 0.0f;
 
     if (keyState[SDL_SCANCODE_W]) {
-        moveX += cos(glm::radians(cameraYaw));
-        moveZ += sin(glm::radians(cameraYaw));
+        moveX += sin(glm::radians(cameraYaw));
+        moveZ += cos(glm::radians(cameraYaw));
     }
     if (keyState[SDL_SCANCODE_S]) {
-        moveX -= cos(glm::radians(cameraYaw));
-        moveZ -= sin(glm::radians(cameraYaw));
+        moveX -= sin(glm::radians(cameraYaw));
+        moveZ -= cos(glm::radians(cameraYaw));
     }
     if (keyState[SDL_SCANCODE_A]) {
-        moveX += cos(glm::radians(cameraYaw - 90.0f));
-        moveZ += sin(glm::radians(cameraYaw - 90.0f));
+        moveX -= cos(glm::radians(cameraYaw));
+        moveZ += sin(glm::radians(cameraYaw));
     }
     if (keyState[SDL_SCANCODE_D]) {
-        moveX += cos(glm::radians(cameraYaw + 90.0f));
-        moveZ += sin(glm::radians(cameraYaw + 90.0f));
+        moveX += cos(glm::radians(cameraYaw));
+        moveZ -= sin(glm::radians(cameraYaw));
     }
 
     // Accumulate movement direction
@@ -328,10 +330,13 @@ void InputSystem::processThirdPersonGamepad(float deltaTime, float cameraYaw) {
     if (std::abs(leftY) < stickDeadzone) leftY = 0.0f;
 
     // Accumulate movement direction from gamepad
+    // Forward direction = (sin(yaw), 0, cos(yaw)) so yaw=0 means facing +Z
+    // Right direction = (cos(yaw), 0, -sin(yaw))
+    // leftY: negative = forward (up on stick), positive = backward
+    // leftX: negative = left, positive = right
     if (leftX != 0.0f || leftY != 0.0f) {
-        // Calculate movement direction based on camera facing
-        float moveX = -leftY * cos(glm::radians(cameraYaw)) + leftX * cos(glm::radians(cameraYaw + 90.0f));
-        float moveZ = -leftY * sin(glm::radians(cameraYaw)) + leftX * sin(glm::radians(cameraYaw + 90.0f));
+        float moveX = -leftY * sin(glm::radians(cameraYaw)) + leftX * cos(glm::radians(cameraYaw));
+        float moveZ = -leftY * cos(glm::radians(cameraYaw)) - leftX * sin(glm::radians(cameraYaw));
 
         movementDirection += glm::vec3(moveX, 0.0f, moveZ);
     }

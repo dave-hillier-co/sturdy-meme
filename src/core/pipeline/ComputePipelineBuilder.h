@@ -244,22 +244,21 @@ public:
             .setLayout(pipelineLayout_);
 
         vk::Device vkDevice(rawDevice_);
-        try {
-            outPipeline = vkDevice.createComputePipeline(pipelineCache_, pipelineInfo);
-        } catch (const vk::SystemError& e) {
-            // Cleanup loaded shader module
-            if (loadedModule) {
-                vkDevice.destroyShaderModule(*loadedModule);
-            }
-            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
-                "ComputePipelineBuilder: Failed to create pipeline: %s", e.what());
-            return false;
-        }
+        auto pipelineResult = vkDevice.createComputePipeline(pipelineCache_, pipelineInfo);
 
         // Cleanup loaded shader module
         if (loadedModule) {
             vkDevice.destroyShaderModule(*loadedModule);
         }
+
+        if (pipelineResult.result != vk::Result::eSuccess &&
+            pipelineResult.result != vk::Result::ePipelineCompileRequired) {
+            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
+                "ComputePipelineBuilder: Failed to create pipeline (VkResult: %d)",
+                static_cast<int>(pipelineResult.result));
+            return false;
+        }
+        outPipeline = pipelineResult.value;
 
         return true;
     }

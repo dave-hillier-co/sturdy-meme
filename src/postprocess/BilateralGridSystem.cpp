@@ -297,7 +297,7 @@ bool BilateralGridSystem::createDescriptorSets() {
         // X blur: grid[0] -> grid[1]
         // Y blur: grid[1] -> grid[0]
         // Z blur: grid[0] -> grid[1] (final output in grid[1], but we'll copy back)
-        auto bufferInfo = makeBufferInfo(blurUniformBuffers.buffers[i], sizeof(BilateralBlurUniforms));
+        auto bufferInfo = makeBufferInfo(blurUniformBuffers.buffers[i], 0, sizeof(BilateralBlurUniforms));
 
         // X: 0 -> 1
         DescriptorWriter()
@@ -422,7 +422,7 @@ void BilateralGridSystem::recordBilateralGrid(VkCommandBuffer cmd, uint32_t fram
         .setSampler(**gridSampler_);
 
     auto gridInfo = makeStorageImageInfo(gridViews[0]);
-    auto bufferInfo = makeBufferInfo(buildUniformBuffers.buffers[frameIndex], sizeof(BilateralBuildUniforms));
+    auto bufferInfo = makeBufferInfo(buildUniformBuffers.buffers[frameIndex], 0, sizeof(BilateralBuildUniforms));
 
     DescriptorWriter()
         .add(WriteBuilder::combinedImageSampler(0, hdrInfo))

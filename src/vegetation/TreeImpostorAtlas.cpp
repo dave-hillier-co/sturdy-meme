@@ -377,7 +377,7 @@ int32_t TreeImpostorAtlas::generateArchetype(
                 .setImageView(barkNormal)
                 .setImageLayout(vk::ImageLayout::eShaderReadOnlyOptimal);
 
-            auto ssboInfo = makeBufferInfo(leafCaptureBuffer_, VK_WHOLE_SIZE);
+            auto ssboInfo = makeBufferInfo(leafCaptureBuffer_);
 
             DescriptorWriter()
                 .add(WriteBuilder::combinedImageSampler(0, leafImageInfo))

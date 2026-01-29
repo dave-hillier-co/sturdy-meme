@@ -359,7 +359,7 @@ bool ShadowSystem::createInstancedShadowResources() {
     for (uint32_t i = 0; i < initInfo_.framesInFlight; i++) {
         DescriptorWriter()
             .add(WriteBuilder::storageBuffer(Bindings::SHADOW_INSTANCES,
-                makeBufferInfo(instanceBuffers[i], VK_WHOLE_SIZE)))
+                makeBufferInfo(instanceBuffers[i])))
             .update(initInfo_.device, instancedShadowDescriptorSets[i]);
     }
 

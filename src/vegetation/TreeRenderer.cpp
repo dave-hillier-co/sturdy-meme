@@ -608,7 +608,7 @@ void TreeRenderer::updateBranchCullingData(const TreeSystem& treeSystem, const T
 
         DescriptorWriter()
             .add(WriteBuilder::storageBuffer(Bindings::TREE_GFX_BRANCH_SHADOW_INSTANCES,
-                makeBufferInfo(instanceBuffer, VK_WHOLE_SIZE)))
+                makeBufferInfo(instanceBuffer)))
             .update(device_, branchShadowInstancedDescriptorSets_[i]);
     }
 }
@@ -621,7 +621,7 @@ void TreeRenderer::updateInstancedShadowDescriptorSets(uint32_t frameIndex, vk::
 
     DescriptorWriter()
         .add(WriteBuilder::uniformBuffer(Bindings::TREE_GFX_UBO,
-            makeBufferInfo(uniformBuffer, VK_WHOLE_SIZE)))
+            makeBufferInfo(uniformBuffer)))
         .update(device_, branchShadowInstancedDescriptorSets_[frameIndex]);
 }
 

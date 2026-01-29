@@ -777,7 +777,7 @@ void TreeLODSystem::initializeDescriptorSets(const std::vector<VkBuffer>& unifor
 }
 
 void TreeLODSystem::initializeGPUCulledDescriptors(VkBuffer gpuInstanceBuffer) {
-    auto instanceInfo = makeBufferInfo(gpuInstanceBuffer, VK_WHOLE_SIZE);
+    auto instanceInfo = makeBufferInfo(gpuInstanceBuffer);
 
     // Update the instance buffer binding to use GPU-culled buffer instead of CPU buffer
     for (uint32_t frameIndex = 0; frameIndex < maxFramesInFlight_; ++frameIndex) {

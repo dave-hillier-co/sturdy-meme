@@ -310,6 +310,10 @@ void FroxelSystem::recordFroxelUpdate(VkCommandBuffer cmd, uint32_t frameIndex,
         underwaterEnabled ? 1.0f : 0.0f
     );
 
+    // Water optical properties (RGB absorption/scattering from WaterSystem)
+    ubo->waterAbsorption = glm::vec4(waterAbsorption, maxWaveAmplitude);
+    ubo->waterScattering = glm::vec4(waterScattering, waterPhaseG);
+
     // Store for next frame's temporal reprojection
     prevViewProj = viewProj;
 

@@ -27,6 +27,8 @@ layout(binding = BINDING_FROXEL_UNIFORMS) uniform FroxelUniforms {
     vec4 gridParams;        // x = volumetric far, y = depth distribution
     vec4 shadowParams;
     vec4 underwaterParams;  // x = underwater density, y = absorption scale, z = water color multiplier, w = enabled
+    vec4 waterAbsorption;   // xyz = RGB absorption coefficients, w = max wave amplitude
+    vec4 waterScattering;   // xyz = RGB scattering coefficients, w = phase function g
 } ubo;
 
 // Froxel grid constants

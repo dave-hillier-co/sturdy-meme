@@ -58,5 +58,16 @@ void EnvironmentUpdater::updateWater(RendererSystems& systems, const FrameData& 
     systems.froxel().setWaterLevel(underwaterParams.waterLevel);
     systems.froxel().setUnderwaterEnabled(underwaterParams.isUnderwater);
 
+    // Pass water optical properties (RGB absorption from WaterSystem)
+    systems.froxel().setWaterAbsorption(underwaterParams.absorptionCoeffs);
+
+    // Derive scattering from turbidity (higher turbidity = more scattering)
+    glm::vec3 scattering = glm::vec3(underwaterParams.turbidity * 0.5f);
+    systems.froxel().setWaterScattering(scattering);
+
+    // Get max wave amplitude for surface transition zone
+    float waveAmp = systems.water().getWaveAmplitude();
+    systems.froxel().setMaxWaveAmplitude(waveAmp);
+
     systems.profiler().endCpuZone("Update:Water");
 }

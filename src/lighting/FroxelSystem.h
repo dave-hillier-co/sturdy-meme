@@ -116,6 +116,16 @@ public:
     void setUnderwaterColorMult(float m) { underwaterColorMult = m; resetTemporalHistory(); }
     float getUnderwaterColorMult() const { return underwaterColorMult; }
 
+    // Water optical properties (RGB absorption from WaterSystem)
+    void setWaterAbsorption(const glm::vec3& absorption) { waterAbsorption = absorption; resetTemporalHistory(); }
+    glm::vec3 getWaterAbsorption() const { return waterAbsorption; }
+    void setWaterScattering(const glm::vec3& scattering) { waterScattering = scattering; resetTemporalHistory(); }
+    glm::vec3 getWaterScattering() const { return waterScattering; }
+    void setMaxWaveAmplitude(float amp) { maxWaveAmplitude = amp; }
+    float getMaxWaveAmplitude() const { return maxWaveAmplitude; }
+    void setWaterPhaseG(float g) { waterPhaseG = g; resetTemporalHistory(); }
+    float getWaterPhaseG() const { return waterPhaseG; }
+
     // Reset temporal history (call when fog parameters change significantly)
     void resetTemporalHistory() { frameCounter = 0; }
 
@@ -199,6 +209,12 @@ private:
     float underwaterDensity = 0.02f;      // Base underwater fog density
     float underwaterAbsorptionScale = 0.5f;  // How quickly fog thickens with depth
     float underwaterColorMult = 1.5f;     // Color intensity multiplier
+
+    // Water optical properties (from WaterSystem, based on Monzon et al. paper)
+    glm::vec3 waterAbsorption = glm::vec3(0.45f, 0.09f, 0.02f);  // RGB absorption coefficients (ocean default)
+    glm::vec3 waterScattering = glm::vec3(0.02f, 0.02f, 0.02f);  // RGB scattering coefficients
+    float maxWaveAmplitude = 1.0f;        // Max wave height for surface transition zone
+    float waterPhaseG = 0.8f;             // Henyey-Greenstein phase function g for water (forward scattering)
 
     bool enabled = true;
     bool initialized_ = false;

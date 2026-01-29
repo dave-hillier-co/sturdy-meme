@@ -35,6 +35,8 @@ layout(binding = BINDING_FROXEL_UNIFORMS) uniform FroxelUniforms {
     vec4 gridParams;        // x = volumetric far, y = depth distribution, z = frame index, w = temporal blend
     vec4 shadowParams;      // x = shadow map size, y = shadow bias, z = pcf radius
     vec4 underwaterParams;  // x = underwater density, y = absorption scale, z = water color multiplier, w = enabled
+    vec4 waterAbsorption;   // xyz = RGB absorption coefficients, w = max wave amplitude
+    vec4 waterScattering;   // xyz = RGB scattering coefficients, w = phase function g (0.8 for water)
 } ubo;
 
 // Temporal reprojection blend factor
@@ -77,45 +79,71 @@ float sigmoidalLayerDensity(float height) {
     return layerDensity / (1.0 + exp(t * 2.0));
 }
 
-// Underwater fog density (when below water surface)
-float underwaterDensity(vec3 worldPos) {
+// Compute surface blend factor for wave-aware water surface transition
+// Returns: 0 = fully underwater, 1 = fully above water
+float getSurfaceBlend(vec3 worldPos) {
     float waterLevel = ubo.layerParams.w;
+    float maxWaveAmp = ubo.waterAbsorption.w;  // Max wave amplitude for transition zone
 
-    // Only apply underwater fog if enabled and below water level
-    if (ubo.underwaterParams.w < 0.5 || worldPos.y >= waterLevel) {
+    // Wave-aware transition zone centered on water level
+    float transitionLow = waterLevel - maxWaveAmp;
+    float transitionHigh = waterLevel + maxWaveAmp;
+
+    return smoothstep(transitionLow, transitionHigh, worldPos.y);
+}
+
+// Underwater fog density (when below water surface)
+// Uses wave-aware surface detection for smooth air/water transition
+float underwaterDensity(vec3 worldPos) {
+    // Only apply underwater fog if enabled
+    if (ubo.underwaterParams.w < 0.5) {
         return 0.0;
     }
 
-    // Depth below water surface
-    float depth = waterLevel - worldPos.y;
+    // Get wave-aware surface blend (0 = underwater, 1 = above water)
+    float surfaceBlend = getSurfaceBlend(worldPos);
+
+    // Fully above water
+    if (surfaceBlend >= 1.0) {
+        return 0.0;
+    }
+
+    // Depth below mean water level
+    float waterLevel = ubo.layerParams.w;
+    float depth = max(waterLevel - worldPos.y, 0.0);
 
     // Underwater fog density increases with depth (exponential falloff)
-    // Uses underwaterParams.x as base density, .y as absorption scale
     float baseDensity = ubo.underwaterParams.x;
     float absorptionScale = ubo.underwaterParams.y;
 
-    // Exponential density increase with depth (denser fog deeper underwater)
-    return baseDensity * (1.0 + depth * absorptionScale * 0.1);
+    // Exponential density increase with depth
+    float waterDensity = baseDensity * (1.0 + depth * absorptionScale * 0.1);
+
+    // Blend at surface transition zone
+    return waterDensity * (1.0 - surfaceBlend);
 }
 
 // Combined fog density at height
+// Uses wave-aware blending for smooth air/water transition
 float getHazeDensity(vec3 worldPos) {
     float height = worldPos.y;
 
     // Atmospheric fog (above water)
     float atmoDensity = exponentialHeightDensity(height) + sigmoidalLayerDensity(height);
 
+    // Check if underwater effects are enabled
+    if (ubo.underwaterParams.w < 0.5) {
+        return atmoDensity;
+    }
+
+    // Get wave-aware surface blend (0 = underwater, 1 = above water)
+    float surfaceBlend = getSurfaceBlend(worldPos);
+
     // Underwater fog (below water surface)
     float waterDensity = underwaterDensity(worldPos);
 
-    // Combine: if underwater, use water fog; otherwise use atmospheric fog
-    // Water fog dominates when below water level
-    float waterLevel = ubo.layerParams.w;
-    if (ubo.underwaterParams.w > 0.5 && worldPos.y < waterLevel) {
-        return waterDensity;
-    }
-
-    return atmoDensity;
+    // Blend atmospheric and underwater fog at surface transition
+    return mix(waterDensity, atmoDensity, surfaceBlend);
 }
 
 // henyeyGreensteinPhase is defined in dynamic_lights_common.glsl
@@ -363,12 +391,19 @@ void main() {
     // Combine sun visibility with shadow
     float totalShadow = sunVisibility * shadow;
 
-    // Check if this froxel is underwater
+    // Wave-aware underwater detection
     float waterLevel = ubo.layerParams.w;
-    bool isUnderwater = (ubo.underwaterParams.w > 0.5) && (worldPos.y < waterLevel);
+    float surfaceBlend = (ubo.underwaterParams.w > 0.5) ? getSurfaceBlend(worldPos) : 1.0;
+    bool isUnderwater = surfaceBlend < 1.0;
+
+    // Select phase function based on medium
+    // Atmospheric: g=0.7 (slight forward scattering for haze)
+    // Underwater: g from waterScattering.w (typically 0.8 for forward scattering in water)
+    float phaseG = isUnderwater ? ubo.waterScattering.w : 0.7;
+    float effectivePhase = henyeyGreenstein(cosTheta, phaseG);
 
     // In-scattering from sun (attenuated by shadow)
-    vec3 sunInScatter = sunLight * phase * totalShadow * density;
+    vec3 sunInScatter = sunLight * effectivePhase * totalShadow * density;
 
     // Ambient sky contribution (isotropic)
     float night = 1.0 - smoothstep(-0.05, 0.08, sunDir.y);
@@ -381,23 +416,33 @@ void main() {
     // Total in-scattering
     vec3 totalInScatter = sunInScatter + skyInScatter + localLightScatter;
 
-    // Apply underwater tinting if below water level
+    // Apply underwater effects using RGB absorption coefficients
     if (isUnderwater) {
-        // Water absorbs red/green light, leaving blue-green
-        // Use underwaterParams.z as the color multiplier
+        // RGB absorption coefficients from WaterSystem (based on Monzon et al. paper)
+        vec3 absorption = ubo.waterAbsorption.xyz;
         float colorMult = ubo.underwaterParams.z;
-        vec3 waterTint = vec3(0.1, 0.4, 0.5);  // Blue-green underwater tint
 
-        // Depth below water surface affects color absorption
-        float depth = waterLevel - worldPos.y;
-        float depthFactor = 1.0 - exp(-depth * 0.05);  // Exponential absorption
+        // Depth below water surface
+        float depth = max(waterLevel - worldPos.y, 0.0);
 
-        // Tint the scattered light toward water color
-        totalInScatter = mix(totalInScatter, totalInScatter * waterTint * colorMult, depthFactor);
+        // Beer-Lambert absorption: transmittance = exp(-absorption * distance)
+        // Red absorbs fastest, then green, then blue (typical for water)
+        vec3 transmittance = exp(-absorption * depth);
 
-        // Add ambient water glow (scattered light from above)
-        vec3 ambientWater = waterTint * 0.02 * (1.0 - depthFactor * 0.5);
+        // Apply wavelength-dependent absorption to scattered light
+        totalInScatter *= transmittance * colorMult;
+
+        // Multiple scattering approximation: ambient water glow from scattered light above
+        // Uses scattering coefficients for the diffuse underwater illumination
+        vec3 scattering = ubo.waterScattering.xyz;
+        vec3 ambientWater = scattering * transmittance * 0.1 * (1.0 - surfaceBlend);
         totalInScatter += ambientWater * density;
+
+        // Blend with atmospheric scattering at surface transition
+        if (surfaceBlend > 0.0) {
+            vec3 atmoScatter = sunLight * phase * totalShadow * density + skyInScatter;
+            totalInScatter = mix(totalInScatter, atmoScatter, surfaceBlend);
+        }
     }
 
     // =========================================================================

@@ -605,19 +605,14 @@ bool Renderer::render(const Camera& camera) {
     RenderContext ctx(cmd, frame.frameIndex, frame, resources, &cmdDiag);
 
     // Execute frame graph - dependency-driven scheduling with parallel execution
-    FrameGraph::RenderContext fgCtx{
-        .commandBuffer = vkCmd,
-        .frameIndex = frame.frameIndex,
-        .imageIndex = imageIndex,
-        .deltaTime = frame.deltaTime,
-        .userData = &ctx,  // Pass full RenderContext to passes
-        // Secondary command buffer support
-        .threadedCommandPool = &renderingInfra_.threadedCommandPool(),
-        .renderPass = vk::RenderPass(systems_->postProcess().getHDRRenderPass()),
-        .framebuffer = vk::Framebuffer(systems_->postProcess().getHDRFramebuffer()),
-        // Command diagnostics - passes increment these counters
-        .diagnostics = &cmdDiag
-    };
+    FrameGraph::RenderContext fgCtx(vkCmd, frame.frameIndex, frame);
+    fgCtx.imageIndex = imageIndex;
+    fgCtx.deltaTime = frame.deltaTime;
+    fgCtx.withUserData(&ctx)  // Pass full RenderContext to passes
+        .withThreading(&renderingInfra_.threadedCommandPool(),
+                       vk::RenderPass(systems_->postProcess().getHDRRenderPass()),
+                       vk::Framebuffer(systems_->postProcess().getHDRFramebuffer()))
+        .withDiagnostics(&cmdDiag);
 
     // Execute all passes in dependency order
     // TaskScheduler enables parallel execution of independent passes

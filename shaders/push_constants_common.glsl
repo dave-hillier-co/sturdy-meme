@@ -19,7 +19,7 @@ layout(push_constant) uniform PushConstants {
     vec4 emissiveColor;
     uint pbrFlags;  // Bitmask indicating which PBR textures are bound
     float alphaTestThreshold;  // Alpha test threshold (0 = disabled, >0 = discard if alpha < threshold)
-    float _padding2;
+    float hueShift;  // Hue rotation in radians (0 = no shift, 2*PI = full rotation)
     float _padding3;
 } material;
 

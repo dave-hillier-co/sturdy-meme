@@ -35,6 +35,7 @@ struct Renderable {
     int treeInstanceIndex = -1;  // Index into treeInstances_ for LOD lookups
     glm::vec3 leafTint = glm::vec3(1.0f);  // Leaf color tint
     float autumnHueShift = 0.0f;  // Autumn hue shift (0=summer, 1=full autumn)
+    float hueShift = 0.0f;  // General hue shift in radians (for NPC tinting)
 
 private:
     friend class RenderableBuilder;
@@ -90,6 +91,9 @@ public:
     // Optional: Set autumn hue shift (0=summer green, 1=full autumn colors)
     RenderableBuilder& withAutumnHueShift(float shift);
 
+    // Optional: Set hue shift in radians (for NPC tinting, 0 to 2*PI)
+    RenderableBuilder& withHueShift(float shift);
+
     // Optional: Set tree instance index for LOD lookups
     RenderableBuilder& withTreeInstanceIndex(int index);
 
@@ -119,4 +123,5 @@ private:
     int treeInstanceIndex_ = -1;
     glm::vec3 leafTint_ = glm::vec3(1.0f);
     float autumnHueShift_ = 0.0f;
+    float hueShift_ = 0.0f;
 };

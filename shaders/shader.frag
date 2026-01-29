@@ -14,6 +14,7 @@
 #include "ubo_cloud_shadow.glsl"
 #include "push_constants_common.glsl"
 #include "normal_mapping_common.glsl"
+#include "hue_shift_common.glsl"
 
 // Enable shadow sampling for dynamic lights
 #define DYNAMIC_LIGHTS_ENABLE_SHADOWS
@@ -126,7 +127,10 @@ void main() {
     vec3 N = perturbNormal(geometricN, fragTangent, normalMap, fragTexCoord);
 
     // Multiply texture color with vertex color (for glTF material baseColorFactor)
-    vec3 albedo = texColor.rgb * fragColor.rgb;
+    vec3 baseAlbedo = texColor.rgb * fragColor.rgb;
+
+    // Apply hue shift to final albedo (for NPC tinting)
+    vec3 albedo = applyHueShift(baseAlbedo, material.hueShift);
 
     // === PBR MATERIAL PROPERTIES ===
     // Sample optional PBR texture maps, falling back to push constant values

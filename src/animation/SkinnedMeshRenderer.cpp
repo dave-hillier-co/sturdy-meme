@@ -299,6 +299,7 @@ void SkinnedMeshRenderer::record(VkCommandBuffer cmd, uint32_t frameIndex, uint3
     push.opacity = playerObj.opacity;
     push.emissiveColor = glm::vec4(playerObj.emissiveColor, 1.0f);
     push.pbrFlags = playerObj.pbrFlags;
+    push.hueShift = playerObj.hueShift;
 
     vkCmd.pushConstants<PushConstants>(
         **pipelineLayout_,
@@ -365,6 +366,7 @@ void SkinnedMeshRenderer::recordWithLOD(VkCommandBuffer cmd, uint32_t frameIndex
     push.opacity = playerObj.opacity;
     push.emissiveColor = glm::vec4(playerObj.emissiveColor, 1.0f);
     push.pbrFlags = playerObj.pbrFlags;
+    push.hueShift = playerObj.hueShift;
 
     vkCmd.pushConstants<PushConstants>(
         **pipelineLayout_,

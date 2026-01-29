@@ -76,6 +76,11 @@ RenderableBuilder& RenderableBuilder::withAutumnHueShift(float shift) {
     return *this;
 }
 
+RenderableBuilder& RenderableBuilder::withHueShift(float shift) {
+    hueShift_ = shift;
+    return *this;
+}
+
 RenderableBuilder& RenderableBuilder::withTreeInstanceIndex(int index) {
     treeInstanceIndex_ = index;
     return *this;
@@ -121,6 +126,7 @@ Renderable RenderableBuilder::build() const {
     renderable.treeInstanceIndex = treeInstanceIndex_;
     renderable.leafTint = leafTint_;
     renderable.autumnHueShift = autumnHueShift_;
+    renderable.hueShift = hueShift_;
 
     return renderable;
 }

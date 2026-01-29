@@ -623,6 +623,12 @@ void SceneBuilder::createRenderables() {
             float charRoughness = 0.5f;
             float charMetallic = 0.0f;
 
+            // Give each NPC a different hue shift for visual variety
+            // Use golden ratio to distribute hues evenly around the color wheel
+            constexpr float GOLDEN_RATIO = 1.618033988749895f;
+            constexpr float TWO_PI = 6.283185307179586f;
+            float hueShift = std::fmod(static_cast<float>(i + 1) * GOLDEN_RATIO, 1.0f) * TWO_PI;
+
             size_t renderableIndex = sceneObjects.size();
             npcSimulation_->setRenderableIndex(i, renderableIndex);
 
@@ -634,9 +640,10 @@ void SceneBuilder::createRenderables() {
                 .withRoughness(charRoughness)
                 .withMetallic(charMetallic)
                 .withCastsShadow(true)
+                .withHueShift(hueShift)
                 .build());
 
-            SDL_Log("SceneBuilder: Added NPC renderable at index %zu", renderableIndex);
+            SDL_Log("SceneBuilder: Added NPC renderable at index %zu with hue shift %.2f rad", renderableIndex, hueShift);
         }
     }
 

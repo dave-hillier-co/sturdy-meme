@@ -107,12 +107,12 @@ bool GodRaysSystem::createResources() {
         .setSubresourceRange(vk::ImageSubresourceRange{vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1});
 
     vk::Device vkDevice(device_);
-    auto result = vkDevice.createImageView(viewInfo);
-    if (result.result != vk::Result::eSuccess) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "GodRaysSystem: Failed to create output image view");
+    try {
+        outputImageView_ = vkDevice.createImageView(viewInfo);
+    } catch (const vk::SystemError& e) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "GodRaysSystem: Failed to create output image view: %s", e.what());
         return false;
     }
-    outputImageView_ = result.value;
 
     return true;
 }

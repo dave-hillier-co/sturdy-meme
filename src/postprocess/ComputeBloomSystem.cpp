@@ -137,12 +137,12 @@ bool ComputeBloomSystem::createMipChain() {
             .setSubresourceRange(vk::ImageSubresourceRange{vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1});
 
         vk::Device vkDevice(device_);
-        auto result = vkDevice.createImageView(viewInfo);
-        if (result.result != vk::Result::eSuccess) {
-            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "ComputeBloomSystem: Failed to create mip image view");
+        try {
+            mip.imageView = vkDevice.createImageView(viewInfo);
+        } catch (const vk::SystemError& e) {
+            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "ComputeBloomSystem: Failed to create mip image view: %s", e.what());
             return false;
         }
-        mip.imageView = result.value;
 
         mipChain_.push_back(mip);
     }

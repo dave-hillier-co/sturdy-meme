@@ -101,12 +101,12 @@ bool GuiSystem::initInternal(SDL_Window* window, VkInstance instance, VkPhysical
         .setPoolSizes(poolSizes);
 
     vk::Device vkDevice(device);
-    auto result = vkDevice.createDescriptorPool(poolInfo);
-    if (result.result != vk::Result::eSuccess) {
-        SDL_Log("Failed to create ImGui descriptor pool");
+    try {
+        imguiPool = vkDevice.createDescriptorPool(poolInfo);
+    } catch (const vk::SystemError& e) {
+        SDL_Log("Failed to create ImGui descriptor pool: %s", e.what());
         return false;
     }
-    imguiPool = result.value;
 
     // Initialize ImGui context
     IMGUI_CHECKVERSION();

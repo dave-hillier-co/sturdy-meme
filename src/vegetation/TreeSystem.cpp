@@ -1,5 +1,6 @@
 #include "TreeSystem.h"
 #include <SDL3/SDL.h>
+#include <vulkan/vulkan.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/constants.hpp>
 #include <filesystem>

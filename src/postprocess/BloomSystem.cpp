@@ -139,11 +139,11 @@ bool BloomSystem::createMipChain() {
             .setHeight(mip.extent.height)
             .setLayers(1);
 
-        auto result = vkDevice.createFramebuffer(fbInfo);
-        if (result.result != vk::Result::eSuccess) {
+        try {
+            mip.framebuffer = vkDevice.createFramebuffer(fbInfo);
+        } catch (const vk::SystemError&) {
             return false;
         }
-        mip.framebuffer = result.value;
     }
 
     return true;

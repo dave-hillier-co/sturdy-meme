@@ -48,25 +48,28 @@ bool AtmosphereLUTSystem::exportImageToPNG(VkImage image, VkFormat format, uint3
         .setQueueFamilyIndex(0) // Assuming graphics queue family 0
         .setFlags(vk::CommandPoolCreateFlagBits::eTransient);
 
-    auto poolResult = vkDevice.createCommandPool(poolInfo);
-    if (poolResult.result != vk::Result::eSuccess) {
-        SDL_Log("Failed to create command pool for PNG export");
+    vk::CommandPool commandPool;
+    try {
+        commandPool = vkDevice.createCommandPool(poolInfo);
+    } catch (const vk::SystemError& e) {
+        SDL_Log("Failed to create command pool for PNG export: %s", e.what());
         return false;
     }
-    vk::CommandPool commandPool = poolResult.value;
 
     auto allocInfo2 = vk::CommandBufferAllocateInfo{}
         .setLevel(vk::CommandBufferLevel::ePrimary)
         .setCommandPool(commandPool)
         .setCommandBufferCount(1);
 
-    auto cmdResult = vkDevice.allocateCommandBuffers(allocInfo2);
-    if (cmdResult.result != vk::Result::eSuccess) {
+    std::vector<vk::CommandBuffer> cmdBuffers;
+    try {
+        cmdBuffers = vkDevice.allocateCommandBuffers(allocInfo2);
+    } catch (const vk::SystemError& e) {
         vkDevice.destroyCommandPool(commandPool);
-        SDL_Log("Failed to allocate command buffer for PNG export");
+        SDL_Log("Failed to allocate command buffer for PNG export: %s", e.what());
         return false;
     }
-    vk::CommandBuffer commandBuffer = cmdResult.value[0];
+    vk::CommandBuffer commandBuffer = cmdBuffers[0];
 
     auto beginInfo = vk::CommandBufferBeginInfo{}
         .setFlags(vk::CommandBufferUsageFlagBits::eOneTimeSubmit);

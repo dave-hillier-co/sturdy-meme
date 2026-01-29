@@ -50,7 +50,7 @@ public:
         VkQueue queue = VK_NULL_HANDLE;
         std::string tilePath;
         VirtualTextureConfig config;
-        uint32_t framesInFlight = 2;
+        uint32_t framesInFlight = 3;
     };
 
     /**
@@ -159,7 +159,7 @@ private:
     std::unique_ptr<VirtualTextureTileLoader> tileLoader;
 
     uint32_t currentFrame = 0;
-    uint32_t framesInFlight_ = 2;
+    uint32_t framesInFlight_ = 3;
     std::unordered_set<uint32_t> pendingTiles; // Tiles currently being loaded
 
     // Over-budget penalty scheme (Ghost of Tsushima style)

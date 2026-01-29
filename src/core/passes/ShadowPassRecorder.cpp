@@ -28,22 +28,23 @@ ShadowPassRecorder::ShadowPassRecorder(RendererSystems& systems)
 {
 }
 
-void ShadowPassRecorder::record(VkCommandBuffer cmd, uint32_t frameIndex, float time, const glm::vec3& cameraPosition) {
+void ShadowPassRecorder::record(VkCommandBuffer cmd, uint32_t frameIndex, float time,
+                                const glm::vec3& cameraPosition, const Params& params) {
     // Setup phase: build callbacks and collect shadow-casting objects
     resources_.profiler->beginCpuZone("Shadow:Setup");
 
     // Delegate to the shadow system with callbacks for terrain and grass
-    auto terrainCallback = [this, frameIndex](VkCommandBuffer cb, uint32_t cascade, const glm::mat4& lightMatrix) {
-        if (config_.terrainEnabled && config_.perfToggles && config_.perfToggles->terrainShadows) {
+    auto terrainCallback = [this, &params, frameIndex](VkCommandBuffer cb, uint32_t cascade, const glm::mat4& lightMatrix) {
+        if (params.terrainEnabled && params.terrainShadows) {
             resources_.profiler->beginGpuZone(cb, "Shadow:Terrain");
             resources_.terrain->recordShadowDraw(cb, frameIndex, lightMatrix, static_cast<int>(cascade));
             resources_.profiler->endGpuZone(cb, "Shadow:Terrain");
         }
     };
 
-    auto grassCallback = [this, frameIndex, time](VkCommandBuffer cb, uint32_t cascade, const glm::mat4& lightMatrix) {
+    auto grassCallback = [this, &params, frameIndex, time](VkCommandBuffer cb, uint32_t cascade, const glm::mat4& lightMatrix) {
         (void)lightMatrix;  // Grass uses cascade index only
-        if (config_.perfToggles && config_.perfToggles->grassShadows) {
+        if (params.grassShadows) {
             resources_.profiler->beginGpuZone(cb, "Shadow:Grass");
             resources_.vegetation.grass().recordShadowDraw(cb, frameIndex, time, static_cast<int>(cascade));
             resources_.profiler->endGpuZone(cb, "Shadow:Grass");
@@ -150,4 +151,18 @@ void ShadowPassRecorder::record(VkCommandBuffer cmd, uint32_t frameIndex, float 
                                        terrainCallback, grassCallback, treeCallback, skinnedCallback,
                                        preCascadeComputeCallback);
     resources_.profiler->endCpuZone("Shadow:Cascades");
+}
+
+// Legacy API implementation (deprecated)
+void ShadowPassRecorder::record(VkCommandBuffer cmd, uint32_t frameIndex, float time, const glm::vec3& cameraPosition) {
+    // Convert legacy config to new params
+    Params params;
+    params.terrainEnabled = legacyConfig_.terrainEnabled;
+    if (legacyConfig_.perfToggles) {
+        params.terrainShadows = legacyConfig_.perfToggles->terrainShadows;
+        params.grassShadows = legacyConfig_.perfToggles->grassShadows;
+    }
+
+    // Call the stateless version
+    record(cmd, frameIndex, time, cameraPosition, params);
 }

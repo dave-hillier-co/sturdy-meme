@@ -243,6 +243,10 @@ set(SOURCES
     src/animation/BlendSpace.cpp
     src/animation/BoneMask.cpp
     src/animation/FootPhaseTracker.cpp
+    src/animation/MotionMatchingFeature.cpp
+    src/animation/MotionMatchingTrajectory.cpp
+    src/animation/MotionDatabase.cpp
+    src/animation/MotionMatchingController.cpp
     # IK
     src/ik/IKSolver.cpp
     src/ik/IKUtils.cpp

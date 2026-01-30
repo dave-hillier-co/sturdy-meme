@@ -301,7 +301,10 @@ void AnimatedCharacter::update(float deltaTime, VmaAllocator allocator, VkDevice
         skeleton.joints[i].localTransform = bindPoseLocalTransforms[i];
     }
 
-    if (useLayerController) {
+    if (useMotionMatching) {
+        // Motion matching mode - skeleton is updated via updateMotionMatching()
+        // Nothing to do here - skeleton already updated
+    } else if (useLayerController) {
         // Use layer controller for advanced layer-based blending
         layerController.update(deltaTime);
         layerController.applyToSkeleton(skeleton);
@@ -756,4 +759,91 @@ const BoneLODMask& AnimatedCharacter::getBoneLODMask(uint32_t lod) const {
         return defaultMask;
     }
     return boneLODMasks_[lod];
+}
+
+// ========== Motion Matching Implementation ==========
+
+void AnimatedCharacter::setUseMotionMatching(bool use) {
+    useMotionMatching = use;
+    if (use) {
+        useStateMachine = false;
+        useLayerController = false;
+        SDL_Log("AnimatedCharacter: Switched to motion matching mode");
+    } else {
+        SDL_Log("AnimatedCharacter: Disabled motion matching mode");
+    }
+}
+
+void AnimatedCharacter::initializeMotionMatching(const MotionMatching::ControllerConfig& config) {
+    if (!loaded) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
+                    "AnimatedCharacter: Cannot initialize motion matching before loading");
+        return;
+    }
+
+    // Initialize the controller
+    motionMatchingController.initialize(config);
+    motionMatchingController.setSkeleton(skeleton);
+
+    // Add all animation clips to the database
+    for (size_t i = 0; i < animations.size(); ++i) {
+        const auto& clip = animations[i];
+
+        // Determine if clip is looping based on name
+        std::string lowerName = clip.name;
+        for (char& c : lowerName) c = std::tolower(c);
+
+        bool looping = (lowerName.find("idle") != std::string::npos ||
+                       lowerName.find("walk") != std::string::npos ||
+                       lowerName.find("run") != std::string::npos);
+
+        // Add tags based on animation type
+        std::vector<std::string> tags;
+        if (lowerName.find("idle") != std::string::npos) {
+            tags.push_back("idle");
+            tags.push_back("locomotion");
+        } else if (lowerName.find("walk") != std::string::npos) {
+            tags.push_back("walk");
+            tags.push_back("locomotion");
+        } else if (lowerName.find("run") != std::string::npos) {
+            tags.push_back("run");
+            tags.push_back("locomotion");
+        } else if (lowerName.find("jump") != std::string::npos) {
+            tags.push_back("jump");
+        }
+
+        motionMatchingController.addClip(&clip, clip.name, looping, tags);
+    }
+
+    // Build the database
+    MotionMatching::DatabaseBuildOptions buildOptions;
+    buildOptions.defaultSampleRate = 30.0f;
+    buildOptions.pruneStaticPoses = false;  // Keep idle poses
+
+    motionMatchingController.buildDatabase(buildOptions);
+
+    // Enable motion matching mode
+    useMotionMatching = true;
+    useStateMachine = false;
+    useLayerController = false;
+
+    SDL_Log("AnimatedCharacter: Motion matching initialized with %zu clips, %zu poses",
+            animations.size(),
+            motionMatchingController.getDatabase().getPoseCount());
+}
+
+void AnimatedCharacter::updateMotionMatching(const glm::vec3& position,
+                                              const glm::vec3& facing,
+                                              const glm::vec3& inputDirection,
+                                              float inputMagnitude,
+                                              float deltaTime) {
+    if (!useMotionMatching || !motionMatchingController.isDatabaseBuilt()) {
+        return;
+    }
+
+    // Update the motion matching controller
+    motionMatchingController.update(position, facing, inputDirection, inputMagnitude, deltaTime);
+
+    // Apply the result to our skeleton
+    motionMatchingController.applyToSkeleton(skeleton);
 }

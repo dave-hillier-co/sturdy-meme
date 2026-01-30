@@ -349,6 +349,14 @@ void GuiSystem::render(GuiInterfaces& ui, const Camera& camera, float deltaTime,
     if (ikDebugSettings.showSkeleton || ikDebugSettings.showIKTargets) {
         GuiIKTab::renderSkeletonOverlay(ui.scene, camera, ikDebugSettings, playerSettings.showCapeColliders);
     }
+
+    // Motion matching debug overlay
+    if (playerSettings.motionMatchingEnabled &&
+        (playerSettings.showMotionMatchingTrajectory ||
+         playerSettings.showMotionMatchingFeatures ||
+         playerSettings.showMotionMatchingStats)) {
+        GuiPlayerTab::renderMotionMatchingOverlay(ui.player, camera, playerSettings);
+    }
 }
 
 void GuiSystem::endFrame(VkCommandBuffer cmd) {

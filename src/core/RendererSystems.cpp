@@ -413,7 +413,7 @@ void RendererSystems::initControlSubsystems(VulkanContext& vulkanContext, Perfor
     debugControl_ = std::make_unique<DebugControlSubsystem>(*debugLineSystem_, *hiZSystem_, *this);
     performanceControl_ = std::make_unique<PerformanceControlSubsystem>(perfToggles, nullptr);
     sceneControl_ = std::make_unique<SceneControlSubsystem>(*sceneManager_, vulkanContext);
-    playerControl_ = std::make_unique<PlayerControlSubsystem>(*sceneManager_);
+    playerControl_ = std::make_unique<PlayerControlSubsystem>(*sceneManager_, vulkanContext);
 
     controlsInitialized_ = true;
     SDL_Log("Control subsystems initialized");

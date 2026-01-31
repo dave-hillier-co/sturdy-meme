@@ -111,6 +111,9 @@ public:
     // Check if database is built
     bool isBuilt() const { return built_; }
 
+    // Get normalization data (computed during build)
+    const FeatureNormalization& getNormalization() const { return normalization_; }
+
     // Clear all data
     void clear();
 
@@ -130,6 +133,7 @@ private:
 
     std::vector<DatabaseClip> clips_;
     std::vector<DatabasePose> poses_;
+    FeatureNormalization normalization_;
 
     bool initialized_ = false;
     bool built_ = false;
@@ -139,6 +143,9 @@ private:
 
     // Check if a pose should be pruned
     bool shouldPrunePose(const DatabasePose& pose, const DatabaseBuildOptions& options) const;
+
+    // Compute normalization statistics from all poses
+    void computeNormalization();
 };
 
 // Search result from motion matching

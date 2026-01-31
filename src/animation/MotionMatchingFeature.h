@@ -19,6 +19,9 @@ constexpr size_t MAX_TRAJECTORY_SAMPLES = 8;
 // Maximum number of bones to track for pose features
 constexpr size_t MAX_FEATURE_BONES = 8;
 
+// Forward declaration
+struct FeatureNormalization;
+
 // Default feature bones commonly used in locomotion
 namespace FeatureBones {
     constexpr const char* LEFT_FOOT = "LeftFoot";
@@ -55,6 +58,13 @@ struct Trajectory {
                       float positionWeight = 1.0f,
                       float velocityWeight = 0.5f,
                       float facingWeight = 0.3f) const;
+
+    // Compute normalized cost between two trajectories
+    float computeNormalizedCost(const Trajectory& other,
+                                const FeatureNormalization& norm,
+                                float positionWeight = 1.0f,
+                                float velocityWeight = 0.5f,
+                                float facingWeight = 0.3f) const;
 };
 
 // Feature for a single bone (position + velocity in character space)
@@ -93,6 +103,42 @@ struct PoseFeatures {
                       float rootVelWeight = 0.5f,
                       float angularVelWeight = 0.3f,
                       float phaseWeight = 0.2f) const;
+
+    // Compute normalized cost between two pose features
+    float computeNormalizedCost(const PoseFeatures& other,
+                                const FeatureNormalization& norm,
+                                float boneWeight = 1.0f,
+                                float rootVelWeight = 0.5f,
+                                float angularVelWeight = 0.3f,
+                                float phaseWeight = 0.2f) const;
+};
+
+// Normalization statistics for a single feature dimension
+struct FeatureStats {
+    float mean = 0.0f;
+    float stdDev = 1.0f;  // Default to 1 to avoid division by zero
+
+    // Normalize a value using these statistics
+    float normalize(float value) const {
+        return (value - mean) / stdDev;
+    }
+};
+
+// Normalization data for all features
+struct FeatureNormalization {
+    // Trajectory normalization (per sample point)
+    std::array<FeatureStats, MAX_TRAJECTORY_SAMPLES> trajectoryPosition;  // magnitude
+    std::array<FeatureStats, MAX_TRAJECTORY_SAMPLES> trajectoryVelocity;  // magnitude
+
+    // Bone feature normalization (per bone)
+    std::array<FeatureStats, MAX_FEATURE_BONES> bonePosition;    // magnitude
+    std::array<FeatureStats, MAX_FEATURE_BONES> boneVelocity;    // magnitude
+
+    // Root motion normalization
+    FeatureStats rootVelocity;       // magnitude
+    FeatureStats rootAngularVelocity;
+
+    bool isComputed = false;
 };
 
 // Configuration for feature extraction

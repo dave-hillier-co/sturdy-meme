@@ -100,6 +100,9 @@ void MotionDatabase::build(const DatabaseBuildOptions& options) {
         }
     }
 
+    // Compute normalization statistics
+    computeNormalization();
+
     built_ = true;
 
     SDL_Log("MotionDatabase: Built with %zu poses from %zu clips (pruned %zu)",
@@ -205,7 +208,93 @@ std::vector<const DatabasePose*> MotionDatabase::getPosesWithTag(const std::stri
 void MotionDatabase::clear() {
     clips_.clear();
     poses_.clear();
+    normalization_ = FeatureNormalization{};
     built_ = false;
+}
+
+void MotionDatabase::computeNormalization() {
+    if (poses_.empty()) {
+        normalization_ = FeatureNormalization{};
+        return;
+    }
+
+    const size_t n = poses_.size();
+
+    // Temporary accumulators for online mean/variance calculation (Welford's algorithm)
+    struct Accumulator {
+        double mean = 0.0;
+        double m2 = 0.0;   // Sum of squared differences from mean
+        size_t count = 0;
+
+        void add(float value) {
+            ++count;
+            double delta = value - mean;
+            mean += delta / count;
+            double delta2 = value - mean;
+            m2 += delta * delta2;
+        }
+
+        FeatureStats finalize() const {
+            FeatureStats stats;
+            stats.mean = static_cast<float>(mean);
+            if (count > 1) {
+                double variance = m2 / (count - 1);
+                stats.stdDev = static_cast<float>(std::sqrt(variance));
+                // Prevent division by zero - use minimum stdDev
+                if (stats.stdDev < 0.001f) {
+                    stats.stdDev = 1.0f;
+                }
+            }
+            return stats;
+        }
+    };
+
+    // Accumulators for each feature type
+    std::array<Accumulator, MAX_TRAJECTORY_SAMPLES> trajPosAcc;
+    std::array<Accumulator, MAX_TRAJECTORY_SAMPLES> trajVelAcc;
+    std::array<Accumulator, MAX_FEATURE_BONES> bonePosAcc;
+    std::array<Accumulator, MAX_FEATURE_BONES> boneVelAcc;
+    Accumulator rootVelAcc;
+    Accumulator rootAngVelAcc;
+
+    // First pass: collect all values
+    for (const auto& pose : poses_) {
+        // Trajectory features
+        for (size_t i = 0; i < pose.trajectory.sampleCount && i < MAX_TRAJECTORY_SAMPLES; ++i) {
+            const auto& sample = pose.trajectory.samples[i];
+            trajPosAcc[i].add(glm::length(sample.position));
+            trajVelAcc[i].add(glm::length(sample.velocity));
+        }
+
+        // Bone features
+        for (size_t i = 0; i < pose.poseFeatures.boneCount && i < MAX_FEATURE_BONES; ++i) {
+            const auto& bone = pose.poseFeatures.boneFeatures[i];
+            bonePosAcc[i].add(glm::length(bone.position));
+            boneVelAcc[i].add(glm::length(bone.velocity));
+        }
+
+        // Root features
+        rootVelAcc.add(glm::length(pose.poseFeatures.rootVelocity));
+        rootAngVelAcc.add(std::abs(pose.poseFeatures.rootAngularVelocity));
+    }
+
+    // Finalize statistics
+    for (size_t i = 0; i < MAX_TRAJECTORY_SAMPLES; ++i) {
+        normalization_.trajectoryPosition[i] = trajPosAcc[i].finalize();
+        normalization_.trajectoryVelocity[i] = trajVelAcc[i].finalize();
+    }
+
+    for (size_t i = 0; i < MAX_FEATURE_BONES; ++i) {
+        normalization_.bonePosition[i] = bonePosAcc[i].finalize();
+        normalization_.boneVelocity[i] = boneVelAcc[i].finalize();
+    }
+
+    normalization_.rootVelocity = rootVelAcc.finalize();
+    normalization_.rootAngularVelocity = rootAngVelAcc.finalize();
+    normalization_.isComputed = true;
+
+    SDL_Log("MotionDatabase: Computed normalization (rootVel mean=%.2f stdDev=%.2f)",
+            normalization_.rootVelocity.mean, normalization_.rootVelocity.stdDev);
 }
 
 MotionDatabase::Stats MotionDatabase::getStats() const {
@@ -343,23 +432,47 @@ float MotionMatcher::computeCost(size_t poseIndex,
 
     const DatabasePose& pose = database_->getPose(poseIndex);
     const FeatureConfig& config = database_->getFeatureExtractor().getConfig();
+    const FeatureNormalization& norm = database_->getNormalization();
 
-    // Trajectory cost
-    float trajCost = queryTrajectory.computeCost(
-        pose.trajectory,
-        config.trajectoryPositionWeight,
-        config.trajectoryVelocityWeight,
-        config.trajectoryFacingWeight
-    ) * options.trajectoryWeight * config.trajectoryWeight;
+    // Trajectory cost (use normalized if available)
+    float trajCost;
+    if (norm.isComputed) {
+        trajCost = queryTrajectory.computeNormalizedCost(
+            pose.trajectory,
+            norm,
+            config.trajectoryPositionWeight,
+            config.trajectoryVelocityWeight,
+            config.trajectoryFacingWeight
+        ) * options.trajectoryWeight * config.trajectoryWeight;
+    } else {
+        trajCost = queryTrajectory.computeCost(
+            pose.trajectory,
+            config.trajectoryPositionWeight,
+            config.trajectoryVelocityWeight,
+            config.trajectoryFacingWeight
+        ) * options.trajectoryWeight * config.trajectoryWeight;
+    }
 
-    // Pose cost
-    float poseCost = queryPose.computeCost(
-        pose.poseFeatures,
-        config.bonePositionWeight,
-        config.rootVelocityWeight,
-        config.angularVelocityWeight,
-        config.phaseWeight
-    ) * options.poseWeight * config.poseWeight;
+    // Pose cost (use normalized if available)
+    float poseCost;
+    if (norm.isComputed) {
+        poseCost = queryPose.computeNormalizedCost(
+            pose.poseFeatures,
+            norm,
+            config.bonePositionWeight,
+            config.rootVelocityWeight,
+            config.angularVelocityWeight,
+            config.phaseWeight
+        ) * options.poseWeight * config.poseWeight;
+    } else {
+        poseCost = queryPose.computeCost(
+            pose.poseFeatures,
+            config.bonePositionWeight,
+            config.rootVelocityWeight,
+            config.angularVelocityWeight,
+            config.phaseWeight
+        ) * options.poseWeight * config.poseWeight;
+    }
 
     // Add cost bias
     float totalCost = trajCost + poseCost + pose.costBias;

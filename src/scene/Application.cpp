@@ -1280,13 +1280,21 @@ void Application::updateECS(float deltaTime) {
     (void)deltaTime;  // Currently unused, but available for time-based systems
 
     // Sync transforms from Renderables to ECS (for objects updated by physics or animation)
+    // This updates root entities that don't have LocalTransform/Parent
     const auto& renderables = renderer_->getSystems().scene().getRenderables();
     for (size_t i = 0; i < sceneEntities_.size() && i < renderables.size(); ++i) {
         ecs::Entity entity = sceneEntities_[i];
         if (ecsWorld_.valid(entity) && ecsWorld_.has<ecs::Transform>(entity)) {
-            ecsWorld_.get<ecs::Transform>(entity).matrix = renderables[i].transform;
+            // Only sync if entity doesn't have LocalTransform (hierarchy handles those)
+            if (!ecsWorld_.has<ecs::LocalTransform>(entity)) {
+                ecsWorld_.get<ecs::Transform>(entity).matrix = renderables[i].transform;
+            }
         }
     }
+
+    // Update hierarchical world transforms (parent * local -> world)
+    // This must run before visibility culling so world transforms are current
+    ecs::systems::updateWorldTransforms(ecsWorld_);
 
     // Update visibility culling based on camera frustum
     glm::mat4 viewProj = camera.getProjectionMatrix() * camera.getViewMatrix();

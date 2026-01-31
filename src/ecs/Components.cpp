@@ -27,4 +27,12 @@ Transform Transform::fromTRS(const glm::vec3& pos, const glm::quat& rot, const g
     return Transform(pos, rot, scale);
 }
 
+glm::mat4 LocalTransform::toMatrix() const {
+    glm::mat4 m = glm::mat4(1.0f);
+    m = glm::translate(m, position);
+    m *= glm::mat4_cast(rotation);
+    m = glm::scale(m, scale);
+    return m;
+}
+
 } // namespace ecs

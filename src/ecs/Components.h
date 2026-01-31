@@ -2,7 +2,11 @@
 
 #include <glm/glm.hpp>
 #include <glm/gtc/quaternion.hpp>
+#include <glm/gtc/matrix_transform.hpp>
+#include <entt/entt.hpp>
 #include <cstdint>
+#include <vector>
+#include <algorithm>
 
 // Forward declarations
 struct Mesh;
@@ -11,7 +15,16 @@ struct Texture;
 namespace ecs {
 
 // =============================================================================
-// Transform Component
+// Entity Handle (for hierarchy references)
+// =============================================================================
+// Forward declare Entity type from World.h for use in hierarchy components.
+// The actual type is entt::entity, but we use a type alias for clarity.
+
+using Entity = entt::entity;
+constexpr Entity NullEntity = entt::null;
+
+// =============================================================================
+// Transform Component (World Space)
 // =============================================================================
 // Stores world-space transformation. The matrix is kept in a GPU-friendly
 // layout (column-major, std140 compatible) so it can be uploaded directly
@@ -33,6 +46,86 @@ struct Transform {
     static Transform fromPosition(const glm::vec3& pos);
     static Transform fromPositionRotation(const glm::vec3& pos, const glm::quat& rot);
     static Transform fromTRS(const glm::vec3& pos, const glm::quat& rot, const glm::vec3& scale);
+};
+
+// =============================================================================
+// Local Transform Component (Parent Space)
+// =============================================================================
+// Stores transformation relative to parent entity. Used with Parent component
+// for hierarchical transforms. The world Transform is computed by the
+// updateWorldTransforms() system.
+
+struct LocalTransform {
+    glm::vec3 position = glm::vec3(0.0f);
+    glm::quat rotation = glm::quat(1.0f, 0.0f, 0.0f, 0.0f);  // Identity quaternion
+    glm::vec3 scale = glm::vec3(1.0f);
+
+    LocalTransform() = default;
+    LocalTransform(const glm::vec3& pos, const glm::quat& rot, const glm::vec3& scl)
+        : position(pos), rotation(rot), scale(scl) {}
+
+    // Compute local matrix from TRS
+    [[nodiscard]] glm::mat4 toMatrix() const;
+
+    // Static factory methods
+    static LocalTransform fromPosition(const glm::vec3& pos) {
+        return LocalTransform(pos, glm::quat(1.0f, 0.0f, 0.0f, 0.0f), glm::vec3(1.0f));
+    }
+
+    static LocalTransform fromPositionRotation(const glm::vec3& pos, const glm::quat& rot) {
+        return LocalTransform(pos, rot, glm::vec3(1.0f));
+    }
+
+    static LocalTransform identity() {
+        return LocalTransform();
+    }
+};
+
+// =============================================================================
+// Hierarchy Components
+// =============================================================================
+// Parent-child relationships for hierarchical transforms.
+// Entities with a Parent component have their world Transform computed from
+// their LocalTransform combined with their parent's world Transform.
+
+// Parent reference - links an entity to its parent
+struct Parent {
+    Entity entity = NullEntity;
+
+    Parent() = default;
+    explicit Parent(Entity e) : entity(e) {}
+
+    [[nodiscard]] bool valid() const { return entity != NullEntity; }
+};
+
+// Children list - optional component for efficient top-down traversal
+// Not strictly required (can query Parent components), but speeds up
+// hierarchical operations when iterating from parents to children.
+struct Children {
+    std::vector<Entity> entities;
+
+    Children() = default;
+
+    void add(Entity child) { entities.push_back(child); }
+
+    void remove(Entity child) {
+        auto it = std::find(entities.begin(), entities.end(), child);
+        if (it != entities.end()) {
+            entities.erase(it);
+        }
+    }
+
+    [[nodiscard]] bool empty() const { return entities.empty(); }
+    [[nodiscard]] size_t count() const { return entities.size(); }
+};
+
+// Hierarchy depth - cached depth for sorting during transform updates
+// Root entities have depth 0, their children depth 1, etc.
+struct HierarchyDepth {
+    uint16_t depth = 0;
+
+    HierarchyDepth() = default;
+    explicit HierarchyDepth(uint16_t d) : depth(d) {}
 };
 
 // =============================================================================

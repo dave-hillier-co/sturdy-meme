@@ -32,8 +32,9 @@ void MotionMatchingController::setSkeleton(const Skeleton& skeleton) {
 void MotionMatchingController::addClip(const AnimationClip* clip,
                                          const std::string& name,
                                          bool looping,
-                                         const std::vector<std::string>& tags) {
-    database_.addClip(clip, name, looping, 30.0f, tags);
+                                         const std::vector<std::string>& tags,
+                                         float locomotionSpeed) {
+    database_.addClip(clip, name, looping, 30.0f, tags, locomotionSpeed);
 }
 
 void MotionMatchingController::buildDatabase(const DatabaseBuildOptions& options) {

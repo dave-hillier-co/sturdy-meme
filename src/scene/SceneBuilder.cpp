@@ -184,10 +184,23 @@ bool SceneBuilder::createMeshes(const InitInfo& info) {
     // Load animated character from FBX
     std::string characterPath = info.resourcePath + "/assets/characters/fbx/Y Bot.fbx";
     std::vector<std::string> additionalAnimations = {
+        // Core locomotion for motion matching
         info.resourcePath + "/assets/characters/fbx/ss_idle.fbx",
+        info.resourcePath + "/assets/characters/fbx/ss_idle2.fbx",
         info.resourcePath + "/assets/characters/fbx/ss_walk.fbx",
+        info.resourcePath + "/assets/characters/fbx/ss_walk2.fbx",
         info.resourcePath + "/assets/characters/fbx/ss_run.fbx",
-        info.resourcePath + "/assets/characters/fbx/ss_jump.fbx"
+        info.resourcePath + "/assets/characters/fbx/ss_run2.fbx",
+        info.resourcePath + "/assets/characters/fbx/ss_jump.fbx",
+        // Strafe animations for directional movement
+        info.resourcePath + "/assets/characters/fbx/ss_strafe_left.fbx",
+        info.resourcePath + "/assets/characters/fbx/ss_strafe_right.fbx",
+        info.resourcePath + "/assets/characters/fbx/ss_strafe_back.fbx",
+        info.resourcePath + "/assets/characters/fbx/ss_strafe_forward.fbx",
+        // Turn animations
+        info.resourcePath + "/assets/characters/fbx/ss_turn_left.fbx",
+        info.resourcePath + "/assets/characters/fbx/ss_turn_right.fbx",
+        info.resourcePath + "/assets/characters/fbx/ss_turn_180.fbx"
     };
 
     AnimatedCharacter::InitInfo charInfo{};
@@ -871,8 +884,13 @@ void SceneBuilder::updateAnimatedCharacter(float deltaTime, VmaAllocator allocat
 
     // Update motion matching if enabled (must be called before update())
     if (animatedCharacter->isUsingMotionMatching()) {
-        float inputMagnitude = glm::length(inputDirection);
-        glm::vec3 normalizedInput = inputMagnitude > 0.001f ? inputDirection / inputMagnitude : glm::vec3(0.0f);
+        // Get actual speed from input direction
+        float actualSpeed = glm::length(inputDirection);
+        // Normalize direction to unit vector
+        glm::vec3 normalizedInput = actualSpeed > 0.001f ? inputDirection / actualSpeed : glm::vec3(0.0f);
+        // Normalize magnitude to 0-1 range (maxSpeed = 6.0 m/s in TrajectoryPredictor)
+        constexpr float MAX_LOCOMOTION_SPEED = 6.0f;
+        float inputMagnitude = std::min(actualSpeed / MAX_LOCOMOTION_SPEED, 1.0f);
         animatedCharacter->updateMotionMatching(position, facing, normalizedInput, inputMagnitude, deltaTime);
     }
 

@@ -79,10 +79,12 @@ public:
     void setSkeleton(const Skeleton& skeleton);
 
     // Add animation clips to the database
+    // locomotionSpeed: Override root velocity for in-place animations (0 = use extracted)
     void addClip(const AnimationClip* clip,
                  const std::string& name,
                  bool looping = true,
-                 const std::vector<std::string>& tags = {});
+                 const std::vector<std::string>& tags = {},
+                 float locomotionSpeed = 0.0f);
 
     // Build the motion database (call after adding all clips)
     void buildDatabase(const DatabaseBuildOptions& options = DatabaseBuildOptions{});

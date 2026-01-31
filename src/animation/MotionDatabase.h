@@ -57,6 +57,11 @@ struct DatabaseClip {
     // Cost modifiers
     float costBias = 0.0f;            // Global bias for this clip
 
+    // Locomotion speed (m/s) for in-place animations
+    // If > 0, this overrides extracted root velocity for trajectory matching
+    // This is critical for Mixamo and other in-place animation formats
+    float locomotionSpeed = 0.0f;
+
     // Tags applied to all poses from this clip
     std::vector<std::string> tags;
 };
@@ -80,11 +85,13 @@ public:
 
     // Add an animation clip to the database
     // Returns the clip index
+    // locomotionSpeed: Override root velocity for in-place animations (0 = use extracted)
     size_t addClip(const AnimationClip* clip,
                    const std::string& name,
                    bool looping = true,
                    float sampleRate = 30.0f,
-                   const std::vector<std::string>& tags = {});
+                   const std::vector<std::string>& tags = {},
+                   float locomotionSpeed = 0.0f);
 
     // Build the database (index all poses)
     void build(const DatabaseBuildOptions& options = DatabaseBuildOptions{});

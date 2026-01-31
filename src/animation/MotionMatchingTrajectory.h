@@ -27,7 +27,7 @@ public:
         std::vector<float> sampleTimes = {-0.3f, -0.2f, -0.1f, 0.1f, 0.2f, 0.4f, 0.6f, 1.0f};
 
         // Movement parameters
-        float maxSpeed = 4.0f;           // Maximum movement speed (m/s)
+        float maxSpeed = 6.0f;           // Maximum movement speed (m/s) - should exceed run speed
         float acceleration = 10.0f;      // How fast character accelerates
         float deceleration = 15.0f;      // How fast character decelerates
         float turnSpeed = 360.0f;        // Degrees per second for turning

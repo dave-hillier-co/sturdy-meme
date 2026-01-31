@@ -21,7 +21,8 @@ size_t MotionDatabase::addClip(const AnimationClip* clip,
                                 const std::string& name,
                                 bool looping,
                                 float sampleRate,
-                                const std::vector<std::string>& tags) {
+                                const std::vector<std::string>& tags,
+                                float locomotionSpeed) {
     if (!initialized_) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
                     "MotionDatabase: Cannot add clip before initialization");
@@ -35,14 +36,27 @@ size_t MotionDatabase::addClip(const AnimationClip* clip,
     dbClip.looping = looping;
     dbClip.sampleRate = sampleRate;
     dbClip.tags = tags;
+    dbClip.locomotionSpeed = locomotionSpeed;
 
     size_t index = clips_.size();
     clips_.push_back(dbClip);
 
     built_ = false; // Need to rebuild
 
-    SDL_Log("MotionDatabase: Added clip '%s' (%.2fs, %s)",
-            name.c_str(), clip->duration, looping ? "looping" : "one-shot");
+    SDL_Log("MotionDatabase: Added clip '%s' (%.2fs, %s, locomotionSpeed=%.1f m/s)",
+            name.c_str(), clip->duration, looping ? "looping" : "one-shot", locomotionSpeed);
+
+    // Debug: Sample the clip to see what root velocity is actually in the animation
+    if (initialized_ && clip->duration > 0.0f) {
+        Skeleton tempSkel = skeleton_;
+        clip->sample(0.0f, tempSkel, false);
+        glm::vec3 pos0 = glm::vec3(tempSkel.joints[0].localTransform[3]);
+        clip->sample(clip->duration * 0.5f, tempSkel, false);
+        glm::vec3 pos1 = glm::vec3(tempSkel.joints[0].localTransform[3]);
+        float dist = glm::length(pos1 - pos0);
+        float estimatedSpeed = dist / (clip->duration * 0.5f);
+        SDL_Log("  -> Root moves %.2fm in first half, estimated speed: %.2f m/s", dist, estimatedSpeed);
+    }
 
     return index;
 }
@@ -142,6 +156,28 @@ void MotionDatabase::indexClip(size_t clipIndex, const DatabaseBuildOptions& opt
         // Extract features
         pose.poseFeatures = featureExtractor_.extractFromClip(*clip, skeleton_, time);
         pose.trajectory = featureExtractor_.extractTrajectoryFromClip(*clip, skeleton_, time);
+
+        // Check if the extracted root velocity is too low (in-place animation)
+        // If so, and we have a locomotion speed hint, use that instead
+        float extractedRootSpeed = glm::length(pose.poseFeatures.rootVelocity);
+        bool isInPlace = extractedRootSpeed < 0.3f;  // Less than 0.3 m/s considered in-place
+
+        if (isInPlace && dbClip.locomotionSpeed > 0.0f) {
+            // Override trajectory velocity and position with locomotion speed
+            // Assume forward motion in the character's facing direction
+            for (size_t j = 0; j < pose.trajectory.sampleCount; ++j) {
+                auto& sample = pose.trajectory.samples[j];
+                // Velocity is locomotion speed in facing direction
+                sample.velocity = sample.facing * dbClip.locomotionSpeed;
+                // Position is integrated from velocity over time offset
+                sample.position = sample.facing * (dbClip.locomotionSpeed * sample.timeOffset);
+            }
+
+            // Also override root velocity in pose features
+            glm::vec3 facing = pose.trajectory.sampleCount > 0 ?
+                pose.trajectory.samples[0].facing : glm::vec3(0.0f, 0.0f, 1.0f);
+            pose.poseFeatures.rootVelocity = facing * dbClip.locomotionSpeed;
+        }
 
         // Apply clip bias
         pose.costBias = dbClip.costBias;

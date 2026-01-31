@@ -147,7 +147,9 @@ struct FeatureConfig {
     std::vector<std::string> featureBoneNames;
 
     // Weights for cost computation
-    float trajectoryWeight = 1.0f;
+    // Trajectory is weighted higher for locomotion type selection (idle/walk/run)
+    // Pose is more important for continuity within the same locomotion type
+    float trajectoryWeight = 2.0f;
     float poseWeight = 1.0f;
     float bonePositionWeight = 1.0f;
     float boneVelocityWeight = 0.5f;

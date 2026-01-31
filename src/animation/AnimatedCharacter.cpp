@@ -787,6 +787,13 @@ void AnimatedCharacter::initializeMotionMatching(const MotionMatching::Controlle
     motionMatchingController.setSkeleton(skeleton);
 
     // Add all animation clips to the database
+    // Locomotion speeds for in-place animations (typical values in m/s)
+    constexpr float IDLE_SPEED = 0.0f;
+    constexpr float WALK_SPEED = 1.4f;   // Average human walking speed
+    constexpr float RUN_SPEED = 5.0f;    // Average human jogging/running speed
+    constexpr float STRAFE_SPEED = 1.8f; // Slightly faster than walk for strafing
+    constexpr float TURN_SPEED = 0.5f;   // Slow movement during turns
+
     for (size_t i = 0; i < animations.size(); ++i) {
         const auto& clip = animations[i];
 
@@ -794,26 +801,48 @@ void AnimatedCharacter::initializeMotionMatching(const MotionMatching::Controlle
         std::string lowerName = clip.name;
         for (char& c : lowerName) c = std::tolower(c);
 
+        // Skip metadata/placeholder clips
+        if (lowerName == "mixamo.com" || lowerName.empty() || clip.duration < 0.1f) {
+            SDL_Log("AnimatedCharacter: Skipping clip '%s' (metadata/placeholder)", clip.name.c_str());
+            continue;
+        }
+
         bool looping = (lowerName.find("idle") != std::string::npos ||
                        lowerName.find("walk") != std::string::npos ||
-                       lowerName.find("run") != std::string::npos);
+                       lowerName.find("run") != std::string::npos ||
+                       lowerName.find("strafe") != std::string::npos);
 
-        // Add tags based on animation type
+        // Add tags and set locomotion speed based on animation type
         std::vector<std::string> tags;
+        float locomotionSpeed = 0.0f;
+
         if (lowerName.find("idle") != std::string::npos) {
             tags.push_back("idle");
             tags.push_back("locomotion");
+            locomotionSpeed = IDLE_SPEED;
+        } else if (lowerName.find("run") != std::string::npos) {
+            // Check run before walk since "run" could be in "running_walk" etc.
+            tags.push_back("run");
+            tags.push_back("locomotion");
+            locomotionSpeed = RUN_SPEED;
         } else if (lowerName.find("walk") != std::string::npos) {
             tags.push_back("walk");
             tags.push_back("locomotion");
-        } else if (lowerName.find("run") != std::string::npos) {
-            tags.push_back("run");
+            locomotionSpeed = WALK_SPEED;
+        } else if (lowerName.find("strafe") != std::string::npos) {
+            tags.push_back("strafe");
             tags.push_back("locomotion");
+            locomotionSpeed = STRAFE_SPEED;
+        } else if (lowerName.find("turn") != std::string::npos) {
+            tags.push_back("turn");
+            tags.push_back("locomotion");
+            locomotionSpeed = TURN_SPEED;
+            looping = false;  // Turn animations typically don't loop
         } else if (lowerName.find("jump") != std::string::npos) {
             tags.push_back("jump");
         }
 
-        motionMatchingController.addClip(&clip, clip.name, looping, tags);
+        motionMatchingController.addClip(&clip, clip.name, looping, tags, locomotionSpeed);
     }
 
     // Build the database

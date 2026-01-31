@@ -2,6 +2,7 @@
 #include <SDL3/SDL.h>
 #include <algorithm>
 #include <cmath>
+#include <glm/glm.hpp>
 
 namespace MotionMatching {
 
@@ -116,6 +117,11 @@ void MotionDatabase::build(const DatabaseBuildOptions& options) {
 
     // Compute normalization statistics
     computeNormalization();
+
+    // Build KD-tree for accelerated search
+    if (options.buildKDTree) {
+        buildKDTree();
+    }
 
     built_ = true;
 
@@ -245,7 +251,88 @@ void MotionDatabase::clear() {
     clips_.clear();
     poses_.clear();
     normalization_ = FeatureNormalization{};
+    kdTree_.clear();
     built_ = false;
+}
+
+KDPoint MotionDatabase::poseToKDPoint(const Trajectory& trajectory,
+                                       const PoseFeatures& pose) const {
+    KDPoint point;
+    size_t idx = 0;
+
+    // Trajectory features (normalized) - position and velocity magnitudes for each sample
+    // Use up to 6 trajectory samples
+    for (size_t i = 0; i < std::min(trajectory.sampleCount, size_t(6)); ++i) {
+        const auto& sample = trajectory.samples[i];
+
+        // Normalize position magnitude
+        float posMag = glm::length(sample.position);
+        if (normalization_.isComputed && normalization_.trajectoryPosition[i].stdDev > 0.001f) {
+            posMag = (posMag - normalization_.trajectoryPosition[i].mean) /
+                     normalization_.trajectoryPosition[i].stdDev;
+        }
+        point[idx++] = posMag;
+
+        // Normalize velocity magnitude
+        float velMag = glm::length(sample.velocity);
+        if (normalization_.isComputed && normalization_.trajectoryVelocity[i].stdDev > 0.001f) {
+            velMag = (velMag - normalization_.trajectoryVelocity[i].mean) /
+                     normalization_.trajectoryVelocity[i].stdDev;
+        }
+        point[idx++] = velMag;
+    }
+
+    // Pad remaining trajectory slots with zeros
+    while (idx < 12) {
+        point[idx++] = 0.0f;
+    }
+
+    // Root velocity (normalized) - 3 components
+    glm::vec3 rootVel = pose.rootVelocity;
+    if (normalization_.isComputed && normalization_.rootVelocity.stdDev > 0.001f) {
+        float rootVelMag = glm::length(rootVel);
+        float normalizedMag = (rootVelMag - normalization_.rootVelocity.mean) /
+                              normalization_.rootVelocity.stdDev;
+        if (rootVelMag > 0.001f) {
+            rootVel = glm::normalize(rootVel) * normalizedMag;
+        } else {
+            rootVel = glm::vec3(0.0f);
+        }
+    }
+    point[idx++] = rootVel.x;
+    point[idx++] = rootVel.y;
+    point[idx++] = rootVel.z;
+
+    // Root angular velocity (normalized)
+    float angVel = pose.rootAngularVelocity;
+    if (normalization_.isComputed && normalization_.rootAngularVelocity.stdDev > 0.001f) {
+        angVel = (angVel - normalization_.rootAngularVelocity.mean) /
+                 normalization_.rootAngularVelocity.stdDev;
+    }
+    point[idx++] = angVel;
+
+    return point;
+}
+
+void MotionDatabase::buildKDTree() {
+    if (poses_.empty()) {
+        kdTree_.clear();
+        return;
+    }
+
+    // Convert all poses to KD points
+    std::vector<KDPoint> points;
+    points.reserve(poses_.size());
+
+    for (size_t i = 0; i < poses_.size(); ++i) {
+        const auto& pose = poses_[i];
+        KDPoint point = poseToKDPoint(pose.trajectory, pose.poseFeatures);
+        point.poseIndex = i;
+        points.push_back(point);
+    }
+
+    // Build the tree
+    kdTree_.build(std::move(points));
 }
 
 void MotionDatabase::computeNormalization() {
@@ -357,21 +444,49 @@ MatchResult MotionMatcher::findBestMatch(const Trajectory& queryTrajectory,
         return best;
     }
 
-    size_t poseCount = database_->getPoseCount();
-    for (size_t i = 0; i < poseCount; ++i) {
-        const DatabasePose& pose = database_->getPose(i);
+    // Use KD-tree acceleration if available and enabled
+    if (options.useKDTree && database_->hasKDTree() && options.kdTreeCandidates > 0) {
+        // Convert query to KD point
+        KDPoint queryPoint = database_->poseToKDPoint(queryTrajectory, queryPose);
 
-        if (!passesFilters(pose, options)) {
-            continue;
+        // Find K nearest neighbors in the tree
+        auto candidates = database_->getKDTree().findKNearest(queryPoint, options.kdTreeCandidates);
+
+        // Evaluate each candidate with full cost function
+        for (const auto& candidate : candidates) {
+            const DatabasePose& pose = database_->getPose(candidate.poseIndex);
+
+            if (!passesFilters(pose, options)) {
+                continue;
+            }
+
+            float cost = computeCost(candidate.poseIndex, queryTrajectory, queryPose, options);
+
+            if (cost < best.cost) {
+                best.poseIndex = candidate.poseIndex;
+                best.cost = cost;
+                best.pose = &pose;
+                best.clip = &database_->getClip(pose.clipIndex);
+            }
         }
+    } else {
+        // Fallback to brute-force search
+        size_t poseCount = database_->getPoseCount();
+        for (size_t i = 0; i < poseCount; ++i) {
+            const DatabasePose& pose = database_->getPose(i);
 
-        float cost = computeCost(i, queryTrajectory, queryPose, options);
+            if (!passesFilters(pose, options)) {
+                continue;
+            }
 
-        if (cost < best.cost) {
-            best.poseIndex = i;
-            best.cost = cost;
-            best.pose = &pose;
-            best.clip = &database_->getClip(pose.clipIndex);
+            float cost = computeCost(i, queryTrajectory, queryPose, options);
+
+            if (cost < best.cost) {
+                best.poseIndex = i;
+                best.cost = cost;
+                best.pose = &pose;
+                best.clip = &database_->getClip(pose.clipIndex);
+            }
         }
     }
 
@@ -405,19 +520,42 @@ std::vector<MatchResult> MotionMatcher::findTopMatches(const Trajectory& queryTr
         return results;
     }
 
-    // Collect all valid matches with costs
+    // Collect candidate poses with costs
     std::vector<std::pair<float, size_t>> candidates;
-    size_t poseCount = database_->getPoseCount();
 
-    for (size_t i = 0; i < poseCount; ++i) {
-        const DatabasePose& pose = database_->getPose(i);
+    // Use KD-tree acceleration if available
+    if (options.useKDTree && database_->hasKDTree() && options.kdTreeCandidates > 0) {
+        // Convert query to KD point
+        KDPoint queryPoint = database_->poseToKDPoint(queryTrajectory, queryPose);
 
-        if (!passesFilters(pose, options)) {
-            continue;
+        // Find more candidates than we need to account for filtering
+        size_t kdCandidates = std::max(options.kdTreeCandidates, count * 2);
+        auto kdResults = database_->getKDTree().findKNearest(queryPoint, kdCandidates);
+
+        for (const auto& kdResult : kdResults) {
+            const DatabasePose& pose = database_->getPose(kdResult.poseIndex);
+
+            if (!passesFilters(pose, options)) {
+                continue;
+            }
+
+            float cost = computeCost(kdResult.poseIndex, queryTrajectory, queryPose, options);
+            candidates.emplace_back(cost, kdResult.poseIndex);
         }
+    } else {
+        // Fallback to brute-force
+        size_t poseCount = database_->getPoseCount();
 
-        float cost = computeCost(i, queryTrajectory, queryPose, options);
-        candidates.emplace_back(cost, i);
+        for (size_t i = 0; i < poseCount; ++i) {
+            const DatabasePose& pose = database_->getPose(i);
+
+            if (!passesFilters(pose, options)) {
+                continue;
+            }
+
+            float cost = computeCost(i, queryTrajectory, queryPose, options);
+            candidates.emplace_back(cost, i);
+        }
     }
 
     // Sort by cost

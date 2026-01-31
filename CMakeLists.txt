@@ -245,6 +245,7 @@ set(SOURCES
     src/animation/FootPhaseTracker.cpp
     src/animation/MotionMatchingFeature.cpp
     src/animation/MotionMatchingTrajectory.cpp
+    src/animation/MotionMatchingKDTree.cpp
     src/animation/MotionDatabase.cpp
     src/animation/MotionMatchingController.cpp
     # IK

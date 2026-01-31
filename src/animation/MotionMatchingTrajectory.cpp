@@ -229,10 +229,32 @@ void TrajectoryPredictor::reset() {
 
 // InertialBlender implementation
 
+void InertialBlender::decaySpring(float& x, float& v, float x0, float v0, float t) const {
+    // Critically damped spring: x(t) = (A + Bt)e^(-omega*t)
+    float omega = config_.naturalFrequency;
+    float decay = std::exp(-omega * t);
+
+    float A = x0;
+    float B = v0 + omega * x0;
+
+    x = (A + B * t) * decay;
+    v = (B - omega * (A + B * t)) * decay;
+}
+
+void InertialBlender::decaySpringVec3(glm::vec3& x, glm::vec3& v,
+                                       const glm::vec3& x0, const glm::vec3& v0, float t) const {
+    for (int i = 0; i < 3; ++i) {
+        decaySpring(x[i], v[i], x0[i], v0[i], t);
+    }
+}
+
 void InertialBlender::startBlend(const glm::vec3& currentPosition,
                                    const glm::vec3& currentVelocity,
                                    const glm::vec3& targetPosition,
                                    const glm::vec3& targetVelocity) {
+    // Clear skeletal blend state (using root-only mode)
+    boneStates_.clear();
+
     // Calculate initial offset between current and target
     springPosition_ = currentPosition - targetPosition;
     springVelocity_ = currentVelocity - targetVelocity;
@@ -242,39 +264,126 @@ void InertialBlender::startBlend(const glm::vec3& currentPosition,
     blendTime_ = 0.0f;
 }
 
+void InertialBlender::startSkeletalBlend(const SkeletonPose& currentPose,
+                                           const SkeletonPose& targetPose,
+                                           const std::vector<glm::vec3>& prevPositionVelocities,
+                                           const std::vector<glm::vec3>& prevAngularVelocities) {
+    size_t boneCount = std::min(currentPose.size(), targetPose.size());
+    boneStates_.resize(boneCount);
+
+    for (size_t i = 0; i < boneCount; ++i) {
+        BoneInertialState& state = boneStates_[i];
+
+        // Position offset
+        state.springPosition = currentPose[i].translation - targetPose[i].translation;
+        state.positionOffset = state.springPosition;
+
+        // Position velocity (if provided)
+        if (i < prevPositionVelocities.size()) {
+            state.springPositionVel = prevPositionVelocities[i];
+        } else {
+            state.springPositionVel = glm::vec3(0.0f);
+        }
+        state.positionVelocity = state.springPositionVel;
+
+        // Rotation offset (convert to axis-angle for spring decay)
+        // q_offset = q_current * inverse(q_target)
+        glm::quat rotDiff = currentPose[i].rotation * glm::inverse(targetPose[i].rotation);
+
+        // Convert quaternion to axis-angle
+        float angle = 2.0f * std::acos(std::clamp(rotDiff.w, -1.0f, 1.0f));
+        glm::vec3 axis(0.0f, 1.0f, 0.0f);
+        if (std::abs(angle) > 0.001f) {
+            float sinHalfAngle = std::sin(angle * 0.5f);
+            if (std::abs(sinHalfAngle) > 0.0001f) {
+                axis = glm::vec3(rotDiff.x, rotDiff.y, rotDiff.z) / sinHalfAngle;
+            }
+        }
+        state.springRotation = axis * angle;
+        state.rotationOffset = rotDiff;
+
+        // Angular velocity (if provided)
+        if (i < prevAngularVelocities.size()) {
+            state.springRotationVel = prevAngularVelocities[i];
+        } else {
+            state.springRotationVel = glm::vec3(0.0f);
+        }
+        state.angularVelocity = state.springRotationVel;
+    }
+
+    // Also set up legacy root blend for compatibility
+    if (!currentPose.empty() && !targetPose.empty()) {
+        springPosition_ = currentPose[0].translation - targetPose[0].translation;
+        springVelocity_ = prevPositionVelocities.empty() ? glm::vec3(0.0f) : prevPositionVelocities[0];
+        positionOffset_ = springPosition_;
+        velocityOffset_ = springVelocity_;
+    }
+
+    blendTime_ = 0.0f;
+}
+
 void InertialBlender::update(float deltaTime) {
     if (!isBlending()) {
         positionOffset_ = glm::vec3(0.0f);
         velocityOffset_ = glm::vec3(0.0f);
+        for (auto& state : boneStates_) {
+            state.positionOffset = glm::vec3(0.0f);
+            state.positionVelocity = glm::vec3(0.0f);
+            state.rotationOffset = glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
+            state.angularVelocity = glm::vec3(0.0f);
+        }
         return;
     }
 
     blendTime_ += deltaTime;
-
-    // Critically damped spring for smooth decay
-    // Using the analytical solution for critically damped spring
-    float omega = config_.naturalFrequency;
     float t = blendTime_;
 
-    // For critically damped: x(t) = (A + Bt)e^(-omega*t)
-    float decay = std::exp(-omega * t);
-    float tDecay = t * decay;
+    // Update legacy root-only blend
+    decaySpringVec3(positionOffset_, velocityOffset_, springPosition_, springVelocity_, t);
 
-    // Initial conditions determine A and B
-    // A = x0, B = v0 + omega*x0
+    // Update full skeletal blend
+    for (auto& state : boneStates_) {
+        // Decay position spring
+        decaySpringVec3(state.positionOffset, state.positionVelocity,
+                        state.springPosition, state.springPositionVel, t);
 
-    for (int i = 0; i < 3; ++i) {
-        float x0 = springPosition_[i];
-        float v0 = springVelocity_[i];
-        float A = x0;
-        float B = v0 + omega * x0;
+        // Decay rotation spring (in axis-angle space)
+        glm::vec3 currentAxisAngle, currentAngVel;
+        decaySpringVec3(currentAxisAngle, currentAngVel,
+                        state.springRotation, state.springRotationVel, t);
 
-        positionOffset_[i] = (A + B * t) * decay;
-        velocityOffset_[i] = (B - omega * (A + B * t)) * decay;
+        // Convert decayed axis-angle back to quaternion
+        float angle = glm::length(currentAxisAngle);
+        if (angle > 0.001f) {
+            glm::vec3 axis = currentAxisAngle / angle;
+            state.rotationOffset = glm::angleAxis(angle, axis);
+        } else {
+            state.rotationOffset = glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
+        }
+        state.angularVelocity = currentAngVel;
+    }
+}
+
+void InertialBlender::applyToPose(SkeletonPose& pose) const {
+    if (!isBlending()) {
+        return;
     }
 
-    // The critically damped spring naturally decays to zero
-    // No additional blend curve needed - it would cause double-attenuation
+    size_t count = std::min(pose.size(), boneStates_.size());
+    for (size_t i = 0; i < count; ++i) {
+        const BoneInertialState& state = boneStates_[i];
+
+        // Apply position offset
+        pose[i].translation += state.positionOffset;
+
+        // Apply rotation offset: final = offset * target
+        pose[i].rotation = state.rotationOffset * pose[i].rotation;
+    }
+
+    // If no skeletal blend but root-only blend is active, apply to root
+    if (boneStates_.empty() && !pose.empty()) {
+        pose[0].translation += positionOffset_;
+    }
 }
 
 void InertialBlender::reset() {
@@ -282,6 +391,7 @@ void InertialBlender::reset() {
     velocityOffset_ = glm::vec3(0.0f);
     springPosition_ = glm::vec3(0.0f);
     springVelocity_ = glm::vec3(0.0f);
+    boneStates_.clear();
     blendTime_ = config_.blendDuration; // Mark as complete
 }
 

@@ -37,6 +37,7 @@ struct SkeletonPose {
 
     void resize(size_t count) { bonePoses.resize(count); }
     size_t size() const { return bonePoses.size(); }
+    bool empty() const { return bonePoses.empty(); }
 
     BonePose& operator[](size_t i) { return bonePoses[i]; }
     const BonePose& operator[](size_t i) const { return bonePoses[i]; }

@@ -169,21 +169,16 @@ void MotionMatchingController::transitionToPose(const MatchResult& match) {
     stats_.currentClipName = match.clip->name;
     stats_.currentClipTime = match.pose->time;
 
-    // Start inertial blend if enabled
-    if (config_.useInertialBlending && previousPose_.size() > 0) {
-        // Get root position from previous and new pose
-        if (currentPose_.size() > 0 && previousPose_.size() > 0) {
-            glm::vec3 prevRootPos = previousPose_[0].translation;
-            glm::vec3 newRootPos = currentPose_[0].translation;
-            glm::vec3 prevRootVel = queryPose_.rootVelocity;
-            glm::vec3 newRootVel = match.pose->poseFeatures.rootVelocity;
-
-            inertialBlender_.startBlend(prevRootPos, prevRootVel, newRootPos, newRootVel);
-        }
-    }
-
-    // Update the current pose immediately
+    // Update the current pose to the new target
     updatePose();
+
+    // Start inertial blend if enabled
+    if (config_.useInertialBlending && !previousPose_.empty() && !currentPose_.empty()) {
+        // Use full skeletal inertialization for smoother transitions
+        // Note: We don't have per-bone velocities tracked, so pass empty vectors
+        // The blender will assume zero velocity, which is reasonable for animation transitions
+        inertialBlender_.startSkeletalBlend(previousPose_, currentPose_);
+    }
 }
 
 void MotionMatchingController::advancePlayback(float deltaTime) {
@@ -262,30 +257,32 @@ void MotionMatchingController::extractQueryFeatures() {
 }
 
 void MotionMatchingController::applyToSkeleton(Skeleton& skeleton) const {
-    if (currentPose_.size() == 0) {
+    if (currentPose_.empty()) {
         return;
     }
 
-    // Apply current pose to skeleton
-    for (size_t i = 0; i < skeleton.joints.size() && i < currentPose_.size(); ++i) {
-        skeleton.joints[i].localTransform = currentPose_[i].toMatrix(
-            skeleton.joints[i].preRotation
-        );
+    // Copy current pose for potential modification
+    SkeletonPose blendedPose = currentPose_;
+
+    // Apply inertial blending if active
+    if (config_.useInertialBlending && inertialBlender_.isBlending()) {
+        inertialBlender_.applyToPose(blendedPose);
     }
 
-    // Apply inertial blending offset to root
-    if (config_.useInertialBlending && inertialBlender_.isBlending() && skeleton.joints.size() > 0) {
-        glm::vec3 offset = inertialBlender_.getPositionOffset();
-        skeleton.joints[0].localTransform[3] += glm::vec4(offset, 0.0f);
+    // Apply blended pose to skeleton
+    for (size_t i = 0; i < skeleton.joints.size() && i < blendedPose.size(); ++i) {
+        skeleton.joints[i].localTransform = blendedPose[i].toMatrix(
+            skeleton.joints[i].preRotation
+        );
     }
 }
 
 void MotionMatchingController::getCurrentPose(SkeletonPose& outPose) const {
     outPose = currentPose_;
 
-    // Apply inertial blending offset
-    if (config_.useInertialBlending && inertialBlender_.isBlending() && outPose.size() > 0) {
-        outPose[0].translation += inertialBlender_.getPositionOffset();
+    // Apply full skeletal inertial blending
+    if (config_.useInertialBlending && inertialBlender_.isBlending() && !outPose.empty()) {
+        inertialBlender_.applyToPose(outPose);
     }
 }
 

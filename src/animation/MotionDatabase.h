@@ -2,6 +2,7 @@
 
 #include "MotionMatchingFeature.h"
 #include "MotionMatchingTrajectory.h"
+#include "MotionMatchingKDTree.h"
 #include "Animation.h"
 #include "AnimationBlend.h"
 #include "GLTFLoader.h"
@@ -73,6 +74,7 @@ struct DatabaseBuildOptions {
     float loopBoundaryMargin = 0.1f;  // Time margin at loop boundaries
     bool pruneStaticPoses = true;     // Remove poses with near-zero motion
     float staticThreshold = 0.01f;    // Velocity threshold for static detection
+    bool buildKDTree = true;          // Build KD-tree for accelerated search
 };
 
 // Main database class
@@ -121,6 +123,14 @@ public:
     // Get normalization data (computed during build)
     const FeatureNormalization& getNormalization() const { return normalization_; }
 
+    // Get the KD-tree for accelerated search
+    const MotionKDTree& getKDTree() const { return kdTree_; }
+    bool hasKDTree() const { return kdTree_.isBuilt(); }
+
+    // Convert a pose to KD-tree point (for query)
+    KDPoint poseToKDPoint(const Trajectory& trajectory,
+                          const PoseFeatures& pose) const;
+
     // Clear all data
     void clear();
 
@@ -141,6 +151,7 @@ private:
     std::vector<DatabaseClip> clips_;
     std::vector<DatabasePose> poses_;
     FeatureNormalization normalization_;
+    MotionKDTree kdTree_;
 
     bool initialized_ = false;
     bool built_ = false;
@@ -153,6 +164,9 @@ private:
 
     // Compute normalization statistics from all poses
     void computeNormalization();
+
+    // Build the KD-tree from all poses
+    void buildKDTree();
 };
 
 // Search result from motion matching
@@ -183,8 +197,10 @@ struct SearchOptions {
     size_t currentPoseIndex = SIZE_MAX;      // SIZE_MAX = no current pose
     float minTimeSinceLastSelect = 0.1f;     // Minimum time before reselecting same pose
 
-    // Performance
-    size_t maxCandidates = 0;                // 0 = no limit (brute force)
+    // Performance - KD-tree acceleration
+    bool useKDTree = true;                   // Use KD-tree for accelerated search
+    size_t kdTreeCandidates = 64;            // Number of KD-tree candidates to evaluate
+    size_t maxCandidates = 0;                // 0 = no limit (brute force, ignored if KD-tree used)
 };
 
 // Motion matcher - performs the search

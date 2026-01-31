@@ -1,6 +1,7 @@
 #pragma once
 
 #include "MotionMatchingFeature.h"
+#include "AnimationBlend.h"
 #include <glm/glm.hpp>
 #include <glm/gtc/quaternion.hpp>
 #include <deque>
@@ -93,8 +94,23 @@ private:
     void pruneHistory();
 };
 
+// Per-bone inertial state for full skeletal blending
+struct BoneInertialState {
+    glm::vec3 positionOffset{0.0f};
+    glm::vec3 positionVelocity{0.0f};
+    glm::quat rotationOffset{1.0f, 0.0f, 0.0f, 0.0f};
+    glm::vec3 angularVelocity{0.0f};  // Axis-angle representation
+
+    // Initial spring state
+    glm::vec3 springPosition{0.0f};
+    glm::vec3 springPositionVel{0.0f};
+    glm::vec3 springRotation{0.0f};   // Axis-angle
+    glm::vec3 springRotationVel{0.0f};
+};
+
 // Inertial blending for smooth transitions between poses
 // Based on "Inertialization" technique for animation
+// Supports full skeletal blending, not just root position
 class InertialBlender {
 public:
     InertialBlender() = default;
@@ -109,23 +125,40 @@ public:
     void setConfig(const Config& config) { config_ = config; }
     const Config& getConfig() const { return config_; }
 
-    // Start a new blend from current state to target
+    // Legacy: Start a new blend from current state to target (root only)
     // Call when switching to a new animation pose
     void startBlend(const glm::vec3& currentPosition,
                     const glm::vec3& currentVelocity,
                     const glm::vec3& targetPosition,
                     const glm::vec3& targetVelocity);
 
+    // Full skeletal: Start blend from current pose to target pose
+    // currentPose/targetPose: SkeletonPose for each joint
+    // prevVelocities: Per-bone velocities from previous frame (can be empty)
+    void startSkeletalBlend(const SkeletonPose& currentPose,
+                             const SkeletonPose& targetPose,
+                             const std::vector<glm::vec3>& prevPositionVelocities = {},
+                             const std::vector<glm::vec3>& prevAngularVelocities = {});
+
     // Update blend state
     void update(float deltaTime);
 
-    // Get blended position/velocity offsets
+    // Get blended position/velocity offsets (legacy root-only)
     // Add these to the target animation position to get final position
     glm::vec3 getPositionOffset() const { return positionOffset_; }
     glm::vec3 getVelocityOffset() const { return velocityOffset_; }
 
+    // Get per-bone offsets for full skeletal blend
+    const std::vector<BoneInertialState>& getBoneStates() const { return boneStates_; }
+
+    // Apply inertial offsets to a pose (const - doesn't modify blender state)
+    void applyToPose(SkeletonPose& pose) const;
+
     // Check if blend is active
     bool isBlending() const { return blendTime_ < config_.blendDuration; }
+
+    // Check if using full skeletal blend
+    bool isSkeletalBlend() const { return !boneStates_.empty(); }
 
     // Get blend progress (0-1)
     float getProgress() const {
@@ -139,14 +172,21 @@ public:
 private:
     Config config_;
 
-    // Blend state
+    // Legacy root-only blend state
     glm::vec3 positionOffset_{0.0f};
     glm::vec3 velocityOffset_{0.0f};
-    float blendTime_ = 0.0f;
-
-    // Spring-damper state for smooth decay
     glm::vec3 springPosition_{0.0f};
     glm::vec3 springVelocity_{0.0f};
+
+    // Full skeletal blend state
+    std::vector<BoneInertialState> boneStates_;
+
+    float blendTime_ = 0.0f;
+
+    // Decay a single spring-damper (critically damped)
+    void decaySpring(float& x, float& v, float x0, float v0, float t) const;
+    void decaySpringVec3(glm::vec3& x, glm::vec3& v,
+                         const glm::vec3& x0, const glm::vec3& v0, float t) const;
 };
 
 // Root motion handler for extracting and applying root movement

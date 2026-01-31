@@ -93,6 +93,17 @@ public:
         return registry_.view<Components...>();
     }
 
+    // Query with exclusion filter
+    template<typename... Components, typename... Exclude>
+    [[nodiscard]] auto view(entt::exclude_t<Exclude...> excl) {
+        return registry_.view<Components...>(excl);
+    }
+
+    template<typename... Components, typename... Exclude>
+    [[nodiscard]] auto view(entt::exclude_t<Exclude...> excl) const {
+        return registry_.view<Components...>(excl);
+    }
+
     // Group interface - for efficient iteration of related components
     template<typename... Owned, typename... Get, typename... Exclude>
     [[nodiscard]] auto group(entt::get_t<Get...> = {}, entt::exclude_t<Exclude...> = {}) {

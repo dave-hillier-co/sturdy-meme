@@ -858,13 +858,22 @@ void SceneBuilder::updatePlayerTransform(const glm::mat4& transform) {
 
 void SceneBuilder::updateAnimatedCharacter(float deltaTime, VmaAllocator allocator, VkDevice device,
                                             VkCommandPool commandPool, VkQueue queue,
-                                            float movementSpeed, bool isGrounded, bool isJumping) {
+                                            float movementSpeed, bool isGrounded, bool isJumping,
+                                            const glm::vec3& position, const glm::vec3& facing,
+                                            const glm::vec3& inputDirection) {
     if (!hasAnimatedCharacter) return;
 
     // Get the character's current world transform for IK ground queries
     glm::mat4 worldTransform = glm::mat4(1.0f);
     if (playerObjectIndex < sceneObjects.size()) {
         worldTransform = sceneObjects[playerObjectIndex].transform;
+    }
+
+    // Update motion matching if enabled (must be called before update())
+    if (animatedCharacter->isUsingMotionMatching()) {
+        float inputMagnitude = glm::length(inputDirection);
+        glm::vec3 normalizedInput = inputMagnitude > 0.001f ? inputDirection / inputMagnitude : glm::vec3(0.0f);
+        animatedCharacter->updateMotionMatching(position, facing, normalizedInput, inputMagnitude, deltaTime);
     }
 
     animatedCharacter->update(deltaTime, allocator, device, commandPool, queue,

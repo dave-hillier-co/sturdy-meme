@@ -419,6 +419,9 @@ bool Application::init(const std::string& title, int width, int height) {
     // Initialize flag simulation
     initFlag();
 
+    // Initialize ECS world with scene entities
+    initECS();
+
     // Initialize GUI system via factory
     {
         INIT_PROFILE_PHASE("GUI");
@@ -576,6 +579,9 @@ void Application::run() {
 
         // Update scene object transforms from physics
         renderer_->getSystems().scene().update(physics());
+
+        // Update ECS systems (visibility culling, LOD)
+        updateECS(deltaTime);
 
         // Update player state in PlayerControlSubsystem for grass/snow/leaf interaction
         renderer_->getSystems().playerControl().setPlayerState(playerTransform.position, physicsVelocity, PlayerMovement::CAPSULE_RADIUS);
@@ -1241,4 +1247,143 @@ void Application::updateFlag(float deltaTime) {
     flagSceneBuilder.uploadFlagClothMesh(
         renderer_->getVulkanContext().getAllocator(), renderer_->getVulkanContext().getVkDevice(),
         renderer_->getCommandPool(), renderer_->getVulkanContext().getVkGraphicsQueue());
+}
+
+void Application::initECS() {
+    INIT_PROFILE_PHASE("ECS");
+
+    // Create ECS entities from scene renderables
+    const auto& renderables = renderer_->getSystems().scene().getRenderables();
+    ecs::EntityFactory factory(ecsWorld_);
+    sceneEntities_ = factory.createFromRenderables(renderables);
+
+    // Link physics bodies to ECS entities
+    for (size_t i = 0; i < scenePhysicsBodies.size() && i < sceneEntities_.size(); ++i) {
+        PhysicsBodyID bodyId = scenePhysicsBodies[i];
+        if (bodyId != INVALID_BODY_ID) {
+            ecsWorld_.add<ecs::PhysicsBody>(sceneEntities_[i], static_cast<ecs::PhysicsBodyId>(bodyId));
+        }
+    }
+
+    // Add bounding spheres for culling (approximate based on mesh type)
+    // For now, use a default radius - could be computed from mesh bounds later
+    for (size_t i = 0; i < sceneEntities_.size(); ++i) {
+        ecs::Entity entity = sceneEntities_[i];
+        if (ecsWorld_.valid(entity)) {
+            // Default bounding sphere centered at origin with 1m radius
+            // This can be refined per-object if needed
+            ecsWorld_.add<ecs::BoundingSphere>(entity, glm::vec3(0.0f), 1.0f);
+            // Mark all entities as initially visible
+            ecsWorld_.add<ecs::Visible>(entity);
+        }
+    }
+
+    SDL_Log("ECS initialized with %zu entities from scene", sceneEntities_.size());
+}
+
+void Application::updateECS(float deltaTime) {
+    (void)deltaTime;  // Currently unused, but available for time-based systems
+
+    auto& sceneManager = renderer_->getSystems().scene();
+    auto& sceneBuilder = sceneManager.getSceneBuilder();
+    auto& renderables = sceneManager.getRenderables();
+
+    // Lazy initialization: populate ECS entities when renderables become available
+    // This handles deferred renderable creation (after terrain is ready)
+    if (sceneEntities_.empty() && !renderables.empty()) {
+        ecs::EntityFactory factory(ecsWorld_);
+        sceneEntities_ = factory.createFromRenderables(renderables);
+
+        // Add bounding spheres and visibility for culling
+        for (ecs::Entity entity : sceneEntities_) {
+            if (ecsWorld_.valid(entity)) {
+                ecsWorld_.add<ecs::BoundingSphere>(entity, glm::vec3(0.0f), 1.0f);
+                ecsWorld_.add<ecs::Visible>(entity);
+            }
+        }
+        SDL_Log("ECS: Populated %zu entities from deferred renderables", sceneEntities_.size());
+    }
+
+    // Set up bone attachments for weapons (once, after entities are populated)
+    if (!ecsWeaponsInitialized_ && !sceneEntities_.empty() && sceneBuilder.hasWeapons()) {
+        size_t swordIdx = sceneBuilder.getSwordIndex();
+        size_t shieldIdx = sceneBuilder.getShieldIndex();
+
+        // Add bone attachment to sword entity
+        if (swordIdx < sceneEntities_.size()) {
+            ecs::Entity swordEntity = sceneEntities_[swordIdx];
+            if (ecsWorld_.valid(swordEntity)) {
+                ecsWorld_.add<ecs::BoneAttachment>(swordEntity,
+                    sceneBuilder.getRightHandBoneIndex(),
+                    sceneBuilder.getSwordOffset());
+                SDL_Log("ECS: Attached sword (entity %zu) to right hand bone %d",
+                        swordIdx, sceneBuilder.getRightHandBoneIndex());
+            }
+        }
+
+        // Add bone attachment to shield entity
+        if (shieldIdx < sceneEntities_.size()) {
+            ecs::Entity shieldEntity = sceneEntities_[shieldIdx];
+            if (ecsWorld_.valid(shieldEntity)) {
+                ecsWorld_.add<ecs::BoneAttachment>(shieldEntity,
+                    sceneBuilder.getLeftHandBoneIndex(),
+                    sceneBuilder.getShieldOffset());
+                SDL_Log("ECS: Attached shield (entity %zu) to left hand bone %d",
+                        shieldIdx, sceneBuilder.getLeftHandBoneIndex());
+            }
+        }
+
+        ecsWeaponsInitialized_ = true;
+    }
+
+    // Sync transforms from Renderables to ECS (for objects NOT driven by bone attachments)
+    for (size_t i = 0; i < sceneEntities_.size() && i < renderables.size(); ++i) {
+        ecs::Entity entity = sceneEntities_[i];
+        if (ecsWorld_.valid(entity) && ecsWorld_.has<ecs::Transform>(entity)) {
+            // Skip if entity has BoneAttachment (skeleton drives it) or LocalTransform (hierarchy drives it)
+            if (!ecsWorld_.has<ecs::BoneAttachment>(entity) && !ecsWorld_.has<ecs::LocalTransform>(entity)) {
+                ecsWorld_.get<ecs::Transform>(entity).matrix = renderables[i].transform;
+            }
+        }
+    }
+
+    // Update bone attachments from skeleton
+    if (sceneBuilder.hasCharacter() && ecsWeaponsInitialized_) {
+        const auto& skeleton = sceneBuilder.getAnimatedCharacter().getSkeleton();
+        std::vector<glm::mat4> globalBoneTransforms;
+        skeleton.computeGlobalTransforms(globalBoneTransforms);
+
+        // Get character world transform from player state
+        glm::mat4 characterWorld = player_.movement.getModelMatrix(player_.transform);
+
+        // Update all bone-attached entities
+        ecs::systems::updateBoneAttachments(ecsWorld_, characterWorld, globalBoneTransforms);
+
+        // Sync bone-attached ECS transforms back to renderables for rendering
+        for (auto [entity, attachment, transform] :
+             ecsWorld_.view<ecs::BoneAttachment, ecs::Transform>().each()) {
+            // Find the renderable index for this entity
+            for (size_t i = 0; i < sceneEntities_.size(); ++i) {
+                if (sceneEntities_[i] == entity && i < renderables.size()) {
+                    renderables[i].transform = transform.matrix;
+                    break;
+                }
+            }
+        }
+    }
+
+    // Update hierarchical world transforms (parent * local -> world)
+    // This must run before visibility culling so world transforms are current
+    ecs::systems::updateWorldTransforms(ecsWorld_);
+
+    // Update visibility culling based on camera frustum
+    glm::mat4 viewProj = camera.getProjectionMatrix() * camera.getViewMatrix();
+    ecs::Frustum frustum = ecs::Frustum::fromViewProjection(viewProj);
+    ecs::systems::updateVisibility(ecsWorld_, frustum);
+
+    // Update LOD levels based on camera distance
+    ecs::systems::updateLOD(ecsWorld_, camera.getPosition());
+
+    // Get culling stats for debugging (could expose to GUI later)
+    [[maybe_unused]] ecs::render::CullStats stats = ecs::render::getCullStats(ecsWorld_);
 }

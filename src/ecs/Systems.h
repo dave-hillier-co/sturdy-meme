@@ -108,6 +108,255 @@ struct Frustum {
 
 namespace systems {
 
+// =============================================================================
+// External Transform Source System
+// =============================================================================
+// Updates transforms for entities driven by external sources (physics, bones, etc.)
+// Must be called BEFORE updateWorldTransforms() so hierarchy can build on these.
+
+// Update transforms from external sources (pointers to matrices managed elsewhere)
+inline void updateExternalTransforms(World& world) {
+    for (auto [entity, source, transform] :
+         world.view<ExternalTransformSource, Transform>().each()) {
+        if (source.valid()) {
+            transform.matrix = *source.sourceMatrix;
+        }
+    }
+}
+
+// Update transforms for bone-attached entities
+// Requires the global bone transforms array computed from the skeleton
+// entityWorldTransform is the character's world transform
+// globalBoneTransforms is the array of bone transforms in model space
+inline void updateBoneAttachments(World& world,
+                                   const glm::mat4& entityWorldTransform,
+                                   const std::vector<glm::mat4>& globalBoneTransforms) {
+    for (auto [entity, attachment, transform] :
+         world.view<BoneAttachment, Transform>().each()) {
+        if (!attachment.valid()) continue;
+
+        size_t boneIdx = static_cast<size_t>(attachment.boneIndex);
+        if (boneIdx >= globalBoneTransforms.size()) continue;
+
+        // World transform = entity world * bone transform * local offset
+        glm::mat4 boneWorld = entityWorldTransform * globalBoneTransforms[boneIdx];
+        transform.matrix = boneWorld * attachment.localOffset;
+    }
+}
+
+// Variant that also applies LocalTransform offset if present
+inline void updateBoneAttachmentsWithLocalOffset(World& world,
+                                                   const glm::mat4& entityWorldTransform,
+                                                   const std::vector<glm::mat4>& globalBoneTransforms) {
+    for (auto [entity, attachment, transform] :
+         world.view<BoneAttachment, Transform>().each()) {
+        if (!attachment.valid()) continue;
+
+        size_t boneIdx = static_cast<size_t>(attachment.boneIndex);
+        if (boneIdx >= globalBoneTransforms.size()) continue;
+
+        // World transform = entity world * bone transform * attachment offset
+        glm::mat4 boneWorld = entityWorldTransform * globalBoneTransforms[boneIdx];
+        glm::mat4 baseTransform = boneWorld * attachment.localOffset;
+
+        // Apply additional LocalTransform if present
+        if (world.has<LocalTransform>(entity)) {
+            const auto& local = world.get<LocalTransform>(entity);
+            transform.matrix = baseTransform * local.toMatrix();
+        } else {
+            transform.matrix = baseTransform;
+        }
+    }
+}
+
+// =============================================================================
+// Hierarchical Transform System
+// =============================================================================
+// Updates world Transform components from LocalTransform and Parent hierarchy.
+// Must be called before visibility culling or any system that reads Transform.
+
+// Update world transforms for all entities with LocalTransform + Parent
+// Processes in depth order (roots first, then children)
+inline void updateWorldTransforms(World& world) {
+    // First pass: Update root entities (LocalTransform but no Parent)
+    // These entities use LocalTransform directly as their world transform
+    for (auto [entity, local, transform] :
+         world.view<LocalTransform, Transform>(entt::exclude<Parent>).each()) {
+        transform.matrix = local.toMatrix();
+    }
+
+    // Second pass: Update entities with parents
+    // We need to process in depth order, so collect and sort by depth
+    struct EntityDepth {
+        Entity entity;
+        uint16_t depth;
+    };
+    std::vector<EntityDepth> hierarchyEntities;
+
+    for (auto [entity, local, parent] :
+         world.view<LocalTransform, Parent>().each()) {
+        uint16_t depth = 1;
+        if (world.has<HierarchyDepth>(entity)) {
+            depth = world.get<HierarchyDepth>(entity).depth;
+        }
+        hierarchyEntities.push_back({entity, depth});
+    }
+
+    // Sort by depth (parents processed before children)
+    std::sort(hierarchyEntities.begin(), hierarchyEntities.end(),
+              [](const EntityDepth& a, const EntityDepth& b) {
+                  return a.depth < b.depth;
+              });
+
+    // Process in depth order
+    for (const auto& ed : hierarchyEntities) {
+        Entity entity = ed.entity;
+
+        if (!world.has<LocalTransform>(entity) || !world.has<Parent>(entity)) {
+            continue;
+        }
+
+        const auto& local = world.get<LocalTransform>(entity);
+        const auto& parent = world.get<Parent>(entity);
+
+        // Get parent's world transform
+        glm::mat4 parentWorld = glm::mat4(1.0f);
+        if (parent.valid() && world.valid(parent.entity) &&
+            world.has<Transform>(parent.entity)) {
+            parentWorld = world.get<Transform>(parent.entity).matrix;
+        }
+
+        // Compute world transform: parent * local
+        if (world.has<Transform>(entity)) {
+            world.get<Transform>(entity).matrix = parentWorld * local.toMatrix();
+        }
+    }
+}
+
+// Compute and cache hierarchy depths for efficient sorting
+// Call this after hierarchy changes (attach/detach operations)
+inline void updateHierarchyDepths(World& world) {
+    // First, set depth 0 for all root entities (no parent)
+    for (auto [entity, local] :
+         world.view<LocalTransform>(entt::exclude<Parent>).each()) {
+        if (world.has<HierarchyDepth>(entity)) {
+            world.get<HierarchyDepth>(entity).depth = 0;
+        } else {
+            world.add<HierarchyDepth>(entity, uint16_t(0));
+        }
+    }
+
+    // Iteratively compute depths for children
+    // Keep iterating until no changes (handles arbitrary depth hierarchies)
+    bool changed = true;
+    uint16_t maxIterations = 100;  // Safety limit
+    uint16_t iteration = 0;
+
+    while (changed && iteration < maxIterations) {
+        changed = false;
+        iteration++;
+
+        for (auto [entity, parent] : world.view<Parent>().each()) {
+            if (!parent.valid() || !world.valid(parent.entity)) {
+                continue;
+            }
+
+            // Get parent's depth
+            uint16_t parentDepth = 0;
+            if (world.has<HierarchyDepth>(parent.entity)) {
+                parentDepth = world.get<HierarchyDepth>(parent.entity).depth;
+            }
+
+            uint16_t expectedDepth = parentDepth + 1;
+
+            if (world.has<HierarchyDepth>(entity)) {
+                if (world.get<HierarchyDepth>(entity).depth != expectedDepth) {
+                    world.get<HierarchyDepth>(entity).depth = expectedDepth;
+                    changed = true;
+                }
+            } else {
+                world.add<HierarchyDepth>(entity, expectedDepth);
+                changed = true;
+            }
+        }
+    }
+}
+
+// =============================================================================
+// Hierarchy Management Helpers
+// =============================================================================
+
+// Attach a child entity to a parent entity
+// Sets up Parent component and optionally adds to parent's Children list
+inline void attachToParent(World& world, Entity child, Entity parent) {
+    // Add or update Parent component on child
+    if (world.has<Parent>(child)) {
+        // Detach from old parent first
+        Entity oldParent = world.get<Parent>(child).entity;
+        if (oldParent != NullEntity && world.valid(oldParent) &&
+            world.has<Children>(oldParent)) {
+            world.get<Children>(oldParent).remove(child);
+        }
+        world.get<Parent>(child).entity = parent;
+    } else {
+        world.add<Parent>(child, parent);
+    }
+
+    // Ensure child has LocalTransform (if it only had world Transform)
+    if (!world.has<LocalTransform>(child)) {
+        // Initialize LocalTransform as identity - caller should set appropriately
+        world.add<LocalTransform>(child);
+    }
+
+    // Ensure child has Transform component for world space result
+    if (!world.has<Transform>(child)) {
+        world.add<Transform>(child);
+    }
+
+    // Add to parent's Children list (if parent has one)
+    if (world.has<Children>(parent)) {
+        world.get<Children>(parent).add(child);
+    }
+
+    // Update hierarchy depths
+    updateHierarchyDepths(world);
+}
+
+// Detach an entity from its parent (becomes a root)
+inline void detachFromParent(World& world, Entity child) {
+    if (!world.has<Parent>(child)) {
+        return;  // Already a root
+    }
+
+    const auto& parentComp = world.get<Parent>(child);
+    Entity parent = parentComp.entity;
+
+    // Remove from parent's Children list
+    if (parent != NullEntity && world.valid(parent) && world.has<Children>(parent)) {
+        world.get<Children>(parent).remove(child);
+    }
+
+    // Remove Parent component
+    world.remove<Parent>(child);
+
+    // Convert current world transform to local transform (now relative to world origin)
+    if (world.has<Transform>(child) && world.has<LocalTransform>(child)) {
+        // The current world transform becomes the local transform
+        // (simplified - doesn't decompose TRS, just copies matrix)
+        const auto& worldTransform = world.get<Transform>(child);
+        auto& local = world.get<LocalTransform>(child);
+        local.position = worldTransform.position();
+        // Note: rotation and scale would need proper decomposition for accuracy
+    }
+
+    // Update hierarchy depths
+    updateHierarchyDepths(world);
+}
+
+// =============================================================================
+// Visibility Culling System
+// =============================================================================
+
 // CPU-based frustum culling using bounding spheres
 // Adds/removes Visible tag component based on frustum test
 inline void updateVisibility(World& world, const Frustum& frustum) {

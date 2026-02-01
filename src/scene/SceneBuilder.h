@@ -148,6 +148,17 @@ public:
     bool hasWeapons() const { return rightHandBoneIndex >= 0 && leftHandBoneIndex >= 0; }
     size_t getSwordIndex() const { return swordIndex; }
     size_t getShieldIndex() const { return shieldIndex; }
+    int32_t getRightHandBoneIndex() const { return rightHandBoneIndex; }
+    int32_t getLeftHandBoneIndex() const { return leftHandBoneIndex; }
+
+    // Get weapon offset matrices (for ECS bone attachment)
+    glm::mat4 getSwordOffset() const {
+        glm::mat4 offset = glm::rotate(glm::mat4(1.0f), glm::radians(90.0f), glm::vec3(0.0f, 0.0f, 1.0f));
+        return glm::translate(offset, glm::vec3(0.0f, 0.4f, 0.0f));
+    }
+    glm::mat4 getShieldOffset() const {
+        return glm::rotate(glm::mat4(1.0f), glm::radians(-90.0f), glm::vec3(1.0f, 0.0f, 0.0f));
+    }
 
     // Update weapon transforms based on character bone positions
     // Call after updating animated character each frame

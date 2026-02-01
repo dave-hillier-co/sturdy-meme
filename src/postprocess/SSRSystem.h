@@ -145,6 +145,7 @@ private:
     VkExtent2D extent = {0, 0};
     bool enabled = true;
     bool blurEnabled = false;        // Disabled - causes screen corruption, needs debugging
+    bool temporalHistoryValid = false;  // Tracks if temporal history is valid (reset after resize)
 
     // SSR parameters
     float maxDistance = 100.0f;     // Max reflection distance

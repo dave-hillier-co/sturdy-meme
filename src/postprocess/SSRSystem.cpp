@@ -113,6 +113,9 @@ void SSRSystem::resize(VkExtent2D newExtent) {
     extent = newExtent;
     vk::Device vkDevice(device);
 
+    // Invalidate temporal history - buffers will contain garbage after resize
+    temporalHistoryValid = false;
+
     // Recreate intermediate buffer
     if (ssrIntermediateView != VK_NULL_HANDLE) {
         vkDevice.destroyImageView(ssrIntermediateView);
@@ -441,7 +444,8 @@ void SSRSystem::recordCompute(VkCommandBuffer cmd, uint32_t frameIndex,
     pc.maxSteps = maxSteps;
     pc.fadeStart = fadeStart;
     pc.fadeEnd = fadeEnd;
-    pc.temporalBlend = temporalBlend;
+    // Use 0 temporal blend when history is invalid (after resize) to avoid ghost frames
+    pc.temporalBlend = temporalHistoryValid ? temporalBlend : 0.0f;
 
     // Bind pipeline and dispatch main SSR pass
     vk::CommandBuffer vkCmd(cmd);
@@ -487,6 +491,9 @@ void SSRSystem::recordCompute(VkCommandBuffer cmd, uint32_t frameIndex,
         // No blur - barrier directly to fragment shader
         BarrierHelpers::computeToFragment(vkCmd, ssrOutputImage);
     }
+
+    // Mark temporal history as valid now that we've rendered a frame
+    temporalHistoryValid = true;
 
     // Swap buffers for next frame
     currentBuffer = writeBuffer;

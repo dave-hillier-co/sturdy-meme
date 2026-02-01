@@ -318,6 +318,7 @@ void SceneBuilder::createNPCs(const InitInfo& info) {
     simInfo.resourcePath = info.resourcePath;
     simInfo.getTerrainHeight = terrainHeightFunc;
     simInfo.sceneOrigin = sceneOrigin;
+    simInfo.ecsWorld = info.ecsWorld;  // Pass ECS world for entity creation
 
     npcSimulation_ = NPCSimulation::create(simInfo);
     if (!npcSimulation_) {
@@ -947,8 +948,12 @@ void SceneBuilder::startCharacterJump(const glm::vec3& startPos, const glm::vec3
 void SceneBuilder::updateNPCs(float deltaTime, const glm::vec3& cameraPos) {
     if (!npcSimulation_) return;
 
-    // Delegate to NPCSimulation for LOD-based update scheduling
-    npcSimulation_->update(deltaTime, cameraPos);
+    // Use ECS-based update if available, otherwise fall back to legacy
+    if (npcSimulation_->isECSEnabled()) {
+        npcSimulation_->updateECS(deltaTime, cameraPos);
+    } else {
+        npcSimulation_->update(deltaTime, cameraPos);
+    }
 
     // Update renderable transforms from NPCSimulation data
     auto& npcData = npcSimulation_->getData();
@@ -971,6 +976,17 @@ size_t SceneBuilder::getNPCCount() const {
 
 bool SceneBuilder::hasNPCs() const {
     return npcSimulation_ && npcSimulation_->hasNPCs();
+}
+
+size_t SceneBuilder::getNPCRenderableIndex(size_t npcIndex) const {
+    if (!npcSimulation_ || npcIndex >= npcSimulation_->getNPCCount()) {
+        return SIZE_MAX;
+    }
+    const auto& npcData = npcSimulation_->getData();
+    if (npcIndex >= npcData.renderableIndices.size()) {
+        return SIZE_MAX;
+    }
+    return npcData.renderableIndices[npcIndex];
 }
 
 void SceneBuilder::updateWeaponTransforms(const glm::mat4& worldTransform) {

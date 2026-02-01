@@ -873,7 +873,8 @@ void SceneBuilder::updateAnimatedCharacter(float deltaTime, VmaAllocator allocat
                                             VkCommandPool commandPool, VkQueue queue,
                                             float movementSpeed, bool isGrounded, bool isJumping,
                                             const glm::vec3& position, const glm::vec3& facing,
-                                            const glm::vec3& inputDirection) {
+                                            const glm::vec3& inputDirection,
+                                            bool strafeMode, const glm::vec3& cameraDirection) {
     if (!hasAnimatedCharacter) return;
 
     // Get the character's current world transform for IK ground queries
@@ -899,6 +900,17 @@ void SceneBuilder::updateAnimatedCharacter(float deltaTime, VmaAllocator allocat
         } else {
             controller.setExcludedTags({"jump"});  // Exclude jump during normal locomotion
             controller.setRequiredTags({});
+        }
+
+        // Configure strafe mode (Unreal-style orientation lock)
+        controller.setStrafeMode(strafeMode);
+        if (strafeMode && glm::length(cameraDirection) > 0.001f) {
+            // In strafe mode, the character should face the camera direction
+            glm::vec3 normalizedCamDir = glm::normalize(cameraDirection);
+            normalizedCamDir.y = 0.0f;  // Keep horizontal only
+            if (glm::length(normalizedCamDir) > 0.001f) {
+                controller.setDesiredFacing(glm::normalize(normalizedCamDir));
+            }
         }
 
         // Get actual speed from input direction

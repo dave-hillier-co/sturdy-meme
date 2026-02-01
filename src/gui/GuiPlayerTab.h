@@ -29,6 +29,10 @@ struct PlayerSettings {
     bool showMotionMatchingTrajectory = false;  // Show predicted and matched trajectory
     bool showMotionMatchingFeatures = false;   // Show feature bone positions
     bool showMotionMatchingStats = false;      // Show match cost statistics
+
+    // Strafe mode (Unreal-style)
+    bool strafeModeEnabled = false;   // Lock orientation to camera direction
+    bool thirdPersonCamera = false;   // Third-person camera mode (for strafe testing)
 };
 
 namespace GuiPlayerTab {

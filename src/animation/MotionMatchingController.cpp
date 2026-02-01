@@ -157,9 +157,20 @@ void MotionMatchingController::performSearch() {
         }
     }
 
-    // Set current pose in search options for continuity
+    // Set search options for continuity (Unreal-style continuing pose bias)
     SearchOptions options = config_.searchOptions;
     options.currentPoseIndex = playback_.matchedPoseIndex;
+    options.currentClipIndex = playback_.clipIndex;  // For continuing pose cost bias
+
+    // Configure strafe mode options
+    options.strafeMode = strafeMode_;
+    if (strafeMode_) {
+        options.desiredFacing = desiredFacing_;
+        options.desiredMovement = trajectoryPredictor_.getCurrentVelocity();
+        // Increase heading weight in strafe mode
+        options.headingWeight = config_.featureConfig.headingWeight > 0.0f ?
+            config_.featureConfig.headingWeight * 2.0f : 1.5f;
+    }
 
     // Perform search with local-space trajectory
     MatchResult match = matcher_.findBestMatch(localTrajectory, queryPose_, options);
@@ -349,6 +360,18 @@ void MotionMatchingController::setRequiredTags(const std::vector<std::string>& t
 
 void MotionMatchingController::setExcludedTags(const std::vector<std::string>& tags) {
     config_.searchOptions.excludedTags = tags;
+}
+
+void MotionMatchingController::setStrafeMode(bool enabled) {
+    strafeMode_ = enabled;
+
+    // Update feature extractor strafe mode for heading extraction
+    featureExtractor_.setStrafeMode(enabled);
+
+    // Force a search to update matching based on new mode
+    forceSearchNextUpdate_ = true;
+
+    SDL_Log("MotionMatchingController: Strafe mode %s", enabled ? "enabled" : "disabled");
 }
 
 const Trajectory& MotionMatchingController::getLastMatchedTrajectory() const {

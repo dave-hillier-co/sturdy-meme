@@ -609,11 +609,25 @@ void Application::run() {
         glm::vec3 inputDirection = glm::vec3(desiredVelocity.x, 0.0f, desiredVelocity.z);
         glm::vec3 facingDirection = playerTransform.getForward();
 
+        // Determine strafe mode (orientation lock is active)
+        bool strafeMode = input.isThirdPersonMode() &&
+            (playerMovement.orientationLocked || input.isOrientationLockHeld());
+
+        // Get camera direction for strafe mode (character faces camera direction)
+        glm::vec3 cameraDirection = camera.getForward();
+        cameraDirection.y = 0.0f;  // Horizontal only
+        if (glm::length(cameraDirection) > 0.001f) {
+            cameraDirection = glm::normalize(cameraDirection);
+        } else {
+            cameraDirection = glm::vec3(0.0f, 0.0f, 1.0f);
+        }
+
         renderer_->getSystems().scene().getSceneBuilder().updateAnimatedCharacter(
             deltaTime, renderer_->getVulkanContext().getAllocator(), renderer_->getVulkanContext().getVkDevice(),
             renderer_->getCommandPool(), renderer_->getVulkanContext().getVkGraphicsQueue(),
             movementSpeed, isGrounded, isJumping,
-            playerTransform.position, facingDirection, inputDirection);
+            playerTransform.position, facingDirection, inputDirection,
+            strafeMode, cameraDirection);
 
         // Update NPC animations with LOD based on camera position
         renderer_->getSystems().scene().getSceneBuilder().updateNPCs(

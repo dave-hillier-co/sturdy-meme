@@ -10,6 +10,7 @@
 #include <optional>
 #include "InitContext.h"
 #include "DescriptorManager.h"
+#include "interfaces/ITemporalSystem.h"
 
 /**
  * SSRSystem - Phase 10: Screen-Space Reflections
@@ -28,7 +29,7 @@
  * - Temporal filtering for stability
  */
 
-class SSRSystem {
+class SSRSystem : public ITemporalSystem {
 public:
     // Passkey for controlled construction via make_unique
     struct ConstructToken { explicit ConstructToken() = default; };
@@ -116,6 +117,9 @@ public:
     void setBlurRadius(float radius) { blurRadius = radius; }
     void setBlurDepthThreshold(float threshold) { blurDepthThreshold = threshold; }
 
+    // ITemporalSystem: Reset temporal history to prevent ghost frames
+    void resetTemporalHistory() override { temporalHistoryValid = false; }
+
     float getMaxDistance() const { return maxDistance; }
     float getThickness() const { return thickness; }
     int getMaxSteps() const { return maxSteps; }
@@ -145,6 +149,7 @@ private:
     VkExtent2D extent = {0, 0};
     bool enabled = true;
     bool blurEnabled = false;        // Disabled - causes screen corruption, needs debugging
+    bool temporalHistoryValid = false;  // Tracks if temporal history is valid (reset after resize)
 
     // SSR parameters
     float maxDistance = 100.0f;     // Max reflection distance

@@ -225,6 +225,12 @@ bool Renderer::initInternal(const InitInfo& info) {
         initResizeCoordinator();
     }
 
+    // Phase 5b: Temporal system registration (for ghost frame prevention)
+    {
+        INIT_PROFILE_PHASE("TemporalSystems");
+        initTemporalSystems();
+    }
+
     // Initialize pass recorders (must be after systems_ is set up)
     // Note: These use stateless recording - config is passed to record() each frame
     reportProgress(0.97f, "Creating pass recorders");
@@ -426,6 +432,14 @@ bool Renderer::render(const Camera& camera) {
         handleResize();
         swapchain = vulkanContext_->getVkSwapchain();  // Update after resize
         framebufferResized = false;
+
+        // After swapchain recreation (especially after window restore), ensure frame sync
+        // is in a clean state. vkDeviceWaitIdle in handleResize ensures GPU is idle,
+        // but we also need to reset frame index and timeline values to ensure
+        // semaphores are used correctly. This prevents ghost frames caused by
+        // semaphore state inconsistencies.
+        frameSync_.waitForAllFrames();
+        frameSync_.resetForResize();
     }
 
     // Skip rendering if window is minimized
@@ -725,8 +739,13 @@ bool Renderer::render(const Camera& camera) {
 
     vk::SwapchainKHR swapChains[] = {swapchain};
 
+    // Present only waits on the binary renderFinished semaphore, NOT the timeline semaphore.
+    // vkQueuePresentKHR doesn't support timeline semaphores - passing one causes undefined behavior
+    // and can result in ghost frames (presenting before rendering is complete).
+    vk::Semaphore presentWaitSemaphores[] = {frameSync_.currentRenderFinishedSemaphore()};
+
     auto presentInfo = vk::PresentInfoKHR{}
-        .setWaitSemaphores(signalSemaphores)
+        .setWaitSemaphores(presentWaitSemaphores)
         .setSwapchains(swapChains)
         .setImageIndices(imageIndex);
 
@@ -803,6 +822,31 @@ bool Renderer::handleResize() {
     );
     framebufferResized = false;
     return success;
+}
+
+void Renderer::notifyWindowFocusGained() {
+    // When window regains focus (especially on macOS), the compositor may have
+    // cached stale content. Invalidate ALL temporal history to prevent ghost frames
+    // from any temporal blending systems.
+
+    if (!windowFocusLost_) {
+        // Focus wasn't lost, nothing to do
+        return;
+    }
+
+    windowFocusLost_ = false;
+
+    SDL_Log("Window focus gained - invalidating temporal history to prevent ghost frames");
+
+    // Use the temporal system registry to reset all registered systems
+    if (systems_) {
+        systems_->resetAllTemporalHistory();
+    }
+
+    // Force swapchain clear on next frame to flush compositor cache
+    // We set framebufferResized to trigger a full swapchain recreation
+    // which includes clearing all swapchain images
+    framebufferResized = true;
 }
 
 // Render pass recording helpers - pure command recording, no state mutation
@@ -1131,6 +1175,12 @@ bool Renderer::pollAsyncInit() {
         {
             INIT_PROFILE_PHASE("ResizeCoordinator");
             initResizeCoordinator();
+        }
+
+        // Phase 5b: Temporal systems
+        {
+            INIT_PROFILE_PHASE("TemporalSystems");
+            initTemporalSystems();
         }
 
         // Initialize pass recorders

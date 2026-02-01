@@ -2,6 +2,7 @@
 
 #include <memory>
 #include <functional>
+#include <vector>
 #include <vulkan/vulkan.h>
 
 #include "InitContext.h"
@@ -12,6 +13,7 @@
 #include "SnowSystemGroup.h"
 #include "GeometrySystemGroup.h"
 #include "scene/SceneCollection.h"
+#include "interfaces/ITemporalSystem.h"
 
 // Forward declarations for control subsystems (only those that coordinate multiple systems)
 class EnvironmentControlSubsystem;
@@ -176,6 +178,7 @@ public:
     void setAtmosphereLUT(std::unique_ptr<AtmosphereLUTSystem> system);
     FroxelSystem& froxel() { return *froxelSystem_; }
     const FroxelSystem& froxel() const { return *froxelSystem_; }
+    bool hasFroxel() const { return froxelSystem_ != nullptr; }
     void setFroxel(std::unique_ptr<FroxelSystem> system);
     CloudShadowSystem& cloudShadow() { return *cloudShadowSystem_; }
     const CloudShadowSystem& cloudShadow() const { return *cloudShadowSystem_; }
@@ -466,6 +469,28 @@ public:
     ecs::World* ecsWorld() { return ecsWorld_; }
     const ecs::World* ecsWorld() const { return ecsWorld_; }
 
+    // ========================================================================
+    // Temporal system management
+    // ========================================================================
+
+    /**
+     * Register a system that has temporal state needing reset on window focus.
+     * Systems implementing ITemporalSystem should be registered here.
+     * This is called automatically during init() for known temporal systems.
+     */
+    void registerTemporalSystem(ITemporalSystem* system);
+
+    /**
+     * Reset all registered temporal systems.
+     * Call this when the window regains focus to prevent ghost frames.
+     */
+    void resetAllTemporalHistory();
+
+    /**
+     * Get the number of registered temporal systems (for diagnostics).
+     */
+    size_t getTemporalSystemCount() const { return temporalSystems_.size(); }
+
 private:
     // ECS world reference (not owned - Application owns the world)
     ecs::World* ecsWorld_ = nullptr;
@@ -565,4 +590,7 @@ private:
 
     bool initialized_ = false;
     bool controlsInitialized_ = false;
+
+    // Temporal systems registry - non-owning pointers to systems that need reset on window focus
+    std::vector<ITemporalSystem*> temporalSystems_;
 };

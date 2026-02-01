@@ -652,6 +652,10 @@ void Renderer::initResizeCoordinator() {
             return {0, 0};
         }
 
+        // Clear all swapchain images to prevent ghost frames from stale content
+        // This is especially important after window restore (e.g., from screen lock)
+        vulkanContext_->clearSwapchainImages();
+
         // Recreate swapchain-dependent resources (depth buffer and framebuffers)
         if (!vulkanContext_->recreateSwapchainResources()) {
             SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to recreate swapchain resources during resize");
@@ -668,4 +672,30 @@ void Renderer::initControlSubsystems() {
     // Initialize control subsystems in RendererSystems
     // These subsystems implement GUI-facing interfaces directly
     systems_->initControlSubsystems(*vulkanContext_, perfToggles);
+}
+
+void Renderer::initTemporalSystems() {
+    // Register all systems that implement ITemporalSystem
+    // These systems have temporal state (history buffers, ping-pong buffers, frame counters)
+    // that needs to be reset when the window regains focus to prevent ghost frames
+
+    // SSR - has temporal filtering with 90% previous frame blend
+    systems_->registerTemporalSystem(&systems_->ssr());
+
+    // Froxel - has temporal reprojection for volumetric fog
+    if (systems_->hasFroxel()) {
+        systems_->registerTemporalSystem(&systems_->froxel());
+    }
+
+    // Water systems with temporal state
+    systems_->registerTemporalSystem(&systems_->foam());
+    systems_->registerTemporalSystem(&systems_->waterDisplacement());
+
+    // Vegetation systems with temporal state
+    if (systems_->impostorCull()) {
+        systems_->registerTemporalSystem(systems_->impostorCull());
+    }
+
+    SDL_Log("Registered %zu temporal systems for ghost frame prevention",
+            systems_->getTemporalSystemCount());
 }

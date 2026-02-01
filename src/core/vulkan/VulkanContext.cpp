@@ -277,10 +277,38 @@ bool VulkanContext::createAllocator() {
 }
 
 bool VulkanContext::createSwapchain() {
+    // Query surface capabilities to understand composite alpha support
+    VkSurfaceCapabilitiesKHR surfaceCaps;
+    vkGetPhysicalDeviceSurfaceCapabilitiesKHR(physicalDevice, surface, &surfaceCaps);
+
+    // Log supported composite alpha modes for debugging ghost frame issues
+    SDL_Log("Swapchain: Supported composite alpha modes: %s%s%s%s",
+        (surfaceCaps.supportedCompositeAlpha & VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR) ? "OPAQUE " : "",
+        (surfaceCaps.supportedCompositeAlpha & VK_COMPOSITE_ALPHA_PRE_MULTIPLIED_BIT_KHR) ? "PRE_MULTIPLIED " : "",
+        (surfaceCaps.supportedCompositeAlpha & VK_COMPOSITE_ALPHA_POST_MULTIPLIED_BIT_KHR) ? "POST_MULTIPLIED " : "",
+        (surfaceCaps.supportedCompositeAlpha & VK_COMPOSITE_ALPHA_INHERIT_BIT_KHR) ? "INHERIT " : "");
+
+    // Prefer OPAQUE to prevent compositor alpha blending, fall back to INHERIT if not supported
+    VkCompositeAlphaFlagBitsKHR compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
+    if (!(surfaceCaps.supportedCompositeAlpha & VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR)) {
+        if (surfaceCaps.supportedCompositeAlpha & VK_COMPOSITE_ALPHA_INHERIT_BIT_KHR) {
+            compositeAlpha = VK_COMPOSITE_ALPHA_INHERIT_BIT_KHR;
+            SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                "Swapchain: OPAQUE composite alpha not supported, using INHERIT. "
+                "Ghost frames may occur on window background/restore.");
+        } else if (surfaceCaps.supportedCompositeAlpha & VK_COMPOSITE_ALPHA_PRE_MULTIPLIED_BIT_KHR) {
+            compositeAlpha = VK_COMPOSITE_ALPHA_PRE_MULTIPLIED_BIT_KHR;
+            SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                "Swapchain: Using PRE_MULTIPLIED composite alpha");
+        }
+    }
+
     vkb::SwapchainBuilder swapchainBuilder{vkbDevice};
     auto swapRet = swapchainBuilder
         .set_desired_format({VK_FORMAT_B8G8R8A8_SRGB, VK_COLOR_SPACE_SRGB_NONLINEAR_KHR})
         .set_desired_present_mode(VK_PRESENT_MODE_FIFO_KHR)
+        // Use selected composite alpha mode to prevent ghost frames
+        .set_composite_alpha_flags(compositeAlpha)
         .build();
 
     if (!swapRet) {
@@ -294,6 +322,12 @@ bool VulkanContext::createSwapchain() {
     swapchainImageViews = vkbSwapchain.get_image_views().value();
     swapchainImageFormat = vkbSwapchain.image_format;
     swapchainExtent = vkbSwapchain.extent;
+
+    SDL_Log("Swapchain: Created with composite alpha mode: %s",
+        compositeAlpha == VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR ? "OPAQUE" :
+        compositeAlpha == VK_COMPOSITE_ALPHA_INHERIT_BIT_KHR ? "INHERIT" :
+        compositeAlpha == VK_COMPOSITE_ALPHA_PRE_MULTIPLIED_BIT_KHR ? "PRE_MULTIPLIED" :
+        "POST_MULTIPLIED");
 
     return true;
 }
@@ -318,6 +352,154 @@ bool VulkanContext::recreateSwapchain() {
     vk::Device(device).waitIdle();
     destroySwapchain();
     return createSwapchain();
+}
+
+void VulkanContext::clearSwapchainImages() {
+    // Clear and PRESENT all swapchain images to eliminate ghost frames after resize
+    // Simply clearing isn't enough - we must present to force the compositor to update
+    // This cycles through all swapchain images, acquiring, clearing, and presenting each
+
+    if (swapchainImages.empty() || !commandPool_ || swapchain == VK_NULL_HANDLE) {
+        return;
+    }
+
+    vk::Device vkDevice(device);
+    vk::Queue vkGfxQueue(graphicsQueue);
+    vk::Queue vkPresentQueue(presentQueue);
+    vk::SwapchainKHR vkSwapchain(swapchain);
+
+    // Create a temporary semaphore for synchronization
+    vk::Semaphore acquireSem, renderSem;
+    try {
+        acquireSem = vkDevice.createSemaphore(vk::SemaphoreCreateInfo{});
+        renderSem = vkDevice.createSemaphore(vk::SemaphoreCreateInfo{});
+    } catch (const vk::SystemError& e) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create semaphores for swapchain clear: %s", e.what());
+        return;
+    }
+
+    // Allocate a temporary command buffer
+    auto allocInfo = vk::CommandBufferAllocateInfo{}
+        .setCommandPool(**commandPool_)
+        .setLevel(vk::CommandBufferLevel::ePrimary)
+        .setCommandBufferCount(1);
+
+    std::vector<vk::CommandBuffer> cmdBuffers;
+    try {
+        cmdBuffers = vkDevice.allocateCommandBuffers(allocInfo);
+    } catch (const vk::SystemError& e) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to allocate command buffer for swapchain clear: %s", e.what());
+        vkDevice.destroySemaphore(acquireSem);
+        vkDevice.destroySemaphore(renderSem);
+        return;
+    }
+
+    vk::CommandBuffer cmd = cmdBuffers[0];
+
+    // Clear color value (black with full alpha)
+    vk::ClearColorValue clearColor{std::array<float, 4>{0.0f, 0.0f, 0.0f, 1.0f}};
+
+    vk::ImageSubresourceRange range{};
+    range.aspectMask = vk::ImageAspectFlagBits::eColor;
+    range.baseMipLevel = 0;
+    range.levelCount = 1;
+    range.baseArrayLayer = 0;
+    range.layerCount = 1;
+
+    // Present each swapchain image to flush the compositor
+    uint32_t presentCount = 0;
+    for (size_t i = 0; i < swapchainImages.size(); i++) {
+        // Acquire the next image
+        uint32_t imageIndex;
+        auto acquireResult = vkDevice.acquireNextImageKHR(vkSwapchain, UINT64_MAX, acquireSem, nullptr);
+        if (acquireResult.result != vk::Result::eSuccess && acquireResult.result != vk::Result::eSuboptimalKHR) {
+            SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "Failed to acquire swapchain image %zu during clear", i);
+            continue;
+        }
+        imageIndex = acquireResult.value;
+
+        // Record clear command for this image
+        try {
+            cmd.begin(vk::CommandBufferBeginInfo{}.setFlags(vk::CommandBufferUsageFlagBits::eOneTimeSubmit));
+
+            VkImage image = swapchainImages[imageIndex];
+
+            // Transition to TRANSFER_DST for clearing
+            auto toTransfer = vk::ImageMemoryBarrier{}
+                .setSrcAccessMask(vk::AccessFlagBits::eNone)
+                .setDstAccessMask(vk::AccessFlagBits::eTransferWrite)
+                .setOldLayout(vk::ImageLayout::eUndefined)
+                .setNewLayout(vk::ImageLayout::eTransferDstOptimal)
+                .setSrcQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
+                .setDstQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
+                .setImage(image)
+                .setSubresourceRange(range);
+
+            cmd.pipelineBarrier(
+                vk::PipelineStageFlagBits::eTopOfPipe,
+                vk::PipelineStageFlagBits::eTransfer,
+                {}, {}, {}, toTransfer);
+
+            // Clear the image
+            cmd.clearColorImage(image, vk::ImageLayout::eTransferDstOptimal, clearColor, range);
+
+            // Transition to PRESENT_SRC for presentation
+            auto toPresent = vk::ImageMemoryBarrier{}
+                .setSrcAccessMask(vk::AccessFlagBits::eTransferWrite)
+                .setDstAccessMask(vk::AccessFlagBits::eNone)
+                .setOldLayout(vk::ImageLayout::eTransferDstOptimal)
+                .setNewLayout(vk::ImageLayout::ePresentSrcKHR)
+                .setSrcQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
+                .setDstQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
+                .setImage(image)
+                .setSubresourceRange(range);
+
+            cmd.pipelineBarrier(
+                vk::PipelineStageFlagBits::eTransfer,
+                vk::PipelineStageFlagBits::eBottomOfPipe,
+                {}, {}, {}, toPresent);
+
+            cmd.end();
+
+            // Submit with proper semaphore wait/signal
+            vk::PipelineStageFlags waitStage = vk::PipelineStageFlagBits::eTransfer;
+            auto submitInfo = vk::SubmitInfo{}
+                .setWaitSemaphores(acquireSem)
+                .setWaitDstStageMask(waitStage)
+                .setCommandBuffers(cmd)
+                .setSignalSemaphores(renderSem);
+
+            vkGfxQueue.submit(submitInfo, nullptr);
+
+            // Present the cleared image
+            auto presentInfo = vk::PresentInfoKHR{}
+                .setWaitSemaphores(renderSem)
+                .setSwapchains(vkSwapchain)
+                .setImageIndices(imageIndex);
+
+            auto presentResult = vkPresentQueue.presentKHR(presentInfo);
+            if (presentResult == vk::Result::eSuccess || presentResult == vk::Result::eSuboptimalKHR) {
+                presentCount++;
+            }
+
+            // Wait for this present to complete before next iteration
+            vkGfxQueue.waitIdle();
+
+            // Reset command buffer for next use
+            cmd.reset(vk::CommandBufferResetFlagBits::eReleaseResources);
+
+        } catch (const vk::SystemError& e) {
+            SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "Error during swapchain clear for image %zu: %s", i, e.what());
+        }
+    }
+
+    SDL_Log("Cleared and presented %u/%zu swapchain images to eliminate ghost frames",
+            presentCount, swapchainImages.size());
+
+    // Cleanup
+    vkDevice.freeCommandBuffers(**commandPool_, cmd);
+    vkDevice.destroySemaphore(acquireSem);
+    vkDevice.destroySemaphore(renderSem);
 }
 
 void VulkanContext::waitIdle() {

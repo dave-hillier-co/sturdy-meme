@@ -10,6 +10,7 @@
 #include <optional>
 
 #include "VmaBuffer.h"
+#include "interfaces/ITemporalSystem.h"
 
 /**
  * WaterDisplacement - Phase 4: Vector Displacement Maps (Interactive Splashes)
@@ -23,7 +24,7 @@
  *
  * Based on Far Cry 5's water rendering approach (GDC 2018).
  */
-class WaterDisplacement {
+class WaterDisplacement : public ITemporalSystem {
 public:
     // Passkey for controlled construction via make_unique
     struct ConstructToken { explicit ConstructToken() = default; };
@@ -103,6 +104,9 @@ public:
 
     // Clear all particles and reset displacement map
     void clear();
+
+    // ITemporalSystem: Reset temporal history to prevent ghost frames
+    void resetTemporalHistory() override { clear(); }
 
     // Get current particle count
     size_t getParticleCount() const { return particles.size(); }

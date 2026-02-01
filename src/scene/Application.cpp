@@ -609,9 +609,10 @@ void Application::run() {
         glm::vec3 inputDirection = glm::vec3(desiredVelocity.x, 0.0f, desiredVelocity.z);
         glm::vec3 facingDirection = playerTransform.getForward();
 
-        // Determine strafe mode (orientation lock is active)
-        bool strafeMode = input.isThirdPersonMode() &&
-            (playerMovement.orientationLocked || input.isOrientationLockHeld());
+        // Determine strafe mode (GUI-enabled or orientation lock is active)
+        bool strafeMode = gui_->getPlayerSettings().strafeModeEnabled ||
+            (input.isThirdPersonMode() &&
+             (playerMovement.orientationLocked || input.isOrientationLockHeld()));
 
         // Get camera direction for strafe mode (character faces camera direction)
         glm::vec3 cameraDirection = camera.getForward();

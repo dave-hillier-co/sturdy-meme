@@ -363,6 +363,11 @@ void MotionMatchingController::setExcludedTags(const std::vector<std::string>& t
 }
 
 void MotionMatchingController::setStrafeMode(bool enabled) {
+    // Only update if value actually changed
+    if (strafeMode_ == enabled) {
+        return;
+    }
+
     strafeMode_ = enabled;
 
     // Update feature extractor strafe mode for heading extraction

@@ -92,8 +92,9 @@ public:
     const Skeleton& getSkeleton() const { return skeleton; }
     Skeleton& getSkeleton() { return skeleton; }
 
-    // Access to vertex data for debugging
+    // Access to vertex/index data for debugging
     const std::vector<SkinnedVertex>& getVertices() const { return vertices; }
+    const std::vector<uint32_t>& getIndices() const { return indices; }
 
 private:
     std::vector<SkinnedVertex> vertices;

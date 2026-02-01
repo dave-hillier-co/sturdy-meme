@@ -1,5 +1,6 @@
 #include "AnimationArchetypeManager.h"
 #include "AnimatedCharacter.h"
+#include "ecs/Components.h"
 #include <SDL3/SDL_log.h>
 #include <glm/gtc/matrix_transform.hpp>
 #include <algorithm>
@@ -414,6 +415,72 @@ void AnimationArchetypeManager::clear() {
 
 void updateAnimationInstance(
     NPCAnimationInstance& instance,
+    const AnimationArchetype& archetype,
+    float deltaTime,
+    uint32_t currentFrame)
+{
+    // Ensure bone matrix buffer is sized correctly
+    instance.resizeBoneMatrices(archetype.getBoneCount());
+
+    // Advance animation time
+    const AnimationClip* currentClip = archetype.getAnimation(instance.currentClipIndex);
+    if (!currentClip) {
+        return;
+    }
+
+    instance.currentTime = advanceAnimationTime(
+        *currentClip,
+        instance.currentTime,
+        deltaTime,
+        instance.playbackSpeed,
+        instance.looping
+    );
+
+    // Update blend state
+    instance.updateBlend(deltaTime);
+
+    // Advance previous clip time if blending
+    if (instance.isBlending) {
+        const AnimationClip* prevClip = archetype.getAnimation(instance.previousClipIndex);
+        if (prevClip) {
+            instance.previousTime = advanceAnimationTime(
+                *prevClip,
+                instance.previousTime,
+                deltaTime,
+                instance.playbackSpeed,
+                true  // Always loop during blend-out
+            );
+        }
+    }
+
+    // Sample animation(s) and compute bone matrices
+    if (instance.isBlending) {
+        sampleArchetypeAnimationBlended(
+            archetype,
+            instance.previousClipIndex,
+            instance.previousTime,
+            instance.currentClipIndex,
+            instance.currentTime,
+            instance.blendWeight,
+            instance.boneMatrices,
+            instance.lodLevel
+        );
+    } else {
+        sampleArchetypeAnimation(
+            archetype,
+            instance.currentClipIndex,
+            instance.currentTime,
+            instance.boneMatrices,
+            instance.lodLevel
+        );
+    }
+
+    instance.lastUpdateFrame = currentFrame;
+}
+
+// Overload for ECS NPCAnimationInstance component
+void updateAnimationInstance(
+    ecs::NPCAnimationInstance& instance,
     const AnimationArchetype& archetype,
     float deltaTime,
     uint32_t currentFrame)

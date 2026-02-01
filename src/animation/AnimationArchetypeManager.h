@@ -15,6 +15,10 @@ class AnimatedCharacter;
 struct SkinnedMesh;
 struct Mesh;
 
+namespace ecs {
+struct NPCAnimationInstance;
+}
+
 // =============================================================================
 // AnimationArchetype - Shared animation data for a character type
 // =============================================================================
@@ -250,6 +254,13 @@ struct NPCAnimationInstance {
 // Update animation instance with time advancement and bone matrix computation
 void updateAnimationInstance(
     NPCAnimationInstance& instance,
+    const AnimationArchetype& archetype,
+    float deltaTime,
+    uint32_t currentFrame);
+
+// Overload for ECS NPCAnimationInstance component
+void updateAnimationInstance(
+    ecs::NPCAnimationInstance& instance,
     const AnimationArchetype& archetype,
     float deltaTime,
     uint32_t currentFrame);

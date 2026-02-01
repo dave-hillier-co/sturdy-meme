@@ -884,6 +884,23 @@ void SceneBuilder::updateAnimatedCharacter(float deltaTime, VmaAllocator allocat
 
     // Update motion matching if enabled (must be called before update())
     if (animatedCharacter->isUsingMotionMatching()) {
+        auto& controller = animatedCharacter->getMotionMatchingController();
+
+        // Derive airborne state from position vs terrain height
+        // If character's Y is significantly above terrain, they're airborne
+        constexpr float AIRBORNE_THRESHOLD = 0.5f;  // 50cm above terrain = airborne
+        float terrainY = getTerrainHeight(position.x, position.z);
+        bool isAirborne = (position.y - terrainY) > AIRBORNE_THRESHOLD;
+
+        // When airborne, require jump animations; otherwise exclude them
+        if (isAirborne) {
+            controller.setExcludedTags({});  // Don't exclude jump
+            controller.setRequiredTags({"jump"});  // Require jump animations
+        } else {
+            controller.setExcludedTags({"jump"});  // Exclude jump during normal locomotion
+            controller.setRequiredTags({});
+        }
+
         // Get actual speed from input direction
         float actualSpeed = glm::length(inputDirection);
         // Normalize direction to unit vector

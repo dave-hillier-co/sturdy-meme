@@ -354,7 +354,8 @@ void MotionMatchingController::setExcludedTags(const std::vector<std::string>& t
 const Trajectory& MotionMatchingController::getLastMatchedTrajectory() const {
     static Trajectory empty;
 
-    if (database_.getPoseCount() == 0) {
+    if (database_.getPoseCount() == 0 ||
+        playback_.matchedPoseIndex >= database_.getPoseCount()) {
         return empty;
     }
 

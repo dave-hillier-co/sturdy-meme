@@ -818,6 +818,16 @@ void AnimatedCharacter::initializeMotionMatching(const MotionMatching::Controlle
         std::vector<std::string> tags;
         float locomotionSpeed = 0.0f;
 
+        // Cost bias: negative = prefer, positive = avoid
+        // Variant animations (idle2, run2, etc.) get positive bias to be used less often
+        float costBias = 0.0f;
+        bool isVariant = (lowerName.find("2") != std::string::npos ||
+                         lowerName.find("_2") != std::string::npos ||
+                         lowerName.find("alt") != std::string::npos);
+        if (isVariant) {
+            costBias = 0.5f;  // Make variants less likely to be selected
+        }
+
         if (lowerName.find("idle") != std::string::npos) {
             tags.push_back("idle");
             tags.push_back("locomotion");
@@ -844,7 +854,7 @@ void AnimatedCharacter::initializeMotionMatching(const MotionMatching::Controlle
             tags.push_back("jump");
         }
 
-        motionMatchingController.addClip(&clip, clip.name, looping, tags, locomotionSpeed);
+        motionMatchingController.addClip(&clip, clip.name, looping, tags, locomotionSpeed, costBias);
     }
 
     // Build the database

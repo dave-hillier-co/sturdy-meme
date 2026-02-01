@@ -33,8 +33,9 @@ void MotionMatchingController::addClip(const AnimationClip* clip,
                                          const std::string& name,
                                          bool looping,
                                          const std::vector<std::string>& tags,
-                                         float locomotionSpeed) {
-    database_.addClip(clip, name, looping, 30.0f, tags, locomotionSpeed);
+                                         float locomotionSpeed,
+                                         float costBias) {
+    database_.addClip(clip, name, looping, 30.0f, tags, locomotionSpeed, costBias);
 }
 
 void MotionMatchingController::buildDatabase(const DatabaseBuildOptions& options) {
@@ -164,15 +165,36 @@ void MotionMatchingController::performSearch() {
     MatchResult match = matcher_.findBestMatch(localTrajectory, queryPose_, options);
 
     if (match.isValid()) {
-        // Check if this is a different pose than current
-        bool isDifferentPose = (match.poseIndex != playback_.matchedPoseIndex);
+        // Check if this is a different clip
+        bool isDifferentClip = (match.pose->clipIndex != playback_.clipIndex);
 
-        // Only transition if cost is significantly better or we've been on same pose too long
-        bool shouldTransition = isDifferentPose &&
-                               (match.cost < stats_.lastMatchCost * 0.8f ||
-                                playback_.timeSinceMatch > 0.5f);
+        // Get current clip info
+        const DatabaseClip& currentClip = database_.getClip(playback_.clipIndex);
 
-        if (shouldTransition || playback_.timeSinceMatch > 1.0f) {
+        // For looping clips we're already playing, don't allow same-clip time jumps
+        // Just let the animation play through naturally - only switch when going to different clip
+        bool shouldTransition = false;
+
+        if (isDifferentClip) {
+            // Switching to different clip - allow if cost is better or we've been here a while
+            shouldTransition = (match.cost < stats_.lastMatchCost * 0.8f ||
+                               playback_.timeSinceMatch > 0.5f);
+        }
+        // For same clip: only transition if we're NOT in a looping clip
+        // Non-looping clips (like jumps) may need time jumps for responsiveness
+        else if (!currentClip.looping) {
+            float timeDiff = std::abs(match.pose->time - playback_.time);
+            bool isSignificantTimeJump = timeDiff > 0.2f;
+            if (isSignificantTimeJump && match.cost < stats_.lastMatchCost * 0.5f) {
+                shouldTransition = true;
+            }
+        }
+        // For looping clips in same clip: never jump, let it play naturally
+
+        // Force transition after 1.0s only if it's to a different clip
+        bool forceTransition = (playback_.timeSinceMatch > 1.0f) && isDifferentClip;
+
+        if (shouldTransition || forceTransition) {
             transitionToPose(match);
             ++matchCountThisSecond_;
 

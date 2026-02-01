@@ -88,12 +88,14 @@ public:
     // Add an animation clip to the database
     // Returns the clip index
     // locomotionSpeed: Override root velocity for in-place animations (0 = use extracted)
+    // costBias: Negative = prefer this clip, positive = avoid (0 = neutral)
     size_t addClip(const AnimationClip* clip,
                    const std::string& name,
                    bool looping = true,
                    float sampleRate = 30.0f,
                    const std::vector<std::string>& tags = {},
-                   float locomotionSpeed = 0.0f);
+                   float locomotionSpeed = 0.0f,
+                   float costBias = 0.0f);
 
     // Build the database (index all poses)
     void build(const DatabaseBuildOptions& options = DatabaseBuildOptions{});

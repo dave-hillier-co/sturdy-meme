@@ -23,7 +23,8 @@ size_t MotionDatabase::addClip(const AnimationClip* clip,
                                 bool looping,
                                 float sampleRate,
                                 const std::vector<std::string>& tags,
-                                float locomotionSpeed) {
+                                float locomotionSpeed,
+                                float costBias) {
     if (!initialized_) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
                     "MotionDatabase: Cannot add clip before initialization");
@@ -38,6 +39,7 @@ size_t MotionDatabase::addClip(const AnimationClip* clip,
     dbClip.sampleRate = sampleRate;
     dbClip.tags = tags;
     dbClip.locomotionSpeed = locomotionSpeed;
+    dbClip.costBias = costBias;
 
     size_t index = clips_.size();
     clips_.push_back(dbClip);

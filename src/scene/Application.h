@@ -82,6 +82,7 @@ private:
     // ECS world and entity tracking
     ecs::World ecsWorld_;
     std::vector<ecs::Entity> sceneEntities_;  // Maps scene object indices to ECS entities
+    bool ecsWeaponsInitialized_ = false;      // Track if weapon bone attachments are set up
 
     bool running = false;
     // Walk speed matches animation root motion: 158.42 cm / 1.10s * 0.01 scale = 1.44 m/s

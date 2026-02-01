@@ -1279,7 +1279,9 @@ void Application::initECS() {
 void Application::updateECS(float deltaTime) {
     (void)deltaTime;  // Currently unused, but available for time-based systems
 
-    const auto& renderables = renderer_->getSystems().scene().getRenderables();
+    auto& sceneManager = renderer_->getSystems().scene();
+    auto& sceneBuilder = sceneManager.getSceneBuilder();
+    auto& renderables = sceneManager.getRenderables();
 
     // Lazy initialization: populate ECS entities when renderables become available
     // This handles deferred renderable creation (after terrain is ready)
@@ -1297,14 +1299,70 @@ void Application::updateECS(float deltaTime) {
         SDL_Log("ECS: Populated %zu entities from deferred renderables", sceneEntities_.size());
     }
 
-    // Sync transforms from Renderables to ECS (for objects updated by physics or animation)
-    // This updates root entities that don't have LocalTransform/Parent
+    // Set up bone attachments for weapons (once, after entities are populated)
+    if (!ecsWeaponsInitialized_ && !sceneEntities_.empty() && sceneBuilder.hasWeapons()) {
+        size_t swordIdx = sceneBuilder.getSwordIndex();
+        size_t shieldIdx = sceneBuilder.getShieldIndex();
+
+        // Add bone attachment to sword entity
+        if (swordIdx < sceneEntities_.size()) {
+            ecs::Entity swordEntity = sceneEntities_[swordIdx];
+            if (ecsWorld_.valid(swordEntity)) {
+                ecsWorld_.add<ecs::BoneAttachment>(swordEntity,
+                    sceneBuilder.getRightHandBoneIndex(),
+                    sceneBuilder.getSwordOffset());
+                SDL_Log("ECS: Attached sword (entity %zu) to right hand bone %d",
+                        swordIdx, sceneBuilder.getRightHandBoneIndex());
+            }
+        }
+
+        // Add bone attachment to shield entity
+        if (shieldIdx < sceneEntities_.size()) {
+            ecs::Entity shieldEntity = sceneEntities_[shieldIdx];
+            if (ecsWorld_.valid(shieldEntity)) {
+                ecsWorld_.add<ecs::BoneAttachment>(shieldEntity,
+                    sceneBuilder.getLeftHandBoneIndex(),
+                    sceneBuilder.getShieldOffset());
+                SDL_Log("ECS: Attached shield (entity %zu) to left hand bone %d",
+                        shieldIdx, sceneBuilder.getLeftHandBoneIndex());
+            }
+        }
+
+        ecsWeaponsInitialized_ = true;
+    }
+
+    // Sync transforms from Renderables to ECS (for objects NOT driven by bone attachments)
     for (size_t i = 0; i < sceneEntities_.size() && i < renderables.size(); ++i) {
         ecs::Entity entity = sceneEntities_[i];
         if (ecsWorld_.valid(entity) && ecsWorld_.has<ecs::Transform>(entity)) {
-            // Only sync if entity doesn't have LocalTransform (hierarchy handles those)
-            if (!ecsWorld_.has<ecs::LocalTransform>(entity)) {
+            // Skip if entity has BoneAttachment (skeleton drives it) or LocalTransform (hierarchy drives it)
+            if (!ecsWorld_.has<ecs::BoneAttachment>(entity) && !ecsWorld_.has<ecs::LocalTransform>(entity)) {
                 ecsWorld_.get<ecs::Transform>(entity).matrix = renderables[i].transform;
+            }
+        }
+    }
+
+    // Update bone attachments from skeleton
+    if (sceneBuilder.hasCharacter() && ecsWeaponsInitialized_) {
+        const auto& skeleton = sceneBuilder.getAnimatedCharacter().getSkeleton();
+        std::vector<glm::mat4> globalBoneTransforms;
+        skeleton.computeGlobalTransforms(globalBoneTransforms);
+
+        // Get character world transform from player state
+        glm::mat4 characterWorld = player_.movement.getModelMatrix(player_.transform);
+
+        // Update all bone-attached entities
+        ecs::systems::updateBoneAttachments(ecsWorld_, characterWorld, globalBoneTransforms);
+
+        // Sync bone-attached ECS transforms back to renderables for rendering
+        for (auto [entity, attachment, transform] :
+             ecsWorld_.view<ecs::BoneAttachment, ecs::Transform>().each()) {
+            // Find the renderable index for this entity
+            for (size_t i = 0; i < sceneEntities_.size(); ++i) {
+                if (sceneEntities_[i] == entity && i < renderables.size()) {
+                    renderables[i].transform = transform.matrix;
+                    break;
+                }
             }
         }
     }

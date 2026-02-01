@@ -327,7 +327,7 @@ void VulkanContext::clearSwapchainImages() {
     // Clear all swapchain images to black to prevent ghost frames after resize
     // This ensures no stale content is visible when the swapchain is first used
 
-    if (swapchainImages.empty() || commandPool == VK_NULL_HANDLE) {
+    if (swapchainImages.empty() || !commandPool_) {
         return;
     }
 
@@ -336,7 +336,7 @@ void VulkanContext::clearSwapchainImages() {
 
     // Allocate a temporary command buffer
     auto allocInfo = vk::CommandBufferAllocateInfo{}
-        .setCommandPool(commandPool)
+        .setCommandPool(**commandPool_)
         .setLevel(vk::CommandBufferLevel::ePrimary)
         .setCommandBufferCount(1);
 
@@ -418,7 +418,7 @@ void VulkanContext::clearSwapchainImages() {
     }
 
     // Free the temporary command buffer
-    vkDevice.freeCommandBuffers(commandPool, cmd);
+    vkDevice.freeCommandBuffers(**commandPool_, cmd);
 }
 
 void VulkanContext::waitIdle() {

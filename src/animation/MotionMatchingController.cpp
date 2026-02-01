@@ -118,15 +118,50 @@ void MotionMatchingController::update(const glm::vec3& position,
 }
 
 void MotionMatchingController::performSearch() {
-    // Generate query trajectory
+    // Generate query trajectory (in world space) - keep this for visualization
     queryTrajectory_ = trajectoryPredictor_.generateTrajectory();
+
+    // Create a local-space copy for matching
+    // Database trajectories are in animation-local space where forward is Z+
+    // We need to rotate the query so the character's facing direction becomes Z+
+    Trajectory localTrajectory = queryTrajectory_;
+
+    glm::vec3 facing = trajectoryPredictor_.getCurrentFacing();
+    if (glm::length(facing) > 0.01f) {
+        facing = glm::normalize(facing);
+
+        // Build rotation from world to local: rotate so facing -> Z+
+        // facing.x = sin(angle), facing.z = cos(angle) where angle is rotation around Y
+        float angle = std::atan2(facing.x, facing.z);
+        float cosA = std::cos(-angle);  // Negative to rotate TO local
+        float sinA = std::sin(-angle);
+
+        for (size_t i = 0; i < localTrajectory.sampleCount; ++i) {
+            TrajectorySample& s = localTrajectory.samples[i];
+
+            // Rotate position around Y axis (3D Y-axis rotation, not 2D rotation)
+            glm::vec3 pos = s.position;
+            s.position.x = pos.x * cosA + pos.z * sinA;
+            s.position.z = -pos.x * sinA + pos.z * cosA;
+
+            // Rotate velocity
+            glm::vec3 vel = s.velocity;
+            s.velocity.x = vel.x * cosA + vel.z * sinA;
+            s.velocity.z = -vel.x * sinA + vel.z * cosA;
+
+            // Rotate facing direction
+            glm::vec3 fac = s.facing;
+            s.facing.x = fac.x * cosA + fac.z * sinA;
+            s.facing.z = -fac.x * sinA + fac.z * cosA;
+        }
+    }
 
     // Set current pose in search options for continuity
     SearchOptions options = config_.searchOptions;
     options.currentPoseIndex = playback_.matchedPoseIndex;
 
-    // Perform search
-    MatchResult match = matcher_.findBestMatch(queryTrajectory_, queryPose_, options);
+    // Perform search with local-space trajectory
+    MatchResult match = matcher_.findBestMatch(localTrajectory, queryPose_, options);
 
     if (match.isValid()) {
         // Check if this is a different pose than current

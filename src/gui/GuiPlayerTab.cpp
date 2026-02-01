@@ -9,6 +9,7 @@
 #include "GLTFLoader.h"  // For Skeleton
 
 #include <imgui.h>
+#include <cmath>
 
 void GuiPlayerTab::render(IPlayerControl& playerControl, PlayerSettings& settings) {
     ImGui::Spacing();
@@ -462,15 +463,37 @@ void GuiPlayerTab::renderMotionMatchingOverlay(IPlayerControl& playerControl, co
         }
 
         // Draw matched trajectory (green - from database)
+        // Database trajectory is in character-local space (forward = Z+)
+        // Transform to world space using character's facing direction
         ImU32 matchColor = IM_COL32(100, 255, 100, 150);
         ImU32 matchPointColor = IM_COL32(0, 255, 0, 200);
+
+        // Get character facing from world transform (Z axis)
+        glm::vec3 charFacing = glm::normalize(glm::vec3(worldTransform[2]));
+        charFacing.y = 0.0f;
+        if (glm::length(charFacing) > 0.01f) {
+            charFacing = glm::normalize(charFacing);
+        } else {
+            charFacing = glm::vec3(0.0f, 0.0f, 1.0f);
+        }
+
+        // Rotation angle: local Z+ -> world facing direction
+        float matchAngle = std::atan2(charFacing.x, charFacing.z);
+        float matchCosA = std::cos(matchAngle);
+        float matchSinA = std::sin(matchAngle);
 
         prevScreen = worldToScreen(charOrigin, viewProj, width, height);
         for (size_t i = 0; i < matchedTrajectory.sampleCount; ++i) {
             const auto& sample = matchedTrajectory.samples[i];
 
-            // Matched trajectory is also in world-space offsets
-            glm::vec3 worldPos = groundPos + sample.position;
+            // Transform from local space to world space (Y-axis rotation)
+            glm::vec3 localPos = sample.position;
+            glm::vec3 worldOffset;
+            worldOffset.x = localPos.x * matchCosA + localPos.z * matchSinA;
+            worldOffset.y = localPos.y;
+            worldOffset.z = -localPos.x * matchSinA + localPos.z * matchCosA;
+
+            glm::vec3 worldPos = groundPos + worldOffset;
             ImVec2 screenPos = worldToScreen(worldPos, viewProj, width, height);
 
             // Draw line (offset slightly for visibility)

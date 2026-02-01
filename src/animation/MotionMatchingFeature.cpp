@@ -380,6 +380,13 @@ Trajectory FeatureExtractor::extractTrajectoryFromClip(const AnimationClip& clip
         return trajectory;
     }
 
+    // First, get the reference position at currentTime (the "current" frame)
+    // This makes trajectory positions relative to where the character is now
+    Skeleton refSkeleton = skeleton;
+    clip.sample(currentTime, refSkeleton, false);
+    glm::vec3 refPosition = glm::vec3(refSkeleton.joints[rootBoneIndex_].localTransform[3]);
+    refPosition.y = 0.0f;
+
     for (float timeOffset : config_.trajectorySampleTimes) {
         float sampleTime = currentTime + timeOffset;
 
@@ -399,8 +406,11 @@ Trajectory FeatureExtractor::extractTrajectoryFromClip(const AnimationClip& clip
 
         TrajectorySample sample;
         sample.timeOffset = timeOffset;
-        sample.position = glm::vec3(rootMat[3]);
-        sample.position.y = 0.0f; // Flatten to ground plane
+
+        // Position relative to reference (current frame)
+        glm::vec3 absPosition = glm::vec3(rootMat[3]);
+        absPosition.y = 0.0f;
+        sample.position = absPosition - refPosition;
 
         // Facing is the forward direction (Z axis)
         sample.facing = glm::normalize(glm::vec3(rootMat[2]));
@@ -423,7 +433,7 @@ Trajectory FeatureExtractor::extractTrajectoryFromClip(const AnimationClip& clip
         glm::vec3 velPos = glm::vec3(velSkeleton.joints[rootBoneIndex_].localTransform[3]);
         velPos.y = 0.0f;
 
-        sample.velocity = (velPos - sample.position) / velDelta;
+        sample.velocity = (velPos - absPosition) / velDelta;
 
         trajectory.addSample(sample);
     }

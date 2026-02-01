@@ -599,10 +599,15 @@ void Application::run() {
         renderer_->getSystems().scene().getSceneBuilder().setShowShield(gui_->getPlayerSettings().showShield);
         renderer_->getSystems().scene().getSceneBuilder().setShowWeaponAxes(gui_->getPlayerSettings().showWeaponAxes);
 
+        // Pass motion matching parameters: position, facing direction, and input direction
+        glm::vec3 inputDirection = glm::vec3(desiredVelocity.x, 0.0f, desiredVelocity.z);
+        glm::vec3 facingDirection = playerTransform.getForward();
+
         renderer_->getSystems().scene().getSceneBuilder().updateAnimatedCharacter(
             deltaTime, renderer_->getVulkanContext().getAllocator(), renderer_->getVulkanContext().getVkDevice(),
             renderer_->getCommandPool(), renderer_->getVulkanContext().getVkGraphicsQueue(),
-            movementSpeed, isGrounded, isJumping);
+            movementSpeed, isGrounded, isJumping,
+            playerTransform.position, facingDirection, inputDirection);
 
         // Update NPC animations with LOD based on camera position
         renderer_->getSystems().scene().getSceneBuilder().updateNPCs(

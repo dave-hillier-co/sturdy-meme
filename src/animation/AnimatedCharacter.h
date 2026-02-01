@@ -10,6 +10,7 @@
 #include "GLTFLoader.h"
 #include "Mesh.h"
 #include "IKSolver.h"
+#include "MotionMatchingController.h"
 #include <vk_mem_alloc.h>
 #include <vulkan/vulkan.h>
 #include <string>
@@ -163,6 +164,36 @@ public:
     // Call this after loading to configure the blend space with idle/walk/run clips
     void setupLocomotionBlendSpace();
 
+    // ========== Motion Matching Mode ==========
+    // When enabled, uses motion matching instead of state machine for animation selection
+
+    // Enable motion matching mode
+    void setUseMotionMatching(bool use);
+    bool isUsingMotionMatching() const { return useMotionMatching; }
+
+    // Initialize motion matching with configuration
+    void initializeMotionMatching(const MotionMatching::ControllerConfig& config = {});
+
+    // Update motion matching with player input
+    // position: current character world position
+    // facing: current character facing direction
+    // inputDirection: desired movement direction from input
+    // inputMagnitude: 0-1 how much movement is desired
+    void updateMotionMatching(const glm::vec3& position,
+                               const glm::vec3& facing,
+                               const glm::vec3& inputDirection,
+                               float inputMagnitude,
+                               float deltaTime);
+
+    // Get motion matching controller for advanced configuration
+    MotionMatching::MotionMatchingController& getMotionMatchingController() { return motionMatchingController; }
+    const MotionMatching::MotionMatchingController& getMotionMatchingController() const { return motionMatchingController; }
+
+    // Get motion matching statistics for debugging
+    const MotionMatching::MotionMatchingStats& getMotionMatchingStats() const {
+        return motionMatchingController.getStats();
+    }
+
     // Reset foot IK locks (call when teleporting or significantly repositioning the character)
     void resetFootLocks() { ikSystem.resetFootLocks(); }
 
@@ -196,8 +227,10 @@ private:
     AnimationPlayer animationPlayer;
     AnimationStateMachine stateMachine;
     AnimationLayerController layerController;
+    MotionMatching::MotionMatchingController motionMatchingController;
     bool useStateMachine = false;  // Set true after state machine is initialized
     bool useLayerController = false;  // Set true to use layer controller instead
+    bool useMotionMatching = false;  // Set true to use motion matching
     size_t currentAnimationIndex = 0;  // Track current animation by index, not duration
 
     // IK system for procedural adjustments

@@ -157,9 +157,15 @@ public:
     // movementSpeed: horizontal speed for animation state selection
     // isGrounded: whether on the ground
     // isJumping: whether just started jumping
+    // position: world position (for motion matching)
+    // facing: facing direction (for motion matching)
+    // inputDirection: desired movement direction (for motion matching)
     void updateAnimatedCharacter(float deltaTime, VmaAllocator allocator, VkDevice device,
                                   VkCommandPool commandPool, VkQueue queue,
-                                  float movementSpeed = 0.0f, bool isGrounded = true, bool isJumping = false);
+                                  float movementSpeed = 0.0f, bool isGrounded = true, bool isJumping = false,
+                                  const glm::vec3& position = glm::vec3(0.0f),
+                                  const glm::vec3& facing = glm::vec3(0.0f, 0.0f, 1.0f),
+                                  const glm::vec3& inputDirection = glm::vec3(0.0f));
 
     // Update all NPCs (call each frame) - updates animation states
     // cameraPos: used for LOD level calculation

@@ -23,4 +23,8 @@ public:
     virtual const glm::vec3& getPlayerPosition() const = 0;
     virtual const glm::vec3& getPlayerVelocity() const = 0;
     virtual float getPlayerCapsuleRadius() const = 0;
+
+    // Viewport dimensions (for debug overlay rendering)
+    virtual uint32_t getWidth() const = 0;
+    virtual uint32_t getHeight() const = 0;
 };

@@ -5,6 +5,7 @@
 
 class SceneManager;
 class SceneBuilder;
+class VulkanContext;
 
 /**
  * PlayerControlSubsystem - Implements IPlayerControl
@@ -13,8 +14,9 @@ class SceneBuilder;
  */
 class PlayerControlSubsystem : public IPlayerControl {
 public:
-    explicit PlayerControlSubsystem(SceneManager& scene)
-        : scene_(scene) {}
+    PlayerControlSubsystem(SceneManager& scene, VulkanContext& vulkanContext)
+        : scene_(scene)
+        , vulkanContext_(vulkanContext) {}
 
     SceneBuilder& getSceneBuilder() override;
     const SceneBuilder& getSceneBuilder() const override;
@@ -25,8 +27,13 @@ public:
     const glm::vec3& getPlayerVelocity() const override { return playerVelocity_; }
     float getPlayerCapsuleRadius() const override { return playerCapsuleRadius_; }
 
+    // Viewport dimensions
+    uint32_t getWidth() const override;
+    uint32_t getHeight() const override;
+
 private:
     SceneManager& scene_;
+    VulkanContext& vulkanContext_;
 
     // Player render state for interaction systems (grass displacement, snow, leaves, etc.)
     glm::vec3 playerPosition_ = glm::vec3(0.0f);

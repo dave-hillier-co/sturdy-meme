@@ -184,10 +184,23 @@ bool SceneBuilder::createMeshes(const InitInfo& info) {
     // Load animated character from FBX
     std::string characterPath = info.resourcePath + "/assets/characters/fbx/Y Bot.fbx";
     std::vector<std::string> additionalAnimations = {
+        // Core locomotion for motion matching
         info.resourcePath + "/assets/characters/fbx/ss_idle.fbx",
+        info.resourcePath + "/assets/characters/fbx/ss_idle2.fbx",
         info.resourcePath + "/assets/characters/fbx/ss_walk.fbx",
+        info.resourcePath + "/assets/characters/fbx/ss_walk2.fbx",
         info.resourcePath + "/assets/characters/fbx/ss_run.fbx",
-        info.resourcePath + "/assets/characters/fbx/ss_jump.fbx"
+        info.resourcePath + "/assets/characters/fbx/ss_run2.fbx",
+        info.resourcePath + "/assets/characters/fbx/ss_jump.fbx",
+        // Strafe animations for directional movement
+        info.resourcePath + "/assets/characters/fbx/ss_strafe_left.fbx",
+        info.resourcePath + "/assets/characters/fbx/ss_strafe_right.fbx",
+        info.resourcePath + "/assets/characters/fbx/ss_strafe_back.fbx",
+        info.resourcePath + "/assets/characters/fbx/ss_strafe_forward.fbx",
+        // Turn animations
+        info.resourcePath + "/assets/characters/fbx/ss_turn_left.fbx",
+        info.resourcePath + "/assets/characters/fbx/ss_turn_right.fbx",
+        info.resourcePath + "/assets/characters/fbx/ss_turn_180.fbx"
     };
 
     AnimatedCharacter::InitInfo charInfo{};
@@ -858,13 +871,44 @@ void SceneBuilder::updatePlayerTransform(const glm::mat4& transform) {
 
 void SceneBuilder::updateAnimatedCharacter(float deltaTime, VmaAllocator allocator, VkDevice device,
                                             VkCommandPool commandPool, VkQueue queue,
-                                            float movementSpeed, bool isGrounded, bool isJumping) {
+                                            float movementSpeed, bool isGrounded, bool isJumping,
+                                            const glm::vec3& position, const glm::vec3& facing,
+                                            const glm::vec3& inputDirection) {
     if (!hasAnimatedCharacter) return;
 
     // Get the character's current world transform for IK ground queries
     glm::mat4 worldTransform = glm::mat4(1.0f);
     if (playerObjectIndex < sceneObjects.size()) {
         worldTransform = sceneObjects[playerObjectIndex].transform;
+    }
+
+    // Update motion matching if enabled (must be called before update())
+    if (animatedCharacter->isUsingMotionMatching()) {
+        auto& controller = animatedCharacter->getMotionMatchingController();
+
+        // Derive airborne state from position vs terrain height
+        // If character's Y is significantly above terrain, they're airborne
+        constexpr float AIRBORNE_THRESHOLD = 0.5f;  // 50cm above terrain = airborne
+        float terrainY = getTerrainHeight(position.x, position.z);
+        bool isAirborne = (position.y - terrainY) > AIRBORNE_THRESHOLD;
+
+        // When airborne, require jump animations; otherwise exclude them
+        if (isAirborne) {
+            controller.setExcludedTags({});  // Don't exclude jump
+            controller.setRequiredTags({"jump"});  // Require jump animations
+        } else {
+            controller.setExcludedTags({"jump"});  // Exclude jump during normal locomotion
+            controller.setRequiredTags({});
+        }
+
+        // Get actual speed from input direction
+        float actualSpeed = glm::length(inputDirection);
+        // Normalize direction to unit vector
+        glm::vec3 normalizedInput = actualSpeed > 0.001f ? inputDirection / actualSpeed : glm::vec3(0.0f);
+        // Normalize magnitude to 0-1 range (maxSpeed = 6.0 m/s in TrajectoryPredictor)
+        constexpr float MAX_LOCOMOTION_SPEED = 6.0f;
+        float inputMagnitude = std::min(actualSpeed / MAX_LOCOMOTION_SPEED, 1.0f);
+        animatedCharacter->updateMotionMatching(position, facing, normalizedInput, inputMagnitude, deltaTime);
     }
 
     animatedCharacter->update(deltaTime, allocator, device, commandPool, queue,

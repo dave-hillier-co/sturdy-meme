@@ -373,10 +373,19 @@ void MotionMatchingController::setStrafeMode(bool enabled) {
     // Update feature extractor strafe mode for heading extraction
     featureExtractor_.setStrafeMode(enabled);
 
+    // Update trajectory predictor strafe mode
+    trajectoryPredictor_.setStrafeMode(enabled);
+
     // Force a search to update matching based on new mode
     forceSearchNextUpdate_ = true;
 
     SDL_Log("MotionMatchingController: Strafe mode %s", enabled ? "enabled" : "disabled");
+}
+
+void MotionMatchingController::setDesiredFacing(const glm::vec3& facing) {
+    desiredFacing_ = facing;
+    // Also update trajectory predictor's strafe facing
+    trajectoryPredictor_.setStrafeFacing(facing);
 }
 
 const Trajectory& MotionMatchingController::getLastMatchedTrajectory() const {

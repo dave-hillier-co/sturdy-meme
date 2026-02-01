@@ -324,15 +324,28 @@ bool VulkanContext::recreateSwapchain() {
 }
 
 void VulkanContext::clearSwapchainImages() {
-    // Clear all swapchain images to black to prevent ghost frames after resize
-    // This ensures no stale content is visible when the swapchain is first used
+    // Clear and PRESENT all swapchain images to eliminate ghost frames after resize
+    // Simply clearing isn't enough - we must present to force the compositor to update
+    // This cycles through all swapchain images, acquiring, clearing, and presenting each
 
-    if (swapchainImages.empty() || !commandPool_) {
+    if (swapchainImages.empty() || !commandPool_ || swapchain == VK_NULL_HANDLE) {
         return;
     }
 
     vk::Device vkDevice(device);
-    vk::Queue vkQueue(graphicsQueue);
+    vk::Queue vkGfxQueue(graphicsQueue);
+    vk::Queue vkPresentQueue(presentQueue);
+    vk::SwapchainKHR vkSwapchain(swapchain);
+
+    // Create a temporary semaphore for synchronization
+    vk::Semaphore acquireSem, renderSem;
+    try {
+        acquireSem = vkDevice.createSemaphore(vk::SemaphoreCreateInfo{});
+        renderSem = vkDevice.createSemaphore(vk::SemaphoreCreateInfo{});
+    } catch (const vk::SystemError& e) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create semaphores for swapchain clear: %s", e.what());
+        return;
+    }
 
     // Allocate a temporary command buffer
     auto allocInfo = vk::CommandBufferAllocateInfo{}
@@ -345,28 +358,40 @@ void VulkanContext::clearSwapchainImages() {
         cmdBuffers = vkDevice.allocateCommandBuffers(allocInfo);
     } catch (const vk::SystemError& e) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to allocate command buffer for swapchain clear: %s", e.what());
+        vkDevice.destroySemaphore(acquireSem);
+        vkDevice.destroySemaphore(renderSem);
         return;
     }
 
     vk::CommandBuffer cmd = cmdBuffers[0];
 
-    // Record the clear commands
-    try {
-        cmd.begin(vk::CommandBufferBeginInfo{}.setFlags(vk::CommandBufferUsageFlagBits::eOneTimeSubmit));
+    // Clear color value (black with full alpha)
+    vk::ClearColorValue clearColor{std::array<float, 4>{0.0f, 0.0f, 0.0f, 1.0f}};
 
-        // Clear color value (black with full alpha)
-        vk::ClearColorValue clearColor{std::array<float, 4>{0.0f, 0.0f, 0.0f, 1.0f}};
+    vk::ImageSubresourceRange range{};
+    range.aspectMask = vk::ImageAspectFlagBits::eColor;
+    range.baseMipLevel = 0;
+    range.levelCount = 1;
+    range.baseArrayLayer = 0;
+    range.layerCount = 1;
 
-        vk::ImageSubresourceRange range{};
-        range.aspectMask = vk::ImageAspectFlagBits::eColor;
-        range.baseMipLevel = 0;
-        range.levelCount = 1;
-        range.baseArrayLayer = 0;
-        range.layerCount = 1;
+    // Present each swapchain image to flush the compositor
+    uint32_t presentCount = 0;
+    for (size_t i = 0; i < swapchainImages.size(); i++) {
+        // Acquire the next image
+        uint32_t imageIndex;
+        auto acquireResult = vkDevice.acquireNextImageKHR(vkSwapchain, UINT64_MAX, acquireSem, nullptr);
+        if (acquireResult.result != vk::Result::eSuccess && acquireResult.result != vk::Result::eSuboptimalKHR) {
+            SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "Failed to acquire swapchain image %zu during clear", i);
+            continue;
+        }
+        imageIndex = acquireResult.value;
 
-        // Clear each swapchain image
-        for (size_t i = 0; i < swapchainImages.size(); i++) {
-            VkImage image = swapchainImages[i];
+        // Record clear command for this image
+        try {
+            cmd.begin(vk::CommandBufferBeginInfo{}.setFlags(vk::CommandBufferUsageFlagBits::eOneTimeSubmit));
+
+            VkImage image = swapchainImages[imageIndex];
 
             // Transition to TRANSFER_DST for clearing
             auto toTransfer = vk::ImageMemoryBarrier{}
@@ -402,23 +427,48 @@ void VulkanContext::clearSwapchainImages() {
                 vk::PipelineStageFlagBits::eTransfer,
                 vk::PipelineStageFlagBits::eBottomOfPipe,
                 {}, {}, {}, toPresent);
+
+            cmd.end();
+
+            // Submit with proper semaphore wait/signal
+            vk::PipelineStageFlags waitStage = vk::PipelineStageFlagBits::eTransfer;
+            auto submitInfo = vk::SubmitInfo{}
+                .setWaitSemaphores(acquireSem)
+                .setWaitDstStageMask(waitStage)
+                .setCommandBuffers(cmd)
+                .setSignalSemaphores(renderSem);
+
+            vkGfxQueue.submit(submitInfo, nullptr);
+
+            // Present the cleared image
+            auto presentInfo = vk::PresentInfoKHR{}
+                .setWaitSemaphores(renderSem)
+                .setSwapchains(vkSwapchain)
+                .setImageIndices(imageIndex);
+
+            auto presentResult = vkPresentQueue.presentKHR(presentInfo);
+            if (presentResult == vk::Result::eSuccess || presentResult == vk::Result::eSuboptimalKHR) {
+                presentCount++;
+            }
+
+            // Wait for this present to complete before next iteration
+            vkGfxQueue.waitIdle();
+
+            // Reset command buffer for next use
+            cmd.reset(vk::CommandBufferResetFlagBits::eReleaseResources);
+
+        } catch (const vk::SystemError& e) {
+            SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "Error during swapchain clear for image %zu: %s", i, e.what());
         }
-
-        cmd.end();
-
-        // Submit and wait for completion
-        auto submitInfo = vk::SubmitInfo{}.setCommandBuffers(cmd);
-        vkQueue.submit(submitInfo, nullptr);
-        vkQueue.waitIdle();
-
-        SDL_Log("Cleared %zu swapchain images to prevent ghost frames", swapchainImages.size());
-
-    } catch (const vk::SystemError& e) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to clear swapchain images: %s", e.what());
     }
 
-    // Free the temporary command buffer
+    SDL_Log("Cleared and presented %u/%zu swapchain images to eliminate ghost frames",
+            presentCount, swapchainImages.size());
+
+    // Cleanup
     vkDevice.freeCommandBuffers(**commandPool_, cmd);
+    vkDevice.destroySemaphore(acquireSem);
+    vkDevice.destroySemaphore(renderSem);
 }
 
 void VulkanContext::waitIdle() {

@@ -290,18 +290,36 @@ void GuiPlayerTab::render(IPlayerControl& playerControl, PlayerSettings& setting
             character.getMotionMatchingController());
 
         // Facing mode combo box
-        const char* facingModeItems[] = { "Follow Movement", "Follow Camera" };
+        const char* facingModeItems[] = { "Follow Movement", "Follow Camera", "Follow Target" };
         int currentFacingMode = static_cast<int>(settings.facingMode);
+        FacingMode prevMode = settings.facingMode;
         if (ImGui::Combo("Facing Mode", &currentFacingMode, facingModeItems, IM_ARRAYSIZE(facingModeItems))) {
             settings.facingMode = static_cast<FacingMode>(currentFacingMode);
-            bool isStrafeMode = (settings.facingMode == FacingMode::FollowCamera);
+            // Both FollowCamera and FollowTarget use strafe-style animation matching
+            bool isStrafeMode = (settings.facingMode != FacingMode::FollowMovement);
             controller.setStrafeMode(isStrafeMode);
+            // Clear target when switching away from FollowTarget
+            if (prevMode == FacingMode::FollowTarget && settings.facingMode != FacingMode::FollowTarget) {
+                settings.hasTarget = false;
+            }
         }
         if (ImGui::IsItemHovered()) {
             ImGui::SetTooltip("Follow Movement: Character turns to face movement direction\n"
-                              "Follow Camera: Character faces camera (strafe mode)\n\n"
+                              "Follow Camera: Character faces camera (strafe mode)\n"
+                              "Follow Target: Character faces a target position (lock-on)\n\n"
                               "Quick toggle: CapsLock or B button (gamepad)\n"
                               "Hold: Middle mouse or Left Trigger");
+        }
+
+        // Show target info when in FollowTarget mode
+        if (settings.facingMode == FacingMode::FollowTarget) {
+            if (settings.hasTarget) {
+                ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.5f, 1.0f),
+                    "Target: (%.1f, %.1f, %.1f)",
+                    settings.targetPosition.x, settings.targetPosition.y, settings.targetPosition.z);
+            } else {
+                ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "Target will be placed 5m ahead");
+            }
         }
 
         // Third-person camera toggle hint
@@ -311,6 +329,8 @@ void GuiPlayerTab::render(IPlayerControl& playerControl, PlayerSettings& setting
         // Facing mode indicator
         if (settings.facingMode == FacingMode::FollowCamera) {
             ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.2f, 1.0f), "FOLLOW CAMERA ACTIVE");
+        } else if (settings.facingMode == FacingMode::FollowTarget && settings.hasTarget) {
+            ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.5f, 1.0f), "FOLLOW TARGET ACTIVE");
         }
 
         ImGui::Separator();

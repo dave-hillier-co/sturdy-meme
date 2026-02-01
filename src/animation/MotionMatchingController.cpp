@@ -170,6 +170,13 @@ void MotionMatchingController::performSearch() {
         // Increase heading weight in strafe mode
         options.headingWeight = config_.featureConfig.headingWeight > 0.0f ?
             config_.featureConfig.headingWeight * 2.0f : 1.5f;
+        // Require strafe-tagged animations when moving in strafe mode
+        // This ensures strafe_forward/back/left/right are used instead of regular walk/run
+        // Only when there's significant movement (otherwise use regular idle)
+        float speed = glm::length(options.desiredMovement);
+        if (speed > 0.5f) {
+            options.requiredTags.push_back("strafe");
+        }
     }
 
     // Perform search with local-space trajectory

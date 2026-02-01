@@ -1,6 +1,5 @@
 #include "WaterPasses.h"
 #include "RendererSystems.h"
-#include "RenderContext.h"
 #include "PerformanceToggles.h"
 #include "Profiler.h"
 #include "WaterSystem.h"
@@ -16,30 +15,35 @@ PassIds addPasses(FrameGraph& graph, RendererSystems& systems, const Config& con
     bool* hdrPassEnabled = config.hdrPassEnabled;
     PerformanceToggles* perfToggles = config.perfToggles;
 
+    // Capture pointer to systems to avoid dangling reference issues
+    // The systems object must outlive the frame graph (owned by Renderer)
+    RendererSystems* systemsPtr = &systems;
+
     // Water G-buffer pass - renders water to mini G-buffer
     ids.waterGBuffer = graph.addPass({
         .name = "WaterGBuffer",
-        .execute = [&systems, perfToggles](FrameGraph::RenderContext& ctx) {
+        .execute = [systemsPtr, perfToggles](FrameGraph::RenderContext& ctx) {
+            if (!systemsPtr || !perfToggles) return;
             vk::CommandBuffer vkCmd(ctx.commandBuffer);
 
             if (perfToggles->waterGBuffer &&
-                systems.waterGBuffer().getPipeline() != VK_NULL_HANDLE &&
-                systems.hasWaterTileCull() &&
-                systems.waterTileCull().wasWaterVisibleLastFrame(ctx.frameIndex)) {
-                systems.profiler().beginGpuZone(ctx.commandBuffer, "WaterGBuffer");
-                systems.waterGBuffer().beginRenderPass(ctx.commandBuffer);
+                systemsPtr->waterGBuffer().getPipeline() != VK_NULL_HANDLE &&
+                systemsPtr->hasWaterTileCull() &&
+                systemsPtr->waterTileCull().wasWaterVisibleLastFrame(ctx.frameIndex)) {
+                systemsPtr->profiler().beginGpuZone(ctx.commandBuffer, "WaterGBuffer");
+                systemsPtr->waterGBuffer().beginRenderPass(ctx.commandBuffer);
 
                 vkCmd.bindPipeline(vk::PipelineBindPoint::eGraphics,
-                                   systems.waterGBuffer().getPipeline());
+                                   systemsPtr->waterGBuffer().getPipeline());
                 vk::DescriptorSet gbufferDescSet =
-                    systems.waterGBuffer().getDescriptorSet(ctx.frameIndex);
+                    systemsPtr->waterGBuffer().getDescriptorSet(ctx.frameIndex);
                 vkCmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics,
-                                        systems.waterGBuffer().getPipelineLayout(),
+                                        systemsPtr->waterGBuffer().getPipelineLayout(),
                                         0, gbufferDescSet, {});
 
-                systems.water().recordMeshDraw(ctx.commandBuffer);
-                systems.waterGBuffer().endRenderPass(ctx.commandBuffer);
-                systems.profiler().endGpuZone(ctx.commandBuffer, "WaterGBuffer");
+                systemsPtr->water().recordMeshDraw(ctx.commandBuffer);
+                systemsPtr->waterGBuffer().endRenderPass(ctx.commandBuffer);
+                systemsPtr->profiler().endGpuZone(ctx.commandBuffer, "WaterGBuffer");
             }
         },
         .canUseSecondary = false,
@@ -50,17 +54,16 @@ PassIds addPasses(FrameGraph& graph, RendererSystems& systems, const Config& con
     // SSR pass - screen-space reflections
     ids.ssr = graph.addPass({
         .name = "SSR",
-        .execute = [&systems, hdrPassEnabled, perfToggles](FrameGraph::RenderContext& ctx) {
-            RenderContext* renderCtx = static_cast<RenderContext*>(ctx.userData);
-            if (!renderCtx) return;
-            if (*hdrPassEnabled && perfToggles->ssr && systems.ssr().isEnabled()) {
-                systems.profiler().beginGpuZone(ctx.commandBuffer, "SSR");
-                systems.ssr().recordCompute(ctx.commandBuffer, ctx.frameIndex,
-                                        systems.postProcess().getHDRColorView(),
-                                        systems.postProcess().getHDRDepthView(),
-                                        renderCtx->frame.view, renderCtx->frame.projection,
-                                        renderCtx->frame.cameraPosition);
-                systems.profiler().endGpuZone(ctx.commandBuffer, "SSR");
+        .execute = [systemsPtr, hdrPassEnabled, perfToggles](FrameGraph::RenderContext& ctx) {
+            if (!systemsPtr || !hdrPassEnabled || !perfToggles) return;
+            if (*hdrPassEnabled && perfToggles->ssr && systemsPtr->ssr().isEnabled()) {
+                systemsPtr->profiler().beginGpuZone(ctx.commandBuffer, "SSR");
+                systemsPtr->ssr().recordCompute(ctx.commandBuffer, ctx.frameIndex,
+                                        systemsPtr->postProcess().getHDRColorView(),
+                                        systemsPtr->postProcess().getHDRDepthView(),
+                                        ctx.viewMatrix(), ctx.projectionMatrix(),
+                                        ctx.cameraPosition());
+                systemsPtr->profiler().endGpuZone(ctx.commandBuffer, "SSR");
             }
         },
         .canUseSecondary = false,
@@ -71,17 +74,16 @@ PassIds addPasses(FrameGraph& graph, RendererSystems& systems, const Config& con
     // Water tile culling pass
     ids.waterTileCull = graph.addPass({
         .name = "WaterTileCull",
-        .execute = [&systems, hdrPassEnabled, perfToggles](FrameGraph::RenderContext& ctx) {
-            RenderContext* renderCtx = static_cast<RenderContext*>(ctx.userData);
-            if (!renderCtx) return;
-            if (*hdrPassEnabled && perfToggles->waterTileCull && systems.waterTileCull().isEnabled()) {
-                systems.profiler().beginGpuZone(ctx.commandBuffer, "WaterTileCull");
-                glm::mat4 viewProj = renderCtx->frame.projection * renderCtx->frame.view;
-                systems.waterTileCull().recordTileCull(ctx.commandBuffer, ctx.frameIndex,
-                                              viewProj, renderCtx->frame.cameraPosition,
-                                              systems.water().getWaterLevel(),
-                                              systems.postProcess().getHDRDepthView());
-                systems.profiler().endGpuZone(ctx.commandBuffer, "WaterTileCull");
+        .execute = [systemsPtr, hdrPassEnabled, perfToggles](FrameGraph::RenderContext& ctx) {
+            if (!systemsPtr || !hdrPassEnabled || !perfToggles) return;
+            if (*hdrPassEnabled && perfToggles->waterTileCull && systemsPtr->waterTileCull().isEnabled()) {
+                systemsPtr->profiler().beginGpuZone(ctx.commandBuffer, "WaterTileCull");
+                glm::mat4 viewProj = ctx.projectionMatrix() * ctx.viewMatrix();
+                systemsPtr->waterTileCull().recordTileCull(ctx.commandBuffer, ctx.frameIndex,
+                                              viewProj, ctx.cameraPosition(),
+                                              systemsPtr->water().getWaterLevel(),
+                                              systemsPtr->postProcess().getHDRDepthView());
+                systemsPtr->profiler().endGpuZone(ctx.commandBuffer, "WaterTileCull");
             }
         },
         .canUseSecondary = false,

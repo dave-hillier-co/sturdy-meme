@@ -164,6 +164,9 @@ set(SOURCES
     src/postprocess/BilateralGridSystem.cpp
     src/postprocess/SSRSystem.cpp
     src/postprocess/HiZSystem.cpp
+    # GPU Culling
+    src/core/GPUSceneBuffer.cpp
+    src/culling/GPUCullPass.cpp
     # Lighting
     src/lighting/FroxelSystem.cpp
     src/lighting/ShadowSystem.cpp
@@ -705,6 +708,7 @@ set(SHADER_FILES
     ${CMAKE_CURRENT_SOURCE_DIR}/shaders/volumetric_snow.comp.spv
     ${CMAKE_CURRENT_SOURCE_DIR}/shaders/hiz_downsample.comp.spv
     ${CMAKE_CURRENT_SOURCE_DIR}/shaders/hiz_culling.comp.spv
+    ${CMAKE_CURRENT_SOURCE_DIR}/shaders/scene_cull.comp.spv
     ${CMAKE_CURRENT_SOURCE_DIR}/shaders/water.vert.spv
     ${CMAKE_CURRENT_SOURCE_DIR}/shaders/water.frag.spv
     ${CMAKE_CURRENT_SOURCE_DIR}/shaders/water_tess.vert.spv
@@ -848,6 +852,7 @@ if(SHADER_COMPILE_CMD)
         tree_impostor_capture_leaf.vert
         tree_impostor_shadow.vert tree_impostor_shadow.frag
         hiz_culling.comp
+        scene_cull.comp
         bloom_compute.comp bloom_upsample_compute.comp bloom_spd.comp godrays_compute.comp
     )
 
@@ -1105,6 +1110,7 @@ if(SHADER_COMPILE_CMD)
         ${CMAKE_CURRENT_SOURCE_DIR}/shaders/volumetric_snow.comp.spv
         ${CMAKE_CURRENT_SOURCE_DIR}/shaders/hiz_downsample.comp.spv
         ${CMAKE_CURRENT_SOURCE_DIR}/shaders/hiz_culling.comp.spv
+        ${CMAKE_CURRENT_SOURCE_DIR}/shaders/scene_cull.comp.spv
         ${CMAKE_CURRENT_SOURCE_DIR}/shaders/water.vert.spv
         ${CMAKE_CURRENT_SOURCE_DIR}/shaders/water.frag.spv
         ${CMAKE_CURRENT_SOURCE_DIR}/shaders/water_tess.vert.spv

@@ -1,0 +1,132 @@
+#version 450
+
+#extension GL_GOOGLE_include_directive : require
+
+// Scene Object GPU Culling Compute Shader
+// Performs frustum culling on scene objects and generates indirect draw commands
+
+#include "bindings.glsl"
+
+layout(local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
+
+// Input: Object culling data
+struct CullObjectData {
+    vec4 boundingSphere;   // xyz = center (world space), w = radius
+    vec4 aabbMin;          // xyz = min corner, w = unused
+    vec4 aabbMax;          // xyz = max corner, w = unused
+    uint objectIndex;      // Index into scene instance buffer
+    uint firstIndex;       // First index in index buffer
+    uint indexCount;       // Number of indices
+    int vertexOffset;      // Vertex offset
+};
+
+// Output: Indirect draw command
+struct DrawIndexedIndirectCommand {
+    uint indexCount;
+    uint instanceCount;
+    uint firstIndex;
+    int vertexOffset;
+    uint firstInstance;
+};
+
+// Culling uniforms
+layout(std140, binding = BINDING_SCENE_CULL_UNIFORMS) uniform CullUniforms {
+    mat4 viewMatrix;
+    mat4 projMatrix;
+    mat4 viewProjMatrix;
+    vec4 frustumPlanes[6];     // Frustum planes (xyz=normal, w=distance)
+    vec4 cameraPosition;       // xyz = camera pos, w = unused
+    vec4 screenParams;         // x = width, y = height, z = 1/width, w = 1/height
+    uint objectCount;          // Number of objects to cull
+    uint enableHiZ;            // 1 = use Hi-Z (future), 0 = frustum only
+    uint maxDrawCommands;      // Output buffer capacity
+    uint padding;
+} cullUniforms;
+
+// Input: Objects to cull
+layout(std430, binding = BINDING_SCENE_CULL_OBJECTS) readonly buffer ObjectBuffer {
+    CullObjectData objects[];
+};
+
+// Output: Indirect draw commands
+layout(std430, binding = BINDING_SCENE_CULL_INDIRECT) writeonly buffer IndirectBuffer {
+    DrawIndexedIndirectCommand commands[];
+};
+
+// Output: Draw count (atomic)
+layout(std430, binding = BINDING_SCENE_CULL_COUNT) buffer DrawCountBuffer {
+    uint drawCount;
+};
+
+// Optional: Hi-Z pyramid for occlusion culling (future)
+layout(binding = BINDING_SCENE_CULL_HIZ) uniform sampler2D hiZPyramid;
+
+// Test if sphere is inside frustum
+bool frustumCullSphere(vec3 center, float radius) {
+    for (int i = 0; i < 6; ++i) {
+        float dist = dot(cullUniforms.frustumPlanes[i].xyz, center) + cullUniforms.frustumPlanes[i].w;
+        if (dist < -radius) {
+            return true;  // Culled
+        }
+    }
+    return false;  // Visible
+}
+
+// Test if AABB is inside frustum (more precise than sphere test)
+bool frustumCullAABB(vec3 aabbMin, vec3 aabbMax) {
+    for (int i = 0; i < 6; ++i) {
+        vec4 plane = cullUniforms.frustumPlanes[i];
+
+        // Find the positive vertex (furthest along plane normal)
+        vec3 pVertex = vec3(
+            plane.x >= 0.0 ? aabbMax.x : aabbMin.x,
+            plane.y >= 0.0 ? aabbMax.y : aabbMin.y,
+            plane.z >= 0.0 ? aabbMax.z : aabbMin.z
+        );
+
+        if (dot(plane.xyz, pVertex) + plane.w < 0.0) {
+            return true;  // Culled
+        }
+    }
+    return false;  // Visible
+}
+
+void main() {
+    uint objectIdx = gl_GlobalInvocationID.x;
+
+    if (objectIdx >= cullUniforms.objectCount) {
+        return;
+    }
+
+    CullObjectData obj = objects[objectIdx];
+
+    // Frustum culling using sphere first (fast rejection)
+    vec3 sphereCenter = obj.boundingSphere.xyz;
+    float sphereRadius = obj.boundingSphere.w;
+
+    if (frustumCullSphere(sphereCenter, sphereRadius)) {
+        return;  // Culled by sphere test
+    }
+
+    // Optional: More precise AABB test for objects that passed sphere test
+    vec3 aabbMin = obj.aabbMin.xyz;
+    vec3 aabbMax = obj.aabbMax.xyz;
+
+    if (frustumCullAABB(aabbMin, aabbMax)) {
+        return;  // Culled by AABB test
+    }
+
+    // Object is visible - add to indirect draw buffer
+    uint drawIdx = atomicAdd(drawCount, 1);
+
+    if (drawIdx < cullUniforms.maxDrawCommands) {
+        DrawIndexedIndirectCommand cmd;
+        cmd.indexCount = obj.indexCount;
+        cmd.instanceCount = 1;
+        cmd.firstIndex = obj.firstIndex;
+        cmd.vertexOffset = obj.vertexOffset;
+        cmd.firstInstance = obj.objectIndex;  // gl_InstanceIndex in vertex shader
+
+        commands[drawIdx] = cmd;
+    }
+}

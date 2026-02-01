@@ -21,6 +21,7 @@
 #include "HDRPassResources.h"
 
 class RendererSystems;
+class GPUSceneBuffer;
 
 /**
  * HDRPassRecorder - Stateless HDR pass command recording
@@ -39,6 +40,12 @@ public:
         const vk::Pipeline* sceneObjectsPipeline = nullptr;
         const vk::PipelineLayout* pipelineLayout = nullptr;
         glm::mat4 viewProj = glm::mat4(1.0f);
+
+        // GPU-driven rendering (Phase 3.3)
+        GPUSceneBuffer* gpuSceneBuffer = nullptr;              // Scene instance SSBO
+        const vk::Pipeline* instancedPipeline = nullptr;       // Pipeline for instanced rendering
+        const vk::PipelineLayout* instancedPipelineLayout = nullptr;
+        bool useIndirectDraw = false;                          // Enable vkCmdDrawIndexedIndirectCount
     };
 
     // Construct with focused resources (preferred - reduced coupling)
@@ -93,6 +100,9 @@ public:
 private:
     // Helper to record scene objects using the provided pipeline
     void recordSceneObjects(VkCommandBuffer cmd, uint32_t frameIndex, const Params& params);
+
+    // Helper to record scene objects using GPU-driven indirect rendering (Phase 3.3)
+    void recordSceneObjectsIndirect(VkCommandBuffer cmd, uint32_t frameIndex, const Params& params);
 
     // Helper to record debug lines with viewport/scissor setup
     void recordDebugLines(VkCommandBuffer cmd, const glm::mat4& viewProj);

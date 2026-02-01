@@ -1,6 +1,7 @@
 #include "HDRPassRecorder.h"
 #include "../RendererSystems.h"
 #include "UBOs.h"  // For PushConstants (generated from shaders)
+#include "../GPUSceneBuffer.h"  // For GPU-driven indirect rendering
 
 // Subsystem includes
 #include "PostProcessSystem.h"
@@ -434,6 +435,99 @@ void HDRPassRecorder::recordDebugLines(VkCommandBuffer cmd, const glm::mat4& vie
     vkCmd.setScissor(0, scissor);
 
     resources_.debugLine->recordCommands(cmd, viewProj);
+}
+
+void HDRPassRecorder::recordSceneObjectsIndirect(VkCommandBuffer cmd, uint32_t frameIndex, const Params& params) {
+    if (!params.gpuSceneBuffer || !params.instancedPipelineLayout) {
+        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "HDRPassRecorder: Indirect rendering requires gpuSceneBuffer and instancedPipelineLayout");
+        return;
+    }
+
+    GPUSceneBuffer* sceneBuffer = params.gpuSceneBuffer;
+    if (sceneBuffer->getObjectCount() == 0) {
+        return;
+    }
+
+    vk::CommandBuffer vkCmd(cmd);
+
+    // Bind instanced pipeline if provided
+    if (params.instancedPipeline) {
+        vkCmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *params.instancedPipeline);
+    }
+
+    // Get MaterialRegistry for descriptor set lookup
+    const auto& materialRegistry = resources_.scene->getSceneBuilder().getMaterialRegistry();
+    const auto& sceneObjects = resources_.scene->getRenderables();
+
+    // For indirect rendering, we need to:
+    // 1. Bind the scene instance SSBO descriptor
+    // 2. Bind vertex/index buffers per unique mesh
+    // 3. Use vkCmdDrawIndexedIndirectCount to draw all visible instances
+
+    // Since culling outputs draw commands sorted by object index (not by mesh),
+    // and indirect draws need shared vertex/index buffers,
+    // we use a simplified approach: draw all objects with one indirect call per mesh type
+
+    // For now, fall back to regular rendering if indirect is requested but setup is incomplete
+    // Full indirect rendering requires:
+    // - A global vertex/index buffer with all meshes
+    // - Indirect commands that reference offsets into the global buffer
+    // - Material binding via SSBO instead of per-draw descriptor sets
+
+    // TODO: Full implementation requires mesh batching infrastructure
+    // For this phase, we demonstrate the indirect draw command structure
+
+    // Bind first material's descriptor set (simplified - full implementation needs multi-material support)
+    MaterialId firstMaterialId = INVALID_MATERIAL_ID;
+    for (const auto& obj : sceneObjects) {
+        if (obj.materialId != INVALID_MATERIAL_ID) {
+            firstMaterialId = obj.materialId;
+            break;
+        }
+    }
+
+    if (firstMaterialId != INVALID_MATERIAL_ID) {
+        VkDescriptorSet descSet = materialRegistry.getDescriptorSet(firstMaterialId, frameIndex);
+        if (descSet != VK_NULL_HANDLE) {
+            vkCmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics,
+                                     *params.instancedPipelineLayout, 0, vk::DescriptorSet(descSet), {});
+        }
+    }
+
+    // For demonstration, render each unique mesh with indirect count
+    // A full implementation would batch objects by mesh and issue one indirect call per batch
+
+    // Get unique meshes
+    std::vector<const Mesh*> uniqueMeshes;
+    for (const auto& obj : sceneObjects) {
+        if (obj.mesh && std::find(uniqueMeshes.begin(), uniqueMeshes.end(), obj.mesh) == uniqueMeshes.end()) {
+            uniqueMeshes.push_back(obj.mesh);
+        }
+    }
+
+    // Draw each mesh type
+    for (const Mesh* mesh : uniqueMeshes) {
+        if (!mesh) continue;
+
+        vk::Buffer vertexBuffers[] = {mesh->getVertexBuffer()};
+        vk::DeviceSize offsets[] = {0};
+        vkCmd.bindVertexBuffers(0, vertexBuffers, offsets);
+        vkCmd.bindIndexBuffer(mesh->getIndexBuffer(), 0, vk::IndexType::eUint32);
+
+        // Use vkCmdDrawIndexedIndirectCount for GPU-driven variable draw count
+        // The draw count is determined by the culling pass
+        vkCmd.drawIndexedIndirectCount(
+            sceneBuffer->getIndirectBuffer(frameIndex),  // Indirect command buffer
+            0,                                            // Offset to commands
+            sceneBuffer->getDrawCountBuffer(frameIndex), // Count buffer
+            0,                                            // Offset to count
+            sceneBuffer->getObjectCount(),               // Max draw count
+            sizeof(GPUDrawIndexedIndirectCommand)        // Stride between commands
+        );
+    }
+
+    // Note: Trees, rocks, and other subsystems still use their own rendering paths
+    // Full GPU-driven rendering would consolidate these into the scene buffer
 }
 
 // ============================================================================

@@ -1,7 +1,7 @@
 #include "SelectionOutlineRenderer.h"
 #include "ShaderLoader.h"
 #include "Mesh.h"
-#include "material/DescriptorManager.h"
+#include "material/IDescriptorAllocator.h"
 #include "ecs/ECSMaterialDemo.h"
 #include <SDL3/SDL_log.h>
 #include <array>
@@ -28,7 +28,7 @@ bool SelectionOutlineRenderer::initInternal(const InitInfo& info) {
     device_ = info.device;
     physicalDevice_ = info.physicalDevice;
     allocator_ = info.allocator;
-    descriptorManager_ = info.descriptorManager;
+    descriptorAllocator_ = info.descriptorAllocator;
     resourcePath_ = info.resourcePath;
     extent_ = info.extent;
     maxFramesInFlight_ = info.maxFramesInFlight;
@@ -70,14 +70,14 @@ bool SelectionOutlineRenderer::createDescriptorSetLayout() {
 }
 
 bool SelectionOutlineRenderer::allocateDescriptorSets(uint32_t maxFramesInFlight) {
-    if (!descriptorManager_) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "SelectionOutlineRenderer: No descriptor manager");
+    if (!descriptorAllocator_) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "SelectionOutlineRenderer: No descriptor allocator");
         return false;
     }
 
     descriptorSets_.resize(maxFramesInFlight);
     for (uint32_t i = 0; i < maxFramesInFlight; ++i) {
-        descriptorSets_[i] = descriptorManager_->allocateSingle(*descriptorSetLayout_);
+        descriptorSets_[i] = descriptorAllocator_->allocateSingle(**descriptorSetLayout_);
         if (descriptorSets_[i] == VK_NULL_HANDLE) {
             SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "SelectionOutlineRenderer: Failed to allocate descriptor set %u", i);
             return false;
@@ -123,7 +123,7 @@ bool SelectionOutlineRenderer::createPipeline(const InitInfo& info) {
             .setLocation(0)
             .setBinding(0)
             .setFormat(vk::Format::eR32G32B32Sfloat)
-            .setOffset(offsetof(Vertex, pos)),
+            .setOffset(offsetof(Vertex, position)),
         vk::VertexInputAttributeDescription{}
             .setLocation(1)
             .setBinding(0)
@@ -229,13 +229,7 @@ bool SelectionOutlineRenderer::createPipeline(const InitInfo& info) {
         .setRenderPass(info.renderPass)
         .setSubpass(0);
 
-    auto result = raiiDevice_->createGraphicsPipeline(nullptr, pipelineInfo);
-    if (result.first != vk::Result::eSuccess) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "SelectionOutlineRenderer: Pipeline creation failed");
-        return false;
-    }
-
-    pipeline_ = std::move(result.second);
+    pipeline_ = raiiDevice_->createGraphicsPipeline(nullptr, pipelineInfo);
     SDL_Log("SelectionOutlineRenderer: Pipeline created successfully");
     return true;
 }

@@ -10,9 +10,10 @@
 
 #include "ecs/World.h"
 #include "ecs/Components.h"
+#include "ecs/ECSMaterialDemo.h"
 
 class Mesh;
-class DescriptorManager;
+class IDescriptorAllocator;
 
 // =============================================================================
 // Selection Outline Renderer
@@ -53,7 +54,7 @@ public:
         vk::PhysicalDevice physicalDevice;
         VmaAllocator allocator;
         vk::RenderPass renderPass;       // HDR render pass (or dedicated outline pass)
-        DescriptorManager* descriptorManager = nullptr;
+        IDescriptorAllocator* descriptorAllocator = nullptr;
         vk::Extent2D extent;
         uint32_t maxFramesInFlight;
         std::string resourcePath;
@@ -97,7 +98,7 @@ private:
     vk::Device device_;
     vk::PhysicalDevice physicalDevice_;
     VmaAllocator allocator_ = VK_NULL_HANDLE;
-    DescriptorManager* descriptorManager_ = nullptr;
+    IDescriptorAllocator* descriptorAllocator_ = nullptr;
     std::string resourcePath_;
     vk::Extent2D extent_{};
     uint32_t maxFramesInFlight_ = 0;

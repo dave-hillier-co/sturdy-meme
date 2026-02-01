@@ -1316,12 +1316,10 @@ void Application::initECS() {
         );
 
         // Use terrain height function if available from renderer
-        auto* terrainSystem = renderer_->getSystems().terrain();
-        if (terrainSystem) {
-            demoInfo.getTerrainHeight = [terrainSystem](float x, float z) {
-                return terrainSystem->getHeight(x, z);
-            };
-        }
+        auto& terrainSystem = renderer_->getSystems().terrain();
+        demoInfo.getTerrainHeight = [&terrainSystem](float x, float z) {
+            return terrainSystem.getHeightAt(x, z);
+        };
 
         ecsMaterialDemo_ = ecs::ECSMaterialDemo::create(demoInfo);
         if (ecsMaterialDemo_) {

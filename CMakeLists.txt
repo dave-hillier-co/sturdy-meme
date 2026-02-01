@@ -30,6 +30,7 @@ set(SOURCES
     src/main.cpp
     # ECS
     src/ecs/Components.cpp
+    src/ecs/ECSMaterialDemo.cpp
     # Scene
     src/scene/Application.cpp
     src/scene/SceneBuilder.cpp
@@ -46,6 +47,7 @@ set(SOURCES
     # Core
     src/core/CrashHandler.cpp
     src/core/Renderer.cpp
+    src/core/SelectionOutlineRenderer.cpp
     src/core/RendererCore.cpp
     src/core/RendererInitPhases.cpp
     src/core/CoreResources.cpp

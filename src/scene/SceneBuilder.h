@@ -92,6 +92,10 @@ public:
     MaterialRegistry& getMaterialRegistry() { return materialRegistry; }
     const MaterialRegistry& getMaterialRegistry() const { return materialRegistry; }
 
+    // Mesh accessors for demo/testing purposes
+    Mesh* getCubeMesh() { return cubeMesh.get(); }
+    Mesh* getSphereMesh() { return sphereMesh.get(); }
+
     // Access to textures for descriptor set creation (via AssetRegistry)
     const Texture* getGroundTexture() const;
     const Texture* getGroundNormalMap() const;

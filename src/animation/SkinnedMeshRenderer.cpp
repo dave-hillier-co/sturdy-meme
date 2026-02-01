@@ -385,7 +385,8 @@ void SkinnedMeshRenderer::recordWithLOD(VkCommandBuffer cmd, uint32_t frameIndex
 
 // Phase 6: ECS-compatible overloads that don't require Renderable
 void SkinnedMeshRenderer::record(VkCommandBuffer cmd, uint32_t frameIndex, uint32_t slotIndex,
-                                  const glm::mat4& transform, AnimatedCharacter& character) {
+                                  const glm::mat4& transform, AnimatedCharacter& character,
+                                  float hueShift) {
     vk::CommandBuffer vkCmd(cmd);
 
     // Bind skinned pipeline
@@ -415,7 +416,7 @@ void SkinnedMeshRenderer::record(VkCommandBuffer cmd, uint32_t frameIndex, uint3
                              vk::DescriptorSet(descriptorSets[frameIndex]),
                              dynamicOffset);
 
-    // Push constants with default PBR values
+    // Push constants with default PBR values (hue shift passed as parameter for NPC tinting)
     PushConstants push{};
     push.model = transform;
     push.roughness = 0.5f;
@@ -424,7 +425,7 @@ void SkinnedMeshRenderer::record(VkCommandBuffer cmd, uint32_t frameIndex, uint3
     push.opacity = 1.0f;
     push.emissiveColor = glm::vec4(1.0f);
     push.pbrFlags = 0;
-    push.hueShift = 0.0f;
+    push.hueShift = hueShift;
 
     vkCmd.pushConstants<PushConstants>(
         **pipelineLayout_,

@@ -4,6 +4,7 @@
 #include "ecs/World.h"
 #include "ecs/Components.h"
 #include <SDL3/SDL.h>
+#include <cmath>
 
 NPCRenderer::NPCRenderer(ConstructToken) {}
 
@@ -85,6 +86,12 @@ void NPCRenderer::prepare(uint32_t frameIndex,
         data.lodLevel = npcData.lodLevels[i];
         data.boneSlot = nextBoneSlot;
 
+        // Compute hue shift for visual variety (must match SceneBuilder formula)
+        // Uses golden ratio to distribute hues evenly around the color wheel
+        constexpr float GOLDEN_RATIO = 1.618033988749895f;
+        constexpr float TWO_PI = 6.283185307179586f;
+        data.hueShift = std::fmod(static_cast<float>(i + 1) * GOLDEN_RATIO, 1.0f) * TWO_PI;
+
         // Update bone matrices for this NPC in its assigned slot
         skinnedMeshRenderer_->updateBoneMatrices(frameIndex, nextBoneSlot, character);
 
@@ -112,7 +119,7 @@ void NPCRenderer::recordDraw(VkCommandBuffer cmd, uint32_t frameIndex) {
         auto* character = currentNpcSim_->getCharacter(data.npcIndex);
         if (!character) continue;
 
-        // Use the ECS-compatible record() method with the stored transform
-        skinnedMeshRenderer_->record(cmd, frameIndex, data.boneSlot, data.transform, *character);
+        // Use the ECS-compatible record() method with the stored transform and hue shift
+        skinnedMeshRenderer_->record(cmd, frameIndex, data.boneSlot, data.transform, *character, data.hueShift);
     }
 }

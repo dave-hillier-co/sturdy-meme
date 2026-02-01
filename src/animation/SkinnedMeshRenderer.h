@@ -126,9 +126,11 @@ public:
      * @param slotIndex Character slot containing this character's bone matrices
      * @param transform World transform matrix for the character
      * @param character Character for mesh data
+     * @param hueShift Optional hue shift for NPC tinting (default: 0.0f)
      */
     void record(VkCommandBuffer cmd, uint32_t frameIndex, uint32_t slotIndex,
-                const glm::mat4& transform, AnimatedCharacter& character);
+                const glm::mat4& transform, AnimatedCharacter& character,
+                float hueShift = 0.0f);
 
     /**
      * Record draw commands with explicit LOD mesh using dynamic offset.

@@ -76,6 +76,7 @@ private:
         glm::mat4 transform;       // World transform for this NPC
         NPCLODLevel lodLevel;      // Current LOD level
         uint32_t boneSlot;         // Bone matrix slot in dynamic buffer (1-63, 0 reserved for player)
+        float hueShift;            // Color tint for this NPC
     };
 
     SkinnedMeshRenderer* skinnedMeshRenderer_ = nullptr;

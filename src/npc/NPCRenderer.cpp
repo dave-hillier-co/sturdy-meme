@@ -1,8 +1,10 @@
 #include "NPCRenderer.h"
 #include "NPCSimulation.h"
 #include "SkinnedMeshRenderer.h"
-#include "RenderableBuilder.h"
+#include "ecs/World.h"
+#include "ecs/Components.h"
 #include <SDL3/SDL.h>
+#include <cmath>
 
 NPCRenderer::NPCRenderer(ConstructToken) {}
 
@@ -28,9 +30,8 @@ bool NPCRenderer::initInternal(const InitInfo& info) {
 
 void NPCRenderer::prepare(uint32_t frameIndex,
                           NPCSimulation& npcSim,
-                          const std::vector<Renderable>& sceneObjects) {
+                          ecs::World* ecsWorld) {
     currentNpcSim_ = &npcSim;
-    currentSceneObjects_ = &sceneObjects;
     currentFrameIndex_ = frameIndex;
 
     // Clear previous frame's render data
@@ -60,12 +61,6 @@ void NPCRenderer::prepare(uint32_t frameIndex,
             continue;
         }
 
-        // Skip NPCs without valid renderable
-        size_t renderableIndex = npcData.renderableIndices[i];
-        if (renderableIndex >= sceneObjects.size()) {
-            continue;
-        }
-
         // Skip NPCs without valid character
         auto* character = npcSim.getCharacter(i);
         if (!character) {
@@ -86,9 +81,16 @@ void NPCRenderer::prepare(uint32_t frameIndex,
 
         NPCRenderData data{};
         data.npcIndex = i;
-        data.renderableIndex = renderableIndex;
+        // Get transform directly from NPCSimulation
+        data.transform = npcSim.buildNPCTransform(i);
         data.lodLevel = npcData.lodLevels[i];
         data.boneSlot = nextBoneSlot;
+
+        // Compute hue shift for visual variety (must match SceneBuilder formula)
+        // Uses golden ratio to distribute hues evenly around the color wheel
+        constexpr float GOLDEN_RATIO = 1.618033988749895f;
+        constexpr float TWO_PI = 6.283185307179586f;
+        data.hueShift = std::fmod(static_cast<float>(i + 1) * GOLDEN_RATIO, 1.0f) * TWO_PI;
 
         // Update bone matrices for this NPC in its assigned slot
         skinnedMeshRenderer_->updateBoneMatrices(frameIndex, nextBoneSlot, character);
@@ -107,7 +109,7 @@ void NPCRenderer::prepare(uint32_t frameIndex,
 }
 
 void NPCRenderer::recordDraw(VkCommandBuffer cmd, uint32_t frameIndex) {
-    if (!currentNpcSim_ || !currentSceneObjects_ || !skinnedMeshRenderer_) {
+    if (!currentNpcSim_ || !skinnedMeshRenderer_) {
         return;
     }
 
@@ -117,7 +119,7 @@ void NPCRenderer::recordDraw(VkCommandBuffer cmd, uint32_t frameIndex) {
         auto* character = currentNpcSim_->getCharacter(data.npcIndex);
         if (!character) continue;
 
-        const Renderable& npcObj = (*currentSceneObjects_)[data.renderableIndex];
-        skinnedMeshRenderer_->record(cmd, frameIndex, data.boneSlot, npcObj, *character);
+        // Use the ECS-compatible record() method with the stored transform and hue shift
+        skinnedMeshRenderer_->record(cmd, frameIndex, data.boneSlot, data.transform, *character, data.hueShift);
     }
 }

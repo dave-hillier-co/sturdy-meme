@@ -519,8 +519,8 @@ void Application::run() {
             // Temporarily lock orientation if holding trigger/middle mouse
             bool effectiveLock = playerMovement.orientationLocked || input.isOrientationLockHeld();
 
-            // Check if GUI strafe mode is enabled
-            bool guiStrafeEnabled = gui_->getPlayerSettings().strafeModeEnabled;
+            // Check if facing mode is set to follow camera
+            bool guiStrafeEnabled = (gui_->getPlayerSettings().facingMode == FacingMode::FollowCamera);
 
             glm::vec3 moveDir = input.getMovementDirection();
             if (glm::length(moveDir) > 0.001f) {
@@ -632,7 +632,7 @@ void Application::run() {
         glm::vec3 facingDirection = playerTransform.getForward();
 
         // Determine strafe mode (GUI-enabled or orientation lock is active)
-        bool strafeMode = gui_->getPlayerSettings().strafeModeEnabled ||
+        bool strafeMode = (gui_->getPlayerSettings().facingMode == FacingMode::FollowCamera) ||
             (input.isThirdPersonMode() &&
              (playerMovement.orientationLocked || input.isOrientationLockHeld()));
 

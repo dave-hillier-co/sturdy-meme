@@ -283,21 +283,24 @@ void GuiPlayerTab::render(IPlayerControl& playerControl, PlayerSettings& setting
 
         // Strafe mode section
         ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.7f, 0.3f, 1.0f));
-        ImGui::Text("STRAFE MODE");
+        ImGui::Text("CHARACTER FACING");
         ImGui::PopStyleColor();
 
         auto& controller = const_cast<MotionMatching::MotionMatchingController&>(
             character.getMotionMatchingController());
 
-        // Strafe mode toggle
-        bool strafeMode = controller.isStrafeMode();
-        if (ImGui::Checkbox("Strafe Mode", &strafeMode)) {
-            controller.setStrafeMode(strafeMode);
-            settings.strafeModeEnabled = strafeMode;
+        // Facing mode combo box
+        const char* facingModeItems[] = { "Follow Movement", "Follow Camera" };
+        int currentFacingMode = static_cast<int>(settings.facingMode);
+        if (ImGui::Combo("Facing Mode", &currentFacingMode, facingModeItems, IM_ARRAYSIZE(facingModeItems))) {
+            settings.facingMode = static_cast<FacingMode>(currentFacingMode);
+            bool isStrafeMode = (settings.facingMode == FacingMode::FollowCamera);
+            controller.setStrafeMode(isStrafeMode);
         }
         if (ImGui::IsItemHovered()) {
-            ImGui::SetTooltip("Lock orientation to camera direction (Unreal-style)\n"
-                              "Toggle: CapsLock or B button (gamepad)\n"
+            ImGui::SetTooltip("Follow Movement: Character turns to face movement direction\n"
+                              "Follow Camera: Character faces camera (strafe mode)\n\n"
+                              "Quick toggle: CapsLock or B button (gamepad)\n"
                               "Hold: Middle mouse or Left Trigger");
         }
 
@@ -305,9 +308,9 @@ void GuiPlayerTab::render(IPlayerControl& playerControl, PlayerSettings& setting
         ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "Tab: Toggle 3rd Person Camera");
         ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "P: Toggle Orbit Camera");
 
-        // Strafe mode indicator
-        if (controller.isStrafeMode()) {
-            ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.2f, 1.0f), "STRAFING ACTIVE");
+        // Facing mode indicator
+        if (settings.facingMode == FacingMode::FollowCamera) {
+            ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.2f, 1.0f), "FOLLOW CAMERA ACTIVE");
         }
 
         ImGui::Separator();

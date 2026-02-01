@@ -31,6 +31,7 @@
 #include "core/interfaces/ITerrainControl.h"
 #include "core/interfaces/IPlayerControl.h"
 #include "DebugLineSystem.h"
+#include "npc/NPCSimulation.h"
 
 #ifdef JPH_DEBUG_RENDERER
 #include "PhysicsDebugRenderer.h"

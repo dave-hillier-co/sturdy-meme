@@ -109,18 +109,19 @@ void ShadowPassRecorder::record(VkCommandBuffer cmd, uint32_t frameIndex, float 
             // Extract render data and create a Renderable for shadow pass
             ecs::RenderData data = ecs::extractRenderData(world, entity);
             if (data.mesh && data.materialId != ecs::InvalidMaterialId) {
-                Renderable r;
-                r.transform = data.transform;
-                r.mesh = data.mesh;
-                r.materialId = data.materialId;
-                r.roughness = data.roughness;
-                r.metallic = data.metallic;
-                r.emissiveIntensity = data.emissiveIntensity;
-                r.emissiveColor = data.emissiveColor;
-                r.alphaTestThreshold = data.alphaTestThreshold;
-                r.pbrFlags = data.pbrFlags;
-                r.castsShadow = true;
-                r.opacity = data.opacity;
+                Renderable r = RenderableBuilder()
+                    .withTransform(data.transform)
+                    .withMesh(data.mesh)
+                    .withTexture(nullptr)
+                    .withMaterialId(data.materialId)
+                    .withRoughness(data.roughness)
+                    .withMetallic(data.metallic)
+                    .withEmissiveIntensity(data.emissiveIntensity)
+                    .withEmissiveColor(data.emissiveColor)
+                    .withAlphaTest(data.alphaTestThreshold)
+                    .withPBRFlags(data.pbrFlags)
+                    .withCastsShadow(true)
+                    .build();
                 allObjects.push_back(r);
             }
         }
@@ -148,14 +149,15 @@ void ShadowPassRecorder::record(VkCommandBuffer cmd, uint32_t frameIndex, float 
     // Skinned character shadow callback (renders with GPU skinning)
     ShadowSystem::DrawCallback skinnedCallback = nullptr;
     if (hasCharacter) {
-        skinnedCallback = [this, frameIndex, playerIndex](VkCommandBuffer cb, uint32_t cascade, const glm::mat4& lightMatrix) {
+        skinnedCallback = [this, frameIndex](VkCommandBuffer cb, uint32_t cascade, const glm::mat4& lightMatrix) {
             (void)lightMatrix;  // Not used, cascade matrices are in UBO
             SceneBuilder& sceneBuilder = resources_.scene->getSceneBuilder();
             const auto& sceneObjs = sceneBuilder.getRenderables();
-            if (playerIndex >= sceneObjs.size()) return;
+            size_t playerIdx = sceneBuilder.getPlayerObjectIndex();
+            if (playerIdx >= sceneObjs.size()) return;
 
             resources_.profiler->beginGpuZone(cb, "Shadow:Skinned");
-            const Renderable& playerObj = sceneObjs[playerIndex];
+            const Renderable& playerObj = sceneObjs[playerIdx];
             AnimatedCharacter& character = sceneBuilder.getAnimatedCharacter();
             SkinnedMesh& skinnedMesh = character.getSkinnedMesh();
 

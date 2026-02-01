@@ -56,6 +56,23 @@ RenderableBuilder& RenderableBuilder::withAlphaTest(float threshold) {
     return *this;
 }
 
+RenderableBuilder& RenderableBuilder::withPBRFlags(uint32_t flags) {
+    pbrFlags_ = flags;
+    return *this;
+}
+
+RenderableBuilder& RenderableBuilder::withPBRProperties(float roughness, float metallic,
+                                                         float emissiveIntensity, const glm::vec3& emissiveColor,
+                                                         float alphaTestThreshold, uint32_t pbrFlags) {
+    roughness_ = roughness;
+    metallic_ = metallic;
+    emissiveIntensity_ = emissiveIntensity;
+    emissiveColor_ = emissiveColor;
+    alphaTestThreshold_ = alphaTestThreshold;
+    pbrFlags_ = pbrFlags;
+    return *this;
+}
+
 RenderableBuilder& RenderableBuilder::withBarkType(const std::string& type) {
     barkType_ = type;
     return *this;
@@ -83,6 +100,23 @@ RenderableBuilder& RenderableBuilder::withHueShift(float shift) {
 
 RenderableBuilder& RenderableBuilder::withTreeInstanceIndex(int index) {
     treeInstanceIndex_ = index;
+    return *this;
+}
+
+RenderableBuilder& RenderableBuilder::withLeafInstanceIndex(int index) {
+    leafInstanceIndex_ = index;
+    return *this;
+}
+
+RenderableBuilder& RenderableBuilder::withTreeData(const std::string& barkType, const std::string& leafType,
+                                                    int leafInstanceIndex, int treeInstanceIndex,
+                                                    const glm::vec3& leafTint, float autumnHueShift) {
+    barkType_ = barkType;
+    leafType_ = leafType;
+    leafInstanceIndex_ = leafInstanceIndex;
+    treeInstanceIndex_ = treeInstanceIndex;
+    leafTint_ = leafTint;
+    autumnHueShift_ = autumnHueShift;
     return *this;
 }
 
@@ -119,11 +153,13 @@ Renderable RenderableBuilder::build() const {
     renderable.metallic = metallic_;
     renderable.emissiveIntensity = emissiveIntensity_;
     renderable.emissiveColor = emissiveColor_;
-    renderable.castsShadow = castsShadow_;
+    renderable.pbrFlags = pbrFlags_;
     renderable.alphaTestThreshold = alphaTestThreshold_;
+    renderable.castsShadow = castsShadow_;
     renderable.barkType = barkType_;
     renderable.leafType = leafType_;
     renderable.treeInstanceIndex = treeInstanceIndex_;
+    renderable.leafInstanceIndex = leafInstanceIndex_;
     renderable.leafTint = leafTint_;
     renderable.autumnHueShift = autumnHueShift_;
     renderable.hueShift = hueShift_;

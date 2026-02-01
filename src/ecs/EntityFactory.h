@@ -49,7 +49,7 @@ public:
             world_.add<CastsShadow>(entity);
         }
 
-        // PBR properties - only add if non-default
+        // PBR properties - only add if non-default (sparse component pattern)
         if (hasCustomPBR(renderable)) {
             PBRProperties pbr;
             pbr.roughness = renderable.roughness;

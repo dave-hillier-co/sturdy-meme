@@ -235,6 +235,50 @@ struct Opacity {
 };
 
 // =============================================================================
+// Dynamic Effect Overlay Components (Phase 4.3)
+// =============================================================================
+// Sparse components for runtime visual effects. Only entities with active
+// effects have these components - others render with default appearance.
+
+// Wetness overlay - simulates wet/rain effects on surfaces
+struct WetnessOverlay {
+    float wetness = 0.0f;  // 0.0 = dry, 1.0 = fully soaked
+
+    WetnessOverlay() = default;
+    explicit WetnessOverlay(float w) : wetness(w) {}
+
+    // Helper to check if effect is active
+    [[nodiscard]] bool isActive() const { return wetness > 0.001f; }
+};
+
+// Damage overlay - simulates damage/wear effects on surfaces
+struct DamageOverlay {
+    float damage = 0.0f;   // 0.0 = pristine, 1.0 = fully destroyed
+
+    DamageOverlay() = default;
+    explicit DamageOverlay(float d) : damage(d) {}
+
+    // Helper to check if effect is active
+    [[nodiscard]] bool isActive() const { return damage > 0.001f; }
+};
+
+// Selection outline - highlights selected entities with colored outline
+struct SelectionOutline {
+    glm::vec3 color = glm::vec3(1.0f, 0.8f, 0.0f);  // Default: golden yellow
+    float thickness = 2.0f;                          // Outline thickness in pixels
+    float pulseSpeed = 0.0f;                         // 0 = no pulse, >0 = pulse frequency
+
+    SelectionOutline() = default;
+    SelectionOutline(const glm::vec3& c, float t = 2.0f, float p = 0.0f)
+        : color(c), thickness(t), pulseSpeed(p) {}
+
+    // Preset styles
+    static SelectionOutline selected() { return SelectionOutline(glm::vec3(1.0f, 0.8f, 0.0f), 2.0f); }
+    static SelectionOutline hovered() { return SelectionOutline(glm::vec3(0.5f, 0.8f, 1.0f), 1.5f); }
+    static SelectionOutline error() { return SelectionOutline(glm::vec3(1.0f, 0.2f, 0.2f), 3.0f, 2.0f); }
+};
+
+// =============================================================================
 // Tree-specific Components
 // =============================================================================
 // Only tree entities have these components.

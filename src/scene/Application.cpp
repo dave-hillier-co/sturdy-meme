@@ -1279,9 +1279,26 @@ void Application::initECS() {
 void Application::updateECS(float deltaTime) {
     (void)deltaTime;  // Currently unused, but available for time-based systems
 
+    const auto& renderables = renderer_->getSystems().scene().getRenderables();
+
+    // Lazy initialization: populate ECS entities when renderables become available
+    // This handles deferred renderable creation (after terrain is ready)
+    if (sceneEntities_.empty() && !renderables.empty()) {
+        ecs::EntityFactory factory(ecsWorld_);
+        sceneEntities_ = factory.createFromRenderables(renderables);
+
+        // Add bounding spheres and visibility for culling
+        for (ecs::Entity entity : sceneEntities_) {
+            if (ecsWorld_.valid(entity)) {
+                ecsWorld_.add<ecs::BoundingSphere>(entity, glm::vec3(0.0f), 1.0f);
+                ecsWorld_.add<ecs::Visible>(entity);
+            }
+        }
+        SDL_Log("ECS: Populated %zu entities from deferred renderables", sceneEntities_.size());
+    }
+
     // Sync transforms from Renderables to ECS (for objects updated by physics or animation)
     // This updates root entities that don't have LocalTransform/Parent
-    const auto& renderables = renderer_->getSystems().scene().getRenderables();
     for (size_t i = 0; i < sceneEntities_.size() && i < renderables.size(); ++i) {
         ecs::Entity entity = sceneEntities_[i];
         if (ecsWorld_.valid(entity) && ecsWorld_.has<ecs::Transform>(entity)) {

@@ -3,25 +3,16 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/quaternion.hpp>
 #include <glm/gtc/matrix_transform.hpp>
-#include <entt/entt.hpp>
 #include <cstdint>
 #include <vector>
 #include <algorithm>
+#include "World.h"  // For Entity, NullEntity
 
 // Forward declarations
 struct Mesh;
 struct Texture;
 
 namespace ecs {
-
-// =============================================================================
-// Entity Handle (for hierarchy references)
-// =============================================================================
-// Forward declare Entity type from World.h for use in hierarchy components.
-// The actual type is entt::entity, but we use a type alias for clarity.
-
-using Entity = entt::entity;
-constexpr Entity NullEntity = entt::null;
 
 // =============================================================================
 // Transform Component (World Space)

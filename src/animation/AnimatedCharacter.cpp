@@ -864,6 +864,10 @@ void AnimatedCharacter::initializeMotionMatching(const MotionMatching::Controlle
 
     motionMatchingController.buildDatabase(buildOptions);
 
+    // Exclude jump animations from normal locomotion search
+    // Jump should only be triggered explicitly, not matched during running
+    motionMatchingController.setExcludedTags({"jump"});
+
     // Enable motion matching mode
     useMotionMatching = true;
     useStateMachine = false;

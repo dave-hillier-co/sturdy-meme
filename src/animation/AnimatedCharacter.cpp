@@ -771,7 +771,9 @@ void AnimatedCharacter::setUseMotionMatching(bool use) {
         useLayerController = false;
         SDL_Log("AnimatedCharacter: Switched to motion matching mode");
     } else {
-        SDL_Log("AnimatedCharacter: Disabled motion matching mode");
+        // Fall back to state machine when motion matching is disabled
+        useStateMachine = true;
+        SDL_Log("AnimatedCharacter: Disabled motion matching mode, using state machine");
     }
 }
 

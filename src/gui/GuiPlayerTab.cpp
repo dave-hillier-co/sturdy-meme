@@ -6,7 +6,7 @@
 #include "animation/MotionMatchingController.h"
 #include "npc/NPCSimulation.h"
 #include "npc/NPCData.h"
-#include "PlayerState.h"  // For PlayerMovement::CAPSULE_HEIGHT
+#include "GLTFLoader.h"  // For Skeleton
 
 #include <imgui.h>
 
@@ -350,7 +350,9 @@ static ImVec2 worldToScreen(const glm::vec3& worldPos,
     }
     glm::vec3 ndc = glm::vec3(clipPos) / clipPos.w;
     float screenX = (ndc.x * 0.5f + 0.5f) * width;
-    float screenY = (1.0f - (ndc.y * 0.5f + 0.5f)) * height;  // Flip Y for screen coords
+    // Vulkan projection already flips Y (proj[1][1] *= -1), so NDC Y is already
+    // in screen orientation. Just map to pixels.
+    float screenY = (ndc.y * 0.5f + 0.5f) * height;
     return ImVec2(screenX, screenY);
 }
 
@@ -390,11 +392,26 @@ void GuiPlayerTab::renderMotionMatchingOverlay(IPlayerControl& playerControl, co
     }
 
     glm::mat4 worldTransform = sceneObjects[playerIndex].transform;
-    glm::vec3 characterPos = glm::vec3(worldTransform[3]);
 
-    // The render transform includes a vertical offset (CAPSULE_HEIGHT * 0.5) for the character model.
-    // Motion matching trajectory/features are at ground level, so subtract this offset.
-    characterPos.y -= PlayerMovement::CAPSULE_HEIGHT * 0.5f;
+    // Get skeleton for computing actual bone positions
+    const auto& skeleton = character.getSkeleton();
+    std::vector<glm::mat4> globalTransforms;
+    skeleton.computeGlobalTransforms(globalTransforms);
+
+    // Find a foot bone to anchor the visualization at actual ground level
+    int32_t footIdx = skeleton.findJointIndex("LeftFoot");
+    if (footIdx < 0) footIdx = skeleton.findJointIndex("mixamorig:LeftFoot");
+    if (footIdx < 0) footIdx = skeleton.findJointIndex("RightFoot");
+    if (footIdx < 0) footIdx = skeleton.findJointIndex("mixamorig:RightFoot");
+
+    // Compute ground position: foot world position with Y as ground level
+    glm::vec3 groundPos = glm::vec3(worldTransform[3]);  // Default to transform origin
+    if (footIdx >= 0 && static_cast<size_t>(footIdx) < globalTransforms.size()) {
+        // Get foot world position
+        glm::vec4 footWorld = worldTransform * globalTransforms[footIdx] * glm::vec4(0, 0, 0, 1);
+        // Use transform XZ but foot Y (which is at ground level)
+        groundPos = glm::vec3(worldTransform[3].x, footWorld.y, worldTransform[3].z);
+    }
 
     // Get ImGui background draw list for overlay rendering
     ImDrawList* drawList = ImGui::GetBackgroundDrawList();
@@ -407,16 +424,21 @@ void GuiPlayerTab::renderMotionMatchingOverlay(IPlayerControl& playerControl, co
         // Matched trajectory (from database)
         const auto& matchedTrajectory = controller.getLastMatchedTrajectory();
 
+        // Use ground position as anchor (where the feet actually are)
+        glm::vec3 charOrigin = groundPos;
+
         // Draw query trajectory (cyan - predicted)
         ImU32 queryColor = IM_COL32(0, 200, 255, 200);
         ImU32 queryPointColor = IM_COL32(0, 255, 255, 255);
 
-        ImVec2 prevScreen = worldToScreen(characterPos, viewProj, width, height);
+        ImVec2 prevScreen = worldToScreen(charOrigin, viewProj, width, height);
         for (size_t i = 0; i < queryTrajectory.sampleCount; ++i) {
             const auto& sample = queryTrajectory.samples[i];
 
-            // Sample position is relative to character
-            glm::vec3 worldPos = characterPos + sample.position;
+            // Transform sample position from character space to world space
+            // Samples are relative to ground position, apply rotation from worldTransform
+            glm::vec3 rotatedPos = glm::mat3(worldTransform) * sample.position;
+            glm::vec3 worldPos = groundPos + rotatedPos;
             ImVec2 screenPos = worldToScreen(worldPos, viewProj, width, height);
 
             // Draw line from previous point
@@ -429,8 +451,9 @@ void GuiPlayerTab::renderMotionMatchingOverlay(IPlayerControl& playerControl, co
                 float radius = sample.timeOffset >= 0 ? 5.0f : 3.0f;  // Future points larger
                 drawList->AddCircleFilled(screenPos, radius, queryPointColor);
 
-                // Draw facing direction
-                glm::vec3 facingEnd = worldPos + sample.facing * 0.3f;
+                // Draw facing direction (transform direction, not position)
+                glm::vec3 facingWorld = glm::mat3(worldTransform) * sample.facing;
+                glm::vec3 facingEnd = worldPos + facingWorld * 0.3f;
                 ImVec2 facingScreenPos = worldToScreen(facingEnd, viewProj, width, height);
                 if (facingScreenPos.x > -500) {
                     drawList->AddLine(screenPos, facingScreenPos, IM_COL32(0, 150, 200, 150), 1.0f);
@@ -444,11 +467,12 @@ void GuiPlayerTab::renderMotionMatchingOverlay(IPlayerControl& playerControl, co
         ImU32 matchColor = IM_COL32(100, 255, 100, 150);
         ImU32 matchPointColor = IM_COL32(0, 255, 0, 200);
 
-        prevScreen = worldToScreen(characterPos, viewProj, width, height);
+        prevScreen = worldToScreen(charOrigin, viewProj, width, height);
         for (size_t i = 0; i < matchedTrajectory.sampleCount; ++i) {
             const auto& sample = matchedTrajectory.samples[i];
 
-            glm::vec3 worldPos = characterPos + sample.position;
+            glm::vec3 rotatedPos = glm::mat3(worldTransform) * sample.position;
+            glm::vec3 worldPos = groundPos + rotatedPos;
             ImVec2 screenPos = worldToScreen(worldPos, viewProj, width, height);
 
             // Draw line (offset slightly for visibility)
@@ -473,6 +497,9 @@ void GuiPlayerTab::renderMotionMatchingOverlay(IPlayerControl& playerControl, co
         const auto& db = controller.getDatabase();
         const auto& playback = controller.getPlaybackState();
 
+        // Use ground position as anchor
+        glm::vec3 charOrigin = groundPos;
+
         // Get the current matched pose features
         if (playback.matchedPoseIndex < db.getPoseCount()) {
             const auto& matchedPose = db.getPose(playback.matchedPoseIndex);
@@ -481,7 +508,9 @@ void GuiPlayerTab::renderMotionMatchingOverlay(IPlayerControl& playerControl, co
             ImU32 featureColor = IM_COL32(255, 150, 0, 200);
 
             for (size_t i = 0; i < features.boneCount; ++i) {
-                glm::vec3 boneWorldPos = characterPos + features.boneFeatures[i].position;
+                // Transform bone position from character space to world space
+                glm::vec3 rotatedPos = glm::mat3(worldTransform) * features.boneFeatures[i].position;
+                glm::vec3 boneWorldPos = groundPos + rotatedPos;
                 ImVec2 screenPos = worldToScreen(boneWorldPos, viewProj, width, height);
 
                 if (screenPos.x > -500) {
@@ -494,8 +523,9 @@ void GuiPlayerTab::renderMotionMatchingOverlay(IPlayerControl& playerControl, co
                         ImVec2(screenPos.x - size, screenPos.y),
                         featureColor);
 
-                    // Draw velocity vector
-                    glm::vec3 velEnd = boneWorldPos + features.boneFeatures[i].velocity * 0.1f;
+                    // Draw velocity vector (transform as direction)
+                    glm::vec3 velWorld = glm::mat3(worldTransform) * features.boneFeatures[i].velocity;
+                    glm::vec3 velEnd = boneWorldPos + velWorld * 0.1f;
                     ImVec2 velScreenPos = worldToScreen(velEnd, viewProj, width, height);
                     if (velScreenPos.x > -500) {
                         drawList->AddLine(screenPos, velScreenPos, IM_COL32(255, 200, 0, 150), 1.5f);
@@ -503,9 +533,10 @@ void GuiPlayerTab::renderMotionMatchingOverlay(IPlayerControl& playerControl, co
                 }
             }
 
-            // Draw root velocity
-            glm::vec3 rootVelEnd = characterPos + features.rootVelocity * 0.2f;
-            ImVec2 charScreen = worldToScreen(characterPos, viewProj, width, height);
+            // Draw root velocity (transform as direction)
+            glm::vec3 rootVelWorld = glm::mat3(worldTransform) * features.rootVelocity;
+            glm::vec3 rootVelEnd = charOrigin + rootVelWorld * 0.2f;
+            ImVec2 charScreen = worldToScreen(charOrigin, viewProj, width, height);
             ImVec2 velScreen = worldToScreen(rootVelEnd, viewProj, width, height);
             if (charScreen.x > -500 && velScreen.x > -500) {
                 drawList->AddLine(charScreen, velScreen, IM_COL32(255, 255, 0, 255), 3.0f);

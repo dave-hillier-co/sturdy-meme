@@ -32,6 +32,7 @@
 #include "core/interfaces/IPlayerControl.h"
 #include "DebugLineSystem.h"
 #include "npc/NPCSimulation.h"
+#include "Texture.h"
 
 #ifdef JPH_DEBUG_RENDERER
 #include "PhysicsDebugRenderer.h"
@@ -1307,10 +1308,35 @@ void Application::initECS() {
     renderer_->getSystems().setECSWorld(&ecsWorld_);
 
     SDL_Log("ECS initialized with %zu entities from scene", sceneEntities_.size());
+
+    // Initialize ECS Material Demo to showcase material components
+    if (!renderables.empty()) {
+        ecs::ECSMaterialDemo::InitInfo demoInfo{};
+        demoInfo.world = &ecsWorld_;
+        demoInfo.cubeMesh = sceneBuilder.getCubeMesh();
+        demoInfo.sphereMesh = sceneBuilder.getSphereMesh();
+        demoInfo.metalTexture = const_cast<Texture*>(sceneBuilder.getMetalTexture());
+        demoInfo.crateTexture = const_cast<Texture*>(sceneBuilder.getCrateTexture());
+        demoInfo.materialRegistry = &sceneManager.getSceneBuilder().getMaterialRegistry();
+        demoInfo.sceneOrigin = glm::vec2(
+            sceneBuilder.getWellEntranceX() - 20.0f,
+            sceneBuilder.getWellEntranceZ() - 20.0f
+        );
+
+        // Use terrain height function if available from renderer
+        auto& terrainSystem = renderer_->getSystems().terrain();
+        demoInfo.getTerrainHeight = [&terrainSystem](float x, float z) {
+            return terrainSystem.getHeightAt(x, z);
+        };
+
+        ecsMaterialDemo_ = ecs::ECSMaterialDemo::create(demoInfo);
+        if (ecsMaterialDemo_) {
+            SDL_Log("ECS Material Demo: Initialized with demo entities");
+        }
+    }
 }
 
 void Application::updateECS(float deltaTime) {
-    (void)deltaTime;  // Currently unused, but available for time-based systems
 
     auto& sceneManager = renderer_->getSystems().scene();
     auto& sceneBuilder = sceneManager.getSceneBuilder();
@@ -1386,6 +1412,13 @@ void Application::updateECS(float deltaTime) {
                 }
             }
         }
+    }
+
+    // Update ECS material demo (wetness/damage cycling, selection toggling)
+    static float totalTime = 0.0f;
+    totalTime += deltaTime;
+    if (ecsMaterialDemo_) {
+        ecsMaterialDemo_->update(deltaTime, totalTime);
     }
 
     // Update hierarchical world transforms (parent * local -> world)

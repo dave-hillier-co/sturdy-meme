@@ -19,6 +19,7 @@
 #include "ecs/Components.h"
 #include "ecs/Systems.h"
 #include "ecs/EntityFactory.h"
+#include "ecs/ECSMaterialDemo.h"
 
 class Application {
 public:
@@ -78,6 +79,7 @@ private:
     ecs::World ecsWorld_;
     std::vector<ecs::Entity> sceneEntities_;  // Maps scene object indices to ECS entities
     bool ecsWeaponsInitialized_ = false;      // Track if weapon bone attachments are set up
+    std::unique_ptr<ecs::ECSMaterialDemo> ecsMaterialDemo_;  // ECS material demo entities
 
     bool running = false;
     // Walk speed matches animation root motion: 158.42 cm / 1.10s * 0.01 scale = 1.44 m/s

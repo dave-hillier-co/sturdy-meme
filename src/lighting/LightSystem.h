@@ -148,7 +148,7 @@ inline glm::vec3 getDirectionFromTransform(const Transform& transform) {
 inline Light pointLightToLight(const PointLightComponent& component,
                                 const Transform& transform) {
     Light light;
-    light.type = LightType::Point;
+    light.type = ::LightType::Point;
     light.position = transform.position();
     light.rotation = glm::quat(1.0f, 0.0f, 0.0f, 0.0f);  // Not used for point lights
     light.color = component.properties.color;
@@ -165,7 +165,7 @@ inline Light pointLightToLight(const PointLightComponent& component,
 inline Light spotLightToLight(const SpotLightComponent& component,
                                const Transform& transform) {
     Light light;
-    light.type = LightType::Spot;
+    light.type = ::LightType::Spot;
     light.position = transform.position();
 
     // Get rotation from transform matrix
@@ -192,7 +192,7 @@ inline Light spotLightToLight(const SpotLightComponent& component,
 inline Light directionalLightToLight(const DirectionalLightComponent& component,
                                       const Transform& transform) {
     Light light;
-    light.type = LightType::Directional;
+    light.type = ::LightType::Directional;
     light.position = glm::vec3(0.0f);  // Position doesn't matter
 
     // Get rotation from transform matrix

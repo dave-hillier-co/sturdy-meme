@@ -426,6 +426,13 @@ bool Renderer::render(const Camera& camera) {
         handleResize();
         swapchain = vulkanContext_->getVkSwapchain();  // Update after resize
         framebufferResized = false;
+
+        // After swapchain recreation (especially after window restore), ensure frame sync
+        // is in a clean state. vkDeviceWaitIdle in handleResize ensures GPU is idle,
+        // but we also need to reset frame index to ensure semaphores are used correctly.
+        // This prevents ghost frames caused by semaphore state inconsistencies.
+        frameSync_.waitForAllFrames();
+        frameSync_.reset();
     }
 
     // Skip rendering if window is minimized

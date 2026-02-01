@@ -320,6 +320,17 @@
 #define BINDING_HIZ_CULL_PYRAMID           4   // Hi-Z pyramid sampler
 
 // =============================================================================
+// Scene Object Cull Compute Descriptor Set
+// GPU-driven frustum culling for scene objects (Phase 3.2)
+// =============================================================================
+#define BINDING_SCENE_CULL_UNIFORMS        0   // Culling uniforms (UBO)
+#define BINDING_SCENE_CULL_OBJECTS         1   // Object cull data (SSBO, read-only)
+#define BINDING_SCENE_CULL_INDIRECT        2   // Indirect draw buffer (SSBO, write)
+#define BINDING_SCENE_CULL_COUNT           3   // Draw count buffer (SSBO, atomic)
+#define BINDING_SCENE_CULL_HIZ             4   // Hi-Z pyramid (optional, for occlusion)
+#define BINDING_SCENE_CULL_INSTANCES       5   // Scene instance buffer (for visibility output)
+
+// =============================================================================
 // Atmosphere LUT Compute Descriptor Set
 // =============================================================================
 #define BINDING_ATMO_OUTPUT_LUT            0   // Output LUT image
@@ -730,6 +741,14 @@ constexpr uint32_t HIZ_CULL_OBJECTS       = BINDING_HIZ_CULL_OBJECTS;
 constexpr uint32_t HIZ_CULL_INDIRECT      = BINDING_HIZ_CULL_INDIRECT;
 constexpr uint32_t HIZ_CULL_COUNT         = BINDING_HIZ_CULL_COUNT;
 constexpr uint32_t HIZ_CULL_PYRAMID       = BINDING_HIZ_CULL_PYRAMID;
+
+// Scene Object Cull
+constexpr uint32_t SCENE_CULL_UNIFORMS    = BINDING_SCENE_CULL_UNIFORMS;
+constexpr uint32_t SCENE_CULL_OBJECTS     = BINDING_SCENE_CULL_OBJECTS;
+constexpr uint32_t SCENE_CULL_INDIRECT    = BINDING_SCENE_CULL_INDIRECT;
+constexpr uint32_t SCENE_CULL_COUNT       = BINDING_SCENE_CULL_COUNT;
+constexpr uint32_t SCENE_CULL_HIZ         = BINDING_SCENE_CULL_HIZ;
+constexpr uint32_t SCENE_CULL_INSTANCES   = BINDING_SCENE_CULL_INSTANCES;
 
 // Atmosphere LUT
 constexpr uint32_t ATMO_OUTPUT_LUT        = BINDING_ATMO_OUTPUT_LUT;

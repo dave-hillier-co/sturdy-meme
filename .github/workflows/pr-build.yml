@@ -1,0 +1,21 @@
+name: PR Build
+
+on:
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  build:
+    runs-on: self-hosted
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure
+        run: cmake --preset debug
+
+      - name: Build
+        run: cmake --build build/debug
+
+      - name: Test
+        run: ctest --test-dir build/debug --output-on-failure

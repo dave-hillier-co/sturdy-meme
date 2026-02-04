@@ -193,38 +193,56 @@ Gamepads are automatically detected when connected (hot-plug supported).
 
 ```
 vulkan-game/
-├── CMakeLists.txt        # Build configuration
-├── CMakePresets.json     # Debug/Release presets
-├── vcpkg.json            # Dependencies
+├── CMakeLists.txt          # Build configuration
+├── CMakePresets.json       # Debug/Release presets
+├── vcpkg.json              # Dependencies
 ├── README.md
 ├── src/
-│   ├── main.cpp          # Entry point
-│   ├── Application.h/cpp # Window, input, game loop
-│   ├── Renderer.h/cpp    # Vulkan rendering
-│   ├── Camera.h/cpp      # Camera system
-│   ├── Mesh.h/cpp        # Geometry
-│   └── Texture.h/cpp     # Texture loading
-├── shaders/
-│   ├── shader.vert       # Vertex shader
-│   └── shader.frag       # Fragment shader
-├── tools/                # Preprocessing tools
-│   ├── terrain_preprocess.cpp
-│   ├── erosion_preprocess.cpp
-│   └── biome_preprocess.cpp
-└── assets/
-    └── textures/
-        └── crate.png     # Wooden crate texture
+│   ├── main.cpp            # Entry point
+│   ├── animation/          # Skeletal animation, motion matching, blend spaces
+│   ├── atmosphere/         # Sky, weather, clouds, time of day, snow
+│   ├── core/               # Renderer, shaders, buffers, materials, passes
+│   ├── culling/            # GPU-based visibility culling
+│   ├── debug/              # CPU/GPU profiling, debug visualization
+│   ├── ecs/                # Entity-component system
+│   ├── gui/                # ImGui debug panels
+│   ├── ik/                 # Inverse kinematics (foot placement, look-at)
+│   ├── lighting/           # Shadows, froxel lighting, dynamic lights
+│   ├── loaders/            # FBX, GLTF, OBJ mesh loading
+│   ├── npc/                # NPC rendering and simulation
+│   ├── physics/            # Jolt physics, character controller, cloth
+│   ├── postprocess/        # Bloom, SSR, god rays, Hi-Z
+│   ├── scene/              # Application, camera, input, scene management
+│   ├── subdivision/        # Catmull-Clark subdivision surfaces
+│   ├── terrain/            # Terrain system, virtual texturing, tile cache
+│   ├── vegetation/         # Grass, trees, impostors, LOD systems
+│   └── water/              # Ocean FFT, water rendering, flow maps
+├── shaders/                # GLSL shaders (~150 files)
+│   ├── *.vert/*.frag       # Vertex/fragment shaders
+│   ├── *.comp              # Compute shaders
+│   ├── *_common.glsl       # Shared shader includes
+│   └── terrain/            # Terrain-specific shaders
+├── tools/                  # Preprocessing tools (see below)
+├── assets/
+│   ├── characters/         # Character models and animations
+│   ├── materials/          # Material definitions
+│   ├── presets/            # Tree and vegetation presets
+│   ├── textures/           # Texture assets
+│   └── trees/              # Tree model data
+└── docs/                   # Architecture and design documentation
 ```
 
 ## Preprocessing Tools
 
-The project includes standalone tools for terrain data preprocessing. Build them with:
+The project includes standalone tools for terrain and content preprocessing. Build all tools with:
 
 ```bash
-cmake --build build/debug --target terrain_preprocess erosion_preprocess biome_preprocess
+cmake --build build/debug --target terrain_preprocess watershed biome_preprocess settlement_generator road_generator vegetation_generator tile_generator town_generator
 ```
 
-### terrain_preprocess
+### Terrain Pipeline Tools
+
+#### terrain_preprocess
 
 Generates tile cache from a 16-bit PNG heightmap.
 
@@ -237,32 +255,32 @@ Generates tile cache from a 16-bit PNG heightmap.
   --lod-levels <value>       Number of LOD levels (default: 4)
 ```
 
-### erosion_preprocess
+#### watershed
 
-Simulates hydraulic erosion and generates flow accumulation data for rivers.
+D8 flow direction analysis and river extraction from heightmaps.
 
 ```bash
-./build/debug/tools/erosion_preprocess <heightmap.png> <cache_dir> [options]
-  --num-droplets <value>       Water droplets to simulate (default: 500000)
-  --sea-level <value>          Height below which is sea (default: 0.0)
-  --terrain-size <value>       World size in meters (default: 16384.0)
-  --output-resolution <value>  Flow map resolution (default: 4096)
+./build/debug/tools/watershed <heightmap.png> <output_dir> [options]
 ```
 
-Outputs: `flow_accumulation.bin`, `flow_direction.bin`, `erosion_preview.png`, `rivers.svg`
+**Outputs:**
+- `flow_direction.png` - 8-bit D8 flow direction (values 0-7)
+- `flow_accumulation.exr` - Float grid of accumulated water flow
+- `watershed_labels.png` - RGBA-encoded uint32 watershed basin IDs
+- `rivers.geojson` - River paths with flow/width metadata
+- `lakes.geojson` - Lake polygons
 
-### biome_preprocess
+#### biome_preprocess
 
-Generates biome classification for south coast of England terrain types.
+Generates biome classification based on terrain features.
 
 ```bash
-./build/debug/tools/biome_preprocess <heightmap.png> <erosion_cache> <output_dir> [options]
+./build/debug/tools/biome_preprocess <heightmap.png> <watershed_cache> <output_dir> [options]
   --sea-level <value>         Height below which is sea (default: 0.0)
   --terrain-size <value>      World size in meters (default: 16384.0)
   --min-altitude <value>      Min altitude in heightmap (default: 0.0)
   --max-altitude <value>      Max altitude in heightmap (default: 200.0)
   --output-resolution <value> Biome map resolution (default: 1024)
-  --num-settlements <value>   Target number of settlements (default: 20)
 ```
 
 **Biome zones:**
@@ -281,7 +299,105 @@ Generates biome classification for south coast of England terrain types.
 **Outputs:**
 - `biome_map.png` - RGBA8 data (R=zone, G=subzone, B=settlement_distance)
 - `biome_debug.png` - Colored visualization
-- `settlements.json` - Settlement locations with metadata
+
+### World Generation Tools
+
+#### settlement_generator
+
+Places settlements based on terrain suitability (flat land, water access, road connections).
+
+```bash
+./build/debug/tools/settlement_generator <biome_map.png> <flow_accumulation.exr> <output_dir> [options]
+  --num-settlements <value>   Target number of settlements (default: 20)
+```
+
+**Outputs:** `settlements.json` - Settlement locations with metadata
+
+#### road_generator
+
+A* pathfinding to connect settlements with terrain-aware roads.
+
+```bash
+./build/debug/tools/road_generator <heightmap.png> <settlements.json> <output_dir> [options]
+```
+
+**Outputs:** `roads.geojson` - Road network with type and settlement connections
+
+#### vegetation_generator
+
+Poisson disk sampling for tree, rock, and detritus placement based on biome rules.
+
+```bash
+./build/debug/tools/vegetation_generator <biome_map.png> <output_dir> [options]
+```
+
+**Outputs:** JSON files with vegetation instance positions and parameters
+
+#### town_generator
+
+Medieval Fantasy City Generator - procedural town layout generation (port of MFCG).
+
+```bash
+./build/debug/tools/town_generator [options]
+```
+
+**Outputs:** SVG town layouts with buildings, streets, walls, and landmarks
+
+#### dwelling_generator
+
+Procedural floor plan generation for individual buildings.
+
+```bash
+./build/debug/tools/dwelling_generator [options]
+```
+
+**Outputs:** SVG floor plans with room layouts
+
+### Virtual Texturing Tools
+
+#### tile_generator
+
+Generates virtual texture tiles by compositing terrain materials with road/river overlays.
+
+```bash
+./build/debug/tools/tile_generator <biome_map.png> <roads.geojson> <rivers.geojson> <output_dir> [options]
+```
+
+### Texture Generation Tools
+
+#### foam_noise_gen
+
+Generates procedural foam noise textures for water rendering.
+
+#### caustics_gen
+
+Generates procedural caustics textures for underwater lighting effects.
+
+#### material_texture_gen
+
+Generates procedural placeholder textures for terrain materials.
+
+#### sbsar_render
+
+Renders Substance Archive (.sbsar) files to texture outputs.
+
+### Build Tools
+
+#### shader_reflect
+
+Parses compiled SPIR-V shaders and generates `generated/UBOs.h` with std140-aligned C++ structs matching shader uniform buffer layouts.
+
+#### skinned_mesh_lod
+
+Mesh simplification tool for generating LOD levels of skinned character meshes.
+
+```bash
+./build/debug/tools/skinned_mesh_lod <input.gltf> <output_dir> [options]
+```
+
+#### terrain_patch_generator
+
+Preview tool for terrain-aware town placement.
 
 ## Dependencies
 

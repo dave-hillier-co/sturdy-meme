@@ -225,6 +225,9 @@ set(SOURCES
     src/gui/GuiTreeTab.cpp
     src/gui/GuiGrassTab.cpp
     src/gui/GuiSceneGraphTab.cpp
+    src/gui/GuiKitchenTab.cpp
+    # Kitchen System
+    src/kitchen/KitchenSystem.cpp
     # Subdivision
     src/subdivision/CatmullClarkCBT.cpp
     src/subdivision/CatmullClarkMesh.cpp

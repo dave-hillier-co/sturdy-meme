@@ -34,6 +34,7 @@
 #include "GuiTreeTab.h"
 #include "GuiGrassTab.h"
 #include "GuiSceneGraphTab.h"
+#include "GuiKitchenTab.h"
 
 #include "terrain/TerrainSystem.h"
 #include "terrain/TerrainTileCache.h"
@@ -344,6 +345,9 @@ void GuiSystem::render(GuiInterfaces& ui, const Camera& camera, float deltaTime,
     if (windowStates.showSceneGraph) {
         renderSceneGraphWindow(ui);
     }
+    if (windowStates.showKitchen) {
+        renderKitchenWindow(kitchenControl_, deltaTime);
+    }
 
     // Skeleton/IK debug overlay
     if (ikDebugSettings.showSkeleton || ikDebugSettings.showIKTargets) {
@@ -402,6 +406,11 @@ void GuiSystem::renderMainMenuBar() {
         if (ImGui::BeginMenu("Character")) {
             ImGui::MenuItem("Player", nullptr, &windowStates.showPlayer);
             ImGui::MenuItem("IK / Animation", nullptr, &windowStates.showIK);
+            ImGui::EndMenu();
+        }
+
+        if (ImGui::BeginMenu("Simulation")) {
+            ImGui::MenuItem("Kitchen Orders", nullptr, &windowStates.showKitchen);
             ImGui::EndMenu();
         }
 
@@ -1006,6 +1015,20 @@ void GuiSystem::renderSceneGraphWindow(GuiInterfaces& ui) {
 
     if (ImGui::Begin("Scene Graph", &windowStates.showSceneGraph)) {
         GuiSceneGraphTab::render(ui.scene, sceneGraphTabState);
+    }
+    ImGui::End();
+}
+
+void GuiSystem::renderKitchenWindow(IKitchenControl* kitchenControl, float deltaTime) {
+    ImGui::SetNextWindowPos(ImVec2(320, 40), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSize(ImVec2(600, 700), ImGuiCond_FirstUseEver);
+
+    if (ImGui::Begin("Kitchen Orders", &windowStates.showKitchen)) {
+        if (kitchenControl) {
+            GuiKitchenTab::render(*kitchenControl, kitchenTabState, deltaTime);
+        } else {
+            ImGui::TextDisabled("Kitchen system not initialized");
+        }
     }
     ImGui::End();
 }

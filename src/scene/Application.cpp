@@ -440,6 +440,11 @@ bool Application::init(const std::string& title, int width, int height) {
             SDL_Log("Failed to initialize GUI system");
             return false;
         }
+
+        // Set kitchen control for GUI tab
+        if (kitchenControl_) {
+            gui_->setKitchenControl(kitchenControl_.get());
+        }
     }
 
     // Set GUI render callback
@@ -1272,6 +1277,11 @@ void Application::initECS() {
 
     SDL_Log("ECS initialized with %zu entities from scene", sceneEntities.size());
 
+    // Initialize kitchen order system
+    kitchenSystem_.initialize(ecsWorld_);
+    kitchenControl_ = std::make_unique<KitchenControlAdapter>(kitchenSystem_, ecsWorld_);
+    SDL_Log("Kitchen system initialized");
+
     // Initialize ECS Material Demo to showcase material components
     if (!renderables.empty()) {
         ecs::ECSMaterialDemo::InitInfo demoInfo{};
@@ -1383,6 +1393,11 @@ void Application::updateECS(float deltaTime) {
     totalTime += deltaTime;
     if (ecsMaterialDemo_) {
         ecsMaterialDemo_->update(deltaTime, totalTime);
+    }
+
+    // Update kitchen order system (cooking progress, station assignments)
+    if (kitchenControl_ && kitchenControl_->isKitchenSimulationEnabled()) {
+        kitchenSystem_.update(ecsWorld_, deltaTime);
     }
 
     // Update hierarchical world transforms (parent * local -> world)

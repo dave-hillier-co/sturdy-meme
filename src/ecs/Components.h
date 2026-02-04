@@ -831,4 +831,206 @@ inline RenderData extractRenderData(const World& world, Entity entity) {
     return data;
 }
 
+// =============================================================================
+// Kitchen Order System Components
+// =============================================================================
+// Components for implementing professional kitchen workflow with hold/fire system.
+// Supports the standard restaurant workflow: order → hold → fire → cook → serve.
+
+// Menu item definition (stored in a lookup table, not per-entity)
+struct MenuItem {
+    std::string name;
+    float cookTime = 5.0f;           // Base cooking time in seconds
+    uint32_t stationType = 0;        // Which station cooks this item (0=grill, 1=fryer, etc.)
+    float difficulty = 1.0f;         // Affects cooking precision requirements
+
+    MenuItem() = default;
+    MenuItem(const std::string& n, float time, uint32_t station, float diff = 1.0f)
+        : name(n), cookTime(time), stationType(station), difficulty(diff) {}
+};
+
+// Order status states following kitchen workflow
+enum class OrderStatus : uint8_t {
+    Pending = 0,     // Just received, not yet acknowledged
+    Held = 1,        // On hold, waiting to be fired
+    Fired = 2,       // Fired - cooking should begin
+    Cooking = 3,     // Currently being cooked at a station
+    Ready = 4,       // Cooking complete, ready to serve
+    Served = 5,      // Delivered to customer
+    Cancelled = 6    // Order was cancelled
+};
+
+// Individual item within an order
+struct OrderItem {
+    uint32_t menuItemId = 0;         // Index into menu items
+    OrderStatus status = OrderStatus::Pending;
+    float cookProgress = 0.0f;       // 0.0 to 1.0 cooking progress
+    uint32_t assignedStation = UINT32_MAX;  // Which station is cooking this
+    float qualityModifier = 1.0f;    // Affected by cook skill, timing
+
+    OrderItem() = default;
+    explicit OrderItem(uint32_t itemId) : menuItemId(itemId) {}
+};
+
+// Order component - represents a customer order with multiple items
+struct Order {
+    uint32_t orderId = 0;                    // Unique order identifier
+    uint32_t tableNumber = 0;                // Which table placed the order
+    std::vector<OrderItem> items;            // Items in this order
+    float timeReceived = 0.0f;               // Game time when order was placed
+    float timeHeld = 0.0f;                   // When order was put on hold
+    float timeFired = 0.0f;                  // When order was fired
+    float timeCompleted = 0.0f;              // When all items ready
+    bool urgent = false;                     // Priority order flag
+    std::string notes;                       // Special instructions
+
+    Order() = default;
+
+    // Check if all items are at or past a given status
+    [[nodiscard]] bool allItemsAtLeast(OrderStatus minStatus) const {
+        for (const auto& item : items) {
+            if (static_cast<uint8_t>(item.status) < static_cast<uint8_t>(minStatus)) {
+                return false;
+            }
+        }
+        return !items.empty();
+    }
+
+    // Check if any item is at a specific status
+    [[nodiscard]] bool anyItemAt(OrderStatus status) const {
+        for (const auto& item : items) {
+            if (item.status == status) return true;
+        }
+        return false;
+    }
+
+    // Get overall order status (minimum status of all items)
+    [[nodiscard]] OrderStatus overallStatus() const {
+        if (items.empty()) return OrderStatus::Pending;
+        OrderStatus minStatus = OrderStatus::Served;
+        for (const auto& item : items) {
+            if (static_cast<uint8_t>(item.status) < static_cast<uint8_t>(minStatus)) {
+                minStatus = item.status;
+            }
+        }
+        return minStatus;
+    }
+};
+
+// Kitchen station types
+enum class StationType : uint8_t {
+    Grill = 0,       // Meats, burgers, steaks
+    Fryer = 1,       // Fried foods
+    Saute = 2,       // Pan dishes
+    Prep = 3,        // Cold prep, salads
+    Oven = 4,        // Baked items
+    Dessert = 5      // Desserts and pastries
+};
+
+// Kitchen station state
+enum class StationState : uint8_t {
+    Idle = 0,        // Ready for new item
+    Cooking = 1,     // Currently cooking
+    Overcooked = 2,  // Item was left too long
+    Cleaning = 3     // Station being cleaned
+};
+
+// Kitchen station component
+struct KitchenStation {
+    StationType type = StationType::Grill;
+    StationState state = StationState::Idle;
+    uint32_t currentOrderId = UINT32_MAX;    // Order being cooked
+    uint32_t currentItemIndex = UINT32_MAX;  // Index within order
+    float cookProgress = 0.0f;               // 0.0 to 1.0
+    float overcookTimer = 0.0f;              // Time past done (for quality penalty)
+    float speedModifier = 1.0f;              // Station efficiency
+    uint32_t stationIndex = 0;               // For identification
+
+    KitchenStation() = default;
+    explicit KitchenStation(StationType t, uint32_t idx)
+        : type(t), stationIndex(idx) {}
+
+    [[nodiscard]] bool isAvailable() const {
+        return state == StationState::Idle;
+    }
+
+    void startCooking(uint32_t orderId, uint32_t itemIdx) {
+        currentOrderId = orderId;
+        currentItemIndex = itemIdx;
+        cookProgress = 0.0f;
+        overcookTimer = 0.0f;
+        state = StationState::Cooking;
+    }
+
+    void finishCooking() {
+        currentOrderId = UINT32_MAX;
+        currentItemIndex = UINT32_MAX;
+        cookProgress = 0.0f;
+        overcookTimer = 0.0f;
+        state = StationState::Idle;
+    }
+};
+
+// Tag for kitchen station entities
+struct KitchenStationTag {};
+
+// Tag for order entities
+struct OrderTag {};
+
+// Cook NPC component - skills and current assignment
+struct CookNPC {
+    float skill = 1.0f;              // Affects cooking speed and quality
+    float stamina = 1.0f;            // Decreases over time, affects performance
+    uint32_t assignedStation = UINT32_MAX;  // Current station assignment
+    std::string name = "Cook";
+
+    CookNPC() = default;
+    CookNPC(const std::string& n, float s) : skill(s), name(n) {}
+};
+
+// Tag for cook NPCs
+struct CookTag {};
+
+// Server NPC component - for delivering orders
+struct ServerNPC {
+    float speed = 1.0f;              // Movement speed modifier
+    uint32_t currentOrderId = UINT32_MAX;  // Order being delivered
+    std::string name = "Server";
+
+    ServerNPC() = default;
+    ServerNPC(const std::string& n, float s) : speed(s), name(n) {}
+};
+
+// Tag for server NPCs
+struct ServerTag {};
+
+// Kitchen state singleton (stored as entity with this component)
+struct KitchenState {
+    uint32_t nextOrderId = 1;
+    float gameTime = 0.0f;
+    std::vector<MenuItem> menu;
+    float rushMultiplier = 1.0f;     // Order frequency multiplier
+    uint32_t ordersCompleted = 0;
+    uint32_t ordersCancelled = 0;
+    float totalQuality = 0.0f;       // Sum of quality scores
+    float averageWaitTime = 0.0f;    // Running average
+
+    KitchenState() {
+        // Initialize default menu items
+        menu.push_back(MenuItem("Roast Chicken", 12.0f, static_cast<uint32_t>(StationType::Oven)));
+        menu.push_back(MenuItem("Grilled Steak", 8.0f, static_cast<uint32_t>(StationType::Grill)));
+        menu.push_back(MenuItem("Fried Fish", 6.0f, static_cast<uint32_t>(StationType::Fryer)));
+        menu.push_back(MenuItem("Vegetable Stew", 10.0f, static_cast<uint32_t>(StationType::Saute)));
+        menu.push_back(MenuItem("Fresh Salad", 3.0f, static_cast<uint32_t>(StationType::Prep)));
+        menu.push_back(MenuItem("Meat Pie", 15.0f, static_cast<uint32_t>(StationType::Oven)));
+        menu.push_back(MenuItem("Honey Cake", 8.0f, static_cast<uint32_t>(StationType::Dessert)));
+        menu.push_back(MenuItem("Ale-Battered Cod", 7.0f, static_cast<uint32_t>(StationType::Fryer)));
+    }
+
+    [[nodiscard]] uint32_t generateOrderId() { return nextOrderId++; }
+};
+
+// Tag for kitchen state singleton entity
+struct KitchenStateTag {};
+
 } // namespace ecs

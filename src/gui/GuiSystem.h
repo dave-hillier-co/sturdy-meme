@@ -11,6 +11,7 @@
 #include "GuiPlayerTab.h"
 #include "GuiEnvironmentTab.h"
 #include "GuiSceneGraphTab.h"
+#include "GuiKitchenTab.h"
 #include "GuiInterfaces.h"
 
 class Camera;
@@ -57,6 +58,8 @@ public:
     PlayerSettings& getPlayerSettings() { return playerSettings; }
     const PlayerSettings& getPlayerSettings() const { return playerSettings; }
 
+    // Set kitchen control for GUI tab
+    void setKitchenControl(IKitchenControl* control) { kitchenControl_ = control; }
 
 private:
     bool initInternal(SDL_Window* window, VkInstance instance, VkPhysicalDevice physicalDevice,
@@ -83,6 +86,7 @@ private:
     void renderProfilerWindow(GuiInterfaces& ui);
     void renderTileLoaderWindow(GuiInterfaces& ui, const Camera& camera);
     void renderSceneGraphWindow(GuiInterfaces& ui);
+    void renderKitchenWindow(IKitchenControl* kitchenControl, float deltaTime);
 
     VkDevice device_ = VK_NULL_HANDLE;  // Stored for cleanup
     VkDescriptorPool imguiPool = VK_NULL_HANDLE;
@@ -99,6 +103,10 @@ private:
 
     // Scene graph tab state
     SceneGraphTabState sceneGraphTabState;
+
+    // Kitchen tab state
+    KitchenTabState kitchenTabState;
+    IKitchenControl* kitchenControl_ = nullptr;
 
     // Cached performance metrics
     float frameTimeHistory[120] = {0};
@@ -124,6 +132,7 @@ private:
         bool showProfiler = false;
         bool showTileLoader = false;
         bool showSceneGraph = false;
+        bool showKitchen = false;
     } windowStates;
 
     // Tile loader visualization mode

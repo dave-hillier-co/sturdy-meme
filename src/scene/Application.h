@@ -20,6 +20,29 @@
 #include "ecs/Systems.h"
 #include "ecs/EntityFactory.h"
 #include "ecs/ECSMaterialDemo.h"
+#include "kitchen/KitchenSystem.h"
+#include "gui/GuiKitchenTab.h"
+
+// Kitchen control adapter for GUI
+class KitchenControlAdapter : public IKitchenControl {
+public:
+    KitchenControlAdapter(kitchen::KitchenSystem& ks, ecs::World& w)
+        : kitchenSystem_(ks), world_(w) {}
+
+    kitchen::KitchenSystem& getKitchenSystem() override { return kitchenSystem_; }
+    ecs::World& getECSWorld() override { return world_; }
+
+    bool isKitchenSimulationEnabled() const override { return enabled_; }
+    void setKitchenSimulationEnabled(bool enabled) override { enabled_ = enabled; }
+    float getOrderSpawnRate() const override { return spawnRate_; }
+    void setOrderSpawnRate(float rate) override { spawnRate_ = rate; }
+
+private:
+    kitchen::KitchenSystem& kitchenSystem_;
+    ecs::World& world_;
+    bool enabled_ = true;
+    float spawnRate_ = 10.0f;
+};
 
 class Application {
 public:
@@ -79,6 +102,11 @@ private:
     ecs::World ecsWorld_;
     bool ecsWeaponsInitialized_ = false;      // Track if weapon bone attachments are set up
     std::unique_ptr<ecs::ECSMaterialDemo> ecsMaterialDemo_;  // ECS material demo entities
+
+    // Kitchen order system
+    kitchen::KitchenSystem kitchenSystem_;
+    std::unique_ptr<KitchenControlAdapter> kitchenControl_;
+    KitchenTabState kitchenTabState_;
 
     bool running = false;
     // Walk speed matches animation root motion: 158.42 cm / 1.10s * 0.01 scale = 1.44 m/s

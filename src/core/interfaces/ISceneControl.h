@@ -3,10 +3,12 @@
 #include <cstdint>
 
 class SceneBuilder;
+namespace ecs { class World; }
 
 /**
  * Interface for scene/character controls.
  * Used by GuiIKTab to access animated character and skeleton.
+ * Used by GuiSceneEditor for entity hierarchy and property editing.
  */
 class ISceneControl {
 public:
@@ -15,6 +17,9 @@ public:
     // Scene builder access (for animated character)
     // Note: Only mutable version required by interface; const is optional
     virtual SceneBuilder& getSceneBuilder() = 0;
+
+    // ECS World access (for scene editor entity management)
+    virtual ecs::World* getECSWorld() = 0;
 
     // Viewport dimensions (needed for skeleton overlay projection)
     virtual uint32_t getWidth() const = 0;

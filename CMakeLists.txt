@@ -225,6 +225,9 @@ set(SOURCES
     src/gui/GuiTreeTab.cpp
     src/gui/GuiGrassTab.cpp
     src/gui/GuiSceneGraphTab.cpp
+    src/gui/GuiHierarchyPanel.cpp
+    src/gui/GuiInspectorPanel.cpp
+    src/gui/GuiSceneEditor.cpp
     # Subdivision
     src/subdivision/CatmullClarkCBT.cpp
     src/subdivision/CatmullClarkMesh.cpp

@@ -12,6 +12,7 @@
 #include "GuiEnvironmentTab.h"
 #include "GuiSceneGraphTab.h"
 #include "GuiInterfaces.h"
+#include "SceneEditorState.h"
 
 class Camera;
 
@@ -83,6 +84,7 @@ private:
     void renderProfilerWindow(GuiInterfaces& ui);
     void renderTileLoaderWindow(GuiInterfaces& ui, const Camera& camera);
     void renderSceneGraphWindow(GuiInterfaces& ui);
+    void renderSceneEditorWindow(GuiInterfaces& ui);
 
     VkDevice device_ = VK_NULL_HANDLE;  // Stored for cleanup
     VkDescriptorPool imguiPool = VK_NULL_HANDLE;
@@ -99,6 +101,9 @@ private:
 
     // Scene graph tab state
     SceneGraphTabState sceneGraphTabState;
+
+    // Scene editor state (Unity-like hierarchy + inspector)
+    SceneEditorState sceneEditorState;
 
     // Cached performance metrics
     float frameTimeHistory[120] = {0};
@@ -124,6 +129,7 @@ private:
         bool showProfiler = false;
         bool showTileLoader = false;
         bool showSceneGraph = false;
+        bool showSceneEditor = false;  // Unity-like scene editor
     } windowStates;
 
     // Tile loader visualization mode

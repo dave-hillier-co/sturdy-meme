@@ -34,6 +34,7 @@
 #include "GuiTreeTab.h"
 #include "GuiGrassTab.h"
 #include "GuiSceneGraphTab.h"
+#include "GuiSceneEditor.h"
 
 #include "terrain/TerrainSystem.h"
 #include "terrain/TerrainTileCache.h"
@@ -344,6 +345,9 @@ void GuiSystem::render(GuiInterfaces& ui, const Camera& camera, float deltaTime,
     if (windowStates.showSceneGraph) {
         renderSceneGraphWindow(ui);
     }
+    if (windowStates.showSceneEditor) {
+        renderSceneEditorWindow(ui);
+    }
 
     // Skeleton/IK debug overlay
     if (ikDebugSettings.showSkeleton || ikDebugSettings.showIKTargets) {
@@ -411,6 +415,8 @@ void GuiSystem::renderMainMenuBar() {
             ImGui::MenuItem("Profiler", nullptr, &windowStates.showProfiler);
             ImGui::MenuItem("Tile Loader", nullptr, &windowStates.showTileLoader);
             ImGui::MenuItem("Scene Graph", nullptr, &windowStates.showSceneGraph);
+            ImGui::Separator();
+            ImGui::MenuItem("Scene Editor", nullptr, &windowStates.showSceneEditor);
             ImGui::EndMenu();
         }
 
@@ -1008,4 +1014,8 @@ void GuiSystem::renderSceneGraphWindow(GuiInterfaces& ui) {
         GuiSceneGraphTab::render(ui.scene, sceneGraphTabState);
     }
     ImGui::End();
+}
+
+void GuiSystem::renderSceneEditorWindow(GuiInterfaces& ui) {
+    GuiSceneEditor::render(ui.scene, sceneEditorState, &windowStates.showSceneEditor);
 }

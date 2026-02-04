@@ -283,6 +283,7 @@ target_include_directories(${PROJECT_NAME} PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src/core/material
     ${CMAKE_CURRENT_SOURCE_DIR}/src/core/asset
     ${CMAKE_CURRENT_SOURCE_DIR}/src/debug
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/economy
     ${CMAKE_CURRENT_SOURCE_DIR}/src/gui
     ${CMAKE_CURRENT_SOURCE_DIR}/src/ik
     ${CMAKE_CURRENT_SOURCE_DIR}/src/lighting
@@ -1256,6 +1257,7 @@ if(BUILD_TESTS)
         tests/test_tile_grid_logic.cpp
         tests/test_tile_composition.cpp
         tests/test_transform.cpp
+        tests/test_economy_discounts.cpp
         # Source files needed by tests
         src/atmosphere/CelestialCalculator.cpp
         src/ik/IKUtils.cpp
@@ -1272,6 +1274,7 @@ if(BUILD_TESTS)
         ${CMAKE_CURRENT_SOURCE_DIR}/src/terrain  # For TileGridLogic.h, ErosionDataLoader.h
         ${CMAKE_CURRENT_SOURCE_DIR}/src/terrain/virtual_texture  # For VirtualTextureTypes.h
         ${CMAKE_CURRENT_SOURCE_DIR}/src/water    # For WaterPlacementData.h
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/economy  # For economy/discount system
     )
 
     target_link_libraries(vulkan_game_tests PRIVATE

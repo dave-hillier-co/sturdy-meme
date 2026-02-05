@@ -1,58 +1,66 @@
 #pragma once
 
 // ============================================================================
-// HDRPassRecorder.h - Stateless HDR render pass recording logic
+// HDRPassRecorder.h - HDR render pass recording with registered drawables
 // ============================================================================
 //
-// Encapsulates all HDR pass recording that was previously in Renderer.
-// This class handles:
-// - Beginning/ending the HDR render pass
-// - Drawing sky, terrain, scene objects, grass, water, weather, debug lines
-// - Secondary command buffer recording for parallel execution
+// Manages HDR pass recording by iterating over registered IHDRDrawable items.
+// Instead of depending on every concrete rendering system, HDRPassRecorder
+// depends only on the IHDRDrawable interface. Systems register themselves
+// (or are registered via adapters) and the recorder iterates them in order.
 //
-// Design: Stateless recording - all configuration passed as parameters to record()
-// This ensures no stale config state and makes the recorder thread-safe.
+// This inverts the dependency: new systems can be added without modifying
+// this class.
+//
+// Design: Stateless recording - all per-frame configuration passed via Params.
 //
 
 #include <vulkan/vulkan.hpp>
 #include <glm/glm.hpp>
 #include <vector>
+#include <memory>
+#include <string>
 
-#include "HDRPassResources.h"
+#include "interfaces/IHDRDrawable.h"
 
-class RendererSystems;
+class Profiler;
+class PostProcessSystem;
 class GPUSceneBuffer;
 
 /**
- * HDRPassRecorder - Stateless HDR pass command recording
+ * HDRPassRecorder - HDR pass command recording via registered drawables
  *
- * All configuration is passed to record() to ensure no stale state.
- * The recorder only stores immutable resource references.
+ * Drawables are registered with a draw order, secondary command buffer slot,
+ * and GPU profiler zone name. The recorder iterates them in order, calling
+ * shouldDraw() and recordHDRDraw() for each.
  */
 class HDRPassRecorder {
 public:
+    // Params is an alias for HDRDrawParams (defined in IHDRDrawable.h)
+    using Params = HDRDrawParams;
+
     /**
-     * Parameters for HDR pass recording.
-     * Passed to record() each frame - no mutable config stored.
+     * Construct with core infrastructure needed for render pass management.
+     *
+     * @param profiler GPU profiler for timing zones
+     * @param postProcess Post-process system providing render pass and framebuffer
      */
-    struct Params {
-        bool terrainEnabled = true;
-        const vk::Pipeline* sceneObjectsPipeline = nullptr;
-        const vk::PipelineLayout* pipelineLayout = nullptr;
-        glm::mat4 viewProj = glm::mat4(1.0f);
+    HDRPassRecorder(Profiler& profiler, PostProcessSystem& postProcess);
 
-        // GPU-driven rendering (Phase 3.3)
-        GPUSceneBuffer* gpuSceneBuffer = nullptr;              // Scene instance SSBO
-        const vk::Pipeline* instancedPipeline = nullptr;       // Pipeline for instanced rendering
-        const vk::PipelineLayout* instancedPipelineLayout = nullptr;
-        bool useIndirectDraw = false;                          // Enable vkCmdDrawIndexedIndirectCount
-    };
-
-    // Construct with focused resources (preferred - reduced coupling)
-    explicit HDRPassRecorder(const HDRPassResources& resources);
-
-    // Construct with RendererSystems (convenience, collects resources internally)
-    explicit HDRPassRecorder(RendererSystems& systems);
+    /**
+     * Register a drawable to participate in HDR pass recording.
+     *
+     * Drawables are called in drawOrder (ascending). The slot determines
+     * which secondary command buffer group the drawable belongs to for
+     * parallel recording.
+     *
+     * @param drawable Owned pointer to the drawable (lifetime managed by recorder)
+     * @param drawOrder Rendering order (lower = drawn first)
+     * @param slot Secondary command buffer slot (0, 1, or 2)
+     * @param profileZone GPU profiler zone name (e.g., "HDR:Sky")
+     */
+    void registerDrawable(std::unique_ptr<IHDRDrawable> drawable, int drawOrder,
+                          int slot, const char* profileZone);
 
     // Record the complete HDR pass (stateless - all config via params)
     void record(VkCommandBuffer cmd, uint32_t frameIndex, float time, const Params& params);
@@ -68,45 +76,17 @@ public:
     void recordSecondarySlot(VkCommandBuffer cmd, uint32_t frameIndex, float time,
                              uint32_t slot, const Params& params);
 
-    // ========================================================================
-    // Legacy API (deprecated - for backward compatibility during migration)
-    // ========================================================================
-
-    // Configuration for HDR recording (deprecated - use Params in record())
-    struct Config {
-        bool terrainEnabled = true;
-        const vk::Pipeline* sceneObjectsPipeline = nullptr;
-        const vk::PipelineLayout* pipelineLayout = nullptr;
-        glm::mat4* lastViewProj = nullptr;
+private:
+    struct RegisteredDrawable {
+        std::unique_ptr<IHDRDrawable> drawable;
+        int drawOrder;
+        int slot;
+        const char* profileZone;
     };
 
-    // Deprecated: Set configuration (use Params in record() instead)
-    [[deprecated("Use record() with Params parameter instead")]]
-    void setConfig(const Config& config) { legacyConfig_ = config; }
+    void beginHDRRenderPass(vk::CommandBuffer vkCmd, vk::SubpassContents contents);
 
-    // Deprecated: Record using stored config
-    [[deprecated("Use record() with Params parameter instead")]]
-    void record(VkCommandBuffer cmd, uint32_t frameIndex, float time);
-
-    // Deprecated: Record with secondaries using stored config
-    [[deprecated("Use recordWithSecondaries() with Params parameter instead")]]
-    void recordWithSecondaries(VkCommandBuffer cmd, uint32_t frameIndex, float time,
-                               const std::vector<vk::CommandBuffer>& secondaries);
-
-    // Deprecated: Record secondary slot using stored config
-    [[deprecated("Use recordSecondarySlot() with Params parameter instead")]]
-    void recordSecondarySlot(VkCommandBuffer cmd, uint32_t frameIndex, float time, uint32_t slot);
-
-private:
-    // Helper to record scene objects using the provided pipeline
-    void recordSceneObjects(VkCommandBuffer cmd, uint32_t frameIndex, const Params& params);
-
-    // Helper to record scene objects using GPU-driven indirect rendering (Phase 3.3)
-    void recordSceneObjectsIndirect(VkCommandBuffer cmd, uint32_t frameIndex, const Params& params);
-
-    // Helper to record debug lines with viewport/scissor setup
-    void recordDebugLines(VkCommandBuffer cmd, const glm::mat4& viewProj);
-
-    HDRPassResources resources_;
-    Config legacyConfig_;  // For deprecated API only
+    Profiler& profiler_;
+    PostProcessSystem& postProcess_;
+    std::vector<RegisteredDrawable> drawables_;
 };

@@ -2,6 +2,7 @@
 #include "core/interfaces/IGrassControl.h"
 #include "vegetation/GrassConstants.h"
 #include <imgui.h>
+#include <cmath>
 
 void GuiGrassTab::render(IGrassControl& grass) {
     // System Overview
@@ -77,7 +78,7 @@ void GuiGrassTab::render(IGrassControl& grass) {
         } else {
             float t = (dist - GrassConstants::CULL_START_DISTANCE) /
                       (GrassConstants::CULL_END_DISTANCE - GrassConstants::CULL_START_DISTANCE);
-            values[i] = 1.0f - powf(t, 1.0f / GrassConstants::CULL_POWER);
+            values[i] = 1.0f - std::pow(t, 1.0f / GrassConstants::CULL_POWER);
         }
     }
     ImGui::PlotLines("##DensityFalloff", values, numSamples, 0, nullptr, 0.0f, 1.0f, ImVec2(-1, 60));

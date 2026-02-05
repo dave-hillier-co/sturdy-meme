@@ -1,7 +1,10 @@
 #define VMA_IMPLEMENTATION
 #include "Renderer.h"
+#include "Camera.h"
 #include "RendererSystems.h"
 #include "MaterialDescriptorFactory.h"
+#include "passes/ShadowPassRecorder.h"
+#include "passes/HDRPassRecorder.h"
 #include "InitProfiler.h"
 #include "QueueSubmitDiagnostics.h"
 #include "core/pipeline/FrameGraphBuilder.h"
@@ -417,38 +420,20 @@ bool Renderer::createDescriptorSets() {
 }
 
 bool Renderer::render(const Camera& camera) {
-    // Skip rendering if window is suspended (e.g., macOS screen lock)
+    // Skip rendering if window is suspended
     if (windowSuspended) {
         return false;
     }
 
-    VkDevice device = vulkanContext_->getVkDevice();
-    VkSwapchainKHR swapchain = vulkanContext_->getVkSwapchain();
-    VkQueue graphicsQueue = vulkanContext_->getVkGraphicsQueue();
-    VkQueue presentQueue = vulkanContext_->getVkPresentQueue();
-
     // Handle pending resize before acquiring next image
     if (framebufferResized) {
         handleResize();
-        swapchain = vulkanContext_->getVkSwapchain();  // Update after resize
         framebufferResized = false;
-
-        // After swapchain recreation (especially after window restore), ensure frame sync
-        // is in a clean state. vkDeviceWaitIdle in handleResize ensures GPU is idle,
-        // but we also need to reset frame index and timeline values to ensure
-        // semaphores are used correctly. This prevents ghost frames caused by
-        // semaphore state inconsistencies.
         frameSync_.waitForAllFrames();
         frameSync_.resetForResize();
     }
 
-    // Skip rendering if window is minimized
-    VkExtent2D extent = vulkanContext_->getVkSwapchainExtent();
-    if (extent.width == 0 || extent.height == 0) {
-        return false;
-    }
-
-    // Begin CPU profiling for this frame (must be before any CPU zones)
+    // Begin CPU profiling for this frame
     systems_->profiler().beginCpuFrame();
 
     // Reset queue submit diagnostics for this frame
@@ -456,70 +441,29 @@ bool Renderer::render(const Camera& camera) {
     qsDiag.reset();
     qsDiag.validationLayersEnabled = vulkanContext_->hasValidationLayers();
 
-    // Frame synchronization - use non-blocking check first to avoid unnecessary waits
-    // With triple buffering, the fence is often already signaled
-    systems_->profiler().beginCpuZone("Wait:FenceSync");
-
-    // Track fence status for diagnostics
-    qsDiag.fenceWasAlreadySignaled = frameSync_.isCurrentFenceSignaled();
-    auto fenceStart = std::chrono::high_resolution_clock::now();
-    frameSync_.waitForCurrentFrameIfNeeded();
-    auto fenceEnd = std::chrono::high_resolution_clock::now();
-    qsDiag.fenceWaitTimeMs = std::chrono::duration<float, std::milli>(fenceEnd - fenceStart).count();
-
-    systems_->profiler().endCpuZone("Wait:FenceSync");
-
-    systems_->profiler().beginCpuZone("Wait:AcquireImage");
-    auto acquireStart = std::chrono::high_resolution_clock::now();
-    uint32_t imageIndex;
-    // Use finite timeout (100ms) to prevent freezing when surface becomes unavailable
-    // (e.g., macOS screen lock). This allows the event loop to continue processing.
-    constexpr uint64_t acquireTimeoutNs = 100'000'000; // 100ms in nanoseconds
-    VkResult result = vkAcquireNextImageKHR(device, swapchain, acquireTimeoutNs,
-                                            frameSync_.currentImageAvailableSemaphore(), VK_NULL_HANDLE, &imageIndex);
-    auto acquireEnd = std::chrono::high_resolution_clock::now();
-    qsDiag.acquireImageTimeMs = std::chrono::duration<float, std::milli>(acquireEnd - acquireStart).count();
-    systems_->profiler().endCpuZone("Wait:AcquireImage");
-
-    if (result == VK_TIMEOUT || result == VK_NOT_READY) {
-        // Timeout acquiring image - surface may be unavailable (e.g., macOS screen lock)
-        // Return gracefully to allow event loop to continue processing
-        return false;
-    } else if (result == VK_ERROR_OUT_OF_DATE_KHR) {
-        handleResize();
-        return false;
-    } else if (result == VK_ERROR_SURFACE_LOST_KHR) {
-        // Surface lost - can happen on macOS when screen locks/unlocks
-        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "Surface lost, will recreate on next frame");
-        framebufferResized = true;
-        return false;
-    } else if (result == VK_ERROR_DEVICE_LOST) {
-        // Device lost - critical error on macOS lock/unlock
-        // Log error but return gracefully - app can attempt recovery on next frame
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Vulkan device lost - attempting recovery");
-        framebufferResized = true;
-        return false;
-    } else if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to acquire swapchain image: %d", result);
+    // === Phase 1: Frame synchronization and swapchain acquire ===
+    auto beginResult = rendererCore_.beginFrame(qsDiag, systems_->profiler());
+    if (!beginResult.success) {
+        if (beginResult.error == FrameResult::SwapchainOutOfDate ||
+            beginResult.error == FrameResult::SurfaceLost ||
+            beginResult.error == FrameResult::DeviceLost) {
+            framebufferResized = true;
+        }
+        systems_->profiler().endCpuFrame();
         return false;
     }
+    uint32_t imageIndex = beginResult.imageIndex;
 
-    frameSync_.resetCurrentFence();
-
-    // Process completed async transfers (textures, buffers uploaded via AsyncTransferManager)
-    // Must be called after fence wait to safely reuse staging buffers
+    // Process completed async transfers after fence wait
     renderingInfra_.processPendingTransfers();
 
-    // Update time system (frame timing and day/night cycle)
+    // === Phase 2: Per-frame data updates ===
     TimingData timing = systems_->time().update();
 
-    // Begin CPU profiling for this frame
+    // UBO updates
     systems_->profiler().beginCpuZone("UniformUpdates");
-
-    // Track UBO bandwidth
     CommandCounter bandwidthCounter(&qsDiag);
 
-    // Update uniform buffer data via UBOUpdater
     {
         systems_->profiler().beginCpuZone("UniformUpdates:UBO");
         UBOUpdater::Config uboConfig;
@@ -534,23 +478,19 @@ bool Renderer::render(const Camera& camera) {
         uboConfig.deltaTime = timing.deltaTime;
         auto uboResult = UBOUpdater::update(*systems_, frameSync_.currentIndex(), camera, uboConfig);
         lastSunIntensity = uboResult.sunIntensity;
-        // Track bandwidth: main UBO + dynamic UBO copy + snow + cloudShadow + lights
-        bandwidthCounter.recordUboUpdate(sizeof(UniformBufferObject) * 2);  // regular + dynamic
+        bandwidthCounter.recordUboUpdate(sizeof(UniformBufferObject) * 2);
         bandwidthCounter.recordUboUpdate(sizeof(SnowUBO));
         bandwidthCounter.recordUboUpdate(sizeof(CloudShadowUBO));
         bandwidthCounter.recordSsboUpdate(sizeof(LightBuffer));
         systems_->profiler().endCpuZone("UniformUpdates:UBO");
     }
 
-    // Update bone matrices for GPU skinning (player uses slot 0)
     {
         systems_->profiler().beginCpuZone("UniformUpdates:Bones");
         SceneBuilder& sceneBuilder = systems_->scene().getSceneBuilder();
         AnimatedCharacter* character = sceneBuilder.hasCharacter() ? &sceneBuilder.getAnimatedCharacter() : nullptr;
-        // Slot 0 is reserved for the player character
         constexpr uint32_t PLAYER_BONE_SLOT = 0;
         systems_->skinnedMesh().updateBoneMatrices(frameSync_.currentIndex(), PLAYER_BONE_SLOT, character);
-        // Track bone SSBO bandwidth (128 bones * mat4)
         bandwidthCounter.recordSsboUpdate(128 * sizeof(glm::mat4));
         systems_->profiler().endCpuZone("UniformUpdates:Bones");
     }
@@ -560,69 +500,20 @@ bool Renderer::render(const Camera& camera) {
     // Build per-frame shared state
     FrameData frame = FrameDataBuilder::buildFrameData(
         camera, *systems_, frameSync_.currentIndex(), timing.deltaTime, timing.elapsedTime);
-
-    // Cache view-projection for debug rendering
     lastViewProj = frame.viewProj;
 
-    // Begin debug line frame if not already started by physics debug
-    // Physics debug calls beginFrame before render() if enabled
-    // Only call beginFrame if we haven't collected lines yet (no physics debug this frame)
-    if (!systems_->debugLine().hasLines()) {
-        systems_->debugLine().beginFrame(frameSync_.currentIndex());
-    }
+    // === Phase 3: Subsystem updates ===
+    FrameUpdater::updateDebugLines(*systems_, frameSync_.currentIndex());
 
-    // Add road/river visualization to debug lines (delegated to DebugControlSubsystem)
-    systems_->debugControlSubsystem().updateRoadRiverVisualization();
-
-    // Upload debug lines if any are present
-    if (systems_->debugLine().hasLines()) {
-        systems_->debugLine().uploadLines();
-    }
-
-    // Update all subsystems (wind, grass, weather, terrain, snow, trees, water, etc.)
+    VkExtent2D extent = vulkanContext_->getVkSwapchainExtent();
     FrameUpdater::SnowConfig snowConfig;
     snowConfig.maxSnowHeight = MAX_SNOW_HEIGHT;
     snowConfig.useVolumetricSnow = useVolumetricSnow;
     FrameUpdater::updateAllSystems(*systems_, frame, extent, snowConfig);
 
-    // Populate GPU scene buffer for GPU-driven rendering
-    if (systems_->hasGPUSceneBuffer()) {
-        systems_->profiler().beginCpuZone("GPUSceneBuffer");
-        GPUSceneBuffer& sceneBuffer = systems_->gpuSceneBuffer();
-        sceneBuffer.beginFrame(frame.frameIndex);
+    FrameUpdater::populateGPUSceneBuffer(*systems_, frame);
 
-        // Add all static scene objects to the GPU buffer
-        const auto& sceneObjects = systems_->scene().getRenderables();
-        SceneBuilder& sceneBuilder = systems_->scene().getSceneBuilder();
-        size_t playerIndex = sceneBuilder.getPlayerObjectIndex();
-        bool hasCharacter = sceneBuilder.hasCharacter();
-        const NPCSimulation* npcSim = sceneBuilder.getNPCSimulation();
-
-        for (size_t i = 0; i < sceneObjects.size(); ++i) {
-            // Skip player character (rendered with GPU skinning)
-            if (hasCharacter && i == playerIndex) continue;
-
-            // Skip NPC characters (rendered with GPU skinning)
-            if (npcSim) {
-                bool isNPC = false;
-                const auto& npcData = npcSim->getData();
-                for (size_t npcIdx = 0; npcIdx < npcData.count(); ++npcIdx) {
-                    if (i == npcData.renderableIndices[npcIdx]) {
-                        isNPC = true;
-                        break;
-                    }
-                }
-                if (isNPC) continue;
-            }
-
-            sceneBuffer.addObject(sceneObjects[i]);
-        }
-
-        sceneBuffer.finalize();
-        systems_->profiler().endCpuZone("GPUSceneBuffer");
-    }
-
-    // Begin command buffer recording
+    // === Phase 4: Command buffer recording ===
     systems_->profiler().beginCpuZone("CmdBufferRecord");
     auto recordStart = std::chrono::high_resolution_clock::now();
 
@@ -631,165 +522,66 @@ bool Renderer::render(const Camera& camera) {
     vkCmd.reset();
     vkCmd.begin(vk::CommandBufferBeginInfo{});
 
-    // Get reference to diagnostics for command counting
-    auto& cmdDiag = systems_->profiler().getQueueSubmitDiagnostics();
+    ScopedDiagnostics scopedDiag(&qsDiag);
 
-    // Set global diagnostics for subsystems that don't have direct access
-    ScopedDiagnostics scopedDiag(&cmdDiag);
-
-    // Begin command capture if requested
     auto& cmdCapture = systems_->profiler().getCommandCapture();
     cmdCapture.beginFrame(systems_->profiler().getFrameNumber());
-
-    // Begin GPU profiling frame
     systems_->profiler().beginGpuFrame(cmd, frame.frameIndex);
 
-    // Build render resources and context for frame graph passes
     RenderResources resources = FrameDataBuilder::buildRenderResources(
         *systems_, imageIndex, vulkanContext_->getFramebuffers(),
         vulkanContext_->getRenderPass(), {vulkanContext_->getWidth(), vulkanContext_->getHeight()},
         descriptorInfra_.getGraphicsPipeline(), descriptorInfra_.getPipelineLayout(),
         descriptorInfra_.getDescriptorSetLayout());
-    RenderContext ctx(cmd, frame.frameIndex, frame, resources, &cmdDiag);
+    RenderContext ctx(cmd, frame.frameIndex, frame, resources, &qsDiag);
 
-    // Execute frame graph - dependency-driven scheduling with parallel execution
     FrameGraph::RenderContext fgCtx(vkCmd, frame.frameIndex, frame);
     fgCtx.imageIndex = imageIndex;
     fgCtx.deltaTime = frame.deltaTime;
-    fgCtx.withUserData(&ctx)  // Pass full RenderContext to passes
+    fgCtx.withUserData(&ctx)
         .withThreading(&renderingInfra_.threadedCommandPool(),
                        vk::RenderPass(systems_->postProcess().getHDRRenderPass()),
                        vk::Framebuffer(systems_->postProcess().getHDRFramebuffer()))
-        .withDiagnostics(&cmdDiag);
+        .withDiagnostics(&qsDiag);
 
-    // Execute all passes in dependency order
-    // TaskScheduler enables parallel execution of independent passes
     renderingInfra_.frameGraph().execute(fgCtx, &TaskScheduler::instance());
 
-    // End GPU profiling frame
     systems_->profiler().endGpuFrame(cmd, frame.frameIndex);
-
-    // End command capture
     cmdCapture.endFrame();
-
     vkCmd.end();
 
     auto recordEnd = std::chrono::high_resolution_clock::now();
-    cmdDiag.commandRecordTimeMs = std::chrono::duration<float, std::milli>(recordEnd - recordStart).count();
-
+    qsDiag.commandRecordTimeMs = std::chrono::duration<float, std::milli>(recordEnd - recordStart).count();
     systems_->profiler().endCpuZone("CmdBufferRecord");
 
-    // Queue submission with timeline semaphore for non-blocking completion tracking
+    // === Phase 5: Submit and present via RendererCore ===
+    FrameExecutionParams execParams;
+    execParams.commandBuffer = cmd;
+    execParams.swapchainImageIndex = imageIndex;
+    execParams.diagnostics = &qsDiag;
+
     systems_->profiler().beginCpuZone("QueueSubmit");
-
-    // Binary semaphores for swapchain synchronization
-    vk::Semaphore waitSemaphores[] = {frameSync_.currentImageAvailableSemaphore()};
-    vk::PipelineStageFlags waitStages[] = {vk::PipelineStageFlagBits::eColorAttachmentOutput};
-
-    // Signal both render finished (binary, for present) and timeline (for frame sync)
-    vk::Semaphore signalSemaphores[] = {
-        frameSync_.currentRenderFinishedSemaphore(),
-        frameSync_.frameTimelineSemaphore()
-    };
-
-    // Get next timeline value to signal for this frame
-    uint64_t timelineSignalValue = frameSync_.nextFrameSignalValue();
-
-    // Timeline semaphore submit info (Vulkan 1.2)
-    // Wait semaphores: imageAvailable is binary (value ignored, use 0)
-    // Signal semaphores: renderFinished is binary (0), timeline gets the new value
-    uint64_t waitValues[] = {0};  // Binary semaphore, value ignored
-    uint64_t signalValues[] = {0, timelineSignalValue};  // Binary, then timeline
-
-    auto timelineInfo = vk::TimelineSemaphoreSubmitInfo{}
-        .setWaitSemaphoreValueCount(1)
-        .setPWaitSemaphoreValues(waitValues)
-        .setSignalSemaphoreValueCount(2)
-        .setPSignalSemaphoreValues(signalValues);
-
-    auto submitInfo = vk::SubmitInfo{}
-        .setPNext(&timelineInfo)
-        .setWaitSemaphores(waitSemaphores)
-        .setWaitDstStageMask(waitStages)
-        .setCommandBuffers(vkCmd)
-        .setSignalSemaphores(signalSemaphores);
-
-    try {
-        // Track queue submit time for diagnostics
-        auto submitStart = std::chrono::high_resolution_clock::now();
-        // No fence needed - timeline semaphore handles frame completion tracking
-        vk::Queue(graphicsQueue).submit(submitInfo, nullptr);
-        auto submitEnd = std::chrono::high_resolution_clock::now();
-        systems_->profiler().getQueueSubmitDiagnostics().queueSubmitTimeMs =
-            std::chrono::duration<float, std::milli>(submitEnd - submitStart).count();
-    } catch (const vk::DeviceLostError&) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Device lost during queue submit");
-        systems_->profiler().endCpuZone("QueueSubmit");
-        framebufferResized = true;
-        return false;
-    } catch (const vk::SystemError& e) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to submit draw command buffer: %s", e.what());
-        systems_->profiler().endCpuZone("QueueSubmit");
-        return false;
-    }
+    FrameResult submitResult = rendererCore_.submitAndPresent(execParams);
     systems_->profiler().endCpuZone("QueueSubmit");
 
-    // Present
-    systems_->profiler().beginCpuZone("Wait:Present");
-
-    vk::SwapchainKHR swapChains[] = {swapchain};
-
-    // Present only waits on the binary renderFinished semaphore, NOT the timeline semaphore.
-    // vkQueuePresentKHR doesn't support timeline semaphores - passing one causes undefined behavior
-    // and can result in ghost frames (presenting before rendering is complete).
-    vk::Semaphore presentWaitSemaphores[] = {frameSync_.currentRenderFinishedSemaphore()};
-
-    auto presentInfo = vk::PresentInfoKHR{}
-        .setWaitSemaphores(presentWaitSemaphores)
-        .setSwapchains(swapChains)
-        .setImageIndices(imageIndex);
-
-    auto presentStart = std::chrono::high_resolution_clock::now();
-    try {
-        auto presentResult = vk::Queue(presentQueue).presentKHR(presentInfo);
-        if (presentResult == vk::Result::eSuboptimalKHR) {
-            framebufferResized = true;
-        }
-    } catch (const vk::OutOfDateKHRError&) {
+    if (submitResult != FrameResult::Success) {
         framebufferResized = true;
-    } catch (const vk::SurfaceLostKHRError&) {
-        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "Surface lost during present, will recover");
-        framebufferResized = true;
-    } catch (const vk::DeviceLostError&) {
-        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "Device lost during present, will recover");
-        framebufferResized = true;
-    } catch (const vk::SystemError& e) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to present swapchain image: %s", e.what());
+        systems_->profiler().endCpuFrame();
+        return false;
     }
-    auto presentEnd = std::chrono::high_resolution_clock::now();
-    cmdDiag.presentTimeMs = std::chrono::duration<float, std::milli>(presentEnd - presentStart).count();
 
-    systems_->profiler().endCpuZone("Wait:Present");
-
-    // Advance grass double-buffer sets after frame submission
-    // This swaps compute/render buffer sets so next frame can overlap:
-    // - Next frame's compute writes to what was the render set
-    // - Next frame's render reads from what was the compute set (now contains fresh data)
+    // === Phase 6: Post-frame housekeeping ===
     systems_->grass().advanceBufferSet();
     systems_->weather().advanceBufferSet();
     systems_->leaf().advanceBufferSet();
 
-    // Update water tile cull visibility tracking (uses absolute frame counter)
     if (systems_->hasWaterTileCull()) {
         systems_->waterTileCull().endFrame(frameSync_.currentIndex());
     }
 
     frameSync_.advance();
 
-    // End CPU profiling for this frame
     systems_->profiler().endCpuFrame();
-
-    // Advance frame counter (handles auto-capture for flamegraphs)
     systems_->profiler().advanceFrame();
 
     return true;

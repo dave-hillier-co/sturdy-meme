@@ -1,6 +1,7 @@
 #include "RendererCore.h"
 #include "VulkanContext.h"
 #include "QueueSubmitDiagnostics.h"
+#include "Profiler.h"
 #include "TaskScheduler.h"
 #include <SDL3/SDL.h>
 #include <chrono>
@@ -47,6 +48,86 @@ RendererCore::FrameBeginResult RendererCore::beginFrame() {
 
     // Acquire swapchain image
     return acquireSwapchainImage();
+}
+
+RendererCore::FrameBeginResult RendererCore::beginFrame(QueueSubmitDiagnostics& diagnostics, Profiler& profiler) {
+    FrameBeginResult result;
+
+    // Skip if window is suspended
+    if (windowSuspended_) {
+        result.error = FrameResult::Skipped;
+        return result;
+    }
+
+    // Handle pending resize
+    if (resizeNeeded_) {
+        result.error = FrameResult::SwapchainOutOfDate;
+        return result;
+    }
+
+    // Skip if window is minimized
+    VkExtent2D extent = vulkanContext_->getVkSwapchainExtent();
+    if (extent.width == 0 || extent.height == 0) {
+        result.error = FrameResult::Skipped;
+        return result;
+    }
+
+    // Frame synchronization with diagnostics
+    profiler.beginCpuZone("Wait:FenceSync");
+    diagnostics.fenceWasAlreadySignaled = frameSync_->isCurrentFenceSignaled();
+    auto fenceStart = std::chrono::high_resolution_clock::now();
+    frameSync_->waitForCurrentFrameIfNeeded();
+    auto fenceEnd = std::chrono::high_resolution_clock::now();
+    diagnostics.fenceWaitTimeMs = std::chrono::duration<float, std::milli>(fenceEnd - fenceStart).count();
+    profiler.endCpuZone("Wait:FenceSync");
+
+    // Acquire swapchain image with diagnostics
+    profiler.beginCpuZone("Wait:AcquireImage");
+    auto acquireStart = std::chrono::high_resolution_clock::now();
+
+    VkDevice device = vulkanContext_->getVkDevice();
+    VkSwapchainKHR swapchain = vulkanContext_->getVkSwapchain();
+
+    uint32_t imageIndex;
+    constexpr uint64_t acquireTimeoutNs = 100'000'000; // 100ms
+    VkResult vkResult = vkAcquireNextImageKHR(
+        device, swapchain, acquireTimeoutNs,
+        frameSync_->currentImageAvailableSemaphore(),
+        VK_NULL_HANDLE, &imageIndex);
+
+    auto acquireEnd = std::chrono::high_resolution_clock::now();
+    diagnostics.acquireImageTimeMs = std::chrono::duration<float, std::milli>(acquireEnd - acquireStart).count();
+    profiler.endCpuZone("Wait:AcquireImage");
+
+    if (vkResult == VK_TIMEOUT || vkResult == VK_NOT_READY) {
+        result.error = FrameResult::Skipped;
+        return result;
+    } else if (vkResult == VK_ERROR_OUT_OF_DATE_KHR) {
+        resizeNeeded_ = true;
+        result.error = FrameResult::SwapchainOutOfDate;
+        return result;
+    } else if (vkResult == VK_ERROR_SURFACE_LOST_KHR) {
+        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "Surface lost, will recreate on next frame");
+        resizeNeeded_ = true;
+        result.error = FrameResult::SurfaceLost;
+        return result;
+    } else if (vkResult == VK_ERROR_DEVICE_LOST) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Vulkan device lost - attempting recovery");
+        resizeNeeded_ = true;
+        result.error = FrameResult::DeviceLost;
+        return result;
+    } else if (vkResult != VK_SUCCESS && vkResult != VK_SUBOPTIMAL_KHR) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to acquire swapchain image: %d", vkResult);
+        result.error = FrameResult::AcquireFailed;
+        return result;
+    }
+
+    frameSync_->resetCurrentFence();
+
+    currentImageIndex_ = imageIndex;
+    result.success = true;
+    result.imageIndex = imageIndex;
+    return result;
 }
 
 RendererCore::FrameBeginResult RendererCore::acquireSwapchainImage() {

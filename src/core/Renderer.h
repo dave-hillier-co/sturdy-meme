@@ -9,7 +9,6 @@
 #include <optional>
 #include <memory>
 
-#include "Camera.h"
 #include "VulkanContext.h"
 #include "RendererSystems.h"
 #include "InitContext.h"
@@ -18,11 +17,12 @@
 #include "RendererCore.h"
 #include "RenderingInfrastructure.h"
 #include "DescriptorInfrastructure.h"
-#include "passes/ShadowPassRecorder.h"
-#include "passes/HDRPassRecorder.h"
 
 // Forward declarations
+class Camera;
 class PhysicsWorld;
+class ShadowPassRecorder;
+class HDRPassRecorder;
 
 namespace ecs {
 class World;

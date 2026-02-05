@@ -29,4 +29,15 @@ public:
         VkExtent2D extent,
         const SnowConfig& snowConfig
     );
+
+    /**
+     * Populate GPU scene buffer with renderable objects for GPU-driven rendering.
+     * Skips player and NPC characters (they use GPU skinning).
+     */
+    static void populateGPUSceneBuffer(RendererSystems& systems, const FrameData& frame);
+
+    /**
+     * Update debug line system: begin frame if needed, upload lines.
+     */
+    static void updateDebugLines(RendererSystems& systems, uint32_t frameIndex);
 };

@@ -32,6 +32,7 @@
 class VulkanContext;
 class TaskScheduler;
 struct QueueSubmitDiagnostics;
+class Profiler;
 
 // Parameters needed for frame execution
 struct FrameExecutionParams {
@@ -108,6 +109,10 @@ public:
         FrameResult error = FrameResult::Success;
     };
     FrameBeginResult beginFrame();
+
+    // Begin a new frame with diagnostics tracking
+    // Populates fence/acquire timing in the provided diagnostics struct
+    FrameBeginResult beginFrame(QueueSubmitDiagnostics& diagnostics, Profiler& profiler);
 
     // Execute the frame graph with the given parameters
     void executeFrameGraph(const FrameExecutionParams& params);

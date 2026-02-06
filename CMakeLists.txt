@@ -15,6 +15,7 @@ find_package(vk-bootstrap CONFIG REQUIRED)
 find_package(VulkanMemoryAllocator CONFIG REQUIRED)
 find_package(Jolt CONFIG REQUIRED)
 find_package(imgui CONFIG REQUIRED)
+find_package(imguizmo CONFIG REQUIRED)
 find_package(fastgltf CONFIG REQUIRED)
 find_package(unofficial-openfbx CONFIG REQUIRED)
 find_package(lodepng CONFIG REQUIRED)
@@ -229,6 +230,10 @@ set(SOURCES
     src/gui/GuiTreeTab.cpp
     src/gui/GuiGrassTab.cpp
     src/gui/GuiSceneGraphTab.cpp
+    src/gui/GuiHierarchyPanel.cpp
+    src/gui/GuiInspectorPanel.cpp
+    src/gui/GuiSceneEditor.cpp
+    src/gui/GuiGizmo.cpp
     # Subdivision
     src/subdivision/CatmullClarkCBT.cpp
     src/subdivision/CatmullClarkMesh.cpp
@@ -314,6 +319,7 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     GPUOpen::VulkanMemoryAllocator
     Jolt::Jolt
     imgui::imgui
+    imguizmo::imguizmo
     fastgltf::fastgltf
     unoffical::openfbx::openfbx
     lodepng

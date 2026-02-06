@@ -12,6 +12,7 @@
 #include "GuiEnvironmentTab.h"
 #include "GuiSceneGraphTab.h"
 #include "GuiInterfaces.h"
+#include "SceneEditorState.h"
 
 class Camera;
 
@@ -57,6 +58,12 @@ public:
     PlayerSettings& getPlayerSettings() { return playerSettings; }
     const PlayerSettings& getPlayerSettings() const { return playerSettings; }
 
+    // Get scene editor state for external systems
+    SceneEditorState& getSceneEditorState() { return sceneEditorState; }
+    const SceneEditorState& getSceneEditorState() const { return sceneEditorState; }
+
+    // Check if gizmo is being used (for input blocking)
+    bool isGizmoActive() const;
 
 private:
     bool initInternal(SDL_Window* window, VkInstance instance, VkPhysicalDevice physicalDevice,
@@ -83,6 +90,7 @@ private:
     void renderProfilerWindow(GuiInterfaces& ui);
     void renderTileLoaderWindow(GuiInterfaces& ui, const Camera& camera);
     void renderSceneGraphWindow(GuiInterfaces& ui);
+    void renderSceneEditorWindow(GuiInterfaces& ui);
 
     VkDevice device_ = VK_NULL_HANDLE;  // Stored for cleanup
     VkDescriptorPool imguiPool = VK_NULL_HANDLE;
@@ -99,6 +107,9 @@ private:
 
     // Scene graph tab state
     SceneGraphTabState sceneGraphTabState;
+
+    // Scene editor state (Unity-like hierarchy + inspector)
+    SceneEditorState sceneEditorState;
 
     // Cached performance metrics
     float frameTimeHistory[120] = {0};
@@ -124,6 +135,7 @@ private:
         bool showProfiler = false;
         bool showTileLoader = false;
         bool showSceneGraph = false;
+        bool showSceneEditor = false;  // Unity-like scene editor
     } windowStates;
 
     // Tile loader visualization mode

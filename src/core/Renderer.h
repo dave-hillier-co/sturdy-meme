@@ -237,6 +237,9 @@ private:
                                       const std::vector<vk::CommandBuffer>& secondaries);
     void recordHDRPassSecondarySlot(VkCommandBuffer cmd, uint32_t frameIndex, float grassTime, uint32_t slot);
 
+    // Create and configure HDR pass recorder with all registered drawables
+    void createHDRPassRecorder();
+
     // Setup frame graph passes with dependencies
     void setupFrameGraph();
 

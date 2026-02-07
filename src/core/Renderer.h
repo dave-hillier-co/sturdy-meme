@@ -13,8 +13,7 @@
 #include "RendererSystems.h"
 #include "InitContext.h"
 #include "PerformanceToggles.h"
-#include "TripleBuffering.h"
-#include "RendererCore.h"
+#include "FrameExecutor.h"
 #include "RenderingInfrastructure.h"
 #include "DescriptorInfrastructure.h"
 
@@ -112,11 +111,15 @@ public:
     void notifyWindowResized() { framebufferResized = true; }
 
     // Notify renderer that window was minimized/hidden (e.g., screen lock on macOS)
-    void notifyWindowSuspended() { windowSuspended = true; }
+    void notifyWindowSuspended() {
+        windowSuspended = true;
+        frameExecutor_.setWindowSuspended(true);
+    }
 
     // Notify renderer that window was restored (e.g., screen unlock on macOS)
     void notifyWindowRestored() {
         windowSuspended = false;
+        frameExecutor_.setWindowSuspended(false);
         framebufferResized = true;  // Force swapchain recreation after restore
     }
 
@@ -227,7 +230,6 @@ private:
     void initResizeCoordinator();         // resize registration
     void initTemporalSystems();           // temporal system registration (for ghost frame prevention)
 
-    bool createSyncObjects();
     bool createDescriptorSets();
 
     // Render pass recording helpers (pure - only record commands, no state mutation)
@@ -242,6 +244,10 @@ private:
 
     // Setup frame graph passes with dependencies
     void setupFrameGraph();
+
+    // Frame building: updates UBOs, subsystems, records command buffer.
+    // Called from the FrameExecutor callback during execute().
+    VkCommandBuffer buildFrame(const Camera& camera, uint32_t imageIndex, uint32_t frameIndex);
 
     std::string resourcePath;
     Config config_;  // Renderer configuration
@@ -260,12 +266,8 @@ private:
     // Performance toggles for debugging
     PerformanceToggles perfToggles;
 
-
-    // Triple buffering: frame synchronization and indexing
-    TripleBuffering frameSync_;
-
-    // Core frame execution (owns the frame loop mechanics)
-    RendererCore rendererCore_;
+    // Frame execution (owns TripleBuffering, sync, acquire, submit, present)
+    FrameExecutor frameExecutor_;
 
     // Pass recorders (encapsulate pass recording logic extracted from Renderer)
     std::unique_ptr<ShadowPassRecorder> shadowPassRecorder_;

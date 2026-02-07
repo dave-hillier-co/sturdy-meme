@@ -514,18 +514,10 @@ bool Renderer::initSubsystems(const InitContext& initCtx) {
     // Wire underwater caustics (must happen after water system is fully initialized)
     wiring.wireCausticsToTerrain(*systems_);
 
-    if (!createSyncObjects()) return false;
-
-    // Initialize RendererCore (core frame loop execution)
-    {
-        RendererCore::InitParams coreParams;
-        coreParams.vulkanContext = vulkanContext_.get();
-        coreParams.frameGraph = &renderingInfra_.frameGraph();
-        coreParams.frameSync = &frameSync_;
-        if (!rendererCore_.init(coreParams)) {
-            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to initialize RendererCore");
-            return false;
-        }
+    // Initialize FrameExecutor (owns TripleBuffering, sync, acquire, submit, present)
+    if (!frameExecutor_.init(vulkanContext_.get(), MAX_FRAMES_IN_FLIGHT)) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to initialize FrameExecutor");
+        return false;
     }
 
     // Create debug line system via factory

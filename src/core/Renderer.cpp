@@ -304,7 +304,7 @@ void Renderer::updatePhysicsDebug(PhysicsWorld& physics, const glm::vec3& camera
 
     // Begin debug line frame (clear previous and set frame index)
     // This is called here so physics debug lines can be collected before render()
-    systems_->debugLine().beginFrame(frameSync_.currentIndex());
+    systems_->debugLine().beginFrame(frameExecutor_.currentFrameIndex());
 
     // Create debug renderer on first use (after Jolt is initialized)
     if (!systems_->physicsDebugRenderer()) {
@@ -343,11 +343,8 @@ void Renderer::cleanup() {
         // Shutdown multi-threading infrastructure via RenderingInfrastructure
         renderingInfra_.shutdown();
 
-        // Destroy RendererCore before its dependencies
-        rendererCore_.destroy();
-
-        // RAII handles cleanup of sync objects via TripleBuffering
-        frameSync_.destroy();
+        // Destroy FrameExecutor (owns TripleBuffering) before its dependencies
+        frameExecutor_.destroy();
 
         // Destroy all subsystems via RendererSystems
         if (systems_) {
@@ -365,10 +362,6 @@ void Renderer::cleanup() {
     SDL_Log("calling vulkanContext_->shutdown");
     vulkanContext_->shutdown();
     SDL_Log("vulkanContext shutdown complete");
-}
-
-bool Renderer::createSyncObjects() {
-    return frameSync_.init(vulkanContext_->getRaiiDevice(), MAX_FRAMES_IN_FLIGHT);
 }
 
 bool Renderer::createDescriptorSets() {
@@ -426,91 +419,57 @@ bool Renderer::createDescriptorSets() {
 }
 
 bool Renderer::render(const Camera& camera) {
-    // Skip rendering if window is suspended
-    if (windowSuspended) {
-        return false;
-    }
+    if (windowSuspended) return false;
 
-    // Handle pending resize before acquiring next image
     if (framebufferResized) {
         handleResize();
         framebufferResized = false;
-        rendererCore_.clearResizeFlag();
-        frameSync_.waitForAllFrames();
-        frameSync_.resetForResize();
     }
 
-    // Begin CPU profiling for this frame
-    systems_->profiler().beginCpuFrame();
+    FrameResult result = frameExecutor_.execute(
+        [&](uint32_t imageIndex, uint32_t frameIndex) {
+            return buildFrame(camera, imageIndex, frameIndex);
+        });
 
-    // Reset queue submit diagnostics for this frame
-    auto& qsDiag = systems_->profiler().getQueueSubmitDiagnostics();
-    qsDiag.reset();
-    qsDiag.validationLayersEnabled = vulkanContext_->hasValidationLayers();
-
-    // === Phase 1: Frame synchronization and swapchain acquire ===
-    auto beginResult = rendererCore_.beginFrame(qsDiag, systems_->profiler());
-    if (!beginResult.success) {
-        if (beginResult.error == FrameResult::SwapchainOutOfDate ||
-            beginResult.error == FrameResult::SurfaceLost ||
-            beginResult.error == FrameResult::DeviceLost) {
-            framebufferResized = true;
-        }
-        systems_->profiler().endCpuFrame();
-        return false;
+    if (result == FrameResult::SwapchainOutOfDate ||
+        result == FrameResult::SurfaceLost ||
+        result == FrameResult::DeviceLost) {
+        framebufferResized = true;
     }
-    uint32_t imageIndex = beginResult.imageIndex;
+    return result == FrameResult::Success;
+}
 
-    // Process completed async transfers after fence wait
+VkCommandBuffer Renderer::buildFrame(const Camera& camera, uint32_t imageIndex, uint32_t frameIndex) {
     renderingInfra_.processPendingTransfers();
 
-    // === Phase 2: Per-frame data updates ===
+    // Per-frame data updates
     TimingData timing = systems_->time().update();
 
-    // UBO updates
-    systems_->profiler().beginCpuZone("UniformUpdates");
-    CommandCounter bandwidthCounter(&qsDiag);
+    UBOUpdater::Config uboConfig;
+    uboConfig.showCascadeDebug = showCascadeDebug;
+    uboConfig.useVolumetricSnow = useVolumetricSnow;
+    uboConfig.showSnowDepthDebug = showSnowDepthDebug;
+    uboConfig.shadowsEnabled = perfToggles.shadowPass;
+    uboConfig.hdrEnabled = hdrEnabled;
+    uboConfig.maxSnowHeight = MAX_SNOW_HEIGHT;
+    uboConfig.lightCullRadius = lightCullRadius;
+    uboConfig.ecsWorld = ecsWorld_;
+    uboConfig.deltaTime = timing.deltaTime;
+    auto uboResult = UBOUpdater::update(*systems_, frameIndex, camera, uboConfig);
+    lastSunIntensity = uboResult.sunIntensity;
 
-    {
-        systems_->profiler().beginCpuZone("UniformUpdates:UBO");
-        UBOUpdater::Config uboConfig;
-        uboConfig.showCascadeDebug = showCascadeDebug;
-        uboConfig.useVolumetricSnow = useVolumetricSnow;
-        uboConfig.showSnowDepthDebug = showSnowDepthDebug;
-        uboConfig.shadowsEnabled = perfToggles.shadowPass;
-        uboConfig.hdrEnabled = hdrEnabled;
-        uboConfig.maxSnowHeight = MAX_SNOW_HEIGHT;
-        uboConfig.lightCullRadius = lightCullRadius;
-        uboConfig.ecsWorld = ecsWorld_;
-        uboConfig.deltaTime = timing.deltaTime;
-        auto uboResult = UBOUpdater::update(*systems_, frameSync_.currentIndex(), camera, uboConfig);
-        lastSunIntensity = uboResult.sunIntensity;
-        bandwidthCounter.recordUboUpdate(sizeof(UniformBufferObject) * 2);
-        bandwidthCounter.recordUboUpdate(sizeof(SnowUBO));
-        bandwidthCounter.recordUboUpdate(sizeof(CloudShadowUBO));
-        bandwidthCounter.recordSsboUpdate(sizeof(LightBuffer));
-        systems_->profiler().endCpuZone("UniformUpdates:UBO");
-    }
-
-    {
-        systems_->profiler().beginCpuZone("UniformUpdates:Bones");
-        SceneBuilder& sceneBuilder = systems_->scene().getSceneBuilder();
-        AnimatedCharacter* character = sceneBuilder.hasCharacter() ? &sceneBuilder.getAnimatedCharacter() : nullptr;
-        constexpr uint32_t PLAYER_BONE_SLOT = 0;
-        systems_->skinnedMesh().updateBoneMatrices(frameSync_.currentIndex(), PLAYER_BONE_SLOT, character);
-        bandwidthCounter.recordSsboUpdate(128 * sizeof(glm::mat4));
-        systems_->profiler().endCpuZone("UniformUpdates:Bones");
-    }
-
-    systems_->profiler().endCpuZone("UniformUpdates");
+    SceneBuilder& sceneBuilder = systems_->scene().getSceneBuilder();
+    AnimatedCharacter* character = sceneBuilder.hasCharacter() ? &sceneBuilder.getAnimatedCharacter() : nullptr;
+    constexpr uint32_t PLAYER_BONE_SLOT = 0;
+    systems_->skinnedMesh().updateBoneMatrices(frameIndex, PLAYER_BONE_SLOT, character);
 
     // Build per-frame shared state
     FrameData frame = FrameDataBuilder::buildFrameData(
-        camera, *systems_, frameSync_.currentIndex(), timing.deltaTime, timing.elapsedTime);
+        camera, *systems_, frameIndex, timing.deltaTime, timing.elapsedTime);
     lastViewProj = frame.viewProj;
 
-    // === Phase 3: Subsystem updates ===
-    FrameUpdater::updateDebugLines(*systems_, frameSync_.currentIndex());
+    // Subsystem updates
+    FrameUpdater::updateDebugLines(*systems_, frameIndex);
 
     VkExtent2D extent = vulkanContext_->getVkSwapchainExtent();
     FrameUpdater::SnowConfig snowConfig;
@@ -520,19 +479,12 @@ bool Renderer::render(const Camera& camera) {
 
     FrameUpdater::populateGPUSceneBuffer(*systems_, frame);
 
-    // === Phase 4: Command buffer recording ===
-    systems_->profiler().beginCpuZone("CmdBufferRecord");
-    auto recordStart = std::chrono::high_resolution_clock::now();
-
+    // Command buffer recording
     VkCommandBuffer cmd = vulkanContext_->getCommandBuffer(frame.frameIndex);
     vk::CommandBuffer vkCmd(cmd);
     vkCmd.reset();
     vkCmd.begin(vk::CommandBufferBeginInfo{});
 
-    ScopedDiagnostics scopedDiag(&qsDiag);
-
-    auto& cmdCapture = systems_->profiler().getCommandCapture();
-    cmdCapture.beginFrame(systems_->profiler().getFrameNumber());
     systems_->profiler().beginGpuFrame(cmd, frame.frameIndex);
 
     RenderResources resources = FrameDataBuilder::buildRenderResources(
@@ -540,58 +492,31 @@ bool Renderer::render(const Camera& camera) {
         vulkanContext_->getRenderPass(), {vulkanContext_->getWidth(), vulkanContext_->getHeight()},
         descriptorInfra_.getGraphicsPipeline(), descriptorInfra_.getPipelineLayout(),
         descriptorInfra_.getDescriptorSetLayout());
-    RenderContext ctx(cmd, frame.frameIndex, frame, resources, &qsDiag);
+    RenderContext renderCtx(cmd, frame.frameIndex, frame, resources, nullptr);
 
     FrameGraph::RenderContext fgCtx(vkCmd, frame.frameIndex, frame);
     fgCtx.imageIndex = imageIndex;
     fgCtx.deltaTime = frame.deltaTime;
-    fgCtx.withUserData(&ctx)
+    fgCtx.withUserData(&renderCtx)
         .withThreading(&renderingInfra_.threadedCommandPool(),
                        vk::RenderPass(systems_->postProcess().getHDRRenderPass()),
-                       vk::Framebuffer(systems_->postProcess().getHDRFramebuffer()))
-        .withDiagnostics(&qsDiag);
+                       vk::Framebuffer(systems_->postProcess().getHDRFramebuffer()));
 
     renderingInfra_.frameGraph().execute(fgCtx, &TaskScheduler::instance());
 
     systems_->profiler().endGpuFrame(cmd, frame.frameIndex);
-    cmdCapture.endFrame();
     vkCmd.end();
 
-    auto recordEnd = std::chrono::high_resolution_clock::now();
-    qsDiag.commandRecordTimeMs = std::chrono::duration<float, std::milli>(recordEnd - recordStart).count();
-    systems_->profiler().endCpuZone("CmdBufferRecord");
-
-    // === Phase 5: Submit and present via RendererCore ===
-    FrameExecutionParams execParams;
-    execParams.commandBuffer = cmd;
-    execParams.swapchainImageIndex = imageIndex;
-    execParams.diagnostics = &qsDiag;
-
-    systems_->profiler().beginCpuZone("QueueSubmit");
-    FrameResult submitResult = rendererCore_.submitAndPresent(execParams);
-    systems_->profiler().endCpuZone("QueueSubmit");
-
-    if (submitResult != FrameResult::Success) {
-        framebufferResized = true;
-        systems_->profiler().endCpuFrame();
-        return false;
-    }
-
-    // === Phase 6: Post-frame housekeeping ===
+    // Advance buffer sets for next frame (safe before submit — command buffer
+    // already has current frame's buffer references baked in)
     systems_->grass().advanceBufferSet();
     systems_->weather().advanceBufferSet();
     systems_->leaf().advanceBufferSet();
-
     if (systems_->hasWaterTileCull()) {
-        systems_->waterTileCull().endFrame(frameSync_.currentIndex());
+        systems_->waterTileCull().endFrame(frameIndex);
     }
 
-    frameSync_.advance();
-
-    systems_->profiler().endCpuFrame();
-    systems_->profiler().advanceFrame();
-
-    return true;
+    return cmd;
 }
 
 void Renderer::waitIdle() {
@@ -599,17 +524,7 @@ void Renderer::waitIdle() {
 }
 
 void Renderer::waitForPreviousFrame() {
-    // Wait for the previous frame's fence to ensure GPU is done with resources
-    // we might be about to destroy/update.
-    //
-    // With triple buffering (MAX_FRAMES_IN_FLIGHT=3):
-    // - Frame N uses fence[N % 3]
-    // - Before updating meshes for frame N, we need frame N-1's GPU work complete
-    // - Previous frame's fence is fence[(N-1) % 3]
-    //
-    // This prevents race conditions where we destroy mesh buffers while the GPU
-    // is still reading them from the previous frame's commands.
-    frameSync_.waitForPreviousFrame();
+    frameExecutor_.waitForPreviousFrame();
 }
 
 bool Renderer::handleResize() {
@@ -1623,19 +1538,10 @@ bool Renderer::initSubsystemsAsync() {
             // Wire caustics
             wiring.wireCausticsToTerrain(*systems_);
 
-            // Sync objects
-            if (!createSyncObjects()) return false;
-
-            // RendererCore
-            {
-                RendererCore::InitParams coreParams;
-                coreParams.vulkanContext = vulkanContext_.get();
-                coreParams.frameGraph = &renderingInfra_.frameGraph();
-                coreParams.frameSync = &frameSync_;
-                if (!rendererCore_.init(coreParams)) {
-                    SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to initialize RendererCore");
-                    return false;
-                }
+            // FrameExecutor (owns sync objects / TripleBuffering)
+            if (!frameExecutor_.init(vulkanContext_.get(), MAX_FRAMES_IN_FLIGHT)) {
+                SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to initialize FrameExecutor");
+                return false;
             }
 
             // Debug line system

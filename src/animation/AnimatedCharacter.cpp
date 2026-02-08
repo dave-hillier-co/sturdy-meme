@@ -327,7 +327,9 @@ void AnimatedCharacter::update(float deltaTime, VmaAllocator allocator, VkDevice
 
     // Get current normalized animation time for phase tracking
     float normalizedTime = 0.0f;
-    if (useStateMachine) {
+    if (useMotionMatching) {
+        normalizedTime = motionMatchingController.getPlaybackState().normalizedTime;
+    } else if (useStateMachine) {
         const AnimationClip* currentClip = stateMachine.getCurrentClip();
         if (currentClip && currentClip->duration > 0.0f) {
             normalizedTime = stateMachine.getCurrentTime() / currentClip->duration;

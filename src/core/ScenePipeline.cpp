@@ -1,4 +1,4 @@
-#include "DescriptorInfrastructure.h"
+#include "ScenePipeline.h"
 #include "VulkanContext.h"
 #include "UBOs.h"
 #include "Bindings.h"
@@ -7,7 +7,7 @@
 #include "Mesh.h"
 #include <SDL3/SDL.h>
 
-void DescriptorInfrastructure::addCommonDescriptorBindings(DescriptorManager::LayoutBuilder& builder) {
+void ScenePipeline::addCommonDescriptorBindings(DescriptorManager::LayoutBuilder& builder) {
     // Main scene descriptor set layout - uses common bindings (0-11, 13-17)
     // This must match definitions in shaders/bindings.h
     builder
@@ -31,14 +31,10 @@ void DescriptorInfrastructure::addCommonDescriptorBindings(DescriptorManager::La
         .addBinding(Bindings::WIND_UBO, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_VERTEX_BIT);                // 17: wind UBO
 }
 
-bool DescriptorInfrastructure::initDescriptors(VulkanContext& context, const Config& config) {
+bool ScenePipeline::initLayout(VulkanContext& context) {
     VkDevice device = context.getVkDevice();
 
     if (!createDescriptorSetLayout(device, context.getRaiiDevice())) {
-        return false;
-    }
-
-    if (!createDescriptorPool(device, config)) {
         return false;
     }
 
@@ -46,7 +42,7 @@ bool DescriptorInfrastructure::initDescriptors(VulkanContext& context, const Con
     return true;
 }
 
-bool DescriptorInfrastructure::createDescriptorSetLayout(VkDevice device, const vk::raii::Device& raiiDevice) {
+bool ScenePipeline::createDescriptorSetLayout(VkDevice device, const vk::raii::Device& raiiDevice) {
     DescriptorManager::LayoutBuilder builder(device);
     addCommonDescriptorBindings(builder);
     VkDescriptorSetLayout rawLayout = builder.build();
@@ -60,17 +56,17 @@ bool DescriptorInfrastructure::createDescriptorSetLayout(VkDevice device, const 
     return true;
 }
 
-bool DescriptorInfrastructure::createDescriptorPool(VkDevice device, const Config& config) {
-    // Create the auto-growing descriptor pool with configurable sizes
-    // Will automatically grow if exhausted
-    descriptorManagerPool_.emplace(device, config.setsPerPool, config.poolSizes);
-    return true;
+void ScenePipeline::setBindlessLayouts(vk::DescriptorSetLayout textureSetLayout,
+                                        vk::DescriptorSetLayout materialSetLayout) {
+    bindlessTextureSetLayout_ = textureSetLayout;
+    bindlessMaterialSetLayout_ = materialSetLayout;
+    SDL_Log("ScenePipeline: Bindless layouts set (texture + material)");
 }
 
-bool DescriptorInfrastructure::createGraphicsPipeline(VulkanContext& context, VkRenderPass hdrRenderPass,
-                                                       const std::string& resourcePath) {
+bool ScenePipeline::createGraphicsPipeline(VulkanContext& context, VkRenderPass hdrRenderPass,
+                                            const std::string& resourcePath) {
     if (!initialized_) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "DescriptorInfrastructure::createGraphicsPipeline: not initialized");
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "ScenePipeline::createGraphicsPipeline: not initialized");
         return false;
     }
 
@@ -78,12 +74,11 @@ bool DescriptorInfrastructure::createGraphicsPipeline(VulkanContext& context, Vk
     VkExtent2D swapchainExtent = context.getVkSwapchainExtent();
 
     // Create pipeline layout using PipelineLayoutBuilder
-    // Set 0: Main rendering (UBO, textures, lights, etc.)
-    // Set 1: Bindless texture array (optional, if bindless is available)
-    // Set 2: Material data SSBO (optional, if bindless is available)
+    // Set 0: per-frame global data, Set 1: bindless textures, Set 2: material SSBO
     auto builder = PipelineLayoutBuilder(context.getRaiiDevice())
         .addDescriptorSetLayout(**descriptorSetLayout_);
 
+    // Add bindless sets if available
     if (bindlessTextureSetLayout_) {
         builder.addDescriptorSetLayout(bindlessTextureSetLayout_);
     }
@@ -127,18 +122,4 @@ bool DescriptorInfrastructure::createGraphicsPipeline(VulkanContext& context, Vk
 
     graphicsPipeline_.emplace(context.getRaiiDevice(), rawPipeline);
     return true;
-}
-
-void DescriptorInfrastructure::cleanup() {
-    // Cleanup in reverse order
-    graphicsPipeline_.reset();
-    pipelineLayout_.reset();
-    descriptorSetLayout_.reset();
-
-    if (descriptorManagerPool_.has_value()) {
-        descriptorManagerPool_->destroy();
-        descriptorManagerPool_.reset();
-    }
-
-    initialized_ = false;
 }

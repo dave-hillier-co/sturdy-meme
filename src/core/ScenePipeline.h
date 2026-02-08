@@ -5,47 +5,36 @@
 #include <vulkan/vulkan_raii.hpp>
 #include <optional>
 #include <string>
-#include <functional>
 
 class VulkanContext;
-class PostProcessSystem;
-class IDescriptorAllocator;
 
 /**
- * DescriptorInfrastructure - Owns descriptor layouts, pools, and graphics pipeline
+ * ScenePipeline - Owns the main scene descriptor set layout and graphics pipeline
  *
- * Extracted from Renderer to reduce coupling. Groups:
+ * Groups:
  * - Main descriptor set layout (for scene rendering)
  * - Pipeline layout (wraps descriptor layout + push constants)
  * - Main graphics pipeline (for standard mesh rendering)
- * - Descriptor pool (auto-growing pool for all systems)
  *
- * Lifecycle:
- * - Create via default constructor
- * - Call init() after VulkanContext and PostProcessSystem are ready
- * - Access via getters for descriptor allocation and pipeline binding
+ * The descriptor pool is owned separately by Renderer since it's a shared
+ * resource allocator unrelated to pipeline configuration.
  */
-class DescriptorInfrastructure {
+class ScenePipeline {
 public:
-    struct Config {
-        uint32_t setsPerPool = 64;
-        DescriptorPoolSizes poolSizes = DescriptorPoolSizes::standard();
-    };
-
-    DescriptorInfrastructure() = default;
-    ~DescriptorInfrastructure() = default;
+    ScenePipeline() = default;
+    ~ScenePipeline() = default;
 
     // Non-copyable, non-movable (owns GPU resources)
-    DescriptorInfrastructure(const DescriptorInfrastructure&) = delete;
-    DescriptorInfrastructure& operator=(const DescriptorInfrastructure&) = delete;
-    DescriptorInfrastructure(DescriptorInfrastructure&&) = delete;
-    DescriptorInfrastructure& operator=(DescriptorInfrastructure&&) = delete;
+    ScenePipeline(const ScenePipeline&) = delete;
+    ScenePipeline& operator=(const ScenePipeline&) = delete;
+    ScenePipeline(ScenePipeline&&) = delete;
+    ScenePipeline& operator=(ScenePipeline&&) = delete;
 
     /**
-     * Initialize descriptor set layout and pool.
+     * Initialize descriptor set layout.
      * Call before createGraphicsPipeline().
      */
-    bool initDescriptors(VulkanContext& context, const Config& config);
+    bool initLayout(VulkanContext& context);
 
     /**
      * Create the graphics pipeline for standard scene rendering.
@@ -53,12 +42,6 @@ public:
      */
     bool createGraphicsPipeline(VulkanContext& context, VkRenderPass hdrRenderPass,
                                 const std::string& resourcePath);
-
-    /**
-     * Cleanup all resources.
-     * Called automatically by destructor, but can be called explicitly.
-     */
-    void cleanup();
 
     // Accessors
     vk::DescriptorSetLayout getDescriptorSetLayout() const {
@@ -82,19 +65,6 @@ public:
         return pipelineLayout_ ? &**pipelineLayout_ : nullptr;
     }
 
-    DescriptorManager::Pool* getDescriptorPool() {
-        return descriptorManagerPool_.has_value() ? &*descriptorManagerPool_ : nullptr;
-    }
-
-    const DescriptorManager::Pool* getDescriptorPool() const {
-        return descriptorManagerPool_.has_value() ? &*descriptorManagerPool_ : nullptr;
-    }
-
-    // Get allocator via interface (for reduced coupling)
-    IDescriptorAllocator* getDescriptorAllocator() {
-        return descriptorManagerPool_.has_value() ? &*descriptorManagerPool_ : nullptr;
-    }
-
     // Raw handle accessors for compatibility
     VkDescriptorSetLayout getVkDescriptorSetLayout() const {
         return descriptorSetLayout_ ? static_cast<VkDescriptorSetLayout>(**descriptorSetLayout_) : VK_NULL_HANDLE;
@@ -116,28 +86,32 @@ public:
     static void addCommonDescriptorBindings(DescriptorManager::LayoutBuilder& builder);
 
     /**
-     * Set bindless descriptor set layouts (Sets 1 and 2) for inclusion in the
-     * pipeline layout. Must be called before createGraphicsPipeline().
+     * Set bindless descriptor set layouts for Sets 1 and 2.
+     * Must be called after BindlessManager::init() and before createGraphicsPipeline().
+     * These are included in the pipeline layout alongside Set 0.
      */
     void setBindlessLayouts(vk::DescriptorSetLayout textureSetLayout,
-                           vk::DescriptorSetLayout materialSetLayout) {
-        bindlessTextureSetLayout_ = textureSetLayout;
-        bindlessMaterialSetLayout_ = materialSetLayout;
-    }
+                            vk::DescriptorSetLayout materialSetLayout);
 
     bool isInitialized() const { return initialized_; }
     bool hasPipeline() const { return graphicsPipeline_.has_value(); }
 
+    // Release GPU resources. Must be called while VkDevice is still valid.
+    void reset() {
+        graphicsPipeline_.reset();
+        pipelineLayout_.reset();
+        descriptorSetLayout_.reset();
+        initialized_ = false;
+    }
+
 private:
     bool createDescriptorSetLayout(VkDevice device, const vk::raii::Device& raiiDevice);
-    bool createDescriptorPool(VkDevice device, const Config& config);
 
     std::optional<vk::raii::DescriptorSetLayout> descriptorSetLayout_;
     std::optional<vk::raii::PipelineLayout> pipelineLayout_;
     std::optional<vk::raii::Pipeline> graphicsPipeline_;
-    std::optional<DescriptorManager::Pool> descriptorManagerPool_;
 
-    // Bindless layouts (non-owning, owned by BindlessManager)
+    // Bindless descriptor set layouts (owned by BindlessManager, stored here for pipeline layout)
     vk::DescriptorSetLayout bindlessTextureSetLayout_;
     vk::DescriptorSetLayout bindlessMaterialSetLayout_;
 

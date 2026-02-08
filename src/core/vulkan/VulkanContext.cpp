@@ -236,6 +236,23 @@ bool VulkanContext::selectPhysicalDevice() {
         supportedFeatures12.descriptorBindingVariableDescriptorCount == VK_TRUE &&
         supportedFeatures12.shaderSampledImageArrayNonUniformIndexing == VK_TRUE;
 
+    // Disable bindless on MoltenVK — it reports descriptor indexing support
+    // but crashes in mvkUpdateDescriptorSets with update-after-bind descriptors
+    if (hasDescriptorIndexing_) {
+        VkPhysicalDeviceVulkan12Properties driverProps12{};
+        driverProps12.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_PROPERTIES;
+        VkPhysicalDeviceProperties2 driverProps2{};
+        driverProps2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2;
+        driverProps2.pNext = &driverProps12;
+        vkGetPhysicalDeviceProperties2(physicalDevice, &driverProps2);
+
+        if (driverProps12.driverID == VK_DRIVER_ID_MOLTENVK) {
+            SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                "MoltenVK detected — disabling bindless rendering (update-after-bind not reliable)");
+            hasDescriptorIndexing_ = false;
+        }
+    }
+
     if (hasDescriptorIndexing_) {
         // Query limits for bindless texture array size
         VkPhysicalDeviceVulkan12Properties props12{};

@@ -90,8 +90,10 @@ public:
                  float locomotionSpeed = 0.0f,
                  float costBias = 0.0f);
 
-    // Build the motion database (call after adding all clips)
-    void buildDatabase(const DatabaseBuildOptions& options = DatabaseBuildOptions{});
+    // Build the motion database (call after adding all clips).
+    // If cachePath is non-empty, uses it for caching computed data.
+    void buildDatabase(const DatabaseBuildOptions& options = DatabaseBuildOptions{},
+                       const std::filesystem::path& cachePath = {});
 
     // Update the controller
     // position: current character world position

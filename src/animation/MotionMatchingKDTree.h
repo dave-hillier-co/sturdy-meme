@@ -76,6 +76,14 @@ public:
         points_.clear();
     }
 
+    // Serialization access
+    const std::vector<KDNode>& getNodes() const { return nodes_; }
+    const std::vector<KDPoint>& getPoints() const { return points_; }
+    void setData(std::vector<KDNode> nodes, std::vector<KDPoint> points) {
+        nodes_ = std::move(nodes);
+        points_ = std::move(points);
+    }
+
 private:
     std::vector<KDNode> nodes_;
     std::vector<KDPoint> points_;  // Store original points for rebuilding

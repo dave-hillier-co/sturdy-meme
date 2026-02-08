@@ -17,6 +17,7 @@
 #include <vector>
 #include <array>
 #include <memory>
+#include <filesystem>
 
 // Debug data for skeleton visualization
 struct SkeletonDebugData {
@@ -252,6 +253,7 @@ private:
 
     bool loaded = false;
     bool needsUpload = false;
+    std::filesystem::path modelPath_;  // Stored for deriving cache paths
 
     // LOD support
     bool skipAnimationUpdate_ = false;

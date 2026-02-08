@@ -29,6 +29,7 @@ AnimatedCharacter::~AnimatedCharacter() {
 
 bool AnimatedCharacter::loadInternal(const InitInfo& info) {
     allocator_ = info.allocator;
+    modelPath_ = info.path;
 
     std::optional<GLTFSkinnedLoadResult> result;
 
@@ -857,12 +858,18 @@ void AnimatedCharacter::initializeMotionMatching(const MotionMatching::Controlle
         motionMatchingController.addClip(&clip, clip.name, looping, tags, locomotionSpeed, costBias);
     }
 
-    // Build the database
+    // Build the database (with cache for faster subsequent loads)
     MotionMatching::DatabaseBuildOptions buildOptions;
     buildOptions.defaultSampleRate = 30.0f;
     buildOptions.pruneStaticPoses = false;  // Keep idle poses
 
-    motionMatchingController.buildDatabase(buildOptions);
+    std::filesystem::path cachePath;
+    if (!modelPath_.empty()) {
+        cachePath = modelPath_;
+        cachePath += ".mmcache";
+    }
+
+    motionMatchingController.buildDatabase(buildOptions, cachePath);
 
     // Exclude jump animations from normal locomotion search
     // Jump should only be triggered explicitly, not matched during running

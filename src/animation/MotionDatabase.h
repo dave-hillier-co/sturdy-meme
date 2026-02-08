@@ -10,6 +10,7 @@
 #include <string>
 #include <memory>
 #include <unordered_map>
+#include <filesystem>
 
 namespace MotionMatching {
 
@@ -97,8 +98,10 @@ public:
                    float locomotionSpeed = 0.0f,
                    float costBias = 0.0f);
 
-    // Build the database (index all poses)
-    void build(const DatabaseBuildOptions& options = DatabaseBuildOptions{});
+    // Build the database (index all poses).
+    // If cachePath is non-empty, tries to load from cache first and saves after build.
+    void build(const DatabaseBuildOptions& options = DatabaseBuildOptions{},
+               const std::filesystem::path& cachePath = {});
 
     // Query methods
     size_t getPoseCount() const { return poses_.size(); }
@@ -136,6 +139,16 @@ public:
     // Clear all data
     void clear();
 
+    // Cache support - saves/loads pre-computed poses, normalization, and KD-tree
+    // to avoid expensive feature extraction on subsequent loads.
+    // The fingerprint is computed from clip metadata + config to detect staleness.
+    bool saveCache(const std::filesystem::path& cachePath) const;
+    bool loadCache(const std::filesystem::path& cachePath);
+
+    // Compute a fingerprint string from current clip metadata and config.
+    // Used to validate cache freshness.
+    std::string computeFingerprint(const DatabaseBuildOptions& options) const;
+
     // Statistics
     struct Stats {
         size_t totalPoses = 0;
@@ -157,6 +170,7 @@ private:
 
     bool initialized_ = false;
     bool built_ = false;
+    std::string fingerprint_;  // Cache validation key
 
     // Index a single clip
     void indexClip(size_t clipIndex, const DatabaseBuildOptions& options);

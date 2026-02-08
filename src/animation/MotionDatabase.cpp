@@ -2,6 +2,8 @@
 #include <SDL3/SDL.h>
 #include <algorithm>
 #include <cmath>
+#include <fstream>
+#include <sstream>
 #include <glm/glm.hpp>
 
 namespace MotionMatching {
@@ -64,12 +66,24 @@ size_t MotionDatabase::addClip(const AnimationClip* clip,
     return index;
 }
 
-void MotionDatabase::build(const DatabaseBuildOptions& options) {
+void MotionDatabase::build(const DatabaseBuildOptions& options,
+                            const std::filesystem::path& cachePath) {
     if (!initialized_) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
                     "MotionDatabase: Cannot build before initialization");
         return;
     }
+
+    // Compute fingerprint for cache validation
+    fingerprint_ = computeFingerprint(options);
+
+    // Try loading from cache
+    if (!cachePath.empty() && loadCache(cachePath)) {
+        SDL_Log("MotionDatabase: Using cached database (%zu poses)", poses_.size());
+        return;
+    }
+
+    Uint64 startTime = SDL_GetTicksNS();
 
     poses_.clear();
     size_t prunedCount = 0;
@@ -127,8 +141,16 @@ void MotionDatabase::build(const DatabaseBuildOptions& options) {
 
     built_ = true;
 
-    SDL_Log("MotionDatabase: Built with %zu poses from %zu clips (pruned %zu)",
-            poses_.size(), clips_.size(), prunedCount);
+    Uint64 elapsedNs = SDL_GetTicksNS() - startTime;
+    float elapsedMs = static_cast<float>(elapsedNs) / 1e6f;
+
+    SDL_Log("MotionDatabase: Built with %zu poses from %zu clips (pruned %zu) in %.1f ms",
+            poses_.size(), clips_.size(), prunedCount, elapsedMs);
+
+    // Save cache for next time
+    if (!cachePath.empty()) {
+        saveCache(cachePath);
+    }
 }
 
 void MotionDatabase::indexClip(size_t clipIndex, const DatabaseBuildOptions& options) {
@@ -752,6 +774,384 @@ bool MotionMatcher::passesFilters(const DatabasePose& pose, const SearchOptions&
         return false;
     }
 
+    return true;
+}
+
+// ============================================================================
+// Cache serialization
+// ============================================================================
+
+namespace {
+
+constexpr uint32_t CACHE_MAGIC = 0x4D4D4442; // "MMDB"
+constexpr uint32_t CACHE_VERSION = 1;
+
+// FNV-1a hash for fingerprint comparison
+uint64_t fnv1aHash(const std::string& str) {
+    uint64_t hash = 14695981039346656037ULL;
+    for (char c : str) {
+        hash ^= static_cast<uint64_t>(c);
+        hash *= 1099511628211ULL;
+    }
+    return hash;
+}
+
+template<typename T>
+void writeVal(std::ofstream& out, const T& val) {
+    out.write(reinterpret_cast<const char*>(&val), sizeof(T));
+}
+
+template<typename T>
+bool readVal(std::ifstream& in, T& val) {
+    in.read(reinterpret_cast<char*>(&val), sizeof(T));
+    return in.good();
+}
+
+void writeString(std::ofstream& out, const std::string& str) {
+    uint32_t len = static_cast<uint32_t>(str.size());
+    writeVal(out, len);
+    out.write(str.data(), len);
+}
+
+bool readString(std::ifstream& in, std::string& str) {
+    uint32_t len = 0;
+    if (!readVal(in, len)) return false;
+    if (len > 10000) return false; // sanity check
+    str.resize(len);
+    in.read(str.data(), len);
+    return in.good();
+}
+
+void writePoseFeatures(std::ofstream& out, const PoseFeatures& pf) {
+    writeVal(out, pf.boneCount);
+    for (size_t i = 0; i < MAX_FEATURE_BONES; ++i) {
+        writeVal(out, pf.boneFeatures[i].position);
+        writeVal(out, pf.boneFeatures[i].velocity);
+    }
+    writeVal(out, pf.rootVelocity);
+    writeVal(out, pf.rootAngularVelocity);
+    writeVal(out, pf.leftFootPhase);
+    writeVal(out, pf.rightFootPhase);
+    writeVal(out, pf.heading.direction);
+    writeVal(out, pf.heading.movementDirection);
+    writeVal(out, pf.heading.angleDifference);
+}
+
+bool readPoseFeatures(std::ifstream& in, PoseFeatures& pf) {
+    if (!readVal(in, pf.boneCount)) return false;
+    for (size_t i = 0; i < MAX_FEATURE_BONES; ++i) {
+        if (!readVal(in, pf.boneFeatures[i].position)) return false;
+        if (!readVal(in, pf.boneFeatures[i].velocity)) return false;
+    }
+    if (!readVal(in, pf.rootVelocity)) return false;
+    if (!readVal(in, pf.rootAngularVelocity)) return false;
+    if (!readVal(in, pf.leftFootPhase)) return false;
+    if (!readVal(in, pf.rightFootPhase)) return false;
+    if (!readVal(in, pf.heading.direction)) return false;
+    if (!readVal(in, pf.heading.movementDirection)) return false;
+    if (!readVal(in, pf.heading.angleDifference)) return false;
+    return true;
+}
+
+void writeTrajectory(std::ofstream& out, const Trajectory& traj) {
+    writeVal(out, traj.sampleCount);
+    for (size_t i = 0; i < MAX_TRAJECTORY_SAMPLES; ++i) {
+        writeVal(out, traj.samples[i].position);
+        writeVal(out, traj.samples[i].velocity);
+        writeVal(out, traj.samples[i].facing);
+        writeVal(out, traj.samples[i].timeOffset);
+    }
+}
+
+bool readTrajectory(std::ifstream& in, Trajectory& traj) {
+    if (!readVal(in, traj.sampleCount)) return false;
+    for (size_t i = 0; i < MAX_TRAJECTORY_SAMPLES; ++i) {
+        if (!readVal(in, traj.samples[i].position)) return false;
+        if (!readVal(in, traj.samples[i].velocity)) return false;
+        if (!readVal(in, traj.samples[i].facing)) return false;
+        if (!readVal(in, traj.samples[i].timeOffset)) return false;
+    }
+    return true;
+}
+
+} // anonymous namespace
+
+std::string MotionDatabase::computeFingerprint(const DatabaseBuildOptions& options) const {
+    std::ostringstream ss;
+    ss << "v" << CACHE_VERSION << "|";
+
+    // Clip metadata
+    ss << "clips:" << clips_.size() << "|";
+    for (const auto& clip : clips_) {
+        ss << clip.name << "," << clip.duration << ","
+           << clip.looping << "," << clip.sampleRate << ","
+           << clip.locomotionSpeed << "," << clip.costBias << ",";
+        for (const auto& tag : clip.tags) {
+            ss << tag << ";";
+        }
+        ss << "|";
+    }
+
+    // Feature config
+    ss << "bones:";
+    for (const auto& name : config_.featureBoneNames) {
+        ss << name << ";";
+    }
+    ss << "|traj:";
+    for (float t : config_.trajectorySampleTimes) {
+        ss << t << ";";
+    }
+    ss << "|weights:" << config_.trajectoryWeight << ","
+       << config_.poseWeight << "," << config_.bonePositionWeight << ","
+       << config_.boneVelocityWeight << "," << config_.trajectoryPositionWeight << ","
+       << config_.trajectoryVelocityWeight << "," << config_.trajectoryFacingWeight << ","
+       << config_.rootVelocityWeight << "," << config_.angularVelocityWeight << ","
+       << config_.phaseWeight << "," << config_.headingWeight << "|";
+
+    // Build options
+    ss << "opts:" << options.defaultSampleRate << ","
+       << options.minPoseInterval << "," << options.loopBoundaryMargin << ","
+       << options.pruneStaticPoses << "," << options.staticThreshold << ","
+       << options.buildKDTree << "|";
+
+    // Skeleton joint count (structural change detection)
+    ss << "joints:" << skeleton_.joints.size();
+
+    return ss.str();
+}
+
+bool MotionDatabase::saveCache(const std::filesystem::path& cachePath) const {
+    if (!built_) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
+                    "MotionDatabase: Cannot save cache before build");
+        return false;
+    }
+
+    std::ofstream out(cachePath, std::ios::binary);
+    if (!out.is_open()) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
+                    "MotionDatabase: Failed to open cache file for writing: %s",
+                    cachePath.string().c_str());
+        return false;
+    }
+
+    // Header
+    writeVal(out, CACHE_MAGIC);
+    writeVal(out, CACHE_VERSION);
+
+    // Fingerprint hash
+    uint64_t fpHash = fnv1aHash(fingerprint_);
+    writeVal(out, fpHash);
+
+    // Pose count
+    uint64_t poseCount = poses_.size();
+    writeVal(out, poseCount);
+
+    // Poses
+    for (const auto& pose : poses_) {
+        writeVal(out, pose.clipIndex);
+        writeVal(out, pose.time);
+        writeVal(out, pose.normalizedTime);
+        writePoseFeatures(out, pose.poseFeatures);
+        writeTrajectory(out, pose.trajectory);
+        writeVal(out, pose.costBias);
+        writeVal(out, pose.isLoopBoundary);
+        writeVal(out, pose.canTransitionFrom);
+        writeVal(out, pose.canTransitionTo);
+
+        uint32_t tagCount = static_cast<uint32_t>(pose.tags.size());
+        writeVal(out, tagCount);
+        for (const auto& tag : pose.tags) {
+            writeString(out, tag);
+        }
+    }
+
+    // Normalization
+    for (size_t i = 0; i < MAX_TRAJECTORY_SAMPLES; ++i) {
+        writeVal(out, normalization_.trajectoryPosition[i].mean);
+        writeVal(out, normalization_.trajectoryPosition[i].stdDev);
+        writeVal(out, normalization_.trajectoryVelocity[i].mean);
+        writeVal(out, normalization_.trajectoryVelocity[i].stdDev);
+    }
+    for (size_t i = 0; i < MAX_FEATURE_BONES; ++i) {
+        writeVal(out, normalization_.bonePosition[i].mean);
+        writeVal(out, normalization_.bonePosition[i].stdDev);
+        writeVal(out, normalization_.boneVelocity[i].mean);
+        writeVal(out, normalization_.boneVelocity[i].stdDev);
+    }
+    writeVal(out, normalization_.rootVelocity.mean);
+    writeVal(out, normalization_.rootVelocity.stdDev);
+    writeVal(out, normalization_.rootAngularVelocity.mean);
+    writeVal(out, normalization_.rootAngularVelocity.stdDev);
+    writeVal(out, normalization_.isComputed);
+
+    // KD-tree
+    const auto& kdNodes = kdTree_.getNodes();
+    const auto& kdPoints = kdTree_.getPoints();
+    uint64_t nodeCount = kdNodes.size();
+    uint64_t pointCount = kdPoints.size();
+    writeVal(out, nodeCount);
+    writeVal(out, pointCount);
+    for (const auto& node : kdNodes) {
+        writeVal(out, node.point);
+        writeVal(out, node.splitDimension);
+        writeVal(out, node.leftChild);
+        writeVal(out, node.rightChild);
+    }
+    for (const auto& point : kdPoints) {
+        writeVal(out, point);
+    }
+
+    if (!out.good()) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
+                    "MotionDatabase: Error writing cache file");
+        return false;
+    }
+
+    SDL_Log("MotionDatabase: Saved cache with %zu poses to %s",
+            poses_.size(), cachePath.string().c_str());
+    return true;
+}
+
+bool MotionDatabase::loadCache(const std::filesystem::path& cachePath) {
+    if (!initialized_) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
+                    "MotionDatabase: Cannot load cache before initialization");
+        return false;
+    }
+
+    if (!std::filesystem::exists(cachePath)) {
+        return false;
+    }
+
+    std::ifstream in(cachePath, std::ios::binary);
+    if (!in.is_open()) {
+        return false;
+    }
+
+    // Read and validate header
+    uint32_t magic = 0, version = 0;
+    if (!readVal(in, magic) || magic != CACHE_MAGIC) {
+        SDL_Log("MotionDatabase: Cache file has invalid magic");
+        return false;
+    }
+    if (!readVal(in, version) || version != CACHE_VERSION) {
+        SDL_Log("MotionDatabase: Cache version mismatch (got %u, expected %u)",
+                version, CACHE_VERSION);
+        return false;
+    }
+
+    // Validate fingerprint
+    uint64_t storedHash = 0;
+    if (!readVal(in, storedHash)) return false;
+    uint64_t currentHash = fnv1aHash(fingerprint_);
+    if (storedHash != currentHash) {
+        SDL_Log("MotionDatabase: Cache fingerprint mismatch - rebuilding");
+        return false;
+    }
+
+    // Read pose count
+    uint64_t poseCount = 0;
+    if (!readVal(in, poseCount)) return false;
+    if (poseCount > 1000000) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
+                    "MotionDatabase: Cache has unreasonable pose count: %llu",
+                    static_cast<unsigned long long>(poseCount));
+        return false;
+    }
+
+    // Read poses
+    std::vector<DatabasePose> poses(poseCount);
+    for (size_t i = 0; i < poseCount; ++i) {
+        auto& pose = poses[i];
+        if (!readVal(in, pose.clipIndex)) return false;
+        if (!readVal(in, pose.time)) return false;
+        if (!readVal(in, pose.normalizedTime)) return false;
+        if (!readPoseFeatures(in, pose.poseFeatures)) return false;
+        if (!readTrajectory(in, pose.trajectory)) return false;
+        if (!readVal(in, pose.costBias)) return false;
+        if (!readVal(in, pose.isLoopBoundary)) return false;
+        if (!readVal(in, pose.canTransitionFrom)) return false;
+        if (!readVal(in, pose.canTransitionTo)) return false;
+
+        uint32_t tagCount = 0;
+        if (!readVal(in, tagCount)) return false;
+        if (tagCount > 100) return false;
+        pose.tags.resize(tagCount);
+        for (uint32_t t = 0; t < tagCount; ++t) {
+            if (!readString(in, pose.tags[t])) return false;
+        }
+    }
+
+    // Read normalization
+    FeatureNormalization norm;
+    for (size_t i = 0; i < MAX_TRAJECTORY_SAMPLES; ++i) {
+        if (!readVal(in, norm.trajectoryPosition[i].mean)) return false;
+        if (!readVal(in, norm.trajectoryPosition[i].stdDev)) return false;
+        if (!readVal(in, norm.trajectoryVelocity[i].mean)) return false;
+        if (!readVal(in, norm.trajectoryVelocity[i].stdDev)) return false;
+    }
+    for (size_t i = 0; i < MAX_FEATURE_BONES; ++i) {
+        if (!readVal(in, norm.bonePosition[i].mean)) return false;
+        if (!readVal(in, norm.bonePosition[i].stdDev)) return false;
+        if (!readVal(in, norm.boneVelocity[i].mean)) return false;
+        if (!readVal(in, norm.boneVelocity[i].stdDev)) return false;
+    }
+    if (!readVal(in, norm.rootVelocity.mean)) return false;
+    if (!readVal(in, norm.rootVelocity.stdDev)) return false;
+    if (!readVal(in, norm.rootAngularVelocity.mean)) return false;
+    if (!readVal(in, norm.rootAngularVelocity.stdDev)) return false;
+    if (!readVal(in, norm.isComputed)) return false;
+
+    // Read KD-tree
+    uint64_t nodeCount = 0, pointCount = 0;
+    if (!readVal(in, nodeCount)) return false;
+    if (!readVal(in, pointCount)) return false;
+    if (nodeCount > 1000000 || pointCount > 1000000) return false;
+
+    std::vector<KDNode> kdNodes(nodeCount);
+    std::vector<KDPoint> kdPoints(pointCount);
+    for (size_t i = 0; i < nodeCount; ++i) {
+        if (!readVal(in, kdNodes[i].point)) return false;
+        if (!readVal(in, kdNodes[i].splitDimension)) return false;
+        if (!readVal(in, kdNodes[i].leftChild)) return false;
+        if (!readVal(in, kdNodes[i].rightChild)) return false;
+    }
+    for (size_t i = 0; i < pointCount; ++i) {
+        if (!readVal(in, kdPoints[i])) return false;
+    }
+
+    if (!in.good()) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
+                    "MotionDatabase: Error reading cache file");
+        return false;
+    }
+
+    // All reads successful - commit the data
+    poses_ = std::move(poses);
+    normalization_ = norm;
+    kdTree_.setData(std::move(kdNodes), std::move(kdPoints));
+
+    // Update clip pose indices from loaded poses
+    for (auto& clip : clips_) {
+        clip.startPoseIndex = 0;
+        clip.poseCount = 0;
+    }
+    for (const auto& pose : poses_) {
+        if (pose.clipIndex < clips_.size()) {
+            clips_[pose.clipIndex].poseCount++;
+        }
+    }
+    size_t runningIndex = 0;
+    for (auto& clip : clips_) {
+        clip.startPoseIndex = runningIndex;
+        runningIndex += clip.poseCount;
+    }
+
+    built_ = true;
+
+    SDL_Log("MotionDatabase: Loaded %zu poses from cache %s",
+            poses_.size(), cachePath.string().c_str());
     return true;
 }
 

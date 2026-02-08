@@ -242,6 +242,8 @@ void MotionMatchingController::performSearch() {
         stats_.lastMatchCost = match.cost;
         stats_.lastTrajectoryCost = match.trajectoryCost;
         stats_.lastPoseCost = match.poseCost;
+        stats_.lastHeadingCost = match.headingCost;
+        stats_.lastBiasCost = match.biasCost;
         stats_.posesSearched = database_.getPoseCount();
     }
 }

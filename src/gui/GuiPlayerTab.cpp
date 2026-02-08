@@ -377,6 +377,8 @@ void GuiPlayerTab::render(IPlayerControl& playerControl, PlayerSettings& setting
         if (ImGui::TreeNode("Cost Breakdown")) {
             ImGui::Text("Trajectory: %.3f", stats.lastTrajectoryCost);
             ImGui::Text("Pose: %.3f", stats.lastPoseCost);
+            ImGui::Text("Heading: %.3f", stats.lastHeadingCost);
+            ImGui::Text("Bias: %.3f", stats.lastBiasCost);
             ImGui::Text("Matches/sec: %zu", stats.matchesThisSecond);
             ImGui::Text("Database poses: %zu", stats.posesSearched);
             ImGui::TreePop();

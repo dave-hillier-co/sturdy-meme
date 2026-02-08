@@ -38,8 +38,9 @@ void MotionMatchingController::addClip(const AnimationClip* clip,
     database_.addClip(clip, name, looping, 30.0f, tags, locomotionSpeed, costBias);
 }
 
-void MotionMatchingController::buildDatabase(const DatabaseBuildOptions& options) {
-    database_.build(options);
+void MotionMatchingController::buildDatabase(const DatabaseBuildOptions& options,
+                                               const std::filesystem::path& cachePath) {
+    database_.build(options, cachePath);
 
     // Start with first pose if available
     if (database_.getPoseCount() > 0) {

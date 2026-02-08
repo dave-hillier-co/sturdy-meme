@@ -28,6 +28,8 @@ struct MotionMatchingStats {
     float lastMatchCost = 0.0f;
     float lastTrajectoryCost = 0.0f;
     float lastPoseCost = 0.0f;
+    float lastHeadingCost = 0.0f;
+    float lastBiasCost = 0.0f;
     size_t matchesThisSecond = 0;
     size_t posesSearched = 0;
     std::string currentClipName;

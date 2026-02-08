@@ -494,19 +494,42 @@ MatchResult MotionMatcher::findBestMatch(const Trajectory& queryTrajectory,
 
     // Compute cost breakdown for best match
     if (best.isValid()) {
+        const FeatureConfig& config = database_->getFeatureExtractor().getConfig();
+
         best.trajectoryCost = queryTrajectory.computeCost(
             best.pose->trajectory,
-            database_->getFeatureExtractor().getConfig().trajectoryPositionWeight,
-            database_->getFeatureExtractor().getConfig().trajectoryVelocityWeight,
-            database_->getFeatureExtractor().getConfig().trajectoryFacingWeight
+            config.trajectoryPositionWeight,
+            config.trajectoryVelocityWeight,
+            config.trajectoryFacingWeight
         );
         best.poseCost = queryPose.computeCost(
             best.pose->poseFeatures,
-            database_->getFeatureExtractor().getConfig().bonePositionWeight,
-            database_->getFeatureExtractor().getConfig().rootVelocityWeight,
-            database_->getFeatureExtractor().getConfig().angularVelocityWeight,
-            database_->getFeatureExtractor().getConfig().phaseWeight
+            config.bonePositionWeight,
+            config.rootVelocityWeight,
+            config.angularVelocityWeight,
+            config.phaseWeight
         );
+
+        // Heading cost
+        float effectiveHeadingWeight = options.headingWeight > 0.0f ? options.headingWeight : config.headingWeight;
+        if (effectiveHeadingWeight > 0.0f) {
+            best.headingCost = queryPose.computeHeadingCost(best.pose->poseFeatures, effectiveHeadingWeight);
+            if (options.strafeMode && glm::length(options.desiredMovement) > 0.001f) {
+                glm::vec3 poseHeading = best.pose->poseFeatures.heading.direction;
+                glm::vec3 desiredFacing = glm::normalize(options.desiredFacing);
+                float facingDot = glm::dot(poseHeading, desiredFacing);
+                best.headingCost += (1.0f - facingDot) * options.strafeFacingWeight;
+            }
+        }
+
+        // Bias cost (continuing pose + looping)
+        const DatabaseClip& bestClip = database_->getClip(best.pose->clipIndex);
+        if (options.currentClipIndex != SIZE_MAX && best.pose->clipIndex == options.currentClipIndex) {
+            best.biasCost = options.continuingPoseCostBias;
+        }
+        if (bestClip.looping) {
+            best.biasCost += options.loopingCostBias;
+        }
     }
 
     return best;

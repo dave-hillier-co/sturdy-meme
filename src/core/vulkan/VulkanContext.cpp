@@ -149,30 +149,48 @@ bool VulkanContext::selectPhysicalDevice() {
     VkPhysicalDeviceFeatures features{};
     features.samplerAnisotropy = VK_FALSE;
 
-    // Vulkan 1.2 features - all promoted from VK_EXT_descriptor_indexing
+    // Vulkan 1.2 required features - only timeline semaphores are mandatory
     VkPhysicalDeviceVulkan12Features vulkan12Features{};
     vulkan12Features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES;
     vulkan12Features.timelineSemaphore = VK_TRUE;  // Required for non-blocking GPU timeline queries
-    // Descriptor indexing features for bindless rendering
-    vulkan12Features.descriptorIndexing = VK_TRUE;
-    vulkan12Features.runtimeDescriptorArray = VK_TRUE;
-    vulkan12Features.descriptorBindingPartiallyBound = VK_TRUE;
-    vulkan12Features.descriptorBindingSampledImageUpdateAfterBind = VK_TRUE;
-    vulkan12Features.descriptorBindingVariableDescriptorCount = VK_TRUE;
-    vulkan12Features.shaderSampledImageArrayNonUniformIndexing = VK_TRUE;
 
+    // Descriptor indexing features are OPTIONAL - try with them first, fall back without.
+    // MoltenVK may report partial support that causes issues at runtime.
+    VkPhysicalDeviceVulkan12Features vulkan12FeaturesWithBindless = vulkan12Features;
+    vulkan12FeaturesWithBindless.descriptorIndexing = VK_TRUE;
+    vulkan12FeaturesWithBindless.runtimeDescriptorArray = VK_TRUE;
+    vulkan12FeaturesWithBindless.descriptorBindingPartiallyBound = VK_TRUE;
+    vulkan12FeaturesWithBindless.descriptorBindingSampledImageUpdateAfterBind = VK_TRUE;
+    vulkan12FeaturesWithBindless.descriptorBindingVariableDescriptorCount = VK_TRUE;
+    vulkan12FeaturesWithBindless.shaderSampledImageArrayNonUniformIndexing = VK_TRUE;
+
+    // First try: select device with descriptor indexing (bindless rendering)
     vkb::PhysicalDeviceSelector selector{vkbInstance};
     auto physRet = selector.set_minimum_version(1, 2)
         .set_surface(surface)
         .set_required_features(features)
-        .set_required_features_12(vulkan12Features)
+        .set_required_features_12(vulkan12FeaturesWithBindless)
         .select();
 
     if (!physRet) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
-            "Failed to select physical device with Vulkan 1.2 and timeline semaphore support: %s",
+        // Fallback: select device WITHOUT descriptor indexing features
+        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+            "Device selection with descriptor indexing failed (%s), retrying without",
             physRet.error().message().c_str());
-        return false;
+
+        vkb::PhysicalDeviceSelector fallbackSelector{vkbInstance};
+        physRet = fallbackSelector.set_minimum_version(1, 2)
+            .set_surface(surface)
+            .set_required_features(features)
+            .set_required_features_12(vulkan12Features)
+            .select();
+
+        if (!physRet) {
+            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
+                "Failed to select physical device: %s",
+                physRet.error().message().c_str());
+            return false;
+        }
     }
 
     vkbPhysicalDevice = physRet.value();

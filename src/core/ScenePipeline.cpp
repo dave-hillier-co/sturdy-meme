@@ -101,12 +101,19 @@ bool ScenePipeline::createGraphicsPipeline(VulkanContext& context, VkRenderPass 
     auto bindingDescription = Vertex::getBindingDescription();
     auto attributeDescriptions = Vertex::getAttributeDescriptions();
 
+    // Select fragment shader variant: bindless (uses Sets 1+2) or legacy (fixed per-material bindings)
+    std::string fragShaderPath = bindlessTextureSetLayout_
+        ? resourcePath + "/shaders/shader_bindless.frag.spv"
+        : resourcePath + "/shaders/shader.frag.spv";
+    SDL_Log("ScenePipeline: Using %s fragment shader",
+            bindlessTextureSetLayout_ ? "bindless" : "legacy");
+
     VkPipeline rawPipeline = VK_NULL_HANDLE;
     GraphicsPipelineFactory factory(device);
     bool success = factory
         .applyPreset(GraphicsPipelineFactory::Preset::Default)
         .setShaders(resourcePath + "/shaders/shader.vert.spv",
-                    resourcePath + "/shaders/shader.frag.spv")
+                    fragShaderPath)
         .setVertexInput({bindingDescription},
                         {attributeDescriptions.begin(), attributeDescriptions.end()})
         .setRenderPass(hdrRenderPass)

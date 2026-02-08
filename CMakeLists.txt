@@ -682,6 +682,7 @@ if(SHADERS_AVAILABLE)
 set(SHADER_FILES
     ${CMAKE_CURRENT_SOURCE_DIR}/shaders/shader.vert.spv
     ${CMAKE_CURRENT_SOURCE_DIR}/shaders/shader.frag.spv
+    ${CMAKE_CURRENT_SOURCE_DIR}/shaders/shader_bindless.frag.spv
     ${CMAKE_CURRENT_SOURCE_DIR}/shaders/skinned.vert.spv
     ${CMAKE_CURRENT_SOURCE_DIR}/shaders/skinned_shadow.vert.spv
     ${CMAKE_CURRENT_SOURCE_DIR}/shaders/sky.vert.spv
@@ -843,7 +844,7 @@ if(SHADER_COMPILE_CMD)
 
     # Shaders that use bindings.glsl and other includes
     set(SHADERS_WITH_BINDINGS
-        shader.vert shader.frag
+        shader.vert shader.frag shader_bindless.frag
         skinned.vert skinned_shadow.vert
         sky.vert sky.frag
         grass.comp grass_tiled.comp grass_displacement.comp grass.vert grass.frag
@@ -1084,6 +1085,7 @@ if(SHADER_COMPILE_CMD)
     add_custom_target(shaders DEPENDS
         ${CMAKE_CURRENT_SOURCE_DIR}/shaders/shader.vert.spv
         ${CMAKE_CURRENT_SOURCE_DIR}/shaders/shader.frag.spv
+        ${CMAKE_CURRENT_SOURCE_DIR}/shaders/shader_bindless.frag.spv
         ${CMAKE_CURRENT_SOURCE_DIR}/shaders/skinned.vert.spv
         ${CMAKE_CURRENT_SOURCE_DIR}/shaders/skinned_shadow.vert.spv
         ${CMAKE_CURRENT_SOURCE_DIR}/shaders/sky.vert.spv

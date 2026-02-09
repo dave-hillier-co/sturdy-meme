@@ -92,6 +92,7 @@ class TimeSystem;
 class CelestialCalculator;
 class BilateralGridSystem;
 class ScreenSpaceShadowSystem;
+class GodRaysSystem;
 class DeferredTerrainObjects;
 struct EnvironmentSettings;
 struct TerrainConfig;
@@ -162,6 +163,10 @@ public:
     BilateralGridSystem& bilateralGrid() { return *bilateralGridSystem_; }
     const BilateralGridSystem& bilateralGrid() const { return *bilateralGridSystem_; }
     void setBilateralGrid(std::unique_ptr<BilateralGridSystem> system);
+    GodRaysSystem& godRays() { return *godRaysSystem_; }
+    const GodRaysSystem& godRays() const { return *godRaysSystem_; }
+    bool hasGodRays() const { return godRaysSystem_ != nullptr; }
+    void setGodRays(std::unique_ptr<GodRaysSystem> system);
     ShadowSystem& shadow() { return *shadowSystem_; }
     const ShadowSystem& shadow() const { return *shadowSystem_; }
     void setShadow(std::unique_ptr<ShadowSystem> system);
@@ -504,6 +509,7 @@ private:
     std::unique_ptr<PostProcessSystem> postProcessSystem_;
     std::unique_ptr<BloomSystem> bloomSystem_;
     std::unique_ptr<BilateralGridSystem> bilateralGridSystem_;
+    std::unique_ptr<GodRaysSystem> godRaysSystem_;
     std::unique_ptr<ShadowSystem> shadowSystem_;
     std::unique_ptr<TerrainSystem> terrainSystem_;
 

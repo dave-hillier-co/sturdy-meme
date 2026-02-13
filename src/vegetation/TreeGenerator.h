@@ -36,6 +36,7 @@ struct BranchData {
     int sectionCount;
     int segmentCount;
     std::vector<SectionData> sections;
+    float inheritedSwayFactor = 0.0f;  // Cumulative sway from all ancestors (for wind animation)
 };
 
 // Leaf placement data
@@ -100,6 +101,7 @@ private:
         int level;
         int sectionCount;
         int segmentCount;
+        float inheritedSwayFactor = 0.0f;  // Cumulative sway from ancestors
     };
 
     void processBranch(const Branch& branch, const TreeOptions& options,
@@ -107,6 +109,7 @@ private:
 
     void generateChildBranches(int count, int level,
                                const std::vector<SectionData>& sections,
+                               float parentTotalSwayAtTip,  // Parent's total sway factor at branch tip
                                const TreeOptions& options, TreeRNG& rng,
                                std::queue<Branch>& branchQueue);
 

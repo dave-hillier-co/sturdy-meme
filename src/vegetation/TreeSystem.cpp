@@ -289,17 +289,28 @@ bool TreeSystem::generateTreeMesh(const TreeOptions& options, Mesh& branchMesh, 
                     1.0f
                 );
                 // Wind animation data in vertex color:
-                // RGB = pivot point (branch origin) for skeletal rotation
-                // A = branch level (0-0.95 for levels 0-3) for wind intensity
-                // For trunk (level 0), use white RGB so texture renders correctly
-                // Cap alpha at 0.95 to distinguish from default color (1,1,1,1)
+                // R = precomputed total sway factor (inherited + own contribution)
+                // G = pivot point Y (for reference, not used in main sway calc)
+                // B = vertex height (for detail motion)
+                // A = branch level (0-0.95 for levels 0-3) for detail motion
                 float normalizedLevel = static_cast<float>(branch.level) / 3.0f * 0.95f;
-                if (branch.level == 0) {
-                    // Trunk: no wind animation, use white for proper texture rendering
-                    v.color = glm::vec4(1.0f, 1.0f, 1.0f, 0.0f);
-                } else {
-                    v.color = glm::vec4(branch.origin, normalizedLevel);
-                }
+
+                // Compute flexibility for this branch level: 0.04 + level * 0.06
+                float flexibility = 0.04f + static_cast<float>(branch.level) * 0.06f;
+
+                // Use precomputed inherited sway factor from tree generation
+                // This was computed during hierarchy traversal and properly accumulates
+                // all ancestor contributions based on actual branch lengths and positions
+                float inheritedSwayFactor = branch.inheritedSwayFactor;
+
+                // Own sway contribution: (vertexHeight - pivotHeight) * flexibility
+                float vertexHeight = v.position.y;
+                float ownSwayFactor = (vertexHeight - branch.origin.y) * flexibility;
+
+                // Total sway factor for this vertex
+                float totalSwayFactor = inheritedSwayFactor + ownSwayFactor;
+
+                v.color = glm::vec4(totalSwayFactor, branch.origin.y, vertexHeight, normalizedLevel);
 
                 branchVertices.push_back(v);
             }

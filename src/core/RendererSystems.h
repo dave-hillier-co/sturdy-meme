@@ -94,6 +94,8 @@ class BilateralGridSystem;
 class ScreenSpaceShadowSystem;
 class GodRaysSystem;
 class DeferredTerrainObjects;
+class VisibilityBuffer;
+class GPUMaterialBuffer;
 struct EnvironmentSettings;
 struct TerrainConfig;
 
@@ -291,6 +293,18 @@ public:
     const ScreenSpaceShadowSystem* screenSpaceShadow() const { return screenSpaceShadowSystem_.get(); }
     bool hasScreenSpaceShadow() const { return screenSpaceShadowSystem_ != nullptr; }
     void setScreenSpaceShadow(std::unique_ptr<ScreenSpaceShadowSystem> system);
+
+    // Visibility buffer
+    VisibilityBuffer* visibilityBuffer() { return visibilityBuffer_.get(); }
+    const VisibilityBuffer* visibilityBuffer() const { return visibilityBuffer_.get(); }
+    bool hasVisibilityBuffer() const { return visibilityBuffer_ != nullptr; }
+    void setVisibilityBuffer(std::unique_ptr<VisibilityBuffer> system);
+
+    // GPU material buffer
+    GPUMaterialBuffer* gpuMaterialBuffer() { return gpuMaterialBuffer_.get(); }
+    const GPUMaterialBuffer* gpuMaterialBuffer() const { return gpuMaterialBuffer_.get(); }
+    bool hasGPUMaterialBuffer() const { return gpuMaterialBuffer_ != nullptr; }
+    void setGPUMaterialBuffer(std::unique_ptr<GPUMaterialBuffer> buffer);
 
     // Scene and resources
     SceneManager& scene() { return *sceneManager_; }
@@ -565,6 +579,10 @@ private:
 
     // Screen-space shadow buffer
     std::unique_ptr<ScreenSpaceShadowSystem> screenSpaceShadowSystem_;
+
+    // Visibility buffer rendering
+    std::unique_ptr<VisibilityBuffer> visibilityBuffer_;
+    std::unique_ptr<GPUMaterialBuffer> gpuMaterialBuffer_;
 
     // Infrastructure (needed throughout)
     std::unique_ptr<SceneManager> sceneManager_;

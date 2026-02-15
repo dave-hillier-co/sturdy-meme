@@ -7,6 +7,7 @@
 #include "passes/WaterPasses.h"
 #include "passes/HDRPass.h"
 #include "passes/PostPasses.h"
+#include "passes/VisBufferPasses.h"
 
 #include <SDL3/SDL.h>
 
@@ -47,6 +48,9 @@ bool FrameGraphBuilder::build(
     hdrConfig.recordHDRPassSecondarySlot = callbacks.recordHDRPassSecondarySlot;
     auto hdr = HDRPass::addPass(frameGraph, systems, hdrConfig);
 
+    // Visibility buffer resolve pass (material evaluation)
+    auto visBufferIds = VisBufferPasses::addPasses(frameGraph, systems);
+
     // Post passes (HiZ, bloom, bilateral grid, final composite)
     PostPasses::Config postConfig;
     postConfig.guiRenderCallback = callbacks.guiRenderCallback;
@@ -82,12 +86,28 @@ bool FrameGraphBuilder::build(
         frameGraph.addDependency(computeIds.gpuCull, hdr);
     }
 
-    // Post-HDR passes depend on HDR
-    frameGraph.addDependency(hdr, waterIds.ssr);
-    frameGraph.addDependency(hdr, waterIds.waterTileCull);
-    frameGraph.addDependency(hdr, postIds.hiZ);
-    frameGraph.addDependency(hdr, postIds.bilateralGrid);
-    frameGraph.addDependency(hdr, postIds.godRays);
+    // V-buffer raster pass depends on Compute (needs UBO updated with view/proj)
+    if (visBufferIds.raster != FrameGraph::INVALID_PASS) {
+        frameGraph.addDependency(computeIds.compute, visBufferIds.raster);
+    }
+
+    // V-buffer resolve depends on raster pass (needs V-buffer populated)
+    // and HDR pass (resolve overlays onto the HDR target)
+    if (visBufferIds.resolve != FrameGraph::INVALID_PASS) {
+        if (visBufferIds.raster != FrameGraph::INVALID_PASS) {
+            frameGraph.addDependency(visBufferIds.raster, visBufferIds.resolve);
+        }
+        frameGraph.addDependency(hdr, visBufferIds.resolve);
+    }
+
+    // Post-HDR passes depend on HDR (and VisBuffer resolve if active)
+    FrameGraph::PassId postDep = (visBufferIds.resolve != FrameGraph::INVALID_PASS)
+        ? visBufferIds.resolve : hdr;
+    frameGraph.addDependency(postDep, waterIds.ssr);
+    frameGraph.addDependency(postDep, waterIds.waterTileCull);
+    frameGraph.addDependency(postDep, postIds.hiZ);
+    frameGraph.addDependency(postDep, postIds.bilateralGrid);
+    frameGraph.addDependency(postDep, postIds.godRays);
 
     // Bloom depends on HiZ
     frameGraph.addDependency(postIds.hiZ, postIds.bloom);

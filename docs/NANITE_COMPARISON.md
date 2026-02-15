@@ -1,12 +1,12 @@
 # Engine vs. Nanite: Architectural Review
 
-A comparison of this engine's rendering architecture against Unreal Engine 5's Nanite virtualized geometry system, identifying strengths, gaps, and what adoption of Nanite-like techniques would require.
+A comparison of this engine's rendering architecture against Unreal Engine 5's Nanite virtualized geometry system, based on actual source code review.
 
 ## Overview
 
-Nanite is UE5's GPU-driven virtualized geometry system that renders pixel-scale detail for scenes with billions of triangles. Its core idea: decompose all static geometry into ~128-triangle **clusters** organized in a **DAG** (directed acyclic graph), then perform **per-cluster LOD selection, culling, and rasterization entirely on the GPU**. Materials are evaluated after visibility is determined, via a **visibility buffer** that decouples geometry from shading.
+Nanite decomposes all static geometry into ~128-triangle **clusters** organized in a **DAG**, then performs per-cluster LOD selection, culling, and rasterization entirely on the GPU. Materials are evaluated after visibility is determined via a **visibility buffer**.
 
-This engine uses a more traditional architecture with some modern GPU-driven elements. The comparison below evaluates each major subsystem.
+This engine has implemented the core architectural skeleton of a Nanite-like pipeline: mesh clustering with DAG hierarchy, GPU-driven LOD selection, two-pass occlusion culling, normal cone backface culling, and a visibility buffer with compute material resolve. The comparison below evaluates how each subsystem compares to Nanite's production implementation.
 
 ---
 
@@ -14,61 +14,158 @@ This engine uses a more traditional architecture with some modern GPU-driven ele
 
 | Aspect | This Engine | Nanite |
 |---|---|---|
-| **Mesh format** | Traditional vertex/index buffers (60 bytes/vertex) | ~128-triangle clusters in a DAG (~14.4 bytes/triangle) |
-| **Organization** | Per-object mesh with AABB | Clusters grouped hierarchically via METIS graph partitioning |
-| **Compression** | None — raw vertex data | Quantized positions, no stored tangents, specialized encoding |
+| **Cluster format** | `MeshCluster`: 64-128 triangles, bounding sphere, AABB, normal cone, DAG links (`MeshClusterBuilder.h:22-51`) | ~128 triangles, bounding sphere with monotonic error, DAG links |
+| **Hierarchy** | DAG built via `buildWithDAG()` — spatial grouping (2-4 clusters/group), meshoptimizer simplification (`MeshClusterBuilder.h:120-122`) | DAG via METIS graph partitioning, boundary-locked edge collapse |
+| **Error metric** | Per-cluster `error` and `parentError` in object space, projected to screen in `cluster_select.comp` | Per-cluster/group object-space error, projected via bounding sphere |
+| **Global buffers** | `GPUClusterBuffer` — single vertex/index/cluster SSBO for all meshes (`MeshClusterBuilder.h:169-227`) | Global vertex/index pages with GPU-resident page table |
+| **Vertex format** | 60 bytes/vertex (vec3 pos, vec3 normal, vec2 uv, vec4 tangent, vec4 color) | ~14.4 bytes/triangle (quantized positions, no stored tangents) |
+| **Partitioning** | Spatial grouping heuristic (`groupClustersSpatially`) | METIS graph partitioning minimizing edge-cut |
 
-**Gap**: The engine uses conventional per-object meshes. Nanite's fundamental innovation is the cluster DAG — everything else (per-cluster LOD, per-cluster culling, software rasterization) flows from this representation. This is the single largest architectural difference.
+**What's implemented**: The engine has the fundamental cluster+DAG representation. `MeshClusterBuilder::build()` creates flat clusters; `buildWithDAG()` iteratively groups and simplifies into coarser parents using meshoptimizer. `GPUClusterBuffer` manages global SSBOs for all clustered meshes.
 
-**What it would take**: An offline mesh preprocessing pipeline that partitions meshes into clusters via graph partitioning (METIS), builds a simplification hierarchy with boundary-locked edge collapse, and stores the result as a DAG with monotonic error metrics. This is a substantial tooling effort.
+**Gaps vs. Nanite**:
+- **Partitioning quality**: Spatial grouping vs. METIS graph partitioning. METIS minimizes boundary edges between clusters, which directly determines crack-free LOD transition quality. Spatial grouping is a reasonable approximation but produces more boundary edges.
+- **Boundary-locked simplification**: Nanite locks vertices shared between clusters during edge collapse, ensuring adjacent LOD levels share boundary vertices exactly. The engine uses meshoptimizer's generic simplification — it doesn't lock boundary vertices, which can introduce T-junctions at LOD transitions.
+- **Compression**: 60 bytes/vertex vs ~14.4 bytes/triangle. Nanite quantizes positions relative to cluster bounds, derives tangents in the pixel shader, and uses specialized index encoding. The engine stores full uncompressed attributes.
+- **Error monotonicity**: Nanite ensures error metrics are strictly monotonic through the DAG by taking bounding sphere unions at each level. The engine stores `error` and `parentError` but the monotonicity guarantee depends on the simplification producing increasing error at each level — not explicitly enforced.
 
 ---
 
 ## 2. LOD System
 
-| Aspect | This Engine | Nanite |
-|---|---|---|
-| **Terrain LOD** | CBT adaptive subdivision (depth 6–28), screen-space metric, temporal spreading | N/A (Nanite targets meshes, not heightmap terrain) |
-| **Mesh LOD** | `CharacterLODSystem` (distance-based discrete), `TreeLODSystem` (geometry→billboard) | Continuous per-cluster LOD via DAG cut; ~1px error threshold |
-| **Transitions** | IGN dithering + temporal variation for cross-fade | Seamless — boundary vertices locked during simplification, no popping |
-| **Granularity** | Per-object | Per-cluster (~128 triangles) |
+### Cluster DAG LOD Selection
 
-**Engine strength**: The terrain CBT system is excellent and more appropriate for heightmap terrain than Nanite would be. Nanite's cluster hierarchy assumes arbitrary mesh topology. Screen-space adaptive subdivision with split/merge hysteresis is well-engineered.
+**File**: `shaders/cluster_select.comp`
 
-**Gap**: For non-terrain meshes, the engine uses traditional discrete LOD with per-object swaps. Nanite's continuous per-cluster LOD means different parts of the same object can be at different detail levels simultaneously, and transitions are crack-free by construction (boundary vertices are locked during simplification). The dithering cross-fade is a reasonable approximation but is perceptible as noise.
+The engine implements Nanite's DAG-cut LOD selection on the GPU:
+
+```
+selected = myScreenError <= threshold && parentScreenError > threshold
+```
+
+Each compute thread evaluates one cluster. Screen-space error projection (`projectErrorToScreen` in `cull_compute_common.glsl:96-111`) uses the standard formula: `(objectError * screenHeight * 0.5) / clipW`. Default threshold is 1.0 pixel (`TwoPassCuller.h:228`).
+
+Leaf handling: leaves are selected when reached (`!parentErrorOk || myErrorOk`), internal nodes only when they're on the cut (`myErrorOk && !parentErrorOk`).
+
+**What matches Nanite**: Core selection algorithm, screen-space error projection, configurable pixel threshold.
+
+**Gaps**:
+- **Traversal strategy**: The engine dispatches one thread per cluster in the entire DAG and each thread independently evaluates its selection criterion. Nanite uses a **persistent-thread work queue** traversal — starting from root nodes and recursively enqueuing children — which avoids evaluating clusters deep in the hierarchy that will never be reached. For deep DAGs this is significantly more efficient.
+- **Instance support**: The engine uses `meshId` as a crude instance index (`cluster_select.comp:91`). Nanite handles millions of instances — each (cluster, instance) pair is independently evaluated.
+
+### Terrain LOD (CBT)
+
+**Files**: `shaders/terrain/terrain_subdivision.comp`, `src/terrain/TerrainCBT.h`
+
+This has no Nanite equivalent and is a strength. Concurrent Binary Tree adaptive subdivision with:
+- Screen-space edge length metric with curvature adaptation
+- Split/merge hysteresis (`SPLIT_THRESHOLD`, `MERGE_THRESHOLD`)
+- Temporal spreading for deep triangles across frames
+- Inline frustum culling
+- Tile cache integration (high-res tiles near camera, coarse fallback far)
+
+Nanite explicitly doesn't target heightmap terrain — its cluster topology assumes arbitrary meshes.
+
+### Tree LOD
+
+**Files**: `shaders/tree_impostor_cull.comp`, `shaders/tree_cell_cull.comp`
+
+Two-tier: spatial cell culling → per-tree screen-space error LOD with geometry/impostor/culled tiers. Smooth blend via `smoothstep`, temporal coherence modes, visibility bit cache. This is a specialized LOD system for vegetation that Nanite also doesn't handle well (foliage is one of Nanite's known limitations).
+
+### LOD Transitions
+
+**File**: `shaders/dither_common.glsl`
+
+Interleaved Gradient Noise dithered crossfade with temporal variant for TAA. This is the standard approach when LOD levels don't share boundary vertices. Nanite avoids needing transitions entirely because boundary locking guarantees watertight seams between adjacent LOD levels.
 
 ---
 
 ## 3. Culling
 
-| Aspect | This Engine | Nanite |
-|---|---|---|
-| **Frustum culling** | GPU compute (`GPUCullPass`), per-object AABB/sphere | GPU compute, per-instance then per-cluster |
-| **Occlusion culling** | Hi-Z pyramid, single-pass | Two-pass HZB: previous-frame HZB → rasterize → new HZB → re-test |
-| **Backface culling** | Standard pipeline | GPU compute per-cluster (entire cluster rejected if back-facing) |
-| **Granularity** | Per-object (~8K object limit) | Per-cluster (~128 triangles) |
+### Two-Pass Occlusion Culling
 
-**Engine strength**: Working GPU-driven Hi-Z occlusion culling is the right foundation. Tree impostor culling via Hi-Z is a nice specialization.
+**Files**: `src/visibility/TwoPassCuller.h`, `shaders/cluster_cull.comp`
+
+This directly implements Nanite's two-pass approach:
+
+**Pass 1** (`passIndex == 0`): Test clusters that were visible last frame (`prevVisibleClusters[]`). High hit rate — most clusters visible last frame are still visible. Render these, build Hi-Z pyramid from resulting depth.
+
+**Pass 2** (`passIndex == 1`): Test remaining clusters against the new Hi-Z. Catches newly visible clusters (disocclusion from camera movement).
+
+Double-buffered visible cluster lists (`visibleClusterBuffers_` / `prevVisibleClusterBuffers_`) with `swapBuffers()` at end of frame.
+
+**What matches Nanite**: The overall two-pass strategy, temporal visible list ping-pong, per-pass indirect draw generation.
 
 **Gaps**:
-1. **Granularity**: A large building 90% behind a wall still renders fully in this engine. Nanite culls individual clusters, saving the 90%.
-2. **Two-pass HZB**: Nanite uses last frame's HZB as a starting point, rasterizes against it, builds a new HZB, then re-tests previously-occluded objects. This catches significantly more occlusion than a single-pass approach. Could be implemented independently of the cluster system.
+- **Pass 2 skip set**: `cluster_cull.comp:123-126` iterates all clusters in pass 2 rather than skipping those already tested in pass 1. Nanite tracks which clusters were tested vs. untested to avoid redundant work.
+
+### Per-Cluster Culling Tests
+
+**File**: `shaders/cluster_cull.comp:112-209`
+
+Each thread performs in sequence:
+1. **Sphere frustum test** (`isSphereInFrustum`) — fast rejection
+2. **AABB frustum test** (`isAABBInFrustum`) — precise test on all 6 planes
+3. **Hi-Z occlusion test** (`hizOcclusionTestAABB`) — project AABB to screen rect, choose mip level covering ~2x2 texels, sample Hi-Z center, compare depth
+4. **Normal cone backface test** (`dot(viewDir, worldConeAxis) > coneAngle`) — reject entire cluster if all normals face away
+
+Output: `VkDrawIndexedIndirectCommand` via subgroup-batched atomics, plus visible cluster ID for next frame.
+
+**What matches Nanite**: All four test types match (frustum sphere/AABB, Hi-Z occlusion, normal cone backface). Subgroup ballot batching reduces atomic contention by ~32x.
+
+**Gaps**:
+- **Hi-Z sampling**: Single center-point sample of the projected AABB rectangle. Nanite samples multiple points or uses conservative bounds. A single center sample can miss occluders that don't cover the AABB center.
+- **AABB transform**: `cluster_cull.comp:150-155` transforms only min/max corners and takes component-wise min/max. This is only correct for axis-aligned transforms. For rotated instances, the 8-corner AABB should be transformed and re-bounded. The Hi-Z common code (`hiz_occlusion_common.glsl:20-53`) does correctly transform all 8 corners for the screen-space projection.
+
+### Hi-Z Pyramid
+
+**Files**: `src/postprocess/HiZSystem.h`, `shaders/hiz_downsample.comp`
+
+- Format: `R32_SFLOAT`, reversed-Z (min of 2x2 = farthest = conservative for occlusion)
+- Per-mip compute dispatch with push constants
+- Edge handling for odd-sized source mips
+
+This is solid. The `MipChainBuilder` with per-mip views and the reversed-Z convention are correct.
+
+### Per-Object Culling (Legacy Path)
+
+**Files**: `src/culling/GPUCullPass.h`, `shaders/scene_cull.comp`
+
+Separate system for non-clustered objects: per-object sphere+AABB frustum test, Hi-Z occlusion, indirect draw generation. Max 8192 objects. This coexists with the cluster path.
 
 ---
 
 ## 4. Rasterization
 
-| Aspect | This Engine | Nanite |
-|---|---|---|
-| **Approach** | Standard hardware rasterization (`vkCmdDrawIndexed`, `vkCmdDrawIndexedIndirectCount`) | Hybrid: software rasterizer (compute) for small triangles + hardware for large |
-| **Visibility buffer** | None — writes directly to render targets | 64-bit per pixel (depth + cluster ID + triangle ID) |
-| **Material evaluation** | Coupled with rasterization in the same draw call | Fully decoupled: rasterize visibility, then evaluate materials per-pixel |
+### Visibility Buffer
 
-**Gap**: This is the second major architectural difference.
+**Files**: `src/visibility/VisibilityBuffer.h`, `shaders/visbuf.vert`, `shaders/visbuf.frag`, `shaders/visbuf_resolve.comp`
 
-Nanite's **software rasterizer** (a compute shader doing scan-line rasterization with 64-bit atomics) is ~3x faster than hardware for sub-pixel triangles because it avoids the GPU's 2x2 quad overhead. Over 90% of Nanite clusters are software-rasterized.
+**Phase 1 — V-Buffer Rasterization** (hardware):
+- Render target: `R32_UINT` (32-bit unsigned integer)
+- Packing: `(instanceId << 23) | (triangleId & 0x7FFFFF)` — 9 bits instance (512 max), 23 bits triangle (~8M max)
+- Vertex shader: minimal transform via push constants (`model`, `instanceId`, `triangleOffset`)
+- Fragment shader: packs `gl_PrimitiveID + triangleOffset` with `instanceId`
+- Alpha test support for masked materials (foliage)
 
-The **visibility buffer** decouples geometry from materials entirely. The engine's traditional approach binds a material and rasterizes geometry together per draw. A visibility buffer pass would be a significant pipeline change but would eliminate overdraw and enable material evaluation only for visible pixels.
+**Phase 2 — Compute Material Resolve** (`visbuf_resolve.comp`):
+- 8x8 workgroups
+- Unpacks instanceId + triangleId from V-buffer
+- Fetches 3 vertex indices from global index SSBO
+- Fetches vertex data from global vertex SSBO (`PackedVertex`: pos+u, normal+v, tangent, color)
+- Reconstructs world position from instance transform
+- Computes perspective-correct barycentrics (screen-space projection + 1/w correction)
+- Interpolates normals and UVs
+- Evaluates simplified directional light PBR
+- Writes to RGBA16F HDR output
+
+**What matches Nanite**: Two-phase architecture (rasterize IDs → resolve materials), global vertex/index SSBOs, per-pixel barycentric reconstruction, decoupled geometry/material evaluation.
+
+**Gaps**:
+- **V-buffer width**: 32-bit vs Nanite's 64-bit. The 9-bit instance limit (512) and 23-bit triangle limit (~8M) are restrictive. Nanite uses 30 bits depth + 27 bits cluster + 7 bits triangle ID. The 64-bit format allows depth testing in the same atomic, enabling software rasterization.
+- **Software rasterizer**: Not implemented. This is Nanite's biggest performance win — a compute shader that does scan-line rasterization with 64-bit atomic compare-and-swap, ~3x faster than hardware for sub-pixel triangles (which are 90%+ of clusters in a Nanite scene). The engine uses hardware rasterization exclusively.
+- **Material sort/binning**: The resolve shader evaluates a single inline PBR model for all pixels. Nanite classifies pixels into 64x64 tiles by material, then dispatches a per-material full-screen pass that evaluates only relevant tiles. This enables full UE material graph evaluation without wasting work on non-matching pixels.
+- **Texture sampling**: The resolve shader uses a hardcoded `vec3(0.8)` base color. No texture atlas or bindless texture access for actual material evaluation.
 
 ---
 
@@ -76,14 +173,16 @@ The **visibility buffer** decouples geometry from materials entirely. The engine
 
 | Aspect | This Engine | Nanite |
 |---|---|---|
-| **CPU involvement** | Material sorting + descriptor set binding per draw; GPU indirect optional | Zero CPU draw calls — entirely GPU-driven |
-| **Indirect draws** | `vkCmdDrawIndexedIndirectCount` for GPU-culled objects | Compute dispatch lists per raster bin |
-| **Batching** | Material-sorted, per-(mesh, material) pair | Raster bins by material; one dispatch per bin |
-| **Scale** | ~8K objects before degradation | 16M instances, billions of triangles |
+| **Cluster path** | `cluster_select.comp` → `cluster_cull.comp` → `VkDrawIndexedIndirectCommand[]` → hardware rasterize | DAG traversal → cluster cull → raster bin sort → software/hardware rasterize dispatch |
+| **Object path** | `GPUSceneBuffer` → `scene_cull.comp` → `vkCmdDrawIndexedIndirectCount` | N/A (everything is clusters) |
+| **Instance limit** | 512 (9-bit V-buffer packing) for cluster path; 8192 for object path | 16M instances |
+| **Subgroup optimization** | Yes — ballot + broadcast for batched atomics in all cull shaders | Yes — similar wave-level batching |
 
-**Engine strength**: The GPU-driven indirect draw path (`GPUSceneBuffer` → `GPUCullPass` → indirect draw) is the right direction and the foundation that Nanite builds on.
+**What matches Nanite**: The cluster pipeline (LOD select → cull → indirect draw) is the correct sequence. Subgroup-batched atomics throughout. Global vertex/index buffers.
 
-**Gap**: The ~8K object limit reflects per-object granularity. Nanite's cluster-based approach has much smaller work units but the GPU handles dispatch internally. The shift needed: from "GPU culls objects, CPU issues indirect draws" to "GPU culls clusters, GPU dispatches rasterization."
+**Gaps**:
+- **Two separate paths**: The engine maintains both a cluster path (`TwoPassCuller` + `VisibilityBuffer`) and an object path (`GPUCullPass` + `GPUSceneBuffer`). Nanite has a single unified cluster path. The dual-path adds complexity and the non-cluster path becomes the bottleneck.
+- **Per-draw push constants**: The V-buffer rasterization pass uses push constants per draw (`model`, `instanceId`, `triangleOffset`). Nanite avoids per-draw CPU state by fetching all instance data from SSBOs using the indirect draw's `firstInstance` field.
 
 ---
 
@@ -91,13 +190,14 @@ The **visibility buffer** decouples geometry from materials entirely. The engine
 
 | Aspect | This Engine | Nanite |
 |---|---|---|
-| **Terrain** | Tile-based streaming with async transfer (LOD tiles, load/unload radii) | N/A for terrain |
-| **Mesh data** | All mesh data resident in GPU memory | Page-based streaming — only visible cluster pages loaded |
+| **Terrain** | Tile-based streaming with tile cache, async transfer, load/unload radii (`TerrainTileCache.h`) | N/A for terrain |
+| **Mesh data** | `GPUClusterBuffer` — fully resident | Page-based streaming, only visible clusters loaded, SSD-optimized |
 | **Textures** | `AsyncTextureUploader` with non-blocking uploads | Virtual texturing (separate system) |
+| **Virtual textures** | Implemented: 8192px virtual, 128px tiles, 2048px cache, 6 mip levels (`VirtualTextureSystem.h`) | Similar |
 
-**Engine strength**: Terrain tile streaming with async transfers on a dedicated queue is well-designed and mirrors virtual texturing concepts.
+**Engine strengths**: The terrain tile cache (high-res tiles near camera in a 2D texture array, per-tile metadata, cooperative loading with yield callback) and virtual texture system are well-designed streaming systems. The `AsyncTransferManager` with dedicated transfer queue is the right pattern.
 
-**Gap**: Mesh geometry is fully resident. Nanite streams cluster pages on demand, keeping only the hierarchy metadata always in memory. Essential for billion-triangle scenes but not needed at the engine's current scale.
+**Gap**: Mesh cluster data is fully resident in GPU memory. Nanite streams cluster pages on demand — the hierarchy metadata is always resident but actual vertex/index data is loaded per-page as needed. This is essential for billion-triangle scenes but not needed at the engine's current scale.
 
 ---
 
@@ -105,72 +205,70 @@ The **visibility buffer** decouples geometry from materials entirely. The engine
 
 | Aspect | This Engine | Nanite |
 |---|---|---|
-| **Approach** | 4-cascade shadow maps with per-cascade frustum culling | Virtual Shadow Maps (16K x 16K virtual, page-based) |
-| **Resolution** | Fixed cascades | Per-page allocation matching screen-space detail |
-| **Rendering** | Separate shadow pass with depth-only shaders | Reuses Nanite cluster culling/rasterization from light perspective |
+| **Approach** | 4-cascade CSM, 2048x2048 per cascade, lambda PSSM splits (`ShadowSystem.h`) | Virtual Shadow Maps (16K x 16K virtual, page-based, ~300px/m near camera) |
+| **Per-cascade culling** | Compute callback before each cascade for GPU culling | Reuses cluster cull/rasterize from light perspective |
+| **Dynamic lights** | Point (cubemap) + spot (2D) shadow arrays, 1024x1024, max 8 lights | VSMs for all light types |
 
-**Gap**: Virtual Shadow Maps are tightly coupled with Nanite — they reuse the same infrastructure from the light's perspective. The engine's cascaded shadow maps are traditional but functional. VSMs would only make sense after a cluster-based geometry system is in place.
-
----
-
-## What the Engine Does Well
-
-1. **Terrain system** — CBT adaptive subdivision is arguably better for heightmap terrain than Nanite. Screen-space LOD with hysteresis and temporal spreading is solid.
-2. **GPU-driven foundation** — Hi-Z culling, indirect draws, GPU scene buffers, and compute-driven culling are the infrastructure Nanite builds on.
-3. **Async infrastructure** — Dedicated transfer queues, async texture uploads, and tile streaming show the right patterns for a streaming system.
-4. **Frame graph** — Dependency-driven parallel render pass execution supports the additional compute passes a Nanite-like system would need.
-5. **Multi-threaded command recording** — Per-thread command pools with secondary command buffers demonstrate the parallel recording patterns needed at scale.
+**Gap**: Virtual Shadow Maps are tightly coupled to the cluster pipeline — they rasterize the same clusters from the light's perspective into a virtual page table. The engine's CSM is the traditional approach. VSMs would require the cluster rasterization pipeline to be reusable from arbitrary viewpoints.
 
 ---
 
-## Adoption Roadmap
+## Summary: What's Implemented vs. Nanite
 
-If Nanite-like rendering were a goal, here's the dependency chain:
+| Nanite Feature | Engine Status | Key File(s) |
+|---|---|---|
+| Mesh clustering (64-128 tri) | **Implemented** | `MeshClusterBuilder.h` |
+| DAG hierarchy + simplification | **Implemented** (meshoptimizer, spatial grouping) | `MeshClusterBuilder::buildWithDAG()` |
+| GPU DAG LOD selection | **Implemented** | `cluster_select.comp` |
+| Screen-space error projection | **Implemented** | `cull_compute_common.glsl:96-111` |
+| Two-pass temporal occlusion culling | **Implemented** | `TwoPassCuller.h`, `cluster_cull.comp` |
+| Hi-Z pyramid | **Implemented** | `HiZSystem.h`, `hiz_downsample.comp` |
+| Normal cone backface culling | **Implemented** | `cluster_cull.comp:170-178` |
+| Visibility buffer | **Implemented** (32-bit) | `VisibilityBuffer.h`, `visbuf.frag` |
+| Compute material resolve | **Implemented** (simplified PBR) | `visbuf_resolve.comp` |
+| Subgroup-batched atomics | **Implemented** | All cull shaders |
+| Global vertex/index SSBOs | **Implemented** | `GPUClusterBuffer` |
+| METIS graph partitioning | **Not implemented** — spatial grouping instead | — |
+| Boundary-locked simplification | **Not implemented** — generic meshoptimizer | — |
+| Software rasterizer | **Not implemented** | — |
+| 64-bit visibility buffer | **Not implemented** — 32-bit | — |
+| Material tile classification | **Not implemented** — inline resolve | — |
+| Cluster streaming | **Not implemented** — fully resident | — |
+| Virtual shadow maps | **Not implemented** — CSM | — |
+| Persistent-thread DAG traversal | **Not implemented** — flat dispatch | — |
 
-### Phase 1: Cluster Mesh Representation (prerequisite for everything)
-- Offline mesh decomposition into ~128-triangle clusters
-- DAG hierarchy with boundary-locked edge-collapse simplification
-- Screen-space error metrics per cluster/group
-- New on-disk format and asset pipeline
+---
 
-### Phase 2: GPU DAG Traversal and Per-Cluster Culling
-- Extend `GPUCullPass` from per-object to per-cluster
-- Persistent-thread BVH traversal in compute
-- Combined LOD selection + occlusion test in a single dispatch
+## Remaining Gaps: Priority Order
 
-### Phase 3: Visibility Buffer
-- 64-bit atomic visibility buffer (depth + cluster ID + triangle ID)
-- Deferred material classification (tile-based)
-- Per-material full-screen evaluation pass into GBuffer
-- Existing deferred lighting continues unchanged downstream
+### 1. Software Rasterizer (highest impact)
+Nanite's biggest performance innovation. A compute shader performing scan-line rasterization with 64-bit atomic compare-and-swap. For sub-pixel triangles (which dominate at Nanite detail levels), this is ~3x faster than hardware rasterization because it avoids 2x2 quad overhead. Would require upgrading V-buffer to 64-bit and implementing a per-cluster size classifier to route small clusters to the software path and large clusters to hardware.
 
-### Phase 4: Software Rasterizer
-- Compute shader scan-line rasterization for small-triangle clusters
-- 64-bit atomic compare-and-swap writes to visibility buffer
-- Hybrid decision: clusters below ~32px edge size → software path
-- Coordinate with hardware path via raster bins
+### 2. Boundary-Locked Simplification
+The current meshoptimizer simplification can introduce T-junctions between adjacent LOD levels, causing visible cracks at LOD transitions. Nanite locks boundary vertices (those shared between clusters in a group) during edge collapse, guaranteeing watertight seams. This requires identifying shared boundary vertices before simplification and passing them as locked constraints.
 
-### Phase 5: Two-Pass HZB (can be done independently after Phase 2)
-- Extend existing `HiZSystem` to retain previous-frame HZB
-- Pass 1: cull against previous HZB, rasterize, build new HZB
-- Pass 2: re-test previously-occluded instances/clusters against new HZB
+### 3. METIS Graph Partitioning
+Spatial grouping produces more boundary edges than graph partitioning, reducing the quality of the LOD hierarchy (more constrained vertices means less simplification freedom). Integrating METIS (or meshoptimizer's `meshopt_buildMeshlets` which does something similar) for initial cluster construction would improve both cluster quality and simplification ratios.
 
-### Phase 6: Cluster Streaming (optimization, only needed at scale)
-- Pack clusters into streamable pages
-- Keep hierarchy always resident, stream vertex/index data on demand
-- Extend `AsyncTransferManager` patterns to mesh pages
+### 4. Persistent-Thread DAG Traversal
+The current flat dispatch (one thread per cluster in the entire DAG) evaluates every cluster in the hierarchy regardless of whether it will be reached. Nanite uses a work-queue approach starting from root nodes, only descending into children when the parent error exceeds the threshold. For deep hierarchies this avoids significant wasted compute.
 
-### Phase 7: Virtual Shadow Maps (optional, coupled to cluster system)
-- Page-based shadow map allocation
-- Reuse cluster rasterization from light perspective
-- Replace cascaded shadow maps
+### 5. Material System Integration
+The resolve shader currently evaluates a single hardcoded PBR model. A production system needs either bindless textures or a material tile classification pass (à la Nanite's 64x64 tile material IDs → per-material fullscreen dispatch) to support diverse materials efficiently.
 
-**Phases 1–2 are the critical path.** The engine's existing GPU culling and indirect draw infrastructure means Phases 3–5 are evolutionary. Phases 6–7 are optimizations relevant only at massive scale.
+### 6. 64-bit V-Buffer + Instance Scalability
+The 9-bit instance / 23-bit triangle packing limits the system to 512 instances. Nanite's 64-bit buffer (30-bit depth + 27-bit cluster + 7-bit triangle) supports much larger scenes and integrates depth testing into the atomic write, which is essential for software rasterization.
+
+### 7. Cluster Streaming (scale-dependent)
+Only needed when total geometry exceeds GPU memory budget. The `AsyncTransferManager` and tile cache patterns could be extended to stream cluster pages.
+
+### 8. Virtual Shadow Maps (optional)
+Would replace CSM with per-page shadow allocation reusing the cluster pipeline from the light's perspective. Only makes sense after the cluster pipeline is the primary rendering path.
 
 ---
 
 ## Conclusion
 
-The engine is well-positioned for selective adoption of Nanite concepts. The terrain system already demonstrates adaptive GPU-driven LOD that in some ways exceeds what Nanite offers for heightmap geometry. The GPU culling pipeline, indirect draws, Hi-Z system, and async transfer infrastructure are the correct foundations.
+The engine has already implemented the core Nanite architecture: cluster DAG representation, GPU LOD selection via screen-space error, two-pass temporal occlusion culling, normal cone backface culling, and a visibility buffer with compute material resolve. This is significantly further along than a traditional renderer.
 
-The largest gaps — cluster mesh representation and the visibility buffer — are architectural choices that would require significant new systems rather than incremental improvements to existing ones. A pragmatic approach would be to adopt the **two-pass HZB** (independent of clusters, immediate culling improvement) and explore **cluster-based representation for static meshes** as the first steps toward Nanite-like capabilities.
+The remaining gaps fall into two categories: **quality** (boundary-locked simplification, METIS partitioning — needed for crack-free LOD transitions) and **performance at scale** (software rasterizer, persistent-thread traversal, 64-bit V-buffer, streaming). The software rasterizer is the single largest performance gap and the primary reason Nanite achieves its headline numbers. The simplification quality is the most important correctness gap.

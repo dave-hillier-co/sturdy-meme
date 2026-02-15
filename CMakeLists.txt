@@ -175,6 +175,9 @@ set(SOURCES
     # GPU Culling
     src/core/GPUSceneBuffer.cpp
     src/culling/GPUCullPass.cpp
+    src/visibility/VisibilityBuffer.cpp
+    src/visibility/MeshClusterBuilder.cpp
+    src/visibility/TwoPassCuller.cpp
     # Lighting
     src/lighting/FroxelSystem.cpp
     src/lighting/ShadowSystem.cpp
@@ -305,6 +308,7 @@ target_include_directories(${PROJECT_NAME} PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src/terrain
     ${CMAKE_CURRENT_SOURCE_DIR}/src/terrain/virtual_texture
     ${CMAKE_CURRENT_SOURCE_DIR}/src/vegetation
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/visibility
     ${CMAKE_CURRENT_SOURCE_DIR}/src/water
     ${CMAKE_CURRENT_SOURCE_DIR}/generated
     ${CMAKE_CURRENT_SOURCE_DIR}  # For shaders/bindings.h
@@ -768,6 +772,12 @@ set(SHADER_FILES
     ${CMAKE_CURRENT_SOURCE_DIR}/shaders/bloom_upsample_compute.comp.spv
     ${CMAKE_CURRENT_SOURCE_DIR}/shaders/bloom_spd.comp.spv
     ${CMAKE_CURRENT_SOURCE_DIR}/shaders/godrays_compute.comp.spv
+    ${CMAKE_CURRENT_SOURCE_DIR}/shaders/visbuf.vert.spv
+    ${CMAKE_CURRENT_SOURCE_DIR}/shaders/visbuf.frag.spv
+    ${CMAKE_CURRENT_SOURCE_DIR}/shaders/visbuf_debug.vert.spv
+    ${CMAKE_CURRENT_SOURCE_DIR}/shaders/visbuf_debug.frag.spv
+    ${CMAKE_CURRENT_SOURCE_DIR}/shaders/visbuf_resolve.comp.spv
+    ${CMAKE_CURRENT_SOURCE_DIR}/shaders/cluster_cull.comp.spv
 )
 
 set(TERRAIN_SHADER_FILES
@@ -835,6 +845,7 @@ if(SHADER_COMPILE_CMD)
         hiz_downsample.comp
         debug_line.vert debug_line.frag
         loading.vert loading.frag
+        visbuf_debug.vert
     )
 
     foreach(SHADER ${SIMPLE_SHADERS})
@@ -874,6 +885,10 @@ if(SHADER_COMPILE_CMD)
         hiz_culling.comp
         scene_cull.comp
         bloom_compute.comp bloom_upsample_compute.comp bloom_spd.comp godrays_compute.comp
+        visbuf.vert visbuf.frag
+        visbuf_debug.frag
+        visbuf_resolve.comp
+        cluster_cull.comp
     )
 
     foreach(SHADER ${SHADERS_WITH_BINDINGS})

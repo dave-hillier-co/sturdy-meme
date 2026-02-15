@@ -31,6 +31,7 @@
 #include "CloudShadowSystem.h"
 #include "HiZSystem.h"
 #include "ScreenSpaceShadowSystem.h"
+#include "VisibilityBuffer.h"
 #include "GPUSceneBuffer.h"
 #include "culling/GPUCullPass.h"
 #include "WaterSystem.h"
@@ -187,6 +188,10 @@ void RendererSystems::setGPUCullPass(std::unique_ptr<GPUCullPass> pass) {
 
 void RendererSystems::setScreenSpaceShadow(std::unique_ptr<ScreenSpaceShadowSystem> system) {
     screenSpaceShadowSystem_ = std::move(system);
+}
+
+void RendererSystems::setVisibilityBuffer(std::unique_ptr<VisibilityBuffer> system) {
+    visibilityBuffer_ = std::move(system);
 }
 
 void RendererSystems::setSky(std::unique_ptr<SkySystem> system) {

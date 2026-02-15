@@ -499,6 +499,22 @@
 #define BINDING_TERRAIN_SCREEN_SHADOW     31   // Terrain set: screen-space shadow buffer
 
 // =============================================================================
+// Visibility Buffer Descriptor Set (compute resolve pass)
+// =============================================================================
+#define BINDING_VISBUF_VISIBILITY          0   // Visibility buffer (uimage2D, R32UI)
+#define BINDING_VISBUF_DEPTH               1   // Depth buffer (sampler2D)
+#define BINDING_VISBUF_HDR_OUTPUT          2   // HDR output (image2D, RGBA16F)
+#define BINDING_VISBUF_VERTEX_BUFFER       3   // Global vertex buffer (SSBO)
+#define BINDING_VISBUF_INDEX_BUFFER        4   // Global index buffer (SSBO)
+#define BINDING_VISBUF_INSTANCE_BUFFER     5   // Instance data (SSBO)
+#define BINDING_VISBUF_MATERIAL_BUFFER     6   // Material data (SSBO)
+#define BINDING_VISBUF_UNIFORMS            7   // Resolve uniforms (UBO)
+
+// Visibility Buffer Debug Visualization (fullscreen pass)
+#define BINDING_VISBUF_DEBUG_INPUT         0   // Visibility buffer input (usampler2D)
+#define BINDING_VISBUF_DEBUG_DEPTH_INPUT   1   // Depth buffer input (sampler2D)
+
+// =============================================================================
 // C++ Type-Safe Wrappers
 // =============================================================================
 #ifdef __cplusplus
@@ -885,6 +901,18 @@ constexpr uint32_t SHADOW_RESOLVE_UNIFORMS = BINDING_SHADOW_RESOLVE_UNIFORMS;
 constexpr uint32_t SCREEN_SHADOW           = BINDING_SCREEN_SHADOW;
 constexpr uint32_t GRASS_SCREEN_SHADOW     = BINDING_GRASS_SCREEN_SHADOW;
 constexpr uint32_t TERRAIN_SCREEN_SHADOW   = BINDING_TERRAIN_SCREEN_SHADOW;
+
+// Visibility Buffer
+constexpr uint32_t VISBUF_VISIBILITY       = BINDING_VISBUF_VISIBILITY;
+constexpr uint32_t VISBUF_DEPTH            = BINDING_VISBUF_DEPTH;
+constexpr uint32_t VISBUF_HDR_OUTPUT       = BINDING_VISBUF_HDR_OUTPUT;
+constexpr uint32_t VISBUF_VERTEX_BUFFER    = BINDING_VISBUF_VERTEX_BUFFER;
+constexpr uint32_t VISBUF_INDEX_BUFFER     = BINDING_VISBUF_INDEX_BUFFER;
+constexpr uint32_t VISBUF_INSTANCE_BUFFER  = BINDING_VISBUF_INSTANCE_BUFFER;
+constexpr uint32_t VISBUF_MATERIAL_BUFFER  = BINDING_VISBUF_MATERIAL_BUFFER;
+constexpr uint32_t VISBUF_UNIFORMS         = BINDING_VISBUF_UNIFORMS;
+constexpr uint32_t VISBUF_DEBUG_INPUT      = BINDING_VISBUF_DEBUG_INPUT;
+constexpr uint32_t VISBUF_DEBUG_DEPTH_INPUT = BINDING_VISBUF_DEBUG_DEPTH_INPUT;
 
 } // namespace Bindings
 

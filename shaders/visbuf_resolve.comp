@@ -1,0 +1,185 @@
+#version 450
+
+#extension GL_GOOGLE_include_directive : require
+
+#include "bindings.glsl"
+
+// Visibility buffer material resolve compute shader
+// Reads the visibility buffer, reconstructs world position via barycentrics,
+// fetches vertex attributes, evaluates material, and writes to HDR output.
+
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+
+// Visibility buffer (R32UI)
+layout(binding = BINDING_VISBUF_VISIBILITY, r32ui) uniform readonly uimage2D visibilityBuffer;
+
+// Depth buffer for position reconstruction
+layout(binding = BINDING_VISBUF_DEPTH) uniform sampler2D depthBuffer;
+
+// HDR output
+layout(binding = BINDING_VISBUF_HDR_OUTPUT, rgba16f) uniform writeonly image2D hdrOutput;
+
+// Vertex data (global vertex buffer as SSBO)
+struct PackedVertex {
+    vec4 positionAndU;    // xyz = position, w = texCoord.x
+    vec4 normalAndV;      // xyz = normal,   w = texCoord.y
+    vec4 tangent;         // xyzw = tangent (w = handedness)
+    vec4 color;           // vertex color
+};
+
+layout(std430, binding = BINDING_VISBUF_VERTEX_BUFFER) readonly buffer VertexBuffer {
+    PackedVertex vertices[];
+};
+
+// Index buffer (global)
+layout(std430, binding = BINDING_VISBUF_INDEX_BUFFER) readonly buffer IndexBuffer {
+    uint indices[];
+};
+
+// Instance data
+struct InstanceData {
+    mat4 model;
+    vec4 materialParams;  // roughness, metallic, emissiveIntensity, opacity
+    vec4 emissiveColor;
+    uint pbrFlags;
+    float alphaTestThreshold;
+    float hueShift;
+    float _pad;
+};
+
+layout(std430, binding = BINDING_VISBUF_INSTANCE_BUFFER) readonly buffer InstanceBuffer {
+    InstanceData instances[];
+};
+
+// Resolve uniforms
+layout(std140, binding = BINDING_VISBUF_UNIFORMS) uniform ResolveUniforms {
+    mat4 invViewProj;
+    mat4 viewMatrix;
+    mat4 projMatrix;
+    vec4 cameraPosition;
+    vec4 screenParams;    // width, height, 1/width, 1/height
+    vec4 lightDirection;  // xyz = sun direction, w = intensity
+    uint instanceCount;
+    uint _pad0, _pad1, _pad2;
+} resolveUniforms;
+
+// Reconstruct world position from depth and screen coordinates
+vec3 reconstructWorldPos(vec2 screenUV, float depth) {
+    // Convert screen UV [0,1] to NDC [-1,1]
+    vec2 ndc = screenUV * 2.0 - 1.0;
+    vec4 clipPos = vec4(ndc, depth, 1.0);
+    vec4 worldPos = resolveUniforms.invViewProj * clipPos;
+    return worldPos.xyz / worldPos.w;
+}
+
+// Compute barycentric coordinates for a point in a triangle (screen space)
+vec3 computeBarycentrics(vec2 p, vec2 a, vec2 b, vec2 c) {
+    vec2 v0 = c - a;
+    vec2 v1 = b - a;
+    vec2 v2 = p - a;
+
+    float dot00 = dot(v0, v0);
+    float dot01 = dot(v0, v1);
+    float dot02 = dot(v0, v2);
+    float dot11 = dot(v1, v1);
+    float dot12 = dot(v1, v2);
+
+    float invDenom = 1.0 / (dot00 * dot11 - dot01 * dot01);
+    float u = (dot11 * dot02 - dot01 * dot12) * invDenom;
+    float v = (dot00 * dot12 - dot01 * dot02) * invDenom;
+
+    return vec3(1.0 - u - v, v, u);
+}
+
+void main() {
+    ivec2 pixelCoord = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 imageSize = imageSize(visibilityBuffer);
+
+    if (pixelCoord.x >= imageSize.x || pixelCoord.y >= imageSize.y) {
+        return;
+    }
+
+    uint packed = imageLoad(visibilityBuffer, pixelCoord).r;
+
+    // Background pixel - write transparent black
+    if (packed == 0u) {
+        imageStore(hdrOutput, pixelCoord, vec4(0.0));
+        return;
+    }
+
+    // Unpack visibility data
+    uint instanceId = packed >> 23u;
+    uint triangleId = packed & 0x7FFFFFu;
+
+    // Fetch triangle indices
+    uint i0 = indices[triangleId * 3u + 0u];
+    uint i1 = indices[triangleId * 3u + 1u];
+    uint i2 = indices[triangleId * 3u + 2u];
+
+    // Fetch vertex positions
+    InstanceData inst = instances[instanceId];
+
+    vec3 p0 = (inst.model * vec4(vertices[i0].positionAndU.xyz, 1.0)).xyz;
+    vec3 p1 = (inst.model * vec4(vertices[i1].positionAndU.xyz, 1.0)).xyz;
+    vec3 p2 = (inst.model * vec4(vertices[i2].positionAndU.xyz, 1.0)).xyz;
+
+    // Project triangle vertices to screen space for barycentric computation
+    mat4 viewProj = resolveUniforms.projMatrix * resolveUniforms.viewMatrix;
+    vec4 sp0 = viewProj * vec4(p0, 1.0);
+    vec4 sp1 = viewProj * vec4(p1, 1.0);
+    vec4 sp2 = viewProj * vec4(p2, 1.0);
+
+    vec2 ss0 = sp0.xy / sp0.w;
+    vec2 ss1 = sp1.xy / sp1.w;
+    vec2 ss2 = sp2.xy / sp2.w;
+
+    // Current pixel in NDC
+    vec2 screenUV = (vec2(pixelCoord) + 0.5) * resolveUniforms.screenParams.zw;
+    vec2 ndc = screenUV * 2.0 - 1.0;
+
+    // Perspective-correct barycentrics
+    vec3 bary = computeBarycentrics(ndc, ss0, ss1, ss2);
+
+    // Perspective correction
+    float w0 = 1.0 / sp0.w;
+    float w1 = 1.0 / sp1.w;
+    float w2 = 1.0 / sp2.w;
+    float wInterp = bary.x * w0 + bary.y * w1 + bary.z * w2;
+    bary = vec3(bary.x * w0, bary.y * w1, bary.z * w2) / wInterp;
+
+    // Interpolate vertex attributes
+    vec3 normal = normalize(
+        bary.x * vertices[i0].normalAndV.xyz +
+        bary.y * vertices[i1].normalAndV.xyz +
+        bary.z * vertices[i2].normalAndV.xyz
+    );
+    normal = normalize(mat3(inst.model) * normal);
+
+    vec2 texCoord = bary.x * vec2(vertices[i0].positionAndU.w, vertices[i0].normalAndV.w) +
+                    bary.y * vec2(vertices[i1].positionAndU.w, vertices[i1].normalAndV.w) +
+                    bary.z * vec2(vertices[i2].positionAndU.w, vertices[i2].normalAndV.w);
+
+    vec3 worldPos = bary.x * p0 + bary.y * p1 + bary.z * p2;
+
+    // Basic PBR lighting (simplified - full version would sample textures)
+    float roughness = inst.materialParams.x;
+    float metallic = inst.materialParams.y;
+
+    // Simple directional light shading
+    vec3 L = normalize(resolveUniforms.lightDirection.xyz);
+    float NdotL = max(dot(normal, L), 0.0);
+
+    vec3 baseColor = vec3(0.8);  // Default albedo (would come from texture)
+    vec3 ambient = baseColor * 0.15;
+    vec3 diffuse = baseColor * NdotL * resolveUniforms.lightDirection.w;
+
+    vec3 finalColor = ambient + diffuse;
+
+    // Emissive
+    float emissiveIntensity = inst.materialParams.z;
+    if (emissiveIntensity > 0.0) {
+        finalColor += inst.emissiveColor.rgb * emissiveIntensity;
+    }
+
+    imageStore(hdrOutput, pixelCoord, vec4(finalColor, 1.0));
+}

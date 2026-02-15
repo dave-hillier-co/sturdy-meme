@@ -94,6 +94,7 @@ class BilateralGridSystem;
 class ScreenSpaceShadowSystem;
 class GodRaysSystem;
 class DeferredTerrainObjects;
+class VisibilityBuffer;
 struct EnvironmentSettings;
 struct TerrainConfig;
 
@@ -291,6 +292,12 @@ public:
     const ScreenSpaceShadowSystem* screenSpaceShadow() const { return screenSpaceShadowSystem_.get(); }
     bool hasScreenSpaceShadow() const { return screenSpaceShadowSystem_ != nullptr; }
     void setScreenSpaceShadow(std::unique_ptr<ScreenSpaceShadowSystem> system);
+
+    // Visibility buffer
+    VisibilityBuffer* visibilityBuffer() { return visibilityBuffer_.get(); }
+    const VisibilityBuffer* visibilityBuffer() const { return visibilityBuffer_.get(); }
+    bool hasVisibilityBuffer() const { return visibilityBuffer_ != nullptr; }
+    void setVisibilityBuffer(std::unique_ptr<VisibilityBuffer> system);
 
     // Scene and resources
     SceneManager& scene() { return *sceneManager_; }
@@ -565,6 +572,9 @@ private:
 
     // Screen-space shadow buffer
     std::unique_ptr<ScreenSpaceShadowSystem> screenSpaceShadowSystem_;
+
+    // Visibility buffer rendering
+    std::unique_ptr<VisibilityBuffer> visibilityBuffer_;
 
     // Infrastructure (needed throughout)
     std::unique_ptr<SceneManager> sceneManager_;

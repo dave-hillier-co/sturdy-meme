@@ -226,6 +226,9 @@ inline void updateWorldTransforms(World& world) {
             parentWorld = world.get<Transform>(parent.entity).matrix;
         }
 
+        // Skip entities driven by bone attachments (their Transform is set by updateBoneAttachments)
+        if (world.has<BoneAttachment>(entity)) continue;
+
         // Compute world transform: parent * local
         if (world.has<Transform>(entity)) {
             world.get<Transform>(entity).matrix = parentWorld * local.toMatrix();

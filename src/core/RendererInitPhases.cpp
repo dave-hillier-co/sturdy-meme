@@ -626,7 +626,8 @@ std::vector<Loading::SystemInitTask> Renderer::buildInitTasks(const InitContext&
                     if (systems_->hiZ().getHiZPyramidView() != VK_NULL_HANDLE) {
                         gpuCullPass->setHiZPyramid(
                             systems_->hiZ().getHiZPyramidView(),
-                            systems_->hiZ().getHiZSampler());
+                            systems_->hiZ().getHiZSampler(),
+                            systems_->hiZ().getMipLevelCount());
                     }
                     const auto* whiteTexture = systems_->scene().getSceneBuilder().getWhiteTexture();
                     if (whiteTexture) {
@@ -635,7 +636,7 @@ std::vector<Loading::SystemInitTask> Renderer::buildInitTasks(const InitContext&
                             whiteTexture->getSampler());
                     }
                     systems_->setGPUCullPass(std::move(gpuCullPass));
-                    SDL_Log("GPUCullPass: Initialized for frustum culling");
+                    SDL_Log("GPUCullPass: Initialized with Hi-Z occlusion culling");
                 }
             }
 

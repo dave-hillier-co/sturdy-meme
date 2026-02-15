@@ -62,15 +62,24 @@ struct alignas(16) ClusterSelectUniforms {
  * The key insight: most clusters visible last frame are still visible,
  * so pass 1 produces a good depth buffer for pass 2's occlusion tests.
  *
+ * LOD Selection uses top-down DAG traversal:
+ *   - CPU seeds root cluster indices into the input buffer
+ *   - Multiple dispatches process one level per pass, ping-ponging
+ *     between input/output node buffers
+ *   - Only clusters whose parents exceed the error threshold are visited
+ *   - Selected clusters are accumulated across all passes
+ *
  * Usage:
  *   1. create()
- *   2. updateUniforms() - set camera, frustum
- *   3. recordPass1() - cull previous frame's visible clusters
- *   4. [render pass 1 visible clusters]
- *   5. [build Hi-Z from pass 1 depth]
- *   6. recordPass2() - cull remaining clusters against Hi-Z
- *   7. [render pass 2 visible clusters]
- *   8. swapBuffers() - swap visible lists for next frame
+ *   2. setRootClusters() - set root cluster indices for DAG traversal
+ *   3. updateUniforms() - set camera, frustum
+ *   4. recordLODSelection() - top-down DAG traversal
+ *   5. recordPass1() - cull previous frame's visible clusters
+ *   6. [render pass 1 visible clusters]
+ *   7. [build Hi-Z from pass 1 depth]
+ *   8. recordPass2() - cull remaining clusters against Hi-Z
+ *   9. [render pass 2 visible clusters]
+ *   10. swapBuffers() - swap visible lists for next frame
  */
 class TwoPassCuller {
 public:
@@ -85,6 +94,7 @@ public:
         uint32_t framesInFlight;
         uint32_t maxClusters;      // Max clusters to cull per frame
         uint32_t maxDrawCommands;   // Max indirect draw commands
+        uint32_t maxDAGLevels = 8;  // Max depth of DAG hierarchy
         const vk::raii::Device* raiiDevice = nullptr;
     };
 
@@ -98,6 +108,13 @@ public:
     // Non-copyable, non-movable
     TwoPassCuller(const TwoPassCuller&) = delete;
     TwoPassCuller& operator=(const TwoPassCuller&) = delete;
+
+    /**
+     * Set root cluster indices for DAG traversal.
+     * Call after uploading meshes. Each root is the coarsest LOD of a mesh.
+     * These seed the first pass of the top-down LOD selection.
+     */
+    void setRootClusters(const std::vector<uint32_t>& rootIndices);
 
     /**
      * Update culling uniforms for the current frame.
@@ -117,8 +134,12 @@ public:
     float getErrorThreshold() const { return errorThreshold_; }
 
     /**
-     * Record LOD selection pass. Dispatches cluster_select.comp to walk the DAG
-     * and output the set of clusters at the appropriate LOD level.
+     * Record LOD selection via top-down DAG traversal.
+     *
+     * Dispatches cluster_select.comp once per DAG level, ping-ponging between
+     * node buffers. Only evaluates clusters whose parents exceeded the error
+     * threshold, avoiding wasted work on unreachable clusters.
+     *
      * Must be called BEFORE recordPass1().
      */
     void recordLODSelection(VkCommandBuffer cmd, uint32_t frameIndex,
@@ -185,9 +206,10 @@ private:
     uint32_t framesInFlight_ = 0;
     uint32_t maxClusters_ = 0;
     uint32_t maxDrawCommands_ = 0;
+    uint32_t maxDAGLevels_ = 8;
     const vk::raii::Device* raiiDevice_ = nullptr;
 
-    // Compute pipeline
+    // Compute pipeline (cluster_cull.comp)
     std::optional<vk::raii::DescriptorSetLayout> descSetLayout_;
     VkPipelineLayout pipelineLayout_ = VK_NULL_HANDLE;
     VkPipeline pipeline_ = VK_NULL_HANDLE;
@@ -222,8 +244,19 @@ private:
     BufferUtils::PerFrameBufferSet selectedCountBuffers_;     // Output: selected cluster count
     BufferUtils::PerFrameBufferSet lodSelectUniformBuffers_;  // Uniforms
 
-    // LOD selection descriptor sets per frame
-    std::vector<VkDescriptorSet> lodSelectDescSets_;
+    // Top-down DAG traversal: ping-pong node buffers
+    // Buffer A and B alternate as input/output each level
+    BufferUtils::PerFrameBufferSet nodeBufferA_;     // Node indices (ping)
+    BufferUtils::PerFrameBufferSet nodeBufferB_;     // Node indices (pong)
+    BufferUtils::PerFrameBufferSet nodeCountA_;      // Node count (ping)
+    BufferUtils::PerFrameBufferSet nodeCountB_;      // Node count (pong)
+
+    // Root cluster indices (CPU-seeded, copied to node buffer at start of traversal)
+    std::vector<uint32_t> rootClusterIndices_;
+
+    // LOD selection descriptor sets per frame (2 per frame for ping-pong)
+    std::vector<VkDescriptorSet> lodSelectDescSetsAB_;  // input=A, output=B
+    std::vector<VkDescriptorSet> lodSelectDescSetsBA_;  // input=B, output=A
 
     float errorThreshold_ = 1.0f;  // Default: 1 pixel error threshold
 

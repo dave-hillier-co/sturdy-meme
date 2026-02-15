@@ -48,6 +48,7 @@ bool TwoPassCuller::initInternal(const InitInfo& info) {
     framesInFlight_ = info.framesInFlight;
     maxClusters_ = info.maxClusters;
     maxDrawCommands_ = info.maxDrawCommands;
+    maxDAGLevels_ = info.maxDAGLevels;
     raiiDevice_ = info.raiiDevice;
 
     if (!createBuffers()) {
@@ -65,8 +66,8 @@ bool TwoPassCuller::initInternal(const InitInfo& info) {
         return false;
     }
 
-    SDL_Log("TwoPassCuller: Initialized (maxClusters=%u, maxDrawCommands=%u)",
-            maxClusters_, maxDrawCommands_);
+    SDL_Log("TwoPassCuller: Initialized (maxClusters=%u, maxDrawCommands=%u, maxDAGLevels=%u)",
+            maxClusters_, maxDrawCommands_, maxDAGLevels_);
     return true;
 }
 
@@ -173,6 +174,29 @@ bool TwoPassCuller::createBuffers() {
         .build(lodSelectUniformBuffers_);
     if (!ok) return false;
 
+    // Top-down DAG traversal: ping-pong node buffers
+    // Each buffer holds cluster indices for one level of the DAG
+    ok = builder
+        .setSize(visibleSize)
+        .setUsage(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT)
+        .setAllocationFlags(0)
+        .setMemoryUsage(VMA_MEMORY_USAGE_GPU_ONLY)
+        .build(nodeBufferA_);
+    if (!ok) return false;
+
+    ok = builder.build(nodeBufferB_);
+    if (!ok) return false;
+
+    // Node count buffers (atomic counters for each ping-pong side)
+    ok = builder
+        .setSize(countSize)
+        .setUsage(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT)
+        .build(nodeCountA_);
+    if (!ok) return false;
+
+    ok = builder.build(nodeCountB_);
+    if (!ok) return false;
+
     return true;
 }
 
@@ -189,6 +213,10 @@ void TwoPassCuller::destroyBuffers() {
     BufferUtils::destroyBuffers(allocator_, selectedClusterBuffers_);
     BufferUtils::destroyBuffers(allocator_, selectedCountBuffers_);
     BufferUtils::destroyBuffers(allocator_, lodSelectUniformBuffers_);
+    BufferUtils::destroyBuffers(allocator_, nodeBufferA_);
+    BufferUtils::destroyBuffers(allocator_, nodeBufferB_);
+    BufferUtils::destroyBuffers(allocator_, nodeCountA_);
+    BufferUtils::destroyBuffers(allocator_, nodeCountB_);
 }
 
 // ============================================================================
@@ -292,8 +320,8 @@ void TwoPassCuller::destroyPipeline() {
 bool TwoPassCuller::createLODSelectPipeline() {
     if (!raiiDevice_) return false;
 
-    // Descriptor set layout matching cluster_select.comp bindings
-    std::array<vk::DescriptorSetLayoutBinding, 5> bindings;
+    // Descriptor set layout matching cluster_select.comp bindings (0-8)
+    std::array<vk::DescriptorSetLayoutBinding, 9> bindings;
     bindings[0] = vk::DescriptorSetLayoutBinding{}.setBinding(0)
         .setDescriptorType(vk::DescriptorType::eStorageBuffer).setDescriptorCount(1)
         .setStageFlags(vk::ShaderStageFlagBits::eCompute);  // clusters
@@ -309,6 +337,18 @@ bool TwoPassCuller::createLODSelectPipeline() {
     bindings[4] = vk::DescriptorSetLayoutBinding{}.setBinding(4)
         .setDescriptorType(vk::DescriptorType::eUniformBuffer).setDescriptorCount(1)
         .setStageFlags(vk::ShaderStageFlagBits::eCompute);  // select uniforms
+    bindings[5] = vk::DescriptorSetLayoutBinding{}.setBinding(5)
+        .setDescriptorType(vk::DescriptorType::eStorageBuffer).setDescriptorCount(1)
+        .setStageFlags(vk::ShaderStageFlagBits::eCompute);  // input nodes
+    bindings[6] = vk::DescriptorSetLayoutBinding{}.setBinding(6)
+        .setDescriptorType(vk::DescriptorType::eStorageBuffer).setDescriptorCount(1)
+        .setStageFlags(vk::ShaderStageFlagBits::eCompute);  // input node count
+    bindings[7] = vk::DescriptorSetLayoutBinding{}.setBinding(7)
+        .setDescriptorType(vk::DescriptorType::eStorageBuffer).setDescriptorCount(1)
+        .setStageFlags(vk::ShaderStageFlagBits::eCompute);  // output nodes
+    bindings[8] = vk::DescriptorSetLayoutBinding{}.setBinding(8)
+        .setDescriptorType(vk::DescriptorType::eStorageBuffer).setDescriptorCount(1)
+        .setStageFlags(vk::ShaderStageFlagBits::eCompute);  // output node count
 
     auto layoutInfo = vk::DescriptorSetLayoutCreateInfo{}.setBindings(bindings);
 
@@ -367,6 +407,12 @@ void TwoPassCuller::destroyLODSelectPipeline() {
     lodSelectDescSetLayout_.reset();
 }
 
+void TwoPassCuller::setRootClusters(const std::vector<uint32_t>& rootIndices) {
+    rootClusterIndices_ = rootIndices;
+    SDL_Log("TwoPassCuller: Set %zu root clusters for DAG traversal",
+            rootClusterIndices_.size());
+}
+
 void TwoPassCuller::recordLODSelection(VkCommandBuffer cmd, uint32_t frameIndex,
                                          uint32_t totalDAGClusters, uint32_t instanceCount) {
     // Update LOD selection uniforms
@@ -392,10 +438,25 @@ void TwoPassCuller::recordLODSelection(VkCommandBuffer cmd, uint32_t frameIndex,
                            0, sizeof(selectUniforms));
     }
 
-    // Clear selected count to 0
+    // Clear selected count to 0 (accumulated across all passes)
     vkCmdFillBuffer(cmd, selectedCountBuffers_.buffers[frameIndex], 0, sizeof(uint32_t), 0);
 
-    // Barrier: transfer -> compute
+    // Seed input buffer A with root cluster indices
+    if (!rootClusterIndices_.empty()) {
+        VkDeviceSize seedSize = rootClusterIndices_.size() * sizeof(uint32_t);
+        vkCmdUpdateBuffer(cmd, nodeBufferA_.buffers[frameIndex], 0,
+                          seedSize, rootClusterIndices_.data());
+
+        // Write root count to nodeCountA
+        uint32_t rootCount = static_cast<uint32_t>(rootClusterIndices_.size());
+        vkCmdUpdateBuffer(cmd, nodeCountA_.buffers[frameIndex], 0,
+                          sizeof(uint32_t), &rootCount);
+    } else {
+        // No roots — write 0 count
+        vkCmdFillBuffer(cmd, nodeCountA_.buffers[frameIndex], 0, sizeof(uint32_t), 0);
+    }
+
+    // Barrier: transfer writes -> compute reads
     VkMemoryBarrier memBarrier{};
     memBarrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
     memBarrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
@@ -406,15 +467,60 @@ void TwoPassCuller::recordLODSelection(VkCommandBuffer cmd, uint32_t frameIndex,
         VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
         0, 1, &memBarrier, 0, nullptr, 0, nullptr);
 
-    // Bind LOD selection pipeline and dispatch
+    // Bind LOD selection pipeline
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, lodSelectPipeline_);
 
-    // Descriptor sets would be bound here
+    // Multi-pass top-down traversal: one dispatch per DAG level
+    // Each pass reads from the input buffer and writes children to the output buffer.
+    // Selected clusters are accumulated into selectedClusterBuffers_ across all passes.
+    //
+    // We dispatch ceil(maxClusters/64) workgroups each pass. Threads beyond
+    // the actual node count early-exit via the inputNodeCount SSBO check.
     uint32_t workGroupSize = 64;
-    uint32_t dispatchCount = (totalDAGClusters + workGroupSize - 1) / workGroupSize;
-    vkCmdDispatch(cmd, dispatchCount, 1, 1);
+    uint32_t maxDispatch = (maxClusters_ + workGroupSize - 1) / workGroupSize;
 
-    // Barrier: compute write -> compute read (selected clusters -> cull pass)
+    // Ping-pong: even levels read A/write B, odd levels read B/write A
+    auto* inputBuffers = &nodeBufferA_;
+    auto* inputCountBuffers = &nodeCountA_;
+    auto* outputBuffers = &nodeBufferB_;
+    auto* outputCountBuffers = &nodeCountB_;
+
+    for (uint32_t level = 0; level < maxDAGLevels_; ++level) {
+        // Clear output node count for this pass
+        vkCmdFillBuffer(cmd, outputCountBuffers->buffers[frameIndex], 0, sizeof(uint32_t), 0);
+
+        // Barrier: clear -> compute
+        memBarrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+        memBarrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
+
+        vkCmdPipelineBarrier(cmd,
+            VK_PIPELINE_STAGE_TRANSFER_BIT,
+            VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+            0, 1, &memBarrier, 0, nullptr, 0, nullptr);
+
+        // Descriptor sets would be bound here for (input, output) pair
+        // Bindings 5-8 change each pass for the ping-pong:
+        //   5 = inputBuffers, 6 = inputCountBuffers,
+        //   7 = outputBuffers, 8 = outputCountBuffers
+
+        // Dispatch
+        vkCmdDispatch(cmd, maxDispatch, 1, 1);
+
+        // Barrier: compute writes -> next pass compute reads + transfer (for clear)
+        memBarrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+        memBarrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_TRANSFER_WRITE_BIT;
+
+        vkCmdPipelineBarrier(cmd,
+            VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+            VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_TRANSFER_BIT,
+            0, 1, &memBarrier, 0, nullptr, 0, nullptr);
+
+        // Swap ping-pong: output becomes input for next level
+        std::swap(inputBuffers, outputBuffers);
+        std::swap(inputCountBuffers, outputCountBuffers);
+    }
+
+    // Final barrier: compute write -> compute read (selected clusters -> cull pass)
     memBarrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
     memBarrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
 
@@ -440,6 +546,8 @@ bool TwoPassCuller::createDescriptorSets() {
 void TwoPassCuller::destroyDescriptorSets() {
     pass1DescSets_.clear();
     pass2DescSets_.clear();
+    lodSelectDescSetsAB_.clear();
+    lodSelectDescSetsBA_.clear();
 }
 
 // ============================================================================

@@ -548,6 +548,14 @@ uint32_t GPUClusterBuffer::uploadMesh(const ClusteredMesh& mesh) {
     for (auto& cluster : adjustedClusters) {
         cluster.firstIndex += baseIndex;
         cluster.firstVertex += static_cast<int32_t>(baseVertex);
+
+        // Adjust DAG connectivity indices to global cluster buffer positions
+        if (cluster.parentIndex != UINT32_MAX) {
+            cluster.parentIndex += baseCluster;
+        }
+        if (cluster.childCount > 0) {
+            cluster.firstChildIndex += baseCluster;
+        }
     }
 
     // Create staging buffer for all three uploads

@@ -212,7 +212,7 @@ void GodRaysSystem::recordGodRaysPass(VkCommandBuffer cmd, VkImageView hdrView, 
     // Update descriptor set
     DescriptorManager::SetWriter(device_, descSet_)
         .writeImage(0, hdrView, **sampler_, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL)
-        .writeImage(1, depthView, **sampler_, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL)
+        .writeImage(1, depthView, **sampler_, VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL)
         .writeStorageImage(2, outputImageView_, VK_IMAGE_LAYOUT_GENERAL)
         .update();
 

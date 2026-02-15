@@ -718,6 +718,7 @@ set(SHADER_FILES
     ${CMAKE_CURRENT_SOURCE_DIR}/shaders/histogram_reduce.comp.spv
     ${CMAKE_CURRENT_SOURCE_DIR}/shaders/bilateral_grid_build.comp.spv
     ${CMAKE_CURRENT_SOURCE_DIR}/shaders/bilateral_grid_blur.comp.spv
+    ${CMAKE_CURRENT_SOURCE_DIR}/shaders/shadow_resolve.comp.spv
     ${CMAKE_CURRENT_SOURCE_DIR}/shaders/snow_accumulation.comp.spv
     ${CMAKE_CURRENT_SOURCE_DIR}/shaders/volumetric_snow.comp.spv
     ${CMAKE_CURRENT_SOURCE_DIR}/shaders/hiz_downsample.comp.spv
@@ -1125,6 +1126,7 @@ if(SHADER_COMPILE_CMD)
         ${CMAKE_CURRENT_SOURCE_DIR}/shaders/histogram_reduce.comp.spv
         ${CMAKE_CURRENT_SOURCE_DIR}/shaders/bilateral_grid_build.comp.spv
         ${CMAKE_CURRENT_SOURCE_DIR}/shaders/bilateral_grid_blur.comp.spv
+        ${CMAKE_CURRENT_SOURCE_DIR}/shaders/shadow_resolve.comp.spv
         ${CMAKE_CURRENT_SOURCE_DIR}/shaders/snow_accumulation.comp.spv
         ${CMAKE_CURRENT_SOURCE_DIR}/shaders/volumetric_snow.comp.spv
         ${CMAKE_CURRENT_SOURCE_DIR}/shaders/hiz_downsample.comp.spv

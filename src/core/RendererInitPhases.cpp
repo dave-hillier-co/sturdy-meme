@@ -479,6 +479,21 @@ std::vector<Loading::SystemInitTask> Renderer::buildInitTasks(const InitContext&
             CoreResources core = CoreResources::collect(
                 systems_->postProcess(), systems_->shadow(), systems_->terrain(), MAX_FRAMES_IN_FLIGHT);
 
+            // Screen-space shadow resolve (pre-compute shadows into buffer)
+            // Must be created BEFORE descriptor wiring so terrain/grass/material
+            // descriptors bind the real shadow buffer instead of placeholders.
+            {
+                auto screenShadow = ScreenSpaceShadowSystem::create(*ctxPtr);
+                if (screenShadow) {
+                    screenShadow->setDepthSource(core.hdr.depthView, vulkanContext_->getDepthSampler());
+                    screenShadow->setShadowMapSource(
+                        static_cast<VkImageView>(systems_->shadow().getShadowImageView()),
+                        static_cast<VkSampler>(systems_->shadow().getShadowSampler()));
+                    systems_->setScreenSpaceShadow(std::move(screenShadow));
+                    SDL_Log("ScreenSpaceShadowSystem: Initialized for shadow buffer optimization");
+                }
+            }
+
             // Cross-system descriptor set wiring
             SystemWiring wiring(device, MAX_FRAMES_IN_FLIGHT);
             wiring.wireTerrainDescriptors(*systems_);
@@ -585,19 +600,6 @@ std::vector<Loading::SystemInitTask> Renderer::buildInitTasks(const InitContext&
                 systems_->hiZ().setDepthBuffer(core.hdr.depthView, vulkanContext_->getDepthSampler());
                 systems_->hiZ().gatherObjects(systems_->scene().getRenderables(),
                                               systems_->rocks().getSceneObjects());
-            }
-
-            // Screen-space shadow resolve (pre-compute shadows into buffer)
-            {
-                auto screenShadow = ScreenSpaceShadowSystem::create(*ctxPtr);
-                if (screenShadow) {
-                    screenShadow->setDepthSource(core.hdr.depthView, vulkanContext_->getDepthSampler());
-                    screenShadow->setShadowMapSource(
-                        static_cast<VkImageView>(systems_->shadow().getShadowImageView()),
-                        static_cast<VkSampler>(systems_->shadow().getShadowSampler()));
-                    systems_->setScreenSpaceShadow(std::move(screenShadow));
-                    SDL_Log("ScreenSpaceShadowSystem: Initialized for shadow buffer optimization");
-                }
             }
 
             // GPU scene buffer for GPU-driven rendering

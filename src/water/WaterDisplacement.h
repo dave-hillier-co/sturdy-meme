@@ -40,6 +40,7 @@ public:
         uint32_t displacementResolution = 512;  // Displacement map resolution
         float worldSize = 100.0f;               // World size covered by displacement map
         const vk::raii::Device* raiiDevice = nullptr;
+        std::string shaderPath;
     };
 
     // Splash particle for displacement
@@ -130,6 +131,7 @@ private:
     const vk::raii::Device* raiiDevice_ = nullptr;
 
     // Configuration
+    std::string shaderPath_;
     uint32_t framesInFlight = 0;
     uint32_t displacementResolution = 512;
     float worldSize = 100.0f;

@@ -535,11 +535,16 @@ void TerrainSystem::updateDescriptorSets(vk::Device device,
         constexpr VkDeviceSize materialLayerUBOSize = 336;  // MaterialLayerUBO size
         writer.writeBuffer(30, buffers->getMaterialLayerUniformBuffer(i), 0, materialLayerUBOSize);
 
-        // Screen-space shadow buffer (binding 31) - use terrain albedo as placeholder if not available
+        // Screen-space shadow buffer (binding 31)
+        // NOTE: ScreenSpaceShadowSystem must be created BEFORE this wiring runs
+        // (see RendererInitPhases.cpp). If missing, the heightmap is used as a
+        // "neutral" placeholder (values near 0-1 map to mostly-lit).
         if (screenShadowView_) {
             writer.writeImage(31, screenShadowView_, screenShadowSampler_);
         } else {
-            writer.writeImage(31, textures->getAlbedoView(), textures->getAlbedoSampler(),
+            SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                "TerrainSystem: Screen shadow buffer not available, using heightmap as placeholder");
+            writer.writeImage(31, tileCache->getBaseHeightMapView(), tileCache->getBaseHeightMapSampler(),
                              VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
         }
 

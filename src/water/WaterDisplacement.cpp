@@ -35,6 +35,7 @@ bool WaterDisplacement::initInternal(const InitInfo& info) {
     displacementResolution = info.displacementResolution;
     worldSize = info.worldSize;
     raiiDevice_ = info.raiiDevice;
+    shaderPath_ = info.shaderPath;
 
     if (!raiiDevice_) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "WaterDisplacement requires raiiDevice");
@@ -186,7 +187,7 @@ bool WaterDisplacement::createComputePipeline() {
 
     // Create compute pipeline - allow failure since system works without splashes
     if (!ComputePipelineBuilder(*raiiDevice_)
-            .setShader("shaders/water_displacement.comp.spv")
+            .setShader(shaderPath_ + "/water_displacement.comp.spv")
             .setPipelineLayout(**computePipelineLayout_)
             .buildInto(computePipeline_)) {
         SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "WaterDisplacement: Compute shader not found, using fallback");

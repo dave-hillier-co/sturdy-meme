@@ -236,17 +236,7 @@ void ScreenSpaceShadowSystem::record(VkCommandBuffer cmd, uint32_t frameIndex) {
     vkCmd.dispatch(groupsX, groupsY, 1);
 
     // Transition shadow buffer to shader read for HDR pass
-    auto barrier = vk::ImageMemoryBarrier2{}
-        .setSrcStageMask(vk::PipelineStageFlagBits2::eComputeShader)
-        .setSrcAccessMask(vk::AccessFlagBits2::eShaderStorageWrite)
-        .setDstStageMask(vk::PipelineStageFlagBits2::eFragmentShader)
-        .setDstAccessMask(vk::AccessFlagBits2::eShaderSampledRead)
-        .setOldLayout(vk::ImageLayout::eGeneral)
-        .setNewLayout(vk::ImageLayout::eShaderReadOnlyOptimal)
-        .setImage(shadowBufferImage_.get())
-        .setSubresourceRange({vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1});
-
-    vkCmd.pipelineBarrier2(vk::DependencyInfo{}.setImageMemoryBarriers(barrier));
+    BarrierHelpers::imageToShaderRead(vkCmd, shadowBufferImage_.get());
 }
 
 void ScreenSpaceShadowSystem::resize(VkExtent2D newExtent) {

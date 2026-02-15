@@ -73,6 +73,7 @@ std::optional<WaterSystemGroup::Bundle> WaterSystemGroup::createAll(
         info.displacementResolution = 512;
         info.worldSize = deps.waterSize;
         info.raiiDevice = ctx.raiiDevice;
+        info.shaderPath = ctx.shaderPath;
 
         bundle.displacement = WaterDisplacement::create(info);
         if (!bundle.displacement) {

@@ -136,7 +136,12 @@ private:
         bool showTileLoader = false;
         bool showSceneGraph = false;
         bool showSceneEditor = false;  // Unity-like scene editor
+        bool showHierarchy = false;     // ECS hierarchy panel (independent dockable window)
+        bool showInspector = false;     // Entity inspector panel (independent dockable window)
     } windowStates;
+
+    // Track whether the default dock layout has been applied
+    bool dockLayoutInitialized_ = false;
 
     // Tile loader visualization mode
     enum class TileViewMode {

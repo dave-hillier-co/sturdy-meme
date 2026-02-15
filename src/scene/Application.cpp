@@ -1332,11 +1332,15 @@ void Application::updateECS(float deltaTime) {
     // Get scene entities from SceneBuilder (Phase 6: entities managed by SceneBuilder)
     const auto& sceneEntities = sceneBuilder.getSceneEntities();
 
-    // Lazy initialization: if ECS world was set but entities not yet created (deferred mode)
-    if (sceneEntities.empty() && !renderables.empty() && sceneBuilder.getECSWorld() == nullptr) {
-        sceneBuilder.setECSWorld(&ecsWorld_);
+    // Lazy initialization: if entities not yet created but renderables are available (deferred mode)
+    if (sceneEntities.empty() && !renderables.empty()) {
+        if (sceneBuilder.getECSWorld() == nullptr) {
+            sceneBuilder.setECSWorld(&ecsWorld_);
+        }
         sceneBuilder.createEntitiesFromRenderables();
-        SDL_Log("ECS: Populated %zu entities from deferred renderables", sceneBuilder.getSceneEntities().size());
+        if (!sceneBuilder.getSceneEntities().empty()) {
+            SDL_Log("ECS: Populated %zu entities from deferred renderables", sceneBuilder.getSceneEntities().size());
+        }
     }
 
     // Re-fetch after potential creation

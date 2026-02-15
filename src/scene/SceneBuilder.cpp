@@ -144,6 +144,28 @@ void SceneBuilder::createEntitiesFromRenderables() {
 
         // Mark as visible by default
         ecsWorld_->add<ecs::Visible>(entity);
+
+        // Assign DebugName based on mesh type for entities without specific tags
+        // (Tagged entities like Player, NPC, etc. already get names from the hierarchy panel)
+        if (sceneObjects[i].mesh == cubeMesh.get()) {
+            ecsWorld_->add<ecs::DebugName>(entity, "Cube");
+        } else if (sceneObjects[i].mesh == sphereMesh.get()) {
+            ecsWorld_->add<ecs::DebugName>(entity, "Sphere");
+        } else if (sceneObjects[i].mesh == capsuleMesh.get()) {
+            ecsWorld_->add<ecs::DebugName>(entity, "Capsule");
+        } else if (sceneObjects[i].mesh == flagPoleMesh.get()) {
+            ecsWorld_->add<ecs::DebugName>(entity, "Flag Pole");
+        } else if (sceneObjects[i].mesh == swordMesh.get()) {
+            ecsWorld_->add<ecs::DebugName>(entity, "Sword");
+        } else if (sceneObjects[i].mesh == shieldMesh.get()) {
+            ecsWorld_->add<ecs::DebugName>(entity, "Shield");
+        } else if (sceneObjects[i].mesh == axisLineMesh.get()) {
+            ecsWorld_->add<ecs::DebugName>(entity, "Debug Axis");
+        } else if (sceneObjects[i].mesh == &flagClothMesh) {
+            ecsWorld_->add<ecs::DebugName>(entity, "Flag Cloth");
+        } else if (sceneObjects[i].mesh == &capeMesh) {
+            ecsWorld_->add<ecs::DebugName>(entity, "Cape");
+        }
     }
 
     // Create NPC entities with tags

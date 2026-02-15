@@ -183,6 +183,7 @@ void SceneManager::initializeSceneLights() {
         auto orbPos = worldPos(2.0f, 0.0f);
         glm::vec3 orbPosition(orbPos.x, 1.3f, orbPos.y);
         orbLightEntity_ = ecs::light::createTorch(*ecsWorld_, orbPosition, 5.0f);
+        ecsWorld_->add<ecs::DebugName>(orbLightEntity_, "Orb Torch");
 
         // Blue point light
         auto bluePos = worldPos(-3.0f, 2.0f);
@@ -192,6 +193,7 @@ void SceneManager::initializeSceneLights() {
             glm::vec3(0.3f, 0.5f, 1.0f),  // Blue color
             3.0f,                          // Intensity
             6.0f);                         // Radius
+        ecsWorld_->add<ecs::DebugName>(blueLightEntity_, "Blue Light");
 
         // Green point light
         auto greenPos = worldPos(4.0f, -2.0f);
@@ -201,6 +203,7 @@ void SceneManager::initializeSceneLights() {
             glm::vec3(0.4f, 1.0f, 0.4f),  // Green color
             2.5f,                          // Intensity
             5.0f);                         // Radius
+        ecsWorld_->add<ecs::DebugName>(greenLightEntity_, "Green Light");
 
         SDL_Log("ECS scene lights initialized (3 light entities)");
     } else {

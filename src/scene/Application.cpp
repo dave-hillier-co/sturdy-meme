@@ -1351,27 +1351,9 @@ void Application::updateECS(float deltaTime) {
     // Re-fetch after potential creation
     const auto& currentEntities = sceneBuilder.getSceneEntities();
 
-    // Set up bone attachments for weapons using tag queries (once, after entities are populated)
+    // Mark weapons as initialized once entities are populated
+    // (BoneAttachments and hierarchy are set up in createEntitiesFromRenderables)
     if (!ecsWeaponsInitialized_ && !currentEntities.empty() && sceneBuilder.hasWeapons()) {
-        // Find and attach sword (right hand weapon) using WeaponTag query
-        for (auto [entity, weaponTag] : ecsWorld_.view<ecs::WeaponTag>().each()) {
-            if (weaponTag.slot == ecs::WeaponSlot::RightHand) {
-                if (!ecsWorld_.has<ecs::BoneAttachment>(entity)) {
-                    ecsWorld_.add<ecs::BoneAttachment>(entity,
-                        sceneBuilder.getRightHandBoneIndex(),
-                        sceneBuilder.getSwordOffset());
-                    SDL_Log("ECS: Attached sword to right hand bone %d", sceneBuilder.getRightHandBoneIndex());
-                }
-            } else if (weaponTag.slot == ecs::WeaponSlot::LeftHand) {
-                if (!ecsWorld_.has<ecs::BoneAttachment>(entity)) {
-                    ecsWorld_.add<ecs::BoneAttachment>(entity,
-                        sceneBuilder.getLeftHandBoneIndex(),
-                        sceneBuilder.getShieldOffset());
-                    SDL_Log("ECS: Attached shield to left hand bone %d", sceneBuilder.getLeftHandBoneIndex());
-                }
-            }
-        }
-
         ecsWeaponsInitialized_ = true;
     }
 

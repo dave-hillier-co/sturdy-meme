@@ -5,6 +5,7 @@
 #include "npc/NPCSimulation.h"
 #include "npc/NPCData.h"
 #include "ecs/EntityFactory.h"
+#include "ecs/Systems.h"
 #include <SDL3/SDL_log.h>
 
 // Constructor must be defined in .cpp to allow unique_ptr<NPCSimulation> with incomplete type in header
@@ -180,14 +181,14 @@ void SceneBuilder::createEntitiesFromRenderables() {
                 swordEntity_ = entity;
                 ecsWorld_->add<ecs::WeaponTag>(entity, ecs::WeaponSlot::RightHand);
                 if (rightHandBoneIndex >= 0) {
-                    ecsWorld_->add<ecs::BoneAttachment>(entity, rightHandBoneIndex, glm::mat4(1.0f));
+                    ecsWorld_->add<ecs::BoneAttachment>(entity, rightHandBoneIndex, getSwordOffset());
                 }
                 break;
             case ObjectRole::Shield:
                 shieldEntity_ = entity;
                 ecsWorld_->add<ecs::WeaponTag>(entity, ecs::WeaponSlot::LeftHand);
                 if (leftHandBoneIndex >= 0) {
-                    ecsWorld_->add<ecs::BoneAttachment>(entity, leftHandBoneIndex, glm::mat4(1.0f));
+                    ecsWorld_->add<ecs::BoneAttachment>(entity, leftHandBoneIndex, getShieldOffset());
                 }
                 break;
             case ObjectRole::WellEntrance:
@@ -197,30 +198,78 @@ void SceneBuilder::createEntitiesFromRenderables() {
             case ObjectRole::DebugAxisRightX:
                 rightHandAxisEntities_[0] = entity;
                 ecsWorld_->add<ecs::DebugAxisTag>(entity);
+                if (rightHandBoneIndex >= 0) {
+                    glm::mat4 off = glm::rotate(glm::mat4(1.0f), glm::radians(-90.0f), glm::vec3(0,0,1));
+                    off = glm::translate(off, glm::vec3(0, 0.075f, 0));
+                    ecsWorld_->add<ecs::BoneAttachment>(entity, rightHandBoneIndex, off);
+                }
                 break;
             case ObjectRole::DebugAxisRightY:
                 rightHandAxisEntities_[1] = entity;
                 ecsWorld_->add<ecs::DebugAxisTag>(entity);
+                if (rightHandBoneIndex >= 0) {
+                    glm::mat4 off = glm::translate(glm::mat4(1.0f), glm::vec3(0, 0.075f, 0));
+                    ecsWorld_->add<ecs::BoneAttachment>(entity, rightHandBoneIndex, off);
+                }
                 break;
             case ObjectRole::DebugAxisRightZ:
                 rightHandAxisEntities_[2] = entity;
                 ecsWorld_->add<ecs::DebugAxisTag>(entity);
+                if (rightHandBoneIndex >= 0) {
+                    glm::mat4 off = glm::rotate(glm::mat4(1.0f), glm::radians(90.0f), glm::vec3(1,0,0));
+                    off = glm::translate(off, glm::vec3(0, 0.075f, 0));
+                    ecsWorld_->add<ecs::BoneAttachment>(entity, rightHandBoneIndex, off);
+                }
                 break;
             case ObjectRole::DebugAxisLeftX:
                 leftHandAxisEntities_[0] = entity;
                 ecsWorld_->add<ecs::DebugAxisTag>(entity);
+                if (leftHandBoneIndex >= 0) {
+                    glm::mat4 off = glm::rotate(glm::mat4(1.0f), glm::radians(-90.0f), glm::vec3(0,0,1));
+                    off = glm::translate(off, glm::vec3(0, 0.075f, 0));
+                    ecsWorld_->add<ecs::BoneAttachment>(entity, leftHandBoneIndex, off);
+                }
                 break;
             case ObjectRole::DebugAxisLeftY:
                 leftHandAxisEntities_[1] = entity;
                 ecsWorld_->add<ecs::DebugAxisTag>(entity);
+                if (leftHandBoneIndex >= 0) {
+                    glm::mat4 off = glm::translate(glm::mat4(1.0f), glm::vec3(0, 0.075f, 0));
+                    ecsWorld_->add<ecs::BoneAttachment>(entity, leftHandBoneIndex, off);
+                }
                 break;
             case ObjectRole::DebugAxisLeftZ:
                 leftHandAxisEntities_[2] = entity;
                 ecsWorld_->add<ecs::DebugAxisTag>(entity);
+                if (leftHandBoneIndex >= 0) {
+                    glm::mat4 off = glm::rotate(glm::mat4(1.0f), glm::radians(90.0f), glm::vec3(1,0,0));
+                    off = glm::translate(off, glm::vec3(0, 0.075f, 0));
+                    ecsWorld_->add<ecs::BoneAttachment>(entity, leftHandBoneIndex, off);
+                }
                 break;
             case ObjectRole::None:
                 break;
         }
+    }
+
+    // Establish parent-child hierarchy: attach weapons, cape, and debug axes to player
+    if (playerEntity_ != ecs::NullEntity) {
+        // Ensure player has Children component for top-down traversal
+        if (!ecsWorld_->has<ecs::Children>(playerEntity_)) {
+            ecsWorld_->add<ecs::Children>(playerEntity_);
+        }
+
+        auto attachChild = [&](ecs::Entity child) {
+            if (child != ecs::NullEntity) {
+                ecs::systems::attachToParent(*ecsWorld_, child, playerEntity_);
+            }
+        };
+
+        attachChild(swordEntity_);
+        attachChild(shieldEntity_);
+        attachChild(capeEntity_);
+        for (auto e : rightHandAxisEntities_) attachChild(e);
+        for (auto e : leftHandAxisEntities_) attachChild(e);
     }
 
     // Create NPC entities with tags
@@ -1178,108 +1227,43 @@ bool SceneBuilder::hasNPCs() const {
 }
 
 
-void SceneBuilder::updateWeaponTransforms(const glm::mat4& worldTransform) {
-    if (!hasAnimatedCharacter) return;
+void SceneBuilder::updateWeaponTransforms(const glm::mat4& /*worldTransform*/) {
+    // Positioning is handled by the ECS bone attachment system (updateBoneAttachments).
+    // This function only handles visibility toggling via scale-to-zero.
+    if (!ecsWorld_) return;
 
-    // Compute global bone transforms (same as cape uses)
-    const auto& skeleton = animatedCharacter->getSkeleton();
-    std::vector<glm::mat4> globalTransforms;
-    skeleton.computeGlobalTransforms(globalTransforms);
-
-    // Hide transform (scale to zero)
     glm::mat4 hideTransform = glm::scale(glm::mat4(1.0f), glm::vec3(0.0f));
 
-    // Helper to update a renderable's transform via its entity handle
-    auto updateRenderable = [this](ecs::Entity entity, const glm::mat4& transform) {
+    // Hide weapons that are not visible
+    auto hideIfNotVisible = [&](ecs::Entity entity, bool visible) {
+        if (entity == ecs::NullEntity) return;
         Renderable* r = getRenderableForEntity(entity);
-        if (r) r->transform = transform;
+        if (r && !visible) {
+            r->transform = hideTransform;
+        }
     };
 
-    // Update sword transform (attached to right hand)
-    if (swordEntity_ != ecs::NullEntity && ecsWorld_) {
-        bool swordVisible = ecsWorld_->has<ecs::WeaponTag>(swordEntity_) &&
-                            ecsWorld_->get<ecs::WeaponTag>(swordEntity_).visible;
-        if (swordVisible && rightHandBoneIndex >= 0) {
-            glm::mat4 boneWorld = worldTransform * globalTransforms[rightHandBoneIndex];
-
-            // Cylinder has height along Y. We want it to point along bone's -X axis.
-            // Rotate 90° around Z to tip Y toward -X, then offset along sword length
-            glm::mat4 swordOffset = glm::rotate(glm::mat4(1.0f), glm::radians(90.0f), glm::vec3(0.0f, 0.0f, 1.0f));
-            swordOffset = glm::translate(swordOffset, glm::vec3(0.0f, 0.4f, 0.0f));
-
-            updateRenderable(swordEntity_, boneWorld * swordOffset);
-        } else {
-            updateRenderable(swordEntity_, hideTransform);
-        }
+    // Sword visibility
+    if (swordEntity_ != ecs::NullEntity && ecsWorld_->has<ecs::WeaponTag>(swordEntity_)) {
+        bool visible = ecsWorld_->get<ecs::WeaponTag>(swordEntity_).visible && rightHandBoneIndex >= 0;
+        hideIfNotVisible(swordEntity_, visible);
     }
 
-    // Update shield transform (attached to left hand)
-    if (shieldEntity_ != ecs::NullEntity && ecsWorld_) {
-        bool shieldVisible = ecsWorld_->has<ecs::WeaponTag>(shieldEntity_) &&
-                             ecsWorld_->get<ecs::WeaponTag>(shieldEntity_).visible;
-        if (shieldVisible && leftHandBoneIndex >= 0) {
-            glm::mat4 boneWorld = worldTransform * globalTransforms[leftHandBoneIndex];
-
-            // Shield flat face (cylinder Y axis) should point outward along -Z (blue axis)
-            // Rotate -90° around X to make Y point toward -Z
-            glm::mat4 shieldOffset = glm::rotate(glm::mat4(1.0f), glm::radians(-90.0f), glm::vec3(1.0f, 0.0f, 0.0f));
-
-            updateRenderable(shieldEntity_, boneWorld * shieldOffset);
-        } else {
-            updateRenderable(shieldEntity_, hideTransform);
-        }
+    // Shield visibility
+    if (shieldEntity_ != ecs::NullEntity && ecsWorld_->has<ecs::WeaponTag>(shieldEntity_)) {
+        bool visible = ecsWorld_->get<ecs::WeaponTag>(shieldEntity_).visible && leftHandBoneIndex >= 0;
+        hideIfNotVisible(shieldEntity_, visible);
     }
 
-    // Debug axis indicators for right hand - cylinder points along Y, so rotate to each axis
-    if (rightHandBoneIndex >= 0) {
-        glm::mat4 boneWorld = worldTransform * globalTransforms[rightHandBoneIndex];
+    // Debug axis visibility
+    auto checkAxisVisible = [&](ecs::Entity entity) -> bool {
+        if (entity == ecs::NullEntity) return false;
+        return ecsWorld_->has<ecs::DebugAxisTag>(entity) &&
+               ecsWorld_->get<ecs::DebugAxisTag>(entity).visible;
+    };
 
-        auto updateAxis = [&](ecs::Entity entity, const glm::mat4& offset) {
-            if (entity != ecs::NullEntity && ecsWorld_) {
-                bool axisVisible = ecsWorld_->has<ecs::DebugAxisTag>(entity) &&
-                                   ecsWorld_->get<ecs::DebugAxisTag>(entity).visible;
-                updateRenderable(entity, axisVisible ? (boneWorld * offset) : hideTransform);
-            }
-        };
-
-        // X axis (Red) - rotate 90° around Z to point Y toward X
-        glm::mat4 xOffset = glm::rotate(glm::mat4(1.0f), glm::radians(-90.0f), glm::vec3(0.0f, 0.0f, 1.0f));
-        xOffset = glm::translate(xOffset, glm::vec3(0.0f, 0.075f, 0.0f));
-        updateAxis(rightHandAxisEntities_[0], xOffset);
-
-        // Y axis (Green) - no rotation needed, cylinder already points along Y
-        glm::mat4 yOffset = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.075f, 0.0f));
-        updateAxis(rightHandAxisEntities_[1], yOffset);
-
-        // Z axis (Blue) - rotate 90° around X to point Y toward Z
-        glm::mat4 zOffset = glm::rotate(glm::mat4(1.0f), glm::radians(90.0f), glm::vec3(1.0f, 0.0f, 0.0f));
-        zOffset = glm::translate(zOffset, glm::vec3(0.0f, 0.075f, 0.0f));
-        updateAxis(rightHandAxisEntities_[2], zOffset);
-    }
-
-    // Debug axis indicators for left hand
-    if (leftHandBoneIndex >= 0) {
-        glm::mat4 boneWorld = worldTransform * globalTransforms[leftHandBoneIndex];
-
-        auto updateAxis = [&](ecs::Entity entity, const glm::mat4& offset) {
-            if (entity != ecs::NullEntity && ecsWorld_) {
-                bool axisVisible = ecsWorld_->has<ecs::DebugAxisTag>(entity) &&
-                                   ecsWorld_->get<ecs::DebugAxisTag>(entity).visible;
-                updateRenderable(entity, axisVisible ? (boneWorld * offset) : hideTransform);
-            }
-        };
-
-        glm::mat4 xOffset = glm::rotate(glm::mat4(1.0f), glm::radians(-90.0f), glm::vec3(0.0f, 0.0f, 1.0f));
-        xOffset = glm::translate(xOffset, glm::vec3(0.0f, 0.075f, 0.0f));
-        updateAxis(leftHandAxisEntities_[0], xOffset);
-
-        glm::mat4 yOffset = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.075f, 0.0f));
-        updateAxis(leftHandAxisEntities_[1], yOffset);
-
-        glm::mat4 zOffset = glm::rotate(glm::mat4(1.0f), glm::radians(90.0f), glm::vec3(1.0f, 0.0f, 0.0f));
-        zOffset = glm::translate(zOffset, glm::vec3(0.0f, 0.075f, 0.0f));
-        updateAxis(leftHandAxisEntities_[2], zOffset);
-    }
+    for (auto e : rightHandAxisEntities_) hideIfNotVisible(e, checkAxisVisible(e));
+    for (auto e : leftHandAxisEntities_) hideIfNotVisible(e, checkAxisVisible(e));
 }
 
 // Texture accessors (return raw pointer from shared_ptr)

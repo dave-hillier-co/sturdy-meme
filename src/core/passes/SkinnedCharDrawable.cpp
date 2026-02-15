@@ -22,20 +22,16 @@ void SkinnedCharDrawable::recordHDRDraw(VkCommandBuffer cmd, uint32_t frameIndex
     // Draw player character (slot 0 is reserved for player)
     constexpr uint32_t PLAYER_BONE_SLOT = 0;
     if (sceneBuilder.hasCharacter()) {
-        // Phase 6: Use ECS entity for player transform if available
         ecs::Entity playerEntity = sceneBuilder.getPlayerEntity();
         ecs::World* ecsWorld = sceneBuilder.getECSWorld();
         if (ecsWorld && playerEntity != ecs::NullEntity && ecsWorld->has<ecs::Transform>(playerEntity)) {
-            // Get transform from ECS
             const glm::mat4& playerTransform = ecsWorld->get<ecs::Transform>(playerEntity).matrix;
             resources_.skinnedMesh->record(cmd, frameIndex, PLAYER_BONE_SLOT, playerTransform, sceneBuilder.getAnimatedCharacter());
         } else {
-            // Fallback: use Renderable (legacy path)
-            const auto& sceneObjects = sceneBuilder.getRenderables();
-            size_t playerIndex = sceneBuilder.getPlayerObjectIndex();
-            if (playerIndex < sceneObjects.size()) {
-                const Renderable& playerObj = sceneObjects[playerIndex];
-                resources_.skinnedMesh->record(cmd, frameIndex, PLAYER_BONE_SLOT, playerObj, sceneBuilder.getAnimatedCharacter());
+            // Fallback: use Renderable via entity handle
+            const Renderable* playerObj = sceneBuilder.getRenderableForEntity(playerEntity);
+            if (playerObj) {
+                resources_.skinnedMesh->record(cmd, frameIndex, PLAYER_BONE_SLOT, *playerObj, sceneBuilder.getAnimatedCharacter());
             }
         }
     }

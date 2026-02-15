@@ -19,6 +19,7 @@
 #include "ecs/Components.h"
 #include <optional>
 #include <memory>
+#include <unordered_map>
 
 class AssetRegistry;
 class NPCSimulation;
@@ -68,8 +69,6 @@ public:
     // Access to built scene (legacy - for backwards compatibility)
     const std::vector<Renderable>& getRenderables() const { return sceneObjects; }
     std::vector<Renderable>& getRenderables() { return sceneObjects; }
-    size_t getPlayerObjectIndex() const { return playerObjectIndex; }
-    size_t getEmissiveOrbIndex() const { return emissiveOrbIndex; }
 
     // ECS entity accessors (Phase 6: direct entity access)
     ecs::Entity getPlayerEntity() const { return playerEntity_; }
@@ -83,6 +82,22 @@ public:
 
     // Get all scene entities (for ECS-based iteration)
     const std::vector<ecs::Entity>& getSceneEntities() const { return sceneEntities_; }
+
+    // Find the renderable for a given entity (returns nullptr if not found)
+    Renderable* getRenderableForEntity(ecs::Entity entity) {
+        auto it = entityToRenderableIndex_.find(entity);
+        if (it != entityToRenderableIndex_.end() && it->second < sceneObjects.size()) {
+            return &sceneObjects[it->second];
+        }
+        return nullptr;
+    }
+    const Renderable* getRenderableForEntity(ecs::Entity entity) const {
+        auto it = entityToRenderableIndex_.find(entity);
+        if (it != entityToRenderableIndex_.end() && it->second < sceneObjects.size()) {
+            return &sceneObjects[it->second];
+        }
+        return nullptr;
+    }
 
     // Get NPC entity by index
     ecs::Entity getNPCEntity(size_t npcIndex) const {
@@ -112,8 +127,7 @@ public:
         onRenderablesCreated_ = std::move(callback);
     }
 
-    // Get indices of objects that need physics bodies
-    // SceneManager uses this instead of hardcoded indices
+    // Deprecated: use PhysicsShapeInfo ECS component queries instead
     const std::vector<size_t>& getPhysicsEnabledIndices() const { return physicsEnabledIndices; }
 
     // Material registry - call registerMaterials() after init(), before Renderer creates descriptor sets
@@ -137,13 +151,10 @@ public:
     // Access to meshes for dynamic updates (e.g., cloth)
     Mesh& getFlagClothMesh() { return flagClothMesh; }
     Mesh& getFlagPoleMesh() { return *flagPoleMesh; }
-    size_t getFlagClothIndex() const { return flagClothIndex; }
-    size_t getFlagPoleIndex() const { return flagPoleIndex; }
 
     // Cape access
     PlayerCape& getPlayerCape() { return playerCape; }
     Mesh& getCapeMesh() { return capeMesh; }
-    size_t getCapeIndex() const { return capeIndex; }
     bool hasCape() const { return hasCapeEnabled; }
     void setCapeEnabled(bool enabled) { hasCapeEnabled = enabled; }
 
@@ -185,8 +196,6 @@ public:
 
     // Player weapons access
     bool hasWeapons() const { return rightHandBoneIndex >= 0 && leftHandBoneIndex >= 0; }
-    size_t getSwordIndex() const { return swordIndex; }
-    size_t getShieldIndex() const { return shieldIndex; }
     int32_t getRightHandBoneIndex() const { return rightHandBoneIndex; }
     int32_t getLeftHandBoneIndex() const { return leftHandBoneIndex; }
 
@@ -293,16 +302,19 @@ private:
     std::shared_ptr<Texture> defaultEmissive_;  // Black texture for objects without emissive
     std::shared_ptr<Texture> whiteTexture_;     // White texture for vertex-colored objects
 
-    // Scene objects
+    // Scene objects (renderables for rendering pipeline)
     std::vector<Renderable> sceneObjects;
-    size_t playerObjectIndex = 0;
-    size_t flagPoleIndex = 0;
-    size_t flagClothIndex = 0;
-    size_t wellEntranceIndex = 0;
-    size_t capeIndex = 0;
-    size_t emissiveOrbIndex = 0;  // Glowing orb that has a corresponding light
-    size_t swordIndex = 0;        // Player sword renderable index
-    size_t shieldIndex = 0;       // Player shield renderable index
+
+    // Internal renderable indices - used only during createEntitiesFromRenderables()
+    // to map renderables to their entity tags. After entity creation, use entity handles.
+    size_t playerRenderableIndex_ = 0;
+    size_t flagPoleRenderableIndex_ = 0;
+    size_t flagClothRenderableIndex_ = 0;
+    size_t wellEntranceRenderableIndex_ = 0;
+    size_t capeRenderableIndex_ = 0;
+    size_t emissiveOrbRenderableIndex_ = 0;
+    size_t swordRenderableIndex_ = 0;
+    size_t shieldRenderableIndex_ = 0;
     // Debug axis indicators (R=X, G=Y, B=Z) for hands
     size_t rightHandAxisX = 0;
     size_t rightHandAxisY = 0;
@@ -313,10 +325,11 @@ private:
     int32_t rightHandBoneIndex = -1;  // Bone index for sword attachment
     int32_t leftHandBoneIndex = -1;   // Bone index for shield attachment
 
-    // ECS entity handles (Phase 6: direct entity storage)
+    // ECS entity handles - the primary way to identify scene objects
     ecs::World* ecsWorld_ = nullptr;  // Pointer to ECS world (not owned)
-    std::vector<ecs::Entity> sceneEntities_;  // All scene entities
+    std::vector<ecs::Entity> sceneEntities_;  // All scene entities (parallel to sceneObjects)
     std::vector<ecs::Entity> npcEntities_;    // NPC entities
+    std::unordered_map<ecs::Entity, size_t> entityToRenderableIndex_;  // Reverse map
     ecs::Entity playerEntity_ = ecs::NullEntity;
     ecs::Entity emissiveOrbEntity_ = ecs::NullEntity;
     ecs::Entity flagPoleEntity_ = ecs::NullEntity;
@@ -326,8 +339,7 @@ private:
     ecs::Entity shieldEntity_ = ecs::NullEntity;
     ecs::Entity wellEntranceEntity_ = ecs::NullEntity;
 
-    // Indices of objects that should have physics bodies (dynamic objects)
-    // Objects NOT in this list are either static (lights, flags) or handled separately (player)
+    // Deprecated: use PhysicsShapeInfo component queries instead
     std::vector<size_t> physicsEnabledIndices;
 
     // Well entrance position (for terrain hole creation)

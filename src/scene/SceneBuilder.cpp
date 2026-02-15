@@ -84,87 +84,115 @@ void SceneBuilder::createEntitiesFromRenderables() {
 
     ecs::EntityFactory factory(*ecsWorld_);
     sceneEntities_.reserve(sceneObjects.size());
+    entityToRenderableIndex_.clear();
 
-    // Create entities from each renderable
-    for (size_t i = 0; i < sceneObjects.size(); ++i) {
+    // Helper: create entity from renderable and register in the reverse map
+    auto createEntity = [&](size_t i) -> ecs::Entity {
         ecs::Entity entity = factory.createFromRenderable(sceneObjects[i]);
         sceneEntities_.push_back(entity);
+        entityToRenderableIndex_[entity] = i;
 
-        // Store special entity handles
-        if (i == playerObjectIndex) {
+        // Add bounding sphere for culling (estimated from mesh)
+        glm::vec3 pos = glm::vec3(sceneObjects[i].transform[3]);
+        float radius = 2.0f;
+        if (sceneObjects[i].mesh) {
+            float scale = glm::length(glm::vec3(sceneObjects[i].transform[0]));
+            radius = scale * 2.0f;
+        }
+        ecsWorld_->add<ecs::BoundingSphere>(entity, pos, radius);
+        ecsWorld_->add<ecs::Visible>(entity);
+
+        return entity;
+    };
+
+    // Physics shape parameters
+    constexpr float BOX_MASS = 10.0f;
+    constexpr float SPHERE_MASS = 5.0f;
+    constexpr float ORB_MASS = 1.0f;
+    const glm::vec3 cubeHalfExtents(0.5f);
+
+    // Create entities for each renderable, tagging by mesh type and role
+    for (size_t i = 0; i < sceneObjects.size(); ++i) {
+        ecs::Entity entity = createEntity(i);
+        const auto& obj = sceneObjects[i];
+
+        // Tag by mesh identity: cubes get debug names and physics shapes
+        if (obj.mesh == cubeMesh.get()) {
+            ecsWorld_->add<ecs::DebugName>(entity, "Cube");
+            // All scene cubes are physics-enabled
+            ecsWorld_->add<ecs::PhysicsShapeInfo>(entity,
+                ecs::PhysicsShapeInfo::box(cubeHalfExtents, BOX_MASS));
+        } else if (obj.mesh == sphereMesh.get()) {
+            ecsWorld_->add<ecs::DebugName>(entity, "Sphere");
+            // Scene spheres are physics-enabled (with varying radius/mass)
+            float scale = glm::length(glm::vec3(obj.transform[0]));
+            if (scale < 0.5f) {
+                // Small sphere (emissive orb)
+                ecsWorld_->add<ecs::PhysicsShapeInfo>(entity,
+                    ecs::PhysicsShapeInfo::sphere(0.5f * scale, ORB_MASS));
+            } else if (obj.emissiveIntensity > 1.0f) {
+                // Emissive indicator spheres (blue/green lights) - no physics
+            } else {
+                // Normal spheres
+                ecsWorld_->add<ecs::PhysicsShapeInfo>(entity,
+                    ecs::PhysicsShapeInfo::sphere(0.5f, SPHERE_MASS));
+            }
+        } else if (obj.mesh == capsuleMesh.get()) {
+            ecsWorld_->add<ecs::DebugName>(entity, "Capsule");
+        } else if (obj.mesh == flagPoleMesh.get()) {
+            ecsWorld_->add<ecs::DebugName>(entity, "Flag Pole");
+        } else if (obj.mesh == swordMesh.get()) {
+            ecsWorld_->add<ecs::DebugName>(entity, "Sword");
+        } else if (obj.mesh == shieldMesh.get()) {
+            ecsWorld_->add<ecs::DebugName>(entity, "Shield");
+        } else if (obj.mesh == axisLineMesh.get()) {
+            ecsWorld_->add<ecs::DebugName>(entity, "Debug Axis");
+        } else if (obj.mesh == &flagClothMesh) {
+            ecsWorld_->add<ecs::DebugName>(entity, "Flag Cloth");
+        } else if (obj.mesh == &capeMesh) {
+            ecsWorld_->add<ecs::DebugName>(entity, "Cape");
+        }
+
+        // Tag special entities by their renderable index
+        // (These are the last index-based lookups - they map the stored
+        // renderable positions to entity tags during the creation phase)
+        if (i == playerRenderableIndex_) {
             playerEntity_ = entity;
             ecsWorld_->add<ecs::PlayerTag>(entity);
         }
-        if (i == emissiveOrbIndex) {
+        if (i == emissiveOrbRenderableIndex_) {
             emissiveOrbEntity_ = entity;
             ecsWorld_->add<ecs::OrbTag>(entity);
         }
-        if (i == flagPoleIndex) {
+        if (i == flagPoleRenderableIndex_) {
             flagPoleEntity_ = entity;
             ecsWorld_->add<ecs::FlagPoleTag>(entity);
         }
-        if (i == flagClothIndex) {
+        if (i == flagClothRenderableIndex_) {
             flagClothEntity_ = entity;
             ecsWorld_->add<ecs::FlagClothTag>(entity);
         }
-        if (i == capeIndex) {
+        if (i == capeRenderableIndex_) {
             capeEntity_ = entity;
             ecsWorld_->add<ecs::CapeTag>(entity);
         }
-        if (i == swordIndex) {
+        if (i == swordRenderableIndex_) {
             swordEntity_ = entity;
             ecsWorld_->add<ecs::WeaponTag>(entity, ecs::WeaponSlot::RightHand);
-            // Add bone attachment for sword
             if (rightHandBoneIndex >= 0) {
                 ecsWorld_->add<ecs::BoneAttachment>(entity, rightHandBoneIndex, glm::mat4(1.0f));
             }
         }
-        if (i == shieldIndex) {
+        if (i == shieldRenderableIndex_) {
             shieldEntity_ = entity;
             ecsWorld_->add<ecs::WeaponTag>(entity, ecs::WeaponSlot::LeftHand);
-            // Add bone attachment for shield
             if (leftHandBoneIndex >= 0) {
                 ecsWorld_->add<ecs::BoneAttachment>(entity, leftHandBoneIndex, glm::mat4(1.0f));
             }
         }
-        if (i == wellEntranceIndex) {
+        if (i == wellEntranceRenderableIndex_) {
             wellEntranceEntity_ = entity;
             ecsWorld_->add<ecs::WellEntranceTag>(entity);
-        }
-
-        // Add bounding sphere for culling (estimated from mesh)
-        glm::vec3 pos = glm::vec3(sceneObjects[i].transform[3]);
-        float radius = 2.0f;  // Default radius, could be computed from mesh bounds
-        if (sceneObjects[i].mesh) {
-            // Estimate radius from mesh scale in transform
-            float scale = glm::length(glm::vec3(sceneObjects[i].transform[0]));
-            radius = scale * 2.0f;  // Rough estimate
-        }
-        ecsWorld_->add<ecs::BoundingSphere>(entity, pos, radius);
-
-        // Mark as visible by default
-        ecsWorld_->add<ecs::Visible>(entity);
-
-        // Assign DebugName based on mesh type for entities without specific tags
-        // (Tagged entities like Player, NPC, etc. already get names from the hierarchy panel)
-        if (sceneObjects[i].mesh == cubeMesh.get()) {
-            ecsWorld_->add<ecs::DebugName>(entity, "Cube");
-        } else if (sceneObjects[i].mesh == sphereMesh.get()) {
-            ecsWorld_->add<ecs::DebugName>(entity, "Sphere");
-        } else if (sceneObjects[i].mesh == capsuleMesh.get()) {
-            ecsWorld_->add<ecs::DebugName>(entity, "Capsule");
-        } else if (sceneObjects[i].mesh == flagPoleMesh.get()) {
-            ecsWorld_->add<ecs::DebugName>(entity, "Flag Pole");
-        } else if (sceneObjects[i].mesh == swordMesh.get()) {
-            ecsWorld_->add<ecs::DebugName>(entity, "Sword");
-        } else if (sceneObjects[i].mesh == shieldMesh.get()) {
-            ecsWorld_->add<ecs::DebugName>(entity, "Shield");
-        } else if (sceneObjects[i].mesh == axisLineMesh.get()) {
-            ecsWorld_->add<ecs::DebugName>(entity, "Debug Axis");
-        } else if (sceneObjects[i].mesh == &flagClothMesh) {
-            ecsWorld_->add<ecs::DebugName>(entity, "Flag Cloth");
-        } else if (sceneObjects[i].mesh == &capeMesh) {
-            ecsWorld_->add<ecs::DebugName>(entity, "Cape");
         }
     }
 
@@ -642,7 +670,7 @@ void SceneBuilder::createRenderables() {
     // Sits 0.8m above crate (crate top at terrain+1.0, sphere center at terrain+1.0+0.3)
     // This object has physics AND is tracked as the emissive orb for light sync
     float glowSphereScale = 0.3f;
-    emissiveOrbIndex = addPhysicsObject(RenderableBuilder()
+    emissiveOrbRenderableIndex_ = addPhysicsObject(RenderableBuilder()
         .withTransform(Transform(
             glm::vec3(crateX, getGroundY(crateX, crateZ, 1.0f + glowSphereScale), crateZ),
             glm::quat(1, 0, 0, 0),  // Identity rotation
@@ -706,7 +734,7 @@ void SceneBuilder::createRenderables() {
     // Player position is controlled by physics, so we place at scene origin
     auto [playerX, playerZ] = worldPos(0.0f, 0.0f);
     float playerTerrainY = getTerrainHeight(playerX, playerZ);
-    playerObjectIndex = sceneObjects.size();
+    playerRenderableIndex_ = sceneObjects.size();
     if (hasAnimatedCharacter) {
         // Use materials from FBX if available, otherwise use defaults
         float charRoughness = 0.5f;  // Default roughness for more specular highlights
@@ -736,6 +764,7 @@ void SceneBuilder::createRenderables() {
             .withEmissiveColor(charEmissiveColor)
             .withEmissiveIntensity(charEmissiveIntensity)
             .withCastsShadow(true)
+            .withGPUSkinned(true)
             .build());
     } else {
         // Capsule fallback - capsule height 1.8m, center at 0.9m above ground
@@ -779,6 +808,7 @@ void SceneBuilder::createRenderables() {
                 .withMetallic(charMetallic)
                 .withCastsShadow(true)
                 .withHueShift(hueShift)
+                .withGPUSkinned(true)
                 .build());
 
             SDL_Log("SceneBuilder: Added NPC renderable at index %zu with hue shift %.2f rad", renderableIndex, hueShift);
@@ -787,7 +817,7 @@ void SceneBuilder::createRenderables() {
 
     // Player weapons - attached to hand bones, transforms updated each frame
     if (hasAnimatedCharacter && rightHandBoneIndex >= 0) {
-        swordIndex = sceneObjects.size();
+        swordRenderableIndex_ = sceneObjects.size();
         sceneObjects.push_back(RenderableBuilder()
             .withTransform(glm::mat4(1.0f))  // Updated per frame
             .withMesh(swordMesh.get())
@@ -797,10 +827,10 @@ void SceneBuilder::createRenderables() {
             .withMetallic(0.95f)
             .withCastsShadow(true)
             .build());
-        SDL_Log("SceneBuilder: Added sword renderable at index %zu", swordIndex);
+        SDL_Log("SceneBuilder: Added sword renderable at index %zu", swordRenderableIndex_);
     }
     if (hasAnimatedCharacter && leftHandBoneIndex >= 0) {
-        shieldIndex = sceneObjects.size();
+        shieldRenderableIndex_ = sceneObjects.size();
         sceneObjects.push_back(RenderableBuilder()
             .withTransform(glm::mat4(1.0f))  // Updated per frame
             .withMesh(shieldMesh.get())
@@ -810,7 +840,7 @@ void SceneBuilder::createRenderables() {
             .withMetallic(0.9f)
             .withCastsShadow(true)
             .build());
-        SDL_Log("SceneBuilder: Added shield renderable at index %zu", shieldIndex);
+        SDL_Log("SceneBuilder: Added shield renderable at index %zu", shieldRenderableIndex_);
     }
 
     // Debug axis indicators for right hand (R=X, G=Y, B=Z)
@@ -903,7 +933,7 @@ void SceneBuilder::createRenderables() {
 
     // Flag pole - 3m pole, center at 1.5m above ground
     auto [flagPoleX, flagPoleZ] = worldPos(5.0f, 0.0f);
-    flagPoleIndex = sceneObjects.size();
+    flagPoleRenderableIndex_ = sceneObjects.size();
     sceneObjects.push_back(RenderableBuilder()
         .atPosition(glm::vec3(flagPoleX, getGroundY(flagPoleX, flagPoleZ, 1.5f), flagPoleZ))
         .withMesh(flagPoleMesh.get())
@@ -915,7 +945,7 @@ void SceneBuilder::createRenderables() {
         .build());
 
     // Flag cloth - will be positioned and updated by ClothSimulation
-    flagClothIndex = sceneObjects.size();
+    flagClothRenderableIndex_ = sceneObjects.size();
     sceneObjects.push_back(RenderableBuilder()
         .withTransform(glm::mat4(1.0f))  // Identity, will be handled differently
         .withMesh(&flagClothMesh)
@@ -928,7 +958,7 @@ void SceneBuilder::createRenderables() {
 
     // Player cape - attached to character, updated each frame (using metal texture)
     if (hasCapeEnabled) {
-        capeIndex = sceneObjects.size();
+        capeRenderableIndex_ = sceneObjects.size();
         sceneObjects.push_back(RenderableBuilder()
             .withTransform(glm::mat4(1.0f))  // Identity, cloth positions are in world space
             .withMesh(&capeMesh)
@@ -948,7 +978,7 @@ void SceneBuilder::createRenderables() {
     glm::mat4 wellTransform = glm::translate(glm::mat4(1.0f),
         glm::vec3(wellEntranceX, wellY + 3.0f, wellEntranceZ));
     wellTransform = glm::scale(wellTransform, glm::vec3(2.0f, 0.5f, 12.0f));
-    wellEntranceIndex = sceneObjects.size();
+    wellEntranceRenderableIndex_ = sceneObjects.size();
     sceneObjects.push_back(RenderableBuilder()
         .withTransform(wellTransform)
         .withMesh(cubeMesh.get())
@@ -976,21 +1006,22 @@ glm::mat4 SceneBuilder::buildCharacterTransform(const glm::vec3& position, float
 }
 
 void SceneBuilder::updatePlayerTransform(const glm::mat4& transform) {
-    if (playerObjectIndex < sceneObjects.size()) {
-        if (hasAnimatedCharacter) {
-            // Extract position and adjust Y (remove capsule center offset)
-            glm::vec3 pos = glm::vec3(transform[3]);
-            pos.y -= 0.9f;  // CAPSULE_HEIGHT * 0.5 = 1.8 * 0.5
+    Renderable* playerRenderable = getRenderableForEntity(playerEntity_);
+    if (!playerRenderable) return;
 
-            // Use the player transform's rotation directly, just adjust position
-            // Note: Scale is now handled by FBX post-import processing
-            glm::mat4 result = transform;
-            result[3] = glm::vec4(pos, 1.0f);
+    if (hasAnimatedCharacter) {
+        // Extract position and adjust Y (remove capsule center offset)
+        glm::vec3 pos = glm::vec3(transform[3]);
+        pos.y -= 0.9f;  // CAPSULE_HEIGHT * 0.5 = 1.8 * 0.5
 
-            sceneObjects[playerObjectIndex].transform = result;
-        } else {
-            sceneObjects[playerObjectIndex].transform = transform;
-        }
+        // Use the player transform's rotation directly, just adjust position
+        // Note: Scale is now handled by FBX post-import processing
+        glm::mat4 result = transform;
+        result[3] = glm::vec4(pos, 1.0f);
+
+        playerRenderable->transform = result;
+    } else {
+        playerRenderable->transform = transform;
     }
 }
 
@@ -1004,8 +1035,9 @@ void SceneBuilder::updateAnimatedCharacter(float deltaTime, VmaAllocator allocat
 
     // Get the character's current world transform for IK ground queries
     glm::mat4 worldTransform = glm::mat4(1.0f);
-    if (playerObjectIndex < sceneObjects.size()) {
-        worldTransform = sceneObjects[playerObjectIndex].transform;
+    const Renderable* playerRenderable = getRenderableForEntity(playerEntity_);
+    if (playerRenderable) {
+        worldTransform = playerRenderable->transform;
     }
 
     // Update motion matching if enabled (must be called before update())
@@ -1052,8 +1084,9 @@ void SceneBuilder::updateAnimatedCharacter(float deltaTime, VmaAllocator allocat
                                   movementSpeed, isGrounded, isJumping, worldTransform);
 
     // Update the mesh pointer in the renderable (in case it was re-created)
-    if (playerObjectIndex < sceneObjects.size()) {
-        sceneObjects[playerObjectIndex].mesh = &animatedCharacter->getMesh();
+    Renderable* playerRend = getRenderableForEntity(playerEntity_);
+    if (playerRend) {
+        playerRend->mesh = &animatedCharacter->getMesh();
     }
 
     // Update player cape if enabled
@@ -1067,8 +1100,9 @@ void SceneBuilder::updateAnimatedCharacter(float deltaTime, VmaAllocator allocat
         capeMesh.upload(allocator, device, commandPool, queue);
 
         // Update mesh pointer in renderable
-        if (capeIndex < sceneObjects.size()) {
-            sceneObjects[capeIndex].mesh = &capeMesh;
+        Renderable* capeRend = getRenderableForEntity(capeEntity_);
+        if (capeRend) {
+            capeRend->mesh = &capeMesh;
         }
     }
 
@@ -1091,18 +1125,17 @@ void SceneBuilder::updateNPCs(float deltaTime, const glm::vec3& cameraPos) {
         npcSimulation_->update(deltaTime, cameraPos);
     }
 
-    // Update renderable transforms from NPCSimulation data
-    auto& npcData = npcSimulation_->getData();
-    for (size_t i = 0; i < npcData.count(); ++i) {
-        size_t renderableIndex = npcData.renderableIndices[i];
-        if (renderableIndex >= sceneObjects.size()) continue;
-
+    // Update renderable transforms from NPC entities
+    for (size_t i = 0; i < npcEntities_.size(); ++i) {
         auto* character = npcSimulation_->getCharacter(i);
         if (!character) continue;
 
+        Renderable* npcRenderable = getRenderableForEntity(npcEntities_[i]);
+        if (!npcRenderable) continue;
+
         glm::mat4 worldTransform = npcSimulation_->buildNPCTransform(i);
-        sceneObjects[renderableIndex].transform = worldTransform;
-        sceneObjects[renderableIndex].mesh = &character->getMesh();
+        npcRenderable->transform = worldTransform;
+        npcRenderable->mesh = &character->getMesh();
     }
 }
 
@@ -1136,24 +1169,30 @@ void SceneBuilder::updateWeaponTransforms(const glm::mat4& worldTransform) {
     // Hide transform (scale to zero)
     glm::mat4 hideTransform = glm::scale(glm::mat4(1.0f), glm::vec3(0.0f));
 
+    // Helper to update a renderable's transform via its entity handle
+    auto updateRenderable = [this](ecs::Entity entity, const glm::mat4& transform) {
+        Renderable* r = getRenderableForEntity(entity);
+        if (r) r->transform = transform;
+    };
+
     // Update sword transform (attached to right hand)
-    if (swordIndex < sceneObjects.size()) {
+    if (swordEntity_ != ecs::NullEntity) {
         if (showSword_ && rightHandBoneIndex >= 0) {
             glm::mat4 boneWorld = worldTransform * globalTransforms[rightHandBoneIndex];
 
             // Cylinder has height along Y. We want it to point along bone's -X axis.
             // Rotate 90° around Z to tip Y toward -X, then offset along sword length
             glm::mat4 swordOffset = glm::rotate(glm::mat4(1.0f), glm::radians(90.0f), glm::vec3(0.0f, 0.0f, 1.0f));
-            swordOffset = glm::translate(swordOffset, glm::vec3(0.0f, 0.4f, 0.0f));  // Offset along sword length only
+            swordOffset = glm::translate(swordOffset, glm::vec3(0.0f, 0.4f, 0.0f));
 
-            sceneObjects[swordIndex].transform = boneWorld * swordOffset;
+            updateRenderable(swordEntity_, boneWorld * swordOffset);
         } else {
-            sceneObjects[swordIndex].transform = hideTransform;
+            updateRenderable(swordEntity_, hideTransform);
         }
     }
 
     // Update shield transform (attached to left hand)
-    if (shieldIndex < sceneObjects.size()) {
+    if (shieldEntity_ != ecs::NullEntity) {
         if (showShield_ && leftHandBoneIndex >= 0) {
             glm::mat4 boneWorld = worldTransform * globalTransforms[leftHandBoneIndex];
 
@@ -1161,9 +1200,9 @@ void SceneBuilder::updateWeaponTransforms(const glm::mat4& worldTransform) {
             // Rotate -90° around X to make Y point toward -Z
             glm::mat4 shieldOffset = glm::rotate(glm::mat4(1.0f), glm::radians(-90.0f), glm::vec3(1.0f, 0.0f, 0.0f));
 
-            sceneObjects[shieldIndex].transform = boneWorld * shieldOffset;
+            updateRenderable(shieldEntity_, boneWorld * shieldOffset);
         } else {
-            sceneObjects[shieldIndex].transform = hideTransform;
+            updateRenderable(shieldEntity_, hideTransform);
         }
     }
 
@@ -1171,75 +1210,47 @@ void SceneBuilder::updateWeaponTransforms(const glm::mat4& worldTransform) {
     if (rightHandBoneIndex >= 0) {
         glm::mat4 boneWorld = worldTransform * globalTransforms[rightHandBoneIndex];
 
-        // Hide axes by scaling to 0 when disabled
-        glm::mat4 hideTransform = glm::scale(glm::mat4(1.0f), glm::vec3(0.0f));
+        auto updateAxis = [&](size_t axisIdx, const glm::mat4& offset) {
+            if (axisIdx < sceneObjects.size()) {
+                sceneObjects[axisIdx].transform = showWeaponAxes_ ? (boneWorld * offset) : hideTransform;
+            }
+        };
 
         // X axis (Red) - rotate 90° around Z to point Y toward X
-        if (rightHandAxisX < sceneObjects.size()) {
-            if (showWeaponAxes_) {
-                glm::mat4 xOffset = glm::rotate(glm::mat4(1.0f), glm::radians(-90.0f), glm::vec3(0.0f, 0.0f, 1.0f));
-                xOffset = glm::translate(xOffset, glm::vec3(0.0f, 0.075f, 0.0f));
-                sceneObjects[rightHandAxisX].transform = boneWorld * xOffset;
-            } else {
-                sceneObjects[rightHandAxisX].transform = hideTransform;
-            }
-        }
+        glm::mat4 xOffset = glm::rotate(glm::mat4(1.0f), glm::radians(-90.0f), glm::vec3(0.0f, 0.0f, 1.0f));
+        xOffset = glm::translate(xOffset, glm::vec3(0.0f, 0.075f, 0.0f));
+        updateAxis(rightHandAxisX, xOffset);
 
         // Y axis (Green) - no rotation needed, cylinder already points along Y
-        if (rightHandAxisY < sceneObjects.size()) {
-            if (showWeaponAxes_) {
-                glm::mat4 yOffset = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.075f, 0.0f));
-                sceneObjects[rightHandAxisY].transform = boneWorld * yOffset;
-            } else {
-                sceneObjects[rightHandAxisY].transform = hideTransform;
-            }
-        }
+        glm::mat4 yOffset = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.075f, 0.0f));
+        updateAxis(rightHandAxisY, yOffset);
 
         // Z axis (Blue) - rotate 90° around X to point Y toward Z
-        if (rightHandAxisZ < sceneObjects.size()) {
-            if (showWeaponAxes_) {
-                glm::mat4 zOffset = glm::rotate(glm::mat4(1.0f), glm::radians(90.0f), glm::vec3(1.0f, 0.0f, 0.0f));
-                zOffset = glm::translate(zOffset, glm::vec3(0.0f, 0.075f, 0.0f));
-                sceneObjects[rightHandAxisZ].transform = boneWorld * zOffset;
-            } else {
-                sceneObjects[rightHandAxisZ].transform = hideTransform;
-            }
-        }
+        glm::mat4 zOffset = glm::rotate(glm::mat4(1.0f), glm::radians(90.0f), glm::vec3(1.0f, 0.0f, 0.0f));
+        zOffset = glm::translate(zOffset, glm::vec3(0.0f, 0.075f, 0.0f));
+        updateAxis(rightHandAxisZ, zOffset);
     }
 
     // Debug axis indicators for left hand
     if (leftHandBoneIndex >= 0) {
         glm::mat4 boneWorld = worldTransform * globalTransforms[leftHandBoneIndex];
-        glm::mat4 hideTransform = glm::scale(glm::mat4(1.0f), glm::vec3(0.0f));
 
-        if (leftHandAxisX < sceneObjects.size()) {
-            if (showWeaponAxes_) {
-                glm::mat4 xOffset = glm::rotate(glm::mat4(1.0f), glm::radians(-90.0f), glm::vec3(0.0f, 0.0f, 1.0f));
-                xOffset = glm::translate(xOffset, glm::vec3(0.0f, 0.075f, 0.0f));
-                sceneObjects[leftHandAxisX].transform = boneWorld * xOffset;
-            } else {
-                sceneObjects[leftHandAxisX].transform = hideTransform;
+        auto updateAxis = [&](size_t axisIdx, const glm::mat4& offset) {
+            if (axisIdx < sceneObjects.size()) {
+                sceneObjects[axisIdx].transform = showWeaponAxes_ ? (boneWorld * offset) : hideTransform;
             }
-        }
+        };
 
-        if (leftHandAxisY < sceneObjects.size()) {
-            if (showWeaponAxes_) {
-                glm::mat4 yOffset = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.075f, 0.0f));
-                sceneObjects[leftHandAxisY].transform = boneWorld * yOffset;
-            } else {
-                sceneObjects[leftHandAxisY].transform = hideTransform;
-            }
-        }
+        glm::mat4 xOffset = glm::rotate(glm::mat4(1.0f), glm::radians(-90.0f), glm::vec3(0.0f, 0.0f, 1.0f));
+        xOffset = glm::translate(xOffset, glm::vec3(0.0f, 0.075f, 0.0f));
+        updateAxis(leftHandAxisX, xOffset);
 
-        if (leftHandAxisZ < sceneObjects.size()) {
-            if (showWeaponAxes_) {
-                glm::mat4 zOffset = glm::rotate(glm::mat4(1.0f), glm::radians(90.0f), glm::vec3(1.0f, 0.0f, 0.0f));
-                zOffset = glm::translate(zOffset, glm::vec3(0.0f, 0.075f, 0.0f));
-                sceneObjects[leftHandAxisZ].transform = boneWorld * zOffset;
-            } else {
-                sceneObjects[leftHandAxisZ].transform = hideTransform;
-            }
-        }
+        glm::mat4 yOffset = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.075f, 0.0f));
+        updateAxis(leftHandAxisY, yOffset);
+
+        glm::mat4 zOffset = glm::rotate(glm::mat4(1.0f), glm::radians(90.0f), glm::vec3(1.0f, 0.0f, 0.0f));
+        zOffset = glm::translate(zOffset, glm::vec3(0.0f, 0.075f, 0.0f));
+        updateAxis(leftHandAxisZ, zOffset);
     }
 }
 

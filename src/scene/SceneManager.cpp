@@ -2,6 +2,7 @@
 #include "lighting/LightSystem.h"
 #include "ecs/Components.h"
 #include <SDL3/SDL.h>
+#include <algorithm>
 
 std::unique_ptr<SceneManager> SceneManager::create(SceneBuilder::InitInfo& builderInfo) {
     auto system = std::make_unique<SceneManager>(ConstructToken{});
@@ -104,57 +105,72 @@ void SceneManager::initializeScenePhysics(PhysicsWorld& physics) {
     // NOTE: Terrain physics is now initialized separately via initTerrainPhysics()
     // which creates a heightfield from the TerrainSystem's height data
 
-    // Get scene objects from builder
     const auto& sceneObjects = sceneBuilder->getRenderables();
-    const auto& physicsIndices = sceneBuilder->getPhysicsEnabledIndices();
 
     // Resize physics bodies array to match scene objects
     scenePhysicsBodies.resize(sceneObjects.size(), INVALID_BODY_ID);
 
-    // Physics parameters
-    glm::vec3 cubeHalfExtents(0.5f, 0.5f, 0.5f);
-    float boxMass = 10.0f;
-    float sphereMass = 5.0f;
     const float spawnOffset = 0.1f;
 
-    // Helper to get spawn Y position on terrain
-    auto getSpawnY = [this, spawnOffset](float x, float z, float objectHeight) {
-        return getTerrainHeight(x, z) + objectHeight + spawnOffset;
-    };
+    // If ECS world is available, use PhysicsShapeInfo components to create bodies
+    if (ecsWorld_) {
+        size_t bodyCount = 0;
+        for (auto [entity, shapeInfo, transform] :
+             ecsWorld_->view<ecs::PhysicsShapeInfo, ecs::Transform>().each()) {
 
-    // Get the emissive orb index from SceneBuilder
-    size_t emissiveOrbIndex = sceneBuilder->getEmissiveOrbIndex();
+            // Find the renderable index for this entity
+            const Renderable* renderable = sceneBuilder->getRenderableForEntity(entity);
+            if (!renderable) continue;
 
-    // Create physics bodies for each physics-enabled object
-    // The physicsIndices tells us which scene objects need physics
-    for (size_t i = 0; i < physicsIndices.size(); ++i) {
-        size_t objIndex = physicsIndices[i];
-        if (objIndex >= sceneObjects.size()) continue;
+            // Find index in sceneObjects for physics body storage
+            auto it = std::find_if(sceneObjects.begin(), sceneObjects.end(),
+                [renderable](const Renderable& r) { return &r == renderable; });
+            if (it == sceneObjects.end()) continue;
+            size_t objIndex = static_cast<size_t>(std::distance(sceneObjects.begin(), it));
 
-        const auto& obj = sceneObjects[objIndex];
-        glm::vec3 pos = glm::vec3(obj.transform[3]);
+            glm::vec3 pos = transform.position();
 
-        // Determine object type from mesh - cubes vs spheres
-        // For the emissive orb (small sphere on crate), use smaller radius
-        if (objIndex == emissiveOrbIndex) {
-            // Small emissive sphere (scaled 0.3)
-            scenePhysicsBodies[objIndex] = physics.createSphere(
-                glm::vec3(pos.x, pos.y + spawnOffset, pos.z),
-                0.5f * 0.3f, 1.0f);
-        } else if (i < 2 || i == 4 || i == 5) {
-            // Boxes: crates (0,1) and metal cubes (4,5)
-            scenePhysicsBodies[objIndex] = physics.createBox(
-                glm::vec3(pos.x, pos.y + spawnOffset, pos.z),
-                cubeHalfExtents, boxMass);
-        } else {
-            // Spheres: indices 2,3
-            scenePhysicsBodies[objIndex] = physics.createSphere(
-                glm::vec3(pos.x, pos.y + spawnOffset, pos.z),
-                0.5f, sphereMass);
+            if (shapeInfo.shapeType == ecs::PhysicsShapeType::Box) {
+                scenePhysicsBodies[objIndex] = physics.createBox(
+                    glm::vec3(pos.x, pos.y + spawnOffset, pos.z),
+                    shapeInfo.halfExtents, shapeInfo.mass);
+            } else {
+                scenePhysicsBodies[objIndex] = physics.createSphere(
+                    glm::vec3(pos.x, pos.y + spawnOffset, pos.z),
+                    shapeInfo.radius(), shapeInfo.mass);
+            }
+
+            // Add PhysicsBody component to entity
+            if (scenePhysicsBodies[objIndex] != INVALID_BODY_ID) {
+                ecsWorld_->add<ecs::PhysicsBody>(entity,
+                    static_cast<ecs::PhysicsBodyId>(scenePhysicsBodies[objIndex]));
+                bodyCount++;
+            }
         }
-    }
+        SDL_Log("Scene physics initialized with %zu bodies from ECS components", bodyCount);
+    } else {
+        // Fallback: use legacy physicsEnabledIndices
+        const auto& physicsIndices = sceneBuilder->getPhysicsEnabledIndices();
+        for (size_t i = 0; i < physicsIndices.size(); ++i) {
+            size_t objIndex = physicsIndices[i];
+            if (objIndex >= sceneObjects.size()) continue;
 
-    SDL_Log("Scene physics initialized with %zu physics-enabled objects", physicsIndices.size());
+            const auto& obj = sceneObjects[objIndex];
+            glm::vec3 pos = glm::vec3(obj.transform[3]);
+
+            // Default: boxes for cubes, spheres for others
+            if (i < 2 || i == 4 || i == 5) {
+                scenePhysicsBodies[objIndex] = physics.createBox(
+                    glm::vec3(pos.x, pos.y + spawnOffset, pos.z),
+                    glm::vec3(0.5f), 10.0f);
+            } else {
+                scenePhysicsBodies[objIndex] = physics.createSphere(
+                    glm::vec3(pos.x, pos.y + spawnOffset, pos.z),
+                    0.5f, 5.0f);
+            }
+        }
+        SDL_Log("Scene physics initialized with %zu physics-enabled objects (legacy)", physicsIndices.size());
+    }
 }
 
 void SceneManager::initializeECSLights() {
@@ -243,47 +259,59 @@ void SceneManager::initializeSceneLights() {
 }
 
 void SceneManager::updatePhysicsToScene(PhysicsWorld& physics) {
-    // Update scene object transforms from physics simulation
-    auto& sceneObjects = sceneBuilder->getRenderables();
-    size_t emissiveOrbIndex = sceneBuilder->getEmissiveOrbIndex();
+    // Use ECS component queries when available
+    if (ecsWorld_) {
+        for (auto [entity, physBody] : ecsWorld_->view<ecs::PhysicsBody>().each()) {
+            if (!physBody.valid()) continue;
 
-    for (size_t i = 0; i < scenePhysicsBodies.size() && i < sceneObjects.size(); i++) {
-        PhysicsBodyID bodyID = scenePhysicsBodies[i];
-        if (bodyID == INVALID_BODY_ID) continue;
+            // Skip player (handled separately by physics character controller)
+            if (ecsWorld_->has<ecs::PlayerTag>(entity)) continue;
 
-        // Skip player object (handled separately)
-        if (i == sceneBuilder->getPlayerObjectIndex()) continue;
+            PhysicsBodyID bodyID = static_cast<PhysicsBodyID>(physBody.bodyId);
+            glm::mat4 physicsTransform = physics.getBodyTransform(bodyID);
 
-        // Get transform from physics (position and rotation only)
-        glm::mat4 physicsTransform = physics.getBodyTransform(bodyID);
+            // Find and update the renderable
+            Renderable* renderable = sceneBuilder->getRenderableForEntity(entity);
+            if (renderable) {
+                // Extract scale from current transform to preserve it
+                glm::vec3 scale;
+                scale.x = glm::length(glm::vec3(renderable->transform[0]));
+                scale.y = glm::length(glm::vec3(renderable->transform[1]));
+                scale.z = glm::length(glm::vec3(renderable->transform[2]));
 
-        // Extract scale from current transform to preserve it
-        glm::vec3 scale;
-        scale.x = glm::length(glm::vec3(sceneObjects[i].transform[0]));
-        scale.y = glm::length(glm::vec3(sceneObjects[i].transform[1]));
-        scale.z = glm::length(glm::vec3(sceneObjects[i].transform[2]));
-
-        // Apply scale to physics transform
-        physicsTransform = glm::scale(physicsTransform, scale);
-
-        // Update scene object transform
-        sceneObjects[i].transform = physicsTransform;
-
-        // Update orb light position to follow the emissive sphere
-        if (i == emissiveOrbIndex) {
-            glm::vec3 orbPosition = glm::vec3(physicsTransform[3]);
-            orbLightPosition = orbPosition;
-
-            // Update ECS light entity position
-            if (ecsWorld_ && orbLightEntity_ != ecs::NullEntity && ecsWorld_->valid(orbLightEntity_)) {
-                if (ecsWorld_->has<ecs::Transform>(orbLightEntity_)) {
-                    ecsWorld_->get<ecs::Transform>(orbLightEntity_).matrix =
-                        ecs::Transform::fromPosition(orbPosition).matrix;
-                }
-            } else if (lightManager.getLightCount() > 0) {
-                // Fallback to legacy light manager
-                lightManager.getLight(0).position = orbPosition;
+                physicsTransform = glm::scale(physicsTransform, scale);
+                renderable->transform = physicsTransform;
             }
+
+            // Update orb light position to follow the emissive sphere
+            if (ecsWorld_->has<ecs::OrbTag>(entity)) {
+                glm::vec3 orbPosition = glm::vec3(physicsTransform[3]);
+                orbLightPosition = orbPosition;
+
+                if (orbLightEntity_ != ecs::NullEntity && ecsWorld_->valid(orbLightEntity_)) {
+                    if (ecsWorld_->has<ecs::Transform>(orbLightEntity_)) {
+                        ecsWorld_->get<ecs::Transform>(orbLightEntity_).matrix =
+                            ecs::Transform::fromPosition(orbPosition).matrix;
+                    }
+                }
+            }
+        }
+    } else {
+        // Fallback: legacy index-based update
+        auto& sceneObjects = sceneBuilder->getRenderables();
+        for (size_t i = 0; i < scenePhysicsBodies.size() && i < sceneObjects.size(); i++) {
+            PhysicsBodyID bodyID = scenePhysicsBodies[i];
+            if (bodyID == INVALID_BODY_ID) continue;
+
+            glm::mat4 physicsTransform = physics.getBodyTransform(bodyID);
+
+            glm::vec3 scale;
+            scale.x = glm::length(glm::vec3(sceneObjects[i].transform[0]));
+            scale.y = glm::length(glm::vec3(sceneObjects[i].transform[1]));
+            scale.z = glm::length(glm::vec3(sceneObjects[i].transform[2]));
+
+            physicsTransform = glm::scale(physicsTransform, scale);
+            sceneObjects[i].transform = physicsTransform;
         }
     }
 }

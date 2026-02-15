@@ -1275,24 +1275,24 @@ void Application::initECS() {
     const auto& renderables = sceneManager.getRenderables();
     SceneBuilder& sceneBuilder = sceneManager.getSceneBuilder();
 
-    // Phase 6: Let SceneBuilder create ECS entities directly
+    // Create ECS entities from renderables (tags and components assigned by SceneBuilder)
     sceneBuilder.setECSWorld(&ecsWorld_);
     sceneBuilder.createEntitiesFromRenderables();
 
-    // Get entity references from SceneBuilder
-    const auto& sceneEntities = sceneBuilder.getSceneEntities();
+    // Connect ECS world to renderer systems for direct entity queries
+    renderer_->getSystems().setECSWorld(&ecsWorld_);
 
-    // Link physics bodies from SceneManager to ECS entities
+    // Link physics bodies to ECS entities
+    // (Physics bodies are created before ECS init, so we link them here
+    // using the entity-to-renderable mapping)
+    const auto& sceneEntities = sceneBuilder.getSceneEntities();
     const auto& physicsBodies = sceneManager.getPhysicsBodies();
     for (size_t i = 0; i < physicsBodies.size() && i < sceneEntities.size(); ++i) {
         PhysicsBodyID bodyId = physicsBodies[i];
-        if (bodyId != INVALID_BODY_ID) {
+        if (bodyId != INVALID_BODY_ID && !ecsWorld_.has<ecs::PhysicsBody>(sceneEntities[i])) {
             ecsWorld_.add<ecs::PhysicsBody>(sceneEntities[i], static_cast<ecs::PhysicsBodyId>(bodyId));
         }
     }
-
-    // Phase 6: Connect ECS world to renderer systems for direct entity queries
-    renderer_->getSystems().setECSWorld(&ecsWorld_);
 
     SDL_Log("ECS initialized with %zu entities from scene", sceneEntities.size());
 
@@ -1396,12 +1396,9 @@ void Application::updateECS(float deltaTime) {
         // Sync bone-attached ECS transforms back to renderables for rendering
         for (auto [entity, attachment, transform] :
              ecsWorld_.view<ecs::BoneAttachment, ecs::Transform>().each()) {
-            // Find the renderable index for this entity
-            for (size_t i = 0; i < currentEntities.size(); ++i) {
-                if (currentEntities[i] == entity && i < renderables.size()) {
-                    renderables[i].transform = transform.matrix;
-                    break;
-                }
+            Renderable* renderable = sceneBuilder.getRenderableForEntity(entity);
+            if (renderable) {
+                renderable->transform = transform.matrix;
             }
         }
     }

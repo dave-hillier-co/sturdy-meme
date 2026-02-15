@@ -348,6 +348,44 @@ struct ExternalTransformSource {
 };
 
 // =============================================================================
+// Physics Shape Info Component
+// =============================================================================
+// Describes the physics collision shape for an entity.
+// Used during physics initialization to create the physics body.
+// After initialization, the entity also gets a PhysicsBody component.
+
+enum class PhysicsShapeType : uint8_t {
+    Box = 0,
+    Sphere = 1
+};
+
+struct PhysicsShapeInfo {
+    PhysicsShapeType shapeType = PhysicsShapeType::Box;
+    glm::vec3 halfExtents = glm::vec3(0.5f);  // For box; for sphere, x = radius
+    float mass = 10.0f;
+
+    PhysicsShapeInfo() = default;
+
+    static PhysicsShapeInfo box(const glm::vec3& halfExt, float m) {
+        PhysicsShapeInfo info;
+        info.shapeType = PhysicsShapeType::Box;
+        info.halfExtents = halfExt;
+        info.mass = m;
+        return info;
+    }
+
+    static PhysicsShapeInfo sphere(float radius, float m) {
+        PhysicsShapeInfo info;
+        info.shapeType = PhysicsShapeType::Sphere;
+        info.halfExtents = glm::vec3(radius, 0.0f, 0.0f);
+        info.mass = m;
+        return info;
+    }
+
+    [[nodiscard]] float radius() const { return halfExtents.x; }
+};
+
+// =============================================================================
 // Physics Component
 // =============================================================================
 // Links an entity to a physics body.

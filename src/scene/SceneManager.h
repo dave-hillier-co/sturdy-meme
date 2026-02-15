@@ -51,7 +51,6 @@ public:
     // Scene object access for rendering
     std::vector<Renderable>& getRenderables() { return sceneBuilder->getRenderables(); }
     const std::vector<Renderable>& getRenderables() const { return sceneBuilder->getRenderables(); }
-    size_t getPlayerObjectIndex() const { return sceneBuilder->getPlayerObjectIndex(); }
 
     // SceneBuilder access for texture descriptor sets
     bool hasSceneBuilder() const { return sceneBuilder != nullptr; }

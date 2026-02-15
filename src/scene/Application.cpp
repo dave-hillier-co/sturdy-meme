@@ -1377,17 +1377,10 @@ void Application::updateECS(float deltaTime) {
         // Get character world transform from player state
         glm::mat4 characterWorld = player_.movement.getModelMatrix(player_.transform);
 
-        // Update all bone-attached entities
+        // Update all bone-attached entities (ECS Transform only, for inspector/hierarchy)
+        // Renderable transforms are set by updateWeaponTransforms() which runs after
+        // the skeleton is animated and uses the correct player renderable world transform.
         ecs::systems::updateBoneAttachments(ecsWorld_, characterWorld, globalBoneTransforms);
-
-        // Sync bone-attached ECS transforms back to renderables for rendering
-        for (auto [entity, attachment, transform] :
-             ecsWorld_.view<ecs::BoneAttachment, ecs::Transform>().each()) {
-            Renderable* renderable = sceneBuilder.getRenderableForEntity(entity);
-            if (renderable) {
-                renderable->transform = transform.matrix;
-            }
-        }
     }
 
     // Update ECS material demo (wetness/damage cycling, selection toggling)

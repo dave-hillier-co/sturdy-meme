@@ -1227,43 +1227,63 @@ bool SceneBuilder::hasNPCs() const {
 }
 
 
-void SceneBuilder::updateWeaponTransforms(const glm::mat4& /*worldTransform*/) {
-    // Positioning is handled by the ECS bone attachment system (updateBoneAttachments).
-    // This function only handles visibility toggling via scale-to-zero.
-    if (!ecsWorld_) return;
+void SceneBuilder::updateWeaponTransforms(const glm::mat4& worldTransform) {
+    if (!hasAnimatedCharacter || !ecsWorld_) return;
+
+    // Compute global bone transforms from the freshly-animated skeleton
+    const auto& skeleton = animatedCharacter->getSkeleton();
+    std::vector<glm::mat4> globalTransforms;
+    skeleton.computeGlobalTransforms(globalTransforms);
 
     glm::mat4 hideTransform = glm::scale(glm::mat4(1.0f), glm::vec3(0.0f));
 
-    // Hide weapons that are not visible
-    auto hideIfNotVisible = [&](ecs::Entity entity, bool visible) {
+    // Position a bone-attached entity's Renderable, or hide it
+    auto updateAttached = [&](ecs::Entity entity, int boneIndex, const glm::mat4& offset, bool visible) {
         if (entity == ecs::NullEntity) return;
         Renderable* r = getRenderableForEntity(entity);
-        if (r && !visible) {
+        if (!r) return;
+        if (visible && boneIndex >= 0 && static_cast<size_t>(boneIndex) < globalTransforms.size()) {
+            r->transform = worldTransform * globalTransforms[boneIndex] * offset;
+        } else {
             r->transform = hideTransform;
         }
     };
 
-    // Sword visibility
-    if (swordEntity_ != ecs::NullEntity && ecsWorld_->has<ecs::WeaponTag>(swordEntity_)) {
-        bool visible = ecsWorld_->get<ecs::WeaponTag>(swordEntity_).visible && rightHandBoneIndex >= 0;
-        hideIfNotVisible(swordEntity_, visible);
+    // Sword
+    if (swordEntity_ != ecs::NullEntity) {
+        bool visible = ecsWorld_->has<ecs::WeaponTag>(swordEntity_) &&
+                       ecsWorld_->get<ecs::WeaponTag>(swordEntity_).visible;
+        updateAttached(swordEntity_, rightHandBoneIndex, getSwordOffset(), visible);
     }
 
-    // Shield visibility
-    if (shieldEntity_ != ecs::NullEntity && ecsWorld_->has<ecs::WeaponTag>(shieldEntity_)) {
-        bool visible = ecsWorld_->get<ecs::WeaponTag>(shieldEntity_).visible && leftHandBoneIndex >= 0;
-        hideIfNotVisible(shieldEntity_, visible);
+    // Shield
+    if (shieldEntity_ != ecs::NullEntity) {
+        bool visible = ecsWorld_->has<ecs::WeaponTag>(shieldEntity_) &&
+                       ecsWorld_->get<ecs::WeaponTag>(shieldEntity_).visible;
+        updateAttached(shieldEntity_, leftHandBoneIndex, getShieldOffset(), visible);
     }
 
-    // Debug axis visibility
-    auto checkAxisVisible = [&](ecs::Entity entity) -> bool {
-        if (entity == ecs::NullEntity) return false;
-        return ecsWorld_->has<ecs::DebugAxisTag>(entity) &&
-               ecsWorld_->get<ecs::DebugAxisTag>(entity).visible;
-    };
+    // Debug axes - right hand
+    for (int a = 0; a < 3; ++a) {
+        ecs::Entity e = rightHandAxisEntities_[a];
+        if (e == ecs::NullEntity) continue;
+        bool visible = ecsWorld_->has<ecs::DebugAxisTag>(e) &&
+                       ecsWorld_->get<ecs::DebugAxisTag>(e).visible;
+        glm::mat4 off = (ecsWorld_->has<ecs::BoneAttachment>(e))
+            ? ecsWorld_->get<ecs::BoneAttachment>(e).localOffset : glm::mat4(1.0f);
+        updateAttached(e, rightHandBoneIndex, off, visible);
+    }
 
-    for (auto e : rightHandAxisEntities_) hideIfNotVisible(e, checkAxisVisible(e));
-    for (auto e : leftHandAxisEntities_) hideIfNotVisible(e, checkAxisVisible(e));
+    // Debug axes - left hand
+    for (int a = 0; a < 3; ++a) {
+        ecs::Entity e = leftHandAxisEntities_[a];
+        if (e == ecs::NullEntity) continue;
+        bool visible = ecsWorld_->has<ecs::DebugAxisTag>(e) &&
+                       ecsWorld_->get<ecs::DebugAxisTag>(e).visible;
+        glm::mat4 off = (ecsWorld_->has<ecs::BoneAttachment>(e))
+            ? ecsWorld_->get<ecs::BoneAttachment>(e).localOffset : glm::mat4(1.0f);
+        updateAttached(e, leftHandBoneIndex, off, visible);
+    }
 }
 
 // Texture accessors (return raw pointer from shared_ptr)

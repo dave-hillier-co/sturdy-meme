@@ -1,8 +1,10 @@
 #include "MeshClusterBuilder.h"
 #include <SDL3/SDL_log.h>
+#include <meshoptimizer.h>
 #include <algorithm>
 #include <cstring>
 #include <numeric>
+#include <unordered_set>
 
 // ============================================================================
 // MeshClusterBuilder
@@ -42,9 +44,12 @@ ClusteredMesh MeshClusterBuilder::build(const std::vector<Vertex>& vertices,
         cluster.indexCount = indexCount;
         cluster.firstVertex = 0;  // All clusters share the same vertex buffer
         cluster.meshId = meshId;
-        cluster.lodLevel = 0;  // Base LOD for now
+        cluster.lodLevel = 0;
         cluster.parentError = 0.0f;
         cluster.error = 0.0f;
+        cluster.parentIndex = UINT32_MAX;
+        cluster.firstChildIndex = 0;
+        cluster.childCount = 0;
 
         // Compute bounding data
         cluster.boundingSphere = computeBoundingSphere(vertices, indices, firstIndex, indexCount);
@@ -143,6 +148,318 @@ void MeshClusterBuilder::computeNormalCone(const std::vector<Vertex>& vertices,
     }
 
     outAngle = minCos;  // cos(half-angle) - higher = tighter cone
+}
+
+// ============================================================================
+// DAG Builder
+// ============================================================================
+
+ClusteredMesh MeshClusterBuilder::buildWithDAG(const std::vector<Vertex>& vertices,
+                                                const std::vector<uint32_t>& indices,
+                                                uint32_t meshId) {
+    // Step 1: Build leaf clusters (LOD 0)
+    ClusteredMesh result = build(vertices, indices, meshId);
+
+    uint32_t leafCount = result.totalClusters;
+    result.leafClusterCount = leafCount;
+
+    // Need at least 2 clusters to build a hierarchy
+    if (leafCount < 2) {
+        result.dagLevels = 1;
+        result.rootClusterIndex = 0;
+        if (!result.clusters.empty()) {
+            result.clusters[0].parentIndex = UINT32_MAX;
+        }
+        SDL_Log("MeshClusterBuilder: DAG trivial (1 cluster, no hierarchy needed)");
+        return result;
+    }
+
+    // Step 2: Iteratively build DAG levels
+    // currentLevel holds indices into result.clusters for the clusters at this level
+    std::vector<uint32_t> currentLevel(leafCount);
+    std::iota(currentLevel.begin(), currentLevel.end(), 0);
+
+    uint32_t lodLevel = 0;
+    uint32_t targetTrisPerParent = targetClusterSize_;
+
+    while (currentLevel.size() > 1) {
+        lodLevel++;
+
+        // Group spatially adjacent clusters
+        auto groups = groupClustersSpatially(result.clusters, currentLevel);
+
+        std::vector<uint32_t> nextLevel;
+        nextLevel.reserve(groups.size());
+
+        for (const auto& group : groups) {
+            if (group.size() == 1) {
+                // Single cluster can't be grouped further — promote as-is
+                // Mark it as its own "parent" at the next level
+                nextLevel.push_back(group[0]);
+                continue;
+            }
+
+            // Simplify the group into a parent cluster
+            float simplifyError = 0.0f;
+            MeshCluster parent = simplifyClusterGroup(
+                group, result.clusters,
+                result.vertices, result.indices,
+                meshId, lodLevel, targetTrisPerParent,
+                simplifyError);
+
+            uint32_t parentIdx = static_cast<uint32_t>(result.clusters.size());
+            parent.parentIndex = UINT32_MAX;  // Will be set by next level
+            parent.firstChildIndex = group[0]; // Record first child for reference
+            parent.childCount = static_cast<uint32_t>(group.size());
+            parent.error = simplifyError;
+
+            // Wire up parent-child relationships
+            for (uint32_t childIdx : group) {
+                result.clusters[childIdx].parentIndex = parentIdx;
+                result.clusters[childIdx].parentError = simplifyError;
+            }
+
+            result.clusters.push_back(parent);
+            nextLevel.push_back(parentIdx);
+        }
+
+        // If we didn't reduce the count, force-merge remaining into one
+        if (nextLevel.size() >= currentLevel.size()) {
+            SDL_Log("MeshClusterBuilder: DAG stopped at level %u (no further reduction from %zu clusters)",
+                    lodLevel, currentLevel.size());
+            break;
+        }
+
+        currentLevel = std::move(nextLevel);
+    }
+
+    // The last remaining cluster is the root
+    result.rootClusterIndex = currentLevel[0];
+    result.dagLevels = lodLevel + 1;
+    result.totalClusters = static_cast<uint32_t>(result.clusters.size());
+
+    SDL_Log("MeshClusterBuilder: DAG built with %u levels, %u total clusters (%u leaf + %u internal), root=%u",
+            result.dagLevels, result.totalClusters, result.leafClusterCount,
+            result.totalClusters - result.leafClusterCount, result.rootClusterIndex);
+
+    return result;
+}
+
+std::vector<std::vector<uint32_t>> MeshClusterBuilder::groupClustersSpatially(
+    const std::vector<MeshCluster>& clusters,
+    const std::vector<uint32_t>& clusterIndices) {
+
+    std::vector<std::vector<uint32_t>> groups;
+    if (clusterIndices.empty()) return groups;
+
+    // Compute centroids for each cluster
+    struct CentroidEntry {
+        uint32_t clusterIdx;
+        glm::vec3 centroid;
+    };
+    std::vector<CentroidEntry> entries;
+    entries.reserve(clusterIndices.size());
+    for (uint32_t idx : clusterIndices) {
+        entries.push_back({idx, glm::vec3(clusters[idx].boundingSphere)});
+    }
+
+    // Greedy nearest-neighbor grouping: pick an ungrouped cluster,
+    // find its nearest 1-3 ungrouped neighbors, form a group
+    std::vector<bool> used(entries.size(), false);
+    constexpr uint32_t MAX_GROUP_SIZE = 4;
+    constexpr uint32_t TARGET_GROUP_SIZE = 2;
+
+    for (size_t i = 0; i < entries.size(); ++i) {
+        if (used[i]) continue;
+
+        std::vector<uint32_t> group;
+        group.push_back(entries[i].clusterIdx);
+        used[i] = true;
+
+        glm::vec3 groupCenter = entries[i].centroid;
+
+        // Find nearest neighbors
+        for (uint32_t g = 1; g < MAX_GROUP_SIZE; ++g) {
+            float bestDist2 = std::numeric_limits<float>::max();
+            size_t bestJ = SIZE_MAX;
+
+            for (size_t j = 0; j < entries.size(); ++j) {
+                if (used[j]) continue;
+                glm::vec3 diff = entries[j].centroid - groupCenter;
+                float dist2 = glm::dot(diff, diff);
+                if (dist2 < bestDist2) {
+                    bestDist2 = dist2;
+                    bestJ = j;
+                }
+            }
+
+            if (bestJ == SIZE_MAX) break;
+
+            // Only add if reasonably close (within 3x the current group radius)
+            // This prevents merging very distant clusters
+            if (g >= TARGET_GROUP_SIZE) {
+                float groupRadius = clusters[group[0]].boundingSphere.w;
+                for (size_t k = 1; k < group.size(); ++k) {
+                    groupRadius = std::max(groupRadius, clusters[group[k]].boundingSphere.w);
+                }
+                if (bestDist2 > 9.0f * groupRadius * groupRadius && g >= TARGET_GROUP_SIZE) {
+                    break;
+                }
+            }
+
+            group.push_back(entries[bestJ].clusterIdx);
+            used[bestJ] = true;
+
+            // Update group center
+            groupCenter = glm::vec3(0.0f);
+            for (uint32_t idx : group) {
+                groupCenter += glm::vec3(clusters[idx].boundingSphere);
+            }
+            groupCenter /= static_cast<float>(group.size());
+        }
+
+        groups.push_back(std::move(group));
+    }
+
+    return groups;
+}
+
+MeshCluster MeshClusterBuilder::simplifyClusterGroup(
+    const std::vector<uint32_t>& groupIndices,
+    const std::vector<MeshCluster>& clusters,
+    std::vector<Vertex>& vertices,
+    std::vector<uint32_t>& indices,
+    uint32_t meshId,
+    uint32_t lodLevel,
+    uint32_t targetTriangles,
+    float& outError) {
+
+    // Collect all vertices referenced by the group's clusters
+    // We need to remap indices to a local vertex set for meshoptimizer
+    std::unordered_set<uint32_t> usedVertexSet;
+    uint32_t totalGroupIndices = 0;
+    for (uint32_t ci : groupIndices) {
+        const auto& c = clusters[ci];
+        for (uint32_t i = c.firstIndex; i < c.firstIndex + c.indexCount; ++i) {
+            usedVertexSet.insert(indices[i]);
+        }
+        totalGroupIndices += c.indexCount;
+    }
+
+    // Build local vertex buffer and index remapping
+    std::vector<uint32_t> globalToLocal(vertices.size(), UINT32_MAX);
+    std::vector<Vertex> localVertices;
+    localVertices.reserve(usedVertexSet.size());
+
+    for (uint32_t vi : usedVertexSet) {
+        globalToLocal[vi] = static_cast<uint32_t>(localVertices.size());
+        localVertices.push_back(vertices[vi]);
+    }
+
+    // Build local index buffer
+    std::vector<uint32_t> localIndices;
+    localIndices.reserve(totalGroupIndices);
+    for (uint32_t ci : groupIndices) {
+        const auto& c = clusters[ci];
+        for (uint32_t i = c.firstIndex; i < c.firstIndex + c.indexCount; ++i) {
+            localIndices.push_back(globalToLocal[indices[i]]);
+        }
+    }
+
+    // Simplify using meshoptimizer
+    uint32_t targetIndexCount = targetTriangles * 3;
+    // Don't go below 12 indices (4 triangles) - need at least something visible
+    targetIndexCount = std::max(targetIndexCount, 12u);
+    // But also cap at the number of input indices
+    targetIndexCount = std::min(targetIndexCount, static_cast<uint32_t>(localIndices.size()));
+
+    float targetError = 0.05f;  // Allow up to 5% error
+    float resultError = 0.0f;
+
+    std::vector<uint32_t> simplifiedIndices(localIndices.size());
+    size_t simplifiedCount = meshopt_simplify(
+        simplifiedIndices.data(),
+        localIndices.data(),
+        localIndices.size(),
+        &localVertices[0].position.x,
+        localVertices.size(),
+        sizeof(Vertex),
+        targetIndexCount,
+        targetError,
+        0,  // no options
+        &resultError);
+
+    simplifiedIndices.resize(simplifiedCount);
+
+    // If meshopt_simplify didn't reduce enough, try sloppy mode
+    if (simplifiedCount > targetIndexCount * 2) {
+        size_t sloppyCount = meshopt_simplifySloppy(
+            simplifiedIndices.data(),
+            localIndices.data(),
+            localIndices.size(),
+            &localVertices[0].position.x,
+            localVertices.size(),
+            sizeof(Vertex),
+            targetIndexCount,
+            targetError,
+            &resultError);
+        if (sloppyCount > 0 && sloppyCount < simplifiedCount) {
+            simplifiedIndices.resize(sloppyCount);
+            simplifiedCount = sloppyCount;
+        }
+    }
+
+    outError = resultError;
+
+    // Optimize vertex cache for the simplified mesh
+    meshopt_optimizeVertexCache(
+        simplifiedIndices.data(),
+        simplifiedIndices.data(),
+        simplifiedIndices.size(),
+        localVertices.size());
+
+    // Append the simplified geometry to the global buffers
+    uint32_t baseVertex = static_cast<uint32_t>(vertices.size());
+    uint32_t baseIndex = static_cast<uint32_t>(indices.size());
+
+    // We only need to append vertices that are actually used by the simplified mesh
+    std::vector<uint32_t> localToGlobal(localVertices.size(), UINT32_MAX);
+    uint32_t newVertexCount = 0;
+    for (uint32_t si : simplifiedIndices) {
+        if (localToGlobal[si] == UINT32_MAX) {
+            localToGlobal[si] = baseVertex + newVertexCount;
+            vertices.push_back(localVertices[si]);
+            newVertexCount++;
+        }
+    }
+
+    // Remap and append indices
+    for (uint32_t si : simplifiedIndices) {
+        indices.push_back(localToGlobal[si]);
+    }
+
+    // Build the parent cluster
+    uint32_t parentFirstIndex = baseIndex;
+    uint32_t parentIndexCount = static_cast<uint32_t>(simplifiedIndices.size());
+
+    MeshCluster parent{};
+    parent.firstIndex = parentFirstIndex;
+    parent.indexCount = parentIndexCount;
+    parent.firstVertex = 0;  // Global vertex buffer
+    parent.meshId = meshId;
+    parent.lodLevel = lodLevel;
+    parent.error = resultError;
+    parent.parentError = 0.0f;  // Set by next level
+    parent.parentIndex = UINT32_MAX;
+    parent.firstChildIndex = 0;
+    parent.childCount = 0;
+
+    // Compute bounding data from the simplified geometry
+    parent.boundingSphere = computeBoundingSphere(vertices, indices, parentFirstIndex, parentIndexCount);
+    computeAABB(vertices, indices, parentFirstIndex, parentIndexCount, parent.aabbMin, parent.aabbMax);
+    computeNormalCone(vertices, indices, parentFirstIndex, parentIndexCount, parent.coneAxis, parent.coneAngle);
+
+    return parent;
 }
 
 // ============================================================================

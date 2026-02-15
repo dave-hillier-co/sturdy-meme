@@ -34,6 +34,16 @@ struct alignas(16) ClusterCullUniforms {
     uint32_t _pad0, _pad1, _pad2;
 };
 
+// Uniform data for the cluster LOD selection compute shader
+struct alignas(16) ClusterSelectUniforms {
+    glm::mat4 viewProjMatrix;
+    glm::vec4 screenParams;     // width, height, 1/width, 1/height
+    uint32_t totalClusterCount; // total clusters in the DAG
+    uint32_t instanceCount;
+    float errorThreshold;       // max acceptable screen-space error in pixels
+    uint32_t maxSelectedClusters;
+};
+
 /**
  * TwoPassCuller - Two-phase GPU occlusion culling for mesh clusters
  *
@@ -100,6 +110,28 @@ public:
                          float nearPlane, float farPlane, uint32_t hiZMipLevels);
 
     /**
+     * Set the LOD error threshold in pixels (default 1.0).
+     * Lower = more detail, higher = more aggressive LOD.
+     */
+    void setErrorThreshold(float pixelError) { errorThreshold_ = pixelError; }
+    float getErrorThreshold() const { return errorThreshold_; }
+
+    /**
+     * Record LOD selection pass. Dispatches cluster_select.comp to walk the DAG
+     * and output the set of clusters at the appropriate LOD level.
+     * Must be called BEFORE recordPass1().
+     */
+    void recordLODSelection(VkCommandBuffer cmd, uint32_t frameIndex,
+                             uint32_t totalDAGClusters, uint32_t instanceCount);
+
+    /**
+     * Get the buffer of selected cluster indices (output of LOD selection).
+     * This is the input to the culling passes.
+     */
+    VkBuffer getSelectedClusterBuffer(uint32_t frameIndex) const;
+    VkBuffer getSelectedCountBuffer(uint32_t frameIndex) const;
+
+    /**
      * Record pass 1: cull previous frame's visible clusters.
      * After this, render the visible clusters and build Hi-Z.
      */
@@ -140,6 +172,9 @@ private:
     bool createPipeline();
     void destroyPipeline();
 
+    bool createLODSelectPipeline();
+    void destroyLODSelectPipeline();
+
     bool createDescriptorSets();
     void destroyDescriptorSets();
 
@@ -176,6 +211,21 @@ private:
     // Descriptor sets per frame
     std::vector<VkDescriptorSet> pass1DescSets_;
     std::vector<VkDescriptorSet> pass2DescSets_;
+
+    // LOD selection pipeline (cluster_select.comp)
+    std::optional<vk::raii::DescriptorSetLayout> lodSelectDescSetLayout_;
+    VkPipelineLayout lodSelectPipelineLayout_ = VK_NULL_HANDLE;
+    VkPipeline lodSelectPipeline_ = VK_NULL_HANDLE;
+
+    // LOD selection buffers
+    BufferUtils::PerFrameBufferSet selectedClusterBuffers_;   // Output: selected cluster indices
+    BufferUtils::PerFrameBufferSet selectedCountBuffers_;     // Output: selected cluster count
+    BufferUtils::PerFrameBufferSet lodSelectUniformBuffers_;  // Uniforms
+
+    // LOD selection descriptor sets per frame
+    std::vector<VkDescriptorSet> lodSelectDescSets_;
+
+    float errorThreshold_ = 1.0f;  // Default: 1 pixel error threshold
 
     // Ping-pong index for visible buffer swapping
     uint32_t currentBufferIndex_ = 0;

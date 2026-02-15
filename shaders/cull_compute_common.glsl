@@ -81,6 +81,36 @@ bool isAABBInRange(vec3 boundsMin, vec3 boundsMax, vec3 cameraPos, float maxDist
 }
 
 // ============================================================================
+// Screen-Space Error Projection
+// ============================================================================
+
+// Project an object-space error metric to screen-space pixels.
+// Used by the cluster DAG LOD selection to decide which LOD level to render.
+//
+// objectError: object-space simplification error (from meshoptimizer)
+// boundingSphere: xyz = world-space center, w = world-space radius
+// viewProjMatrix: current frame's view-projection matrix
+// screenHeight: viewport height in pixels
+//
+// Returns: approximate screen-space error in pixels
+float projectErrorToScreen(float objectError, vec4 boundingSphere,
+                            mat4 viewProjMatrix, float screenHeight) {
+    // Project the sphere center to get clip-space W (distance from camera)
+    vec4 clipCenter = viewProjMatrix * vec4(boundingSphere.xyz, 1.0);
+
+    // Behind the camera - return large error to force rendering
+    if (clipCenter.w <= 0.0) {
+        return 1e6;
+    }
+
+    // Projected size is proportional to world-space size / distance (clip W).
+    // Scale by half screen height because clip Y range is [-1,1].
+    float projectedError = (objectError * screenHeight * 0.5) / clipCenter.w;
+
+    return projectedError;
+}
+
+// ============================================================================
 // Distance Bucketing
 // ============================================================================
 

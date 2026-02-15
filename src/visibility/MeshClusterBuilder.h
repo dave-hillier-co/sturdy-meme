@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <vector>
 #include <memory>
+#include <functional>
 
 #include "Mesh.h"
 #include "VmaBuffer.h"
@@ -37,10 +38,16 @@ struct MeshCluster {
     uint32_t meshId;            // Which mesh this cluster belongs to
 
     // LOD information
-    float parentError;          // Screen-space error of parent cluster
-    float error;                // Screen-space error of this cluster
+    float parentError;          // Object-space error of parent cluster
+    float error;                // Object-space error of this cluster
     uint32_t lodLevel;          // LOD level (0 = highest detail)
+    uint32_t parentIndex;       // Index of parent in cluster array (UINT32_MAX for root)
+
+    // DAG connectivity
+    uint32_t firstChildIndex;   // Index of first child in cluster array
+    uint32_t childCount;        // Number of children (0 = leaf)
     uint32_t _pad2;
+    uint32_t _pad3;
 };
 
 /**
@@ -59,6 +66,11 @@ struct ClusteredMesh {
     // Per-cluster groups for LOD hierarchy
     uint32_t totalTriangles = 0;
     uint32_t totalClusters = 0;
+
+    // DAG metadata
+    uint32_t leafClusterCount = 0;  // Number of LOD 0 clusters
+    uint32_t dagLevels = 0;         // Total hierarchy depth
+    uint32_t rootClusterIndex = 0;  // Index of the root cluster (coarsest LOD)
 };
 
 /**
@@ -95,6 +107,20 @@ public:
                         const std::vector<uint32_t>& indices,
                         uint32_t meshId = 0);
 
+    /**
+     * Build clusters AND a DAG hierarchy for LOD selection.
+     * First builds leaf clusters, then iteratively groups and simplifies
+     * them into coarser parent clusters using meshoptimizer.
+     *
+     * @param vertices Mesh vertices
+     * @param indices  Mesh indices (triangle list)
+     * @param meshId   ID to tag clusters with
+     * @return ClusteredMesh with full DAG hierarchy
+     */
+    ClusteredMesh buildWithDAG(const std::vector<Vertex>& vertices,
+                               const std::vector<uint32_t>& indices,
+                               uint32_t meshId = 0);
+
 private:
     // Compute bounding sphere from a set of points
     static glm::vec4 computeBoundingSphere(const std::vector<Vertex>& vertices,
@@ -112,6 +138,24 @@ private:
                                    const std::vector<uint32_t>& indices,
                                    uint32_t firstIndex, uint32_t indexCount,
                                    glm::vec3& outAxis, float& outAngle);
+
+    // Group clusters spatially for DAG level building.
+    // Returns groups of cluster indices (2-4 per group).
+    static std::vector<std::vector<uint32_t>> groupClustersSpatially(
+        const std::vector<MeshCluster>& clusters,
+        const std::vector<uint32_t>& clusterIndices);
+
+    // Merge a group of clusters' geometry and simplify into a single parent cluster.
+    // Appends new vertices/indices to the mesh and returns the parent cluster.
+    static MeshCluster simplifyClusterGroup(
+        const std::vector<uint32_t>& groupIndices,
+        const std::vector<MeshCluster>& clusters,
+        std::vector<Vertex>& vertices,
+        std::vector<uint32_t>& indices,
+        uint32_t meshId,
+        uint32_t lodLevel,
+        uint32_t targetTriangles,
+        float& outError);
 
     uint32_t targetClusterSize_ = DEFAULT_CLUSTER_SIZE;
 };

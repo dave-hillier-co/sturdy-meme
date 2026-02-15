@@ -1,0 +1,159 @@
+#version 450
+
+#extension GL_GOOGLE_include_directive : require
+#extension GL_KHR_shader_subgroup_ballot : require
+
+#include "bindings.glsl"
+#include "cull_compute_common.glsl"
+
+// Cluster DAG LOD selection compute shader
+//
+// Walks the cluster DAG and finds the "cut" — the set of clusters to render.
+// A cluster is selected if:
+//   - Its own projected screen error is acceptable (<= threshold)
+//   - Its parent's projected screen error is NOT acceptable (> threshold)
+// Root nodes have no parent, so they always pass the parent test.
+// Leaf nodes (childCount == 0) are always candidates when reached.
+//
+// Output: a list of selected cluster indices fed into cluster_cull.comp
+
+layout(local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
+
+// Cluster metadata (must match C++ MeshCluster and cluster_cull.comp ClusterData)
+struct ClusterData {
+    vec4 boundingSphere;    // xyz = center (object space), w = radius
+    vec3 aabbMin;
+    float _pad0;
+    vec3 aabbMax;
+    float _pad1;
+    vec3 coneAxis;
+    float coneAngle;
+    uint firstIndex;
+    uint indexCount;
+    uint firstVertex;
+    uint meshId;
+    float parentError;      // object-space error of parent cluster
+    float error;            // object-space error of this cluster
+    uint lodLevel;
+    uint parentIndex;       // index of parent (0xFFFFFFFF for root)
+    uint firstChildIndex;
+    uint childCount;        // 0 = leaf
+    uint _pad2;
+    uint _pad3;
+};
+
+layout(std430, binding = 0) readonly buffer ClusterBuffer {
+    ClusterData clusters[];
+};
+
+// Per-instance transforms (same as cluster_cull.comp)
+struct InstanceTransform {
+    mat4 model;
+    vec4 materialParams;
+    vec4 emissiveColor;
+    uint pbrFlags;
+    float alphaTestThreshold;
+    float hueShift;
+    float _pad;
+};
+
+layout(std430, binding = 1) readonly buffer InstanceBuffer {
+    InstanceTransform instances[];
+};
+
+// Output: selected cluster indices for culling
+layout(std430, binding = 2) writeonly buffer SelectedClusterBuffer {
+    uint selectedClusters[];
+};
+
+// Output: selected cluster count (atomic)
+layout(std430, binding = 3) buffer SelectedCountBuffer {
+    uint selectedCount;
+};
+
+// Selection uniforms
+layout(std140, binding = 4) uniform SelectUniforms {
+    mat4 viewProjMatrix;
+    vec4 screenParams;      // width, height, 1/width, 1/height
+    uint totalClusterCount; // total clusters in the DAG
+    uint instanceCount;
+    float errorThreshold;   // max acceptable screen-space error in pixels (e.g. 1.0)
+    uint maxSelectedClusters;
+} sel;
+
+void main() {
+    uint threadIdx = gl_GlobalInvocationID.x;
+    if (threadIdx >= sel.totalClusterCount) return;
+
+    ClusterData cluster = clusters[threadIdx];
+
+    // Use meshId as instance index
+    uint instanceIdx = cluster.meshId;
+    if (instanceIdx >= sel.instanceCount) return;
+
+    mat4 model = instances[instanceIdx].model;
+
+    // Transform bounding sphere to world space for error projection
+    vec3 worldCenter = (model * vec4(cluster.boundingSphere.xyz, 1.0)).xyz;
+    float scaleApprox = length(vec3(model[0][0], model[1][0], model[2][0]));
+    float worldRadius = cluster.boundingSphere.w * scaleApprox;
+    float worldError = cluster.error * scaleApprox;
+
+    vec4 worldSphere = vec4(worldCenter, worldRadius);
+    float screenHeight = sel.screenParams.y;
+
+    // Project this cluster's error to screen space
+    float myScreenError = projectErrorToScreen(worldError, worldSphere,
+                                                sel.viewProjMatrix, screenHeight);
+
+    // Project parent's error to screen space
+    float parentScreenError;
+    bool isRoot = (cluster.parentIndex == 0xFFFFFFFFu);
+
+    if (isRoot) {
+        // Root has no parent — always passes parent test
+        parentScreenError = 1e6;
+    } else {
+        float worldParentError = cluster.parentError * scaleApprox;
+        parentScreenError = projectErrorToScreen(worldParentError, worldSphere,
+                                                  sel.viewProjMatrix, screenHeight);
+    }
+
+    // The DAG cut condition:
+    // Select this cluster if its error is acceptable AND its parent's is not.
+    // This ensures exactly one level of the DAG is selected per spatial region.
+    bool myErrorOk = (myScreenError <= sel.errorThreshold);
+    bool parentErrorOk = (parentScreenError <= sel.errorThreshold);
+
+    // Leaf nodes: if our error is acceptable, always select (even if parent is ok,
+    // because we are the finest available detail)
+    bool isLeaf = (cluster.childCount == 0);
+
+    bool selected = false;
+    if (isLeaf) {
+        // Leaves are selected if they are reached (parent error not acceptable)
+        // OR if they are the finest detail available
+        selected = !parentErrorOk || myErrorOk;
+    } else {
+        // Internal nodes: select if our error is ok but parent's is not
+        selected = myErrorOk && !parentErrorOk;
+    }
+
+    if (!selected) return;
+
+    // Write to output using subgroup-batched atomics
+    uvec4 activeMask = subgroupBallot(true);
+    uint activeCount = subgroupBallotBitCount(activeMask);
+    uint laneOffset = subgroupBallotExclusiveBitCount(activeMask);
+
+    uint baseIdx = 0;
+    if (subgroupElect()) {
+        baseIdx = atomicAdd(selectedCount, activeCount);
+    }
+    baseIdx = subgroupBroadcastFirst(baseIdx);
+
+    uint outIdx = baseIdx + laneOffset;
+    if (outIdx < sel.maxSelectedClusters) {
+        selectedClusters[outIdx] = threadIdx;
+    }
+}

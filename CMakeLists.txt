@@ -21,6 +21,7 @@ find_package(unofficial-openfbx CONFIG REQUIRED)
 find_package(lodepng CONFIG REQUIRED)
 find_package(nlohmann_json CONFIG REQUIRED)
 find_package(EnTT CONFIG REQUIRED)
+find_package(meshoptimizer CONFIG REQUIRED)
 
 find_path(STB_INCLUDE_DIRS "stb_image.h")
 
@@ -330,6 +331,7 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     lodepng
     nlohmann_json::nlohmann_json
     EnTT::EnTT
+    meshoptimizer::meshoptimizer
 )
 
 # Enable Jolt Physics debug renderer for visualization
@@ -778,6 +780,7 @@ set(SHADER_FILES
     ${CMAKE_CURRENT_SOURCE_DIR}/shaders/visbuf_debug.frag.spv
     ${CMAKE_CURRENT_SOURCE_DIR}/shaders/visbuf_resolve.comp.spv
     ${CMAKE_CURRENT_SOURCE_DIR}/shaders/cluster_cull.comp.spv
+    ${CMAKE_CURRENT_SOURCE_DIR}/shaders/cluster_select.comp.spv
 )
 
 set(TERRAIN_SHADER_FILES
@@ -889,6 +892,7 @@ if(SHADER_COMPILE_CMD)
         visbuf_debug.frag
         visbuf_resolve.comp
         cluster_cull.comp
+        cluster_select.comp
     )
 
     foreach(SHADER ${SHADERS_WITH_BINDINGS})

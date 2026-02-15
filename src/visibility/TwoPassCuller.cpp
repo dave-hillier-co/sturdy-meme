@@ -60,6 +60,11 @@ bool TwoPassCuller::initInternal(const InitInfo& info) {
         return false;
     }
 
+    if (!createLODSelectPipeline()) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "TwoPassCuller: Failed to create LOD selection pipeline");
+        return false;
+    }
+
     SDL_Log("TwoPassCuller: Initialized (maxClusters=%u, maxDrawCommands=%u)",
             maxClusters_, maxDrawCommands_);
     return true;
@@ -69,6 +74,7 @@ void TwoPassCuller::cleanup() {
     if (device_ == VK_NULL_HANDLE) return;
     vkDeviceWaitIdle(device_);
     destroyDescriptorSets();
+    destroyLODSelectPipeline();
     destroyPipeline();
     destroyBuffers();
 }
@@ -141,6 +147,32 @@ bool TwoPassCuller::createBuffers() {
         .build(uniformBuffers_);
     if (!ok) return false;
 
+    // LOD selection buffers
+    ok = builder
+        .setSize(visibleSize)  // same capacity as visible cluster buffers
+        .setUsage(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT)
+        .setAllocationFlags(0)
+        .setMemoryUsage(VMA_MEMORY_USAGE_GPU_ONLY)
+        .build(selectedClusterBuffers_);
+    if (!ok) return false;
+
+    ok = builder
+        .setSize(countSize)
+        .setUsage(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT)
+        .build(selectedCountBuffers_);
+    if (!ok) return false;
+
+    VkDeviceSize lodSelectUniformSize = sizeof(ClusterSelectUniforms);
+    ok = BufferUtils::PerFrameBufferBuilder()
+        .setAllocator(allocator_)
+        .setFrameCount(framesInFlight_)
+        .setSize(lodSelectUniformSize)
+        .setUsage(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT)
+        .setAllocationFlags(VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
+                           VMA_ALLOCATION_CREATE_MAPPED_BIT)
+        .build(lodSelectUniformBuffers_);
+    if (!ok) return false;
+
     return true;
 }
 
@@ -154,6 +186,9 @@ void TwoPassCuller::destroyBuffers() {
     BufferUtils::destroyBuffers(allocator_, prevVisibleClusterBuffers_);
     BufferUtils::destroyBuffers(allocator_, prevVisibleCountBuffers_);
     BufferUtils::destroyBuffers(allocator_, uniformBuffers_);
+    BufferUtils::destroyBuffers(allocator_, selectedClusterBuffers_);
+    BufferUtils::destroyBuffers(allocator_, selectedCountBuffers_);
+    BufferUtils::destroyBuffers(allocator_, lodSelectUniformBuffers_);
 }
 
 // ============================================================================
@@ -252,6 +287,149 @@ void TwoPassCuller::destroyPipeline() {
         pipelineLayout_ = VK_NULL_HANDLE;
     }
     descSetLayout_.reset();
+}
+
+bool TwoPassCuller::createLODSelectPipeline() {
+    if (!raiiDevice_) return false;
+
+    // Descriptor set layout matching cluster_select.comp bindings
+    std::array<vk::DescriptorSetLayoutBinding, 5> bindings;
+    bindings[0] = vk::DescriptorSetLayoutBinding{}.setBinding(0)
+        .setDescriptorType(vk::DescriptorType::eStorageBuffer).setDescriptorCount(1)
+        .setStageFlags(vk::ShaderStageFlagBits::eCompute);  // clusters
+    bindings[1] = vk::DescriptorSetLayoutBinding{}.setBinding(1)
+        .setDescriptorType(vk::DescriptorType::eStorageBuffer).setDescriptorCount(1)
+        .setStageFlags(vk::ShaderStageFlagBits::eCompute);  // instances
+    bindings[2] = vk::DescriptorSetLayoutBinding{}.setBinding(2)
+        .setDescriptorType(vk::DescriptorType::eStorageBuffer).setDescriptorCount(1)
+        .setStageFlags(vk::ShaderStageFlagBits::eCompute);  // selected clusters output
+    bindings[3] = vk::DescriptorSetLayoutBinding{}.setBinding(3)
+        .setDescriptorType(vk::DescriptorType::eStorageBuffer).setDescriptorCount(1)
+        .setStageFlags(vk::ShaderStageFlagBits::eCompute);  // selected count
+    bindings[4] = vk::DescriptorSetLayoutBinding{}.setBinding(4)
+        .setDescriptorType(vk::DescriptorType::eUniformBuffer).setDescriptorCount(1)
+        .setStageFlags(vk::ShaderStageFlagBits::eCompute);  // select uniforms
+
+    auto layoutInfo = vk::DescriptorSetLayoutCreateInfo{}.setBindings(bindings);
+
+    try {
+        lodSelectDescSetLayout_.emplace(*raiiDevice_, layoutInfo);
+    } catch (const vk::SystemError& e) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "TwoPassCuller: Failed to create LOD select desc set layout: %s", e.what());
+        return false;
+    }
+
+    vk::DescriptorSetLayout vkDescLayout(**lodSelectDescSetLayout_);
+    auto pipelineLayoutInfo = vk::PipelineLayoutCreateInfo{}.setSetLayouts(vkDescLayout);
+
+    vk::Device vkDevice(device_);
+    lodSelectPipelineLayout_ = static_cast<VkPipelineLayout>(vkDevice.createPipelineLayout(pipelineLayoutInfo));
+
+    // Load compute shader
+    auto compModule = ShaderLoader::loadShaderModule(vkDevice, shaderPath_ + "/cluster_select.comp.spv");
+    if (!compModule) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "TwoPassCuller: Failed to load cluster_select.comp shader");
+        return false;
+    }
+
+    auto stageInfo = vk::PipelineShaderStageCreateInfo{}
+        .setStage(vk::ShaderStageFlagBits::eCompute)
+        .setModule(*compModule)
+        .setPName("main");
+
+    auto computeInfo = vk::ComputePipelineCreateInfo{}
+        .setStage(stageInfo)
+        .setLayout(lodSelectPipelineLayout_);
+
+    auto result = vkDevice.createComputePipeline(nullptr, computeInfo);
+    if (result.result != vk::Result::eSuccess) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "TwoPassCuller: Failed to create LOD select compute pipeline");
+        vkDevice.destroyShaderModule(*compModule);
+        return false;
+    }
+    lodSelectPipeline_ = static_cast<VkPipeline>(result.value);
+
+    vkDevice.destroyShaderModule(*compModule);
+
+    SDL_Log("TwoPassCuller: LOD selection compute pipeline created");
+    return true;
+}
+
+void TwoPassCuller::destroyLODSelectPipeline() {
+    if (lodSelectPipeline_ != VK_NULL_HANDLE) {
+        vkDestroyPipeline(device_, lodSelectPipeline_, nullptr);
+        lodSelectPipeline_ = VK_NULL_HANDLE;
+    }
+    if (lodSelectPipelineLayout_ != VK_NULL_HANDLE) {
+        vkDestroyPipelineLayout(device_, lodSelectPipelineLayout_, nullptr);
+        lodSelectPipelineLayout_ = VK_NULL_HANDLE;
+    }
+    lodSelectDescSetLayout_.reset();
+}
+
+void TwoPassCuller::recordLODSelection(VkCommandBuffer cmd, uint32_t frameIndex,
+                                         uint32_t totalDAGClusters, uint32_t instanceCount) {
+    // Update LOD selection uniforms
+    ClusterSelectUniforms selectUniforms{};
+
+    // Reuse the viewProjMatrix from the cull uniforms (already written this frame)
+    void* cullMapped = uniformBuffers_.mappedPointers[frameIndex];
+    if (cullMapped) {
+        auto* cullUbo = static_cast<const ClusterCullUniforms*>(cullMapped);
+        selectUniforms.viewProjMatrix = cullUbo->viewProjMatrix;
+        selectUniforms.screenParams = cullUbo->screenParams;
+    }
+
+    selectUniforms.totalClusterCount = totalDAGClusters;
+    selectUniforms.instanceCount = instanceCount;
+    selectUniforms.errorThreshold = errorThreshold_;
+    selectUniforms.maxSelectedClusters = maxClusters_;
+
+    void* mapped = lodSelectUniformBuffers_.mappedPointers[frameIndex];
+    if (mapped) {
+        memcpy(mapped, &selectUniforms, sizeof(selectUniforms));
+        vmaFlushAllocation(allocator_, lodSelectUniformBuffers_.allocations[frameIndex],
+                           0, sizeof(selectUniforms));
+    }
+
+    // Clear selected count to 0
+    vkCmdFillBuffer(cmd, selectedCountBuffers_.buffers[frameIndex], 0, sizeof(uint32_t), 0);
+
+    // Barrier: transfer -> compute
+    VkMemoryBarrier memBarrier{};
+    memBarrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
+    memBarrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+    memBarrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
+
+    vkCmdPipelineBarrier(cmd,
+        VK_PIPELINE_STAGE_TRANSFER_BIT,
+        VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+        0, 1, &memBarrier, 0, nullptr, 0, nullptr);
+
+    // Bind LOD selection pipeline and dispatch
+    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, lodSelectPipeline_);
+
+    // Descriptor sets would be bound here
+    uint32_t workGroupSize = 64;
+    uint32_t dispatchCount = (totalDAGClusters + workGroupSize - 1) / workGroupSize;
+    vkCmdDispatch(cmd, dispatchCount, 1, 1);
+
+    // Barrier: compute write -> compute read (selected clusters -> cull pass)
+    memBarrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+    memBarrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+
+    vkCmdPipelineBarrier(cmd,
+        VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+        VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+        0, 1, &memBarrier, 0, nullptr, 0, nullptr);
+}
+
+VkBuffer TwoPassCuller::getSelectedClusterBuffer(uint32_t frameIndex) const {
+    return selectedClusterBuffers_.buffers[frameIndex];
+}
+
+VkBuffer TwoPassCuller::getSelectedCountBuffer(uint32_t frameIndex) const {
+    return selectedCountBuffers_.buffers[frameIndex];
 }
 
 bool TwoPassCuller::createDescriptorSets() {

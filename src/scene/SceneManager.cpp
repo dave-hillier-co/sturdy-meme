@@ -112,65 +112,43 @@ void SceneManager::initializeScenePhysics(PhysicsWorld& physics) {
 
     const float spawnOffset = 0.1f;
 
-    // If ECS world is available, use PhysicsShapeInfo components to create bodies
-    if (ecsWorld_) {
-        size_t bodyCount = 0;
-        for (auto [entity, shapeInfo, transform] :
-             ecsWorld_->view<ecs::PhysicsShapeInfo, ecs::Transform>().each()) {
-
-            // Find the renderable index for this entity
-            const Renderable* renderable = sceneBuilder->getRenderableForEntity(entity);
-            if (!renderable) continue;
-
-            // Find index in sceneObjects for physics body storage
-            auto it = std::find_if(sceneObjects.begin(), sceneObjects.end(),
-                [renderable](const Renderable& r) { return &r == renderable; });
-            if (it == sceneObjects.end()) continue;
-            size_t objIndex = static_cast<size_t>(std::distance(sceneObjects.begin(), it));
-
-            glm::vec3 pos = transform.position();
-
-            if (shapeInfo.shapeType == ecs::PhysicsShapeType::Box) {
-                scenePhysicsBodies[objIndex] = physics.createBox(
-                    glm::vec3(pos.x, pos.y + spawnOffset, pos.z),
-                    shapeInfo.halfExtents, shapeInfo.mass);
-            } else {
-                scenePhysicsBodies[objIndex] = physics.createSphere(
-                    glm::vec3(pos.x, pos.y + spawnOffset, pos.z),
-                    shapeInfo.radius(), shapeInfo.mass);
-            }
-
-            // Add PhysicsBody component to entity
-            if (scenePhysicsBodies[objIndex] != INVALID_BODY_ID) {
-                ecsWorld_->add<ecs::PhysicsBody>(entity,
-                    static_cast<ecs::PhysicsBodyId>(scenePhysicsBodies[objIndex]));
-                bodyCount++;
-            }
-        }
-        SDL_Log("Scene physics initialized with %zu bodies from ECS components", bodyCount);
-    } else {
-        // Fallback: use legacy physicsEnabledIndices
-        const auto& physicsIndices = sceneBuilder->getPhysicsEnabledIndices();
-        for (size_t i = 0; i < physicsIndices.size(); ++i) {
-            size_t objIndex = physicsIndices[i];
-            if (objIndex >= sceneObjects.size()) continue;
-
-            const auto& obj = sceneObjects[objIndex];
-            glm::vec3 pos = glm::vec3(obj.transform[3]);
-
-            // Default: boxes for cubes, spheres for others
-            if (i < 2 || i == 4 || i == 5) {
-                scenePhysicsBodies[objIndex] = physics.createBox(
-                    glm::vec3(pos.x, pos.y + spawnOffset, pos.z),
-                    glm::vec3(0.5f), 10.0f);
-            } else {
-                scenePhysicsBodies[objIndex] = physics.createSphere(
-                    glm::vec3(pos.x, pos.y + spawnOffset, pos.z),
-                    0.5f, 5.0f);
-            }
-        }
-        SDL_Log("Scene physics initialized with %zu physics-enabled objects (legacy)", physicsIndices.size());
+    if (!ecsWorld_) {
+        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+            "SceneManager: No ECS world during physics init - bodies will be linked later");
+        return;
     }
+
+    size_t bodyCount = 0;
+    for (auto [entity, shapeInfo, transform] :
+         ecsWorld_->view<ecs::PhysicsShapeInfo, ecs::Transform>().each()) {
+
+        // Find the renderable index for this entity via pointer identity
+        const Renderable* renderable = sceneBuilder->getRenderableForEntity(entity);
+        if (!renderable) continue;
+
+        size_t objIndex = static_cast<size_t>(renderable - sceneObjects.data());
+        if (objIndex >= sceneObjects.size()) continue;
+
+        glm::vec3 pos = transform.position();
+
+        if (shapeInfo.shapeType == ecs::PhysicsShapeType::Box) {
+            scenePhysicsBodies[objIndex] = physics.createBox(
+                glm::vec3(pos.x, pos.y + spawnOffset, pos.z),
+                shapeInfo.halfExtents, shapeInfo.mass);
+        } else {
+            scenePhysicsBodies[objIndex] = physics.createSphere(
+                glm::vec3(pos.x, pos.y + spawnOffset, pos.z),
+                shapeInfo.radius(), shapeInfo.mass);
+        }
+
+        // Add PhysicsBody component to entity
+        if (scenePhysicsBodies[objIndex] != INVALID_BODY_ID) {
+            ecsWorld_->add<ecs::PhysicsBody>(entity,
+                static_cast<ecs::PhysicsBodyId>(scenePhysicsBodies[objIndex]));
+            bodyCount++;
+        }
+    }
+    SDL_Log("Scene physics initialized with %zu bodies from ECS components", bodyCount);
 }
 
 void SceneManager::initializeECSLights() {

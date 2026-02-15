@@ -153,46 +153,67 @@ void SceneBuilder::createEntitiesFromRenderables() {
             ecsWorld_->add<ecs::DebugName>(entity, "Cape");
         }
 
-        // Tag special entities by their renderable index
-        // (These are the last index-based lookups - they map the stored
-        // renderable positions to entity tags during the creation phase)
-        if (i == playerRenderableIndex_) {
-            playerEntity_ = entity;
-            ecsWorld_->add<ecs::PlayerTag>(entity);
-        }
-        if (i == emissiveOrbRenderableIndex_) {
-            emissiveOrbEntity_ = entity;
-            ecsWorld_->add<ecs::OrbTag>(entity);
-        }
-        if (i == flagPoleRenderableIndex_) {
-            flagPoleEntity_ = entity;
-            ecsWorld_->add<ecs::FlagPoleTag>(entity);
-        }
-        if (i == flagClothRenderableIndex_) {
-            flagClothEntity_ = entity;
-            ecsWorld_->add<ecs::FlagClothTag>(entity);
-        }
-        if (i == capeRenderableIndex_) {
-            capeEntity_ = entity;
-            ecsWorld_->add<ecs::CapeTag>(entity);
-        }
-        if (i == swordRenderableIndex_) {
-            swordEntity_ = entity;
-            ecsWorld_->add<ecs::WeaponTag>(entity, ecs::WeaponSlot::RightHand);
-            if (rightHandBoneIndex >= 0) {
-                ecsWorld_->add<ecs::BoneAttachment>(entity, rightHandBoneIndex, glm::mat4(1.0f));
-            }
-        }
-        if (i == shieldRenderableIndex_) {
-            shieldEntity_ = entity;
-            ecsWorld_->add<ecs::WeaponTag>(entity, ecs::WeaponSlot::LeftHand);
-            if (leftHandBoneIndex >= 0) {
-                ecsWorld_->add<ecs::BoneAttachment>(entity, leftHandBoneIndex, glm::mat4(1.0f));
-            }
-        }
-        if (i == wellEntranceRenderableIndex_) {
-            wellEntranceEntity_ = entity;
-            ecsWorld_->add<ecs::WellEntranceTag>(entity);
+        // Tag special entities by their role (assigned during createRenderables)
+        ObjectRole role = (i < objectRoles_.size()) ? objectRoles_[i] : ObjectRole::None;
+        switch (role) {
+            case ObjectRole::Player:
+                playerEntity_ = entity;
+                ecsWorld_->add<ecs::PlayerTag>(entity);
+                break;
+            case ObjectRole::EmissiveOrb:
+                emissiveOrbEntity_ = entity;
+                ecsWorld_->add<ecs::OrbTag>(entity);
+                break;
+            case ObjectRole::FlagPole:
+                flagPoleEntity_ = entity;
+                ecsWorld_->add<ecs::FlagPoleTag>(entity);
+                break;
+            case ObjectRole::FlagCloth:
+                flagClothEntity_ = entity;
+                ecsWorld_->add<ecs::FlagClothTag>(entity);
+                break;
+            case ObjectRole::Cape:
+                capeEntity_ = entity;
+                ecsWorld_->add<ecs::CapeTag>(entity);
+                break;
+            case ObjectRole::Sword:
+                swordEntity_ = entity;
+                ecsWorld_->add<ecs::WeaponTag>(entity, ecs::WeaponSlot::RightHand);
+                if (rightHandBoneIndex >= 0) {
+                    ecsWorld_->add<ecs::BoneAttachment>(entity, rightHandBoneIndex, glm::mat4(1.0f));
+                }
+                break;
+            case ObjectRole::Shield:
+                shieldEntity_ = entity;
+                ecsWorld_->add<ecs::WeaponTag>(entity, ecs::WeaponSlot::LeftHand);
+                if (leftHandBoneIndex >= 0) {
+                    ecsWorld_->add<ecs::BoneAttachment>(entity, leftHandBoneIndex, glm::mat4(1.0f));
+                }
+                break;
+            case ObjectRole::WellEntrance:
+                wellEntranceEntity_ = entity;
+                ecsWorld_->add<ecs::WellEntranceTag>(entity);
+                break;
+            case ObjectRole::DebugAxisRightX:
+                rightHandAxisEntities_[0] = entity;
+                break;
+            case ObjectRole::DebugAxisRightY:
+                rightHandAxisEntities_[1] = entity;
+                break;
+            case ObjectRole::DebugAxisRightZ:
+                rightHandAxisEntities_[2] = entity;
+                break;
+            case ObjectRole::DebugAxisLeftX:
+                leftHandAxisEntities_[0] = entity;
+                break;
+            case ObjectRole::DebugAxisLeftY:
+                leftHandAxisEntities_[1] = entity;
+                break;
+            case ObjectRole::DebugAxisLeftZ:
+                leftHandAxisEntities_[2] = entity;
+                break;
+            case ObjectRole::None:
+                break;
         }
     }
 
@@ -564,7 +585,6 @@ bool SceneBuilder::loadTextures(const InitInfo& info) {
 
 void SceneBuilder::createRenderables() {
     sceneObjects.clear();
-    physicsEnabledIndices.clear();
 
     // Ground disc removed - terrain system provides the ground now
 
@@ -588,17 +608,19 @@ void SceneBuilder::createRenderables() {
         return getTerrainHeight(x, z) + objectHeight;
     };
 
-    // Helper to add physics-enabled objects
-    auto addPhysicsObject = [this](Renderable&& r) -> size_t {
+    objectRoles_.clear();
+
+    // Helper to add a renderable with an optional role
+    auto addObject = [this](Renderable&& r, ObjectRole role = ObjectRole::None) -> size_t {
         size_t idx = sceneObjects.size();
         sceneObjects.push_back(std::move(r));
-        physicsEnabledIndices.push_back(idx);
+        objectRoles_.push_back(role);
         return idx;
     };
 
     // Wooden crate - slightly shiny, non-metallic (unit cube, half-extent 0.5)
     auto [crateX, crateZ] = worldPos(2.0f, 0.0f);
-    addPhysicsObject(RenderableBuilder()
+    addObject(RenderableBuilder()
         .atPosition(glm::vec3(crateX, getGroundY(crateX, crateZ, 0.5f), crateZ))
         .withMesh(cubeMesh.get())
         .withTexture(crateTex)
@@ -609,7 +631,7 @@ void SceneBuilder::createRenderables() {
 
     // Rotated wooden crate
     auto [rotatedCrateX, rotatedCrateZ] = worldPos(-1.5f, 1.0f);
-    addPhysicsObject(RenderableBuilder()
+    addObject(RenderableBuilder()
         .withTransform(Transform(
             glm::vec3(rotatedCrateX, getGroundY(rotatedCrateX, rotatedCrateZ, 0.5f), rotatedCrateZ),
             Transform::yRotation(glm::radians(30.0f))))
@@ -622,7 +644,7 @@ void SceneBuilder::createRenderables() {
 
     // Polished metal sphere - smooth, fully metallic (radius 0.5)
     auto [polishedSphereX, polishedSphereZ] = worldPos(0.0f, -2.0f);
-    addPhysicsObject(RenderableBuilder()
+    addObject(RenderableBuilder()
         .atPosition(glm::vec3(polishedSphereX, getGroundY(polishedSphereX, polishedSphereZ, 0.5f), polishedSphereZ))
         .withMesh(sphereMesh.get())
         .withTexture(metalTex)
@@ -633,7 +655,7 @@ void SceneBuilder::createRenderables() {
 
     // Rough/brushed metal sphere - moderately rough, metallic (radius 0.5)
     auto [roughSphereX, roughSphereZ] = worldPos(-3.0f, -1.0f);
-    addPhysicsObject(RenderableBuilder()
+    addObject(RenderableBuilder()
         .atPosition(glm::vec3(roughSphereX, getGroundY(roughSphereX, roughSphereZ, 0.5f), roughSphereZ))
         .withMesh(sphereMesh.get())
         .withTexture(metalTex)
@@ -644,7 +666,7 @@ void SceneBuilder::createRenderables() {
 
     // Polished metal cube - smooth, fully metallic (half-extent 0.5)
     auto [polishedCubeX, polishedCubeZ] = worldPos(3.0f, -2.0f);
-    addPhysicsObject(RenderableBuilder()
+    addObject(RenderableBuilder()
         .atPosition(glm::vec3(polishedCubeX, getGroundY(polishedCubeX, polishedCubeZ, 0.5f), polishedCubeZ))
         .withMesh(cubeMesh.get())
         .withTexture(metalTex)
@@ -655,7 +677,7 @@ void SceneBuilder::createRenderables() {
 
     // Brushed metal cube - rough, metallic (half-extent 0.5)
     auto [brushedCubeX, brushedCubeZ] = worldPos(-3.0f, -3.0f);
-    addPhysicsObject(RenderableBuilder()
+    addObject(RenderableBuilder()
         .withTransform(Transform(
             glm::vec3(brushedCubeX, getGroundY(brushedCubeX, brushedCubeZ, 0.5f), brushedCubeZ),
             Transform::yRotation(glm::radians(45.0f))))
@@ -670,7 +692,7 @@ void SceneBuilder::createRenderables() {
     // Sits 0.8m above crate (crate top at terrain+1.0, sphere center at terrain+1.0+0.3)
     // This object has physics AND is tracked as the emissive orb for light sync
     float glowSphereScale = 0.3f;
-    emissiveOrbRenderableIndex_ = addPhysicsObject(RenderableBuilder()
+    addObject(RenderableBuilder()
         .withTransform(Transform(
             glm::vec3(crateX, getGroundY(crateX, crateZ, 1.0f + glowSphereScale), crateZ),
             glm::quat(1, 0, 0, 0),  // Identity rotation
@@ -683,11 +705,11 @@ void SceneBuilder::createRenderables() {
         .withEmissiveIntensity(25.0f)
         .withEmissiveColor(glm::vec3(1.0f, 0.9f, 0.7f))
         .withCastsShadow(false)
-        .build());
+        .build(), ObjectRole::EmissiveOrb);
 
     // Blue light indicator sphere - saturated blue, floating above terrain
     auto [blueLightX, blueLightZ] = worldPos(-3.0f, 2.0f);
-    sceneObjects.push_back(RenderableBuilder()
+    addObject(RenderableBuilder()
         .withTransform(Transform(
             glm::vec3(blueLightX, getGroundY(blueLightX, blueLightZ, 1.5f), blueLightZ),
             glm::quat(1, 0, 0, 0), 0.2f))
@@ -703,7 +725,7 @@ void SceneBuilder::createRenderables() {
 
     // Green light indicator sphere - saturated green, floating above terrain
     auto [greenLightX, greenLightZ] = worldPos(4.0f, -2.0f);
-    sceneObjects.push_back(RenderableBuilder()
+    addObject(RenderableBuilder()
         .withTransform(Transform(
             glm::vec3(greenLightX, getGroundY(greenLightX, greenLightZ, 1.5f), greenLightZ),
             glm::quat(1, 0, 0, 0), 0.2f))
@@ -719,7 +741,7 @@ void SceneBuilder::createRenderables() {
 
     // Debug cube - red emissive cube for testing (half-extent 0.5)
     auto [debugCubeX, debugCubeZ] = worldPos(5.0f, -5.0f);
-    sceneObjects.push_back(RenderableBuilder()
+    addObject(RenderableBuilder()
         .atPosition(glm::vec3(debugCubeX, getGroundY(debugCubeX, debugCubeZ, 0.5f), debugCubeZ))
         .withMesh(cubeMesh.get())
         .withTexture(crateTex)
@@ -734,7 +756,6 @@ void SceneBuilder::createRenderables() {
     // Player position is controlled by physics, so we place at scene origin
     auto [playerX, playerZ] = worldPos(0.0f, 0.0f);
     float playerTerrainY = getTerrainHeight(playerX, playerZ);
-    playerRenderableIndex_ = sceneObjects.size();
     if (hasAnimatedCharacter) {
         // Use materials from FBX if available, otherwise use defaults
         float charRoughness = 0.5f;  // Default roughness for more specular highlights
@@ -754,7 +775,7 @@ void SceneBuilder::createRenderables() {
                     mat.name.c_str(), charRoughness, charMetallic);
         }
 
-        sceneObjects.push_back(RenderableBuilder()
+        addObject(RenderableBuilder()
             .withTransform(buildCharacterTransform(glm::vec3(playerX, playerTerrainY, playerZ), 10.0f))
             .withMesh(&animatedCharacter->getMesh())
             .withTexture(whiteTex)  // White texture so vertex colors show through
@@ -765,10 +786,10 @@ void SceneBuilder::createRenderables() {
             .withEmissiveIntensity(charEmissiveIntensity)
             .withCastsShadow(true)
             .withGPUSkinned(true)
-            .build());
+            .build(), ObjectRole::Player);
     } else {
         // Capsule fallback - capsule height 1.8m, center at 0.9m above ground
-        sceneObjects.push_back(RenderableBuilder()
+        addObject(RenderableBuilder()
             .atPosition(glm::vec3(playerX, playerTerrainY + 0.9f, playerZ))
             .withMesh(capsuleMesh.get())
             .withTexture(metalTex)
@@ -776,7 +797,7 @@ void SceneBuilder::createRenderables() {
             .withRoughness(0.3f)
             .withMetallic(0.8f)
             .withCastsShadow(true)
-            .build());
+            .build(), ObjectRole::Player);
     }
 
     // NPC characters - rendered with GPU skinning like the player
@@ -796,10 +817,7 @@ void SceneBuilder::createRenderables() {
             constexpr float TWO_PI = 6.283185307179586f;
             float hueShift = std::fmod(static_cast<float>(i + 1) * GOLDEN_RATIO, 1.0f) * TWO_PI;
 
-            size_t renderableIndex = sceneObjects.size();
-            npcSimulation_->setRenderableIndex(i, renderableIndex);
-
-            sceneObjects.push_back(RenderableBuilder()
+            size_t renderableIndex = addObject(RenderableBuilder()
                 .withTransform(npcSimulation_->buildNPCTransform(i))
                 .withMesh(&character->getMesh())
                 .withTexture(whiteTex)
@@ -810,6 +828,7 @@ void SceneBuilder::createRenderables() {
                 .withHueShift(hueShift)
                 .withGPUSkinned(true)
                 .build());
+            npcSimulation_->setRenderableIndex(i, renderableIndex);
 
             SDL_Log("SceneBuilder: Added NPC renderable at index %zu with hue shift %.2f rad", renderableIndex, hueShift);
         }
@@ -817,8 +836,7 @@ void SceneBuilder::createRenderables() {
 
     // Player weapons - attached to hand bones, transforms updated each frame
     if (hasAnimatedCharacter && rightHandBoneIndex >= 0) {
-        swordRenderableIndex_ = sceneObjects.size();
-        sceneObjects.push_back(RenderableBuilder()
+        addObject(RenderableBuilder()
             .withTransform(glm::mat4(1.0f))  // Updated per frame
             .withMesh(swordMesh.get())
             .withTexture(metalTex)
@@ -826,12 +844,10 @@ void SceneBuilder::createRenderables() {
             .withRoughness(0.2f)
             .withMetallic(0.95f)
             .withCastsShadow(true)
-            .build());
-        SDL_Log("SceneBuilder: Added sword renderable at index %zu", swordRenderableIndex_);
+            .build(), ObjectRole::Sword);
     }
     if (hasAnimatedCharacter && leftHandBoneIndex >= 0) {
-        shieldRenderableIndex_ = sceneObjects.size();
-        sceneObjects.push_back(RenderableBuilder()
+        addObject(RenderableBuilder()
             .withTransform(glm::mat4(1.0f))  // Updated per frame
             .withMesh(shieldMesh.get())
             .withTexture(metalTex)
@@ -839,15 +855,13 @@ void SceneBuilder::createRenderables() {
             .withRoughness(0.3f)
             .withMetallic(0.9f)
             .withCastsShadow(true)
-            .build());
-        SDL_Log("SceneBuilder: Added shield renderable at index %zu", shieldRenderableIndex_);
+            .build(), ObjectRole::Shield);
     }
 
     // Debug axis indicators for right hand (R=X, G=Y, B=Z)
     if (hasAnimatedCharacter && rightHandBoneIndex >= 0) {
         // X axis - Red
-        rightHandAxisX = sceneObjects.size();
-        sceneObjects.push_back(RenderableBuilder()
+        addObject(RenderableBuilder()
             .withTransform(glm::mat4(1.0f))
             .withMesh(axisLineMesh.get())
             .withTexture(whiteTex)
@@ -857,10 +871,9 @@ void SceneBuilder::createRenderables() {
             .withEmissiveColor(glm::vec3(1.0f, 0.0f, 0.0f))
             .withEmissiveIntensity(5.0f)
             .withCastsShadow(false)
-            .build());
+            .build(), ObjectRole::DebugAxisRightX);
         // Y axis - Green
-        rightHandAxisY = sceneObjects.size();
-        sceneObjects.push_back(RenderableBuilder()
+        addObject(RenderableBuilder()
             .withTransform(glm::mat4(1.0f))
             .withMesh(axisLineMesh.get())
             .withTexture(whiteTex)
@@ -870,10 +883,9 @@ void SceneBuilder::createRenderables() {
             .withEmissiveColor(glm::vec3(0.0f, 1.0f, 0.0f))
             .withEmissiveIntensity(5.0f)
             .withCastsShadow(false)
-            .build());
+            .build(), ObjectRole::DebugAxisRightY);
         // Z axis - Blue
-        rightHandAxisZ = sceneObjects.size();
-        sceneObjects.push_back(RenderableBuilder()
+        addObject(RenderableBuilder()
             .withTransform(glm::mat4(1.0f))
             .withMesh(axisLineMesh.get())
             .withTexture(whiteTex)
@@ -883,15 +895,14 @@ void SceneBuilder::createRenderables() {
             .withEmissiveColor(glm::vec3(0.0f, 0.0f, 1.0f))
             .withEmissiveIntensity(5.0f)
             .withCastsShadow(false)
-            .build());
+            .build(), ObjectRole::DebugAxisRightZ);
         SDL_Log("SceneBuilder: Added debug axis indicators for right hand");
     }
 
     // Debug axis indicators for left hand (R=X, G=Y, B=Z)
     if (hasAnimatedCharacter && leftHandBoneIndex >= 0) {
         // X axis - Red
-        leftHandAxisX = sceneObjects.size();
-        sceneObjects.push_back(RenderableBuilder()
+        addObject(RenderableBuilder()
             .withTransform(glm::mat4(1.0f))
             .withMesh(axisLineMesh.get())
             .withTexture(whiteTex)
@@ -901,10 +912,9 @@ void SceneBuilder::createRenderables() {
             .withEmissiveColor(glm::vec3(1.0f, 0.0f, 0.0f))
             .withEmissiveIntensity(5.0f)
             .withCastsShadow(false)
-            .build());
+            .build(), ObjectRole::DebugAxisLeftX);
         // Y axis - Green
-        leftHandAxisY = sceneObjects.size();
-        sceneObjects.push_back(RenderableBuilder()
+        addObject(RenderableBuilder()
             .withTransform(glm::mat4(1.0f))
             .withMesh(axisLineMesh.get())
             .withTexture(whiteTex)
@@ -914,10 +924,9 @@ void SceneBuilder::createRenderables() {
             .withEmissiveColor(glm::vec3(0.0f, 1.0f, 0.0f))
             .withEmissiveIntensity(5.0f)
             .withCastsShadow(false)
-            .build());
+            .build(), ObjectRole::DebugAxisLeftY);
         // Z axis - Blue
-        leftHandAxisZ = sceneObjects.size();
-        sceneObjects.push_back(RenderableBuilder()
+        addObject(RenderableBuilder()
             .withTransform(glm::mat4(1.0f))
             .withMesh(axisLineMesh.get())
             .withTexture(whiteTex)
@@ -927,14 +936,13 @@ void SceneBuilder::createRenderables() {
             .withEmissiveColor(glm::vec3(0.0f, 0.0f, 1.0f))
             .withEmissiveIntensity(5.0f)
             .withCastsShadow(false)
-            .build());
+            .build(), ObjectRole::DebugAxisLeftZ);
         SDL_Log("SceneBuilder: Added debug axis indicators for left hand");
     }
 
     // Flag pole - 3m pole, center at 1.5m above ground
     auto [flagPoleX, flagPoleZ] = worldPos(5.0f, 0.0f);
-    flagPoleRenderableIndex_ = sceneObjects.size();
-    sceneObjects.push_back(RenderableBuilder()
+    addObject(RenderableBuilder()
         .atPosition(glm::vec3(flagPoleX, getGroundY(flagPoleX, flagPoleZ, 1.5f), flagPoleZ))
         .withMesh(flagPoleMesh.get())
         .withTexture(metalTex)
@@ -942,11 +950,10 @@ void SceneBuilder::createRenderables() {
         .withRoughness(0.4f)
         .withMetallic(0.9f)
         .withCastsShadow(true)
-        .build());
+        .build(), ObjectRole::FlagPole);
 
     // Flag cloth - will be positioned and updated by ClothSimulation
-    flagClothRenderableIndex_ = sceneObjects.size();
-    sceneObjects.push_back(RenderableBuilder()
+    addObject(RenderableBuilder()
         .withTransform(glm::mat4(1.0f))  // Identity, will be handled differently
         .withMesh(&flagClothMesh)
         .withTexture(crateTex)  // Using crate texture for now
@@ -954,12 +961,11 @@ void SceneBuilder::createRenderables() {
         .withRoughness(0.6f)
         .withMetallic(0.0f)
         .withCastsShadow(true)
-        .build());
+        .build(), ObjectRole::FlagCloth);
 
     // Player cape - attached to character, updated each frame (using metal texture)
     if (hasCapeEnabled) {
-        capeRenderableIndex_ = sceneObjects.size();
-        sceneObjects.push_back(RenderableBuilder()
+        addObject(RenderableBuilder()
             .withTransform(glm::mat4(1.0f))  // Identity, cloth positions are in world space
             .withMesh(&capeMesh)
             .withTexture(metalTex)
@@ -967,7 +973,7 @@ void SceneBuilder::createRenderables() {
             .withRoughness(0.3f)
             .withMetallic(0.8f)
             .withCastsShadow(true)
-            .build());
+            .build(), ObjectRole::Cape);
     }
 
     // Well entrance - demonstrates terrain hole mask system
@@ -978,8 +984,7 @@ void SceneBuilder::createRenderables() {
     glm::mat4 wellTransform = glm::translate(glm::mat4(1.0f),
         glm::vec3(wellEntranceX, wellY + 3.0f, wellEntranceZ));
     wellTransform = glm::scale(wellTransform, glm::vec3(2.0f, 0.5f, 12.0f));
-    wellEntranceRenderableIndex_ = sceneObjects.size();
-    sceneObjects.push_back(RenderableBuilder()
+    addObject(RenderableBuilder()
         .withTransform(wellTransform)
         .withMesh(cubeMesh.get())
         .withTexture(metalTex)  // Stone-like appearance
@@ -987,7 +992,7 @@ void SceneBuilder::createRenderables() {
         .withRoughness(0.8f)
         .withMetallic(0.1f)
         .withCastsShadow(true)
-        .build());
+        .build(), ObjectRole::WellEntrance);
 }
 
 void SceneBuilder::uploadFlagClothMesh(VmaAllocator allocator, VkDevice device, VkCommandPool commandPool, VkQueue queue) {
@@ -1147,16 +1152,6 @@ bool SceneBuilder::hasNPCs() const {
     return npcSimulation_ && npcSimulation_->hasNPCs();
 }
 
-size_t SceneBuilder::getNPCRenderableIndex(size_t npcIndex) const {
-    if (!npcSimulation_ || npcIndex >= npcSimulation_->getNPCCount()) {
-        return SIZE_MAX;
-    }
-    const auto& npcData = npcSimulation_->getData();
-    if (npcIndex >= npcData.renderableIndices.size()) {
-        return SIZE_MAX;
-    }
-    return npcData.renderableIndices[npcIndex];
-}
 
 void SceneBuilder::updateWeaponTransforms(const glm::mat4& worldTransform) {
     if (!hasAnimatedCharacter) return;
@@ -1210,47 +1205,47 @@ void SceneBuilder::updateWeaponTransforms(const glm::mat4& worldTransform) {
     if (rightHandBoneIndex >= 0) {
         glm::mat4 boneWorld = worldTransform * globalTransforms[rightHandBoneIndex];
 
-        auto updateAxis = [&](size_t axisIdx, const glm::mat4& offset) {
-            if (axisIdx < sceneObjects.size()) {
-                sceneObjects[axisIdx].transform = showWeaponAxes_ ? (boneWorld * offset) : hideTransform;
+        auto updateAxis = [&](ecs::Entity entity, const glm::mat4& offset) {
+            if (entity != ecs::NullEntity) {
+                updateRenderable(entity, showWeaponAxes_ ? (boneWorld * offset) : hideTransform);
             }
         };
 
         // X axis (Red) - rotate 90° around Z to point Y toward X
         glm::mat4 xOffset = glm::rotate(glm::mat4(1.0f), glm::radians(-90.0f), glm::vec3(0.0f, 0.0f, 1.0f));
         xOffset = glm::translate(xOffset, glm::vec3(0.0f, 0.075f, 0.0f));
-        updateAxis(rightHandAxisX, xOffset);
+        updateAxis(rightHandAxisEntities_[0], xOffset);
 
         // Y axis (Green) - no rotation needed, cylinder already points along Y
         glm::mat4 yOffset = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.075f, 0.0f));
-        updateAxis(rightHandAxisY, yOffset);
+        updateAxis(rightHandAxisEntities_[1], yOffset);
 
         // Z axis (Blue) - rotate 90° around X to point Y toward Z
         glm::mat4 zOffset = glm::rotate(glm::mat4(1.0f), glm::radians(90.0f), glm::vec3(1.0f, 0.0f, 0.0f));
         zOffset = glm::translate(zOffset, glm::vec3(0.0f, 0.075f, 0.0f));
-        updateAxis(rightHandAxisZ, zOffset);
+        updateAxis(rightHandAxisEntities_[2], zOffset);
     }
 
     // Debug axis indicators for left hand
     if (leftHandBoneIndex >= 0) {
         glm::mat4 boneWorld = worldTransform * globalTransforms[leftHandBoneIndex];
 
-        auto updateAxis = [&](size_t axisIdx, const glm::mat4& offset) {
-            if (axisIdx < sceneObjects.size()) {
-                sceneObjects[axisIdx].transform = showWeaponAxes_ ? (boneWorld * offset) : hideTransform;
+        auto updateAxis = [&](ecs::Entity entity, const glm::mat4& offset) {
+            if (entity != ecs::NullEntity) {
+                updateRenderable(entity, showWeaponAxes_ ? (boneWorld * offset) : hideTransform);
             }
         };
 
         glm::mat4 xOffset = glm::rotate(glm::mat4(1.0f), glm::radians(-90.0f), glm::vec3(0.0f, 0.0f, 1.0f));
         xOffset = glm::translate(xOffset, glm::vec3(0.0f, 0.075f, 0.0f));
-        updateAxis(leftHandAxisX, xOffset);
+        updateAxis(leftHandAxisEntities_[0], xOffset);
 
         glm::mat4 yOffset = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.075f, 0.0f));
-        updateAxis(leftHandAxisY, yOffset);
+        updateAxis(leftHandAxisEntities_[1], yOffset);
 
         glm::mat4 zOffset = glm::rotate(glm::mat4(1.0f), glm::radians(90.0f), glm::vec3(1.0f, 0.0f, 0.0f));
         zOffset = glm::translate(zOffset, glm::vec3(0.0f, 0.075f, 0.0f));
-        updateAxis(leftHandAxisZ, zOffset);
+        updateAxis(leftHandAxisEntities_[2], zOffset);
     }
 }
 

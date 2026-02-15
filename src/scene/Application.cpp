@@ -1197,8 +1197,7 @@ void Application::updateCameraOcclusion(float deltaTime) {
     }
 
     // Update opacities using ECS queries - entities with PhysicsBody and Opacity components
-    auto& sceneObjects = renderer_->getSystems().scene().getRenderables();
-    const auto& sceneBuilder = renderer_->getSystems().scene().getSceneBuilder();
+    auto& sceneBuilder = renderer_->getSystems().scene().getSceneBuilder();
 
     // Query entities with PhysicsBody component (excludes player via PlayerTag check)
     for (auto [entity, physicsBody] : ecsWorld_.view<ecs::PhysicsBody>().each()) {
@@ -1211,14 +1210,11 @@ void Application::updateCameraOcclusion(float deltaTime) {
         bool isOccluding = currentlyOccluding.count(bodyID) > 0;
         float targetOpacity = isOccluding ? occludedOpacity : 1.0f;
 
-        // Find the renderable index for this entity and update opacity
-        const auto& sceneEntities = sceneBuilder.getSceneEntities();
-        for (size_t i = 0; i < sceneEntities.size(); ++i) {
-            if (sceneEntities[i] == entity && i < sceneObjects.size()) {
-                float fadeFactor = 1.0f - std::exp(-occlusionFadeSpeed * deltaTime);
-                sceneObjects[i].opacity += (targetOpacity - sceneObjects[i].opacity) * fadeFactor;
-                break;
-            }
+        // Update renderable opacity via entity handle
+        Renderable* renderable = sceneBuilder.getRenderableForEntity(entity);
+        if (renderable) {
+            float fadeFactor = 1.0f - std::exp(-occlusionFadeSpeed * deltaTime);
+            renderable->opacity += (targetOpacity - renderable->opacity) * fadeFactor;
         }
     }
 

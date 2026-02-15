@@ -17,6 +17,7 @@
 #include "PlayerCape.h"
 #include "ecs/World.h"
 #include "ecs/Components.h"
+#include <array>
 #include <optional>
 #include <memory>
 #include <unordered_map>
@@ -127,8 +128,6 @@ public:
         onRenderablesCreated_ = std::move(callback);
     }
 
-    // Deprecated: use PhysicsShapeInfo ECS component queries instead
-    const std::vector<size_t>& getPhysicsEnabledIndices() const { return physicsEnabledIndices; }
 
     // Material registry - call registerMaterials() after init(), before Renderer creates descriptor sets
     MaterialRegistry& getMaterialRegistry() { return materialRegistry; }
@@ -190,9 +189,6 @@ public:
     size_t getNPCCount() const;
     bool hasNPCs() const;
 
-    // Get NPC renderable info for ECS integration
-    // Returns the renderable index for a given NPC, or SIZE_MAX if invalid
-    size_t getNPCRenderableIndex(size_t npcIndex) const;
 
     // Player weapons access
     bool hasWeapons() const { return rightHandBoneIndex >= 0 && leftHandBoneIndex >= 0; }
@@ -305,25 +301,16 @@ private:
     // Scene objects (renderables for rendering pipeline)
     std::vector<Renderable> sceneObjects;
 
-    // Internal renderable indices - used only during createEntitiesFromRenderables()
-    // to map renderables to their entity tags. After entity creation, use entity handles.
-    size_t playerRenderableIndex_ = 0;
-    size_t flagPoleRenderableIndex_ = 0;
-    size_t flagClothRenderableIndex_ = 0;
-    size_t wellEntranceRenderableIndex_ = 0;
-    size_t capeRenderableIndex_ = 0;
-    size_t emissiveOrbRenderableIndex_ = 0;
-    size_t swordRenderableIndex_ = 0;
-    size_t shieldRenderableIndex_ = 0;
-    // Debug axis indicators (R=X, G=Y, B=Z) for hands
-    size_t rightHandAxisX = 0;
-    size_t rightHandAxisY = 0;
-    size_t rightHandAxisZ = 0;
-    size_t leftHandAxisX = 0;
-    size_t leftHandAxisY = 0;
-    size_t leftHandAxisZ = 0;
     int32_t rightHandBoneIndex = -1;  // Bone index for sword attachment
     int32_t leftHandBoneIndex = -1;   // Bone index for shield attachment
+
+    // Scene object roles - assigned during createRenderables(), consumed during entity creation
+    enum class ObjectRole : uint8_t {
+        None, Player, EmissiveOrb, FlagPole, FlagCloth, Cape,
+        Sword, Shield, WellEntrance, DebugAxisRightX, DebugAxisRightY,
+        DebugAxisRightZ, DebugAxisLeftX, DebugAxisLeftY, DebugAxisLeftZ
+    };
+    std::vector<ObjectRole> objectRoles_;
 
     // ECS entity handles - the primary way to identify scene objects
     ecs::World* ecsWorld_ = nullptr;  // Pointer to ECS world (not owned)
@@ -338,9 +325,9 @@ private:
     ecs::Entity swordEntity_ = ecs::NullEntity;
     ecs::Entity shieldEntity_ = ecs::NullEntity;
     ecs::Entity wellEntranceEntity_ = ecs::NullEntity;
-
-    // Deprecated: use PhysicsShapeInfo component queries instead
-    std::vector<size_t> physicsEnabledIndices;
+    // Debug axis entities (3 per hand: X=Red, Y=Green, Z=Blue)
+    std::array<ecs::Entity, 3> rightHandAxisEntities_ = {ecs::NullEntity, ecs::NullEntity, ecs::NullEntity};
+    std::array<ecs::Entity, 3> leftHandAxisEntities_ = {ecs::NullEntity, ecs::NullEntity, ecs::NullEntity};
 
     // Well entrance position (for terrain hole creation)
     float wellEntranceX = 0.0f;

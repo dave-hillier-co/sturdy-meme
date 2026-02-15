@@ -98,6 +98,11 @@ RenderableBuilder& RenderableBuilder::withHueShift(float shift) {
     return *this;
 }
 
+RenderableBuilder& RenderableBuilder::withGPUSkinned(bool skinned) {
+    gpuSkinned_ = skinned;
+    return *this;
+}
+
 RenderableBuilder& RenderableBuilder::withTreeInstanceIndex(int index) {
     treeInstanceIndex_ = index;
     return *this;
@@ -163,6 +168,7 @@ Renderable RenderableBuilder::build() const {
     renderable.leafTint = leafTint_;
     renderable.autumnHueShift = autumnHueShift_;
     renderable.hueShift = hueShift_;
+    renderable.gpuSkinned = gpuSkinned_;
 
     return renderable;
 }

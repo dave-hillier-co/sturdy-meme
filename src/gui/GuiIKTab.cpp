@@ -173,14 +173,13 @@ void GuiIKTab::renderSkeletonOverlay(ISceneControl& sceneControl, const Camera& 
 
     auto& character = sceneBuilder.getAnimatedCharacter();
 
-    // Get the character's world transform from the scene object
-    const auto& sceneObjects = sceneBuilder.getRenderables();
-    size_t playerIndex = sceneBuilder.getPlayerObjectIndex();
-    if (playerIndex >= sceneObjects.size()) {
+    // Get the character's world transform via entity handle
+    const Renderable* playerRenderable = sceneBuilder.getRenderableForEntity(sceneBuilder.getPlayerEntity());
+    if (!playerRenderable) {
         return;
     }
 
-    glm::mat4 worldTransform = sceneObjects[playerIndex].transform;
+    glm::mat4 worldTransform = playerRenderable->transform;
 
     // Get viewport size
     float width = static_cast<float>(sceneControl.getWidth());

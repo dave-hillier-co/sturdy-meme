@@ -48,6 +48,10 @@ struct Renderable {
 
     float hueShift = 0.0f;  // General hue shift in radians (for NPC tinting)
 
+    // GPU skinned flag - true for characters rendered via GPU skinning pipeline
+    // Used by rendering passes to skip these objects (they use a separate draw path)
+    bool gpuSkinned = false;
+
     // Helper to set all PBR properties from ECS component
     void setPBRProperties(float r, float m, float ei, const glm::vec3& ec, float at, uint32_t flags) {
         roughness = r;
@@ -140,6 +144,9 @@ public:
     // Optional: Set hue shift in radians (for NPC tinting, 0 to 2*PI)
     RenderableBuilder& withHueShift(float shift);
 
+    // Optional: Mark as GPU-skinned character (rendered via separate pipeline)
+    RenderableBuilder& withGPUSkinned(bool skinned);
+
     // Optional: Set tree instance index for LOD lookups
     RenderableBuilder& withTreeInstanceIndex(int index);
 
@@ -181,4 +188,5 @@ private:
     glm::vec3 leafTint_ = glm::vec3(1.0f);
     float autumnHueShift_ = 0.0f;
     float hueShift_ = 0.0f;
+    bool gpuSkinned_ = false;
 };

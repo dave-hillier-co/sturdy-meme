@@ -51,9 +51,9 @@ namespace {
     }
 
     // Get a display name for a renderable based on its properties
-    const char* getObjectTypeName(const Renderable& obj, size_t index, size_t playerIndex) {
-        if (index == playerIndex) {
-            return "Player";
+    const char* getObjectTypeName(const Renderable& obj) {
+        if (obj.gpuSkinned) {
+            return "Character";
         }
         if (obj.emissiveIntensity > 0.0f) {
             return "Emissive";
@@ -89,7 +89,6 @@ namespace {
 void GuiSceneGraphTab::render(ISceneControl& sceneControl, SceneGraphTabState& state) {
     SceneBuilder& sceneBuilder = sceneControl.getSceneBuilder();
     const auto& renderables = sceneBuilder.getRenderables();
-    size_t playerIndex = sceneBuilder.getPlayerObjectIndex();
 
     ImGui::Spacing();
 
@@ -118,7 +117,7 @@ void GuiSceneGraphTab::render(ISceneControl& sceneControl, SceneGraphTabState& s
 
             // Build display name
             char displayName[128];
-            const char* typeName = getObjectTypeName(obj, i, playerIndex);
+            const char* typeName = getObjectTypeName(obj);
             snprintf(displayName, sizeof(displayName), "[%zu] %s", i, typeName);
 
             // Apply filter
@@ -154,8 +153,8 @@ void GuiSceneGraphTab::render(ISceneControl& sceneControl, SceneGraphTabState& s
 
             // Color code by type
             ImVec4 itemColor = ImVec4(0.9f, 0.9f, 0.9f, 1.0f);  // Default white
-            if (i == playerIndex) {
-                itemColor = ImVec4(0.3f, 0.9f, 0.3f, 1.0f);  // Green for player
+            if (obj.gpuSkinned) {
+                itemColor = ImVec4(0.3f, 0.9f, 0.3f, 1.0f);  // Green for characters
             } else if (obj.emissiveIntensity > 0.0f) {
                 itemColor = ImVec4(1.0f, 0.8f, 0.3f, 1.0f);  // Yellow for emissive
             } else if (obj.treeInstanceIndex >= 0 || obj.leafInstanceIndex >= 0) {
@@ -330,8 +329,10 @@ void GuiSceneGraphTab::render(ISceneControl& sceneControl, SceneGraphTabState& s
                 // Index info
                 ImGui::Spacing();
                 ImGui::Text("Object Index: %d", state.selectedObjectIndex);
-                if (static_cast<size_t>(state.selectedObjectIndex) == playerIndex) {
-                    ImGui::TextColored(ImVec4(0.3f, 1.0f, 0.3f, 1.0f), "(Player Object)");
+                if (state.selectedObjectIndex >= 0 &&
+                    static_cast<size_t>(state.selectedObjectIndex) < renderables.size() &&
+                    renderables[static_cast<size_t>(state.selectedObjectIndex)].gpuSkinned) {
+                    ImGui::TextColored(ImVec4(0.3f, 1.0f, 0.3f, 1.0f), "(GPU Skinned Character)");
                 }
             }
         }

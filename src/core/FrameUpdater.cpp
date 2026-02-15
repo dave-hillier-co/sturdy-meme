@@ -2,10 +2,8 @@
 #include "RendererSystems.h"
 #include "Profiler.h"
 #include "SceneManager.h"
-#include "SceneBuilder.h"
 #include "GPUSceneBuffer.h"
 #include "DebugLineSystem.h"
-#include "npc/NPCSimulation.h"
 #include "controls/DebugControlSubsystem.h"
 
 #include "updaters/VegetationUpdater.h"
@@ -46,27 +44,10 @@ void FrameUpdater::populateGPUSceneBuffer(RendererSystems& systems, const FrameD
     sceneBuffer.beginFrame(frame.frameIndex);
 
     const auto& sceneObjects = systems.scene().getRenderables();
-    SceneBuilder& sceneBuilder = systems.scene().getSceneBuilder();
-    size_t playerIndex = sceneBuilder.getPlayerObjectIndex();
-    bool hasCharacter = sceneBuilder.hasCharacter();
-    const NPCSimulation* npcSim = sceneBuilder.getNPCSimulation();
 
     for (size_t i = 0; i < sceneObjects.size(); ++i) {
-        // Skip player character (rendered with GPU skinning)
-        if (hasCharacter && i == playerIndex) continue;
-
-        // Skip NPC characters (rendered with GPU skinning)
-        if (npcSim) {
-            bool isNPC = false;
-            const auto& npcData = npcSim->getData();
-            for (size_t npcIdx = 0; npcIdx < npcData.count(); ++npcIdx) {
-                if (i == npcData.renderableIndices[npcIdx]) {
-                    isNPC = true;
-                    break;
-                }
-            }
-            if (isNPC) continue;
-        }
+        // Skip GPU-skinned characters (player + NPCs, rendered via separate pipeline)
+        if (sceneObjects[i].gpuSkinned) continue;
 
         sceneBuffer.addObject(sceneObjects[i]);
     }

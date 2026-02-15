@@ -1196,34 +1196,39 @@ void Application::updateCameraOcclusion(float deltaTime) {
         currentlyOccluding.insert(hit.bodyId);
     }
 
-    // Update opacities using ECS queries - entities with PhysicsBody and Opacity components
-    auto& sceneObjects = renderer_->getSystems().scene().getRenderables();
-    const auto& sceneBuilder = renderer_->getSystems().scene().getSceneBuilder();
+    // Update opacities and occlusion tags using ECS queries
+    auto& sceneBuilder = renderer_->getSystems().scene().getSceneBuilder();
 
-    // Query entities with PhysicsBody component (excludes player via PlayerTag check)
     for (auto [entity, physicsBody] : ecsWorld_.view<ecs::PhysicsBody>().each()) {
-        // Skip player entity
         if (ecsWorld_.has<ecs::PlayerTag>(entity)) continue;
 
         PhysicsBodyID bodyID = static_cast<PhysicsBodyID>(physicsBody.bodyId);
         if (bodyID == INVALID_BODY_ID) continue;
 
         bool isOccluding = currentlyOccluding.count(bodyID) > 0;
-        float targetOpacity = isOccluding ? occludedOpacity : 1.0f;
 
-        // Find the renderable index for this entity and update opacity
-        const auto& sceneEntities = sceneBuilder.getSceneEntities();
-        for (size_t i = 0; i < sceneEntities.size(); ++i) {
-            if (sceneEntities[i] == entity && i < sceneObjects.size()) {
-                float fadeFactor = 1.0f - std::exp(-occlusionFadeSpeed * deltaTime);
-                sceneObjects[i].opacity += (targetOpacity - sceneObjects[i].opacity) * fadeFactor;
-                break;
-            }
+        // Update OccludingCamera tag
+        if (isOccluding && !ecsWorld_.has<ecs::OccludingCamera>(entity)) {
+            ecsWorld_.add<ecs::OccludingCamera>(entity);
+        } else if (!isOccluding && ecsWorld_.has<ecs::OccludingCamera>(entity)) {
+            ecsWorld_.remove<ecs::OccludingCamera>(entity);
+        }
+
+        // Update opacity via ECS component and sync to renderable
+        float targetOpacity = isOccluding ? occludedOpacity : 1.0f;
+        if (!ecsWorld_.has<ecs::Opacity>(entity)) {
+            ecsWorld_.add<ecs::Opacity>(entity, 1.0f);
+        }
+        auto& opacity = ecsWorld_.get<ecs::Opacity>(entity);
+        float fadeFactor = 1.0f - std::exp(-occlusionFadeSpeed * deltaTime);
+        opacity.value += (targetOpacity - opacity.value) * fadeFactor;
+
+        // Sync to renderable for current rendering pipeline
+        Renderable* renderable = sceneBuilder.getRenderableForEntity(entity);
+        if (renderable) {
+            renderable->opacity = opacity.value;
         }
     }
-
-    // Update tracking set
-    occludingBodies = std::move(currentlyOccluding);
 }
 
 void Application::updateFlag(float deltaTime) {
@@ -1275,24 +1280,24 @@ void Application::initECS() {
     const auto& renderables = sceneManager.getRenderables();
     SceneBuilder& sceneBuilder = sceneManager.getSceneBuilder();
 
-    // Phase 6: Let SceneBuilder create ECS entities directly
+    // Create ECS entities from renderables (tags and components assigned by SceneBuilder)
     sceneBuilder.setECSWorld(&ecsWorld_);
     sceneBuilder.createEntitiesFromRenderables();
 
-    // Get entity references from SceneBuilder
-    const auto& sceneEntities = sceneBuilder.getSceneEntities();
+    // Connect ECS world to renderer systems for direct entity queries
+    renderer_->getSystems().setECSWorld(&ecsWorld_);
 
-    // Link physics bodies from SceneManager to ECS entities
+    // Link physics bodies to ECS entities
+    // (Physics bodies are created before ECS init, so we link them here
+    // using the entity-to-renderable mapping)
+    const auto& sceneEntities = sceneBuilder.getSceneEntities();
     const auto& physicsBodies = sceneManager.getPhysicsBodies();
     for (size_t i = 0; i < physicsBodies.size() && i < sceneEntities.size(); ++i) {
         PhysicsBodyID bodyId = physicsBodies[i];
-        if (bodyId != INVALID_BODY_ID) {
+        if (bodyId != INVALID_BODY_ID && !ecsWorld_.has<ecs::PhysicsBody>(sceneEntities[i])) {
             ecsWorld_.add<ecs::PhysicsBody>(sceneEntities[i], static_cast<ecs::PhysicsBodyId>(bodyId));
         }
     }
-
-    // Phase 6: Connect ECS world to renderer systems for direct entity queries
-    renderer_->getSystems().setECSWorld(&ecsWorld_);
 
     SDL_Log("ECS initialized with %zu entities from scene", sceneEntities.size());
 
@@ -1332,37 +1337,23 @@ void Application::updateECS(float deltaTime) {
     // Get scene entities from SceneBuilder (Phase 6: entities managed by SceneBuilder)
     const auto& sceneEntities = sceneBuilder.getSceneEntities();
 
-    // Lazy initialization: if ECS world was set but entities not yet created (deferred mode)
-    if (sceneEntities.empty() && !renderables.empty() && sceneBuilder.getECSWorld() == nullptr) {
-        sceneBuilder.setECSWorld(&ecsWorld_);
+    // Lazy initialization: if entities not yet created but renderables are available (deferred mode)
+    if (sceneEntities.empty() && !renderables.empty()) {
+        if (sceneBuilder.getECSWorld() == nullptr) {
+            sceneBuilder.setECSWorld(&ecsWorld_);
+        }
         sceneBuilder.createEntitiesFromRenderables();
-        SDL_Log("ECS: Populated %zu entities from deferred renderables", sceneBuilder.getSceneEntities().size());
+        if (!sceneBuilder.getSceneEntities().empty()) {
+            SDL_Log("ECS: Populated %zu entities from deferred renderables", sceneBuilder.getSceneEntities().size());
+        }
     }
 
     // Re-fetch after potential creation
     const auto& currentEntities = sceneBuilder.getSceneEntities();
 
-    // Set up bone attachments for weapons using tag queries (once, after entities are populated)
+    // Mark weapons as initialized once entities are populated
+    // (BoneAttachments and hierarchy are set up in createEntitiesFromRenderables)
     if (!ecsWeaponsInitialized_ && !currentEntities.empty() && sceneBuilder.hasWeapons()) {
-        // Find and attach sword (right hand weapon) using WeaponTag query
-        for (auto [entity, weaponTag] : ecsWorld_.view<ecs::WeaponTag>().each()) {
-            if (weaponTag.slot == ecs::WeaponSlot::RightHand) {
-                if (!ecsWorld_.has<ecs::BoneAttachment>(entity)) {
-                    ecsWorld_.add<ecs::BoneAttachment>(entity,
-                        sceneBuilder.getRightHandBoneIndex(),
-                        sceneBuilder.getSwordOffset());
-                    SDL_Log("ECS: Attached sword to right hand bone %d", sceneBuilder.getRightHandBoneIndex());
-                }
-            } else if (weaponTag.slot == ecs::WeaponSlot::LeftHand) {
-                if (!ecsWorld_.has<ecs::BoneAttachment>(entity)) {
-                    ecsWorld_.add<ecs::BoneAttachment>(entity,
-                        sceneBuilder.getLeftHandBoneIndex(),
-                        sceneBuilder.getShieldOffset());
-                    SDL_Log("ECS: Attached shield to left hand bone %d", sceneBuilder.getLeftHandBoneIndex());
-                }
-            }
-        }
-
         ecsWeaponsInitialized_ = true;
     }
 
@@ -1377,30 +1368,9 @@ void Application::updateECS(float deltaTime) {
         }
     }
 
-    // Update bone attachments from skeleton
-    if (sceneBuilder.hasCharacter() && ecsWeaponsInitialized_) {
-        const auto& skeleton = sceneBuilder.getAnimatedCharacter().getSkeleton();
-        std::vector<glm::mat4> globalBoneTransforms;
-        skeleton.computeGlobalTransforms(globalBoneTransforms);
-
-        // Get character world transform from player state
-        glm::mat4 characterWorld = player_.movement.getModelMatrix(player_.transform);
-
-        // Update all bone-attached entities
-        ecs::systems::updateBoneAttachments(ecsWorld_, characterWorld, globalBoneTransforms);
-
-        // Sync bone-attached ECS transforms back to renderables for rendering
-        for (auto [entity, attachment, transform] :
-             ecsWorld_.view<ecs::BoneAttachment, ecs::Transform>().each()) {
-            // Find the renderable index for this entity
-            for (size_t i = 0; i < currentEntities.size(); ++i) {
-                if (currentEntities[i] == entity && i < renderables.size()) {
-                    renderables[i].transform = transform.matrix;
-                    break;
-                }
-            }
-        }
-    }
+    // Note: bone-attached entity transforms (weapons, debug axes) are updated by
+    // SceneBuilder::updateWeaponTransforms() which runs after skeleton animation and
+    // syncs both Renderable and ECS Transform using the correct world transform.
 
     // Update ECS material demo (wetness/damage cycling, selection toggling)
     static float totalTime = 0.0f;

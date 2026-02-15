@@ -452,13 +452,12 @@ void GuiPlayerTab::renderMotionMatchingOverlay(IPlayerControl& playerControl, co
     glm::mat4 viewProj = camera.getProjectionMatrix() * camera.getViewMatrix();
 
     // Get the character's world position
-    const auto& sceneObjects = sceneBuilder.getRenderables();
-    size_t playerIndex = sceneBuilder.getPlayerObjectIndex();
-    if (playerIndex >= sceneObjects.size()) {
+    const Renderable* playerRenderable = sceneBuilder.getRenderableForEntity(sceneBuilder.getPlayerEntity());
+    if (!playerRenderable) {
         return;
     }
 
-    glm::mat4 worldTransform = sceneObjects[playerIndex].transform;
+    glm::mat4 worldTransform = playerRenderable->transform;
 
     // Get skeleton for computing actual bone positions
     const auto& skeleton = character.getSkeleton();

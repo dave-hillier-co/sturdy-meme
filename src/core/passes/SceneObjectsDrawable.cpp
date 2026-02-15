@@ -161,8 +161,6 @@ void SceneObjectsDrawable::recordSceneObjects(VkCommandBuffer cmd, uint32_t fram
     } else {
         // Legacy path: Use Renderable vector
         const auto& sceneObjects = resources_.scene->getRenderables();
-        size_t playerIndex = resources_.scene->getSceneBuilder().getPlayerObjectIndex();
-        bool hasCharacter = resources_.scene->getSceneBuilder().hasCharacter();
 
         // Build sorted indices by materialId to minimize descriptor set switches
         std::vector<size_t> sortedIndices(sceneObjects.size());
@@ -174,29 +172,9 @@ void SceneObjectsDrawable::recordSceneObjects(VkCommandBuffer cmd, uint32_t fram
         MaterialId lastMaterialId = INVALID_MATERIAL_ID;
         VkDescriptorSet currentDescSet = VK_NULL_HANDLE;
 
-        // Get NPC simulation for skipping NPC renderables (rendered with GPU skinning)
-        const NPCSimulation* npcSim = resources_.scene->getSceneBuilder().getNPCSimulation();
-
         for (size_t i : sortedIndices) {
-            // Skip player character (rendered separately with GPU skinning)
-            if (hasCharacter && i == playerIndex) {
-                continue;
-            }
-
-            // Skip NPC characters (rendered separately with GPU skinning)
-            bool isNPC = false;
-            if (npcSim) {
-                const auto& npcData = npcSim->getData();
-                for (size_t npcIdx = 0; npcIdx < npcData.count(); ++npcIdx) {
-                    if (i == npcData.renderableIndices[npcIdx]) {
-                        isNPC = true;
-                        break;
-                    }
-                }
-            }
-            if (isNPC) {
-                continue;
-            }
+            // Skip GPU-skinned characters (player + NPCs, rendered via separate pipeline)
+            if (sceneObjects[i].gpuSkinned) continue;
 
             const auto& obj = sceneObjects[i];
 

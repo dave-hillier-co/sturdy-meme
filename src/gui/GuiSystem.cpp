@@ -35,13 +35,19 @@
 #include "GuiGrassTab.h"
 #include "GuiSceneGraphTab.h"
 #include "GuiSceneEditor.h"
+#include "GuiHierarchyPanel.h"
+#include "GuiInspectorPanel.h"
 #include "GuiGizmo.h"
+
+#include "ecs/World.h"
+#include "ecs/Components.h"
 
 #include "terrain/TerrainSystem.h"
 #include "terrain/TerrainTileCache.h"
 #include "physics/PhysicsTerrainTileManager.h"
 
 #include <imgui.h>
+#include <imgui_internal.h>
 #include <imgui_impl_sdl3.h>
 #include <imgui_impl_vulkan.h>
 #include <vulkan/vulkan.hpp>
@@ -291,6 +297,28 @@ void GuiSystem::render(GuiInterfaces& ui, const Camera& camera, float deltaTime,
     }
     avgFrameTime = sum / 120.0f;
 
+    // Create main viewport dockspace - allows all windows to be freely dockable
+    ImGuiID mainDockspaceId = ImGui::DockSpaceOverViewport(0, ImGui::GetMainViewport(),
+        ImGuiDockNodeFlags_PassthruCentralNode | ImGuiDockNodeFlags_NoDockingOverCentralNode);
+
+    // Set up default dock layout on first use when editor panels are shown
+    if (!dockLayoutInitialized_ && (windowStates.showHierarchy || windowStates.showInspector)) {
+        ImGui::DockBuilderRemoveNode(mainDockspaceId);
+        ImGui::DockBuilderAddNode(mainDockspaceId, ImGuiDockNodeFlags_DockSpace);
+        ImGui::DockBuilderSetNodeSize(mainDockspaceId, ImGui::GetMainViewport()->Size);
+
+        // Split: right 20% for inspector, then left side split for hierarchy
+        ImGuiID dockMain = mainDockspaceId;
+        ImGuiID dockRight = ImGui::DockBuilderSplitNode(dockMain, ImGuiDir_Right, 0.22f, nullptr, &dockMain);
+        ImGuiID dockLeft = ImGui::DockBuilderSplitNode(dockMain, ImGuiDir_Left, 0.20f, nullptr, &dockMain);
+
+        ImGui::DockBuilderDockWindow("Hierarchy", dockLeft);
+        ImGui::DockBuilderDockWindow("Inspector", dockRight);
+
+        ImGui::DockBuilderFinish(mainDockspaceId);
+        dockLayoutInitialized_ = true;
+    }
+
     // Main menu bar
     renderMainMenuBar();
 
@@ -346,10 +374,66 @@ void GuiSystem::render(GuiInterfaces& ui, const Camera& camera, float deltaTime,
     if (windowStates.showSceneGraph) {
         renderSceneGraphWindow(ui);
     }
+
+    // Scene Editor: render Hierarchy and Inspector as independent dockable windows
     if (windowStates.showSceneEditor) {
-        renderSceneEditorWindow(ui);
-        // Render 3D transform gizmo over the viewport
+        // Legacy nested dockspace mode (keep for backwards compat if both flags are off)
+        if (!windowStates.showHierarchy && !windowStates.showInspector) {
+            renderSceneEditorWindow(ui);
+        }
         GuiGizmo::render(camera, ui.scene, sceneEditorState);
+    }
+
+    // Independent dockable Hierarchy and Inspector panels
+    if (windowStates.showHierarchy) {
+        if (ImGui::Begin("Hierarchy", &windowStates.showHierarchy, ImGuiWindowFlags_MenuBar)) {
+            // Create entity menu bar within the hierarchy window
+            if (ImGui::BeginMenuBar()) {
+                if (ImGui::BeginMenu("Create")) {
+                    ecs::World* world = ui.scene.getECSWorld();
+                    if (world) {
+                        if (ImGui::MenuItem("Empty Entity")) {
+                            ecs::Entity e = world->create();
+                            world->add<ecs::Transform>(e);
+                            world->add<ecs::LocalTransform>(e);
+                            world->add<ecs::DebugName>(e, "Empty");
+                            sceneEditorState.select(e);
+                        }
+                        ImGui::Separator();
+                        if (ImGui::MenuItem("Point Light")) {
+                            ecs::Entity e = world->create();
+                            world->add<ecs::Transform>(e);
+                            world->add<ecs::LocalTransform>(e);
+                            world->add<ecs::PointLightComponent>(e, glm::vec3(1.0f), 1.0f, 10.0f);
+                            world->add<ecs::LightSourceTag>(e);
+                            world->add<ecs::DebugName>(e, "New Point Light");
+                            sceneEditorState.select(e);
+                        }
+                        if (ImGui::MenuItem("Spot Light")) {
+                            ecs::Entity e = world->create();
+                            world->add<ecs::Transform>(e);
+                            world->add<ecs::LocalTransform>(e);
+                            world->add<ecs::SpotLightComponent>(e, glm::vec3(1.0f), 1.0f);
+                            world->add<ecs::LightSourceTag>(e);
+                            world->add<ecs::DebugName>(e, "New Spot Light");
+                            sceneEditorState.select(e);
+                        }
+                    }
+                    ImGui::EndMenu();
+                }
+                ImGui::EndMenuBar();
+            }
+            GuiHierarchyPanel::render(ui.scene, sceneEditorState);
+        }
+        ImGui::End();
+        // Render gizmo when hierarchy is showing
+        GuiGizmo::render(camera, ui.scene, sceneEditorState);
+    }
+    if (windowStates.showInspector) {
+        if (ImGui::Begin("Inspector", &windowStates.showInspector)) {
+            GuiInspectorPanel::render(ui.scene, sceneEditorState);
+        }
+        ImGui::End();
     }
 
     // Skeleton/IK debug overlay
@@ -412,14 +496,20 @@ void GuiSystem::renderMainMenuBar() {
             ImGui::EndMenu();
         }
 
+        if (ImGui::BeginMenu("Scene")) {
+            ImGui::MenuItem("Hierarchy", nullptr, &windowStates.showHierarchy);
+            ImGui::MenuItem("Inspector", nullptr, &windowStates.showInspector);
+            ImGui::Separator();
+            ImGui::MenuItem("Scene Editor (Legacy)", nullptr, &windowStates.showSceneEditor);
+            ImGui::MenuItem("Scene Graph", nullptr, &windowStates.showSceneGraph);
+            ImGui::EndMenu();
+        }
+
         if (ImGui::BeginMenu("Debug")) {
             ImGui::MenuItem("Debug Visualizations", nullptr, &windowStates.showDebug);
             ImGui::MenuItem("Performance Toggles", nullptr, &windowStates.showPerformance);
             ImGui::MenuItem("Profiler", nullptr, &windowStates.showProfiler);
             ImGui::MenuItem("Tile Loader", nullptr, &windowStates.showTileLoader);
-            ImGui::MenuItem("Scene Graph", nullptr, &windowStates.showSceneGraph);
-            ImGui::Separator();
-            ImGui::MenuItem("Scene Editor", nullptr, &windowStates.showSceneEditor);
             ImGui::EndMenu();
         }
 
@@ -1024,6 +1114,6 @@ void GuiSystem::renderSceneEditorWindow(GuiInterfaces& ui) {
 }
 
 bool GuiSystem::isGizmoActive() const {
-    if (!windowStates.showSceneEditor) return false;
+    if (!windowStates.showSceneEditor && !windowStates.showHierarchy) return false;
     return GuiGizmo::isUsing() || GuiGizmo::isOver();
 }

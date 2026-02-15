@@ -86,8 +86,17 @@ bool FrameGraphBuilder::build(
         frameGraph.addDependency(computeIds.gpuCull, hdr);
     }
 
-    // VisBuffer resolve depends on HDR (V-buffer rasterization happens there)
+    // V-buffer raster pass depends on Compute (needs UBO updated with view/proj)
+    if (visBufferIds.raster != FrameGraph::INVALID_PASS) {
+        frameGraph.addDependency(computeIds.compute, visBufferIds.raster);
+    }
+
+    // V-buffer resolve depends on raster pass (needs V-buffer populated)
+    // and HDR pass (resolve overlays onto the HDR target)
     if (visBufferIds.resolve != FrameGraph::INVALID_PASS) {
+        if (visBufferIds.raster != FrameGraph::INVALID_PASS) {
+            frameGraph.addDependency(visBufferIds.raster, visBufferIds.resolve);
+        }
         frameGraph.addDependency(hdr, visBufferIds.resolve);
     }
 

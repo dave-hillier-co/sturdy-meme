@@ -884,6 +884,193 @@ void VisibilityBuffer::destroyResolveBuffers() {
 }
 
 // ============================================================================
+// Global vertex/index buffers (for resolve pass)
+// ============================================================================
+
+bool VisibilityBuffer::buildGlobalBuffers(const std::vector<const Mesh*>& uniqueMeshes) {
+    if (uniqueMeshes.empty()) {
+        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "VisibilityBuffer: No meshes to build global buffers");
+        return false;
+    }
+
+    // Count total vertices and indices across all meshes
+    uint32_t totalVertices = 0;
+    uint32_t totalIndices = 0;
+    for (const Mesh* mesh : uniqueMeshes) {
+        if (!mesh) continue;
+        totalVertices += static_cast<uint32_t>(mesh->getVertices().size());
+        totalIndices += mesh->getIndexCount();
+    }
+
+    if (totalVertices == 0 || totalIndices == 0) {
+        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "VisibilityBuffer: Empty mesh data");
+        return false;
+    }
+
+    // Build CPU-side packed vertex and offset-adjusted index arrays
+    std::vector<VisBufPackedVertex> packedVertices;
+    packedVertices.reserve(totalVertices);
+    std::vector<uint32_t> globalIndices;
+    globalIndices.reserve(totalIndices);
+    meshInfoMap_.clear();
+
+    uint32_t currentVertexOffset = 0;
+    uint32_t currentIndexOffset = 0;
+
+    for (const Mesh* mesh : uniqueMeshes) {
+        if (!mesh) continue;
+
+        const auto& verts = mesh->getVertices();
+        uint32_t indexCount = mesh->getIndexCount();
+
+        // Track mesh info
+        VisBufMeshInfo info{};
+        info.globalVertexOffset = currentVertexOffset;
+        info.globalIndexOffset = currentIndexOffset;
+        info.triangleOffset = currentIndexOffset / 3;
+        meshInfoMap_[mesh] = info;
+
+        // Repack vertices into PackedVertex format
+        for (const auto& v : verts) {
+            VisBufPackedVertex pv{};
+            pv.positionAndU = glm::vec4(v.position, v.texCoord.x);
+            pv.normalAndV = glm::vec4(v.normal, v.texCoord.y);
+            pv.tangent = v.tangent;
+            pv.color = v.color;
+            packedVertices.push_back(pv);
+        }
+
+        // Copy mesh indices, offset to global vertex space
+        const auto& meshIndices = mesh->getIndices();
+        for (uint32_t idx : meshIndices) {
+            globalIndices.push_back(idx + currentVertexOffset);
+        }
+
+        currentVertexOffset += static_cast<uint32_t>(verts.size());
+        currentIndexOffset += indexCount;
+    }
+
+    // Upload to GPU storage buffers
+    globalVertexBufferSize_ = packedVertices.size() * sizeof(VisBufPackedVertex);
+    globalIndexBufferSize_ = globalIndices.size() * sizeof(uint32_t);
+
+    // Vertex buffer
+    if (!VmaBufferFactory::createStorageBufferHostWritable(
+            allocator_, globalVertexBufferSize_, globalVertexBuffer_)) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
+                     "VisibilityBuffer: Failed to create global vertex buffer");
+        return false;
+    }
+
+    VmaAllocationInfo vertAllocInfo{};
+    vmaGetAllocationInfo(allocator_, globalVertexBuffer_.get_deleter().allocation, &vertAllocInfo);
+    if (vertAllocInfo.pMappedData) {
+        memcpy(vertAllocInfo.pMappedData, packedVertices.data(), globalVertexBufferSize_);
+        vmaFlushAllocation(allocator_, globalVertexBuffer_.get_deleter().allocation,
+                           0, globalVertexBufferSize_);
+    }
+
+    // Index buffer
+    if (!VmaBufferFactory::createStorageBufferHostWritable(
+            allocator_, globalIndexBufferSize_, globalIndexBuffer_)) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
+                     "VisibilityBuffer: Failed to create global index buffer");
+        return false;
+    }
+
+    VmaAllocationInfo idxAllocInfo{};
+    vmaGetAllocationInfo(allocator_, globalIndexBuffer_.get_deleter().allocation, &idxAllocInfo);
+    if (idxAllocInfo.pMappedData) {
+        memcpy(idxAllocInfo.pMappedData, globalIndices.data(), globalIndexBufferSize_);
+        vmaFlushAllocation(allocator_, globalIndexBuffer_.get_deleter().allocation,
+                           0, globalIndexBufferSize_);
+    }
+
+    globalBuffersBuilt_ = true;
+    SDL_Log("VisibilityBuffer: Global buffers built (%u vertices, %u indices, %zu meshes)",
+            totalVertices, totalIndices, uniqueMeshes.size());
+    return true;
+}
+
+const VisBufMeshInfo* VisibilityBuffer::getMeshInfo(const Mesh* mesh) const {
+    auto it = meshInfoMap_.find(mesh);
+    if (it != meshInfoMap_.end()) {
+        return &it->second;
+    }
+    return nullptr;
+}
+
+// ============================================================================
+// Raster pass descriptor sets
+// ============================================================================
+
+bool VisibilityBuffer::createRasterDescriptorSets(
+    const std::vector<VkBuffer>& uboBuffers,
+    VkDeviceSize uboSize) {
+
+    if (!rasterDescSetLayout_ || uboBuffers.empty()) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
+                     "VisibilityBuffer: Cannot create raster desc sets - layout or UBO not ready");
+        return false;
+    }
+
+    VkDescriptorSetLayout rawLayout = **rasterDescSetLayout_;
+    rasterDescSets_ = descriptorPool_->allocate(rawLayout, static_cast<uint32_t>(uboBuffers.size()));
+    if (rasterDescSets_.size() != uboBuffers.size()) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
+                     "VisibilityBuffer: Failed to allocate raster descriptor sets");
+        return false;
+    }
+
+    // Update each frame's descriptor set
+    for (size_t i = 0; i < rasterDescSets_.size(); ++i) {
+        VkDescriptorSet descSet = rasterDescSets_[i];
+
+        // Binding 0: UBO
+        VkDescriptorBufferInfo uboInfo{};
+        uboInfo.buffer = uboBuffers[i];
+        uboInfo.offset = 0;
+        uboInfo.range = uboSize;
+
+        // Binding 1: Placeholder diffuse texture (alphaTestThreshold = 0 means it won't be sampled)
+        VkDescriptorImageInfo texInfo{};
+        texInfo.sampler = nearestSampler_ ? static_cast<VkSampler>(**nearestSampler_) : VK_NULL_HANDLE;
+        texInfo.imageView = placeholderTexView_;
+        texInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+        std::array<VkWriteDescriptorSet, 2> writes{};
+
+        writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        writes[0].dstSet = descSet;
+        writes[0].dstBinding = 0;  // BINDING_UBO
+        writes[0].descriptorCount = 1;
+        writes[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+        writes[0].pBufferInfo = &uboInfo;
+
+        writes[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        writes[1].dstSet = descSet;
+        writes[1].dstBinding = 1;  // BINDING_DIFFUSE_TEX
+        writes[1].descriptorCount = 1;
+        writes[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        writes[1].pImageInfo = &texInfo;
+
+        vkUpdateDescriptorSets(device_, static_cast<uint32_t>(writes.size()),
+                               writes.data(), 0, nullptr);
+    }
+
+    SDL_Log("VisibilityBuffer: Raster descriptor sets created (%zu frames)",
+            rasterDescSets_.size());
+    return true;
+}
+
+VkDescriptorSet VisibilityBuffer::getRasterDescriptorSet(uint32_t frameIndex) const {
+    if (frameIndex < rasterDescSets_.size()) {
+        return rasterDescSets_[frameIndex];
+    }
+    return VK_NULL_HANDLE;
+}
+
+// ============================================================================
 // Resize
 // ============================================================================
 

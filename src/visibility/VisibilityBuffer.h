@@ -7,6 +7,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #include "InitContext.h"
@@ -18,6 +19,21 @@
 
 class Mesh;
 struct Renderable;
+
+// Packed vertex format for SSBO (matches PackedVertex in visbuf_resolve.comp)
+struct VisBufPackedVertex {
+    glm::vec4 positionAndU;  // xyz = position, w = texCoord.x
+    glm::vec4 normalAndV;    // xyz = normal,   w = texCoord.y
+    glm::vec4 tangent;       // xyzw = tangent (w = handedness)
+    glm::vec4 color;         // vertex color
+};
+
+// Per-mesh tracking info for V-buffer global buffers
+struct VisBufMeshInfo {
+    uint32_t globalVertexOffset;
+    uint32_t globalIndexOffset;
+    uint32_t triangleOffset;  // = globalIndexOffset / 3
+};
 
 // GPU material data for the resolve shader (matches GPUMaterial in visbuf_resolve.comp)
 struct GPUMaterial {
@@ -172,6 +188,42 @@ public:
     // Bind the debug visualization descriptor set and record fullscreen draw
     void recordDebugVisualization(VkCommandBuffer cmd, uint32_t debugMode);
 
+    // ====================================================================
+    // Global vertex/index buffer management (for resolve pass)
+    // ====================================================================
+
+    /**
+     * Build global vertex and index buffers from unique scene meshes.
+     * Repacks Vertex data into PackedVertex format for the resolve shader.
+     * Adjusts indices to reference global vertex offsets.
+     * Call once when the scene is ready, or when meshes change.
+     */
+    bool buildGlobalBuffers(const std::vector<const Mesh*>& uniqueMeshes);
+
+    /** Get mesh info (offsets) for a given mesh pointer. Returns nullptr if not found. */
+    const VisBufMeshInfo* getMeshInfo(const Mesh* mesh) const;
+
+    bool hasGlobalBuffers() const { return globalBuffersBuilt_; }
+    VkBuffer getGlobalVertexBuffer() const { return globalVertexBuffer_.get(); }
+    VkBuffer getGlobalIndexBuffer() const { return globalIndexBuffer_.get(); }
+    VkDeviceSize getGlobalVertexBufferSize() const { return globalVertexBufferSize_; }
+    VkDeviceSize getGlobalIndexBufferSize() const { return globalIndexBufferSize_; }
+
+    // ====================================================================
+    // Raster pass descriptor set management
+    // ====================================================================
+
+    /**
+     * Create per-frame descriptor sets for the raster pass.
+     * Binds UBO (binding 0) and placeholder diffuse texture (binding 1).
+     * Call once after GlobalBufferManager is initialized.
+     */
+    bool createRasterDescriptorSets(const std::vector<VkBuffer>& uboBuffers,
+                                     VkDeviceSize uboSize);
+
+    VkDescriptorSet getRasterDescriptorSet(uint32_t frameIndex) const;
+    bool hasRasterDescriptorSets() const { return !rasterDescSets_.empty(); }
+
     // Get the depth image/view (shared with main HDR pass when V-buffer is active)
     VkImageView getDepthView() const { return depthView_; }
     VkImage getDepthImage() const { return depthImage_.get(); }
@@ -267,6 +319,17 @@ private:
     // Placeholder 1x1 image for unbound texture array descriptor
     ManagedImage placeholderTexImage_;
     VkImageView placeholderTexView_ = VK_NULL_HANDLE;
+
+    // Global vertex/index buffers for resolve pass
+    VmaBuffer globalVertexBuffer_;
+    VmaBuffer globalIndexBuffer_;
+    VkDeviceSize globalVertexBufferSize_ = 0;
+    VkDeviceSize globalIndexBufferSize_ = 0;
+    std::unordered_map<const Mesh*, VisBufMeshInfo> meshInfoMap_;
+    bool globalBuffersBuilt_ = false;
+
+    // Raster pass descriptor sets (per-frame: UBO + placeholder texture)
+    std::vector<VkDescriptorSet> rasterDescSets_;
 
     Stats stats_ = {};
 };

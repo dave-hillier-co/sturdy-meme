@@ -169,9 +169,11 @@ void main() {
     float visBufDepth = texelFetch(depthBuffer, pixelCoord, 0).r;
     float hdrDepth = texture(hdrDepthBuffer, depthUV).r;
 
-    // Use a small bias: V-buffer must be strictly in front of HDR content.
-    // Same-depth objects (rendered in both passes) keep the HDR textured version.
-    if (visBufDepth >= hdrDepth) {
+    // Depth bias to prevent z-fighting: same geometry rendered in separate
+    // render passes can produce slightly different depth values. Scale bias
+    // with depth for consistent behavior across the depth range.
+    float depthBias = max(visBufDepth * 5e-4, 1e-6);
+    if (visBufDepth + depthBias >= hdrDepth) {
         return;
     }
 

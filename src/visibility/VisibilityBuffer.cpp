@@ -1,6 +1,9 @@
 #include "VisibilityBuffer.h"
 #include "ShaderLoader.h"
 #include "Mesh.h"
+#include "Texture.h"
+#include "MaterialRegistry.h"
+#include "vulkan/CommandBufferUtils.h"
 #include "shaders/bindings.h"
 #include "vulkan/VmaBufferFactory.h"
 
@@ -30,6 +33,8 @@ std::unique_ptr<VisibilityBuffer> VisibilityBuffer::create(const InitContext& ct
     info.framesInFlight = ctx.framesInFlight;
     info.depthFormat = depthFormat;
     info.raiiDevice = ctx.raiiDevice;
+    info.graphicsQueue = ctx.graphicsQueue;
+    info.commandPool = ctx.commandPool;
     return create(info);
 }
 
@@ -50,6 +55,8 @@ bool VisibilityBuffer::initInternal(const InitInfo& info) {
     framesInFlight_ = info.framesInFlight;
     depthFormat_ = info.depthFormat;
     raiiDevice_ = info.raiiDevice;
+    graphicsQueue_ = info.graphicsQueue;
+    commandPool_ = info.commandPool;
 
     if (!createRenderTargets()) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "VisibilityBuffer: Failed to create render targets");
@@ -1005,6 +1012,214 @@ const VisBufMeshInfo* VisibilityBuffer::getMeshInfo(const Mesh* mesh) const {
         return &it->second;
     }
     return nullptr;
+}
+
+// ============================================================================
+// Material texture array
+// ============================================================================
+
+bool VisibilityBuffer::buildMaterialTextureArray(const MaterialRegistry& registry) {
+    if (graphicsQueue_ == VK_NULL_HANDLE || commandPool_ == VK_NULL_HANDLE) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
+                     "VisibilityBuffer: Cannot build texture array - no queue/command pool");
+        return false;
+    }
+
+    // Collect unique diffuse textures from all materials
+    std::vector<const Texture*> textures;
+    textureLayerMap_.clear();
+
+    size_t matCount = registry.getMaterialCount();
+    for (uint32_t i = 0; i < matCount; ++i) {
+        const auto* def = registry.getMaterial(i);
+        if (!def || !def->diffuse) continue;
+        if (textureLayerMap_.find(def->diffuse) != textureLayerMap_.end()) continue;
+
+        textureLayerMap_[def->diffuse] = static_cast<uint32_t>(textures.size());
+        textures.push_back(def->diffuse);
+    }
+
+    if (textures.empty()) {
+        SDL_Log("VisibilityBuffer: No material textures to build array from");
+        return false;
+    }
+
+    // Determine array resolution from the first texture (blit handles resizing)
+    uint32_t arrayW = static_cast<uint32_t>(textures[0]->getWidth());
+    uint32_t arrayH = static_cast<uint32_t>(textures[0]->getHeight());
+    uint32_t layerCount = static_cast<uint32_t>(textures.size());
+
+    SDL_Log("VisibilityBuffer: Building texture array %ux%u with %u layers",
+            arrayW, arrayH, layerCount);
+
+    // Create the 2D array image (SRGB for albedo)
+    auto imageInfo = vk::ImageCreateInfo{}
+        .setImageType(vk::ImageType::e2D)
+        .setFormat(vk::Format::eR8G8B8A8Srgb)
+        .setExtent({arrayW, arrayH, 1})
+        .setMipLevels(1)
+        .setArrayLayers(layerCount)
+        .setSamples(vk::SampleCountFlagBits::e1)
+        .setTiling(vk::ImageTiling::eOptimal)
+        .setUsage(vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled)
+        .setSharingMode(vk::SharingMode::eExclusive)
+        .setInitialLayout(vk::ImageLayout::eUndefined);
+
+    VmaAllocationCreateInfo allocInfo{};
+    allocInfo.usage = VMA_MEMORY_USAGE_AUTO;
+    allocInfo.requiredFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+
+    VkImage rawImage;
+    VmaAllocation rawAlloc;
+    if (vmaCreateImage(allocator_,
+                       reinterpret_cast<const VkImageCreateInfo*>(&imageInfo),
+                       &allocInfo, &rawImage, &rawAlloc, nullptr) != VK_SUCCESS) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
+                     "VisibilityBuffer: Failed to create texture array image");
+        return false;
+    }
+    textureArrayImage_ = ManagedImage(rawImage, {allocator_, rawAlloc});
+
+    // One-shot command buffer for blitting
+    CommandScope cmd(device_, commandPool_, graphicsQueue_);
+    if (!cmd.begin()) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
+                     "VisibilityBuffer: Failed to begin texture array command buffer");
+        return false;
+    }
+
+    vk::CommandBuffer vkCmd = cmd.get();
+
+    // Transition the entire array to TRANSFER_DST
+    {
+        auto barrier = vk::ImageMemoryBarrier{}
+            .setSrcAccessMask(vk::AccessFlagBits::eNone)
+            .setDstAccessMask(vk::AccessFlagBits::eTransferWrite)
+            .setOldLayout(vk::ImageLayout::eUndefined)
+            .setNewLayout(vk::ImageLayout::eTransferDstOptimal)
+            .setImage(textureArrayImage_.get())
+            .setSubresourceRange({vk::ImageAspectFlagBits::eColor, 0, 1, 0, layerCount});
+
+        vkCmd.pipelineBarrier(
+            vk::PipelineStageFlagBits::eTopOfPipe,
+            vk::PipelineStageFlagBits::eTransfer,
+            {}, {}, {}, barrier);
+    }
+
+    // Blit each texture into its layer
+    for (uint32_t layer = 0; layer < layerCount; ++layer) {
+        const Texture* tex = textures[layer];
+        VkImage srcImage = tex->getImage();
+        int srcW = tex->getWidth();
+        int srcH = tex->getHeight();
+
+        // Transition source to TRANSFER_SRC
+        {
+            auto barrier = vk::ImageMemoryBarrier{}
+                .setSrcAccessMask(vk::AccessFlagBits::eShaderRead)
+                .setDstAccessMask(vk::AccessFlagBits::eTransferRead)
+                .setOldLayout(vk::ImageLayout::eShaderReadOnlyOptimal)
+                .setNewLayout(vk::ImageLayout::eTransferSrcOptimal)
+                .setImage(srcImage)
+                .setSubresourceRange({vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1});
+
+            vkCmd.pipelineBarrier(
+                vk::PipelineStageFlagBits::eFragmentShader,
+                vk::PipelineStageFlagBits::eTransfer,
+                {}, {}, {}, barrier);
+        }
+
+        // Blit (handles format conversion and resizing)
+        vk::ImageBlit region;
+        region.srcSubresource = {vk::ImageAspectFlagBits::eColor, 0, 0, 1};
+        region.srcOffsets[0] = vk::Offset3D{0, 0, 0};
+        region.srcOffsets[1] = vk::Offset3D{srcW, srcH, 1};
+        region.dstSubresource = {vk::ImageAspectFlagBits::eColor, 0, layer, 1};
+        region.dstOffsets[0] = vk::Offset3D{0, 0, 0};
+        region.dstOffsets[1] = vk::Offset3D{
+            static_cast<int32_t>(arrayW),
+            static_cast<int32_t>(arrayH), 1};
+
+        vkCmd.blitImage(
+            srcImage, vk::ImageLayout::eTransferSrcOptimal,
+            textureArrayImage_.get(), vk::ImageLayout::eTransferDstOptimal,
+            region, vk::Filter::eLinear);
+
+        // Transition source back to SHADER_READ_ONLY
+        {
+            auto barrier = vk::ImageMemoryBarrier{}
+                .setSrcAccessMask(vk::AccessFlagBits::eTransferRead)
+                .setDstAccessMask(vk::AccessFlagBits::eShaderRead)
+                .setOldLayout(vk::ImageLayout::eTransferSrcOptimal)
+                .setNewLayout(vk::ImageLayout::eShaderReadOnlyOptimal)
+                .setImage(srcImage)
+                .setSubresourceRange({vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1});
+
+            vkCmd.pipelineBarrier(
+                vk::PipelineStageFlagBits::eTransfer,
+                vk::PipelineStageFlagBits::eFragmentShader,
+                {}, {}, {}, barrier);
+        }
+    }
+
+    // Transition array to SHADER_READ_ONLY
+    {
+        auto barrier = vk::ImageMemoryBarrier{}
+            .setSrcAccessMask(vk::AccessFlagBits::eTransferWrite)
+            .setDstAccessMask(vk::AccessFlagBits::eShaderRead)
+            .setOldLayout(vk::ImageLayout::eTransferDstOptimal)
+            .setNewLayout(vk::ImageLayout::eShaderReadOnlyOptimal)
+            .setImage(textureArrayImage_.get())
+            .setSubresourceRange({vk::ImageAspectFlagBits::eColor, 0, 1, 0, layerCount});
+
+        vkCmd.pipelineBarrier(
+            vk::PipelineStageFlagBits::eTransfer,
+            vk::PipelineStageFlagBits::eComputeShader,
+            {}, {}, {}, barrier);
+    }
+
+    if (!cmd.end()) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
+                     "VisibilityBuffer: Failed to submit texture array commands");
+        return false;
+    }
+
+    // Create 2D array image view
+    auto viewInfo = vk::ImageViewCreateInfo{}
+        .setImage(textureArrayImage_.get())
+        .setViewType(vk::ImageViewType::e2DArray)
+        .setFormat(vk::Format::eR8G8B8A8Srgb)
+        .setSubresourceRange({vk::ImageAspectFlagBits::eColor, 0, 1, 0, layerCount});
+
+    vk::Device vkDevice(device_);
+    textureArrayView_ = static_cast<VkImageView>(vkDevice.createImageView(viewInfo));
+
+    // Create sampler
+    auto samplerInfo = vk::SamplerCreateInfo{}
+        .setMagFilter(vk::Filter::eLinear)
+        .setMinFilter(vk::Filter::eLinear)
+        .setMipmapMode(vk::SamplerMipmapMode::eLinear)
+        .setAddressModeU(vk::SamplerAddressMode::eRepeat)
+        .setAddressModeV(vk::SamplerAddressMode::eRepeat)
+        .setAddressModeW(vk::SamplerAddressMode::eClampToEdge)
+        .setMaxAnisotropy(1.0f)
+        .setMaxLod(VK_LOD_CLAMP_NONE);
+
+    textureArraySampler_.emplace(*raiiDevice_, samplerInfo);
+
+    textureArrayBuilt_ = true;
+    SDL_Log("VisibilityBuffer: Texture array built (%u layers, %ux%u)",
+            layerCount, arrayW, arrayH);
+    return true;
+}
+
+VkSampler VisibilityBuffer::getTextureArraySampler() const {
+    return textureArraySampler_ ? static_cast<VkSampler>(**textureArraySampler_) : VK_NULL_HANDLE;
+}
+
+uint32_t VisibilityBuffer::getTextureLayerIndex(const Texture* tex) const {
+    auto it = textureLayerMap_.find(tex);
+    return (it != textureLayerMap_.end()) ? it->second : ~0u;
 }
 
 // ============================================================================

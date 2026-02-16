@@ -105,6 +105,51 @@ bool GPUMaterialBuffer::uploadFromRegistry(const MaterialRegistry& registry) {
     return uploadMaterials(materials);
 }
 
+bool GPUMaterialBuffer::uploadFromRegistry(const MaterialRegistry& registry,
+                                            const VisibilityBuffer& visBuf) {
+    if (!mappedPtr_) return false;
+
+    uint32_t count = static_cast<uint32_t>(
+        std::min(registry.getMaterialCount(), static_cast<size_t>(maxMaterials_)));
+
+    std::vector<GPUMaterial> materials;
+    materials.reserve(count);
+
+    for (uint32_t i = 0; i < count; ++i) {
+        const auto* def = registry.getMaterial(i);
+        GPUMaterial gpuMat{};
+
+        if (def) {
+            gpuMat.baseColor = glm::vec4(1.0f, 1.0f, 1.0f, 1.0f);
+            gpuMat.roughness = def->roughness;
+            gpuMat.metallic = def->metallic;
+            gpuMat.normalScale = 1.0f;
+            gpuMat.aoStrength = 1.0f;
+
+            // Look up albedo texture layer in the texture array
+            gpuMat.albedoTexIndex = def->diffuse
+                ? visBuf.getTextureLayerIndex(def->diffuse) : ~0u;
+            gpuMat.normalTexIndex = ~0u;
+            gpuMat.roughnessMetallicTexIndex = ~0u;
+            gpuMat.flags = 0;
+        } else {
+            gpuMat.baseColor = glm::vec4(0.8f, 0.8f, 0.8f, 1.0f);
+            gpuMat.roughness = 0.5f;
+            gpuMat.metallic = 0.0f;
+            gpuMat.normalScale = 1.0f;
+            gpuMat.aoStrength = 1.0f;
+            gpuMat.albedoTexIndex = ~0u;
+            gpuMat.normalTexIndex = ~0u;
+            gpuMat.roughnessMetallicTexIndex = ~0u;
+            gpuMat.flags = 0;
+        }
+
+        materials.push_back(gpuMat);
+    }
+
+    return uploadMaterials(materials);
+}
+
 bool GPUMaterialBuffer::setMaterial(uint32_t index, const GPUMaterial& material) {
     if (!mappedPtr_ || index >= maxMaterials_) return false;
 

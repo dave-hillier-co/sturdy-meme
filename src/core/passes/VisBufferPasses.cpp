@@ -11,6 +11,7 @@
 #include "scene/SceneBuilder.h"
 #include "npc/NPCSimulation.h"
 #include "Mesh.h"
+#include "MaterialRegistry.h"
 
 #include <algorithm>
 #include <unordered_set>
@@ -46,6 +47,17 @@ static void executeRasterPass(FrameGraph::RenderContext& ctx, RendererSystems& s
 
         if (!uniqueMeshes.empty()) {
             visBuf->buildGlobalBuffers(uniqueMeshes);
+        }
+    }
+
+    // Lazily build material texture array and re-upload material indices
+    if (!visBuf->hasTextureArray()) {
+        const auto& registry = systems.scene().getSceneBuilder().getMaterialRegistry();
+        if (visBuf->buildMaterialTextureArray(registry)) {
+            // Re-upload materials with correct texture array indices
+            if (systems.hasGPUMaterialBuffer()) {
+                systems.gpuMaterialBuffer()->uploadFromRegistry(registry, *visBuf);
+            }
         }
     }
 
@@ -215,6 +227,12 @@ static void executeResolvePass(FrameGraph::RenderContext& ctx, RendererSystems& 
             resolveBuffers.materialBuffer = matBuf->getBuffer();
             resolveBuffers.materialBufferSize = matBuf->getBufferSize();
             resolveBuffers.materialCount = matBuf->getMaterialCount();
+        }
+
+        // Material texture array (albedo textures)
+        if (visBuf->hasTextureArray()) {
+            resolveBuffers.textureArrayView = visBuf->getTextureArrayView();
+            resolveBuffers.textureArraySampler = visBuf->getTextureArraySampler();
         }
 
         // HDR depth for depth comparison (prevents overwriting closer HDR-pass objects)

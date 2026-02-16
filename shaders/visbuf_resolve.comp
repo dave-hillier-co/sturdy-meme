@@ -161,19 +161,14 @@ void main() {
     uint instanceId = packed.r - 1u;
     uint triangleId = packed.g - 1u;
 
-    // Depth comparison: only write if V-buffer object is in front of HDR-pass content.
-    // Sample V-buffer depth and HDR depth; skip if HDR is closer (smaller depth value).
-    // This prevents the resolve from overwriting textured HDR objects that are at the
-    // same depth (double-rendered) or in front (terrain, trees, etc.).
+    // Depth comparison: only write if V-buffer object is in front of HDR-pass content
+    // (terrain, trees, water, etc.). Scene objects are NOT rendered in HDR when V-buffer
+    // is active, so this only compares against environment geometry.
     vec2 depthUV = (vec2(pixelCoord) + 0.5) * resolveUniforms.screenParams.zw;
     float visBufDepth = texelFetch(depthBuffer, pixelCoord, 0).r;
     float hdrDepth = texture(hdrDepthBuffer, depthUV).r;
 
-    // Depth bias to prevent z-fighting: same geometry rendered in separate
-    // render passes can produce slightly different depth values. Scale bias
-    // with depth for consistent behavior across the depth range.
-    float depthBias = max(visBufDepth * 5e-4, 1e-6);
-    if (visBufDepth + depthBias >= hdrDepth) {
+    if (visBufDepth > hdrDepth) {
         return;
     }
 

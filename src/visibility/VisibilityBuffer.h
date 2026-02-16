@@ -18,6 +18,8 @@
 #include "PerFrameBuffer.h"
 
 class Mesh;
+class Texture;
+class MaterialRegistry;
 struct Renderable;
 
 // Packed vertex format for SSBO (matches PackedVertex in visbuf_resolve.comp)
@@ -108,6 +110,8 @@ public:
         uint32_t framesInFlight;
         VkFormat depthFormat;
         const vk::raii::Device* raiiDevice = nullptr;
+        VkQueue graphicsQueue = VK_NULL_HANDLE;
+        VkCommandPool commandPool = VK_NULL_HANDLE;
     };
 
     static std::unique_ptr<VisibilityBuffer> create(const InitInfo& info);
@@ -227,6 +231,21 @@ public:
     VkDescriptorSet getRasterDescriptorSet(uint32_t frameIndex) const;
     bool hasRasterDescriptorSets() const { return !rasterDescSets_.empty(); }
 
+    // ====================================================================
+    // Material texture array (albedo textures packed into sampler2DArray)
+    // ====================================================================
+
+    /**
+     * Build a 2D array texture from all material albedo textures.
+     * Uses one-shot command buffer with blit for resizing.
+     * Returns the texture-to-layer mapping for populating GPUMaterial indices.
+     */
+    bool buildMaterialTextureArray(const MaterialRegistry& registry);
+    bool hasTextureArray() const { return textureArrayBuilt_; }
+    VkImageView getTextureArrayView() const { return textureArrayView_; }
+    VkSampler getTextureArraySampler() const;
+    uint32_t getTextureLayerIndex(const Texture* tex) const;
+
     // Get the depth image/view (shared with main HDR pass when V-buffer is active)
     VkImageView getDepthView() const { return depthView_; }
     VkImage getDepthImage() const { return depthImage_.get(); }
@@ -333,6 +352,17 @@ private:
 
     // Raster pass descriptor sets (per-frame: UBO + placeholder texture)
     std::vector<VkDescriptorSet> rasterDescSets_;
+
+    // Material texture array (albedo textures as sampler2DArray)
+    ManagedImage textureArrayImage_;
+    VkImageView textureArrayView_ = VK_NULL_HANDLE;
+    std::optional<vk::raii::Sampler> textureArraySampler_;
+    bool textureArrayBuilt_ = false;
+    std::unordered_map<const Texture*, uint32_t> textureLayerMap_;
+
+    // Queue/command pool for one-shot operations (texture array building)
+    VkQueue graphicsQueue_ = VK_NULL_HANDLE;
+    VkCommandPool commandPool_ = VK_NULL_HANDLE;
 
     Stats stats_ = {};
 };

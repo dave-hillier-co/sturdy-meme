@@ -56,6 +56,13 @@ public:
     bool uploadFromRegistry(const MaterialRegistry& registry);
 
     /**
+     * Upload materials with texture array indices from VisibilityBuffer.
+     * Populates albedoTexIndex from the texture array layer mapping.
+     */
+    bool uploadFromRegistry(const MaterialRegistry& registry,
+                            const VisibilityBuffer& visBuf);
+
+    /**
      * Set or update a single material at the given index.
      */
     bool setMaterial(uint32_t index, const GPUMaterial& material);

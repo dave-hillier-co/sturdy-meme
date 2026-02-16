@@ -348,6 +348,44 @@ struct ExternalTransformSource {
 };
 
 // =============================================================================
+// Physics Shape Info Component
+// =============================================================================
+// Describes the physics collision shape for an entity.
+// Used during physics initialization to create the physics body.
+// After initialization, the entity also gets a PhysicsBody component.
+
+enum class PhysicsShapeType : uint8_t {
+    Box = 0,
+    Sphere = 1
+};
+
+struct PhysicsShapeInfo {
+    PhysicsShapeType shapeType = PhysicsShapeType::Box;
+    glm::vec3 halfExtents = glm::vec3(0.5f);  // For box; for sphere, x = radius
+    float mass = 10.0f;
+
+    PhysicsShapeInfo() = default;
+
+    static PhysicsShapeInfo box(const glm::vec3& halfExt, float m) {
+        PhysicsShapeInfo info;
+        info.shapeType = PhysicsShapeType::Box;
+        info.halfExtents = halfExt;
+        info.mass = m;
+        return info;
+    }
+
+    static PhysicsShapeInfo sphere(float radius, float m) {
+        PhysicsShapeInfo info;
+        info.shapeType = PhysicsShapeType::Sphere;
+        info.halfExtents = glm::vec3(radius, 0.0f, 0.0f);
+        info.mass = m;
+        return info;
+    }
+
+    [[nodiscard]] float radius() const { return halfExtents.x; }
+};
+
+// =============================================================================
 // Physics Component
 // =============================================================================
 // Links an entity to a physics body.
@@ -403,9 +441,11 @@ enum class WeaponSlot : uint8_t {
 
 struct WeaponTag {
     WeaponSlot slot;
+    bool visible = true;  // User-controlled visibility (separate from frustum culling)
 
     WeaponTag() : slot(WeaponSlot::RightHand) {}
     explicit WeaponTag(WeaponSlot s) : slot(s) {}
+    WeaponTag(WeaponSlot s, bool vis) : slot(s), visible(vis) {}
 };
 
 // NPC entity marker
@@ -418,6 +458,16 @@ struct NPCTag {
 
 // Well entrance (terrain hole marker)
 struct WellEntranceTag {};
+
+// Debug axis indicator (for weapon bone visualization)
+struct DebugAxisTag {
+    bool visible = false;  // User-controlled visibility
+    DebugAxisTag() = default;
+    explicit DebugAxisTag(bool vis) : visible(vis) {}
+};
+
+// Camera occlusion marker (entity is between camera and player)
+struct OccludingCamera {};
 
 // =============================================================================
 // NPC Animation Components

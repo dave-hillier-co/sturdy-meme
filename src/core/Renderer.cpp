@@ -775,10 +775,9 @@ bool Renderer::createSkinnedMeshRendererDescriptorSets() {
     VkImageView playerNormalView = whiteTexture->getImageView();
     VkSampler playerNormalSampler = whiteTexture->getSampler();
 
-    const auto& sceneObjects = sceneBuilder.getRenderables();
-    size_t playerIndex = sceneBuilder.getPlayerObjectIndex();
-    if (playerIndex < sceneObjects.size()) {
-        MaterialId playerMaterialId = sceneObjects[playerIndex].materialId;
+    const Renderable* playerRenderable = sceneBuilder.getRenderableForEntity(sceneBuilder.getPlayerEntity());
+    if (playerRenderable) {
+        MaterialId playerMaterialId = playerRenderable->materialId;
         const auto* playerMaterial = materialRegistry.getMaterial(playerMaterialId);
         if (playerMaterial) {
             if (playerMaterial->diffuse) {

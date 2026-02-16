@@ -4,7 +4,6 @@
 #include <memory>
 #include <glm/glm.hpp>
 #include "SceneBuilder.h"
-#include "Light.h"
 #include "PhysicsSystem.h"
 #include "ecs/World.h"
 
@@ -51,16 +50,13 @@ public:
     // Scene object access for rendering
     std::vector<Renderable>& getRenderables() { return sceneBuilder->getRenderables(); }
     const std::vector<Renderable>& getRenderables() const { return sceneBuilder->getRenderables(); }
-    size_t getPlayerObjectIndex() const { return sceneBuilder->getPlayerObjectIndex(); }
 
     // SceneBuilder access for texture descriptor sets
     bool hasSceneBuilder() const { return sceneBuilder != nullptr; }
     SceneBuilder& getSceneBuilder() { return *sceneBuilder; }
     const SceneBuilder& getSceneBuilder() const { return *sceneBuilder; }
 
-    // Light management (deprecated - use ECS lights)
-    LightManager& getLightManager() { return lightManager; }
-    const LightManager& getLightManager() const { return lightManager; }
+    // Light management (ECS-only, legacy LightManager removed)
 
     // ECS light management
     void setECSWorld(ecs::World* world) { ecsWorld_ = world; }
@@ -96,7 +92,6 @@ private:
     // Scene resources
     std::unique_ptr<SceneBuilder> sceneBuilder;
     SceneBuilder::HeightQueryFunc terrainHeightFunc;
-    LightManager lightManager;
     glm::vec2 sceneOrigin = glm::vec2(0.0f);  // World XZ offset for scene
 
     // Physics body tracking (mapped to scene object indices)

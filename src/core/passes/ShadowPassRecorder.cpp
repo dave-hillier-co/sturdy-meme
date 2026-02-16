@@ -128,14 +128,11 @@ void ShadowPassRecorder::record(VkCommandBuffer cmd, uint32_t frameIndex, float 
     } else {
         // Legacy path: Use Renderable vector
         const auto& sceneObjects = resources_.scene->getRenderables();
-        size_t playerIndex = resources_.scene->getSceneBuilder().getPlayerObjectIndex();
 
         allObjects.reserve(sceneObjects.size() + rockCount + detritusCount);
         for (size_t i = 0; i < sceneObjects.size(); ++i) {
-            // Skip player character - rendered with skinned shadow pipeline
-            if (hasCharacter && i == playerIndex) {
-                continue;
-            }
+            // Skip GPU-skinned characters - rendered with skinned shadow pipeline
+            if (sceneObjects[i].gpuSkinned) continue;
             allObjects.push_back(sceneObjects[i]);
         }
     }
@@ -152,12 +149,11 @@ void ShadowPassRecorder::record(VkCommandBuffer cmd, uint32_t frameIndex, float 
         skinnedCallback = [this, frameIndex](VkCommandBuffer cb, uint32_t cascade, const glm::mat4& lightMatrix) {
             (void)lightMatrix;  // Not used, cascade matrices are in UBO
             SceneBuilder& sceneBuilder = resources_.scene->getSceneBuilder();
-            const auto& sceneObjs = sceneBuilder.getRenderables();
-            size_t playerIdx = sceneBuilder.getPlayerObjectIndex();
-            if (playerIdx >= sceneObjs.size()) return;
+            ecs::Entity playerEntity = sceneBuilder.getPlayerEntity();
+            const Renderable* playerObj = sceneBuilder.getRenderableForEntity(playerEntity);
+            if (!playerObj) return;
 
             resources_.profiler->beginGpuZone(cb, "Shadow:Skinned");
-            const Renderable& playerObj = sceneObjs[playerIdx];
             AnimatedCharacter& character = sceneBuilder.getAnimatedCharacter();
             SkinnedMesh& skinnedMesh = character.getSkinnedMesh();
 
@@ -165,7 +161,7 @@ void ShadowPassRecorder::record(VkCommandBuffer cmd, uint32_t frameIndex, float 
             resources_.shadow->bindSkinnedShadowPipeline(cb, resources_.skinnedMesh->getDescriptorSet(frameIndex));
 
             // Record the skinned mesh shadow
-            resources_.shadow->recordSkinnedMeshShadow(cb, cascade, playerObj.transform, skinnedMesh);
+            resources_.shadow->recordSkinnedMeshShadow(cb, cascade, playerObj->transform, skinnedMesh);
             resources_.profiler->endGpuZone(cb, "Shadow:Skinned");
         };
     }

@@ -2,6 +2,7 @@
 #include "lighting/LightSystem.h"
 #include "ecs/Components.h"
 #include <SDL3/SDL.h>
+#include <algorithm>
 
 std::unique_ptr<SceneManager> SceneManager::create(SceneBuilder::InitInfo& builderInfo) {
     auto system = std::make_unique<SceneManager>(ConstructToken{});
@@ -104,57 +105,50 @@ void SceneManager::initializeScenePhysics(PhysicsWorld& physics) {
     // NOTE: Terrain physics is now initialized separately via initTerrainPhysics()
     // which creates a heightfield from the TerrainSystem's height data
 
-    // Get scene objects from builder
     const auto& sceneObjects = sceneBuilder->getRenderables();
-    const auto& physicsIndices = sceneBuilder->getPhysicsEnabledIndices();
 
     // Resize physics bodies array to match scene objects
     scenePhysicsBodies.resize(sceneObjects.size(), INVALID_BODY_ID);
 
-    // Physics parameters
-    glm::vec3 cubeHalfExtents(0.5f, 0.5f, 0.5f);
-    float boxMass = 10.0f;
-    float sphereMass = 5.0f;
     const float spawnOffset = 0.1f;
 
-    // Helper to get spawn Y position on terrain
-    auto getSpawnY = [this, spawnOffset](float x, float z, float objectHeight) {
-        return getTerrainHeight(x, z) + objectHeight + spawnOffset;
-    };
-
-    // Get the emissive orb index from SceneBuilder
-    size_t emissiveOrbIndex = sceneBuilder->getEmissiveOrbIndex();
-
-    // Create physics bodies for each physics-enabled object
-    // The physicsIndices tells us which scene objects need physics
-    for (size_t i = 0; i < physicsIndices.size(); ++i) {
-        size_t objIndex = physicsIndices[i];
-        if (objIndex >= sceneObjects.size()) continue;
-
-        const auto& obj = sceneObjects[objIndex];
-        glm::vec3 pos = glm::vec3(obj.transform[3]);
-
-        // Determine object type from mesh - cubes vs spheres
-        // For the emissive orb (small sphere on crate), use smaller radius
-        if (objIndex == emissiveOrbIndex) {
-            // Small emissive sphere (scaled 0.3)
-            scenePhysicsBodies[objIndex] = physics.createSphere(
-                glm::vec3(pos.x, pos.y + spawnOffset, pos.z),
-                0.5f * 0.3f, 1.0f);
-        } else if (i < 2 || i == 4 || i == 5) {
-            // Boxes: crates (0,1) and metal cubes (4,5)
-            scenePhysicsBodies[objIndex] = physics.createBox(
-                glm::vec3(pos.x, pos.y + spawnOffset, pos.z),
-                cubeHalfExtents, boxMass);
-        } else {
-            // Spheres: indices 2,3
-            scenePhysicsBodies[objIndex] = physics.createSphere(
-                glm::vec3(pos.x, pos.y + spawnOffset, pos.z),
-                0.5f, sphereMass);
-        }
+    if (!ecsWorld_) {
+        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+            "SceneManager: No ECS world during physics init - bodies will be linked later");
+        return;
     }
 
-    SDL_Log("Scene physics initialized with %zu physics-enabled objects", physicsIndices.size());
+    size_t bodyCount = 0;
+    for (auto [entity, shapeInfo, transform] :
+         ecsWorld_->view<ecs::PhysicsShapeInfo, ecs::Transform>().each()) {
+
+        // Find the renderable index for this entity via pointer identity
+        const Renderable* renderable = sceneBuilder->getRenderableForEntity(entity);
+        if (!renderable) continue;
+
+        size_t objIndex = static_cast<size_t>(renderable - sceneObjects.data());
+        if (objIndex >= sceneObjects.size()) continue;
+
+        glm::vec3 pos = transform.position();
+
+        if (shapeInfo.shapeType == ecs::PhysicsShapeType::Box) {
+            scenePhysicsBodies[objIndex] = physics.createBox(
+                glm::vec3(pos.x, pos.y + spawnOffset, pos.z),
+                shapeInfo.halfExtents, shapeInfo.mass);
+        } else {
+            scenePhysicsBodies[objIndex] = physics.createSphere(
+                glm::vec3(pos.x, pos.y + spawnOffset, pos.z),
+                shapeInfo.radius(), shapeInfo.mass);
+        }
+
+        // Add PhysicsBody component to entity
+        if (scenePhysicsBodies[objIndex] != INVALID_BODY_ID) {
+            ecsWorld_->add<ecs::PhysicsBody>(entity,
+                static_cast<ecs::PhysicsBodyId>(scenePhysicsBodies[objIndex]));
+            bodyCount++;
+        }
+    }
+    SDL_Log("Scene physics initialized with %zu bodies from ECS components", bodyCount);
 }
 
 void SceneManager::initializeECSLights() {
@@ -169,117 +163,81 @@ void SceneManager::initializeECSLights() {
 }
 
 void SceneManager::initializeSceneLights() {
-    // Clear any existing lights from legacy system
-    lightManager.clear();
+    if (!ecsWorld_) {
+        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+            "initializeSceneLights: No ECS world available, skipping light creation");
+        return;
+    }
 
     // Helper to apply scene origin offset
     auto worldPos = [this](float localX, float localZ) -> glm::vec2 {
         return glm::vec2(localX + sceneOrigin.x, localZ + sceneOrigin.y);
     };
 
-    // Create ECS light entities if world is available
-    if (ecsWorld_) {
-        // Orb light - flickering torch that follows the emissive sphere
-        auto orbPos = worldPos(2.0f, 0.0f);
-        glm::vec3 orbPosition(orbPos.x, 1.3f, orbPos.y);
-        orbLightEntity_ = ecs::light::createTorch(*ecsWorld_, orbPosition, 5.0f);
+    // Orb light - flickering torch that follows the emissive sphere
+    auto orbPos = worldPos(2.0f, 0.0f);
+    glm::vec3 orbPosition(orbPos.x, 1.3f, orbPos.y);
+    orbLightEntity_ = ecs::light::createTorch(*ecsWorld_, orbPosition, 5.0f);
+    ecsWorld_->add<ecs::DebugName>(orbLightEntity_, "Orb Torch");
 
-        // Blue point light
-        auto bluePos = worldPos(-3.0f, 2.0f);
-        glm::vec3 bluePosition(bluePos.x, 2.0f, bluePos.y);
-        blueLightEntity_ = ecs::light::createPointLight(
-            *ecsWorld_, bluePosition,
-            glm::vec3(0.3f, 0.5f, 1.0f),  // Blue color
-            3.0f,                          // Intensity
-            6.0f);                         // Radius
+    // Blue point light
+    auto bluePos = worldPos(-3.0f, 2.0f);
+    glm::vec3 bluePosition(bluePos.x, 2.0f, bluePos.y);
+    blueLightEntity_ = ecs::light::createPointLight(
+        *ecsWorld_, bluePosition,
+        glm::vec3(0.3f, 0.5f, 1.0f),  // Blue color
+        3.0f,                          // Intensity
+        6.0f);                         // Radius
+    ecsWorld_->add<ecs::DebugName>(blueLightEntity_, "Blue Light");
 
-        // Green point light
-        auto greenPos = worldPos(4.0f, -2.0f);
-        glm::vec3 greenPosition(greenPos.x, 1.5f, greenPos.y);
-        greenLightEntity_ = ecs::light::createPointLight(
-            *ecsWorld_, greenPosition,
-            glm::vec3(0.4f, 1.0f, 0.4f),  // Green color
-            2.5f,                          // Intensity
-            5.0f);                         // Radius
+    // Green point light
+    auto greenPos = worldPos(4.0f, -2.0f);
+    glm::vec3 greenPosition(greenPos.x, 1.5f, greenPos.y);
+    greenLightEntity_ = ecs::light::createPointLight(
+        *ecsWorld_, greenPosition,
+        glm::vec3(0.4f, 1.0f, 0.4f),  // Green color
+        2.5f,                          // Intensity
+        5.0f);                         // Radius
+    ecsWorld_->add<ecs::DebugName>(greenLightEntity_, "Green Light");
 
-        SDL_Log("ECS scene lights initialized (3 light entities)");
-    } else {
-        // Fallback to legacy LightManager if ECS world not available
-        auto orbPos = worldPos(2.0f, 0.0f);
-        Light orbLight;
-        orbLight.type = LightType::Point;
-        orbLight.position = glm::vec3(orbPos.x, 1.3f, orbPos.y);
-        orbLight.color = glm::vec3(1.0f, 0.9f, 0.7f);  // Warm white
-        orbLight.intensity = 5.0f;
-        orbLight.radius = 8.0f;
-        orbLight.priority = 10.0f;
-        lightManager.addLight(orbLight);
-
-        auto bluePos = worldPos(-3.0f, 2.0f);
-        Light blueLight;
-        blueLight.type = LightType::Point;
-        blueLight.position = glm::vec3(bluePos.x, 2.0f, bluePos.y);
-        blueLight.color = glm::vec3(0.3f, 0.5f, 1.0f);
-        blueLight.intensity = 3.0f;
-        blueLight.radius = 6.0f;
-        blueLight.priority = 5.0f;
-        lightManager.addLight(blueLight);
-
-        auto greenPos = worldPos(4.0f, -2.0f);
-        Light greenLight;
-        greenLight.type = LightType::Point;
-        greenLight.position = glm::vec3(greenPos.x, 1.5f, greenPos.y);
-        greenLight.color = glm::vec3(0.4f, 1.0f, 0.4f);
-        greenLight.intensity = 2.5f;
-        greenLight.radius = 5.0f;
-        greenLight.priority = 5.0f;
-        lightManager.addLight(greenLight);
-
-        SDL_Log("Scene lights initialized (legacy LightManager: %zu lights)", lightManager.getLightCount());
-    }
+    SDL_Log("ECS scene lights initialized (3 light entities)");
 }
 
 void SceneManager::updatePhysicsToScene(PhysicsWorld& physics) {
-    // Update scene object transforms from physics simulation
-    auto& sceneObjects = sceneBuilder->getRenderables();
-    size_t emissiveOrbIndex = sceneBuilder->getEmissiveOrbIndex();
+    if (!ecsWorld_) return;
 
-    for (size_t i = 0; i < scenePhysicsBodies.size() && i < sceneObjects.size(); i++) {
-        PhysicsBodyID bodyID = scenePhysicsBodies[i];
-        if (bodyID == INVALID_BODY_ID) continue;
+    for (auto [entity, physBody] : ecsWorld_->view<ecs::PhysicsBody>().each()) {
+        if (!physBody.valid()) continue;
 
-        // Skip player object (handled separately)
-        if (i == sceneBuilder->getPlayerObjectIndex()) continue;
+        // Skip player (handled separately by physics character controller)
+        if (ecsWorld_->has<ecs::PlayerTag>(entity)) continue;
 
-        // Get transform from physics (position and rotation only)
+        PhysicsBodyID bodyID = static_cast<PhysicsBodyID>(physBody.bodyId);
         glm::mat4 physicsTransform = physics.getBodyTransform(bodyID);
 
-        // Extract scale from current transform to preserve it
-        glm::vec3 scale;
-        scale.x = glm::length(glm::vec3(sceneObjects[i].transform[0]));
-        scale.y = glm::length(glm::vec3(sceneObjects[i].transform[1]));
-        scale.z = glm::length(glm::vec3(sceneObjects[i].transform[2]));
+        // Find and update the renderable
+        Renderable* renderable = sceneBuilder->getRenderableForEntity(entity);
+        if (renderable) {
+            // Extract scale from current transform to preserve it
+            glm::vec3 scale;
+            scale.x = glm::length(glm::vec3(renderable->transform[0]));
+            scale.y = glm::length(glm::vec3(renderable->transform[1]));
+            scale.z = glm::length(glm::vec3(renderable->transform[2]));
 
-        // Apply scale to physics transform
-        physicsTransform = glm::scale(physicsTransform, scale);
-
-        // Update scene object transform
-        sceneObjects[i].transform = physicsTransform;
+            physicsTransform = glm::scale(physicsTransform, scale);
+            renderable->transform = physicsTransform;
+        }
 
         // Update orb light position to follow the emissive sphere
-        if (i == emissiveOrbIndex) {
+        if (ecsWorld_->has<ecs::OrbTag>(entity)) {
             glm::vec3 orbPosition = glm::vec3(physicsTransform[3]);
             orbLightPosition = orbPosition;
 
-            // Update ECS light entity position
-            if (ecsWorld_ && orbLightEntity_ != ecs::NullEntity && ecsWorld_->valid(orbLightEntity_)) {
+            if (orbLightEntity_ != ecs::NullEntity && ecsWorld_->valid(orbLightEntity_)) {
                 if (ecsWorld_->has<ecs::Transform>(orbLightEntity_)) {
                     ecsWorld_->get<ecs::Transform>(orbLightEntity_).matrix =
                         ecs::Transform::fromPosition(orbPosition).matrix;
                 }
-            } else if (lightManager.getLightCount() > 0) {
-                // Fallback to legacy light manager
-                lightManager.getLight(0).position = orbPosition;
             }
         }
     }

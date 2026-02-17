@@ -1,4 +1,5 @@
 #include "Application.h"
+#include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <cstdio>
@@ -696,6 +697,20 @@ void Application::run() {
 
         // Update physics simulation
         physics().update(deltaTime);
+
+        // Detect and destroy ragdolls with NaN state (constraint solver diverged)
+        ragdolls_.erase(
+            std::remove_if(ragdolls_.begin(), ragdolls_.end(),
+                [this](ArticulatedBody& ragdoll) {
+                    if (ragdoll.hasNaNState(physics())) {
+                        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                                    "Destroying ragdoll with NaN physics state");
+                        ragdoll.destroy(physics());
+                        return true;
+                    }
+                    return false;
+                }),
+            ragdolls_.end());
 
         // Update physics terrain tiles based on player position
         glm::vec3 playerPos = physics().getCharacterPosition();

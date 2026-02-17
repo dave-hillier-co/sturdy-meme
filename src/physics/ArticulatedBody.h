@@ -104,6 +104,10 @@ public:
     glm::vec3 getRootPosition(const PhysicsWorld& physics) const;
     glm::quat getRootRotation(const PhysicsWorld& physics) const;
 
+    // Check if any body has NaN position/velocity (constraint solver diverged).
+    // Returns true if the ragdoll is broken and should be destroyed.
+    bool hasNaNState(const PhysicsWorld& physics) const;
+
 private:
     void cleanup(PhysicsWorld& physics);
 

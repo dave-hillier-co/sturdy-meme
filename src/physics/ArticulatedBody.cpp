@@ -369,6 +369,18 @@ glm::quat ArticulatedBody::getRootRotation(const PhysicsWorld& physics) const {
     return physics.getBodyInfo(bodyIDs_[0]).rotation;
 }
 
+bool ArticulatedBody::hasNaNState(const PhysicsWorld& physics) const {
+    for (auto bodyID : bodyIDs_) {
+        if (bodyID == INVALID_BODY_ID) continue;
+        PhysicsBodyInfo info = physics.getBodyInfo(bodyID);
+        if (std::isnan(info.position.x) || std::isnan(info.position.y) || std::isnan(info.position.z))
+            return true;
+        if (std::isnan(info.angularVelocity.x) || std::isnan(info.angularVelocity.y) || std::isnan(info.angularVelocity.z))
+            return true;
+    }
+    return false;
+}
+
 // ─── Humanoid config factory ───────────────────────────────────────────────────
 
 // Helper: find a joint by trying multiple common naming conventions

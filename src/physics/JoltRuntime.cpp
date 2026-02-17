@@ -19,10 +19,14 @@ static void TraceImpl(const char* inFMT, ...) {
 }
 
 #ifdef JPH_ENABLE_ASSERTS
-// Callback for asserts
+// Callback for asserts — log and continue, don't break into debugger.
+// Jolt debug assertions (e.g., NaN velocity in ClampAngularVelocity) would
+// otherwise call __builtin_trap() and kill the process. We log the issue
+// and let Jolt continue; broken bodies are detected and cleaned up per-frame.
 static bool AssertFailedImpl(const char* inExpression, const char* inMessage, const char* inFile, uint32_t inLine) {
-    SDL_Log("Jolt Assert: %s:%u: (%s) %s", inFile, inLine, inExpression, inMessage ? inMessage : "");
-    return true; // Break into debugger
+    SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                "Jolt Assert (non-fatal): %s:%u: (%s) %s", inFile, inLine, inExpression, inMessage ? inMessage : "");
+    return false; // false = don't trigger JPH_BREAKPOINT, continue execution
 }
 #endif
 

@@ -343,6 +343,15 @@ bool CALMGPUInference::packWeights(const CALMLowLevelController& llc,
     const auto& styleMLP = scNet.styleMLP();
     const auto& mainMLP = scNet.mainMLP();
 
+    // Convert ml::Activation to GPU activation code (0=None, 1=ReLU, 2=Tanh)
+    auto activationToGPU = [](Activation act) -> uint32_t {
+        switch (act) {
+            case Activation::ReLU: return 1;
+            case Activation::Tanh: return 2;
+            default: return 0;
+        }
+    };
+
     auto packNetwork = [&](const MLPNetwork& net) {
         for (size_t i = 0; i < net.numLayers(); ++i) {
             const auto& layer = net.layer(i);
@@ -355,7 +364,7 @@ bool CALMGPUInference::packWeights(const CALMLowLevelController& llc,
             for (size_t j = 0; j < b.size(); ++j) packedWeights.push_back(b[j]);
             meta.inFeatures = static_cast<uint32_t>(layer.inFeatures);
             meta.outFeatures = static_cast<uint32_t>(layer.outFeatures);
-            meta.activation = 1;  // ReLU default
+            meta.activation = activationToGPU(net.activation(i));
             layerMetas.push_back(meta);
         }
     };
@@ -367,12 +376,6 @@ bool CALMGPUInference::packWeights(const CALMLowLevelController& llc,
     const auto& muHead = llc.muHead();
     if (muHead.numLayers() > 0) packNetwork(muHead);
     uint32_t mainLayerCount = static_cast<uint32_t>(mainMLP.numLayers() + muHead.numLayers());
-
-    // Set activation hints
-    for (uint32_t i = 0; i < styleLayerCount; ++i)
-        layerMetas[i].activation = 2;  // Tanh
-    if (mainLayerCount > 0)
-        layerMetas[styleLayerCount + mainLayerCount - 1].activation = 0;  // None (muHead)
 
     pushConstants_.numLayers = static_cast<uint32_t>(layerMetas.size());
     pushConstants_.styleLayerCount = styleLayerCount;

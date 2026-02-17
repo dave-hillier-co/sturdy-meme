@@ -75,30 +75,31 @@ void getLayerMeta(uint layerIdx, out uint weightOff, out uint biasOff,
     activation = layerMeta[base + 4];
 }
 
-// Matrix-vector multiply: dest[j] = sum(weights[j*inFeat + k] * src[k]) + bias[j]
-// for j in [0, outFeat)
-void matVecMul(uint weightOff, uint biasOff, uint inFeat, uint outFeat,
-               inout float src[MAX_HIDDEN], inout float dest[MAX_HIDDEN]) {
+// Forward one layer from bufA to bufB
+void forwardLayerAtoB(uint weightOff, uint biasOff, uint inFeat, uint outFeat, uint activation) {
     for (uint j = 0; j < outFeat; ++j) {
-        float sum = weights[biasOff + j];  // bias
+        float sum = weights[biasOff + j];
         uint rowStart = weightOff + j * inFeat;
         for (uint k = 0; k < inFeat; ++k) {
-            sum += weights[rowStart + k] * src[k];
+            sum += weights[rowStart + k] * bufA[k];
         }
-        dest[j] = sum;
+        if (activation == 1u) sum = max(sum, 0.0);       // ReLU
+        else if (activation == 2u) sum = tanh(sum);       // Tanh
+        bufB[j] = sum;
     }
 }
 
-// Apply activation in-place
-void applyActivation(uint activation, uint count, inout float buf[MAX_HIDDEN]) {
-    if (activation == 1) {  // ReLU
-        for (uint i = 0; i < count; ++i) {
-            buf[i] = max(buf[i], 0.0);
+// Forward one layer from bufB to bufA
+void forwardLayerBtoA(uint weightOff, uint biasOff, uint inFeat, uint outFeat, uint activation) {
+    for (uint j = 0; j < outFeat; ++j) {
+        float sum = weights[biasOff + j];
+        uint rowStart = weightOff + j * inFeat;
+        for (uint k = 0; k < inFeat; ++k) {
+            sum += weights[rowStart + k] * bufB[k];
         }
-    } else if (activation == 2) {  // Tanh
-        for (uint i = 0; i < count; ++i) {
-            buf[i] = tanh(buf[i]);
-        }
+        if (activation == 1u) sum = max(sum, 0.0);       // ReLU
+        else if (activation == 2u) sum = tanh(sum);       // Tanh
+        bufA[j] = sum;
     }
 }
 
@@ -119,23 +120,31 @@ void main() {
         getLayerMeta(layer, wOff, bOff, inF, outF, act);
 
         if (useA) {
-            matVecMul(wOff, bOff, inF, outF, bufA, bufB);
-            applyActivation(act, outF, bufB);
+            forwardLayerAtoB(wOff, bOff, inF, outF, act);
         } else {
-            matVecMul(wOff, bOff, inF, outF, bufB, bufA);
-            applyActivation(act, outF, bufA);
+            forwardLayerBtoA(wOff, bOff, inF, outF, act);
         }
         useA = !useA;
     }
 
-    // Copy style embedding to styleEmbed buffer
+    // Copy style embedding result to styleEmbed buffer
     {
         uint lastStyleLayer = pc.styleLayerCount - 1;
         uint dummy1, dummy2, dummy3, styleDim, dummy4;
         getLayerMeta(lastStyleLayer, dummy1, dummy2, dummy3, styleDim, dummy4);
-        float[] src = useA ? bufA : bufB;
         for (uint i = 0; i < styleDim; ++i) {
-            styleEmbed[i] = src[i];
+            // After the loop, the result is in bufB if useA==false (even layers),
+            // or bufA if useA==true (odd layers). useA was flipped after each layer,
+            // so if useA is true now, the result is in bufB; if false, in bufA.
+            // Actually: useA starts true, flips after each layer.
+            // After 1 layer: useA=false, result in bufB
+            // After 2 layers: useA=true, result in bufA
+            // So: result is in bufA if useA==true, bufB if useA==false
+            // Wait, no. useA=true means "next layer reads from A", meaning the
+            // LAST layer wrote to B. So result is in the buffer we'd NOT read from.
+            // useA==true  -> last wrote to B -> result in bufB
+            // useA==false -> last wrote to A -> result in bufA
+            styleEmbed[i] = useA ? bufB[i] : bufA[i];
         }
     }
 
@@ -156,19 +165,17 @@ void main() {
         getLayerMeta(globalLayer, wOff, bOff, inF, outF, act);
 
         if (useA) {
-            matVecMul(wOff, bOff, inF, outF, bufA, bufB);
-            applyActivation(act, outF, bufB);
+            forwardLayerAtoB(wOff, bOff, inF, outF, act);
         } else {
-            matVecMul(wOff, bOff, inF, outF, bufB, bufA);
-            applyActivation(act, outF, bufA);
+            forwardLayerBtoA(wOff, bOff, inF, outF, act);
         }
         useA = !useA;
     }
 
     // --- Step 5: Write output actions ---
+    // Same logic: useA==true means result is in bufB, useA==false means bufA
     uint actionBase = npcIdx * ACTION_DIM;
-    float[] result = useA ? bufA : bufB;
     for (uint i = 0; i < ACTION_DIM; ++i) {
-        actions[actionBase + i] = result[i];
+        actions[actionBase + i] = useA ? bufB[i] : bufA[i];
     }
 }

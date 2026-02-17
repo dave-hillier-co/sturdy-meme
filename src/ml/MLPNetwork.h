@@ -58,6 +58,9 @@ public:
     LinearLayer& layer(size_t index) { return layers_[index]; }
     const LinearLayer& layer(size_t index) const { return layers_[index]; }
 
+    // Access activation for a specific layer
+    Activation activation(size_t index) const { return activations_[index]; }
+
 private:
     std::vector<LinearLayer> layers_;
     std::vector<Activation> activations_;

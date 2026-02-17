@@ -6,9 +6,6 @@
 #include <glm/gtc/quaternion.hpp>
 #include <string>
 
-struct Skeleton;
-class CharacterController;
-
 namespace ml {
 
 // High-Level Controller (HLC) for CALM.

@@ -783,6 +783,7 @@ set(SHADER_FILES
     ${CMAKE_CURRENT_SOURCE_DIR}/shaders/bloom_upsample_compute.comp.spv
     ${CMAKE_CURRENT_SOURCE_DIR}/shaders/bloom_spd.comp.spv
     ${CMAKE_CURRENT_SOURCE_DIR}/shaders/godrays_compute.comp.spv
+    ${CMAKE_CURRENT_SOURCE_DIR}/shaders/calm_inference.comp.spv
 )
 
 set(TERRAIN_SHADER_FILES
@@ -922,6 +923,7 @@ if(SHADER_COMPILE_CMD)
         volumetric_snow.comp
         cloudmap_lut.comp
         cloud_shadow.comp
+        calm_inference.comp
     )
 
     foreach(SHADER ${SPECIAL_COMPUTE_SHADERS})
@@ -1209,6 +1211,7 @@ if(SHADER_COMPILE_CMD)
         ${CMAKE_CURRENT_SOURCE_DIR}/shaders/bloom_upsample_compute.comp.spv
         ${CMAKE_CURRENT_SOURCE_DIR}/shaders/bloom_spd.comp.spv
         ${CMAKE_CURRENT_SOURCE_DIR}/shaders/godrays_compute.comp.spv
+        ${CMAKE_CURRENT_SOURCE_DIR}/shaders/calm_inference.comp.spv
     )
 
     # Source shaders used for UBO reflection (curated subset that defines complete UBO structures)

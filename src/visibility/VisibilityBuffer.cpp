@@ -1625,36 +1625,50 @@ void VisibilityBuffer::recordResolvePass(VkCommandBuffer cmd, uint32_t frameInde
         resolveDescSetsDirty_ = false;
     }
 
-    // Transition visibility buffer to GENERAL for storage image read
-    // and HDR depth to READ_ONLY for sampling in the depth comparison
+    // Transition images for compute shader access
     {
-        std::array<VkImageMemoryBarrier, 2> barriers{};
+        std::array<VkImageMemoryBarrier, 3> barriers{};
+        uint32_t barrierCount = 0;
 
-        // V-buffer: COLOR_ATTACHMENT → GENERAL (for storage image read)
-        barriers[0].sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-        barriers[0].srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-        barriers[0].dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-        barriers[0].oldLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-        barriers[0].newLayout = VK_IMAGE_LAYOUT_GENERAL;
-        barriers[0].image = visibilityImage_.get();
-        barriers[0].subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-        barriers[0].subresourceRange.levelCount = 1;
-        barriers[0].subresourceRange.layerCount = 1;
+        // V-buffer: SHADER_READ_ONLY → GENERAL (for storage image read)
+        barriers[barrierCount].sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+        barriers[barrierCount].srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+        barriers[barrierCount].dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+        barriers[barrierCount].oldLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        barriers[barrierCount].newLayout = VK_IMAGE_LAYOUT_GENERAL;
+        barriers[barrierCount].image = visibilityImage_.get();
+        barriers[barrierCount].subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        barriers[barrierCount].subresourceRange.levelCount = 1;
+        barriers[barrierCount].subresourceRange.layerCount = 1;
+        barrierCount++;
 
-        uint32_t barrierCount = 1;
+        // HDR color: SHADER_READ_ONLY → GENERAL (for imageStore in compute shader)
+        if (resolveBuffers_.hdrColorImage != VK_NULL_HANDLE) {
+            barriers[barrierCount].sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+            barriers[barrierCount].srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+            barriers[barrierCount].dstAccessMask = VK_ACCESS_SHADER_WRITE_BIT | VK_ACCESS_SHADER_READ_BIT;
+            barriers[barrierCount].oldLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+            barriers[barrierCount].newLayout = VK_IMAGE_LAYOUT_GENERAL;
+            barriers[barrierCount].image = resolveBuffers_.hdrColorImage;
+            barriers[barrierCount].subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+            barriers[barrierCount].subresourceRange.levelCount = 1;
+            barriers[barrierCount].subresourceRange.layerCount = 1;
+            barrierCount++;
+        }
 
-        // HDR depth: DEPTH_STENCIL_ATTACHMENT → DEPTH_STENCIL_READ_ONLY (for sampling)
+        // HDR depth: already in DEPTH_STENCIL_READ_ONLY (set by HDR render pass finalLayout)
+        // Just need execution+memory dependency so render pass writes are visible to compute reads
         if (resolveBuffers_.hdrDepthImage != VK_NULL_HANDLE) {
-            barriers[1].sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-            barriers[1].srcAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
-            barriers[1].dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-            barriers[1].oldLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-            barriers[1].newLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
-            barriers[1].image = resolveBuffers_.hdrDepthImage;
-            barriers[1].subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
-            barriers[1].subresourceRange.levelCount = 1;
-            barriers[1].subresourceRange.layerCount = 1;
-            barrierCount = 2;
+            barriers[barrierCount].sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+            barriers[barrierCount].srcAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+            barriers[barrierCount].dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+            barriers[barrierCount].oldLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
+            barriers[barrierCount].newLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
+            barriers[barrierCount].image = resolveBuffers_.hdrDepthImage;
+            barriers[barrierCount].subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
+            barriers[barrierCount].subresourceRange.levelCount = 1;
+            barriers[barrierCount].subresourceRange.layerCount = 1;
+            barrierCount++;
         }
 
         vkCmdPipelineBarrier(cmd,
@@ -1675,16 +1689,28 @@ void VisibilityBuffer::recordResolvePass(VkCommandBuffer cmd, uint32_t frameInde
     uint32_t groupsY = (extent_.height + 7) / 8;
     vkCmdDispatch(cmd, groupsX, groupsY, 1);
 
-    // Barrier: resolve writes -> subsequent reads of HDR output
-    VkMemoryBarrier memBarrier{};
-    memBarrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
-    memBarrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
-    memBarrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+    // Barrier: resolve writes -> subsequent reads
+    // Transition HDR color back to SHADER_READ_ONLY for post-processing sampling
+    // HDR depth stays in DEPTH_STENCIL_READ_ONLY (post-processing expects that layout)
+    {
+        VkImageMemoryBarrier postBarrier{};
+        postBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+        postBarrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+        postBarrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+        postBarrier.oldLayout = VK_IMAGE_LAYOUT_GENERAL;
+        postBarrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        postBarrier.image = resolveBuffers_.hdrColorImage;
+        postBarrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        postBarrier.subresourceRange.levelCount = 1;
+        postBarrier.subresourceRange.layerCount = 1;
 
-    vkCmdPipelineBarrier(cmd,
-        VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-        VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-        0, 1, &memBarrier, 0, nullptr, 0, nullptr);
+        if (resolveBuffers_.hdrColorImage != VK_NULL_HANDLE) {
+            vkCmdPipelineBarrier(cmd,
+                VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                0, 0, nullptr, 0, nullptr, 1, &postBarrier);
+        }
+    }
 }
 
 void VisibilityBuffer::recordDebugVisualization(VkCommandBuffer cmd, uint32_t debugMode) {

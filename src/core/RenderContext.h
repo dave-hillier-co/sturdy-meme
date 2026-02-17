@@ -22,6 +22,7 @@ struct RenderResources {
     VkFramebuffer hdrFramebuffer = VK_NULL_HANDLE;
     VkExtent2D hdrExtent = {0, 0};
     VkImageView hdrColorView = VK_NULL_HANDLE;
+    VkImage hdrColorImage = VK_NULL_HANDLE;
     VkImageView hdrDepthView = VK_NULL_HANDLE;
     VkImage hdrDepthImage = VK_NULL_HANDLE;
 

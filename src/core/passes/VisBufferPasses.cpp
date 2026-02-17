@@ -372,7 +372,8 @@ static void executeResolvePass(FrameGraph::RenderContext& ctx, RendererSystems& 
             resolveBuffers.textureArraySampler = visBuf->getTextureArraySampler();
         }
 
-        // HDR depth for depth comparison
+        // HDR images for depth comparison and layout transitions
+        resolveBuffers.hdrColorImage = renderCtx->resources.hdrColorImage;
         resolveBuffers.hdrDepthView = renderCtx->resources.hdrDepthView;
         resolveBuffers.hdrDepthImage = renderCtx->resources.hdrDepthImage;
 

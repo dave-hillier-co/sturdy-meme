@@ -109,6 +109,7 @@ RenderResources FrameDataBuilder::buildRenderResources(
     resources.hdrFramebuffer = systems.postProcess().getHDRFramebuffer();
     resources.hdrExtent = systems.postProcess().getExtent();
     resources.hdrColorView = systems.postProcess().getHDRColorView();
+    resources.hdrColorImage = systems.postProcess().getHDRColorImage();
     resources.hdrDepthView = systems.postProcess().getHDRDepthView();
     resources.hdrDepthImage = systems.postProcess().getHDRDepthImage();
 

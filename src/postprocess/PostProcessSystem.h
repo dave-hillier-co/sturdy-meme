@@ -105,6 +105,7 @@ public:
 
     // Render target accessors (vulkan-hpp)
     vk::ImageView getHDRColorView() const { return vk::ImageView(hdrColorView); }
+    vk::Image getHDRColorImage() const { return vk::Image(hdrColorImage); }
     vk::ImageView getHDRDepthView() const { return vk::ImageView(hdrDepthView); }
     vk::Image getHDRDepthImage() const { return vk::Image(hdrDepthImage); }
     vk::RenderPass getHDRRenderPass() const { return vk::RenderPass(hdrRenderPass); }

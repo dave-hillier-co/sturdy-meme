@@ -14,7 +14,49 @@ Nanite is a virtualized geometry system that renders arbitrarily complex meshes 
 
 ---
 
-## What We Already Have
+## Current State
+
+### What's built
+
+| Component | Status | Location |
+|---|---|---|
+| Mesh clustering (64-tri clusters) | Built | `MeshClusterBuilder.h/.cpp` |
+| Cluster DAG with meshoptimizer simplification | Built | `MeshClusterBuilder::buildWithDAG()` |
+| GPU cluster buffer (global vertex/index SSBOs) | Built | `GPUClusterBuffer` |
+| GPU DAG LOD selection compute shader | Built | `shaders/cluster_select.comp` |
+| Two-pass occlusion culler (LOD select + cull + indirect) | Built | `TwoPassCuller.h/.cpp`, `shaders/cluster_cull.comp` |
+| Normal cone backface culling | Built | `cluster_cull.comp:170-178` |
+| V-buffer render target (R32G32_UINT) | Built | `VisibilityBuffer.h/.cpp` |
+| V-buffer raster pipeline (visbuf.vert/frag) | Built | `shaders/visbuf.vert`, `shaders/visbuf.frag` |
+| Compute material resolve (PBR + lights) | Built | `shaders/visbuf_resolve.comp` |
+| Material texture array (sampler2DArray) | Built | `VisibilityBuffer::buildMaterialTextureArray()` |
+| GPU material buffer (per-material PBR data) | Built | `GPUMaterialBuffer` |
+| Hi-Z depth pyramid | Built | `HiZSystem`, `shaders/hiz_downsample.comp` |
+
+### What's broken: the integration
+
+The individual subsystems exist but are not properly integrated into the rendering pipeline. The current state is a broken hybrid:
+
+1. **HDR pass** (priority 30) renders sky, terrain, rocks, trees, grass, water, weather, debug lines — everything. It begins an `R16G16B16A16_SFLOAT` render pass, clears color+depth, and draws all registered `IHDRDrawable` implementations inline.
+
+2. **V-buffer raster** (priority 31) renders ECS scene objects into a **separate** R32G32_UINT render target with its own render pass and framebuffer. It uses `VisBufferPasses::executeRasterPass()` which does immediate per-cluster draws with push constants.
+
+3. **V-buffer resolve** (priority 28) runs a compute shader that reads the V-buffer, reconstructs geometry, evaluates PBR, and tries to `imageStore` the result **into the HDR color image**. This requires layout transitions (SHADER_READ_ONLY → GENERAL → SHADER_READ_ONLY) and depth comparison against the HDR depth buffer.
+
+4. `SceneObjectsDrawable` has a `visBufferActive` flag that skips ECS objects in the HDR pass when V-buffer is enabled. But rocks, trees, and everything else still render in HDR.
+
+5. `TwoPassCuller` is built but **not wired** into the rendering pipeline. V-buffer raster does immediate draws instead of consuming indirect draw buffers from the culler.
+
+**Problems:**
+- The resolve compute shader writes into an image owned by a different render pass, requiring fragile layout transition hacks
+- Two separate depth buffers (V-buffer owns one, HDR owns one) with no shared depth testing
+- Only ECS scene objects go through V-buffer; rocks and other static meshes bypass it entirely
+- TwoPassCuller output (indirect draw buffers) is not consumed by anything
+- Per-cluster push constants instead of GPU-driven indirect draws
+
+---
+
+## What We Already Have (pre-Nanite)
 
 | Existing System | Nanite Parallel | Location |
 |---|---|---|
@@ -33,19 +75,11 @@ Nanite is a virtualized geometry system that renders arbitrarily complex meshes 
 ### Goal
 Split every static mesh into clusters of ~64–128 triangles with precomputed bounding information and a simplification error metric.
 
-### Approach
+### Status: DONE
 
-**Offline preprocessing tool** (`tools/mesh_cluster`):
+`MeshClusterBuilder` implements this. `build()` creates flat clusters; `buildWithDAG()` builds the full hierarchy. `GPUClusterBuffer` manages global vertex/index SSBOs.
 
-1. Load mesh vertices and indices (from our `Mesh` class vertex/index format)
-2. Run graph-based partitioning (e.g. METIS or a simple greedy spatial partitioning) to group triangles into clusters of 64–128 triangles
-3. For each cluster, compute:
-   - Tight AABB and bounding sphere (for culling)
-   - Normal cone (for backface cluster culling)
-   - Maximum simplification error in object-space (used for LOD selection)
-4. Output a `.cluster` file with the cluster metadata and reordered index buffer
-
-**Runtime data structures**:
+### Runtime data structures
 
 ```cpp
 struct MeshCluster {
@@ -59,8 +93,6 @@ struct MeshCluster {
     uint32_t lodLevel;          // hierarchy depth
 };
 ```
-
-**What this replaces**: Currently `GPUCullObjectData` operates per-object (one entry per `Renderable`). After clustering, culling operates per-cluster — the same compute shader pattern but with finer granularity.
 
 ### Applicable Systems
 
@@ -79,17 +111,11 @@ struct MeshCluster {
 ### Goal
 Build a DAG where groups of clusters at level N simplify into a parent cluster at level N+1. The GPU walks the DAG at runtime and selects the coarsest level that satisfies a screen-space error threshold.
 
-### Approach
+### Status: DONE (offline tool + compute shader)
 
-**Offline** (extend `tools/mesh_cluster`):
+`MeshClusterBuilder::buildWithDAG()` builds the hierarchy. `cluster_select.comp` does GPU LOD selection. `TwoPassCuller` orchestrates the dispatch.
 
-1. Starting from the leaf clusters (full detail), group spatially adjacent clusters into sets of 2–4
-2. Simplify the combined geometry of each group (edge collapse with quadric error metric) down to a single cluster (~64–128 triangles)
-3. Record parent→child relationships and the max error at each level
-4. Repeat until one root cluster remains (or error exceeds a threshold)
-5. Store the DAG edges and per-node error in the `.cluster` file
-
-**Runtime DAG node** (extends `MeshCluster`):
+### Runtime DAG node
 
 ```cpp
 struct ClusterDAGNode {
@@ -101,18 +127,12 @@ struct ClusterDAGNode {
 };
 ```
 
-**GPU LOD selection** (`shaders/cluster_select.comp`):
+### GPU LOD selection (`shaders/cluster_select.comp`)
 
 ```glsl
-// For each DAG node, determine if this node should render:
-// - Its own error projected to screen is acceptable (< threshold)
-// - Its parent's error projected to screen is NOT acceptable (> threshold)
-// This is the "cut" through the DAG.
 float screenError = projectError(node.cluster.maxError, node.cluster.boundingSphere, viewProj, screenHeight);
 float parentScreenError = projectError(node.parentError, node.cluster.boundingSphere, viewProj, screenHeight);
-
 bool shouldRender = (screenError <= errorThreshold) && (parentScreenError > errorThreshold);
-// Root nodes: parentScreenError is infinite → always pass parent test
 ```
 
 ### Integration with Existing LOD Systems
@@ -129,6 +149,10 @@ bool shouldRender = (screenError <= errorThreshold) && (parentScreenError > erro
 
 ### Goal
 Use last frame's depth buffer to reject occluded clusters before rasterization, then catch newly-visible clusters in a second pass.
+
+### Status: Built (`TwoPassCuller`), NOT INTEGRATED
+
+`TwoPassCuller` implements the full two-pass pipeline (LOD select → cull pass 1 → Hi-Z rebuild → cull pass 2) and produces indirect draw buffers. But nothing consumes those buffers yet — `VisBufferPasses` does immediate per-cluster draws with push constants instead.
 
 ### Approach
 
@@ -165,52 +189,155 @@ Level 2: Cluster raster pass 2 + HDR main scene
 
 ---
 
-## Phase 4: Visibility Buffer Rendering
+## Phase 4: Visibility Buffer Integration
 
 ### Goal
-Replace per-object forward shading with a two-step approach: rasterize only IDs, then shade in a fullscreen compute/fragment pass. This decouples geometric complexity from shading cost.
+Make the V-buffer the primary rendering path for opaque static geometry. The V-buffer raster and resolve replace the forward shading that currently happens for these objects in the HDR pass. Non-V-buffer systems (terrain, water, grass, sky, particles) continue rendering in the HDR pass.
 
-### Approach
+### Status: Partially built, poorly integrated
 
-**Step 1 — Visibility pass**:
-- Render all visible clusters into a uint32 render target (R32_UINT or R32G32_UINT)
-- Each pixel stores: `clusterID` (upper bits) + `triangleID` (lower bits)
-- Vertex shader is minimal (just transform), fragment shader writes the ID
-- Depth test still applies (existing depth buffer from Hi-Z pipeline)
+The V-buffer raster pipeline, resolve compute shader, material texture array, and GPU material buffer all work individually. The integration into the frame graph is the problem — the V-buffer currently runs as a secondary overlay that tries to composite into the HDR pass's render targets via compute `imageStore`.
 
-**Step 2 — Material resolve pass** (`shaders/visibility_resolve.comp`):
-- Fullscreen compute dispatch reads the visibility buffer
-- For each pixel, look up cluster → mesh → material
-- Reconstruct barycentric coordinates from triangle vertices + screen position
-- Interpolate UVs, normals, tangents
-- Sample material textures and evaluate the PBR lighting model (reuse existing `lighting_common.glsl`)
+### Target architecture
 
-**What this replaces**:
-- The current `shader.vert`/`shader.frag` pipeline with push constants per object
+The V-buffer raster pass and the HDR render pass share the same depth buffer. The V-buffer rasters first into its uint target while also writing depth. Then the HDR render pass begins with `loadOp = eLoad` on depth (preserving V-buffer depth writes) and `loadOp = eClear` on color. Non-V-buffer drawables render into HDR as before. Finally the resolve compute shader reads the V-buffer and writes resolved materials into the HDR color target.
+
+This means V-buffer objects participate in depth testing against HDR objects naturally — no separate depth comparison needed in the resolve shader.
+
+### Frame graph pass ordering
+
+```
+Compute [100] ──> Shadow [50], Froxel [50], WaterGBuffer [40]
+                      │
+              ┌───────┴────────┐
+              v                v
+     ClusterSelect [92]   (other compute)
+              │
+              v
+     ClusterCull [91]
+              │
+              v
+     VisBufferRaster [35]     ← writes uint V-buffer + shared depth
+              │
+              v
+     HDR [30]                  ← loads depth (preserves V-buffer writes), clears color
+              │                  renders: sky, terrain, rocks*, trees*, grass, water, weather
+              v
+     VisBufferResolve [28]     ← compute: reads V-buffer, imageStore to HDR color
+              │
+              v
+     HiZ [15], SSR [20], Bloom [10], etc.
+              │
+              v
+     PostProcess [0]
+```
+
+*Rocks and trees move to V-buffer path incrementally (see Phase 6).
+
+### Step-by-step integration plan
+
+**Step 1: Share the depth buffer**
+
+The V-buffer raster pass and the HDR pass must use the **same** depth image. Currently they each own separate depth attachments.
+
+- `PostProcessSystem` owns the HDR depth image (`hdrDepthImage`, D32_SFLOAT)
+- `VisibilityBuffer` owns a separate depth image (`depthImage_`, D32_SFLOAT)
+- Change: `VisibilityBuffer` stops creating its own depth image. Instead, it receives the HDR depth image/view at init (or via a setter) and uses it in its framebuffer
+- The V-buffer render pass attachment description for depth uses `loadOp = eClear`, `storeOp = eStore`, `finalLayout = eDepthStencilAttachmentOptimal` (not READ_ONLY, because HDR needs to continue writing to it)
+- The HDR render pass depth attachment changes to `loadOp = eLoad` (not eClear) so V-buffer depth writes are preserved
+- Both passes write to the same depth image — standard Vulkan depth testing handles visibility between V-buffer and HDR objects
+
+**Step 2: V-buffer raster runs before HDR**
+
+Already the case (priority 31 vs 30) but the dependency graph needs updating:
+
+- `VisBufferRaster` depends on: Compute, Shadow (for shadow maps if needed)
+- `HDR` depends on: `VisBufferRaster` (needs shared depth populated), Shadow, Froxel, WaterGBuffer
+- This ensures V-buffer depth writes are complete before HDR begins
+
+In `FrameGraphBuilder.cpp`:
+```cpp
+// V-buffer raster must complete before HDR (shared depth buffer)
+if (visBufferIds.raster != FrameGraph::INVALID_PASS) {
+    frameGraph.addDependency(computeIds.compute, visBufferIds.raster);
+    frameGraph.addDependency(visBufferIds.raster, hdr);  // HDR loads V-buffer depth
+}
+```
+
+**Step 3: HDR clears color only, loads depth**
+
+The HDR render pass in `PostProcessSystem::createRenderPass()` currently clears both color and depth. When V-buffer is active:
+
+- Color: `loadOp = eClear` (still clear — V-buffer objects haven't written color yet, only IDs)
+- Depth: `loadOp = eLoad` (preserve V-buffer raster depth writes)
+
+This can be a separate render pass variant, or the `VisibilityBuffer` can set a flag that `PostProcessSystem` checks when creating the render pass.
+
+HDR drawables (sky, terrain, grass, water, rocks*) render as before. Their fragments are depth-tested against V-buffer geometry naturally via the shared depth buffer — no special logic needed.
+
+**Step 4: Resolve writes to HDR color**
+
+The resolve compute shader runs after HDR (priority 28). At this point:
+- HDR color is in `SHADER_READ_ONLY_OPTIMAL` (set by HDR render pass `finalLayout`)
+- V-buffer uint image is in `SHADER_READ_ONLY_OPTIMAL` (set by V-buffer render pass `finalLayout`)
+- Shared depth is in `DEPTH_STENCIL_READ_ONLY_OPTIMAL` (set by HDR render pass `finalLayout`)
+
+The resolve pass needs:
+- V-buffer image: transition to `GENERAL` for storage image read
+- HDR color image: transition to `GENERAL` for `imageStore`
+- Depth: already in `READ_ONLY`, just needs memory dependency for sampling
+
+After dispatch:
+- HDR color: transition back to `SHADER_READ_ONLY_OPTIMAL` for post-processing
+
+The resolve shader no longer needs to compare V-buffer depth against HDR depth — the shared depth buffer already resolved visibility during rasterization. The depth comparison code in `visbuf_resolve.comp` can be removed.
+
+**Step 5: Remove duplicate rendering**
+
+Once depth is shared, `SceneObjectsDrawable::visBufferActive` correctly skips ECS objects in HDR. V-buffer resolve writes their shaded output to the HDR color image. Other HDR drawables (sky, terrain, etc.) render normally and coexist via shared depth.
+
+**Step 6: Wire TwoPassCuller indirect draws**
+
+Replace the immediate per-cluster draws in `VisBufferPasses::executeRasterPass()` with indirect draws from `TwoPassCuller`:
+
+- Add `ClusterSelect` and `ClusterCull` as compute passes in the frame graph (before `VisBufferRaster`)
+- `TwoPassCuller::recordLODSelection()` → populates selected cluster buffer
+- `TwoPassCuller::recordCullPass()` → populates indirect draw buffer
+- `VisBufferRaster` binds the cluster vertex/index buffer and calls `vkCmdDrawIndexedIndirectCount` using TwoPassCuller's indirect buffer + draw count buffer
+- Push constants are eliminated — the vertex shader reads instance data from SSBO using `gl_InstanceIndex` or `gl_DrawID`
+
+### What this replaces
+
+- The current `shader.vert`/`shader.frag` pipeline with push constants per object (for V-buffer objects)
 - Material sorting in `SceneObjectsDrawable` (no longer needed — all materials resolved in one compute pass)
 - Per-object descriptor set switches (material textures accessed via bindless array)
+- The separate V-buffer depth image
+- The depth comparison hack in `visbuf_resolve.comp`
+- Per-cluster immediate draw calls (replaced by indirect draws from TwoPassCuller)
 
-**Prerequisite — Bindless textures**:
+### Prerequisite — Bindless textures
+
 - Requires `VK_EXT_descriptor_indexing` (widely supported)
 - Create a single large descriptor array of all material textures
 - Each cluster references a material index; the resolve shader indexes into the texture array
 - This replaces the current pattern of per-material descriptor set binding
 
-### Integration with Existing Shading
+### V-buffer vs HDR pass ownership
 
-The visibility buffer approach initially applies only to **opaque static geometry** (scene objects, rocks, Catmull-Clark surfaces, tree branches). Systems that need specialized vertex processing continue using their existing pipelines:
-
-| System | Visibility Buffer? | Reason |
+| System | Renders in | Reason |
 |---|---|---|
-| Scene objects (static) | Yes | Standard opaque meshes |
-| Rocks | Yes | Static procedural meshes |
-| Tree branches | Yes | Static per-frame (wind applied in resolve) |
-| Tree leaves | No | Instanced billboards with per-leaf attributes |
-| Grass | No | Compute-generated, stochastic density |
-| Water | No | FFT displacement, custom shading model |
-| Skinned characters | Possible later | Needs skeleton transform in visibility pass |
-| Particles/weather | No | Alpha blended, low poly |
-| Tree impostors | No | Billboard with atlas sampling |
+| Scene objects (ECS static) | V-buffer | Standard opaque meshes |
+| Rocks | V-buffer (Phase 6.1) | Static procedural meshes |
+| Tree branches | V-buffer (Phase 6.2) | Static per-frame (wind applied in resolve) |
+| Catmull-Clark surfaces | V-buffer (Phase 6.4) | High poly, benefits from cluster LOD |
+| Sky | HDR pass | Fullscreen, no geometry benefit |
+| Terrain | HDR pass | Own LOD system (CBT), heightmap-based |
+| Grass | HDR pass | Compute-generated, stochastic density |
+| Water | HDR pass | FFT displacement, custom shading model |
+| Tree leaves | HDR pass | Instanced billboards with per-leaf attributes |
+| Tree impostors | HDR pass | Billboard with atlas sampling |
+| Skinned characters | HDR pass (for now) | Needs skeleton transform |
+| Particles/weather | HDR pass | Alpha blended, low poly |
 
 ---
 
@@ -240,14 +367,15 @@ During cluster culling, classify each visible cluster:
 
 ### 6.1 Rocks (`ScatterSystem`)
 
-**Current state**: Procedural `createRock()` meshes, rendered as individual `Renderable` objects with CPU frustum culling and per-object draw calls.
+**Current state**: Procedural `createRock()` meshes, rendered as individual `Renderable` objects via `SceneObjectsDrawable` in the HDR pass. Own descriptor sets for rock textures. No LOD.
 
-**Nanite application**:
-1. Pre-cluster each rock archetype's mesh during build (different seed/subdivision variants)
-2. Per-instance cluster DAG selection in compute (shared archetype DAG, per-instance transform)
-3. Cluster-level occlusion culling via Hi-Z eliminates hidden rocks behind terrain or other rocks
-4. Rocks at distance automatically simplify through the DAG — no need for explicit rock LOD code
-5. Software raster for distant rock fields where triangles are sub-pixel
+**Migration to V-buffer**:
+1. Cluster each rock archetype's mesh via `MeshClusterBuilder::buildWithDAG()`
+2. Upload clusters to `GPUClusterBuffer` alongside scene object clusters
+3. Add rock instances to the V-buffer instance buffer (transform + material index)
+4. Rock materials go into `GPUMaterialBuffer`; rock textures into the material texture array
+5. Remove rock rendering from `SceneObjectsDrawable` (delete the `resources_.rocks` block)
+6. Rocks now participate in cluster LOD selection and two-pass occlusion culling automatically
 
 **Expected improvement**: Rocks currently have no LOD. With the DAG, a rock at 500m renders perhaps 4-8 triangles instead of hundreds. With occlusion culling, rocks behind terrain ridges are fully skipped.
 
@@ -267,7 +395,7 @@ During cluster culling, classify each visible cluster:
 
 ### 6.3 Scene Objects (ECS Entities)
 
-**Current state**: `GPUSceneBuffer` collects up to 8192 objects. Compute shader frustum culls and emits indirect draw commands. Push constants carry per-object PBR params.
+**Current state**: `GPUSceneBuffer` collects up to 8192 objects. Compute shader frustum culls and emits indirect draw commands. Push constants carry per-object PBR params. When `visBufferActive` is true, ECS objects skip the HDR pass and render through V-buffer instead.
 
 **Nanite application**:
 1. Replace per-object entries with per-cluster entries in `GPUSceneBuffer`
@@ -313,22 +441,30 @@ This mirrors how `TerrainTileCache` and `VirtualTextureSystem` manage terrain ti
 ## Implementation Order and Dependencies
 
 ```
-Phase 1: Mesh Clustering (offline tool)
+Phase 1: Mesh Clustering .......................... DONE
    ↓
-Phase 2: Cluster DAG + GPU LOD Selection (offline tool + compute shader)
+Phase 2: Cluster DAG + GPU LOD Selection .......... DONE
+   ↓
+Phase 4: V-Buffer Integration ..................... IN PROGRESS
+   Step 1: Share depth buffer between V-buffer and HDR
+   Step 2: Fix frame graph ordering (V-buffer raster → HDR → resolve)
+   Step 3: HDR loads depth instead of clearing it
+   Step 4: Proper resolve barriers (V-buffer + HDR color)
+   Step 5: Remove duplicate rendering paths
+   Step 6: Wire TwoPassCuller indirect draws
    ↓                              ↓
 Phase 3: Two-Phase Occlusion    Phase 6.1-6.2: Apply to rocks & trees
    ↓                              ↓
-Phase 4: Visibility Buffer      Phase 6.3-6.4: Apply to scene objects & subdivision
+Phase 6.3-6.4: Scene objects    Phase 6.3-6.4: Catmull-Clark & subdivision
    ↓
 Phase 5: Software Rasterization (optimization, can defer)
    ↓
 Phase 7: Streaming (optimization, can defer)
 ```
 
-Phases 1-2 provide the biggest architectural shift — all downstream phases build on the cluster DAG representation. Phases 3 and 6 can proceed in parallel. Phases 5 and 7 are optimizations that can be deferred until the core pipeline is working.
+Phase 4 integration is the current blocker. Steps 1-3 (shared depth) are the critical path — once V-buffer and HDR share a depth buffer, the fragile layout transition hacks and depth comparison code in the resolve shader go away. Step 6 (TwoPassCuller) eliminates the per-cluster push constant draws.
 
-Each phase produces a working renderer. At the end of Phase 1, we have finer-grained culling. After Phase 2, we have automatic LOD. After Phase 3, we have occlusion culling. The system improves incrementally.
+Each step produces a working renderer. After step 3, V-buffer objects are visible and depth-correct against HDR objects. After step 6, rendering is fully GPU-driven.
 
 ---
 

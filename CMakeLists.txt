@@ -290,6 +290,7 @@ set(SOURCES
     src/ml/CALMBehaviorFSM.cpp
     src/ml/CALMAnimationIntegration.cpp
     src/ml/CALMGPUInference.cpp
+    src/ml/CALMModelLoader.cpp
 )
 
 add_executable(${PROJECT_NAME} ${SOURCES})
@@ -1305,6 +1306,7 @@ if(BUILD_TESTS)
         tests/test_calm_observation.cpp
         tests/test_calm_controller.cpp
         tests/test_calm_hlc_fsm.cpp
+        tests/test_calm_model_loader.cpp
         # Source files needed by tests
         src/atmosphere/CelestialCalculator.cpp
         src/animation/Animation.cpp
@@ -1332,6 +1334,7 @@ if(BUILD_TESTS)
         src/ml/CALMHighLevelController.cpp
         src/ml/CALMBehaviorFSM.cpp
         src/ml/CALMAnimationIntegration.cpp
+        src/ml/CALMModelLoader.cpp
     )
 
     target_include_directories(vulkan_game_tests PRIVATE

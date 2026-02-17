@@ -1,7 +1,9 @@
 #include "CALMLatentSpace.h"
 #include <SDL3/SDL_log.h>
+#include <nlohmann/json.hpp>
 #include <algorithm>
 #include <cassert>
+#include <fstream>
 
 namespace ml {
 
@@ -66,6 +68,85 @@ CALMLatentSpace::getBehaviorsByTag(const std::string& tag) const {
         }
     }
     return result;
+}
+
+// --- File I/O ---
+
+bool CALMLatentSpace::loadLibraryFromJSON(const std::string& path) {
+    std::ifstream file(path);
+    if (!file.is_open()) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
+                     "CALMLatentSpace: failed to open %s", path.c_str());
+        return false;
+    }
+
+    nlohmann::json doc;
+    try {
+        doc = nlohmann::json::parse(file);
+    } catch (const nlohmann::json::parse_error& e) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
+                     "CALMLatentSpace: JSON parse error in %s: %s",
+                     path.c_str(), e.what());
+        return false;
+    }
+
+    // Read latent dimension (optional, defaults to current)
+    if (doc.contains("latent_dim")) {
+        int fileDim = doc["latent_dim"].get<int>();
+        if (latentDim_ != 0 && fileDim != latentDim_) {
+            SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                        "CALMLatentSpace: file latent_dim=%d differs from current=%d, using file value",
+                        fileDim, latentDim_);
+        }
+        latentDim_ = fileDim;
+    }
+
+    if (!doc.contains("behaviors") || !doc["behaviors"].is_array()) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
+                     "CALMLatentSpace: missing 'behaviors' array in %s", path.c_str());
+        return false;
+    }
+
+    size_t loaded = 0;
+    for (const auto& entry : doc["behaviors"]) {
+        std::string clipName = entry.value("clip", "");
+        if (clipName.empty()) continue;
+
+        std::vector<std::string> tags;
+        if (entry.contains("tags") && entry["tags"].is_array()) {
+            for (const auto& t : entry["tags"]) {
+                tags.push_back(t.get<std::string>());
+            }
+        }
+
+        if (!entry.contains("latent") || !entry["latent"].is_array()) {
+            SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                        "CALMLatentSpace: skipping '%s' — no latent array", clipName.c_str());
+            continue;
+        }
+
+        const auto& latentArr = entry["latent"];
+        std::vector<float> data;
+        data.reserve(latentArr.size());
+        for (const auto& v : latentArr) {
+            data.push_back(v.get<float>());
+        }
+
+        if (static_cast<int>(data.size()) != latentDim_) {
+            SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                        "CALMLatentSpace: '%s' has %zu dims (expected %d), skipping",
+                        clipName.c_str(), data.size(), latentDim_);
+            continue;
+        }
+
+        size_t dim = data.size();
+        Tensor latent(1, dim, std::move(data));
+        addBehavior(clipName, tags, std::move(latent));
+        ++loaded;
+    }
+
+    SDL_Log("CALMLatentSpace: loaded %zu behaviors from %s", loaded, path.c_str());
+    return loaded > 0;
 }
 
 // --- Encoder ---

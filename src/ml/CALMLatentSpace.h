@@ -74,6 +74,12 @@ public:
     // Get a zero latent (for initialization)
     Tensor zeroLatent() const;
 
+    // --- File I/O ---
+
+    // Load a latent library from JSON file (produced by calm_encode_library.py).
+    // Returns true on success.
+    bool loadLibraryFromJSON(const std::string& path);
+
     // Get latent dimension
     int latentDim() const { return latentDim_; }
 

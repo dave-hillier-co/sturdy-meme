@@ -80,9 +80,15 @@ bool VisibilityBuffer::initInternal(const InitInfo& info) {
         return false;
     }
 
-    if (!createRasterPipeline()) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "VisibilityBuffer: Failed to create raster pipeline");
-        return false;
+    // Raster pipeline requires shaderDrawParameters (gl_DrawID) for GPU-driven draws
+    if (info.hasShaderDrawParameters) {
+        if (!createRasterPipeline()) {
+            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "VisibilityBuffer: Failed to create raster pipeline");
+            return false;
+        }
+    } else {
+        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+            "VisibilityBuffer: Raster pipeline skipped (shaderDrawParameters not available)");
     }
 
     if (!createDebugPipeline()) {

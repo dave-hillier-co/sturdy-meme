@@ -223,6 +223,9 @@ static void executeRasterPass(FrameGraph::RenderContext& ctx, RendererSystems& s
     auto* visBuf = systems.visibilityBuffer();
     if (!visBuf) return;
 
+    // Skip if raster pipeline wasn't created (shaderDrawParameters unavailable)
+    if (visBuf->getRasterPipeline() == VK_NULL_HANDLE) return;
+
     VkCommandBuffer cmd = renderCtx->cmd;
     uint32_t frameIndex = renderCtx->frameIndex;
 

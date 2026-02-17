@@ -632,6 +632,7 @@ std::vector<Loading::SystemInitTask> Renderer::buildInitTasks(const InitContext&
                 // HDR pass loads it (loadOp=eLoad) to preserve V-buffer depth writes
                 vbInfo.sharedDepthImage = systems_->postProcess().getHDRDepthImage();
                 vbInfo.sharedDepthView = systems_->postProcess().getHDRDepthView();
+                vbInfo.hasShaderDrawParameters = vulkanContext_->hasShaderDrawParameters();
                 auto visBuf = VisibilityBuffer::create(vbInfo);
                 if (visBuf) {
                     systems_->setVisibilityBuffer(std::move(visBuf));

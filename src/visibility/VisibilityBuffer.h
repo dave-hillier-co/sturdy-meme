@@ -116,6 +116,8 @@ public:
         // Shared depth buffer from HDR pass (if null, creates own)
         VkImage sharedDepthImage = VK_NULL_HANDLE;
         VkImageView sharedDepthView = VK_NULL_HANDLE;
+        // Skip raster pipeline when shaderDrawParameters (gl_DrawID) unavailable
+        bool hasShaderDrawParameters = true;
     };
 
     static std::unique_ptr<VisibilityBuffer> create(const InitInfo& info);

@@ -7,6 +7,7 @@
 #include <SDL3/SDL_log.h>
 #include <cstdarg>
 #include <mutex>
+#include <unordered_set>
 
 // Callback for traces
 static void TraceImpl(const char* inFMT, ...) {
@@ -19,13 +20,27 @@ static void TraceImpl(const char* inFMT, ...) {
 }
 
 #ifdef JPH_ENABLE_ASSERTS
-// Callback for asserts — log and continue, don't break into debugger.
-// Jolt debug assertions (e.g., NaN velocity in ClampAngularVelocity) would
-// otherwise call __builtin_trap() and kill the process. We log the issue
-// and let Jolt continue; broken bodies are detected and cleaned up per-frame.
+// Callback for asserts — log once per unique site and continue.
+// Jolt debug assertions (e.g., NaN velocity, GJK precision) would
+// otherwise call __builtin_trap() and kill the process.
 static bool AssertFailedImpl(const char* inExpression, const char* inMessage, const char* inFile, uint32_t inLine) {
+    // Rate-limit: only log the first occurrence of each unique (file, line) pair
+    static std::mutex logMutex;
+    static std::unordered_set<uint64_t> seenAsserts;
+
+    uint64_t key = (static_cast<uint64_t>(inLine) << 32) ^
+                   std::hash<const char*>{}(inFile);
+
+    {
+        std::lock_guard<std::mutex> lock(logMutex);
+        if (!seenAsserts.insert(key).second) {
+            return false; // Already logged this assert, skip silently
+        }
+    }
+
     SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
-                "Jolt Assert (non-fatal): %s:%u: (%s) %s", inFile, inLine, inExpression, inMessage ? inMessage : "");
+                "Jolt Assert (non-fatal, logged once): %s:%u: (%s) %s",
+                inFile, inLine, inExpression, inMessage ? inMessage : "");
     return false; // false = don't trigger JPH_BREAKPOINT, continue execution
 }
 #endif

@@ -157,11 +157,17 @@ bool ArticulatedBody::create(PhysicsWorld& physics, const ArticulatedBodyConfig&
         bodySettings.mFriction = 0.8f;
         bodySettings.mRestitution = 0.0f;
         bodySettings.mOverrideMassProperties = JPH::EOverrideMassProperties::CalculateInertia;
-        bodySettings.mMassPropertiesOverride.mMass = part.mass;
+        bodySettings.mMassPropertiesOverride.mMass = std::max(part.mass, 2.0f);
 
-        // Higher damping prevents velocity explosion from constraint forces
-        bodySettings.mLinearDamping = 0.3f;
-        bodySettings.mAngularDamping = 0.5f;
+        // High damping prevents velocity explosion from constraint forces during impact
+        bodySettings.mLinearDamping = 0.5f;
+        bodySettings.mAngularDamping = 0.9f;
+
+        // More solver iterations for the constraint chain (default is 10 vel / 2 pos).
+        // Ragdoll chains are 6+ bodies deep; insufficient iterations cause the solver
+        // to diverge on ground impact, producing NaN angular velocities.
+        bodySettings.mNumVelocityStepsOverride = 20;
+        bodySettings.mNumPositionStepsOverride = 6;
 
         // Self-collision filtering: same group, unique sub-group per part
         bodySettings.mCollisionGroup = JPH::CollisionGroup(
@@ -230,8 +236,8 @@ bool ArticulatedBody::create(PhysicsWorld& physics, const ArticulatedBodyConfig&
         settings.mTwistMinAngle = part.twistMinAngle;
         settings.mTwistMaxAngle = part.twistMaxAngle;
 
-        // Higher friction torque prevents jittery ragdoll and dampens joint oscillation
-        settings.mMaxFrictionTorque = 5.0f;
+        // High friction torque prevents jittery ragdoll and dampens joint oscillation
+        settings.mMaxFrictionTorque = 10.0f;
 
         JPH::TwoBodyConstraint* constraint = static_cast<JPH::TwoBodyConstraint*>(
             settings.Create(*parentBody, *childBody)

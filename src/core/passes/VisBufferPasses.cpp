@@ -372,10 +372,8 @@ static void executeResolvePass(FrameGraph::RenderContext& ctx, RendererSystems& 
             resolveBuffers.textureArraySampler = visBuf->getTextureArraySampler();
         }
 
-        // HDR images for depth comparison and layout transitions
+        // HDR color image for layout transitions (resolve writes to it via imageStore)
         resolveBuffers.hdrColorImage = renderCtx->resources.hdrColorImage;
-        resolveBuffers.hdrDepthView = renderCtx->resources.hdrDepthView;
-        resolveBuffers.hdrDepthImage = renderCtx->resources.hdrDepthImage;
 
         // Dynamic light buffer for multi-light resolve
         const auto& lightBuffers = systems.globalBuffers().getLightBuffers();

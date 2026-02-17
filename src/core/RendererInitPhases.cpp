@@ -615,12 +615,29 @@ std::vector<Loading::SystemInitTask> Renderer::buildInitTasks(const InitContext&
                 }
             }
 
-            // Visibility buffer system
+            // Visibility buffer system (shares depth with HDR pass)
             {
-                auto visBuf = VisibilityBuffer::create(*ctxPtr, vulkanContext_->getDepthFormat());
+                VisibilityBuffer::InitInfo vbInfo{};
+                vbInfo.device = ctxPtr->device;
+                vbInfo.allocator = ctxPtr->allocator;
+                vbInfo.descriptorPool = ctxPtr->descriptorPool;
+                vbInfo.extent = ctxPtr->extent;
+                vbInfo.shaderPath = ctxPtr->shaderPath;
+                vbInfo.framesInFlight = ctxPtr->framesInFlight;
+                vbInfo.depthFormat = vulkanContext_->getDepthFormat();
+                vbInfo.raiiDevice = ctxPtr->raiiDevice;
+                vbInfo.graphicsQueue = ctxPtr->graphicsQueue;
+                vbInfo.commandPool = ctxPtr->commandPool;
+                // Share HDR depth buffer — V-buffer raster writes depth first,
+                // HDR pass loads it (loadOp=eLoad) to preserve V-buffer depth writes
+                vbInfo.sharedDepthImage = systems_->postProcess().getHDRDepthImage();
+                vbInfo.sharedDepthView = systems_->postProcess().getHDRDepthView();
+                auto visBuf = VisibilityBuffer::create(vbInfo);
                 if (visBuf) {
                     systems_->setVisibilityBuffer(std::move(visBuf));
-                    SDL_Log("VisibilityBuffer: Initialized for GPU-driven material resolve");
+                    // Tell PostProcessSystem to load depth (not clear) in HDR pass
+                    systems_->postProcess().setDepthLoadOnHDRPass(true);
+                    SDL_Log("VisibilityBuffer: Initialized with shared HDR depth buffer");
                 }
             }
 

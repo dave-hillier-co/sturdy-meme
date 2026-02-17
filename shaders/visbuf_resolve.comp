@@ -85,9 +85,6 @@ layout(std140, binding = BINDING_VISBUF_UNIFORMS) uniform ResolveUniforms {
 // Texture array for material textures (UNORM - sRGB sources linearized during blit)
 layout(binding = BINDING_VISBUF_TEXTURE_ARRAY) uniform sampler2DArray materialTextures;
 
-// HDR pass depth buffer for depth comparison (prevents overwriting closer HDR-pass objects)
-layout(binding = BINDING_VISBUF_HDR_DEPTH) uniform sampler2D hdrDepthBuffer;
-
 // Dynamic light buffer for multiple point/spot lights
 #define DYNAMIC_LIGHT_BUFFER_BINDING BINDING_VISBUF_LIGHT_BUFFER
 #include "dynamic_lights_common.glsl"
@@ -165,16 +162,9 @@ void main() {
     uint instanceId = packed.r - 1u;
     uint triangleId = packed.g - 1u;
 
-    // Depth comparison: only write if V-buffer object is in front of HDR-pass content
-    // (terrain, trees, water, etc.). Scene objects are NOT rendered in HDR when V-buffer
-    // is active, so this only compares against environment geometry.
-    vec2 depthUV = (vec2(pixelCoord) + 0.5) * resolveUniforms.screenParams.zw;
-    float visBufDepth = texelFetch(depthBuffer, pixelCoord, 0).r;
-    float hdrDepth = texture(hdrDepthBuffer, depthUV).r;
-
-    if (visBufDepth > hdrDepth) {
-        return;
-    }
+    // No depth comparison needed — V-buffer and HDR pass share the same depth buffer.
+    // Visibility between V-buffer objects and HDR objects (terrain, trees, water)
+    // is resolved by hardware depth testing during rasterization.
 
     // Fetch triangle indices
     uint i0 = indices[triangleId * 3u + 0u];

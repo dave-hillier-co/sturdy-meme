@@ -113,6 +113,9 @@ public:
         const vk::raii::Device* raiiDevice = nullptr;
         VkQueue graphicsQueue = VK_NULL_HANDLE;
         VkCommandPool commandPool = VK_NULL_HANDLE;
+        // Shared depth buffer from HDR pass (if null, creates own)
+        VkImage sharedDepthImage = VK_NULL_HANDLE;
+        VkImageView sharedDepthView = VK_NULL_HANDLE;
     };
 
     static std::unique_ptr<VisibilityBuffer> create(const InitInfo& info);
@@ -172,8 +175,6 @@ public:
         VkImageView textureArrayView = VK_NULL_HANDLE; // sampler2DArray
         VkSampler textureArraySampler = VK_NULL_HANDLE;
         VkImage hdrColorImage = VK_NULL_HANDLE;       // HDR color image (for layout barriers)
-        VkImageView hdrDepthView = VK_NULL_HANDLE;    // HDR pass depth for depth comparison
-        VkImage hdrDepthImage = VK_NULL_HANDLE;       // HDR depth image (for layout barriers)
         VkBuffer lightBuffer = VK_NULL_HANDLE;        // Dynamic light SSBO
         VkDeviceSize lightBufferSize = 0;
     };
@@ -303,8 +304,9 @@ private:
     ManagedImage visibilityImage_;
     VkImageView visibilityView_ = VK_NULL_HANDLE;
 
-    // Depth target (shared or owned)
-    ManagedImage depthImage_;
+    // Depth target (shared from HDR pass, or owned)
+    bool sharedDepth_ = false;        // true = depth image owned by PostProcessSystem
+    ManagedImage depthImage_;          // only used when !sharedDepth_
     VkImageView depthView_ = VK_NULL_HANDLE;
 
     // Render pass + framebuffer

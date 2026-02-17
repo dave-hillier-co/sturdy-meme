@@ -87,12 +87,15 @@ bool FrameGraphBuilder::build(
     }
 
     // V-buffer raster pass depends on Compute (needs UBO updated with view/proj)
+    // HDR depends on V-buffer raster (shared depth buffer — V-buffer writes depth first,
+    // HDR loads it with loadOp=eLoad to preserve V-buffer depth writes)
     if (visBufferIds.raster != FrameGraph::INVALID_PASS) {
         frameGraph.addDependency(computeIds.compute, visBufferIds.raster);
+        frameGraph.addDependency(visBufferIds.raster, hdr);
     }
 
-    // V-buffer resolve depends on raster pass (needs V-buffer populated)
-    // and HDR pass (resolve overlays onto the HDR target)
+    // V-buffer resolve depends on both raster (needs V-buffer populated)
+    // and HDR (resolve writes resolved materials into HDR color via imageStore)
     if (visBufferIds.resolve != FrameGraph::INVALID_PASS) {
         if (visBufferIds.raster != FrameGraph::INVALID_PASS) {
             frameGraph.addDependency(visBufferIds.raster, visBufferIds.resolve);

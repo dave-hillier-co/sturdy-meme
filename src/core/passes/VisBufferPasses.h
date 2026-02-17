@@ -22,6 +22,7 @@ class RendererSystems;
 namespace VisBufferPasses {
 
 struct PassIds {
+    FrameGraph::PassId cull = FrameGraph::INVALID_PASS;
     FrameGraph::PassId raster = FrameGraph::INVALID_PASS;
     FrameGraph::PassId resolve = FrameGraph::INVALID_PASS;
 };

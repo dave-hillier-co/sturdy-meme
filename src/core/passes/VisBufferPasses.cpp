@@ -13,6 +13,7 @@
 #include "Mesh.h"
 #include "MaterialRegistry.h"
 #include "MeshClusterBuilder.h"
+#include "TwoPassCuller.h"
 
 #include <algorithm>
 #include <unordered_set>
@@ -158,6 +159,63 @@ static bool buildClusterState(RendererSystems& systems) {
 // Raster pass: Draw scene objects into the V-buffer
 // ============================================================================
 
+// ============================================================================
+// Cull pass: Run TwoPassCuller compute to produce indirect draw commands
+// ============================================================================
+
+static void executeCullPass(FrameGraph::RenderContext& ctx, RendererSystems& systems) {
+    RenderContext* renderCtx = static_cast<RenderContext*>(ctx.userData);
+    if (!renderCtx) return;
+
+    auto* culler = systems.twoPassCuller();
+    if (!culler || !culler->hasDescriptorSets()) return;
+
+    VkCommandBuffer cmd = renderCtx->cmd;
+    uint32_t frameIndex = renderCtx->frameIndex;
+
+    auto* clusterBuf = systems.gpuClusterBuffer();
+    if (!clusterBuf) return;
+
+    systems.profiler().beginGpuZone(cmd, "VisBufferCull");
+
+    // Update culling uniforms
+    glm::vec4 frustumPlanes[6];
+    // Extract frustum planes from view-projection matrix
+    glm::mat4 vp = renderCtx->frame.projection * renderCtx->frame.view;
+    for (int i = 0; i < 3; ++i) {
+        frustumPlanes[i * 2 + 0] = glm::vec4(
+            vp[0][3] + vp[0][i], vp[1][3] + vp[1][i],
+            vp[2][3] + vp[2][i], vp[3][3] + vp[3][i]);
+        frustumPlanes[i * 2 + 1] = glm::vec4(
+            vp[0][3] - vp[0][i], vp[1][3] - vp[1][i],
+            vp[2][3] - vp[2][i], vp[3][3] - vp[3][i]);
+    }
+    // Normalize planes
+    for (int i = 0; i < 6; ++i) {
+        float len = glm::length(glm::vec3(frustumPlanes[i]));
+        if (len > 0.0f) frustumPlanes[i] /= len;
+    }
+
+    uint32_t instanceCount = systems.hasGPUSceneBuffer()
+        ? systems.gpuSceneBuffer().getObjectCount() : 0;
+
+    culler->updateUniforms(frameIndex,
+        renderCtx->frame.view, renderCtx->frame.projection,
+        renderCtx->frame.cameraPosition,
+        frustumPlanes,
+        clusterBuf->getTotalClusters(), instanceCount,
+        renderCtx->frame.nearPlane, renderCtx->frame.farPlane, 0);
+
+    // Run pass 1 (frustum cull previous frame's visible clusters)
+    culler->recordPass1(cmd, frameIndex);
+
+    systems.profiler().endGpuZone(cmd, "VisBufferCull");
+}
+
+// ============================================================================
+// Raster pass: GPU-driven indirect draws from TwoPassCuller output
+// ============================================================================
+
 static void executeRasterPass(FrameGraph::RenderContext& ctx, RendererSystems& systems) {
     RenderContext* renderCtx = static_cast<RenderContext*>(ctx.userData);
     if (!renderCtx) return;
@@ -185,14 +243,57 @@ static void executeRasterPass(FrameGraph::RenderContext& ctx, RendererSystems& s
         }
     }
 
-    // Lazily create raster descriptor sets
+    // Lazily wire TwoPassCuller with external buffers
+    auto* culler = systems.twoPassCuller();
+    auto* clusterBuf = systems.gpuClusterBuffer();
+    if (culler && clusterBuf && !culler->hasDescriptorSets() && systems.hasGPUSceneBuffer()) {
+        auto& sceneBuffer = systems.gpuSceneBuffer();
+        uint32_t objCount = std::max(sceneBuffer.getObjectCount(), 1u);
+        std::vector<VkBuffer> instanceBuffers;
+        uint32_t framesInFlight = systems.globalBuffers().getFramesInFlight();
+        for (uint32_t fi = 0; fi < framesInFlight; ++fi) {
+            instanceBuffers.push_back(sceneBuffer.getInstanceBuffer(fi));
+        }
+        culler->setExternalBuffers(
+            clusterBuf->getClusterBuffer(),
+            clusterBuf->getTotalClusters() * sizeof(MeshCluster),
+            instanceBuffers,
+            objCount * sizeof(GPUSceneInstanceData));
+    }
+
+    // Lazily create raster descriptor sets (with DrawData and Instance SSBOs)
     if (!visBuf->hasRasterDescriptorSets()) {
         const auto& uboBuffers = systems.globalBuffers().getUniformBuffers();
         VkDeviceSize uboSize = systems.globalBuffers().getUniformBufferSize();
-        visBuf->createRasterDescriptorSets(uboBuffers, uboSize);
+
+        std::vector<VkBuffer> drawDataBuffers;
+        VkDeviceSize drawDataSize = 0;
+        std::vector<VkBuffer> instanceBuffers;
+        VkDeviceSize instanceSize = 0;
+
+        if (culler && systems.hasGPUSceneBuffer()) {
+            auto& sceneBuffer = systems.gpuSceneBuffer();
+            uint32_t objCount = std::max(sceneBuffer.getObjectCount(), 1u);
+            drawDataSize = culler->getDrawDataBufferSize();
+            instanceSize = objCount * sizeof(GPUSceneInstanceData);
+
+            uint32_t framesInFlight = systems.globalBuffers().getFramesInFlight();
+            for (uint32_t fi = 0; fi < framesInFlight; ++fi) {
+                drawDataBuffers.push_back(culler->getPass1DrawDataBuffer(fi));
+                instanceBuffers.push_back(sceneBuffer.getInstanceBuffer(fi));
+            }
+        }
+
+        visBuf->createRasterDescriptorSets(uboBuffers, uboSize,
+            drawDataBuffers, drawDataSize, instanceBuffers, instanceSize);
     }
 
     if (!visBuf->hasRasterDescriptorSets() || !visBuf->hasGlobalBuffers()) {
+        systems.profiler().endGpuZone(cmd, "VisBufferRaster");
+        return;
+    }
+
+    if (!clusterBuf) {
         systems.profiler().endGpuZone(cmd, "VisBufferRaster");
         return;
     }
@@ -231,90 +332,25 @@ static void executeRasterPass(FrameGraph::RenderContext& ctx, RendererSystems& s
     vk::Rect2D scissor{{0, 0}, {extent.width, extent.height}};
     vkCmd.setScissor(0, scissor);
 
-    // Bind raster descriptor set (UBO + placeholder texture)
+    // Bind raster descriptor set (UBO + texture + DrawData + Instances)
     VkDescriptorSet rasterDescSet = visBuf->getRasterDescriptorSet(frameIndex);
     vkCmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics,
                               vk::PipelineLayout(visBuf->getRasterPipelineLayout()),
                               0, vk::DescriptorSet(rasterDescSet), {});
 
-    // Iterate scene objects
-    const auto& sceneObjects = systems.scene().getRenderables();
-    SceneBuilder& sceneBuilder = systems.scene().getSceneBuilder();
-    size_t playerIndex = sceneBuilder.getPlayerObjectIndex();
-    bool hasCharacter = sceneBuilder.hasCharacter();
-    const NPCSimulation* npcSim = sceneBuilder.getNPCSimulation();
-
-    uint32_t instanceId = 0;
-
-    // Cluster-based raster: bind GPUClusterBuffer vertex/index once,
-    // then draw each cluster per object with push constants.
-    auto* clusterBuf = systems.gpuClusterBuffer();
-    if (!clusterBuf) {
-        vkCmdEndRenderPass(cmd);
-        systems.profiler().endGpuZone(cmd, "VisBufferRaster");
-        return;
-    }
-
+    // Bind GPUClusterBuffer vertex/index buffers
     vk::Buffer vertexBuffers[] = {vk::Buffer(clusterBuf->getVertexBuffer())};
     vk::DeviceSize offsets[] = {0};
     vkCmd.bindVertexBuffers(0, vertexBuffers, offsets);
     vkCmd.bindIndexBuffer(vk::Buffer(clusterBuf->getIndexBuffer()), 0, vk::IndexType::eUint32);
 
-    for (size_t i = 0; i < sceneObjects.size(); ++i) {
-        if (hasCharacter && i == playerIndex) continue;
-
-        if (npcSim) {
-            bool isNPC = false;
-            const auto& npcData = npcSim->getData();
-            for (size_t npcIdx = 0; npcIdx < npcData.count(); ++npcIdx) {
-                if (i == npcData.renderableIndices[npcIdx]) {
-                    isNPC = true;
-                    break;
-                }
-            }
-            if (isNPC) continue;
-        }
-
-        const auto& obj = sceneObjects[i];
-        if (!obj.mesh) {
-            instanceId++;
-            continue;
-        }
-
-        auto it = s_clusterState.clusteredMeshes.find(obj.mesh);
-        if (it == s_clusterState.clusteredMeshes.end()) {
-            instanceId++;
-            continue;
-        }
-
-        const ClusteredMesh& clustered = it->second;
-        const VisBufMeshInfo* meshInfo = visBuf->getMeshInfo(obj.mesh);
-        if (!meshInfo) {
-            instanceId++;
-            continue;
-        }
-
-        // Draw each leaf cluster for this instance
-        for (const auto& cluster : clustered.clusters) {
-            if (cluster.lodLevel != 0) continue;
-
-            VisBufPushConstants push{};
-            push.model = obj.transform;
-            push.instanceId = instanceId;
-            push.triangleOffset = meshInfo->triangleOffset + cluster.firstIndex / 3;
-            push.alphaTestThreshold = 0.0f;
-
-            vkCmd.pushConstants<VisBufPushConstants>(
-                vk::PipelineLayout(visBuf->getRasterPipelineLayout()),
-                vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
-                0, push);
-
-            vkCmd.drawIndexed(cluster.indexCount, 1,
-                              meshInfo->globalIndexOffset + cluster.firstIndex,
-                              static_cast<int32_t>(meshInfo->globalVertexOffset), 0);
-        }
-
-        instanceId++;
+    // GPU-driven indirect draw from TwoPassCuller pass 1 output
+    if (culler && culler->hasDescriptorSets()) {
+        vkCmdDrawIndexedIndirectCount(cmd,
+            culler->getPass1IndirectBuffer(frameIndex), 0,
+            culler->getPass1DrawCountBuffer(frameIndex), 0,
+            culler->getMaxDrawCommands(),
+            sizeof(VkDrawIndexedIndirectCommand));
     }
 
     vkCmdEndRenderPass(cmd);
@@ -413,6 +449,19 @@ PassIds addPasses(FrameGraph& graph, RendererSystems& systems) {
     // Only add if visibility buffer system exists
     if (!systems.hasVisibilityBuffer()) {
         return ids;
+    }
+
+    // Cull pass: GPU compute culling to produce indirect draw commands
+    if (systems.hasTwoPassCuller()) {
+        ids.cull = graph.addPass({
+            .name = "VisBufferCull",
+            .execute = [&systems](FrameGraph::RenderContext& ctx) {
+                executeCullPass(ctx, systems);
+            },
+            .canUseSecondary = false,
+            .mainThreadOnly = true,
+            .priority = 32  // Before raster (31)
+        });
     }
 
     // Raster pass: draw scene objects into V-buffer

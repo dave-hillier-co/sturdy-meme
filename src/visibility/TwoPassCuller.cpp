@@ -1,5 +1,6 @@
 #include "TwoPassCuller.h"
 #include "ShaderLoader.h"
+#include "ImageBuilder.h"
 #include "shaders/bindings.h"
 
 #include <SDL3/SDL_log.h>
@@ -106,6 +107,18 @@ bool TwoPassCuller::createBuffers() {
     ok = builder.build(pass2IndirectBuffers_);
     if (!ok) return false;
 
+    // Per-draw data buffers (parallel to indirect commands, read by raster shader via gl_DrawID)
+    // Each entry: { uint instanceId, uint triangleOffset } = 8 bytes
+    VkDeviceSize drawDataSize = maxDrawCommands_ * 2 * sizeof(uint32_t);
+    ok = builder
+        .setSize(drawDataSize)
+        .setUsage(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT)
+        .build(pass1DrawDataBuffers_);
+    if (!ok) return false;
+
+    ok = builder.build(pass2DrawDataBuffers_);
+    if (!ok) return false;
+
     // Draw count buffers (atomic counter, GPU-written)
     ok = builder
         .setSize(countSize)
@@ -203,8 +216,10 @@ bool TwoPassCuller::createBuffers() {
 void TwoPassCuller::destroyBuffers() {
     BufferUtils::destroyBuffers(allocator_, pass1IndirectBuffers_);
     BufferUtils::destroyBuffers(allocator_, pass1DrawCountBuffers_);
+    BufferUtils::destroyBuffers(allocator_, pass1DrawDataBuffers_);
     BufferUtils::destroyBuffers(allocator_, pass2IndirectBuffers_);
     BufferUtils::destroyBuffers(allocator_, pass2DrawCountBuffers_);
+    BufferUtils::destroyBuffers(allocator_, pass2DrawDataBuffers_);
     BufferUtils::destroyBuffers(allocator_, visibleClusterBuffers_);
     BufferUtils::destroyBuffers(allocator_, visibleCountBuffers_);
     BufferUtils::destroyBuffers(allocator_, prevVisibleClusterBuffers_);
@@ -226,8 +241,8 @@ void TwoPassCuller::destroyBuffers() {
 bool TwoPassCuller::createPipeline() {
     if (!raiiDevice_) return false;
 
-    // Descriptor set layout matching cluster_cull.comp bindings
-    std::array<vk::DescriptorSetLayoutBinding, 10> bindings;
+    // Descriptor set layout matching cluster_cull.comp bindings (0-10)
+    std::array<vk::DescriptorSetLayoutBinding, 11> bindings;
     bindings[0] = vk::DescriptorSetLayoutBinding{}.setBinding(0)
         .setDescriptorType(vk::DescriptorType::eStorageBuffer).setDescriptorCount(1)
         .setStageFlags(vk::ShaderStageFlagBits::eCompute);  // clusters
@@ -258,6 +273,9 @@ bool TwoPassCuller::createPipeline() {
     bindings[9] = vk::DescriptorSetLayoutBinding{}.setBinding(9)
         .setDescriptorType(vk::DescriptorType::eStorageBuffer).setDescriptorCount(1)
         .setStageFlags(vk::ShaderStageFlagBits::eCompute);  // prev visible count
+    bindings[10] = vk::DescriptorSetLayoutBinding{}.setBinding(BINDING_CLUSTER_CULL_DRAW_DATA)
+        .setDescriptorType(vk::DescriptorType::eStorageBuffer).setDescriptorCount(1)
+        .setStageFlags(vk::ShaderStageFlagBits::eCompute);  // per-draw data output
 
     auto layoutInfo = vk::DescriptorSetLayoutCreateInfo{}.setBindings(bindings);
 
@@ -538,8 +556,195 @@ VkBuffer TwoPassCuller::getSelectedCountBuffer(uint32_t frameIndex) const {
     return selectedCountBuffers_.buffers[frameIndex];
 }
 
+void TwoPassCuller::setExternalBuffers(VkBuffer clusterBuffer, VkDeviceSize clusterSize,
+                                        const std::vector<VkBuffer>& instanceBuffers,
+                                        VkDeviceSize instanceSize) {
+    externalClusterBuffer_ = clusterBuffer;
+    externalClusterSize_ = clusterSize;
+    externalInstanceBuffers_ = instanceBuffers;
+    externalInstanceSize_ = instanceSize;
+
+    // (Re)create descriptor sets now that we have all buffers
+    destroyDescriptorSets();
+    createDescriptorSets();
+}
+
 bool TwoPassCuller::createDescriptorSets() {
-    // Descriptor sets will be allocated and updated per-frame when needed
+    if (!descSetLayout_ || externalClusterBuffer_ == VK_NULL_HANDLE ||
+        externalInstanceBuffers_.empty()) {
+        return true;  // Not ready yet — will be called from setExternalBuffers
+    }
+
+    VkDescriptorSetLayout rawLayout = **descSetLayout_;
+    VkDeviceSize drawDataSize = maxDrawCommands_ * 2 * sizeof(uint32_t);
+
+    // Allocate pass 1 and pass 2 descriptor sets (one per frame)
+    pass1DescSets_ = descriptorPool_->allocate(rawLayout, framesInFlight_);
+    pass2DescSets_ = descriptorPool_->allocate(rawLayout, framesInFlight_);
+
+    if (pass1DescSets_.size() != framesInFlight_ || pass2DescSets_.size() != framesInFlight_) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "TwoPassCuller: Failed to allocate cull descriptor sets");
+        return false;
+    }
+
+    // Create Hi-Z sampler (nearest, clamp) for pass 2
+    if (!hiZSampler_) {
+        auto samplerInfo = vk::SamplerCreateInfo{}
+            .setMagFilter(vk::Filter::eNearest)
+            .setMinFilter(vk::Filter::eNearest)
+            .setMipmapMode(vk::SamplerMipmapMode::eNearest)
+            .setAddressModeU(vk::SamplerAddressMode::eClampToEdge)
+            .setAddressModeV(vk::SamplerAddressMode::eClampToEdge)
+            .setMaxLod(16.0f);
+        hiZSampler_.emplace(*raiiDevice_, samplerInfo);
+    }
+
+    // Create 1x1 placeholder for Hi-Z in pass 1 (not used but must be valid)
+    if (placeholderHiZView_ == VK_NULL_HANDLE) {
+        bool built = ImageBuilder(allocator_)
+            .setExtent(1, 1)
+            .setFormat(VK_FORMAT_R32_SFLOAT)
+            .setUsage(VK_IMAGE_USAGE_SAMPLED_BIT)
+            .setGpuOnly()
+            .build(device_, placeholderHiZImage_, placeholderHiZView_, VK_IMAGE_ASPECT_COLOR_BIT);
+        if (!built) {
+            SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "TwoPassCuller: Failed to create placeholder Hi-Z image");
+        }
+    }
+
+    VkSampler rawHiZSampler = hiZSampler_ ? static_cast<VkSampler>(**hiZSampler_) : VK_NULL_HANDLE;
+
+    for (uint32_t i = 0; i < framesInFlight_; ++i) {
+        // Common buffer infos shared between pass 1 and pass 2
+        VkDescriptorBufferInfo clusterInfo{externalClusterBuffer_, 0, externalClusterSize_};
+        VkDescriptorBufferInfo instanceInfo{
+            (i < externalInstanceBuffers_.size()) ? externalInstanceBuffers_[i] : externalInstanceBuffers_[0],
+            0, externalInstanceSize_};
+        VkDescriptorBufferInfo uniformInfo{uniformBuffers_.buffers[i], 0, sizeof(ClusterCullUniforms)};
+        VkDescriptorBufferInfo prevVisClusterInfo{prevVisibleClusterBuffers_.buffers[i], 0, maxClusters_ * sizeof(uint32_t)};
+        VkDescriptorBufferInfo prevVisCountInfo{prevVisibleCountBuffers_.buffers[i], 0, sizeof(uint32_t)};
+
+        // Placeholder Hi-Z image for pass 1 (not used, enableHiZ=0)
+        VkDescriptorImageInfo hiZInfo{rawHiZSampler, placeholderHiZView_, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+
+        // Pass 1 descriptor set
+        {
+            VkDescriptorBufferInfo indirectInfo{pass1IndirectBuffers_.buffers[i], 0, maxDrawCommands_ * sizeof(VkDrawIndexedIndirectCommand)};
+            VkDescriptorBufferInfo drawCountInfo{pass1DrawCountBuffers_.buffers[i], 0, sizeof(uint32_t)};
+            VkDescriptorBufferInfo visClusterInfo{visibleClusterBuffers_.buffers[i], 0, maxClusters_ * sizeof(uint32_t)};
+            VkDescriptorBufferInfo visCountInfo{visibleCountBuffers_.buffers[i], 0, sizeof(uint32_t)};
+            VkDescriptorBufferInfo drawDataInfo{pass1DrawDataBuffers_.buffers[i], 0, drawDataSize};
+
+            std::array<VkWriteDescriptorSet, 11> writes{};
+            for (auto& w : writes) w.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+
+            writes[0].dstSet = pass1DescSets_[i]; writes[0].dstBinding = 0;
+            writes[0].descriptorCount = 1; writes[0].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+            writes[0].pBufferInfo = &clusterInfo;
+
+            writes[1].dstSet = pass1DescSets_[i]; writes[1].dstBinding = 1;
+            writes[1].descriptorCount = 1; writes[1].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+            writes[1].pBufferInfo = &instanceInfo;
+
+            writes[2].dstSet = pass1DescSets_[i]; writes[2].dstBinding = 2;
+            writes[2].descriptorCount = 1; writes[2].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+            writes[2].pBufferInfo = &indirectInfo;
+
+            writes[3].dstSet = pass1DescSets_[i]; writes[3].dstBinding = 3;
+            writes[3].descriptorCount = 1; writes[3].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+            writes[3].pBufferInfo = &drawCountInfo;
+
+            writes[4].dstSet = pass1DescSets_[i]; writes[4].dstBinding = 4;
+            writes[4].descriptorCount = 1; writes[4].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+            writes[4].pBufferInfo = &visClusterInfo;
+
+            writes[5].dstSet = pass1DescSets_[i]; writes[5].dstBinding = 5;
+            writes[5].descriptorCount = 1; writes[5].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+            writes[5].pBufferInfo = &visCountInfo;
+
+            writes[6].dstSet = pass1DescSets_[i]; writes[6].dstBinding = 6;
+            writes[6].descriptorCount = 1; writes[6].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+            writes[6].pBufferInfo = &uniformInfo;
+
+            writes[7].dstSet = pass1DescSets_[i]; writes[7].dstBinding = 7;
+            writes[7].descriptorCount = 1; writes[7].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+            writes[7].pImageInfo = &hiZInfo;
+
+            writes[8].dstSet = pass1DescSets_[i]; writes[8].dstBinding = 8;
+            writes[8].descriptorCount = 1; writes[8].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+            writes[8].pBufferInfo = &prevVisClusterInfo;
+
+            writes[9].dstSet = pass1DescSets_[i]; writes[9].dstBinding = 9;
+            writes[9].descriptorCount = 1; writes[9].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+            writes[9].pBufferInfo = &prevVisCountInfo;
+
+            writes[10].dstSet = pass1DescSets_[i]; writes[10].dstBinding = BINDING_CLUSTER_CULL_DRAW_DATA;
+            writes[10].descriptorCount = 1; writes[10].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+            writes[10].pBufferInfo = &drawDataInfo;
+
+            vkUpdateDescriptorSets(device_, static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
+        }
+
+        // Pass 2 descriptor set (same layout, different output buffers, Hi-Z enabled)
+        {
+            VkDescriptorBufferInfo indirectInfo{pass2IndirectBuffers_.buffers[i], 0, maxDrawCommands_ * sizeof(VkDrawIndexedIndirectCommand)};
+            VkDescriptorBufferInfo drawCountInfo{pass2DrawCountBuffers_.buffers[i], 0, sizeof(uint32_t)};
+            VkDescriptorBufferInfo visClusterInfo{visibleClusterBuffers_.buffers[i], 0, maxClusters_ * sizeof(uint32_t)};
+            VkDescriptorBufferInfo visCountInfo{visibleCountBuffers_.buffers[i], 0, sizeof(uint32_t)};
+            VkDescriptorBufferInfo drawDataInfo{pass2DrawDataBuffers_.buffers[i], 0, drawDataSize};
+
+            std::array<VkWriteDescriptorSet, 11> writes{};
+            for (auto& w : writes) w.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+
+            writes[0].dstSet = pass2DescSets_[i]; writes[0].dstBinding = 0;
+            writes[0].descriptorCount = 1; writes[0].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+            writes[0].pBufferInfo = &clusterInfo;
+
+            writes[1].dstSet = pass2DescSets_[i]; writes[1].dstBinding = 1;
+            writes[1].descriptorCount = 1; writes[1].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+            writes[1].pBufferInfo = &instanceInfo;
+
+            writes[2].dstSet = pass2DescSets_[i]; writes[2].dstBinding = 2;
+            writes[2].descriptorCount = 1; writes[2].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+            writes[2].pBufferInfo = &indirectInfo;
+
+            writes[3].dstSet = pass2DescSets_[i]; writes[3].dstBinding = 3;
+            writes[3].descriptorCount = 1; writes[3].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+            writes[3].pBufferInfo = &drawCountInfo;
+
+            writes[4].dstSet = pass2DescSets_[i]; writes[4].dstBinding = 4;
+            writes[4].descriptorCount = 1; writes[4].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+            writes[4].pBufferInfo = &visClusterInfo;
+
+            writes[5].dstSet = pass2DescSets_[i]; writes[5].dstBinding = 5;
+            writes[5].descriptorCount = 1; writes[5].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+            writes[5].pBufferInfo = &visCountInfo;
+
+            writes[6].dstSet = pass2DescSets_[i]; writes[6].dstBinding = 6;
+            writes[6].descriptorCount = 1; writes[6].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+            writes[6].pBufferInfo = &uniformInfo;
+
+            writes[7].dstSet = pass2DescSets_[i]; writes[7].dstBinding = 7;
+            writes[7].descriptorCount = 1; writes[7].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+            writes[7].pImageInfo = &hiZInfo;  // Will be updated per-frame with real Hi-Z
+
+            writes[8].dstSet = pass2DescSets_[i]; writes[8].dstBinding = 8;
+            writes[8].descriptorCount = 1; writes[8].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+            writes[8].pBufferInfo = &prevVisClusterInfo;
+
+            writes[9].dstSet = pass2DescSets_[i]; writes[9].dstBinding = 9;
+            writes[9].descriptorCount = 1; writes[9].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+            writes[9].pBufferInfo = &prevVisCountInfo;
+
+            writes[10].dstSet = pass2DescSets_[i]; writes[10].dstBinding = BINDING_CLUSTER_CULL_DRAW_DATA;
+            writes[10].descriptorCount = 1; writes[10].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+            writes[10].pBufferInfo = &drawDataInfo;
+
+            vkUpdateDescriptorSets(device_, static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
+        }
+    }
+
+    SDL_Log("TwoPassCuller: Descriptor sets created (%u frames)", framesInFlight_);
     return true;
 }
 
@@ -548,6 +753,12 @@ void TwoPassCuller::destroyDescriptorSets() {
     pass2DescSets_.clear();
     lodSelectDescSetsAB_.clear();
     lodSelectDescSetsBA_.clear();
+    if (placeholderHiZView_ != VK_NULL_HANDLE) {
+        vkDestroyImageView(device_, placeholderHiZView_, nullptr);
+        placeholderHiZView_ = VK_NULL_HANDLE;
+    }
+    placeholderHiZImage_.reset();
+    hiZSampler_.reset();
 }
 
 // ============================================================================
@@ -599,27 +810,30 @@ void TwoPassCuller::recordPass1(VkCommandBuffer cmd, uint32_t frameIndex) {
         VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
         0, 1, &memBarrier, 0, nullptr, 0, nullptr);
 
-    // Bind pipeline and dispatch
+    // Bind pipeline and descriptor sets
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline_);
 
-    // Descriptor sets would be bound here (pass 1 set with passIndex=0)
-    // For now, the dispatch count is based on previous frame's visible count
+    if (frameIndex < pass1DescSets_.size()) {
+        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE,
+            pipelineLayout_, 0, 1, &pass1DescSets_[frameIndex], 0, nullptr);
+    }
+
     uint32_t workGroupSize = 64;
     uint32_t dispatchCount = (maxClusters_ + workGroupSize - 1) / workGroupSize;
     vkCmdDispatch(cmd, dispatchCount, 1, 1);
 
-    // Barrier: compute write -> indirect read
+    // Barrier: compute write -> indirect read + vertex shader read
     memBarrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
-    memBarrier.dstAccessMask = VK_ACCESS_INDIRECT_COMMAND_READ_BIT;
+    memBarrier.dstAccessMask = VK_ACCESS_INDIRECT_COMMAND_READ_BIT | VK_ACCESS_SHADER_READ_BIT;
 
     vkCmdPipelineBarrier(cmd,
         VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-        VK_PIPELINE_STAGE_DRAW_INDIRECT_BIT,
+        VK_PIPELINE_STAGE_DRAW_INDIRECT_BIT | VK_PIPELINE_STAGE_VERTEX_SHADER_BIT,
         0, 1, &memBarrier, 0, nullptr, 0, nullptr);
 }
 
 void TwoPassCuller::recordPass2(VkCommandBuffer cmd, uint32_t frameIndex, VkImageView hiZView) {
-    (void)hiZView;  // Will be used when descriptor sets are fully wired
+    (void)hiZView;  // TODO: update pass2 descriptor set binding 7 with real Hi-Z view
 
     // Clear pass 2 draw count
     vkCmdFillBuffer(cmd, pass2DrawCountBuffers_.buffers[frameIndex], 0, sizeof(uint32_t), 0);
@@ -636,18 +850,22 @@ void TwoPassCuller::recordPass2(VkCommandBuffer cmd, uint32_t frameIndex, VkImag
 
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline_);
 
-    // Descriptor sets for pass 2 (with Hi-Z and passIndex=1)
+    if (frameIndex < pass2DescSets_.size()) {
+        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE,
+            pipelineLayout_, 0, 1, &pass2DescSets_[frameIndex], 0, nullptr);
+    }
+
     uint32_t workGroupSize = 64;
     uint32_t dispatchCount = (maxClusters_ + workGroupSize - 1) / workGroupSize;
     vkCmdDispatch(cmd, dispatchCount, 1, 1);
 
-    // Barrier: compute -> indirect draw
+    // Barrier: compute -> indirect draw + vertex shader read
     memBarrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
-    memBarrier.dstAccessMask = VK_ACCESS_INDIRECT_COMMAND_READ_BIT;
+    memBarrier.dstAccessMask = VK_ACCESS_INDIRECT_COMMAND_READ_BIT | VK_ACCESS_SHADER_READ_BIT;
 
     vkCmdPipelineBarrier(cmd,
         VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-        VK_PIPELINE_STAGE_DRAW_INDIRECT_BIT,
+        VK_PIPELINE_STAGE_DRAW_INDIRECT_BIT | VK_PIPELINE_STAGE_VERTEX_SHADER_BIT,
         0, 1, &memBarrier, 0, nullptr, 0, nullptr);
 }
 
@@ -669,4 +887,16 @@ VkBuffer TwoPassCuller::getPass2IndirectBuffer(uint32_t frameIndex) const {
 
 VkBuffer TwoPassCuller::getPass2DrawCountBuffer(uint32_t frameIndex) const {
     return pass2DrawCountBuffers_.buffers[frameIndex];
+}
+
+VkBuffer TwoPassCuller::getPass1DrawDataBuffer(uint32_t frameIndex) const {
+    return pass1DrawDataBuffers_.buffers[frameIndex];
+}
+
+VkBuffer TwoPassCuller::getPass2DrawDataBuffer(uint32_t frameIndex) const {
+    return pass2DrawDataBuffers_.buffers[frameIndex];
+}
+
+VkDeviceSize TwoPassCuller::getDrawDataBufferSize() const {
+    return maxDrawCommands_ * 2 * sizeof(uint32_t);
 }

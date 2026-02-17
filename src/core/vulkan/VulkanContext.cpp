@@ -150,15 +150,22 @@ bool VulkanContext::selectPhysicalDevice() {
     VkPhysicalDeviceFeatures features{};
     features.samplerAnisotropy = VK_FALSE;
 
+    // Vulkan 1.1 features - shaderDrawParameters for gl_DrawID in GPU-driven rendering
+    VkPhysicalDeviceVulkan11Features vulkan11Features{};
+    vulkan11Features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES;
+    vulkan11Features.shaderDrawParameters = VK_TRUE;
+
     // Vulkan 1.2 features - timeline semaphores are core in 1.2
     VkPhysicalDeviceVulkan12Features vulkan12Features{};
     vulkan12Features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES;
     vulkan12Features.timelineSemaphore = VK_TRUE;  // Required for non-blocking GPU timeline queries
+    vulkan12Features.drawIndirectCount = VK_TRUE;  // Required for vkCmdDrawIndexedIndirectCount
 
     vkb::PhysicalDeviceSelector selector{vkbInstance};
     auto physRet = selector.set_minimum_version(1, 2)
         .set_surface(surface)
         .set_required_features(features)
+        .set_required_features_11(vulkan11Features)
         .set_required_features_12(vulkan12Features)
         .select();
 

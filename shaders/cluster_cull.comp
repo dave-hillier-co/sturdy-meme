@@ -109,6 +109,16 @@ layout(std430, binding = 9) readonly buffer PrevVisibleCountBuffer {
     uint prevVisibleCount;
 };
 
+// Per-draw data output (parallel to indirect commands, indexed by gl_DrawID in raster shader)
+struct DrawData {
+    uint instanceId;
+    uint triangleOffset;    // firstIndex / 3 (global triangle index for resolve)
+};
+
+layout(std430, binding = BINDING_CLUSTER_CULL_DRAW_DATA) writeonly buffer DrawDataBuffer {
+    DrawData drawData[];
+};
+
 void main() {
     uint threadIdx = gl_GlobalInvocationID.x;
 
@@ -190,7 +200,11 @@ void main() {
         commands[drawIdx].instanceCount = 1;
         commands[drawIdx].firstIndex = cluster.firstIndex;
         commands[drawIdx].vertexOffset = int(cluster.firstVertex);
-        commands[drawIdx].firstInstance = instanceIdx;
+        commands[drawIdx].firstInstance = 0;
+
+        // Per-draw data for raster shader (indexed by gl_DrawID)
+        drawData[drawIdx].instanceId = instanceIdx;
+        drawData[drawIdx].triangleOffset = cluster.firstIndex / 3u;
     }
 
     // Record as visible for next frame's pass 1

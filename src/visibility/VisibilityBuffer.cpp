@@ -301,10 +301,12 @@ void VisibilityBuffer::destroyFramebuffer() {
 // ============================================================================
 
 bool VisibilityBuffer::createRasterPipeline() {
-    // Create descriptor set layout for raster pass
-    // Binding 0: Main UBO (from main rendering set)
-    // Binding 1: Diffuse texture (for alpha testing)
-    std::array<vk::DescriptorSetLayoutBinding, 2> layoutBindings;
+    // Create descriptor set layout for raster pass (GPU-driven indirect draws)
+    // Binding 0: Main UBO (camera matrices)
+    // Binding 1: Diffuse texture (for alpha testing, placeholder for now)
+    // Binding 2: DrawData SSBO (per-draw instanceId + triangleOffset from TwoPassCuller)
+    // Binding 3: Instance SSBO (transforms from GPUSceneBuffer)
+    std::array<vk::DescriptorSetLayoutBinding, 4> layoutBindings;
     layoutBindings[0] = vk::DescriptorSetLayoutBinding{}
         .setBinding(BINDING_UBO)
         .setDescriptorType(vk::DescriptorType::eUniformBuffer)
@@ -317,6 +319,18 @@ bool VisibilityBuffer::createRasterPipeline() {
         .setDescriptorCount(1)
         .setStageFlags(vk::ShaderStageFlagBits::eFragment);
 
+    layoutBindings[2] = vk::DescriptorSetLayoutBinding{}
+        .setBinding(BINDING_VISBUF_RASTER_DRAW_DATA)
+        .setDescriptorType(vk::DescriptorType::eStorageBuffer)
+        .setDescriptorCount(1)
+        .setStageFlags(vk::ShaderStageFlagBits::eVertex);
+
+    layoutBindings[3] = vk::DescriptorSetLayoutBinding{}
+        .setBinding(BINDING_VISBUF_RASTER_INSTANCES)
+        .setDescriptorType(vk::DescriptorType::eStorageBuffer)
+        .setDescriptorCount(1)
+        .setStageFlags(vk::ShaderStageFlagBits::eVertex);
+
     auto layoutInfo = vk::DescriptorSetLayoutCreateInfo{}
         .setBindings(layoutBindings);
 
@@ -327,16 +341,10 @@ bool VisibilityBuffer::createRasterPipeline() {
         return false;
     }
 
-    // Push constants for per-object data
-    vk::PushConstantRange pushRange{};
-    pushRange.stageFlags = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment;
-    pushRange.offset = 0;
-    pushRange.size = sizeof(VisBufPushConstants);
-
+    // No push constants — all per-draw data comes via DrawData SSBO
     vk::DescriptorSetLayout vkRasterLayout(**rasterDescSetLayout_);
     auto pipelineLayoutInfo = vk::PipelineLayoutCreateInfo{}
-        .setSetLayouts(vkRasterLayout)
-        .setPushConstantRanges(pushRange);
+        .setSetLayouts(vkRasterLayout);
 
     vk::Device vkDevice(device_);
     rasterPipelineLayout_ = static_cast<VkPipelineLayout>(vkDevice.createPipelineLayout(pipelineLayoutInfo));
@@ -1249,7 +1257,11 @@ uint32_t VisibilityBuffer::getTextureLayerIndex(const Texture* tex) const {
 
 bool VisibilityBuffer::createRasterDescriptorSets(
     const std::vector<VkBuffer>& uboBuffers,
-    VkDeviceSize uboSize) {
+    VkDeviceSize uboSize,
+    const std::vector<VkBuffer>& drawDataBuffers,
+    VkDeviceSize drawDataSize,
+    const std::vector<VkBuffer>& instanceBuffers,
+    VkDeviceSize instanceSize) {
 
     if (!rasterDescSetLayout_ || uboBuffers.empty()) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
@@ -1275,27 +1287,53 @@ bool VisibilityBuffer::createRasterDescriptorSets(
         uboInfo.offset = 0;
         uboInfo.range = uboSize;
 
-        // Binding 1: Placeholder diffuse texture (alphaTestThreshold = 0 means it won't be sampled)
+        // Binding 1: Placeholder diffuse texture
         VkDescriptorImageInfo texInfo{};
         texInfo.sampler = nearestSampler_ ? static_cast<VkSampler>(**nearestSampler_) : VK_NULL_HANDLE;
         texInfo.imageView = placeholderTexView_;
         texInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
-        std::array<VkWriteDescriptorSet, 2> writes{};
+        // Binding 2: DrawData SSBO (per-draw data from TwoPassCuller)
+        VkDescriptorBufferInfo drawDataInfo{};
+        drawDataInfo.buffer = (i < drawDataBuffers.size()) ? drawDataBuffers[i] : placeholderBuffer_.get();
+        drawDataInfo.offset = 0;
+        drawDataInfo.range = (i < drawDataBuffers.size() && drawDataSize > 0) ? drawDataSize : PLACEHOLDER_BUFFER_SIZE;
+
+        // Binding 3: Instance SSBO (transforms from GPUSceneBuffer)
+        VkDescriptorBufferInfo instanceInfo{};
+        instanceInfo.buffer = (i < instanceBuffers.size()) ? instanceBuffers[i] : placeholderBuffer_.get();
+        instanceInfo.offset = 0;
+        instanceInfo.range = (i < instanceBuffers.size() && instanceSize > 0) ? instanceSize : PLACEHOLDER_BUFFER_SIZE;
+
+        std::array<VkWriteDescriptorSet, 4> writes{};
 
         writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
         writes[0].dstSet = descSet;
-        writes[0].dstBinding = 0;  // BINDING_UBO
+        writes[0].dstBinding = BINDING_UBO;
         writes[0].descriptorCount = 1;
         writes[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
         writes[0].pBufferInfo = &uboInfo;
 
         writes[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
         writes[1].dstSet = descSet;
-        writes[1].dstBinding = 1;  // BINDING_DIFFUSE_TEX
+        writes[1].dstBinding = BINDING_DIFFUSE_TEX;
         writes[1].descriptorCount = 1;
         writes[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
         writes[1].pImageInfo = &texInfo;
+
+        writes[2].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        writes[2].dstSet = descSet;
+        writes[2].dstBinding = BINDING_VISBUF_RASTER_DRAW_DATA;
+        writes[2].descriptorCount = 1;
+        writes[2].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        writes[2].pBufferInfo = &drawDataInfo;
+
+        writes[3].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        writes[3].dstSet = descSet;
+        writes[3].dstBinding = BINDING_VISBUF_RASTER_INSTANCES;
+        writes[3].descriptorCount = 1;
+        writes[3].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        writes[3].pBufferInfo = &instanceInfo;
 
         vkUpdateDescriptorSets(device_, static_cast<uint32_t>(writes.size()),
                                writes.data(), 0, nullptr);
@@ -1316,6 +1354,11 @@ VkDescriptorSet VisibilityBuffer::getRasterDescriptorSet(uint32_t frameIndex) co
 // ============================================================================
 // Resize
 // ============================================================================
+
+void VisibilityBuffer::updateSharedDepth(VkImageView newDepthView) {
+    if (!sharedDepth_) return;
+    depthView_ = newDepthView;
+}
 
 void VisibilityBuffer::resize(VkExtent2D newExtent) {
     if (newExtent.width == extent_.width && newExtent.height == extent_.height) {

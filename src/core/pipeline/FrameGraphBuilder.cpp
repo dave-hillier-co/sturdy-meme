@@ -86,11 +86,20 @@ bool FrameGraphBuilder::build(
         frameGraph.addDependency(computeIds.gpuCull, hdr);
     }
 
-    // V-buffer raster pass depends on Compute (needs UBO updated with view/proj)
+    // V-buffer cull pass depends on Compute (needs UBO/scene data uploaded)
+    // V-buffer raster depends on cull (needs indirect draw commands ready)
     // HDR depends on V-buffer raster (shared depth buffer — V-buffer writes depth first,
     // HDR loads it with loadOp=eLoad to preserve V-buffer depth writes)
+    if (visBufferIds.cull != FrameGraph::INVALID_PASS) {
+        frameGraph.addDependency(computeIds.compute, visBufferIds.cull);
+        if (visBufferIds.raster != FrameGraph::INVALID_PASS) {
+            frameGraph.addDependency(visBufferIds.cull, visBufferIds.raster);
+        }
+    }
     if (visBufferIds.raster != FrameGraph::INVALID_PASS) {
-        frameGraph.addDependency(computeIds.compute, visBufferIds.raster);
+        if (visBufferIds.cull == FrameGraph::INVALID_PASS) {
+            frameGraph.addDependency(computeIds.compute, visBufferIds.raster);
+        }
         frameGraph.addDependency(visBufferIds.raster, hdr);
     }
 

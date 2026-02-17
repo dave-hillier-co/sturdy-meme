@@ -823,6 +823,21 @@ void Renderer::initResizeCoordinator() {
     }
     resizeCoordinator_->registerWithSimpleResize(systems_->froxel(), "FroxelSystem", ResizePriority::RenderTarget);
 
+    // V-buffer resize: update shared depth from PostProcessSystem, then resize
+    // Must run after PostProcessSystem resize (registered above) so the new depth is ready
+    if (systems_->hasVisibilityBuffer()) {
+        resizeCoordinator_->registerCallback("VisibilityBuffer",
+            [this](VkExtent2D newExtent) {
+                auto* visBuf = systems_->visibilityBuffer();
+                if (visBuf) {
+                    visBuf->updateSharedDepth(systems_->postProcess().getHDRDepthView());
+                    visBuf->resize(newExtent);
+                }
+            },
+            nullptr,
+            ResizePriority::RenderTarget);
+    }
+
     // Culling systems with simple resize (extent only, but reallocates)
     resizeCoordinator_->registerWithSimpleResize(systems_->hiZ(), "HiZSystem", ResizePriority::Culling);
     resizeCoordinator_->registerWithSimpleResize(systems_->ssr(), "SSRSystem", ResizePriority::Culling);

@@ -12,6 +12,7 @@
 #include "InitContext.h"
 #include "DescriptorManager.h"
 #include "VmaBuffer.h"
+#include "VmaImage.h"
 #include "PerFrameBuffer.h"
 
 class GPUClusterBuffer;
@@ -176,6 +177,24 @@ public:
     VkBuffer getPass2IndirectBuffer(uint32_t frameIndex) const;
     VkBuffer getPass2DrawCountBuffer(uint32_t frameIndex) const;
 
+    // Access per-draw data buffers (parallel to indirect commands, indexed by gl_DrawID)
+    VkBuffer getPass1DrawDataBuffer(uint32_t frameIndex) const;
+    VkBuffer getPass2DrawDataBuffer(uint32_t frameIndex) const;
+    VkDeviceSize getDrawDataBufferSize() const;
+
+    uint32_t getMaxDrawCommands() const { return maxDrawCommands_; }
+
+    /**
+     * Set external buffer references needed by culling descriptor sets.
+     * Must be called before the first frame that uses the culler.
+     * clusterBuffer: GPUClusterBuffer::getClusterBuffer()
+     * instanceBuffers: per-frame instance buffers from GPUSceneBuffer
+     */
+    void setExternalBuffers(VkBuffer clusterBuffer, VkDeviceSize clusterSize,
+                            const std::vector<VkBuffer>& instanceBuffers,
+                            VkDeviceSize instanceSize);
+    bool hasDescriptorSets() const { return !pass1DescSets_.empty(); }
+
     // Statistics
     struct Stats {
         uint32_t pass1Visible;
@@ -221,6 +240,10 @@ private:
     BufferUtils::PerFrameBufferSet pass2IndirectBuffers_;
     BufferUtils::PerFrameBufferSet pass2DrawCountBuffers_;
 
+    // Per-draw data buffers (parallel to indirect commands, indexed by gl_DrawID in raster shader)
+    BufferUtils::PerFrameBufferSet pass1DrawDataBuffers_;
+    BufferUtils::PerFrameBufferSet pass2DrawDataBuffers_;
+
     // Visible cluster tracking (double-buffered)
     BufferUtils::PerFrameBufferSet visibleClusterBuffers_;     // Current frame output
     BufferUtils::PerFrameBufferSet visibleCountBuffers_;       // Current frame count
@@ -262,4 +285,17 @@ private:
 
     // Ping-pong index for visible buffer swapping
     uint32_t currentBufferIndex_ = 0;
+
+    // External buffer references for descriptor sets
+    VkBuffer externalClusterBuffer_ = VK_NULL_HANDLE;
+    VkDeviceSize externalClusterSize_ = 0;
+    std::vector<VkBuffer> externalInstanceBuffers_;
+    VkDeviceSize externalInstanceSize_ = 0;
+
+    // Hi-Z sampler for pass 2 occlusion testing
+    std::optional<vk::raii::Sampler> hiZSampler_;
+
+    // Placeholder image for unbound Hi-Z descriptor in pass 1
+    ManagedImage placeholderHiZImage_;
+    VkImageView placeholderHiZView_ = VK_NULL_HANDLE;
 };

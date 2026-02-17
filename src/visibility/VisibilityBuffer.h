@@ -131,6 +131,9 @@ public:
 
     void resize(VkExtent2D newExtent);
 
+    // Update shared depth view (call before resize when PostProcessSystem recreates depth)
+    void updateSharedDepth(VkImageView newDepthView);
+
     // Get the V-buffer render pass (color=R32G32_UINT + depth)
     VkRenderPass getRenderPass() const { return renderPass_; }
     VkFramebuffer getFramebuffer() const { return framebuffer_; }
@@ -226,12 +229,16 @@ public:
     // ====================================================================
 
     /**
-     * Create per-frame descriptor sets for the raster pass.
-     * Binds UBO (binding 0) and placeholder diffuse texture (binding 1).
-     * Call once after GlobalBufferManager is initialized.
+     * Create per-frame descriptor sets for the raster pass (GPU-driven indirect draws).
+     * Binds UBO, placeholder texture, DrawData SSBO, and Instance SSBO.
+     * Call once after TwoPassCuller and GPUSceneBuffer are initialized.
      */
     bool createRasterDescriptorSets(const std::vector<VkBuffer>& uboBuffers,
-                                     VkDeviceSize uboSize);
+                                     VkDeviceSize uboSize,
+                                     const std::vector<VkBuffer>& drawDataBuffers = {},
+                                     VkDeviceSize drawDataSize = 0,
+                                     const std::vector<VkBuffer>& instanceBuffers = {},
+                                     VkDeviceSize instanceSize = 0);
 
     VkDescriptorSet getRasterDescriptorSet(uint32_t frameIndex) const;
     bool hasRasterDescriptorSets() const { return !rasterDescSets_.empty(); }

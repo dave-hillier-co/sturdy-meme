@@ -80,35 +80,10 @@ bool ArticulatedBody::create(PhysicsWorld& physics, const ArticulatedBodyConfig&
 
     JPH::BodyInterface& bodyInterface = joltSystem->GetBodyInterface();
 
-    // Phase 0: Set up collision group filter to prevent self-collision
-    // between parent-child pairs. Each body part gets a unique sub-group ID.
-    // Connected parts (parent-child) have collision disabled between them.
-    JPH::Ref<JPH::GroupFilterTable> groupFilter = new JPH::GroupFilterTable(static_cast<uint>(numParts));
-
-    // Disable collision between each parent-child pair
-    for (size_t i = 0; i < numParts; ++i) {
-        int32_t parentIdx = config.parts[i].parentPartIndex;
-        if (parentIdx >= 0) {
-            groupFilter->DisableCollision(
-                static_cast<JPH::CollisionGroup::SubGroupID>(i),
-                static_cast<JPH::CollisionGroup::SubGroupID>(parentIdx));
-        }
-    }
-
-    // Also disable collision between siblings that are close together
-    // (e.g., left/right thigh both attach to pelvis and can overlap)
-    for (size_t i = 0; i < numParts; ++i) {
-        for (size_t j = i + 1; j < numParts; ++j) {
-            if (config.parts[i].parentPartIndex == config.parts[j].parentPartIndex &&
-                config.parts[i].parentPartIndex >= 0) {
-                groupFilter->DisableCollision(
-                    static_cast<JPH::CollisionGroup::SubGroupID>(i),
-                    static_cast<JPH::CollisionGroup::SubGroupID>(j));
-            }
-        }
-    }
-
-    // Use a unique group ID for this ragdoll instance (use address as ID)
+    // All ragdoll bodies share the same group + sub-group so they NEVER collide
+    // with each other, but still collide with the environment (ground, etc.).
+    // GroupFilterTable with 1 sub-group: same sub-group = no collision.
+    JPH::Ref<JPH::GroupFilterTable> groupFilter = new JPH::GroupFilterTable(1);
     JPH::CollisionGroup::GroupID ragdollGroupID =
         static_cast<JPH::CollisionGroup::GroupID>(reinterpret_cast<uintptr_t>(this) & 0xFFFFFFFF);
 
@@ -163,17 +138,15 @@ bool ArticulatedBody::create(PhysicsWorld& physics, const ArticulatedBodyConfig&
         bodySettings.mLinearDamping = 0.5f;
         bodySettings.mAngularDamping = 0.9f;
 
-        // More solver iterations for the constraint chain (default is 10 vel / 2 pos).
-        // Ragdoll chains are 6+ bodies deep; insufficient iterations cause the solver
-        // to diverge on ground impact, producing NaN angular velocities.
-        bodySettings.mNumVelocityStepsOverride = 20;
-        bodySettings.mNumPositionStepsOverride = 6;
+        // LinearCast uses speculative contacts — more stable for constrained body chains
+        bodySettings.mMotionQuality = JPH::EMotionQuality::LinearCast;
 
-        // Self-collision filtering: same group, unique sub-group per part
-        bodySettings.mCollisionGroup = JPH::CollisionGroup(
-            groupFilter,
-            ragdollGroupID,
-            static_cast<JPH::CollisionGroup::SubGroupID>(i));
+        // More solver iterations for the constraint chain (default is 10 vel / 2 pos).
+        bodySettings.mNumVelocityStepsOverride = 30;
+        bodySettings.mNumPositionStepsOverride = 10;
+
+        // All ragdoll bodies: same group + same sub-group = no self-collision
+        bodySettings.mCollisionGroup = JPH::CollisionGroup(groupFilter, ragdollGroupID, 0);
 
         JPH::Body* body = bodyInterface.CreateBody(bodySettings);
         if (!body) {

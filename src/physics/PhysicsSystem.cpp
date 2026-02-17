@@ -131,8 +131,8 @@ void PhysicsWorld::update(float deltaTime) {
             character_.update(FIXED_TIMESTEP, physicsSystem_.get(), tempAllocator_.get());
         }
 
-        // Step physics
-        physicsSystem_->Update(FIXED_TIMESTEP, 1, tempAllocator_.get(), jobSystem_.get());
+        // Step physics (2 collision steps for ragdoll constraint stability)
+        physicsSystem_->Update(FIXED_TIMESTEP, 2, tempAllocator_.get(), jobSystem_.get());
 
         accumulatedTime_ -= FIXED_TIMESTEP;
         numSteps++;

@@ -170,26 +170,9 @@ static void executeRasterPass(FrameGraph::RenderContext& ctx, RendererSystems& s
 
     systems.profiler().beginGpuZone(cmd, "VisBufferRaster");
 
-    // Lazily build cluster state if GPUClusterBuffer is available
-    bool useClusters = false;
-    if (systems.hasGPUClusterBuffer() && !s_clusterState.built) {
+    // Lazily build cluster state on first frame
+    if (!s_clusterState.built && systems.hasGPUClusterBuffer()) {
         buildClusterState(systems);
-    }
-    useClusters = s_clusterState.built;
-
-    // Lazily build global vertex/index buffers on first frame (fallback path)
-    if (!visBuf->hasGlobalBuffers() && !useClusters) {
-        const auto& sceneObjects = systems.scene().getRenderables();
-
-        std::unordered_set<const Mesh*> meshSet;
-        for (const auto& obj : sceneObjects) {
-            if (obj.mesh) meshSet.insert(obj.mesh);
-        }
-        std::vector<const Mesh*> uniqueMeshes(meshSet.begin(), meshSet.end());
-
-        if (!uniqueMeshes.empty()) {
-            visBuf->buildGlobalBuffers(uniqueMeshes);
-        }
     }
 
     // Lazily build material texture array and re-upload material indices
@@ -263,106 +246,62 @@ static void executeRasterPass(FrameGraph::RenderContext& ctx, RendererSystems& s
 
     uint32_t instanceId = 0;
 
-    if (useClusters) {
-        // Cluster-based raster: bind GPUClusterBuffer vertex/index once,
-        // then draw each cluster per object with push constants.
-        // Future: replace with vkCmdDrawIndexedIndirectCount via TwoPassCuller.
-        auto* clusterBuf = systems.gpuClusterBuffer();
+    // Cluster-based raster: bind GPUClusterBuffer vertex/index once,
+    // then draw each cluster per object with push constants.
+    auto* clusterBuf = systems.gpuClusterBuffer();
+    if (!clusterBuf) {
+        vkCmdEndRenderPass(cmd);
+        systems.profiler().endGpuZone(cmd, "VisBufferRaster");
+        return;
+    }
 
-        vk::Buffer vertexBuffers[] = {vk::Buffer(clusterBuf->getVertexBuffer())};
-        vk::DeviceSize offsets[] = {0};
-        vkCmd.bindVertexBuffers(0, vertexBuffers, offsets);
-        vkCmd.bindIndexBuffer(vk::Buffer(clusterBuf->getIndexBuffer()), 0, vk::IndexType::eUint32);
+    vk::Buffer vertexBuffers[] = {vk::Buffer(clusterBuf->getVertexBuffer())};
+    vk::DeviceSize offsets[] = {0};
+    vkCmd.bindVertexBuffers(0, vertexBuffers, offsets);
+    vkCmd.bindIndexBuffer(vk::Buffer(clusterBuf->getIndexBuffer()), 0, vk::IndexType::eUint32);
 
-        for (size_t i = 0; i < sceneObjects.size(); ++i) {
-            if (hasCharacter && i == playerIndex) continue;
+    for (size_t i = 0; i < sceneObjects.size(); ++i) {
+        if (hasCharacter && i == playerIndex) continue;
 
-            if (npcSim) {
-                bool isNPC = false;
-                const auto& npcData = npcSim->getData();
-                for (size_t npcIdx = 0; npcIdx < npcData.count(); ++npcIdx) {
-                    if (i == npcData.renderableIndices[npcIdx]) {
-                        isNPC = true;
-                        break;
-                    }
+        if (npcSim) {
+            bool isNPC = false;
+            const auto& npcData = npcSim->getData();
+            for (size_t npcIdx = 0; npcIdx < npcData.count(); ++npcIdx) {
+                if (i == npcData.renderableIndices[npcIdx]) {
+                    isNPC = true;
+                    break;
                 }
-                if (isNPC) continue;
             }
-
-            const auto& obj = sceneObjects[i];
-            if (!obj.mesh) {
-                instanceId++;
-                continue;
-            }
-
-            auto it = s_clusterState.clusteredMeshes.find(obj.mesh);
-            if (it == s_clusterState.clusteredMeshes.end()) {
-                instanceId++;
-                continue;
-            }
-
-            const ClusteredMesh& clustered = it->second;
-            const VisBufMeshInfo* meshInfo = visBuf->getMeshInfo(obj.mesh);
-            if (!meshInfo) {
-                instanceId++;
-                continue;
-            }
-
-            // Draw each leaf cluster for this instance
-            for (const auto& cluster : clustered.clusters) {
-                if (cluster.lodLevel != 0) continue;
-
-                VisBufPushConstants push{};
-                push.model = obj.transform;
-                push.instanceId = instanceId;
-                push.triangleOffset = meshInfo->triangleOffset + cluster.firstIndex / 3;
-                push.alphaTestThreshold = 0.0f;
-
-                vkCmd.pushConstants<VisBufPushConstants>(
-                    vk::PipelineLayout(visBuf->getRasterPipelineLayout()),
-                    vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
-                    0, push);
-
-                vkCmd.drawIndexed(cluster.indexCount, 1,
-                                  meshInfo->globalIndexOffset + cluster.firstIndex,
-                                  static_cast<int32_t>(meshInfo->globalVertexOffset), 0);
-            }
-
-            instanceId++;
+            if (isNPC) continue;
         }
-    } else {
-        // Fallback: per-object draws with original mesh vertex/index buffers
-        for (size_t i = 0; i < sceneObjects.size(); ++i) {
-            if (hasCharacter && i == playerIndex) continue;
 
-            if (npcSim) {
-                bool isNPC = false;
-                const auto& npcData = npcSim->getData();
-                for (size_t npcIdx = 0; npcIdx < npcData.count(); ++npcIdx) {
-                    if (i == npcData.renderableIndices[npcIdx]) {
-                        isNPC = true;
-                        break;
-                    }
-                }
-                if (isNPC) continue;
-            }
+        const auto& obj = sceneObjects[i];
+        if (!obj.mesh) {
+            instanceId++;
+            continue;
+        }
 
-            const auto& obj = sceneObjects[i];
-            if (!obj.mesh) {
-                instanceId++;
-                continue;
-            }
+        auto it = s_clusterState.clusteredMeshes.find(obj.mesh);
+        if (it == s_clusterState.clusteredMeshes.end()) {
+            instanceId++;
+            continue;
+        }
 
-            const VisBufMeshInfo* meshInfo = visBuf->getMeshInfo(obj.mesh);
-            if (!meshInfo) {
-                instanceId++;
-                continue;
-            }
+        const ClusteredMesh& clustered = it->second;
+        const VisBufMeshInfo* meshInfo = visBuf->getMeshInfo(obj.mesh);
+        if (!meshInfo) {
+            instanceId++;
+            continue;
+        }
+
+        // Draw each leaf cluster for this instance
+        for (const auto& cluster : clustered.clusters) {
+            if (cluster.lodLevel != 0) continue;
 
             VisBufPushConstants push{};
             push.model = obj.transform;
             push.instanceId = instanceId;
-            push.triangleOffset = meshInfo->triangleOffset;
+            push.triangleOffset = meshInfo->triangleOffset + cluster.firstIndex / 3;
             push.alphaTestThreshold = 0.0f;
 
             vkCmd.pushConstants<VisBufPushConstants>(
@@ -370,15 +309,12 @@ static void executeRasterPass(FrameGraph::RenderContext& ctx, RendererSystems& s
                 vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
                 0, push);
 
-            vk::Buffer vertexBuffers[] = {obj.mesh->getVertexBuffer()};
-            vk::DeviceSize offsets[] = {0};
-            vkCmd.bindVertexBuffers(0, vertexBuffers, offsets);
-            vkCmd.bindIndexBuffer(obj.mesh->getIndexBuffer(), 0, vk::IndexType::eUint32);
-
-            vkCmd.drawIndexed(obj.mesh->getIndexCount(), 1, 0, 0, 0);
-
-            instanceId++;
+            vkCmd.drawIndexed(cluster.indexCount, 1,
+                              meshInfo->globalIndexOffset + cluster.firstIndex,
+                              static_cast<int32_t>(meshInfo->globalVertexOffset), 0);
         }
+
+        instanceId++;
     }
 
     vkCmdEndRenderPass(cmd);

@@ -162,9 +162,6 @@ bool ArticulatedBody::create(PhysicsWorld& physics, const ArticulatedBodyConfig&
     // DisableParentChildCollisions sets up GroupFilterTable automatically
     ragdollSettings->DisableParentChildCollisions();
 
-    // CalculateConstraintPriorities ensures root constraints are solved first
-    ragdollSettings->CalculateConstraintPriorities();
-
     // Phase 5: Create the ragdoll instance
     uint32_t groupID = sNextRagdollGroupID++;
     ragdoll_ = ragdollSettings->CreateRagdoll(groupID, 0, joltSystem);

@@ -20,6 +20,33 @@ static float calculateExtensionRatio(
     return glm::clamp(distanceToTarget / legLength, 0.0f, 1.5f);
 }
 
+void FootPlacementIKSolver::queryGround(
+    FootPlacementIK& foot,
+    const std::vector<glm::mat4>& globalTransforms,
+    const GroundQueryFunc& groundQuery,
+    const glm::mat4& characterTransform
+) {
+    if (!foot.enabled || foot.weight <= 0.0f) return;
+    if (foot.footBoneIndex < 0 || foot.hipBoneIndex < 0 || foot.kneeBoneIndex < 0) return;
+    if (!groundQuery) return;
+
+    // Get current foot position in skeleton space (from animation)
+    glm::vec3 animFootPos = IKUtils::getWorldPosition(globalTransforms[foot.footBoneIndex]);
+    foot.animationFootPosition = animFootPos;
+
+    // Transform to world space
+    glm::vec3 worldFootPos = glm::vec3(characterTransform * glm::vec4(animFootPos, 1.0f));
+
+    // Query ground at foot position
+    glm::vec3 rayOrigin = worldFootPos + glm::vec3(0.0f, foot.raycastHeight, 0.0f);
+    GroundQueryResult result = groundQuery(rayOrigin, foot.raycastHeight + foot.raycastDistance);
+
+    foot.isGrounded = result.hit;
+    if (result.hit) {
+        foot.currentGroundHeight = result.position.y;
+    }
+}
+
 void FootPlacementIKSolver::solve(
     Skeleton& skeleton,
     FootPlacementIK& foot,
@@ -45,6 +72,7 @@ void FootPlacementIKSolver::solve(
     if (foot.lockBlend <= 0.0f) {
         foot.isLocked = false;
         foot.lockedWorldPosition = glm::vec3(0.0f);
+        foot.lockOriginWorldPosition = glm::vec3(0.0f);
         foot.lockedGroundNormal = glm::vec3(0.0f, 1.0f, 0.0f);
     }
 
@@ -63,21 +91,26 @@ void FootPlacementIKSolver::solve(
 
     if (foot.lockBlend > 0.0f) {
         if (!foot.isLocked) {
-            // First time locking - store the current world position
+            // First time locking - store both the locked position and the origin for drift comparison
             foot.lockedWorldPosition = worldFootPos;
+            foot.lockOriginWorldPosition = worldFootPos;
             foot.isLocked = true;
         }
 
-        // Check if locked position is too far from animation position (would break silhouette)
-        // If so, release the lock and let foot slide (per Simon Clavet's GDC recommendation)
-        float distanceFromAnim = glm::length(glm::vec2(foot.lockedWorldPosition.x - worldFootPos.x,
-                                                        foot.lockedWorldPosition.z - worldFootPos.z));
-        const float maxLockDistance = 0.15f;  // 15cm max deviation from animation
+        // Compare the animation's current foot position against where the foot was at lock time.
+        // This measures how far the character has moved since locking, not how far the lock
+        // has drifted. The lock should release when the character has walked far enough that
+        // maintaining the lock would visually break the silhouette.
+        float distanceFromLockOrigin = glm::length(glm::vec2(
+            worldFootPos.x - foot.lockOriginWorldPosition.x,
+            worldFootPos.z - foot.lockOriginWorldPosition.z));
+        const float maxLockDistance = 0.15f;  // 15cm max deviation from lock origin
 
-        if (distanceFromAnim > maxLockDistance) {
-            // Too far - release lock
+        if (distanceFromLockOrigin > maxLockDistance) {
+            // Character has moved too far from where foot was planted - release lock
             foot.isLocked = false;
             foot.lockedWorldPosition = worldFootPos;
+            foot.lockOriginWorldPosition = worldFootPos;
         } else {
             // Blend full position toward locked position (including Y for slope handling)
             queryWorldPos = glm::mix(worldFootPos, foot.lockedWorldPosition, foot.lockBlend);
@@ -147,10 +180,10 @@ void FootPlacementIKSolver::solve(
             globalTransforms, foot.hipBoneIndex, foot.kneeBoneIndex, foot.footBoneIndex,
             targetLocalPos, foot.legLength);
 
-        // If over 95% extended, target is unreachable - blend down IK weight
-        if (foot.currentExtensionRatio > 0.95f) {
+        // If over 90% extended, smoothly blend down IK weight to avoid pop at full extension
+        if (foot.currentExtensionRatio > 0.9f) {
             foot.targetUnreachable = true;
-            // Smoothly reduce weight as we approach full extension
+            // Smooth ramp from 1.0 at 0.9 to 0.0 at 1.0 — guard and ramp aligned
             float reachWeight = glm::clamp(1.0f - (foot.currentExtensionRatio - 0.9f) * 10.0f, 0.0f, 1.0f);
             phaseWeight *= reachWeight;
         } else {
@@ -195,14 +228,21 @@ void FootPlacementIKSolver::solve(
         std::vector<glm::mat4> updatedGlobalTransforms;
         skeleton.computeGlobalTransforms(updatedGlobalTransforms);
 
-        // Use locked ground normal during stance for stability, otherwise use current
-        glm::vec3 groundNormal = (foot.lockBlend > 0.5f && foot.isLocked)
-            ? foot.lockedGroundNormal
-            : groundResult.normal;
+        // Use locked ground normal during stance for stability, otherwise use current.
+        // Prefer multi-point fitted plane normal when available.
+        glm::vec3 groundNormal;
+        if (foot.lockBlend > 0.5f && foot.isLocked) {
+            groundNormal = foot.lockedGroundNormal;
+        } else if (foot.useMultiPointGround && glm::length2(foot.groundPlaneNormal) > 0.5f) {
+            groundNormal = foot.groundPlaneNormal;
+        } else {
+            groundNormal = groundResult.normal;
+        }
 
         // Ground normal is in world space, transform to skeleton space
-        glm::mat3 charRotInv = glm::inverse(glm::mat3(characterTransform));
-        glm::vec3 targetUp = glm::normalize(charRotInv * groundNormal);
+        // Use transpose(inverse(mat3)) for correct normal transformation
+        glm::mat3 normalMatrix = glm::transpose(glm::inverse(glm::mat3(characterTransform)));
+        glm::vec3 targetUp = glm::normalize(normalMatrix * groundNormal);
 
         // Get the foot joint's current local rotation (from animation + leg IK)
         Joint& footJoint = skeleton.joints[foot.footBoneIndex];
@@ -334,6 +374,229 @@ glm::quat FootPlacementIKSolver::alignFootToGround(
     angle = glm::clamp(angle, -maxAngle, maxAngle);
 
     return glm::angleAxis(angle, glm::normalize(axis));
+}
+
+// Multi-point ground query: probe heel, ball, toe and fit a ground plane normal.
+glm::vec3 FootPlacementIKSolver::queryMultiPointGround(
+    const FootPlacementIK& foot,
+    const std::vector<glm::mat4>& globalTransforms,
+    const GroundQueryFunc& groundQuery,
+    const glm::mat4& characterTransform
+) {
+    // Collect world-space probe positions from available bones
+    auto probeAt = [&](int32_t boneIndex) -> std::pair<glm::vec3, bool> {
+        if (boneIndex < 0 || boneIndex >= static_cast<int32_t>(globalTransforms.size()))
+            return {{}, false};
+        glm::vec3 localPos = IKUtils::getWorldPosition(globalTransforms[boneIndex]);
+        glm::vec3 worldPos = glm::vec3(characterTransform * glm::vec4(localPos, 1.0f));
+        glm::vec3 rayOrigin = worldPos + glm::vec3(0.0f, foot.raycastHeight, 0.0f);
+        GroundQueryResult gq = groundQuery(rayOrigin, foot.raycastHeight + foot.raycastDistance);
+        if (gq.hit) return {gq.position, true};
+        return {{}, false};
+    };
+
+    // Probe heel, ball, toe when bones are available
+    auto [heelHit, heelOk] = probeAt(foot.heelBoneIndex);
+    auto [ballHit, ballOk] = probeAt(foot.ballBoneIndex);
+    auto [toeHit, toeOk] = probeAt(foot.toeBoneIndex);
+
+    // Collect valid contacts
+    std::vector<glm::vec3> contacts;
+    if (heelOk) contacts.push_back(heelHit);
+    if (ballOk) contacts.push_back(ballHit);
+    if (toeOk) contacts.push_back(toeHit);
+
+    if (contacts.size() >= 3) {
+        // Fit plane: normal = normalize(cross(ball-heel, toe-heel))
+        glm::vec3 v1 = contacts[1] - contacts[0];
+        glm::vec3 v2 = contacts[2] - contacts[0];
+        glm::vec3 normal = glm::cross(v1, v2);
+        if (glm::length2(normal) > 0.0001f) {
+            normal = glm::normalize(normal);
+            if (normal.y < 0.0f) normal = -normal;
+            return normal;
+        }
+    } else if (contacts.size() == 2) {
+        // Two contacts: derive normal from the edge and world up
+        glm::vec3 edge = contacts[1] - contacts[0];
+        glm::vec3 worldUp(0.0f, 1.0f, 0.0f);
+        glm::vec3 right = glm::cross(edge, worldUp);
+        if (glm::length2(right) > 0.0001f) {
+            glm::vec3 normal = glm::normalize(glm::cross(right, edge));
+            if (normal.y < 0.0f) normal = -normal;
+            return normal;
+        }
+    }
+
+    // Fallback: flat ground
+    return glm::vec3(0.0f, 1.0f, 0.0f);
+}
+
+// Toe IK: bend toe bone to match ground angle under the toe.
+void FootPlacementIKSolver::solveToeIK(
+    Skeleton& skeleton,
+    FootPlacementIK& foot,
+    const std::vector<glm::mat4>& globalTransforms,
+    const GroundQueryFunc& groundQuery,
+    const glm::mat4& characterTransform,
+    float deltaTime
+) {
+    if (foot.toeBoneIndex < 0 || foot.footBoneIndex < 0) return;
+    if (!foot.enabled || foot.weight <= 0.0f) return;
+
+    // Phase-aware blending
+    float phaseBlend = 1.0f;
+    if (foot.currentPhase == FootPhase::Swing) {
+        phaseBlend = foot.phaseProgress > 0.8f ? (foot.phaseProgress - 0.8f) / 0.2f : 0.0f;
+    }
+    // PushOff: allow full toe bend (natural toe-off)
+
+    if (phaseBlend <= 0.01f) {
+        if (deltaTime > 0.0f) {
+            float t = glm::clamp(8.0f * deltaTime, 0.0f, 1.0f);
+            foot.currentToeAngle = glm::mix(foot.currentToeAngle, 0.0f, t);
+        }
+        return;
+    }
+
+    // Get toe and foot world positions
+    glm::vec3 toeLocalPos = IKUtils::getWorldPosition(globalTransforms[foot.toeBoneIndex]);
+    glm::vec3 toeWorldPos = glm::vec3(characterTransform * glm::vec4(toeLocalPos, 1.0f));
+    glm::vec3 footLocalPos = IKUtils::getWorldPosition(globalTransforms[foot.footBoneIndex]);
+    glm::vec3 footWorldPos = glm::vec3(characterTransform * glm::vec4(footLocalPos, 1.0f));
+
+    // Query ground under toe
+    glm::vec3 rayOrigin = toeWorldPos + glm::vec3(0.0f, foot.raycastHeight, 0.0f);
+    GroundQueryResult toeGround = groundQuery(rayOrigin, foot.raycastHeight + foot.raycastDistance);
+    if (!toeGround.hit) return;
+
+    // Angle from foot-ground height to toe-ground height
+    float horizontalDist = glm::length(glm::vec2(toeWorldPos.x - footWorldPos.x,
+                                                   toeWorldPos.z - footWorldPos.z));
+    if (horizontalDist < 0.01f) return;
+
+    float heightDiff = toeGround.position.y - foot.currentGroundHeight;
+    foot.targetToeAngle = std::atan2(heightDiff, horizontalDist);
+
+    // Clamp to natural limits
+    constexpr float MAX_DORSIFLEXION = glm::radians(45.0f);
+    constexpr float MAX_PLANTARFLEXION = glm::radians(60.0f);
+    foot.targetToeAngle = glm::clamp(foot.targetToeAngle, -MAX_DORSIFLEXION, MAX_PLANTARFLEXION);
+    foot.targetToeAngle *= phaseBlend;
+
+    // Smooth toward target
+    if (deltaTime > 0.0f) {
+        float t = glm::clamp(10.0f * deltaTime, 0.0f, 1.0f);
+        foot.currentToeAngle = glm::mix(foot.currentToeAngle, foot.targetToeAngle, t);
+    } else {
+        foot.currentToeAngle = foot.targetToeAngle;
+    }
+
+    if (std::abs(foot.currentToeAngle) < 0.005f) return;
+
+    // Apply pitch rotation to toe bone around local X axis
+    Joint& toeJoint = skeleton.joints[foot.toeBoneIndex];
+    glm::vec3 tt, ts;
+    glm::quat tr;
+    IKUtils::decomposeTransform(toeJoint.localTransform, tt, tr, ts);
+    glm::quat toeBend = glm::angleAxis(foot.currentToeAngle, glm::vec3(1.0f, 0.0f, 0.0f));
+    tr = tr * toeBend;
+    toeJoint.localTransform = IKUtils::composeTransform(tt, tr, ts);
+}
+
+// Foot roll: apply sub-phase rotations to the foot bone.
+void FootPlacementIKSolver::applyFootRoll(
+    Skeleton& skeleton,
+    FootPlacementIK& foot,
+    const std::vector<glm::mat4>& globalTransforms,
+    const glm::mat4& characterTransform
+) {
+    if (foot.footBoneIndex < 0 || !foot.enabled || foot.weight <= 0.0f) return;
+
+    float rollAngle = 0.0f;
+    if (foot.currentPhase == FootPhase::Contact) {
+        // Heel strike → flat: foot starts angled (toe up) and rotates to flat
+        float heelStrikeAngle = glm::radians(15.0f);
+        rollAngle = heelStrikeAngle * (1.0f - foot.phaseProgress);
+    } else if (foot.currentPhase == FootPhase::PushOff) {
+        // Heel off → toe off: heel lifts, foot pivots forward
+        float pushOffAngle = glm::radians(-25.0f);
+        rollAngle = pushOffAngle * foot.phaseProgress;
+    }
+
+    if (std::abs(rollAngle) < 0.005f) return;
+
+    Joint& footJoint = skeleton.joints[foot.footBoneIndex];
+    glm::vec3 ft, fs;
+    glm::quat fr;
+    IKUtils::decomposeTransform(footJoint.localTransform, ft, fr, fs);
+    glm::quat rollQuat = glm::angleAxis(rollAngle * foot.weight, glm::vec3(1.0f, 0.0f, 0.0f));
+    fr = fr * rollQuat;
+    footJoint.localTransform = IKUtils::composeTransform(ft, fr, fs);
+}
+
+// Slope compensation: shift pelvis forward/back and lean body into slope.
+void FootPlacementIKSolver::applySlopeCompensation(
+    Skeleton& skeleton,
+    PelvisAdjustment& pelvis,
+    const GroundQueryFunc& groundQuery,
+    const glm::mat4& characterTransform,
+    const glm::vec3& characterForward,
+    float deltaTime
+) {
+    if (!pelvis.enabled || pelvis.pelvisBoneIndex < 0 || !groundQuery) return;
+
+    // Sample ground normal at character center
+    glm::vec3 charPos = glm::vec3(characterTransform[3]);
+    glm::vec3 rayOrigin = charPos + glm::vec3(0.0f, 0.5f, 0.0f);
+    GroundQueryResult result = groundQuery(rayOrigin, 2.0f);
+    if (!result.hit) return;
+
+    glm::vec3 groundNormal = glm::normalize(result.normal);
+
+    // Compute slope angle along forward direction
+    glm::vec3 fwd = glm::normalize(glm::vec3(characterForward.x, 0.0f, characterForward.z));
+    float forwardSlope = -glm::dot(groundNormal, fwd);
+    float slopeAngle = std::asin(glm::clamp(forwardSlope, -1.0f, 1.0f));
+
+    // Forward/backward shift proportional to slope
+    float targetShiftAmount = slopeAngle * (pelvis.maxSlopeShift / glm::radians(30.0f));
+    targetShiftAmount = glm::clamp(targetShiftAmount, -pelvis.maxSlopeShift, pelvis.maxSlopeShift);
+    glm::vec3 targetShift = fwd * targetShiftAmount;
+
+    // Body lean proportional to slope
+    float targetLean = glm::clamp(slopeAngle, -pelvis.maxSlopeLean, pelvis.maxSlopeLean);
+
+    // Smooth
+    if (deltaTime > 0.0f) {
+        float t = glm::clamp(pelvis.smoothSpeed * deltaTime, 0.0f, 1.0f);
+        pelvis.currentSlopeShift = glm::mix(pelvis.currentSlopeShift, targetShift, t);
+        pelvis.slopeLeanAngle = glm::mix(pelvis.slopeLeanAngle, targetLean, t);
+    } else {
+        pelvis.currentSlopeShift = targetShift;
+        pelvis.slopeLeanAngle = targetLean;
+    }
+
+    // Apply to pelvis
+    if (glm::length2(pelvis.currentSlopeShift) > 0.0001f || std::abs(pelvis.slopeLeanAngle) > 0.001f) {
+        Joint& pelvisJoint = skeleton.joints[pelvis.pelvisBoneIndex];
+        glm::vec3 pt, ps;
+        glm::quat pr;
+        IKUtils::decomposeTransform(pelvisJoint.localTransform, pt, pr, ps);
+
+        // Convert world-space shift to local space
+        glm::mat3 invCharRot = glm::transpose(glm::mat3(characterTransform));
+        glm::vec3 localShift = invCharRot * pelvis.currentSlopeShift;
+        pt += localShift;
+
+        // Apply lean as pitch around local X
+        if (std::abs(pelvis.slopeLeanAngle) > 0.001f) {
+            glm::quat lean = glm::angleAxis(pelvis.slopeLeanAngle, glm::vec3(1.0f, 0.0f, 0.0f));
+            pr = lean * pr;
+        }
+
+        pelvisJoint.localTransform = IKUtils::composeTransform(pt, pr, ps);
+    }
 }
 
 // Helper to compute ankle height from skeleton bind pose

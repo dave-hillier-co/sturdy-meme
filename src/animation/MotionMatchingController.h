@@ -21,6 +21,7 @@ struct PlaybackState {
 
     size_t matchedPoseIndex = 0;    // Last matched pose index
     float timeSinceMatch = 0.0f;    // Time since last pose match
+    float playbackSpeedScale = 1.0f; // Current speed scaling for stride matching (debug)
 };
 
 // Statistics for debugging
@@ -36,6 +37,15 @@ struct MotionMatchingStats {
     float currentClipTime = 0.0f;
 };
 
+// Policy for when to transition between clips
+struct TransitionPolicy {
+    float minDwellTime = 0.3f;          // Minimum time in current clip before allowing transition
+    float costImprovementRatio = 0.8f;  // New match must be this fraction of current cost to trigger
+    float forceTransitionTime = 1.0f;   // Force search for new clip after this long
+    float sameClipMinTimeDiff = 0.2f;   // Minimum time jump for same-clip transitions (non-looping only)
+    float sameClipCostRatio = 0.5f;     // Stricter ratio for same-clip jumps
+};
+
 // Configuration for the controller
 struct ControllerConfig {
     // Search timing
@@ -45,6 +55,9 @@ struct ControllerConfig {
     // Blending
     float defaultBlendDuration = 0.2f;
     bool useInertialBlending = true;
+
+    // Transition
+    TransitionPolicy transitionPolicy;
 
     // Trajectory
     TrajectoryPredictor::Config trajectoryConfig;
@@ -116,6 +129,12 @@ public:
     // Force a search on next update
     void forceSearch() { forceSearchNextUpdate_ = true; }
 
+    // Get the Y-axis rotation delta extracted from the root bone this frame.
+    // For walk/run clips this is near-zero. For turn-in-place clips, this
+    // represents the animation-driven rotation that should be fed into the
+    // character controller's facing direction.
+    float getExtractedRootYawDelta() const { return extractedRootYawDelta_; }
+
     // Set required tags for search
     void setRequiredTags(const std::vector<std::string>& tags);
 
@@ -126,8 +145,9 @@ public:
     void setStrafeMode(bool enabled);
     bool isStrafeMode() const { return strafeMode_; }
 
-    // Set desired facing direction (for strafe mode - locked to camera direction)
+    // Set/get desired facing direction (for strafe mode - locked to camera direction)
     void setDesiredFacing(const glm::vec3& facing);
+    glm::vec3 getDesiredFacing() const { return desiredFacing_; }
 
     // Get/set continuing pose cost bias
     void setContinuingPoseCostBias(float bias) { config_.searchOptions.continuingPoseCostBias = bias; }
@@ -175,6 +195,14 @@ private:
     // Flags
     bool initialized_ = false;
     bool forceSearchNextUpdate_ = false;
+
+    // Root yaw extraction — per-frame delta, not absolute
+    float extractedRootYawDelta_ = 0.0f;
+    float previousRootYaw_ = 0.0f;
+
+    // Per-bone velocity tracking for inertial blending
+    SkeletonPose prevPrevPose_;          // Pose from two frames ago
+    float prevDeltaTime_ = 0.0f;        // Delta time from previous frame
 
     // Strafe mode (Unreal-style)
     bool strafeMode_ = false;

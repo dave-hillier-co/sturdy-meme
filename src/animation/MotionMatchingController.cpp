@@ -24,6 +24,7 @@ void MotionMatchingController::setSkeleton(const Skeleton& skeleton) {
     // Initialize pose storage
     currentPose_.resize(skeleton.joints.size());
     previousPose_.resize(skeleton.joints.size());
+    prevPrevPose_.resize(skeleton.joints.size());
 
     SDL_Log("MotionMatchingController: Skeleton set with %zu joints",
             skeleton.joints.size());
@@ -72,6 +73,11 @@ void MotionMatchingController::update(const glm::vec3& position,
     if (config_.useInertialBlending) {
         inertialBlender_.update(deltaTime);
     }
+
+    // Track pose history for per-bone velocity computation
+    prevPrevPose_ = previousPose_;
+    previousPose_ = currentPose_;
+    prevDeltaTime_ = deltaTime;
 
     // Advance current playback
     advancePlayback(deltaTime);
@@ -159,6 +165,14 @@ void MotionMatchingController::performSearch() {
         }
     }
 
+    // Zero out Y components for matching. On slopes the trajectory predictor
+    // produces non-zero Y positions/velocities but the database trajectories
+    // are flat (2D). Height is handled by foot IK, not motion matching.
+    for (size_t i = 0; i < localTrajectory.sampleCount; ++i) {
+        localTrajectory.samples[i].position.y = 0.0f;
+        localTrajectory.samples[i].velocity.y = 0.0f;
+    }
+
     // Set search options for continuity (Unreal-style continuing pose bias)
     SearchOptions options = config_.searchOptions;
     options.currentPoseIndex = playback_.matchedPoseIndex;
@@ -212,6 +226,8 @@ void MotionMatchingController::performSearch() {
     MatchResult match = matcher_.findBestMatch(localTrajectory, localQueryPose, options);
 
     if (match.isValid()) {
+        const auto& policy = config_.transitionPolicy;
+
         // Check if this is a different clip
         bool isDifferentClip = (match.pose->clipIndex != playback_.clipIndex);
 
@@ -223,23 +239,24 @@ void MotionMatchingController::performSearch() {
         bool shouldTransition = false;
 
         if (isDifferentClip) {
-            // Switching to different clip - allow if cost is better or we've been here a while
-            shouldTransition = (match.cost < stats_.lastMatchCost * 0.8f ||
-                               playback_.timeSinceMatch > 0.5f);
+            // Switching to different clip - allow if cost improves by the policy ratio
+            // or we've been in the current clip longer than the minimum dwell time
+            shouldTransition = (match.cost < stats_.lastMatchCost * policy.costImprovementRatio ||
+                               playback_.timeSinceMatch > policy.minDwellTime);
         }
         // For same clip: only transition if we're NOT in a looping clip
         // Non-looping clips (like jumps) may need time jumps for responsiveness
         else if (!currentClip.looping) {
             float timeDiff = std::abs(match.pose->time - playback_.time);
-            bool isSignificantTimeJump = timeDiff > 0.2f;
-            if (isSignificantTimeJump && match.cost < stats_.lastMatchCost * 0.5f) {
+            bool isSignificantTimeJump = timeDiff > policy.sameClipMinTimeDiff;
+            if (isSignificantTimeJump && match.cost < stats_.lastMatchCost * policy.sameClipCostRatio) {
                 shouldTransition = true;
             }
         }
         // For looping clips in same clip: never jump, let it play naturally
 
-        // Force transition after 1.0s only if it's to a different clip
-        bool forceTransition = (playback_.timeSinceMatch > 1.0f) && isDifferentClip;
+        // Force transition after policy timeout, only if it's to a different clip
+        bool forceTransition = (playback_.timeSinceMatch > policy.forceTransitionTime) && isDifferentClip;
 
         if (shouldTransition || forceTransition) {
             transitionToPose(match);
@@ -271,6 +288,24 @@ void MotionMatchingController::transitionToPose(const MatchResult& match) {
     playback_.matchedPoseIndex = match.poseIndex;
     playback_.timeSinceMatch = 0.0f;
 
+    // Reset root yaw tracking so the first frame after transition doesn't
+    // produce a bogus delta from the old clip's yaw to the new clip's yaw.
+    // updatePose() below will set previousRootYaw_ from the new clip.
+    // We pre-sample it here to avoid a one-frame spike.
+    if (match.clip->clip && match.clip->clip->rootBoneIndex >= 0) {
+        Skeleton tempSkel = database_.getSkeleton();
+        match.clip->clip->sample(match.pose->time, tempSkel, true);
+        size_t rootIdx = static_cast<size_t>(match.clip->clip->rootBoneIndex);
+        if (rootIdx < tempSkel.joints.size()) {
+            BonePose rootPose = BonePose::fromMatrix(
+                tempSkel.joints[rootIdx].localTransform,
+                tempSkel.joints[rootIdx].preRotation);
+            glm::quat q = rootPose.rotation;
+            previousRootYaw_ = std::atan2(2.0f * (q.w * q.y + q.x * q.z),
+                                           1.0f - 2.0f * (q.y * q.y + q.z * q.z));
+        }
+    }
+
     // Update stats
     stats_.currentClipName = match.clip->name;
     stats_.currentClipTime = match.pose->time;
@@ -280,10 +315,38 @@ void MotionMatchingController::transitionToPose(const MatchResult& match) {
 
     // Start inertial blend if enabled
     if (config_.useInertialBlending && !previousPose_.empty() && !currentPose_.empty()) {
-        // Use full skeletal inertialization for smoother transitions
-        // Note: We don't have per-bone velocities tracked, so pass empty vectors
-        // The blender will assume zero velocity, which is reasonable for animation transitions
-        inertialBlender_.startSkeletalBlend(previousPose_, currentPose_);
+        // Compute per-bone velocities from finite difference (prev vs prevPrev)
+        std::vector<glm::vec3> positionVelocities;
+        std::vector<glm::vec3> angularVelocities;
+
+        if (prevDeltaTime_ > 0.001f && !prevPrevPose_.empty() &&
+            prevPrevPose_.size() == previousPose_.size()) {
+            float invDt = 1.0f / prevDeltaTime_;
+            positionVelocities.resize(previousPose_.size());
+            angularVelocities.resize(previousPose_.size());
+
+            for (size_t i = 0; i < previousPose_.size(); ++i) {
+                // Translation velocity via finite difference
+                positionVelocities[i] = (previousPose_[i].translation - prevPrevPose_[i].translation) * invDt;
+
+                // Angular velocity: convert quaternion difference to axis-angle rate
+                glm::quat qDelta = previousPose_[i].rotation * glm::inverse(prevPrevPose_[i].rotation);
+                if (qDelta.w < 0.0f) {
+                    qDelta = glm::quat(-qDelta.w, -qDelta.x, -qDelta.y, -qDelta.z);
+                }
+                float angle = 2.0f * std::acos(std::clamp(qDelta.w, -1.0f, 1.0f));
+                if (std::abs(angle) > 0.001f) {
+                    float sinHalf = std::sin(angle * 0.5f);
+                    if (std::abs(sinHalf) > 0.0001f) {
+                        glm::vec3 axis = glm::vec3(qDelta.x, qDelta.y, qDelta.z) / sinHalf;
+                        angularVelocities[i] = axis * (angle * invDt);
+                    }
+                }
+            }
+        }
+
+        inertialBlender_.startSkeletalBlend(previousPose_, currentPose_,
+                                             positionVelocities, angularVelocities);
     }
 }
 
@@ -297,8 +360,26 @@ void MotionMatchingController::advancePlayback(float deltaTime) {
         return;
     }
 
-    // Advance time
-    playback_.time += deltaTime;
+    // Compute playback speed scaling based on stride matching.
+    // When the character's actual speed differs from the clip's natural speed,
+    // adjust playback rate so feet don't slide.
+    float speedScale = 1.0f;
+    if (clip.strideLength > 0.01f && clip.duration > 0.0f) {
+        float clipSpeed = clip.locomotionSpeed > 0.0f
+            ? clip.locomotionSpeed
+            : clip.strideLength / clip.duration;
+        float actualSpeed = glm::length(glm::vec2(
+            trajectoryPredictor_.getCurrentVelocity().x,
+            trajectoryPredictor_.getCurrentVelocity().z));
+        if (clipSpeed > 0.01f) {
+            speedScale = actualSpeed / clipSpeed;
+            speedScale = glm::clamp(speedScale, 0.5f, 2.0f);
+        }
+    }
+    playback_.playbackSpeedScale = speedScale;
+
+    // Advance time with speed scaling
+    playback_.time += deltaTime * speedScale;
 
     // Handle looping
     if (clip.looping) {
@@ -344,22 +425,31 @@ void MotionMatchingController::updatePose() {
         );
     }
 
-    // Strip Y-axis rotation from root bone to prevent double-rotation.
+    // Extract and strip Y-axis rotation from root bone.
     // The character controller externally rotates the world transform toward the
     // movement direction. If we also keep the animation's root Y-rotation,
     // they compound — causing the character to overshoot and face backwards
-    // during turns. Walk/run root Y-rotation is near-zero so this is invisible
-    // for those clips; turn animations have large root Y-rotation causing the bug.
+    // during turns. We strip it but expose the per-frame delta via
+    // getExtractedRootYawDelta() so the calling code can feed it into the
+    // character controller for turn animations.
     int32_t rootIdx = clip.clip->rootBoneIndex;
     if (rootIdx >= 0 && static_cast<size_t>(rootIdx) < currentPose_.size()) {
         glm::quat q = currentPose_[rootIdx].rotation;
-        // Decompose quaternion into Y-rotation and remainder: q = qY * qRemainder
         // Extract yaw angle from quaternion
         float yaw = std::atan2(2.0f * (q.w * q.y + q.x * q.z),
                                1.0f - 2.0f * (q.y * q.y + q.z * q.z));
-        // Remove the Y-rotation component
+        // Compute per-frame delta (change from previous frame's root yaw)
+        float yawDelta = yaw - previousRootYaw_;
+        // Normalize to [-pi, pi] to handle wrap-around
+        while (yawDelta > glm::pi<float>()) yawDelta -= glm::two_pi<float>();
+        while (yawDelta < -glm::pi<float>()) yawDelta += glm::two_pi<float>();
+        extractedRootYawDelta_ = yawDelta;
+        previousRootYaw_ = yaw;
+        // Remove the Y-rotation component from the pose
         glm::quat qY = glm::angleAxis(yaw, glm::vec3(0.0f, 1.0f, 0.0f));
         currentPose_[rootIdx].rotation = glm::inverse(qY) * q;
+    } else {
+        extractedRootYawDelta_ = 0.0f;
     }
 }
 

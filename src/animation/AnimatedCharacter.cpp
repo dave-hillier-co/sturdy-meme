@@ -571,23 +571,36 @@ void AnimatedCharacter::setupDefaultIKChains() {
     std::string leftToe = findBone({"LeftToeBase", "LeftToe", "L_Toe", "toe.L", "ball_l"});
     std::string rightToe = findBone({"RightToeBase", "RightToe", "R_Toe", "toe.R", "ball_r"});
 
+    // Additional foot bones for multi-point ground fitting
+    std::string leftToeEnd = findBone({"LeftToe_End", "LeftToeEnd", "L_ToeEnd", "toe_end.L", "toe_end_l"});
+    std::string rightToeEnd = findBone({"RightToe_End", "RightToeEnd", "R_ToeEnd", "toe_end.R", "toe_end_r"});
+    std::string leftHeel = findBone({"LeftHeelRoll", "LeftHeel", "L_Heel", "heel.L", "heel_l"});
+    std::string rightHeel = findBone({"RightHeelRoll", "RightHeel", "R_Heel", "heel.R", "heel_r"});
+
     if (!leftThigh.empty() && !leftKnee.empty() && !leftFoot.empty()) {
-        if (ikSystem.addFootPlacement("LeftFoot", skeleton, leftThigh, leftKnee, leftFoot, leftToe)) {
-            // Set knee pole vector (forward)
+        if (ikSystem.addFootPlacement("LeftFoot", skeleton, leftThigh, leftKnee, leftFoot, leftToe, true)) {
             if (auto* foot = ikSystem.getFootPlacement("LeftFoot")) {
                 foot->poleVector = glm::vec3(0, 0, 1);
+                // Set heel/ball bones for multi-point ground plane fitting
+                if (!leftHeel.empty()) foot->heelBoneIndex = skeleton.findJointIndex(leftHeel);
+                if (!leftToeEnd.empty()) foot->ballBoneIndex = skeleton.findJointIndex(leftToeEnd);
             }
-            SDL_Log("AnimatedCharacter: Setup left foot placement IK");
+            SDL_Log("AnimatedCharacter: Setup left foot placement IK (heel=%s, ball=%s)",
+                    leftHeel.empty() ? "none" : leftHeel.c_str(),
+                    leftToeEnd.empty() ? "none" : leftToeEnd.c_str());
         }
     }
 
     if (!rightThigh.empty() && !rightKnee.empty() && !rightFoot.empty()) {
         if (ikSystem.addFootPlacement("RightFoot", skeleton, rightThigh, rightKnee, rightFoot, rightToe)) {
-            // Set knee pole vector (forward)
             if (auto* foot = ikSystem.getFootPlacement("RightFoot")) {
                 foot->poleVector = glm::vec3(0, 0, 1);
+                if (!rightHeel.empty()) foot->heelBoneIndex = skeleton.findJointIndex(rightHeel);
+                if (!rightToeEnd.empty()) foot->ballBoneIndex = skeleton.findJointIndex(rightToeEnd);
             }
-            SDL_Log("AnimatedCharacter: Setup right foot placement IK");
+            SDL_Log("AnimatedCharacter: Setup right foot placement IK (heel=%s, ball=%s)",
+                    rightHeel.empty() ? "none" : rightHeel.c_str(),
+                    rightToeEnd.empty() ? "none" : rightToeEnd.c_str());
         }
     }
 
@@ -812,6 +825,7 @@ void AnimatedCharacter::initializeMotionMatching(const MotionMatching::Controlle
     constexpr float RUN_SPEED = 5.0f;    // Average human jogging/running speed
     constexpr float STRAFE_SPEED = 1.8f; // Slightly faster than walk for strafing
     constexpr float TURN_SPEED = 0.5f;   // Slow movement during turns
+    constexpr float BACKWARD_WALK_SPEED = 1.2f; // Slightly slower than forward walk
 
     for (size_t i = 0; i < animations.size(); ++i) {
         const auto& clip = animations[i];
@@ -826,10 +840,17 @@ void AnimatedCharacter::initializeMotionMatching(const MotionMatching::Controlle
             continue;
         }
 
-        bool looping = (lowerName.find("idle") != std::string::npos ||
+        // Detect start/stop transition clips — these match "walk"/"run" in name
+        // but should not loop since they're one-shot transitions
+        bool isStartStop = (lowerName.find("start") != std::string::npos ||
+                           lowerName.find("stop") != std::string::npos);
+
+        bool looping = !isStartStop &&
+                       (lowerName.find("idle") != std::string::npos ||
                        lowerName.find("walk") != std::string::npos ||
                        lowerName.find("run") != std::string::npos ||
-                       lowerName.find("strafe") != std::string::npos);
+                       lowerName.find("strafe") != std::string::npos ||
+                       lowerName.find("backward") != std::string::npos);
 
         // Add tags and set locomotion speed based on animation type
         std::vector<std::string> tags;
@@ -845,10 +866,28 @@ void AnimatedCharacter::initializeMotionMatching(const MotionMatching::Controlle
             costBias = 0.5f;  // Make variants less likely to be selected
         }
 
-        if (lowerName.find("idle") != std::string::npos) {
+        // Classify clips by name. Order matters: check more specific patterns first
+        // (e.g., "backward" before "walk", "start/stop" before base locomotion).
+        if (isStartStop) {
+            // Start/stop transition clips (e.g., "walk_start", "run_stop")
+            tags.push_back("transition");
+            tags.push_back("locomotion");
+            looping = false;
+            // Determine speed from the base locomotion type in the name
+            if (lowerName.find("run") != std::string::npos) {
+                locomotionSpeed = RUN_SPEED;
+            } else {
+                locomotionSpeed = WALK_SPEED;
+            }
+        } else if (lowerName.find("idle") != std::string::npos) {
             tags.push_back("idle");
             tags.push_back("locomotion");
             locomotionSpeed = IDLE_SPEED;
+        } else if (lowerName.find("backward") != std::string::npos) {
+            // Backward walk/run — check before generic walk/run
+            tags.push_back("strafe");  // Use strafe tag so strafe filtering picks them up
+            tags.push_back("locomotion");
+            locomotionSpeed = BACKWARD_WALK_SPEED;
         } else if (lowerName.find("run") != std::string::npos) {
             // Check run before walk since "run" could be in "running_walk" etc.
             tags.push_back("run");
@@ -915,4 +954,59 @@ void AnimatedCharacter::updateMotionMatching(const glm::vec3& position,
 
     // Apply the result to our skeleton
     motionMatchingController.applyToSkeleton(skeleton);
+
+    // Upper body strafe twist: when in strafe mode, rotate the spine so the
+    // upper body faces the aim/camera direction while legs follow movement.
+    if (motionMatchingController.isStrafeMode()) {
+        // Lazy-initialize spine bone index
+        if (!spineLookedUp_) {
+            spineLookedUp_ = true;
+            // Try common spine bone names (Mixamo: "Spine1" or "Spine2" for mid-spine)
+            const std::vector<std::string> spineNames = {
+                "Spine1", "Spine2", "mixamorig:Spine1", "mixamorig:Spine2",
+                "spine_01", "spine_02", "chest"
+            };
+            for (const auto& name : spineNames) {
+                spineJointIndex_ = skeleton.findJointIndex(name);
+                if (spineJointIndex_ >= 0) break;
+            }
+            if (spineJointIndex_ >= 0) {
+                SDL_Log("AnimatedCharacter: Strafe twist bone: '%s' (index %d)",
+                        skeleton.joints[spineJointIndex_].name.c_str(), spineJointIndex_);
+            }
+        }
+
+        if (spineJointIndex_ >= 0) {
+            // Compute the angle between the character's movement-driven facing and
+            // the desired strafe facing direction (aim/camera).
+            glm::vec3 desiredFacing = motionMatchingController.getDesiredFacing();
+            if (glm::length(desiredFacing) > 0.01f && glm::length(facing) > 0.01f) {
+                glm::vec3 fwd = glm::normalize(glm::vec3(facing.x, 0.0f, facing.z));
+                glm::vec3 aim = glm::normalize(glm::vec3(desiredFacing.x, 0.0f, desiredFacing.z));
+
+                // Signed angle between facing and aim around Y axis
+                float cross = fwd.x * aim.z - fwd.z * aim.x;
+                float dot = fwd.x * aim.x + fwd.z * aim.z;
+                float twistAngle = std::atan2(cross, dot);
+
+                // Clamp twist to avoid extreme contortion
+                twistAngle = glm::clamp(twistAngle, -glm::half_pi<float>(), glm::half_pi<float>());
+
+                if (std::abs(twistAngle) > 0.01f) {
+                    // Apply twist as a local Y-rotation on the spine bone
+                    glm::quat twist = glm::angleAxis(twistAngle, glm::vec3(0.0f, 1.0f, 0.0f));
+                    auto& joint = skeleton.joints[spineJointIndex_];
+                    glm::mat4 localTx = joint.localTransform;
+
+                    // Extract current position and rotation, apply twist, reconstruct
+                    glm::vec3 pos(localTx[3]);
+                    glm::quat currentRot = glm::quat_cast(glm::mat3(localTx));
+                    glm::quat twistedRot = currentRot * twist;  // Twist in local space
+
+                    joint.localTransform = glm::translate(glm::mat4(1.0f), pos) *
+                                           glm::mat4_cast(twistedRot);
+                }
+            }
+        }
+    }
 }

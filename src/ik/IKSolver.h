@@ -108,6 +108,8 @@ struct FootPlacementIK {
     int32_t kneeBoneIndex = -1;       // Shin/lower leg
     int32_t footBoneIndex = -1;       // Foot/ankle
     int32_t toeBoneIndex = -1;        // Optional toe bone for ground alignment
+    int32_t heelBoneIndex = -1;       // Optional heel bone for multi-point ground
+    int32_t ballBoneIndex = -1;       // Optional ball-of-foot bone for multi-point ground
 
     // Foot dimensions for ground probing
     glm::vec3 footOffset = glm::vec3(0.0f, -0.05f, 0.0f);  // Offset from ankle to sole
@@ -142,14 +144,23 @@ struct FootPlacementIK {
     glm::vec3 animationFootPosition = glm::vec3(0.0f);
 
     // Foot locking state (prevents sliding during stance)
-    glm::vec3 lockedWorldPosition = glm::vec3(0.0f);  // World position where foot is locked
+    glm::vec3 lockedWorldPosition = glm::vec3(0.0f);      // World position where foot is locked
+    glm::vec3 lockOriginWorldPosition = glm::vec3(0.0f);  // Foot's world position at lock time (for drift comparison)
     glm::vec3 lockedGroundNormal = glm::vec3(0.0f, 1.0f, 0.0f);  // Ground normal when locked
-    bool isLocked = false;                             // Whether foot is currently locked in place
-    float lockBlend = 0.0f;                            // Blend factor toward locked position (0-1)
+    bool isLocked = false;                                 // Whether foot is currently locked in place
+    float lockBlend = 0.0f;                                // Blend factor toward locked position (0-1)
 
     // Phase tracking integration
     FootPhase currentPhase = FootPhase::Stance;
     float phaseProgress = 0.0f;
+
+    // Multi-point ground query results (heel, ball, toe)
+    glm::vec3 groundPlaneNormal = glm::vec3(0.0f, 1.0f, 0.0f);  // Fitted from up to 3 contacts
+    bool useMultiPointGround = true;  // Enable multi-point queries when bones are available
+
+    // Toe IK state
+    float currentToeAngle = 0.0f;     // Current toe bend angle (radians)
+    float targetToeAngle = 0.0f;      // Target toe bend from ground contact
 };
 
 // Pelvis adjustment for foot placement
@@ -162,6 +173,12 @@ struct PelvisAdjustment {
 
     // Internal state
     float currentOffset = 0.0f;
+
+    // Slope compensation: shift pelvis forward/back on slopes
+    glm::vec3 currentSlopeShift = glm::vec3(0.0f);
+    float maxSlopeShift = 0.1f;       // Max forward/backward shift (meters)
+    float slopeLeanAngle = 0.0f;      // Current lean angle from slope (radians)
+    float maxSlopeLean = glm::radians(8.0f);  // Max body lean into slope
 };
 
 // Straddling IK - for stepping onto elevated surfaces (boxes, stairs, etc.)
@@ -350,6 +367,16 @@ private:
 // Plants feet on uneven terrain using ground queries
 class FootPlacementIKSolver {
 public:
+    // Query ground under foot and populate animationFootPosition, currentGroundHeight,
+    // isGrounded fields on the FootPlacementIK struct without modifying the skeleton.
+    // Used to get foot data before pelvis adjustment.
+    static void queryGround(
+        FootPlacementIK& foot,
+        const std::vector<glm::mat4>& globalTransforms,
+        const GroundQueryFunc& groundQuery,
+        const glm::mat4& characterTransform
+    );
+
     // Solve foot placement for a single foot
     // Uses GroundQueryFunc to probe terrain height
     static void solve(
@@ -400,6 +427,47 @@ public:
         int32_t hipBoneIndex,
         int32_t kneeBoneIndex,
         int32_t footBoneIndex
+    );
+
+    // Multi-point ground query: probe heel, ball, toe and fit a plane.
+    // Populates foot.groundPlaneNormal. Falls back to single-point query
+    // when heel/ball bones are not available.
+    static glm::vec3 queryMultiPointGround(
+        const FootPlacementIK& foot,
+        const std::vector<glm::mat4>& globalTransforms,
+        const GroundQueryFunc& groundQuery,
+        const glm::mat4& characterTransform
+    );
+
+    // Toe IK: bend toe bone to match ground under toe.
+    // Call after foot placement solve. Phase-aware: full bend in stance,
+    // animation pose in swing.
+    static void solveToeIK(
+        Skeleton& skeleton,
+        FootPlacementIK& foot,
+        const std::vector<glm::mat4>& globalTransforms,
+        const GroundQueryFunc& groundQuery,
+        const glm::mat4& characterTransform,
+        float deltaTime
+    );
+
+    // Apply foot roll rotation based on phase sub-phases.
+    // Heel strike → flat → heel off → toe off.
+    static void applyFootRoll(
+        Skeleton& skeleton,
+        FootPlacementIK& foot,
+        const std::vector<glm::mat4>& globalTransforms,
+        const glm::mat4& characterTransform
+    );
+
+    // Apply slope compensation to pelvis (forward/back shift + lean).
+    static void applySlopeCompensation(
+        Skeleton& skeleton,
+        PelvisAdjustment& pelvis,
+        const GroundQueryFunc& groundQuery,
+        const glm::mat4& characterTransform,
+        const glm::vec3& characterForward,
+        float deltaTime
     );
 
 private:
@@ -592,7 +660,8 @@ public:
         const std::string& hipBoneName,
         const std::string& kneeBoneName,
         const std::string& footBoneName,
-        const std::string& toeBoneName = ""
+        const std::string& toeBoneName = "",
+        bool isLeftFoot = false
     );
 
     // Setup pelvis adjustment
@@ -706,6 +775,7 @@ private:
     struct NamedFootPlacement {
         std::string name;
         FootPlacementIK foot;
+        bool isLeftFoot = false;
     };
     std::vector<NamedFootPlacement> footPlacements;
     PelvisAdjustment pelvisAdjustment;

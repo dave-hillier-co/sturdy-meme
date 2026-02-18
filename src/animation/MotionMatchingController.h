@@ -145,8 +145,9 @@ public:
     void setStrafeMode(bool enabled);
     bool isStrafeMode() const { return strafeMode_; }
 
-    // Set desired facing direction (for strafe mode - locked to camera direction)
+    // Set/get desired facing direction (for strafe mode - locked to camera direction)
     void setDesiredFacing(const glm::vec3& facing);
+    glm::vec3 getDesiredFacing() const { return desiredFacing_; }
 
     // Get/set continuing pose cost bias
     void setContinuingPoseCostBias(float bias) { config_.searchOptions.continuingPoseCostBias = bias; }

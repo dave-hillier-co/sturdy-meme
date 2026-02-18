@@ -715,6 +715,25 @@ void Application::run() {
             playerTransform.position, facingDirection, inputDirection,
             strafeMode, strafeFacingDirection);
 
+        // Feed animation-driven root yaw into character facing.
+        // For walk/run clips this is near-zero (no visible effect). For turn-in-place
+        // clips the extracted yaw delta drives the character's actual rotation, so the
+        // turn animation produces real world-space rotation.
+        {
+            auto& sb = renderer_->getSystems().scene().getSceneBuilder();
+            if (sb.hasCharacter() && sb.getAnimatedCharacter().isUsingMotionMatching()) {
+                float yawDelta = sb.getAnimatedCharacter()
+                    .getMotionMatchingController().getExtractedRootYawDelta();
+                if (std::abs(yawDelta) > 0.001f) {
+                    float currentYaw = playerTransform.getYaw();
+                    float newYaw = currentYaw + glm::degrees(yawDelta);
+                    while (newYaw > 360.0f) newYaw -= 360.0f;
+                    while (newYaw < 0.0f) newYaw += 360.0f;
+                    playerTransform.setYaw(newYaw);
+                }
+            }
+        }
+
         // Draw debug target indicator when in FollowTarget mode
         if (settings.facingMode == FacingMode::FollowTarget && settings.hasTarget) {
             auto& debugLines = renderer_->getSystems().debugControl().getDebugLineSystem();

@@ -264,4 +264,8 @@ private:
     std::vector<BoneCategory> boneCategories_;  // Category for each bone
     std::array<BoneLODMask, CHARACTER_LOD_LEVELS> boneLODMasks_;  // Which bones active at each LOD
     bool boneLODMasksBuilt_ = false;
+
+    // Upper body strafe twist
+    int32_t spineJointIndex_ = -1;   // Cached spine bone index for strafe twist
+    bool spineLookedUp_ = false;     // Whether we've attempted the lookup
 };

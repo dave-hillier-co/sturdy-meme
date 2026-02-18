@@ -165,6 +165,14 @@ void MotionMatchingController::performSearch() {
         }
     }
 
+    // Zero out Y components for matching. On slopes the trajectory predictor
+    // produces non-zero Y positions/velocities but the database trajectories
+    // are flat (2D). Height is handled by foot IK, not motion matching.
+    for (size_t i = 0; i < localTrajectory.sampleCount; ++i) {
+        localTrajectory.samples[i].position.y = 0.0f;
+        localTrajectory.samples[i].velocity.y = 0.0f;
+    }
+
     // Set search options for continuity (Unreal-style continuing pose bias)
     SearchOptions options = config_.searchOptions;
     options.currentPoseIndex = playback_.matchedPoseIndex;

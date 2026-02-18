@@ -193,6 +193,7 @@ set(SOURCES
     src/physics/RagdollInstance.cpp
     # UniCon
     src/unicon/StateEncoder.cpp
+    src/unicon/MLPPolicy.cpp
     # Terrain
     src/terrain/TerrainSystem.cpp
     src/terrain/TerrainDescriptorSets.cpp

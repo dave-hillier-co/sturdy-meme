@@ -192,14 +192,19 @@ bool VulkanContext::selectPhysicalDevice() {
     supportedFeatures11.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES;
     VkPhysicalDeviceVulkan12Features supportedFeatures12{};
     supportedFeatures12.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES;
-    VkPhysicalDeviceDriverProperties driverProps{};
-    driverProps.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DRIVER_PROPERTIES;
     supportedFeatures11.pNext = &supportedFeatures12;
-    supportedFeatures12.pNext = &driverProps;
     VkPhysicalDeviceFeatures2 features2{};
     features2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
     features2.pNext = &supportedFeatures11;
     vkGetPhysicalDeviceFeatures2(physicalDevice, &features2);
+
+    // Query driver properties separately (must use vkGetPhysicalDeviceProperties2, not Features2)
+    VkPhysicalDeviceDriverProperties driverProps{};
+    driverProps.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DRIVER_PROPERTIES;
+    VkPhysicalDeviceProperties2 props2{};
+    props2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2;
+    props2.pNext = &driverProps;
+    vkGetPhysicalDeviceProperties2(physicalDevice, &props2);
 
     // Detect MoltenVK/portability layer — reports shaderDrawParameters but can't
     // compile SPIR-V DrawIndex to MSL

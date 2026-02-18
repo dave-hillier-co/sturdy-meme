@@ -93,6 +93,28 @@ void MotionDatabase::build(const DatabaseBuildOptions& options,
         indexClip(i, options);
         clips_[i].startPoseIndex = posesBeforeClip;
         clips_[i].poseCount = poses_.size() - posesBeforeClip;
+
+        // Compute average root XZ speed for playback speed scaling.
+        // Only needed when locomotionSpeed override is not set.
+        if (clips_[i].locomotionSpeed <= 0.0f && clips_[i].clip && clips_[i].duration > 0.0f) {
+            const AnimationClip* clip = clips_[i].clip;
+            const int kSamples = 16;
+            float totalDist = 0.0f;
+            Skeleton tempSkel = skeleton_;
+            clip->sample(0.0f, tempSkel, false);
+            glm::vec3 prevPos = glm::vec3(tempSkel.joints[0].localTransform[3]);
+            for (int s = 1; s <= kSamples; ++s) {
+                float t = clips_[i].duration * static_cast<float>(s) / static_cast<float>(kSamples);
+                clip->sample(t, tempSkel, false);
+                glm::vec3 curPos = glm::vec3(tempSkel.joints[0].localTransform[3]);
+                glm::vec2 delta(curPos.x - prevPos.x, curPos.z - prevPos.z);
+                totalDist += glm::length(delta);
+                prevPos = curPos;
+            }
+            clips_[i].averageSpeed = totalDist / clips_[i].duration;
+        } else if (clips_[i].locomotionSpeed > 0.0f) {
+            clips_[i].averageSpeed = clips_[i].locomotionSpeed;
+        }
     }
 
     // Prune poses if requested

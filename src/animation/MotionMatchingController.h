@@ -157,6 +157,15 @@ public:
     // Debug: Get the query trajectory for visualization
     const Trajectory& getQueryTrajectory() const { return queryTrajectory_; }
 
+    // Get the per-frame root Y-rotation delta (radians) extracted from the animation.
+    // The animation's root Y-rotation is stripped before applying to the skeleton;
+    // callers should rotate the character transform by this amount instead to preserve
+    // turn animations while preventing double-rotation.
+    float getRootYawDelta() const { return rootYawDelta_; }
+
+    // Get the current playback speed scale (actual speed / clip canonical speed).
+    float getPlaybackSpeedScale() const { return playbackSpeedScale_; }
+
 private:
     ControllerConfig config_;
     MotionDatabase database_;
@@ -175,10 +184,22 @@ private:
     SkeletonPose currentPose_;
     SkeletonPose previousPose_;
 
+    // Per-frame pose for bone velocity tracking (finite-difference)
+    SkeletonPose prevFramePose_;
+    std::vector<glm::vec3> bonePosVelocities_;   // Bone translation velocities (m/s)
+    std::vector<glm::vec3> boneAngVelocities_;   // Bone angular velocities (axis*rad/s)
+
     // Timing
     float timeSinceLastSearch_ = 0.0f;
     float matchCountTimer_ = 0.0f;
     size_t matchCountThisSecond_ = 0;
+
+    // Playback speed scaling (stride matching)
+    float playbackSpeedScale_ = 1.0f;
+
+    // Root Y-rotation tracking
+    float prevRootYaw_ = 0.0f;   // Cumulative yaw at end of last frame
+    float rootYawDelta_ = 0.0f;  // Per-frame yaw delta (radians), exposed to callers
 
     // Flags
     bool initialized_ = false;

@@ -3,6 +3,7 @@
 #include "GLTFLoader.h"
 #include <SDL3/SDL.h>
 #include <algorithm>
+#include <glm/gtc/constants.hpp>
 
 namespace MotionMatching {
 
@@ -78,6 +79,33 @@ void MotionMatchingController::update(const glm::vec3& position,
 
     // Update pose from current playback
     updatePose();
+
+    // Track per-bone velocities via finite difference for inertial blending.
+    // Done after updatePose() so currentPose_ is fresh.
+    if (!prevFramePose_.empty() && prevFramePose_.size() == currentPose_.size() && deltaTime > 1e-6f) {
+        size_t n = currentPose_.size();
+        bonePosVelocities_.resize(n);
+        boneAngVelocities_.resize(n);
+        for (size_t i = 0; i < n; ++i) {
+            bonePosVelocities_[i] = (currentPose_[i].translation - prevFramePose_[i].translation) / deltaTime;
+
+            // Angular velocity from rotation delta (axis * rad/s)
+            glm::quat dq = currentPose_[i].rotation * glm::inverse(prevFramePose_[i].rotation);
+            if (dq.w < 0.0f) dq = -dq;  // Ensure shortest arc
+            float sinHalfAngle = glm::length(glm::vec3(dq.x, dq.y, dq.z));
+            if (sinHalfAngle > 1e-6f) {
+                float angle = 2.0f * std::asin(glm::clamp(sinHalfAngle, 0.0f, 1.0f));
+                boneAngVelocities_[i] = (glm::vec3(dq.x, dq.y, dq.z) / sinHalfAngle) * (angle / deltaTime);
+            } else {
+                boneAngVelocities_[i] = glm::vec3(0.0f);
+            }
+        }
+    } else if (currentPose_.size() != bonePosVelocities_.size()) {
+        // First frame or size mismatch — initialize to zero
+        bonePosVelocities_.assign(currentPose_.size(), glm::vec3(0.0f));
+        boneAngVelocities_.assign(currentPose_.size(), glm::vec3(0.0f));
+    }
+    prevFramePose_ = currentPose_;
 
     // Extract query features from current state
     extractQueryFeatures();
@@ -283,12 +311,18 @@ void MotionMatchingController::transitionToPose(const MatchResult& match) {
     // Update the current pose to the new target
     updatePose();
 
-    // Start inertial blend if enabled
+    // Reset prevRootYaw_ to the new pose's yaw so the first frame after the transition
+    // doesn't generate a spurious large delta from the yaw discontinuity.
+    rootYawDelta_ = 0.0f;
+    // prevRootYaw_ was already updated inside updatePose() to the new clip's yaw.
+
+    // Start inertial blend if enabled.
+    // Pass per-bone velocities computed from the previous animation so the blender
+    // can produce the correct overshoot-and-settle inertialization response
+    // (Bovet & Clavet GDC 2016) instead of a plain crossfade.
     if (config_.useInertialBlending && !previousPose_.empty() && !currentPose_.empty()) {
-        // Use full skeletal inertialization for smoother transitions
-        // Note: We don't have per-bone velocities tracked, so pass empty vectors
-        // The blender will assume zero velocity, which is reasonable for animation transitions
-        inertialBlender_.startSkeletalBlend(previousPose_, currentPose_);
+        inertialBlender_.startSkeletalBlend(previousPose_, currentPose_,
+                                            bonePosVelocities_, boneAngVelocities_);
     }
 }
 
@@ -302,8 +336,20 @@ void MotionMatchingController::advancePlayback(float deltaTime) {
         return;
     }
 
-    // Advance time
-    playback_.time += deltaTime;
+    // Stride matching: scale playback rate so animation speed matches actual movement speed.
+    // clip.averageSpeed is the canonical speed of this animation (m/s).
+    // We only scale for locomotion clips (speed > 0.1 m/s); idle clips play at 1x.
+    float canonicalSpeed = clip.averageSpeed;
+    if (canonicalSpeed > 0.1f) {
+        glm::vec3 vel = trajectoryPredictor_.getCurrentVelocity();
+        float actualSpeed = glm::length(glm::vec2(vel.x, vel.z));
+        playbackSpeedScale_ = glm::clamp(actualSpeed / canonicalSpeed, 0.5f, 2.0f);
+    } else {
+        playbackSpeedScale_ = 1.0f;
+    }
+
+    // Advance time (scaled)
+    playback_.time += deltaTime * playbackSpeedScale_;
 
     // Handle looping
     if (clip.looping) {
@@ -355,6 +401,10 @@ void MotionMatchingController::updatePose() {
     // they compound — causing the character to overshoot and face backwards
     // during turns. Walk/run root Y-rotation is near-zero so this is invisible
     // for those clips; turn animations have large root Y-rotation causing the bug.
+    //
+    // Instead of discarding the yaw, we expose it as rootYawDelta_ so callers
+    // can rotate the character's facing direction by this amount each frame,
+    // preserving turn animation intent while preventing double-rotation.
     int32_t rootIdx = clip.clip->rootBoneIndex;
     if (rootIdx >= 0 && static_cast<size_t>(rootIdx) < currentPose_.size()) {
         glm::quat q = currentPose_[rootIdx].rotation;
@@ -362,9 +412,19 @@ void MotionMatchingController::updatePose() {
         // Extract yaw angle from quaternion
         float yaw = std::atan2(2.0f * (q.w * q.y + q.x * q.z),
                                1.0f - 2.0f * (q.y * q.y + q.z * q.z));
-        // Remove the Y-rotation component
+
+        // Compute per-frame yaw delta (normalized to [-pi, pi] to handle wrap-around)
+        float rawDelta = yaw - prevRootYaw_;
+        if (rawDelta > glm::pi<float>())  rawDelta -= 2.0f * glm::pi<float>();
+        if (rawDelta < -glm::pi<float>()) rawDelta += 2.0f * glm::pi<float>();
+        rootYawDelta_ = rawDelta;
+        prevRootYaw_ = yaw;
+
+        // Remove the Y-rotation component so the skeleton doesn't self-rotate
         glm::quat qY = glm::angleAxis(yaw, glm::vec3(0.0f, 1.0f, 0.0f));
         currentPose_[rootIdx].rotation = glm::inverse(qY) * q;
+    } else {
+        rootYawDelta_ = 0.0f;
     }
 }
 

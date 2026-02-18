@@ -64,6 +64,11 @@ struct DatabaseClip {
     // This is critical for Mixamo and other in-place animation formats
     float locomotionSpeed = 0.0f;
 
+    // Average root XZ speed (m/s) computed from the animation's root bone motion.
+    // Used by playback speed scaling when locomotionSpeed == 0.
+    // For in-place animations this will be ~0; use locomotionSpeed instead.
+    float averageSpeed = 0.0f;
+
     // Tags applied to all poses from this clip
     std::vector<std::string> tags;
 };

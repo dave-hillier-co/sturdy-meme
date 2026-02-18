@@ -571,23 +571,36 @@ void AnimatedCharacter::setupDefaultIKChains() {
     std::string leftToe = findBone({"LeftToeBase", "LeftToe", "L_Toe", "toe.L", "ball_l"});
     std::string rightToe = findBone({"RightToeBase", "RightToe", "R_Toe", "toe.R", "ball_r"});
 
+    // Additional foot bones for multi-point ground fitting
+    std::string leftToeEnd = findBone({"LeftToe_End", "LeftToeEnd", "L_ToeEnd", "toe_end.L", "toe_end_l"});
+    std::string rightToeEnd = findBone({"RightToe_End", "RightToeEnd", "R_ToeEnd", "toe_end.R", "toe_end_r"});
+    std::string leftHeel = findBone({"LeftHeelRoll", "LeftHeel", "L_Heel", "heel.L", "heel_l"});
+    std::string rightHeel = findBone({"RightHeelRoll", "RightHeel", "R_Heel", "heel.R", "heel_r"});
+
     if (!leftThigh.empty() && !leftKnee.empty() && !leftFoot.empty()) {
         if (ikSystem.addFootPlacement("LeftFoot", skeleton, leftThigh, leftKnee, leftFoot, leftToe, true)) {
-            // Set knee pole vector (forward)
             if (auto* foot = ikSystem.getFootPlacement("LeftFoot")) {
                 foot->poleVector = glm::vec3(0, 0, 1);
+                // Set heel/ball bones for multi-point ground plane fitting
+                if (!leftHeel.empty()) foot->heelBoneIndex = skeleton.findJointIndex(leftHeel);
+                if (!leftToeEnd.empty()) foot->ballBoneIndex = skeleton.findJointIndex(leftToeEnd);
             }
-            SDL_Log("AnimatedCharacter: Setup left foot placement IK");
+            SDL_Log("AnimatedCharacter: Setup left foot placement IK (heel=%s, ball=%s)",
+                    leftHeel.empty() ? "none" : leftHeel.c_str(),
+                    leftToeEnd.empty() ? "none" : leftToeEnd.c_str());
         }
     }
 
     if (!rightThigh.empty() && !rightKnee.empty() && !rightFoot.empty()) {
         if (ikSystem.addFootPlacement("RightFoot", skeleton, rightThigh, rightKnee, rightFoot, rightToe)) {
-            // Set knee pole vector (forward)
             if (auto* foot = ikSystem.getFootPlacement("RightFoot")) {
                 foot->poleVector = glm::vec3(0, 0, 1);
+                if (!rightHeel.empty()) foot->heelBoneIndex = skeleton.findJointIndex(rightHeel);
+                if (!rightToeEnd.empty()) foot->ballBoneIndex = skeleton.findJointIndex(rightToeEnd);
             }
-            SDL_Log("AnimatedCharacter: Setup right foot placement IK");
+            SDL_Log("AnimatedCharacter: Setup right foot placement IK (heel=%s, ball=%s)",
+                    rightHeel.empty() ? "none" : rightHeel.c_str(),
+                    rightToeEnd.empty() ? "none" : rightToeEnd.c_str());
         }
     }
 

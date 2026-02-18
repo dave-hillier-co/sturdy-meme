@@ -206,7 +206,8 @@ bool IKSystem::addFootPlacement(
     const std::string& hipBoneName,
     const std::string& kneeBoneName,
     const std::string& footBoneName,
-    const std::string& toeBoneName
+    const std::string& toeBoneName,
+    bool isLeftFoot
 ) {
     int32_t hipIdx = skeleton.findJointIndex(hipBoneName);
     int32_t kneeIdx = skeleton.findJointIndex(kneeBoneName);
@@ -233,6 +234,7 @@ bool IKSystem::addFootPlacement(
 
     NamedFootPlacement nfp;
     nfp.name = name;
+    nfp.isLeftFoot = isLeftFoot;
     nfp.foot.hipBoneIndex = hipIdx;
     nfp.foot.kneeBoneIndex = kneeIdx;
     nfp.foot.footBoneIndex = footIdx;
@@ -454,67 +456,87 @@ void IKSystem::solve(Skeleton& skeleton, float deltaTime) {
 void IKSystem::solve(Skeleton& skeleton, const glm::mat4& characterTransform, float deltaTime) {
     if (!hasEnabledChains()) return;
 
-    // Compute global transforms once
-    skeleton.computeGlobalTransforms(cachedGlobalTransforms);
-
-    // Solve pelvis adjustment first (affects leg IK)
-    if (pelvisAdjustment.enabled && !footPlacements.empty()) {
-        // Find left and right foot placements
-        FootPlacementIK* leftFoot = nullptr;
-        FootPlacementIK* rightFoot = nullptr;
+    // Helper to find left/right foot placements using explicit isLeftFoot flag
+    auto findLeftRight = [this](FootPlacementIK*& leftFoot, FootPlacementIK*& rightFoot) {
+        leftFoot = nullptr;
+        rightFoot = nullptr;
         for (auto& nfp : footPlacements) {
-            if (nfp.name.find("left") != std::string::npos ||
-                nfp.name.find("Left") != std::string::npos ||
-                nfp.name.find("L_") != std::string::npos) {
+            if (nfp.isLeftFoot) {
                 leftFoot = &nfp.foot;
             } else {
                 rightFoot = &nfp.foot;
             }
         }
+    };
+
+    // 1. Compute global transforms once
+    skeleton.computeGlobalTransforms(cachedGlobalTransforms);
+
+    // 2. Query ground for all feet without modifying skeleton (populates
+    //    animationFootPosition, currentGroundHeight, isGrounded)
+    if (groundQuery) {
+        for (auto& nfp : footPlacements) {
+            if (nfp.foot.enabled && nfp.foot.weight > 0.0f) {
+                FootPlacementIKSolver::queryGround(nfp.foot, cachedGlobalTransforms,
+                                                    groundQuery, characterTransform);
+            }
+        }
+    }
+
+    // 3. Calculate and apply pelvis offset using current-frame foot data
+    if (pelvisAdjustment.enabled && !footPlacements.empty()) {
+        FootPlacementIK* leftFoot = nullptr;
+        FootPlacementIK* rightFoot = nullptr;
+        findLeftRight(leftFoot, rightFoot);
 
         if (leftFoot && rightFoot) {
             float offset = FootPlacementIKSolver::calculatePelvisOffset(*leftFoot, *rightFoot, 0.0f);
             FootPlacementIKSolver::applyPelvisAdjustment(skeleton, pelvisAdjustment, offset, deltaTime);
-            skeleton.computeGlobalTransforms(cachedGlobalTransforms);
         }
     }
 
-    // Solve foot placement IK
+    // 4. Recompute globals after pelvis adjustment
+    skeleton.computeGlobalTransforms(cachedGlobalTransforms);
+
+    // 5. Solve foot placement IK (both feet)
     for (auto& nfp : footPlacements) {
         if (nfp.foot.enabled && nfp.foot.weight > 0.0f && groundQuery) {
             FootPlacementIKSolver::solve(skeleton, nfp.foot, cachedGlobalTransforms,
                                          groundQuery, characterTransform, deltaTime);
-            skeleton.computeGlobalTransforms(cachedGlobalTransforms);
         }
     }
 
-    // Solve two-bone IK chains
-    for (auto& nc : chains) {
-        if (nc.chain.enabled && nc.chain.weight > 0.0f) {
-            TwoBoneIKSolver::solveBlended(skeleton, nc.chain, cachedGlobalTransforms, nc.chain.weight);
-            skeleton.computeGlobalTransforms(cachedGlobalTransforms);
-        }
-    }
+    // 6. Recompute globals after foot IK
+    skeleton.computeGlobalTransforms(cachedGlobalTransforms);
 
-    // Solve straddling IK (hip tilt for different foot heights)
+    // 7. Solve straddling IK (hip tilt for different foot heights)
     if (straddle.enabled && straddle.weight > 0.0f) {
         FootPlacementIK* leftFoot = nullptr;
         FootPlacementIK* rightFoot = nullptr;
-        for (auto& nfp : footPlacements) {
-            if (nfp.name.find("left") != std::string::npos ||
-                nfp.name.find("Left") != std::string::npos) {
-                leftFoot = &nfp.foot;
-            } else {
-                rightFoot = &nfp.foot;
-            }
-        }
+        findLeftRight(leftFoot, rightFoot);
         StraddleIKSolver::solve(skeleton, straddle, leftFoot, rightFoot, cachedGlobalTransforms, deltaTime);
+    }
+
+    // 8. Solve two-bone IK chains (arms, etc.)
+    bool chainsModified = false;
+    for (auto& nc : chains) {
+        if (nc.chain.enabled && nc.chain.weight > 0.0f) {
+            TwoBoneIKSolver::solveBlended(skeleton, nc.chain, cachedGlobalTransforms, nc.chain.weight);
+            chainsModified = true;
+        }
+    }
+
+    // 9. Recompute if needed for climbing or look-at
+    bool needsRecompute = chainsModified || (straddle.enabled && straddle.weight > 0.0f);
+    bool hasClimbing = climbing.enabled && climbing.weight > 0.0f && climbing.currentTransition > 0.0f;
+    bool hasLookAt = lookAt.enabled && lookAt.weight > 0.0f;
+
+    if (needsRecompute && (hasClimbing || hasLookAt)) {
         skeleton.computeGlobalTransforms(cachedGlobalTransforms);
     }
 
-    // Solve climbing IK
-    if (climbing.enabled && climbing.weight > 0.0f && climbing.currentTransition > 0.0f) {
-        // Gather arm and leg chains
+    // 10. Solve climbing IK
+    if (hasClimbing) {
         std::vector<TwoBoneIKChain> armChains;
         std::vector<TwoBoneIKChain> legChains;
 
@@ -525,11 +547,13 @@ void IKSystem::solve(Skeleton& skeleton, const glm::mat4& characterTransform, fl
 
         ClimbingIKSolver::solve(skeleton, climbing, armChains, legChains,
                                 cachedGlobalTransforms, characterTransform, deltaTime);
-        skeleton.computeGlobalTransforms(cachedGlobalTransforms);
+        if (hasLookAt) {
+            skeleton.computeGlobalTransforms(cachedGlobalTransforms);
+        }
     }
 
-    // Solve look-at IK last (head movement shouldn't affect body)
-    if (lookAt.enabled && lookAt.weight > 0.0f) {
+    // 11. Solve look-at IK last (head movement shouldn't affect body)
+    if (hasLookAt) {
         LookAtIKSolver::solve(skeleton, lookAt, cachedGlobalTransforms, deltaTime);
     }
 }

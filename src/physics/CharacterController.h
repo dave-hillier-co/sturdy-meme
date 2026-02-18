@@ -42,6 +42,12 @@ public:
 
     // Ground state
     bool isOnGround() const;
+    glm::vec3 getGroundNormal() const;
+    glm::vec3 getGroundVelocity() const;
+
+    // Jump configuration
+    void setJumpImpulse(float impulse) { jumpImpulse_ = impulse; }
+    float getJumpImpulse() const { return jumpImpulse_; }
 
     // Check if character is created
     bool isValid() const { return character_ != nullptr; }
@@ -52,4 +58,5 @@ private:
     float radius_ = 0.3f;
     glm::vec3 desiredVelocity_{0.0f};
     bool wantsJump_ = false;
+    float jumpImpulse_ = 5.0f;
 };

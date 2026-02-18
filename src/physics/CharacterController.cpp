@@ -70,24 +70,33 @@ void CharacterController::update(float deltaTime, JPH::PhysicsSystem* physicsSys
 
     JPH::Vec3 newVelocity;
 
-    // Horizontal velocity from input
-    newVelocity.SetX(desiredVelocity_.x);
-    newVelocity.SetZ(desiredVelocity_.z);
-
     // Vertical velocity per Jolt docs:
     // OnGround: groundVelocity + horizontal + optional jump + dt*gravity
     // Else: currentVertical + horizontal + dt*gravity
     if (onGround) {
         JPH::Vec3 groundVelocity = character_->GetGroundVelocity();
+        JPH::Vec3 groundNormal = character_->GetGroundNormal();
         float verticalVelocity = groundVelocity.GetY();
 
+        // Project desired horizontal velocity onto ground plane to avoid
+        // jitter near the slope limit where horizontal input fights the slope angle
+        JPH::Vec3 desiredHorizontal(desiredVelocity_.x, 0.0f, desiredVelocity_.z);
+        float dot = desiredHorizontal.Dot(groundNormal);
+        JPH::Vec3 projected = desiredHorizontal - dot * groundNormal;
+
+        // Add horizontal ground velocity for moving platform support
+        newVelocity.SetX(projected.GetX() + groundVelocity.GetX());
+        newVelocity.SetZ(projected.GetZ() + groundVelocity.GetZ());
+
         if (wantsJump_) {
-            verticalVelocity += 5.0f;
+            verticalVelocity += jumpImpulse_;
             wantsJump_ = false;
         }
 
         newVelocity.SetY(verticalVelocity);
     } else {
+        newVelocity.SetX(desiredVelocity_.x);
+        newVelocity.SetZ(desiredVelocity_.z);
         newVelocity.SetY(currentVelocity.GetY());
     }
 
@@ -153,4 +162,14 @@ glm::vec3 CharacterController::getVelocity() const {
 bool CharacterController::isOnGround() const {
     if (!character_) return false;
     return character_->GetGroundState() == JPH::CharacterVirtual::EGroundState::OnGround;
+}
+
+glm::vec3 CharacterController::getGroundNormal() const {
+    if (!character_ || !isOnGround()) return glm::vec3(0.0f, 1.0f, 0.0f);
+    return toGLM(character_->GetGroundNormal());
+}
+
+glm::vec3 CharacterController::getGroundVelocity() const {
+    if (!character_) return glm::vec3(0.0f);
+    return toGLM(character_->GetGroundVelocity());
 }

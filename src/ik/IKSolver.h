@@ -142,10 +142,11 @@ struct FootPlacementIK {
     glm::vec3 animationFootPosition = glm::vec3(0.0f);
 
     // Foot locking state (prevents sliding during stance)
-    glm::vec3 lockedWorldPosition = glm::vec3(0.0f);  // World position where foot is locked
+    glm::vec3 lockedWorldPosition = glm::vec3(0.0f);      // World position where foot is locked
+    glm::vec3 lockOriginWorldPosition = glm::vec3(0.0f);  // Foot's world position at lock time (for drift comparison)
     glm::vec3 lockedGroundNormal = glm::vec3(0.0f, 1.0f, 0.0f);  // Ground normal when locked
-    bool isLocked = false;                             // Whether foot is currently locked in place
-    float lockBlend = 0.0f;                            // Blend factor toward locked position (0-1)
+    bool isLocked = false;                                 // Whether foot is currently locked in place
+    float lockBlend = 0.0f;                                // Blend factor toward locked position (0-1)
 
     // Phase tracking integration
     FootPhase currentPhase = FootPhase::Stance;
@@ -350,6 +351,16 @@ private:
 // Plants feet on uneven terrain using ground queries
 class FootPlacementIKSolver {
 public:
+    // Query ground under foot and populate animationFootPosition, currentGroundHeight,
+    // isGrounded fields on the FootPlacementIK struct without modifying the skeleton.
+    // Used to get foot data before pelvis adjustment.
+    static void queryGround(
+        FootPlacementIK& foot,
+        const std::vector<glm::mat4>& globalTransforms,
+        const GroundQueryFunc& groundQuery,
+        const glm::mat4& characterTransform
+    );
+
     // Solve foot placement for a single foot
     // Uses GroundQueryFunc to probe terrain height
     static void solve(
@@ -592,7 +603,8 @@ public:
         const std::string& hipBoneName,
         const std::string& kneeBoneName,
         const std::string& footBoneName,
-        const std::string& toeBoneName = ""
+        const std::string& toeBoneName = "",
+        bool isLeftFoot = false
     );
 
     // Setup pelvis adjustment
@@ -706,6 +718,7 @@ private:
     struct NamedFootPlacement {
         std::string name;
         FootPlacementIK foot;
+        bool isLeftFoot = false;
     };
     std::vector<NamedFootPlacement> footPlacements;
     PelvisAdjustment pelvisAdjustment;

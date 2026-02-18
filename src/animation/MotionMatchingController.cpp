@@ -212,6 +212,8 @@ void MotionMatchingController::performSearch() {
     MatchResult match = matcher_.findBestMatch(localTrajectory, localQueryPose, options);
 
     if (match.isValid()) {
+        const auto& policy = config_.transitionPolicy;
+
         // Check if this is a different clip
         bool isDifferentClip = (match.pose->clipIndex != playback_.clipIndex);
 
@@ -223,23 +225,24 @@ void MotionMatchingController::performSearch() {
         bool shouldTransition = false;
 
         if (isDifferentClip) {
-            // Switching to different clip - allow if cost is better or we've been here a while
-            shouldTransition = (match.cost < stats_.lastMatchCost * 0.8f ||
-                               playback_.timeSinceMatch > 0.5f);
+            // Switching to different clip - allow if cost improves by the policy ratio
+            // or we've been in the current clip longer than the minimum dwell time
+            shouldTransition = (match.cost < stats_.lastMatchCost * policy.costImprovementRatio ||
+                               playback_.timeSinceMatch > policy.minDwellTime);
         }
         // For same clip: only transition if we're NOT in a looping clip
         // Non-looping clips (like jumps) may need time jumps for responsiveness
         else if (!currentClip.looping) {
             float timeDiff = std::abs(match.pose->time - playback_.time);
-            bool isSignificantTimeJump = timeDiff > 0.2f;
-            if (isSignificantTimeJump && match.cost < stats_.lastMatchCost * 0.5f) {
+            bool isSignificantTimeJump = timeDiff > policy.sameClipMinTimeDiff;
+            if (isSignificantTimeJump && match.cost < stats_.lastMatchCost * policy.sameClipCostRatio) {
                 shouldTransition = true;
             }
         }
         // For looping clips in same clip: never jump, let it play naturally
 
-        // Force transition after 1.0s only if it's to a different clip
-        bool forceTransition = (playback_.timeSinceMatch > 1.0f) && isDifferentClip;
+        // Force transition after policy timeout, only if it's to a different clip
+        bool forceTransition = (playback_.timeSinceMatch > policy.forceTransitionTime) && isDifferentClip;
 
         if (shouldTransition || forceTransition) {
             transitionToPose(match);

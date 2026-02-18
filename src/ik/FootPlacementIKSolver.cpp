@@ -20,6 +20,33 @@ static float calculateExtensionRatio(
     return glm::clamp(distanceToTarget / legLength, 0.0f, 1.5f);
 }
 
+void FootPlacementIKSolver::queryGround(
+    FootPlacementIK& foot,
+    const std::vector<glm::mat4>& globalTransforms,
+    const GroundQueryFunc& groundQuery,
+    const glm::mat4& characterTransform
+) {
+    if (!foot.enabled || foot.weight <= 0.0f) return;
+    if (foot.footBoneIndex < 0 || foot.hipBoneIndex < 0 || foot.kneeBoneIndex < 0) return;
+    if (!groundQuery) return;
+
+    // Get current foot position in skeleton space (from animation)
+    glm::vec3 animFootPos = IKUtils::getWorldPosition(globalTransforms[foot.footBoneIndex]);
+    foot.animationFootPosition = animFootPos;
+
+    // Transform to world space
+    glm::vec3 worldFootPos = glm::vec3(characterTransform * glm::vec4(animFootPos, 1.0f));
+
+    // Query ground at foot position
+    glm::vec3 rayOrigin = worldFootPos + glm::vec3(0.0f, foot.raycastHeight, 0.0f);
+    GroundQueryResult result = groundQuery(rayOrigin, foot.raycastHeight + foot.raycastDistance);
+
+    foot.isGrounded = result.hit;
+    if (result.hit) {
+        foot.currentGroundHeight = result.position.y;
+    }
+}
+
 void FootPlacementIKSolver::solve(
     Skeleton& skeleton,
     FootPlacementIK& foot,
@@ -45,6 +72,7 @@ void FootPlacementIKSolver::solve(
     if (foot.lockBlend <= 0.0f) {
         foot.isLocked = false;
         foot.lockedWorldPosition = glm::vec3(0.0f);
+        foot.lockOriginWorldPosition = glm::vec3(0.0f);
         foot.lockedGroundNormal = glm::vec3(0.0f, 1.0f, 0.0f);
     }
 
@@ -63,21 +91,26 @@ void FootPlacementIKSolver::solve(
 
     if (foot.lockBlend > 0.0f) {
         if (!foot.isLocked) {
-            // First time locking - store the current world position
+            // First time locking - store both the locked position and the origin for drift comparison
             foot.lockedWorldPosition = worldFootPos;
+            foot.lockOriginWorldPosition = worldFootPos;
             foot.isLocked = true;
         }
 
-        // Check if locked position is too far from animation position (would break silhouette)
-        // If so, release the lock and let foot slide (per Simon Clavet's GDC recommendation)
-        float distanceFromAnim = glm::length(glm::vec2(foot.lockedWorldPosition.x - worldFootPos.x,
-                                                        foot.lockedWorldPosition.z - worldFootPos.z));
-        const float maxLockDistance = 0.15f;  // 15cm max deviation from animation
+        // Compare the animation's current foot position against where the foot was at lock time.
+        // This measures how far the character has moved since locking, not how far the lock
+        // has drifted. The lock should release when the character has walked far enough that
+        // maintaining the lock would visually break the silhouette.
+        float distanceFromLockOrigin = glm::length(glm::vec2(
+            worldFootPos.x - foot.lockOriginWorldPosition.x,
+            worldFootPos.z - foot.lockOriginWorldPosition.z));
+        const float maxLockDistance = 0.15f;  // 15cm max deviation from lock origin
 
-        if (distanceFromAnim > maxLockDistance) {
-            // Too far - release lock
+        if (distanceFromLockOrigin > maxLockDistance) {
+            // Character has moved too far from where foot was planted - release lock
             foot.isLocked = false;
             foot.lockedWorldPosition = worldFootPos;
+            foot.lockOriginWorldPosition = worldFootPos;
         } else {
             // Blend full position toward locked position (including Y for slope handling)
             queryWorldPos = glm::mix(worldFootPos, foot.lockedWorldPosition, foot.lockBlend);
@@ -147,10 +180,10 @@ void FootPlacementIKSolver::solve(
             globalTransforms, foot.hipBoneIndex, foot.kneeBoneIndex, foot.footBoneIndex,
             targetLocalPos, foot.legLength);
 
-        // If over 95% extended, target is unreachable - blend down IK weight
-        if (foot.currentExtensionRatio > 0.95f) {
+        // If over 90% extended, smoothly blend down IK weight to avoid pop at full extension
+        if (foot.currentExtensionRatio > 0.9f) {
             foot.targetUnreachable = true;
-            // Smoothly reduce weight as we approach full extension
+            // Smooth ramp from 1.0 at 0.9 to 0.0 at 1.0 — guard and ramp aligned
             float reachWeight = glm::clamp(1.0f - (foot.currentExtensionRatio - 0.9f) * 10.0f, 0.0f, 1.0f);
             phaseWeight *= reachWeight;
         } else {
@@ -201,8 +234,9 @@ void FootPlacementIKSolver::solve(
             : groundResult.normal;
 
         // Ground normal is in world space, transform to skeleton space
-        glm::mat3 charRotInv = glm::inverse(glm::mat3(characterTransform));
-        glm::vec3 targetUp = glm::normalize(charRotInv * groundNormal);
+        // Use transpose(inverse(mat3)) for correct normal transformation
+        glm::mat3 normalMatrix = glm::transpose(glm::inverse(glm::mat3(characterTransform)));
+        glm::vec3 targetUp = glm::normalize(normalMatrix * groundNormal);
 
         // Get the foot joint's current local rotation (from animation + leg IK)
         Joint& footJoint = skeleton.joints[foot.footBoneIndex];

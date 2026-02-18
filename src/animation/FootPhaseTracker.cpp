@@ -114,9 +114,18 @@ float FootPhaseTracker::sampleFootHeight(const AnimationClip& clip, int32_t foot
     // Create a temporary skeleton copy for sampling
     Skeleton tempSkeleton = skeleton;
 
-    // Reset to bind pose
+    // Reset to bind pose by computing local transforms from inverse bind matrices.
+    // globalBind[i] = inverse(inverseBindMatrix[i])
+    // localBind[i] = inverse(parentGlobalBind) * globalBind[i]
     for (size_t i = 0; i < tempSkeleton.joints.size(); ++i) {
-        // Keep original local transform
+        glm::mat4 globalBind = glm::inverse(tempSkeleton.joints[i].inverseBindMatrix);
+        int32_t parentIdx = tempSkeleton.joints[i].parentIndex;
+        if (parentIdx >= 0 && parentIdx < static_cast<int32_t>(tempSkeleton.joints.size())) {
+            glm::mat4 parentGlobalBind = glm::inverse(tempSkeleton.joints[parentIdx].inverseBindMatrix);
+            tempSkeleton.joints[i].localTransform = glm::inverse(parentGlobalBind) * globalBind;
+        } else {
+            tempSkeleton.joints[i].localTransform = globalBind;
+        }
     }
 
     // Sample animation at this time

@@ -36,6 +36,15 @@ struct MotionMatchingStats {
     float currentClipTime = 0.0f;
 };
 
+// Policy for when to transition between clips
+struct TransitionPolicy {
+    float minDwellTime = 0.3f;          // Minimum time in current clip before allowing transition
+    float costImprovementRatio = 0.8f;  // New match must be this fraction of current cost to trigger
+    float forceTransitionTime = 1.0f;   // Force search for new clip after this long
+    float sameClipMinTimeDiff = 0.2f;   // Minimum time jump for same-clip transitions (non-looping only)
+    float sameClipCostRatio = 0.5f;     // Stricter ratio for same-clip jumps
+};
+
 // Configuration for the controller
 struct ControllerConfig {
     // Search timing
@@ -45,6 +54,9 @@ struct ControllerConfig {
     // Blending
     float defaultBlendDuration = 0.2f;
     bool useInertialBlending = true;
+
+    // Transition
+    TransitionPolicy transitionPolicy;
 
     // Trajectory
     TrajectoryPredictor::Config trajectoryConfig;

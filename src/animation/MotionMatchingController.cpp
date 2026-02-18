@@ -288,6 +288,24 @@ void MotionMatchingController::transitionToPose(const MatchResult& match) {
     playback_.matchedPoseIndex = match.poseIndex;
     playback_.timeSinceMatch = 0.0f;
 
+    // Reset root yaw tracking so the first frame after transition doesn't
+    // produce a bogus delta from the old clip's yaw to the new clip's yaw.
+    // updatePose() below will set previousRootYaw_ from the new clip.
+    // We pre-sample it here to avoid a one-frame spike.
+    if (match.clip->clip && match.clip->clip->rootBoneIndex >= 0) {
+        Skeleton tempSkel = database_.getSkeleton();
+        match.clip->clip->sample(match.pose->time, tempSkel, true);
+        size_t rootIdx = static_cast<size_t>(match.clip->clip->rootBoneIndex);
+        if (rootIdx < tempSkel.joints.size()) {
+            BonePose rootPose = BonePose::fromMatrix(
+                tempSkel.joints[rootIdx].localTransform,
+                tempSkel.joints[rootIdx].preRotation);
+            glm::quat q = rootPose.rotation;
+            previousRootYaw_ = std::atan2(2.0f * (q.w * q.y + q.x * q.z),
+                                           1.0f - 2.0f * (q.y * q.y + q.z * q.z));
+        }
+    }
+
     // Update stats
     stats_.currentClipName = match.clip->name;
     stats_.currentClipTime = match.pose->time;
@@ -411,19 +429,23 @@ void MotionMatchingController::updatePose() {
     // The character controller externally rotates the world transform toward the
     // movement direction. If we also keep the animation's root Y-rotation,
     // they compound — causing the character to overshoot and face backwards
-    // during turns. We strip it but expose it via getExtractedRootYawDelta()
-    // so the calling code can feed it into the character controller for turn
-    // animations where the animation should drive facing rotation.
+    // during turns. We strip it but expose the per-frame delta via
+    // getExtractedRootYawDelta() so the calling code can feed it into the
+    // character controller for turn animations.
     int32_t rootIdx = clip.clip->rootBoneIndex;
     if (rootIdx >= 0 && static_cast<size_t>(rootIdx) < currentPose_.size()) {
         glm::quat q = currentPose_[rootIdx].rotation;
-        // Decompose quaternion into Y-rotation and remainder: q = qY * qRemainder
         // Extract yaw angle from quaternion
         float yaw = std::atan2(2.0f * (q.w * q.y + q.x * q.z),
                                1.0f - 2.0f * (q.y * q.y + q.z * q.z));
-        // Store the extracted yaw for external use (turn-in-place, root motion)
-        extractedRootYawDelta_ = yaw;
-        // Remove the Y-rotation component
+        // Compute per-frame delta (change from previous frame's root yaw)
+        float yawDelta = yaw - previousRootYaw_;
+        // Normalize to [-pi, pi] to handle wrap-around
+        while (yawDelta > glm::pi<float>()) yawDelta -= glm::two_pi<float>();
+        while (yawDelta < -glm::pi<float>()) yawDelta += glm::two_pi<float>();
+        extractedRootYawDelta_ = yawDelta;
+        previousRootYaw_ = yaw;
+        // Remove the Y-rotation component from the pose
         glm::quat qY = glm::angleAxis(yaw, glm::vec3(0.0f, 1.0f, 0.0f));
         currentPose_[rootIdx].rotation = glm::inverse(qY) * q;
     } else {

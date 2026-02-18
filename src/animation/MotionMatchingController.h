@@ -196,8 +196,9 @@ private:
     bool initialized_ = false;
     bool forceSearchNextUpdate_ = false;
 
-    // Root yaw extraction
+    // Root yaw extraction — per-frame delta, not absolute
     float extractedRootYawDelta_ = 0.0f;
+    float previousRootYaw_ = 0.0f;
 
     // Per-bone velocity tracking for inertial blending
     SkeletonPose prevPrevPose_;          // Pose from two frames ago

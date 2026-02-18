@@ -315,16 +315,10 @@ void FootPhaseTracker::reset() {
 void FootPhaseTracker::applyToFootIK(bool isLeftFoot, FootPlacementIK& foot) const {
     const FootPhaseData& data = isLeftFoot ? leftFoot_ : rightFoot_;
 
-    // Push phase and progress directly into the IK struct so there is a single
-    // source of truth (previously both FootPhaseData and FootPlacementIK maintained
-    // independent copies of phase/progress/lockBlend – bug #17).
+    // Sync only the fields that are truly duplicated between FootPhaseData and
+    // FootPlacementIK (bug #17).  lockBlend and weight are intentionally managed
+    // by the caller with smoothed blending (e.g. turnLockScale in AnimatedCharacter)
+    // so we must not overwrite them here.
     foot.currentPhase = data.phase;
     foot.phaseProgress = data.phaseProgress;
-    foot.lockBlend = getLockBlend(isLeftFoot);
-
-    // When the tracker says the foot should be unlocked (swing), clear the IK lock
-    // so it doesn't hold stale world-space position data.
-    if (data.phase == FootPhase::Swing) {
-        foot.isLocked = false;
-    }
 }

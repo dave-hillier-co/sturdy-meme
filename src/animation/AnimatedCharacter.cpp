@@ -394,12 +394,9 @@ void AnimatedCharacter::update(float deltaTime, VmaAllocator allocator, VkDevice
             targetLockBlend = footPhaseTracker.getLockBlend(isLeftFoot) * turnLockScale;
             targetWeight = footPhaseTracker.getIKWeight(isLeftFoot);
 
-            // Pass phase data to foot for solver to use
-            const FootPhaseData& phaseData = isLeftFoot
-                ? footPhaseTracker.getLeftFoot()
-                : footPhaseTracker.getRightFoot();
-            foot->currentPhase = phaseData.phase;
-            foot->phaseProgress = phaseData.phaseProgress;
+            // Sync phase/progress into the IK foot (single source of truth – bug #17).
+            // lockBlend and weight remain under this function's smoothed control.
+            footPhaseTracker.applyToFootIK(isLeftFoot, *foot);
         } else {
             // Fallback: no lock during movement, moderate IK
             targetLockBlend = 0.0f;
@@ -423,6 +420,7 @@ void AnimatedCharacter::update(float deltaTime, VmaAllocator allocator, VkDevice
             if (foot->lockBlend <= 0.0f) {
                 foot->isLocked = false;
                 foot->lockedWorldPosition = glm::vec3(0.0f);
+                foot->lockedAnimFootPosition = glm::vec3(0.0f);  // Phase 1: clear new drift-check field too
             }
 
             // IK weight - faster blending for responsiveness

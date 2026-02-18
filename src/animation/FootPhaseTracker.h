@@ -82,8 +82,9 @@ public:
     // Get lock blend for foot based on phase (0 = no lock, 1 = full lock)
     float getLockBlend(bool isLeftFoot) const;
 
-    // Synchronise tracker phase data into the IK struct (single source of truth).
-    // Eliminates duplicate state between FootPhaseData and FootPlacementIK (bug #17).
+    // Sync currentPhase and phaseProgress into the IK foot struct (single source of truth
+    // for the duplicated fields – bug #17).  Does NOT touch lockBlend or weight, which
+    // are managed by the caller with smoothed blending.
     void applyToFootIK(bool isLeftFoot, FootPlacementIK& foot) const;
 
     // Reset tracker state

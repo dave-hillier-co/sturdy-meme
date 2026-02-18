@@ -22,6 +22,9 @@
 #include "ecs/ECSMaterialDemo.h"
 #include "ml/unicon/Controller.h"
 #include "ml/unicon/RagdollRenderer.h"
+#include "combat/CombatSystem.h"
+#include "combat/CombatAnimationController.h"
+#include "physics/ActiveRagdoll.h"
 
 class Application {
 public:
@@ -45,6 +48,8 @@ private:
     void initECS();
     void updateECS(float deltaTime);
     void spawnRagdoll();
+    void initCombatSystem();
+    void updateCombatSystem(float deltaTime);
 
     SDL_Window* window = nullptr;
     std::unique_ptr<Renderer> renderer_;
@@ -90,6 +95,12 @@ private:
 
     // Ragdoll renderer (shares player mesh, uses physics bone matrices)
     ml::unicon::RagdollRenderer ragdollRenderer_;
+
+    // Combat system
+    CombatSystem combatSystem_;
+    CombatAnimationController combatAnimController_;
+    std::unique_ptr<ActiveRagdoll> playerRagdoll_;
+    bool combatInitialized_ = false;
 
     bool running = false;
     // Walk speed matches animation root motion: 158.42 cm / 1.10s * 0.01 scale = 1.44 m/s

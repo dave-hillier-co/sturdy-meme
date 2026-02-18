@@ -195,11 +195,15 @@ set(SOURCES
     src/physics/PhysicsDebugRenderer.cpp
     src/physics/RagdollBuilder.cpp
     src/physics/RagdollInstance.cpp
+    src/physics/ActiveRagdoll.cpp
     # UniCon (target-frame tracking controller)
     src/ml/unicon/Controller.cpp
     src/ml/unicon/StateEncoder.cpp
     src/ml/unicon/MotionScheduler.cpp
     src/ml/unicon/RagdollRenderer.cpp
+    # Combat
+    src/combat/CombatSystem.cpp
+    src/combat/CombatAnimationController.cpp
     # Terrain
     src/terrain/TerrainSystem.cpp
     src/terrain/TerrainDescriptorSets.cpp

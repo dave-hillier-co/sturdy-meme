@@ -194,6 +194,7 @@ set(SOURCES
     # UniCon
     src/unicon/StateEncoder.cpp
     src/unicon/MLPPolicy.cpp
+    src/unicon/UniConController.cpp
     # Terrain
     src/terrain/TerrainSystem.cpp
     src/terrain/TerrainDescriptorSets.cpp

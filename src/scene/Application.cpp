@@ -34,6 +34,7 @@
 #include "core/interfaces/IPlayerControl.h"
 #include "DebugLineSystem.h"
 #include "npc/NPCSimulation.h"
+#include "unicon/UniConController.h"
 #include "Texture.h"
 
 #ifdef JPH_DEBUG_RENDERER
@@ -220,6 +221,10 @@ bool Application::init(const std::string& title, int width, int height) {
             SDL_Log("Failed to initialize physics system");
             return false;
         }
+
+        // Initialize UniCon ML controller for ragdoll physics
+        uniconController_.init(20, 1); // 20-body humanoid, tau=1
+        uniconController_.initRandomPolicy();
     }
 
     // Create terrain hole at well entrance location
@@ -694,6 +699,9 @@ void Application::run() {
 
         // Always update physics character controller (handles gravity, jumping, and movement)
         physics().updateCharacter(deltaTime, desiredVelocity, wantsJump);
+
+        // Apply ML policy torques to ragdolls before physics step
+        uniconController_.update(ragdolls_, physics());
 
         // Update physics simulation
         physics().update(deltaTime);

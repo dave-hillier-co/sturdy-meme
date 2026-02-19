@@ -926,6 +926,10 @@ void Application::shutdown() {
     }
     ragdolls_.clear();
 
+    // Destroy combat ragdoll BEFORE physics (ragdoll destructor removes bodies from physics world)
+    playerRagdoll_.reset();
+    combatInitialized_ = false;
+
     physicsTerrainManager_.cleanup();
     physics_.reset();  // RAII cleanup via optional reset
     renderer_.reset();  // RAII cleanup via unique_ptr reset

@@ -81,6 +81,13 @@ static bool buildClusterState(RendererSystems& systems) {
     uint32_t meshId = 0;
     std::vector<std::pair<const Mesh*, const ClusteredMesh*>> meshClusterPairs;
 
+    // Track per-mesh base offsets in GPUClusterBuffer (for raster draw commands)
+    struct MeshGPUOffsets {
+        uint32_t baseVertex;
+        uint32_t baseIndex;
+    };
+    std::unordered_map<const Mesh*, MeshGPUOffsets> gpuOffsets;
+
     for (const Mesh* mesh : meshSet) {
         const auto& vertices = mesh->getVertices();
         const auto& indices = mesh->getIndices();
@@ -96,6 +103,11 @@ static bool buildClusterState(RendererSystems& systems) {
         SDL_Log("VisBufferPasses: Mesh %u clustered: %u clusters, %u triangles, %u DAG levels",
                 meshId, clustered.totalClusters, clustered.totalTriangles, clustered.dagLevels);
 
+        // Record GPU buffer offsets BEFORE upload (uploadMesh increments totals)
+        MeshGPUOffsets offsets;
+        offsets.baseVertex = clusterBuf->getTotalVertices();
+        offsets.baseIndex = clusterBuf->getTotalIndices();
+
         // Upload to GPUClusterBuffer
         uint32_t baseCluster = clusterBuf->uploadMesh(clustered);
         if (baseCluster == UINT32_MAX) {
@@ -105,6 +117,7 @@ static bool buildClusterState(RendererSystems& systems) {
             continue;
         }
 
+        gpuOffsets[mesh] = offsets;
         s_clusterState.clusteredMeshes[mesh] = std::move(clustered);
         meshClusterPairs.push_back({mesh, &s_clusterState.clusteredMeshes[mesh]});
         meshId++;
@@ -126,13 +139,29 @@ static bool buildClusterState(RendererSystems& systems) {
     s_clusterState.fallbackIndirectCmds.clear();
     s_clusterState.fallbackDrawData.clear();
 
+    // instanceId must match GPUSceneBuffer's indexing: sequential for non-gpuSkinned
+    // objects that have a mesh (GPUSceneBuffer::addObject returns -1 for mesh-less)
     uint32_t instanceId = 0;
     for (size_t i = 0; i < sceneObjects.size(); ++i) {
         if (sceneObjects[i].gpuSkinned) continue;
         const auto& obj = sceneObjects[i];
-        if (!obj.mesh) { instanceId++; continue; }
+        // Skip mesh-less objects WITHOUT incrementing instanceId
+        // (GPUSceneBuffer::addObject also skips them, so no instance is created)
+        if (!obj.mesh) continue;
+
         auto it = s_clusterState.clusteredMeshes.find(obj.mesh);
         if (it == s_clusterState.clusteredMeshes.end()) { instanceId++; continue; }
+
+        // Look up per-mesh offsets for raster (GPUClusterBuffer) and resolve (global buffers)
+        auto gpuIt = gpuOffsets.find(obj.mesh);
+        const auto* meshInfo = visBuf->getMeshInfo(obj.mesh);
+
+        if (gpuIt == gpuOffsets.end() || !meshInfo) {
+            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
+                "VisBufferPasses: Missing offsets for mesh %p", (const void*)obj.mesh);
+            instanceId++;
+            continue;
+        }
 
         for (const auto& cluster : it->second.clusters) {
             if (cluster.lodLevel != 0) continue;  // Only leaf clusters
@@ -140,15 +169,20 @@ static bool buildClusterState(RendererSystems& systems) {
             VkDrawIndexedIndirectCommand indirectCmd{};
             indirectCmd.indexCount = cluster.indexCount;
             indirectCmd.instanceCount = 1;
-            indirectCmd.firstIndex = cluster.firstIndex;
-            indirectCmd.vertexOffset = static_cast<int32_t>(cluster.firstVertex);
+            // Add GPUClusterBuffer base offsets: cluster offsets are local to per-mesh data,
+            // but the bound index/vertex buffers are the global concatenated GPUClusterBuffer
+            indirectCmd.firstIndex = cluster.firstIndex + gpuIt->second.baseIndex;
+            indirectCmd.vertexOffset = static_cast<int32_t>(cluster.firstVertex + gpuIt->second.baseVertex);
             // firstInstance encodes the draw index for gl_InstanceIndex in raster shader
             indirectCmd.firstInstance = static_cast<uint32_t>(s_clusterState.fallbackIndirectCmds.size());
             s_clusterState.fallbackIndirectCmds.push_back(indirectCmd);
 
             CPUDrawData dd{};
             dd.instanceId = instanceId;
-            dd.triangleOffset = cluster.firstIndex / 3;  // Triangle offset for V-buffer ID
+            // triangleOffset must index into the resolve global buffer, not local per-mesh data.
+            // meshInfo->triangleOffset = base triangle offset for this mesh in resolve buffer.
+            // cluster.firstIndex / 3 = local triangle offset within the mesh.
+            dd.triangleOffset = meshInfo->triangleOffset + cluster.firstIndex / 3;
             s_clusterState.fallbackDrawData.push_back(dd);
         }
         instanceId++;

@@ -500,6 +500,24 @@ static void executeResolvePass(FrameGraph::RenderContext& ctx, RendererSystems& 
 
     // Dispatch the resolve compute shader
     VkImageView hdrView = renderCtx->resources.hdrColorView;
+
+    // One-time diagnostic logging
+    static bool loggedResolveState = false;
+    if (!loggedResolveState) {
+        SDL_Log("VisBufferResolve: pipeline=%p, hdrView=%p, hdrImage=%p, "
+                "globalBufs=%d, texArray=%d, matBuf=%p, instanceBuf=%p",
+                (void*)(uintptr_t)visBuf->getResolvePipeline(),
+                (void*)(uintptr_t)hdrView,
+                (void*)(uintptr_t)renderCtx->resources.hdrColorImage,
+                visBuf->hasGlobalBuffers() ? 1 : 0,
+                visBuf->hasTextureArray() ? 1 : 0,
+                (void*)(uintptr_t)(systems.hasGPUMaterialBuffer()
+                    ? systems.gpuMaterialBuffer()->getBuffer() : VK_NULL_HANDLE),
+                (void*)(uintptr_t)(systems.hasGPUSceneBuffer()
+                    ? systems.gpuSceneBuffer().getInstanceBuffer(frameIndex) : VK_NULL_HANDLE));
+        loggedResolveState = true;
+    }
+
     visBuf->recordResolvePass(cmd, frameIndex, hdrView);
 
     systems.profiler().endGpuZone(cmd, "VisBufferResolve");

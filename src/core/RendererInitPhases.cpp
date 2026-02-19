@@ -722,8 +722,9 @@ std::vector<Loading::SystemInitTask> Renderer::buildInitTasks(const InitContext&
             }
 
             // Two-pass GPU culler for Nanite-style occlusion + LOD selection
-            // Requires shaderDrawParameters (gl_DrawID) for GPU-driven V-buffer rendering
-            if (vulkanContext_->hasShaderDrawParameters()) {
+            // Uses gl_InstanceIndex (via firstInstance) instead of gl_DrawID,
+            // so shaderDrawParameters is NOT required — works on MoltenVK too.
+            {
                 TwoPassCuller::InitInfo cullerInfo{};
                 cullerInfo.device = ctxPtr->device;
                 cullerInfo.allocator = ctxPtr->allocator;
@@ -739,9 +740,6 @@ std::vector<Loading::SystemInitTask> Renderer::buildInitTasks(const InitContext&
                     systems_->setTwoPassCuller(std::move(twoPassCuller));
                     SDL_Log("TwoPassCuller: Initialized for GPU-driven cluster culling");
                 }
-            } else {
-                SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
-                    "TwoPassCuller: Skipped - shaderDrawParameters not supported");
             }
 
             // Profiler

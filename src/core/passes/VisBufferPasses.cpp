@@ -142,7 +142,8 @@ static bool buildClusterState(RendererSystems& systems) {
             indirectCmd.instanceCount = 1;
             indirectCmd.firstIndex = cluster.firstIndex;
             indirectCmd.vertexOffset = static_cast<int32_t>(cluster.firstVertex);
-            indirectCmd.firstInstance = 0;
+            // firstInstance encodes the draw index for gl_InstanceIndex in raster shader
+            indirectCmd.firstInstance = static_cast<uint32_t>(s_clusterState.fallbackIndirectCmds.size());
             s_clusterState.fallbackIndirectCmds.push_back(indirectCmd);
 
             CPUDrawData dd{};

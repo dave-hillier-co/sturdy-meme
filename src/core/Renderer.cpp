@@ -609,9 +609,7 @@ void Renderer::createHDRPassRecorder() {
         sceneRes.treeRenderer = systems_->treeRenderer();
         sceneRes.treeLOD = systems_->treeLOD();
         sceneRes.impostorCull = systems_->impostorCull();
-        // V-buffer active = false for now — traditional scene object rendering
-        // until V-buffer pipeline is fully bootstrapped (culler + fallback draws)
-        sceneRes.visBufferActive = false;
+        sceneRes.visBufferActive = systems_->hasVisibilityBuffer();
 
         hdrPassRecorder_->registerDrawable(
             std::make_unique<SceneObjectsDrawable>(sceneRes),

@@ -6,6 +6,7 @@
 #include "passes/ShadowPasses.h"
 #include "passes/WaterPasses.h"
 #include "passes/HDRPass.h"
+#include "passes/VisBufferPasses.h"
 #include "passes/PostPasses.h"
 
 #include <SDL3/SDL.h>
@@ -47,6 +48,9 @@ bool FrameGraphBuilder::build(
     hdrConfig.recordHDRPassSecondarySlot = callbacks.recordHDRPassSecondarySlot;
     auto hdr = HDRPass::addPass(frameGraph, systems, hdrConfig);
 
+    // Visibility buffer resolve pass (material evaluation)
+    auto visBufferIds = VisBufferPasses::addPasses(frameGraph, systems);
+
     // Post passes (HiZ, bloom, bilateral grid, final composite)
     PostPasses::Config postConfig;
     postConfig.guiRenderCallback = callbacks.guiRenderCallback;
@@ -82,7 +86,27 @@ bool FrameGraphBuilder::build(
         frameGraph.addDependency(computeIds.gpuCull, hdr);
     }
 
-    // Post-HDR passes depend on HDR
+    // V-buffer runs non-interfering alongside traditional rendering.
+    // Cull → raster → resolve chain, but nothing blocks HDR or post passes.
+    if (visBufferIds.cull != FrameGraph::INVALID_PASS) {
+        frameGraph.addDependency(computeIds.compute, visBufferIds.cull);
+        if (visBufferIds.raster != FrameGraph::INVALID_PASS) {
+            frameGraph.addDependency(visBufferIds.cull, visBufferIds.raster);
+        }
+    }
+    if (visBufferIds.raster != FrameGraph::INVALID_PASS) {
+        if (visBufferIds.cull == FrameGraph::INVALID_PASS) {
+            frameGraph.addDependency(computeIds.compute, visBufferIds.raster);
+        }
+    }
+    if (visBufferIds.resolve != FrameGraph::INVALID_PASS) {
+        if (visBufferIds.raster != FrameGraph::INVALID_PASS) {
+            frameGraph.addDependency(visBufferIds.raster, visBufferIds.resolve);
+        }
+        frameGraph.addDependency(hdr, visBufferIds.resolve);
+    }
+
+    // Post-HDR passes depend on HDR only (V-buffer is non-interfering)
     frameGraph.addDependency(hdr, waterIds.ssr);
     frameGraph.addDependency(hdr, waterIds.waterTileCull);
     frameGraph.addDependency(hdr, postIds.hiZ);

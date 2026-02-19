@@ -609,6 +609,7 @@ void Renderer::createHDRPassRecorder() {
         sceneRes.treeRenderer = systems_->treeRenderer();
         sceneRes.treeLOD = systems_->treeLOD();
         sceneRes.impostorCull = systems_->impostorCull();
+        sceneRes.visBufferActive = false;  // V-buffer resolve not yet proven — keep traditional path
 
         hdrPassRecorder_->registerDrawable(
             std::make_unique<SceneObjectsDrawable>(sceneRes),

@@ -65,6 +65,10 @@
 #include "CoreResources.h"
 #include "ScreenSpaceShadowSystem.h"
 #include "TerrainFactory.h"
+#include "VisibilityBuffer.h"
+#include "GPUMaterialBuffer.h"
+#include "MeshClusterBuilder.h"
+#include "TwoPassCuller.h"
 #include "threading/TaskScheduler.h"
 #include <SDL3/SDL.h>
 
@@ -611,6 +615,63 @@ std::vector<Loading::SystemInitTask> Renderer::buildInitTasks(const InitContext&
                 }
             }
 
+            // Visibility buffer system (shares depth with HDR pass)
+            {
+                VisibilityBuffer::InitInfo vbInfo{};
+                vbInfo.device = ctxPtr->device;
+                vbInfo.allocator = ctxPtr->allocator;
+                vbInfo.descriptorPool = ctxPtr->descriptorPool;
+                vbInfo.extent = ctxPtr->extent;
+                vbInfo.shaderPath = ctxPtr->shaderPath;
+                vbInfo.framesInFlight = ctxPtr->framesInFlight;
+                vbInfo.depthFormat = vulkanContext_->getDepthFormat();
+                vbInfo.raiiDevice = ctxPtr->raiiDevice;
+                vbInfo.graphicsQueue = ctxPtr->graphicsQueue;
+                vbInfo.commandPool = ctxPtr->commandPool;
+                // Own depth buffer for now — V-buffer runs non-interfering alongside
+                // traditional rendering until the resolve compute pass is proven working.
+                vbInfo.hasShaderDrawParameters = vulkanContext_->hasShaderDrawParameters();
+                auto visBuf = VisibilityBuffer::create(vbInfo);
+                if (visBuf) {
+                    systems_->setVisibilityBuffer(std::move(visBuf));
+                    SDL_Log("VisibilityBuffer: Initialized (own depth, non-interfering)");
+                }
+            }
+
+            // GPU material buffer for visibility buffer resolve
+            {
+                GPUMaterialBuffer::InitInfo matBufInfo{};
+                matBufInfo.allocator = vulkanContext_->getAllocator();
+                matBufInfo.maxMaterials = 256;
+
+                auto gpuMatBuf = GPUMaterialBuffer::create(matBufInfo);
+                if (gpuMatBuf) {
+                    // Upload materials from the scene's material registry if available
+                    auto& sceneBuilder = systems_->scene().getSceneBuilder();
+                    const auto& registry = sceneBuilder.getMaterialRegistry();
+                    if (registry.getMaterialCount() > 0) {
+                        gpuMatBuf->uploadFromRegistry(registry);
+                        SDL_Log("GPUMaterialBuffer: Uploaded %zu materials from registry",
+                                registry.getMaterialCount());
+                    } else {
+                        // Upload a default material so the buffer is valid
+                        GPUMaterial defaultMat{};
+                        defaultMat.baseColor = glm::vec4(0.8f, 0.8f, 0.8f, 1.0f);
+                        defaultMat.roughness = 0.5f;
+                        defaultMat.metallic = 0.0f;
+                        defaultMat.normalScale = 1.0f;
+                        defaultMat.aoStrength = 1.0f;
+                        defaultMat.albedoTexIndex = ~0u;
+                        defaultMat.normalTexIndex = ~0u;
+                        defaultMat.roughnessMetallicTexIndex = ~0u;
+                        defaultMat.flags = 0;
+                        gpuMatBuf->uploadMaterials({defaultMat});
+                        SDL_Log("GPUMaterialBuffer: Uploaded default material");
+                    }
+                    systems_->setGPUMaterialBuffer(std::move(gpuMatBuf));
+                }
+            }
+
             // GPU culling pass
             if (systems_->hasGPUSceneBuffer()) {
                 GPUCullPass::InitInfo cullInfo{};
@@ -626,7 +687,8 @@ std::vector<Loading::SystemInitTask> Renderer::buildInitTasks(const InitContext&
                     if (systems_->hiZ().getHiZPyramidView() != VK_NULL_HANDLE) {
                         gpuCullPass->setHiZPyramid(
                             systems_->hiZ().getHiZPyramidView(),
-                            systems_->hiZ().getHiZSampler());
+                            systems_->hiZ().getHiZSampler(),
+                            systems_->hiZ().getMipLevelCount());
                     }
                     const auto* whiteTexture = systems_->scene().getSceneBuilder().getWhiteTexture();
                     if (whiteTexture) {
@@ -635,7 +697,46 @@ std::vector<Loading::SystemInitTask> Renderer::buildInitTasks(const InitContext&
                             whiteTexture->getSampler());
                     }
                     systems_->setGPUCullPass(std::move(gpuCullPass));
-                    SDL_Log("GPUCullPass: Initialized for frustum culling");
+                    SDL_Log("GPUCullPass: Initialized with Hi-Z occlusion culling");
+                }
+            }
+
+            // GPU cluster buffer for Nanite-style cluster rendering
+            {
+                GPUClusterBuffer::InitInfo clusterInfo{};
+                clusterInfo.allocator = vulkanContext_->getAllocator();
+                clusterInfo.device = device;
+                clusterInfo.commandPool = vulkanContext_->getCommandPool();
+                clusterInfo.queue = static_cast<VkQueue>(vulkanContext_->getVkGraphicsQueue());
+                clusterInfo.maxClusters = 16384;
+                clusterInfo.maxVertices = 1024 * 1024;
+                clusterInfo.maxIndices = 2048 * 1024;
+
+                auto gpuClusterBuf = GPUClusterBuffer::create(clusterInfo);
+                if (gpuClusterBuf) {
+                    systems_->setGPUClusterBuffer(std::move(gpuClusterBuf));
+                    SDL_Log("GPUClusterBuffer: Initialized for cluster-based rendering");
+                }
+            }
+
+            // Two-pass GPU culler for Nanite-style occlusion + LOD selection
+            // Uses gl_InstanceIndex (via firstInstance) instead of gl_DrawID,
+            // so shaderDrawParameters is NOT required — works on MoltenVK too.
+            {
+                TwoPassCuller::InitInfo cullerInfo{};
+                cullerInfo.device = ctxPtr->device;
+                cullerInfo.allocator = ctxPtr->allocator;
+                cullerInfo.descriptorPool = ctxPtr->descriptorPool;
+                cullerInfo.shaderPath = ctxPtr->shaderPath;
+                cullerInfo.framesInFlight = ctxPtr->framesInFlight;
+                cullerInfo.maxClusters = 16384;
+                cullerInfo.maxDrawCommands = 16384;
+                cullerInfo.raiiDevice = ctxPtr->raiiDevice;
+                cullerInfo.hasDrawIndirectCount = vulkanContext_->hasDrawIndirectCount();
+                auto twoPassCuller = TwoPassCuller::create(cullerInfo);
+                if (twoPassCuller) {
+                    systems_->setTwoPassCuller(std::move(twoPassCuller));
+                    SDL_Log("TwoPassCuller: Initialized for GPU-driven cluster culling");
                 }
             }
 
@@ -652,7 +753,10 @@ std::vector<Loading::SystemInitTask> Renderer::buildInitTasks(const InitContext&
             }
 
             // Debug line system
-            auto debugLineSystem = DebugLineSystem::create(*ctxPtr, core.hdr.renderPass);
+            // Use fresh render pass — core.hdr.renderPass may be stale if
+            // setDepthLoadOnHDRPass() recreated the HDR render pass above.
+            VkRenderPass currentHDRRenderPass = systems_->postProcess().getHDRRenderPass();
+            auto debugLineSystem = DebugLineSystem::create(*ctxPtr, currentHDRRenderPass);
             if (!debugLineSystem) return false;
             systems_->setDebugLineSystem(std::move(debugLineSystem));
 
@@ -730,6 +834,21 @@ void Renderer::initResizeCoordinator() {
         resizeCoordinator_->registerWithSimpleResize(systems_->godRays(), "GodRaysSystem", ResizePriority::RenderTarget);
     }
     resizeCoordinator_->registerWithSimpleResize(systems_->froxel(), "FroxelSystem", ResizePriority::RenderTarget);
+
+    // V-buffer resize: update shared depth from PostProcessSystem, then resize
+    // Must run after PostProcessSystem resize (registered above) so the new depth is ready
+    if (systems_->hasVisibilityBuffer()) {
+        resizeCoordinator_->registerCallback("VisibilityBuffer",
+            [this](VkExtent2D newExtent) {
+                auto* visBuf = systems_->visibilityBuffer();
+                if (visBuf) {
+                    visBuf->updateSharedDepth(systems_->postProcess().getHDRDepthView());
+                    visBuf->resize(newExtent);
+                }
+            },
+            nullptr,
+            ResizePriority::RenderTarget);
+    }
 
     // Culling systems with simple resize (extent only, but reallocates)
     resizeCoordinator_->registerWithSimpleResize(systems_->hiZ(), "HiZSystem", ResizePriority::Culling);

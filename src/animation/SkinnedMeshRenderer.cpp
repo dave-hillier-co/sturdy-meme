@@ -257,6 +257,25 @@ void SkinnedMeshRenderer::updateBoneMatrices(uint32_t frameIndex, uint32_t slotI
     }
 }
 
+void SkinnedMeshRenderer::updateBoneMatricesRaw(uint32_t frameIndex, uint32_t slotIndex,
+                                                 const glm::mat4* matrices, size_t count) {
+    if (slotIndex >= MAX_SKINNED_CHARACTERS) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Bone matrix slot %u exceeds max %u", slotIndex, MAX_SKINNED_CHARACTERS);
+        return;
+    }
+
+    BoneMatricesUBO* ubo = static_cast<BoneMatricesUBO*>(
+        boneMatricesBuffer_.getMappedPtr(frameIndex, slotIndex));
+
+    size_t numBones = std::min(count, static_cast<size_t>(MAX_BONES));
+    for (size_t i = 0; i < numBones; i++) {
+        ubo->bones[i] = matrices[i];
+    }
+    for (size_t i = numBones; i < MAX_BONES; i++) {
+        ubo->bones[i] = glm::mat4(1.0f);
+    }
+}
+
 void SkinnedMeshRenderer::record(VkCommandBuffer cmd, uint32_t frameIndex, uint32_t slotIndex,
                                   const Renderable& playerObj, AnimatedCharacter& character) {
     vk::CommandBuffer vkCmd(cmd);

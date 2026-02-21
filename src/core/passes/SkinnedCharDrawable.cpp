@@ -43,4 +43,9 @@ void SkinnedCharDrawable::recordHDRDraw(VkCommandBuffer cmd, uint32_t frameIndex
             resources_.npcRenderer->recordDraw(cmd, frameIndex);
         }
     }
+
+    // Draw physics-driven ragdolls via callback (slots 32+)
+    if (resources_.ragdollDrawCallback) {
+        resources_.ragdollDrawCallback(cmd, frameIndex);
+    }
 }

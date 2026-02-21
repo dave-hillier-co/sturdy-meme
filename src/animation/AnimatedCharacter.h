@@ -11,6 +11,7 @@
 #include "Mesh.h"
 #include "IKSolver.h"
 #include "MotionMatchingController.h"
+#include "../physics/ArticulatedBody.h"
 #include <vk_mem_alloc.h>
 #include <vulkan/vulkan.h>
 #include <string>
@@ -195,6 +196,17 @@ public:
         return motionMatchingController.getStats();
     }
 
+    // ========== Physics-Based Animation Mode ==========
+    // When enabled, skeleton poses come from an ArticulatedBody ragdoll
+    // driven by the physics engine instead of from animation clips.
+
+    void setUsePhysicsBasedAnimation(bool use) { usePhysicsBased_ = use; }
+    bool isUsingPhysicsBasedAnimation() const { return usePhysicsBased_; }
+
+    // Set the ragdoll source for physics-based animation.
+    // The ragdoll and physics must outlive this character while physics mode is active.
+    void setPhysicsSource(ArticulatedBody* ragdoll, const PhysicsWorld* physicsWorld);
+
     // Reset foot IK locks (call when teleporting or significantly repositioning the character)
     void resetFootLocks() { ikSystem.resetFootLocks(); }
 
@@ -268,4 +280,9 @@ private:
     // Upper body strafe twist
     int32_t spineJointIndex_ = -1;   // Cached spine bone index for strafe twist
     bool spineLookedUp_ = false;     // Whether we've attempted the lookup
+
+    // Physics-based animation
+    bool usePhysicsBased_ = false;
+    ArticulatedBody* physicsRagdoll_ = nullptr;
+    const PhysicsWorld* physicsWorld_ = nullptr;
 };

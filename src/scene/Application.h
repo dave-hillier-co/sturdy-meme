@@ -21,6 +21,7 @@
 #include "ecs/EntityFactory.h"
 #include "ecs/ECSMaterialDemo.h"
 #include "ml/unicon/Controller.h"
+#include "ml/unicon/RagdollRenderer.h"
 
 class Application {
 public:
@@ -86,6 +87,9 @@ private:
 
     // UniCon ML policy controller for ragdolls
     ml::unicon::Controller uniconController_;
+
+    // Ragdoll renderer (shares player mesh, uses physics bone matrices)
+    ml::unicon::RagdollRenderer ragdollRenderer_;
 
     bool running = false;
     // Walk speed matches animation root motion: 158.42 cm / 1.10s * 0.01 scale = 1.44 m/s

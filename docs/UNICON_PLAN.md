@@ -18,8 +18,10 @@ src/ml/                     # Shared ML infrastructure
 │   ├── Controller.h        # Latent management + LLC inference
 │   └── LowLevelController.h
 └── unicon/                 # UniCon strategy (target-frame tracking)
-    ├── Controller.h        # Obs → MLP → torques loop
-    └── StateEncoder.h      # UniCon Eq.4 observation encoding
+    ├── Controller.h        # Obs → MLP → torques loop + perturbation testing
+    ├── StateEncoder.h      # UniCon Eq.4 observation encoding
+    ├── MotionScheduler.h   # Target frame production (MocapScheduler, KeyboardScheduler)
+    └── RagdollRenderer.h   # Physics → bone matrices → GPU skinning
 
 src/training/               # Shared training infrastructure
 ├── CharacterEnv.h          # Single-character RL environment
@@ -38,41 +40,47 @@ src/training/               # Shared training infrastructure
 | 3 | Humanoid State Encoding | **Complete** |
 | 4 | MLP Inference Engine | **Complete** (shared `ml::MLPNetwork` with ELU support) |
 | 5 | Low-Level Motion Executor | **Complete** (`ml::unicon::Controller`) |
-| 6 | High-Level Motion Schedulers | Not started |
-| 7 | Rendering Integration | Not started |
+| 6 | High-Level Motion Schedulers | **Complete** (MocapScheduler, KeyboardScheduler) |
+| 7 | Rendering Integration | **Complete** (RagdollRenderer, PhysicsBased mode, debug overlay) |
 | 8 | Training Pipeline | **Complete** (shared VecEnv + pybind11) |
-| 9 | NPC Integration | Not started |
-| 10 | Polish & Advanced | Not started |
+| 9 | NPC Integration | **Complete** (PhysicsBased LOD tier, transition blending) |
+| 10 | Polish & Advanced | **Complete** (perturbation, terrain via physics) |
+
+## Testing
+
+### Ragdoll Rendering
+1. Run the application
+2. Press **R** to spawn a ragdoll — it should appear as a skinned character falling under gravity
+3. The UniCon controller applies torques to try to maintain the target pose
+4. Spawn multiple ragdolls (press R repeatedly) to test multi-character rendering
+
+### Motion Schedulers
+To test motion schedulers, attach one to the controller:
+```cpp
+auto scheduler = std::make_unique<ml::unicon::MocapScheduler>();
+scheduler->configure(skeleton, 1, 1.0f/30.0f);
+scheduler->setClip(&walkClip);
+uniconController_.setScheduler(std::move(scheduler));
+```
+
+### Perturbation Testing
+Enable auto-perturbation for stress-testing ragdoll recovery:
+```cpp
+uniconController_.setAutoPerturbation(3.0f, 300.0f); // every 3s, 300N max
+```
+
+### Debug Overlay
+Enable debug visualization to see ragdoll body parts and target poses:
+```cpp
+ragdollRenderer_.setDebugEnabled(true);
+ragdollRenderer_.drawDebugOverlay(ragdolls_, physics(), debugLines, &controller.getTargetFrames());
+```
 
 ## Next Steps
 
-1. **Convert motion data**: `python tools/unicon_training/fetch_training_data.py assets/characters/fbx/ -o assets/motions/`
-2. **Train via Python**: Use pybind11 VecEnv with PPO to train a UniCon policy
-3. **Phase 6**: Build motion schedulers (mocap playback, keyboard control)
-4. **Phase 7**: Connect physics-driven skeleton to the rendering pipeline
-
-## Remaining Phases
-
-### Phase 6: High-Level Motion Schedulers
-
-Schedulers produce target frames for the UniCon controller:
-- **MocapScheduler**: plays back a single motion clip as target frames
-- **MotionStitchingScheduler**: sequences clips with SLERP blending
-- **KeyboardScheduler**: maps WASD input to motion selection
-
-### Phase 7: Rendering Integration
-
-Add `PhysicsBased` animation mode to `AnimatedCharacter`. When active, `ArticulatedBody::writeToSkeleton()` feeds the existing skinned mesh pipeline.
-
-### Phase 9: NPC Integration
-
-LOD-based physics policy: full UniCon for close NPCs (< 25m), kinematic animation beyond. All NPCs share one `ml::MLPNetwork` instance; each has its own `ArticulatedBody`.
-
-### Phase 10: Polish
-
-- Perturbation response (random impulses → natural recovery)
-- Terrain adaptation (uneven ground, slopes)
-- Style transfer via motion stitching
+1. **Train a policy**: Use pybind11 VecEnv with PPO to train a UniCon policy
+2. **Convert motion data**: `python tools/unicon_training/fetch_training_data.py assets/characters/fbx/ -o assets/motions/`
+3. **Deploy trained weights**: Export via `tools/ml/export.py` → `generated/unicon/policy_weights.bin`
 
 ## Key References
 

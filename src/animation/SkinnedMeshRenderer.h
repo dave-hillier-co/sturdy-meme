@@ -104,6 +104,16 @@ public:
     void updateBoneMatrices(uint32_t frameIndex, uint32_t slotIndex, AnimatedCharacter* character);
 
     /**
+     * Update bone matrices from raw matrix data (for physics-based animation).
+     * @param frameIndex Current frame index for triple-buffered resources
+     * @param slotIndex Character slot (0 to MAX_SKINNED_CHARACTERS-1)
+     * @param matrices Bone matrices to upload (global * inverseBindMatrix)
+     * @param count Number of matrices
+     */
+    void updateBoneMatricesRaw(uint32_t frameIndex, uint32_t slotIndex,
+                               const glm::mat4* matrices, size_t count);
+
+    /**
      * Record draw commands for skinned character using dynamic offset.
      * Uses VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC to select the correct
      * bone matrix slot for this character at draw time.

@@ -530,6 +530,31 @@ bool Application::init(const std::string& title, int width, int height) {
         return static_cast<int>(ragdolls_.size());
     });
 
+    // Configure ragdoll renderer if player character is available
+    {
+        auto& sceneBuilder = renderer_->getSystems().scene().getSceneBuilder();
+        if (sceneBuilder.hasCharacter()) {
+            ragdollRenderer_.configure(sceneBuilder.getAnimatedCharacter().getSkeleton());
+        }
+    }
+
+    // Set ragdoll draw callback for rendering physics-driven ragdolls
+    renderer_->setRagdollDrawCallback([this](VkCommandBuffer cmd, uint32_t frameIndex) {
+        if (!ragdollRenderer_.isConfigured() || ragdolls_.empty() || !physics_) return;
+        auto& sceneBuilder = renderer_->getSystems().scene().getSceneBuilder();
+        if (!sceneBuilder.hasCharacter()) return;
+
+        // Upload ragdoll bone matrices (done here because we need the frame index)
+        ragdollRenderer_.updateBoneMatrices(ragdolls_, physics(),
+                                             renderer_->getSystems().skinnedMesh(),
+                                             frameIndex);
+
+        // Record draw commands using player character's mesh
+        ragdollRenderer_.recordDrawCommands(cmd, frameIndex,
+                                             sceneBuilder.getAnimatedCharacter(),
+                                             renderer_->getSystems().skinnedMesh());
+    });
+
     // Set up input system with GUI reference for input blocking
     input.setGuiSystem(gui_.get());
     input.setMoveSpeed(moveSpeed);
@@ -704,7 +729,7 @@ void Application::run() {
         physics().updateCharacter(deltaTime, desiredVelocity, wantsJump);
 
         // Apply ML policy torques to ragdolls before physics step
-        uniconController_.update(ragdolls_, physics());
+        uniconController_.update(ragdolls_, physics(), deltaTime);
 
         // Update physics simulation
         physics().update(deltaTime);

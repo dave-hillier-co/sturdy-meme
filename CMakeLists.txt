@@ -195,6 +195,8 @@ set(SOURCES
     # UniCon (target-frame tracking controller)
     src/ml/unicon/Controller.cpp
     src/ml/unicon/StateEncoder.cpp
+    src/ml/unicon/MotionScheduler.cpp
+    src/ml/unicon/RagdollRenderer.cpp
     # Terrain
     src/terrain/TerrainSystem.cpp
     src/terrain/TerrainDescriptorSets.cpp

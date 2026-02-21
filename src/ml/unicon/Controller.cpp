@@ -38,6 +38,13 @@ bool Controller::loadPolicy(const std::string& path) {
     return true;
 }
 
+void Controller::setScheduler(std::unique_ptr<MotionScheduler> scheduler) {
+    scheduler_ = std::move(scheduler);
+    if (scheduler_) {
+        SDL_Log("UniCon Controller: motion scheduler attached");
+    }
+}
+
 void Controller::initRandomPolicy() {
     size_t obsDim = encoder_.getObservationDim();
 
@@ -69,13 +76,18 @@ void Controller::initRandomPolicy() {
 }
 
 void Controller::update(std::vector<ArticulatedBody>& ragdolls,
-                         PhysicsWorld& physics) {
+                         PhysicsWorld& physics, float dt) {
     if (!policyLoaded_) return;
 
     for (auto& ragdoll : ragdolls) {
         if (!ragdoll.isValid()) continue;
 
-        if (!useCustomTarget_) {
+        if (scheduler_ && !useCustomTarget_) {
+            // Use motion scheduler to produce target frames from animation clips
+            glm::vec3 rootPos = ragdoll.getRootPosition(physics);
+            glm::quat rootRot = ragdoll.getRootRotation(physics);
+            scheduler_->schedule(dt, rootPos, rootRot, targetFrames_);
+        } else if (!useCustomTarget_) {
             for (auto& tf : targetFrames_) {
                 tf = makeStandingTarget(ragdoll, physics);
             }
@@ -108,6 +120,15 @@ void Controller::update(std::vector<ArticulatedBody>& ragdolls,
 
         ragdoll.applyTorques(physics, torques_);
     }
+
+    // Auto-perturbation for stress-testing
+    if (perturbInterval_ > 0.0f) {
+        perturbTimer_ += dt;
+        if (perturbTimer_ >= perturbInterval_) {
+            perturbTimer_ = 0.0f;
+            applyRandomPerturbation(ragdolls, physics, perturbMaxForce_);
+        }
+    }
 }
 
 void Controller::setTargetFrame(const TargetFrame& target) {
@@ -131,6 +152,43 @@ TargetFrame Controller::makeStandingTarget(const ArticulatedBody& body,
     tf.jointAngularVelocities.assign(n, glm::vec3(0.0f));
 
     return tf;
+}
+
+void Controller::applyRandomPerturbation(std::vector<ArticulatedBody>& ragdolls,
+                                           PhysicsWorld& physics, float maxForce) {
+    static std::mt19937 rng(std::random_device{}());
+    std::uniform_real_distribution<float> forceDist(-maxForce, maxForce);
+    std::uniform_int_distribution<int> partDist;
+
+    for (auto& ragdoll : ragdolls) {
+        if (!ragdoll.isValid()) continue;
+        size_t partCount = ragdoll.getPartCount();
+        if (partCount == 0) continue;
+
+        partDist = std::uniform_int_distribution<int>(0, static_cast<int>(partCount) - 1);
+        size_t targetPart = static_cast<size_t>(partDist(rng));
+
+        // Apply impulse to a random body part
+        glm::vec3 impulse(forceDist(rng), forceDist(rng), forceDist(rng));
+
+        // Scale down to a single torque on the target part
+        std::vector<glm::vec3> torques(partCount, glm::vec3(0.0f));
+        torques[targetPart] = impulse;
+        ragdoll.applyTorques(physics, torques);
+
+        SDL_Log("UniCon perturbation: applied (%.0f, %.0f, %.0f) to part %zu",
+                impulse.x, impulse.y, impulse.z, targetPart);
+    }
+}
+
+void Controller::setAutoPerturbation(float intervalSeconds, float maxForce) {
+    perturbInterval_ = intervalSeconds;
+    perturbMaxForce_ = maxForce;
+    perturbTimer_ = 0.0f;
+    if (intervalSeconds > 0.0f) {
+        SDL_Log("UniCon: auto-perturbation enabled (interval=%.1fs, force=%.0fN)",
+                intervalSeconds, maxForce);
+    }
 }
 
 } // namespace ml::unicon

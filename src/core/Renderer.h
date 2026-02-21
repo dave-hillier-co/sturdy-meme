@@ -157,6 +157,11 @@ public:
     using GuiRenderCallback = std::function<void(VkCommandBuffer)>;
     void setGuiRenderCallback(GuiRenderCallback callback) { guiRenderCallback = callback; }
 
+    // Ragdoll draw callback (called during HDR skinned character pass)
+    using RagdollDrawCallback = std::function<void(VkCommandBuffer, uint32_t)>;
+    void setRagdollDrawCallback(RagdollDrawCallback callback) { ragdollDrawCallback_ = std::move(callback); }
+    const RagdollDrawCallback& getRagdollDrawCallback() const { return ragdollDrawCallback_; }
+
     // RendererSystems access - use this for all subsystem access
     RendererSystems& getSystems() { return *systems_; }
     const RendererSystems& getSystems() const { return *systems_; }
@@ -312,6 +317,9 @@ private:
 
     // GUI rendering callback
     GuiRenderCallback guiRenderCallback;
+
+    // Ragdoll draw callback
+    RagdollDrawCallback ragdollDrawCallback_;
 
     // Progress callback for async loading (stored during init)
     ProgressCallback progressCallback_;

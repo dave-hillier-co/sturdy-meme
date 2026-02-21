@@ -191,9 +191,10 @@ set(SOURCES
     src/physics/PhysicsDebugRenderer.cpp
     src/physics/RagdollBuilder.cpp
     src/physics/RagdollInstance.cpp
+    # ML inference
+    src/core/ml/MLPPolicy.cpp
     # UniCon
     src/unicon/StateEncoder.cpp
-    src/unicon/MLPPolicy.cpp
     src/unicon/UniConController.cpp
     # Terrain
     src/terrain/TerrainSystem.cpp
@@ -328,6 +329,7 @@ target_include_directories(${PROJECT_NAME} PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src/core/pipeline
     ${CMAKE_CURRENT_SOURCE_DIR}/src/core/material
     ${CMAKE_CURRENT_SOURCE_DIR}/src/core/asset
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/core/ml
     ${CMAKE_CURRENT_SOURCE_DIR}/src/debug
     ${CMAKE_CURRENT_SOURCE_DIR}/src/gui
     ${CMAKE_CURRENT_SOURCE_DIR}/src/ik
@@ -669,6 +671,7 @@ find_package(Python3 COMPONENTS Interpreter QUIET)
 set(UNICON_WEIGHTS_DIR ${CMAKE_CURRENT_SOURCE_DIR}/generated/unicon)
 set(UNICON_WEIGHTS_FILE ${UNICON_WEIGHTS_DIR}/policy_weights.bin)
 set(UNICON_TRAINING_DIR ${CMAKE_CURRENT_SOURCE_DIR}/tools/unicon_training)
+set(ML_TOOLS_DIR ${CMAKE_CURRENT_SOURCE_DIR}/tools/ml)
 
 if(Python3_FOUND)
     # Export weights from a training checkpoint.
@@ -695,7 +698,7 @@ if(Python3_FOUND)
         WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
         DEPENDS
             ${UNICON_TRAINING_DIR}/export.py
-            ${UNICON_TRAINING_DIR}/config.py
+            ${ML_TOOLS_DIR}/export.py
         COMMENT "Generating random UniCon policy weights for testing"
     )
 

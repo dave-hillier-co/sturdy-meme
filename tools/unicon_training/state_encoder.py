@@ -8,42 +8,9 @@ so that trained weights transfer directly to the C++ runtime.
 import numpy as np
 from typing import List, Optional
 
-
-def quat_yaw(q: np.ndarray) -> float:
-    """Extract yaw angle from quaternion (w,x,y,z format, Y-up)."""
-    w, x, y, z = q
-    return np.arctan2(2.0 * (w * y + x * z), 1.0 - 2.0 * (y * y + z * z))
-
-
-def quat_from_axis_angle(axis: np.ndarray, angle: float) -> np.ndarray:
-    """Create quaternion (w,x,y,z) from axis-angle."""
-    half = angle * 0.5
-    s = np.sin(half)
-    return np.array([np.cos(half), axis[0] * s, axis[1] * s, axis[2] * s])
-
-
-def quat_inverse(q: np.ndarray) -> np.ndarray:
-    """Inverse of unit quaternion (w,x,y,z)."""
-    return np.array([q[0], -q[1], -q[2], -q[3]])
-
-
-def quat_mul(a: np.ndarray, b: np.ndarray) -> np.ndarray:
-    """Quaternion multiplication (w,x,y,z format)."""
-    aw, ax, ay, az = a
-    bw, bx, by, bz = b
-    return np.array([
-        aw * bw - ax * bx - ay * by - az * bz,
-        aw * bx + ax * bw + ay * bz - az * by,
-        aw * by - ax * bz + ay * bw + az * bx,
-        aw * bz + ax * by - ay * bx + az * bw,
-    ])
-
-
-def quat_rotate_vec(q: np.ndarray, v: np.ndarray) -> np.ndarray:
-    """Rotate vector v by quaternion q (w,x,y,z)."""
-    qv = np.array([0.0, v[0], v[1], v[2]])
-    result = quat_mul(quat_mul(q, qv), quat_inverse(q))
-    return result[1:4]
+from tools.ml.quaternion import (
+    quat_yaw, quat_from_axis_angle, quat_inverse, quat_mul, quat_rotate_vec,
+)
 
 
 class StateEncoder:

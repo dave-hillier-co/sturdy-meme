@@ -1,28 +1,26 @@
-"""PyTorch MLP policy matching the C++ MLPPolicy architecture.
+"""General-purpose MLP networks for reinforcement learning.
 
-Network: 3 hidden layers x 1024 units, ELU activation on hidden, linear output.
-The weight format must exactly match the C++ binary format for export.
+MLPPolicy: feedforward network mapping observations to actions.
+ValueNetwork: feedforward network mapping observations to scalar value.
+
+Both support configurable depth, width, and activation functions.
 """
 
 import torch
 import torch.nn as nn
-import numpy as np
 from typing import Optional
 
-from .config import PolicyConfig, HumanoidConfig
+from .config import PolicyConfig
 
 
 class MLPPolicy(nn.Module):
-    """MLP policy network matching C++ MLPPolicy architecture.
+    """MLP policy network.
 
     Architecture:
-        input -> Linear(input_dim, 1024) -> ELU ->
-                 Linear(1024, 1024) -> ELU ->
-                 Linear(1024, 1024) -> ELU ->
-                 Linear(1024, output_dim)
+        input -> [Linear -> activation] x N -> Linear -> output
 
-    Output is raw (unnormalized) torques. A separate log_std parameter
-    vector is used for the stochastic policy during training.
+    Hidden layers use the configured activation; output is linear.
+    A learnable per-action log_std parameter is used for stochastic sampling.
     """
 
     def __init__(self, input_dim: int, output_dim: int,
@@ -34,23 +32,24 @@ class MLPPolicy(nn.Module):
         self.input_dim = input_dim
         self.output_dim = output_dim
 
+        activation_cls = {"elu": nn.ELU, "relu": nn.ReLU, "tanh": nn.Tanh}
+        act = activation_cls.get(config.activation, nn.ELU)
+
         layers = []
         prev_dim = input_dim
         for _ in range(config.hidden_layers):
             layers.append(nn.Linear(prev_dim, config.hidden_dim))
-            layers.append(nn.ELU())
+            layers.append(act())
             prev_dim = config.hidden_dim
         layers.append(nn.Linear(prev_dim, output_dim))
 
         self.network = nn.Sequential(*layers)
-
-        # Stochastic policy: learnable per-action log standard deviation
         self.log_std = nn.Parameter(torch.full((output_dim,), -1.0))
 
         self._init_weights()
 
     def _init_weights(self):
-        """Xavier initialization matching C++ initRandom."""
+        """Xavier initialization."""
         for m in self.network:
             if isinstance(m, nn.Linear):
                 nn.init.xavier_uniform_(m.weight)
@@ -61,7 +60,7 @@ class MLPPolicy(nn.Module):
         return self.network(obs)
 
     def get_distribution(self, obs: torch.Tensor):
-        """Return action distribution for PPO sampling."""
+        """Return Gaussian action distribution for sampling."""
         mean = self.forward(obs)
         std = self.log_std.exp().expand_as(mean)
         return torch.distributions.Normal(mean, std)
@@ -75,31 +74,33 @@ class MLPPolicy(nn.Module):
 
     def get_layer_params(self):
         """Yield (weight, bias, input_dim, output_dim) for each linear layer.
-        This matches the C++ MLPPolicy layer ordering for export."""
+        Weight layout: [out_features, in_features] row-major."""
         for module in self.network:
             if isinstance(module, nn.Linear):
                 yield (
-                    module.weight.detach().cpu().numpy(),  # [out, in] row-major
-                    module.bias.detach().cpu().numpy(),     # [out]
+                    module.weight.detach().cpu().numpy(),
+                    module.bias.detach().cpu().numpy(),
                     module.in_features,
                     module.out_features,
                 )
 
 
 class ValueNetwork(nn.Module):
-    """Separate value function for PPO.
-    Same architecture as the policy but outputs a single scalar."""
+    """MLP value function that maps observations to a scalar."""
 
     def __init__(self, input_dim: int, config: Optional[PolicyConfig] = None):
         super().__init__()
         if config is None:
             config = PolicyConfig()
 
+        activation_cls = {"elu": nn.ELU, "relu": nn.ReLU, "tanh": nn.Tanh}
+        act = activation_cls.get(config.activation, nn.ELU)
+
         layers = []
         prev_dim = input_dim
         for _ in range(config.hidden_layers):
             layers.append(nn.Linear(prev_dim, config.hidden_dim))
-            layers.append(nn.ELU())
+            layers.append(act())
             prev_dim = config.hidden_dim
         layers.append(nn.Linear(prev_dim, 1))
 

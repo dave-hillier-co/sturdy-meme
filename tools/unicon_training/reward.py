@@ -13,7 +13,7 @@ import numpy as np
 from typing import Tuple
 
 from .config import RewardConfig
-from .state_encoder import quat_mul, quat_inverse
+from tools.ml.quaternion import quat_mul, quat_inverse
 
 
 def compute_reward(

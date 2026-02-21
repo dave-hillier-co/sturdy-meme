@@ -1,7 +1,7 @@
 #pragma once
 
 #include "StateEncoder.h"
-#include "MLPPolicy.h"
+#include "../core/ml/MLPPolicy.h"
 #include "../physics/ArticulatedBody.h"
 #include "../physics/PhysicsSystem.h"
 

@@ -1,34 +1,31 @@
-"""Load motion data from BVH and FBX files for training.
+"""Load motion capture data from BVH files.
 
-Converts skeletal animation into the dict format expected by UniConEnv:
+Parses BVH hierarchy and motion sections into a dictionary format:
     {
-        "clip_name": {
-            "fps": float,
-            "frames": [
-                {
-                    "root_pos": ndarray (3,),
-                    "root_rot": ndarray (4,),  # w,x,y,z
-                    "joint_positions": ndarray (J, 3),
-                    "joint_rotations": ndarray (J, 4),
-                },
-                ...
-            ]
-        },
-        ...
+        "fps": float,
+        "frames": [
+            {
+                "root_pos": ndarray (3,),
+                "root_rot": ndarray (4,),  # w,x,y,z
+                "joint_positions": ndarray (J, 3),
+                "joint_rotations": ndarray (J, 4),
+            },
+            ...
+        ]
     }
 """
 
-import json
 import numpy as np
 from pathlib import Path
-from typing import Dict, Any, Optional
+from typing import Dict, Any
+
+from .quaternion import euler_to_quat
 
 
-def load_bvh(path: str, num_joints: int = 20) -> Dict[str, Any]:
+def load_bvh(path: str, num_joints: int) -> Dict[str, Any]:
     """Load a BVH motion capture file.
 
-    BVH files contain a hierarchy section and a motion section.
-    This parser handles the standard BVH format used by CMU Mocap.
+    Handles the standard BVH format (e.g. CMU Mocap database).
     """
     with open(path, "r") as f:
         content = f.read()
@@ -36,7 +33,7 @@ def load_bvh(path: str, num_joints: int = 20) -> Dict[str, Any]:
     lines = content.strip().split("\n")
     idx = 0
 
-    # Parse hierarchy to get joint names and offsets
+    # Parse hierarchy
     joint_names = []
     joint_offsets = []
     joint_parents = []
@@ -49,7 +46,6 @@ def load_bvh(path: str, num_joints: int = 20) -> Dict[str, Any]:
             joint_names.append(name)
             joint_parents.append(parent_stack[-1])
         elif line.startswith("End Site"):
-            # Skip end site blocks
             idx += 1
             while idx < len(lines) and "}" not in lines[idx]:
                 idx += 1
@@ -68,7 +64,7 @@ def load_bvh(path: str, num_joints: int = 20) -> Dict[str, Any]:
             break
         idx += 1
 
-    # Parse motion data
+    # Parse motion data header
     num_frames = 0
     frame_time = 1.0 / 30.0
 
@@ -85,40 +81,34 @@ def load_bvh(path: str, num_joints: int = 20) -> Dict[str, Any]:
     fps = 1.0 / frame_time
     frames = []
 
-    for frame_idx in range(num_frames):
+    for _ in range(num_frames):
         if idx >= len(lines):
             break
         values = [float(v) for v in lines[idx].strip().split()]
         idx += 1
 
-        # First 3 values are root translation, then 3 rotation values per joint
-        root_pos = np.array(values[0:3], dtype=np.float32)
-        # Convert from BVH coordinate system (Z-up) to Y-up if needed
-        # Standard BVH: X-right, Y-up, Z-forward
-        root_pos = root_pos * 0.01  # cm to m
+        root_pos = np.array(values[0:3], dtype=np.float32) * 0.01  # cm to m
 
-        # Parse rotations (Euler angles in degrees)
         rot_offset = 3
         joint_rotations = np.zeros((num_joints, 4), dtype=np.float32)
-        joint_rotations[:, 0] = 1.0  # identity quaternion w
+        joint_rotations[:, 0] = 1.0  # identity
 
         for j in range(min(len(joint_names), num_joints)):
             if rot_offset + 3 <= len(values):
-                # BVH typically uses ZXY or ZYX order
                 rx = np.radians(values[rot_offset])
                 ry = np.radians(values[rot_offset + 1])
                 rz = np.radians(values[rot_offset + 2])
-                joint_rotations[j] = _euler_to_quat(rx, ry, rz)
+                joint_rotations[j] = euler_to_quat(rx, ry, rz)
                 rot_offset += 3
 
-        # Compute joint positions from offsets and rotations (forward kinematics)
+        # Forward kinematics for joint positions
         joint_positions = np.zeros((num_joints, 3), dtype=np.float32)
         joint_positions[0] = root_pos
         offsets = np.array(joint_offsets[:num_joints], dtype=np.float32) * 0.01
 
         for j in range(1, min(len(joint_names), num_joints)):
             parent = joint_parents[j]
-            if parent >= 0 and parent < num_joints:
+            if 0 <= parent < num_joints:
                 joint_positions[j] = joint_positions[parent] + offsets[j]
 
         frames.append({
@@ -133,14 +123,10 @@ def load_bvh(path: str, num_joints: int = 20) -> Dict[str, Any]:
 
 def load_motion_directory(
     motion_dir: str,
-    num_joints: int = 20,
+    num_joints: int,
     extensions: tuple = (".bvh",),
 ) -> Dict[str, Dict[str, Any]]:
-    """Load all motion files from a directory.
-
-    Returns:
-        Dictionary mapping clip names to motion data.
-    """
+    """Load all motion files from a directory."""
     motion_dir = Path(motion_dir)
     motions = {}
 
@@ -160,11 +146,11 @@ def load_motion_directory(
 
 
 def generate_standing_motion(
-    num_joints: int = 20,
+    num_joints: int,
     duration_seconds: float = 5.0,
     fps: float = 60.0,
 ) -> Dict[str, Any]:
-    """Generate a simple standing-still motion for testing/bootstrap."""
+    """Generate a standing-still motion clip for testing."""
     num_frames = int(duration_seconds * fps)
     frames = []
 
@@ -180,17 +166,3 @@ def generate_standing_motion(
         })
 
     return {"fps": fps, "frames": frames}
-
-
-def _euler_to_quat(rx: float, ry: float, rz: float) -> np.ndarray:
-    """Convert Euler angles (radians, ZYX order) to quaternion (w,x,y,z)."""
-    cx, sx = np.cos(rx / 2), np.sin(rx / 2)
-    cy, sy = np.cos(ry / 2), np.sin(ry / 2)
-    cz, sz = np.cos(rz / 2), np.sin(rz / 2)
-
-    w = cx * cy * cz + sx * sy * sz
-    x = sx * cy * cz - cx * sy * sz
-    y = cx * sy * cz + sx * cy * sz
-    z = cx * cy * sz - sx * sy * cz
-
-    return np.array([w, x, y, z], dtype=np.float32)

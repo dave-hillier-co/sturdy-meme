@@ -15,6 +15,7 @@ from typing import Optional, Tuple, Dict, Any
 from .config import TrainingConfig, HumanoidConfig, RewardConfig, RSISConfig
 from .state_encoder import StateEncoder
 from .reward import compute_reward
+from tools.ml.quaternion import slerp as quat_slerp
 
 
 # Default MuJoCo humanoid XML.
@@ -414,12 +415,12 @@ class UniConEnv:
 
         # Linear interpolation for positions, slerp for rotations
         root_pos = (1 - alpha) * f0["root_pos"] + alpha * f1["root_pos"]
-        root_rot = self._slerp(f0["root_rot"], f1["root_rot"], alpha)
+        root_rot = quat_slerp(f0["root_rot"], f1["root_rot"], alpha)
         joint_pos = (1 - alpha) * f0["joint_positions"] + alpha * f1["joint_positions"]
 
         joint_rot = np.zeros_like(f0["joint_rotations"])
         for j in range(joint_rot.shape[0]):
-            joint_rot[j] = self._slerp(
+            joint_rot[j] = quat_slerp(
                 f0["joint_rotations"][j], f1["joint_rotations"][j], alpha
             )
 
@@ -438,20 +439,6 @@ class UniConEnv:
             "joint_rotations": joint_rot.astype(np.float32),
             "joint_ang_vels": joint_ang_vels.astype(np.float32),
         }
-
-    def _slerp(self, q0: np.ndarray, q1: np.ndarray, t: float) -> np.ndarray:
-        """Spherical linear interpolation between quaternions."""
-        dot = np.dot(q0, q1)
-        if dot < 0:
-            q1 = -q1
-            dot = -dot
-        dot = np.clip(dot, -1.0, 1.0)
-        if dot > 0.9995:
-            result = q0 + t * (q1 - q0)
-            return result / np.linalg.norm(result)
-        theta = np.arccos(dot)
-        sin_theta = np.sin(theta)
-        return (np.sin((1 - t) * theta) * q0 + np.sin(t * theta) * q1) / sin_theta
 
     def _compute_reward(self) -> Tuple[float, np.ndarray, bool]:
         """Compute reward by comparing current state to target."""

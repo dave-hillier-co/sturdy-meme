@@ -6,493 +6,491 @@
 #include <imgui.h>
 #include <glm/glm.hpp>
 
-void GuiEnvironmentTab::render(IEnvironmentControl& envControl, EnvironmentTabState& state) {
-    if (ImGui::CollapsingHeader("Froxel Volumetric Fog")) {
-        bool fogEnabled = envControl.isFogEnabled();
-        if (ImGui::Checkbox("Enable Froxel Fog", &fogEnabled)) {
-            envControl.setFogEnabled(fogEnabled);
+void GuiEnvironmentTab::renderFroxelFog(IEnvironmentControl& envControl) {
+    bool fogEnabled = envControl.isFogEnabled();
+    if (ImGui::Checkbox("Enable Froxel Fog", &fogEnabled)) {
+        envControl.setFogEnabled(fogEnabled);
+    }
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("Frustum-aligned voxel grid volumetric fog with temporal reprojection");
+    }
+
+    if (fogEnabled) {
+        float fogDensity = envControl.getFogDensity();
+        if (ImGui::SliderFloat("Fog Density", &fogDensity, 0.0f, 1.0f, "%.4f", ImGuiSliderFlags_Logarithmic)) {
+            envControl.setFogDensity(fogDensity);
         }
         if (ImGui::IsItemHovered()) {
-            ImGui::SetTooltip("Frustum-aligned voxel grid volumetric fog with temporal reprojection");
+            ImGui::SetTooltip("0 = no fog, 1 = extremely dense (logarithmic scale)");
         }
 
-        if (fogEnabled) {
-            float fogDensity = envControl.getFogDensity();
-            if (ImGui::SliderFloat("Fog Density", &fogDensity, 0.0f, 1.0f, "%.4f", ImGuiSliderFlags_Logarithmic)) {
-                envControl.setFogDensity(fogDensity);
+        float fogAbsorption = envControl.getFogAbsorption();
+        if (ImGui::SliderFloat("Absorption", &fogAbsorption, 0.0f, 1.0f, "%.4f", ImGuiSliderFlags_Logarithmic)) {
+            envControl.setFogAbsorption(fogAbsorption);
+        }
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Light absorption coefficient (0 = transparent, 1 = opaque fog)");
+        }
+
+        float fogBaseHeight = envControl.getFogBaseHeight();
+        if (ImGui::SliderFloat("Base Height", &fogBaseHeight, -500.0f, 500.0f, "%.1f")) {
+            envControl.setFogBaseHeight(fogBaseHeight);
+        }
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Height where fog density is maximum");
+        }
+
+        float fogScaleHeight = envControl.getFogScaleHeight();
+        if (ImGui::SliderFloat("Scale Height", &fogScaleHeight, 0.1f, 2000.0f, "%.1f", ImGuiSliderFlags_Logarithmic)) {
+            envControl.setFogScaleHeight(fogScaleHeight);
+        }
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Exponential falloff (0.1 = thin layer, 2000 = fog everywhere)");
+        }
+
+        float volumetricFar = envControl.getVolumetricFarPlane();
+        if (ImGui::SliderFloat("Far Plane", &volumetricFar, 10.0f, 5000.0f, "%.0f", ImGuiSliderFlags_Logarithmic)) {
+            envControl.setVolumetricFarPlane(volumetricFar);
+        }
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Volumetric range (10 = close only, 5000 = entire scene)");
+        }
+
+        float temporalBlend = envControl.getTemporalBlend();
+        if (ImGui::SliderFloat("Temporal Blend", &temporalBlend, 0.0f, 0.999f, "%.3f")) {
+            envControl.setTemporalBlend(temporalBlend);
+        }
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("0 = no temporal filtering (noisy), 0.999 = extreme smoothing (ghosting)");
+        }
+
+        ImGui::Text("Presets:");
+        ImGui::SameLine();
+        if (ImGui::Button("Clear##froxel")) {
+            envControl.setFogDensity(0.0f);
+            envControl.setLayerDensity(0.0f);
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Light##froxel")) {
+            envControl.setFogDensity(0.005f);
+            envControl.setFogAbsorption(0.005f);
+            envControl.setFogScaleHeight(100.0f);
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Dense##froxel")) {
+            envControl.setFogDensity(0.03f);
+            envControl.setFogAbsorption(0.02f);
+            envControl.setFogScaleHeight(50.0f);
+        }
+
+        if (ImGui::TreeNode("Extreme Tests")) {
+            if (ImGui::Button("Max Density")) {
+                envControl.setFogDensity(1.0f);
+                envControl.setFogAbsorption(1.0f);
+                envControl.setFogScaleHeight(2000.0f);
+                envControl.setLayerDensity(0.5f);
             }
             if (ImGui::IsItemHovered()) {
-                ImGui::SetTooltip("0 = no fog, 1 = extremely dense (logarithmic scale)");
+                ImGui::SetTooltip("Maximum fog density - tests opacity limits");
             }
 
-            float fogAbsorption = envControl.getFogAbsorption();
-            if (ImGui::SliderFloat("Absorption", &fogAbsorption, 0.0f, 1.0f, "%.4f", ImGuiSliderFlags_Logarithmic)) {
-                envControl.setFogAbsorption(fogAbsorption);
+            ImGui::SameLine();
+            if (ImGui::Button("Near Only")) {
+                envControl.setVolumetricFarPlane(20.0f);
+                envControl.setFogDensity(0.05f);
+                envControl.setFogAbsorption(0.05f);
             }
             if (ImGui::IsItemHovered()) {
-                ImGui::SetTooltip("Light absorption coefficient (0 = transparent, 1 = opaque fog)");
+                ImGui::SetTooltip("Very short far plane (20m) - tests near-field froxels");
             }
 
-            float fogBaseHeight = envControl.getFogBaseHeight();
-            if (ImGui::SliderFloat("Base Height", &fogBaseHeight, -500.0f, 500.0f, "%.1f")) {
-                envControl.setFogBaseHeight(fogBaseHeight);
+            ImGui::SameLine();
+            if (ImGui::Button("Full Range")) {
+                envControl.setVolumetricFarPlane(5000.0f);
+                envControl.setFogDensity(0.001f);
+                envControl.setFogAbsorption(0.001f);
             }
             if (ImGui::IsItemHovered()) {
-                ImGui::SetTooltip("Height where fog density is maximum");
+                ImGui::SetTooltip("Maximum far plane (5000m) - tests full depth distribution");
             }
 
-            float fogScaleHeight = envControl.getFogScaleHeight();
-            if (ImGui::SliderFloat("Scale Height", &fogScaleHeight, 0.1f, 2000.0f, "%.1f", ImGuiSliderFlags_Logarithmic)) {
-                envControl.setFogScaleHeight(fogScaleHeight);
+            if (ImGui::Button("No Temporal")) {
+                envControl.setTemporalBlend(0.0f);
+                envControl.setFogDensity(0.02f);
             }
             if (ImGui::IsItemHovered()) {
-                ImGui::SetTooltip("Exponential falloff (0.1 = thin layer, 2000 = fog everywhere)");
+                ImGui::SetTooltip("Disable temporal filtering - shows raw noise");
             }
 
-            float volumetricFar = envControl.getVolumetricFarPlane();
-            if (ImGui::SliderFloat("Far Plane", &volumetricFar, 10.0f, 5000.0f, "%.0f", ImGuiSliderFlags_Logarithmic)) {
-                envControl.setVolumetricFarPlane(volumetricFar);
+            ImGui::SameLine();
+            if (ImGui::Button("Max Temporal")) {
+                envControl.setTemporalBlend(0.999f);
+                envControl.setFogDensity(0.02f);
             }
             if (ImGui::IsItemHovered()) {
-                ImGui::SetTooltip("Volumetric range (10 = close only, 5000 = entire scene)");
+                ImGui::SetTooltip("Maximum temporal filtering - shows ghosting artifacts");
             }
 
-            float temporalBlend = envControl.getTemporalBlend();
-            if (ImGui::SliderFloat("Temporal Blend", &temporalBlend, 0.0f, 0.999f, "%.3f")) {
-                envControl.setTemporalBlend(temporalBlend);
+            ImGui::SameLine();
+            if (ImGui::Button("Thin Layer")) {
+                envControl.setFogDensity(0.0f);
+                envControl.setLayerHeight(5.0f);
+                envControl.setLayerThickness(2.0f);
+                envControl.setLayerDensity(0.2f);
             }
             if (ImGui::IsItemHovered()) {
-                ImGui::SetTooltip("0 = no temporal filtering (noisy), 0.999 = extreme smoothing (ghosting)");
+                ImGui::SetTooltip("Very thin ground fog layer - tests height fog precision");
+            }
+
+            if (ImGui::Button("Ground Fog")) {
+                envControl.setFogBaseHeight(0.0f);
+                envControl.setFogScaleHeight(10.0f);
+                envControl.setFogDensity(0.05f);
+                envControl.setFogAbsorption(0.03f);
+                envControl.setLayerDensity(0.0f);
+            }
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("Fog concentrated at ground level with rapid altitude falloff");
+            }
+
+            ImGui::SameLine();
+            if (ImGui::Button("High Altitude")) {
+                envControl.setFogBaseHeight(200.0f);
+                envControl.setFogScaleHeight(50.0f);
+                envControl.setFogDensity(0.02f);
+                envControl.setFogAbsorption(0.02f);
+                envControl.setLayerDensity(0.0f);
+            }
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("Fog starts at 200m altitude - tests high-altitude froxels");
+            }
+
+            ImGui::SameLine();
+            if (ImGui::Button("Inversion")) {
+                envControl.setFogBaseHeight(-100.0f);
+                envControl.setFogScaleHeight(5.0f);
+                envControl.setFogDensity(0.0f);
+                envControl.setLayerHeight(50.0f);
+                envControl.setLayerThickness(20.0f);
+                envControl.setLayerDensity(0.15f);
+            }
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("Temperature inversion layer - fog trapped at specific altitude");
+            }
+
+            if (ImGui::Button("Vertical Slice")) {
+                envControl.setFogBaseHeight(0.0f);
+                envControl.setFogScaleHeight(200.0f);
+                envControl.setFogDensity(0.02f);
+                envControl.setFogAbsorption(0.02f);
+                envControl.setVolumetricFarPlane(500.0f);
+                envControl.setLayerDensity(0.0f);
+            }
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("Uniform fog - tests vertical froxel distribution without height falloff");
+            }
+
+            ImGui::SameLine();
+            if (ImGui::Button("Sky Layer")) {
+                envControl.setFogDensity(0.0f);
+                envControl.setLayerHeight(300.0f);
+                envControl.setLayerThickness(100.0f);
+                envControl.setLayerDensity(0.08f);
+            }
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("Cloud-like layer at high altitude (300m)");
+            }
+
+            ImGui::SameLine();
+            if (ImGui::Button("Underground")) {
+                envControl.setFogBaseHeight(-200.0f);
+                envControl.setFogScaleHeight(30.0f);
+                envControl.setFogDensity(0.1f);
+                envControl.setFogAbsorption(0.05f);
+                envControl.setLayerDensity(0.0f);
+            }
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("Fog maximum below ground - tests negative altitude handling");
+            }
+
+            ImGui::TreePop();
+        }
+    }
+}
+
+void GuiEnvironmentTab::renderHeightFog(IEnvironmentControl& envControl, EnvironmentTabState& state) {
+    bool fogEnabled = envControl.isFogEnabled();
+    if (!fogEnabled) {
+        ImGui::TextDisabled("Enable Froxel Fog to access height fog settings");
+    } else {
+        if (ImGui::Checkbox("Enable Height Fog", &state.heightFogEnabled)) {
+            if (state.heightFogEnabled) {
+                envControl.setLayerDensity(state.cachedLayerDensity);
+            } else {
+                state.cachedLayerDensity = envControl.getLayerDensity();
+                if (state.cachedLayerDensity < 0.001f) state.cachedLayerDensity = 0.02f;
+                envControl.setLayerDensity(0.0f);
+            }
+        }
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Toggle ground-hugging fog layer");
+        }
+
+        if (state.heightFogEnabled) {
+            float layerHeight = envControl.getLayerHeight();
+            if (ImGui::SliderFloat("Layer Height", &layerHeight, -200.0f, 500.0f, "%.1f")) {
+                envControl.setLayerHeight(layerHeight);
+            }
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("Top of ground fog layer (-200 = below ground, 500 = high altitude cloud)");
+            }
+
+            float layerThickness = envControl.getLayerThickness();
+            if (ImGui::SliderFloat("Layer Thickness", &layerThickness, 0.1f, 500.0f, "%.1f", ImGuiSliderFlags_Logarithmic)) {
+                envControl.setLayerThickness(layerThickness);
+            }
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("Vertical extent (0.1 = paper thin, 500 = massive fog bank)");
+            }
+
+            float layerDensity = envControl.getLayerDensity();
+            if (ImGui::SliderFloat("Layer Density", &layerDensity, 0.0f, 1.0f, "%.4f", ImGuiSliderFlags_Logarithmic)) {
+                envControl.setLayerDensity(layerDensity);
+                state.cachedLayerDensity = layerDensity;
+            }
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("0 = invisible, 1 = completely opaque (logarithmic)");
             }
 
             ImGui::Text("Presets:");
             ImGui::SameLine();
-            if (ImGui::Button("Clear##froxel")) {
-                envControl.setFogDensity(0.0f);
-                envControl.setLayerDensity(0.0f);
+            if (ImGui::Button("Valley##layer")) {
+                envControl.setLayerHeight(20.0f);
+                envControl.setLayerThickness(30.0f);
+                envControl.setLayerDensity(0.03f);
+                state.cachedLayerDensity = 0.03f;
             }
             ImGui::SameLine();
-            if (ImGui::Button("Light##froxel")) {
-                envControl.setFogDensity(0.005f);
-                envControl.setFogAbsorption(0.005f);
-                envControl.setFogScaleHeight(100.0f);
-            }
-            ImGui::SameLine();
-            if (ImGui::Button("Dense##froxel")) {
-                envControl.setFogDensity(0.03f);
-                envControl.setFogAbsorption(0.02f);
-                envControl.setFogScaleHeight(50.0f);
-            }
-
-            if (ImGui::TreeNode("Extreme Tests")) {
-                if (ImGui::Button("Max Density")) {
-                    envControl.setFogDensity(1.0f);
-                    envControl.setFogAbsorption(1.0f);
-                    envControl.setFogScaleHeight(2000.0f);
-                    envControl.setLayerDensity(0.5f);
-                }
-                if (ImGui::IsItemHovered()) {
-                    ImGui::SetTooltip("Maximum fog density - tests opacity limits");
-                }
-
-                ImGui::SameLine();
-                if (ImGui::Button("Near Only")) {
-                    envControl.setVolumetricFarPlane(20.0f);
-                    envControl.setFogDensity(0.05f);
-                    envControl.setFogAbsorption(0.05f);
-                }
-                if (ImGui::IsItemHovered()) {
-                    ImGui::SetTooltip("Very short far plane (20m) - tests near-field froxels");
-                }
-
-                ImGui::SameLine();
-                if (ImGui::Button("Full Range")) {
-                    envControl.setVolumetricFarPlane(5000.0f);
-                    envControl.setFogDensity(0.001f);
-                    envControl.setFogAbsorption(0.001f);
-                }
-                if (ImGui::IsItemHovered()) {
-                    ImGui::SetTooltip("Maximum far plane (5000m) - tests full depth distribution");
-                }
-
-                if (ImGui::Button("No Temporal")) {
-                    envControl.setTemporalBlend(0.0f);
-                    envControl.setFogDensity(0.02f);
-                }
-                if (ImGui::IsItemHovered()) {
-                    ImGui::SetTooltip("Disable temporal filtering - shows raw noise");
-                }
-
-                ImGui::SameLine();
-                if (ImGui::Button("Max Temporal")) {
-                    envControl.setTemporalBlend(0.999f);
-                    envControl.setFogDensity(0.02f);
-                }
-                if (ImGui::IsItemHovered()) {
-                    ImGui::SetTooltip("Maximum temporal filtering - shows ghosting artifacts");
-                }
-
-                ImGui::SameLine();
-                if (ImGui::Button("Thin Layer")) {
-                    envControl.setFogDensity(0.0f);
-                    envControl.setLayerHeight(5.0f);
-                    envControl.setLayerThickness(2.0f);
-                    envControl.setLayerDensity(0.2f);
-                }
-                if (ImGui::IsItemHovered()) {
-                    ImGui::SetTooltip("Very thin ground fog layer - tests height fog precision");
-                }
-
-                if (ImGui::Button("Ground Fog")) {
-                    envControl.setFogBaseHeight(0.0f);
-                    envControl.setFogScaleHeight(10.0f);
-                    envControl.setFogDensity(0.05f);
-                    envControl.setFogAbsorption(0.03f);
-                    envControl.setLayerDensity(0.0f);
-                }
-                if (ImGui::IsItemHovered()) {
-                    ImGui::SetTooltip("Fog concentrated at ground level with rapid altitude falloff");
-                }
-
-                ImGui::SameLine();
-                if (ImGui::Button("High Altitude")) {
-                    envControl.setFogBaseHeight(200.0f);
-                    envControl.setFogScaleHeight(50.0f);
-                    envControl.setFogDensity(0.02f);
-                    envControl.setFogAbsorption(0.02f);
-                    envControl.setLayerDensity(0.0f);
-                }
-                if (ImGui::IsItemHovered()) {
-                    ImGui::SetTooltip("Fog starts at 200m altitude - tests high-altitude froxels");
-                }
-
-                ImGui::SameLine();
-                if (ImGui::Button("Inversion")) {
-                    envControl.setFogBaseHeight(-100.0f);
-                    envControl.setFogScaleHeight(5.0f);
-                    envControl.setFogDensity(0.0f);
-                    envControl.setLayerHeight(50.0f);
-                    envControl.setLayerThickness(20.0f);
-                    envControl.setLayerDensity(0.15f);
-                }
-                if (ImGui::IsItemHovered()) {
-                    ImGui::SetTooltip("Temperature inversion layer - fog trapped at specific altitude");
-                }
-
-                if (ImGui::Button("Vertical Slice")) {
-                    envControl.setFogBaseHeight(0.0f);
-                    envControl.setFogScaleHeight(200.0f);
-                    envControl.setFogDensity(0.02f);
-                    envControl.setFogAbsorption(0.02f);
-                    envControl.setVolumetricFarPlane(500.0f);
-                    envControl.setLayerDensity(0.0f);
-                }
-                if (ImGui::IsItemHovered()) {
-                    ImGui::SetTooltip("Uniform fog - tests vertical froxel distribution without height falloff");
-                }
-
-                ImGui::SameLine();
-                if (ImGui::Button("Sky Layer")) {
-                    envControl.setFogDensity(0.0f);
-                    envControl.setLayerHeight(300.0f);
-                    envControl.setLayerThickness(100.0f);
-                    envControl.setLayerDensity(0.08f);
-                }
-                if (ImGui::IsItemHovered()) {
-                    ImGui::SetTooltip("Cloud-like layer at high altitude (300m)");
-                }
-
-                ImGui::SameLine();
-                if (ImGui::Button("Underground")) {
-                    envControl.setFogBaseHeight(-200.0f);
-                    envControl.setFogScaleHeight(30.0f);
-                    envControl.setFogDensity(0.1f);
-                    envControl.setFogAbsorption(0.05f);
-                    envControl.setLayerDensity(0.0f);
-                }
-                if (ImGui::IsItemHovered()) {
-                    ImGui::SetTooltip("Fog maximum below ground - tests negative altitude handling");
-                }
-
-                ImGui::TreePop();
+            if (ImGui::Button("Thick Mist##layer")) {
+                envControl.setLayerHeight(10.0f);
+                envControl.setLayerThickness(15.0f);
+                envControl.setLayerDensity(0.1f);
+                state.cachedLayerDensity = 0.1f;
             }
         }
     }
+}
 
-    if (ImGui::CollapsingHeader("Height Fog Layer")) {
-        bool fogEnabled = envControl.isFogEnabled();
-        if (!fogEnabled) {
-            ImGui::TextDisabled("Enable Froxel Fog to access height fog settings");
-        } else {
-            if (ImGui::Checkbox("Enable Height Fog", &state.heightFogEnabled)) {
-                if (state.heightFogEnabled) {
-                    envControl.setLayerDensity(state.cachedLayerDensity);
-                } else {
-                    state.cachedLayerDensity = envControl.getLayerDensity();
-                    if (state.cachedLayerDensity < 0.001f) state.cachedLayerDensity = 0.02f;
-                    envControl.setLayerDensity(0.0f);
-                }
-            }
-            if (ImGui::IsItemHovered()) {
-                ImGui::SetTooltip("Toggle ground-hugging fog layer");
-            }
-
-            if (state.heightFogEnabled) {
-                float layerHeight = envControl.getLayerHeight();
-                if (ImGui::SliderFloat("Layer Height", &layerHeight, -200.0f, 500.0f, "%.1f")) {
-                    envControl.setLayerHeight(layerHeight);
-                }
-                if (ImGui::IsItemHovered()) {
-                    ImGui::SetTooltip("Top of ground fog layer (-200 = below ground, 500 = high altitude cloud)");
-                }
-
-                float layerThickness = envControl.getLayerThickness();
-                if (ImGui::SliderFloat("Layer Thickness", &layerThickness, 0.1f, 500.0f, "%.1f", ImGuiSliderFlags_Logarithmic)) {
-                    envControl.setLayerThickness(layerThickness);
-                }
-                if (ImGui::IsItemHovered()) {
-                    ImGui::SetTooltip("Vertical extent (0.1 = paper thin, 500 = massive fog bank)");
-                }
-
-                float layerDensity = envControl.getLayerDensity();
-                if (ImGui::SliderFloat("Layer Density", &layerDensity, 0.0f, 1.0f, "%.4f", ImGuiSliderFlags_Logarithmic)) {
-                    envControl.setLayerDensity(layerDensity);
-                    state.cachedLayerDensity = layerDensity;
-                }
-                if (ImGui::IsItemHovered()) {
-                    ImGui::SetTooltip("0 = invisible, 1 = completely opaque (logarithmic)");
-                }
-
-                ImGui::Text("Presets:");
-                ImGui::SameLine();
-                if (ImGui::Button("Valley##layer")) {
-                    envControl.setLayerHeight(20.0f);
-                    envControl.setLayerThickness(30.0f);
-                    envControl.setLayerDensity(0.03f);
-                    state.cachedLayerDensity = 0.03f;
-                }
-                ImGui::SameLine();
-                if (ImGui::Button("Thick Mist##layer")) {
-                    envControl.setLayerHeight(10.0f);
-                    envControl.setLayerThickness(15.0f);
-                    envControl.setLayerDensity(0.1f);
-                    state.cachedLayerDensity = 0.1f;
-                }
-            }
-        }
-    }
-
+void GuiEnvironmentTab::renderAtmosphere(IEnvironmentControl& envControl, EnvironmentTabState& state) {
     AtmosphereParams atmosParams = envControl.getAtmosphereParams();
     bool atmosChanged = false;
 
-    if (ImGui::CollapsingHeader("Atmospheric Scattering")) {
-        float skyExposure = envControl.getSkyExposure();
-        if (ImGui::SliderFloat("Sky Exposure", &skyExposure, 1.0f, 20.0f, "%.1f")) {
-            envControl.setSkyExposure(skyExposure);
-        }
-        if (ImGui::IsItemHovered()) {
-            ImGui::SetTooltip("Sky brightness multiplier (1 = dim, 5 = default, 20 = very bright)");
-        }
+    float skyExposure = envControl.getSkyExposure();
+    if (ImGui::SliderFloat("Sky Exposure", &skyExposure, 1.0f, 20.0f, "%.1f")) {
+        envControl.setSkyExposure(skyExposure);
+    }
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("Sky brightness multiplier (1 = dim, 5 = default, 20 = very bright)");
+    }
 
-        if (ImGui::Checkbox("Enable Atmosphere", &state.atmosphereEnabled)) {
-            if (state.atmosphereEnabled) {
-                atmosParams.rayleighScatteringBase = glm::vec3(5.802e-3f, 13.558e-3f, 33.1e-3f) * (state.cachedRayleighScale / 13.558f);
-                atmosParams.mieScatteringBase = state.cachedMieScale / 1000.0f;
-                atmosChanged = true;
-            } else {
-                state.cachedRayleighScale = atmosParams.rayleighScatteringBase.y * 1000.0f;
-                state.cachedMieScale = atmosParams.mieScatteringBase * 1000.0f;
-                if (state.cachedRayleighScale < 0.001f) state.cachedRayleighScale = 13.558f;
-                if (state.cachedMieScale < 0.001f) state.cachedMieScale = 3.996f;
-                atmosParams.rayleighScatteringBase = glm::vec3(0.0f);
-                atmosParams.mieScatteringBase = 0.0f;
-                atmosParams.mieAbsorptionBase = 0.0f;
-                atmosParams.ozoneAbsorption = glm::vec3(0.0f);
-                atmosChanged = true;
-            }
-        }
-        if (ImGui::IsItemHovered()) {
-            ImGui::SetTooltip("Toggle sky scattering (Rayleigh blue sky, Mie haze)");
-        }
-
+    if (ImGui::Checkbox("Enable Atmosphere", &state.atmosphereEnabled)) {
         if (state.atmosphereEnabled) {
-            ImGui::Text("Rayleigh Scattering (Air):");
-            float rayleighScale = atmosParams.rayleighScatteringBase.y * 1000.0f;
-            if (ImGui::SliderFloat("Rayleigh Strength", &rayleighScale, 0.0f, 200.0f, "%.2f", ImGuiSliderFlags_Logarithmic)) {
-                float oldVal = atmosParams.rayleighScatteringBase.y * 1000.0f;
-                if (oldVal > 0.0001f) {
-                    float ratio = rayleighScale / oldVal;
-                    atmosParams.rayleighScatteringBase *= ratio;
-                } else {
-                    atmosParams.rayleighScatteringBase = glm::vec3(5.802e-3f, 13.558e-3f, 33.1e-3f) * (rayleighScale / 13.558f);
-                }
-                state.cachedRayleighScale = rayleighScale;
-                atmosChanged = true;
-            }
-            if (ImGui::IsItemHovered()) {
-                ImGui::SetTooltip("0 = no blue sky, 13.5 = Earth, 200 = extremely blue (logarithmic)");
-            }
+            atmosParams.rayleighScatteringBase = glm::vec3(5.802e-3f, 13.558e-3f, 33.1e-3f) * (state.cachedRayleighScale / 13.558f);
+            atmosParams.mieScatteringBase = state.cachedMieScale / 1000.0f;
+            atmosChanged = true;
+        } else {
+            state.cachedRayleighScale = atmosParams.rayleighScatteringBase.y * 1000.0f;
+            state.cachedMieScale = atmosParams.mieScatteringBase * 1000.0f;
+            if (state.cachedRayleighScale < 0.001f) state.cachedRayleighScale = 13.558f;
+            if (state.cachedMieScale < 0.001f) state.cachedMieScale = 3.996f;
+            atmosParams.rayleighScatteringBase = glm::vec3(0.0f);
+            atmosParams.mieScatteringBase = 0.0f;
+            atmosParams.mieAbsorptionBase = 0.0f;
+            atmosParams.ozoneAbsorption = glm::vec3(0.0f);
+            atmosChanged = true;
+        }
+    }
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("Toggle sky scattering (Rayleigh blue sky, Mie haze)");
+    }
 
-            if (ImGui::SliderFloat("Rayleigh Scale Height", &atmosParams.rayleighScaleHeight, 0.1f, 100.0f, "%.1f km", ImGuiSliderFlags_Logarithmic)) {
-                atmosChanged = true;
+    if (state.atmosphereEnabled) {
+        ImGui::Text("Rayleigh Scattering (Air):");
+        float rayleighScale = atmosParams.rayleighScatteringBase.y * 1000.0f;
+        if (ImGui::SliderFloat("Rayleigh Strength", &rayleighScale, 0.0f, 200.0f, "%.2f", ImGuiSliderFlags_Logarithmic)) {
+            float oldVal = atmosParams.rayleighScatteringBase.y * 1000.0f;
+            if (oldVal > 0.0001f) {
+                float ratio = rayleighScale / oldVal;
+                atmosParams.rayleighScatteringBase *= ratio;
+            } else {
+                atmosParams.rayleighScatteringBase = glm::vec3(5.802e-3f, 13.558e-3f, 33.1e-3f) * (rayleighScale / 13.558f);
             }
-            if (ImGui::IsItemHovered()) {
-                ImGui::SetTooltip("0.1 = thin atmosphere, 8 = Earth, 100 = very thick");
-            }
+            state.cachedRayleighScale = rayleighScale;
+            atmosChanged = true;
+        }
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("0 = no blue sky, 13.5 = Earth, 200 = extremely blue (logarithmic)");
+        }
 
-            ImGui::Spacing();
-            ImGui::Text("Mie Scattering (Haze):");
-            float mieScale = atmosParams.mieScatteringBase * 1000.0f;
-            if (ImGui::SliderFloat("Mie Strength", &mieScale, 0.0f, 200.0f, "%.2f", ImGuiSliderFlags_Logarithmic)) {
-                atmosParams.mieScatteringBase = mieScale / 1000.0f;
-                state.cachedMieScale = mieScale;
-                atmosChanged = true;
-            }
-            if (ImGui::IsItemHovered()) {
-                ImGui::SetTooltip("0 = no haze, 4 = Earth, 200 = dense smog (logarithmic)");
-            }
+        if (ImGui::SliderFloat("Rayleigh Scale Height", &atmosParams.rayleighScaleHeight, 0.1f, 100.0f, "%.1f km", ImGuiSliderFlags_Logarithmic)) {
+            atmosChanged = true;
+        }
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("0.1 = thin atmosphere, 8 = Earth, 100 = very thick");
+        }
 
-            if (ImGui::SliderFloat("Mie Scale Height", &atmosParams.mieScaleHeight, 0.01f, 50.0f, "%.2f km", ImGuiSliderFlags_Logarithmic)) {
-                atmosChanged = true;
-            }
-            if (ImGui::IsItemHovered()) {
-                ImGui::SetTooltip("0.01 = ground-level only, 1.2 = Earth, 50 = everywhere");
-            }
+        ImGui::Spacing();
+        ImGui::Text("Mie Scattering (Haze):");
+        float mieScale = atmosParams.mieScatteringBase * 1000.0f;
+        if (ImGui::SliderFloat("Mie Strength", &mieScale, 0.0f, 200.0f, "%.2f", ImGuiSliderFlags_Logarithmic)) {
+            atmosParams.mieScatteringBase = mieScale / 1000.0f;
+            state.cachedMieScale = mieScale;
+            atmosChanged = true;
+        }
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("0 = no haze, 4 = Earth, 200 = dense smog (logarithmic)");
+        }
 
-            if (ImGui::SliderFloat("Mie Anisotropy", &atmosParams.mieAnisotropy, -0.99f, 0.99f, "%.2f")) {
-                atmosChanged = true;
-            }
-            if (ImGui::IsItemHovered()) {
-                ImGui::SetTooltip("-1 = backward scatter, 0 = uniform, 0.8 = Earth (forward), 0.99 = laser-like sun");
-            }
+        if (ImGui::SliderFloat("Mie Scale Height", &atmosParams.mieScaleHeight, 0.01f, 50.0f, "%.2f km", ImGuiSliderFlags_Logarithmic)) {
+            atmosChanged = true;
+        }
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("0.01 = ground-level only, 1.2 = Earth, 50 = everywhere");
+        }
 
-            float mieAbsScale = atmosParams.mieAbsorptionBase * 1000.0f;
-            if (ImGui::SliderFloat("Mie Absorption", &mieAbsScale, 0.0f, 100.0f, "%.2f", ImGuiSliderFlags_Logarithmic)) {
-                atmosParams.mieAbsorptionBase = mieAbsScale / 1000.0f;
-                atmosChanged = true;
-            }
-            if (ImGui::IsItemHovered()) {
-                ImGui::SetTooltip("0 = no absorption, 4.4 = Earth, 100 = heavy smog");
-            }
+        if (ImGui::SliderFloat("Mie Anisotropy", &atmosParams.mieAnisotropy, -0.99f, 0.99f, "%.2f")) {
+            atmosChanged = true;
+        }
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("-1 = backward scatter, 0 = uniform, 0.8 = Earth (forward), 0.99 = laser-like sun");
+        }
 
-            ImGui::Spacing();
-            ImGui::Text("Ozone Layer:");
-            float ozoneScale = atmosParams.ozoneAbsorption.y * 1000.0f;
-            if (ImGui::SliderFloat("Ozone Strength", &ozoneScale, 0.0f, 50.0f, "%.2f", ImGuiSliderFlags_Logarithmic)) {
-                float oldVal = atmosParams.ozoneAbsorption.y * 1000.0f;
-                if (oldVal > 0.0001f) {
-                    float ratio = ozoneScale / oldVal;
-                    atmosParams.ozoneAbsorption *= ratio;
-                } else {
-                    atmosParams.ozoneAbsorption = glm::vec3(0.65e-3f, 1.881e-3f, 0.085e-3f) * (ozoneScale / 1.881f);
-                }
-                atmosChanged = true;
-            }
-            if (ImGui::IsItemHovered()) {
-                ImGui::SetTooltip("0 = no ozone, 1.9 = Earth, 50 = extreme orange sunsets");
-            }
+        float mieAbsScale = atmosParams.mieAbsorptionBase * 1000.0f;
+        if (ImGui::SliderFloat("Mie Absorption", &mieAbsScale, 0.0f, 100.0f, "%.2f", ImGuiSliderFlags_Logarithmic)) {
+            atmosParams.mieAbsorptionBase = mieAbsScale / 1000.0f;
+            atmosChanged = true;
+        }
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("0 = no absorption, 4.4 = Earth, 100 = heavy smog");
+        }
 
-            if (ImGui::SliderFloat("Ozone Center", &atmosParams.ozoneLayerCenter, 0.0f, 100.0f, "%.0f km")) {
-                atmosChanged = true;
+        ImGui::Spacing();
+        ImGui::Text("Ozone Layer:");
+        float ozoneScale = atmosParams.ozoneAbsorption.y * 1000.0f;
+        if (ImGui::SliderFloat("Ozone Strength", &ozoneScale, 0.0f, 50.0f, "%.2f", ImGuiSliderFlags_Logarithmic)) {
+            float oldVal = atmosParams.ozoneAbsorption.y * 1000.0f;
+            if (oldVal > 0.0001f) {
+                float ratio = ozoneScale / oldVal;
+                atmosParams.ozoneAbsorption *= ratio;
+            } else {
+                atmosParams.ozoneAbsorption = glm::vec3(0.65e-3f, 1.881e-3f, 0.085e-3f) * (ozoneScale / 1.881f);
             }
-            if (ImGui::IsItemHovered()) {
-                ImGui::SetTooltip("0 = at surface, 25 = Earth, 100 = very high");
-            }
+            atmosChanged = true;
+        }
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("0 = no ozone, 1.9 = Earth, 50 = extreme orange sunsets");
+        }
 
-            if (ImGui::SliderFloat("Ozone Width", &atmosParams.ozoneLayerWidth, 0.1f, 100.0f, "%.1f km", ImGuiSliderFlags_Logarithmic)) {
-                atmosChanged = true;
-            }
-            if (ImGui::IsItemHovered()) {
-                ImGui::SetTooltip("0.1 = thin band, 15 = Earth, 100 = everywhere");
-            }
+        if (ImGui::SliderFloat("Ozone Center", &atmosParams.ozoneLayerCenter, 0.0f, 100.0f, "%.0f km")) {
+            atmosChanged = true;
+        }
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("0 = at surface, 25 = Earth, 100 = very high");
+        }
 
-            ImGui::Spacing();
-            ImGui::Text("Presets:");
-            if (ImGui::Button("Earth##atmos")) {
-                AtmosphereParams earth;
-                envControl.setAtmosphereParams(earth);
-                state.cachedRayleighScale = 13.558f;
-                state.cachedMieScale = 3.996f;
-                atmosChanged = false;
-            }
-            ImGui::SameLine();
-            if (ImGui::Button("Clear##atmos")) {
-                AtmosphereParams clear;
-                clear.mieScatteringBase = 1.0e-3f;
-                clear.mieAbsorptionBase = 1.0e-3f;
-                envControl.setAtmosphereParams(clear);
-                state.cachedMieScale = 1.0f;
-                atmosChanged = false;
-            }
-            ImGui::SameLine();
-            if (ImGui::Button("Hazy##atmos")) {
-                AtmosphereParams hazy;
-                hazy.mieScatteringBase = 15.0e-3f;
-                hazy.mieAbsorptionBase = 10.0e-3f;
-                hazy.mieAnisotropy = 0.7f;
-                envControl.setAtmosphereParams(hazy);
-                state.cachedMieScale = 15.0f;
-                atmosChanged = false;
-            }
+        if (ImGui::SliderFloat("Ozone Width", &atmosParams.ozoneLayerWidth, 0.1f, 100.0f, "%.1f km", ImGuiSliderFlags_Logarithmic)) {
+            atmosChanged = true;
+        }
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("0.1 = thin band, 15 = Earth, 100 = everywhere");
+        }
+
+        ImGui::Spacing();
+        ImGui::Text("Presets:");
+        if (ImGui::Button("Earth##atmos")) {
+            AtmosphereParams earth;
+            envControl.setAtmosphereParams(earth);
+            state.cachedRayleighScale = 13.558f;
+            state.cachedMieScale = 3.996f;
+            atmosChanged = false;
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Clear##atmos")) {
+            AtmosphereParams clear;
+            clear.mieScatteringBase = 1.0e-3f;
+            clear.mieAbsorptionBase = 1.0e-3f;
+            envControl.setAtmosphereParams(clear);
+            state.cachedMieScale = 1.0f;
+            atmosChanged = false;
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Hazy##atmos")) {
+            AtmosphereParams hazy;
+            hazy.mieScatteringBase = 15.0e-3f;
+            hazy.mieAbsorptionBase = 10.0e-3f;
+            hazy.mieAnisotropy = 0.7f;
+            envControl.setAtmosphereParams(hazy);
+            state.cachedMieScale = 15.0f;
+            atmosChanged = false;
         }
     }
 
     if (atmosChanged) {
         envControl.setAtmosphereParams(atmosParams);
     }
+}
 
-    if (ImGui::CollapsingHeader("Falling Leaves")) {
-        float leafIntensity = envControl.getLeafIntensity();
-        if (ImGui::SliderFloat("Leaf Intensity", &leafIntensity, 0.0f, 1.0f)) {
-            envControl.setLeafIntensity(leafIntensity);
-        }
+void GuiEnvironmentTab::renderLeaves(IEnvironmentControl& envControl) {
+    float leafIntensity = envControl.getLeafIntensity();
+    if (ImGui::SliderFloat("Leaf Intensity", &leafIntensity, 0.0f, 1.0f)) {
+        envControl.setLeafIntensity(leafIntensity);
+    }
+}
+
+void GuiEnvironmentTab::renderClouds(IEnvironmentControl& envControl) {
+    bool paraboloid = envControl.isUsingParaboloidClouds();
+    if (ImGui::Checkbox("Paraboloid LUT Clouds", &paraboloid)) {
+        envControl.toggleCloudStyle();
+    }
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("Toggle between procedural and paraboloid LUT hybrid cloud rendering");
     }
 
-    if (ImGui::CollapsingHeader("Clouds")) {
-        bool paraboloid = envControl.isUsingParaboloidClouds();
-        if (ImGui::Checkbox("Paraboloid LUT Clouds", &paraboloid)) {
-            envControl.toggleCloudStyle();
-        }
-        if (ImGui::IsItemHovered()) {
-            ImGui::SetTooltip("Toggle between procedural and paraboloid LUT hybrid cloud rendering");
-        }
+    float cloudCoverage = envControl.getCloudCoverage();
+    if (ImGui::SliderFloat("Cloud Coverage", &cloudCoverage, 0.0f, 1.0f, "%.2f")) {
+        envControl.setCloudCoverage(cloudCoverage);
+    }
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("0 = clear sky, 0.5 = partly cloudy, 1 = overcast");
+    }
 
-        float cloudCoverage = envControl.getCloudCoverage();
-        if (ImGui::SliderFloat("Cloud Coverage", &cloudCoverage, 0.0f, 1.0f, "%.2f")) {
-            envControl.setCloudCoverage(cloudCoverage);
-        }
-        if (ImGui::IsItemHovered()) {
-            ImGui::SetTooltip("0 = clear sky, 0.5 = partly cloudy, 1 = overcast");
-        }
+    float cloudDensity = envControl.getCloudDensity();
+    if (ImGui::SliderFloat("Cloud Density", &cloudDensity, 0.0f, 1.0f, "%.2f")) {
+        envControl.setCloudDensity(cloudDensity);
+    }
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("0 = thin/wispy, 0.3 = normal, 1 = thick/opaque");
+    }
 
-        float cloudDensity = envControl.getCloudDensity();
-        if (ImGui::SliderFloat("Cloud Density", &cloudDensity, 0.0f, 1.0f, "%.2f")) {
-            envControl.setCloudDensity(cloudDensity);
-        }
-        if (ImGui::IsItemHovered()) {
-            ImGui::SetTooltip("0 = thin/wispy, 0.3 = normal, 1 = thick/opaque");
-        }
-
-        ImGui::Text("Presets:");
-        ImGui::SameLine();
-        if (ImGui::Button("Clear##clouds")) {
-            envControl.setCloudCoverage(0.0f);
-            envControl.setCloudDensity(0.3f);
-        }
-        ImGui::SameLine();
-        if (ImGui::Button("Partly##clouds")) {
-            envControl.setCloudCoverage(0.4f);
-            envControl.setCloudDensity(0.3f);
-        }
-        ImGui::SameLine();
-        if (ImGui::Button("Cloudy##clouds")) {
-            envControl.setCloudCoverage(0.7f);
-            envControl.setCloudDensity(0.5f);
-        }
-        ImGui::SameLine();
-        if (ImGui::Button("Overcast##clouds")) {
-            envControl.setCloudCoverage(0.95f);
-            envControl.setCloudDensity(0.7f);
-        }
+    ImGui::Text("Presets:");
+    ImGui::SameLine();
+    if (ImGui::Button("Clear##clouds")) {
+        envControl.setCloudCoverage(0.0f);
+        envControl.setCloudDensity(0.3f);
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Partly##clouds")) {
+        envControl.setCloudCoverage(0.4f);
+        envControl.setCloudDensity(0.3f);
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Cloudy##clouds")) {
+        envControl.setCloudCoverage(0.7f);
+        envControl.setCloudDensity(0.5f);
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Overcast##clouds")) {
+        envControl.setCloudCoverage(0.95f);
+        envControl.setCloudDensity(0.7f);
     }
 }

@@ -33,12 +33,10 @@ void GuiPostFXTab::renderCloudShadows(ICloudShadowControl& cloudShadow) {
         ImGui::SetTooltip("Enable/disable cloud shadow projection on terrain");
     }
 
-    ImGui::BeginDisabled(!cloudShadowEnabled);
     float cloudShadowIntensity = cloudShadow.getShadowIntensity();
     if (ImGui::SliderFloat("Shadow Intensity", &cloudShadowIntensity, 0.0f, 1.0f)) {
         cloudShadow.setShadowIntensity(cloudShadowIntensity);
     }
-    ImGui::EndDisabled();
 }
 
 void GuiPostFXTab::renderBloom(IPostProcessState& postProcess) {
@@ -60,7 +58,6 @@ void GuiPostFXTab::renderGodRays(IPostProcessState& postProcess) {
         ImGui::SetTooltip("Toggle god ray light shafts effect");
     }
 
-    ImGui::BeginDisabled(!godRaysEnabled);
     const char* qualityNames[] = {"Low (16 samples)", "Medium (32 samples)", "High (64 samples)"};
     int currentQuality = static_cast<int>(postProcess.getGodRayQuality());
     if (ImGui::Combo("God Ray Quality", &currentQuality, qualityNames, 3)) {
@@ -69,7 +66,6 @@ void GuiPostFXTab::renderGodRays(IPostProcessState& postProcess) {
     if (ImGui::IsItemHovered()) {
         ImGui::SetTooltip("Higher quality = more samples = better rays but slower");
     }
-    ImGui::EndDisabled();
 }
 
 void GuiPostFXTab::renderVolumetricFogSettings(IPostProcessState& postProcess) {
@@ -117,7 +113,6 @@ void GuiPostFXTab::renderLocalToneMapping(IPostProcessState& postProcess) {
         ImGui::SetTooltip("Ghost of Tsushima bilateral grid technique for detail-preserving contrast");
     }
 
-    ImGui::BeginDisabled(!localToneMapEnabled);
     float contrast = postProcess.getLocalToneMapContrast();
     if (ImGui::SliderFloat("Contrast Reduction", &contrast, 0.0f, 1.0f)) {
         postProcess.setLocalToneMapContrast(contrast);
@@ -141,7 +136,6 @@ void GuiPostFXTab::renderLocalToneMapping(IPostProcessState& postProcess) {
     if (ImGui::IsItemHovered()) {
         ImGui::SetTooltip("GOT used 40%% bilateral, 60%% gaussian for smooth gradients");
     }
-    ImGui::EndDisabled();
 }
 
 void GuiPostFXTab::renderExposure(IPostProcessState& postProcess) {
@@ -155,7 +149,6 @@ void GuiPostFXTab::renderExposure(IPostProcessState& postProcess) {
 
     ImGui::Text("Current: %.2f EV", postProcess.getCurrentExposure());
 
-    ImGui::BeginDisabled(autoExposure);
     float manualExposure = postProcess.getManualExposure();
     if (ImGui::SliderFloat("Manual Exposure", &manualExposure, -4.0f, 4.0f, "%.2f EV")) {
         postProcess.setManualExposure(manualExposure);
@@ -163,5 +156,4 @@ void GuiPostFXTab::renderExposure(IPostProcessState& postProcess) {
     if (ImGui::IsItemHovered()) {
         ImGui::SetTooltip("Manual exposure value in EV (-4 to +4)");
     }
-    ImGui::EndDisabled();
 }

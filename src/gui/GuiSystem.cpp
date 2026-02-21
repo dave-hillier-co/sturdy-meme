@@ -210,88 +210,40 @@ void GuiSystem::render(GuiInterfaces& ui, const Camera& camera, float deltaTime,
     if (windowStates.showWeather) {
         renderWeatherWindow(ui);
     }
-    if (windowStates.showFroxelFog) {
-        ImGui::SetNextWindowSize(ImVec2(280, 300), ImGuiCond_FirstUseEver);
-        if (ImGui::Begin("Froxel Volumetric Fog", &windowStates.showFroxelFog)) {
+    if (windowStates.showEnvironment) {
+        ImGui::SetNextWindowSize(ImVec2(300, 600), ImGuiCond_FirstUseEver);
+        if (ImGui::Begin("Environment", &windowStates.showEnvironment)) {
+            ImGui::SeparatorText("Froxel Volumetric Fog");
             GuiEnvironmentTab::renderFroxelFog(ui.environment);
-        }
-        ImGui::End();
-    }
-    if (windowStates.showHeightFog) {
-        ImGui::SetNextWindowSize(ImVec2(280, 200), ImGuiCond_FirstUseEver);
-        if (ImGui::Begin("Height Fog Layer", &windowStates.showHeightFog)) {
+            ImGui::SeparatorText("Height Fog Layer");
             GuiEnvironmentTab::renderHeightFog(ui.environment, environmentTabState);
-        }
-        ImGui::End();
-    }
-    if (windowStates.showAtmosphere) {
-        ImGui::SetNextWindowSize(ImVec2(280, 400), ImGuiCond_FirstUseEver);
-        if (ImGui::Begin("Atmospheric Scattering", &windowStates.showAtmosphere)) {
+            ImGui::SeparatorText("Atmospheric Scattering");
             GuiEnvironmentTab::renderAtmosphere(ui.environment, environmentTabState);
-        }
-        ImGui::End();
-    }
-    if (windowStates.showLeaves) {
-        ImGui::SetNextWindowSize(ImVec2(280, 80), ImGuiCond_FirstUseEver);
-        if (ImGui::Begin("Falling Leaves", &windowStates.showLeaves)) {
+            ImGui::SeparatorText("Clouds");
+            GuiEnvironmentTab::renderClouds(ui.environment);
+            ImGui::SeparatorText("Falling Leaves");
             GuiEnvironmentTab::renderLeaves(ui.environment);
         }
         ImGui::End();
     }
-    if (windowStates.showClouds) {
-        ImGui::SetNextWindowSize(ImVec2(280, 180), ImGuiCond_FirstUseEver);
-        if (ImGui::Begin("Clouds", &windowStates.showClouds)) {
-            GuiEnvironmentTab::renderClouds(ui.environment);
-        }
-        ImGui::End();
-    }
 
-    // Rendering - Post FX windows
-    if (windowStates.showHDRPipeline) {
-        ImGui::SetNextWindowSize(ImVec2(280, 100), ImGuiCond_FirstUseEver);
-        if (ImGui::Begin("HDR Pipeline", &windowStates.showHDRPipeline)) {
+    // Post Processing window
+    if (windowStates.showPostFX) {
+        ImGui::SetNextWindowSize(ImVec2(300, 500), ImGuiCond_FirstUseEver);
+        if (ImGui::Begin("Post Processing", &windowStates.showPostFX)) {
+            ImGui::SeparatorText("HDR Pipeline");
             GuiPostFXTab::renderHDRPipeline(ui.postProcess);
-        }
-        ImGui::End();
-    }
-    if (windowStates.showCloudShadows) {
-        ImGui::SetNextWindowSize(ImVec2(280, 100), ImGuiCond_FirstUseEver);
-        if (ImGui::Begin("Cloud Shadows", &windowStates.showCloudShadows)) {
+            ImGui::SeparatorText("Cloud Shadows");
             GuiPostFXTab::renderCloudShadows(ui.cloudShadow);
-        }
-        ImGui::End();
-    }
-    if (windowStates.showBloom) {
-        ImGui::SetNextWindowSize(ImVec2(280, 80), ImGuiCond_FirstUseEver);
-        if (ImGui::Begin("Bloom", &windowStates.showBloom)) {
+            ImGui::SeparatorText("Bloom");
             GuiPostFXTab::renderBloom(ui.postProcess);
-        }
-        ImGui::End();
-    }
-    if (windowStates.showGodRays) {
-        ImGui::SetNextWindowSize(ImVec2(280, 120), ImGuiCond_FirstUseEver);
-        if (ImGui::Begin("God Rays", &windowStates.showGodRays)) {
+            ImGui::SeparatorText("God Rays");
             GuiPostFXTab::renderGodRays(ui.postProcess);
-        }
-        ImGui::End();
-    }
-    if (windowStates.showVolumetricFogSettings) {
-        ImGui::SetNextWindowSize(ImVec2(280, 120), ImGuiCond_FirstUseEver);
-        if (ImGui::Begin("Volumetric Fog Settings", &windowStates.showVolumetricFogSettings)) {
+            ImGui::SeparatorText("Volumetric Fog");
             GuiPostFXTab::renderVolumetricFogSettings(ui.postProcess);
-        }
-        ImGui::End();
-    }
-    if (windowStates.showLocalToneMapping) {
-        ImGui::SetNextWindowSize(ImVec2(280, 160), ImGuiCond_FirstUseEver);
-        if (ImGui::Begin("Local Tone Mapping", &windowStates.showLocalToneMapping)) {
+            ImGui::SeparatorText("Local Tone Mapping");
             GuiPostFXTab::renderLocalToneMapping(ui.postProcess);
-        }
-        ImGui::End();
-    }
-    if (windowStates.showExposure) {
-        ImGui::SetNextWindowSize(ImVec2(280, 100), ImGuiCond_FirstUseEver);
-        if (ImGui::Begin("Exposure", &windowStates.showExposure)) {
+            ImGui::SeparatorText("Exposure");
             GuiPostFXTab::renderExposure(ui.postProcess);
         }
         ImGui::End();
@@ -311,45 +263,21 @@ void GuiSystem::render(GuiInterfaces& ui, const Camera& camera, float deltaTime,
         renderGrassWindow(ui);
     }
 
-    // Character windows
-    if (windowStates.showCape) {
-        ImGui::SetNextWindowSize(ImVec2(250, 100), ImGuiCond_FirstUseEver);
-        if (ImGui::Begin("Cape", &windowStates.showCape)) {
+    // Character window
+    if (windowStates.showCharacter) {
+        ImGui::SetNextWindowSize(ImVec2(300, 500), ImGuiCond_FirstUseEver);
+        if (ImGui::Begin("Character", &windowStates.showCharacter)) {
+            ImGui::SeparatorText("Cape");
             GuiPlayerTab::renderCape(playerSettings);
-        }
-        ImGui::End();
-    }
-    if (windowStates.showWeapons) {
-        ImGui::SetNextWindowSize(ImVec2(250, 120), ImGuiCond_FirstUseEver);
-        if (ImGui::Begin("Weapons", &windowStates.showWeapons)) {
+            ImGui::SeparatorText("Weapons");
             GuiPlayerTab::renderWeapons(playerSettings);
-        }
-        ImGui::End();
-    }
-    if (windowStates.showCharacterLOD) {
-        ImGui::SetNextWindowSize(ImVec2(280, 220), ImGuiCond_FirstUseEver);
-        if (ImGui::Begin("Character LOD", &windowStates.showCharacterLOD)) {
+            ImGui::SeparatorText("Character LOD");
             GuiPlayerTab::renderCharacterLOD(ui.player, playerSettings);
-        }
-        ImGui::End();
-    }
-    if (windowStates.showCapeInfo) {
-        ImGui::SetNextWindowSize(ImVec2(280, 100), ImGuiCond_FirstUseEver);
-        if (ImGui::Begin("Cape Info", &windowStates.showCapeInfo)) {
+            ImGui::SeparatorText("Cape Info");
             GuiPlayerTab::renderCapeInfo();
-        }
-        ImGui::End();
-    }
-    if (windowStates.showNPCLOD) {
-        ImGui::SetNextWindowSize(ImVec2(300, 200), ImGuiCond_FirstUseEver);
-        if (ImGui::Begin("NPC LOD", &windowStates.showNPCLOD)) {
+            ImGui::SeparatorText("NPC LOD");
             GuiPlayerTab::renderNPCLOD(ui.player);
-        }
-        ImGui::End();
-    }
-    if (windowStates.showMotionMatching) {
-        ImGui::SetNextWindowSize(ImVec2(300, 350), ImGuiCond_FirstUseEver);
-        if (ImGui::Begin("Motion Matching", &windowStates.showMotionMatching)) {
+            ImGui::SeparatorText("Motion Matching");
             GuiPlayerTab::renderMotionMatching(ui.player, playerSettings);
         }
         ImGui::End();
@@ -358,38 +286,19 @@ void GuiSystem::render(GuiInterfaces& ui, const Camera& camera, float deltaTime,
         renderIKWindow(ui, camera);
     }
 
-    // Debug windows
-    if (windowStates.showDebugViz) {
-        ImGui::SetNextWindowSize(ImVec2(300, 200), ImGuiCond_FirstUseEver);
-        if (ImGui::Begin("Debug Visualizations", &windowStates.showDebugViz)) {
+    // Debug window
+    if (windowStates.showDebug) {
+        ImGui::SetNextWindowSize(ImVec2(300, 500), ImGuiCond_FirstUseEver);
+        if (ImGui::Begin("Debug", &windowStates.showDebug)) {
+            ImGui::SeparatorText("Visualizations");
             GuiDebugTab::renderVisualizations(ui.debug);
-        }
-        ImGui::End();
-    }
-    if (windowStates.showPhysicsDebug) {
-        ImGui::SetNextWindowSize(ImVec2(280, 300), ImGuiCond_FirstUseEver);
-        if (ImGui::Begin("Physics Debug", &windowStates.showPhysicsDebug)) {
+            ImGui::SeparatorText("Physics Debug");
             GuiDebugTab::renderPhysicsDebug(ui.debug);
-        }
-        ImGui::End();
-    }
-    if (windowStates.showOcclusionCulling) {
-        ImGui::SetNextWindowSize(ImVec2(280, 140), ImGuiCond_FirstUseEver);
-        if (ImGui::Begin("Occlusion Culling", &windowStates.showOcclusionCulling)) {
+            ImGui::SeparatorText("Occlusion Culling");
             GuiDebugTab::renderOcclusionCulling(ui.debug);
-        }
-        ImGui::End();
-    }
-    if (windowStates.showSystemInfo) {
-        ImGui::SetNextWindowSize(ImVec2(250, 120), ImGuiCond_FirstUseEver);
-        if (ImGui::Begin("System Info", &windowStates.showSystemInfo)) {
+            ImGui::SeparatorText("System Info");
             GuiDebugTab::renderSystemInfo();
-        }
-        ImGui::End();
-    }
-    if (windowStates.showKeyboardShortcuts) {
-        ImGui::SetNextWindowSize(ImVec2(280, 350), ImGuiCond_FirstUseEver);
-        if (ImGui::Begin("Keyboard Shortcuts", &windowStates.showKeyboardShortcuts)) {
+            ImGui::SeparatorText("Keyboard Shortcuts");
             GuiDebugTab::renderKeyboardShortcuts();
         }
         ImGui::End();
@@ -475,25 +384,12 @@ void GuiSystem::renderMainMenuBar() {
             ImGui::MenuItem("Time", nullptr, &windowStates.showTime);
             ImGui::MenuItem("Weather", nullptr, &windowStates.showWeather);
             ImGui::Separator();
-            ImGui::MenuItem("Froxel Fog", nullptr, &windowStates.showFroxelFog);
-            ImGui::MenuItem("Height Fog", nullptr, &windowStates.showHeightFog);
-            ImGui::MenuItem("Atmosphere", nullptr, &windowStates.showAtmosphere);
-            ImGui::MenuItem("Clouds", nullptr, &windowStates.showClouds);
-            ImGui::MenuItem("Falling Leaves", nullptr, &windowStates.showLeaves);
+            ImGui::MenuItem("Fog / Atmosphere / Clouds", nullptr, &windowStates.showEnvironment);
             ImGui::EndMenu();
         }
 
         if (ImGui::BeginMenu("Rendering")) {
-            if (ImGui::BeginMenu("Post FX")) {
-                ImGui::MenuItem("HDR Pipeline", nullptr, &windowStates.showHDRPipeline);
-                ImGui::MenuItem("Cloud Shadows", nullptr, &windowStates.showCloudShadows);
-                ImGui::MenuItem("Bloom", nullptr, &windowStates.showBloom);
-                ImGui::MenuItem("God Rays", nullptr, &windowStates.showGodRays);
-                ImGui::MenuItem("Volumetric Fog", nullptr, &windowStates.showVolumetricFogSettings);
-                ImGui::MenuItem("Local Tone Mapping", nullptr, &windowStates.showLocalToneMapping);
-                ImGui::MenuItem("Exposure", nullptr, &windowStates.showExposure);
-                ImGui::EndMenu();
-            }
+            ImGui::MenuItem("Post Processing", nullptr, &windowStates.showPostFX);
             ImGui::Separator();
             ImGui::MenuItem("Terrain", nullptr, &windowStates.showTerrain);
             ImGui::MenuItem("Water", nullptr, &windowStates.showWater);
@@ -503,12 +399,7 @@ void GuiSystem::renderMainMenuBar() {
         }
 
         if (ImGui::BeginMenu("Character")) {
-            ImGui::MenuItem("Cape", nullptr, &windowStates.showCape);
-            ImGui::MenuItem("Weapons", nullptr, &windowStates.showWeapons);
-            ImGui::MenuItem("Character LOD", nullptr, &windowStates.showCharacterLOD);
-            ImGui::MenuItem("Cape Info", nullptr, &windowStates.showCapeInfo);
-            ImGui::MenuItem("NPC LOD", nullptr, &windowStates.showNPCLOD);
-            ImGui::MenuItem("Motion Matching", nullptr, &windowStates.showMotionMatching);
+            ImGui::MenuItem("Character", nullptr, &windowStates.showCharacter);
             ImGui::Separator();
             ImGui::MenuItem("IK / Animation", nullptr, &windowStates.showIK);
             ImGui::EndMenu();
@@ -524,11 +415,7 @@ void GuiSystem::renderMainMenuBar() {
         }
 
         if (ImGui::BeginMenu("Debug")) {
-            ImGui::MenuItem("Visualizations", nullptr, &windowStates.showDebugViz);
-            ImGui::MenuItem("Physics Debug", nullptr, &windowStates.showPhysicsDebug);
-            ImGui::MenuItem("Occlusion Culling", nullptr, &windowStates.showOcclusionCulling);
-            ImGui::MenuItem("System Info", nullptr, &windowStates.showSystemInfo);
-            ImGui::MenuItem("Keyboard Shortcuts", nullptr, &windowStates.showKeyboardShortcuts);
+            ImGui::MenuItem("Debug", nullptr, &windowStates.showDebug);
             ImGui::Separator();
             ImGui::MenuItem("Performance Toggles", nullptr, &windowStates.showPerformance);
             ImGui::MenuItem("Profiler", nullptr, &windowStates.showProfiler);

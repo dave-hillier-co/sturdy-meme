@@ -32,7 +32,6 @@ void GuiDebugTab::renderVisualizations(IDebugControl& debugControl) {
         ImGui::SetTooltip("Shows road and river paths with directional cones");
     }
 
-    ImGui::BeginDisabled(!roadRiverVis);
     ImGui::Indent();
 
     bool showRoads = debugControl.isRoadVisualizationEnabled();
@@ -52,7 +51,6 @@ void GuiDebugTab::renderVisualizations(IDebugControl& debugControl) {
     }
 
     ImGui::Unindent();
-    ImGui::EndDisabled();
 }
 
 void GuiDebugTab::renderPhysicsDebug(IDebugControl& debugControl) {
@@ -65,7 +63,6 @@ void GuiDebugTab::renderPhysicsDebug(IDebugControl& debugControl) {
         ImGui::SetTooltip("Draw Jolt Physics collision shapes and debug info");
     }
 
-    ImGui::BeginDisabled(!physicsDebug);
     auto* debugRenderer = debugControl.getPhysicsDebugRenderer();
     if (debugRenderer) {
         auto& options = debugRenderer->getOptions();
@@ -106,7 +103,6 @@ void GuiDebugTab::renderPhysicsDebug(IDebugControl& debugControl) {
         ImGui::SameLine();
         ImGui::Text("Active: %d", ragdollCount);
     }
-    ImGui::EndDisabled();
 #else
     (void)debugControl;
     ImGui::TextDisabled("Physics debug not available (JPH_DEBUG_RENDERER not defined)");

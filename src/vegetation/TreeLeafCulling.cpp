@@ -567,6 +567,89 @@ void TreeLeafCulling::updateSpatialIndex(const TreeSystem& treeSystem) {
             leafRenderables.size(), spatialIndex_->getNonEmptyCellCount());
 }
 
+struct TreeDataPrepResult {
+    std::vector<TreeCullData> treeData;
+    std::vector<TreeRenderDataGPU> renderData;
+    uint32_t numTrees = 0;
+    uint32_t totalLeafInstances = 0;
+};
+
+static TreeDataPrepResult prepareTreeCullData(const TreeSystem& treeSystem,
+                                               const TreeLODSystem* lodSystem) {
+    TreeDataPrepResult result;
+    const auto& leafRenderables = treeSystem.getLeafRenderables();
+    const auto& leafDrawInfo = treeSystem.getLeafDrawInfo();
+
+    result.treeData.reserve(leafRenderables.size());
+    result.renderData.reserve(leafRenderables.size());
+
+    for (const auto& renderable : leafRenderables) {
+        if (renderable.leafInstanceIndex >= 0 &&
+            static_cast<size_t>(renderable.leafInstanceIndex) < leafDrawInfo.size()) {
+            const auto& drawInfo = leafDrawInfo[renderable.leafInstanceIndex];
+            if (drawInfo.instanceCount > 0) {
+                float lodBlendFactor = 0.0f;
+                if (lodSystem) {
+                    lodBlendFactor = lodSystem->getBlendFactor(static_cast<uint32_t>(renderable.leafInstanceIndex));
+                }
+
+                uint32_t leafTypeIdx = LEAF_TYPE_OAK;
+                if (renderable.leafType == "ash") leafTypeIdx = LEAF_TYPE_ASH;
+                else if (renderable.leafType == "aspen") leafTypeIdx = LEAF_TYPE_ASPEN;
+                else if (renderable.leafType == "pine") leafTypeIdx = LEAF_TYPE_PINE;
+
+                static bool loggedOnce = false;
+                if (!loggedOnce && result.numTrees < 10) {
+                    SDL_Log("TreeLeafCulling: Tree %u: leafType='%s' -> leafTypeIdx=%u, firstInst=%u, count=%u",
+                            result.numTrees, renderable.leafType.c_str(), leafTypeIdx,
+                            drawInfo.firstInstance, drawInfo.instanceCount);
+                    if (result.numTrees == 9) loggedOnce = true;
+                }
+
+                TreeCullData treeData{};
+                treeData.treeModel = renderable.transform;
+                treeData.inputFirstInstance = drawInfo.firstInstance;
+                treeData.inputInstanceCount = drawInfo.instanceCount;
+                treeData.treeIndex = result.numTrees;
+                treeData.leafTypeIndex = leafTypeIdx;
+                treeData.lodBlendFactor = lodBlendFactor;
+                result.treeData.push_back(treeData);
+
+                TreeRenderDataGPU renderData{};
+                renderData.model = renderable.transform;
+                renderData.tintAndParams = glm::vec4(renderable.leafTint, renderable.autumnHueShift);
+                float windOffset = glm::fract(renderable.transform[3][0] * 0.1f + renderable.transform[3][2] * 0.1f) * 6.28318f;
+                renderData.windOffsetAndLOD = glm::vec4(windOffset, lodBlendFactor, 0.0f, 0.0f);
+                result.renderData.push_back(renderData);
+
+                result.totalLeafInstances += drawInfo.instanceCount;
+                result.numTrees++;
+            }
+        }
+    }
+
+    if (result.numTrees == 0) return result;
+
+    // CRITICAL: Sort tree data by inputFirstInstance for binary search in shader.
+    std::vector<size_t> sortIndices(result.treeData.size());
+    std::iota(sortIndices.begin(), sortIndices.end(), 0);
+    std::sort(sortIndices.begin(), sortIndices.end(), [&](size_t a, size_t b) {
+        return result.treeData[a].inputFirstInstance < result.treeData[b].inputFirstInstance;
+    });
+
+    std::vector<TreeCullData> sortedTreeData(result.treeData.size());
+    std::vector<TreeRenderDataGPU> sortedRenderData(result.renderData.size());
+    for (size_t i = 0; i < sortIndices.size(); ++i) {
+        sortedTreeData[i] = result.treeData[sortIndices[i]];
+        sortedTreeData[i].treeIndex = static_cast<uint32_t>(i);
+        sortedRenderData[i] = result.renderData[sortIndices[i]];
+    }
+
+    result.treeData = std::move(sortedTreeData);
+    result.renderData = std::move(sortedRenderData);
+    return result;
+}
+
 void TreeLeafCulling::recordCulling(VkCommandBuffer cmd, uint32_t frameIndex,
                                      const TreeSystem& treeSystem,
                                      const TreeLODSystem* lodSystem,
@@ -579,86 +662,13 @@ void TreeLeafCulling::recordCulling(VkCommandBuffer cmd, uint32_t frameIndex,
 
     if (leafRenderables.empty() || leafDrawInfo.empty()) return;
 
+    auto prep = prepareTreeCullData(treeSystem, lodSystem);
+    if (prep.numTrees == 0 || prep.totalLeafInstances == 0) return;
+
+    uint32_t numTrees = prep.numTrees;
+    uint32_t totalLeafInstances = prep.totalLeafInstances;
+
     vk::CommandBuffer vkCmd(cmd);
-
-    // Build per-tree data for batched culling
-    std::vector<TreeCullData> treeDataList;
-    std::vector<TreeRenderDataGPU> treeRenderDataList;
-    treeDataList.reserve(leafRenderables.size());
-    treeRenderDataList.reserve(leafRenderables.size());
-
-    uint32_t numTrees = 0;
-    uint32_t totalLeafInstances = 0;
-
-    for (const auto& renderable : leafRenderables) {
-        if (renderable.leafInstanceIndex >= 0 &&
-            static_cast<size_t>(renderable.leafInstanceIndex) < leafDrawInfo.size()) {
-            const auto& drawInfo = leafDrawInfo[renderable.leafInstanceIndex];
-            if (drawInfo.instanceCount > 0) {
-                float lodBlendFactor = 0.0f;
-                if (lodSystem) {
-                    // Use leafInstanceIndex (== tree instance index) for LOD lookup
-                    // This correctly maps to treeInstances_ even if some trees have no leaves
-                    lodBlendFactor = lodSystem->getBlendFactor(static_cast<uint32_t>(renderable.leafInstanceIndex));
-                }
-
-                uint32_t leafTypeIdx = LEAF_TYPE_OAK;
-                if (renderable.leafType == "ash") leafTypeIdx = LEAF_TYPE_ASH;
-                else if (renderable.leafType == "aspen") leafTypeIdx = LEAF_TYPE_ASPEN;
-                else if (renderable.leafType == "pine") leafTypeIdx = LEAF_TYPE_PINE;
-
-                static bool loggedOnce = false;
-                if (!loggedOnce && numTrees < 10) {
-                    SDL_Log("TreeLeafCulling: Tree %u: leafType='%s' -> leafTypeIdx=%u, firstInst=%u, count=%u",
-                            numTrees, renderable.leafType.c_str(), leafTypeIdx,
-                            drawInfo.firstInstance, drawInfo.instanceCount);
-                    if (numTrees == 9) loggedOnce = true;
-                }
-
-                TreeCullData treeData{};
-                treeData.treeModel = renderable.transform;
-                treeData.inputFirstInstance = drawInfo.firstInstance;
-                treeData.inputInstanceCount = drawInfo.instanceCount;
-                treeData.treeIndex = numTrees;
-                treeData.leafTypeIndex = leafTypeIdx;
-                treeData.lodBlendFactor = lodBlendFactor;
-                treeDataList.push_back(treeData);
-
-                TreeRenderDataGPU renderData{};
-                renderData.model = renderable.transform;
-                renderData.tintAndParams = glm::vec4(renderable.leafTint, renderable.autumnHueShift);
-                float windOffset = glm::fract(renderable.transform[3][0] * 0.1f + renderable.transform[3][2] * 0.1f) * 6.28318f;
-                renderData.windOffsetAndLOD = glm::vec4(windOffset, lodBlendFactor, 0.0f, 0.0f);
-                treeRenderDataList.push_back(renderData);
-
-                totalLeafInstances += drawInfo.instanceCount;
-                numTrees++;
-            }
-        }
-    }
-    if (numTrees == 0 || totalLeafInstances == 0) return;
-
-    // CRITICAL: Sort tree data by inputFirstInstance for binary search in shader.
-    // The shader's binary search assumes trees are sorted by their leaf instance range.
-    // If trees were added in non-sequential order, the search fails and defaults to
-    // tree 0 (usually oak), causing all leaves to render as oak.
-    std::vector<size_t> sortIndices(treeDataList.size());
-    std::iota(sortIndices.begin(), sortIndices.end(), 0);
-    std::sort(sortIndices.begin(), sortIndices.end(), [&](size_t a, size_t b) {
-        return treeDataList[a].inputFirstInstance < treeDataList[b].inputFirstInstance;
-    });
-
-    // Reorder both lists according to sorted indices
-    std::vector<TreeCullData> sortedTreeData(treeDataList.size());
-    std::vector<TreeRenderDataGPU> sortedRenderData(treeRenderDataList.size());
-    for (size_t i = 0; i < sortIndices.size(); ++i) {
-        sortedTreeData[i] = treeDataList[sortIndices[i]];
-        sortedTreeData[i].treeIndex = static_cast<uint32_t>(i);  // Update treeIndex to match new position
-        sortedRenderData[i] = treeRenderDataList[sortIndices[i]];
-    }
-
-    treeDataList = std::move(sortedTreeData);
-    treeRenderDataList = std::move(sortedRenderData);
 
     // Lazy initialization of shared output buffers
     if (cullOutputBuffers_.empty()) {
@@ -719,9 +729,9 @@ void TreeLeafCulling::recordCulling(VkCommandBuffer cmd, uint32_t frameIndex,
 
     // Upload per-tree data to frame-specific buffers (triple-buffered to avoid race conditions)
     vkCmd.updateBuffer(treeDataBuffers_.getVk(frameIndex), 0,
-                       numTrees * sizeof(TreeCullData), treeDataList.data());
+                       numTrees * sizeof(TreeCullData), prep.treeData.data());
     vkCmd.updateBuffer(treeRenderDataBuffers_.getVk(frameIndex), 0,
-                       numTrees * sizeof(TreeRenderDataGPU), treeRenderDataList.data());
+                       numTrees * sizeof(TreeRenderDataGPU), prep.renderData.data());
 
     // Barrier for tree data buffer updates
     auto barrier = vk::MemoryBarrier{}

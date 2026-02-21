@@ -283,6 +283,9 @@ struct SelectionOutline {
 // =============================================================================
 // Only tree entities have these components.
 
+// Zero-size tag for fast tree entity queries
+struct TreeTag {};
+
 struct TreeData {
     int leafInstanceIndex = -1;
     int treeInstanceIndex = -1;
@@ -291,12 +294,17 @@ struct TreeData {
 };
 
 struct BarkType {
-    uint32_t typeIndex = 0;  // Index into bark texture array
+    uint32_t typeIndex = 0;   // Index into bark texture array
+    std::string typeName;     // String key for texture lookup (e.g. "oak", "birch")
 };
 
 struct LeafType {
-    uint32_t typeIndex = 0;  // Index into leaf texture array
+    uint32_t typeIndex = 0;   // Index into leaf texture array
+    std::string typeName;     // String key for texture lookup (e.g. "oak", "pine")
 };
+
+// Zero-size tag for the currently selected/editable tree
+struct TreeSelected {};
 
 // =============================================================================
 // LOD Component

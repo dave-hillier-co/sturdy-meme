@@ -81,8 +81,68 @@ bool TreeSystem::initInternal(const InitInfo& info) {
     return true;
 }
 
+ecs::Entity TreeSystem::createTreeEntity(uint32_t treeIdx, const TreeInstanceData& instance,
+                                          const TreeOptions& opts, const AABB& bounds) {
+    if (!world_) return ecs::NullEntity;
+
+    ecs::Entity e = world_->create();
+    world_->add<ecs::TreeTag>(e);
+    world_->add<ecs::Transform>(e, instance.getTransformMatrix());
+    world_->add<ecs::TreeData>(e, ecs::TreeData{
+        static_cast<int>(instance.meshIndex),
+        static_cast<int>(treeIdx),
+        opts.leaves.tint,
+        opts.leaves.autumnHueShift
+    });
+    world_->add<ecs::BarkType>(e, ecs::BarkType{0, opts.bark.type});
+    world_->add<ecs::LeafType>(e, ecs::LeafType{0, opts.leaves.type});
+    world_->add<ecs::MeshRef>(e, &branchMeshes_[instance.meshIndex]);
+    world_->add<ecs::CastsShadow>(e);
+
+    // Compute bounding sphere from AABB
+    glm::vec3 center = (bounds.min + bounds.max) * 0.5f;
+    float radius = glm::length(bounds.max - center);
+    // Transform to world space
+    glm::vec3 worldCenter = glm::vec3(instance.getTransformMatrix() * glm::vec4(center, 1.0f));
+    float worldRadius = radius * instance.scale();
+    world_->add<ecs::BoundingSphere>(e, worldCenter, worldRadius);
+
+    return e;
+}
+
+void TreeSystem::destroyTreeEntity(uint32_t index) {
+    if (!world_ || index >= treeEntities_.size()) return;
+    if (treeEntities_[index] != ecs::NullEntity) {
+        world_->destroy(treeEntities_[index]);
+    }
+}
+
+void TreeSystem::refreshMeshRefs() {
+    if (!world_) return;
+    for (size_t i = 0; i < treeEntities_.size() && i < treeInstances_.size(); ++i) {
+        ecs::Entity e = treeEntities_[i];
+        if (e == ecs::NullEntity) continue;
+        uint32_t meshIndex = treeInstances_[i].meshIndex;
+        if (meshIndex < branchMeshes_.size()) {
+            if (auto* ref = world_->tryGet<ecs::MeshRef>(e)) {
+                ref->mesh = &branchMeshes_[meshIndex];
+            }
+        }
+    }
+}
+
 void TreeSystem::cleanup() {
     if (storedDevice_ == VK_NULL_HANDLE) return;
+
+    // Destroy all ECS entities
+    if (world_) {
+        for (auto e : treeEntities_) {
+            if (e != ecs::NullEntity) {
+                world_->destroy(e);
+            }
+        }
+    }
+    treeEntities_.clear();
 
     // RAII-managed textures - just reset the maps
     barkTextures_.clear();
@@ -473,9 +533,29 @@ void TreeSystem::createSceneObjects() {
         // Build transform using quaternion rotation
         glm::mat4 transform = instance.getTransformMatrix();
 
-        // Get textures based on tree options (string-based lookup)
-        Texture* barkTex = getBarkTexture(opts.bark.type);
-        Texture* leafTex = getLeafTexture(opts.leaves.type);
+        // Read bark/leaf type from ECS when available, fall back to TreeOptions
+        std::string barkTypeName = opts.bark.type;
+        std::string leafTypeName = opts.leaves.type;
+        glm::vec3 leafTint = opts.leaves.tint;
+        float autumnHueShift = opts.leaves.autumnHueShift;
+
+        if (world_ && treeIdx < treeEntities_.size() && treeEntities_[treeIdx] != ecs::NullEntity) {
+            ecs::Entity e = treeEntities_[treeIdx];
+            if (auto* bark = world_->tryGet<ecs::BarkType>(e)) {
+                barkTypeName = bark->typeName;
+            }
+            if (auto* leaf = world_->tryGet<ecs::LeafType>(e)) {
+                leafTypeName = leaf->typeName;
+            }
+            if (auto* treeData = world_->tryGet<ecs::TreeData>(e)) {
+                leafTint = treeData->leafTint;
+                autumnHueShift = treeData->autumnHueShift;
+            }
+        }
+
+        // Get textures based on type name (string-based lookup)
+        Texture* barkTex = getBarkTexture(barkTypeName);
+        Texture* leafTex = getLeafTexture(leafTypeName);
 
         // Branch renderable
         Mesh* branchMesh = &branchMeshes_[instance.meshIndex];
@@ -486,7 +566,7 @@ void TreeSystem::createSceneObjects() {
                 .withTransform(transform)
                 .withRoughness(0.7f)
                 .withMetallic(0.0f)
-                .withBarkType(opts.bark.type)
+                .withBarkType(barkTypeName)
                 .withTreeInstanceIndex(static_cast<int>(treeIdx))
                 .build();
 
@@ -504,9 +584,9 @@ void TreeSystem::createSceneObjects() {
                 .withRoughness(0.8f)
                 .withMetallic(0.0f)
                 .withAlphaTest(opts.leaves.alphaTest)
-                .withLeafType(opts.leaves.type)
-                .withLeafTint(opts.leaves.tint)
-                .withAutumnHueShift(opts.leaves.autumnHueShift)
+                .withLeafType(leafTypeName)
+                .withLeafTint(leafTint)
+                .withAutumnHueShift(autumnHueShift)
                 .withTreeInstanceIndex(static_cast<int>(treeIdx))
                 .build();
 
@@ -518,6 +598,7 @@ void TreeSystem::createSceneObjects() {
 }
 
 void TreeSystem::rebuildSceneObjects() {
+    refreshMeshRefs();
     createSceneObjects();
 }
 
@@ -563,6 +644,10 @@ uint32_t TreeSystem::addTree(const glm::vec3& position, float rotation, float sc
 
     uint32_t treeIndex = static_cast<uint32_t>(treeInstances_.size());
     treeInstances_.push_back(instance);
+
+    // Create ECS entity for this tree
+    ecs::Entity entity = createTreeEntity(treeIndex, instance, options, fullBounds);
+    treeEntities_.push_back(entity);
 
     // Upload leaf instances to GPU SSBO
     if (!uploadLeafInstanceBuffer()) {
@@ -626,6 +711,10 @@ uint32_t TreeSystem::addTreeFromStagedData(
     uint32_t treeIndex = static_cast<uint32_t>(treeInstances_.size());
     treeInstances_.push_back(instance);
 
+    // Create ECS entity for this tree
+    ecs::Entity entity = createTreeEntity(treeIndex, instance, options, fullBounds);
+    treeEntities_.push_back(entity);
+
     // Note: Don't upload leaf buffer or rebuild scene objects here
     // Caller should call finalizeLeafInstanceBuffer() after adding all trees
 
@@ -644,6 +733,21 @@ bool TreeSystem::finalizeLeafInstanceBuffer() {
 void TreeSystem::removeTree(uint32_t index) {
     if (index >= treeInstances_.size()) return;
 
+    // Destroy ECS entity
+    destroyTreeEntity(index);
+    if (index < treeEntities_.size()) {
+        treeEntities_.erase(treeEntities_.begin() + index);
+
+        // Update treeInstanceIndex in remaining entities' TreeData
+        if (world_) {
+            for (uint32_t i = index; i < treeEntities_.size(); ++i) {
+                if (treeEntities_[i] != ecs::NullEntity && world_->has<ecs::TreeData>(treeEntities_[i])) {
+                    world_->get<ecs::TreeData>(treeEntities_[i]).treeInstanceIndex = static_cast<int>(i);
+                }
+            }
+        }
+    }
+
     // Remove instance
     treeInstances_.erase(treeInstances_.begin() + index);
 
@@ -661,12 +765,26 @@ void TreeSystem::selectTree(int index) {
     // Deselect previous
     if (selectedTreeIndex_ >= 0 && selectedTreeIndex_ < static_cast<int>(treeInstances_.size())) {
         treeInstances_[selectedTreeIndex_].isSelected = false;
+        // Remove ECS tag from previous selection
+        if (world_ && static_cast<size_t>(selectedTreeIndex_) < treeEntities_.size()) {
+            ecs::Entity prev = treeEntities_[selectedTreeIndex_];
+            if (prev != ecs::NullEntity && world_->has<ecs::TreeSelected>(prev)) {
+                world_->remove<ecs::TreeSelected>(prev);
+            }
+        }
     }
 
     // Select new
     if (index >= 0 && index < static_cast<int>(treeInstances_.size())) {
         selectedTreeIndex_ = index;
         treeInstances_[index].isSelected = true;
+        // Add ECS tag to new selection
+        if (world_ && static_cast<size_t>(index) < treeEntities_.size()) {
+            ecs::Entity e = treeEntities_[index];
+            if (e != ecs::NullEntity && !world_->has<ecs::TreeSelected>(e)) {
+                world_->add<ecs::TreeSelected>(e);
+            }
+        }
     } else {
         selectedTreeIndex_ = -1;
     }

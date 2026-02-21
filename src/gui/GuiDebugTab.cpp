@@ -1,9 +1,7 @@
 #include "GuiDebugTab.h"
 #include "core/interfaces/IDebugControl.h"
 #include "DebugLineSystem.h"
-#ifdef JPH_DEBUG_RENDERER
-#include "PhysicsDebugRenderer.h"
-#endif
+#include "physics/PhysicsDebugOptions.h"
 
 #include <imgui.h>
 
@@ -54,27 +52,23 @@ void GuiDebugTab::renderVisualizations(IDebugControl& debugControl) {
 }
 
 void GuiDebugTab::renderPhysicsDebugOptions(IDebugControl& debugControl) {
-#ifdef JPH_DEBUG_RENDERER
-    auto* debugRenderer = debugControl.getPhysicsDebugRenderer();
-    if (debugRenderer) {
-        auto& options = debugRenderer->getOptions();
+    auto& options = debugControl.getPhysicsDebugOptions();
 
-        ImGui::Checkbox("Draw Shapes", &options.drawShapes);
-        ImGui::Checkbox("Wireframe", &options.drawShapeWireframe);
-        ImGui::Checkbox("Bounding Boxes", &options.drawBoundingBox);
-        ImGui::Checkbox("Velocity", &options.drawVelocity);
-        ImGui::Checkbox("Center of Mass", &options.drawCenterOfMassTransform);
+    ImGui::Checkbox("Draw Shapes", &options.drawShapes);
+    ImGui::Checkbox("Wireframe", &options.drawShapeWireframe);
+    ImGui::Checkbox("Bounding Boxes", &options.drawBoundingBox);
+    ImGui::Checkbox("Velocity", &options.drawVelocity);
+    ImGui::Checkbox("Center of Mass", &options.drawCenterOfMassTransform);
 
-        ImGui::Spacing();
-        ImGui::Text("Body Types:");
-        ImGui::Checkbox("Static", &options.drawStaticBodies);
-        if (ImGui::IsItemHovered()) {
-            ImGui::SetTooltip("Warning: Static bodies include terrain heightfields which are very slow to render");
-        }
-        ImGui::Checkbox("Dynamic", &options.drawDynamicBodies);
-        ImGui::Checkbox("Kinematic", &options.drawKinematicBodies);
-        ImGui::Checkbox("Character", &options.drawCharacter);
+    ImGui::Spacing();
+    ImGui::Text("Body Types:");
+    ImGui::Checkbox("Static", &options.drawStaticBodies);
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("Warning: Static bodies include terrain heightfields which are very slow to render");
     }
+    ImGui::Checkbox("Dynamic", &options.drawDynamicBodies);
+    ImGui::Checkbox("Kinematic", &options.drawKinematicBodies);
+    ImGui::Checkbox("Character", &options.drawCharacter);
 
     // Show stats
     auto& debugLines = debugControl.getDebugLineSystem();
@@ -95,10 +89,6 @@ void GuiDebugTab::renderPhysicsDebugOptions(IDebugControl& debugControl) {
         ImGui::SameLine();
         ImGui::Text("Active: %d", ragdollCount);
     }
-#else
-    (void)debugControl;
-    ImGui::TextDisabled("Physics debug not available (JPH_DEBUG_RENDERER not defined)");
-#endif
 }
 
 void GuiDebugTab::renderOcclusionCulling(IDebugControl& debugControl) {

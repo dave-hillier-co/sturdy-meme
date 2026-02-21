@@ -1306,6 +1306,11 @@ void Application::initECS() {
     // Connect ECS world to renderer systems for direct entity queries
     renderer_->getSystems().setECSWorld(&ecsWorld_);
 
+    // Wire ECS world to tree system for entity creation
+    if (auto* treeSystem = renderer_->getSystems().tree()) {
+        treeSystem->setECSWorld(&ecsWorld_);
+    }
+
     // Link physics bodies to ECS entities
     // (Physics bodies are created before ECS init, so we link them here
     // using the entity-to-renderable mapping)

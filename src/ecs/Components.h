@@ -283,6 +283,9 @@ struct SelectionOutline {
 // =============================================================================
 // Only tree entities have these components.
 
+// Zero-size tag for fast tree entity queries
+struct TreeTag {};
+
 struct TreeData {
     int leafInstanceIndex = -1;
     int treeInstanceIndex = -1;

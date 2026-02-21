@@ -19,6 +19,8 @@
 #include "Texture.h"
 #include "RenderableBuilder.h"
 #include "scene/Transform.h"
+#include "ecs/World.h"
+#include "ecs/Components.h"
 
 // GPU leaf instance data - matches shaders/tree_leaf_instance.glsl
 // std430 layout: 32 bytes per instance
@@ -100,6 +102,10 @@ public:
     TreeSystem(TreeSystem&&) = delete;
     TreeSystem& operator=(TreeSystem&&) = delete;
 
+    // ECS integration
+    void setECSWorld(ecs::World* world) { world_ = world; }
+    ecs::World* getECSWorld() const { return world_; }
+
     // Get scene objects for rendering (integrated with existing pipeline)
     const std::vector<Renderable>& getBranchRenderables() const { return branchRenderables_; }
     std::vector<Renderable>& getBranchRenderables() { return branchRenderables_; }
@@ -161,6 +167,13 @@ public:
     // Get tree instances for physics/other systems
     const std::vector<TreeInstanceData>& getTreeInstances() const { return treeInstances_; }
 
+    // Get ECS entity for a tree by index
+    ecs::Entity getTreeEntity(uint32_t index) const {
+        if (index < treeEntities_.size()) return treeEntities_[index];
+        return ecs::NullEntity;
+    }
+    const std::vector<ecs::Entity>& getTreeEntities() const { return treeEntities_; }
+
     // Generate collision capsule data for a tree instance
     // Returns capsules in world space (tree position + rotation + scale applied)
     std::vector<PhysicsWorld::CapsuleData> getTreeCollisionCapsules(
@@ -210,6 +223,16 @@ private:
     bool uploadLeafInstanceBuffer();
     void createSceneObjects();
     void rebuildSceneObjects();
+
+    // ECS entity creation/destruction for trees
+    ecs::Entity createTreeEntity(uint32_t treeIdx, const TreeInstanceData& instance, const TreeOptions& opts, const AABB& bounds);
+    void destroyTreeEntity(uint32_t index);
+
+    // ECS world reference (not owned)
+    ecs::World* world_ = nullptr;
+
+    // ECS entities for each tree instance (parallel to treeInstances_)
+    std::vector<ecs::Entity> treeEntities_;
 
     // Stored for RAII cleanup and reload
     VmaAllocator storedAllocator_ = VK_NULL_HANDLE;

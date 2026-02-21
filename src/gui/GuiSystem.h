@@ -78,15 +78,11 @@ private:
     void renderPositionPanel(const Camera& camera);
     void renderTimeWindow(GuiInterfaces& ui);
     void renderWeatherWindow(GuiInterfaces& ui);
-    void renderEnvironmentWindow(GuiInterfaces& ui);
-    void renderPostFXWindow(GuiInterfaces& ui);
     void renderTerrainWindow(GuiInterfaces& ui);
     void renderWaterWindow(GuiInterfaces& ui);
     void renderTreesWindow(GuiInterfaces& ui);
     void renderGrassWindow(GuiInterfaces& ui);
-    void renderPlayerWindow(GuiInterfaces& ui);
     void renderIKWindow(GuiInterfaces& ui, const Camera& camera);
-    void renderDebugWindow(GuiInterfaces& ui);
     void renderPerformanceWindow(GuiInterfaces& ui);
     void renderProfilerWindow(GuiInterfaces& ui);
     void renderTileLoaderWindow(GuiInterfaces& ui, const Camera& camera);
@@ -120,26 +116,58 @@ private:
 
     // Window visibility states for menu-based UI
     struct WindowStates {
+        // View
         bool showDashboard = true;
         bool showPosition = true;
+
+        // Environment
         bool showTime = false;
         bool showWeather = false;
-        bool showEnvironment = false;
-        bool showPostFX = false;
+        bool showFroxelFog = false;
+        bool showHeightFog = false;
+        bool showAtmosphere = false;
+        bool showLeaves = false;
+        bool showClouds = false;
+
+        // Rendering - Post FX (individual windows)
+        bool showHDRPipeline = false;
+        bool showCloudShadows = false;
+        bool showBloom = false;
+        bool showGodRays = false;
+        bool showVolumetricFogSettings = false;
+        bool showLocalToneMapping = false;
+        bool showExposure = false;
+
+        // Rendering - Other
         bool showTerrain = false;
         bool showWater = false;
         bool showTrees = false;
         bool showGrass = false;
-        bool showPlayer = false;
+
+        // Character (individual windows)
+        bool showCape = false;
+        bool showWeapons = false;
+        bool showCharacterLOD = false;
+        bool showCapeInfo = false;
+        bool showNPCLOD = false;
+        bool showMotionMatching = false;
         bool showIK = false;
-        bool showDebug = false;
+
+        // Scene
+        bool showSceneGraph = false;
+        bool showSceneEditor = false;
+        bool showHierarchy = false;
+        bool showInspector = false;
+
+        // Debug (individual windows)
+        bool showDebugViz = false;
+        bool showPhysicsDebug = false;
+        bool showOcclusionCulling = false;
+        bool showSystemInfo = false;
+        bool showKeyboardShortcuts = false;
         bool showPerformance = false;
         bool showProfiler = false;
         bool showTileLoader = false;
-        bool showSceneGraph = false;
-        bool showSceneEditor = false;  // Unity-like scene editor
-        bool showHierarchy = false;     // ECS hierarchy panel (independent dockable window)
-        bool showInspector = false;     // Entity inspector panel (independent dockable window)
     } windowStates;
 
     // Track whether the default dock layout has been applied

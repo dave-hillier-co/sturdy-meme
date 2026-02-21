@@ -149,10 +149,16 @@ bool TerrainSystem::initInternal(const InitInfo& info, const TerrainConfig& cfg)
     effectsInfo.framesInFlight = framesInFlight;
     effects.init(effectsInfo);
 
-    // Create descriptor set layouts and sets
-    if (!createComputeDescriptorSetLayout()) return false;
-    if (!createRenderDescriptorSetLayout()) return false;
-    if (!createDescriptorSets()) return false;
+    // Create descriptor set layouts and per-frame sets
+    TerrainDescriptorSets::InitInfo dsInfo{};
+    dsInfo.device = device;
+    dsInfo.descriptorPool = descriptorPool;
+    dsInfo.framesInFlight = framesInFlight;
+    dsInfo.maxVisibleTriangles = MAX_VISIBLE_TRIANGLES;
+    descriptorSets_ = TerrainDescriptorSets::create(dsInfo);
+    if (!descriptorSets_) return false;
+
+    descriptorSets_->writeInitialComputeBindings(cbt.get(), buffers.get(), tileCache.get());
 
     // Initialize pipelines subsystem (RAII-managed)
     TerrainPipelines::InitInfo pipelineInfo{};
@@ -161,8 +167,8 @@ bool TerrainSystem::initInternal(const InitInfo& info, const TerrainConfig& cfg)
     pipelineInfo.physicalDevice = physicalDevice;
     pipelineInfo.renderPass = renderPass;
     pipelineInfo.shadowRenderPass = shadowRenderPass;
-    pipelineInfo.computeDescriptorSetLayout = computeDescriptorSetLayout;
-    pipelineInfo.renderDescriptorSetLayout = renderDescriptorSetLayout;
+    pipelineInfo.computeDescriptorSetLayout = descriptorSets_->getComputeLayout();
+    pipelineInfo.renderDescriptorSetLayout = descriptorSets_->getRenderLayout();
     pipelineInfo.shaderPath = shaderPath;
     pipelineInfo.useMeshlets = config.useMeshlets;
     pipelineInfo.meshletIndexCount = config.useMeshlets && meshlet ? meshlet->getIndexCount() : 0;
@@ -204,12 +210,9 @@ void TerrainSystem::cleanup() {
     vk::Device vkDevice(device);
     vkDevice.waitIdle();
 
-    // RAII-managed subsystems destroyed automatically via std::optional reset
+    // RAII-managed subsystems destroyed automatically
     pipelines.reset();
-
-    // Destroy descriptor set layouts
-    if (computeDescriptorSetLayout) vkDevice.destroyDescriptorSetLayout(computeDescriptorSetLayout);
-    if (renderDescriptorSetLayout) vkDevice.destroyDescriptorSetLayout(renderDescriptorSetLayout);
+    descriptorSets_.reset();
 
     // Reset all RAII-managed subsystems
     buffers.reset();
@@ -351,6 +354,82 @@ TerrainSystem::HeightQueryInfo TerrainSystem::getHeightAtDebug(float x, float z)
     result.source = cacheInfo.source;
     result.found = cacheInfo.found;
     return result;
+}
+
+void TerrainSystem::updateDescriptorSets(vk::Device device,
+                                          const std::vector<vk::Buffer>& sceneUniformBuffers,
+                                          vk::ImageView shadowMapView,
+                                          vk::Sampler shadowSampler,
+                                          const std::vector<vk::Buffer>& snowUBOBuffers,
+                                          const std::vector<vk::Buffer>& cloudShadowUBOBuffers) {
+    descriptorSets_->updateRenderBindings(cbt.get(), buffers.get(), textures.get(),
+                                           tileCache.get(), &effects,
+                                           sceneUniformBuffers, shadowMapView, shadowSampler,
+                                           snowUBOBuffers, cloudShadowUBOBuffers);
+}
+
+void TerrainSystem::setSnowMask(vk::Device device, vk::ImageView snowMaskView, vk::Sampler snowMaskSampler) {
+    descriptorSets_->writeSnowMask(snowMaskView, snowMaskSampler);
+}
+
+void TerrainSystem::setVolumetricSnowCascades(vk::Device device,
+                                               vk::ImageView cascade0View, vk::ImageView cascade1View, vk::ImageView cascade2View,
+                                               vk::Sampler cascadeSampler) {
+    descriptorSets_->writeSnowCascades(cascade0View, cascade1View, cascade2View, cascadeSampler);
+}
+
+void TerrainSystem::setCloudShadowMap(vk::Device device, vk::ImageView cloudShadowView, vk::Sampler cloudShadowSampler) {
+    descriptorSets_->writeCloudShadowMap(cloudShadowView, cloudShadowSampler);
+}
+
+void TerrainSystem::setCaustics(vk::Device device, vk::ImageView causticsView, vk::Sampler causticsSampler,
+                                 float waterLevel, bool enabled) {
+    descriptorSets_->writeCausticsTexture(causticsView, causticsSampler);
+
+    effects.setCausticsParams(waterLevel, enabled);
+
+    for (uint32_t i = 0; i < framesInFlight; i++) {
+        float* causticsData = static_cast<float*>(buffers->getCausticsMappedPtr(i));
+        if (causticsData) {
+            causticsData[0] = waterLevel;
+            causticsData[6] = enabled ? 1.0f : 0.0f;
+        }
+    }
+}
+
+void TerrainSystem::setLiquidWetness(float wetness) {
+    effects.setLiquidWetness(wetness);
+
+    const auto& liquidConfig = effects.getLiquidConfig();
+    for (uint32_t i = 0; i < framesInFlight; i++) {
+        void* liquidData = buffers->getLiquidMappedPtr(i);
+        if (liquidData) {
+            memcpy(liquidData, &liquidConfig, sizeof(material::TerrainLiquidUBO));
+        }
+    }
+}
+
+void TerrainSystem::setLiquidConfig(const material::TerrainLiquidUBO& config) {
+    effects.setLiquidConfig(config);
+
+    for (uint32_t i = 0; i < framesInFlight; i++) {
+        void* liquidData = buffers->getLiquidMappedPtr(i);
+        if (liquidData) {
+            memcpy(liquidData, &config, sizeof(material::TerrainLiquidUBO));
+        }
+    }
+}
+
+void TerrainSystem::setMaterialLayerStack(const material::MaterialLayerStack& stack) {
+    effects.setMaterialLayerStack(stack);
+
+    const auto& materialLayerUBO = effects.getMaterialLayerUBO();
+    for (uint32_t i = 0; i < framesInFlight; i++) {
+        void* layerData = buffers->getMaterialLayerMappedPtr(i);
+        if (layerData) {
+            memcpy(layerData, &materialLayerUBO, sizeof(material::MaterialLayerUBO));
+        }
+    }
 }
 
 bool TerrainSystem::setMeshletSubdivisionLevel(int level) {

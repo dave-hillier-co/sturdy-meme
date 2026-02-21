@@ -2,7 +2,6 @@
 #include "TerrainBuffers.h"
 #include "TerrainCameraOptimizer.h"
 #include "TerrainEffects.h"
-#include "DescriptorManager.h"
 #include "GpuProfiler.h"
 #include "QueueSubmitDiagnostics.h"
 #include "UBOs.h"
@@ -75,11 +74,7 @@ void TerrainSystem::updateUniforms(uint32_t frameIndex, const glm::vec3& cameraP
 
 void TerrainSystem::recordCompute(vk::CommandBuffer cmd, uint32_t frameIndex, GpuProfiler* profiler) {
     // Update tile info buffer binding to the correct frame's buffer (triple-buffered to avoid CPU-GPU sync)
-    if (tileCache && tileCache->getTileInfoBuffer(frameIndex) != VK_NULL_HANDLE) {
-        DescriptorManager::SetWriter(device, computeDescriptorSets[frameIndex])
-            .writeBuffer(20, tileCache->getTileInfoBuffer(frameIndex), 0, VK_WHOLE_SIZE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
-            .update();
-    }
+    descriptorSets_->writeTileInfoCompute(frameIndex, tileCache.get());
 
     // Record pending meshlet uploads (fence-free, like virtual texture system)
     if (config.useMeshlets && meshlet && meshlet->hasPendingUpload()) {
@@ -111,7 +106,7 @@ void TerrainSystem::recordCompute(vk::CommandBuffer cmd, uint32_t frameIndex, Gp
 
     vkCmd.bindPipeline(vk::PipelineBindPoint::eCompute, pipelines->getDispatcherPipeline());
     vkCmd.bindDescriptorSets(vk::PipelineBindPoint::eCompute, pipelines->getDispatcherPipelineLayout(),
-                             0, vk::DescriptorSet(computeDescriptorSets[frameIndex]), {});
+                             0, descriptorSets_->getComputeSet(frameIndex), {});
 
     TerrainDispatcherPushConstants dispatcherPC{};
     dispatcherPC.subdivisionWorkgroupSize = SUBDIVISION_WORKGROUP_SIZE;
@@ -140,7 +135,7 @@ void TerrainSystem::recordCompute(vk::CommandBuffer cmd, uint32_t frameIndex, Gp
 
     vkCmd.bindPipeline(vk::PipelineBindPoint::eCompute, pipelines->getSubdivisionPipeline());
     vkCmd.bindDescriptorSets(vk::PipelineBindPoint::eCompute, pipelines->getSubdivisionPipelineLayout(),
-                             0, vk::DescriptorSet(computeDescriptorSets[frameIndex]), {});
+                             0, descriptorSets_->getComputeSet(frameIndex), {});
 
     TerrainSubdivisionPushConstants subdivPC{};
     subdivPC.updateMode = subdivisionFrameCount & 1;  // 0 = split, 1 = merge
@@ -182,7 +177,7 @@ void TerrainSystem::recordCompute(vk::CommandBuffer cmd, uint32_t frameIndex, Gp
         // - Shared memory: 3 levels (8 subgroups -> 14-bit sum)
         vkCmd.bindPipeline(vk::PipelineBindPoint::eCompute, pipelines->getSumReductionPrepassSubgroupPipeline());
         vkCmd.bindDescriptorSets(vk::PipelineBindPoint::eCompute, pipelines->getSumReductionPipelineLayout(),
-                                 0, vk::DescriptorSet(computeDescriptorSets[frameIndex]), {});
+                                 0, descriptorSets_->getComputeSet(frameIndex), {});
 
         vkCmd.pushConstants<TerrainSumReductionPushConstants>(
             pipelines->getSumReductionPipelineLayout(),
@@ -205,7 +200,7 @@ void TerrainSystem::recordCompute(vk::CommandBuffer cmd, uint32_t frameIndex, Gp
         // Fallback path: standard prepass handles 5 levels
         vkCmd.bindPipeline(vk::PipelineBindPoint::eCompute, pipelines->getSumReductionPrepassPipeline());
         vkCmd.bindDescriptorSets(vk::PipelineBindPoint::eCompute, pipelines->getSumReductionPipelineLayout(),
-                                 0, vk::DescriptorSet(computeDescriptorSets[frameIndex]), {});
+                                 0, descriptorSets_->getComputeSet(frameIndex), {});
 
         vkCmd.pushConstants<TerrainSumReductionPushConstants>(
             pipelines->getSumReductionPipelineLayout(),
@@ -236,7 +231,7 @@ void TerrainSystem::recordCompute(vk::CommandBuffer cmd, uint32_t frameIndex, Gp
 
         vkCmd.bindPipeline(vk::PipelineBindPoint::eCompute, pipelines->getSumReductionPipeline());
         vkCmd.bindDescriptorSets(vk::PipelineBindPoint::eCompute, pipelines->getSumReductionPipelineLayout(),
-                                 0, vk::DescriptorSet(computeDescriptorSets[frameIndex]), {});
+                                 0, descriptorSets_->getComputeSet(frameIndex), {});
 
         for (int depth = startDepth; depth >= 0; --depth) {
             sumPC.passID = depth;
@@ -285,11 +280,7 @@ void TerrainSystem::recordCompute(vk::CommandBuffer cmd, uint32_t frameIndex, Gp
 
 void TerrainSystem::recordDraw(vk::CommandBuffer cmd, uint32_t frameIndex) {
     // Update tile info buffer binding to the correct frame's buffer (triple-buffered to avoid CPU-GPU sync)
-    if (tileCache && tileCache->getTileInfoBuffer(frameIndex) != VK_NULL_HANDLE) {
-        DescriptorManager::SetWriter(device, renderDescriptorSets[frameIndex])
-            .writeBuffer(20, tileCache->getTileInfoBuffer(frameIndex), 0, VK_WHOLE_SIZE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
-            .update();
-    }
+    descriptorSets_->writeTileInfoRender(frameIndex, tileCache.get());
 
     vk::CommandBuffer vkCmd = cmd;
 
@@ -302,7 +293,7 @@ void TerrainSystem::recordDraw(vk::CommandBuffer cmd, uint32_t frameIndex) {
     vkCmd.bindPipeline(vk::PipelineBindPoint::eGraphics, pipeline);
 
     vkCmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, pipelines->getRenderPipelineLayout(),
-                             0, renderDescriptorSets[frameIndex], {});
+                             0, descriptorSets_->getRenderSet(frameIndex), {});
 
     auto viewport = vk::Viewport{}
         .setX(0.0f)
@@ -357,7 +348,7 @@ void TerrainSystem::recordShadowCull(vk::CommandBuffer cmd, uint32_t frameIndex,
     // Bind shadow cull compute pipeline
     vkCmd.bindPipeline(vk::PipelineBindPoint::eCompute, pipelines->getShadowCullPipeline());
     vkCmd.bindDescriptorSets(vk::PipelineBindPoint::eCompute, pipelines->getShadowCullPipelineLayout(),
-                             0, computeDescriptorSets[frameIndex], {});
+                             0, descriptorSets_->getComputeSet(frameIndex), {});
 
     // Set up push constants with frustum planes
     TerrainShadowCullPushConstants pc{};
@@ -407,7 +398,7 @@ void TerrainSystem::recordShadowDraw(vk::CommandBuffer cmd, uint32_t frameIndex,
 
     vkCmd.bindPipeline(vk::PipelineBindPoint::eGraphics, pipeline);
     vkCmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, pipelines->getShadowPipelineLayout(),
-                             0, renderDescriptorSets[frameIndex], {});
+                             0, descriptorSets_->getRenderSet(frameIndex), {});
 
     auto viewport = vk::Viewport{}
         .setX(0.0f)

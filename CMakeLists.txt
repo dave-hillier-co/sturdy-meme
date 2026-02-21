@@ -190,7 +190,7 @@ set(SOURCES
     src/physics/PhysicsDebugRenderer.cpp
     # Terrain
     src/terrain/TerrainSystem.cpp
-    src/terrain/TerrainDescriptors.cpp
+    src/terrain/TerrainDescriptorSets.cpp
     src/terrain/TerrainRecording.cpp
     src/terrain/TerrainFactory.cpp
     src/terrain/TerrainBuffers.cpp

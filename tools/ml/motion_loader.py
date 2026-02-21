@@ -1,6 +1,6 @@
-"""Load motion capture data from BVH files.
+"""Load motion capture data from BVH and JSON files.
 
-Parses BVH hierarchy and motion sections into a dictionary format:
+Parses motion files into a dictionary format:
     {
         "fps": float,
         "frames": [
@@ -15,6 +15,7 @@ Parses BVH hierarchy and motion sections into a dictionary format:
     }
 """
 
+import json
 import numpy as np
 from pathlib import Path
 from typing import Dict, Any
@@ -121,10 +122,46 @@ def load_bvh(path: str, num_joints: int) -> Dict[str, Any]:
     return {"fps": fps, "frames": frames}
 
 
+def load_json(path: str, num_joints: int) -> Dict[str, Any]:
+    """Load a JSON motion file (as produced by fetch_training_data.py).
+
+    The JSON format stores lists of floats; this converts them back to ndarrays.
+    """
+    with open(path, "r") as f:
+        data = json.load(f)
+
+    frames = []
+    for raw in data["frames"]:
+        jp = np.array(raw["joint_positions"], dtype=np.float32)
+        jr = np.array(raw["joint_rotations"], dtype=np.float32)
+
+        # Pad or trim to num_joints
+        if jp.shape[0] < num_joints:
+            pad_p = np.zeros((num_joints - jp.shape[0], 3), dtype=np.float32)
+            jp = np.concatenate([jp, pad_p], axis=0)
+            pad_r = np.tile(
+                np.array([1.0, 0.0, 0.0, 0.0], dtype=np.float32),
+                (num_joints - jr.shape[0], 1),
+            )
+            jr = np.concatenate([jr, pad_r], axis=0)
+        else:
+            jp = jp[:num_joints]
+            jr = jr[:num_joints]
+
+        frames.append({
+            "root_pos": np.array(raw["root_pos"], dtype=np.float32),
+            "root_rot": np.array(raw["root_rot"], dtype=np.float32),
+            "joint_positions": jp,
+            "joint_rotations": jr,
+        })
+
+    return {"fps": float(data["fps"]), "frames": frames}
+
+
 def load_motion_directory(
     motion_dir: str,
     num_joints: int,
-    extensions: tuple = (".bvh",),
+    extensions: tuple = (".bvh", ".json"),
 ) -> Dict[str, Dict[str, Any]]:
     """Load all motion files from a directory."""
     motion_dir = Path(motion_dir)
@@ -139,6 +176,8 @@ def load_motion_directory(
             try:
                 if ext == ".bvh":
                     motions[name] = load_bvh(str(filepath), num_joints)
+                elif ext == ".json":
+                    motions[name] = load_json(str(filepath), num_joints)
             except Exception as e:
                 print(f"Warning: failed to load {filepath}: {e}")
 

@@ -1346,6 +1346,9 @@ if(BUILD_TESTS)
         src/ml/calm/LowLevelController.cpp
         src/ml/calm/Controller.cpp
         src/ml/calm/ModelLoader.cpp
+        src/physics/JoltLayerConfig.cpp
+        src/physics/RagdollBuilder.cpp
+        src/physics/RagdollInstance.cpp
     )
 
     target_include_directories(vulkan_game_tests PRIVATE
@@ -1369,6 +1372,7 @@ if(BUILD_TESTS)
         nlohmann_json::nlohmann_json             # For GeoJSON parsing in terrain loaders
         SDL3::SDL3                               # For SDL_Log in terrain loaders
         lodepng                                  # For PNG loading in VirtualTextureTileLoader
+        Jolt::Jolt                               # For physics in RagdollBuilder/RagdollInstance
     )
 
     target_compile_features(vulkan_game_tests PRIVATE cxx_std_17)

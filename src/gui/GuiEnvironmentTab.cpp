@@ -15,7 +15,6 @@ void GuiEnvironmentTab::renderFroxelFog(IEnvironmentControl& envControl) {
         ImGui::SetTooltip("Frustum-aligned voxel grid volumetric fog with temporal reprojection");
     }
 
-    ImGui::BeginDisabled(!fogEnabled);
     {
         float fogDensity = envControl.getFogDensity();
         if (ImGui::SliderFloat("Fog Density", &fogDensity, 0.0f, 1.0f, "%.4f", ImGuiSliderFlags_Logarithmic)) {
@@ -217,7 +216,6 @@ void GuiEnvironmentTab::renderFroxelFog(IEnvironmentControl& envControl) {
             ImGui::TreePop();
         }
     }
-    ImGui::EndDisabled();
 }
 
 void GuiEnvironmentTab::renderHeightFog(IEnvironmentControl& envControl, EnvironmentTabState& state) {
@@ -234,7 +232,6 @@ void GuiEnvironmentTab::renderHeightFog(IEnvironmentControl& envControl, Environ
         ImGui::SetTooltip("Toggle ground-hugging fog layer");
     }
 
-    ImGui::BeginDisabled(!state.heightFogEnabled);
     float layerHeight = envControl.getLayerHeight();
     if (ImGui::SliderFloat("Layer Height", &layerHeight, -200.0f, 500.0f, "%.1f")) {
         envControl.setLayerHeight(layerHeight);
@@ -275,7 +272,6 @@ void GuiEnvironmentTab::renderHeightFog(IEnvironmentControl& envControl, Environ
         envControl.setLayerDensity(0.1f);
         state.cachedLayerDensity = 0.1f;
     }
-    ImGui::EndDisabled();
 }
 
 void GuiEnvironmentTab::renderAtmosphere(IEnvironmentControl& envControl, EnvironmentTabState& state) {
@@ -311,7 +307,6 @@ void GuiEnvironmentTab::renderAtmosphere(IEnvironmentControl& envControl, Enviro
         ImGui::SetTooltip("Toggle sky scattering (Rayleigh blue sky, Mie haze)");
     }
 
-    ImGui::BeginDisabled(!state.atmosphereEnabled);
     {
         ImGui::Text("Rayleigh Scattering (Air):");
         float rayleighScale = atmosParams.rayleighScatteringBase.y * 1000.0f;
@@ -432,7 +427,6 @@ void GuiEnvironmentTab::renderAtmosphere(IEnvironmentControl& envControl, Enviro
             atmosChanged = false;
         }
     }
-    ImGui::EndDisabled();
 
     if (atmosChanged) {
         envControl.setAtmosphereParams(atmosParams);

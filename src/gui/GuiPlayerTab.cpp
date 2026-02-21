@@ -89,12 +89,10 @@ void GuiPlayerTab::renderCharacterLOD(IPlayerControl& playerControl, PlayerSetti
     ImGui::Spacing();
 
     ImGui::Checkbox("Force LOD Level", &settings.forceLODLevel);
-    ImGui::BeginDisabled(!settings.forceLODLevel);
     int forcedLOD = static_cast<int>(settings.forcedLOD);
     if (ImGui::SliderInt("Forced LOD", &forcedLOD, 0, 3, lodNames[forcedLOD])) {
         settings.forcedLOD = static_cast<uint32_t>(forcedLOD);
     }
-    ImGui::EndDisabled();
 
     if (settings.forceLODLevel) {
         character.setLODLevel(settings.forcedLOD);
@@ -244,8 +242,6 @@ void GuiPlayerTab::renderMotionMatching(IPlayerControl& playerControl, PlayerSet
 
     bool mmActive = character.isUsingMotionMatching();
 
-    ImGui::BeginDisabled(!mmActive);
-
     // Facing mode
     const char* facingModeItems[] = { "Follow Movement", "Follow Camera", "Follow Target" };
     int currentFacingMode = static_cast<int>(settings.facingMode);
@@ -339,8 +335,6 @@ void GuiPlayerTab::renderMotionMatching(IPlayerControl& playerControl, PlayerSet
         ImGui::Text("Database: %zu poses from %zu clips",
                    db.getPoseCount(), db.getClipCount());
     }
-
-    ImGui::EndDisabled();
 }
 
 // Helper to project world position to screen coordinates

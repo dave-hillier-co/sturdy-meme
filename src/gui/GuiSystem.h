@@ -120,23 +120,13 @@ private:
         bool showDashboard = true;
         bool showPosition = true;
 
-        // Environment
+        // Grouped windows
         bool showTime = false;
         bool showWeather = false;
-        bool showFroxelFog = false;
-        bool showHeightFog = false;
-        bool showAtmosphere = false;
-        bool showLeaves = false;
-        bool showClouds = false;
-
-        // Rendering - Post FX (individual windows)
-        bool showHDRPipeline = false;
-        bool showCloudShadows = false;
-        bool showBloom = false;
-        bool showGodRays = false;
-        bool showVolumetricFogSettings = false;
-        bool showLocalToneMapping = false;
-        bool showExposure = false;
+        bool showEnvironment = false;
+        bool showPostFX = false;
+        bool showCharacter = false;
+        bool showDebug = false;
 
         // Rendering - Other
         bool showTerrain = false;
@@ -144,13 +134,7 @@ private:
         bool showTrees = false;
         bool showGrass = false;
 
-        // Character (individual windows)
-        bool showCape = false;
-        bool showWeapons = false;
-        bool showCharacterLOD = false;
-        bool showCapeInfo = false;
-        bool showNPCLOD = false;
-        bool showMotionMatching = false;
+        // Character - IK is separate (large enough)
         bool showIK = false;
 
         // Scene
@@ -159,12 +143,7 @@ private:
         bool showHierarchy = false;
         bool showInspector = false;
 
-        // Debug (individual windows)
-        bool showDebugViz = false;
-        bool showPhysicsDebug = false;
-        bool showOcclusionCulling = false;
-        bool showSystemInfo = false;
-        bool showKeyboardShortcuts = false;
+        // Debug - standalone
         bool showPerformance = false;
         bool showProfiler = false;
         bool showTileLoader = false;

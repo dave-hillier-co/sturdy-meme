@@ -566,11 +566,22 @@ void City::buildWalls() {
     std::vector<Cell*> outer;
 
     if (!wallsNeeded) {
-        // No walls needed - all cells are inner
-        inner = cells;
+        // No walls: inner is only cells already marked withinCity (first nCells_)
+        // Faithful to mfcg.js: a = Z.filter(cells, withinWalls); if empty, cells[0..nPatches]
         for (auto* p : cells) {
-            p->withinCity = true;
-            p->withinWalls = true;  // For border calculation
+            if (p->withinCity) {
+                inner.push_back(p);
+                p->withinWalls = true;  // Needed for virtual border calculation
+            }
+        }
+        // Fallback if none were marked (shouldn't happen, but matches reference)
+        if (inner.empty()) {
+            size_t limit = std::min(static_cast<size_t>(nCells_ + 1), cells.size());
+            for (size_t i = 0; i < limit; ++i) {
+                inner.push_back(cells[i]);
+                cells[i]->withinCity = true;
+                cells[i]->withinWalls = true;
+            }
         }
     } else {
         for (auto* patch : cells) {

@@ -305,6 +305,51 @@ public:
     }
 
     // -------------------------------------------------------------------------
+    // Scatter area entity creation (rocks, detritus)
+    // -------------------------------------------------------------------------
+    // Creates a root entity representing a placement area for scattered objects.
+    // The area entity holds generation parameters as components and will parent
+    // individual instance entities.
+
+    [[nodiscard]] Entity createRockArea(
+        const glm::vec2& center,
+        float radius,
+        float minSpacing,
+        float minElevation,
+        const ScatterMaterialParams& materialParams,
+        const RockGenerationParams& genParams) {
+
+        glm::mat4 transform = glm::translate(glm::mat4(1.0f),
+            glm::vec3(center.x, 0.0f, center.y));
+        Entity entity = createRoot(transform);
+        world_.add<RockTag>(entity);
+        world_.add<ScatterArea>(entity, center, radius, minSpacing, minElevation);
+        world_.add<ScatterMaterialParams>(entity, materialParams);
+        world_.add<RockGenerationParams>(entity, genParams);
+        world_.add<DebugName>(entity, "RockArea");
+        return entity;
+    }
+
+    [[nodiscard]] Entity createDetritusArea(
+        const glm::vec2& center,
+        float radius,
+        float minSpacing,
+        float minElevation,
+        const ScatterMaterialParams& materialParams,
+        const DetritusGenerationParams& genParams) {
+
+        glm::mat4 transform = glm::translate(glm::mat4(1.0f),
+            glm::vec3(center.x, 0.0f, center.y));
+        Entity entity = createRoot(transform);
+        world_.add<DetritusTag>(entity);
+        world_.add<ScatterArea>(entity, center, radius, minSpacing, minElevation);
+        world_.add<ScatterMaterialParams>(entity, materialParams);
+        world_.add<DetritusGenerationParams>(entity, genParams);
+        world_.add<DebugName>(entity, "DetritusArea");
+        return entity;
+    }
+
+    // -------------------------------------------------------------------------
     // Utility helpers
     // -------------------------------------------------------------------------
 

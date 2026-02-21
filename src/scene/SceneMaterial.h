@@ -132,6 +132,9 @@ public:
     size_t getInstanceCount() const { return instances_.size(); }
     size_t getMeshVariationCount() const { return meshes_.size(); }
 
+    // Material properties
+    const MaterialProperties& getMaterialProperties() const { return materialProps_; }
+
     // Check if initialized and has content
     bool isInitialized() const { return initialized_; }
     bool hasContent() const { return !instances_.empty() && !meshes_.empty(); }

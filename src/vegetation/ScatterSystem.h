@@ -15,6 +15,7 @@
 #include "scene/SceneObjectInstance.h"
 #include "core/material/MaterialDescriptorFactory.h"
 #include "DescriptorManager.h"
+#include "ecs/World.h"
 
 /**
  * ScatterSystem - Generic system for scattered decoration objects
@@ -96,12 +97,6 @@ public:
     size_t getInstanceCount() const { return material_.getInstanceCount(); }
     size_t getMeshVariationCount() const { return material_.getMeshVariationCount(); }
 
-    // Get instances for physics integration
-    const std::vector<SceneObjectInstance>& getInstances() const { return material_.getInstances(); }
-
-    // Get meshes for physics collision shapes
-    const std::vector<Mesh>& getMeshes() const { return material_.getMeshes(); }
-
     // System name for logging/debugging
     const std::string& getName() const { return name_; }
 
@@ -119,6 +114,23 @@ public:
 
     bool hasDescriptorSets() const { return !descriptorSets_.empty(); }
 
+    // ECS area entity (set after ECS world is available)
+    void setAreaEntity(ecs::Entity entity) { areaEntity_ = entity; }
+    ecs::Entity getAreaEntity() const { return areaEntity_; }
+
+    // Create per-instance ECS entities as children of the area entity.
+    // isRock: true for RockTag, false for DetritusTag on each instance.
+    // Returns number of entities created.
+    size_t createInstanceEntities(ecs::World& world, bool isRock);
+
+    // Get created instance entity handles
+    const std::vector<ecs::Entity>& getInstanceEntities() const { return instanceEntities_; }
+
+    // Rebuild renderables from ECS entity transforms instead of internal instances.
+    // Uses Transform and MeshRef components from instance entities.
+    // Replaces the SceneMaterial::rebuildSceneObjects() call path.
+    void rebuildFromECS(ecs::World& world);
+
 private:
     bool initInternal(
         const InitInfo& info,
@@ -132,4 +144,6 @@ private:
     std::string name_;
     SceneMaterial material_;
     std::vector<VkDescriptorSet> descriptorSets_;
+    ecs::Entity areaEntity_ = ecs::NullEntity;
+    std::vector<ecs::Entity> instanceEntities_;
 };

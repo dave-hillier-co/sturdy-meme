@@ -288,12 +288,10 @@ void GuiSystem::render(GuiInterfaces& ui, const Camera& camera, float deltaTime,
 
     // Debug window
     if (windowStates.showDebug) {
-        ImGui::SetNextWindowSize(ImVec2(300, 500), ImGuiCond_FirstUseEver);
+        ImGui::SetNextWindowSize(ImVec2(300, 400), ImGuiCond_FirstUseEver);
         if (ImGui::Begin("Debug", &windowStates.showDebug)) {
             ImGui::SeparatorText("Visualizations");
             GuiDebugTab::renderVisualizations(ui.debug);
-            ImGui::SeparatorText("Physics Debug");
-            GuiDebugTab::renderPhysicsDebug(ui.debug);
             ImGui::SeparatorText("Occlusion Culling");
             GuiDebugTab::renderOcclusionCulling(ui.debug);
             ImGui::SeparatorText("System Info");
@@ -302,6 +300,17 @@ void GuiSystem::render(GuiInterfaces& ui, const Camera& camera, float deltaTime,
             GuiDebugTab::renderKeyboardShortcuts();
         }
         ImGui::End();
+    }
+    // Physics Debug: window open = feature enabled
+    if (windowStates.showPhysicsDebug) {
+        ui.debug.setPhysicsDebugEnabled(true);
+        ImGui::SetNextWindowSize(ImVec2(280, 300), ImGuiCond_FirstUseEver);
+        if (ImGui::Begin("Physics Debug", &windowStates.showPhysicsDebug)) {
+            GuiDebugTab::renderPhysicsDebugOptions(ui.debug);
+        }
+        ImGui::End();
+    } else {
+        ui.debug.setPhysicsDebugEnabled(false);
     }
     if (windowStates.showPerformance) {
         renderPerformanceWindow(ui);
@@ -416,6 +425,7 @@ void GuiSystem::renderMainMenuBar() {
 
         if (ImGui::BeginMenu("Debug")) {
             ImGui::MenuItem("Debug", nullptr, &windowStates.showDebug);
+            ImGui::MenuItem("Physics Debug", nullptr, &windowStates.showPhysicsDebug);
             ImGui::Separator();
             ImGui::MenuItem("Performance Toggles", nullptr, &windowStates.showPerformance);
             ImGui::MenuItem("Profiler", nullptr, &windowStates.showProfiler);

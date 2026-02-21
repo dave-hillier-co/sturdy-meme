@@ -620,6 +620,11 @@ void Renderer::createHDRPassRecorder() {
         charRes.scene = &systems_->scene();
         charRes.skinnedMesh = &systems_->skinnedMesh();
         charRes.npcRenderer = systems_->npcRenderer();
+        charRes.ragdollDrawCallback = [this](VkCommandBuffer cmd, uint32_t frameIndex) {
+            if (ragdollDrawCallback_) {
+                ragdollDrawCallback_(cmd, frameIndex);
+            }
+        };
 
         hdrPassRecorder_->registerDrawable(
             std::make_unique<SkinnedCharDrawable>(charRes),

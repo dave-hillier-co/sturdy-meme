@@ -193,12 +193,16 @@ void NPCSimulation::update(float deltaTime, const glm::vec3& cameraPos) {
 }
 
 void NPCSimulation::updateLODLevels(const glm::vec3& cameraPos) {
+    constexpr float LOD_BLEND_SPEED = 3.0f;  // Blend duration ~0.33s
+
     for (size_t i = 0; i < data_.count(); ++i) {
         const glm::vec3& npcPos = data_.positions[i];
         float distance = glm::distance(cameraPos, npcPos);
 
         NPCLODLevel newLevel;
-        if (distance < LOD_DISTANCE_REAL) {
+        if (physicsAnimationEnabled_ && distance < LOD_DISTANCE_PHYSICS) {
+            newLevel = NPCLODLevel::PhysicsBased;
+        } else if (distance < LOD_DISTANCE_REAL) {
             newLevel = NPCLODLevel::Real;
         } else if (distance < LOD_DISTANCE_BULK) {
             newLevel = NPCLODLevel::Bulk;
@@ -206,9 +210,17 @@ void NPCSimulation::updateLODLevels(const glm::vec3& cameraPos) {
             newLevel = NPCLODLevel::Virtual;
         }
 
-        // Track LOD transitions for debugging
+        // Track LOD transitions and initiate blending
         if (data_.lodLevels[i] != newLevel) {
-            data_.framesSinceUpdate[i] = 0;  // Reset counter on LOD change
+            data_.previousLodLevels[i] = data_.lodLevels[i];
+            data_.lodBlendWeights[i] = 0.0f;  // Start blending from old to new
+            data_.framesSinceUpdate[i] = 0;
+        }
+
+        // Advance blend weight toward 1.0 (fully transitioned to new LOD)
+        if (data_.lodBlendWeights[i] < 1.0f) {
+            data_.lodBlendWeights[i] = std::min(1.0f,
+                data_.lodBlendWeights[i] + LOD_BLEND_SPEED * (1.0f / 60.0f));
         }
 
         data_.lodLevels[i] = newLevel;

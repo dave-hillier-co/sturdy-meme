@@ -302,7 +302,18 @@ void AnimatedCharacter::update(float deltaTime, VmaAllocator allocator, VkDevice
         skeleton.joints[i].localTransform = bindPoseLocalTransforms[i];
     }
 
-    if (useMotionMatching) {
+    if (usePhysicsBased_ && physicsRagdoll_ && physicsWorld_ && physicsRagdoll_->isValid()) {
+        // Physics-based animation: read joint transforms directly from ragdoll
+        physicsRagdoll_->writeToSkeleton(skeleton, *physicsWorld_);
+        // Skip IK / foot phase tracking in physics mode — physics handles ground contact
+        std::vector<glm::mat4> globalTransforms;
+        skeleton.computeGlobalTransforms(globalTransforms);
+        cachedBoneMatrices_.resize(skeleton.joints.size());
+        for (size_t i = 0; i < skeleton.joints.size(); ++i) {
+            cachedBoneMatrices_[i] = globalTransforms[i] * skeleton.joints[i].inverseBindMatrix;
+        }
+        return;
+    } else if (useMotionMatching) {
         // Motion matching mode - apply the pose from the controller
         // (updateMotionMatching was called before update, but skeleton was reset to bind pose above)
         motionMatchingController.applyToSkeleton(skeleton);
@@ -790,6 +801,17 @@ const BoneLODMask& AnimatedCharacter::getBoneLODMask(uint32_t lod) const {
         return defaultMask;
     }
     return boneLODMasks_[lod];
+}
+
+// ========== Physics-Based Animation Implementation ==========
+
+void AnimatedCharacter::setPhysicsSource(ArticulatedBody* ragdoll, const PhysicsWorld* physicsWorld) {
+    physicsRagdoll_ = ragdoll;
+    physicsWorld_ = physicsWorld;
+    if (ragdoll && physicsWorld) {
+        SDL_Log("AnimatedCharacter: physics source attached (%zu parts -> %zu joints)",
+                ragdoll->getPartCount(), skeleton.joints.size());
+    }
 }
 
 // ========== Motion Matching Implementation ==========

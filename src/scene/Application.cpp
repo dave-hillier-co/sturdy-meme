@@ -1,4 +1,5 @@
 #include "Application.h"
+#include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <cstdio>
@@ -33,6 +34,7 @@
 #include "core/interfaces/IPlayerControl.h"
 #include "DebugLineSystem.h"
 #include "npc/NPCSimulation.h"
+#include "ml/unicon/Controller.h"
 #include "Texture.h"
 
 #ifdef JPH_DEBUG_RENDERER
@@ -218,6 +220,13 @@ bool Application::init(const std::string& title, int width, int height) {
         if (!physics_) {
             SDL_Log("Failed to initialize physics system");
             return false;
+        }
+
+        // Initialize UniCon ML controller for ragdoll physics
+        uniconController_.init(20, 1); // 20-body humanoid, tau=1
+        if (!uniconController_.loadPolicy("generated/unicon/policy_weights.bin")) {
+            SDL_Log("No trained UniCon weights found, using random policy");
+            uniconController_.initRandomPolicy();
         }
     }
 
@@ -513,6 +522,39 @@ bool Application::init(const std::string& title, int width, int height) {
         gui_->endFrame(cmd);
     });
 
+    // Wire up ragdoll spawn callback for debug UI
+    renderer_->getSystems().debugControl().setSpawnRagdollCallback([this]() {
+        spawnRagdoll();
+    });
+    renderer_->getSystems().debugControl().setRagdollCountCallback([this]() -> int {
+        return static_cast<int>(ragdolls_.size());
+    });
+
+    // Configure ragdoll renderer if player character is available
+    {
+        auto& sceneBuilder = renderer_->getSystems().scene().getSceneBuilder();
+        if (sceneBuilder.hasCharacter()) {
+            ragdollRenderer_.configure(sceneBuilder.getAnimatedCharacter().getSkeleton());
+        }
+    }
+
+    // Set ragdoll draw callback for rendering physics-driven ragdolls
+    renderer_->setRagdollDrawCallback([this](VkCommandBuffer cmd, uint32_t frameIndex) {
+        if (!ragdollRenderer_.isConfigured() || ragdolls_.empty() || !physics_) return;
+        auto& sceneBuilder = renderer_->getSystems().scene().getSceneBuilder();
+        if (!sceneBuilder.hasCharacter()) return;
+
+        // Upload ragdoll bone matrices (done here because we need the frame index)
+        ragdollRenderer_.updateBoneMatrices(ragdolls_, physics(),
+                                             renderer_->getSystems().skinnedMesh(),
+                                             frameIndex);
+
+        // Record draw commands using player character's mesh
+        ragdollRenderer_.recordDrawCommands(cmd, frameIndex,
+                                             sceneBuilder.getAnimatedCharacter(),
+                                             renderer_->getSystems().skinnedMesh());
+    });
+
     // Set up input system with GUI reference for input blocking
     input.setGuiSystem(gui_.get());
     input.setMoveSpeed(moveSpeed);
@@ -686,8 +728,25 @@ void Application::run() {
         // Always update physics character controller (handles gravity, jumping, and movement)
         physics().updateCharacter(deltaTime, desiredVelocity, wantsJump);
 
+        // Apply ML policy torques to ragdolls before physics step
+        uniconController_.update(ragdolls_, physics(), deltaTime);
+
         // Update physics simulation
         physics().update(deltaTime);
+
+        // Detect and destroy ragdolls with NaN state (constraint solver diverged)
+        ragdolls_.erase(
+            std::remove_if(ragdolls_.begin(), ragdolls_.end(),
+                [this](ArticulatedBody& ragdoll) {
+                    if (ragdoll.hasNaNState(physics())) {
+                        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                                    "Destroying ragdoll with NaN physics state");
+                        ragdoll.destroy(physics());
+                        return true;
+                    }
+                    return false;
+                }),
+            ragdolls_.end());
 
         // Update physics terrain tiles based on player position
         glm::vec3 playerPos = physics().getCharacterPosition();
@@ -856,6 +915,13 @@ void Application::shutdown() {
     renderer_->waitIdle();
     gui_.reset();  // RAII cleanup via destructor
     // InputSystem cleanup handled by destructor (RAII)
+
+    // Destroy ragdolls before physics world
+    for (auto& ragdoll : ragdolls_) {
+        ragdoll.destroy(physics());
+    }
+    ragdolls_.clear();
+
     physicsTerrainManager_.cleanup();
     physics_.reset();  // RAII cleanup via optional reset
     renderer_.reset();  // RAII cleanup via unique_ptr reset
@@ -994,6 +1060,9 @@ void Application::processEvents() {
                     glm::vec3 playerPos = player_.transform.position;
                     sys.environmentControl().spawnConfetti(playerPos, 8.0f, 100.0f, 0.5f);
                     SDL_Log("Confetti!");
+                }
+                else if (event.key.scancode == SDL_SCANCODE_R) {
+                    spawnRagdoll();
                 }
                 else if (event.key.scancode == SDL_SCANCODE_V) {
                     sys.environmentControl().toggleCloudStyle();
@@ -1470,4 +1539,36 @@ void Application::updateECS(float deltaTime) {
 
     // Get culling stats for debugging (could expose to GUI later)
     [[maybe_unused]] ecs::render::CullStats stats = ecs::render::getCullStats(ecsWorld_);
+}
+
+void Application::spawnRagdoll() {
+    if (!physics_) {
+        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "Cannot spawn ragdoll: physics not initialized");
+        return;
+    }
+
+    auto& sceneBuilder = renderer_->getSystems().scene().getSceneBuilder();
+
+    // Build humanoid config from the player's skeleton if available,
+    // otherwise use a default config with generic proportions
+    ArticulatedBodyConfig config;
+    if (sceneBuilder.hasCharacter()) {
+        const Skeleton& skeleton = sceneBuilder.getAnimatedCharacter().getSkeleton();
+        config = createHumanoidConfig(skeleton);
+    } else {
+        // Fallback: create a minimal config without skeleton mapping
+        config = createHumanoidConfig(Skeleton{});
+    }
+
+    // Spawn 5m above the player position
+    glm::vec3 spawnPos = player_.transform.position + glm::vec3(0.0f, 5.0f, 0.0f);
+
+    ArticulatedBody ragdoll;
+    if (ragdoll.create(physics(), config, spawnPos)) {
+        ragdolls_.push_back(std::move(ragdoll));
+        SDL_Log("Spawned ragdoll at (%.1f, %.1f, %.1f) - total ragdolls: %zu",
+                spawnPos.x, spawnPos.y, spawnPos.z, ragdolls_.size());
+    } else {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to spawn ragdoll");
+    }
 }

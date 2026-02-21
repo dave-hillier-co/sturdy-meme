@@ -9,6 +9,7 @@
 #include "Camera.h"
 #include "PlayerState.h"
 #include "PhysicsSystem.h"
+#include "ArticulatedBody.h"
 #include "PhysicsTerrainTileManager.h"
 #include "ClothSimulation.h"
 #include "GuiSystem.h"
@@ -19,6 +20,8 @@
 #include "ecs/Systems.h"
 #include "ecs/EntityFactory.h"
 #include "ecs/ECSMaterialDemo.h"
+#include "ml/unicon/Controller.h"
+#include "ml/unicon/RagdollRenderer.h"
 
 class Application {
 public:
@@ -41,6 +44,7 @@ private:
     void updateCameraOcclusion(float deltaTime);
     void initECS();
     void updateECS(float deltaTime);
+    void spawnRagdoll();
 
     SDL_Window* window = nullptr;
     std::unique_ptr<Renderer> renderer_;
@@ -77,6 +81,15 @@ private:
     ecs::World ecsWorld_;
     bool ecsWeaponsInitialized_ = false;      // Track if weapon bone attachments are set up
     std::unique_ptr<ecs::ECSMaterialDemo> ecsMaterialDemo_;  // ECS material demo entities
+
+    // Ragdoll test instances
+    std::vector<ArticulatedBody> ragdolls_;
+
+    // UniCon ML policy controller for ragdolls
+    ml::unicon::Controller uniconController_;
+
+    // Ragdoll renderer (shares player mesh, uses physics bone matrices)
+    ml::unicon::RagdollRenderer ragdollRenderer_;
 
     bool running = false;
     // Walk speed matches animation root motion: 158.42 cm / 1.10s * 0.01 scale = 1.44 m/s

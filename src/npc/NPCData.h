@@ -7,9 +7,10 @@
 // NPC LOD levels inspired by Assassin's Creed crowd systems
 // Controls update frequency and animation quality
 enum class NPCLODLevel : uint8_t {
-    Virtual = 0,  // >50m: No rendering, minimal updates (every 10 seconds)
-    Bulk = 1,     // 25-50m: Simplified animation, reduced updates (every 1 second)
-    Real = 2      // <25m: Full animation every frame
+    Virtual = 0,      // >50m: No rendering, minimal updates (every 10 seconds)
+    Bulk = 1,         // 25-50m: Simplified animation, reduced updates (every 1 second)
+    Real = 2,         // <25m: Full animation every frame
+    PhysicsBased = 3  // <10m: Physics-driven ragdoll with ML policy (UniCon)
 };
 
 // NPC activity states for animation variety
@@ -50,6 +51,10 @@ struct NPCData {
     // Cached bone matrices (reused when animation update is skipped)
     std::vector<std::vector<glm::mat4>> cachedBoneMatrices;
 
+    // LOD transition blend state (for kinematic↔physics blending)
+    std::vector<NPCLODLevel> previousLodLevels;  // Previous frame's LOD level
+    std::vector<float> lodBlendWeights;           // 0.0 = old LOD, 1.0 = new LOD
+
     // Renderable indices into SceneBuilder's sceneObjects
     std::vector<size_t> renderableIndices;
 
@@ -65,6 +70,8 @@ struct NPCData {
         framesSinceUpdate.reserve(n);
         animStates.reserve(n);
         cachedBoneMatrices.reserve(n);
+        previousLodLevels.reserve(n);
+        lodBlendWeights.reserve(n);
         renderableIndices.reserve(n);
     }
 
@@ -78,6 +85,8 @@ struct NPCData {
         framesSinceUpdate.push_back(0);
         animStates.push_back(AnimationPlaybackState{});
         cachedBoneMatrices.push_back({});
+        previousLodLevels.push_back(NPCLODLevel::Real);
+        lodBlendWeights.push_back(1.0f);
         renderableIndices.push_back(0);  // Set by caller after adding renderable
         return index;
     }
@@ -91,6 +100,8 @@ struct NPCData {
         framesSinceUpdate.clear();
         animStates.clear();
         cachedBoneMatrices.clear();
+        previousLodLevels.clear();
+        lodBlendWeights.clear();
         renderableIndices.clear();
     }
 };

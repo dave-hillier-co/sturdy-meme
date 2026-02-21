@@ -209,7 +209,8 @@ private:
     void findAnimationIndices(const AnimationArchetype& archetype, ArchetypeData& data);
 
     // LOD distance thresholds (matching CharacterLODConfig)
-    static constexpr float LOD_DISTANCE_REAL = 25.0f;     // Full quality
+    static constexpr float LOD_DISTANCE_PHYSICS = 10.0f;  // Physics-based animation (ML policy)
+    static constexpr float LOD_DISTANCE_REAL = 25.0f;     // Full quality kinematic animation
     static constexpr float LOD_DISTANCE_BULK = 50.0f;     // Reduced quality
     // Beyond LOD_DISTANCE_BULK = Virtual (minimal updates)
 
@@ -217,4 +218,7 @@ private:
     static constexpr uint32_t UPDATE_INTERVAL_REAL = 1;    // Every frame
     static constexpr uint32_t UPDATE_INTERVAL_BULK = 60;   // ~1 second at 60fps
     static constexpr uint32_t UPDATE_INTERVAL_VIRTUAL = 600; // ~10 seconds at 60fps
+
+    // Physics-based animation flag
+    bool physicsAnimationEnabled_ = false;
 };

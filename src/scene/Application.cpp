@@ -275,56 +275,8 @@ bool Application::init(const std::string& title, int width, int height) {
         renderer_->getSystems().scene().initPhysics(physics());
     }
 
-    // Create convex hull colliders for rocks using actual mesh geometry
-    const auto& rockSystem = renderer_->getSystems().rocks();
-    const auto& rockInstances = rockSystem.getInstances();
-    const auto& rockMeshes = rockSystem.getMeshes();
-
-    for (const auto& rock : rockInstances) {
-        // Rock position is adjusted down by 15% of scale in rendering
-        glm::vec3 colliderPos = rock.position();
-        colliderPos.y -= rock.scale() * 0.15f;
-
-        // Get the mesh for this rock variation
-        const Mesh& mesh = rockMeshes[rock.meshVariation];
-        const auto& vertices = mesh.getVertices();
-
-        // Extract just the positions from the vertex data
-        std::vector<glm::vec3> positions;
-        positions.reserve(vertices.size());
-        for (const auto& v : vertices) {
-            positions.push_back(v.position);
-        }
-
-        // Create convex hull from mesh vertices with rock's scale
-        physics().createStaticConvexHull(colliderPos, positions.data(), positions.size(),
-                                       rock.scale(), rock.rotation());
-    }
-    SDL_Log("Created %zu rock convex hull colliders", rockInstances.size());
-
-    // Create convex hull colliders for fallen branches (detritus)
-    if (const ScatterSystem* detritusSystem = renderer_->getSystems().detritus()) {
-        const auto& detritusInstances = detritusSystem->getInstances();
-        const auto& detritusMeshes = detritusSystem->getMeshes();
-
-        for (const auto& detritus : detritusInstances) {
-            // Get the mesh for this detritus variation
-            const Mesh& mesh = detritusMeshes[detritus.meshVariation];
-            const auto& vertices = mesh.getVertices();
-
-            // Extract positions from vertex data
-            std::vector<glm::vec3> positions;
-            positions.reserve(vertices.size());
-            for (const auto& v : vertices) {
-                positions.push_back(v.position);
-            }
-
-            // Create convex hull from mesh vertices with detritus scale
-            physics().createStaticConvexHull(detritus.position(), positions.data(), positions.size(),
-                                           detritus.scale(), detritus.rotation());
-        }
-        SDL_Log("Created %zu detritus convex hull colliders", detritusInstances.size());
-    }
+    // Note: Rock and detritus physics colliders are created after ECS instance entities
+    // are populated (see createScatterPhysicsFromECS below)
 
     // Create compound capsule colliders for trees (trunk + major branches)
     // Track how many trees currently have colliders for deferred generation
@@ -444,6 +396,103 @@ bool Application::init(const std::string& title, int width, int height) {
     renderer_->setECSWorld(&ecsWorld_);
     renderer_->getSystems().scene().setECSWorld(&ecsWorld_);
     renderer_->getSystems().scene().initializeECSLights();
+
+    // Create ECS area entities for scatter systems (rocks, detritus)
+    {
+        ecs::EntityFactory factory(ecsWorld_);
+        auto& systems = renderer_->getSystems();
+
+        // Rock area entity
+        auto& rockSystem = systems.rocks();
+        ecs::RockGenerationParams rockGenParams{};
+        ecs::ScatterMaterialParams rockMatParams{};
+        // Note: exact config values were set in RendererInitPhases; area entity captures
+        // the placement center/radius from the system name for identification
+        auto rockArea = factory.createRockArea(
+            glm::vec2(0.0f), 100.0f, 4.0f, 0.5f,
+            rockMatParams, rockGenParams);
+        rockSystem.setAreaEntity(rockArea);
+        rockSystem.createInstanceEntities(ecsWorld_, true);
+        rockSystem.rebuildFromECS(ecsWorld_);
+
+        // Detritus area entity (if detritus system exists)
+        if (auto* detritusSystem = systems.detritus()) {
+            ecs::DetritusGenerationParams detGenParams{};
+            ecs::ScatterMaterialParams detMatParams{0.85f, 0.0f};
+            auto detArea = factory.createDetritusArea(
+                glm::vec2(0.0f), 80.0f, 1.0f, 24.0f,
+                detMatParams, detGenParams);
+            detritusSystem->setAreaEntity(detArea);
+            detritusSystem->createInstanceEntities(ecsWorld_, false);
+            detritusSystem->rebuildFromECS(ecsWorld_);
+        }
+    }
+
+    // Create physics colliders for scatter objects from ECS entities
+    {
+        size_t rockColliders = 0;
+        for (auto [entity, transform, meshRef, variation] :
+             ecsWorld_.view<ecs::Transform, ecs::MeshRef, ecs::RockTag, ecs::MeshVariation>(
+                 entt::exclude<ecs::Children>).each()) {
+            if (!meshRef.mesh) continue;
+            const auto& vertices = meshRef.mesh->getVertices();
+
+            std::vector<glm::vec3> positions;
+            positions.reserve(vertices.size());
+            for (const auto& v : vertices) {
+                positions.push_back(v.position);
+            }
+
+            // Extract position and scale from the transform matrix
+            glm::vec3 pos = transform.position();
+
+            // Approximate uniform scale from first column length
+            float scale = glm::length(glm::vec3(transform.matrix[0]));
+
+            // Extract rotation quaternion (normalize columns first)
+            glm::mat3 rotMat(
+                glm::vec3(transform.matrix[0]) / scale,
+                glm::vec3(transform.matrix[1]) / scale,
+                glm::vec3(transform.matrix[2]) / scale
+            );
+            glm::quat rotation = glm::quat_cast(rotMat);
+
+            physics().createStaticConvexHull(pos, positions.data(), positions.size(),
+                                           scale, rotation);
+            rockColliders++;
+        }
+        SDL_Log("Created %zu rock convex hull colliders (from ECS)", rockColliders);
+
+        size_t detritusColliders = 0;
+        for (auto [entity, transform, meshRef, variation] :
+             ecsWorld_.view<ecs::Transform, ecs::MeshRef, ecs::DetritusTag, ecs::MeshVariation>(
+                 entt::exclude<ecs::Children>).each()) {
+            if (!meshRef.mesh) continue;
+            const auto& vertices = meshRef.mesh->getVertices();
+
+            std::vector<glm::vec3> positions;
+            positions.reserve(vertices.size());
+            for (const auto& v : vertices) {
+                positions.push_back(v.position);
+            }
+
+            glm::vec3 pos = transform.position();
+            float scale = glm::length(glm::vec3(transform.matrix[0]));
+            glm::mat3 rotMat(
+                glm::vec3(transform.matrix[0]) / scale,
+                glm::vec3(transform.matrix[1]) / scale,
+                glm::vec3(transform.matrix[2]) / scale
+            );
+            glm::quat rotation = glm::quat_cast(rotMat);
+
+            physics().createStaticConvexHull(pos, positions.data(), positions.size(),
+                                           scale, rotation);
+            detritusColliders++;
+        }
+        if (detritusColliders > 0) {
+            SDL_Log("Created %zu detritus convex hull colliders (from ECS)", detritusColliders);
+        }
+    }
 
     // Initialize GUI system via factory
     {

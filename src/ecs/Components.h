@@ -814,6 +814,73 @@ struct LightFlickerComponent {
 struct LightSourceTag {};
 
 // =============================================================================
+// Scatter System Components (Rocks & Detritus)
+// =============================================================================
+// Components for ECS-driven scattered decoration objects (rocks, fallen branches).
+// Area entities define placement regions; instance entities are children with
+// per-object transforms and mesh references.
+
+// Tag components for scatter object types
+struct RockTag {};
+struct DetritusTag {};
+
+// Mesh variation index - which mesh variant this instance uses
+struct MeshVariation {
+    uint32_t index = 0;
+
+    MeshVariation() = default;
+    explicit MeshVariation(uint32_t i) : index(i) {}
+};
+
+// Scatter placement area - defines a region where objects are spawned
+struct ScatterArea {
+    glm::vec2 center = glm::vec2(0.0f);
+    float radius = 80.0f;
+    float minSpacing = 3.0f;       // Minimum distance between instances
+    float minElevation = 0.5f;     // Minimum terrain height for placement
+
+    ScatterArea() = default;
+    ScatterArea(const glm::vec2& c, float r, float spacing, float minElev)
+        : center(c), radius(r), minSpacing(spacing), minElevation(minElev) {}
+};
+
+// Rock generation parameters (per-area tuning for procedural rock meshes)
+struct RockGenerationParams {
+    int variations = 5;
+    int perVariation = 8;
+    float minRadius = 0.3f;
+    float maxRadius = 1.5f;
+    float meshRoughness = 0.35f;
+    float meshAsymmetry = 0.25f;
+    int subdivisions = 3;
+
+    RockGenerationParams() = default;
+};
+
+// Detritus generation parameters (per-area tuning for fallen branch meshes)
+struct DetritusGenerationParams {
+    int branchVariations = 8;
+    int forkedVariations = 4;
+    int branchesPerVariation = 4;
+    float minLength = 0.5f;
+    float maxLength = 4.0f;
+    float minBranchRadius = 0.03f;
+    float maxBranchRadius = 0.25f;
+    int maxTotal = 100;
+
+    DetritusGenerationParams() = default;
+};
+
+// Shared PBR material parameters for a scatter area's instances
+struct ScatterMaterialParams {
+    float roughness = 0.7f;
+    float metallic = 0.0f;
+
+    ScatterMaterialParams() = default;
+    ScatterMaterialParams(float r, float m) : roughness(r), metallic(m) {}
+};
+
+// =============================================================================
 // Render Data Helper (Phase 6: Renderable Elimination)
 // =============================================================================
 // POD struct containing all data needed to render an entity.

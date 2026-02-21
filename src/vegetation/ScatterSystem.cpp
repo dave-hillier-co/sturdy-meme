@@ -1,4 +1,5 @@
 #include "ScatterSystem.h"
+#include "ecs/Components.h"
 #include <SDL3/SDL_log.h>
 
 std::unique_ptr<ScatterSystem> ScatterSystem::create(
@@ -114,4 +115,94 @@ bool ScatterSystem::createDescriptorSets(
 
     SDL_Log("ScatterSystem[%s]: Created %u descriptor sets", name_.c_str(), frameCount);
     return true;
+}
+
+size_t ScatterSystem::createInstanceEntities(ecs::World& world, bool isRock) {
+    if (areaEntity_ == ecs::NullEntity) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
+            "ScatterSystem[%s]: Cannot create instance entities without area entity", name_.c_str());
+        return 0;
+    }
+
+    const auto& instances = material_.getInstances();
+    const auto& meshes = material_.getMeshes();
+
+    instanceEntities_.clear();
+    instanceEntities_.reserve(instances.size());
+
+    for (const auto& instance : instances) {
+        ecs::Entity entity = world.create();
+
+        // Transform from the instance's computed matrix
+        world.add<ecs::Transform>(entity, instance.getTransformMatrix());
+
+        // Mesh reference (pointer to the mesh for this variation)
+        if (instance.meshVariation < meshes.size()) {
+            world.add<ecs::MeshRef>(entity, const_cast<Mesh*>(&meshes[instance.meshVariation]));
+        }
+
+        // Mesh variation index
+        world.add<ecs::MeshVariation>(entity, instance.meshVariation);
+
+        // Shadow casting
+        world.add<ecs::CastsShadow>(entity);
+
+        // Tag component
+        if (isRock) {
+            world.add<ecs::RockTag>(entity);
+        } else {
+            world.add<ecs::DetritusTag>(entity);
+        }
+
+        // Bounding sphere from mesh and scale
+        float boundRadius = instance.scale();
+        world.add<ecs::BoundingSphere>(entity, instance.position(), boundRadius);
+
+        // Parent-child relationship
+        world.add<ecs::Parent>(entity, areaEntity_);
+        world.add<ecs::HierarchyDepth>(entity, uint16_t(1));
+
+        if (world.has<ecs::Children>(areaEntity_)) {
+            world.get<ecs::Children>(areaEntity_).add(entity);
+        }
+
+        instanceEntities_.push_back(entity);
+    }
+
+    SDL_Log("ScatterSystem[%s]: Created %zu instance entities (parent: area entity)",
+            name_.c_str(), instanceEntities_.size());
+
+    // Clear internal instances - ECS is now the source of truth
+    material_.clearInstances();
+
+    return instanceEntities_.size();
+}
+
+void ScatterSystem::rebuildFromECS(ecs::World& world) {
+    auto& sceneObjects = material_.getSceneObjects();
+    sceneObjects.clear();
+    sceneObjects.reserve(instanceEntities_.size());
+
+    const auto& matProps = material_.getMaterialProperties();
+
+    for (ecs::Entity entity : instanceEntities_) {
+        if (!world.valid(entity)) continue;
+        if (!world.has<ecs::Transform>(entity) || !world.has<ecs::MeshRef>(entity)) continue;
+
+        const auto& transform = world.get<ecs::Transform>(entity);
+        const auto& meshRef = world.get<ecs::MeshRef>(entity);
+        if (!meshRef.mesh) continue;
+
+        sceneObjects.push_back(RenderableBuilder()
+            .withTransform(transform.matrix)
+            .withMesh(meshRef.mesh)
+            .withTexture(material_.getDiffuseTexture())
+            .withRoughness(matProps.roughness)
+            .withMetallic(matProps.metallic)
+            .withCastsShadow(matProps.castsShadow)
+            .build());
+    }
+
+    SDL_Log("ScatterSystem[%s]: Rebuilt %zu renderables from ECS entities",
+            name_.c_str(), sceneObjects.size());
 }

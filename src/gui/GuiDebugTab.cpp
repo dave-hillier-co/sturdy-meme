@@ -109,6 +109,40 @@ void GuiDebugTab::renderPhysicsDebug(IDebugControl& debugControl) {
 #endif
 }
 
+void GuiDebugTab::renderPhysicsDebugOptions(IDebugControl& debugControl) {
+#ifdef JPH_DEBUG_RENDERER
+    auto* debugRenderer = debugControl.getPhysicsDebugRenderer();
+    if (debugRenderer) {
+        auto& options = debugRenderer->getOptions();
+
+        ImGui::Checkbox("Draw Shapes", &options.drawShapes);
+        ImGui::Checkbox("Wireframe", &options.drawShapeWireframe);
+        ImGui::Checkbox("Bounding Boxes", &options.drawBoundingBox);
+        ImGui::Checkbox("Velocity", &options.drawVelocity);
+        ImGui::Checkbox("Center of Mass", &options.drawCenterOfMassTransform);
+
+        ImGui::Spacing();
+        ImGui::Text("Body Types:");
+        ImGui::Checkbox("Static", &options.drawStaticBodies);
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Warning: Static bodies include terrain heightfields which are very slow to render");
+        }
+        ImGui::Checkbox("Dynamic", &options.drawDynamicBodies);
+        ImGui::Checkbox("Kinematic", &options.drawKinematicBodies);
+        ImGui::Checkbox("Character", &options.drawCharacter);
+    }
+
+    // Show stats
+    auto& debugLines = debugControl.getDebugLineSystem();
+    ImGui::Spacing();
+    ImGui::Text("Lines: %zu", debugLines.getLineCount());
+    ImGui::Text("Triangles: %zu", debugLines.getTriangleCount());
+#else
+    (void)debugControl;
+    ImGui::TextDisabled("Physics debug not available (JPH_DEBUG_RENDERER not defined)");
+#endif
+}
+
 void GuiDebugTab::renderOcclusionCulling(IDebugControl& debugControl) {
     bool hiZEnabled = debugControl.isHiZCullingEnabled();
     if (ImGui::Checkbox("Hi-Z Occlusion Culling", &hiZEnabled)) {

@@ -144,6 +144,7 @@ private:
         bool showInspector = false;
 
         // Debug - standalone
+        bool showPhysicsDebug = false;
         bool showPerformance = false;
         bool showProfiler = false;
         bool showTileLoader = false;

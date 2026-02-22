@@ -483,6 +483,13 @@ void TreeRenderer::updateCulledLeafDescriptorSet(
         return;
     }
 
+    // Only proceed if output buffers are valid (they're created lazily in recordCulling)
+    VkBuffer outputBuffer = leafCulling_->getOutputBuffer(frameIndex);
+    VkBuffer treeDataBuffer = leafCulling_->getTreeRenderDataBuffer(frameIndex);
+    if (outputBuffer == VK_NULL_HANDLE || treeDataBuffer == VK_NULL_HANDLE) {
+        return;
+    }
+
     // Allocate descriptor set for this type if not already allocated
     if (culledLeafDescriptorSets_[frameIndex].find(leafType) == culledLeafDescriptorSets_[frameIndex].end()) {
         auto sets = descriptorPool_->allocate(**leafDescriptorSetLayout_, 1);
@@ -491,13 +498,6 @@ void TreeRenderer::updateCulledLeafDescriptorSet(
             return;
         }
         culledLeafDescriptorSets_[frameIndex][leafType] = vk::DescriptorSet(sets[0]);
-    }
-
-    // Only write buffers if they're valid (they're created lazily in recordCulling)
-    VkBuffer outputBuffer = leafCulling_->getOutputBuffer(frameIndex);
-    VkBuffer treeDataBuffer = leafCulling_->getTreeRenderDataBuffer(frameIndex);
-    if (outputBuffer == VK_NULL_HANDLE || treeDataBuffer == VK_NULL_HANDLE) {
-        return;
     }
 
     vk::DescriptorSet dstSet = culledLeafDescriptorSets_[frameIndex][leafType];

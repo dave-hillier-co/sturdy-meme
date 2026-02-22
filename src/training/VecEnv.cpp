@@ -231,7 +231,13 @@ int VecEnv::loadMotions(const std::string& directory) {
                      "VecEnv::loadMotions: no skeleton available");
         return 0;
     }
-    return motionLibrary_.loadFromDirectory(directory, *ownedSkeleton_);
+    int loaded = motionLibrary_.loadFromDirectory(directory, *ownedSkeleton_);
+    if (loaded > 0 && !envs_.empty()) {
+        // Auto-precompute AMP observations for discriminator training
+        auto charConfig = ml::CharacterConfig::buildFromSkeleton(*ownedSkeleton_);
+        motionLibrary_.precomputeObservations(charConfig, *ownedSkeleton_);
+    }
+    return loaded;
 }
 
 int VecEnv::loadMotionFile(const std::string& path) {
@@ -240,7 +246,12 @@ int VecEnv::loadMotionFile(const std::string& path) {
                      "VecEnv::loadMotionFile: no skeleton available");
         return 0;
     }
-    return motionLibrary_.loadFile(path, *ownedSkeleton_);
+    int loaded = motionLibrary_.loadFile(path, *ownedSkeleton_);
+    if (loaded > 0 && !envs_.empty()) {
+        auto charConfig = ml::CharacterConfig::buildFromSkeleton(*ownedSkeleton_);
+        motionLibrary_.precomputeObservations(charConfig, *ownedSkeleton_);
+    }
+    return loaded;
 }
 
 void VecEnv::resetDoneWithMotions() {
@@ -272,6 +283,14 @@ void VecEnv::resetDoneWithMotions() {
             dones_[i] = 0;
         }
     }
+}
+
+bool VecEnv::sampleMotionObservations(int batchSize, float* outBuffer) {
+    if (!motionLibrary_.hasObservations()) {
+        return false;
+    }
+    motionLibrary_.sampleObservations(batchSize, rng_, outBuffer);
+    return true;
 }
 
 } // namespace training

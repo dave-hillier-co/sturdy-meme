@@ -123,6 +123,81 @@ MotionFrame MotionLibrary::sampleFrame(int clipIndex, float time, const Skeleton
     return poseToMotionFrame(skel, globalTransforms, clip.rootBoneIndex);
 }
 
+// --- Observation precomputation ---
+
+void MotionLibrary::precomputeObservations(const ml::CharacterConfig& config,
+                                            const Skeleton& skeleton,
+                                            float fps) {
+    if (clips_.empty()) {
+        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                    "MotionLibrary: No clips loaded, skipping observation precomputation");
+        return;
+    }
+
+    MotionObservationComputer obsComputer(config);
+    obsDim_ = config.observationDim;
+    totalObsFrames_ = 0;
+    cachedObs_.clear();
+    cachedObs_.resize(clips_.size());
+
+    float frameTime = 1.0f / fps;
+
+    SDL_Log("MotionLibrary: Precomputing observations for %zu clips at %.0f fps (obs_dim=%d)",
+            clips_.size(), fps, obsDim_);
+
+    for (size_t ci = 0; ci < clips_.size(); ++ci) {
+        const auto& clip = clips_[ci];
+        int numFrames = std::max(2, static_cast<int>(clip.duration * fps) + 1);
+
+        // Sample all frames of this clip into MotionFrames
+        std::vector<MotionFrame> frames(numFrames);
+        for (int fi = 0; fi < numFrames; ++fi) {
+            float time = static_cast<float>(fi) * frameTime;
+            time = std::min(time, clip.duration);
+            frames[fi] = sampleFrame(static_cast<int>(ci), time, skeleton);
+        }
+
+        // Compute observations for the entire clip
+        cachedObs_[ci].numFrames = numFrames;
+        cachedObs_[ci].data = obsComputer.computeClip(frames, fps);
+        totalObsFrames_ += numFrames;
+    }
+
+    SDL_Log("MotionLibrary: Precomputed %d observation frames across %zu clips",
+            totalObsFrames_, clips_.size());
+}
+
+void MotionLibrary::sampleObservations(int batchSize, std::mt19937& rng,
+                                        float* outBuffer) const {
+    if (cachedObs_.empty() || totalObsFrames_ == 0) {
+        std::fill(outBuffer, outBuffer + batchSize * obsDim_, 0.0f);
+        return;
+    }
+
+    for (int b = 0; b < batchSize; ++b) {
+        // Pick a random clip weighted by frame count
+        std::uniform_int_distribution<int> frameDist(0, totalObsFrames_ - 1);
+        int globalFrame = frameDist(rng);
+
+        int cumFrames = 0;
+        size_t clipIdx = 0;
+        for (size_t ci = 0; ci < cachedObs_.size(); ++ci) {
+            cumFrames += cachedObs_[ci].numFrames;
+            if (globalFrame < cumFrames) {
+                clipIdx = ci;
+                break;
+            }
+        }
+
+        // Random frame within the selected clip
+        std::uniform_int_distribution<int> localDist(0, cachedObs_[clipIdx].numFrames - 1);
+        int frameIdx = localDist(rng);
+
+        const float* src = cachedObs_[clipIdx].data.data() + frameIdx * obsDim_;
+        std::copy(src, src + obsDim_, outBuffer + b * obsDim_);
+    }
+}
+
 MotionFrame MotionLibrary::poseToMotionFrame(
     const Skeleton& skeleton,
     const std::vector<glm::mat4>& globalTransforms,

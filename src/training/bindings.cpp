@@ -160,6 +160,32 @@ PYBIND11_MODULE(jolt_training, m) {
         .def("reset_done_with_motions", &training::VecEnv::resetDoneWithMotions,
              "Reset done environments using random frames from loaded motion library.")
 
+        // Sample reference motion observations for discriminator training.
+        // Loads FBX directly — no .npy conversion needed.
+        .def("sample_motion_observations", [](training::VecEnv& self, int batchSize) {
+            int obsDim = self.motionObsDim();
+            if (obsDim == 0 || !self.hasMotionObservations()) {
+                throw std::runtime_error(
+                    "No motion observations available. "
+                    "Call load_motions() first to load FBX animations.");
+            }
+            auto result = py::array_t<float>({batchSize, obsDim});
+            auto buf = result.mutable_data();
+            self.sampleMotionObservations(batchSize, buf);
+            return result;
+        }, py::arg("batch_size"),
+           "Sample random AMP observations from precomputed FBX motion data.")
+
+        .def_property_readonly("has_motion_observations",
+             &training::VecEnv::hasMotionObservations,
+             "Whether precomputed motion observations are available.")
+
+        .def_property_readonly("motion_obs_dim", &training::VecEnv::motionObsDim,
+             "Observation dimension of precomputed motion data.")
+
+        .def_property_readonly("total_motion_frames", &training::VecEnv::totalMotionFrames,
+             "Total number of precomputed observation frames.")
+
         .def_property_readonly("num_motions", [](const training::VecEnv& self) {
             return self.motionLibrary().numClips();
         }, "Number of loaded motion clips.")

@@ -444,9 +444,9 @@ VkCommandBuffer Renderer::buildFrame(const Camera& camera, uint32_t imageIndex, 
     TimingData timing = systems_->time().update();
 
     UBOUpdater::Config uboConfig;
-    uboConfig.showCascadeDebug = showCascadeDebug;
+    uboConfig.showCascadeDebug = systems_->debugControlSubsystem().isShowingCascadeDebug();
     uboConfig.useVolumetricSnow = useVolumetricSnow;
-    uboConfig.showSnowDepthDebug = showSnowDepthDebug;
+    uboConfig.showSnowDepthDebug = systems_->debugControlSubsystem().isShowingSnowDepthDebug();
     uboConfig.shadowsEnabled = perfToggles.shadowPass;
     uboConfig.hdrEnabled = hdrEnabled;
     uboConfig.maxSnowHeight = MAX_SNOW_HEIGHT;

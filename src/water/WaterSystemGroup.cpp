@@ -9,11 +9,29 @@
 #include "WaterTileCull.h"
 #include "WaterGBuffer.h"
 #include "RendererSystems.h"
+#include "ResizeCoordinator.h"
 #include "ShadowSystem.h"
 #include "TerrainSystem.h"
 #include "PostProcessSystem.h"
 #include <SDL3/SDL.h>
 #include <array>
+
+void WaterSystemGroup::Bundle::registerAll(RendererSystems& systems) {
+    systems.registry().add<WaterSystem>(std::move(system));
+    systems.registry().add<WaterDisplacement>(std::move(displacement));
+    systems.registry().add<FlowMapGenerator>(std::move(flowMap));
+    systems.registry().add<FoamBuffer>(std::move(foam));
+    systems.registry().add<SSRSystem>(std::move(ssr));
+    if (tileCull) systems.registry().add<WaterTileCull>(std::move(tileCull));
+    if (gBuffer) systems.registry().add<WaterGBuffer>(std::move(gBuffer));
+}
+
+bool WaterSystemGroup::createAndRegister(const CreateDeps& deps, RendererSystems& systems) {
+    auto bundle = createAll(deps);
+    if (!bundle) return false;
+    bundle->registerAll(systems);
+    return true;
+}
 
 std::optional<WaterSystemGroup::Bundle> WaterSystemGroup::createAll(
     const CreateDeps& deps
@@ -151,6 +169,24 @@ std::optional<WaterSystemGroup::Bundle> WaterSystemGroup::createAll(
 
     SDL_Log("WaterSystemGroup: All systems created successfully");
     return bundle;
+}
+
+void WaterSystemGroup::registerResize(ResizeCoordinator& coord, RendererSystems& systems) {
+    coord.registerWithSimpleResize(systems.ssr(), "SSRSystem", ResizePriority::Culling);
+    if (systems.hasWaterTileCull()) {
+        coord.registerWithSimpleResize(systems.waterTileCull(), "WaterTileCull", ResizePriority::Culling);
+    }
+    auto waterGroup = systems.waterGroup();
+    if (waterGroup.hasGBuffer()) {
+        coord.registerWithSimpleResize(*waterGroup.gBuffer(), "WaterGBuffer", ResizePriority::GBuffer);
+    }
+    coord.registerWithExtent(systems.water(), "WaterSystem");
+}
+
+void WaterSystemGroup::registerTemporalSystems(RendererSystems& systems) {
+    systems.registerTemporalSystem(&systems.ssr());
+    systems.registerTemporalSystem(&systems.foam());
+    systems.registerTemporalSystem(&systems.waterDisplacement());
 }
 
 bool WaterSystemGroup::configureSubsystems(

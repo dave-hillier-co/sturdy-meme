@@ -12,6 +12,8 @@ class SnowMaskSystem;
 class VolumetricSnowSystem;
 class WeatherSystem;
 class LeafSystem;
+class RendererSystems;
+class ResizeCoordinator;
 
 /**
  * SnowSystemGroup - Groups snow and weather-related rendering systems
@@ -63,6 +65,8 @@ struct SnowSystemGroup {
         std::unique_ptr<VolumetricSnowSystem> volumetricSnow;
         std::unique_ptr<WeatherSystem> weather;
         std::unique_ptr<LeafSystem> leaf;
+
+        void registerAll(RendererSystems& systems);
     };
 
     /**
@@ -78,4 +82,9 @@ struct SnowSystemGroup {
      * Returns nullopt on failure.
      */
     static std::optional<Bundle> createAll(const CreateDeps& deps);
+
+    static bool createAndRegister(const CreateDeps& deps, RendererSystems& systems);
+
+    /** Register snow/weather systems for resize. */
+    static void registerResize(ResizeCoordinator& coord, RendererSystems& systems);
 };

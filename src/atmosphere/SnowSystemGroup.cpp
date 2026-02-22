@@ -5,7 +5,23 @@
 #include "VolumetricSnowSystem.h"
 #include "WeatherSystem.h"
 #include "LeafSystem.h"
+#include "RendererSystems.h"
+#include "ResizeCoordinator.h"
 #include <SDL3/SDL.h>
+
+void SnowSystemGroup::Bundle::registerAll(RendererSystems& systems) {
+    systems.registry().add<SnowMaskSystem>(std::move(snowMask));
+    systems.registry().add<VolumetricSnowSystem>(std::move(volumetricSnow));
+    systems.registry().add<WeatherSystem>(std::move(weather));
+    systems.registry().add<LeafSystem>(std::move(leaf));
+}
+
+bool SnowSystemGroup::createAndRegister(const CreateDeps& deps, RendererSystems& systems) {
+    auto bundle = createAll(deps);
+    if (!bundle) return false;
+    bundle->registerAll(systems);
+    return true;
+}
 
 std::optional<SnowSystemGroup::Bundle> SnowSystemGroup::createAll(
     const CreateDeps& deps
@@ -36,4 +52,9 @@ std::optional<SnowSystemGroup::Bundle> SnowSystemGroup::createAll(
 
     SDL_Log("SnowSystemGroup: All systems created successfully");
     return bundle;
+}
+
+void SnowSystemGroup::registerResize(ResizeCoordinator& coord, RendererSystems& systems) {
+    coord.registerWithExtent(systems.weather(), "WeatherSystem");
+    coord.registerWithExtent(systems.leaf(), "LeafSystem");
 }

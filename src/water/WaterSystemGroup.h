@@ -21,6 +21,7 @@ class ShadowSystem;
 class TerrainSystem;
 class PostProcessSystem;
 class RendererSystems;
+class ResizeCoordinator;
 
 /**
  * WaterSystemGroup - Groups water-related rendering systems
@@ -45,8 +46,7 @@ class RendererSystems;
  * Self-initialization:
  *   auto bundle = WaterSystemGroup::createAll(deps);
  *   if (bundle) {
- *       systems.setWater(std::move(bundle->system));
- *       // ... etc
+ *       bundle->registerAll(systems);
  *   }
  *
  * Configuration (after systems are stored in RendererSystems):
@@ -95,6 +95,8 @@ struct WaterSystemGroup {
         std::unique_ptr<SSRSystem> ssr;
         std::unique_ptr<WaterTileCull> tileCull;      // Optional
         std::unique_ptr<WaterGBuffer> gBuffer;        // Optional
+
+        void registerAll(RendererSystems& systems);
     };
 
     /**
@@ -115,6 +117,12 @@ struct WaterSystemGroup {
      * additional wiring after other systems are ready.
      */
     static std::optional<Bundle> createAll(const CreateDeps& deps);
+
+    static bool createAndRegister(const CreateDeps& deps, RendererSystems& systems);
+
+    /** Register water systems for resize and temporal history. */
+    static void registerResize(ResizeCoordinator& coord, RendererSystems& systems);
+    static void registerTemporalSystems(RendererSystems& systems);
 
     // ========================================================================
     // Configuration methods (call after systems are in RendererSystems)

@@ -480,6 +480,55 @@ class MotionClip:
 
         return clip
 
+    @classmethod
+    def from_fbx(cls, path, tags=None, scale=0.01, fps=30.0,
+                 retarget_map_path=None):
+        """Load a MotionClip directly from an FBX file.
+
+        Uses convert_fbx_to_training.convert_fbx() to parse the FBX file and
+        extract animation data, skipping the intermediate .npy step.
+
+        Requires the ufbx Python package (pip install ufbx).
+
+        Args:
+            path: Path to .fbx file.
+            tags: Optional semantic tags.
+            scale: Position scale factor (default: 0.01 for cm->m).
+            fps: Target sample rate (default: 30).
+            retarget_map_path: Optional path to retarget_map.json.
+
+        Returns:
+            MotionClip instance, or None if conversion fails.
+        """
+        try:
+            from convert_fbx_to_training import convert_fbx
+        except ImportError:
+            # Try importing from tools/ with explicit path
+            import importlib.util
+            tools_dir = Path(__file__).resolve().parent
+            spec = importlib.util.spec_from_file_location(
+                "convert_fbx_to_training",
+                tools_dir / "convert_fbx_to_training.py")
+            mod = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(mod)
+            convert_fbx = mod.convert_fbx
+
+        path = Path(path)
+        data = convert_fbx(str(path), retarget_map_path, scale, fps)
+        if data is None:
+            return None
+
+        clip = cls(name=path.stem, tags=tags)
+        clip.joint_rotations = np.asarray(data["joint_rotations"], dtype=np.float32)
+        clip.joint_positions = np.asarray(data["joint_positions"], dtype=np.float32)
+        clip.root_positions = np.asarray(data["root_positions"], dtype=np.float32)
+        clip.root_rotations = np.asarray(data["root_rotations"], dtype=np.float32)
+        clip.fps = float(data.get("fps", 30.0))
+        clip.num_frames = clip.joint_rotations.shape[0]
+        clip.joint_names = list(data.get("joint_names", []))
+
+        return clip
+
     def compute_observations(self, computer=None):
         """Compute and cache AMP observations for all frames.
 
@@ -527,11 +576,15 @@ class MotionDataset:
     def from_manifest(cls, manifest_path):
         """Load from a YAML manifest.
 
-        Expected YAML:
+        Supports both .npy and .fbx files:
             motions:
               - file: walk_forward.npy
                 fps: 30
                 tags: [walk, locomotion]
+              - file: sword_idle.fbx
+                fps: 30
+                scale: 0.01
+                tags: [idle, sword]
         """
         if yaml is None:
             logger.error("PyYAML required. Install: pip install pyyaml")
@@ -544,38 +597,103 @@ class MotionDataset:
         base_dir = manifest_path.parent
         dataset = cls()
 
+        # Check for manifest-level FBX settings
+        fbx_defaults = manifest.get("fbx_defaults", {})
+        default_scale = fbx_defaults.get("scale", 0.01)
+        default_retarget = fbx_defaults.get("retarget_map", None)
+        if default_retarget:
+            default_retarget = str(base_dir / default_retarget)
+
         for entry in manifest.get("motions", []):
-            npy_path = base_dir / entry["file"]
-            if not npy_path.exists():
-                logger.warning("Clip not found, skipping: %s", npy_path)
+            file_path = base_dir / entry["file"]
+            if not file_path.exists():
+                logger.warning("Clip not found, skipping: %s", file_path)
                 continue
+
             tags = entry.get("tags", [])
+            ext = file_path.suffix.lower()
+
             try:
-                clip = MotionClip.from_npy(npy_path, tags=tags)
-                if "fps" in entry:
-                    clip.fps = float(entry["fps"])
+                if ext == ".fbx":
+                    scale = entry.get("scale", default_scale)
+                    fps = float(entry.get("fps", 30))
+                    retarget = entry.get("retarget_map", default_retarget)
+                    if retarget and not Path(retarget).is_absolute():
+                        retarget = str(base_dir / retarget)
+                    clip = MotionClip.from_fbx(
+                        file_path, tags=tags, scale=scale,
+                        fps=fps, retarget_map_path=retarget)
+                    if clip is None:
+                        logger.error("  Failed to convert FBX: %s", file_path)
+                        continue
+                else:
+                    clip = MotionClip.from_npy(file_path, tags=tags)
+                    if "fps" in entry:
+                        clip.fps = float(entry["fps"])
+
                 dataset.add_clip(clip)
                 logger.info("  Loaded: %s (%d frames, %.1fs)",
                             clip.name, clip.num_frames, clip.duration())
             except Exception as e:
-                logger.error("  Failed to load %s: %s", npy_path, e)
+                logger.error("  Failed to load %s: %s", file_path, e)
 
         logger.info("Dataset: %d clips, %d total frames",
                      len(dataset.clips), dataset.total_frames)
         return dataset
 
     @classmethod
-    def from_directory(cls, directory, tags=None):
-        """Load all .npy files from a directory."""
+    def from_directory(cls, directory, tags=None, fbx_scale=0.01, fbx_fps=30.0,
+                       retarget_map_path=None):
+        """Load all .npy and .fbx files from a directory.
+
+        FBX files are converted on-the-fly using convert_fbx_to_training,
+        so no separate conversion step is needed.
+
+        Args:
+            directory: Path to directory.
+            tags: Optional tags applied to all clips.
+            fbx_scale: Scale factor for FBX files (default: 0.01 for cm->m).
+            fbx_fps: Sample rate for FBX files (default: 30).
+            retarget_map_path: Optional retarget map for FBX files.
+        """
         directory = Path(directory)
         dataset = cls()
 
+        # Load .npy files
         for npy_path in sorted(directory.glob("*.npy")):
             try:
                 clip = MotionClip.from_npy(npy_path, tags=tags)
                 dataset.add_clip(clip)
             except Exception as e:
                 logger.error("  Failed to load %s: %s", npy_path, e)
+
+        # Load .fbx files directly
+        fbx_files = sorted(directory.glob("*.fbx"))
+        # Also check recursively
+        fbx_files.extend(sorted(directory.glob("**/*.fbx")))
+        # Deduplicate
+        seen = set()
+        unique_fbx = []
+        for f in fbx_files:
+            if f.resolve() not in seen:
+                seen.add(f.resolve())
+                unique_fbx.append(f)
+        fbx_files = unique_fbx
+
+        # Skip mesh-only files
+        fbx_files = [f for f in fbx_files if f.name != "Y Bot.fbx"]
+
+        if fbx_files:
+            logger.info("Loading %d FBX files from %s", len(fbx_files), directory)
+            for fbx_path in fbx_files:
+                try:
+                    clip = MotionClip.from_fbx(
+                        fbx_path, tags=tags, scale=fbx_scale,
+                        fps=fbx_fps, retarget_map_path=retarget_map_path)
+                    if clip is not None:
+                        dataset.add_clip(clip)
+                except Exception as e:
+                    logger.error("  Failed to load FBX %s: %s", fbx_path, e)
 
         logger.info("Dataset: %d clips, %d total frames",
                      len(dataset.clips), dataset.total_frames)
@@ -646,6 +764,13 @@ class MotionDataset:
             obs_batch[i] = clip.observations[fi]
 
         return obs_batch
+
+    def sample_amp_obs(self, batch_size, rng=None):
+        """Sample a batch of AMP observations (alias for sample_observations).
+
+        Provided for compatibility with AMPTrainer which uses this name.
+        """
+        return self.sample_observations(batch_size, rng)
 
     def get_clips_by_tag(self, tag):
         """Get all clips matching a tag."""

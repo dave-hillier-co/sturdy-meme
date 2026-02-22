@@ -102,14 +102,32 @@ public:
         {}
     };
 
+    // Bounding box of a generated town in its local coordinate space
+    struct TownBounds {
+        double minX, minY, width, height;
+        double centerX() const { return minX + width / 2.0; }
+        double centerY() const { return minY + height / 2.0; }
+    };
+
+    // Result of generating inner SVG content (no <svg> wrapper)
+    struct TownContent {
+        std::string svgGroups;  // Inner SVG groups (farms, water, roads, buildings, walls)
+        TownBounds bounds;      // Bounding box in local coords
+    };
+
     static bool write(const building::City& model, const std::string& filename, const Style& style = Style());
     static std::string generate(const building::City& model, const Style& style = Style());
+
+    // Generate just the inner SVG content without <svg> wrapper or <style> block.
+    // Used for embedding towns into a composite map SVG.
+    static TownContent generateContent(const building::City& model, const Style& style = Style());
 
     // Equality
     bool operator==(const SVGWriter& other) const { return true; }
     bool operator!=(const SVGWriter& other) const { return false; }
 
 private:
+    static void emitContent(std::ostringstream& svg, const building::City& model, const Style& style);
     static std::string polygonToPath(const geom::Polygon& poly);
     static std::string polylineToPath(const std::vector<geom::Point>& points);
     static std::string polylineToPath(const building::City::Street& street);  // For PointPtr streets

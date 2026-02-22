@@ -261,9 +261,8 @@ target_link_libraries(dwelling_generator PRIVATE
 
 target_compile_features(dwelling_generator PRIVATE cxx_std_17)
 
-# Town generator (Medieval Fantasy City Generator port)
-add_executable(town_generator
-    town_generator/src/main.cpp
+# Town generator library (Medieval Fantasy City Generator port)
+add_library(town_generator_lib STATIC
     town_generator/src/geom/Point.cpp
     town_generator/src/geom/Segment.cpp
     town_generator/src/geom/Circle.cpp
@@ -300,15 +299,24 @@ add_executable(town_generator
     town_generator/src/svg/SVGWriter.cpp
 )
 
-target_include_directories(town_generator PRIVATE
+target_include_directories(town_generator_lib PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/town_generator/include
 )
 
-target_link_libraries(town_generator PRIVATE
+target_link_libraries(town_generator_lib PUBLIC
     SDL3::SDL3
 )
 
-target_compile_features(town_generator PRIVATE cxx_std_17)
+target_compile_features(town_generator_lib PUBLIC cxx_std_17)
+
+# Town generator executable
+add_executable(town_generator
+    town_generator/src/main.cpp
+)
+
+target_link_libraries(town_generator PRIVATE
+    town_generator_lib
+)
 
 # Town generator tests
 find_package(doctest CONFIG REQUIRED)
@@ -319,28 +327,23 @@ add_executable(town_generator_tests
     town_generator/tests/test_segment.cpp
     town_generator/tests/test_geometry_utils.cpp
     town_generator/tests/test_graph.cpp
-    town_generator/src/geom/Point.cpp
-    town_generator/src/geom/Segment.cpp
-    town_generator/src/geom/Circle.cpp
-    town_generator/src/geom/GeomUtils.cpp
-    town_generator/src/geom/Polygon.cpp
-    town_generator/src/geom/Graph.cpp
-    town_generator/src/geom/Spline.cpp
-    town_generator/src/geom/Voronoi.cpp
-    town_generator/src/utils/Random.cpp
-    town_generator/src/utils/MathUtils.cpp
-)
-
-target_include_directories(town_generator_tests PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/town_generator/include
 )
 
 target_link_libraries(town_generator_tests PRIVATE
-    SDL3::SDL3
+    town_generator_lib
     doctest::doctest
 )
 
-target_compile_features(town_generator_tests PRIVATE cxx_std_17)
+# Town map generator (composite full-map SVG with all settlements)
+add_executable(town_map_generator
+    town_map_generator/main.cpp
+)
+
+target_link_libraries(town_map_generator PRIVATE
+    town_generator_lib
+    glm::glm
+    nlohmann_json::nlohmann_json
+)
 
 # Terrain-aware patch generator (preview tool for town placement)
 add_executable(terrain_patch_generator

@@ -64,36 +64,7 @@ static bool isGate(const geom::Point& pt, const std::vector<geom::PointPtr>& gat
     return false;
 }
 
-std::string SVGWriter::generate(const building::City& model, const Style& style) {
-    std::ostringstream svg;
-    svg << std::fixed << std::setprecision(2);
-
-    // Calculate bounds
-    auto bounds = model.borderPatch.shape.getBounds();
-    double margin = 5.0;
-    double width = bounds.width() + margin * 2;
-    double height = bounds.height() + margin * 2;
-    double minX = bounds.left - margin;
-    double minY = bounds.top - margin;
-
-    // SVG header
-    svg << "<svg xmlns=\"http://www.w3.org/2000/svg\" ";
-    svg << "width=\"" << width * 4 << "\" height=\"" << height * 4 << "\" ";
-    svg << "viewBox=\"" << minX << " " << minY << " " << width << " " << height << "\">\n";
-
-    // CSS styles for common attributes - reduces file size significantly
-    svg << "  <style>\n";
-    svg << "    .building { stroke: " << style.buildingStroke << "; stroke-width: " << style.buildingStrokeWidth << "; }\n";
-    svg << "    .special { fill: " << style.wallStroke << "; stroke: " << style.buildingStroke << "; stroke-width: " << style.buildingStrokeWidth << "; }\n";
-    svg << "    .road { fill: none; stroke-linecap: round; stroke-linejoin: round; }\n";
-    svg << "    .tower { fill: " << style.towerFill << "; }\n";
-    svg << "  </style>\n";
-
-    // Background
-    svg << "  <rect x=\"" << minX << "\" y=\"" << minY << "\" ";
-    svg << "width=\"" << width << "\" height=\"" << height << "\" ";
-    svg << "fill=\"" << style.backgroundColor << "\"/>\n";
-
+void SVGWriter::emitContent(std::ostringstream& svg, const building::City& model, const Style& style) {
     // Farm fields (green background for Farm wards) - rendered first, below water
     svg << "  <g id=\"farms\">\n";
     for (const auto& ward : model.wards_) {
@@ -433,6 +404,52 @@ std::string SVGWriter::generate(const building::City& model, const Style& style)
         renderWall(model.citadel, true);
         svg << "  </g>\n";
     }
+}
+
+SVGWriter::TownContent SVGWriter::generateContent(const building::City& model, const Style& style) {
+    TownContent result;
+
+    auto bounds = model.borderPatch.shape.getBounds();
+    double margin = 5.0;
+    result.bounds.minX = bounds.left - margin;
+    result.bounds.minY = bounds.top - margin;
+    result.bounds.width = bounds.width() + margin * 2;
+    result.bounds.height = bounds.height() + margin * 2;
+
+    std::ostringstream svg;
+    svg << std::fixed << std::setprecision(2);
+    emitContent(svg, model, style);
+    result.svgGroups = svg.str();
+
+    return result;
+}
+
+std::string SVGWriter::generate(const building::City& model, const Style& style) {
+    auto content = generateContent(model, style);
+
+    std::ostringstream svg;
+    svg << std::fixed << std::setprecision(2);
+
+    // SVG header
+    svg << "<svg xmlns=\"http://www.w3.org/2000/svg\" ";
+    svg << "width=\"" << content.bounds.width * 4 << "\" height=\"" << content.bounds.height * 4 << "\" ";
+    svg << "viewBox=\"" << content.bounds.minX << " " << content.bounds.minY << " "
+        << content.bounds.width << " " << content.bounds.height << "\">\n";
+
+    // CSS styles for common attributes
+    svg << "  <style>\n";
+    svg << "    .building { stroke: " << style.buildingStroke << "; stroke-width: " << style.buildingStrokeWidth << "; }\n";
+    svg << "    .special { fill: " << style.wallStroke << "; stroke: " << style.buildingStroke << "; stroke-width: " << style.buildingStrokeWidth << "; }\n";
+    svg << "    .road { fill: none; stroke-linecap: round; stroke-linejoin: round; }\n";
+    svg << "    .tower { fill: " << style.towerFill << "; }\n";
+    svg << "  </style>\n";
+
+    // Background
+    svg << "  <rect x=\"" << content.bounds.minX << "\" y=\"" << content.bounds.minY << "\" ";
+    svg << "width=\"" << content.bounds.width << "\" height=\"" << content.bounds.height << "\" ";
+    svg << "fill=\"" << style.backgroundColor << "\"/>\n";
+
+    svg << content.svgGroups;
 
     svg << "</svg>\n";
 

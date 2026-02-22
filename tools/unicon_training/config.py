@@ -98,5 +98,10 @@ class TrainingConfig:
     final_log_std: float = -3.0
     log_std_anneal_iterations: int = 5000
 
-    device: str = "cuda"
+    device: str = "auto"
     seed: int = 42
+
+    # Parallelization
+    parallel: bool = False   # Enable multiprocessing vec env
+    num_workers: int = 0     # 0 = auto-detect (cpu_count - 1)
+    max_envs: int = 0        # 0 = no limit

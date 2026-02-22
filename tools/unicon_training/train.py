@@ -10,6 +10,7 @@ Usage:
 
 import argparse
 import json
+import os
 import time
 from pathlib import Path
 
@@ -25,6 +26,22 @@ from tools.ml.motion_loader import load_motion_directory, generate_standing_moti
 
 from .config import TrainingConfig
 from .environment import UniConEnv
+from .vec_env import SubprocVecEnv
+
+
+def _select_device(requested: str) -> torch.device:
+    """Select the best available device: CUDA > MPS > CPU."""
+    if requested == "cuda" and torch.cuda.is_available():
+        return torch.device("cuda")
+    if requested == "mps" and torch.backends.mps.is_available():
+        return torch.device("mps")
+    if requested in ("cuda", "mps", "auto"):
+        if torch.cuda.is_available():
+            return torch.device("cuda")
+        if torch.backends.mps.is_available():
+            return torch.device("mps")
+        return torch.device("cpu")
+    return torch.device(requested)
 
 
 class UniConTrainer:
@@ -32,31 +49,49 @@ class UniConTrainer:
 
     def __init__(self, config: TrainingConfig):
         self.config = config
-        self.device = torch.device(config.device if torch.cuda.is_available() else "cpu")
+        self.device = _select_device(config.device)
+        self._parallel = config.parallel
+        self.vec_env = None
 
-        # Load motion data
-        print(f"Loading motion data from {config.motion_dir}...")
-        self.motion_data = load_motion_directory(
-            config.motion_dir, config.humanoid.num_bodies
-        )
-        if not self.motion_data:
-            print("No motion data found. Using standing motion for bootstrap training.")
-            self.motion_data = {
-                "standing": generate_standing_motion(config.humanoid.num_bodies)
-            }
-        print(f"Loaded {len(self.motion_data)} motion clips")
+        # Determine actual env count
+        actual_num_envs = config.ppo.num_envs
+        if config.max_envs > 0:
+            actual_num_envs = min(actual_num_envs, config.max_envs)
 
-        # Create environments (cap for CPU training)
-        actual_num_envs = min(config.ppo.num_envs, 32)
-        print(f"Creating {actual_num_envs} environments...")
-        self.envs = [
-            UniConEnv(config, motion_data=self.motion_data)
-            for _ in range(actual_num_envs)
-        ]
-        self.num_envs = actual_num_envs
+        if self._parallel:
+            # Parallel mode: SubprocVecEnv handles env creation in workers
+            num_workers = config.num_workers
+            if num_workers <= 0:
+                num_workers = max(1, (os.cpu_count() or 2) - 1)
+            print(f"Creating {actual_num_envs} environments across {num_workers} workers...")
+            self.vec_env = SubprocVecEnv(
+                config, actual_num_envs, num_workers, config.motion_dir, config.seed,
+            )
+            self.num_envs = actual_num_envs
+            obs_dim = self.vec_env.obs_dim
+            act_dim = self.vec_env.act_dim
+        else:
+            # Sequential mode
+            # Load motion data
+            print(f"Loading motion data from {config.motion_dir}...")
+            self.motion_data = load_motion_directory(
+                config.motion_dir, config.humanoid.num_bodies
+            )
+            if not self.motion_data:
+                print("No motion data found. Using standing motion for bootstrap training.")
+                self.motion_data = {
+                    "standing": generate_standing_motion(config.humanoid.num_bodies)
+                }
+            print(f"Loaded {len(self.motion_data)} motion clips")
 
-        obs_dim = self.envs[0].obs_dim
-        act_dim = self.envs[0].act_dim
+            print(f"Creating {actual_num_envs} environments...")
+            self.envs = [
+                UniConEnv(config, motion_data=self.motion_data)
+                for _ in range(actual_num_envs)
+            ]
+            self.num_envs = actual_num_envs
+            obs_dim = self.envs[0].obs_dim
+            act_dim = self.envs[0].act_dim
 
         # Networks
         self.policy = MLPPolicy(obs_dim, act_dim, config.policy).to(self.device)
@@ -86,11 +121,15 @@ class UniConTrainer:
         ppo = self.config.ppo
         print(f"\nStarting training for {ppo.num_iterations} iterations...")
 
-        obs_list = [
-            env.reset(seed=self.config.seed + i)
-            for i, env in enumerate(self.envs)
-        ]
-        obs = torch.tensor(np.stack(obs_list), dtype=torch.float32, device=self.device)
+        if self._parallel:
+            obs_np = self.vec_env.reset()
+        else:
+            obs_list = [
+                env.reset(seed=self.config.seed + i)
+                for i, env in enumerate(self.envs)
+            ]
+            obs_np = np.stack(obs_list)
+        obs = torch.tensor(obs_np, dtype=torch.float32, device=self.device)
 
         for iteration in range(ppo.num_iterations):
             self.iteration = iteration
@@ -111,27 +150,44 @@ class UniConTrainer:
                     value = self.value_net(obs)
 
                     action_np = action.cpu().numpy()
-                    new_obs_list = []
-                    rewards = []
-                    dones = []
 
-                    for i, env in enumerate(self.envs):
-                        ob, reward, done, info = env.step(action_np[i])
-                        rewards.append(reward)
-                        dones.append(float(done))
+                    if self._parallel:
+                        new_obs_np, rewards_np, dones_np, infos = self.vec_env.step(action_np)
+                        for i, (d, info) in enumerate(zip(dones_np, infos)):
+                            if d:
+                                episode_rewards.append(info.get("episode_reward", rewards_np[i]))
+                                episode_lengths.append(info.get("episode_length", 0))
+                        new_obs = torch.tensor(
+                            new_obs_np, dtype=torch.float32, device=self.device
+                        )
+                        reward_t = torch.tensor(
+                            rewards_np, dtype=torch.float32, device=self.device
+                        )
+                        done_t = torch.tensor(
+                            dones_np, dtype=torch.float32, device=self.device
+                        )
+                    else:
+                        new_obs_list = []
+                        rewards = []
+                        dones = []
 
-                        if done:
-                            episode_rewards.append(info.get("episode_reward", reward))
-                            episode_lengths.append(info.get("episode_length", 0))
-                            ob = env.reset()
+                        for i, env in enumerate(self.envs):
+                            ob, reward, done, info = env.step(action_np[i])
+                            rewards.append(reward)
+                            dones.append(float(done))
 
-                        new_obs_list.append(ob)
+                            if done:
+                                episode_rewards.append(info.get("episode_reward", reward))
+                                episode_lengths.append(info.get("episode_length", 0))
+                                ob = env.reset()
 
-                    new_obs = torch.tensor(
-                        np.stack(new_obs_list), dtype=torch.float32, device=self.device
-                    )
-                    reward_t = torch.tensor(rewards, dtype=torch.float32, device=self.device)
-                    done_t = torch.tensor(dones, dtype=torch.float32, device=self.device)
+                            new_obs_list.append(ob)
+
+                        new_obs = torch.tensor(
+                            np.stack(new_obs_list), dtype=torch.float32, device=self.device
+                        )
+                        reward_t = torch.tensor(rewards, dtype=torch.float32, device=self.device)
+                        done_t = torch.tensor(dones, dtype=torch.float32, device=self.device)
 
                     self.buffer.add(obs, action, log_prob, reward_t, done_t, value)
                     obs = new_obs
@@ -195,6 +251,12 @@ class UniConTrainer:
         export_policy(self.policy, str(weights_path))
         print(f"  Exported C++ weights: {weights_path}")
 
+    def close(self):
+        """Clean up resources."""
+        if self.vec_env is not None:
+            self.vec_env.close()
+            self.vec_env = None
+
 
 def main():
     parser = argparse.ArgumentParser(description="Train UniCon policy with PPO")
@@ -208,6 +270,10 @@ def main():
     parser.add_argument("--num-envs", type=int, default=None)
     parser.add_argument("--device", type=str, default=None)
     parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--parallel", action="store_true",
+                        help="Enable multiprocessing vec env")
+    parser.add_argument("--num-workers", type=int, default=None,
+                        help="Number of worker processes (0 = auto)")
     args = parser.parse_args()
 
     config = TrainingConfig()
@@ -228,14 +294,23 @@ def main():
         config.ppo.num_envs = args.num_envs
     if args.device is not None:
         config.device = args.device
+    if args.parallel:
+        config.parallel = True
+    if args.num_workers is not None:
+        config.num_workers = args.num_workers
 
     np.random.seed(config.seed)
     torch.manual_seed(config.seed)
     if torch.cuda.is_available():
         torch.cuda.manual_seed(config.seed)
+    if torch.backends.mps.is_available():
+        torch.mps.manual_seed(config.seed)
 
     trainer = UniConTrainer(config)
-    trainer.train()
+    try:
+        trainer.train()
+    finally:
+        trainer.close()
 
 
 if __name__ == "__main__":

@@ -137,6 +137,9 @@ set(SOURCES
     # Vegetation
     src/vegetation/DisplacementSystem.cpp
     src/vegetation/GrassSystem.cpp
+    src/vegetation/GrassBuffers.cpp
+    src/vegetation/GrassComputePass.cpp
+    src/vegetation/GrassShadowPass.cpp
     src/vegetation/GrassLODStrategy.cpp
     src/vegetation/GrassTile.cpp
     src/vegetation/VegetationRenderContext.cpp

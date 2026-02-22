@@ -18,7 +18,7 @@
 
 // Forward declarations
 class DescriptorManager;
-struct TiledGrassPushConstants;  // Defined in GrassSystem.h
+struct TiledGrassPushConstants;  // Defined in GrassTypes.h
 
 /**
  * GrassTileManager - Manages streaming grass tiles around the camera

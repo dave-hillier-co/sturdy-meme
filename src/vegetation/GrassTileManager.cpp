@@ -1,5 +1,5 @@
 #include "GrassTileManager.h"
-#include "GrassSystem.h"  // For TiledGrassPushConstants
+#include "GrassTypes.h"  // For TiledGrassPushConstants
 #include <SDL3/SDL.h>
 #include <algorithm>
 #include <cmath>

@@ -174,12 +174,6 @@ public:
     void setTerrainEnabled(bool enabled) { terrainEnabled = enabled; }
     bool isTerrainEnabled() const { return terrainEnabled; }
 
-    // Debug visualization toggles (local state)
-    void toggleCascadeDebug() { showCascadeDebug = !showCascadeDebug; }
-    bool isShowingCascadeDebug() const { return showCascadeDebug; }
-    void toggleSnowDepthDebug() { showSnowDepthDebug = !showSnowDepthDebug; }
-    bool isShowingSnowDepthDebug() const { return showSnowDepthDebug; }
-
     // Resource access
     VkCommandPool getCommandPool() const { return vulkanContext_->getCommandPool(); }
     DescriptorManager::Pool* getDescriptorPool();
@@ -294,8 +288,6 @@ private:
 
     float lastSunIntensity = 1.0f;
 
-    bool showCascadeDebug = false;         // true = show cascade colors overlay
-    bool showSnowDepthDebug = false;       // true = show snow depth heat map overlay
     bool hdrEnabled = true;                // true = HDR tonemapping/bloom, false = bypass
     bool hdrPassEnabled = true;            // true = render HDR pass, false = skip entire HDR scene rendering
     bool terrainEnabled = true;            // true = render terrain, false = skip terrain rendering

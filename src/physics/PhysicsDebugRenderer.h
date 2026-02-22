@@ -5,6 +5,7 @@
 #ifdef JPH_DEBUG_RENDERER
 
 #include <Jolt/Renderer/DebugRendererSimple.h>
+#include "PhysicsDebugOptions.h"
 #include <glm/glm.hpp>
 #include <vector>
 #include <mutex>
@@ -31,7 +32,7 @@ struct DebugTriangle {
 // Jolt debug renderer implementation that collects primitives for Vulkan rendering
 class PhysicsDebugRenderer : public JPH::DebugRendererSimple {
 public:
-    PhysicsDebugRenderer();
+    PhysicsDebugRenderer() = default;
     virtual ~PhysicsDebugRenderer() override = default;
 
     // Initialize after Jolt is initialized (must be called before use)
@@ -48,8 +49,8 @@ public:
     void beginFrame(const glm::vec3& cameraPos);
     void endFrame();
 
-    // Draw all physics bodies
-    void drawBodies(JPH::PhysicsSystem& physicsSystem);
+    // Draw all physics bodies using the provided options
+    void drawBodies(JPH::PhysicsSystem& physicsSystem, const PhysicsDebugOptions& options);
 
     // Access collected primitives for rendering
     const std::vector<DebugLine>& getLines() const { return lines; }
@@ -58,39 +59,12 @@ public:
     // Clear all primitives
     void clear();
 
-    // Visualization options
-    struct Options {
-        bool drawShapes = true;
-        bool drawShapeWireframe = true;
-        bool drawBoundingBox = false;
-        bool drawCenterOfMassTransform = false;
-        bool drawWorldTransform = false;
-        bool drawVelocity = false;
-        bool drawMassAndInertia = false;
-        bool drawSleepStats = false;
-        bool drawConstraints = false;
-        bool drawConstraintLimits = false;
-        bool drawConstraintReferenceFrame = false;
-        bool drawContactPoint = false;
-        bool drawContactNormal = false;
-
-        // Body type filters (static disabled by default - terrain heightfields are huge!)
-        bool drawStaticBodies = false;
-        bool drawDynamicBodies = true;
-        bool drawKinematicBodies = true;
-        bool drawCharacter = true;
-    };
-
-    Options& getOptions() { return options; }
-    const Options& getOptions() const { return options; }
-
 private:
     glm::vec4 toGLM(JPH::ColorArg color) const;
     glm::vec3 toGLM(JPH::RVec3Arg v) const;
 
     std::vector<DebugLine> lines;
     std::vector<DebugTriangle> triangles;
-    Options options;
     std::mutex mutex;
     bool initialized = false;
 };

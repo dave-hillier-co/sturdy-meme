@@ -2,6 +2,10 @@
 
 #include "EnvironmentSettings.h"
 #include "GrassConstants.h"
+#include "GrassTypes.h"
+#include "GrassBuffers.h"
+#include "GrassComputePass.h"
+#include "GrassShadowPass.h"
 #include <vulkan/vulkan.hpp>
 #include <vk_mem_alloc.h>
 #include <glm/glm.hpp>
@@ -11,11 +15,8 @@
 #include <memory>
 #include <optional>
 
-#include "PerFrameBuffer.h"
-#include "DoubleBufferedBuffer.h"
 #include "DynamicUniformBuffer.h"
 #include "SystemLifecycleHelper.h"
-#include "BufferSetManager.h"
 #include "UBOs.h"
 #include "core/FrameBuffered.h"
 #include "interfaces/IRecordable.h"
@@ -26,31 +27,6 @@ class WindSystem;
 class GrassTileManager;
 class DisplacementSystem;
 struct InitContext;
-
-// Legacy push constants for non-tiled mode (and shadow pass)
-struct GrassPushConstants {
-    float time;
-    int cascadeIndex;  // For shadow pass: which cascade we're rendering
-};
-
-// Push constants for tiled grass with continuous stochastic culling
-// Tiles provide coarse culling, continuous distance-based culling handles density
-struct TiledGrassPushConstants {
-    float time;
-    float tileOriginX;   // World X origin of this tile
-    float tileOriginZ;   // World Z origin of this tile
-    float tileSize;      // Tile size in world units
-    float spacing;       // Blade spacing (always base spacing, no LOD multiplier)
-    uint32_t tileIndex;  // Tile index for debugging
-    float unused1;       // Padding
-    float unused2;       // Padding
-};
-
-struct GrassInstance {
-    glm::vec4 positionAndFacing;  // xyz = position, w = facing angle
-    glm::vec4 heightHashTilt;     // x = height, y = hash, z = tilt, w = clumpId
-    glm::vec4 terrainNormal;      // xyz = terrain normal (for tangent alignment), w = unused
-};
 
 class GrassSystem : public IRecordableAnimated, public IShadowCasterAnimated {
 public:
@@ -172,17 +148,11 @@ private:
     bool initInternal(const InitInfo& info);
     void cleanup();
 
-    bool createShadowPipeline();
-    bool createBuffers();
-    bool createComputeDescriptorSetLayout(SystemLifecycleHelper::PipelineHandles& handles);
-    bool createComputePipeline(SystemLifecycleHelper::PipelineHandles& handles);
     bool createGraphicsDescriptorSetLayout(SystemLifecycleHelper::PipelineHandles& handles);
     bool createGraphicsPipeline(SystemLifecycleHelper::PipelineHandles& handles);
     bool createDescriptorSets();
     bool createExtraPipelines(SystemLifecycleHelper::PipelineHandles& computeHandles,
                                SystemLifecycleHelper::PipelineHandles& graphicsHandles);
-    void writeComputeDescriptorSets();  // Called after init to write compute descriptor sets
-    void destroyBuffers(VmaAllocator allocator);
 
     // Accessors
     vk::Device getDevice() const { return device_; }
@@ -196,21 +166,18 @@ private:
     SystemLifecycleHelper::PipelineHandles& getComputePipelineHandles() { return lifecycle_.getComputePipeline(); }
     SystemLifecycleHelper::PipelineHandles& getGraphicsPipelineHandles() { return lifecycle_.getGraphicsPipeline(); }
 
-    // Buffer set management (double/triple-buffered resources)
-    uint32_t getComputeBufferSet() const { return bufferSets_.getComputeSet(); }
-    uint32_t getRenderBufferSet() const { return bufferSets_.getRenderSet(); }
-    uint32_t getBufferSetCount() const { return bufferSets_.getSetCount(); }
-
     // Descriptor set access
-    VkDescriptorSet getComputeDescriptorSet(uint32_t index) const { return computeDescriptorSets_[index]; }
     VkDescriptorSet getGraphicsDescriptorSet(uint32_t index) const { return graphicsDescriptorSets_[index]; }
 
-    // Core components (same as ParticleSystem - composed from identical parts)
-    SystemLifecycleHelper lifecycle_;
-    BufferSetManager bufferSets_;
+    // Composed components
+    GrassBuffers buffers_;
+    GrassComputePass computePass_;
+    GrassShadowPass shadowPass_;
 
-    // Compute and graphics descriptor sets (one per buffer set)
-    std::vector<VkDescriptorSet> computeDescriptorSets_;
+    // Core lifecycle helper
+    SystemLifecycleHelper lifecycle_;
+
+    // Graphics descriptor sets (one per buffer set)
     std::vector<VkDescriptorSet> graphicsDescriptorSets_;
 
     // Stored init info
@@ -228,27 +195,8 @@ private:
     // RAII device pointer
     const vk::raii::Device* raiiDevice_ = nullptr;
 
-    // Shadow pipeline (for casting shadows)
-    std::optional<vk::raii::DescriptorSetLayout> shadowDescriptorSetLayout_;
-    std::optional<vk::raii::PipelineLayout> shadowPipelineLayout_;
-    std::optional<vk::raii::Pipeline> shadowPipeline_;
-
     // Displacement system (owned externally, provides displacement texture)
     DisplacementSystem* displacementSystem_ = nullptr;
-
-    // Triple-buffered storage buffers: one per frame in flight
-    // Each frame gets its own buffer set to avoid GPU read/CPU write conflicts.
-    // Buffer set count MUST match frames in flight (3) to prevent race conditions.
-    BufferUtils::DoubleBufferedBufferSet instanceBuffers;      // [setIndex]
-    BufferUtils::DoubleBufferedBufferSet indirectBuffers;
-
-    // Uniform buffers for culling (per frame, not double-buffered)
-    BufferUtils::PerFrameBufferSet uniformBuffers;    // CullingUniforms at binding 2
-    BufferUtils::PerFrameBufferSet paramsBuffers;     // GrassParams at binding 7
-
-    // Descriptor sets: one per buffer set (matches frames in flight)
-    // Per-frame descriptor sets for uniform buffers that DO need per-frame copies
-    std::vector<vk::DescriptorSet> shadowDescriptorSets_;
 
     // Terrain heightmap for grass placement (stored for compute descriptor updates)
     vk::ImageView terrainHeightMapView_;
@@ -271,23 +219,13 @@ private:
     std::vector<vk::Buffer> rendererUniformBuffers_;
 
     // Dynamic renderer UBO - used with VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC
-    // to avoid per-frame descriptor set updates
     const BufferUtils::DynamicUniformBuffer* dynamicRendererUBO_ = nullptr;
-
-    // MAX_INSTANCES uses unified constant from GrassConstants.h:
-    // GrassConstants::MAX_INSTANCES (~100k rendered after culling)
 
     const EnvironmentSettings* environmentSettings = nullptr;
 
     // Tiled grass system (for world-scale rendering)
-    bool tiledModeEnabled_ = true;  // Enable tiled mode by default
+    bool tiledModeEnabled_ = true;
     std::unique_ptr<GrassTileManager> tileManager_;
-
-    // Tiled grass compute pipeline (separate from legacy pipeline)
-    std::optional<vk::raii::Pipeline> tiledComputePipeline_;
-
-    // Frame counter for tile unloading (ensures GPU isn't using tile before freeing)
-    uint64_t frameCounter_ = 0;
 
     // Camera position for camera-centered dispatch
     glm::vec3 lastCameraPos_{0.0f};

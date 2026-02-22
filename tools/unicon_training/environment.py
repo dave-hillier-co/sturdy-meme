@@ -15,7 +15,11 @@ from typing import Optional, Tuple, Dict, Any
 from .config import TrainingConfig, HumanoidConfig, RewardConfig, RSISConfig
 from .state_encoder import StateEncoder
 from .reward import compute_reward
-from tools.ml.quaternion import slerp as quat_slerp
+from tools.ml.quaternion import (
+    slerp as quat_slerp,
+    quat_mul,
+    quat_inverse,
+)
 
 
 # Default MuJoCo humanoid XML.
@@ -471,6 +475,9 @@ class UniConEnv:
     def _sample_motion(self, time: float) -> dict:
         """Sample a motion clip at a given time.
 
+        Handles looping by accumulating root displacement and rotation
+        across loop boundaries so the trajectory is continuous.
+
         Motion data format (dict):
             "fps": float
             "frames": list of dicts, each with:
@@ -486,27 +493,62 @@ class UniConEnv:
 
         # Compute frame index and interpolation factor
         frame_f = time * fps
-        frame_idx = int(frame_f) % num_frames
+        raw_frame = int(frame_f)
+        frame_idx = raw_frame % num_frames
         next_idx = (frame_idx + 1) % num_frames
-        alpha = frame_f - int(frame_f)
+        alpha = frame_f - raw_frame
+
+        # Loop counts for current and next frame
+        loop_curr = raw_frame // num_frames
+        loop_next = (raw_frame + 1) // num_frames
+
+        # Per-loop root position displacement
+        first_root = np.array(frames[0]["root_pos"], dtype=np.float32)
+        last_root = np.array(frames[-1]["root_pos"], dtype=np.float32)
+        root_disp = last_root - first_root
+
+        # Per-loop joint position displacement (world-space)
+        first_joints = np.array(frames[0]["joint_positions"], dtype=np.float32)
+        last_joints = np.array(frames[-1]["joint_positions"], dtype=np.float32)
+        joint_disp = last_joints - first_joints
+        np.nan_to_num(joint_disp, copy=False, nan=0.0, posinf=0.0, neginf=0.0)
+
+        # Per-loop root rotation delta: q_last * q_first^-1
+        first_rot = np.array(frames[0]["root_rot"], dtype=np.float32)
+        last_rot = np.array(frames[-1]["root_rot"], dtype=np.float32)
+        rot_delta = quat_mul(last_rot, quat_inverse(first_rot))
 
         f0 = frames[frame_idx]
         f1 = frames[next_idx]
 
-        # Linear interpolation for positions, slerp for rotations
-        root_pos = (1 - alpha) * f0["root_pos"] + alpha * f1["root_pos"]
-        root_rot = quat_slerp(f0["root_rot"], f1["root_rot"], alpha)
-        joint_pos = (1 - alpha) * f0["joint_positions"] + alpha * f1["joint_positions"]
+        # Offset positions by accumulated loop displacement
+        f0_root = np.array(f0["root_pos"], dtype=np.float32) + loop_curr * root_disp
+        f1_root = np.array(f1["root_pos"], dtype=np.float32) + loop_next * root_disp
+        root_pos = (1 - alpha) * f0_root + alpha * f1_root
 
-        joint_rot = np.zeros_like(f0["joint_rotations"])
+        f0_joints = np.array(f0["joint_positions"], dtype=np.float32) + loop_curr * joint_disp
+        f1_joints = np.array(f1["joint_positions"], dtype=np.float32) + loop_next * joint_disp
+        joint_pos = (1 - alpha) * f0_joints + alpha * f1_joints
+
+        # Accumulate root rotation across loops
+        f0_rot = np.array(f0["root_rot"], dtype=np.float32)
+        f1_rot = np.array(f1["root_rot"], dtype=np.float32)
+        for _ in range(loop_curr):
+            f0_rot = quat_mul(rot_delta, f0_rot)
+        for _ in range(loop_next):
+            f1_rot = quat_mul(rot_delta, f1_rot)
+        root_rot = quat_slerp(f0_rot, f1_rot, alpha)
+
+        # Joint rotations (body-relative, no loop accumulation needed)
+        joint_rot = np.zeros_like(np.array(f0["joint_rotations"]))
         for j in range(joint_rot.shape[0]):
             joint_rot[j] = quat_slerp(
                 f0["joint_rotations"][j], f1["joint_rotations"][j], alpha
             )
 
-        # Finite-difference velocities
+        # Finite-difference velocities (using loop-offset positions)
         dt = 1.0 / fps
-        root_lin_vel = (f1["root_pos"] - f0["root_pos"]) / dt
+        root_lin_vel = (f1_root - f0_root) / dt
         root_ang_vel = np.zeros(3, dtype=np.float32)  # simplified
         joint_ang_vels = np.zeros((joint_rot.shape[0], 3), dtype=np.float32)
 

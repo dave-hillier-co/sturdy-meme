@@ -168,24 +168,81 @@ _DEFAULT_HUMANOID_XML = """
     <motor joint="r_knee" gear="400"/>
     <motor joint="r_ankle_x" gear="200"/>
     <motor joint="r_ankle_y" gear="200"/>
-    <motor joint="l_shoulder_x" gear="150"/>
-    <motor joint="r_shoulder_x" gear="150"/>
-    <motor joint="head_x" gear="100"/>
-    <motor joint="head_y" gear="100"/>
-    <motor joint="chest_x" gear="200"/>
   </actuator>
 </mujoco>
 """
 
-# Mapping from MuJoCo body names to the 20-part ArticulatedBody order
+# Mapping from the 20-part ArticulatedBody order to MuJoCo body names.
+# The C++ ArticulatedBody has 20 parts; the MuJoCo humanoid has 17 bodies.
+# Parts 4/5 (Neck/Head), 6/7 (LeftShoulder/LeftUpperArm), and 10/11
+# (RightShoulder/RightUpperArm) share MuJoCo bodies via duplicates.
 BODY_NAMES = [
-    "pelvis", "lower_spine", "upper_spine", "chest", "head",
-    "l_shoulder", "l_forearm", "l_hand",
-    "r_shoulder", "r_forearm", "r_hand",
-    "l_thigh", "l_shin", "l_foot",
-    "r_thigh", "r_shin", "r_foot",
-    # The remaining 3 map to shoulder/neck joints represented as bodies
-    "l_shoulder", "r_shoulder", "head",
+    "pelvis",       # 0: Pelvis
+    "lower_spine",  # 1: LowerSpine (Spine)
+    "upper_spine",  # 2: UpperSpine (Spine1)
+    "chest",        # 3: Chest (Spine2)
+    "head",         # 4: Neck (mapped to head body)
+    "head",         # 5: Head
+    "l_shoulder",   # 6: LeftShoulder
+    "l_shoulder",   # 7: LeftUpperArm (same MuJoCo body)
+    "l_forearm",    # 8: LeftForearm
+    "l_hand",       # 9: LeftHand
+    "r_shoulder",   # 10: RightShoulder
+    "r_shoulder",   # 11: RightUpperArm (same MuJoCo body)
+    "r_forearm",    # 12: RightForearm
+    "r_hand",       # 13: RightHand
+    "l_thigh",      # 14: LeftThigh
+    "l_shin",       # 15: LeftShin
+    "l_foot",       # 16: LeftFoot
+    "r_thigh",      # 17: RightThigh
+    "r_shin",       # 18: RightShin
+    "r_foot",       # 19: RightFoot
+]
+
+# Maps each of the 60 policy action outputs (20 parts * 3 torque components)
+# to a MuJoCo actuator index, or None if the output is unused.
+# Built at module level from actuator names in the MuJoCo XML.
+_ACTION_TO_ACTUATOR_NAMES = [
+    # Part 0: Pelvis (freejoint, no actuators)
+    None, None, None,
+    # Part 1: LowerSpine
+    "lower_spine_x", "lower_spine_y", "lower_spine_z",
+    # Part 2: UpperSpine
+    "upper_spine_x", "upper_spine_y", None,
+    # Part 3: Chest
+    "chest_x", None, None,
+    # Part 4: Neck -> head
+    "head_x", "head_y", None,
+    # Part 5: Head (duplicate, no unique actuators)
+    None, None, None,
+    # Part 6: LeftShoulder
+    "l_shoulder_x", "l_shoulder_y", "l_shoulder_z",
+    # Part 7: LeftUpperArm (duplicate of part 6, no unique actuators)
+    None, None, None,
+    # Part 8: LeftForearm
+    "l_elbow", None, None,
+    # Part 9: LeftHand
+    "l_wrist_x", None, None,
+    # Part 10: RightShoulder
+    "r_shoulder_x", "r_shoulder_y", "r_shoulder_z",
+    # Part 11: RightUpperArm (duplicate of part 10)
+    None, None, None,
+    # Part 12: RightForearm
+    "r_elbow", None, None,
+    # Part 13: RightHand
+    "r_wrist_x", None, None,
+    # Part 14: LeftThigh
+    "l_hip_x", "l_hip_y", "l_hip_z",
+    # Part 15: LeftShin
+    "l_knee", None, None,
+    # Part 16: LeftFoot
+    "l_ankle_x", "l_ankle_y", None,
+    # Part 17: RightThigh
+    "r_hip_x", "r_hip_y", "r_hip_z",
+    # Part 18: RightShin
+    "r_knee", None, None,
+    # Part 19: RightFoot
+    "r_ankle_x", "r_ankle_y", None,
 ]
 
 
@@ -217,14 +274,29 @@ class UniConEnv:
         self.data = mujoco.MjData(self.model)
         self.model.opt.timestep = config.physics_dt / config.physics_substeps
 
-        # Body and joint counts
-        self.num_bodies = min(self.model.nbody - 1, config.humanoid.num_bodies)  # -1 for worldbody
+        # Body and joint counts - always 20 to match C++ ArticulatedBody
+        self.num_bodies = config.humanoid.num_bodies
         self.num_actuators = self.model.nu
 
         # State encoder matching C++
-        self.encoder = StateEncoder(self.num_bodies, config.policy.tau)
+        self.encoder = StateEncoder(self.num_bodies, config.tau)
         self.obs_dim = self.encoder.observation_dim
-        self.act_dim = self.num_actuators
+        self.act_dim = config.humanoid.num_bodies * 3  # 20 * 3 = 60
+
+        # Build action-to-actuator index mapping
+        self._action_map = []  # length 60, each entry is MuJoCo actuator idx or -1
+        for name in _ACTION_TO_ACTUATOR_NAMES:
+            if name is None:
+                self._action_map.append(-1)
+            else:
+                joint_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_JOINT, name)
+                # Find actuator that drives this joint
+                found = -1
+                for ai in range(self.model.nu):
+                    if self.model.actuator_trnid[ai, 0] == joint_id:
+                        found = ai
+                        break
+                self._action_map.append(found)
 
         # Motion data for reference trajectories
         self.motion_data = motion_data
@@ -285,9 +357,14 @@ class UniConEnv:
         Returns:
             obs, reward, done, info
         """
-        # Clip and apply action
+        # Clip and apply action via the 60->30 actuator mapping
         action = np.clip(action, -1.0, 1.0)
-        self.data.ctrl[:] = action
+        self.data.ctrl[:] = 0.0
+        effort = self.config.humanoid.effort_factors
+        for i, actuator_idx in enumerate(self._action_map):
+            if actuator_idx >= 0:
+                part_idx = i // 3
+                self.data.ctrl[actuator_idx] = action[i] * effort[part_idx]
 
         # Step physics (substeps are handled by MuJoCo timestep)
         for _ in range(self.config.physics_substeps):
@@ -340,11 +417,14 @@ class UniConEnv:
         # Build target frames
         target_frames = self._get_target_frames()
 
-        return self.encoder.encode(
+        obs = self.encoder.encode(
             root_pos, root_rot, root_lin_vel, root_ang_vel,
             joint_positions, joint_rotations, joint_ang_vels,
             target_frames,
         )
+        # Sanitize: replace NaN/inf from bad motion data with zeros
+        np.nan_to_num(obs, copy=False, nan=0.0, posinf=0.0, neginf=0.0)
+        return obs
 
     def _get_body_state(self, part_idx: int) -> Tuple[np.ndarray, np.ndarray]:
         """Get position and rotation of a body part.
@@ -430,7 +510,7 @@ class UniConEnv:
         root_ang_vel = np.zeros(3, dtype=np.float32)  # simplified
         joint_ang_vels = np.zeros((joint_rot.shape[0], 3), dtype=np.float32)
 
-        return {
+        result = {
             "root_pos": root_pos.astype(np.float32),
             "root_rot": root_rot.astype(np.float32),
             "root_lin_vel": root_lin_vel.astype(np.float32),
@@ -439,6 +519,10 @@ class UniConEnv:
             "joint_rotations": joint_rot.astype(np.float32),
             "joint_ang_vels": joint_ang_vels.astype(np.float32),
         }
+        # Sanitize any NaN/inf from bad motion data
+        for key, val in result.items():
+            np.nan_to_num(val, copy=False, nan=0.0, posinf=0.0, neginf=0.0)
+        return result
 
     def _compute_reward(self) -> Tuple[float, np.ndarray, bool]:
         """Compute reward by comparing current state to target."""

@@ -16,31 +16,31 @@ class HumanoidConfig:
     num_bodies: int = 20
     total_mass_kg: float = 70.0
     height_m: float = 1.8
-    num_dof: int = 35
+    num_dof: int = 30  # 30 unique hinge joints in MuJoCo model
 
-    # Per-joint torque effort factors (50-600 range from paper).
-    # Order matches ArticulatedBody part indices.
+    # Per-body torque effort factors (50-600 range from paper).
+    # Order matches the 20-part ArticulatedBody / BODY_NAMES ordering.
     effort_factors: List[float] = field(default_factory=lambda: [
-        200.0,  # pelvis
-        300.0,  # lower_spine
-        300.0,  # upper_spine
-        200.0,  # chest
-        50.0,   # head
-        150.0,  # l_upper_arm
-        100.0,  # l_forearm
-        50.0,   # l_hand
-        150.0,  # r_upper_arm
-        100.0,  # r_forearm
-        50.0,   # r_hand
-        600.0,  # l_thigh
-        400.0,  # l_shin
-        200.0,  # l_foot
-        600.0,  # r_thigh
-        400.0,  # r_shin
-        200.0,  # r_foot
-        150.0,  # l_shoulder
-        150.0,  # r_shoulder
-        100.0,  # neck
+        200.0,  # 0: Pelvis (no actuators, placeholder)
+        300.0,  # 1: LowerSpine
+        300.0,  # 2: UpperSpine
+        200.0,  # 3: Chest
+        100.0,  # 4: Neck (mapped to head joints)
+        50.0,   # 5: Head (duplicate, no unique actuators)
+        150.0,  # 6: LeftShoulder
+        150.0,  # 7: LeftUpperArm (duplicate, no unique actuators)
+        100.0,  # 8: LeftForearm
+        50.0,   # 9: LeftHand
+        150.0,  # 10: RightShoulder
+        150.0,  # 11: RightUpperArm (duplicate, no unique actuators)
+        100.0,  # 12: RightForearm
+        50.0,   # 13: RightHand
+        600.0,  # 14: LeftThigh
+        400.0,  # 15: LeftShin
+        200.0,  # 16: LeftFoot
+        600.0,  # 17: RightThigh
+        400.0,  # 18: RightShin
+        200.0,  # 19: RightFoot
     ])
 
 
@@ -81,6 +81,9 @@ class TrainingConfig:
     reward: RewardConfig = field(default_factory=RewardConfig)
     ppo: PPOConfig = field(default_factory=PPOConfig)
     rsis: RSISConfig = field(default_factory=RSISConfig)
+
+    # Number of future target frames (tau from the UniCon paper)
+    tau: int = 1
 
     # Physics simulation
     physics_dt: float = 1.0 / 60.0

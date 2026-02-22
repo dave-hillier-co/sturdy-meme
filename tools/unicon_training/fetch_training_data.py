@@ -13,7 +13,7 @@ Usage:
     python tools/unicon_training/fetch_training_data.py my_anim.fbx -o assets/motions/
 
     # List joints in an FBX without converting (useful for debugging):
-    python tools/unicon_training/fetch_training_data.py assets/characters/fbx/Y\ Bot.fbx --list-joints
+    python tools/unicon_training/fetch_training_data.py "assets/characters/fbx/Y Bot.fbx" --list-joints
 
     # Convert with a specific target FPS:
     python tools/unicon_training/fetch_training_data.py assets/characters/fbx/ -o assets/motions/ --fps 60
@@ -88,6 +88,17 @@ def _build_mixamo_name_map() -> Dict[str, int]:
 MIXAMO_NAME_MAP = _build_mixamo_name_map()
 
 
+def _to_str(value) -> str:
+    """Convert pyassimp string/bytes/struct to Python str."""
+    if isinstance(value, str):
+        return value
+    if isinstance(value, bytes):
+        return value.decode('utf-8')
+    if hasattr(value, 'data'):
+        return value.data.decode('utf-8')
+    return str(value)
+
+
 def _mat4_to_pos_rot(m) -> tuple:
     """Extract position and rotation (w,x,y,z) from a 4x4 matrix."""
     pos = np.array([m[0][3], m[1][3], m[2][3]], dtype=np.float32)
@@ -144,7 +155,7 @@ def _rotation_matrix_to_quat(m: np.ndarray) -> np.ndarray:
 
 def _find_node_by_name(node, name: str):
     """Recursively find a scene node by name."""
-    if node.name.decode() if isinstance(node.name, bytes) else node.name == name:
+    if _to_str(node.name) == name:
         return node
     for child in node.children:
         result = _find_node_by_name(child, name)
@@ -162,7 +173,7 @@ def _collect_nodes(node, parent_transform=None) -> Dict[str, tuple]:
     local = np.array(node.transformation, dtype=np.float64)
     world = parent_transform @ local
 
-    name = node.name.decode() if isinstance(node.name, bytes) else node.name
+    name = _to_str(node.name)
 
     result = {name: world}
     for child in node.children:
@@ -172,8 +183,7 @@ def _collect_nodes(node, parent_transform=None) -> Dict[str, tuple]:
 
 def list_joints(fbx_path: str):
     """Print all joint/bone names found in an FBX file."""
-    scene = pyassimp.load(fbx_path)
-    try:
+    with pyassimp.load(fbx_path) as scene:
         nodes = _collect_nodes(scene.rootnode)
         print(f"\nJoints in {fbx_path} ({len(nodes)} nodes):")
         for name in sorted(nodes.keys()):
@@ -196,8 +206,6 @@ def list_joints(fbx_path: str):
                 missing.append(canonical)
         if missing:
             print(f"Missing: {', '.join(missing)}")
-    finally:
-        pyassimp.release(scene)
 
 
 def convert_fbx(fbx_path: str, target_fps: float = 30.0,
@@ -216,8 +224,7 @@ def convert_fbx(fbx_path: str, target_fps: float = 30.0,
              pp.aiProcess_SortByPType |
              pp.aiProcess_LimitBoneWeights)
 
-    scene = pyassimp.load(fbx_path, processing=flags)
-    try:
+    with pyassimp.load(fbx_path, processing=flags) as scene:
         if not scene.animations:
             print(f"  Warning: {fbx_path} has no animations, skipping")
             return None
@@ -230,7 +237,7 @@ def convert_fbx(fbx_path: str, target_fps: float = 30.0,
         # Build channel lookup by bone name
         channels = {}
         for channel in anim.channels:
-            name = channel.nodename.decode() if isinstance(channel.nodename, bytes) else channel.nodename
+            name = _to_str(channel.nodename)
             channels[name] = channel
 
         # Sample at target FPS
@@ -275,9 +282,6 @@ def convert_fbx(fbx_path: str, target_fps: float = 30.0,
             "frames": frames,
         }
 
-    finally:
-        pyassimp.release(scene)
-
 
 def _evaluate_animation(root_node, channels: dict, time_ticks: float,
                         scale: float, parent_world=None) -> Dict[str, tuple]:
@@ -285,7 +289,7 @@ def _evaluate_animation(root_node, channels: dict, time_ticks: float,
     if parent_world is None:
         parent_world = np.eye(4, dtype=np.float64)
 
-    name = root_node.name.decode() if isinstance(root_node.name, bytes) else root_node.name
+    name = _to_str(root_node.name)
 
     # Start with the node's default transform
     local = np.array(root_node.transformation, dtype=np.float64)
@@ -339,8 +343,7 @@ def _sample_channel(channel, time: float) -> np.ndarray:
 def _interpolate_vec3_keys(keys, time: float) -> np.ndarray:
     """Interpolate between vector3 keyframes."""
     if len(keys) == 1:
-        k = keys[0]
-        return np.array([k.value[0], k.value[1], k.value[2]], dtype=np.float64)
+        return np.asarray(keys[0].value, dtype=np.float64)[:3]
 
     # Find the two surrounding keys
     for i in range(len(keys) - 1):
@@ -348,33 +351,30 @@ def _interpolate_vec3_keys(keys, time: float) -> np.ndarray:
             k0, k1 = keys[i], keys[i + 1]
             dt = k1.time - k0.time
             alpha = (time - k0.time) / dt if dt > 0 else 0.0
-            v0 = np.array([k0.value[0], k0.value[1], k0.value[2]], dtype=np.float64)
-            v1 = np.array([k1.value[0], k1.value[1], k1.value[2]], dtype=np.float64)
+            v0 = np.asarray(k0.value, dtype=np.float64)[:3]
+            v1 = np.asarray(k1.value, dtype=np.float64)[:3]
             return v0 + alpha * (v1 - v0)
 
     # Past the last key
-    k = keys[-1]
-    return np.array([k.value[0], k.value[1], k.value[2]], dtype=np.float64)
+    return np.asarray(keys[-1].value, dtype=np.float64)[:3]
 
 
 def _interpolate_quat_keys(keys, time: float) -> np.ndarray:
     """Interpolate between quaternion keyframes. Returns (w,x,y,z)."""
     if len(keys) == 1:
-        k = keys[0]
-        # pyassimp quaternion: (w, x, y, z)
-        return np.array([k.value.w, k.value.x, k.value.y, k.value.z], dtype=np.float64)
+        # pyassimp quaternion value is already ndarray (w, x, y, z)
+        return np.asarray(keys[0].value, dtype=np.float64)[:4]
 
     for i in range(len(keys) - 1):
         if time <= keys[i + 1].time:
             k0, k1 = keys[i], keys[i + 1]
             dt = k1.time - k0.time
             alpha = (time - k0.time) / dt if dt > 0 else 0.0
-            q0 = np.array([k0.value.w, k0.value.x, k0.value.y, k0.value.z], dtype=np.float64)
-            q1 = np.array([k1.value.w, k1.value.x, k1.value.y, k1.value.z], dtype=np.float64)
+            q0 = np.asarray(k0.value, dtype=np.float64)[:4]
+            q1 = np.asarray(k1.value, dtype=np.float64)[:4]
             return _slerp(q0, q1, alpha)
 
-    k = keys[-1]
-    return np.array([k.value.w, k.value.x, k.value.y, k.value.z], dtype=np.float64)
+    return np.asarray(keys[-1].value, dtype=np.float64)[:4]
 
 
 def _slerp(q0: np.ndarray, q1: np.ndarray, t: float) -> np.ndarray:

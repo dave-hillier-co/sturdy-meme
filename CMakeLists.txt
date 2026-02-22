@@ -62,12 +62,12 @@ set(SOURCES
     # Note: Some systems implement their interfaces directly (CelestialCalculator -> ILocationControl,
     #       TerrainSystem -> ITerrainControl, Profiler -> IProfilerControl, WeatherSystem -> IWeatherState,
     #       PostProcessSystem -> IPostProcessState, CloudShadowSystem -> ICloudShadowControl)
-    src/core/controls/EnvironmentControlSubsystem.cpp
-    src/core/controls/WaterControlSubsystem.cpp
-    src/core/controls/TreeControlSubsystem.cpp
-    src/core/controls/DebugControlSubsystem.cpp
-    src/core/controls/SceneControlSubsystem.cpp
-    src/core/controls/PlayerControlSubsystem.cpp
+    src/controls/EnvironmentControlSubsystem.cpp
+    src/controls/WaterControlSubsystem.cpp
+    src/controls/TreeControlSubsystem.cpp
+    src/controls/DebugControlSubsystem.cpp
+    src/controls/SceneControlSubsystem.cpp
+    src/controls/PlayerControlSubsystem.cpp
     src/core/vulkan/VulkanContext.cpp
     src/core/vulkan/AsyncTransferManager.cpp
     src/core/vulkan/ThreadedCommandPool.cpp
@@ -75,19 +75,19 @@ set(SOURCES
     src/core/threading/TaskScheduler.cpp
     src/core/pipeline/FrameGraph.cpp
     src/core/pipeline/FrameGraphBuilder.cpp
-    src/core/passes/ComputePasses.cpp
-    src/core/passes/ShadowPasses.cpp
-    src/core/passes/ShadowPassRecorder.cpp
-    src/core/passes/ShadowPassResources.cpp
-    src/core/passes/WaterPasses.cpp
-    src/core/passes/HDRPass.cpp
-    src/core/passes/HDRPassRecorder.cpp
-    src/core/passes/HDRPassResources.cpp
-    src/core/passes/SceneObjectsDrawable.cpp
-    src/core/passes/SkinnedCharDrawable.cpp
-    src/core/passes/DebugLinesDrawable.cpp
-    src/core/passes/WaterDrawable.cpp
-    src/core/passes/PostPasses.cpp
+    src/passes/ComputePasses.cpp
+    src/passes/ShadowPasses.cpp
+    src/passes/ShadowPassRecorder.cpp
+    src/passes/ShadowPassResources.cpp
+    src/passes/WaterPasses.cpp
+    src/passes/HDRPass.cpp
+    src/passes/HDRPassRecorder.cpp
+    src/passes/HDRPassResources.cpp
+    src/passes/SceneObjectsDrawable.cpp
+    src/passes/SkinnedCharDrawable.cpp
+    src/passes/DebugLinesDrawable.cpp
+    src/passes/WaterDrawable.cpp
+    src/passes/PostPasses.cpp
     src/core/FrameUpdater.cpp
     src/core/FrameDataBuilder.cpp
     src/core/updaters/VegetationUpdater.cpp
@@ -95,10 +95,10 @@ set(SOURCES
     src/core/updaters/EnvironmentUpdater.cpp
     src/core/updaters/UBOUpdater.cpp
     src/core/LoadingRenderer.cpp
-    src/core/loading/LoadJobQueue.cpp
-    src/core/loading/AsyncStartupLoader.cpp
-    src/core/loading/AsyncSystemLoader.cpp
-    src/core/loading/LoadJobFactory.cpp
+    src/loading/LoadJobQueue.cpp
+    src/loading/AsyncStartupLoader.cpp
+    src/loading/AsyncSystemLoader.cpp
+    src/loading/LoadJobFactory.cpp
     src/core/Mesh.cpp
     src/core/SingleBuffer.cpp
     src/core/PerFrameBuffer.cpp
@@ -112,9 +112,9 @@ set(SOURCES
     src/core/pipeline/PipelineBuilder.cpp
     src/core/pipeline/PipelineCache.cpp
     src/core/pipeline/GraphicsPipelineFactory.cpp
-    src/core/material/DescriptorManager.cpp
-    src/core/material/MaterialDescriptorFactory.cpp
-    src/core/material/MaterialRegistry.cpp
+    src/material/DescriptorManager.cpp
+    src/material/MaterialDescriptorFactory.cpp
+    src/material/MaterialRegistry.cpp
     src/core/asset/AssetRegistry.cpp
     src/core/RenderableBuilder.cpp
     # Atmosphere
@@ -331,7 +331,10 @@ target_include_directories(${PROJECT_NAME} PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src/core/vulkan
     ${CMAKE_CURRENT_SOURCE_DIR}/src/core/threading
     ${CMAKE_CURRENT_SOURCE_DIR}/src/core/pipeline
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/core/material
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/material
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/controls
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/passes
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/loading
     ${CMAKE_CURRENT_SOURCE_DIR}/src/core/asset
     ${CMAKE_CURRENT_SOURCE_DIR}/src/debug
     ${CMAKE_CURRENT_SOURCE_DIR}/src/gui

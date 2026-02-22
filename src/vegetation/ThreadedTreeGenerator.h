@@ -2,7 +2,7 @@
 
 #include "TreeOptions.h"
 #include "TreeGenerator.h"
-#include "core/loading/LoadJobQueue.h"
+#include "loading/LoadJobQueue.h"
 #include <glm/glm.hpp>
 #include <vector>
 #include <memory>

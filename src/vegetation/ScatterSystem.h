@@ -13,7 +13,7 @@
 #include "RenderableBuilder.h"
 #include "scene/SceneMaterial.h"
 #include "scene/SceneObjectInstance.h"
-#include "core/material/MaterialDescriptorFactory.h"
+#include "material/MaterialDescriptorFactory.h"
 #include "DescriptorManager.h"
 #include "ecs/World.h"
 

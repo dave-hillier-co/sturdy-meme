@@ -24,8 +24,8 @@
 #include "VirtualTextureSystem.h"
 #include "DescriptorManager.h"
 #include "InitContext.h"
-#include "core/material/TerrainLiquidUBO.h"
-#include "core/material/MaterialLayer.h"
+#include "material/TerrainLiquidUBO.h"
+#include "material/MaterialLayer.h"
 #include <optional>
 #include <functional>
 

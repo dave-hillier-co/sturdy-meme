@@ -3,8 +3,8 @@
 #include <vulkan/vulkan.hpp>
 #include <glm/glm.hpp>
 #include <cstdint>
-#include "core/material/TerrainLiquidUBO.h"
-#include "core/material/MaterialLayer.h"
+#include "material/TerrainLiquidUBO.h"
+#include "material/MaterialLayer.h"
 
 class TerrainBuffers;
 

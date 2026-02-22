@@ -15,7 +15,7 @@
 #include "DescriptorManager.h"
 #include "VmaBuffer.h"
 #include "core/FrameBuffered.h"
-#include "core/material/MaterialComponents.h"
+#include "material/MaterialComponents.h"
 #include "interfaces/IRecordable.h"
 
 class ShadowSystem;

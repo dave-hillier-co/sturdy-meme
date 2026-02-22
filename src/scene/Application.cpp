@@ -6,8 +6,8 @@
 #include <unordered_set>
 #include "core/vulkan/VulkanContext.h"
 #include "core/LoadingRenderer.h"
-#include "core/loading/LoadJobQueue.h"
-#include "core/loading/LoadJobFactory.h"
+#include "loading/LoadJobQueue.h"
+#include "loading/LoadJobFactory.h"
 #include "core/threading/TaskScheduler.h"
 #include "InitProfiler.h"
 #include "Profiler.h"

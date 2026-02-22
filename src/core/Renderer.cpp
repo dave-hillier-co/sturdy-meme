@@ -11,7 +11,7 @@
 #include "core/FrameUpdater.h"
 #include "core/FrameDataBuilder.h"
 #include "core/updaters/UBOUpdater.h"
-#include "core/loading/AsyncSystemLoader.h"
+#include "loading/AsyncSystemLoader.h"
 #include "interfaces/IPlayerControl.h"
 #include "UBOs.h"
 #include "FrameData.h"

@@ -4,7 +4,7 @@
 #include <array>
 #include <filesystem>
 #include "Renderer.h"
-#include "core/loading/AsyncSystemLoader.h"
+#include "loading/AsyncSystemLoader.h"
 #include "MaterialDescriptorFactory.h"
 #include "PostProcessSystem.h"
 #include "BloomSystem.h"

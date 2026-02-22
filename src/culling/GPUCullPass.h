@@ -11,7 +11,7 @@
 
 #include "core/PerFrameBuffer.h"
 #include "core/vulkan/VmaBuffer.h"
-#include "core/material/DescriptorManager.h"
+#include "material/DescriptorManager.h"
 #include "core/InitContext.h"
 
 // Forward declarations

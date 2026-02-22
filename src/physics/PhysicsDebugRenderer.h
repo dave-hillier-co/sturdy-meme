@@ -32,7 +32,7 @@ struct DebugTriangle {
 // Jolt debug renderer implementation that collects primitives for Vulkan rendering
 class PhysicsDebugRenderer : public JPH::DebugRendererSimple {
 public:
-    explicit PhysicsDebugRenderer(PhysicsDebugOptions& externalOptions);
+    PhysicsDebugRenderer() = default;
     virtual ~PhysicsDebugRenderer() override = default;
 
     // Initialize after Jolt is initialized (must be called before use)
@@ -49,8 +49,8 @@ public:
     void beginFrame(const glm::vec3& cameraPos);
     void endFrame();
 
-    // Draw all physics bodies
-    void drawBodies(JPH::PhysicsSystem& physicsSystem);
+    // Draw all physics bodies using the provided options
+    void drawBodies(JPH::PhysicsSystem& physicsSystem, const PhysicsDebugOptions& options);
 
     // Access collected primitives for rendering
     const std::vector<DebugLine>& getLines() const { return lines; }
@@ -59,20 +59,12 @@ public:
     // Clear all primitives
     void clear();
 
-    // Options are stored externally (on DebugControlSubsystem) so they
-    // persist independently of this renderer's lifetime
-    using Options = PhysicsDebugOptions;
-
-    Options& getOptions() { return options_; }
-    const Options& getOptions() const { return options_; }
-
 private:
     glm::vec4 toGLM(JPH::ColorArg color) const;
     glm::vec3 toGLM(JPH::RVec3Arg v) const;
 
     std::vector<DebugLine> lines;
     std::vector<DebugTriangle> triangles;
-    Options& options_;
     std::mutex mutex;
     bool initialized = false;
 };

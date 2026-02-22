@@ -67,8 +67,10 @@ class AMPTrainer:
         real_score = self.discriminator(real_obs_t, real_obs_t1)
         fake_score = self.discriminator(fake_obs_t, fake_obs_t1)
 
-        # WGAN loss: maximize real, minimize fake
-        disc_loss = fake_score.mean() - real_score.mean()
+        # Least-squares GAN loss (more stable than WGAN for AMP)
+        # Real samples should have D(x) = 1, fake should have D(x) = 0
+        disc_loss = 0.5 * ((real_score - 1.0) ** 2).mean() + \
+                    0.5 * (fake_score ** 2).mean()
 
         # Gradient penalty on real samples
         grad_penalty = self._gradient_penalty(
@@ -79,6 +81,7 @@ class AMPTrainer:
 
         self.optimizer.zero_grad()
         total_loss.backward()
+        nn.utils.clip_grad_norm_(self.discriminator.parameters(), 1.0)
         self.optimizer.step()
 
         return {

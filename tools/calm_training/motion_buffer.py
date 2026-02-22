@@ -108,10 +108,21 @@ class MotionTransitionBuffer:
         if all_obs_t:
             new_obs_t = np.stack(all_obs_t)
             new_obs_t1 = np.stack(all_obs_t1)
+
+            # Filter out any transition pairs containing NaN
+            valid_t = np.isfinite(new_obs_t).all(axis=1)
+            valid_t1 = np.isfinite(new_obs_t1).all(axis=1)
+            valid = valid_t & valid_t1
+            removed = (~valid).sum()
+            if removed > 0:
+                print(f"  Removed {removed} transitions with NaN/Inf values")
+            new_obs_t = new_obs_t[valid]
+            new_obs_t1 = new_obs_t1[valid]
+
             self.obs_t = np.concatenate([self.obs_t, new_obs_t], axis=0)
             self.obs_t1 = np.concatenate([self.obs_t1, new_obs_t1], axis=0)
 
-        return len(all_obs_t)
+        return len(self.obs_t)
 
     def sample(
         self, batch_size: int, rng: np.random.RandomState = None

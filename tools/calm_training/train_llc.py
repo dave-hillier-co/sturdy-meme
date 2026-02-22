@@ -318,6 +318,7 @@ class LLCTrainer:
             # Collect rollouts
             self.buffer.reset()
             episode_rewards = []
+            step_rewards = []
             all_obs_t = []
             all_obs_t1 = []
 
@@ -379,6 +380,7 @@ class LLCTrainer:
                         self.config.amp.style_reward_weight,
                         self.config.amp.task_reward_weight,
                     )
+                    step_rewards.append(combined_reward.mean().item())
 
                     new_obs = torch.tensor(
                         new_obs_np, dtype=torch.float32, device=self.device
@@ -443,9 +445,7 @@ class LLCTrainer:
             iter_time = time.time() - iter_start
 
             if iteration % self.config.log_interval == 0:
-                mean_reward = (
-                    np.mean(episode_rewards) if episode_rewards else 0.0
-                )
+                mean_reward = np.mean(step_rewards) if step_rewards else 0.0
                 print(
                     f"Iter {iteration:6d} | "
                     f"reward={mean_reward:.4f} | "

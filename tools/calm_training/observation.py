@@ -236,6 +236,10 @@ class CALMObservationExtractor:
 
         assert idx == self.config.per_frame_obs_dim
 
+        # Sanitize NaN/Inf values
+        np.nan_to_num(obs, nan=0.0, posinf=100.0, neginf=-100.0, copy=False)
+        np.clip(obs, -100.0, 100.0, out=obs)
+
         # Update history
         self._history.append(obs.copy())
         self._prev_dof_positions = dof_positions.copy()
@@ -278,8 +282,16 @@ class CALMObservationExtractor:
         # Compute root angular velocity from quaternion difference
         if prev_root_rot is not None and delta_time > 0:
             delta_rot = _quat_mul(root_rot, _quat_inverse(prev_root_rot))
+            # Normalize to avoid numerical issues
+            delta_norm = np.linalg.norm(delta_rot)
+            if delta_norm > 1e-8:
+                delta_rot = delta_rot / delta_norm
+            else:
+                delta_rot = np.array([1.0, 0.0, 0.0, 0.0])
             axis, angle = _quat_to_axis_angle(delta_rot)
             root_ang_vel = axis * (angle / delta_time)
+            # Clamp angular velocity to reasonable range
+            np.clip(root_ang_vel, -50.0, 50.0, out=root_ang_vel)
         else:
             root_ang_vel = np.zeros(3, dtype=np.float32)
 

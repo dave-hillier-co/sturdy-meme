@@ -29,9 +29,9 @@ _CALM_HUMANOID_XML = """
   </option>
 
   <default>
-    <joint damping="0.5" armature="0.01"/>
+    <joint damping="5.0" armature="0.02"/>
     <geom condim="3" friction="1 0.5 0.5" margin="0.001"/>
-    <position kp="40" kv="5" ctrllimited="true"/>
+    <position kp="200" kv="20" ctrllimited="true"/>
   </default>
 
   <worldbody>
@@ -377,6 +377,27 @@ class CALMEnv:
         self.motion_time += self.env_config.sim_timestep
         self.episode_length += 1
 
+        # Check for simulation instability (NaN in qpos)
+        sim_unstable = not np.isfinite(self.data.qpos).all()
+
+        if sim_unstable:
+            # Terminate immediately with zero reward
+            obs_t1 = np.zeros(self.humanoid.per_frame_obs_dim, dtype=np.float32)
+            self._prev_per_frame_obs = obs_t1
+            policy_obs = np.zeros(self.humanoid.policy_obs_dim, dtype=np.float32)
+            reward = 0.0
+            done = True
+            info = {
+                "obs_t": obs_t if obs_t is not None else np.zeros(
+                    self.humanoid.per_frame_obs_dim, dtype=np.float32
+                ),
+                "obs_t1": obs_t1,
+                "root_height": 0.0,
+                "episode_length": self.episode_length,
+                "sim_unstable": True,
+            }
+            return policy_obs, reward, done, info
+
         # Extract new observation
         per_frame = self._extract_per_frame_obs()
         obs_t1 = per_frame.copy()
@@ -431,7 +452,7 @@ class CALMEnv:
         for i, bid in enumerate(self._key_body_ids):
             key_body_positions[i] = self.data.xpos[bid].astype(np.float32)
 
-        return self.obs_extractor.extract_frame(
+        obs = self.obs_extractor.extract_frame(
             root_pos=root_pos,
             root_rot=root_rot,
             root_vel=root_vel,
@@ -440,3 +461,9 @@ class CALMEnv:
             key_body_positions=key_body_positions,
             delta_time=self.env_config.sim_timestep,
         )
+
+        # Clamp to prevent extreme values from propagating
+        np.clip(obs, -100.0, 100.0, out=obs)
+        np.nan_to_num(obs, nan=0.0, posinf=100.0, neginf=-100.0, copy=False)
+
+        return obs

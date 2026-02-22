@@ -250,25 +250,6 @@ static TreeDataPrepResult prepareTreeCullData(const TreeSystem& treeSystem,
         }
     }
 
-    if (result.numTrees == 0) return result;
-
-    // CRITICAL: Sort tree data by inputFirstInstance for binary search in shader.
-    std::vector<size_t> sortIndices(result.treeData.size());
-    std::iota(sortIndices.begin(), sortIndices.end(), 0);
-    std::sort(sortIndices.begin(), sortIndices.end(), [&](size_t a, size_t b) {
-        return result.treeData[a].inputFirstInstance < result.treeData[b].inputFirstInstance;
-    });
-
-    std::vector<TreeCullData> sortedTreeData(result.treeData.size());
-    std::vector<TreeRenderDataGPU> sortedRenderData(result.renderData.size());
-    for (size_t i = 0; i < sortIndices.size(); ++i) {
-        sortedTreeData[i] = result.treeData[sortIndices[i]];
-        sortedTreeData[i].treeIndex = static_cast<uint32_t>(i);
-        sortedRenderData[i] = result.renderData[sortIndices[i]];
-    }
-
-    result.treeData = std::move(sortedTreeData);
-    result.renderData = std::move(sortedRenderData);
     return result;
 }
 

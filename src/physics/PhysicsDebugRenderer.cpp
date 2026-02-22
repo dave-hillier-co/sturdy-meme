@@ -11,7 +11,7 @@
 // Custom body filter that respects our options
 class OptionsBodyFilter : public JPH::BodyDrawFilter {
 public:
-    OptionsBodyFilter(const PhysicsDebugRenderer::Options& opts) : options(opts) {}
+    explicit OptionsBodyFilter(const PhysicsDebugOptions& opts) : options(opts) {}
 
     virtual bool ShouldDraw(const JPH::Body& inBody) const override {
         JPH::EMotionType motionType = inBody.GetMotionType();
@@ -28,14 +28,8 @@ public:
     }
 
 private:
-    const PhysicsDebugRenderer::Options& options;
+    const PhysicsDebugOptions& options;
 };
-
-PhysicsDebugRenderer::PhysicsDebugRenderer(PhysicsDebugOptions& externalOptions)
-    : options_(externalOptions) {
-    // Don't initialize here - Jolt allocator not yet registered
-    // Call init() after Jolt is initialized
-}
 
 void PhysicsDebugRenderer::init() {
     if (initialized) return;
@@ -85,34 +79,32 @@ void PhysicsDebugRenderer::endFrame() {
     NextFrame();
 }
 
-void PhysicsDebugRenderer::drawBodies(JPH::PhysicsSystem& physicsSystem) {
-    // Build draw settings from our options
+void PhysicsDebugRenderer::drawBodies(JPH::PhysicsSystem& physicsSystem, const PhysicsDebugOptions& options) {
+    // Build draw settings from options
     JPH::BodyManager::DrawSettings drawSettings;
-    drawSettings.mDrawShape = options_.drawShapes;
-    drawSettings.mDrawShapeWireframe = options_.drawShapeWireframe;
-    drawSettings.mDrawBoundingBox = options_.drawBoundingBox;
-    drawSettings.mDrawCenterOfMassTransform = options_.drawCenterOfMassTransform;
-    drawSettings.mDrawWorldTransform = options_.drawWorldTransform;
-    drawSettings.mDrawVelocity = options_.drawVelocity;
-    drawSettings.mDrawMassAndInertia = options_.drawMassAndInertia;
-    drawSettings.mDrawSleepStats = options_.drawSleepStats;
+    drawSettings.mDrawShape = options.drawShapes;
+    drawSettings.mDrawShapeWireframe = options.drawShapeWireframe;
+    drawSettings.mDrawBoundingBox = options.drawBoundingBox;
+    drawSettings.mDrawCenterOfMassTransform = options.drawCenterOfMassTransform;
+    drawSettings.mDrawWorldTransform = options.drawWorldTransform;
+    drawSettings.mDrawVelocity = options.drawVelocity;
+    drawSettings.mDrawMassAndInertia = options.drawMassAndInertia;
+    drawSettings.mDrawSleepStats = options.drawSleepStats;
 
     // Create body filter to respect our options
-    OptionsBodyFilter bodyFilter(options_);
+    OptionsBodyFilter bodyFilter(options);
 
     // Draw bodies with filter
     physicsSystem.DrawBodies(drawSettings, this, &bodyFilter);
 
     // Draw constraints if enabled
-    if (options_.drawConstraints) {
+    if (options.drawConstraints) {
         physicsSystem.DrawConstraints(this);
     }
 
-    if (options_.drawConstraintLimits) {
+    if (options.drawConstraintLimits) {
         physicsSystem.DrawConstraintLimits(this);
     }
-
-    // Note: DrawConstraintReferenceFrames may not exist in all versions
 }
 
 void PhysicsDebugRenderer::clear() {

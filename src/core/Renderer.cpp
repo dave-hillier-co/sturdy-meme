@@ -306,9 +306,10 @@ void Renderer::updatePhysicsDebug(PhysicsWorld& physics, const glm::vec3& camera
     // Begin physics debug frame
     debugRenderer->beginFrame(cameraPos);
 
-    // Draw all physics bodies
+    // Draw all physics bodies using current options from subsystem
     if (physics.getPhysicsSystem()) {
-        debugRenderer->drawBodies(*physics.getPhysicsSystem());
+        auto& options = systems_->debugControlSubsystem().getPhysicsDebugOptions();
+        debugRenderer->drawBodies(*physics.getPhysicsSystem(), options);
     }
 
     // End frame (cleanup cached geometry)

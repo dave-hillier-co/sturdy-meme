@@ -253,6 +253,13 @@ def get_device(device_str: str) -> torch.device:
 def load_motion_dataset(args: argparse.Namespace) -> MotionDataset:
     """Load the motion dataset from the specified path.
 
+    Supports directories of .npy files, directories of .fbx files (converted
+    on-the-fly), YAML manifests with .npy or .fbx entries, or single FBX files.
+
+    When the C++ jolt_training module is available and --motions-fbx is used,
+    FBX observations come from C++ (faster, no ufbx dependency). Otherwise
+    FBX files are parsed in Python via ufbx.
+
     Args:
         args: Parsed command-line arguments.
 
@@ -266,10 +273,22 @@ def load_motion_dataset(args: argparse.Namespace) -> MotionDataset:
     motions_path = Path(args.motions)
     if motions_path.is_dir():
         logger.info("Loading motions from directory: %s", motions_path)
-        return MotionDataset(motion_dir=str(motions_path))
+        # from_directory handles both .npy and .fbx files
+        return MotionDataset.from_directory(str(motions_path))
     elif motions_path.suffix in (".yaml", ".yml"):
         logger.info("Loading motions from manifest: %s", motions_path)
-        return MotionDataset(manifest_path=str(motions_path))
+        return MotionDataset.from_manifest(str(motions_path))
+    elif motions_path.suffix.lower() == ".fbx":
+        logger.info("Loading single FBX file: %s", motions_path)
+        dataset = MotionDataset()
+        from motion_dataset import MotionClip
+        clip = MotionClip.from_fbx(motions_path)
+        if clip is not None:
+            dataset.add_clip(clip)
+        else:
+            logger.error("Failed to load FBX file: %s", motions_path)
+            sys.exit(1)
+        return dataset
     else:
         logger.error("Unrecognized motion path format: %s", motions_path)
         sys.exit(1)
@@ -514,13 +533,24 @@ def train(args: argparse.Namespace) -> None:
         motion_dataset.obs_dim,
     )
 
-    # Create vectorized environment
-    # When --motions-fbx is provided, FBX animations are loaded directly via
-    # the C++ FBXLoader inside VecEnv (no Python FBX parsing needed).
+    # Create vectorized environment.
+    # --motions-fbx loads FBX directly in C++ for both episode resets and
+    # discriminator training (precomputed AMP observations). If --motions-fbx
+    # is not given but --motions points to an FBX directory, use that for the
+    # C++ path as well.
+    motions_fbx_dir = args.motions_fbx
+    if motions_fbx_dir is None and args.motions:
+        motions_path = Path(args.motions)
+        if motions_path.is_dir():
+            # Check if it contains FBX files
+            has_fbx = any(motions_path.glob("**/*.fbx"))
+            if has_fbx:
+                motions_fbx_dir = str(motions_path)
+
     env = VecEnvWrapper(
         num_envs=args.num_envs,
         skeleton_path=args.skeleton,
-        motions_dir=args.motions_fbx,
+        motions_dir=motions_fbx_dir,
         obs_dim=DEFAULT_OBS_DIM,
         action_dim=DEFAULT_ACTION_DIM,
     )
@@ -554,6 +584,7 @@ def train(args: argparse.Namespace) -> None:
         lr=args.disc_lr,
         grad_penalty_weight=args.grad_penalty_weight,
         device=device,
+        vec_env=env,
     )
 
     # Create rollout buffer

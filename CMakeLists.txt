@@ -316,6 +316,7 @@ set(SOURCES
     # Training
     src/training/CharacterEnv.cpp
     src/training/MotionLibrary.cpp
+    src/training/MotionObservationComputer.cpp
     src/training/RewardComputer.cpp
     src/training/VecEnv.cpp
 )

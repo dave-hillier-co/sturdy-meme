@@ -39,12 +39,20 @@ class AMPTrainer:
     This encourages the policy to produce observations that the discriminator
     scores close to 1 (the real target).
 
+    Supports two observation sources:
+      1. Python MotionDataset (from .npy or .fbx files via ufbx)
+      2. C++ VecEnv with precomputed FBX observations (via jolt_training)
+
+    When vec_env is provided and has precomputed motion observations,
+    reference samples come from C++ (faster, no Python FBX parsing needed).
+
     Args:
         discriminator: AMPDiscriminator network.
         motion_dataset: MotionDataset providing reference motion observations.
         lr: Learning rate for the discriminator optimizer.
         grad_penalty_weight: Weight of the gradient penalty term (lambda in WGAN-GP).
         device: Torch device for computation.
+        vec_env: Optional VecEnvWrapper with C++ motion observation support.
     """
 
     def __init__(
@@ -54,11 +62,24 @@ class AMPTrainer:
         lr: float = 1e-4,
         grad_penalty_weight: float = 10.0,
         device: torch.device = torch.device("cpu"),
+        vec_env=None,
     ):
         self.discriminator = discriminator
         self.motion_dataset = motion_dataset
         self.grad_penalty_weight = grad_penalty_weight
         self.device = device
+        self.vec_env = vec_env
+
+        # Check if C++ env can provide motion observations directly from FBX
+        self._use_cpp_obs = False
+        if vec_env is not None:
+            try:
+                if (hasattr(vec_env, 'using_cpp') and vec_env.using_cpp
+                        and hasattr(vec_env._env, 'has_motion_observations')
+                        and vec_env._env.has_motion_observations):
+                    self._use_cpp_obs = True
+            except Exception:
+                pass
 
         self.optimizer = torch.optim.Adam(discriminator.parameters(), lr=lr)
 
@@ -165,7 +186,12 @@ class AMPTrainer:
         # Get reference observations
         if reference_obs is None:
             ref_batch_size = reference_batch_size or batch_size
-            ref_np = self.motion_dataset.sample_amp_obs(ref_batch_size)
+            if self._use_cpp_obs:
+                # Sample directly from C++ precomputed FBX observations
+                ref_np = self.vec_env._env.sample_motion_observations(ref_batch_size)
+            else:
+                # Fall back to Python MotionDataset
+                ref_np = self.motion_dataset.sample_amp_obs(ref_batch_size)
             reference_obs = torch.from_numpy(ref_np).to(self.device)
 
         # Ensure same batch size for gradient penalty

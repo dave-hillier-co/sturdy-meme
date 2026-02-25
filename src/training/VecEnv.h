@@ -77,14 +77,30 @@ public:
     // --- Motion Library ---
 
     // Load FBX animations from a directory for episode resets.
+    // Automatically precomputes AMP observations for discriminator training.
     int loadMotions(const std::string& directory);
 
     // Load a single FBX animation file.
+    // Automatically precomputes AMP observations for discriminator training.
     int loadMotionFile(const std::string& path);
 
     // Reset done environments using random frames from the motion library.
     // Falls back to default standing pose if no motions are loaded.
     void resetDoneWithMotions();
+
+    // Sample a batch of random AMP observations from precomputed motion data.
+    // outBuffer must have space for (batchSize * motionObsDim()) floats.
+    // Returns false if no observations are available.
+    bool sampleMotionObservations(int batchSize, float* outBuffer);
+
+    // Whether motion observations are available for sampling.
+    bool hasMotionObservations() const { return motionLibrary_.hasObservations(); }
+
+    // Observation dimension of precomputed motion data.
+    int motionObsDim() const { return motionLibrary_.observationDim(); }
+
+    // Total number of precomputed motion observation frames.
+    int totalMotionFrames() const { return motionLibrary_.totalObsFrames(); }
 
     // Access the motion library directly.
     const MotionLibrary& motionLibrary() const { return motionLibrary_; }

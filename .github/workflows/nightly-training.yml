@@ -2,8 +2,8 @@ name: Nightly Training
 
 on:
   schedule:
-    # Run at 2 AM UTC every night
-    - cron: '0 2 * * *'
+    # Run at midnight UTC every night
+    - cron: '0 0 * * *'
   workflow_dispatch:
     inputs:
       skip_calm:
@@ -16,9 +16,68 @@ on:
         required: false
         default: 'false'
         type: boolean
+      force:
+        description: 'Run even if no relevant changes detected'
+        required: false
+        default: 'false'
+        type: boolean
 
 jobs:
+  check-changes:
+    runs-on: self-hosted
+    outputs:
+      calm_changed: ${{ steps.diff.outputs.calm_changed }}
+      unicon_changed: ${{ steps.diff.outputs.unicon_changed }}
+      any_changed: ${{ steps.diff.outputs.any_changed }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check for relevant changes in the last 24 hours
+        id: diff
+        run: |
+          SINCE=$(git log -1 --before='24 hours ago' --format='%H' 2>/dev/null || echo '')
+
+          if [ -z "$SINCE" ]; then
+            echo "No commit older than 24h found — treating as first run"
+            echo "calm_changed=true" >> "$GITHUB_OUTPUT"
+            echo "unicon_changed=true" >> "$GITHUB_OUTPUT"
+            echo "any_changed=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          CALM_PATHS='tools/calm_training tools/ml data/calm training'
+          UNICON_PATHS='tools/unicon_training tools/ml assets/motions'
+
+          calm_changed=false
+          unicon_changed=false
+
+          if git diff --name-only "$SINCE"..HEAD -- $CALM_PATHS | grep -q .; then
+            calm_changed=true
+          fi
+
+          if git diff --name-only "$SINCE"..HEAD -- $UNICON_PATHS | grep -q .; then
+            unicon_changed=true
+          fi
+
+          any_changed=false
+          if [ "$calm_changed" = "true" ] || [ "$unicon_changed" = "true" ]; then
+            any_changed=true
+          fi
+
+          echo "calm_changed=$calm_changed" >> "$GITHUB_OUTPUT"
+          echo "unicon_changed=$unicon_changed" >> "$GITHUB_OUTPUT"
+          echo "any_changed=$any_changed" >> "$GITHUB_OUTPUT"
+
+          echo "CALM changed: $calm_changed"
+          echo "UniCon changed: $unicon_changed"
+
   train:
+    needs: check-changes
+    if: >-
+      needs.check-changes.outputs.any_changed == 'true'
+      || (github.event_name == 'workflow_dispatch' && inputs.force == 'true')
     runs-on: self-hosted
     timeout-minutes: 720  # 12 hour safety limit
 
@@ -33,19 +92,29 @@ jobs:
           pip install torch numpy mujoco
 
       - name: Train CALM
-        if: ${{ github.event_name == 'schedule' || inputs.skip_calm != 'true' }}
+        if: >-
+          (needs.check-changes.outputs.calm_changed == 'true'
+          || (github.event_name == 'workflow_dispatch' && inputs.force == 'true'))
+          && (github.event_name == 'schedule' || inputs.skip_calm != 'true')
         run: |
           source .venv/bin/activate
           ./scripts/train-calm-nightly.sh
 
       - name: Train UniCon
-        if: ${{ github.event_name == 'schedule' || inputs.skip_unicon != 'true' }}
+        if: >-
+          (needs.check-changes.outputs.unicon_changed == 'true'
+          || (github.event_name == 'workflow_dispatch' && inputs.force == 'true'))
+          && (github.event_name == 'schedule' || inputs.skip_unicon != 'true')
         run: |
           source .venv/bin/activate
           ./scripts/train-unicon-nightly.sh
 
       - name: Upload CALM checkpoints
-        if: ${{ always() && (github.event_name == 'schedule' || inputs.skip_calm != 'true') }}
+        if: >-
+          always()
+          && (needs.check-changes.outputs.calm_changed == 'true'
+          || (github.event_name == 'workflow_dispatch' && inputs.force == 'true'))
+          && (github.event_name == 'schedule' || inputs.skip_calm != 'true')
         uses: actions/upload-artifact@v4
         with:
           name: calm-checkpoints-${{ github.run_number }}
@@ -53,9 +122,23 @@ jobs:
           retention-days: 30
 
       - name: Upload UniCon checkpoints
-        if: ${{ always() && (github.event_name == 'schedule' || inputs.skip_unicon != 'true') }}
+        if: >-
+          always()
+          && (needs.check-changes.outputs.unicon_changed == 'true'
+          || (github.event_name == 'workflow_dispatch' && inputs.force == 'true'))
+          && (github.event_name == 'schedule' || inputs.skip_unicon != 'true')
         uses: actions/upload-artifact@v4
         with:
           name: unicon-checkpoints-${{ github.run_number }}
           path: generated/unicon/
           retention-days: 30
+
+  skip-notification:
+    needs: check-changes
+    if: >-
+      needs.check-changes.outputs.any_changed == 'false'
+      && (github.event_name == 'schedule' || inputs.force != 'true')
+    runs-on: self-hosted
+    steps:
+      - name: No training needed
+        run: echo "No relevant changes in the last 24 hours — skipping training."

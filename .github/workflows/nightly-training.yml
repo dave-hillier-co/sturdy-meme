@@ -1,0 +1,61 @@
+name: Nightly Training
+
+on:
+  schedule:
+    # Run at 2 AM UTC every night
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+    inputs:
+      skip_calm:
+        description: 'Skip CALM training'
+        required: false
+        default: 'false'
+        type: boolean
+      skip_unicon:
+        description: 'Skip UniCon training'
+        required: false
+        default: 'false'
+        type: boolean
+
+jobs:
+  train:
+    runs-on: self-hosted
+    timeout-minutes: 720  # 12 hour safety limit
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python environment
+        run: |
+          python3 -m venv .venv
+          source .venv/bin/activate
+          pip install --upgrade pip
+          pip install torch numpy mujoco
+
+      - name: Train CALM
+        if: ${{ github.event_name == 'schedule' || inputs.skip_calm != 'true' }}
+        run: |
+          source .venv/bin/activate
+          ./scripts/train-calm-nightly.sh
+
+      - name: Train UniCon
+        if: ${{ github.event_name == 'schedule' || inputs.skip_unicon != 'true' }}
+        run: |
+          source .venv/bin/activate
+          ./scripts/train-unicon-nightly.sh
+
+      - name: Upload CALM checkpoints
+        if: ${{ always() && (github.event_name == 'schedule' || inputs.skip_calm != 'true') }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: calm-checkpoints-${{ github.run_number }}
+          path: checkpoints/calm/
+          retention-days: 30
+
+      - name: Upload UniCon checkpoints
+        if: ${{ always() && (github.event_name == 'schedule' || inputs.skip_unicon != 'true') }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: unicon-checkpoints-${{ github.run_number }}
+          path: generated/unicon/
+          retention-days: 30

@@ -34,18 +34,13 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Check for relevant changes in the last 24 hours
+      - name: Check for relevant changes since last successful training
         id: diff
         run: |
-          SINCE=$(git log -1 --before='24 hours ago' --format='%H' 2>/dev/null || echo '')
-
-          if [ -z "$SINCE" ]; then
-            echo "No commit older than 24h found — treating as first run"
-            echo "calm_changed=true" >> "$GITHUB_OUTPUT"
-            echo "unicon_changed=true" >> "$GITHUB_OUTPUT"
-            echo "any_changed=true" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
+          STAMP_DIR="${HOME}/.nightly_training_stamps"
+          mkdir -p "$STAMP_DIR"
+          CALM_STAMP="$STAMP_DIR/calm_last_commit"
+          UNICON_STAMP="$STAMP_DIR/unicon_last_commit"
 
           CALM_PATHS='tools/calm_training tools/ml data/calm training'
           UNICON_PATHS='tools/unicon_training tools/ml assets/motions'
@@ -53,11 +48,38 @@ jobs:
           calm_changed=false
           unicon_changed=false
 
-          if git diff --name-only "$SINCE"..HEAD -- $CALM_PATHS | grep -q .; then
+          # Check for input changes since last successful training.
+          # No stamp file means training has never succeeded — must run at least once.
+          # Stamp file records the commit of last successful training so we diff from there.
+          if [ -f "$CALM_STAMP" ]; then
+            CALM_SINCE=$(cat "$CALM_STAMP")
+            if git rev-parse --verify "$CALM_SINCE" >/dev/null 2>&1; then
+              if git diff --name-only "$CALM_SINCE"..HEAD -- $CALM_PATHS | grep -q .; then
+                echo "CALM inputs changed since last successful training ($CALM_SINCE)"
+                calm_changed=true
+              fi
+            else
+              echo "CALM stamp commit $CALM_SINCE not found — treating as changed"
+              calm_changed=true
+            fi
+          else
+            echo "No CALM training stamp found — need initial training"
             calm_changed=true
           fi
 
-          if git diff --name-only "$SINCE"..HEAD -- $UNICON_PATHS | grep -q .; then
+          if [ -f "$UNICON_STAMP" ]; then
+            UNICON_SINCE=$(cat "$UNICON_STAMP")
+            if git rev-parse --verify "$UNICON_SINCE" >/dev/null 2>&1; then
+              if git diff --name-only "$UNICON_SINCE"..HEAD -- $UNICON_PATHS | grep -q .; then
+                echo "UniCon inputs changed since last successful training ($UNICON_SINCE)"
+                unicon_changed=true
+              fi
+            else
+              echo "UniCon stamp commit $UNICON_SINCE not found — treating as changed"
+              unicon_changed=true
+            fi
+          else
+            echo "No UniCon training stamp found — need initial training"
             unicon_changed=true
           fi
 
@@ -100,6 +122,16 @@ jobs:
           source .venv/bin/activate
           ./scripts/train-calm-nightly.sh
 
+      - name: Record CALM training stamp
+        if: >-
+          success()
+          && (needs.check-changes.outputs.calm_changed == 'true'
+          || (github.event_name == 'workflow_dispatch' && inputs.force == 'true'))
+          && (github.event_name == 'schedule' || inputs.skip_calm != 'true')
+        run: |
+          mkdir -p "${HOME}/.nightly_training_stamps"
+          git rev-parse HEAD > "${HOME}/.nightly_training_stamps/calm_last_commit"
+
       - name: Train UniCon
         if: >-
           (needs.check-changes.outputs.unicon_changed == 'true'
@@ -108,6 +140,16 @@ jobs:
         run: |
           source .venv/bin/activate
           ./scripts/train-unicon-nightly.sh
+
+      - name: Record UniCon training stamp
+        if: >-
+          success()
+          && (needs.check-changes.outputs.unicon_changed == 'true'
+          || (github.event_name == 'workflow_dispatch' && inputs.force == 'true'))
+          && (github.event_name == 'schedule' || inputs.skip_unicon != 'true')
+        run: |
+          mkdir -p "${HOME}/.nightly_training_stamps"
+          git rev-parse HEAD > "${HOME}/.nightly_training_stamps/unicon_last_commit"
 
       - name: Upload CALM checkpoints
         if: >-
@@ -141,4 +183,4 @@ jobs:
     runs-on: self-hosted
     steps:
       - name: No training needed
-        run: echo "No relevant changes in the last 24 hours — skipping training."
+        run: echo "No changes since last successful training and all artifacts present — skipping training."

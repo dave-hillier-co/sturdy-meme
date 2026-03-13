@@ -3,6 +3,7 @@
 #define GLM_ENABLE_EXPERIMENTAL
 #endif
 #include <glm/gtx/norm.hpp>
+#include <glm/gtx/quaternion.hpp>
 #include <cmath>
 
 namespace IKUtils {
@@ -68,27 +69,9 @@ glm::quat aimAt(
     glm::vec3 from = glm::normalize(currentDir);
     glm::vec3 to = glm::normalize(targetDir);
 
-    float dot = glm::dot(from, to);
-
-    // Already aligned
-    if (dot > 0.9999f) {
-        return glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
-    }
-
-    // Opposite directions
-    if (dot < -0.9999f) {
-        // Find orthogonal axis
-        glm::vec3 axis = glm::cross(glm::vec3(1, 0, 0), from);
-        if (glm::length2(axis) < 0.0001f) {
-            axis = glm::cross(glm::vec3(0, 1, 0), from);
-        }
-        axis = glm::normalize(axis);
-        return glm::angleAxis(glm::pi<float>(), axis);
-    }
-
-    glm::vec3 axis = glm::cross(from, to);
-    float angle = std::acos(glm::clamp(dot, -1.0f, 1.0f));
-    return glm::angleAxis(angle, glm::normalize(axis));
+    // glm::rotation computes the shortest-arc quaternion between two unit vectors,
+    // handling aligned and anti-parallel cases internally — no explicit trig needed.
+    return glm::rotation(from, to);
 }
 
 } // namespace IKUtils

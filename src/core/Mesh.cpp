@@ -4,14 +4,11 @@
 #include <vulkan/vulkan.hpp>
 #include <cstring>
 #include <stdexcept>
+#include <glm/gtc/constants.hpp>
 #include <cmath>
 #include <map>
 #include <unordered_map>
 #include <functional>
-
-#ifndef M_PI
-#define M_PI 3.14159265358979323846
-#endif
 
 namespace {
     // Simple hash-based 3D noise for procedural rock generation
@@ -169,7 +166,7 @@ void Mesh::createDisc(float radius, int segments, float uvScale) {
 
     // Edge vertices
     for (int i = 0; i <= segments; ++i) {
-        float angle = (float)i / (float)segments * 2.0f * (float)M_PI;
+        float angle = (float)i / (float)segments * 2.0f * glm::pi<float>();
         float x = radius * std::cos(angle);
         float z = radius * std::sin(angle);
 
@@ -195,12 +192,12 @@ void Mesh::createSphere(float radius, int stacks, int slices) {
 
     // Generate vertices
     for (int i = 0; i <= stacks; ++i) {
-        float phi = (float)M_PI * (float)i / (float)stacks;
+        float phi = glm::pi<float>() * (float)i / (float)stacks;
         float y = radius * std::cos(phi);
         float ringRadius = radius * std::sin(phi);
 
         for (int j = 0; j <= slices; ++j) {
-            float theta = 2.0f * (float)M_PI * (float)j / (float)slices;
+            float theta = 2.0f * glm::pi<float>() * (float)j / (float)slices;
             float x = ringRadius * std::cos(theta);
             float z = ringRadius * std::sin(theta);
 
@@ -251,12 +248,12 @@ void Mesh::createCapsule(float radius, float height, int stacks, int slices) {
 
     // Generate top hemisphere (from top pole down to equator)
     for (int i = 0; i <= halfStacks; ++i) {
-        float phi = (float)M_PI * 0.5f * (1.0f - (float)i / (float)halfStacks);  // PI/2 to 0
+        float phi = glm::pi<float>() * 0.5f * (1.0f - (float)i / (float)halfStacks);  // PI/2 to 0
         float y = radius * std::sin(phi) + cylinderHeight * 0.5f;
         float ringRadius = radius * std::cos(phi);
 
         for (int j = 0; j <= slices; ++j) {
-            float theta = 2.0f * (float)M_PI * (float)j / (float)slices;
+            float theta = 2.0f * glm::pi<float>() * (float)j / (float)slices;
             float x = ringRadius * std::cos(theta);
             float z = ringRadius * std::sin(theta);
 
@@ -280,7 +277,7 @@ void Mesh::createCapsule(float radius, float height, int stacks, int slices) {
         float y = cylinderHeight * 0.5f - t * cylinderHeight;
 
         for (int j = 0; j <= slices; ++j) {
-            float theta = 2.0f * (float)M_PI * (float)j / (float)slices;
+            float theta = 2.0f * glm::pi<float>() * (float)j / (float)slices;
             float x = radius * std::cos(theta);
             float z = radius * std::sin(theta);
 
@@ -297,12 +294,12 @@ void Mesh::createCapsule(float radius, float height, int stacks, int slices) {
 
     // Generate bottom hemisphere (from equator down to bottom pole)
     for (int i = 1; i <= halfStacks; ++i) {
-        float phi = (float)M_PI * 0.5f * (float)i / (float)halfStacks;  // 0 to PI/2
+        float phi = glm::pi<float>() * 0.5f * (float)i / (float)halfStacks;  // 0 to PI/2
         float y = -radius * std::sin(phi) - cylinderHeight * 0.5f;
         float ringRadius = radius * std::cos(phi);
 
         for (int j = 0; j <= slices; ++j) {
-            float theta = 2.0f * (float)M_PI * (float)j / (float)slices;
+            float theta = 2.0f * glm::pi<float>() * (float)j / (float)slices;
             float x = ringRadius * std::cos(theta);
             float z = ringRadius * std::sin(theta);
 
@@ -414,7 +411,7 @@ void Mesh::createCylinder(float radius, float height, int segments) {
         float y = ring == 0 ? halfHeight : -halfHeight;
 
         for (int i = 0; i <= segments; ++i) {
-            float theta = 2.0f * (float)M_PI * (float)i / (float)segments;
+            float theta = 2.0f * glm::pi<float>() * (float)i / (float)segments;
             float x = radius * std::cos(theta);
             float z = radius * std::sin(theta);
 
@@ -453,7 +450,7 @@ void Mesh::createCylinder(float radius, float height, int segments) {
     vertices.push_back({{0.0f, halfHeight, 0.0f}, {0.0f, 1.0f, 0.0f}, {0.5f, 0.5f}, {1.0f, 0.0f, 0.0f, 1.0f}});
 
     for (int i = 0; i < segments; ++i) {
-        float theta = 2.0f * (float)M_PI * (float)i / (float)segments;
+        float theta = 2.0f * glm::pi<float>() * (float)i / (float)segments;
         float x = radius * std::cos(theta);
         float z = radius * std::sin(theta);
         glm::vec2 uv((std::cos(theta) + 1.0f) * 0.5f, (std::sin(theta) + 1.0f) * 0.5f);
@@ -472,7 +469,7 @@ void Mesh::createCylinder(float radius, float height, int segments) {
     vertices.push_back({{0.0f, -halfHeight, 0.0f}, {0.0f, -1.0f, 0.0f}, {0.5f, 0.5f}, {1.0f, 0.0f, 0.0f, 1.0f}});
 
     for (int i = 0; i < segments; ++i) {
-        float theta = 2.0f * (float)M_PI * (float)i / (float)segments;
+        float theta = 2.0f * glm::pi<float>() * (float)i / (float)segments;
         float x = radius * std::cos(theta);
         float z = radius * std::sin(theta);
         glm::vec2 uv((std::cos(theta) + 1.0f) * 0.5f, (std::sin(theta) + 1.0f) * 0.5f);
@@ -685,7 +682,7 @@ void Mesh::createBranch(float radius, float length, int sections, int segments, 
         float offsetZ = (hash(section, 1) - 0.5f) * gnarliness * radius;
 
         for (int seg = 0; seg <= segments; ++seg) {
-            float theta = 2.0f * static_cast<float>(M_PI) * static_cast<float>(seg) / static_cast<float>(segments);
+            float theta = 2.0f * glm::pi<float>() * static_cast<float>(seg) / static_cast<float>(segments);
 
             // Add per-vertex gnarliness
             float vertGnarl = 1.0f + (hash(section * 100 + seg, 2) - 0.5f) * gnarliness * 0.5f;
@@ -754,8 +751,8 @@ void Mesh::createForkedBranch(float radius, float length, int sections, int segm
     // Vary fork angles slightly
     float leftAngle = forkAngle + (hash(2, 0) - 0.5f) * 0.2f;
     float rightAngle = forkAngle + (hash(3, 0) - 0.5f) * 0.2f;
-    float leftYaw = hash(4, 0) * 2.0f * static_cast<float>(M_PI);
-    float rightYaw = leftYaw + static_cast<float>(M_PI) * (0.8f + hash(5, 0) * 0.4f);  // Roughly opposite
+    float leftYaw = hash(4, 0) * 2.0f * glm::pi<float>();
+    float rightYaw = leftYaw + glm::pi<float>() * (0.8f + hash(5, 0) * 0.4f);  // Roughly opposite
 
     int vertsPerRing = segments + 1;
 
@@ -778,7 +775,7 @@ void Mesh::createForkedBranch(float radius, float length, int sections, int segm
             center += right * offsetX + forward * offsetZ;
 
             for (int seg = 0; seg <= segments; ++seg) {
-                float theta = 2.0f * static_cast<float>(M_PI) * static_cast<float>(seg) / static_cast<float>(segments);
+                float theta = 2.0f * glm::pi<float>() * static_cast<float>(seg) / static_cast<float>(segments);
 
                 float vertGnarl = 1.0f + (hash((section + baseVertexOffset) * 100 + seg, 12) - 0.5f) * gnarliness * 0.5f;
 

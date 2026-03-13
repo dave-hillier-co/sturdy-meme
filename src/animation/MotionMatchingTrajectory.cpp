@@ -1,4 +1,5 @@
 #include "MotionMatchingTrajectory.h"
+#include "core/MathUtils.h"
 #include <algorithm>
 #include <cmath>
 
@@ -67,13 +68,7 @@ void TrajectoryPredictor::update(const glm::vec3& position,
                 float sign = cross >= 0.0f ? 1.0f : -1.0f;
                 float actualAngle = sign * std::min(maxAngleChange, angleDiff);
 
-                float cosA = std::cos(actualAngle);
-                float sinA = std::sin(actualAngle);
-                smoothedDirection_ = glm::vec3(
-                    normSmoothed.x * cosA - normSmoothed.z * sinA,
-                    0.0f,
-                    normSmoothed.x * sinA + normSmoothed.z * cosA
-                );
+                smoothedDirection_ = MathUtils::rotateAroundY(normSmoothed, actualAngle);
             }
         }
     }
@@ -199,13 +194,7 @@ TrajectorySample TrajectoryPredictor::predictFuture(float timeOffset) const {
             float sign = cross >= 0.0f ? 1.0f : -1.0f;
             float actualTurn = sign * angleDiff * turnProgress;
 
-            float cosA = std::cos(actualTurn);
-            float sinA = std::sin(actualTurn);
-            predictedFacing = glm::vec3(
-                currentFacing_.x * cosA - currentFacing_.z * sinA,
-                0.0f,
-                currentFacing_.x * sinA + currentFacing_.z * cosA
-            );
+            predictedFacing = MathUtils::rotateAroundY(currentFacing_, actualTurn);
         }
     }
 
@@ -361,15 +350,9 @@ void InertialBlender::startSkeletalBlend(const SkeletonPose& currentPose,
             rotDiff = glm::quat(-rotDiff.w, -rotDiff.x, -rotDiff.y, -rotDiff.z);
         }
 
-        // Convert quaternion to axis-angle
-        float angle = 2.0f * std::acos(std::clamp(rotDiff.w, -1.0f, 1.0f));
-        glm::vec3 axis(0.0f, 1.0f, 0.0f);
-        if (std::abs(angle) > 0.001f) {
-            float sinHalfAngle = std::sin(angle * 0.5f);
-            if (std::abs(sinHalfAngle) > 0.0001f) {
-                axis = glm::vec3(rotDiff.x, rotDiff.y, rotDiff.z) / sinHalfAngle;
-            }
-        }
+        // Convert quaternion to axis-angle using GLM helpers
+        float angle = glm::angle(rotDiff);
+        glm::vec3 axis = (angle > 0.001f) ? glm::axis(rotDiff) : glm::vec3(0.0f, 1.0f, 0.0f);
         state.springRotation = axis * angle;
         state.rotationOffset = rotDiff;
 
@@ -490,11 +473,10 @@ void RootMotionExtractor::update(const glm::vec3& rootPosition,
         // Extract Y rotation from quaternion difference
         glm::quat deltaRot = rootRotation * glm::inverse(prevRootRotation_);
 
-        // Convert to axis-angle
-        float angle = 2.0f * std::acos(std::clamp(deltaRot.w, -1.0f, 1.0f));
+        // Convert to axis-angle using GLM helpers
+        float angle = glm::angle(deltaRot);
         if (std::abs(angle) > 0.001f && std::abs(deltaRot.y) > 0.001f) {
-            // Check if rotation is around Y axis
-            float yComponent = deltaRot.y / std::sin(angle * 0.5f);
+            float yComponent = glm::axis(deltaRot).y;
             deltaRotation_ = angle * yComponent * config_.rotationScale;
         } else {
             deltaRotation_ = 0.0f;

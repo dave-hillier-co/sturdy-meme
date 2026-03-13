@@ -1,10 +1,10 @@
 #pragma once
 
 #include "Transform.h"
+#include "core/MathUtils.h"
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/quaternion.hpp>
-#include <cmath>
 
 /**
  * PlayerTransform - Player-specific transform with degree-based yaw helpers
@@ -33,14 +33,7 @@ struct PlayerTransform : Transform {
     // Get yaw in degrees (extracted from quaternion)
     // Uses the proper formula that handles general quaternions (not just pure Y-rotations)
     float getYaw() const {
-        // For a general quaternion, yaw (rotation around Y) is:
-        // yaw = atan2(2*(w*y + x*z), 1 - 2*(x*x + y*y))
-        // This formula handles any quaternion orientation correctly
-        float yaw = std::atan2(
-            2.0f * (rotation.w * rotation.y + rotation.x * rotation.z),
-            1.0f - 2.0f * (rotation.x * rotation.x + rotation.y * rotation.y)
-        );
-        return glm::degrees(yaw);
+        return glm::degrees(MathUtils::extractYaw(rotation));
     }
 
     // Set yaw in degrees

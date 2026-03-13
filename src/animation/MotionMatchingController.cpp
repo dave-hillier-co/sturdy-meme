@@ -1,6 +1,7 @@
 #include "MotionMatchingController.h"
 #include "Animation.h"
 #include "GLTFLoader.h"
+#include "core/MathUtils.h"
 #include <SDL3/SDL.h>
 #include <algorithm>
 
@@ -140,10 +141,11 @@ void MotionMatchingController::performSearch() {
     if (glm::length(facing) > 0.01f) {
         facing = glm::normalize(facing);
 
-        // facing.x = sin(angle), facing.z = cos(angle) where angle is rotation around Y
-        float angle = std::atan2(facing.x, facing.z);
-        cosA = std::cos(-angle);  // Negative to rotate TO local
-        sinA = std::sin(-angle);
+        // For a unit vector on the XZ plane: facing = (sin(angle), 0, cos(angle))
+        // To rotate TO local (negative angle): cos(-a)=cos(a)=facing.z, sin(-a)=-sin(a)=-facing.x
+        // This avoids the atan2 → cos/sin round-trip entirely.
+        cosA = facing.z;
+        sinA = -facing.x;
 
         for (size_t i = 0; i < localTrajectory.sampleCount; ++i) {
             TrajectorySample& s = localTrajectory.samples[i];
@@ -301,8 +303,7 @@ void MotionMatchingController::transitionToPose(const MatchResult& match) {
                 tempSkel.joints[rootIdx].localTransform,
                 tempSkel.joints[rootIdx].preRotation);
             glm::quat q = rootPose.rotation;
-            previousRootYaw_ = std::atan2(2.0f * (q.w * q.y + q.x * q.z),
-                                           1.0f - 2.0f * (q.y * q.y + q.z * q.z));
+            previousRootYaw_ = MathUtils::extractYaw(q);
         }
     }
 
@@ -435,9 +436,7 @@ void MotionMatchingController::updatePose() {
     int32_t rootIdx = clip.clip->rootBoneIndex;
     if (rootIdx >= 0 && static_cast<size_t>(rootIdx) < currentPose_.size()) {
         glm::quat q = currentPose_[rootIdx].rotation;
-        // Extract yaw angle from quaternion
-        float yaw = std::atan2(2.0f * (q.w * q.y + q.x * q.z),
-                               1.0f - 2.0f * (q.y * q.y + q.z * q.z));
+        float yaw = MathUtils::extractYaw(q);
         // Compute per-frame delta (change from previous frame's root yaw)
         float yawDelta = yaw - previousRootYaw_;
         // Normalize to [-pi, pi] to handle wrap-around

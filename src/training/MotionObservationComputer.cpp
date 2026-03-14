@@ -1,6 +1,10 @@
 #include "MotionObservationComputer.h"
 
 #include <glm/gtc/matrix_transform.hpp>
+#ifndef GLM_ENABLE_EXPERIMENTAL
+#define GLM_ENABLE_EXPERIMENTAL
+#endif
+#include <glm/gtx/quaternion.hpp>
 #include <cmath>
 #include <cassert>
 #include <algorithm>
@@ -67,15 +71,16 @@ void MotionObservationComputer::extractRootFeatures(
     }
 
     // 3) Local root velocity in heading frame (3D)
-    float headingAngle = getHeadingAngle(rootRot);
-    float cosH = std::cos(-headingAngle);
-    float sinH = std::sin(-headingAngle);
+    // Use quaternion to rotate world velocity into heading frame instead of manual sin/cos
+    glm::quat headingQuat = removeHeading(rootRot);
+    glm::quat invHeading = glm::angleAxis(-getHeadingAngle(rootRot), glm::vec3(0.0f, 1.0f, 0.0f));
 
     if (prevFrame && dt > 0.0f) {
         glm::vec3 worldVel = (rootPos - prevFrame->rootPosition) / dt;
-        obs.push_back(cosH * worldVel.x + sinH * worldVel.z);
-        obs.push_back(worldVel.y);
-        obs.push_back(-sinH * worldVel.x + cosH * worldVel.z);
+        glm::vec3 localVel = invHeading * worldVel;
+        obs.push_back(localVel.x);
+        obs.push_back(localVel.y);
+        obs.push_back(localVel.z);
     } else {
         obs.push_back(0.0f);
         obs.push_back(0.0f);
@@ -85,16 +90,15 @@ void MotionObservationComputer::extractRootFeatures(
     // 4) Local root angular velocity in heading frame (3D)
     if (prevFrame && dt > 0.0f) {
         glm::quat deltaRot = rootRot * glm::inverse(prevFrame->rootRotation);
-        float angle = 2.0f * std::acos(std::clamp(deltaRot.w, -1.0f, 1.0f));
-        glm::vec3 axis(0.0f, 1.0f, 0.0f);
-        float sinHalfAngle = std::sqrt(1.0f - deltaRot.w * deltaRot.w);
-        if (sinHalfAngle > 1e-6f) {
-            axis = glm::vec3(deltaRot.x, deltaRot.y, deltaRot.z) / sinHalfAngle;
-        }
+        // Ensure shortest path
+        if (deltaRot.w < 0.0f) deltaRot = -deltaRot;
+        float angle = glm::angle(deltaRot);
+        glm::vec3 axis = (angle > 1e-6f) ? glm::axis(deltaRot) : glm::vec3(0.0f, 1.0f, 0.0f);
         glm::vec3 angVel = axis * (angle / dt);
-        obs.push_back(cosH * angVel.x + sinH * angVel.z);
-        obs.push_back(angVel.y);
-        obs.push_back(-sinH * angVel.x + cosH * angVel.z);
+        glm::vec3 localAngVel = invHeading * angVel;
+        obs.push_back(localAngVel.x);
+        obs.push_back(localAngVel.y);
+        obs.push_back(localAngVel.z);
     } else {
         obs.push_back(0.0f);
         obs.push_back(0.0f);
@@ -156,19 +160,18 @@ void MotionObservationComputer::extractKeyBodyFeatures(
     std::vector<float>& obs) const {
 
     glm::vec3 rootPos = frame.rootPosition;
-    float headingAngle = getHeadingAngle(frame.rootRotation);
-    float cosH = std::cos(-headingAngle);
-    float sinH = std::sin(-headingAngle);
+    glm::quat invHeading = glm::angleAxis(-getHeadingAngle(frame.rootRotation), glm::vec3(0.0f, 1.0f, 0.0f));
 
     for (const auto& kb : config_.keyBodies) {
         if (kb.jointIndex >= 0 &&
             static_cast<size_t>(kb.jointIndex) < frame.jointPositions.size()) {
             glm::vec3 worldPos = frame.jointPositions[kb.jointIndex];
             glm::vec3 relPos = worldPos - rootPos;
+            glm::vec3 localPos = invHeading * relPos;
 
-            obs.push_back(cosH * relPos.x + sinH * relPos.z);
-            obs.push_back(relPos.y);
-            obs.push_back(-sinH * relPos.x + cosH * relPos.z);
+            obs.push_back(localPos.x);
+            obs.push_back(localPos.y);
+            obs.push_back(localPos.z);
         } else {
             obs.push_back(0.0f);
             obs.push_back(0.0f);
@@ -201,21 +204,8 @@ glm::quat MotionObservationComputer::removeHeading(const glm::quat& q) {
 }
 
 glm::vec3 MotionObservationComputer::quatToEulerXYZ(const glm::quat& q) {
-    // Convert quaternion to matrix, then extract Euler XYZ angles.
-    // Matches ObservationExtractor::matrixToEulerXYZ exactly.
-    glm::mat4 m = glm::mat4_cast(q);
-    glm::vec3 euler;
-    float sy = m[0][2];
-    if (std::abs(sy) < 0.99999f) {
-        euler.x = std::atan2(-m[1][2], m[2][2]);
-        euler.y = std::asin(sy);
-        euler.z = std::atan2(-m[0][1], m[0][0]);
-    } else {
-        euler.x = std::atan2(m[2][1], m[1][1]);
-        euler.y = (sy > 0.0f) ? 1.5707963f : -1.5707963f;
-        euler.z = 0.0f;
-    }
-    return euler;
+    // Use GLM's built-in euler angle extraction
+    return glm::eulerAngles(q);
 }
 
 } // namespace training

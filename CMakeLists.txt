@@ -1399,6 +1399,7 @@ if(BUILD_TESTS)
         tests/test_calm_controller.cpp
         tests/test_calm_hlc_fsm.cpp
         tests/test_calm_model_loader.cpp
+        tests/test_quaternion_math.cpp
         # Source files needed by tests
         src/atmosphere/CelestialCalculator.cpp
         src/animation/Animation.cpp
@@ -1408,6 +1409,9 @@ if(BUILD_TESTS)
         src/animation/MotionMatchingTrajectory.cpp
         src/animation/MotionDatabase.cpp
         src/ik/IKUtils.cpp
+        src/vegetation/TreeGenerator.cpp
+        src/vegetation/BranchGenerator.cpp
+        src/vegetation/TreeOptions.cpp
         src/terrain/ErosionDataLoader.cpp
         src/terrain/RoadNetworkLoader.cpp
         src/terrain/virtual_texture/VirtualTextureTileLoader.cpp
@@ -1443,6 +1447,7 @@ if(BUILD_TESTS)
         ${CMAKE_CURRENT_SOURCE_DIR}/src/water    # For WaterPlacementData.h
         ${CMAKE_CURRENT_SOURCE_DIR}/src/debug    # For Flamegraph.h
         ${CMAKE_CURRENT_SOURCE_DIR}/src/ml       # For MLP inference
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/vegetation  # For TreeGenerator, BranchGenerator
     )
 
     target_link_libraries(vulkan_game_tests PRIVATE

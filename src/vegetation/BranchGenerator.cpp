@@ -1,5 +1,9 @@
 #include "BranchGenerator.h"
 #include <glm/gtc/constants.hpp>
+#ifndef GLM_ENABLE_EXPERIMENTAL
+#define GLM_ENABLE_EXPERIMENTAL
+#endif
+#include <glm/gtx/quaternion.hpp>
 #include <cmath>
 #include <algorithm>
 
@@ -94,13 +98,15 @@ void BranchGenerator::processBranch(const BranchConfig& config,
         glm::vec3 up(0.0f, sectionLength, 0.0f);
         sectionOrigin += sectionOrientation * up;
 
-        // Apply gnarliness perturbation
+        // Apply gnarliness perturbation using quaternion multiplication
+        // instead of converting to euler angles and back
         float gnarliness = std::max(1.0f, 1.0f / std::sqrt(sectionRadius)) * config.gnarliness;
 
-        glm::vec3 euler = glm::eulerAngles(sectionOrientation);
-        euler.x += rng.random(gnarliness, -gnarliness);
-        euler.z += rng.random(gnarliness, -gnarliness);
-        sectionOrientation = glm::quat(euler);
+        float perturbX = rng.random(gnarliness, -gnarliness);
+        float perturbZ = rng.random(gnarliness, -gnarliness);
+        glm::quat perturbation = glm::angleAxis(perturbX, glm::vec3(1.0f, 0.0f, 0.0f))
+                               * glm::angleAxis(perturbZ, glm::vec3(0.0f, 0.0f, 1.0f));
+        sectionOrientation = sectionOrientation * perturbation;
 
         // Apply twist
         if (std::abs(config.twist) > 0.0001f) {
@@ -113,22 +119,13 @@ void BranchGenerator::processBranch(const BranchConfig& config,
             glm::vec3 forceDir = glm::normalize(config.forceDirection);
 
             glm::vec3 upVec(0.0f, 1.0f, 0.0f);
-            float dot = glm::dot(upVec, forceDir);
-            glm::quat forceQuat;
-
-            if (dot < -0.999f) {
-                forceQuat = glm::angleAxis(glm::pi<float>(), glm::vec3(1.0f, 0.0f, 0.0f));
-            } else if (dot > 0.999f) {
-                forceQuat = glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
-            } else {
-                glm::vec3 axis = glm::normalize(glm::cross(upVec, forceDir));
-                float angle = std::acos(dot);
-                forceQuat = glm::angleAxis(angle, axis);
-            }
+            // glm::rotation computes shortest-arc quaternion between unit vectors
+            glm::quat forceQuat = glm::rotation(upVec, forceDir);
 
             float maxAngle = config.forceStrength / sectionRadius;
+            // Angle between two quaternions: 2 * acos(|dot(q1, q2)|)
             float dotProduct = glm::dot(sectionOrientation, forceQuat);
-            float angleBetween = 2.0f * std::acos(glm::clamp(std::abs(dotProduct), 0.0f, 1.0f));
+            float angleBetween = glm::angle(glm::normalize(forceQuat * glm::inverse(sectionOrientation)));
 
             if (angleBetween > 0.0001f) {
                 float interpT = glm::clamp(maxAngle / angleBetween, -1.0f, 1.0f);

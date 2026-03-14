@@ -264,14 +264,17 @@ void FootPlacementIKSolver::solve(
             // Calculate rotation needed to align foot up with ground normal
             float dot = glm::dot(footCurrentUp, targetUp);
 
-            // Compute alignment rotation
+            // Compute alignment rotation using glm::rotation for shortest-arc
             glm::quat alignDelta = glm::quat(1, 0, 0, 0);
             if (dot < 0.9999f && dot > -0.9999f) {
-                glm::vec3 axis = glm::cross(footCurrentUp, targetUp);
-                if (glm::length2(axis) > 0.0001f) {
-                    float angle = std::acos(glm::clamp(dot, -1.0f, 1.0f));
-                    angle = glm::clamp(angle, -foot.maxFootAngle, foot.maxFootAngle);
-                    alignDelta = glm::angleAxis(angle, glm::normalize(axis));
+                glm::quat fullAlign = glm::rotation(footCurrentUp, targetUp);
+                // Clamp rotation angle to maxFootAngle
+                float fullAngle = glm::angle(fullAlign);
+                if (fullAngle > foot.maxFootAngle) {
+                    glm::vec3 axis = glm::axis(fullAlign);
+                    alignDelta = glm::angleAxis(foot.maxFootAngle, axis);
+                } else {
+                    alignDelta = fullAlign;
                 }
             }
 
@@ -365,15 +368,14 @@ glm::quat FootPlacementIKSolver::alignFootToGround(
         return glm::quat(1, 0, 0, 0);
     }
 
-    glm::vec3 axis = glm::cross(footUp, targetUp);
-    if (glm::length2(axis) < 0.0001f) {
-        return glm::quat(1, 0, 0, 0);
+    // Use glm::rotation for shortest-arc quaternion between unit vectors
+    glm::quat fullAlign = glm::rotation(footUp, targetUp);
+    float fullAngle = glm::angle(fullAlign);
+    if (fullAngle > maxAngle) {
+        glm::vec3 axis = glm::axis(fullAlign);
+        return glm::angleAxis(maxAngle, axis);
     }
-
-    float angle = std::acos(glm::clamp(dot, -1.0f, 1.0f));
-    angle = glm::clamp(angle, -maxAngle, maxAngle);
-
-    return glm::angleAxis(angle, glm::normalize(axis));
+    return fullAlign;
 }
 
 // Multi-point ground query: probe heel, ball, toe and fit a ground plane normal.

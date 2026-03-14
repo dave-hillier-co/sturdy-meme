@@ -26,7 +26,7 @@ namespace {
         return scale;
     }
 
-    // Extract Euler angles (approximate - assumes no gimbal lock)
+    // Extract Euler angles using quaternion conversion
     glm::vec3 extractEulerAngles(const glm::mat4& transform) {
         glm::vec3 scale = extractScale(transform);
         glm::mat3 rotMat(
@@ -35,19 +35,8 @@ namespace {
             glm::vec3(transform[2]) / scale.z
         );
 
-        glm::vec3 euler;
-        euler.y = std::asin(-rotMat[2][0]);  // Yaw
-
-        if (std::abs(std::cos(euler.y)) > 0.001f) {
-            euler.x = std::atan2(rotMat[2][1], rotMat[2][2]);  // Pitch
-            euler.z = std::atan2(rotMat[1][0], rotMat[0][0]);  // Roll
-        } else {
-            euler.x = std::atan2(-rotMat[1][2], rotMat[1][1]);
-            euler.z = 0.0f;
-        }
-
-        // Convert to degrees
-        return glm::degrees(euler);
+        glm::quat q = glm::quat_cast(rotMat);
+        return glm::degrees(glm::eulerAngles(q));
     }
 
     // Get a display name for a renderable based on its properties

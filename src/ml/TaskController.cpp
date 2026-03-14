@@ -1,4 +1,5 @@
 #include "TaskController.h"
+#include "core/MathUtils.h"
 #include <cmath>
 #include <cassert>
 
@@ -30,7 +31,7 @@ int TaskController::latentDim() const {
 // --- HeadingController ---
 
 void HeadingController::setTarget(glm::vec2 direction, float speed) {
-    float len = std::sqrt(direction.x * direction.x + direction.y * direction.y);
+    float len = glm::length(direction);
     if (len > 1e-6f) {
         targetDirection_ = direction / len;
     }
@@ -39,16 +40,13 @@ void HeadingController::setTarget(glm::vec2 direction, float speed) {
 
 void HeadingController::evaluate(float characterHeading, Tensor& outLatent) const {
     // Rotate target direction into the character's local frame
-    float cosH = std::cos(-characterHeading);
-    float sinH = std::sin(-characterHeading);
-
-    float localX = targetDirection_.x * cosH - targetDirection_.y * sinH;
-    float localZ = targetDirection_.x * sinH + targetDirection_.y * cosH;
+    glm::vec3 worldDir(targetDirection_.x, 0.0f, targetDirection_.y);
+    glm::vec3 localDir = MathUtils::rotateAroundY(worldDir, -characterHeading);
 
     // Build task observation: [local_dir_x, local_dir_z, target_speed]
     taskObs_ = Tensor(3);
-    taskObs_[0] = localX;
-    taskObs_[1] = localZ;
+    taskObs_[0] = localDir.x;
+    taskObs_[1] = localDir.z;
     taskObs_[2] = targetSpeed_;
 
     hlc_.evaluate(taskObs_, outLatent);
@@ -62,29 +60,22 @@ void LocationController::setTarget(glm::vec3 worldPosition) {
 
 void LocationController::evaluate(glm::vec3 characterPosition, float characterHeading,
                                    Tensor& outLatent) const {
-    // Compute world-space offset
+    // Compute world-space offset and rotate into character's local frame
     glm::vec3 offset = targetPosition_ - characterPosition;
-
-    // Rotate into character's local frame
-    float cosH = std::cos(-characterHeading);
-    float sinH = std::sin(-characterHeading);
-
-    float localX = offset.x * cosH - offset.z * sinH;
-    float localZ = offset.x * sinH + offset.z * cosH;
+    glm::vec3 localOffset = MathUtils::rotateAroundY(offset, -characterHeading);
 
     // Build task observation: [local_offset_x, local_offset_y, local_offset_z]
     taskObs_ = Tensor(3);
-    taskObs_[0] = localX;
-    taskObs_[1] = offset.y;
-    taskObs_[2] = localZ;
+    taskObs_[0] = localOffset.x;
+    taskObs_[1] = localOffset.y;
+    taskObs_[2] = localOffset.z;
 
     hlc_.evaluate(taskObs_, outLatent);
 }
 
 bool LocationController::hasReached(glm::vec3 characterPosition, float threshold) const {
     glm::vec3 offset = targetPosition_ - characterPosition;
-    float dist = std::sqrt(offset.x * offset.x + offset.y * offset.y + offset.z * offset.z);
-    return dist < threshold;
+    return glm::length(offset) < threshold;
 }
 
 // --- StrikeController ---
@@ -96,20 +87,16 @@ void StrikeController::setTarget(glm::vec3 targetPosition) {
 void StrikeController::evaluate(glm::vec3 characterPosition, float characterHeading,
                                  Tensor& outLatent) const {
     glm::vec3 offset = targetPosition_ - characterPosition;
-    float dist = std::sqrt(offset.x * offset.x + offset.y * offset.y + offset.z * offset.z);
+    float dist = glm::length(offset);
 
     // Rotate into character's local frame
-    float cosH = std::cos(-characterHeading);
-    float sinH = std::sin(-characterHeading);
-
-    float localX = offset.x * cosH - offset.z * sinH;
-    float localZ = offset.x * sinH + offset.z * cosH;
+    glm::vec3 localOffset = MathUtils::rotateAroundY(offset, -characterHeading);
 
     // Build task observation: [local_target_x, local_target_y, local_target_z, distance]
     taskObs_ = Tensor(4);
-    taskObs_[0] = localX;
-    taskObs_[1] = offset.y;
-    taskObs_[2] = localZ;
+    taskObs_[0] = localOffset.x;
+    taskObs_[1] = localOffset.y;
+    taskObs_[2] = localOffset.z;
     taskObs_[3] = dist;
 
     hlc_.evaluate(taskObs_, outLatent);
@@ -117,7 +104,7 @@ void StrikeController::evaluate(glm::vec3 characterPosition, float characterHead
 
 float StrikeController::distanceToTarget(glm::vec3 characterPosition) const {
     glm::vec3 offset = targetPosition_ - characterPosition;
-    return std::sqrt(offset.x * offset.x + offset.y * offset.y + offset.z * offset.z);
+    return glm::length(offset);
 }
 
 } // namespace ml

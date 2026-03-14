@@ -130,12 +130,11 @@ bool TwoBoneIKSolver::solve(
     cosAngle = glm::clamp(cosAngle, -1.0f, 1.0f);
     float midAngle = std::acos(cosAngle);  // Angle at elbow/knee
 
-    // Angle at root joint (shoulder/hip)
-    // Using law of cosines again
+    // Cosine of angle at root joint (shoulder/hip) via law of cosines
+    // No need to compute the angle itself - we use cos/sin directly
     float cosRootAngle = (upperLen * upperLen + targetDist * targetDist - lowerLen * lowerLen)
                          / (2.0f * upperLen * targetDist);
     cosRootAngle = glm::clamp(cosRootAngle, -1.0f, 1.0f);
-    float rootAngle = std::acos(cosRootAngle);
 
     // Get parent transforms for converting world rotations to local
     Joint& rootJoint = skeleton.joints[chain.rootBoneIndex];
@@ -174,11 +173,12 @@ bool TwoBoneIKSolver::solve(
     }
     bendDir = glm::normalize(bendDir);
 
-    // Calculate new mid position
-    // The mid joint lies at distance upperLen from root, at angle rootAngle from target direction
+    // Calculate new mid position using algebraic alternative
+    // cosRootAngle was already computed; sinRootAngle = sqrt(1 - cos²) (angle is in [0,π])
+    float sinRootAngle = std::sqrt(1.0f - cosRootAngle * cosRootAngle);
     glm::vec3 newMidPos = rootPos
-                          + targetDir * (upperLen * std::cos(rootAngle))
-                          + bendDir * (upperLen * std::sin(rootAngle));
+                          + targetDir * (upperLen * cosRootAngle)
+                          + bendDir * (upperLen * sinRootAngle);
 
     // Calculate rotations for root bone
     // Current bone direction (from animation)

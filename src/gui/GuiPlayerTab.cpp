@@ -9,6 +9,7 @@
 #include "GLTFLoader.h"  // For Skeleton
 
 #include <imgui.h>
+#include "core/MathUtils.h"
 #include <cmath>
 
 void GuiPlayerTab::render(IPlayerControl& playerControl, PlayerSettings& settings) {
@@ -544,19 +545,13 @@ void GuiPlayerTab::renderMotionMatchingOverlay(IPlayerControl& playerControl, co
 
         // Rotation angle: local Z+ -> world facing direction
         float matchAngle = std::atan2(charFacing.x, charFacing.z);
-        float matchCosA = std::cos(matchAngle);
-        float matchSinA = std::sin(matchAngle);
 
         prevScreen = worldToScreen(charOrigin, viewProj, width, height);
         for (size_t i = 0; i < matchedTrajectory.sampleCount; ++i) {
             const auto& sample = matchedTrajectory.samples[i];
 
-            // Transform from local space to world space (Y-axis rotation)
-            glm::vec3 localPos = sample.position;
-            glm::vec3 worldOffset;
-            worldOffset.x = localPos.x * matchCosA + localPos.z * matchSinA;
-            worldOffset.y = localPos.y;
-            worldOffset.z = -localPos.x * matchSinA + localPos.z * matchCosA;
+            // Transform from local space to world space using Y-axis rotation utility
+            glm::vec3 worldOffset = MathUtils::rotateAroundY(sample.position, matchAngle);
 
             glm::vec3 worldPos = groundPos + worldOffset;
             ImVec2 screenPos = worldToScreen(worldPos, viewProj, width, height);

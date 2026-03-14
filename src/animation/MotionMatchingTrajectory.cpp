@@ -22,16 +22,11 @@ void TrajectoryPredictor::update(const glm::vec3& position,
 
     // Compute angular velocity from facing direction change
     if (deltaTime > 0.001f && glm::length(previousFacing_) > 0.01f && glm::length(currentFacing_) > 0.01f) {
-        // Compute signed angle between previous and current facing
-        float dot = glm::clamp(glm::dot(previousFacing_, currentFacing_), -1.0f, 1.0f);
-        float angle = std::acos(dot);
-
-        // Determine sign using cross product (Y component)
-        // Positive cross = turning left (counter-clockwise), negative = turning right
+        // Compute signed angle between previous and current facing using atan2
+        // Positive = turning left (counter-clockwise), negative = turning right
         float cross = previousFacing_.x * currentFacing_.z - previousFacing_.z * currentFacing_.x;
-        if (cross < 0.0f) {
-            angle = -angle;
-        }
+        float dot = glm::dot(previousFacing_, currentFacing_);
+        float angle = std::atan2(cross, dot);
 
         currentAngularVelocity_ = angle / deltaTime;
     } else {
@@ -58,15 +53,14 @@ void TrajectoryPredictor::update(const glm::vec3& position,
         } else {
             // Spherical lerp on the horizontal plane (rotate towards target)
             glm::vec3 normSmoothed = glm::normalize(smoothedDirection_);
-            float dotProduct = glm::clamp(glm::dot(normSmoothed, targetDir), -1.0f, 1.0f);
-            float angleDiff = std::acos(dotProduct);
+            float cross = normSmoothed.x * targetDir.z - normSmoothed.z * targetDir.x;
+            float dot = glm::dot(normSmoothed, targetDir);
+            float angleDiff = std::atan2(cross, dot);
 
-            if (angleDiff > 0.001f) {
+            if (std::abs(angleDiff) > 0.001f) {
                 // Interpolate the angle, not the vector
-                float maxAngleChange = smoothFactor * angleDiff;
-                float cross = normSmoothed.x * targetDir.z - normSmoothed.z * targetDir.x;
-                float sign = cross >= 0.0f ? 1.0f : -1.0f;
-                float actualAngle = sign * std::min(maxAngleChange, angleDiff);
+                float maxAngleChange = smoothFactor * std::abs(angleDiff);
+                float actualAngle = (angleDiff > 0.0f ? 1.0f : -1.0f) * std::min(maxAngleChange, std::abs(angleDiff));
 
                 smoothedDirection_ = MathUtils::rotateAroundY(normSmoothed, actualAngle);
             }
@@ -183,16 +177,14 @@ TrajectorySample TrajectoryPredictor::predictFuture(float timeOffset) const {
         glm::vec3 targetFacing = glm::normalize(glm::vec3(smoothedInput_.x, 0.0f, smoothedInput_.z));
         float turnAngle = glm::radians(config_.turnSpeed) * timeOffset;
 
-        // Calculate angle between current and target facing
-        float dotProduct = glm::clamp(glm::dot(currentFacing_, targetFacing), -1.0f, 1.0f);
-        float angleDiff = std::acos(dotProduct);
+        // Calculate signed angle between current and target facing
+        float cross = currentFacing_.x * targetFacing.z - currentFacing_.z * targetFacing.x;
+        float dot = glm::dot(currentFacing_, targetFacing);
+        float angleDiff = std::atan2(cross, dot);
 
-        if (angleDiff > 0.01f) {
-            float turnProgress = std::min(1.0f, turnAngle / angleDiff);
-            // Use SLERP-like interpolation on ground plane
-            float cross = currentFacing_.x * targetFacing.z - currentFacing_.z * targetFacing.x;
-            float sign = cross >= 0.0f ? 1.0f : -1.0f;
-            float actualTurn = sign * angleDiff * turnProgress;
+        if (std::abs(angleDiff) > 0.01f) {
+            float turnProgress = std::min(1.0f, turnAngle / std::abs(angleDiff));
+            float actualTurn = angleDiff * turnProgress;
 
             predictedFacing = MathUtils::rotateAroundY(currentFacing_, actualTurn);
         }

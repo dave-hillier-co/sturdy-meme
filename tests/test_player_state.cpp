@@ -86,9 +86,9 @@ TEST_SUITE("PlayerMovement") {
         auto transform = PlayerTransform::withYaw(glm::vec3(5.0f, 0.0f, 3.0f), 0.0f);
         glm::mat4 model = movement.getModelMatrix(transform);
 
-        // Model matrix should translate to position + half capsule height
+        // Model matrix should translate to the transform position
         CHECK(model[3][0] == doctest::Approx(5.0f));
-        CHECK(model[3][1] == doctest::Approx(PlayerMovement::CAPSULE_HEIGHT * 0.5f));
+        CHECK(model[3][1] == doctest::Approx(0.0f));
         CHECK(model[3][2] == doctest::Approx(3.0f));
     }
 

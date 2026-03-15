@@ -4,6 +4,8 @@
 #include <vulkan/vulkan_raii.hpp>
 #include <vk_mem_alloc.h>
 #include <glm/glm.hpp>
+#include <glm/trigonometric.hpp>
+#include <cmath>
 #include <vector>
 #include <memory>
 #include <string>
@@ -128,9 +130,14 @@ public:
         bool enabled = false;                   // Disabled: causes 1-frame flickering with triple-buffering
         float positionThreshold = 5.0f;         // Camera position change threshold for full update (meters)
         float rotationThreshold = 10.0f;        // Camera rotation change threshold for full update (degrees)
+        float cosRotationThreshold = 0.98481f;   // cos(radians(10.0)) - precomputed from rotationThreshold
         float partialUpdateFraction = 0.1f;     // Fraction of trees to update per frame in partial mode
         uint32_t framesSinceFullUpdate = 0;     // Counter for forcing periodic full updates
         uint32_t maxFramesBetweenFullUpdates = 60;  // Force full update every N frames
+
+        void updateCosThreshold() {
+            cosRotationThreshold = std::cos(glm::radians(rotationThreshold));
+        }
     };
 
     /**

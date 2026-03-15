@@ -1,4 +1,5 @@
 #include "MotionMatchingTrajectory.h"
+#include <glm/gtc/quaternion.hpp>
 #include <algorithm>
 #include <cmath>
 
@@ -21,16 +22,11 @@ void TrajectoryPredictor::update(const glm::vec3& position,
 
     // Compute angular velocity from facing direction change
     if (deltaTime > 0.001f && glm::length(previousFacing_) > 0.01f && glm::length(currentFacing_) > 0.01f) {
-        // Compute signed angle between previous and current facing
-        float dot = glm::clamp(glm::dot(previousFacing_, currentFacing_), -1.0f, 1.0f);
-        float angle = std::acos(dot);
-
-        // Determine sign using cross product (Y component)
-        // Positive cross = turning left (counter-clockwise), negative = turning right
+        // Compute signed angle between previous and current facing using atan2
+        // Positive = turning left (counter-clockwise), negative = turning right
         float cross = previousFacing_.x * currentFacing_.z - previousFacing_.z * currentFacing_.x;
-        if (cross < 0.0f) {
-            angle = -angle;
-        }
+        float dot = glm::dot(previousFacing_, currentFacing_);
+        float angle = std::atan2(cross, dot);
 
         currentAngularVelocity_ = angle / deltaTime;
     } else {
@@ -57,23 +53,17 @@ void TrajectoryPredictor::update(const glm::vec3& position,
         } else {
             // Spherical lerp on the horizontal plane (rotate towards target)
             glm::vec3 normSmoothed = glm::normalize(smoothedDirection_);
-            float dotProduct = glm::clamp(glm::dot(normSmoothed, targetDir), -1.0f, 1.0f);
-            float angleDiff = std::acos(dotProduct);
+            float cross = normSmoothed.x * targetDir.z - normSmoothed.z * targetDir.x;
+            float dot = glm::dot(normSmoothed, targetDir);
+            float angleDiff = std::atan2(cross, dot);
 
-            if (angleDiff > 0.001f) {
+            if (std::abs(angleDiff) > 0.001f) {
                 // Interpolate the angle, not the vector
-                float maxAngleChange = smoothFactor * angleDiff;
-                float cross = normSmoothed.x * targetDir.z - normSmoothed.z * targetDir.x;
-                float sign = cross >= 0.0f ? 1.0f : -1.0f;
-                float actualAngle = sign * std::min(maxAngleChange, angleDiff);
+                float maxAngleChange = smoothFactor * std::abs(angleDiff);
+                float actualAngle = (angleDiff > 0.0f ? 1.0f : -1.0f) * std::min(maxAngleChange, std::abs(angleDiff));
 
-                float cosA = std::cos(actualAngle);
-                float sinA = std::sin(actualAngle);
-                smoothedDirection_ = glm::vec3(
-                    normSmoothed.x * cosA - normSmoothed.z * sinA,
-                    0.0f,
-                    normSmoothed.x * sinA + normSmoothed.z * cosA
-                );
+                glm::quat rot = glm::angleAxis(actualAngle, glm::vec3(0.0f, 1.0f, 0.0f));
+                smoothedDirection_ = rot * normSmoothed;
             }
         }
     }
@@ -188,24 +178,17 @@ TrajectorySample TrajectoryPredictor::predictFuture(float timeOffset) const {
         glm::vec3 targetFacing = glm::normalize(glm::vec3(smoothedInput_.x, 0.0f, smoothedInput_.z));
         float turnAngle = glm::radians(config_.turnSpeed) * timeOffset;
 
-        // Calculate angle between current and target facing
-        float dotProduct = glm::clamp(glm::dot(currentFacing_, targetFacing), -1.0f, 1.0f);
-        float angleDiff = std::acos(dotProduct);
+        // Calculate signed angle between current and target facing
+        float cross = currentFacing_.x * targetFacing.z - currentFacing_.z * targetFacing.x;
+        float dot = glm::dot(currentFacing_, targetFacing);
+        float angleDiff = std::atan2(cross, dot);
 
-        if (angleDiff > 0.01f) {
-            float turnProgress = std::min(1.0f, turnAngle / angleDiff);
-            // Use SLERP-like interpolation on ground plane
-            float cross = currentFacing_.x * targetFacing.z - currentFacing_.z * targetFacing.x;
-            float sign = cross >= 0.0f ? 1.0f : -1.0f;
-            float actualTurn = sign * angleDiff * turnProgress;
+        if (std::abs(angleDiff) > 0.01f) {
+            float turnProgress = std::min(1.0f, turnAngle / std::abs(angleDiff));
+            float actualTurn = angleDiff * turnProgress;
 
-            float cosA = std::cos(actualTurn);
-            float sinA = std::sin(actualTurn);
-            predictedFacing = glm::vec3(
-                currentFacing_.x * cosA - currentFacing_.z * sinA,
-                0.0f,
-                currentFacing_.x * sinA + currentFacing_.z * cosA
-            );
+            glm::quat turnQuat = glm::angleAxis(actualTurn, glm::vec3(0.0f, 1.0f, 0.0f));
+            predictedFacing = turnQuat * currentFacing_;
         }
     }
 
@@ -361,15 +344,9 @@ void InertialBlender::startSkeletalBlend(const SkeletonPose& currentPose,
             rotDiff = glm::quat(-rotDiff.w, -rotDiff.x, -rotDiff.y, -rotDiff.z);
         }
 
-        // Convert quaternion to axis-angle
-        float angle = 2.0f * std::acos(std::clamp(rotDiff.w, -1.0f, 1.0f));
-        glm::vec3 axis(0.0f, 1.0f, 0.0f);
-        if (std::abs(angle) > 0.001f) {
-            float sinHalfAngle = std::sin(angle * 0.5f);
-            if (std::abs(sinHalfAngle) > 0.0001f) {
-                axis = glm::vec3(rotDiff.x, rotDiff.y, rotDiff.z) / sinHalfAngle;
-            }
-        }
+        // Convert quaternion to axis-angle using GLM helpers
+        float angle = glm::angle(rotDiff);
+        glm::vec3 axis = (angle > 0.001f) ? glm::axis(rotDiff) : glm::vec3(0.0f, 1.0f, 0.0f);
         state.springRotation = axis * angle;
         state.rotationOffset = rotDiff;
 
@@ -490,11 +467,10 @@ void RootMotionExtractor::update(const glm::vec3& rootPosition,
         // Extract Y rotation from quaternion difference
         glm::quat deltaRot = rootRotation * glm::inverse(prevRootRotation_);
 
-        // Convert to axis-angle
-        float angle = 2.0f * std::acos(std::clamp(deltaRot.w, -1.0f, 1.0f));
+        // Convert to axis-angle using GLM helpers
+        float angle = glm::angle(deltaRot);
         if (std::abs(angle) > 0.001f && std::abs(deltaRot.y) > 0.001f) {
-            // Check if rotation is around Y axis
-            float yComponent = deltaRot.y / std::sin(angle * 0.5f);
+            float yComponent = glm::axis(deltaRot).y;
             deltaRotation_ = angle * yComponent * config_.rotationScale;
         } else {
             deltaRotation_ = 0.0f;

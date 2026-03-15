@@ -332,14 +332,10 @@ PoseFeatures FeatureExtractor::extractFromPose(const Skeleton& skeleton,
             glm::vec3 currentFacing = glm::normalize(glm::vec3(rootTransform[2].x, 0.0f, rootTransform[2].z));
             glm::vec3 prevFacing = glm::normalize(glm::vec3(prevRootTransform[2].x, 0.0f, prevRootTransform[2].z));
 
-            // Compute signed angle between facing directions
-            float dot = glm::clamp(glm::dot(prevFacing, currentFacing), -1.0f, 1.0f);
-            float angle = std::acos(dot);
-            // Determine sign using cross product (Y component)
+            // Compute signed angle between facing directions using atan2
             float cross = prevFacing.x * currentFacing.z - prevFacing.z * currentFacing.x;
-            if (cross < 0.0f) {
-                angle = -angle;
-            }
+            float dot = glm::dot(prevFacing, currentFacing);
+            float angle = std::atan2(cross, dot);
             features.rootAngularVelocity = angle / deltaTime;
         }
     }
@@ -544,17 +540,12 @@ HeadingFeature FeatureExtractor::extractHeadingFromPose(const Skeleton& skeleton
     // Store movement direction
     heading.movementDirection = movementDirection;
 
-    // Compute angle between heading and movement
+    // Compute signed angle between heading and movement using atan2
     if (glm::length(movementDirection) > 0.001f) {
         glm::vec3 normMovement = glm::normalize(movementDirection);
-        float dot = glm::clamp(glm::dot(heading.direction, normMovement), -1.0f, 1.0f);
-        heading.angleDifference = std::acos(dot);
-
-        // Determine sign using cross product (for left vs right strafe)
         float cross = heading.direction.x * normMovement.z - heading.direction.z * normMovement.x;
-        if (cross < 0.0f) {
-            heading.angleDifference = -heading.angleDifference;
-        }
+        float dot = glm::dot(heading.direction, normMovement);
+        heading.angleDifference = std::atan2(cross, dot);
     }
 
     return heading;

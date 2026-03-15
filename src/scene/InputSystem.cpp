@@ -1,5 +1,6 @@
 #include "InputSystem.h"
 #include "GuiSystem.h"
+#include <glm/gtc/quaternion.hpp>
 #include <cmath>
 
 InputSystem::InputSystem() {
@@ -189,30 +190,20 @@ void InputSystem::processFreeCameraKeyboard(float deltaTime, const bool* keyStat
 }
 
 void InputSystem::processThirdPersonKeyboard(float deltaTime, float cameraYaw, const bool* keyState) {
-    // Calculate movement direction based on camera facing
-    float moveX = 0.0f;
-    float moveZ = 0.0f;
+    // Calculate movement direction based on camera facing using quaternion rotation
+    glm::quat yawRot = glm::angleAxis(glm::radians(cameraYaw), glm::vec3(0.0f, 1.0f, 0.0f));
+    glm::vec3 forward = yawRot * glm::vec3(1.0f, 0.0f, 0.0f);
+    glm::vec3 right = yawRot * glm::vec3(0.0f, 0.0f, 1.0f);
 
-    if (keyState[SDL_SCANCODE_W]) {
-        moveX += cos(glm::radians(cameraYaw));
-        moveZ += sin(glm::radians(cameraYaw));
-    }
-    if (keyState[SDL_SCANCODE_S]) {
-        moveX -= cos(glm::radians(cameraYaw));
-        moveZ -= sin(glm::radians(cameraYaw));
-    }
-    if (keyState[SDL_SCANCODE_A]) {
-        moveX += cos(glm::radians(cameraYaw - 90.0f));
-        moveZ += sin(glm::radians(cameraYaw - 90.0f));
-    }
-    if (keyState[SDL_SCANCODE_D]) {
-        moveX += cos(glm::radians(cameraYaw + 90.0f));
-        moveZ += sin(glm::radians(cameraYaw + 90.0f));
-    }
+    glm::vec3 move(0.0f);
+    if (keyState[SDL_SCANCODE_W]) move += forward;
+    if (keyState[SDL_SCANCODE_S]) move -= forward;
+    if (keyState[SDL_SCANCODE_A]) move -= right;
+    if (keyState[SDL_SCANCODE_D]) move += right;
 
     // Accumulate movement direction
-    if (moveX != 0.0f || moveZ != 0.0f) {
-        movementDirection += glm::vec3(moveX, 0.0f, moveZ);
+    if (move.x != 0.0f || move.z != 0.0f) {
+        movementDirection += move;
     }
 
     // Space to jump (only on initial press, not while held)
@@ -327,13 +318,13 @@ void InputSystem::processThirdPersonGamepad(float deltaTime, float cameraYaw) {
     if (std::abs(leftX) < stickDeadzone) leftX = 0.0f;
     if (std::abs(leftY) < stickDeadzone) leftY = 0.0f;
 
-    // Accumulate movement direction from gamepad
+    // Accumulate movement direction from gamepad using quaternion rotation
     if (leftX != 0.0f || leftY != 0.0f) {
-        // Calculate movement direction based on camera facing
-        float moveX = -leftY * cos(glm::radians(cameraYaw)) + leftX * cos(glm::radians(cameraYaw + 90.0f));
-        float moveZ = -leftY * sin(glm::radians(cameraYaw)) + leftX * sin(glm::radians(cameraYaw + 90.0f));
+        glm::quat yawRot = glm::angleAxis(glm::radians(cameraYaw), glm::vec3(0.0f, 1.0f, 0.0f));
+        glm::vec3 forward = yawRot * glm::vec3(1.0f, 0.0f, 0.0f);
+        glm::vec3 right = yawRot * glm::vec3(0.0f, 0.0f, 1.0f);
 
-        movementDirection += glm::vec3(moveX, 0.0f, moveZ);
+        movementDirection += forward * (-leftY) + right * leftX;
     }
 
     // A button (South) to jump (only on initial press)

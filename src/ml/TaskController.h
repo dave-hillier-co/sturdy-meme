@@ -4,7 +4,6 @@
 #include "Tensor.h"
 #include <glm/glm.hpp>
 #include <glm/gtc/quaternion.hpp>
-#include <string>
 
 namespace ml {
 
@@ -55,9 +54,9 @@ public:
     // speed: target movement speed (m/s)
     void setTarget(glm::vec2 direction, float speed);
 
-    // Evaluate given the character's current heading (yaw angle in radians)
+    // Evaluate given the character's current rotation quaternion
     // Returns the latent code to feed to the LLC
-    void evaluate(float characterHeading, Tensor& outLatent) const;
+    void evaluate(const glm::quat& characterRotation, Tensor& outLatent) const;
 
     bool isLoaded() const { return hlc_.isLoaded(); }
     TaskController& hlc() { return hlc_; }
@@ -80,8 +79,8 @@ public:
     // Set the target world position
     void setTarget(glm::vec3 worldPosition);
 
-    // Evaluate given the character's current position and heading
-    void evaluate(glm::vec3 characterPosition, float characterHeading,
+    // Evaluate given the character's current position and rotation
+    void evaluate(glm::vec3 characterPosition, const glm::quat& characterRotation,
                   Tensor& outLatent) const;
 
     // Check if the character has reached the target (within threshold)
@@ -107,8 +106,8 @@ public:
     // Set the target to strike
     void setTarget(glm::vec3 targetPosition);
 
-    // Evaluate given the character's current position and heading
-    void evaluate(glm::vec3 characterPosition, float characterHeading,
+    // Evaluate given the character's current position and rotation
+    void evaluate(glm::vec3 characterPosition, const glm::quat& characterRotation,
                   Tensor& outLatent) const;
 
     // Get distance to target from a position

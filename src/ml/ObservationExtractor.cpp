@@ -3,6 +3,10 @@
 #include "CharacterController.h"
 #include "RagdollInstance.h"
 #include <glm/gtc/matrix_transform.hpp>
+#ifndef GLM_ENABLE_EXPERIMENTAL
+#define GLM_ENABLE_EXPERIMENTAL
+#endif
+#include <glm/gtx/quaternion.hpp>
 #include <cmath>
 #include <cassert>
 
@@ -104,36 +108,24 @@ void ObservationExtractor::extractRootFeatures(
     }
 
     // 3) Local root velocity in heading frame (3D)
-    float headingAngle = getHeadingAngle(rootRot);
-    float cosH = std::cos(-headingAngle);
-    float sinH = std::sin(-headingAngle);
+    // Use quaternion rotation to transform world velocity into heading frame
+    glm::quat invHeading = glm::angleAxis(-getHeadingAngle(rootRot), glm::vec3(0.0f, 1.0f, 0.0f));
 
     glm::vec3 worldVel = controller.getVelocity();
-    glm::vec3 localVel;
-    localVel.x = cosH * worldVel.x + sinH * worldVel.z;
-    localVel.y = worldVel.y;
-    localVel.z = -sinH * worldVel.x + cosH * worldVel.z;
+    glm::vec3 localVel = invHeading * worldVel;
     obs.push_back(localVel.x);
     obs.push_back(localVel.y);
     obs.push_back(localVel.z);
 
     // 4) Local root angular velocity (3D)
     if (hasPreviousFrame_ && deltaTime > 0.0f) {
-        // Approximate angular velocity from quaternion difference
         glm::quat deltaRot = rootRot * glm::inverse(prevRootRotation_);
-        // Convert to axis-angle
-        float angle = 2.0f * std::acos(std::clamp(deltaRot.w, -1.0f, 1.0f));
-        glm::vec3 axis(0.0f, 1.0f, 0.0f);
-        float sinHalfAngle = std::sqrt(1.0f - deltaRot.w * deltaRot.w);
-        if (sinHalfAngle > 1e-6f) {
-            axis = glm::vec3(deltaRot.x, deltaRot.y, deltaRot.z) / sinHalfAngle;
-        }
+        // Ensure shortest path
+        if (deltaRot.w < 0.0f) deltaRot = -deltaRot;
+        float angle = glm::angle(deltaRot);
+        glm::vec3 axis = (angle > 1e-6f) ? glm::axis(deltaRot) : glm::vec3(0.0f, 1.0f, 0.0f);
         glm::vec3 angVel = axis * (angle / deltaTime);
-        // Rotate into heading frame
-        glm::vec3 localAngVel;
-        localAngVel.x = cosH * angVel.x + sinH * angVel.z;
-        localAngVel.y = angVel.y;
-        localAngVel.z = -sinH * angVel.x + cosH * angVel.z;
+        glm::vec3 localAngVel = invHeading * angVel;
         obs.push_back(localAngVel.x);
         obs.push_back(localAngVel.y);
         obs.push_back(localAngVel.z);
@@ -203,23 +195,18 @@ void ObservationExtractor::extractKeyBodyFeatures(
         headingAngle = getHeadingAngle(rootRot);
     }
 
-    float cosH = std::cos(-headingAngle);
-    float sinH = std::sin(-headingAngle);
+    glm::quat invHeading = glm::angleAxis(-headingAngle, glm::vec3(0.0f, 1.0f, 0.0f));
 
     for (const auto& kb : config_.keyBodies) {
         if (kb.jointIndex >= 0 &&
             static_cast<size_t>(kb.jointIndex) < globalTransforms.size()) {
             glm::vec3 worldPos(globalTransforms[kb.jointIndex][3]);
             glm::vec3 relPos = worldPos - rootPos;
+            glm::vec3 localPos = invHeading * relPos;
 
-            // Rotate into heading frame
-            float localX = cosH * relPos.x + sinH * relPos.z;
-            float localY = relPos.y;
-            float localZ = -sinH * relPos.x + cosH * relPos.z;
-
-            obs.push_back(localX);
-            obs.push_back(localY);
-            obs.push_back(localZ);
+            obs.push_back(localPos.x);
+            obs.push_back(localPos.y);
+            obs.push_back(localPos.z);
         } else {
             obs.push_back(0.0f);
             obs.push_back(0.0f);
@@ -256,20 +243,9 @@ glm::quat ObservationExtractor::removeHeading(const glm::quat& q) {
 }
 
 glm::vec3 ObservationExtractor::matrixToEulerXYZ(const glm::mat4& m) {
-    // Extract Euler angles (XYZ intrinsic order) from a rotation matrix
-    glm::vec3 euler;
-    float sy = m[0][2];
-    if (std::abs(sy) < 0.99999f) {
-        euler.x = std::atan2(-m[1][2], m[2][2]);
-        euler.y = std::asin(sy);
-        euler.z = std::atan2(-m[0][1], m[0][0]);
-    } else {
-        // Gimbal lock
-        euler.x = std::atan2(m[2][1], m[1][1]);
-        euler.y = (sy > 0.0f) ? 1.5707963f : -1.5707963f;
-        euler.z = 0.0f;
-    }
-    return euler;
+    // Convert to quaternion and use GLM's built-in euler angle extraction
+    glm::quat q = glm::quat_cast(m);
+    return glm::eulerAngles(q);
 }
 
 // ---- Ragdoll-based observation extraction ----
@@ -319,16 +295,11 @@ void ObservationExtractor::extractRootFeaturesFromRagdoll(
     }
 
     // 3) Local root velocity in heading frame (3D)
-    float headingAngle = getHeadingAngle(rootRot);
-    float cosH = std::cos(-headingAngle);
-    float sinH = std::sin(-headingAngle);
+    glm::quat invHeading = glm::angleAxis(-getHeadingAngle(rootRot), glm::vec3(0.0f, 1.0f, 0.0f));
 
     // Exact velocity from physics instead of finite differences
     glm::vec3 worldVel = ragdoll.getRootLinearVelocity();
-    glm::vec3 localVel;
-    localVel.x = cosH * worldVel.x + sinH * worldVel.z;
-    localVel.y = worldVel.y;
-    localVel.z = -sinH * worldVel.x + cosH * worldVel.z;
+    glm::vec3 localVel = invHeading * worldVel;
     obs.push_back(localVel.x);
     obs.push_back(localVel.y);
     obs.push_back(localVel.z);
@@ -336,10 +307,7 @@ void ObservationExtractor::extractRootFeaturesFromRagdoll(
     // 4) Local root angular velocity (3D)
     // Exact angular velocity from physics — much more accurate than finite differences
     glm::vec3 angVel = ragdoll.getRootAngularVelocity();
-    glm::vec3 localAngVel;
-    localAngVel.x = cosH * angVel.x + sinH * angVel.z;
-    localAngVel.y = angVel.y;
-    localAngVel.z = -sinH * angVel.x + cosH * angVel.z;
+    glm::vec3 localAngVel = invHeading * angVel;
     obs.push_back(localAngVel.x);
     obs.push_back(localAngVel.y);
     obs.push_back(localAngVel.z);

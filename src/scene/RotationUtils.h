@@ -2,7 +2,10 @@
 
 #include <glm/glm.hpp>
 #include <glm/gtc/quaternion.hpp>
-#include <cmath>
+#ifndef GLM_ENABLE_EXPERIMENTAL
+#define GLM_ENABLE_EXPERIMENTAL
+#endif
+#include <glm/gtx/quaternion.hpp>
 
 namespace RotationUtils {
 
@@ -11,22 +14,9 @@ namespace RotationUtils {
 inline glm::quat rotationFromDirection(const glm::vec3& direction,
                                         const glm::vec3& defaultDir = glm::vec3(0.0f, -1.0f, 0.0f)) {
     glm::vec3 dir = glm::normalize(direction);
-    float dot = glm::dot(defaultDir, dir);
-
-    if (dot > 0.9999f) {
-        return glm::quat(1.0f, 0.0f, 0.0f, 0.0f);  // Already aligned
-    }
-    if (dot < -0.9999f) {
-        // Opposite direction - rotate 180 degrees around perpendicular axis
-        glm::vec3 axis = glm::abs(defaultDir.x) < 0.9f
-            ? glm::normalize(glm::cross(glm::vec3(1.0f, 0.0f, 0.0f), defaultDir))
-            : glm::normalize(glm::cross(glm::vec3(0.0f, 1.0f, 0.0f), defaultDir));
-        return glm::angleAxis(glm::pi<float>(), axis);
-    }
-
-    glm::vec3 axis = glm::normalize(glm::cross(defaultDir, dir));
-    float angle = std::acos(glm::clamp(dot, -1.0f, 1.0f));
-    return glm::angleAxis(angle, axis);
+    // glm::rotation computes shortest-arc quaternion between two unit vectors,
+    // handling aligned and anti-parallel cases internally.
+    return glm::rotation(defaultDir, dir);
 }
 
 // Get direction vector from a quaternion rotation (rotates defaultDir by the quaternion)

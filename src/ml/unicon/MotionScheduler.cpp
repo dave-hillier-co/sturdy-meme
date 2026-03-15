@@ -2,6 +2,10 @@
 
 #include <SDL3/SDL_log.h>
 #include <glm/gtc/quaternion.hpp>
+#ifndef GLM_ENABLE_EXPERIMENTAL
+#define GLM_ENABLE_EXPERIMENTAL
+#endif
+#include <glm/gtx/quaternion.hpp>
 #include <cmath>
 #include <algorithm>
 
@@ -161,19 +165,15 @@ void MocapScheduler::estimateVelocities(const TargetFrame& prev, const TargetFra
     // Root linear velocity: finite difference of position
     out.rootLinearVelocity = (curr.rootPosition - prev.rootPosition) * invDt;
 
-    // Root angular velocity: from quaternion difference
-    // dq = curr * inverse(prev), then angular_vel = 2 * log(dq) / dt
+    // Root angular velocity: from quaternion difference using glm::angle/axis
     glm::quat dq = curr.rootRotation * glm::inverse(prev.rootRotation);
     // Ensure shortest path
     if (dq.w < 0.0f) dq = -dq;
 
-    // Convert quaternion delta to angular velocity
-    // For small rotations: angular_vel ~= 2 * vec(dq) / dt
-    float sinHalfAngle = glm::length(glm::vec3(dq.x, dq.y, dq.z));
-    if (sinHalfAngle > 1e-6f) {
-        float halfAngle = std::atan2(sinHalfAngle, dq.w);
-        glm::vec3 axis = glm::vec3(dq.x, dq.y, dq.z) / sinHalfAngle;
-        out.rootAngularVelocity = axis * (2.0f * halfAngle * invDt);
+    float rootAngle = glm::angle(dq);
+    if (rootAngle > 1e-6f) {
+        glm::vec3 rootAxis = glm::axis(dq);
+        out.rootAngularVelocity = rootAxis * (rootAngle * invDt);
     } else {
         out.rootAngularVelocity = glm::vec3(0.0f);
     }
@@ -186,11 +186,10 @@ void MocapScheduler::estimateVelocities(const TargetFrame& prev, const TargetFra
         glm::quat jdq = curr.jointRotations[i] * glm::inverse(prev.jointRotations[i]);
         if (jdq.w < 0.0f) jdq = -jdq;
 
-        float jSin = glm::length(glm::vec3(jdq.x, jdq.y, jdq.z));
-        if (jSin > 1e-6f) {
-            float jHalf = std::atan2(jSin, jdq.w);
-            glm::vec3 jAxis = glm::vec3(jdq.x, jdq.y, jdq.z) / jSin;
-            out.jointAngularVelocities[i] = jAxis * (2.0f * jHalf * invDt);
+        float jAngle = glm::angle(jdq);
+        if (jAngle > 1e-6f) {
+            glm::vec3 jAxis = glm::axis(jdq);
+            out.jointAngularVelocities[i] = jAxis * (jAngle * invDt);
         }
     }
 }

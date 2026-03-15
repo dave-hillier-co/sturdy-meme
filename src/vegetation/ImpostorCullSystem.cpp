@@ -381,19 +381,21 @@ void ImpostorCullSystem::recordCulling(VkCommandBuffer cmd, uint32_t frameIndex,
 
         // Extract camera forward direction from view matrix (third column negated)
         glm::vec3 cameraDir = -glm::normalize(glm::vec3(viewProjMatrix[0][2], viewProjMatrix[1][2], viewProjMatrix[2][2]));
-        float rotDelta = glm::degrees(glm::acos(glm::clamp(glm::dot(cameraDir, lastCameraDir_), -1.0f, 1.0f)));
+        // Compare dot product directly against precomputed cosine threshold
+        // (avoids acos + degrees conversion each frame)
+        float dotDelta = glm::clamp(glm::dot(cameraDir, lastCameraDir_), -1.0f, 1.0f);
 
         // Increment frame counter
         temporalSettings_.framesSinceFullUpdate++;
 
         // Determine update mode
         if (posDelta > temporalSettings_.positionThreshold ||
-            rotDelta > temporalSettings_.rotationThreshold ||
+            dotDelta < temporalSettings_.cosRotationThreshold ||
             temporalSettings_.framesSinceFullUpdate >= temporalSettings_.maxFramesBetweenFullUpdates) {
             // Full update: camera moved significantly or periodic forced update
             temporalUpdateMode = 0;
             temporalSettings_.framesSinceFullUpdate = 0;
-        } else if (posDelta < 0.1f && rotDelta < 0.5f) {
+        } else if (posDelta < 0.1f && dotDelta > 0.99996f) { // cos(0.5°) ≈ 0.99996
             // Skip update: camera nearly stationary
             temporalUpdateMode = 2;
         } else {

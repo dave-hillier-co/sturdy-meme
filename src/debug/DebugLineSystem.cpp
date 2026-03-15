@@ -3,6 +3,7 @@
 #include "core/vulkan/VertexInputBuilder.h"
 #include <SDL3/SDL_log.h>
 #include <vulkan/vulkan.hpp>
+#include <glm/gtc/constants.hpp>
 #include <cstring>
 #include <algorithm>
 
@@ -341,7 +342,7 @@ void DebugLineSystem::addBox(const glm::vec3& min, const glm::vec3& max, const g
 }
 
 void DebugLineSystem::addSphere(const glm::vec3& center, float radius, const glm::vec4& color, int segments) {
-    const float step = 2.0f * 3.14159265f / static_cast<float>(segments);
+    const float step = glm::two_pi<float>() / static_cast<float>(segments);
 
     // XY circle
     for (int i = 0; i < segments; i++) {
@@ -385,7 +386,7 @@ void DebugLineSystem::addCapsule(const glm::vec3& start, const glm::vec3& end, f
         glm::normalize(glm::cross(axis, glm::vec3(1, 0, 0)));
     glm::vec3 perp2 = glm::cross(axis, perp1);
 
-    const float step = 2.0f * 3.14159265f / static_cast<float>(segments);
+    const float step = glm::two_pi<float>() / static_cast<float>(segments);
 
     // Cylinder lines
     for (int i = 0; i < segments; i++) {
@@ -439,7 +440,7 @@ void DebugLineSystem::addCone(const glm::vec3& base, const glm::vec3& tip, float
         glm::normalize(glm::cross(axis, glm::vec3(1, 0, 0)));
     glm::vec3 perp2 = glm::cross(axis, perp1);
 
-    const float step = 2.0f * 3.14159265f / static_cast<float>(segments);
+    const float step = glm::two_pi<float>() / static_cast<float>(segments);
 
     // Draw base circle and lines to tip
     for (int i = 0; i < segments; i++) {

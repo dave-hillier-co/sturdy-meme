@@ -56,8 +56,9 @@ UBOBuilder::LightingParams UBOBuilder::calculateLightingParams(float timeOfDay) 
     if (systems_.timeSystem->isMoonPhaseOverrideEnabled()) {
         params.moonPhase = systems_.timeSystem->getMoonPhase();
         // Recalculate illumination based on manual phase
-        float phaseAngle = params.moonPhase * 2.0f * glm::pi<float>();
-        float illumination = (1.0f - std::cos(phaseAngle)) * 0.5f;
+        // Uses identity: (1 - cos(2πp)) / 2 = sin²(πp)
+        float sinPhase = std::sin(params.moonPhase * glm::pi<float>());
+        float illumination = sinPhase * sinPhase;
         // Adjust moon color based on manual phase illumination
         params.moonColor = systems_.celestialCalculator->getMoonColor(moonPos.altitude, illumination);
     } else {

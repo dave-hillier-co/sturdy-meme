@@ -171,7 +171,7 @@ TEST_SUITE("HeadingController") {
         heading.setTarget(glm::vec2(1.0f, 0.0f), 3.0f);
 
         ml::Tensor latent;
-        heading.evaluate(0.0f, latent);  // facing forward
+        heading.evaluate(glm::quat(1, 0, 0, 0), latent);  // facing forward (identity)
 
         CHECK(static_cast<int>(latent.size()) == 64);
         CHECK(latent.l2Norm() == doctest::Approx(1.0f).epsilon(1e-4));
@@ -183,8 +183,8 @@ TEST_SUITE("HeadingController") {
         heading.setTarget(glm::vec2(1.0f, 0.0f), 5.0f);
 
         ml::Tensor lat0, lat90;
-        heading.evaluate(0.0f, lat0);
-        heading.evaluate(1.5708f, lat90);  // 90 degrees
+        heading.evaluate(glm::quat(1, 0, 0, 0), lat0);  // identity
+        heading.evaluate(glm::angleAxis(1.5708f, glm::vec3(0, 1, 0)), lat90);  // 90 degrees around Y
 
         bool differ = false;
         for (size_t i = 0; i < lat0.size(); ++i) {
@@ -209,7 +209,7 @@ TEST_SUITE("LocationController") {
         loc.setTarget(glm::vec3(10.0f, 0.0f, 10.0f));
 
         ml::Tensor latent;
-        loc.evaluate(glm::vec3(0.0f), 0.0f, latent);
+        loc.evaluate(glm::vec3(0.0f), glm::quat(1, 0, 0, 0), latent);
 
         CHECK(static_cast<int>(latent.size()) == 64);
         CHECK(latent.l2Norm() == doctest::Approx(1.0f).epsilon(1e-4));
@@ -238,7 +238,7 @@ TEST_SUITE("StrikeController") {
         strike.setTarget(glm::vec3(2.0f, 0.0f, 0.0f));
 
         ml::Tensor latent;
-        strike.evaluate(glm::vec3(0.0f), 0.0f, latent);
+        strike.evaluate(glm::vec3(0.0f), glm::quat(1, 0, 0, 0), latent);
 
         CHECK(static_cast<int>(latent.size()) == 64);
     }

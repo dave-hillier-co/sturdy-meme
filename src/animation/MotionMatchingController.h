@@ -3,6 +3,7 @@
 #include "MotionDatabase.h"
 #include "MotionMatchingTrajectory.h"
 #include "AnimationBlend.h"
+#include <glm/gtc/quaternion.hpp>
 #include <memory>
 #include <functional>
 
@@ -198,7 +199,7 @@ private:
 
     // Root yaw extraction — per-frame delta, not absolute
     float extractedRootYawDelta_ = 0.0f;
-    float previousRootYaw_ = 0.0f;
+    glm::quat previousRootYawQuat_{1.0f, 0.0f, 0.0f, 0.0f};
 
     // Per-bone velocity tracking for inertial blending
     SkeletonPose prevPrevPose_;          // Pose from two frames ago

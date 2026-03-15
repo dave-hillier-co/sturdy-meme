@@ -1,7 +1,6 @@
 #include "MotionMatchingController.h"
 #include "Animation.h"
 #include "GLTFLoader.h"
-#include "core/MathUtils.h"
 #include <SDL3/SDL.h>
 #include <algorithm>
 
@@ -303,7 +302,9 @@ void MotionMatchingController::transitionToPose(const MatchResult& match) {
                 tempSkel.joints[rootIdx].localTransform,
                 tempSkel.joints[rootIdx].preRotation);
             glm::quat q = rootPose.rotation;
-            previousRootYaw_ = MathUtils::extractYaw(q);
+            // Extract Y-rotation via swing-twist decomposition around Y axis
+            glm::quat yQuat = glm::normalize(glm::quat(q.w, 0.0f, q.y, 0.0f));
+            previousRootYawQuat_ = yQuat;
         }
     }
 
@@ -436,17 +437,17 @@ void MotionMatchingController::updatePose() {
     int32_t rootIdx = clip.clip->rootBoneIndex;
     if (rootIdx >= 0 && static_cast<size_t>(rootIdx) < currentPose_.size()) {
         glm::quat q = currentPose_[rootIdx].rotation;
-        float yaw = MathUtils::extractYaw(q);
-        // Compute per-frame delta (change from previous frame's root yaw)
-        float yawDelta = yaw - previousRootYaw_;
-        // Normalize to [-pi, pi] to handle wrap-around
-        while (yawDelta > glm::pi<float>()) yawDelta -= glm::two_pi<float>();
-        while (yawDelta < -glm::pi<float>()) yawDelta += glm::two_pi<float>();
-        extractedRootYawDelta_ = yawDelta;
-        previousRootYaw_ = yaw;
+        // Extract Y-rotation via swing-twist decomposition around Y axis
+        glm::quat currentYawQuat = glm::normalize(glm::quat(q.w, 0.0f, q.y, 0.0f));
+        // Compute per-frame delta quaternion
+        glm::quat deltaQuat = currentYawQuat * glm::inverse(previousRootYawQuat_);
+        // Ensure shortest path
+        if (deltaQuat.w < 0.0f) deltaQuat = -deltaQuat;
+        // Extract scalar yaw delta from the Y-rotation quaternion
+        extractedRootYawDelta_ = 2.0f * std::atan2(deltaQuat.y, deltaQuat.w);
+        previousRootYawQuat_ = currentYawQuat;
         // Remove the Y-rotation component from the pose
-        glm::quat qY = glm::angleAxis(yaw, glm::vec3(0.0f, 1.0f, 0.0f));
-        currentPose_[rootIdx].rotation = glm::inverse(qY) * q;
+        currentPose_[rootIdx].rotation = glm::inverse(currentYawQuat) * q;
     } else {
         extractedRootYawDelta_ = 0.0f;
     }

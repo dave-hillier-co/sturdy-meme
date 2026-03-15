@@ -1,5 +1,4 @@
 #include "TaskController.h"
-#include "core/MathUtils.h"
 #include <cmath>
 #include <cassert>
 
@@ -38,10 +37,10 @@ void HeadingController::setTarget(glm::vec2 direction, float speed) {
     targetSpeed_ = speed;
 }
 
-void HeadingController::evaluate(float characterHeading, Tensor& outLatent) const {
+void HeadingController::evaluate(const glm::quat& characterRotation, Tensor& outLatent) const {
     // Rotate target direction into the character's local frame
     glm::vec3 worldDir(targetDirection_.x, 0.0f, targetDirection_.y);
-    glm::vec3 localDir = MathUtils::rotateAroundY(worldDir, -characterHeading);
+    glm::vec3 localDir = glm::inverse(characterRotation) * worldDir;
 
     // Build task observation: [local_dir_x, local_dir_z, target_speed]
     taskObs_ = Tensor(3);
@@ -58,11 +57,11 @@ void LocationController::setTarget(glm::vec3 worldPosition) {
     targetPosition_ = worldPosition;
 }
 
-void LocationController::evaluate(glm::vec3 characterPosition, float characterHeading,
+void LocationController::evaluate(glm::vec3 characterPosition, const glm::quat& characterRotation,
                                    Tensor& outLatent) const {
     // Compute world-space offset and rotate into character's local frame
     glm::vec3 offset = targetPosition_ - characterPosition;
-    glm::vec3 localOffset = MathUtils::rotateAroundY(offset, -characterHeading);
+    glm::vec3 localOffset = glm::inverse(characterRotation) * offset;
 
     // Build task observation: [local_offset_x, local_offset_y, local_offset_z]
     taskObs_ = Tensor(3);
@@ -84,13 +83,13 @@ void StrikeController::setTarget(glm::vec3 targetPosition) {
     targetPosition_ = targetPosition;
 }
 
-void StrikeController::evaluate(glm::vec3 characterPosition, float characterHeading,
+void StrikeController::evaluate(glm::vec3 characterPosition, const glm::quat& characterRotation,
                                  Tensor& outLatent) const {
     glm::vec3 offset = targetPosition_ - characterPosition;
     float dist = glm::length(offset);
 
     // Rotate into character's local frame
-    glm::vec3 localOffset = MathUtils::rotateAroundY(offset, -characterHeading);
+    glm::vec3 localOffset = glm::inverse(characterRotation) * offset;
 
     // Build task observation: [local_target_x, local_target_y, local_target_z, distance]
     taskObs_ = Tensor(4);

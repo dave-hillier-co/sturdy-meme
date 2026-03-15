@@ -9,7 +9,7 @@
 #include "GLTFLoader.h"  // For Skeleton
 
 #include <imgui.h>
-#include "core/MathUtils.h"
+#include <glm/gtc/quaternion.hpp>
 #include <cmath>
 
 void GuiPlayerTab::render(IPlayerControl& playerControl, PlayerSettings& settings) {
@@ -543,15 +543,16 @@ void GuiPlayerTab::renderMotionMatchingOverlay(IPlayerControl& playerControl, co
             charFacing = glm::vec3(0.0f, 0.0f, 1.0f);
         }
 
-        // Rotation angle: local Z+ -> world facing direction
+        // Build quaternion that rotates local Z+ to world facing direction
         float matchAngle = std::atan2(charFacing.x, charFacing.z);
+        glm::quat localToWorld = glm::angleAxis(matchAngle, glm::vec3(0.0f, 1.0f, 0.0f));
 
         prevScreen = worldToScreen(charOrigin, viewProj, width, height);
         for (size_t i = 0; i < matchedTrajectory.sampleCount; ++i) {
             const auto& sample = matchedTrajectory.samples[i];
 
-            // Transform from local space to world space using Y-axis rotation utility
-            glm::vec3 worldOffset = MathUtils::rotateAroundY(sample.position, matchAngle);
+            // Transform from local space to world space using quaternion rotation
+            glm::vec3 worldOffset = localToWorld * sample.position;
 
             glm::vec3 worldPos = groundPos + worldOffset;
             ImVec2 screenPos = worldToScreen(worldPos, viewProj, width, height);

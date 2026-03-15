@@ -1,5 +1,5 @@
 #include "MotionMatchingTrajectory.h"
-#include "core/MathUtils.h"
+#include <glm/gtc/quaternion.hpp>
 #include <algorithm>
 #include <cmath>
 
@@ -62,7 +62,8 @@ void TrajectoryPredictor::update(const glm::vec3& position,
                 float maxAngleChange = smoothFactor * std::abs(angleDiff);
                 float actualAngle = (angleDiff > 0.0f ? 1.0f : -1.0f) * std::min(maxAngleChange, std::abs(angleDiff));
 
-                smoothedDirection_ = MathUtils::rotateAroundY(normSmoothed, actualAngle);
+                glm::quat rot = glm::angleAxis(actualAngle, glm::vec3(0.0f, 1.0f, 0.0f));
+                smoothedDirection_ = rot * normSmoothed;
             }
         }
     }
@@ -186,7 +187,8 @@ TrajectorySample TrajectoryPredictor::predictFuture(float timeOffset) const {
             float turnProgress = std::min(1.0f, turnAngle / std::abs(angleDiff));
             float actualTurn = angleDiff * turnProgress;
 
-            predictedFacing = MathUtils::rotateAroundY(currentFacing_, actualTurn);
+            glm::quat turnQuat = glm::angleAxis(actualTurn, glm::vec3(0.0f, 1.0f, 0.0f));
+            predictedFacing = turnQuat * currentFacing_;
         }
     }
 

@@ -1,8 +1,17 @@
 # Plan: Eliminate Two-Phase Initialization & Adopt Smart Pointers
 
-## Status: COMPLETE ✓
+## Status: IN PROGRESS — residual work documented below
 
-All systems have been converted to RAII factory pattern. The two-phase initialization pattern has been eliminated.
+Most render subsystems (terrain, water, shadow, atmosphere, vegetation,
+post-process) have been converted to the RAII factory pattern. The
+tier-based system registry + `static std::unique_ptr<T> create(...)` is now
+the standard entry point for these systems.
+
+However, 19 headers in `src/` still declare `void destroy()` or `void
+shutdown()` (see [Residual work](#residual-work) below). Some are legitimate
+drain/join APIs that happen to share the name; others are genuine two-phase
+holdovers that should still be converted. The next maintainer to touch this
+plan should split the list and act on the real holdovers.
 
 ### Completed Conversions
 All systems now use `static std::unique_ptr<T> create(...)` factory pattern:
@@ -507,3 +516,63 @@ After each system migration:
 ### Backward Compatibility
 - During migration, can keep deprecated `init()`/`destroy()` that delegate to new pattern
 - Remove deprecated API once all callsites updated
+
+---
+
+## Residual work
+
+<a id="residual-work"></a>
+
+These headers still declare `void destroy()` or `void shutdown()` methods.
+Each one needs a classification pass: is it a legitimate drain/shutdown
+operation that should stay, or a two-phase holdover that should become an
+RAII destructor? Audited 2026-04-17 on branch
+`claude/review-game-engine-15t1V`.
+
+### Likely legitimate (thread join / external-lifetime drain)
+
+These are not two-phase init per se — they're explicit shutdown points that
+block until a background resource finishes. Keep the method, but document
+why it isn't folded into the destructor (e.g. "joins worker threads before
+dtor so exceptions during drain are visible to the caller").
+
+- `src/core/threading/TaskScheduler.h:76` — `void shutdown()`
+- `src/core/vulkan/AsyncTransferManager.h:60` — `void shutdown()`
+- `src/core/vulkan/ThreadedCommandPool.h:53` — `void shutdown()`
+- `src/loading/AsyncStartupLoader.h:121` — `void shutdown()`
+- `src/loading/AsyncSystemLoader.h:157` — `void shutdown()`
+- `src/loading/LoadJobQueue.h:230` — `void shutdown()`
+- `src/loading/LoadJobFactory.h:196` — `void shutdown()`
+
+### Genuine two-phase holdovers (convert to RAII)
+
+- `src/ml/GPUInference.h:64,87` — paired `bool init(...)` + `void destroy()`.
+  Also uses raw `vkCreate*`/`vkDestroy*`. Best next migration target: one
+  unit that resolves two-phase init AND vulkan-hpp migration together.
+- `src/material/DescriptorManager.h:181` — `void destroy()`
+- `src/material/ComposedMaterialRegistry.h:188` — `void destroy()`
+- `src/vegetation/GrassTileManager.h:77` — `void destroy()`
+- `src/vegetation/GrassTileResourcePool.h:50` — `void destroy()`
+- `src/core/TripleBuffering.h:82` — `void destroy()`
+- `src/core/FrameExecutor.h:51` — `void destroy()`
+- `src/core/FrameIndexedBuffers.h:73` — `void destroy()`
+- `src/core/RenderingInfrastructure.h:56` — `void shutdown()`
+- `src/core/pipeline/PipelineCache.h:40` — `void shutdown()`
+- `src/core/vulkan/VulkanContext.h:48` — `void shutdown()` (complex — owns
+  device, so ordering with dependent RAII systems must be preserved before
+  converting)
+
+### Top-level
+
+- `src/scene/Application.h:33` — `void shutdown()`. This is the application
+  entry-point and runs teardown in a specific order; may be the last thing
+  to convert, if at all.
+
+### Verification command
+
+```
+grep -rn "void destroy()\|void shutdown()" src/
+```
+
+Should shrink as each entry above is converted. Update this file when items
+move between categories.

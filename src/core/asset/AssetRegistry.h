@@ -193,7 +193,7 @@ public:
      * Load a shader module from file with caching.
      * Returns shared_ptr to RAII wrapper - shader destroyed when last ref released.
      */
-    std::shared_ptr<ShaderModule> loadShader(const std::string& path);
+    std::shared_ptr<ShaderModule> loadShaderModule(const std::string& path);
 
     /**
      * Get shader by path. Returns nullptr if not found or expired.

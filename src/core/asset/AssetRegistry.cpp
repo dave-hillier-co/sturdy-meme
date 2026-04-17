@@ -178,7 +178,7 @@ std::shared_ptr<Mesh> AssetRegistry::getMesh(const std::string& name) {
 // Shader Management
 // ============================================================================
 
-std::shared_ptr<AssetRegistry::ShaderModule> AssetRegistry::loadShader(const std::string& path) {
+std::shared_ptr<AssetRegistry::ShaderModule> AssetRegistry::loadShaderModule(const std::string& path) {
     // Check cache first
     if (auto cached = shaderCache_.get(path)) {
         return cached;

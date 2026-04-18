@@ -3,6 +3,7 @@
 #include "SamplerFactory.h"
 #include "CommandBufferUtils.h"
 #include "core/ImageBuilder.h"
+#include "TerrainHeight.h"
 #include <SDL3/SDL.h>
 #include <vulkan/vulkan.hpp>
 #include <cstring>
@@ -256,31 +257,11 @@ bool FlowMapGenerator::generateSlopeBasedFlow(const std::vector<float>& heightDa
 
     for (uint32_t y = 0; y < res; y++) {
         for (uint32_t x = 0; x < res; x++) {
-            // Sample height from heightmap (bilinear)
             float u = static_cast<float>(x) / (res - 1);
             float v = static_cast<float>(y) / (res - 1);
 
-            // Bilinear sample from heightmap
-            float hx = u * (heightmapSize - 1);
-            float hy = v * (heightmapSize - 1);
-            uint32_t x0 = static_cast<uint32_t>(hx);
-            uint32_t y0 = static_cast<uint32_t>(hy);
-            uint32_t x1 = std::min(x0 + 1, heightmapSize - 1);
-            uint32_t y1 = std::min(y0 + 1, heightmapSize - 1);
-            float fx = hx - x0;
-            float fy = hy - y0;
-
-            float h00 = heightData[y0 * heightmapSize + x0];
-            float h10 = heightData[y0 * heightmapSize + x1];
-            float h01 = heightData[y1 * heightmapSize + x0];
-            float h11 = heightData[y1 * heightmapSize + x1];
-
-            float h = (h00 * (1 - fx) * (1 - fy) +
-                      h10 * fx * (1 - fy) +
-                      h01 * (1 - fx) * fy +
-                      h11 * fx * fy);
-
-            float worldHeight = h * heightScale;
+            float worldHeight = TerrainHeight::sampleWorldHeight(
+                u, v, heightData.data(), heightmapSize, heightScale);
             uint32_t idx = y * res + x;
             heights[idx] = worldHeight;
             waterMask[idx] = (worldHeight < config.waterLevel);

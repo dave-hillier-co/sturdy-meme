@@ -9,15 +9,7 @@ Current state and next steps for the Vulkan outdoor rendering engine.
 These major systems are fully implemented and feature-complete:
 
 ### Water Rendering ✅
-All 17 phases complete (see `WATER_RENDERING_PLAN.md`):
-- Flow maps, foam system, mini G-buffer
-- Vector displacement, FBM surface detail
-- Screen-space tessellation, PBR lighting
-- Refraction, caustics, SSR
-- Dual depth buffer, material blending
-- Jacobian foam, temporal persistence
-- Intersection foam, wake/trail system
-- Enhanced subsurface scattering
+Core water system complete: flow maps, foam (Jacobian + temporal + intersection + wakes), mini G-buffer, vector displacement, FBM surface detail, screen-space tessellation, PBR light transport, refraction, caustics, SSR, dual depth, material blending, enhanced SSS. Further enhancements tracked in `WATER_AAA_MIGRATION_PLAN.md` (underwater volume renderer, planar reflections, breaking waves, flow networks).
 
 ### Tree Rendering ✅
 All 6 phases complete (see `TREE_RENDERING_ROADMAP.md`):
@@ -116,14 +108,6 @@ From `FUTURE_WORK.md` - features not yet implemented:
 - Orientation lock (strafe mode)
 - Dynamic FOV during sprint
 
-### Animation - Combat & Locomotion ✅
-FBX animations are integrated. Available animations include:
-- Combat attacks (sword combos, kicks)
-- Defense (block, block idle)
-- Reactions (hit, death)
-- Strafing, turning in place
-- Crouch, casting, power-up, sheath
-
 ### Procedural Trees
 GPU-driven tree generation:
 - L-systems or Space Colonization
@@ -173,9 +157,9 @@ Legacy code that can be removed once tested (see `TREE_RENDERING_ROADMAP.md`):
 - 17-view impostor atlas code
 
 ### Code Quality
-- Continue vulkan-hpp migration (run `./scripts/analyze-vulkan-usage.sh`)
+- Continue vulkan-hpp migration (run `./scripts/analyze-vulkan-usage.sh`); see `VULKAN_HPP_MIGRATION_PLAN.md` and `VULKAN_ANALYSIS.md`
 - RAII refactoring per `RAII_REFACTOR_PLAN.md`
-- Eliminate two-phase init per `PLAN-eliminate-two-phase-init.md`
+- Renderer core extraction per `RENDERER_REFACTORING_PLAN.md` (last step pending)
 
 ---
 

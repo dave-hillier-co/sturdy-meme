@@ -25,17 +25,6 @@ Outstanding features and improvements not yet implemented.
 
 ---
 
-## Animation - Combat & Advanced Locomotion ✅
-
-Combat and locomotion animations from `assets/characters/fbx/` are now integrated:
-- Combat attacks (sword combos, slashes, kick)
-- Combat defense (block, block idle)
-- Combat reactions (hit impacts, death)
-- Advanced locomotion (strafing, turn in place)
-- Special states (crouch, casting, power-up, sheath)
-
----
-
 ## Procedural Trees
 
 GPU-driven tree generation with adjustable parameters. Not currently implemented.

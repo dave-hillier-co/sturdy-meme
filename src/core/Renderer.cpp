@@ -306,9 +306,10 @@ void Renderer::updatePhysicsDebug(PhysicsWorld& physics, const glm::vec3& camera
     // Begin physics debug frame
     debugRenderer->beginFrame(cameraPos);
 
-    // Draw all physics bodies
+    // Draw all physics bodies using current options from subsystem
     if (physics.getPhysicsSystem()) {
-        debugRenderer->drawBodies(*physics.getPhysicsSystem());
+        auto& options = systems_->debugControlSubsystem().getPhysicsDebugOptions();
+        debugRenderer->drawBodies(*physics.getPhysicsSystem(), options);
     }
 
     // End frame (cleanup cached geometry)
@@ -444,9 +445,9 @@ VkCommandBuffer Renderer::buildFrame(const Camera& camera, uint32_t imageIndex, 
     TimingData timing = systems_->time().update();
 
     UBOUpdater::Config uboConfig;
-    uboConfig.showCascadeDebug = showCascadeDebug;
+    uboConfig.showCascadeDebug = systems_->debugControlSubsystem().isShowingCascadeDebug();
     uboConfig.useVolumetricSnow = useVolumetricSnow;
-    uboConfig.showSnowDepthDebug = showSnowDepthDebug;
+    uboConfig.showSnowDepthDebug = systems_->debugControlSubsystem().isShowingSnowDepthDebug();
     uboConfig.shadowsEnabled = perfToggles.shadowPass;
     uboConfig.hdrEnabled = hdrEnabled;
     uboConfig.maxSnowHeight = MAX_SNOW_HEIGHT;

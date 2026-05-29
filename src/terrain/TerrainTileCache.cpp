@@ -82,6 +82,16 @@ bool TerrainTileCache::initInternal(const InitInfo& info) {
         tileInfoBuffer_.initializeAllFrames();
     }
 
+    // Create background disk loader for streamed tiles (worker threads do the
+    // stbi_load_16 decode off the render thread). Non-fatal if it fails: the
+    // synchronous loadTile() path remains available.
+    diskLoader_ = TerrainTileDiskLoader::create(cacheDirectory, tileResolution,
+                                                storedTileResolution, /*workerCount*/2);
+    if (!diskLoader_) {
+        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                    "TerrainTileCache: disk loader unavailable, falling back to synchronous tile loads");
+    }
+
     SDL_Log("TerrainTileCache initialized: %s", cacheDirectory.c_str());
     SDL_Log("  Terrain size: %.0fm, Tile resolution: %u (stored: %u with overlap), LOD levels: %u",
             terrainSize, tileResolution, storedTileResolution, numLODLevels);
@@ -115,6 +125,11 @@ bool TerrainTileCache::initInternal(const InitInfo& info) {
 }
 
 void TerrainTileCache::cleanup() {
+    // Join worker threads first so no background load is in flight while we tear
+    // down. Workers only touch their own LoadedTile state, never loadedTiles or
+    // GPU resources, but joining here makes the lifetime explicit and safe.
+    diskLoader_.reset();
+
     // Wait for GPU to finish
     if (device) {
         vkDeviceWaitIdle(device);
@@ -273,8 +288,63 @@ TileCoord TerrainTileCache::worldToTileCoord(float worldX, float worldZ, uint32_
     return coord;
 }
 
+void TerrainTileCache::drainLoadedTiles() {
+    if (!diskLoader_) return;
+
+    std::vector<TerrainTileDiskLoader::LoadedTile> done = diskLoader_->drainCompleted();
+    for (auto& loaded : done) {
+        uint64_t key = makeTileKey(loaded.coord, loaded.lod);
+        auto it = loadedTiles.find(key);
+        // If the tile was already filled in (e.g. by a synchronous physics load
+        // racing the worker), keep the existing one and discard the worker copy.
+        if (it != loadedTiles.end() && !it->second.cpuData.empty()) {
+            continue;
+        }
+
+        TerrainTile& tile = loadedTiles[key];
+        tile.coord = loaded.coord;
+        tile.lod = loaded.lod;
+        calculateTileWorldBounds(loaded.coord, loaded.lod, tile);
+        tile.cpuData = std::move(loaded.cpuData);
+        // CPU data only so far; the GPU layer is allocated during promotion.
+        if (tile.state == TileState::Unloaded) {
+            tile.state = TileState::CpuResident;
+        }
+    }
+}
+
+void TerrainTileCache::promoteCpuTilesToResident(uint32_t& tilesAddedThisFrame, uint32_t maxThisFrame) {
+    for (auto& [key, tile] : loadedTiles) {
+        if (tilesAddedThisFrame >= maxThisFrame) break;
+        if (tile.state != TileState::CpuResident) continue;
+        if (tile.cpuData.empty()) continue;
+        // Base LOD tiles never get GPU layers here; they feed the base heightmap.
+        if (tile.lod == baseHeightMap_.getBaseLOD()) continue;
+
+        int32_t layerIndex = tileArray_.allocateLayer();
+        if (layerIndex < 0) {
+            // Array full: stays CpuResident (height queries still work). Retried later.
+            continue;
+        }
+
+        tile.arrayLayerIndex = layerIndex;
+        tileArray_.copyTileToLayer(tile, static_cast<uint32_t>(layerIndex));
+        tile.state = TileState::Resident;
+        holeMask_.uploadTileHoleMask(tile, tile.arrayLayerIndex);
+        tilesAddedThisFrame++;
+    }
+}
+
 void TerrainTileCache::updateActiveTiles(const glm::vec3& cameraPos, float loadRadius, float unloadRadius) {
-    std::vector<std::pair<TileCoord, uint32_t>> tilesToLoad;
+    // First adopt any tiles the worker threads finished decoding since last frame.
+    drainLoadedTiles();
+
+    struct LoadCandidate {
+        TileCoord coord;
+        uint32_t lod;
+        float dist;
+    };
+    std::vector<LoadCandidate> tilesToLoad;
     std::vector<uint64_t> tilesToUnload;
 
     float camX = cameraPos.x;
@@ -314,8 +384,15 @@ void TerrainTileCache::updateActiveTiles(const glm::vec3& cameraPos, float loadR
 
                 if (dist < lodMaxDist && dist < loadRadius) {
                     TileCoord coord{tx, tz};
-                    if (!isTileLoaded(coord, lod)) {
-                        tilesToLoad.push_back({coord, lod});
+                    uint64_t key = makeTileKey(coord, lod);
+                    auto it = loadedTiles.find(key);
+                    // Already have at least CPU data? Then it's either Resident
+                    // (nothing to do) or CpuResident (promoted later this frame).
+                    // Only enqueue a disk load for tiles we have no data for and
+                    // that aren't already in flight on a worker.
+                    bool hasData = (it != loadedTiles.end() && !it->second.cpuData.empty());
+                    if (!hasData) {
+                        tilesToLoad.push_back({coord, lod, dist});
                     }
                 }
             }
@@ -355,18 +432,42 @@ void TerrainTileCache::updateActiveTiles(const glm::vec3& cameraPos, float loadR
         }
     }
 
-    // Load new tiles (limit per frame to avoid stalls)
-    constexpr uint32_t MAX_TILES_PER_FRAME = 4;
-    uint32_t tilesLoadedThisFrame = 0;
-
-    for (const auto& [coord, lod] : tilesToLoad) {
-        if (tilesLoadedThisFrame >= MAX_TILES_PER_FRAME) break;
-        if (loadedTiles.size() >= MAX_ACTIVE_TILES) break;
-
-        if (loadTile(coord, lod)) {
-            tilesLoadedThisFrame++;
+    // Queue disk loads on the worker pool, nearest-first (lowest distance =
+    // highest priority). The render thread no longer blocks on stbi_load_16;
+    // results arrive via drainLoadedTiles() on a later frame.
+    if (diskLoader_) {
+        std::sort(tilesToLoad.begin(), tilesToLoad.end(),
+                  [](const LoadCandidate& a, const LoadCandidate& b) { return a.dist < b.dist; });
+        // Bound how much we keep resident on the CPU so loadedTiles cannot grow
+        // without limit when the GPU array is saturated. We allow a small headroom
+        // above MAX_ACTIVE_TILES so the nearest tiles can preempt farther ones once
+        // priority-based eviction lands; for now we simply stop enqueuing.
+        constexpr size_t CPU_TILE_BUDGET = MAX_ACTIVE_TILES + 16;
+        size_t pending = diskLoader_->getPendingCount();
+        for (const auto& cand : tilesToLoad) {
+            if (loadedTiles.size() + pending >= CPU_TILE_BUDGET) break;
+            // Priority is integer distance in metres; lower = sooner.
+            diskLoader_->queueTile(cand.coord, cand.lod, static_cast<int>(cand.dist));
+            ++pending;
+        }
+    } else {
+        // Fallback: no worker pool, load a bounded number synchronously this frame.
+        std::sort(tilesToLoad.begin(), tilesToLoad.end(),
+                  [](const LoadCandidate& a, const LoadCandidate& b) { return a.dist < b.dist; });
+        constexpr uint32_t MAX_TILES_PER_FRAME = 4;
+        uint32_t loaded = 0;
+        for (const auto& cand : tilesToLoad) {
+            if (loaded >= MAX_TILES_PER_FRAME) break;
+            if (loadedTiles.size() >= MAX_ACTIVE_TILES) break;
+            if (loadTile(cand.coord, cand.lod)) loaded++;
         }
     }
+
+    // Promote CPU-resident tiles to GPU-resident (bounded per frame to limit the
+    // upload cost). This is the only remaining per-frame GPU work for streaming.
+    constexpr uint32_t MAX_UPLOADS_PER_FRAME = 4;
+    uint32_t tilesUploadedThisFrame = 0;
+    promoteCpuTilesToResident(tilesUploadedThisFrame, MAX_UPLOADS_PER_FRAME);
 
     // Update active tiles list. Only Resident tiles (those with a real GPU array layer)
     // belong here: activeTiles feeds TileInfoBuffer, which writes arrayLayerIndex to the

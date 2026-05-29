@@ -213,6 +213,7 @@ set(SOURCES
     src/terrain/TerrainCBT.cpp
     src/terrain/TerrainMeshlet.cpp
     src/terrain/TerrainTileCache.cpp
+    src/terrain/TerrainTileDiskLoader.cpp
     src/terrain/TileArrayManager.cpp
     src/terrain/HoleMaskManager.cpp
     src/terrain/TileInfoBuffer.cpp

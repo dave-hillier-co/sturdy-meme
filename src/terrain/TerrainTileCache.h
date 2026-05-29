@@ -21,6 +21,7 @@
 #include "HoleMaskManager.h"
 #include "TileInfoBuffer.h"
 #include "BaseHeightMap.h"
+#include "TerrainTileDiskLoader.h"
 
 // Use types from TileGridLogic for consistency
 using TileCoord = TileGrid::TileCoord;
@@ -251,6 +252,15 @@ private:
     // Returns true on success, tile is populated with cpuData and world bounds
     bool loadTileDataFromDisk(TileCoord coord, uint32_t lod, TerrainTile& tile);
 
+    // Drain CPU tiles finished by the background disk loader and insert them into
+    // loadedTiles as CpuResident. Called on the main thread from updateActiveTiles().
+    void drainLoadedTiles();
+
+    // Promote CpuResident tiles to Resident by allocating a GPU array layer and
+    // staging their height data. Called on the main thread from updateActiveTiles().
+    // tilesAddedThisFrame is incremented per successful upload.
+    void promoteCpuTilesToResident(uint32_t& tilesAddedThisFrame, uint32_t maxThisFrame);
+
     // Calculate world bounds for a tile at given LOD
     void calculateTileWorldBounds(TileCoord coord, uint32_t lod, TerrainTile& tile) const;
 
@@ -259,6 +269,12 @@ private:
     HoleMaskManager holeMask_;
     TileInfoBuffer tileInfoBuffer_;
     BaseHeightMap baseHeightMap_;
+
+    // Background disk loader (worker threads). Disk I/O for streamed tiles runs
+    // off the render thread; updateActiveTiles() enqueues requests and drains
+    // completed CPU tiles. May be null if creation failed, in which case the
+    // cache falls back to synchronous loads.
+    std::unique_ptr<TerrainTileDiskLoader> diskLoader_;
 
     // Vulkan resources
     const vk::raii::Device* raiiDevice_ = nullptr;

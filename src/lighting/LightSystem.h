@@ -316,14 +316,15 @@ inline uint32_t buildLightBuffer(const World& world,
         allLights.push_back(light);
     }
 
-    // Sort by effective weight (descending)
-    std::sort(allLights.begin(), allLights.end(),
+    // Only the top MAX_LIGHTS by effective weight are written, so partially sort
+    // just that prefix instead of ordering the whole list (descending).
+    uint32_t count = static_cast<uint32_t>(std::min(allLights.size(), static_cast<size_t>(MAX_LIGHTS)));
+    std::partial_sort(allLights.begin(), allLights.begin() + count, allLights.end(),
         [](const CollectedLight& a, const CollectedLight& b) {
             return a.effectiveWeight > b.effectiveWeight;
         });
 
     // Write to buffer (up to MAX_LIGHTS)
-    uint32_t count = static_cast<uint32_t>(std::min(allLights.size(), static_cast<size_t>(MAX_LIGHTS)));
     buffer.lightCount = glm::uvec4(count, 0, 0, 0);
 
     for (uint32_t i = 0; i < count; i++) {

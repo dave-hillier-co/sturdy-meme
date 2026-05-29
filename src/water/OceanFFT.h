@@ -206,8 +206,12 @@ private:
 
     void recordSpectrumGeneration(VkCommandBuffer cmd, Cascade& cascade, uint32_t seed);
     void recordTimeEvolution(VkCommandBuffer cmd, Cascade& cascade, float time);
-    void recordFFT(VkCommandBuffer cmd, Cascade& cascade, VkImage input, VkImageView inputView,
+    void recordFFT(VkCommandBuffer cmd, Cascade& cascade, VkDescriptorSet fftDescSet,
+                   VkImage input, VkImageView inputView,
                    VkImage output, VkImageView outputView);
+
+    // FFT is run once per displacement component (Dy, Dx, Dz) per cascade.
+    static constexpr uint32_t kFFTSetsPerCascade = 3;
     void recordDisplacementGeneration(VkCommandBuffer cmd, Cascade& cascade);
 
     // Device resources
@@ -250,7 +254,7 @@ private:
     std::optional<vk::raii::DescriptorPool> descriptorPool_;
     std::vector<VkDescriptorSet> spectrumDescSets;
     std::vector<VkDescriptorSet> timeEvolutionDescSets;
-    std::vector<VkDescriptorSet> fftDescSets;       // Multiple for ping-pong
+    std::vector<VkDescriptorSet> fftDescSets;       // Persistent: cascadeCount * kFFTSetsPerCascade
     std::vector<VkDescriptorSet> displacementDescSets;
 
     // Spectrum parameters UBO

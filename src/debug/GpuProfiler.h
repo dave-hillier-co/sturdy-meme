@@ -4,6 +4,7 @@
 #include <string>
 #include <vector>
 #include <unordered_map>
+#include <unordered_set>
 #include <array>
 #include <optional>
 #include <atomic>
@@ -143,6 +144,7 @@ private:
     FrameStats lastFrameStats;
     FrameStats smoothedStats;
     std::unordered_map<std::string, float> smoothedZoneTimes;  // Per-zone smoothed times
+    std::unordered_set<std::string> seenZonesScratch_;  // Reused each frame to avoid per-frame allocation
     std::vector<std::string> zoneNames;
 
     // Smoothing factor (0.0 = no smoothing, 1.0 = infinite smoothing)

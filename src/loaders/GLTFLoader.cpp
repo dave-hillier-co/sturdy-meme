@@ -274,7 +274,8 @@ std::optional<GLTFLoadResult> load(const std::string& path) {
             size_t nodeIndex = skin.joints[i];
 
             // Find parent in node tree
-            for (size_t parentNodeIdx = 0; parentNodeIdx < asset->nodes.size(); ++parentNodeIdx) {
+            bool parentFound = false;
+            for (size_t parentNodeIdx = 0; parentNodeIdx < asset->nodes.size() && !parentFound; ++parentNodeIdx) {
                 const auto& parentNode = asset->nodes[parentNodeIdx];
                 for (size_t childIdx : parentNode.children) {
                     if (childIdx == nodeIndex) {
@@ -285,6 +286,7 @@ std::optional<GLTFLoadResult> load(const std::string& path) {
                                 break;
                             }
                         }
+                        parentFound = true;
                         break;
                     }
                 }
@@ -413,7 +415,8 @@ std::optional<GLTFSkinnedLoadResult> loadSkinned(const std::string& path) {
         for (size_t i = 0; i < skin.joints.size(); ++i) {
             size_t nodeIndex = skin.joints[i];
 
-            for (size_t parentNodeIdx = 0; parentNodeIdx < asset->nodes.size(); ++parentNodeIdx) {
+            bool parentFound = false;
+            for (size_t parentNodeIdx = 0; parentNodeIdx < asset->nodes.size() && !parentFound; ++parentNodeIdx) {
                 const auto& parentNode = asset->nodes[parentNodeIdx];
                 for (size_t childIdx : parentNode.children) {
                     if (childIdx == nodeIndex) {
@@ -423,6 +426,7 @@ std::optional<GLTFSkinnedLoadResult> loadSkinned(const std::string& path) {
                                 break;
                             }
                         }
+                        parentFound = true;
                         break;
                     }
                 }

@@ -183,7 +183,7 @@ void NPCSimulation::update(float deltaTime, const glm::vec3& cameraPos) {
 
     // Update LOD levels based on camera position
     if (lodEnabled_) {
-        updateLODLevels(cameraPos);
+        updateLODLevels(deltaTime, cameraPos);
     }
 
     // Update NPCs based on their LOD level
@@ -192,7 +192,7 @@ void NPCSimulation::update(float deltaTime, const glm::vec3& cameraPos) {
     updateVirtualNPCs(deltaTime);
 }
 
-void NPCSimulation::updateLODLevels(const glm::vec3& cameraPos) {
+void NPCSimulation::updateLODLevels(float deltaTime, const glm::vec3& cameraPos) {
     constexpr float LOD_BLEND_SPEED = 3.0f;  // Blend duration ~0.33s
 
     for (size_t i = 0; i < data_.count(); ++i) {
@@ -217,10 +217,11 @@ void NPCSimulation::updateLODLevels(const glm::vec3& cameraPos) {
             data_.framesSinceUpdate[i] = 0;
         }
 
-        // Advance blend weight toward 1.0 (fully transitioned to new LOD)
+        // Advance blend weight toward 1.0 (fully transitioned to new LOD).
+        // Use real delta time so blend duration is frame-rate independent.
         if (data_.lodBlendWeights[i] < 1.0f) {
             data_.lodBlendWeights[i] = std::min(1.0f,
-                data_.lodBlendWeights[i] + LOD_BLEND_SPEED * (1.0f / 60.0f));
+                data_.lodBlendWeights[i] + LOD_BLEND_SPEED * deltaTime);
         }
 
         data_.lodLevels[i] = newLevel;

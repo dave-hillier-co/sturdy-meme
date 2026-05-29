@@ -218,6 +218,10 @@ private:
     bool createTwoPhaseLeafCullPipeline();
     bool createTwoPhaseLeafCullDescriptorSets();
 
+    // Write all bindings of the two-phase leaf cull descriptor sets for every frame.
+    // Called only when buffers change (see twoPhaseLeafCullDescriptorsDirty_), not per-frame.
+    void writeTwoPhaseLeafCullDescriptorSets(const TreeSystem& treeSystem);
+
     void updateCullDescriptorSets(const TreeSystem& treeSystem);
 
     const vk::raii::Device* raiiDevice_ = nullptr;
@@ -296,6 +300,12 @@ private:
     std::optional<vk::raii::PipelineLayout> twoPhaseLeafCullPipelineLayout_;
     std::optional<vk::raii::DescriptorSetLayout> twoPhaseLeafCullDescriptorSetLayout_;
     std::vector<VkDescriptorSet> twoPhaseLeafCullDescriptorSets_;
+    // The two-phase leaf cull sets bind frame-stable buffers, so they are written
+    // only when those buffers are (re)created rather than every frame. This flag is
+    // raised on any relevant buffer (re)creation/resize; lastLeafInstanceBuffer_
+    // additionally detects reallocation of the externally-owned leaf instance buffer.
+    bool twoPhaseLeafCullDescriptorsDirty_ = true;
+    VkBuffer lastLeafInstanceBuffer_ = VK_NULL_HANDLE;
 
     BufferUtils::PerFrameBufferSet leafCullP3ParamsBuffers_;  // LeafCullP3Params at binding 6
 

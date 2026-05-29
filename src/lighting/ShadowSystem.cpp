@@ -18,6 +18,24 @@
 #include <cmath>
 #include <limits>
 
+namespace {
+// Component-wise near-equality for two 4x4 matrices (used for shadow change detection).
+bool matricesNearlyEqual(const glm::mat4& a, const glm::mat4& b, float epsilon) {
+    for (int c = 0; c < 4; ++c) {
+        for (int r = 0; r < 4; ++r) {
+            if (std::fabs(a[c][r] - b[c][r]) > epsilon) return false;
+        }
+    }
+    return true;
+}
+
+bool vec3NearlyEqual(const glm::vec3& a, const glm::vec3& b, float epsilon) {
+    return std::fabs(a.x - b.x) <= epsilon &&
+           std::fabs(a.y - b.y) <= epsilon &&
+           std::fabs(a.z - b.z) <= epsilon;
+}
+}  // namespace
+
 // Factory implementations
 std::unique_ptr<ShadowSystem> ShadowSystem::create(const InitInfo& info) {
     auto system = std::make_unique<ShadowSystem>(ConstructToken{}, info);
@@ -537,7 +555,7 @@ void ShadowSystem::calculateCascadeSplits(float nearClip, float farClip, float l
     }
 }
 
-glm::mat4 ShadowSystem::calculateCascadeMatrix(const glm::vec3& lightDir, const Camera& camera, float nearSplit, float farSplit) {
+glm::mat4 ShadowSystem::calculateCascadeMatrix(const glm::vec3& lightDir, const Camera& camera, const glm::mat4& invView, float nearSplit, float farSplit) {
     glm::vec3 lightDirNorm = glm::normalize(lightDir);
     if (glm::length(lightDirNorm) < std::numeric_limits<float>::epsilon()) {
         lightDirNorm = glm::vec3(0.0f, -1.0f, 0.0f);
@@ -554,7 +572,6 @@ glm::mat4 ShadowSystem::calculateCascadeMatrix(const glm::vec3& lightDir, const 
     float farHeight = farSplit * tanHalfFov;
     float farWidth = farHeight * aspect;
 
-    glm::mat4 invView = glm::inverse(camera.getViewMatrix());
     glm::vec3 camPos = glm::vec3(invView[3]);
     glm::vec3 camForward = -glm::vec3(invView[2]);
     glm::vec3 camRight = glm::vec3(invView[0]);
@@ -603,10 +620,30 @@ void ShadowSystem::updateCascadeMatrices(const glm::vec3& lightDir, const Camera
     const float shadowFar = 150.0f;
     const float lambda = 0.5f;
 
+    // The cascade matrices are a pure function of the sun direction and the camera
+    // view/projection. When none of those changed (static camera, paused time of day),
+    // the previously computed matrices are still valid, so skip the work.
+    const glm::mat4 view = camera.getViewMatrix();
+    const glm::mat4 proj = camera.getProjectionMatrix();
+    constexpr float kEpsilon = 1e-6f;
+    if (cascadesValid_ &&
+        vec3NearlyEqual(lightDir, lastLightDir_, kEpsilon) &&
+        matricesNearlyEqual(view, lastView_, kEpsilon) &&
+        matricesNearlyEqual(proj, lastProj_, kEpsilon)) {
+        return;
+    }
+    lastLightDir_ = lightDir;
+    lastView_ = view;
+    lastProj_ = proj;
+    cascadesValid_ = true;
+
     calculateCascadeSplits(shadowNear, shadowFar, lambda, cascadeSplitDepths);
 
+    // Inverse view is identical across all cascades; compute it once instead of per-cascade.
+    const glm::mat4 invView = glm::inverse(view);
+
     for (uint32_t i = 0; i < NUM_SHADOW_CASCADES; i++) {
-        cascadeMatrices[i] = calculateCascadeMatrix(lightDir, camera, cascadeSplitDepths[i], cascadeSplitDepths[i + 1]);
+        cascadeMatrices[i] = calculateCascadeMatrix(lightDir, camera, invView, cascadeSplitDepths[i], cascadeSplitDepths[i + 1]);
     }
 }
 

@@ -151,7 +151,7 @@ private:
     void cleanup();
 
     // Update LOD levels based on camera distance
-    void updateLODLevels(const glm::vec3& cameraPos);
+    void updateLODLevels(float deltaTime, const glm::vec3& cameraPos);
 
     // LOD-tiered update functions
     void updateVirtualNPCs(float deltaTime);  // >50m: minimal updates

@@ -7,6 +7,11 @@
 #include <algorithm>
 #include <numeric>
 
+#if defined(__ARM_NEON) || defined(__ARM_NEON__)
+#include <arm_neon.h>
+#define ML_TENSOR_NEON 1
+#endif
+
 namespace ml {
 
 // Lightweight 1D/2D tensor for neural network inference.
@@ -44,6 +49,9 @@ public:
 
     // Matrix-vector multiply: out = M * v
     // M is this tensor (rows x cols), v is input (cols), out is (rows)
+    // The per-row dot product is SIMD-accelerated where available (see dotProduct).
+    // Note: SIMD changes float accumulation order, so results match the scalar path
+    // only to within floating-point rounding (fine for NN inference).
     static void matVecMul(const Tensor& matrix, const Tensor& vec, Tensor& out) {
         assert(matrix.cols_ == vec.size());
         assert(out.size() == matrix.rows_);
@@ -55,12 +63,7 @@ public:
         const size_t cols = matrix.cols_;
 
         for (size_t r = 0; r < rows; ++r) {
-            float sum = 0.0f;
-            const float* row = m + r * cols;
-            for (size_t c = 0; c < cols; ++c) {
-                sum += row[c] * v[c];
-            }
-            o[r] = sum;
+            o[r] = dotProduct(m + r * cols, v, cols);
         }
     }
 
@@ -140,6 +143,34 @@ public:
     }
 
 private:
+    // SIMD-accelerated dot product of two length-n float arrays.
+    static float dotProduct(const float* a, const float* b, size_t n) {
+#if defined(ML_TENSOR_NEON)
+        float32x4_t acc0 = vdupq_n_f32(0.0f);
+        float32x4_t acc1 = vdupq_n_f32(0.0f);
+        size_t i = 0;
+        for (; i + 8 <= n; i += 8) {
+            acc0 = vmlaq_f32(acc0, vld1q_f32(a + i), vld1q_f32(b + i));
+            acc1 = vmlaq_f32(acc1, vld1q_f32(a + i + 4), vld1q_f32(b + i + 4));
+        }
+        if (i + 4 <= n) {
+            acc0 = vmlaq_f32(acc0, vld1q_f32(a + i), vld1q_f32(b + i));
+            i += 4;
+        }
+        float sum = vaddvq_f32(vaddq_f32(acc0, acc1));  // AArch64 horizontal add
+        for (; i < n; ++i) {
+            sum += a[i] * b[i];
+        }
+        return sum;
+#else
+        float sum = 0.0f;
+        for (size_t i = 0; i < n; ++i) {
+            sum += a[i] * b[i];
+        }
+        return sum;
+#endif
+    }
+
     std::vector<float> data_;
     size_t rows_ = 0;
     size_t cols_ = 0;

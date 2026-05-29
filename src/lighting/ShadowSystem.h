@@ -179,7 +179,7 @@ private:
 
     // Cascade calculation methods
     void calculateCascadeSplits(float nearClip, float farClip, float lambda, std::vector<float>& splits);
-    glm::mat4 calculateCascadeMatrix(const glm::vec3& lightDir, const Camera& camera, float nearSplit, float farSplit);
+    glm::mat4 calculateCascadeMatrix(const glm::vec3& lightDir, const Camera& camera, const glm::mat4& invView, float nearSplit, float farSplit);
 
     const InitInfo initInfo_;
 
@@ -195,6 +195,13 @@ private:
     // CSM cascade data
     std::vector<float> cascadeSplitDepths;
     std::array<glm::mat4, NUM_SHADOW_CASCADES> cascadeMatrices;
+
+    // Change-detection cache: the cascade matrices only depend on the sun direction
+    // and the camera view/projection, so skip the recompute when none have changed.
+    bool cascadesValid_ = false;
+    glm::vec3 lastLightDir_{0.0f};
+    glm::mat4 lastView_{1.0f};
+    glm::mat4 lastProj_{1.0f};
 
     // Dynamic light shadow maps
     static constexpr uint32_t DYNAMIC_SHADOW_MAP_SIZE = 1024;

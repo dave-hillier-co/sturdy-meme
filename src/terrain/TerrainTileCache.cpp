@@ -576,12 +576,9 @@ bool TerrainTileCache::getHeightAt(float worldX, float worldZ, float& outHeight)
         return true;
     };
 
-    // First check active tiles (GPU tiles - highest priority)
-    std::vector<const TerrainTile*> sortedActive(activeTiles.begin(), activeTiles.end());
-    std::sort(sortedActive.begin(), sortedActive.end(), [](const TerrainTile* a, const TerrainTile* b) {
-        return a->lod < b->lod;
-    });
-    for (const TerrainTile* tile : sortedActive) {
+    // First check active tiles (GPU tiles - highest priority).
+    // activeTiles is already kept sorted by LOD in updateActiveTiles(), so iterate directly.
+    for (const TerrainTile* tile : activeTiles) {
         if (sampleTile(*tile, "active")) return true;
     }
 
@@ -630,12 +627,8 @@ TerrainTileCache::HeightQueryInfo TerrainTileCache::getHeightAtDebug(float world
         return true;
     };
 
-    // Check active tiles first
-    std::vector<const TerrainTile*> sortedActive(activeTiles.begin(), activeTiles.end());
-    std::sort(sortedActive.begin(), sortedActive.end(), [](const TerrainTile* a, const TerrainTile* b) {
-        return a->lod < b->lod;
-    });
-    for (const TerrainTile* tile : sortedActive) {
+    // Check active tiles first (already kept sorted by LOD in updateActiveTiles()).
+    for (const TerrainTile* tile : activeTiles) {
         if (sampleTile(*tile, "active")) return info;
     }
 

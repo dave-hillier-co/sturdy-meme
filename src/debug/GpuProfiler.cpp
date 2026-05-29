@@ -329,12 +329,12 @@ void GpuProfiler::collectResults(uint32_t frameIndex) {
     smoothedFrameTimeMs = SMOOTHING_FACTOR * smoothedFrameTimeMs + (1.0f - SMOOTHING_FACTOR) * frameTimeMs;
 
     // Update smoothed stats using exponential moving average
-    // Track which zones were seen this frame
-    std::unordered_map<std::string, bool> seenThisFrame;
+    // Track which zones were seen this frame (reused member set, cleared each frame)
+    seenZonesScratch_.clear();
 
     // Update smoothed values for zones in this frame
     for (const auto& zone : lastFrameStats.zones) {
-        seenThisFrame[zone.name] = true;
+        seenZonesScratch_.insert(zone.name);
 
         auto it = smoothedZoneTimes.find(zone.name);
         if (it == smoothedZoneTimes.end()) {
@@ -348,7 +348,7 @@ void GpuProfiler::collectResults(uint32_t frameIndex) {
 
     // Decay zones not seen this frame (they may be intermittent like FrustumCull)
     for (auto& [name, time] : smoothedZoneTimes) {
-        if (!seenThisFrame[name]) {
+        if (seenZonesScratch_.find(name) == seenZonesScratch_.end()) {
             // Decay toward zero but keep it in the map for a while
             time *= SMOOTHING_FACTOR;
         }

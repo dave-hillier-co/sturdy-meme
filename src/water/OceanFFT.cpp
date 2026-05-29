@@ -492,6 +492,10 @@ bool OceanFFT::createDescriptorSets() {
     spectrumDescSets.resize(cascadeCount);
     timeEvolutionDescSets.resize(cascadeCount);
     displacementDescSets.resize(cascadeCount);
+    // One persistent FFT set per cascade per displacement component (Dy, Dx, Dz).
+    // Reused across frames (rewritten per stage in recordFFT) instead of allocating
+    // a fresh set every frame, matching the per-cascade pattern used by the sets above.
+    fftDescSets.resize(cascadeCount * kFFTSetsPerCascade);
 
     for (int i = 0; i < cascadeCount; i++) {
         // Spectrum descriptor set
@@ -557,6 +561,23 @@ bool OceanFFT::createDescriptorSets() {
 
             // Note: These will be updated dynamically based on which FFT buffer has the result
         }
+
+        // FFT descriptor sets (one per displacement component). Bindings are rewritten
+        // per stage during recordFFT; allocated once here rather than per frame.
+        for (uint32_t slot = 0; slot < kFFTSetsPerCascade; slot++) {
+            vk::DescriptorSetLayout fftLayout(**fftDescLayout_);
+            auto allocInfo = vk::DescriptorSetAllocateInfo{}
+                .setDescriptorPool(**descriptorPool_)
+                .setSetLayouts(fftLayout);
+
+            try {
+                auto sets = vkDevice.allocateDescriptorSets(allocInfo);
+                fftDescSets[i * kFFTSetsPerCascade + slot] = sets[0];
+            } catch (const vk::SystemError& e) {
+                SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "OceanFFT: Failed to allocate FFT descriptor set: %s", e.what());
+                return false;
+            }
+        }
     }
 
     return true;
@@ -586,12 +607,12 @@ void OceanFFT::update(VkCommandBuffer cmd, uint32_t frameIndex, float time) {
         vkCmd.pipelineBarrier(vk::PipelineStageFlagBits::eComputeShader, vk::PipelineStageFlagBits::eComputeShader,
                               {}, barrier, {}, {});
 
-        // FFT for each displacement component
-        recordFFT(cmd, cascade, cascade.hktDy.get(), **cascade.hktDyView,
+        // FFT for each displacement component (each uses its own persistent descriptor set)
+        recordFFT(cmd, cascade, fftDescSets[i * kFFTSetsPerCascade + 0], cascade.hktDy.get(), **cascade.hktDyView,
                   cascade.fftPing.get(), **cascade.fftPingView);
-        recordFFT(cmd, cascade, cascade.hktDx.get(), **cascade.hktDxView,
+        recordFFT(cmd, cascade, fftDescSets[i * kFFTSetsPerCascade + 1], cascade.hktDx.get(), **cascade.hktDxView,
                   cascade.fftPong.get(), **cascade.fftPongView);
-        recordFFT(cmd, cascade, cascade.hktDz.get(), **cascade.hktDzView,
+        recordFFT(cmd, cascade, fftDescSets[i * kFFTSetsPerCascade + 2], cascade.hktDz.get(), **cascade.hktDzView,
                   cascade.fftPing.get(), **cascade.fftPingView);
 
         // Barrier before displacement generation
@@ -702,7 +723,7 @@ void OceanFFT::recordTimeEvolution(VkCommandBuffer cmd, Cascade& cascade, float 
     vkCmd.dispatch(groupCount, groupCount, 1);
 }
 
-void OceanFFT::recordFFT(VkCommandBuffer cmd, Cascade& cascade,
+void OceanFFT::recordFFT(VkCommandBuffer cmd, Cascade& cascade, VkDescriptorSet fftDescSet,
                          VkImage input, VkImageView inputView,
                          VkImage output, VkImageView outputView) {
     // Simplified FFT using ping-pong between input and ping/pong buffers
@@ -713,20 +734,7 @@ void OceanFFT::recordFFT(VkCommandBuffer cmd, Cascade& cascade,
     uint32_t groupSize = 16;
     uint32_t groupCount = (params.resolution + groupSize - 1) / groupSize;
 
-    // Allocate temporary FFT descriptor sets dynamically
-    VkDescriptorSet fftDescSet;
-    vk::DescriptorSetLayout fftLayout(**fftDescLayout_);
-    auto allocInfo = vk::DescriptorSetAllocateInfo{}
-        .setDescriptorPool(**descriptorPool_)
-        .setSetLayouts(fftLayout);
-
-    try {
-        auto sets = vk::Device(device).allocateDescriptorSets(allocInfo);
-        fftDescSet = sets[0];
-    } catch (const vk::SystemError& e) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "OceanFFT: Failed to allocate FFT descriptor set: %s", e.what());
-        return;
-    }
+    // fftDescSet is pre-allocated (one per cascade per component) and rewritten per stage below.
 
     // Track which buffer has current data
     VkImage currentInput = input;

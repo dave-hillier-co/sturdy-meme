@@ -197,4 +197,8 @@ private:
     // Multi-slot dynamic buffer for bone matrices
     // Supports MAX_SKINNED_CHARACTERS slots per frame, selected via dynamic offset
     BufferUtils::MultiSlotDynamicBuffer boneMatricesBuffer_;
+
+    // Reused across updateBoneMatrices() calls to avoid a per-call heap allocation.
+    // Safe because updateBoneMatrices is only called sequentially on the main thread.
+    std::vector<glm::mat4> boneMatricesScratch_;
 };

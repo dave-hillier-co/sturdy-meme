@@ -242,8 +242,8 @@ void SkinnedMeshRenderer::updateBoneMatrices(uint32_t frameIndex, uint32_t slotI
         return;
     }
 
-    // Get bone matrices from animated character
-    std::vector<glm::mat4> boneMatrices;
+    // Get bone matrices from animated character (reused scratch avoids per-call allocation)
+    std::vector<glm::mat4>& boneMatrices = boneMatricesScratch_;
     character->computeBoneMatrices(boneMatrices);
 
     // Copy to mapped buffer slot

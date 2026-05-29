@@ -435,9 +435,11 @@ bool WaterSystem::createDescriptorSets(const std::vector<VkBuffer>& uniformBuffe
         writer.writeImage(8, causticsTexture->getImageView(), causticsTexture->getSampler());
         writer.writeImage(9, ssrView, ssrSampler, VK_IMAGE_LAYOUT_GENERAL);
         writer.writeImage(10, sceneDepthView, sceneDepthSampler, VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL);
-        writer.writeImage(11, displacementMapView, displacementMapSampler);  // FFT Ocean displacement placeholder
-        writer.writeImage(12, displacementMapView, displacementMapSampler);  // FFT Ocean normal placeholder
-        writer.writeImage(13, displacementMapView, displacementMapSampler);  // FFT Ocean foam placeholder
+        // Ocean detail bindings (11-13): the multi-cascade FFT ocean was never wired up
+        // and has been removed, so these reuse the interactive WaterDisplacement map.
+        writer.writeImage(11, displacementMapView, displacementMapSampler);  // ocean displacement
+        writer.writeImage(12, displacementMapView, displacementMapSampler);  // ocean normal
+        writer.writeImage(13, displacementMapView, displacementMapSampler);  // ocean foam
 
         // Tile cache bindings (14 and 15) - for high-res terrain sampling
         if (tileArrayView != VK_NULL_HANDLE && tileSampler != VK_NULL_HANDLE) {
@@ -448,15 +450,15 @@ bool WaterSystem::createDescriptorSets(const std::vector<VkBuffer>& uniformBuffe
             writer.writeBuffer(15, tileInfoBuffers_[0], 0, VK_WHOLE_SIZE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
         }
 
-        // FFT Ocean cascade 1 and 2 (bindings 16-21)
-        // Currently using placeholders until OceanFFT is integrated into the renderer
-        // TODO: Replace with actual OceanFFT cascade views when integrated
-        writer.writeImage(16, displacementMapView, displacementMapSampler);  // Cascade 1 displacement placeholder
-        writer.writeImage(17, displacementMapView, displacementMapSampler);  // Cascade 1 normal placeholder
-        writer.writeImage(18, displacementMapView, displacementMapSampler);  // Cascade 1 foam placeholder
-        writer.writeImage(19, displacementMapView, displacementMapSampler);  // Cascade 2 displacement placeholder
-        writer.writeImage(20, displacementMapView, displacementMapSampler);  // Cascade 2 normal placeholder
-        writer.writeImage(21, displacementMapView, displacementMapSampler);  // Cascade 2 foam placeholder
+        // Ocean cascade 1 and 2 (bindings 16-21): the multi-scale FFT cascades were never
+        // wired up (OceanFFT removed), so these reuse the same WaterDisplacement map.
+        // The shader still samples all bindings, so they must point at a valid image.
+        writer.writeImage(16, displacementMapView, displacementMapSampler);  // cascade 1 displacement
+        writer.writeImage(17, displacementMapView, displacementMapSampler);  // cascade 1 normal
+        writer.writeImage(18, displacementMapView, displacementMapSampler);  // cascade 1 foam
+        writer.writeImage(19, displacementMapView, displacementMapSampler);  // cascade 2 displacement
+        writer.writeImage(20, displacementMapView, displacementMapSampler);  // cascade 2 normal
+        writer.writeImage(21, displacementMapView, displacementMapSampler);  // cascade 2 foam
 
         // Environment cubemap (binding 22) - Phase 2 SSR fallback
         if (envCubemapView != VK_NULL_HANDLE && envCubemapSampler != VK_NULL_HANDLE) {

@@ -35,10 +35,8 @@ struct TerrainTile {
     // CPU data for collision queries (512x512 normalized heights)
     std::vector<float> cpuData;
 
-    // GPU resources
-    VkImage image = VK_NULL_HANDLE;
-    VmaAllocation allocation = VK_NULL_HANDLE;
-    VkImageView imageView = VK_NULL_HANDLE;
+    // GPU residency is provided by the shared tile array texture (see arrayLayerIndex);
+    // tiles have no standalone GPU image.
 
     // World bounds (for shader lookup)
     float worldMinX = 0.0f;
@@ -226,12 +224,6 @@ private:
 
     // Unload a tile and free GPU resources
     void unloadTile(TileCoord coord, uint32_t lod);
-
-    // Create GPU texture for a tile
-    bool createTileGPUResources(TerrainTile& tile);
-
-    // Upload tile data to GPU
-    bool uploadTileToGPU(TerrainTile& tile);
 
     // Get appropriate LOD level for distance
     uint32_t getLODForDistance(float distance) const;

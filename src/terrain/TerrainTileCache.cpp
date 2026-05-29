@@ -126,11 +126,7 @@ void TerrainTileCache::cleanup() {
     tileInfoBuffer_.cleanup();
     tileArray_.cleanup();
 
-    // Unload all tiles
-    for (auto& [key, tile] : loadedTiles) {
-        if (tile.imageView) vkDestroyImageView(device, tile.imageView, nullptr);
-        if (tile.image) vmaDestroyImage(allocator, tile.image, tile.allocation);
-    }
+    // Unload all tiles (GPU residency is owned by the shared tile array, freed above)
     loadedTiles.clear();
     activeTiles.clear();
 
@@ -355,8 +351,6 @@ void TerrainTileCache::updateActiveTiles(const glm::vec3& cameraPos, float loadR
             if (tile.arrayLayerIndex >= 0) {
                 tileArray_.freeLayer(tile.arrayLayerIndex);
             }
-            if (tile.imageView) vkDestroyImageView(device, tile.imageView, nullptr);
-            if (tile.image) vmaDestroyImage(allocator, tile.image, tile.allocation);
             loadedTiles.erase(it);
         }
     }
@@ -416,19 +410,9 @@ bool TerrainTileCache::loadTile(TileCoord coord, uint32_t lod) {
 
     TerrainTile& tile = *tilePtr;
 
-    if (!createTileGPUResources(tile)) {
-        loadedTiles.erase(key);
-        return false;
-    }
-
-    if (!uploadTileToGPU(tile)) {
-        if (tile.imageView) vkDestroyImageView(device, tile.imageView, nullptr);
-        if (tile.image) vmaDestroyImage(allocator, tile.image, tile.allocation);
-        loadedTiles.erase(key);
-        return false;
-    }
-
-    // Allocate a layer in the tile array and copy data to it
+    // Allocate a layer in the shared tile array and stage the CPU height data
+    // directly into it. The array texture is the only resource the terrain shader
+    // samples (see TerrainDescriptorSets), so no standalone per-tile image is needed.
     int32_t layerIndex = tileArray_.allocateLayer();
     if (layerIndex >= 0) {
         tile.arrayLayerIndex = layerIndex;
@@ -450,102 +434,6 @@ bool TerrainTileCache::loadTile(TileCoord coord, uint32_t lod) {
     return true;
 }
 
-bool TerrainTileCache::createTileGPUResources(TerrainTile& tile) {
-    uint32_t actualRes = static_cast<uint32_t>(std::sqrt(tile.cpuData.size()));
-
-    ManagedImage image;
-    if (!ImageBuilder(allocator)
-            .setExtent(actualRes, actualRes)
-            .setFormat(VK_FORMAT_R32_SFLOAT)
-            .setUsage(VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT)
-            .build(device, image, tile.imageView)) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "TerrainTileCache: Failed to create tile image");
-        return false;
-    }
-    image.releaseToRaw(tile.image, tile.allocation);
-    return true;
-}
-
-bool TerrainTileCache::uploadTileToGPU(TerrainTile& tile) {
-    uint32_t actualRes = static_cast<uint32_t>(std::sqrt(tile.cpuData.size()));
-    VkDeviceSize imageSize = tile.cpuData.size() * sizeof(float);
-
-    ManagedBuffer stagingBuffer;
-    if (!VmaBufferFactory::createStagingBuffer(allocator, imageSize, stagingBuffer)) {
-        return false;
-    }
-
-    void* mappedData = stagingBuffer.map();
-    memcpy(mappedData, tile.cpuData.data(), imageSize);
-    stagingBuffer.unmap();
-
-    CommandScope cmd(device, commandPool, graphicsQueue);
-    if (!cmd.begin()) return false;
-
-    vk::CommandBuffer vkCmd(cmd.get());
-
-    // Transition to transfer dst
-    {
-        auto barrier = vk::ImageMemoryBarrier{}
-            .setSrcAccessMask(vk::AccessFlags{})
-            .setDstAccessMask(vk::AccessFlagBits::eTransferWrite)
-            .setOldLayout(vk::ImageLayout::eUndefined)
-            .setNewLayout(vk::ImageLayout::eTransferDstOptimal)
-            .setSrcQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
-            .setDstQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
-            .setImage(tile.image)
-            .setSubresourceRange(vk::ImageSubresourceRange{}
-                .setAspectMask(vk::ImageAspectFlagBits::eColor)
-                .setBaseMipLevel(0)
-                .setLevelCount(1)
-                .setBaseArrayLayer(0)
-                .setLayerCount(1));
-        vkCmd.pipelineBarrier(vk::PipelineStageFlagBits::eTopOfPipe,
-                              vk::PipelineStageFlagBits::eTransfer,
-                              {}, {}, {}, barrier);
-    }
-
-    // Copy buffer to image
-    {
-        auto region = vk::BufferImageCopy{}
-            .setBufferOffset(0)
-            .setBufferRowLength(0)
-            .setBufferImageHeight(0)
-            .setImageSubresource(vk::ImageSubresourceLayers{}
-                .setAspectMask(vk::ImageAspectFlagBits::eColor)
-                .setMipLevel(0)
-                .setBaseArrayLayer(0)
-                .setLayerCount(1))
-            .setImageOffset({0, 0, 0})
-            .setImageExtent({actualRes, actualRes, 1});
-        vkCmd.copyBufferToImage(stagingBuffer.get(), tile.image, vk::ImageLayout::eTransferDstOptimal, region);
-    }
-
-    // Transition to shader read
-    {
-        auto barrier = vk::ImageMemoryBarrier{}
-            .setSrcAccessMask(vk::AccessFlagBits::eTransferWrite)
-            .setDstAccessMask(vk::AccessFlagBits::eShaderRead)
-            .setOldLayout(vk::ImageLayout::eTransferDstOptimal)
-            .setNewLayout(vk::ImageLayout::eShaderReadOnlyOptimal)
-            .setSrcQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
-            .setDstQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
-            .setImage(tile.image)
-            .setSubresourceRange(vk::ImageSubresourceRange{}
-                .setAspectMask(vk::ImageAspectFlagBits::eColor)
-                .setBaseMipLevel(0)
-                .setLevelCount(1)
-                .setBaseArrayLayer(0)
-                .setLayerCount(1));
-        vkCmd.pipelineBarrier(vk::PipelineStageFlagBits::eTransfer,
-                              vk::PipelineStageFlagBits::eFragmentShader,
-                              {}, {}, {}, barrier);
-    }
-
-    if (!cmd.end()) return false;
-
-    return true;
-}
 
 bool TerrainTileCache::isTileLoaded(TileCoord coord, uint32_t lod) const {
     uint64_t key = makeTileKey(coord, lod);

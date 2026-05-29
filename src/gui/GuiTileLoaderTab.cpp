@@ -118,7 +118,7 @@ void GuiTileLoaderTab::render(ITerrainControl& terrain, PhysicsTerrainTileManage
         // Process tiles in order: LOD3 -> LOD0 (finer detail overwrites coarser)
         for (int targetLod = 3; targetLod >= 0; targetLod--) {
             for (const TerrainTile* tile : activeTiles) {
-                if (!tile || !tile->loaded || tile->lod != static_cast<uint32_t>(targetLod)) continue;
+                if (!tile || tile->state != TileState::Resident || tile->lod != static_cast<uint32_t>(targetLod)) continue;
                 addTileToMap(tile->coord.x, tile->coord.z, tile->lod);
             }
         }

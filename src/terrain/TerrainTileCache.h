@@ -27,6 +27,16 @@ using TileCoord = TileGrid::TileCoord;
 using TileCoordHash = TileGrid::TileCoordHash;
 using TerrainHole = TileGrid::TerrainHole;
 
+// Residency state of a terrain tile. Replaces an earlier `bool loaded` that could not
+// distinguish "CPU height available but no GPU layer" from "fully renderable" — the
+// latter ambiguity let a tile that failed array-layer allocation still be treated as
+// renderable, feeding arrayLayerIndex == -1 to the shader via TileInfoBuffer.
+enum class TileState {
+    Unloaded,      // no data yet
+    CpuResident,   // cpuData present, no GPU array layer (physics/height queries, or array full)
+    Resident       // cpuData present AND a valid GPU array layer; fully renderable
+};
+
 // A single terrain tile with CPU and GPU data
 struct TerrainTile {
     TileCoord coord;
@@ -44,9 +54,9 @@ struct TerrainTile {
     float worldMaxX = 0.0f;
     float worldMaxZ = 0.0f;
 
-    bool loaded = false;
+    TileState state = TileState::Unloaded;
 
-    // Index in the tile array texture (-1 = not yet uploaded to array)
+    // Index in the tile array texture (-1 = not resident in the array)
     int32_t arrayLayerIndex = -1;
 };
 

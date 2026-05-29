@@ -368,10 +368,12 @@ void TerrainTileCache::updateActiveTiles(const glm::vec3& cameraPos, float loadR
         }
     }
 
-    // Update active tiles list
+    // Update active tiles list. Only Resident tiles (those with a real GPU array layer)
+    // belong here: activeTiles feeds TileInfoBuffer, which writes arrayLayerIndex to the
+    // shader. A CpuResident tile (no layer) must not, or it would bind layer -1.
     activeTiles.clear();
     for (auto& [key, tile] : loadedTiles) {
-        if (tile.loaded) {
+        if (tile.state == TileState::Resident) {
             activeTiles.push_back(&tile);
         }
     }
@@ -389,7 +391,7 @@ bool TerrainTileCache::loadTile(TileCoord coord, uint32_t lod) {
     uint64_t key = makeTileKey(coord, lod);
 
     auto existingIt = loadedTiles.find(key);
-    if (existingIt != loadedTiles.end() && existingIt->second.loaded) {
+    if (existingIt != loadedTiles.end() && existingIt->second.state == TileState::Resident) {
         return true;
     }
 
@@ -414,21 +416,26 @@ bool TerrainTileCache::loadTile(TileCoord coord, uint32_t lod) {
     // directly into it. The array texture is the only resource the terrain shader
     // samples (see TerrainDescriptorSets), so no standalone per-tile image is needed.
     int32_t layerIndex = tileArray_.allocateLayer();
-    if (layerIndex >= 0) {
-        tile.arrayLayerIndex = layerIndex;
-        tileArray_.copyTileToLayer(tile, static_cast<uint32_t>(layerIndex));
-    } else {
-        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "TerrainTileCache: No free array layers for tile (%d, %d) LOD%u",
-                    coord.x, coord.z, lod);
+    if (layerIndex < 0) {
+        // No GPU layer available: the tile keeps its CPU data (height queries/physics
+        // still work) but is not renderable. It stays CpuResident and will be retried
+        // on a later frame once a layer frees, rather than binding layer -1 to the shader.
+        // Logged at debug level because a starved tile is retried every frame.
+        tile.state = TileState::CpuResident;
+        SDL_LogDebug(SDL_LOG_CATEGORY_APPLICATION, "TerrainTileCache: No free array layers for tile (%d, %d) LOD%u",
+                     coord.x, coord.z, lod);
+        return true;
     }
 
-    tile.loaded = true;
+    tile.arrayLayerIndex = layerIndex;
+    tileArray_.copyTileToLayer(tile, static_cast<uint32_t>(layerIndex));
+    tile.state = TileState::Resident;
 
     SDL_Log("TerrainTileCache: Loaded tile (%d, %d) LOD%u layer %d - world bounds [%.0f,%.0f]-[%.0f,%.0f]%s",
             coord.x, coord.z, lod, tile.arrayLayerIndex, tile.worldMinX, tile.worldMinZ, tile.worldMaxX, tile.worldMaxZ,
             hasCpuData ? " (added GPU to existing)" : "");
 
-    // Upload hole mask for this tile
+    // Upload hole mask for this tile (only meaningful once it has an array layer)
     holeMask_.uploadTileHoleMask(tile, tile.arrayLayerIndex);
 
     return true;
@@ -438,7 +445,9 @@ bool TerrainTileCache::loadTile(TileCoord coord, uint32_t lod) {
 bool TerrainTileCache::isTileLoaded(TileCoord coord, uint32_t lod) const {
     uint64_t key = makeTileKey(coord, lod);
     auto it = loadedTiles.find(key);
-    return it != loadedTiles.end() && it->second.loaded;
+    // "Loaded" here means renderable (has a GPU layer); a CpuResident tile still needs
+    // loading so the render path will allocate it a layer.
+    return it != loadedTiles.end() && it->second.state == TileState::Resident;
 }
 
 bool TerrainTileCache::getHeightAt(float worldX, float worldZ, float& outHeight) const {
@@ -546,7 +555,7 @@ TerrainTileCache::HeightQueryInfo TerrainTileCache::getHeightAtDebug(float world
 const TerrainTile* TerrainTileCache::getLoadedTile(TileCoord coord, uint32_t lod) const {
     uint64_t key = makeTileKey(coord, lod);
     auto it = loadedTiles.find(key);
-    if (it != loadedTiles.end() && (it->second.loaded || !it->second.cpuData.empty())) {
+    if (it != loadedTiles.end() && it->second.state != TileState::Unloaded) {
         return &it->second;
     }
     return nullptr;
@@ -555,10 +564,7 @@ const TerrainTile* TerrainTileCache::getLoadedTile(TileCoord coord, uint32_t lod
 bool TerrainTileCache::requestTileLoad(TileCoord coord, uint32_t lod) {
     uint64_t key = makeTileKey(coord, lod);
     auto it = loadedTiles.find(key);
-    if (it != loadedTiles.end() && it->second.loaded) {
-        return true;
-    }
-    if (it != loadedTiles.end() && !it->second.cpuData.empty()) {
+    if (it != loadedTiles.end() && it->second.state != TileState::Unloaded) {
         return true;
     }
     return loadTile(coord, lod);
@@ -577,7 +583,8 @@ bool TerrainTileCache::loadTileCPUOnly(TileCoord coord, uint32_t lod) {
         return false;
     }
 
-    tile.loaded = false;
+    // CPU height data only (for physics/queries); no GPU array layer yet.
+    tile.state = TileState::CpuResident;
 
     SDL_Log("TerrainTileCache: Loaded tile CPU data (%d, %d) LOD%u - world bounds [%.0f,%.0f]-[%.0f,%.0f]",
             coord.x, coord.z, lod, tile.worldMinX, tile.worldMinZ, tile.worldMaxX, tile.worldMaxZ);

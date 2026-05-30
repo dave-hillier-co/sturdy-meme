@@ -352,22 +352,36 @@ void TerrainTileCache::updateActiveTiles(const glm::vec3& cameraPos, float loadR
 
     uint32_t baseLOD = baseHeightMap_.getBaseLOD();
 
-    // For each LOD level, determine which tiles should be loaded
+    // Outer radius of each LOD's distance band. LOD n covers the concentric ring
+    // [lodMaxDistance(n-1), lodMaxDistance(n)).
+    auto lodMaxDistance = [](uint32_t lod) -> float {
+        return (lod == 0) ? LOD0_MAX_DISTANCE :
+               (lod == 1) ? LOD1_MAX_DISTANCE :
+               (lod == 2) ? LOD2_MAX_DISTANCE :
+               LOD3_MAX_DISTANCE;
+    };
+
+    // For each LOD level, load only the tiles inside that LOD's concentric ring.
+    // Loading each LOD in its OWN band [lodMinDist, lodMaxDist) (rather than every
+    // LOD out to a single loadRadius) guarantees adjacent regions never differ by
+    // more than one LOD level, which is what prevents the height seam ("crack")
+    // that appears where the sampled tile LOD jumps. The per-LOD outer radius
+    // (lodMaxDist), not the caller's loadRadius, sets the extent so the coarse
+    // bands actually reach their intended distances.
     for (uint32_t lod = 0; lod < numLODLevels; lod++) {
-        float lodMaxDist = (lod == 0) ? LOD0_MAX_DISTANCE :
-                          (lod == 1) ? LOD1_MAX_DISTANCE :
-                          (lod == 2) ? LOD2_MAX_DISTANCE :
-                          LOD3_MAX_DISTANCE;
+        const float lodMaxDist = lodMaxDistance(lod);
+        const float lodMinDist = (lod == 0) ? 0.0f : lodMaxDistance(lod - 1);
 
         uint32_t lodTilesX = tilesX >> lod;
         uint32_t lodTilesZ = tilesZ >> lod;
         if (lodTilesX < 1) lodTilesX = 1;
         if (lodTilesZ < 1) lodTilesZ = 1;
 
-        int32_t minTileX = static_cast<int32_t>(((camX - loadRadius) / terrainSize + 0.5f) * lodTilesX);
-        int32_t maxTileX = static_cast<int32_t>(((camX + loadRadius) / terrainSize + 0.5f) * lodTilesX);
-        int32_t minTileZ = static_cast<int32_t>(((camZ - loadRadius) / terrainSize + 0.5f) * lodTilesZ);
-        int32_t maxTileZ = static_cast<int32_t>(((camZ + loadRadius) / terrainSize + 0.5f) * lodTilesZ);
+        // Scan the tile range covering this LOD's outer radius.
+        int32_t minTileX = static_cast<int32_t>(((camX - lodMaxDist) / terrainSize + 0.5f) * lodTilesX);
+        int32_t maxTileX = static_cast<int32_t>(((camX + lodMaxDist) / terrainSize + 0.5f) * lodTilesX);
+        int32_t minTileZ = static_cast<int32_t>(((camZ - lodMaxDist) / terrainSize + 0.5f) * lodTilesZ);
+        int32_t maxTileZ = static_cast<int32_t>(((camZ + lodMaxDist) / terrainSize + 0.5f) * lodTilesZ);
 
         minTileX = std::max(0, minTileX);
         maxTileX = std::min(static_cast<int32_t>(lodTilesX - 1), maxTileX);
@@ -382,7 +396,9 @@ void TerrainTileCache::updateActiveTiles(const glm::vec3& cameraPos, float loadR
                 float dist = std::sqrt((tileCenterX - camX) * (tileCenterX - camX) +
                                        (tileCenterZ - camZ) * (tileCenterZ - camZ));
 
-                if (dist < lodMaxDist && dist < loadRadius) {
+                // Ring membership: only this LOD's band, so each ground position is
+                // covered by exactly one LOD (no redundant finer-area copies).
+                if (dist >= lodMinDist && dist < lodMaxDist) {
                     TileCoord coord{tx, tz};
                     uint64_t key = makeTileKey(coord, lod);
                     auto it = loadedTiles.find(key);
@@ -399,7 +415,12 @@ void TerrainTileCache::updateActiveTiles(const glm::vec3& cameraPos, float loadR
         }
     }
 
-    // Find tiles to unload (beyond their LOD's useful range)
+    // Unload tiles that have left their LOD ring on EITHER side: too far (a coarser
+    // LOD now covers the ground) or too close (a finer LOD does). Unloading the
+    // too-close ones keeps the resident set a clean stack of concentric rings and
+    // stops stale inner copies from accumulating and starving the tile budget. The
+    // hysteresis margin (unload - load radius) prevents thrashing at ring edges.
+    const float ringHysteresis = std::max(0.0f, unloadRadius - loadRadius);
     for (auto& [key, tile] : loadedTiles) {
         if (tile.lod == baseLOD) continue;
 
@@ -409,13 +430,10 @@ void TerrainTileCache::updateActiveTiles(const glm::vec3& cameraPos, float loadR
         float dist = std::sqrt((tileCenterX - camX) * (tileCenterX - camX) +
                                (tileCenterZ - camZ) * (tileCenterZ - camZ));
 
-        float lodMaxDist = (tile.lod == 0) ? LOD0_MAX_DISTANCE :
-                          (tile.lod == 1) ? LOD1_MAX_DISTANCE :
-                          (tile.lod == 2) ? LOD2_MAX_DISTANCE :
-                          LOD3_MAX_DISTANCE;
+        const float lodMaxDist = lodMaxDistance(tile.lod);
+        const float lodMinDist = (tile.lod == 0) ? 0.0f : lodMaxDistance(tile.lod - 1);
 
-        float unloadDist = lodMaxDist + (unloadRadius - loadRadius);
-        if (dist > unloadDist) {
+        if (dist > lodMaxDist + ringHysteresis || dist < lodMinDist - ringHysteresis) {
             tilesToUnload.push_back(key);
         }
     }

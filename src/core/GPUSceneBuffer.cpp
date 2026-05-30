@@ -143,7 +143,10 @@ int32_t GPUSceneBuffer::addObject(const Renderable& renderable, VkDescriptorSet 
     float radius = glm::length(extents);
 
     cullData.boundingSphere = glm::vec4(center, radius);
-    cullData.aabbMin = glm::vec4(worldBounds.min, 0.0f);
+    // aabbMin.w carries castsShadow (1 = caster, 0 = not). The color cull pass ignores it;
+    // the shadow cull pass (cullMode==1) rejects non-casters so the shared cull-object
+    // buffer can drive both passes.
+    cullData.aabbMin = glm::vec4(worldBounds.min, renderable.castsShadow ? 1.0f : 0.0f);
     cullData.aabbMax = glm::vec4(worldBounds.max, 0.0f);
     cullData.objectIndex = objectIndex;
     cullData.firstIndex = 0;

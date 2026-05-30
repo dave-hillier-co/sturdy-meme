@@ -176,7 +176,7 @@ void GPUCullPass::updateUniforms(uint32_t frameIndex,
     uniforms.objectCount = objectCount;
     uniforms.enableHiZ = hiZEnabled_ ? 1 : 0;
     uniforms.maxDrawCommands = MAX_OBJECTS;
-    uniforms.padding = 0;
+    uniforms.cullMode = 0;  // color pass: draw every frustum-visible object
 
     // Extract frustum planes from view-projection matrix
     extractFrustumPlanes(uniforms.viewProjMatrix, uniforms.frustumPlanes);

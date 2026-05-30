@@ -179,6 +179,7 @@ set(SOURCES
     # GPU Culling
     src/core/GPUSceneBuffer.cpp
     src/culling/GPUCullPass.cpp
+    src/culling/ShadowCullPass.cpp
     # Lighting
     src/lighting/FroxelSystem.cpp
     src/lighting/ShadowSystem.cpp
@@ -802,6 +803,7 @@ set(SHADER_FILES
     ${CMAKE_CURRENT_SOURCE_DIR}/shaders/grass_shadow.vert.spv
     ${CMAKE_CURRENT_SOURCE_DIR}/shaders/grass_shadow.frag.spv
     ${CMAKE_CURRENT_SOURCE_DIR}/shaders/shadow.vert.spv
+    ${CMAKE_CURRENT_SOURCE_DIR}/shaders/shadow_indirect.vert.spv
     ${CMAKE_CURRENT_SOURCE_DIR}/shaders/shadow.frag.spv
     ${CMAKE_CURRENT_SOURCE_DIR}/shaders/postprocess.vert.spv
     ${CMAKE_CURRENT_SOURCE_DIR}/shaders/postprocess.frag.spv
@@ -962,6 +964,7 @@ if(SHADER_COMPILE_CMD)
     set(SHADERS_WITH_BINDINGS
         shader.vert shader.frag
         shader_instanced.vert shader_instanced.frag
+        shadow_indirect.vert
         skinned.vert skinned_shadow.vert
         sky.vert sky.frag
         grass.comp grass_tiled.comp grass_displacement.comp grass.vert grass.frag

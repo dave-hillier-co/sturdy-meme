@@ -28,7 +28,7 @@ struct alignas(16) GPUCullUniforms {
     uint32_t objectCount;           // Number of objects to cull
     uint32_t enableHiZ;             // 1 = use Hi-Z, 0 = frustum only
     uint32_t maxDrawCommands;       // Output buffer capacity
-    uint32_t padding;
+    uint32_t cullMode;              // 0 = color pass, 1 = shadow pass (rejects non-casters)
 };
 
 /**

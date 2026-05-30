@@ -40,7 +40,7 @@ layout(std140, binding = BINDING_SCENE_CULL_UNIFORMS) uniform CullUniforms {
     uint objectCount;          // Number of objects to cull
     uint enableHiZ;            // 1 = use Hi-Z (future), 0 = frustum only
     uint maxDrawCommands;      // Output buffer capacity
-    uint padding;
+    uint cullMode;             // 0 = color pass, 1 = shadow pass (also rejects non-casters)
 } cullUniforms;
 
 // Input: Objects to cull
@@ -111,6 +111,12 @@ void main() {
     // Frustum cull: cheap sphere rejection, then a precise AABB test.
     bool culled = frustumCullSphere(obj.boundingSphere.xyz, obj.boundingSphere.w)
                || frustumCullAABB(obj.aabbMin.xyz, obj.aabbMax.xyz);
+
+    // Shadow pass: reject objects flagged as non-shadow-casters (aabbMin.w == 0).
+    // The color pass leaves cullMode at 0 and draws every visible object regardless.
+    if (cullUniforms.cullMode == 1u && obj.aabbMin.w < 0.5) {
+        culled = true;
+    }
 
     DrawIndexedIndirectCommand cmd;
     cmd.indexCount = obj.indexCount;

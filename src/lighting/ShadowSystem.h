@@ -19,6 +19,10 @@
 #include "SkinnedMesh.h"
 #include "VulkanHelpers.h"
 
+// Forward declarations for the GPU-driven indirect shadow path
+class GPUSceneBuffer;
+class ShadowCullPass;
+
 // Number of cascades for CSM
 static constexpr uint32_t NUM_SHADOW_CASCADES = 4;
 
@@ -74,6 +78,20 @@ public:
     // Pre-cascade compute callback: runs BEFORE each cascade's render pass (for GPU culling)
     // Signature: void(VkCommandBuffer cmd, uint32_t frameIndex, uint32_t cascade, const glm::mat4& lightMatrix)
     using ComputeCallback = std::function<void(VkCommandBuffer, uint32_t, uint32_t, const glm::mat4&)>;
+    // Optional GPU-driven indirect scene-object shadow path. When enabled, the shared scene
+    // objects (those mirrored into GPUSceneBuffer) are culled per-cascade on the GPU and drawn
+    // with indirect commands instead of the instanced/per-object path. Trees, grass, terrain
+    // and skinned characters keep their own callbacks either way. The CPU-supplied
+    // sceneObjects vector is still drawn when this is disabled.
+    // Plain aggregate (no in-class initializers) so it can be a `= {}` default argument:
+    // a value-initialized instance is all-zero, i.e. disabled.
+    struct IndirectShadowParams {
+        bool enabled;
+        ShadowCullPass* cullPass;
+        GPUSceneBuffer* sceneBuffer;
+        bool canMultiDrawIndirect;
+    };
+
     void recordShadowPass(VkCommandBuffer cmd, uint32_t frameIndex,
                           VkDescriptorSet descriptorSet,
                           const std::vector<Renderable>& sceneObjects,
@@ -81,7 +99,16 @@ public:
                           const DrawCallback& grassDrawCallback,
                           const DrawCallback& treeDrawCallback = nullptr,
                           const DrawCallback& skinnedDrawCallback = nullptr,
-                          const ComputeCallback& preCascadeComputeCallback = nullptr);
+                          const ComputeCallback& preCascadeComputeCallback = nullptr,
+                          const IndirectShadowParams& indirect = {});
+
+    /**
+     * Initialize GPU-driven indirect shadow resources (pipeline + per-frame instance
+     * descriptor sets bound to the GPUSceneBuffer instance buffer). Requires the
+     * GPUSceneBuffer to already exist. Safe to skip; the CPU/instanced path remains.
+     */
+    bool initIndirectShadowPath(GPUSceneBuffer& sceneBuffer);
+    bool hasIndirectShadowPath() const { return indirectShadowReady_; }
 
     // Record skinned mesh shadow for a single cascade (called after bindSkinnedShadowPipeline)
     void recordSkinnedMeshShadow(VkCommandBuffer cmd, uint32_t cascade,
@@ -248,6 +275,24 @@ private:
         uint32_t frameIndex,
         uint32_t cascadeIndex,
         const std::vector<Renderable>& sceneObjects);
+
+    // GPU-driven indirect shadow rendering (reuses GPUSceneBuffer instance buffer + the
+    // per-cascade ShadowCullPass output). set 0 = main UBO (cascade matrices), set 1 =
+    // scene instance SSBO (reuses instancedShadowDescriptorSetLayout).
+    struct IndirectShadowPushConstants {
+        uint32_t cascadeIndex;
+    };
+    VkPipeline indirectShadowPipeline = VK_NULL_HANDLE;
+    VkPipelineLayout indirectShadowPipelineLayout = VK_NULL_HANDLE;
+    VkDescriptorPool indirectShadowPool = VK_NULL_HANDLE;
+    std::vector<vk::DescriptorSet> indirectInstanceDescriptorSets;  // per frame -> instance SSBO
+    bool indirectShadowReady_ = false;
+
+    // Draw scene objects for one cascade via per-cascade indirect commands.
+    void recordShadowSceneIndirect(VkCommandBuffer cmd, uint32_t frameIndex, uint32_t cascade,
+                                   VkDescriptorSet uboDescriptorSet,
+                                   GPUSceneBuffer& sceneBuffer,
+                                   VkBuffer indirectBuffer, bool canMultiDrawIndirect);
 
     bool initialized_ = false;
 };

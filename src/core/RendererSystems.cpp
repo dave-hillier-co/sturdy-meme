@@ -34,6 +34,7 @@
 #include "ScreenSpaceShadowSystem.h"
 #include "GPUSceneBuffer.h"
 #include "culling/GPUCullPass.h"
+#include "culling/ShadowCullPass.h"
 #include "WaterSystem.h"
 #include "WaterDisplacement.h"
 #include "FlowMapGenerator.h"
@@ -241,6 +242,10 @@ void RendererSystems::setGPUSceneBuffer(std::unique_ptr<GPUSceneBuffer> buffer) 
 
 void RendererSystems::setGPUCullPass(std::unique_ptr<GPUCullPass> pass) {
     registry_.add<GPUCullPass>(std::move(pass));
+}
+
+void RendererSystems::setShadowCullPass(std::unique_ptr<ShadowCullPass> pass) {
+    registry_.add<ShadowCullPass>(std::move(pass));
 }
 
 void RendererSystems::setScreenSpaceShadow(std::unique_ptr<ScreenSpaceShadowSystem> system) {

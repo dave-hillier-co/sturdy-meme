@@ -22,6 +22,8 @@ class TerrainSystem;
 class SceneManager;
 class GlobalBufferManager;
 class SkinnedMeshRenderer;
+class GPUSceneBuffer;
+class ShadowCullPass;
 
 class RendererSystems;
 
@@ -48,6 +50,10 @@ struct ShadowPassResources {
     SceneManager* scene = nullptr;
     GlobalBufferManager* globalBuffers = nullptr;
     SkinnedMeshRenderer* skinnedMesh = nullptr;
+
+    // GPU-driven indirect shadow path (optional - null when unavailable)
+    GPUSceneBuffer* gpuSceneBuffer = nullptr;
+    ShadowCullPass* shadowCullPass = nullptr;
 
     // ECS world for Phase 6 rendering (optional - if null, uses legacy renderables)
     ecs::World* ecsWorld = nullptr;

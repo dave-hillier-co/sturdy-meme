@@ -564,12 +564,31 @@ void Renderer::notifyWindowFocusGained() {
 
 // Render pass recording helpers - pure command recording, no state mutation
 
+// Runtime toggle for the GPU-driven indirect shadow path. Defaults ON; set the environment
+// variable INDIRECT_SHADOW_DRAW=0 to force the instanced shadow path (A/B comparison and a
+// fallback). Per-cascade GPU frustum culling + vkCmdDrawIndexedIndirect for scene-object
+// shadows. Evaluated once.
+static bool indirectShadowDrawEnabled() {
+    static const bool enabled = []{
+        const char* v = std::getenv("INDIRECT_SHADOW_DRAW");
+        const bool on = (v == nullptr) || (std::string(v) != "0");
+        SDL_Log("Indirect shadow draw path: %s", on ? "ENABLED" : "disabled (instanced path)");
+        return on;
+    }();
+    return enabled;
+}
+
 void Renderer::recordShadowPass(VkCommandBuffer cmd, uint32_t frameIndex, float grassTime, const glm::vec3& cameraPosition) {
     // Build params for stateless recording
     ShadowPassRecorder::Params params;
     params.terrainEnabled = terrainEnabled;
     params.terrainShadows = perfToggles.terrainShadows;
     params.grassShadows = perfToggles.grassShadows;
+    params.indirectShadowDraw = indirectShadowDrawEnabled();
+    // vkCmdDrawIndexedIndirect needs both features; else the indirect path falls back to a
+    // direct instanced draw (no per-object GPU culling).
+    params.canMultiDrawIndirect = vulkanContext_->hasMultiDrawIndirect()
+                               && vulkanContext_->hasDrawIndirectFirstInstance();
 
     // Delegate to the recorder
     shadowPassRecorder_->record(cmd, frameIndex, grassTime, cameraPosition, params);
@@ -677,10 +696,9 @@ void Renderer::recordHDRPass(VkCommandBuffer cmd, uint32_t frameIndex, float gra
     params.pipelineLayout = scenePipeline_.getPipelineLayoutPtr();
     params.viewProj = lastViewProj;
 
-    // GPU-driven rendering params
-    // Note: useIndirectDraw is disabled for now as the full GPU-driven rendering path
-    // requires mesh batching and proper indirect draw command generation.
-    // The GPUCullPass runs to populate visibility data, but rendering uses the traditional path.
+    // GPU-driven rendering params. The GPUCullPass produces per-object indirect commands and
+    // SceneObjectsDrawable issues vkCmdDrawIndexedIndirect when the indirect path is active
+    // (indirectSceneDrawEnabled, default on; INDIRECT_SCENE_DRAW=0 forces the CPU path).
     if (systems_->hasGPUSceneBuffer() && systems_->hasGPUCullPass()) {
         params.gpuSceneBuffer = &systems_->gpuSceneBuffer();
         params.instancedPipelineLayout = instancedScenePipeline_.getPipelineLayoutPtr();
@@ -707,9 +725,7 @@ void Renderer::recordHDRPassWithSecondaries(VkCommandBuffer cmd, uint32_t frameI
     params.pipelineLayout = scenePipeline_.getPipelineLayoutPtr();
     params.viewProj = lastViewProj;
 
-    // GPU-driven rendering params
-    // Note: useIndirectDraw is disabled for now as the full GPU-driven rendering path
-    // requires mesh batching and proper indirect draw command generation.
+    // GPU-driven rendering params (see recordHDRPass; indirect draw is the default path).
     if (systems_->hasGPUSceneBuffer() && systems_->hasGPUCullPass()) {
         params.gpuSceneBuffer = &systems_->gpuSceneBuffer();
         params.instancedPipelineLayout = instancedScenePipeline_.getPipelineLayoutPtr();
@@ -735,9 +751,7 @@ void Renderer::recordHDRPassSecondarySlot(VkCommandBuffer cmd, uint32_t frameInd
     params.pipelineLayout = scenePipeline_.getPipelineLayoutPtr();
     params.viewProj = lastViewProj;
 
-    // GPU-driven rendering params
-    // Note: useIndirectDraw is disabled for now as the full GPU-driven rendering path
-    // requires mesh batching and proper indirect draw command generation.
+    // GPU-driven rendering params (see recordHDRPass; indirect draw is the default path).
     if (systems_->hasGPUSceneBuffer() && systems_->hasGPUCullPass()) {
         params.gpuSceneBuffer = &systems_->gpuSceneBuffer();
         params.instancedPipelineLayout = instancedScenePipeline_.getPipelineLayoutPtr();

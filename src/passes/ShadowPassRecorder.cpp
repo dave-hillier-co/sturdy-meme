@@ -17,6 +17,8 @@
 #include "AnimatedCharacter.h"
 #include "SkinnedMesh.h"
 #include "CullCommon.h"  // For extractFrustumPlanes
+#include "culling/ShadowCullPass.h"
+#include "GPUSceneBuffer.h"
 
 // ECS includes for Phase 6 rendering
 #include "ecs/World.h"
@@ -82,6 +84,16 @@ void ShadowPassRecorder::record(VkCommandBuffer cmd, uint32_t frameIndex, float 
         }
     };
 
+    // When the GPU-driven indirect shadow path is active it draws everything mirrored into
+    // GPUSceneBuffer (legacy renderables + scatter rocks/detritus). Those must NOT also be
+    // collected into the CPU/instanced list below or they would be drawn twice. ECS scene
+    // entities are NOT in GPUSceneBuffer, so they are still collected and drawn via the
+    // instanced path alongside the indirect draw (the same split the color pass uses).
+    const bool indirectActive = params.indirectShadowDraw
+                             && resources_.shadowCullPass && resources_.gpuSceneBuffer
+                             && resources_.shadow->hasIndirectShadowPath()
+                             && resources_.gpuSceneBuffer->getObjectCount() > 0;
+
     // Combine scene objects and rock objects for shadow rendering
     // Skip player character - it's rendered separately with skinned shadow pipeline
     std::vector<Renderable> allObjects;
@@ -125,8 +137,9 @@ void ShadowPassRecorder::record(VkCommandBuffer cmd, uint32_t frameIndex, float 
                 allObjects.push_back(r);
             }
         }
-    } else {
-        // Legacy path: Use Renderable vector
+    } else if (!indirectActive) {
+        // Legacy path: Use Renderable vector. These renderables are mirrored into
+        // GPUSceneBuffer, so they are only needed on the CPU/instanced path (indirect off).
         const auto& sceneObjects = resources_.scene->getRenderables();
 
         allObjects.reserve(sceneObjects.size() + rockCount + detritusCount);
@@ -137,10 +150,13 @@ void ShadowPassRecorder::record(VkCommandBuffer cmd, uint32_t frameIndex, float 
         }
     }
 
-    // Add rocks and detritus (these still use legacy Renderable)
-    allObjects.insert(allObjects.end(), resources_.vegetation.rocks().getSceneObjects().begin(), resources_.vegetation.rocks().getSceneObjects().end());
-    if (resources_.vegetation.hasDetritus()) {
-        allObjects.insert(allObjects.end(), resources_.vegetation.detritus()->getSceneObjects().begin(), resources_.vegetation.detritus()->getSceneObjects().end());
+    // Add rocks and detritus (legacy Renderable). When indirect is active these ride the
+    // GPUSceneBuffer indirect draw, so don't also collect them here (avoids double-draw).
+    if (!indirectActive) {
+        allObjects.insert(allObjects.end(), resources_.vegetation.rocks().getSceneObjects().begin(), resources_.vegetation.rocks().getSceneObjects().end());
+        if (resources_.vegetation.hasDetritus()) {
+            allObjects.insert(allObjects.end(), resources_.vegetation.detritus()->getSceneObjects().begin(), resources_.vegetation.detritus()->getSceneObjects().end());
+        }
     }
 
     // Skinned character shadow callback (renders with GPU skinning)
@@ -185,6 +201,18 @@ void ShadowPassRecorder::record(VkCommandBuffer cmd, uint32_t frameIndex, float 
     const auto& materialRegistry = resources_.scene->getSceneBuilder().getMaterialRegistry();
     VkDescriptorSet shadowDescriptorSet = materialRegistry.getDescriptorSet(0, frameIndex);
 
+    // GPU-driven indirect scene-object shadow path. When enabled and available, the shared
+    // scene objects (those mirrored into GPUSceneBuffer) are culled per-cascade on the GPU
+    // and drawn indirectly; the CPU allObjects path above is skipped for them. Rocks/detritus
+    // ride along since they are part of GPUSceneBuffer too.
+    ShadowSystem::IndirectShadowParams indirect{};
+    if (indirectActive) {
+        indirect.enabled = true;
+        indirect.cullPass = resources_.shadowCullPass;
+        indirect.sceneBuffer = resources_.gpuSceneBuffer;
+        indirect.canMultiDrawIndirect = params.canMultiDrawIndirect;
+    }
+
     resources_.profiler->endCpuZone("Shadow:Setup");
 
     // Record all shadow cascades
@@ -192,7 +220,7 @@ void ShadowPassRecorder::record(VkCommandBuffer cmd, uint32_t frameIndex, float 
     resources_.shadow->recordShadowPass(cmd, frameIndex, shadowDescriptorSet,
                                        allObjects,
                                        terrainCallback, grassCallback, treeCallback, skinnedCallback,
-                                       preCascadeComputeCallback);
+                                       preCascadeComputeCallback, indirect);
     resources_.profiler->endCpuZone("Shadow:Cascades");
 }
 

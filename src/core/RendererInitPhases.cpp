@@ -29,6 +29,7 @@
 #include "HiZSystem.h"
 #include "GPUSceneBuffer.h"
 #include "culling/GPUCullPass.h"
+#include "culling/ShadowCullPass.h"
 #include "ScatterSystem.h"
 #include "ScatterSystemFactory.h"
 #include "TreeSystem.h"
@@ -647,6 +648,38 @@ std::vector<Loading::SystemInitTask> Renderer::buildInitTasks(const InitContext&
                     }
                     systems_->setGPUCullPass(std::move(gpuCullPass));
                     SDL_Log("GPUCullPass: Initialized for frustum culling");
+                }
+            }
+
+            // Per-cascade shadow culling pass + GPU-driven indirect shadow draw resources.
+            // Reuses the scene cull-object buffer (shared with the color pass) and the
+            // GPUSceneBuffer instance buffer; produces one indirect command buffer per cascade.
+            if (systems_->hasGPUSceneBuffer()) {
+                ShadowCullPass::InitInfo shadowCullInfo{};
+                shadowCullInfo.device = device;
+                shadowCullInfo.raiiDevice = &vulkanContext_->getRaiiDevice();
+                shadowCullInfo.allocator = vulkanContext_->getAllocator();
+                shadowCullInfo.shaderPath = resourcePath + "/shaders";
+                shadowCullInfo.framesInFlight = MAX_FRAMES_IN_FLIGHT;
+                shadowCullInfo.cascadeCount = NUM_SHADOW_CASCADES;
+                shadowCullInfo.descriptorPool = getDescriptorPool();
+
+                auto shadowCullPass = ShadowCullPass::create(shadowCullInfo);
+                if (shadowCullPass) {
+                    const auto* whiteTexture = systems_->scene().getSceneBuilder().getWhiteTexture();
+                    if (whiteTexture) {
+                        shadowCullPass->setPlaceholderImage(
+                            whiteTexture->getImageView(), whiteTexture->getSampler());
+                    }
+                    // Write the cull descriptor sets once (buffers are stable for their lifetime).
+                    shadowCullPass->prepareDescriptors(&systems_->gpuSceneBuffer());
+                    systems_->setShadowCullPass(std::move(shadowCullPass));
+
+                    // Build the indirect shadow pipeline + instance descriptor sets.
+                    if (!systems_->shadow().initIndirectShadowPath(systems_->gpuSceneBuffer())) {
+                        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                            "ShadowSystem: indirect shadow path unavailable; using instanced path");
+                    }
                 }
             }
 

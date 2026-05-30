@@ -10,6 +10,8 @@
 #include "core/vulkan/RenderPassBuilder.h"
 #include "core/vulkan/DescriptorWriter.h"
 #include "core/InitInfoBuilder.h"
+#include "core/GPUSceneBuffer.h"
+#include "culling/ShadowCullPass.h"
 #include <vulkan/vulkan.hpp>
 #include <SDL3/SDL.h>
 #include <algorithm>
@@ -90,6 +92,11 @@ ShadowSystem::~ShadowSystem() {
     if (skinnedShadowPipelineLayout != VK_NULL_HANDLE) vkDevice.destroyPipelineLayout(skinnedShadowPipelineLayout);
     if (dynamicShadowPipeline != VK_NULL_HANDLE) vkDevice.destroyPipeline(dynamicShadowPipeline);
     if (dynamicShadowPipelineLayout != VK_NULL_HANDLE) vkDevice.destroyPipelineLayout(dynamicShadowPipelineLayout);
+
+    // GPU-driven indirect shadow cleanup (descriptor sets freed with the pool)
+    if (indirectShadowPipeline != VK_NULL_HANDLE) vkDevice.destroyPipeline(indirectShadowPipeline);
+    if (indirectShadowPipelineLayout != VK_NULL_HANDLE) vkDevice.destroyPipelineLayout(indirectShadowPipelineLayout);
+    if (indirectShadowPool != VK_NULL_HANDLE) vkDevice.destroyDescriptorPool(indirectShadowPool);
 
     // CSM cleanup
     for (auto fb : cascadeFramebuffers) {
@@ -540,6 +547,144 @@ void ShadowSystem::drawShadowSceneInstanced(
     }
 }
 
+bool ShadowSystem::initIndirectShadowPath(GPUSceneBuffer& sceneBuffer) {
+    vk::Device vkDevice(initInfo_.device);
+
+    // Pipeline layout: set 0 = main UBO (cascade matrices), set 1 = scene instance SSBO
+    // (reuse the instanced shadow layout: one storage buffer at binding 0, vertex stage).
+    auto pushRange = vk::PushConstantRange{}
+        .setStageFlags(vk::ShaderStageFlagBits::eVertex)
+        .setOffset(0)
+        .setSize(sizeof(IndirectShadowPushConstants));
+
+    std::array<vk::DescriptorSetLayout, 2> setLayouts = {
+        vk::DescriptorSetLayout(initInfo_.mainDescriptorSetLayout),
+        vk::DescriptorSetLayout(instancedShadowDescriptorSetLayout)
+    };
+
+    auto layoutInfo = vk::PipelineLayoutCreateInfo{}
+        .setSetLayouts(setLayouts)
+        .setPushConstantRanges(pushRange);
+    try {
+        indirectShadowPipelineLayout = vkDevice.createPipelineLayout(layoutInfo);
+    } catch (const vk::SystemError& e) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create indirect shadow pipeline layout: %s", e.what());
+        return false;
+    }
+
+    auto binding = Vertex::getBindingDescription();
+    auto attrsArr = Vertex::getAttributeDescriptions();
+    std::vector<VkVertexInputAttributeDescription> attrs(attrsArr.begin(), attrsArr.end());
+
+    GraphicsPipelineFactory factory(initInfo_.device);
+    factory.applyPreset(GraphicsPipelineFactory::Preset::Shadow)
+           .setShaders(initInfo_.shaderPath + "/shadow_indirect.vert.spv", initInfo_.shaderPath + "/shadow.frag.spv")
+           .setRenderPass(shadowRenderPass)
+           .setPipelineLayout(indirectShadowPipelineLayout)
+           .setExtent({SHADOW_MAP_SIZE, SHADOW_MAP_SIZE})
+           .setVertexInput({binding}, attrs)
+           .setDepthBias(1.25f, 1.75f);
+    if (!factory.build(indirectShadowPipeline)) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create indirect shadow pipeline");
+        return false;
+    }
+
+    // Per-frame instance descriptor sets bound to the GPUSceneBuffer instance buffers.
+    auto poolSize = vk::DescriptorPoolSize{}
+        .setType(vk::DescriptorType::eStorageBuffer)
+        .setDescriptorCount(initInfo_.framesInFlight);
+    auto poolInfo = vk::DescriptorPoolCreateInfo{}
+        .setMaxSets(initInfo_.framesInFlight)
+        .setPoolSizes(poolSize);
+    try {
+        indirectShadowPool = vkDevice.createDescriptorPool(poolInfo);
+    } catch (const vk::SystemError& e) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create indirect shadow descriptor pool: %s", e.what());
+        return false;
+    }
+
+    std::vector<vk::DescriptorSetLayout> layouts(initInfo_.framesInFlight,
+        vk::DescriptorSetLayout(instancedShadowDescriptorSetLayout));
+    auto allocInfo = vk::DescriptorSetAllocateInfo{}
+        .setDescriptorPool(indirectShadowPool)
+        .setSetLayouts(layouts);
+    try {
+        indirectInstanceDescriptorSets = vkDevice.allocateDescriptorSets(allocInfo);
+    } catch (const vk::SystemError& e) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to allocate indirect shadow descriptor sets: %s", e.what());
+        return false;
+    }
+
+    for (uint32_t i = 0; i < initInfo_.framesInFlight; ++i) {
+        auto bufInfo = vk::DescriptorBufferInfo{}
+            .setBuffer(sceneBuffer.getInstanceBuffer(i))
+            .setOffset(0)
+            .setRange(sceneBuffer.getInstanceBufferSize());
+        auto write = vk::WriteDescriptorSet{}
+            .setDstSet(indirectInstanceDescriptorSets[i])
+            .setDstBinding(BINDING_SHADOW_INSTANCES)
+            .setDescriptorType(vk::DescriptorType::eStorageBuffer)
+            .setDescriptorCount(1)
+            .setBufferInfo(bufInfo);
+        vkDevice.updateDescriptorSets(write, {});
+    }
+
+    indirectShadowReady_ = true;
+    SDL_Log("ShadowSystem: GPU-driven indirect shadow path initialized");
+    return true;
+}
+
+void ShadowSystem::recordShadowSceneIndirect(VkCommandBuffer cmd, uint32_t frameIndex, uint32_t cascade,
+                                             VkDescriptorSet uboDescriptorSet,
+                                             GPUSceneBuffer& sceneBuffer,
+                                             VkBuffer indirectBuffer, bool canMultiDrawIndirect) {
+    if (!indirectShadowReady_ || indirectShadowPipeline == VK_NULL_HANDLE) return;
+    if (frameIndex >= indirectInstanceDescriptorSets.size()) return;
+
+    const auto& batches = sceneBuffer.getBatches();
+    if (batches.empty()) return;
+
+    vk::CommandBuffer vkCmd(cmd);
+    vkCmd.bindPipeline(vk::PipelineBindPoint::eGraphics, indirectShadowPipeline);
+
+    // set 0 = UBO (cascade matrices), set 1 = instance SSBO (bound once).
+    std::array<vk::DescriptorSet, 2> sets = {
+        vk::DescriptorSet(uboDescriptorSet),
+        indirectInstanceDescriptorSets[frameIndex]
+    };
+    vkCmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, indirectShadowPipelineLayout, 0, sets, {});
+
+    IndirectShadowPushConstants push{cascade};
+    vkCmd.pushConstants<IndirectShadowPushConstants>(
+        indirectShadowPipelineLayout, vk::ShaderStageFlagBits::eVertex, 0, push);
+
+    // One draw per (mesh, material) batch. The per-cascade cull pass wrote one command per
+    // object into a stable slot (command k -> instance k), toggling instanceCount (0/1) for
+    // visibility; each batch owns the contiguous range [firstObject, firstObject+objectCount)
+    // and firstInstance selects the instance via gl_InstanceIndex. Direct fallback draws the
+    // whole batch where multiDrawIndirect is unavailable.
+    constexpr uint32_t kCmdStride = sizeof(GPUDrawIndexedIndirectCommand);
+    for (const auto& batch : batches) {
+        if (!batch.mesh || batch.objectCount == 0) continue;
+
+        vk::Buffer vb[] = {batch.mesh->getVertexBuffer()};
+        vk::DeviceSize offsets[] = {0};
+        vkCmd.bindVertexBuffers(0, 1, vb, offsets);
+        vkCmd.bindIndexBuffer(batch.mesh->getIndexBuffer(), 0, vk::IndexType::eUint32);
+
+        if (canMultiDrawIndirect && indirectBuffer != VK_NULL_HANDLE) {
+            vkCmd.drawIndexedIndirect(
+                vk::Buffer(indirectBuffer),
+                static_cast<vk::DeviceSize>(batch.firstObject) * kCmdStride,
+                batch.objectCount,
+                kCmdStride);
+        } else {
+            vkCmd.drawIndexed(batch.mesh->getIndexCount(), batch.objectCount, 0, 0, batch.firstObject);
+        }
+        DIAG_RECORD_DRAW();
+    }
+}
+
 void ShadowSystem::calculateCascadeSplits(float nearClip, float farClip, float lambda, std::vector<float>& splits) {
     splits.resize(NUM_SHADOW_CASCADES + 1);
     splits[0] = nearClip;
@@ -690,11 +835,20 @@ void ShadowSystem::recordShadowPass(VkCommandBuffer cmd, uint32_t frameIndex,
                                      const DrawCallback& grassDrawCallback,
                                      const DrawCallback& treeDrawCallback,
                                      const DrawCallback& skinnedDrawCallback,
-                                     const ComputeCallback& preCascadeComputeCallback) {
+                                     const ComputeCallback& preCascadeComputeCallback,
+                                     const IndirectShadowParams& indirect) {
     vk::CommandBuffer vkCmd(cmd);
 
-    // Check if instanced rendering is available
-    bool useInstanced = instancedShadowPipeline != VK_NULL_HANDLE &&
+    // GPU-driven indirect scene-object path (per-cascade frustum culling + indirect draw).
+    // When active it replaces the instanced/per-object scene-object draw below.
+    const bool useIndirect = indirect.enabled && indirectShadowReady_ &&
+                             indirect.cullPass && indirect.sceneBuffer &&
+                             indirect.sceneBuffer->getObjectCount() > 0;
+    const uint32_t cullObjectCount = useIndirect ? indirect.sceneBuffer->getObjectCount() : 0;
+
+    // Check if instanced rendering is available (only used when not on the indirect path)
+    bool useInstanced = !useIndirect &&
+                        instancedShadowPipeline != VK_NULL_HANDLE &&
                         frameIndex < instancedShadowDescriptorSets.size() &&
                         !sceneObjects.empty();
 
@@ -702,6 +856,16 @@ void ShadowSystem::recordShadowPass(VkCommandBuffer cmd, uint32_t frameIndex,
         // Run pre-cascade compute pass (GPU culling) BEFORE the render pass
         if (preCascadeComputeCallback) {
             preCascadeComputeCallback(cmd, frameIndex, cascade, cascadeMatrices[cascade]);
+        }
+
+        // GPU-driven scene-object shadow culling for this cascade (also before the render pass).
+        // Each cascade culls the shared cull-object buffer against its own light-space frustum
+        // into its own indirect command buffer.
+        if (useIndirect) {
+            // Descriptors were written once at init (prepareDescriptors); only the per-frame
+            // uniform contents change here. No descriptor updates during recording.
+            indirect.cullPass->updateUniforms(frameIndex, cascade, cascadeMatrices[cascade], cullObjectCount);
+            indirect.cullPass->recordCulling(cmd, frameIndex, cascade);
         }
 
         vk::ClearValue shadowClear;
@@ -715,7 +879,33 @@ void ShadowSystem::recordShadowPass(VkCommandBuffer cmd, uint32_t frameIndex,
 
         vkCmd.beginRenderPass(shadowPassInfo, vk::SubpassContents::eInline);
 
-        if (useInstanced) {
+        if (useIndirect) {
+            // GPU-driven indirect draw of the GPUSceneBuffer objects (legacy + scatter) for
+            // this cascade.
+            recordShadowSceneIndirect(cmd, frameIndex, cascade, descriptorSet,
+                                      *indirect.sceneBuffer,
+                                      indirect.cullPass->getIndirectBuffer(frameIndex, cascade),
+                                      indirect.canMultiDrawIndirect);
+
+            // Supplementary shadow casters NOT mirrored into GPUSceneBuffer (e.g. ECS scene
+            // entities) are drawn via the instanced path so they still cast shadows.
+            if (!sceneObjects.empty() && instancedShadowPipeline != VK_NULL_HANDLE &&
+                frameIndex < instancedShadowDescriptorSets.size()) {
+                std::array<vk::DescriptorSet, 2> descSets = {
+                    vk::DescriptorSet(descriptorSet),
+                    vk::DescriptorSet(instancedShadowDescriptorSets[frameIndex])
+                };
+                vkCmd.bindPipeline(vk::PipelineBindPoint::eGraphics, instancedShadowPipeline);
+                vkCmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, instancedShadowPipelineLayout,
+                                         0, descSets, {});
+                drawShadowSceneInstanced(cmd, frameIndex, cascade, sceneObjects);
+            }
+
+            // Leave the regular shadow pipeline bound for the terrain/grass/tree callbacks.
+            vkCmd.bindPipeline(vk::PipelineBindPoint::eGraphics, shadowPipeline);
+            vkCmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, shadowPipelineLayout,
+                                     0, vk::DescriptorSet(descriptorSet), {});
+        } else if (useInstanced) {
             // Use instanced rendering for scene objects (rocks, detritus, etc.)
             // Bind descriptor sets for instanced pipeline
             std::array<vk::DescriptorSet, 2> descSets = {

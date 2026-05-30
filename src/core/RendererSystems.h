@@ -71,6 +71,7 @@ class CloudShadowSystem;
 class HiZSystem;
 class GPUSceneBuffer;
 class GPUCullPass;
+class ShadowCullPass;
 class WaterSystem;
 class WaterDisplacement;
 class FlowMapGenerator;
@@ -295,6 +296,10 @@ public:
     const GPUCullPass& gpuCullPass() const { return registry_.get<GPUCullPass>(); }
     bool hasGPUCullPass() const { return registry_.has<GPUCullPass>(); }
     void setGPUCullPass(std::unique_ptr<GPUCullPass> pass);
+    ShadowCullPass& shadowCullPass() { return registry_.get<ShadowCullPass>(); }
+    const ShadowCullPass& shadowCullPass() const { return registry_.get<ShadowCullPass>(); }
+    bool hasShadowCullPass() const { return registry_.has<ShadowCullPass>(); }
+    void setShadowCullPass(std::unique_ptr<ShadowCullPass> pass);
 
     // Screen-space shadow buffer
     ScreenSpaceShadowSystem* screenSpaceShadow() { return registry_.find<ScreenSpaceShadowSystem>(); }

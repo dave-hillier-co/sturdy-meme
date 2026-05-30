@@ -40,6 +40,9 @@ public:
         bool terrainEnabled = true;
         bool terrainShadows = true;
         bool grassShadows = true;
+        // GPU-driven indirect scene-object shadow path (per-cascade frustum culling).
+        bool indirectShadowDraw = false;
+        bool canMultiDrawIndirect = false;
     };
 
     // Construct with focused resources (preferred - reduced coupling)

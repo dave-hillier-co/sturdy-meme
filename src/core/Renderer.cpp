@@ -342,6 +342,7 @@ void Renderer::cleanup() {
 
         // Clean up ScenePipeline (RAII objects must be reset while device is alive)
         scenePipeline_.reset();
+        instancedScenePipeline_.reset();
 
         // Clean up descriptor pool
         if (descriptorPool_.has_value()) {
@@ -655,6 +656,19 @@ void Renderer::createHDRPassRecorder() {
         900, 2, "HDR:DebugLines");
 }
 
+// Runtime toggle for the GPU-driven indirect scene draw path. Defaults ON; set the
+// environment variable INDIRECT_SCENE_DRAW=0 to force the CPU draw path (A/B comparison
+// and a fallback). Evaluated once.
+static bool indirectSceneDrawEnabled() {
+    static const bool enabled = []{
+        const char* v = std::getenv("INDIRECT_SCENE_DRAW");
+        const bool on = (v == nullptr) || (std::string(v) != "0");
+        SDL_Log("Indirect scene draw path: %s", on ? "ENABLED" : "disabled (CPU path)");
+        return on;
+    }();
+    return enabled;
+}
+
 void Renderer::recordHDRPass(VkCommandBuffer cmd, uint32_t frameIndex, float grassTime) {
     // Build params for stateless recording
     HDRPassRecorder::Params params;
@@ -669,9 +683,15 @@ void Renderer::recordHDRPass(VkCommandBuffer cmd, uint32_t frameIndex, float gra
     // The GPUCullPass runs to populate visibility data, but rendering uses the traditional path.
     if (systems_->hasGPUSceneBuffer() && systems_->hasGPUCullPass()) {
         params.gpuSceneBuffer = &systems_->gpuSceneBuffer();
-        params.instancedPipelineLayout = scenePipeline_.getPipelineLayoutPtr();
-        params.instancedPipeline = scenePipeline_.getGraphicsPipelinePtr();
-        // params.useIndirectDraw = true;  // TODO: Enable when indirect draw path is fully implemented
+        params.instancedPipelineLayout = instancedScenePipeline_.getPipelineLayoutPtr();
+        params.instancedPipeline = instancedScenePipeline_.getGraphicsPipelinePtr();
+        params.instanceDescriptorSet = instancedScenePipeline_.getInstanceDescriptorSet(frameIndex);
+        params.useIndirectDraw = indirectSceneDrawEnabled()
+                              && instancedScenePipeline_.hasPipeline()
+                              && params.instanceDescriptorSet != VK_NULL_HANDLE;
+        // vkCmdDrawIndexedIndirect needs both features; else fall back to direct instanced draw.
+        params.canMultiDrawIndirect = vulkanContext_->hasMultiDrawIndirect()
+                                   && vulkanContext_->hasDrawIndirectFirstInstance();
     }
 
     // Delegate to the recorder
@@ -692,9 +712,15 @@ void Renderer::recordHDRPassWithSecondaries(VkCommandBuffer cmd, uint32_t frameI
     // requires mesh batching and proper indirect draw command generation.
     if (systems_->hasGPUSceneBuffer() && systems_->hasGPUCullPass()) {
         params.gpuSceneBuffer = &systems_->gpuSceneBuffer();
-        params.instancedPipelineLayout = scenePipeline_.getPipelineLayoutPtr();
-        params.instancedPipeline = scenePipeline_.getGraphicsPipelinePtr();
-        // params.useIndirectDraw = true;  // TODO: Enable when indirect draw path is fully implemented
+        params.instancedPipelineLayout = instancedScenePipeline_.getPipelineLayoutPtr();
+        params.instancedPipeline = instancedScenePipeline_.getGraphicsPipelinePtr();
+        params.instanceDescriptorSet = instancedScenePipeline_.getInstanceDescriptorSet(frameIndex);
+        params.useIndirectDraw = indirectSceneDrawEnabled()
+                              && instancedScenePipeline_.hasPipeline()
+                              && params.instanceDescriptorSet != VK_NULL_HANDLE;
+        // vkCmdDrawIndexedIndirect needs both features; else fall back to direct instanced draw.
+        params.canMultiDrawIndirect = vulkanContext_->hasMultiDrawIndirect()
+                                   && vulkanContext_->hasDrawIndirectFirstInstance();
     }
 
     // Delegate to the recorder
@@ -714,9 +740,15 @@ void Renderer::recordHDRPassSecondarySlot(VkCommandBuffer cmd, uint32_t frameInd
     // requires mesh batching and proper indirect draw command generation.
     if (systems_->hasGPUSceneBuffer() && systems_->hasGPUCullPass()) {
         params.gpuSceneBuffer = &systems_->gpuSceneBuffer();
-        params.instancedPipelineLayout = scenePipeline_.getPipelineLayoutPtr();
-        params.instancedPipeline = scenePipeline_.getGraphicsPipelinePtr();
-        // params.useIndirectDraw = true;  // TODO: Enable when indirect draw path is fully implemented
+        params.instancedPipelineLayout = instancedScenePipeline_.getPipelineLayoutPtr();
+        params.instancedPipeline = instancedScenePipeline_.getGraphicsPipelinePtr();
+        params.instanceDescriptorSet = instancedScenePipeline_.getInstanceDescriptorSet(frameIndex);
+        params.useIndirectDraw = indirectSceneDrawEnabled()
+                              && instancedScenePipeline_.hasPipeline()
+                              && params.instanceDescriptorSet != VK_NULL_HANDLE;
+        // vkCmdDrawIndexedIndirect needs both features; else fall back to direct instanced draw.
+        params.canMultiDrawIndirect = vulkanContext_->hasMultiDrawIndirect()
+                                   && vulkanContext_->hasDrawIndirectFirstInstance();
     }
 
     // Delegate to the recorder

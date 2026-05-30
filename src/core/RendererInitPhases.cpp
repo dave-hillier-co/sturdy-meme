@@ -112,6 +112,12 @@ bool Renderer::initDescriptorInfrastructure() {
         return false;
     }
 
+    // Initialize instanced scene pipeline layout (for GPU-driven indirect rendering)
+    if (!instancedScenePipeline_.initLayout(*vulkanContext_)) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to initialize instanced scene pipeline layout");
+        return false;
+    }
+
     // Create descriptor pool (shared resource allocator)
     VkDevice device = vulkanContext_->getVkDevice();
     descriptorPool_.emplace(device, config_.setsPerPool, config_.descriptorPoolSizes);
@@ -181,6 +187,11 @@ std::vector<Loading::SystemInitTask> Renderer::buildInitTasks(const InitContext&
                 if (!scenePipeline_.createGraphicsPipeline(*vulkanContext_,
                         systems_->postProcess().getHDRRenderPass(), resourcePath)) {
                     SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create graphics pipeline");
+                    return false;
+                }
+                if (!instancedScenePipeline_.createGraphicsPipeline(*vulkanContext_,
+                        systems_->postProcess().getHDRRenderPass(), resourcePath)) {
+                    SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create instanced graphics pipeline");
                     return false;
                 }
             }
@@ -637,6 +648,13 @@ std::vector<Loading::SystemInitTask> Renderer::buildInitTasks(const InitContext&
                     systems_->setGPUCullPass(std::move(gpuCullPass));
                     SDL_Log("GPUCullPass: Initialized for frustum culling");
                 }
+            }
+
+            // Instance descriptor sets (set 1) for the instanced indirect draw pipeline.
+            // Created here because it needs the GPUSceneBuffer's instance buffers.
+            if (systems_->hasGPUSceneBuffer() && getDescriptorPool()) {
+                instancedScenePipeline_.createInstanceDescriptorSets(
+                    device, *getDescriptorPool(), systems_->gpuSceneBuffer(), MAX_FRAMES_IN_FLIGHT);
             }
 
             // Profiler

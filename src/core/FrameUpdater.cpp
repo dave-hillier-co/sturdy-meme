@@ -3,6 +3,7 @@
 #include "Profiler.h"
 #include "SceneManager.h"
 #include "GPUSceneBuffer.h"
+#include "vegetation/ScatterSystem.h"
 #include "DebugLineSystem.h"
 #include "controls/DebugControlSubsystem.h"
 
@@ -50,6 +51,24 @@ void FrameUpdater::populateGPUSceneBuffer(RendererSystems& systems, const FrameD
         if (sceneObjects[i].gpuSkinned) continue;
 
         sceneBuffer.addObject(sceneObjects[i]);
+    }
+
+    // Scatter content (rocks, detritus). These have no MaterialRegistry materialId but own
+    // a single descriptor set per frame on the same layout, so they ride the indirect path
+    // via a per-object descriptor override. When indirect draw is active, SceneObjectsDrawable
+    // skips its CPU rocks/detritus loops to avoid double-drawing.
+    auto addScatter = [&](const ScatterSystem& scatter) {
+        if (!scatter.hasDescriptorSets()) return;
+        VkDescriptorSet set = scatter.getDescriptorSet(frame.frameIndex);
+        if (set == VK_NULL_HANDLE) return;
+        for (const auto& obj : scatter.getSceneObjects()) {
+            if (obj.gpuSkinned) continue;
+            sceneBuffer.addObject(obj, set);
+        }
+    };
+    addScatter(systems.rocks());
+    if (systems.detritus()) {
+        addScatter(*systems.detritus());
     }
 
     sceneBuffer.finalize();

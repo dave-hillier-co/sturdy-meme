@@ -20,6 +20,7 @@
 #include "loading/LoadJobFactory.h"
 #include "asset/AssetRegistry.h"
 #include "ScenePipeline.h"
+#include "InstancedScenePipeline.h"
 #include "material/DescriptorManager.h"
 
 // Forward declarations
@@ -262,6 +263,11 @@ private:
 
     // Scene rendering pipeline (layout + graphics pipeline)
     ScenePipeline scenePipeline_;
+
+    // Instanced scene pipeline for GPU-driven indirect rendering (currently inert:
+    // the indirect draw path is gated off, see recordHDRPass). Built alongside
+    // scenePipeline_ so it is ready when the indirect path is enabled.
+    InstancedScenePipeline instancedScenePipeline_;
 
     // Descriptor pool (shared resource allocator for all subsystems)
     std::optional<DescriptorManager::Pool> descriptorPool_;

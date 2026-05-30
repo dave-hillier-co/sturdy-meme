@@ -52,12 +52,16 @@ struct GPUDrawIndexedIndirectCommand {
 };
 static_assert(sizeof(GPUDrawIndexedIndirectCommand) == 20, "GPUDrawIndexedIndirectCommand size mismatch");
 
-// Mesh batch for indirect rendering - groups objects by mesh+material
+// Mesh batch for indirect rendering - groups objects by mesh+material(+descriptor set)
 struct GPUMeshBatch {
     const class Mesh* mesh;
     MaterialId materialId;
     uint32_t firstObject;         // Index into cull object array
     uint32_t objectCount;         // Number of objects in this batch
+    // Optional set-0 descriptor override for objects without a MaterialRegistry materialId
+    // (e.g. ScatterSystem rocks/detritus, which own a single set on the same layout).
+    // When null, the draw resolves set 0 via MaterialRegistry::getDescriptorSet(materialId).
+    VkDescriptorSet overrideDescriptorSet = VK_NULL_HANDLE;
 };
 
 /**
@@ -100,7 +104,9 @@ public:
 
     // Add an object to the current frame
     // Returns the object index, or -1 if buffer is full
-    int32_t addObject(const Renderable& renderable);
+    // overrideSet: optional set-0 descriptor for objects without a MaterialRegistry
+    // materialId (e.g. scatter rocks/detritus). Pass VK_NULL_HANDLE for normal objects.
+    int32_t addObject(const Renderable& renderable, VkDescriptorSet overrideSet = VK_NULL_HANDLE);
 
     // Finalize the frame: upload to GPU
     // Call after all addObject() calls for the frame
@@ -111,6 +117,9 @@ public:
 
     // Get buffer accessors
     VkBuffer getInstanceBuffer(uint32_t frameIndex) const { return instanceBuffers_.buffers[frameIndex]; }
+    VkDeviceSize getInstanceBufferSize() const {
+        return static_cast<VkDeviceSize>(MAX_GPU_SCENE_OBJECTS) * sizeof(GPUSceneInstanceData);
+    }
     VkBuffer getCullObjectBuffer() const { return cullObjectBuffer_.get(); }
     VkBuffer getIndirectBuffer(uint32_t frameIndex) const { return indirectBuffers_.buffers[frameIndex]; }
     VkBuffer getDrawCountBuffer(uint32_t frameIndex) const { return drawCountBuffers_.buffers[frameIndex]; }
@@ -145,6 +154,15 @@ private:
     // CPU-side staging data for current frame
     std::vector<GPUSceneInstanceData> instances_;
     std::vector<GPUCullObjectData> cullObjects_;
+
+    // Per-object mesh+material+descriptor override, parallel to instances_
+    // (CPU-only; drives batching).
+    struct ObjectDrawInfo {
+        const Mesh* mesh = nullptr;
+        MaterialId materialId = INVALID_MATERIAL_ID;
+        VkDescriptorSet overrideSet = VK_NULL_HANDLE;
+    };
+    std::vector<ObjectDrawInfo> drawInfo_;
 
     // Mesh batches for indirect rendering
     std::vector<GPUMeshBatch> batches_;

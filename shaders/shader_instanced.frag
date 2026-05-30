@@ -14,6 +14,7 @@
 #include "ubo_cloud_shadow.glsl"
 #include "scene_instance_common.glsl"
 #include "normal_mapping_common.glsl"
+#include "hue_shift_common.glsl"
 
 // Enable shadow sampling for dynamic lights
 #define DYNAMIC_LIGHTS_ENABLE_SHADOWS
@@ -33,6 +34,9 @@ layout(binding = BINDING_ROUGHNESS_MAP) uniform sampler2D roughnessMap;
 layout(binding = BINDING_METALLIC_MAP) uniform sampler2D metallicMap;
 layout(binding = BINDING_AO_MAP) uniform sampler2D aoMap;
 layout(binding = BINDING_HEIGHT_MAP) uniform sampler2D heightMap;
+
+// Screen-space pre-computed shadow buffer (matches shader.frag / CPU path)
+layout(binding = BINDING_SCREEN_SHADOW) uniform sampler2D screenShadowBuffer;
 
 layout(location = 0) in vec3 fragNormal;
 layout(location = 1) in vec2 fragTexCoord;
@@ -84,7 +88,10 @@ void main() {
 
     vec3 N = perturbNormal(geometricN, fragTangent, normalMap, fragTexCoord);
 
-    vec3 albedo = texColor.rgb * fragColor.rgb;
+    // Multiply texture color with vertex color, then apply per-instance hue shift
+    // (matches shader.frag: NPC/material tinting).
+    vec3 baseAlbedo = texColor.rgb * fragColor.rgb;
+    vec3 albedo = applyHueShift(baseAlbedo, inst.hueShift);
 
     // Get material properties from instance data
     float roughness = INSTANCE_ROUGHNESS(inst);
@@ -115,11 +122,10 @@ void main() {
     vec3 sunL = normalize(ubo.toSunDirection.xyz);
     float terrainShadow = 1.0;
     if (ubo.shadowsEnabled > 0.5) {
-        terrainShadow = calculateCascadedShadow(
-            fragWorldPos, N, sunL,
-            ubo.view, ubo.cascadeSplits, ubo.cascadeViewProj,
-            ubo.shadowMapSize, shadowMapArray
-        );
+        // Sample pre-computed screen-space shadow buffer (resolved in compute pass),
+        // matching shader.frag rather than recomputing cascaded shadows in-shader.
+        vec2 screenUV = gl_FragCoord.xy / vec2(textureSize(screenShadowBuffer, 0));
+        terrainShadow = texture(screenShadowBuffer, screenUV).r;
     }
 
     float cloudShadowFactor = 1.0;

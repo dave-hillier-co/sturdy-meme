@@ -4,11 +4,7 @@
 #ifndef PUSH_CONSTANTS_COMMON_GLSL
 #define PUSH_CONSTANTS_COMMON_GLSL
 
-// PBR texture flags - indicates which optional PBR textures are bound
-#define PBR_HAS_ROUGHNESS_MAP  (1u << 0)
-#define PBR_HAS_METALLIC_MAP   (1u << 1)
-#define PBR_HAS_AO_MAP         (1u << 2)
-#define PBR_HAS_HEIGHT_MAP     (1u << 3)
+#include "pbr_flags_common.glsl"
 
 layout(push_constant) uniform PushConstants {
     mat4 model;

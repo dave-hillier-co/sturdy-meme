@@ -39,7 +39,12 @@ struct HDRDrawParams {
     GPUSceneBuffer* gpuSceneBuffer = nullptr;
     const vk::Pipeline* instancedPipeline = nullptr;
     const vk::PipelineLayout* instancedPipelineLayout = nullptr;
+    VkDescriptorSet instanceDescriptorSet = VK_NULL_HANDLE;  // set 1 (instance SSBO) for this frame
     bool useIndirectDraw = false;
+    // True when the device supports multiDrawIndirect + drawIndirectFirstInstance, so the
+    // instanced path can issue vkCmdDrawIndexedIndirect; otherwise it falls back to a
+    // direct instanced vkCmdDrawIndexed per batch.
+    bool canMultiDrawIndirect = false;
 };
 
 /**

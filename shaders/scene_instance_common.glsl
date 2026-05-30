@@ -11,21 +11,25 @@
 #define SCENE_INSTANCE_COMMON_GLSL
 
 #include "bindings.glsl"
+#include "pbr_flags_common.glsl"
 
 // Per-instance data for scene objects
-// Must match SceneInstanceData in SceneInstanceBuffer.h (std430 layout)
+// Must match GPUSceneInstanceData in src/core/GPUSceneBuffer.h (std430 layout, 112 bytes)
 struct SceneInstance {
-    mat4 model;              // Model transform matrix (64 bytes)
-    vec4 materialParams;     // x=roughness, y=metallic, z=emissiveIntensity, w=opacity
-    vec4 emissiveColor;      // rgb=emissive color, a=unused
-    uint pbrFlags;           // PBR texture flags bitmask
-    float alphaTestThreshold;
-    float _pad0;
-    float _pad1;
+    mat4 model;              // Model transform matrix (64 bytes, offset 0)
+    vec4 materialParams;     // x=roughness, y=metallic, z=emissiveIntensity, w=opacity (offset 64)
+    vec4 emissiveColor;      // rgb=emissive color, a=unused (offset 80)
+    uint pbrFlags;           // PBR texture flags bitmask (offset 96)
+    float alphaTestThreshold;// offset 100
+    float hueShift;          // offset 104
+    float _pad1;             // offset 108
 };
 
-// Instance buffer (readonly for vertex/fragment shaders)
-layout(std430, binding = BINDING_SCENE_INSTANCE_BUFFER) readonly buffer SceneInstanceBuffer {
+// Instance buffer (readonly for vertex/fragment shaders).
+// Lives in its own descriptor set (set 1) so material sets (set 0) are shared,
+// unchanged, with the CPU draw path.
+layout(std430, set = SET_SCENE_INSTANCE, binding = BINDING_SCENE_INSTANCE_BUFFER)
+readonly buffer SceneInstanceBuffer {
     SceneInstance sceneInstances[];
 };
 

@@ -46,16 +46,16 @@ void SceneObjectsDrawable::recordSceneObjects(VkCommandBuffer cmd, uint32_t fram
         return;
     }
 
-    // Use GPU-driven indirect rendering if enabled
-    if (params.useIndirectDraw && params.gpuSceneBuffer && params.gpuSceneBuffer->getObjectCount() > 0) {
-        recordSceneObjectsIndirect(cmd, frameIndex, params);
-        return;
-    }
-
     vk::CommandBuffer vkCmd(cmd);
 
     // Get MaterialRegistry for descriptor set lookup
     const auto& materialRegistry = resources_.scene->getSceneBuilder().getMaterialRegistry();
+
+    // The main scene objects (those mirrored into GPUSceneBuffer) draw via the GPU-driven
+    // indirect path when enabled, otherwise the CPU path below. Either way, rocks, detritus
+    // and trees still render afterward, so they must not be skipped here.
+    const bool useIndirect = params.useIndirectDraw && params.gpuSceneBuffer
+                          && params.gpuSceneBuffer->getObjectCount() > 0;
 
     // Helper lambda to render an entity with RenderData
     auto renderWithRenderData = [&](const ecs::RenderData& data, VkDescriptorSet descSet) {
@@ -115,6 +115,14 @@ void SceneObjectsDrawable::recordSceneObjects(VkCommandBuffer cmd, uint32_t fram
         vkCmd.drawIndexed(obj.mesh->getIndexCount(), 1, 0, 0, 0);
     };
 
+    if (useIndirect) {
+        // Main scene objects via GPU-driven instanced/indirect draw.
+        recordSceneObjectsIndirect(cmd, frameIndex, params);
+        // Rebind the CPU scene pipeline so the rocks/detritus draws below are valid.
+        if (params.sceneObjectsPipeline) {
+            vkCmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *params.sceneObjectsPipeline);
+        }
+    } else {
     // Phase 6: Use ECS if available, otherwise fall back to legacy renderables
     if (resources_.ecsWorld) {
         ecs::World& world = *resources_.ecsWorld;
@@ -192,21 +200,26 @@ void SceneObjectsDrawable::recordSceneObjects(VkCommandBuffer cmd, uint32_t fram
             renderObject(obj, currentDescSet);
         }
     }
+    }  // end CPU main-objects path (else of useIndirect)
 
-    // Render procedural rocks (ScatterSystem owns its own descriptor sets)
-    // These still use legacy Renderable as they're procedurally generated
-    if (resources_.rocks && resources_.rocks->hasDescriptorSets()) {
-        VkDescriptorSet rockDescSet = resources_.rocks->getDescriptorSet(frameIndex);
-        for (const auto& rock : resources_.rocks->getSceneObjects()) {
-            renderObject(rock, rockDescSet);
+    // Rocks and detritus. When the indirect path is active they are folded into the
+    // GPUSceneBuffer (see FrameUpdater::populateGPUSceneBuffer) and drawn there with GPU
+    // frustum culling, so the CPU loops below must be skipped to avoid double-drawing.
+    if (!useIndirect) {
+        // Render procedural rocks (ScatterSystem owns its own descriptor sets)
+        if (resources_.rocks && resources_.rocks->hasDescriptorSets()) {
+            VkDescriptorSet rockDescSet = resources_.rocks->getDescriptorSet(frameIndex);
+            for (const auto& rock : resources_.rocks->getSceneObjects()) {
+                renderObject(rock, rockDescSet);
+            }
         }
-    }
 
-    // Render woodland detritus (ScatterSystem owns its own descriptor sets)
-    if (resources_.detritus && resources_.detritus->hasDescriptorSets()) {
-        VkDescriptorSet detritusDescSet = resources_.detritus->getDescriptorSet(frameIndex);
-        for (const auto& detritus : resources_.detritus->getSceneObjects()) {
-            renderObject(detritus, detritusDescSet);
+        // Render woodland detritus (ScatterSystem owns its own descriptor sets)
+        if (resources_.detritus && resources_.detritus->hasDescriptorSets()) {
+            VkDescriptorSet detritusDescSet = resources_.detritus->getDescriptorSet(frameIndex);
+            for (const auto& detritus : resources_.detritus->getSceneObjects()) {
+                renderObject(detritus, detritusDescSet);
+            }
         }
     }
 
@@ -243,92 +256,76 @@ void SceneObjectsDrawable::recordSceneObjects(VkCommandBuffer cmd, uint32_t fram
 
 void SceneObjectsDrawable::recordSceneObjectsIndirect(VkCommandBuffer cmd, uint32_t frameIndex,
                                                        const HDRDrawParams& params) {
-    if (!params.gpuSceneBuffer || !params.instancedPipelineLayout) {
-        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "SceneObjectsDrawable: Indirect rendering requires gpuSceneBuffer and instancedPipelineLayout");
+    if (!params.gpuSceneBuffer || !params.instancedPipeline || !params.instancedPipelineLayout) {
+        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+            "SceneObjectsDrawable: indirect draw requires gpuSceneBuffer, instancedPipeline and layout");
         return;
     }
 
     GPUSceneBuffer* sceneBuffer = params.gpuSceneBuffer;
-    if (sceneBuffer->getObjectCount() == 0) {
+    const auto& batches = sceneBuffer->getBatches();
+    if (batches.empty()) {
         return;
     }
 
     vk::CommandBuffer vkCmd(cmd);
-
-    // Bind instanced pipeline if provided
-    if (params.instancedPipeline) {
-        vkCmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *params.instancedPipeline);
-    }
-
-    // Get MaterialRegistry for descriptor set lookup
     const auto& materialRegistry = resources_.scene->getSceneBuilder().getMaterialRegistry();
-    const auto& sceneObjects = resources_.scene->getRenderables();
 
-    // For indirect rendering, we need to:
-    // 1. Bind the scene instance SSBO descriptor
-    // 2. Bind vertex/index buffers per unique mesh
-    // 3. Use vkCmdDrawIndexedIndirectCount to draw all visible instances
+    // Instanced pipeline: set 0 = material (bound per batch), set 1 = instance SSBO (bound once).
+    vkCmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *params.instancedPipeline);
 
-    // Since culling outputs draw commands sorted by object index (not by mesh),
-    // and indirect draws need shared vertex/index buffers,
-    // we use a simplified approach: draw all objects with one indirect call per mesh type
-
-    // For now, fall back to regular rendering if indirect is requested but setup is incomplete
-    // Full indirect rendering requires:
-    // - A global vertex/index buffer with all meshes
-    // - Indirect commands that reference offsets into the global buffer
-    // - Material binding via SSBO instead of per-draw descriptor sets
-
-    // TODO: Full implementation requires mesh batching infrastructure
-    // For this phase, we demonstrate the indirect draw command structure
-
-    // Bind first material's descriptor set (simplified - full implementation needs multi-material support)
-    MaterialId firstMaterialId = INVALID_MATERIAL_ID;
-    for (const auto& obj : sceneObjects) {
-        if (obj.materialId != INVALID_MATERIAL_ID) {
-            firstMaterialId = obj.materialId;
-            break;
-        }
+    if (params.instanceDescriptorSet != VK_NULL_HANDLE) {
+        vkCmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics,
+                                 *params.instancedPipelineLayout, 1,
+                                 vk::DescriptorSet(params.instanceDescriptorSet), {});
     }
 
-    if (firstMaterialId != INVALID_MATERIAL_ID) {
-        VkDescriptorSet descSet = materialRegistry.getDescriptorSet(firstMaterialId, frameIndex);
-        if (descSet != VK_NULL_HANDLE) {
+    // One draw per (mesh, material) batch. The GPU cull pass writes one indirect command
+    // per object into a stable slot (command k -> instance k); each batch owns the
+    // contiguous range [firstObject, firstObject + objectCount). firstInstance carries the
+    // slot so gl_InstanceIndex selects the right instance, and instanceCount (0/1) from the
+    // cull pass skips culled objects. Falls back to a direct instanced draw where
+    // multiDrawIndirect/drawIndirectFirstInstance are unavailable.
+    const VkBuffer indirectBuffer = sceneBuffer->getIndirectBuffer(frameIndex);
+    constexpr uint32_t kCmdStride = sizeof(GPUDrawIndexedIndirectCommand);
+
+    VkDescriptorSet lastSet = VK_NULL_HANDLE;
+    for (const auto& batch : batches) {
+        if (!batch.mesh || batch.objectCount == 0) {
+            continue;
+        }
+
+        // Resolve set 0: scatter objects carry an explicit descriptor override; normal
+        // objects resolve it from MaterialRegistry by materialId.
+        VkDescriptorSet set0 = batch.overrideDescriptorSet != VK_NULL_HANDLE
+            ? batch.overrideDescriptorSet
+            : materialRegistry.getDescriptorSet(batch.materialId, frameIndex);
+        if (set0 == VK_NULL_HANDLE) {
+            continue;  // skip a batch whose descriptor set is unavailable
+        }
+        if (set0 != lastSet) {
             vkCmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics,
-                                     *params.instancedPipelineLayout, 0, vk::DescriptorSet(descSet), {});
+                                     *params.instancedPipelineLayout, 0,
+                                     vk::DescriptorSet(set0), {});
+            lastSet = set0;
         }
-    }
 
-    // For demonstration, render each unique mesh with indirect count
-    // A full implementation would batch objects by mesh and issue one indirect call per batch
-
-    // Get unique meshes
-    std::vector<const Mesh*> uniqueMeshes;
-    for (const auto& obj : sceneObjects) {
-        if (obj.mesh && std::find(uniqueMeshes.begin(), uniqueMeshes.end(), obj.mesh) == uniqueMeshes.end()) {
-            uniqueMeshes.push_back(obj.mesh);
-        }
-    }
-
-    // Draw each mesh type
-    for (const Mesh* mesh : uniqueMeshes) {
-        if (!mesh) continue;
-
-        vk::Buffer vertexBuffers[] = {mesh->getVertexBuffer()};
+        vk::Buffer vertexBuffers[] = {batch.mesh->getVertexBuffer()};
         vk::DeviceSize offsets[] = {0};
         vkCmd.bindVertexBuffers(0, vertexBuffers, offsets);
-        vkCmd.bindIndexBuffer(mesh->getIndexBuffer(), 0, vk::IndexType::eUint32);
+        vkCmd.bindIndexBuffer(batch.mesh->getIndexBuffer(), 0, vk::IndexType::eUint32);
 
-        // Use vkCmdDrawIndexedIndirectCount for GPU-driven variable draw count
-        // The draw count is determined by the culling pass
-        vkCmd.drawIndexedIndirectCount(
-            sceneBuffer->getIndirectBuffer(frameIndex),  // Indirect command buffer
-            0,                                            // Offset to commands
-            sceneBuffer->getDrawCountBuffer(frameIndex), // Count buffer
-            0,                                            // Offset to count
-            sceneBuffer->getObjectCount(),               // Max draw count
-            sizeof(GPUDrawIndexedIndirectCommand)        // Stride between commands
-        );
+        if (params.canMultiDrawIndirect && indirectBuffer != VK_NULL_HANDLE) {
+            vkCmd.drawIndexedIndirect(
+                vk::Buffer(indirectBuffer),
+                static_cast<vk::DeviceSize>(batch.firstObject) * kCmdStride,
+                batch.objectCount,
+                kCmdStride);
+        } else {
+            // Direct fallback: instanceCount = objectCount, firstInstance = firstObject.
+            // (No GPU culling in this path; all objects in the batch are drawn.)
+            vkCmd.drawIndexed(batch.mesh->getIndexCount(), batch.objectCount, 0, 0, batch.firstObject);
+        }
     }
 
     // Note: Trees, rocks, and other subsystems still use their own rendering paths

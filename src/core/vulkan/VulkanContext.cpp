@@ -203,6 +203,25 @@ bool VulkanContext::selectPhysicalDevice() {
             "Timeline semaphores not supported - falling back to fences");
     }
 
+    // GPU-driven indirect rendering features. These are optional, so enable each only
+    // if the device supports it (enable_*_if_present is a no-op when absent) and record
+    // the result so the renderer can fall back to the CPU draw path when unavailable.
+    VkPhysicalDeviceFeatures firstInstanceFeature{};
+    firstInstanceFeature.drawIndirectFirstInstance = VK_TRUE;
+    hasDrawIndirectFirstInstance_ = vkbPhysicalDevice.enable_features_if_present(firstInstanceFeature);
+
+    VkPhysicalDeviceFeatures multiDrawFeature{};
+    multiDrawFeature.multiDrawIndirect = VK_TRUE;
+    hasMultiDrawIndirect_ = vkbPhysicalDevice.enable_features_if_present(multiDrawFeature);
+
+    VkPhysicalDeviceVulkan12Features drawCountFeature{};
+    drawCountFeature.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES;
+    drawCountFeature.drawIndirectCount = VK_TRUE;
+    hasDrawIndirectCount_ = vkbPhysicalDevice.enable_extension_features_if_present(drawCountFeature);
+
+    SDL_Log("Indirect draw features: drawIndirectFirstInstance=%d multiDrawIndirect=%d drawIndirectCount=%d",
+        hasDrawIndirectFirstInstance_, hasMultiDrawIndirect_, hasDrawIndirectCount_);
+
     // Create RAII wrapper for physical device (non-owning - physical devices aren't destroyed)
     raiiPhysicalDevice_ = std::make_unique<vk::raii::PhysicalDevice>(*raiiInstance_, physicalDevice);
 

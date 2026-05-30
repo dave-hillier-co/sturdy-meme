@@ -100,33 +100,29 @@ void main() {
 
     CullObjectData obj = objects[objectIdx];
 
-    // Frustum culling using sphere first (fast rejection)
-    vec3 sphereCenter = obj.boundingSphere.xyz;
-    float sphereRadius = obj.boundingSphere.w;
+    // Stable-slot scheme: every object owns command slot obj.objectIndex (which equals
+    // its instance-buffer slot). We write the full command every frame and toggle
+    // visibility via instanceCount (0 = culled no-op draw, 1 = drawn). This lets the
+    // host issue one fixed-size vkCmdDrawIndexedIndirect per (mesh,material) batch over a
+    // contiguous command range, with no GPU draw-count needed (drawIndirectCount is
+    // unavailable on the target). The host reads the matching contiguous slice via
+    // firstInstance, so command slot order must match instance slot order.
 
-    if (frustumCullSphere(sphereCenter, sphereRadius)) {
-        return;  // Culled by sphere test
-    }
+    // Frustum cull: cheap sphere rejection, then a precise AABB test.
+    bool culled = frustumCullSphere(obj.boundingSphere.xyz, obj.boundingSphere.w)
+               || frustumCullAABB(obj.aabbMin.xyz, obj.aabbMax.xyz);
 
-    // Optional: More precise AABB test for objects that passed sphere test
-    vec3 aabbMin = obj.aabbMin.xyz;
-    vec3 aabbMax = obj.aabbMax.xyz;
+    DrawIndexedIndirectCommand cmd;
+    cmd.indexCount = obj.indexCount;
+    cmd.instanceCount = culled ? 0u : 1u;  // 0 = no-op draw (skipped by the GPU)
+    cmd.firstIndex = obj.firstIndex;
+    cmd.vertexOffset = obj.vertexOffset;
+    cmd.firstInstance = obj.objectIndex;  // -> gl_InstanceIndex in the vertex shader
 
-    if (frustumCullAABB(aabbMin, aabbMax)) {
-        return;  // Culled by AABB test
-    }
+    commands[obj.objectIndex] = cmd;
 
-    // Object is visible - add to indirect draw buffer
-    uint drawIdx = atomicAdd(drawCount, 1);
-
-    if (drawIdx < cullUniforms.maxDrawCommands) {
-        DrawIndexedIndirectCommand cmd;
-        cmd.indexCount = obj.indexCount;
-        cmd.instanceCount = 1;
-        cmd.firstIndex = obj.firstIndex;
-        cmd.vertexOffset = obj.vertexOffset;
-        cmd.firstInstance = obj.objectIndex;  // gl_InstanceIndex in vertex shader
-
-        commands[drawIdx] = cmd;
+    // Visible-object tally (diagnostics only; the draw uses fixed per-batch counts).
+    if (!culled) {
+        atomicAdd(drawCount, 1u);
     }
 }

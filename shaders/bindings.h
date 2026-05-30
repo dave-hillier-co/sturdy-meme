@@ -34,7 +34,13 @@
 
 // Storage Buffers
 #define BINDING_LIGHT_BUFFER            4   // Point/spot light array
-#define BINDING_SCENE_INSTANCE_BUFFER  18   // Scene object instance data (for batched rendering)
+
+// Scene instance buffer for the instanced (GPU-driven indirect) pipeline. It lives in
+// its own descriptor set so the material descriptor sets (set 0) remain identical to
+// the CPU draw path and bind unchanged; the instance buffer (set 1) is bound once per
+// frame. See InstancedScenePipeline / scene_instance_common.glsl.
+#define SET_SCENE_INSTANCE              1   // Descriptor set index for the instance buffer
+#define BINDING_SCENE_INSTANCE_BUFFER   0   // Instance data binding within SET_SCENE_INSTANCE
 
 // Weathering (composable material system - main rendering set)
 #define BINDING_WEATHERING_UBO         19   // Weathering parameters (wetness, dirt, moss)

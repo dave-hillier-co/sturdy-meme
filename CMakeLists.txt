@@ -58,6 +58,7 @@ set(SOURCES
     src/core/RendererSystems.cpp
     src/core/InitContext.cpp
     src/core/ScenePipeline.cpp
+    src/core/InstancedScenePipeline.cpp
     # Control subsystems (coordinate multiple systems for GUI interfaces)
     # Note: Some systems implement their interfaces directly (CelestialCalculator -> ILocationControl,
     #       TerrainSystem -> ITerrainControl, Profiler -> IProfilerControl, WeatherSystem -> IWeatherState,
@@ -787,6 +788,8 @@ if(SHADERS_AVAILABLE)
 set(SHADER_FILES
     ${CMAKE_CURRENT_SOURCE_DIR}/shaders/shader.vert.spv
     ${CMAKE_CURRENT_SOURCE_DIR}/shaders/shader.frag.spv
+    ${CMAKE_CURRENT_SOURCE_DIR}/shaders/shader_instanced.vert.spv
+    ${CMAKE_CURRENT_SOURCE_DIR}/shaders/shader_instanced.frag.spv
     ${CMAKE_CURRENT_SOURCE_DIR}/shaders/skinned.vert.spv
     ${CMAKE_CURRENT_SOURCE_DIR}/shaders/skinned_shadow.vert.spv
     ${CMAKE_CURRENT_SOURCE_DIR}/shaders/sky.vert.spv
@@ -927,9 +930,12 @@ if(SHADER_COMPILE_CMD)
     # Common shader includes that many shaders depend on
     set(BINDINGS_DEPS
         ${CMAKE_CURRENT_SOURCE_DIR}/shaders/bindings.glsl
+        ${CMAKE_CURRENT_SOURCE_DIR}/shaders/bindings.h
         ${CMAKE_CURRENT_SOURCE_DIR}/shaders/ubo_common.glsl
         ${CMAKE_CURRENT_SOURCE_DIR}/shaders/ubo_snow.glsl
         ${CMAKE_CURRENT_SOURCE_DIR}/shaders/ubo_cloud_shadow.glsl
+        ${CMAKE_CURRENT_SOURCE_DIR}/shaders/scene_instance_common.glsl
+        ${CMAKE_CURRENT_SOURCE_DIR}/shaders/pbr_flags_common.glsl
     )
 
     # Simple shaders using SHADER_COMPILE_CMD (no includes)
@@ -955,6 +961,7 @@ if(SHADER_COMPILE_CMD)
     # Shaders that use bindings.glsl and other includes
     set(SHADERS_WITH_BINDINGS
         shader.vert shader.frag
+        shader_instanced.vert shader_instanced.frag
         skinned.vert skinned_shadow.vert
         sky.vert sky.frag
         grass.comp grass_tiled.comp grass_displacement.comp grass.vert grass.frag

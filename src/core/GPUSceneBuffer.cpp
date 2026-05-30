@@ -3,6 +3,8 @@
 #include <SDL3/SDL_log.h>
 #include <cstring>
 #include <algorithm>
+#include <numeric>
+#include <functional>
 
 bool GPUSceneBuffer::init(VmaAllocator allocator, uint32_t frameCount) {
     allocator_ = allocator;
@@ -96,11 +98,12 @@ void GPUSceneBuffer::beginFrame(uint32_t frameIndex) {
     currentFrame_ = frameIndex;
     instances_.clear();
     cullObjects_.clear();
+    drawInfo_.clear();
     batches_.clear();
     cullDataDirty_ = true;
 }
 
-int32_t GPUSceneBuffer::addObject(const Renderable& renderable) {
+int32_t GPUSceneBuffer::addObject(const Renderable& renderable, VkDescriptorSet overrideSet) {
     if (instances_.size() >= MAX_GPU_SCENE_OBJECTS) {
         SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
             "GPUSceneBuffer: Max objects reached (%zu)", MAX_GPU_SCENE_OBJECTS);
@@ -149,12 +152,64 @@ int32_t GPUSceneBuffer::addObject(const Renderable& renderable) {
 
     cullObjects_.push_back(cullData);
 
+    // Track mesh+material+descriptor override for batching in finalize().
+    drawInfo_.push_back({renderable.mesh, renderable.materialId, overrideSet});
+
     return static_cast<int32_t>(objectIndex);
 }
 
 void GPUSceneBuffer::finalize() {
     if (instances_.empty()) {
         return;
+    }
+
+    // Group objects into draw batches by (mesh, material). Sort instances_,
+    // cullObjects_ and drawInfo_ together so instance slot order == command slot
+    // order (the firstInstance->gl_InstanceIndex contract depends on this), then
+    // reassign each cull slot's objectIndex to its new position and emit contiguous
+    // (mesh, material) batches.
+    const size_t count = instances_.size();
+    std::vector<uint32_t> order(count);
+    std::iota(order.begin(), order.end(), 0u);
+    std::stable_sort(order.begin(), order.end(), [this](uint32_t a, uint32_t b) {
+        if (drawInfo_[a].mesh != drawInfo_[b].mesh) {
+            return std::less<const Mesh*>{}(drawInfo_[a].mesh, drawInfo_[b].mesh);
+        }
+        if (drawInfo_[a].materialId != drawInfo_[b].materialId) {
+            return drawInfo_[a].materialId < drawInfo_[b].materialId;
+        }
+        return std::less<VkDescriptorSet>{}(drawInfo_[a].overrideSet, drawInfo_[b].overrideSet);
+    });
+
+    std::vector<GPUSceneInstanceData> sortedInstances;
+    std::vector<GPUCullObjectData> sortedCull;
+    std::vector<ObjectDrawInfo> sortedInfo;
+    sortedInstances.reserve(count);
+    sortedCull.reserve(count);
+    sortedInfo.reserve(count);
+    for (uint32_t newIdx = 0; newIdx < count; ++newIdx) {
+        const uint32_t oldIdx = order[newIdx];
+        sortedInstances.push_back(instances_[oldIdx]);
+        GPUCullObjectData cull = cullObjects_[oldIdx];
+        cull.objectIndex = newIdx;  // stable slot = sorted position
+        sortedCull.push_back(cull);
+        sortedInfo.push_back(drawInfo_[oldIdx]);
+    }
+    instances_ = std::move(sortedInstances);
+    cullObjects_ = std::move(sortedCull);
+    drawInfo_ = std::move(sortedInfo);
+
+    batches_.clear();
+    for (uint32_t i = 0; i < count;) {
+        const Mesh* mesh = drawInfo_[i].mesh;
+        const MaterialId materialId = drawInfo_[i].materialId;
+        const VkDescriptorSet overrideSet = drawInfo_[i].overrideSet;
+        const uint32_t first = i;
+        while (i < count && drawInfo_[i].mesh == mesh && drawInfo_[i].materialId == materialId
+               && drawInfo_[i].overrideSet == overrideSet) {
+            ++i;
+        }
+        batches_.push_back(GPUMeshBatch{mesh, materialId, first, i - first, overrideSet});
     }
 
     // Upload instance data to current frame's buffer

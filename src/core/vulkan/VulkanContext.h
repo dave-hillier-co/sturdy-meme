@@ -126,6 +126,14 @@ public:
     // Check if timeline semaphores are supported (always true for Vulkan 1.2+)
     bool hasTimelineSemaphores() const { return hasTimelineSemaphores_; }
 
+    // GPU-driven indirect rendering feature support (queried + enabled at device creation).
+    // vkCmdDrawIndexedIndirectCount (variable draw count from a GPU buffer).
+    bool hasDrawIndirectCount() const { return hasDrawIndirectCount_; }
+    // vkCmdDrawIndexedIndirect with drawCount > 1 (multiple draws from one indirect buffer).
+    bool hasMultiDrawIndirect() const { return hasMultiDrawIndirect_; }
+    // firstInstance != 0 in (indexed) indirect draws -> required for per-object gl_InstanceIndex.
+    bool hasDrawIndirectFirstInstance() const { return hasDrawIndirectFirstInstance_; }
+
 private:
     bool createInstance();
     bool createSurface();
@@ -157,6 +165,9 @@ private:
     uint32_t transferQueueFamily_ = 0;
     bool hasDedicatedTransfer_ = false;
     bool hasTimelineSemaphores_ = false;
+    bool hasDrawIndirectCount_ = false;
+    bool hasMultiDrawIndirect_ = false;
+    bool hasDrawIndirectFirstInstance_ = false;
 
     VmaAllocator allocator = VK_NULL_HANDLE;
 

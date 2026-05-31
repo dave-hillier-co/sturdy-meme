@@ -24,6 +24,10 @@ find_package(EnTT CONFIG REQUIRED)
 
 find_path(STB_INCLUDE_DIRS "stb_image.h")
 
+# Enable testing before adding subdirectories so their add_test() calls are
+# registered in the top-level CTest list (e.g. tools/town_generator_tests).
+enable_testing()
+
 # Add tools subdirectory for shader reflection
 add_subdirectory(tools)
 

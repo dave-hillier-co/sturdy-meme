@@ -3,6 +3,7 @@
 #include "SamplerFactory.h"
 #include "CommandBufferUtils.h"
 #include "core/ImageBuilder.h"
+#include "terrain/TerrainHeight.h"
 #include <SDL3/SDL.h>
 #include <vulkan/vulkan.hpp>
 #include <cstring>
@@ -280,7 +281,7 @@ bool FlowMapGenerator::generateSlopeBasedFlow(const std::vector<float>& heightDa
                       h01 * (1 - fx) * fy +
                       h11 * fx * fy);
 
-            float worldHeight = h * heightScale;
+            float worldHeight = TerrainHeight::toWorld(h, heightScale);
             uint32_t idx = y * res + x;
             heights[idx] = worldHeight;
             waterMask[idx] = (worldHeight < config.waterLevel);

@@ -111,11 +111,11 @@ void GuiSceneEditor::render(ISceneControl& sceneControl, SceneEditorState& state
                         state.clearSelection();
                     }
                 }
-                if (ImGui::MenuItem("Duplicate", "Ctrl+D", false, hasSelection)) {
+                if (ImGui::MenuItem("Duplicate (TODO)", "Ctrl+D", false, false)) {
                     // TODO: Implement entity duplication
                 }
                 ImGui::Separator();
-                if (ImGui::MenuItem("Focus", "F", false, hasSelection)) {
+                if (ImGui::MenuItem("Focus (TODO)", "F", false, false)) {
                     // TODO: Implement camera focus on selected entity
                 }
                 ImGui::EndMenu();

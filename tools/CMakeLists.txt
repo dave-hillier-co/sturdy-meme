@@ -342,6 +342,8 @@ target_link_libraries(town_generator_tests PRIVATE
 
 target_compile_features(town_generator_tests PRIVATE cxx_std_17)
 
+add_test(NAME town_generator_tests COMMAND town_generator_tests)
+
 # Terrain-aware patch generator (preview tool for town placement)
 add_executable(terrain_patch_generator
     terrain_patch_generator/main.cpp

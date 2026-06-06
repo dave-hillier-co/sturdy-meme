@@ -2,7 +2,10 @@
 #include <SDL3/SDL_log.h>
 #include <stb_image.h>
 #include <lodepng.h>
-#define TINYEXR_IMPLEMENTATION
+// tinyexr implementation is provided by the prebuilt vcpkg library
+// (unofficial::tinyexr::tinyexr); do not define TINYEXR_IMPLEMENTATION here, as
+// the implementation block pulls in headers (exr_reader.hh) that the package
+// does not install.
 #include <tinyexr.h>
 #include <fstream>
 #include <queue>

@@ -8,7 +8,9 @@
 #include <nlohmann/json.hpp>
 #include <stb_image.h>
 #include <lodepng.h>
-#define TINYEXR_IMPLEMENTATION
+// tinyexr implementation is provided by the prebuilt vcpkg library; defining
+// TINYEXR_IMPLEMENTATION would compile the implementation block, which includes
+// headers (exr_reader.hh) not shipped by the package.
 #include <tinyexr.h>
 
 // Settlement SVG generation (reuse from biome_preprocess)

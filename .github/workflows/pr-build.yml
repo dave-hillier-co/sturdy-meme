@@ -24,6 +24,9 @@ jobs:
             # Ensure required build tools are available
             command -v ninja &>/dev/null || brew install ninja
             command -v cmake &>/dev/null || brew install cmake
+            # pkg-config is required by vcpkg ports (e.g. simdjson's
+            # vcpkg_fixup_pkgconfig); the Linux branch already installs it.
+            command -v pkg-config &>/dev/null || brew install pkg-config
           else
             # Linux
             if ! command -v ninja &>/dev/null || ! command -v g++ &>/dev/null || ! command -v cmake &>/dev/null; then

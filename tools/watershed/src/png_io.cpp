@@ -387,7 +387,9 @@ void write_terrain_traced_rivers_png(
 
 // Standard format output functions for biome_preprocess compatibility
 
-#define TINYEXR_IMPLEMENTATION
+// tinyexr implementation is provided by the prebuilt vcpkg library; defining
+// TINYEXR_IMPLEMENTATION would compile the implementation block, which includes
+// headers (exr_reader.hh) not shipped by the package.
 #include <tinyexr.h>
 
 void write_flow_accumulation_exr(const std::string& filename, const D8Result& d8) {

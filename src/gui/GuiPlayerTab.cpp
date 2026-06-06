@@ -246,37 +246,43 @@ void GuiPlayerTab::render(IPlayerControl& playerControl, PlayerSettings& setting
         }
     }
 
-    // Motion Matching section
+    // Animation mode section
     ImGui::Spacing();
     ImGui::Separator();
     ImGui::Spacing();
 
-    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.3f, 0.8f, 1.0f, 1.0f));
-    ImGui::Text("MOTION MATCHING");
+    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.6f, 0.9f, 0.6f, 1.0f));
+    ImGui::Text("ANIMATION MODE");
     ImGui::PopStyleColor();
 
     // character already declared above, reuse it
 
-    // Enable/disable motion matching
-    bool wasEnabled = character.isUsingMotionMatching();
-    if (ImGui::Checkbox("Enable Motion Matching", &settings.motionMatchingEnabled)) {
-        if (settings.motionMatchingEnabled && !wasEnabled) {
-            // Initialize motion matching if not already done
-            if (!character.getMotionMatchingController().isDatabaseBuilt()) {
-                character.initializeMotionMatching();
-            } else {
-                character.setUseMotionMatching(true);
-            }
-        } else if (!settings.motionMatchingEnabled && wasEnabled) {
-            character.setUseMotionMatching(false);
-        }
+    // Single mode selector — the authority for which animation system drives the
+    // character. Routing through setAnimationMode() keeps the underlying flags
+    // consistent (no illegal combinations) and builds the motion-matching
+    // database lazily on first use.
+    static const char* modeItems[] = {
+        "Simple", "State Machine", "Blend Space",
+        "Layer Controller", "Motion Matching", "Physics"
+    };
+    int currentMode = static_cast<int>(character.getAnimationMode());
+    if (ImGui::Combo("Mode", &currentMode, modeItems, IM_ARRAYSIZE(modeItems))) {
+        auto newMode = static_cast<AnimatedCharacter::AnimationMode>(currentMode);
+        character.setAnimationMode(newMode);
+        // Keep the legacy flag (and the auto-init below) in sync with the choice.
+        settings.motionMatchingEnabled = (newMode == AnimatedCharacter::AnimationMode::MotionMatching);
     }
     if (ImGui::IsItemHovered()) {
-        ImGui::SetTooltip("Use motion matching for animation selection\n"
-                          "instead of state machine");
+        ImGui::SetTooltip("Simple: single-clip playback\n"
+                          "State Machine: discrete idle/walk/run transitions\n"
+                          "Blend Space: smooth locomotion blending\n"
+                          "Layer Controller: layered + masked blending\n"
+                          "Motion Matching: data-driven pose selection\n"
+                          "Physics: ragdoll-driven (requires a physics source)");
     }
 
-    // Auto-initialize motion matching if enabled by default but not yet active
+    // Auto-initialize motion matching when enabled by default but not yet active
+    // (settings.motionMatchingEnabled defaults to true for the on-load experience).
     if (settings.motionMatchingEnabled && !character.isUsingMotionMatching()) {
         if (!character.getMotionMatchingController().isDatabaseBuilt()) {
             character.initializeMotionMatching();
@@ -285,10 +291,16 @@ void GuiPlayerTab::render(IPlayerControl& playerControl, PlayerSettings& setting
         }
     }
 
-    // Sync the checkbox with actual state
+    // Keep the legacy flag honest with the actual mode.
     settings.motionMatchingEnabled = character.isUsingMotionMatching();
 
+    // Motion matching detail section (only when that mode is active)
     if (character.isUsingMotionMatching()) {
+        ImGui::Spacing();
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.3f, 0.8f, 1.0f, 1.0f));
+        ImGui::Text("MOTION MATCHING");
+        ImGui::PopStyleColor();
+
         ImGui::Indent();
 
         // Strafe mode section

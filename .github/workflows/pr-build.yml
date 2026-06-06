@@ -63,7 +63,11 @@ jobs:
           echo "VCPKG_ROOT: $VCPKG_ROOT"
 
       - name: Configure
-        run: cmake --preset debug
+        # Skip terrain preprocessing: it depends on the large heightmap asset
+        # assets/terrain/isleofwight-0m-200m.png, which is gitignored and
+        # provided out-of-band rather than checked in, so it is not available
+        # on CI runners.
+        run: cmake --preset debug -DSKIP_TERRAIN_PREPROCESSING=ON
 
       - name: Build
         run: cmake --build build/debug

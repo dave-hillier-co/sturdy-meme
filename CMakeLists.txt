@@ -95,6 +95,7 @@ set(SOURCES
     src/passes/WaterDrawable.cpp
     src/passes/PostPasses.cpp
     src/core/FrameUpdater.cpp
+    src/core/FrameUpdate.cpp
     src/core/FrameDataBuilder.cpp
     src/core/updaters/VegetationUpdater.cpp
     src/core/updaters/AtmosphereUpdater.cpp

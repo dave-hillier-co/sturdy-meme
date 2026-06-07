@@ -8,9 +8,8 @@
 #include "InitProfiler.h"
 #include "QueueSubmitDiagnostics.h"
 #include "core/pipeline/FrameGraphBuilder.h"
-#include "core/FrameUpdater.h"
+#include "core/FrameUpdate.h"
 #include "core/FrameDataBuilder.h"
-#include "core/updaters/UBOUpdater.h"
 #include "loading/AsyncSystemLoader.h"
 #include "interfaces/IPlayerControl.h"
 #include "UBOs.h"
@@ -30,7 +29,6 @@
 #include "Mesh.h"
 // Time and environment
 #include "WindSystem.h"
-#include "TimeSystem.h"
 #include "CelestialCalculator.h"
 #include "EnvironmentSettings.h"
 #include "interfaces/IEnvironmentControl.h"
@@ -436,44 +434,22 @@ bool Renderer::render(const Camera& camera) {
 }
 
 VkCommandBuffer Renderer::buildFrame(const Camera& camera, uint32_t imageIndex, uint32_t frameIndex) {
-    asyncTransferManager_.processPendingTransfers();
-
-    // Per-frame data updates
-    TimingData timing = systems_->time().update();
-
-    UBOUpdater::Config uboConfig;
-    uboConfig.showCascadeDebug = showCascadeDebug;
-    uboConfig.useVolumetricSnow = useVolumetricSnow;
-    uboConfig.showSnowDepthDebug = showSnowDepthDebug;
-    uboConfig.shadowsEnabled = perfToggles.shadowPass;
-    uboConfig.hdrEnabled = hdrEnabled;
-    uboConfig.maxSnowHeight = MAX_SNOW_HEIGHT;
-    uboConfig.lightCullRadius = lightCullRadius;
-    uboConfig.ecsWorld = ecsWorld_;
-    uboConfig.deltaTime = timing.deltaTime;
-    auto uboResult = UBOUpdater::update(*systems_, frameIndex, camera, uboConfig);
-    lastSunIntensity = uboResult.sunIntensity;
-
-    SceneBuilder& sceneBuilder = systems_->scene().getSceneBuilder();
-    AnimatedCharacter* character = sceneBuilder.hasCharacter() ? &sceneBuilder.getAnimatedCharacter() : nullptr;
-    constexpr uint32_t PLAYER_BONE_SLOT = 0;
-    systems_->skinnedMesh().updateBoneMatrices(frameIndex, PLAYER_BONE_SLOT, character);
-
-    // Build per-frame shared state
-    FrameData frame = FrameDataBuilder::buildFrameData(
-        camera, *systems_, frameIndex, timing.deltaTime, timing.elapsedTime);
+    // Simulation-update phase: transfers, time, UBOs, bone matrices, FrameData,
+    // per-system updates, and GPU scene buffer population.
+    FrameUpdate::Config cfg;
+    cfg.showCascadeDebug = showCascadeDebug;
+    cfg.useVolumetricSnow = useVolumetricSnow;
+    cfg.showSnowDepthDebug = showSnowDepthDebug;
+    cfg.shadowsEnabled = perfToggles.shadowPass;
+    cfg.hdrEnabled = hdrEnabled;
+    cfg.maxSnowHeight = MAX_SNOW_HEIGHT;
+    cfg.lightCullRadius = lightCullRadius;
+    cfg.ecsWorld = ecsWorld_;
+    FrameUpdate::Result upd = FrameUpdate::run(*systems_, asyncTransferManager_, camera, frameIndex,
+                                               vulkanContext_->getVkSwapchainExtent(), cfg);
+    lastSunIntensity = upd.sunIntensity;
+    FrameData& frame = upd.frame;
     lastViewProj = frame.viewProj;
-
-    // Subsystem updates
-    FrameUpdater::updateDebugLines(*systems_, frameIndex);
-
-    VkExtent2D extent = vulkanContext_->getVkSwapchainExtent();
-    FrameUpdater::SnowConfig snowConfig;
-    snowConfig.maxSnowHeight = MAX_SNOW_HEIGHT;
-    snowConfig.useVolumetricSnow = useVolumetricSnow;
-    FrameUpdater::updateAllSystems(*systems_, frame, extent, snowConfig);
-
-    FrameUpdater::populateGPUSceneBuffer(*systems_, frame);
 
     // Command buffer recording
     VkCommandBuffer cmd = vulkanContext_->getCommandBuffer(frame.frameIndex);

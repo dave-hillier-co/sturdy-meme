@@ -507,10 +507,11 @@ bool Application::init(const std::string& title, int width, int height) {
     // Initialize GUI system via factory
     {
         INIT_PROFILE_PHASE("GUI");
-        gui_ = GuiSystem::create(window, renderer_->getInstance(), renderer_->getPhysicalDevice(),
-                                  renderer_->getDevice(), renderer_->getGraphicsQueueFamily(),
-                                  renderer_->getGraphicsQueue(), renderer_->getSwapchainRenderPass(),
-                                  renderer_->getSwapchainImageCount());
+        const VulkanContext& vkCtx = renderer_->getVulkanContext();
+        gui_ = GuiSystem::create(window, vkCtx.getVkInstance(), vkCtx.getVkPhysicalDevice(),
+                                  vkCtx.getVkDevice(), vkCtx.getGraphicsQueueFamily(),
+                                  vkCtx.getVkGraphicsQueue(), vkCtx.getRenderPass(),
+                                  vkCtx.getSwapchainImageCount());
         if (!gui_) {
             SDL_Log("Failed to initialize GUI system");
             return false;

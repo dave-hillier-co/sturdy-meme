@@ -143,14 +143,8 @@ public:
     // to prevent ghost frames from blending with stale compositor-cached content
     void notifyWindowFocusGained();
 
-    // Vulkan handle getters for GUI integration
-    vk::Instance getInstance() const { return vulkanContext_->getVkInstance(); }
-    vk::PhysicalDevice getPhysicalDevice() const { return vulkanContext_->getVkPhysicalDevice(); }
-    vk::Device getDevice() const { return vulkanContext_->getVkDevice(); }
-    vk::Queue getGraphicsQueue() const { return vulkanContext_->getVkGraphicsQueue(); }
-    uint32_t getGraphicsQueueFamily() const { return vulkanContext_->getGraphicsQueueFamily(); }
-    VkRenderPass getSwapchainRenderPass() const { return vulkanContext_->getRenderPass(); }
-    uint32_t getSwapchainImageCount() const { return vulkanContext_->getSwapchainImageCount(); }
+    // Vulkan handles for GUI/integration are obtained via getVulkanContext() below,
+    // so Renderer is not a second-class vendor of Vulkan handles.
 
     // Access to VulkanContext
     VulkanContext& getVulkanContext() { return *vulkanContext_; }

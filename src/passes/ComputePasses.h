@@ -1,6 +1,6 @@
 #pragma once
 
-#include "FrameGraph.h"
+#include "PassScheduler.h"
 
 class RendererSystems;
 struct PerformanceToggles;
@@ -18,11 +18,11 @@ struct Config {
 };
 
 struct PassIds {
-    FrameGraph::PassId compute = FrameGraph::INVALID_PASS;
-    FrameGraph::PassId froxel = FrameGraph::INVALID_PASS;
-    FrameGraph::PassId gpuCull = FrameGraph::INVALID_PASS;  // GPU-driven culling pass
+    PassScheduler::PassId compute = PassScheduler::INVALID_PASS;
+    PassScheduler::PassId froxel = PassScheduler::INVALID_PASS;
+    PassScheduler::PassId gpuCull = PassScheduler::INVALID_PASS;  // GPU-driven culling pass
 };
 
-PassIds addPasses(FrameGraph& graph, RendererSystems& systems, const Config& config);
+PassIds addPasses(PassScheduler& graph, RendererSystems& systems, const Config& config);
 
 } // namespace ComputePasses

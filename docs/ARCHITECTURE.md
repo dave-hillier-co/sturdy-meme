@@ -68,11 +68,11 @@ Multi-threaded infrastructure for async loading and parallel command recording:
 - `TaskScheduler` (`src/core/threading/`) - Thread pool with IO affinity
 - `AsyncTransferManager` (`src/core/vulkan/`) - Non-blocking GPU transfers with dedicated transfer queue
 - `ThreadedCommandPool` (`src/core/vulkan/`) - Per-thread, per-frame command pools
-- `FrameGraph` (`src/core/pipeline/`) - Dependency-driven render pass scheduling
+- `PassScheduler` (`src/core/pipeline/`) - Dependency-driven render pass scheduling
 - `AsyncTextureUploader` (`src/core/loading/`) - Non-blocking texture uploads
 
-### FrameGraph Execution
-The FrameGraph compiles render passes into execution levels based on dependencies:
+### Pass Scheduling
+The `PassScheduler` compiles render passes into execution levels based on dependencies:
 ```
 Level 0: Compute
 Level 1: Shadow, Froxel, WaterGBuffer (parallel)

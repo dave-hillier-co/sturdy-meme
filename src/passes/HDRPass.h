@@ -1,6 +1,6 @@
 #pragma once
 
-#include "FrameGraph.h"
+#include "PassScheduler.h"
 #include <glm/glm.hpp>
 
 class RendererSystems;
@@ -27,6 +27,6 @@ struct Config {
     bool* terrainEnabled = nullptr;
 };
 
-FrameGraph::PassId addPass(FrameGraph& graph, RendererSystems& systems, const Config& config);
+PassScheduler::PassId addPass(PassScheduler& graph, RendererSystems& systems, const Config& config);
 
 } // namespace HDRPass

@@ -35,7 +35,7 @@ bool RenderingInfrastructure::init(VulkanContext& context, uint32_t threadCount)
         // Continue - not a fatal error
     }
 
-    // FrameGraph is initialized empty and populated later by FrameGraphBuilder
+    // PassScheduler is initialized empty and populated later by PassSchedulerBuilder
     // AssetRegistry is initialized separately via initAssetRegistry()
 
     initialized_ = true;
@@ -55,7 +55,7 @@ void RenderingInfrastructure::shutdown() {
     asyncTextureUploader_.shutdown();  // Must shutdown before transfer manager
     asyncTransferManager_.shutdown();
     threadedCommandPool_.shutdown();
-    // FrameGraph has no explicit shutdown
+    // PassScheduler has no explicit shutdown
     // AssetRegistry cleanup is automatic (RAII)
 
     initialized_ = false;

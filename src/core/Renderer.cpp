@@ -160,7 +160,7 @@ void Renderer::cleanup() {
         // object is torn down). They capture raw pointers to Renderer members (recorders,
         // pipelines, VulkanContext, etc.); clearing here removes any dependence on member
         // destruction order.
-        frameGraph_.clear();
+        passScheduler_.clear();
 
         // Shutdown multi-threading infrastructure in reverse init order
         asyncTextureUploader_.shutdown();
@@ -249,15 +249,15 @@ VkCommandBuffer Renderer::buildFrame(const Camera& camera, uint32_t imageIndex, 
         scenePipeline_.getDescriptorSetLayout());
     RenderContext renderCtx(cmd, frame.frameIndex, frame, resources, nullptr);
 
-    FrameGraph::RenderContext fgCtx(vkCmd, frame.frameIndex, frame);
-    fgCtx.imageIndex = imageIndex;
-    fgCtx.deltaTime = frame.deltaTime;
-    fgCtx.withUserData(&renderCtx)
+    PassScheduler::RenderContext psCtx(vkCmd, frame.frameIndex, frame);
+    psCtx.imageIndex = imageIndex;
+    psCtx.deltaTime = frame.deltaTime;
+    psCtx.withUserData(&renderCtx)
         .withThreading(&threadedCommandPool_,
                        vk::RenderPass(systems_->postProcess().getHDRRenderPass()),
                        vk::Framebuffer(systems_->postProcess().getHDRFramebuffer()));
 
-    frameGraph_.execute(fgCtx, &TaskScheduler::instance());
+    passScheduler_.execute(psCtx, &TaskScheduler::instance());
 
     systems_->profiler().endGpuFrame(cmd, frame.frameIndex);
     vkCmd.end();

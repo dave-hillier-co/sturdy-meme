@@ -10,7 +10,7 @@
 // Phase Order:
 // 1. BeginFrame    - Advance double-buffers, reset per-frame state
 // 2. Update        - Compute simulations (wind, weather, grass compute)
-// 3. Record        - Record command buffers (already handled by FrameGraph)
+// 3. Record        - Record command buffers (already handled by PassScheduler)
 // 4. Submit        - Submit commands to GPU (handled by Renderer)
 // 5. EndFrame      - Post-submit cleanup, diagnostics, profiling
 //
@@ -25,7 +25,7 @@
 //   // In render loop
 //   lifecycle.beginFrame();
 //   lifecycle.update(deltaTime);
-//   // ... record commands via FrameGraph ...
+//   // ... record commands via PassScheduler ...
 //   lifecycle.endFrame();
 //
 
@@ -39,7 +39,7 @@
 enum class FramePhase {
     BeginFrame,  // Advance double-buffers, reset state
     Update,      // Compute simulations before rendering
-    Record,      // Command buffer recording (FrameGraph handles this)
+    Record,      // Command buffer recording (PassScheduler handles this)
     Submit,      // GPU submission (Renderer handles this)
     EndFrame     // Post-submit cleanup and diagnostics
 };

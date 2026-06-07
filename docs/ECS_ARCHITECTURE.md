@@ -396,7 +396,7 @@ for (auto [e, mesh, lod] : world.query<LODMesh, LODController>()) {
 
 These systems are already well-architected and wouldn't benefit:
 
-- **FrameGraph** - Already handles render pass dependencies cleanly
+- **PassScheduler** - Already handles render pass dependencies cleanly
 - **Terrain System** - Specialized tile-based rendering, not entity-based
 - **Weather/Wind/Time** - Global state, not per-entity
 - **Post-processing** - Screen-space effects, no entity involvement

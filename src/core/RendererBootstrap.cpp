@@ -11,7 +11,7 @@
 #include "passes/ShadowPassRecorder.h"
 #include "passes/HDRPassRecorder.h"
 #include "InitProfiler.h"
-#include "core/pipeline/FrameGraphBuilder.h"
+#include "core/pipeline/PassSchedulerBuilder.h"
 #include "loading/AsyncSystemLoader.h"
 #include "UBOs.h"
 
@@ -200,8 +200,8 @@ bool RendererBootstrap::initInternal(Renderer& r, const Renderer::InitInfo& info
     // Setup frame graph with dependencies
     reportProgress(0.99f, "Configuring frame graph");
     {
-        INIT_PROFILE_PHASE("FrameGraph");
-        setupFrameGraph(r);
+        INIT_PROFILE_PHASE("PassScheduler");
+        setupPassScheduler(r);
     }
     SDL_Log("Frame graph configured");
 
@@ -210,14 +210,14 @@ bool RendererBootstrap::initInternal(Renderer& r, const Renderer::InitInfo& info
     return true;
 }
 
-void RendererBootstrap::setupFrameGraph(Renderer& r) {
+void RendererBootstrap::setupPassScheduler(Renderer& r) {
     // GUI callback (PostPasses still uses it)
-    FrameGraphBuilder::Callbacks callbacks;
+    PassSchedulerBuilder::Callbacks callbacks;
     callbacks.guiRenderCallback = &r.guiRenderCallback;
 
     // Build state references for frame graph passes. The pass modules build their own
     // Params from these pointers and invoke the recorders directly.
-    FrameGraphBuilder::State state;
+    PassSchedulerBuilder::State state;
     state.lastSunIntensity = &r.lastSunIntensity;
     state.hdrPassEnabled = &r.hdrPassEnabled;
     state.terrainEnabled = &r.terrainEnabled;
@@ -230,8 +230,8 @@ void RendererBootstrap::setupFrameGraph(Renderer& r) {
     state.vulkanContext = r.vulkanContext_.get();
     state.lastViewProj = &r.lastViewProj;
 
-    // Use FrameGraphBuilder to configure all passes and dependencies
-    if (!FrameGraphBuilder::build(r.frameGraph_, *r.systems_, callbacks, state)) {
+    // Use PassSchedulerBuilder to configure all passes and dependencies
+    if (!PassSchedulerBuilder::build(r.passScheduler_, *r.systems_, callbacks, state)) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to build frame graph");
     }
 }
@@ -556,8 +556,8 @@ bool RendererBootstrap::pollAsyncInit(Renderer& r) {
         // Setup frame graph
         if (r.progressCallback_) r.progressCallback_(0.99f, "Configuring frame graph");
         {
-            INIT_PROFILE_PHASE("FrameGraph");
-            setupFrameGraph(r);
+            INIT_PROFILE_PHASE("PassScheduler");
+            setupPassScheduler(r);
         }
         SDL_Log("Frame graph configured");
 

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "FrameGraph.h"
+#include "PassScheduler.h"
 #include <glm/glm.hpp>
 
 class RendererSystems;
@@ -22,10 +22,10 @@ struct Config {
 };
 
 struct PassIds {
-    FrameGraph::PassId shadow = FrameGraph::INVALID_PASS;
-    FrameGraph::PassId shadowResolve = FrameGraph::INVALID_PASS;
+    PassScheduler::PassId shadow = PassScheduler::INVALID_PASS;
+    PassScheduler::PassId shadowResolve = PassScheduler::INVALID_PASS;
 };
 
-PassIds addPasses(FrameGraph& graph, RendererSystems& systems, const Config& config);
+PassIds addPasses(PassScheduler& graph, RendererSystems& systems, const Config& config);
 
 } // namespace ShadowPasses

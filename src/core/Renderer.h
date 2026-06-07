@@ -16,7 +16,7 @@
 #include "FrameExecutor.h"
 #include "vulkan/AsyncTransferManager.h"
 #include "vulkan/ThreadedCommandPool.h"
-#include "pipeline/FrameGraph.h"
+#include "pipeline/PassScheduler.h"
 #include "loading/LoadJobFactory.h"
 #include "asset/AssetRegistry.h"
 #include "ScenePipeline.h"
@@ -263,7 +263,7 @@ private:
     // Multi-threading and asset infrastructure
     AsyncTransferManager asyncTransferManager_;
     ThreadedCommandPool threadedCommandPool_;
-    FrameGraph frameGraph_;
+    PassScheduler passScheduler_;
     Loading::AsyncTextureUploader asyncTextureUploader_;
     AssetRegistry assetRegistry_;
 

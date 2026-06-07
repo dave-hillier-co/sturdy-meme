@@ -11,7 +11,7 @@
 
 namespace PostPasses {
 
-PassIds addPasses(FrameGraph& graph, RendererSystems& systems, const Config& config) {
+PassIds addPasses(PassScheduler& graph, RendererSystems& systems, const Config& config) {
     PassIds ids;
     auto* guiCallback = config.guiRenderCallback;
     auto* framebuffers = config.framebuffers;
@@ -20,7 +20,7 @@ PassIds addPasses(FrameGraph& graph, RendererSystems& systems, const Config& con
     // Hi-Z pass - hierarchical Z-buffer generation
     ids.hiZ = graph.addPass({
         .name = "HiZ",
-        .execute = [&systems, perfToggles](FrameGraph::RenderContext& ctx) {
+        .execute = [&systems, perfToggles](PassScheduler::RenderContext& ctx) {
             if (!perfToggles->hiZPyramid) return;
             RenderContext* renderCtx = static_cast<RenderContext*>(ctx.userData);
             if (!renderCtx) return;
@@ -36,7 +36,7 @@ PassIds addPasses(FrameGraph& graph, RendererSystems& systems, const Config& con
     // Bloom pass - multi-pass bloom effect
     ids.bloom = graph.addPass({
         .name = "Bloom",
-        .execute = [&systems, perfToggles](FrameGraph::RenderContext& ctx) {
+        .execute = [&systems, perfToggles](PassScheduler::RenderContext& ctx) {
             if (!perfToggles->bloom || !systems.postProcess().isBloomEnabled()) return;
             RenderContext* renderCtx = static_cast<RenderContext*>(ctx.userData);
             if (!renderCtx) return;
@@ -53,7 +53,7 @@ PassIds addPasses(FrameGraph& graph, RendererSystems& systems, const Config& con
     // God rays pass - quarter-resolution light shafts
     ids.godRays = graph.addPass({
         .name = "GodRays",
-        .execute = [&systems](FrameGraph::RenderContext& ctx) {
+        .execute = [&systems](PassScheduler::RenderContext& ctx) {
             if (!systems.hasGodRays() || !systems.postProcess().isGodRaysEnabled()) return;
             RenderContext* renderCtx = static_cast<RenderContext*>(ctx.userData);
             if (!renderCtx) return;
@@ -76,7 +76,7 @@ PassIds addPasses(FrameGraph& graph, RendererSystems& systems, const Config& con
     // Bilateral grid pass - local tone mapping
     ids.bilateralGrid = graph.addPass({
         .name = "BilateralGrid",
-        .execute = [&systems](FrameGraph::RenderContext& ctx) {
+        .execute = [&systems](PassScheduler::RenderContext& ctx) {
             if (systems.postProcess().isLocalToneMapEnabled()) {
                 systems.profiler().beginGpuZone(ctx.commandBuffer, "BilateralGrid");
                 systems.bilateralGrid().recordBilateralGrid(ctx.commandBuffer, ctx.frameIndex,
@@ -92,7 +92,7 @@ PassIds addPasses(FrameGraph& graph, RendererSystems& systems, const Config& con
     // Post-process pass - final composite with tone mapping and GUI
     ids.postProcess = graph.addPass({
         .name = "PostProcess",
-        .execute = [&systems, framebuffers, guiCallback](FrameGraph::RenderContext& ctx) {
+        .execute = [&systems, framebuffers, guiCallback](PassScheduler::RenderContext& ctx) {
             RenderContext* renderCtx = static_cast<RenderContext*>(ctx.userData);
             if (!renderCtx) return;
             systems.profiler().beginGpuZone(ctx.commandBuffer, "PostProcess");

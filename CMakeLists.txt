@@ -78,8 +78,8 @@ set(SOURCES
     src/core/vulkan/ThreadedCommandPool.cpp
     $<IF:$<PLATFORM_ID:Darwin>,src/core/vulkan/MetalLayerFix.mm,src/core/vulkan/MetalLayerFix.cpp>
     src/core/threading/TaskScheduler.cpp
-    src/core/pipeline/FrameGraph.cpp
-    src/core/pipeline/FrameGraphBuilder.cpp
+    src/core/pipeline/PassScheduler.cpp
+    src/core/pipeline/PassSchedulerBuilder.cpp
     src/passes/ComputePasses.cpp
     src/passes/ShadowPasses.cpp
     src/passes/ShadowPassRecorder.cpp

@@ -59,13 +59,13 @@ static HDRPassRecorder::Params buildParams(
     return params;
 }
 
-FrameGraph::PassId addPass(FrameGraph& graph, RendererSystems& systems, const Config& config) {
+PassScheduler::PassId addPass(PassScheduler& graph, RendererSystems& systems, const Config& config) {
     bool* hdrPassEnabled = config.hdrPassEnabled;
     Config cfg = config;
 
     return graph.addPass({
         .name = "HDR",
-        .execute = [&systems, hdrPassEnabled, cfg](FrameGraph::RenderContext& ctx) {
+        .execute = [&systems, hdrPassEnabled, cfg](PassScheduler::RenderContext& ctx) {
             RenderContext* renderCtx = static_cast<RenderContext*>(ctx.userData);
             if (!renderCtx) return;
             if (*hdrPassEnabled) {
@@ -86,7 +86,7 @@ FrameGraph::PassId addPass(FrameGraph& graph, RendererSystems& systems, const Co
         .mainThreadOnly = true,  // Main thread begins render pass, but secondaries record in parallel
         .priority = 30,
         .secondarySlots = 3,  // 3 parallel recording slots
-        .secondaryRecord = [&systems, cfg](FrameGraph::RenderContext& ctx, uint32_t slot) {
+        .secondaryRecord = [&systems, cfg](PassScheduler::RenderContext& ctx, uint32_t slot) {
             RenderContext* renderCtx = static_cast<RenderContext*>(ctx.userData);
             if (!renderCtx) return;
             auto params = buildParams(systems, cfg, ctx.frameIndex);

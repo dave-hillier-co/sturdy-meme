@@ -1,6 +1,6 @@
 #pragma once
 
-#include "FrameGraph.h"
+#include "PassScheduler.h"
 #include "PerformanceToggles.h"
 #include <vulkan/vulkan_raii.hpp>
 #include <glm/glm.hpp>
@@ -14,7 +14,7 @@ class InstancedScenePipeline;
 class VulkanContext;
 
 /**
- * FrameGraphBuilder - Wires together domain-specific render passes
+ * PassSchedulerBuilder - Wires together domain-specific render passes
  *
  * Delegates pass creation to domain modules in src/core/passes/:
  * - ComputePasses: GPU compute dispatches, froxel/atmosphere
@@ -30,7 +30,7 @@ class VulkanContext;
  *                                               ├──> HiZ ──> Bloom┤
  *                                               └──> BilateralGrid┘
  */
-class FrameGraphBuilder {
+class PassSchedulerBuilder {
 public:
     struct Callbacks {
         std::function<void(VkCommandBuffer)>* guiRenderCallback = nullptr;
@@ -53,7 +53,7 @@ public:
     };
 
     static bool build(
-        FrameGraph& frameGraph,
+        PassScheduler& passScheduler,
         RendererSystems& systems,
         const Callbacks& callbacks,
         const State& state

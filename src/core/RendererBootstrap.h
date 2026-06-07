@@ -28,7 +28,7 @@ public:
     static bool initSkinnedMeshRenderer(Renderer& r);
     static bool createSkinnedMeshRendererDescriptorSets(Renderer& r);
 
-    static void setupFrameGraph(Renderer& r);
+    static void setupPassScheduler(Renderer& r);
 
     static bool pollAsyncInit(Renderer& r);
 };

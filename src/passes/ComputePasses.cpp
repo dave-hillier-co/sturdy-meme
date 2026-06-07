@@ -32,7 +32,7 @@
 
 namespace ComputePasses {
 
-PassIds addPasses(FrameGraph& graph, RendererSystems& systems, const Config& config) {
+PassIds addPasses(PassScheduler& graph, RendererSystems& systems, const Config& config) {
     PassIds ids;
     PerformanceToggles* perfToggles = config.perfToggles;
     bool* terrainEnabled = config.terrainEnabled;
@@ -40,7 +40,7 @@ PassIds addPasses(FrameGraph& graph, RendererSystems& systems, const Config& con
     // Compute pass - runs all GPU compute dispatches
     ids.compute = graph.addPass({
         .name = "Compute",
-        .execute = [&systems, perfToggles, terrainEnabled](FrameGraph::RenderContext& ctx) {
+        .execute = [&systems, perfToggles, terrainEnabled](PassScheduler::RenderContext& ctx) {
             RenderContext* renderCtx = static_cast<RenderContext*>(ctx.userData);
             if (!renderCtx) return;
             VkCommandBuffer cmd = renderCtx->cmd;
@@ -172,7 +172,7 @@ PassIds addPasses(FrameGraph& graph, RendererSystems& systems, const Config& con
     // Froxel/Atmosphere pass - volumetric fog and atmosphere LUTs
     ids.froxel = graph.addPass({
         .name = "Froxel",
-        .execute = [&systems, perfToggles](FrameGraph::RenderContext& ctx) {
+        .execute = [&systems, perfToggles](PassScheduler::RenderContext& ctx) {
             RenderContext* renderCtx = static_cast<RenderContext*>(ctx.userData);
             if (!renderCtx) return;
             VkCommandBuffer cmd = renderCtx->cmd;
@@ -236,7 +236,7 @@ PassIds addPasses(FrameGraph& graph, RendererSystems& systems, const Config& con
     if (systems.hasGPUSceneBuffer() && systems.hasGPUCullPass()) {
         ids.gpuCull = graph.addPass({
             .name = "GPUCull",
-            .execute = [&systems](FrameGraph::RenderContext& ctx) {
+            .execute = [&systems](PassScheduler::RenderContext& ctx) {
                 RenderContext* renderCtx = static_cast<RenderContext*>(ctx.userData);
                 if (!renderCtx) return;
                 VkCommandBuffer cmd = renderCtx->cmd;

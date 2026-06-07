@@ -27,7 +27,7 @@ static bool indirectShadowDrawEnabled() {
     return enabled;
 }
 
-PassIds addPasses(FrameGraph& graph, RendererSystems& systems, const Config& config) {
+PassIds addPasses(PassScheduler& graph, RendererSystems& systems, const Config& config) {
     PassIds ids;
     float* lastSunIntensity = config.lastSunIntensity;
     PerformanceToggles* perfToggles = config.perfToggles;
@@ -38,7 +38,7 @@ PassIds addPasses(FrameGraph& graph, RendererSystems& systems, const Config& con
     // Shadow map rendering pass
     ids.shadow = graph.addPass({
         .name = "Shadow",
-        .execute = [&systems, lastSunIntensity, perfToggles, recorder, vulkanContext, terrainEnabled](FrameGraph::RenderContext& ctx) {
+        .execute = [&systems, lastSunIntensity, perfToggles, recorder, vulkanContext, terrainEnabled](PassScheduler::RenderContext& ctx) {
             RenderContext* renderCtx = static_cast<RenderContext*>(ctx.userData);
             if (!renderCtx) return;
             if (*lastSunIntensity > 0.001f && perfToggles->shadowPass) {
@@ -70,7 +70,7 @@ PassIds addPasses(FrameGraph& graph, RendererSystems& systems, const Config& con
     if (systems.hasScreenSpaceShadow()) {
         ids.shadowResolve = graph.addPass({
             .name = "ShadowResolve",
-            .execute = [&systems, lastSunIntensity, perfToggles](FrameGraph::RenderContext& ctx) {
+            .execute = [&systems, lastSunIntensity, perfToggles](PassScheduler::RenderContext& ctx) {
                 if (!systems.hasScreenSpaceShadow()) return;
                 if (*lastSunIntensity <= 0.001f || !perfToggles->shadowPass) return;
                 systems.profiler().beginGpuZone(ctx.commandBuffer, "ShadowResolve");

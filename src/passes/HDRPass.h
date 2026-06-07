@@ -1,8 +1,13 @@
 #pragma once
 
 #include "FrameGraph.h"
+#include <glm/glm.hpp>
 
 class RendererSystems;
+class HDRPassRecorder;
+class ScenePipeline;
+class InstancedScenePipeline;
+class VulkanContext;
 
 /**
  * HDRPass - Main scene HDR rendering pass
@@ -12,15 +17,14 @@ class RendererSystems;
  */
 namespace HDRPass {
 
-using HDRRecordFn = std::function<void(VkCommandBuffer, uint32_t, float)>;
-using HDRSecondaryRecordFn = std::function<void(VkCommandBuffer, uint32_t, float, const std::vector<vk::CommandBuffer>&)>;
-using HDRSlotRecordFn = std::function<void(VkCommandBuffer, uint32_t, float, uint32_t)>;
-
 struct Config {
     bool* hdrPassEnabled = nullptr;
-    HDRRecordFn recordHDRPass;
-    HDRSecondaryRecordFn recordHDRPassWithSecondaries;
-    HDRSlotRecordFn recordHDRPassSecondarySlot;
+    HDRPassRecorder* recorder = nullptr;
+    ScenePipeline* scenePipeline = nullptr;
+    InstancedScenePipeline* instancedScenePipeline = nullptr;
+    VulkanContext* vulkanContext = nullptr;
+    glm::mat4* lastViewProj = nullptr;
+    bool* terrainEnabled = nullptr;
 };
 
 FrameGraph::PassId addPass(FrameGraph& graph, RendererSystems& systems, const Config& config);

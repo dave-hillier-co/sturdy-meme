@@ -7,6 +7,11 @@
 #include <functional>
 
 class RendererSystems;
+class ShadowPassRecorder;
+class HDRPassRecorder;
+class ScenePipeline;
+class InstancedScenePipeline;
+class VulkanContext;
 
 /**
  * FrameGraphBuilder - Wires together domain-specific render passes
@@ -28,10 +33,6 @@ class RendererSystems;
 class FrameGraphBuilder {
 public:
     struct Callbacks {
-        std::function<void(VkCommandBuffer, uint32_t, float, const glm::vec3&)> recordShadowPass;
-        std::function<void(VkCommandBuffer, uint32_t, float)> recordHDRPass;
-        std::function<void(VkCommandBuffer, uint32_t, float, const std::vector<vk::CommandBuffer>&)> recordHDRPassWithSecondaries;
-        std::function<void(VkCommandBuffer, uint32_t, float, uint32_t)> recordHDRPassSecondarySlot;
         std::function<void(VkCommandBuffer)>* guiRenderCallback = nullptr;
     };
 
@@ -41,6 +42,14 @@ public:
         bool* terrainEnabled = nullptr;
         PerformanceToggles* perfToggles = nullptr;
         std::vector<vk::raii::Framebuffer>* framebuffers = nullptr;
+
+        // Pass-module inputs (the pass lambdas build Params and call the recorder directly)
+        ShadowPassRecorder* shadowRecorder = nullptr;
+        HDRPassRecorder* hdrRecorder = nullptr;
+        ScenePipeline* scenePipeline = nullptr;
+        InstancedScenePipeline* instancedScenePipeline = nullptr;
+        VulkanContext* vulkanContext = nullptr;
+        glm::mat4* lastViewProj = nullptr;
     };
 
     static bool build(

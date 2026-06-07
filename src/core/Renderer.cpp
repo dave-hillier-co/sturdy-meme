@@ -250,29 +250,24 @@ bool Renderer::initInternal(const InitInfo& info) {
 }
 
 void Renderer::setupFrameGraph() {
-    // Build callbacks for frame graph passes
+    // GUI callback (PostPasses still uses it)
     FrameGraphBuilder::Callbacks callbacks;
-    callbacks.recordShadowPass = [this](VkCommandBuffer cmd, uint32_t frameIndex, float time, const glm::vec3& cameraPos) {
-        recordShadowPass(cmd, frameIndex, time, cameraPos);
-    };
-    callbacks.recordHDRPass = [this](VkCommandBuffer cmd, uint32_t frameIndex, float time) {
-        recordHDRPass(cmd, frameIndex, time);
-    };
-    callbacks.recordHDRPassWithSecondaries = [this](VkCommandBuffer cmd, uint32_t frameIndex, float time, const std::vector<vk::CommandBuffer>& secondaries) {
-        recordHDRPassWithSecondaries(cmd, frameIndex, time, secondaries);
-    };
-    callbacks.recordHDRPassSecondarySlot = [this](VkCommandBuffer cmd, uint32_t frameIndex, float time, uint32_t slot) {
-        recordHDRPassSecondarySlot(cmd, frameIndex, time, slot);
-    };
     callbacks.guiRenderCallback = &guiRenderCallback;
 
-    // Build state references for frame graph passes
+    // Build state references for frame graph passes. The pass modules build their own
+    // Params from these pointers and invoke the recorders directly.
     FrameGraphBuilder::State state;
     state.lastSunIntensity = &lastSunIntensity;
     state.hdrPassEnabled = &hdrPassEnabled;
     state.terrainEnabled = &terrainEnabled;
     state.perfToggles = &perfToggles;
     state.framebuffers = &vulkanContext_->getFramebuffers();
+    state.shadowRecorder = shadowPassRecorder_.get();
+    state.hdrRecorder = hdrPassRecorder_.get();
+    state.scenePipeline = &scenePipeline_;
+    state.instancedScenePipeline = &instancedScenePipeline_;
+    state.vulkanContext = vulkanContext_.get();
+    state.lastViewProj = &lastViewProj;
 
     // Use FrameGraphBuilder to configure all passes and dependencies
     if (!FrameGraphBuilder::build(frameGraph_, *systems_, callbacks, state)) {
@@ -325,6 +320,12 @@ void Renderer::cleanup() {
 
     if (device != VK_NULL_HANDLE) {
         vkDeviceWaitIdle(device);
+
+        // Drop the frame-graph pass lambdas now (after the GPU is idle, before any captured
+        // object is torn down). They capture raw pointers to Renderer members (recorders,
+        // pipelines, VulkanContext, etc.); clearing here removes any dependence on member
+        // destruction order.
+        frameGraph_.clear();
 
         // Shutdown multi-threading infrastructure in reverse init order
         asyncTextureUploader_.shutdown();
@@ -564,36 +565,6 @@ void Renderer::notifyWindowFocusGained() {
 
 // Render pass recording helpers - pure command recording, no state mutation
 
-// Runtime toggle for the GPU-driven indirect shadow path. Defaults ON; set the environment
-// variable INDIRECT_SHADOW_DRAW=0 to force the instanced shadow path (A/B comparison and a
-// fallback). Per-cascade GPU frustum culling + vkCmdDrawIndexedIndirect for scene-object
-// shadows. Evaluated once.
-static bool indirectShadowDrawEnabled() {
-    static const bool enabled = []{
-        const char* v = std::getenv("INDIRECT_SHADOW_DRAW");
-        const bool on = (v == nullptr) || (std::string(v) != "0");
-        SDL_Log("Indirect shadow draw path: %s", on ? "ENABLED" : "disabled (instanced path)");
-        return on;
-    }();
-    return enabled;
-}
-
-void Renderer::recordShadowPass(VkCommandBuffer cmd, uint32_t frameIndex, float grassTime, const glm::vec3& cameraPosition) {
-    // Build params for stateless recording
-    ShadowPassRecorder::Params params;
-    params.terrainEnabled = terrainEnabled;
-    params.terrainShadows = perfToggles.terrainShadows;
-    params.grassShadows = perfToggles.grassShadows;
-    params.indirectShadowDraw = indirectShadowDrawEnabled();
-    // vkCmdDrawIndexedIndirect needs both features; else the indirect path falls back to a
-    // direct instanced draw (no per-object GPU culling).
-    params.canMultiDrawIndirect = vulkanContext_->hasMultiDrawIndirect()
-                               && vulkanContext_->hasDrawIndirectFirstInstance();
-
-    // Delegate to the recorder
-    shadowPassRecorder_->record(cmd, frameIndex, grassTime, cameraPosition, params);
-}
-
 void Renderer::createHDRPassRecorder() {
     hdrPassRecorder_ = std::make_unique<HDRPassRecorder>(
         systems_->profiler(), systems_->postProcess());
@@ -673,100 +644,6 @@ void Renderer::createHDRPassRecorder() {
     hdrPassRecorder_->registerDrawable(
         std::make_unique<DebugLinesDrawable>(systems_->debugLine(), systems_->postProcess()),
         900, 2, "HDR:DebugLines");
-}
-
-// Runtime toggle for the GPU-driven indirect scene draw path. Defaults ON; set the
-// environment variable INDIRECT_SCENE_DRAW=0 to force the CPU draw path (A/B comparison
-// and a fallback). Evaluated once.
-static bool indirectSceneDrawEnabled() {
-    static const bool enabled = []{
-        const char* v = std::getenv("INDIRECT_SCENE_DRAW");
-        const bool on = (v == nullptr) || (std::string(v) != "0");
-        SDL_Log("Indirect scene draw path: %s", on ? "ENABLED" : "disabled (CPU path)");
-        return on;
-    }();
-    return enabled;
-}
-
-void Renderer::recordHDRPass(VkCommandBuffer cmd, uint32_t frameIndex, float grassTime) {
-    // Build params for stateless recording
-    HDRPassRecorder::Params params;
-    params.terrainEnabled = terrainEnabled;
-    params.sceneObjectsPipeline = scenePipeline_.getGraphicsPipelinePtr();
-    params.pipelineLayout = scenePipeline_.getPipelineLayoutPtr();
-    params.viewProj = lastViewProj;
-
-    // GPU-driven rendering params. The GPUCullPass produces per-object indirect commands and
-    // SceneObjectsDrawable issues vkCmdDrawIndexedIndirect when the indirect path is active
-    // (indirectSceneDrawEnabled, default on; INDIRECT_SCENE_DRAW=0 forces the CPU path).
-    if (systems_->hasGPUSceneBuffer() && systems_->hasGPUCullPass()) {
-        params.gpuSceneBuffer = &systems_->gpuSceneBuffer();
-        params.instancedPipelineLayout = instancedScenePipeline_.getPipelineLayoutPtr();
-        params.instancedPipeline = instancedScenePipeline_.getGraphicsPipelinePtr();
-        params.instanceDescriptorSet = instancedScenePipeline_.getInstanceDescriptorSet(frameIndex);
-        params.useIndirectDraw = indirectSceneDrawEnabled()
-                              && instancedScenePipeline_.hasPipeline()
-                              && params.instanceDescriptorSet != VK_NULL_HANDLE;
-        // vkCmdDrawIndexedIndirect needs both features; else fall back to direct instanced draw.
-        params.canMultiDrawIndirect = vulkanContext_->hasMultiDrawIndirect()
-                                   && vulkanContext_->hasDrawIndirectFirstInstance();
-    }
-
-    // Delegate to the recorder
-    hdrPassRecorder_->record(cmd, frameIndex, grassTime, params);
-}
-
-void Renderer::recordHDRPassWithSecondaries(VkCommandBuffer cmd, uint32_t frameIndex, float grassTime,
-                                            const std::vector<vk::CommandBuffer>& secondaries) {
-    // Build params for stateless recording
-    HDRPassRecorder::Params params;
-    params.terrainEnabled = terrainEnabled;
-    params.sceneObjectsPipeline = scenePipeline_.getGraphicsPipelinePtr();
-    params.pipelineLayout = scenePipeline_.getPipelineLayoutPtr();
-    params.viewProj = lastViewProj;
-
-    // GPU-driven rendering params (see recordHDRPass; indirect draw is the default path).
-    if (systems_->hasGPUSceneBuffer() && systems_->hasGPUCullPass()) {
-        params.gpuSceneBuffer = &systems_->gpuSceneBuffer();
-        params.instancedPipelineLayout = instancedScenePipeline_.getPipelineLayoutPtr();
-        params.instancedPipeline = instancedScenePipeline_.getGraphicsPipelinePtr();
-        params.instanceDescriptorSet = instancedScenePipeline_.getInstanceDescriptorSet(frameIndex);
-        params.useIndirectDraw = indirectSceneDrawEnabled()
-                              && instancedScenePipeline_.hasPipeline()
-                              && params.instanceDescriptorSet != VK_NULL_HANDLE;
-        // vkCmdDrawIndexedIndirect needs both features; else fall back to direct instanced draw.
-        params.canMultiDrawIndirect = vulkanContext_->hasMultiDrawIndirect()
-                                   && vulkanContext_->hasDrawIndirectFirstInstance();
-    }
-
-    // Delegate to the recorder
-    hdrPassRecorder_->recordWithSecondaries(cmd, frameIndex, grassTime, secondaries, params);
-}
-
-void Renderer::recordHDRPassSecondarySlot(VkCommandBuffer cmd, uint32_t frameIndex, float grassTime, uint32_t slot) {
-    // Build params for stateless recording
-    HDRPassRecorder::Params params;
-    params.terrainEnabled = terrainEnabled;
-    params.sceneObjectsPipeline = scenePipeline_.getGraphicsPipelinePtr();
-    params.pipelineLayout = scenePipeline_.getPipelineLayoutPtr();
-    params.viewProj = lastViewProj;
-
-    // GPU-driven rendering params (see recordHDRPass; indirect draw is the default path).
-    if (systems_->hasGPUSceneBuffer() && systems_->hasGPUCullPass()) {
-        params.gpuSceneBuffer = &systems_->gpuSceneBuffer();
-        params.instancedPipelineLayout = instancedScenePipeline_.getPipelineLayoutPtr();
-        params.instancedPipeline = instancedScenePipeline_.getGraphicsPipelinePtr();
-        params.instanceDescriptorSet = instancedScenePipeline_.getInstanceDescriptorSet(frameIndex);
-        params.useIndirectDraw = indirectSceneDrawEnabled()
-                              && instancedScenePipeline_.hasPipeline()
-                              && params.instanceDescriptorSet != VK_NULL_HANDLE;
-        // vkCmdDrawIndexedIndirect needs both features; else fall back to direct instanced draw.
-        params.canMultiDrawIndirect = vulkanContext_->hasMultiDrawIndirect()
-                                   && vulkanContext_->hasDrawIndirectFirstInstance();
-    }
-
-    // Delegate to the recorder
-    hdrPassRecorder_->recordSecondarySlot(cmd, frameIndex, grassTime, slot, params);
 }
 
 // ===== GPU Skinning Implementation =====

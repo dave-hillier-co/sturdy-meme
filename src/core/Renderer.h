@@ -236,13 +236,6 @@ private:
 
     bool createDescriptorSets();
 
-    // Render pass recording helpers (pure - only record commands, no state mutation)
-    void recordShadowPass(VkCommandBuffer cmd, uint32_t frameIndex, float grassTime, const glm::vec3& cameraPosition);
-    void recordHDRPass(VkCommandBuffer cmd, uint32_t frameIndex, float grassTime);
-    void recordHDRPassWithSecondaries(VkCommandBuffer cmd, uint32_t frameIndex, float grassTime,
-                                      const std::vector<vk::CommandBuffer>& secondaries);
-    void recordHDRPassSecondarySlot(VkCommandBuffer cmd, uint32_t frameIndex, float grassTime, uint32_t slot);
-
     // Create and configure HDR pass recorder with all registered drawables
     void createHDRPassRecorder();
 
@@ -264,9 +257,9 @@ private:
     // Scene rendering pipeline (layout + graphics pipeline)
     ScenePipeline scenePipeline_;
 
-    // Instanced scene pipeline for GPU-driven indirect rendering (currently inert:
-    // the indirect draw path is gated off, see recordHDRPass). Built alongside
-    // scenePipeline_ so it is ready when the indirect path is enabled.
+    // Instanced scene pipeline for GPU-driven indirect rendering. The indirect draw
+    // path is the default (set INDIRECT_SCENE_DRAW=0 to force the CPU path); params are
+    // built in HDRPass::buildParams. Built alongside scenePipeline_.
     InstancedScenePipeline instancedScenePipeline_;
 
     // Descriptor pool (shared resource allocator for all subsystems)

@@ -30,7 +30,9 @@ bool FrameGraphBuilder::build(
     ShadowPasses::Config shadowConfig;
     shadowConfig.lastSunIntensity = state.lastSunIntensity;
     shadowConfig.perfToggles = state.perfToggles;
-    shadowConfig.recordShadowPass = callbacks.recordShadowPass;
+    shadowConfig.recorder = state.shadowRecorder;
+    shadowConfig.vulkanContext = state.vulkanContext;
+    shadowConfig.terrainEnabled = state.terrainEnabled;
     auto shadowIds = ShadowPasses::addPasses(frameGraph, systems, shadowConfig);
 
     // Water passes (GBuffer, SSR, tile cull)
@@ -42,9 +44,12 @@ bool FrameGraphBuilder::build(
     // HDR pass (main scene rendering)
     HDRPass::Config hdrConfig;
     hdrConfig.hdrPassEnabled = state.hdrPassEnabled;
-    hdrConfig.recordHDRPass = callbacks.recordHDRPass;
-    hdrConfig.recordHDRPassWithSecondaries = callbacks.recordHDRPassWithSecondaries;
-    hdrConfig.recordHDRPassSecondarySlot = callbacks.recordHDRPassSecondarySlot;
+    hdrConfig.recorder = state.hdrRecorder;
+    hdrConfig.scenePipeline = state.scenePipeline;
+    hdrConfig.instancedScenePipeline = state.instancedScenePipeline;
+    hdrConfig.vulkanContext = state.vulkanContext;
+    hdrConfig.lastViewProj = state.lastViewProj;
+    hdrConfig.terrainEnabled = state.terrainEnabled;
     auto hdr = HDRPass::addPass(frameGraph, systems, hdrConfig);
 
     // Post passes (HiZ, bloom, bilateral grid, final composite)

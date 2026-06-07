@@ -4,6 +4,8 @@
 #include <glm/glm.hpp>
 
 class RendererSystems;
+class ShadowPassRecorder;
+class VulkanContext;
 struct PerformanceToggles;
 
 /**
@@ -11,12 +13,12 @@ struct PerformanceToggles;
  */
 namespace ShadowPasses {
 
-using ShadowRecordFn = std::function<void(VkCommandBuffer, uint32_t, float, const glm::vec3&)>;
-
 struct Config {
     float* lastSunIntensity = nullptr;
     PerformanceToggles* perfToggles = nullptr;
-    ShadowRecordFn recordShadowPass;
+    ShadowPassRecorder* recorder = nullptr;
+    VulkanContext* vulkanContext = nullptr;   // for hasMultiDrawIndirect / hasDrawIndirectFirstInstance
+    bool* terrainEnabled = nullptr;
 };
 
 struct PassIds {

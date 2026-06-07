@@ -48,6 +48,8 @@ constexpr uint32_t PBR_HAS_HEIGHT_MAP    = (1u << 3);
 
 
 class Renderer {
+    friend class RendererBootstrap;
+
 public:
     // Passkey for controlled construction via make_unique
     struct ConstructToken { explicit ConstructToken() = default; };
@@ -220,27 +222,10 @@ public:
     bool pollAsyncInit();
 
 private:
-    bool initInternal(const InitInfo& info);
-    bool initInternalAsync(const InitInfo& info);  // Async initialization path
     void cleanup();
-
-    // High-level initialization phases
-    bool initCoreVulkanResources();       // swapchain resources, command pool, threading
-    bool initDescriptorInfrastructure();  // layouts, pools, sets
-    // Build the declarative list of initialization tasks (shared by sync and async paths)
-    std::vector<Loading::SystemInitTask> buildInitTasks(const InitContext& initCtx);
-    bool initSubsystems(const InitContext& initCtx);  // Runs buildInitTasks synchronously
-    bool initSubsystemsAsync();  // Feeds buildInitTasks to AsyncSystemLoader
-    void initResizeCoordinator();         // resize registration
-    void initTemporalSystems();           // temporal system registration (for ghost frame prevention)
-
-    bool createDescriptorSets();
 
     // Create and configure HDR pass recorder with all registered drawables
     void createHDRPassRecorder();
-
-    // Setup frame graph passes with dependencies
-    void setupFrameGraph();
 
     // Frame building: updates UBOs, subsystems, records command buffer.
     // Called from the FrameExecutor callback during execute().
@@ -329,11 +314,4 @@ private:
     bool asyncInitComplete_ = true;  // True when not using async, or when async is done
     bool asyncInitFailed_ = false;   // True if async init encountered an error
     bool asyncInitStarted_ = false;
-
-    // Skinned mesh rendering
-    bool initSkinnedMeshRenderer();
-    bool createSkinnedMeshRendererDescriptorSets();
-
-    // Initialize control subsystems (called after systems are ready)
-    void initControlSubsystems();
 };

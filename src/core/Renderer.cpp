@@ -1,20 +1,17 @@
 #define VMA_IMPLEMENTATION
 #include "Renderer.h"
+#include "RendererBootstrap.h"
 #include "Camera.h"
 #include "RendererSystems.h"
-#include "MaterialDescriptorFactory.h"
 #include "passes/ShadowPassRecorder.h"
 #include "passes/HDRPassRecorder.h"
-#include "InitProfiler.h"
-#include "QueueSubmitDiagnostics.h"
-#include "core/pipeline/FrameGraphBuilder.h"
 #include "core/FrameUpdate.h"
 #include "core/FrameDataBuilder.h"
-#include "loading/AsyncSystemLoader.h"
 #include "interfaces/IPlayerControl.h"
 #include "UBOs.h"
 #include "FrameData.h"
 #include "RenderContext.h"
+#include "loading/AsyncSystemLoader.h"  // complete type for unique_ptr<AsyncSystemLoader> member dtor
 
 // Subsystem includes for render loop
 // Core systems
@@ -25,14 +22,11 @@
 #include "Profiler.h"
 #include "SceneManager.h"
 #include "ResizeCoordinator.h"
-#include "SceneBuilder.h"
 #include "Mesh.h"
 // Time and environment
 #include "WindSystem.h"
-#include "CelestialCalculator.h"
 #include "EnvironmentSettings.h"
 #include "interfaces/IEnvironmentControl.h"
-#include "UBOBuilder.h"
 // Terrain and atmosphere
 #include "TerrainSystem.h"
 #include "SnowMaskSystem.h"
@@ -98,16 +92,20 @@ std::unique_ptr<Renderer> Renderer::create(const InitInfo& info) {
 
     if (info.asyncInit) {
         // Async initialization path - starts background loading
-        if (!instance->initInternalAsync(info)) {
+        if (!RendererBootstrap::initInternalAsync(*instance, info)) {
             return nullptr;
         }
     } else {
         // Synchronous initialization path (original behavior)
-        if (!instance->initInternal(info)) {
+        if (!RendererBootstrap::initInternal(*instance, info)) {
             return nullptr;
         }
     }
     return instance;
+}
+
+bool Renderer::pollAsyncInit() {
+    return RendererBootstrap::pollAsyncInit(*this);
 }
 
 Renderer::Renderer(ConstructToken) {}
@@ -115,163 +113,6 @@ Renderer::Renderer(ConstructToken) {}
 Renderer::~Renderer() {
     cleanup();
 }
-
-bool Renderer::initInternal(const InitInfo& info) {
-    INIT_PROFILE_PHASE("Renderer");
-
-    resourcePath = info.resourcePath;
-    config_ = info.config;
-    progressCallback_ = info.progressCallback;
-
-    // Helper to report progress (no-op if callback not set)
-    auto reportProgress = [this](float progress, const char* phase) {
-        if (progressCallback_) {
-            progressCallback_(progress, phase);
-        }
-    };
-
-    reportProgress(0.0f, "Initializing...");
-
-    // Create subsystems container
-    systems_ = std::make_unique<RendererSystems>();
-
-    // Initialize Vulkan context
-    // If a pre-initialized context was provided (instance or device already created),
-    // take ownership and complete any remaining initialization.
-    // Otherwise, create a new context and fully initialize it.
-    {
-        INIT_PROFILE_PHASE("VulkanContext");
-        if (info.vulkanContext) {
-            vulkanContext_ = std::move(const_cast<std::unique_ptr<VulkanContext>&>(info.vulkanContext));
-            // Only call initDevice if device isn't already initialized
-            // (LoadingRenderer may have already completed device init)
-            if (!vulkanContext_->isDeviceReady()) {
-                if (!vulkanContext_->initDevice(info.window)) {
-                    SDL_Log("Failed to complete Vulkan device initialization");
-                    return false;
-                }
-            }
-        } else {
-            vulkanContext_ = std::make_unique<VulkanContext>();
-            if (!vulkanContext_->init(info.window)) {
-                SDL_Log("Failed to initialize Vulkan context");
-                return false;
-            }
-        }
-    }
-
-    // Phase 1: Core Vulkan resources (render pass, depth, framebuffers, command pool)
-    reportProgress(0.05f, "Creating Vulkan resources");
-    {
-        INIT_PROFILE_PHASE("CoreVulkanResources");
-        if (!initCoreVulkanResources()) return false;
-    }
-
-    // Initialize asset registry (after command pool is ready)
-    reportProgress(0.08f, "Initializing asset registry");
-    {
-        INIT_PROFILE_PHASE("AssetRegistry");
-        assetRegistry_.init(
-            vulkanContext_->getVkDevice(),
-            vulkanContext_->getVkPhysicalDevice(),
-            vulkanContext_->getAllocator(),
-            vulkanContext_->getCommandPool(),
-            vulkanContext_->getVkGraphicsQueue());
-    }
-
-    // Phase 2: Descriptor infrastructure (layouts, pools)
-    reportProgress(0.10f, "Creating descriptor infrastructure");
-    {
-        INIT_PROFILE_PHASE("DescriptorInfrastructure");
-        if (!initDescriptorInfrastructure()) return false;
-    }
-
-    // Build shared InitContext for subsystem initialization
-    // Pass pool sizes hint so subsystems can create consistent pools if needed
-    InitContext initCtx = InitContext::build(
-        *vulkanContext_, vulkanContext_->getCommandPool(), getDescriptorPool(),
-        resourcePath, MAX_FRAMES_IN_FLIGHT, config_.descriptorPoolSizes);
-
-    // Phase 3: All subsystems (terrain, grass, weather, snow, water, etc.)
-    // This is the heaviest phase, so we pass the progress callback for finer updates
-    reportProgress(0.12f, "Initializing subsystems");
-    {
-        INIT_PROFILE_PHASE("Subsystems");
-        if (!initSubsystems(initCtx)) return false;
-    }
-
-    // Phase 4: Control subsystems (after systems are ready)
-    reportProgress(0.95f, "Initializing controls");
-    {
-        INIT_PROFILE_PHASE("ControlSubsystems");
-        initControlSubsystems();
-    }
-
-    // Phase 5: Resize coordinator registration
-    reportProgress(0.96f, "Configuring resize handler");
-    {
-        INIT_PROFILE_PHASE("ResizeCoordinator");
-        initResizeCoordinator();
-    }
-
-    // Phase 5b: Temporal system registration (for ghost frame prevention)
-    {
-        INIT_PROFILE_PHASE("TemporalSystems");
-        initTemporalSystems();
-    }
-
-    // Initialize pass recorders (must be after systems_ is set up)
-    // Note: These use stateless recording - config is passed to record() each frame
-    reportProgress(0.97f, "Creating pass recorders");
-    {
-        INIT_PROFILE_PHASE("PassRecorders");
-        shadowPassRecorder_ = std::make_unique<ShadowPassRecorder>(*systems_);
-        createHDRPassRecorder();
-    }
-    SDL_Log("Pass recorders initialized");
-
-    // Setup frame graph with dependencies
-    reportProgress(0.99f, "Configuring frame graph");
-    {
-        INIT_PROFILE_PHASE("FrameGraph");
-        setupFrameGraph();
-    }
-    SDL_Log("Frame graph configured");
-
-    reportProgress(1.0f, "Ready");
-
-    return true;
-}
-
-void Renderer::setupFrameGraph() {
-    // GUI callback (PostPasses still uses it)
-    FrameGraphBuilder::Callbacks callbacks;
-    callbacks.guiRenderCallback = &guiRenderCallback;
-
-    // Build state references for frame graph passes. The pass modules build their own
-    // Params from these pointers and invoke the recorders directly.
-    FrameGraphBuilder::State state;
-    state.lastSunIntensity = &lastSunIntensity;
-    state.hdrPassEnabled = &hdrPassEnabled;
-    state.terrainEnabled = &terrainEnabled;
-    state.perfToggles = &perfToggles;
-    state.framebuffers = &vulkanContext_->getFramebuffers();
-    state.shadowRecorder = shadowPassRecorder_.get();
-    state.hdrRecorder = hdrPassRecorder_.get();
-    state.scenePipeline = &scenePipeline_;
-    state.instancedScenePipeline = &instancedScenePipeline_;
-    state.vulkanContext = vulkanContext_.get();
-    state.lastViewProj = &lastViewProj;
-
-    // Use FrameGraphBuilder to configure all passes and dependencies
-    if (!FrameGraphBuilder::build(frameGraph_, *systems_, callbacks, state)) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to build frame graph");
-    }
-}
-
-
-// Note: initCoreVulkanResources(), initDescriptorInfrastructure(), initSubsystems(),
-// and initResizeCoordinator() are implemented in RendererInitPhases.cpp
 
 #ifdef JPH_DEBUG_RENDERER
 void Renderer::updatePhysicsDebug(PhysicsWorld& physics, const glm::vec3& cameraPos) {
@@ -352,64 +193,6 @@ void Renderer::cleanup() {
     SDL_Log("calling vulkanContext_->shutdown");
     vulkanContext_->shutdown();
     SDL_Log("vulkanContext shutdown complete");
-}
-
-bool Renderer::createDescriptorSets() {
-    VkDevice device = vulkanContext_->getVkDevice();
-
-    // Create descriptor sets for all materials via MaterialRegistry
-    // This replaces the hardcoded per-material descriptor set allocation
-    auto& materialRegistry = systems_->scene().getSceneBuilder().getMaterialRegistry();
-
-    // Lambda to build common bindings for a given frame (using GlobalBufferManager)
-    auto getCommonBindings = [this](uint32_t frameIndex) -> MaterialDescriptorFactory::CommonBindings {
-        MaterialDescriptorFactory::CommonBindings common{};
-        common.uniformBuffer = systems_->globalBuffers().uniformBuffers.buffers[frameIndex];
-        common.uniformBufferSize = sizeof(UniformBufferObject);
-        common.shadowMapView = systems_->shadow().getShadowImageView();
-        common.shadowMapSampler = systems_->shadow().getShadowSampler();
-        common.lightBuffer = systems_->globalBuffers().lightBuffers.buffers[frameIndex];
-        common.lightBufferSize = sizeof(LightBuffer);
-        common.emissiveMapView = systems_->scene().getSceneBuilder().getDefaultEmissiveMap()->getImageView();
-        common.emissiveMapSampler = systems_->scene().getSceneBuilder().getDefaultEmissiveMap()->getSampler();
-        common.pointShadowView = systems_->shadow().getPointShadowArrayView(frameIndex);
-        common.pointShadowSampler = systems_->shadow().getPointShadowSampler();
-        common.spotShadowView = systems_->shadow().getSpotShadowArrayView(frameIndex);
-        common.spotShadowSampler = systems_->shadow().getSpotShadowSampler();
-        common.snowMaskView = systems_->snowMask().getSnowMaskView();
-        common.snowMaskSampler = systems_->snowMask().getSnowMaskSampler();
-        // Snow and cloud shadow UBOs (bindings 10 and 11)
-        common.snowUboBuffer = systems_->globalBuffers().snowBuffers.buffers[frameIndex];
-        common.snowUboBufferSize = sizeof(SnowUBO);
-        common.cloudShadowUboBuffer = systems_->globalBuffers().cloudShadowBuffers.buffers[frameIndex];
-        common.cloudShadowUboBufferSize = sizeof(CloudShadowUBO);
-        // Cloud shadow texture is added later in init() after cloudShadowSystem is initialized
-        // Placeholder texture for unused PBR bindings (13-16)
-        common.placeholderTextureView = systems_->scene().getSceneBuilder().getWhiteTexture()->getImageView();
-        common.placeholderTextureSampler = systems_->scene().getSceneBuilder().getWhiteTexture()->getSampler();
-        if (systems_->hasScreenSpaceShadow()) {
-            common.screenShadowView = systems_->screenSpaceShadow()->getShadowBufferView();
-            common.screenShadowSampler = systems_->screenSpaceShadow()->getShadowBufferSampler();
-        }
-        return common;
-    };
-
-    materialRegistry.createDescriptorSets(
-        device,
-        *getDescriptorPool(),
-        scenePipeline_.getVkDescriptorSetLayout(),
-        MAX_FRAMES_IN_FLIGHT,
-        getCommonBindings);
-
-    if (!materialRegistry.hasDescriptorSets()) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create MaterialRegistry descriptor sets");
-        return false;
-    }
-
-    // Rock and Detritus descriptor sets are now owned by their respective systems
-    // They are created in initPhase2 when the systems are initialized
-
-    return true;
 }
 
 bool Renderer::render(const Camera& camera) {
@@ -548,295 +331,5 @@ void Renderer::createHDRPassRecorder() {
         });
 }
 
-// ===== GPU Skinning Implementation =====
-
-bool Renderer::initSkinnedMeshRenderer() {
-    SkinnedMeshRenderer::InitInfo info{};
-    info.device = vulkanContext_->getVkDevice();
-    info.physicalDevice = vulkanContext_->getVkPhysicalDevice();  // For dynamic UBO alignment
-    info.raiiDevice = &vulkanContext_->getRaiiDevice();
-    info.allocator = vulkanContext_->getAllocator();
-    info.descriptorPool = getDescriptorPool();
-    info.renderPass = systems_->postProcess().getHDRRenderPass();
-    info.extent = vulkanContext_->getVkSwapchainExtent();
-    info.shaderPath = resourcePath + "/shaders";
-    info.framesInFlight = MAX_FRAMES_IN_FLIGHT;
-    info.addCommonBindings = [](DescriptorManager::LayoutBuilder& builder) {
-        ScenePipeline::addCommonDescriptorBindings(builder);
-    };
-
-    auto skinnedMeshRenderer = SkinnedMeshRenderer::create(info);
-    if (!skinnedMeshRenderer) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create SkinnedMeshRenderer");
-        return false;
-    }
-    systems_->setSkinnedMesh(std::move(skinnedMeshRenderer));
-
-    // Create NPCRenderer (uses SkinnedMeshRenderer for draw calls)
-    NPCRenderer::InitInfo npcInfo{};
-    npcInfo.skinnedMeshRenderer = &systems_->skinnedMesh();
-    auto npcRenderer = NPCRenderer::create(npcInfo);
-    if (npcRenderer) {
-        systems_->setNPCRenderer(std::move(npcRenderer));
-        SDL_Log("NPCRenderer created successfully");
-    }
-
-    return true;
-}
-
-bool Renderer::createSkinnedMeshRendererDescriptorSets() {
-    const auto* whiteTexture = systems_->scene().getSceneBuilder().getWhiteTexture();
-    const auto* emissiveMap = systems_->scene().getSceneBuilder().getDefaultEmissiveMap();
-    const auto& sceneBuilder = systems_->scene().getSceneBuilder();
-    const auto& materialRegistry = sceneBuilder.getMaterialRegistry();
-
-    // Build point and spot shadow views for all frames
-    std::vector<VkImageView> pointShadowViews(MAX_FRAMES_IN_FLIGHT);
-    std::vector<VkImageView> spotShadowViews(MAX_FRAMES_IN_FLIGHT);
-    for (uint32_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
-        pointShadowViews[i] = systems_->shadow().getPointShadowArrayView(i);
-        spotShadowViews[i] = systems_->shadow().getSpotShadowArrayView(i);
-    }
-
-    // Get the player's actual material from MaterialRegistry based on their materialId
-    // This fixes the race condition where player could have different material based on FBX load success
-    VkImageView playerDiffuseView = whiteTexture->getImageView();
-    VkSampler playerDiffuseSampler = whiteTexture->getSampler();
-    VkImageView playerNormalView = whiteTexture->getImageView();
-    VkSampler playerNormalSampler = whiteTexture->getSampler();
-
-    const Renderable* playerRenderable = sceneBuilder.getRenderableForEntity(sceneBuilder.getPlayerEntity());
-    if (playerRenderable) {
-        MaterialId playerMaterialId = playerRenderable->materialId;
-        const auto* playerMaterial = materialRegistry.getMaterial(playerMaterialId);
-        if (playerMaterial) {
-            if (playerMaterial->diffuse) {
-                playerDiffuseView = playerMaterial->diffuse->getImageView();
-                playerDiffuseSampler = playerMaterial->diffuse->getSampler();
-            }
-            if (playerMaterial->normal) {
-                playerNormalView = playerMaterial->normal->getImageView();
-                playerNormalSampler = playerMaterial->normal->getSampler();
-            }
-            SDL_Log("SkinnedMeshRenderer: Using player material '%s'", playerMaterial->name.c_str());
-        }
-    }
-
-    SkinnedMeshRenderer::DescriptorResources resources{};
-    resources.globalBufferManager = &systems_->globalBuffers();
-    resources.shadowMapView = systems_->shadow().getShadowImageView();
-    resources.shadowMapSampler = systems_->shadow().getShadowSampler();
-    resources.emissiveMapView = emissiveMap->getImageView();
-    resources.emissiveMapSampler = emissiveMap->getSampler();
-    resources.pointShadowViews = &pointShadowViews;
-    resources.pointShadowSampler = systems_->shadow().getPointShadowSampler();
-    resources.spotShadowViews = &spotShadowViews;
-    resources.spotShadowSampler = systems_->shadow().getSpotShadowSampler();
-    resources.snowMaskView = systems_->snowMask().getSnowMaskView();
-    resources.snowMaskSampler = systems_->snowMask().getSnowMaskSampler();
-    resources.whiteTextureView = whiteTexture->getImageView();
-    resources.whiteTextureSampler = whiteTexture->getSampler();
-    resources.playerDiffuseView = playerDiffuseView;
-    resources.playerDiffuseSampler = playerDiffuseSampler;
-    resources.playerNormalView = playerNormalView;
-    resources.playerNormalSampler = playerNormalSampler;
-
-    return systems_->skinnedMesh().createDescriptorSets(resources);
-}
-
 // Resource access
 DescriptorManager::Pool* Renderer::getDescriptorPool() { return descriptorPool_.has_value() ? &*descriptorPool_ : nullptr; }
-
-// ===== Async Initialization Implementation =====
-
-bool Renderer::initInternalAsync(const InitInfo& info) {
-    INIT_PROFILE_PHASE("Renderer");
-
-    resourcePath = info.resourcePath;
-    config_ = info.config;
-    progressCallback_ = info.progressCallback;
-
-    // Helper to report progress
-    auto reportProgress = [this](float progress, const char* phase) {
-        if (progressCallback_) {
-            progressCallback_(progress, phase);
-        }
-    };
-
-    reportProgress(0.0f, "Initializing...");
-
-    // Create subsystems container
-    systems_ = std::make_unique<RendererSystems>();
-
-    // Initialize Vulkan context (must be synchronous - needed for everything else)
-    {
-        INIT_PROFILE_PHASE("VulkanContext");
-        if (info.vulkanContext) {
-            vulkanContext_ = std::move(const_cast<std::unique_ptr<VulkanContext>&>(info.vulkanContext));
-            if (!vulkanContext_->isDeviceReady()) {
-                if (!vulkanContext_->initDevice(info.window)) {
-                    SDL_Log("Failed to complete Vulkan device initialization");
-                    return false;
-                }
-            }
-        } else {
-            vulkanContext_ = std::make_unique<VulkanContext>();
-            if (!vulkanContext_->init(info.window)) {
-                SDL_Log("Failed to initialize Vulkan context");
-                return false;
-            }
-        }
-    }
-
-    // Phase 1: Core Vulkan resources (synchronous - quick)
-    reportProgress(0.05f, "Creating Vulkan resources");
-    {
-        INIT_PROFILE_PHASE("CoreVulkanResources");
-        if (!initCoreVulkanResources()) return false;
-    }
-
-    // Initialize asset registry (synchronous - quick)
-    reportProgress(0.08f, "Initializing asset registry");
-    {
-        INIT_PROFILE_PHASE("AssetRegistry");
-        assetRegistry_.init(
-            vulkanContext_->getVkDevice(),
-            vulkanContext_->getVkPhysicalDevice(),
-            vulkanContext_->getAllocator(),
-            vulkanContext_->getCommandPool(),
-            vulkanContext_->getVkGraphicsQueue());
-    }
-
-    // Phase 2: Descriptor infrastructure (synchronous - quick)
-    reportProgress(0.10f, "Creating descriptor infrastructure");
-    {
-        INIT_PROFILE_PHASE("DescriptorInfrastructure");
-        if (!initDescriptorInfrastructure()) return false;
-    }
-
-    // Build InitContext for subsystem initialization and store for async access
-    asyncInitContext_ = InitContext::build(
-        *vulkanContext_, vulkanContext_->getCommandPool(), getDescriptorPool(),
-        resourcePath, MAX_FRAMES_IN_FLIGHT, config_.descriptorPoolSizes);
-
-    // Phase 3: Start async subsystem initialization
-    reportProgress(0.12f, "Starting async subsystem loading");
-    asyncInitComplete_ = false;
-    asyncInitStarted_ = true;
-
-    // Create async loader and set up tasks
-    Loading::AsyncSystemLoader::InitInfo loaderInfo;
-    loaderInfo.vulkanContext = vulkanContext_.get();
-    loaderInfo.loadingRenderer = nullptr;  // We handle rendering separately
-    loaderInfo.workerCount = 0;  // Auto-detect
-
-    asyncLoader_ = Loading::AsyncSystemLoader::create(loaderInfo);
-    if (!asyncLoader_) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create AsyncSystemLoader");
-        // Fall back to synchronous initialization
-        if (!initSubsystems(asyncInitContext_)) return false;
-        asyncInitComplete_ = true;
-    } else {
-        // Start async subsystem initialization
-        if (!initSubsystemsAsync()) {
-            return false;
-        }
-        asyncLoader_->start();
-    }
-
-    return true;
-}
-
-bool Renderer::pollAsyncInit() {
-    if (asyncInitComplete_) {
-        return !asyncInitFailed_;  // Return false if init failed
-    }
-
-    if (!asyncLoader_) {
-        asyncInitComplete_ = true;
-        return true;
-    }
-
-    // Poll for completed tasks
-    asyncLoader_->pollCompletions();
-
-    // Update progress callback
-    if (progressCallback_) {
-        auto progress = asyncLoader_->getProgress();
-        // Map 0.0-1.0 to 0.12-0.95 (subsystem init range)
-        float mappedProgress = 0.12f + progress.progress * 0.83f;
-        progressCallback_(mappedProgress, progress.currentPhase.c_str());
-    }
-
-    // Check if all tasks are complete
-    if (asyncLoader_->isComplete()) {
-        if (asyncLoader_->hasError()) {
-            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
-                        "Async init failed: %s", asyncLoader_->getErrorMessage().c_str());
-            asyncInitComplete_ = true;
-            asyncInitFailed_ = true;
-            return false;  // Indicate failure consistently
-        }
-
-        // Finalize initialization (quick synchronous steps)
-        SDL_Log("Async subsystem loading complete, finalizing...");
-
-        // Phase 4: Control subsystems
-        if (progressCallback_) progressCallback_(0.95f, "Initializing controls");
-        {
-            INIT_PROFILE_PHASE("ControlSubsystems");
-            initControlSubsystems();
-        }
-
-        // Phase 5: Resize coordinator
-        if (progressCallback_) progressCallback_(0.96f, "Configuring resize handler");
-        {
-            INIT_PROFILE_PHASE("ResizeCoordinator");
-            initResizeCoordinator();
-        }
-
-        // Phase 5b: Temporal systems
-        {
-            INIT_PROFILE_PHASE("TemporalSystems");
-            initTemporalSystems();
-        }
-
-        // Initialize pass recorders
-        if (progressCallback_) progressCallback_(0.97f, "Creating pass recorders");
-        {
-            INIT_PROFILE_PHASE("PassRecorders");
-            shadowPassRecorder_ = std::make_unique<ShadowPassRecorder>(*systems_);
-            createHDRPassRecorder();
-        }
-        SDL_Log("Pass recorders initialized");
-
-        // Setup frame graph
-        if (progressCallback_) progressCallback_(0.99f, "Configuring frame graph");
-        {
-            INIT_PROFILE_PHASE("FrameGraph");
-            setupFrameGraph();
-        }
-        SDL_Log("Frame graph configured");
-
-        if (progressCallback_) progressCallback_(1.0f, "Ready");
-
-        // Clean up async loader
-        asyncLoader_->shutdown();
-        asyncLoader_.reset();
-
-        asyncInitComplete_ = true;
-        SDL_Log("Async initialization complete");
-    }
-
-    return asyncInitComplete_;
-}
-
-bool Renderer::initSubsystemsAsync() {
-    // Build the shared task definitions and feed them to the async loader.
-    // The tasks declare dependencies so AsyncSystemLoader can exploit parallelism.
-    auto tasks = buildInitTasks(asyncInitContext_);
-    for (auto& task : tasks) {
-        asyncLoader_->addTask(std::move(task));
-    }
-    return true;
-}

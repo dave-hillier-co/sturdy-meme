@@ -34,53 +34,44 @@ All 7 phases complete (see `plans/grass-system-improvements.md`):
 
 ## In Progress: Procedural Cities
 
-Major multi-phase project for generating medieval settlements. See `procedural_cities/` for full documentation.
+Multi-phase project for generating medieval settlements. Two separate lineages exist; do
+not confuse them:
 
-### Current Status: Not Started
+### What is built: the 2D layout generator (`tools/town_generator`)
 
-All implementation checklist items remain incomplete.
+A standalone C++ town-layout generator (Watabou-style) that is the working 2D concept tool:
+- Geometry core: `Point`/`Segment`/`Polygon`/`Graph`, Voronoi, DCEL, polygon boolean ops, splines
+- A full ward system: Cathedral, Market, Castle, Harbour, Alleys, Farm, Park, Wilderness
+- City structure: curtain walls, canals, districts, blocks, buildings, landmarks
+- SVG output (`src/svg/SVGWriter.cpp`) and a CLI (`--seed`, `--size`, `--cells`, `--coast`)
+- Unit tests (`tools/town_generator/tests/`) registered with the top-level CTest
 
-### Recommended Order
+Known gaps in this lineage:
+- **Standalone build is broken**: `src/main.cpp` uses `SDL_Log` but the tool's
+  `CMakeLists.txt` does not link SDL3, so the CLI fails to compile (`'SDL3/SDL.h' not found`).
+  The library sources compile; only the entry point is affected.
+- **Not engine-integrated**: nothing under `src/` consumes `town_generator` output. The
+  runtime's existing `generated/terrain_data/roads/settlement_*` data comes from a different
+  pipeline (BiomeGenerator / erosion road network), not this tool.
 
-#### Quick Wins (Start Here)
-1. **SVG Export from BiomeGenerator** - Export settlements as circles, roads as lines
-2. **Blockout cubes** - Place `Mesh::createCube()` at settlement positions
-3. **Extend RoadType** - Add Street/Lane/Alley to existing enum
-4. **Config files** - Start JSON templates with nlohmann::json
+### Aspirational design (`docs/procedural_cities/`)
 
-#### Phase 0: 2D Preview Tool (TypeScript)
-Browser-based tool for rapid visual iteration:
-- Spatial types and polygon operations
-- Subdivision algorithms (BSP, grid, frontage)
-- Path network with space colonization
-- Layout generator
-- SVG renderer with pan/zoom
+The `procedural_cities/` docs and `IMPLEMENTATION_CHECKLIST.md` describe a *different,
+unbuilt* architecture (frontage/burgage lot subdivision, space-colonization street growth,
+runtime streaming with impostor LOD). That checklist is aspirational, not a status of
+`town_generator`, and its items do not map onto the tool above.
 
-#### Phase 1: C++ Foundation
-- Port spatial utilities from TypeScript
-- Config system with JSON schema
-- Terrain integration interface
-- SVG exporter for debugging
+### Next steps
 
-#### Phase 2: Geometry Generation
-- Path network system
-- Water crossing detection (fords vs bridges)
-- Layout system with terrain awareness
-- Mesh generation (extrusion, roofs)
-- Shape grammar system
-- Placement system for props
-
-#### Phase 3: Assembly
-- Building assembler (footprint → LODs → props)
-- Settlement assembler (layout → roads → buildings → navmesh)
-
-#### Phase 4: Runtime
-- Streaming system for load/unload
-- LOD system with impostor atlas
-- Renderer integration following `TreeSystem` pattern
+1. **Fix the `town_generator` standalone build** — link SDL3 in `tools/town_generator/CMakeLists.txt`
+   so the CLI compiles and layouts can be iterated again.
+2. **Bridge 2D → 3D in-engine** — consume the layout (wards, walls, building footprints) and
+   instantiate it on the terrain through the GPU-indirect scene path: markers → footprints →
+   blockout volumes. This is the path to milestone M2.5 (roamable settlements).
+3. **Reconcile the design docs** with the tool that actually exists.
 
 ### Visual Milestones
-Progress checkpoints from overview:
+Target checkpoints (M2.5 is the key roamable-world milestone):
 
 | Milestone | Description |
 |-----------|-------------|

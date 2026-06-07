@@ -127,9 +127,14 @@ bool GuiSystem::initInternal(SDL_Window* window, VkInstance instance, VkPhysical
     initInfo.ImageCount = imageCount;
     // Since ImGui 1.92 (2025/09/26) the render pass / MSAA / subpass settings
     // live in the per-viewport PipelineInfoMain struct rather than directly on
-    // InitInfo.
+    // InitInfo. Guard so the code builds against both 1.91.x and 1.92+.
+#if IMGUI_VERSION_NUM >= 19200
     initInfo.PipelineInfoMain.MSAASamples = VK_SAMPLE_COUNT_1_BIT;
     initInfo.PipelineInfoMain.RenderPass = renderPass;
+#else
+    initInfo.MSAASamples = VK_SAMPLE_COUNT_1_BIT;
+    initInfo.RenderPass = renderPass;
+#endif
     initInfo.CheckVkResultFn = checkVkResult;
 
     if (!ImGui_ImplVulkan_Init(&initInfo)) {

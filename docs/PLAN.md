@@ -157,7 +157,7 @@ Legacy code that can be removed once tested (see `TREE_RENDERING_ROADMAP.md`):
 - 17-view impostor atlas code
 
 ### Code Quality
-- Renderer core extraction per `RENDERER_REFACTORING_PLAN.md` (last step pending)
+- Renderer decomposition: passes as self-describing `IRenderPass` objects registered with the pass scheduler (removes callback trampolines), split frame update from command recording, extract scene composition and bootstrap from `Renderer`
 
 ---
 

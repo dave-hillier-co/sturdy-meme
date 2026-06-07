@@ -166,26 +166,6 @@ public:
     // Call this after loading to configure the blend space with idle/walk/run clips
     void setupLocomotionBlendSpace();
 
-    // ========== Unified Animation Mode Selection ==========
-    // The character supports several mutually-exclusive animation modes. These
-    // were historically toggled through independent booleans (useStateMachine,
-    // useLayerController, useMotionMatching, usePhysicsBased_), which made
-    // illegal combinations reachable. setAnimationMode() is the single source of
-    // truth: it configures the underlying flags consistently and validates
-    // prerequisites (building the motion-matching database, checking for a
-    // physics source, etc.). The legacy setUseXxx() setters delegate here.
-    enum class AnimationMode {
-        Simple,          // single-clip AnimationPlayer
-        StateMachine,    // discrete idle/walk/run state transitions
-        BlendSpace,      // smooth 1D locomotion blending (state-machine sub-mode)
-        LayerController, // layered blending with bone masks / additive layers
-        MotionMatching,  // data-driven motion matching
-        Physics          // ragdoll-driven (physics-based) pose
-    };
-
-    void setAnimationMode(AnimationMode mode);
-    AnimationMode getAnimationMode() const { return animationMode_; }
-
     // ========== Motion Matching Mode ==========
     // When enabled, uses motion matching instead of state machine for animation selection
 
@@ -220,7 +200,7 @@ public:
     // When enabled, skeleton poses come from an ArticulatedBody ragdoll
     // driven by the physics engine instead of from animation clips.
 
-    void setUsePhysicsBasedAnimation(bool use);
+    void setUsePhysicsBasedAnimation(bool use) { usePhysicsBased_ = use; }
     bool isUsingPhysicsBasedAnimation() const { return usePhysicsBased_; }
 
     // Set the ragdoll source for physics-based animation.
@@ -246,11 +226,6 @@ private:
     bool loadInternal(const InitInfo& info);
     void cleanup();
 
-    // Populate the locomotion state machine (idle/walk/run/jump) from the
-    // currently loaded animation clips. Shared by initial load and by
-    // loadAdditionalAnimations so the clip classification lives in one place.
-    void rebuildLocomotionStateMachine();
-
     // Stored for RAII cleanup
     VmaAllocator allocator_ = VK_NULL_HANDLE;
 
@@ -269,7 +244,6 @@ private:
     bool useStateMachine = false;  // Set true after state machine is initialized
     bool useLayerController = false;  // Set true to use layer controller instead
     bool useMotionMatching = false;  // Set true to use motion matching
-    AnimationMode animationMode_ = AnimationMode::Simple;  // Canonical current mode
     size_t currentAnimationIndex = 0;  // Track current animation by index, not duration
 
     // IK system for procedural adjustments

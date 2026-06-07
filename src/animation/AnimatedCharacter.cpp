@@ -3,7 +3,6 @@
 #include "FBXLoader.h"
 #include "PhysicsSystem.h"
 #include "BoneMask.h"
-#include "ClipClassifier.h"
 #include "FootPhaseTracker.h"
 #include <SDL3/SDL_log.h>
 #include <glm/gtc/matrix_transform.hpp>
@@ -98,7 +97,52 @@ bool AnimatedCharacter::loadInternal(const InitInfo& info) {
                 animations.size(), animations[0].name.c_str());
 
         // Set up animation state machine with locomotion animations
-        rebuildLocomotionStateMachine();
+        // Look for idle, walk, run, jump animations by name
+        const AnimationClip* idleClip = nullptr;
+        const AnimationClip* walkClip = nullptr;
+        const AnimationClip* runClip = nullptr;
+        const AnimationClip* jumpClip = nullptr;
+
+        for (const auto& clip : animations) {
+            std::string lowerName = clip.name;
+            for (char& c : lowerName) c = std::tolower(c);
+
+            if (lowerName.find("idle") != std::string::npos) {
+                idleClip = &clip;
+            } else if (lowerName.find("walk") != std::string::npos) {
+                walkClip = &clip;
+            } else if (lowerName.find("run") != std::string::npos) {
+                runClip = &clip;
+            } else if (lowerName.find("jump") != std::string::npos) {
+                jumpClip = &clip;
+            }
+        }
+
+        // Add states to state machine
+        if (idleClip) {
+            stateMachine.addState("idle", idleClip, true);
+            SDL_Log("AnimatedCharacter: Added 'idle' state");
+        }
+        if (walkClip) {
+            stateMachine.addState("walk", walkClip, true);
+            SDL_Log("AnimatedCharacter: Added 'walk' state");
+        }
+        if (runClip) {
+            stateMachine.addState("run", runClip, true);
+            SDL_Log("AnimatedCharacter: Added 'run' state");
+        }
+        if (jumpClip) {
+            stateMachine.addState("jump", jumpClip, false);
+            SDL_Log("AnimatedCharacter: Added 'jump' state");
+        }
+
+        // Enable state machine if we have at least idle
+        if (idleClip) {
+            stateMachine.setState("idle");
+            useStateMachine = true;
+            SDL_Log("AnimatedCharacter: State machine enabled with %s locomotion animations",
+                    (walkClip && runClip) ? "full" : "partial");
+        }
 
         // Initialize layer controller with skeleton
         layerController.initialize(skeleton);
@@ -145,30 +189,25 @@ void AnimatedCharacter::loadAdditionalAnimations(const std::vector<std::string>&
     }
 
     // Re-setup state machine with all animations
-    rebuildLocomotionStateMachine();
-    SDL_Log("AnimatedCharacter: State machine refreshed with %zu total animations",
-            animations.size());
-}
+    stateMachine = AnimationStateMachine();  // Reset
 
-void AnimatedCharacter::rebuildLocomotionStateMachine() {
-    // Reset so repeated calls (e.g. after loading additional animation files)
-    // start from a clean state machine.
-    stateMachine = AnimationStateMachine();
-
-    // Bucket clips into locomotion slots using the shared classifier. Later
-    // matches overwrite earlier ones, matching the historical behaviour.
     const AnimationClip* idleClip = nullptr;
     const AnimationClip* walkClip = nullptr;
     const AnimationClip* runClip = nullptr;
     const AnimationClip* jumpClip = nullptr;
 
     for (const auto& clip : animations) {
-        switch (anim::classifyClip(clip.name, clip.duration).category) {
-            case anim::ClipCategory::Idle: idleClip = &clip; break;
-            case anim::ClipCategory::Walk: walkClip = &clip; break;
-            case anim::ClipCategory::Run:  runClip = &clip; break;
-            case anim::ClipCategory::Jump: jumpClip = &clip; break;
-            default: break;
+        std::string lowerName = clip.name;
+        for (char& c : lowerName) c = std::tolower(c);
+
+        if (lowerName.find("idle") != std::string::npos) {
+            idleClip = &clip;
+        } else if (lowerName.find("walk") != std::string::npos) {
+            walkClip = &clip;
+        } else if (lowerName.find("run") != std::string::npos) {
+            runClip = &clip;
+        } else if (lowerName.find("jump") != std::string::npos) {
+            jumpClip = &clip;
         }
     }
 
@@ -189,13 +228,11 @@ void AnimatedCharacter::rebuildLocomotionStateMachine() {
         SDL_Log("AnimatedCharacter: Added 'jump' state");
     }
 
-    // Enable state machine if we have at least idle
     if (idleClip) {
         stateMachine.setState("idle");
         useStateMachine = true;
-        animationMode_ = AnimationMode::StateMachine;
-        SDL_Log("AnimatedCharacter: State machine enabled with %s locomotion animations",
-                (walkClip && runClip) ? "full" : "partial");
+        SDL_Log("AnimatedCharacter: State machine refreshed with %zu total animations",
+                animations.size());
     }
 }
 
@@ -664,70 +701,14 @@ SkeletonDebugData AnimatedCharacter::getSkeletonDebugData(const glm::mat4& world
     return data;
 }
 
-void AnimatedCharacter::setAnimationMode(AnimationMode mode) {
-    animationMode_ = mode;
-
-    // Reset to a known baseline; each case re-enables only what it needs so
-    // illegal flag combinations cannot accumulate.
-    usePhysicsBased_ = false;
-    useMotionMatching = false;
-    useLayerController = false;
-    useStateMachine = false;
-    stateMachine.setUseBlendSpace(false);
-
-    switch (mode) {
-        case AnimationMode::Simple:
-            // All flags false -> update() uses the simple AnimationPlayer.
-            SDL_Log("AnimatedCharacter: mode = Simple (single clip)");
-            break;
-        case AnimationMode::StateMachine:
-            useStateMachine = true;
-            SDL_Log("AnimatedCharacter: mode = State Machine");
-            break;
-        case AnimationMode::BlendSpace:
-            useStateMachine = true;
-            stateMachine.setUseBlendSpace(true);
-            SDL_Log("AnimatedCharacter: mode = Blend Space (smooth locomotion)");
-            break;
-        case AnimationMode::LayerController:
-            if (!layerController.isInitialized()) {
-                layerController.initialize(skeleton);
-            }
-            useLayerController = true;
-            SDL_Log("AnimatedCharacter: mode = Layer Controller");
-            break;
-        case AnimationMode::MotionMatching:
-            // Lazily build the database the first time motion matching is used.
-            if (!motionMatchingController.isDatabaseBuilt()) {
-                initializeMotionMatching();  // sets useMotionMatching / animationMode_
-            } else {
-                useMotionMatching = true;
-            }
-            SDL_Log("AnimatedCharacter: mode = Motion Matching");
-            break;
-        case AnimationMode::Physics:
-            usePhysicsBased_ = true;
-            // Keep the state machine active as a fallback: update() only reads
-            // the ragdoll when a valid physics source is attached, otherwise it
-            // falls through to the state machine.
-            useStateMachine = true;
-            if (!physicsRagdoll_ || !physicsWorld_) {
-                SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
-                            "AnimatedCharacter: Physics mode requested but no physics source "
-                            "attached; using state machine until setPhysicsSource() is called");
-            } else {
-                SDL_Log("AnimatedCharacter: mode = Physics (ragdoll-driven)");
-            }
-            break;
-    }
-}
-
 void AnimatedCharacter::setUseLayerController(bool use) {
-    setAnimationMode(use ? AnimationMode::LayerController : AnimationMode::StateMachine);
-}
-
-void AnimatedCharacter::setUsePhysicsBasedAnimation(bool use) {
-    setAnimationMode(use ? AnimationMode::Physics : AnimationMode::StateMachine);
+    useLayerController = use;
+    if (use) {
+        useStateMachine = false;
+        SDL_Log("AnimatedCharacter: Switched to layer controller mode");
+    } else {
+        SDL_Log("AnimatedCharacter: Switched to state machine mode");
+    }
 }
 
 void AnimatedCharacter::setupLocomotionBlendSpace() {
@@ -736,7 +717,12 @@ void AnimatedCharacter::setupLocomotionBlendSpace() {
 }
 
 void AnimatedCharacter::setUseBlendSpace(bool use) {
-    setAnimationMode(use ? AnimationMode::BlendSpace : AnimationMode::StateMachine);
+    stateMachine.setUseBlendSpace(use);
+    if (use) {
+        SDL_Log("AnimatedCharacter: Blend space mode enabled for smooth locomotion");
+    } else {
+        SDL_Log("AnimatedCharacter: Blend space mode disabled, using discrete state transitions");
+    }
 }
 
 void AnimatedCharacter::setLODLevel(uint32_t level) {
@@ -831,8 +817,16 @@ void AnimatedCharacter::setPhysicsSource(ArticulatedBody* ragdoll, const Physics
 // ========== Motion Matching Implementation ==========
 
 void AnimatedCharacter::setUseMotionMatching(bool use) {
-    // Fall back to the state machine when motion matching is disabled.
-    setAnimationMode(use ? AnimationMode::MotionMatching : AnimationMode::StateMachine);
+    useMotionMatching = use;
+    if (use) {
+        useStateMachine = false;
+        useLayerController = false;
+        SDL_Log("AnimatedCharacter: Switched to motion matching mode");
+    } else {
+        // Fall back to state machine when motion matching is disabled
+        useStateMachine = true;
+        SDL_Log("AnimatedCharacter: Disabled motion matching mode, using state machine");
+    }
 }
 
 void AnimatedCharacter::initializeMotionMatching(const MotionMatching::ControllerConfig& config) {
@@ -858,64 +852,84 @@ void AnimatedCharacter::initializeMotionMatching(const MotionMatching::Controlle
     for (size_t i = 0; i < animations.size(); ++i) {
         const auto& clip = animations[i];
 
-        // Classify via the shared classifier (single source of truth for the
-        // name-based bucketing also used by the locomotion state machine).
-        const anim::ClipClassification cls = anim::classifyClip(clip.name, clip.duration);
+        // Determine if clip is looping based on name
+        std::string lowerName = clip.name;
+        for (char& c : lowerName) c = std::tolower(c);
 
         // Skip metadata/placeholder clips
-        if (cls.isMetadata) {
+        if (lowerName == "mixamo.com" || lowerName.empty() || clip.duration < 0.1f) {
             SDL_Log("AnimatedCharacter: Skipping clip '%s' (metadata/placeholder)", clip.name.c_str());
             continue;
         }
 
-        const std::string lowerName = anim::toLowerCopy(clip.name);
+        // Detect start/stop transition clips — these match "walk"/"run" in name
+        // but should not loop since they're one-shot transitions
+        bool isStartStop = (lowerName.find("start") != std::string::npos ||
+                           lowerName.find("stop") != std::string::npos);
 
+        bool looping = !isStartStop &&
+                       (lowerName.find("idle") != std::string::npos ||
+                       lowerName.find("walk") != std::string::npos ||
+                       lowerName.find("run") != std::string::npos ||
+                       lowerName.find("strafe") != std::string::npos ||
+                       lowerName.find("backward") != std::string::npos);
+
+        // Add tags and set locomotion speed based on animation type
         std::vector<std::string> tags;
         float locomotionSpeed = 0.0f;
-        bool looping = cls.looping;
 
-        // Cost bias: negative = prefer, positive = avoid. Variant animations
-        // (idle2, run2, etc.) get positive bias to be used less often.
-        float costBias = cls.isVariant ? 0.5f : 0.0f;
+        // Cost bias: negative = prefer, positive = avoid
+        // Variant animations (idle2, run2, etc.) get positive bias to be used less often
+        float costBias = 0.0f;
+        bool isVariant = (lowerName.find("2") != std::string::npos ||
+                         lowerName.find("_2") != std::string::npos ||
+                         lowerName.find("alt") != std::string::npos);
+        if (isVariant) {
+            costBias = 0.5f;  // Make variants less likely to be selected
+        }
 
-        // Map the locomotion category onto motion-matching tags and the
-        // override speed used for in-place clips.
-        switch (cls.category) {
-            case anim::ClipCategory::Transition:
-                // Start/stop transition clips (e.g., "walk_start", "run_stop")
-                tags = {"transition", "locomotion"};
-                looping = false;
-                locomotionSpeed = anim::nameContains(lowerName, "run") ? RUN_SPEED : WALK_SPEED;
-                break;
-            case anim::ClipCategory::Idle:
-                tags = {"idle", "locomotion"};
-                locomotionSpeed = IDLE_SPEED;
-                break;
-            case anim::ClipCategory::Run:
-                tags = {"run", "locomotion"};
+        // Classify clips by name. Order matters: check more specific patterns first
+        // (e.g., "backward" before "walk", "start/stop" before base locomotion).
+        if (isStartStop) {
+            // Start/stop transition clips (e.g., "walk_start", "run_stop")
+            tags.push_back("transition");
+            tags.push_back("locomotion");
+            looping = false;
+            // Determine speed from the base locomotion type in the name
+            if (lowerName.find("run") != std::string::npos) {
                 locomotionSpeed = RUN_SPEED;
-                break;
-            case anim::ClipCategory::Walk:
-                tags = {"walk", "locomotion"};
+            } else {
                 locomotionSpeed = WALK_SPEED;
-                break;
-            case anim::ClipCategory::Strafe:
-                // "backward" clips are classified as strafe but use a distinct
-                // (slower) speed; both share the "strafe" tag for filtering.
-                tags = {"strafe", "locomotion"};
-                locomotionSpeed = anim::nameContains(lowerName, "backward")
-                                      ? BACKWARD_WALK_SPEED : STRAFE_SPEED;
-                break;
-            case anim::ClipCategory::Turn:
-                tags = {"turn", "locomotion"};
-                locomotionSpeed = TURN_SPEED;
-                looping = false;  // Turn animations typically don't loop
-                break;
-            case anim::ClipCategory::Jump:
-                tags = {"jump"};
-                break;
-            case anim::ClipCategory::Unknown:
-                break;
+            }
+        } else if (lowerName.find("idle") != std::string::npos) {
+            tags.push_back("idle");
+            tags.push_back("locomotion");
+            locomotionSpeed = IDLE_SPEED;
+        } else if (lowerName.find("backward") != std::string::npos) {
+            // Backward walk/run — check before generic walk/run
+            tags.push_back("strafe");  // Use strafe tag so strafe filtering picks them up
+            tags.push_back("locomotion");
+            locomotionSpeed = BACKWARD_WALK_SPEED;
+        } else if (lowerName.find("run") != std::string::npos) {
+            // Check run before walk since "run" could be in "running_walk" etc.
+            tags.push_back("run");
+            tags.push_back("locomotion");
+            locomotionSpeed = RUN_SPEED;
+        } else if (lowerName.find("walk") != std::string::npos) {
+            tags.push_back("walk");
+            tags.push_back("locomotion");
+            locomotionSpeed = WALK_SPEED;
+        } else if (lowerName.find("strafe") != std::string::npos) {
+            tags.push_back("strafe");
+            tags.push_back("locomotion");
+            locomotionSpeed = STRAFE_SPEED;
+        } else if (lowerName.find("turn") != std::string::npos) {
+            tags.push_back("turn");
+            tags.push_back("locomotion");
+            locomotionSpeed = TURN_SPEED;
+            looping = false;  // Turn animations typically don't loop
+        } else if (lowerName.find("jump") != std::string::npos) {
+            tags.push_back("jump");
         }
 
         motionMatchingController.addClip(&clip, clip.name, looping, tags, locomotionSpeed, costBias);
@@ -942,8 +956,6 @@ void AnimatedCharacter::initializeMotionMatching(const MotionMatching::Controlle
     useMotionMatching = true;
     useStateMachine = false;
     useLayerController = false;
-    usePhysicsBased_ = false;
-    animationMode_ = AnimationMode::MotionMatching;
 
     SDL_Log("AnimatedCharacter: Motion matching initialized with %zu clips, %zu poses",
             animations.size(),

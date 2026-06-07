@@ -9,6 +9,7 @@
 #include "ScreenSpaceShadowSystem.h"
 #include "WeatherSystem.h"
 #include "PostProcessSystem.h"
+#include "interfaces/IDebugControl.h"
 #include "SceneManager.h"
 #include "controls/EnvironmentControlSubsystem.h"
 #include "Camera.h"
@@ -59,7 +60,7 @@ UBOUpdater::Result UBOUpdater::update(
     // Get cloud parameters from EnvironmentControlSubsystem (authoritative source)
     auto& envControl = systems.environmentControl();
     UBOBuilder::MainUBOConfig mainConfig{};
-    mainConfig.showCascadeDebug = config.showCascadeDebug;
+    mainConfig.showCascadeDebug = systems.debugControl().isShowingCascadeDebug();
     mainConfig.useParaboloidClouds = envControl.isUsingParaboloidClouds();
     mainConfig.cloudCoverage = envControl.getCloudCoverage();
     mainConfig.cloudDensity = envControl.getCloudDensity();
@@ -69,7 +70,7 @@ UBOUpdater::Result UBOUpdater::update(
 
     UBOBuilder::SnowConfig snowConfig{};
     snowConfig.useVolumetricSnow = config.useVolumetricSnow;
-    snowConfig.showSnowDepthDebug = config.showSnowDepthDebug;
+    snowConfig.showSnowDepthDebug = systems.debugControl().isShowingSnowDepthDebug();
     snowConfig.maxSnowHeight = config.maxSnowHeight;
     SnowUBO snowUbo = systems.uboBuilder().buildSnowUBOData(snowConfig);
 
@@ -112,9 +113,6 @@ UBOUpdater::Result UBOUpdater::update(
         sunScreenPos.y = 1.0f - sunScreenPos.y;
     }
     systems.postProcess().setSunScreenPos(sunScreenPos);
-
-    // Update HDR enabled state
-    systems.postProcess().setHDREnabled(config.hdrEnabled);
 
     // Return computed values needed by caller
     result.sunIntensity = lighting.sunIntensity;

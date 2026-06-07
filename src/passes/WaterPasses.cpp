@@ -12,7 +12,6 @@ namespace WaterPasses {
 
 PassIds addPasses(PassScheduler& graph, RendererSystems& systems, const Config& config) {
     PassIds ids;
-    bool* hdrPassEnabled = config.hdrPassEnabled;
     PerformanceToggles* perfToggles = config.perfToggles;
 
     // Capture pointer to systems to avoid dangling reference issues
@@ -55,9 +54,9 @@ PassIds addPasses(PassScheduler& graph, RendererSystems& systems, const Config& 
     // SSR pass - screen-space reflections
     ids.ssr = graph.addPass({
         .name = "SSR",
-        .execute = [systemsPtr, hdrPassEnabled, perfToggles](PassScheduler::RenderContext& ctx) {
-            if (!systemsPtr || !hdrPassEnabled || !perfToggles) return;
-            if (*hdrPassEnabled && perfToggles->ssr && systemsPtr->ssr().isEnabled()) {
+        .execute = [systemsPtr, perfToggles](PassScheduler::RenderContext& ctx) {
+            if (!systemsPtr || !perfToggles) return;
+            if (systemsPtr->postProcess().isHDRPassEnabled() && perfToggles->ssr && systemsPtr->ssr().isEnabled()) {
                 systemsPtr->profiler().beginGpuZone(ctx.commandBuffer, "SSR");
                 systemsPtr->ssr().recordCompute(ctx.commandBuffer, ctx.frameIndex,
                                         systemsPtr->postProcess().getHDRColorView(),
@@ -75,9 +74,9 @@ PassIds addPasses(PassScheduler& graph, RendererSystems& systems, const Config& 
     // Water tile culling pass
     ids.waterTileCull = graph.addPass({
         .name = "WaterTileCull",
-        .execute = [systemsPtr, hdrPassEnabled, perfToggles](PassScheduler::RenderContext& ctx) {
-            if (!systemsPtr || !hdrPassEnabled || !perfToggles) return;
-            if (*hdrPassEnabled && perfToggles->waterTileCull && systemsPtr->waterTileCull().isEnabled()) {
+        .execute = [systemsPtr, perfToggles](PassScheduler::RenderContext& ctx) {
+            if (!systemsPtr || !perfToggles) return;
+            if (systemsPtr->postProcess().isHDRPassEnabled() && perfToggles->waterTileCull && systemsPtr->waterTileCull().isEnabled()) {
                 systemsPtr->profiler().beginGpuZone(ctx.commandBuffer, "WaterTileCull");
                 glm::mat4 viewProj = ctx.projectionMatrix() * ctx.viewMatrix();
                 systemsPtr->waterTileCull().recordTileCull(ctx.commandBuffer, ctx.frameIndex,

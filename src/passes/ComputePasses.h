@@ -14,7 +14,6 @@ namespace ComputePasses {
 
 struct Config {
     PerformanceToggles* perfToggles = nullptr;
-    bool* terrainEnabled = nullptr;
 };
 
 struct PassIds {

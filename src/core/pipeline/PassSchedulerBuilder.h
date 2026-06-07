@@ -38,8 +38,6 @@ public:
 
     struct State {
         float* lastSunIntensity = nullptr;
-        bool* hdrPassEnabled = nullptr;
-        bool* terrainEnabled = nullptr;
         PerformanceToggles* perfToggles = nullptr;
         std::vector<vk::raii::Framebuffer>* framebuffers = nullptr;
 

@@ -35,12 +35,11 @@ namespace ComputePasses {
 PassIds addPasses(PassScheduler& graph, RendererSystems& systems, const Config& config) {
     PassIds ids;
     PerformanceToggles* perfToggles = config.perfToggles;
-    bool* terrainEnabled = config.terrainEnabled;
 
     // Compute pass - runs all GPU compute dispatches
     ids.compute = graph.addPass({
         .name = "Compute",
-        .execute = [&systems, perfToggles, terrainEnabled](PassScheduler::RenderContext& ctx) {
+        .execute = [&systems, perfToggles](PassScheduler::RenderContext& ctx) {
             RenderContext* renderCtx = static_cast<RenderContext*>(ctx.userData);
             if (!renderCtx) return;
             VkCommandBuffer cmd = renderCtx->cmd;
@@ -49,7 +48,7 @@ PassIds addPasses(PassScheduler& graph, RendererSystems& systems, const Config& 
             systems.profiler().beginCpuZone("ComputeDispatch");
 
             // Terrain compute pass (adaptive subdivision)
-            if (terrainEnabled && *terrainEnabled && perfToggles->terrainCompute) {
+            if (systems.terrain().isTerrainEnabled() && perfToggles->terrainCompute) {
                 systems.profiler().beginGpuZone(cmd, "TerrainCompute");
                 systems.terrain().recordCompute(cmd, frameIndex, &systems.profiler().getGpuProfiler());
                 systems.profiler().endGpuZone(cmd, "TerrainCompute");

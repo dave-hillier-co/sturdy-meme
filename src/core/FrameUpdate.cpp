@@ -26,11 +26,8 @@ FrameUpdate::Result FrameUpdate::run(RendererSystems& systems,
     TimingData timing = systems.time().update();
 
     UBOUpdater::Config uboConfig;
-    uboConfig.showCascadeDebug = config.showCascadeDebug;
     uboConfig.useVolumetricSnow = config.useVolumetricSnow;
-    uboConfig.showSnowDepthDebug = config.showSnowDepthDebug;
     uboConfig.shadowsEnabled = config.shadowsEnabled;
-    uboConfig.hdrEnabled = config.hdrEnabled;
     uboConfig.maxSnowHeight = config.maxSnowHeight;
     uboConfig.lightCullRadius = config.lightCullRadius;
     uboConfig.ecsWorld = config.ecsWorld;

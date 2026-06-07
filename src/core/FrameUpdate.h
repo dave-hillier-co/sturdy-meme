@@ -32,11 +32,8 @@ class World;
 
 struct FrameUpdate {
     struct Config {
-        bool  showCascadeDebug = false;
         bool  useVolumetricSnow = true;
-        bool  showSnowDepthDebug = false;
         bool  shadowsEnabled = true;
-        bool  hdrEnabled = true;
         float maxSnowHeight = 0.0f;
         float lightCullRadius = 0.0f;
         ecs::World* ecsWorld = nullptr;

@@ -163,20 +163,6 @@ public:
     RendererSystems& getSystems() { return *systems_; }
     const RendererSystems& getSystems() const { return *systems_; }
 
-    // Local rendering state (affects render loop directly)
-    void setHDREnabled(bool enabled) { hdrEnabled = enabled; }
-    bool isHDREnabled() const { return hdrEnabled; }
-    void setHDRPassEnabled(bool enabled) { hdrPassEnabled = enabled; }
-    bool isHDRPassEnabled() const { return hdrPassEnabled; }
-    void setTerrainEnabled(bool enabled) { terrainEnabled = enabled; }
-    bool isTerrainEnabled() const { return terrainEnabled; }
-
-    // Debug visualization toggles (local state)
-    void toggleCascadeDebug() { showCascadeDebug = !showCascadeDebug; }
-    bool isShowingCascadeDebug() const { return showCascadeDebug; }
-    void toggleSnowDepthDebug() { showSnowDepthDebug = !showSnowDepthDebug; }
-    bool isShowingSnowDepthDebug() const { return showSnowDepthDebug; }
-
     // Resource access
     VkCommandPool getCommandPool() const { return vulkanContext_->getCommandPool(); }
     DescriptorManager::Pool* getDescriptorPool();
@@ -271,12 +257,6 @@ private:
     static constexpr int MAX_FRAMES_IN_FLIGHT = TripleBuffering::DEFAULT_FRAME_COUNT;
 
     float lastSunIntensity = 1.0f;
-
-    bool showCascadeDebug = false;         // true = show cascade colors overlay
-    bool showSnowDepthDebug = false;       // true = show snow depth heat map overlay
-    bool hdrEnabled = true;                // true = HDR tonemapping/bloom, false = bypass
-    bool hdrPassEnabled = true;            // true = render HDR pass, false = skip entire HDR scene rendering
-    bool terrainEnabled = true;            // true = render terrain, false = skip terrain rendering
 
     // Note: Cloud parameters (cloudCoverage, cloudDensity, skyExposure, useParaboloidClouds)
     // are now managed by EnvironmentControlSubsystem as the authoritative source.

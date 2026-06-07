@@ -1,5 +1,6 @@
 #include "ShadowPasses.h"
 #include "RendererSystems.h"
+#include "TerrainSystem.h"
 #include "RenderContext.h"
 #include "Profiler.h"
 #include "PerformanceToggles.h"
@@ -33,12 +34,11 @@ PassIds addPasses(PassScheduler& graph, RendererSystems& systems, const Config& 
     PerformanceToggles* perfToggles = config.perfToggles;
     ShadowPassRecorder* recorder = config.recorder;
     VulkanContext* vulkanContext = config.vulkanContext;
-    bool* terrainEnabled = config.terrainEnabled;
 
     // Shadow map rendering pass
     ids.shadow = graph.addPass({
         .name = "Shadow",
-        .execute = [&systems, lastSunIntensity, perfToggles, recorder, vulkanContext, terrainEnabled](PassScheduler::RenderContext& ctx) {
+        .execute = [&systems, lastSunIntensity, perfToggles, recorder, vulkanContext](PassScheduler::RenderContext& ctx) {
             RenderContext* renderCtx = static_cast<RenderContext*>(ctx.userData);
             if (!renderCtx) return;
             if (*lastSunIntensity > 0.001f && perfToggles->shadowPass) {
@@ -46,7 +46,7 @@ PassIds addPasses(PassScheduler& graph, RendererSystems& systems, const Config& 
                 systems.profiler().beginGpuZone(ctx.commandBuffer, "ShadowPass");
 
                 ShadowPassRecorder::Params params;
-                params.terrainEnabled = *terrainEnabled;
+                params.terrainEnabled = systems.terrain().isTerrainEnabled();
                 params.terrainShadows = perfToggles->terrainShadows;
                 params.grassShadows = perfToggles->grassShadows;
                 params.indirectShadowDraw = indirectShadowDrawEnabled();

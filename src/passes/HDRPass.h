@@ -18,13 +18,11 @@ class VulkanContext;
 namespace HDRPass {
 
 struct Config {
-    bool* hdrPassEnabled = nullptr;
     HDRPassRecorder* recorder = nullptr;
     ScenePipeline* scenePipeline = nullptr;
     InstancedScenePipeline* instancedScenePipeline = nullptr;
     VulkanContext* vulkanContext = nullptr;
     glm::mat4* lastViewProj = nullptr;
-    bool* terrainEnabled = nullptr;
 };
 
 PassScheduler::PassId addPass(PassScheduler& graph, RendererSystems& systems, const Config& config);

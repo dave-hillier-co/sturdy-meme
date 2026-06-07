@@ -23,7 +23,6 @@ bool PassSchedulerBuilder::build(
     // Compute passes (compute stage + froxel)
     ComputePasses::Config computeConfig;
     computeConfig.perfToggles = state.perfToggles;
-    computeConfig.terrainEnabled = state.terrainEnabled;
     auto computeIds = ComputePasses::addPasses(passScheduler, systems, computeConfig);
 
     // Shadow passes (shadow map + screen-space resolve)
@@ -32,24 +31,20 @@ bool PassSchedulerBuilder::build(
     shadowConfig.perfToggles = state.perfToggles;
     shadowConfig.recorder = state.shadowRecorder;
     shadowConfig.vulkanContext = state.vulkanContext;
-    shadowConfig.terrainEnabled = state.terrainEnabled;
     auto shadowIds = ShadowPasses::addPasses(passScheduler, systems, shadowConfig);
 
     // Water passes (GBuffer, SSR, tile cull)
     WaterPasses::Config waterConfig;
-    waterConfig.hdrPassEnabled = state.hdrPassEnabled;
     waterConfig.perfToggles = state.perfToggles;
     auto waterIds = WaterPasses::addPasses(passScheduler, systems, waterConfig);
 
     // HDR pass (main scene rendering)
     HDRPass::Config hdrConfig;
-    hdrConfig.hdrPassEnabled = state.hdrPassEnabled;
     hdrConfig.recorder = state.hdrRecorder;
     hdrConfig.scenePipeline = state.scenePipeline;
     hdrConfig.instancedScenePipeline = state.instancedScenePipeline;
     hdrConfig.vulkanContext = state.vulkanContext;
     hdrConfig.lastViewProj = state.lastViewProj;
-    hdrConfig.terrainEnabled = state.terrainEnabled;
     auto hdr = HDRPass::addPass(passScheduler, systems, hdrConfig);
 
     // Post passes (HiZ, bloom, bilateral grid, final composite)

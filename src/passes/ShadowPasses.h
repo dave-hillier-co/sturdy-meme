@@ -18,7 +18,6 @@ struct Config {
     PerformanceToggles* perfToggles = nullptr;
     ShadowPassRecorder* recorder = nullptr;
     VulkanContext* vulkanContext = nullptr;   // for hasMultiDrawIndirect / hasDrawIndirectFirstInstance
-    bool* terrainEnabled = nullptr;
 };
 
 struct PassIds {

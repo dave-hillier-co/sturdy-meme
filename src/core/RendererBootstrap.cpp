@@ -219,8 +219,6 @@ void RendererBootstrap::setupPassScheduler(Renderer& r) {
     // Params from these pointers and invoke the recorders directly.
     PassSchedulerBuilder::State state;
     state.lastSunIntensity = &r.lastSunIntensity;
-    state.hdrPassEnabled = &r.hdrPassEnabled;
-    state.terrainEnabled = &r.terrainEnabled;
     state.perfToggles = &r.perfToggles;
     state.framebuffers = &r.vulkanContext_->getFramebuffers();
     state.shadowRecorder = r.shadowPassRecorder_.get();

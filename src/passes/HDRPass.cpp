@@ -1,5 +1,7 @@
 #include "HDRPass.h"
 #include "RendererSystems.h"
+#include "TerrainSystem.h"
+#include "PostProcessSystem.h"
 #include "RenderContext.h"
 #include "Profiler.h"
 #include "HDRPassRecorder.h"
@@ -35,7 +37,7 @@ static HDRPassRecorder::Params buildParams(
     uint32_t frameIndex)
 {
     HDRPassRecorder::Params params;
-    params.terrainEnabled = *config.terrainEnabled;
+    params.terrainEnabled = systems.terrain().isTerrainEnabled();
     params.sceneObjectsPipeline = config.scenePipeline->getGraphicsPipelinePtr();
     params.pipelineLayout = config.scenePipeline->getPipelineLayoutPtr();
     params.viewProj = *config.lastViewProj;
@@ -60,15 +62,14 @@ static HDRPassRecorder::Params buildParams(
 }
 
 PassScheduler::PassId addPass(PassScheduler& graph, RendererSystems& systems, const Config& config) {
-    bool* hdrPassEnabled = config.hdrPassEnabled;
     Config cfg = config;
 
     return graph.addPass({
         .name = "HDR",
-        .execute = [&systems, hdrPassEnabled, cfg](PassScheduler::RenderContext& ctx) {
+        .execute = [&systems, cfg](PassScheduler::RenderContext& ctx) {
             RenderContext* renderCtx = static_cast<RenderContext*>(ctx.userData);
             if (!renderCtx) return;
-            if (*hdrPassEnabled) {
+            if (systems.postProcess().isHDRPassEnabled()) {
                 systems.profiler().beginCpuZone("RenderPassRecord");
                 auto params = buildParams(systems, cfg, ctx.frameIndex);
                 if (ctx.secondaryBuffers && !ctx.secondaryBuffers->empty()) {

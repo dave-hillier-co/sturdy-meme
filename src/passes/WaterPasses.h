@@ -13,7 +13,6 @@ struct PerformanceToggles;
 namespace WaterPasses {
 
 struct Config {
-    bool* hdrPassEnabled = nullptr;
     PerformanceToggles* perfToggles = nullptr;
 };
 

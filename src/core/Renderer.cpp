@@ -220,11 +220,8 @@ VkCommandBuffer Renderer::buildFrame(const Camera& camera, uint32_t imageIndex, 
     // Simulation-update phase: transfers, time, UBOs, bone matrices, FrameData,
     // per-system updates, and GPU scene buffer population.
     FrameUpdate::Config cfg;
-    cfg.showCascadeDebug = showCascadeDebug;
     cfg.useVolumetricSnow = useVolumetricSnow;
-    cfg.showSnowDepthDebug = showSnowDepthDebug;
     cfg.shadowsEnabled = perfToggles.shadowPass;
-    cfg.hdrEnabled = hdrEnabled;
     cfg.maxSnowHeight = MAX_SNOW_HEIGHT;
     cfg.lightCullRadius = lightCullRadius;
     cfg.ecsWorld = ecsWorld_;

@@ -4,7 +4,7 @@
 #include "ScatterSystemFactory.h"
 #include "DescriptorManager.h"
 #include <glm/glm.hpp>
-#include <vulkan/vulkan.h>
+#include <vulkan/vulkan.hpp>
 #include <vector>
 #include <memory>
 #include <functional>

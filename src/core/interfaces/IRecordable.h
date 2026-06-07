@@ -14,7 +14,7 @@
 // - Allows future systems to integrate without modifying pass recorders
 //
 
-#include <vulkan/vulkan.h>
+#include <vulkan/vulkan.hpp>
 #include <cstdint>
 
 /**

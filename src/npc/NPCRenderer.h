@@ -2,7 +2,7 @@
 
 #include "NPCData.h"
 #include "core/interfaces/IRecordable.h"
-#include <vulkan/vulkan.h>
+#include <vulkan/vulkan.hpp>
 #include <glm/glm.hpp>
 #include <vector>
 #include <memory>

@@ -90,7 +90,7 @@ bool TerrainBuffers::createUniformBuffers(const InitInfo& info) {
         .setAllocator(info.allocator)
         .setFrameCount(info.framesInFlight)
         .setSize(sizeof(TerrainUniforms))
-        .setUsage(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT)
+        .setUsage(VkBufferUsageFlags(vk::BufferUsageFlagBits::eUniformBuffer))
         .build(uniformBuffers)) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create terrain uniform buffers");
         return false;
@@ -103,7 +103,7 @@ bool TerrainBuffers::createUniformBuffers(const InitInfo& info) {
         .setAllocator(info.allocator)
         .setFrameCount(info.framesInFlight)
         .setSize(causticsUBOSize)
-        .setUsage(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT)
+        .setUsage(VkBufferUsageFlags(vk::BufferUsageFlagBits::eUniformBuffer))
         .build(causticsUniforms)) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create caustics uniform buffers");
         return false;
@@ -116,7 +116,7 @@ bool TerrainBuffers::createUniformBuffers(const InitInfo& info) {
         .setAllocator(info.allocator)
         .setFrameCount(info.framesInFlight)
         .setSize(liquidUBOSize)
-        .setUsage(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT)
+        .setUsage(VkBufferUsageFlags(vk::BufferUsageFlagBits::eUniformBuffer))
         .build(liquidUniforms)) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create liquid uniform buffers");
         return false;
@@ -130,7 +130,7 @@ bool TerrainBuffers::createUniformBuffers(const InitInfo& info) {
         .setAllocator(info.allocator)
         .setFrameCount(info.framesInFlight)
         .setSize(materialLayerUBOSize)
-        .setUsage(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT)
+        .setUsage(VkBufferUsageFlags(vk::BufferUsageFlagBits::eUniformBuffer))
         .build(materialLayerUniforms)) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create material layer uniform buffers");
         return false;
@@ -144,7 +144,7 @@ bool TerrainBuffers::createIndirectBuffers(const InitInfo& info) {
     if (!BufferUtils::SingleBufferBuilder()
             .setAllocator(info.allocator)
             .setSize(sizeof(VkDispatchIndirectCommand))
-            .setUsage(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT)
+            .setUsage(VkBufferUsageFlags(vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eIndirectBuffer))
             .setAllocationFlags(0)
             .build(indirectDispatch)) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create indirect dispatch buffer");
@@ -155,7 +155,7 @@ bool TerrainBuffers::createIndirectBuffers(const InitInfo& info) {
     if (!BufferUtils::SingleBufferBuilder()
             .setAllocator(info.allocator)
             .setSize(sizeof(VkDrawIndexedIndirectCommand))
-            .setUsage(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT)
+            .setUsage(VkBufferUsageFlags(vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eIndirectBuffer))
             .setAllocationFlags(VMA_ALLOCATION_CREATE_HOST_ACCESS_RANDOM_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT)
             .build(indirectDraw)) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create indirect draw buffer");
@@ -170,7 +170,7 @@ bool TerrainBuffers::createIndirectBuffers(const InitInfo& info) {
     if (!BufferUtils::SingleBufferBuilder()
             .setAllocator(info.allocator)
             .setSize(sizeof(uint32_t) * (1 + info.maxVisibleTriangles))
-            .setUsage(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT)
+            .setUsage(VkBufferUsageFlags(vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eTransferDst))
             .setAllocationFlags(0)
             .build(visibleIndices)) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create visible indices buffer");
@@ -181,7 +181,7 @@ bool TerrainBuffers::createIndirectBuffers(const InitInfo& info) {
     if (!BufferUtils::SingleBufferBuilder()
             .setAllocator(info.allocator)
             .setSize(sizeof(VkDispatchIndirectCommand))
-            .setUsage(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT)
+            .setUsage(VkBufferUsageFlags(vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eIndirectBuffer))
             .setAllocationFlags(0)
             .build(cullIndirectDispatch)) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create cull indirect dispatch buffer");
@@ -192,7 +192,7 @@ bool TerrainBuffers::createIndirectBuffers(const InitInfo& info) {
     if (!BufferUtils::SingleBufferBuilder()
             .setAllocator(info.allocator)
             .setSize(sizeof(uint32_t) * (1 + info.maxVisibleTriangles))
-            .setUsage(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT)
+            .setUsage(VkBufferUsageFlags(vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eTransferDst))
             .setAllocationFlags(0)
             .build(shadowVisible)) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create shadow visible indices buffer");
@@ -203,7 +203,7 @@ bool TerrainBuffers::createIndirectBuffers(const InitInfo& info) {
     if (!BufferUtils::SingleBufferBuilder()
             .setAllocator(info.allocator)
             .setSize(sizeof(VkDrawIndexedIndirectCommand))
-            .setUsage(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT)
+            .setUsage(VkBufferUsageFlags(vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eIndirectBuffer))
             .setAllocationFlags(0)
             .build(shadowIndirectDraw)) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create shadow indirect draw buffer");

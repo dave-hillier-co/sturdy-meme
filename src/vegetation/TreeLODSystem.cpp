@@ -29,7 +29,7 @@ std::unique_ptr<TreeLODSystem> TreeLODSystem::create(const InitInfo& info) {
 TreeLODSystem::~TreeLODSystem() {
     if (device_ == VK_NULL_HANDLE) return;
 
-    vkDeviceWaitIdle(device_);
+    vk::Device(device_).waitIdle();
 
     if (billboardVertexBuffer_ != VK_NULL_HANDLE) {
         vmaDestroyBuffer(allocator_, billboardVertexBuffer_, billboardVertexAllocation_);

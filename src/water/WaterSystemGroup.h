@@ -6,7 +6,7 @@
 #include <memory>
 #include <optional>
 #include <vector>
-#include <vulkan/vulkan.h>
+#include <vulkan/vulkan.hpp>
 
 // Forward declarations
 struct TerrainConfig;

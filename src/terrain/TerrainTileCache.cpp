@@ -132,7 +132,7 @@ void TerrainTileCache::cleanup() {
 
     // Wait for GPU to finish
     if (device) {
-        vkDeviceWaitIdle(device);
+        vk::Device(device).waitIdle();
     }
 
     // Clean up sub-components

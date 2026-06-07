@@ -244,7 +244,7 @@ void ScreenSpaceShadowSystem::resize(VkExtent2D newExtent) {
         return;
     }
 
-    vkDeviceWaitIdle(device_);
+    vk::Device(device_).waitIdle();
     extent_ = newExtent;
 
     // Recreate shadow buffer with new size

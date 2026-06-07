@@ -175,21 +175,18 @@ bool VirtualTextureCache::createCacheTexture(VkDevice device, VmaAllocator alloc
     }
 
     // Transition to shader read layout
-    VkCommandBufferAllocateInfo cmdAllocInfo{};
-    cmdAllocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-    cmdAllocInfo.commandPool = commandPool;
-    cmdAllocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-    cmdAllocInfo.commandBufferCount = 1;
+    vk::Device vkDevice(device);
+    auto cmdAllocInfo = vk::CommandBufferAllocateInfo{}
+        .setCommandPool(commandPool)
+        .setLevel(vk::CommandBufferLevel::ePrimary)
+        .setCommandBufferCount(1);
 
-    VkCommandBuffer cmd;
-    vkAllocateCommandBuffers(device, &cmdAllocInfo, &cmd);
+    vk::CommandBuffer vkCmd = vkDevice.allocateCommandBuffers(cmdAllocInfo).front();
 
-    VkCommandBufferBeginInfo beginInfo{};
-    beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-    beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-    vkBeginCommandBuffer(cmd, &beginInfo);
+    auto beginInfo = vk::CommandBufferBeginInfo{}
+        .setFlags(vk::CommandBufferUsageFlagBits::eOneTimeSubmit);
+    vkCmd.begin(beginInfo);
 
-    vk::CommandBuffer vkCmd(cmd);
     auto barrier = vk::ImageMemoryBarrier{}
         .setSrcAccessMask(vk::AccessFlags{})
         .setDstAccessMask(vk::AccessFlagBits::eShaderRead)
@@ -208,17 +205,16 @@ bool VirtualTextureCache::createCacheTexture(VkDevice device, VmaAllocator alloc
                           vk::PipelineStageFlagBits::eFragmentShader,
                           {}, {}, {}, barrier);
 
-    vkEndCommandBuffer(cmd);
+    vkCmd.end();
 
-    VkSubmitInfo submitInfo{};
-    submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-    submitInfo.commandBufferCount = 1;
-    submitInfo.pCommandBuffers = &cmd;
+    vk::Queue vkQueue(queue);
+    auto submitInfo = vk::SubmitInfo{}
+        .setCommandBuffers(vkCmd);
 
-    vkQueueSubmit(queue, 1, &submitInfo, VK_NULL_HANDLE);
-    vkQueueWaitIdle(queue);
+    vkQueue.submit(submitInfo, VK_NULL_HANDLE);
+    vkQueue.waitIdle();
 
-    vkFreeCommandBuffers(device, commandPool, 1, &cmd);
+    vkDevice.freeCommandBuffers(commandPool, vkCmd);
 
     return true;
 }

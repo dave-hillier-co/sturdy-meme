@@ -17,7 +17,7 @@
 
 #include "FrameData.h"
 #include "RenderContext.h"
-#include <vulkan/vulkan.h>
+#include <vulkan/vulkan.hpp>
 #include <vector>
 
 // Forward declarations

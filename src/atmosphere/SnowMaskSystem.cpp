@@ -88,7 +88,7 @@ void SnowMaskSystem::cleanup() {
 
     snowMaskSampler_.reset();
     if (snowMaskView) {
-        vkDestroyImageView(lifecycle.getDevice(), snowMaskView, nullptr);
+        vk::Device(lifecycle.getDevice()).destroyImageView(snowMaskView);
         snowMaskView = VK_NULL_HANDLE;
     }
     if (snowMaskImage) {

@@ -5,7 +5,7 @@
 #include "VirtualTexturePageTable.h"
 #include "VirtualTextureFeedback.h"
 #include "VirtualTextureTileLoader.h"
-#include <vulkan/vulkan.h>
+#include <vulkan/vulkan.hpp>
 #include <vulkan/vulkan_raii.hpp>
 #include <vk_mem_alloc.h>
 #include <string>

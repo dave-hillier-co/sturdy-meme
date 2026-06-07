@@ -59,8 +59,8 @@ void FrameUpdater::populateGPUSceneBuffer(RendererSystems& systems, const FrameD
     // skips its CPU rocks/detritus loops to avoid double-drawing.
     auto addScatter = [&](const ScatterSystem& scatter) {
         if (!scatter.hasDescriptorSets()) return;
-        VkDescriptorSet set = scatter.getDescriptorSet(frame.frameIndex);
-        if (set == VK_NULL_HANDLE) return;
+        vk::DescriptorSet set = scatter.getDescriptorSet(frame.frameIndex);
+        if (!set) return;
         for (const auto& obj : scatter.getSceneObjects()) {
             if (obj.gpuSkinned) continue;
             sceneBuffer.addObject(obj, set);

@@ -1,6 +1,7 @@
 #include "GPUInference.h"
 #include "../core/ShaderLoader.h"
 #include <SDL3/SDL_log.h>
+#include <vulkan/vulkan.hpp>
 #include <cstring>
 #include <array>
 
@@ -30,35 +31,38 @@ bool GPUInference::init(VkDevice device, VmaAllocator allocator, const Config& c
                       VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
                       VMA_MEMORY_USAGE_GPU_TO_CPU)) return false;
 
+    vk::Device vkDevice(device_);
+
     // Descriptor set layout: 5 storage buffers
-    std::array<VkDescriptorSetLayoutBinding, 5> bindings{};
+    std::array<vk::DescriptorSetLayoutBinding, 5> bindings{};
     for (uint32_t i = 0; i < 5; ++i) {
-        bindings[i].binding = i;
-        bindings[i].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-        bindings[i].descriptorCount = 1;
-        bindings[i].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+        bindings[i] = vk::DescriptorSetLayoutBinding{}
+            .setBinding(i)
+            .setDescriptorType(vk::DescriptorType::eStorageBuffer)
+            .setDescriptorCount(1)
+            .setStageFlags(vk::ShaderStageFlagBits::eCompute);
     }
 
-    VkDescriptorSetLayoutCreateInfo layoutInfo{};
-    layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-    layoutInfo.bindingCount = 5;
-    layoutInfo.pBindings = bindings.data();
-    if (vkCreateDescriptorSetLayout(device_, &layoutInfo, nullptr, &descriptorSetLayout_) != VK_SUCCESS) {
+    auto layoutInfo = vk::DescriptorSetLayoutCreateInfo{}
+        .setBindings(bindings);
+    try {
+        descriptorSetLayout_ = vkDevice.createDescriptorSetLayout(layoutInfo);
+    } catch (const vk::SystemError&) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "GPUInference: failed to create descriptor set layout");
         return false;
     }
 
     // Descriptor pool
-    VkDescriptorPoolSize poolSize{};
-    poolSize.type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    poolSize.descriptorCount = 5;
+    auto poolSize = vk::DescriptorPoolSize{}
+        .setType(vk::DescriptorType::eStorageBuffer)
+        .setDescriptorCount(5);
 
-    VkDescriptorPoolCreateInfo poolInfo{};
-    poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-    poolInfo.maxSets = 1;
-    poolInfo.poolSizeCount = 1;
-    poolInfo.pPoolSizes = &poolSize;
-    if (vkCreateDescriptorPool(device_, &poolInfo, nullptr, &descriptorPool_) != VK_SUCCESS) {
+    auto poolInfo = vk::DescriptorPoolCreateInfo{}
+        .setMaxSets(1)
+        .setPoolSizes(poolSize);
+    try {
+        descriptorPool_ = vkDevice.createDescriptorPool(poolInfo);
+    } catch (const vk::SystemError&) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "GPUInference: failed to create descriptor pool");
         return false;
     }
@@ -66,19 +70,19 @@ bool GPUInference::init(VkDevice device, VmaAllocator allocator, const Config& c
     if (!createDescriptorSet()) return false;
 
     // Push constant range
-    VkPushConstantRange pushRange{};
-    pushRange.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
-    pushRange.offset = 0;
-    pushRange.size = sizeof(InferencePushConstants);
+    auto pushRange = vk::PushConstantRange{}
+        .setStageFlags(vk::ShaderStageFlagBits::eCompute)
+        .setOffset(0)
+        .setSize(sizeof(InferencePushConstants));
 
     // Pipeline layout
-    VkPipelineLayoutCreateInfo plInfo{};
-    plInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-    plInfo.setLayoutCount = 1;
-    plInfo.pSetLayouts = &descriptorSetLayout_;
-    plInfo.pushConstantRangeCount = 1;
-    plInfo.pPushConstantRanges = &pushRange;
-    if (vkCreatePipelineLayout(device_, &plInfo, nullptr, &pipelineLayout_) != VK_SUCCESS) {
+    vk::DescriptorSetLayout setLayout(descriptorSetLayout_);
+    auto plInfo = vk::PipelineLayoutCreateInfo{}
+        .setSetLayouts(setLayout)
+        .setPushConstantRanges(pushRange);
+    try {
+        pipelineLayout_ = vkDevice.createPipelineLayout(plInfo);
+    } catch (const vk::SystemError&) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "GPUInference: failed to create pipeline layout");
         return false;
     }
@@ -100,36 +104,37 @@ bool GPUInference::init(VkDevice device, VmaAllocator allocator, const Config& c
         uint32_t maxHidden;
     } specData = {cfg.maxNPCs, cfg.latentDim, cfg.obsDim, cfg.actionDim, cfg.maxHiddenSize};
 
-    std::array<VkSpecializationMapEntry, 5> specEntries{};
+    std::array<vk::SpecializationMapEntry, 5> specEntries{};
     for (uint32_t i = 0; i < 5; ++i) {
-        specEntries[i].constantID = i;
-        specEntries[i].offset = i * sizeof(uint32_t);
-        specEntries[i].size = sizeof(uint32_t);
+        specEntries[i] = vk::SpecializationMapEntry{}
+            .setConstantID(i)
+            .setOffset(i * sizeof(uint32_t))
+            .setSize(sizeof(uint32_t));
     }
 
-    VkSpecializationInfo specInfo{};
-    specInfo.mapEntryCount = 5;
-    specInfo.pMapEntries = specEntries.data();
-    specInfo.dataSize = sizeof(specData);
-    specInfo.pData = &specData;
+    auto specInfo = vk::SpecializationInfo{}
+        .setMapEntries(specEntries)
+        .setDataSize(sizeof(specData))
+        .setPData(&specData);
 
-    VkComputePipelineCreateInfo pipelineInfo{};
-    pipelineInfo.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
-    pipelineInfo.stage.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-    pipelineInfo.stage.stage = VK_SHADER_STAGE_COMPUTE_BIT;
-    pipelineInfo.stage.module = *shaderModule;
-    pipelineInfo.stage.pName = "main";
-    pipelineInfo.stage.pSpecializationInfo = &specInfo;
-    pipelineInfo.layout = pipelineLayout_;
+    auto stageInfo = vk::PipelineShaderStageCreateInfo{}
+        .setStage(vk::ShaderStageFlagBits::eCompute)
+        .setModule(*shaderModule)
+        .setPName("main")
+        .setPSpecializationInfo(&specInfo);
 
-    VkResult result = vkCreateComputePipelines(device_, VK_NULL_HANDLE,
-                                                1, &pipelineInfo, nullptr, &pipeline_);
-    vkDestroyShaderModule(device_, *shaderModule, nullptr);
+    auto pipelineInfo = vk::ComputePipelineCreateInfo{}
+        .setStage(stageInfo)
+        .setLayout(pipelineLayout_);
 
-    if (result != VK_SUCCESS) {
+    auto pipelineResult = vkDevice.createComputePipeline(nullptr, pipelineInfo);
+    vkDevice.destroyShaderModule(*shaderModule);
+
+    if (pipelineResult.result != vk::Result::eSuccess) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "GPUInference: failed to create compute pipeline");
         return false;
     }
+    pipeline_ = pipelineResult.value;
 
     initialized_ = true;
     SDL_Log("GPUInference: initialized (maxNPCs=%u, latent=%u, obs=%u, action=%u)",
@@ -185,22 +190,23 @@ void GPUInference::uploadInputs(const std::vector<float>& latents,
 void GPUInference::recordDispatch(VkCommandBuffer cmd, uint32_t npcCount) {
     if (!initialized_ || pipeline_ == VK_NULL_HANDLE) return;
 
-    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline_);
-    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE,
-                            pipelineLayout_, 0, 1, &descriptorSet_, 0, nullptr);
-    vkCmdPushConstants(cmd, pipelineLayout_, VK_SHADER_STAGE_COMPUTE_BIT,
-                       0, sizeof(pushConstants_), &pushConstants_);
+    vk::CommandBuffer vkCmd(cmd);
 
-    vkCmdDispatch(cmd, npcCount, 1, 1);
+    vkCmd.bindPipeline(vk::PipelineBindPoint::eCompute, pipeline_);
+    vkCmd.bindDescriptorSets(vk::PipelineBindPoint::eCompute,
+                             pipelineLayout_, 0, vk::DescriptorSet(descriptorSet_), {});
+    vkCmd.pushConstants(pipelineLayout_, vk::ShaderStageFlagBits::eCompute,
+                        0, sizeof(pushConstants_), &pushConstants_);
+
+    vkCmd.dispatch(npcCount, 1, 1);
 
     // Memory barrier: compute writes -> host reads
-    VkMemoryBarrier barrier{};
-    barrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
-    barrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
-    barrier.dstAccessMask = VK_ACCESS_HOST_READ_BIT;
-    vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-                         VK_PIPELINE_STAGE_HOST_BIT,
-                         0, 1, &barrier, 0, nullptr, 0, nullptr);
+    auto barrier = vk::MemoryBarrier{}
+        .setSrcAccessMask(vk::AccessFlagBits::eShaderWrite)
+        .setDstAccessMask(vk::AccessFlagBits::eHostRead);
+    vkCmd.pipelineBarrier(vk::PipelineStageFlagBits::eComputeShader,
+                          vk::PipelineStageFlagBits::eHost,
+                          {}, barrier, {}, {});
 }
 
 void GPUInference::readBackActions(std::vector<float>& actions, uint32_t npcCount) {
@@ -219,20 +225,21 @@ void GPUInference::destroy() {
     destroyBuffer(obsBuffer_);
     destroyBuffer(actionBuffer_);
 
+    vk::Device vkDevice(device_);
     if (pipeline_ != VK_NULL_HANDLE) {
-        vkDestroyPipeline(device_, pipeline_, nullptr);
+        vkDevice.destroyPipeline(pipeline_);
         pipeline_ = VK_NULL_HANDLE;
     }
     if (pipelineLayout_ != VK_NULL_HANDLE) {
-        vkDestroyPipelineLayout(device_, pipelineLayout_, nullptr);
+        vkDevice.destroyPipelineLayout(pipelineLayout_);
         pipelineLayout_ = VK_NULL_HANDLE;
     }
     if (descriptorPool_ != VK_NULL_HANDLE) {
-        vkDestroyDescriptorPool(device_, descriptorPool_, nullptr);
+        vkDevice.destroyDescriptorPool(descriptorPool_);
         descriptorPool_ = VK_NULL_HANDLE;
     }
     if (descriptorSetLayout_ != VK_NULL_HANDLE) {
-        vkDestroyDescriptorSetLayout(device_, descriptorSetLayout_, nullptr);
+        vkDevice.destroyDescriptorSetLayout(descriptorSetLayout_);
         descriptorSetLayout_ = VK_NULL_HANDLE;
     }
 
@@ -246,16 +253,15 @@ bool GPUInference::createBuffer(GPUBuffer& buf, size_t size,
                                  VmaMemoryUsage memUsage) {
     if (buf.buffer != VK_NULL_HANDLE) destroyBuffer(buf);
 
-    VkBufferCreateInfo bufferInfo{};
-    bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-    bufferInfo.size = size;
-    bufferInfo.usage = usage;
+    auto bufferInfo = vk::BufferCreateInfo{}
+        .setSize(size)
+        .setUsage(static_cast<vk::BufferUsageFlags>(usage));
 
     VmaAllocationCreateInfo allocInfo{};
     allocInfo.usage = memUsage;
     allocInfo.flags = VMA_ALLOCATION_CREATE_MAPPED_BIT;
 
-    if (vmaCreateBuffer(allocator_, &bufferInfo, &allocInfo,
+    if (vmaCreateBuffer(allocator_, reinterpret_cast<const VkBufferCreateInfo*>(&bufferInfo), &allocInfo,
                         &buf.buffer, &buf.allocation, nullptr) != VK_SUCCESS) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
                      "GPUInference: failed to create buffer (size=%zu)", size);
@@ -289,13 +295,15 @@ void GPUInference::readFromBuffer(const GPUBuffer& buf, void* data, size_t size)
 }
 
 bool GPUInference::createDescriptorSet() {
-    VkDescriptorSetAllocateInfo allocInfo{};
-    allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-    allocInfo.descriptorPool = descriptorPool_;
-    allocInfo.descriptorSetCount = 1;
-    allocInfo.pSetLayouts = &descriptorSetLayout_;
+    vk::DescriptorSetLayout setLayout(descriptorSetLayout_);
+    auto allocInfo = vk::DescriptorSetAllocateInfo{}
+        .setDescriptorPool(descriptorPool_)
+        .setSetLayouts(setLayout);
 
-    return vkAllocateDescriptorSets(device_, &allocInfo, &descriptorSet_) == VK_SUCCESS;
+    vk::DescriptorSet set;
+    vk::Result result = vk::Device(device_).allocateDescriptorSets(&allocInfo, &set);
+    descriptorSet_ = set;
+    return result == vk::Result::eSuccess;
 }
 
 void GPUInference::updateDescriptorSet() {
@@ -305,31 +313,28 @@ void GPUInference::updateDescriptorSet() {
         {&latentBuffer_, 2}, {&obsBuffer_, 3}, {&actionBuffer_, 4},
     };
 
-    std::vector<VkWriteDescriptorSet> writes;
-    std::vector<VkDescriptorBufferInfo> bufInfos(5);
+    std::vector<vk::WriteDescriptorSet> writes;
+    std::vector<vk::DescriptorBufferInfo> bufInfos(5);
 
     for (int i = 0; i < 5; ++i) {
         auto* b = buffers[i].buf;
         if (b->buffer == VK_NULL_HANDLE) continue;
 
-        bufInfos[i] = {};
-        bufInfos[i].buffer = b->buffer;
-        bufInfos[i].offset = 0;
-        bufInfos[i].range = b->size;
+        bufInfos[i] = vk::DescriptorBufferInfo{}
+            .setBuffer(b->buffer)
+            .setOffset(0)
+            .setRange(b->size);
 
-        VkWriteDescriptorSet write{};
-        write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        write.dstSet = descriptorSet_;
-        write.dstBinding = buffers[i].binding;
-        write.descriptorCount = 1;
-        write.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-        write.pBufferInfo = &bufInfos[i];
-        writes.push_back(write);
+        writes.push_back(vk::WriteDescriptorSet{}
+            .setDstSet(descriptorSet_)
+            .setDstBinding(buffers[i].binding)
+            .setDescriptorCount(1)
+            .setDescriptorType(vk::DescriptorType::eStorageBuffer)
+            .setPBufferInfo(&bufInfos[i]));
     }
 
     if (!writes.empty()) {
-        vkUpdateDescriptorSets(device_, static_cast<uint32_t>(writes.size()),
-                               writes.data(), 0, nullptr);
+        vk::Device(device_).updateDescriptorSets(writes, {});
     }
 }
 

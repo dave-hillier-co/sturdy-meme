@@ -281,9 +281,10 @@ bool BloomSystem::createDescriptorSets() {
 }
 
 void BloomSystem::destroyMipChain() {
+    vk::Device vkDevice(device);
     for (auto& mip : mipChain) {
-        if (mip.framebuffer) vkDestroyFramebuffer(device, mip.framebuffer, nullptr);
-        if (mip.imageView) vkDestroyImageView(device, mip.imageView, nullptr);
+        if (mip.framebuffer) vkDevice.destroyFramebuffer(mip.framebuffer);
+        if (mip.imageView) vkDevice.destroyImageView(mip.imageView);
         if (mip.image) vmaDestroyImage(allocator, mip.image, mip.allocation);
     }
     mipChain.clear();

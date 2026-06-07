@@ -173,8 +173,7 @@ bool VulkanContext::selectPhysicalDevice() {
     physicalDevice = vkbPhysicalDevice.physical_device;
 
     // Verify Vulkan 1.2 API version
-    VkPhysicalDeviceProperties props;
-    vkGetPhysicalDeviceProperties(physicalDevice, &props);
+    vk::PhysicalDeviceProperties props = vk::PhysicalDevice(physicalDevice).getProperties();
     uint32_t major = VK_API_VERSION_MAJOR(props.apiVersion);
     uint32_t minor = VK_API_VERSION_MINOR(props.apiVersion);
 
@@ -188,12 +187,9 @@ bool VulkanContext::selectPhysicalDevice() {
         props.deviceName, major, minor, VK_API_VERSION_PATCH(props.apiVersion));
 
     // Verify timeline semaphore support (should always be true if we got here)
-    VkPhysicalDeviceVulkan12Features supportedFeatures12{};
-    supportedFeatures12.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES;
-    VkPhysicalDeviceFeatures2 features2{};
-    features2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
-    features2.pNext = &supportedFeatures12;
-    vkGetPhysicalDeviceFeatures2(physicalDevice, &features2);
+    auto featuresChain = vk::PhysicalDevice(physicalDevice)
+        .getFeatures2<vk::PhysicalDeviceFeatures2, vk::PhysicalDeviceVulkan12Features>();
+    const auto& supportedFeatures12 = featuresChain.get<vk::PhysicalDeviceVulkan12Features>();
 
     hasTimelineSemaphores_ = supportedFeatures12.timelineSemaphore == VK_TRUE;
     if (hasTimelineSemaphores_) {
@@ -298,25 +294,25 @@ bool VulkanContext::createAllocator() {
 
 bool VulkanContext::createSwapchain() {
     // Query surface capabilities to understand composite alpha support
-    VkSurfaceCapabilitiesKHR surfaceCaps;
-    vkGetPhysicalDeviceSurfaceCapabilitiesKHR(physicalDevice, surface, &surfaceCaps);
+    vk::SurfaceCapabilitiesKHR surfaceCaps =
+        vk::PhysicalDevice(physicalDevice).getSurfaceCapabilitiesKHR(vk::SurfaceKHR(surface));
 
     // Log supported composite alpha modes for debugging ghost frame issues
     SDL_Log("Swapchain: Supported composite alpha modes: %s%s%s%s",
-        (surfaceCaps.supportedCompositeAlpha & VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR) ? "OPAQUE " : "",
-        (surfaceCaps.supportedCompositeAlpha & VK_COMPOSITE_ALPHA_PRE_MULTIPLIED_BIT_KHR) ? "PRE_MULTIPLIED " : "",
-        (surfaceCaps.supportedCompositeAlpha & VK_COMPOSITE_ALPHA_POST_MULTIPLIED_BIT_KHR) ? "POST_MULTIPLIED " : "",
-        (surfaceCaps.supportedCompositeAlpha & VK_COMPOSITE_ALPHA_INHERIT_BIT_KHR) ? "INHERIT " : "");
+        (surfaceCaps.supportedCompositeAlpha & vk::CompositeAlphaFlagBitsKHR::eOpaque) ? "OPAQUE " : "",
+        (surfaceCaps.supportedCompositeAlpha & vk::CompositeAlphaFlagBitsKHR::ePreMultiplied) ? "PRE_MULTIPLIED " : "",
+        (surfaceCaps.supportedCompositeAlpha & vk::CompositeAlphaFlagBitsKHR::ePostMultiplied) ? "POST_MULTIPLIED " : "",
+        (surfaceCaps.supportedCompositeAlpha & vk::CompositeAlphaFlagBitsKHR::eInherit) ? "INHERIT " : "");
 
     // Prefer OPAQUE to prevent compositor alpha blending, fall back to INHERIT if not supported
     VkCompositeAlphaFlagBitsKHR compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
-    if (!(surfaceCaps.supportedCompositeAlpha & VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR)) {
-        if (surfaceCaps.supportedCompositeAlpha & VK_COMPOSITE_ALPHA_INHERIT_BIT_KHR) {
+    if (!(surfaceCaps.supportedCompositeAlpha & vk::CompositeAlphaFlagBitsKHR::eOpaque)) {
+        if (surfaceCaps.supportedCompositeAlpha & vk::CompositeAlphaFlagBitsKHR::eInherit) {
             compositeAlpha = VK_COMPOSITE_ALPHA_INHERIT_BIT_KHR;
             SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
                 "Swapchain: OPAQUE composite alpha not supported, using INHERIT. "
                 "Ghost frames may occur on window background/restore.");
-        } else if (surfaceCaps.supportedCompositeAlpha & VK_COMPOSITE_ALPHA_PRE_MULTIPLIED_BIT_KHR) {
+        } else if (surfaceCaps.supportedCompositeAlpha & vk::CompositeAlphaFlagBitsKHR::ePreMultiplied) {
             compositeAlpha = VK_COMPOSITE_ALPHA_PRE_MULTIPLIED_BIT_KHR;
             SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
                 "Swapchain: Using PRE_MULTIPLIED composite alpha");
@@ -687,9 +683,13 @@ bool VulkanContext::createCommandPoolAndBuffers(uint32_t frameCount) {
             .setLevel(vk::CommandBufferLevel::ePrimary)
             .setCommandBufferCount(frameCount);
 
-        if (vkAllocateCommandBuffers(device,
-                reinterpret_cast<const VkCommandBufferAllocateInfo*>(&allocInfo),
-                commandBuffers_.data()) != VK_SUCCESS) {
+        try {
+            std::vector<vk::CommandBuffer> allocated =
+                vk::Device(device).allocateCommandBuffers(allocInfo);
+            for (uint32_t i = 0; i < frameCount; ++i) {
+                commandBuffers_[i] = allocated[i];
+            }
+        } catch (const vk::SystemError&) {
             SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to allocate command buffers");
             commandPool_.reset();
             commandBuffers_.clear();

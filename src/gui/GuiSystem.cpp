@@ -152,7 +152,7 @@ void GuiSystem::cleanup() {
     ImGui::DestroyContext();
 
     if (imguiPool != VK_NULL_HANDLE) {
-        vkDestroyDescriptorPool(device_, imguiPool, nullptr);
+        vk::Device(device_).destroyDescriptorPool(imguiPool);
         imguiPool = VK_NULL_HANDLE;
     }
     device_ = VK_NULL_HANDLE;

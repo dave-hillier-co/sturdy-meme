@@ -199,12 +199,12 @@ bool FroxelSystem::createDescriptorSetLayout() {
     // 5: Previous scattering volume (storage image)
 
     VkDescriptorSetLayout rawLayout = DescriptorManager::LayoutBuilder(initInfo_.device)
-        .addStorageImage(VK_SHADER_STAGE_COMPUTE_BIT)            // 0: Scattering volume
-        .addStorageImage(VK_SHADER_STAGE_COMPUTE_BIT)            // 1: Integrated volume
-        .addUniformBuffer(VK_SHADER_STAGE_COMPUTE_BIT)           // 2: Uniform buffer
-        .addCombinedImageSampler(VK_SHADER_STAGE_COMPUTE_BIT)    // 3: Shadow map
-        .addStorageBuffer(VK_SHADER_STAGE_COMPUTE_BIT)           // 4: Light buffer
-        .addStorageImage(VK_SHADER_STAGE_COMPUTE_BIT)            // 5: Previous scattering
+        .addStorageImage(VkShaderStageFlags(vk::ShaderStageFlagBits::eCompute))            // 0: Scattering volume
+        .addStorageImage(VkShaderStageFlags(vk::ShaderStageFlagBits::eCompute))            // 1: Integrated volume
+        .addUniformBuffer(VkShaderStageFlags(vk::ShaderStageFlagBits::eCompute))           // 2: Uniform buffer
+        .addCombinedImageSampler(VkShaderStageFlags(vk::ShaderStageFlagBits::eCompute))    // 3: Shadow map
+        .addStorageBuffer(VkShaderStageFlags(vk::ShaderStageFlagBits::eCompute))           // 4: Light buffer
+        .addStorageImage(VkShaderStageFlags(vk::ShaderStageFlagBits::eCompute))            // 5: Previous scattering
         .build();
 
     if (rawLayout == VK_NULL_HANDLE) {
@@ -230,7 +230,7 @@ bool FroxelSystem::createUniformBuffers() {
         .setAllocator(initInfo_.allocator)
         .setFrameCount(initInfo_.framesInFlight)
         .setSize(sizeof(FroxelUniforms))
-        .setUsage(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT)
+        .setUsage(VkBufferUsageFlags(vk::BufferUsageFlagBits::eUniformBuffer))
         .build(uniformBuffers);
 }
 

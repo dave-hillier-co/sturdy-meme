@@ -194,7 +194,7 @@ bool TreeSpatialIndex::uploadToGPU() {
     // Without this, the GPU may still be reading from buffers we're about to destroy,
     // causing undefined behavior (garbage data -> wrong treeIndex -> all trees become oak).
     if (!cellBuffers_.empty()) {
-        vkDeviceWaitIdle(device_);
+        vk::Device(device_).waitIdle();
     }
 
     // Clean up old buffers (now safe since no frames are in-flight)

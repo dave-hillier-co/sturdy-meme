@@ -4,7 +4,7 @@
 #include "ecs/World.h"
 #include "ecs/Components.h"
 #include "animation/AnimationArchetypeManager.h"
-#include <vulkan/vulkan.h>
+#include <vulkan/vulkan.hpp>
 #include <vk_mem_alloc.h>
 #include <glm/glm.hpp>
 #include <memory>

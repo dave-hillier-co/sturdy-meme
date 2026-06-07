@@ -103,9 +103,10 @@ public:
 
 private:
     void destroyPipelineHandles(VkDevice dev, PipelineHandles& handles) {
-        vkDestroyPipeline(dev, handles.pipeline, nullptr);
-        vkDestroyPipelineLayout(dev, handles.pipelineLayout, nullptr);
-        vkDestroyDescriptorSetLayout(dev, handles.descriptorSetLayout, nullptr);
+        vk::Device hppDevice(dev);
+        hppDevice.destroyPipeline(vk::Pipeline(handles.pipeline));
+        hppDevice.destroyPipelineLayout(vk::PipelineLayout(handles.pipelineLayout));
+        hppDevice.destroyDescriptorSetLayout(vk::DescriptorSetLayout(handles.descriptorSetLayout));
         handles.pipeline = VK_NULL_HANDLE;
         handles.pipelineLayout = VK_NULL_HANDLE;
         handles.descriptorSetLayout = VK_NULL_HANDLE;

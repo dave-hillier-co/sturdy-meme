@@ -91,7 +91,7 @@ void HiZSystem::resize(VkExtent2D newExtent) {
         return;
     }
 
-    vkDeviceWaitIdle(device);
+    vk::Device(device).waitIdle();
 
     extent = newExtent;
 

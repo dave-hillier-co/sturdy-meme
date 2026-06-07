@@ -56,11 +56,12 @@ std::unique_ptr<Texture> Texture::createSolidColor(uint8_t r, uint8_t g, uint8_t
 }
 
 Texture::~Texture() {
+    vk::Device vkDevice(device_);
     if (sampler != VK_NULL_HANDLE) {
-        vkDestroySampler(device_, sampler, nullptr);
+        vkDevice.destroySampler(sampler);
     }
     if (imageView != VK_NULL_HANDLE) {
-        vkDestroyImageView(device_, imageView, nullptr);
+        vkDevice.destroyImageView(imageView);
     }
     if (image != VK_NULL_HANDLE) {
         vmaDestroyImage(allocator_, image, allocation);
@@ -87,8 +88,9 @@ Texture::Texture(Texture&& other) noexcept
 Texture& Texture::operator=(Texture&& other) noexcept {
     if (this != &other) {
         // Clean up current resources
-        if (sampler != VK_NULL_HANDLE) vkDestroySampler(device_, sampler, nullptr);
-        if (imageView != VK_NULL_HANDLE) vkDestroyImageView(device_, imageView, nullptr);
+        vk::Device vkDevice(device_);
+        if (sampler != VK_NULL_HANDLE) vkDevice.destroySampler(sampler);
+        if (imageView != VK_NULL_HANDLE) vkDevice.destroyImageView(imageView);
         if (image != VK_NULL_HANDLE) vmaDestroyImage(allocator_, image, allocation);
 
         // Move from other

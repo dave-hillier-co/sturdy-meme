@@ -27,7 +27,7 @@ std::unique_ptr<TreeImpostorAtlas> TreeImpostorAtlas::create(const InitInfo& inf
 TreeImpostorAtlas::~TreeImpostorAtlas() {
     if (device_ == VK_NULL_HANDLE) return;
 
-    vkDeviceWaitIdle(device_);
+    vk::Device(device_).waitIdle();
 
     // Cleanup leaf capture buffer (VMA-managed)
     if (leafCaptureBuffer_ != VK_NULL_HANDLE) {

@@ -157,7 +157,6 @@ Legacy code that can be removed once tested (see `TREE_RENDERING_ROADMAP.md`):
 - 17-view impostor atlas code
 
 ### Code Quality
-- RAII refactoring per `RAII_REFACTOR_PLAN.md`
 - Renderer core extraction per `RENDERER_REFACTORING_PLAN.md` (last step pending)
 
 ---

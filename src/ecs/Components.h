@@ -178,6 +178,11 @@ struct PBRProperties {
 // Entity casts shadows (participates in shadow pass)
 struct CastsShadow {};
 
+// Entity is drawn by the GPU-skinning pipeline (player, NPCs), NOT the static
+// scene-object indirect path. Render systems that build the GPU scene/shadow
+// buffers skip these entities.
+struct GPUSkinned {};
+
 // Entity is visible (set by culling system, queried by render system)
 struct Visible {};
 

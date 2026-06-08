@@ -71,6 +71,12 @@ public:
             world_.add<Opacity>(entity, renderable.opacity);
         }
 
+        // GPU-skinned characters draw via a separate pipeline; tag so the
+        // static scene-object/shadow buffers skip them.
+        if (renderable.gpuSkinned) {
+            world_.add<GPUSkinned>(entity);
+        }
+
         // Tree-specific data
         if (isTree(renderable)) {
             TreeData treeData;

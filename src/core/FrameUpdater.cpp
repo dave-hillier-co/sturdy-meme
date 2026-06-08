@@ -44,13 +44,41 @@ void FrameUpdater::populateGPUSceneBuffer(RendererSystems& systems, const FrameD
     GPUSceneBuffer& sceneBuffer = systems.gpuSceneBuffer();
     sceneBuffer.beginFrame(frame.frameIndex);
 
-    const auto& sceneObjects = systems.scene().getRenderables();
+    // Scene objects are sourced from the ECS: each scene entity's render data is
+    // extracted from its components (Transform/MeshRef/MaterialRef/PBRProperties/...).
+    // GPU-skinned characters (player + NPCs) draw via a separate pipeline and are
+    // skipped via the GPUSkinned tag.
+    ecs::World* world = systems.ecsWorld();
+    if (world) {
+        const auto& sceneEntities = systems.scene().getSceneBuilder().getSceneEntities();
+        for (ecs::Entity entity : sceneEntities) {
+            if (!world->valid(entity)) continue;
+            if (world->has<ecs::GPUSkinned>(entity)) continue;
+            sceneBuffer.addObject(ecs::extractRenderData(*world, entity));
+        }
 
-    for (size_t i = 0; i < sceneObjects.size(); ++i) {
-        // Skip GPU-skinned characters (player + NPCs, rendered via separate pipeline)
-        if (sceneObjects[i].gpuSkinned) continue;
-
-        sceneBuffer.addObject(sceneObjects[i]);
+#ifndef NDEBUG
+        // One-shot equivalence check vs the legacy Renderable path: the ECS query
+        // must select exactly the non-gpuSkinned scene objects.
+        static bool verified = false;
+        if (!verified && !sceneEntities.empty()) {
+            verified = true;
+            const auto& objs = systems.scene().getRenderables();
+            size_t legacyCount = 0;
+            for (const auto& o : objs) if (!o.gpuSkinned) ++legacyCount;
+            size_t ecsCount = 0;
+            for (ecs::Entity e : sceneEntities)
+                if (world->valid(e) && !world->has<ecs::GPUSkinned>(e)) ++ecsCount;
+            if (ecsCount != legacyCount) {
+                SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                    "GPUSceneBuffer: ECS scene-object count %zu != legacy non-skinned count %zu",
+                    ecsCount, legacyCount);
+            } else {
+                SDL_Log("GPUSceneBuffer: ECS scene-object query matches legacy set (%zu objects)",
+                    ecsCount);
+            }
+        }
+#endif
     }
 
     // Scatter content (rocks, detritus). These have no MaterialRegistry materialId but own

@@ -147,16 +147,12 @@ public:
         Mesh* mesh,
         MaterialId materialId,
         const glm::mat4& transform,
-        int treeInstanceIndex,
-        int leafInstanceIndex,
         const glm::vec3& leafTint = glm::vec3(1.0f),
         float autumnHueShift = 0.0f) {
 
         Entity entity = createStaticMesh(mesh, materialId, transform, true);
 
         TreeData treeData;
-        treeData.treeInstanceIndex = treeInstanceIndex;
-        treeData.leafInstanceIndex = leafInstanceIndex;
         treeData.leafTint = leafTint;
         treeData.autumnHueShift = autumnHueShift;
         world_.add<TreeData>(entity, treeData);
@@ -433,27 +429,23 @@ public:
         return *this;
     }
 
-    // Optional: Set tree instance index
-    EntityBuilder& withTreeInstanceIndex(int index) {
-        treeInstanceIndex_ = index;
-        return *this;
-    }
-
-    // Optional: Set leaf instance index
-    EntityBuilder& withLeafInstanceIndex(int index) {
-        leafInstanceIndex_ = index;
+    // Optional: Mark this entity as a tree (adds TreeData with the given tint)
+    EntityBuilder& asTree() {
+        isTree_ = true;
         return *this;
     }
 
     // Optional: Set leaf tint
     EntityBuilder& withLeafTint(const glm::vec3& tint) {
         leafTint_ = tint;
+        isTree_ = true;
         return *this;
     }
 
     // Optional: Set autumn hue shift
     EntityBuilder& withAutumnHueShift(float shift) {
         autumnHueShift_ = shift;
+        isTree_ = true;
         return *this;
     }
 
@@ -506,10 +498,8 @@ public:
         }
 
         // Tree-specific data
-        if (treeInstanceIndex_ >= 0 || leafInstanceIndex_ >= 0) {
+        if (isTree_) {
             TreeData treeData;
-            treeData.leafInstanceIndex = leafInstanceIndex_;
-            treeData.treeInstanceIndex = treeInstanceIndex_;
             treeData.leafTint = leafTint_;
             treeData.autumnHueShift = autumnHueShift_;
             world_.add<TreeData>(entity, treeData);
@@ -550,8 +540,7 @@ private:
     float opacity_ = 1.0f;
 
     // Tree properties
-    int treeInstanceIndex_ = -1;
-    int leafInstanceIndex_ = -1;
+    bool isTree_ = false;
     glm::vec3 leafTint_ = glm::vec3(1.0f);
     float autumnHueShift_ = 0.0f;
 

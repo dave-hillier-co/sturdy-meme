@@ -58,7 +58,6 @@ struct TreeInstanceData {
     Transform transform;
     uint32_t meshIndex{0};  // Which tree mesh to use
     uint32_t archetypeIndex{0}; // Which impostor archetype to use (0=oak, 1=pine, 2=ash, 3=aspen)
-    bool isSelected{false}; // Is this the currently editable tree
 
     TreeInstanceData() = default;
 
@@ -87,6 +86,16 @@ struct TreeInstanceData {
     glm::mat4 getTransformMatrix() const { return transform.toMatrix(); }
 };
 
+// Bake contract:
+//   ECS is the config source of truth. Each tree entity carries Transform +
+//   TreeConfig{meshIndex,archetypeIndex} + TreeData(tint/autumn) + Bark/LeafType
+//   + a sparse TreeSelected tag. treeInstances_,
+//   branchRenderables_/leafRenderables_, leafDrawInfoPerTree_ and the leaf SSBO
+//   are ONE-WAY derived bakes rebuilt on change (add/remove/regenerate/edit),
+//   never per frame and never written back to the ECS. All of these share one
+//   canonical insertion order (treeEntities_), so every parallel index
+//   (treeInstanceIndex, lodStates_[i], cull inputData[i], meshIndex, GPU slot)
+//   is equal by construction. meshIndex is 1:1 with the tree index.
 class TreeSystem {
 public:
     // Passkey for controlled construction via make_unique
@@ -240,9 +249,13 @@ private:
     bool uploadLeafInstanceBuffer();
     void createSceneObjects();
     void rebuildSceneObjects();
+    // Re-derive treeInstances_ (a one-way read-model) from the ECS source of
+    // truth, ordered by treeEntities_ insertion order. Called at the start of
+    // every bake; never writes back to the ECS.
+    void rebuildTreeInstancesFromECS();
 
     // ECS entity creation/destruction for trees
-    ecs::Entity createTreeEntity(uint32_t treeIdx, const TreeInstanceData& instance, const TreeOptions& opts, const AABB& bounds);
+    ecs::Entity createTreeEntity(const TreeInstanceData& instance, const TreeOptions& opts, const AABB& bounds);
     void destroyTreeEntity(uint32_t index);
     void refreshMeshRefs();  // Update MeshRef pointers after branchMeshes_ reallocation
 
@@ -299,11 +312,21 @@ private:
     std::unordered_map<std::string, std::unique_ptr<Texture>> barkNormalMaps_;
     std::unordered_map<std::string, std::unique_ptr<Texture>> leafTextures_;
 
-    // Tree instances (positions, rotations, etc.)
+    // ONE-WAY DERIVED read-model of per-tree transform + meshIndex/archetype.
+    // The ECS (Transform + TreeConfig on each tree entity) is the source of
+    // truth; this cache is rebuilt from it on every bake (rebuildSceneObjects ->
+    // rebuildTreeInstancesFromECS), ordered by treeEntities_ insertion order.
+    // Never written by a render/cull/physics consumer. meshIndex is 1:1 with the
+    // tree index; indices here are ephemeral per bake.
     std::vector<TreeInstanceData> treeInstances_;
     int selectedTreeIndex_ = -1;
 
-    // Scene objects for rendering
+    // ONE-WAY DERIVED render bake, rebuilt on add/remove/regenerate/edit (never
+    // per draw). These may be SPARSER than treeInstances_ (a tree with an empty
+    // branch mesh or no leaves is skipped), so vector position is NOT the tree
+    // index. Consumers key off the carried indices: renderable.treeInstanceIndex
+    // == tree index i (LOD/lodStates_ lookup); renderable.leafInstanceIndex ==
+    // meshIndex (leafDrawInfoPerTree_ lookup), and meshIndex is 1:1 with i.
     std::vector<TreeRenderable> branchRenderables_;
     std::vector<TreeRenderable> leafRenderables_;
 };

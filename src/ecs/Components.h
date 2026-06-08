@@ -292,8 +292,6 @@ struct SelectionOutline {
 struct TreeTag {};
 
 struct TreeData {
-    int leafInstanceIndex = -1;
-    int treeInstanceIndex = -1;
     glm::vec3 leafTint = glm::vec3(1.0f);
     float autumnHueShift = 0.0f;
 };
@@ -306,6 +304,13 @@ struct BarkType {
 struct LeafType {
     uint32_t typeIndex = 0;   // Index into leaf texture array
     std::string typeName;     // String key for texture lookup (e.g. "oak", "pine")
+};
+
+// Per-tree config derived into the GPU bake. ECS is the source of truth;
+// in this codebase meshIndex is 1:1 with the tree index.
+struct TreeConfig {
+    uint32_t meshIndex = 0;
+    uint32_t archetypeIndex = 0;  // 0=oak, 1=pine, 2=ash, 3=aspen
 };
 
 // Zero-size tag for the currently selected/editable tree

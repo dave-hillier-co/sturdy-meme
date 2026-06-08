@@ -133,6 +133,7 @@ void SceneBuilder::createSceneEntity(size_t i) {
 
     ecs::EntityFactory factory(*ecsWorld_);
     const Renderable& obj = sceneObjects[i];
+    const ObjectRole role = (i < objectRoles_.size()) ? objectRoles_[i] : ObjectRole::None;
 
     // Core components (Transform, MeshRef, MaterialRef, CastsShadow, PBRProperties,
     // HueShift, Opacity, GPUSkinned, TreeData) via value-gated factory.
@@ -158,13 +159,14 @@ void SceneBuilder::createSceneEntity(size_t i) {
     } else if (obj.mesh == sphereMesh.get()) {
         ecsWorld_->add<ecs::DebugName>(entity, "Sphere");
         float scale = glm::length(glm::vec3(obj.transform[0]));
-        if (scale < 0.5f) {
-            // Small sphere (emissive orb) - tested BEFORE emissiveIntensity so the
-            // 0.2-scale emissive indicator spheres still get sphere physics bodies.
+        if (scale < 0.5f && role == ObjectRole::EmissiveOrb) {
+            // The emissive orb is dynamic (its torch light follows it as it settles).
+            // Other small emissive spheres (blue/green light indicators) share the
+            // scale<0.5 size but are decorative markers and get no physics body.
             ecsWorld_->add<ecs::PhysicsShapeInfo>(entity,
                 ecs::PhysicsShapeInfo::sphere(0.5f * scale, ORB_MASS));
-        } else if (obj.emissiveIntensity > 1.0f) {
-            // Emissive indicator spheres (blue/green lights) - no physics
+        } else if (scale < 0.5f || obj.emissiveIntensity > 1.0f) {
+            // Small/emissive indicator spheres (blue/green lights) - no physics
         } else {
             // Normal spheres
             ecsWorld_->add<ecs::PhysicsShapeInfo>(entity,
@@ -187,7 +189,6 @@ void SceneBuilder::createSceneEntity(size_t i) {
     }
 
     // Tag special entities by their role and cache entity handles.
-    ObjectRole role = (i < objectRoles_.size()) ? objectRoles_[i] : ObjectRole::None;
     switch (role) {
         case ObjectRole::Player:
             playerEntity_ = entity;

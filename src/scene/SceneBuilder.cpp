@@ -226,6 +226,12 @@ void SceneBuilder::createSceneEntity(size_t i) {
         case ObjectRole::WellEntrance:
             wellEntranceEntity_ = entity;
             ecsWorld_->add<ecs::WellEntranceTag>(entity);
+            // The well entrance is a decorative frame floating above the terrain hole.
+            // It uses the cube mesh, so the mesh-identity branch above gave it a dynamic
+            // box body - remove it so the frame stays put instead of falling.
+            if (ecsWorld_->has<ecs::PhysicsShapeInfo>(entity)) {
+                ecsWorld_->remove<ecs::PhysicsShapeInfo>(entity);
+            }
             break;
         case ObjectRole::DebugAxisRightX:
             rightHandAxisEntities_[0] = entity;

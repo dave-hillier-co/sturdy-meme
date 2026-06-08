@@ -7,13 +7,10 @@
 #include <cstdint>
 #include <string>
 #include "scene/Transform.h"
+#include "material/MaterialId.h"
 
 class Mesh;
 class Texture;
-
-// Material ID type - use MaterialRegistry to convert to descriptor sets
-using MaterialId = uint32_t;
-constexpr MaterialId INVALID_MATERIAL_ID = ~0u;
 
 // Forward declaration for PBRProperties
 namespace ecs { struct PBRProperties; }

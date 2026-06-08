@@ -15,6 +15,7 @@
 #include "InitContext.h"
 #include "Light.h"
 #include "RenderableBuilder.h"
+#include "ecs/Components.h"
 #include "SkinnedMesh.h"
 #include "VulkanHelpers.h"
 
@@ -93,7 +94,7 @@ public:
 
     void recordShadowPass(VkCommandBuffer cmd, uint32_t frameIndex,
                           VkDescriptorSet descriptorSet,
-                          const std::vector<Renderable>& sceneObjects,
+                          const std::vector<ecs::RenderData>& sceneObjects,
                           const DrawCallback& terrainDrawCallback,
                           const DrawCallback& grassDrawCallback,
                           const DrawCallback& treeDrawCallback = nullptr,
@@ -273,7 +274,7 @@ private:
         VkCommandBuffer cmd,
         uint32_t frameIndex,
         uint32_t cascadeIndex,
-        const std::vector<Renderable>& sceneObjects);
+        const std::vector<ecs::RenderData>& sceneObjects);
 
     // GPU-driven indirect shadow rendering (reuses GPUSceneBuffer instance buffer + the
     // per-cascade ShadowCullPass output). set 0 = main UBO (cascade matrices), set 1 =

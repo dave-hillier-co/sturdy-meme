@@ -473,7 +473,7 @@ void ShadowSystem::drawShadowSceneInstanced(
     VkCommandBuffer cmd,
     uint32_t frameIndex,
     uint32_t cascadeIndex,
-    const std::vector<Renderable>& sceneObjects)
+    const std::vector<ecs::RenderData>& sceneObjects)
 {
     if (sceneObjects.empty() || instancedShadowPipeline == VK_NULL_HANDLE) return;
     if (frameIndex >= instanceMappedPtrs.size()) return;
@@ -481,7 +481,7 @@ void ShadowSystem::drawShadowSceneInstanced(
     vk::CommandBuffer vkCmd(cmd);
 
     // Group objects by mesh pointer (objects sharing the same mesh can be instanced)
-    std::unordered_map<const Mesh*, std::vector<const Renderable*>> meshGroups;
+    std::unordered_map<const Mesh*, std::vector<const ecs::RenderData*>> meshGroups;
     for (const auto& obj : sceneObjects) {
         if (!obj.castsShadow || !obj.mesh) continue;
         meshGroups[obj.mesh].push_back(&obj);
@@ -830,7 +830,7 @@ void ShadowSystem::drawShadowScene(
 
 void ShadowSystem::recordShadowPass(VkCommandBuffer cmd, uint32_t frameIndex,
                                      VkDescriptorSet descriptorSet,
-                                     const std::vector<Renderable>& sceneObjects,
+                                     const std::vector<ecs::RenderData>& sceneObjects,
                                      const DrawCallback& terrainDrawCallback,
                                      const DrawCallback& grassDrawCallback,
                                      const DrawCallback& treeDrawCallback,

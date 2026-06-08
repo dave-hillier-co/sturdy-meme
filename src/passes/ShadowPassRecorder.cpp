@@ -127,16 +127,19 @@ void ShadowPassRecorder::record(VkCommandBuffer cmd, uint32_t frameIndex, float 
         }
     }
 
-    // Add rocks and detritus (scatter RenderData). When indirect is active these ride the
-    // GPUSceneBuffer indirect draw, so don't also collect them here (avoids double-draw).
-    if (!indirectActive) {
-        for (const auto& r : resources_.vegetation.rocks().getSceneObjects()) {
+    // Add rocks and detritus (scatter RenderData) to the instanced (CPU) shadow draw.
+    // They are also in GPUSceneBuffer for the indirect path, but its per-cascade shadow cull
+    // is fitted tightly to the camera view-frustum slice and drops casters that sit off that
+    // slice along the light axis (instanceCount 0 -> no shadow). The unculled instanced pass
+    // is exactly what makes the scene-object cubes cast (they ride it unconditionally), so
+    // scatter casters must ride it too. Depth-only shadow draws are idempotent, so overlapping
+    // the indirect path on the default route is safe (cubes already do this).
+    for (const auto& r : resources_.vegetation.rocks().getSceneObjects()) {
+        allObjects.push_back(r);
+    }
+    if (resources_.vegetation.hasDetritus()) {
+        for (const auto& r : resources_.vegetation.detritus()->getSceneObjects()) {
             allObjects.push_back(r);
-        }
-        if (resources_.vegetation.hasDetritus()) {
-            for (const auto& r : resources_.vegetation.detritus()->getSceneObjects()) {
-                allObjects.push_back(r);
-            }
         }
     }
 

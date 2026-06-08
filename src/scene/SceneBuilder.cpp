@@ -30,6 +30,14 @@ bool SceneBuilder::initInternal(const InitInfo& info) {
     storedDevice = info.device;
     sceneOrigin = info.sceneOrigin;
 
+    // Slice 5: the merged createRenderables() pass creates ECS entities, so the
+    // ECS world must be available before it runs. Adopt it from InitInfo if
+    // provided. In the deferred path the world is instead set via setECSWorld()
+    // (from Application::initECS) before createRenderablesDeferred() is triggered.
+    if (info.ecsWorld) {
+        ecsWorld_ = info.ecsWorld;
+    }
+
     // Calculate well entrance position immediately (needed for terrain hole creation)
     // This must be available even if renderables are deferred
     wellEntranceX = 20.0f + sceneOrigin.x;
@@ -60,6 +68,13 @@ void SceneBuilder::createRenderablesDeferred() {
         SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "SceneBuilder: Renderables already created");
         return;
     }
+    if (!ecsWorld_) {
+        // Slice 5: the merged creation pass needs the ECS world. This indicates an
+        // ordering bug (setECSWorld must run before deferred creation); log loudly.
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
+            "SceneBuilder: ECS world not set before deferred renderable creation; "
+            "entities will not be created");
+    }
     SDL_Log("SceneBuilder: Creating deferred renderables now");
     createRenderables();
     renderablesCreated_ = true;
@@ -71,40 +86,44 @@ void SceneBuilder::createRenderablesDeferred() {
 }
 
 void SceneBuilder::createEntitiesFromRenderables() {
+    // Slice 5: entity creation is now merged into createRenderables(), which
+    // creates each ECS entity (with all tags/components/hierarchy) at the same
+    // time it pushes the mirror Renderable into sceneObjects. This function is
+    // retained only as an idempotent no-op shim: it is still invoked from
+    // Application::initECS and the deferred lazy path, but must do nothing once
+    // the merged pass has run.
     if (!ecsWorld_) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "SceneBuilder: ECS world not set");
         return;
     }
 
     if (sceneObjects.empty()) {
+        // Renderables not created yet (deferred mode); the merged pass will run
+        // when createRenderables() is invoked later.
         SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "SceneBuilder: No renderables to create entities from");
         return;
     }
 
-    SDL_Log("SceneBuilder: Creating %zu ECS entities from renderables", sceneObjects.size());
+    if (!sceneEntities_.empty()) {
+        // Entities already created by the merged createRenderables() pass.
+        return;
+    }
 
-    ecs::EntityFactory factory(*ecsWorld_);
-    sceneEntities_.reserve(sceneObjects.size());
-    entityToRenderableIndex_.clear();
+    // Should not normally be reached: renderables exist but no entities were
+    // created. This can only happen if createRenderables() ran without an ECS
+    // world set. Log so the ordering bug is visible rather than silently
+    // producing an entity-less scene.
+    SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+        "SceneBuilder: createEntitiesFromRenderables called with %zu renderables but no entities; "
+        "createRenderables() must run with the ECS world set",
+        sceneObjects.size());
+}
 
-    // Helper: create entity from renderable and register in the reverse map
-    auto createEntity = [&](size_t i) -> ecs::Entity {
-        ecs::Entity entity = factory.createFromRenderable(sceneObjects[i]);
-        sceneEntities_.push_back(entity);
-        entityToRenderableIndex_[entity] = i;
-
-        // Add bounding sphere for culling (estimated from mesh)
-        glm::vec3 pos = glm::vec3(sceneObjects[i].transform[3]);
-        float radius = 2.0f;
-        if (sceneObjects[i].mesh) {
-            float scale = glm::length(glm::vec3(sceneObjects[i].transform[0]));
-            radius = scale * 2.0f;
-        }
-        ecsWorld_->add<ecs::BoundingSphere>(entity, pos, radius);
-        ecsWorld_->add<ecs::Visible>(entity);
-
-        return entity;
-    };
+void SceneBuilder::createSceneEntity(size_t i) {
+    // Merged second-pass entity creation for a single scene object. Produces the
+    // exact same components/tags/hierarchy as the former
+    // createEntitiesFromRenderables() did, but inline as each Renderable is built.
+    if (!ecsWorld_) return;
 
     // Physics shape parameters
     constexpr float BOX_MASS = 10.0f;
@@ -112,145 +131,163 @@ void SceneBuilder::createEntitiesFromRenderables() {
     constexpr float ORB_MASS = 1.0f;
     const glm::vec3 cubeHalfExtents(0.5f);
 
-    // Create entities for each renderable, tagging by mesh type and role
-    for (size_t i = 0; i < sceneObjects.size(); ++i) {
-        ecs::Entity entity = createEntity(i);
-        const auto& obj = sceneObjects[i];
+    ecs::EntityFactory factory(*ecsWorld_);
+    const Renderable& obj = sceneObjects[i];
 
-        // Tag by mesh identity: cubes get debug names and physics shapes
-        if (obj.mesh == cubeMesh.get()) {
-            ecsWorld_->add<ecs::DebugName>(entity, "Cube");
-            // All scene cubes are physics-enabled
-            ecsWorld_->add<ecs::PhysicsShapeInfo>(entity,
-                ecs::PhysicsShapeInfo::box(cubeHalfExtents, BOX_MASS));
-        } else if (obj.mesh == sphereMesh.get()) {
-            ecsWorld_->add<ecs::DebugName>(entity, "Sphere");
-            // Scene spheres are physics-enabled (with varying radius/mass)
-            float scale = glm::length(glm::vec3(obj.transform[0]));
-            if (scale < 0.5f) {
-                // Small sphere (emissive orb)
-                ecsWorld_->add<ecs::PhysicsShapeInfo>(entity,
-                    ecs::PhysicsShapeInfo::sphere(0.5f * scale, ORB_MASS));
-            } else if (obj.emissiveIntensity > 1.0f) {
-                // Emissive indicator spheres (blue/green lights) - no physics
-            } else {
-                // Normal spheres
-                ecsWorld_->add<ecs::PhysicsShapeInfo>(entity,
-                    ecs::PhysicsShapeInfo::sphere(0.5f, SPHERE_MASS));
-            }
-        } else if (obj.mesh == capsuleMesh.get()) {
-            ecsWorld_->add<ecs::DebugName>(entity, "Capsule");
-        } else if (obj.mesh == flagPoleMesh.get()) {
-            ecsWorld_->add<ecs::DebugName>(entity, "Flag Pole");
-        } else if (obj.mesh == swordMesh.get()) {
-            ecsWorld_->add<ecs::DebugName>(entity, "Sword");
-        } else if (obj.mesh == shieldMesh.get()) {
-            ecsWorld_->add<ecs::DebugName>(entity, "Shield");
-        } else if (obj.mesh == axisLineMesh.get()) {
-            ecsWorld_->add<ecs::DebugName>(entity, "Debug Axis");
-        } else if (obj.mesh == &flagClothMesh) {
-            ecsWorld_->add<ecs::DebugName>(entity, "Flag Cloth");
-        } else if (obj.mesh == &capeMesh) {
-            ecsWorld_->add<ecs::DebugName>(entity, "Cape");
-        }
+    // Core components (Transform, MeshRef, MaterialRef, CastsShadow, PBRProperties,
+    // HueShift, Opacity, GPUSkinned, TreeData) via value-gated factory.
+    ecs::Entity entity = factory.createFromRenderable(obj);
+    sceneEntities_.push_back(entity);
+    entityToRenderableIndex_[entity] = i;
 
-        // Tag special entities by their role (assigned during createRenderables)
-        ObjectRole role = (i < objectRoles_.size()) ? objectRoles_[i] : ObjectRole::None;
-        switch (role) {
-            case ObjectRole::Player:
-                playerEntity_ = entity;
-                ecsWorld_->add<ecs::PlayerTag>(entity);
-                break;
-            case ObjectRole::EmissiveOrb:
-                emissiveOrbEntity_ = entity;
-                ecsWorld_->add<ecs::OrbTag>(entity);
-                break;
-            case ObjectRole::FlagPole:
-                flagPoleEntity_ = entity;
-                ecsWorld_->add<ecs::FlagPoleTag>(entity);
-                break;
-            case ObjectRole::FlagCloth:
-                flagClothEntity_ = entity;
-                ecsWorld_->add<ecs::FlagClothTag>(entity);
-                break;
-            case ObjectRole::Cape:
-                capeEntity_ = entity;
-                ecsWorld_->add<ecs::CapeTag>(entity);
-                break;
-            case ObjectRole::Sword:
-                swordEntity_ = entity;
-                ecsWorld_->add<ecs::WeaponTag>(entity, ecs::WeaponSlot::RightHand);
-                if (rightHandBoneIndex >= 0) {
-                    ecsWorld_->add<ecs::BoneAttachment>(entity, rightHandBoneIndex, getSwordOffset());
-                }
-                break;
-            case ObjectRole::Shield:
-                shieldEntity_ = entity;
-                ecsWorld_->add<ecs::WeaponTag>(entity, ecs::WeaponSlot::LeftHand);
-                if (leftHandBoneIndex >= 0) {
-                    ecsWorld_->add<ecs::BoneAttachment>(entity, leftHandBoneIndex, getShieldOffset());
-                }
-                break;
-            case ObjectRole::WellEntrance:
-                wellEntranceEntity_ = entity;
-                ecsWorld_->add<ecs::WellEntranceTag>(entity);
-                break;
-            case ObjectRole::DebugAxisRightX:
-                rightHandAxisEntities_[0] = entity;
-                ecsWorld_->add<ecs::DebugAxisTag>(entity);
-                if (rightHandBoneIndex >= 0) {
-                    glm::mat4 off = glm::rotate(glm::mat4(1.0f), glm::radians(-90.0f), glm::vec3(0,0,1));
-                    off = glm::translate(off, glm::vec3(0, 0.075f, 0));
-                    ecsWorld_->add<ecs::BoneAttachment>(entity, rightHandBoneIndex, off);
-                }
-                break;
-            case ObjectRole::DebugAxisRightY:
-                rightHandAxisEntities_[1] = entity;
-                ecsWorld_->add<ecs::DebugAxisTag>(entity);
-                if (rightHandBoneIndex >= 0) {
-                    glm::mat4 off = glm::translate(glm::mat4(1.0f), glm::vec3(0, 0.075f, 0));
-                    ecsWorld_->add<ecs::BoneAttachment>(entity, rightHandBoneIndex, off);
-                }
-                break;
-            case ObjectRole::DebugAxisRightZ:
-                rightHandAxisEntities_[2] = entity;
-                ecsWorld_->add<ecs::DebugAxisTag>(entity);
-                if (rightHandBoneIndex >= 0) {
-                    glm::mat4 off = glm::rotate(glm::mat4(1.0f), glm::radians(90.0f), glm::vec3(1,0,0));
-                    off = glm::translate(off, glm::vec3(0, 0.075f, 0));
-                    ecsWorld_->add<ecs::BoneAttachment>(entity, rightHandBoneIndex, off);
-                }
-                break;
-            case ObjectRole::DebugAxisLeftX:
-                leftHandAxisEntities_[0] = entity;
-                ecsWorld_->add<ecs::DebugAxisTag>(entity);
-                if (leftHandBoneIndex >= 0) {
-                    glm::mat4 off = glm::rotate(glm::mat4(1.0f), glm::radians(-90.0f), glm::vec3(0,0,1));
-                    off = glm::translate(off, glm::vec3(0, 0.075f, 0));
-                    ecsWorld_->add<ecs::BoneAttachment>(entity, leftHandBoneIndex, off);
-                }
-                break;
-            case ObjectRole::DebugAxisLeftY:
-                leftHandAxisEntities_[1] = entity;
-                ecsWorld_->add<ecs::DebugAxisTag>(entity);
-                if (leftHandBoneIndex >= 0) {
-                    glm::mat4 off = glm::translate(glm::mat4(1.0f), glm::vec3(0, 0.075f, 0));
-                    ecsWorld_->add<ecs::BoneAttachment>(entity, leftHandBoneIndex, off);
-                }
-                break;
-            case ObjectRole::DebugAxisLeftZ:
-                leftHandAxisEntities_[2] = entity;
-                ecsWorld_->add<ecs::DebugAxisTag>(entity);
-                if (leftHandBoneIndex >= 0) {
-                    glm::mat4 off = glm::rotate(glm::mat4(1.0f), glm::radians(90.0f), glm::vec3(1,0,0));
-                    off = glm::translate(off, glm::vec3(0, 0.075f, 0));
-                    ecsWorld_->add<ecs::BoneAttachment>(entity, leftHandBoneIndex, off);
-                }
-                break;
-            case ObjectRole::None:
-                break;
-        }
+    // Bounding sphere for culling (estimated from mesh) + Visible on every entity.
+    glm::vec3 pos = glm::vec3(obj.transform[3]);
+    float radius = 2.0f;
+    if (obj.mesh) {
+        float scale = glm::length(glm::vec3(obj.transform[0]));
+        radius = scale * 2.0f;
     }
+    ecsWorld_->add<ecs::BoundingSphere>(entity, pos, radius);
+    ecsWorld_->add<ecs::Visible>(entity);
+
+    // Tag by mesh identity: cubes/spheres get debug names and physics shapes.
+    if (obj.mesh == cubeMesh.get()) {
+        ecsWorld_->add<ecs::DebugName>(entity, "Cube");
+        ecsWorld_->add<ecs::PhysicsShapeInfo>(entity,
+            ecs::PhysicsShapeInfo::box(cubeHalfExtents, BOX_MASS));
+    } else if (obj.mesh == sphereMesh.get()) {
+        ecsWorld_->add<ecs::DebugName>(entity, "Sphere");
+        float scale = glm::length(glm::vec3(obj.transform[0]));
+        if (scale < 0.5f) {
+            // Small sphere (emissive orb) - tested BEFORE emissiveIntensity so the
+            // 0.2-scale emissive indicator spheres still get sphere physics bodies.
+            ecsWorld_->add<ecs::PhysicsShapeInfo>(entity,
+                ecs::PhysicsShapeInfo::sphere(0.5f * scale, ORB_MASS));
+        } else if (obj.emissiveIntensity > 1.0f) {
+            // Emissive indicator spheres (blue/green lights) - no physics
+        } else {
+            // Normal spheres
+            ecsWorld_->add<ecs::PhysicsShapeInfo>(entity,
+                ecs::PhysicsShapeInfo::sphere(0.5f, SPHERE_MASS));
+        }
+    } else if (obj.mesh == capsuleMesh.get()) {
+        ecsWorld_->add<ecs::DebugName>(entity, "Capsule");
+    } else if (obj.mesh == flagPoleMesh.get()) {
+        ecsWorld_->add<ecs::DebugName>(entity, "Flag Pole");
+    } else if (obj.mesh == swordMesh.get()) {
+        ecsWorld_->add<ecs::DebugName>(entity, "Sword");
+    } else if (obj.mesh == shieldMesh.get()) {
+        ecsWorld_->add<ecs::DebugName>(entity, "Shield");
+    } else if (obj.mesh == axisLineMesh.get()) {
+        ecsWorld_->add<ecs::DebugName>(entity, "Debug Axis");
+    } else if (obj.mesh == &flagClothMesh) {
+        ecsWorld_->add<ecs::DebugName>(entity, "Flag Cloth");
+    } else if (obj.mesh == &capeMesh) {
+        ecsWorld_->add<ecs::DebugName>(entity, "Cape");
+    }
+
+    // Tag special entities by their role and cache entity handles.
+    ObjectRole role = (i < objectRoles_.size()) ? objectRoles_[i] : ObjectRole::None;
+    switch (role) {
+        case ObjectRole::Player:
+            playerEntity_ = entity;
+            ecsWorld_->add<ecs::PlayerTag>(entity);
+            break;
+        case ObjectRole::EmissiveOrb:
+            emissiveOrbEntity_ = entity;
+            ecsWorld_->add<ecs::OrbTag>(entity);
+            break;
+        case ObjectRole::FlagPole:
+            flagPoleEntity_ = entity;
+            ecsWorld_->add<ecs::FlagPoleTag>(entity);
+            break;
+        case ObjectRole::FlagCloth:
+            flagClothEntity_ = entity;
+            ecsWorld_->add<ecs::FlagClothTag>(entity);
+            break;
+        case ObjectRole::Cape:
+            capeEntity_ = entity;
+            ecsWorld_->add<ecs::CapeTag>(entity);
+            break;
+        case ObjectRole::Sword:
+            swordEntity_ = entity;
+            ecsWorld_->add<ecs::WeaponTag>(entity, ecs::WeaponSlot::RightHand);
+            if (rightHandBoneIndex >= 0) {
+                ecsWorld_->add<ecs::BoneAttachment>(entity, rightHandBoneIndex, getSwordOffset());
+            }
+            break;
+        case ObjectRole::Shield:
+            shieldEntity_ = entity;
+            ecsWorld_->add<ecs::WeaponTag>(entity, ecs::WeaponSlot::LeftHand);
+            if (leftHandBoneIndex >= 0) {
+                ecsWorld_->add<ecs::BoneAttachment>(entity, leftHandBoneIndex, getShieldOffset());
+            }
+            break;
+        case ObjectRole::WellEntrance:
+            wellEntranceEntity_ = entity;
+            ecsWorld_->add<ecs::WellEntranceTag>(entity);
+            break;
+        case ObjectRole::DebugAxisRightX:
+            rightHandAxisEntities_[0] = entity;
+            ecsWorld_->add<ecs::DebugAxisTag>(entity);
+            if (rightHandBoneIndex >= 0) {
+                glm::mat4 off = glm::rotate(glm::mat4(1.0f), glm::radians(-90.0f), glm::vec3(0,0,1));
+                off = glm::translate(off, glm::vec3(0, 0.075f, 0));
+                ecsWorld_->add<ecs::BoneAttachment>(entity, rightHandBoneIndex, off);
+            }
+            break;
+        case ObjectRole::DebugAxisRightY:
+            rightHandAxisEntities_[1] = entity;
+            ecsWorld_->add<ecs::DebugAxisTag>(entity);
+            if (rightHandBoneIndex >= 0) {
+                glm::mat4 off = glm::translate(glm::mat4(1.0f), glm::vec3(0, 0.075f, 0));
+                ecsWorld_->add<ecs::BoneAttachment>(entity, rightHandBoneIndex, off);
+            }
+            break;
+        case ObjectRole::DebugAxisRightZ:
+            rightHandAxisEntities_[2] = entity;
+            ecsWorld_->add<ecs::DebugAxisTag>(entity);
+            if (rightHandBoneIndex >= 0) {
+                glm::mat4 off = glm::rotate(glm::mat4(1.0f), glm::radians(90.0f), glm::vec3(1,0,0));
+                off = glm::translate(off, glm::vec3(0, 0.075f, 0));
+                ecsWorld_->add<ecs::BoneAttachment>(entity, rightHandBoneIndex, off);
+            }
+            break;
+        case ObjectRole::DebugAxisLeftX:
+            leftHandAxisEntities_[0] = entity;
+            ecsWorld_->add<ecs::DebugAxisTag>(entity);
+            if (leftHandBoneIndex >= 0) {
+                glm::mat4 off = glm::rotate(glm::mat4(1.0f), glm::radians(-90.0f), glm::vec3(0,0,1));
+                off = glm::translate(off, glm::vec3(0, 0.075f, 0));
+                ecsWorld_->add<ecs::BoneAttachment>(entity, leftHandBoneIndex, off);
+            }
+            break;
+        case ObjectRole::DebugAxisLeftY:
+            leftHandAxisEntities_[1] = entity;
+            ecsWorld_->add<ecs::DebugAxisTag>(entity);
+            if (leftHandBoneIndex >= 0) {
+                glm::mat4 off = glm::translate(glm::mat4(1.0f), glm::vec3(0, 0.075f, 0));
+                ecsWorld_->add<ecs::BoneAttachment>(entity, leftHandBoneIndex, off);
+            }
+            break;
+        case ObjectRole::DebugAxisLeftZ:
+            leftHandAxisEntities_[2] = entity;
+            ecsWorld_->add<ecs::DebugAxisTag>(entity);
+            if (leftHandBoneIndex >= 0) {
+                glm::mat4 off = glm::rotate(glm::mat4(1.0f), glm::radians(90.0f), glm::vec3(1,0,0));
+                off = glm::translate(off, glm::vec3(0, 0.075f, 0));
+                ecsWorld_->add<ecs::BoneAttachment>(entity, leftHandBoneIndex, off);
+            }
+            break;
+        case ObjectRole::None:
+            break;
+    }
+}
+
+void SceneBuilder::finalizeSceneEntities() {
+    // Establish parent-child hierarchy and tag NPC entities once all scene
+    // objects (and their entities) have been created in the merged pass.
+    if (!ecsWorld_) return;
 
     // Establish parent-child hierarchy: attach weapons, cape, and debug axes to player
     if (playerEntity_ != ecs::NullEntity) {
@@ -272,7 +309,7 @@ void SceneBuilder::createEntitiesFromRenderables() {
         for (auto e : leftHandAxisEntities_) attachChild(e);
     }
 
-    // Create NPC entities with tags
+    // Tag NPC entities (insertion order preserved by npcData ordering).
     if (npcSimulation_) {
         const auto& npcData = npcSimulation_->getData();
         npcEntities_.reserve(npcData.count());
@@ -288,7 +325,7 @@ void SceneBuilder::createEntitiesFromRenderables() {
         SDL_Log("SceneBuilder: Tagged %zu NPC entities", npcEntities_.size());
     }
 
-    SDL_Log("SceneBuilder: Created ECS entities successfully");
+    SDL_Log("SceneBuilder: Created %zu ECS entities successfully", sceneEntities_.size());
 }
 
 void SceneBuilder::registerMaterials() {
@@ -641,6 +678,16 @@ bool SceneBuilder::loadTextures(const InitInfo& info) {
 void SceneBuilder::createRenderables() {
     sceneObjects.clear();
 
+    // Slice 5: entity creation is merged into this pass. Reset the entity-tracking
+    // state so the merged pass starts clean (createRenderables may run once, either
+    // eagerly or via the deferred path).
+    sceneEntities_.clear();
+    entityToRenderableIndex_.clear();
+    npcEntities_.clear();
+    if (ecsWorld_) {
+        sceneEntities_.reserve(32);
+    }
+
     // Ground disc removed - terrain system provides the ground now
 
     // Scene objects are placed relative to sceneOrigin (settlement location)
@@ -665,11 +712,19 @@ void SceneBuilder::createRenderables() {
 
     objectRoles_.clear();
 
-    // Helper to add a renderable with an optional role
+    // Helper to add a renderable with an optional role. Slice 5: this also creates
+    // the matching ECS entity (with all tags/components) inline, merging the former
+    // second creation pass into this single loop. The mirror Renderable is still
+    // pushed into sceneObjects (physics/animation write-target + GUI surface).
     auto addObject = [this](Renderable&& r, ObjectRole role = ObjectRole::None) -> size_t {
         size_t idx = sceneObjects.size();
         sceneObjects.push_back(std::move(r));
         objectRoles_.push_back(role);
+        // Create the ECS entity for this object immediately (idempotent: only when
+        // an ECS world is set; the deferred path guarantees it is set first).
+        if (ecsWorld_) {
+            createSceneEntity(idx);
+        }
         return idx;
     };
 
@@ -1048,6 +1103,12 @@ void SceneBuilder::createRenderables() {
         .withMetallic(0.1f)
         .withCastsShadow(true)
         .build(), ObjectRole::WellEntrance);
+
+    // Slice 5: finalize merged entity creation - establish player hierarchy
+    // (weapons/cape/debug axes) and tag NPC entities now that all entities exist.
+    if (ecsWorld_) {
+        finalizeSceneEntities();
+    }
 }
 
 void SceneBuilder::uploadFlagClothMesh(VmaAllocator allocator, VkDevice device, VkCommandPool commandPool, VkQueue queue) {

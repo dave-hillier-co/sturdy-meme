@@ -238,6 +238,12 @@ private:
     void createRenderables();
     void createNPCs(const InitInfo& info);  // Create NPC characters
 
+    // Slice 5 (merged creation pass): create the ECS entity for sceneObjects[i]
+    // with all tags/components/role handling. Called inline from createRenderables.
+    void createSceneEntity(size_t i);
+    // Finalize the merged pass: player hierarchy + NPC tagging once all entities exist.
+    void finalizeSceneEntities();
+
     // Get terrain height at (x, z), returns 0 if no terrain function available
     float getTerrainHeight(float x, float z) const;
 

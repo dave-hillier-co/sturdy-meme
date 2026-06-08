@@ -425,33 +425,6 @@ inline void updateVisibility(World& world, const Frustum& frustum) {
     }
 }
 
-// LOD system - updates LOD levels based on distance from camera
-inline void updateLOD(World& world, const glm::vec3& cameraPos) {
-    for (auto [entity, transform, lod] : world.view<Transform, LODController>().each()) {
-        float dist = glm::distance(cameraPos, transform.position());
-
-        // Determine LOD level
-        uint8_t newLevel;
-        if (dist < lod.thresholds[0]) {
-            newLevel = 0;  // High detail
-        } else if (dist < lod.thresholds[1]) {
-            newLevel = 1;  // Medium detail
-        } else {
-            newLevel = 2;  // Low detail
-        }
-
-        lod.currentLevel = newLevel;
-
-        // Update interval based on LOD (distant objects update less frequently)
-        switch (newLevel) {
-            case 0: lod.updateInterval = 1; break;    // Every frame
-            case 1: lod.updateInterval = 4; break;    // Every 4 frames
-            case 2: lod.updateInterval = 16; break;   // Every 16 frames
-            default: lod.updateInterval = 1; break;
-        }
-    }
-}
-
 // Physics sync system - updates transforms from physics bodies
 // Note: Requires PhysicsSystem pointer to be passed in
 template<typename PhysicsSystem>
@@ -605,36 +578,6 @@ inline size_t selectAnimationForActivity(
 // Helpers for efficient batch rendering based on ECS queries.
 
 namespace render {
-
-// Statistics for visibility culling
-struct CullStats {
-    size_t totalEntities = 0;
-    size_t visibleEntities = 0;
-    size_t culledEntities = 0;
-
-    [[nodiscard]] float visibilityRatio() const {
-        return totalEntities > 0 ?
-            static_cast<float>(visibleEntities) / static_cast<float>(totalEntities) : 0.0f;
-    }
-};
-
-// Count visible vs total entities for profiling
-inline CullStats getCullStats(const World& world) {
-    CullStats stats;
-
-    // Count entities with transforms (renderable)
-    for ([[maybe_unused]] auto entity : world.view<Transform>()) {
-        stats.totalEntities++;
-    }
-
-    // Count visible entities
-    for ([[maybe_unused]] auto entity : world.view<Transform, Visible>()) {
-        stats.visibleEntities++;
-    }
-
-    stats.culledEntities = stats.totalEntities - stats.visibleEntities;
-    return stats;
-}
 
 // Batch key for grouping draw calls
 struct BatchKey {

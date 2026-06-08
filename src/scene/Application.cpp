@@ -1530,16 +1530,12 @@ void Application::updateECS(float deltaTime) {
     // This must run before visibility culling so world transforms are current
     ecs::systems::updateWorldTransforms(ecsWorld_);
 
-    // Update visibility culling based on camera frustum
+    // Update visibility culling based on camera frustum.
+    // The Visible tag this sets is consumed by the ECS light culling queries
+    // (LightSystem). The scene-object draw path culls independently on the GPU.
     glm::mat4 viewProj = camera.getProjectionMatrix() * camera.getViewMatrix();
     ecs::Frustum frustum = ecs::Frustum::fromViewProjection(viewProj);
     ecs::systems::updateVisibility(ecsWorld_, frustum);
-
-    // Update LOD levels based on camera distance
-    ecs::systems::updateLOD(ecsWorld_, camera.getPosition());
-
-    // Get culling stats for debugging (could expose to GUI later)
-    [[maybe_unused]] ecs::render::CullStats stats = ecs::render::getCullStats(ecsWorld_);
 }
 
 void Application::spawnRagdoll() {

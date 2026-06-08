@@ -26,7 +26,9 @@ namespace ecs {
 //   - SelectionOutline: Entity highlighting
 //
 // This system creates entities during initialization and updates dynamic
-// effects (wetness cycling, damage progression, selection toggling) each frame.
+// effects (wetness cycling, damage progression) each frame. Selection is a sparse
+// SelectionOutline component on the demo entities (queried by the outline renderer),
+// not a list this system maintains.
 
 class ECSMaterialDemo {
 public:
@@ -61,12 +63,6 @@ public:
     // deltaTime: Time since last frame in seconds
     // totalTime: Total elapsed time in seconds
     void update(float deltaTime, float totalTime);
-
-    // Toggle selection on demo entities
-    void toggleSelection();
-
-    // Get selected entities for rendering
-    const std::vector<Entity>& getSelectedEntities() const { return selectedEntities_; }
 
     // Get all demo entities
     const std::vector<Entity>& getDemoEntities() const { return demoEntities_; }
@@ -103,10 +99,8 @@ private:
     std::vector<Entity> treeDemoEntities_;
     std::vector<Entity> wetEntities_;
     std::vector<Entity> damagedEntities_;
-    std::vector<Entity> selectedEntities_;
 
     // Animation state
-    bool selectionActive_ = true;
     float wetnessCycleTime_ = 0.0f;
     float damageCycleTime_ = 0.0f;
 };

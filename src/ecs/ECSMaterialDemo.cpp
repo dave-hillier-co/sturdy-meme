@@ -281,6 +281,8 @@ void ECSMaterialDemo::createSelectionDemoEntities(const InitInfo& info) {
     // -------------------------------------------------------------------------
     SDL_Log("ECSMaterialDemo: Creating selection outline demo");
 
+    size_t selectionCount = 0;
+
     // Selected style (golden yellow)
     {
         float x = originX - 3.0f;
@@ -298,7 +300,7 @@ void ECSMaterialDemo::createSelectionDemoEntities(const InitInfo& info) {
         world_->add<DebugName>(entity, "Selection_Selected_Demo");
 
         demoEntities_.push_back(entity);
-        selectedEntities_.push_back(entity);
+        ++selectionCount;
     }
 
     // Hovered style (light blue)
@@ -318,7 +320,7 @@ void ECSMaterialDemo::createSelectionDemoEntities(const InitInfo& info) {
         world_->add<DebugName>(entity, "Selection_Hovered_Demo");
 
         demoEntities_.push_back(entity);
-        selectedEntities_.push_back(entity);
+        ++selectionCount;
     }
 
     // Error style (red, pulsing)
@@ -338,7 +340,7 @@ void ECSMaterialDemo::createSelectionDemoEntities(const InitInfo& info) {
         world_->add<DebugName>(entity, "Selection_Error_Demo");
 
         demoEntities_.push_back(entity);
-        selectedEntities_.push_back(entity);
+        ++selectionCount;
     }
 
     // Custom style (green, thick)
@@ -359,7 +361,7 @@ void ECSMaterialDemo::createSelectionDemoEntities(const InitInfo& info) {
         world_->add<DebugName>(entity, "Selection_Custom_Demo");
 
         demoEntities_.push_back(entity);
-        selectedEntities_.push_back(entity);
+        ++selectionCount;
     }
 
     // Pulsing style (cyan, slow pulse)
@@ -380,10 +382,10 @@ void ECSMaterialDemo::createSelectionDemoEntities(const InitInfo& info) {
         world_->add<DebugName>(entity, "Selection_Pulsing_Demo");
 
         demoEntities_.push_back(entity);
-        selectedEntities_.push_back(entity);
+        ++selectionCount;
     }
 
-    SDL_Log("ECSMaterialDemo: Created %zu selection demo entities", selectedEntities_.size());
+    SDL_Log("ECSMaterialDemo: Created %zu selection demo entities", selectionCount);
 }
 
 void ECSMaterialDemo::update(float deltaTime, float totalTime) {
@@ -421,26 +423,6 @@ void ECSMaterialDemo::update(float deltaTime, float totalTime) {
             overlay.damage = damage;
         }
     }
-}
-
-void ECSMaterialDemo::toggleSelection() {
-    selectionActive_ = !selectionActive_;
-
-    for (Entity entity : selectedEntities_) {
-        if (selectionActive_) {
-            // Re-add selection outline if removed
-            if (!world_->has<SelectionOutline>(entity)) {
-                world_->add<SelectionOutline>(entity, SelectionOutline::selected());
-            }
-        } else {
-            // Remove selection outline
-            if (world_->has<SelectionOutline>(entity)) {
-                world_->registry().remove<SelectionOutline>(entity);
-            }
-        }
-    }
-
-    SDL_Log("ECSMaterialDemo: Selection %s", selectionActive_ ? "enabled" : "disabled");
 }
 
 // =============================================================================

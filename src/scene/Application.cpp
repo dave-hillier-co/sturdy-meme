@@ -1510,7 +1510,7 @@ void Application::updateECS(float deltaTime) {
     // (cape) by updateWorldTransforms, and static objects once at creation. No blanket
     // Renderable->ECS sync loop is required.
 
-    // Update ECS material demo (wetness/damage cycling, selection toggling)
+    // Update ECS material demo (wetness/damage cycling)
     static float totalTime = 0.0f;
     totalTime += deltaTime;
     if (ecsMaterialDemo_) {

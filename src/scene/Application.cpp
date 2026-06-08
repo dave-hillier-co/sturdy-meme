@@ -1504,20 +1504,11 @@ void Application::updateECS(float deltaTime) {
         ecsWeaponsInitialized_ = true;
     }
 
-    // Sync transforms from Renderables to ECS (for objects NOT driven by bone attachments)
-    for (size_t i = 0; i < currentEntities.size() && i < renderables.size(); ++i) {
-        ecs::Entity entity = currentEntities[i];
-        if (ecsWorld_.valid(entity) && ecsWorld_.has<ecs::Transform>(entity)) {
-            // Skip if entity has BoneAttachment (skeleton drives it) or LocalTransform (hierarchy drives it)
-            if (!ecsWorld_.has<ecs::BoneAttachment>(entity) && !ecsWorld_.has<ecs::LocalTransform>(entity)) {
-                ecsWorld_.get<ecs::Transform>(entity).matrix = renderables[i].transform;
-            }
-        }
-    }
-
-    // Note: bone-attached entity transforms (weapons, debug axes) are updated by
-    // SceneBuilder::updateWeaponTransforms() which runs after skeleton animation and
-    // syncs both Renderable and ECS Transform using the correct world transform.
+    // ECS Transform is now written directly at each per-frame source: physics objects by
+    // SceneManager::updatePhysicsToScene, the player by updatePlayerTransform, NPCs by
+    // updateNPCs, bone-attached weapons/axes by updateWeaponTransforms, hierarchy children
+    // (cape) by updateWorldTransforms, and static objects once at creation. No blanket
+    // Renderable->ECS sync loop is required.
 
     // Update ECS material demo (wetness/damage cycling, selection toggling)
     static float totalTime = 0.0f;

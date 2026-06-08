@@ -1086,9 +1086,14 @@ void SceneBuilder::setShowWeaponAxes(bool show) {
 
 void SceneBuilder::updatePlayerTransform(const glm::mat4& transform) {
     Renderable* playerRenderable = getRenderableForEntity(playerEntity_);
-    if (!playerRenderable) return;
-
-    playerRenderable->transform = transform;
+    if (playerRenderable) {
+        playerRenderable->transform = transform;
+    }
+    // ECS Transform is authoritative for the skinned shadow pass (reads ECS) and replaces
+    // the forward sync loop. The renderable mirror stays for the skinned colour draw / GUI.
+    if (ecsWorld_ && ecsWorld_->valid(playerEntity_) && ecsWorld_->has<ecs::Transform>(playerEntity_)) {
+        ecsWorld_->get<ecs::Transform>(playerEntity_).matrix = transform;
+    }
 }
 
 void SceneBuilder::updateAnimatedCharacter(float deltaTime, VmaAllocator allocator, VkDevice device,
@@ -1196,12 +1201,19 @@ void SceneBuilder::updateNPCs(float deltaTime, const glm::vec3& cameraPos) {
         auto* character = npcSimulation_->getCharacter(i);
         if (!character) continue;
 
-        Renderable* npcRenderable = getRenderableForEntity(npcEntities_[i]);
-        if (!npcRenderable) continue;
-
         glm::mat4 worldTransform = npcSimulation_->buildNPCTransform(i);
-        npcRenderable->transform = worldTransform;
-        npcRenderable->mesh = &character->getMesh();
+
+        Renderable* npcRenderable = getRenderableForEntity(npcEntities_[i]);
+        if (npcRenderable) {
+            npcRenderable->transform = worldTransform;
+            npcRenderable->mesh = &character->getMesh();
+        }
+        // ECS Transform authoritative (replaces forward sync). NPCs are GPU-skinned so the
+        // scene/shadow buffers skip them, but keep ECS current for gizmos/inspector parity.
+        if (ecsWorld_ && ecsWorld_->valid(npcEntities_[i]) &&
+            ecsWorld_->has<ecs::Transform>(npcEntities_[i])) {
+            ecsWorld_->get<ecs::Transform>(npcEntities_[i]).matrix = worldTransform;
+        }
     }
 }
 

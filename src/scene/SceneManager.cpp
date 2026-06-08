@@ -228,6 +228,13 @@ void SceneManager::updatePhysicsToScene(PhysicsWorld& physics) {
             renderable->transform = physicsTransform;
         }
 
+        // ECS Transform is authoritative for rendering (GPU scene buffer / shadows read it
+        // via extractRenderData). Write it directly so the forward sync loop is no longer
+        // needed. The renderable mirror above stays for the not-yet-migrated readers.
+        if (ecsWorld_->has<ecs::Transform>(entity)) {
+            ecsWorld_->get<ecs::Transform>(entity).matrix = physicsTransform;
+        }
+
         // Update orb light position to follow the emissive sphere
         if (ecsWorld_->has<ecs::OrbTag>(entity)) {
             glm::vec3 orbPosition = glm::vec3(physicsTransform[3]);

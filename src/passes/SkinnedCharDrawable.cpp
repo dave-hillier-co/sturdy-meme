@@ -28,10 +28,10 @@ void SkinnedCharDrawable::recordHDRDraw(VkCommandBuffer cmd, uint32_t frameIndex
             const glm::mat4& playerTransform = ecsWorld->get<ecs::Transform>(playerEntity).matrix;
             resources_.skinnedMesh->record(cmd, frameIndex, PLAYER_BONE_SLOT, playerTransform, sceneBuilder.getAnimatedCharacter());
         } else {
-            // Fallback: use Renderable via entity handle
-            const Renderable* playerObj = sceneBuilder.getRenderableForEntity(playerEntity);
+            // Fallback: use the scene-object mirror transform via entity handle
+            const ecs::RenderData* playerObj = sceneBuilder.getRenderableForEntity(playerEntity);
             if (playerObj) {
-                resources_.skinnedMesh->record(cmd, frameIndex, PLAYER_BONE_SLOT, *playerObj, sceneBuilder.getAnimatedCharacter());
+                resources_.skinnedMesh->record(cmd, frameIndex, PLAYER_BONE_SLOT, playerObj->transform, sceneBuilder.getAnimatedCharacter());
             }
         }
     }

@@ -123,7 +123,7 @@ void SceneManager::initializeScenePhysics(PhysicsWorld& physics) {
          ecsWorld_->view<ecs::PhysicsShapeInfo, ecs::Transform>().each()) {
 
         // Find the renderable index for this entity via pointer identity
-        const Renderable* renderable = sceneBuilder->getRenderableForEntity(entity);
+        const ecs::RenderData* renderable = sceneBuilder->getRenderableForEntity(entity);
         if (!renderable) continue;
 
         size_t objIndex = static_cast<size_t>(renderable - sceneObjects.data());
@@ -216,7 +216,7 @@ void SceneManager::updatePhysicsToScene(PhysicsWorld& physics) {
         glm::mat4 physicsTransform = physics.getBodyTransform(bodyID);
 
         // Find and update the renderable
-        Renderable* renderable = sceneBuilder->getRenderableForEntity(entity);
+        ecs::RenderData* renderable = sceneBuilder->getRenderableForEntity(entity);
         if (renderable) {
             // Extract scale from current transform to preserve it
             glm::vec3 scale;

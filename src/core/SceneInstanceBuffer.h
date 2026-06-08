@@ -9,7 +9,7 @@
 #include <cstdint>
 
 #include "vulkan/VmaBuffer.h"
-#include "RenderableBuilder.h"
+#include "ecs/Components.h"
 #include "shaders/bindings.h"
 
 // Maximum instances per frame (can be increased if needed)
@@ -84,7 +84,7 @@ public:
 
     // Add an instance to the current frame
     // Returns the instance index, or -1 if buffer is full
-    int32_t addInstance(const Renderable& renderable);
+    int32_t addInstance(const ecs::RenderData& renderable);
 
     // Finalize the frame: upload to GPU and build batches
     // Call after all addInstance() calls for the frame

@@ -2,7 +2,7 @@
 
 #include "World.h"
 #include "Components.h"
-#include "core/RenderableBuilder.h"
+#include "material/MaterialId.h"
 
 namespace ecs {
 
@@ -17,22 +17,23 @@ public:
     explicit EntityFactory(World& world) : world_(world) {}
 
     // -------------------------------------------------------------------------
-    // Create entity from existing Renderable
+    // Create entity from extracted RenderData
     // -------------------------------------------------------------------------
-    // Converts a Renderable struct into an ECS entity with appropriate components.
-    // This is the primary migration path from the current rendering system.
+    // Converts the transient RenderData upload POD into an ECS entity with the
+    // appropriate components. This is the bootstrap writer that turns the
+    // SceneBuilder scene-object mirror into ECS entities.
     //
     // Components added:
     //   - Transform (always)
     //   - MeshRef (always)
     //   - MaterialRef (if valid material ID)
-    //   - CastsShadow (if renderable casts shadows)
+    //   - CastsShadow (if it casts shadows)
     //   - PBRProperties (if non-default values)
     //   - HueShift (if non-zero)
     //   - Opacity (if non-default)
-    //   - TreeData (if tree-related indices set)
+    //   - GPUSkinned (if gpu-skinned)
 
-    [[nodiscard]] Entity createFromRenderable(const Renderable& renderable) {
+    [[nodiscard]] Entity createFromRenderable(const RenderData& renderable) {
         Entity entity = world_.create();
 
         // Core components - always present
@@ -40,7 +41,7 @@ public:
         world_.add<MeshRef>(entity, renderable.mesh);
 
         // Material reference
-        if (renderable.materialId != INVALID_MATERIAL_ID) {
+        if (renderable.materialId != InvalidMaterialId) {
             world_.add<MaterialRef>(entity, renderable.materialId);
         }
 
@@ -77,35 +78,7 @@ public:
             world_.add<GPUSkinned>(entity);
         }
 
-        // Tree-specific data
-        if (isTree(renderable)) {
-            TreeData treeData;
-            treeData.leafInstanceIndex = renderable.leafInstanceIndex;
-            treeData.treeInstanceIndex = renderable.treeInstanceIndex;
-            treeData.leafTint = renderable.leafTint;
-            treeData.autumnHueShift = renderable.autumnHueShift;
-            world_.add<TreeData>(entity, treeData);
-        }
-
         return entity;
-    }
-
-    // -------------------------------------------------------------------------
-    // Batch create entities from vector of Renderables
-    // -------------------------------------------------------------------------
-    // Returns a vector of entity handles corresponding to each renderable.
-
-    [[nodiscard]] std::vector<Entity> createFromRenderables(
-        const std::vector<Renderable>& renderables) {
-
-        std::vector<Entity> entities;
-        entities.reserve(renderables.size());
-
-        for (const auto& renderable : renderables) {
-            entities.push_back(createFromRenderable(renderable));
-        }
-
-        return entities;
     }
 
     // -------------------------------------------------------------------------
@@ -360,8 +333,8 @@ public:
     // -------------------------------------------------------------------------
 
 private:
-    // Check if renderable has non-default PBR properties
-    static bool hasCustomPBR(const Renderable& r) {
+    // Check if render data has non-default PBR properties
+    static bool hasCustomPBR(const RenderData& r) {
         return r.roughness != 0.5f ||
                r.metallic != 0.0f ||
                r.emissiveIntensity != 0.0f ||
@@ -370,40 +343,8 @@ private:
                r.pbrFlags != 0;
     }
 
-    // Check if renderable represents a tree
-    static bool isTree(const Renderable& r) {
-        return r.treeInstanceIndex >= 0 || r.leafInstanceIndex >= 0;
-    }
-
     World& world_;
 };
-
-// =============================================================================
-// Sync utilities - for keeping ECS in sync during migration
-// =============================================================================
-
-// Update ECS Transform from Renderable transform (for objects that still
-// use the old system but are mirrored in ECS)
-inline void syncTransformFromRenderable(
-    World& world,
-    Entity entity,
-    const Renderable& renderable) {
-
-    if (world.has<Transform>(entity)) {
-        world.get<Transform>(entity).matrix = renderable.transform;
-    }
-}
-
-// Update Renderable transform from ECS (for physics-driven objects)
-inline void syncRenderableFromTransform(
-    Renderable& renderable,
-    const World& world,
-    Entity entity) {
-
-    if (world.has<Transform>(entity)) {
-        renderable.transform = world.get<Transform>(entity).matrix;
-    }
-}
 
 // =============================================================================
 // Entity Builder - Fluent API for creating ECS entities

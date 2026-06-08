@@ -22,7 +22,6 @@
 
 class RendererSystems;
 struct PerformanceToggles;
-struct Renderable;
 
 /**
  * ShadowPassRecorder - Stateless shadow pass command recording

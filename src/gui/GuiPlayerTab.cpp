@@ -465,7 +465,7 @@ void GuiPlayerTab::renderMotionMatchingOverlay(IPlayerControl& playerControl, co
     glm::mat4 viewProj = camera.getProjectionMatrix() * camera.getViewMatrix();
 
     // Get the character's world position
-    const Renderable* playerRenderable = sceneBuilder.getRenderableForEntity(sceneBuilder.getPlayerEntity());
+    const ecs::RenderData* playerRenderable = sceneBuilder.getRenderableForEntity(sceneBuilder.getPlayerEntity());
     if (!playerRenderable) {
         return;
     }

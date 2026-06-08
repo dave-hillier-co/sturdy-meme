@@ -123,7 +123,6 @@ set(SOURCES
     src/material/MaterialDescriptorFactory.cpp
     src/material/MaterialRegistry.cpp
     src/core/asset/AssetRegistry.cpp
-    src/core/RenderableBuilder.cpp
     # Atmosphere
     src/atmosphere/TimeSystem.cpp
     src/atmosphere/CelestialCalculator.cpp

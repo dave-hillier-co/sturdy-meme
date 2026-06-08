@@ -1,7 +1,7 @@
 #include "GuiSceneGraphTab.h"
 #include "core/interfaces/ISceneControl.h"
 #include "scene/SceneBuilder.h"
-#include "core/RenderableBuilder.h"
+#include "ecs/Components.h"
 #include "Mesh.h"
 
 #include <imgui.h>
@@ -40,18 +40,12 @@ namespace {
     }
 
     // Get a display name for a renderable based on its properties
-    const char* getObjectTypeName(const Renderable& obj) {
+    const char* getObjectTypeName(const ecs::RenderData& obj) {
         if (obj.gpuSkinned) {
             return "Character";
         }
         if (obj.emissiveIntensity > 0.0f) {
             return "Emissive";
-        }
-        if (obj.treeInstanceIndex >= 0) {
-            return "Tree";
-        }
-        if (obj.leafInstanceIndex >= 0) {
-            return "Leaves";
         }
         if (obj.alphaTestThreshold > 0.0f) {
             return "Alpha-Test";
@@ -102,7 +96,7 @@ void GuiSceneGraphTab::render(ISceneControl& sceneControl, SceneGraphTabState& s
     float listHeight = ImGui::GetContentRegionAvail().y * 0.45f;
     if (ImGui::BeginChild("ObjectList", ImVec2(-1, listHeight), true)) {
         for (size_t i = 0; i < renderables.size(); ++i) {
-            const Renderable& obj = renderables[i];
+            const ecs::RenderData& obj = renderables[i];
 
             // Build display name
             char displayName[128];
@@ -146,8 +140,6 @@ void GuiSceneGraphTab::render(ISceneControl& sceneControl, SceneGraphTabState& s
                 itemColor = ImVec4(0.3f, 0.9f, 0.3f, 1.0f);  // Green for characters
             } else if (obj.emissiveIntensity > 0.0f) {
                 itemColor = ImVec4(1.0f, 0.8f, 0.3f, 1.0f);  // Yellow for emissive
-            } else if (obj.treeInstanceIndex >= 0 || obj.leafInstanceIndex >= 0) {
-                itemColor = ImVec4(0.4f, 0.8f, 0.4f, 1.0f);  // Light green for trees
             } else if (!obj.castsShadow) {
                 itemColor = ImVec4(0.6f, 0.6f, 0.8f, 1.0f);  // Blue-ish for non-shadow casters
             }
@@ -187,7 +179,7 @@ void GuiSceneGraphTab::render(ISceneControl& sceneControl, SceneGraphTabState& s
     ImGui::Spacing();
 
     if (state.selectedObjectIndex >= 0 && state.selectedObjectIndex < static_cast<int>(renderables.size())) {
-        const Renderable& selected = renderables[static_cast<size_t>(state.selectedObjectIndex)];
+        const ecs::RenderData& selected = renderables[static_cast<size_t>(state.selectedObjectIndex)];
 
         // Highlight indicator for selected object
         ImDrawList* drawList = ImGui::GetWindowDrawList();
@@ -273,27 +265,6 @@ void GuiSceneGraphTab::render(ISceneControl& sceneControl, SceneGraphTabState& s
                         selected.emissiveColor.g,
                         selected.emissiveColor.b);
                     ImGui::Unindent();
-                }
-
-                // Tree-specific info
-                if (selected.treeInstanceIndex >= 0) {
-                    ImGui::Spacing();
-                    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.5f, 0.9f, 0.5f, 1.0f));
-                    ImGui::Text("Tree Properties");
-                    ImGui::PopStyleColor();
-                    ImGui::Indent();
-                    ImGui::Text("Tree Index: %d", selected.treeInstanceIndex);
-                    ImGui::Text("Bark Type: %s", selected.barkType.c_str());
-                    ImGui::Text("Leaf Type: %s", selected.leafType.c_str());
-                    ImGui::Text("Autumn Shift: %.2f", selected.autumnHueShift);
-                    ImGui::Text("Leaf Tint:");
-                    ImGui::SameLine();
-                    drawColorPreview(selected.leafTint);
-                    ImGui::Unindent();
-                }
-
-                if (selected.leafInstanceIndex >= 0) {
-                    ImGui::Text("Leaf Instance: %d", selected.leafInstanceIndex);
                 }
 
                 ImGui::Spacing();

@@ -553,22 +553,17 @@ void TreeSystem::createSceneObjects() {
             }
         }
 
-        // Get textures based on type name (string-based lookup)
-        Texture* barkTex = getBarkTexture(barkTypeName);
-        Texture* leafTex = getLeafTexture(leafTypeName);
 
         // Branch renderable
         Mesh* branchMesh = &branchMeshes_[instance.meshIndex];
         if (branchMesh->getIndexCount() > 0) {
-            Renderable branchRenderable = RenderableBuilder()
-                .withMesh(branchMesh)
-                .withTexture(barkTex)
-                .withTransform(transform)
-                .withRoughness(0.7f)
-                .withMetallic(0.0f)
-                .withBarkType(barkTypeName)
-                .withTreeInstanceIndex(static_cast<int>(treeIdx))
-                .build();
+            TreeRenderable branchRenderable{};
+            branchRenderable.mesh = branchMesh;
+            branchRenderable.transform = transform;
+            branchRenderable.roughness = 0.7f;
+            branchRenderable.metallic = 0.0f;
+            branchRenderable.barkType = barkTypeName;
+            branchRenderable.treeInstanceIndex = static_cast<int>(treeIdx);
 
             branchRenderables_.push_back(branchRenderable);
         }
@@ -577,18 +572,16 @@ void TreeSystem::createSceneObjects() {
         // The mesh index in the renderable is used to look up leaf draw info
         if (instance.meshIndex < leafDrawInfoPerTree_.size() &&
             leafDrawInfoPerTree_[instance.meshIndex].instanceCount > 0) {
-            Renderable leafRenderable = RenderableBuilder()
-                .withMesh(const_cast<Mesh*>(&sharedLeafQuadMesh_))  // Shared quad mesh
-                .withTexture(leafTex)
-                .withTransform(transform)
-                .withRoughness(0.8f)
-                .withMetallic(0.0f)
-                .withAlphaTest(opts.leaves.alphaTest)
-                .withLeafType(leafTypeName)
-                .withLeafTint(leafTint)
-                .withAutumnHueShift(autumnHueShift)
-                .withTreeInstanceIndex(static_cast<int>(treeIdx))
-                .build();
+            TreeRenderable leafRenderable{};
+            leafRenderable.mesh = const_cast<Mesh*>(&sharedLeafQuadMesh_);  // Shared quad mesh
+            leafRenderable.transform = transform;
+            leafRenderable.roughness = 0.8f;
+            leafRenderable.metallic = 0.0f;
+            leafRenderable.alphaTestThreshold = opts.leaves.alphaTest;
+            leafRenderable.leafType = leafTypeName;
+            leafRenderable.leafTint = leafTint;
+            leafRenderable.autumnHueShift = autumnHueShift;
+            leafRenderable.treeInstanceIndex = static_cast<int>(treeIdx);
 
             // Store the mesh index so the renderer can look up leaf draw info
             leafRenderable.leafInstanceIndex = static_cast<int>(instance.meshIndex);

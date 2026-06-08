@@ -10,7 +10,7 @@
 
 #include "Mesh.h"
 #include "Texture.h"
-#include "RenderableBuilder.h"
+#include "material/MaterialId.h"
 #include "GLTFLoader.h"
 #include "AnimatedCharacter.h"
 #include "MaterialRegistry.h"
@@ -67,9 +67,9 @@ public:
     SceneBuilder(SceneBuilder&&) = delete;
     SceneBuilder& operator=(SceneBuilder&&) = delete;
 
-    // Access to built scene (legacy - for backwards compatibility)
-    const std::vector<Renderable>& getRenderables() const { return sceneObjects; }
-    std::vector<Renderable>& getRenderables() { return sceneObjects; }
+    // Access to built scene mirror (bootstrap source for ECS entities + inspector reads)
+    const std::vector<ecs::RenderData>& getRenderables() const { return sceneObjects; }
+    std::vector<ecs::RenderData>& getRenderables() { return sceneObjects; }
 
     // ECS entity accessors (Phase 6: direct entity access)
     ecs::Entity getPlayerEntity() const { return playerEntity_; }
@@ -84,15 +84,15 @@ public:
     // Get all scene entities (for ECS-based iteration)
     const std::vector<ecs::Entity>& getSceneEntities() const { return sceneEntities_; }
 
-    // Find the renderable for a given entity (returns nullptr if not found)
-    Renderable* getRenderableForEntity(ecs::Entity entity) {
+    // Find the render-data mirror entry for a given entity (nullptr if not found)
+    ecs::RenderData* getRenderableForEntity(ecs::Entity entity) {
         auto it = entityToRenderableIndex_.find(entity);
         if (it != entityToRenderableIndex_.end() && it->second < sceneObjects.size()) {
             return &sceneObjects[it->second];
         }
         return nullptr;
     }
-    const Renderable* getRenderableForEntity(ecs::Entity entity) const {
+    const ecs::RenderData* getRenderableForEntity(ecs::Entity entity) const {
         auto it = entityToRenderableIndex_.find(entity);
         if (it != entityToRenderableIndex_.end() && it->second < sceneObjects.size()) {
             return &sceneObjects[it->second];
@@ -296,8 +296,8 @@ private:
     std::shared_ptr<Texture> defaultEmissive_;  // Black texture for objects without emissive
     std::shared_ptr<Texture> whiteTexture_;     // White texture for vertex-colored objects
 
-    // Scene objects (renderables for rendering pipeline)
-    std::vector<Renderable> sceneObjects;
+    // Scene objects mirror (bootstrap source for ECS entities + inspector reads)
+    std::vector<ecs::RenderData> sceneObjects;
 
     int32_t rightHandBoneIndex = -1;  // Bone index for sword attachment
     int32_t leftHandBoneIndex = -1;   // Bone index for shield attachment

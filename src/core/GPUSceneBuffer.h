@@ -9,8 +9,8 @@
 #include "vulkan/VmaBuffer.h"
 #include "vulkan/VmaBufferFactory.h"
 #include "PerFrameBuffer.h"
-#include "RenderableBuilder.h"
 #include "ecs/Components.h"
+#include "material/MaterialId.h"
 #include "shaders/bindings.h"
 
 // Maximum objects supported for GPU-driven rendering
@@ -108,10 +108,6 @@ public:
     // overrideSet: optional set-0 descriptor for objects without a MaterialRegistry
     // materialId (e.g. scatter rocks/detritus). Pass VK_NULL_HANDLE for normal objects.
     int32_t addObject(const ecs::RenderData& data, VkDescriptorSet overrideSet = VK_NULL_HANDLE);
-
-    // Legacy overload: builds a RenderData from a Renderable and delegates.
-    // Retained for the scatter path until scatter migrates to ECS RenderData.
-    int32_t addObject(const Renderable& renderable, VkDescriptorSet overrideSet = VK_NULL_HANDLE);
 
     // Finalize the frame: upload to GPU
     // Call after all addObject() calls for the frame

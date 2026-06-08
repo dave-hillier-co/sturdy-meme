@@ -132,11 +132,11 @@ void SceneBuilder::createSceneEntity(size_t i) {
     const glm::vec3 cubeHalfExtents(0.5f);
 
     ecs::EntityFactory factory(*ecsWorld_);
-    const Renderable& obj = sceneObjects[i];
+    const ecs::RenderData& obj = sceneObjects[i];
     const ObjectRole role = (i < objectRoles_.size()) ? objectRoles_[i] : ObjectRole::None;
 
     // Core components (Transform, MeshRef, MaterialRef, CastsShadow, PBRProperties,
-    // HueShift, Opacity, GPUSkinned, TreeData) via value-gated factory.
+    // HueShift, Opacity, GPUSkinned) via value-gated factory.
     ecs::Entity entity = factory.createFromRenderable(obj);
     sceneEntities_.push_back(entity);
     entityToRenderableIndex_[entity] = i;
@@ -701,11 +701,6 @@ void SceneBuilder::createRenderables() {
     const float originX = sceneOrigin.x;
     const float originZ = sceneOrigin.y;
 
-    // Cache texture pointers from registry (const_cast needed as Renderable uses non-const ptr)
-    Texture* crateTex = const_cast<Texture*>(getCrateTexture());
-    Texture* metalTex = const_cast<Texture*>(getMetalTexture());
-    Texture* whiteTex = const_cast<Texture*>(getWhiteTexture());
-
     // Helper: get world position with scene origin offset
     auto worldPos = [originX, originZ](float localX, float localZ) -> std::pair<float, float> {
         return {localX + originX, localZ + originZ};
@@ -723,7 +718,7 @@ void SceneBuilder::createRenderables() {
     // the matching ECS entity (with all tags/components) inline, merging the former
     // second creation pass into this single loop. The mirror Renderable is still
     // pushed into sceneObjects (physics/animation write-target + GUI surface).
-    auto addObject = [this](Renderable&& r, ObjectRole role = ObjectRole::None) -> size_t {
+    auto addObject = [this](ecs::RenderData&& r, ObjectRole role = ObjectRole::None) -> size_t {
         size_t idx = sceneObjects.size();
         sceneObjects.push_back(std::move(r));
         objectRoles_.push_back(role);
@@ -735,139 +730,105 @@ void SceneBuilder::createRenderables() {
         return idx;
     };
 
+    // Build an ecs::RenderData scene-object mirror entry. Defaults match the former
+    // RenderableBuilder defaults (texture was inspection-only and is dropped).
+    auto makeObject = [](const glm::mat4& transform, Mesh* mesh, MaterialId materialId,
+                         float roughness = 0.5f, float metallic = 0.0f,
+                         float emissiveIntensity = 0.0f,
+                         const glm::vec3& emissiveColor = glm::vec3(1.0f),
+                         bool castsShadow = true, float hueShift = 0.0f,
+                         bool gpuSkinned = false) -> ecs::RenderData {
+        ecs::RenderData r{};
+        r.transform = transform;
+        r.mesh = mesh;
+        r.materialId = materialId;
+        r.roughness = roughness;
+        r.metallic = metallic;
+        r.emissiveIntensity = emissiveIntensity;
+        r.emissiveColor = emissiveColor;
+        r.castsShadow = castsShadow;
+        r.hueShift = hueShift;
+        r.gpuSkinned = gpuSkinned;
+        return r;
+    };
+
     // Wooden crate - slightly shiny, non-metallic (unit cube, half-extent 0.5)
     auto [crateX, crateZ] = worldPos(2.0f, 0.0f);
-    addObject(RenderableBuilder()
-        .atPosition(glm::vec3(crateX, getGroundY(crateX, crateZ, 0.5f), crateZ))
-        .withMesh(cubeMesh.get())
-        .withTexture(crateTex)
-        .withMaterialId(crateMaterialId)
-        .withRoughness(0.4f)
-        .withMetallic(0.0f)
-        .build());
+    addObject(makeObject(
+        glm::translate(glm::mat4(1.0f), glm::vec3(crateX, getGroundY(crateX, crateZ, 0.5f), crateZ)),
+        cubeMesh.get(), crateMaterialId, 0.4f, 0.0f));
 
     // Rotated wooden crate
     auto [rotatedCrateX, rotatedCrateZ] = worldPos(-1.5f, 1.0f);
-    addObject(RenderableBuilder()
-        .withTransform(Transform(
+    addObject(makeObject(
+        Transform(
             glm::vec3(rotatedCrateX, getGroundY(rotatedCrateX, rotatedCrateZ, 0.5f), rotatedCrateZ),
-            Transform::yRotation(glm::radians(30.0f))))
-        .withMesh(cubeMesh.get())
-        .withTexture(crateTex)
-        .withMaterialId(crateMaterialId)
-        .withRoughness(0.4f)
-        .withMetallic(0.0f)
-        .build());
+            Transform::yRotation(glm::radians(30.0f))).toMatrix(),
+        cubeMesh.get(), crateMaterialId, 0.4f, 0.0f));
 
     // Polished metal sphere - smooth, fully metallic (radius 0.5)
     auto [polishedSphereX, polishedSphereZ] = worldPos(0.0f, -2.0f);
-    addObject(RenderableBuilder()
-        .atPosition(glm::vec3(polishedSphereX, getGroundY(polishedSphereX, polishedSphereZ, 0.5f), polishedSphereZ))
-        .withMesh(sphereMesh.get())
-        .withTexture(metalTex)
-        .withMaterialId(metalMaterialId)
-        .withRoughness(0.1f)
-        .withMetallic(1.0f)
-        .build());
+    addObject(makeObject(
+        glm::translate(glm::mat4(1.0f), glm::vec3(polishedSphereX, getGroundY(polishedSphereX, polishedSphereZ, 0.5f), polishedSphereZ)),
+        sphereMesh.get(), metalMaterialId, 0.1f, 1.0f));
 
     // Rough/brushed metal sphere - moderately rough, metallic (radius 0.5)
     auto [roughSphereX, roughSphereZ] = worldPos(-3.0f, -1.0f);
-    addObject(RenderableBuilder()
-        .atPosition(glm::vec3(roughSphereX, getGroundY(roughSphereX, roughSphereZ, 0.5f), roughSphereZ))
-        .withMesh(sphereMesh.get())
-        .withTexture(metalTex)
-        .withMaterialId(metalMaterialId)
-        .withRoughness(0.5f)
-        .withMetallic(1.0f)
-        .build());
+    addObject(makeObject(
+        glm::translate(glm::mat4(1.0f), glm::vec3(roughSphereX, getGroundY(roughSphereX, roughSphereZ, 0.5f), roughSphereZ)),
+        sphereMesh.get(), metalMaterialId, 0.5f, 1.0f));
 
     // Polished metal cube - smooth, fully metallic (half-extent 0.5)
     auto [polishedCubeX, polishedCubeZ] = worldPos(3.0f, -2.0f);
-    addObject(RenderableBuilder()
-        .atPosition(glm::vec3(polishedCubeX, getGroundY(polishedCubeX, polishedCubeZ, 0.5f), polishedCubeZ))
-        .withMesh(cubeMesh.get())
-        .withTexture(metalTex)
-        .withMaterialId(metalMaterialId)
-        .withRoughness(0.1f)
-        .withMetallic(1.0f)
-        .build());
+    addObject(makeObject(
+        glm::translate(glm::mat4(1.0f), glm::vec3(polishedCubeX, getGroundY(polishedCubeX, polishedCubeZ, 0.5f), polishedCubeZ)),
+        cubeMesh.get(), metalMaterialId, 0.1f, 1.0f));
 
     // Brushed metal cube - rough, metallic (half-extent 0.5)
     auto [brushedCubeX, brushedCubeZ] = worldPos(-3.0f, -3.0f);
-    addObject(RenderableBuilder()
-        .withTransform(Transform(
+    addObject(makeObject(
+        Transform(
             glm::vec3(brushedCubeX, getGroundY(brushedCubeX, brushedCubeZ, 0.5f), brushedCubeZ),
-            Transform::yRotation(glm::radians(45.0f))))
-        .withMesh(cubeMesh.get())
-        .withTexture(metalTex)
-        .withMaterialId(metalMaterialId)
-        .withRoughness(0.6f)
-        .withMetallic(1.0f)
-        .build());
+            Transform::yRotation(glm::radians(45.0f))).toMatrix(),
+        cubeMesh.get(), metalMaterialId, 0.6f, 1.0f));
 
     // Glowing emissive sphere on top of the first crate - demonstrates bloom effect
     // Sits 0.8m above crate (crate top at terrain+1.0, sphere center at terrain+1.0+0.3)
     // This object has physics AND is tracked as the emissive orb for light sync
     float glowSphereScale = 0.3f;
-    addObject(RenderableBuilder()
-        .withTransform(Transform(
+    addObject(makeObject(
+        Transform(
             glm::vec3(crateX, getGroundY(crateX, crateZ, 1.0f + glowSphereScale), crateZ),
             glm::quat(1, 0, 0, 0),  // Identity rotation
-            glowSphereScale))
-        .withMesh(sphereMesh.get())
-        .withTexture(metalTex)
-        .withMaterialId(metalMaterialId)
-        .withRoughness(0.2f)
-        .withMetallic(0.0f)
-        .withEmissiveIntensity(25.0f)
-        .withEmissiveColor(glm::vec3(1.0f, 0.9f, 0.7f))
-        .withCastsShadow(false)
-        .build(), ObjectRole::EmissiveOrb);
+            glowSphereScale).toMatrix(),
+        sphereMesh.get(), metalMaterialId, 0.2f, 0.0f,
+        25.0f, glm::vec3(1.0f, 0.9f, 0.7f), /*castsShadow*/ false),
+        ObjectRole::EmissiveOrb);
 
     // Blue light indicator sphere - saturated blue, floating above terrain
     auto [blueLightX, blueLightZ] = worldPos(-3.0f, 2.0f);
-    addObject(RenderableBuilder()
-        .withTransform(Transform(
+    addObject(makeObject(
+        Transform(
             glm::vec3(blueLightX, getGroundY(blueLightX, blueLightZ, 1.5f), blueLightZ),
-            glm::quat(1, 0, 0, 0), 0.2f))
-        .withMesh(sphereMesh.get())
-        .withTexture(metalTex)
-        .withMaterialId(metalMaterialId)
-        .withRoughness(0.2f)
-        .withMetallic(0.0f)
-        .withEmissiveIntensity(4.0f)
-        .withEmissiveColor(glm::vec3(0.0f, 0.3f, 1.0f))
-        .withCastsShadow(false)
-        .build());
+            glm::quat(1, 0, 0, 0), 0.2f).toMatrix(),
+        sphereMesh.get(), metalMaterialId, 0.2f, 0.0f,
+        4.0f, glm::vec3(0.0f, 0.3f, 1.0f), /*castsShadow*/ false));
 
     // Green light indicator sphere - saturated green, floating above terrain
     auto [greenLightX, greenLightZ] = worldPos(4.0f, -2.0f);
-    addObject(RenderableBuilder()
-        .withTransform(Transform(
+    addObject(makeObject(
+        Transform(
             glm::vec3(greenLightX, getGroundY(greenLightX, greenLightZ, 1.5f), greenLightZ),
-            glm::quat(1, 0, 0, 0), 0.2f))
-        .withMesh(sphereMesh.get())
-        .withTexture(metalTex)
-        .withMaterialId(metalMaterialId)
-        .withRoughness(0.2f)
-        .withMetallic(0.0f)
-        .withEmissiveIntensity(3.0f)
-        .withEmissiveColor(glm::vec3(0.0f, 1.0f, 0.2f))
-        .withCastsShadow(false)
-        .build());
+            glm::quat(1, 0, 0, 0), 0.2f).toMatrix(),
+        sphereMesh.get(), metalMaterialId, 0.2f, 0.0f,
+        3.0f, glm::vec3(0.0f, 1.0f, 0.2f), /*castsShadow*/ false));
 
     // Debug cube - red emissive cube for testing (half-extent 0.5)
     auto [debugCubeX, debugCubeZ] = worldPos(5.0f, -5.0f);
-    addObject(RenderableBuilder()
-        .atPosition(glm::vec3(debugCubeX, getGroundY(debugCubeX, debugCubeZ, 0.5f), debugCubeZ))
-        .withMesh(cubeMesh.get())
-        .withTexture(crateTex)
-        .withMaterialId(crateMaterialId)
-        .withRoughness(0.3f)
-        .withMetallic(0.0f)
-        .withEmissiveIntensity(5.0f)
-        .withEmissiveColor(glm::vec3(1.0f, 0.0f, 0.0f))
-        .build());
+    addObject(makeObject(
+        glm::translate(glm::mat4(1.0f), glm::vec3(debugCubeX, getGroundY(debugCubeX, debugCubeZ, 0.5f), debugCubeZ)),
+        cubeMesh.get(), crateMaterialId, 0.3f, 0.0f,
+        5.0f, glm::vec3(1.0f, 0.0f, 0.0f)));
 
     // Player character - uses animated character if loaded, otherwise capsule
     // Player position is controlled by physics, so we place at scene origin
@@ -892,29 +853,18 @@ void SceneBuilder::createRenderables() {
                     mat.name.c_str(), charRoughness, charMetallic);
         }
 
-        addObject(RenderableBuilder()
-            .withTransform(buildCharacterTransform(glm::vec3(playerX, playerTerrainY, playerZ), 10.0f))
-            .withMesh(&animatedCharacter->getMesh())
-            .withTexture(whiteTex)  // White texture so vertex colors show through
-            .withMaterialId(whiteMaterialId)
-            .withRoughness(charRoughness)
-            .withMetallic(charMetallic)
-            .withEmissiveColor(charEmissiveColor)
-            .withEmissiveIntensity(charEmissiveIntensity)
-            .withCastsShadow(true)
-            .withGPUSkinned(true)
-            .build(), ObjectRole::Player);
+        addObject(makeObject(
+            buildCharacterTransform(glm::vec3(playerX, playerTerrainY, playerZ), 10.0f),
+            &animatedCharacter->getMesh(), whiteMaterialId, charRoughness, charMetallic,
+            charEmissiveIntensity, charEmissiveColor, /*castsShadow*/ true,
+            /*hueShift*/ 0.0f, /*gpuSkinned*/ true),
+            ObjectRole::Player);
     } else {
         // Capsule fallback - capsule height 1.8m, center at 0.9m above ground
-        addObject(RenderableBuilder()
-            .atPosition(glm::vec3(playerX, playerTerrainY + 0.9f, playerZ))
-            .withMesh(capsuleMesh.get())
-            .withTexture(metalTex)
-            .withMaterialId(metalMaterialId)
-            .withRoughness(0.3f)
-            .withMetallic(0.8f)
-            .withCastsShadow(true)
-            .build(), ObjectRole::Player);
+        addObject(makeObject(
+            glm::translate(glm::mat4(1.0f), glm::vec3(playerX, playerTerrainY + 0.9f, playerZ)),
+            capsuleMesh.get(), metalMaterialId, 0.3f, 0.8f),
+            ObjectRole::Player);
     }
 
     // NPC characters - rendered with GPU skinning like the player
@@ -934,17 +884,11 @@ void SceneBuilder::createRenderables() {
             constexpr float TWO_PI = 6.283185307179586f;
             float hueShift = std::fmod(static_cast<float>(i + 1) * GOLDEN_RATIO, 1.0f) * TWO_PI;
 
-            size_t renderableIndex = addObject(RenderableBuilder()
-                .withTransform(npcSimulation_->buildNPCTransform(i))
-                .withMesh(&character->getMesh())
-                .withTexture(whiteTex)
-                .withMaterialId(whiteMaterialId)
-                .withRoughness(charRoughness)
-                .withMetallic(charMetallic)
-                .withCastsShadow(true)
-                .withHueShift(hueShift)
-                .withGPUSkinned(true)
-                .build());
+            size_t renderableIndex = addObject(makeObject(
+                npcSimulation_->buildNPCTransform(i),
+                &character->getMesh(), whiteMaterialId, charRoughness, charMetallic,
+                /*emissiveIntensity*/ 0.0f, /*emissiveColor*/ glm::vec3(1.0f),
+                /*castsShadow*/ true, hueShift, /*gpuSkinned*/ true));
             npcSimulation_->setRenderableIndex(i, renderableIndex);
 
             SDL_Log("SceneBuilder: Added NPC renderable at index %zu with hue shift %.2f rad", renderableIndex, hueShift);
@@ -953,144 +897,71 @@ void SceneBuilder::createRenderables() {
 
     // Player weapons - attached to hand bones, transforms updated each frame
     if (hasAnimatedCharacter && rightHandBoneIndex >= 0) {
-        addObject(RenderableBuilder()
-            .withTransform(glm::mat4(1.0f))  // Updated per frame
-            .withMesh(swordMesh.get())
-            .withTexture(metalTex)
-            .withMaterialId(metalMaterialId)
-            .withRoughness(0.2f)
-            .withMetallic(0.95f)
-            .withCastsShadow(true)
-            .build(), ObjectRole::Sword);
+        addObject(makeObject(
+            glm::mat4(1.0f),  // Updated per frame
+            swordMesh.get(), metalMaterialId, 0.2f, 0.95f),
+            ObjectRole::Sword);
     }
     if (hasAnimatedCharacter && leftHandBoneIndex >= 0) {
-        addObject(RenderableBuilder()
-            .withTransform(glm::mat4(1.0f))  // Updated per frame
-            .withMesh(shieldMesh.get())
-            .withTexture(metalTex)
-            .withMaterialId(metalMaterialId)
-            .withRoughness(0.3f)
-            .withMetallic(0.9f)
-            .withCastsShadow(true)
-            .build(), ObjectRole::Shield);
+        addObject(makeObject(
+            glm::mat4(1.0f),  // Updated per frame
+            shieldMesh.get(), metalMaterialId, 0.3f, 0.9f),
+            ObjectRole::Shield);
     }
 
     // Debug axis indicators for right hand (R=X, G=Y, B=Z)
     if (hasAnimatedCharacter && rightHandBoneIndex >= 0) {
         // X axis - Red
-        addObject(RenderableBuilder()
-            .withTransform(glm::mat4(1.0f))
-            .withMesh(axisLineMesh.get())
-            .withTexture(whiteTex)
-            .withMaterialId(whiteMaterialId)
-            .withRoughness(1.0f)
-            .withMetallic(0.0f)
-            .withEmissiveColor(glm::vec3(1.0f, 0.0f, 0.0f))
-            .withEmissiveIntensity(5.0f)
-            .withCastsShadow(false)
-            .build(), ObjectRole::DebugAxisRightX);
+        addObject(makeObject(glm::mat4(1.0f), axisLineMesh.get(), whiteMaterialId,
+            1.0f, 0.0f, 5.0f, glm::vec3(1.0f, 0.0f, 0.0f), /*castsShadow*/ false),
+            ObjectRole::DebugAxisRightX);
         // Y axis - Green
-        addObject(RenderableBuilder()
-            .withTransform(glm::mat4(1.0f))
-            .withMesh(axisLineMesh.get())
-            .withTexture(whiteTex)
-            .withMaterialId(whiteMaterialId)
-            .withRoughness(1.0f)
-            .withMetallic(0.0f)
-            .withEmissiveColor(glm::vec3(0.0f, 1.0f, 0.0f))
-            .withEmissiveIntensity(5.0f)
-            .withCastsShadow(false)
-            .build(), ObjectRole::DebugAxisRightY);
+        addObject(makeObject(glm::mat4(1.0f), axisLineMesh.get(), whiteMaterialId,
+            1.0f, 0.0f, 5.0f, glm::vec3(0.0f, 1.0f, 0.0f), /*castsShadow*/ false),
+            ObjectRole::DebugAxisRightY);
         // Z axis - Blue
-        addObject(RenderableBuilder()
-            .withTransform(glm::mat4(1.0f))
-            .withMesh(axisLineMesh.get())
-            .withTexture(whiteTex)
-            .withMaterialId(whiteMaterialId)
-            .withRoughness(1.0f)
-            .withMetallic(0.0f)
-            .withEmissiveColor(glm::vec3(0.0f, 0.0f, 1.0f))
-            .withEmissiveIntensity(5.0f)
-            .withCastsShadow(false)
-            .build(), ObjectRole::DebugAxisRightZ);
+        addObject(makeObject(glm::mat4(1.0f), axisLineMesh.get(), whiteMaterialId,
+            1.0f, 0.0f, 5.0f, glm::vec3(0.0f, 0.0f, 1.0f), /*castsShadow*/ false),
+            ObjectRole::DebugAxisRightZ);
         SDL_Log("SceneBuilder: Added debug axis indicators for right hand");
     }
 
     // Debug axis indicators for left hand (R=X, G=Y, B=Z)
     if (hasAnimatedCharacter && leftHandBoneIndex >= 0) {
         // X axis - Red
-        addObject(RenderableBuilder()
-            .withTransform(glm::mat4(1.0f))
-            .withMesh(axisLineMesh.get())
-            .withTexture(whiteTex)
-            .withMaterialId(whiteMaterialId)
-            .withRoughness(1.0f)
-            .withMetallic(0.0f)
-            .withEmissiveColor(glm::vec3(1.0f, 0.0f, 0.0f))
-            .withEmissiveIntensity(5.0f)
-            .withCastsShadow(false)
-            .build(), ObjectRole::DebugAxisLeftX);
+        addObject(makeObject(glm::mat4(1.0f), axisLineMesh.get(), whiteMaterialId,
+            1.0f, 0.0f, 5.0f, glm::vec3(1.0f, 0.0f, 0.0f), /*castsShadow*/ false),
+            ObjectRole::DebugAxisLeftX);
         // Y axis - Green
-        addObject(RenderableBuilder()
-            .withTransform(glm::mat4(1.0f))
-            .withMesh(axisLineMesh.get())
-            .withTexture(whiteTex)
-            .withMaterialId(whiteMaterialId)
-            .withRoughness(1.0f)
-            .withMetallic(0.0f)
-            .withEmissiveColor(glm::vec3(0.0f, 1.0f, 0.0f))
-            .withEmissiveIntensity(5.0f)
-            .withCastsShadow(false)
-            .build(), ObjectRole::DebugAxisLeftY);
+        addObject(makeObject(glm::mat4(1.0f), axisLineMesh.get(), whiteMaterialId,
+            1.0f, 0.0f, 5.0f, glm::vec3(0.0f, 1.0f, 0.0f), /*castsShadow*/ false),
+            ObjectRole::DebugAxisLeftY);
         // Z axis - Blue
-        addObject(RenderableBuilder()
-            .withTransform(glm::mat4(1.0f))
-            .withMesh(axisLineMesh.get())
-            .withTexture(whiteTex)
-            .withMaterialId(whiteMaterialId)
-            .withRoughness(1.0f)
-            .withMetallic(0.0f)
-            .withEmissiveColor(glm::vec3(0.0f, 0.0f, 1.0f))
-            .withEmissiveIntensity(5.0f)
-            .withCastsShadow(false)
-            .build(), ObjectRole::DebugAxisLeftZ);
+        addObject(makeObject(glm::mat4(1.0f), axisLineMesh.get(), whiteMaterialId,
+            1.0f, 0.0f, 5.0f, glm::vec3(0.0f, 0.0f, 1.0f), /*castsShadow*/ false),
+            ObjectRole::DebugAxisLeftZ);
         SDL_Log("SceneBuilder: Added debug axis indicators for left hand");
     }
 
     // Flag pole - 3m pole, center at 1.5m above ground
     auto [flagPoleX, flagPoleZ] = worldPos(5.0f, 0.0f);
-    addObject(RenderableBuilder()
-        .atPosition(glm::vec3(flagPoleX, getGroundY(flagPoleX, flagPoleZ, 1.5f), flagPoleZ))
-        .withMesh(flagPoleMesh.get())
-        .withTexture(metalTex)
-        .withMaterialId(metalMaterialId)
-        .withRoughness(0.4f)
-        .withMetallic(0.9f)
-        .withCastsShadow(true)
-        .build(), ObjectRole::FlagPole);
+    addObject(makeObject(
+        glm::translate(glm::mat4(1.0f), glm::vec3(flagPoleX, getGroundY(flagPoleX, flagPoleZ, 1.5f), flagPoleZ)),
+        flagPoleMesh.get(), metalMaterialId, 0.4f, 0.9f),
+        ObjectRole::FlagPole);
 
     // Flag cloth - will be positioned and updated by ClothSimulation
-    addObject(RenderableBuilder()
-        .withTransform(glm::mat4(1.0f))  // Identity, will be handled differently
-        .withMesh(&flagClothMesh)
-        .withTexture(crateTex)  // Using crate texture for now
-        .withMaterialId(crateMaterialId)
-        .withRoughness(0.6f)
-        .withMetallic(0.0f)
-        .withCastsShadow(true)
-        .build(), ObjectRole::FlagCloth);
+    addObject(makeObject(
+        glm::mat4(1.0f),  // Identity, will be handled differently
+        &flagClothMesh, crateMaterialId, 0.6f, 0.0f),
+        ObjectRole::FlagCloth);
 
     // Player cape - attached to character, updated each frame (using metal texture)
     if (hasCapeEnabled) {
-        addObject(RenderableBuilder()
-            .withTransform(glm::mat4(1.0f))  // Identity, cloth positions are in world space
-            .withMesh(&capeMesh)
-            .withTexture(metalTex)
-            .withMaterialId(capeMaterialId)
-            .withRoughness(0.3f)
-            .withMetallic(0.8f)
-            .withCastsShadow(true)
-            .build(), ObjectRole::Cape);
+        addObject(makeObject(
+            glm::mat4(1.0f),  // Identity, cloth positions are in world space
+            &capeMesh, capeMaterialId, 0.3f, 0.8f),
+            ObjectRole::Cape);
     }
 
     // Well entrance - demonstrates terrain hole mask system
@@ -1101,15 +972,10 @@ void SceneBuilder::createRenderables() {
     glm::mat4 wellTransform = glm::translate(glm::mat4(1.0f),
         glm::vec3(wellEntranceX, wellY + 3.0f, wellEntranceZ));
     wellTransform = glm::scale(wellTransform, glm::vec3(2.0f, 0.5f, 12.0f));
-    addObject(RenderableBuilder()
-        .withTransform(wellTransform)
-        .withMesh(cubeMesh.get())
-        .withTexture(metalTex)  // Stone-like appearance
-        .withMaterialId(metalMaterialId)
-        .withRoughness(0.8f)
-        .withMetallic(0.1f)
-        .withCastsShadow(true)
-        .build(), ObjectRole::WellEntrance);
+    addObject(makeObject(
+        wellTransform,
+        cubeMesh.get(), metalMaterialId, 0.8f, 0.1f),
+        ObjectRole::WellEntrance);
 
     // Slice 5: finalize merged entity creation - establish player hierarchy
     // (weapons/cape/debug axes) and tag NPC entities now that all entities exist.
@@ -1153,7 +1019,7 @@ void SceneBuilder::setShowWeaponAxes(bool show) {
 }
 
 void SceneBuilder::updatePlayerTransform(const glm::mat4& transform) {
-    Renderable* playerRenderable = getRenderableForEntity(playerEntity_);
+    ecs::RenderData*playerRenderable = getRenderableForEntity(playerEntity_);
     if (playerRenderable) {
         playerRenderable->transform = transform;
     }
@@ -1174,7 +1040,7 @@ void SceneBuilder::updateAnimatedCharacter(float deltaTime, VmaAllocator allocat
 
     // Get the character's current world transform for IK ground queries
     glm::mat4 worldTransform = glm::mat4(1.0f);
-    const Renderable* playerRenderable = getRenderableForEntity(playerEntity_);
+    const ecs::RenderData* playerRenderable = getRenderableForEntity(playerEntity_);
     if (playerRenderable) {
         worldTransform = playerRenderable->transform;
     }
@@ -1223,7 +1089,7 @@ void SceneBuilder::updateAnimatedCharacter(float deltaTime, VmaAllocator allocat
                                   movementSpeed, isGrounded, isJumping, worldTransform);
 
     // Update the mesh pointer in the renderable (in case it was re-created)
-    Renderable* playerRend = getRenderableForEntity(playerEntity_);
+    ecs::RenderData*playerRend = getRenderableForEntity(playerEntity_);
     if (playerRend) {
         playerRend->mesh = &animatedCharacter->getMesh();
     }
@@ -1239,7 +1105,7 @@ void SceneBuilder::updateAnimatedCharacter(float deltaTime, VmaAllocator allocat
         capeMesh.upload(allocator, device, commandPool, queue);
 
         // Update mesh pointer in renderable
-        Renderable* capeRend = getRenderableForEntity(capeEntity_);
+        ecs::RenderData*capeRend = getRenderableForEntity(capeEntity_);
         if (capeRend) {
             capeRend->mesh = &capeMesh;
         }
@@ -1271,7 +1137,7 @@ void SceneBuilder::updateNPCs(float deltaTime, const glm::vec3& cameraPos) {
 
         glm::mat4 worldTransform = npcSimulation_->buildNPCTransform(i);
 
-        Renderable* npcRenderable = getRenderableForEntity(npcEntities_[i]);
+        ecs::RenderData*npcRenderable = getRenderableForEntity(npcEntities_[i]);
         if (npcRenderable) {
             npcRenderable->transform = worldTransform;
             npcRenderable->mesh = &character->getMesh();
@@ -1307,7 +1173,7 @@ void SceneBuilder::updateWeaponTransforms(const glm::mat4& worldTransform) {
     // Position a bone-attached entity's Renderable and sync ECS Transform
     auto updateAttached = [&](ecs::Entity entity, int boneIndex, const glm::mat4& offset, bool visible) {
         if (entity == ecs::NullEntity) return;
-        Renderable* r = getRenderableForEntity(entity);
+        ecs::RenderData*r = getRenderableForEntity(entity);
         if (!r) return;
         if (visible && boneIndex >= 0 && static_cast<size_t>(boneIndex) < globalTransforms.size()) {
             r->transform = worldTransform * globalTransforms[boneIndex] * offset;

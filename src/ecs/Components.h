@@ -917,6 +917,10 @@ struct RenderData {
     float opacity = 1.0f;
     float hueShift = 0.0f;
 
+    // GPU-skinned character marker (player + NPCs). Carried so the bootstrap
+    // writer can set the GPUSkinned tag; not extracted from components.
+    bool gpuSkinned = false;
+
     // Entity reference for additional queries
     Entity entity = NullEntity;
 };

@@ -5,7 +5,7 @@
 // ============================================================================
 //
 // Encapsulates player and NPC skinned mesh rendering with GPU skinning.
-// Supports both ECS transform lookup and legacy Renderable path.
+// Uses ECS transform lookup, falling back to the scene-object mirror transform.
 //
 
 #include "interfaces/IHDRDrawable.h"
@@ -28,8 +28,8 @@ using RagdollDrawCallback = std::function<void(VkCommandBuffer, uint32_t)>;
  *
  * Handles:
  * - Player character with GPU skinning (bone slot 0)
- * - ECS entity transform lookup for player (Phase 6)
- * - Legacy Renderable fallback for player transform
+ * - ECS entity transform lookup for player
+ * - Scene-object mirror transform fallback for player
  * - NPC rendering via NPCRenderer (bone slots 1+)
  * - Ragdoll rendering via callback (bone slots 32+)
  */

@@ -14,7 +14,6 @@
 #include <unordered_map>
 
 class AnimatedCharacter;
-class Renderable;
 struct SkinnedMesh;
 
 // Forward declare for height query function

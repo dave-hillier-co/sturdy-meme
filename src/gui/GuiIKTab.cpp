@@ -174,7 +174,7 @@ void GuiIKTab::renderSkeletonOverlay(ISceneControl& sceneControl, const Camera& 
     auto& character = sceneBuilder.getAnimatedCharacter();
 
     // Get the character's world transform via entity handle
-    const Renderable* playerRenderable = sceneBuilder.getRenderableForEntity(sceneBuilder.getPlayerEntity());
+    const ecs::RenderData* playerRenderable = sceneBuilder.getRenderableForEntity(sceneBuilder.getPlayerEntity());
     if (!playerRenderable) {
         return;
     }

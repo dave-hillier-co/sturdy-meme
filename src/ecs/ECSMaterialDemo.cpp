@@ -2,7 +2,7 @@
 #include "MaterialRegistry.h"
 #include "Mesh.h"
 #include "Texture.h"
-#include "RenderableBuilder.h"
+#include "material/MaterialId.h"
 #include <SDL3/SDL_log.h>
 #include <cmath>
 #include <unordered_set>

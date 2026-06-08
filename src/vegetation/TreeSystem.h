@@ -17,10 +17,27 @@
 #include "TreeCollision.h"
 #include "Mesh.h"
 #include "Texture.h"
-#include "RenderableBuilder.h"
 #include "scene/Transform.h"
 #include "ecs/World.h"
 #include "ecs/Components.h"
+
+// Lightweight per-mesh render carrier for tree branches and leaves.
+// Carries the tree-specific data (bark/leaf type, tint, autumn shift, instance
+// indices) that the tree render/cull paths consume; the authoritative source is
+// the ECS TreeData/BarkType/LeafType components, this is the per-frame upload POD.
+struct TreeRenderable {
+    Mesh* mesh = nullptr;
+    glm::mat4 transform = glm::mat4(1.0f);
+    float roughness = 0.5f;
+    float metallic = 0.0f;
+    float alphaTestThreshold = 0.0f;
+    std::string barkType = "oak";
+    std::string leafType = "oak";
+    glm::vec3 leafTint = glm::vec3(1.0f);
+    float autumnHueShift = 0.0f;
+    int treeInstanceIndex = -1;
+    int leafInstanceIndex = -1;
+};
 
 // GPU leaf instance data - matches shaders/tree_leaf_instance.glsl
 // std430 layout: 32 bytes per instance
@@ -107,11 +124,11 @@ public:
     ecs::World* getECSWorld() const { return world_; }
 
     // Get scene objects for rendering (integrated with existing pipeline)
-    const std::vector<Renderable>& getBranchRenderables() const { return branchRenderables_; }
-    std::vector<Renderable>& getBranchRenderables() { return branchRenderables_; }
+    const std::vector<TreeRenderable>& getBranchRenderables() const { return branchRenderables_; }
+    std::vector<TreeRenderable>& getBranchRenderables() { return branchRenderables_; }
 
-    const std::vector<Renderable>& getLeafRenderables() const { return leafRenderables_; }
-    std::vector<Renderable>& getLeafRenderables() { return leafRenderables_; }
+    const std::vector<TreeRenderable>& getLeafRenderables() const { return leafRenderables_; }
+    std::vector<TreeRenderable>& getLeafRenderables() { return leafRenderables_; }
 
     // Tree management
     uint32_t addTree(const glm::vec3& position, float rotation, float scale, const TreeOptions& options);
@@ -287,6 +304,6 @@ private:
     int selectedTreeIndex_ = -1;
 
     // Scene objects for rendering
-    std::vector<Renderable> branchRenderables_;
-    std::vector<Renderable> leafRenderables_;
+    std::vector<TreeRenderable> branchRenderables_;
+    std::vector<TreeRenderable> leafRenderables_;
 };

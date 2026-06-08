@@ -161,23 +161,6 @@ int32_t GPUSceneBuffer::addObject(const ecs::RenderData& data, VkDescriptorSet o
     return static_cast<int32_t>(objectIndex);
 }
 
-int32_t GPUSceneBuffer::addObject(const Renderable& renderable, VkDescriptorSet overrideSet) {
-    ecs::RenderData data;
-    data.transform = renderable.transform;
-    data.mesh = renderable.mesh;
-    data.materialId = renderable.materialId;
-    data.roughness = renderable.roughness;
-    data.metallic = renderable.metallic;
-    data.emissiveIntensity = renderable.emissiveIntensity;
-    data.emissiveColor = renderable.emissiveColor;
-    data.alphaTestThreshold = renderable.alphaTestThreshold;
-    data.pbrFlags = renderable.pbrFlags;
-    data.castsShadow = renderable.castsShadow;
-    data.opacity = renderable.opacity;
-    data.hueShift = renderable.hueShift;
-    return addObject(data, overrideSet);
-}
-
 void GPUSceneBuffer::finalize() {
     if (instances_.empty()) {
         return;

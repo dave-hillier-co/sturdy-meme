@@ -1363,7 +1363,7 @@ void Application::updateCameraOcclusion(float deltaTime) {
         opacity.value += (targetOpacity - opacity.value) * fadeFactor;
 
         // Sync to renderable for current rendering pipeline
-        Renderable* renderable = sceneBuilder.getRenderableForEntity(entity);
+        ecs::RenderData* renderable = sceneBuilder.getRenderableForEntity(entity);
         if (renderable) {
             renderable->opacity = opacity.value;
         }

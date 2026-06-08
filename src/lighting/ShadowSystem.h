@@ -14,7 +14,7 @@
 #include "Camera.h"
 #include "InitContext.h"
 #include "Light.h"
-#include "RenderableBuilder.h"
+#include "ecs/Components.h"
 #include "ecs/Components.h"
 #include "SkinnedMesh.h"
 #include "VulkanHelpers.h"
@@ -163,7 +163,7 @@ public:
     // Dynamic shadow rendering (placeholder for future implementation)
     void renderDynamicShadows(VkCommandBuffer cmd, uint32_t frameIndex,
                               VkDescriptorSet descriptorSet,
-                              const std::vector<Renderable>& sceneObjects,
+                              const std::vector<ecs::RenderData>& sceneObjects,
                               const DrawCallback& terrainDrawCallback,
                               const DrawCallback& grassDrawCallback,
                               const DrawCallback& skinnedDrawCallback,
@@ -198,7 +198,7 @@ private:
         VkPipelineLayout layout,
         uint32_t cascadeOrFaceIndex,
         const glm::mat4& lightMatrix,
-        const std::vector<Renderable>& sceneObjects,
+        const std::vector<ecs::RenderData>& sceneObjects,
         const DrawCallback& terrainCallback,
         const DrawCallback& grassCallback,
         const DrawCallback& treeCallback,

@@ -1127,8 +1127,22 @@ std::vector<Loading::SystemInitTask> RendererBootstrap::buildInitTasks(Renderer&
             if (hiZSystem) {
                 r.systems_->setHiZ(std::move(hiZSystem));
                 r.systems_->hiZ().setDepthBuffer(core.hdr.depthView, r.vulkanContext_->getDepthSampler());
-                r.systems_->hiZ().gatherObjects(r.systems_->scene().getRenderables(),
-                                              r.systems_->rocks().getSceneObjects());
+                // Convert the (bootstrap-time) renderable lists to RenderData for HiZ.
+                // Scene objects are deferred and empty here; only rocks are present.
+                auto toRenderData = [](const std::vector<Renderable>& src) {
+                    std::vector<ecs::RenderData> out;
+                    out.reserve(src.size());
+                    for (const auto& o : src) {
+                        ecs::RenderData d;
+                        d.transform = o.transform;
+                        d.mesh = o.mesh;
+                        out.push_back(d);
+                    }
+                    return out;
+                };
+                r.systems_->hiZ().gatherObjects(
+                    toRenderData(r.systems_->scene().getRenderables()),
+                    toRenderData(r.systems_->rocks().getSceneObjects()));
             }
 
             // GPU scene buffer for GPU-driven rendering

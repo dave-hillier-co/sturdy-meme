@@ -381,8 +381,8 @@ void HiZSystem::updateObjectData(const std::vector<CullObjectData>& objects) {
     objectDataBuffer_.unmap();
 }
 
-void HiZSystem::gatherObjects(const std::vector<Renderable>& sceneObjects,
-                               const std::vector<Renderable>& rockObjects) {
+void HiZSystem::gatherObjects(const std::vector<ecs::RenderData>& sceneObjects,
+                               const std::vector<ecs::RenderData>& rockObjects) {
     std::vector<CullObjectData> cullObjects;
 
     // Gather scene objects for culling

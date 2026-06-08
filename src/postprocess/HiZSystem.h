@@ -17,7 +17,7 @@
 #include "VmaBuffer.h"
 #include "VmaImage.h"
 #include "core/ImageBuilder.h"
-#include "RenderableBuilder.h"
+#include "ecs/Components.h"
 
 // GPU-side object data for culling (matches shader struct)
 struct alignas(16) CullObjectData {
@@ -108,10 +108,10 @@ public:
     // Submit objects to be culled (call once when scene changes)
     void updateObjectData(const std::vector<CullObjectData>& objects);
 
-    // Gather objects from renderable lists for culling
-    // Converts Renderables to CullObjectData and updates internal buffers
-    void gatherObjects(const std::vector<Renderable>& sceneObjects,
-                       const std::vector<Renderable>& rockObjects);
+    // Gather objects for culling from extracted ECS render data.
+    // Converts RenderData to CullObjectData and updates internal buffers.
+    void gatherObjects(const std::vector<ecs::RenderData>& sceneObjects,
+                       const std::vector<ecs::RenderData>& rockObjects);
 
     // Record Hi-Z pyramid generation compute pass
     // Call AFTER the main depth pass completes

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "NPCData.h"
+#include "NPCTypes.h"
 #include "ecs/World.h"
 #include "ecs/Components.h"
 #include "animation/AnimationArchetypeManager.h"
@@ -65,29 +65,17 @@ public:
     // Returns number of NPCs successfully created
     size_t spawnNPCs(const std::vector<NPCSpawnInfo>& spawnPoints);
 
-    // Update all NPCs (call each frame)
-    // cameraPos: used for LOD level calculation
-    void update(float deltaTime, const glm::vec3& cameraPos);
-
-    // Access to NPC data (read-only for renderer)
-    const NPCData& getData() const { return data_; }
-
-    // Access to NPC data (for renderable setup)
-    NPCData& getData() { return data_; }
-
     // Get animated character for a specific NPC (for rendering)
     AnimatedCharacter* getCharacter(size_t npcIndex);
     const AnimatedCharacter* getCharacter(size_t npcIndex) const;
 
     // Check if NPCs are available
-    bool hasNPCs() const { return data_.count() > 0; }
-    size_t getNPCCount() const { return data_.count(); }
+    bool hasNPCs() const { return !characters_.empty(); }
+    size_t getNPCCount() const { return characters_.size(); }
 
-    // Build world transform matrix for an NPC
+    // Build world transform matrix for an NPC (reads the NPC's authoritative ECS
+    // Transform on its simulation entity).
     glm::mat4 buildNPCTransform(size_t npcIndex) const;
-
-    // Set renderable index for an NPC (called after adding to scene)
-    void setRenderableIndex(size_t npcIndex, size_t renderableIndex);
 
     // LOD configuration (uses CharacterLODConfig thresholds)
     void setLODEnabled(bool enabled) { lodEnabled_ = enabled; }
@@ -132,9 +120,6 @@ public:
     // Get skinned mesh for archetype (for rendering)
     SkinnedMesh* getArchetypeSkinnedMesh(uint32_t archetypeId);
 
-    // Get bone matrices for an NPC (works in both modes)
-    const std::vector<glm::mat4>* getNPCBoneMatrices(size_t npcIndex) const;
-
     // Statistics for archetype mode
     struct ArchetypeStats {
         size_t archetypeCount = 0;
@@ -149,20 +134,6 @@ private:
     bool initInternal(const InitInfo& info);
     void cleanup();
 
-    // Update LOD levels based on camera distance
-    void updateLODLevels(float deltaTime, const glm::vec3& cameraPos);
-
-    // LOD-tiered update functions
-    void updateVirtualNPCs(float deltaTime);  // >50m: minimal updates
-    void updateBulkNPCs(float deltaTime);     // 25-50m: reduced updates
-    void updateRealNPCs(float deltaTime);     // <25m: full updates
-
-    // Update a single NPC's animation
-    void updateNPCAnimation(size_t npcIndex, float deltaTime);
-
-    // Build character transform from position and rotation
-    glm::mat4 buildCharacterTransform(const glm::vec3& position, float yawRadians) const;
-
     // Stored initialization data
     VmaAllocator allocator_ = VK_NULL_HANDLE;
     VkDevice device_ = VK_NULL_HANDLE;
@@ -172,15 +143,14 @@ private:
     HeightQueryFunc terrainHeightFunc_;
     glm::vec2 sceneOrigin_ = glm::vec2(0.0f);
 
-    // NPC data (Structure-of-Arrays) - legacy, kept for backward compatibility
-    NPCData data_;
-
-    // Character instances (one per NPC for now, will become template references in Stage 4)
+    // Character instances, one per NPC, in spawn order. characters_[i] corresponds
+    // to npcEntities_[i] (the NPC's simulation entity); this push-order alignment is
+    // the only retained index invariant and is never derived from entt view order.
     std::vector<std::unique_ptr<AnimatedCharacter>> characters_;
 
     // ECS integration
     ecs::World* ecsWorld_ = nullptr;
-    std::vector<ecs::Entity> npcEntities_;  // ECS entities for each NPC
+    std::vector<ecs::Entity> npcEntities_;  // Simulation entity per NPC (spawn order)
 
     // LOD configuration
     bool lodEnabled_ = true;
@@ -206,18 +176,4 @@ private:
 
     // Helper to find animation indices in archetype
     void findAnimationIndices(const AnimationArchetype& archetype, ArchetypeData& data);
-
-    // LOD distance thresholds (matching CharacterLODConfig)
-    static constexpr float LOD_DISTANCE_PHYSICS = 10.0f;  // Physics-based animation (ML policy)
-    static constexpr float LOD_DISTANCE_REAL = 25.0f;     // Full quality kinematic animation
-    static constexpr float LOD_DISTANCE_BULK = 50.0f;     // Reduced quality
-    // Beyond LOD_DISTANCE_BULK = Virtual (minimal updates)
-
-    // LOD update intervals (in frames)
-    static constexpr uint32_t UPDATE_INTERVAL_REAL = 1;    // Every frame
-    static constexpr uint32_t UPDATE_INTERVAL_BULK = 60;   // ~1 second at 60fps
-    static constexpr uint32_t UPDATE_INTERVAL_VIRTUAL = 600; // ~10 seconds at 60fps
-
-    // Physics-based animation flag
-    bool physicsAnimationEnabled_ = false;
 };

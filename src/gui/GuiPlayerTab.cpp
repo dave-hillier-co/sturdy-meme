@@ -5,7 +5,8 @@
 #include "animation/AnimatedCharacter.h"
 #include "animation/MotionMatchingController.h"
 #include "npc/NPCSimulation.h"
-#include "npc/NPCData.h"
+#include "ecs/World.h"
+#include "ecs/Components.h"
 #include "GLTFLoader.h"  // For Skeleton
 
 #include <imgui.h>
@@ -165,8 +166,19 @@ void GuiPlayerTab::render(IPlayerControl& playerControl, PlayerSettings& setting
         ImGui::Text("NPC LOD");
         ImGui::PopStyleColor();
 
-        const auto& npcData = npcSim->getData();
-        size_t npcCount = npcData.count();
+        ecs::World* ecsWorld = sceneBuilder.getECSWorld();
+        size_t npcCount = npcSim->getNPCCount();
+
+        // Helper: read an NPC's ECS LOD controller (authoritative per-NPC state).
+        auto getLOD = [&](size_t i) -> const ecs::NPCLODController* {
+            if (!ecsWorld) return nullptr;
+            ecs::Entity e = npcSim->getNPCEntity(i);
+            if (e == ecs::NullEntity || !ecsWorld->valid(e) ||
+                !ecsWorld->has<ecs::NPCLODController>(e)) {
+                return nullptr;
+            }
+            return &ecsWorld->get<ecs::NPCLODController>(e);
+        };
 
         if (npcCount == 0) {
             ImGui::TextDisabled("No NPCs in scene");
@@ -174,10 +186,12 @@ void GuiPlayerTab::render(IPlayerControl& playerControl, PlayerSettings& setting
             // Count NPCs per LOD level
             uint32_t virtualCount = 0, bulkCount = 0, realCount = 0;
             for (size_t i = 0; i < npcCount; ++i) {
-                switch (npcData.lodLevels[i]) {
-                    case NPCLODLevel::Virtual: virtualCount++; break;
-                    case NPCLODLevel::Bulk: bulkCount++; break;
-                    case NPCLODLevel::Real: realCount++; break;
+                const ecs::NPCLODController* lod = getLOD(i);
+                if (!lod) continue;
+                switch (lod->level) {
+                    case ecs::NPCLODLevel::Virtual: virtualCount++; break;
+                    case ecs::NPCLODLevel::Bulk: bulkCount++; break;
+                    case ecs::NPCLODLevel::Real: realCount++; break;
                 }
             }
 
@@ -206,29 +220,35 @@ void GuiPlayerTab::render(IPlayerControl& playerControl, PlayerSettings& setting
             // Per-NPC details (collapsible)
             if (ImGui::TreeNode("NPC Details")) {
                 for (size_t i = 0; i < npcCount; ++i) {
+                    const ecs::NPCLODController* lod = getLOD(i);
+
                     const char* lodName = "Unknown";
                     ImVec4 lodColor = ImVec4(1.0f, 1.0f, 1.0f, 1.0f);
+                    uint32_t frames = 0;
 
-                    switch (npcData.lodLevels[i]) {
-                        case NPCLODLevel::Real:
-                            lodName = "Real";
-                            lodColor = colorReal;
-                            break;
-                        case NPCLODLevel::Bulk:
-                            lodName = "Bulk";
-                            lodColor = colorBulk;
-                            break;
-                        case NPCLODLevel::Virtual:
-                            lodName = "Virtual";
-                            lodColor = colorVirtual;
-                            break;
+                    if (lod) {
+                        frames = lod->framesSinceUpdate;
+                        switch (lod->level) {
+                            case ecs::NPCLODLevel::Real:
+                                lodName = "Real";
+                                lodColor = colorReal;
+                                break;
+                            case ecs::NPCLODLevel::Bulk:
+                                lodName = "Bulk";
+                                lodColor = colorBulk;
+                                break;
+                            case ecs::NPCLODLevel::Virtual:
+                                lodName = "Virtual";
+                                lodColor = colorVirtual;
+                                break;
+                        }
                     }
 
                     ImGui::Text("NPC %zu:", i);
                     ImGui::SameLine();
                     ImGui::TextColored(lodColor, "%s", lodName);
                     ImGui::SameLine();
-                    ImGui::TextDisabled("(frames: %u)", npcData.framesSinceUpdate[i]);
+                    ImGui::TextDisabled("(frames: %u)", frames);
                 }
                 ImGui::TreePop();
             }

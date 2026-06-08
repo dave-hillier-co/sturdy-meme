@@ -6,7 +6,7 @@
 #include "CharacterConfig.h"
 #include "../animation/AnimationArchetypeManager.h"
 #include "../animation/CharacterLOD.h"
-#include "../npc/NPCData.h"
+#include "../npc/NPCTypes.h"
 #include "../physics/RagdollBuilder.h"
 #include "../physics/RagdollInstance.h"
 #include <memory>

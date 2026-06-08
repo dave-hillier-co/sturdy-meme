@@ -8,7 +8,7 @@
 #include <string>
 #include <memory>
 
-#include "NPCData.h"  // For NPCLODLevel
+#include "NPCTypes.h"  // For NPCLODLevel
 #include "animation/SkinnedMesh.h"
 #include "animation/Animation.h"
 #include "animation/CharacterLOD.h"

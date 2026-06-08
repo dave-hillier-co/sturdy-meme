@@ -511,22 +511,7 @@ struct NPCAnimationState {
     NPCAnimationState() = default;
 };
 
-// Cached bone matrices for LOD-based update skipping
-// When an NPC is far away, we skip animation updates and reuse cached matrices
-struct NPCBoneCache {
-    std::vector<glm::mat4> matrices;
-    uint32_t lastUpdateFrame = 0;
-
-    NPCBoneCache() = default;
-
-    void resize(size_t boneCount) {
-        if (matrices.size() != boneCount) {
-            matrices.resize(boneCount, glm::mat4(1.0f));
-        }
-    }
-};
-
-// NPC LOD level (mirrors NPCLODLevel from NPCData.h for ECS)
+// NPC LOD level (ECS counterpart of NPCLODLevel in npc/NPCTypes.h)
 enum class NPCLODLevel : uint8_t {
     Virtual = 0,  // >50m: No rendering, minimal updates (every 10 seconds)
     Bulk = 1,     // 25-50m: Simplified animation, reduced updates (every 1 second)
@@ -581,6 +566,17 @@ struct SkinnedMeshRef {
     SkinnedMeshRef(void* c, size_t idx) : character(c), npcIndex(idx) {}
 
     [[nodiscard]] bool valid() const { return character != nullptr; }
+};
+
+// Per-NPC hue tint for visual variety.
+// Computed once at spawn from the NPC's spawn index (golden-ratio distribution),
+// so the value travels with the entity rather than being recomputed from view
+// position (which is not stable across add/remove).
+struct NPCHueShift {
+    float hueShift = 0.0f;
+
+    NPCHueShift() = default;
+    explicit NPCHueShift(float h) : hueShift(h) {}
 };
 
 // NPC facing direction (yaw in degrees)

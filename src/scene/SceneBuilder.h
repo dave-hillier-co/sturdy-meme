@@ -100,14 +100,6 @@ public:
         return nullptr;
     }
 
-    // Get NPC entity by index
-    ecs::Entity getNPCEntity(size_t npcIndex) const {
-        if (npcIndex < npcEntities_.size()) {
-            return npcEntities_[npcIndex];
-        }
-        return ecs::NullEntity;
-    }
-
     // Set the ECS world (must be called before createRenderables if ECS is used).
     // Also propagates to the NPC simulation so its NPCs (spawned before the world
     // arrives in the deferred path) get their simulation entities created.
@@ -315,11 +307,6 @@ private:
     // ECS entity handles - the primary way to identify scene objects
     ecs::World* ecsWorld_ = nullptr;  // Pointer to ECS world (not owned)
     std::vector<ecs::Entity> sceneEntities_;  // All scene entities (parallel to sceneObjects)
-    std::vector<ecs::Entity> npcEntities_;    // NPC render-proxy entities (NPC spawn order)
-    // Renderable index of each NPC's render proxy, in NPC spawn order. Captured when
-    // the proxies are created in createRenderables() and consumed in
-    // finalizeSceneEntities() to tag the matching scene entities.
-    std::vector<size_t> npcRenderableIndices_;
     std::unordered_map<ecs::Entity, size_t> entityToRenderableIndex_;  // Reverse map
     ecs::Entity playerEntity_ = ecs::NullEntity;
     ecs::Entity emissiveOrbEntity_ = ecs::NullEntity;

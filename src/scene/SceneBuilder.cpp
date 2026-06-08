@@ -324,29 +324,8 @@ void SceneBuilder::finalizeSceneEntities() {
         for (auto e : leftHandAxisEntities_) attachChild(e);
     }
 
-    // Tag NPC render-proxy entities. npcRenderableIndices_ holds, in NPC spawn order,
-    // the renderable index of each NPC's proxy (captured in createRenderables). The
-    // template index is read from the simulation entity's authoritative NPCTag.
-    if (npcSimulation_) {
-        npcEntities_.reserve(npcRenderableIndices_.size());
-
-        for (size_t i = 0; i < npcRenderableIndices_.size(); ++i) {
-            size_t renderableIndex = npcRenderableIndices_[i];
-            if (renderableIndex >= sceneEntities_.size()) continue;
-
-            uint32_t templateIndex = 0;
-            ecs::Entity simEntity = npcSimulation_->getNPCEntity(i);
-            if (simEntity != ecs::NullEntity && ecsWorld_->valid(simEntity) &&
-                ecsWorld_->has<ecs::NPCTag>(simEntity)) {
-                templateIndex = ecsWorld_->get<ecs::NPCTag>(simEntity).templateIndex;
-            }
-
-            ecs::Entity npcEntity = sceneEntities_[renderableIndex];
-            ecsWorld_->add<ecs::NPCTag>(npcEntity, templateIndex);
-            npcEntities_.push_back(npcEntity);
-        }
-        SDL_Log("SceneBuilder: Tagged %zu NPC entities", npcEntities_.size());
-    }
+    // NPCs are simulation entities owned by NPCSimulation and rendered by NPCRenderer;
+    // they are not part of sceneEntities_ and need no tagging here.
 
     SDL_Log("SceneBuilder: Created %zu ECS entities successfully", sceneEntities_.size());
 }
@@ -706,8 +685,6 @@ void SceneBuilder::createRenderables() {
     // eagerly or via the deferred path).
     sceneEntities_.clear();
     entityToRenderableIndex_.clear();
-    npcEntities_.clear();
-    npcRenderableIndices_.clear();
     if (ecsWorld_) {
         sceneEntities_.reserve(32);
     }
@@ -884,34 +861,9 @@ void SceneBuilder::createRenderables() {
             ObjectRole::Player);
     }
 
-    // NPC characters - rendered with GPU skinning like the player
-    if (npcSimulation_) {
-        for (size_t i = 0; i < npcSimulation_->getNPCCount(); ++i) {
-            auto* character = npcSimulation_->getCharacter(i);
-            if (!character) continue;
-
-            // Same material settings as player
-            float charRoughness = 0.5f;
-            float charMetallic = 0.0f;
-
-            // Give each NPC a different hue shift for visual variety
-            // Use golden ratio to distribute hues evenly around the color wheel
-            constexpr float GOLDEN_RATIO = 1.618033988749895f;
-            constexpr float TWO_PI = 6.283185307179586f;
-            float hueShift = std::fmod(static_cast<float>(i + 1) * GOLDEN_RATIO, 1.0f) * TWO_PI;
-
-            size_t renderableIndex = addObject(makeObject(
-                npcSimulation_->buildNPCTransform(i),
-                &character->getMesh(), whiteMaterialId, charRoughness, charMetallic,
-                /*emissiveIntensity*/ 0.0f, /*emissiveColor*/ glm::vec3(1.0f),
-                /*castsShadow*/ true, hueShift, /*gpuSkinned*/ true));
-            // Record the proxy renderable index in NPC spawn order so the matching
-            // scene entity can be tagged in finalizeSceneEntities().
-            npcRenderableIndices_.push_back(renderableIndex);
-
-            SDL_Log("SceneBuilder: Added NPC renderable at index %zu with hue shift %.2f rad", renderableIndex, hueShift);
-        }
-    }
+    // NPCs are rendered by NPCRenderer over the NPCSimulation simulation entities
+    // (created in NPCSimulation::createNPCSimEntity). No scene-object render proxies
+    // are created here.
 
     // Player weapons - attached to hand bones, transforms updated each frame
     if (hasAnimatedCharacter && rightHandBoneIndex >= 0) {
@@ -1141,31 +1093,9 @@ void SceneBuilder::startCharacterJump(const glm::vec3& startPos, const glm::vec3
 void SceneBuilder::updateNPCs(float deltaTime, const glm::vec3& cameraPos) {
     if (!npcSimulation_) return;
 
-    // ECS is the single source of truth for per-NPC state.
+    // ECS is the single source of truth for per-NPC state, consumed by NPCRenderer
+    // directly from the NPCSimulation simulation entities.
     npcSimulation_->updateECS(deltaTime, cameraPos);
-
-    // Mirror each NPC's authoritative ECS Transform (on the simulation entity) onto
-    // its render-proxy renderable. The proxy list (npcEntities_) and the simulation
-    // entity list are both built in NPC spawn order, so index i lines up. NPCs are
-    // GPU-skinned so the scene/shadow buffers skip them; the proxy transform is kept
-    // current for gizmos/inspector parity.
-    for (size_t i = 0; i < npcEntities_.size(); ++i) {
-        auto* character = npcSimulation_->getCharacter(i);
-        if (!character) continue;
-
-        ecs::Entity simEntity = npcSimulation_->getNPCEntity(i);
-        if (simEntity == ecs::NullEntity || !ecsWorld_ ||
-            !ecsWorld_->valid(simEntity) || !ecsWorld_->has<ecs::Transform>(simEntity)) {
-            continue;
-        }
-        const glm::mat4& worldTransform = ecsWorld_->get<ecs::Transform>(simEntity).matrix;
-
-        ecs::RenderData* npcRenderable = getRenderableForEntity(npcEntities_[i]);
-        if (npcRenderable) {
-            npcRenderable->transform = worldTransform;
-            npcRenderable->mesh = &character->getMesh();
-        }
-    }
 }
 
 size_t SceneBuilder::getNPCCount() const {

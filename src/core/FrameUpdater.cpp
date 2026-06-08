@@ -56,29 +56,6 @@ void FrameUpdater::populateGPUSceneBuffer(RendererSystems& systems, const FrameD
             if (world->has<ecs::GPUSkinned>(entity)) continue;
             sceneBuffer.addObject(ecs::extractRenderData(*world, entity));
         }
-
-#ifndef NDEBUG
-        // One-shot equivalence check vs the legacy Renderable path: the ECS query
-        // must select exactly the non-gpuSkinned scene objects.
-        static bool verified = false;
-        if (!verified && !sceneEntities.empty()) {
-            verified = true;
-            const auto& objs = systems.scene().getRenderables();
-            size_t legacyCount = 0;
-            for (const auto& o : objs) if (!o.gpuSkinned) ++legacyCount;
-            size_t ecsCount = 0;
-            for (ecs::Entity e : sceneEntities)
-                if (world->valid(e) && !world->has<ecs::GPUSkinned>(e)) ++ecsCount;
-            if (ecsCount != legacyCount) {
-                SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
-                    "GPUSceneBuffer: ECS scene-object count %zu != legacy non-skinned count %zu",
-                    ecsCount, legacyCount);
-            } else {
-                SDL_Log("GPUSceneBuffer: ECS scene-object query matches legacy set (%zu objects)",
-                    ecsCount);
-            }
-        }
-#endif
     }
 
     // Scatter content (rocks, detritus). These have no MaterialRegistry materialId but own
@@ -90,7 +67,6 @@ void FrameUpdater::populateGPUSceneBuffer(RendererSystems& systems, const FrameD
         vk::DescriptorSet set = scatter.getDescriptorSet(frame.frameIndex);
         if (!set) return;
         for (const auto& obj : scatter.getSceneObjects()) {
-            if (obj.gpuSkinned) continue;
             sceneBuffer.addObject(obj, set);
         }
     };

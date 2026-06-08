@@ -23,8 +23,8 @@ void SceneCollection::clear() {
     materials_.clear();
 }
 
-std::vector<Renderable> SceneCollection::collectAllSceneObjects() const {
-    std::vector<Renderable> allObjects;
+std::vector<ecs::RenderData> SceneCollection::collectAllSceneObjects() const {
+    std::vector<ecs::RenderData> allObjects;
 
     // Estimate total size for reservation
     size_t totalSize = 0;

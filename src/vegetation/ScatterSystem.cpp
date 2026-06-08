@@ -193,14 +193,13 @@ void ScatterSystem::rebuildFromECS(ecs::World& world) {
         const auto& meshRef = world.get<ecs::MeshRef>(entity);
         if (!meshRef.mesh) continue;
 
-        sceneObjects.push_back(RenderableBuilder()
-            .withTransform(transform.matrix)
-            .withMesh(meshRef.mesh)
-            .withTexture(material_.getDiffuseTexture())
-            .withRoughness(matProps.roughness)
-            .withMetallic(matProps.metallic)
-            .withCastsShadow(matProps.castsShadow)
-            .build());
+        ecs::RenderData obj{};
+        obj.transform = transform.matrix;
+        obj.mesh = meshRef.mesh;
+        obj.roughness = matProps.roughness;
+        obj.metallic = matProps.metallic;
+        obj.castsShadow = matProps.castsShadow;
+        sceneObjects.push_back(obj);
     }
 
     SDL_Log("ScatterSystem[%s]: Rebuilt %zu renderables from ECS entities",

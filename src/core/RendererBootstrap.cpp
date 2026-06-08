@@ -1142,7 +1142,7 @@ std::vector<Loading::SystemInitTask> RendererBootstrap::buildInitTasks(Renderer&
                 };
                 r.systems_->hiZ().gatherObjects(
                     toRenderData(r.systems_->scene().getRenderables()),
-                    toRenderData(r.systems_->rocks().getSceneObjects()));
+                    r.systems_->rocks().getSceneObjects());
             }
 
             // GPU scene buffer for GPU-driven rendering

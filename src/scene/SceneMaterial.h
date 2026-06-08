@@ -12,7 +12,7 @@
 #include "SceneObjectInstance.h"
 #include "Mesh.h"
 #include "Texture.h"
-#include "RenderableBuilder.h"
+#include "ecs/Components.h"
 
 /**
  * SceneMaterial - Represents a material with textures, properties, mesh variations, and instances
@@ -113,8 +113,8 @@ public:
     // ========================================================================
 
     // Get scene objects for rendering
-    const std::vector<Renderable>& getSceneObjects() const { return sceneObjects_; }
-    std::vector<Renderable>& getSceneObjects() { return sceneObjects_; }
+    const std::vector<ecs::RenderData>& getSceneObjects() const { return sceneObjects_; }
+    std::vector<ecs::RenderData>& getSceneObjects() { return sceneObjects_; }
 
     // Get instances for physics/other systems
     const std::vector<SceneObjectInstance>& getInstances() const { return instances_; }
@@ -160,5 +160,5 @@ private:
     std::vector<SceneObjectInstance> instances_;
 
     // Scene objects for rendering (generated from instances + meshes)
-    std::vector<Renderable> sceneObjects_;
+    std::vector<ecs::RenderData> sceneObjects_;
 };

@@ -102,23 +102,6 @@ void ShadowPassRecorder::record(VkCommandBuffer cmd, uint32_t frameIndex, float 
     size_t detritusCount = resources_.vegetation.hasDetritus() ? resources_.vegetation.detritus()->getSceneObjects().size() : 0;
     size_t rockCount = resources_.vegetation.rocks().getSceneObjects().size();
 
-    // Local helper: build RenderData from a legacy Renderable (rocks/detritus, and the
-    // ECS-less fallback). Used only off the indirect path; dies with Renderable.
-    auto fromRenderable = [](const Renderable& r) {
-        ecs::RenderData d;
-        d.transform = r.transform;
-        d.mesh = r.mesh;
-        d.materialId = r.materialId;
-        d.roughness = r.roughness;
-        d.metallic = r.metallic;
-        d.emissiveIntensity = r.emissiveIntensity;
-        d.emissiveColor = r.emissiveColor;
-        d.alphaTestThreshold = r.alphaTestThreshold;
-        d.pbrFlags = r.pbrFlags;
-        d.castsShadow = r.castsShadow;
-        return d;
-    };
-
     if (resources_.ecsWorld) {
         ecs::World& world = *resources_.ecsWorld;
 
@@ -142,26 +125,17 @@ void ShadowPassRecorder::record(VkCommandBuffer cmd, uint32_t frameIndex, float 
                 allObjects.push_back(data);
             }
         }
-    } else if (!indirectActive) {
-        // ECS-less fallback (CPU/instanced path only).
-        const auto& sceneObjects = resources_.scene->getRenderables();
-
-        allObjects.reserve(sceneObjects.size() + rockCount + detritusCount);
-        for (size_t i = 0; i < sceneObjects.size(); ++i) {
-            if (sceneObjects[i].gpuSkinned) continue;  // skinned shadow pipeline
-            allObjects.push_back(fromRenderable(sceneObjects[i]));
-        }
     }
 
-    // Add rocks and detritus (legacy Renderable). When indirect is active these ride the
+    // Add rocks and detritus (scatter RenderData). When indirect is active these ride the
     // GPUSceneBuffer indirect draw, so don't also collect them here (avoids double-draw).
     if (!indirectActive) {
         for (const auto& r : resources_.vegetation.rocks().getSceneObjects()) {
-            allObjects.push_back(fromRenderable(r));
+            allObjects.push_back(r);
         }
         if (resources_.vegetation.hasDetritus()) {
             for (const auto& r : resources_.vegetation.detritus()->getSceneObjects()) {
-                allObjects.push_back(fromRenderable(r));
+                allObjects.push_back(r);
             }
         }
     }

@@ -121,52 +121,14 @@ size_t NPCSimulation::spawnNPCs(const std::vector<NPCSpawnInfo>& spawnPoints) {
             default: break;
         }
 
-        // Create ECS entity if ECS is enabled
-        if (ecsWorld_) {
-            ecs::Entity entity = ecsWorld_->create();
-
-            // Transform - position with height offset for character center
-            constexpr float CHARACTER_HEIGHT_OFFSET = 0.9f;
-            glm::mat4 transform = glm::mat4(1.0f);
-            transform = glm::translate(transform, worldPos + glm::vec3(0.0f, CHARACTER_HEIGHT_OFFSET, 0.0f));
-            transform = glm::rotate(transform, glm::radians(spawn.yawDegrees), glm::vec3(0.0f, 1.0f, 0.0f));
-            ecsWorld_->add<ecs::Transform>(entity, transform);
-
-            // NPC identification
-            ecsWorld_->add<ecs::NPCTag>(entity, spawn.templateIndex);
-            ecsWorld_->add<ecs::NPCFacing>(entity, spawn.yawDegrees);
-
-            // Per-NPC hue tint (golden-ratio distribution; matches SceneBuilder/NPCRenderer formula).
-            // Computed from the spawn index so the value is stable and travels with the entity.
-            {
-                constexpr float GOLDEN_RATIO = 1.618033988749895f;
-                constexpr float TWO_PI = 6.283185307179586f;
-                float hueShift = std::fmod(static_cast<float>(npcIndex + 1) * GOLDEN_RATIO, 1.0f) * TWO_PI;
-                ecsWorld_->add<ecs::NPCHueShift>(entity, hueShift);
-            }
-
-            // Animation state
-            ecs::NPCAnimationState animState;
-            animState.activity = ecsActivity;
-            ecsWorld_->add<ecs::NPCAnimationState>(entity, animState);
-
-            // LOD controller
-            ecsWorld_->add<ecs::NPCLODController>(entity);
-
-            // Skinned mesh reference (link to AnimatedCharacter)
-            ecsWorld_->add<ecs::SkinnedMeshRef>(entity, character.get(), npcIndex);
-
-            // Bounding sphere for culling (approximate character bounds)
-            ecsWorld_->add<ecs::BoundingSphere>(entity, glm::vec3(0.0f, 1.0f, 0.0f), 1.0f);
-
-            // Mark as visible initially
-            ecsWorld_->add<ecs::Visible>(entity);
-
-            npcEntities_.push_back(entity);
-        }
-
-        // Store character
+        // Retain the character and its spawn data in spawn order. The simulation
+        // entity is created now if the ECS world is already set, or later via
+        // setECSWorld() (the deferred path spawns NPCs before the world exists).
         characters_.push_back(std::move(character));
+        npcSpawnData_.push_back(NPCSpawnData{worldPos, spawn.yawDegrees, ecsActivity, spawn.templateIndex});
+        if (ecsWorld_) {
+            createNPCSimEntity(npcIndex);
+        }
 
         const char* activityName = spawn.activity == NPCActivity::Idle ? "idle" :
                                    spawn.activity == NPCActivity::Walking ? "walking" : "running";
@@ -179,6 +141,69 @@ size_t NPCSimulation::spawnNPCs(const std::vector<NPCSpawnInfo>& spawnPoints) {
 
     SDL_Log("NPCSimulation: Created %zu NPCs%s", createdCount, ecsWorld_ ? " with ECS entities" : "");
     return createdCount;
+}
+
+void NPCSimulation::createNPCSimEntity(size_t i) {
+    if (!ecsWorld_ || i >= characters_.size() || i >= npcSpawnData_.size()) return;
+
+    const NPCSpawnData& sd = npcSpawnData_[i];
+    AnimatedCharacter* character = characters_[i].get();
+
+    ecs::Entity entity = ecsWorld_->create();
+
+    // Transform - position with height offset for character center
+    constexpr float CHARACTER_HEIGHT_OFFSET = 0.9f;
+    glm::mat4 transform = glm::mat4(1.0f);
+    transform = glm::translate(transform, sd.worldPos + glm::vec3(0.0f, CHARACTER_HEIGHT_OFFSET, 0.0f));
+    transform = glm::rotate(transform, glm::radians(sd.yawDegrees), glm::vec3(0.0f, 1.0f, 0.0f));
+    ecsWorld_->add<ecs::Transform>(entity, transform);
+
+    // NPC identification
+    ecsWorld_->add<ecs::NPCTag>(entity, sd.templateIndex);
+    ecsWorld_->add<ecs::NPCFacing>(entity, sd.yawDegrees);
+
+    // Per-NPC hue tint (golden-ratio distribution; matches SceneBuilder/NPCRenderer formula).
+    {
+        constexpr float GOLDEN_RATIO = 1.618033988749895f;
+        constexpr float TWO_PI = 6.283185307179586f;
+        float hueShift = std::fmod(static_cast<float>(i + 1) * GOLDEN_RATIO, 1.0f) * TWO_PI;
+        ecsWorld_->add<ecs::NPCHueShift>(entity, hueShift);
+    }
+
+    // Animation state
+    ecs::NPCAnimationState animState;
+    animState.activity = sd.activity;
+    ecsWorld_->add<ecs::NPCAnimationState>(entity, animState);
+
+    // LOD controller
+    ecsWorld_->add<ecs::NPCLODController>(entity);
+
+    // Skinned mesh reference (link to AnimatedCharacter)
+    ecsWorld_->add<ecs::SkinnedMeshRef>(entity, character, static_cast<uint32_t>(i));
+
+    // Bounding sphere for culling (approximate character bounds)
+    ecsWorld_->add<ecs::BoundingSphere>(entity, glm::vec3(0.0f, 1.0f, 0.0f), 1.0f);
+
+    // Mark as visible initially
+    ecsWorld_->add<ecs::Visible>(entity);
+
+    npcEntities_.push_back(entity);
+}
+
+void NPCSimulation::setECSWorld(ecs::World* world) {
+    ecsWorld_ = world;
+    if (!ecsWorld_) return;
+    if (!npcEntities_.empty()) return;  // already created (NPCs spawned with a world)
+
+    // Deferred path: NPCs spawned before the world existed. Create their simulation
+    // entities now, in spawn order, so the renderer's ECS view finds them.
+    for (size_t i = 0; i < characters_.size(); ++i) {
+        createNPCSimEntity(i);
+    }
+    if (!npcEntities_.empty()) {
+        SDL_Log("NPCSimulation: created %zu NPC simulation entities (deferred ECS world)",
+                npcEntities_.size());
+    }
 }
 
 glm::mat4 NPCSimulation::buildNPCTransform(size_t npcIndex) const {

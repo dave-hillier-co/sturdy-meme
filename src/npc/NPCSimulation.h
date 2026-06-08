@@ -81,6 +81,12 @@ public:
     void setLODEnabled(bool enabled) { lodEnabled_ = enabled; }
     bool isLODEnabled() const { return lodEnabled_; }
 
+    // Set (or late-bind) the ECS world. NPCs are spawned during scene init, which in
+    // the deferred path runs BEFORE the world is available; calling this once the world
+    // exists creates each spawned NPC's simulation entity (idempotent). The renderer
+    // queries those entities, so this must run before the first NPC draw.
+    void setECSWorld(ecs::World* world);
+
     // ECS integration - get entity for an NPC
     ecs::Entity getNPCEntity(size_t npcIndex) const {
         return npcIndex < npcEntities_.size() ? npcEntities_[npcIndex] : ecs::NullEntity;
@@ -147,6 +153,20 @@ private:
     // to npcEntities_[i] (the NPC's simulation entity); this push-order alignment is
     // the only retained index invariant and is never derived from entt view order.
     std::vector<std::unique_ptr<AnimatedCharacter>> characters_;
+
+    // Create the simulation entity for spawned NPC index i (Transform + tags + LOD +
+    // SkinnedMeshRef + hue). Requires ecsWorld_ set and characters_[i]/npcSpawnData_[i].
+    void createNPCSimEntity(size_t i);
+
+    // Per-NPC spawn data retained so simulation entities can be created when the ECS
+    // world arrives after spawn (deferred path). Parallel to characters_ by spawn order.
+    struct NPCSpawnData {
+        glm::vec3 worldPos = glm::vec3(0.0f);
+        float yawDegrees = 0.0f;
+        ecs::NPCActivity activity = ecs::NPCActivity::Idle;
+        uint32_t templateIndex = 0;
+    };
+    std::vector<NPCSpawnData> npcSpawnData_;
 
     // ECS integration
     ecs::World* ecsWorld_ = nullptr;

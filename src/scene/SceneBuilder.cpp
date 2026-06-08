@@ -62,6 +62,15 @@ bool SceneBuilder::initInternal(const InitInfo& info) {
     return true;
 }
 
+void SceneBuilder::setECSWorld(ecs::World* world) {
+    ecsWorld_ = world;
+    // NPCs are spawned during init (before the world is set in the deferred path);
+    // propagate so the NPC simulation creates its entities now that the world exists.
+    if (npcSimulation_) {
+        npcSimulation_->setECSWorld(world);
+    }
+}
+
 void SceneBuilder::createRenderablesDeferred() {
     if (renderablesCreated_) {
         SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "SceneBuilder: Renderables already created");

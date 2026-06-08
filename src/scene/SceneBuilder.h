@@ -108,8 +108,10 @@ public:
         return ecs::NullEntity;
     }
 
-    // Set the ECS world (must be called before createRenderables if ECS is used)
-    void setECSWorld(ecs::World* world) { ecsWorld_ = world; }
+    // Set the ECS world (must be called before createRenderables if ECS is used).
+    // Also propagates to the NPC simulation so its NPCs (spawned before the world
+    // arrives in the deferred path) get their simulation entities created.
+    void setECSWorld(ecs::World* world);
     ecs::World* getECSWorld() const { return ecsWorld_; }
 
     // Create entities from renderables (for legacy compatibility during transition)

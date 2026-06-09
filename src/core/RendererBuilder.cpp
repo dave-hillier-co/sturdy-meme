@@ -1,9 +1,9 @@
-// RendererBootstrap.cpp - Construction-time initialization for Renderer.
+// RendererBuilder.cpp - Construction-time initialization for Renderer.
 // Relocated verbatim from Renderer.cpp / RendererInitPhases.cpp. Behavior-preserving:
 // method bodies are unchanged except member access is qualified through 'r.' and
-// cross-calls go through RendererBootstrap::.
+// cross-calls go through RendererBuilder::.
 
-#include "RendererBootstrap.h"
+#include "RendererBuilder.h"
 
 #include "Renderer.h"
 #include "RendererSystems.h"
@@ -83,7 +83,7 @@
 #include <array>
 #include <filesystem>
 
-bool RendererBootstrap::initInternal(Renderer& r, const Renderer::InitInfo& info) {
+bool RendererBuilder::initInternal(Renderer& r, const Renderer::InitInfo& info) {
     INIT_PROFILE_PHASE("Renderer");
 
     r.resourcePath = info.resourcePath;
@@ -210,7 +210,7 @@ bool RendererBootstrap::initInternal(Renderer& r, const Renderer::InitInfo& info
     return true;
 }
 
-void RendererBootstrap::setupPassScheduler(Renderer& r) {
+void RendererBuilder::setupPassScheduler(Renderer& r) {
     // GUI callback (PostPasses still uses it)
     PassSchedulerBuilder::Callbacks callbacks;
     callbacks.guiRenderCallback = &r.guiRenderCallback;
@@ -234,7 +234,7 @@ void RendererBootstrap::setupPassScheduler(Renderer& r) {
     }
 }
 
-bool RendererBootstrap::createDescriptorSets(Renderer& r) {
+bool RendererBuilder::createDescriptorSets(Renderer& r) {
     VkDevice device = r.vulkanContext_->getVkDevice();
 
     // Create descriptor sets for all materials via MaterialRegistry
@@ -294,7 +294,7 @@ bool RendererBootstrap::createDescriptorSets(Renderer& r) {
 
 // ===== GPU Skinning Implementation =====
 
-bool RendererBootstrap::initSkinnedMeshRenderer(Renderer& r) {
+bool RendererBuilder::initSkinnedMeshRenderer(Renderer& r) {
     SkinnedMeshRenderer::InitInfo info{};
     info.device = r.vulkanContext_->getVkDevice();
     info.physicalDevice = r.vulkanContext_->getVkPhysicalDevice();  // For dynamic UBO alignment
@@ -328,7 +328,7 @@ bool RendererBootstrap::initSkinnedMeshRenderer(Renderer& r) {
     return true;
 }
 
-bool RendererBootstrap::createSkinnedMeshRendererDescriptorSets(Renderer& r) {
+bool RendererBuilder::createSkinnedMeshRendererDescriptorSets(Renderer& r) {
     const auto* whiteTexture = r.systems_->scene().getSceneBuilder().getWhiteTexture();
     const auto* emissiveMap = r.systems_->scene().getSceneBuilder().getDefaultEmissiveMap();
     const auto& sceneBuilder = r.systems_->scene().getSceneBuilder();
@@ -390,7 +390,7 @@ bool RendererBootstrap::createSkinnedMeshRendererDescriptorSets(Renderer& r) {
 
 // ===== Async Initialization Implementation =====
 
-bool RendererBootstrap::initInternalAsync(Renderer& r, const Renderer::InitInfo& info) {
+bool RendererBuilder::initInternalAsync(Renderer& r, const Renderer::InitInfo& info) {
     INIT_PROFILE_PHASE("Renderer");
 
     r.resourcePath = info.resourcePath;
@@ -455,15 +455,17 @@ bool RendererBootstrap::initInternalAsync(Renderer& r, const Renderer::InitInfo&
         if (!initDescriptorInfrastructure(r)) return false;
     }
 
-    // Build InitContext for subsystem initialization and store for async access
-    r.asyncInitContext_ = InitContext::build(
+    // Build InitContext for subsystem initialization and store for async access.
+    // The heavy async scaffolding (loader + this stored context) lives off the
+    // Renderer in asyncInit_, allocated here and reset() once init completes.
+    r.asyncInit_ = std::make_unique<AsyncInitState>();
+    r.asyncInit_->ctx = InitContext::build(
         *r.vulkanContext_, r.vulkanContext_->getCommandPool(), r.getDescriptorPool(),
         r.resourcePath, Renderer::MAX_FRAMES_IN_FLIGHT, r.config_.descriptorPoolSizes);
 
     // Phase 3: Start async subsystem initialization
     reportProgress(0.12f, "Starting async subsystem loading");
     r.asyncInitComplete_ = false;
-    r.asyncInitStarted_ = true;
 
     // Create async loader and set up tasks
     Loading::AsyncSystemLoader::InitInfo loaderInfo;
@@ -471,49 +473,51 @@ bool RendererBootstrap::initInternalAsync(Renderer& r, const Renderer::InitInfo&
     loaderInfo.loadingRenderer = nullptr;  // We handle rendering separately
     loaderInfo.workerCount = 0;  // Auto-detect
 
-    r.asyncLoader_ = Loading::AsyncSystemLoader::create(loaderInfo);
-    if (!r.asyncLoader_) {
+    r.asyncInit_->loader = Loading::AsyncSystemLoader::create(loaderInfo);
+    if (!r.asyncInit_->loader) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create AsyncSystemLoader");
         // Fall back to synchronous initialization
-        if (!initSubsystems(r, r.asyncInitContext_)) return false;
+        if (!initSubsystems(r, r.asyncInit_->ctx)) return false;
         r.asyncInitComplete_ = true;
     } else {
         // Start async subsystem initialization
         if (!initSubsystemsAsync(r)) {
             return false;
         }
-        r.asyncLoader_->start();
+        r.asyncInit_->loader->start();
     }
 
     return true;
 }
 
-bool RendererBootstrap::pollAsyncInit(Renderer& r) {
+bool RendererBuilder::pollAsyncInit(Renderer& r) {
     if (r.asyncInitComplete_) {
         return !r.asyncInitFailed_;  // Return false if init failed
     }
 
-    if (!r.asyncLoader_) {
+    if (!r.asyncInit_ || !r.asyncInit_->loader) {
         r.asyncInitComplete_ = true;
         return true;
     }
 
+    Loading::AsyncSystemLoader& loader = *r.asyncInit_->loader;
+
     // Poll for completed tasks
-    r.asyncLoader_->pollCompletions();
+    loader.pollCompletions();
 
     // Update progress callback
     if (r.progressCallback_) {
-        auto progress = r.asyncLoader_->getProgress();
+        auto progress = loader.getProgress();
         // Map 0.0-1.0 to 0.12-0.95 (subsystem init range)
         float mappedProgress = 0.12f + progress.progress * 0.83f;
         r.progressCallback_(mappedProgress, progress.currentPhase.c_str());
     }
 
     // Check if all tasks are complete
-    if (r.asyncLoader_->isComplete()) {
-        if (r.asyncLoader_->hasError()) {
+    if (loader.isComplete()) {
+        if (loader.hasError()) {
             SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
-                        "Async init failed: %s", r.asyncLoader_->getErrorMessage().c_str());
+                        "Async init failed: %s", loader.getErrorMessage().c_str());
             r.asyncInitComplete_ = true;
             r.asyncInitFailed_ = true;
             return false;  // Indicate failure consistently
@@ -561,9 +565,12 @@ bool RendererBootstrap::pollAsyncInit(Renderer& r) {
 
         if (r.progressCallback_) r.progressCallback_(1.0f, "Ready");
 
-        // Clean up async loader
-        r.asyncLoader_->shutdown();
-        r.asyncLoader_.reset();
+        // Clean up async loader and the stored InitContext together. This is
+        // the only place asyncInit_ is reset, exactly where the loader was
+        // reset before, so the InitContext (read by the tasks) stays alive
+        // until every task has completed.
+        loader.shutdown();
+        r.asyncInit_.reset();
 
         r.asyncInitComplete_ = true;
         SDL_Log("Async initialization complete");
@@ -572,12 +579,12 @@ bool RendererBootstrap::pollAsyncInit(Renderer& r) {
     return r.asyncInitComplete_;
 }
 
-bool RendererBootstrap::initSubsystemsAsync(Renderer& r) {
+bool RendererBuilder::initSubsystemsAsync(Renderer& r) {
     // Build the shared task definitions and feed them to the async loader.
     // The tasks declare dependencies so AsyncSystemLoader can exploit parallelism.
-    auto tasks = buildInitTasks(r, r.asyncInitContext_);
+    auto tasks = buildInitTasks(r, r.asyncInit_->ctx);
     for (auto& task : tasks) {
-        r.asyncLoader_->addTask(std::move(task));
+        r.asyncInit_->loader->addTask(std::move(task));
     }
     return true;
 }
@@ -586,7 +593,7 @@ bool RendererBootstrap::initSubsystemsAsync(Renderer& r) {
 // High-level initialization phases (relocated from RendererInitPhases.cpp)
 // ============================================================================
 
-bool RendererBootstrap::initCoreVulkanResources(Renderer& r) {
+bool RendererBuilder::initCoreVulkanResources(Renderer& r) {
     // Create swapchain-dependent resources (render pass, depth buffer, framebuffers)
     if (!r.vulkanContext_->createSwapchainResources()) return false;
 
@@ -623,7 +630,7 @@ bool RendererBootstrap::initCoreVulkanResources(Renderer& r) {
     return true;
 }
 
-bool RendererBootstrap::initDescriptorInfrastructure(Renderer& r) {
+bool RendererBuilder::initDescriptorInfrastructure(Renderer& r) {
     // Initialize scene pipeline (descriptor set layout)
     if (!r.scenePipeline_.initLayout(*r.vulkanContext_)) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to initialize scene pipeline layout");
@@ -643,7 +650,7 @@ bool RendererBootstrap::initDescriptorInfrastructure(Renderer& r) {
     return true;
 }
 
-bool RendererBootstrap::initSubsystems(Renderer& r, const InitContext& initCtx) {
+bool RendererBuilder::initSubsystems(Renderer& r, const InitContext& initCtx) {
     // Execute the shared task definitions synchronously in dependency order
     auto tasks = buildInitTasks(r, initCtx);
     for (auto& task : tasks) {
@@ -670,7 +677,7 @@ bool RendererBootstrap::initSubsystems(Renderer& r, const InitContext& initCtx) 
 //   Tier 4 (water):        Water systems (depends on vegetation + atmosphere)
 //   Tier 5 (finalize):     Wiring, geometry, culling, debug, profiler (depends on water)
 // ============================================================================
-std::vector<Loading::SystemInitTask> RendererBootstrap::buildInitTasks(Renderer& r, const InitContext& initCtx) {
+std::vector<Loading::SystemInitTask> RendererBuilder::buildInitTasks(Renderer& r, const InitContext& initCtx) {
     std::vector<Loading::SystemInitTask> tasks;
     const InitContext* ctxPtr = &initCtx;
     VkFormat swapchainImageFormat = static_cast<VkFormat>(r.vulkanContext_->getVkSwapchainImageFormat());
@@ -1288,7 +1295,7 @@ std::vector<Loading::SystemInitTask> RendererBootstrap::buildInitTasks(Renderer&
     return tasks;
 }
 
-void RendererBootstrap::initResizeCoordinator(Renderer& r) {
+void RendererBuilder::initResizeCoordinator(Renderer& r) {
     r.resizeCoordinator_ = std::make_unique<ResizeCoordinator>();
 
     // Register systems with resize coordinator
@@ -1366,13 +1373,13 @@ void RendererBootstrap::initResizeCoordinator(Renderer& r) {
     SDL_Log("Resize coordinator configured with %zu systems", 17UL);
 }
 
-void RendererBootstrap::initControlSubsystems(Renderer& r) {
+void RendererBuilder::initControlSubsystems(Renderer& r) {
     // Initialize control subsystems in RendererSystems
     // These subsystems implement GUI-facing interfaces directly
     r.systems_->initControlSubsystems(*r.vulkanContext_, r.perfToggles);
 }
 
-void RendererBootstrap::initTemporalSystems(Renderer& r) {
+void RendererBuilder::initTemporalSystems(Renderer& r) {
     // Register all systems that implement ITemporalSystem
     // These systems have temporal state (history buffers, ping-pong buffers, frame counters)
     // that needs to be reset when the window regains focus to prevent ghost frames

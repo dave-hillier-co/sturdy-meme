@@ -1,7 +1,6 @@
 #include "FroxelSystem.h"
 #include "ShaderLoader.h"
 #include "DescriptorManager.h"
-#include "core/InitInfoBuilder.h"
 #include "core/vulkan/BarrierHelpers.h"
 #include "core/vulkan/SamplerFactory.h"
 #include "core/pipeline/ComputePipelineBuilder.h"
@@ -22,7 +21,14 @@ std::unique_ptr<FroxelSystem> FroxelSystem::create(const InitInfo& info) {
 
 std::unique_ptr<FroxelSystem> FroxelSystem::create(const InitContext& ctx, VkImageView shadowMapView_, VkSampler shadowSampler_,
                                                     const std::vector<VkBuffer>& lightBuffers_) {
-    InitInfo info = InitInfoBuilder::fromContext<InitInfo>(ctx);
+    InitInfo info{};
+    info.device = ctx.device;
+    info.allocator = ctx.allocator;
+    info.descriptorPool = ctx.descriptorPool;
+    info.extent = ctx.extent;
+    info.shaderPath = ctx.shaderPath;
+    info.framesInFlight = ctx.framesInFlight;
+    info.raiiDevice = ctx.raiiDevice;
     info.shadowMapView = shadowMapView_;
     info.shadowSampler = shadowSampler_;
     info.lightBuffers = lightBuffers_;

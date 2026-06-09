@@ -3,7 +3,6 @@
 #include "InitContext.h"
 #include "ComputePipelineBuilder.h"
 #include "core/ImageBuilder.h"
-#include "core/InitInfoBuilder.h"
 #include "core/vulkan/BarrierHelpers.h"
 #include "core/vulkan/SamplerFactory.h"
 #include <SDL3/SDL.h>
@@ -25,7 +24,13 @@ std::unique_ptr<DisplacementSystem> DisplacementSystem::create(const InitInfo& i
 }
 
 std::unique_ptr<DisplacementSystem> DisplacementSystem::create(const InitContext& ctx) {
-    InitInfo info = InitInfoBuilder::fromContext<InitInfo>(ctx);
+    InitInfo info{};
+    info.device = vk::Device(ctx.device);
+    info.allocator = ctx.allocator;
+    info.descriptorPool = ctx.descriptorPool;
+    info.shaderPath = ctx.shaderPath;
+    info.framesInFlight = ctx.framesInFlight;
+    info.raiiDevice = ctx.raiiDevice;
     return create(info);
 }
 

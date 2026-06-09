@@ -9,7 +9,6 @@
 #include "core/vulkan/DescriptorSetLayoutBuilder.h"
 #include "core/vulkan/RenderPassBuilder.h"
 #include "core/vulkan/DescriptorWriter.h"
-#include "core/InitInfoBuilder.h"
 #include "core/GPUSceneBuffer.h"
 #include "culling/ShadowCullPass.h"
 #include <vulkan/vulkan.hpp>
@@ -50,7 +49,13 @@ std::unique_ptr<ShadowSystem> ShadowSystem::create(const InitInfo& info) {
 std::unique_ptr<ShadowSystem> ShadowSystem::create(const InitContext& ctx,
                                                     VkDescriptorSetLayout mainDescriptorSetLayout_,
                                                     VkDescriptorSetLayout skinnedDescriptorSetLayout_) {
-    InitInfo info = InitInfoBuilder::fromContext<InitInfo>(ctx);
+    InitInfo info{};
+    info.raiiDevice = ctx.raiiDevice;
+    info.device = ctx.device;
+    info.physicalDevice = ctx.physicalDevice;
+    info.allocator = ctx.allocator;
+    info.shaderPath = ctx.shaderPath;
+    info.framesInFlight = ctx.framesInFlight;
     info.mainDescriptorSetLayout = mainDescriptorSetLayout_;
     info.skinnedDescriptorSetLayout = skinnedDescriptorSetLayout_;
     return create(info);

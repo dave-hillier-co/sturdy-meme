@@ -1,6 +1,6 @@
 #define VMA_IMPLEMENTATION
 #include "Renderer.h"
-#include "RendererBootstrap.h"
+#include "RendererBuilder.h"
 #include "Camera.h"
 #include "RendererSystems.h"
 #include "passes/ShadowPassRecorder.h"
@@ -92,12 +92,12 @@ std::unique_ptr<Renderer> Renderer::create(const InitInfo& info) {
 
     if (info.asyncInit) {
         // Async initialization path - starts background loading
-        if (!RendererBootstrap::initInternalAsync(*instance, info)) {
+        if (!RendererBuilder::initInternalAsync(*instance, info)) {
             return nullptr;
         }
     } else {
         // Synchronous initialization path (original behavior)
-        if (!RendererBootstrap::initInternal(*instance, info)) {
+        if (!RendererBuilder::initInternal(*instance, info)) {
             return nullptr;
         }
     }
@@ -105,7 +105,7 @@ std::unique_ptr<Renderer> Renderer::create(const InitInfo& info) {
 }
 
 bool Renderer::pollAsyncInit() {
-    return RendererBootstrap::pollAsyncInit(*this);
+    return RendererBuilder::pollAsyncInit(*this);
 }
 
 Renderer::Renderer(ConstructToken) {}

@@ -39,6 +39,11 @@ namespace Loading {
     struct SystemInitTask;
 }
 
+// Heavy async-init scaffolding (loader + stored InitContext) lives off the
+// runtime Renderer object; defined in RendererBuilder.h, owned via unique_ptr
+// and reset() once async init completes.
+struct AsyncInitState;
+
 // PBR texture flags - indicates which optional PBR textures are bound
 // Must match definitions in push_constants_common.glsl
 constexpr uint32_t PBR_HAS_ROUGHNESS_MAP = (1u << 0);
@@ -48,7 +53,7 @@ constexpr uint32_t PBR_HAS_HEIGHT_MAP    = (1u << 3);
 
 
 class Renderer {
-    friend class RendererBootstrap;
+    friend class RendererBuilder;
 
 public:
     // Passkey for controlled construction via make_unique
@@ -282,10 +287,12 @@ private:
     // Progress callback for async loading (stored during init)
     ProgressCallback progressCallback_;
 
-    // Async initialization state
-    std::unique_ptr<Loading::AsyncSystemLoader> asyncLoader_;
-    InitContext asyncInitContext_;  // Stored for async task access
+    // Async initialization state.
+    // asyncInit_ holds the heavy scaffolding (loader + stored InitContext) only
+    // for the async path; it is allocated in initInternalAsync and reset() when
+    // async init completes. The completion/failure flags stay as plain bools so
+    // isAsyncInitComplete() reports true immediately on the sync path.
+    std::unique_ptr<AsyncInitState> asyncInit_;
     bool asyncInitComplete_ = true;  // True when not using async, or when async is done
     bool asyncInitFailed_ = false;   // True if async init encountered an error
-    bool asyncInitStarted_ = false;
 };

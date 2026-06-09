@@ -3,14 +3,24 @@
 #include "Renderer.h"
 #include "InitContext.h"
 
+#include <memory>
 #include <vector>
 
-// RendererBootstrap - stateless construction/initialization helper for Renderer.
+// Heavy async-init scaffolding, kept off the runtime Renderer object.
+// Owned by Renderer via a unique_ptr that is reset() once async init finishes.
+// Holds the background system loader and the InitContext the async tasks read
+// from (the context must outlive every task, so Renderer owns it through here).
+struct AsyncInitState {
+    std::unique_ptr<Loading::AsyncSystemLoader> loader;
+    InitContext ctx;  // Stored for async task access (lifetime == this state)
+};
+
+// RendererBuilder - stateless construction/initialization helper for Renderer.
 //
 // All of Renderer's construction-time initialization lives here as static methods
-// taking a Renderer& to operate on. RendererBootstrap is a friend of Renderer so it
+// taking a Renderer& to operate on. RendererBuilder is a friend of Renderer so it
 // can access private members. This keeps Renderer focused on the runtime/render path.
-class RendererBootstrap {
+class RendererBuilder {
 public:
     static bool initInternal(Renderer& r, const Renderer::InitInfo& info);
     static bool initInternalAsync(Renderer& r, const Renderer::InitInfo& info);

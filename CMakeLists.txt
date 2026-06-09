@@ -52,7 +52,7 @@ set(SOURCES
     # Core
     src/core/CrashHandler.cpp
     src/core/Renderer.cpp
-    src/core/RendererBootstrap.cpp
+    src/core/RendererBuilder.cpp
     src/core/SelectionOutlineRenderer.cpp
     src/core/FrameExecutor.cpp
     src/core/CoreResources.cpp

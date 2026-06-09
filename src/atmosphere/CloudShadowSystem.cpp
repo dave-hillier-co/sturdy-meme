@@ -3,7 +3,6 @@
 #include "DescriptorManager.h"
 #include "VmaImage.h"
 #include "SamplerFactory.h"
-#include "core/InitInfoBuilder.h"
 #include "core/vulkan/BarrierHelpers.h"
 #include "core/vulkan/PipelineLayoutBuilder.h"
 #include "core/vulkan/DescriptorSetLayoutBuilder.h"
@@ -22,7 +21,13 @@ std::unique_ptr<CloudShadowSystem> CloudShadowSystem::create(const InitInfo& inf
 }
 
 std::unique_ptr<CloudShadowSystem> CloudShadowSystem::create(const InitContext& ctx, VkImageView cloudMapLUTView_, VkSampler cloudMapLUTSampler_) {
-    InitInfo info = InitInfoBuilder::fromContext<InitInfo>(ctx);
+    InitInfo info{};
+    info.device = ctx.device;
+    info.allocator = ctx.allocator;
+    info.descriptorPool = ctx.descriptorPool;
+    info.shaderPath = ctx.shaderPath;
+    info.framesInFlight = ctx.framesInFlight;
+    info.raiiDevice = ctx.raiiDevice;
     info.cloudMapLUTView = cloudMapLUTView_;
     info.cloudMapLUTSampler = cloudMapLUTSampler_;
     return create(info);

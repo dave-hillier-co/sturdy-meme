@@ -4,7 +4,6 @@
 #include "core/pipeline/ComputePipelineBuilder.h"
 #include "core/vulkan/PipelineLayoutBuilder.h"
 #include "core/vulkan/BarrierHelpers.h"
-#include "core/InitInfoBuilder.h"
 #include "shaders/bindings.h"
 #include <SDL3/SDL_log.h>
 #include <cstring>
@@ -19,7 +18,13 @@ std::unique_ptr<GPUCullPass> GPUCullPass::create(const InitInfo& info) {
 }
 
 std::unique_ptr<GPUCullPass> GPUCullPass::create(const InitContext& ctx) {
-    InitInfo info = InitInfoBuilder::fromContext<InitInfo>(ctx);
+    InitInfo info{};
+    info.device = ctx.device;
+    info.allocator = ctx.allocator;
+    info.descriptorPool = ctx.descriptorPool;
+    info.shaderPath = ctx.shaderPath;
+    info.framesInFlight = ctx.framesInFlight;
+    info.raiiDevice = ctx.raiiDevice;
     return create(info);
 }
 

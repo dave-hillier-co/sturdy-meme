@@ -187,6 +187,11 @@ void GrassComputePass::recordResetAndCompute(vk::CommandBuffer cmd, uint32_t fra
     cmd.pipelineBarrier(vk::PipelineStageFlagBits::eHost, vk::PipelineStageFlagBits::eComputeShader,
                         {}, hostBarrier, {}, {});
 
+    // Write-after-read: this recycled buffer set was read by the previous
+    // frame's indirect draws + vertex shader. Ensure those reads complete
+    // before we reset (transfer) and overwrite (compute) it.
+    BarrierHelpers::indirectDrawAndShaderToComputeWrite(cmd);
+
     // Reset indirect buffer before compute dispatch
     cmd.fillBuffer(buffers.indirectBuffers().buffers[writeSet], 0, sizeof(VkDrawIndirectCommand), 0);
     BarrierHelpers::fillBufferToCompute(cmd);

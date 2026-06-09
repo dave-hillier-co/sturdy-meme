@@ -402,8 +402,14 @@ void WeatherSystem::recordResetAndCompute(VkCommandBuffer cmd, uint32_t frameInd
         .writeBuffer(4, externalWindBuffers[frameIndex], 0, 32)  // sizeof(WindUniforms)
         .update();
 
-    // Reset indirect buffer before compute dispatch
     vk::CommandBuffer vkCmd(cmd);
+
+    // Write-after-read: this recycled buffer set was read by the previous
+    // frame's indirect draws + vertex shader. Ensure those reads complete
+    // before we reset (transfer) and overwrite (compute) it.
+    BarrierHelpers::indirectDrawAndShaderToComputeWrite(vkCmd);
+
+    // Reset indirect buffer before compute dispatch
     vkCmd.fillBuffer(indirectBuffers.buffers[writeSet], 0, sizeof(VkDrawIndirectCommand), 0);
     BarrierHelpers::fillBufferToCompute(vkCmd);
 

@@ -12,8 +12,26 @@ bool FrameExecutor::init(VulkanContext* ctx, uint32_t frameCount) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "FrameExecutor::init: failed to create sync objects");
         return false;
     }
+    // Present-wait semaphores are sized to the swapchain image count, not the
+    // frame-in-flight count (see TripleBuffering binary-semaphore notes).
+    if (!ensurePresentSemaphores()) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "FrameExecutor::init: failed to create present semaphores");
+        return false;
+    }
     SDL_Log("FrameExecutor initialized (%u frames in flight)", frameCount);
     return true;
+}
+
+bool FrameExecutor::ensurePresentSemaphores() {
+    uint32_t imageCount = vulkanContext_->getSwapchainImageCount();
+    if (imageCount == 0) {
+        // Swapchain not ready yet (e.g. minimized); nothing to create.
+        return true;
+    }
+    if (frameSync_.presentSemaphoreCount() == imageCount) {
+        return true;
+    }
+    return frameSync_.initPresentSemaphores(imageCount);
 }
 
 void FrameExecutor::destroy() {
@@ -31,6 +49,11 @@ FrameResult FrameExecutor::execute(const FrameBuilder& builder) {
 
     VkExtent2D extent = vulkanContext_->getVkSwapchainExtent();
     if (extent.width == 0 || extent.height == 0) return FrameResult::Skipped;
+
+    // A swapchain recreate (resize) can change the image count. The recreate
+    // path waits for device idle, so it is safe to resize the per-image
+    // present-wait semaphores here before any submit/present this frame.
+    if (!ensurePresentSemaphores()) return FrameResult::Skipped;
 
     // Wait for this frame slot to be available
     frameSync_.waitForCurrentFrameIfNeeded();
@@ -50,7 +73,7 @@ FrameResult FrameExecutor::execute(const FrameBuilder& builder) {
     }
 
     // Submit
-    FrameResult submitResult = submitCommandBuffer(cmd);
+    FrameResult submitResult = submitCommandBuffer(cmd, imageIndex);
     if (submitResult != FrameResult::Success) return submitResult;
 
     // Present
@@ -90,14 +113,16 @@ FrameResult FrameExecutor::acquireImage(uint32_t& imageIndex) {
     return FrameResult::Success;
 }
 
-FrameResult FrameExecutor::submitCommandBuffer(VkCommandBuffer cmd) {
+FrameResult FrameExecutor::submitCommandBuffer(VkCommandBuffer cmd, uint32_t imageIndex) {
     VkQueue graphicsQueue = vulkanContext_->getVkGraphicsQueue();
     vk::CommandBuffer vkCmd(cmd);
 
     vk::Semaphore waitSemaphores[] = {frameSync_.currentImageAvailableSemaphore()};
     vk::PipelineStageFlags waitStages[] = {vk::PipelineStageFlagBits::eColorAttachmentOutput};
+    // Present-wait semaphore is keyed by swapchain image index (not frame slot)
+    // so a pending present is never left waiting on a re-signaled semaphore.
     vk::Semaphore signalSemaphores[] = {
-        frameSync_.currentRenderFinishedSemaphore(),
+        frameSync_.renderFinishedSemaphoreForImage(imageIndex),
         frameSync_.frameTimelineSemaphore()
     };
 
@@ -135,7 +160,7 @@ FrameResult FrameExecutor::present(uint32_t imageIndex) {
     VkQueue presentQueue = vulkanContext_->getVkPresentQueue();
     VkSwapchainKHR swapchain = vulkanContext_->getVkSwapchain();
 
-    vk::Semaphore waitSemaphores[] = {frameSync_.currentRenderFinishedSemaphore()};
+    vk::Semaphore waitSemaphores[] = {frameSync_.renderFinishedSemaphoreForImage(imageIndex)};
     vk::SwapchainKHR swapChains[] = {swapchain};
 
     auto presentInfo = vk::PresentInfoKHR{}

@@ -69,8 +69,13 @@ public:
 
 private:
     FrameResult acquireImage(uint32_t& imageIndex);
-    FrameResult submitCommandBuffer(VkCommandBuffer cmd);
+    FrameResult submitCommandBuffer(VkCommandBuffer cmd, uint32_t imageIndex);
     FrameResult present(uint32_t imageIndex);
+
+    // Ensure the per-image present-wait semaphores match the current swapchain
+    // image count (recreates them on first use and after a resize that changes
+    // the image count). Returns false if creation failed.
+    bool ensurePresentSemaphores();
 
     TripleBuffering frameSync_;
     VulkanContext* vulkanContext_ = nullptr;

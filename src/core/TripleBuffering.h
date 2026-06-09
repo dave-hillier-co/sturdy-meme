@@ -38,7 +38,6 @@
 
 struct FrameSyncPrimitives {
     std::optional<vk::raii::Semaphore> imageAvailable;     // Binary semaphore for swapchain acquire
-    std::optional<vk::raii::Semaphore> renderFinished;     // Binary semaphore for present
 
     // Non-copyable (Vulkan resources)
     FrameSyncPrimitives() = default;
@@ -165,24 +164,42 @@ public:
     // =========================================================================
     // Synchronization - Binary Semaphores (for swapchain)
     // =========================================================================
+    //
+    // The image-available semaphore is per-frame-in-flight slot: it is signaled
+    // by vkAcquireNextImageKHR before the image index is known, so it must be
+    // tied to the frame slot.
+    //
+    // The render-finished (present-wait) semaphore is per *swapchain image*, NOT
+    // per frame slot. Present completion is not tracked by the frame timeline
+    // semaphore, so a per-slot semaphore could be re-signaled by a new submit
+    // while an earlier present is still waiting on it (the classic WSI hazard the
+    // validation layers flag as VUID-vkQueuePresentKHR / sync-hazard). Indexing
+    // by image index is safe because the presentation engine cannot return an
+    // image from vkAcquireNextImageKHR until its previous present has completed.
+
+    // (Re)create the per-image present-wait semaphores. Call once the swapchain
+    // image count is known, and again on resize if the image count changed.
+    // Requires init() to have been called first (needs a valid device).
+    bool initPresentSemaphores(uint32_t imageCount);
+
+    // Number of per-image present-wait semaphores currently allocated
+    uint32_t presentSemaphoreCount() const {
+        return static_cast<uint32_t>(presentSemaphores_.size());
+    }
 
     // Get image available semaphore for current frame
     VkSemaphore currentImageAvailableSemaphore() const {
         return **frames_.current().imageAvailable;
     }
 
-    // Get render finished semaphore for current frame
-    VkSemaphore currentRenderFinishedSemaphore() const {
-        return **frames_.current().renderFinished;
+    // Get the render-finished (present-wait) semaphore for a swapchain image
+    VkSemaphore renderFinishedSemaphoreForImage(uint32_t imageIndex) const {
+        return *presentSemaphores_[imageIndex];
     }
 
-    // Get semaphores for any frame index
+    // Get image available semaphore for any frame index
     VkSemaphore imageAvailableSemaphore(uint32_t frameIndex) const {
         return **frames_.at(frameIndex).imageAvailable;
-    }
-
-    VkSemaphore renderFinishedSemaphore(uint32_t frameIndex) const {
-        return **frames_.at(frameIndex).renderFinished;
     }
 
     // =========================================================================
@@ -228,6 +245,11 @@ private:
 
     // Timeline semaphore for frame completion tracking (Vulkan 1.2)
     std::optional<vk::raii::Semaphore> frameTimeline_;
+
+    // Per-swapchain-image present-wait (render-finished) binary semaphores.
+    // Indexed by swapchain image index, not frame-in-flight slot. See the
+    // binary-semaphore section above for the WSI hazard this avoids.
+    std::vector<vk::raii::Semaphore> presentSemaphores_;
 
     // Per-frame signal values (what value was signaled when this frame was submitted)
     std::array<uint64_t, 8> frameSignalValues_{};  // Supports up to 8 frames in flight

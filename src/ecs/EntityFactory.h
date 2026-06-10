@@ -7,7 +7,6 @@
 #include "material/MaterialId.h"
 
 #include <cassert>
-#include <optional>
 
 namespace ecs {
 

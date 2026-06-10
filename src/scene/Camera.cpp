@@ -177,8 +177,11 @@ void Camera::updateThirdPerson(float deltaTime) {
     pitch_ = smoothedPitch_;
     thirdPersonDistance_ = smoothedDistance_;
 
-    // Use collision-adjusted distance if set, otherwise use smoothed distance
-    float effectiveDistance = smoothedDistance_;
+    // Recover the collision distance toward the unobstructed distance each frame.
+    // Pull-in is instant (applyCollisionDistance), recovery is smoothed here.
+    collisionSmoothedDistance_ += (smoothedDistance_ - collisionSmoothedDistance_) * distanceFactor;
+    collisionSmoothedDistance_ = std::min(collisionSmoothedDistance_, smoothedDistance_);
+    float effectiveDistance = collisionSmoothedDistance_;
 
     // Calculate camera position based on smoothed spherical coordinates around target
     float horizontalDist = effectiveDistance * cos(glm::radians(smoothedPitch_));
@@ -196,12 +199,15 @@ void Camera::updateThirdPerson(float deltaTime) {
 }
 
 void Camera::applyCollisionDistance(float distance) {
-    // Apply collision adjustment - pull camera closer to avoid clipping
-    if (distance > 0.0f && distance < smoothedDistance_) {
+    // Pull camera closer to avoid clipping. Pull-in snaps immediately;
+    // recovery toward the unobstructed distance is smoothed in updateThirdPerson.
+    float desired = std::max(thirdPersonMinDistance_, distance - 0.2f);  // Small offset to avoid clipping
+    if (distance > 0.0f && desired < collisionSmoothedDistance_) {
         collisionAdjustedDistance_ = distance;
+        collisionSmoothedDistance_ = desired;
 
         // Recalculate position with adjusted distance
-        float effectiveDistance = std::max(thirdPersonMinDistance_, distance - 0.2f);  // Small offset to avoid clipping
+        float effectiveDistance = desired;
         float horizontalDist = effectiveDistance * cos(glm::radians(smoothedPitch_));
         float verticalOffset = effectiveDistance * sin(glm::radians(smoothedPitch_));
 
@@ -222,6 +228,7 @@ void Camera::resetSmoothing() {
     smoothedYaw_ = targetYaw_;
     smoothedPitch_ = targetPitch_;
     smoothedDistance_ = targetDistance_;
+    collisionSmoothedDistance_ = targetDistance_;
     currentFov_ = targetFov_;
 }
 
@@ -263,6 +270,7 @@ void Camera::initializeThirdPersonFromCurrentPosition(const glm::vec3& target) {
     smoothedPitch_ = calculatedPitch;
     targetDistance_ = distance;
     smoothedDistance_ = distance;
+    collisionSmoothedDistance_ = distance;
 
     // Also update the base yaw/pitch so getYaw() returns correct value
     yaw_ = calculatedYaw;

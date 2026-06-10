@@ -21,8 +21,8 @@ public:
 
     // Update continuous input state (call once per frame before reading input)
     // deltaTime is used for input that accumulates over time
-    // cameraYaw is needed to calculate movement direction relative to camera facing
-    void update(float deltaTime, float cameraYaw);
+    // cameraForward is needed to calculate movement direction relative to camera facing
+    void update(float deltaTime, const glm::vec3& cameraForward);
 
     // Query if GUI wants input (blocks game input)
     void setGuiSystem(GuiSystem* gui) { guiSystem = gui; }
@@ -80,12 +80,12 @@ private:
     void scanForGamepads();
 
     // Input processing helpers
-    void processKeyboardInput(float deltaTime, float cameraYaw);
-    void processGamepadInput(float deltaTime, float cameraYaw);
+    void processKeyboardInput(float deltaTime, const glm::vec3& cameraForward);
+    void processGamepadInput(float deltaTime, const glm::vec3& cameraForward);
     void processFreeCameraKeyboard(float deltaTime, const bool* keyState);
-    void processThirdPersonKeyboard(float deltaTime, float cameraYaw, const bool* keyState);
+    void processThirdPersonKeyboard(float deltaTime, const glm::vec3& cameraForward, const bool* keyState);
     void processFreeCameraGamepad(float deltaTime);
-    void processThirdPersonGamepad(float deltaTime, float cameraYaw);
+    void processThirdPersonGamepad(float deltaTime, const glm::vec3& cameraForward);
 
     // Check if GUI is consuming input
     bool isGuiBlocking() const;

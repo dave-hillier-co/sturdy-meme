@@ -152,4 +152,5 @@ private:
 
     // Camera collision
     float collisionAdjustedDistance_ = -1.0f;  // -1 means no collision adjustment
+    float collisionSmoothedDistance_ = 3.0f;   // pulls in instantly, recovers smoothly
 };

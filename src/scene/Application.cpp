@@ -612,7 +612,7 @@ void Application::run() {
         gui_->render(guiInterfaces, camera, lastDeltaTime, currentFps);
 
         // Update input system
-        input.update(deltaTime, camera.getYaw());
+        input.update(deltaTime, camera.getForward());
 
         // Apply input to camera
         applyInputToCamera();
@@ -653,8 +653,10 @@ void Application::run() {
             }
 
             glm::vec3 moveDir = input.getMovementDirection();
-            if (glm::length(moveDir) > 0.001f) {
-                moveDir = glm::normalize(moveDir);
+            float moveLen = glm::length(moveDir);
+            if (moveLen > 0.001f) {
+                // Clamp rather than normalize so analog stick magnitude scales speed
+                if (moveLen > 1.0f) moveDir /= moveLen;
                 float currentSpeed = input.isSprinting() ? sprintSpeed : moveSpeed;
                 desiredVelocity = moveDir * currentSpeed;
 
@@ -674,7 +676,7 @@ void Application::run() {
                     float yawRate = (sceneBuilder.hasCharacter() &&
                                      sceneBuilder.getAnimatedCharacter().isUsingMotionMatching())
                                     ? 4.0f : 10.0f;
-                    float smoothedYaw = currentYaw + yawDiff * yawRate * deltaTime;
+                    float smoothedYaw = currentYaw + yawDiff * (1.0f - std::exp(-yawRate * deltaTime));
                     // Keep yaw in reasonable range
                     while (smoothedYaw > 360.0f) smoothedYaw -= 360.0f;
                     while (smoothedYaw < 0.0f) smoothedYaw += 360.0f;
@@ -704,7 +706,7 @@ void Application::run() {
                     while (yawDiff > 180.0f) yawDiff -= 360.0f;
                     while (yawDiff < -180.0f) yawDiff += 360.0f;
                     // Faster rotation for strafe mode responsiveness
-                    float smoothedYaw = currentYaw + yawDiff * 15.0f * deltaTime;
+                    float smoothedYaw = currentYaw + yawDiff * (1.0f - std::exp(-15.0f * deltaTime));
                     while (smoothedYaw > 360.0f) smoothedYaw -= 360.0f;
                     while (smoothedYaw < 0.0f) smoothedYaw += 360.0f;
                     playerTransform.setYaw(smoothedYaw);

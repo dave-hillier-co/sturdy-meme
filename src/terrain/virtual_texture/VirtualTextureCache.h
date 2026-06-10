@@ -35,6 +35,8 @@ public:
         VirtualTextureConfig config;
         uint32_t framesInFlight = 3;
         bool useCompression = false;
+        // Staging capacity: maximum tile uploads recorded per frame
+        uint32_t maxUploadsPerFrame = 16;
     };
 
     // Factory method - returns nullptr on failure
@@ -48,9 +50,14 @@ public:
     VirtualTextureCache(const VirtualTextureCache&) = delete;
     VirtualTextureCache& operator=(const VirtualTextureCache&) = delete;
 
-    // Allocate a slot for a new tile, evicting LRU if needed
-    // Returns the cache slot coordinates, or nullptr if allocation failed
-    CacheSlot* allocateSlot(TileId id, uint32_t currentFrame);
+    // Allocate a slot for a new tile, evicting LRU if needed.
+    // Slots used within the last framesInFlight frames are never evicted
+    // (in-flight frames may still sample them), so allocation can fail.
+    // If an eviction occurred, evictedTile receives the evicted tile's id so
+    // the caller can invalidate its page table entry.
+    // Returns the cache slot, or nullptr if allocation failed.
+    CacheSlot* allocateSlot(TileId id, uint32_t currentFrame,
+                            std::optional<TileId>* evictedTile = nullptr);
 
     // Mark a tile as used this frame (for LRU tracking)
     void markUsed(TileId id, uint32_t currentFrame);
@@ -73,9 +80,15 @@ public:
      * @param format Tile format (RGBA8 or BC1)
      * @param cmd Command buffer to record into (must be in recording state)
      * @param frameIndex Current frame index for staging buffer selection
+     * @return false if the upload could not be recorded (format mismatch,
+     *         staging capacity exhausted, tile not in cache)
      */
-    void recordTileUpload(TileId id, const void* pixelData, uint32_t width, uint32_t height,
+    bool recordTileUpload(TileId id, const void* pixelData, uint32_t width, uint32_t height,
                           TileFormat format, VkCommandBuffer cmd, uint32_t frameIndex);
+
+    // Reset the staging sub-allocation cursor for this frame. Must be called
+    // once per frame before any recordTileUpload calls.
+    void beginFrame();
 
     // Check if the cache is using compressed BC1 format
     bool isCompressed() const { return useCompression_; }
@@ -108,8 +121,12 @@ public:
 private:
     bool initInternal(const InitInfo& info);
 
-    // Find LRU slot for eviction
-    size_t findLRUSlot() const;
+    // Find LRU slot for eviction, skipping slots that in-flight frames may
+    // still sample. Returns slots.size() if no slot is evictable.
+    size_t findLRUSlot(uint32_t currentFrame) const;
+
+    // Bytes needed to stage one tile in the cache's format
+    VkDeviceSize getTileStagingSize() const;
 
     // Create the cache texture
     bool createCacheTexture(VkDevice device, VmaAllocator allocator,
@@ -130,9 +147,14 @@ private:
     VmaImageHandle cacheImage_{};
     std::optional<vk::raii::Sampler> cacheSampler_;
 
-    // Per-frame staging buffers to avoid race conditions with in-flight frames
+    // Per-frame staging buffers to avoid race conditions with in-flight frames.
+    // Each buffer holds maxUploadsPerFrame_ tile regions; stagingCursor_ tracks
+    // the next free region within the current frame's buffer, because copy
+    // commands execute long after recording and regions must not be reused.
     std::vector<VmaBuffer> stagingBuffers_;
     std::vector<void*> stagingMapped_;
+    VkDeviceSize stagingCursor_ = 0;
+    uint32_t maxUploadsPerFrame_ = 16;
     uint32_t framesInFlight_ = 3;
 
     // Cache slot management

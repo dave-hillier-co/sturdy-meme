@@ -574,19 +574,53 @@ add_custom_target(roads_gen DEPENDS ${ROADS_JSON} ${ROADS_BIN} ${ROADS_META})
 add_dependencies(roads_gen road_generator biome_gen)
 
 # ============================================================================
+# SEQUENTIAL PHASE: tile_generator runs after roads complete
+# Virtual texture tiles composite biome materials, riverbeds and roads
+# ============================================================================
+
+# Virtual texture tile outputs. Parameters must match the runtime
+# VirtualTextureConfig in TerrainSystem (8192px virtual = 64 tiles/axis of
+# 128px, 6 mips) and the terrain/VT_WORLD_SIZE of 16384m.
+set(VT_TILES_DIR ${CMAKE_CURRENT_SOURCE_DIR}/generated/vt_tiles)
+set(VT_TILES_STAMP ${VT_TILES_DIR}/vt_tiles.stamp)
+
+add_custom_command(
+    OUTPUT ${VT_TILES_STAMP}
+    COMMAND ${CMAKE_COMMAND} -E make_directory ${VT_TILES_DIR}
+    COMMAND $<TARGET_FILE:tile_generator>
+        --heightmap ${TERRAIN_HEIGHTMAP}
+        --biomemap ${BIOME_MAP_PNG}
+        --roads ${ROADS_JSON}
+        --output ${VT_TILES_DIR}
+        --materials ${CMAKE_CURRENT_SOURCE_DIR}/assets/textures
+        --terrain-size 16384
+        --tile-res 128
+        --tiles-per-axis 64
+        --max-mip 6
+    COMMAND ${CMAKE_COMMAND} -E touch ${VT_TILES_STAMP}
+    DEPENDS ${TERRAIN_HEIGHTMAP} ${BIOME_MAP_PNG} ${ROADS_JSON}
+    COMMENT "Generating virtual texture tiles (after roads)"
+)
+
+# Explicit target for virtual texture tile generation
+add_custom_target(vt_tiles_gen DEPENDS ${VT_TILES_STAMP})
+add_dependencies(vt_tiles_gen tile_generator roads_gen)
+
+# ============================================================================
 # UMBRELLA TARGET: terrain_preprocessing depends on all outputs
 # ============================================================================
 
 # Custom target that depends on all preprocessing outputs
 add_custom_target(terrain_preprocessing
-    DEPENDS ${TERRAIN_TILES_META} ${WATERSHED_RIVERS_SVG} ${BIOME_MAP_PNG} ${ROADS_BIN}
+    DEPENDS ${TERRAIN_TILES_META} ${WATERSHED_RIVERS_SVG} ${BIOME_MAP_PNG} ${ROADS_BIN} ${VT_TILES_STAMP}
 )
 
 # Dependencies ensure correct build order:
 # - terrain_tiles_gen and watershed_gen can run in parallel
 # - biome_gen runs after watershed_gen completes
 # - roads_gen runs after biome_gen completes
-add_dependencies(terrain_preprocessing terrain_tiles_gen watershed_gen biome_gen roads_gen)
+# - vt_tiles_gen runs after roads_gen completes
+add_dependencies(terrain_preprocessing terrain_tiles_gen watershed_gen biome_gen roads_gen vt_tiles_gen)
 
 # Foam noise texture generation
 set(FOAM_TEXTURE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/assets/textures)
@@ -897,6 +931,7 @@ set(TERRAIN_SHADER_FILES
     ${CMAKE_CURRENT_SOURCE_DIR}/shaders/terrain/terrain_sum_reduction_batched.comp.spv
     ${CMAKE_CURRENT_SOURCE_DIR}/shaders/terrain/terrain.vert.spv
     ${CMAKE_CURRENT_SOURCE_DIR}/shaders/terrain/terrain.frag.spv
+    ${CMAKE_CURRENT_SOURCE_DIR}/shaders/terrain/terrain_vt.frag.spv
     ${CMAKE_CURRENT_SOURCE_DIR}/shaders/terrain/terrain_shadow.vert.spv
     ${CMAKE_CURRENT_SOURCE_DIR}/shaders/terrain/terrain_shadow.frag.spv
     ${CMAKE_CURRENT_SOURCE_DIR}/shaders/terrain/terrain_shadow_cull.comp.spv
@@ -1178,6 +1213,18 @@ if(SHADER_COMPILE_CMD)
         )
     endforeach()
 
+    # Virtual texture variant of the terrain fragment shader: same source
+    # compiled with USE_VIRTUAL_TEXTURE so it samples the megatexture cache
+    # instead of triplanar albedo
+    add_custom_command(
+        OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/shaders/terrain/terrain_vt.frag.spv
+        COMMAND ${GLSLANG_VALIDATOR} --target-env vulkan1.2 -DUSE_VIRTUAL_TEXTURE -I${CMAKE_CURRENT_SOURCE_DIR}/shaders/terrain -I${CMAKE_CURRENT_SOURCE_DIR}/shaders -V -o ${CMAKE_CURRENT_SOURCE_DIR}/shaders/terrain/terrain_vt.frag.spv ${CMAKE_CURRENT_SOURCE_DIR}/shaders/terrain/terrain.frag
+        DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/shaders/terrain/terrain.frag
+                ${CMAKE_CURRENT_SOURCE_DIR}/shaders/virtual_texture.glsl
+                ${BINDINGS_DEPS}
+        COMMENT "Compiling terrain shader variant: terrain_vt.frag"
+    )
+
     # Catmull-Clark subdivision shaders
     set(CATMULLCLARK_SIMPLE_SHADERS
         catmullclark_subdivision.comp.glsl
@@ -1273,6 +1320,7 @@ if(SHADER_COMPILE_CMD)
         ${CMAKE_CURRENT_SOURCE_DIR}/shaders/terrain/terrain_sum_reduction_batched.comp.spv
         ${CMAKE_CURRENT_SOURCE_DIR}/shaders/terrain/terrain.vert.spv
         ${CMAKE_CURRENT_SOURCE_DIR}/shaders/terrain/terrain.frag.spv
+        ${CMAKE_CURRENT_SOURCE_DIR}/shaders/terrain/terrain_vt.frag.spv
         ${CMAKE_CURRENT_SOURCE_DIR}/shaders/terrain/terrain_shadow.vert.spv
         ${CMAKE_CURRENT_SOURCE_DIR}/shaders/terrain/terrain_shadow.frag.spv
         ${CMAKE_CURRENT_SOURCE_DIR}/shaders/terrain/terrain_shadow_cull.comp.spv

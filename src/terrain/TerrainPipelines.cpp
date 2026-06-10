@@ -33,6 +33,7 @@ bool TerrainPipelines::initInternal(const InitInfo& info) {
     useMeshlets = info.useMeshlets;
     meshletIndexCount = info.meshletIndexCount;
     subgroupCaps = info.subgroupCaps;
+    useVirtualTexture = info.useVirtualTexture;
 
     if (!createDispatcherPipeline()) return false;
     if (!createSubdivisionPipeline()) return false;
@@ -206,10 +207,15 @@ bool TerrainPipelines::createRenderPipeline() {
     }
     renderPipelineLayout_ = std::move(layoutOpt);
 
-    // Create filled render pipeline
+    // Create filled render pipeline. The VT variant is terrain.frag compiled
+    // with USE_VIRTUAL_TEXTURE (sampling the megatexture instead of triplanar).
+    const std::string fragShader = useVirtualTexture
+        ? shaderPath + "/terrain/terrain_vt.frag.spv"
+        : shaderPath + "/terrain/terrain.frag.spv";
+
     PipelineBuilder builder(device);
     builder.addShaderStage(shaderPath + "/terrain/terrain.vert.spv", VK_SHADER_STAGE_VERTEX_BIT)
-           .addShaderStage(shaderPath + "/terrain/terrain.frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT);
+           .addShaderStage(fragShader, VK_SHADER_STAGE_FRAGMENT_BIT);
 
     VkPipeline rawPipeline = VK_NULL_HANDLE;
     if (!builder.buildGraphicsPipeline(PipelinePresets::filled(renderPass), **renderPipelineLayout_, rawPipeline)) {
@@ -258,9 +264,13 @@ bool TerrainPipelines::createShadowPipeline() {
 }
 
 bool TerrainPipelines::createMeshletRenderPipeline() {
+    const std::string fragShader = useVirtualTexture
+        ? shaderPath + "/terrain/terrain_vt.frag.spv"
+        : shaderPath + "/terrain/terrain.frag.spv";
+
     PipelineBuilder builder(device);
     builder.addShaderStage(shaderPath + "/terrain/terrain_meshlet.vert.spv", VK_SHADER_STAGE_VERTEX_BIT)
-           .addShaderStage(shaderPath + "/terrain/terrain.frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT);
+           .addShaderStage(fragShader, VK_SHADER_STAGE_FRAGMENT_BIT);
 
     auto cfg = PipelinePresets::filled(renderPass);
     cfg.useMeshletVertexInput = true;

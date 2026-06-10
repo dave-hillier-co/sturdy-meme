@@ -20,6 +20,7 @@
 #include <vector>
 #include <memory>
 #include <string>
+#include <functional>
 
 #include "interfaces/IHDRDrawable.h"
 
@@ -76,6 +77,13 @@ public:
     void recordSecondarySlot(VkCommandBuffer cmd, uint32_t frameIndex, float time,
                              uint32_t slot, const Params& params);
 
+    // Callback recorded into the primary command buffer right after the HDR
+    // render pass ends (outside any render pass) - used for transfer work that
+    // depends on the pass's fragment output, e.g. the virtual texture
+    // feedback readback copy.
+    using PostPassCallback = std::function<void(VkCommandBuffer cmd, uint32_t frameIndex)>;
+    void setPostPassCallback(PostPassCallback callback) { postPassCallback_ = std::move(callback); }
+
 private:
     struct RegisteredDrawable {
         std::unique_ptr<IHDRDrawable> drawable;
@@ -89,4 +97,5 @@ private:
     Profiler& profiler_;
     PostProcessSystem& postProcess_;
     std::vector<RegisteredDrawable> drawables_;
+    PostPassCallback postPassCallback_;
 };

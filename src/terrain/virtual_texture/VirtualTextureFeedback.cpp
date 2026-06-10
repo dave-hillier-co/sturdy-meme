@@ -86,9 +86,10 @@ void VirtualTextureFeedback::clear(VkCommandBuffer cmd, uint32_t frameIndex) {
     vk::CommandBuffer vkCmd(cmd);
     vkCmd.fillBuffer(fb.counterBuffer.get(), 0, sizeof(uint32_t), 0);
     {
+        // atomicAdd is a read-modify-write, so the shader both reads and writes
         auto barrier = vk::MemoryBarrier{}
             .setSrcAccessMask(vk::AccessFlagBits::eTransferWrite)
-            .setDstAccessMask(vk::AccessFlagBits::eShaderRead);
+            .setDstAccessMask(vk::AccessFlagBits::eShaderRead | vk::AccessFlagBits::eShaderWrite);
         vkCmd.pipelineBarrier(vk::PipelineStageFlagBits::eTransfer,
                               vk::PipelineStageFlagBits::eFragmentShader,
                               {}, barrier, {}, {});
@@ -163,13 +164,11 @@ void VirtualTextureFeedback::readback(uint32_t frameIndex) {
         return;
     }
 
-    // Read tile IDs and deduplicate
+    // Read tile IDs and deduplicate. The counter bounds the valid entries, so
+    // every value is a real request - including 0, which is tile (0,0) mip 0.
     const uint32_t* tileIds = static_cast<const uint32_t*>(fb.readbackMapped);
     for (uint32_t i = 0; i < count; ++i) {
-        uint32_t packed = tileIds[i];
-        if (packed != 0) { // 0 might be invalid/empty
-            requestedTilePacked.insert(packed);
-        }
+        requestedTilePacked.insert(tileIds[i]);
     }
 
     // Convert to TileId and sort by priority (lower mip first)

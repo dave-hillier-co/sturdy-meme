@@ -175,15 +175,15 @@ void VirtualTextureTileLoader::workerLoop() {
         if (loadTileFromDisk(request.id, tile)) {
             totalBytesLoaded += tile.pixels.size();
 
+            // Invoke callback before the tile is moved into the loaded list
+            if (loadedCallback) {
+                loadedCallback(tile);
+            }
+
             // Add to loaded list
             {
                 std::lock_guard<std::mutex> lock(loadedMutex);
                 loadedTiles.push_back(std::move(tile));
-            }
-
-            // Invoke callback if set
-            if (loadedCallback) {
-                loadedCallback(tile);
             }
         }
     }

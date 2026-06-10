@@ -781,6 +781,11 @@ std::vector<Loading::SystemInitTask> RendererBuilder::buildInitTasks(Renderer& r
             terrainFactoryConfig.shadowMapSize = r.systems_->shadow().getShadowMapSize();
             terrainFactoryConfig.resourcePath = r.resourcePath;
 
+            // VT feedback needs fragment shader SSBO atomics
+            terrainFactoryConfig.useVirtualTexture =
+                terrainFactoryConfig.useVirtualTexture &&
+                r.vulkanContext_->hasFragmentStoresAndAtomics();
+
             // Yield callback keeps the window responsive during heavy terrain loading
             terrainFactoryConfig.yieldCallback = [&r](float subProgress, const char* phase) {
                 float overallProgress = 0.20f + subProgress * 0.08f;

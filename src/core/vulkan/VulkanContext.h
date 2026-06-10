@@ -133,6 +133,8 @@ public:
     bool hasMultiDrawIndirect() const { return hasMultiDrawIndirect_; }
     // firstInstance != 0 in (indexed) indirect draws -> required for per-object gl_InstanceIndex.
     bool hasDrawIndirectFirstInstance() const { return hasDrawIndirectFirstInstance_; }
+    // Fragment shader SSBO writes/atomics -> required for virtual texture feedback.
+    bool hasFragmentStoresAndAtomics() const { return hasFragmentStoresAndAtomics_; }
 
 private:
     bool createInstance();
@@ -168,6 +170,7 @@ private:
     bool hasDrawIndirectCount_ = false;
     bool hasMultiDrawIndirect_ = false;
     bool hasDrawIndirectFirstInstance_ = false;
+    bool hasFragmentStoresAndAtomics_ = false;
 
     VmaAllocator allocator = VK_NULL_HANDLE;
 

@@ -73,6 +73,15 @@ void TerrainSystem::updateUniforms(uint32_t frameIndex, const glm::vec3& cameraP
 }
 
 void TerrainSystem::recordCompute(vk::CommandBuffer cmd, uint32_t frameIndex, GpuProfiler* profiler) {
+    // Virtual texture frame work: process last completed frame's feedback,
+    // record tile/page-table uploads, then clear this frame's feedback buffer.
+    // Must run before the early-out below - VT streaming continues even when
+    // subdivision compute is skipped.
+    if (virtualTexture) {
+        virtualTexture->update(cmd, frameIndex);
+        virtualTexture->beginFrame(cmd, frameIndex);
+    }
+
     // Update tile info buffer binding to the correct frame's buffer (triple-buffered to avoid CPU-GPU sync)
     descriptorSets_->writeTileInfoCompute(frameIndex, tileCache.get());
 
@@ -323,6 +332,14 @@ void TerrainSystem::recordDraw(vk::CommandBuffer cmd, uint32_t frameIndex) {
         // Direct vertex draw (no vertex buffer - vertices generated from gl_VertexIndex)
         vkCmd.drawIndirect(buffers->getIndirectDrawBuffer(), 0, 1, sizeof(VkDrawIndirectCommand));
         DIAG_RECORD_DRAW();
+    }
+}
+
+void TerrainSystem::recordVirtualTextureFeedbackCopy(vk::CommandBuffer cmd, uint32_t frameIndex) {
+    // Copies this frame's GPU feedback buffer to its CPU readback buffer.
+    // Must be recorded after the HDR render pass (outside any render pass).
+    if (virtualTexture) {
+        virtualTexture->endFrame(cmd, frameIndex);
     }
 }
 

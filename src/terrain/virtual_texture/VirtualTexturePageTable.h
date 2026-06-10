@@ -71,14 +71,11 @@ public:
     // Check if any entries have changed
     bool isDirty() const { return dirty; }
 
-    // Get the image view for a mip level
-    VkImageView getImageView(uint32_t mipLevel) const;
-
     // Get the sampler for the page table
     VkSampler getSampler() const { return pageTableSampler_ ? **pageTableSampler_ : VK_NULL_HANDLE; }
 
-    // Get the combined image view (array of all mip levels)
-    VkImageView getCombinedImageView() const { return combinedImageView; }
+    // Get the combined image view (texture array, one layer per mip level)
+    VkImageView getCombinedImageView() const { return pageTableImage_.getView(); }
 
 
 private:
@@ -100,11 +97,10 @@ private:
     VmaAllocator allocator_ = VK_NULL_HANDLE;
     const vk::raii::Device* raiiDevice_ = nullptr;
 
-    // One image per mip level
-    std::vector<VmaImageHandle> pageTableImages_;
-
-    // Combined image view (texture array)
-    VkImageView combinedImageView = VK_NULL_HANDLE;
+    // Single array image: one layer per mip level, all layers sized for mip 0.
+    // Mip N's entries occupy the top-left corner of layer N, matching the
+    // shader's texelFetch(vtPageTable, ivec3(x, y, mip)) addressing.
+    VmaImageHandle pageTableImage_;
     std::optional<vk::raii::Sampler> pageTableSampler_;
 
     // Per-frame staging buffers to avoid race conditions with in-flight frames

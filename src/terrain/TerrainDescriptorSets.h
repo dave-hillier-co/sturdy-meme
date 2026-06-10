@@ -11,6 +11,7 @@ class TerrainBuffers;
 class TerrainTextures;
 class TerrainTileCache;
 class TerrainEffects;
+namespace VirtualTexture { class VirtualTextureSystem; }
 
 /**
  * TerrainDescriptorSets - Owns and manages Vulkan descriptor set layouts and sets
@@ -54,6 +55,8 @@ public:
     void writeInitialComputeBindings(TerrainCBT* cbt, TerrainBuffers* buffers, TerrainTileCache* tileCache);
 
     // Write full render descriptor bindings with shared external resources
+    // virtualTexture may be null (VT bindings are then left unwritten; the
+    // non-VT pipeline doesn't statically use them)
     void updateRenderBindings(TerrainCBT* cbt,
                               TerrainBuffers* buffers,
                               TerrainTextures* textures,
@@ -63,7 +66,8 @@ public:
                               vk::ImageView shadowMapView,
                               vk::Sampler shadowSampler,
                               const std::vector<vk::Buffer>& snowUBOBuffers,
-                              const std::vector<vk::Buffer>& cloudShadowUBOBuffers);
+                              const std::vector<vk::Buffer>& cloudShadowUBOBuffers,
+                              VirtualTexture::VirtualTextureSystem* virtualTexture = nullptr);
 
     // Individual texture binding updates (called when external systems provide resources)
     void writeSnowMask(vk::ImageView view, vk::Sampler sampler);

@@ -276,6 +276,40 @@ bool FroxelSystem::createIntegrationPipeline() {
         .buildInto(integrationPipeline_);
 }
 
+void FroxelSystem::recordInitialClearIfNeeded(VkCommandBuffer cmd) {
+    if (integratedVolumeInitialized_) return;
+    integratedVolumeInitialized_ = true;
+
+    vk::CommandBuffer vkCmd(cmd);
+    auto range = vk::ImageSubresourceRange{vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1};
+
+    auto toTransfer = vk::ImageMemoryBarrier{}
+        .setSrcAccessMask(vk::AccessFlagBits::eNone)
+        .setDstAccessMask(vk::AccessFlagBits::eTransferWrite)
+        .setOldLayout(vk::ImageLayout::eUndefined)
+        .setNewLayout(vk::ImageLayout::eTransferDstOptimal)
+        .setImage(integratedVolume_.get())
+        .setSubresourceRange(range);
+    vkCmd.pipelineBarrier(vk::PipelineStageFlagBits::eTopOfPipe,
+                          vk::PipelineStageFlagBits::eTransfer,
+                          {}, {}, {}, toTransfer);
+
+    // Zero scattering / zero opacity = no fog contribution in the composite
+    vkCmd.clearColorImage(integratedVolume_.get(), vk::ImageLayout::eTransferDstOptimal,
+                          vk::ClearColorValue(std::array<float, 4>{0.0f, 0.0f, 0.0f, 0.0f}), range);
+
+    auto toSampled = vk::ImageMemoryBarrier{}
+        .setSrcAccessMask(vk::AccessFlagBits::eTransferWrite)
+        .setDstAccessMask(vk::AccessFlagBits::eShaderRead)
+        .setOldLayout(vk::ImageLayout::eTransferDstOptimal)
+        .setNewLayout(vk::ImageLayout::eShaderReadOnlyOptimal)
+        .setImage(integratedVolume_.get())
+        .setSubresourceRange(range);
+    vkCmd.pipelineBarrier(vk::PipelineStageFlagBits::eTransfer,
+                          vk::PipelineStageFlagBits::eFragmentShader,
+                          {}, {}, {}, toSampled);
+}
+
 void FroxelSystem::recordFroxelUpdate(VkCommandBuffer cmd, uint32_t frameIndex,
                                        const glm::mat4& view, const glm::mat4& proj,
                                        const glm::vec3& cameraPos,
@@ -283,7 +317,12 @@ void FroxelSystem::recordFroxelUpdate(VkCommandBuffer cmd, uint32_t frameIndex,
                                        const glm::vec3& sunColor,
                                        const glm::mat4* cascadeMatrices,
                                        const glm::vec4& cascadeSplits) {
-    if (!enabled) return;
+    if (!enabled) {
+        // The post-process composite statically binds the integrated volume; keep it valid
+        recordInitialClearIfNeeded(cmd);
+        return;
+    }
+    integratedVolumeInitialized_ = true;
 
     // Update uniform buffer
     glm::mat4 viewProj = proj * view;

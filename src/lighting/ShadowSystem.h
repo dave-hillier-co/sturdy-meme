@@ -103,6 +103,14 @@ public:
                           const IndirectShadowParams& indirect = {});
 
     /**
+     * Record empty depth-clear render passes for each cascade if the shadow map
+     * has never been rendered. The cascade shadow map is statically sampled by the
+     * main scene shaders, so it must hold valid contents (depth = 1.0, no shadow)
+     * even on frames where the shadow pass is skipped (e.g. sun below horizon).
+     */
+    void recordInitialClearIfNeeded(VkCommandBuffer cmd);
+
+    /**
      * Initialize GPU-driven indirect shadow resources (pipeline + per-frame instance
      * descriptor sets bound to the GPUSceneBuffer instance buffer). Requires the
      * GPUSceneBuffer to already exist. Safe to skip; the CPU/instanced path remains.
@@ -287,6 +295,7 @@ private:
     VkDescriptorPool indirectShadowPool = VK_NULL_HANDLE;
     std::vector<vk::DescriptorSet> indirectInstanceDescriptorSets;  // per frame -> instance SSBO
     bool indirectShadowReady_ = false;
+    bool csmInitialized_ = false;
 
     // Draw scene objects for one cascade via per-cascade indirect commands.
     void recordShadowSceneIndirect(VkCommandBuffer cmd, uint32_t frameIndex, uint32_t cascade,

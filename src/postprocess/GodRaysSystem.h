@@ -53,6 +53,13 @@ public:
      */
     void recordGodRaysPass(VkCommandBuffer cmd, VkImageView hdrView, VkImageView depthView);
 
+    /**
+     * Clear the output image and move it to SHADER_READ_ONLY_OPTIMAL if it has
+     * never been written. The post-process composite statically binds this image,
+     * so it must be valid even while the god rays pass itself is skipped/disabled.
+     */
+    void recordInitialClearIfNeeded(VkCommandBuffer cmd);
+
     VkImageView getGodRaysOutput() const { return outputImageView_; }
     VkSampler getSampler() const { return sampler_ ? **sampler_ : VK_NULL_HANDLE; }
 
@@ -88,6 +95,7 @@ private:
     VmaAllocation outputAllocation_ = VK_NULL_HANDLE;
     VkImageView outputImageView_ = VK_NULL_HANDLE;
     VkExtent2D quarterExtent_ = {0, 0};
+    bool outputNeedsInitialClear_ = true;
 
     std::optional<vk::raii::Sampler> sampler_;
     std::optional<vk::raii::DescriptorSetLayout> descSetLayout_;

@@ -6,6 +6,7 @@
 #include "PerformanceToggles.h"
 #include "ScreenSpaceShadowSystem.h"
 #include "ShadowPassRecorder.h"
+#include "ShadowSystem.h"
 #include "vulkan/VulkanContext.h"
 
 #include <cstdlib>
@@ -59,6 +60,10 @@ PassIds addPasses(PassScheduler& graph, RendererSystems& systems, const Config& 
 
                 systems.profiler().endGpuZone(ctx.commandBuffer, "ShadowPass");
                 systems.profiler().endCpuZone("ShadowRecord");
+            } else {
+                // Skipped (sun down / toggled off): make sure the statically-sampled
+                // cascade shadow map holds valid contents instead of UNDEFINED memory.
+                systems.shadow().recordInitialClearIfNeeded(ctx.commandBuffer);
             }
         },
         .canUseSecondary = false,

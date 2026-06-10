@@ -172,6 +172,28 @@ bool ShadowSystem::createShadowResources() {
     return true;
 }
 
+void ShadowSystem::recordInitialClearIfNeeded(VkCommandBuffer cmd) {
+    if (csmInitialized_) return;
+    csmInitialized_ = true;
+
+    // Empty render passes clear each cascade to depth 1.0 (fully lit) and leave the
+    // image in SHADER_READ_ONLY_OPTIMAL via the render pass final layout, matching
+    // what the regular shadow pass produces.
+    vk::CommandBuffer vkCmd(cmd);
+    vk::ClearValue shadowClear;
+    shadowClear.depthStencil = vk::ClearDepthStencilValue{1.0f, 0};
+
+    for (uint32_t cascade = 0; cascade < NUM_SHADOW_CASCADES; cascade++) {
+        auto passInfo = vk::RenderPassBeginInfo{}
+            .setRenderPass(shadowRenderPass)
+            .setFramebuffer(cascadeFramebuffers[cascade])
+            .setRenderArea({{0, 0}, {SHADOW_MAP_SIZE, SHADOW_MAP_SIZE}})
+            .setClearValues(shadowClear);
+        vkCmd.beginRenderPass(passInfo, vk::SubpassContents::eInline);
+        vkCmd.endRenderPass();
+    }
+}
+
 bool ShadowSystem::createShadowPipelineCommon(
     const std::string& vertShader,
     const std::string& fragShader,
@@ -843,6 +865,9 @@ void ShadowSystem::recordShadowPass(VkCommandBuffer cmd, uint32_t frameIndex,
                                      const ComputeCallback& preCascadeComputeCallback,
                                      const IndirectShadowParams& indirect) {
     vk::CommandBuffer vkCmd(cmd);
+
+    // Each cascade render pass below clears and writes the shadow map
+    csmInitialized_ = true;
 
     // GPU-driven indirect scene-object path (per-cascade frustum culling + indirect draw).
     // When active it replaces the instanced/per-object scene-object draw below.

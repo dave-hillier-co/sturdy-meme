@@ -93,7 +93,8 @@ bool GodRaysSystem::createResources() {
         .setArrayLayers(1)
         .setSamples(vk::SampleCountFlagBits::e1)
         .setTiling(vk::ImageTiling::eOptimal)
-        .setUsage(vk::ImageUsageFlagBits::eStorage | vk::ImageUsageFlagBits::eSampled)
+        .setUsage(vk::ImageUsageFlagBits::eStorage | vk::ImageUsageFlagBits::eSampled |
+                  vk::ImageUsageFlagBits::eTransferDst)
         .setSharingMode(vk::SharingMode::eExclusive)
         .setInitialLayout(vk::ImageLayout::eUndefined);
 
@@ -119,7 +120,41 @@ bool GodRaysSystem::createResources() {
         return false;
     }
 
+    outputNeedsInitialClear_ = true;
     return true;
+}
+
+void GodRaysSystem::recordInitialClearIfNeeded(VkCommandBuffer cmd) {
+    if (!outputNeedsInitialClear_) return;
+    outputNeedsInitialClear_ = false;
+
+    vk::CommandBuffer vkCmd(cmd);
+    auto range = vk::ImageSubresourceRange{vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1};
+
+    auto toTransfer = vk::ImageMemoryBarrier{}
+        .setSrcAccessMask(vk::AccessFlagBits::eNone)
+        .setDstAccessMask(vk::AccessFlagBits::eTransferWrite)
+        .setOldLayout(vk::ImageLayout::eUndefined)
+        .setNewLayout(vk::ImageLayout::eTransferDstOptimal)
+        .setImage(outputImage_)
+        .setSubresourceRange(range);
+    vkCmd.pipelineBarrier(vk::PipelineStageFlagBits::eTopOfPipe,
+                          vk::PipelineStageFlagBits::eTransfer,
+                          {}, {}, {}, toTransfer);
+
+    vkCmd.clearColorImage(outputImage_, vk::ImageLayout::eTransferDstOptimal,
+                          vk::ClearColorValue(std::array<float, 4>{0.0f, 0.0f, 0.0f, 0.0f}), range);
+
+    auto toSampled = vk::ImageMemoryBarrier{}
+        .setSrcAccessMask(vk::AccessFlagBits::eTransferWrite)
+        .setDstAccessMask(vk::AccessFlagBits::eShaderRead)
+        .setOldLayout(vk::ImageLayout::eTransferDstOptimal)
+        .setNewLayout(vk::ImageLayout::eShaderReadOnlyOptimal)
+        .setImage(outputImage_)
+        .setSubresourceRange(range);
+    vkCmd.pipelineBarrier(vk::PipelineStageFlagBits::eTransfer,
+                          vk::PipelineStageFlagBits::eFragmentShader,
+                          {}, {}, {}, toSampled);
 }
 
 bool GodRaysSystem::createPipeline() {
@@ -197,6 +232,9 @@ void GodRaysSystem::destroyResources() {
 
 void GodRaysSystem::recordGodRaysPass(VkCommandBuffer cmd, VkImageView hdrView, VkImageView depthView) {
     vk::CommandBuffer vkCmd(cmd);
+
+    // The dispatch below overwrites every texel, so no separate initial clear is needed
+    outputNeedsInitialClear_ = false;
 
     // Transition output image to GENERAL
     {

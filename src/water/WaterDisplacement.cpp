@@ -7,6 +7,7 @@
 #include "core/vulkan/PipelineLayoutBuilder.h"
 #include "core/vulkan/DescriptorSetLayoutBuilder.h"
 #include "core/vulkan/BarrierHelpers.h"
+#include "core/vulkan/CommandBufferUtils.h"
 #include "core/ImageBuilder.h"
 #include <SDL3/SDL_log.h>
 #include <vulkan/vulkan.hpp>
@@ -142,6 +143,39 @@ bool WaterDisplacement::createDisplacementMap() {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create displacement sampler");
         return false;
     }
+
+    // The water vertex shader samples the displacement map every frame, but the
+    // compute pass that writes it only runs when splash particles exist. Clear both
+    // maps to zero and move them to shader-read layout so they are valid to sample
+    // before (or without) any compute dispatch.
+    CommandScope initCmd(vk::Device(device), vk::CommandPool(commandPool), vk::Queue(computeQueue));
+    if (!initCmd.begin()) {
+        return false;
+    }
+    for (VkImage image : {displacementMap, prevDisplacementMap}) {
+        BarrierHelpers::transitionImageLayout(initCmd.get(), image,
+            vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal,
+            vk::PipelineStageFlagBits::eTopOfPipe, vk::PipelineStageFlagBits::eTransfer,
+            {}, vk::AccessFlagBits::eTransferWrite);
+
+        auto clearRange = vk::ImageSubresourceRange{}
+            .setAspectMask(vk::ImageAspectFlagBits::eColor)
+            .setLevelCount(1)
+            .setLayerCount(1);
+        initCmd.get().clearColorImage(image, vk::ImageLayout::eTransferDstOptimal,
+                                      vk::ClearColorValue{0.0f, 0.0f, 0.0f, 0.0f}, clearRange);
+
+        BarrierHelpers::transitionImageLayout(initCmd.get(), image,
+            vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eShaderReadOnlyOptimal,
+            vk::PipelineStageFlagBits::eTransfer,
+            vk::PipelineStageFlagBits::eVertexShader | vk::PipelineStageFlagBits::eFragmentShader |
+                vk::PipelineStageFlagBits::eComputeShader,
+            vk::AccessFlagBits::eTransferWrite, vk::AccessFlagBits::eShaderRead);
+    }
+    if (!initCmd.end()) {
+        return false;
+    }
+
     return true;
 }
 

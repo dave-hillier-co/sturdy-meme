@@ -3,6 +3,8 @@
 #include "GraphicsPipelineFactory.h"
 #include "VmaBufferFactory.h"
 #include "DescriptorManager.h"
+#include "core/vulkan/BarrierHelpers.h"
+#include "core/vulkan/CommandBufferUtils.h"
 #include "debug/QueueSubmitDiagnostics.h"
 #include <vulkan/vulkan.hpp>
 #include <SDL3/SDL.h>
@@ -93,6 +95,7 @@ bool WaterSystem::initInternal(const InitInfo& info) {
     if (!createUniformBuffers()) return false;
     if (!loadFoamTexture()) return false;
     if (!loadCausticsTexture()) return false;
+    if (!createEnvPlaceholderCube()) return false;
 
     return true;
 }
@@ -103,6 +106,7 @@ void WaterSystem::cleanup() {
     // Destroy RAII-managed resources
     foamTexture.reset();
     causticsTexture.reset();
+    envPlaceholderCube_.reset();
     waterMesh.reset();
 
     // Destroy uniform buffers (RAII-managed)
@@ -383,6 +387,45 @@ bool WaterSystem::loadCausticsTexture() {
     return true;
 }
 
+bool WaterSystem::createEnvPlaceholderCube() {
+    ImageBuilder builder(allocator);
+    builder.setExtent(1, 1)
+           .setFormat(VK_FORMAT_R8G8B8A8_UNORM)
+           .asTexture()
+           .asCubeMap();
+    envPlaceholderCube_ = createImageWithView(*raiiDevice_, builder);
+    if (!envPlaceholderCube_.isValid()) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create env placeholder cubemap");
+        return false;
+    }
+
+    // Clear all 6 faces to black and move to shader-read layout
+    CommandScope initCmd(vk::Device(device), vk::CommandPool(commandPool), vk::Queue(graphicsQueue));
+    if (!initCmd.begin()) {
+        return false;
+    }
+    BarrierHelpers::transitionImageLayout(initCmd.get(), envPlaceholderCube_.getImage(),
+        vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal,
+        vk::PipelineStageFlagBits::eTopOfPipe, vk::PipelineStageFlagBits::eTransfer,
+        {}, vk::AccessFlagBits::eTransferWrite,
+        vk::ImageAspectFlagBits::eColor, 0, 1, 0, 6);
+
+    auto clearRange = vk::ImageSubresourceRange{}
+        .setAspectMask(vk::ImageAspectFlagBits::eColor)
+        .setLevelCount(1)
+        .setLayerCount(6);
+    initCmd.get().clearColorImage(envPlaceholderCube_.getImage(), vk::ImageLayout::eTransferDstOptimal,
+                                  vk::ClearColorValue{0.0f, 0.0f, 0.0f, 1.0f}, clearRange);
+
+    BarrierHelpers::transitionImageLayout(initCmd.get(), envPlaceholderCube_.getImage(),
+        vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eShaderReadOnlyOptimal,
+        vk::PipelineStageFlagBits::eTransfer, vk::PipelineStageFlagBits::eFragmentShader,
+        vk::AccessFlagBits::eTransferWrite, vk::AccessFlagBits::eShaderRead,
+        vk::ImageAspectFlagBits::eColor, 0, 1, 0, 6);
+
+    return initCmd.end();
+}
+
 bool WaterSystem::createDescriptorSets(const std::vector<VkBuffer>& uniformBuffers,
                                         VkDeviceSize uniformBufferSize,
                                         ShadowSystem& shadowSystem,
@@ -464,8 +507,9 @@ bool WaterSystem::createDescriptorSets(const std::vector<VkBuffer>& uniformBuffe
         if (envCubemapView != VK_NULL_HANDLE && envCubemapSampler != VK_NULL_HANDLE) {
             writer.writeImage(22, envCubemapView, envCubemapSampler);
         } else {
-            // Use displacement map as placeholder (will fall back to procedural sky in shader)
-            writer.writeImage(22, displacementMapView, displacementMapSampler);
+            // Black 1x1 cube placeholder (shader falls back to procedural sky).
+            // Must be a cube view: the shader binding is samplerCube.
+            writer.writeImage(22, envPlaceholderCube_.getView(), foamTexture->getSampler());
         }
 
         writer.update();
@@ -531,10 +575,12 @@ void WaterSystem::recordDraw(VkCommandBuffer cmd, uint32_t frameIndex) {
         waterUniforms.waterExtent.y
     ));
     // useFFTOcean and oceanSize values are set via setUseFFTOcean()
-    // Push constants are used by vertex shader (non-tess) or both vertex + tess eval shaders
+    // Stage flags must match the pipeline layout's push constant range exactly
     vkCmd.pushConstants<PushConstants>(
         **pipelineLayout_,
-        vk::ShaderStageFlagBits::eVertex,
+        vk::ShaderStageFlagBits::eVertex |
+            vk::ShaderStageFlagBits::eTessellationControl |
+            vk::ShaderStageFlagBits::eTessellationEvaluation,
         0, pushConstants);
 
     // Bind water mesh and draw

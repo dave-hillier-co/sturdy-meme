@@ -63,7 +63,7 @@ public:
         float nearPlane;
         float farPlane;
         uint32_t maxTiles;        // Output buffer capacity
-        uint32_t _pad0;
+        uint32_t frameIndex;      // Frame-in-flight index (selects counter slot)
     };
 
     // Indirect draw command for Vulkan

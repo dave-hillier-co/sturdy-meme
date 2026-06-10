@@ -15,6 +15,7 @@
 #include "DescriptorManager.h"
 #include "VmaBuffer.h"
 #include "core/FrameBuffered.h"
+#include "core/ImageBuilder.h"
 #include "material/MaterialComponents.h"
 #include "interfaces/IRecordable.h"
 
@@ -370,6 +371,7 @@ private:
     bool createUniformBuffers();
     bool loadFoamTexture();
     bool loadCausticsTexture();
+    bool createEnvPlaceholderCube();
 
     // Initialization info
     VkDevice device = VK_NULL_HANDLE;
@@ -410,6 +412,12 @@ private:
 
     // Caustics texture (Phase 9) - RAII-managed
     std::unique_ptr<Texture> causticsTexture;
+
+    // 1x1 black cubemap bound at binding 22 when no real environment cubemap is
+    // supplied. The shader declares samplerCube there, so the placeholder must be
+    // a cube view (a 2D view is an invalid descriptor and breaks the draw on Metal).
+    // Black is treated as "no cubemap" by the shader, which falls back to procedural sky.
+    ImageWithView envPlaceholderCube_;
 
     // Tidal parameters
     float baseWaterLevel = 0.0f;  // Mean sea level

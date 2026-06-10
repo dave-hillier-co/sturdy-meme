@@ -171,6 +171,8 @@ bool VulkanContext::createSurface() {
 bool VulkanContext::selectPhysicalDevice() {
     VkPhysicalDeviceFeatures features{};
     features.samplerAnisotropy = VK_FALSE;
+    // Point-light shadows use cube-array image views and SampledCubeArray shaders
+    features.imageCubeArray = VK_TRUE;
 
     // Vulkan 1.2 features - timeline semaphores are core in 1.2
     VkPhysicalDeviceVulkan12Features vulkan12Features{};

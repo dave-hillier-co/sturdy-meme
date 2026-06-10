@@ -48,9 +48,10 @@ bool TripleBuffering::init(const vk::raii::Device& device, uint32_t frameCount) 
             FrameSyncPrimitives primitives;
 
             try {
-                // Binary semaphores for swapchain acquire/present
+                // Binary semaphore for swapchain acquire (per frame-in-flight slot).
+                // The present-wait (render-finished) semaphore is per swapchain
+                // image instead — see initPresentSemaphores().
                 primitives.imageAvailable.emplace(device, vk::SemaphoreCreateInfo{});
-                primitives.renderFinished.emplace(device, vk::SemaphoreCreateInfo{});
             } catch (const vk::SystemError& e) {
                 SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
                     "TripleBuffering::init: failed to create semaphores for frame %u: %s", i, e.what());
@@ -68,7 +69,7 @@ bool TripleBuffering::init(const vk::raii::Device& device, uint32_t frameCount) 
     // Verify all primitives were created successfully
     for (uint32_t i = 0; i < frameCount; ++i) {
         const auto& p = frames_[i];
-        if (!p.imageAvailable || !p.renderFinished) {
+        if (!p.imageAvailable) {
             SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
                 "TripleBuffering::init: incomplete primitives for frame %u", i);
             destroy();
@@ -80,9 +81,42 @@ bool TripleBuffering::init(const vk::raii::Device& device, uint32_t frameCount) 
     return true;
 }
 
+bool TripleBuffering::initPresentSemaphores(uint32_t imageCount) {
+    if (!device_) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
+            "TripleBuffering::initPresentSemaphores: called before init()");
+        return false;
+    }
+    if (imageCount == 0) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
+            "TripleBuffering::initPresentSemaphores: imageCount must be > 0");
+        return false;
+    }
+
+    // Recreate from scratch; RAII destroys any previous semaphores. Callers must
+    // ensure the device is idle (e.g. after a swapchain recreate) before resizing
+    // this set, since outstanding presents may still reference the old semaphores.
+    presentSemaphores_.clear();
+    presentSemaphores_.reserve(imageCount);
+    try {
+        for (uint32_t i = 0; i < imageCount; ++i) {
+            presentSemaphores_.emplace_back(*device_, vk::SemaphoreCreateInfo{});
+        }
+    } catch (const vk::SystemError& e) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
+            "TripleBuffering::initPresentSemaphores: failed to create semaphores: %s", e.what());
+        presentSemaphores_.clear();
+        return false;
+    }
+
+    SDL_Log("TripleBuffering: created %u per-image present-wait semaphores", imageCount);
+    return true;
+}
+
 void TripleBuffering::destroy() {
     // RAII handles cleanup - just clear containers and reset pointers
     frames_.clear();
+    presentSemaphores_.clear();
     frameTimeline_.reset();
     frameSignalValues_.fill(0);
     globalFrameCounter_ = 0;

@@ -29,6 +29,14 @@ std::unique_ptr<HDRPassRecorder> buildHDRPassRecorder(
     auto recorder = std::make_unique<HDRPassRecorder>(
         systems.profiler(), systems.postProcess());
 
+    // Virtual texture feedback: copy the GPU feedback buffer (written by the
+    // terrain fragment shader during the HDR pass) to its CPU readback buffer
+    recorder->setPostPassCallback([&systems](VkCommandBuffer cmd, uint32_t frameIndex) {
+        if (systems.terrain().hasVirtualTexture() && systems.terrain().isTerrainEnabled()) {
+            systems.terrain().recordVirtualTextureFeedbackCopy(cmd, frameIndex);
+        }
+    });
+
     // Draw order constants - controls rendering sequence within the HDR pass.
     // Slot assignment groups drawables for parallel secondary command buffer recording.
     // Slot 0: geometry base, Slot 1: scene meshes, Slot 2: effects/vegetation/debug

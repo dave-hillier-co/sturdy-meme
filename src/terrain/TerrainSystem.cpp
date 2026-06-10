@@ -112,7 +112,9 @@ bool TerrainSystem::initInternal(const InitInfo& info, const TerrainConfig& cfg)
         vtConfig.virtualSizePixels = 8192;  // 64 * 128 = 8192
         vtConfig.tileSizePixels = 128;
         vtConfig.cacheSizePixels = 2048;    // 16x16 tiles in cache
-        vtConfig.borderPixels = 4;
+        // Tiles are generated without gutters and the cache places them at a
+        // tileSize stride, so the border must be 0 (see VirtualTextureConfig)
+        vtConfig.borderPixels = 0;
         vtConfig.maxMipLevels = 6;
 
         VirtualTexture::VirtualTextureSystem::InitInfo vtInfo;
@@ -173,6 +175,7 @@ bool TerrainSystem::initInternal(const InitInfo& info, const TerrainConfig& cfg)
     pipelineInfo.useMeshlets = config.useMeshlets;
     pipelineInfo.meshletIndexCount = config.useMeshlets && meshlet ? meshlet->getIndexCount() : 0;
     pipelineInfo.subgroupCaps = &subgroupCaps;
+    pipelineInfo.useVirtualTexture = virtualTexture != nullptr;
     pipelines = TerrainPipelines::create(pipelineInfo);
     if (!pipelines) return false;
 
@@ -365,7 +368,8 @@ void TerrainSystem::updateDescriptorSets(vk::Device device,
     descriptorSets_->updateRenderBindings(cbt.get(), buffers.get(), textures.get(),
                                            tileCache.get(), &effects,
                                            sceneUniformBuffers, shadowMapView, shadowSampler,
-                                           snowUBOBuffers, cloudShadowUBOBuffers);
+                                           snowUBOBuffers, cloudShadowUBOBuffers,
+                                           virtualTexture.get());
 }
 
 void TerrainSystem::setSnowMask(vk::Device device, vk::ImageView snowMaskView, vk::Sampler snowMaskSampler) {

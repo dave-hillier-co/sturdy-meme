@@ -210,6 +210,12 @@ bool VulkanContext::selectPhysicalDevice() {
     multiDrawFeature.multiDrawIndirect = VK_TRUE;
     hasMultiDrawIndirect_ = vkbPhysicalDevice.enable_features_if_present(multiDrawFeature);
 
+    // Fragment shader SSBO writes/atomics - required by the virtual texture
+    // feedback buffer (terrain fragment shader requests tiles via atomicAdd)
+    VkPhysicalDeviceFeatures fragmentStoresFeature{};
+    fragmentStoresFeature.fragmentStoresAndAtomics = VK_TRUE;
+    hasFragmentStoresAndAtomics_ = vkbPhysicalDevice.enable_features_if_present(fragmentStoresFeature);
+
     VkPhysicalDeviceVulkan12Features drawCountFeature{};
     drawCountFeature.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES;
     drawCountFeature.drawIndirectCount = VK_TRUE;
@@ -217,6 +223,7 @@ bool VulkanContext::selectPhysicalDevice() {
 
     SDL_Log("Indirect draw features: drawIndirectFirstInstance=%d multiDrawIndirect=%d drawIndirectCount=%d",
         hasDrawIndirectFirstInstance_, hasMultiDrawIndirect_, hasDrawIndirectCount_);
+    SDL_Log("Fragment stores and atomics (virtual texture feedback): %d", hasFragmentStoresAndAtomics_);
 
     // Create RAII wrapper for physical device (non-owning - physical devices aren't destroyed)
     raiiPhysicalDevice_ = std::make_unique<vk::raii::PhysicalDevice>(*raiiInstance_, physicalDevice);

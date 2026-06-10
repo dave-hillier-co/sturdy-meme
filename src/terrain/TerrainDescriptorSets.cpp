@@ -4,6 +4,7 @@
 #include "TerrainTextures.h"
 #include "TerrainTileCache.h"
 #include "TerrainEffects.h"
+#include "VirtualTextureSystem.h"
 #include "DescriptorManager.h"
 #include "UBOs.h"
 #include <vulkan/vulkan.hpp>
@@ -56,6 +57,7 @@ bool TerrainDescriptorSets::createLayouts() {
     // 17: snow UBO, 18: cloud shadow UBO, 19: tile array, 20: tile info
     // 21: caustics, 22: caustics UBO, 29: liquid UBO, 30: material layer UBO
     // 31: screen-space shadow
+    // 24-28: virtual texture (page table, cache, feedback, counter, params)
     renderLayout_ = DescriptorManager::LayoutBuilder(device_)
         .addBinding(0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_VERTEX_BIT)
         .addBinding(3, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT)
@@ -77,6 +79,11 @@ bool TerrainDescriptorSets::createLayouts() {
         .addBinding(20, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_VERTEX_BIT)
         .addBinding(21, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT)
         .addBinding(22, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_FRAGMENT_BIT)
+        .addBinding(24, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT)
+        .addBinding(25, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT)
+        .addBinding(26, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_FRAGMENT_BIT)
+        .addBinding(27, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_FRAGMENT_BIT)
+        .addBinding(28, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_FRAGMENT_BIT)
         .addBinding(29, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_FRAGMENT_BIT)
         .addBinding(30, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_FRAGMENT_BIT)
         .addBinding(31, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT)
@@ -152,7 +159,8 @@ void TerrainDescriptorSets::updateRenderBindings(TerrainCBT* cbt,
                                                    vk::ImageView shadowMapView,
                                                    vk::Sampler shadowSampler,
                                                    const std::vector<vk::Buffer>& snowUBOBuffers,
-                                                   const std::vector<vk::Buffer>& cloudShadowUBOBuffers) {
+                                                   const std::vector<vk::Buffer>& cloudShadowUBOBuffers,
+                                                   VirtualTexture::VirtualTextureSystem* virtualTexture) {
     for (uint32_t i = 0; i < framesInFlight_; i++) {
         auto writer = DescriptorManager::SetWriter(device_, renderSets_[i]);
 
@@ -218,6 +226,22 @@ void TerrainDescriptorSets::updateRenderBindings(TerrainCBT* cbt,
 
         constexpr VkDeviceSize causticsUBOSize = 32;
         writer.writeBuffer(22, buffers->getCausticsUniformBuffer(i), 0, causticsUBOSize);
+
+        // Virtual texture bindings (feedback buffers are per frame in flight)
+        if (virtualTexture) {
+            writer.writeImage(24, virtualTexture->getPageTableImageView(),
+                             virtualTexture->getPageTableSampler(),
+                             VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+            writer.writeImage(25, virtualTexture->getCacheImageView(),
+                             virtualTexture->getCacheSampler(),
+                             VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+            writer.writeBuffer(26, virtualTexture->getFeedbackBuffer(i), 0, VK_WHOLE_SIZE,
+                              VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
+            writer.writeBuffer(27, virtualTexture->getCounterBuffer(i), 0, VK_WHOLE_SIZE,
+                              VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
+            writer.writeBuffer(28, virtualTexture->getParamsBuffer(), 0,
+                              sizeof(VirtualTexture::VTParamsUBO));
+        }
 
         constexpr VkDeviceSize liquidUBOSize = 128;
         writer.writeBuffer(29, buffers->getLiquidUniformBuffer(i), 0, liquidUBOSize);

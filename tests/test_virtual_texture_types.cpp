@@ -118,7 +118,9 @@ TEST_SUITE("VirtualTextureConfig") {
         CHECK(config.virtualSizePixels == 65536);
         CHECK(config.tileSizePixels == 128);
         CHECK(config.cacheSizePixels == 4096);
-        CHECK(config.borderPixels == 4);
+        // Border must be 0 until tiles are baked with gutters and the cache
+        // places tiles at a (tileSize + 2*border) stride
+        CHECK(config.borderPixels == 0);
         CHECK(config.maxMipLevels == 9);
     }
 

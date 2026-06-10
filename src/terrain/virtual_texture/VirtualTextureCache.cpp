@@ -48,6 +48,8 @@ VirtualTextureCache::VirtualTextureCache(VirtualTextureCache&& other) noexcept
     , cacheSampler_(std::move(other.cacheSampler_))
     , stagingBuffers_(std::move(other.stagingBuffers_))
     , stagingMapped_(std::move(other.stagingMapped_))
+    , stagingCursor_(other.stagingCursor_)
+    , maxUploadsPerFrame_(other.maxUploadsPerFrame_)
     , framesInFlight_(other.framesInFlight_)
     , slots(std::move(other.slots))
     , tileToSlot(std::move(other.tileToSlot))
@@ -79,6 +81,8 @@ VirtualTextureCache& VirtualTextureCache::operator=(VirtualTextureCache&& other)
         cacheSampler_ = std::move(other.cacheSampler_);
         stagingBuffers_ = std::move(other.stagingBuffers_);
         stagingMapped_ = std::move(other.stagingMapped_);
+        stagingCursor_ = other.stagingCursor_;
+        maxUploadsPerFrame_ = other.maxUploadsPerFrame_;
         framesInFlight_ = other.framesInFlight_;
         slots = std::move(other.slots);
         tileToSlot = std::move(other.tileToSlot);
@@ -130,14 +134,11 @@ bool VirtualTextureCache::initInternal(const InitInfo& info) {
         return false;
     }
 
-    // Create per-frame staging buffers to avoid race conditions with in-flight frames
-    // BC1: 8 bytes per 4x4 block = 0.5 bytes per pixel
-    // RGBA8: 4 bytes per pixel
-    uint32_t blockWidth = (config.tileSizePixels + 3) / 4;
-    uint32_t blockHeight = (config.tileSizePixels + 3) / 4;
-    VkDeviceSize stagingSize = useCompression_
-        ? (blockWidth * blockHeight * 8)  // BC1: 8 bytes per block
-        : (config.tileSizePixels * config.tileSizePixels * 4);  // RGBA8
+    // Create per-frame staging buffers to avoid race conditions with in-flight
+    // frames. Each buffer holds one region per upload that can be recorded in
+    // a frame, since the copy commands execute after recording finishes.
+    maxUploadsPerFrame_ = info.maxUploadsPerFrame;
+    VkDeviceSize stagingSize = getTileStagingSize() * maxUploadsPerFrame_;
 
     stagingBuffers_.resize(framesInFlight_);
     stagingMapped_.resize(framesInFlight_);
@@ -234,7 +235,8 @@ bool VirtualTextureCache::createSampler(VkDevice device) {
     return true;
 }
 
-CacheSlot* VirtualTextureCache::allocateSlot(TileId id, uint32_t currentFrame) {
+CacheSlot* VirtualTextureCache::allocateSlot(TileId id, uint32_t currentFrame,
+                                             std::optional<TileId>* evictedTile) {
     uint32_t packed = id.pack();
 
     // Check if already in cache
@@ -256,11 +258,15 @@ CacheSlot* VirtualTextureCache::allocateSlot(TileId id, uint32_t currentFrame) {
     }
 
     // No empty slots, evict LRU
-    size_t lruIndex = findLRUSlot();
+    size_t lruIndex = findLRUSlot(currentFrame);
     if (lruIndex < slots.size()) {
-        // Remove old mapping
-        uint32_t oldPacked = slots[lruIndex].tileId.pack();
-        tileToSlot.erase(oldPacked);
+        // Remove old mapping and report the eviction so the caller can
+        // invalidate the evicted tile's page table entry
+        TileId oldTile = slots[lruIndex].tileId;
+        tileToSlot.erase(oldTile.pack());
+        if (evictedTile) {
+            *evictedTile = oldTile;
+        }
 
         // Set new tile
         slots[lruIndex].tileId = id;
@@ -291,12 +297,16 @@ const CacheSlot* VirtualTextureCache::getSlot(TileId id) const {
     return nullptr;
 }
 
-size_t VirtualTextureCache::findLRUSlot() const {
-    size_t lruIndex = 0;
+size_t VirtualTextureCache::findLRUSlot(uint32_t currentFrame) const {
+    size_t lruIndex = slots.size();
     uint32_t oldestFrame = UINT32_MAX;
 
     for (size_t i = 0; i < slots.size(); ++i) {
-        if (slots[i].occupied && slots[i].lastUsedFrame < oldestFrame) {
+        if (!slots[i].occupied) continue;
+        // Skip slots in-flight frames may still sample: their page table
+        // version still maps this slot until those frames complete
+        if (slots[i].lastUsedFrame + framesInFlight_ > currentFrame) continue;
+        if (slots[i].lastUsedFrame < oldestFrame) {
             oldestFrame = slots[i].lastUsedFrame;
             lruIndex = i;
         }
@@ -305,14 +315,29 @@ size_t VirtualTextureCache::findLRUSlot() const {
     return lruIndex;
 }
 
-void VirtualTextureCache::recordTileUpload(TileId id, const void* pixelData,
+VkDeviceSize VirtualTextureCache::getTileStagingSize() const {
+    if (useCompression_) {
+        // BC1: 8 bytes per 4x4 block
+        uint32_t blockWidth = (config.tileSizePixels + 3) / 4;
+        uint32_t blockHeight = (config.tileSizePixels + 3) / 4;
+        return blockWidth * blockHeight * 8;
+    }
+    // RGBA8: 4 bytes per pixel
+    return config.tileSizePixels * config.tileSizePixels * 4;
+}
+
+void VirtualTextureCache::beginFrame() {
+    stagingCursor_ = 0;
+}
+
+bool VirtualTextureCache::recordTileUpload(TileId id, const void* pixelData,
                                             uint32_t width, uint32_t height,
                                             TileFormat format, VkCommandBuffer cmd, uint32_t frameIndex) {
     // Find the slot for this tile
     auto it = tileToSlot.find(id.pack());
     if (it == tileToSlot.end()) {
         SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "Cannot upload tile not in cache");
-        return;
+        return false;
     }
 
     // Check format compatibility
@@ -322,14 +347,21 @@ void VirtualTextureCache::recordTileUpload(TileId id, const void* pixelData,
             "Tile format mismatch: tile is %s, cache is %s",
             tileIsCompressed ? "compressed" : "RGBA8",
             useCompression_ ? "BC1" : "RGBA8");
-        return;
+        return false;
+    }
+
+    // An oversized tile would overwrite neighboring cache slots
+    if (width > config.tileSizePixels || height > config.tileSizePixels) {
+        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+            "Tile %ux%u exceeds cache slot size %u", width, height, config.tileSizePixels);
+        return false;
     }
 
     // Select the staging buffer for this frame to avoid race conditions
     uint32_t bufferIndex = frameIndex % framesInFlight_;
     if (bufferIndex >= stagingBuffers_.size() || !stagingMapped_[bufferIndex]) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Invalid staging buffer index %u", bufferIndex);
-        return;
+        return false;
     }
 
     size_t slotIndex = it->second;
@@ -349,8 +381,20 @@ void VirtualTextureCache::recordTileUpload(TileId id, const void* pixelData,
         dataSize = width * height * 4;
     }
 
-    // Copy to per-frame staging buffer
-    std::memcpy(stagingMapped_[bufferIndex], pixelData, dataSize);
+    // Sub-allocate a region of the per-frame staging buffer. Regions can't be
+    // reused within a frame: the copy commands execute long after recording.
+    VkDeviceSize stagingCapacity = getTileStagingSize() * maxUploadsPerFrame_;
+    if (stagingCursor_ + dataSize > stagingCapacity) {
+        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                    "VT staging buffer exhausted for this frame (%u uploads max)",
+                    maxUploadsPerFrame_);
+        return false;
+    }
+    VkDeviceSize stagingOffset = stagingCursor_;
+    stagingCursor_ += dataSize;
+
+    std::memcpy(static_cast<uint8_t*>(stagingMapped_[bufferIndex]) + stagingOffset,
+                pixelData, dataSize);
 
     vk::CommandBuffer vkCmd(cmd);
 
@@ -378,7 +422,7 @@ void VirtualTextureCache::recordTileUpload(TileId id, const void* pixelData,
     // Copy buffer to image region at tile slot position
     {
         auto region = vk::BufferImageCopy{}
-            .setBufferOffset(0)
+            .setBufferOffset(stagingOffset)
             .setBufferRowLength(0)
             .setBufferImageHeight(0)
             .setImageSubresource(vk::ImageSubresourceLayers{}
@@ -413,6 +457,8 @@ void VirtualTextureCache::recordTileUpload(TileId id, const void* pixelData,
                               vk::PipelineStageFlagBits::eFragmentShader,
                               {}, {}, {}, barrier);
     }
+
+    return true;
 }
 
 uint32_t VirtualTextureCache::getUsedSlotCount() const {

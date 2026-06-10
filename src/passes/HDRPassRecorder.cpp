@@ -57,6 +57,10 @@ void HDRPassRecorder::record(VkCommandBuffer cmd, uint32_t frameIndex, float tim
 
     vkCmd.endRenderPass();
 
+    if (postPassCallback_) {
+        postPassCallback_(cmd, frameIndex);
+    }
+
     profiler_.endGpuZone(cmd, "HDRPass");
 }
 
@@ -76,6 +80,10 @@ void HDRPassRecorder::recordWithSecondaries(VkCommandBuffer cmd, uint32_t frameI
     }
 
     vkCmd.endRenderPass();
+
+    if (postPassCallback_) {
+        postPassCallback_(cmd, frameIndex);
+    }
 
     profiler_.endGpuZone(cmd, "HDRPass");
 }

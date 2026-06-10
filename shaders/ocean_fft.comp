@@ -33,6 +33,11 @@ layout(push_constant) uniform PushConstants {
     int inverse;     // 1 = inverse FFT, 0 = forward FFT
 };
 
+// Reverse the low `bits` bits of i (for the DIT input permutation)
+int bitReverse(int i, int bits) {
+    return int(bitfieldReverse(uint(i)) >> (32 - bits));
+}
+
 void main() {
     ivec2 coord = ivec2(gl_GlobalInvocationID.xy);
 
@@ -70,16 +75,27 @@ void main() {
         bottomIndex = index;
     }
 
+    // This is a decimation-in-time butterfly, which requires its input in
+    // bit-reversed order. Instead of a separate permutation pass, stage 0
+    // reads its inputs through the bit-reversal directly.
+    int readTop = topIndex;
+    int readBottom = bottomIndex;
+    if (stage == 0) {
+        int bits = findMSB(resolution);
+        readTop = bitReverse(topIndex, bits);
+        readBottom = bitReverse(bottomIndex, bits);
+    }
+
     // Read input values
     ivec2 topCoord, bottomCoord;
     if (direction == 0) {
         // Horizontal FFT
-        topCoord = ivec2(topIndex, coord.y);
-        bottomCoord = ivec2(bottomIndex, coord.y);
+        topCoord = ivec2(readTop, coord.y);
+        bottomCoord = ivec2(readBottom, coord.y);
     } else {
         // Vertical FFT
-        topCoord = ivec2(coord.x, topIndex);
-        bottomCoord = ivec2(coord.x, bottomIndex);
+        topCoord = ivec2(coord.x, readTop);
+        bottomCoord = ivec2(coord.x, readBottom);
     }
 
     vec2 a = imageLoad(inputBuffer, topCoord).xy;

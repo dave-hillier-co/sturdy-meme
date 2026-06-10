@@ -27,6 +27,7 @@ struct PerformanceToggles {
     bool leafCompute = true;
     bool foamCompute = true;
     bool cloudShadowCompute = true;
+    bool oceanFFTCompute = true;
 
     // HDR stage draw calls
     bool skyDraw = true;
@@ -53,7 +54,7 @@ struct PerformanceToggles {
     bool froxelFog = true;
     bool atmosphereLUT = true;
     bool ssr = true;
-    bool waterGBuffer = true;
+    bool waterGBuffer = false;  // Mini G-buffer output is not consumed by anything yet
     bool waterTileCull = true;
 
     // Synchronization barriers (for debugging sync issues)
@@ -77,6 +78,7 @@ struct PerformanceToggles {
             {"leafCompute", "Compute", &leafCompute},
             {"foamCompute", "Compute", &foamCompute},
             {"cloudShadowCompute", "Compute", &cloudShadowCompute},
+            {"oceanFFTCompute", "Compute", &oceanFFTCompute},
 
             // HDR Draw
             {"skyDraw", "HDR Draw", &skyDraw},

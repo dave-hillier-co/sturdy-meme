@@ -8,6 +8,7 @@
 #include "SSRSystem.h"
 #include "WaterTileCull.h"
 #include "WaterGBuffer.h"
+#include "OceanFFT.h"
 #include "RendererSystems.h"
 #include "ShadowSystem.h"
 #include "TerrainSystem.h"
@@ -149,6 +150,25 @@ std::optional<WaterSystemGroup::Bundle> WaterSystemGroup::createAll(
         }
     }
 
+    // 8. Create OceanFFT (optional - FFT-based Tessendorf ocean simulation)
+    {
+        OceanFFT::InitInfo info{};
+        info.device = ctx.device;
+        info.physicalDevice = ctx.physicalDevice;
+        info.allocator = ctx.allocator;
+        info.commandPool = ctx.commandPool;
+        info.computeQueue = ctx.graphicsQueue;
+        info.shaderPath = ctx.shaderPath;
+        info.framesInFlight = ctx.framesInFlight;
+        info.useCascades = true;
+        info.raiiDevice = ctx.raiiDevice;
+
+        bundle.oceanFFT = OceanFFT::create(info);
+        if (!bundle.oceanFFT) {
+            SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "WaterSystemGroup: OceanFFT creation failed (non-fatal, falling back to Gerstner waves)");
+        }
+    }
+
     SDL_Log("WaterSystemGroup: All systems created successfully");
     return bundle;
 }
@@ -174,6 +194,12 @@ bool WaterSystemGroup::configureSubsystems(
     water.setShoreBlendDistance(8.0f);
     water.setShoreFoamWidth(15.0f);
     water.setCameraPlanes(0.1f, 50000.0f);
+
+    // Use the FFT ocean for wave displacement when available (cascade patch
+    // sizes match the OceanFFT defaults: 256m / 64m / 16m).
+    if (systems.hasOceanFFT()) {
+        water.setUseFFTOcean(true);
+    }
 
     // Generate flow map from terrain data
     FlowMapGenerator::Config flowConfig{};
@@ -217,6 +243,18 @@ bool WaterSystemGroup::createDescriptorSets(
         terrainSystem.getTileInfoBuffer(2)
     };
 
+    // Gather FFT ocean cascade views when the OceanFFT system is available
+    WaterSystem::OceanCascadeViews oceanViews{};
+    if (systems.hasOceanFFT()) {
+        auto& ocean = systems.oceanFFT();
+        for (int i = 0; i < 3; i++) {
+            oceanViews.displacement[i] = ocean.getDisplacementView(i);
+            oceanViews.normal[i] = ocean.getNormalView(i);
+            oceanViews.foam[i] = ocean.getFoamView(i);
+        }
+        oceanViews.sampler = ocean.getSampler();
+    }
+
     if (!systems.water().createDescriptorSets(
             uniformBuffers, uniformBufferSize, shadowSystem,
             terrainSystem.getHeightMapView(), terrainSystem.getHeightMapSampler(),
@@ -226,7 +264,9 @@ bool WaterSystemGroup::createDescriptorSets(
             systems.ssr().getSSRResultView(), systems.ssr().getSampler(),
             postProcessSystem.getHDRDepthView(), depthSampler,
             terrainSystem.getTileArrayView(), terrainSystem.getTileSampler(),
-            waterTileInfoBuffers)) {
+            waterTileInfoBuffers,
+            VK_NULL_HANDLE, VK_NULL_HANDLE,
+            oceanViews.isValid() ? &oceanViews : nullptr)) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create water descriptor sets");
         return false;
     }

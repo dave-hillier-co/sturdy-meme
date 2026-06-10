@@ -118,6 +118,26 @@ public:
     // Update extent for viewport (on window resize)
     void setExtent(VkExtent2D newExtent) { extent = newExtent; }
 
+    // FFT ocean cascade outputs for bindings 11-13 / 16-18 / 19-21.
+    // Images are expected to be in VK_IMAGE_LAYOUT_GENERAL (see OceanFFT).
+    struct OceanCascadeViews {
+        std::array<VkImageView, 3> displacement{};  // [cascade]
+        std::array<VkImageView, 3> normal{};
+        std::array<VkImageView, 3> foam{};
+        VkSampler sampler = VK_NULL_HANDLE;
+
+        bool isValid() const {
+            if (sampler == VK_NULL_HANDLE) return false;
+            for (int i = 0; i < 3; i++) {
+                if (displacement[i] == VK_NULL_HANDLE || normal[i] == VK_NULL_HANDLE ||
+                    foam[i] == VK_NULL_HANDLE) {
+                    return false;
+                }
+            }
+            return true;
+        }
+    };
+
     // Create descriptor sets after main UBO is ready
     bool createDescriptorSets(const std::vector<VkBuffer>& uniformBuffers,
                               VkDeviceSize uniformBufferSize,
@@ -138,7 +158,8 @@ public:
                               VkSampler tileSampler = VK_NULL_HANDLE,
                               const std::array<VkBuffer, 3>& tileInfoBuffers = {},
                               VkImageView envCubemapView = VK_NULL_HANDLE,
-                              VkSampler envCubemapSampler = VK_NULL_HANDLE);
+                              VkSampler envCubemapSampler = VK_NULL_HANDLE,
+                              const OceanCascadeViews* oceanViews = nullptr);
 
     // Update water uniforms (call each frame)
     void updateUniforms(uint32_t frameIndex);

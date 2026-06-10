@@ -2,9 +2,11 @@
 #include "core/interfaces/IWaterControl.h"
 #include "WaterSystem.h"
 #include "WaterTileCull.h"
+#include "OceanFFT.h"
 
 #include <imgui.h>
 #include <glm/glm.hpp>
+#include <cmath>
 
 void GuiWaterTab::render(IWaterControl& waterControl) {
     ImGui::Spacing();
@@ -51,12 +53,68 @@ void GuiWaterTab::render(IWaterControl& waterControl) {
     ImGui::PopStyleColor();
 
     // FFT Ocean toggle
+    OceanFFT* ocean = waterControl.getOceanFFT();
     bool useFFT = water.getUseFFTOcean();
     if (ImGui::Checkbox("FFT Ocean (Tessendorf)", &useFFT)) {
         water.setUseFFTOcean(useFFT);
     }
     if (ImGui::IsItemHovered()) {
         ImGui::SetTooltip("Use FFT-based ocean simulation instead of Gerstner waves");
+    }
+    if (!ocean && useFFT) {
+        ImGui::TextDisabled("OceanFFT system unavailable - cascades are placeholders");
+    }
+
+    if (ocean && useFFT) {
+        ImGui::Spacing();
+        ImGui::Text("FFT Ocean Parameters:");
+
+        float windSpeed = ocean->getWindSpeed();
+        if (ImGui::SliderFloat("Wind Speed", &windSpeed, 1.0f, 30.0f, "%.1f m/s")) {
+            ocean->setWindSpeed(windSpeed);
+        }
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Higher wind = larger waves (regenerates spectrum)");
+        }
+
+        glm::vec2 windDir = ocean->getWindDirection();
+        float windAngle = glm::degrees(std::atan2(windDir.y, windDir.x));
+        if (ImGui::SliderFloat("Wind Direction", &windAngle, -180.0f, 180.0f, "%.0f deg")) {
+            float rad = glm::radians(windAngle);
+            ocean->setWindDirection(glm::vec2(std::cos(rad), std::sin(rad)));
+        }
+
+        float fftAmplitude = ocean->getAmplitude();
+        if (ImGui::SliderFloat("Spectrum Amplitude", &fftAmplitude, 1.0f, 2000.0f, "%.0f",
+                               ImGuiSliderFlags_Logarithmic)) {
+            ocean->setAmplitude(fftAmplitude);
+        }
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Phillips spectrum energy (regenerates spectrum)");
+        }
+
+        float choppiness = ocean->getChoppiness();
+        if (ImGui::SliderFloat("Choppiness", &choppiness, 0.0f, 2.5f, "%.2f")) {
+            ocean->setChoppiness(choppiness);
+        }
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Horizontal displacement - sharper wave crests");
+        }
+
+        float heightScale = ocean->getHeightScale();
+        if (ImGui::SliderFloat("Height Scale", &heightScale, 0.0f, 3.0f, "%.2f")) {
+            ocean->setHeightScale(heightScale);
+        }
+
+        float fftFoam = ocean->getFoamThreshold();
+        if (ImGui::SliderFloat("FFT Foam Threshold", &fftFoam, -1.0f, 1.0f, "%.2f")) {
+            ocean->setFoamThreshold(fftFoam);
+        }
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Jacobian threshold for whitecaps (lower = less foam)");
+        }
+
+        ImGui::Spacing();
     }
 
     float amplitude = water.getWaveAmplitude();

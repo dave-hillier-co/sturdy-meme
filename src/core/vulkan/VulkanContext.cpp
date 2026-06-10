@@ -115,11 +115,33 @@ bool VulkanContext::createInstance() {
         SDL_Log("Vulkan validation layers disabled");
     }
 
-    auto instRet = builder.set_app_name("Vulkan Game")
+    // Enable the surface extensions SDL's active video driver requires.
+    // vk-bootstrap only enables the compile-time platform defaults, which
+    // misses drivers like SDL's offscreen backend (VK_EXT_headless_surface).
+    builder.set_app_name("Vulkan Game")
         .request_validation_layers(enableValidation)
         .use_default_debug_messenger()
-        .require_api_version(1, 2, 0)
-        .build();
+        .require_api_version(1, 2, 0);
+
+    // The extension list is only complete after SDL has loaded its Vulkan
+    // library (refcounted; window creation loads it again later).
+    if (!SDL_Vulkan_LoadLibrary(nullptr)) {
+        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                    "SDL_Vulkan_LoadLibrary failed: %s", SDL_GetError());
+    }
+
+    Uint32 sdlExtensionCount = 0;
+    const char* const* sdlExtensions = SDL_Vulkan_GetInstanceExtensions(&sdlExtensionCount);
+    if (sdlExtensions) {
+        for (Uint32 i = 0; i < sdlExtensionCount; i++) {
+            builder.enable_extension(sdlExtensions[i]);
+        }
+    } else {
+        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                    "SDL_Vulkan_GetInstanceExtensions failed: %s", SDL_GetError());
+    }
+
+    auto instRet = builder.build();
 
     if (!instRet) {
         SDL_Log("Failed to create Vulkan instance: %s", instRet.error().message().c_str());
@@ -184,7 +206,7 @@ bool VulkanContext::selectPhysicalDevice() {
     }
 
     SDL_Log("Selected physical device: %s (Vulkan %u.%u.%u)",
-        props.deviceName, major, minor, VK_API_VERSION_PATCH(props.apiVersion));
+        props.deviceName.data(), major, minor, VK_API_VERSION_PATCH(props.apiVersion));
 
     // Verify timeline semaphore support (should always be true if we got here)
     auto featuresChain = vk::PhysicalDevice(physicalDevice)

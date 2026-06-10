@@ -15,6 +15,7 @@ bool AsyncTransferManager::initialize(VulkanContext& context) {
     context_.emplace(context);
     device_ = context.getVkDevice();
     transferQueue_ = context.getVkTransferQueue();
+    graphicsQueue_ = context.getVkGraphicsQueue();
     transferQueueFamily_ = context.getTransferQueueFamily();
     graphicsQueueFamily_ = context.getGraphicsQueueFamily();
     hasDedicatedTransfer_ = context.hasDedicatedTransferQueue();
@@ -32,6 +33,24 @@ bool AsyncTransferManager::initialize(VulkanContext& context) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
             "AsyncTransferManager: Failed to create command pool: %s", e.what());
         return false;
+    }
+
+    // With a dedicated transfer queue, textures destined for graphics access need
+    // a queue-family ownership transfer: the release is recorded on the transfer
+    // queue, but the matching acquire must be recorded on the graphics queue.
+    // Allocate a separate pool for those acquire command buffers.
+    if (hasDedicatedTransfer_) {
+        auto graphicsPoolInfo = vk::CommandPoolCreateInfo{}
+            .setFlags(vk::CommandPoolCreateFlagBits::eResetCommandBuffer |
+                      vk::CommandPoolCreateFlagBits::eTransient)
+            .setQueueFamilyIndex(graphicsQueueFamily_);
+        try {
+            graphicsCommandPool_.emplace(context.getRaiiDevice(), graphicsPoolInfo);
+        } catch (const vk::SystemError& e) {
+            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
+                "AsyncTransferManager: Failed to create graphics acquire command pool: %s", e.what());
+            return false;
+        }
     }
 
     // Create timeline semaphore for tracking transfer completion (Vulkan 1.2)
@@ -77,6 +96,7 @@ void AsyncTransferManager::shutdown() {
     }
 
     transferTimeline_.reset();
+    graphicsCommandPool_.reset();
     transferCommandPool_.reset();
     initialized_ = false;
 
@@ -84,6 +104,7 @@ void AsyncTransferManager::shutdown() {
 }
 
 vk::CommandBuffer AsyncTransferManager::allocateTransferCommandBuffer() {
+    std::lock_guard<std::mutex> lock(commandPoolMutex_);
     auto allocInfo = vk::CommandBufferAllocateInfo{}
         .setCommandPool(*transferCommandPool_)
         .setLevel(vk::CommandBufferLevel::ePrimary)
@@ -94,7 +115,24 @@ vk::CommandBuffer AsyncTransferManager::allocateTransferCommandBuffer() {
 }
 
 void AsyncTransferManager::freeTransferCommandBuffer(vk::CommandBuffer cmd) {
+    std::lock_guard<std::mutex> lock(commandPoolMutex_);
     device_.freeCommandBuffers(*transferCommandPool_, cmd);
+}
+
+vk::CommandBuffer AsyncTransferManager::allocateGraphicsCommandBuffer() {
+    std::lock_guard<std::mutex> lock(commandPoolMutex_);
+    auto allocInfo = vk::CommandBufferAllocateInfo{}
+        .setCommandPool(*graphicsCommandPool_)
+        .setLevel(vk::CommandBufferLevel::ePrimary)
+        .setCommandBufferCount(1);
+
+    auto buffers = device_.allocateCommandBuffers(allocInfo);
+    return buffers[0];
+}
+
+void AsyncTransferManager::freeGraphicsCommandBuffer(vk::CommandBuffer cmd) {
+    std::lock_guard<std::mutex> lock(commandPoolMutex_);
+    device_.freeCommandBuffers(*graphicsCommandPool_, cmd);
 }
 
 VmaBuffer AsyncTransferManager::acquireStagingBuffer(vk::DeviceSize size) {
@@ -169,25 +207,30 @@ TransferHandle AsyncTransferManager::submitBufferTransfer(
 
     cmd.end();
 
-    // Get next timeline value to signal for this transfer
-    uint64_t timelineValue = nextTimelineValue_++;
+    // Assign the timeline value and submit under one lock so that, across
+    // concurrent submitters, signalled values increase in submission order.
+    uint64_t timelineValue;
+    uint64_t id;
+    {
+        std::lock_guard<std::mutex> lock(submitMutex_);
+        timelineValue = nextTimelineValue_++;
+        id = nextTransferId_++;
 
-    // Submit to transfer queue with timeline semaphore signal
-    uint64_t signalValue = timelineValue;
-    auto timelineInfo = vk::TimelineSemaphoreSubmitInfo{}
-        .setSignalSemaphoreValueCount(1)
-        .setPSignalSemaphoreValues(&signalValue);
+        uint64_t signalValue = timelineValue;
+        auto timelineInfo = vk::TimelineSemaphoreSubmitInfo{}
+            .setSignalSemaphoreValueCount(1)
+            .setPSignalSemaphoreValues(&signalValue);
 
-    vk::Semaphore signalSemaphores[] = {**transferTimeline_};
-    auto submitInfo = vk::SubmitInfo{}
-        .setPNext(&timelineInfo)
-        .setCommandBuffers(cmd)
-        .setSignalSemaphores(signalSemaphores);
+        vk::Semaphore signalSemaphores[] = {**transferTimeline_};
+        auto submitInfo = vk::SubmitInfo{}
+            .setPNext(&timelineInfo)
+            .setCommandBuffers(cmd)
+            .setSignalSemaphores(signalSemaphores);
 
-    transferQueue_.submit(submitInfo, nullptr);  // No fence, using timeline semaphore
+        transferQueue_.submit(submitInfo, nullptr);  // No fence, using timeline semaphore
+    }
 
     // Track pending transfer
-    uint64_t id = nextTransferId_++;
     {
         std::lock_guard<std::mutex> lock(transferMutex_);
         pendingTransfers_.push_back(PendingTransfer{
@@ -281,7 +324,10 @@ TransferHandle AsyncTransferManager::submitImageTransfer(
          finalLayout == vk::ImageLayout::eGeneral);
 
     if (needsOwnershipTransfer) {
-        // Release ownership from transfer queue
+        // Release ownership from the transfer queue. The matching acquire is
+        // recorded later on the graphics queue (see submitOwnershipAcquire) -
+        // Vulkan performs no implicit acquire, so the resource is not usable by
+        // the graphics queue until that acquire executes.
         auto releaseBarrier = vk::ImageMemoryBarrier{}
             .setOldLayout(vk::ImageLayout::eTransferDstOptimal)
             .setNewLayout(finalLayout)
@@ -326,25 +372,30 @@ TransferHandle AsyncTransferManager::submitImageTransfer(
 
     cmd.end();
 
-    // Get next timeline value to signal for this transfer
-    uint64_t timelineValue = nextTimelineValue_++;
+    // Assign the timeline value and submit under one lock so that, across
+    // concurrent submitters, signalled values increase in submission order.
+    uint64_t timelineValue;
+    uint64_t id;
+    {
+        std::lock_guard<std::mutex> lock(submitMutex_);
+        timelineValue = nextTimelineValue_++;
+        id = nextTransferId_++;
 
-    // Submit to transfer queue with timeline semaphore signal
-    uint64_t signalValue = timelineValue;
-    auto timelineInfo = vk::TimelineSemaphoreSubmitInfo{}
-        .setSignalSemaphoreValueCount(1)
-        .setPSignalSemaphoreValues(&signalValue);
+        uint64_t signalValue = timelineValue;
+        auto timelineInfo = vk::TimelineSemaphoreSubmitInfo{}
+            .setSignalSemaphoreValueCount(1)
+            .setPSignalSemaphoreValues(&signalValue);
 
-    vk::Semaphore signalSemaphores[] = {**transferTimeline_};
-    auto submitInfo = vk::SubmitInfo{}
-        .setPNext(&timelineInfo)
-        .setCommandBuffers(cmd)
-        .setSignalSemaphores(signalSemaphores);
+        vk::Semaphore signalSemaphores[] = {**transferTimeline_};
+        auto submitInfo = vk::SubmitInfo{}
+            .setPNext(&timelineInfo)
+            .setCommandBuffers(cmd)
+            .setSignalSemaphores(signalSemaphores);
 
-    transferQueue_.submit(submitInfo, nullptr);  // No fence, using timeline semaphore
+        transferQueue_.submit(submitInfo, nullptr);  // No fence, using timeline semaphore
+    }
 
     // Track pending transfer
-    uint64_t id = nextTransferId_++;
     {
         std::lock_guard<std::mutex> lock(transferMutex_);
         pendingTransfers_.push_back(PendingTransfer{
@@ -355,30 +406,102 @@ TransferHandle AsyncTransferManager::submitImageTransfer(
             .onComplete = std::move(onComplete),
             .needsOwnershipTransfer = needsOwnershipTransfer,
             .targetImage = dstImage,
-            .finalLayout = finalLayout
+            .finalLayout = finalLayout,
+            .mipLevels = mipLevels,
+            .layerCount = layerCount
         });
     }
 
     return TransferHandle{id};
 }
 
+// Returns true once a pending transfer's GPU work has fully completed and the
+// resource is owned by the queue that will consume it. For an ownership transfer
+// that means the graphics-queue acquire fence has signalled, not merely that the
+// transfer-queue copy finished. Caller must hold transferMutex_.
+bool AsyncTransferManager::transferComplete(const PendingTransfer& t,
+                                            uint64_t currentTimelineValue) {
+    if (t.needsOwnershipTransfer) {
+        return t.acquireSubmitted && t.acquireFence &&
+               t.acquireFence->getStatus() == vk::Result::eSuccess;
+    }
+    return currentTimelineValue >= t.timelineValue;
+}
+
 bool AsyncTransferManager::isComplete(TransferHandle handle) const {
     if (!handle.isValid() || !transferTimeline_) return true;
 
     std::lock_guard<std::mutex> lock(transferMutex_);
+    uint64_t currentValue = transferTimeline_->getCounterValue();
     for (const auto& transfer : pendingTransfers_) {
         if (transfer.id == handle.id) {
-            // Non-blocking check using timeline semaphore counter
-            uint64_t currentValue = transferTimeline_->getCounterValue();
-            return currentValue >= transfer.timelineValue;
+            return transferComplete(transfer, currentValue);
         }
     }
     return true; // Not found = already completed
 }
 
+void AsyncTransferManager::submitOwnershipAcquire(PendingTransfer& transfer) {
+    // Record the queue-family ownership *acquire* on the graphics queue. The
+    // old/new layouts must match the release barrier exactly; the layout
+    // transition itself happens once, between the release and the acquire.
+    vk::CommandBuffer cmd = allocateGraphicsCommandBuffer();
+
+    cmd.begin(vk::CommandBufferBeginInfo{}
+        .setFlags(vk::CommandBufferUsageFlagBits::eOneTimeSubmit));
+
+    auto acquireBarrier = vk::ImageMemoryBarrier{}
+        .setOldLayout(vk::ImageLayout::eTransferDstOptimal)
+        .setNewLayout(transfer.finalLayout)
+        .setSrcQueueFamilyIndex(transferQueueFamily_)
+        .setDstQueueFamilyIndex(graphicsQueueFamily_)
+        .setImage(transfer.targetImage)
+        .setSubresourceRange(vk::ImageSubresourceRange{}
+            .setAspectMask(vk::ImageAspectFlagBits::eColor)
+            .setBaseMipLevel(0)
+            .setLevelCount(transfer.mipLevels)
+            .setBaseArrayLayer(0)
+            .setLayerCount(transfer.layerCount))
+        .setSrcAccessMask(vk::AccessFlagBits::eNone)  // memory made available by the release + semaphore
+        .setDstAccessMask(vk::AccessFlagBits::eShaderRead);
+
+    cmd.pipelineBarrier(
+        vk::PipelineStageFlagBits::eAllCommands,
+        vk::PipelineStageFlagBits::eFragmentShader,
+        {}, {}, {}, acquireBarrier);
+
+    cmd.end();
+
+    // The acquire must wait on the transfer-queue release: the timeline value
+    // signalled by the copy/release submission provides that cross-queue
+    // dependency (and makes the transfer writes visible to the graphics queue).
+    uint64_t waitValue = transfer.timelineValue;
+    auto timelineInfo = vk::TimelineSemaphoreSubmitInfo{}
+        .setWaitSemaphoreValueCount(1)
+        .setPWaitSemaphoreValues(&waitValue);
+
+    vk::Semaphore waitSemaphores[] = {**transferTimeline_};
+    vk::PipelineStageFlags waitStages[] = {vk::PipelineStageFlagBits::eAllCommands};
+
+    vk::raii::Fence fence(context_->get().getRaiiDevice(), vk::FenceCreateInfo{});
+
+    auto submitInfo = vk::SubmitInfo{}
+        .setPNext(&timelineInfo)
+        .setWaitSemaphores(waitSemaphores)
+        .setWaitDstStageMask(waitStages)
+        .setCommandBuffers(cmd);
+
+    graphicsQueue_.submit(submitInfo, *fence);
+
+    transfer.acquireCmdBuffer = cmd;
+    transfer.acquireFence.emplace(std::move(fence));
+    transfer.acquireSubmitted = true;
+}
+
 void AsyncTransferManager::wait(TransferHandle handle) {
     if (!handle.isValid() || !transferTimeline_) return;
 
+    // First block until the transfer-queue (copy/release) work has completed.
     uint64_t waitValue = 0;
     {
         std::lock_guard<std::mutex> lock(transferMutex_);
@@ -391,15 +514,36 @@ void AsyncTransferManager::wait(TransferHandle handle) {
     }
 
     if (waitValue > 0) {
-        // Wait using timeline semaphore
         auto waitInfo = vk::SemaphoreWaitInfo{}
             .setSemaphores(**transferTimeline_)
             .setValues(waitValue);
         (void)device_.waitSemaphores(waitInfo, UINT64_MAX);
     }
 
-    // Process to clean up this transfer
-    processPendingTransfers();
+    // processPendingTransfers() submits the ownership acquire (if any) and
+    // reclaims the transfer once it is fully complete. For an ownership transfer
+    // the acquire fence may still be in flight, so block on it and re-process.
+    for (;;) {
+        processPendingTransfers();
+
+        vk::Fence acquireFence = nullptr;
+        {
+            std::lock_guard<std::mutex> lock(transferMutex_);
+            bool stillPending = false;
+            for (const auto& transfer : pendingTransfers_) {
+                if (transfer.id == handle.id) {
+                    stillPending = true;
+                    if (transfer.acquireFence) acquireFence = **transfer.acquireFence;
+                    break;
+                }
+            }
+            if (!stillPending) break;
+        }
+
+        if (acquireFence) {
+            (void)device_.waitForFences(acquireFence, VK_TRUE, UINT64_MAX);
+        }
+    }
 }
 
 void AsyncTransferManager::processPendingTransfers() {
@@ -407,7 +551,6 @@ void AsyncTransferManager::processPendingTransfers() {
 
     std::vector<PendingTransfer> completed;
 
-    // Check for completed transfers using timeline semaphore counter (non-blocking)
     {
         std::lock_guard<std::mutex> lock(transferMutex_);
 
@@ -416,7 +559,13 @@ void AsyncTransferManager::processPendingTransfers() {
 
         auto it = pendingTransfers_.begin();
         while (it != pendingTransfers_.end()) {
-            if (currentValue >= it->timelineValue) {
+            // Submit the graphics-queue ownership acquire as soon as the transfer
+            // is seen; the acquire's semaphore wait orders it after the release.
+            if (it->needsOwnershipTransfer && !it->acquireSubmitted) {
+                submitOwnershipAcquire(*it);
+            }
+
+            if (transferComplete(*it, currentValue)) {
                 completed.push_back(std::move(*it));
                 it = pendingTransfers_.erase(it);
             } else {
@@ -427,19 +576,19 @@ void AsyncTransferManager::processPendingTransfers() {
 
     // Process completed transfers
     for (auto& transfer : completed) {
-        // Free command buffer
+        // Free command buffers (transfer copy/release, and graphics acquire if any)
         freeTransferCommandBuffer(transfer.cmdBuffer);
+        if (transfer.acquireCmdBuffer) {
+            freeGraphicsCommandBuffer(transfer.acquireCmdBuffer);
+        }
 
         // Return staging buffer to pool
         releaseStagingBuffer(std::move(transfer.stagingBuffer));
 
-        // Execute completion callback
+        // Execute completion callback (resource is now owned by the graphics queue)
         if (transfer.onComplete) {
             transfer.onComplete();
         }
-
-        // Note: Queue ownership transfer acquire happens implicitly
-        // when graphics queue first uses the resource with proper barrier
     }
 }
 
@@ -455,7 +604,7 @@ void AsyncTransferManager::waitAll() {
         }
     }
 
-    // Wait for all pending transfers to complete
+    // Wait for all transfer-queue (copy/release) work to complete
     if (maxValue > 0) {
         auto waitInfo = vk::SemaphoreWaitInfo{}
             .setSemaphores(**transferTimeline_)
@@ -463,7 +612,26 @@ void AsyncTransferManager::waitAll() {
         (void)device_.waitSemaphores(waitInfo, UINT64_MAX);
     }
 
-    processPendingTransfers();
+    // Drain everything, including in-flight graphics-queue ownership acquires:
+    // each pass submits any outstanding acquires and reclaims finished transfers.
+    for (;;) {
+        processPendingTransfers();
+
+        std::vector<vk::Fence> acquireFences;
+        {
+            std::lock_guard<std::mutex> lock(transferMutex_);
+            if (pendingTransfers_.empty()) break;
+            for (const auto& transfer : pendingTransfers_) {
+                if (transfer.acquireFence) {
+                    acquireFences.push_back(**transfer.acquireFence);
+                }
+            }
+        }
+
+        if (!acquireFences.empty()) {
+            (void)device_.waitForFences(acquireFences, VK_TRUE, UINT64_MAX);
+        }
+    }
 }
 
 size_t AsyncTransferManager::getPendingCount() const {

@@ -54,9 +54,13 @@ PassIds addPasses(PassScheduler& graph, RendererSystems& systems, const Config& 
     ids.godRays = graph.addPass({
         .name = "GodRays",
         .execute = [&systems](PassScheduler::RenderContext& ctx) {
-            if (!systems.hasGodRays() || !systems.postProcess().isGodRaysEnabled()) return;
+            if (!systems.hasGodRays()) return;
             RenderContext* renderCtx = static_cast<RenderContext*>(ctx.userData);
             if (!renderCtx) return;
+            // The composite pass statically binds the god-rays output, so the image
+            // must be initialized even while the effect itself is disabled.
+            systems.godRays().recordInitialClearIfNeeded(ctx.commandBuffer);
+            if (!systems.postProcess().isGodRaysEnabled()) return;
             systems.profiler().beginGpuZone(ctx.commandBuffer, "GodRays");
             // Forward sun screen position and parameters to GodRaysSystem
             auto& godRays = systems.godRays();

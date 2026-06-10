@@ -181,6 +181,9 @@ PassIds addPasses(PassScheduler& graph, RendererSystems& systems, const Config& 
                 renderCtx->frame.nearPlane, renderCtx->frame.farPlane);
 
             if (!perfToggles->froxelFog && !perfToggles->atmosphereLUT) {
+                // The post-process composite statically binds the integrated froxel
+                // volume; initialize it even when froxel updates never run.
+                systems.froxel().recordInitialClearIfNeeded(cmd);
                 return;
             }
 

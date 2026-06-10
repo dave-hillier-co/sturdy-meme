@@ -148,7 +148,7 @@ bool WaterDisplacement::createDisplacementMap() {
     // compute pass that writes it only runs when splash particles exist. Clear both
     // maps to zero and move them to shader-read layout so they are valid to sample
     // before (or without) any compute dispatch.
-    CommandScope initCmd(vk::Device(device), vk::CommandPool(commandPool), vk::Queue(computeQueue));
+    CommandScope initCmd{vk::Device(device), vk::CommandPool(commandPool), vk::Queue(computeQueue)};
     if (!initCmd.begin()) {
         return false;
     }

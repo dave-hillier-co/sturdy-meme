@@ -400,7 +400,7 @@ bool WaterSystem::createEnvPlaceholderCube() {
     }
 
     // Clear all 6 faces to black and move to shader-read layout
-    CommandScope initCmd(vk::Device(device), vk::CommandPool(commandPool), vk::Queue(graphicsQueue));
+    CommandScope initCmd{vk::Device(device), vk::CommandPool(commandPool), vk::Queue(graphicsQueue)};
     if (!initCmd.begin()) {
         return false;
     }

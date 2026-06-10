@@ -532,6 +532,11 @@ void LeafSystem::recordResetAndCompute(VkCommandBuffer cmd, uint32_t frameIndex,
     vkCmd.pipelineBarrier(vk::PipelineStageFlagBits::eHost, vk::PipelineStageFlagBits::eComputeShader,
                           {}, hostBarrier, {}, {});
 
+    // Write-after-read: this recycled buffer set was read by the previous
+    // frame's indirect draws + vertex input. Ensure those reads complete
+    // before we reset (transfer) and overwrite (compute) it.
+    BarrierHelpers::indirectDrawAndVertexToComputeWrite(vkCmd);
+
     // Reset indirect buffer before compute dispatch
     vkCmd.fillBuffer(indirectBuffers.buffers[writeSet], 0, sizeof(VkDrawIndirectCommand), 0);
     BarrierHelpers::fillBufferToCompute(vkCmd);

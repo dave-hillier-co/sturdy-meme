@@ -1,5 +1,7 @@
 #pragma once
 
+#include <optional>
+
 #include "World.h"
 #include "Components.h"
 #include "material/MaterialId.h"

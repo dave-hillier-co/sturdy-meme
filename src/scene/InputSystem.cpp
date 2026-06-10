@@ -1,6 +1,5 @@
 #include "InputSystem.h"
 #include "GuiSystem.h"
-#include <glm/gtc/quaternion.hpp>
 #include <cmath>
 
 InputSystem::InputSystem() {
@@ -92,7 +91,7 @@ bool InputSystem::processEvent(const SDL_Event& event) {
     return false;
 }
 
-void InputSystem::update(float deltaTime, float cameraYaw) {
+void InputSystem::update(float deltaTime, const glm::vec3& cameraForward) {
     // Reset input accumulators
     movementDirection = glm::vec3(0.0f);
     jumpRequested = false;
@@ -119,10 +118,10 @@ void InputSystem::update(float deltaTime, float cameraYaw) {
     keyboardState = SDL_GetKeyboardState(nullptr);
 
     // Process keyboard input
-    processKeyboardInput(deltaTime, cameraYaw);
+    processKeyboardInput(deltaTime, cameraForward);
 
     // Process gamepad input
-    processGamepadInput(deltaTime, cameraYaw);
+    processGamepadInput(deltaTime, cameraForward);
 }
 
 bool InputSystem::isKeyPressed(SDL_Scancode scancode) const {
@@ -137,11 +136,11 @@ bool InputSystem::isGuiBlocking() const {
     return false;
 }
 
-void InputSystem::processKeyboardInput(float deltaTime, float cameraYaw) {
+void InputSystem::processKeyboardInput(float deltaTime, const glm::vec3& cameraForward) {
     if (!keyboardState) return;
 
     if (thirdPersonMode) {
-        processThirdPersonKeyboard(deltaTime, cameraYaw, keyboardState);
+        processThirdPersonKeyboard(deltaTime, cameraForward, keyboardState);
     } else {
         processFreeCameraKeyboard(deltaTime, keyboardState);
     }
@@ -189,11 +188,11 @@ void InputSystem::processFreeCameraKeyboard(float deltaTime, const bool* keyStat
     }
 }
 
-void InputSystem::processThirdPersonKeyboard(float deltaTime, float cameraYaw, const bool* keyState) {
-    // Calculate movement direction based on camera facing using quaternion rotation
-    glm::quat yawRot = glm::angleAxis(glm::radians(cameraYaw), glm::vec3(0.0f, 1.0f, 0.0f));
-    glm::vec3 forward = yawRot * glm::vec3(1.0f, 0.0f, 0.0f);
-    glm::vec3 right = yawRot * glm::vec3(0.0f, 0.0f, 1.0f);
+void InputSystem::processThirdPersonKeyboard(float deltaTime, const glm::vec3& cameraForward, const bool* keyState) {
+    // Movement is relative to the camera: project its forward onto the ground
+    // plane (third-person pitch is clamped, so this never degenerates)
+    glm::vec3 forward = glm::normalize(glm::vec3(cameraForward.x, 0.0f, cameraForward.z));
+    glm::vec3 right = glm::normalize(glm::cross(forward, glm::vec3(0.0f, 1.0f, 0.0f)));
 
     glm::vec3 move(0.0f);
     if (keyState[SDL_SCANCODE_W]) move += forward;
@@ -250,11 +249,11 @@ void InputSystem::processThirdPersonKeyboard(float deltaTime, float cameraYaw, c
     orientationLockHeld = (mouseState & SDL_BUTTON_MMASK) != 0;
 }
 
-void InputSystem::processGamepadInput(float deltaTime, float cameraYaw) {
+void InputSystem::processGamepadInput(float deltaTime, const glm::vec3& cameraForward) {
     if (!gamepad) return;
 
     if (thirdPersonMode) {
-        processThirdPersonGamepad(deltaTime, cameraYaw);
+        processThirdPersonGamepad(deltaTime, cameraForward);
     } else {
         processFreeCameraGamepad(deltaTime);
     }
@@ -309,7 +308,7 @@ void InputSystem::processFreeCameraGamepad(float deltaTime) {
     }
 }
 
-void InputSystem::processThirdPersonGamepad(float deltaTime, float cameraYaw) {
+void InputSystem::processThirdPersonGamepad(float deltaTime, const glm::vec3& cameraForward) {
     // Left stick moves player relative to camera facing
     float leftX = SDL_GetGamepadAxis(gamepad, SDL_GAMEPAD_AXIS_LEFTX) / 32767.0f;
     float leftY = SDL_GetGamepadAxis(gamepad, SDL_GAMEPAD_AXIS_LEFTY) / 32767.0f;
@@ -318,11 +317,10 @@ void InputSystem::processThirdPersonGamepad(float deltaTime, float cameraYaw) {
     if (std::abs(leftX) < stickDeadzone) leftX = 0.0f;
     if (std::abs(leftY) < stickDeadzone) leftY = 0.0f;
 
-    // Accumulate movement direction from gamepad using quaternion rotation
+    // Accumulate movement direction relative to the camera's ground-plane facing
     if (leftX != 0.0f || leftY != 0.0f) {
-        glm::quat yawRot = glm::angleAxis(glm::radians(cameraYaw), glm::vec3(0.0f, 1.0f, 0.0f));
-        glm::vec3 forward = yawRot * glm::vec3(1.0f, 0.0f, 0.0f);
-        glm::vec3 right = yawRot * glm::vec3(0.0f, 0.0f, 1.0f);
+        glm::vec3 forward = glm::normalize(glm::vec3(cameraForward.x, 0.0f, cameraForward.z));
+        glm::vec3 right = glm::normalize(glm::cross(forward, glm::vec3(0.0f, 1.0f, 0.0f)));
 
         movementDirection += forward * (-leftY) + right * leftX;
     }

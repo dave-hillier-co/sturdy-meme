@@ -231,6 +231,13 @@ VkCommandBuffer Renderer::buildFrame(const Camera& camera, uint32_t imageIndex, 
     FrameData& frame = upd.frame;
     lastViewProj = frame.viewProj;
 
+    // Reset this frame's threaded command pools before any parallel recording.
+    // The frame fence has already been waited on (FrameExecutor::execute), so the
+    // GPU is done with this slot's secondary buffers and it's safe to reset the
+    // pools — this returns the per-frame allocation counters to zero so the
+    // pre-allocated buffers are reused instead of leaking new ones each frame.
+    threadedCommandPool_.resetFrame(frame.frameIndex);
+
     // Command buffer recording
     VkCommandBuffer cmd = vulkanContext_->getCommandBuffer(frame.frameIndex);
     vk::CommandBuffer vkCmd(cmd);

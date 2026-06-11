@@ -12,7 +12,7 @@ These major systems are fully implemented and feature-complete:
 Core water system complete: flow maps, foam (Jacobian + temporal + intersection + wakes), mini G-buffer, vector displacement, FBM surface detail, screen-space tessellation, PBR light transport, refraction, caustics, SSR, dual depth, material blending, enhanced SSS. Further enhancements tracked in `WATER_AAA_MIGRATION_PLAN.md` (underwater volume renderer, planar reflections, breaking waves, flow networks).
 
 ### Tree Rendering ✅
-All 6 phases complete (see `TREE_RENDERING_ROADMAP.md`):
+All 6 phases complete:
 - Spatial partitioning (uniform grid cells)
 - Hi-Z occlusion culling
 - Two-phase tree-to-leaf culling
@@ -141,7 +141,7 @@ Stylized approach inspired by The Witness:
 ## Maintenance Tasks
 
 ### Tree Rendering Cleanup
-Legacy code that can be removed once tested (see `TREE_RENDERING_ROADMAP.md`):
+Legacy code that can be removed once tested:
 - Debug flags (elevation override, cell index display)
 - Single-phase leaf culling shader
 - Distance-based LOD code paths

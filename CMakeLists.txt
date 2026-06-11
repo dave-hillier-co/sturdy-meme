@@ -237,6 +237,7 @@ set(SOURCES
     src/water/FlowMapGenerator.cpp
     src/water/WaterGBuffer.cpp
     src/water/WaterDisplacement.cpp
+    src/water/OceanFFT.cpp
     src/water/FoamBuffer.cpp
     src/water/WaterTileCull.cpp
     src/water/WaterSystemGroup.cpp
@@ -881,6 +882,10 @@ set(SHADER_FILES
     ${CMAKE_CURRENT_SOURCE_DIR}/shaders/water_position.vert.spv
     ${CMAKE_CURRENT_SOURCE_DIR}/shaders/water_position.frag.spv
     ${CMAKE_CURRENT_SOURCE_DIR}/shaders/water_displacement.comp.spv
+    ${CMAKE_CURRENT_SOURCE_DIR}/shaders/ocean_spectrum.comp.spv
+    ${CMAKE_CURRENT_SOURCE_DIR}/shaders/ocean_time_evolution.comp.spv
+    ${CMAKE_CURRENT_SOURCE_DIR}/shaders/ocean_fft.comp.spv
+    ${CMAKE_CURRENT_SOURCE_DIR}/shaders/ocean_displacement.comp.spv
     ${CMAKE_CURRENT_SOURCE_DIR}/shaders/foam_blur.comp.spv
     ${CMAKE_CURRENT_SOURCE_DIR}/shaders/ssr.comp.spv
     ${CMAKE_CURRENT_SOURCE_DIR}/shaders/ssr_blur.comp.spv
@@ -978,6 +983,7 @@ if(SHADER_COMPILE_CMD)
         ${CMAKE_CURRENT_SOURCE_DIR}/shaders/ubo_cloud_shadow.glsl
         ${CMAKE_CURRENT_SOURCE_DIR}/shaders/scene_instance_common.glsl
         ${CMAKE_CURRENT_SOURCE_DIR}/shaders/pbr_flags_common.glsl
+        ${CMAKE_CURRENT_SOURCE_DIR}/shaders/ocean_complex_common.glsl
     )
 
     # Simple shaders using SHADER_COMPILE_CMD (no includes)
@@ -1030,6 +1036,7 @@ if(SHADER_COMPILE_CMD)
         hiz_culling.comp
         scene_cull.comp
         bloom_compute.comp bloom_upsample_compute.comp bloom_spd.comp godrays_compute.comp
+        ocean_spectrum.comp ocean_time_evolution.comp ocean_fft.comp ocean_displacement.comp
     )
 
     foreach(SHADER ${SHADERS_WITH_BINDINGS})
@@ -1309,6 +1316,10 @@ if(SHADER_COMPILE_CMD)
         ${CMAKE_CURRENT_SOURCE_DIR}/shaders/water_position.vert.spv
         ${CMAKE_CURRENT_SOURCE_DIR}/shaders/water_position.frag.spv
         ${CMAKE_CURRENT_SOURCE_DIR}/shaders/water_displacement.comp.spv
+        ${CMAKE_CURRENT_SOURCE_DIR}/shaders/ocean_spectrum.comp.spv
+        ${CMAKE_CURRENT_SOURCE_DIR}/shaders/ocean_time_evolution.comp.spv
+        ${CMAKE_CURRENT_SOURCE_DIR}/shaders/ocean_fft.comp.spv
+        ${CMAKE_CURRENT_SOURCE_DIR}/shaders/ocean_displacement.comp.spv
         ${CMAKE_CURRENT_SOURCE_DIR}/shaders/foam_blur.comp.spv
         ${CMAKE_CURRENT_SOURCE_DIR}/shaders/terrain/terrain_dispatcher.comp.spv
         ${CMAKE_CURRENT_SOURCE_DIR}/shaders/terrain/terrain_subdivision.comp.spv

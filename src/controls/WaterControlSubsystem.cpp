@@ -17,3 +17,11 @@ WaterTileCull& WaterControlSubsystem::getWaterTileCull() {
 const WaterTileCull& WaterControlSubsystem::getWaterTileCull() const {
     return waterTileCull_;
 }
+
+OceanFFT* WaterControlSubsystem::getOceanFFT() {
+    return oceanFFT_;
+}
+
+const OceanFFT* WaterControlSubsystem::getOceanFFT() const {
+    return oceanFFT_;
+}

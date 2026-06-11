@@ -43,3 +43,14 @@ assets/textures/downloads
 /town_map.svg
 /town_output.svg
 /test_town.svg
+
+# Runtime artifacts written to the working directory when running the app
+# from the repository root (atmosphere LUT debug exports, pipeline cache)
+/cloudmap_lut.png
+/multiscatter_lut.png
+/skyview_lut.png
+/transmittance_lut.png
+/pipeline_cache.bin
+
+# Local convenience symlink to assets/textures for running from the repo root
+/textures

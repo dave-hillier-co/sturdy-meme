@@ -3,7 +3,7 @@
 #include "LoadJobQueue.h"
 #include "../vulkan/AsyncTransferManager.h"
 #include "../vulkan/VmaImage.h"
-#include <vulkan/vulkan.h>
+#include <vulkan/vulkan.hpp>
 #include <vk_mem_alloc.h>
 #include <string>
 #include <functional>

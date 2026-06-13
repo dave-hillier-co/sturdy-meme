@@ -14,7 +14,7 @@
 // This ensures no stale config state and makes the recorder thread-safe.
 //
 
-#include <vulkan/vulkan.h>
+#include <vulkan/vulkan.hpp>
 #include <glm/glm.hpp>
 #include <vector>
 
@@ -22,7 +22,6 @@
 
 class RendererSystems;
 struct PerformanceToggles;
-struct Renderable;
 
 /**
  * ShadowPassRecorder - Stateless shadow pass command recording

@@ -1,6 +1,6 @@
 #pragma once
 
-#include <vulkan/vulkan.h>
+#include <vulkan/vulkan.hpp>
 #include <vk_mem_alloc.h>
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
@@ -10,7 +10,7 @@
 
 #include "Mesh.h"
 #include "Texture.h"
-#include "RenderableBuilder.h"
+#include "material/MaterialId.h"
 #include "GLTFLoader.h"
 #include "AnimatedCharacter.h"
 #include "MaterialRegistry.h"
@@ -67,9 +67,9 @@ public:
     SceneBuilder(SceneBuilder&&) = delete;
     SceneBuilder& operator=(SceneBuilder&&) = delete;
 
-    // Access to built scene (legacy - for backwards compatibility)
-    const std::vector<Renderable>& getRenderables() const { return sceneObjects; }
-    std::vector<Renderable>& getRenderables() { return sceneObjects; }
+    // Access to built scene mirror (bootstrap source for ECS entities + inspector reads)
+    const std::vector<ecs::RenderData>& getRenderables() const { return sceneObjects; }
+    std::vector<ecs::RenderData>& getRenderables() { return sceneObjects; }
 
     // ECS entity accessors (Phase 6: direct entity access)
     ecs::Entity getPlayerEntity() const { return playerEntity_; }
@@ -84,15 +84,15 @@ public:
     // Get all scene entities (for ECS-based iteration)
     const std::vector<ecs::Entity>& getSceneEntities() const { return sceneEntities_; }
 
-    // Find the renderable for a given entity (returns nullptr if not found)
-    Renderable* getRenderableForEntity(ecs::Entity entity) {
+    // Find the render-data mirror entry for a given entity (nullptr if not found)
+    ecs::RenderData* getRenderableForEntity(ecs::Entity entity) {
         auto it = entityToRenderableIndex_.find(entity);
         if (it != entityToRenderableIndex_.end() && it->second < sceneObjects.size()) {
             return &sceneObjects[it->second];
         }
         return nullptr;
     }
-    const Renderable* getRenderableForEntity(ecs::Entity entity) const {
+    const ecs::RenderData* getRenderableForEntity(ecs::Entity entity) const {
         auto it = entityToRenderableIndex_.find(entity);
         if (it != entityToRenderableIndex_.end() && it->second < sceneObjects.size()) {
             return &sceneObjects[it->second];
@@ -100,16 +100,10 @@ public:
         return nullptr;
     }
 
-    // Get NPC entity by index
-    ecs::Entity getNPCEntity(size_t npcIndex) const {
-        if (npcIndex < npcEntities_.size()) {
-            return npcEntities_[npcIndex];
-        }
-        return ecs::NullEntity;
-    }
-
-    // Set the ECS world (must be called before createRenderables if ECS is used)
-    void setECSWorld(ecs::World* world) { ecsWorld_ = world; }
+    // Set the ECS world (must be called before createRenderables if ECS is used).
+    // Also propagates to the NPC simulation so its NPCs (spawned before the world
+    // arrives in the deferred path) get their simulation entities created.
+    void setECSWorld(ecs::World* world);
     ecs::World* getECSWorld() const { return ecsWorld_; }
 
     // Create entities from renderables (for legacy compatibility during transition)
@@ -238,6 +232,12 @@ private:
     void createRenderables();
     void createNPCs(const InitInfo& info);  // Create NPC characters
 
+    // Slice 5 (merged creation pass): create the ECS entity for sceneObjects[i]
+    // with all tags/components/role handling. Called inline from createRenderables.
+    void createSceneEntity(size_t i);
+    // Finalize the merged pass: player hierarchy + NPC tagging once all entities exist.
+    void finalizeSceneEntities();
+
     // Get terrain height at (x, z), returns 0 if no terrain function available
     float getTerrainHeight(float x, float z) const;
 
@@ -290,8 +290,8 @@ private:
     std::shared_ptr<Texture> defaultEmissive_;  // Black texture for objects without emissive
     std::shared_ptr<Texture> whiteTexture_;     // White texture for vertex-colored objects
 
-    // Scene objects (renderables for rendering pipeline)
-    std::vector<Renderable> sceneObjects;
+    // Scene objects mirror (bootstrap source for ECS entities + inspector reads)
+    std::vector<ecs::RenderData> sceneObjects;
 
     int32_t rightHandBoneIndex = -1;  // Bone index for sword attachment
     int32_t leftHandBoneIndex = -1;   // Bone index for shield attachment
@@ -307,7 +307,6 @@ private:
     // ECS entity handles - the primary way to identify scene objects
     ecs::World* ecsWorld_ = nullptr;  // Pointer to ECS world (not owned)
     std::vector<ecs::Entity> sceneEntities_;  // All scene entities (parallel to sceneObjects)
-    std::vector<ecs::Entity> npcEntities_;    // NPC entities
     std::unordered_map<ecs::Entity, size_t> entityToRenderableIndex_;  // Reverse map
     ecs::Entity playerEntity_ = ecs::NullEntity;
     ecs::Entity emissiveOrbEntity_ = ecs::NullEntity;

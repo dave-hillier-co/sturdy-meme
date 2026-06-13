@@ -14,7 +14,6 @@
 #include "CharacterLOD.h"
 #include "DescriptorManager.h"
 #include "MaterialDescriptorFactory.h"
-#include "RenderableBuilder.h"
 #include "GlobalBufferManager.h"
 #include "DynamicUniformBuffer.h"
 
@@ -114,22 +113,9 @@ public:
                                const glm::mat4* matrices, size_t count);
 
     /**
-     * Record draw commands for skinned character using dynamic offset.
+     * Record draw commands with explicit transform (ECS-compatible).
      * Uses VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC to select the correct
      * bone matrix slot for this character at draw time.
-     *
-     * @param cmd Command buffer to record to
-     * @param frameIndex Current frame index
-     * @param slotIndex Character slot containing this character's bone matrices
-     * @param playerObj Renderable with transform and material properties
-     * @param character Character for mesh data
-     */
-    void record(VkCommandBuffer cmd, uint32_t frameIndex, uint32_t slotIndex,
-                const Renderable& playerObj, AnimatedCharacter& character);
-
-    /**
-     * Record draw commands with explicit transform (Phase 6: ECS-compatible).
-     * This version does not require a Renderable, only the transform matrix.
      *
      * @param cmd Command buffer to record to
      * @param frameIndex Current frame index
@@ -143,14 +129,7 @@ public:
                 float hueShift = 0.0f);
 
     /**
-     * Record draw commands with explicit LOD mesh using dynamic offset.
-     */
-    void recordWithLOD(VkCommandBuffer cmd, uint32_t frameIndex, uint32_t slotIndex,
-                       const Renderable& playerObj, AnimatedCharacter& character,
-                       const CharacterLODMesh& lodMesh);
-
-    /**
-     * Record draw commands with explicit LOD mesh (Phase 6: ECS-compatible).
+     * Record draw commands with explicit LOD mesh (ECS-compatible).
      */
     void recordWithLOD(VkCommandBuffer cmd, uint32_t frameIndex, uint32_t slotIndex,
                        const glm::mat4& transform, AnimatedCharacter& character,

@@ -4,7 +4,7 @@
 // FrameContext.h - Unified per-frame execution context
 // ============================================================================
 //
-// This consolidates the previously separate RenderContext and FrameGraph::RenderContext
+// This consolidates the previously separate RenderContext and PassScheduler::RenderContext
 // into a single type that contains everything needed for command recording.
 //
 // Design:

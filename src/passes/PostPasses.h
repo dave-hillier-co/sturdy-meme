@@ -1,6 +1,6 @@
 #pragma once
 
-#include "FrameGraph.h"
+#include "PassScheduler.h"
 #include <vulkan/vulkan_raii.hpp>
 
 class RendererSystems;
@@ -20,13 +20,13 @@ struct Config {
 };
 
 struct PassIds {
-    FrameGraph::PassId hiZ = FrameGraph::INVALID_PASS;
-    FrameGraph::PassId bloom = FrameGraph::INVALID_PASS;
-    FrameGraph::PassId godRays = FrameGraph::INVALID_PASS;
-    FrameGraph::PassId bilateralGrid = FrameGraph::INVALID_PASS;
-    FrameGraph::PassId postProcess = FrameGraph::INVALID_PASS;
+    PassScheduler::PassId hiZ = PassScheduler::INVALID_PASS;
+    PassScheduler::PassId bloom = PassScheduler::INVALID_PASS;
+    PassScheduler::PassId godRays = PassScheduler::INVALID_PASS;
+    PassScheduler::PassId bilateralGrid = PassScheduler::INVALID_PASS;
+    PassScheduler::PassId postProcess = PassScheduler::INVALID_PASS;
 };
 
-PassIds addPasses(FrameGraph& graph, RendererSystems& systems, const Config& config);
+PassIds addPasses(PassScheduler& graph, RendererSystems& systems, const Config& config);
 
 } // namespace PostPasses

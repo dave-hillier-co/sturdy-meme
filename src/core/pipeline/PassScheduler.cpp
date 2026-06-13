@@ -1,4 +1,4 @@
-#include "FrameGraph.h"
+#include "PassScheduler.h"
 #include "core/FrameContext.h"
 #include "threading/TaskScheduler.h"
 #include "vulkan/ThreadedCommandPool.h"
@@ -8,7 +8,7 @@
 #include <queue>
 #include <sstream>
 
-FrameGraph::PassId FrameGraph::addPass(const std::string& name, PassFunction execute) {
+PassScheduler::PassId PassScheduler::addPass(const std::string& name, PassFunction execute) {
     return addPass(PassConfig{
         .name = name,
         .execute = std::move(execute),
@@ -18,7 +18,7 @@ FrameGraph::PassId FrameGraph::addPass(const std::string& name, PassFunction exe
     });
 }
 
-FrameGraph::PassId FrameGraph::addPass(const PassConfig& config) {
+PassScheduler::PassId PassScheduler::addPass(const PassConfig& config) {
     PassId id = nextPassId_++;
 
     Pass pass;
@@ -33,16 +33,16 @@ FrameGraph::PassId FrameGraph::addPass(const PassConfig& config) {
     return id;
 }
 
-void FrameGraph::addDependency(PassId from, PassId to) {
+void PassScheduler::addDependency(PassId from, PassId to) {
     if (from >= passes_.size() || to >= passes_.size()) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
-            "FrameGraph: Invalid pass ID in addDependency(%u, %u)", from, to);
+            "PassScheduler: Invalid pass ID in addDependency(%u, %u)", from, to);
         return;
     }
 
     if (from == to) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
-            "FrameGraph: Cannot add self-dependency for pass %u", from);
+            "PassScheduler: Cannot add self-dependency for pass %u", from);
         return;
     }
 
@@ -61,7 +61,7 @@ void FrameGraph::addDependency(PassId from, PassId to) {
     compiled_ = false;
 }
 
-void FrameGraph::removePass(PassId id) {
+void PassScheduler::removePass(PassId id) {
     if (id >= passes_.size()) {
         return;
     }
@@ -86,17 +86,17 @@ void FrameGraph::removePass(PassId id) {
     compiled_ = false;
 }
 
-void FrameGraph::setPassEnabled(PassId id, bool enabled) {
+void PassScheduler::setPassEnabled(PassId id, bool enabled) {
     if (id < passes_.size()) {
         passes_[id].enabled = enabled;
     }
 }
 
-bool FrameGraph::isPassEnabled(PassId id) const {
+bool PassScheduler::isPassEnabled(PassId id) const {
     return id < passes_.size() && passes_[id].enabled;
 }
 
-bool FrameGraph::topologicalSort(std::vector<std::vector<PassId>>& levels) {
+bool PassScheduler::topologicalSort(std::vector<std::vector<PassId>>& levels) {
     levels.clear();
 
     // Calculate in-degree for each pass (only count enabled passes)
@@ -161,7 +161,7 @@ bool FrameGraph::topologicalSort(std::vector<std::vector<PassId>>& levels) {
     // Check for cycles
     if (processedCount != activeCount) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
-            "FrameGraph: Cycle detected! Processed %zu of %zu active passes",
+            "PassScheduler: Cycle detected! Processed %zu of %zu active passes",
             processedCount, activeCount);
         return false;
     }
@@ -169,13 +169,13 @@ bool FrameGraph::topologicalSort(std::vector<std::vector<PassId>>& levels) {
     return true;
 }
 
-bool FrameGraph::compile() {
+bool PassScheduler::compile() {
     if (!topologicalSort(executionLevels_)) {
         compiled_ = false;
         return false;
     }
 
-    SDL_Log("FrameGraph: Compiled with %zu levels:", executionLevels_.size());
+    SDL_Log("PassScheduler: Compiled with %zu levels:", executionLevels_.size());
     for (size_t i = 0; i < executionLevels_.size(); ++i) {
         std::string passNames;
         for (PassId id : executionLevels_[i]) {
@@ -189,10 +189,10 @@ bool FrameGraph::compile() {
     return true;
 }
 
-void FrameGraph::execute(FrameContext& context, TaskScheduler* scheduler) {
+void PassScheduler::execute(FrameContext& context, TaskScheduler* scheduler) {
     if (!compiled_) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
-            "FrameGraph: Cannot execute - not compiled");
+            "PassScheduler: Cannot execute - not compiled");
         return;
     }
 
@@ -228,7 +228,7 @@ void FrameGraph::execute(FrameContext& context, TaskScheduler* scheduler) {
                 // Bounds check
                 if (id >= passes_.size()) {
                     SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
-                        "FrameGraph: Invalid pass ID %u (max %zu)", id, passes_.size());
+                        "PassScheduler: Invalid pass ID %u (max %zu)", id, passes_.size());
                     continue;
                 }
 
@@ -239,7 +239,7 @@ void FrameGraph::execute(FrameContext& context, TaskScheduler* scheduler) {
                 // Skip passes with null execute function
                 if (!config.execute) {
                     SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
-                        "FrameGraph: Skipping pass %s with null execute function", config.name.c_str());
+                        "PassScheduler: Skipping pass %s with null execute function", config.name.c_str());
                     continue;
                 }
 
@@ -261,7 +261,7 @@ void FrameGraph::execute(FrameContext& context, TaskScheduler* scheduler) {
     }
 }
 
-void FrameGraph::executeWithSecondaryBuffers(
+void PassScheduler::executeWithSecondaryBuffers(
     FrameContext& context,
     const Pass& pass,
     TaskScheduler* scheduler) {
@@ -273,7 +273,7 @@ void FrameGraph::executeWithSecondaryBuffers(
     // Validate inputs
     if (numSlots == 0 || !pool || !scheduler || !config.secondaryRecord) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
-            "FrameGraph: Invalid parameters for secondary buffer execution (pass: %s)",
+            "PassScheduler: Invalid parameters for secondary buffer execution (pass: %s)",
             config.name.c_str());
         // Fall back to standard execution
         if (config.execute) {
@@ -285,7 +285,7 @@ void FrameGraph::executeWithSecondaryBuffers(
     // Validate render pass and framebuffer for inheritance
     if (!context.renderPass || !context.framebuffer) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
-            "FrameGraph: Missing renderPass or framebuffer for secondary buffers (pass: %s)",
+            "PassScheduler: Missing renderPass or framebuffer for secondary buffers (pass: %s)",
             config.name.c_str());
         if (config.execute) {
             config.execute(context);
@@ -310,7 +310,7 @@ void FrameGraph::executeWithSecondaryBuffers(
                 vk::CommandBuffer secondary = pool->allocateSecondary(context.frameIndex, threadId);
                 if (!secondary) {
                     SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
-                        "FrameGraph: Failed to allocate secondary buffer for slot %u", slot);
+                        "PassScheduler: Failed to allocate secondary buffer for slot %u", slot);
                     failureCount.fetch_add(1, std::memory_order_relaxed);
                     return;
                 }
@@ -340,15 +340,15 @@ void FrameGraph::executeWithSecondaryBuffers(
                 secondaryBuffers[slot] = secondary;
             } catch (const vk::SystemError& e) {
                 SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
-                    "FrameGraph: Vulkan error in secondary buffer slot %u: %s", slot, e.what());
+                    "PassScheduler: Vulkan error in secondary buffer slot %u: %s", slot, e.what());
                 failureCount.fetch_add(1, std::memory_order_relaxed);
             } catch (const std::exception& e) {
                 SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
-                    "FrameGraph: Exception in secondary buffer slot %u: %s", slot, e.what());
+                    "PassScheduler: Exception in secondary buffer slot %u: %s", slot, e.what());
                 failureCount.fetch_add(1, std::memory_order_relaxed);
             } catch (...) {
                 SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
-                    "FrameGraph: Unknown exception in secondary buffer slot %u", slot);
+                    "PassScheduler: Unknown exception in secondary buffer slot %u", slot);
                 failureCount.fetch_add(1, std::memory_order_relaxed);
             }
         }, &group);
@@ -360,7 +360,7 @@ void FrameGraph::executeWithSecondaryBuffers(
     // Check if any slots failed
     if (failureCount.load(std::memory_order_relaxed) > 0) {
         SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
-            "FrameGraph: %u/%u secondary buffer slots failed for pass %s",
+            "PassScheduler: %u/%u secondary buffer slots failed for pass %s",
             failureCount.load(), numSlots, config.name.c_str());
         // Filter out null buffers
         secondaryBuffers.erase(
@@ -381,12 +381,12 @@ void FrameGraph::executeWithSecondaryBuffers(
     context.secondaryBuffers = nullptr;
 }
 
-FrameGraph::PassId FrameGraph::getPass(const std::string& name) const {
+PassScheduler::PassId PassScheduler::getPass(const std::string& name) const {
     auto it = nameToId_.find(name);
     return (it != nameToId_.end()) ? it->second : INVALID_PASS;
 }
 
-void FrameGraph::clear() {
+void PassScheduler::clear() {
     passes_.clear();
     nameToId_.clear();
     executionLevels_.clear();
@@ -394,9 +394,9 @@ void FrameGraph::clear() {
     compiled_ = false;
 }
 
-std::string FrameGraph::debugString() const {
+std::string PassScheduler::debugString() const {
     std::stringstream ss;
-    ss << "FrameGraph (" << passes_.size() << " passes):\n";
+    ss << "PassScheduler (" << passes_.size() << " passes):\n";
 
     for (const auto& pass : passes_) {
         if (!pass.config.execute) continue;

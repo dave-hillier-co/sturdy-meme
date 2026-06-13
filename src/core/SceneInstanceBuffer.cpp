@@ -42,7 +42,7 @@ void SceneInstanceBuffer::beginFrame(uint32_t frameIndex) {
     batchMap_.clear();
 }
 
-int32_t SceneInstanceBuffer::addInstance(const Renderable& renderable) {
+int32_t SceneInstanceBuffer::addInstance(const ecs::RenderData& renderable) {
     if (instances_.size() >= MAX_SCENE_INSTANCES) {
         SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
             "SceneInstanceBuffer: Max instances reached (%zu)", MAX_SCENE_INSTANCES);

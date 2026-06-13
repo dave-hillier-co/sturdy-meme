@@ -507,10 +507,11 @@ bool Application::init(const std::string& title, int width, int height) {
     // Initialize GUI system via factory
     {
         INIT_PROFILE_PHASE("GUI");
-        gui_ = GuiSystem::create(window, renderer_->getInstance(), renderer_->getPhysicalDevice(),
-                                  renderer_->getDevice(), renderer_->getGraphicsQueueFamily(),
-                                  renderer_->getGraphicsQueue(), renderer_->getSwapchainRenderPass(),
-                                  renderer_->getSwapchainImageCount());
+        const VulkanContext& vkCtx = renderer_->getVulkanContext();
+        gui_ = GuiSystem::create(window, vkCtx.getVkInstance(), vkCtx.getVkPhysicalDevice(),
+                                  vkCtx.getVkDevice(), vkCtx.getGraphicsQueueFamily(),
+                                  vkCtx.getVkGraphicsQueue(), vkCtx.getRenderPass(),
+                                  vkCtx.getSwapchainImageCount());
         if (!gui_) {
             SDL_Log("Failed to initialize GUI system");
             return false;
@@ -611,7 +612,7 @@ void Application::run() {
         gui_->render(guiInterfaces, camera, lastDeltaTime, currentFps);
 
         // Update input system
-        input.update(deltaTime, camera.getYaw());
+        input.update(deltaTime, camera.getForward());
 
         // Apply input to camera
         applyInputToCamera();
@@ -652,8 +653,10 @@ void Application::run() {
             }
 
             glm::vec3 moveDir = input.getMovementDirection();
-            if (glm::length(moveDir) > 0.001f) {
-                moveDir = glm::normalize(moveDir);
+            float moveLen = glm::length(moveDir);
+            if (moveLen > 0.001f) {
+                // Clamp rather than normalize so analog stick magnitude scales speed
+                if (moveLen > 1.0f) moveDir /= moveLen;
                 float currentSpeed = input.isSprinting() ? sprintSpeed : moveSpeed;
                 desiredVelocity = moveDir * currentSpeed;
 
@@ -673,7 +676,7 @@ void Application::run() {
                     float yawRate = (sceneBuilder.hasCharacter() &&
                                      sceneBuilder.getAnimatedCharacter().isUsingMotionMatching())
                                     ? 4.0f : 10.0f;
-                    float smoothedYaw = currentYaw + yawDiff * yawRate * deltaTime;
+                    float smoothedYaw = currentYaw + yawDiff * (1.0f - std::exp(-yawRate * deltaTime));
                     // Keep yaw in reasonable range
                     while (smoothedYaw > 360.0f) smoothedYaw -= 360.0f;
                     while (smoothedYaw < 0.0f) smoothedYaw += 360.0f;
@@ -703,7 +706,7 @@ void Application::run() {
                     while (yawDiff > 180.0f) yawDiff -= 360.0f;
                     while (yawDiff < -180.0f) yawDiff += 360.0f;
                     // Faster rotation for strafe mode responsiveness
-                    float smoothedYaw = currentYaw + yawDiff * 15.0f * deltaTime;
+                    float smoothedYaw = currentYaw + yawDiff * (1.0f - std::exp(-15.0f * deltaTime));
                     while (smoothedYaw > 360.0f) smoothedYaw -= 360.0f;
                     while (smoothedYaw < 0.0f) smoothedYaw += 360.0f;
                     playerTransform.setYaw(smoothedYaw);
@@ -1362,7 +1365,7 @@ void Application::updateCameraOcclusion(float deltaTime) {
         opacity.value += (targetOpacity - opacity.value) * fadeFactor;
 
         // Sync to renderable for current rendering pipeline
-        Renderable* renderable = sceneBuilder.getRenderableForEntity(entity);
+        ecs::RenderData* renderable = sceneBuilder.getRenderableForEntity(entity);
         if (renderable) {
             renderable->opacity = opacity.value;
         }
@@ -1503,22 +1506,13 @@ void Application::updateECS(float deltaTime) {
         ecsWeaponsInitialized_ = true;
     }
 
-    // Sync transforms from Renderables to ECS (for objects NOT driven by bone attachments)
-    for (size_t i = 0; i < currentEntities.size() && i < renderables.size(); ++i) {
-        ecs::Entity entity = currentEntities[i];
-        if (ecsWorld_.valid(entity) && ecsWorld_.has<ecs::Transform>(entity)) {
-            // Skip if entity has BoneAttachment (skeleton drives it) or LocalTransform (hierarchy drives it)
-            if (!ecsWorld_.has<ecs::BoneAttachment>(entity) && !ecsWorld_.has<ecs::LocalTransform>(entity)) {
-                ecsWorld_.get<ecs::Transform>(entity).matrix = renderables[i].transform;
-            }
-        }
-    }
+    // ECS Transform is now written directly at each per-frame source: physics objects by
+    // SceneManager::updatePhysicsToScene, the player by updatePlayerTransform, NPCs by
+    // updateNPCs, bone-attached weapons/axes by updateWeaponTransforms, hierarchy children
+    // (cape) by updateWorldTransforms, and static objects once at creation. No blanket
+    // Renderable->ECS sync loop is required.
 
-    // Note: bone-attached entity transforms (weapons, debug axes) are updated by
-    // SceneBuilder::updateWeaponTransforms() which runs after skeleton animation and
-    // syncs both Renderable and ECS Transform using the correct world transform.
-
-    // Update ECS material demo (wetness/damage cycling, selection toggling)
+    // Update ECS material demo (wetness/damage cycling)
     static float totalTime = 0.0f;
     totalTime += deltaTime;
     if (ecsMaterialDemo_) {
@@ -1529,16 +1523,12 @@ void Application::updateECS(float deltaTime) {
     // This must run before visibility culling so world transforms are current
     ecs::systems::updateWorldTransforms(ecsWorld_);
 
-    // Update visibility culling based on camera frustum
+    // Update visibility culling based on camera frustum.
+    // The Visible tag this sets is consumed by the ECS light culling queries
+    // (LightSystem). The scene-object draw path culls independently on the GPU.
     glm::mat4 viewProj = camera.getProjectionMatrix() * camera.getViewMatrix();
     ecs::Frustum frustum = ecs::Frustum::fromViewProjection(viewProj);
     ecs::systems::updateVisibility(ecsWorld_, frustum);
-
-    // Update LOD levels based on camera distance
-    ecs::systems::updateLOD(ecsWorld_, camera.getPosition());
-
-    // Get culling stats for debugging (could expose to GUI later)
-    [[maybe_unused]] ecs::render::CullStats stats = ecs::render::getCullStats(ecsWorld_);
 }
 
 void Application::spawnRagdoll() {

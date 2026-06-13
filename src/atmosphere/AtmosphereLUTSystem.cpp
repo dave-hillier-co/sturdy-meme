@@ -1,5 +1,4 @@
 #include "AtmosphereLUTSystem.h"
-#include "core/InitInfoBuilder.h"
 #include <SDL3/SDL_log.h>
 
 std::unique_ptr<AtmosphereLUTSystem> AtmosphereLUTSystem::create(const InitInfo& info) {
@@ -11,7 +10,13 @@ std::unique_ptr<AtmosphereLUTSystem> AtmosphereLUTSystem::create(const InitInfo&
 }
 
 std::unique_ptr<AtmosphereLUTSystem> AtmosphereLUTSystem::create(const InitContext& ctx) {
-    InitInfo info = InitInfoBuilder::fromContext<InitInfo>(ctx);
+    InitInfo info{};
+    info.device = ctx.device;
+    info.allocator = ctx.allocator;
+    info.descriptorPool = ctx.descriptorPool;
+    info.shaderPath = ctx.shaderPath;
+    info.framesInFlight = ctx.framesInFlight;
+    info.raiiDevice = ctx.raiiDevice;
     return create(info);
 }
 

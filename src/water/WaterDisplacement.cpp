@@ -7,6 +7,7 @@
 #include "core/vulkan/PipelineLayoutBuilder.h"
 #include "core/vulkan/DescriptorSetLayoutBuilder.h"
 #include "core/vulkan/BarrierHelpers.h"
+#include "core/vulkan/CommandBufferUtils.h"
 #include "core/ImageBuilder.h"
 #include <SDL3/SDL_log.h>
 #include <vulkan/vulkan.hpp>
@@ -142,6 +143,40 @@ bool WaterDisplacement::createDisplacementMap() {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create displacement sampler");
         return false;
     }
+
+    // Clear both maps to zero and move them to SHADER_READ_ONLY so they are
+    // valid to sample (water vertex shader, compute prev-frame input) before
+    // the first recordCompute - and even if the compute never runs.
+    {
+        CommandScope cmd{vk::Device(device), vk::CommandPool(commandPool), vk::Queue(computeQueue)};
+        if (!cmd.begin()) return false;
+
+        auto clearRange = vk::ImageSubresourceRange{}
+            .setAspectMask(vk::ImageAspectFlagBits::eColor)
+            .setBaseMipLevel(0)
+            .setLevelCount(1)
+            .setBaseArrayLayer(0)
+            .setLayerCount(1);
+
+        for (VkImage image : {displacementMap, prevDisplacementMap}) {
+            BarrierHelpers::transitionImageLayout(cmd.get(), image,
+                vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal,
+                vk::PipelineStageFlagBits::eTopOfPipe, vk::PipelineStageFlagBits::eTransfer,
+                vk::AccessFlags{}, vk::AccessFlagBits::eTransferWrite);
+            cmd.get().clearColorImage(image, vk::ImageLayout::eTransferDstOptimal,
+                                      vk::ClearColorValue{std::array<float, 4>{0.0f, 0.0f, 0.0f, 0.0f}},
+                                      clearRange);
+            BarrierHelpers::transitionImageLayout(cmd.get(), image,
+                vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eShaderReadOnlyOptimal,
+                vk::PipelineStageFlagBits::eTransfer,
+                vk::PipelineStageFlagBits::eComputeShader | vk::PipelineStageFlagBits::eVertexShader |
+                    vk::PipelineStageFlagBits::eTessellationEvaluationShader | vk::PipelineStageFlagBits::eFragmentShader,
+                vk::AccessFlagBits::eTransferWrite, vk::AccessFlagBits::eShaderRead);
+        }
+
+        if (!cmd.end()) return false;
+    }
+
     return true;
 }
 

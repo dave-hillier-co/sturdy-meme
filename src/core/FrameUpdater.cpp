@@ -44,13 +44,18 @@ void FrameUpdater::populateGPUSceneBuffer(RendererSystems& systems, const FrameD
     GPUSceneBuffer& sceneBuffer = systems.gpuSceneBuffer();
     sceneBuffer.beginFrame(frame.frameIndex);
 
-    const auto& sceneObjects = systems.scene().getRenderables();
-
-    for (size_t i = 0; i < sceneObjects.size(); ++i) {
-        // Skip GPU-skinned characters (player + NPCs, rendered via separate pipeline)
-        if (sceneObjects[i].gpuSkinned) continue;
-
-        sceneBuffer.addObject(sceneObjects[i]);
+    // Scene objects are sourced from the ECS: each scene entity's render data is
+    // extracted from its components (Transform/MeshRef/MaterialRef/PBRProperties/...).
+    // GPU-skinned characters (player + NPCs) draw via a separate pipeline and are
+    // skipped via the GPUSkinned tag.
+    ecs::World* world = systems.ecsWorld();
+    if (world) {
+        const auto& sceneEntities = systems.scene().getSceneBuilder().getSceneEntities();
+        for (ecs::Entity entity : sceneEntities) {
+            if (!world->valid(entity)) continue;
+            if (world->has<ecs::GPUSkinned>(entity)) continue;
+            sceneBuffer.addObject(ecs::extractRenderData(*world, entity));
+        }
     }
 
     // Scatter content (rocks, detritus). These have no MaterialRegistry materialId but own
@@ -59,10 +64,9 @@ void FrameUpdater::populateGPUSceneBuffer(RendererSystems& systems, const FrameD
     // skips its CPU rocks/detritus loops to avoid double-drawing.
     auto addScatter = [&](const ScatterSystem& scatter) {
         if (!scatter.hasDescriptorSets()) return;
-        VkDescriptorSet set = scatter.getDescriptorSet(frame.frameIndex);
-        if (set == VK_NULL_HANDLE) return;
+        vk::DescriptorSet set = scatter.getDescriptorSet(frame.frameIndex);
+        if (!set) return;
         for (const auto& obj : scatter.getSceneObjects()) {
-            if (obj.gpuSkinned) continue;
             sceneBuffer.addObject(obj, set);
         }
     };

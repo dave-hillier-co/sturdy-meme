@@ -72,9 +72,10 @@ bool VirtualTexturePageTable::initInternal(const InitInfo& info) {
         return false;
     }
 
-    // Create per-frame staging buffers (sized for largest mip level)
-    uint32_t maxMipSize = mipSizes[0];
-    VkDeviceSize stagingSize = maxMipSize * sizeof(uint32_t); // RGBA8 packed
+    // Create per-frame staging buffers, sized for the worst case of every
+    // mip level being dirty in the same frame (each dirty mip gets its own
+    // region of the buffer)
+    VkDeviceSize stagingSize = totalEntries * sizeof(uint32_t); // RGBA8 packed
     stagingBuffers_.resize(framesInFlight_);
     stagingMapped_.resize(framesInFlight_);
 
@@ -94,8 +95,6 @@ bool VirtualTexturePageTable::initInternal(const InitInfo& info) {
 
 void VirtualTexturePageTable::cleanup() {
     if (device_ == VK_NULL_HANDLE) return;  // Not initialized
-    VkDevice device = device_;
-    VmaAllocator allocator = allocator_;
     // VmaBuffer cleanup - unmap first
     for (size_t i = 0; i < stagingBuffers_.size(); ++i) {
         if (stagingMapped_[i]) {
@@ -108,14 +107,7 @@ void VirtualTexturePageTable::cleanup() {
     stagingMapped_.clear();
 
     pageTableSampler_.reset();
-
-    vk::Device vkDevice(device);
-    if (combinedImageView != VK_NULL_HANDLE) {
-        vkDevice.destroyImageView(combinedImageView);
-        combinedImageView = VK_NULL_HANDLE;
-    }
-
-    pageTableImages_.clear();
+    pageTableImage_.reset();
 
     cpuData.clear();
     mipOffsets.clear();
@@ -125,55 +117,51 @@ void VirtualTexturePageTable::cleanup() {
 
 bool VirtualTexturePageTable::createPageTableTextures(VkDevice device, VmaAllocator allocator,
                                                        VkCommandPool commandPool, VkQueue queue) {
-    pageTableImages_.resize(config.maxMipLevels);
+    // Single array image: every layer is sized for mip 0; mip N's entries
+    // occupy the top-left corner of layer N. This wastes a little memory but
+    // lets the shader address all mips through one usampler2DArray.
+    uint32_t tilesPerAxis = config.getTilesPerAxis();
 
-    for (uint32_t mip = 0; mip < config.maxMipLevels; ++mip) {
-        uint32_t tilesAtMip = config.getTilesAtMip(mip);
+    VmaImageSpec spec{};
+    spec = spec.withFormat(vk::Format::eR8G8B8A8Uint)
+        .withExtent(vk::Extent3D{tilesPerAxis, tilesPerAxis, 1})
+        .withMipLevels(1)
+        .withArrayLayers(config.maxMipLevels)
+        .withUsage(vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled)
+        .withView(vk::ImageViewType::e2DArray, vk::ImageAspectFlagBits::eColor,
+                  0, 1, 0, config.maxMipLevels)
+        .withRequiredFlags(VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 
-        VmaImageSpec spec{};
-        spec = spec.withFormat(vk::Format::eR8G8B8A8Uint)
-            .withExtent(vk::Extent3D{tilesAtMip, tilesAtMip, 1})
-            .withMipLevels(1)
-            .withUsage(vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled)
-            .withView(vk::ImageViewType::e2D, vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1)
-            .withRequiredFlags(VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-
-        pageTableImages_[mip] = spec.build(allocator, device);
-        if (!pageTableImages_[mip].isValid()) {
-            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create page table image for mip %u", mip);
-            return false;
-        }
+    pageTableImage_ = spec.build(allocator, device);
+    if (!pageTableImage_.isValid()) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create page table array image");
+        return false;
     }
 
-    // Transition all images to shader read layout
+    // Transition all layers to shader read layout
     {
         CommandScope cmdScope(device, commandPool, queue);
         if (!cmdScope.begin()) return false;
 
         vk::CommandBuffer vkCmd(cmdScope.get());
-        std::vector<vk::ImageMemoryBarrier> barriers;
-        barriers.reserve(config.maxMipLevels);
-
-        for (uint32_t mip = 0; mip < config.maxMipLevels; ++mip) {
-            barriers.push_back(vk::ImageMemoryBarrier{}
-                .setSrcAccessMask(vk::AccessFlags{})
-                .setDstAccessMask(vk::AccessFlagBits::eShaderRead)
-                .setOldLayout(vk::ImageLayout::eUndefined)
-                .setNewLayout(vk::ImageLayout::eShaderReadOnlyOptimal)
-                .setSrcQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
-                .setDstQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
-                .setImage(pageTableImages_[mip].getImage())
-                .setSubresourceRange(vk::ImageSubresourceRange{}
-                    .setAspectMask(vk::ImageAspectFlagBits::eColor)
-                    .setBaseMipLevel(0)
-                    .setLevelCount(1)
-                    .setBaseArrayLayer(0)
-                    .setLayerCount(1)));
-        }
+        auto barrier = vk::ImageMemoryBarrier{}
+            .setSrcAccessMask(vk::AccessFlags{})
+            .setDstAccessMask(vk::AccessFlagBits::eShaderRead)
+            .setOldLayout(vk::ImageLayout::eUndefined)
+            .setNewLayout(vk::ImageLayout::eShaderReadOnlyOptimal)
+            .setSrcQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
+            .setDstQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
+            .setImage(pageTableImage_.getImage())
+            .setSubresourceRange(vk::ImageSubresourceRange{}
+                .setAspectMask(vk::ImageAspectFlagBits::eColor)
+                .setBaseMipLevel(0)
+                .setLevelCount(1)
+                .setBaseArrayLayer(0)
+                .setLayerCount(config.maxMipLevels));
 
         vkCmd.pipelineBarrier(vk::PipelineStageFlagBits::eTopOfPipe,
                               vk::PipelineStageFlagBits::eFragmentShader,
-                              {}, {}, {}, barriers);
+                              {}, {}, {}, barrier);
 
         if (!cmdScope.end()) return false;
     }
@@ -235,11 +223,6 @@ PageTableEntry VirtualTexturePageTable::getEntry(TileId id) const {
     return cpuData[index];
 }
 
-VkImageView VirtualTexturePageTable::getImageView(uint32_t mipLevel) const {
-    if (mipLevel >= pageTableImages_.size()) return VK_NULL_HANDLE;
-    return pageTableImages_[mipLevel].getView();
-}
-
 void VirtualTexturePageTable::recordUpload(VkCommandBuffer cmd, uint32_t frameIndex) {
     if (!dirty) return;
 
@@ -250,80 +233,80 @@ void VirtualTexturePageTable::recordUpload(VkCommandBuffer cmd, uint32_t frameIn
         return;
     }
 
+    vk::CommandBuffer vkCmd(cmd);
+
+    auto fullRange = vk::ImageSubresourceRange{}
+        .setAspectMask(vk::ImageAspectFlagBits::eColor)
+        .setBaseMipLevel(0)
+        .setLevelCount(1)
+        .setBaseArrayLayer(0)
+        .setLayerCount(config.maxMipLevels);
+
+    // Transition all layers to transfer dst
+    {
+        auto barrier = vk::ImageMemoryBarrier{}
+            .setSrcAccessMask(vk::AccessFlagBits::eShaderRead)
+            .setDstAccessMask(vk::AccessFlagBits::eTransferWrite)
+            .setOldLayout(vk::ImageLayout::eShaderReadOnlyOptimal)
+            .setNewLayout(vk::ImageLayout::eTransferDstOptimal)
+            .setSrcQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
+            .setDstQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
+            .setImage(pageTableImage_.getImage())
+            .setSubresourceRange(fullRange);
+        vkCmd.pipelineBarrier(vk::PipelineStageFlagBits::eFragmentShader,
+                              vk::PipelineStageFlagBits::eTransfer,
+                              {}, {}, {}, barrier);
+    }
+
+    // Each dirty mip gets its own region of the staging buffer; the copy
+    // commands execute long after this function returns, so regions must
+    // not be reused within a frame
+    uint32_t* staging = static_cast<uint32_t*>(stagingMapped_[bufferIndex]);
+    size_t stagingCursor = 0;
+
     for (uint32_t mip = 0; mip < config.maxMipLevels; ++mip) {
         if (!mipDirty[mip]) continue;
 
         uint32_t tilesAtMip = config.getTilesAtMip(mip);
         size_t numEntries = mipSizes[mip];
 
-        // Pack entries into per-frame staging buffer
-        uint32_t* packed = static_cast<uint32_t*>(stagingMapped_[bufferIndex]);
         for (size_t i = 0; i < numEntries; ++i) {
-            packed[i] = cpuData[mipOffsets[mip] + i].packRGBA8();
+            staging[stagingCursor + i] = cpuData[mipOffsets[mip] + i].packRGBA8();
         }
 
-        vk::CommandBuffer vkCmd(cmd);
+        // Copy into this mip's layer (data sits in the top-left corner)
+        auto region = vk::BufferImageCopy{}
+            .setBufferOffset(stagingCursor * sizeof(uint32_t))
+            .setBufferRowLength(0)
+            .setBufferImageHeight(0)
+            .setImageSubresource(vk::ImageSubresourceLayers{}
+                .setAspectMask(vk::ImageAspectFlagBits::eColor)
+                .setMipLevel(0)
+                .setBaseArrayLayer(mip)
+                .setLayerCount(1))
+            .setImageOffset({0, 0, 0})
+            .setImageExtent({tilesAtMip, tilesAtMip, 1});
+        vkCmd.copyBufferToImage(stagingBuffers_[bufferIndex].get(), pageTableImage_.getImage(),
+                                vk::ImageLayout::eTransferDstOptimal, region);
 
-        // Transition to transfer dst
-        {
-            auto barrier = vk::ImageMemoryBarrier{}
-                .setSrcAccessMask(vk::AccessFlagBits::eShaderRead)
-                .setDstAccessMask(vk::AccessFlagBits::eTransferWrite)
-                .setOldLayout(vk::ImageLayout::eShaderReadOnlyOptimal)
-                .setNewLayout(vk::ImageLayout::eTransferDstOptimal)
-                .setSrcQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
-                .setDstQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
-                .setImage(pageTableImages_[mip].getImage())
-                .setSubresourceRange(vk::ImageSubresourceRange{}
-                    .setAspectMask(vk::ImageAspectFlagBits::eColor)
-                    .setBaseMipLevel(0)
-                    .setLevelCount(1)
-                    .setBaseArrayLayer(0)
-                    .setLayerCount(1));
-            vkCmd.pipelineBarrier(vk::PipelineStageFlagBits::eFragmentShader,
-                                  vk::PipelineStageFlagBits::eTransfer,
-                                  {}, {}, {}, barrier);
-        }
-
-        // Copy buffer to page table image
-        {
-            auto region = vk::BufferImageCopy{}
-                .setBufferOffset(0)
-                .setBufferRowLength(0)
-                .setBufferImageHeight(0)
-                .setImageSubresource(vk::ImageSubresourceLayers{}
-                    .setAspectMask(vk::ImageAspectFlagBits::eColor)
-                    .setMipLevel(0)
-                    .setBaseArrayLayer(0)
-                    .setLayerCount(1))
-                .setImageOffset({0, 0, 0})
-                .setImageExtent({tilesAtMip, tilesAtMip, 1});
-            vkCmd.copyBufferToImage(stagingBuffers_[bufferIndex].get(), pageTableImages_[mip].getImage(),
-                                    vk::ImageLayout::eTransferDstOptimal, region);
-        }
-
-        // Transition back to shader read
-        {
-            auto barrier = vk::ImageMemoryBarrier{}
-                .setSrcAccessMask(vk::AccessFlagBits::eTransferWrite)
-                .setDstAccessMask(vk::AccessFlagBits::eShaderRead)
-                .setOldLayout(vk::ImageLayout::eTransferDstOptimal)
-                .setNewLayout(vk::ImageLayout::eShaderReadOnlyOptimal)
-                .setSrcQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
-                .setDstQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
-                .setImage(pageTableImages_[mip].getImage())
-                .setSubresourceRange(vk::ImageSubresourceRange{}
-                    .setAspectMask(vk::ImageAspectFlagBits::eColor)
-                    .setBaseMipLevel(0)
-                    .setLevelCount(1)
-                    .setBaseArrayLayer(0)
-                    .setLayerCount(1));
-            vkCmd.pipelineBarrier(vk::PipelineStageFlagBits::eTransfer,
-                                  vk::PipelineStageFlagBits::eFragmentShader,
-                                  {}, {}, {}, barrier);
-        }
-
+        stagingCursor += numEntries;
         mipDirty[mip] = false;
+    }
+
+    // Transition back to shader read
+    {
+        auto barrier = vk::ImageMemoryBarrier{}
+            .setSrcAccessMask(vk::AccessFlagBits::eTransferWrite)
+            .setDstAccessMask(vk::AccessFlagBits::eShaderRead)
+            .setOldLayout(vk::ImageLayout::eTransferDstOptimal)
+            .setNewLayout(vk::ImageLayout::eShaderReadOnlyOptimal)
+            .setSrcQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
+            .setDstQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
+            .setImage(pageTableImage_.getImage())
+            .setSubresourceRange(fullRange);
+        vkCmd.pipelineBarrier(vk::PipelineStageFlagBits::eTransfer,
+                              vk::PipelineStageFlagBits::eFragmentShader,
+                              {}, {}, {}, barrier);
     }
 
     dirty = false;

@@ -1,6 +1,6 @@
 #pragma once
 
-#include <vulkan/vulkan.h>
+#include <vulkan/vulkan.hpp>
 #include <vulkan/vulkan_raii.hpp>
 #include <string>
 #include <memory>
@@ -29,6 +29,7 @@ public:
         bool useMeshlets;
         uint32_t meshletIndexCount;  // From TerrainMeshlet::getIndexCount()
         const SubgroupCapabilities* subgroupCaps;  // For optimized compute paths
+        bool useVirtualTexture = false;  // Use the VT fragment shader variant
     };
 
     /**
@@ -115,6 +116,7 @@ private:
     bool useMeshlets = false;
     uint32_t meshletIndexCount = 0;
     const SubgroupCapabilities* subgroupCaps = nullptr;
+    bool useVirtualTexture = false;
 
     // Compute pipelines
     std::optional<vk::raii::PipelineLayout> dispatcherPipelineLayout_;

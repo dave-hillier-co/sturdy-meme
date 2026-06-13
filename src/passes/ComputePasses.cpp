@@ -24,6 +24,8 @@
 #include "culling/GPUCullPass.h"
 #include "FlowMapGenerator.h"
 #include "FoamBuffer.h"
+#include "WaterDisplacement.h"
+#include "OceanFFT.h"
 #include "CloudShadowSystem.h"
 #include "WindSystem.h"
 #include "FroxelSystem.h"
@@ -32,15 +34,14 @@
 
 namespace ComputePasses {
 
-PassIds addPasses(FrameGraph& graph, RendererSystems& systems, const Config& config) {
+PassIds addPasses(PassScheduler& graph, RendererSystems& systems, const Config& config) {
     PassIds ids;
     PerformanceToggles* perfToggles = config.perfToggles;
-    bool* terrainEnabled = config.terrainEnabled;
 
     // Compute pass - runs all GPU compute dispatches
     ids.compute = graph.addPass({
         .name = "Compute",
-        .execute = [&systems, perfToggles, terrainEnabled](FrameGraph::RenderContext& ctx) {
+        .execute = [&systems, perfToggles](PassScheduler::RenderContext& ctx) {
             RenderContext* renderCtx = static_cast<RenderContext*>(ctx.userData);
             if (!renderCtx) return;
             VkCommandBuffer cmd = renderCtx->cmd;
@@ -49,7 +50,7 @@ PassIds addPasses(FrameGraph& graph, RendererSystems& systems, const Config& con
             systems.profiler().beginCpuZone("ComputeDispatch");
 
             // Terrain compute pass (adaptive subdivision)
-            if (terrainEnabled && *terrainEnabled && perfToggles->terrainCompute) {
+            if (systems.terrain().isTerrainEnabled() && perfToggles->terrainCompute) {
                 systems.profiler().beginGpuZone(cmd, "TerrainCompute");
                 systems.terrain().recordCompute(cmd, frameIndex, &systems.profiler().getGpuProfiler());
                 systems.profiler().endGpuZone(cmd, "TerrainCompute");
@@ -143,6 +144,20 @@ PassIds addPasses(FrameGraph& graph, RendererSystems& systems, const Config& con
                 systems.foam().recordCompute(cmd, frameIndex, renderCtx->frame.deltaTime,
                                              systems.flowMap().getFlowMapView(), systems.flowMap().getFlowMapSampler());
                 systems.profiler().endGpuZone(cmd, "FoamCompute");
+
+                // Interactive water displacement (splashes/ripples) shares the
+                // water-surface dynamics toggle
+                systems.profiler().beginGpuZone(cmd, "WaterDisplacement");
+                systems.waterDisplacement().update(renderCtx->frame.deltaTime);
+                systems.waterDisplacement().recordCompute(cmd, frameIndex);
+                systems.profiler().endGpuZone(cmd, "WaterDisplacement");
+            }
+
+            // FFT ocean simulation compute pass
+            if (perfToggles->oceanFFTCompute && systems.hasOceanFFT()) {
+                systems.profiler().beginGpuZone(cmd, "OceanFFT");
+                systems.oceanFFT().recordCompute(cmd, renderCtx->frame.time);
+                systems.profiler().endGpuZone(cmd, "OceanFFT");
             }
 
             // Cloud shadow map compute pass
@@ -172,7 +187,7 @@ PassIds addPasses(FrameGraph& graph, RendererSystems& systems, const Config& con
     // Froxel/Atmosphere pass - volumetric fog and atmosphere LUTs
     ids.froxel = graph.addPass({
         .name = "Froxel",
-        .execute = [&systems, perfToggles](FrameGraph::RenderContext& ctx) {
+        .execute = [&systems, perfToggles](PassScheduler::RenderContext& ctx) {
             RenderContext* renderCtx = static_cast<RenderContext*>(ctx.userData);
             if (!renderCtx) return;
             VkCommandBuffer cmd = renderCtx->cmd;
@@ -182,6 +197,9 @@ PassIds addPasses(FrameGraph& graph, RendererSystems& systems, const Config& con
                 renderCtx->frame.nearPlane, renderCtx->frame.farPlane);
 
             if (!perfToggles->froxelFog && !perfToggles->atmosphereLUT) {
+                // The post-process composite statically binds the integrated froxel
+                // volume; initialize it even when froxel updates never run.
+                systems.froxel().recordInitialClearIfNeeded(cmd);
                 return;
             }
 
@@ -236,7 +254,7 @@ PassIds addPasses(FrameGraph& graph, RendererSystems& systems, const Config& con
     if (systems.hasGPUSceneBuffer() && systems.hasGPUCullPass()) {
         ids.gpuCull = graph.addPass({
             .name = "GPUCull",
-            .execute = [&systems](FrameGraph::RenderContext& ctx) {
+            .execute = [&systems](PassScheduler::RenderContext& ctx) {
                 RenderContext* renderCtx = static_cast<RenderContext*>(ctx.userData);
                 if (!renderCtx) return;
                 VkCommandBuffer cmd = renderCtx->cmd;

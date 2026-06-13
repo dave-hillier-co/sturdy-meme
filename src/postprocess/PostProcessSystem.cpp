@@ -4,7 +4,6 @@
 #include "GodRaysSystem.h"
 #include "ShaderLoader.h"
 #include "DescriptorManager.h"
-#include "core/InitInfoBuilder.h"
 #include "core/pipeline/ComputePipelineBuilder.h"
 #include "SamplerFactory.h"
 #include "VmaBuffer.h"
@@ -25,7 +24,14 @@ std::unique_ptr<PostProcessSystem> PostProcessSystem::create(const InitInfo& inf
 }
 
 std::unique_ptr<PostProcessSystem> PostProcessSystem::create(const InitContext& ctx, VkRenderPass outputRenderPass, VkFormat swapchainFormat) {
-    InitInfo info = InitInfoBuilder::fromContext<InitInfo>(ctx);
+    InitInfo info{};
+    info.device = ctx.device;
+    info.allocator = ctx.allocator;
+    info.descriptorPool = ctx.descriptorPool;
+    info.extent = ctx.extent;
+    info.shaderPath = ctx.shaderPath;
+    info.framesInFlight = ctx.framesInFlight;
+    info.raiiDevice = ctx.raiiDevice;
     info.outputRenderPass = outputRenderPass;
     info.swapchainFormat = swapchainFormat;
     return create(info);

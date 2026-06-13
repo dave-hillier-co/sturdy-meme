@@ -3,7 +3,6 @@
 #include "SamplerFactory.h"
 #include "DescriptorManager.h"
 #include "core/ImageBuilder.h"
-#include "core/InitInfoBuilder.h"
 #include "core/vulkan/BarrierHelpers.h"
 #include "core/vulkan/PipelineLayoutBuilder.h"
 #include "core/vulkan/DescriptorSetLayoutBuilder.h"
@@ -23,7 +22,13 @@ std::unique_ptr<BloomSystem> BloomSystem::create(const InitInfo& info) {
 }
 
 std::unique_ptr<BloomSystem> BloomSystem::create(const InitContext& ctx) {
-    InitInfo info = InitInfoBuilder::fromContext<InitInfo>(ctx);
+    InitInfo info{};
+    info.device = ctx.device;
+    info.allocator = ctx.allocator;
+    info.descriptorPool = ctx.descriptorPool;
+    info.extent = ctx.extent;
+    info.shaderPath = ctx.shaderPath;
+    info.raiiDevice = ctx.raiiDevice;
     return create(info);
 }
 
@@ -281,9 +286,10 @@ bool BloomSystem::createDescriptorSets() {
 }
 
 void BloomSystem::destroyMipChain() {
+    vk::Device vkDevice(device);
     for (auto& mip : mipChain) {
-        if (mip.framebuffer) vkDestroyFramebuffer(device, mip.framebuffer, nullptr);
-        if (mip.imageView) vkDestroyImageView(device, mip.imageView, nullptr);
+        if (mip.framebuffer) vkDevice.destroyFramebuffer(mip.framebuffer);
+        if (mip.imageView) vkDevice.destroyImageView(mip.imageView);
         if (mip.image) vmaDestroyImage(allocator, mip.image, mip.allocation);
     }
     mipChain.clear();

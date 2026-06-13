@@ -85,8 +85,7 @@ bool GpuProfiler::initInternal(VkDevice dev, VkPhysicalDevice physicalDevice,
     maxZones = maxZones_;
 
     // Query timestamp period from physical device
-    VkPhysicalDeviceProperties props;
-    vkGetPhysicalDeviceProperties(physicalDevice, &props);
+    vk::PhysicalDeviceProperties props = vk::PhysicalDevice(physicalDevice).getProperties();
     timestampPeriod = props.limits.timestampPeriod;
 
     if (timestampPeriod == 0.0f) {
@@ -133,9 +132,10 @@ bool GpuProfiler::initInternal(VkDevice dev, VkPhysicalDevice physicalDevice,
 
 void GpuProfiler::cleanup() {
     if (device != VK_NULL_HANDLE) {
+        vk::Device vkDevice(device);
         for (auto& pool : queryPools) {
             if (pool != VK_NULL_HANDLE) {
-                vkDestroyQueryPool(device, pool, nullptr);
+                vkDevice.destroyQueryPool(pool);
                 pool = VK_NULL_HANDLE;
             }
         }
@@ -267,20 +267,19 @@ void GpuProfiler::collectResults(uint32_t frameIndex) {
     // Allocate buffer for results
     std::vector<uint64_t> timestamps(queryCount);
 
-    // Get query results - use VK_QUERY_RESULT_64_BIT for timestamps
-    // Don't use WAIT_BIT since we're in the middle of frame setup
-    VkResult result = vkGetQueryPoolResults(
-        device,
+    // Get query results - use e64 for timestamps
+    // Don't use eWait since we're in the middle of frame setup
+    vk::Result result = vk::Device(device).getQueryPoolResults(
         queryPools[frameIndex],
         0,
         queryCount,
         timestamps.size() * sizeof(uint64_t),
         timestamps.data(),
         sizeof(uint64_t),
-        VK_QUERY_RESULT_64_BIT
+        vk::QueryResultFlagBits::e64
     );
 
-    if (result != VK_SUCCESS) {
+    if (result != vk::Result::eSuccess) {
         // Results not ready or error - this is normal for first frames
         return;
     }

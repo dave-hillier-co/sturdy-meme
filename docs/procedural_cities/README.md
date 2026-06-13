@@ -1,5 +1,17 @@
 # Procedural Cities & Settlements
 
+> **Status note.** These documents describe an *aspirational* settlement-generation
+> architecture (frontage/burgage lot subdivision, space-colonization streets, runtime
+> streaming with impostor LOD). They are a design target, **not** a description of code
+> that exists. The `IMPLEMENTATION_CHECKLIST.md` reflects this design and is largely
+> unimplemented.
+>
+> A separate, **working** 2D town-layout generator already exists at `tools/town_generator`
+> (Watabou-style: Voronoi/DCEL geometry, ward system, curtain walls, SVG output, unit
+> tests). It is a different lineage from the design below and is not yet engine-integrated.
+> See the "Procedural Cities" section of `docs/PLAN.md` for the reconciled status and next
+> steps.
+
 Comprehensive documentation for the procedural settlement generation system.
 
 **Target Quality**: AAA-standard procedural generation with artist-controllable parameters

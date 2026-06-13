@@ -1,7 +1,6 @@
 #include "FroxelSystem.h"
 #include "ShaderLoader.h"
 #include "DescriptorManager.h"
-#include "core/InitInfoBuilder.h"
 #include "core/vulkan/BarrierHelpers.h"
 #include "core/vulkan/SamplerFactory.h"
 #include "core/pipeline/ComputePipelineBuilder.h"
@@ -22,7 +21,14 @@ std::unique_ptr<FroxelSystem> FroxelSystem::create(const InitInfo& info) {
 
 std::unique_ptr<FroxelSystem> FroxelSystem::create(const InitContext& ctx, VkImageView shadowMapView_, VkSampler shadowSampler_,
                                                     const std::vector<VkBuffer>& lightBuffers_) {
-    InitInfo info = InitInfoBuilder::fromContext<InitInfo>(ctx);
+    InitInfo info{};
+    info.device = ctx.device;
+    info.allocator = ctx.allocator;
+    info.descriptorPool = ctx.descriptorPool;
+    info.extent = ctx.extent;
+    info.shaderPath = ctx.shaderPath;
+    info.framesInFlight = ctx.framesInFlight;
+    info.raiiDevice = ctx.raiiDevice;
     info.shadowMapView = shadowMapView_;
     info.shadowSampler = shadowSampler_;
     info.lightBuffers = lightBuffers_;
@@ -199,12 +205,12 @@ bool FroxelSystem::createDescriptorSetLayout() {
     // 5: Previous scattering volume (storage image)
 
     VkDescriptorSetLayout rawLayout = DescriptorManager::LayoutBuilder(initInfo_.device)
-        .addStorageImage(VK_SHADER_STAGE_COMPUTE_BIT)            // 0: Scattering volume
-        .addStorageImage(VK_SHADER_STAGE_COMPUTE_BIT)            // 1: Integrated volume
-        .addUniformBuffer(VK_SHADER_STAGE_COMPUTE_BIT)           // 2: Uniform buffer
-        .addCombinedImageSampler(VK_SHADER_STAGE_COMPUTE_BIT)    // 3: Shadow map
-        .addStorageBuffer(VK_SHADER_STAGE_COMPUTE_BIT)           // 4: Light buffer
-        .addStorageImage(VK_SHADER_STAGE_COMPUTE_BIT)            // 5: Previous scattering
+        .addStorageImage(VkShaderStageFlags(vk::ShaderStageFlagBits::eCompute))            // 0: Scattering volume
+        .addStorageImage(VkShaderStageFlags(vk::ShaderStageFlagBits::eCompute))            // 1: Integrated volume
+        .addUniformBuffer(VkShaderStageFlags(vk::ShaderStageFlagBits::eCompute))           // 2: Uniform buffer
+        .addCombinedImageSampler(VkShaderStageFlags(vk::ShaderStageFlagBits::eCompute))    // 3: Shadow map
+        .addStorageBuffer(VkShaderStageFlags(vk::ShaderStageFlagBits::eCompute))           // 4: Light buffer
+        .addStorageImage(VkShaderStageFlags(vk::ShaderStageFlagBits::eCompute))            // 5: Previous scattering
         .build();
 
     if (rawLayout == VK_NULL_HANDLE) {
@@ -230,7 +236,7 @@ bool FroxelSystem::createUniformBuffers() {
         .setAllocator(initInfo_.allocator)
         .setFrameCount(initInfo_.framesInFlight)
         .setSize(sizeof(FroxelUniforms))
-        .setUsage(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT)
+        .setUsage(VkBufferUsageFlags(vk::BufferUsageFlagBits::eUniformBuffer))
         .build(uniformBuffers);
 }
 
@@ -270,6 +276,40 @@ bool FroxelSystem::createIntegrationPipeline() {
         .buildInto(integrationPipeline_);
 }
 
+void FroxelSystem::recordInitialClearIfNeeded(VkCommandBuffer cmd) {
+    if (integratedVolumeInitialized_) return;
+    integratedVolumeInitialized_ = true;
+
+    vk::CommandBuffer vkCmd(cmd);
+    auto range = vk::ImageSubresourceRange{vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1};
+
+    auto toTransfer = vk::ImageMemoryBarrier{}
+        .setSrcAccessMask(vk::AccessFlagBits::eNone)
+        .setDstAccessMask(vk::AccessFlagBits::eTransferWrite)
+        .setOldLayout(vk::ImageLayout::eUndefined)
+        .setNewLayout(vk::ImageLayout::eTransferDstOptimal)
+        .setImage(integratedVolume_.get())
+        .setSubresourceRange(range);
+    vkCmd.pipelineBarrier(vk::PipelineStageFlagBits::eTopOfPipe,
+                          vk::PipelineStageFlagBits::eTransfer,
+                          {}, {}, {}, toTransfer);
+
+    // Zero scattering / zero opacity = no fog contribution in the composite
+    vkCmd.clearColorImage(integratedVolume_.get(), vk::ImageLayout::eTransferDstOptimal,
+                          vk::ClearColorValue(std::array<float, 4>{0.0f, 0.0f, 0.0f, 0.0f}), range);
+
+    auto toSampled = vk::ImageMemoryBarrier{}
+        .setSrcAccessMask(vk::AccessFlagBits::eTransferWrite)
+        .setDstAccessMask(vk::AccessFlagBits::eShaderRead)
+        .setOldLayout(vk::ImageLayout::eTransferDstOptimal)
+        .setNewLayout(vk::ImageLayout::eShaderReadOnlyOptimal)
+        .setImage(integratedVolume_.get())
+        .setSubresourceRange(range);
+    vkCmd.pipelineBarrier(vk::PipelineStageFlagBits::eTransfer,
+                          vk::PipelineStageFlagBits::eFragmentShader,
+                          {}, {}, {}, toSampled);
+}
+
 void FroxelSystem::recordFroxelUpdate(VkCommandBuffer cmd, uint32_t frameIndex,
                                        const glm::mat4& view, const glm::mat4& proj,
                                        const glm::vec3& cameraPos,
@@ -277,7 +317,12 @@ void FroxelSystem::recordFroxelUpdate(VkCommandBuffer cmd, uint32_t frameIndex,
                                        const glm::vec3& sunColor,
                                        const glm::mat4* cascadeMatrices,
                                        const glm::vec4& cascadeSplits) {
-    if (!enabled) return;
+    if (!enabled) {
+        // The post-process composite statically binds the integrated volume; keep it valid
+        recordInitialClearIfNeeded(cmd);
+        return;
+    }
+    integratedVolumeInitialized_ = true;
 
     // Update uniform buffer
     glm::mat4 viewProj = proj * view;

@@ -16,7 +16,7 @@ class ThreadedCommandPool;
 struct QueueSubmitDiagnostics;
 
 /**
- * FrameGraph - Dependency-driven render pass scheduling.
+ * PassScheduler - Dependency-driven render pass scheduling.
  *
  * Implements the frame graph concept from the video:
  * "each node in the graph will have its own dependencies and priorities
@@ -32,7 +32,7 @@ struct QueueSubmitDiagnostics;
  *                  └──> FroxelStage ─┘
  *
  * Usage:
- *   FrameGraph graph;
+ *   PassScheduler graph;
  *   auto compute = graph.addPass("Compute", [](FrameContext& ctx) { ... });
  *   auto shadow = graph.addPass("Shadow", [](FrameContext& ctx) { ... });
  *   auto hdr = graph.addPass("HDR", [](FrameContext& ctx) { ... });
@@ -43,7 +43,7 @@ struct QueueSubmitDiagnostics;
  *   graph.compile();
  *   graph.execute(context);
  */
-class FrameGraph {
+class PassScheduler {
 public:
     using PassId = uint32_t;
     static constexpr PassId INVALID_PASS = UINT32_MAX;
@@ -89,8 +89,8 @@ public:
         SecondaryRecordFunction secondaryRecord;
     };
 
-    FrameGraph() = default;
-    ~FrameGraph() = default;
+    PassScheduler() = default;
+    ~PassScheduler() = default;
 
     /**
      * Add a render pass to the graph.

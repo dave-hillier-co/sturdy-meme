@@ -162,6 +162,17 @@ void ShadowCullPass::updateUniforms(uint32_t frameIndex, uint32_t cascade,
 
     extractFrustumPlanes(lightViewProj, uniforms.frustumPlanes);
 
+    // CSM caster extension: a shadow caster between the light and the visible cascade slice
+    // (or beyond its far extent along the light's depth axis) must still be drawn into the
+    // shadow map even though it lies outside the tight, view-frustum-fitted ortho box on that
+    // axis. Neutralize the light-space NEAR (4) and FAR (5) planes so the cull bounds objects
+    // by the four side planes (L/R/T/B) only. A plane of (0,0,0,large) makes dot(n,c)+w = large,
+    // always >= -radius for any sphere and >= 0 for any AABB, so it never culls on depth.
+    // The caster-flag test (cullMode==1) is untouched, so non-casters are still rejected.
+    constexpr float kNeverCull = 1.0e9f;
+    uniforms.frustumPlanes[4] = glm::vec4(0.0f, 0.0f, 0.0f, kNeverCull);  // near
+    uniforms.frustumPlanes[5] = glm::vec4(0.0f, 0.0f, 0.0f, kNeverCull);  // far
+
     lastObjectCount_ = objectCount;
 
     void* dst = uniformBuffers_[cascade].mappedPointers[frameIndex];

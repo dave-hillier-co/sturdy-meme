@@ -1,31 +1,69 @@
 #include "ShadowPasses.h"
 #include "RendererSystems.h"
+#include "TerrainSystem.h"
 #include "RenderContext.h"
 #include "Profiler.h"
 #include "PerformanceToggles.h"
 #include "ScreenSpaceShadowSystem.h"
+#include "ShadowPassRecorder.h"
+#include "ShadowSystem.h"
+#include "vulkan/VulkanContext.h"
+
+#include <cstdlib>
+#include <string>
+#include <SDL3/SDL.h>
 
 namespace ShadowPasses {
 
-PassIds addPasses(FrameGraph& graph, RendererSystems& systems, const Config& config) {
+// Runtime toggle for the GPU-driven indirect shadow path. Defaults ON; set the environment
+// variable INDIRECT_SHADOW_DRAW=0 to force the instanced shadow path (A/B comparison and a
+// fallback). Per-cascade GPU frustum culling + vkCmdDrawIndexedIndirect for scene-object
+// shadows. Evaluated once.
+static bool indirectShadowDrawEnabled() {
+    static const bool enabled = []{
+        const char* v = std::getenv("INDIRECT_SHADOW_DRAW");
+        const bool on = (v == nullptr) || (std::string(v) != "0");
+        SDL_Log("Indirect shadow draw path: %s", on ? "ENABLED" : "disabled (instanced path)");
+        return on;
+    }();
+    return enabled;
+}
+
+PassIds addPasses(PassScheduler& graph, RendererSystems& systems, const Config& config) {
     PassIds ids;
     float* lastSunIntensity = config.lastSunIntensity;
     PerformanceToggles* perfToggles = config.perfToggles;
-    auto recordFn = config.recordShadowPass;
+    ShadowPassRecorder* recorder = config.recorder;
+    VulkanContext* vulkanContext = config.vulkanContext;
 
     // Shadow map rendering pass
     ids.shadow = graph.addPass({
         .name = "Shadow",
-        .execute = [&systems, lastSunIntensity, perfToggles, recordFn](FrameGraph::RenderContext& ctx) {
+        .execute = [&systems, lastSunIntensity, perfToggles, recorder, vulkanContext](PassScheduler::RenderContext& ctx) {
             RenderContext* renderCtx = static_cast<RenderContext*>(ctx.userData);
             if (!renderCtx) return;
             if (*lastSunIntensity > 0.001f && perfToggles->shadowPass) {
                 systems.profiler().beginCpuZone("ShadowRecord");
                 systems.profiler().beginGpuZone(ctx.commandBuffer, "ShadowPass");
-                recordFn(ctx.commandBuffer, ctx.frameIndex,
-                         renderCtx->frame.time, renderCtx->frame.cameraPosition);
+
+                ShadowPassRecorder::Params params;
+                params.terrainEnabled = systems.terrain().isTerrainEnabled();
+                params.terrainShadows = perfToggles->terrainShadows;
+                params.grassShadows = perfToggles->grassShadows;
+                params.indirectShadowDraw = indirectShadowDrawEnabled();
+                // vkCmdDrawIndexedIndirect needs both features; else the indirect path falls back
+                // to a direct instanced draw (no per-object GPU culling).
+                params.canMultiDrawIndirect = vulkanContext->hasMultiDrawIndirect()
+                                           && vulkanContext->hasDrawIndirectFirstInstance();
+                recorder->record(ctx.commandBuffer, ctx.frameIndex,
+                                 renderCtx->frame.time, renderCtx->frame.cameraPosition, params);
+
                 systems.profiler().endGpuZone(ctx.commandBuffer, "ShadowPass");
                 systems.profiler().endCpuZone("ShadowRecord");
+            } else {
+                // Skipped (sun down / toggled off): make sure the statically-sampled
+                // cascade shadow map holds valid contents instead of UNDEFINED memory.
+                systems.shadow().recordInitialClearIfNeeded(ctx.commandBuffer);
             }
         },
         .canUseSecondary = false,
@@ -37,7 +75,7 @@ PassIds addPasses(FrameGraph& graph, RendererSystems& systems, const Config& con
     if (systems.hasScreenSpaceShadow()) {
         ids.shadowResolve = graph.addPass({
             .name = "ShadowResolve",
-            .execute = [&systems, lastSunIntensity, perfToggles](FrameGraph::RenderContext& ctx) {
+            .execute = [&systems, lastSunIntensity, perfToggles](PassScheduler::RenderContext& ctx) {
                 if (!systems.hasScreenSpaceShadow()) return;
                 if (*lastSunIntensity <= 0.001f || !perfToggles->shadowPass) return;
                 systems.profiler().beginGpuZone(ctx.commandBuffer, "ShadowResolve");

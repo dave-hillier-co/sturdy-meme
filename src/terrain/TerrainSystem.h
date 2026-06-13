@@ -247,6 +247,14 @@ public:
         recordDraw(vk::CommandBuffer(cmd), frameIndex);
     }
 
+    // Record the virtual texture feedback copy (GPU feedback -> CPU readback).
+    // Call once per frame after the HDR render pass, outside any render pass.
+    // No-op when virtual texturing is disabled.
+    void recordVirtualTextureFeedbackCopy(vk::CommandBuffer cmd, uint32_t frameIndex);
+
+    // Whether virtual texturing is active for this terrain
+    bool hasVirtualTexture() const { return virtualTexture != nullptr; }
+
     // Record shadow pass for terrain
     void recordShadowDraw(vk::CommandBuffer cmd, uint32_t frameIndex,
                           const glm::mat4& lightViewProj, int cascadeIndex);

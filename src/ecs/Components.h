@@ -178,6 +178,11 @@ struct PBRProperties {
 // Entity casts shadows (participates in shadow pass)
 struct CastsShadow {};
 
+// Entity is drawn by the GPU-skinning pipeline (player, NPCs), NOT the static
+// scene-object indirect path. Render systems that build the GPU scene/shadow
+// buffers skip these entities.
+struct GPUSkinned {};
+
 // Entity is visible (set by culling system, queried by render system)
 struct Visible {};
 
@@ -287,8 +292,6 @@ struct SelectionOutline {
 struct TreeTag {};
 
 struct TreeData {
-    int leafInstanceIndex = -1;
-    int treeInstanceIndex = -1;
     glm::vec3 leafTint = glm::vec3(1.0f);
     float autumnHueShift = 0.0f;
 };
@@ -301,6 +304,13 @@ struct BarkType {
 struct LeafType {
     uint32_t typeIndex = 0;   // Index into leaf texture array
     std::string typeName;     // String key for texture lookup (e.g. "oak", "pine")
+};
+
+// Per-tree config derived into the GPU bake. ECS is the source of truth;
+// in this codebase meshIndex is 1:1 with the tree index.
+struct TreeConfig {
+    uint32_t meshIndex = 0;
+    uint32_t archetypeIndex = 0;  // 0=oak, 1=pine, 2=ash, 3=aspen
 };
 
 // Zero-size tag for the currently selected/editable tree
@@ -501,22 +511,7 @@ struct NPCAnimationState {
     NPCAnimationState() = default;
 };
 
-// Cached bone matrices for LOD-based update skipping
-// When an NPC is far away, we skip animation updates and reuse cached matrices
-struct NPCBoneCache {
-    std::vector<glm::mat4> matrices;
-    uint32_t lastUpdateFrame = 0;
-
-    NPCBoneCache() = default;
-
-    void resize(size_t boneCount) {
-        if (matrices.size() != boneCount) {
-            matrices.resize(boneCount, glm::mat4(1.0f));
-        }
-    }
-};
-
-// NPC LOD level (mirrors NPCLODLevel from NPCData.h for ECS)
+// NPC LOD level (ECS counterpart of NPCLODLevel in npc/NPCTypes.h)
 enum class NPCLODLevel : uint8_t {
     Virtual = 0,  // >50m: No rendering, minimal updates (every 10 seconds)
     Bulk = 1,     // 25-50m: Simplified animation, reduced updates (every 1 second)
@@ -571,6 +566,17 @@ struct SkinnedMeshRef {
     SkinnedMeshRef(void* c, size_t idx) : character(c), npcIndex(idx) {}
 
     [[nodiscard]] bool valid() const { return character != nullptr; }
+};
+
+// Per-NPC hue tint for visual variety.
+// Computed once at spawn from the NPC's spawn index (golden-ratio distribution),
+// so the value travels with the entity rather than being recomputed from view
+// position (which is not stable across add/remove).
+struct NPCHueShift {
+    float hueShift = 0.0f;
+
+    NPCHueShift() = default;
+    explicit NPCHueShift(float h) : hueShift(h) {}
 };
 
 // NPC facing direction (yaw in degrees)
@@ -911,6 +917,10 @@ struct RenderData {
     bool castsShadow = true;
     float opacity = 1.0f;
     float hueShift = 0.0f;
+
+    // GPU-skinned character marker (player + NPCs). Carried so the bootstrap
+    // writer can set the GPUSkinned tag; not extracted from components.
+    bool gpuSkinned = false;
 
     // Entity reference for additional queries
     Entity entity = NullEntity;

@@ -659,7 +659,7 @@ void TreeLeafCulling::updateSpatialIndex(const TreeSystem& treeSystem) {
         !visibleCellBuffers_.empty() && !treeDataBuffers_.empty()) {
         // Need to wait for GPU before destroying old buffers
         if (!visibleTreeBuffers_.empty()) {
-            vkDeviceWaitIdle(device_);
+            vk::Device(device_).waitIdle();
             SDL_Log("TreeLeafCulling: Resizing visible tree buffer from %u to %u trees",
                     maxVisibleTrees_, requiredTreeCapacity);
         }
@@ -808,7 +808,7 @@ void TreeLeafCulling::recordCulling(VkCommandBuffer cmd, uint32_t frameIndex,
     if (numTrees > numTreesForIndirect_) {
         SDL_Log("TreeLeafCulling: Tree count increased from %u to %u, resizing buffers",
                 numTreesForIndirect_, numTrees);
-        vkDeviceWaitIdle(device_);  // Wait for in-flight frames before destroying buffers
+        vk::Device(device_).waitIdle();  // Wait for in-flight frames before destroying buffers
 
         // Resize tree data buffers
         treeDataBufferSize_ = numTrees * sizeof(TreeCullData);

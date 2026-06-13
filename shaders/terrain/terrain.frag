@@ -334,12 +334,15 @@ void main() {
         albedo = mix(albedo, farGrassColor, farLodBlend * grassGrowthFactor);
     }
 
+    // Material roughness constants - used by both VT and non-VT paths for
+    // the slope-based roughness blend below
+    float rockRoughness = 0.95;
+    float grassRoughness = 0.8;
+
 #ifndef USE_VIRTUAL_TEXTURE
     // === MATERIAL LAYER BLENDING (Composable Material System) ===
     // Blend terrain materials based on configured layers or fallback to slope-based
     vec3 rockColor = vec3(0.4, 0.35, 0.3);
-    float rockRoughness = 0.95;
-    float grassRoughness = 0.8;
 
     if (materialLayerUbo.numMaterialLayers > 0) {
         // Use configured material layers from UBO

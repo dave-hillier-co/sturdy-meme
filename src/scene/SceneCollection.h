@@ -1,7 +1,7 @@
 #pragma once
 
 #include <vector>
-#include "RenderableBuilder.h"
+#include "ecs/Components.h"
 
 class SceneMaterial;
 
@@ -53,7 +53,7 @@ public:
      * Collect all scene objects from all registered materials
      * Returns a vector combining renderables from all materials
      */
-    std::vector<Renderable> collectAllSceneObjects() const;
+    std::vector<ecs::RenderData> collectAllSceneObjects() const;
 
     /**
      * Get read-only access to registered materials

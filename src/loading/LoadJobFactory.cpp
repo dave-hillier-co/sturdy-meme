@@ -180,7 +180,9 @@ UploadedTexture StagedResourceUploader::uploadTexture(const StagedTexture& stage
     std::memcpy(data, staged.pixels.data(), imageSize);
     stagingBuffer.unmap();
 
-    VkFormat imageFormat = staged.srgb ? VK_FORMAT_R8G8B8A8_SRGB : VK_FORMAT_R8G8B8A8_UNORM;
+    VkFormat imageFormat = staged.srgb
+        ? VK_FORMAT_R8G8B8A8_SRGB
+        : VK_FORMAT_R8G8B8A8_UNORM;
 
     // Create image
     ManagedImage managedImage;
@@ -429,7 +431,9 @@ AsyncTextureHandle AsyncTextureUploader::submitTexture(const StagedTexture& stag
         return {};
     }
 
-    VkFormat imageFormat = staged.srgb ? VK_FORMAT_R8G8B8A8_SRGB : VK_FORMAT_R8G8B8A8_UNORM;
+    VkFormat imageFormat = staged.srgb
+        ? VK_FORMAT_R8G8B8A8_SRGB
+        : VK_FORMAT_R8G8B8A8_UNORM;
 
     // Create GPU image immediately (this is fast, just allocation)
     ManagedImage managedImage;

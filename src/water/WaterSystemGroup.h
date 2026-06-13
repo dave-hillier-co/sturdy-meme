@@ -6,7 +6,7 @@
 #include <memory>
 #include <optional>
 #include <vector>
-#include <vulkan/vulkan.h>
+#include <vulkan/vulkan.hpp>
 
 // Forward declarations
 struct TerrainConfig;
@@ -17,6 +17,7 @@ class FoamBuffer;
 class SSRSystem;
 class WaterTileCull;
 class WaterGBuffer;
+class OceanFFT;
 class ShadowSystem;
 class TerrainSystem;
 class PostProcessSystem;
@@ -62,6 +63,7 @@ struct WaterSystemGroup {
     SYSTEM_MEMBER(SSRSystem, ssr);
     SYSTEM_MEMBER(WaterTileCull, tileCull);
     SYSTEM_MEMBER(WaterGBuffer, gBuffer);
+    SYSTEM_MEMBER(OceanFFT, oceanFFT);
 
     // Required system accessors
     REQUIRED_SYSTEM_ACCESSORS(WaterSystem, system)
@@ -73,6 +75,7 @@ struct WaterSystemGroup {
     // Optional system accessors (may be null)
     OPTIONAL_SYSTEM_ACCESSORS(WaterTileCull, tileCull, TileCull)
     OPTIONAL_SYSTEM_ACCESSORS(WaterGBuffer, gBuffer, GBuffer)
+    OPTIONAL_SYSTEM_ACCESSORS(OceanFFT, oceanFFT, OceanFFT)
 
     // Validation (only required systems)
     bool isValid() const {
@@ -95,6 +98,7 @@ struct WaterSystemGroup {
         std::unique_ptr<SSRSystem> ssr;
         std::unique_ptr<WaterTileCull> tileCull;      // Optional
         std::unique_ptr<WaterGBuffer> gBuffer;        // Optional
+        std::unique_ptr<OceanFFT> oceanFFT;           // Optional
     };
 
     /**

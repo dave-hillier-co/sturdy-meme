@@ -114,8 +114,18 @@ public:
         return *this;
     }
 
+    ImageBuilder& setUsage(vk::ImageUsageFlags usage) {
+        imageInfo_.usage = static_cast<VkImageUsageFlags>(usage);
+        return *this;
+    }
+
     ImageBuilder& addUsage(VkImageUsageFlags usage) {
         imageInfo_.usage |= usage;
+        return *this;
+    }
+
+    ImageBuilder& addUsage(vk::ImageUsageFlags usage) {
+        imageInfo_.usage |= static_cast<VkImageUsageFlags>(usage);
         return *this;
     }
 

@@ -1,9 +1,11 @@
 #pragma once
 
-#include "FrameGraph.h"
+#include "PassScheduler.h"
 #include <glm/glm.hpp>
 
 class RendererSystems;
+class ShadowPassRecorder;
+class VulkanContext;
 struct PerformanceToggles;
 
 /**
@@ -11,19 +13,18 @@ struct PerformanceToggles;
  */
 namespace ShadowPasses {
 
-using ShadowRecordFn = std::function<void(VkCommandBuffer, uint32_t, float, const glm::vec3&)>;
-
 struct Config {
     float* lastSunIntensity = nullptr;
     PerformanceToggles* perfToggles = nullptr;
-    ShadowRecordFn recordShadowPass;
+    ShadowPassRecorder* recorder = nullptr;
+    VulkanContext* vulkanContext = nullptr;   // for hasMultiDrawIndirect / hasDrawIndirectFirstInstance
 };
 
 struct PassIds {
-    FrameGraph::PassId shadow = FrameGraph::INVALID_PASS;
-    FrameGraph::PassId shadowResolve = FrameGraph::INVALID_PASS;
+    PassScheduler::PassId shadow = PassScheduler::INVALID_PASS;
+    PassScheduler::PassId shadowResolve = PassScheduler::INVALID_PASS;
 };
 
-PassIds addPasses(FrameGraph& graph, RendererSystems& systems, const Config& config);
+PassIds addPasses(PassScheduler& graph, RendererSystems& systems, const Config& config);
 
 } // namespace ShadowPasses

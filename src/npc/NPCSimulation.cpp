@@ -6,6 +6,7 @@
 #include <glm/gtc/matrix_transform.hpp>
 #include <algorithm>
 #include <cctype>
+#include <cmath>
 
 // Constructor must be defined in .cpp to allow unique_ptr<AnimatedCharacter> with incomplete type in header
 NPCSimulation::NPCSimulation(ConstructToken) {}
@@ -56,7 +57,6 @@ void NPCSimulation::cleanup() {
     archetypeManager_.clear();
 
     characters_.clear();
-    data_.clear();
 }
 
 size_t NPCSimulation::spawnNPCs(const std::vector<NPCSpawnInfo>& spawnPoints) {
@@ -65,7 +65,6 @@ size_t NPCSimulation::spawnNPCs(const std::vector<NPCSpawnInfo>& spawnPoints) {
     }
 
     // Reserve space
-    data_.reserve(spawnPoints.size());
     characters_.reserve(spawnPoints.size());
     if (ecsWorld_) {
         npcEntities_.reserve(spawnPoints.size());
@@ -110,11 +109,9 @@ size_t NPCSimulation::spawnNPCs(const std::vector<NPCSpawnInfo>& spawnPoints) {
             worldPos.y = terrainHeightFunc_(worldPos.x, worldPos.z);
         }
 
-        // Add to data arrays (legacy path)
-        size_t npcIndex = data_.addNPC(spawn.templateIndex, worldPos, spawn.yawDegrees);
-
-        // Set initial activity state for animation variety
-        data_.animStates[npcIndex].activity = spawn.activity;
+        // Spawn index: characters_ and npcEntities_ are appended in lockstep below,
+        // so the next index equals the current size.
+        size_t npcIndex = characters_.size();
 
         // Convert activity enum for ECS
         ecs::NPCActivity ecsActivity = ecs::NPCActivity::Idle;
@@ -124,46 +121,14 @@ size_t NPCSimulation::spawnNPCs(const std::vector<NPCSpawnInfo>& spawnPoints) {
             default: break;
         }
 
-        // Create ECS entity if ECS is enabled
-        if (ecsWorld_) {
-            ecs::Entity entity = ecsWorld_->create();
-
-            // Transform - position with height offset for character center
-            constexpr float CHARACTER_HEIGHT_OFFSET = 0.9f;
-            glm::mat4 transform = glm::mat4(1.0f);
-            transform = glm::translate(transform, worldPos + glm::vec3(0.0f, CHARACTER_HEIGHT_OFFSET, 0.0f));
-            transform = glm::rotate(transform, glm::radians(spawn.yawDegrees), glm::vec3(0.0f, 1.0f, 0.0f));
-            ecsWorld_->add<ecs::Transform>(entity, transform);
-
-            // NPC identification
-            ecsWorld_->add<ecs::NPCTag>(entity, spawn.templateIndex);
-            ecsWorld_->add<ecs::NPCFacing>(entity, spawn.yawDegrees);
-
-            // Animation state
-            ecs::NPCAnimationState animState;
-            animState.activity = ecsActivity;
-            ecsWorld_->add<ecs::NPCAnimationState>(entity, animState);
-
-            // LOD controller
-            ecsWorld_->add<ecs::NPCLODController>(entity);
-
-            // Bone cache for LOD skipping
-            ecsWorld_->add<ecs::NPCBoneCache>(entity);
-
-            // Skinned mesh reference (link to AnimatedCharacter)
-            ecsWorld_->add<ecs::SkinnedMeshRef>(entity, character.get(), npcIndex);
-
-            // Bounding sphere for culling (approximate character bounds)
-            ecsWorld_->add<ecs::BoundingSphere>(entity, glm::vec3(0.0f, 1.0f, 0.0f), 1.0f);
-
-            // Mark as visible initially
-            ecsWorld_->add<ecs::Visible>(entity);
-
-            npcEntities_.push_back(entity);
-        }
-
-        // Store character
+        // Retain the character and its spawn data in spawn order. The simulation
+        // entity is created now if the ECS world is already set, or later via
+        // setECSWorld() (the deferred path spawns NPCs before the world exists).
         characters_.push_back(std::move(character));
+        npcSpawnData_.push_back(NPCSpawnData{worldPos, spawn.yawDegrees, ecsActivity, spawn.templateIndex});
+        if (ecsWorld_) {
+            createNPCSimEntity(npcIndex);
+        }
 
         const char* activityName = spawn.activity == NPCActivity::Idle ? "idle" :
                                    spawn.activity == NPCActivity::Walking ? "walking" : "running";
@@ -178,163 +143,78 @@ size_t NPCSimulation::spawnNPCs(const std::vector<NPCSpawnInfo>& spawnPoints) {
     return createdCount;
 }
 
-void NPCSimulation::update(float deltaTime, const glm::vec3& cameraPos) {
-    if (data_.count() == 0) return;
+void NPCSimulation::createNPCSimEntity(size_t i) {
+    if (!ecsWorld_ || i >= characters_.size() || i >= npcSpawnData_.size()) return;
 
-    // Update LOD levels based on camera position
-    if (lodEnabled_) {
-        updateLODLevels(deltaTime, cameraPos);
-    }
+    const NPCSpawnData& sd = npcSpawnData_[i];
+    AnimatedCharacter* character = characters_[i].get();
 
-    // Update NPCs based on their LOD level
-    updateRealNPCs(deltaTime);
-    updateBulkNPCs(deltaTime);
-    updateVirtualNPCs(deltaTime);
-}
+    ecs::Entity entity = ecsWorld_->create();
 
-void NPCSimulation::updateLODLevels(float deltaTime, const glm::vec3& cameraPos) {
-    constexpr float LOD_BLEND_SPEED = 3.0f;  // Blend duration ~0.33s
-
-    for (size_t i = 0; i < data_.count(); ++i) {
-        const glm::vec3& npcPos = data_.positions[i];
-        float distance = glm::distance(cameraPos, npcPos);
-
-        NPCLODLevel newLevel;
-        if (physicsAnimationEnabled_ && distance < LOD_DISTANCE_PHYSICS) {
-            newLevel = NPCLODLevel::PhysicsBased;
-        } else if (distance < LOD_DISTANCE_REAL) {
-            newLevel = NPCLODLevel::Real;
-        } else if (distance < LOD_DISTANCE_BULK) {
-            newLevel = NPCLODLevel::Bulk;
-        } else {
-            newLevel = NPCLODLevel::Virtual;
-        }
-
-        // Track LOD transitions and initiate blending
-        if (data_.lodLevels[i] != newLevel) {
-            data_.previousLodLevels[i] = data_.lodLevels[i];
-            data_.lodBlendWeights[i] = 0.0f;  // Start blending from old to new
-            data_.framesSinceUpdate[i] = 0;
-        }
-
-        // Advance blend weight toward 1.0 (fully transitioned to new LOD).
-        // Use real delta time so blend duration is frame-rate independent.
-        if (data_.lodBlendWeights[i] < 1.0f) {
-            data_.lodBlendWeights[i] = std::min(1.0f,
-                data_.lodBlendWeights[i] + LOD_BLEND_SPEED * deltaTime);
-        }
-
-        data_.lodLevels[i] = newLevel;
-    }
-}
-
-void NPCSimulation::updateVirtualNPCs(float deltaTime) {
-    for (size_t i = 0; i < data_.count(); ++i) {
-        if (data_.lodLevels[i] != NPCLODLevel::Virtual) continue;
-
-        data_.framesSinceUpdate[i]++;
-
-        // Only update every UPDATE_INTERVAL_VIRTUAL frames
-        if (data_.framesSinceUpdate[i] < UPDATE_INTERVAL_VIRTUAL) {
-            continue;
-        }
-
-        data_.framesSinceUpdate[i] = 0;
-
-        // Minimal update: just advance animation time, no bone matrix computation
-        auto& animState = data_.animStates[i];
-        if (characters_[i]) {
-            // Just update internal time without computing bones
-            animState.currentTime += deltaTime * UPDATE_INTERVAL_VIRTUAL * animState.playbackSpeed;
-        }
-    }
-}
-
-void NPCSimulation::updateBulkNPCs(float deltaTime) {
-    for (size_t i = 0; i < data_.count(); ++i) {
-        if (data_.lodLevels[i] != NPCLODLevel::Bulk) continue;
-
-        data_.framesSinceUpdate[i]++;
-
-        // Only update every UPDATE_INTERVAL_BULK frames
-        if (data_.framesSinceUpdate[i] < UPDATE_INTERVAL_BULK) {
-            // Use cached bone matrices
-            if (characters_[i]) {
-                characters_[i]->setSkipAnimationUpdate(true);
-            }
-            continue;
-        }
-
-        data_.framesSinceUpdate[i] = 0;
-
-        // Reduced update: compute bones but at lower frequency
-        updateNPCAnimation(i, deltaTime * UPDATE_INTERVAL_BULK);
-    }
-}
-
-void NPCSimulation::updateRealNPCs(float deltaTime) {
-    for (size_t i = 0; i < data_.count(); ++i) {
-        if (data_.lodLevels[i] != NPCLODLevel::Real) continue;
-
-        // Full update every frame
-        data_.framesSinceUpdate[i] = 0;
-        updateNPCAnimation(i, deltaTime);
-    }
-}
-
-void NPCSimulation::updateNPCAnimation(size_t npcIndex, float deltaTime) {
-    if (npcIndex >= characters_.size() || !characters_[npcIndex]) return;
-
-    auto& character = characters_[npcIndex];
-    character->setSkipAnimationUpdate(false);
-
-    // Build world transform for this NPC
-    glm::mat4 worldTransform = buildNPCTransform(npcIndex);
-
-    // Determine movement speed based on NPC's activity state
-    // These values drive the animation state machine blend (idle/walk/run)
-    float movementSpeed = 0.0f;
-    switch (data_.animStates[npcIndex].activity) {
-        case NPCActivity::Idle:
-            movementSpeed = 0.0f;
-            break;
-        case NPCActivity::Walking:
-            movementSpeed = 1.5f;  // Walk speed (m/s)
-            break;
-        case NPCActivity::Running:
-            movementSpeed = 5.0f;  // Run speed (m/s)
-            break;
-    }
-
-    // Update animation with activity-appropriate movement speed
-    character->update(deltaTime, allocator_, device_, commandPool_, graphicsQueue_,
-                      movementSpeed,
-                      true,  // isGrounded
-                      false, // isJumping
-                      worldTransform);
-
-    // Cache bone matrices for LOD skipping
-    character->computeBoneMatrices(data_.cachedBoneMatrices[npcIndex]);
-}
-
-glm::mat4 NPCSimulation::buildCharacterTransform(const glm::vec3& position, float yawRadians) const {
-    // Character model origin is at the center, but position is at ground level.
-    // Add vertical offset to raise the character so feet are on the ground.
-    // This matches the player character offset (CAPSULE_HEIGHT * 0.5f = 0.9m).
+    // Transform - position with height offset for character center
     constexpr float CHARACTER_HEIGHT_OFFSET = 0.9f;
-
     glm::mat4 transform = glm::mat4(1.0f);
-    transform = glm::translate(transform, position + glm::vec3(0.0f, CHARACTER_HEIGHT_OFFSET, 0.0f));
-    transform = glm::rotate(transform, yawRadians, glm::vec3(0.0f, 1.0f, 0.0f));
-    return transform;
+    transform = glm::translate(transform, sd.worldPos + glm::vec3(0.0f, CHARACTER_HEIGHT_OFFSET, 0.0f));
+    transform = glm::rotate(transform, glm::radians(sd.yawDegrees), glm::vec3(0.0f, 1.0f, 0.0f));
+    ecsWorld_->add<ecs::Transform>(entity, transform);
+
+    // NPC identification
+    ecsWorld_->add<ecs::NPCTag>(entity, sd.templateIndex);
+    ecsWorld_->add<ecs::NPCFacing>(entity, sd.yawDegrees);
+
+    // Per-NPC hue tint (golden-ratio distribution; matches SceneBuilder/NPCRenderer formula).
+    {
+        constexpr float GOLDEN_RATIO = 1.618033988749895f;
+        constexpr float TWO_PI = 6.283185307179586f;
+        float hueShift = std::fmod(static_cast<float>(i + 1) * GOLDEN_RATIO, 1.0f) * TWO_PI;
+        ecsWorld_->add<ecs::NPCHueShift>(entity, hueShift);
+    }
+
+    // Animation state
+    ecs::NPCAnimationState animState;
+    animState.activity = sd.activity;
+    ecsWorld_->add<ecs::NPCAnimationState>(entity, animState);
+
+    // LOD controller
+    ecsWorld_->add<ecs::NPCLODController>(entity);
+
+    // Skinned mesh reference (link to AnimatedCharacter)
+    ecsWorld_->add<ecs::SkinnedMeshRef>(entity, character, static_cast<uint32_t>(i));
+
+    // Bounding sphere for culling (approximate character bounds)
+    ecsWorld_->add<ecs::BoundingSphere>(entity, glm::vec3(0.0f, 1.0f, 0.0f), 1.0f);
+
+    // Mark as visible initially
+    ecsWorld_->add<ecs::Visible>(entity);
+
+    npcEntities_.push_back(entity);
+}
+
+void NPCSimulation::setECSWorld(ecs::World* world) {
+    ecsWorld_ = world;
+    if (!ecsWorld_) return;
+    if (!npcEntities_.empty()) return;  // already created (NPCs spawned with a world)
+
+    // Deferred path: NPCs spawned before the world existed. Create their simulation
+    // entities now, in spawn order, so the renderer's ECS view finds them.
+    for (size_t i = 0; i < characters_.size(); ++i) {
+        createNPCSimEntity(i);
+    }
+    if (!npcEntities_.empty()) {
+        SDL_Log("NPCSimulation: created %zu NPC simulation entities (deferred ECS world)",
+                npcEntities_.size());
+    }
 }
 
 glm::mat4 NPCSimulation::buildNPCTransform(size_t npcIndex) const {
-    if (npcIndex >= data_.count()) {
-        return glm::mat4(1.0f);
+    // The NPC's authoritative world transform lives on its simulation entity.
+    if (ecsWorld_ && npcIndex < npcEntities_.size()) {
+        ecs::Entity entity = npcEntities_[npcIndex];
+        if (ecsWorld_->valid(entity) && ecsWorld_->has<ecs::Transform>(entity)) {
+            return ecsWorld_->get<ecs::Transform>(entity).matrix;
+        }
     }
-    return buildCharacterTransform(data_.positions[npcIndex],
-                                   glm::radians(data_.yawDegrees[npcIndex]));
+    return glm::mat4(1.0f);
 }
 
 AnimatedCharacter* NPCSimulation::getCharacter(size_t npcIndex) {
@@ -347,16 +227,8 @@ const AnimatedCharacter* NPCSimulation::getCharacter(size_t npcIndex) const {
     return characters_[npcIndex].get();
 }
 
-void NPCSimulation::setRenderableIndex(size_t npcIndex, size_t renderableIndex) {
-    if (npcIndex < data_.renderableIndices.size()) {
-        data_.renderableIndices[npcIndex] = renderableIndex;
-    }
-}
-
 void NPCSimulation::updateECS(float deltaTime, const glm::vec3& cameraPos) {
     if (!ecsWorld_ || npcEntities_.empty()) {
-        // Fall back to legacy update if ECS not enabled
-        update(deltaTime, cameraPos);
         return;
     }
 
@@ -423,17 +295,6 @@ void NPCSimulation::updateECS(float deltaTime, const glm::vec3& cameraPos) {
         // Update animation
         character->update(effectiveDelta, allocator_, device_, commandPool_, graphicsQueue_,
                           movementSpeed, true, false, transform.matrix);
-
-        // Cache bone matrices (store in ECS component if available)
-        if (ecsWorld_->has<ecs::NPCBoneCache>(entity)) {
-            auto& boneCache = ecsWorld_->get<ecs::NPCBoneCache>(entity);
-            character->computeBoneMatrices(boneCache.matrices);
-        }
-
-        // Also update legacy cache for backward compatibility
-        if (skinnedRef.npcIndex < data_.cachedBoneMatrices.size()) {
-            character->computeBoneMatrices(data_.cachedBoneMatrices[skinnedRef.npcIndex]);
-        }
     }
 }
 
@@ -539,7 +400,6 @@ size_t NPCSimulation::spawnNPCsWithArchetypes(const std::vector<NPCSpawnInfo>& s
     auto& renderData = archetypeRenderData_[archetypeId];
 
     // Reserve space
-    data_.reserve(spawnPoints.size());
     npcEntities_.reserve(spawnPoints.size());
 
     size_t createdCount = 0;
@@ -551,9 +411,8 @@ size_t NPCSimulation::spawnNPCsWithArchetypes(const std::vector<NPCSpawnInfo>& s
             worldPos.y = terrainHeightFunc_(worldPos.x, worldPos.z);
         }
 
-        // Add to legacy data arrays (for backward compatibility)
-        size_t npcIndex = data_.addNPC(spawn.templateIndex, worldPos, spawn.yawDegrees);
-        data_.animStates[npcIndex].activity = spawn.activity;
+        // Spawn index: npcEntities_ is appended at the end of this iteration.
+        size_t npcIndex = npcEntities_.size();
 
         // Create ECS entity
         ecs::Entity entity = ecsWorld_->create();
@@ -568,6 +427,14 @@ size_t NPCSimulation::spawnNPCsWithArchetypes(const std::vector<NPCSpawnInfo>& s
         // NPC identification
         ecsWorld_->add<ecs::NPCTag>(entity, spawn.templateIndex);
         ecsWorld_->add<ecs::NPCFacing>(entity, spawn.yawDegrees);
+
+        // Per-NPC hue tint (golden-ratio distribution; matches SceneBuilder/NPCRenderer formula).
+        {
+            constexpr float GOLDEN_RATIO = 1.618033988749895f;
+            constexpr float TWO_PI = 6.283185307179586f;
+            float hueShift = std::fmod(static_cast<float>(npcIndex + 1) * GOLDEN_RATIO, 1.0f) * TWO_PI;
+            ecsWorld_->add<ecs::NPCHueShift>(entity, hueShift);
+        }
 
         // Archetype reference (new in Phase 2.2)
         ecsWorld_->add<ecs::AnimationArchetypeRef>(entity, archetypeId);
@@ -698,28 +565,12 @@ SkinnedMesh* NPCSimulation::getArchetypeSkinnedMesh(uint32_t archetypeId) {
     return nullptr;
 }
 
-const std::vector<glm::mat4>* NPCSimulation::getNPCBoneMatrices(size_t npcIndex) const {
-    if (useSharedArchetypes_ && ecsWorld_ && npcIndex < npcEntities_.size()) {
-        ecs::Entity entity = npcEntities_[npcIndex];
-        if (ecsWorld_->valid(entity) && ecsWorld_->has<ecs::NPCAnimationInstance>(entity)) {
-            return &ecsWorld_->get<ecs::NPCAnimationInstance>(entity).boneMatrices;
-        }
-    }
-
-    // Fall back to legacy cached matrices
-    if (npcIndex < data_.cachedBoneMatrices.size()) {
-        return &data_.cachedBoneMatrices[npcIndex];
-    }
-
-    return nullptr;
-}
-
 NPCSimulation::ArchetypeStats NPCSimulation::getArchetypeStats() const {
     ArchetypeStats stats;
     stats.archetypeCount = archetypeManager_.getArchetypeCount();
     stats.totalBones = archetypeManager_.getTotalBoneCount();
     stats.totalAnimations = archetypeManager_.getTotalAnimationCount();
-    stats.npcCount = data_.count();
+    stats.npcCount = npcEntities_.size();
 
     // Estimate memory savings
     // Per-NPC AnimatedCharacter is roughly:

@@ -2,7 +2,7 @@
 
 #include "vulkan/AsyncTransferManager.h"
 #include "vulkan/ThreadedCommandPool.h"
-#include "pipeline/FrameGraph.h"
+#include "pipeline/PassScheduler.h"
 #include "loading/LoadJobFactory.h"
 #include "asset/AssetRegistry.h"
 
@@ -14,7 +14,7 @@ class VulkanContext;
  * Extracted from Renderer to reduce coupling. Groups:
  * - AsyncTransferManager: Non-blocking GPU uploads
  * - ThreadedCommandPool: Parallel command buffer recording
- * - FrameGraph: Render pass dependency management
+ * - PassScheduler: Render pass dependency management
  * - AsyncTextureUploader: Background texture uploads
  * - AssetRegistry: Centralized asset management with deduplication
  *
@@ -68,8 +68,8 @@ public:
     ThreadedCommandPool& threadedCommandPool() { return threadedCommandPool_; }
     const ThreadedCommandPool& threadedCommandPool() const { return threadedCommandPool_; }
 
-    FrameGraph& frameGraph() { return frameGraph_; }
-    const FrameGraph& frameGraph() const { return frameGraph_; }
+    PassScheduler& passScheduler() { return passScheduler_; }
+    const PassScheduler& passScheduler() const { return passScheduler_; }
 
     Loading::AsyncTextureUploader& asyncTextureUploader() { return asyncTextureUploader_; }
     const Loading::AsyncTextureUploader& asyncTextureUploader() const { return asyncTextureUploader_; }
@@ -82,7 +82,7 @@ public:
 private:
     AsyncTransferManager asyncTransferManager_;
     ThreadedCommandPool threadedCommandPool_;
-    FrameGraph frameGraph_;
+    PassScheduler passScheduler_;
     Loading::AsyncTextureUploader asyncTextureUploader_;
     AssetRegistry assetRegistry_;
 

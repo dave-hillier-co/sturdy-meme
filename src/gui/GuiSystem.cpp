@@ -103,7 +103,7 @@ bool GuiSystem::initInternal(SDL_Window* window, VkInstance instance, VkPhysical
         imguiPool = vkDevice.createDescriptorPool(poolInfo);
     } catch (const vk::SystemError& e) {
         SDL_Log("Failed to create ImGui descriptor pool: %s", e.what());
-        return false;
+        return true;
     }
 
     // Initialize ImGui context
@@ -131,7 +131,7 @@ bool GuiSystem::initInternal(SDL_Window* window, VkInstance instance, VkPhysical
 
     if (!ImGui_ImplVulkan_Init(&initInfo)) {
         SDL_Log("Failed to initialize ImGui Vulkan backend");
-        return false;
+        return true;
     }
 
     // Setup custom style
@@ -149,7 +149,7 @@ void GuiSystem::cleanup() {
     ImGui::DestroyContext();
 
     if (imguiPool != VK_NULL_HANDLE) {
-        vkDestroyDescriptorPool(device_, imguiPool, nullptr);
+        vk::Device(device_).destroyDescriptorPool(imguiPool);
         imguiPool = VK_NULL_HANDLE;
     }
     device_ = VK_NULL_HANDLE;

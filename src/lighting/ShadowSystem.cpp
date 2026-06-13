@@ -9,7 +9,6 @@
 #include "core/vulkan/DescriptorSetLayoutBuilder.h"
 #include "core/vulkan/RenderPassBuilder.h"
 #include "core/vulkan/DescriptorWriter.h"
-#include "core/InitInfoBuilder.h"
 #include "core/GPUSceneBuffer.h"
 #include "culling/ShadowCullPass.h"
 #include <vulkan/vulkan.hpp>
@@ -50,7 +49,13 @@ std::unique_ptr<ShadowSystem> ShadowSystem::create(const InitInfo& info) {
 std::unique_ptr<ShadowSystem> ShadowSystem::create(const InitContext& ctx,
                                                     VkDescriptorSetLayout mainDescriptorSetLayout_,
                                                     VkDescriptorSetLayout skinnedDescriptorSetLayout_) {
-    InitInfo info = InitInfoBuilder::fromContext<InitInfo>(ctx);
+    InitInfo info{};
+    info.raiiDevice = ctx.raiiDevice;
+    info.device = ctx.device;
+    info.physicalDevice = ctx.physicalDevice;
+    info.allocator = ctx.allocator;
+    info.shaderPath = ctx.shaderPath;
+    info.framesInFlight = ctx.framesInFlight;
     info.mainDescriptorSetLayout = mainDescriptorSetLayout_;
     info.skinnedDescriptorSetLayout = skinnedDescriptorSetLayout_;
     return create(info);
@@ -165,6 +170,28 @@ bool ShadowSystem::createShadowResources() {
         }
     }
     return true;
+}
+
+void ShadowSystem::recordInitialClearIfNeeded(VkCommandBuffer cmd) {
+    if (csmInitialized_) return;
+    csmInitialized_ = true;
+
+    // Empty render passes clear each cascade to depth 1.0 (fully lit) and leave the
+    // image in SHADER_READ_ONLY_OPTIMAL via the render pass final layout, matching
+    // what the regular shadow pass produces.
+    vk::CommandBuffer vkCmd(cmd);
+    vk::ClearValue shadowClear;
+    shadowClear.depthStencil = vk::ClearDepthStencilValue{1.0f, 0};
+
+    for (uint32_t cascade = 0; cascade < NUM_SHADOW_CASCADES; cascade++) {
+        auto passInfo = vk::RenderPassBeginInfo{}
+            .setRenderPass(shadowRenderPass)
+            .setFramebuffer(cascadeFramebuffers[cascade])
+            .setRenderArea({{0, 0}, {SHADOW_MAP_SIZE, SHADOW_MAP_SIZE}})
+            .setClearValues(shadowClear);
+        vkCmd.beginRenderPass(passInfo, vk::SubpassContents::eInline);
+        vkCmd.endRenderPass();
+    }
 }
 
 bool ShadowSystem::createShadowPipelineCommon(
@@ -473,7 +500,7 @@ void ShadowSystem::drawShadowSceneInstanced(
     VkCommandBuffer cmd,
     uint32_t frameIndex,
     uint32_t cascadeIndex,
-    const std::vector<Renderable>& sceneObjects)
+    const std::vector<ecs::RenderData>& sceneObjects)
 {
     if (sceneObjects.empty() || instancedShadowPipeline == VK_NULL_HANDLE) return;
     if (frameIndex >= instanceMappedPtrs.size()) return;
@@ -481,7 +508,7 @@ void ShadowSystem::drawShadowSceneInstanced(
     vk::CommandBuffer vkCmd(cmd);
 
     // Group objects by mesh pointer (objects sharing the same mesh can be instanced)
-    std::unordered_map<const Mesh*, std::vector<const Renderable*>> meshGroups;
+    std::unordered_map<const Mesh*, std::vector<const ecs::RenderData*>> meshGroups;
     for (const auto& obj : sceneObjects) {
         if (!obj.castsShadow || !obj.mesh) continue;
         meshGroups[obj.mesh].push_back(&obj);
@@ -797,7 +824,7 @@ void ShadowSystem::drawShadowScene(
     VkPipelineLayout layout,
     uint32_t cascadeOrFaceIndex,
     const glm::mat4& lightMatrix,
-    const std::vector<Renderable>& sceneObjects,
+    const std::vector<ecs::RenderData>& sceneObjects,
     const DrawCallback& terrainCallback,
     const DrawCallback& grassCallback,
     const DrawCallback& treeCallback,
@@ -830,7 +857,7 @@ void ShadowSystem::drawShadowScene(
 
 void ShadowSystem::recordShadowPass(VkCommandBuffer cmd, uint32_t frameIndex,
                                      VkDescriptorSet descriptorSet,
-                                     const std::vector<Renderable>& sceneObjects,
+                                     const std::vector<ecs::RenderData>& sceneObjects,
                                      const DrawCallback& terrainDrawCallback,
                                      const DrawCallback& grassDrawCallback,
                                      const DrawCallback& treeDrawCallback,
@@ -838,6 +865,9 @@ void ShadowSystem::recordShadowPass(VkCommandBuffer cmd, uint32_t frameIndex,
                                      const ComputeCallback& preCascadeComputeCallback,
                                      const IndirectShadowParams& indirect) {
     vk::CommandBuffer vkCmd(cmd);
+
+    // Each cascade render pass below clears and writes the shadow map
+    csmInitialized_ = true;
 
     // GPU-driven indirect scene-object path (per-cascade frustum culling + indirect draw).
     // When active it replaces the instanced/per-object scene-object draw below.
@@ -991,7 +1021,7 @@ void ShadowSystem::recordSkinnedMeshShadow(VkCommandBuffer cmd, uint32_t cascade
 
 void ShadowSystem::renderDynamicShadows(VkCommandBuffer cmd, uint32_t frameIndex,
                                         VkDescriptorSet descriptorSet,
-                                        const std::vector<Renderable>& sceneObjects,
+                                        const std::vector<ecs::RenderData>& sceneObjects,
                                         const DrawCallback& terrainDrawCallback,
                                         const DrawCallback& grassDrawCallback,
                                         const DrawCallback& skinnedDrawCallback,

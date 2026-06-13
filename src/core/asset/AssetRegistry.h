@@ -5,7 +5,6 @@
 #include "../Mesh.h"
 #include "../ShaderLoader.h"
 
-#include <vulkan/vulkan.h>
 #include <vulkan/vulkan.hpp>
 #include <vk_mem_alloc.h>
 
@@ -83,7 +82,7 @@ public:
         ShaderModule(vk::ShaderModule m, VkDevice d) : module(m), device(d) {}
         ~ShaderModule() {
             if (module && device) {
-                vkDestroyShaderModule(device, module, nullptr);
+                vk::Device(device).destroyShaderModule(module);
             }
         }
 
@@ -100,7 +99,7 @@ public:
         ShaderModule& operator=(ShaderModule&& other) noexcept {
             if (this != &other) {
                 if (module && device) {
-                    vkDestroyShaderModule(device, module, nullptr);
+                    vk::Device(device).destroyShaderModule(module);
                 }
                 module = other.module;
                 device = other.device;

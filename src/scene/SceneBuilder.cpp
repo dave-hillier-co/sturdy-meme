@@ -3,7 +3,6 @@
 #include "PhysicsSystem.h"
 #include "asset/AssetRegistry.h"
 #include "npc/NPCSimulation.h"
-#include "npc/NPCData.h"
 #include "ecs/EntityFactory.h"
 #include "ecs/Systems.h"
 #include <SDL3/SDL_log.h>
@@ -30,6 +29,14 @@ bool SceneBuilder::initInternal(const InitInfo& info) {
     storedDevice = info.device;
     sceneOrigin = info.sceneOrigin;
 
+    // Slice 5: the merged createRenderables() pass creates ECS entities, so the
+    // ECS world must be available before it runs. Adopt it from InitInfo if
+    // provided. In the deferred path the world is instead set via setECSWorld()
+    // (from Application::initECS) before createRenderablesDeferred() is triggered.
+    if (info.ecsWorld) {
+        ecsWorld_ = info.ecsWorld;
+    }
+
     // Calculate well entrance position immediately (needed for terrain hole creation)
     // This must be available even if renderables are deferred
     wellEntranceX = 20.0f + sceneOrigin.x;
@@ -55,10 +62,26 @@ bool SceneBuilder::initInternal(const InitInfo& info) {
     return true;
 }
 
+void SceneBuilder::setECSWorld(ecs::World* world) {
+    ecsWorld_ = world;
+    // NPCs are spawned during init (before the world is set in the deferred path);
+    // propagate so the NPC simulation creates its entities now that the world exists.
+    if (npcSimulation_) {
+        npcSimulation_->setECSWorld(world);
+    }
+}
+
 void SceneBuilder::createRenderablesDeferred() {
     if (renderablesCreated_) {
         SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "SceneBuilder: Renderables already created");
         return;
+    }
+    if (!ecsWorld_) {
+        // Slice 5: the merged creation pass needs the ECS world. This indicates an
+        // ordering bug (setECSWorld must run before deferred creation); log loudly.
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
+            "SceneBuilder: ECS world not set before deferred renderable creation; "
+            "entities will not be created");
     }
     SDL_Log("SceneBuilder: Creating deferred renderables now");
     createRenderables();
@@ -71,40 +94,44 @@ void SceneBuilder::createRenderablesDeferred() {
 }
 
 void SceneBuilder::createEntitiesFromRenderables() {
+    // Slice 5: entity creation is now merged into createRenderables(), which
+    // creates each ECS entity (with all tags/components/hierarchy) at the same
+    // time it pushes the mirror Renderable into sceneObjects. This function is
+    // retained only as an idempotent no-op shim: it is still invoked from
+    // Application::initECS and the deferred lazy path, but must do nothing once
+    // the merged pass has run.
     if (!ecsWorld_) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "SceneBuilder: ECS world not set");
         return;
     }
 
     if (sceneObjects.empty()) {
+        // Renderables not created yet (deferred mode); the merged pass will run
+        // when createRenderables() is invoked later.
         SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "SceneBuilder: No renderables to create entities from");
         return;
     }
 
-    SDL_Log("SceneBuilder: Creating %zu ECS entities from renderables", sceneObjects.size());
+    if (!sceneEntities_.empty()) {
+        // Entities already created by the merged createRenderables() pass.
+        return;
+    }
 
-    ecs::EntityFactory factory(*ecsWorld_);
-    sceneEntities_.reserve(sceneObjects.size());
-    entityToRenderableIndex_.clear();
+    // Should not normally be reached: renderables exist but no entities were
+    // created. This can only happen if createRenderables() ran without an ECS
+    // world set. Log so the ordering bug is visible rather than silently
+    // producing an entity-less scene.
+    SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+        "SceneBuilder: createEntitiesFromRenderables called with %zu renderables but no entities; "
+        "createRenderables() must run with the ECS world set",
+        sceneObjects.size());
+}
 
-    // Helper: create entity from renderable and register in the reverse map
-    auto createEntity = [&](size_t i) -> ecs::Entity {
-        ecs::Entity entity = factory.createFromRenderable(sceneObjects[i]);
-        sceneEntities_.push_back(entity);
-        entityToRenderableIndex_[entity] = i;
-
-        // Add bounding sphere for culling (estimated from mesh)
-        glm::vec3 pos = glm::vec3(sceneObjects[i].transform[3]);
-        float radius = 2.0f;
-        if (sceneObjects[i].mesh) {
-            float scale = glm::length(glm::vec3(sceneObjects[i].transform[0]));
-            radius = scale * 2.0f;
-        }
-        ecsWorld_->add<ecs::BoundingSphere>(entity, pos, radius);
-        ecsWorld_->add<ecs::Visible>(entity);
-
-        return entity;
-    };
+void SceneBuilder::createSceneEntity(size_t i) {
+    // Merged second-pass entity creation for a single scene object. Produces the
+    // exact same components/tags/hierarchy as the former
+    // createEntitiesFromRenderables() did, but inline as each Renderable is built.
+    if (!ecsWorld_) return;
 
     // Physics shape parameters
     constexpr float BOX_MASS = 10.0f;
@@ -112,145 +139,170 @@ void SceneBuilder::createEntitiesFromRenderables() {
     constexpr float ORB_MASS = 1.0f;
     const glm::vec3 cubeHalfExtents(0.5f);
 
-    // Create entities for each renderable, tagging by mesh type and role
-    for (size_t i = 0; i < sceneObjects.size(); ++i) {
-        ecs::Entity entity = createEntity(i);
-        const auto& obj = sceneObjects[i];
+    ecs::EntityFactory factory(*ecsWorld_);
+    const ecs::RenderData& obj = sceneObjects[i];
+    const ObjectRole role = (i < objectRoles_.size()) ? objectRoles_[i] : ObjectRole::None;
 
-        // Tag by mesh identity: cubes get debug names and physics shapes
-        if (obj.mesh == cubeMesh.get()) {
-            ecsWorld_->add<ecs::DebugName>(entity, "Cube");
-            // All scene cubes are physics-enabled
-            ecsWorld_->add<ecs::PhysicsShapeInfo>(entity,
-                ecs::PhysicsShapeInfo::box(cubeHalfExtents, BOX_MASS));
-        } else if (obj.mesh == sphereMesh.get()) {
-            ecsWorld_->add<ecs::DebugName>(entity, "Sphere");
-            // Scene spheres are physics-enabled (with varying radius/mass)
-            float scale = glm::length(glm::vec3(obj.transform[0]));
-            if (scale < 0.5f) {
-                // Small sphere (emissive orb)
-                ecsWorld_->add<ecs::PhysicsShapeInfo>(entity,
-                    ecs::PhysicsShapeInfo::sphere(0.5f * scale, ORB_MASS));
-            } else if (obj.emissiveIntensity > 1.0f) {
-                // Emissive indicator spheres (blue/green lights) - no physics
-            } else {
-                // Normal spheres
-                ecsWorld_->add<ecs::PhysicsShapeInfo>(entity,
-                    ecs::PhysicsShapeInfo::sphere(0.5f, SPHERE_MASS));
-            }
-        } else if (obj.mesh == capsuleMesh.get()) {
-            ecsWorld_->add<ecs::DebugName>(entity, "Capsule");
-        } else if (obj.mesh == flagPoleMesh.get()) {
-            ecsWorld_->add<ecs::DebugName>(entity, "Flag Pole");
-        } else if (obj.mesh == swordMesh.get()) {
-            ecsWorld_->add<ecs::DebugName>(entity, "Sword");
-        } else if (obj.mesh == shieldMesh.get()) {
-            ecsWorld_->add<ecs::DebugName>(entity, "Shield");
-        } else if (obj.mesh == axisLineMesh.get()) {
-            ecsWorld_->add<ecs::DebugName>(entity, "Debug Axis");
-        } else if (obj.mesh == &flagClothMesh) {
-            ecsWorld_->add<ecs::DebugName>(entity, "Flag Cloth");
-        } else if (obj.mesh == &capeMesh) {
-            ecsWorld_->add<ecs::DebugName>(entity, "Cape");
-        }
+    // Core components (Transform, MeshRef, MaterialRef, CastsShadow, PBRProperties,
+    // HueShift, Opacity, GPUSkinned) via value-gated factory.
+    ecs::Entity entity = factory.createFromRenderable(obj);
+    sceneEntities_.push_back(entity);
+    entityToRenderableIndex_[entity] = i;
 
-        // Tag special entities by their role (assigned during createRenderables)
-        ObjectRole role = (i < objectRoles_.size()) ? objectRoles_[i] : ObjectRole::None;
-        switch (role) {
-            case ObjectRole::Player:
-                playerEntity_ = entity;
-                ecsWorld_->add<ecs::PlayerTag>(entity);
-                break;
-            case ObjectRole::EmissiveOrb:
-                emissiveOrbEntity_ = entity;
-                ecsWorld_->add<ecs::OrbTag>(entity);
-                break;
-            case ObjectRole::FlagPole:
-                flagPoleEntity_ = entity;
-                ecsWorld_->add<ecs::FlagPoleTag>(entity);
-                break;
-            case ObjectRole::FlagCloth:
-                flagClothEntity_ = entity;
-                ecsWorld_->add<ecs::FlagClothTag>(entity);
-                break;
-            case ObjectRole::Cape:
-                capeEntity_ = entity;
-                ecsWorld_->add<ecs::CapeTag>(entity);
-                break;
-            case ObjectRole::Sword:
-                swordEntity_ = entity;
-                ecsWorld_->add<ecs::WeaponTag>(entity, ecs::WeaponSlot::RightHand);
-                if (rightHandBoneIndex >= 0) {
-                    ecsWorld_->add<ecs::BoneAttachment>(entity, rightHandBoneIndex, getSwordOffset());
-                }
-                break;
-            case ObjectRole::Shield:
-                shieldEntity_ = entity;
-                ecsWorld_->add<ecs::WeaponTag>(entity, ecs::WeaponSlot::LeftHand);
-                if (leftHandBoneIndex >= 0) {
-                    ecsWorld_->add<ecs::BoneAttachment>(entity, leftHandBoneIndex, getShieldOffset());
-                }
-                break;
-            case ObjectRole::WellEntrance:
-                wellEntranceEntity_ = entity;
-                ecsWorld_->add<ecs::WellEntranceTag>(entity);
-                break;
-            case ObjectRole::DebugAxisRightX:
-                rightHandAxisEntities_[0] = entity;
-                ecsWorld_->add<ecs::DebugAxisTag>(entity);
-                if (rightHandBoneIndex >= 0) {
-                    glm::mat4 off = glm::rotate(glm::mat4(1.0f), glm::radians(-90.0f), glm::vec3(0,0,1));
-                    off = glm::translate(off, glm::vec3(0, 0.075f, 0));
-                    ecsWorld_->add<ecs::BoneAttachment>(entity, rightHandBoneIndex, off);
-                }
-                break;
-            case ObjectRole::DebugAxisRightY:
-                rightHandAxisEntities_[1] = entity;
-                ecsWorld_->add<ecs::DebugAxisTag>(entity);
-                if (rightHandBoneIndex >= 0) {
-                    glm::mat4 off = glm::translate(glm::mat4(1.0f), glm::vec3(0, 0.075f, 0));
-                    ecsWorld_->add<ecs::BoneAttachment>(entity, rightHandBoneIndex, off);
-                }
-                break;
-            case ObjectRole::DebugAxisRightZ:
-                rightHandAxisEntities_[2] = entity;
-                ecsWorld_->add<ecs::DebugAxisTag>(entity);
-                if (rightHandBoneIndex >= 0) {
-                    glm::mat4 off = glm::rotate(glm::mat4(1.0f), glm::radians(90.0f), glm::vec3(1,0,0));
-                    off = glm::translate(off, glm::vec3(0, 0.075f, 0));
-                    ecsWorld_->add<ecs::BoneAttachment>(entity, rightHandBoneIndex, off);
-                }
-                break;
-            case ObjectRole::DebugAxisLeftX:
-                leftHandAxisEntities_[0] = entity;
-                ecsWorld_->add<ecs::DebugAxisTag>(entity);
-                if (leftHandBoneIndex >= 0) {
-                    glm::mat4 off = glm::rotate(glm::mat4(1.0f), glm::radians(-90.0f), glm::vec3(0,0,1));
-                    off = glm::translate(off, glm::vec3(0, 0.075f, 0));
-                    ecsWorld_->add<ecs::BoneAttachment>(entity, leftHandBoneIndex, off);
-                }
-                break;
-            case ObjectRole::DebugAxisLeftY:
-                leftHandAxisEntities_[1] = entity;
-                ecsWorld_->add<ecs::DebugAxisTag>(entity);
-                if (leftHandBoneIndex >= 0) {
-                    glm::mat4 off = glm::translate(glm::mat4(1.0f), glm::vec3(0, 0.075f, 0));
-                    ecsWorld_->add<ecs::BoneAttachment>(entity, leftHandBoneIndex, off);
-                }
-                break;
-            case ObjectRole::DebugAxisLeftZ:
-                leftHandAxisEntities_[2] = entity;
-                ecsWorld_->add<ecs::DebugAxisTag>(entity);
-                if (leftHandBoneIndex >= 0) {
-                    glm::mat4 off = glm::rotate(glm::mat4(1.0f), glm::radians(90.0f), glm::vec3(1,0,0));
-                    off = glm::translate(off, glm::vec3(0, 0.075f, 0));
-                    ecsWorld_->add<ecs::BoneAttachment>(entity, leftHandBoneIndex, off);
-                }
-                break;
-            case ObjectRole::None:
-                break;
-        }
+    // Bounding sphere for culling (estimated from mesh) + Visible on every entity.
+    glm::vec3 pos = glm::vec3(obj.transform[3]);
+    float radius = 2.0f;
+    if (obj.mesh) {
+        float scale = glm::length(glm::vec3(obj.transform[0]));
+        radius = scale * 2.0f;
     }
+    ecsWorld_->add<ecs::BoundingSphere>(entity, pos, radius);
+    ecsWorld_->add<ecs::Visible>(entity);
+
+    // Tag by mesh identity: cubes/spheres get debug names and physics shapes.
+    if (obj.mesh == cubeMesh.get()) {
+        ecsWorld_->add<ecs::DebugName>(entity, "Cube");
+        ecsWorld_->add<ecs::PhysicsShapeInfo>(entity,
+            ecs::PhysicsShapeInfo::box(cubeHalfExtents, BOX_MASS));
+    } else if (obj.mesh == sphereMesh.get()) {
+        ecsWorld_->add<ecs::DebugName>(entity, "Sphere");
+        float scale = glm::length(glm::vec3(obj.transform[0]));
+        if (scale < 0.5f && role == ObjectRole::EmissiveOrb) {
+            // The emissive orb is dynamic (its torch light follows it as it settles).
+            // Other small emissive spheres (blue/green light indicators) share the
+            // scale<0.5 size but are decorative markers and get no physics body.
+            ecsWorld_->add<ecs::PhysicsShapeInfo>(entity,
+                ecs::PhysicsShapeInfo::sphere(0.5f * scale, ORB_MASS));
+        } else if (scale < 0.5f || obj.emissiveIntensity > 1.0f) {
+            // Small/emissive indicator spheres (blue/green lights) - no physics
+        } else {
+            // Normal spheres
+            ecsWorld_->add<ecs::PhysicsShapeInfo>(entity,
+                ecs::PhysicsShapeInfo::sphere(0.5f, SPHERE_MASS));
+        }
+    } else if (obj.mesh == capsuleMesh.get()) {
+        ecsWorld_->add<ecs::DebugName>(entity, "Capsule");
+    } else if (obj.mesh == flagPoleMesh.get()) {
+        ecsWorld_->add<ecs::DebugName>(entity, "Flag Pole");
+    } else if (obj.mesh == swordMesh.get()) {
+        ecsWorld_->add<ecs::DebugName>(entity, "Sword");
+    } else if (obj.mesh == shieldMesh.get()) {
+        ecsWorld_->add<ecs::DebugName>(entity, "Shield");
+    } else if (obj.mesh == axisLineMesh.get()) {
+        ecsWorld_->add<ecs::DebugName>(entity, "Debug Axis");
+    } else if (obj.mesh == &flagClothMesh) {
+        ecsWorld_->add<ecs::DebugName>(entity, "Flag Cloth");
+    } else if (obj.mesh == &capeMesh) {
+        ecsWorld_->add<ecs::DebugName>(entity, "Cape");
+    }
+
+    // Tag special entities by their role and cache entity handles.
+    switch (role) {
+        case ObjectRole::Player:
+            playerEntity_ = entity;
+            ecsWorld_->add<ecs::PlayerTag>(entity);
+            break;
+        case ObjectRole::EmissiveOrb:
+            emissiveOrbEntity_ = entity;
+            ecsWorld_->add<ecs::OrbTag>(entity);
+            break;
+        case ObjectRole::FlagPole:
+            flagPoleEntity_ = entity;
+            ecsWorld_->add<ecs::FlagPoleTag>(entity);
+            break;
+        case ObjectRole::FlagCloth:
+            flagClothEntity_ = entity;
+            ecsWorld_->add<ecs::FlagClothTag>(entity);
+            break;
+        case ObjectRole::Cape:
+            capeEntity_ = entity;
+            ecsWorld_->add<ecs::CapeTag>(entity);
+            break;
+        case ObjectRole::Sword:
+            swordEntity_ = entity;
+            ecsWorld_->add<ecs::WeaponTag>(entity, ecs::WeaponSlot::RightHand);
+            if (rightHandBoneIndex >= 0) {
+                ecsWorld_->add<ecs::BoneAttachment>(entity, rightHandBoneIndex, getSwordOffset());
+            }
+            break;
+        case ObjectRole::Shield:
+            shieldEntity_ = entity;
+            ecsWorld_->add<ecs::WeaponTag>(entity, ecs::WeaponSlot::LeftHand);
+            if (leftHandBoneIndex >= 0) {
+                ecsWorld_->add<ecs::BoneAttachment>(entity, leftHandBoneIndex, getShieldOffset());
+            }
+            break;
+        case ObjectRole::WellEntrance:
+            wellEntranceEntity_ = entity;
+            ecsWorld_->add<ecs::WellEntranceTag>(entity);
+            // The well entrance is a decorative frame floating above the terrain hole.
+            // It uses the cube mesh, so the mesh-identity branch above gave it a dynamic
+            // box body - remove it so the frame stays put instead of falling.
+            if (ecsWorld_->has<ecs::PhysicsShapeInfo>(entity)) {
+                ecsWorld_->remove<ecs::PhysicsShapeInfo>(entity);
+            }
+            break;
+        case ObjectRole::DebugAxisRightX:
+            rightHandAxisEntities_[0] = entity;
+            ecsWorld_->add<ecs::DebugAxisTag>(entity);
+            if (rightHandBoneIndex >= 0) {
+                glm::mat4 off = glm::rotate(glm::mat4(1.0f), glm::radians(-90.0f), glm::vec3(0,0,1));
+                off = glm::translate(off, glm::vec3(0, 0.075f, 0));
+                ecsWorld_->add<ecs::BoneAttachment>(entity, rightHandBoneIndex, off);
+            }
+            break;
+        case ObjectRole::DebugAxisRightY:
+            rightHandAxisEntities_[1] = entity;
+            ecsWorld_->add<ecs::DebugAxisTag>(entity);
+            if (rightHandBoneIndex >= 0) {
+                glm::mat4 off = glm::translate(glm::mat4(1.0f), glm::vec3(0, 0.075f, 0));
+                ecsWorld_->add<ecs::BoneAttachment>(entity, rightHandBoneIndex, off);
+            }
+            break;
+        case ObjectRole::DebugAxisRightZ:
+            rightHandAxisEntities_[2] = entity;
+            ecsWorld_->add<ecs::DebugAxisTag>(entity);
+            if (rightHandBoneIndex >= 0) {
+                glm::mat4 off = glm::rotate(glm::mat4(1.0f), glm::radians(90.0f), glm::vec3(1,0,0));
+                off = glm::translate(off, glm::vec3(0, 0.075f, 0));
+                ecsWorld_->add<ecs::BoneAttachment>(entity, rightHandBoneIndex, off);
+            }
+            break;
+        case ObjectRole::DebugAxisLeftX:
+            leftHandAxisEntities_[0] = entity;
+            ecsWorld_->add<ecs::DebugAxisTag>(entity);
+            if (leftHandBoneIndex >= 0) {
+                glm::mat4 off = glm::rotate(glm::mat4(1.0f), glm::radians(-90.0f), glm::vec3(0,0,1));
+                off = glm::translate(off, glm::vec3(0, 0.075f, 0));
+                ecsWorld_->add<ecs::BoneAttachment>(entity, leftHandBoneIndex, off);
+            }
+            break;
+        case ObjectRole::DebugAxisLeftY:
+            leftHandAxisEntities_[1] = entity;
+            ecsWorld_->add<ecs::DebugAxisTag>(entity);
+            if (leftHandBoneIndex >= 0) {
+                glm::mat4 off = glm::translate(glm::mat4(1.0f), glm::vec3(0, 0.075f, 0));
+                ecsWorld_->add<ecs::BoneAttachment>(entity, leftHandBoneIndex, off);
+            }
+            break;
+        case ObjectRole::DebugAxisLeftZ:
+            leftHandAxisEntities_[2] = entity;
+            ecsWorld_->add<ecs::DebugAxisTag>(entity);
+            if (leftHandBoneIndex >= 0) {
+                glm::mat4 off = glm::rotate(glm::mat4(1.0f), glm::radians(90.0f), glm::vec3(1,0,0));
+                off = glm::translate(off, glm::vec3(0, 0.075f, 0));
+                ecsWorld_->add<ecs::BoneAttachment>(entity, leftHandBoneIndex, off);
+            }
+            break;
+        case ObjectRole::None:
+            break;
+    }
+}
+
+void SceneBuilder::finalizeSceneEntities() {
+    // Establish parent-child hierarchy and tag NPC entities once all scene
+    // objects (and their entities) have been created in the merged pass.
+    if (!ecsWorld_) return;
 
     // Establish parent-child hierarchy: attach weapons, cape, and debug axes to player
     if (playerEntity_ != ecs::NullEntity) {
@@ -272,23 +324,10 @@ void SceneBuilder::createEntitiesFromRenderables() {
         for (auto e : leftHandAxisEntities_) attachChild(e);
     }
 
-    // Create NPC entities with tags
-    if (npcSimulation_) {
-        const auto& npcData = npcSimulation_->getData();
-        npcEntities_.reserve(npcData.count());
+    // NPCs are simulation entities owned by NPCSimulation and rendered by NPCRenderer;
+    // they are not part of sceneEntities_ and need no tagging here.
 
-        for (size_t i = 0; i < npcData.count(); ++i) {
-            size_t renderableIndex = npcData.renderableIndices[i];
-            if (renderableIndex < sceneEntities_.size()) {
-                ecs::Entity npcEntity = sceneEntities_[renderableIndex];
-                ecsWorld_->add<ecs::NPCTag>(npcEntity, static_cast<uint32_t>(npcData.templateIndices[i]));
-                npcEntities_.push_back(npcEntity);
-            }
-        }
-        SDL_Log("SceneBuilder: Tagged %zu NPC entities", npcEntities_.size());
-    }
-
-    SDL_Log("SceneBuilder: Created ECS entities successfully");
+    SDL_Log("SceneBuilder: Created %zu ECS entities successfully", sceneEntities_.size());
 }
 
 void SceneBuilder::registerMaterials() {
@@ -641,16 +680,20 @@ bool SceneBuilder::loadTextures(const InitInfo& info) {
 void SceneBuilder::createRenderables() {
     sceneObjects.clear();
 
+    // Slice 5: entity creation is merged into this pass. Reset the entity-tracking
+    // state so the merged pass starts clean (createRenderables may run once, either
+    // eagerly or via the deferred path).
+    sceneEntities_.clear();
+    entityToRenderableIndex_.clear();
+    if (ecsWorld_) {
+        sceneEntities_.reserve(32);
+    }
+
     // Ground disc removed - terrain system provides the ground now
 
     // Scene objects are placed relative to sceneOrigin (settlement location)
     const float originX = sceneOrigin.x;
     const float originZ = sceneOrigin.y;
-
-    // Cache texture pointers from registry (const_cast needed as Renderable uses non-const ptr)
-    Texture* crateTex = const_cast<Texture*>(getCrateTexture());
-    Texture* metalTex = const_cast<Texture*>(getMetalTexture());
-    Texture* whiteTex = const_cast<Texture*>(getWhiteTexture());
 
     // Helper: get world position with scene origin offset
     auto worldPos = [originX, originZ](float localX, float localZ) -> std::pair<float, float> {
@@ -665,147 +708,121 @@ void SceneBuilder::createRenderables() {
 
     objectRoles_.clear();
 
-    // Helper to add a renderable with an optional role
-    auto addObject = [this](Renderable&& r, ObjectRole role = ObjectRole::None) -> size_t {
+    // Helper to add a renderable with an optional role. Slice 5: this also creates
+    // the matching ECS entity (with all tags/components) inline, merging the former
+    // second creation pass into this single loop. The mirror Renderable is still
+    // pushed into sceneObjects (physics/animation write-target + GUI surface).
+    auto addObject = [this](ecs::RenderData&& r, ObjectRole role = ObjectRole::None) -> size_t {
         size_t idx = sceneObjects.size();
         sceneObjects.push_back(std::move(r));
         objectRoles_.push_back(role);
+        // Create the ECS entity for this object immediately (idempotent: only when
+        // an ECS world is set; the deferred path guarantees it is set first).
+        if (ecsWorld_) {
+            createSceneEntity(idx);
+        }
         return idx;
+    };
+
+    // Build an ecs::RenderData scene-object mirror entry. Defaults match the former
+    // RenderableBuilder defaults (texture was inspection-only and is dropped).
+    auto makeObject = [](const glm::mat4& transform, Mesh* mesh, MaterialId materialId,
+                         float roughness = 0.5f, float metallic = 0.0f,
+                         float emissiveIntensity = 0.0f,
+                         const glm::vec3& emissiveColor = glm::vec3(1.0f),
+                         bool castsShadow = true, float hueShift = 0.0f,
+                         bool gpuSkinned = false) -> ecs::RenderData {
+        ecs::RenderData r{};
+        r.transform = transform;
+        r.mesh = mesh;
+        r.materialId = materialId;
+        r.roughness = roughness;
+        r.metallic = metallic;
+        r.emissiveIntensity = emissiveIntensity;
+        r.emissiveColor = emissiveColor;
+        r.castsShadow = castsShadow;
+        r.hueShift = hueShift;
+        r.gpuSkinned = gpuSkinned;
+        return r;
     };
 
     // Wooden crate - slightly shiny, non-metallic (unit cube, half-extent 0.5)
     auto [crateX, crateZ] = worldPos(2.0f, 0.0f);
-    addObject(RenderableBuilder()
-        .atPosition(glm::vec3(crateX, getGroundY(crateX, crateZ, 0.5f), crateZ))
-        .withMesh(cubeMesh.get())
-        .withTexture(crateTex)
-        .withMaterialId(crateMaterialId)
-        .withRoughness(0.4f)
-        .withMetallic(0.0f)
-        .build());
+    addObject(makeObject(
+        glm::translate(glm::mat4(1.0f), glm::vec3(crateX, getGroundY(crateX, crateZ, 0.5f), crateZ)),
+        cubeMesh.get(), crateMaterialId, 0.4f, 0.0f));
 
     // Rotated wooden crate
     auto [rotatedCrateX, rotatedCrateZ] = worldPos(-1.5f, 1.0f);
-    addObject(RenderableBuilder()
-        .withTransform(Transform(
+    addObject(makeObject(
+        Transform(
             glm::vec3(rotatedCrateX, getGroundY(rotatedCrateX, rotatedCrateZ, 0.5f), rotatedCrateZ),
-            Transform::yRotation(glm::radians(30.0f))))
-        .withMesh(cubeMesh.get())
-        .withTexture(crateTex)
-        .withMaterialId(crateMaterialId)
-        .withRoughness(0.4f)
-        .withMetallic(0.0f)
-        .build());
+            Transform::yRotation(glm::radians(30.0f))).toMatrix(),
+        cubeMesh.get(), crateMaterialId, 0.4f, 0.0f));
 
     // Polished metal sphere - smooth, fully metallic (radius 0.5)
     auto [polishedSphereX, polishedSphereZ] = worldPos(0.0f, -2.0f);
-    addObject(RenderableBuilder()
-        .atPosition(glm::vec3(polishedSphereX, getGroundY(polishedSphereX, polishedSphereZ, 0.5f), polishedSphereZ))
-        .withMesh(sphereMesh.get())
-        .withTexture(metalTex)
-        .withMaterialId(metalMaterialId)
-        .withRoughness(0.1f)
-        .withMetallic(1.0f)
-        .build());
+    addObject(makeObject(
+        glm::translate(glm::mat4(1.0f), glm::vec3(polishedSphereX, getGroundY(polishedSphereX, polishedSphereZ, 0.5f), polishedSphereZ)),
+        sphereMesh.get(), metalMaterialId, 0.1f, 1.0f));
 
     // Rough/brushed metal sphere - moderately rough, metallic (radius 0.5)
     auto [roughSphereX, roughSphereZ] = worldPos(-3.0f, -1.0f);
-    addObject(RenderableBuilder()
-        .atPosition(glm::vec3(roughSphereX, getGroundY(roughSphereX, roughSphereZ, 0.5f), roughSphereZ))
-        .withMesh(sphereMesh.get())
-        .withTexture(metalTex)
-        .withMaterialId(metalMaterialId)
-        .withRoughness(0.5f)
-        .withMetallic(1.0f)
-        .build());
+    addObject(makeObject(
+        glm::translate(glm::mat4(1.0f), glm::vec3(roughSphereX, getGroundY(roughSphereX, roughSphereZ, 0.5f), roughSphereZ)),
+        sphereMesh.get(), metalMaterialId, 0.5f, 1.0f));
 
     // Polished metal cube - smooth, fully metallic (half-extent 0.5)
     auto [polishedCubeX, polishedCubeZ] = worldPos(3.0f, -2.0f);
-    addObject(RenderableBuilder()
-        .atPosition(glm::vec3(polishedCubeX, getGroundY(polishedCubeX, polishedCubeZ, 0.5f), polishedCubeZ))
-        .withMesh(cubeMesh.get())
-        .withTexture(metalTex)
-        .withMaterialId(metalMaterialId)
-        .withRoughness(0.1f)
-        .withMetallic(1.0f)
-        .build());
+    addObject(makeObject(
+        glm::translate(glm::mat4(1.0f), glm::vec3(polishedCubeX, getGroundY(polishedCubeX, polishedCubeZ, 0.5f), polishedCubeZ)),
+        cubeMesh.get(), metalMaterialId, 0.1f, 1.0f));
 
     // Brushed metal cube - rough, metallic (half-extent 0.5)
     auto [brushedCubeX, brushedCubeZ] = worldPos(-3.0f, -3.0f);
-    addObject(RenderableBuilder()
-        .withTransform(Transform(
+    addObject(makeObject(
+        Transform(
             glm::vec3(brushedCubeX, getGroundY(brushedCubeX, brushedCubeZ, 0.5f), brushedCubeZ),
-            Transform::yRotation(glm::radians(45.0f))))
-        .withMesh(cubeMesh.get())
-        .withTexture(metalTex)
-        .withMaterialId(metalMaterialId)
-        .withRoughness(0.6f)
-        .withMetallic(1.0f)
-        .build());
+            Transform::yRotation(glm::radians(45.0f))).toMatrix(),
+        cubeMesh.get(), metalMaterialId, 0.6f, 1.0f));
 
     // Glowing emissive sphere on top of the first crate - demonstrates bloom effect
     // Sits 0.8m above crate (crate top at terrain+1.0, sphere center at terrain+1.0+0.3)
     // This object has physics AND is tracked as the emissive orb for light sync
     float glowSphereScale = 0.3f;
-    addObject(RenderableBuilder()
-        .withTransform(Transform(
+    addObject(makeObject(
+        Transform(
             glm::vec3(crateX, getGroundY(crateX, crateZ, 1.0f + glowSphereScale), crateZ),
             glm::quat(1, 0, 0, 0),  // Identity rotation
-            glowSphereScale))
-        .withMesh(sphereMesh.get())
-        .withTexture(metalTex)
-        .withMaterialId(metalMaterialId)
-        .withRoughness(0.2f)
-        .withMetallic(0.0f)
-        .withEmissiveIntensity(25.0f)
-        .withEmissiveColor(glm::vec3(1.0f, 0.9f, 0.7f))
-        .withCastsShadow(false)
-        .build(), ObjectRole::EmissiveOrb);
+            glowSphereScale).toMatrix(),
+        sphereMesh.get(), metalMaterialId, 0.2f, 0.0f,
+        25.0f, glm::vec3(1.0f, 0.9f, 0.7f), /*castsShadow*/ false),
+        ObjectRole::EmissiveOrb);
 
     // Blue light indicator sphere - saturated blue, floating above terrain
     auto [blueLightX, blueLightZ] = worldPos(-3.0f, 2.0f);
-    addObject(RenderableBuilder()
-        .withTransform(Transform(
+    addObject(makeObject(
+        Transform(
             glm::vec3(blueLightX, getGroundY(blueLightX, blueLightZ, 1.5f), blueLightZ),
-            glm::quat(1, 0, 0, 0), 0.2f))
-        .withMesh(sphereMesh.get())
-        .withTexture(metalTex)
-        .withMaterialId(metalMaterialId)
-        .withRoughness(0.2f)
-        .withMetallic(0.0f)
-        .withEmissiveIntensity(4.0f)
-        .withEmissiveColor(glm::vec3(0.0f, 0.3f, 1.0f))
-        .withCastsShadow(false)
-        .build());
+            glm::quat(1, 0, 0, 0), 0.2f).toMatrix(),
+        sphereMesh.get(), metalMaterialId, 0.2f, 0.0f,
+        4.0f, glm::vec3(0.0f, 0.3f, 1.0f), /*castsShadow*/ false));
 
     // Green light indicator sphere - saturated green, floating above terrain
     auto [greenLightX, greenLightZ] = worldPos(4.0f, -2.0f);
-    addObject(RenderableBuilder()
-        .withTransform(Transform(
+    addObject(makeObject(
+        Transform(
             glm::vec3(greenLightX, getGroundY(greenLightX, greenLightZ, 1.5f), greenLightZ),
-            glm::quat(1, 0, 0, 0), 0.2f))
-        .withMesh(sphereMesh.get())
-        .withTexture(metalTex)
-        .withMaterialId(metalMaterialId)
-        .withRoughness(0.2f)
-        .withMetallic(0.0f)
-        .withEmissiveIntensity(3.0f)
-        .withEmissiveColor(glm::vec3(0.0f, 1.0f, 0.2f))
-        .withCastsShadow(false)
-        .build());
+            glm::quat(1, 0, 0, 0), 0.2f).toMatrix(),
+        sphereMesh.get(), metalMaterialId, 0.2f, 0.0f,
+        3.0f, glm::vec3(0.0f, 1.0f, 0.2f), /*castsShadow*/ false));
 
     // Debug cube - red emissive cube for testing (half-extent 0.5)
     auto [debugCubeX, debugCubeZ] = worldPos(5.0f, -5.0f);
-    addObject(RenderableBuilder()
-        .atPosition(glm::vec3(debugCubeX, getGroundY(debugCubeX, debugCubeZ, 0.5f), debugCubeZ))
-        .withMesh(cubeMesh.get())
-        .withTexture(crateTex)
-        .withMaterialId(crateMaterialId)
-        .withRoughness(0.3f)
-        .withMetallic(0.0f)
-        .withEmissiveIntensity(5.0f)
-        .withEmissiveColor(glm::vec3(1.0f, 0.0f, 0.0f))
-        .build());
+    addObject(makeObject(
+        glm::translate(glm::mat4(1.0f), glm::vec3(debugCubeX, getGroundY(debugCubeX, debugCubeZ, 0.5f), debugCubeZ)),
+        cubeMesh.get(), crateMaterialId, 0.3f, 0.0f,
+        5.0f, glm::vec3(1.0f, 0.0f, 0.0f)));
 
     // Player character - uses animated character if loaded, otherwise capsule
     // Player position is controlled by physics, so we place at scene origin
@@ -830,205 +847,91 @@ void SceneBuilder::createRenderables() {
                     mat.name.c_str(), charRoughness, charMetallic);
         }
 
-        addObject(RenderableBuilder()
-            .withTransform(buildCharacterTransform(glm::vec3(playerX, playerTerrainY, playerZ), 10.0f))
-            .withMesh(&animatedCharacter->getMesh())
-            .withTexture(whiteTex)  // White texture so vertex colors show through
-            .withMaterialId(whiteMaterialId)
-            .withRoughness(charRoughness)
-            .withMetallic(charMetallic)
-            .withEmissiveColor(charEmissiveColor)
-            .withEmissiveIntensity(charEmissiveIntensity)
-            .withCastsShadow(true)
-            .withGPUSkinned(true)
-            .build(), ObjectRole::Player);
+        addObject(makeObject(
+            buildCharacterTransform(glm::vec3(playerX, playerTerrainY, playerZ), 10.0f),
+            &animatedCharacter->getMesh(), whiteMaterialId, charRoughness, charMetallic,
+            charEmissiveIntensity, charEmissiveColor, /*castsShadow*/ true,
+            /*hueShift*/ 0.0f, /*gpuSkinned*/ true),
+            ObjectRole::Player);
     } else {
         // Capsule fallback - capsule height 1.8m, center at 0.9m above ground
-        addObject(RenderableBuilder()
-            .atPosition(glm::vec3(playerX, playerTerrainY + 0.9f, playerZ))
-            .withMesh(capsuleMesh.get())
-            .withTexture(metalTex)
-            .withMaterialId(metalMaterialId)
-            .withRoughness(0.3f)
-            .withMetallic(0.8f)
-            .withCastsShadow(true)
-            .build(), ObjectRole::Player);
+        addObject(makeObject(
+            glm::translate(glm::mat4(1.0f), glm::vec3(playerX, playerTerrainY + 0.9f, playerZ)),
+            capsuleMesh.get(), metalMaterialId, 0.3f, 0.8f),
+            ObjectRole::Player);
     }
 
-    // NPC characters - rendered with GPU skinning like the player
-    if (npcSimulation_) {
-        auto& npcData = npcSimulation_->getData();
-        for (size_t i = 0; i < npcData.count(); ++i) {
-            auto* character = npcSimulation_->getCharacter(i);
-            if (!character) continue;
-
-            // Same material settings as player
-            float charRoughness = 0.5f;
-            float charMetallic = 0.0f;
-
-            // Give each NPC a different hue shift for visual variety
-            // Use golden ratio to distribute hues evenly around the color wheel
-            constexpr float GOLDEN_RATIO = 1.618033988749895f;
-            constexpr float TWO_PI = 6.283185307179586f;
-            float hueShift = std::fmod(static_cast<float>(i + 1) * GOLDEN_RATIO, 1.0f) * TWO_PI;
-
-            size_t renderableIndex = addObject(RenderableBuilder()
-                .withTransform(npcSimulation_->buildNPCTransform(i))
-                .withMesh(&character->getMesh())
-                .withTexture(whiteTex)
-                .withMaterialId(whiteMaterialId)
-                .withRoughness(charRoughness)
-                .withMetallic(charMetallic)
-                .withCastsShadow(true)
-                .withHueShift(hueShift)
-                .withGPUSkinned(true)
-                .build());
-            npcSimulation_->setRenderableIndex(i, renderableIndex);
-
-            SDL_Log("SceneBuilder: Added NPC renderable at index %zu with hue shift %.2f rad", renderableIndex, hueShift);
-        }
-    }
+    // NPCs are rendered by NPCRenderer over the NPCSimulation simulation entities
+    // (created in NPCSimulation::createNPCSimEntity). No scene-object render proxies
+    // are created here.
 
     // Player weapons - attached to hand bones, transforms updated each frame
     if (hasAnimatedCharacter && rightHandBoneIndex >= 0) {
-        addObject(RenderableBuilder()
-            .withTransform(glm::mat4(1.0f))  // Updated per frame
-            .withMesh(swordMesh.get())
-            .withTexture(metalTex)
-            .withMaterialId(metalMaterialId)
-            .withRoughness(0.2f)
-            .withMetallic(0.95f)
-            .withCastsShadow(true)
-            .build(), ObjectRole::Sword);
+        addObject(makeObject(
+            glm::mat4(1.0f),  // Updated per frame
+            swordMesh.get(), metalMaterialId, 0.2f, 0.95f),
+            ObjectRole::Sword);
     }
     if (hasAnimatedCharacter && leftHandBoneIndex >= 0) {
-        addObject(RenderableBuilder()
-            .withTransform(glm::mat4(1.0f))  // Updated per frame
-            .withMesh(shieldMesh.get())
-            .withTexture(metalTex)
-            .withMaterialId(metalMaterialId)
-            .withRoughness(0.3f)
-            .withMetallic(0.9f)
-            .withCastsShadow(true)
-            .build(), ObjectRole::Shield);
+        addObject(makeObject(
+            glm::mat4(1.0f),  // Updated per frame
+            shieldMesh.get(), metalMaterialId, 0.3f, 0.9f),
+            ObjectRole::Shield);
     }
 
     // Debug axis indicators for right hand (R=X, G=Y, B=Z)
     if (hasAnimatedCharacter && rightHandBoneIndex >= 0) {
         // X axis - Red
-        addObject(RenderableBuilder()
-            .withTransform(glm::mat4(1.0f))
-            .withMesh(axisLineMesh.get())
-            .withTexture(whiteTex)
-            .withMaterialId(whiteMaterialId)
-            .withRoughness(1.0f)
-            .withMetallic(0.0f)
-            .withEmissiveColor(glm::vec3(1.0f, 0.0f, 0.0f))
-            .withEmissiveIntensity(5.0f)
-            .withCastsShadow(false)
-            .build(), ObjectRole::DebugAxisRightX);
+        addObject(makeObject(glm::mat4(1.0f), axisLineMesh.get(), whiteMaterialId,
+            1.0f, 0.0f, 5.0f, glm::vec3(1.0f, 0.0f, 0.0f), /*castsShadow*/ false),
+            ObjectRole::DebugAxisRightX);
         // Y axis - Green
-        addObject(RenderableBuilder()
-            .withTransform(glm::mat4(1.0f))
-            .withMesh(axisLineMesh.get())
-            .withTexture(whiteTex)
-            .withMaterialId(whiteMaterialId)
-            .withRoughness(1.0f)
-            .withMetallic(0.0f)
-            .withEmissiveColor(glm::vec3(0.0f, 1.0f, 0.0f))
-            .withEmissiveIntensity(5.0f)
-            .withCastsShadow(false)
-            .build(), ObjectRole::DebugAxisRightY);
+        addObject(makeObject(glm::mat4(1.0f), axisLineMesh.get(), whiteMaterialId,
+            1.0f, 0.0f, 5.0f, glm::vec3(0.0f, 1.0f, 0.0f), /*castsShadow*/ false),
+            ObjectRole::DebugAxisRightY);
         // Z axis - Blue
-        addObject(RenderableBuilder()
-            .withTransform(glm::mat4(1.0f))
-            .withMesh(axisLineMesh.get())
-            .withTexture(whiteTex)
-            .withMaterialId(whiteMaterialId)
-            .withRoughness(1.0f)
-            .withMetallic(0.0f)
-            .withEmissiveColor(glm::vec3(0.0f, 0.0f, 1.0f))
-            .withEmissiveIntensity(5.0f)
-            .withCastsShadow(false)
-            .build(), ObjectRole::DebugAxisRightZ);
+        addObject(makeObject(glm::mat4(1.0f), axisLineMesh.get(), whiteMaterialId,
+            1.0f, 0.0f, 5.0f, glm::vec3(0.0f, 0.0f, 1.0f), /*castsShadow*/ false),
+            ObjectRole::DebugAxisRightZ);
         SDL_Log("SceneBuilder: Added debug axis indicators for right hand");
     }
 
     // Debug axis indicators for left hand (R=X, G=Y, B=Z)
     if (hasAnimatedCharacter && leftHandBoneIndex >= 0) {
         // X axis - Red
-        addObject(RenderableBuilder()
-            .withTransform(glm::mat4(1.0f))
-            .withMesh(axisLineMesh.get())
-            .withTexture(whiteTex)
-            .withMaterialId(whiteMaterialId)
-            .withRoughness(1.0f)
-            .withMetallic(0.0f)
-            .withEmissiveColor(glm::vec3(1.0f, 0.0f, 0.0f))
-            .withEmissiveIntensity(5.0f)
-            .withCastsShadow(false)
-            .build(), ObjectRole::DebugAxisLeftX);
+        addObject(makeObject(glm::mat4(1.0f), axisLineMesh.get(), whiteMaterialId,
+            1.0f, 0.0f, 5.0f, glm::vec3(1.0f, 0.0f, 0.0f), /*castsShadow*/ false),
+            ObjectRole::DebugAxisLeftX);
         // Y axis - Green
-        addObject(RenderableBuilder()
-            .withTransform(glm::mat4(1.0f))
-            .withMesh(axisLineMesh.get())
-            .withTexture(whiteTex)
-            .withMaterialId(whiteMaterialId)
-            .withRoughness(1.0f)
-            .withMetallic(0.0f)
-            .withEmissiveColor(glm::vec3(0.0f, 1.0f, 0.0f))
-            .withEmissiveIntensity(5.0f)
-            .withCastsShadow(false)
-            .build(), ObjectRole::DebugAxisLeftY);
+        addObject(makeObject(glm::mat4(1.0f), axisLineMesh.get(), whiteMaterialId,
+            1.0f, 0.0f, 5.0f, glm::vec3(0.0f, 1.0f, 0.0f), /*castsShadow*/ false),
+            ObjectRole::DebugAxisLeftY);
         // Z axis - Blue
-        addObject(RenderableBuilder()
-            .withTransform(glm::mat4(1.0f))
-            .withMesh(axisLineMesh.get())
-            .withTexture(whiteTex)
-            .withMaterialId(whiteMaterialId)
-            .withRoughness(1.0f)
-            .withMetallic(0.0f)
-            .withEmissiveColor(glm::vec3(0.0f, 0.0f, 1.0f))
-            .withEmissiveIntensity(5.0f)
-            .withCastsShadow(false)
-            .build(), ObjectRole::DebugAxisLeftZ);
+        addObject(makeObject(glm::mat4(1.0f), axisLineMesh.get(), whiteMaterialId,
+            1.0f, 0.0f, 5.0f, glm::vec3(0.0f, 0.0f, 1.0f), /*castsShadow*/ false),
+            ObjectRole::DebugAxisLeftZ);
         SDL_Log("SceneBuilder: Added debug axis indicators for left hand");
     }
 
     // Flag pole - 3m pole, center at 1.5m above ground
     auto [flagPoleX, flagPoleZ] = worldPos(5.0f, 0.0f);
-    addObject(RenderableBuilder()
-        .atPosition(glm::vec3(flagPoleX, getGroundY(flagPoleX, flagPoleZ, 1.5f), flagPoleZ))
-        .withMesh(flagPoleMesh.get())
-        .withTexture(metalTex)
-        .withMaterialId(metalMaterialId)
-        .withRoughness(0.4f)
-        .withMetallic(0.9f)
-        .withCastsShadow(true)
-        .build(), ObjectRole::FlagPole);
+    addObject(makeObject(
+        glm::translate(glm::mat4(1.0f), glm::vec3(flagPoleX, getGroundY(flagPoleX, flagPoleZ, 1.5f), flagPoleZ)),
+        flagPoleMesh.get(), metalMaterialId, 0.4f, 0.9f),
+        ObjectRole::FlagPole);
 
     // Flag cloth - will be positioned and updated by ClothSimulation
-    addObject(RenderableBuilder()
-        .withTransform(glm::mat4(1.0f))  // Identity, will be handled differently
-        .withMesh(&flagClothMesh)
-        .withTexture(crateTex)  // Using crate texture for now
-        .withMaterialId(crateMaterialId)
-        .withRoughness(0.6f)
-        .withMetallic(0.0f)
-        .withCastsShadow(true)
-        .build(), ObjectRole::FlagCloth);
+    addObject(makeObject(
+        glm::mat4(1.0f),  // Identity, will be handled differently
+        &flagClothMesh, crateMaterialId, 0.6f, 0.0f),
+        ObjectRole::FlagCloth);
 
     // Player cape - attached to character, updated each frame (using metal texture)
     if (hasCapeEnabled) {
-        addObject(RenderableBuilder()
-            .withTransform(glm::mat4(1.0f))  // Identity, cloth positions are in world space
-            .withMesh(&capeMesh)
-            .withTexture(metalTex)
-            .withMaterialId(capeMaterialId)
-            .withRoughness(0.3f)
-            .withMetallic(0.8f)
-            .withCastsShadow(true)
-            .build(), ObjectRole::Cape);
+        addObject(makeObject(
+            glm::mat4(1.0f),  // Identity, cloth positions are in world space
+            &capeMesh, capeMaterialId, 0.3f, 0.8f),
+            ObjectRole::Cape);
     }
 
     // Well entrance - demonstrates terrain hole mask system
@@ -1039,15 +942,16 @@ void SceneBuilder::createRenderables() {
     glm::mat4 wellTransform = glm::translate(glm::mat4(1.0f),
         glm::vec3(wellEntranceX, wellY + 3.0f, wellEntranceZ));
     wellTransform = glm::scale(wellTransform, glm::vec3(2.0f, 0.5f, 12.0f));
-    addObject(RenderableBuilder()
-        .withTransform(wellTransform)
-        .withMesh(cubeMesh.get())
-        .withTexture(metalTex)  // Stone-like appearance
-        .withMaterialId(metalMaterialId)
-        .withRoughness(0.8f)
-        .withMetallic(0.1f)
-        .withCastsShadow(true)
-        .build(), ObjectRole::WellEntrance);
+    addObject(makeObject(
+        wellTransform,
+        cubeMesh.get(), metalMaterialId, 0.8f, 0.1f),
+        ObjectRole::WellEntrance);
+
+    // Slice 5: finalize merged entity creation - establish player hierarchy
+    // (weapons/cape/debug axes) and tag NPC entities now that all entities exist.
+    if (ecsWorld_) {
+        finalizeSceneEntities();
+    }
 }
 
 void SceneBuilder::uploadFlagClothMesh(VmaAllocator allocator, VkDevice device, VkCommandPool commandPool, VkQueue queue) {
@@ -1085,10 +989,15 @@ void SceneBuilder::setShowWeaponAxes(bool show) {
 }
 
 void SceneBuilder::updatePlayerTransform(const glm::mat4& transform) {
-    Renderable* playerRenderable = getRenderableForEntity(playerEntity_);
-    if (!playerRenderable) return;
-
-    playerRenderable->transform = transform;
+    ecs::RenderData*playerRenderable = getRenderableForEntity(playerEntity_);
+    if (playerRenderable) {
+        playerRenderable->transform = transform;
+    }
+    // ECS Transform is authoritative for the skinned shadow pass (reads ECS) and replaces
+    // the forward sync loop. The renderable mirror stays for the skinned colour draw / GUI.
+    if (ecsWorld_ && ecsWorld_->valid(playerEntity_) && ecsWorld_->has<ecs::Transform>(playerEntity_)) {
+        ecsWorld_->get<ecs::Transform>(playerEntity_).matrix = transform;
+    }
 }
 
 void SceneBuilder::updateAnimatedCharacter(float deltaTime, VmaAllocator allocator, VkDevice device,
@@ -1101,7 +1010,7 @@ void SceneBuilder::updateAnimatedCharacter(float deltaTime, VmaAllocator allocat
 
     // Get the character's current world transform for IK ground queries
     glm::mat4 worldTransform = glm::mat4(1.0f);
-    const Renderable* playerRenderable = getRenderableForEntity(playerEntity_);
+    const ecs::RenderData* playerRenderable = getRenderableForEntity(playerEntity_);
     if (playerRenderable) {
         worldTransform = playerRenderable->transform;
     }
@@ -1150,7 +1059,7 @@ void SceneBuilder::updateAnimatedCharacter(float deltaTime, VmaAllocator allocat
                                   movementSpeed, isGrounded, isJumping, worldTransform);
 
     // Update the mesh pointer in the renderable (in case it was re-created)
-    Renderable* playerRend = getRenderableForEntity(playerEntity_);
+    ecs::RenderData*playerRend = getRenderableForEntity(playerEntity_);
     if (playerRend) {
         playerRend->mesh = &animatedCharacter->getMesh();
     }
@@ -1166,7 +1075,7 @@ void SceneBuilder::updateAnimatedCharacter(float deltaTime, VmaAllocator allocat
         capeMesh.upload(allocator, device, commandPool, queue);
 
         // Update mesh pointer in renderable
-        Renderable* capeRend = getRenderableForEntity(capeEntity_);
+        ecs::RenderData*capeRend = getRenderableForEntity(capeEntity_);
         if (capeRend) {
             capeRend->mesh = &capeMesh;
         }
@@ -1184,25 +1093,9 @@ void SceneBuilder::startCharacterJump(const glm::vec3& startPos, const glm::vec3
 void SceneBuilder::updateNPCs(float deltaTime, const glm::vec3& cameraPos) {
     if (!npcSimulation_) return;
 
-    // Use ECS-based update if available, otherwise fall back to legacy
-    if (npcSimulation_->isECSEnabled()) {
-        npcSimulation_->updateECS(deltaTime, cameraPos);
-    } else {
-        npcSimulation_->update(deltaTime, cameraPos);
-    }
-
-    // Update renderable transforms from NPC entities
-    for (size_t i = 0; i < npcEntities_.size(); ++i) {
-        auto* character = npcSimulation_->getCharacter(i);
-        if (!character) continue;
-
-        Renderable* npcRenderable = getRenderableForEntity(npcEntities_[i]);
-        if (!npcRenderable) continue;
-
-        glm::mat4 worldTransform = npcSimulation_->buildNPCTransform(i);
-        npcRenderable->transform = worldTransform;
-        npcRenderable->mesh = &character->getMesh();
-    }
+    // ECS is the single source of truth for per-NPC state, consumed by NPCRenderer
+    // directly from the NPCSimulation simulation entities.
+    npcSimulation_->updateECS(deltaTime, cameraPos);
 }
 
 size_t SceneBuilder::getNPCCount() const {
@@ -1227,7 +1120,7 @@ void SceneBuilder::updateWeaponTransforms(const glm::mat4& worldTransform) {
     // Position a bone-attached entity's Renderable and sync ECS Transform
     auto updateAttached = [&](ecs::Entity entity, int boneIndex, const glm::mat4& offset, bool visible) {
         if (entity == ecs::NullEntity) return;
-        Renderable* r = getRenderableForEntity(entity);
+        ecs::RenderData*r = getRenderableForEntity(entity);
         if (!r) return;
         if (visible && boneIndex >= 0 && static_cast<size_t>(boneIndex) < globalTransforms.size()) {
             r->transform = worldTransform * globalTransforms[boneIndex] * offset;

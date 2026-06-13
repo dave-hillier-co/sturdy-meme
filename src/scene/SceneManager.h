@@ -48,8 +48,8 @@ public:
     void updatePlayerTransform(const glm::mat4& transform);
 
     // Scene object access for rendering
-    std::vector<Renderable>& getRenderables() { return sceneBuilder->getRenderables(); }
-    const std::vector<Renderable>& getRenderables() const { return sceneBuilder->getRenderables(); }
+    std::vector<ecs::RenderData>& getRenderables() { return sceneBuilder->getRenderables(); }
+    const std::vector<ecs::RenderData>& getRenderables() const { return sceneBuilder->getRenderables(); }
 
     // SceneBuilder access for texture descriptor sets
     bool hasSceneBuilder() const { return sceneBuilder != nullptr; }

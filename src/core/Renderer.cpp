@@ -1,21 +1,17 @@
 #define VMA_IMPLEMENTATION
 #include "Renderer.h"
+#include "RendererBuilder.h"
 #include "Camera.h"
 #include "RendererSystems.h"
-#include "MaterialDescriptorFactory.h"
 #include "passes/ShadowPassRecorder.h"
 #include "passes/HDRPassRecorder.h"
-#include "InitProfiler.h"
-#include "QueueSubmitDiagnostics.h"
-#include "core/pipeline/FrameGraphBuilder.h"
-#include "core/FrameUpdater.h"
+#include "core/FrameUpdate.h"
 #include "core/FrameDataBuilder.h"
-#include "core/updaters/UBOUpdater.h"
-#include "loading/AsyncSystemLoader.h"
 #include "interfaces/IPlayerControl.h"
 #include "UBOs.h"
 #include "FrameData.h"
 #include "RenderContext.h"
+#include "loading/AsyncSystemLoader.h"  // complete type for unique_ptr<AsyncSystemLoader> member dtor
 
 // Subsystem includes for render loop
 // Core systems
@@ -26,15 +22,11 @@
 #include "Profiler.h"
 #include "SceneManager.h"
 #include "ResizeCoordinator.h"
-#include "SceneBuilder.h"
 #include "Mesh.h"
 // Time and environment
 #include "WindSystem.h"
-#include "TimeSystem.h"
-#include "CelestialCalculator.h"
 #include "EnvironmentSettings.h"
 #include "interfaces/IEnvironmentControl.h"
-#include "UBOBuilder.h"
 // Terrain and atmosphere
 #include "TerrainSystem.h"
 #include "SnowMaskSystem.h"
@@ -79,12 +71,8 @@
 // Weather
 #include "WeatherSystem.h"
 #include "LeafSystem.h"
-// HDR drawable registration
-#include "passes/HDRDrawableAdapters.h"
-#include "passes/SceneObjectsDrawable.h"
-#include "passes/SkinnedCharDrawable.h"
-#include "passes/DebugLinesDrawable.h"
-#include "passes/WaterDrawable.h"
+// HDR scene composition (drawable registration)
+#include "passes/SceneComposition.h"
 
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_vulkan.h>
@@ -104,16 +92,20 @@ std::unique_ptr<Renderer> Renderer::create(const InitInfo& info) {
 
     if (info.asyncInit) {
         // Async initialization path - starts background loading
-        if (!instance->initInternalAsync(info)) {
+        if (!RendererBuilder::initInternalAsync(*instance, info)) {
             return nullptr;
         }
     } else {
         // Synchronous initialization path (original behavior)
-        if (!instance->initInternal(info)) {
+        if (!RendererBuilder::initInternal(*instance, info)) {
             return nullptr;
         }
     }
     return instance;
+}
+
+bool Renderer::pollAsyncInit() {
+    return RendererBuilder::pollAsyncInit(*this);
 }
 
 Renderer::Renderer(ConstructToken) {}
@@ -121,168 +113,6 @@ Renderer::Renderer(ConstructToken) {}
 Renderer::~Renderer() {
     cleanup();
 }
-
-bool Renderer::initInternal(const InitInfo& info) {
-    INIT_PROFILE_PHASE("Renderer");
-
-    resourcePath = info.resourcePath;
-    config_ = info.config;
-    progressCallback_ = info.progressCallback;
-
-    // Helper to report progress (no-op if callback not set)
-    auto reportProgress = [this](float progress, const char* phase) {
-        if (progressCallback_) {
-            progressCallback_(progress, phase);
-        }
-    };
-
-    reportProgress(0.0f, "Initializing...");
-
-    // Create subsystems container
-    systems_ = std::make_unique<RendererSystems>();
-
-    // Initialize Vulkan context
-    // If a pre-initialized context was provided (instance or device already created),
-    // take ownership and complete any remaining initialization.
-    // Otherwise, create a new context and fully initialize it.
-    {
-        INIT_PROFILE_PHASE("VulkanContext");
-        if (info.vulkanContext) {
-            vulkanContext_ = std::move(const_cast<std::unique_ptr<VulkanContext>&>(info.vulkanContext));
-            // Only call initDevice if device isn't already initialized
-            // (LoadingRenderer may have already completed device init)
-            if (!vulkanContext_->isDeviceReady()) {
-                if (!vulkanContext_->initDevice(info.window)) {
-                    SDL_Log("Failed to complete Vulkan device initialization");
-                    return false;
-                }
-            }
-        } else {
-            vulkanContext_ = std::make_unique<VulkanContext>();
-            if (!vulkanContext_->init(info.window)) {
-                SDL_Log("Failed to initialize Vulkan context");
-                return false;
-            }
-        }
-    }
-
-    // Phase 1: Core Vulkan resources (render pass, depth, framebuffers, command pool)
-    reportProgress(0.05f, "Creating Vulkan resources");
-    {
-        INIT_PROFILE_PHASE("CoreVulkanResources");
-        if (!initCoreVulkanResources()) return false;
-    }
-
-    // Initialize asset registry (after command pool is ready)
-    reportProgress(0.08f, "Initializing asset registry");
-    {
-        INIT_PROFILE_PHASE("AssetRegistry");
-        assetRegistry_.init(
-            vulkanContext_->getVkDevice(),
-            vulkanContext_->getVkPhysicalDevice(),
-            vulkanContext_->getAllocator(),
-            vulkanContext_->getCommandPool(),
-            vulkanContext_->getVkGraphicsQueue());
-    }
-
-    // Phase 2: Descriptor infrastructure (layouts, pools)
-    reportProgress(0.10f, "Creating descriptor infrastructure");
-    {
-        INIT_PROFILE_PHASE("DescriptorInfrastructure");
-        if (!initDescriptorInfrastructure()) return false;
-    }
-
-    // Build shared InitContext for subsystem initialization
-    // Pass pool sizes hint so subsystems can create consistent pools if needed
-    InitContext initCtx = InitContext::build(
-        *vulkanContext_, vulkanContext_->getCommandPool(), getDescriptorPool(),
-        resourcePath, MAX_FRAMES_IN_FLIGHT, config_.descriptorPoolSizes);
-
-    // Phase 3: All subsystems (terrain, grass, weather, snow, water, etc.)
-    // This is the heaviest phase, so we pass the progress callback for finer updates
-    reportProgress(0.12f, "Initializing subsystems");
-    {
-        INIT_PROFILE_PHASE("Subsystems");
-        if (!initSubsystems(initCtx)) return false;
-    }
-
-    // Phase 4: Control subsystems (after systems are ready)
-    reportProgress(0.95f, "Initializing controls");
-    {
-        INIT_PROFILE_PHASE("ControlSubsystems");
-        initControlSubsystems();
-    }
-
-    // Phase 5: Resize coordinator registration
-    reportProgress(0.96f, "Configuring resize handler");
-    {
-        INIT_PROFILE_PHASE("ResizeCoordinator");
-        initResizeCoordinator();
-    }
-
-    // Phase 5b: Temporal system registration (for ghost frame prevention)
-    {
-        INIT_PROFILE_PHASE("TemporalSystems");
-        initTemporalSystems();
-    }
-
-    // Initialize pass recorders (must be after systems_ is set up)
-    // Note: These use stateless recording - config is passed to record() each frame
-    reportProgress(0.97f, "Creating pass recorders");
-    {
-        INIT_PROFILE_PHASE("PassRecorders");
-        shadowPassRecorder_ = std::make_unique<ShadowPassRecorder>(*systems_);
-        createHDRPassRecorder();
-    }
-    SDL_Log("Pass recorders initialized");
-
-    // Setup frame graph with dependencies
-    reportProgress(0.99f, "Configuring frame graph");
-    {
-        INIT_PROFILE_PHASE("FrameGraph");
-        setupFrameGraph();
-    }
-    SDL_Log("Frame graph configured");
-
-    reportProgress(1.0f, "Ready");
-
-    return true;
-}
-
-void Renderer::setupFrameGraph() {
-    // Build callbacks for frame graph passes
-    FrameGraphBuilder::Callbacks callbacks;
-    callbacks.recordShadowPass = [this](VkCommandBuffer cmd, uint32_t frameIndex, float time, const glm::vec3& cameraPos) {
-        recordShadowPass(cmd, frameIndex, time, cameraPos);
-    };
-    callbacks.recordHDRPass = [this](VkCommandBuffer cmd, uint32_t frameIndex, float time) {
-        recordHDRPass(cmd, frameIndex, time);
-    };
-    callbacks.recordHDRPassWithSecondaries = [this](VkCommandBuffer cmd, uint32_t frameIndex, float time, const std::vector<vk::CommandBuffer>& secondaries) {
-        recordHDRPassWithSecondaries(cmd, frameIndex, time, secondaries);
-    };
-    callbacks.recordHDRPassSecondarySlot = [this](VkCommandBuffer cmd, uint32_t frameIndex, float time, uint32_t slot) {
-        recordHDRPassSecondarySlot(cmd, frameIndex, time, slot);
-    };
-    callbacks.guiRenderCallback = &guiRenderCallback;
-
-    // Build state references for frame graph passes
-    FrameGraphBuilder::State state;
-    state.lastSunIntensity = &lastSunIntensity;
-    state.hdrPassEnabled = &hdrPassEnabled;
-    state.terrainEnabled = &terrainEnabled;
-    state.perfToggles = &perfToggles;
-    state.framebuffers = &vulkanContext_->getFramebuffers();
-
-    // Use FrameGraphBuilder to configure all passes and dependencies
-    if (!FrameGraphBuilder::build(frameGraph_, *systems_, callbacks, state)) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to build frame graph");
-    }
-}
-
-
-// Note: initCoreVulkanResources(), initDescriptorInfrastructure(), initSubsystems(),
-// and initResizeCoordinator() are implemented in RendererInitPhases.cpp
 
 #ifdef JPH_DEBUG_RENDERER
 void Renderer::updatePhysicsDebug(PhysicsWorld& physics, const glm::vec3& cameraPos) {
@@ -326,6 +156,12 @@ void Renderer::cleanup() {
     if (device != VK_NULL_HANDLE) {
         vkDeviceWaitIdle(device);
 
+        // Drop the frame-graph pass lambdas now (after the GPU is idle, before any captured
+        // object is torn down). They capture raw pointers to Renderer members (recorders,
+        // pipelines, VulkanContext, etc.); clearing here removes any dependence on member
+        // destruction order.
+        passScheduler_.clear();
+
         // Shutdown multi-threading infrastructure in reverse init order
         asyncTextureUploader_.shutdown();
         asyncTransferManager_.shutdown();
@@ -359,64 +195,6 @@ void Renderer::cleanup() {
     SDL_Log("vulkanContext shutdown complete");
 }
 
-bool Renderer::createDescriptorSets() {
-    VkDevice device = vulkanContext_->getVkDevice();
-
-    // Create descriptor sets for all materials via MaterialRegistry
-    // This replaces the hardcoded per-material descriptor set allocation
-    auto& materialRegistry = systems_->scene().getSceneBuilder().getMaterialRegistry();
-
-    // Lambda to build common bindings for a given frame (using GlobalBufferManager)
-    auto getCommonBindings = [this](uint32_t frameIndex) -> MaterialDescriptorFactory::CommonBindings {
-        MaterialDescriptorFactory::CommonBindings common{};
-        common.uniformBuffer = systems_->globalBuffers().uniformBuffers.buffers[frameIndex];
-        common.uniformBufferSize = sizeof(UniformBufferObject);
-        common.shadowMapView = systems_->shadow().getShadowImageView();
-        common.shadowMapSampler = systems_->shadow().getShadowSampler();
-        common.lightBuffer = systems_->globalBuffers().lightBuffers.buffers[frameIndex];
-        common.lightBufferSize = sizeof(LightBuffer);
-        common.emissiveMapView = systems_->scene().getSceneBuilder().getDefaultEmissiveMap()->getImageView();
-        common.emissiveMapSampler = systems_->scene().getSceneBuilder().getDefaultEmissiveMap()->getSampler();
-        common.pointShadowView = systems_->shadow().getPointShadowArrayView(frameIndex);
-        common.pointShadowSampler = systems_->shadow().getPointShadowSampler();
-        common.spotShadowView = systems_->shadow().getSpotShadowArrayView(frameIndex);
-        common.spotShadowSampler = systems_->shadow().getSpotShadowSampler();
-        common.snowMaskView = systems_->snowMask().getSnowMaskView();
-        common.snowMaskSampler = systems_->snowMask().getSnowMaskSampler();
-        // Snow and cloud shadow UBOs (bindings 10 and 11)
-        common.snowUboBuffer = systems_->globalBuffers().snowBuffers.buffers[frameIndex];
-        common.snowUboBufferSize = sizeof(SnowUBO);
-        common.cloudShadowUboBuffer = systems_->globalBuffers().cloudShadowBuffers.buffers[frameIndex];
-        common.cloudShadowUboBufferSize = sizeof(CloudShadowUBO);
-        // Cloud shadow texture is added later in init() after cloudShadowSystem is initialized
-        // Placeholder texture for unused PBR bindings (13-16)
-        common.placeholderTextureView = systems_->scene().getSceneBuilder().getWhiteTexture()->getImageView();
-        common.placeholderTextureSampler = systems_->scene().getSceneBuilder().getWhiteTexture()->getSampler();
-        if (systems_->hasScreenSpaceShadow()) {
-            common.screenShadowView = systems_->screenSpaceShadow()->getShadowBufferView();
-            common.screenShadowSampler = systems_->screenSpaceShadow()->getShadowBufferSampler();
-        }
-        return common;
-    };
-
-    materialRegistry.createDescriptorSets(
-        device,
-        *getDescriptorPool(),
-        scenePipeline_.getVkDescriptorSetLayout(),
-        MAX_FRAMES_IN_FLIGHT,
-        getCommonBindings);
-
-    if (!materialRegistry.hasDescriptorSets()) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create MaterialRegistry descriptor sets");
-        return false;
-    }
-
-    // Rock and Detritus descriptor sets are now owned by their respective systems
-    // They are created in initPhase2 when the systems are initialized
-
-    return true;
-}
-
 bool Renderer::render(const Camera& camera) {
     if (windowSuspended) return false;
 
@@ -439,44 +217,26 @@ bool Renderer::render(const Camera& camera) {
 }
 
 VkCommandBuffer Renderer::buildFrame(const Camera& camera, uint32_t imageIndex, uint32_t frameIndex) {
-    asyncTransferManager_.processPendingTransfers();
-
-    // Per-frame data updates
-    TimingData timing = systems_->time().update();
-
-    UBOUpdater::Config uboConfig;
-    uboConfig.showCascadeDebug = showCascadeDebug;
-    uboConfig.useVolumetricSnow = useVolumetricSnow;
-    uboConfig.showSnowDepthDebug = showSnowDepthDebug;
-    uboConfig.shadowsEnabled = perfToggles.shadowPass;
-    uboConfig.hdrEnabled = hdrEnabled;
-    uboConfig.maxSnowHeight = MAX_SNOW_HEIGHT;
-    uboConfig.lightCullRadius = lightCullRadius;
-    uboConfig.ecsWorld = ecsWorld_;
-    uboConfig.deltaTime = timing.deltaTime;
-    auto uboResult = UBOUpdater::update(*systems_, frameIndex, camera, uboConfig);
-    lastSunIntensity = uboResult.sunIntensity;
-
-    SceneBuilder& sceneBuilder = systems_->scene().getSceneBuilder();
-    AnimatedCharacter* character = sceneBuilder.hasCharacter() ? &sceneBuilder.getAnimatedCharacter() : nullptr;
-    constexpr uint32_t PLAYER_BONE_SLOT = 0;
-    systems_->skinnedMesh().updateBoneMatrices(frameIndex, PLAYER_BONE_SLOT, character);
-
-    // Build per-frame shared state
-    FrameData frame = FrameDataBuilder::buildFrameData(
-        camera, *systems_, frameIndex, timing.deltaTime, timing.elapsedTime);
+    // Simulation-update phase: transfers, time, UBOs, bone matrices, FrameData,
+    // per-system updates, and GPU scene buffer population.
+    FrameUpdate::Config cfg;
+    cfg.useVolumetricSnow = useVolumetricSnow;
+    cfg.shadowsEnabled = perfToggles.shadowPass;
+    cfg.maxSnowHeight = MAX_SNOW_HEIGHT;
+    cfg.lightCullRadius = lightCullRadius;
+    cfg.ecsWorld = ecsWorld_;
+    FrameUpdate::Result upd = FrameUpdate::run(*systems_, asyncTransferManager_, camera, frameIndex,
+                                               vulkanContext_->getVkSwapchainExtent(), cfg);
+    lastSunIntensity = upd.sunIntensity;
+    FrameData& frame = upd.frame;
     lastViewProj = frame.viewProj;
 
-    // Subsystem updates
-    FrameUpdater::updateDebugLines(*systems_, frameIndex);
-
-    VkExtent2D extent = vulkanContext_->getVkSwapchainExtent();
-    FrameUpdater::SnowConfig snowConfig;
-    snowConfig.maxSnowHeight = MAX_SNOW_HEIGHT;
-    snowConfig.useVolumetricSnow = useVolumetricSnow;
-    FrameUpdater::updateAllSystems(*systems_, frame, extent, snowConfig);
-
-    FrameUpdater::populateGPUSceneBuffer(*systems_, frame);
+    // Reset this frame's threaded command pools before any parallel recording.
+    // The frame fence has already been waited on (FrameExecutor::execute), so the
+    // GPU is done with this slot's secondary buffers and it's safe to reset the
+    // pools — this returns the per-frame allocation counters to zero so the
+    // pre-allocated buffers are reused instead of leaking new ones each frame.
+    threadedCommandPool_.resetFrame(frame.frameIndex);
 
     // Command buffer recording
     VkCommandBuffer cmd = vulkanContext_->getCommandBuffer(frame.frameIndex);
@@ -493,15 +253,15 @@ VkCommandBuffer Renderer::buildFrame(const Camera& camera, uint32_t imageIndex, 
         scenePipeline_.getDescriptorSetLayout());
     RenderContext renderCtx(cmd, frame.frameIndex, frame, resources, nullptr);
 
-    FrameGraph::RenderContext fgCtx(vkCmd, frame.frameIndex, frame);
-    fgCtx.imageIndex = imageIndex;
-    fgCtx.deltaTime = frame.deltaTime;
-    fgCtx.withUserData(&renderCtx)
+    PassScheduler::RenderContext psCtx(vkCmd, frame.frameIndex, frame);
+    psCtx.imageIndex = imageIndex;
+    psCtx.deltaTime = frame.deltaTime;
+    psCtx.withUserData(&renderCtx)
         .withThreading(&threadedCommandPool_,
                        vk::RenderPass(systems_->postProcess().getHDRRenderPass()),
                        vk::Framebuffer(systems_->postProcess().getHDRFramebuffer()));
 
-    frameGraph_.execute(fgCtx, &TaskScheduler::instance());
+    passScheduler_.execute(psCtx, &TaskScheduler::instance());
 
     systems_->profiler().endGpuFrame(cmd, frame.frameIndex);
     vkCmd.end();
@@ -564,500 +324,16 @@ void Renderer::notifyWindowFocusGained() {
 
 // Render pass recording helpers - pure command recording, no state mutation
 
-// Runtime toggle for the GPU-driven indirect shadow path. Defaults ON; set the environment
-// variable INDIRECT_SHADOW_DRAW=0 to force the instanced shadow path (A/B comparison and a
-// fallback). Per-cascade GPU frustum culling + vkCmdDrawIndexedIndirect for scene-object
-// shadows. Evaluated once.
-static bool indirectShadowDrawEnabled() {
-    static const bool enabled = []{
-        const char* v = std::getenv("INDIRECT_SHADOW_DRAW");
-        const bool on = (v == nullptr) || (std::string(v) != "0");
-        SDL_Log("Indirect shadow draw path: %s", on ? "ENABLED" : "disabled (instanced path)");
-        return on;
-    }();
-    return enabled;
-}
-
-void Renderer::recordShadowPass(VkCommandBuffer cmd, uint32_t frameIndex, float grassTime, const glm::vec3& cameraPosition) {
-    // Build params for stateless recording
-    ShadowPassRecorder::Params params;
-    params.terrainEnabled = terrainEnabled;
-    params.terrainShadows = perfToggles.terrainShadows;
-    params.grassShadows = perfToggles.grassShadows;
-    params.indirectShadowDraw = indirectShadowDrawEnabled();
-    // vkCmdDrawIndexedIndirect needs both features; else the indirect path falls back to a
-    // direct instanced draw (no per-object GPU culling).
-    params.canMultiDrawIndirect = vulkanContext_->hasMultiDrawIndirect()
-                               && vulkanContext_->hasDrawIndirectFirstInstance();
-
-    // Delegate to the recorder
-    shadowPassRecorder_->record(cmd, frameIndex, grassTime, cameraPosition, params);
-}
-
 void Renderer::createHDRPassRecorder() {
-    hdrPassRecorder_ = std::make_unique<HDRPassRecorder>(
-        systems_->profiler(), systems_->postProcess());
-
-    // Draw order constants - controls rendering sequence within the HDR pass.
-    // Slot assignment groups drawables for parallel secondary command buffer recording.
-    // Slot 0: geometry base, Slot 1: scene meshes, Slot 2: effects/vegetation/debug
-
-    // Slot 0: Sky + Terrain + Catmull-Clark (geometry base)
-    hdrPassRecorder_->registerDrawable(
-        std::make_unique<RecordableDrawable>(systems_->sky()),
-        0, 0, "HDR:Sky");
-
-    hdrPassRecorder_->registerDrawable(
-        std::make_unique<TerrainDrawable>(systems_->terrain()),
-        100, 0, "HDR:Terrain");
-
-    hdrPassRecorder_->registerDrawable(
-        std::make_unique<RecordableDrawable>(systems_->catmullClark()),
-        200, 0, "HDR:CatmullClark");
-
-    // Slot 1: Scene Objects + Skinned Characters (scene meshes)
-    {
-        SceneObjectsDrawable::Resources sceneRes;
-        sceneRes.scene = &systems_->scene();
-        sceneRes.globalBuffers = &systems_->globalBuffers();
-        sceneRes.shadow = &systems_->shadow();
-        sceneRes.wind = &systems_->wind();
-        sceneRes.ecsWorld = systems_->ecsWorld();
-        sceneRes.rocks = &systems_->rocks();
-        sceneRes.detritus = systems_->detritus();
-        sceneRes.tree = systems_->tree();
-        sceneRes.treeRenderer = systems_->treeRenderer();
-        sceneRes.treeLOD = systems_->treeLOD();
-        sceneRes.impostorCull = systems_->impostorCull();
-
-        hdrPassRecorder_->registerDrawable(
-            std::make_unique<SceneObjectsDrawable>(sceneRes),
-            300, 1, "HDR:SceneObjects");
-    }
-
-    {
-        SkinnedCharDrawable::Resources charRes;
-        charRes.scene = &systems_->scene();
-        charRes.skinnedMesh = &systems_->skinnedMesh();
-        charRes.npcRenderer = systems_->npcRenderer();
-        charRes.ragdollDrawCallback = [this](VkCommandBuffer cmd, uint32_t frameIndex) {
+    // Scene composition (which drawables, in what order/slot) lives in SceneComposition.
+    hdrPassRecorder_ = SceneComposition::buildHDRPassRecorder(
+        *systems_,
+        [this](VkCommandBuffer cmd, uint32_t frameIndex) {
             if (ragdollDrawCallback_) {
                 ragdollDrawCallback_(cmd, frameIndex);
             }
-        };
-
-        hdrPassRecorder_->registerDrawable(
-            std::make_unique<SkinnedCharDrawable>(charRes),
-            400, 1, "HDR:SkinnedChar");
-    }
-
-    // Slot 2: Grass + Water + Leaves + Weather + Debug (effects/vegetation)
-    hdrPassRecorder_->registerDrawable(
-        std::make_unique<AnimatedRecordableDrawable>(systems_->grass()),
-        500, 2, "HDR:Grass");
-
-    hdrPassRecorder_->registerDrawable(
-        std::make_unique<WaterDrawable>(
-            systems_->water(),
-            systems_->hasWaterTileCull() ? &systems_->waterTileCull() : nullptr),
-        600, 2, "HDR:Water");
-
-    hdrPassRecorder_->registerDrawable(
-        std::make_unique<AnimatedRecordableDrawable>(systems_->leaf()),
-        700, 2, "HDR:Leaves");
-
-    hdrPassRecorder_->registerDrawable(
-        std::make_unique<AnimatedRecordableDrawable>(systems_->weather()),
-        800, 2, "HDR:Weather");
-
-    hdrPassRecorder_->registerDrawable(
-        std::make_unique<DebugLinesDrawable>(systems_->debugLine(), systems_->postProcess()),
-        900, 2, "HDR:DebugLines");
-}
-
-// Runtime toggle for the GPU-driven indirect scene draw path. Defaults ON; set the
-// environment variable INDIRECT_SCENE_DRAW=0 to force the CPU draw path (A/B comparison
-// and a fallback). Evaluated once.
-static bool indirectSceneDrawEnabled() {
-    static const bool enabled = []{
-        const char* v = std::getenv("INDIRECT_SCENE_DRAW");
-        const bool on = (v == nullptr) || (std::string(v) != "0");
-        SDL_Log("Indirect scene draw path: %s", on ? "ENABLED" : "disabled (CPU path)");
-        return on;
-    }();
-    return enabled;
-}
-
-void Renderer::recordHDRPass(VkCommandBuffer cmd, uint32_t frameIndex, float grassTime) {
-    // Build params for stateless recording
-    HDRPassRecorder::Params params;
-    params.terrainEnabled = terrainEnabled;
-    params.sceneObjectsPipeline = scenePipeline_.getGraphicsPipelinePtr();
-    params.pipelineLayout = scenePipeline_.getPipelineLayoutPtr();
-    params.viewProj = lastViewProj;
-
-    // GPU-driven rendering params. The GPUCullPass produces per-object indirect commands and
-    // SceneObjectsDrawable issues vkCmdDrawIndexedIndirect when the indirect path is active
-    // (indirectSceneDrawEnabled, default on; INDIRECT_SCENE_DRAW=0 forces the CPU path).
-    if (systems_->hasGPUSceneBuffer() && systems_->hasGPUCullPass()) {
-        params.gpuSceneBuffer = &systems_->gpuSceneBuffer();
-        params.instancedPipelineLayout = instancedScenePipeline_.getPipelineLayoutPtr();
-        params.instancedPipeline = instancedScenePipeline_.getGraphicsPipelinePtr();
-        params.instanceDescriptorSet = instancedScenePipeline_.getInstanceDescriptorSet(frameIndex);
-        params.useIndirectDraw = indirectSceneDrawEnabled()
-                              && instancedScenePipeline_.hasPipeline()
-                              && params.instanceDescriptorSet != VK_NULL_HANDLE;
-        // vkCmdDrawIndexedIndirect needs both features; else fall back to direct instanced draw.
-        params.canMultiDrawIndirect = vulkanContext_->hasMultiDrawIndirect()
-                                   && vulkanContext_->hasDrawIndirectFirstInstance();
-    }
-
-    // Delegate to the recorder
-    hdrPassRecorder_->record(cmd, frameIndex, grassTime, params);
-}
-
-void Renderer::recordHDRPassWithSecondaries(VkCommandBuffer cmd, uint32_t frameIndex, float grassTime,
-                                            const std::vector<vk::CommandBuffer>& secondaries) {
-    // Build params for stateless recording
-    HDRPassRecorder::Params params;
-    params.terrainEnabled = terrainEnabled;
-    params.sceneObjectsPipeline = scenePipeline_.getGraphicsPipelinePtr();
-    params.pipelineLayout = scenePipeline_.getPipelineLayoutPtr();
-    params.viewProj = lastViewProj;
-
-    // GPU-driven rendering params (see recordHDRPass; indirect draw is the default path).
-    if (systems_->hasGPUSceneBuffer() && systems_->hasGPUCullPass()) {
-        params.gpuSceneBuffer = &systems_->gpuSceneBuffer();
-        params.instancedPipelineLayout = instancedScenePipeline_.getPipelineLayoutPtr();
-        params.instancedPipeline = instancedScenePipeline_.getGraphicsPipelinePtr();
-        params.instanceDescriptorSet = instancedScenePipeline_.getInstanceDescriptorSet(frameIndex);
-        params.useIndirectDraw = indirectSceneDrawEnabled()
-                              && instancedScenePipeline_.hasPipeline()
-                              && params.instanceDescriptorSet != VK_NULL_HANDLE;
-        // vkCmdDrawIndexedIndirect needs both features; else fall back to direct instanced draw.
-        params.canMultiDrawIndirect = vulkanContext_->hasMultiDrawIndirect()
-                                   && vulkanContext_->hasDrawIndirectFirstInstance();
-    }
-
-    // Delegate to the recorder
-    hdrPassRecorder_->recordWithSecondaries(cmd, frameIndex, grassTime, secondaries, params);
-}
-
-void Renderer::recordHDRPassSecondarySlot(VkCommandBuffer cmd, uint32_t frameIndex, float grassTime, uint32_t slot) {
-    // Build params for stateless recording
-    HDRPassRecorder::Params params;
-    params.terrainEnabled = terrainEnabled;
-    params.sceneObjectsPipeline = scenePipeline_.getGraphicsPipelinePtr();
-    params.pipelineLayout = scenePipeline_.getPipelineLayoutPtr();
-    params.viewProj = lastViewProj;
-
-    // GPU-driven rendering params (see recordHDRPass; indirect draw is the default path).
-    if (systems_->hasGPUSceneBuffer() && systems_->hasGPUCullPass()) {
-        params.gpuSceneBuffer = &systems_->gpuSceneBuffer();
-        params.instancedPipelineLayout = instancedScenePipeline_.getPipelineLayoutPtr();
-        params.instancedPipeline = instancedScenePipeline_.getGraphicsPipelinePtr();
-        params.instanceDescriptorSet = instancedScenePipeline_.getInstanceDescriptorSet(frameIndex);
-        params.useIndirectDraw = indirectSceneDrawEnabled()
-                              && instancedScenePipeline_.hasPipeline()
-                              && params.instanceDescriptorSet != VK_NULL_HANDLE;
-        // vkCmdDrawIndexedIndirect needs both features; else fall back to direct instanced draw.
-        params.canMultiDrawIndirect = vulkanContext_->hasMultiDrawIndirect()
-                                   && vulkanContext_->hasDrawIndirectFirstInstance();
-    }
-
-    // Delegate to the recorder
-    hdrPassRecorder_->recordSecondarySlot(cmd, frameIndex, grassTime, slot, params);
-}
-
-// ===== GPU Skinning Implementation =====
-
-bool Renderer::initSkinnedMeshRenderer() {
-    SkinnedMeshRenderer::InitInfo info{};
-    info.device = vulkanContext_->getVkDevice();
-    info.physicalDevice = vulkanContext_->getVkPhysicalDevice();  // For dynamic UBO alignment
-    info.raiiDevice = &vulkanContext_->getRaiiDevice();
-    info.allocator = vulkanContext_->getAllocator();
-    info.descriptorPool = getDescriptorPool();
-    info.renderPass = systems_->postProcess().getHDRRenderPass();
-    info.extent = vulkanContext_->getVkSwapchainExtent();
-    info.shaderPath = resourcePath + "/shaders";
-    info.framesInFlight = MAX_FRAMES_IN_FLIGHT;
-    info.addCommonBindings = [](DescriptorManager::LayoutBuilder& builder) {
-        ScenePipeline::addCommonDescriptorBindings(builder);
-    };
-
-    auto skinnedMeshRenderer = SkinnedMeshRenderer::create(info);
-    if (!skinnedMeshRenderer) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create SkinnedMeshRenderer");
-        return false;
-    }
-    systems_->setSkinnedMesh(std::move(skinnedMeshRenderer));
-
-    // Create NPCRenderer (uses SkinnedMeshRenderer for draw calls)
-    NPCRenderer::InitInfo npcInfo{};
-    npcInfo.skinnedMeshRenderer = &systems_->skinnedMesh();
-    auto npcRenderer = NPCRenderer::create(npcInfo);
-    if (npcRenderer) {
-        systems_->setNPCRenderer(std::move(npcRenderer));
-        SDL_Log("NPCRenderer created successfully");
-    }
-
-    return true;
-}
-
-bool Renderer::createSkinnedMeshRendererDescriptorSets() {
-    const auto* whiteTexture = systems_->scene().getSceneBuilder().getWhiteTexture();
-    const auto* emissiveMap = systems_->scene().getSceneBuilder().getDefaultEmissiveMap();
-    const auto& sceneBuilder = systems_->scene().getSceneBuilder();
-    const auto& materialRegistry = sceneBuilder.getMaterialRegistry();
-
-    // Build point and spot shadow views for all frames
-    std::vector<VkImageView> pointShadowViews(MAX_FRAMES_IN_FLIGHT);
-    std::vector<VkImageView> spotShadowViews(MAX_FRAMES_IN_FLIGHT);
-    for (uint32_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
-        pointShadowViews[i] = systems_->shadow().getPointShadowArrayView(i);
-        spotShadowViews[i] = systems_->shadow().getSpotShadowArrayView(i);
-    }
-
-    // Get the player's actual material from MaterialRegistry based on their materialId
-    // This fixes the race condition where player could have different material based on FBX load success
-    VkImageView playerDiffuseView = whiteTexture->getImageView();
-    VkSampler playerDiffuseSampler = whiteTexture->getSampler();
-    VkImageView playerNormalView = whiteTexture->getImageView();
-    VkSampler playerNormalSampler = whiteTexture->getSampler();
-
-    const Renderable* playerRenderable = sceneBuilder.getRenderableForEntity(sceneBuilder.getPlayerEntity());
-    if (playerRenderable) {
-        MaterialId playerMaterialId = playerRenderable->materialId;
-        const auto* playerMaterial = materialRegistry.getMaterial(playerMaterialId);
-        if (playerMaterial) {
-            if (playerMaterial->diffuse) {
-                playerDiffuseView = playerMaterial->diffuse->getImageView();
-                playerDiffuseSampler = playerMaterial->diffuse->getSampler();
-            }
-            if (playerMaterial->normal) {
-                playerNormalView = playerMaterial->normal->getImageView();
-                playerNormalSampler = playerMaterial->normal->getSampler();
-            }
-            SDL_Log("SkinnedMeshRenderer: Using player material '%s'", playerMaterial->name.c_str());
-        }
-    }
-
-    SkinnedMeshRenderer::DescriptorResources resources{};
-    resources.globalBufferManager = &systems_->globalBuffers();
-    resources.shadowMapView = systems_->shadow().getShadowImageView();
-    resources.shadowMapSampler = systems_->shadow().getShadowSampler();
-    resources.emissiveMapView = emissiveMap->getImageView();
-    resources.emissiveMapSampler = emissiveMap->getSampler();
-    resources.pointShadowViews = &pointShadowViews;
-    resources.pointShadowSampler = systems_->shadow().getPointShadowSampler();
-    resources.spotShadowViews = &spotShadowViews;
-    resources.spotShadowSampler = systems_->shadow().getSpotShadowSampler();
-    resources.snowMaskView = systems_->snowMask().getSnowMaskView();
-    resources.snowMaskSampler = systems_->snowMask().getSnowMaskSampler();
-    resources.whiteTextureView = whiteTexture->getImageView();
-    resources.whiteTextureSampler = whiteTexture->getSampler();
-    resources.playerDiffuseView = playerDiffuseView;
-    resources.playerDiffuseSampler = playerDiffuseSampler;
-    resources.playerNormalView = playerNormalView;
-    resources.playerNormalSampler = playerNormalSampler;
-
-    return systems_->skinnedMesh().createDescriptorSets(resources);
+        });
 }
 
 // Resource access
 DescriptorManager::Pool* Renderer::getDescriptorPool() { return descriptorPool_.has_value() ? &*descriptorPool_ : nullptr; }
-
-// ===== Async Initialization Implementation =====
-
-bool Renderer::initInternalAsync(const InitInfo& info) {
-    INIT_PROFILE_PHASE("Renderer");
-
-    resourcePath = info.resourcePath;
-    config_ = info.config;
-    progressCallback_ = info.progressCallback;
-
-    // Helper to report progress
-    auto reportProgress = [this](float progress, const char* phase) {
-        if (progressCallback_) {
-            progressCallback_(progress, phase);
-        }
-    };
-
-    reportProgress(0.0f, "Initializing...");
-
-    // Create subsystems container
-    systems_ = std::make_unique<RendererSystems>();
-
-    // Initialize Vulkan context (must be synchronous - needed for everything else)
-    {
-        INIT_PROFILE_PHASE("VulkanContext");
-        if (info.vulkanContext) {
-            vulkanContext_ = std::move(const_cast<std::unique_ptr<VulkanContext>&>(info.vulkanContext));
-            if (!vulkanContext_->isDeviceReady()) {
-                if (!vulkanContext_->initDevice(info.window)) {
-                    SDL_Log("Failed to complete Vulkan device initialization");
-                    return false;
-                }
-            }
-        } else {
-            vulkanContext_ = std::make_unique<VulkanContext>();
-            if (!vulkanContext_->init(info.window)) {
-                SDL_Log("Failed to initialize Vulkan context");
-                return false;
-            }
-        }
-    }
-
-    // Phase 1: Core Vulkan resources (synchronous - quick)
-    reportProgress(0.05f, "Creating Vulkan resources");
-    {
-        INIT_PROFILE_PHASE("CoreVulkanResources");
-        if (!initCoreVulkanResources()) return false;
-    }
-
-    // Initialize asset registry (synchronous - quick)
-    reportProgress(0.08f, "Initializing asset registry");
-    {
-        INIT_PROFILE_PHASE("AssetRegistry");
-        assetRegistry_.init(
-            vulkanContext_->getVkDevice(),
-            vulkanContext_->getVkPhysicalDevice(),
-            vulkanContext_->getAllocator(),
-            vulkanContext_->getCommandPool(),
-            vulkanContext_->getVkGraphicsQueue());
-    }
-
-    // Phase 2: Descriptor infrastructure (synchronous - quick)
-    reportProgress(0.10f, "Creating descriptor infrastructure");
-    {
-        INIT_PROFILE_PHASE("DescriptorInfrastructure");
-        if (!initDescriptorInfrastructure()) return false;
-    }
-
-    // Build InitContext for subsystem initialization and store for async access
-    asyncInitContext_ = InitContext::build(
-        *vulkanContext_, vulkanContext_->getCommandPool(), getDescriptorPool(),
-        resourcePath, MAX_FRAMES_IN_FLIGHT, config_.descriptorPoolSizes);
-
-    // Phase 3: Start async subsystem initialization
-    reportProgress(0.12f, "Starting async subsystem loading");
-    asyncInitComplete_ = false;
-    asyncInitStarted_ = true;
-
-    // Create async loader and set up tasks
-    Loading::AsyncSystemLoader::InitInfo loaderInfo;
-    loaderInfo.vulkanContext = vulkanContext_.get();
-    loaderInfo.loadingRenderer = nullptr;  // We handle rendering separately
-    loaderInfo.workerCount = 0;  // Auto-detect
-
-    asyncLoader_ = Loading::AsyncSystemLoader::create(loaderInfo);
-    if (!asyncLoader_) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create AsyncSystemLoader");
-        // Fall back to synchronous initialization
-        if (!initSubsystems(asyncInitContext_)) return false;
-        asyncInitComplete_ = true;
-    } else {
-        // Start async subsystem initialization
-        if (!initSubsystemsAsync()) {
-            return false;
-        }
-        asyncLoader_->start();
-    }
-
-    return true;
-}
-
-bool Renderer::pollAsyncInit() {
-    if (asyncInitComplete_) {
-        return !asyncInitFailed_;  // Return false if init failed
-    }
-
-    if (!asyncLoader_) {
-        asyncInitComplete_ = true;
-        return true;
-    }
-
-    // Poll for completed tasks
-    asyncLoader_->pollCompletions();
-
-    // Update progress callback
-    if (progressCallback_) {
-        auto progress = asyncLoader_->getProgress();
-        // Map 0.0-1.0 to 0.12-0.95 (subsystem init range)
-        float mappedProgress = 0.12f + progress.progress * 0.83f;
-        progressCallback_(mappedProgress, progress.currentPhase.c_str());
-    }
-
-    // Check if all tasks are complete
-    if (asyncLoader_->isComplete()) {
-        if (asyncLoader_->hasError()) {
-            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
-                        "Async init failed: %s", asyncLoader_->getErrorMessage().c_str());
-            asyncInitComplete_ = true;
-            asyncInitFailed_ = true;
-            return false;  // Indicate failure consistently
-        }
-
-        // Finalize initialization (quick synchronous steps)
-        SDL_Log("Async subsystem loading complete, finalizing...");
-
-        // Phase 4: Control subsystems
-        if (progressCallback_) progressCallback_(0.95f, "Initializing controls");
-        {
-            INIT_PROFILE_PHASE("ControlSubsystems");
-            initControlSubsystems();
-        }
-
-        // Phase 5: Resize coordinator
-        if (progressCallback_) progressCallback_(0.96f, "Configuring resize handler");
-        {
-            INIT_PROFILE_PHASE("ResizeCoordinator");
-            initResizeCoordinator();
-        }
-
-        // Phase 5b: Temporal systems
-        {
-            INIT_PROFILE_PHASE("TemporalSystems");
-            initTemporalSystems();
-        }
-
-        // Initialize pass recorders
-        if (progressCallback_) progressCallback_(0.97f, "Creating pass recorders");
-        {
-            INIT_PROFILE_PHASE("PassRecorders");
-            shadowPassRecorder_ = std::make_unique<ShadowPassRecorder>(*systems_);
-            createHDRPassRecorder();
-        }
-        SDL_Log("Pass recorders initialized");
-
-        // Setup frame graph
-        if (progressCallback_) progressCallback_(0.99f, "Configuring frame graph");
-        {
-            INIT_PROFILE_PHASE("FrameGraph");
-            setupFrameGraph();
-        }
-        SDL_Log("Frame graph configured");
-
-        if (progressCallback_) progressCallback_(1.0f, "Ready");
-
-        // Clean up async loader
-        asyncLoader_->shutdown();
-        asyncLoader_.reset();
-
-        asyncInitComplete_ = true;
-        SDL_Log("Async initialization complete");
-    }
-
-    return asyncInitComplete_;
-}
-
-bool Renderer::initSubsystemsAsync() {
-    // Build the shared task definitions and feed them to the async loader.
-    // The tasks declare dependencies so AsyncSystemLoader can exploit parallelism.
-    auto tasks = buildInitTasks(asyncInitContext_);
-    for (auto& task : tasks) {
-        asyncLoader_->addTask(std::move(task));
-    }
-    return true;
-}

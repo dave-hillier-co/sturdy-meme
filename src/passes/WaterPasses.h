@@ -1,6 +1,6 @@
 #pragma once
 
-#include "FrameGraph.h"
+#include "PassScheduler.h"
 
 class RendererSystems;
 struct PerformanceToggles;
@@ -13,16 +13,15 @@ struct PerformanceToggles;
 namespace WaterPasses {
 
 struct Config {
-    bool* hdrPassEnabled = nullptr;
     PerformanceToggles* perfToggles = nullptr;
 };
 
 struct PassIds {
-    FrameGraph::PassId waterGBuffer = FrameGraph::INVALID_PASS;
-    FrameGraph::PassId ssr = FrameGraph::INVALID_PASS;
-    FrameGraph::PassId waterTileCull = FrameGraph::INVALID_PASS;
+    PassScheduler::PassId waterGBuffer = PassScheduler::INVALID_PASS;
+    PassScheduler::PassId ssr = PassScheduler::INVALID_PASS;
+    PassScheduler::PassId waterTileCull = PassScheduler::INVALID_PASS;
 };
 
-PassIds addPasses(FrameGraph& graph, RendererSystems& systems, const Config& config);
+PassIds addPasses(PassScheduler& graph, RendererSystems& systems, const Config& config);
 
 } // namespace WaterPasses

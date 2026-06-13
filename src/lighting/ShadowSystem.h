@@ -1,6 +1,5 @@
 #pragma once
 
-#include <vulkan/vulkan.h>
 #include <vulkan/vulkan.hpp>
 #include <vulkan/vulkan_raii.hpp>
 #include <vk_mem_alloc.h>
@@ -15,7 +14,8 @@
 #include "Camera.h"
 #include "InitContext.h"
 #include "Light.h"
-#include "RenderableBuilder.h"
+#include "ecs/Components.h"
+#include "ecs/Components.h"
 #include "SkinnedMesh.h"
 #include "VulkanHelpers.h"
 
@@ -94,13 +94,21 @@ public:
 
     void recordShadowPass(VkCommandBuffer cmd, uint32_t frameIndex,
                           VkDescriptorSet descriptorSet,
-                          const std::vector<Renderable>& sceneObjects,
+                          const std::vector<ecs::RenderData>& sceneObjects,
                           const DrawCallback& terrainDrawCallback,
                           const DrawCallback& grassDrawCallback,
                           const DrawCallback& treeDrawCallback = nullptr,
                           const DrawCallback& skinnedDrawCallback = nullptr,
                           const ComputeCallback& preCascadeComputeCallback = nullptr,
                           const IndirectShadowParams& indirect = {});
+
+    /**
+     * Record empty depth-clear render passes for each cascade if the shadow map
+     * has never been rendered. The cascade shadow map is statically sampled by the
+     * main scene shaders, so it must hold valid contents (depth = 1.0, no shadow)
+     * even on frames where the shadow pass is skipped (e.g. sun below horizon).
+     */
+    void recordInitialClearIfNeeded(VkCommandBuffer cmd);
 
     /**
      * Initialize GPU-driven indirect shadow resources (pipeline + per-frame instance
@@ -163,7 +171,7 @@ public:
     // Dynamic shadow rendering (placeholder for future implementation)
     void renderDynamicShadows(VkCommandBuffer cmd, uint32_t frameIndex,
                               VkDescriptorSet descriptorSet,
-                              const std::vector<Renderable>& sceneObjects,
+                              const std::vector<ecs::RenderData>& sceneObjects,
                               const DrawCallback& terrainDrawCallback,
                               const DrawCallback& grassDrawCallback,
                               const DrawCallback& skinnedDrawCallback,
@@ -198,7 +206,7 @@ private:
         VkPipelineLayout layout,
         uint32_t cascadeOrFaceIndex,
         const glm::mat4& lightMatrix,
-        const std::vector<Renderable>& sceneObjects,
+        const std::vector<ecs::RenderData>& sceneObjects,
         const DrawCallback& terrainCallback,
         const DrawCallback& grassCallback,
         const DrawCallback& treeCallback,
@@ -274,7 +282,7 @@ private:
         VkCommandBuffer cmd,
         uint32_t frameIndex,
         uint32_t cascadeIndex,
-        const std::vector<Renderable>& sceneObjects);
+        const std::vector<ecs::RenderData>& sceneObjects);
 
     // GPU-driven indirect shadow rendering (reuses GPUSceneBuffer instance buffer + the
     // per-cascade ShadowCullPass output). set 0 = main UBO (cascade matrices), set 1 =
@@ -287,6 +295,7 @@ private:
     VkDescriptorPool indirectShadowPool = VK_NULL_HANDLE;
     std::vector<vk::DescriptorSet> indirectInstanceDescriptorSets;  // per frame -> instance SSBO
     bool indirectShadowReady_ = false;
+    bool csmInitialized_ = false;
 
     // Draw scene objects for one cascade via per-cascade indirect commands.
     void recordShadowSceneIndirect(VkCommandBuffer cmd, uint32_t frameIndex, uint32_t cascade,

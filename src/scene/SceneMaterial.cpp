@@ -62,14 +62,13 @@ void SceneMaterial::rebuildSceneObjects(
             transform = transformModifier(instance, transform);
         }
 
-        sceneObjects_.push_back(RenderableBuilder()
-            .withTransform(transform)
-            .withMesh(&meshes_[instance.meshVariation])
-            .withTexture(diffuseTexture_.get())
-            .withRoughness(materialProps_.roughness)
-            .withMetallic(materialProps_.metallic)
-            .withCastsShadow(materialProps_.castsShadow)
-            .build());
+        ecs::RenderData obj{};
+        obj.transform = transform;
+        obj.mesh = &meshes_[instance.meshVariation];
+        obj.roughness = materialProps_.roughness;
+        obj.metallic = materialProps_.metallic;
+        obj.castsShadow = materialProps_.castsShadow;
+        sceneObjects_.push_back(obj);
     }
 }
 

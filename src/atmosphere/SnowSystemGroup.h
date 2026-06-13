@@ -5,7 +5,7 @@
 
 #include <memory>
 #include <optional>
-#include <vulkan/vulkan.h>
+#include <vulkan/vulkan.hpp>
 
 // Forward declarations
 class SnowMaskSystem;

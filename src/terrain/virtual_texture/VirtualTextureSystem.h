@@ -5,11 +5,12 @@
 #include "VirtualTexturePageTable.h"
 #include "VirtualTextureFeedback.h"
 #include "VirtualTextureTileLoader.h"
-#include <vulkan/vulkan.h>
+#include <vulkan/vulkan.hpp>
 #include <vulkan/vulkan_raii.hpp>
 #include <vk_mem_alloc.h>
 #include <string>
 #include <vector>
+#include <deque>
 #include <unordered_set>
 #include <optional>
 
@@ -102,10 +103,10 @@ public:
     VkSampler getCacheSampler() const { return cache->getCacheSampler(); }
 
     /**
-     * Get page table textures for shader binding
+     * Get page table texture array (one layer per mip level) for shader binding
      */
-    VkImageView getPageTableImageView(uint32_t mipLevel) const {
-        return pageTable->getImageView(mipLevel);
+    VkImageView getPageTableImageView() const {
+        return pageTable->getCombinedImageView();
     }
     VkSampler getPageTableSampler() const { return pageTable->getSampler(); }
 
@@ -123,6 +124,12 @@ public:
      * Get UBO data for shader binding
      */
     VTParamsUBO getParams() const;
+
+    /**
+     * Get the GPU uniform buffer holding VTParamsUBO (filled at init;
+     * the params are constant for the lifetime of the system)
+     */
+    VkBuffer getParamsBuffer() const { return paramsBuffer_.get(); }
 
     /**
      * Get configuration
@@ -158,9 +165,16 @@ private:
     std::unique_ptr<VirtualTextureFeedback> feedback;
     std::unique_ptr<VirtualTextureTileLoader> tileLoader;
 
+    // Uniform buffer holding VTParamsUBO for shader binding
+    VmaBuffer paramsBuffer_;
+
     uint32_t currentFrame = 0;
     uint32_t framesInFlight_ = 3;
     std::unordered_set<uint32_t> pendingTiles; // Tiles currently being loaded
+
+    // Tiles that finished loading but haven't been uploaded yet (upload
+    // throughput is capped per frame; the remainder is retried next frame)
+    std::deque<LoadedTile> pendingUploads_;
 
     // Over-budget penalty scheme (Ghost of Tsushima style)
     // When cache is under pressure, we increase the penalty to request coarser mips

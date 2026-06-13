@@ -3,7 +3,6 @@
 #include "VmaBufferFactory.h"
 #include "SamplerFactory.h"
 #include "core/ImageBuilder.h"
-#include "core/InitInfoBuilder.h"
 #include "core/pipeline/ComputePipelineBuilder.h"
 #include "core/vulkan/PipelineLayoutBuilder.h"
 #include "core/vulkan/BarrierHelpers.h"
@@ -22,7 +21,14 @@ std::unique_ptr<HiZSystem> HiZSystem::create(const InitInfo& info) {
 }
 
 std::unique_ptr<HiZSystem> HiZSystem::create(const InitContext& ctx, VkFormat depthFormat_) {
-    InitInfo info = InitInfoBuilder::fromContext<InitInfo>(ctx);
+    InitInfo info{};
+    info.device = ctx.device;
+    info.allocator = ctx.allocator;
+    info.descriptorPool = ctx.descriptorPool;
+    info.extent = ctx.extent;
+    info.shaderPath = ctx.shaderPath;
+    info.framesInFlight = ctx.framesInFlight;
+    info.raiiDevice = ctx.raiiDevice;
     info.depthFormat = depthFormat_;
     return create(info);
 }
@@ -91,7 +97,7 @@ void HiZSystem::resize(VkExtent2D newExtent) {
         return;
     }
 
-    vkDeviceWaitIdle(device);
+    vk::Device(device).waitIdle();
 
     extent = newExtent;
 
@@ -381,8 +387,8 @@ void HiZSystem::updateObjectData(const std::vector<CullObjectData>& objects) {
     objectDataBuffer_.unmap();
 }
 
-void HiZSystem::gatherObjects(const std::vector<Renderable>& sceneObjects,
-                               const std::vector<Renderable>& rockObjects) {
+void HiZSystem::gatherObjects(const std::vector<ecs::RenderData>& sceneObjects,
+                               const std::vector<ecs::RenderData>& rockObjects) {
     std::vector<CullObjectData> cullObjects;
 
     // Gather scene objects for culling

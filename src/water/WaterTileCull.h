@@ -1,6 +1,6 @@
 #pragma once
 
-#include <vulkan/vulkan.h>
+#include <vulkan/vulkan.hpp>
 #include <vulkan/vulkan_raii.hpp>
 #include <vk_mem_alloc.h>
 #include <glm/glm.hpp>
@@ -63,7 +63,7 @@ public:
         float nearPlane;
         float farPlane;
         uint32_t maxTiles;        // Output buffer capacity
-        uint32_t _pad0;
+        uint32_t frameIndex;      // Frame-in-flight index (selects counter slot)
     };
 
     // Indirect draw command for Vulkan

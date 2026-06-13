@@ -3,7 +3,6 @@
 #include "GraphicsPipelineFactory.h"
 #include "DescriptorManager.h"
 #include "UBOs.h"
-#include "core/InitInfoBuilder.h"
 #include "core/vulkan/PipelineLayoutBuilder.h"
 #include <vulkan/vulkan.hpp>
 #include <SDL3/SDL.h>
@@ -18,7 +17,14 @@ std::unique_ptr<SkySystem> SkySystem::create(const InitInfo& info) {
 }
 
 std::unique_ptr<SkySystem> SkySystem::create(const InitContext& ctx, VkRenderPass hdrPass) {
-    InitInfo info = InitInfoBuilder::fromContext<InitInfo>(ctx);
+    InitInfo info{};
+    info.device = ctx.device;
+    info.allocator = ctx.allocator;
+    info.descriptorPool = ctx.descriptorPool;
+    info.shaderPath = ctx.shaderPath;
+    info.framesInFlight = ctx.framesInFlight;
+    info.extent = ctx.extent;
+    info.raiiDevice = ctx.raiiDevice;
     info.hdrRenderPass = hdrPass;
     return create(info);
 }

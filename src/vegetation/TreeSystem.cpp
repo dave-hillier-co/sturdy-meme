@@ -3,6 +3,7 @@
 #include <vulkan/vulkan.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/constants.hpp>
+#include <glm/gtc/quaternion.hpp>
 #include <filesystem>
 #include <cstring>
 
@@ -81,7 +82,7 @@ bool TreeSystem::initInternal(const InitInfo& info) {
     return true;
 }
 
-ecs::Entity TreeSystem::createTreeEntity(uint32_t treeIdx, const TreeInstanceData& instance,
+ecs::Entity TreeSystem::createTreeEntity(const TreeInstanceData& instance,
                                           const TreeOptions& opts, const AABB& bounds) {
     if (!world_) return ecs::NullEntity;
 
@@ -89,11 +90,10 @@ ecs::Entity TreeSystem::createTreeEntity(uint32_t treeIdx, const TreeInstanceDat
     world_->add<ecs::TreeTag>(e);
     world_->add<ecs::Transform>(e, instance.getTransformMatrix());
     world_->add<ecs::TreeData>(e, ecs::TreeData{
-        static_cast<int>(instance.meshIndex),
-        static_cast<int>(treeIdx),
         opts.leaves.tint,
         opts.leaves.autumnHueShift
     });
+    world_->add<ecs::TreeConfig>(e, ecs::TreeConfig{instance.meshIndex, instance.archetypeIndex});
     world_->add<ecs::BarkType>(e, ecs::BarkType{0, opts.bark.type});
     world_->add<ecs::LeafType>(e, ecs::LeafType{0, opts.leaves.type});
     world_->add<ecs::MeshRef>(e, &branchMeshes_[instance.meshIndex]);
@@ -523,6 +523,8 @@ void TreeSystem::createSceneObjects() {
     branchRenderables_.clear();
     leafRenderables_.clear();
 
+    // treeEntities_ is the canonical ordered list (insertion order) that ties
+    // treeInstances_[i] <-> entity <-> renderable/LOD/GPU slot together.
     for (size_t treeIdx = 0; treeIdx < treeInstances_.size(); ++treeIdx) {
         const auto& instance = treeInstances_[treeIdx];
         if (instance.meshIndex >= branchMeshes_.size()) continue;
@@ -530,7 +532,7 @@ void TreeSystem::createSceneObjects() {
 
         const TreeOptions& opts = treeOptions_[instance.meshIndex];
 
-        // Build transform using quaternion rotation
+        // Build transform using quaternion rotation (fallback when no ECS)
         glm::mat4 transform = instance.getTransformMatrix();
 
         // Read bark/leaf type from ECS when available, fall back to TreeOptions
@@ -541,6 +543,11 @@ void TreeSystem::createSceneObjects() {
 
         if (world_ && treeIdx < treeEntities_.size() && treeEntities_[treeIdx] != ecs::NullEntity) {
             ecs::Entity e = treeEntities_[treeIdx];
+            // Render/shadow transform comes straight from the ECS Transform
+            // matrix (source of truth) with no decompose round-trip.
+            if (auto* xform = world_->tryGet<ecs::Transform>(e)) {
+                transform = xform->matrix;
+            }
             if (auto* bark = world_->tryGet<ecs::BarkType>(e)) {
                 barkTypeName = bark->typeName;
             }
@@ -553,22 +560,17 @@ void TreeSystem::createSceneObjects() {
             }
         }
 
-        // Get textures based on type name (string-based lookup)
-        Texture* barkTex = getBarkTexture(barkTypeName);
-        Texture* leafTex = getLeafTexture(leafTypeName);
 
         // Branch renderable
         Mesh* branchMesh = &branchMeshes_[instance.meshIndex];
         if (branchMesh->getIndexCount() > 0) {
-            Renderable branchRenderable = RenderableBuilder()
-                .withMesh(branchMesh)
-                .withTexture(barkTex)
-                .withTransform(transform)
-                .withRoughness(0.7f)
-                .withMetallic(0.0f)
-                .withBarkType(barkTypeName)
-                .withTreeInstanceIndex(static_cast<int>(treeIdx))
-                .build();
+            TreeRenderable branchRenderable{};
+            branchRenderable.mesh = branchMesh;
+            branchRenderable.transform = transform;
+            branchRenderable.roughness = 0.7f;
+            branchRenderable.metallic = 0.0f;
+            branchRenderable.barkType = barkTypeName;
+            branchRenderable.treeInstanceIndex = static_cast<int>(treeIdx);
 
             branchRenderables_.push_back(branchRenderable);
         }
@@ -577,18 +579,16 @@ void TreeSystem::createSceneObjects() {
         // The mesh index in the renderable is used to look up leaf draw info
         if (instance.meshIndex < leafDrawInfoPerTree_.size() &&
             leafDrawInfoPerTree_[instance.meshIndex].instanceCount > 0) {
-            Renderable leafRenderable = RenderableBuilder()
-                .withMesh(const_cast<Mesh*>(&sharedLeafQuadMesh_))  // Shared quad mesh
-                .withTexture(leafTex)
-                .withTransform(transform)
-                .withRoughness(0.8f)
-                .withMetallic(0.0f)
-                .withAlphaTest(opts.leaves.alphaTest)
-                .withLeafType(leafTypeName)
-                .withLeafTint(leafTint)
-                .withAutumnHueShift(autumnHueShift)
-                .withTreeInstanceIndex(static_cast<int>(treeIdx))
-                .build();
+            TreeRenderable leafRenderable{};
+            leafRenderable.mesh = const_cast<Mesh*>(&sharedLeafQuadMesh_);  // Shared quad mesh
+            leafRenderable.transform = transform;
+            leafRenderable.roughness = 0.8f;
+            leafRenderable.metallic = 0.0f;
+            leafRenderable.alphaTestThreshold = opts.leaves.alphaTest;
+            leafRenderable.leafType = leafTypeName;
+            leafRenderable.leafTint = leafTint;
+            leafRenderable.autumnHueShift = autumnHueShift;
+            leafRenderable.treeInstanceIndex = static_cast<int>(treeIdx);
 
             // Store the mesh index so the renderer can look up leaf draw info
             leafRenderable.leafInstanceIndex = static_cast<int>(instance.meshIndex);
@@ -597,7 +597,72 @@ void TreeSystem::createSceneObjects() {
     }
 }
 
+void TreeSystem::rebuildTreeInstancesFromECS() {
+    // treeInstances_ is a ONE-WAY derived read-model whose canonical ORDER is
+    // owned by the bake (treeEntities_ insertion order). The ECS holds the
+    // source-of-truth config: Transform (TRS) + TreeConfig{meshIndex,archetype}.
+    //
+    // We rebuild treeInstances_ by iterating treeEntities_ in insertion order so
+    // the derived order is byte-identical to the historical push order:
+    // position i == treeEntities_[i] == treeInstances_[i] == lodStates_[i] ==
+    // meshIndex == GPU slot. Trees use a faithful
+    // TRS (uniform positive scale + Y rotation), so decomposing the ECS world
+    // matrix reproduces the exact position/rotation/scale used by physics and
+    // collision generation.
+    if (!world_) return;  // No ECS: leave the directly-populated cache as-is.
+
+    std::vector<TreeInstanceData> derived;
+    derived.reserve(treeEntities_.size());
+
+    for (ecs::Entity e : treeEntities_) {
+        TreeInstanceData instance;
+        if (e != ecs::NullEntity) {
+            if (auto* xform = world_->tryGet<ecs::Transform>(e)) {
+                // Trees are built as translate * rotate * scale with uniform
+                // positive scale, so we can recover the exact TRS without the
+                // experimental glm::decompose extension.
+                const glm::mat4& wm = xform->matrix;
+                glm::vec3 col0 = glm::vec3(wm[0]);
+                glm::vec3 col1 = glm::vec3(wm[1]);
+                glm::vec3 col2 = glm::vec3(wm[2]);
+                glm::vec3 translation = glm::vec3(wm[3]);
+                float scale = glm::length(col0);  // uniform scale
+#ifndef NDEBUG
+                // The TRS recovery assumes uniform scale (trees are built that
+                // way). Warn if the columns diverge, since the decomposed scale
+                // feeds physics collision generation (getTreeCollisionCapsules).
+                float s1 = glm::length(col1), s2 = glm::length(col2);
+                if (std::abs(s1 - scale) > 1e-3f * scale || std::abs(s2 - scale) > 1e-3f * scale) {
+                    SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                        "TreeSystem: non-uniform tree scale (%.3f,%.3f,%.3f); collision capsules may be off",
+                        scale, s1, s2);
+                }
+#endif
+                glm::mat3 rotMat{col0, col1, col2};
+                if (scale > 0.0f) {
+                    rotMat[0] /= scale;
+                    rotMat[1] /= glm::length(rotMat[1]);
+                    rotMat[2] /= glm::length(rotMat[2]);
+                } else {
+                    rotMat = glm::mat3(1.0f);
+                    scale = 1.0f;
+                }
+                glm::quat rotation = glm::quat_cast(rotMat);
+                instance.transform = Transform(translation, rotation, scale);
+            }
+            if (auto* cfg = world_->tryGet<ecs::TreeConfig>(e)) {
+                instance.meshIndex = cfg->meshIndex;
+                instance.archetypeIndex = cfg->archetypeIndex;
+            }
+        }
+        derived.push_back(instance);
+    }
+
+    treeInstances_ = std::move(derived);
+}
+
 void TreeSystem::rebuildSceneObjects() {
+    rebuildTreeInstancesFromECS();
     refreshMeshRefs();
     createSceneObjects();
 }
@@ -625,7 +690,6 @@ uint32_t TreeSystem::addTree(const glm::vec3& position, float rotation, float sc
     TreeInstanceData instance;
     instance.transform = Transform(position, Transform::yRotation(rotation), scale);
     instance.meshIndex = meshIndex;
-    instance.isSelected = false;
 
     // Determine archetype index based on leaf type
     // Archetypes: 0=oak, 1=pine, 2=ash, 3=aspen
@@ -646,7 +710,7 @@ uint32_t TreeSystem::addTree(const glm::vec3& position, float rotation, float sc
     treeInstances_.push_back(instance);
 
     // Create ECS entity for this tree
-    ecs::Entity entity = createTreeEntity(treeIndex, instance, options, fullBounds);
+    ecs::Entity entity = createTreeEntity(instance, options, fullBounds);
     treeEntities_.push_back(entity);
 
     // Upload leaf instances to GPU SSBO
@@ -705,14 +769,13 @@ uint32_t TreeSystem::addTreeFromStagedData(
     TreeInstanceData instance;
     instance.transform = Transform(position, Transform::yRotation(rotation), scale);
     instance.meshIndex = meshIndex;
-    instance.isSelected = false;
     instance.archetypeIndex = archetypeIndex;
 
     uint32_t treeIndex = static_cast<uint32_t>(treeInstances_.size());
     treeInstances_.push_back(instance);
 
     // Create ECS entity for this tree
-    ecs::Entity entity = createTreeEntity(treeIndex, instance, options, fullBounds);
+    ecs::Entity entity = createTreeEntity(instance, options, fullBounds);
     treeEntities_.push_back(entity);
 
     // Note: Don't upload leaf buffer or rebuild scene objects here
@@ -733,19 +796,12 @@ bool TreeSystem::finalizeLeafInstanceBuffer() {
 void TreeSystem::removeTree(uint32_t index) {
     if (index >= treeInstances_.size()) return;
 
-    // Destroy ECS entity
+    // Destroy ECS entity. No per-tree index back-references to fix up: ordering
+    // is derived from treeEntities_ insertion order, which rebuildSceneObjects()
+    // re-bakes below.
     destroyTreeEntity(index);
     if (index < treeEntities_.size()) {
         treeEntities_.erase(treeEntities_.begin() + index);
-
-        // Update treeInstanceIndex in remaining entities' TreeData
-        if (world_) {
-            for (uint32_t i = index; i < treeEntities_.size(); ++i) {
-                if (treeEntities_[i] != ecs::NullEntity && world_->has<ecs::TreeData>(treeEntities_[i])) {
-                    world_->get<ecs::TreeData>(treeEntities_[i]).treeInstanceIndex = static_cast<int>(i);
-                }
-            }
-        }
     }
 
     // Remove instance
@@ -764,8 +820,7 @@ void TreeSystem::removeTree(uint32_t index) {
 void TreeSystem::selectTree(int index) {
     // Deselect previous
     if (selectedTreeIndex_ >= 0 && selectedTreeIndex_ < static_cast<int>(treeInstances_.size())) {
-        treeInstances_[selectedTreeIndex_].isSelected = false;
-        // Remove ECS tag from previous selection
+        // Remove ECS tag from previous selection (the tag is the source of truth)
         if (world_ && static_cast<size_t>(selectedTreeIndex_) < treeEntities_.size()) {
             ecs::Entity prev = treeEntities_[selectedTreeIndex_];
             if (prev != ecs::NullEntity && world_->has<ecs::TreeSelected>(prev)) {
@@ -777,7 +832,6 @@ void TreeSystem::selectTree(int index) {
     // Select new
     if (index >= 0 && index < static_cast<int>(treeInstances_.size())) {
         selectedTreeIndex_ = index;
-        treeInstances_[index].isSelected = true;
         // Add ECS tag to new selection
         if (world_ && static_cast<size_t>(index) < treeEntities_.size()) {
             ecs::Entity e = treeEntities_[index];

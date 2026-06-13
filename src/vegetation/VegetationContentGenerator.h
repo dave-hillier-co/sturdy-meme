@@ -5,7 +5,7 @@
 #include <vector>
 #include <functional>
 #include <memory>
-#include <vulkan/vulkan.h>
+#include <vulkan/vulkan.hpp>
 #include <vk_mem_alloc.h>
 
 // Forward declarations

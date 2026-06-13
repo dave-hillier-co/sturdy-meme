@@ -1,14 +1,14 @@
 #pragma once
 
-#include "NPCData.h"
 #include "core/interfaces/IRecordable.h"
-#include <vulkan/vulkan.h>
+#include <vulkan/vulkan.hpp>
 #include <glm/glm.hpp>
 #include <vector>
 #include <memory>
 
 class NPCSimulation;
 class SkinnedMeshRenderer;
+class AnimatedCharacter;
 
 namespace ecs { class World; }
 
@@ -72,11 +72,10 @@ private:
 
     // Render data prepared each frame
     struct NPCRenderData {
-        size_t npcIndex;           // Index into NPCSimulation
-        glm::mat4 transform;       // World transform for this NPC
-        NPCLODLevel lodLevel;      // Current LOD level
-        uint32_t boneSlot;         // Bone matrix slot in dynamic buffer (1-63, 0 reserved for player)
-        float hueShift;            // Color tint for this NPC
+        AnimatedCharacter* character; // Skinned character to draw (owned by NPCSimulation)
+        glm::mat4 transform;          // World transform for this NPC
+        uint32_t boneSlot;            // Bone matrix slot in dynamic buffer (1-63, 0 reserved for player)
+        float hueShift;               // Color tint for this NPC
     };
 
     SkinnedMeshRenderer* skinnedMeshRenderer_ = nullptr;

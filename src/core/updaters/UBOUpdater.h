@@ -27,11 +27,8 @@ class UBOUpdater {
 public:
     // Configuration for UBO updates
     struct Config {
-        bool showCascadeDebug = false;
         bool useVolumetricSnow = true;
-        bool showSnowDepthDebug = false;
         bool shadowsEnabled = true;
-        bool hdrEnabled = true;
         float maxSnowHeight = 0.3f;
         float lightCullRadius = 100.0f;
         ecs::World* ecsWorld = nullptr;  // Optional: ECS world for light updates

@@ -1,6 +1,6 @@
 #pragma once
 
-#include <vulkan/vulkan.h>
+#include <vulkan/vulkan.hpp>
 #include <vk_mem_alloc.h>
 #include <glm/glm.hpp>
 #include <vector>
@@ -10,7 +10,7 @@
 
 #include "Mesh.h"
 #include "Texture.h"
-#include "RenderableBuilder.h"
+#include "ecs/Components.h"
 #include "scene/SceneMaterial.h"
 #include "scene/SceneObjectInstance.h"
 #include "material/MaterialDescriptorFactory.h"
@@ -82,8 +82,8 @@ public:
     ScatterSystem& operator=(ScatterSystem&&) = delete;
 
     // Get scene objects for rendering
-    const std::vector<Renderable>& getSceneObjects() const { return material_.getSceneObjects(); }
-    std::vector<Renderable>& getSceneObjects() { return material_.getSceneObjects(); }
+    const std::vector<ecs::RenderData>& getSceneObjects() const { return material_.getSceneObjects(); }
+    std::vector<ecs::RenderData>& getSceneObjects() { return material_.getSceneObjects(); }
 
     // Access the underlying material
     SceneMaterial& getMaterial() { return material_; }

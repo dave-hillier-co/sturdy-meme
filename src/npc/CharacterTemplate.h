@@ -1,14 +1,14 @@
 #pragma once
 
 #include <glm/glm.hpp>
-#include <vulkan/vulkan.h>
+#include <vulkan/vulkan.hpp>
 #include <vk_mem_alloc.h>
 #include <vector>
 #include <array>
 #include <string>
 #include <memory>
 
-#include "NPCData.h"  // For NPCLODLevel
+#include "NPCTypes.h"  // For NPCLODLevel
 #include "animation/SkinnedMesh.h"
 #include "animation/Animation.h"
 #include "animation/CharacterLOD.h"

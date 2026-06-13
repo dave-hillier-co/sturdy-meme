@@ -103,14 +103,14 @@ void GPUSceneBuffer::beginFrame(uint32_t frameIndex) {
     cullDataDirty_ = true;
 }
 
-int32_t GPUSceneBuffer::addObject(const Renderable& renderable, VkDescriptorSet overrideSet) {
+int32_t GPUSceneBuffer::addObject(const ecs::RenderData& data, VkDescriptorSet overrideSet) {
     if (instances_.size() >= MAX_GPU_SCENE_OBJECTS) {
         SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
             "GPUSceneBuffer: Max objects reached (%zu)", MAX_GPU_SCENE_OBJECTS);
         return -1;
     }
 
-    if (!renderable.mesh) {
+    if (!data.mesh) {
         return -1;
     }
 
@@ -118,24 +118,24 @@ int32_t GPUSceneBuffer::addObject(const Renderable& renderable, VkDescriptorSet 
 
     // Build instance data
     GPUSceneInstanceData instance{};
-    instance.model = renderable.transform;
+    instance.model = data.transform;
     instance.materialParams = glm::vec4(
-        renderable.roughness,
-        renderable.metallic,
-        renderable.emissiveIntensity,
-        renderable.opacity
+        data.roughness,
+        data.metallic,
+        data.emissiveIntensity,
+        data.opacity
     );
-    instance.emissiveColor = glm::vec4(renderable.emissiveColor, 1.0f);
-    instance.pbrFlags = renderable.pbrFlags;
-    instance.alphaTestThreshold = renderable.alphaTestThreshold;
-    instance.hueShift = renderable.hueShift;
+    instance.emissiveColor = glm::vec4(data.emissiveColor, 1.0f);
+    instance.pbrFlags = data.pbrFlags;
+    instance.alphaTestThreshold = data.alphaTestThreshold;
+    instance.hueShift = data.hueShift;
     instance._pad1 = 0.0f;
 
     instances_.push_back(instance);
 
     // Build cull data
-    const AABB& localBounds = renderable.mesh->getBounds();
-    AABB worldBounds = localBounds.transformed(renderable.transform);
+    const AABB& localBounds = data.mesh->getBounds();
+    AABB worldBounds = localBounds.transformed(data.transform);
 
     GPUCullObjectData cullData{};
     glm::vec3 center = worldBounds.getCenter();
@@ -146,17 +146,17 @@ int32_t GPUSceneBuffer::addObject(const Renderable& renderable, VkDescriptorSet 
     // aabbMin.w carries castsShadow (1 = caster, 0 = not). The color cull pass ignores it;
     // the shadow cull pass (cullMode==1) rejects non-casters so the shared cull-object
     // buffer can drive both passes.
-    cullData.aabbMin = glm::vec4(worldBounds.min, renderable.castsShadow ? 1.0f : 0.0f);
+    cullData.aabbMin = glm::vec4(worldBounds.min, data.castsShadow ? 1.0f : 0.0f);
     cullData.aabbMax = glm::vec4(worldBounds.max, 0.0f);
     cullData.objectIndex = objectIndex;
     cullData.firstIndex = 0;
-    cullData.indexCount = renderable.mesh->getIndexCount();
+    cullData.indexCount = data.mesh->getIndexCount();
     cullData.vertexOffset = 0;
 
     cullObjects_.push_back(cullData);
 
     // Track mesh+material+descriptor override for batching in finalize().
-    drawInfo_.push_back({renderable.mesh, renderable.materialId, overrideSet});
+    drawInfo_.push_back({data.mesh, data.materialId, overrideSet});
 
     return static_cast<int32_t>(objectIndex);
 }

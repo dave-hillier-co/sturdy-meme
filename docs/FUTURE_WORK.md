@@ -141,7 +141,7 @@ When it rains, surfaces should show wetness effects:
 
 ## Advanced Threading
 
-Potential parallelism improvements beyond current FrameGraph and secondary command buffer infrastructure:
+Potential parallelism improvements beyond current PassScheduler and secondary command buffer infrastructure:
 
 ### Physics on Worker Threads
 - Move physics simulation to TaskScheduler workers

@@ -3,6 +3,8 @@
 #include "GraphicsPipelineFactory.h"
 #include "VmaBufferFactory.h"
 #include "DescriptorManager.h"
+#include "core/vulkan/BarrierHelpers.h"
+#include "core/vulkan/CommandBufferUtils.h"
 #include "debug/QueueSubmitDiagnostics.h"
 #include <vulkan/vulkan.hpp>
 #include <SDL3/SDL.h>
@@ -93,6 +95,7 @@ bool WaterSystem::initInternal(const InitInfo& info) {
     if (!createUniformBuffers()) return false;
     if (!loadFoamTexture()) return false;
     if (!loadCausticsTexture()) return false;
+    if (!createEnvPlaceholderCube()) return false;
 
     return true;
 }
@@ -103,6 +106,7 @@ void WaterSystem::cleanup() {
     // Destroy RAII-managed resources
     foamTexture.reset();
     causticsTexture.reset();
+    envPlaceholderCube_.reset();
     waterMesh.reset();
 
     // Destroy uniform buffers (RAII-managed)
@@ -383,6 +387,45 @@ bool WaterSystem::loadCausticsTexture() {
     return true;
 }
 
+bool WaterSystem::createEnvPlaceholderCube() {
+    ImageBuilder builder(allocator);
+    builder.setExtent(1, 1)
+           .setFormat(VK_FORMAT_R8G8B8A8_UNORM)
+           .asTexture()
+           .asCubeMap();
+    envPlaceholderCube_ = createImageWithView(*raiiDevice_, builder);
+    if (!envPlaceholderCube_.isValid()) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create env placeholder cubemap");
+        return false;
+    }
+
+    // Clear all 6 faces to black and move to shader-read layout
+    CommandScope initCmd{vk::Device(device), vk::CommandPool(commandPool), vk::Queue(graphicsQueue)};
+    if (!initCmd.begin()) {
+        return false;
+    }
+    BarrierHelpers::transitionImageLayout(initCmd.get(), envPlaceholderCube_.getImage(),
+        vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal,
+        vk::PipelineStageFlagBits::eTopOfPipe, vk::PipelineStageFlagBits::eTransfer,
+        {}, vk::AccessFlagBits::eTransferWrite,
+        vk::ImageAspectFlagBits::eColor, 0, 1, 0, 6);
+
+    auto clearRange = vk::ImageSubresourceRange{}
+        .setAspectMask(vk::ImageAspectFlagBits::eColor)
+        .setLevelCount(1)
+        .setLayerCount(6);
+    initCmd.get().clearColorImage(envPlaceholderCube_.getImage(), vk::ImageLayout::eTransferDstOptimal,
+                                  vk::ClearColorValue{0.0f, 0.0f, 0.0f, 1.0f}, clearRange);
+
+    BarrierHelpers::transitionImageLayout(initCmd.get(), envPlaceholderCube_.getImage(),
+        vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eShaderReadOnlyOptimal,
+        vk::PipelineStageFlagBits::eTransfer, vk::PipelineStageFlagBits::eFragmentShader,
+        vk::AccessFlagBits::eTransferWrite, vk::AccessFlagBits::eShaderRead,
+        vk::ImageAspectFlagBits::eColor, 0, 1, 0, 6);
+
+    return initCmd.end();
+}
+
 bool WaterSystem::createDescriptorSets(const std::vector<VkBuffer>& uniformBuffers,
                                         VkDeviceSize uniformBufferSize,
                                         ShadowSystem& shadowSystem,
@@ -402,7 +445,8 @@ bool WaterSystem::createDescriptorSets(const std::vector<VkBuffer>& uniformBuffe
                                         VkSampler tileSampler,
                                         const std::array<VkBuffer, 3>& tileInfoBuffers,
                                         VkImageView envCubemapView,
-                                        VkSampler envCubemapSampler) {
+                                        VkSampler envCubemapSampler,
+                                        const OceanCascadeViews* oceanViews) {
     // Store tile info buffers for per-frame updates (triple-buffered)
     tileInfoBuffers_.resize(tileInfoBuffers.size());
     for (size_t i = 0; i < tileInfoBuffers.size(); ++i) {
@@ -435,11 +479,19 @@ bool WaterSystem::createDescriptorSets(const std::vector<VkBuffer>& uniformBuffe
         writer.writeImage(8, causticsTexture->getImageView(), causticsTexture->getSampler());
         writer.writeImage(9, ssrView, ssrSampler, VK_IMAGE_LAYOUT_GENERAL);
         writer.writeImage(10, sceneDepthView, sceneDepthSampler, VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL);
-        // Ocean detail bindings (11-13): the multi-cascade FFT ocean was never wired up
-        // and has been removed, so these reuse the interactive WaterDisplacement map.
-        writer.writeImage(11, displacementMapView, displacementMapSampler);  // ocean displacement
-        writer.writeImage(12, displacementMapView, displacementMapSampler);  // ocean normal
-        writer.writeImage(13, displacementMapView, displacementMapSampler);  // ocean foam
+        // Ocean cascade 0 bindings (11-13). When OceanFFT is available its maps
+        // (in GENERAL layout) are bound; otherwise fall back to the interactive
+        // WaterDisplacement map so the bindings stay valid.
+        const bool hasOcean = oceanViews && oceanViews->isValid();
+        if (hasOcean) {
+            writer.writeImage(11, oceanViews->displacement[0], oceanViews->sampler, VK_IMAGE_LAYOUT_GENERAL);
+            writer.writeImage(12, oceanViews->normal[0], oceanViews->sampler, VK_IMAGE_LAYOUT_GENERAL);
+            writer.writeImage(13, oceanViews->foam[0], oceanViews->sampler, VK_IMAGE_LAYOUT_GENERAL);
+        } else {
+            writer.writeImage(11, displacementMapView, displacementMapSampler);  // ocean displacement
+            writer.writeImage(12, displacementMapView, displacementMapSampler);  // ocean normal
+            writer.writeImage(13, displacementMapView, displacementMapSampler);  // ocean foam
+        }
 
         // Tile cache bindings (14 and 15) - for high-res terrain sampling
         if (tileArrayView != VK_NULL_HANDLE && tileSampler != VK_NULL_HANDLE) {
@@ -450,22 +502,33 @@ bool WaterSystem::createDescriptorSets(const std::vector<VkBuffer>& uniformBuffe
             writer.writeBuffer(15, tileInfoBuffers_[0], 0, VK_WHOLE_SIZE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
         }
 
-        // Ocean cascade 1 and 2 (bindings 16-21): the multi-scale FFT cascades were never
-        // wired up (OceanFFT removed), so these reuse the same WaterDisplacement map.
-        // The shader still samples all bindings, so they must point at a valid image.
-        writer.writeImage(16, displacementMapView, displacementMapSampler);  // cascade 1 displacement
-        writer.writeImage(17, displacementMapView, displacementMapSampler);  // cascade 1 normal
-        writer.writeImage(18, displacementMapView, displacementMapSampler);  // cascade 1 foam
-        writer.writeImage(19, displacementMapView, displacementMapSampler);  // cascade 2 displacement
-        writer.writeImage(20, displacementMapView, displacementMapSampler);  // cascade 2 normal
-        writer.writeImage(21, displacementMapView, displacementMapSampler);  // cascade 2 foam
+        // Ocean cascade 1 and 2 (bindings 16-21). The shader samples all bindings
+        // regardless of mode, so they must always point at a valid image.
+        if (hasOcean) {
+            writer.writeImage(16, oceanViews->displacement[1], oceanViews->sampler, VK_IMAGE_LAYOUT_GENERAL);
+            writer.writeImage(17, oceanViews->normal[1], oceanViews->sampler, VK_IMAGE_LAYOUT_GENERAL);
+            writer.writeImage(18, oceanViews->foam[1], oceanViews->sampler, VK_IMAGE_LAYOUT_GENERAL);
+            writer.writeImage(19, oceanViews->displacement[2], oceanViews->sampler, VK_IMAGE_LAYOUT_GENERAL);
+            writer.writeImage(20, oceanViews->normal[2], oceanViews->sampler, VK_IMAGE_LAYOUT_GENERAL);
+            writer.writeImage(21, oceanViews->foam[2], oceanViews->sampler, VK_IMAGE_LAYOUT_GENERAL);
+        } else {
+            writer.writeImage(16, displacementMapView, displacementMapSampler);  // cascade 1 displacement
+            writer.writeImage(17, displacementMapView, displacementMapSampler);  // cascade 1 normal
+            writer.writeImage(18, displacementMapView, displacementMapSampler);  // cascade 1 foam
+            writer.writeImage(19, displacementMapView, displacementMapSampler);  // cascade 2 displacement
+            writer.writeImage(20, displacementMapView, displacementMapSampler);  // cascade 2 normal
+            writer.writeImage(21, displacementMapView, displacementMapSampler);  // cascade 2 foam
+        }
 
-        // Environment cubemap (binding 22) - Phase 2 SSR fallback
+        // Environment cubemap (binding 22) - Phase 2 SSR fallback.
+        // The binding is a samplerCube, so the fallback must be a cube-view image;
+        // the black placeholder makes the shader use its procedural sky path.
         if (envCubemapView != VK_NULL_HANDLE && envCubemapSampler != VK_NULL_HANDLE) {
             writer.writeImage(22, envCubemapView, envCubemapSampler);
         } else {
-            // Use displacement map as placeholder (will fall back to procedural sky in shader)
-            writer.writeImage(22, displacementMapView, displacementMapSampler);
+            // Black 1x1 cube placeholder (shader falls back to procedural sky).
+            // Must be a cube view: the shader binding is samplerCube.
+            writer.writeImage(22, envPlaceholderCube_.getView(), foamTexture->getSampler());
         }
 
         writer.update();
@@ -531,10 +594,12 @@ void WaterSystem::recordDraw(VkCommandBuffer cmd, uint32_t frameIndex) {
         waterUniforms.waterExtent.y
     ));
     // useFFTOcean and oceanSize values are set via setUseFFTOcean()
-    // Push constants are used by vertex shader (non-tess) or both vertex + tess eval shaders
+    // Stage flags must match the pipeline layout's push constant range exactly
     vkCmd.pushConstants<PushConstants>(
         **pipelineLayout_,
-        vk::ShaderStageFlagBits::eVertex,
+        vk::ShaderStageFlagBits::eVertex |
+            vk::ShaderStageFlagBits::eTessellationControl |
+            vk::ShaderStageFlagBits::eTessellationEvaluation,
         0, pushConstants);
 
     // Bind water mesh and draw

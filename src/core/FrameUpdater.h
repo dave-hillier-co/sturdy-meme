@@ -1,7 +1,7 @@
 #pragma once
 
 #include "FrameData.h"
-#include <vulkan/vulkan.h>
+#include <vulkan/vulkan.hpp>
 
 class RendererSystems;
 

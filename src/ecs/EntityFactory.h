@@ -1,8 +1,12 @@
 #pragma once
 
+#include <optional>
+
 #include "World.h"
 #include "Components.h"
-#include "core/RenderableBuilder.h"
+#include "material/MaterialId.h"
+
+#include <cassert>
 
 namespace ecs {
 
@@ -17,22 +21,23 @@ public:
     explicit EntityFactory(World& world) : world_(world) {}
 
     // -------------------------------------------------------------------------
-    // Create entity from existing Renderable
+    // Create entity from extracted RenderData
     // -------------------------------------------------------------------------
-    // Converts a Renderable struct into an ECS entity with appropriate components.
-    // This is the primary migration path from the current rendering system.
+    // Converts the transient RenderData upload POD into an ECS entity with the
+    // appropriate components. This is the bootstrap writer that turns the
+    // SceneBuilder scene-object mirror into ECS entities.
     //
     // Components added:
     //   - Transform (always)
     //   - MeshRef (always)
     //   - MaterialRef (if valid material ID)
-    //   - CastsShadow (if renderable casts shadows)
+    //   - CastsShadow (if it casts shadows)
     //   - PBRProperties (if non-default values)
     //   - HueShift (if non-zero)
     //   - Opacity (if non-default)
-    //   - TreeData (if tree-related indices set)
+    //   - GPUSkinned (if gpu-skinned)
 
-    [[nodiscard]] Entity createFromRenderable(const Renderable& renderable) {
+    [[nodiscard]] Entity createFromRenderable(const RenderData& renderable) {
         Entity entity = world_.create();
 
         // Core components - always present
@@ -40,7 +45,7 @@ public:
         world_.add<MeshRef>(entity, renderable.mesh);
 
         // Material reference
-        if (renderable.materialId != INVALID_MATERIAL_ID) {
+        if (renderable.materialId != InvalidMaterialId) {
             world_.add<MaterialRef>(entity, renderable.materialId);
         }
 
@@ -71,35 +76,13 @@ public:
             world_.add<Opacity>(entity, renderable.opacity);
         }
 
-        // Tree-specific data
-        if (isTree(renderable)) {
-            TreeData treeData;
-            treeData.leafInstanceIndex = renderable.leafInstanceIndex;
-            treeData.treeInstanceIndex = renderable.treeInstanceIndex;
-            treeData.leafTint = renderable.leafTint;
-            treeData.autumnHueShift = renderable.autumnHueShift;
-            world_.add<TreeData>(entity, treeData);
+        // GPU-skinned characters draw via a separate pipeline; tag so the
+        // static scene-object/shadow buffers skip them.
+        if (renderable.gpuSkinned) {
+            world_.add<GPUSkinned>(entity);
         }
 
         return entity;
-    }
-
-    // -------------------------------------------------------------------------
-    // Batch create entities from vector of Renderables
-    // -------------------------------------------------------------------------
-    // Returns a vector of entity handles corresponding to each renderable.
-
-    [[nodiscard]] std::vector<Entity> createFromRenderables(
-        const std::vector<Renderable>& renderables) {
-
-        std::vector<Entity> entities;
-        entities.reserve(renderables.size());
-
-        for (const auto& renderable : renderables) {
-            entities.push_back(createFromRenderable(renderable));
-        }
-
-        return entities;
     }
 
     // -------------------------------------------------------------------------
@@ -168,16 +151,12 @@ public:
         Mesh* mesh,
         MaterialId materialId,
         const glm::mat4& transform,
-        int treeInstanceIndex,
-        int leafInstanceIndex,
         const glm::vec3& leafTint = glm::vec3(1.0f),
         float autumnHueShift = 0.0f) {
 
         Entity entity = createStaticMesh(mesh, materialId, transform, true);
 
         TreeData treeData;
-        treeData.treeInstanceIndex = treeInstanceIndex;
-        treeData.leafInstanceIndex = leafInstanceIndex;
         treeData.leafTint = leafTint;
         treeData.autumnHueShift = autumnHueShift;
         world_.add<TreeData>(entity, treeData);
@@ -354,8 +333,8 @@ public:
     // -------------------------------------------------------------------------
 
 private:
-    // Check if renderable has non-default PBR properties
-    static bool hasCustomPBR(const Renderable& r) {
+    // Check if render data has non-default PBR properties
+    static bool hasCustomPBR(const RenderData& r) {
         return r.roughness != 0.5f ||
                r.metallic != 0.0f ||
                r.emissiveIntensity != 0.0f ||
@@ -364,40 +343,8 @@ private:
                r.pbrFlags != 0;
     }
 
-    // Check if renderable represents a tree
-    static bool isTree(const Renderable& r) {
-        return r.treeInstanceIndex >= 0 || r.leafInstanceIndex >= 0;
-    }
-
     World& world_;
 };
-
-// =============================================================================
-// Sync utilities - for keeping ECS in sync during migration
-// =============================================================================
-
-// Update ECS Transform from Renderable transform (for objects that still
-// use the old system but are mirrored in ECS)
-inline void syncTransformFromRenderable(
-    World& world,
-    Entity entity,
-    const Renderable& renderable) {
-
-    if (world.has<Transform>(entity)) {
-        world.get<Transform>(entity).matrix = renderable.transform;
-    }
-}
-
-// Update Renderable transform from ECS (for physics-driven objects)
-inline void syncRenderableFromTransform(
-    Renderable& renderable,
-    const World& world,
-    Entity entity) {
-
-    if (world.has<Transform>(entity)) {
-        renderable.transform = world.get<Transform>(entity).matrix;
-    }
-}
 
 // =============================================================================
 // Entity Builder - Fluent API for creating ECS entities
@@ -486,27 +433,23 @@ public:
         return *this;
     }
 
-    // Optional: Set tree instance index
-    EntityBuilder& withTreeInstanceIndex(int index) {
-        treeInstanceIndex_ = index;
-        return *this;
-    }
-
-    // Optional: Set leaf instance index
-    EntityBuilder& withLeafInstanceIndex(int index) {
-        leafInstanceIndex_ = index;
+    // Optional: Mark this entity as a tree (adds TreeData with the given tint)
+    EntityBuilder& asTree() {
+        isTree_ = true;
         return *this;
     }
 
     // Optional: Set leaf tint
     EntityBuilder& withLeafTint(const glm::vec3& tint) {
         leafTint_ = tint;
+        isTree_ = true;
         return *this;
     }
 
     // Optional: Set autumn hue shift
     EntityBuilder& withAutumnHueShift(float shift) {
         autumnHueShift_ = shift;
+        isTree_ = true;
         return *this;
     }
 
@@ -559,10 +502,8 @@ public:
         }
 
         // Tree-specific data
-        if (treeInstanceIndex_ >= 0 || leafInstanceIndex_ >= 0) {
+        if (isTree_) {
             TreeData treeData;
-            treeData.leafInstanceIndex = leafInstanceIndex_;
-            treeData.treeInstanceIndex = treeInstanceIndex_;
             treeData.leafTint = leafTint_;
             treeData.autumnHueShift = autumnHueShift_;
             world_.add<TreeData>(entity, treeData);
@@ -603,8 +544,7 @@ private:
     float opacity_ = 1.0f;
 
     // Tree properties
-    int treeInstanceIndex_ = -1;
-    int leafInstanceIndex_ = -1;
+    bool isTree_ = false;
     glm::vec3 leafTint_ = glm::vec3(1.0f);
     float autumnHueShift_ = 0.0f;
 

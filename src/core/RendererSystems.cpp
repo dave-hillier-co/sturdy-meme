@@ -42,6 +42,7 @@
 #include "SSRSystem.h"
 #include "WaterTileCull.h"
 #include "WaterGBuffer.h"
+#include "OceanFFT.h"
 #include "ErosionDataLoader.h"
 #include "RoadNetworkLoader.h"
 #include "RoadRiverVisualization.h"
@@ -190,6 +191,10 @@ void RendererSystems::setWaterGBuffer(std::unique_ptr<WaterGBuffer> system) {
     registry_.add<WaterGBuffer>(std::move(system));
 }
 
+void RendererSystems::setOceanFFT(std::unique_ptr<OceanFFT> system) {
+    registry_.add<OceanFFT>(std::move(system));
+}
+
 void RendererSystems::setCatmullClark(std::unique_ptr<CatmullClarkSystem> system) {
     registry_.add<CatmullClarkSystem>(std::move(system));
 }
@@ -332,7 +337,7 @@ void RendererSystems::initControlSubsystems(VulkanContext& vulkanContext, Perfor
         registry_.get<LeafSystem>(), registry_.get<CloudShadowSystem>(),
         registry_.get<PostProcessSystem>(), registry_.get<EnvironmentSettings>()));
     registry_.add<WaterControlSubsystem>(std::make_unique<WaterControlSubsystem>(
-        registry_.get<WaterSystem>(), registry_.get<WaterTileCull>()));
+        registry_.get<WaterSystem>(), registry_.get<WaterTileCull>(), registry_.find<OceanFFT>()));
     registry_.add<TreeControlSubsystem>(std::make_unique<TreeControlSubsystem>(
         registry_.find<TreeSystem>(), *this));
     registry_.add<GrassControlAdapter>(std::make_unique<GrassControlAdapter>(

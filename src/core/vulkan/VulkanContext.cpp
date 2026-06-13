@@ -115,11 +115,33 @@ bool VulkanContext::createInstance() {
         SDL_Log("Vulkan validation layers disabled");
     }
 
-    auto instRet = builder.set_app_name("Vulkan Game")
+    // Enable the surface extensions SDL's active video driver requires.
+    // vk-bootstrap only enables the compile-time platform defaults, which
+    // misses drivers like SDL's offscreen backend (VK_EXT_headless_surface).
+    builder.set_app_name("Vulkan Game")
         .request_validation_layers(enableValidation)
         .use_default_debug_messenger()
-        .require_api_version(1, 2, 0)
-        .build();
+        .require_api_version(1, 2, 0);
+
+    // The extension list is only complete after SDL has loaded its Vulkan
+    // library (refcounted; window creation loads it again later).
+    if (!SDL_Vulkan_LoadLibrary(nullptr)) {
+        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                    "SDL_Vulkan_LoadLibrary failed: %s", SDL_GetError());
+    }
+
+    Uint32 sdlExtensionCount = 0;
+    const char* const* sdlExtensions = SDL_Vulkan_GetInstanceExtensions(&sdlExtensionCount);
+    if (sdlExtensions) {
+        for (Uint32 i = 0; i < sdlExtensionCount; i++) {
+            builder.enable_extension(sdlExtensions[i]);
+        }
+    } else {
+        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                    "SDL_Vulkan_GetInstanceExtensions failed: %s", SDL_GetError());
+    }
+
+    auto instRet = builder.build();
 
     if (!instRet) {
         SDL_Log("Failed to create Vulkan instance: %s", instRet.error().message().c_str());
@@ -149,6 +171,8 @@ bool VulkanContext::createSurface() {
 bool VulkanContext::selectPhysicalDevice() {
     VkPhysicalDeviceFeatures features{};
     features.samplerAnisotropy = VK_FALSE;
+    // Point-light shadows use cube-array image views and SampledCubeArray shaders
+    features.imageCubeArray = VK_TRUE;
 
     // Vulkan 1.2 features - timeline semaphores are core in 1.2
     VkPhysicalDeviceVulkan12Features vulkan12Features{};
@@ -173,8 +197,7 @@ bool VulkanContext::selectPhysicalDevice() {
     physicalDevice = vkbPhysicalDevice.physical_device;
 
     // Verify Vulkan 1.2 API version
-    VkPhysicalDeviceProperties props;
-    vkGetPhysicalDeviceProperties(physicalDevice, &props);
+    vk::PhysicalDeviceProperties props = vk::PhysicalDevice(physicalDevice).getProperties();
     uint32_t major = VK_API_VERSION_MAJOR(props.apiVersion);
     uint32_t minor = VK_API_VERSION_MINOR(props.apiVersion);
 
@@ -185,15 +208,12 @@ bool VulkanContext::selectPhysicalDevice() {
     }
 
     SDL_Log("Selected physical device: %s (Vulkan %u.%u.%u)",
-        props.deviceName, major, minor, VK_API_VERSION_PATCH(props.apiVersion));
+        props.deviceName.data(), major, minor, VK_API_VERSION_PATCH(props.apiVersion));
 
     // Verify timeline semaphore support (should always be true if we got here)
-    VkPhysicalDeviceVulkan12Features supportedFeatures12{};
-    supportedFeatures12.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES;
-    VkPhysicalDeviceFeatures2 features2{};
-    features2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
-    features2.pNext = &supportedFeatures12;
-    vkGetPhysicalDeviceFeatures2(physicalDevice, &features2);
+    auto featuresChain = vk::PhysicalDevice(physicalDevice)
+        .getFeatures2<vk::PhysicalDeviceFeatures2, vk::PhysicalDeviceVulkan12Features>();
+    const auto& supportedFeatures12 = featuresChain.get<vk::PhysicalDeviceVulkan12Features>();
 
     hasTimelineSemaphores_ = supportedFeatures12.timelineSemaphore == VK_TRUE;
     if (hasTimelineSemaphores_) {
@@ -214,6 +234,12 @@ bool VulkanContext::selectPhysicalDevice() {
     multiDrawFeature.multiDrawIndirect = VK_TRUE;
     hasMultiDrawIndirect_ = vkbPhysicalDevice.enable_features_if_present(multiDrawFeature);
 
+    // Fragment shader SSBO writes/atomics - required by the virtual texture
+    // feedback buffer (terrain fragment shader requests tiles via atomicAdd)
+    VkPhysicalDeviceFeatures fragmentStoresFeature{};
+    fragmentStoresFeature.fragmentStoresAndAtomics = VK_TRUE;
+    hasFragmentStoresAndAtomics_ = vkbPhysicalDevice.enable_features_if_present(fragmentStoresFeature);
+
     VkPhysicalDeviceVulkan12Features drawCountFeature{};
     drawCountFeature.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES;
     drawCountFeature.drawIndirectCount = VK_TRUE;
@@ -221,6 +247,7 @@ bool VulkanContext::selectPhysicalDevice() {
 
     SDL_Log("Indirect draw features: drawIndirectFirstInstance=%d multiDrawIndirect=%d drawIndirectCount=%d",
         hasDrawIndirectFirstInstance_, hasMultiDrawIndirect_, hasDrawIndirectCount_);
+    SDL_Log("Fragment stores and atomics (virtual texture feedback): %d", hasFragmentStoresAndAtomics_);
 
     // Create RAII wrapper for physical device (non-owning - physical devices aren't destroyed)
     raiiPhysicalDevice_ = std::make_unique<vk::raii::PhysicalDevice>(*raiiInstance_, physicalDevice);
@@ -298,25 +325,25 @@ bool VulkanContext::createAllocator() {
 
 bool VulkanContext::createSwapchain() {
     // Query surface capabilities to understand composite alpha support
-    VkSurfaceCapabilitiesKHR surfaceCaps;
-    vkGetPhysicalDeviceSurfaceCapabilitiesKHR(physicalDevice, surface, &surfaceCaps);
+    vk::SurfaceCapabilitiesKHR surfaceCaps =
+        vk::PhysicalDevice(physicalDevice).getSurfaceCapabilitiesKHR(vk::SurfaceKHR(surface));
 
     // Log supported composite alpha modes for debugging ghost frame issues
     SDL_Log("Swapchain: Supported composite alpha modes: %s%s%s%s",
-        (surfaceCaps.supportedCompositeAlpha & VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR) ? "OPAQUE " : "",
-        (surfaceCaps.supportedCompositeAlpha & VK_COMPOSITE_ALPHA_PRE_MULTIPLIED_BIT_KHR) ? "PRE_MULTIPLIED " : "",
-        (surfaceCaps.supportedCompositeAlpha & VK_COMPOSITE_ALPHA_POST_MULTIPLIED_BIT_KHR) ? "POST_MULTIPLIED " : "",
-        (surfaceCaps.supportedCompositeAlpha & VK_COMPOSITE_ALPHA_INHERIT_BIT_KHR) ? "INHERIT " : "");
+        (surfaceCaps.supportedCompositeAlpha & vk::CompositeAlphaFlagBitsKHR::eOpaque) ? "OPAQUE " : "",
+        (surfaceCaps.supportedCompositeAlpha & vk::CompositeAlphaFlagBitsKHR::ePreMultiplied) ? "PRE_MULTIPLIED " : "",
+        (surfaceCaps.supportedCompositeAlpha & vk::CompositeAlphaFlagBitsKHR::ePostMultiplied) ? "POST_MULTIPLIED " : "",
+        (surfaceCaps.supportedCompositeAlpha & vk::CompositeAlphaFlagBitsKHR::eInherit) ? "INHERIT " : "");
 
     // Prefer OPAQUE to prevent compositor alpha blending, fall back to INHERIT if not supported
     VkCompositeAlphaFlagBitsKHR compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
-    if (!(surfaceCaps.supportedCompositeAlpha & VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR)) {
-        if (surfaceCaps.supportedCompositeAlpha & VK_COMPOSITE_ALPHA_INHERIT_BIT_KHR) {
+    if (!(surfaceCaps.supportedCompositeAlpha & vk::CompositeAlphaFlagBitsKHR::eOpaque)) {
+        if (surfaceCaps.supportedCompositeAlpha & vk::CompositeAlphaFlagBitsKHR::eInherit) {
             compositeAlpha = VK_COMPOSITE_ALPHA_INHERIT_BIT_KHR;
             SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
                 "Swapchain: OPAQUE composite alpha not supported, using INHERIT. "
                 "Ghost frames may occur on window background/restore.");
-        } else if (surfaceCaps.supportedCompositeAlpha & VK_COMPOSITE_ALPHA_PRE_MULTIPLIED_BIT_KHR) {
+        } else if (surfaceCaps.supportedCompositeAlpha & vk::CompositeAlphaFlagBitsKHR::ePreMultiplied) {
             compositeAlpha = VK_COMPOSITE_ALPHA_PRE_MULTIPLIED_BIT_KHR;
             SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
                 "Swapchain: Using PRE_MULTIPLIED composite alpha");
@@ -687,9 +714,13 @@ bool VulkanContext::createCommandPoolAndBuffers(uint32_t frameCount) {
             .setLevel(vk::CommandBufferLevel::ePrimary)
             .setCommandBufferCount(frameCount);
 
-        if (vkAllocateCommandBuffers(device,
-                reinterpret_cast<const VkCommandBufferAllocateInfo*>(&allocInfo),
-                commandBuffers_.data()) != VK_SUCCESS) {
+        try {
+            std::vector<vk::CommandBuffer> allocated =
+                vk::Device(device).allocateCommandBuffers(allocInfo);
+            for (uint32_t i = 0; i < frameCount; ++i) {
+                commandBuffers_[i] = allocated[i];
+            }
+        } catch (const vk::SystemError&) {
             SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to allocate command buffers");
             commandPool_.reset();
             commandBuffers_.clear();

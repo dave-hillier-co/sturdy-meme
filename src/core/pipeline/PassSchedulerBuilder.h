@@ -1,15 +1,20 @@
 #pragma once
 
-#include "FrameGraph.h"
+#include "PassScheduler.h"
 #include "PerformanceToggles.h"
 #include <vulkan/vulkan_raii.hpp>
 #include <glm/glm.hpp>
 #include <functional>
 
 class RendererSystems;
+class ShadowPassRecorder;
+class HDRPassRecorder;
+class ScenePipeline;
+class InstancedScenePipeline;
+class VulkanContext;
 
 /**
- * FrameGraphBuilder - Wires together domain-specific render passes
+ * PassSchedulerBuilder - Wires together domain-specific render passes
  *
  * Delegates pass creation to domain modules in src/core/passes/:
  * - ComputePasses: GPU compute dispatches, froxel/atmosphere
@@ -25,26 +30,28 @@ class RendererSystems;
  *                                               ├──> HiZ ──> Bloom┤
  *                                               └──> BilateralGrid┘
  */
-class FrameGraphBuilder {
+class PassSchedulerBuilder {
 public:
     struct Callbacks {
-        std::function<void(VkCommandBuffer, uint32_t, float, const glm::vec3&)> recordShadowPass;
-        std::function<void(VkCommandBuffer, uint32_t, float)> recordHDRPass;
-        std::function<void(VkCommandBuffer, uint32_t, float, const std::vector<vk::CommandBuffer>&)> recordHDRPassWithSecondaries;
-        std::function<void(VkCommandBuffer, uint32_t, float, uint32_t)> recordHDRPassSecondarySlot;
         std::function<void(VkCommandBuffer)>* guiRenderCallback = nullptr;
     };
 
     struct State {
         float* lastSunIntensity = nullptr;
-        bool* hdrPassEnabled = nullptr;
-        bool* terrainEnabled = nullptr;
         PerformanceToggles* perfToggles = nullptr;
         std::vector<vk::raii::Framebuffer>* framebuffers = nullptr;
+
+        // Pass-module inputs (the pass lambdas build Params and call the recorder directly)
+        ShadowPassRecorder* shadowRecorder = nullptr;
+        HDRPassRecorder* hdrRecorder = nullptr;
+        ScenePipeline* scenePipeline = nullptr;
+        InstancedScenePipeline* instancedScenePipeline = nullptr;
+        VulkanContext* vulkanContext = nullptr;
+        glm::mat4* lastViewProj = nullptr;
     };
 
     static bool build(
-        FrameGraph& frameGraph,
+        PassScheduler& passScheduler,
         RendererSystems& systems,
         const Callbacks& callbacks,
         const State& state

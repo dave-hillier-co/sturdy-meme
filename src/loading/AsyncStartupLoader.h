@@ -1,7 +1,7 @@
 #pragma once
 
 #include "LoadJobQueue.h"
-#include <vulkan/vulkan.h>
+#include <vulkan/vulkan.hpp>
 #include <memory>
 #include <functional>
 #include <string>

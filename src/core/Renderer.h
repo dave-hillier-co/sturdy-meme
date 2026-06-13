@@ -16,7 +16,7 @@
 #include "FrameExecutor.h"
 #include "vulkan/AsyncTransferManager.h"
 #include "vulkan/ThreadedCommandPool.h"
-#include "pipeline/FrameGraph.h"
+#include "pipeline/PassScheduler.h"
 #include "loading/LoadJobFactory.h"
 #include "asset/AssetRegistry.h"
 #include "ScenePipeline.h"
@@ -39,6 +39,11 @@ namespace Loading {
     struct SystemInitTask;
 }
 
+// Heavy async-init scaffolding (loader + stored InitContext) lives off the
+// runtime Renderer object; defined in RendererBuilder.h, owned via unique_ptr
+// and reset() once async init completes.
+struct AsyncInitState;
+
 // PBR texture flags - indicates which optional PBR textures are bound
 // Must match definitions in push_constants_common.glsl
 constexpr uint32_t PBR_HAS_ROUGHNESS_MAP = (1u << 0);
@@ -48,6 +53,8 @@ constexpr uint32_t PBR_HAS_HEIGHT_MAP    = (1u << 3);
 
 
 class Renderer {
+    friend class RendererBuilder;
+
 public:
     // Passkey for controlled construction via make_unique
     struct ConstructToken { explicit ConstructToken() = default; };
@@ -141,14 +148,8 @@ public:
     // to prevent ghost frames from blending with stale compositor-cached content
     void notifyWindowFocusGained();
 
-    // Vulkan handle getters for GUI integration
-    vk::Instance getInstance() const { return vulkanContext_->getVkInstance(); }
-    vk::PhysicalDevice getPhysicalDevice() const { return vulkanContext_->getVkPhysicalDevice(); }
-    vk::Device getDevice() const { return vulkanContext_->getVkDevice(); }
-    vk::Queue getGraphicsQueue() const { return vulkanContext_->getVkGraphicsQueue(); }
-    uint32_t getGraphicsQueueFamily() const { return vulkanContext_->getGraphicsQueueFamily(); }
-    VkRenderPass getSwapchainRenderPass() const { return vulkanContext_->getRenderPass(); }
-    uint32_t getSwapchainImageCount() const { return vulkanContext_->getSwapchainImageCount(); }
+    // Vulkan handles for GUI/integration are obtained via getVulkanContext() below,
+    // so Renderer is not a second-class vendor of Vulkan handles.
 
     // Access to VulkanContext
     VulkanContext& getVulkanContext() { return *vulkanContext_; }
@@ -166,20 +167,6 @@ public:
     // RendererSystems access - use this for all subsystem access
     RendererSystems& getSystems() { return *systems_; }
     const RendererSystems& getSystems() const { return *systems_; }
-
-    // Local rendering state (affects render loop directly)
-    void setHDREnabled(bool enabled) { hdrEnabled = enabled; }
-    bool isHDREnabled() const { return hdrEnabled; }
-    void setHDRPassEnabled(bool enabled) { hdrPassEnabled = enabled; }
-    bool isHDRPassEnabled() const { return hdrPassEnabled; }
-    void setTerrainEnabled(bool enabled) { terrainEnabled = enabled; }
-    bool isTerrainEnabled() const { return terrainEnabled; }
-
-    // Debug visualization toggles (local state)
-    void toggleCascadeDebug() { showCascadeDebug = !showCascadeDebug; }
-    bool isShowingCascadeDebug() const { return showCascadeDebug; }
-    void toggleSnowDepthDebug() { showSnowDepthDebug = !showSnowDepthDebug; }
-    bool isShowingSnowDepthDebug() const { return showSnowDepthDebug; }
 
     // Resource access
     VkCommandPool getCommandPool() const { return vulkanContext_->getCommandPool(); }
@@ -220,34 +207,10 @@ public:
     bool pollAsyncInit();
 
 private:
-    bool initInternal(const InitInfo& info);
-    bool initInternalAsync(const InitInfo& info);  // Async initialization path
     void cleanup();
-
-    // High-level initialization phases
-    bool initCoreVulkanResources();       // swapchain resources, command pool, threading
-    bool initDescriptorInfrastructure();  // layouts, pools, sets
-    // Build the declarative list of initialization tasks (shared by sync and async paths)
-    std::vector<Loading::SystemInitTask> buildInitTasks(const InitContext& initCtx);
-    bool initSubsystems(const InitContext& initCtx);  // Runs buildInitTasks synchronously
-    bool initSubsystemsAsync();  // Feeds buildInitTasks to AsyncSystemLoader
-    void initResizeCoordinator();         // resize registration
-    void initTemporalSystems();           // temporal system registration (for ghost frame prevention)
-
-    bool createDescriptorSets();
-
-    // Render pass recording helpers (pure - only record commands, no state mutation)
-    void recordShadowPass(VkCommandBuffer cmd, uint32_t frameIndex, float grassTime, const glm::vec3& cameraPosition);
-    void recordHDRPass(VkCommandBuffer cmd, uint32_t frameIndex, float grassTime);
-    void recordHDRPassWithSecondaries(VkCommandBuffer cmd, uint32_t frameIndex, float grassTime,
-                                      const std::vector<vk::CommandBuffer>& secondaries);
-    void recordHDRPassSecondarySlot(VkCommandBuffer cmd, uint32_t frameIndex, float grassTime, uint32_t slot);
 
     // Create and configure HDR pass recorder with all registered drawables
     void createHDRPassRecorder();
-
-    // Setup frame graph passes with dependencies
-    void setupFrameGraph();
 
     // Frame building: updates UBOs, subsystems, records command buffer.
     // Called from the FrameExecutor callback during execute().
@@ -264,9 +227,9 @@ private:
     // Scene rendering pipeline (layout + graphics pipeline)
     ScenePipeline scenePipeline_;
 
-    // Instanced scene pipeline for GPU-driven indirect rendering (currently inert:
-    // the indirect draw path is gated off, see recordHDRPass). Built alongside
-    // scenePipeline_ so it is ready when the indirect path is enabled.
+    // Instanced scene pipeline for GPU-driven indirect rendering. The indirect draw
+    // path is the default (set INDIRECT_SCENE_DRAW=0 to force the CPU path); params are
+    // built in HDRPass::buildParams. Built alongside scenePipeline_.
     InstancedScenePipeline instancedScenePipeline_;
 
     // Descriptor pool (shared resource allocator for all subsystems)
@@ -291,7 +254,7 @@ private:
     // Multi-threading and asset infrastructure
     AsyncTransferManager asyncTransferManager_;
     ThreadedCommandPool threadedCommandPool_;
-    FrameGraph frameGraph_;
+    PassScheduler passScheduler_;
     Loading::AsyncTextureUploader asyncTextureUploader_;
     AssetRegistry assetRegistry_;
 
@@ -299,12 +262,6 @@ private:
     static constexpr int MAX_FRAMES_IN_FLIGHT = TripleBuffering::DEFAULT_FRAME_COUNT;
 
     float lastSunIntensity = 1.0f;
-
-    bool showCascadeDebug = false;         // true = show cascade colors overlay
-    bool showSnowDepthDebug = false;       // true = show snow depth heat map overlay
-    bool hdrEnabled = true;                // true = HDR tonemapping/bloom, false = bypass
-    bool hdrPassEnabled = true;            // true = render HDR pass, false = skip entire HDR scene rendering
-    bool terrainEnabled = true;            // true = render terrain, false = skip terrain rendering
 
     // Note: Cloud parameters (cloudCoverage, cloudDensity, skyExposure, useParaboloidClouds)
     // are now managed by EnvironmentControlSubsystem as the authoritative source.
@@ -330,17 +287,12 @@ private:
     // Progress callback for async loading (stored during init)
     ProgressCallback progressCallback_;
 
-    // Async initialization state
-    std::unique_ptr<Loading::AsyncSystemLoader> asyncLoader_;
-    InitContext asyncInitContext_;  // Stored for async task access
+    // Async initialization state.
+    // asyncInit_ holds the heavy scaffolding (loader + stored InitContext) only
+    // for the async path; it is allocated in initInternalAsync and reset() when
+    // async init completes. The completion/failure flags stay as plain bools so
+    // isAsyncInitComplete() reports true immediately on the sync path.
+    std::unique_ptr<AsyncInitState> asyncInit_;
     bool asyncInitComplete_ = true;  // True when not using async, or when async is done
     bool asyncInitFailed_ = false;   // True if async init encountered an error
-    bool asyncInitStarted_ = false;
-
-    // Skinned mesh rendering
-    bool initSkinnedMeshRenderer();
-    bool createSkinnedMeshRendererDescriptorSets();
-
-    // Initialize control subsystems (called after systems are ready)
-    void initControlSubsystems();
 };

@@ -31,8 +31,7 @@ bool DynamicUniformBufferBuilder::build(DynamicUniformBuffer& outBuffer) const {
     }
 
     // Get minimum uniform buffer offset alignment
-    VkPhysicalDeviceProperties props;
-    vkGetPhysicalDeviceProperties(physicalDevice_, &props);
+    vk::PhysicalDeviceProperties props = vk::PhysicalDevice(physicalDevice_).getProperties();
     VkDeviceSize minAlignment = props.limits.minUniformBufferOffsetAlignment;
 
     // Calculate aligned size (round up to alignment)
@@ -108,8 +107,7 @@ bool MultiSlotDynamicBufferBuilder::build(MultiSlotDynamicBuffer& outBuffer) con
     }
 
     // Get minimum uniform buffer offset alignment
-    VkPhysicalDeviceProperties props;
-    vkGetPhysicalDeviceProperties(physicalDevice_, &props);
+    vk::PhysicalDeviceProperties props = vk::PhysicalDevice(physicalDevice_).getProperties();
     VkDeviceSize minAlignment = props.limits.minUniformBufferOffsetAlignment;
 
     // Calculate aligned slot size (round up to alignment)

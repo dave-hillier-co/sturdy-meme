@@ -1,7 +1,9 @@
 #include "VirtualTextureSystem.h"
+#include "VmaBufferFactory.h"
 #include <vulkan/vulkan.hpp>
 #include <SDL3/SDL_log.h>
 #include <algorithm>
+#include <cstring>
 
 namespace VirtualTexture {
 
@@ -31,6 +33,7 @@ bool VirtualTextureSystem::init(const InitInfo& info) {
     cacheInfo.config = config;
     cacheInfo.framesInFlight = framesInFlight_;
     cacheInfo.useCompression = false;
+    cacheInfo.maxUploadsPerFrame = MAX_UPLOADS_PER_FRAME;
 
     cache = VirtualTextureCache::create(cacheInfo);
     if (!cache) {
@@ -68,6 +71,18 @@ bool VirtualTextureSystem::init(const InitInfo& info) {
         return false;
     }
 
+    // Create and fill the params UBO (constant for the system's lifetime)
+    if (!VmaBufferFactory::createUniformBuffer(info.allocator, sizeof(VTParamsUBO), paramsBuffer_)) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create VT params UBO");
+        return false;
+    }
+    {
+        VTParamsUBO params = getParams();
+        void* mapped = paramsBuffer_.map();
+        std::memcpy(mapped, &params, sizeof(params));
+        paramsBuffer_.unmap();
+    }
+
     SDL_Log("VirtualTextureSystem initialized successfully");
     return true;
 }
@@ -78,7 +93,9 @@ void VirtualTextureSystem::destroy(VkDevice device, VmaAllocator allocator) {
     feedback.reset();
     pageTable.reset();
     cache.reset();
+    paramsBuffer_.reset();
     pendingTiles.clear();
+    pendingUploads_.clear();
 }
 
 void VirtualTextureSystem::beginFrame(VkCommandBuffer cmd, uint32_t frameIndex) {
@@ -104,13 +121,14 @@ void VirtualTextureSystem::endFrame(VkCommandBuffer cmd, uint32_t frameIndex) {
 void VirtualTextureSystem::update(VkCommandBuffer cmd, uint32_t frameIndex) {
     currentFrame++;
 
-    // Process feedback from a COMPLETED frame.
-    // With N frames in flight, we read back from frame (currentFrame - framesInFlight)
-    // to ensure the GPU has finished writing to it.
-    // For the first few frames, we skip feedback processing since no frames have completed yet.
-    if (currentFrame >= framesInFlight_) {
-        uint32_t readbackFrameIndex = (frameIndex + framesInFlight_ - 1) % framesInFlight_;
-        processFeedback(readbackFrameIndex);
+    // Process feedback from a COMPLETED frame. The only fence-safe slot is
+    // frameIndex itself: it was last written framesInFlight frames ago and
+    // the caller has just waited on that frame's fence. Any other slot may
+    // still be in flight on the GPU.
+    // For the first few frames, we skip feedback processing since the slot
+    // hasn't been written yet.
+    if (currentFrame > framesInFlight_) {
+        processFeedback(frameIndex);
     }
 
     // Record upload commands for any tiles that finished loading
@@ -224,49 +242,62 @@ void VirtualTextureSystem::processFeedback(uint32_t frameIndex) {
 }
 
 void VirtualTextureSystem::recordPendingTileUploads(VkCommandBuffer cmd, uint32_t frameIndex) {
-    // Get tiles that finished loading
-    std::vector<LoadedTile> loaded = tileLoader->getLoadedTiles();
+    // Collect tiles that finished loading; anything beyond this frame's
+    // upload budget stays in the queue and is retried next frame
+    for (auto& tile : tileLoader->getLoadedTiles()) {
+        pendingUploads_.push_back(std::move(tile));
+    }
 
-    if (loaded.empty()) {
+    if (pendingUploads_.empty()) {
         return;
     }
 
+    cache->beginFrame();
+
+    uint32_t slotsPerAxis = config.getCacheTilesPerAxis();
     uint32_t uploaded = 0;
-    for (auto& tile : loaded) {
-        if (uploaded >= MAX_UPLOADS_PER_FRAME) {
-            // Re-queue remaining tiles for next frame
-            // In a real implementation, we'd keep them in a local buffer
+
+    while (!pendingUploads_.empty() && uploaded < MAX_UPLOADS_PER_FRAME) {
+        LoadedTile& tile = pendingUploads_.front();
+        uint32_t packed = tile.id.pack();
+
+        // Allocate cache slot, invalidating the evicted tile's page table
+        // entry if eviction occurred
+        std::optional<TileId> evicted;
+        CacheSlot* slot = cache->allocateSlot(tile.id, currentFrame, &evicted);
+        if (!slot) {
+            // Every slot is occupied by recently-used tiles; retry next frame
+            SDL_LogDebug(SDL_LOG_CATEGORY_APPLICATION,
+                         "VT: Cache full, deferring %zu tile uploads", pendingUploads_.size());
             break;
         }
-
-        // Allocate cache slot
-        CacheSlot* slot = cache->allocateSlot(tile.id, currentFrame);
-        if (!slot) {
-            SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
-                        "VT: Failed to allocate cache slot for tile");
-            continue;
+        if (evicted) {
+            pageTable->clearEntry(*evicted);
         }
 
         // Record tile upload commands into the main command buffer
         // This uses per-frame staging buffers to avoid race conditions
-        cache->recordTileUpload(tile.id, tile.pixels.data(),
-                                   tile.width, tile.height,
-                                   tile.format, cmd, frameIndex);
-
-        // Update page table (CPU-side, will be uploaded via recordUpload)
-        uint32_t slotsPerAxis = config.getCacheTilesPerAxis();
-        uint32_t packed = tile.id.pack();
-        auto slotIt = cache->getTileSlotIndex(tile.id);
-
-        if (slotIt != UINT32_MAX) {
-            uint16_t cacheX = slotIt % slotsPerAxis;
-            uint16_t cacheY = slotIt / slotsPerAxis;
-            pageTable->setEntry(tile.id, cacheX, cacheY);
+        bool ok = cache->recordTileUpload(tile.id, tile.pixels.data(),
+                                          tile.width, tile.height,
+                                          tile.format, cmd, frameIndex);
+        if (ok) {
+            // Update page table (CPU-side, will be uploaded via recordUpload)
+            uint32_t slotIndex = cache->getTileSlotIndex(tile.id);
+            if (slotIndex != UINT32_MAX) {
+                uint16_t cacheX = slotIndex % slotsPerAxis;
+                uint16_t cacheY = slotIndex / slotsPerAxis;
+                pageTable->setEntry(tile.id, cacheX, cacheY);
+            }
+            uploaded++;
+        } else {
+            SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                        "VT: Dropping tile (%u,%u) mip %u - upload failed",
+                        tile.id.x, tile.id.y, tile.id.mipLevel);
         }
 
-        // Remove from pending set
+        // Whether uploaded or dropped, this tile is no longer pending
         pendingTiles.erase(packed);
-        uploaded++;
+        pendingUploads_.pop_front();
     }
 
     if (uploaded > 0) {

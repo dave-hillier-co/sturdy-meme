@@ -66,6 +66,12 @@ float vtCalculateMipLevel(vec2 virtualUV) {
 
 // Write tile request to feedback buffer
 void vtWriteFeedback(uvec2 tileCoord, uint mipLevel) {
+    // Decimate: only 1 in 16 pixels writes feedback, so a full-screen miss
+    // doesn't saturate the 4096-entry buffer with duplicates of a few tiles
+    if ((uint(gl_FragCoord.x) & 3u) != 0u || (uint(gl_FragCoord.y) & 3u) != 0u) {
+        return;
+    }
+
     uint packed = vtPackTileId(tileCoord, mipLevel);
 
     // Atomically increment counter and get index
@@ -77,59 +83,64 @@ void vtWriteFeedback(uvec2 tileCoord, uint mipLevel) {
     }
 }
 
-// Sample virtual texture with automatic mip selection
+// Sample virtual texture at the given mip level, falling back to coarser
+// mips when the requested tile is not resident. Iterative because GLSL
+// forbids recursion.
 vec4 sampleVirtualTexture(vec2 virtualUV, float mipLevel) {
     // Clamp to valid mip range
-    uint mip = clamp(uint(mipLevel + 0.5), 0u, vtParams.maxMipLevel);
+    uint requestedMip = clamp(uint(mipLevel + 0.5), 0u, vtParams.maxMipLevel);
 
-    // Calculate number of tiles at this mip level
     float tileSize = vtParams.tileSizeAndBorder.x;
     float virtualSize = vtParams.virtualTextureSizeAndInverse.x;
-    float tilesAtMip = virtualSize / (tileSize * float(1u << mip));
 
-    // Calculate tile coordinates
-    vec2 tileCoordF = virtualUV * tilesAtMip;
-    ivec2 tileCoord = ivec2(floor(tileCoordF));
+    for (uint mip = requestedMip; mip <= vtParams.maxMipLevel; ++mip) {
+        // Calculate number of tiles at this mip level
+        float tilesAtMip = virtualSize / (tileSize * float(1u << mip));
 
-    // Clamp tile coordinates to valid range
-    int maxTileCoord = int(tilesAtMip) - 1;
-    tileCoord = clamp(tileCoord, ivec2(0), ivec2(maxTileCoord));
+        // Calculate tile coordinates
+        vec2 tileCoordF = virtualUV * tilesAtMip;
+        ivec2 tileCoord = ivec2(floor(tileCoordF));
 
-    // Calculate UV within the tile [0, 1]
-    vec2 inTileUV = fract(tileCoordF);
+        // Clamp tile coordinates to valid range
+        int maxTileCoord = int(tilesAtMip) - 1;
+        tileCoord = clamp(tileCoord, ivec2(0), ivec2(maxTileCoord));
 
-    // Fetch page table entry from texture array
-    // Each mip level is stored as a separate layer in the texture array
-    // Entry format: R = cacheX, G = cacheY, B = unused, A = valid
-    uvec4 pageEntry = texelFetch(vtPageTable, ivec3(tileCoord.x, tileCoord.y, int(mip)), 0);
+        // Calculate UV within the tile [0, 1]
+        vec2 inTileUV = fract(tileCoordF);
 
-    // Check if tile is loaded (valid flag in alpha channel)
-    if (pageEntry.a == 0u) {
-        // Tile not loaded - write feedback request
-        vtWriteFeedback(uvec2(tileCoord), mip);
+        // Fetch page table entry from texture array
+        // Each mip level is stored as a layer in the texture array, with the
+        // mip's entries occupying the top-left tilesAtMip x tilesAtMip corner
+        // Entry format: R = cacheX, G = cacheY, B = unused, A = valid
+        uvec4 pageEntry = texelFetch(vtPageTable, ivec3(tileCoord.x, tileCoord.y, int(mip)), 0);
 
-        // Try to use coarser mip level as fallback
-        if (mip < vtParams.maxMipLevel) {
-            return sampleVirtualTexture(virtualUV, float(mip + 1u));
+        // Check if tile is loaded (valid flag in alpha channel)
+        if (pageEntry.a == 0u) {
+            // Tile not loaded - request the mip we actually wanted, then
+            // keep walking up the chain looking for a resident fallback
+            if (mip == requestedMip) {
+                vtWriteFeedback(uvec2(tileCoord), mip);
+            }
+            continue;
         }
 
-        // Ultimate fallback - return placeholder color (pink/magenta for debugging)
-        return vec4(1.0, 0.0, 1.0, 1.0);
+        // Transform to physical cache coordinates
+        vec2 cachePos = vec2(pageEntry.xy);  // Cache tile position (in tiles)
+        float border = vtParams.tileSizeAndBorder.y;
+        float tileWithBorder = vtParams.tileSizeAndBorder.z;
+        float cacheSize = vtParams.physicalCacheSizeAndInverse.x;
+
+        // Calculate physical UV: tiles are stored at a stride of tileWithBorder,
+        // with the usable content offset by the border
+        vec2 physicalUV = (cachePos * tileWithBorder + border + inTileUV * tileSize) / cacheSize;
+
+        // Explicit LOD: the cache is single-mip and implicit derivatives are
+        // undefined inside this non-uniform loop
+        return textureLod(vtCache, physicalUV, 0.0);
     }
 
-    // Transform to physical cache coordinates
-    vec2 cachePos = vec2(pageEntry.xy);  // Cache tile position (in tiles)
-    float border = vtParams.tileSizeAndBorder.y;
-    float tileWithBorder = vtParams.tileSizeAndBorder.z;
-    float cacheSize = vtParams.physicalCacheSizeAndInverse.x;
-
-    // Calculate physical UV
-    // Each tile in cache includes border pixels for filtering
-    // The actual tile content is (tileSize - 2*border) in the center
-    float usableTileSize = tileSize;  // We use the full tile but account for border in UV
-    vec2 physicalUV = (cachePos * tileWithBorder + border + inTileUV * usableTileSize) / cacheSize;
-
-    return texture(vtCache, physicalUV);
+    // Ultimate fallback - return placeholder color (pink/magenta for debugging)
+    return vec4(1.0, 0.0, 1.0, 1.0);
 }
 
 // Convenience function with automatic mip calculation

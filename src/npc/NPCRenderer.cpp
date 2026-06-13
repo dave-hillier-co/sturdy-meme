@@ -1,10 +1,10 @@
 #include "NPCRenderer.h"
 #include "NPCSimulation.h"
+#include "AnimatedCharacter.h"
 #include "SkinnedMeshRenderer.h"
 #include "ecs/World.h"
 #include "ecs/Components.h"
 #include <SDL3/SDL.h>
-#include <cmath>
 
 NPCRenderer::NPCRenderer(ConstructToken) {}
 
@@ -37,32 +37,32 @@ void NPCRenderer::prepare(uint32_t frameIndex,
     // Clear previous frame's render data
     renderData_.clear();
 
-    const auto& npcData = npcSim.getData();
-    size_t npcCount = npcData.count();
-
-    if (npcCount == 0) {
+    // The ECS world is the single source of truth for per-NPC render state.
+    if (!ecsWorld) {
         visibleNPCCount_ = 0;
         drawCallCount_ = 0;
         return;
     }
 
-    // Reserve space for render data
-    renderData_.reserve(npcCount);
-
-    // Bone slot allocation: slot 0 is reserved for player, NPCs use slots 1+
-    // Max slots available = SkinnedMeshRenderer::getMaxSlots() - 1
+    // Bone slot allocation: slot 0 is reserved for player, NPCs use slots 1+.
+    // Slots are assigned sequentially in this single ordered pass and stored in
+    // renderData_; recordDraw replays the same ordered list within the same frame,
+    // so each slot stays paired with the matrices uploaded here.
     uint32_t nextBoneSlot = 1;  // Start at 1 (slot 0 reserved for player)
     const uint32_t maxSlots = SkinnedMeshRenderer::getMaxSlots();
 
-    // Build render data for each visible NPC
-    for (size_t i = 0; i < npcCount; ++i) {
+    // Iterate the dense ECS view of skinned NPC entities. The view covers exactly
+    // the simulation NPC entities (Transform/NPCLODController/SkinnedMeshRef/NPCHueShift).
+    for (auto [entity, transform, lodCtrl, skinnedRef, hue] :
+         ecsWorld->view<ecs::Transform, ecs::NPCLODController,
+                        ecs::SkinnedMeshRef, ecs::NPCHueShift>().each()) {
         // Skip Virtual LOD NPCs (not rendered)
-        if (npcData.lodLevels[i] == NPCLODLevel::Virtual) {
+        if (lodCtrl.level == ecs::NPCLODLevel::Virtual) {
             continue;
         }
 
-        // Skip NPCs without valid character
-        auto* character = npcSim.getCharacter(i);
+        // Skip NPCs without a valid character
+        auto* character = static_cast<AnimatedCharacter*>(skinnedRef.character);
         if (!character) {
             continue;
         }
@@ -74,23 +74,11 @@ void NPCRenderer::prepare(uint32_t frameIndex,
             break;
         }
 
-        // Future: Add frustum culling here
-        // if (frustumCullingEnabled_ && !isInFrustum(npcData.positions[i])) {
-        //     continue;
-        // }
-
         NPCRenderData data{};
-        data.npcIndex = i;
-        // Get transform directly from NPCSimulation
-        data.transform = npcSim.buildNPCTransform(i);
-        data.lodLevel = npcData.lodLevels[i];
+        data.character = character;
+        data.transform = transform.matrix;
         data.boneSlot = nextBoneSlot;
-
-        // Compute hue shift for visual variety (must match SceneBuilder formula)
-        // Uses golden ratio to distribute hues evenly around the color wheel
-        constexpr float GOLDEN_RATIO = 1.618033988749895f;
-        constexpr float TWO_PI = 6.283185307179586f;
-        data.hueShift = std::fmod(static_cast<float>(i + 1) * GOLDEN_RATIO, 1.0f) * TWO_PI;
+        data.hueShift = hue.hueShift;
 
         // Update bone matrices for this NPC in its assigned slot
         skinnedMeshRenderer_->updateBoneMatrices(frameIndex, nextBoneSlot, character);
@@ -101,25 +89,20 @@ void NPCRenderer::prepare(uint32_t frameIndex,
 
     visibleNPCCount_ = renderData_.size();
     drawCallCount_ = visibleNPCCount_;  // Currently 1:1, will improve with batching
-
-    // Future optimization: Sort by template/material for batching
-    // std::sort(renderData_.begin(), renderData_.end(), [&](const NPCRenderData& a, const NPCRenderData& b) {
-    //     return npcData.templateIndices[a.npcIndex] < npcData.templateIndices[b.npcIndex];
-    // });
 }
 
 void NPCRenderer::recordDraw(VkCommandBuffer cmd, uint32_t frameIndex) {
-    if (!currentNpcSim_ || !skinnedMeshRenderer_) {
+    if (!skinnedMeshRenderer_) {
         return;
     }
 
-    // Record draw calls for each visible NPC using their assigned bone slot
-    // The dynamic offset in bindDescriptorSets selects the correct bone matrices
+    // Record draw calls for each visible NPC using their assigned bone slot.
+    // The dynamic offset in bindDescriptorSets selects the correct bone matrices.
+    // This replays renderData_ in the same order prepare() built it, keeping each
+    // bone slot paired with the matrices uploaded for that character.
     for (const auto& data : renderData_) {
-        auto* character = currentNpcSim_->getCharacter(data.npcIndex);
-        if (!character) continue;
-
-        // Use the ECS-compatible record() method with the stored transform and hue shift
-        skinnedMeshRenderer_->record(cmd, frameIndex, data.boneSlot, data.transform, *character, data.hueShift);
+        if (!data.character) continue;
+        skinnedMeshRenderer_->record(cmd, frameIndex, data.boneSlot, data.transform,
+                                     *data.character, data.hueShift);
     }
 }

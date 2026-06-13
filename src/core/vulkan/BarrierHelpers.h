@@ -275,6 +275,39 @@ inline void computeToIndirectDrawAndShader(vk::CommandBuffer cmd) {
 }
 
 /**
+ * Write-after-read barrier for a recycled (double/triple-buffered) buffer set.
+ *
+ * When buffer sets rotate, the set written by frame N's compute is the same
+ * one that frame N-1's indirect draws + vertex-shader storage reads consumed.
+ * Before frame N overwrites it (fillBuffer reset on transfer, then compute
+ * write), the previous frame's reads must have completed. A WAR hazard needs
+ * only an execution dependency, so no memory/access masks are required.
+ *
+ * Pair with computeToIndirectDrawAndShader (indirect command + storage buffer
+ * read in the vertex shader).
+ */
+inline void indirectDrawAndShaderToComputeWrite(vk::CommandBuffer cmd) {
+    cmd.pipelineBarrier(
+        vk::PipelineStageFlagBits::eDrawIndirect | vk::PipelineStageFlagBits::eVertexShader,
+        vk::PipelineStageFlagBits::eTransfer | vk::PipelineStageFlagBits::eComputeShader,
+        {}, {}, {}, {});
+}
+
+/**
+ * Write-after-read barrier for a recycled buffer set consumed via the
+ * vertex-input stage (vertex attribute / index reads).
+ *
+ * Pair with computeToIndirectDrawAndVertex. See
+ * indirectDrawAndShaderToComputeWrite for the hazard description.
+ */
+inline void indirectDrawAndVertexToComputeWrite(vk::CommandBuffer cmd) {
+    cmd.pipelineBarrier(
+        vk::PipelineStageFlagBits::eDrawIndirect | vk::PipelineStageFlagBits::eVertexInput,
+        vk::PipelineStageFlagBits::eTransfer | vk::PipelineStageFlagBits::eComputeShader,
+        {}, {}, {}, {});
+}
+
+/**
  * Buffer barrier between compute passes
  */
 inline void bufferComputeToCompute(

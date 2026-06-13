@@ -24,6 +24,11 @@ public:
 
     void decrement() {
         if (--pendingCount_ == 0) {
+            // Take the same mutex the waiter holds during its predicate check.
+            // Without this, a decrement-to-zero can land between wait()'s
+            // predicate evaluation and its block, losing the notification and
+            // hanging the waiter forever (lost-wakeup race).
+            std::lock_guard<std::mutex> lock(mutex_);
             cv_.notify_all();
         }
     }

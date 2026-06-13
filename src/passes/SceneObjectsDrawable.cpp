@@ -87,34 +87,6 @@ void SceneObjectsDrawable::recordSceneObjects(VkCommandBuffer cmd, uint32_t fram
         vkCmd.drawIndexed(data.mesh->getIndexCount(), 1, 0, 0, 0);
     };
 
-    // Helper lambda to render a legacy Renderable (for rocks/detritus)
-    auto renderObject = [&](const Renderable& obj, VkDescriptorSet descSet) {
-        PushConstants push{};
-        push.model = obj.transform;
-        push.roughness = obj.roughness;
-        push.metallic = obj.metallic;
-        push.emissiveIntensity = obj.emissiveIntensity;
-        push.opacity = obj.opacity;
-        push.emissiveColor = glm::vec4(obj.emissiveColor, 1.0f);
-        push.pbrFlags = obj.pbrFlags;
-        push.alphaTestThreshold = obj.alphaTestThreshold;
-
-        vkCmd.pushConstants<PushConstants>(
-            *params.pipelineLayout,
-            vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
-            0, push);
-
-        vkCmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics,
-                                 *params.pipelineLayout, 0, vk::DescriptorSet(descSet), {});
-
-        vk::Buffer vertexBuffers[] = {obj.mesh->getVertexBuffer()};
-        vk::DeviceSize offsets[] = {0};
-        vkCmd.bindVertexBuffers(0, vertexBuffers, offsets);
-        vkCmd.bindIndexBuffer(obj.mesh->getIndexBuffer(), 0, vk::IndexType::eUint32);
-
-        vkCmd.drawIndexed(obj.mesh->getIndexCount(), 1, 0, 0, 0);
-    };
-
     if (useIndirect) {
         // Main scene objects via GPU-driven instanced/indirect draw.
         recordSceneObjectsIndirect(cmd, frameIndex, params);
@@ -123,8 +95,8 @@ void SceneObjectsDrawable::recordSceneObjects(VkCommandBuffer cmd, uint32_t fram
             vkCmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *params.sceneObjectsPipeline);
         }
     } else {
-    // Phase 6: Use ECS if available, otherwise fall back to legacy renderables
-    if (resources_.ecsWorld) {
+    // CPU scene-object path (ECS is always present on this path).
+    {
         ecs::World& world = *resources_.ecsWorld;
 
         // Collect entities to render (those with MeshRef and MaterialRef, excluding special entities)
@@ -166,39 +138,6 @@ void SceneObjectsDrawable::recordSceneObjects(VkCommandBuffer cmd, uint32_t fram
             }
             renderWithRenderData(data, currentDescSet);
         }
-    } else {
-        // Legacy path: Use Renderable vector
-        const auto& sceneObjects = resources_.scene->getRenderables();
-
-        // Build sorted indices by materialId to minimize descriptor set switches
-        std::vector<size_t> sortedIndices(sceneObjects.size());
-        std::iota(sortedIndices.begin(), sortedIndices.end(), 0);
-        std::sort(sortedIndices.begin(), sortedIndices.end(), [&](size_t a, size_t b) {
-            return sceneObjects[a].materialId < sceneObjects[b].materialId;
-        });
-
-        MaterialId lastMaterialId = INVALID_MATERIAL_ID;
-        VkDescriptorSet currentDescSet = VK_NULL_HANDLE;
-
-        for (size_t i : sortedIndices) {
-            // Skip GPU-skinned characters (player + NPCs, rendered via separate pipeline)
-            if (sceneObjects[i].gpuSkinned) continue;
-
-            const auto& obj = sceneObjects[i];
-
-            // Only update descriptor set when material changes
-            if (obj.materialId != lastMaterialId) {
-                currentDescSet = materialRegistry.getDescriptorSet(obj.materialId, frameIndex);
-                if (currentDescSet == VK_NULL_HANDLE) {
-                    // Skip objects with invalid materialId
-                    SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
-                        "Skipping object with invalid materialId %u", obj.materialId);
-                    continue;
-                }
-                lastMaterialId = obj.materialId;
-            }
-            renderObject(obj, currentDescSet);
-        }
     }
     }  // end CPU main-objects path (else of useIndirect)
 
@@ -210,7 +149,7 @@ void SceneObjectsDrawable::recordSceneObjects(VkCommandBuffer cmd, uint32_t fram
         if (resources_.rocks && resources_.rocks->hasDescriptorSets()) {
             VkDescriptorSet rockDescSet = resources_.rocks->getDescriptorSet(frameIndex);
             for (const auto& rock : resources_.rocks->getSceneObjects()) {
-                renderObject(rock, rockDescSet);
+                renderWithRenderData(rock, rockDescSet);
             }
         }
 
@@ -218,7 +157,7 @@ void SceneObjectsDrawable::recordSceneObjects(VkCommandBuffer cmd, uint32_t fram
         if (resources_.detritus && resources_.detritus->hasDescriptorSets()) {
             VkDescriptorSet detritusDescSet = resources_.detritus->getDescriptorSet(frameIndex);
             for (const auto& detritus : resources_.detritus->getSceneObjects()) {
-                renderObject(detritus, detritusDescSet);
+                renderWithRenderData(detritus, detritusDescSet);
             }
         }
     }

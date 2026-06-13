@@ -23,7 +23,12 @@
   - `SDL_LogDebug(SDL_LOG_CATEGORY_APPLICATION, ...)` for debug output
 - procedurally generated content should be generated as part of the build process.
 - generated textures should be saved in png format
-- Vulkan-hpp: Use vulkan-hpp (`#include <vulkan/vulkan.hpp>`) for new Vulkan code. Prefer builder pattern with `.set*()` methods over positional constructors (e.g., `vk::BufferCreateInfo{}.setSize(...).setUsage(...)`). Run `./scripts/analyze-vulkan-usage.sh` to see migration guidance.
+- Vulkan-hpp: All Vulkan code uses vulkan-hpp (`#include <vulkan/vulkan.hpp>`) — never include `<vulkan/vulkan.h>` directly. Standards:
+  - Construct create-infos with the builder pattern (`.set*()`), not positional/C-struct init: `vk::BufferCreateInfo{}.setSize(...).setUsage(...)`.
+  - Use scoped enums (`vk::Format::eR8G8B8A8Unorm`, `vk::ImageUsageFlagBits::e*`) where they are consumed natively by hpp.
+  - vulkan-hpp interoperates with the C API (`vk::Buffer`↔`VkBuffer`). Keep **C handle types** (`VkDevice`, `VkBuffer`, ...) in public/header signatures and struct members that cross module boundaries, so files migrate independently without rippling to includers (see `ShaderLoader` for the idiom).
+  - NEVER write `static_cast<VkFormat>(vk::Format::e...)` round-trips. If the surrounding API (a custom builder/struct/function) takes a C type, just pass the plain C enum (`VK_FORMAT_R8G8B8A8_UNORM`). The round-trip is strictly worse than the C enum.
+  - Run `./scripts/analyze-vulkan-usage.sh` to audit usage.
 
 ## Preprocessing Tool Output Formats
 

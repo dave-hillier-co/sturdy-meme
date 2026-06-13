@@ -10,7 +10,10 @@ struct VirtualTextureConfig {
     uint32_t virtualSizePixels = 65536;     // Virtual texture size (64K x 64K)
     uint32_t tileSizePixels = 128;          // Size of each tile (128x128)
     uint32_t cacheSizePixels = 4096;        // Physical cache size (4K x 4K)
-    uint32_t borderPixels = 4;              // Tile border for filtering
+    // Tile border for filtering. Must stay 0 until tile_generator bakes
+    // gutters and the cache places tiles at a (tileSize + 2*border) stride;
+    // the shader's stride math derives from this value.
+    uint32_t borderPixels = 0;
     uint32_t maxMipLevels = 9;              // log2(512) = 9 mip levels
 
     // Calculated values

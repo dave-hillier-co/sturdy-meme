@@ -1,6 +1,6 @@
 #pragma once
 
-#include <vulkan/vulkan.h>
+#include <vulkan/vulkan.hpp>
 #include <vulkan/vulkan_raii.hpp>
 #include <vk_mem_alloc.h>
 #include <glm/glm.hpp>
@@ -74,6 +74,13 @@ public:
                            const glm::vec3& sunColor,
                            const glm::mat4* cascadeMatrices,
                            const glm::vec4& cascadeSplits);
+
+    /**
+     * Clear the integrated volume and move it to SHADER_READ_ONLY_OPTIMAL if the
+     * froxel update has never run. The post-process composite statically binds the
+     * integrated volume, so it must be valid even while froxel updates are disabled.
+     */
+    void recordInitialClearIfNeeded(VkCommandBuffer cmd);
 
     // Get the scattering volume (raw, pre-integration) - returns current frame's output
     VkImageView getScatteringVolumeView() const { return scatteringVolumeViews_[frameCounter % 2] ? **scatteringVolumeViews_[frameCounter % 2] : VK_NULL_HANDLE; }
@@ -158,6 +165,7 @@ private:
     // Integrated scattering volume (front-to-back integrated) - RAII-managed
     ManagedImage integratedVolume_;
     std::optional<vk::raii::ImageView> integratedVolumeView_;
+    bool integratedVolumeInitialized_ = false;
 
     // Volume sampler (trilinear filtering)
     std::optional<vk::raii::Sampler> volumeSampler_;

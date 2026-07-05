@@ -289,15 +289,25 @@ void main() {
 
 #ifdef USE_VIRTUAL_TEXTURE
     // Virtual Texture: Sample pre-composited megatexture (includes roads, rivers, biome materials)
-    // Convert world XZ position to virtual texture UV
-    vec2 vtUV = fragWorldPos.xz / VT_WORLD_SIZE;
+    // Convert world XZ position to virtual texture UV. The terrain mesh is
+    // centered on the origin (worldXZ = (uv - 0.5) * TERRAIN_SIZE in the vertex
+    // shader), spanning [-VT_WORLD_SIZE/2, +VT_WORLD_SIZE/2], so undo that
+    // centering with the +0.5 offset. Without it the negative half of the
+    // terrain collapses onto the clamped UV edge and samples the wrong tiles.
+    vec2 vtUV = fragWorldPos.xz / VT_WORLD_SIZE + 0.5;
 
     // Clamp UV to valid range (handles terrain edges)
     vtUV = clamp(vtUV, 0.0, 1.0);
 
-    // Sample with automatic mip selection
-    vec4 vtSample = sampleVirtualTextureAuto(vtUV);
-    albedo = vtSample.rgb;
+    // Sample with automatic mip selection. When the requested tile (and every
+    // coarser fallback) is missing from the cache, the VT lookup reports
+    // resident=false; fall back to the triplanar ground texture so a cache
+    // miss looks like terrain instead of a flat placeholder.
+    bool vtResident;
+    vec4 vtSample = sampleVirtualTextureAuto(vtUV, vtResident);
+    albedo = vtResident
+        ? vtSample.rgb
+        : sampleTriplanar(terrainAlbedo, fragWorldPos, normal, TRIPLANAR_SCALE);
 
     // On steep slopes, blend with cliff material (not baked into VT for triplanar quality)
     // Use triplanar for cliffs to avoid stretching on vertical surfaces

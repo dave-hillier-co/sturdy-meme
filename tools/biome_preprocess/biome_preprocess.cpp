@@ -15,6 +15,22 @@
 namespace fs = std::filesystem;
 
 // Check if outputs are up to date based on inputs and config
+// FNV-1a hash of the watershed build stamp: identifies the exact watershed
+// configuration/inputs the erosion data was generated from
+std::string readWatershedStamp(const std::string& erosionCacheDir) {
+    std::ifstream file(erosionCacheDir + "/watershed.meta");
+    if (!file.is_open()) return "missing";
+    uint64_t hash = 1469598103934665603ull;
+    char c;
+    while (file.get(c)) {
+        hash ^= static_cast<unsigned char>(c);
+        hash *= 1099511628211ull;
+    }
+    std::ostringstream out;
+    out << std::hex << hash;
+    return out.str();
+}
+
 bool isBiomeOutputUpToDate(const BiomeConfig& config) {
     std::string metaPath = config.outputDir + "/biome.meta";
     std::ifstream file(metaPath);
@@ -32,6 +48,7 @@ bool isBiomeOutputUpToDate(const BiomeConfig& config) {
     float cachedMaxAltitude = 0;
     uint32_t cachedOutputResolution = 0;
     uint32_t cachedNumSettlements = 0;
+    std::string cachedWatershedStamp;
 
     while (std::getline(file, line)) {
         std::istringstream iss(line);
@@ -49,6 +66,7 @@ bool isBiomeOutputUpToDate(const BiomeConfig& config) {
             else if (key == "maxAltitude") cachedMaxAltitude = std::stof(value);
             else if (key == "outputResolution") cachedOutputResolution = std::stoul(value);
             else if (key == "numSettlements") cachedNumSettlements = std::stoul(value);
+            else if (key == "watershedStamp") cachedWatershedStamp = value;
         }
     }
 
@@ -69,6 +87,13 @@ bool isBiomeOutputUpToDate(const BiomeConfig& config) {
     std::string flowDirPath = config.erosionCacheDir + "/flow_direction.png";
     if (!fs::exists(flowAccPath, ec) || !fs::exists(flowDirPath, ec)) {
         SDL_Log("Biome: erosion input files missing, reprocessing");
+        return false;
+    }
+
+    // Watershed content changes (threshold, resolution, sea level) don't alter
+    // the erosion dir path, so compare the watershed stamp itself
+    if (cachedWatershedStamp != readWatershedStamp(config.erosionCacheDir)) {
+        SDL_Log("Biome: watershed inputs changed, reprocessing");
         return false;
     }
 
@@ -120,6 +145,7 @@ bool saveBiomeBuildStamp(const BiomeConfig& config) {
     file << "maxAltitude=" << config.maxAltitude << "\n";
     file << "outputResolution=" << config.outputResolution << "\n";
     file << "numSettlements=" << config.numSettlements << "\n";
+    file << "watershedStamp=" << readWatershedStamp(config.erosionCacheDir) << "\n";
 
     return true;
 }

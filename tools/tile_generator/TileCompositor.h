@@ -23,8 +23,13 @@ struct TileCompositorConfig {
     uint32_t tilesPerAxis = 512;         // Number of tiles per axis at mip 0
     uint32_t maxMipLevels = 9;           // log2(512) = 9
 
-    // Material sampling
-    float materialTilingScale = 4.0f;    // Base UV tiling for materials
+    // Material sampling. worldPos is in METERS, so this is a per-meter UV
+    // frequency: total repeat = materialTilingScale * material.tilingScale.
+    // With material.tilingScale defaulting to 4, 1/128 gives a ~32 m texture
+    // repeat. The old value of 4.0 implicitly assumed normalized [0,1] coords
+    // and made the UV step a whole texel per pixel, collapsing every tile to a
+    // single texel (uniformly dark).
+    float materialTilingScale = 1.0f / 128.0f;  // Base UV tiling for materials (per meter)
     float slopeThreshold = 0.5f;         // Slope for cliff material blend start
     float slopeBlendRange = 0.3f;        // Range over which cliff blend occurs
 

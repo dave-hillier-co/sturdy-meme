@@ -173,13 +173,14 @@ void GuiIKTab::renderSkeletonOverlay(ISceneControl& sceneControl, const Camera& 
 
     auto& character = sceneBuilder.getAnimatedCharacter();
 
-    // Get the character's world transform via entity handle
-    const ecs::RenderData* playerRenderable = sceneBuilder.getRenderableForEntity(sceneBuilder.getPlayerEntity());
-    if (!playerRenderable) {
+    // Get the character's world transform (ECS authoritative)
+    const ecs::World* world = sceneBuilder.getECSWorld();
+    ecs::Entity playerEntity = sceneBuilder.getPlayerEntity();
+    if (!world || !world->valid(playerEntity) || !world->has<ecs::Transform>(playerEntity)) {
         return;
     }
 
-    glm::mat4 worldTransform = playerRenderable->transform;
+    glm::mat4 worldTransform = world->get<ecs::Transform>(playerEntity).matrix;
 
     // Get viewport size
     float width = static_cast<float>(sceneControl.getWidth());

@@ -102,218 +102,70 @@ bool MaterialLibrary::init(const MaterialLibraryConfig& cfg) {
 }
 
 void MaterialLibrary::setupDefaultMaterials() {
-    // Sea material (placeholder - sea is rendered differently)
-    zoneMaterials[static_cast<size_t>(BiomeZone::Sea)] = {
-        "sea",
-        "terrain/sea/albedo.png",
-        "",
-        "",
-        1.0f,
-        0.3f
+    // Albedo sources. The dedicated terrain/* art set was never added to the
+    // repo, so the megatexture baked flat gray (sampleMaterialTriplanar's
+    // missing-texture fallback). Point each biome at a real 512x512 PNG that
+    // ships under assets/textures/downloads/ instead. Paths are relative to the
+    // --materials base path (assets/textures). Only albedoPath is sampled by the
+    // tile compositor; normal/roughness maps are left empty here.
+    const std::string GRASS   = "downloads/Grass001_2K-JPG/Grass001.png";
+    const std::string DIRT    = "downloads/Ground037_2K-JPG/Ground037.png";
+    const std::string FOREST  = "downloads/Ground048_2K-JPG/Ground048.png";
+    const std::string MUD     = "downloads/Ground042_2K-JPG/Ground042.png";
+    const std::string MARSH   = "downloads/Ground054_2K-JPG/Ground054.png";
+    const std::string SAND    = "downloads/Ground078_2K-JPG/Ground078.png";
+    const std::string GRAVEL  = "downloads/Gravel022_2K-JPG/Gravel022.png";
+    const std::string CHALK   = "downloads/Rock027_2K-JPG/Rock027.png";
+    const std::string ROCK    = "downloads/Rock030_2K-JPG/Rock030.png";
+    const std::string PAVING  = "downloads/PavingStones070_2K-JPG/PavingStones070.png";
+
+    const float ts = config.defaultTilingScale;
+
+    // Helper-free assignment: {name, albedo, normal, roughnessMap, tiling, roughness}
+    // Sea (not rendered via VT, but kept for completeness)
+    zoneMaterials[static_cast<size_t>(BiomeZone::Sea)]          = {"sea", MARSH, "", "", 1.0f, 0.3f};
+    zoneMaterials[static_cast<size_t>(BiomeZone::Beach)]        = {"beach_sand", SAND, "", "", ts, 0.9f};
+    zoneMaterials[static_cast<size_t>(BiomeZone::ChalkCliff)]   = {"chalk_cliff", CHALK, "", "", ts, 0.7f};
+    zoneMaterials[static_cast<size_t>(BiomeZone::SaltMarsh)]    = {"salt_marsh", MARSH, "", "", ts, 0.85f};
+    zoneMaterials[static_cast<size_t>(BiomeZone::River)]        = {"river", GRAVEL, "", "", ts, 0.85f};
+    zoneMaterials[static_cast<size_t>(BiomeZone::Wetland)]      = {"wetland", MUD, "", "", ts, 0.85f};
+    zoneMaterials[static_cast<size_t>(BiomeZone::Grassland)]    = {"grassland", GRASS, "", "", ts, 0.8f};
+    zoneMaterials[static_cast<size_t>(BiomeZone::Agricultural)] = {"agricultural", DIRT, "", "", ts, 0.9f};
+    zoneMaterials[static_cast<size_t>(BiomeZone::Woodland)]     = {"woodland", FOREST, "", "", ts, 0.85f};
+
+    // Sub-zones add roughness variety; albedo follows the parent biome so the
+    // megatexture reads as coherent ground rather than four clashing textures.
+    auto fillSubZones = [&](BiomeZone zone, const std::string& albedo,
+                            float r0, float r1, float r2, float r3) {
+        auto& sub = subZoneMaterials[static_cast<size_t>(zone)];
+        sub[0] = {"sub0", albedo, "", "", ts, r0};
+        sub[1] = {"sub1", albedo, "", "", ts, r1};
+        sub[2] = {"sub2", albedo, "", "", ts, r2};
+        sub[3] = {"sub3", albedo, "", "", ts, r3};
     };
 
-    // Beach material - sandy beach
-    zoneMaterials[static_cast<size_t>(BiomeZone::Beach)] = {
-        "beach_sand",
-        "terrain/beach/sand_albedo.png",
-        "terrain/beach/sand_normal.png",
-        "",
-        config.defaultTilingScale,
-        0.9f
-    };
-
-    // Beach sub-zones (all use sand_albedo as fallback until more textures available)
-    subZoneMaterials[static_cast<size_t>(BiomeZone::Beach)] = {{
-        {"wet_sand", "terrain/beach/sand_albedo.png", "terrain/beach/sand_normal.png", "", config.defaultTilingScale, 0.7f},
-        {"pebbles", "terrain/beach/sand_albedo.png", "terrain/beach/sand_normal.png", "", config.defaultTilingScale, 0.85f},
-        {"driftwood", "terrain/beach/sand_albedo.png", "terrain/beach/sand_normal.png", "", config.defaultTilingScale, 0.8f},
-        {"seaweed", "terrain/beach/sand_albedo.png", "terrain/beach/sand_normal.png", "", config.defaultTilingScale, 0.75f}
-    }};
-
-    // Chalk cliff material
-    zoneMaterials[static_cast<size_t>(BiomeZone::ChalkCliff)] = {
-        "chalk_cliff",
-        "terrain/cliff/chalk_albedo.png",
-        "terrain/cliff/chalk_normal.png",
-        "",
-        config.defaultTilingScale,
-        0.7f
-    };
-
-    // Chalk cliff sub-zones (all use chalk_albedo as fallback)
-    subZoneMaterials[static_cast<size_t>(BiomeZone::ChalkCliff)] = {{
-        {"exposed_chalk", "terrain/cliff/chalk_albedo.png", "terrain/cliff/chalk_normal.png", "", config.defaultTilingScale, 0.65f},
-        {"grass_topped", "terrain/cliff/chalk_albedo.png", "terrain/cliff/chalk_normal.png", "", config.defaultTilingScale, 0.8f},
-        {"eroded_chalk", "terrain/cliff/chalk_albedo.png", "terrain/cliff/chalk_normal.png", "", config.defaultTilingScale, 0.7f},
-        {"flint", "terrain/cliff/rock_albedo.png", "terrain/cliff/rock_normal.png", "", config.defaultTilingScale, 0.6f}
-    }};
-
-    // Salt marsh material
-    zoneMaterials[static_cast<size_t>(BiomeZone::SaltMarsh)] = {
-        "salt_marsh",
-        "terrain/marsh/muddy_grass_albedo.png",
-        "terrain/marsh/muddy_grass_normal.png",
-        "",
-        config.defaultTilingScale,
-        0.85f
-    };
-
-    // Salt marsh sub-zones (all use muddy_grass_albedo as fallback)
-    subZoneMaterials[static_cast<size_t>(BiomeZone::SaltMarsh)] = {{
-        {"mudflat", "terrain/marsh/muddy_grass_albedo.png", "terrain/marsh/muddy_grass_normal.png", "", config.defaultTilingScale, 0.9f},
-        {"saltpan", "terrain/marsh/muddy_grass_albedo.png", "terrain/marsh/muddy_grass_normal.png", "", config.defaultTilingScale, 0.75f},
-        {"cordgrass", "terrain/marsh/muddy_grass_albedo.png", "terrain/marsh/muddy_grass_normal.png", "", config.defaultTilingScale, 0.8f},
-        {"creek", "terrain/marsh/muddy_grass_albedo.png", "terrain/marsh/muddy_grass_normal.png", "", config.defaultTilingScale, 0.7f}
-    }};
-
-    // River material (placeholder - handled by spline rasterization)
-    zoneMaterials[static_cast<size_t>(BiomeZone::River)] = {
-        "river",
-        "terrain/river/gravel_albedo.png",
-        "terrain/river/gravel_normal.png",
-        "",
-        config.defaultTilingScale,
-        0.85f
-    };
-
-    // River sub-zones (all use gravel_albedo as fallback)
-    subZoneMaterials[static_cast<size_t>(BiomeZone::River)] = {{
-        {"river_gravel", "terrain/river/gravel_albedo.png", "terrain/river/gravel_normal.png", "", config.defaultTilingScale, 0.85f},
-        {"river_stones", "terrain/river/gravel_albedo.png", "terrain/river/gravel_normal.png", "", config.defaultTilingScale, 0.8f},
-        {"river_sand", "terrain/river/gravel_albedo.png", "terrain/river/gravel_normal.png", "", config.defaultTilingScale, 0.9f},
-        {"river_mud", "terrain/river/gravel_albedo.png", "terrain/river/gravel_normal.png", "", config.defaultTilingScale, 0.95f}
-    }};
-
-    // Wetland material
-    zoneMaterials[static_cast<size_t>(BiomeZone::Wetland)] = {
-        "wetland",
-        "terrain/wetland/wet_grass_albedo.png",
-        "terrain/wetland/wet_grass_normal.png",
-        "",
-        config.defaultTilingScale,
-        0.85f
-    };
-
-    // Wetland sub-zones (use available textures)
-    subZoneMaterials[static_cast<size_t>(BiomeZone::Wetland)] = {{
-        {"marsh_grass", "terrain/wetland/wet_grass_albedo.png", "terrain/wetland/wet_grass_normal.png", "", config.defaultTilingScale, 0.85f},
-        {"reeds", "terrain/wetland/wet_grass_albedo.png", "terrain/wetland/wet_grass_normal.png", "", config.defaultTilingScale, 0.75f},
-        {"muddy", "terrain/wetland/muddy_albedo.png", "", "", config.defaultTilingScale, 0.95f},
-        {"flooded", "terrain/wetland/wet_grass_albedo.png", "terrain/wetland/wet_grass_normal.png", "", config.defaultTilingScale, 0.5f}
-    }};
-
-    // Grassland material (chalk downs)
-    zoneMaterials[static_cast<size_t>(BiomeZone::Grassland)] = {
-        "grassland",
-        "terrain/grassland/chalk_grass_albedo.png",
-        "terrain/grassland/chalk_grass_normal.png",
-        "",
-        config.defaultTilingScale,
-        0.8f
-    };
-
-    // Grassland sub-zones (all use chalk_grass_albedo as fallback)
-    subZoneMaterials[static_cast<size_t>(BiomeZone::Grassland)] = {{
-        {"open_down", "terrain/grassland/chalk_grass_albedo.png", "terrain/grassland/chalk_grass_normal.png", "", config.defaultTilingScale, 0.8f},
-        {"wildflower", "terrain/grassland/chalk_grass_albedo.png", "terrain/grassland/chalk_grass_normal.png", "", config.defaultTilingScale, 0.75f},
-        {"gorse", "terrain/grassland/chalk_grass_albedo.png", "terrain/grassland/chalk_grass_normal.png", "", config.defaultTilingScale, 0.7f},
-        {"chalk_scrape", "terrain/grassland/chalk_grass_albedo.png", "terrain/grassland/chalk_grass_normal.png", "", config.defaultTilingScale, 0.65f}
-    }};
-
-    // Agricultural material
-    zoneMaterials[static_cast<size_t>(BiomeZone::Agricultural)] = {
-        "agricultural",
-        "terrain/agricultural/ploughed_albedo.png",
-        "terrain/agricultural/ploughed_normal.png",
-        "",
-        config.defaultTilingScale,
-        0.9f
-    };
-
-    // Agricultural sub-zones (all use ploughed_albedo as fallback)
-    subZoneMaterials[static_cast<size_t>(BiomeZone::Agricultural)] = {{
-        {"ploughed", "terrain/agricultural/ploughed_albedo.png", "terrain/agricultural/ploughed_normal.png", "", config.defaultTilingScale, 0.9f},
-        {"pasture", "terrain/agricultural/ploughed_albedo.png", "terrain/agricultural/ploughed_normal.png", "", config.defaultTilingScale, 0.8f},
-        {"crop", "terrain/agricultural/ploughed_albedo.png", "terrain/agricultural/ploughed_normal.png", "", config.defaultTilingScale, 0.75f},
-        {"fallow", "terrain/agricultural/ploughed_albedo.png", "terrain/agricultural/ploughed_normal.png", "", config.defaultTilingScale, 0.85f}
-    }};
-
-    // Woodland material
-    zoneMaterials[static_cast<size_t>(BiomeZone::Woodland)] = {
-        "woodland",
-        "terrain/woodland/forest_floor_albedo.png",
-        "terrain/woodland/forest_floor_normal.png",
-        "",
-        config.defaultTilingScale,
-        0.85f
-    };
-
-    // Woodland sub-zones (all use forest_floor_albedo as fallback)
-    subZoneMaterials[static_cast<size_t>(BiomeZone::Woodland)] = {{
-        {"beech_floor", "terrain/woodland/forest_floor_albedo.png", "terrain/woodland/forest_floor_normal.png", "", config.defaultTilingScale, 0.85f},
-        {"oak_fern", "terrain/woodland/forest_floor_albedo.png", "terrain/woodland/forest_floor_normal.png", "", config.defaultTilingScale, 0.8f},
-        {"clearing", "terrain/woodland/forest_floor_albedo.png", "terrain/woodland/forest_floor_normal.png", "", config.defaultTilingScale, 0.75f},
-        {"coppice", "terrain/woodland/forest_floor_albedo.png", "terrain/woodland/forest_floor_normal.png", "", config.defaultTilingScale, 0.8f}
-    }};
+    fillSubZones(BiomeZone::Sea,          MARSH,  0.3f, 0.3f, 0.3f, 0.3f);
+    fillSubZones(BiomeZone::Beach,        SAND,   0.7f, 0.85f, 0.8f, 0.75f);
+    fillSubZones(BiomeZone::ChalkCliff,   CHALK,  0.65f, 0.8f, 0.7f, 0.6f);
+    fillSubZones(BiomeZone::SaltMarsh,    MARSH,  0.9f, 0.75f, 0.8f, 0.7f);
+    fillSubZones(BiomeZone::River,        GRAVEL, 0.85f, 0.8f, 0.9f, 0.95f);
+    fillSubZones(BiomeZone::Wetland,      MUD,    0.85f, 0.75f, 0.95f, 0.5f);
+    fillSubZones(BiomeZone::Grassland,    GRASS,  0.8f, 0.75f, 0.7f, 0.65f);
+    fillSubZones(BiomeZone::Agricultural, DIRT,   0.9f, 0.8f, 0.75f, 0.85f);
+    fillSubZones(BiomeZone::Woodland,     FOREST, 0.85f, 0.8f, 0.75f, 0.8f);
 
     // Cliff material (for steep slopes)
-    cliffMaterial = {
-        "cliff",
-        "terrain/cliff/rock_albedo.png",
-        "terrain/cliff/rock_normal.png",
-        "",
-        config.defaultTilingScale,
-        0.7f
-    };
+    cliffMaterial = {"cliff", ROCK, "", "", ts, 0.7f};
 
-    // Road materials
-    roadMaterials[static_cast<size_t>(RoadType::Footpath)] = {
-        "roads/footpath_albedo.png",
-        "",
-        0.85f,
-        0.5f,
-        1.0f
-    };
+    // Road materials: {albedoPath, normalPath, roughness, tilingScale, opacity}
+    roadMaterials[static_cast<size_t>(RoadType::Footpath)]  = {GRAVEL, "", 0.85f, 0.5f, 1.0f};
+    roadMaterials[static_cast<size_t>(RoadType::Bridleway)] = {GRAVEL, "", 0.8f, 0.5f, 1.0f};
+    roadMaterials[static_cast<size_t>(RoadType::Lane)]      = {GRAVEL, "", 0.75f, 1.0f, 1.0f};
+    roadMaterials[static_cast<size_t>(RoadType::Road)]      = {PAVING, "", 0.7f, 2.0f, 1.0f};
+    roadMaterials[static_cast<size_t>(RoadType::MainRoad)]  = {PAVING, "", 0.65f, 2.0f, 1.0f};
 
-    roadMaterials[static_cast<size_t>(RoadType::Bridleway)] = {
-        "roads/bridleway_albedo.png",
-        "roads/bridleway_normal.png",
-        0.8f,
-        0.5f,
-        1.0f
-    };
-
-    roadMaterials[static_cast<size_t>(RoadType::Lane)] = {
-        "roads/lane_albedo.png",
-        "roads/lane_normal.png",
-        0.75f,
-        1.0f,
-        1.0f
-    };
-
-    roadMaterials[static_cast<size_t>(RoadType::Road)] = {
-        "roads/road_albedo.png",
-        "roads/road_normal.png",
-        0.7f,
-        2.0f,
-        1.0f
-    };
-
-    roadMaterials[static_cast<size_t>(RoadType::MainRoad)] = {
-        "roads/main_road_albedo.png",
-        "roads/main_road_normal.png",
-        0.65f,
-        2.0f,
-        1.0f
-    };
-
-    // Riverbed material
-    riverbedMaterial = {
-        "rivers/gravel_albedo.png",
-        "rivers/mud_albedo.png",
-        1.3f,
-        0.9f
-    };
+    // Riverbed material: {centerAlbedoPath, edgeAlbedoPath, tilingScale, opacity}
+    riverbedMaterial = {GRAVEL, MUD, 1.3f, 0.9f};
 }
 
 std::string MaterialLibrary::resolvePath(const std::string& relativePath) const {

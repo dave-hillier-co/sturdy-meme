@@ -67,6 +67,8 @@
 #include "ErosionDataLoader.h"
 #include "RoadNetworkLoader.h"
 #include "RoadRiverVisualization.h"
+#include "world/SettlementRegistry.h"
+#include "world/BiomeMap.h"
 #include "ResizeCoordinator.h"
 #include "TimeSystem.h"
 #include "CelestialCalculator.h"
@@ -349,9 +351,10 @@ bool RendererBuilder::createSkinnedMeshRendererDescriptorSets(Renderer& r) {
     VkImageView playerNormalView = whiteTexture->getImageView();
     VkSampler playerNormalSampler = whiteTexture->getSampler();
 
-    const ecs::RenderData* playerRenderable = sceneBuilder.getRenderableForEntity(sceneBuilder.getPlayerEntity());
-    if (playerRenderable) {
-        MaterialId playerMaterialId = playerRenderable->materialId;
+    const ecs::World* ecsWorld = sceneBuilder.getECSWorld();
+    ecs::Entity playerEntity = sceneBuilder.getPlayerEntity();
+    if (ecsWorld && ecsWorld->valid(playerEntity) && ecsWorld->has<ecs::MaterialRef>(playerEntity)) {
+        MaterialId playerMaterialId = ecsWorld->get<ecs::MaterialRef>(playerEntity).id;
         const auto* playerMaterial = materialRegistry.getMaterial(playerMaterialId);
         if (playerMaterial) {
             if (playerMaterial->diffuse) {
@@ -1049,6 +1052,12 @@ std::vector<Loading::SystemInitTask> RendererBuilder::buildInitTasks(Renderer& r
                 deferredConfig.forestCenter = glm::vec2(sceneOrigin.x + 200.0f, sceneOrigin.y + 100.0f);
                 deferredConfig.forestRadius = 80.0f;
                 deferredConfig.maxTrees = 500;
+                // Biome-driven vegetation: registry objects are loaded later in
+                // init but generation only runs after the first frame
+                deferredConfig.biomeMap = &r.systems_->biomeMap();
+                deferredConfig.settlements = &r.systems_->settlements().settlements();
+                deferredConfig.biomeRegionRadius = 2000.0f;
+                deferredConfig.maxBiomeTrees = 4500;
                 deferredConfig.uniformBuffers = r.systems_->globalBuffers().uniformBuffers.buffers;
                 deferredConfig.shadowView = r.systems_->shadow().getShadowImageView();
                 deferredConfig.shadowSampler = r.systems_->shadow().getShadowSampler();
@@ -1139,10 +1148,12 @@ std::vector<Loading::SystemInitTask> RendererBuilder::buildInitTasks(Renderer& r
             if (hiZSystem) {
                 r.systems_->setHiZ(std::move(hiZSystem));
                 r.systems_->hiZ().setDepthBuffer(core.hdr.depthView, r.vulkanContext_->getDepthSampler());
-                // Scene objects and rocks are already ecs::RenderData (scene objects are
-                // deferred and empty here; only rocks are present at bootstrap time).
+                // Scene objects are deferred and do not exist at bootstrap; only rocks are
+                // present. Per-frame Hi-Z culling of scene objects runs off the ECS-sourced
+                // GPUSceneBuffer path, so no scene list is gathered here.
+                const std::vector<ecs::RenderData> noSceneObjects;
                 r.systems_->hiZ().gatherObjects(
-                    r.systems_->scene().getRenderables(),
+                    noSceneObjects,
                     r.systems_->rocks().getSceneObjects());
             }
 
@@ -1252,6 +1263,15 @@ std::vector<Loading::SystemInitTask> RendererBuilder::buildInitTasks(Renderer& r
                     SDL_Log("Loaded road network from %s", roadsPathAlt.c_str());
                 }
 
+                std::string settlementsPath =
+                    SettlementRegistry::getSettlementsPath(terrainDataPath + "/biome");
+                r.systems_->settlements().loadFromJson(settlementsPath);
+                r.systems_->settlements().applyTownExtents(terrainDataPath + "/towns");
+
+                std::string biomeMapPath =
+                    BiomeMap::getBiomeMapPath(terrainDataPath + "/biome");
+                r.systems_->biomeMap().loadFromPng(biomeMapPath, core.terrain.size);
+
                 std::string watershedPath = terrainDataPath + "/watershed";
                 ErosionLoadConfig erosionConfig{};
                 erosionConfig.cacheDirectory = watershedPath;
@@ -1263,6 +1283,7 @@ std::vector<Loading::SystemInitTask> RendererBuilder::buildInitTasks(Renderer& r
                 auto& vis = r.systems_->roadRiverVis();
                 vis.setWaterData(&r.systems_->erosionData().getWaterData());
                 vis.setRoadNetwork(&r.systems_->roadData().getRoadNetwork());
+                vis.setSettlements(&r.systems_->settlements().settlements());
                 vis.setTerrainTileCache(r.systems_->terrain().getTileCache());
 
                 RoadRiverVisConfig visConfig{};

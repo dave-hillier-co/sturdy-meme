@@ -2,7 +2,14 @@
 
 A phased plan for completing ECS integration across the codebase. Each phase produces a working, testable state.
 
+> **Status:** Planning history; phases have been implemented out of order and this document is
+> not a current-state architecture description. See [ARCHITECTURE.md](ARCHITECTURE.md) for the
+> implementation and [ARCHITECTURE_REVIEW.md](ARCHITECTURE_REVIEW.md) for the remaining
+> dual-authority problem. Verify each item against the code before treating it as outstanding.
+
 ## Current State
+
+Verified against the code on 2026-07-01.
 
 **Completed:**
 - EnTT-based ECS with `ecs::World` wrapper
@@ -11,8 +18,25 @@ A phased plan for completing ECS integration across the codebase. Each phase pro
 - Bone attachments (sword/shield on player)
 - Frustum culling system
 - EntityFactory for converting renderables
+- GPU scene-buffer population from ECS render components
+- GPU culling and indirect scene rendering path
+- ECS physics-body components for migrated scene entities
+- **Phase 1.2 (special-object indices):** replaced by entity handles + tag components
+  (`PlayerTag`, `CapeTag`, `WeaponTag`, …); no `playerIndex`/`emissiveOrbIndex`/`capeIndex`
+- **Phase 2 (NPC migration):** NPCs are ECS entities (`npcEntities_`); the parallel
+  `templateIndices`/`positions`/`renderableIndices` arrays are gone
+- **Phase 6 (Renderable elimination):** monolithic `Renderable`/`RenderableBuilder.h` removed;
+  PBR data in `PBRProperties`, tree typing in dedicated components. `ecs::RenderData` remains
+  only as a transient GPU-feed struct produced by `extractRenderData`
 
-**The Gap:** ECS coexists with legacy systems. Renderables still drive rendering. NPCs use parallel arrays. Physics uses index mapping.
+**The Gap: CLOSED (2026-07-01).** The persistent `RenderData` mirror
+(`SceneBuilder::sceneObjects` + `entityToRenderableIndex_` + `getRenderableForEntity`) and the
+index-aligned `scenePhysicsBodies` vector are removed; opacity and transform no longer dual-write;
+scatter is a documented immutable instance source; and the CPU-fallback and GPU-indirect paths
+enumerate the same entity set. ECS components are the sole authority; `ecs::RenderData` remains
+only as a transient GPU-feed struct. See the [ARCHITECTURE_REVIEW.md](ARCHITECTURE_REVIEW.md)
+"ECS and Render-Data Dual Authority" section (marked Resolved) for the per-slice detail and
+verification.
 
 ---
 
@@ -36,7 +60,10 @@ A phased plan for completing ECS integration across the codebase. Each phase pro
 
 **Testing:** Run game, verify physics objects (player, dynamic props) still move correctly. Check collision detection still works.
 
-### 1.2 Replace Hardcoded Special Object Indices
+### 1.2 Replace Hardcoded Special Object Indices — DONE (verified 2026-07-01)
+
+Implemented: role entity handles (`playerEntity_`, `emissiveOrbEntity_`, `capeEntity_`) and tag
+components replace the hardcoded indices. Original plan text retained below for history.
 
 **Current:** `SceneBuilder` tracks `playerIndex`, `emissiveOrbIndex`, `capeIndex`, etc.
 
@@ -62,7 +89,10 @@ struct WeaponTag { WeaponSlot slot; };
 
 **Testing:** Verify player camera follow works, cape physics works, flag animation works, weapon attachment works.
 
-### 1.3 NPC Renderable Index Elimination
+### 1.3 NPC Renderable Index Elimination — DONE (verified 2026-07-01)
+
+Implemented as part of Phase 2: NPCs are ECS entities (`npcEntities_`), no `renderableIndices`.
+Original plan text retained below for history.
 
 **Current:** `NPCData::renderableIndices` maps NPC index to scene object index.
 
@@ -80,9 +110,13 @@ struct WeaponTag { WeaponSlot slot; };
 
 ---
 
-## Phase 2: NPC System Migration
+## Phase 2: NPC System Migration — DONE (verified 2026-07-01)
 
 **Goal:** Move NPCs from parallel arrays to proper ECS entities.
+
+Implemented: NPCs are ECS entities (`src/npc/NPCSimulation.h:173`); the parallel-primitive arrays
+below no longer exist and `NPCRenderData` is a transient per-frame draw struct. Original plan text
+retained below for history.
 
 ### 2.1 NPC Component Design
 
@@ -366,9 +400,16 @@ struct LightFlicker {
 
 ---
 
-## Phase 6: Full Renderable Elimination
+## Phase 6: Full Renderable Elimination — LARGELY DONE (verified 2026-07-01)
 
 **Goal:** Remove Renderable struct entirely. All render data in components.
+
+Implemented: the monolithic `Renderable` struct and `RenderableBuilder.h` are removed; PBR data
+lives in `PBRProperties` and tree typing in dedicated components. The residual work is not this
+struct but the persistent `ecs::RenderData` mirror in `SceneBuilder` — tracked under the
+dual-authority issue in [ARCHITECTURE_REVIEW.md](ARCHITECTURE_REVIEW.md). `ecs::RenderData` itself
+is retained as a legitimate transient GPU-feed struct. Original plan text retained below for
+history.
 
 ### 6.1 Component Completeness Audit
 

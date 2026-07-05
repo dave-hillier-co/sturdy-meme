@@ -13,11 +13,13 @@ class DebugLineSystem;
 class TerrainTileCache;
 struct WaterPlacementData;
 struct RoadNetwork;
+struct Settlement;
 
 struct RoadRiverVisConfig {
     // Visualization toggles
     bool showRivers = true;
     bool showRoads = true;
+    bool showSettlements = true;
 
     // Cone appearance
     float coneRadius = 0.5f;        // Radius of cone base
@@ -31,6 +33,10 @@ struct RoadRiverVisConfig {
     // Colors (RGBA)
     glm::vec4 riverColor = glm::vec4(0.2f, 0.5f, 1.0f, 1.0f);  // Blue
     glm::vec4 roadColor = glm::vec4(0.8f, 0.6f, 0.2f, 1.0f);   // Orange/tan
+    glm::vec4 settlementColor = glm::vec4(0.9f, 0.2f, 0.2f, 1.0f);  // Red
+
+    // Settlement marker appearance
+    float settlementMarkerHeight = 40.0f;  // Vertical beacon height
 };
 
 class RoadRiverVisualization {
@@ -52,6 +58,10 @@ public:
     void setRoadNetwork(const RoadNetwork* roadNetwork) {
         if (roadNetwork) roadNetwork_.emplace(*roadNetwork);
         else roadNetwork_.reset();
+        dirty_ = true;
+    }
+    void setSettlements(const std::vector<Settlement>* settlements) {
+        settlements_ = settlements;
         dirty_ = true;
     }
     void setTerrainTileCache(const TerrainTileCache* tileCache) {
@@ -81,7 +91,9 @@ private:
     void rebuildCache();
     void buildRiverCones();
     void buildRoadCones();
+    void buildSettlementMarkers();
     void addConeToCache(const glm::vec3& base, const glm::vec3& tip, float radius, const glm::vec4& color);
+    void addCircleToCache(const glm::vec3& center, float radius, const glm::vec4& color);
 
     // Get height at world position from terrain height map
     float getTerrainHeight(float x, float z) const;
@@ -89,6 +101,7 @@ private:
     RoadRiverVisConfig config_;
     std::optional<std::reference_wrapper<const WaterPlacementData>> waterData_;
     std::optional<std::reference_wrapper<const RoadNetwork>> roadNetwork_;
+    const std::vector<Settlement>* settlements_ = nullptr;
     std::optional<std::reference_wrapper<const TerrainTileCache>> tileCache_;
 
     // Cached line vertices (pairs for each line segment)

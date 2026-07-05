@@ -179,6 +179,10 @@ size_t ScatterSystem::createInstanceEntities(ecs::World& world, bool isRock) {
 }
 
 void ScatterSystem::rebuildFromECS(ecs::World& world) {
+    // Bake the scatter instance entities into the immutable runtime cache. Called once at init;
+    // this cache is the authority for scatter rendering thereafter (no live per-frame re-sync).
+    // Note: only transform/mesh/roughness/metallic/castsShadow are carried; scatter does not
+    // participate in opacity/hueShift/alphaTest.
     auto& sceneObjects = material_.getSceneObjects();
     sceneObjects.clear();
     sceneObjects.reserve(instanceEntities_.size());

@@ -111,6 +111,12 @@ public:
                                          size_t vertexCount, float scale = 1.0f,
                                          const glm::quat& rotation = glm::quat(1, 0, 0, 0));
 
+    // Static triangle mesh (concave world geometry: building footprints,
+    // curved walls). Vertices are taken in world space; the body sits at the
+    // origin. Indexed triangles, 3 indices per triangle.
+    PhysicsBodyID createStaticMesh(const glm::vec3* vertices, size_t vertexCount,
+                                   const uint32_t* indices, size_t indexCount);
+
     // Static capsule (for tree trunks, poles, etc.)
     // halfHeight: half the height of the cylindrical part (total height = 2*halfHeight + 2*radius)
     PhysicsBodyID createStaticCapsule(const glm::vec3& position, float halfHeight, float radius,

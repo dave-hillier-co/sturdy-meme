@@ -67,10 +67,6 @@ public:
     SceneBuilder(SceneBuilder&&) = delete;
     SceneBuilder& operator=(SceneBuilder&&) = delete;
 
-    // Access to built scene mirror (bootstrap source for ECS entities + inspector reads)
-    const std::vector<ecs::RenderData>& getRenderables() const { return sceneObjects; }
-    std::vector<ecs::RenderData>& getRenderables() { return sceneObjects; }
-
     // ECS entity accessors (Phase 6: direct entity access)
     ecs::Entity getPlayerEntity() const { return playerEntity_; }
     ecs::Entity getEmissiveOrbEntity() const { return emissiveOrbEntity_; }
@@ -81,24 +77,18 @@ public:
     ecs::Entity getShieldEntity() const { return shieldEntity_; }
     ecs::Entity getWellEntranceEntity() const { return wellEntranceEntity_; }
 
-    // Get all scene entities (for ECS-based iteration)
+    // Get all scene entities (for ECS-based iteration). Scene-object render data is derived
+    // on demand from each entity's components via ecs::extractRenderData; there is no
+    // persistent RenderData mirror.
     const std::vector<ecs::Entity>& getSceneEntities() const { return sceneEntities_; }
 
-    // Find the render-data mirror entry for a given entity (nullptr if not found)
-    ecs::RenderData* getRenderableForEntity(ecs::Entity entity) {
-        auto it = entityToRenderableIndex_.find(entity);
-        if (it != entityToRenderableIndex_.end() && it->second < sceneObjects.size()) {
-            return &sceneObjects[it->second];
-        }
-        return nullptr;
-    }
-    const ecs::RenderData* getRenderableForEntity(ecs::Entity entity) const {
-        auto it = entityToRenderableIndex_.find(entity);
-        if (it != entityToRenderableIndex_.end() && it->second < sceneObjects.size()) {
-            return &sceneObjects[it->second];
-        }
-        return nullptr;
-    }
+    // Register an externally created entity (e.g. settlement buildings) so both
+    // render paths (GPU-indirect and CPU fallback) enumerate it.
+    void addExternalSceneEntity(ecs::Entity entity) { sceneEntities_.push_back(entity); }
+
+    // Upload runtime-generated geometry as a SceneBuilder-owned mesh.
+    // Returns nullptr on upload failure.
+    Mesh* addGeneratedMesh(std::vector<Vertex> vertices, std::vector<uint32_t> indices);
 
     // Set the ECS world (must be called before createRenderables if ECS is used).
     // Also propagates to the NPC simulation so its NPCs (spawned before the world
@@ -130,6 +120,9 @@ public:
     // Mesh accessors for demo/testing purposes
     Mesh* getCubeMesh() const { return cubeMesh.get(); }
     Mesh* getSphereMesh() const { return sphereMesh.get(); }
+
+    // Material for untextured/vertex-colored objects (building blockouts)
+    MaterialId getWhiteMaterialId() const { return whiteMaterialId; }
 
     // Access to textures for descriptor set creation (via AssetRegistry)
     const Texture* getGroundTexture() const;
@@ -232,9 +225,16 @@ private:
     void createRenderables();
     void createNPCs(const InitInfo& info);  // Create NPC characters
 
-    // Slice 5 (merged creation pass): create the ECS entity for sceneObjects[i]
+    // Scene object roles - assigned during createRenderables(), consumed during entity creation
+    enum class ObjectRole : uint8_t {
+        None, Player, EmissiveOrb, FlagPole, FlagCloth, Cape,
+        Sword, Shield, WellEntrance, DebugAxisRightX, DebugAxisRightY,
+        DebugAxisRightZ, DebugAxisLeftX, DebugAxisLeftY, DebugAxisLeftZ
+    };
+
+    // Merged creation pass: create the ECS entity for a transient scene-object RenderData
     // with all tags/components/role handling. Called inline from createRenderables.
-    void createSceneEntity(size_t i);
+    void createSceneEntity(const ecs::RenderData& obj, ObjectRole role);
     // Finalize the merged pass: player hierarchy + NPC tagging once all entities exist.
     void finalizeSceneEntities();
 
@@ -247,9 +247,14 @@ private:
     // Terrain height query function
     HeightQueryFunc terrainHeightFunc;
 
-    // Stored for RAII cleanup
+    // Stored for RAII cleanup and runtime mesh uploads
     VmaAllocator storedAllocator = VK_NULL_HANDLE;
     VkDevice storedDevice = VK_NULL_HANDLE;
+    VkCommandPool storedCommandPool = VK_NULL_HANDLE;
+    VkQueue storedGraphicsQueue = VK_NULL_HANDLE;
+
+    // Runtime-generated meshes (settlement blockouts etc.), RAII-owned
+    std::vector<std::unique_ptr<Mesh>> generatedMeshes_;
 
     // Asset registry for centralized resource management
     std::optional<std::reference_wrapper<AssetRegistry>> assetRegistry_;
@@ -290,24 +295,12 @@ private:
     std::shared_ptr<Texture> defaultEmissive_;  // Black texture for objects without emissive
     std::shared_ptr<Texture> whiteTexture_;     // White texture for vertex-colored objects
 
-    // Scene objects mirror (bootstrap source for ECS entities + inspector reads)
-    std::vector<ecs::RenderData> sceneObjects;
-
     int32_t rightHandBoneIndex = -1;  // Bone index for sword attachment
     int32_t leftHandBoneIndex = -1;   // Bone index for shield attachment
 
-    // Scene object roles - assigned during createRenderables(), consumed during entity creation
-    enum class ObjectRole : uint8_t {
-        None, Player, EmissiveOrb, FlagPole, FlagCloth, Cape,
-        Sword, Shield, WellEntrance, DebugAxisRightX, DebugAxisRightY,
-        DebugAxisRightZ, DebugAxisLeftX, DebugAxisLeftY, DebugAxisLeftZ
-    };
-    std::vector<ObjectRole> objectRoles_;
-
     // ECS entity handles - the primary way to identify scene objects
     ecs::World* ecsWorld_ = nullptr;  // Pointer to ECS world (not owned)
-    std::vector<ecs::Entity> sceneEntities_;  // All scene entities (parallel to sceneObjects)
-    std::unordered_map<ecs::Entity, size_t> entityToRenderableIndex_;  // Reverse map
+    std::vector<ecs::Entity> sceneEntities_;  // All scene entities
     ecs::Entity playerEntity_ = ecs::NullEntity;
     ecs::Entity emissiveOrbEntity_ = ecs::NullEntity;
     ecs::Entity flagPoleEntity_ = ecs::NullEntity;

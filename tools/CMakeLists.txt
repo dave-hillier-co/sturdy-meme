@@ -64,29 +64,6 @@ target_link_libraries(biome_preprocess PRIVATE
 
 target_compile_features(biome_preprocess PRIVATE cxx_std_17)
 
-# Settlement generator tool (standalone settlement placement)
-add_executable(settlement_generator
-    settlement_generator/main.cpp
-    settlement_generator/SettlementGenerator.cpp
-    settlement_generator/SettlementSVG.cpp
-    common/stb_impl.cpp
-)
-
-target_include_directories(settlement_generator PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/settlement_generator
-    ${STB_INCLUDE_DIRS}
-)
-
-target_link_libraries(settlement_generator PRIVATE
-    SDL3::SDL3
-    glm::glm
-    lodepng
-    nlohmann_json::nlohmann_json
-    unofficial::tinyexr::tinyexr
-)
-
-target_compile_features(settlement_generator PRIVATE cxx_std_17)
-
 # Foam noise texture generator
 add_executable(foam_noise_gen
     foam_noise_gen/foam_noise_gen.cpp
@@ -223,25 +200,6 @@ target_link_libraries(watershed PRIVATE
 
 target_compile_features(watershed PRIVATE cxx_std_17)
 
-# Vegetation placement generator (Poisson disk sampling for trees, rocks, detritus)
-add_executable(vegetation_generator
-    vegetation_generator/main.cpp
-    vegetation_generator/VegetationPlacer.cpp
-)
-
-target_include_directories(vegetation_generator PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/vegetation_generator
-)
-
-target_link_libraries(vegetation_generator PRIVATE
-    SDL3::SDL3
-    glm::glm
-    lodepng
-    nlohmann_json::nlohmann_json
-)
-
-target_compile_features(vegetation_generator PRIVATE cxx_std_17)
-
 # Dwelling generator (procedural house floor plans)
 add_executable(dwelling_generator
     dwelling_generator/main.cpp
@@ -298,6 +256,7 @@ add_executable(town_generator
     town_generator/src/wards/Harbour.cpp
     town_generator/src/wards/Wilderness.cpp
     town_generator/src/svg/SVGWriter.cpp
+    town_generator/src/geojson/GeoJSONWriter.cpp
 )
 
 target_include_directories(town_generator PRIVATE
@@ -306,6 +265,7 @@ target_include_directories(town_generator PRIVATE
 
 target_link_libraries(town_generator PRIVATE
     SDL3::SDL3
+    nlohmann_json::nlohmann_json
 )
 
 target_compile_features(town_generator PRIVATE cxx_std_17)
@@ -344,36 +304,26 @@ target_compile_features(town_generator_tests PRIVATE cxx_std_17)
 
 add_test(NAME town_generator_tests COMMAND town_generator_tests)
 
-# Terrain-aware patch generator (preview tool for town placement)
-add_executable(terrain_patch_generator
-    terrain_patch_generator/main.cpp
+add_test(NAME town_geojson_determinism
+    COMMAND ${CMAKE_COMMAND}
+        -DTOOL=$<TARGET_FILE:town_generator>
+        -DWORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/geojson_determinism
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/town_generator/tests/geojson_determinism.cmake
 )
 
-target_include_directories(terrain_patch_generator PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/terrain_patch_generator
+# World preview - composites generated world data into one overview PNG/SVG
+add_executable(world_preview
+    world_preview/main.cpp
 )
 
-target_link_libraries(terrain_patch_generator PRIVATE
+target_link_libraries(world_preview PRIVATE
     SDL3::SDL3
     glm::glm
     lodepng
     nlohmann_json::nlohmann_json
 )
 
-target_compile_features(terrain_patch_generator PRIVATE cxx_std_17)
-
-# Test data generator for terrain_patch_generator
-add_executable(terrain_patch_test_data
-    terrain_patch_generator/generate_test_data.cpp
-)
-
-target_link_libraries(terrain_patch_test_data PRIVATE
-    SDL3::SDL3
-    lodepng
-    nlohmann_json::nlohmann_json
-)
-
-target_compile_features(terrain_patch_test_data PRIVATE cxx_std_17)
+target_compile_features(world_preview PRIVATE cxx_std_17)
 
 # Skinned mesh LOD generator (mesh simplification for skinned characters)
 find_package(meshoptimizer CONFIG REQUIRED)

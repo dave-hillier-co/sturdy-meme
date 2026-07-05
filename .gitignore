@@ -43,3 +43,5 @@ assets/textures/downloads
 /town_map.svg
 /town_output.svg
 /test_town.svg
+
+.claude/*

@@ -99,16 +99,17 @@ void SceneObjectsDrawable::recordSceneObjects(VkCommandBuffer cmd, uint32_t fram
     {
         ecs::World& world = *resources_.ecsWorld;
 
-        // Collect entities to render (those with MeshRef and MaterialRef, excluding special entities)
+        // Collect entities to render. Use the SAME source and filter as the GPU-indirect feed
+        // (FrameUpdater::populateGPUSceneBuffer): the curated getSceneEntities() list, skipping
+        // invalid entities and GPU-skinned characters (player/NPCs draw via a separate pipeline).
+        // This guarantees the CPU-fallback and GPU-indirect paths enumerate the same entity set.
         std::vector<ecs::RenderData> renderList;
         renderList.reserve(256);  // Preallocate for typical scene size
 
-        // Query all entities with MeshRef and MaterialRef (required for rendering)
-        for (auto [entity, meshRef, materialRef] : world.view<ecs::MeshRef, ecs::MaterialRef>().each()) {
-            // Skip entities rendered by specialized systems
-            if (world.has<ecs::PlayerTag>(entity)) continue;   // Skinned mesh renderer
-            if (world.has<ecs::NPCTag>(entity)) continue;      // NPC renderer
-            if (world.has<ecs::TreeData>(entity)) continue;    // Tree renderer
+        const auto& sceneEntities = resources_.scene->getSceneBuilder().getSceneEntities();
+        for (ecs::Entity entity : sceneEntities) {
+            if (!world.valid(entity)) continue;
+            if (world.has<ecs::GPUSkinned>(entity)) continue;  // skinned mesh / NPC renderer
 
             // Extract render data from entity's components
             ecs::RenderData data = ecs::extractRenderData(world, entity);

@@ -9,6 +9,8 @@
 #include <memory>
 #include <functional>
 
+class BiomeMap;
+struct Settlement;
 class TreeSystem;
 class TreeLODSystem;
 class ImpostorCullSystem;
@@ -43,10 +45,18 @@ public:
         // Scene positioning
         glm::vec2 sceneOrigin{0.0f, 0.0f};
 
-        // Forest configuration
+        // Forest configuration (fallback when no biome map is available)
         glm::vec2 forestCenter{0.0f, 0.0f};
         float forestRadius = 80.0f;
         int maxTrees = 500;
+
+        // Biome-driven vegetation: when biomeMap is set, tree placement follows
+        // the biome map over biomeRegionRadius instead of the fixed forest disk
+        const BiomeMap* biomeMap = nullptr;
+        const std::vector<Settlement>* settlements = nullptr;
+        float biomeRegionRadius = 600.0f;
+        int maxBiomeTrees = 1500;
+        float seaLevel = 23.0f;
 
         // Descriptor resources needed for finalizing tree systems
         std::vector<VkBuffer> uniformBuffers;
@@ -85,6 +95,14 @@ public:
      * Use this to create physics colliders for the generated trees.
      */
     void setOnTreesGeneratedCallback(OnTreesGeneratedFunc func) { onTreesGenerated_ = std::move(func); }
+
+    /**
+     * Set callback invoked once when all deferred generation completes
+     * (terrain is loaded and heights are queryable). Used for other
+     * terrain-dependent content such as settlement building blockouts.
+     */
+    using OnGeneratedFunc = std::function<void()>;
+    void setOnGeneratedCallback(OnGeneratedFunc func) { onGenerated_ = std::move(func); }
 
     /**
      * Attempt to generate terrain objects if not already done and terrain is ready.
@@ -127,6 +145,7 @@ private:
     Config config_;
     GetCommonBindingsFunc getCommonBindings_;
     OnTreesGeneratedFunc onTreesGenerated_;
+    OnGeneratedFunc onGenerated_;
     bool generated_ = false;
     bool generating_ = false;
 };

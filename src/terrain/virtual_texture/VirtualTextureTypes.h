@@ -93,6 +93,10 @@ struct CacheSlot {
     TileId tileId;
     uint32_t lastUsedFrame = 0;
     bool occupied = false;
+    // Pinned slots are never evicted. Used to keep the coarsest mip level
+    // permanently resident so the shader's mip fallback chain always
+    // terminates in a real tile instead of the magenta debug color.
+    bool pinned = false;
 };
 
 // Feedback entry from GPU - requested tile with priority

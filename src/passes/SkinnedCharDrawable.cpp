@@ -27,12 +27,6 @@ void SkinnedCharDrawable::recordHDRDraw(VkCommandBuffer cmd, uint32_t frameIndex
         if (ecsWorld && playerEntity != ecs::NullEntity && ecsWorld->has<ecs::Transform>(playerEntity)) {
             const glm::mat4& playerTransform = ecsWorld->get<ecs::Transform>(playerEntity).matrix;
             resources_.skinnedMesh->record(cmd, frameIndex, PLAYER_BONE_SLOT, playerTransform, sceneBuilder.getAnimatedCharacter());
-        } else {
-            // Fallback: use the scene-object mirror transform via entity handle
-            const ecs::RenderData* playerObj = sceneBuilder.getRenderableForEntity(playerEntity);
-            if (playerObj) {
-                resources_.skinnedMesh->record(cmd, frameIndex, PLAYER_BONE_SLOT, playerObj->transform, sceneBuilder.getAnimatedCharacter());
-            }
         }
     }
 

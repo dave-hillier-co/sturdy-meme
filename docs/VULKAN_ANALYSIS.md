@@ -1,5 +1,11 @@
 # Vulkan Usage Analysis
 
+> **Status:** Historical migration report. Several named wrappers and file paths in this report
+> have since been removed or replaced. It must not be used as the current Vulkan architecture
+> reference. See [ARCHITECTURE.md](ARCHITECTURE.md) for current ownership and infrastructure, run
+> `./scripts/analyze-vulkan-usage.sh` for a fresh usage inventory, and track remaining lifetime
+> risks in [ARCHITECTURE_REVIEW.md](ARCHITECTURE_REVIEW.md).
+
 This document analyzes Vulkan usage patterns throughout the codebase, focusing on correctness, consistency, and opportunities to apply high-level helpers.
 
 ## Executive Summary

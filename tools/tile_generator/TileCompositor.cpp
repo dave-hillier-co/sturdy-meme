@@ -293,10 +293,10 @@ bool TileCompositor::loadBiomeMap(const std::string& path) {
     return true;
 }
 
-bool TileCompositor::loadRoads(const std::string& jsonPath) {
-    std::ifstream file(jsonPath);
+bool TileCompositor::loadRoads(const std::string& geojsonPath) {
+    std::ifstream file(geojsonPath);
     if (!file.is_open()) {
-        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "Could not open roads file: %s", jsonPath.c_str());
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Could not open roads file: %s", geojsonPath.c_str());
         return false;
     }
 
@@ -306,35 +306,45 @@ bool TileCompositor::loadRoads(const std::string& jsonPath) {
 
         std::vector<RoadGen::RoadSpline> roads;
 
-        if (j.contains("roads") && j["roads"].is_array()) {
-            for (const auto& road : j["roads"]) {
-                RoadGen::RoadSpline spline;
+        for (const auto& feature : j.value("features", nlohmann::json::array())) {
+            if (feature["geometry"]["type"] != "LineString") continue;
 
-                if (road.contains("type")) {
-                    spline.type = static_cast<RoadGen::RoadType>(road["type"].get<int>());
-                }
+            RoadGen::RoadSpline spline;
 
-                if (road.contains("points") && road["points"].is_array()) {
-                    for (const auto& pt : road["points"]) {
-                        RoadGen::RoadControlPoint cp;
-                        cp.position = glm::vec2(pt["x"].get<float>(), pt["z"].get<float>());
-                        cp.widthOverride = pt.value("width", 0.0f); // 0 means use default
-                        spline.controlPoints.push_back(cp);
-                    }
-                }
+            const auto& props = feature["properties"];
+            std::string typeStr = props.value("type", "lane");
+            if (typeStr == "footpath") spline.type = RoadGen::RoadType::Footpath;
+            else if (typeStr == "bridleway") spline.type = RoadGen::RoadType::Bridleway;
+            else if (typeStr == "lane") spline.type = RoadGen::RoadType::Lane;
+            else if (typeStr == "road") spline.type = RoadGen::RoadType::Road;
+            else if (typeStr == "main_road") spline.type = RoadGen::RoadType::MainRoad;
+            else spline.type = RoadGen::RoadType::Lane;
 
-                if (!spline.controlPoints.empty()) {
-                    roads.push_back(std::move(spline));
-                }
+            float defaultWidth = props.value("width", 0.0f);
+
+            for (const auto& coord : feature["geometry"]["coordinates"]) {
+                RoadGen::RoadControlPoint cp;
+                cp.position = glm::vec2(coord[0].get<float>(), coord[1].get<float>());
+                cp.widthOverride = defaultWidth; // 0 means use default from RoadType
+                spline.controlPoints.push_back(cp);
+            }
+
+            if (!spline.controlPoints.empty()) {
+                roads.push_back(std::move(spline));
             }
         }
 
+        if (roads.empty()) {
+            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "No roads parsed from %s", geojsonPath.c_str());
+            return false;
+        }
+
         splineRasterizer.setRoads(roads);
-        SDL_Log("Loaded %zu roads from %s", roads.size(), jsonPath.c_str());
+        SDL_Log("Loaded %zu roads from %s", roads.size(), geojsonPath.c_str());
         return true;
 
     } catch (const std::exception& e) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Error parsing roads JSON: %s", e.what());
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Error parsing roads GeoJSON: %s", e.what());
         return false;
     }
 }
@@ -478,6 +488,17 @@ void TileCompositor::generateTile(uint32_t tileX, uint32_t tileY, uint32_t mipLe
         hasRoads = splineTile.hasRoads();
     }
 
+    // Supersample count per axis. At coarse mips each output pixel covers many
+    // metres of ground, so point-sampling the material texture at a fixed
+    // per-metre frequency aliases (and at some mips the per-pixel UV step lands
+    // exactly on a whole texel, collapsing the tile to one colour). Averaging
+    // several sub-samples across the pixel footprint pre-filters the texture,
+    // which is what a mip level should be. mip0 needs none; coarse mips have few
+    // tiles so the extra work is cheap.
+    const uint32_t superSamples = mipLevel < 3u ? 1u
+                                  : std::min<uint32_t>(8u, 1u << (mipLevel - 2u));
+    const float pixelWorld = tileSize / config.tileResolution;
+
     // Generate each pixel
     for (uint32_t py = 0; py < config.tileResolution; ++py) {
         for (uint32_t px = 0; px < config.tileResolution; ++px) {
@@ -486,8 +507,22 @@ void TileCompositor::generateTile(uint32_t tileX, uint32_t tileY, uint32_t mipLe
             float v = (py + 0.5f) / config.tileResolution;
             glm::vec2 worldPos(worldMinX + u * tileSize, worldMinZ + v * tileSize);
 
-            // Sample base terrain
-            glm::vec4 color = sampleBaseTerrain(worldPos);
+            // Sample base terrain, supersampled across the pixel footprint to
+            // pre-filter the material texture at coarse mip levels
+            glm::vec4 color;
+            if (superSamples <= 1u) {
+                color = sampleBaseTerrain(worldPos);
+            } else {
+                glm::vec4 sum(0.0f);
+                for (uint32_t sy = 0; sy < superSamples; ++sy) {
+                    for (uint32_t sx = 0; sx < superSamples; ++sx) {
+                        float ox = ((sx + 0.5f) / superSamples - 0.5f) * pixelWorld;
+                        float oy = ((sy + 0.5f) / superSamples - 0.5f) * pixelWorld;
+                        sum += sampleBaseTerrain(worldPos + glm::vec2(ox, oy));
+                    }
+                }
+                color = sum / static_cast<float>(superSamples * superSamples);
+            }
 
             // Composite road layer (only at mip 0 for now)
             if (hasRoads && mipLevel == 0) {

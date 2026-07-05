@@ -47,10 +47,6 @@ public:
     // Player transform updates
     void updatePlayerTransform(const glm::mat4& transform);
 
-    // Scene object access for rendering
-    std::vector<ecs::RenderData>& getRenderables() { return sceneBuilder->getRenderables(); }
-    const std::vector<ecs::RenderData>& getRenderables() const { return sceneBuilder->getRenderables(); }
-
     // SceneBuilder access for texture descriptor sets
     bool hasSceneBuilder() const { return sceneBuilder != nullptr; }
     SceneBuilder& getSceneBuilder() { return *sceneBuilder; }
@@ -69,10 +65,11 @@ public:
     void setOrbLightPosition(const glm::vec3& position) { orbLightPosition = position; }
     const glm::vec3& getOrbLightPosition() const { return orbLightPosition; }
 
-    // Physics body access for ECS integration
-    const std::vector<PhysicsBodyID>& getPhysicsBodies() const { return scenePhysicsBodies; }
-    PhysicsBodyID getPhysicsBody(size_t index) const {
-        return index < scenePhysicsBodies.size() ? scenePhysicsBodies[index] : INVALID_BODY_ID;
+    // Ensure scene physics bodies exist for all entities with PhysicsShapeInfo. Idempotent;
+    // call once the ECS world is set and scene entities are created. Physics bodies are stored
+    // as ecs::PhysicsBody components on their entities (no parallel index-aligned array).
+    void ensureScenePhysics() {
+        if (storedPhysics_) initializeScenePhysics(*storedPhysics_);
     }
 
 private:
@@ -93,9 +90,6 @@ private:
     std::unique_ptr<SceneBuilder> sceneBuilder;
     SceneBuilder::HeightQueryFunc terrainHeightFunc;
     glm::vec2 sceneOrigin = glm::vec2(0.0f);  // World XZ offset for scene
-
-    // Physics body tracking (mapped to scene object indices)
-    std::vector<PhysicsBodyID> scenePhysicsBodies;
 
     // Stored physics world pointer for deferred initialization callback
     PhysicsWorld* storedPhysics_ = nullptr;

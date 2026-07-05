@@ -9,6 +9,7 @@
 #include "ScatterSystem.h"
 #include "SceneManager.h"
 #include "SceneBuilder.h"
+#include "world/BiomeMap.h"
 #include <SDL3/SDL.h>
 
 std::unique_ptr<DeferredTerrainObjects> DeferredTerrainObjects::create(const Config& config) {
@@ -71,8 +72,15 @@ bool DeferredTerrainObjects::tryGenerate(
         // Generate demo trees
         vegGen.generateDemoTrees(*tree, config_.sceneOrigin);
 
-        // Generate forest
-        vegGen.generateForest(*tree, config_.forestCenter, config_.forestRadius, config_.maxTrees);
+        // Generate vegetation: biome-driven when a biome map is available,
+        // otherwise the legacy fixed forest disk
+        if (config_.biomeMap && config_.biomeMap->isLoaded()) {
+            vegGen.generateBiomeForest(*tree, *config_.biomeMap, config_.settlements,
+                                       config_.sceneOrigin, config_.biomeRegionRadius,
+                                       config_.maxBiomeTrees, config_.seaLevel);
+        } else {
+            vegGen.generateForest(*tree, config_.forestCenter, config_.forestRadius, config_.maxTrees);
+        }
 
         // Generate impostor archetypes
         if (treeLOD) {
@@ -129,6 +137,10 @@ bool DeferredTerrainObjects::tryGenerate(
     // Mark as done
     generated_ = true;
     generating_ = false;
+
+    if (onGenerated_) {
+        onGenerated_();
+    }
 
     SDL_Log("DeferredTerrainObjects: All vegetation content generated");
     return true;

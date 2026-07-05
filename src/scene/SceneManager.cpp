@@ -52,9 +52,11 @@ void SceneManager::initPhysics(PhysicsWorld& physics) {
     // Store physics pointer for deferred initialization callback
     storedPhysics_ = &physics;
 
-    // Register callback for when deferred renderables are created
+    // Register callback for when deferred renderables are created. initializeScenePhysics is
+    // idempotent (skips entities that already have a body), so it is safe to call from here
+    // and from ensureScenePhysics().
     sceneBuilder->setOnRenderablesCreated([this]() {
-        if (storedPhysics_ && scenePhysicsBodies.empty()) {
+        if (storedPhysics_) {
             SDL_Log("SceneManager: Deferred renderables created, initializing physics bodies...");
             initializeScenePhysics(*storedPhysics_);
         }
@@ -105,50 +107,43 @@ void SceneManager::initializeScenePhysics(PhysicsWorld& physics) {
     // NOTE: Terrain physics is now initialized separately via initTerrainPhysics()
     // which creates a heightfield from the TerrainSystem's height data
 
-    const auto& sceneObjects = sceneBuilder->getRenderables();
-
-    // Resize physics bodies array to match scene objects
-    scenePhysicsBodies.resize(sceneObjects.size(), INVALID_BODY_ID);
-
-    const float spawnOffset = 0.1f;
-
+    // Physics bodies live entirely on their entities as ecs::PhysicsBody components; there is
+    // no parallel index-aligned array. This is idempotent: entities that already have a body
+    // are skipped, so it can safely run from both the deferred callback and the post-ECS re-run.
     if (!ecsWorld_) {
         SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
             "SceneManager: No ECS world during physics init - bodies will be linked later");
         return;
     }
 
+    const float spawnOffset = 0.1f;
     size_t bodyCount = 0;
     for (auto [entity, shapeInfo, transform] :
          ecsWorld_->view<ecs::PhysicsShapeInfo, ecs::Transform>().each()) {
 
-        // Find the renderable index for this entity via pointer identity
-        const ecs::RenderData* renderable = sceneBuilder->getRenderableForEntity(entity);
-        if (!renderable) continue;
-
-        size_t objIndex = static_cast<size_t>(renderable - sceneObjects.data());
-        if (objIndex >= sceneObjects.size()) continue;
+        if (ecsWorld_->has<ecs::PhysicsBody>(entity)) continue;  // already created
 
         glm::vec3 pos = transform.position();
 
+        PhysicsBodyID bodyId;
         if (shapeInfo.shapeType == ecs::PhysicsShapeType::Box) {
-            scenePhysicsBodies[objIndex] = physics.createBox(
+            bodyId = physics.createBox(
                 glm::vec3(pos.x, pos.y + spawnOffset, pos.z),
                 shapeInfo.halfExtents, shapeInfo.mass);
         } else {
-            scenePhysicsBodies[objIndex] = physics.createSphere(
+            bodyId = physics.createSphere(
                 glm::vec3(pos.x, pos.y + spawnOffset, pos.z),
                 shapeInfo.radius(), shapeInfo.mass);
         }
 
-        // Add PhysicsBody component to entity
-        if (scenePhysicsBodies[objIndex] != INVALID_BODY_ID) {
-            ecsWorld_->add<ecs::PhysicsBody>(entity,
-                static_cast<ecs::PhysicsBodyId>(scenePhysicsBodies[objIndex]));
+        if (bodyId != INVALID_BODY_ID) {
+            ecsWorld_->add<ecs::PhysicsBody>(entity, static_cast<ecs::PhysicsBodyId>(bodyId));
             bodyCount++;
         }
     }
-    SDL_Log("Scene physics initialized with %zu bodies from ECS components", bodyCount);
+    if (bodyCount > 0) {
+        SDL_Log("Scene physics initialized with %zu bodies from ECS components", bodyCount);
+    }
 }
 
 void SceneManager::initializeECSLights() {
@@ -215,24 +210,17 @@ void SceneManager::updatePhysicsToScene(PhysicsWorld& physics) {
         PhysicsBodyID bodyID = static_cast<PhysicsBodyID>(physBody.bodyId);
         glm::mat4 physicsTransform = physics.getBodyTransform(bodyID);
 
-        // Find and update the renderable
-        ecs::RenderData* renderable = sceneBuilder->getRenderableForEntity(entity);
-        if (renderable) {
-            // Extract scale from current transform to preserve it
+        // ecs::Transform is the sole authority. Recover the (physics-less) scale from the
+        // current ECS transform, reapply it to the new rigid-body transform, and write back.
+        if (ecsWorld_->has<ecs::Transform>(entity)) {
+            glm::mat4& matrix = ecsWorld_->get<ecs::Transform>(entity).matrix;
             glm::vec3 scale;
-            scale.x = glm::length(glm::vec3(renderable->transform[0]));
-            scale.y = glm::length(glm::vec3(renderable->transform[1]));
-            scale.z = glm::length(glm::vec3(renderable->transform[2]));
+            scale.x = glm::length(glm::vec3(matrix[0]));
+            scale.y = glm::length(glm::vec3(matrix[1]));
+            scale.z = glm::length(glm::vec3(matrix[2]));
 
             physicsTransform = glm::scale(physicsTransform, scale);
-            renderable->transform = physicsTransform;
-        }
-
-        // ECS Transform is authoritative for rendering (GPU scene buffer / shadows read it
-        // via extractRenderData). Write it directly so the forward sync loop is no longer
-        // needed. The renderable mirror above stays for the not-yet-migrated readers.
-        if (ecsWorld_->has<ecs::Transform>(entity)) {
-            ecsWorld_->get<ecs::Transform>(entity).matrix = physicsTransform;
+            matrix = physicsTransform;
         }
 
         // Update orb light position to follow the emissive sphere

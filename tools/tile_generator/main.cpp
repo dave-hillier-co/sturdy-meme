@@ -16,7 +16,7 @@ void printUsage(const char* programName) {
     SDL_Log("");
     SDL_Log("Optional options:");
     SDL_Log("  --materials <path>    Base path for material textures (default: assets/textures/terrain)");
-    SDL_Log("  --roads <path>        Path to roads.json file");
+    SDL_Log("  --roads <path>        Path to roads.geojson file");
     SDL_Log("  --terrain-size <f>    Terrain size in meters (default: 16384)");
     SDL_Log("  --tile-res <n>        Tile resolution in pixels (default: 128)");
     SDL_Log("  --tiles-per-axis <n>  Number of tiles per axis at mip 0 (default: 512)");
@@ -176,7 +176,12 @@ int main(int argc, char* argv[]) {
     }
 
     if (!opts.roadsPath.empty()) {
-        compositor.loadRoads(opts.roadsPath);
+        if (!compositor.loadRoads(opts.roadsPath)) {
+            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
+                         "Failed to load roads from %s - refusing to generate tiles without roads",
+                         opts.roadsPath.c_str());
+            return 1;
+        }
     }
 
     SDL_Log("");

@@ -227,6 +227,10 @@ set(SOURCES
     src/terrain/BaseHeightMap.cpp
     src/terrain/ErosionDataLoader.cpp
     src/terrain/RoadNetworkLoader.cpp
+    # World content
+    src/world/SettlementRegistry.cpp
+    src/world/SettlementBlockoutGenerator.cpp
+    src/world/BiomeMap.cpp
     src/terrain/virtual_texture/VirtualTextureCache.cpp
     src/terrain/virtual_texture/VirtualTexturePageTable.cpp
     src/terrain/virtual_texture/VirtualTextureFeedback.cpp
@@ -476,36 +480,39 @@ add_dependencies(terrain_tiles_gen terrain_preprocess)
 set(WATERSHED_DATA_DIR ${TERRAIN_DATA_DIR}/watershed)
 set(WATERSHED_RIVERS_SVG ${WATERSHED_DATA_DIR}/rivers.svg)
 set(WATERSHED_FLOW_PNG ${WATERSHED_DATA_DIR}/flow.png)
-set(WATERSHED_FLOW_BIN ${WATERSHED_DATA_DIR}/flow_accumulation.bin)
-set(WATERSHED_DIR_BIN ${WATERSHED_DATA_DIR}/flow_direction.bin)
-set(WATERSHED_LABELS_BIN ${WATERSHED_DATA_DIR}/watershed_labels.bin)
-set(WATERSHED_RIVERS_DAT ${WATERSHED_DATA_DIR}/rivers.dat)
-set(WATERSHED_LAKES_DAT ${WATERSHED_DATA_DIR}/lakes.dat)
+set(WATERSHED_FLOW_EXR ${WATERSHED_DATA_DIR}/flow_accumulation.exr)
+set(WATERSHED_DIR_PNG ${WATERSHED_DATA_DIR}/flow_direction.png)
+set(WATERSHED_LABELS_PNG ${WATERSHED_DATA_DIR}/watershed_labels.png)
+set(WATERSHED_RIVERS_GEOJSON ${WATERSHED_DATA_DIR}/rivers.geojson)
+set(WATERSHED_LAKES_GEOJSON ${WATERSHED_DATA_DIR}/lakes.geojson)
 set(WATERSHED_META ${WATERSHED_DATA_DIR}/watershed.meta)
 
 # Run watershed tool when heightmap changes
+# --threshold is minimum catchment area in input-resolution pixels (1px = 1m^2
+# for the 16384 heightmap); the tool rescales it to the processing resolution.
+# --sea-level is in raw uint16 heightmap units: (23m + 15) / 235 * 65535 = 10598.
 add_custom_command(
     OUTPUT ${WATERSHED_RIVERS_SVG} ${WATERSHED_FLOW_PNG}
-           ${WATERSHED_FLOW_BIN} ${WATERSHED_DIR_BIN} ${WATERSHED_LABELS_BIN}
-           ${WATERSHED_RIVERS_DAT} ${WATERSHED_LAKES_DAT} ${WATERSHED_META}
+           ${WATERSHED_FLOW_EXR} ${WATERSHED_DIR_PNG} ${WATERSHED_LABELS_PNG}
+           ${WATERSHED_RIVERS_GEOJSON} ${WATERSHED_LAKES_GEOJSON} ${WATERSHED_META}
     COMMAND ${CMAKE_COMMAND} -E make_directory ${WATERSHED_DATA_DIR}
     COMMAND $<TARGET_FILE:watershed>
         ${TERRAIN_HEIGHTMAP}
         --output ${WATERSHED_DATA_DIR}
-        --threshold 5000
-        --sea-level 6000
+        --threshold 250000
+        --sea-level 10598
         --resolution 512
         --terrain-size 16384
-        --min-altitude 0
-        --max-altitude 200
+        --min-altitude -15
+        --max-altitude 220
     DEPENDS ${TERRAIN_HEIGHTMAP}
     COMMENT "Running watershed analysis (parallel)"
 )
 
 # Explicit target for watershed generation (enables parallel build)
 add_custom_target(watershed_gen DEPENDS ${WATERSHED_RIVERS_SVG} ${WATERSHED_FLOW_PNG}
-                                        ${WATERSHED_FLOW_BIN} ${WATERSHED_DIR_BIN} ${WATERSHED_LABELS_BIN}
-                                        ${WATERSHED_RIVERS_DAT} ${WATERSHED_LAKES_DAT} ${WATERSHED_META})
+                                        ${WATERSHED_FLOW_EXR} ${WATERSHED_DIR_PNG} ${WATERSHED_LABELS_PNG}
+                                        ${WATERSHED_RIVERS_GEOJSON} ${WATERSHED_LAKES_GEOJSON} ${WATERSHED_META})
 add_dependencies(watershed_gen watershed)
 
 # ============================================================================
@@ -533,7 +540,7 @@ add_custom_command(
         --terrain-size 16384
         --output-resolution 1024
         --num-settlements 20
-    DEPENDS ${TERRAIN_HEIGHTMAP} ${WATERSHED_FLOW_BIN} ${WATERSHED_DIR_BIN}
+    DEPENDS ${TERRAIN_HEIGHTMAP} ${WATERSHED_FLOW_EXR} ${WATERSHED_DIR_PNG} ${WATERSHED_LABELS_PNG}
     COMMENT "Generating biome classification (after watershed)"
 )
 
@@ -548,13 +555,14 @@ add_dependencies(biome_gen biome_preprocess watershed_gen)
 
 # Road generation outputs
 set(ROADS_DATA_DIR ${TERRAIN_DATA_DIR}/roads)
-set(ROADS_JSON ${ROADS_DATA_DIR}/roads.json)
-set(ROADS_BIN ${ROADS_DATA_DIR}/roads.bin)
+set(ROADS_GEOJSON ${ROADS_DATA_DIR}/roads.geojson)
+set(ROADS_SVG ${ROADS_DATA_DIR}/roads.svg)
+set(ROADS_DEBUG_PNG ${ROADS_DATA_DIR}/roads_debug.png)
 set(ROADS_META ${ROADS_DATA_DIR}/roads.meta)
 
 # Run road_generator after biome_preprocess completes
 add_custom_command(
-    OUTPUT ${ROADS_JSON} ${ROADS_BIN} ${ROADS_META}
+    OUTPUT ${ROADS_GEOJSON} ${ROADS_SVG} ${ROADS_DEBUG_PNG} ${ROADS_META}
     COMMAND ${CMAKE_COMMAND} -E make_directory ${ROADS_DATA_DIR}
     COMMAND $<TARGET_FILE:road_generator>
         ${TERRAIN_HEIGHTMAP}
@@ -570,8 +578,29 @@ add_custom_command(
 )
 
 # Explicit target for road generation
-add_custom_target(roads_gen DEPENDS ${ROADS_JSON} ${ROADS_BIN} ${ROADS_META})
+add_custom_target(roads_gen DEPENDS ${ROADS_GEOJSON} ${ROADS_SVG} ${ROADS_DEBUG_PNG} ${ROADS_META})
 add_dependencies(roads_gen road_generator biome_gen)
+
+# ============================================================================
+# SEQUENTIAL PHASE: town_generator runs after biome_preprocess (needs settlements)
+# Generates per-settlement town layouts as content-space GeoJSON
+# ============================================================================
+
+set(TOWNS_DATA_DIR ${TERRAIN_DATA_DIR}/towns)
+set(TOWNS_META ${TOWNS_DATA_DIR}/towns.meta)
+
+add_custom_command(
+    OUTPUT ${TOWNS_META}
+    COMMAND ${CMAKE_COMMAND} -E make_directory ${TOWNS_DATA_DIR}
+    COMMAND $<TARGET_FILE:town_generator>
+        --settlements ${BIOME_SETTLEMENTS_JSON}
+        --output-dir ${TOWNS_DATA_DIR}
+    DEPENDS ${BIOME_SETTLEMENTS_JSON} town_generator
+    COMMENT "Generating town layouts (after biome)"
+)
+
+add_custom_target(towns_gen DEPENDS ${TOWNS_META})
+add_dependencies(towns_gen biome_gen)
 
 # ============================================================================
 # SEQUENTIAL PHASE: tile_generator runs after roads complete
@@ -590,7 +619,7 @@ add_custom_command(
     COMMAND $<TARGET_FILE:tile_generator>
         --heightmap ${TERRAIN_HEIGHTMAP}
         --biomemap ${BIOME_MAP_PNG}
-        --roads ${ROADS_JSON}
+        --roads ${ROADS_GEOJSON}
         --output ${VT_TILES_DIR}
         --materials ${CMAKE_CURRENT_SOURCE_DIR}/assets/textures
         --terrain-size 16384
@@ -598,7 +627,7 @@ add_custom_command(
         --tiles-per-axis 64
         --max-mip 6
     COMMAND ${CMAKE_COMMAND} -E touch ${VT_TILES_STAMP}
-    DEPENDS ${TERRAIN_HEIGHTMAP} ${BIOME_MAP_PNG} ${ROADS_JSON}
+    DEPENDS ${TERRAIN_HEIGHTMAP} ${BIOME_MAP_PNG} ${ROADS_GEOJSON}
     COMMENT "Generating virtual texture tiles (after roads)"
 )
 
@@ -612,7 +641,7 @@ add_dependencies(vt_tiles_gen tile_generator roads_gen)
 
 # Custom target that depends on all preprocessing outputs
 add_custom_target(terrain_preprocessing
-    DEPENDS ${TERRAIN_TILES_META} ${WATERSHED_RIVERS_SVG} ${BIOME_MAP_PNG} ${ROADS_BIN} ${VT_TILES_STAMP}
+    DEPENDS ${TERRAIN_TILES_META} ${WATERSHED_RIVERS_SVG} ${BIOME_MAP_PNG} ${ROADS_GEOJSON} ${TOWNS_META} ${VT_TILES_STAMP}
 )
 
 # Dependencies ensure correct build order:
@@ -620,7 +649,99 @@ add_custom_target(terrain_preprocessing
 # - biome_gen runs after watershed_gen completes
 # - roads_gen runs after biome_gen completes
 # - vt_tiles_gen runs after roads_gen completes
-add_dependencies(terrain_preprocessing terrain_tiles_gen watershed_gen biome_gen roads_gen vt_tiles_gen)
+add_dependencies(terrain_preprocessing terrain_tiles_gen watershed_gen biome_gen roads_gen towns_gen vt_tiles_gen)
+
+# ============================================================================
+# WORLD PREVIEW: fast world-generation feedback without VT tile compositing
+# Runs watershed -> biome -> roads -> towns with the SAME parameters as the
+# full pipeline (settlement placement is resolution-sensitive, so reduced
+# resolutions would preview a different world) into a separate directory,
+# then composites one overview PNG/SVG. Only the slow VT tile stage is
+# skipped. Build on demand with:
+#   cmake --build <build-dir> --target preview
+# Never part of the default build; never touches full-res data.
+# ============================================================================
+
+set(PREVIEW_DATA_DIR ${CMAKE_CURRENT_SOURCE_DIR}/generated/terrain_data_preview)
+set(PREVIEW_WATERSHED_DIR ${PREVIEW_DATA_DIR}/watershed)
+set(PREVIEW_BIOME_DIR ${PREVIEW_DATA_DIR}/biome)
+set(PREVIEW_ROADS_DIR ${PREVIEW_DATA_DIR}/roads)
+
+add_custom_command(
+    OUTPUT ${PREVIEW_WATERSHED_DIR}/watershed.meta
+    COMMAND ${CMAKE_COMMAND} -E make_directory ${PREVIEW_WATERSHED_DIR}
+    COMMAND $<TARGET_FILE:watershed>
+        ${TERRAIN_HEIGHTMAP}
+        --output ${PREVIEW_WATERSHED_DIR}
+        --threshold 250000
+        --sea-level 10598
+        --resolution 512
+        --terrain-size 16384
+        --min-altitude -15
+        --max-altitude 220
+    DEPENDS ${TERRAIN_HEIGHTMAP} watershed
+    COMMENT "Preview: watershed analysis (256)"
+)
+
+add_custom_command(
+    OUTPUT ${PREVIEW_BIOME_DIR}/biome_map.png ${PREVIEW_BIOME_DIR}/settlements.json
+    COMMAND ${CMAKE_COMMAND} -E make_directory ${PREVIEW_BIOME_DIR}
+    COMMAND $<TARGET_FILE:biome_preprocess>
+        ${TERRAIN_HEIGHTMAP}
+        ${PREVIEW_WATERSHED_DIR}
+        ${PREVIEW_BIOME_DIR}
+        --sea-level 23
+        --min-altitude -15
+        --max-altitude 220
+        --terrain-size 16384
+        --output-resolution 1024
+        --num-settlements 20
+    DEPENDS ${TERRAIN_HEIGHTMAP} ${PREVIEW_WATERSHED_DIR}/watershed.meta biome_preprocess
+    COMMENT "Preview: biome classification (512)"
+)
+
+add_custom_command(
+    OUTPUT ${PREVIEW_ROADS_DIR}/roads.geojson
+    COMMAND ${CMAKE_COMMAND} -E make_directory ${PREVIEW_ROADS_DIR}
+    COMMAND $<TARGET_FILE:road_generator>
+        ${TERRAIN_HEIGHTMAP}
+        ${PREVIEW_BIOME_DIR}/biome_map.png
+        ${PREVIEW_BIOME_DIR}/settlements.json
+        ${PREVIEW_ROADS_DIR}
+        --terrain-size 16384
+        --min-altitude -15
+        --max-altitude 220
+        --grid-resolution 512
+    DEPENDS ${TERRAIN_HEIGHTMAP} ${PREVIEW_BIOME_DIR}/biome_map.png ${PREVIEW_BIOME_DIR}/settlements.json road_generator
+    COMMENT "Preview: road network (512)"
+)
+
+add_custom_command(
+    OUTPUT ${PREVIEW_DATA_DIR}/towns/towns.meta
+    COMMAND ${CMAKE_COMMAND} -E make_directory ${PREVIEW_DATA_DIR}/towns
+    COMMAND $<TARGET_FILE:town_generator>
+        --settlements ${PREVIEW_BIOME_DIR}/settlements.json
+        --output-dir ${PREVIEW_DATA_DIR}/towns
+    DEPENDS ${PREVIEW_BIOME_DIR}/settlements.json town_generator
+    COMMENT "Preview: town layouts"
+)
+
+add_custom_command(
+    OUTPUT ${PREVIEW_DATA_DIR}/world_preview.png ${PREVIEW_DATA_DIR}/world_preview.svg
+    COMMAND $<TARGET_FILE:world_preview>
+        --heightmap ${TERRAIN_HEIGHTMAP}
+        --terrain-data ${PREVIEW_DATA_DIR}
+        --sea-level 23
+        --min-alt -15
+        --max-alt 220
+    DEPENDS ${TERRAIN_HEIGHTMAP} ${PREVIEW_WATERSHED_DIR}/watershed.meta
+            ${PREVIEW_BIOME_DIR}/biome_map.png ${PREVIEW_ROADS_DIR}/roads.geojson
+            ${PREVIEW_DATA_DIR}/towns/towns.meta
+            world_preview
+    COMMENT "Preview: compositing world overview map"
+)
+
+add_custom_target(preview DEPENDS ${PREVIEW_DATA_DIR}/world_preview.png)
 
 # Foam noise texture generation
 set(FOAM_TEXTURE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/assets/textures)
@@ -808,6 +929,31 @@ else()
             COMMENT "Copying virtual texture tiles to build directory"
         )
     endif()
+endif()
+
+# The POST_BUILD copies above only run when the executable relinks, so
+# regenerated world data would otherwise never reach the bundle on a
+# data-only change. This stamp re-syncs whenever the pipeline outputs change.
+if(NOT SKIP_TERRAIN_PREPROCESSING)
+    if(APPLE)
+        set(WORLD_DATA_DEST $<TARGET_BUNDLE_CONTENT_DIR:${PROJECT_NAME}>/Resources)
+    else()
+        set(WORLD_DATA_DEST $<TARGET_FILE_DIR:${PROJECT_NAME}>)
+    endif()
+    set(WORLD_DATA_SYNC_STAMP ${CMAKE_BINARY_DIR}/world_data_sync.stamp)
+    add_custom_command(
+        OUTPUT ${WORLD_DATA_SYNC_STAMP}
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+            ${TERRAIN_DATA_DIR} ${WORLD_DATA_DEST}/terrain_data
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+            ${CMAKE_SOURCE_DIR}/generated/vt_tiles ${WORLD_DATA_DEST}/vt_tiles
+        COMMAND ${CMAKE_COMMAND} -E touch ${WORLD_DATA_SYNC_STAMP}
+        DEPENDS ${PROJECT_NAME}
+                ${TERRAIN_TILES_META} ${WATERSHED_META} ${BIOME_META}
+                ${ROADS_META} ${TOWNS_META} ${VT_TILES_STAMP}
+        COMMENT "Syncing regenerated world data into app bundle"
+    )
+    add_custom_target(world_data_sync ALL DEPENDS ${WORLD_DATA_SYNC_STAMP})
 endif()
 
 # Check for shader compiler early so we can skip shader target_sources if not available

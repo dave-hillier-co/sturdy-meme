@@ -37,38 +37,42 @@ All 7 phases complete (see `plans/grass-system-improvements.md`):
 Multi-phase project for generating medieval settlements. Two separate lineages exist; do
 not confuse them:
 
-### What is built: the 2D layout generator (`tools/town_generator`)
+### What is built and engine-integrated (`tools/town_generator` + `src/world/`)
 
-A standalone C++ town-layout generator (Watabou-style) that is the working 2D concept tool:
+The Watabou-style 2D layout generator is now wired end-to-end:
 - Geometry core: `Point`/`Segment`/`Polygon`/`Graph`, Voronoi, DCEL, polygon boolean ops, splines
 - A full ward system: Cathedral, Market, Castle, Harbour, Alleys, Farm, Park, Wilderness
 - City structure: curtain walls, canals, districts, blocks, buildings, landmarks
-- SVG output (`src/svg/SVGWriter.cpp`) and a CLI (`--seed`, `--size`, `--cells`, `--coast`)
-- Unit tests (`tools/town_generator/tests/`) registered with the top-level CTest
+- SVG output (`src/svg/SVGWriter.cpp`) plus a **GeoJSON exporter** (`src/geojson/GeoJSONWriter.cpp`)
+- **Batch mode in the build pipeline**: `town_generator --settlements settlements.json --output-dir ...`
+  emits one content-space `town_<id>.geojson` per settlement (footprints, streets, walls)
+- **Runtime consumption**: `src/world/SettlementBlockoutGenerator` extrudes the exact footprint
+  polygons into one merged mesh per settlement (deferred until terrain heights are ready;
+  buildings kept at realistic sizes — median 7m footprint — with towns growing past their
+  nominal radius, exported as `extent_radius` and fed back into vegetation suppression);
+  `src/world/SettlementRegistry` and `src/world/BiomeMap` feed teleporting, debug markers
+  and biome-driven vegetation
+- Fast feedback: `cmake --build build/debug --target preview` composites the whole generated
+  world (heightmap, biomes, rivers, roads, settlements, town footprints) into one PNG/SVG in
+  under a minute
+- Unit tests plus a GeoJSON determinism test registered with the top-level CTest
 
-Known gaps in this lineage:
-- **Standalone build is broken**: `src/main.cpp` uses `SDL_Log` but the tool's
-  `CMakeLists.txt` does not link SDL3, so the CLI fails to compile (`'SDL3/SDL.h' not found`).
-  The library sources compile; only the entry point is affected.
-- **Not engine-integrated**: nothing under `src/` consumes `town_generator` output. The
-  runtime's existing `generated/terrain_data/roads/settlement_*` data comes from a different
-  pipeline (BiomeGenerator / erosion road network), not this tool.
+### Requirements (`docs/PROCEDURAL_CITIES_REQUIREMENTS.md`)
 
-### Aspirational design (`docs/procedural_cities/`)
-
-The `procedural_cities/` docs and `IMPLEMENTATION_CHECKLIST.md` describe a *different,
-unbuilt* architecture (frontage/burgage lot subdivision, space-colonization street growth,
-runtime streaming with impostor LOD). That checklist is aspirational, not a status of
-`town_generator`, and its items do not map onto the tool above.
+The design target — setting authenticity, layout/street/building/port/defensive
+requirements, the M1-M10 quality ladder, runtime budgets, and committed numeric
+parameters — lives in `PROCEDURAL_CITIES_REQUIREMENTS.md`. Milestones M1-M3 are
+substantially covered by the delivered lineage; collision, navmesh, roofs/silhouettes,
+streaming and interiors are the target for later milestones.
 
 ### Next steps
 
-1. **Fix the `town_generator` standalone build** — link SDL3 in `tools/town_generator/CMakeLists.txt`
-   so the CLI compiles and layouts can be iterated again.
-2. **Bridge 2D → 3D in-engine** — consume the layout (wards, walls, building footprints) and
-   instantiate it on the terrain through the GPU-indirect scene path: markers → footprints →
-   blockout volumes. This is the path to milestone M2.5 (roamable settlements).
-3. **Reconcile the design docs** with the tool that actually exists.
+1. **Building collision** — blockout boxes have no colliders; characters walk through them (M3).
+2. **In-engine street/wall geometry** — street and wall LineStrings are exported but not rendered.
+3. **Bridge/ford handling** — inter-settlement roads cross the Solent as straight lines
+   (`ROAD_NETWORK_DESIGN.md` gap; obvious on the preview map).
+4. **Whole-island vegetation** — biome-driven trees currently cover a 2km radius; island-wide
+   coverage needs instanced tree rendering (see `TREE_RENDERING_ROADMAP.md`).
 
 ### Visual Milestones
 Target checkpoints (M2.5 is the key roamable-world milestone):

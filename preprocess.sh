@@ -54,9 +54,7 @@ print_usage() {
     echo "  1. terrain_preprocess - Generate terrain tiles with LOD levels"
     echo "  2. watershed          - D8 flow direction and river extraction (parallel with 1)"
     echo "  3. biome_preprocess   - Biome classification and settlements"
-    echo "  4. settlement_generator - Optional: regenerate settlements"
-    echo "  5. road_generator     - Generate road network between settlements"
-    echo "  6. vegetation_generator - Place trees, rocks, and vegetation"
+    echo "  4. road_generator     - Generate road network between settlements"
     echo ""
     echo "Examples:"
     echo "  $0                                    # Run full pipeline with defaults"
@@ -190,7 +188,7 @@ if ! $SKIP_BUILD; then
         "$SCRIPT_DIR/build-claude.sh" --shaders 2>&1 | tail -20
     else
         echo -e "${GREEN}Building with cmake...${NC}"
-        cmake --preset claude && cmake --build "$BUILD_DIR" --target terrain_preprocess watershed biome_preprocess road_generator vegetation_generator -j
+        cmake --preset claude && cmake --build "$BUILD_DIR" --target terrain_preprocess watershed biome_preprocess road_generator -j
     fi
 fi
 
@@ -263,21 +261,6 @@ if [[ -f "$SETTLEMENTS_JSON" ]]; then
         --max-altitude "$MAX_ALTITUDE"
 else
     echo -e "${YELLOW}Warning: No settlements found, skipping road generation${NC}"
-fi
-
-# Stage 5: Vegetation placement (depends on biome)
-stage_header "5" "Vegetation placement"
-
-BIOME_MAP="$OUTPUT_DIR/biome/biome_map.png"
-if [[ -f "$BIOME_MAP" ]]; then
-    run_tool vegetation_generator \
-        --heightmap "$HEIGHTMAP" \
-        --biome "$BIOME_MAP" \
-        --output "$OUTPUT_DIR/vegetation" \
-        --min-altitude "$MIN_ALTITUDE" \
-        --max-altitude "$MAX_ALTITUDE"
-else
-    echo -e "${YELLOW}Warning: No biome map found, skipping vegetation${NC}"
 fi
 
 # Summary

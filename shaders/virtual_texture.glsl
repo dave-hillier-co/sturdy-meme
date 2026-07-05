@@ -86,7 +86,8 @@ void vtWriteFeedback(uvec2 tileCoord, uint mipLevel) {
 // Sample virtual texture at the given mip level, falling back to coarser
 // mips when the requested tile is not resident. Iterative because GLSL
 // forbids recursion.
-vec4 sampleVirtualTexture(vec2 virtualUV, float mipLevel) {
+vec4 sampleVirtualTexture(vec2 virtualUV, float mipLevel, out bool resident) {
+    resident = false;
     // Clamp to valid mip range
     uint requestedMip = clamp(uint(mipLevel + 0.5), 0u, vtParams.maxMipLevel);
 
@@ -136,23 +137,26 @@ vec4 sampleVirtualTexture(vec2 virtualUV, float mipLevel) {
 
         // Explicit LOD: the cache is single-mip and implicit derivatives are
         // undefined inside this non-uniform loop
+        resident = true;
         return textureLod(vtCache, physicalUV, 0.0);
     }
 
-    // Ultimate fallback - return placeholder color (pink/magenta for debugging)
-    return vec4(1.0, 0.0, 1.0, 1.0);
+    // Ultimate fallback - no resident mip in the chain. Return black with
+    // resident=false so the caller can substitute a non-VT texture instead
+    // of showing the bare cache miss (historically a magenta placeholder).
+    return vec4(0.0, 0.0, 0.0, 1.0);
 }
 
 // Convenience function with automatic mip calculation
-vec4 sampleVirtualTextureAuto(vec2 virtualUV) {
+vec4 sampleVirtualTextureAuto(vec2 virtualUV, out bool resident) {
     float mipLevel = vtCalculateMipLevel(virtualUV);
-    return sampleVirtualTexture(virtualUV, mipLevel);
+    return sampleVirtualTexture(virtualUV, mipLevel, resident);
 }
 
 // Sample with bias (useful for anisotropic filtering approximation)
-vec4 sampleVirtualTextureBias(vec2 virtualUV, float bias) {
+vec4 sampleVirtualTextureBias(vec2 virtualUV, float bias, out bool resident) {
     float mipLevel = vtCalculateMipLevel(virtualUV) + bias;
-    return sampleVirtualTexture(virtualUV, mipLevel);
+    return sampleVirtualTexture(virtualUV, mipLevel, resident);
 }
 
 #endif // VIRTUAL_TEXTURE_GLSL

@@ -3,6 +3,7 @@
 #include "../terrain/TerrainTileCache.h"
 #include "../terrain/RoadNetworkLoader.h"
 #include "../water/WaterPlacementData.h"
+#include "../world/SettlementRegistry.h"
 #include <glm/gtc/constants.hpp>
 #include <SDL3/SDL_log.h>
 #include <cmath>
@@ -34,6 +35,10 @@ void RoadRiverVisualization::rebuildCache() {
 
     if (config_.showRoads && roadNetwork_) {
         buildRoadCones();
+    }
+
+    if (config_.showSettlements && settlements_) {
+        buildSettlementMarkers();
     }
 
     // 16 lines * 2 verts = 32 verts per cone
@@ -179,6 +184,40 @@ void RoadRiverVisualization::buildRoadCones() {
 
             accumulated += segmentLen;
         }
+    }
+}
+
+void RoadRiverVisualization::addCircleToCache(const glm::vec3& center, float radius,
+                                              const glm::vec4& color) {
+    const int segments = 32;
+    for (int i = 0; i < segments; i++) {
+        float a0 = (float(i) / segments) * glm::two_pi<float>();
+        float a1 = (float(i + 1) / segments) * glm::two_pi<float>();
+        glm::vec3 p0 = center + glm::vec3(std::cos(a0) * radius, 0.0f, std::sin(a0) * radius);
+        glm::vec3 p1 = center + glm::vec3(std::cos(a1) * radius, 0.0f, std::sin(a1) * radius);
+        // Follow terrain height around the ring
+        p0.y = getTerrainHeight(p0.x, p0.z) + config_.heightAboveGround;
+        p1.y = getTerrainHeight(p1.x, p1.z) + config_.heightAboveGround;
+        cachedLineVertices_.push_back({p0, color});
+        cachedLineVertices_.push_back({p1, color});
+    }
+}
+
+void RoadRiverVisualization::buildSettlementMarkers() {
+    for (const auto& settlement : *settlements_) {
+        float terrainY = getTerrainHeight(settlement.worldPos.x, settlement.worldPos.y);
+        glm::vec3 center(settlement.worldPos.x, terrainY, settlement.worldPos.y);
+
+        // Boundary ring at the settlement radius
+        addCircleToCache(center, settlement.radius, config_.settlementColor);
+
+        // Vertical beacon so settlements are visible from a distance
+        glm::vec3 beaconTop = center + glm::vec3(0.0f, config_.settlementMarkerHeight, 0.0f);
+        cachedLineVertices_.push_back({center, config_.settlementColor});
+        cachedLineVertices_.push_back({beaconTop, config_.settlementColor});
+        addConeToCache(beaconTop,
+                       beaconTop + glm::vec3(0.0f, config_.coneLength * 2.0f, 0.0f),
+                       config_.coneRadius * 2.0f, config_.settlementColor);
     }
 }
 

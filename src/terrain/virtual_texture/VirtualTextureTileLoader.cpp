@@ -250,22 +250,16 @@ bool VirtualTextureTileLoader::loadTileFromDisk(TileId id, LoadedTile& tile) {
     SDL_LogDebug(SDL_LOG_CATEGORY_APPLICATION,
                  "Could not load tile (tried %s and %s)", ddsPath.c_str(), pngPath.c_str());
 
-    // Create a placeholder tile (pink/magenta checkerboard)
+    // Create a neutral placeholder tile. A missing tile file should look like
+    // bland ground, not a magenta debug pattern, so it blends with surrounding
+    // terrain instead of flashing pink on screen.
     tile.id = id;
     tile.width = 128;
     tile.height = 128;
     tile.format = TileFormat::RGBA8;
-    tile.pixels.resize(tile.width * tile.height * 4);
-
-    for (uint32_t y = 0; y < tile.height; ++y) {
-        for (uint32_t x = 0; x < tile.width; ++x) {
-            size_t idx = (y * tile.width + x) * 4;
-            bool checker = ((x / 16) + (y / 16)) % 2 == 0;
-            tile.pixels[idx + 0] = checker ? 255 : 128;  // R
-            tile.pixels[idx + 1] = checker ? 0 : 0;      // G
-            tile.pixels[idx + 2] = checker ? 255 : 128;  // B
-            tile.pixels[idx + 3] = 255;                   // A
-        }
+    tile.pixels.assign(static_cast<size_t>(tile.width) * tile.height * 4, 127);
+    for (size_t idx = 3; idx < tile.pixels.size(); idx += 4) {
+        tile.pixels[idx] = 255;  // opaque alpha
     }
     return true;
 }

@@ -123,6 +123,46 @@ void GuiDebugTab::render(IDebugControl& debugControl) {
     }
 #endif
 
+    if (debugControl.canTeleport()) {
+        ImGui::Spacing();
+        ImGui::Separator();
+        ImGui::Spacing();
+
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.6f, 1.0f, 0.6f, 1.0f));
+        ImGui::Text("WORLD");
+        ImGui::PopStyleColor();
+
+        static float gotoX = 0.0f;
+        static float gotoZ = 0.0f;
+        ImGui::SetNextItemWidth(80.0f);
+        ImGui::InputFloat("X", &gotoX, 0.0f, 0.0f, "%.0f");
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(80.0f);
+        ImGui::InputFloat("Z", &gotoZ, 0.0f, 0.0f, "%.0f");
+        ImGui::SameLine();
+        if (ImGui::Button("Go")) {
+            debugControl.teleportTo(gotoX, gotoZ);
+        }
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Teleport to world XZ position (terrain is -8192..8192)");
+        }
+
+        const auto& targets = debugControl.getTeleportTargets();
+        if (!targets.empty() && ImGui::TreeNode("Settlements", "Settlements (%zu)", targets.size())) {
+            for (const auto& target : targets) {
+                ImGui::PushID(target.name.c_str());
+                if (ImGui::Button("Teleport")) {
+                    debugControl.teleportTo(target.worldX, target.worldZ);
+                }
+                ImGui::SameLine();
+                ImGui::Text("%s (%.0f, %.0f) r=%.0fm",
+                            target.name.c_str(), target.worldX, target.worldZ, target.radius);
+                ImGui::PopID();
+            }
+            ImGui::TreePop();
+        }
+    }
+
     ImGui::Spacing();
     ImGui::Separator();
     ImGui::Spacing();

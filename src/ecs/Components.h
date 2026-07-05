@@ -838,6 +838,14 @@ struct LightSourceTag {};
 struct RockTag {};
 struct DetritusTag {};
 
+// Building blockout - which settlement this building belongs to
+struct BuildingTag {
+    uint32_t settlementId = 0;
+
+    BuildingTag() = default;
+    explicit BuildingTag(uint32_t id) : settlementId(id) {}
+};
+
 // Mesh variation index - which mesh variant this instance uses
 struct MeshVariation {
     uint32_t index = 0;

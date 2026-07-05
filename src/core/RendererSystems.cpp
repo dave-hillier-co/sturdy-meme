@@ -45,6 +45,8 @@
 #include "ErosionDataLoader.h"
 #include "RoadNetworkLoader.h"
 #include "RoadRiverVisualization.h"
+#include "world/SettlementRegistry.h"
+#include "world/BiomeMap.h"
 #include "UBOBuilder.h"
 #include "Profiler.h"
 #include "DebugLineSystem.h"
@@ -80,6 +82,8 @@ RendererSystems::RendererSystems() {
     registry_.emplace<ErosionDataLoader>();
     registry_.emplace<RoadNetworkLoader>();
     registry_.emplace<RoadRiverVisualization>();
+    registry_.emplace<SettlementRegistry>();
+    registry_.emplace<BiomeMap>();
     registry_.emplace<UBOBuilder>();
     registry_.emplace<TimeSystem>();
     registry_.emplace<CelestialCalculator>();

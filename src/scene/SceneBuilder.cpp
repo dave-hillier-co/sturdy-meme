@@ -22,11 +22,26 @@ SceneBuilder::~SceneBuilder() {
     cleanup();
 }
 
+Mesh* SceneBuilder::addGeneratedMesh(std::vector<Vertex> vertices, std::vector<uint32_t> indices) {
+    if (vertices.empty() || indices.empty()) return nullptr;
+    auto mesh = std::make_unique<Mesh>();
+    mesh->setCustomGeometry(vertices, indices);
+    if (!mesh->upload(storedAllocator, storedDevice, storedCommandPool, storedGraphicsQueue)) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
+                     "SceneBuilder: failed to upload generated mesh (%zu verts)", vertices.size());
+        return nullptr;
+    }
+    generatedMeshes_.push_back(std::move(mesh));
+    return generatedMeshes_.back().get();
+}
+
 bool SceneBuilder::initInternal(const InitInfo& info) {
     // Store terrain height function for object placement
     terrainHeightFunc = info.getTerrainHeight;
     storedAllocator = info.allocator;
     storedDevice = info.device;
+    storedCommandPool = info.commandPool;
+    storedGraphicsQueue = info.graphicsQueue;
     sceneOrigin = info.sceneOrigin;
 
     // Slice 5: the merged createRenderables() pass creates ECS entities, so the
@@ -94,40 +109,32 @@ void SceneBuilder::createRenderablesDeferred() {
 }
 
 void SceneBuilder::createEntitiesFromRenderables() {
-    // Slice 5: entity creation is now merged into createRenderables(), which
-    // creates each ECS entity (with all tags/components/hierarchy) at the same
-    // time it pushes the mirror Renderable into sceneObjects. This function is
-    // retained only as an idempotent no-op shim: it is still invoked from
-    // Application::initECS and the deferred lazy path, but must do nothing once
-    // the merged pass has run.
+    // Entity creation is performed inline by createRenderables(), which builds each ECS entity
+    // (with all tags/components/hierarchy) directly. This function is retained only as an
+    // idempotent shim: it is still invoked from Application::initECS and the deferred lazy
+    // path, but does nothing once the creation pass has run.
     if (!ecsWorld_) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "SceneBuilder: ECS world not set");
         return;
     }
 
-    if (sceneObjects.empty()) {
-        // Renderables not created yet (deferred mode); the merged pass will run
-        // when createRenderables() is invoked later.
+    if (!renderablesCreated_) {
+        // Renderables not created yet (deferred mode); the creation pass will run
+        // when createRenderablesDeferred() is invoked later.
         SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "SceneBuilder: No renderables to create entities from");
         return;
     }
 
-    if (!sceneEntities_.empty()) {
-        // Entities already created by the merged createRenderables() pass.
-        return;
+    if (sceneEntities_.empty()) {
+        // Renderables were created but no entities exist: createRenderables() must have run
+        // without an ECS world set. Log so the ordering bug is visible.
+        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+            "SceneBuilder: renderables created but no entities; "
+            "createRenderables() must run with the ECS world set");
     }
-
-    // Should not normally be reached: renderables exist but no entities were
-    // created. This can only happen if createRenderables() ran without an ECS
-    // world set. Log so the ordering bug is visible rather than silently
-    // producing an entity-less scene.
-    SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
-        "SceneBuilder: createEntitiesFromRenderables called with %zu renderables but no entities; "
-        "createRenderables() must run with the ECS world set",
-        sceneObjects.size());
 }
 
-void SceneBuilder::createSceneEntity(size_t i) {
+void SceneBuilder::createSceneEntity(const ecs::RenderData& obj, ObjectRole role) {
     // Merged second-pass entity creation for a single scene object. Produces the
     // exact same components/tags/hierarchy as the former
     // createEntitiesFromRenderables() did, but inline as each Renderable is built.
@@ -140,14 +147,11 @@ void SceneBuilder::createSceneEntity(size_t i) {
     const glm::vec3 cubeHalfExtents(0.5f);
 
     ecs::EntityFactory factory(*ecsWorld_);
-    const ecs::RenderData& obj = sceneObjects[i];
-    const ObjectRole role = (i < objectRoles_.size()) ? objectRoles_[i] : ObjectRole::None;
 
     // Core components (Transform, MeshRef, MaterialRef, CastsShadow, PBRProperties,
     // HueShift, Opacity, GPUSkinned) via value-gated factory.
     ecs::Entity entity = factory.createFromRenderable(obj);
     sceneEntities_.push_back(entity);
-    entityToRenderableIndex_[entity] = i;
 
     // Bounding sphere for culling (estimated from mesh) + Visible on every entity.
     glm::vec3 pos = glm::vec3(obj.transform[3]);
@@ -402,7 +406,7 @@ void SceneBuilder::cleanup() {
     // RAII-managed NPC simulation
     npcSimulation_.reset();
 
-    sceneObjects.clear();
+    sceneEntities_.clear();
 }
 
 bool SceneBuilder::createMeshes(const InitInfo& info) {
@@ -678,13 +682,9 @@ bool SceneBuilder::loadTextures(const InitInfo& info) {
 }
 
 void SceneBuilder::createRenderables() {
-    sceneObjects.clear();
-
-    // Slice 5: entity creation is merged into this pass. Reset the entity-tracking
-    // state so the merged pass starts clean (createRenderables may run once, either
-    // eagerly or via the deferred path).
+    // Entity creation happens in this pass. Reset the entity list so the pass starts clean
+    // (createRenderables runs once, either eagerly or via the deferred path).
     sceneEntities_.clear();
-    entityToRenderableIndex_.clear();
     if (ecsWorld_) {
         sceneEntities_.reserve(32);
     }
@@ -706,22 +706,14 @@ void SceneBuilder::createRenderables() {
         return getTerrainHeight(x, z) + objectHeight;
     };
 
-    objectRoles_.clear();
-
-    // Helper to add a renderable with an optional role. Slice 5: this also creates
-    // the matching ECS entity (with all tags/components) inline, merging the former
-    // second creation pass into this single loop. The mirror Renderable is still
-    // pushed into sceneObjects (physics/animation write-target + GUI surface).
-    auto addObject = [this](ecs::RenderData&& r, ObjectRole role = ObjectRole::None) -> size_t {
-        size_t idx = sceneObjects.size();
-        sceneObjects.push_back(std::move(r));
-        objectRoles_.push_back(role);
-        // Create the ECS entity for this object immediately (idempotent: only when
-        // an ECS world is set; the deferred path guarantees it is set first).
+    // Helper to add a scene object: builds its ECS entity (with all tags/components) directly
+    // from a transient RenderData. There is no persistent RenderData mirror; the RenderData
+    // seeds the entity's components and is then discarded. The ECS world must be set first
+    // (guaranteed by both the eager and deferred creation paths).
+    auto addObject = [this](ecs::RenderData&& r, ObjectRole role = ObjectRole::None) {
         if (ecsWorld_) {
-            createSceneEntity(idx);
+            createSceneEntity(r, role);
         }
-        return idx;
     };
 
     // Build an ecs::RenderData scene-object mirror entry. Defaults match the former
@@ -989,12 +981,7 @@ void SceneBuilder::setShowWeaponAxes(bool show) {
 }
 
 void SceneBuilder::updatePlayerTransform(const glm::mat4& transform) {
-    ecs::RenderData*playerRenderable = getRenderableForEntity(playerEntity_);
-    if (playerRenderable) {
-        playerRenderable->transform = transform;
-    }
-    // ECS Transform is authoritative for the skinned shadow pass (reads ECS) and replaces
-    // the forward sync loop. The renderable mirror stays for the skinned colour draw / GUI.
+    // ecs::Transform is the sole authority (skinned colour + shadow passes and GUI read it).
     if (ecsWorld_ && ecsWorld_->valid(playerEntity_) && ecsWorld_->has<ecs::Transform>(playerEntity_)) {
         ecsWorld_->get<ecs::Transform>(playerEntity_).matrix = transform;
     }
@@ -1008,11 +995,10 @@ void SceneBuilder::updateAnimatedCharacter(float deltaTime, VmaAllocator allocat
                                             bool strafeMode, const glm::vec3& cameraDirection) {
     if (!hasAnimatedCharacter) return;
 
-    // Get the character's current world transform for IK ground queries
+    // Get the character's current world transform for IK ground queries (ECS authoritative).
     glm::mat4 worldTransform = glm::mat4(1.0f);
-    const ecs::RenderData* playerRenderable = getRenderableForEntity(playerEntity_);
-    if (playerRenderable) {
-        worldTransform = playerRenderable->transform;
+    if (ecsWorld_ && ecsWorld_->valid(playerEntity_) && ecsWorld_->has<ecs::Transform>(playerEntity_)) {
+        worldTransform = ecsWorld_->get<ecs::Transform>(playerEntity_).matrix;
     }
 
     // Update motion matching if enabled (must be called before update())
@@ -1057,28 +1043,19 @@ void SceneBuilder::updateAnimatedCharacter(float deltaTime, VmaAllocator allocat
 
     animatedCharacter->update(deltaTime, allocator, device, commandPool, queue,
                                   movementSpeed, isGrounded, isJumping, worldTransform);
-
-    // Update the mesh pointer in the renderable (in case it was re-created)
-    ecs::RenderData*playerRend = getRenderableForEntity(playerEntity_);
-    if (playerRend) {
-        playerRend->mesh = &animatedCharacter->getMesh();
-    }
+    // The player is drawn by SkinnedCharDrawable straight from animatedCharacter->getMesh(),
+    // not via its MeshRef, so no per-frame mesh-pointer sync is needed.
 
     // Update player cape if enabled
     if (hasCapeEnabled) {
         // Update cape simulation with current skeleton pose
         playerCape.update(animatedCharacter->getSkeleton(), worldTransform, deltaTime, nullptr);
 
-        // Update cape mesh and re-upload
+        // Update cape mesh and re-upload. The cape entity's MeshRef points at the stable
+        // capeMesh member, so re-uploading its GPU resources needs no MeshRef update.
         playerCape.updateMesh(capeMesh);
         capeMesh.releaseGPUResources();
         capeMesh.upload(allocator, device, commandPool, queue);
-
-        // Update mesh pointer in renderable
-        ecs::RenderData*capeRend = getRenderableForEntity(capeEntity_);
-        if (capeRend) {
-            capeRend->mesh = &capeMesh;
-        }
     }
 
     // Update weapon transforms using the same worldTransform as the cape
@@ -1117,20 +1094,15 @@ void SceneBuilder::updateWeaponTransforms(const glm::mat4& worldTransform) {
 
     glm::mat4 hideTransform = glm::scale(glm::mat4(1.0f), glm::vec3(0.0f));
 
-    // Position a bone-attached entity's Renderable and sync ECS Transform
+    // Position a bone-attached entity via its authoritative ECS Transform.
     auto updateAttached = [&](ecs::Entity entity, int boneIndex, const glm::mat4& offset, bool visible) {
         if (entity == ecs::NullEntity) return;
-        ecs::RenderData*r = getRenderableForEntity(entity);
-        if (!r) return;
+        if (!ecsWorld_->valid(entity) || !ecsWorld_->has<ecs::Transform>(entity)) return;
+        glm::mat4 transform = hideTransform;
         if (visible && boneIndex >= 0 && static_cast<size_t>(boneIndex) < globalTransforms.size()) {
-            r->transform = worldTransform * globalTransforms[boneIndex] * offset;
-        } else {
-            r->transform = hideTransform;
+            transform = worldTransform * globalTransforms[boneIndex] * offset;
         }
-        // Keep ECS Transform in sync so gizmos and inspector show correct values
-        if (ecsWorld_->has<ecs::Transform>(entity)) {
-            ecsWorld_->get<ecs::Transform>(entity).matrix = r->transform;
-        }
+        ecsWorld_->get<ecs::Transform>(entity).matrix = transform;
     };
 
     // Sword

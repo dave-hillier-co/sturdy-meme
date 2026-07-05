@@ -1,27 +1,28 @@
 # Future Work
 
-Outstanding features and improvements not yet implemented.
+This document tracks future work and records recently completed items where that context prevents
+older plans from being mistaken for current gaps.
 
 ---
 
-## Camera Improvements
+## Camera Improvements Implemented
 
 ### Smoothing
-- Add interpolated camera state (smoothedYaw, smoothedPitch, smoothedDistance)
-- Exponential smoothing formula: `smoothed += (target - smoothed) * (1 - exp(-speed * deltaTime))`
-- Configurable speed parameters: positionSmoothSpeed (8.0), rotationSmoothSpeed (12.0), distanceSmoothSpeed (6.0)
+- Third-person camera smoothing is implemented in `Camera`.
 
 ### Occlusion Handling
-- Raycast from player to camera to detect occluding objects
-- Fade occluding objects to transparent (opacity 0.3) instead of camera clipping
-- Requires: PhysicsSystem raycast query, per-object opacity uniform, alpha blending
+- `Application::updateCameraOcclusion()` raycasts from the player to the camera.
+- Occluding ECS entities fade toward reduced opacity.
+- Camera collision distance is adjusted to the closest hit.
 
 ### Orientation Lock
-- Toggle to lock player facing direction while allowing movement in any direction (strafe)
-- Input: Left trigger hold or right stick click on gamepad
+- Persistent and held orientation-lock modes are implemented.
+- Follow-movement, follow-camera, and follow-target facing modes are available.
 
 ### Dynamic FOV
 - Widen FOV during sprinting for sense of speed (45° idle → 55° sprint)
+
+Only dynamic FOV remains future work in this section.
 
 ---
 

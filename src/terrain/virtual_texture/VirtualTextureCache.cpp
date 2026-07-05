@@ -239,6 +239,10 @@ CacheSlot* VirtualTextureCache::allocateSlot(TileId id, uint32_t currentFrame,
                                              std::optional<TileId>* evictedTile) {
     uint32_t packed = id.pack();
 
+    // Keep the coarsest mip level permanently resident so the shader's mip
+    // fallback chain always finds a real tile (never the magenta debug color).
+    const bool shouldPin = (id.mipLevel + 1u >= config.maxMipLevels);
+
     // Check if already in cache
     auto it = tileToSlot.find(packed);
     if (it != tileToSlot.end()) {
@@ -252,6 +256,7 @@ CacheSlot* VirtualTextureCache::allocateSlot(TileId id, uint32_t currentFrame,
             slots[i].occupied = true;
             slots[i].tileId = id;
             slots[i].lastUsedFrame = currentFrame;
+            slots[i].pinned = shouldPin;
             tileToSlot[packed] = i;
             return &slots[i];
         }
@@ -271,6 +276,7 @@ CacheSlot* VirtualTextureCache::allocateSlot(TileId id, uint32_t currentFrame,
         // Set new tile
         slots[lruIndex].tileId = id;
         slots[lruIndex].lastUsedFrame = currentFrame;
+        slots[lruIndex].pinned = shouldPin;
         tileToSlot[packed] = lruIndex;
         return &slots[lruIndex];
     }
@@ -303,6 +309,8 @@ size_t VirtualTextureCache::findLRUSlot(uint32_t currentFrame) const {
 
     for (size_t i = 0; i < slots.size(); ++i) {
         if (!slots[i].occupied) continue;
+        // Never evict pinned slots (the always-resident coarse mip tail)
+        if (slots[i].pinned) continue;
         // Skip slots in-flight frames may still sample: their page table
         // version still maps this slot until those frames complete
         if (slots[i].lastUsedFrame + framesInFlight_ > currentFrame) continue;

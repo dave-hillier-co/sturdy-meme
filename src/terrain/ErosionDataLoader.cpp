@@ -22,7 +22,7 @@ std::string ErosionDataLoader::getLakesPath(const std::string& cacheDir) {
 }
 
 std::string ErosionDataLoader::getMetadataPath(const std::string& cacheDir) {
-    return cacheDir + "/erosion_data.meta";
+    return cacheDir + "/watershed.meta";
 }
 
 bool ErosionDataLoader::isCacheValid(const ErosionLoadConfig& config) const {
@@ -63,7 +63,7 @@ bool ErosionDataLoader::loadAndValidateMetadata(const ErosionLoadConfig& config)
             std::string value;
             std::getline(iss, value);
 
-            if (key == "sourceFileSize") cachedSourceSize = std::stoull(value);
+            if (key == "inputSize") cachedSourceSize = std::stoull(value);
         }
     }
 

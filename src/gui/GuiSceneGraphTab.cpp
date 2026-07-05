@@ -71,7 +71,26 @@ namespace {
 
 void GuiSceneGraphTab::render(ISceneControl& sceneControl, SceneGraphTabState& state) {
     SceneBuilder& sceneBuilder = sceneControl.getSceneBuilder();
-    const auto& renderables = sceneBuilder.getRenderables();
+
+    // Reconstruct render rows from the ECS each frame so the inspector reflects
+    // live component state (transform, opacity, material) rather than a mirror.
+    // Indices stay parallel to getSceneEntities() so selection is stable.
+    std::vector<ecs::RenderData> renderables;
+    const ecs::World* world = sceneBuilder.getECSWorld();
+    if (world) {
+        const auto& entities = sceneBuilder.getSceneEntities();
+        renderables.reserve(entities.size());
+        for (ecs::Entity e : entities) {
+            if (!world->valid(e)) {
+                renderables.emplace_back();
+                continue;
+            }
+            ecs::RenderData row = ecs::extractRenderData(*world, e);
+            // extractRenderData does not populate gpuSkinned; derive it from the tag.
+            row.gpuSkinned = world->has<ecs::GPUSkinned>(e);
+            renderables.push_back(row);
+        }
+    }
 
     ImGui::Spacing();
 

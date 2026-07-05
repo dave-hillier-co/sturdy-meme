@@ -83,6 +83,25 @@ bool VirtualTextureSystem::init(const InitInfo& info) {
         paramsBuffer_.unmap();
     }
 
+    // Preload the coarsest mip level. These tiles are pinned in the cache
+    // (see VirtualTextureCache::allocateSlot) so they stay resident for the
+    // system's lifetime, guaranteeing the shader's mip fallback chain always
+    // terminates in a real tile instead of the magenta debug color - this is
+    // what prevents pink terrain when fine tiles haven't streamed in yet.
+    {
+        uint32_t coarsestMip = config.maxMipLevels - 1;
+        uint32_t tilesPerAxis = config.getTilesAtMip(coarsestMip);
+        for (uint32_t y = 0; y < tilesPerAxis; ++y) {
+            for (uint32_t x = 0; x < tilesPerAxis; ++x) {
+                requestTile(TileId(static_cast<uint16_t>(x),
+                                   static_cast<uint16_t>(y),
+                                   static_cast<uint8_t>(coarsestMip)));
+            }
+        }
+        SDL_Log("  Preloading %u coarsest-mip (mip %u) fallback tiles",
+                tilesPerAxis * tilesPerAxis, coarsestMip);
+    }
+
     SDL_Log("VirtualTextureSystem initialized successfully");
     return true;
 }

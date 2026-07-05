@@ -82,6 +82,8 @@ class WaterGBuffer;
 class ErosionDataLoader;
 class RoadNetworkLoader;
 class RoadRiverVisualization;
+class SettlementRegistry;
+class BiomeMap;
 class UBOBuilder;
 class Profiler;
 class DebugLineSystem;
@@ -322,6 +324,10 @@ public:
     const RoadNetworkLoader& roadData() const { return registry_.get<RoadNetworkLoader>(); }
     RoadRiverVisualization& roadRiverVis() { return registry_.get<RoadRiverVisualization>(); }
     const RoadRiverVisualization& roadRiverVis() const { return registry_.get<RoadRiverVisualization>(); }
+    SettlementRegistry& settlements() { return registry_.get<SettlementRegistry>(); }
+    const SettlementRegistry& settlements() const { return registry_.get<SettlementRegistry>(); }
+    BiomeMap& biomeMap() { return registry_.get<BiomeMap>(); }
+    const BiomeMap& biomeMap() const { return registry_.get<BiomeMap>(); }
 
     // Animation and skinning
     SkinnedMeshRenderer& skinnedMesh() { return registry_.get<SkinnedMeshRenderer>(); }

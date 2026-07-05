@@ -82,8 +82,11 @@ public:
     ScatterSystem& operator=(ScatterSystem&&) = delete;
 
     // Get scene objects for rendering
+    // Scatter instances are an immutable instance source: rebuildFromECS() bakes the scatter
+    // ECS entities into this flat cache once at init, and it is the authority thereafter. It is
+    // deliberately separate from the SceneBuilder scene-object authority and is never mutated
+    // per frame, so the public accessor is read-only.
     const std::vector<ecs::RenderData>& getSceneObjects() const { return material_.getSceneObjects(); }
-    std::vector<ecs::RenderData>& getSceneObjects() { return material_.getSceneObjects(); }
 
     // Access the underlying material
     SceneMaterial& getMaterial() { return material_; }

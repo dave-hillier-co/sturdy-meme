@@ -24,6 +24,8 @@
 #include "WindSystem.h"
 #include "GuiInterfaces.h"
 #include "core/RendererSystems.h"
+#include "world/SettlementRegistry.h"
+#include "world/SettlementBlockoutGenerator.h"
 #include "EnvironmentSettings.h"
 #include "TimeSystem.h"
 #include "core/interfaces/ITimeSystem.h"
@@ -336,6 +338,64 @@ bool Application::init(const std::string& title, int width, int height) {
             }
             SDL_Log("Created %zu tree colliders for deferred forest generation", newColliders);
         });
+
+        // Once terrain-dependent generation completes, place settlement blockout
+        // buildings (heights are reliable at that point)
+        deferred->setOnGeneratedCallback([this]() {
+            auto& systems = renderer_->getSystems();
+            ecs::World* world = systems.ecsWorld();
+            auto* terrainSys = systems.terrainPtr();
+            if (!world || !terrainSys || !systems.scenePtr()) return;
+            auto& sceneBuilder = systems.scene().getSceneBuilder();
+            if (!sceneBuilder.getCubeMesh()) return;
+
+            SettlementBlockoutGenerator::Config cfg;
+            cfg.getTerrainHeight = [terrainSys](float x, float z) {
+                return terrainSys->getHeightAt(x, z);
+            };
+            cfg.preloadTiles = [terrainSys](float x, float z, float radius) {
+                if (auto* cache = terrainSys->getTileCache()) {
+                    cache->preloadTilesAround(x, z, radius);
+                }
+            };
+            cfg.buildingMesh = sceneBuilder.getCubeMesh();
+            cfg.materialId = sceneBuilder.getWhiteMaterialId();
+            // Town layouts extrude their exact footprint polygons into one
+            // merged mesh per settlement
+            cfg.createMesh = [&sceneBuilder](std::vector<Vertex> verts,
+                                             std::vector<uint32_t> inds) {
+                return sceneBuilder.addGeneratedMesh(std::move(verts), std::move(inds));
+            };
+            // Static box collider per building for the random-box fallback path
+            cfg.addCollider = [this](const glm::vec3& center, const glm::vec3& halfExtents,
+                                     float yaw) {
+                physics().createStaticBox(center, halfExtents,
+                                          glm::angleAxis(yaw, glm::vec3(0.0f, 1.0f, 0.0f)));
+            };
+            // One triangle-mesh collider per settlement matching the exact
+            // footprint prisms (so L-shaped/concave plots aren't over-filled)
+            cfg.addMeshCollider = [this](const std::vector<Vertex>& verts,
+                                         const std::vector<uint32_t>& inds) {
+                std::vector<glm::vec3> positions;
+                positions.reserve(verts.size());
+                for (const auto& v : verts) positions.push_back(v.position);
+                physics().createStaticMesh(positions.data(), positions.size(),
+                                           inds.data(), inds.size());
+            };
+            cfg.seaLevel = 23.0f;
+            cfg.townsDir = getResourcePath() + "/terrain_data/towns";
+            // Keep clear of the hand-placed content at the scene origin: spawn,
+            // well, crates, NPCs (within 5m) and the four demo trees (up to 58m
+            // out). The empty core reads as a village green.
+            cfg.exclusionCenter = glm::vec2(9200.0f - 8192.0f, 3000.0f - 8192.0f);
+            cfg.exclusionRadius = 70.0f;
+
+            auto result = SettlementBlockoutGenerator::generate(
+                *world, systems.settlements().settlements(), cfg);
+            for (ecs::Entity entity : result.entities) {
+                sceneBuilder.addExternalSceneEntity(entity);
+            }
+        });
     }
 
     // Create player entity and character controller
@@ -402,9 +462,8 @@ bool Application::init(const std::string& title, int width, int height) {
     // Initialize ECS world with scene entities
     initECS();
 
-    // Wire up ECS world for lighting
+    // Wire up ECS world for lighting (SceneManager's world was already set in initECS()).
     renderer_->setECSWorld(&ecsWorld_);
-    renderer_->getSystems().scene().setECSWorld(&ecsWorld_);
     renderer_->getSystems().scene().initializeECSLights();
 
     // Create ECS area entities for scatter systems (rocks, detritus)
@@ -530,6 +589,23 @@ bool Application::init(const std::string& title, int width, int height) {
     renderer_->getSystems().debugControl().setRagdollCountCallback([this]() -> int {
         return static_cast<int>(ragdolls_.size());
     });
+
+    // Wire up world teleport for debug UI, with settlements as destinations
+    for (const auto& settlement : renderer_->getSystems().settlements().settlements()) {
+        IDebugControl::TeleportTarget target;
+        target.name = settlement.displayName();
+        target.worldX = settlement.worldPos.x;
+        target.worldZ = settlement.worldPos.y;
+        target.radius = settlement.radius;
+        teleportTargets_.push_back(std::move(target));
+    }
+    renderer_->getSystems().debugControl().setTeleportCallback([this](float x, float z) {
+        teleportTo(x, z);
+    });
+    renderer_->getSystems().debugControl().setTeleportTargetsCallback(
+        [this]() -> const std::vector<IDebugControl::TeleportTarget>& {
+            return teleportTargets_;
+        });
 
     // Configure ragdoll renderer if player character is available
     {
@@ -1338,8 +1414,6 @@ void Application::updateCameraOcclusion(float deltaTime) {
     }
 
     // Update opacities and occlusion tags using ECS queries
-    auto& sceneBuilder = renderer_->getSystems().scene().getSceneBuilder();
-
     for (auto [entity, physicsBody] : ecsWorld_.view<ecs::PhysicsBody>().each()) {
         if (ecsWorld_.has<ecs::PlayerTag>(entity)) continue;
 
@@ -1363,12 +1437,7 @@ void Application::updateCameraOcclusion(float deltaTime) {
         auto& opacity = ecsWorld_.get<ecs::Opacity>(entity);
         float fadeFactor = 1.0f - std::exp(-occlusionFadeSpeed * deltaTime);
         opacity.value += (targetOpacity - opacity.value) * fadeFactor;
-
-        // Sync to renderable for current rendering pipeline
-        ecs::RenderData* renderable = sceneBuilder.getRenderableForEntity(entity);
-        if (renderable) {
-            renderable->opacity = opacity.value;
-        }
+        // ecs::Opacity is authoritative; extractRenderData feeds it to every render path.
     }
 }
 
@@ -1418,11 +1487,13 @@ void Application::initECS() {
     INIT_PROFILE_PHASE("ECS");
 
     auto& sceneManager = renderer_->getSystems().scene();
-    const auto& renderables = sceneManager.getRenderables();
     SceneBuilder& sceneBuilder = sceneManager.getSceneBuilder();
 
     // Create ECS entities from renderables (tags and components assigned by SceneBuilder)
     sceneBuilder.setECSWorld(&ecsWorld_);
+    // SceneManager needs its own ECS world pointer before ensureScenePhysics() below (and
+    // before its physics/light queries). This is the single wiring point for it.
+    sceneManager.setECSWorld(&ecsWorld_);
     sceneBuilder.createEntitiesFromRenderables();
 
     // Connect ECS world to renderer systems for direct entity queries
@@ -1436,22 +1507,16 @@ void Application::initECS() {
         treeRenderer->setECSWorld(&ecsWorld_);
     }
 
-    // Link physics bodies to ECS entities
-    // (Physics bodies are created before ECS init, so we link them here
-    // using the entity-to-renderable mapping)
+    // Now that the ECS world is set and scene entities exist, ensure every entity with a
+    // PhysicsShapeInfo has a physics body. Idempotent: skips entities already created by the
+    // deferred callback. Physics bodies live as ecs::PhysicsBody components (no parallel array).
     const auto& sceneEntities = sceneBuilder.getSceneEntities();
-    const auto& physicsBodies = sceneManager.getPhysicsBodies();
-    for (size_t i = 0; i < physicsBodies.size() && i < sceneEntities.size(); ++i) {
-        PhysicsBodyID bodyId = physicsBodies[i];
-        if (bodyId != INVALID_BODY_ID && !ecsWorld_.has<ecs::PhysicsBody>(sceneEntities[i])) {
-            ecsWorld_.add<ecs::PhysicsBody>(sceneEntities[i], static_cast<ecs::PhysicsBodyId>(bodyId));
-        }
-    }
+    sceneManager.ensureScenePhysics();
 
     SDL_Log("ECS initialized with %zu entities from scene", sceneEntities.size());
 
     // Initialize ECS Material Demo to showcase material components
-    if (!renderables.empty()) {
+    if (sceneBuilder.hasRenderables()) {
         ecs::ECSMaterialDemo::InitInfo demoInfo{};
         demoInfo.world = &ecsWorld_;
         demoInfo.cubeMesh = sceneBuilder.getCubeMesh();
@@ -1481,13 +1546,12 @@ void Application::updateECS(float deltaTime) {
 
     auto& sceneManager = renderer_->getSystems().scene();
     auto& sceneBuilder = sceneManager.getSceneBuilder();
-    auto& renderables = sceneManager.getRenderables();
 
     // Get scene entities from SceneBuilder (Phase 6: entities managed by SceneBuilder)
     const auto& sceneEntities = sceneBuilder.getSceneEntities();
 
     // Lazy initialization: if entities not yet created but renderables are available (deferred mode)
-    if (sceneEntities.empty() && !renderables.empty()) {
+    if (sceneEntities.empty() && sceneBuilder.hasRenderables()) {
         if (sceneBuilder.getECSWorld() == nullptr) {
             sceneBuilder.setECSWorld(&ecsWorld_);
         }
@@ -1529,6 +1593,39 @@ void Application::updateECS(float deltaTime) {
     glm::mat4 viewProj = camera.getProjectionMatrix() * camera.getViewMatrix();
     ecs::Frustum frustum = ecs::Frustum::fromViewProjection(viewProj);
     ecs::systems::updateVisibility(ecsWorld_, frustum);
+}
+
+void Application::teleportTo(float worldX, float worldZ) {
+    auto* terrain = renderer_->getSystems().terrainPtr();
+    float terrainY = 50.0f;  // Fallback if terrain unavailable
+    if (terrain) {
+        // Pre-load high-res tiles so the height query and landing are accurate
+        if (auto* tileCache = terrain->getTileCache()) {
+            tileCache->preloadTilesAround(worldX, worldZ, 600.0f);
+        }
+        terrainY = terrain->getHeightAt(worldX, worldZ);
+    }
+
+    // Move the player character and its physics body
+    player_.transform.position = glm::vec3(worldX, terrainY + 0.1f, worldZ);
+    if (physics_) {
+        physics().setCharacterPosition(player_.transform.position);
+        // Pre-load physics terrain tiles around the destination
+        for (int i = 0; i < 50; i++) {
+            physicsTerrainManager_.update(player_.transform.position);
+        }
+    }
+
+    // Move the camera: land slightly above and behind the destination
+    camera.setPosition(glm::vec3(worldX, terrainY + 2.0f, worldZ));
+    if (input.isThirdPersonMode()) {
+        camera.initializeThirdPersonFromCurrentPosition(
+            player_.movement.getFocusPoint(player_.transform.position));
+    } else {
+        camera.resetSmoothing();
+    }
+
+    SDL_Log("Teleported to (%.1f, %.1f, %.1f)", worldX, terrainY, worldZ);
 }
 
 void Application::spawnRagdoll() {

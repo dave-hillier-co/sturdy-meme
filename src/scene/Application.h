@@ -15,6 +15,7 @@
 #include "GuiSystem.h"
 #include "InputSystem.h"
 #include "BreadcrumbTracker.h"
+#include "core/interfaces/IDebugControl.h"
 #include "ecs/World.h"
 #include "ecs/Components.h"
 #include "ecs/Systems.h"
@@ -45,6 +46,7 @@ private:
     void initECS();
     void updateECS(float deltaTime);
     void spawnRagdoll();
+    void teleportTo(float worldX, float worldZ);
 
     SDL_Window* window = nullptr;
     std::unique_ptr<Renderer> renderer_;
@@ -62,6 +64,9 @@ private:
     // Breadcrumb tracker for fast respawn (Ghost of Tsushima optimization)
     // Tracks safe player positions so respawns load most content from cache
     BreadcrumbTracker breadcrumbTracker;
+
+    // Teleport destinations for the debug World section (built from settlements)
+    std::vector<IDebugControl::TeleportTarget> teleportTargets_;
 
     // Flag simulation
     ClothSimulation clothSim;

@@ -9,6 +9,9 @@
 #include "TreeOptions.h"
 #include "ScatterSystem.h"
 #include "ScatterSystemFactory.h"
+#include "world/BiomeMap.h"
+#include "world/SettlementRegistry.h"
+#include "scene/DeterministicRandom.h"
 #include <SDL3/SDL.h>
 #include <filesystem>
 #include <cmath>
@@ -213,6 +216,168 @@ int VegetationContentGenerator::generateForest(
 
     SDL_Log("VegetationContentGenerator: Generated forest with %d trees", treesPlaced);
     return treesPlaced;
+}
+
+int VegetationContentGenerator::generateBiomeForest(
+    TreeSystem& treeSystem,
+    const BiomeMap& biomeMap,
+    const std::vector<Settlement>* settlements,
+    const glm::vec2& center,
+    float radius,
+    int maxTrees,
+    float seaLevel,
+    uint32_t seed
+) {
+    // Tree presets per archetype index (matches generateImpostorArchetypes order)
+    std::vector<std::pair<std::string, TreeOptions(*)()>> treePresets = {
+        {"oak_medium.json", TreeOptions::defaultOak},
+        {"pine_medium.json", TreeOptions::defaultPine},
+        {"ash_medium.json", TreeOptions::defaultOak},
+        {"aspen_medium.json", TreeOptions::defaultOak}
+    };
+
+    // Per-biome tree probability on the sampling grid
+    auto densityFor = [](BiomeMap::Zone zone) -> float {
+        switch (zone) {
+            case BiomeMap::Zone::Woodland:     return 0.55f;
+            case BiomeMap::Zone::Grassland:    return 0.05f;
+            case BiomeMap::Zone::Agricultural: return 0.03f;
+            case BiomeMap::Zone::Wetland:      return 0.10f;
+            default:                           return 0.0f;  // Sea/beach/cliff/marsh/river
+        }
+    };
+
+    // Archetype mix per biome (indices into treePresets)
+    auto pickArchetype = [](BiomeMap::Zone zone, float t) -> size_t {
+        switch (zone) {
+            case BiomeMap::Zone::Woodland:
+                // Mixed woodland: oak/ash dominant, some pine and aspen
+                if (t < 0.40f) return 0;       // oak
+                if (t < 0.70f) return 2;       // ash
+                if (t < 0.88f) return 1;       // pine
+                return 3;                      // aspen
+            case BiomeMap::Zone::Wetland:
+                return t < 0.7f ? 3 : 2;       // aspen/ash near water
+            case BiomeMap::Zone::Agricultural:
+                return 0;                      // lone field oaks
+            case BiomeMap::Zone::Grassland:
+            default:
+                return t < 0.8f ? 0 : 2;       // downs: oak with some ash
+        }
+    };
+
+    const float cellSize = 12.0f;  // Sampling grid spacing in meters
+
+    // Pass 1: collect every candidate position over the whole region so the
+    // tree budget is spread evenly instead of truncating the grid scan partway
+    struct Candidate {
+        glm::vec2 pos;
+        float y;
+        size_t presetIdx;
+    };
+    std::vector<Candidate> candidates;
+
+    int gridCells = static_cast<int>((2.0f * radius) / cellSize);
+    glm::vec2 regionMin = center - glm::vec2(radius);
+
+    for (int gz = 0; gz < gridCells; ++gz) {
+        for (int gx = 0; gx < gridCells; ++gx) {
+            glm::vec2 cellOrigin = regionMin + glm::vec2(gx, gz) * cellSize;
+
+            // Jittered position within the cell, deterministic per cell
+            float jx = DeterministicRandom::hashPosition(cellOrigin.x, cellOrigin.y, seed);
+            float jz = DeterministicRandom::hashPosition(cellOrigin.x, cellOrigin.y, seed + 1);
+            glm::vec2 pos = cellOrigin + glm::vec2(jx, jz) * cellSize;
+
+            if (glm::distance(pos, center) > radius) continue;
+
+            BiomeMap::Zone zone = biomeMap.zoneAtWorld(pos.x, pos.y);
+            float density = densityFor(zone);
+            if (density <= 0.0f) continue;
+
+            float roll = DeterministicRandom::hashPosition(pos.x, pos.y, seed + 2);
+            if (roll >= density) continue;
+
+            // No trees inside settlement radii (buildings live there)
+            if (settlements) {
+                bool inSettlement = false;
+                for (const auto& s : *settlements) {
+                    if (glm::distance(pos, s.worldPos) < s.radius) { inSettlement = true; break; }
+                }
+                if (inSettlement) continue;
+            }
+
+            float y = config_.getTerrainHeight(pos.x, pos.y);
+            if (y < seaLevel + 0.5f) continue;
+
+            float archRoll = DeterministicRandom::hashPosition(pos.x, pos.y, seed + 3);
+            candidates.push_back({pos, y, pickArchetype(zone, archRoll)});
+        }
+    }
+
+    // Pass 2: if over budget, keep an evenly strided subset (deterministic,
+    // preserves spatial coverage since candidates are in grid order)
+    size_t keep = std::min(candidates.size(), static_cast<size_t>(maxTrees));
+    if (keep < candidates.size()) {
+        SDL_Log("VegetationContentGenerator: %zu tree candidates, thinning to %zu",
+                candidates.size(), keep);
+    }
+
+    // Presets loaded once, not per tree
+    std::vector<TreeOptions> presetCache;
+    presetCache.reserve(treePresets.size());
+    for (const auto& [name, fallback] : treePresets) {
+        presetCache.push_back(loadPresetOrDefault(name, fallback));
+    }
+
+    std::vector<ThreadedTreeGenerator::TreeRequest> requests;
+    requests.reserve(keep);
+    for (size_t i = 0; i < keep; ++i) {
+        const Candidate& c = candidates[keep == candidates.size()
+            ? i : (i * candidates.size()) / keep];
+        ThreadedTreeGenerator::TreeRequest req;
+        req.position = glm::vec3(c.pos.x, c.y, c.pos.y);
+        req.rotation = DeterministicRandom::hashRange(c.pos.x, c.pos.y, seed + 4, 0.0f, 6.2831853f);
+        req.scale = DeterministicRandom::hashRange(c.pos.x, c.pos.y, seed + 5, 0.7f, 1.3f);
+        req.options = presetCache[c.presetIdx];
+        req.archetypeIndex = static_cast<uint32_t>(c.presetIdx);
+        requests.push_back(req);
+    }
+
+    auto threadedGen = ThreadedTreeGenerator::create(4);
+    int uploadedCount = 0;
+
+    if (threadedGen) {
+        threadedGen->queueTrees(requests);
+        SDL_Log("VegetationContentGenerator: Queued %zu biome trees for parallel generation",
+                requests.size());
+        threadedGen->waitForAll();
+
+        auto stagedTrees = threadedGen->getCompletedTrees();
+        for (auto& staged : stagedTrees) {
+            uint32_t treeIdx = treeSystem.addTreeFromStagedData(
+                staged.position, staged.rotation, staged.scale,
+                staged.options,
+                staged.branchVertexData, staged.branchVertexCount,
+                staged.branchIndices,
+                staged.leafInstanceData, staged.leafInstanceCount,
+                staged.archetypeIndex);
+            if (treeIdx != UINT32_MAX) {
+                uploadedCount++;
+            }
+        }
+        treeSystem.finalizeLeafInstanceBuffer();
+    } else {
+        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "Threaded tree generator unavailable, using serial");
+        for (const auto& req : requests) {
+            treeSystem.addTree(req.position, req.rotation, req.scale, req.options);
+            uploadedCount++;
+        }
+    }
+
+    SDL_Log("VegetationContentGenerator: Biome forest - %d trees placed (region radius %.0fm)",
+            uploadedCount, radius);
+    return uploadedCount;
 }
 
 void VegetationContentGenerator::generateImpostorArchetypes(

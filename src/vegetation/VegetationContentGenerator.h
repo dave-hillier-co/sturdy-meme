@@ -9,6 +9,8 @@
 #include <vk_mem_alloc.h>
 
 // Forward declarations
+class BiomeMap;
+struct Settlement;
 class TreeSystem;
 class TreeLODSystem;
 class ImpostorCullSystem;
@@ -67,6 +69,24 @@ public:
         const glm::vec2& center,
         float radius,
         int maxTrees,
+        uint32_t seed = 12345);
+
+    /**
+     * Generate biome-driven vegetation over a region.
+     * Trees are placed on a jittered grid; density and species follow the
+     * biome map (woodland dense, grassland/agricultural sparse), suppressed
+     * inside settlement radii and below sea level. Deterministic: placement
+     * depends only on position hashes and the seed.
+     * Returns number of trees placed.
+     */
+    int generateBiomeForest(
+        TreeSystem& treeSystem,
+        const BiomeMap& biomeMap,
+        const std::vector<Settlement>* settlements,
+        const glm::vec2& center,
+        float radius,
+        int maxTrees,
+        float seaLevel = 23.0f,
         uint32_t seed = 12345);
 
     /**

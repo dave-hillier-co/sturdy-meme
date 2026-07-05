@@ -16,6 +16,7 @@
 #include <Jolt/Physics/Collision/Shape/HeightFieldShape.h>
 #include <Jolt/Physics/Collision/Shape/StaticCompoundShape.h>
 #include <Jolt/Physics/Collision/Shape/ConvexHullShape.h>
+#include <Jolt/Physics/Collision/Shape/MeshShape.h>
 #include <Jolt/Physics/Body/BodyCreationSettings.h>
 #include <Jolt/Physics/Collision/RayCast.h>
 #include <Jolt/Physics/Collision/CastResult.h>
@@ -96,11 +97,14 @@ bool PhysicsWorld::initInternal() {
         numThreads
     );
 
-    // Create physics system
-    const uint32_t maxBodies = 1024;
+    // Create physics system. Static world content is body-hungry: ~4700
+    // settlement building colliders + tree colliders + streamed terrain
+    // heightfield tiles. Exhausting the pool makes every later body creation
+    // fail (e.g. terrain tiles around a teleported player).
+    const uint32_t maxBodies = 16384;
     const uint32_t numBodyMutexes = 0; // Use default
-    const uint32_t maxBodyPairs = 1024;
-    const uint32_t maxContactConstraints = 1024;
+    const uint32_t maxBodyPairs = 4096;
+    const uint32_t maxContactConstraints = 4096;
 
     physicsSystem_ = std::make_unique<JPH::PhysicsSystem>();
     physicsSystem_->Init(
@@ -461,6 +465,53 @@ PhysicsBodyID PhysicsWorld::createStaticConvexHull(const glm::vec3& position, co
     JPH::Body* body = bodyInterface.CreateBody(bodySettings);
     if (!body) {
         SDL_Log("Failed to create convex hull body");
+        return INVALID_BODY_ID;
+    }
+
+    bodyInterface.AddBody(body->GetID(), JPH::EActivation::DontActivate);
+    return body->GetID().GetIndexAndSequenceNumber();
+}
+
+PhysicsBodyID PhysicsWorld::createStaticMesh(const glm::vec3* vertices, size_t vertexCount,
+                                             const uint32_t* indices, size_t indexCount) {
+    if (vertexCount < 3 || indexCount < 3) return INVALID_BODY_ID;
+
+    JPH::BodyInterface& bodyInterface = physicsSystem_->GetBodyInterface();
+
+    JPH::VertexList joltVertices;
+    joltVertices.reserve(vertexCount);
+    for (size_t i = 0; i < vertexCount; ++i) {
+        joltVertices.push_back(JPH::Float3(vertices[i].x, vertices[i].y, vertices[i].z));
+    }
+
+    JPH::IndexedTriangleList triangles;
+    triangles.reserve(indexCount / 3);
+    for (size_t i = 0; i + 2 < indexCount; i += 3) {
+        triangles.push_back(JPH::IndexedTriangle(indices[i], indices[i + 1], indices[i + 2], 0));
+    }
+
+    JPH::MeshShapeSettings meshSettings(std::move(joltVertices), std::move(triangles));
+    meshSettings.Sanitize();
+    JPH::ShapeSettings::ShapeResult shapeResult = meshSettings.Create();
+    if (!shapeResult.IsValid()) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create static mesh shape: %s",
+                     shapeResult.GetError().c_str());
+        return INVALID_BODY_ID;
+    }
+
+    // Vertices are already in world space, so the body sits at the origin
+    JPH::BodyCreationSettings bodySettings(
+        shapeResult.Get(),
+        JPH::RVec3(0.0, 0.0, 0.0),
+        JPH::Quat::sIdentity(),
+        JPH::EMotionType::Static,
+        PhysicsLayers::NON_MOVING
+    );
+    bodySettings.mFriction = 0.7f;
+
+    JPH::Body* body = bodyInterface.CreateBody(bodySettings);
+    if (!body) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create static mesh body");
         return INVALID_BODY_ID;
     }
 

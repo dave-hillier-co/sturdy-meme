@@ -165,6 +165,22 @@ public:
     }
 
     // -------------------------------------------------------------------------
+    // Create building blockout entity
+    // -------------------------------------------------------------------------
+
+    [[nodiscard]] Entity createBuilding(
+        Mesh* mesh,
+        MaterialId materialId,
+        const glm::mat4& transform,
+        uint32_t settlementId) {
+
+        Entity entity = createStaticMesh(mesh, materialId, transform, true);
+        world_.add<BuildingTag>(entity, settlementId);
+
+        return entity;
+    }
+
+    // -------------------------------------------------------------------------
     // Bone-attached entity creation
     // -------------------------------------------------------------------------
     // Creates an entity that follows a skeleton bone transform.

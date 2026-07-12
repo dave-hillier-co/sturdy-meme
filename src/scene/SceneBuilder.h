@@ -90,6 +90,12 @@ public:
     // Returns nullptr on upload failure.
     Mesh* addGeneratedMesh(std::vector<Vertex> vertices, std::vector<uint32_t> indices);
 
+    // Batched variant: the whole batch shares one staging buffer and a single
+    // queue submit (one fence wait instead of one per mesh). Returns one
+    // Mesh* per input, nullptr where upload failed. CPU-side geometry is
+    // released after upload; these meshes render only.
+    std::vector<Mesh*> addGeneratedMeshes(std::vector<MeshGeometry> batch);
+
     // Set the ECS world (must be called before createRenderables if ECS is used).
     // Also propagates to the NPC simulation so its NPCs (spawned before the world
     // arrives in the deferred path) get their simulation entities created.
@@ -123,6 +129,16 @@ public:
 
     // Material for untextured/vertex-colored objects (building blockouts)
     MaterialId getWhiteMaterialId() const { return whiteMaterialId; }
+
+    // Additional registered materials, reused as distinct building-layer
+    // textures so stacked storeys read differently (foundation vs each floor)
+    MaterialId getCrateMaterialId() const { return crateMaterialId; }
+    MaterialId getGroundMaterialId() const { return groundMaterialId; }
+    MaterialId getMetalMaterialId() const { return metalMaterialId; }
+
+    // Material for a Quaternius kit glTF material name (e.g. "MI_Plaster").
+    // Falls back to the white material for unregistered names (glass, vine).
+    MaterialId getKitMaterialId(const std::string& kitMaterialName) const;
 
     // Access to textures for descriptor set creation (via AssetRegistry)
     const Texture* getGroundTexture() const;
@@ -222,6 +238,9 @@ private:
     bool createMeshes(const InitInfo& info);
     bool loadTextures(const InitInfo& info);
     void registerMaterials();
+    // Loads and registers the Quaternius kit PBR materials (BaseColor + Normal)
+    // used by modular building pieces. Safe no-op if textures are missing.
+    void registerKitMaterials(const std::string& resourcePath);
     void createRenderables();
     void createNPCs(const InitInfo& info);  // Create NPC characters
 
@@ -294,6 +313,10 @@ private:
     std::shared_ptr<Texture> metalNormal_;
     std::shared_ptr<Texture> defaultEmissive_;  // Black texture for objects without emissive
     std::shared_ptr<Texture> whiteTexture_;     // White texture for vertex-colored objects
+
+    // Quaternius modular-kit materials, keyed by glTF material name
+    std::vector<std::shared_ptr<Texture>> kitTextures_;
+    std::unordered_map<std::string, MaterialId> kitMaterials_;
 
     int32_t rightHandBoneIndex = -1;  // Bone index for sword attachment
     int32_t leftHandBoneIndex = -1;   // Bone index for shield attachment

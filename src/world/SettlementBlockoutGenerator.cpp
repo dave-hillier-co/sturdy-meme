@@ -1,5 +1,7 @@
 #include "SettlementBlockoutGenerator.h"
 #include "WorldCoords.h"
+#include "FootprintRing.h"
+#include "KitBuildingAssembler.h"
 
 #include "ecs/EntityFactory.h"
 #include "scene/DeterministicRandom.h"
@@ -10,8 +12,10 @@
 #include <nlohmann/json.hpp>
 #include <algorithm>
 #include <array>
+#include <climits>
 #include <cmath>
 #include <fstream>
+#include <memory>
 
 namespace {
 
@@ -78,125 +82,56 @@ FootprintBox fitFootprintBox(const std::vector<glm::vec2>& worldRing) {
     return box;
 }
 
-// Positive when the XZ ring is counter-clockwise in math orientation
-// (interior on the left of each directed edge)
-float ringSignedArea(const std::vector<glm::vec2>& ring) {
-    float area = 0.0f;
-    for (size_t i = 0; i < ring.size(); ++i) {
-        const glm::vec2& a = ring[i];
-        const glm::vec2& b = ring[(i + 1) % ring.size()];
-        area += a.x * b.y - b.x * a.y;
-    }
-    return area * 0.5f;
-}
+// One merged mesh buffer per building-layer material.
+struct LayerBuf {
+    std::vector<Vertex> verts;
+    std::vector<uint32_t> inds;
+};
 
-float cross2(const glm::vec2& o, const glm::vec2& a, const glm::vec2& b) {
-    return (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x);
-}
+// Extrude a footprint into a below-ground foundation plinth plus stacked floor
+// bands, appending each band to its layer buffer (layers[0] = foundation,
+// layers[1..] = floors cycled per storey). The full above-ground prism is also
+// appended to the collider buffers so the physics mesh matches the plot shape.
+// groundY is the (already slightly sunk) lowest ground corner.
+void appendLayeredBuilding(std::vector<LayerBuf>& layers,
+                           std::vector<Vertex>& colVerts, std::vector<uint32_t>& colInds,
+                           std::vector<glm::vec2> ring,
+                           float groundY, float height,
+                           float foundationDepth, float storeyHeight) {
+    if (layers.empty() || !footprint::normalizeRing(ring)) return;
 
-bool pointInTriangle(const glm::vec2& p, const glm::vec2& a, const glm::vec2& b,
-                     const glm::vec2& c) {
-    float d1 = cross2(a, b, p);
-    float d2 = cross2(b, c, p);
-    float d3 = cross2(c, a, p);
-    bool hasNeg = (d1 < 0.0f) || (d2 < 0.0f) || (d3 < 0.0f);
-    bool hasPos = (d1 > 0.0f) || (d2 > 0.0f) || (d3 > 0.0f);
-    return !(hasNeg && hasPos);
-}
+    const float topY = groundY + height;
+    // Foundation plinth: sunk below the lowest corner, capped with a small lip
+    // above ground so it stays visible where the terrain falls away.
+    const float lip = std::min(0.3f, height * 0.1f);
+    const float foundTop = groundY + lip;
+    // Foundation material is the rock trim sheet: V pins to its brick-course
+    // strip, only U tiles along the wall.
+    footprint::appendBandStrip(layers[0].verts, layers[0].inds, ring,
+                               groundY - foundationDepth, foundTop,
+                               /*vBottom*/ 0.98f, /*vTop*/ 0.60f);
 
-// Ear-clip a CCW (positive-area) simple polygon into index triples
-std::vector<std::array<size_t, 3>> triangulateRing(const std::vector<glm::vec2>& ring) {
-    std::vector<std::array<size_t, 3>> tris;
-    std::vector<size_t> idx(ring.size());
-    for (size_t i = 0; i < idx.size(); ++i) idx[i] = i;
-
-    while (idx.size() > 3) {
-        bool clipped = false;
-        for (size_t i = 0; i < idx.size(); ++i) {
-            size_t ia = idx[(i + idx.size() - 1) % idx.size()];
-            size_t ib = idx[i];
-            size_t ic = idx[(i + 1) % idx.size()];
-            if (cross2(ring[ia], ring[ib], ring[ic]) <= 1e-6f) continue;  // Reflex/degenerate
-
-            bool earClear = true;
-            for (size_t j : idx) {
-                if (j == ia || j == ib || j == ic) continue;
-                if (pointInTriangle(ring[j], ring[ia], ring[ib], ring[ic])) {
-                    earClear = false;
-                    break;
-                }
-            }
-            if (!earClear) continue;
-
-            tris.push_back({ia, ib, ic});
-            idx.erase(idx.begin() + i);
-            clipped = true;
-            break;
+    // Stacked floor bands between the plinth lip and the eaves
+    const int floors = std::max(1,
+        static_cast<int>(std::lround((topY - foundTop) / storeyHeight)));
+    const size_t floorMats = layers.size() > 1 ? layers.size() - 1 : 1;
+    float y = foundTop;
+    for (int f = 0; f < floors; ++f) {
+        float bandTop = (f == floors - 1)
+            ? topY
+            : foundTop + (topY - foundTop) * static_cast<float>(f + 1) / floors;
+        size_t li = layers.size() > 1 ? 1 + (static_cast<size_t>(f) % floorMats) : 0;
+        footprint::appendBandWalls(layers[li].verts, layers[li].inds, ring, y, bandTop);
+        if (f == floors - 1) {
+            footprint::appendRoofCap(layers[li].verts, layers[li].inds, ring, bandTop, 0.5f);
         }
-        if (!clipped) {
-            // Degenerate polygon: fall back to a fan so we never loop forever
-            for (size_t i = 1; i + 1 < idx.size(); ++i) {
-                tris.push_back({idx[0], idx[i], idx[i + 1]});
-            }
-            return tris;
-        }
-    }
-    if (idx.size() == 3) tris.push_back({idx[0], idx[1], idx[2]});
-    return tris;
-}
-
-// Append an extruded footprint prism (walls + flat roof, no floor) to the
-// merged mesh. Follows the createCube convention: outward faces wound CCW as
-// seen from outside.
-void appendBuildingPrism(std::vector<Vertex>& verts, std::vector<uint32_t>& inds,
-                         std::vector<glm::vec2> ring, float baseY, float topY) {
-    if (ring.size() >= 2 && glm::distance(ring.front(), ring.back()) < 1e-3f) {
-        ring.pop_back();  // Drop GeoJSON closing vertex
-    }
-    if (ring.size() < 3) return;
-    if (ringSignedArea(ring) < 0.0f) std::reverse(ring.begin(), ring.end());
-
-    const float wallHeight = topY - baseY;
-
-    // Walls: outward normal is the right side of each directed edge.
-    // UVs are world-anchored (0.5/m -> texture repeats every 2m) so tiling is
-    // continuous along a wall and consistent across all buildings.
-    for (size_t i = 0; i < ring.size(); ++i) {
-        const glm::vec2& p0 = ring[i];
-        const glm::vec2& p1 = ring[(i + 1) % ring.size()];
-        glm::vec2 edge = p1 - p0;
-        float len = glm::length(edge);
-        if (len < 1e-4f) continue;
-        glm::vec2 d = edge / len;
-        glm::vec3 normal(d.y, 0.0f, -d.x);
-        glm::vec4 tangent(-d.x, 0.0f, -d.y, 1.0f);
-
-        const float uvScale = 0.5f;
-        float u0 = glm::dot(p1, -d) * uvScale;  // Along the +U (tangent) direction
-        float u1 = glm::dot(p0, -d) * uvScale;
-        float vBase = -baseY * uvScale;
-        float vTop = -topY * uvScale;
-
-        uint32_t base = static_cast<uint32_t>(verts.size());
-        verts.push_back({{p1.x, baseY, p1.y}, normal, {u0, vBase}, tangent});
-        verts.push_back({{p0.x, baseY, p0.y}, normal, {u1, vBase}, tangent});
-        verts.push_back({{p0.x, topY, p0.y}, normal, {u1, vTop}, tangent});
-        verts.push_back({{p1.x, topY, p1.y}, normal, {u0, vTop}, tangent});
-        inds.insert(inds.end(), {base, base + 1, base + 2, base + 2, base + 3, base});
+        y = bandTop;
     }
 
-    // Flat roof
-    uint32_t roofBase = static_cast<uint32_t>(verts.size());
-    for (const auto& p : ring) {
-        verts.push_back({{p.x, topY, p.y}, {0.0f, 1.0f, 0.0f},
-                         {p.x * 0.1f, p.y * 0.1f}, {1.0f, 0.0f, 0.0f, 1.0f}});
-    }
-    for (const auto& tri : triangulateRing(ring)) {
-        // CCW-from-above needs reversed order relative to the math-CCW ring
-        inds.push_back(roofBase + static_cast<uint32_t>(tri[2]));
-        inds.push_back(roofBase + static_cast<uint32_t>(tri[1]));
-        inds.push_back(roofBase + static_cast<uint32_t>(tri[0]));
-    }
+    // Collider: full above-ground prism, capped so the roof is walkable and
+    // nothing falls into the hollow interior
+    footprint::appendBandWalls(colVerts, colInds, ring, groundY, topY);
+    footprint::appendRoofCap(colVerts, colInds, ring, topY, 0.5f);
 }
 
 // Load building footprints (world-space rings) from town_<id>.geojson.
@@ -239,24 +174,87 @@ std::vector<std::pair<std::vector<glm::vec2>, bool>> loadTownFootprints(const st
 
 } // namespace
 
-SettlementBlockoutGenerator::Result SettlementBlockoutGenerator::generate(
-    ecs::World& world,
-    const std::vector<Settlement>& settlements,
-    const Config& config) {
+SettlementBlockoutGenerator::SettlementBlockoutGenerator(Config config)
+    : config_(std::move(config)) {
+    result_.layoutHash = 2166136261u;  // FNV offset basis
 
-    Result result;
-    result.layoutHash = 2166136261u;  // FNV offset basis
+    // One assembler for all settlements: kit glTF pieces load once and are
+    // reused; accumulated meshes are flushed per spatial chunk.
+    if (!config_.kitModelsDir.empty() && config_.createMeshes && config_.kitMaterial) {
+        kit_ = std::make_unique<KitBuildingAssembler>(config_.kitModelsDir);
+        // Probe an essential piece: if the kit assets are missing/broken,
+        // fall back to prisms everywhere instead of emitting invisible
+        // buildings with solid colliders.
+        if (kit_->probe("Wall_Plaster_Straight").empty()) {
+            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
+                         "SettlementBlockoutGenerator: kit pieces not loadable from "
+                         "'%s', using prism buildings", config_.kitModelsDir.c_str());
+            kit_.reset();
+        }
+    }
+}
+
+SettlementBlockoutGenerator::~SettlementBlockoutGenerator() = default;
+
+void SettlementBlockoutGenerator::logSummary() const {
+    SDL_Log("SettlementBlockout: %d buildings in %zu scene entities, %zu slots "
+            "rejected, %zu kit verts total, layout hash %08x",
+            result_.totalBuildings, result_.entities.size(), result_.rejectedSlots,
+            totalKitVerts_, result_.layoutHash);
+}
+
+std::vector<ecs::Entity> SettlementBlockoutGenerator::generateSettlement(
+    ecs::World& world, const Settlement& settlement) {
+
+    const Config& config = config_;
+    Result& result = result_;
+    KitBuildingAssembler* kit = kit_.get();
+    size_t& totalKitVerts = totalKitVerts_;
+    const size_t entitiesBefore = result_.entities.size();
 
     if (!config.buildingMesh || !config.getTerrainHeight) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
                      "SettlementBlockoutGenerator: missing mesh or height query");
-        return result;
+        return {};
     }
 
     ecs::EntityFactory factory(world);
-    int totalBuildings = 0;
 
-    for (const auto& settlement : settlements) {
+    // Meshes accumulate here and upload in ONE batch (single staging buffer
+    // and queue submit) at the end of the settlement.
+    std::vector<MeshGeometry> pendingGeo;
+    std::vector<MaterialId> pendingMats;
+
+    {
+        // Move the assembler's accumulated per-material meshes into the
+        // pending batch (world-space geometry, identity transform). Called
+        // per spatial chunk so each mesh keeps a chunk-local AABB.
+        auto flushKit = [&]() {
+            if (!kit) return;
+            for (auto& mm : kit->takeMaterialMeshes()) {
+                if (mm.vertices.empty()) continue;
+                pendingMats.push_back(config.kitMaterial(mm.materialName));
+                pendingGeo.push_back({std::move(mm.vertices), std::move(mm.indices)});
+            }
+        };
+        // Upload the pending batch and create one entity per merged mesh.
+        auto uploadPending = [&]() {
+            if (pendingGeo.empty()) return;
+            std::vector<Mesh*> meshes = config.createMeshes(std::move(pendingGeo));
+            for (size_t i = 0; i < meshes.size(); ++i) {
+                if (meshes[i]) {
+                    result.entities.push_back(factory.createBuilding(
+                        meshes[i], pendingMats[i], glm::mat4(1.0f), settlement.id));
+                } else {
+                    SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
+                                 "SettlementBlockout: mesh upload failed for %s",
+                                 settlement.displayName().c_str());
+                }
+            }
+            pendingGeo.clear();
+            pendingMats.clear();
+        };
+
         if (config.preloadTiles) {
             config.preloadTiles(settlement.worldPos.x, settlement.worldPos.y,
                                 settlement.radius + 50.0f);
@@ -305,12 +303,50 @@ SettlementBlockoutGenerator::Result SettlementBlockoutGenerator::generate(
                 }
 
                 // Merged mode: extrude the actual footprint polygons into one
-                // world-space mesh per settlement (exact plot shapes, one draw)
-                std::vector<Vertex> meshVerts;
-                std::vector<uint32_t> meshInds;
-                const bool mergedMode = static_cast<bool>(config.createMesh);
+                // world-space mesh per layer material (foundation + floor bands)
+                // for the whole settlement, so each storey reads distinctly while
+                // draw calls stay ~O(layers) rather than O(buildings).
+                std::vector<MaterialId> layerMats = config.layerMaterials;
+                if (layerMats.empty()) layerMats.push_back(config.materialId);
+                std::vector<LayerBuf> layers(layerMats.size());
+                std::vector<Vertex> colVerts;
+                std::vector<uint32_t> colInds;
+                const bool mergedMode = static_cast<bool>(config.createMeshes);
 
-                for (size_t slotIdx : selected) {
+                // Kit mode: order slots by spatial chunk so each flush yields
+                // meshes with chunk-local AABBs (GPU/shadow culling can reject
+                // most of a town). Chunks run centre-outward so when the kit
+                // vertex budget runs dry the prism fallbacks land on the town
+                // outskirts rather than splitting it along a chunk line.
+                // Order stays deterministic.
+                std::vector<size_t> order = selected;
+                auto cellOf = [&](size_t idx) {
+                    const glm::vec2& c = eligible[idx].box.center;
+                    return glm::ivec2(
+                        static_cast<int>(std::floor(c.x / config.kitChunkSize)),
+                        static_cast<int>(std::floor(c.y / config.kitChunkSize)));
+                };
+                if (kit) {
+                    auto cellDist2 = [&](const glm::ivec2& cell) {
+                        glm::vec2 centre = (glm::vec2(cell) + 0.5f) * config.kitChunkSize;
+                        glm::vec2 d = centre - settlement.worldPos;
+                        return glm::dot(d, d);
+                    };
+                    std::stable_sort(order.begin(), order.end(),
+                                     [&](size_t a, size_t b) {
+                        glm::ivec2 ca = cellOf(a), cb = cellOf(b);
+                        if (ca == cb) return a < b;
+                        float da = cellDist2(ca), db = cellDist2(cb);
+                        if (da != db) return da < db;
+                        if (ca.x != cb.x) return ca.x < cb.x;
+                        return ca.y < cb.y;
+                    });
+                }
+                glm::ivec2 currentCell{INT_MIN, INT_MIN};
+                size_t settlementKitVerts = 0;
+                int kitBuildings = 0;
+
+                for (size_t slotIdx : order) {
                     const FootprintBox& box = eligible[slotIdx].box;
                     const bool special = eligible[slotIdx].special;
                     if (created >= config.maxBuildingsPerSettlement) break;
@@ -344,13 +380,51 @@ SettlementBlockoutGenerator::Result SettlementBlockoutGenerator::generate(
                         ? DeterministicRandom::hashRange(box.center.x, box.center.y, seed + 6, 10.0f, 16.0f)
                         : DeterministicRandom::hashRange(box.center.x, box.center.y, seed + 4, 4.5f, 7.5f);
 
-                    if (mergedMode) {
+                    // Kit wall shell when the plot is gentle enough and the
+                    // settlement's kit vertex budget has room; anything else
+                    // falls back to the extruded prism so every plot builds.
+                    std::vector<glm::vec2> ring;
+                    bool kitBuilt = false;
+                    if (kit && (maxH - minH) <= config.maxCornerHeightSpread &&
+                        settlementKitVerts < config.kitVertexBudgetPerSettlement &&
+                        totalKitVerts < config.kitVertexBudgetTotal) {
+                        ring = footprints[eligible[slotIdx].footprintIndex].first;
+                        kitBuilt = footprint::normalizeRing(ring);
+                    }
+
+                    if (kitBuilt) {
+                        glm::ivec2 cell = cellOf(slotIdx);
+                        if (cell != currentCell) {
+                            flushKit();
+                            currentCell = cell;
+                        }
+                        const uint32_t buildingSeed = static_cast<uint32_t>(
+                            DeterministicRandom::hashRange(box.center.x, box.center.y,
+                                                           seed + 7, 0.0f, 16777216.0f));
+                        const float baseY = minH - 0.2f;
+                        const size_t before = kit->vertexCount();
+                        kit->addFootprintShell(
+                            ring,
+                            KitBuildingAssembler::OrientedBox{box.center, box.width,
+                                                              box.depth, box.yaw},
+                            baseY, height, minH - config.foundationDepth, buildingSeed);
+                        settlementKitVerts += kit->vertexCount() - before;
+                        totalKitVerts += kit->vertexCount() - before;
+                        kitBuildings++;
+                        // Collider prism matches the module-quantized shell
+                        // top, capped so nothing falls into the hollow shell
+                        const float colTop =
+                            baseY + KitBuildingAssembler::shellTopHeight(height);
+                        footprint::appendBandWalls(colVerts, colInds, ring, baseY, colTop);
+                        footprint::appendRoofCap(colVerts, colInds, ring, colTop, 0.5f);
+                    } else if (mergedMode) {
                         // Base sinks 0.2m below the lowest corner so no wall floats.
-                        // A single mesh collider is built from this geometry
-                        // after the loop (matches concave footprints exactly).
-                        appendBuildingPrism(meshVerts, meshInds,
-                                            footprints[eligible[slotIdx].footprintIndex].first,
-                                            minH - 0.2f, minH - 0.2f + height);
+                        // The mesh collider is built from the accumulated prism
+                        // geometry after the loop (matches concave footprints).
+                        appendLayeredBuilding(layers, colVerts, colInds,
+                                              footprints[eligible[slotIdx].footprintIndex].first,
+                                              minH - 0.2f, height,
+                                              config.foundationDepth, config.storeyHeight);
                     } else {
                         if (config.addCollider) {
                             config.addCollider(
@@ -369,34 +443,41 @@ SettlementBlockoutGenerator::Result SettlementBlockoutGenerator::generate(
                     }
                     created++;
 
-                    hashCombine(result.layoutHash, settlement.id);
-                    hashCombine(result.layoutHash, quantize(box.center.x));
-                    hashCombine(result.layoutHash, quantize(box.center.y));
-                    hashCombine(result.layoutHash, quantize(minH));
-                    hashCombine(result.layoutHash, quantize(box.width * 1000.0f + height * 10.0f + box.depth));
+                    // Per-building hashes combine with XOR so the layout hash
+                    // is independent of emission order (which varies with kit
+                    // chunking) — it fingerprints placements only.
+                    uint32_t bh = 2166136261u;
+                    hashCombine(bh, settlement.id);
+                    hashCombine(bh, quantize(box.center.x));
+                    hashCombine(bh, quantize(box.center.y));
+                    hashCombine(bh, quantize(minH));
+                    hashCombine(bh, quantize(box.width * 1000.0f + height * 10.0f + box.depth));
+                    result.layoutHash ^= bh;
                 }
 
-                if (mergedMode && !meshVerts.empty()) {
+                flushKit();  // Last chunk of kit-wall meshes
+
+                if (mergedMode && !colVerts.empty()) {
                     if (config.addMeshCollider) {
-                        config.addMeshCollider(meshVerts, meshInds);
+                        config.addMeshCollider(colVerts, colInds);
                     }
-                    if (Mesh* mesh = config.createMesh(std::move(meshVerts), std::move(meshInds))) {
-                        ecs::Entity entity = factory.createBuilding(
-                            mesh, config.materialId, glm::mat4(1.0f), settlement.id);
-                        result.entities.push_back(entity);
-                    } else {
-                        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
-                                     "SettlementBlockout: mesh upload failed for %s",
-                                     settlement.displayName().c_str());
+                    for (size_t li = 0; li < layers.size(); ++li) {
+                        if (layers[li].verts.empty()) continue;
+                        pendingMats.push_back(layerMats[li]);
+                        pendingGeo.push_back({std::move(layers[li].verts),
+                                              std::move(layers[li].inds)});
                     }
                 }
+                uploadPending();
 
                 SDL_Log("SettlementBlockout: %s - %d buildings from town layout "
-                        "(%zu footprints, %zu eligible, %zu steep)",
+                        "(%zu footprints, %zu eligible, %zu steep, %d kit shells, "
+                        "%zu kit verts)",
                         settlement.displayName().c_str(), created,
-                        footprints.size(), eligible.size(), steepSlots);
-                totalBuildings += created;
-                continue;  // Next settlement; skip the random fallback
+                        footprints.size(), eligible.size(), steepSlots,
+                        kitBuildings, settlementKitVerts);
+                result.totalBuildings += created;
+                return {result.entities.begin() + entitiesBefore, result.entities.end()};
             }
         }
 
@@ -456,18 +537,49 @@ SettlementBlockoutGenerator::Result SettlementBlockoutGenerator::generate(
 
             // Sink slightly into the lowest corner so no edge floats
             float groundY = minH;
-            if (config.addCollider) {
-                config.addCollider(glm::vec3(pos.x, groundY - 0.2f + height * 0.5f, pos.y),
-                                   glm::vec3(width * 0.5f, height * 0.5f, depth * 0.5f), yaw);
-            }
-            glm::mat4 transform = glm::translate(glm::mat4(1.0f),
-                glm::vec3(pos.x, groundY + height * 0.5f - 0.2f, pos.y));
-            transform = glm::rotate(transform, yaw, glm::vec3(0.0f, 1.0f, 0.0f));
-            transform = glm::scale(transform, glm::vec3(width, height, depth));
+            if (kit && totalKitVerts < config.kitVertexBudgetTotal) {
+                // Kit wall shell on a module-quantized rectangle (2m bays).
+                // Half extents in metres equal the module counts.
+                const float hx = static_cast<float>(
+                    std::max(2, static_cast<int>(std::lround(width * 0.5f))));
+                const float hz = static_cast<float>(
+                    std::max(2, static_cast<int>(std::lround(depth * 0.5f))));
+                const float c = std::cos(yaw), s = std::sin(yaw);
+                auto world = [&](float lx, float lz) {
+                    return pos + glm::vec2(c * lx + s * lz, -s * lx + c * lz);
+                };
+                // CCW in math orientation, same convention as town rings
+                std::vector<glm::vec2> ring{world(-hx, -hz), world(hx, -hz),
+                                            world(hx, hz), world(-hx, hz)};
+                const float baseY = groundY - 0.2f;
+                const float shellTop = KitBuildingAssembler::shellTopHeight(height);
+                const uint32_t buildingSeed = static_cast<uint32_t>(
+                    DeterministicRandom::hashRange(pos.x, pos.y, seed + 7,
+                                                   0.0f, 16777216.0f));
+                const size_t before = kit->vertexCount();
+                kit->addFootprintShell(
+                    ring,
+                    KitBuildingAssembler::OrientedBox{pos, hx * 2.0f, hz * 2.0f, yaw},
+                    baseY, height, groundY - config.foundationDepth, buildingSeed);
+                totalKitVerts += kit->vertexCount() - before;
+                if (config.addCollider) {
+                    config.addCollider(glm::vec3(pos.x, baseY + shellTop * 0.5f, pos.y),
+                                       glm::vec3(hx, shellTop * 0.5f, hz), yaw);
+                }
+            } else {
+                if (config.addCollider) {
+                    config.addCollider(glm::vec3(pos.x, groundY - 0.2f + height * 0.5f, pos.y),
+                                       glm::vec3(width * 0.5f, height * 0.5f, depth * 0.5f), yaw);
+                }
+                glm::mat4 transform = glm::translate(glm::mat4(1.0f),
+                    glm::vec3(pos.x, groundY + height * 0.5f - 0.2f, pos.y));
+                transform = glm::rotate(transform, yaw, glm::vec3(0.0f, 1.0f, 0.0f));
+                transform = glm::scale(transform, glm::vec3(width, height, depth));
 
-            ecs::Entity entity = factory.createBuilding(
-                config.buildingMesh, config.materialId, transform, settlement.id);
-            result.entities.push_back(entity);
+                ecs::Entity entity = factory.createBuilding(
+                    config.buildingMesh, config.materialId, transform, settlement.id);
+                result.entities.push_back(entity);
+            }
             placed.push_back(pos);
             created++;
 
@@ -478,13 +590,13 @@ SettlementBlockoutGenerator::Result SettlementBlockoutGenerator::generate(
             hashCombine(result.layoutHash, quantize(width * 1000.0f + height * 10.0f + depth));
         }
 
+        flushKit();  // Fallback-mode kit meshes for this settlement
+        uploadPending();
+
         SDL_Log("SettlementBlockout: %s - %d/%d buildings placed",
                 settlement.displayName().c_str(), created, targetCount);
-        totalBuildings += created;
+        result.totalBuildings += created;
     }
 
-    SDL_Log("SettlementBlockout: %d buildings in %zu scene entities, %zu slots rejected, "
-            "layout hash %08x",
-            totalBuildings, result.entities.size(), result.rejectedSlots, result.layoutHash);
-    return result;
+    return {result.entities.begin() + entitiesBefore, result.entities.end()};
 }

@@ -400,6 +400,53 @@ void Mesh::setCustomGeometry(const std::vector<Vertex>& verts, const std::vector
     calculateBounds();
 }
 
+void Mesh::setCustomGeometry(std::vector<Vertex>&& verts, std::vector<uint32_t>&& inds) {
+    vertices = std::move(verts);
+    indices = std::move(inds);
+    calculateBounds();
+}
+
+void Mesh::copyGeometryTo(void* dst) const {
+    const VkDeviceSize vertexBytes = sizeof(Vertex) * vertices.size();
+    memcpy(dst, vertices.data(), vertexBytes);
+    memcpy(static_cast<char*>(dst) + vertexBytes, indices.data(),
+           sizeof(uint32_t) * indices.size());
+}
+
+bool Mesh::uploadFromStaging(VmaAllocator allocator, VkCommandBuffer cmd,
+                             VkBuffer staging, VkDeviceSize stagingOffset) {
+    if (vertices.empty() || indices.empty()) return false;
+
+    const VkDeviceSize vertexBufferSize = sizeof(vertices[0]) * vertices.size();
+    const VkDeviceSize indexBufferSize = sizeof(indices[0]) * indices.size();
+
+    ManagedBuffer managedVertexBuffer;
+    if (!VmaBufferFactory::createVertexBuffer(allocator, vertexBufferSize, managedVertexBuffer)) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
+                     "Mesh::uploadFromStaging: Failed to create vertex buffer");
+        return false;
+    }
+    ManagedBuffer managedIndexBuffer;
+    if (!VmaBufferFactory::createIndexBuffer(allocator, indexBufferSize, managedIndexBuffer)) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
+                     "Mesh::uploadFromStaging: Failed to create index buffer");
+        return false;
+    }
+
+    vk::CommandBuffer vkCmd(cmd);
+    vkCmd.copyBuffer(staging, managedVertexBuffer.get(),
+                     vk::BufferCopy{}.setSrcOffset(stagingOffset).setSize(vertexBufferSize));
+    vkCmd.copyBuffer(staging, managedIndexBuffer.get(),
+                     vk::BufferCopy{}
+                         .setSrcOffset(stagingOffset + vertexBufferSize)
+                         .setSize(indexBufferSize));
+
+    allocator_ = allocator;
+    managedVertexBuffer.releaseToRaw(vertexBuffer, vertexAllocation);
+    managedIndexBuffer.releaseToRaw(indexBuffer, indexAllocation);
+    return true;
+}
+
 void Mesh::createCylinder(float radius, float height, int segments) {
     vertices.clear();
     indices.clear();
@@ -938,6 +985,8 @@ Mesh::Mesh(Mesh&& other) noexcept
     : allocator_(other.allocator_)
     , vertices(std::move(other.vertices))
     , indices(std::move(other.indices))
+    , indexCount_(other.indexCount_)
+    , vertexCount_(other.vertexCount_)
     , bounds(other.bounds)
     , vertexBuffer(other.vertexBuffer)
     , vertexAllocation(other.vertexAllocation)
@@ -961,6 +1010,8 @@ Mesh& Mesh::operator=(Mesh&& other) noexcept {
         allocator_ = other.allocator_;
         vertices = std::move(other.vertices);
         indices = std::move(other.indices);
+        indexCount_ = other.indexCount_;
+        vertexCount_ = other.vertexCount_;
         bounds = other.bounds;
         vertexBuffer = other.vertexBuffer;
         vertexAllocation = other.vertexAllocation;

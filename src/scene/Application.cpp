@@ -26,6 +26,7 @@
 #include "core/RendererSystems.h"
 #include "world/SettlementRegistry.h"
 #include "world/SettlementBlockoutGenerator.h"
+#include "world/KitBuildingAssembler.h"
 #include "EnvironmentSettings.h"
 #include "TimeSystem.h"
 #include "core/interfaces/ITimeSystem.h"
@@ -192,11 +193,11 @@ bool Application::init(const std::string& title, int width, int height) {
     // Position camera at a settlement (Town 1: market town with coastal/agricultural features)
     // Settlement coords are 0-16384, world coords are centered (-8192 to +8192)
     {
-        const float settlementX = 9200.0f;
-        const float settlementZ = 3000.0f;
+        const float settlementX = 11000.0f;  // Town 1 in 0-16384 space
+        const float settlementZ = 5200.0f;
         const float halfTerrain = 8192.0f;
-        float cameraX = settlementX - halfTerrain;  // 1008
-        float cameraZ = settlementZ - halfTerrain;  // -5192
+        float cameraX = settlementX - halfTerrain;
+        float cameraZ = settlementZ - halfTerrain;
         float terrainY = 50.0f;  // Default height if terrain unavailable
         if (auto* terrainPtr = renderer_->getSystems().terrainPtr()) {
             // Pre-load tiles before querying height (tiles only preloaded around origin by default)
@@ -266,9 +267,9 @@ bool Application::init(const std::string& title, int width, int height) {
                 SDL_Log("Physics terrain tile manager initialized");
 
                 // Pre-load physics terrain tiles around scene origin (where objects are placed)
-                // Scene is at Town 1: settlement coords (9200, 3000) -> world coords (1008, -5192)
+                // Scene is at Town 1: settlement coords (11000, 5200) -> world coords (2808, -2992)
                 const float halfTerrain = 8192.0f;
-                glm::vec3 sceneSpawnPos(9200.0f - halfTerrain, 0.0f, 3000.0f - halfTerrain);
+                glm::vec3 sceneSpawnPos(11000.0f - halfTerrain, 0.0f, 5200.0f - halfTerrain);
                 for (int i = 0; i < 50; i++) {  // Load up to 50 tiles synchronously
                     physicsTerrainManager_.update(sceneSpawnPos);
                 }
@@ -360,11 +361,24 @@ bool Application::init(const std::string& title, int width, int height) {
             };
             cfg.buildingMesh = sceneBuilder.getCubeMesh();
             cfg.materialId = sceneBuilder.getWhiteMaterialId();
-            // Town layouts extrude their exact footprint polygons into one
-            // merged mesh per settlement
-            cfg.createMesh = [&sceneBuilder](std::vector<Vertex> verts,
-                                             std::vector<uint32_t> inds) {
-                return sceneBuilder.addGeneratedMesh(std::move(verts), std::move(inds));
+            // Buildings assemble from modular kit wall pieces; plots the kit
+            // can't take (steep, over budget) fall back to extruded prisms in
+            // matching kit materials: [0] foundation plinth, then floor bands.
+            cfg.kitModelsDir = getResourcePath() + "/assets/models/buildings";
+            cfg.kitMaterial = [sb = &sceneBuilder](const std::string& name) {
+                return sb->getKitMaterialId(name);
+            };
+            cfg.layerMaterials = {
+                sceneBuilder.getKitMaterialId("MI_RockTrim"),     // foundation
+                sceneBuilder.getKitMaterialId("MI_Plaster"),      // floor 1
+                sceneBuilder.getKitMaterialId("MI_UnevenBrick"),  // floor 2
+            };
+            // Each settlement's meshes upload as one batch (single staging
+            // buffer + submit). Buildings never feed physics from mesh CPU
+            // copies (colliders use separate prism buffers), so the batch
+            // path releases CPU geometry after upload.
+            cfg.createMeshes = [sb = &sceneBuilder](std::vector<MeshGeometry> batch) {
+                return sb->addGeneratedMeshes(std::move(batch));
             };
             // Static box collider per building for the random-box fallback path
             cfg.addCollider = [this](const glm::vec3& center, const glm::vec3& halfExtents,
@@ -387,24 +401,34 @@ bool Application::init(const std::string& title, int width, int height) {
             // Keep clear of the hand-placed content at the scene origin: spawn,
             // well, crates, NPCs (within 5m) and the four demo trees (up to 58m
             // out). The empty core reads as a village green.
-            cfg.exclusionCenter = glm::vec2(9200.0f - 8192.0f, 3000.0f - 8192.0f);
+            cfg.exclusionCenter = glm::vec2(11000.0f - 8192.0f, 5200.0f - 8192.0f);
             cfg.exclusionRadius = 70.0f;
 
-            auto result = SettlementBlockoutGenerator::generate(
-                *world, systems.settlements().settlements(), cfg);
-            for (ecs::Entity entity : result.entities) {
-                sceneBuilder.addExternalSceneEntity(entity);
-            }
+            // Queue settlements nearest-first from the player and generate
+            // one per frame (stepSettlementGeneration) so the ~20-settlement
+            // build cost never lands in a single frame.
+            settlementQueue_ = systems.settlements().settlements();
+            const glm::vec2 playerXZ(player_.transform.position.x,
+                                     player_.transform.position.z);
+            std::sort(settlementQueue_.begin(), settlementQueue_.end(),
+                      [playerXZ](const Settlement& a, const Settlement& b) {
+                float da = glm::distance(a.worldPos, playerXZ);
+                float db = glm::distance(b.worldPos, playerXZ);
+                if (da != db) return da < db;
+                return a.id < b.id;
+            });
+            settlementQueueNext_ = 0;
+            settlementGen_ = std::make_unique<SettlementBlockoutGenerator>(std::move(cfg));
         });
     }
 
     // Create player entity and character controller
     // Spawn at Town 1 settlement location (same as camera and scene origin)
     const float halfTerrain = 8192.0f;
-    const float settlementX = 9200.0f;  // Town 1 in 0-16384 space
-    const float settlementZ = 3000.0f;
-    float playerSpawnX = settlementX - halfTerrain;  // 1008
-    float playerSpawnZ = settlementZ - halfTerrain;  // -5192
+    const float settlementX = 11000.0f;  // Town 1 in 0-16384 space
+    const float settlementZ = 5200.0f;
+    float playerSpawnX = settlementX - halfTerrain;
+    float playerSpawnZ = settlementZ - halfTerrain;
 
     // Pre-load high-res tiles around spawn before querying height
     // This ensures we get LOD0 height data instead of low-res base LOD fallback
@@ -846,6 +870,7 @@ void Application::run() {
         renderer_->getSystems().scene().update(physics());
 
         // Update ECS systems (visibility culling, LOD)
+        stepSettlementGeneration();
         updateECS(deltaTime);
 
         // Update player state in PlayerControlSubsystem for grass/snow/leaf interaction
@@ -1187,10 +1212,10 @@ void Application::processEvents() {
                     debugLines.clearPersistentLines();
 
                     // Use scene origin (where objects are placed) as center for diagnostic
-                    // Scene is at Town 1: settlement coords (9200, 3000) -> world coords (1008, -5192)
+                    // Scene is at Town 1: settlement coords (11000, 5200) -> world coords (2808, -2992)
                     const float halfTerrain = 8192.0f;
-                    float centerX = 9200.0f - halfTerrain;  // 1008
-                    float centerZ = 3000.0f - halfTerrain;  // -5192
+                    float centerX = 11000.0f - halfTerrain;
+                    float centerZ = 5200.0f - halfTerrain;
 
                     int gridSize = 5;  // 5x5 grid of samples at 1m spacing
                     float rayStartY = 500.0f;
@@ -1386,6 +1411,28 @@ void Application::initFlag() {
         renderer_->getCommandPool(), renderer_->getVulkanContext().getVkGraphicsQueue());
 
     SDL_Log("Flag initialized with %dx%d cloth simulation", clothWidth, clothHeight);
+}
+
+// Generate settlement buildings one settlement per frame (queued nearest-first
+// by the deferred-generation callback) so the cost amortizes across frames.
+void Application::stepSettlementGeneration() {
+    if (!settlementGen_ || settlementQueueNext_ >= settlementQueue_.size()) return;
+    auto& systems = renderer_->getSystems();
+    ecs::World* world = systems.ecsWorld();
+    if (!world || !systems.scenePtr()) return;
+    auto& sceneBuilder = systems.scene().getSceneBuilder();
+
+    const Settlement& settlement = settlementQueue_[settlementQueueNext_++];
+    for (ecs::Entity e : settlementGen_->generateSettlement(*world, settlement)) {
+        sceneBuilder.addExternalSceneEntity(e);
+    }
+
+    if (settlementQueueNext_ >= settlementQueue_.size()) {
+        settlementGen_->logSummary();
+        settlementGen_.reset();
+        settlementQueue_.clear();
+        settlementQueueNext_ = 0;
+    }
 }
 
 void Application::updateCameraOcclusion(float deltaTime) {

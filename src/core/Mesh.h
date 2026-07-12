@@ -104,6 +104,12 @@ struct Vertex {
     }
 };
 
+// CPU-side mesh payload passed between generators and batched uploads.
+struct MeshGeometry {
+    std::vector<Vertex> vertices;
+    std::vector<uint32_t> indices;
+};
+
 class Mesh {
 public:
     Mesh() = default;
@@ -127,14 +133,42 @@ public:
     void createForkedBranch(float radius, float length, int sections, int segments, uint32_t seed,
                             float taper = 0.7f, float gnarliness = 0.15f, float forkAngle = 0.4f);
     void setCustomGeometry(const std::vector<Vertex>& verts, const std::vector<uint32_t>& inds);
+    void setCustomGeometry(std::vector<Vertex>&& verts, std::vector<uint32_t>&& inds);
     bool upload(VmaAllocator allocator, VkDevice device, VkCommandPool commandPool, VkQueue queue);
+
+    // Batched-upload support: several meshes can share one staging buffer and
+    // one command-buffer submit (see SceneBuilder::addGeneratedMeshes).
+    // stagedSize() is the staging bytes this mesh needs; copyGeometryTo()
+    // writes vertices then indices to dst; uploadFromStaging() creates the
+    // device buffers and records the copies into an externally managed
+    // command buffer — the caller owns the staging lifetime and the submit.
+    VkDeviceSize stagedSize() const {
+        return sizeof(Vertex) * vertices.size() + sizeof(uint32_t) * indices.size();
+    }
+    void copyGeometryTo(void* dst) const;
+    bool uploadFromStaging(VmaAllocator allocator, VkCommandBuffer cmd,
+                           VkBuffer staging, VkDeviceSize stagingOffset);
 
     VkBuffer getVertexBuffer() const { return vertexBuffer; }
     VkBuffer getIndexBuffer() const { return indexBuffer; }
-    uint32_t getIndexCount() const { return static_cast<uint32_t>(indices.size()); }
+    uint32_t getIndexCount() const {
+        return indices.empty() ? indexCount_ : static_cast<uint32_t>(indices.size());
+    }
+    uint32_t getVertexCount() const {
+        return vertices.empty() ? vertexCount_ : static_cast<uint32_t>(vertices.size());
+    }
 
     // Release GPU resources without destroying CPU data (for dynamic meshes that need re-upload)
     void releaseGPUResources();
+
+    // Release CPU-side geometry after upload, for large generated meshes that
+    // never feed physics or re-upload. Index count and bounds are preserved.
+    void releaseCpuGeometry() {
+        indexCount_ = static_cast<uint32_t>(indices.size());
+        vertexCount_ = static_cast<uint32_t>(vertices.size());
+        vertices = {};
+        indices = {};
+    }
 
     // Access to vertex data for physics collision shapes
     const std::vector<Vertex>& getVertices() const { return vertices; }
@@ -151,6 +185,8 @@ private:
 
     std::vector<Vertex> vertices;
     std::vector<uint32_t> indices;
+    uint32_t indexCount_ = 0;   // Preserved counts after releaseCpuGeometry()
+    uint32_t vertexCount_ = 0;
     AABB bounds;  // Local-space bounding box
 
     VkBuffer vertexBuffer = VK_NULL_HANDLE;

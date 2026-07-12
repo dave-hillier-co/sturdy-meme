@@ -230,6 +230,9 @@ set(SOURCES
     # World content
     src/world/SettlementRegistry.cpp
     src/world/SettlementBlockoutGenerator.cpp
+    src/world/FootprintRing.cpp
+    src/world/KitMeshLoader.cpp
+    src/world/KitBuildingAssembler.cpp
     src/world/BiomeMap.cpp
     src/terrain/virtual_texture/VirtualTextureCache.cpp
     src/terrain/virtual_texture/VirtualTexturePageTable.cpp

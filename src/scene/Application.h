@@ -23,6 +23,7 @@
 #include "ecs/ECSMaterialDemo.h"
 #include "ml/unicon/Controller.h"
 #include "ml/unicon/RagdollRenderer.h"
+#include "world/SettlementBlockoutGenerator.h"
 
 class Application {
 public:
@@ -47,6 +48,7 @@ private:
     void updateECS(float deltaTime);
     void spawnRagdoll();
     void teleportTo(float worldX, float worldZ);
+    void stepSettlementGeneration();
 
     SDL_Window* window = nullptr;
     std::unique_ptr<Renderer> renderer_;
@@ -57,6 +59,13 @@ private:
 
     // Helper to access physics (assumes physics is initialized)
     PhysicsWorld& physics() { return *physics_; }
+
+    // Settlement buildings generate one settlement per frame (nearest first)
+    // once deferred terrain generation completes, so the startup cost is
+    // amortized instead of stalling a single frame.
+    std::unique_ptr<SettlementBlockoutGenerator> settlementGen_;
+    std::vector<Settlement> settlementQueue_;
+    size_t settlementQueueNext_ = 0;
 
     // Input system
     InputSystem input;

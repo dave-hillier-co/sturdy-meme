@@ -5,6 +5,8 @@
 #include "npc/NPCSimulation.h"
 #include "ecs/EntityFactory.h"
 #include "ecs/Systems.h"
+#include "core/vulkan/VmaBufferFactory.h"
+#include "core/vulkan/CommandBufferUtils.h"
 #include <SDL3/SDL_log.h>
 
 // Constructor must be defined in .cpp to allow unique_ptr<NPCSimulation> with incomplete type in header
@@ -33,6 +35,75 @@ Mesh* SceneBuilder::addGeneratedMesh(std::vector<Vertex> vertices, std::vector<u
     }
     generatedMeshes_.push_back(std::move(mesh));
     return generatedMeshes_.back().get();
+}
+
+std::vector<Mesh*> SceneBuilder::addGeneratedMeshes(std::vector<MeshGeometry> batch) {
+    std::vector<Mesh*> out(batch.size(), nullptr);
+
+    std::vector<std::unique_ptr<Mesh>> meshes(batch.size());
+    VkDeviceSize total = 0;
+    for (size_t i = 0; i < batch.size(); ++i) {
+        if (batch[i].vertices.empty() || batch[i].indices.empty()) continue;
+        meshes[i] = std::make_unique<Mesh>();
+        meshes[i]->setCustomGeometry(std::move(batch[i].vertices), std::move(batch[i].indices));
+        total += meshes[i]->stagedSize();
+    }
+    if (total == 0) return out;
+
+    ManagedBuffer staging;
+    void* mapped = nullptr;
+    if (!VmaBufferFactory::createStagingBuffer(storedAllocator, total, staging) ||
+        !(mapped = staging.map())) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
+                     "SceneBuilder: batched staging alloc failed (%llu bytes), "
+                     "falling back to per-mesh uploads",
+                     static_cast<unsigned long long>(total));
+        for (size_t i = 0; i < meshes.size(); ++i) {
+            if (!meshes[i]) continue;
+            if (meshes[i]->upload(storedAllocator, storedDevice, storedCommandPool,
+                                  storedGraphicsQueue)) {
+                meshes[i]->releaseCpuGeometry();
+                generatedMeshes_.push_back(std::move(meshes[i]));
+                out[i] = generatedMeshes_.back().get();
+            }
+        }
+        return out;
+    }
+
+    VkDeviceSize offset = 0;
+    for (const auto& mesh : meshes) {
+        if (!mesh) continue;
+        mesh->copyGeometryTo(static_cast<char*>(mapped) + offset);
+        offset += mesh->stagedSize();
+    }
+    staging.unmap();
+
+    CommandScope cmd(storedDevice, storedCommandPool, storedGraphicsQueue);
+    if (!cmd.begin()) return out;
+    offset = 0;
+    std::vector<bool> recorded(meshes.size(), false);
+    for (size_t i = 0; i < meshes.size(); ++i) {
+        if (!meshes[i]) continue;
+        VkDeviceSize meshOffset = offset;
+        offset += meshes[i]->stagedSize();
+        recorded[i] = meshes[i]->uploadFromStaging(storedAllocator, cmd.get(),
+                                                   staging.get(), meshOffset);
+    }
+    // Single submit + fence wait for the whole batch
+    if (!cmd.end()) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
+                     "SceneBuilder: batched mesh upload submit failed (%zu meshes)",
+                     meshes.size());
+        return out;
+    }
+
+    for (size_t i = 0; i < meshes.size(); ++i) {
+        if (!meshes[i] || !recorded[i]) continue;
+        meshes[i]->releaseCpuGeometry();
+        generatedMeshes_.push_back(std::move(meshes[i]));
+        out[i] = generatedMeshes_.back().get();
+    }
+    return out;
 }
 
 bool SceneBuilder::initInternal(const InitInfo& info) {
@@ -369,6 +440,57 @@ void SceneBuilder::registerMaterials() {
     SDL_Log("SceneBuilder: Registered %zu materials", materialRegistry.getMaterialCount());
 }
 
+void SceneBuilder::registerKitMaterials(const std::string& resourcePath) {
+    TextureLoadConfig srgb{};
+    srgb.useSRGB = true;
+    srgb.generateMipmaps = true;
+    TextureLoadConfig linear{};
+    linear.useSRGB = false;
+    linear.generateMipmaps = true;
+
+    const std::string dir = resourcePath + "/assets/textures/buildings/";
+
+    // Quaternius Medieval Village kit material -> (BaseColor, Normal) textures.
+    // RedBrick has no dedicated normal map, so it borrows the brick normal.
+    struct KitMat { const char* name; const char* base; const char* normal; };
+    const KitMat kitMats[] = {
+        {"MI_Plaster",     "T_Plaster_BaseColor.png",     "T_Plaster_Normal.png"},
+        {"MI_WoodTrim",    "T_WoodTrim_BaseColor.png",    "T_WoodTrim_Normal.png"},
+        {"MI_Brick",       "T_Brick_BaseColor.png",       "T_Brick_Normal.png"},
+        {"MI_RedBrick",    "T_RedBrick_BaseColor.png",    "T_Brick_Normal.png"},
+        {"MI_UnevenBrick", "T_UnevenBrick_BaseColor.png", "T_UnevenBrick_Normal.png"},
+        {"MI_RockTrim",    "T_RockTrim_BaseColor.png",    "T_RockTrim_Normal.png"},
+        {"MI_RoundTiles",  "T_RoundTiles_BaseColor.png",  "T_RoundTiles_Normal.png"},
+        // Window panes: gradient sheen with a flat(ish) normal
+        {"MI_WindowGlass", "T_WindowGradient.png",        "T_Plaster_Normal.png"},
+    };
+
+    auto& registry = assetRegistry_->get();
+    for (const auto& m : kitMats) {
+        auto base = registry.loadTexture(dir + m.base, srgb);
+        auto norm = registry.loadTexture(dir + m.normal, linear);
+        if (!base || !norm) {
+            SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                        "SceneBuilder: kit material '%s' missing textures, skipping", m.name);
+            continue;
+        }
+        MaterialId id = materialRegistry.registerMaterial(m.name, *base, *norm);
+        kitMaterials_[m.name] = id;
+        // WoodTrim variants (worn) reuse the base wood material
+        if (std::string(m.name) == "MI_WoodTrim") kitMaterials_["MI_WoodTrim_Wear"] = id;
+        kitTextures_.push_back(std::move(base));
+        kitTextures_.push_back(std::move(norm));
+    }
+
+    SDL_Log("SceneBuilder: Registered %zu kit materials", kitMaterials_.size());
+}
+
+MaterialId SceneBuilder::getKitMaterialId(const std::string& kitMaterialName) const {
+    auto it = kitMaterials_.find(kitMaterialName);
+    if (it != kitMaterials_.end()) return it->second;
+    return whiteMaterialId;  // glass, vine, ornaments: fall back to a plain material
+}
+
 float SceneBuilder::getTerrainHeight(float x, float z) const {
     if (terrainHeightFunc) {
         return terrainHeightFunc(x, z);
@@ -676,6 +798,9 @@ bool SceneBuilder::loadTextures(const InitInfo& info) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create white texture");
         return false;
     }
+
+    // Load and register the modular building kit's PBR materials
+    registerKitMaterials(info.resourcePath);
 
     SDL_Log("SceneBuilder: Loaded 8 textures via AssetRegistry");
     return true;

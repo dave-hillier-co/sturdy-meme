@@ -686,8 +686,10 @@ std::vector<Loading::SystemInitTask> RendererBuilder::buildInitTasks(Renderer& r
     VkFormat swapchainImageFormat = static_cast<VkFormat>(r.vulkanContext_->getVkSwapchainImageFormat());
 
     // Shared constants
+    // Scene origin sits at Town 1 (settlement id 1, content coords 11000,5200)
+    // so the hand-placed green spawns inside the largest procedural town.
     const float halfTerrain = 8192.0f;
-    glm::vec2 sceneOrigin(9200.0f - halfTerrain, 3000.0f - halfTerrain);
+    glm::vec2 sceneOrigin(11000.0f - halfTerrain, 5200.0f - halfTerrain);
 
     // ========== TASK: Core Systems (Tier 0) ==========
     {

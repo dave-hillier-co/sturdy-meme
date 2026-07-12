@@ -46,10 +46,15 @@ private:
                                    VkCommandPool commandPool, VkQueue queue);
     bool loadDDS(const std::string& path, VmaAllocator allocator, VkDevice device,
                  VkCommandPool commandPool, VkQueue queue, bool useSRGB);
-    bool transitionImageLayout(VkDevice device, VkCommandPool commandPool, VkQueue queue,
-                               VkImage image, VkImageLayout oldLayout, VkImageLayout newLayout);
-    bool copyBufferToImage(VkDevice device, VkCommandPool commandPool, VkQueue queue,
-                           VkBuffer buffer, VkImage image, uint32_t width, uint32_t height);
+    // Record-only upload helpers: append commands to a caller-owned command
+    // buffer so a full texture upload (transition -> copy -> transition) shares a
+    // single queue submission + fence wait, instead of a blocking GPU round-trip
+    // per step. levelCount lets a single barrier cover all mip levels at once.
+    static void recordTransition(vk::CommandBuffer cmd, VkImage image,
+                                 VkImageLayout oldLayout, VkImageLayout newLayout,
+                                 uint32_t levelCount = 1);
+    static void recordCopyBufferToImage(vk::CommandBuffer cmd, VkBuffer buffer,
+                                        VkImage image, uint32_t width, uint32_t height);
 
     // Stored for cleanup
     VmaAllocator allocator_ = VK_NULL_HANDLE;

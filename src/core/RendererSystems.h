@@ -79,6 +79,7 @@ class FoamBuffer;
 class SSRSystem;
 class WaterTileCull;
 class WaterGBuffer;
+class OceanFFT;
 class ErosionDataLoader;
 class RoadNetworkLoader;
 class RoadRiverVisualization;
@@ -253,6 +254,10 @@ public:
     WaterGBuffer& waterGBuffer() { return registry_.get<WaterGBuffer>(); }
     const WaterGBuffer& waterGBuffer() const { return registry_.get<WaterGBuffer>(); }
     void setWaterGBuffer(std::unique_ptr<WaterGBuffer> system);
+    OceanFFT& oceanFFT() { return registry_.get<OceanFFT>(); }
+    const OceanFFT& oceanFFT() const { return registry_.get<OceanFFT>(); }
+    bool hasOceanFFT() const { return registry_.has<OceanFFT>(); }
+    void setOceanFFT(std::unique_ptr<OceanFFT> system);
 
     // Geometry processing
     CatmullClarkSystem& catmullClark() { return registry_.get<CatmullClarkSystem>(); }
@@ -408,7 +413,8 @@ public:
             registry_.find<FoamBuffer>(),
             registry_.find<SSRSystem>(),
             registry_.find<WaterTileCull>(),
-            registry_.find<WaterGBuffer>()
+            registry_.find<WaterGBuffer>(),
+            registry_.find<OceanFFT>()
         };
     }
 

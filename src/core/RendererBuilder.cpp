@@ -56,6 +56,7 @@
 #include "FoamBuffer.h"
 #include "WaterTileCull.h"
 #include "WaterGBuffer.h"
+#include "OceanFFT.h"
 #include "WaterSystemGroup.h"
 #include "SSRSystem.h"
 #include "DebugLineSystem.h"
@@ -993,6 +994,7 @@ std::vector<Loading::SystemInitTask> RendererBuilder::buildInitTasks(Renderer& r
             r.systems_->setSSR(std::move(waterBundle->ssr));
             if (waterBundle->tileCull) r.systems_->setWaterTileCull(std::move(waterBundle->tileCull));
             if (waterBundle->gBuffer) r.systems_->setWaterGBuffer(std::move(waterBundle->gBuffer));
+            if (waterBundle->oceanFFT) r.systems_->setOceanFFT(std::move(waterBundle->oceanFFT));
 
             // Configure water subsystems
             TerrainFactory::Config terrainFactoryConfig{};

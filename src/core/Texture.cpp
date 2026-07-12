@@ -166,20 +166,21 @@ bool Texture::loadInternal(const std::string& path, VmaAllocator allocator, VkDe
         return false;
     }
 
-    // Transition and copy using RAII command scope
-    if (!transitionImageLayout(device, commandPool, queue, managedImage.get(),
-                               VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL)) {
-        return false;
-    }
+    // Upload in a single command submission: transition -> copy -> transition.
+    // Batching into one submit+wait avoids a full GPU round-trip per step.
+    {
+        CommandScope cmd(device, commandPool, queue);
+        if (!cmd.begin()) return false;
+        vk::CommandBuffer vkCmd(cmd.get());
 
-    if (!copyBufferToImage(device, commandPool, queue, stagingBuffer.get(), managedImage.get(),
-                           static_cast<uint32_t>(width), static_cast<uint32_t>(height))) {
-        return false;
-    }
+        recordTransition(vkCmd, managedImage.get(),
+                         VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+        recordCopyBufferToImage(vkCmd, stagingBuffer.get(), managedImage.get(),
+                                static_cast<uint32_t>(width), static_cast<uint32_t>(height));
+        recordTransition(vkCmd, managedImage.get(),
+                         VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
 
-    if (!transitionImageLayout(device, commandPool, queue, managedImage.get(),
-                               VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL)) {
-        return false;
+        if (!cmd.end()) return false;
     }
 
     // stagingBuffer automatically destroyed here
@@ -307,20 +308,19 @@ bool Texture::loadDDS(const std::string& path, VmaAllocator allocator, VkDevice 
         return false;
     }
 
-    // Transition and copy
-    if (!transitionImageLayout(device, commandPool, queue, image,
-                               VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL)) {
-        return false;
-    }
+    // Transition and copy in a single command submission (one submit + wait).
+    {
+        CommandScope cmd(device, commandPool, queue);
+        if (!cmd.begin()) return false;
+        vk::CommandBuffer vkCmd(cmd.get());
 
-    if (!copyBufferToImage(device, commandPool, queue, stagingBuffer.get(), image,
-                           dds.width, dds.height)) {
-        return false;
-    }
+        recordTransition(vkCmd, image,
+                         VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+        recordCopyBufferToImage(vkCmd, stagingBuffer.get(), image, dds.width, dds.height);
+        recordTransition(vkCmd, image,
+                         VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
 
-    if (!transitionImageLayout(device, commandPool, queue, image,
-                               VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL)) {
-        return false;
+        if (!cmd.end()) return false;
     }
 
     // Create image view using vulkan-hpp builder
@@ -409,18 +409,19 @@ bool Texture::createSolidColorInternal(uint8_t r, uint8_t g, uint8_t b, uint8_t 
         return false;
     }
 
-    if (!transitionImageLayout(device, commandPool, queue, managedImage.get(),
-                               VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL)) {
-        return false;
-    }
+    // Transition and copy in a single command submission (one submit + wait).
+    {
+        CommandScope cmd(device, commandPool, queue);
+        if (!cmd.begin()) return false;
+        vk::CommandBuffer vkCmd(cmd.get());
 
-    if (!copyBufferToImage(device, commandPool, queue, stagingBuffer.get(), managedImage.get(), 1, 1)) {
-        return false;
-    }
+        recordTransition(vkCmd, managedImage.get(),
+                         VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+        recordCopyBufferToImage(vkCmd, stagingBuffer.get(), managedImage.get(), 1, 1);
+        recordTransition(vkCmd, managedImage.get(),
+                         VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
 
-    if (!transitionImageLayout(device, commandPool, queue, managedImage.get(),
-                               VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL)) {
-        return false;
+        if (!cmd.end()) return false;
     }
 
     // Create image view using vulkan-hpp builder
@@ -479,15 +480,9 @@ bool Texture::createSolidColorInternal(uint8_t r, uint8_t g, uint8_t b, uint8_t 
     return true;
 }
 
-bool Texture::transitionImageLayout(VkDevice device, VkCommandPool commandPool, VkQueue queue,
-                                    VkImage image, VkImageLayout oldLayout, VkImageLayout newLayout) {
-    CommandScope cmd(device, commandPool, queue);
-    if (!cmd.begin()) {
-        return false;
-    }
-
-    vk::CommandBuffer vkCmd(cmd.get());
-
+void Texture::recordTransition(vk::CommandBuffer cmd, VkImage image,
+                               VkImageLayout oldLayout, VkImageLayout newLayout,
+                               uint32_t levelCount) {
     vk::PipelineStageFlags srcStage;
     vk::PipelineStageFlags dstStage;
     vk::AccessFlags srcAccess;
@@ -517,7 +512,7 @@ bool Texture::transitionImageLayout(VkDevice device, VkCommandPool commandPool, 
         .setSubresourceRange(vk::ImageSubresourceRange{}
             .setAspectMask(vk::ImageAspectFlagBits::eColor)
             .setBaseMipLevel(0)
-            .setLevelCount(1)
+            .setLevelCount(levelCount)
             .setBaseArrayLayer(0)
             .setLayerCount(1))
         .setOldLayout(static_cast<vk::ImageLayout>(oldLayout))
@@ -525,21 +520,12 @@ bool Texture::transitionImageLayout(VkDevice device, VkCommandPool commandPool, 
         .setSrcAccessMask(srcAccess)
         .setDstAccessMask(dstAccess);
 
-    vkCmd.pipelineBarrier(srcStage, dstStage, {}, {}, {}, barrier);
-
-    return cmd.end();
+    cmd.pipelineBarrier(srcStage, dstStage, {}, {}, {}, barrier);
 }
 
-bool Texture::copyBufferToImage(VkDevice device, VkCommandPool commandPool, VkQueue queue,
-                                VkBuffer buffer, VkImage image, uint32_t width, uint32_t height) {
-    CommandScope cmd(device, commandPool, queue);
-    if (!cmd.begin()) {
-        return false;
-    }
-
+void Texture::recordCopyBufferToImage(vk::CommandBuffer cmd, VkBuffer buffer,
+                                      VkImage image, uint32_t width, uint32_t height) {
     // Copy buffer to image (image must already be in TRANSFER_DST_OPTIMAL)
-    vk::CommandBuffer vkCmd(cmd.get());
-
     auto region = vk::BufferImageCopy{}
         .setBufferOffset(0)
         .setBufferRowLength(0)
@@ -552,9 +538,7 @@ bool Texture::copyBufferToImage(VkDevice device, VkCommandPool commandPool, VkQu
         .setImageOffset({0, 0, 0})
         .setImageExtent({width, height, 1});
 
-    vkCmd.copyBufferToImage(buffer, image, vk::ImageLayout::eTransferDstOptimal, region);
-
-    return cmd.end();
+    cmd.copyBufferToImage(buffer, image, vk::ImageLayout::eTransferDstOptimal, region);
 }
 
 // Generate a single mip level on CPU with alpha-coverage preservation
@@ -713,38 +697,17 @@ bool Texture::loadWithMipmapsInternal(const std::string& path, VmaAllocator allo
         return false;
     }
 
-    // Transition all mip levels to transfer dst using vulkan-hpp builder
+    // Upload all mip levels in a single command submission: one transition of
+    // every level to transfer-dst, one multi-region copy, one transition to
+    // shader-read. Batching avoids two extra GPU round-trips (submit + fence
+    // wait) per texture compared with submitting each step separately.
     {
         CommandScope cmd(device, commandPool, queue);
         if (!cmd.begin()) return false;
-
-        auto barrier = vk::ImageMemoryBarrier{}
-            .setImage(managedImage.get())
-            .setSrcQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
-            .setDstQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
-            .setSubresourceRange(vk::ImageSubresourceRange{}
-                .setAspectMask(vk::ImageAspectFlagBits::eColor)
-                .setBaseMipLevel(0)
-                .setLevelCount(mipLevels)
-                .setBaseArrayLayer(0)
-                .setLayerCount(1))
-            .setOldLayout(vk::ImageLayout::eUndefined)
-            .setNewLayout(vk::ImageLayout::eTransferDstOptimal)
-            .setSrcAccessMask(vk::AccessFlags{})
-            .setDstAccessMask(vk::AccessFlagBits::eTransferWrite);
-
         vk::CommandBuffer vkCmd(cmd.get());
-        vkCmd.pipelineBarrier(
-            vk::PipelineStageFlagBits::eTopOfPipe, vk::PipelineStageFlagBits::eTransfer,
-            {}, {}, {}, barrier);
 
-        if (!cmd.end()) return false;
-    }
-
-    // Copy each mip level from staging buffer to image
-    {
-        CommandScope cmd(device, commandPool, queue);
-        if (!cmd.begin()) return false;
+        recordTransition(vkCmd, managedImage.get(),
+                         VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, mipLevels);
 
         std::vector<vk::BufferImageCopy> regions(mipLevels);
         for (uint32_t i = 0; i < mipLevels; ++i) {
@@ -760,38 +723,11 @@ bool Texture::loadWithMipmapsInternal(const std::string& path, VmaAllocator allo
                 .setImageOffset({0, 0, 0})
                 .setImageExtent({mipWidths[i], mipHeights[i], 1});
         }
-
-        vk::CommandBuffer vkCmd(cmd.get());
         vkCmd.copyBufferToImage(stagingBuffer.get(), managedImage.get(),
                                 vk::ImageLayout::eTransferDstOptimal, regions);
 
-        if (!cmd.end()) return false;
-    }
-
-    // Transition all mip levels to shader read using vulkan-hpp builder
-    {
-        CommandScope cmd(device, commandPool, queue);
-        if (!cmd.begin()) return false;
-
-        auto barrier = vk::ImageMemoryBarrier{}
-            .setImage(managedImage.get())
-            .setSrcQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
-            .setDstQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
-            .setSubresourceRange(vk::ImageSubresourceRange{}
-                .setAspectMask(vk::ImageAspectFlagBits::eColor)
-                .setBaseMipLevel(0)
-                .setLevelCount(mipLevels)
-                .setBaseArrayLayer(0)
-                .setLayerCount(1))
-            .setOldLayout(vk::ImageLayout::eTransferDstOptimal)
-            .setNewLayout(vk::ImageLayout::eShaderReadOnlyOptimal)
-            .setSrcAccessMask(vk::AccessFlagBits::eTransferWrite)
-            .setDstAccessMask(vk::AccessFlagBits::eShaderRead);
-
-        vk::CommandBuffer vkCmd(cmd.get());
-        vkCmd.pipelineBarrier(
-            vk::PipelineStageFlagBits::eTransfer, vk::PipelineStageFlagBits::eFragmentShader,
-            {}, {}, {}, barrier);
+        recordTransition(vkCmd, managedImage.get(),
+                         VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, mipLevels);
 
         if (!cmd.end()) return false;
     }

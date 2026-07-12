@@ -11,8 +11,6 @@
  * - Can be composed together to create complex materials
  * - Each component can be applied to any surface type
  * - Feature flags control which components are active in shaders
- *
- * See docs/MATERIAL_COMPOSABILITY.md for the full design document.
  */
 
 namespace material {

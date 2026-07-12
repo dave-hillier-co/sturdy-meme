@@ -24,6 +24,8 @@
 #include "culling/GPUCullPass.h"
 #include "FlowMapGenerator.h"
 #include "FoamBuffer.h"
+#include "WaterDisplacement.h"
+#include "OceanFFT.h"
 #include "CloudShadowSystem.h"
 #include "WindSystem.h"
 #include "FroxelSystem.h"
@@ -142,6 +144,20 @@ PassIds addPasses(PassScheduler& graph, RendererSystems& systems, const Config& 
                 systems.foam().recordCompute(cmd, frameIndex, renderCtx->frame.deltaTime,
                                              systems.flowMap().getFlowMapView(), systems.flowMap().getFlowMapSampler());
                 systems.profiler().endGpuZone(cmd, "FoamCompute");
+
+                // Interactive water displacement (splashes/ripples) shares the
+                // water-surface dynamics toggle
+                systems.profiler().beginGpuZone(cmd, "WaterDisplacement");
+                systems.waterDisplacement().update(renderCtx->frame.deltaTime);
+                systems.waterDisplacement().recordCompute(cmd, frameIndex);
+                systems.profiler().endGpuZone(cmd, "WaterDisplacement");
+            }
+
+            // FFT ocean simulation compute pass
+            if (perfToggles->oceanFFTCompute && systems.hasOceanFFT()) {
+                systems.profiler().beginGpuZone(cmd, "OceanFFT");
+                systems.oceanFFT().recordCompute(cmd, renderCtx->frame.time);
+                systems.profiler().endGpuZone(cmd, "OceanFFT");
             }
 
             // Cloud shadow map compute pass

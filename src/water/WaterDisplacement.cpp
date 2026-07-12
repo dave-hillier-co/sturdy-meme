@@ -144,36 +144,37 @@ bool WaterDisplacement::createDisplacementMap() {
         return false;
     }
 
-    // The water vertex shader samples the displacement map every frame, but the
-    // compute pass that writes it only runs when splash particles exist. Clear both
-    // maps to zero and move them to shader-read layout so they are valid to sample
-    // before (or without) any compute dispatch.
-    CommandScope initCmd{vk::Device(device), vk::CommandPool(commandPool), vk::Queue(computeQueue)};
-    if (!initCmd.begin()) {
-        return false;
-    }
-    for (VkImage image : {displacementMap, prevDisplacementMap}) {
-        BarrierHelpers::transitionImageLayout(initCmd.get(), image,
-            vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal,
-            vk::PipelineStageFlagBits::eTopOfPipe, vk::PipelineStageFlagBits::eTransfer,
-            {}, vk::AccessFlagBits::eTransferWrite);
+    // Clear both maps to zero and move them to SHADER_READ_ONLY so they are
+    // valid to sample (water vertex shader, compute prev-frame input) before
+    // the first recordCompute - and even if the compute never runs.
+    {
+        CommandScope cmd{vk::Device(device), vk::CommandPool(commandPool), vk::Queue(computeQueue)};
+        if (!cmd.begin()) return false;
 
         auto clearRange = vk::ImageSubresourceRange{}
             .setAspectMask(vk::ImageAspectFlagBits::eColor)
+            .setBaseMipLevel(0)
             .setLevelCount(1)
+            .setBaseArrayLayer(0)
             .setLayerCount(1);
-        initCmd.get().clearColorImage(image, vk::ImageLayout::eTransferDstOptimal,
-                                      vk::ClearColorValue{0.0f, 0.0f, 0.0f, 0.0f}, clearRange);
 
-        BarrierHelpers::transitionImageLayout(initCmd.get(), image,
-            vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eShaderReadOnlyOptimal,
-            vk::PipelineStageFlagBits::eTransfer,
-            vk::PipelineStageFlagBits::eVertexShader | vk::PipelineStageFlagBits::eFragmentShader |
-                vk::PipelineStageFlagBits::eComputeShader,
-            vk::AccessFlagBits::eTransferWrite, vk::AccessFlagBits::eShaderRead);
-    }
-    if (!initCmd.end()) {
-        return false;
+        for (VkImage image : {displacementMap, prevDisplacementMap}) {
+            BarrierHelpers::transitionImageLayout(cmd.get(), image,
+                vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal,
+                vk::PipelineStageFlagBits::eTopOfPipe, vk::PipelineStageFlagBits::eTransfer,
+                vk::AccessFlags{}, vk::AccessFlagBits::eTransferWrite);
+            cmd.get().clearColorImage(image, vk::ImageLayout::eTransferDstOptimal,
+                                      vk::ClearColorValue{std::array<float, 4>{0.0f, 0.0f, 0.0f, 0.0f}},
+                                      clearRange);
+            BarrierHelpers::transitionImageLayout(cmd.get(), image,
+                vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eShaderReadOnlyOptimal,
+                vk::PipelineStageFlagBits::eTransfer,
+                vk::PipelineStageFlagBits::eComputeShader | vk::PipelineStageFlagBits::eVertexShader |
+                    vk::PipelineStageFlagBits::eTessellationEvaluationShader | vk::PipelineStageFlagBits::eFragmentShader,
+                vk::AccessFlagBits::eTransferWrite, vk::AccessFlagBits::eShaderRead);
+        }
+
+        if (!cmd.end()) return false;
     }
 
     return true;

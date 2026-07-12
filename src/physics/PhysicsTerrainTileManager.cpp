@@ -185,6 +185,9 @@ void PhysicsTerrainTileManager::unloadPhysicsTile(uint64_t tileKey) {
 }
 
 void PhysicsTerrainTileManager::update(const glm::vec3& playerPosition) {
+    // Not initialized (e.g. terrain tile cache unavailable) - nothing to manage
+    if (!physics_ || !tileCache_) return;
+
     // Calculate required tiles at player position
     auto requiredTiles = calculateRequiredTiles(playerPosition);
 

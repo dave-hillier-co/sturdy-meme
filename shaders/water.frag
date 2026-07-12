@@ -763,8 +763,10 @@ void main() {
     // =========================================================================
     {
         // Calculate linear depth of water surface
+        // NDC z is used as-is: the depth buffer stores raw NDC z (no remap happens
+        // in the viewport transform), so remapping here would not match sceneDepthTexture.
         vec4 clipPos = ubo.proj * ubo.view * vec4(fragWorldPos, 1.0);
-        float waterLinearDepth = linearizeDepth(clipPos.z / clipPos.w * 0.5 + 0.5, ubo.cameraNear, ubo.cameraFar);
+        float waterLinearDepth = linearizeDepth(clipPos.z / clipPos.w, ubo.cameraNear, ubo.cameraFar);
 
         // Get scene depth and calculate soft edge
         float sceneLinearDepth = getSceneDepth(screenUV, ubo.cameraNear, ubo.cameraFar);

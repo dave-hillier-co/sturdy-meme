@@ -2,6 +2,7 @@
 
 class WaterSystem;
 class WaterTileCull;
+class OceanFFT;
 
 /**
  * Interface for water system controls.
@@ -18,4 +19,8 @@ public:
     // Water tile culling (performance optimization)
     virtual WaterTileCull& getWaterTileCull() = 0;
     virtual const WaterTileCull& getWaterTileCull() const = 0;
+
+    // FFT ocean simulation (optional - may be null)
+    virtual OceanFFT* getOceanFFT() = 0;
+    virtual const OceanFFT* getOceanFFT() const = 0;
 };

@@ -24,9 +24,6 @@ public:
     CountingCommandBuffer(vk::CommandBuffer cmd, QueueSubmitDiagnostics* diag)
         : cmd_(cmd), diag_(diag) {}
 
-    CountingCommandBuffer(vk::CommandBuffer cmd, QueueSubmitDiagnostics* diag)
-        : cmd_(cmd), diag_(diag) {}
-
     // Get the underlying command buffer for operations we don't wrap
     vk::CommandBuffer get() const { return cmd_; }
     operator vk::CommandBuffer() const { return cmd_; }

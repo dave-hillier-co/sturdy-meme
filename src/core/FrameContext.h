@@ -119,12 +119,6 @@ struct FrameContext {
         , frameIndex(frame)
         , frameData_(&data) {}
 
-    /// Construct with required fields (vk::CommandBuffer)
-    FrameContext(vk::CommandBuffer cmdBuffer, uint32_t frame, const FrameData& data)
-        : commandBuffer(cmdBuffer)
-        , frameIndex(frame)
-        , frameData_(&data) {}
-
     /// Full constructor with all common fields
     FrameContext(vk::CommandBuffer cmdBuffer, uint32_t frame, uint32_t image,
                  float dt, float t, const FrameData& data,

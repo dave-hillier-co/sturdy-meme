@@ -115,7 +115,7 @@ GrassSystem::~GrassSystem() {
 }
 
 bool GrassSystem::initInternal(const InitInfo& info) {
-    SDL_Log("GrassSystem::init() starting, device=%p, pool=%p", (void*)static_cast<VkDevice>(info.device), (void*)static_cast<VkDescriptorPool>(info.descriptorPool));
+    SDL_Log("GrassSystem::init() starting, device=%p, pool=%p", (void*)static_cast<VkDevice>(info.device), (void*)info.descriptorPool);
     shadowRenderPass_ = info.shadowRenderPass;
     shadowMapSize_ = info.shadowMapSize;
 

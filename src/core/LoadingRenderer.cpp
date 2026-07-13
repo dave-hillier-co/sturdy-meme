@@ -370,15 +370,18 @@ bool LoadingRenderer::render() {
     VkSubmitInfo submitInfo{};
     submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
 
-    vk::Semaphore waitSemaphores[] = {**imageAvailableSemaphore_};
+    // Raw VkSubmitInfo/VkPresentInfoKHR are a C-API boundary: keep the handle
+    // arrays C-typed (they initialise from the vk:: handles implicitly).
+    VkSemaphore waitSemaphores[] = {**imageAvailableSemaphore_};
     VkPipelineStageFlags waitStages[] = {VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
+    VkCommandBuffer rawCmd = cmd;
     submitInfo.waitSemaphoreCount = 1;
     submitInfo.pWaitSemaphores = waitSemaphores;
     submitInfo.pWaitDstStageMask = waitStages;
     submitInfo.commandBufferCount = 1;
-    submitInfo.pCommandBuffers = &cmd;
+    submitInfo.pCommandBuffers = &rawCmd;
 
-    vk::Semaphore signalSemaphores[] = {**renderFinishedSemaphore_};
+    VkSemaphore signalSemaphores[] = {**renderFinishedSemaphore_};
     submitInfo.signalSemaphoreCount = 1;
     submitInfo.pSignalSemaphores = signalSemaphores;
 
@@ -393,7 +396,7 @@ bool LoadingRenderer::render() {
     presentInfo.waitSemaphoreCount = 1;
     presentInfo.pWaitSemaphores = signalSemaphores;
 
-    vk::SwapchainKHR swapchains[] = {ctx_->get().getVkSwapchain()};
+    VkSwapchainKHR swapchains[] = {ctx_->get().getVkSwapchain()};
     presentInfo.swapchainCount = 1;
     presentInfo.pSwapchains = swapchains;
     presentInfo.pImageIndices = &imageIndex;

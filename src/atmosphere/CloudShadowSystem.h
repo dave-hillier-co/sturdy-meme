@@ -154,6 +154,7 @@ private:
 
     // Temporal spreading: update 1/4 of shadow map per frame
     uint32_t quadrantIndex = 0;  // Cycles 0-3
+    bool shadowMapInitialized_ = false;  // First transition may discard; later ones must preserve quadrants
 
     bool initInternal(const InitInfo& info);
     void cleanup();

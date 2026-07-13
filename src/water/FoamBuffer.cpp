@@ -253,15 +253,22 @@ void FoamBuffer::recordCompute(VkCommandBuffer cmd, uint32_t frameIndex, float d
         .writeBuffer(3, wakeUniformBuffers_[frameIndex].get(), 0, sizeof(WakeUniformData))
         .update();
 
-    // Transition write buffer to general layout
+    // Transition write buffer to general layout (discard; the helper waits
+    // for any in-flight readers of this image)
     vk::CommandBuffer vkCmd(cmd);
     BarrierHelpers::imageToGeneral(vkCmd, foamBuffer[writeBuffer]);
 
-    // Transition read buffer to shader read for compute sampling
-    BarrierHelpers::transitionImageLayout(vkCmd, foamBuffer[readBuffer],
-        vk::ImageLayout::eUndefined, vk::ImageLayout::eShaderReadOnlyOptimal,
-        vk::PipelineStageFlagBits::eTopOfPipe, vk::PipelineStageFlagBits::eComputeShader,
-        {}, vk::AccessFlagBits::eShaderRead);
+    if (firstCompute_) {
+        // The read buffer has never been written; give it a defined layout
+        // once. From the next frame on it is already ShaderReadOnlyOptimal
+        // from the exit transition below - the old unconditional eUndefined
+        // transition here DISCARDED the accumulated foam history every frame.
+        BarrierHelpers::transitionImageLayout(vkCmd, foamBuffer[readBuffer],
+            vk::ImageLayout::eUndefined, vk::ImageLayout::eShaderReadOnlyOptimal,
+            vk::PipelineStageFlagBits::eTopOfPipe, vk::PipelineStageFlagBits::eComputeShader,
+            {}, vk::AccessFlagBits::eShaderRead);
+        firstCompute_ = false;
+    }
 
     // Bind compute pipeline
     vkCmd.bindPipeline(vk::PipelineBindPoint::eCompute, **computePipeline_);
@@ -289,8 +296,11 @@ void FoamBuffer::recordCompute(VkCommandBuffer cmd, uint32_t frameIndex, float d
     uint32_t groupsY = (resolution + groupSize - 1) / groupSize;
     vkCmd.dispatch(groupsX, groupsY, 1);
 
-    // Transition write buffer to shader read for water shader sampling
-    BarrierHelpers::imageToShaderRead(vkCmd, foamBuffer[writeBuffer]);
+    // Transition write buffer to shader read. Next frame's foam compute
+    // samples this image as its history, so the dst scope must include
+    // compute as well as the water fragment shader.
+    BarrierHelpers::imageToShaderRead(vkCmd, foamBuffer[writeBuffer],
+        vk::PipelineStageFlagBits::eFragmentShader | vk::PipelineStageFlagBits::eComputeShader);
 
     // Swap buffers for next frame
     currentBuffer = writeBuffer;

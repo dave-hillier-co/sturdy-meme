@@ -272,18 +272,24 @@ void CloudShadowSystem::recordUpdate(VkCommandBuffer cmd, uint32_t frameIndex,
     // Bind pipeline and descriptor set
     vk::CommandBuffer vkCmd(cmd);
 
-    // Transition shadow map to general layout for compute write
+    // Transition shadow map to general layout for compute write. Only one
+    // quadrant is rewritten per frame (temporal spreading), so after the
+    // first frame the transition must PRESERVE the other quadrants -
+    // oldLayout eUndefined discards the whole image.
     auto prepareBarrier = vk::ImageMemoryBarrier{}
         .setSrcAccessMask(vk::AccessFlagBits::eShaderRead)
         .setDstAccessMask(vk::AccessFlagBits::eShaderWrite)
-        .setOldLayout(vk::ImageLayout::eUndefined)
+        .setOldLayout(shadowMapInitialized_ ? vk::ImageLayout::eShaderReadOnlyOptimal
+                                            : vk::ImageLayout::eUndefined)
         .setNewLayout(vk::ImageLayout::eGeneral)
         .setSrcQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
         .setDstQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
         .setImage(shadowMap_.get())
         .setSubresourceRange({vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1});
-    vkCmd.pipelineBarrier(vk::PipelineStageFlagBits::eFragmentShader, vk::PipelineStageFlagBits::eComputeShader,
+    vkCmd.pipelineBarrier(vk::PipelineStageFlagBits::eFragmentShader | vk::PipelineStageFlagBits::eComputeShader,
+                          vk::PipelineStageFlagBits::eComputeShader,
                           {}, {}, {}, prepareBarrier);
+    shadowMapInitialized_ = true;
 
     vkCmd.bindPipeline(vk::PipelineBindPoint::eCompute, **computePipeline_);
     vkCmd.bindDescriptorSets(vk::PipelineBindPoint::eCompute,
@@ -300,6 +306,8 @@ void CloudShadowSystem::recordUpdate(VkCommandBuffer cmd, uint32_t frameIndex,
     uint32_t groupCountY = (SHADOW_MAP_SIZE + 15) / 16;
     vkCmd.dispatch(groupCountX, groupCountY, 1);
 
-    // Transition shadow map to shader read for fragment shaders
-    BarrierHelpers::imageToShaderRead(vkCmd, shadowMap_.get(), vk::PipelineStageFlagBits::eFragmentShader);
+    // Transition shadow map to shader read for fragment shaders and next
+    // frame's own compute pass (which preserves and re-reads the layout)
+    BarrierHelpers::imageToShaderRead(vkCmd, shadowMap_.get(),
+        vk::PipelineStageFlagBits::eFragmentShader | vk::PipelineStageFlagBits::eComputeShader);
 }

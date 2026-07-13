@@ -210,7 +210,7 @@ bool TreeLeafCulling::createLeafCullBuffers(uint32_t maxLeafInstances, uint32_t 
 
     // cullOutputBuffers_/cullIndirectBuffers_/cullUniformBuffers_/treeDataBuffers_ created;
     // the two-phase leaf cull sets bind these, so mark them for rewrite.
-    twoPhaseLeafCullDescriptorsDirty_ = true;
+    twoPhaseLeafCullDescriptorsDirtyMask_ = ~0u;
 
     SDL_Log("TreeLeafCulling: Created leaf culling buffers (max %u instances, %u trees, %.2f MB output)",
             maxLeafInstances, numTrees,
@@ -480,7 +480,7 @@ bool TreeLeafCulling::createTreeFilterBuffers(uint32_t maxTrees) {
     SDL_Log("TreeLeafCulling: Created tree filter buffers (max %u trees, %.2f KB visible tree buffer x %u frames)",
             maxTrees, visibleTreeBufferSize_ / 1024.0f, maxFramesInFlight_);
     // visibleTreeBuffers_ (and siblings) were (re)created; the two-phase sets bind them.
-    twoPhaseLeafCullDescriptorsDirty_ = true;
+    twoPhaseLeafCullDescriptorsDirtyMask_ = ~0u;
     return true;
 }
 
@@ -561,26 +561,26 @@ bool TreeLeafCulling::createTwoPhaseLeafCullDescriptorSets() {
     }
 
     SDL_Log("TreeLeafCulling: Allocated %u two-phase leaf cull descriptor sets", maxFramesInFlight_);
-    twoPhaseLeafCullDescriptorsDirty_ = true;
+    twoPhaseLeafCullDescriptorsDirtyMask_ = ~0u;
     return true;
 }
 
-void TreeLeafCulling::writeTwoPhaseLeafCullDescriptorSets(const TreeSystem& treeSystem) {
+void TreeLeafCulling::writeTwoPhaseLeafCullDescriptorSet(const TreeSystem& treeSystem, uint32_t frameIndex) {
     if (twoPhaseLeafCullDescriptorSets_.empty()) return;
 
-    // All bindings are frame-indexed and stable between buffer (re)creations, so the
-    // set only needs writing when one of these buffers changes (tracked by the caller).
-    for (uint32_t f = 0; f < maxFramesInFlight_; ++f) {
-        DescriptorManager::SetWriter writer(device_, twoPhaseLeafCullDescriptorSets_[f]);
-        writer.writeBuffer(Bindings::LEAF_CULL_P3_VISIBLE_TREES, visibleTreeBuffers_.getVk(f), 0, VK_WHOLE_SIZE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
-              .writeBuffer(Bindings::LEAF_CULL_P3_ALL_TREES, treeDataBuffers_.getVk(f), 0, VK_WHOLE_SIZE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
-              .writeBuffer(Bindings::LEAF_CULL_P3_INPUT, treeSystem.getLeafInstanceBuffer(), 0, VK_WHOLE_SIZE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
-              .writeBuffer(Bindings::LEAF_CULL_P3_OUTPUT, cullOutputBuffers_.getVk(f), 0, VK_WHOLE_SIZE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
-              .writeBuffer(Bindings::LEAF_CULL_P3_INDIRECT, cullIndirectBuffers_.getVk(f), 0, VK_WHOLE_SIZE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
-              .writeBuffer(Bindings::LEAF_CULL_P3_CULLING, cullUniformBuffers_.buffers[f], 0, sizeof(CullingUniforms), VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER)
-              .writeBuffer(Bindings::LEAF_CULL_P3_PARAMS, leafCullP3ParamsBuffers_.buffers[f], 0, sizeof(LeafCullP3Params), VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER)
-              .update();
-    }
+    // Only the current frame's set may be written: its fence has been waited,
+    // while the other frames' sets can still be bound in executing command
+    // buffers (updating those is undefined behavior).
+    const uint32_t f = frameIndex;
+    DescriptorManager::SetWriter writer(device_, twoPhaseLeafCullDescriptorSets_[f]);
+    writer.writeBuffer(Bindings::LEAF_CULL_P3_VISIBLE_TREES, visibleTreeBuffers_.getVk(f), 0, VK_WHOLE_SIZE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+          .writeBuffer(Bindings::LEAF_CULL_P3_ALL_TREES, treeDataBuffers_.getVk(f), 0, VK_WHOLE_SIZE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+          .writeBuffer(Bindings::LEAF_CULL_P3_INPUT, treeSystem.getLeafInstanceBuffer(), 0, VK_WHOLE_SIZE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+          .writeBuffer(Bindings::LEAF_CULL_P3_OUTPUT, cullOutputBuffers_.getVk(f), 0, VK_WHOLE_SIZE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+          .writeBuffer(Bindings::LEAF_CULL_P3_INDIRECT, cullIndirectBuffers_.getVk(f), 0, VK_WHOLE_SIZE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+          .writeBuffer(Bindings::LEAF_CULL_P3_CULLING, cullUniformBuffers_.buffers[f], 0, sizeof(CullingUniforms), VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER)
+          .writeBuffer(Bindings::LEAF_CULL_P3_PARAMS, leafCullP3ParamsBuffers_.buffers[f], 0, sizeof(LeafCullP3Params), VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER)
+          .update();
 }
 
 void TreeLeafCulling::updateSpatialIndex(const TreeSystem& treeSystem) {
@@ -844,7 +844,7 @@ void TreeLeafCulling::recordCulling(VkCommandBuffer cmd, uint32_t frameIndex,
         // treeDataBuffers_ handle changed: the two-phase leaf cull sets bind it
         // (LEAF_CULL_P3_ALL_TREES), so mark them for rewrite. Previously omitted,
         // which left the set pointing at a freed buffer after a tree-count increase.
-        twoPhaseLeafCullDescriptorsDirty_ = true;
+        twoPhaseLeafCullDescriptorsDirtyMask_ = ~0u;
     }
 
     // Reset all 4 indirect draw commands (one per leaf type: oak, ash, aspen, pine)
@@ -1031,13 +1031,17 @@ void TreeLeafCulling::recordCulling(VkCommandBuffer cmd, uint32_t frameIndex,
                                       {}, p3UniformBarrier, {}, {});
 
                 // Descriptor bindings are frame-stable; rewrite only when a referenced
-                // buffer changed (dirty flag) or the external leaf instance buffer was
-                // reallocated, instead of every frame.
+                // buffer changed (per-frame dirty bit) or the external leaf instance
+                // buffer was reallocated - and only THIS frame's set, since the other
+                // frames' sets may still be bound in executing command buffers.
                 VkBuffer leafInstanceBuffer = treeSystem.getLeafInstanceBuffer();
-                if (twoPhaseLeafCullDescriptorsDirty_ || leafInstanceBuffer != lastLeafInstanceBuffer_) {
-                    writeTwoPhaseLeafCullDescriptorSets(treeSystem);
-                    twoPhaseLeafCullDescriptorsDirty_ = false;
+                if (leafInstanceBuffer != lastLeafInstanceBuffer_) {
+                    twoPhaseLeafCullDescriptorsDirtyMask_ = ~0u;
                     lastLeafInstanceBuffer_ = leafInstanceBuffer;
+                }
+                if (twoPhaseLeafCullDescriptorsDirtyMask_ & (1u << frameIndex)) {
+                    writeTwoPhaseLeafCullDescriptorSet(treeSystem, frameIndex);
+                    twoPhaseLeafCullDescriptorsDirtyMask_ &= ~(1u << frameIndex);
                 }
 
                 vkCmd.bindPipeline(vk::PipelineBindPoint::eCompute, **twoPhaseLeafCullPipeline_);

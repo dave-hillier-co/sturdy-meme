@@ -425,14 +425,19 @@ public:
             subpass.setPDepthStencilAttachment(&depthRef);
         }
 
-        // Create dependency
-        vk::PipelineStageFlags srcStage = vk::PipelineStageFlagBits::eColorAttachmentOutput;
+        // Entry dependency (EXTERNAL -> 0). Source scope includes fragment
+        // shading: attachments with loadOp Clear/DontCare discard their
+        // contents, and a shader from the previous frame (or an earlier pass)
+        // may still be sampling the image - a write-after-read hazard the old
+        // ColorAttachmentOutput-only scope did not cover.
+        vk::PipelineStageFlags srcStage = vk::PipelineStageFlagBits::eColorAttachmentOutput |
+                                          vk::PipelineStageFlagBits::eFragmentShader;
         vk::PipelineStageFlags dstStage = vk::PipelineStageFlagBits::eColorAttachmentOutput;
         vk::AccessFlags srcAccess = {};
         vk::AccessFlags dstAccess = vk::AccessFlagBits::eColorAttachmentWrite;
 
         if (hasDepth_) {
-            srcStage = vk::PipelineStageFlagBits::eColorAttachmentOutput | vk::PipelineStageFlagBits::eEarlyFragmentTests;
+            srcStage |= vk::PipelineStageFlagBits::eEarlyFragmentTests;
             dstStage = vk::PipelineStageFlagBits::eColorAttachmentOutput | vk::PipelineStageFlagBits::eEarlyFragmentTests;
             dstAccess |= vk::AccessFlagBits::eDepthStencilAttachmentWrite;
         }
@@ -445,7 +450,7 @@ public:
             dstAccess = vk::AccessFlagBits::eDepthStencilAttachmentWrite;
         }
 
-        auto dependency = vk::SubpassDependency{}
+        auto entryDependency = vk::SubpassDependency{}
             .setSrcSubpass(VK_SUBPASS_EXTERNAL)
             .setDstSubpass(0)
             .setSrcStageMask(srcStage)
@@ -453,10 +458,38 @@ public:
             .setDstStageMask(dstStage)
             .setDstAccessMask(dstAccess);
 
+        // Exit dependency (0 -> EXTERNAL). Most of these passes render to an
+        // image that is subsequently SAMPLED (bloom mips, HDR offscreen,
+        // shadow maps, water G-buffer); without an explicit exit dependency
+        // the implicit one gives no visibility to those shader reads, which
+        // is real corruption on MoltenVK where heap-placed images have no
+        // automatic hazard tracking. Present targets are unaffected -
+        // presentation is ordered by semaphores.
+        vk::PipelineStageFlags exitSrcStage = vk::PipelineStageFlagBits::eColorAttachmentOutput;
+        vk::AccessFlags exitSrcAccess = vk::AccessFlagBits::eColorAttachmentWrite;
+        if (colorAttachments_.empty() && hasDepth_) {
+            exitSrcStage = vk::PipelineStageFlagBits::eLateFragmentTests;
+            exitSrcAccess = vk::AccessFlagBits::eDepthStencilAttachmentWrite;
+        } else if (hasDepth_) {
+            exitSrcStage |= vk::PipelineStageFlagBits::eLateFragmentTests;
+            exitSrcAccess |= vk::AccessFlagBits::eDepthStencilAttachmentWrite;
+        }
+
+        auto exitDependency = vk::SubpassDependency{}
+            .setSrcSubpass(0)
+            .setDstSubpass(VK_SUBPASS_EXTERNAL)
+            .setSrcStageMask(exitSrcStage)
+            .setSrcAccessMask(exitSrcAccess)
+            .setDstStageMask(vk::PipelineStageFlagBits::eFragmentShader |
+                             vk::PipelineStageFlagBits::eComputeShader)
+            .setDstAccessMask(vk::AccessFlagBits::eShaderRead);
+
+        std::array<vk::SubpassDependency, 2> dependencies{entryDependency, exitDependency};
+
         auto renderPassInfo = vk::RenderPassCreateInfo{}
             .setAttachments(attachments)
             .setSubpasses(subpass)
-            .setDependencies(dependency);
+            .setDependencies(dependencies);
 
         try {
             return vk::raii::RenderPass(device, renderPassInfo);

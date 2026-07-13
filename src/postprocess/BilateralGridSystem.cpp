@@ -344,6 +344,9 @@ void BilateralGridSystem::recordClearGrid(VkCommandBuffer cmd) {
         .setBaseArrayLayer(0)
         .setLayerCount(1);
 
+    // The grids are shared across frames and sampled by the tonemap fragment
+    // shader; the previous in-flight frame may still be reading them, so this
+    // discard must wait for those reads (write-after-read hazard).
     auto barrier = vk::ImageMemoryBarrier{}
         .setOldLayout(vk::ImageLayout::eUndefined)
         .setNewLayout(vk::ImageLayout::eTransferDstOptimal)
@@ -354,7 +357,8 @@ void BilateralGridSystem::recordClearGrid(VkCommandBuffer cmd) {
 
     vk::CommandBuffer vkCmdBarrier(cmd);
     vkCmdBarrier.pipelineBarrier(
-        vk::PipelineStageFlagBits::eTopOfPipe, vk::PipelineStageFlagBits::eTransfer,
+        vk::PipelineStageFlagBits::eFragmentShader | vk::PipelineStageFlagBits::eComputeShader,
+        vk::PipelineStageFlagBits::eTransfer,
         {}, {}, {}, barrier);
 
     // Clear to zero
@@ -383,7 +387,7 @@ void BilateralGridSystem::recordClearGrid(VkCommandBuffer cmd) {
         .setImage(gridImages[0])
         .setSubresourceRange(subresourceRange);
 
-    // grid[1]: no prior access, just needs layout transition
+    // grid[1]: discard, but the previous frame's tonemap may still sample it
     barriers[1] = vk::ImageMemoryBarrier{}
         .setOldLayout(vk::ImageLayout::eUndefined)
         .setNewLayout(vk::ImageLayout::eGeneral)
@@ -392,9 +396,12 @@ void BilateralGridSystem::recordClearGrid(VkCommandBuffer cmd) {
         .setImage(gridImages[1])
         .setSubresourceRange(subresourceRange);
 
-    // Single barrier call for both transitions (TRANSFER covers TOP_OF_PIPE)
+    // Single barrier call for both transitions; source scope covers the
+    // clear (transfer) and the previous frame's shader reads of grid[1]
     vkCmd.pipelineBarrier(
-        vk::PipelineStageFlagBits::eTransfer, vk::PipelineStageFlagBits::eComputeShader,
+        vk::PipelineStageFlagBits::eTransfer | vk::PipelineStageFlagBits::eFragmentShader |
+            vk::PipelineStageFlagBits::eComputeShader,
+        vk::PipelineStageFlagBits::eComputeShader,
         {}, {}, {}, barriers);
 }
 

@@ -165,6 +165,7 @@ private:
     std::optional<vk::raii::ImageView> foamBufferView_[2];
     VmaAllocation foamAllocation[2] = {VK_NULL_HANDLE, VK_NULL_HANDLE};
     int currentBuffer = 0;  // Which buffer to read from
+    bool firstCompute_ = true;  // Read buffer needs a one-time layout init
 
     // Sampler (RAII-managed)
     std::optional<vk::raii::Sampler> sampler_;

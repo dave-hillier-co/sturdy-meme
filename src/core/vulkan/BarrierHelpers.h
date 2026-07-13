@@ -61,20 +61,31 @@ inline void transitionImageLayout(
 // ============================================================================
 
 /**
- * Transition image from undefined to general layout (for compute write)
+ * Transition image from undefined to general layout (for compute write).
+ *
+ * oldLayout Undefined DISCARDS the contents, so the source scope must cover
+ * every shader that may still be reading the image - most callers discard a
+ * persistent image every frame that the previous in-flight frame's fragment
+ * or compute shaders sample (screen-space shadows, Hi-Z, LUTs, ping-pong
+ * buffers). The old TopOfPipe/none source gave NO execution dependency and
+ * let the rewrite race those reads; on MoltenVK (heap-placed textures, no
+ * automatic hazard tracking) this produced visible blocky corruption.
  */
 inline void imageToGeneral(
         vk::CommandBuffer cmd,
         vk::Image image,
         vk::ImageAspectFlags aspectMask = vk::ImageAspectFlagBits::eColor,
-        uint32_t mipLevels = 1) {
+        uint32_t mipLevels = 1,
+        vk::PipelineStageFlags srcStage = vk::PipelineStageFlagBits::eFragmentShader |
+                                          vk::PipelineStageFlagBits::eComputeShader,
+        vk::AccessFlags srcAccess = vk::AccessFlagBits::eShaderWrite) {
 
     transitionImageLayout(cmd, image,
         vk::ImageLayout::eUndefined,
         vk::ImageLayout::eGeneral,
-        vk::PipelineStageFlagBits::eTopOfPipe,
+        srcStage,
         vk::PipelineStageFlagBits::eComputeShader,
-        vk::AccessFlags{},
+        srcAccess,
         vk::AccessFlagBits::eShaderWrite,
         aspectMask, 0, mipLevels);
 }

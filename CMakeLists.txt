@@ -175,7 +175,6 @@ set(SOURCES
     # Postprocess
     src/postprocess/PostProcessSystem.cpp
     src/postprocess/BloomSystem.cpp
-    src/postprocess/ComputeBloomSystem.cpp
     src/postprocess/GodRaysSystem.cpp
     src/postprocess/BilateralGridSystem.cpp
     src/postprocess/SSRSystem.cpp

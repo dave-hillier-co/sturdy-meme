@@ -217,9 +217,10 @@ private:
     bool createTwoPhaseLeafCullPipeline();
     bool createTwoPhaseLeafCullDescriptorSets();
 
-    // Write all bindings of the two-phase leaf cull descriptor sets for every frame.
-    // Called only when buffers change (see twoPhaseLeafCullDescriptorsDirty_), not per-frame.
-    void writeTwoPhaseLeafCullDescriptorSets(const TreeSystem& treeSystem);
+    // Write all bindings of one frame's two-phase leaf cull descriptor set.
+    // Only call for the frame currently being recorded (fence-waited) - see
+    // twoPhaseLeafCullDescriptorsDirtyMask_.
+    void writeTwoPhaseLeafCullDescriptorSet(const TreeSystem& treeSystem, uint32_t frameIndex);
 
     void updateCullDescriptorSets(const TreeSystem& treeSystem);
 
@@ -300,10 +301,14 @@ private:
     std::optional<vk::raii::DescriptorSetLayout> twoPhaseLeafCullDescriptorSetLayout_;
     std::vector<VkDescriptorSet> twoPhaseLeafCullDescriptorSets_;
     // The two-phase leaf cull sets bind frame-stable buffers, so they are written
-    // only when those buffers are (re)created rather than every frame. This flag is
-    // raised on any relevant buffer (re)creation/resize; lastLeafInstanceBuffer_
-    // additionally detects reallocation of the externally-owned leaf instance buffer.
-    bool twoPhaseLeafCullDescriptorsDirty_ = true;
+    // only when those buffers are (re)created rather than every frame. One dirty
+    // bit per frame slot: a set may only be rewritten during ITS OWN frame's
+    // recording (that frame's fence has been waited) - rewriting other frames'
+    // sets while they are still executing is undefined behavior. Buffer changes
+    // set all bits; each frame writes and clears only its own bit.
+    // lastLeafInstanceBuffer_ additionally detects reallocation of the
+    // externally-owned leaf instance buffer.
+    uint32_t twoPhaseLeafCullDescriptorsDirtyMask_ = ~0u;
     VkBuffer lastLeafInstanceBuffer_ = VK_NULL_HANDLE;
 
     BufferUtils::PerFrameBufferSet leafCullP3ParamsBuffers_;  // LeafCullP3Params at binding 6

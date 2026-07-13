@@ -176,6 +176,7 @@ private:
     vk::Image image_;
     VmaAllocation allocation_ = VK_NULL_HANDLE;
     vk::ImageView imageView_;
+    bool imageInitialized_ = false;  // First transition discards; later ones preserve decay history
     std::optional<vk::raii::Sampler> sampler_;
 
     // Compute pipeline

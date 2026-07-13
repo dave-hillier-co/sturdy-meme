@@ -237,8 +237,16 @@ void DisplacementSystem::recordUpdate(vk::CommandBuffer cmd, uint32_t frameIndex
     );
     memcpy(uniformBuffers_.mappedPointers[frameIndex], &uniforms, sizeof(DisplacementUniforms));
 
-    // Transition displacement image to general layout if needed
-    BarrierHelpers::imageToGeneral(cmd, image_);
+    // Transition displacement image to general layout. This image ACCUMULATES
+    // (displacement decays over frames), so after the first frame the
+    // transition must preserve the contents - eUndefined discards them.
+    if (imageInitialized_) {
+        BarrierHelpers::shaderReadToGeneral(cmd, image_,
+            vk::PipelineStageFlagBits::eComputeShader);
+    } else {
+        BarrierHelpers::imageToGeneral(cmd, image_);
+        imageInitialized_ = true;
+    }
 
     // Dispatch displacement update compute shader
     cmd.bindPipeline(vk::PipelineBindPoint::eCompute, **pipeline_);

@@ -25,9 +25,10 @@
 - generated textures should be saved in png format
 - Vulkan-hpp: All Vulkan code uses vulkan-hpp (`#include <vulkan/vulkan.hpp>`) — never include `<vulkan/vulkan.h>` directly. Standards:
   - Construct create-infos with the builder pattern (`.set*()`), not positional/C-struct init: `vk::BufferCreateInfo{}.setSize(...).setUsage(...)`.
-  - Use scoped enums (`vk::Format::eR8G8B8A8Unorm`, `vk::ImageUsageFlagBits::e*`) where they are consumed natively by hpp.
-  - vulkan-hpp interoperates with the C API (`vk::Buffer`↔`VkBuffer`). Keep **C handle types** (`VkDevice`, `VkBuffer`, ...) in public/header signatures and struct members that cross module boundaries, so files migrate independently without rippling to includers (see `ShaderLoader` for the idiom).
-  - NEVER write `static_cast<VkFormat>(vk::Format::e...)` round-trips. If the surrounding API (a custom builder/struct/function) takes a C type, just pass the plain C enum (`VK_FORMAT_R8G8B8A8_UNORM`). The round-trip is strictly worse than the C enum.
+  - Use scoped enums (`vk::Format::eR8G8B8A8Unorm`, `vk::ImageUsageFlagBits::e*`) everywhere — never the `VK_*` C enum constants.
+  - **Use native `vk::` types everywhere, including public/header signatures and struct members** — `vk::Device`, `vk::Buffer`, `vk::ImageView`, `vk::CommandBuffer`, `vk::Format`, `vk::Extent2D`, etc. Do NOT use the C handle types (`VkDevice`, `VkBuffer`, ...) as a "migration boundary" in headers. That boundary convention was removed: it was self-perpetuating (headers stay C-typed forever, so the migration never finishes) and `vk::` handles/structs convert implicitly to their C counterparts anyway, so a native header does not ripple to includers.
+  - The ONLY place a `VkFoo` C type is acceptable is at a genuine external-C-API boundary that literally requires it — VMA (`vmaCreateBuffer` wants `VkBuffer*`), SDL, Dear ImGui (`ImGui_ImplVulkan_*`), and similar. Obtain the C handle at the call by relying on the implicit `vk::Buffer`→`VkBuffer` conversion (or `static_cast<VkBuffer>(x)` when a conversion is ambiguous); do not thread C types through your own signatures to reach it.
+  - NEVER write `static_cast<VkFormat>(vk::Format::e...)` or other `vk::`→C-enum round-trips. Keep the value as `vk::Format` and pass it to hpp APIs directly. If some external API truly needs the C enum, convert only at that boundary.
   - Run `./scripts/analyze-vulkan-usage.sh` to audit usage.
 
 ## Preprocessing Tool Output Formats

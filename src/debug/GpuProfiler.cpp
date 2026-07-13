@@ -8,7 +8,7 @@
 GpuProfiler::GpuProfiler() = default;
 
 // Factory
-std::optional<GpuProfiler> GpuProfiler::create(VkDevice device, VkPhysicalDevice physicalDevice,
+std::optional<GpuProfiler> GpuProfiler::create(vk::Device device, vk::PhysicalDevice physicalDevice,
                                                 uint32_t framesInFlight, uint32_t maxZones) {
     GpuProfiler profiler;
     if (!profiler.initInternal(device, physicalDevice, framesInFlight, maxZones)) {
@@ -78,7 +78,7 @@ GpuProfiler& GpuProfiler::operator=(GpuProfiler&& other) noexcept {
     return *this;
 }
 
-bool GpuProfiler::initInternal(VkDevice dev, VkPhysicalDevice physicalDevice,
+bool GpuProfiler::initInternal(vk::Device dev, vk::PhysicalDevice physicalDevice,
                                 uint32_t framesInFlight_, uint32_t maxZones_) {
     device = dev;
     framesInFlight = framesInFlight_;
@@ -145,7 +145,7 @@ void GpuProfiler::cleanup() {
     device = VK_NULL_HANDLE;
 }
 
-void GpuProfiler::beginFrame(VkCommandBuffer cmd, uint32_t frameIndex) {
+void GpuProfiler::beginFrame(vk::CommandBuffer cmd, uint32_t frameIndex) {
     if (!enabled || queryPools.empty()) return;
 
     // Collect results from previous frame first (before reset)
@@ -175,7 +175,7 @@ void GpuProfiler::beginFrame(VkCommandBuffer cmd, uint32_t frameIndex) {
     vkCmd.writeTimestamp(vk::PipelineStageFlagBits::eTopOfPipe, queryPools[frameIndex], frameStartQuery);
 }
 
-void GpuProfiler::endFrame(VkCommandBuffer cmd, uint32_t frameIndex) {
+void GpuProfiler::endFrame(vk::CommandBuffer cmd, uint32_t frameIndex) {
     if (!enabled || queryPools.empty()) return;
 
     vk::CommandBuffer vkCmd(cmd);
@@ -189,7 +189,7 @@ void GpuProfiler::endFrame(VkCommandBuffer cmd, uint32_t frameIndex) {
     frameZoneCounts[frameIndex] = currentZoneSlot.load(std::memory_order_relaxed);
 }
 
-void GpuProfiler::beginZone(VkCommandBuffer cmd, const char* zoneName) {
+void GpuProfiler::beginZone(vk::CommandBuffer cmd, const char* zoneName) {
     if (!enabled || queryPools.empty()) return;
 
     // Atomically allocate a zone slot - lock-free
@@ -214,7 +214,7 @@ void GpuProfiler::beginZone(VkCommandBuffer cmd, const char* zoneName) {
                          queryPools[currentFrameIndex], queryIdx);
 }
 
-void GpuProfiler::endZone(VkCommandBuffer cmd, const char* zoneName) {
+void GpuProfiler::endZone(vk::CommandBuffer cmd, const char* zoneName) {
     if (!enabled || queryPools.empty()) return;
 
     // Find the zone slot by name - lock-free linear scan

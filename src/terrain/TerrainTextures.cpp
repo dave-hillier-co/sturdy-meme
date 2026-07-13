@@ -220,9 +220,9 @@ bool TerrainTextures::createGrassFarLODTexture() {
     return true;
 }
 
-bool TerrainTextures::uploadImageDataMipLevel(VkImage image, const void* data, uint32_t width, uint32_t height,
+bool TerrainTextures::uploadImageDataMipLevel(vk::Image image, const void* data, uint32_t width, uint32_t height,
                                                VkFormat format, uint32_t bytesPerPixel, uint32_t mipLevel) {
-    VkDeviceSize imageSize = width * height * bytesPerPixel;
+    vk::DeviceSize imageSize = width * height * bytesPerPixel;
 
     // Create staging buffer using RAII wrapper
     ManagedBuffer stagingBuffer;
@@ -285,7 +285,7 @@ bool TerrainTextures::uploadImageDataMipLevel(VkImage image, const void* data, u
     return true;
 }
 
-bool TerrainTextures::generateMipmaps(VkImage image, uint32_t width, uint32_t height, uint32_t mipLevels) {
+bool TerrainTextures::generateMipmaps(vk::Image image, uint32_t width, uint32_t height, uint32_t mipLevels) {
     CommandScope cmd(device, commandPool, graphicsQueue);
     if (!cmd.begin()) return false;
 

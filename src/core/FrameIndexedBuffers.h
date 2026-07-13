@@ -39,11 +39,11 @@ namespace BufferUtils {
 //   // In render(frameIndex):
 //   vk::Buffer buffer = buffers.get(frameIndex);  // Same buffer - guaranteed!
 //
-// Migration from std::vector<VkBuffer> + currentBufferSet_:
+// Migration from std::vector<vk::Buffer> + currentBufferSet_:
 //   Before (buggy):
-//     std::vector<VkBuffer> buffers_;
+//     std::vector<vk::Buffer> buffers_;
 //     uint32_t currentBufferSet_ = 0;
-//     VkBuffer getBuffer() { return buffers_[currentBufferSet_]; }  // Can desync!
+//     vk::Buffer getBuffer() { return buffers_[currentBufferSet_]; }  // Can desync!
 //     void swap() { currentBufferSet_ = (currentBufferSet_ + 1) % 3; }
 //
 //   After (safe):
@@ -79,8 +79,8 @@ public:
     // Get buffer for a specific frame (primary access method)
     vk::Buffer get(uint32_t frameIndex) const;
 
-    // Get raw VkBuffer for APIs that need it
-    VkBuffer getVk(uint32_t frameIndex) const;
+    // Get raw vk::Buffer for APIs that need it
+    vk::Buffer getVk(uint32_t frameIndex) const;
 
     // =========================================================================
     // Utility methods

@@ -51,7 +51,7 @@ public:
      * Create the graphics pipeline for standard scene rendering.
      * Requires PostProcessSystem to be initialized (for HDR render pass).
      */
-    bool createGraphicsPipeline(VulkanContext& context, VkRenderPass hdrRenderPass,
+    bool createGraphicsPipeline(VulkanContext& context, vk::RenderPass hdrRenderPass,
                                 const std::string& resourcePath);
 
     /**
@@ -96,16 +96,16 @@ public:
     }
 
     // Raw handle accessors for compatibility
-    VkDescriptorSetLayout getVkDescriptorSetLayout() const {
-        return descriptorSetLayout_ ? static_cast<VkDescriptorSetLayout>(**descriptorSetLayout_) : VK_NULL_HANDLE;
+    vk::DescriptorSetLayout getVkDescriptorSetLayout() const {
+        return descriptorSetLayout_ ? static_cast<vk::DescriptorSetLayout>(**descriptorSetLayout_) : VK_NULL_HANDLE;
     }
 
-    VkPipelineLayout getVkPipelineLayout() const {
-        return pipelineLayout_ ? static_cast<VkPipelineLayout>(**pipelineLayout_) : VK_NULL_HANDLE;
+    vk::PipelineLayout getVkPipelineLayout() const {
+        return pipelineLayout_ ? static_cast<vk::PipelineLayout>(**pipelineLayout_) : VK_NULL_HANDLE;
     }
 
-    VkPipeline getVkGraphicsPipeline() const {
-        return graphicsPipeline_ ? static_cast<VkPipeline>(**graphicsPipeline_) : VK_NULL_HANDLE;
+    vk::Pipeline getVkGraphicsPipeline() const {
+        return graphicsPipeline_ ? static_cast<vk::Pipeline>(**graphicsPipeline_) : VK_NULL_HANDLE;
     }
 
     /**
@@ -119,8 +119,8 @@ public:
     bool hasPipeline() const { return graphicsPipeline_.has_value(); }
 
 private:
-    bool createDescriptorSetLayout(VkDevice device, const vk::raii::Device& raiiDevice);
-    bool createDescriptorPool(VkDevice device, const Config& config);
+    bool createDescriptorSetLayout(vk::Device device, const vk::raii::Device& raiiDevice);
+    bool createDescriptorPool(vk::Device device, const Config& config);
 
     std::optional<vk::raii::DescriptorSetLayout> descriptorSetLayout_;
     std::optional<vk::raii::PipelineLayout> pipelineLayout_;

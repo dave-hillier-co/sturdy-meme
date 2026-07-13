@@ -20,7 +20,7 @@ public:
 
     // Initialization parameters
     struct InitInfo {
-        VkDevice device;
+        vk::Device device;
         VmaAllocator allocator;
         uint32_t framesInFlight;
     };

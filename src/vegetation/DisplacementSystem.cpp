@@ -108,8 +108,8 @@ bool DisplacementSystem::createTexture() {
 }
 
 bool DisplacementSystem::createBuffers() {
-    VkDeviceSize sourceBufferSize = sizeof(DisplacementSource) * GrassConstants::MAX_DISPLACEMENT_SOURCES;
-    VkDeviceSize uniformBufferSize = sizeof(DisplacementUniforms);
+    vk::DeviceSize sourceBufferSize = sizeof(DisplacementSource) * GrassConstants::MAX_DISPLACEMENT_SOURCES;
+    vk::DeviceSize uniformBufferSize = sizeof(DisplacementUniforms);
 
     BufferUtils::PerFrameBufferBuilder sourceBuilder;
     if (!sourceBuilder.setAllocator(allocator_)
@@ -136,7 +136,7 @@ bool DisplacementSystem::createPipeline() {
     // 0: Displacement map (storage image, read-write)
     // 1: Source buffer (SSBO)
     // 2: Displacement uniforms (UBO)
-    VkDescriptorSetLayout rawDescSetLayout = DescriptorManager::LayoutBuilder(device_)
+    vk::DescriptorSetLayout rawDescSetLayout = DescriptorManager::LayoutBuilder(device_)
         .addStorageImage(VK_SHADER_STAGE_COMPUTE_BIT)
         .addStorageBuffer(VK_SHADER_STAGE_COMPUTE_BIT)
         .addUniformBuffer(VK_SHADER_STAGE_COMPUTE_BIT)
@@ -147,7 +147,7 @@ bool DisplacementSystem::createPipeline() {
     }
     descriptorSetLayout_.emplace(*raiiDevice_, rawDescSetLayout);
 
-    VkPipelineLayout rawPipelineLayout = DescriptorManager::createPipelineLayout(
+    vk::PipelineLayout rawPipelineLayout = DescriptorManager::createPipelineLayout(
         device_, **descriptorSetLayout_);
     if (rawPipelineLayout == VK_NULL_HANDLE) {
         return false;

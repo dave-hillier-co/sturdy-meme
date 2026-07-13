@@ -61,13 +61,13 @@ public:
 
     struct InitInfo {
         const vk::raii::Device* raiiDevice;  // vulkan-hpp RAII device
-        VkDevice device;
-        VkPhysicalDevice physicalDevice;
+        vk::Device device;
+        vk::PhysicalDevice physicalDevice;
         VmaAllocator allocator;
-        VkRenderPass hdrRenderPass;
-        VkRenderPass shadowRenderPass;  // For shadow casting
-        VkCommandPool commandPool;
-        VkQueue graphicsQueue;
+        vk::RenderPass hdrRenderPass;
+        vk::RenderPass shadowRenderPass;  // For shadow casting
+        vk::CommandPool commandPool;
+        vk::Queue graphicsQueue;
         DescriptorManager::Pool* descriptorPool;
         VkExtent2D extent;
         std::string resourcePath;
@@ -98,23 +98,23 @@ public:
                 const ScreenParams& screenParams = ScreenParams());
 
     // Render impostors (called after full geometry trees are rendered)
-    void renderImpostors(VkCommandBuffer cmd, uint32_t frameIndex,
-                         VkBuffer uniformBuffer, VkImageView shadowMap, VkSampler shadowSampler);
+    void renderImpostors(vk::CommandBuffer cmd, uint32_t frameIndex,
+                         vk::Buffer uniformBuffer, vk::ImageView shadowMap, vk::Sampler shadowSampler);
 
     // Render impostors using GPU-culled data (indirect drawing with Hi-Z occlusion)
     // Call this instead of renderImpostors when ImpostorCullSystem is available
-    void renderImpostorsGPUCulled(VkCommandBuffer cmd, uint32_t frameIndex,
-                                  VkBuffer uniformBuffer, VkImageView shadowMap, VkSampler shadowSampler,
-                                  VkBuffer gpuInstanceBuffer, VkBuffer indirectDrawBuffer);
+    void renderImpostorsGPUCulled(vk::CommandBuffer cmd, uint32_t frameIndex,
+                                  vk::Buffer uniformBuffer, vk::ImageView shadowMap, vk::Sampler shadowSampler,
+                                  vk::Buffer gpuInstanceBuffer, vk::Buffer indirectDrawBuffer);
 
     // Render impostor shadows for a specific cascade
-    void renderImpostorShadows(VkCommandBuffer cmd, uint32_t frameIndex,
-                               int cascadeIndex, VkBuffer uniformBuffer);
+    void renderImpostorShadows(vk::CommandBuffer cmd, uint32_t frameIndex,
+                               int cascadeIndex, vk::Buffer uniformBuffer);
 
     // Render impostor shadows using GPU-culled data (indirect drawing with Hi-Z occlusion)
-    void renderImpostorShadowsGPUCulled(VkCommandBuffer cmd, uint32_t frameIndex,
-                                        int cascadeIndex, VkBuffer uniformBuffer,
-                                        VkBuffer gpuInstanceBuffer, VkBuffer indirectDrawBuffer);
+    void renderImpostorShadowsGPUCulled(vk::CommandBuffer cmd, uint32_t frameIndex,
+                                        int cascadeIndex, vk::Buffer uniformBuffer,
+                                        vk::Buffer gpuInstanceBuffer, vk::Buffer indirectDrawBuffer);
 
     // Get LOD state for a specific tree
     const TreeLODState& getTreeLODState(uint32_t treeIndex) const;
@@ -145,8 +145,8 @@ public:
     int32_t generateImpostor(const std::string& name, const struct TreeOptions& options,
                              const struct Mesh& branchMesh,
                              const std::vector<struct LeafInstanceGPU>& leafInstances,
-                             VkImageView barkAlbedo, VkImageView barkNormal,
-                             VkImageView leafAlbedo, VkSampler sampler);
+                             vk::ImageView barkAlbedo, vk::ImageView barkNormal,
+                             vk::ImageView leafAlbedo, vk::Sampler sampler);
 
     // Update tree count (call when trees are added/removed)
     void updateTreeCount(size_t count);
@@ -160,13 +160,13 @@ public:
     bool isGPUCullingEnabled() const { return gpuCullingEnabled_; }
 
     // Initialize descriptor sets with static bindings (call once during init)
-    void initializeDescriptorSets(const std::vector<VkBuffer>& uniformBuffers,
-                                  VkImageView shadowMap, VkSampler shadowSampler);
+    void initializeDescriptorSets(const std::vector<vk::Buffer>& uniformBuffers,
+                                  vk::ImageView shadowMap, vk::Sampler shadowSampler);
 
     // Initialize GPU-culled descriptor sets with the GPU instance buffer (call once when GPU culling is enabled)
-    void initializeGPUCulledDescriptors(VkBuffer gpuInstanceBuffer);
+    void initializeGPUCulledDescriptors(vk::Buffer gpuInstanceBuffer);
 
-    VkDevice getDevice() const { return device_; }
+    vk::Device getDevice() const { return device_; }
 
     // Debug info
     struct DebugInfo {
@@ -203,16 +203,16 @@ private:
     // Render setup helpers
     void bindImpostorPipeline(vk::CommandBuffer& cmd, uint32_t frameIndex);
     void bindShadowPipeline(vk::CommandBuffer& cmd, uint32_t frameIndex);
-    void bindBillboardBuffers(vk::CommandBuffer& cmd, VkBuffer instanceBuf = VK_NULL_HANDLE);
+    void bindBillboardBuffers(vk::CommandBuffer& cmd, vk::Buffer instanceBuf = VK_NULL_HANDLE);
 
     const vk::raii::Device* raiiDevice_ = nullptr;
-    VkDevice device_ = VK_NULL_HANDLE;
-    VkPhysicalDevice physicalDevice_ = VK_NULL_HANDLE;
+    vk::Device device_ = VK_NULL_HANDLE;
+    vk::PhysicalDevice physicalDevice_ = VK_NULL_HANDLE;
     VmaAllocator allocator_ = VK_NULL_HANDLE;
-    VkRenderPass hdrRenderPass_ = VK_NULL_HANDLE;
-    VkRenderPass shadowRenderPass_ = VK_NULL_HANDLE;
-    VkCommandPool commandPool_ = VK_NULL_HANDLE;
-    VkQueue graphicsQueue_ = VK_NULL_HANDLE;
+    vk::RenderPass hdrRenderPass_ = VK_NULL_HANDLE;
+    vk::RenderPass shadowRenderPass_ = VK_NULL_HANDLE;
+    vk::CommandPool commandPool_ = VK_NULL_HANDLE;
+    vk::Queue graphicsQueue_ = VK_NULL_HANDLE;
     DescriptorManager::Pool* descriptorPool_ = nullptr;
     std::string resourcePath_;
     VkExtent2D extent_{};
@@ -236,20 +236,20 @@ private:
     std::optional<vk::raii::DescriptorSetLayout> shadowDescriptorSetLayout_;
 
     // Per-frame descriptor sets
-    std::vector<VkDescriptorSet> impostorDescriptorSets_;
-    std::vector<VkDescriptorSet> shadowDescriptorSets_;
+    std::vector<vk::DescriptorSet> impostorDescriptorSets_;
+    std::vector<vk::DescriptorSet> shadowDescriptorSets_;
 
     // Billboard quad mesh
-    VkBuffer billboardVertexBuffer_ = VK_NULL_HANDLE;
+    vk::Buffer billboardVertexBuffer_ = VK_NULL_HANDLE;
     VmaAllocation billboardVertexAllocation_ = VK_NULL_HANDLE;
-    VkBuffer billboardIndexBuffer_ = VK_NULL_HANDLE;
+    vk::Buffer billboardIndexBuffer_ = VK_NULL_HANDLE;
     VmaAllocation billboardIndexAllocation_ = VK_NULL_HANDLE;
     uint32_t billboardIndexCount_ = 0;
 
     // Instance buffer for impostor rendering
-    VkBuffer instanceBuffer_ = VK_NULL_HANDLE;
+    vk::Buffer instanceBuffer_ = VK_NULL_HANDLE;
     VmaAllocation instanceAllocation_ = VK_NULL_HANDLE;
-    VkDeviceSize instanceBufferSize_ = 0;
+    vk::DeviceSize instanceBufferSize_ = 0;
     size_t maxInstances_ = 0;
 
     // Current frame data

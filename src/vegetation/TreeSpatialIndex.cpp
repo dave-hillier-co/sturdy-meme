@@ -248,14 +248,14 @@ bool TreeSpatialIndex::uploadToGPU() {
 
     for (uint32_t i = 0; i < maxFramesInFlight_; ++i) {
         if (vmaCreateBuffer(allocator_, reinterpret_cast<const VkBufferCreateInfo*>(&cellBufferInfo), &allocInfo,
-                            &cellBuffers_[i], &cellAllocations_[i], nullptr) != VK_SUCCESS) {
+                            reinterpret_cast<VkBuffer*>(&cellBuffers_[i]), &cellAllocations_[i], nullptr) != VK_SUCCESS) {
             SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "TreeSpatialIndex: Failed to create cell buffer %u", i);
             cleanup();
             return false;
         }
 
         if (vmaCreateBuffer(allocator_, reinterpret_cast<const VkBufferCreateInfo*>(&sortedBufferInfo), &allocInfo,
-                            &sortedTreeBuffers_[i], &sortedTreeAllocations_[i], nullptr) != VK_SUCCESS) {
+                            reinterpret_cast<VkBuffer*>(&sortedTreeBuffers_[i]), &sortedTreeAllocations_[i], nullptr) != VK_SUCCESS) {
             SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "TreeSpatialIndex: Failed to create sorted tree buffer %u", i);
             cleanup();
             return false;

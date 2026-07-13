@@ -239,13 +239,8 @@ public:
     // Pass optional GpuProfiler for detailed per-phase profiling
     void recordCompute(vk::CommandBuffer cmd, uint32_t frameIndex, GpuProfiler* profiler = nullptr);
 
-    // Record terrain rendering
-    void recordDraw(vk::CommandBuffer cmd, uint32_t frameIndex);
-
-    // IRecordable interface implementation
-    void recordDraw(VkCommandBuffer cmd, uint32_t frameIndex) override {
-        recordDraw(vk::CommandBuffer(cmd), frameIndex);
-    }
+    // Record terrain rendering (IRecordable interface implementation)
+    void recordDraw(vk::CommandBuffer cmd, uint32_t frameIndex) override;
 
     // Record the virtual texture feedback copy (GPU feedback -> CPU readback).
     // Call once per frame after the HDR render pass, outside any render pass.
@@ -255,15 +250,9 @@ public:
     // Whether virtual texturing is active for this terrain
     bool hasVirtualTexture() const { return virtualTexture != nullptr; }
 
-    // Record shadow pass for terrain
+    // Record shadow pass for terrain (IShadowCaster interface implementation)
     void recordShadowDraw(vk::CommandBuffer cmd, uint32_t frameIndex,
-                          const glm::mat4& lightViewProj, int cascadeIndex);
-
-    // IShadowCaster interface implementation
-    void recordShadowDraw(VkCommandBuffer cmd, uint32_t frameIndex,
-                          const glm::mat4& lightMatrix, int cascade) override {
-        recordShadowDraw(vk::CommandBuffer(cmd), frameIndex, lightMatrix, cascade);
-    }
+                          const glm::mat4& lightViewProj, int cascadeIndex) override;
 
     // Record shadow culling compute (call before recordShadowDraw for each cascade)
     void recordShadowCull(vk::CommandBuffer cmd, uint32_t frameIndex,

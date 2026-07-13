@@ -104,20 +104,20 @@ public:
         TreeLODSystem* treeLOD,
         ImpostorCullSystem* impostorCull,
         TreeRenderer* treeRenderer,
-        const std::vector<VkBuffer>& uniformBuffers,
-        VkImageView shadowView,
-        VkSampler shadowSampler);
+        const std::vector<vk::Buffer>& uniformBuffers,
+        vk::ImageView shadowView,
+        vk::Sampler shadowSampler);
 
     /**
      * Create detritus scatter system with fallen branches near trees.
      * Call after trees are generated.
      */
     struct DetritusCreateInfo {
-        VkDevice device;
+        vk::Device device;
         VmaAllocator allocator;
-        VkCommandPool commandPool;
-        VkQueue graphicsQueue;
-        VkPhysicalDevice physicalDevice;
+        vk::CommandPool commandPool;
+        vk::Queue graphicsQueue;
+        vk::PhysicalDevice physicalDevice;
     };
     std::unique_ptr<ScatterSystem> createDetritusSystem(
         const DetritusCreateInfo& info,

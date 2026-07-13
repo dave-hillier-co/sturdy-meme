@@ -451,11 +451,11 @@ void TerrainSystem::recordShadowDraw(vk::CommandBuffer cmd, uint32_t frameIndex,
         vkCmd.bindIndexBuffer(meshlet->getIndexBuffer(), 0, vk::IndexType::eUint16);
 
         // Use shadow indirect draw buffer if culling, else main indirect buffer
-        VkBuffer drawBuffer = useCulled ? buffers->getShadowIndirectDrawBuffer() : buffers->getIndirectDrawBuffer();
+        vk::Buffer drawBuffer = useCulled ? buffers->getShadowIndirectDrawBuffer() : buffers->getIndirectDrawBuffer();
         vkCmd.drawIndexedIndirect(drawBuffer, 0, 1, sizeof(VkDrawIndexedIndirectCommand));
         DIAG_RECORD_DRAW();
     } else {
-        VkBuffer drawBuffer = useCulled ? buffers->getShadowIndirectDrawBuffer() : buffers->getIndirectDrawBuffer();
+        vk::Buffer drawBuffer = useCulled ? buffers->getShadowIndirectDrawBuffer() : buffers->getIndirectDrawBuffer();
         vkCmd.drawIndirect(drawBuffer, 0, 1, sizeof(VkDrawIndirectCommand));
         DIAG_RECORD_DRAW();
     }

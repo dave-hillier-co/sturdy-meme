@@ -54,9 +54,9 @@ public:
     explicit PostProcessSystem(ConstructToken) {}
 
     struct InitInfo {
-        VkDevice device;
+        vk::Device device;
         VmaAllocator allocator;
-        VkRenderPass outputRenderPass;
+        vk::RenderPass outputRenderPass;
         DescriptorManager::Pool* descriptorPool;  // Auto-growing pool
         VkExtent2D extent;
         VkFormat swapchainFormat;
@@ -70,7 +70,7 @@ public:
      * Returns nullptr on failure.
      */
     static std::unique_ptr<PostProcessSystem> create(const InitInfo& info);
-    static std::unique_ptr<PostProcessSystem> create(const InitContext& ctx, VkRenderPass outputRenderPass, VkFormat swapchainFormat);
+    static std::unique_ptr<PostProcessSystem> create(const InitContext& ctx, vk::RenderPass outputRenderPass, VkFormat swapchainFormat);
 
 
     /**
@@ -89,7 +89,7 @@ public:
      */
     static std::optional<Bundle> createWithDependencies(
         const InitContext& ctx,
-        VkRenderPass finalRenderPass,
+        vk::RenderPass finalRenderPass,
         VkFormat swapchainImageFormat
     );
 
@@ -114,9 +114,9 @@ public:
     VkExtent2D getExtent() const { return extent; }
 
     // Pre-end callback is called after post-process draw but before ending render pass (for GUI overlay)
-    using PreEndCallback = std::function<void(VkCommandBuffer)>;
-    void recordPostProcess(VkCommandBuffer cmd, uint32_t frameIndex,
-                          VkFramebuffer swapchainFB, float deltaTime,
+    using PreEndCallback = std::function<void(vk::CommandBuffer)>;
+    void recordPostProcess(vk::CommandBuffer cmd, uint32_t frameIndex,
+                          vk::Framebuffer swapchainFB, float deltaTime,
                           PreEndCallback preEndCallback = nullptr);
 
     // IPostProcessState exposure controls
@@ -164,19 +164,19 @@ public:
     int getFroxelDebugMode() const override { return froxelDebugMode; }
 
     // Froxel volumetrics (Phase 4.3)
-    void setFroxelVolume(VkImageView volumeView, VkSampler volumeSampler);
+    void setFroxelVolume(vk::ImageView volumeView, vk::Sampler volumeSampler);
     void setFroxelEnabled(bool enabled) { froxelEnabled = enabled; }
 
     // Bloom (multi-pass)
-    void setBloomTexture(VkImageView bloomView, VkSampler bloomSampler);
+    void setBloomTexture(vk::ImageView bloomView, vk::Sampler bloomSampler);
     void setBloomEnabled(bool enabled) override { bloomEnabled = enabled; }
     bool isBloomEnabled() const override { return bloomEnabled; }
     bool isFroxelEnabled() const { return froxelEnabled; }
 
     // Local tone mapping (bilateral grid) - Ghost of Tsushima technique
-    void setBilateralGrid(VkImageView gridView, VkSampler gridSampler);
+    void setBilateralGrid(vk::ImageView gridView, vk::Sampler gridSampler);
     // Quarter-resolution god rays texture (compute-based optimization)
-    void setGodRaysTexture(VkImageView godRaysView, VkSampler godRaysSampler);
+    void setGodRaysTexture(vk::ImageView godRaysView, vk::Sampler godRaysSampler);
     void setLocalToneMapEnabled(bool enabled) override { localToneMapEnabled = enabled; }
     bool isLocalToneMapEnabled() const override { return localToneMapEnabled; }
     void setLocalToneMapContrast(float c) override { localToneMapContrast = glm::clamp(c, 0.0f, 1.0f); }
@@ -251,20 +251,20 @@ private:
     bool createHistogramPipelines();
     bool createHistogramDescriptorSets();
     void destroyHistogramResources();
-    void recordHistogramCompute(VkCommandBuffer cmd, uint32_t frameIndex, float deltaTime);
+    void recordHistogramCompute(vk::CommandBuffer cmd, uint32_t frameIndex, float deltaTime);
 
     // Synchronize histogram build output for reduce pass
-    void barrierHistogramBuildToReduce(VkCommandBuffer cmd);
+    void barrierHistogramBuildToReduce(vk::CommandBuffer cmd);
 
     // Synchronize histogram reduce output for CPU read and HDR image for sampling
-    void barrierHistogramReduceComplete(VkCommandBuffer cmd, uint32_t frameIndex);
+    void barrierHistogramReduceComplete(vk::CommandBuffer cmd, uint32_t frameIndex);
 
     void destroyHDRResources();
 
-    VkDevice device = VK_NULL_HANDLE;
+    vk::Device device = VK_NULL_HANDLE;
     VmaAllocator allocator = VK_NULL_HANDLE;
     DescriptorManager::Pool* descriptorPool = nullptr;
-    VkRenderPass outputRenderPass = VK_NULL_HANDLE;
+    vk::RenderPass outputRenderPass = VK_NULL_HANDLE;
     VkExtent2D extent = {0, 0};
     VkFormat swapchainFormat = VK_FORMAT_UNDEFINED;
     std::string shaderPath;
@@ -283,16 +283,16 @@ private:
     const vk::raii::Device* raiiDevice_ = nullptr;
     std::optional<vk::raii::Sampler> hdrSampler_;
     std::optional<vk::raii::RenderPass> hdrRenderPass_;
-    VkRenderPass hdrRenderPass = VK_NULL_HANDLE;  // Raw handle for compatibility
-    VkFramebuffer hdrFramebuffer = VK_NULL_HANDLE;
+    vk::RenderPass hdrRenderPass = VK_NULL_HANDLE;  // Raw handle for compatibility
+    vk::Framebuffer hdrFramebuffer = VK_NULL_HANDLE;
 
     // Final composite pipeline
-    VkDescriptorSetLayout compositeDescriptorSetLayout = VK_NULL_HANDLE;
-    VkPipelineLayout compositePipelineLayout = VK_NULL_HANDLE;
+    vk::DescriptorSetLayout compositeDescriptorSetLayout = VK_NULL_HANDLE;
+    vk::PipelineLayout compositePipelineLayout = VK_NULL_HANDLE;
     // Pipeline variants for different god ray sample counts
     // Index 0=Low(16), 1=Medium(32), 2=High(64)
-    std::array<VkPipeline, 3> compositePipelines = {VK_NULL_HANDLE, VK_NULL_HANDLE, VK_NULL_HANDLE};
-    std::vector<VkDescriptorSet> compositeDescriptorSets;
+    std::array<vk::Pipeline, 3> compositePipelines = {VK_NULL_HANDLE, VK_NULL_HANDLE, VK_NULL_HANDLE};
+    std::vector<vk::DescriptorSet> compositeDescriptorSets;
 
     // Uniform buffers (per frame)
     BufferUtils::PerFrameBufferSet uniformBuffers;
@@ -318,10 +318,10 @@ private:
     bool froxelFilterHighQuality = true;  // Tricubic (true) vs trilinear (false)
 
     // Froxel volumetrics (Phase 4.3)
-    VkImageView froxelVolumeView = VK_NULL_HANDLE;
-    VkSampler froxelSampler = VK_NULL_HANDLE;
-    VkImageView bloomView = VK_NULL_HANDLE;
-    VkSampler bloomSampler = VK_NULL_HANDLE;
+    vk::ImageView froxelVolumeView = VK_NULL_HANDLE;
+    vk::Sampler froxelSampler = VK_NULL_HANDLE;
+    vk::ImageView bloomView = VK_NULL_HANDLE;
+    vk::Sampler bloomSampler = VK_NULL_HANDLE;
     bool froxelEnabled = false;
     bool hdrEnabled = true;  // HDR tonemapping enabled by default
     bool hdrPassEnabled = true;  // HDR pass enabled by default
@@ -333,13 +333,13 @@ private:
     int froxelDebugMode = 0;  // 0=Normal, 1=Depth slices, 2=Density, 3=Transmittance, 4=Grid cells
 
     // Local tone mapping (bilateral grid)
-    VkImageView bilateralGridView = VK_NULL_HANDLE;
-    VkSampler bilateralGridSampler = VK_NULL_HANDLE;
+    vk::ImageView bilateralGridView = VK_NULL_HANDLE;
+    vk::Sampler bilateralGridSampler = VK_NULL_HANDLE;
     bool localToneMapEnabled = false;  // Disabled by default
 
     // Quarter-resolution god rays (compute optimization)
-    VkImageView godRaysView_ = VK_NULL_HANDLE;
-    VkSampler godRaysSampler_ = VK_NULL_HANDLE;
+    vk::ImageView godRaysView_ = VK_NULL_HANDLE;
+    vk::Sampler godRaysSampler_ = VK_NULL_HANDLE;
     float localToneMapContrast = 0.5f; // 0=none, 0.5=typical, 1.0=flat
     float localToneMapDetail = 1.0f;   // 1.0=neutral, 1.5=punchy
     float bilateralBlend = 0.4f;       // GOT used 40% bilateral, 60% gaussian
@@ -374,15 +374,15 @@ private:
     BufferUtils::PerFrameBufferSet histogramParamsBuffers;  // Per-frame histogram params
 
     // Histogram compute pipelines
-    VkDescriptorSetLayout histogramBuildDescLayout = VK_NULL_HANDLE;
-    VkDescriptorSetLayout histogramReduceDescLayout = VK_NULL_HANDLE;
-    VkPipelineLayout histogramBuildPipelineLayout = VK_NULL_HANDLE;
-    VkPipelineLayout histogramReducePipelineLayout = VK_NULL_HANDLE;
-    VkPipeline histogramBuildPipeline = VK_NULL_HANDLE;
-    VkPipeline histogramReducePipeline = VK_NULL_HANDLE;
+    vk::DescriptorSetLayout histogramBuildDescLayout = VK_NULL_HANDLE;
+    vk::DescriptorSetLayout histogramReduceDescLayout = VK_NULL_HANDLE;
+    vk::PipelineLayout histogramBuildPipelineLayout = VK_NULL_HANDLE;
+    vk::PipelineLayout histogramReducePipelineLayout = VK_NULL_HANDLE;
+    vk::Pipeline histogramBuildPipeline = VK_NULL_HANDLE;
+    vk::Pipeline histogramReducePipeline = VK_NULL_HANDLE;
 
-    std::vector<VkDescriptorSet> histogramBuildDescSets;
-    std::vector<VkDescriptorSet> histogramReduceDescSets;
+    std::vector<vk::DescriptorSet> histogramBuildDescSets;
+    std::vector<vk::DescriptorSet> histogramReduceDescSets;
 
     float calculateAverageLuminance();
 };

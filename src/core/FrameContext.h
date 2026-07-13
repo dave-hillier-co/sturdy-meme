@@ -33,7 +33,7 @@ struct RenderResources;
  *
  * Usage:
  *   void MyPass::record(FrameContext& ctx) {
- *       vkCmdBindPipeline(ctx.cmd(), ...);  // Raw VkCommandBuffer
+ *       vkCmdBindPipeline(ctx.cmd(), ...);  // Raw vk::CommandBuffer
  *       ctx.commandBuffer.bindPipeline(...); // vulkan-hpp style
  *       // Access frame state via ctx.frame()
  *       auto& camera = ctx.frame();
@@ -50,8 +50,8 @@ struct FrameContext {
     /// vulkan-hpp type for compatibility with existing code
     vk::CommandBuffer commandBuffer;
 
-    /// Raw VkCommandBuffer accessor for C API calls
-    VkCommandBuffer cmd() const { return static_cast<VkCommandBuffer>(commandBuffer); }
+    /// Raw vk::CommandBuffer accessor for C API calls
+    vk::CommandBuffer cmd() const { return static_cast<vk::CommandBuffer>(commandBuffer); }
 
     /// Frame index for buffer selection (0 to MAX_FRAMES_IN_FLIGHT-1)
     uint32_t frameIndex = 0;
@@ -113,8 +113,8 @@ struct FrameContext {
     /// Default constructor (for delayed initialization)
     FrameContext() : frameData_(&defaultFrameData_) {}
 
-    /// Construct with required fields (VkCommandBuffer)
-    FrameContext(VkCommandBuffer cmdBuffer, uint32_t frame, const FrameData& data)
+    /// Construct with required fields (vk::CommandBuffer)
+    FrameContext(vk::CommandBuffer cmdBuffer, uint32_t frame, const FrameData& data)
         : commandBuffer(cmdBuffer)
         , frameIndex(frame)
         , frameData_(&data) {}
@@ -126,7 +126,7 @@ struct FrameContext {
         , frameData_(&data) {}
 
     /// Full constructor with all common fields
-    FrameContext(VkCommandBuffer cmdBuffer, uint32_t frame, uint32_t image,
+    FrameContext(vk::CommandBuffer cmdBuffer, uint32_t frame, uint32_t image,
                  float dt, float t, const FrameData& data,
                  const RenderResources* res = nullptr,
                  QueueSubmitDiagnostics* diag = nullptr)

@@ -33,7 +33,7 @@ class VulkanContext;
 class PassSchedulerBuilder {
 public:
     struct Callbacks {
-        std::function<void(VkCommandBuffer)>* guiRenderCallback = nullptr;
+        std::function<void(vk::CommandBuffer)>* guiRenderCallback = nullptr;
     };
 
     struct State {

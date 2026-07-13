@@ -136,17 +136,17 @@ public:
      * Returns false if any critical system fails to initialize
      */
     bool init(const InitContext& initCtx,
-              VkRenderPass swapchainRenderPass,
+              vk::RenderPass swapchainRenderPass,
               VkFormat swapchainImageFormat,
-              VkDescriptorSetLayout mainDescriptorSetLayout,
+              vk::DescriptorSetLayout mainDescriptorSetLayout,
               VkFormat depthFormat,
-              VkSampler depthSampler,
+              vk::Sampler depthSampler,
               const std::string& resourcePath);
 
     /**
      * Destroy all subsystems in reverse dependency order
      */
-    void destroy(VkDevice device, VmaAllocator allocator);
+    void destroy(vk::Device device, VmaAllocator allocator);
 
     /**
      * Get tier-1 core resources for dependent system initialization
@@ -444,7 +444,7 @@ public:
 #ifdef JPH_DEBUG_RENDERER
     PhysicsDebugRenderer* physicsDebugRenderer() { return registry_.find<PhysicsDebugRenderer>(); }
     const PhysicsDebugRenderer* physicsDebugRenderer() const { return registry_.find<PhysicsDebugRenderer>(); }
-    void createPhysicsDebugRenderer(const InitContext& ctx, VkRenderPass hdrRenderPass);
+    void createPhysicsDebugRenderer(const InitContext& ctx, vk::RenderPass hdrRenderPass);
 #endif
 
     // ========================================================================

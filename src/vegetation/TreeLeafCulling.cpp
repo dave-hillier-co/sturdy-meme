@@ -79,7 +79,7 @@ bool TreeLeafCulling::createLeafCullPipeline() {
            .addBinding(Bindings::TREE_LEAF_CULL_TREES, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_COMPUTE_BIT)
            .addBinding(Bindings::TREE_LEAF_CULL_PARAMS, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_COMPUTE_BIT);
 
-    VkDescriptorSetLayout rawLayout = builder.build();
+    vk::DescriptorSetLayout rawLayout = builder.build();
     if (rawLayout == VK_NULL_HANDLE) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "TreeLeafCulling: Failed to create cull descriptor set layout");
         return false;
@@ -101,7 +101,7 @@ bool TreeLeafCulling::createLeafCullPipeline() {
         SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "TreeLeafCulling: Cull shader not found: %s", shaderPath.c_str());
         return false;
     }
-    VkShaderModule computeShaderModule = shaderModuleOpt.value();
+    vk::ShaderModule computeShaderModule = shaderModuleOpt.value();
 
     auto shaderStageInfo = vk::PipelineShaderStageCreateInfo{}
         .setStage(vk::ShaderStageFlagBits::eCompute)
@@ -226,7 +226,7 @@ bool TreeLeafCulling::createCellCullPipeline() {
            .addBinding(Bindings::TREE_CELL_CULL_CULLING, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_COMPUTE_BIT)
            .addBinding(Bindings::TREE_CELL_CULL_PARAMS, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_COMPUTE_BIT);
 
-    VkDescriptorSetLayout rawLayout = builder.build();
+    vk::DescriptorSetLayout rawLayout = builder.build();
     if (rawLayout == VK_NULL_HANDLE) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "TreeLeafCulling: Failed to create cell cull descriptor set layout");
         return false;
@@ -248,7 +248,7 @@ bool TreeLeafCulling::createCellCullPipeline() {
         SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "TreeLeafCulling: Cell cull shader not found: %s", shaderPath.c_str());
         return false;
     }
-    VkShaderModule computeShaderModule = shaderModuleOpt.value();
+    vk::ShaderModule computeShaderModule = shaderModuleOpt.value();
 
     auto shaderStageInfo = vk::PipelineShaderStageCreateInfo{}
         .setStage(vk::ShaderStageFlagBits::eCompute)
@@ -360,7 +360,7 @@ bool TreeLeafCulling::createTreeFilterPipeline() {
            .addBinding(Bindings::TREE_FILTER_CULLING, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_COMPUTE_BIT)
            .addBinding(Bindings::TREE_FILTER_PARAMS, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_COMPUTE_BIT);
 
-    VkDescriptorSetLayout rawLayout = builder.build();
+    vk::DescriptorSetLayout rawLayout = builder.build();
     if (rawLayout == VK_NULL_HANDLE) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "TreeLeafCulling: Failed to create tree filter descriptor set layout");
         return false;
@@ -382,7 +382,7 @@ bool TreeLeafCulling::createTreeFilterPipeline() {
         SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "TreeLeafCulling: Tree filter shader not found: %s", shaderPath.c_str());
         return false;
     }
-    VkShaderModule computeShaderModule = shaderModuleOpt.value();
+    vk::ShaderModule computeShaderModule = shaderModuleOpt.value();
 
     auto shaderStageInfo = vk::PipelineShaderStageCreateInfo{}
         .setStage(vk::ShaderStageFlagBits::eCompute)
@@ -494,7 +494,7 @@ bool TreeLeafCulling::createTwoPhaseLeafCullPipeline() {
            .addBinding(Bindings::LEAF_CULL_P3_CULLING, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_COMPUTE_BIT)
            .addBinding(Bindings::LEAF_CULL_P3_PARAMS, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_COMPUTE_BIT);
 
-    VkDescriptorSetLayout rawLayout = builder.build();
+    vk::DescriptorSetLayout rawLayout = builder.build();
     if (rawLayout == VK_NULL_HANDLE) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "TreeLeafCulling: Failed to create two-phase leaf cull descriptor set layout");
         return false;
@@ -516,7 +516,7 @@ bool TreeLeafCulling::createTwoPhaseLeafCullPipeline() {
         SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "TreeLeafCulling: Two-phase leaf cull shader not found: %s", shaderPath.c_str());
         return false;
     }
-    VkShaderModule computeShaderModule = shaderModuleOpt.value();
+    vk::ShaderModule computeShaderModule = shaderModuleOpt.value();
 
     auto shaderStageInfo = vk::PipelineShaderStageCreateInfo{}
         .setStage(vk::ShaderStageFlagBits::eCompute)
@@ -700,7 +700,7 @@ void TreeLeafCulling::updateCullDescriptorSets(const TreeSystem& treeSystem) {
     descriptorSetsInitialized_ = true;
 }
 
-void TreeLeafCulling::recordCulling(VkCommandBuffer cmd, uint32_t frameIndex,
+void TreeLeafCulling::recordCulling(vk::CommandBuffer cmd, uint32_t frameIndex,
                                      const TreeSystem& treeSystem,
                                      const TreeLODSystem* lodSystem,
                                      const glm::vec3& cameraPos,
@@ -1034,7 +1034,7 @@ void TreeLeafCulling::recordCulling(VkCommandBuffer cmd, uint32_t frameIndex,
                 // buffer changed (per-frame dirty bit) or the external leaf instance
                 // buffer was reallocated - and only THIS frame's set, since the other
                 // frames' sets may still be bound in executing command buffers.
-                VkBuffer leafInstanceBuffer = treeSystem.getLeafInstanceBuffer();
+                vk::Buffer leafInstanceBuffer = treeSystem.getLeafInstanceBuffer();
                 if (leafInstanceBuffer != lastLeafInstanceBuffer_) {
                     twoPhaseLeafCullDescriptorsDirtyMask_ = ~0u;
                     lastLeafInstanceBuffer_ = leafInstanceBuffer;

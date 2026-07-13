@@ -86,29 +86,29 @@ public:
     uint32_t getTransferQueueFamily() const;
     bool hasDedicatedTransferQueue() const { return hasDedicatedTransfer_; }
     VmaAllocator getAllocator() const { return allocator; }
-    VkPipelineCache getPipelineCache() const { return pipelineCache.getCache(); }
+    vk::PipelineCache getPipelineCache() const { return pipelineCache.getCache(); }
     SDL_Window* getWindow() const { return window; }
 
-    const std::vector<VkImageView>& getSwapchainImageViews() const { return swapchainImageViews; }
+    const std::vector<vk::ImageView>& getSwapchainImageViews() const { return swapchainImageViews; }
     uint32_t getSwapchainImageCount() const { return static_cast<uint32_t>(swapchainImages.size()); }
     uint32_t getWidth() const { return swapchainExtent.width; }
     uint32_t getHeight() const { return swapchainExtent.height; }
 
     // Swapchain-dependent resource getters
-    VkRenderPass getRenderPass() const { return renderPass_ ? **renderPass_ : VK_NULL_HANDLE; }
+    vk::RenderPass getRenderPass() const { return renderPass_ ? **renderPass_ : VK_NULL_HANDLE; }
     const vk::raii::RenderPass& getRaiiRenderPass() const { return *renderPass_; }
-    VkImageView getDepthImageView() const { return depthImageView_ ? **depthImageView_ : VK_NULL_HANDLE; }
-    VkSampler getDepthSampler() const { return depthSampler_ ? **depthSampler_ : VK_NULL_HANDLE; }
+    vk::ImageView getDepthImageView() const { return depthImageView_ ? **depthImageView_ : VK_NULL_HANDLE; }
+    vk::Sampler getDepthSampler() const { return depthSampler_ ? **depthSampler_ : VK_NULL_HANDLE; }
     VkFormat getDepthFormat() const { return depthFormat_; }
     const std::vector<vk::raii::Framebuffer>& getFramebuffers() const { return framebuffers_; }
     std::vector<vk::raii::Framebuffer>& getFramebuffers() { return framebuffers_; }
     uint32_t getFramebufferCount() const { return static_cast<uint32_t>(framebuffers_.size()); }
 
     // Command pool/buffer getters
-    VkCommandPool getCommandPool() const { return commandPool_ ? **commandPool_ : VK_NULL_HANDLE; }
+    vk::CommandPool getCommandPool() const { return commandPool_ ? **commandPool_ : VK_NULL_HANDLE; }
     const vk::raii::CommandPool& getRaiiCommandPool() const { return *commandPool_; }
-    const std::vector<VkCommandBuffer>& getCommandBuffers() const { return commandBuffers_; }
-    VkCommandBuffer getCommandBuffer(uint32_t frameIndex) const {
+    const std::vector<vk::CommandBuffer>& getCommandBuffers() const { return commandBuffers_; }
+    vk::CommandBuffer getCommandBuffer(uint32_t frameIndex) const {
         return frameIndex < commandBuffers_.size() ? commandBuffers_[frameIndex] : VK_NULL_HANDLE;
     }
 
@@ -157,13 +157,13 @@ private:
     vkb::PhysicalDevice vkbPhysicalDevice;
     vkb::Device vkbDevice;
 
-    VkInstance instance = VK_NULL_HANDLE;
-    VkSurfaceKHR surface = VK_NULL_HANDLE;
-    VkPhysicalDevice physicalDevice = VK_NULL_HANDLE;
-    VkDevice device = VK_NULL_HANDLE;
-    VkQueue graphicsQueue = VK_NULL_HANDLE;
-    VkQueue presentQueue = VK_NULL_HANDLE;
-    VkQueue transferQueue_ = VK_NULL_HANDLE;
+    vk::Instance instance = VK_NULL_HANDLE;
+    vk::SurfaceKHR surface = VK_NULL_HANDLE;
+    vk::PhysicalDevice physicalDevice = VK_NULL_HANDLE;
+    vk::Device device = VK_NULL_HANDLE;
+    vk::Queue graphicsQueue = VK_NULL_HANDLE;
+    vk::Queue presentQueue = VK_NULL_HANDLE;
+    vk::Queue transferQueue_ = VK_NULL_HANDLE;
     uint32_t transferQueueFamily_ = 0;
     bool hasDedicatedTransfer_ = false;
     bool hasTimelineSemaphores_ = false;
@@ -176,9 +176,9 @@ private:
 
     PipelineCache pipelineCache;
 
-    VkSwapchainKHR swapchain = VK_NULL_HANDLE;
-    std::vector<VkImage> swapchainImages;
-    std::vector<VkImageView> swapchainImageViews;
+    vk::SwapchainKHR swapchain = VK_NULL_HANDLE;
+    std::vector<vk::Image> swapchainImages;
+    std::vector<vk::ImageView> swapchainImageViews;
     VkFormat swapchainImageFormat = VK_FORMAT_UNDEFINED;
     VkExtent2D swapchainExtent = {0, 0};
 
@@ -198,5 +198,5 @@ private:
 
     // Command pool and buffers
     std::optional<vk::raii::CommandPool> commandPool_;
-    std::vector<VkCommandBuffer> commandBuffers_;
+    std::vector<vk::CommandBuffer> commandBuffers_;
 };

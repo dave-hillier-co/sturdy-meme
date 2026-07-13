@@ -119,8 +119,8 @@ bool TerrainDescriptorSets::allocateSets() {
 void TerrainDescriptorSets::writeInitialComputeBindings(TerrainCBT* cbt, TerrainBuffers* buffers,
                                                          TerrainTileCache* tileCache) {
     for (uint32_t i = 0; i < framesInFlight_; i++) {
-        VkImageView tileArrayView = VK_NULL_HANDLE;
-        VkSampler tileSampler = VK_NULL_HANDLE;
+        vk::ImageView tileArrayView = VK_NULL_HANDLE;
+        vk::Sampler tileSampler = VK_NULL_HANDLE;
         if (tileCache) {
             tileArrayView = tileCache->getTileArrayView();
             tileSampler = tileCache->getSampler();
@@ -224,7 +224,7 @@ void TerrainDescriptorSets::updateRenderBindings(TerrainCBT* cbt,
                              VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
         }
 
-        constexpr VkDeviceSize causticsUBOSize = 32;
+        constexpr vk::DeviceSize causticsUBOSize = 32;
         writer.writeBuffer(22, buffers->getCausticsUniformBuffer(i), 0, causticsUBOSize);
 
         // Virtual texture bindings (feedback buffers are per frame in flight)
@@ -243,10 +243,10 @@ void TerrainDescriptorSets::updateRenderBindings(TerrainCBT* cbt,
                               sizeof(VirtualTexture::VTParamsUBO));
         }
 
-        constexpr VkDeviceSize liquidUBOSize = 128;
+        constexpr vk::DeviceSize liquidUBOSize = 128;
         writer.writeBuffer(29, buffers->getLiquidUniformBuffer(i), 0, liquidUBOSize);
 
-        constexpr VkDeviceSize materialLayerUBOSize = 336;
+        constexpr vk::DeviceSize materialLayerUBOSize = 336;
         writer.writeBuffer(30, buffers->getMaterialLayerUniformBuffer(i), 0, materialLayerUBOSize);
 
         if (screenShadowView_) {

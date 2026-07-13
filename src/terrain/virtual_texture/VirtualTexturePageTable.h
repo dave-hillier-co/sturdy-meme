@@ -27,10 +27,10 @@ public:
 
     struct InitInfo {
         const vk::raii::Device* raiiDevice = nullptr;
-        VkDevice device = VK_NULL_HANDLE;
+        vk::Device device = VK_NULL_HANDLE;
         VmaAllocator allocator = VK_NULL_HANDLE;
-        VkCommandPool commandPool = VK_NULL_HANDLE;
-        VkQueue queue = VK_NULL_HANDLE;
+        vk::CommandPool commandPool = VK_NULL_HANDLE;
+        vk::Queue queue = VK_NULL_HANDLE;
         VirtualTextureConfig config;
         uint32_t framesInFlight = 3;
     };
@@ -66,16 +66,16 @@ public:
      * @param cmd Command buffer to record into (must be in recording state)
      * @param frameIndex Current frame index for staging buffer selection
      */
-    void recordUpload(VkCommandBuffer cmd, uint32_t frameIndex);
+    void recordUpload(vk::CommandBuffer cmd, uint32_t frameIndex);
 
     // Check if any entries have changed
     bool isDirty() const { return dirty; }
 
     // Get the sampler for the page table
-    VkSampler getSampler() const { return pageTableSampler_ ? **pageTableSampler_ : VK_NULL_HANDLE; }
+    vk::Sampler getSampler() const { return pageTableSampler_ ? **pageTableSampler_ : VK_NULL_HANDLE; }
 
     // Get the combined image view (texture array, one layer per mip level)
-    VkImageView getCombinedImageView() const { return pageTableImage_.getView(); }
+    vk::ImageView getCombinedImageView() const { return pageTableImage_.getView(); }
 
 
 private:
@@ -83,17 +83,17 @@ private:
     void cleanup();
 
     // Create page table textures
-    bool createPageTableTextures(VkDevice device, VmaAllocator allocator,
-                                  VkCommandPool commandPool, VkQueue queue);
+    bool createPageTableTextures(vk::Device device, VmaAllocator allocator,
+                                  vk::CommandPool commandPool, vk::Queue queue);
 
     // Create sampler
-    bool createSampler(VkDevice device);
+    bool createSampler(vk::Device device);
 
     // Get linear index into cpuData for a tile
     size_t getEntryIndex(TileId id) const;
 
     VirtualTextureConfig config;
-    VkDevice device_ = VK_NULL_HANDLE;
+    vk::Device device_ = VK_NULL_HANDLE;
     VmaAllocator allocator_ = VK_NULL_HANDLE;
     const vk::raii::Device* raiiDevice_ = nullptr;
 

@@ -18,34 +18,34 @@ struct QueueSubmitDiagnostics;
  */
 struct RenderResources {
     // HDR render target (from PostProcessSystem)
-    VkRenderPass hdrRenderPass = VK_NULL_HANDLE;
-    VkFramebuffer hdrFramebuffer = VK_NULL_HANDLE;
+    vk::RenderPass hdrRenderPass = VK_NULL_HANDLE;
+    vk::Framebuffer hdrFramebuffer = VK_NULL_HANDLE;
     VkExtent2D hdrExtent = {0, 0};
-    VkImageView hdrColorView = VK_NULL_HANDLE;
-    VkImageView hdrDepthView = VK_NULL_HANDLE;
+    vk::ImageView hdrColorView = VK_NULL_HANDLE;
+    vk::ImageView hdrDepthView = VK_NULL_HANDLE;
 
     // Shadow resources (from ShadowSystem)
-    VkRenderPass shadowRenderPass = VK_NULL_HANDLE;
-    VkImageView shadowMapView = VK_NULL_HANDLE;
-    VkSampler shadowSampler = VK_NULL_HANDLE;
+    vk::RenderPass shadowRenderPass = VK_NULL_HANDLE;
+    vk::ImageView shadowMapView = VK_NULL_HANDLE;
+    vk::Sampler shadowSampler = VK_NULL_HANDLE;
     std::array<glm::mat4, 4> cascadeMatrices = {};
     glm::vec4 cascadeSplitDepths = glm::vec4(0.0f);
-    VkPipeline shadowPipeline = VK_NULL_HANDLE;
-    VkPipelineLayout shadowPipelineLayout = VK_NULL_HANDLE;
+    vk::Pipeline shadowPipeline = VK_NULL_HANDLE;
+    vk::PipelineLayout shadowPipelineLayout = VK_NULL_HANDLE;
 
     // Bloom output (from BloomSystem)
-    VkImageView bloomOutput = VK_NULL_HANDLE;
-    VkSampler bloomSampler = VK_NULL_HANDLE;
+    vk::ImageView bloomOutput = VK_NULL_HANDLE;
+    vk::Sampler bloomSampler = VK_NULL_HANDLE;
 
     // Swapchain target (for final output)
-    VkRenderPass swapchainRenderPass = VK_NULL_HANDLE;
-    VkFramebuffer swapchainFramebuffer = VK_NULL_HANDLE;
+    vk::RenderPass swapchainRenderPass = VK_NULL_HANDLE;
+    vk::Framebuffer swapchainFramebuffer = VK_NULL_HANDLE;
     VkExtent2D swapchainExtent = {0, 0};
 
     // Main scene pipeline (from Renderer)
-    VkPipeline graphicsPipeline = VK_NULL_HANDLE;
-    VkPipelineLayout pipelineLayout = VK_NULL_HANDLE;
-    VkDescriptorSetLayout descriptorSetLayout = VK_NULL_HANDLE;
+    vk::Pipeline graphicsPipeline = VK_NULL_HANDLE;
+    vk::PipelineLayout pipelineLayout = VK_NULL_HANDLE;
+    vk::DescriptorSetLayout descriptorSetLayout = VK_NULL_HANDLE;
 };
 
 /**
@@ -58,14 +58,14 @@ struct RenderResources {
  * which provides a more flexible interface with optional resources.
  */
 struct RenderContext {
-    VkCommandBuffer cmd = VK_NULL_HANDLE;
+    vk::CommandBuffer cmd = VK_NULL_HANDLE;
     uint32_t frameIndex = 0;
     const FrameData& frame;
     const RenderResources& resources;
     QueueSubmitDiagnostics* diagnostics = nullptr;  // Optional command counting
 
     // Constructor to ensure references are always valid
-    RenderContext(VkCommandBuffer cmdBuffer, uint32_t frameIdx,
+    RenderContext(vk::CommandBuffer cmdBuffer, uint32_t frameIdx,
                   const FrameData& frameData, const RenderResources& res,
                   QueueSubmitDiagnostics* diag = nullptr)
         : cmd(cmdBuffer)

@@ -26,7 +26,7 @@ public:
     explicit GodRaysSystem(ConstructToken) {}
 
     struct InitInfo {
-        VkDevice device;
+        vk::Device device;
         VmaAllocator allocator;
         DescriptorManager::Pool* descriptorPool;
         VkExtent2D extent;
@@ -52,17 +52,17 @@ public:
      * @param hdrView HDR input image view
      * @param depthView Depth buffer image view
      */
-    void recordGodRaysPass(VkCommandBuffer cmd, VkImageView hdrView, VkImageView depthView);
+    void recordGodRaysPass(vk::CommandBuffer cmd, vk::ImageView hdrView, vk::ImageView depthView);
 
     /**
      * Clear the output image and move it to SHADER_READ_ONLY_OPTIMAL if it has
      * never been written. The post-process composite statically binds this image,
      * so it must be valid even while the god rays pass itself is skipped/disabled.
      */
-    void recordInitialClearIfNeeded(VkCommandBuffer cmd);
+    void recordInitialClearIfNeeded(vk::CommandBuffer cmd);
 
-    VkImageView getGodRaysOutput() const { return outputImageView_ ? **outputImageView_ : VK_NULL_HANDLE; }
-    VkSampler getSampler() const { return sampler_ ? **sampler_ : VK_NULL_HANDLE; }
+    vk::ImageView getGodRaysOutput() const { return outputImageView_ ? **outputImageView_ : VK_NULL_HANDLE; }
+    vk::Sampler getSampler() const { return sampler_ ? **sampler_ : VK_NULL_HANDLE; }
 
     // Parameters
     void setSunScreenPos(glm::vec2 pos) { sunScreenPos_ = pos; }
@@ -84,7 +84,7 @@ private:
     bool createDescriptorSets();
     void destroyResources();
 
-    VkDevice device_ = VK_NULL_HANDLE;
+    vk::Device device_ = VK_NULL_HANDLE;
     VmaAllocator allocator_ = VK_NULL_HANDLE;
     DescriptorManager::Pool* descriptorPool_ = nullptr;
     VkExtent2D extent_ = {0, 0};
@@ -101,14 +101,14 @@ private:
     std::optional<vk::raii::DescriptorSetLayout> descSetLayout_;
     std::optional<vk::raii::PipelineLayout> pipelineLayout_;
     std::optional<vk::raii::Pipeline> pipeline_;
-    VkDescriptorSet descSet_ = VK_NULL_HANDLE;
+    vk::DescriptorSet descSet_ = VK_NULL_HANDLE;
 
     // Views the descriptor set was last written with. The set must not be
     // rewritten every frame - in-flight frames still execute with it bound
     // (see recordGodRaysPass).
-    VkImageView writtenHdrView_ = VK_NULL_HANDLE;
-    VkImageView writtenDepthView_ = VK_NULL_HANDLE;
-    VkImageView writtenOutputView_ = VK_NULL_HANDLE;
+    vk::ImageView writtenHdrView_ = VK_NULL_HANDLE;
+    vk::ImageView writtenDepthView_ = VK_NULL_HANDLE;
+    vk::ImageView writtenOutputView_ = VK_NULL_HANDLE;
 
     // Parameters
     glm::vec2 sunScreenPos_ = glm::vec2(0.5f, 0.5f);

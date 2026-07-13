@@ -30,9 +30,9 @@ public:
 
     struct InitInfo {
         VmaAllocator allocator;
-        VkDevice device;
-        VkCommandPool commandPool;
-        VkQueue graphicsQueue;
+        vk::Device device;
+        vk::CommandPool commandPool;
+        vk::Queue graphicsQueue;
         std::string resourcePath;
         HeightQueryFunc getTerrainHeight;  // Query terrain height for placement
         glm::vec2 sceneOrigin = glm::vec2(0.0f);  // World XZ offset for scene objects
@@ -142,9 +142,9 @@ private:
 
     // Stored initialization data
     VmaAllocator allocator_ = VK_NULL_HANDLE;
-    VkDevice device_ = VK_NULL_HANDLE;
-    VkCommandPool commandPool_ = VK_NULL_HANDLE;
-    VkQueue graphicsQueue_ = VK_NULL_HANDLE;
+    vk::Device device_ = VK_NULL_HANDLE;
+    vk::CommandPool commandPool_ = VK_NULL_HANDLE;
+    vk::Queue graphicsQueue_ = VK_NULL_HANDLE;
     std::string resourcePath_;
     HeightQueryFunc terrainHeightFunc_;
     glm::vec2 sceneOrigin_ = glm::vec2(0.0f);

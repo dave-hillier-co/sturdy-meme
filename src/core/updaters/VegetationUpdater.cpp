@@ -91,9 +91,9 @@ void VegetationUpdater::updateTreeDescriptors(RendererSystems& systems, const Fr
     systems.profiler().beginCpuZone("Update:TreeDesc");
 
     // Use wind UBO from context instead of querying each time
-    VkBuffer windBuffer = static_cast<VkBuffer>(ctx.windUBO);
-    VkImageView shadowView = static_cast<VkImageView>(ctx.shadowMapView);
-    VkSampler shadowSampler = static_cast<VkSampler>(ctx.shadowMapSampler);
+    vk::Buffer windBuffer = static_cast<vk::Buffer>(ctx.windUBO);
+    vk::ImageView shadowView = static_cast<vk::ImageView>(ctx.shadowMapView);
+    vk::Sampler shadowSampler = static_cast<vk::Sampler>(ctx.shadowMapSampler);
 
     // Update descriptor sets for each bark texture type
     for (const auto& barkType : systems.tree()->getBarkTextureTypes()) {

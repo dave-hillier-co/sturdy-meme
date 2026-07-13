@@ -70,18 +70,18 @@ public:
  */
 struct GPUUploadContext {
     VmaAllocator allocator;
-    VkDevice device;
-    VkCommandPool commandPool;
-    VkQueue queue;
-    VkPhysicalDevice physicalDevice;
+    vk::Device device;
+    vk::CommandPool commandPool;
+    vk::Queue queue;
+    vk::PhysicalDevice physicalDevice;
 };
 
 /**
  * Result of a GPU texture upload
  */
 struct UploadedTexture {
-    VkImage image = VK_NULL_HANDLE;
-    VkImageView view = VK_NULL_HANDLE;
+    vk::Image image = VK_NULL_HANDLE;
+    vk::ImageView view = VK_NULL_HANDLE;
     VmaAllocation allocation = VK_NULL_HANDLE;
     uint32_t width = 0;
     uint32_t height = 0;
@@ -99,14 +99,14 @@ public:
 
     /**
      * Upload a staged texture to GPU
-     * Creates VkImage, VkImageView, handles staging buffer and transitions
+     * Creates vk::Image, vk::ImageView, handles staging buffer and transitions
      */
     UploadedTexture uploadTexture(const StagedTexture& staged);
 
     /**
-     * Upload a staged buffer to GPU (returns VkBuffer)
+     * Upload a staged buffer to GPU (returns vk::Buffer)
      */
-    VkBuffer uploadBuffer(const StagedBuffer& staged, VkBufferUsageFlags usage);
+    vk::Buffer uploadBuffer(const StagedBuffer& staged, VkBufferUsageFlags usage);
 
 private:
     GPUUploadContext ctx_;
@@ -126,8 +126,8 @@ struct AsyncTextureHandle {
  * Returned when isComplete() returns true.
  */
 struct AsyncUploadedTexture {
-    VkImage image = VK_NULL_HANDLE;
-    VkImageView view = VK_NULL_HANDLE;
+    vk::Image image = VK_NULL_HANDLE;
+    vk::ImageView view = VK_NULL_HANDLE;
     VmaAllocation allocation = VK_NULL_HANDLE;
     uint32_t width = 0;
     uint32_t height = 0;
@@ -158,7 +158,7 @@ public:
     /**
      * Initialize the uploader with GPU resources
      */
-    bool initialize(VkDevice device, VmaAllocator allocator, AsyncTransferManager* transferManager);
+    bool initialize(vk::Device device, VmaAllocator allocator, AsyncTransferManager* transferManager);
 
     /**
      * Submit a staged texture for async GPU upload.
@@ -200,13 +200,13 @@ private:
         uint64_t id;
         TransferHandle transferHandle;
         ManagedImage image;
-        VkImageView view = VK_NULL_HANDLE;
+        vk::ImageView view = VK_NULL_HANDLE;
         uint32_t width = 0;
         uint32_t height = 0;
         std::string name;
     };
 
-    VkDevice device_ = VK_NULL_HANDLE;
+    vk::Device device_ = VK_NULL_HANDLE;
     VmaAllocator allocator_ = VK_NULL_HANDLE;
     AsyncTransferManager* transferManager_ = nullptr;
 

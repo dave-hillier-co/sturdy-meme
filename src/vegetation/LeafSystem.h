@@ -94,10 +94,10 @@ public:
                         float terrainSize, float terrainHeightScale);
 
     // Record compute dispatch for particle simulation
-    void recordResetAndCompute(VkCommandBuffer cmd, uint32_t frameIndex, float time, float deltaTime);
+    void recordResetAndCompute(vk::CommandBuffer cmd, uint32_t frameIndex, float time, float deltaTime);
 
     // Record draw commands for leaves (implements IRecordableAnimated)
-    void recordDraw(VkCommandBuffer cmd, uint32_t frameIndex, float time) override;
+    void recordDraw(vk::CommandBuffer cmd, uint32_t frameIndex, float time) override;
 
     // Double-buffer management
     void advanceBufferSet();
@@ -131,9 +131,9 @@ private:
     void destroyBuffers(VmaAllocator allocator);
 
     // Accessors - use stored initInfo during init, particleSystem after init completes
-    VkDevice getDevice() const { return storedDevice; }
+    vk::Device getDevice() const { return storedDevice; }
     VmaAllocator getAllocator() const { return storedAllocator; }
-    VkRenderPass getRenderPass() const { return storedRenderPass; }
+    vk::RenderPass getRenderPass() const { return storedRenderPass; }
     DescriptorManager::Pool* getDescriptorPool() const { return storedDescriptorPool; }
     const VkExtent2D& getExtent() const { return particleSystem ? particleSystem->getExtent() : storedExtent; }
     const std::string& getShaderPath() const { return storedShaderPath; }
@@ -145,9 +145,9 @@ private:
     std::unique_ptr<ParticleSystem> particleSystem;
 
     // Stored init info (available during initialization before particleSystem is created)
-    VkDevice storedDevice = VK_NULL_HANDLE;
+    vk::Device storedDevice = VK_NULL_HANDLE;
     VmaAllocator storedAllocator = VK_NULL_HANDLE;
-    VkRenderPass storedRenderPass = VK_NULL_HANDLE;
+    vk::RenderPass storedRenderPass = VK_NULL_HANDLE;
     DescriptorManager::Pool* storedDescriptorPool = nullptr;
     VkExtent2D storedExtent = {0, 0};
     std::string storedShaderPath;
@@ -179,14 +179,14 @@ private:
     float confettiConeAngle = 0.5f;
 
     // Displacement texture (shared from GrassSystem)
-    VkImageView displacementMapView = VK_NULL_HANDLE;
-    VkSampler displacementMapSampler = VK_NULL_HANDLE;
+    vk::ImageView displacementMapView = VK_NULL_HANDLE;
+    vk::Sampler displacementMapSampler = VK_NULL_HANDLE;
 
     // Tile cache resources for high-res terrain sampling
-    TripleBuffered<VkBuffer> tileInfoBuffers_;  // Triple-buffered for frames-in-flight sync
+    TripleBuffered<vk::Buffer> tileInfoBuffers_;  // Triple-buffered for frames-in-flight sync
 
     // Renderer uniform buffers for per-frame descriptor updates
-    std::vector<VkBuffer> rendererUniformBuffers_;
+    std::vector<vk::Buffer> rendererUniformBuffers_;
 
     // Dynamic renderer UBO - used with VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC
     // to avoid per-frame descriptor set updates

@@ -69,10 +69,10 @@ void LeafSystem::destroyBuffers(VmaAllocator alloc) {
 }
 
 bool LeafSystem::createBuffers() {
-    VkDeviceSize particleBufferSize = sizeof(LeafParticle) * MAX_PARTICLES;
-    VkDeviceSize indirectBufferSize = sizeof(VkDrawIndirectCommand);
-    VkDeviceSize cullingUniformSize = sizeof(CullingUniforms);
-    VkDeviceSize leafPhysicsParamsSize = sizeof(LeafPhysicsParams);
+    vk::DeviceSize particleBufferSize = sizeof(LeafParticle) * MAX_PARTICLES;
+    vk::DeviceSize indirectBufferSize = sizeof(VkDrawIndirectCommand);
+    vk::DeviceSize cullingUniformSize = sizeof(CullingUniforms);
+    vk::DeviceSize leafPhysicsParamsSize = sizeof(LeafPhysicsParams);
 
     // Use framesInFlight for buffer set count to ensure proper triple buffering
     uint32_t bufferSetCount = getFramesInFlight();
@@ -377,19 +377,19 @@ void LeafSystem::updateDescriptorSets(vk::Device dev, const std::vector<vk::Buff
                                        const std::array<vk::Buffer, 3>& tileInfoBuffersParam,
                                        const BufferUtils::DynamicUniformBuffer* dynamicRendererUBO) {
     // Store displacement texture references
-    this->displacementMapView = static_cast<VkImageView>(displacementMapViewParam);
-    this->displacementMapSampler = static_cast<VkSampler>(displacementMapSamplerParam);
+    this->displacementMapView = static_cast<vk::ImageView>(displacementMapViewParam);
+    this->displacementMapSampler = static_cast<vk::Sampler>(displacementMapSamplerParam);
 
     // Store tile info buffers (triple-buffered for frames-in-flight sync)
     tileInfoBuffers_.resize(tileInfoBuffersParam.size());
     for (size_t i = 0; i < tileInfoBuffersParam.size(); ++i) {
-        tileInfoBuffers_[i] = static_cast<VkBuffer>(tileInfoBuffersParam[i]);
+        tileInfoBuffers_[i] = static_cast<vk::Buffer>(tileInfoBuffersParam[i]);
     }
 
     // Store renderer uniform buffers (kept for backward compatibility)
     this->rendererUniformBuffers_.resize(rendererUniformBuffers.size());
     for (size_t i = 0; i < rendererUniformBuffers.size(); ++i) {
-        rendererUniformBuffers_[i] = static_cast<VkBuffer>(rendererUniformBuffers[i]);
+        rendererUniformBuffers_[i] = static_cast<vk::Buffer>(rendererUniformBuffers[i]);
     }
 
     // Store dynamic renderer UBO reference for per-frame binding with dynamic offsets
@@ -508,7 +508,7 @@ void LeafSystem::updateUniforms(uint32_t frameIndex, const glm::vec3& cameraPos,
     confettiToSpawn = 0.0f;
 }
 
-void LeafSystem::recordResetAndCompute(VkCommandBuffer cmd, uint32_t frameIndex, float time, float deltaTime) {
+void LeafSystem::recordResetAndCompute(vk::CommandBuffer cmd, uint32_t frameIndex, float time, float deltaTime) {
     uint32_t writeSet = particleSystem->getComputeBufferSet();
 
     // Update compute descriptor set to use this frame's uniform, displacement region, params, and tile info buffers
@@ -543,7 +543,7 @@ void LeafSystem::recordResetAndCompute(VkCommandBuffer cmd, uint32_t frameIndex,
 
     // Dispatch leaf compute shader
     vkCmd.bindPipeline(vk::PipelineBindPoint::eCompute, getComputePipelineHandles().pipeline);
-    VkDescriptorSet computeSet = particleSystem->getComputeDescriptorSet(writeSet);
+    vk::DescriptorSet computeSet = particleSystem->getComputeDescriptorSet(writeSet);
     vkCmd.bindDescriptorSets(vk::PipelineBindPoint::eCompute,
                              getComputePipelineHandles().pipelineLayout, 0, vk::DescriptorSet(computeSet), {});
 
@@ -561,7 +561,7 @@ void LeafSystem::recordResetAndCompute(VkCommandBuffer cmd, uint32_t frameIndex,
     BarrierHelpers::computeToIndirectDrawAndVertex(vkCmd);
 }
 
-void LeafSystem::recordDraw(VkCommandBuffer cmd, uint32_t frameIndex, float time) {
+void LeafSystem::recordDraw(vk::CommandBuffer cmd, uint32_t frameIndex, float time) {
     // Double-buffer: graphics reads from renderBufferSet (previous frame's compute output)
     uint32_t readSet = particleSystem->getRenderBufferSet();
 
@@ -587,7 +587,7 @@ void LeafSystem::recordDraw(VkCommandBuffer cmd, uint32_t frameIndex, float time
         .setExtent(vk::Extent2D{ext.width, ext.height});
     vkCmd.setScissor(0, scissor);
 
-    VkDescriptorSet graphicsSet = particleSystem->getGraphicsDescriptorSet(readSet);
+    vk::DescriptorSet graphicsSet = particleSystem->getGraphicsDescriptorSet(readSet);
 
     // Use dynamic offset for binding 0 (renderer UBO) if dynamic buffer is available
     if (dynamicRendererUBO_ && dynamicRendererUBO_->isValid()) {

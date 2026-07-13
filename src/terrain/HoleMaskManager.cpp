@@ -106,7 +106,7 @@ void HoleMaskManager::uploadTileHoleMask(const TerrainTile& tile, int32_t layerI
 
     std::vector<uint8_t> holeMaskData = generateTileHoleMask(tile);
 
-    VkDeviceSize imageSize = holeMaskData.size() * sizeof(uint8_t);
+    vk::DeviceSize imageSize = holeMaskData.size() * sizeof(uint8_t);
     ManagedBuffer stagingBuffer;
     if (!VmaBufferFactory::createStagingBuffer(allocator_, imageSize, stagingBuffer)) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "HoleMaskManager: Failed to create staging buffer for hole mask");

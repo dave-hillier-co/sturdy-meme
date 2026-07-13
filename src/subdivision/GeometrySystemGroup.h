@@ -64,8 +64,8 @@ struct GeometrySystemGroup {
      */
     struct CreateDeps {
         const InitContext& ctx;
-        VkRenderPass hdrRenderPass;
-        const std::vector<VkBuffer>& uniformBuffers;  // For descriptor updates
+        vk::RenderPass hdrRenderPass;
+        const std::vector<vk::Buffer>& uniformBuffers;  // For descriptor updates
         std::string resourcePath;                      // For loading assets (e.g., suzanne.obj)
         HeightFunc getTerrainHeight;                   // For placing objects on terrain
         CatmullClarkConfig catmullClarkConfig = {};    // Optional config override

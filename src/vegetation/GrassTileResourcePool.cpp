@@ -117,7 +117,7 @@ void GrassTileResourcePool::updateTileDescriptorSets(const TileCoord& coord) {
         DescriptorManager::SetWriter writer(device_, descSet);
 
         // Binding 0: Shared instance buffer
-        constexpr VkDeviceSize instanceSize = 48;
+        constexpr vk::DeviceSize instanceSize = 48;
         if (sharedInstanceBuffer_) {
             writer.writeBuffer(0, sharedInstanceBuffer_, 0,
                                instanceSize * GrassConstants::MAX_INSTANCES,
@@ -175,7 +175,7 @@ void GrassTileResourcePool::writePerFrameBindings(const TileCoord& coord, uint32
 
     // Update per-frame bindings
     // Binding 0: Shared instance buffer (may have changed due to buffer set rotation)
-    constexpr VkDeviceSize instanceSize = 48;
+    constexpr vk::DeviceSize instanceSize = 48;
     if (sharedInstanceBuffer_) {
         writer.writeBuffer(0, sharedInstanceBuffer_, 0,
                            instanceSize * GrassConstants::MAX_INSTANCES,

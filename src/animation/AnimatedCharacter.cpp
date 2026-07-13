@@ -238,8 +238,8 @@ const AnimationClip* AnimatedCharacter::getCurrentAnimation() const {
     return nullptr;
 }
 
-void AnimatedCharacter::update(float deltaTime, VmaAllocator allocator, VkDevice device,
-                                VkCommandPool commandPool, VkQueue queue,
+void AnimatedCharacter::update(float deltaTime, VmaAllocator allocator, vk::Device device,
+                                vk::CommandPool commandPool, vk::Queue queue,
                                 float movementSpeed, bool isGrounded, bool isJumping,
                                 const glm::mat4& worldTransform) {
     if (!loaded) return;

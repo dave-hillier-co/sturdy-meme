@@ -117,7 +117,7 @@ public:
         get_deleter().mapped = false;
     }
 
-    void releaseToRaw(VkBuffer& outBuffer, VmaAllocation& outAllocation) {
+    void releaseToRaw(vk::Buffer& outBuffer, VmaAllocation& outAllocation) {
         outBuffer = get();
         outAllocation = get_deleter().allocation;
         release();

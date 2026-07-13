@@ -14,7 +14,7 @@ struct PerformanceToggles;
 namespace PostPasses {
 
 struct Config {
-    std::function<void(VkCommandBuffer)>* guiRenderCallback = nullptr;
+    std::function<void(vk::CommandBuffer)>* guiRenderCallback = nullptr;
     std::vector<vk::raii::Framebuffer>* framebuffers = nullptr;
     PerformanceToggles* perfToggles = nullptr;
 };

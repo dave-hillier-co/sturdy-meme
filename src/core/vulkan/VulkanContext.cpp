@@ -473,7 +473,7 @@ void VulkanContext::clearSwapchainImages() {
         try {
             cmd.begin(vk::CommandBufferBeginInfo{}.setFlags(vk::CommandBufferUsageFlagBits::eOneTimeSubmit));
 
-            VkImage image = swapchainImages[imageIndex];
+            vk::Image image = swapchainImages[imageIndex];
 
             // Transition to TRANSFER_DST for clearing
             auto toTransfer = vk::ImageMemoryBarrier{}

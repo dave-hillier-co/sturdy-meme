@@ -199,8 +199,8 @@ bool BilateralGridSystem::createDescriptorSetLayout() {
 }
 
 bool BilateralGridSystem::createUniformBuffers() {
-    VkDeviceSize buildSize = sizeof(BilateralBuildUniforms);
-    VkDeviceSize blurSize = sizeof(BilateralBlurUniforms);
+    vk::DeviceSize buildSize = sizeof(BilateralBuildUniforms);
+    vk::DeviceSize blurSize = sizeof(BilateralBlurUniforms);
 
     if (!BufferUtils::PerFrameBufferBuilder()
             .setAllocator(allocator)
@@ -327,7 +327,7 @@ void BilateralGridSystem::resize(VkExtent2D newExtent) {
     // Grid size is fixed, only input extent changes
 }
 
-void BilateralGridSystem::recordClearGrid(VkCommandBuffer cmd) {
+void BilateralGridSystem::recordClearGrid(vk::CommandBuffer cmd) {
     // Transition grid[0] to TRANSFER_DST for clearing
     auto subresourceRange = vk::ImageSubresourceRange{}
         .setAspectMask(vk::ImageAspectFlagBits::eColor)
@@ -397,8 +397,8 @@ void BilateralGridSystem::recordClearGrid(VkCommandBuffer cmd) {
         {}, {}, {}, barriers);
 }
 
-void BilateralGridSystem::recordBilateralGrid(VkCommandBuffer cmd, uint32_t frameIndex,
-                                              VkImageView hdrInputView) {
+void BilateralGridSystem::recordBilateralGrid(vk::CommandBuffer cmd, uint32_t frameIndex,
+                                              vk::ImageView hdrInputView) {
     if (!enabled) return;
 
     // Clear grid

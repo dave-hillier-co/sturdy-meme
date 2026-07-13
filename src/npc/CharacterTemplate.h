@@ -70,9 +70,9 @@ class CharacterTemplateFactory {
 public:
     struct InitInfo {
         VmaAllocator allocator;
-        VkDevice device;
-        VkCommandPool commandPool;
-        VkQueue queue;
+        vk::Device device;
+        vk::CommandPool commandPool;
+        vk::Queue queue;
     };
 
     explicit CharacterTemplateFactory(const InitInfo& info);
@@ -89,9 +89,9 @@ public:
 
 private:
     VmaAllocator allocator_;
-    VkDevice device_;
-    VkCommandPool commandPool_;
-    VkQueue queue_;
+    vk::Device device_;
+    vk::CommandPool commandPool_;
+    vk::Queue queue_;
 };
 
 // Per-NPC instance data when using templates

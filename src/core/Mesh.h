@@ -134,7 +134,7 @@ public:
                             float taper = 0.7f, float gnarliness = 0.15f, float forkAngle = 0.4f);
     void setCustomGeometry(const std::vector<Vertex>& verts, const std::vector<uint32_t>& inds);
     void setCustomGeometry(std::vector<Vertex>&& verts, std::vector<uint32_t>&& inds);
-    bool upload(VmaAllocator allocator, VkDevice device, VkCommandPool commandPool, VkQueue queue);
+    bool upload(VmaAllocator allocator, vk::Device device, vk::CommandPool commandPool, vk::Queue queue);
 
     // Batched-upload support: several meshes can share one staging buffer and
     // one command-buffer submit (see SceneBuilder::addGeneratedMeshes).
@@ -142,15 +142,15 @@ public:
     // writes vertices then indices to dst; uploadFromStaging() creates the
     // device buffers and records the copies into an externally managed
     // command buffer — the caller owns the staging lifetime and the submit.
-    VkDeviceSize stagedSize() const {
+    vk::DeviceSize stagedSize() const {
         return sizeof(Vertex) * vertices.size() + sizeof(uint32_t) * indices.size();
     }
     void copyGeometryTo(void* dst) const;
-    bool uploadFromStaging(VmaAllocator allocator, VkCommandBuffer cmd,
-                           VkBuffer staging, VkDeviceSize stagingOffset);
+    bool uploadFromStaging(VmaAllocator allocator, vk::CommandBuffer cmd,
+                           vk::Buffer staging, vk::DeviceSize stagingOffset);
 
-    VkBuffer getVertexBuffer() const { return vertexBuffer; }
-    VkBuffer getIndexBuffer() const { return indexBuffer; }
+    vk::Buffer getVertexBuffer() const { return vertexBuffer; }
+    vk::Buffer getIndexBuffer() const { return indexBuffer; }
     uint32_t getIndexCount() const {
         return indices.empty() ? indexCount_ : static_cast<uint32_t>(indices.size());
     }
@@ -189,8 +189,8 @@ private:
     uint32_t vertexCount_ = 0;
     AABB bounds;  // Local-space bounding box
 
-    VkBuffer vertexBuffer = VK_NULL_HANDLE;
+    vk::Buffer vertexBuffer = VK_NULL_HANDLE;
     VmaAllocation vertexAllocation = VK_NULL_HANDLE;
-    VkBuffer indexBuffer = VK_NULL_HANDLE;
+    vk::Buffer indexBuffer = VK_NULL_HANDLE;
     VmaAllocation indexAllocation = VK_NULL_HANDLE;
 };

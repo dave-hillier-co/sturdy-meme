@@ -1,4 +1,5 @@
 #pragma once
+#include <vulkan/vulkan.hpp>
 
 #include <vector>
 #include <memory>
@@ -81,7 +82,7 @@ private:
 
     // Stored for cleanup
     VmaAllocator storedAllocator = VK_NULL_HANDLE;
-    VkDevice storedDevice = VK_NULL_HANDLE;
+    vk::Device storedDevice = VK_NULL_HANDLE;
 
     // Get terrain height at (x, z), returns 0 if no terrain function available
     float getTerrainHeight(float x, float z) const;

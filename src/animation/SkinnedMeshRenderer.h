@@ -34,11 +34,11 @@ public:
     using AddCommonBindingsCallback = std::function<void(DescriptorManager::LayoutBuilder&)>;
 
     struct InitInfo {
-        VkDevice device;
-        VkPhysicalDevice physicalDevice;  // For minUniformBufferOffsetAlignment
+        vk::Device device;
+        vk::PhysicalDevice physicalDevice;  // For minUniformBufferOffsetAlignment
         VmaAllocator allocator;
         DescriptorManager::Pool* descriptorPool;
-        VkRenderPass renderPass;  // HDR render pass
+        vk::RenderPass renderPass;  // HDR render pass
         VkExtent2D extent;
         std::string shaderPath;
         uint32_t framesInFlight;
@@ -51,26 +51,26 @@ public:
         const GlobalBufferManager* globalBufferManager;
 
         // Shadow system resources
-        VkImageView shadowMapView;
-        VkSampler shadowMapSampler;
-        VkImageView emissiveMapView;
-        VkSampler emissiveMapSampler;
-        std::vector<VkImageView>* pointShadowViews;  // Per-frame
-        VkSampler pointShadowSampler;
-        std::vector<VkImageView>* spotShadowViews;   // Per-frame
-        VkSampler spotShadowSampler;
-        VkImageView snowMaskView;
-        VkSampler snowMaskSampler;
+        vk::ImageView shadowMapView;
+        vk::Sampler shadowMapSampler;
+        vk::ImageView emissiveMapView;
+        vk::Sampler emissiveMapSampler;
+        std::vector<vk::ImageView>* pointShadowViews;  // Per-frame
+        vk::Sampler pointShadowSampler;
+        std::vector<vk::ImageView>* spotShadowViews;   // Per-frame
+        vk::Sampler spotShadowSampler;
+        vk::ImageView snowMaskView;
+        vk::Sampler snowMaskSampler;
 
         // Placeholder textures
-        VkImageView whiteTextureView;
-        VkSampler whiteTextureSampler;
+        vk::ImageView whiteTextureView;
+        vk::Sampler whiteTextureSampler;
 
         // Player material textures (from MaterialRegistry based on player's materialId)
-        VkImageView playerDiffuseView;
-        VkSampler playerDiffuseSampler;
-        VkImageView playerNormalView;
-        VkSampler playerNormalSampler;
+        vk::ImageView playerDiffuseView;
+        vk::Sampler playerDiffuseSampler;
+        vk::ImageView playerNormalView;
+        vk::Sampler playerNormalSampler;
     };
 
     /**
@@ -92,7 +92,7 @@ public:
     bool createDescriptorSets(const DescriptorResources& resources);
 
     // Update cloud shadow binding after cloud shadow system is initialized
-    void updateCloudShadowBinding(VkImageView cloudShadowView, VkSampler cloudShadowSampler);
+    void updateCloudShadowBinding(vk::ImageView cloudShadowView, vk::Sampler cloudShadowSampler);
 
     /**
      * Update bone matrices for a character at a specific slot.
@@ -124,14 +124,14 @@ public:
      * @param character Character for mesh data
      * @param hueShift Optional hue shift for NPC tinting (default: 0.0f)
      */
-    void record(VkCommandBuffer cmd, uint32_t frameIndex, uint32_t slotIndex,
+    void record(vk::CommandBuffer cmd, uint32_t frameIndex, uint32_t slotIndex,
                 const glm::mat4& transform, AnimatedCharacter& character,
                 float hueShift = 0.0f);
 
     /**
      * Record draw commands with explicit LOD mesh (ECS-compatible).
      */
-    void recordWithLOD(VkCommandBuffer cmd, uint32_t frameIndex, uint32_t slotIndex,
+    void recordWithLOD(vk::CommandBuffer cmd, uint32_t frameIndex, uint32_t slotIndex,
                        const glm::mat4& transform, AnimatedCharacter& character,
                        const CharacterLODMesh& lodMesh);
 
@@ -142,10 +142,10 @@ public:
     void setExtent(VkExtent2D newExtent) { extent = newExtent; }
 
     // Accessors for ShadowSystem integration
-    VkDescriptorSetLayout getDescriptorSetLayout() const { return descriptorSetLayout_ ? **descriptorSetLayout_ : VK_NULL_HANDLE; }
-    VkPipelineLayout getPipelineLayout() const { return pipelineLayout_ ? **pipelineLayout_ : VK_NULL_HANDLE; }
-    VkPipeline getPipeline() const { return pipeline_ ? **pipeline_ : VK_NULL_HANDLE; }
-    VkDescriptorSet getDescriptorSet(uint32_t frameIndex) const { return descriptorSets[frameIndex]; }
+    vk::DescriptorSetLayout getDescriptorSetLayout() const { return descriptorSetLayout_ ? **descriptorSetLayout_ : VK_NULL_HANDLE; }
+    vk::PipelineLayout getPipelineLayout() const { return pipelineLayout_ ? **pipelineLayout_ : VK_NULL_HANDLE; }
+    vk::Pipeline getPipeline() const { return pipeline_ ? **pipeline_ : VK_NULL_HANDLE; }
+    vk::DescriptorSet getDescriptorSet(uint32_t frameIndex) const { return descriptorSets[frameIndex]; }
 
 private:
     bool initInternal(const InitInfo& info);
@@ -155,11 +155,11 @@ private:
     bool createBoneMatricesBuffers();
 
     // Vulkan handles (stored, not owned)
-    VkDevice device = VK_NULL_HANDLE;
-    VkPhysicalDevice physicalDevice = VK_NULL_HANDLE;
+    vk::Device device = VK_NULL_HANDLE;
+    vk::PhysicalDevice physicalDevice = VK_NULL_HANDLE;
     VmaAllocator allocator = VK_NULL_HANDLE;
     DescriptorManager::Pool* descriptorPool = nullptr;
-    VkRenderPass renderPass = VK_NULL_HANDLE;
+    vk::RenderPass renderPass = VK_NULL_HANDLE;
     VkExtent2D extent{};
     std::string shaderPath;
     uint32_t framesInFlight = 0;
@@ -171,7 +171,7 @@ private:
     std::optional<vk::raii::PipelineLayout> pipelineLayout_;
     std::optional<vk::raii::Pipeline> pipeline_;
 
-    std::vector<VkDescriptorSet> descriptorSets;
+    std::vector<vk::DescriptorSet> descriptorSets;
 
     // Multi-slot dynamic buffer for bone matrices
     // Supports MAX_SKINNED_CHARACTERS slots per frame, selected via dynamic offset

@@ -65,7 +65,7 @@ size_t RagdollRenderer::updateBoneMatrices(const std::vector<ArticulatedBody>& r
     return renderedCount_;
 }
 
-void RagdollRenderer::recordDrawCommands(VkCommandBuffer cmd,
+void RagdollRenderer::recordDrawCommands(vk::CommandBuffer cmd,
                                           uint32_t frameIndex,
                                           AnimatedCharacter& templateCharacter,
                                           SkinnedMeshRenderer& skinnedRenderer,

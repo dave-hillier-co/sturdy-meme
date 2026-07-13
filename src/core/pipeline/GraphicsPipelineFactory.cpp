@@ -2,7 +2,7 @@
 #include "ShaderLoader.h"
 #include <SDL3/SDL.h>
 
-GraphicsPipelineFactory::GraphicsPipelineFactory(VkDevice device) : device(device) {
+GraphicsPipelineFactory::GraphicsPipelineFactory(vk::Device device) : device(device) {
     initDefaultColorBlendAttachment();
 }
 
@@ -10,7 +10,7 @@ GraphicsPipelineFactory::~GraphicsPipelineFactory() {
     cleanup();
 }
 
-GraphicsPipelineFactory& GraphicsPipelineFactory::setPipelineCache(VkPipelineCache cache) {
+GraphicsPipelineFactory& GraphicsPipelineFactory::setPipelineCache(vk::PipelineCache cache) {
     pipelineCacheHandle = cache;
     return *this;
 }
@@ -130,13 +130,13 @@ GraphicsPipelineFactory& GraphicsPipelineFactory::setTessellationEvaluationShade
     return *this;
 }
 
-GraphicsPipelineFactory& GraphicsPipelineFactory::setRenderPass(VkRenderPass pass, uint32_t sub) {
+GraphicsPipelineFactory& GraphicsPipelineFactory::setRenderPass(vk::RenderPass pass, uint32_t sub) {
     renderPass = pass;
     subpass = sub;
     return *this;
 }
 
-GraphicsPipelineFactory& GraphicsPipelineFactory::setPipelineLayout(VkPipelineLayout layout) {
+GraphicsPipelineFactory& GraphicsPipelineFactory::setPipelineLayout(vk::PipelineLayout layout) {
     pipelineLayout = layout;
     return *this;
 }
@@ -398,7 +398,7 @@ bool GraphicsPipelineFactory::loadShaderModules(std::vector<VkPipelineShaderStag
     return true;
 }
 
-bool GraphicsPipelineFactory::build(VkPipeline& pipeline) {
+bool GraphicsPipelineFactory::build(vk::Pipeline& pipeline) {
     // Validate required state
     if (renderPass == VK_NULL_HANDLE) {
         SDL_Log("GraphicsPipelineFactory: Render pass not set");
@@ -537,7 +537,7 @@ bool GraphicsPipelineFactory::build(VkPipeline& pipeline) {
 
 void GraphicsPipelineFactory::cleanup() {
     vk::Device vkDevice(device);
-    for (VkShaderModule module : shaderModules) {
+    for (vk::ShaderModule module : shaderModules) {
         vkDevice.destroyShaderModule(module);
     }
     shaderModules.clear();

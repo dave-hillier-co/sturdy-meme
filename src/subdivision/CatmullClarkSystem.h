@@ -47,16 +47,16 @@ public:
     explicit CatmullClarkSystem(ConstructToken) {}
 
     struct InitInfo {
-        VkDevice device;
-        VkPhysicalDevice physicalDevice;
+        vk::Device device;
+        vk::PhysicalDevice physicalDevice;
         VmaAllocator allocator;
-        VkRenderPass renderPass;
+        vk::RenderPass renderPass;
         DescriptorManager::Pool* descriptorPool;  // Auto-growing pool
         VkExtent2D extent;
         std::string shaderPath;
         uint32_t framesInFlight;
-        VkQueue graphicsQueue;
-        VkCommandPool commandPool;
+        vk::Queue graphicsQueue;
+        vk::CommandPool commandPool;
         const vk::raii::Device* raiiDevice = nullptr;  // vulkan-hpp RAII device
     };
 
@@ -79,17 +79,17 @@ public:
     void setExtent(VkExtent2D newExtent) { extent = newExtent; }
 
     // Update descriptor sets with shared resources
-    void updateDescriptorSets(VkDevice device, const std::vector<VkBuffer>& sceneUniformBuffers);
+    void updateDescriptorSets(vk::Device device, const std::vector<vk::Buffer>& sceneUniformBuffers);
 
     // Update uniforms for a frame
     void updateUniforms(uint32_t frameIndex, const glm::vec3& cameraPos,
                         const glm::mat4& view, const glm::mat4& proj);
 
     // Record compute commands (subdivision update)
-    void recordCompute(VkCommandBuffer cmd, uint32_t frameIndex);
+    void recordCompute(vk::CommandBuffer cmd, uint32_t frameIndex);
 
     // Record rendering (implements IRecordable)
-    void recordDraw(VkCommandBuffer cmd, uint32_t frameIndex) override;
+    void recordDraw(vk::CommandBuffer cmd, uint32_t frameIndex) override;
 
     // Config accessors
     const CatmullClarkConfig& getConfig() const { return config; }
@@ -117,16 +117,16 @@ private:
     bool createWireframePipeline();
 
     // Vulkan resources
-    VkDevice device = VK_NULL_HANDLE;
-    VkPhysicalDevice physicalDevice = VK_NULL_HANDLE;
+    vk::Device device = VK_NULL_HANDLE;
+    vk::PhysicalDevice physicalDevice = VK_NULL_HANDLE;
     VmaAllocator allocator = VK_NULL_HANDLE;
-    VkRenderPass renderPass = VK_NULL_HANDLE;
+    vk::RenderPass renderPass = VK_NULL_HANDLE;
     DescriptorManager::Pool* descriptorPool = nullptr;
     VkExtent2D extent = {0, 0};
     std::string shaderPath;
     uint32_t framesInFlight = 0;
-    VkQueue graphicsQueue = VK_NULL_HANDLE;
-    VkCommandPool commandPool = VK_NULL_HANDLE;
+    vk::Queue graphicsQueue = VK_NULL_HANDLE;
+    vk::CommandPool commandPool = VK_NULL_HANDLE;
 
     // Composed subsystems (RAII-managed)
     std::unique_ptr<CatmullClarkCBT> cbt;
@@ -155,8 +155,8 @@ private:
     std::optional<vk::raii::Pipeline> wireframePipeline_;
 
     // Descriptor sets
-    std::vector<VkDescriptorSet> computeDescriptorSets;  // Per frame
-    std::vector<VkDescriptorSet> renderDescriptorSets;   // Per frame
+    std::vector<vk::DescriptorSet> computeDescriptorSets;  // Per frame
+    std::vector<vk::DescriptorSet> renderDescriptorSets;   // Per frame
 
     // Configuration
     CatmullClarkConfig config;

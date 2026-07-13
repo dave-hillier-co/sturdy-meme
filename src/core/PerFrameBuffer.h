@@ -7,7 +7,7 @@
 namespace BufferUtils {
 
 struct PerFrameBufferSet {
-    std::vector<VkBuffer> buffers;
+    std::vector<vk::Buffer> buffers;
     std::vector<VmaAllocation> allocations;
     std::vector<void*> mappedPointers;
 };
@@ -15,7 +15,7 @@ struct PerFrameBufferSet {
 struct PerFrameBufferConfig {
     const VmaAllocator allocator;
     const uint32_t frameCount;
-    const VkDeviceSize size;
+    const vk::DeviceSize size;
     const VkBufferUsageFlags usage;
     const VmaMemoryUsage memoryUsage;
     const VmaAllocationCreateFlags allocationFlags;
@@ -23,7 +23,7 @@ struct PerFrameBufferConfig {
     PerFrameBufferConfig(
         VmaAllocator allocator = VK_NULL_HANDLE,
         uint32_t frameCount = 0,
-        VkDeviceSize size = 0,
+        vk::DeviceSize size = 0,
         VkBufferUsageFlags usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
         VmaMemoryUsage memoryUsage = VMA_MEMORY_USAGE_AUTO,
         VmaAllocationCreateFlags allocationFlags =
@@ -36,14 +36,14 @@ public:
 
     PerFrameBufferBuilder withAllocator(VmaAllocator allocator) const;
     PerFrameBufferBuilder withFrameCount(uint32_t count) const;
-    PerFrameBufferBuilder withSize(VkDeviceSize size) const;
+    PerFrameBufferBuilder withSize(vk::DeviceSize size) const;
     PerFrameBufferBuilder withUsage(VkBufferUsageFlags usage) const;
     PerFrameBufferBuilder withMemoryUsage(VmaMemoryUsage usage) const;
     PerFrameBufferBuilder withAllocationFlags(VmaAllocationCreateFlags flags) const;
 
     PerFrameBufferBuilder& setAllocator(VmaAllocator allocator);
     PerFrameBufferBuilder& setFrameCount(uint32_t count);
-    PerFrameBufferBuilder& setSize(VkDeviceSize size);
+    PerFrameBufferBuilder& setSize(vk::DeviceSize size);
     PerFrameBufferBuilder& setUsage(VkBufferUsageFlags usage);
     PerFrameBufferBuilder& setMemoryUsage(VmaMemoryUsage usage);
     PerFrameBufferBuilder& setAllocationFlags(VmaAllocationCreateFlags flags);
@@ -53,7 +53,7 @@ public:
 private:
     VmaAllocator allocator_ = VK_NULL_HANDLE;
     uint32_t frameCount_ = 0;
-    VkDeviceSize bufferSize_ = 0;
+    vk::DeviceSize bufferSize_ = 0;
     VkBufferUsageFlags usage_ = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
     VmaMemoryUsage memoryUsage_ = VMA_MEMORY_USAGE_AUTO;
     VmaAllocationCreateFlags allocationFlags_ =

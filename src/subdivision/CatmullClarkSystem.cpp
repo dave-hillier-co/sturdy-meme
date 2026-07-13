@@ -183,10 +183,10 @@ bool CatmullClarkSystem::createDescriptorSets() {
     return true;
 }
 
-void CatmullClarkSystem::updateDescriptorSets(VkDevice device, const std::vector<VkBuffer>& sceneUniformBuffers) {
-    VkDeviceSize vertexBufferSize = mesh->vertices.size() * sizeof(CatmullClarkMesh::Vertex);
-    VkDeviceSize halfedgeBufferSize = mesh->halfedges.size() * sizeof(CatmullClarkMesh::Halfedge);
-    VkDeviceSize faceBufferSize = mesh->faces.size() * sizeof(CatmullClarkMesh::Face);
+void CatmullClarkSystem::updateDescriptorSets(vk::Device device, const std::vector<vk::Buffer>& sceneUniformBuffers) {
+    vk::DeviceSize vertexBufferSize = mesh->vertices.size() * sizeof(CatmullClarkMesh::Vertex);
+    vk::DeviceSize halfedgeBufferSize = mesh->halfedges.size() * sizeof(CatmullClarkMesh::Halfedge);
+    vk::DeviceSize faceBufferSize = mesh->faces.size() * sizeof(CatmullClarkMesh::Face);
 
     for (uint32_t i = 0; i < framesInFlight; ++i) {
         // Compute descriptor set
@@ -448,7 +448,7 @@ void CatmullClarkSystem::updateUniforms(uint32_t frameIndex, const glm::vec3& ca
     // Currently no additional uniforms need updating here.
 }
 
-void CatmullClarkSystem::recordCompute(VkCommandBuffer cmd, uint32_t frameIndex) {
+void CatmullClarkSystem::recordCompute(vk::CommandBuffer cmd, uint32_t frameIndex) {
     vk::CommandBuffer vkCmd(cmd);
 
     // Bind the subdivision compute pipeline
@@ -480,7 +480,7 @@ void CatmullClarkSystem::recordCompute(VkCommandBuffer cmd, uint32_t frameIndex)
                           {}, memoryBarrier, {}, {});
 }
 
-void CatmullClarkSystem::recordDraw(VkCommandBuffer cmd, uint32_t frameIndex) {
+void CatmullClarkSystem::recordDraw(vk::CommandBuffer cmd, uint32_t frameIndex) {
     vk::CommandBuffer vkCmd(cmd);
 
     // Select pipeline based on wireframe mode

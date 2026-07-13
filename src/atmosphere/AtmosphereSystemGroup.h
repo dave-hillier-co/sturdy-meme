@@ -78,10 +78,10 @@ struct AtmosphereSystemGroup {
      */
     struct CreateDeps {
         const InitContext& ctx;
-        VkRenderPass hdrRenderPass;        // For SkySystem
-        VkImageView shadowMapView;         // For FroxelSystem (cascade shadows)
-        VkSampler shadowSampler;           // For FroxelSystem
-        const std::vector<VkBuffer>& lightBuffers;  // For FroxelSystem
+        vk::RenderPass hdrRenderPass;        // For SkySystem
+        vk::ImageView shadowMapView;         // For FroxelSystem (cascade shadows)
+        vk::Sampler shadowSampler;           // For FroxelSystem
+        const std::vector<vk::Buffer>& lightBuffers;  // For FroxelSystem
     };
 
     /**

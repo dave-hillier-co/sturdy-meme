@@ -28,10 +28,10 @@ public:
 
     struct InitInfo {
         const vk::raii::Device* raiiDevice = nullptr;
-        VkDevice device = VK_NULL_HANDLE;
+        vk::Device device = VK_NULL_HANDLE;
         VmaAllocator allocator = VK_NULL_HANDLE;
-        VkCommandPool commandPool = VK_NULL_HANDLE;
-        VkQueue queue = VK_NULL_HANDLE;
+        vk::CommandPool commandPool = VK_NULL_HANDLE;
+        vk::Queue queue = VK_NULL_HANDLE;
         VirtualTextureConfig config;
         uint32_t framesInFlight = 3;
         bool useCompression = false;
@@ -84,14 +84,14 @@ public:
      *         staging capacity exhausted, tile not in cache)
      */
     bool recordTileUpload(TileId id, const void* pixelData, uint32_t width, uint32_t height,
-                          TileFormat format, VkCommandBuffer cmd, uint32_t frameIndex);
+                          TileFormat format, vk::CommandBuffer cmd, uint32_t frameIndex);
 
     // Bracket a batch of recordTileUpload calls with a single pair of layout
     // transitions instead of one pair per tile. Dozens of image barriers per
     // frame force MoltenVK to split Metal encoders repeatedly, which showed up
     // as blocky stale-tile corruption on Apple GPUs.
-    void recordUploadBatchBegin(VkCommandBuffer cmd);
-    void recordUploadBatchEnd(VkCommandBuffer cmd);
+    void recordUploadBatchBegin(vk::CommandBuffer cmd);
+    void recordUploadBatchEnd(vk::CommandBuffer cmd);
 
     // Reset the staging sub-allocation cursor for this frame. Must be called
     // once per frame before any recordTileUpload calls.
@@ -106,10 +106,10 @@ public:
     uint32_t getStagingBufferCount() const { return static_cast<uint32_t>(stagingBuffers_.size()); }
 
     // Get the cache texture image view
-    VkImageView getCacheImageView() const { return cacheImage_.getView(); }
+    vk::ImageView getCacheImageView() const { return cacheImage_.getView(); }
 
     // Get the sampler for the cache texture
-    VkSampler getCacheSampler() const { return cacheSampler_ ? **cacheSampler_ : VK_NULL_HANDLE; }
+    vk::Sampler getCacheSampler() const { return cacheSampler_ ? **cacheSampler_ : VK_NULL_HANDLE; }
 
     // Get the slot index for a tile (UINT32_MAX if not found)
     uint32_t getTileSlotIndex(TileId id) const {
@@ -133,17 +133,17 @@ private:
     size_t findLRUSlot(uint32_t currentFrame) const;
 
     // Bytes needed to stage one tile in the cache's format
-    VkDeviceSize getTileStagingSize() const;
+    vk::DeviceSize getTileStagingSize() const;
 
     // Create the cache texture
-    bool createCacheTexture(VkDevice device, VmaAllocator allocator,
-                            VkCommandPool commandPool, VkQueue queue);
+    bool createCacheTexture(vk::Device device, VmaAllocator allocator,
+                            vk::CommandPool commandPool, vk::Queue queue);
 
     // Create sampler for the cache
-    bool createSampler(VkDevice device);
+    bool createSampler(vk::Device device);
 
     // Stored for cleanup
-    VkDevice device_ = VK_NULL_HANDLE;
+    vk::Device device_ = VK_NULL_HANDLE;
     VmaAllocator allocator_ = VK_NULL_HANDLE;
 
     VirtualTextureConfig config;
@@ -160,7 +160,7 @@ private:
     // commands execute long after recording and regions must not be reused.
     std::vector<VmaBuffer> stagingBuffers_;
     std::vector<void*> stagingMapped_;
-    VkDeviceSize stagingCursor_ = 0;
+    vk::DeviceSize stagingCursor_ = 0;
     uint32_t maxUploadsPerFrame_ = 16;
     uint32_t framesInFlight_ = 3;
 

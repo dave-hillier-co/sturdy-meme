@@ -91,7 +91,7 @@ void NPCRenderer::prepare(uint32_t frameIndex,
     drawCallCount_ = visibleNPCCount_;  // Currently 1:1, will improve with batching
 }
 
-void NPCRenderer::recordDraw(VkCommandBuffer cmd, uint32_t frameIndex) {
+void NPCRenderer::recordDraw(vk::CommandBuffer cmd, uint32_t frameIndex) {
     if (!skinnedMeshRenderer_) {
         return;
     }

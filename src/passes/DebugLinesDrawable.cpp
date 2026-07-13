@@ -12,7 +12,7 @@ bool DebugLinesDrawable::shouldDraw(uint32_t /*frameIndex*/, const HDRDrawParams
     return debugLine_.hasLines();
 }
 
-void DebugLinesDrawable::recordHDRDraw(VkCommandBuffer cmd, uint32_t /*frameIndex*/,
+void DebugLinesDrawable::recordHDRDraw(vk::CommandBuffer cmd, uint32_t /*frameIndex*/,
                                         float /*time*/, const HDRDrawParams& params) {
     vk::CommandBuffer vkCmd(cmd);
 

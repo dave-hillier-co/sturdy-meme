@@ -54,12 +54,12 @@ bool FrameIndexedBuffers::resize(VmaAllocator allocator, uint32_t frameCount, vk
     allocInfo.usage = memoryUsage;
 
     for (uint32_t i = 0; i < frameCount; ++i) {
-        VkBuffer rawBuffer;
+        vk::Buffer rawBuffer;
         VkResult result = vmaCreateBuffer(
             allocator,
             reinterpret_cast<const VkBufferCreateInfo*>(&bufferInfo),
             &allocInfo,
-            &rawBuffer,
+            reinterpret_cast<VkBuffer*>(&rawBuffer),
             &allocations_[i],
             nullptr);
 
@@ -79,7 +79,7 @@ void FrameIndexedBuffers::destroy() {
     if (allocator_) {
         for (uint32_t i = 0; i < buffers_.size(); ++i) {
             if (buffers_[i]) {
-                vmaDestroyBuffer(allocator_, static_cast<VkBuffer>(buffers_[i]), allocations_[i]);
+                vmaDestroyBuffer(allocator_, static_cast<vk::Buffer>(buffers_[i]), allocations_[i]);
             }
         }
     }
@@ -93,8 +93,8 @@ vk::Buffer FrameIndexedBuffers::get(uint32_t frameIndex) const {
     return buffers_[frameIndex % frameCount_];
 }
 
-VkBuffer FrameIndexedBuffers::getVk(uint32_t frameIndex) const {
-    return static_cast<VkBuffer>(get(frameIndex));
+vk::Buffer FrameIndexedBuffers::getVk(uint32_t frameIndex) const {
+    return static_cast<vk::Buffer>(get(frameIndex));
 }
 
 }  // namespace BufferUtils

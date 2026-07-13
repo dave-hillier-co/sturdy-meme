@@ -32,7 +32,7 @@ public:
     explicit BilateralGridSystem(ConstructToken) {}
 
     struct InitInfo {
-        VkDevice device;
+        vk::Device device;
         VmaAllocator allocator;
         DescriptorManager::Pool* descriptorPool;
         VkExtent2D extent;
@@ -69,12 +69,12 @@ public:
 
     // Record bilateral grid compute passes
     // Call before post-process pass
-    void recordBilateralGrid(VkCommandBuffer cmd, uint32_t frameIndex,
-                             VkImageView hdrInputView);
+    void recordBilateralGrid(vk::CommandBuffer cmd, uint32_t frameIndex,
+                             vk::ImageView hdrInputView);
 
     // Get the blurred grid for sampling in post-process
-    VkImageView getGridView() const { return gridViews[0] ? **gridViews[0] : VK_NULL_HANDLE; }
-    VkSampler getGridSampler() const { return gridSampler_ ? **gridSampler_ : VK_NULL_HANDLE; }
+    vk::ImageView getGridView() const { return gridViews[0] ? **gridViews[0] : VK_NULL_HANDLE; }
+    vk::Sampler getGridSampler() const { return gridSampler_ ? **gridSampler_ : VK_NULL_HANDLE; }
 
     // Local tone mapping parameters
     void setEnabled(bool e) { enabled = e; }
@@ -110,9 +110,9 @@ private:
     void destroyGridResources();
 
     // Clear grid before each frame
-    void recordClearGrid(VkCommandBuffer cmd);
+    void recordClearGrid(vk::CommandBuffer cmd);
 
-    VkDevice device = VK_NULL_HANDLE;
+    vk::Device device = VK_NULL_HANDLE;
     VmaAllocator allocator = VK_NULL_HANDLE;
     DescriptorManager::Pool* descriptorPool = nullptr;
     VkExtent2D extent = {0, 0};
@@ -133,15 +133,15 @@ private:
     std::optional<vk::raii::DescriptorSetLayout> buildDescriptorSetLayout_;
     std::optional<vk::raii::PipelineLayout> buildPipelineLayout_;
     std::optional<vk::raii::Pipeline> buildPipeline_;
-    std::vector<VkDescriptorSet> buildDescriptorSets;
+    std::vector<vk::DescriptorSet> buildDescriptorSets;
 
     // Blur pipeline (separable Gaussian along each axis)
     std::optional<vk::raii::DescriptorSetLayout> blurDescriptorSetLayout_;
     std::optional<vk::raii::PipelineLayout> blurPipelineLayout_;
     std::optional<vk::raii::Pipeline> blurPipeline_;
-    std::vector<VkDescriptorSet> blurDescriptorSetsX;  // X-axis blur
-    std::vector<VkDescriptorSet> blurDescriptorSetsY;  // Y-axis blur
-    std::vector<VkDescriptorSet> blurDescriptorSetsZ;  // Z-axis blur
+    std::vector<vk::DescriptorSet> blurDescriptorSetsX;  // X-axis blur
+    std::vector<vk::DescriptorSet> blurDescriptorSetsY;  // Y-axis blur
+    std::vector<vk::DescriptorSet> blurDescriptorSetsZ;  // Z-axis blur
 
     // Uniform buffers
     BufferUtils::PerFrameBufferSet buildUniformBuffers;

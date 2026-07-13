@@ -42,7 +42,7 @@ public:
     /**
      * Get the pipeline cache handle for use in pipeline creation
      */
-    VkPipelineCache getCache() const { return pipelineCache_ ? **pipelineCache_ : VK_NULL_HANDLE; }
+    vk::PipelineCache getCache() const { return pipelineCache_ ? **pipelineCache_ : VK_NULL_HANDLE; }
 
     /**
      * Save the current cache state to disk

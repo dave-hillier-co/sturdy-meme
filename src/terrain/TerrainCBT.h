@@ -32,7 +32,7 @@ public:
     TerrainCBT& operator=(const TerrainCBT&) = delete;
 
     // Buffer accessors
-    VkBuffer getBuffer() const { return buffer_.get(); }
+    vk::Buffer getBuffer() const { return buffer_.get(); }
     uint32_t getBufferSize() const { return bufferSize; }
     int getMaxDepth() const { return maxDepth; }
 

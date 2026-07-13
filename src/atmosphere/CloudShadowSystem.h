@@ -40,13 +40,13 @@ public:
     explicit CloudShadowSystem(ConstructToken) {}
 
     struct InitInfo {
-        VkDevice device;
+        vk::Device device;
         VmaAllocator allocator;
         DescriptorManager::Pool* descriptorPool;  // Auto-growing pool
         std::string shaderPath;
         uint32_t framesInFlight;
-        VkImageView cloudMapLUTView;  // From AtmosphereLUTSystem
-        VkSampler cloudMapLUTSampler; // From AtmosphereLUTSystem
+        vk::ImageView cloudMapLUTView;  // From AtmosphereLUTSystem
+        vk::Sampler cloudMapLUTSampler; // From AtmosphereLUTSystem
         const vk::raii::Device* raiiDevice = nullptr;
     };
 
@@ -67,7 +67,7 @@ public:
      * Returns nullptr on failure.
      */
     static std::unique_ptr<CloudShadowSystem> create(const InitInfo& info);
-    static std::unique_ptr<CloudShadowSystem> create(const InitContext& ctx, VkImageView cloudMapLUTView, VkSampler cloudMapLUTSampler);
+    static std::unique_ptr<CloudShadowSystem> create(const InitContext& ctx, vk::ImageView cloudMapLUTView, vk::Sampler cloudMapLUTSampler);
 
     ~CloudShadowSystem();
 
@@ -78,14 +78,14 @@ public:
     CloudShadowSystem& operator=(CloudShadowSystem&&) = delete;
 
     // Update cloud shadow map (call before scene rendering)
-    void recordUpdate(VkCommandBuffer cmd, uint32_t frameIndex,
+    void recordUpdate(vk::CommandBuffer cmd, uint32_t frameIndex,
                       const glm::vec3& sunDir, float sunIntensity,
                       const glm::vec3& windOffset, float windTime,
                       const glm::vec3& cameraPos);
 
     // Accessors for shader binding
-    VkImageView getShadowMapView() const { return shadowMapView_ ? **shadowMapView_ : VK_NULL_HANDLE; }
-    VkSampler getShadowMapSampler() const { return shadowMapSampler_ ? **shadowMapSampler_ : VK_NULL_HANDLE; }
+    vk::ImageView getShadowMapView() const { return shadowMapView_ ? **shadowMapView_ : VK_NULL_HANDLE; }
+    vk::Sampler getShadowMapSampler() const { return shadowMapSampler_ ? **shadowMapSampler_ : VK_NULL_HANDLE; }
 
     // Get the world-to-shadow-UV matrix for sampling in fragment shaders
     const glm::mat4& getWorldToShadowUV() const { return worldToShadowUV; }
@@ -116,7 +116,7 @@ private:
 
     void updateWorldToShadowMatrix(const glm::vec3& sunDir, const glm::vec3& cameraPos);
 
-    VkDevice device = VK_NULL_HANDLE;
+    vk::Device device = VK_NULL_HANDLE;
     VmaAllocator allocator = VK_NULL_HANDLE;
     DescriptorManager::Pool* descriptorPool = nullptr;
     std::string shaderPath;
@@ -124,8 +124,8 @@ private:
     const vk::raii::Device* raiiDevice_ = nullptr;
 
     // External resources (not owned)
-    VkImageView cloudMapLUTView = VK_NULL_HANDLE;
-    VkSampler cloudMapLUTSampler = VK_NULL_HANDLE;
+    vk::ImageView cloudMapLUTView = VK_NULL_HANDLE;
+    vk::Sampler cloudMapLUTSampler = VK_NULL_HANDLE;
 
     // Cloud shadow map (R16F - stores shadow attenuation 0=full shadow, 1=no shadow)
     ManagedImage shadowMap_;  // VMA-managed image (keep as-is)
@@ -136,7 +136,7 @@ private:
     std::optional<vk::raii::DescriptorSetLayout> descriptorSetLayout_;
     std::optional<vk::raii::PipelineLayout> pipelineLayout_;
     std::optional<vk::raii::Pipeline> computePipeline_;
-    std::vector<VkDescriptorSet> descriptorSets;
+    std::vector<vk::DescriptorSet> descriptorSets;
 
     // Uniform buffers (per frame)
     BufferUtils::PerFrameBufferSet uniformBuffers;

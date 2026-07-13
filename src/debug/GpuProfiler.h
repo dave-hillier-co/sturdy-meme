@@ -45,7 +45,7 @@ public:
      * Returns nullopt if initialization fails (fatal error).
      * Note: If timestamps are unsupported, returns a valid but disabled profiler.
      */
-    static std::optional<GpuProfiler> create(VkDevice device, VkPhysicalDevice physicalDevice,
+    static std::optional<GpuProfiler> create(vk::Device device, vk::PhysicalDevice physicalDevice,
                                               uint32_t framesInFlight, uint32_t maxZones = 64);
 
     // Destructor handles cleanup
@@ -61,25 +61,25 @@ public:
      * Call at the start of frame command buffer recording.
      * Resets query pool for this frame and writes initial timestamp.
      */
-    void beginFrame(VkCommandBuffer cmd, uint32_t frameIndex);
+    void beginFrame(vk::CommandBuffer cmd, uint32_t frameIndex);
 
     /**
      * Call at the end of frame command buffer recording.
      * Writes final timestamp and triggers result collection from previous frame.
      */
-    void endFrame(VkCommandBuffer cmd, uint32_t frameIndex);
+    void endFrame(vk::CommandBuffer cmd, uint32_t frameIndex);
 
     /**
      * Begin a named profiling zone.
      * Writes a timestamp at the top of the GPU pipeline.
      */
-    void beginZone(VkCommandBuffer cmd, const char* zoneName);
+    void beginZone(vk::CommandBuffer cmd, const char* zoneName);
 
     /**
      * End a named profiling zone.
      * Writes a timestamp at the bottom of the GPU pipeline.
      */
-    void endZone(VkCommandBuffer cmd, const char* zoneName);
+    void endZone(vk::CommandBuffer cmd, const char* zoneName);
 
     /**
      * Get profiling results from the previous frame.
@@ -107,7 +107,7 @@ public:
 private:
     GpuProfiler();  // Private: use factory
 
-    bool initInternal(VkDevice device, VkPhysicalDevice physicalDevice,
+    bool initInternal(vk::Device device, vk::PhysicalDevice physicalDevice,
                       uint32_t framesInFlight, uint32_t maxZones);
     void cleanup();
 
@@ -120,8 +120,8 @@ private:
         const char* name = nullptr;  // Set atomically with startQueryIndex
     };
 
-    VkDevice device = VK_NULL_HANDLE;
-    std::vector<VkQueryPool> queryPools;  // One per frame in flight
+    vk::Device device = VK_NULL_HANDLE;
+    std::vector<vk::QueryPool> queryPools;  // One per frame in flight
 
     float timestampPeriod = 0.0f;  // Nanoseconds per timestamp tick
     uint32_t maxZones = 0;

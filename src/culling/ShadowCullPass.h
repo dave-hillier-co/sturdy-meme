@@ -39,7 +39,7 @@ public:
     explicit ShadowCullPass(ConstructToken) {}
 
     struct InitInfo {
-        VkDevice device;
+        vk::Device device;
         VmaAllocator allocator;
         DescriptorManager::Pool* descriptorPool;
         std::string shaderPath;
@@ -68,16 +68,16 @@ public:
     bool prepareDescriptors(GPUSceneBuffer* sceneBuffer);
 
     // Record the culling compute dispatch for one cascade.
-    void recordCulling(VkCommandBuffer cmd, uint32_t frameIndex, uint32_t cascade);
+    void recordCulling(vk::CommandBuffer cmd, uint32_t frameIndex, uint32_t cascade);
 
     // Per-cascade indirect command buffer (for vkCmdDrawIndexedIndirect).
-    VkBuffer getIndirectBuffer(uint32_t frameIndex, uint32_t cascade) const;
+    vk::Buffer getIndirectBuffer(uint32_t frameIndex, uint32_t cascade) const;
 
     // Visible-object tally written by the cull shader (diagnostic; reflects the last GPU run).
     uint32_t getVisibleCount(uint32_t frameIndex, uint32_t cascade) const;
 
     // Placeholder image bound to the (unused) Hi-Z sampler slot; required on MoltenVK.
-    void setPlaceholderImage(VkImageView view, VkSampler sampler);
+    void setPlaceholderImage(vk::ImageView view, vk::Sampler sampler);
 
 private:
     bool initInternal(const InitInfo& info);
@@ -88,7 +88,7 @@ private:
 
     uint32_t flatIndex(uint32_t cascade, uint32_t frame) const { return cascade * framesInFlight_ + frame; }
 
-    VkDevice device_ = VK_NULL_HANDLE;
+    vk::Device device_ = VK_NULL_HANDLE;
     VmaAllocator allocator_ = VK_NULL_HANDLE;
     DescriptorManager::Pool* descriptorPool_ = nullptr;
     std::string shaderPath_;
@@ -101,7 +101,7 @@ private:
     std::optional<vk::raii::Pipeline> pipeline_;
 
     // Flattened [cascade * framesInFlight + frame] descriptor sets.
-    std::vector<VkDescriptorSet> descSets_;
+    std::vector<vk::DescriptorSet> descSets_;
 
     // Per-cascade per-frame buffers (each set holds framesInFlight buffers).
     std::vector<BufferUtils::PerFrameBufferSet> uniformBuffers_;   // [cascade]
@@ -111,8 +111,8 @@ private:
     GPUSceneBuffer* currentSceneBuffer_ = nullptr;
     uint32_t lastObjectCount_ = 0;
 
-    VkImageView placeholderImageView_ = VK_NULL_HANDLE;
-    VkSampler placeholderSampler_ = VK_NULL_HANDLE;
+    vk::ImageView placeholderImageView_ = VK_NULL_HANDLE;
+    vk::Sampler placeholderSampler_ = VK_NULL_HANDLE;
 
     static constexpr uint32_t WORKGROUP_SIZE = 64;
     static constexpr uint32_t MAX_OBJECTS = 8192;

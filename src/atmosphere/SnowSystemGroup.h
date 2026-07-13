@@ -70,7 +70,7 @@ struct SnowSystemGroup {
      */
     struct CreateDeps {
         const InitContext& ctx;
-        VkRenderPass hdrRenderPass;
+        vk::RenderPass hdrRenderPass;
     };
 
     /**

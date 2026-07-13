@@ -28,16 +28,16 @@ public:
     explicit WaterSystem(ConstructToken) {}
 
     struct InitInfo {
-        VkDevice device;
-        VkPhysicalDevice physicalDevice;
+        vk::Device device;
+        vk::PhysicalDevice physicalDevice;
         VmaAllocator allocator;
         DescriptorManager::Pool* descriptorPool;  // Auto-growing pool
-        VkRenderPass hdrRenderPass;
+        vk::RenderPass hdrRenderPass;
         std::string shaderPath;
         uint32_t framesInFlight;
         VkExtent2D extent;
-        VkCommandPool commandPool;
-        VkQueue graphicsQueue;
+        vk::CommandPool commandPool;
+        vk::Queue graphicsQueue;
         float waterSize = 100.0f;  // Size of water plane in world units
         std::string assetPath;     // Base path for assets (for foam texture)
         const vk::raii::Device* raiiDevice = nullptr;
@@ -121,10 +121,10 @@ public:
     // FFT ocean cascade outputs for bindings 11-13 / 16-18 / 19-21.
     // Images are expected to be in VK_IMAGE_LAYOUT_GENERAL (see OceanFFT).
     struct OceanCascadeViews {
-        std::array<VkImageView, 3> displacement{};  // [cascade]
-        std::array<VkImageView, 3> normal{};
-        std::array<VkImageView, 3> foam{};
-        VkSampler sampler = VK_NULL_HANDLE;
+        std::array<vk::ImageView, 3> displacement{};  // [cascade]
+        std::array<vk::ImageView, 3> normal{};
+        std::array<vk::ImageView, 3> foam{};
+        vk::Sampler sampler = VK_NULL_HANDLE;
 
         bool isValid() const {
             if (sampler == VK_NULL_HANDLE) return false;
@@ -139,36 +139,36 @@ public:
     };
 
     // Create descriptor sets after main UBO is ready
-    bool createDescriptorSets(const std::vector<VkBuffer>& uniformBuffers,
-                              VkDeviceSize uniformBufferSize,
+    bool createDescriptorSets(const std::vector<vk::Buffer>& uniformBuffers,
+                              vk::DeviceSize uniformBufferSize,
                               ShadowSystem& shadowSystem,
-                              VkImageView terrainHeightMapView,
-                              VkSampler terrainHeightMapSampler,
-                              VkImageView flowMapView,
-                              VkSampler flowMapSampler,
-                              VkImageView displacementMapView,
-                              VkSampler displacementMapSampler,
-                              VkImageView temporalFoamView,
-                              VkSampler temporalFoamSampler,
-                              VkImageView ssrView,
-                              VkSampler ssrSampler,
-                              VkImageView sceneDepthView,
-                              VkSampler sceneDepthSampler,
-                              VkImageView tileArrayView = VK_NULL_HANDLE,
-                              VkSampler tileSampler = VK_NULL_HANDLE,
-                              const std::array<VkBuffer, 3>& tileInfoBuffers = {},
-                              VkImageView envCubemapView = VK_NULL_HANDLE,
-                              VkSampler envCubemapSampler = VK_NULL_HANDLE,
+                              vk::ImageView terrainHeightMapView,
+                              vk::Sampler terrainHeightMapSampler,
+                              vk::ImageView flowMapView,
+                              vk::Sampler flowMapSampler,
+                              vk::ImageView displacementMapView,
+                              vk::Sampler displacementMapSampler,
+                              vk::ImageView temporalFoamView,
+                              vk::Sampler temporalFoamSampler,
+                              vk::ImageView ssrView,
+                              vk::Sampler ssrSampler,
+                              vk::ImageView sceneDepthView,
+                              vk::Sampler sceneDepthSampler,
+                              vk::ImageView tileArrayView = VK_NULL_HANDLE,
+                              vk::Sampler tileSampler = VK_NULL_HANDLE,
+                              const std::array<vk::Buffer, 3>& tileInfoBuffers = {},
+                              vk::ImageView envCubemapView = VK_NULL_HANDLE,
+                              vk::Sampler envCubemapSampler = VK_NULL_HANDLE,
                               const OceanCascadeViews* oceanViews = nullptr);
 
     // Update water uniforms (call each frame)
     void updateUniforms(uint32_t frameIndex);
 
     // Record water rendering commands (implements IRecordable)
-    void recordDraw(VkCommandBuffer cmd, uint32_t frameIndex) override;
+    void recordDraw(vk::CommandBuffer cmd, uint32_t frameIndex) override;
 
     // Record just mesh draw (for G-buffer pass with external pipeline)
-    void recordMeshDraw(VkCommandBuffer cmd);
+    void recordMeshDraw(vk::CommandBuffer cmd);
 
     // Configuration
     void setWaterLevel(float level) { baseWaterLevel = level; waterUniforms.waterLevel = level; }
@@ -189,8 +189,8 @@ public:
     float getTidalRange() const { return tidalRange; }
 
     // Foam texture accessors (can be used for terrain caustics)
-    VkImageView getFoamTextureView() const { return foamTexture ? foamTexture->getImageView() : VK_NULL_HANDLE; }
-    VkSampler getFoamTextureSampler() const { return foamTexture ? foamTexture->getSampler() : VK_NULL_HANDLE; }
+    vk::ImageView getFoamTextureView() const { return foamTexture ? foamTexture->getImageView() : VK_NULL_HANDLE; }
+    vk::Sampler getFoamTextureSampler() const { return foamTexture ? foamTexture->getSampler() : VK_NULL_HANDLE; }
     glm::vec4 getWaterColor() const { return waterUniforms.waterColor; }
     float getWaveAmplitude() const { return waterUniforms.waveParams.x; }
     float getWaveLength() const { return waterUniforms.waveParams.y; }
@@ -282,15 +282,15 @@ public:
     bool isTessellationSupported() const { return tessellationPipeline_.has_value(); }
 
     // Get uniform buffers (for G-buffer pass descriptor sets)
-    VkBuffer getUniformBuffer(size_t frameIndex) const { return waterUniformBuffers_[frameIndex].get(); }
-    std::vector<VkBuffer> getUniformBuffers() const {
-        std::vector<VkBuffer> buffers;
+    vk::Buffer getUniformBuffer(size_t frameIndex) const { return waterUniformBuffers_[frameIndex].get(); }
+    std::vector<vk::Buffer> getUniformBuffers() const {
+        std::vector<vk::Buffer> buffers;
         for (const auto& buf : waterUniformBuffers_) {
             buffers.push_back(buf.get());
         }
         return buffers;
     }
-    static VkDeviceSize getUniformBufferSize() { return sizeof(WaterUniforms); }
+    static vk::DeviceSize getUniformBufferSize() { return sizeof(WaterUniforms); }
 
     // Water type presets (based on Far Cry 5 approach)
     enum class WaterType {
@@ -395,16 +395,16 @@ private:
     bool createEnvPlaceholderCube();
 
     // Initialization info
-    VkDevice device = VK_NULL_HANDLE;
-    VkPhysicalDevice physicalDevice = VK_NULL_HANDLE;
+    vk::Device device = VK_NULL_HANDLE;
+    vk::PhysicalDevice physicalDevice = VK_NULL_HANDLE;
     VmaAllocator allocator = VK_NULL_HANDLE;
     DescriptorManager::Pool* descriptorPool = nullptr;
-    VkRenderPass hdrRenderPass = VK_NULL_HANDLE;
+    vk::RenderPass hdrRenderPass = VK_NULL_HANDLE;
     std::string shaderPath;
     uint32_t framesInFlight = 0;
     VkExtent2D extent = {0, 0};
-    VkCommandPool commandPool = VK_NULL_HANDLE;
-    VkQueue graphicsQueue = VK_NULL_HANDLE;
+    vk::CommandPool commandPool = VK_NULL_HANDLE;
+    vk::Queue graphicsQueue = VK_NULL_HANDLE;
     float waterSize = 100.0f;
     std::string assetPath;
 
@@ -413,7 +413,7 @@ private:
     std::optional<vk::raii::Pipeline> tessellationPipeline_;  // GPU tessellation pipeline for wave detail
     std::optional<vk::raii::PipelineLayout> pipelineLayout_;
     std::optional<vk::raii::DescriptorSetLayout> descriptorSetLayout_;
-    std::vector<VkDescriptorSet> descriptorSets;
+    std::vector<vk::DescriptorSet> descriptorSets;
     bool useTessellation_ = false;  // Whether to use tessellation when supported
 
     // RAII device pointer
@@ -445,7 +445,7 @@ private:
     float tidalRange = 2.0f;      // Max tide height variation in meters
 
     // Tile cache resources for high-res terrain sampling
-    TripleBuffered<VkBuffer> tileInfoBuffers_;  // Triple-buffered for frames-in-flight sync
+    TripleBuffered<vk::Buffer> tileInfoBuffers_;  // Triple-buffered for frames-in-flight sync
 
     // Push constants - must match shader layout exactly
     // alignas(16) ensures proper alignment for SIMD operations on glm::mat4.

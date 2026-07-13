@@ -10,7 +10,7 @@
 #include <SDL3/SDL.h>
 
 bool InstancedScenePipeline::initLayout(VulkanContext& context) {
-    VkDevice device = context.getVkDevice();
+    vk::Device device = context.getVkDevice();
 
     if (!createDescriptorSetLayouts(device, context.getRaiiDevice())) {
         return false;
@@ -20,13 +20,13 @@ bool InstancedScenePipeline::initLayout(VulkanContext& context) {
     return true;
 }
 
-bool InstancedScenePipeline::createDescriptorSetLayouts(VkDevice device, const vk::raii::Device& raiiDevice) {
+bool InstancedScenePipeline::createDescriptorSetLayouts(vk::Device device, const vk::raii::Device& raiiDevice) {
     // Set 0: the exact common scene bindings (identical to ScenePipeline), so material
     // descriptor sets from MaterialRegistry bind to this pipeline unchanged.
     {
         DescriptorManager::LayoutBuilder builder(device);
         ScenePipeline::addCommonDescriptorBindings(builder);
-        VkDescriptorSetLayout rawLayout = builder.build();
+        vk::DescriptorSetLayout rawLayout = builder.build();
         if (rawLayout == VK_NULL_HANDLE) {
             SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
                 "InstancedScenePipeline: failed to create common (set 0) descriptor layout");
@@ -41,7 +41,7 @@ bool InstancedScenePipeline::createDescriptorSetLayouts(VkDevice device, const v
         builder.addBinding(Bindings::SCENE_INSTANCE_BUFFER,
                            VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
                            VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT);
-        VkDescriptorSetLayout rawLayout = builder.build();
+        vk::DescriptorSetLayout rawLayout = builder.build();
         if (rawLayout == VK_NULL_HANDLE) {
             SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
                 "InstancedScenePipeline: failed to create instance (set 1) descriptor layout");
@@ -53,7 +53,7 @@ bool InstancedScenePipeline::createDescriptorSetLayouts(VkDevice device, const v
     return true;
 }
 
-bool InstancedScenePipeline::createGraphicsPipeline(VulkanContext& context, VkRenderPass hdrRenderPass,
+bool InstancedScenePipeline::createGraphicsPipeline(VulkanContext& context, vk::RenderPass hdrRenderPass,
                                                     const std::string& resourcePath) {
     if (!initialized_) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
@@ -81,7 +81,7 @@ bool InstancedScenePipeline::createGraphicsPipeline(VulkanContext& context, VkRe
     auto bindingDescription = Vertex::getBindingDescription();
     auto attributeDescriptions = Vertex::getAttributeDescriptions();
 
-    VkPipeline rawPipeline = VK_NULL_HANDLE;
+    vk::Pipeline rawPipeline = VK_NULL_HANDLE;
     GraphicsPipelineFactory factory(device);
     bool success = factory
         .applyPreset(GraphicsPipelineFactory::Preset::Default)
@@ -105,7 +105,7 @@ bool InstancedScenePipeline::createGraphicsPipeline(VulkanContext& context, VkRe
     return true;
 }
 
-bool InstancedScenePipeline::createInstanceDescriptorSets(VkDevice device, DescriptorManager::Pool& pool,
+bool InstancedScenePipeline::createInstanceDescriptorSets(vk::Device device, DescriptorManager::Pool& pool,
                                                           GPUSceneBuffer& sceneBuffer, uint32_t framesInFlight) {
     if (!instanceSetLayout_) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,

@@ -51,7 +51,7 @@ public:
     explicit ShadowPassRecorder(RendererSystems& systems);
 
     // Record the complete shadow pass (stateless - all config via params)
-    void record(VkCommandBuffer cmd, uint32_t frameIndex, float time,
+    void record(vk::CommandBuffer cmd, uint32_t frameIndex, float time,
                 const glm::vec3& cameraPosition, const Params& params);
 
     // ========================================================================
@@ -70,7 +70,7 @@ public:
 
     // Deprecated: Record using stored config (use record() with Params instead)
     [[deprecated("Use record() with Params parameter instead")]]
-    void record(VkCommandBuffer cmd, uint32_t frameIndex, float time, const glm::vec3& cameraPosition);
+    void record(vk::CommandBuffer cmd, uint32_t frameIndex, float time, const glm::vec3& cameraPosition);
 
 private:
     ShadowPassResources resources_;

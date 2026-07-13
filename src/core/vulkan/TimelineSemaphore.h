@@ -61,9 +61,9 @@ public:
     vk::Semaphore get() const { return semaphore_ ? **semaphore_ : vk::Semaphore{}; }
 
     /**
-     * Get the raw VkSemaphore handle.
+     * Get the raw vk::Semaphore handle.
      */
-    VkSemaphore getHandle() const { return semaphore_ ? static_cast<VkSemaphore>(**semaphore_) : VK_NULL_HANDLE; }
+    vk::Semaphore getHandle() const { return semaphore_ ? static_cast<vk::Semaphore>(**semaphore_) : VK_NULL_HANDLE; }
 
     // =========================================================================
     // Counter Queries (Non-blocking)

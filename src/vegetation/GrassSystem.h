@@ -103,16 +103,13 @@ public:
     void updateUniforms(uint32_t frameIndex, const glm::vec3& cameraPos, const glm::mat4& viewProj,
                         float terrainSize, float terrainHeightScale, float time);
     void recordResetAndCompute(vk::CommandBuffer cmd, uint32_t frameIndex, float time);
-    void recordDraw(vk::CommandBuffer cmd, uint32_t frameIndex, float time);
     void recordShadowDraw(vk::CommandBuffer cmd, uint32_t frameIndex, float time, uint32_t cascadeIndex);
 
     // IRecordableAnimated interface implementation
-    void recordDraw(VkCommandBuffer cmd, uint32_t frameIndex, float time) override {
-        recordDraw(vk::CommandBuffer(cmd), frameIndex, time);
-    }
+    void recordDraw(vk::CommandBuffer cmd, uint32_t frameIndex, float time) override;
 
     // IShadowCasterAnimated interface implementation
-    void recordShadowDraw(VkCommandBuffer cmd, uint32_t frameIndex, float time, int cascade) override {
+    void recordShadowDraw(vk::CommandBuffer cmd, uint32_t frameIndex, float time, int cascade) override {
         recordShadowDraw(vk::CommandBuffer(cmd), frameIndex, time, static_cast<uint32_t>(cascade));
     }
 
@@ -167,7 +164,7 @@ private:
     SystemLifecycleHelper::PipelineHandles& getGraphicsPipelineHandles() { return lifecycle_.getGraphicsPipeline(); }
 
     // Descriptor set access
-    VkDescriptorSet getGraphicsDescriptorSet(uint32_t index) const { return graphicsDescriptorSets_[index]; }
+    vk::DescriptorSet getGraphicsDescriptorSet(uint32_t index) const { return graphicsDescriptorSets_[index]; }
 
     // Composed components
     GrassBuffers buffers_;
@@ -178,7 +175,7 @@ private:
     SystemLifecycleHelper lifecycle_;
 
     // Graphics descriptor sets (one per buffer set)
-    std::vector<VkDescriptorSet> graphicsDescriptorSets_;
+    std::vector<vk::DescriptorSet> graphicsDescriptorSets_;
 
     // Stored init info
     vk::Device device_;

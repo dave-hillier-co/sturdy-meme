@@ -23,13 +23,13 @@ class VulkanContext;
 struct InitContext {
     // Core Vulkan handles (from VulkanContext)
     const vk::raii::Device* raiiDevice = nullptr;
-    VkDevice device = VK_NULL_HANDLE;
-    VkPhysicalDevice physicalDevice = VK_NULL_HANDLE;
+    vk::Device device = VK_NULL_HANDLE;
+    vk::PhysicalDevice physicalDevice = VK_NULL_HANDLE;
     VmaAllocator allocator = VK_NULL_HANDLE;
 
     // Queue for one-time command submission (uploads, etc.)
-    VkQueue graphicsQueue = VK_NULL_HANDLE;
-    VkCommandPool commandPool = VK_NULL_HANDLE;
+    vk::Queue graphicsQueue = VK_NULL_HANDLE;
+    vk::CommandPool commandPool = VK_NULL_HANDLE;
 
     // Shared descriptor pool (auto-growing)
     DescriptorManager::Pool* descriptorPool = nullptr;
@@ -55,7 +55,7 @@ struct InitContext {
      */
     static InitContext build(
         const VulkanContext& vulkanContext,
-        VkCommandPool commandPool,
+        vk::CommandPool commandPool,
         DescriptorManager::Pool* descriptorPool,
         const std::string& resourcePath,
         uint32_t framesInFlight,

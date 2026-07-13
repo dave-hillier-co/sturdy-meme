@@ -75,7 +75,7 @@ bool SkinnedMeshRenderer::createDescriptorSetLayout() {
     // Add skinned-specific binding as DYNAMIC UBO - enables per-draw offset selection
     builder.addBinding(Bindings::BONE_MATRICES, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, VK_SHADER_STAGE_VERTEX_BIT);
 
-    VkDescriptorSetLayout rawLayout = builder.build();
+    vk::DescriptorSetLayout rawLayout = builder.build();
     if (rawLayout == VK_NULL_HANDLE) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create skinned descriptor set layout");
         return false;
@@ -103,7 +103,7 @@ bool SkinnedMeshRenderer::createPipeline() {
     auto bindingDescription = SkinnedVertex::getBindingDescription();
     auto attributeDescriptions = SkinnedVertex::getAttributeDescriptions();
 
-    VkPipeline rawPipeline = VK_NULL_HANDLE;
+    vk::Pipeline rawPipeline = VK_NULL_HANDLE;
     GraphicsPipelineFactory factory(device);
     bool success = factory
         .applyPreset(GraphicsPipelineFactory::Preset::Default)
@@ -218,7 +218,7 @@ bool SkinnedMeshRenderer::createDescriptorSets(const DescriptorResources& resour
     return true;
 }
 
-void SkinnedMeshRenderer::updateCloudShadowBinding(VkImageView cloudShadowView, VkSampler cloudShadowSampler) {
+void SkinnedMeshRenderer::updateCloudShadowBinding(vk::ImageView cloudShadowView, vk::Sampler cloudShadowSampler) {
     MaterialDescriptorFactory factory(device);
     for (size_t i = 0; i < framesInFlight; i++) {
         factory.updateCloudShadowBinding(descriptorSets[i], cloudShadowView, cloudShadowSampler);
@@ -276,7 +276,7 @@ void SkinnedMeshRenderer::updateBoneMatricesRaw(uint32_t frameIndex, uint32_t sl
     }
 }
 
-void SkinnedMeshRenderer::record(VkCommandBuffer cmd, uint32_t frameIndex, uint32_t slotIndex,
+void SkinnedMeshRenderer::record(vk::CommandBuffer cmd, uint32_t frameIndex, uint32_t slotIndex,
                                   const glm::mat4& transform, AnimatedCharacter& character,
                                   float hueShift) {
     vk::CommandBuffer vkCmd(cmd);
@@ -336,7 +336,7 @@ void SkinnedMeshRenderer::record(VkCommandBuffer cmd, uint32_t frameIndex, uint3
     DIAG_RECORD_DRAW();
 }
 
-void SkinnedMeshRenderer::recordWithLOD(VkCommandBuffer cmd, uint32_t frameIndex, uint32_t slotIndex,
+void SkinnedMeshRenderer::recordWithLOD(vk::CommandBuffer cmd, uint32_t frameIndex, uint32_t slotIndex,
                                          const glm::mat4& transform, AnimatedCharacter& character,
                                          const CharacterLODMesh& lodMesh) {
     // Validate LOD mesh

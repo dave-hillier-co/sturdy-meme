@@ -64,24 +64,24 @@ public:
                           int slot, const char* profileZone);
 
     // Record the complete HDR pass (stateless - all config via params)
-    void record(VkCommandBuffer cmd, uint32_t frameIndex, float time, const Params& params);
+    void record(vk::CommandBuffer cmd, uint32_t frameIndex, float time, const Params& params);
 
     // Record HDR pass with pre-recorded secondary command buffers
-    void recordWithSecondaries(VkCommandBuffer cmd, uint32_t frameIndex, float time,
+    void recordWithSecondaries(vk::CommandBuffer cmd, uint32_t frameIndex, float time,
                                const std::vector<vk::CommandBuffer>& secondaries, const Params& params);
 
     // Record a specific slot to a secondary command buffer
     // Slot 0: Sky + Terrain + Catmull-Clark
     // Slot 1: Scene Objects + Skinned Character
     // Slot 2: Grass + Water + Leaves + Weather + Debug lines
-    void recordSecondarySlot(VkCommandBuffer cmd, uint32_t frameIndex, float time,
+    void recordSecondarySlot(vk::CommandBuffer cmd, uint32_t frameIndex, float time,
                              uint32_t slot, const Params& params);
 
     // Callback recorded into the primary command buffer right after the HDR
     // render pass ends (outside any render pass) - used for transfer work that
     // depends on the pass's fragment output, e.g. the virtual texture
     // feedback readback copy.
-    using PostPassCallback = std::function<void(VkCommandBuffer cmd, uint32_t frameIndex)>;
+    using PostPassCallback = std::function<void(vk::CommandBuffer cmd, uint32_t frameIndex)>;
     void setPostPassCallback(PostPassCallback callback) { postPassCallback_ = std::move(callback); }
 
 private:

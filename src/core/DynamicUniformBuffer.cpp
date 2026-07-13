@@ -9,7 +9,7 @@ DynamicUniformBufferBuilder& DynamicUniformBufferBuilder::setAllocator(VmaAlloca
     return *this;
 }
 
-DynamicUniformBufferBuilder& DynamicUniformBufferBuilder::setPhysicalDevice(VkPhysicalDevice device) {
+DynamicUniformBufferBuilder& DynamicUniformBufferBuilder::setPhysicalDevice(vk::PhysicalDevice device) {
     physicalDevice_ = device;
     return *this;
 }
@@ -19,7 +19,7 @@ DynamicUniformBufferBuilder& DynamicUniformBufferBuilder::setFrameCount(uint32_t
     return *this;
 }
 
-DynamicUniformBufferBuilder& DynamicUniformBufferBuilder::setElementSize(VkDeviceSize size) {
+DynamicUniformBufferBuilder& DynamicUniformBufferBuilder::setElementSize(vk::DeviceSize size) {
     elementSize_ = size;
     return *this;
 }
@@ -32,11 +32,11 @@ bool DynamicUniformBufferBuilder::build(DynamicUniformBuffer& outBuffer) const {
 
     // Get minimum uniform buffer offset alignment
     vk::PhysicalDeviceProperties props = vk::PhysicalDevice(physicalDevice_).getProperties();
-    VkDeviceSize minAlignment = props.limits.minUniformBufferOffsetAlignment;
+    vk::DeviceSize minAlignment = props.limits.minUniformBufferOffsetAlignment;
 
     // Calculate aligned size (round up to alignment)
-    VkDeviceSize alignedSize = (elementSize_ + minAlignment - 1) & ~(minAlignment - 1);
-    VkDeviceSize totalSize = alignedSize * frameCount_;
+    vk::DeviceSize alignedSize = (elementSize_ + minAlignment - 1) & ~(minAlignment - 1);
+    vk::DeviceSize totalSize = alignedSize * frameCount_;
 
     auto bufferInfo = vk::BufferCreateInfo{}
         .setSize(totalSize)
@@ -50,7 +50,7 @@ bool DynamicUniformBufferBuilder::build(DynamicUniformBuffer& outBuffer) const {
     DynamicUniformBuffer result{};
     VmaAllocationInfo allocationInfo{};
 
-    if (vmaCreateBuffer(allocator_, reinterpret_cast<const VkBufferCreateInfo*>(&bufferInfo), &allocInfo, &result.buffer, &result.allocation,
+    if (vmaCreateBuffer(allocator_, reinterpret_cast<const VkBufferCreateInfo*>(&bufferInfo), &allocInfo, reinterpret_cast<VkBuffer*>(&result.buffer), &result.allocation,
                         &allocationInfo) != VK_SUCCESS) {
         SDL_Log("Failed to create dynamic uniform buffer");
         return false;
@@ -80,7 +80,7 @@ MultiSlotDynamicBufferBuilder& MultiSlotDynamicBufferBuilder::setAllocator(VmaAl
     return *this;
 }
 
-MultiSlotDynamicBufferBuilder& MultiSlotDynamicBufferBuilder::setPhysicalDevice(VkPhysicalDevice device) {
+MultiSlotDynamicBufferBuilder& MultiSlotDynamicBufferBuilder::setPhysicalDevice(vk::PhysicalDevice device) {
     physicalDevice_ = device;
     return *this;
 }
@@ -95,7 +95,7 @@ MultiSlotDynamicBufferBuilder& MultiSlotDynamicBufferBuilder::setSlotsPerFrame(u
     return *this;
 }
 
-MultiSlotDynamicBufferBuilder& MultiSlotDynamicBufferBuilder::setElementSize(VkDeviceSize size) {
+MultiSlotDynamicBufferBuilder& MultiSlotDynamicBufferBuilder::setElementSize(vk::DeviceSize size) {
     elementSize_ = size;
     return *this;
 }
@@ -108,11 +108,11 @@ bool MultiSlotDynamicBufferBuilder::build(MultiSlotDynamicBuffer& outBuffer) con
 
     // Get minimum uniform buffer offset alignment
     vk::PhysicalDeviceProperties props = vk::PhysicalDevice(physicalDevice_).getProperties();
-    VkDeviceSize minAlignment = props.limits.minUniformBufferOffsetAlignment;
+    vk::DeviceSize minAlignment = props.limits.minUniformBufferOffsetAlignment;
 
     // Calculate aligned slot size (round up to alignment)
-    VkDeviceSize alignedSlotSize = (elementSize_ + minAlignment - 1) & ~(minAlignment - 1);
-    VkDeviceSize totalSize = alignedSlotSize * slotsPerFrame_ * frameCount_;
+    vk::DeviceSize alignedSlotSize = (elementSize_ + minAlignment - 1) & ~(minAlignment - 1);
+    vk::DeviceSize totalSize = alignedSlotSize * slotsPerFrame_ * frameCount_;
 
     auto bufferInfo = vk::BufferCreateInfo{}
         .setSize(totalSize)
@@ -127,7 +127,7 @@ bool MultiSlotDynamicBufferBuilder::build(MultiSlotDynamicBuffer& outBuffer) con
     VmaAllocationInfo allocationInfo{};
 
     if (vmaCreateBuffer(allocator_, reinterpret_cast<const VkBufferCreateInfo*>(&bufferInfo), &allocInfo,
-                        &result.buffer, &result.allocation, &allocationInfo) != VK_SUCCESS) {
+                        reinterpret_cast<VkBuffer*>(&result.buffer), &result.allocation, &allocationInfo) != VK_SUCCESS) {
         SDL_Log("Failed to create multi-slot dynamic uniform buffer");
         return false;
     }

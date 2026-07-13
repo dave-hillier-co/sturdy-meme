@@ -106,7 +106,7 @@ bool VirtualTextureSystem::init(const InitInfo& info) {
     return true;
 }
 
-void VirtualTextureSystem::destroy(VkDevice device, VmaAllocator allocator) {
+void VirtualTextureSystem::destroy(vk::Device device, VmaAllocator allocator) {
     // RAII-managed subsystems are destroyed automatically via std::optional reset
     tileLoader.reset();
     feedback.reset();
@@ -117,12 +117,12 @@ void VirtualTextureSystem::destroy(VkDevice device, VmaAllocator allocator) {
     pendingUploads_.clear();
 }
 
-void VirtualTextureSystem::beginFrame(VkCommandBuffer cmd, uint32_t frameIndex) {
+void VirtualTextureSystem::beginFrame(vk::CommandBuffer cmd, uint32_t frameIndex) {
     // Clear the feedback buffer for this frame
     feedback->clear(cmd, frameIndex);
 }
 
-void VirtualTextureSystem::endFrame(VkCommandBuffer cmd, uint32_t frameIndex) {
+void VirtualTextureSystem::endFrame(vk::CommandBuffer cmd, uint32_t frameIndex) {
     // Memory barrier to ensure shader writes are visible before transfer
     vk::CommandBuffer vkCmd(cmd);
     auto barrier = vk::MemoryBarrier{}
@@ -137,7 +137,7 @@ void VirtualTextureSystem::endFrame(VkCommandBuffer cmd, uint32_t frameIndex) {
     feedback->recordCopyToReadback(cmd, frameIndex);
 }
 
-void VirtualTextureSystem::update(VkCommandBuffer cmd, uint32_t frameIndex) {
+void VirtualTextureSystem::update(vk::CommandBuffer cmd, uint32_t frameIndex) {
     currentFrame++;
 
     // Process feedback from a COMPLETED frame. The only fence-safe slot is
@@ -260,7 +260,7 @@ void VirtualTextureSystem::processFeedback(uint32_t frameIndex) {
     }
 }
 
-void VirtualTextureSystem::recordPendingTileUploads(VkCommandBuffer cmd, uint32_t frameIndex) {
+void VirtualTextureSystem::recordPendingTileUploads(vk::CommandBuffer cmd, uint32_t frameIndex) {
     // Collect tiles that finished loading; anything beyond this frame's
     // upload budget stays in the queue and is retried next frame
     for (auto& tile : tileLoader->getLoadedTiles()) {

@@ -46,11 +46,11 @@ public:
     };
 
     struct InitInfo {
-        VkDevice device;
+        vk::Device device;
         VmaAllocator allocator;
-        VkCommandPool commandPool;
-        VkQueue graphicsQueue;
-        VkPhysicalDevice physicalDevice;
+        vk::CommandPool commandPool;
+        vk::Queue graphicsQueue;
+        vk::PhysicalDevice physicalDevice;
         std::string resourcePath;
         std::function<float(float, float)> getTerrainHeight;
         float terrainSize;
@@ -105,13 +105,13 @@ public:
 
     // Descriptor set management
     bool createDescriptorSets(
-        VkDevice device,
+        vk::Device device,
         DescriptorManager::Pool& pool,
-        VkDescriptorSetLayout layout,
+        vk::DescriptorSetLayout layout,
         uint32_t frameCount,
         std::function<MaterialDescriptorFactory::CommonBindings(uint32_t)> getCommonBindings);
 
-    VkDescriptorSet getDescriptorSet(uint32_t frameIndex) const {
+    vk::DescriptorSet getDescriptorSet(uint32_t frameIndex) const {
         return (frameIndex < descriptorSets_.size()) ? descriptorSets_[frameIndex] : VK_NULL_HANDLE;
     }
 
@@ -146,7 +146,7 @@ private:
 
     std::string name_;
     SceneMaterial material_;
-    std::vector<VkDescriptorSet> descriptorSets_;
+    std::vector<vk::DescriptorSet> descriptorSets_;
     ecs::Entity areaEntity_ = ecs::NullEntity;
     std::vector<ecs::Entity> instanceEntities_;
 };

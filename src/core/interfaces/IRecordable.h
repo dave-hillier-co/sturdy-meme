@@ -33,7 +33,7 @@ public:
      * @param cmd Command buffer to record to (must be in recording state)
      * @param frameIndex Current frame index for triple-buffered resources
      */
-    virtual void recordDraw(VkCommandBuffer cmd, uint32_t frameIndex) = 0;
+    virtual void recordDraw(vk::CommandBuffer cmd, uint32_t frameIndex) = 0;
 };
 
 /**
@@ -50,10 +50,10 @@ public:
      * @param frameIndex Current frame index
      * @param time Animation time in seconds
      */
-    virtual void recordDraw(VkCommandBuffer cmd, uint32_t frameIndex, float time) = 0;
+    virtual void recordDraw(vk::CommandBuffer cmd, uint32_t frameIndex, float time) = 0;
 
     // Default implementation calls the time-based version with time=0
-    void recordDraw(VkCommandBuffer cmd, uint32_t frameIndex) override {
+    void recordDraw(vk::CommandBuffer cmd, uint32_t frameIndex) override {
         recordDraw(cmd, frameIndex, 0.0f);
     }
 };

@@ -24,7 +24,7 @@ void ResizeCoordinator::ensureSorted() {
     sorted_ = true;
 }
 
-bool ResizeCoordinator::performResize(VkDevice device, VmaAllocator allocator, VkExtent2D newExtent) {
+bool ResizeCoordinator::performResize(vk::Device device, VmaAllocator allocator, VkExtent2D newExtent) {
     // If we have a core resize handler and no explicit extent, let it determine the extent
     if (coreResizeHandler_ && newExtent.width == 0 && newExtent.height == 0) {
         // Wait for GPU to finish all work before resizing

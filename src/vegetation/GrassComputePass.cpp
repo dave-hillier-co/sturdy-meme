@@ -17,8 +17,8 @@ struct DescriptorBindingInfo {
     uint32_t count = 1;
 };
 
-VkDescriptorSetLayout buildDescriptorSetLayout(
-    VkDevice device,
+vk::DescriptorSetLayout buildDescriptorSetLayout(
+    vk::Device device,
     const DescriptorBindingInfo* bindings,
     size_t bindingCount
 ) {
@@ -30,7 +30,7 @@ VkDescriptorSetLayout buildDescriptorSetLayout(
     return builder.build();
 }
 
-std::optional<VkPipelineLayout> buildPipelineLayoutRaw(
+std::optional<vk::PipelineLayout> buildPipelineLayoutRaw(
     const vk::raii::Device& device,
     vk::DescriptorSetLayout layout,
     vk::ShaderStageFlags pushStages,
@@ -101,9 +101,9 @@ bool GrassComputePass::createPipeline(const vk::raii::Device& device, const std:
 }
 
 bool GrassComputePass::createTiledPipeline(const vk::raii::Device& device, const std::string& shaderPath,
-                                            VkPipelineLayout pipelineLayout) {
+                                            vk::PipelineLayout pipelineLayout) {
     ComputePipelineBuilder builder(device);
-    VkPipeline rawTiledPipeline = VK_NULL_HANDLE;
+    vk::Pipeline rawTiledPipeline = VK_NULL_HANDLE;
     if (!builder.setShader(shaderPath + "/grass_tiled.comp.spv")
              .setPipelineLayout(pipelineLayout)
              .buildRaw(rawTiledPipeline)) {
@@ -116,7 +116,7 @@ bool GrassComputePass::createTiledPipeline(const vk::raii::Device& device, const
 }
 
 bool GrassComputePass::allocateDescriptorSets(DescriptorManager::Pool* pool,
-                                               VkDescriptorSetLayout layout, uint32_t count) {
+                                               vk::DescriptorSetLayout layout, uint32_t count) {
     descriptorSets_.resize(count);
     for (uint32_t set = 0; set < count; set++) {
         descriptorSets_[set] = pool->allocateSingle(layout);
@@ -202,7 +202,7 @@ void GrassComputePass::recordResetAndCompute(vk::CommandBuffer cmd, uint32_t fra
         computePipeline = **tiledPipeline_;
     }
     cmd.bindPipeline(vk::PipelineBindPoint::eCompute, computePipeline);
-    VkDescriptorSet computeSet = descriptorSets_[writeSet];
+    vk::DescriptorSet computeSet = descriptorSets_[writeSet];
     cmd.bindDescriptorSets(vk::PipelineBindPoint::eCompute,
                            computeHandles.pipelineLayout, 0,
                            vk::DescriptorSet(computeSet), {});

@@ -61,20 +61,20 @@ public:
      * Set the depth buffer source (previous frame's depth).
      * Must be called before the first record() and whenever depth resources change.
      */
-    void setDepthSource(VkImageView depthView, VkSampler depthSampler);
+    void setDepthSource(vk::ImageView depthView, vk::Sampler depthSampler);
 
     /**
      * Set the shadow map source (cascaded shadow map array).
      * Must be called before the first record() and whenever shadow resources change.
      */
-    void setShadowMapSource(VkImageView shadowMapView, VkSampler shadowMapSampler);
+    void setShadowMapSource(vk::ImageView shadowMapView, vk::Sampler shadowMapSampler);
 
     /**
      * Record the compute dispatch to resolve shadows.
      * The shadow buffer will be transitioned to GENERAL for writing,
      * then to SHADER_READ_ONLY_OPTIMAL for HDR shaders.
      */
-    void record(VkCommandBuffer cmd, uint32_t frameIndex);
+    void record(vk::CommandBuffer cmd, uint32_t frameIndex);
 
     /**
      * Handle window resize.
@@ -82,8 +82,8 @@ public:
     void resize(VkExtent2D newExtent);
 
     // Accessors for the shadow buffer (for HDR shader descriptor binding)
-    VkImageView getShadowBufferView() const;
-    VkSampler getShadowBufferSampler() const;
+    vk::ImageView getShadowBufferView() const;
+    vk::Sampler getShadowBufferSampler() const;
 
 private:
     bool initInternal(const InitContext& ctx);
@@ -105,7 +105,7 @@ private:
     };
 
     // Core Vulkan handles
-    VkDevice device_ = VK_NULL_HANDLE;
+    vk::Device device_ = VK_NULL_HANDLE;
     VmaAllocator allocator_ = VK_NULL_HANDLE;
     DescriptorManager::Pool* descriptorPool_ = nullptr;
     const vk::raii::Device* raiiDevice_ = nullptr;
@@ -124,14 +124,14 @@ private:
     std::optional<vk::raii::Pipeline> pipeline_;
 
     // Per-frame descriptor sets and uniform buffers
-    std::vector<VkDescriptorSet> descriptorSets_;
+    std::vector<vk::DescriptorSet> descriptorSets_;
     BufferUtils::PerFrameBufferSet uniformBuffers_;
 
     // External resource references
-    VkImageView depthView_ = VK_NULL_HANDLE;
-    VkSampler depthSampler_ = VK_NULL_HANDLE;
-    VkImageView shadowMapView_ = VK_NULL_HANDLE;
-    VkSampler shadowMapSampler_ = VK_NULL_HANDLE;
+    vk::ImageView depthView_ = VK_NULL_HANDLE;
+    vk::Sampler depthSampler_ = VK_NULL_HANDLE;
+    vk::ImageView shadowMapView_ = VK_NULL_HANDLE;
+    vk::Sampler shadowMapSampler_ = VK_NULL_HANDLE;
     bool descriptorsNeedUpdate_ = true;
 
     // Previous frame tracking for temporal reprojection

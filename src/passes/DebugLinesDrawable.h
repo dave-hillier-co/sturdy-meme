@@ -1,4 +1,5 @@
 #pragma once
+#include <vulkan/vulkan.hpp>
 
 // ============================================================================
 // DebugLinesDrawable.h - Debug line rendering as IHDRDrawable
@@ -26,7 +27,7 @@ public:
 
     bool shouldDraw(uint32_t frameIndex, const HDRDrawParams& params) const override;
 
-    void recordHDRDraw(VkCommandBuffer cmd, uint32_t frameIndex,
+    void recordHDRDraw(vk::CommandBuffer cmd, uint32_t frameIndex,
                         float time, const HDRDrawParams& params) override;
 
 private:

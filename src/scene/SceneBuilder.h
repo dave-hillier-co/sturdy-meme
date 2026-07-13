@@ -40,10 +40,10 @@ public:
 
     struct InitInfo {
         VmaAllocator allocator;
-        VkDevice device;
-        VkCommandPool commandPool;
-        VkQueue graphicsQueue;
-        VkPhysicalDevice physicalDevice;
+        vk::Device device;
+        vk::CommandPool commandPool;
+        vk::Queue graphicsQueue;
+        vk::PhysicalDevice physicalDevice;
         std::string resourcePath;
         AssetRegistry* assetRegistry = nullptr;  // Centralized asset management
         HeightQueryFunc getTerrainHeight;  // Optional: query terrain height for object placement
@@ -174,7 +174,7 @@ public:
     void updatePlayerTransform(const glm::mat4& transform);
 
     // Upload flag cloth mesh (for dynamic updates)
-    void uploadFlagClothMesh(VmaAllocator allocator, VkDevice device, VkCommandPool commandPool, VkQueue queue);
+    void uploadFlagClothMesh(VmaAllocator allocator, vk::Device device, vk::CommandPool commandPool, vk::Queue queue);
 
     // Animated character access
     AnimatedCharacter& getAnimatedCharacter() { return *animatedCharacter; }
@@ -215,8 +215,8 @@ public:
     // inputDirection: desired movement direction (for motion matching)
     // strafeMode: whether orientation is locked (for strafe animation matching)
     // cameraDirection: camera facing direction (for strafe mode - character faces camera)
-    void updateAnimatedCharacter(float deltaTime, VmaAllocator allocator, VkDevice device,
-                                  VkCommandPool commandPool, VkQueue queue,
+    void updateAnimatedCharacter(float deltaTime, VmaAllocator allocator, vk::Device device,
+                                  vk::CommandPool commandPool, vk::Queue queue,
                                   float movementSpeed = 0.0f, bool isGrounded = true, bool isJumping = false,
                                   const glm::vec3& position = glm::vec3(0.0f),
                                   const glm::vec3& facing = glm::vec3(0.0f, 0.0f, 1.0f),
@@ -268,9 +268,9 @@ private:
 
     // Stored for RAII cleanup and runtime mesh uploads
     VmaAllocator storedAllocator = VK_NULL_HANDLE;
-    VkDevice storedDevice = VK_NULL_HANDLE;
-    VkCommandPool storedCommandPool = VK_NULL_HANDLE;
-    VkQueue storedGraphicsQueue = VK_NULL_HANDLE;
+    vk::Device storedDevice = VK_NULL_HANDLE;
+    vk::CommandPool storedCommandPool = VK_NULL_HANDLE;
+    vk::Queue storedGraphicsQueue = VK_NULL_HANDLE;
 
     // Runtime-generated meshes (settlement blockouts etc.), RAII-owned
     std::vector<std::unique_ptr<Mesh>> generatedMeshes_;

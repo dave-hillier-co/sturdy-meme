@@ -1,4 +1,5 @@
 #pragma once
+#include <vulkan/vulkan.hpp>
 
 // ============================================================================
 // HDRDrawableAdapters.h - Simple adapters wrapping existing interfaces as IHDRDrawable
@@ -23,7 +24,7 @@ class RecordableDrawable : public IHDRDrawable {
 public:
     explicit RecordableDrawable(IRecordable& target) : target_(target) {}
 
-    void recordHDRDraw(VkCommandBuffer cmd, uint32_t frameIndex,
+    void recordHDRDraw(vk::CommandBuffer cmd, uint32_t frameIndex,
                         float /*time*/, const HDRDrawParams& /*params*/) override {
         target_.recordDraw(cmd, frameIndex);
     }
@@ -40,7 +41,7 @@ class AnimatedRecordableDrawable : public IHDRDrawable {
 public:
     explicit AnimatedRecordableDrawable(IRecordableAnimated& target) : target_(target) {}
 
-    void recordHDRDraw(VkCommandBuffer cmd, uint32_t frameIndex,
+    void recordHDRDraw(vk::CommandBuffer cmd, uint32_t frameIndex,
                         float time, const HDRDrawParams& /*params*/) override {
         target_.recordDraw(cmd, frameIndex, time);
     }
@@ -58,7 +59,7 @@ public:
         return params.terrainEnabled;
     }
 
-    void recordHDRDraw(VkCommandBuffer cmd, uint32_t frameIndex,
+    void recordHDRDraw(vk::CommandBuffer cmd, uint32_t frameIndex,
                         float /*time*/, const HDRDrawParams& /*params*/) override {
         target_.recordDraw(cmd, frameIndex);
     }

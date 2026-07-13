@@ -38,7 +38,7 @@ struct HDRDrawParams {
     GPUSceneBuffer* gpuSceneBuffer = nullptr;
     const vk::Pipeline* instancedPipeline = nullptr;
     const vk::PipelineLayout* instancedPipelineLayout = nullptr;
-    VkDescriptorSet instanceDescriptorSet = VK_NULL_HANDLE;  // set 1 (instance SSBO) for this frame
+    vk::DescriptorSet instanceDescriptorSet = VK_NULL_HANDLE;  // set 1 (instance SSBO) for this frame
     bool useIndirectDraw = false;
     // True when the device supports multiDrawIndirect + drawIndirectFirstInstance, so the
     // instanced path can issue vkCmdDrawIndexedIndirect; otherwise it falls back to a
@@ -65,7 +65,7 @@ public:
      * @param time Animation time in seconds
      * @param params Per-frame rendering parameters
      */
-    virtual void recordHDRDraw(VkCommandBuffer cmd, uint32_t frameIndex,
+    virtual void recordHDRDraw(vk::CommandBuffer cmd, uint32_t frameIndex,
                                 float time, const HDRDrawParams& params) = 0;
 
     /**

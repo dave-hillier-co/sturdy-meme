@@ -402,7 +402,7 @@ void GuiTreeTab::render(ITreeControl& treeControl) {
                     }
 
                     // Get the appropriate descriptor set
-                    VkDescriptorSet previewSet = VK_NULL_HANDLE;
+                    vk::DescriptorSet previewSet = VK_NULL_HANDLE;
                     if (selectedTextureType == 0) {
                         previewSet = atlas->getPreviewDescriptorSet(static_cast<uint32_t>(selectedArchetype));
                     } else {

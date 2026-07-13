@@ -11,14 +11,14 @@ void SkinnedMesh::setData(const SkinnedMeshData& data) {
     skeleton = data.skeleton;
 }
 
-bool SkinnedMesh::upload(VmaAllocator allocator, VkDevice device, VkCommandPool commandPool, VkQueue queue) {
+bool SkinnedMesh::upload(VmaAllocator allocator, vk::Device device, vk::CommandPool commandPool, vk::Queue queue) {
     if (vertices.empty() || indices.empty()) {
         SDL_Log("SkinnedMesh: No data to upload");
         return false;
     }
 
-    VkDeviceSize vertexBufferSize = sizeof(SkinnedVertex) * vertices.size();
-    VkDeviceSize indexBufferSize = sizeof(uint32_t) * indices.size();
+    vk::DeviceSize vertexBufferSize = sizeof(SkinnedVertex) * vertices.size();
+    vk::DeviceSize indexBufferSize = sizeof(uint32_t) * indices.size();
 
     // Create vertex staging buffer using RAII
     ManagedBuffer stagingVertexBuffer;

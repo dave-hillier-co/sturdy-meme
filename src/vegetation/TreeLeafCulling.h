@@ -138,8 +138,8 @@ public:
 
     struct InitInfo {
         const vk::raii::Device* raiiDevice = nullptr;
-        VkDevice device;
-        VkPhysicalDevice physicalDevice;
+        vk::Device device;
+        vk::PhysicalDevice physicalDevice;
         VmaAllocator allocator;
         DescriptorManager::Pool* descriptorPool;
         std::string resourcePath;
@@ -169,7 +169,7 @@ public:
     void updateSpatialIndex(const TreeSystem& treeSystem);
 
     // Record compute pass for leaf culling (call before render pass)
-    void recordCulling(VkCommandBuffer cmd, uint32_t frameIndex,
+    void recordCulling(vk::CommandBuffer cmd, uint32_t frameIndex,
                        const TreeSystem& treeSystem,
                        const TreeLODSystem* lodSystem,
                        const glm::vec3& cameraPos,
@@ -191,18 +191,18 @@ public:
     // IMPORTANT: Always pass the same frameIndex used for recordCulling() to ensure
     // compute and graphics passes use the same buffer set.
     // Uses FrameIndexedBuffers to enforce this pattern and prevent desync bugs.
-    VkBuffer getOutputBuffer(uint32_t frameIndex) const {
+    vk::Buffer getOutputBuffer(uint32_t frameIndex) const {
         return cullOutputBuffers_.getVk(frameIndex);
     }
-    VkBuffer getIndirectBuffer(uint32_t frameIndex) const {
+    vk::Buffer getIndirectBuffer(uint32_t frameIndex) const {
         return cullIndirectBuffers_.getVk(frameIndex);
     }
-    VkBuffer getTreeRenderDataBuffer(uint32_t frameIndex) const {
+    vk::Buffer getTreeRenderDataBuffer(uint32_t frameIndex) const {
         return treeRenderDataBuffers_.getVk(frameIndex);
     }
     uint32_t getMaxLeavesPerType() const { return maxLeavesPerType_; }
 
-    VkDevice getDevice() const { return device_; }
+    vk::Device getDevice() const { return device_; }
 
 
 private:
@@ -225,8 +225,8 @@ private:
     void updateCullDescriptorSets(const TreeSystem& treeSystem);
 
     const vk::raii::Device* raiiDevice_ = nullptr;
-    VkDevice device_ = VK_NULL_HANDLE;
-    VkPhysicalDevice physicalDevice_ = VK_NULL_HANDLE;
+    vk::Device device_ = VK_NULL_HANDLE;
+    vk::PhysicalDevice physicalDevice_ = VK_NULL_HANDLE;
     VmaAllocator allocator_ = VK_NULL_HANDLE;
     DescriptorManager::Pool* descriptorPool_ = nullptr;
     std::string resourcePath_;
@@ -241,7 +241,7 @@ private:
     std::optional<vk::raii::Pipeline> cullPipeline_;
     std::optional<vk::raii::PipelineLayout> cullPipelineLayout_;
     std::optional<vk::raii::DescriptorSetLayout> cullDescriptorSetLayout_;
-    std::vector<VkDescriptorSet> cullDescriptorSets_;
+    std::vector<vk::DescriptorSet> cullDescriptorSets_;
 
     // Triple-buffered output buffers using FrameIndexedBuffers for type-safe access.
     // This enforces that buffer access always uses frameIndex, preventing the common
@@ -258,8 +258,8 @@ private:
     // triple-buffered to avoid overwriting data that in-flight frames are reading.
     BufferUtils::FrameIndexedBuffers treeDataBuffers_;
     BufferUtils::FrameIndexedBuffers treeRenderDataBuffers_;
-    VkDeviceSize treeDataBufferSize_ = 0;
-    VkDeviceSize treeRenderDataBufferSize_ = 0;
+    vk::DeviceSize treeDataBufferSize_ = 0;
+    vk::DeviceSize treeRenderDataBufferSize_ = 0;
 
     uint32_t numTreesForIndirect_ = 0;
     uint32_t maxLeavesPerType_ = 0;
@@ -272,13 +272,13 @@ private:
     std::optional<vk::raii::Pipeline> cellCullPipeline_;
     std::optional<vk::raii::PipelineLayout> cellCullPipelineLayout_;
     std::optional<vk::raii::DescriptorSetLayout> cellCullDescriptorSetLayout_;
-    std::vector<VkDescriptorSet> cellCullDescriptorSets_;
+    std::vector<vk::DescriptorSet> cellCullDescriptorSets_;
 
     // Triple-buffered intermediate buffers to prevent race conditions.
     // These are reset and written each frame, so they must be triple-buffered
     // to avoid frame N+1 overwriting data that frame N is still reading.
     BufferUtils::FrameIndexedBuffers visibleCellBuffers_;
-    VkDeviceSize visibleCellBufferSize_ = 0;
+    vk::DeviceSize visibleCellBufferSize_ = 0;
 
     BufferUtils::FrameIndexedBuffers cellCullIndirectBuffers_;
 
@@ -291,7 +291,7 @@ private:
     std::optional<vk::raii::Pipeline> treeFilterPipeline_;
     std::optional<vk::raii::PipelineLayout> treeFilterPipelineLayout_;
     std::optional<vk::raii::DescriptorSetLayout> treeFilterDescriptorSetLayout_;
-    std::vector<VkDescriptorSet> treeFilterDescriptorSets_;
+    std::vector<vk::DescriptorSet> treeFilterDescriptorSets_;
 
     BufferUtils::PerFrameBufferSet treeFilterUniformBuffers_;  // CullingUniforms at binding 6
     BufferUtils::PerFrameBufferSet treeFilterParamsBuffers_;  // TreeFilterParams at binding 7
@@ -299,7 +299,7 @@ private:
     std::optional<vk::raii::Pipeline> twoPhaseLeafCullPipeline_;
     std::optional<vk::raii::PipelineLayout> twoPhaseLeafCullPipelineLayout_;
     std::optional<vk::raii::DescriptorSetLayout> twoPhaseLeafCullDescriptorSetLayout_;
-    std::vector<VkDescriptorSet> twoPhaseLeafCullDescriptorSets_;
+    std::vector<vk::DescriptorSet> twoPhaseLeafCullDescriptorSets_;
     // The two-phase leaf cull sets bind frame-stable buffers, so they are written
     // only when those buffers are (re)created rather than every frame. One dirty
     // bit per frame slot: a set may only be rewritten during ITS OWN frame's
@@ -309,13 +309,13 @@ private:
     // lastLeafInstanceBuffer_ additionally detects reallocation of the
     // externally-owned leaf instance buffer.
     uint32_t twoPhaseLeafCullDescriptorsDirtyMask_ = ~0u;
-    VkBuffer lastLeafInstanceBuffer_ = VK_NULL_HANDLE;
+    vk::Buffer lastLeafInstanceBuffer_ = VK_NULL_HANDLE;
 
     BufferUtils::PerFrameBufferSet leafCullP3ParamsBuffers_;  // LeafCullP3Params at binding 6
 
     // Triple-buffered intermediate buffers for two-phase culling
     BufferUtils::FrameIndexedBuffers visibleTreeBuffers_;
-    VkDeviceSize visibleTreeBufferSize_ = 0;
+    vk::DeviceSize visibleTreeBufferSize_ = 0;
     uint32_t maxVisibleTrees_ = 0;  // Buffer capacity for bounds checking in shader
 
     BufferUtils::FrameIndexedBuffers leafCullIndirectDispatchBuffers_;

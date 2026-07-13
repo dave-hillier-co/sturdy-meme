@@ -39,11 +39,11 @@ public:
     // Configuration for shadow system initialization
     struct InitInfo {
         const vk::raii::Device* raiiDevice = nullptr;  // For RAII resource creation
-        VkDevice device;
-        VkPhysicalDevice physicalDevice;
+        vk::Device device;
+        vk::PhysicalDevice physicalDevice;
         VmaAllocator allocator;
-        VkDescriptorSetLayout mainDescriptorSetLayout;  // For pipeline compatibility
-        VkDescriptorSetLayout skinnedDescriptorSetLayout = VK_NULL_HANDLE;  // For skinned shadow pipeline (optional)
+        vk::DescriptorSetLayout mainDescriptorSetLayout;  // For pipeline compatibility
+        vk::DescriptorSetLayout skinnedDescriptorSetLayout = VK_NULL_HANDLE;  // For skinned shadow pipeline (optional)
         std::string shaderPath;
         uint32_t framesInFlight;
     };
@@ -58,8 +58,8 @@ public:
      */
     static std::unique_ptr<ShadowSystem> create(const InitInfo& info);
     static std::unique_ptr<ShadowSystem> create(const InitContext& ctx,
-                                                 VkDescriptorSetLayout mainDescriptorSetLayout,
-                                                 VkDescriptorSetLayout skinnedDescriptorSetLayout = VK_NULL_HANDLE);
+                                                 vk::DescriptorSetLayout mainDescriptorSetLayout,
+                                                 vk::DescriptorSetLayout skinnedDescriptorSetLayout = VK_NULL_HANDLE);
 
     ~ShadowSystem();
 
@@ -73,11 +73,11 @@ public:
     void updateCascadeMatrices(const glm::vec3& lightDir, const Camera& camera);
 
     // Record shadow pass for all cascades
-    // Callback signature: void(VkCommandBuffer cmd, uint32_t cascade, const glm::mat4& lightMatrix)
-    using DrawCallback = std::function<void(VkCommandBuffer, uint32_t, const glm::mat4&)>;
+    // Callback signature: void(vk::CommandBuffer cmd, uint32_t cascade, const glm::mat4& lightMatrix)
+    using DrawCallback = std::function<void(vk::CommandBuffer, uint32_t, const glm::mat4&)>;
     // Pre-cascade compute callback: runs BEFORE each cascade's render pass (for GPU culling)
-    // Signature: void(VkCommandBuffer cmd, uint32_t frameIndex, uint32_t cascade, const glm::mat4& lightMatrix)
-    using ComputeCallback = std::function<void(VkCommandBuffer, uint32_t, uint32_t, const glm::mat4&)>;
+    // Signature: void(vk::CommandBuffer cmd, uint32_t frameIndex, uint32_t cascade, const glm::mat4& lightMatrix)
+    using ComputeCallback = std::function<void(vk::CommandBuffer, uint32_t, uint32_t, const glm::mat4&)>;
     // Optional GPU-driven indirect scene-object shadow path. When enabled, the shared scene
     // objects (those mirrored into GPUSceneBuffer) are culled per-cascade on the GPU and drawn
     // with indirect commands instead of the instanced/per-object path. Trees, grass, terrain
@@ -92,8 +92,8 @@ public:
         bool canMultiDrawIndirect;
     };
 
-    void recordShadowPass(VkCommandBuffer cmd, uint32_t frameIndex,
-                          VkDescriptorSet descriptorSet,
+    void recordShadowPass(vk::CommandBuffer cmd, uint32_t frameIndex,
+                          vk::DescriptorSet descriptorSet,
                           const std::vector<ecs::RenderData>& sceneObjects,
                           const DrawCallback& terrainDrawCallback,
                           const DrawCallback& grassDrawCallback,
@@ -108,7 +108,7 @@ public:
      * main scene shaders, so it must hold valid contents (depth = 1.0, no shadow)
      * even on frames where the shadow pass is skipped (e.g. sun below horizon).
      */
-    void recordInitialClearIfNeeded(VkCommandBuffer cmd);
+    void recordInitialClearIfNeeded(vk::CommandBuffer cmd);
 
     /**
      * Initialize GPU-driven indirect shadow resources (pipeline + per-frame instance
@@ -119,7 +119,7 @@ public:
     bool hasIndirectShadowPath() const { return indirectShadowReady_; }
 
     // Record skinned mesh shadow for a single cascade (called after bindSkinnedShadowPipeline)
-    void recordSkinnedMeshShadow(VkCommandBuffer cmd, uint32_t cascade,
+    void recordSkinnedMeshShadow(vk::CommandBuffer cmd, uint32_t cascade,
                                   const glm::mat4& modelMatrix,
                                   const SkinnedMesh& mesh);
 
@@ -129,7 +129,7 @@ public:
      * @param descriptorSet Descriptor set with dynamic UBO binding for bone matrices
      * @param boneMatrixOffset Dynamic offset to select character's bone matrices slot
      */
-    void bindSkinnedShadowPipeline(VkCommandBuffer cmd, VkDescriptorSet descriptorSet,
+    void bindSkinnedShadowPipeline(vk::CommandBuffer cmd, vk::DescriptorSet descriptorSet,
                                     uint32_t boneMatrixOffset = 0);
 
     // Shadow map accessors (vulkan-hpp)
@@ -148,10 +148,10 @@ public:
     }
 
     // Additional shadow pipeline accessors (not in interface)
-    VkPipeline getShadowPipeline() const { return shadowPipeline; }
-    VkPipelineLayout getShadowPipelineLayout() const { return shadowPipelineLayout; }
-    VkPipeline getSkinnedShadowPipeline() const { return skinnedShadowPipeline; }
-    VkPipelineLayout getSkinnedShadowPipelineLayout() const { return skinnedShadowPipelineLayout; }
+    vk::Pipeline getShadowPipeline() const { return shadowPipeline; }
+    vk::PipelineLayout getShadowPipelineLayout() const { return shadowPipelineLayout; }
+    vk::Pipeline getSkinnedShadowPipeline() const { return skinnedShadowPipeline; }
+    vk::PipelineLayout getSkinnedShadowPipelineLayout() const { return skinnedShadowPipelineLayout; }
 
     // Cascade data accessors
     const std::array<glm::mat4, NUM_SHADOW_CASCADES>& getCascadeMatrices() const { return cascadeMatrices; }
@@ -159,18 +159,18 @@ public:
 
     // Dynamic shadow resource accessors (for binding in main shader)
     // Bounds-checked accessors to prevent O3 UB from OOB access
-    VkImageView getPointShadowArrayView(uint32_t frameIndex) const {
+    vk::ImageView getPointShadowArrayView(uint32_t frameIndex) const {
         return frameIndex < pointShadowResources.size() ? pointShadowResources[frameIndex].getArrayView() : VK_NULL_HANDLE;
     }
-    VkSampler getPointShadowSampler() const { return pointShadowResources.empty() ? VK_NULL_HANDLE : pointShadowResources[0].getSampler(); }
-    VkImageView getSpotShadowArrayView(uint32_t frameIndex) const {
+    vk::Sampler getPointShadowSampler() const { return pointShadowResources.empty() ? VK_NULL_HANDLE : pointShadowResources[0].getSampler(); }
+    vk::ImageView getSpotShadowArrayView(uint32_t frameIndex) const {
         return frameIndex < spotShadowResources.size() ? spotShadowResources[frameIndex].getArrayView() : VK_NULL_HANDLE;
     }
-    VkSampler getSpotShadowSampler() const { return spotShadowResources.empty() ? VK_NULL_HANDLE : spotShadowResources[0].getSampler(); }
+    vk::Sampler getSpotShadowSampler() const { return spotShadowResources.empty() ? VK_NULL_HANDLE : spotShadowResources[0].getSampler(); }
 
     // Dynamic shadow rendering (placeholder for future implementation)
-    void renderDynamicShadows(VkCommandBuffer cmd, uint32_t frameIndex,
-                              VkDescriptorSet descriptorSet,
+    void renderDynamicShadows(vk::CommandBuffer cmd, uint32_t frameIndex,
+                              vk::DescriptorSet descriptorSet,
                               const std::vector<ecs::RenderData>& sceneObjects,
                               const DrawCallback& terrainDrawCallback,
                               const DrawCallback& grassDrawCallback,
@@ -194,16 +194,16 @@ private:
     bool createShadowPipelineCommon(
         const std::string& vertShader,
         const std::string& fragShader,
-        VkDescriptorSetLayout descriptorSetLayout,
+        vk::DescriptorSetLayout descriptorSetLayout,
         const VkVertexInputBindingDescription& binding,
         const std::vector<VkVertexInputAttributeDescription>& attributes,
-        VkPipelineLayout& outLayout,
-        VkPipeline& outPipeline);
+        vk::PipelineLayout& outLayout,
+        vk::Pipeline& outPipeline);
 
     // Draw helper
     void drawShadowScene(
-        VkCommandBuffer cmd,
-        VkPipelineLayout layout,
+        vk::CommandBuffer cmd,
+        vk::PipelineLayout layout,
         uint32_t cascadeOrFaceIndex,
         const glm::mat4& lightMatrix,
         const std::vector<ecs::RenderData>& sceneObjects,
@@ -222,10 +222,10 @@ private:
     static constexpr uint32_t SHADOW_MAP_SIZE = 2048;
     DepthArrayResources csmResources;
     std::optional<vk::raii::RenderPass> shadowRenderPass_;
-    VkRenderPass shadowRenderPass = VK_NULL_HANDLE;  // Raw handle for compatibility
-    std::vector<VkFramebuffer> cascadeFramebuffers;
-    VkPipeline shadowPipeline = VK_NULL_HANDLE;
-    VkPipelineLayout shadowPipelineLayout = VK_NULL_HANDLE;
+    vk::RenderPass shadowRenderPass = VK_NULL_HANDLE;  // Raw handle for compatibility
+    std::vector<vk::Framebuffer> cascadeFramebuffers;
+    vk::Pipeline shadowPipeline = VK_NULL_HANDLE;
+    vk::PipelineLayout shadowPipelineLayout = VK_NULL_HANDLE;
 
     // CSM cascade data
     std::vector<float> cascadeSplitDepths;
@@ -244,26 +244,26 @@ private:
 
     // Point light shadows (cube maps) - per frame
     std::vector<DepthArrayResources> pointShadowResources;
-    std::vector<std::vector<VkFramebuffer>> pointShadowFramebuffers;  // [frame][face]
+    std::vector<std::vector<vk::Framebuffer>> pointShadowFramebuffers;  // [frame][face]
 
     // Spot light shadows (2D depth textures) - per frame
     std::vector<DepthArrayResources> spotShadowResources;
-    std::vector<std::vector<VkFramebuffer>> spotShadowFramebuffers;   // [frame][light]
+    std::vector<std::vector<vk::Framebuffer>> spotShadowFramebuffers;   // [frame][light]
 
-    VkPipeline dynamicShadowPipeline = VK_NULL_HANDLE;
-    VkPipelineLayout dynamicShadowPipelineLayout = VK_NULL_HANDLE;
+    vk::Pipeline dynamicShadowPipeline = VK_NULL_HANDLE;
+    vk::PipelineLayout dynamicShadowPipelineLayout = VK_NULL_HANDLE;
 
     // Skinned mesh shadow pipeline (for GPU-skinned characters)
-    VkPipeline skinnedShadowPipeline = VK_NULL_HANDLE;
-    VkPipelineLayout skinnedShadowPipelineLayout = VK_NULL_HANDLE;
+    vk::Pipeline skinnedShadowPipeline = VK_NULL_HANDLE;
+    vk::PipelineLayout skinnedShadowPipelineLayout = VK_NULL_HANDLE;
 
     // Instanced shadow rendering (batches scene objects by mesh)
     static constexpr uint32_t MAX_SHADOW_INSTANCES = 512;  // Max instances per frame
-    VkPipeline instancedShadowPipeline = VK_NULL_HANDLE;
-    VkPipelineLayout instancedShadowPipelineLayout = VK_NULL_HANDLE;
-    VkDescriptorSetLayout instancedShadowDescriptorSetLayout = VK_NULL_HANDLE;
+    vk::Pipeline instancedShadowPipeline = VK_NULL_HANDLE;
+    vk::PipelineLayout instancedShadowPipelineLayout = VK_NULL_HANDLE;
+    vk::DescriptorSetLayout instancedShadowDescriptorSetLayout = VK_NULL_HANDLE;
     std::vector<vk::DescriptorSet> instancedShadowDescriptorSets;  // Per frame
-    std::vector<VkBuffer> instanceBuffers;      // Per frame
+    std::vector<vk::Buffer> instanceBuffers;      // Per frame
     std::vector<VmaAllocation> instanceAllocations;  // Per frame
     std::vector<void*> instanceMappedPtrs;      // Persistently mapped
 
@@ -279,7 +279,7 @@ private:
 
     // Draw scene objects using instanced rendering (batches by mesh)
     void drawShadowSceneInstanced(
-        VkCommandBuffer cmd,
+        vk::CommandBuffer cmd,
         uint32_t frameIndex,
         uint32_t cascadeIndex,
         const std::vector<ecs::RenderData>& sceneObjects);
@@ -290,18 +290,18 @@ private:
     struct IndirectShadowPushConstants {
         uint32_t cascadeIndex;
     };
-    VkPipeline indirectShadowPipeline = VK_NULL_HANDLE;
-    VkPipelineLayout indirectShadowPipelineLayout = VK_NULL_HANDLE;
-    VkDescriptorPool indirectShadowPool = VK_NULL_HANDLE;
+    vk::Pipeline indirectShadowPipeline = VK_NULL_HANDLE;
+    vk::PipelineLayout indirectShadowPipelineLayout = VK_NULL_HANDLE;
+    vk::DescriptorPool indirectShadowPool = VK_NULL_HANDLE;
     std::vector<vk::DescriptorSet> indirectInstanceDescriptorSets;  // per frame -> instance SSBO
     bool indirectShadowReady_ = false;
     bool csmInitialized_ = false;
 
     // Draw scene objects for one cascade via per-cascade indirect commands.
-    void recordShadowSceneIndirect(VkCommandBuffer cmd, uint32_t frameIndex, uint32_t cascade,
-                                   VkDescriptorSet uboDescriptorSet,
+    void recordShadowSceneIndirect(vk::CommandBuffer cmd, uint32_t frameIndex, uint32_t cascade,
+                                   vk::DescriptorSet uboDescriptorSet,
                                    GPUSceneBuffer& sceneBuffer,
-                                   VkBuffer indirectBuffer, bool canMultiDrawIndirect);
+                                   vk::Buffer indirectBuffer, bool canMultiDrawIndirect);
 
     bool initialized_ = false;
 };

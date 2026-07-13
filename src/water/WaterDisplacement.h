@@ -32,11 +32,11 @@ public:
     explicit WaterDisplacement(ConstructToken) {}
 
     struct InitInfo {
-        VkDevice device;
-        VkPhysicalDevice physicalDevice;
+        vk::Device device;
+        vk::PhysicalDevice physicalDevice;
         VmaAllocator allocator;
-        VkCommandPool commandPool;
-        VkQueue computeQueue;
+        vk::CommandPool commandPool;
+        vk::Queue computeQueue;
         uint32_t framesInFlight;
         uint32_t displacementResolution = 512;  // Displacement map resolution
         float worldSize = 100.0f;               // World size covered by displacement map
@@ -89,15 +89,15 @@ public:
     void update(float deltaTime);
 
     // Record compute shader dispatch
-    void recordCompute(VkCommandBuffer cmd, uint32_t frameIndex);
+    void recordCompute(vk::CommandBuffer cmd, uint32_t frameIndex);
 
     // Get displacement map for sampling in water shader
-    VkImageView getDisplacementMapView() const { return displacementMapView_ ? **displacementMapView_ : VK_NULL_HANDLE; }
-    VkSampler getSampler() const { return sampler_ ? **sampler_ : VK_NULL_HANDLE; }
+    vk::ImageView getDisplacementMapView() const { return displacementMapView_ ? **displacementMapView_ : VK_NULL_HANDLE; }
+    vk::Sampler getSampler() const { return sampler_ ? **sampler_ : VK_NULL_HANDLE; }
 
     // Get descriptor set for water shader binding
-    VkDescriptorSetLayout getDescriptorSetLayout() const { return descriptorSetLayout_ ? **descriptorSetLayout_ : VK_NULL_HANDLE; }
-    VkDescriptorSet getDescriptorSet(uint32_t frameIndex) const { return descriptorSets[frameIndex]; }
+    vk::DescriptorSetLayout getDescriptorSetLayout() const { return descriptorSetLayout_ ? **descriptorSetLayout_ : VK_NULL_HANDLE; }
+    vk::DescriptorSet getDescriptorSet(uint32_t frameIndex) const { return descriptorSets[frameIndex]; }
 
     // Configuration
     void setWorldExtent(const glm::vec2& center, const glm::vec2& size);
@@ -124,11 +124,11 @@ private:
     void updateParticleBuffer(uint32_t frameIndex);
 
     // Device handles
-    VkDevice device = VK_NULL_HANDLE;
-    VkPhysicalDevice physicalDevice = VK_NULL_HANDLE;
+    vk::Device device = VK_NULL_HANDLE;
+    vk::PhysicalDevice physicalDevice = VK_NULL_HANDLE;
     VmaAllocator allocator = VK_NULL_HANDLE;
-    VkCommandPool commandPool = VK_NULL_HANDLE;
-    VkQueue computeQueue = VK_NULL_HANDLE;
+    vk::CommandPool commandPool = VK_NULL_HANDLE;
+    vk::Queue computeQueue = VK_NULL_HANDLE;
     const vk::raii::Device* raiiDevice_ = nullptr;
 
     // Configuration
@@ -155,7 +155,7 @@ private:
     std::optional<vk::raii::PipelineLayout> computePipelineLayout_;
     std::optional<vk::raii::DescriptorSetLayout> descriptorSetLayout_;
     std::optional<vk::raii::DescriptorPool> descriptorPool_;
-    std::vector<VkDescriptorSet> descriptorSets;
+    std::vector<vk::DescriptorSet> descriptorSets;
 
     // Particle buffer (SSBO, RAII-managed)
     static constexpr uint32_t MAX_PARTICLES = 256;

@@ -23,7 +23,7 @@ std::unique_ptr<PostProcessSystem> PostProcessSystem::create(const InitInfo& inf
     return system;
 }
 
-std::unique_ptr<PostProcessSystem> PostProcessSystem::create(const InitContext& ctx, VkRenderPass outputRenderPass, VkFormat swapchainFormat) {
+std::unique_ptr<PostProcessSystem> PostProcessSystem::create(const InitContext& ctx, vk::RenderPass outputRenderPass, VkFormat swapchainFormat) {
     InitInfo info{};
     info.device = ctx.device;
     info.allocator = ctx.allocator;
@@ -39,7 +39,7 @@ std::unique_ptr<PostProcessSystem> PostProcessSystem::create(const InitContext& 
 
 std::optional<PostProcessSystem::Bundle> PostProcessSystem::createWithDependencies(
     const InitContext& ctx,
-    VkRenderPass finalRenderPass,
+    vk::RenderPass finalRenderPass,
     VkFormat swapchainImageFormat
 ) {
     // Create post-process system
@@ -201,7 +201,7 @@ void PostProcessSystem::resize(VkExtent2D newExtent) {
 bool PostProcessSystem::createHDRRenderTarget() {
     // Create HDR color image
     {
-        VkImageView rawView = VK_NULL_HANDLE;
+        vk::ImageView rawView = VK_NULL_HANDLE;
         if (!ImageBuilder(allocator)
                 .setExtent(extent.width, extent.height)
                 .setFormat(HDR_FORMAT)
@@ -215,7 +215,7 @@ bool PostProcessSystem::createHDRRenderTarget() {
 
     // Create HDR depth image
     {
-        VkImageView rawView = VK_NULL_HANDLE;
+        vk::ImageView rawView = VK_NULL_HANDLE;
         if (!ImageBuilder(allocator)
                 .setExtent(extent.width, extent.height)
                 .setFormat(DEPTH_FORMAT)
@@ -505,8 +505,8 @@ bool PostProcessSystem::createCompositePipeline() {
     return true;
 }
 
-void PostProcessSystem::recordPostProcess(VkCommandBuffer cmd, uint32_t frameIndex,
-                                          VkFramebuffer swapchainFB, float deltaTime,
+void PostProcessSystem::recordPostProcess(vk::CommandBuffer cmd, uint32_t frameIndex,
+                                          vk::Framebuffer swapchainFB, float deltaTime,
                                           PreEndCallback preEndCallback) {
     // Run histogram compute pass for auto-exposure (if enabled)
     recordHistogramCompute(cmd, frameIndex, deltaTime);
@@ -589,7 +589,7 @@ void PostProcessSystem::recordPostProcess(VkCommandBuffer cmd, uint32_t frameInd
 
         // Select pipeline variant based on god ray quality setting
         vk::CommandBuffer vkCmd(cmd);
-        VkPipeline selectedPipeline = compositePipelines[static_cast<int>(godRayQuality)];
+        vk::Pipeline selectedPipeline = compositePipelines[static_cast<int>(godRayQuality)];
         vkCmd.bindPipeline(vk::PipelineBindPoint::eGraphics, selectedPipeline);
         vkCmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, compositePipelineLayout,
                                  0, vk::DescriptorSet(compositeDescriptorSets[frameIndex]), {});
@@ -808,7 +808,7 @@ void PostProcessSystem::destroyHistogramResources() {
     }
 }
 
-void PostProcessSystem::recordHistogramCompute(VkCommandBuffer cmd, uint32_t frameIndex, float deltaTime) {
+void PostProcessSystem::recordHistogramCompute(vk::CommandBuffer cmd, uint32_t frameIndex, float deltaTime) {
     if (!autoExposureEnabled) return;
 
     // Update histogram parameters (HistogramReduceParams is a superset of HistogramBuildParams)
@@ -917,7 +917,7 @@ void PostProcessSystem::recordHistogramCompute(VkCommandBuffer cmd, uint32_t fra
 }
 
 
-void PostProcessSystem::setFroxelVolume(VkImageView volumeView, VkSampler volumeSampler) {
+void PostProcessSystem::setFroxelVolume(vk::ImageView volumeView, vk::Sampler volumeSampler) {
     froxelVolumeView = volumeView;
     froxelSampler = volumeSampler;
 
@@ -929,7 +929,7 @@ void PostProcessSystem::setFroxelVolume(VkImageView volumeView, VkSampler volume
     }
 }
 
-void PostProcessSystem::setBloomTexture(VkImageView bloomView, VkSampler bloomSampler) {
+void PostProcessSystem::setBloomTexture(vk::ImageView bloomView, vk::Sampler bloomSampler) {
     this->bloomView = bloomView;
     this->bloomSampler = bloomSampler;
 
@@ -941,7 +941,7 @@ void PostProcessSystem::setBloomTexture(VkImageView bloomView, VkSampler bloomSa
     }
 }
 
-void PostProcessSystem::setBilateralGrid(VkImageView gridView, VkSampler gridSampler) {
+void PostProcessSystem::setBilateralGrid(vk::ImageView gridView, vk::Sampler gridSampler) {
     this->bilateralGridView = gridView;
     this->bilateralGridSampler = gridSampler;
 
@@ -953,7 +953,7 @@ void PostProcessSystem::setBilateralGrid(VkImageView gridView, VkSampler gridSam
     }
 }
 
-void PostProcessSystem::setGodRaysTexture(VkImageView godRaysView, VkSampler godRaysSampler) {
+void PostProcessSystem::setGodRaysTexture(vk::ImageView godRaysView, vk::Sampler godRaysSampler) {
     this->godRaysView_ = godRaysView;
     this->godRaysSampler_ = godRaysSampler;
 

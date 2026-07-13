@@ -84,7 +84,7 @@ bool LoadingRenderer::createFramebuffers() {
 
 bool LoadingRenderer::createPipeline() {
     const auto& device = ctx_->get().getRaiiDevice();
-    VkDevice rawDevice = ctx_->get().getVkDevice();
+    vk::Device rawDevice = ctx_->get().getVkDevice();
 
     // Load shaders
     std::string vertPath = shaderPath_ + "/loading.vert.spv";
@@ -98,7 +98,7 @@ bool LoadingRenderer::createPipeline() {
         return false;
     }
 
-    // ShaderLoader returns raw VkShaderModule, clean up when done
+    // ShaderLoader returns raw vk::ShaderModule, clean up when done
     auto cleanupShaders = [&]() {
         vkDestroyShaderModule(rawDevice, *vertModule, nullptr);
         vkDestroyShaderModule(rawDevice, *fragModule, nullptr);
@@ -233,7 +233,7 @@ bool LoadingRenderer::createCommandPool() {
     allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
     allocInfo.commandBufferCount = imageCount;
 
-    if (vkAllocateCommandBuffers(ctx_->get().getVkDevice(), &allocInfo, commandBuffers_.data()) != VK_SUCCESS) {
+    if (vkAllocateCommandBuffers(ctx_->get().getVkDevice(), &allocInfo, reinterpret_cast<VkCommandBuffer*>(commandBuffers_.data())) != VK_SUCCESS) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "LoadingRenderer: Failed to allocate command buffers");
         return false;
     }
@@ -263,7 +263,7 @@ bool LoadingRenderer::render() {
     if (!initialized_) return false;
 
     const auto& device = ctx_->get().getRaiiDevice();
-    VkDevice rawDevice = ctx_->get().getVkDevice();
+    vk::Device rawDevice = ctx_->get().getVkDevice();
     VkExtent2D extent = ctx_->get().getVkSwapchainExtent();
 
     // Skip if window is minimized
@@ -306,7 +306,7 @@ bool LoadingRenderer::render() {
     float elapsedTime = currentTime - startTime_;
 
     // Reset and record command buffer
-    VkCommandBuffer cmd = commandBuffers_[imageIndex];
+    vk::CommandBuffer cmd = commandBuffers_[imageIndex];
     vkResetCommandBuffer(cmd, 0);
 
     VkCommandBufferBeginInfo beginInfo{};
@@ -370,7 +370,7 @@ bool LoadingRenderer::render() {
     VkSubmitInfo submitInfo{};
     submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
 
-    VkSemaphore waitSemaphores[] = {**imageAvailableSemaphore_};
+    vk::Semaphore waitSemaphores[] = {**imageAvailableSemaphore_};
     VkPipelineStageFlags waitStages[] = {VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
     submitInfo.waitSemaphoreCount = 1;
     submitInfo.pWaitSemaphores = waitSemaphores;
@@ -378,7 +378,7 @@ bool LoadingRenderer::render() {
     submitInfo.commandBufferCount = 1;
     submitInfo.pCommandBuffers = &cmd;
 
-    VkSemaphore signalSemaphores[] = {**renderFinishedSemaphore_};
+    vk::Semaphore signalSemaphores[] = {**renderFinishedSemaphore_};
     submitInfo.signalSemaphoreCount = 1;
     submitInfo.pSignalSemaphores = signalSemaphores;
 
@@ -393,7 +393,7 @@ bool LoadingRenderer::render() {
     presentInfo.waitSemaphoreCount = 1;
     presentInfo.pWaitSemaphores = signalSemaphores;
 
-    VkSwapchainKHR swapchains[] = {ctx_->get().getVkSwapchain()};
+    vk::SwapchainKHR swapchains[] = {ctx_->get().getVkSwapchain()};
     presentInfo.swapchainCount = 1;
     presentInfo.pSwapchains = swapchains;
     presentInfo.pImageIndices = &imageIndex;
@@ -406,7 +406,7 @@ bool LoadingRenderer::render() {
 void LoadingRenderer::cleanup() {
     if (!initialized_) return;
 
-    VkDevice device = ctx_->get().getVkDevice();
+    vk::Device device = ctx_->get().getVkDevice();
 
     // Wait for GPU to finish
     vkDeviceWaitIdle(device);
@@ -415,7 +415,7 @@ void LoadingRenderer::cleanup() {
     if (!commandBuffers_.empty() && commandPool_) {
         vkFreeCommandBuffers(device, **commandPool_,
                              static_cast<uint32_t>(commandBuffers_.size()),
-                             commandBuffers_.data());
+                             reinterpret_cast<VkCommandBuffer*>(commandBuffers_.data()));
         commandBuffers_.clear();
     }
 

@@ -1,4 +1,5 @@
 #pragma once
+#include <vulkan/vulkan.hpp>
 
 // ============================================================================
 // SceneObjectsDrawable.h - Scene object rendering as IHDRDrawable
@@ -57,12 +58,12 @@ public:
 
     explicit SceneObjectsDrawable(const Resources& resources);
 
-    void recordHDRDraw(VkCommandBuffer cmd, uint32_t frameIndex,
+    void recordHDRDraw(vk::CommandBuffer cmd, uint32_t frameIndex,
                         float time, const HDRDrawParams& params) override;
 
 private:
-    void recordSceneObjects(VkCommandBuffer cmd, uint32_t frameIndex, const HDRDrawParams& params);
-    void recordSceneObjectsIndirect(VkCommandBuffer cmd, uint32_t frameIndex, const HDRDrawParams& params);
+    void recordSceneObjects(vk::CommandBuffer cmd, uint32_t frameIndex, const HDRDrawParams& params);
+    void recordSceneObjectsIndirect(vk::CommandBuffer cmd, uint32_t frameIndex, const HDRDrawParams& params);
 
     Resources resources_;
 };

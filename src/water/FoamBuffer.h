@@ -50,11 +50,11 @@ public:
     explicit FoamBuffer(ConstructToken) {}
 
     struct InitInfo {
-        VkDevice device;
-        VkPhysicalDevice physicalDevice;
+        vk::Device device;
+        vk::PhysicalDevice physicalDevice;
         VmaAllocator allocator;
-        VkCommandPool commandPool;
-        VkQueue computeQueue;
+        vk::CommandPool commandPool;
+        vk::Queue computeQueue;
         std::string shaderPath;
         uint32_t framesInFlight;
         uint32_t resolution = 512;      // Foam buffer resolution
@@ -95,12 +95,12 @@ public:
 
     // Record compute shader dispatch for blur/decay
     // Call this each frame before water rendering
-    void recordCompute(VkCommandBuffer cmd, uint32_t frameIndex, float deltaTime,
-                       VkImageView flowMapView, VkSampler flowMapSampler);
+    void recordCompute(vk::CommandBuffer cmd, uint32_t frameIndex, float deltaTime,
+                       vk::ImageView flowMapView, vk::Sampler flowMapSampler);
 
     // Get foam buffer for sampling in water shader
-    VkImageView getFoamBufferView() const { return foamBufferView_[currentBuffer] ? **foamBufferView_[currentBuffer] : VK_NULL_HANDLE; }
-    VkSampler getSampler() const { return sampler_ ? **sampler_ : VK_NULL_HANDLE; }
+    vk::ImageView getFoamBufferView() const { return foamBufferView_[currentBuffer] ? **foamBufferView_[currentBuffer] : VK_NULL_HANDLE; }
+    vk::Sampler getSampler() const { return sampler_ ? **sampler_ : VK_NULL_HANDLE; }
 
     // Configuration
     void setWorldExtent(const glm::vec2& center, const glm::vec2& size);
@@ -113,7 +113,7 @@ public:
     float getInjectionStrength() const { return injectionStrength; }
 
     // Clear foam buffer
-    void clear(VkCommandBuffer cmd);
+    void clear(vk::CommandBuffer cmd);
 
     // ITemporalSystem: Reset temporal history to prevent ghost frames
     void resetTemporalHistory() override { currentBuffer = 0; }
@@ -141,11 +141,11 @@ private:
     bool createDescriptorSets();
 
     // Device handles
-    VkDevice device = VK_NULL_HANDLE;
-    VkPhysicalDevice physicalDevice = VK_NULL_HANDLE;
+    vk::Device device = VK_NULL_HANDLE;
+    vk::PhysicalDevice physicalDevice = VK_NULL_HANDLE;
     VmaAllocator allocator = VK_NULL_HANDLE;
-    VkCommandPool commandPool = VK_NULL_HANDLE;
-    VkQueue computeQueue = VK_NULL_HANDLE;
+    vk::CommandPool commandPool = VK_NULL_HANDLE;
+    vk::Queue computeQueue = VK_NULL_HANDLE;
     std::string shaderPath;
     const vk::raii::Device* raiiDevice_ = nullptr;
 
@@ -175,7 +175,7 @@ private:
     std::optional<vk::raii::PipelineLayout> computePipelineLayout_;
     std::optional<vk::raii::DescriptorSetLayout> descriptorSetLayout_;
     std::optional<vk::raii::DescriptorPool> descriptorPool_;
-    std::vector<VkDescriptorSet> descriptorSets;
+    std::vector<vk::DescriptorSet> descriptorSets;
 
     // Phase 16: Wake system
     WakeUniformData wakeData{};

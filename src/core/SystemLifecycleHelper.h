@@ -10,9 +10,9 @@
 class SystemLifecycleHelper {
 public:
     struct InitInfo {
-        VkDevice device;
+        vk::Device device;
         VmaAllocator allocator;
-        VkRenderPass renderPass;
+        vk::RenderPass renderPass;
         DescriptorManager::Pool* descriptorPool;  // Auto-growing pool (preferred)
         VkExtent2D extent;
         std::string shaderPath;
@@ -21,9 +21,9 @@ public:
     };
 
     struct PipelineHandles {
-        VkDescriptorSetLayout descriptorSetLayout = VK_NULL_HANDLE;
-        VkPipelineLayout pipelineLayout = VK_NULL_HANDLE;
-        VkPipeline pipeline = VK_NULL_HANDLE;
+        vk::DescriptorSetLayout descriptorSetLayout = VK_NULL_HANDLE;
+        vk::PipelineLayout pipelineLayout = VK_NULL_HANDLE;
+        vk::Pipeline pipeline = VK_NULL_HANDLE;
     };
 
     struct Hooks {
@@ -70,10 +70,10 @@ public:
         return true;
     }
 
-    void destroy(VkDevice deviceOverride = VK_NULL_HANDLE, VmaAllocator allocatorOverride = VK_NULL_HANDLE) {
+    void destroy(vk::Device deviceOverride = VK_NULL_HANDLE, VmaAllocator allocatorOverride = VK_NULL_HANDLE) {
         if (!initialized) return;
 
-        VkDevice dev = deviceOverride == VK_NULL_HANDLE ? initInfo.device : deviceOverride;
+        vk::Device dev = deviceOverride == VK_NULL_HANDLE ? initInfo.device : deviceOverride;
         VmaAllocator alloc = allocatorOverride == VK_NULL_HANDLE ? initInfo.allocator : allocatorOverride;
 
         if (graphicsEnabled) {
@@ -88,9 +88,9 @@ public:
         initialized = false;
     }
 
-    VkDevice getDevice() const { return initInfo.device; }
+    vk::Device getDevice() const { return initInfo.device; }
     VmaAllocator getAllocator() const { return initInfo.allocator; }
-    VkRenderPass getRenderPass() const { return initInfo.renderPass; }
+    vk::RenderPass getRenderPass() const { return initInfo.renderPass; }
     DescriptorManager::Pool* getDescriptorPool() const { return initInfo.descriptorPool; }
     const VkExtent2D& getExtent() const { return initInfo.extent; }
     void setExtent(VkExtent2D newExtent) { initInfo.extent = newExtent; }
@@ -102,7 +102,7 @@ public:
     PipelineHandles& getGraphicsPipeline() { return graphicsPipeline; }
 
 private:
-    void destroyPipelineHandles(VkDevice dev, PipelineHandles& handles) {
+    void destroyPipelineHandles(vk::Device dev, PipelineHandles& handles) {
         vk::Device hppDevice(dev);
         hppDevice.destroyPipeline(vk::Pipeline(handles.pipeline));
         hppDevice.destroyPipelineLayout(vk::PipelineLayout(handles.pipelineLayout));

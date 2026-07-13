@@ -159,7 +159,7 @@ bool ImpostorCullSystem::createBuffers() {
     allocInfo.usage = VMA_MEMORY_USAGE_CPU_TO_GPU;
 
     if (vmaCreateBuffer(allocator_, reinterpret_cast<const VkBufferCreateInfo*>(&bufferInfo), &allocInfo,
-                        &treeInputBuffer_, &treeInputAllocation_, nullptr) != VK_SUCCESS) {
+                        reinterpret_cast<VkBuffer*>(&treeInputBuffer_), &treeInputAllocation_, nullptr) != VK_SUCCESS) {
         return false;
     }
 
@@ -167,7 +167,7 @@ bool ImpostorCullSystem::createBuffers() {
     archetypeBufferSize_ = maxArchetypes_ * sizeof(ArchetypeCullData);
     bufferInfo.setSize(archetypeBufferSize_);
     if (vmaCreateBuffer(allocator_, reinterpret_cast<const VkBufferCreateInfo*>(&bufferInfo), &allocInfo,
-                        &archetypeBuffer_, &archetypeAllocation_, nullptr) != VK_SUCCESS) {
+                        reinterpret_cast<VkBuffer*>(&archetypeBuffer_), &archetypeAllocation_, nullptr) != VK_SUCCESS) {
         return false;
     }
 
@@ -179,7 +179,7 @@ bool ImpostorCullSystem::createBuffers() {
     allocInfo.usage = VMA_MEMORY_USAGE_GPU_ONLY;
 
     if (vmaCreateBuffer(allocator_, reinterpret_cast<const VkBufferCreateInfo*>(&bufferInfo), &allocInfo,
-                        &visibleImpostorBuffer_, &visibleImpostorAllocation_, nullptr) != VK_SUCCESS) {
+                        reinterpret_cast<VkBuffer*>(&visibleImpostorBuffer_), &visibleImpostorAllocation_, nullptr) != VK_SUCCESS) {
         return false;
     }
 
@@ -191,7 +191,7 @@ bool ImpostorCullSystem::createBuffers() {
     allocInfo.usage = VMA_MEMORY_USAGE_GPU_ONLY;
 
     if (vmaCreateBuffer(allocator_, reinterpret_cast<const VkBufferCreateInfo*>(&bufferInfo), &allocInfo,
-                        &indirectDrawBuffer_, &indirectDrawAllocation_, nullptr) != VK_SUCCESS) {
+                        reinterpret_cast<VkBuffer*>(&indirectDrawBuffer_), &indirectDrawAllocation_, nullptr) != VK_SUCCESS) {
         return false;
     }
 
@@ -354,19 +354,19 @@ void ImpostorCullSystem::initializeDescriptorSets() {
     lastHiZView_ = VK_NULL_HANDLE;
 }
 
-void ImpostorCullSystem::updateHiZDescriptor(uint32_t frameIndex, VkImageView hiZPyramidView, VkSampler hiZSampler) {
+void ImpostorCullSystem::updateHiZDescriptor(uint32_t frameIndex, vk::ImageView hiZPyramidView, vk::Sampler hiZSampler) {
     auto hiZInfo = makeImageInfo(hiZSampler, hiZPyramidView);
     DescriptorWriter()
         .add(WriteBuilder::combinedImageSampler(BINDING_TREE_IMPOSTOR_CULL_HIZ, hiZInfo))
         .update(vk::Device(device_), cullDescriptorSets_[frameIndex]);
 }
 
-void ImpostorCullSystem::recordCulling(VkCommandBuffer cmd, uint32_t frameIndex,
+void ImpostorCullSystem::recordCulling(vk::CommandBuffer cmd, uint32_t frameIndex,
                                         const glm::vec3& cameraPos,
                                         const glm::vec4* frustumPlanes,
                                         const glm::mat4& viewProjMatrix,
-                                        VkImageView hiZPyramidView,
-                                        VkSampler hiZSampler,
+                                        vk::ImageView hiZPyramidView,
+                                        vk::Sampler hiZSampler,
                                         const LODParams& lodParams) {
     if (treeCount_ == 0) return;
 

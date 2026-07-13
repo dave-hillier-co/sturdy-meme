@@ -102,16 +102,16 @@ public:
     void clearInteractions();
 
     // Record compute dispatch for snow accumulation update
-    void recordCompute(VkCommandBuffer cmd, uint32_t frameIndex);
+    void recordCompute(vk::CommandBuffer cmd, uint32_t frameIndex);
 
     // Set camera position (cascades center around this)
     void setCameraPosition(const glm::vec3& worldPos);
 
     // Accessors for cascade textures (for terrain/object shaders to bind)
-    VkImageView getCascadeView(uint32_t cascade) const {
+    vk::ImageView getCascadeView(uint32_t cascade) const {
         return cascade < NUM_SNOW_CASCADES ? cascadeViews[cascade] : VK_NULL_HANDLE;
     }
-    VkSampler getCascadeSampler() const { return cascadeSampler_ ? **cascadeSampler_ : VK_NULL_HANDLE; }
+    vk::Sampler getCascadeSampler() const { return cascadeSampler_ ? **cascadeSampler_ : VK_NULL_HANDLE; }
 
     // Get cascade parameters for shader uniforms (origin, size)
     glm::vec2 getCascadeOrigin(uint32_t cascade) const {
@@ -143,12 +143,12 @@ private:
     void updateCascadeOrigins(const glm::vec3& cameraPos);
 
     // Transition cascade images for compute write
-    void barrierCascadesForCompute(VkCommandBuffer cmd);
+    void barrierCascadesForCompute(vk::CommandBuffer cmd);
 
     // Transition cascade images for fragment shader sampling
-    void barrierCascadesForSampling(VkCommandBuffer cmd);
+    void barrierCascadesForSampling(vk::CommandBuffer cmd);
 
-    VkDevice getDevice() const { return lifecycle.getDevice(); }
+    vk::Device getDevice() const { return lifecycle.getDevice(); }
     VmaAllocator getAllocator() const { return lifecycle.getAllocator(); }
     DescriptorManager::Pool* getDescriptorPool() const { return lifecycle.getDescriptorPool(); }
     const std::string& getShaderPath() const { return lifecycle.getShaderPath(); }
@@ -159,9 +159,9 @@ private:
     SystemLifecycleHelper lifecycle;
 
     // Cascade textures (R16F height in meters)
-    std::array<VkImage, NUM_SNOW_CASCADES> cascadeImages{};
+    std::array<vk::Image, NUM_SNOW_CASCADES> cascadeImages{};
     std::array<VmaAllocation, NUM_SNOW_CASCADES> cascadeAllocations{};
-    std::array<VkImageView, NUM_SNOW_CASCADES> cascadeViews{};
+    std::array<vk::ImageView, NUM_SNOW_CASCADES> cascadeViews{};
     std::optional<vk::raii::Sampler> cascadeSampler_;
 
     // Cascade world-space parameters (updated based on camera position)
@@ -176,7 +176,7 @@ private:
     BufferUtils::PerFrameBufferSet interactionBuffers;
 
     // Descriptor sets (per frame)
-    std::vector<VkDescriptorSet> computeDescriptorSets;
+    std::vector<vk::DescriptorSet> computeDescriptorSets;
 
     // Current frame interaction sources
     std::vector<VolumetricSnowInteraction> currentInteractions;

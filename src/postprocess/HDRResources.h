@@ -12,10 +12,10 @@ class PostProcessSystem;
  * systems that render to the HDR target.
  */
 struct HDRResources {
-    VkRenderPass renderPass = VK_NULL_HANDLE;
-    VkImageView colorView = VK_NULL_HANDLE;
-    VkImageView depthView = VK_NULL_HANDLE;
-    VkFramebuffer framebuffer = VK_NULL_HANDLE;
+    vk::RenderPass renderPass = VK_NULL_HANDLE;
+    vk::ImageView colorView = VK_NULL_HANDLE;
+    vk::ImageView depthView = VK_NULL_HANDLE;
+    vk::Framebuffer framebuffer = VK_NULL_HANDLE;
     VkExtent2D extent = {0, 0};
 
     bool isValid() const { return renderPass != VK_NULL_HANDLE; }

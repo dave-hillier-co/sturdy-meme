@@ -34,10 +34,10 @@ bool VirtualTexturePageTable::initInternal(const InitInfo& info) {
     allocator_ = info.allocator;
     framesInFlight_ = info.framesInFlight;
 
-    VkDevice device = info.device;
+    vk::Device device = info.device;
     VmaAllocator allocator = info.allocator;
-    VkCommandPool commandPool = info.commandPool;
-    VkQueue queue = info.queue;
+    vk::CommandPool commandPool = info.commandPool;
+    vk::Queue queue = info.queue;
 
     // Calculate total entries and offsets for each mip level
     size_t totalEntries = 0;
@@ -82,7 +82,7 @@ bool VirtualTexturePageTable::initInternal(const InitInfo& info) {
     // Create per-frame staging buffers, sized for the worst case of every
     // mip level being dirty in the same frame (each dirty mip gets its own
     // region of the buffer)
-    VkDeviceSize stagingSize = totalEntries * sizeof(uint32_t); // RGBA8 packed
+    vk::DeviceSize stagingSize = totalEntries * sizeof(uint32_t); // RGBA8 packed
     stagingBuffers_.resize(framesInFlight_);
     stagingMapped_.resize(framesInFlight_);
 
@@ -122,8 +122,8 @@ void VirtualTexturePageTable::cleanup() {
     mipDirty.clear();
 }
 
-bool VirtualTexturePageTable::createPageTableTextures(VkDevice device, VmaAllocator allocator,
-                                                       VkCommandPool commandPool, VkQueue queue) {
+bool VirtualTexturePageTable::createPageTableTextures(vk::Device device, VmaAllocator allocator,
+                                                       vk::CommandPool commandPool, vk::Queue queue) {
     // Single array image: every layer is sized for mip 0; mip N's entries
     // occupy the top-left corner of layer N. This wastes a little memory but
     // lets the shader address all mips through one usampler2DArray.
@@ -176,7 +176,7 @@ bool VirtualTexturePageTable::createPageTableTextures(VkDevice device, VmaAlloca
     return true;
 }
 
-bool VirtualTexturePageTable::createSampler(VkDevice device) {
+bool VirtualTexturePageTable::createSampler(vk::Device device) {
     if (!raiiDevice_) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "VirtualTexturePageTable::createSampler requires raiiDevice");
         return false;
@@ -230,7 +230,7 @@ PageTableEntry VirtualTexturePageTable::getEntry(TileId id) const {
     return cpuData[index];
 }
 
-void VirtualTexturePageTable::recordUpload(VkCommandBuffer cmd, uint32_t frameIndex) {
+void VirtualTexturePageTable::recordUpload(vk::CommandBuffer cmd, uint32_t frameIndex) {
     if (!dirty) return;
 
     // Select the staging buffer for this frame to avoid race conditions

@@ -88,7 +88,7 @@ public:
 
     // Core resize handler type - called before performResize to handle swapchain/depth/framebuffers
     // Returns the new extent (or {0,0} if minimized/failed)
-    using CoreResizeHandler = std::function<VkExtent2D(VkDevice, VmaAllocator)>;
+    using CoreResizeHandler = std::function<VkExtent2D(vk::Device, VmaAllocator)>;
 
     // Set the core resize handler (swapchain, depth buffer, framebuffers)
     void setCoreResizeHandler(CoreResizeHandler handler) { coreResizeHandler_ = std::move(handler); }
@@ -119,7 +119,7 @@ public:
 
     // Perform resize on all registered components
     // Returns false if any component fails to resize
-    bool performResize(VkDevice device, VmaAllocator allocator, VkExtent2D newExtent);
+    bool performResize(vk::Device device, VmaAllocator allocator, VkExtent2D newExtent);
 
     // Update extent only (no resource reallocation)
     void updateExtent(VkExtent2D newExtent);

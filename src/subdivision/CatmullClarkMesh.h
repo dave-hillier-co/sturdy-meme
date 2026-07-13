@@ -49,9 +49,9 @@ struct CatmullClarkMesh {
     ManagedBuffer faceBuffer_;
 
     // Buffer accessors
-    VkBuffer getVertexBuffer() const { return vertexBuffer_.get(); }
-    VkBuffer getHalfedgeBuffer() const { return halfedgeBuffer_.get(); }
-    VkBuffer getFaceBuffer() const { return faceBuffer_.get(); }
+    vk::Buffer getVertexBuffer() const { return vertexBuffer_.get(); }
+    vk::Buffer getHalfedgeBuffer() const { return halfedgeBuffer_.get(); }
+    vk::Buffer getFaceBuffer() const { return faceBuffer_.get(); }
 
     bool uploadToGPU(VmaAllocator allocator);
 

@@ -1,6 +1,6 @@
 #include "MaterialDescriptorFactory.h"
 
-MaterialDescriptorFactory::MaterialDescriptorFactory(VkDevice device)
+MaterialDescriptorFactory::MaterialDescriptorFactory(vk::Device device)
     : device(device) {}
 
 void MaterialDescriptorFactory::writeCommonBindings(
@@ -56,7 +56,7 @@ void MaterialDescriptorFactory::writeCommonBindings(
 }
 
 void MaterialDescriptorFactory::writeDescriptorSet(
-    VkDescriptorSet set,
+    vk::DescriptorSet set,
     const CommonBindings& common,
     const MaterialTextures& material) {
 
@@ -70,8 +70,8 @@ void MaterialDescriptorFactory::writeDescriptorSet(
         .writeImage(3, material.normalView, material.normalSampler);
 
     // PBR texture bindings (13-16) - always write, using placeholder if no texture provided
-    VkImageView placeholderView = common.placeholderTextureView;
-    VkSampler placeholderSampler = common.placeholderTextureSampler;
+    vk::ImageView placeholderView = common.placeholderTextureView;
+    vk::Sampler placeholderSampler = common.placeholderTextureSampler;
 
     writer.writeImage(13,
         material.roughnessView != VK_NULL_HANDLE ? material.roughnessView : placeholderView,
@@ -90,7 +90,7 @@ void MaterialDescriptorFactory::writeDescriptorSet(
 }
 
 void MaterialDescriptorFactory::writeSkinnedDescriptorSet(
-    VkDescriptorSet set,
+    vk::DescriptorSet set,
     const CommonBindings& common,
     const MaterialTextures& material) {
 
@@ -111,8 +111,8 @@ void MaterialDescriptorFactory::writeSkinnedDescriptorSet(
     }
 
     // PBR texture bindings (13-16) - always write, using placeholder if no texture provided
-    VkImageView placeholderView = common.placeholderTextureView;
-    VkSampler placeholderSampler = common.placeholderTextureSampler;
+    vk::ImageView placeholderView = common.placeholderTextureView;
+    vk::Sampler placeholderSampler = common.placeholderTextureSampler;
 
     writer.writeImage(13,
         material.roughnessView != VK_NULL_HANDLE ? material.roughnessView : placeholderView,
@@ -131,9 +131,9 @@ void MaterialDescriptorFactory::writeSkinnedDescriptorSet(
 }
 
 void MaterialDescriptorFactory::updateCloudShadowBinding(
-    VkDescriptorSet set,
-    VkImageView cloudShadowView,
-    VkSampler cloudShadowSampler) {
+    vk::DescriptorSet set,
+    vk::ImageView cloudShadowView,
+    vk::Sampler cloudShadowSampler) {
 
     DescriptorManager::SetWriter writer(device, set);
     writer.writeImage(9, cloudShadowView, cloudShadowSampler)

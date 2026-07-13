@@ -71,7 +71,7 @@ public:
     explicit HiZSystem(ConstructToken) {}
 
     struct InitInfo {
-        VkDevice device;
+        vk::Device device;
         VmaAllocator allocator;
         DescriptorManager::Pool* descriptorPool;  // Auto-growing pool
         VkExtent2D extent;
@@ -99,7 +99,7 @@ public:
     void resize(VkExtent2D newExtent);
 
     // Update the source depth buffer view for pyramid generation
-    void setDepthBuffer(VkImageView depthView, VkSampler depthSampler);
+    void setDepthBuffer(vk::ImageView depthView, vk::Sampler depthSampler);
 
     // Update culling uniforms (call before recording culling)
     void updateUniforms(uint32_t frameIndex, const glm::mat4& view, const glm::mat4& proj,
@@ -115,17 +115,17 @@ public:
 
     // Record Hi-Z pyramid generation compute pass
     // Call AFTER the main depth pass completes
-    void recordPyramidGeneration(VkCommandBuffer cmd, uint32_t frameIndex);
+    void recordPyramidGeneration(vk::CommandBuffer cmd, uint32_t frameIndex);
 
     // Record occlusion culling compute pass
     // Call AFTER pyramid generation
-    void recordCulling(VkCommandBuffer cmd, uint32_t frameIndex);
+    void recordCulling(vk::CommandBuffer cmd, uint32_t frameIndex);
 
     // Get the indirect draw buffer for rendering
-    VkBuffer getIndirectDrawBuffer(uint32_t frameIndex) const;
+    vk::Buffer getIndirectDrawBuffer(uint32_t frameIndex) const;
 
     // Get the draw count buffer (for indirect count draws)
-    VkBuffer getDrawCountBuffer(uint32_t frameIndex) const;
+    vk::Buffer getDrawCountBuffer(uint32_t frameIndex) const;
 
     // Get current object count (for draw limits)
     uint32_t getObjectCount() const { return objectCount; }
@@ -134,9 +134,9 @@ public:
     uint32_t getVisibleCount(uint32_t frameIndex) const;
 
     // Hi-Z pyramid access (for debugging/visualization and external occlusion culling)
-    VkImageView getHiZPyramidView() const { return hiZPyramid.fullView ? **hiZPyramid.fullView : VK_NULL_HANDLE; }
-    VkSampler getHiZSampler() const { return hiZSampler_ ? **hiZSampler_ : VK_NULL_HANDLE; }
-    VkImageView getHiZMipView(uint32_t mipLevel) const;
+    vk::ImageView getHiZPyramidView() const { return hiZPyramid.fullView ? **hiZPyramid.fullView : VK_NULL_HANDLE; }
+    vk::Sampler getHiZSampler() const { return hiZSampler_ ? **hiZSampler_ : VK_NULL_HANDLE; }
+    vk::ImageView getHiZMipView(uint32_t mipLevel) const;
     uint32_t getMipLevelCount() const { return mipLevelCount; }
 
     // Enable/disable Hi-Z culling (falls back to frustum-only)
@@ -184,9 +184,9 @@ private:
     static void extractFrustumPlanes(const glm::mat4& viewProj, glm::vec4 planes[6]);
 
     // Synchronize culling output for indirect draw consumption
-    void barrierCullingToIndirectDraw(VkCommandBuffer cmd);
+    void barrierCullingToIndirectDraw(vk::CommandBuffer cmd);
 
-    VkDevice device = VK_NULL_HANDLE;
+    vk::Device device = VK_NULL_HANDLE;
     VmaAllocator allocator = VK_NULL_HANDLE;
     DescriptorManager::Pool* descriptorPool = nullptr;
     VkExtent2D extent = {0, 0};
@@ -202,20 +202,20 @@ private:
     uint32_t mipLevelCount = 0;
 
     // Source depth buffer reference
-    VkImageView sourceDepthView = VK_NULL_HANDLE;
-    VkSampler sourceDepthSampler = VK_NULL_HANDLE;
+    vk::ImageView sourceDepthView = VK_NULL_HANDLE;
+    vk::Sampler sourceDepthSampler = VK_NULL_HANDLE;
 
     // Pyramid generation pipeline
     std::optional<vk::raii::DescriptorSetLayout> pyramidDescSetLayout_;
     std::optional<vk::raii::PipelineLayout> pyramidPipelineLayout_;
     std::optional<vk::raii::Pipeline> pyramidPipeline_;
-    std::vector<VkDescriptorSet> pyramidDescSets;  // One per mip level
+    std::vector<vk::DescriptorSet> pyramidDescSets;  // One per mip level
 
     // Culling pipeline
     std::optional<vk::raii::DescriptorSetLayout> cullingDescSetLayout_;
     std::optional<vk::raii::PipelineLayout> cullingPipelineLayout_;
     std::optional<vk::raii::Pipeline> cullingPipeline_;
-    std::vector<VkDescriptorSet> cullingDescSets;  // Per frame
+    std::vector<vk::DescriptorSet> cullingDescSets;  // Per frame
 
     // Object data buffer (input to culling, RAII-managed)
     ManagedBuffer objectDataBuffer_;

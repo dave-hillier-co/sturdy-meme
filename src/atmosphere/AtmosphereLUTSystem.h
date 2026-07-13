@@ -75,7 +75,7 @@ public:
     explicit AtmosphereLUTSystem(ConstructToken) {}
 
     struct InitInfo {
-        VkDevice device;
+        vk::Device device;
         VmaAllocator allocator;
         DescriptorManager::Pool* descriptorPool;  // Auto-growing pool
         std::string shaderPath;
@@ -114,25 +114,25 @@ public:
     AtmosphereLUTSystem& operator=(AtmosphereLUTSystem&&) = delete;
 
     // Compute LUTs (called at startup and when atmosphere parameters change)
-    void computeTransmittanceLUT(VkCommandBuffer cmd);
-    void computeMultiScatterLUT(VkCommandBuffer cmd);
-    void computeIrradianceLUT(VkCommandBuffer cmd);
-    void computeSkyViewLUT(VkCommandBuffer cmd, const glm::vec3& sunDir, const glm::vec3& cameraPos, float cameraAltitude);
-    void computeCloudMapLUT(VkCommandBuffer cmd, const glm::vec3& windOffset, float time);
+    void computeTransmittanceLUT(vk::CommandBuffer cmd);
+    void computeMultiScatterLUT(vk::CommandBuffer cmd);
+    void computeIrradianceLUT(vk::CommandBuffer cmd);
+    void computeSkyViewLUT(vk::CommandBuffer cmd, const glm::vec3& sunDir, const glm::vec3& cameraPos, float cameraAltitude);
+    void computeCloudMapLUT(vk::CommandBuffer cmd, const glm::vec3& windOffset, float time);
 
     // Update sky-view LUT per frame (uses SHADER_READ_ONLY_OPTIMAL as old layout since LUT was already computed)
     // frameIndex is required for proper double-buffering of uniform buffers and descriptor sets
-    void updateSkyViewLUT(VkCommandBuffer cmd, uint32_t frameIndex, const glm::vec3& sunDir, const glm::vec3& cameraPos, float cameraAltitude);
-    void updateCloudMapLUT(VkCommandBuffer cmd, uint32_t frameIndex, const glm::vec3& windOffset, float time);
+    void updateSkyViewLUT(vk::CommandBuffer cmd, uint32_t frameIndex, const glm::vec3& sunDir, const glm::vec3& cameraPos, float cameraAltitude);
+    void updateCloudMapLUT(vk::CommandBuffer cmd, uint32_t frameIndex, const glm::vec3& windOffset, float time);
 
     // Get LUT views for sampling in shaders
-    VkImageView getTransmittanceLUTView() const { return transmittanceLUTView ? static_cast<VkImageView>(**transmittanceLUTView) : VK_NULL_HANDLE; }
-    VkImageView getMultiScatterLUTView() const { return multiScatterLUTView ? static_cast<VkImageView>(**multiScatterLUTView) : VK_NULL_HANDLE; }
-    VkImageView getSkyViewLUTView() const { return skyViewLUTView ? static_cast<VkImageView>(**skyViewLUTView) : VK_NULL_HANDLE; }
-    VkImageView getRayleighIrradianceLUTView() const { return rayleighIrradianceLUTView ? static_cast<VkImageView>(**rayleighIrradianceLUTView) : VK_NULL_HANDLE; }
-    VkImageView getMieIrradianceLUTView() const { return mieIrradianceLUTView ? static_cast<VkImageView>(**mieIrradianceLUTView) : VK_NULL_HANDLE; }
-    VkImageView getCloudMapLUTView() const { return cloudMapLUTView ? static_cast<VkImageView>(**cloudMapLUTView) : VK_NULL_HANDLE; }
-    VkSampler getLUTSampler() const { return lutSampler_ ? **lutSampler_ : VK_NULL_HANDLE; }
+    vk::ImageView getTransmittanceLUTView() const { return transmittanceLUTView ? static_cast<vk::ImageView>(**transmittanceLUTView) : VK_NULL_HANDLE; }
+    vk::ImageView getMultiScatterLUTView() const { return multiScatterLUTView ? static_cast<vk::ImageView>(**multiScatterLUTView) : VK_NULL_HANDLE; }
+    vk::ImageView getSkyViewLUTView() const { return skyViewLUTView ? static_cast<vk::ImageView>(**skyViewLUTView) : VK_NULL_HANDLE; }
+    vk::ImageView getRayleighIrradianceLUTView() const { return rayleighIrradianceLUTView ? static_cast<vk::ImageView>(**rayleighIrradianceLUTView) : VK_NULL_HANDLE; }
+    vk::ImageView getMieIrradianceLUTView() const { return mieIrradianceLUTView ? static_cast<vk::ImageView>(**mieIrradianceLUTView) : VK_NULL_HANDLE; }
+    vk::ImageView getCloudMapLUTView() const { return cloudMapLUTView ? static_cast<vk::ImageView>(**cloudMapLUTView) : VK_NULL_HANDLE; }
+    vk::Sampler getLUTSampler() const { return lutSampler_ ? **lutSampler_ : VK_NULL_HANDLE; }
 
     // Export LUTs as PNG files (for debugging/visualization)
     bool exportLUTsAsPNG(const std::string& outputDir);
@@ -168,7 +168,7 @@ public:
 
     // Recompute static LUTs (transmittance, multi-scatter, irradiance) when params change
     // Call this from the render loop when needsRecompute() returns true
-    void recomputeStaticLUTs(VkCommandBuffer cmd);
+    void recomputeStaticLUTs(vk::CommandBuffer cmd);
 
 private:
     bool createTransmittanceLUT();
@@ -185,15 +185,15 @@ private:
     void destroyLUTResources();
 
     // Transition irradiance LUTs for compute write
-    void barrierIrradianceLUTsForCompute(VkCommandBuffer cmd);
+    void barrierIrradianceLUTsForCompute(vk::CommandBuffer cmd);
 
     // Transition irradiance LUTs for fragment shader sampling
-    void barrierIrradianceLUTsForSampling(VkCommandBuffer cmd);
+    void barrierIrradianceLUTsForSampling(vk::CommandBuffer cmd);
 
     // Helper to export a 2D image to PNG
-    bool exportImageToPNG(VkImage image, VkFormat format, uint32_t width, uint32_t height, const std::string& filename);
+    bool exportImageToPNG(vk::Image image, VkFormat format, uint32_t width, uint32_t height, const std::string& filename);
 
-    VkDevice device = VK_NULL_HANDLE;
+    vk::Device device = VK_NULL_HANDLE;
     VmaAllocator allocator = VK_NULL_HANDLE;
     DescriptorManager::Pool* descriptorPool = nullptr;
     std::string shaderPath;
@@ -231,32 +231,32 @@ private:
     std::optional<vk::raii::Sampler> lutSampler_;
 
     // Compute pipelines
-    VkDescriptorSetLayout transmittanceDescriptorSetLayout = VK_NULL_HANDLE;
-    VkDescriptorSetLayout multiScatterDescriptorSetLayout = VK_NULL_HANDLE;
-    VkDescriptorSetLayout skyViewDescriptorSetLayout = VK_NULL_HANDLE;
-    VkDescriptorSetLayout irradianceDescriptorSetLayout = VK_NULL_HANDLE;
-    VkDescriptorSetLayout cloudMapDescriptorSetLayout = VK_NULL_HANDLE;
+    vk::DescriptorSetLayout transmittanceDescriptorSetLayout = VK_NULL_HANDLE;
+    vk::DescriptorSetLayout multiScatterDescriptorSetLayout = VK_NULL_HANDLE;
+    vk::DescriptorSetLayout skyViewDescriptorSetLayout = VK_NULL_HANDLE;
+    vk::DescriptorSetLayout irradianceDescriptorSetLayout = VK_NULL_HANDLE;
+    vk::DescriptorSetLayout cloudMapDescriptorSetLayout = VK_NULL_HANDLE;
 
-    VkPipelineLayout transmittancePipelineLayout = VK_NULL_HANDLE;
-    VkPipelineLayout multiScatterPipelineLayout = VK_NULL_HANDLE;
-    VkPipelineLayout skyViewPipelineLayout = VK_NULL_HANDLE;
-    VkPipelineLayout irradiancePipelineLayout = VK_NULL_HANDLE;
-    VkPipelineLayout cloudMapPipelineLayout = VK_NULL_HANDLE;
+    vk::PipelineLayout transmittancePipelineLayout = VK_NULL_HANDLE;
+    vk::PipelineLayout multiScatterPipelineLayout = VK_NULL_HANDLE;
+    vk::PipelineLayout skyViewPipelineLayout = VK_NULL_HANDLE;
+    vk::PipelineLayout irradiancePipelineLayout = VK_NULL_HANDLE;
+    vk::PipelineLayout cloudMapPipelineLayout = VK_NULL_HANDLE;
 
-    VkPipeline transmittancePipeline = VK_NULL_HANDLE;
-    VkPipeline multiScatterPipeline = VK_NULL_HANDLE;
-    VkPipeline skyViewPipeline = VK_NULL_HANDLE;
-    VkPipeline irradiancePipeline = VK_NULL_HANDLE;
-    VkPipeline cloudMapPipeline = VK_NULL_HANDLE;
+    vk::Pipeline transmittancePipeline = VK_NULL_HANDLE;
+    vk::Pipeline multiScatterPipeline = VK_NULL_HANDLE;
+    vk::Pipeline skyViewPipeline = VK_NULL_HANDLE;
+    vk::Pipeline irradiancePipeline = VK_NULL_HANDLE;
+    vk::Pipeline cloudMapPipeline = VK_NULL_HANDLE;
 
     // Single descriptor sets for one-time LUT computation (at startup)
-    VkDescriptorSet transmittanceDescriptorSet = VK_NULL_HANDLE;
-    VkDescriptorSet multiScatterDescriptorSet = VK_NULL_HANDLE;
-    VkDescriptorSet irradianceDescriptorSet = VK_NULL_HANDLE;
+    vk::DescriptorSet transmittanceDescriptorSet = VK_NULL_HANDLE;
+    vk::DescriptorSet multiScatterDescriptorSet = VK_NULL_HANDLE;
+    vk::DescriptorSet irradianceDescriptorSet = VK_NULL_HANDLE;
 
     // Per-frame descriptor sets for per-frame LUT updates (double-buffered)
-    std::vector<VkDescriptorSet> skyViewDescriptorSets;
-    std::vector<VkDescriptorSet> cloudMapDescriptorSets;
+    std::vector<vk::DescriptorSet> skyViewDescriptorSets;
+    std::vector<vk::DescriptorSet> cloudMapDescriptorSets;
 
     // Uniform buffers for one-time LUT computation (at startup)
     // Uses PerFrameBufferSet with frame count of 1 for consistency

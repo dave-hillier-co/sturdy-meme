@@ -64,7 +64,7 @@ void ShadowCullPass::cleanup() {
 
 bool ShadowCullPass::createPipeline() {
     // Same descriptor layout as the color cull pass (scene_cull.comp is shared).
-    VkDescriptorSetLayout rawLayout = DescriptorManager::LayoutBuilder(device_)
+    vk::DescriptorSetLayout rawLayout = DescriptorManager::LayoutBuilder(device_)
         .addUniformBuffer(VK_SHADER_STAGE_COMPUTE_BIT)         // 0: Uniforms
         .addStorageBuffer(VK_SHADER_STAGE_COMPUTE_BIT)         // 1: Object data
         .addStorageBuffer(VK_SHADER_STAGE_COMPUTE_BIT)         // 2: Indirect draw buffer
@@ -92,7 +92,7 @@ bool ShadowCullPass::createBuffers() {
     indirectBuffers_.resize(cascadeCount_);
     countBuffers_.resize(cascadeCount_);
 
-    const VkDeviceSize indirectSize = sizeof(GPUDrawIndexedIndirectCommand) * MAX_OBJECTS;
+    const vk::DeviceSize indirectSize = sizeof(GPUDrawIndexedIndirectCommand) * MAX_OBJECTS;
 
     for (uint32_t c = 0; c < cascadeCount_; ++c) {
         if (!BufferUtils::PerFrameBufferBuilder()
@@ -207,7 +207,7 @@ bool ShadowCullPass::prepareDescriptors(GPUSceneBuffer* sceneBuffer) {
             }};
             vk::DescriptorImageInfo imageInfo{sampler, imageView, vk::ImageLayout::eShaderReadOnlyOptimal};
 
-            VkDescriptorSet set = descSets_[flatIndex(c, f)];
+            vk::DescriptorSet set = descSets_[flatIndex(c, f)];
             std::array<vk::WriteDescriptorSet, 5> writes = {{
                 vk::WriteDescriptorSet{}.setDstSet(set).setDstBinding(BINDING_SCENE_CULL_UNIFORMS)
                     .setDescriptorType(vk::DescriptorType::eUniformBuffer).setDescriptorCount(1).setPBufferInfo(&bufferInfos[0]),
@@ -226,7 +226,7 @@ bool ShadowCullPass::prepareDescriptors(GPUSceneBuffer* sceneBuffer) {
     return true;
 }
 
-void ShadowCullPass::recordCulling(VkCommandBuffer cmd, uint32_t frameIndex, uint32_t cascade) {
+void ShadowCullPass::recordCulling(vk::CommandBuffer cmd, uint32_t frameIndex, uint32_t cascade) {
     if (!currentSceneBuffer_ || cascade >= cascadeCount_ || frameIndex >= framesInFlight_) return;
     if (lastObjectCount_ == 0) return;
 
@@ -246,7 +246,7 @@ void ShadowCullPass::recordCulling(VkCommandBuffer cmd, uint32_t frameIndex, uin
     BarrierHelpers::computeToIndirectDraw(vkCmd);
 }
 
-VkBuffer ShadowCullPass::getIndirectBuffer(uint32_t frameIndex, uint32_t cascade) const {
+vk::Buffer ShadowCullPass::getIndirectBuffer(uint32_t frameIndex, uint32_t cascade) const {
     if (cascade >= cascadeCount_ || frameIndex >= framesInFlight_) return VK_NULL_HANDLE;
     return indirectBuffers_[cascade].buffers[frameIndex];
 }
@@ -258,7 +258,7 @@ uint32_t ShadowCullPass::getVisibleCount(uint32_t frameIndex, uint32_t cascade) 
     return *static_cast<uint32_t*>(mapped[frameIndex]);
 }
 
-void ShadowCullPass::setPlaceholderImage(VkImageView view, VkSampler sampler) {
+void ShadowCullPass::setPlaceholderImage(vk::ImageView view, vk::Sampler sampler) {
     placeholderImageView_ = view;
     placeholderSampler_ = sampler;
 }

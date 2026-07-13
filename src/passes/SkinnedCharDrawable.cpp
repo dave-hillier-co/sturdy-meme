@@ -15,7 +15,7 @@ SkinnedCharDrawable::SkinnedCharDrawable(const Resources& resources)
 {
 }
 
-void SkinnedCharDrawable::recordHDRDraw(VkCommandBuffer cmd, uint32_t frameIndex,
+void SkinnedCharDrawable::recordHDRDraw(vk::CommandBuffer cmd, uint32_t frameIndex,
                                          float /*time*/, const HDRDrawParams& /*params*/) {
     SceneBuilder& sceneBuilder = resources_.scene->getSceneBuilder();
 

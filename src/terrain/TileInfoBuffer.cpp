@@ -7,7 +7,7 @@ bool TileInfoBuffer::init(const InitInfo& info) {
     maxActiveTiles_ = info.maxActiveTiles;
 
     // Layout: uint activeTileCount, uint padding[3], TileInfoGPU tiles[maxActiveTiles]
-    VkDeviceSize bufferSize = sizeof(uint32_t) * 4 + maxActiveTiles_ * sizeof(TileInfoGPU);
+    vk::DeviceSize bufferSize = sizeof(uint32_t) * 4 + maxActiveTiles_ * sizeof(TileInfoGPU);
     buffers_.resize(FRAMES_IN_FLIGHT);
     for (uint32_t i = 0; i < FRAMES_IN_FLIGHT; i++) {
         if (!VmaBufferFactory::createStorageBufferHostReadable(info.allocator, bufferSize, buffers_[i])) {

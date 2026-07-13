@@ -150,7 +150,7 @@ void Renderer::updatePhysicsDebug(PhysicsWorld& physics, const glm::vec3& camera
 #endif
 
 void Renderer::cleanup() {
-    VkDevice device = vulkanContext_->getVkDevice();
+    vk::Device device = vulkanContext_->getVkDevice();
     VmaAllocator allocator = vulkanContext_->getAllocator();
 
     if (device != VK_NULL_HANDLE) {
@@ -216,7 +216,7 @@ bool Renderer::render(const Camera& camera) {
     return result == FrameResult::Success;
 }
 
-VkCommandBuffer Renderer::buildFrame(const Camera& camera, uint32_t imageIndex, uint32_t frameIndex) {
+vk::CommandBuffer Renderer::buildFrame(const Camera& camera, uint32_t imageIndex, uint32_t frameIndex) {
     // Simulation-update phase: transfers, time, UBOs, bone matrices, FrameData,
     // per-system updates, and GPU scene buffer population.
     FrameUpdate::Config cfg;
@@ -239,7 +239,7 @@ VkCommandBuffer Renderer::buildFrame(const Camera& camera, uint32_t imageIndex, 
     threadedCommandPool_.resetFrame(frame.frameIndex);
 
     // Command buffer recording
-    VkCommandBuffer cmd = vulkanContext_->getCommandBuffer(frame.frameIndex);
+    vk::CommandBuffer cmd = vulkanContext_->getCommandBuffer(frame.frameIndex);
     vk::CommandBuffer vkCmd(cmd);
     vkCmd.reset();
     vkCmd.begin(vk::CommandBufferBeginInfo{});
@@ -328,7 +328,7 @@ void Renderer::createHDRPassRecorder() {
     // Scene composition (which drawables, in what order/slot) lives in SceneComposition.
     hdrPassRecorder_ = SceneComposition::buildHDRPassRecorder(
         *systems_,
-        [this](VkCommandBuffer cmd, uint32_t frameIndex) {
+        [this](vk::CommandBuffer cmd, uint32_t frameIndex) {
             if (ragdollDrawCallback_) {
                 ragdollDrawCallback_(cmd, frameIndex);
             }

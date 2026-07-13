@@ -436,9 +436,9 @@ void VegetationContentGenerator::finalizeTreeSystems(
     TreeLODSystem* treeLOD,
     ImpostorCullSystem* impostorCull,
     TreeRenderer* treeRenderer,
-    const std::vector<VkBuffer>& uniformBuffers,
-    VkImageView shadowView,
-    VkSampler shadowSampler
+    const std::vector<vk::Buffer>& uniformBuffers,
+    vk::ImageView shadowView,
+    vk::Sampler shadowSampler
 ) {
     // Update ImpostorCullSystem with tree data
     if (impostorCull && treeLOD) {

@@ -30,11 +30,11 @@
 class SceneMaterial {
 public:
     struct InitInfo {
-        VkDevice device;
+        vk::Device device;
         VmaAllocator allocator;
-        VkCommandPool commandPool;
-        VkQueue graphicsQueue;
-        VkPhysicalDevice physicalDevice;
+        vk::CommandPool commandPool;
+        vk::Queue graphicsQueue;
+        vk::PhysicalDevice physicalDevice;
         std::string resourcePath;
         std::function<float(float, float)> getTerrainHeight;
         float terrainSize;
@@ -144,7 +144,7 @@ private:
 
     // Vulkan context (stored for cleanup)
     VmaAllocator storedAllocator_ = VK_NULL_HANDLE;
-    VkDevice storedDevice_ = VK_NULL_HANDLE;
+    vk::Device storedDevice_ = VK_NULL_HANDLE;
 
     // Material properties for renderables
     MaterialProperties materialProps_;

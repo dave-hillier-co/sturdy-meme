@@ -23,7 +23,7 @@ class Texture;
  *   auto groundId = registry.registerMaterial("ground", groundTexture, groundNormal);
  *   registry.createDescriptorSets(device, pool, layout, commonBindings);
  *   ...
- *   VkDescriptorSet set = registry.getDescriptorSet(materialId, frameIndex);
+ *   vk::DescriptorSet set = registry.getDescriptorSet(materialId, frameIndex);
  */
 class MaterialRegistry {
 public:
@@ -62,17 +62,17 @@ public:
     // Create descriptor sets for all registered materials
     // Must be called after all materials are registered and resources are ready
     void createDescriptorSets(
-        VkDevice device,
+        vk::Device device,
         IDescriptorAllocator& allocator,
-        VkDescriptorSetLayout layout,
+        vk::DescriptorSetLayout layout,
         uint32_t framesInFlight,
         const std::function<MaterialDescriptorFactory::CommonBindings(uint32_t frameIndex)>& getCommonBindings);
 
     // Get descriptor set for a material at a specific frame
-    VkDescriptorSet getDescriptorSet(MaterialId id, uint32_t frameIndex) const;
+    vk::DescriptorSet getDescriptorSet(MaterialId id, uint32_t frameIndex) const;
 
     // Update cloud shadow binding for all materials (for late initialization)
-    void updateCloudShadowBinding(VkDevice device, VkImageView view, VkSampler sampler);
+    void updateCloudShadowBinding(vk::Device device, vk::ImageView view, vk::Sampler sampler);
 
     // Get number of registered materials
     size_t getMaterialCount() const { return materials.size(); }
@@ -85,6 +85,6 @@ private:
     std::unordered_map<std::string, MaterialId> nameToId;
 
     // descriptorSets[materialId][frameIndex]
-    std::vector<std::vector<VkDescriptorSet>> descriptorSets;
+    std::vector<std::vector<vk::DescriptorSet>> descriptorSets;
     uint32_t framesInFlight = 0;
 };

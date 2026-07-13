@@ -151,7 +151,7 @@ bool BaseHeightMap::createCombinedHeightMap() {
     }
 
     // Upload to GPU
-    VkDeviceSize imageSize = heightMapResolution_ * heightMapResolution_ * sizeof(float);
+    vk::DeviceSize imageSize = heightMapResolution_ * heightMapResolution_ * sizeof(float);
 
     ManagedBuffer stagingBuffer;
     if (!VmaBufferFactory::createStagingBuffer(allocator_, imageSize, stagingBuffer)) {

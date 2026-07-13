@@ -222,8 +222,8 @@ bool FoamBuffer::createDescriptorSets() {
     return true;
 }
 
-void FoamBuffer::recordCompute(VkCommandBuffer cmd, uint32_t frameIndex, float deltaTime,
-                                VkImageView flowMapView, VkSampler flowMapSampler) {
+void FoamBuffer::recordCompute(vk::CommandBuffer cmd, uint32_t frameIndex, float deltaTime,
+                                vk::ImageView flowMapView, vk::Sampler flowMapSampler) {
     if (!computePipeline_) return;
 
     // Update wake uniform buffer for this frame
@@ -335,7 +335,7 @@ void FoamBuffer::setWorldExtent(const glm::vec2& center, const glm::vec2& size) 
     worldSize = std::max(size.x, size.y);
 }
 
-void FoamBuffer::clear(VkCommandBuffer cmd) {
+void FoamBuffer::clear(vk::CommandBuffer cmd) {
     // Clear both foam buffers to zero
     vk::ClearColorValue clearValue(std::array<float, 4>{0.0f, 0.0f, 0.0f, 0.0f});
     vk::CommandBuffer vkCmd(cmd);

@@ -88,9 +88,9 @@ bool ScatterSystem::loadTextures(const InitInfo& info, const Config& config) {
 }
 
 bool ScatterSystem::createDescriptorSets(
-    VkDevice device,
+    vk::Device device,
     DescriptorManager::Pool& pool,
-    VkDescriptorSetLayout layout,
+    vk::DescriptorSetLayout layout,
     uint32_t frameCount,
     std::function<MaterialDescriptorFactory::CommonBindings(uint32_t)> getCommonBindings)
 {

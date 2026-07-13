@@ -290,11 +290,11 @@ void RendererSystems::setProfiler(std::unique_ptr<Profiler> profiler) {
 // ============================================================================
 
 bool RendererSystems::init(const InitContext& /*initCtx*/,
-                            VkRenderPass /*swapchainRenderPass*/,
+                            vk::RenderPass /*swapchainRenderPass*/,
                             VkFormat /*swapchainImageFormat*/,
-                            VkDescriptorSetLayout /*mainDescriptorSetLayout*/,
+                            vk::DescriptorSetLayout /*mainDescriptorSetLayout*/,
                             VkFormat /*depthFormat*/,
-                            VkSampler /*depthSampler*/,
+                            vk::Sampler /*depthSampler*/,
                             const std::string& /*resourcePath*/) {
     // NOTE: This centralized init is not currently used.
     // Initialization is done via RendererInitPhases.cpp which calls each subsystem directly.
@@ -302,7 +302,7 @@ bool RendererSystems::init(const InitContext& /*initCtx*/,
     return false;
 }
 
-void RendererSystems::destroy(VkDevice device, VmaAllocator allocator) {
+void RendererSystems::destroy(vk::Device device, VmaAllocator allocator) {
     SDL_Log("RendererSystems::destroy starting");
 
     // GPUSceneBuffer needs explicit cleanup before its destructor
@@ -324,7 +324,7 @@ CoreResources RendererSystems::getCoreResources(uint32_t framesInFlight) const {
 }
 
 #ifdef JPH_DEBUG_RENDERER
-void RendererSystems::createPhysicsDebugRenderer(const InitContext& /*ctx*/, VkRenderPass /*hdrRenderPass*/) {
+void RendererSystems::createPhysicsDebugRenderer(const InitContext& /*ctx*/, vk::RenderPass /*hdrRenderPass*/) {
     auto renderer = std::make_unique<PhysicsDebugRenderer>();
     renderer->init();
     registry_.add<PhysicsDebugRenderer>(std::move(renderer));

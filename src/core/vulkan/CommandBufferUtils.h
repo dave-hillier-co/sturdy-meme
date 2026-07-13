@@ -93,7 +93,7 @@ public:
     vk::CommandBuffer get() const { return commandBuffer_; }
 
     // For compatibility with C API
-    VkCommandBuffer getHandle() const { return static_cast<VkCommandBuffer>(commandBuffer_); }
+    vk::CommandBuffer getHandle() const { return static_cast<vk::CommandBuffer>(commandBuffer_); }
 
 private:
     vk::Device device_;

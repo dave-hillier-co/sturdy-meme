@@ -140,9 +140,9 @@ struct DepthResources {
     vk::Format format = vk::Format::eD32Sfloat;
 
     // Get raw handles for compatibility with existing code
-    VkImage getImage() const { return image.get(); }
-    VkImageView getView() const { return view ? **view : VK_NULL_HANDLE; }
-    VkSampler getSampler() const { return sampler ? **sampler : VK_NULL_HANDLE; }
+    vk::Image getImage() const { return image.get(); }
+    vk::ImageView getView() const { return view ? **view : VK_NULL_HANDLE; }
+    vk::Sampler getSampler() const { return sampler ? **sampler : VK_NULL_HANDLE; }
 
     void reset() {
         sampler.reset();
@@ -279,12 +279,12 @@ struct DepthArrayResources {
     std::optional<vk::raii::Sampler> sampler;
 
     // Get raw handles for compatibility with existing code
-    VkImage getImage() const { return image.get(); }
-    VkImageView getArrayView() const { return arrayView ? **arrayView : VK_NULL_HANDLE; }
-    VkImageView getLayerView(size_t index) const {
+    vk::Image getImage() const { return image.get(); }
+    vk::ImageView getArrayView() const { return arrayView ? **arrayView : VK_NULL_HANDLE; }
+    vk::ImageView getLayerView(size_t index) const {
         return index < layerViews.size() ? *layerViews[index] : VK_NULL_HANDLE;
     }
-    VkSampler getSampler() const { return sampler ? **sampler : VK_NULL_HANDLE; }
+    vk::Sampler getSampler() const { return sampler ? **sampler : VK_NULL_HANDLE; }
 
     void reset() {
         sampler.reset();
@@ -378,8 +378,8 @@ inline bool createDepthArrayResources(
 inline std::optional<std::vector<vk::raii::Framebuffer>> createFramebuffers(
     const vk::raii::Device& device,
     const vk::raii::RenderPass& renderPass,
-    const std::vector<VkImageView>& swapchainImageViews,
-    VkImageView depthImageView,
+    const std::vector<vk::ImageView>& swapchainImageViews,
+    vk::ImageView depthImageView,
     VkExtent2D extent)
 {
     std::vector<vk::raii::Framebuffer> framebuffers;
@@ -411,8 +411,8 @@ inline std::optional<std::vector<vk::raii::Framebuffer>> createFramebuffers(
 
 inline std::optional<std::vector<vk::raii::Framebuffer>> createDepthOnlyFramebuffers(
     const vk::raii::Device& device,
-    VkRenderPass renderPass,
-    const std::vector<VkImageView>& depthImageViews,
+    vk::RenderPass renderPass,
+    const std::vector<vk::ImageView>& depthImageViews,
     VkExtent2D extent)
 {
     std::vector<vk::raii::Framebuffer> framebuffers;

@@ -50,7 +50,7 @@ public:
     explicit TreeSpatialIndex(ConstructToken) {}
 
     struct InitInfo {
-        VkDevice device;
+        vk::Device device;
         VmaAllocator allocator;
         float cellSize = 64.0f;     // World units per cell side
         float worldSize = 4096.0f;  // Total world size (for grid allocation)
@@ -90,15 +90,15 @@ public:
     bool uploadToGPU();
 
     // Accessors for GPU buffers (frame-indexed to prevent race conditions)
-    VkBuffer getCellBuffer(uint32_t frameIndex) const {
+    vk::Buffer getCellBuffer(uint32_t frameIndex) const {
         return cellBuffers_[frameIndex % maxFramesInFlight_];
     }
-    VkDeviceSize getCellBufferSize() const { return cellBufferSize_; }
+    vk::DeviceSize getCellBufferSize() const { return cellBufferSize_; }
 
-    VkBuffer getSortedTreeBuffer(uint32_t frameIndex) const {
+    vk::Buffer getSortedTreeBuffer(uint32_t frameIndex) const {
         return sortedTreeBuffers_[frameIndex % maxFramesInFlight_];
     }
-    VkDeviceSize getSortedTreeBufferSize() const { return sortedTreeBufferSize_; }
+    vk::DeviceSize getSortedTreeBufferSize() const { return sortedTreeBufferSize_; }
 
     // Accessors for cell data
     uint32_t getCellCount() const { return static_cast<uint32_t>(cells_.size()); }
@@ -131,7 +131,7 @@ private:
     // Get 1D cell index from 2D coordinates
     uint32_t getCellIndex(int32_t cellX, int32_t cellZ) const;
 
-    VkDevice device_ = VK_NULL_HANDLE;
+    vk::Device device_ = VK_NULL_HANDLE;
     VmaAllocator allocator_ = VK_NULL_HANDLE;
 
     float cellSize_ = 64.0f;
@@ -148,11 +148,11 @@ private:
 
     // GPU buffers (triple-buffered to prevent race conditions when updating
     // while frames are in-flight - each frame uses its own copy)
-    std::vector<VkBuffer> cellBuffers_;
+    std::vector<vk::Buffer> cellBuffers_;
     std::vector<VmaAllocation> cellAllocations_;
-    VkDeviceSize cellBufferSize_ = 0;
+    vk::DeviceSize cellBufferSize_ = 0;
 
-    std::vector<VkBuffer> sortedTreeBuffers_;
+    std::vector<vk::Buffer> sortedTreeBuffers_;
     std::vector<VmaAllocation> sortedTreeAllocations_;
-    VkDeviceSize sortedTreeBufferSize_ = 0;
+    vk::DeviceSize sortedTreeBufferSize_ = 0;
 };

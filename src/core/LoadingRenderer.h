@@ -99,7 +99,7 @@ private:
     std::optional<vk::raii::PipelineLayout> pipelineLayout_;
     std::optional<vk::raii::Pipeline> pipeline_;
     std::optional<vk::raii::CommandPool> commandPool_;
-    std::vector<VkCommandBuffer> commandBuffers_;
+    std::vector<vk::CommandBuffer> commandBuffers_;
 
     // Sync objects
     std::optional<vk::raii::Semaphore> imageAvailableSemaphore_;

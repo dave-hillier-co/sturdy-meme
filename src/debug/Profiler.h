@@ -1,4 +1,5 @@
 #pragma once
+#include <vulkan/vulkan.hpp>
 
 #include "GpuProfiler.h"
 #include "CpuProfiler.h"
@@ -31,7 +32,7 @@ public:
      * Always returns valid profiler - GPU may be disabled if init fails,
      * but CPU profiling will still work.
      */
-    static std::unique_ptr<Profiler> create(VkDevice device, VkPhysicalDevice physicalDevice,
+    static std::unique_ptr<Profiler> create(vk::Device device, vk::PhysicalDevice physicalDevice,
                                              uint32_t framesInFlight) {
         auto profiler = std::make_unique<Profiler>(ConstructToken{});
         auto gpu = GpuProfiler::create(device, physicalDevice, framesInFlight);
@@ -63,7 +64,7 @@ public:
     /**
      * Begin GPU frame profiling (call when command buffer is ready).
      */
-    void beginGpuFrame(VkCommandBuffer cmd, uint32_t frameIndex) {
+    void beginGpuFrame(vk::CommandBuffer cmd, uint32_t frameIndex) {
         if (gpuProfiler_) {
             gpuProfiler_->beginFrame(cmd, frameIndex);
         }
@@ -79,7 +80,7 @@ public:
     /**
      * End GPU frame profiling (call after command buffer recording, before submit).
      */
-    void endGpuFrame(VkCommandBuffer cmd, uint32_t frameIndex) {
+    void endGpuFrame(vk::CommandBuffer cmd, uint32_t frameIndex) {
         if (gpuProfiler_) {
             gpuProfiler_->endFrame(cmd, frameIndex);
         }
@@ -89,7 +90,7 @@ public:
      * Legacy combined begin (for backwards compatibility).
      * Prefer using beginCpuFrame() + beginGpuFrame() separately.
      */
-    void beginFrame(VkCommandBuffer cmd, uint32_t frameIndex) {
+    void beginFrame(vk::CommandBuffer cmd, uint32_t frameIndex) {
         cpuProfiler.beginFrame();
         if (gpuProfiler_) {
             gpuProfiler_->beginFrame(cmd, frameIndex);
@@ -99,7 +100,7 @@ public:
     /**
      * Legacy combined end (for backwards compatibility).
      */
-    void endFrame(VkCommandBuffer cmd, uint32_t frameIndex) {
+    void endFrame(vk::CommandBuffer cmd, uint32_t frameIndex) {
         if (gpuProfiler_) {
             gpuProfiler_->endFrame(cmd, frameIndex);
         }
@@ -109,7 +110,7 @@ public:
     /**
      * Begin a GPU profiling zone.
      */
-    void beginGpuZone(VkCommandBuffer cmd, const char* zoneName) {
+    void beginGpuZone(vk::CommandBuffer cmd, const char* zoneName) {
         if (gpuProfiler_) {
             gpuProfiler_->beginZone(cmd, zoneName);
         }
@@ -118,7 +119,7 @@ public:
     /**
      * End a GPU profiling zone.
      */
-    void endGpuZone(VkCommandBuffer cmd, const char* zoneName) {
+    void endGpuZone(vk::CommandBuffer cmd, const char* zoneName) {
         if (gpuProfiler_) {
             gpuProfiler_->endZone(cmd, zoneName);
         }
@@ -376,7 +377,7 @@ private:
  */
 class ScopedGpuZone {
 public:
-    ScopedGpuZone(Profiler& profiler, VkCommandBuffer cmd, const char* zoneName)
+    ScopedGpuZone(Profiler& profiler, vk::CommandBuffer cmd, const char* zoneName)
         : profiler(profiler), cmd(cmd), name(zoneName) {
         profiler.beginGpuZone(cmd, name);
     }
@@ -390,7 +391,7 @@ public:
 
 private:
     Profiler& profiler;
-    VkCommandBuffer cmd;
+    vk::CommandBuffer cmd;
     const char* name;
 };
 

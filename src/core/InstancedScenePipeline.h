@@ -48,7 +48,7 @@ public:
     /**
      * Create the graphics pipeline. Requires the HDR render pass from PostProcessSystem.
      */
-    bool createGraphicsPipeline(VulkanContext& context, VkRenderPass hdrRenderPass,
+    bool createGraphicsPipeline(VulkanContext& context, vk::RenderPass hdrRenderPass,
                                 const std::string& resourcePath);
 
     /**
@@ -56,11 +56,11 @@ public:
      * Call once after the GPUSceneBuffer exists; the instance buffers are stable
      * for the lifetime of the buffer, so the sets are written once and bound by frame.
      */
-    bool createInstanceDescriptorSets(VkDevice device, DescriptorManager::Pool& pool,
+    bool createInstanceDescriptorSets(vk::Device device, DescriptorManager::Pool& pool,
                                       GPUSceneBuffer& sceneBuffer, uint32_t framesInFlight);
 
     // Set-1 descriptor set for the given frame (VK_NULL_HANDLE if not created).
-    VkDescriptorSet getInstanceDescriptorSet(uint32_t frameIndex) const {
+    vk::DescriptorSet getInstanceDescriptorSet(uint32_t frameIndex) const {
         return frameIndex < instanceDescriptorSets_.size() ? instanceDescriptorSets_[frameIndex]
                                                            : VK_NULL_HANDLE;
     }
@@ -76,8 +76,8 @@ public:
         return instanceSetLayout_ ? **instanceSetLayout_ : vk::DescriptorSetLayout{};
     }
 
-    VkDescriptorSetLayout getVkInstanceSetLayout() const {
-        return instanceSetLayout_ ? static_cast<VkDescriptorSetLayout>(**instanceSetLayout_) : VK_NULL_HANDLE;
+    vk::DescriptorSetLayout getVkInstanceSetLayout() const {
+        return instanceSetLayout_ ? static_cast<vk::DescriptorSetLayout>(**instanceSetLayout_) : VK_NULL_HANDLE;
     }
 
     vk::PipelineLayout getPipelineLayout() const {
@@ -100,7 +100,7 @@ public:
     bool isInitialized() const { return initialized_; }
     bool hasPipeline() const { return graphicsPipeline_.has_value(); }
 
-    // Release GPU resources. Must be called while VkDevice is still valid.
+    // Release GPU resources. Must be called while vk::Device is still valid.
     void reset() {
         // Descriptor sets are owned by the shared pool; just drop our handles.
         instanceDescriptorSets_.clear();
@@ -112,7 +112,7 @@ public:
     }
 
 private:
-    bool createDescriptorSetLayouts(VkDevice device, const vk::raii::Device& raiiDevice);
+    bool createDescriptorSetLayouts(vk::Device device, const vk::raii::Device& raiiDevice);
 
     std::optional<vk::raii::DescriptorSetLayout> commonSetLayout_;    // set 0
     std::optional<vk::raii::DescriptorSetLayout> instanceSetLayout_;  // set 1
@@ -120,7 +120,7 @@ private:
     std::optional<vk::raii::Pipeline> graphicsPipeline_;
 
     // Per-frame set-1 descriptor sets (owned by the shared descriptor pool).
-    std::vector<VkDescriptorSet> instanceDescriptorSets_;
+    std::vector<vk::DescriptorSet> instanceDescriptorSets_;
 
     bool initialized_ = false;
 };

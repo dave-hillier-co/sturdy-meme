@@ -160,7 +160,7 @@ UploadedTexture StagedResourceUploader::uploadTexture(const StagedTexture& stage
         return result;
     }
 
-    VkDeviceSize imageSize = staged.pixels.size();
+    vk::DeviceSize imageSize = staged.pixels.size();
 
     // Create staging buffer
     ManagedBuffer stagingBuffer;
@@ -289,10 +289,10 @@ UploadedTexture StagedResourceUploader::uploadTexture(const StagedTexture& stage
             .setBaseArrayLayer(0)
             .setLayerCount(1));
 
-    VkImageView imageView;
+    vk::ImageView imageView;
     vk::Device vkDevice(ctx_.device);
     try {
-        imageView = static_cast<VkImageView>(vkDevice.createImageView(viewInfo));
+        imageView = static_cast<vk::ImageView>(vkDevice.createImageView(viewInfo));
     } catch (const vk::SystemError& e) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
                     "Failed to create image view for '%s': %s", staged.name.c_str(), e.what());
@@ -310,7 +310,7 @@ UploadedTexture StagedResourceUploader::uploadTexture(const StagedTexture& stage
     return result;
 }
 
-VkBuffer StagedResourceUploader::uploadBuffer(const StagedBuffer& staged, VkBufferUsageFlags usage) {
+vk::Buffer StagedResourceUploader::uploadBuffer(const StagedBuffer& staged, VkBufferUsageFlags usage) {
     (void)usage;  // Currently unused - we create storage buffers
 
     if (staged.data.empty()) {
@@ -319,7 +319,7 @@ VkBuffer StagedResourceUploader::uploadBuffer(const StagedBuffer& staged, VkBuff
         return VK_NULL_HANDLE;
     }
 
-    VkDeviceSize bufferSize = staged.data.size();
+    vk::DeviceSize bufferSize = staged.data.size();
 
     // Create staging buffer
     ManagedBuffer stagingBuffer;
@@ -369,7 +369,7 @@ AsyncTextureUploader::~AsyncTextureUploader() {
     shutdown();
 }
 
-bool AsyncTextureUploader::initialize(VkDevice device, VmaAllocator allocator,
+bool AsyncTextureUploader::initialize(vk::Device device, VmaAllocator allocator,
                                        AsyncTransferManager* transferManager) {
     if (initialized_) {
         return true;
@@ -459,10 +459,10 @@ AsyncTextureHandle AsyncTextureUploader::submitTexture(const StagedTexture& stag
             .setBaseArrayLayer(0)
             .setLayerCount(1));
 
-    VkImageView imageView;
+    vk::ImageView imageView;
     vk::Device vkDevice(device_);
     try {
-        imageView = static_cast<VkImageView>(vkDevice.createImageView(viewInfo));
+        imageView = static_cast<vk::ImageView>(vkDevice.createImageView(viewInfo));
     } catch (const vk::SystemError& e) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
             "AsyncTextureUploader: Failed to create image view for '%s': %s", staged.name.c_str(), e.what());
@@ -545,7 +545,7 @@ AsyncUploadedTexture AsyncTextureUploader::takeCompletedTexture(AsyncTextureHand
     PendingUpload& upload = it->second;
 
     // Transfer ownership to result
-    VkImage rawImage;
+    vk::Image rawImage;
     VmaAllocation rawAlloc;
     upload.image.releaseToRaw(rawImage, rawAlloc);
 
@@ -589,7 +589,7 @@ std::vector<AsyncUploadedTexture> AsyncTextureUploader::takeAllCompleted() {
         PendingUpload& upload = it->second;
 
         AsyncUploadedTexture result;
-        VkImage rawImage;
+        vk::Image rawImage;
         VmaAllocation rawAlloc;
         upload.image.releaseToRaw(rawImage, rawAlloc);
 

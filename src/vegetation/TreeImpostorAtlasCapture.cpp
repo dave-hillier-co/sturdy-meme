@@ -261,11 +261,11 @@ bool TreeImpostorAtlas::createLeafQuadMesh() {
     std::array<uint32_t, 6> indices = {0, 1, 2, 2, 3, 0};
     leafQuadIndexCount_ = 6;
 
-    VkDeviceSize vertexSize = sizeof(vertices);
-    VkDeviceSize indexSize = sizeof(indices);
-    VkDeviceSize stagingSize = vertexSize + indexSize;
+    vk::DeviceSize vertexSize = sizeof(vertices);
+    vk::DeviceSize indexSize = sizeof(indices);
+    vk::DeviceSize stagingSize = vertexSize + indexSize;
 
-    VkBuffer stagingBuffer;
+    vk::Buffer stagingBuffer;
     VmaAllocation stagingAllocation;
     auto stagingInfo = vk::BufferCreateInfo{}
         .setSize(stagingSize)
@@ -274,7 +274,7 @@ bool TreeImpostorAtlas::createLeafQuadMesh() {
     VmaAllocationCreateInfo stagingAllocInfo{};
     stagingAllocInfo.usage = VMA_MEMORY_USAGE_CPU_ONLY;
 
-    if (vmaCreateBuffer(allocator_, reinterpret_cast<const VkBufferCreateInfo*>(&stagingInfo), &stagingAllocInfo, &stagingBuffer, &stagingAllocation, nullptr) != VK_SUCCESS) {
+    if (vmaCreateBuffer(allocator_, reinterpret_cast<const VkBufferCreateInfo*>(&stagingInfo), &stagingAllocInfo, reinterpret_cast<VkBuffer*>(&stagingBuffer), &stagingAllocation, nullptr) != VK_SUCCESS) {
         return false;
     }
 
@@ -291,7 +291,7 @@ bool TreeImpostorAtlas::createLeafQuadMesh() {
     VmaAllocationCreateInfo gpuAllocInfo{};
     gpuAllocInfo.usage = VMA_MEMORY_USAGE_GPU_ONLY;
 
-    if (vmaCreateBuffer(allocator_, reinterpret_cast<const VkBufferCreateInfo*>(&vertexBufferInfo), &gpuAllocInfo, &leafQuadVertexBuffer_, &leafQuadVertexAllocation_, nullptr) != VK_SUCCESS) {
+    if (vmaCreateBuffer(allocator_, reinterpret_cast<const VkBufferCreateInfo*>(&vertexBufferInfo), &gpuAllocInfo, reinterpret_cast<VkBuffer*>(&leafQuadVertexBuffer_), &leafQuadVertexAllocation_, nullptr) != VK_SUCCESS) {
         vmaDestroyBuffer(allocator_, stagingBuffer, stagingAllocation);
         return false;
     }
@@ -300,7 +300,7 @@ bool TreeImpostorAtlas::createLeafQuadMesh() {
         .setSize(indexSize)
         .setUsage(vk::BufferUsageFlagBits::eIndexBuffer | vk::BufferUsageFlagBits::eTransferDst);
 
-    if (vmaCreateBuffer(allocator_, reinterpret_cast<const VkBufferCreateInfo*>(&indexBufferInfo), &gpuAllocInfo, &leafQuadIndexBuffer_, &leafQuadIndexAllocation_, nullptr) != VK_SUCCESS) {
+    if (vmaCreateBuffer(allocator_, reinterpret_cast<const VkBufferCreateInfo*>(&indexBufferInfo), &gpuAllocInfo, reinterpret_cast<VkBuffer*>(&leafQuadIndexBuffer_), &leafQuadIndexAllocation_, nullptr) != VK_SUCCESS) {
         vmaDestroyBuffer(allocator_, stagingBuffer, stagingAllocation);
         return false;
     }
@@ -329,7 +329,7 @@ bool TreeImpostorAtlas::createLeafQuadMesh() {
 }
 
 void TreeImpostorAtlas::renderOctahedralCell(
-    VkCommandBuffer cmd,
+    vk::CommandBuffer cmd,
     int cellX, int cellY,
     glm::vec3 viewDirection,
     const Mesh& branchMesh,
@@ -339,8 +339,8 @@ void TreeImpostorAtlas::renderOctahedralCell(
     float halfHeight,
     float centerHeight,
     float baseY,
-    VkDescriptorSet branchDescSet,
-    VkDescriptorSet leafDescSet) {
+    vk::DescriptorSet branchDescSet,
+    vk::DescriptorSet leafDescSet) {
 
     vk::CommandBuffer vkCmd(cmd);
 

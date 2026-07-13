@@ -42,9 +42,9 @@ bool RenderingInfrastructure::init(VulkanContext& context, uint32_t threadCount)
     return true;
 }
 
-void RenderingInfrastructure::initAssetRegistry(VkDevice device, VkPhysicalDevice physicalDevice,
-                                                 VmaAllocator allocator, VkCommandPool commandPool,
-                                                 VkQueue graphicsQueue) {
+void RenderingInfrastructure::initAssetRegistry(vk::Device device, vk::PhysicalDevice physicalDevice,
+                                                 VmaAllocator allocator, vk::CommandPool commandPool,
+                                                 vk::Queue graphicsQueue) {
     assetRegistry_.init(device, physicalDevice, allocator, commandPool, graphicsQueue);
 }
 

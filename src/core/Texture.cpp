@@ -25,8 +25,8 @@ static bool hasExtension(const std::string& path, const std::string& ext) {
     return pathExt == ext;
 }
 
-std::unique_ptr<Texture> Texture::loadFromFile(const std::string& path, VmaAllocator allocator, VkDevice device,
-                                                VkCommandPool commandPool, VkQueue queue, VkPhysicalDevice physicalDevice,
+std::unique_ptr<Texture> Texture::loadFromFile(const std::string& path, VmaAllocator allocator, vk::Device device,
+                                                vk::CommandPool commandPool, vk::Queue queue, vk::PhysicalDevice physicalDevice,
                                                 bool useSRGB) {
     auto texture = std::make_unique<Texture>(ConstructToken{});
     if (!texture->loadInternal(path, allocator, device, commandPool, queue, physicalDevice, useSRGB)) {
@@ -35,8 +35,8 @@ std::unique_ptr<Texture> Texture::loadFromFile(const std::string& path, VmaAlloc
     return texture;
 }
 
-std::unique_ptr<Texture> Texture::loadFromFileWithMipmaps(const std::string& path, VmaAllocator allocator, VkDevice device,
-                                                           VkCommandPool commandPool, VkQueue queue, VkPhysicalDevice physicalDevice,
+std::unique_ptr<Texture> Texture::loadFromFileWithMipmaps(const std::string& path, VmaAllocator allocator, vk::Device device,
+                                                           vk::CommandPool commandPool, vk::Queue queue, vk::PhysicalDevice physicalDevice,
                                                            bool useSRGB, bool enableAnisotropy) {
     auto texture = std::make_unique<Texture>(ConstructToken{});
     if (!texture->loadWithMipmapsInternal(path, allocator, device, commandPool, queue, physicalDevice, useSRGB, enableAnisotropy)) {
@@ -46,8 +46,8 @@ std::unique_ptr<Texture> Texture::loadFromFileWithMipmaps(const std::string& pat
 }
 
 std::unique_ptr<Texture> Texture::createSolidColor(uint8_t r, uint8_t g, uint8_t b, uint8_t a,
-                                                    VmaAllocator allocator, VkDevice device,
-                                                    VkCommandPool commandPool, VkQueue queue) {
+                                                    VmaAllocator allocator, vk::Device device,
+                                                    vk::CommandPool commandPool, vk::Queue queue) {
     auto texture = std::make_unique<Texture>(ConstructToken{});
     if (!texture->createSolidColorInternal(r, g, b, a, allocator, device, commandPool, queue)) {
         return nullptr;
@@ -112,8 +112,8 @@ Texture& Texture::operator=(Texture&& other) noexcept {
     return *this;
 }
 
-bool Texture::loadInternal(const std::string& path, VmaAllocator allocator, VkDevice device,
-                            VkCommandPool commandPool, VkQueue queue, VkPhysicalDevice physicalDevice,
+bool Texture::loadInternal(const std::string& path, VmaAllocator allocator, vk::Device device,
+                            vk::CommandPool commandPool, vk::Queue queue, vk::PhysicalDevice physicalDevice,
                             bool useSRGB) {
     allocator_ = allocator;
     device_ = device;
@@ -135,7 +135,7 @@ bool Texture::loadInternal(const std::string& path, VmaAllocator allocator, VkDe
     // Use RAII to ensure pixels are freed on any exit path
     StbiPixels pixelGuard(pixels);
 
-    VkDeviceSize imageSize = width * height * 4;
+    vk::DeviceSize imageSize = width * height * 4;
 
     // Create staging buffer using RAII
     ManagedBuffer stagingBuffer;
@@ -235,14 +235,14 @@ bool Texture::loadInternal(const std::string& path, VmaAllocator allocator, VkDe
 
     // Success - transfer ownership to member variables
     managedImage.releaseToRaw(image, allocation);
-    imageView = static_cast<VkImageView>(createdView);
-    sampler = static_cast<VkSampler>(createdSampler);
+    imageView = static_cast<vk::ImageView>(createdView);
+    sampler = static_cast<vk::Sampler>(createdSampler);
 
     return true;
 }
 
-bool Texture::loadDDS(const std::string& path, VmaAllocator allocator, VkDevice device,
-                      VkCommandPool commandPool, VkQueue queue, bool useSRGB) {
+bool Texture::loadDDS(const std::string& path, VmaAllocator allocator, vk::Device device,
+                      vk::CommandPool commandPool, vk::Queue queue, bool useSRGB) {
     DDSLoader::Image dds = DDSLoader::load(path);
     if (!dds.isValid()) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to load DDS texture: %s", path.c_str());
@@ -268,7 +268,7 @@ bool Texture::loadDDS(const std::string& path, VmaAllocator allocator, VkDevice 
         }
     }
 
-    VkDeviceSize imageSize = dds.data.size();
+    vk::DeviceSize imageSize = dds.data.size();
 
     // Create staging buffer
     ManagedBuffer stagingBuffer;
@@ -303,7 +303,7 @@ bool Texture::loadDDS(const std::string& path, VmaAllocator allocator, VkDevice 
     allocInfo.usage = VMA_MEMORY_USAGE_AUTO;
     allocInfo.requiredFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
 
-    if (vmaCreateImage(allocator, reinterpret_cast<const VkImageCreateInfo*>(&imageInfo), &allocInfo, &image, &allocation, nullptr) != VK_SUCCESS) {
+    if (vmaCreateImage(allocator, reinterpret_cast<const VkImageCreateInfo*>(&imageInfo), &allocInfo, reinterpret_cast<VkImage*>(&image), &allocation, nullptr) != VK_SUCCESS) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create image for DDS texture: %s", path.c_str());
         return false;
     }
@@ -337,7 +337,7 @@ bool Texture::loadDDS(const std::string& path, VmaAllocator allocator, VkDevice 
 
     vk::Device vkDevice(device);
     try {
-        imageView = static_cast<VkImageView>(vkDevice.createImageView(viewInfo));
+        imageView = static_cast<vk::ImageView>(vkDevice.createImageView(viewInfo));
     } catch (const vk::SystemError& e) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create image view for DDS texture: %s (%s)", path.c_str(), e.what());
         return false;
@@ -362,7 +362,7 @@ bool Texture::loadDDS(const std::string& path, VmaAllocator allocator, VkDevice 
         .setMaxLod(static_cast<float>(dds.mipLevels));
 
     try {
-        sampler = static_cast<VkSampler>(vkDevice.createSampler(samplerInfo));
+        sampler = static_cast<vk::Sampler>(vkDevice.createSampler(samplerInfo));
     } catch (const vk::SystemError& e) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create sampler for DDS texture: %s (%s)", path.c_str(), e.what());
         return false;
@@ -373,15 +373,15 @@ bool Texture::loadDDS(const std::string& path, VmaAllocator allocator, VkDevice 
 }
 
 bool Texture::createSolidColorInternal(uint8_t r, uint8_t g, uint8_t b, uint8_t a,
-                                        VmaAllocator allocator, VkDevice device,
-                                        VkCommandPool commandPool, VkQueue queue) {
+                                        VmaAllocator allocator, vk::Device device,
+                                        vk::CommandPool commandPool, vk::Queue queue) {
     allocator_ = allocator;
     device_ = device;
     width = 1;
     height = 1;
     uint8_t pixels[4] = {r, g, b, a};
 
-    VkDeviceSize imageSize = 4;
+    vk::DeviceSize imageSize = 4;
 
     // Create staging buffer using RAII
     ManagedBuffer stagingBuffer;
@@ -474,13 +474,13 @@ bool Texture::createSolidColorInternal(uint8_t r, uint8_t g, uint8_t b, uint8_t 
 
     // Success - transfer ownership to member variables
     managedImage.releaseToRaw(image, allocation);
-    imageView = static_cast<VkImageView>(createdView);
-    sampler = static_cast<VkSampler>(createdSampler);
+    imageView = static_cast<vk::ImageView>(createdView);
+    sampler = static_cast<vk::Sampler>(createdSampler);
 
     return true;
 }
 
-void Texture::recordTransition(vk::CommandBuffer cmd, VkImage image,
+void Texture::recordTransition(vk::CommandBuffer cmd, vk::Image image,
                                VkImageLayout oldLayout, VkImageLayout newLayout,
                                uint32_t levelCount) {
     vk::PipelineStageFlags srcStage;
@@ -523,8 +523,8 @@ void Texture::recordTransition(vk::CommandBuffer cmd, VkImage image,
     cmd.pipelineBarrier(srcStage, dstStage, {}, {}, {}, barrier);
 }
 
-void Texture::recordCopyBufferToImage(vk::CommandBuffer cmd, VkBuffer buffer,
-                                      VkImage image, uint32_t width, uint32_t height) {
+void Texture::recordCopyBufferToImage(vk::CommandBuffer cmd, vk::Buffer buffer,
+                                      vk::Image image, uint32_t width, uint32_t height) {
     // Copy buffer to image (image must already be in TRANSFER_DST_OPTIMAL)
     auto region = vk::BufferImageCopy{}
         .setBufferOffset(0)
@@ -613,8 +613,8 @@ static void generateMipLevelAlphaCoverage(
     }
 }
 
-bool Texture::loadWithMipmapsInternal(const std::string& path, VmaAllocator allocator, VkDevice device,
-                                       VkCommandPool commandPool, VkQueue queue, VkPhysicalDevice physicalDevice,
+bool Texture::loadWithMipmapsInternal(const std::string& path, VmaAllocator allocator, vk::Device device,
+                                       vk::CommandPool commandPool, vk::Queue queue, vk::PhysicalDevice physicalDevice,
                                        bool useSRGB, bool enableAnisotropy) {
     allocator_ = allocator;
     device_ = device;
@@ -660,8 +660,8 @@ bool Texture::loadWithMipmapsInternal(const std::string& path, VmaAllocator allo
     }
 
     // Calculate total size needed for staging buffer
-    VkDeviceSize totalSize = 0;
-    std::vector<VkDeviceSize> mipOffsets(mipLevels);
+    vk::DeviceSize totalSize = 0;
+    std::vector<vk::DeviceSize> mipOffsets(mipLevels);
     for (uint32_t i = 0; i < mipLevels; ++i) {
         mipOffsets[i] = totalSize;
         totalSize += mipWidths[i] * mipHeights[i] * 4;
@@ -782,8 +782,8 @@ bool Texture::loadWithMipmapsInternal(const std::string& path, VmaAllocator allo
 
     // Transfer ownership
     managedImage.releaseToRaw(image, allocation);
-    imageView = static_cast<VkImageView>(createdView);
-    sampler = static_cast<VkSampler>(createdSampler);
+    imageView = static_cast<vk::ImageView>(createdView);
+    sampler = static_cast<vk::Sampler>(createdSampler);
 
     SDL_Log("Loaded texture with %u mip levels: %s (%dx%d)", mipLevels, path.c_str(), width, height);
     return true;

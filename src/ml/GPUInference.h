@@ -61,7 +61,7 @@ public:
     GPUInference& operator=(const GPUInference&) = delete;
 
     // Initialize GPU resources (pipeline, descriptor sets, buffers).
-    bool init(VkDevice device, VmaAllocator allocator, const Config& config);
+    bool init(vk::Device device, VmaAllocator allocator, const Config& config);
 
     // Upload LLC network weights to the GPU.
     bool uploadWeights(const calm::LowLevelController& llc);
@@ -72,7 +72,7 @@ public:
                       uint32_t npcCount);
 
     // Record the compute dispatch into a command buffer.
-    void recordDispatch(VkCommandBuffer cmd, uint32_t npcCount);
+    void recordDispatch(vk::CommandBuffer cmd, uint32_t npcCount);
 
     // Read back the computed actions from the GPU.
     void readBackActions(std::vector<float>& actions, uint32_t npcCount);
@@ -90,19 +90,19 @@ private:
     Config config_;
     bool initialized_ = false;
 
-    VkDevice device_ = VK_NULL_HANDLE;
+    vk::Device device_ = VK_NULL_HANDLE;
     VmaAllocator allocator_ = VK_NULL_HANDLE;
 
     // Vulkan objects
-    VkDescriptorSetLayout descriptorSetLayout_ = VK_NULL_HANDLE;
-    VkDescriptorPool descriptorPool_ = VK_NULL_HANDLE;
-    VkDescriptorSet descriptorSet_ = VK_NULL_HANDLE;
-    VkPipelineLayout pipelineLayout_ = VK_NULL_HANDLE;
-    VkPipeline pipeline_ = VK_NULL_HANDLE;
+    vk::DescriptorSetLayout descriptorSetLayout_ = VK_NULL_HANDLE;
+    vk::DescriptorPool descriptorPool_ = VK_NULL_HANDLE;
+    vk::DescriptorSet descriptorSet_ = VK_NULL_HANDLE;
+    vk::PipelineLayout pipelineLayout_ = VK_NULL_HANDLE;
+    vk::Pipeline pipeline_ = VK_NULL_HANDLE;
 
     // GPU buffers (VMA-allocated)
     struct GPUBuffer {
-        VkBuffer buffer = VK_NULL_HANDLE;
+        vk::Buffer buffer = VK_NULL_HANDLE;
         VmaAllocation allocation = VK_NULL_HANDLE;
         size_t size = 0;
     };

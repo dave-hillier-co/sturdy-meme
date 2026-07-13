@@ -6,7 +6,7 @@ namespace BufferUtils {
 namespace {
 
 void destroyCreatedBuffers(VmaAllocator allocator,
-                           const std::vector<VkBuffer>& buffers,
+                           const std::vector<vk::Buffer>& buffers,
                            const std::vector<VmaAllocation>& allocations,
                            size_t count) {
     for (size_t i = 0; i < count; i++) {
@@ -21,7 +21,7 @@ void destroyCreatedBuffers(VmaAllocator allocator,
 DoubleBufferedBufferConfig::DoubleBufferedBufferConfig(
     VmaAllocator allocator,
     uint32_t setCount,
-    VkDeviceSize size,
+    vk::DeviceSize size,
     VkBufferUsageFlags usage,
     VmaMemoryUsage memoryUsage,
     VmaAllocationCreateFlags allocationFlags)
@@ -55,7 +55,7 @@ DoubleBufferedBufferBuilder DoubleBufferedBufferBuilder::withSetCount(uint32_t c
     return builder;
 }
 
-DoubleBufferedBufferBuilder DoubleBufferedBufferBuilder::withSize(VkDeviceSize size) const {
+DoubleBufferedBufferBuilder DoubleBufferedBufferBuilder::withSize(vk::DeviceSize size) const {
     auto builder = *this;
     builder.bufferSize_ = size;
     return builder;
@@ -89,7 +89,7 @@ DoubleBufferedBufferBuilder& DoubleBufferedBufferBuilder::setSetCount(uint32_t c
     return *this;
 }
 
-DoubleBufferedBufferBuilder& DoubleBufferedBufferBuilder::setSize(VkDeviceSize size) {
+DoubleBufferedBufferBuilder& DoubleBufferedBufferBuilder::setSize(vk::DeviceSize size) {
     bufferSize_ = size;
     return *this;
 }
@@ -130,7 +130,7 @@ bool DoubleBufferedBufferBuilder::build(DoubleBufferedBufferSet& outBuffers) con
     allocInfo.flags = allocationFlags_;
 
     for (uint32_t i = 0; i < setCount_; i++) {
-        if (vmaCreateBuffer(allocator_, reinterpret_cast<const VkBufferCreateInfo*>(&bufferInfo), &allocInfo, &result.buffers[i], &result.allocations[i], nullptr) !=
+        if (vmaCreateBuffer(allocator_, reinterpret_cast<const VkBufferCreateInfo*>(&bufferInfo), &allocInfo, reinterpret_cast<VkBuffer*>(&result.buffers[i]), &result.allocations[i], nullptr) !=
             VK_SUCCESS) {
             SDL_Log("Failed to create double-buffered buffer %u", i);
             destroyCreatedBuffers(allocator_, result.buffers, result.allocations, i);

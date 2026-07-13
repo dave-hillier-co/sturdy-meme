@@ -30,11 +30,11 @@ public:
     explicit WaterTileCull(ConstructToken) {}
 
     struct InitInfo {
-        VkDevice device;
-        VkPhysicalDevice physicalDevice;
+        vk::Device device;
+        vk::PhysicalDevice physicalDevice;
         VmaAllocator allocator;
-        VkCommandPool commandPool;
-        VkQueue computeQueue;
+        vk::CommandPool commandPool;
+        vk::Queue computeQueue;
         std::string shaderPath;
         uint32_t framesInFlight;
         VkExtent2D extent;
@@ -92,14 +92,14 @@ public:
 
     // Record compute pass to determine visible tiles
     // Call before water rendering
-    void recordTileCull(VkCommandBuffer cmd, uint32_t frameIndex,
+    void recordTileCull(vk::CommandBuffer cmd, uint32_t frameIndex,
                         const glm::mat4& viewProj,
                         const glm::vec3& cameraPos,
                         float waterLevel,
-                        VkImageView depthView);
+                        vk::ImageView depthView);
 
     // Get indirect draw buffer for water rendering
-    VkBuffer getIndirectDrawBuffer() const { return indirectDrawBuffer_.get(); }
+    vk::Buffer getIndirectDrawBuffer() const { return indirectDrawBuffer_.get(); }
 
     // Get visible tile count for this frame
     uint32_t getVisibleTileCount(uint32_t frameIndex) const;
@@ -109,7 +109,7 @@ public:
     bool wasWaterVisibleLastFrame(uint32_t currentFrameIndex) const;
 
     // Get tile buffer for debug visualization
-    VkBuffer getTileBuffer() const { return tileBuffer_.get(); }
+    vk::Buffer getTileBuffer() const { return tileBuffer_.get(); }
 
     // Configuration
     void setEnabled(bool enable) { enabled = enable; }
@@ -129,19 +129,19 @@ private:
     bool createDescriptorSets();
 
     // Synchronize counter buffer for transfer (compute → transfer)
-    void barrierCounterForTransfer(VkCommandBuffer cmd, uint32_t frameIndex);
+    void barrierCounterForTransfer(vk::CommandBuffer cmd, uint32_t frameIndex);
 
     // Synchronize tile/indirect buffers for drawing (compute → vertex/draw)
-    void barrierCullResultsForDraw(VkCommandBuffer cmd, uint32_t frameIndex);
+    void barrierCullResultsForDraw(vk::CommandBuffer cmd, uint32_t frameIndex);
 
     // Synchronize counter readback for CPU access (transfer → host)
-    void barrierCounterForHostRead(VkCommandBuffer cmd, uint32_t frameIndex);
+    void barrierCounterForHostRead(vk::CommandBuffer cmd, uint32_t frameIndex);
 
-    VkDevice device = VK_NULL_HANDLE;
-    VkPhysicalDevice physicalDevice = VK_NULL_HANDLE;
+    vk::Device device = VK_NULL_HANDLE;
+    vk::PhysicalDevice physicalDevice = VK_NULL_HANDLE;
     VmaAllocator allocator = VK_NULL_HANDLE;
-    VkCommandPool commandPool = VK_NULL_HANDLE;
-    VkQueue computeQueue = VK_NULL_HANDLE;
+    vk::CommandPool commandPool = VK_NULL_HANDLE;
+    vk::Queue computeQueue = VK_NULL_HANDLE;
     std::string shaderPath;
 
     uint32_t framesInFlight = 0;
@@ -169,7 +169,7 @@ private:
     std::optional<vk::raii::PipelineLayout> computePipelineLayout_;
     std::optional<vk::raii::DescriptorSetLayout> descriptorSetLayout_;
     std::optional<vk::raii::DescriptorPool> descriptorPool_;
-    std::vector<VkDescriptorSet> descriptorSets;
+    std::vector<vk::DescriptorSet> descriptorSets;
 
     // Depth texture sampler for tile culling (RAII-managed)
     std::optional<vk::raii::Sampler> depthSampler_;

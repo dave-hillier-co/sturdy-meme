@@ -102,7 +102,7 @@ bool ScreenSpaceShadowSystem::createPipeline() {
     // Binding 1: Previous frame depth (combined image sampler)
     // Binding 2: Cascade shadow maps (combined image sampler)
     // Binding 3: Uniforms (UBO)
-    VkDescriptorSetLayout rawLayout = DescriptorManager::LayoutBuilder(device_)
+    vk::DescriptorSetLayout rawLayout = DescriptorManager::LayoutBuilder(device_)
         .addStorageImage(VK_SHADER_STAGE_COMPUTE_BIT)                  // 0: shadow buffer output
         .addCombinedImageSampler(VK_SHADER_STAGE_COMPUTE_BIT)         // 1: prev depth
         .addCombinedImageSampler(VK_SHADER_STAGE_COMPUTE_BIT)         // 2: shadow map array
@@ -198,19 +198,19 @@ void ScreenSpaceShadowSystem::updatePerFrame(uint32_t frameIndex,
     hasPrevFrame_ = true;
 }
 
-void ScreenSpaceShadowSystem::setDepthSource(VkImageView depthView, VkSampler depthSampler) {
+void ScreenSpaceShadowSystem::setDepthSource(vk::ImageView depthView, vk::Sampler depthSampler) {
     depthView_ = depthView;
     depthSampler_ = depthSampler;
     descriptorsNeedUpdate_ = true;
 }
 
-void ScreenSpaceShadowSystem::setShadowMapSource(VkImageView shadowMapView, VkSampler shadowMapSampler) {
+void ScreenSpaceShadowSystem::setShadowMapSource(vk::ImageView shadowMapView, vk::Sampler shadowMapSampler) {
     shadowMapView_ = shadowMapView;
     shadowMapSampler_ = shadowMapSampler;
     descriptorsNeedUpdate_ = true;
 }
 
-void ScreenSpaceShadowSystem::record(VkCommandBuffer cmd, uint32_t frameIndex) {
+void ScreenSpaceShadowSystem::record(vk::CommandBuffer cmd, uint32_t frameIndex) {
     if (depthView_ == VK_NULL_HANDLE || shadowMapView_ == VK_NULL_HANDLE) {
         return;
     }
@@ -257,10 +257,10 @@ void ScreenSpaceShadowSystem::resize(VkExtent2D newExtent) {
     updateDescriptorSets();
 }
 
-VkImageView ScreenSpaceShadowSystem::getShadowBufferView() const {
+vk::ImageView ScreenSpaceShadowSystem::getShadowBufferView() const {
     return shadowBufferView_ ? **shadowBufferView_ : VK_NULL_HANDLE;
 }
 
-VkSampler ScreenSpaceShadowSystem::getShadowBufferSampler() const {
+vk::Sampler ScreenSpaceShadowSystem::getShadowBufferSampler() const {
     return shadowBufferSampler_ ? **shadowBufferSampler_ : VK_NULL_HANDLE;
 }

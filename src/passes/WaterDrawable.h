@@ -1,4 +1,5 @@
 #pragma once
+#include <vulkan/vulkan.hpp>
 
 // ============================================================================
 // WaterDrawable.h - Water rendering with optional temporal tile culling
@@ -24,7 +25,7 @@ public:
 
     bool shouldDraw(uint32_t frameIndex, const HDRDrawParams& params) const override;
 
-    void recordHDRDraw(VkCommandBuffer cmd, uint32_t frameIndex,
+    void recordHDRDraw(vk::CommandBuffer cmd, uint32_t frameIndex,
                         float /*time*/, const HDRDrawParams& /*params*/) override {
         water_.recordDraw(cmd, frameIndex);
     }

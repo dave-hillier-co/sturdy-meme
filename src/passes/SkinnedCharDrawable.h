@@ -1,4 +1,5 @@
 #pragma once
+#include <vulkan/vulkan.hpp>
 
 // ============================================================================
 // SkinnedCharDrawable.h - Skinned character rendering as IHDRDrawable
@@ -21,7 +22,7 @@ namespace ecs { class World; }
 
 // Callback for drawing additional skinned characters (e.g. ragdolls).
 // Parameters: cmd, frameIndex
-using RagdollDrawCallback = std::function<void(VkCommandBuffer, uint32_t)>;
+using RagdollDrawCallback = std::function<void(vk::CommandBuffer, uint32_t)>;
 
 /**
  * Renders skinned characters (player + NPCs + ragdolls) in the HDR pass.
@@ -44,7 +45,7 @@ public:
 
     explicit SkinnedCharDrawable(const Resources& resources);
 
-    void recordHDRDraw(VkCommandBuffer cmd, uint32_t frameIndex,
+    void recordHDRDraw(vk::CommandBuffer cmd, uint32_t frameIndex,
                         float time, const HDRDrawParams& params) override;
 
 private:

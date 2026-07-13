@@ -37,11 +37,11 @@ public:
     explicit SSRSystem(ConstructToken) {}
 
     struct InitInfo {
-        VkDevice device;
-        VkPhysicalDevice physicalDevice;
+        vk::Device device;
+        vk::PhysicalDevice physicalDevice;
         VmaAllocator allocator;
-        VkCommandPool commandPool;
-        VkQueue computeQueue;
+        vk::CommandPool commandPool;
+        vk::Queue computeQueue;
         std::string shaderPath;
         uint32_t framesInFlight;
         VkExtent2D extent;
@@ -99,14 +99,14 @@ public:
     // hdrColorView: Scene color buffer to reflect
     // hdrDepthView: Scene depth buffer for ray marching
     // normalView: Optional normal buffer for better hit detection
-    void recordCompute(VkCommandBuffer cmd, uint32_t frameIndex,
-                       VkImageView hdrColorView, VkImageView hdrDepthView,
+    void recordCompute(vk::CommandBuffer cmd, uint32_t frameIndex,
+                       vk::ImageView hdrColorView, vk::ImageView hdrDepthView,
                        const glm::mat4& view, const glm::mat4& proj,
                        const glm::vec3& cameraPos);
 
     // Get SSR result texture for sampling in water shader
-    VkImageView getSSRResultView() const { return ssrResultView[currentBuffer] ? **ssrResultView[currentBuffer] : VK_NULL_HANDLE; }
-    VkSampler getSampler() const { return sampler_ ? **sampler_ : VK_NULL_HANDLE; }
+    vk::ImageView getSSRResultView() const { return ssrResultView[currentBuffer] ? **ssrResultView[currentBuffer] : VK_NULL_HANDLE; }
+    vk::Sampler getSampler() const { return sampler_ ? **sampler_ : VK_NULL_HANDLE; }
 
     // Configuration
     void setMaxDistance(float dist) { maxDistance = dist; }
@@ -138,11 +138,11 @@ private:
     bool createBlurPipeline();
     bool createDescriptorSets();
 
-    VkDevice device = VK_NULL_HANDLE;
-    VkPhysicalDevice physicalDevice = VK_NULL_HANDLE;
+    vk::Device device = VK_NULL_HANDLE;
+    vk::PhysicalDevice physicalDevice = VK_NULL_HANDLE;
     VmaAllocator allocator = VK_NULL_HANDLE;
-    VkCommandPool commandPool = VK_NULL_HANDLE;
-    VkQueue computeQueue = VK_NULL_HANDLE;
+    vk::CommandPool commandPool = VK_NULL_HANDLE;
+    vk::Queue computeQueue = VK_NULL_HANDLE;
     std::string shaderPath;
     const vk::raii::Device* raiiDevice_ = nullptr;
 
@@ -179,18 +179,18 @@ private:
     std::optional<vk::raii::PipelineLayout> computePipelineLayout_;
     std::optional<vk::raii::DescriptorSetLayout> descriptorSetLayout_;
     DescriptorManager::Pool* descriptorPool = nullptr;  // Shared auto-growing pool
-    std::vector<VkDescriptorSet> descriptorSets;
+    std::vector<vk::DescriptorSet> descriptorSets;
 
     // Blur compute pipeline
     std::optional<vk::raii::Pipeline> blurPipeline_;
     std::optional<vk::raii::PipelineLayout> blurPipelineLayout_;
     std::optional<vk::raii::DescriptorSetLayout> blurDescriptorSetLayout_;
-    std::vector<VkDescriptorSet> blurDescriptorSets;
+    std::vector<vk::DescriptorSet> blurDescriptorSets;
 
     // Intermediate buffer for blur (SSR writes here, blur reads and writes to final)
     ManagedImage ssrIntermediate;
     std::optional<vk::raii::ImageView> ssrIntermediateView;
 
     // Store depth view for blur pass
-    VkImageView cachedDepthView = VK_NULL_HANDLE;
+    vk::ImageView cachedDepthView = VK_NULL_HANDLE;
 };

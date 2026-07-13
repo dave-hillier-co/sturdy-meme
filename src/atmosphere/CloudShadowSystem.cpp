@@ -20,7 +20,7 @@ std::unique_ptr<CloudShadowSystem> CloudShadowSystem::create(const InitInfo& inf
     return system;
 }
 
-std::unique_ptr<CloudShadowSystem> CloudShadowSystem::create(const InitContext& ctx, VkImageView cloudMapLUTView_, VkSampler cloudMapLUTSampler_) {
+std::unique_ptr<CloudShadowSystem> CloudShadowSystem::create(const InitContext& ctx, vk::ImageView cloudMapLUTView_, vk::Sampler cloudMapLUTSampler_) {
     InitInfo info{};
     info.device = ctx.device;
     info.allocator = ctx.allocator;
@@ -234,7 +234,7 @@ void CloudShadowSystem::updateWorldToShadowMatrix(const glm::vec3& sunDir, const
     worldToShadowUV = offset * scale * parallaxOffset * translate;
 }
 
-void CloudShadowSystem::recordUpdate(VkCommandBuffer cmd, uint32_t frameIndex,
+void CloudShadowSystem::recordUpdate(vk::CommandBuffer cmd, uint32_t frameIndex,
                                       const glm::vec3& sunDir, float sunIntensity,
                                       const glm::vec3& windOffset, float windTime,
                                       const glm::vec3& cameraPos) {

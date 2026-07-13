@@ -78,8 +78,8 @@ public:
 
     struct InitInfo {
         const vk::raii::Device* raiiDevice = nullptr;
-        VkDevice device;
-        VkPhysicalDevice physicalDevice;
+        vk::Device device;
+        vk::PhysicalDevice physicalDevice;
         VmaAllocator allocator;
         DescriptorManager::Pool* descriptorPool;
         VkExtent2D extent;
@@ -153,17 +153,17 @@ public:
      * @param hiZSampler Sampler for Hi-Z pyramid
      * @param lodParams LOD parameters including screen-space error settings
      */
-    void recordCulling(VkCommandBuffer cmd, uint32_t frameIndex,
+    void recordCulling(vk::CommandBuffer cmd, uint32_t frameIndex,
                        const glm::vec3& cameraPos,
                        const glm::vec4* frustumPlanes,
                        const glm::mat4& viewProjMatrix,
-                       VkImageView hiZPyramidView,
-                       VkSampler hiZSampler,
+                       vk::ImageView hiZPyramidView,
+                       vk::Sampler hiZSampler,
                        const LODParams& lodParams);
 
     // Get output buffers for rendering
-    VkBuffer getVisibleImpostorBuffer() const { return visibleImpostorBuffer_; }
-    VkBuffer getIndirectDrawBuffer() const { return indirectDrawBuffer_; }
+    vk::Buffer getVisibleImpostorBuffer() const { return visibleImpostorBuffer_; }
+    vk::Buffer getIndirectDrawBuffer() const { return indirectDrawBuffer_; }
 
     // Get visible impostor count (read from GPU - may be stale)
     uint32_t getVisibleCount() const { return lastVisibleCount_; }
@@ -200,11 +200,11 @@ private:
     bool allocateDescriptorSets();
     bool createBuffers();
 
-    void updateHiZDescriptor(uint32_t frameIndex, VkImageView hiZPyramidView, VkSampler hiZSampler);
+    void updateHiZDescriptor(uint32_t frameIndex, vk::ImageView hiZPyramidView, vk::Sampler hiZSampler);
 
     const vk::raii::Device* raiiDevice_ = nullptr;
-    VkDevice device_ = VK_NULL_HANDLE;
-    VkPhysicalDevice physicalDevice_ = VK_NULL_HANDLE;
+    vk::Device device_ = VK_NULL_HANDLE;
+    vk::PhysicalDevice physicalDevice_ = VK_NULL_HANDLE;
     VmaAllocator allocator_ = VK_NULL_HANDLE;
     DescriptorManager::Pool* descriptorPool_ = nullptr;
     std::string resourcePath_;
@@ -219,25 +219,25 @@ private:
     std::optional<vk::raii::DescriptorSetLayout> cullDescriptorSetLayout_;
 
     // Per-frame descriptor sets
-    std::vector<VkDescriptorSet> cullDescriptorSets_;
+    std::vector<vk::DescriptorSet> cullDescriptorSets_;
 
     // Tree input buffer (all trees)
-    VkBuffer treeInputBuffer_ = VK_NULL_HANDLE;
+    vk::Buffer treeInputBuffer_ = VK_NULL_HANDLE;
     VmaAllocation treeInputAllocation_ = VK_NULL_HANDLE;
-    VkDeviceSize treeInputBufferSize_ = 0;
+    vk::DeviceSize treeInputBufferSize_ = 0;
 
     // Archetype data buffer
-    VkBuffer archetypeBuffer_ = VK_NULL_HANDLE;
+    vk::Buffer archetypeBuffer_ = VK_NULL_HANDLE;
     VmaAllocation archetypeAllocation_ = VK_NULL_HANDLE;
-    VkDeviceSize archetypeBufferSize_ = 0;
+    vk::DeviceSize archetypeBufferSize_ = 0;
 
     // Visible impostor output buffer
-    VkBuffer visibleImpostorBuffer_ = VK_NULL_HANDLE;
+    vk::Buffer visibleImpostorBuffer_ = VK_NULL_HANDLE;
     VmaAllocation visibleImpostorAllocation_ = VK_NULL_HANDLE;
-    VkDeviceSize visibleImpostorBufferSize_ = 0;
+    vk::DeviceSize visibleImpostorBufferSize_ = 0;
 
     // Indirect draw command buffer
-    VkBuffer indirectDrawBuffer_ = VK_NULL_HANDLE;
+    vk::Buffer indirectDrawBuffer_ = VK_NULL_HANDLE;
     VmaAllocation indirectDrawAllocation_ = VK_NULL_HANDLE;
 
     // Uniform buffers (per-frame)
@@ -247,7 +247,7 @@ private:
     // Stores 1 bit per tree: 1 = visible as impostor, 0 = not visible
     // Using FrameIndexedBuffers for automatic RAII management
     BufferUtils::FrameIndexedBuffers visibilityCacheBuffers_;
-    VkDeviceSize visibilityCacheBufferSize_ = 0;
+    vk::DeviceSize visibilityCacheBufferSize_ = 0;
 
     // State
     uint32_t treeCount_ = 0;
@@ -262,5 +262,5 @@ private:
     uint32_t partialUpdateOffset_ = 0;  // Rolling offset for partial updates
 
     // Track if Hi-Z texture changed
-    VkImageView lastHiZView_ = VK_NULL_HANDLE;
+    vk::ImageView lastHiZView_ = VK_NULL_HANDLE;
 };

@@ -41,18 +41,18 @@ public:
     uint32_t getRenderBufferSet() const { return renderBufferSet; }
     uint32_t getBufferSetCount() const { return bufferSetCount; }
 
-    void setComputeDescriptorSet(uint32_t index, VkDescriptorSet set);
-    void setGraphicsDescriptorSet(uint32_t index, VkDescriptorSet set);
+    void setComputeDescriptorSet(uint32_t index, vk::DescriptorSet set);
+    void setGraphicsDescriptorSet(uint32_t index, vk::DescriptorSet set);
 
-    VkDescriptorSet getComputeDescriptorSet(uint32_t index) const { return computeDescriptorSets[index]; }
-    VkDescriptorSet getGraphicsDescriptorSet(uint32_t index) const { return graphicsDescriptorSets[index]; }
+    vk::DescriptorSet getComputeDescriptorSet(uint32_t index) const { return computeDescriptorSets[index]; }
+    vk::DescriptorSet getGraphicsDescriptorSet(uint32_t index) const { return graphicsDescriptorSets[index]; }
 
     SystemLifecycleHelper::PipelineHandles& getComputePipelineHandles() { return lifecycle.getComputePipeline(); }
     SystemLifecycleHelper::PipelineHandles& getGraphicsPipelineHandles() { return lifecycle.getGraphicsPipeline(); }
 
-    VkDevice getDevice() const { return lifecycle.getDevice(); }
+    vk::Device getDevice() const { return lifecycle.getDevice(); }
     VmaAllocator getAllocator() const { return lifecycle.getAllocator(); }
-    VkRenderPass getRenderPass() const { return lifecycle.getRenderPass(); }
+    vk::RenderPass getRenderPass() const { return lifecycle.getRenderPass(); }
     DescriptorManager::Pool* getDescriptorPool() const { return lifecycle.getDescriptorPool(); }
     const VkExtent2D& getExtent() const { return lifecycle.getExtent(); }
     void setExtent(VkExtent2D newExtent) { lifecycle.setExtent(newExtent); }
@@ -66,7 +66,7 @@ private:
     uint32_t bufferSetCount = 0;
     uint32_t computeBufferSet = 0;
     uint32_t renderBufferSet = 0;
-    std::vector<VkDescriptorSet> computeDescriptorSets;
-    std::vector<VkDescriptorSet> graphicsDescriptorSets;
+    std::vector<vk::DescriptorSet> computeDescriptorSets;
+    std::vector<vk::DescriptorSet> graphicsDescriptorSets;
 };
 

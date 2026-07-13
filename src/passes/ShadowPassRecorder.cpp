@@ -34,13 +34,13 @@ ShadowPassRecorder::ShadowPassRecorder(RendererSystems& systems)
 {
 }
 
-void ShadowPassRecorder::record(VkCommandBuffer cmd, uint32_t frameIndex, float time,
+void ShadowPassRecorder::record(vk::CommandBuffer cmd, uint32_t frameIndex, float time,
                                 const glm::vec3& cameraPosition, const Params& params) {
     // Setup phase: build callbacks and collect shadow-casting objects
     resources_.profiler->beginCpuZone("Shadow:Setup");
 
     // Delegate to the shadow system with callbacks for terrain and grass
-    auto terrainCallback = [this, &params, frameIndex](VkCommandBuffer cb, uint32_t cascade, const glm::mat4& lightMatrix) {
+    auto terrainCallback = [this, &params, frameIndex](vk::CommandBuffer cb, uint32_t cascade, const glm::mat4& lightMatrix) {
         if (params.terrainEnabled && params.terrainShadows) {
             resources_.profiler->beginGpuZone(cb, "Shadow:Terrain");
             resources_.terrain->recordShadowDraw(cb, frameIndex, lightMatrix, static_cast<int>(cascade));
@@ -48,7 +48,7 @@ void ShadowPassRecorder::record(VkCommandBuffer cmd, uint32_t frameIndex, float 
         }
     };
 
-    auto grassCallback = [this, &params, frameIndex, time](VkCommandBuffer cb, uint32_t cascade, const glm::mat4& lightMatrix) {
+    auto grassCallback = [this, &params, frameIndex, time](vk::CommandBuffer cb, uint32_t cascade, const glm::mat4& lightMatrix) {
         (void)lightMatrix;  // Grass uses cascade index only
         if (params.grassShadows) {
             resources_.profiler->beginGpuZone(cb, "Shadow:Grass");
@@ -57,7 +57,7 @@ void ShadowPassRecorder::record(VkCommandBuffer cmd, uint32_t frameIndex, float 
         }
     };
 
-    auto treeCallback = [this, frameIndex](VkCommandBuffer cb, uint32_t cascade, const glm::mat4& lightMatrix) {
+    auto treeCallback = [this, frameIndex](vk::CommandBuffer cb, uint32_t cascade, const glm::mat4& lightMatrix) {
         (void)lightMatrix;
         if (resources_.vegetation.hasTree() && resources_.vegetation.hasTreeRenderer()) {
             resources_.profiler->beginGpuZone(cb, "Shadow:Trees");
@@ -67,7 +67,7 @@ void ShadowPassRecorder::record(VkCommandBuffer cmd, uint32_t frameIndex, float 
         // Render impostor shadows
         if (resources_.vegetation.hasTreeLOD()) {
             resources_.profiler->beginGpuZone(cb, "Shadow:Impostors");
-            VkBuffer uniformBuffer = resources_.globalBuffers->uniformBuffers.buffers[frameIndex];
+            vk::Buffer uniformBuffer = resources_.globalBuffers->uniformBuffers.buffers[frameIndex];
             auto* impostorCull = resources_.vegetation.impostorCull();
             if (impostorCull && impostorCull->getTreeCount() > 0) {
                 // Use GPU-culled indirect rendering
@@ -144,7 +144,7 @@ void ShadowPassRecorder::record(VkCommandBuffer cmd, uint32_t frameIndex, float 
     // Skinned character shadow callback (renders with GPU skinning)
     ShadowSystem::DrawCallback skinnedCallback = nullptr;
     if (hasCharacter) {
-        skinnedCallback = [this, frameIndex](VkCommandBuffer cb, uint32_t cascade, const glm::mat4& lightMatrix) {
+        skinnedCallback = [this, frameIndex](vk::CommandBuffer cb, uint32_t cascade, const glm::mat4& lightMatrix) {
             (void)lightMatrix;  // Not used, cascade matrices are in UBO
             SceneBuilder& sceneBuilder = resources_.scene->getSceneBuilder();
             ecs::Entity playerEntity = sceneBuilder.getPlayerEntity();
@@ -167,7 +167,7 @@ void ShadowPassRecorder::record(VkCommandBuffer cmd, uint32_t frameIndex, float 
 
     // Pre-cascade compute callback for GPU culling (runs before each cascade's render pass)
     ShadowSystem::ComputeCallback preCascadeComputeCallback = [this, cameraPosition](
-        VkCommandBuffer cb, uint32_t frame, uint32_t cascade, const glm::mat4& lightMatrix) {
+        vk::CommandBuffer cb, uint32_t frame, uint32_t cascade, const glm::mat4& lightMatrix) {
         if (resources_.vegetation.hasTreeRenderer() && resources_.vegetation.hasTree() && resources_.vegetation.hasTreeLOD()) {
             // Extract frustum planes from the light view-projection matrix
             glm::vec4 cascadeFrustumPlanes[6];
@@ -182,7 +182,7 @@ void ShadowPassRecorder::record(VkCommandBuffer cmd, uint32_t frameIndex, float 
     // Use any MaterialRegistry descriptor set for shadow pass (only needs common bindings/UBO)
     // MaterialId 0 is the first registered material (crate)
     const auto& materialRegistry = resources_.scene->getSceneBuilder().getMaterialRegistry();
-    VkDescriptorSet shadowDescriptorSet = materialRegistry.getDescriptorSet(0, frameIndex);
+    vk::DescriptorSet shadowDescriptorSet = materialRegistry.getDescriptorSet(0, frameIndex);
 
     // GPU-driven indirect scene-object shadow path. When enabled and available, the shared
     // scene objects (those mirrored into GPUSceneBuffer) are culled per-cascade on the GPU
@@ -208,7 +208,7 @@ void ShadowPassRecorder::record(VkCommandBuffer cmd, uint32_t frameIndex, float 
 }
 
 // Legacy API implementation (deprecated)
-void ShadowPassRecorder::record(VkCommandBuffer cmd, uint32_t frameIndex, float time, const glm::vec3& cameraPosition) {
+void ShadowPassRecorder::record(vk::CommandBuffer cmd, uint32_t frameIndex, float time, const glm::vec3& cameraPosition) {
     // Convert legacy config to new params
     Params params;
     params.terrainEnabled = legacyConfig_.terrainEnabled;

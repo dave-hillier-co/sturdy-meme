@@ -61,8 +61,8 @@ void VolumetricSnowSystem::destroyBuffers(VmaAllocator alloc) {
 }
 
 bool VolumetricSnowSystem::createBuffers() {
-    VkDeviceSize uniformBufferSize = sizeof(VolumetricSnowUniforms);
-    VkDeviceSize interactionBufferSize = sizeof(VolumetricSnowInteraction) * MAX_INTERACTIONS;
+    vk::DeviceSize uniformBufferSize = sizeof(VolumetricSnowUniforms);
+    vk::DeviceSize interactionBufferSize = sizeof(VolumetricSnowInteraction) * MAX_INTERACTIONS;
 
     BufferUtils::PerFrameBufferBuilder uniformBuilder;
     if (!uniformBuilder.setAllocator(getAllocator())
@@ -105,7 +105,7 @@ bool VolumetricSnowSystem::createCascadeTextures() {
         allocInfo.usage = VMA_MEMORY_USAGE_AUTO;
 
         if (vmaCreateImage(getAllocator(), reinterpret_cast<const VkImageCreateInfo*>(&imageInfo), &allocInfo,
-                           &cascadeImages[i], &cascadeAllocations[i], nullptr) != VK_SUCCESS) {
+                           reinterpret_cast<VkImage*>(&cascadeImages[i]), &cascadeAllocations[i], nullptr) != VK_SUCCESS) {
             SDL_Log("Failed to create volumetric snow cascade %d image", i);
             return false;
         }
@@ -124,7 +124,7 @@ bool VolumetricSnowSystem::createCascadeTextures() {
 
         vk::Device vkDevice(getDevice());
         try {
-            cascadeViews[i] = static_cast<VkImageView>(vkDevice.createImageView(viewInfo));
+            cascadeViews[i] = static_cast<vk::ImageView>(vkDevice.createImageView(viewInfo));
         } catch (const vk::SystemError& e) {
             SDL_Log("Failed to create volumetric snow cascade %d image view: %s", i, e.what());
             return false;
@@ -297,7 +297,7 @@ std::array<glm::vec4, NUM_SNOW_CASCADES> VolumetricSnowSystem::getCascadeParams(
     return params;
 }
 
-void VolumetricSnowSystem::recordCompute(VkCommandBuffer cmd, uint32_t frameIndex) {
+void VolumetricSnowSystem::recordCompute(vk::CommandBuffer cmd, uint32_t frameIndex) {
     barrierCascadesForCompute(cmd);
 
     // Bind compute pipeline and descriptor set
@@ -323,7 +323,7 @@ void VolumetricSnowSystem::recordCompute(VkCommandBuffer cmd, uint32_t frameInde
     clearInteractions();
 }
 
-void VolumetricSnowSystem::barrierCascadesForCompute(VkCommandBuffer cmd) {
+void VolumetricSnowSystem::barrierCascadesForCompute(vk::CommandBuffer cmd) {
     vk::CommandBuffer vkCmd(cmd);
     vk::PipelineStageFlags srcStage = isFirstFrame[0] ?
         vk::PipelineStageFlagBits::eTopOfPipe : vk::PipelineStageFlagBits::eFragmentShader;
@@ -348,7 +348,7 @@ void VolumetricSnowSystem::barrierCascadesForCompute(VkCommandBuffer cmd) {
     vkCmd.pipelineBarrier(srcStage, vk::PipelineStageFlagBits::eComputeShader, {}, {}, {}, barriers);
 }
 
-void VolumetricSnowSystem::barrierCascadesForSampling(VkCommandBuffer cmd) {
+void VolumetricSnowSystem::barrierCascadesForSampling(vk::CommandBuffer cmd) {
     vk::CommandBuffer vkCmd(cmd);
     std::vector<vk::ImageMemoryBarrier> barriers;
     barriers.reserve(NUM_SNOW_CASCADES);

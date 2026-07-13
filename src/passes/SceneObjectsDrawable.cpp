@@ -29,7 +29,7 @@ SceneObjectsDrawable::SceneObjectsDrawable(const Resources& resources)
 {
 }
 
-void SceneObjectsDrawable::recordHDRDraw(VkCommandBuffer cmd, uint32_t frameIndex,
+void SceneObjectsDrawable::recordHDRDraw(vk::CommandBuffer cmd, uint32_t frameIndex,
                                           float time, const HDRDrawParams& params) {
     vk::CommandBuffer vkCmd(cmd);
 
@@ -39,7 +39,7 @@ void SceneObjectsDrawable::recordHDRDraw(VkCommandBuffer cmd, uint32_t frameInde
     recordSceneObjects(cmd, frameIndex, params);
 }
 
-void SceneObjectsDrawable::recordSceneObjects(VkCommandBuffer cmd, uint32_t frameIndex,
+void SceneObjectsDrawable::recordSceneObjects(vk::CommandBuffer cmd, uint32_t frameIndex,
                                                const HDRDrawParams& params) {
     if (!params.pipelineLayout) {
         SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "SceneObjectsDrawable: pipelineLayout not set");
@@ -58,7 +58,7 @@ void SceneObjectsDrawable::recordSceneObjects(VkCommandBuffer cmd, uint32_t fram
                           && params.gpuSceneBuffer->getObjectCount() > 0;
 
     // Helper lambda to render an entity with RenderData
-    auto renderWithRenderData = [&](const ecs::RenderData& data, VkDescriptorSet descSet) {
+    auto renderWithRenderData = [&](const ecs::RenderData& data, vk::DescriptorSet descSet) {
         if (!data.mesh) return;
 
         PushConstants push{};
@@ -125,7 +125,7 @@ void SceneObjectsDrawable::recordSceneObjects(VkCommandBuffer cmd, uint32_t fram
 
         // Render sorted entities
         ecs::MaterialId lastMaterialId = ecs::InvalidMaterialId;
-        VkDescriptorSet currentDescSet = VK_NULL_HANDLE;
+        vk::DescriptorSet currentDescSet = VK_NULL_HANDLE;
 
         for (const auto& data : renderList) {
             if (data.materialId != lastMaterialId) {
@@ -148,7 +148,7 @@ void SceneObjectsDrawable::recordSceneObjects(VkCommandBuffer cmd, uint32_t fram
     if (!useIndirect) {
         // Render procedural rocks (ScatterSystem owns its own descriptor sets)
         if (resources_.rocks && resources_.rocks->hasDescriptorSets()) {
-            VkDescriptorSet rockDescSet = resources_.rocks->getDescriptorSet(frameIndex);
+            vk::DescriptorSet rockDescSet = resources_.rocks->getDescriptorSet(frameIndex);
             for (const auto& rock : resources_.rocks->getSceneObjects()) {
                 renderWithRenderData(rock, rockDescSet);
             }
@@ -156,7 +156,7 @@ void SceneObjectsDrawable::recordSceneObjects(VkCommandBuffer cmd, uint32_t fram
 
         // Render woodland detritus (ScatterSystem owns its own descriptor sets)
         if (resources_.detritus && resources_.detritus->hasDescriptorSets()) {
-            VkDescriptorSet detritusDescSet = resources_.detritus->getDescriptorSet(frameIndex);
+            vk::DescriptorSet detritusDescSet = resources_.detritus->getDescriptorSet(frameIndex);
             for (const auto& detritus : resources_.detritus->getSceneObjects()) {
                 renderWithRenderData(detritus, detritusDescSet);
             }
@@ -194,7 +194,7 @@ void SceneObjectsDrawable::recordSceneObjects(VkCommandBuffer cmd, uint32_t fram
     }
 }
 
-void SceneObjectsDrawable::recordSceneObjectsIndirect(VkCommandBuffer cmd, uint32_t frameIndex,
+void SceneObjectsDrawable::recordSceneObjectsIndirect(vk::CommandBuffer cmd, uint32_t frameIndex,
                                                        const HDRDrawParams& params) {
     if (!params.gpuSceneBuffer || !params.instancedPipeline || !params.instancedPipelineLayout) {
         SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
@@ -226,10 +226,10 @@ void SceneObjectsDrawable::recordSceneObjectsIndirect(VkCommandBuffer cmd, uint3
     // slot so gl_InstanceIndex selects the right instance, and instanceCount (0/1) from the
     // cull pass skips culled objects. Falls back to a direct instanced draw where
     // multiDrawIndirect/drawIndirectFirstInstance are unavailable.
-    const VkBuffer indirectBuffer = sceneBuffer->getIndirectBuffer(frameIndex);
+    const vk::Buffer indirectBuffer = sceneBuffer->getIndirectBuffer(frameIndex);
     constexpr uint32_t kCmdStride = sizeof(GPUDrawIndexedIndirectCommand);
 
-    VkDescriptorSet lastSet = VK_NULL_HANDLE;
+    vk::DescriptorSet lastSet = VK_NULL_HANDLE;
     for (const auto& batch : batches) {
         if (!batch.mesh || batch.objectCount == 0) {
             continue;
@@ -237,7 +237,7 @@ void SceneObjectsDrawable::recordSceneObjectsIndirect(VkCommandBuffer cmd, uint3
 
         // Resolve set 0: scatter objects carry an explicit descriptor override; normal
         // objects resolve it from MaterialRegistry by materialId.
-        VkDescriptorSet set0 = batch.overrideDescriptorSet != VK_NULL_HANDLE
+        vk::DescriptorSet set0 = batch.overrideDescriptorSet != VK_NULL_HANDLE
             ? batch.overrideDescriptorSet
             : materialRegistry.getDescriptorSet(batch.materialId, frameIndex);
         if (set0 == VK_NULL_HANDLE) {

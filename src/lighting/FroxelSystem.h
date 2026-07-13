@@ -24,15 +24,15 @@ static constexpr uint32_t FROXEL_NUM_CASCADES = 4;
 class FroxelSystem : public IFogControl, public ITemporalSystem {
 public:
     struct InitInfo {
-        VkDevice device;
+        vk::Device device;
         VmaAllocator allocator;
         DescriptorManager::Pool* descriptorPool;  // Auto-growing pool
         VkExtent2D extent;
         std::string shaderPath;
         uint32_t framesInFlight;
-        VkImageView shadowMapView;       // Cascaded shadow map array view
-        VkSampler shadowSampler;         // Shadow sampler with comparison
-        std::vector<VkBuffer> lightBuffers;  // Per-frame light buffers for local light contribution
+        vk::ImageView shadowMapView;       // Cascaded shadow map array view
+        vk::Sampler shadowSampler;         // Shadow sampler with comparison
+        std::vector<vk::Buffer> lightBuffers;  // Per-frame light buffers for local light contribution
         const vk::raii::Device* raiiDevice = nullptr;
     };
 
@@ -53,8 +53,8 @@ public:
      * Returns nullptr on failure.
      */
     static std::unique_ptr<FroxelSystem> create(const InitInfo& info);
-    static std::unique_ptr<FroxelSystem> create(const InitContext& ctx, VkImageView shadowMapView, VkSampler shadowSampler,
-                                                 const std::vector<VkBuffer>& lightBuffers);
+    static std::unique_ptr<FroxelSystem> create(const InitContext& ctx, vk::ImageView shadowMapView, vk::Sampler shadowSampler,
+                                                 const std::vector<vk::Buffer>& lightBuffers);
 
 
     ~FroxelSystem();
@@ -67,7 +67,7 @@ public:
     void resize(VkExtent2D newExtent);
 
     // Update froxel volume (call before scene rendering)
-    void recordFroxelUpdate(VkCommandBuffer cmd, uint32_t frameIndex,
+    void recordFroxelUpdate(vk::CommandBuffer cmd, uint32_t frameIndex,
                            const glm::mat4& view, const glm::mat4& proj,
                            const glm::vec3& cameraPos,
                            const glm::vec3& sunDir, float sunIntensity,
@@ -80,13 +80,13 @@ public:
      * froxel update has never run. The post-process composite statically binds the
      * integrated volume, so it must be valid even while froxel updates are disabled.
      */
-    void recordInitialClearIfNeeded(VkCommandBuffer cmd);
+    void recordInitialClearIfNeeded(vk::CommandBuffer cmd);
 
     // Get the scattering volume (raw, pre-integration) - returns current frame's output
-    VkImageView getScatteringVolumeView() const { return scatteringVolumeViews_[frameCounter % 2] ? **scatteringVolumeViews_[frameCounter % 2] : VK_NULL_HANDLE; }
+    vk::ImageView getScatteringVolumeView() const { return scatteringVolumeViews_[frameCounter % 2] ? **scatteringVolumeViews_[frameCounter % 2] : VK_NULL_HANDLE; }
     // Get the integrated volume for compositing (front-to-back integrated result)
-    VkImageView getIntegratedVolumeView() const { return integratedVolumeView_ ? **integratedVolumeView_ : VK_NULL_HANDLE; }
-    VkSampler getVolumeSampler() const { return volumeSampler_ ? **volumeSampler_ : VK_NULL_HANDLE; }
+    vk::ImageView getIntegratedVolumeView() const { return integratedVolumeView_ ? **integratedVolumeView_ : VK_NULL_HANDLE; }
+    vk::Sampler getVolumeSampler() const { return volumeSampler_ ? **volumeSampler_ : VK_NULL_HANDLE; }
 
     // IFogControl implementation (reset temporal history on change for immediate feedback)
     void setEnabled(bool e) override { enabled = e; }
@@ -176,7 +176,7 @@ private:
     std::optional<vk::raii::Pipeline> froxelUpdatePipeline_;
     std::optional<vk::raii::Pipeline> integrationPipeline_;
 
-    std::vector<VkDescriptorSet> froxelDescriptorSets;
+    std::vector<vk::DescriptorSet> froxelDescriptorSets;
 
     // Uniform buffers (per frame)
     BufferUtils::PerFrameBufferSet uniformBuffers;

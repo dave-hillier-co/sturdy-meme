@@ -9,11 +9,11 @@ namespace BufferUtils {
 // Dynamic uniform buffer: single buffer with aligned offsets for each frame
 // Use with VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC to avoid per-frame descriptor updates
 struct DynamicUniformBuffer {
-    VkBuffer buffer = VK_NULL_HANDLE;
+    vk::Buffer buffer = VK_NULL_HANDLE;
     VmaAllocation allocation = VK_NULL_HANDLE;
     void* mappedPointer = nullptr;
-    VkDeviceSize alignedSize = 0;    // Size of each frame's data (aligned)
-    VkDeviceSize elementSize = 0;    // Original unaligned size
+    vk::DeviceSize alignedSize = 0;    // Size of each frame's data (aligned)
+    vk::DeviceSize elementSize = 0;    // Original unaligned size
     uint32_t frameCount = 0;
 
     bool isValid() const { return buffer != VK_NULL_HANDLE; }
@@ -30,18 +30,18 @@ struct DynamicUniformBuffer {
     }
 
     // Total buffer size
-    VkDeviceSize getTotalSize() const { return alignedSize * frameCount; }
+    vk::DeviceSize getTotalSize() const { return alignedSize * frameCount; }
 };
 
 // Multi-slot dynamic uniform buffer: single buffer with aligned offsets for multiple
 // slots per frame. Use for per-object data like bone matrices where each character
 // needs its own slot in the buffer, selected via dynamic offset at draw time.
 struct MultiSlotDynamicBuffer {
-    VkBuffer buffer = VK_NULL_HANDLE;
+    vk::Buffer buffer = VK_NULL_HANDLE;
     VmaAllocation allocation = VK_NULL_HANDLE;
     void* mappedPointer = nullptr;
-    VkDeviceSize alignedSlotSize = 0;  // Size of each slot (aligned to minUniformBufferOffsetAlignment)
-    VkDeviceSize elementSize = 0;       // Original unaligned element size
+    vk::DeviceSize alignedSlotSize = 0;  // Size of each slot (aligned to minUniformBufferOffsetAlignment)
+    vk::DeviceSize elementSize = 0;       // Original unaligned element size
     uint32_t slotsPerFrame = 0;         // Number of slots per frame (e.g., max characters)
     uint32_t frameCount = 0;
 
@@ -59,10 +59,10 @@ struct MultiSlotDynamicBuffer {
     }
 
     // Total buffer size
-    VkDeviceSize getTotalSize() const { return alignedSlotSize * slotsPerFrame * frameCount; }
+    vk::DeviceSize getTotalSize() const { return alignedSlotSize * slotsPerFrame * frameCount; }
 
     // Get aligned slot size for descriptor writes
-    VkDeviceSize getAlignedSlotSize() const { return alignedSlotSize; }
+    vk::DeviceSize getAlignedSlotSize() const { return alignedSlotSize; }
 };
 
 // Builder for dynamic uniform buffers (single buffer with aligned per-frame data)
@@ -70,17 +70,17 @@ struct MultiSlotDynamicBuffer {
 class DynamicUniformBufferBuilder {
 public:
     DynamicUniformBufferBuilder& setAllocator(VmaAllocator allocator);
-    DynamicUniformBufferBuilder& setPhysicalDevice(VkPhysicalDevice physicalDevice);
+    DynamicUniformBufferBuilder& setPhysicalDevice(vk::PhysicalDevice physicalDevice);
     DynamicUniformBufferBuilder& setFrameCount(uint32_t count);
-    DynamicUniformBufferBuilder& setElementSize(VkDeviceSize size);
+    DynamicUniformBufferBuilder& setElementSize(vk::DeviceSize size);
 
     bool build(DynamicUniformBuffer& outBuffer) const;
 
 private:
     VmaAllocator allocator_ = VK_NULL_HANDLE;
-    VkPhysicalDevice physicalDevice_ = VK_NULL_HANDLE;
+    vk::PhysicalDevice physicalDevice_ = VK_NULL_HANDLE;
     uint32_t frameCount_ = 0;
-    VkDeviceSize elementSize_ = 0;
+    vk::DeviceSize elementSize_ = 0;
 };
 
 // Builder for multi-slot dynamic uniform buffers
@@ -88,19 +88,19 @@ private:
 class MultiSlotDynamicBufferBuilder {
 public:
     MultiSlotDynamicBufferBuilder& setAllocator(VmaAllocator allocator);
-    MultiSlotDynamicBufferBuilder& setPhysicalDevice(VkPhysicalDevice physicalDevice);
+    MultiSlotDynamicBufferBuilder& setPhysicalDevice(vk::PhysicalDevice physicalDevice);
     MultiSlotDynamicBufferBuilder& setFrameCount(uint32_t count);
     MultiSlotDynamicBufferBuilder& setSlotsPerFrame(uint32_t count);
-    MultiSlotDynamicBufferBuilder& setElementSize(VkDeviceSize size);
+    MultiSlotDynamicBufferBuilder& setElementSize(vk::DeviceSize size);
 
     bool build(MultiSlotDynamicBuffer& outBuffer) const;
 
 private:
     VmaAllocator allocator_ = VK_NULL_HANDLE;
-    VkPhysicalDevice physicalDevice_ = VK_NULL_HANDLE;
+    vk::PhysicalDevice physicalDevice_ = VK_NULL_HANDLE;
     uint32_t frameCount_ = 0;
     uint32_t slotsPerFrame_ = 0;
-    VkDeviceSize elementSize_ = 0;
+    vk::DeviceSize elementSize_ = 0;
 };
 
 void destroyBuffer(VmaAllocator allocator, DynamicUniformBuffer& buffer);

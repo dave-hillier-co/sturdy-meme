@@ -98,7 +98,7 @@ bool TerrainBuffers::createUniformBuffers(const InitInfo& info) {
 
     // Caustics uniforms (8 floats = 32 bytes, std140 aligned)
     // Matches CausticsUniforms in terrain.frag
-    constexpr VkDeviceSize causticsUBOSize = 32;  // 8 * sizeof(float)
+    constexpr vk::DeviceSize causticsUBOSize = 32;  // 8 * sizeof(float)
     if (!BufferUtils::PerFrameBufferBuilder()
         .setAllocator(info.allocator)
         .setFrameCount(info.framesInFlight)
@@ -111,7 +111,7 @@ bool TerrainBuffers::createUniformBuffers(const InitInfo& info) {
 
     // Liquid uniforms (composable material system - puddles, wetness)
     // Matches TerrainLiquidUniforms in terrain.frag and TerrainLiquidUBO in C++
-    constexpr VkDeviceSize liquidUBOSize = 128;  // Aligned size of TerrainLiquidUBO
+    constexpr vk::DeviceSize liquidUBOSize = 128;  // Aligned size of TerrainLiquidUBO
     if (!BufferUtils::PerFrameBufferBuilder()
         .setAllocator(info.allocator)
         .setFrameCount(info.framesInFlight)
@@ -125,7 +125,7 @@ bool TerrainBuffers::createUniformBuffers(const InitInfo& info) {
     // Material layer uniforms (composable material system - layer blending)
     // Matches MaterialLayerUBO in MaterialLayer.h: 4 layers * 5 vec4s + int + padding
     // LayerData = 5 * vec4 = 80 bytes, 4 layers = 320 bytes + 16 bytes header = 336 bytes
-    constexpr VkDeviceSize materialLayerUBOSize = 336;
+    constexpr vk::DeviceSize materialLayerUBOSize = 336;
     if (!BufferUtils::PerFrameBufferBuilder()
         .setAllocator(info.allocator)
         .setFrameCount(info.framesInFlight)

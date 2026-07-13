@@ -407,18 +407,18 @@ void Mesh::setCustomGeometry(std::vector<Vertex>&& verts, std::vector<uint32_t>&
 }
 
 void Mesh::copyGeometryTo(void* dst) const {
-    const VkDeviceSize vertexBytes = sizeof(Vertex) * vertices.size();
+    const vk::DeviceSize vertexBytes = sizeof(Vertex) * vertices.size();
     memcpy(dst, vertices.data(), vertexBytes);
     memcpy(static_cast<char*>(dst) + vertexBytes, indices.data(),
            sizeof(uint32_t) * indices.size());
 }
 
-bool Mesh::uploadFromStaging(VmaAllocator allocator, VkCommandBuffer cmd,
-                             VkBuffer staging, VkDeviceSize stagingOffset) {
+bool Mesh::uploadFromStaging(VmaAllocator allocator, vk::CommandBuffer cmd,
+                             vk::Buffer staging, vk::DeviceSize stagingOffset) {
     if (vertices.empty() || indices.empty()) return false;
 
-    const VkDeviceSize vertexBufferSize = sizeof(vertices[0]) * vertices.size();
-    const VkDeviceSize indexBufferSize = sizeof(indices[0]) * indices.size();
+    const vk::DeviceSize vertexBufferSize = sizeof(vertices[0]) * vertices.size();
+    const vk::DeviceSize indexBufferSize = sizeof(indices[0]) * indices.size();
 
     ManagedBuffer managedVertexBuffer;
     if (!VmaBufferFactory::createVertexBuffer(allocator, vertexBufferSize, managedVertexBuffer)) {
@@ -894,14 +894,14 @@ void Mesh::createForkedBranch(float radius, float length, int sections, int segm
     calculateBounds();
 }
 
-bool Mesh::upload(VmaAllocator allocator, VkDevice device, VkCommandPool commandPool, VkQueue queue) {
+bool Mesh::upload(VmaAllocator allocator, vk::Device device, vk::CommandPool commandPool, vk::Queue queue) {
     if (vertices.empty() || indices.empty()) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Mesh::upload: No vertex or index data");
         return false;
     }
 
-    VkDeviceSize vertexBufferSize = sizeof(vertices[0]) * vertices.size();
-    VkDeviceSize indexBufferSize = sizeof(indices[0]) * indices.size();
+    vk::DeviceSize vertexBufferSize = sizeof(vertices[0]) * vertices.size();
+    vk::DeviceSize indexBufferSize = sizeof(indices[0]) * indices.size();
 
     // Create staging buffer using RAII
     ManagedBuffer stagingBuffer;

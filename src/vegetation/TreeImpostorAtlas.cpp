@@ -130,13 +130,13 @@ bool TreeImpostorAtlas::createAtlasArrayTextures() {
     allocInfo.usage = VMA_MEMORY_USAGE_GPU_ONLY;
 
     if (vmaCreateImage(allocator_, reinterpret_cast<const VkImageCreateInfo*>(&imageInfo), &allocInfo,
-                       &octaAlbedoArrayImage_, &octaAlbedoArrayAllocation_, nullptr) != VK_SUCCESS) {
+                       reinterpret_cast<VkImage*>(&octaAlbedoArrayImage_), &octaAlbedoArrayAllocation_, nullptr) != VK_SUCCESS) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "TreeImpostorAtlas: Failed to create octahedral albedo array image");
         return false;
     }
 
     if (vmaCreateImage(allocator_, reinterpret_cast<const VkImageCreateInfo*>(&imageInfo), &allocInfo,
-                       &octaNormalArrayImage_, &octaNormalArrayAllocation_, nullptr) != VK_SUCCESS) {
+                       reinterpret_cast<VkImage*>(&octaNormalArrayImage_), &octaNormalArrayAllocation_, nullptr) != VK_SUCCESS) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "TreeImpostorAtlas: Failed to create octahedral normal array image");
         return false;
     }
@@ -255,7 +255,7 @@ bool TreeImpostorAtlas::createAtlasResources(uint32_t archetypeIndex) {
     allocInfo.usage = VMA_MEMORY_USAGE_GPU_ONLY;
 
     if (vmaCreateImage(allocator_, reinterpret_cast<const VkImageCreateInfo*>(&depthImageInfo), &allocInfo,
-                       &atlas.depthImage, &atlas.depthAllocation, nullptr) != VK_SUCCESS) {
+                       reinterpret_cast<VkImage*>(&atlas.depthImage), &atlas.depthAllocation, nullptr) != VK_SUCCESS) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "TreeImpostorAtlas: Failed to create depth image");
         return false;
     }
@@ -300,10 +300,10 @@ int32_t TreeImpostorAtlas::generateArchetype(
     const TreeOptions& options,
     const Mesh& branchMesh,
     const std::vector<LeafInstanceGPU>& leafInstances,
-    VkImageView barkAlbedo,
-    VkImageView barkNormal,
-    VkImageView leafAlbedo,
-    VkSampler sampler) {
+    vk::ImageView barkAlbedo,
+    vk::ImageView barkNormal,
+    vk::ImageView leafAlbedo,
+    vk::Sampler sampler) {
 
     uint32_t archetypeIndex = static_cast<uint32_t>(archetypes_.size());
 
@@ -337,9 +337,9 @@ int32_t TreeImpostorAtlas::generateArchetype(
     SDL_Log("TreeImpostorAtlas: Tree bounds X=[%.2f, %.2f], Y=[%.2f, %.2f], Z=[%.2f, %.2f]",
             minBounds.x, maxBounds.x, minBounds.y, maxBounds.y, minBounds.z, maxBounds.z);
 
-    VkDescriptorSet leafCaptureDescSet = VK_NULL_HANDLE;
+    vk::DescriptorSet leafCaptureDescSet = VK_NULL_HANDLE;
     if (!leafInstances.empty()) {
-        VkDeviceSize requiredSize = leafInstances.size() * sizeof(LeafInstanceGPU);
+        vk::DeviceSize requiredSize = leafInstances.size() * sizeof(LeafInstanceGPU);
 
         if (requiredSize > leafCaptureBufferSize_) {
             if (leafCaptureBuffer_ != VK_NULL_HANDLE) {
@@ -353,7 +353,7 @@ int32_t TreeImpostorAtlas::generateArchetype(
             VmaAllocationCreateInfo allocInfo{};
             allocInfo.usage = VMA_MEMORY_USAGE_CPU_TO_GPU;
 
-            if (vmaCreateBuffer(allocator_, reinterpret_cast<const VkBufferCreateInfo*>(&bufferInfo), &allocInfo, &leafCaptureBuffer_, &leafCaptureAllocation_, nullptr) != VK_SUCCESS) {
+            if (vmaCreateBuffer(allocator_, reinterpret_cast<const VkBufferCreateInfo*>(&bufferInfo), &allocInfo, reinterpret_cast<VkBuffer*>(&leafCaptureBuffer_), &leafCaptureAllocation_, nullptr) != VK_SUCCESS) {
                 SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "TreeImpostorAtlas: Failed to create leaf capture buffer");
                 return -1;
             }
@@ -387,7 +387,7 @@ int32_t TreeImpostorAtlas::generateArchetype(
         }
     }
 
-    VkDescriptorSet captureDescSet = descriptorPool_->allocateSingle(**captureDescriptorSetLayout_);
+    vk::DescriptorSet captureDescSet = descriptorPool_->allocateSingle(**captureDescriptorSetLayout_);
     if (captureDescSet == VK_NULL_HANDLE) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "TreeImpostorAtlas: Failed to allocate descriptor set");
         return -1;
@@ -514,7 +514,7 @@ const TreeImpostorArchetype* TreeImpostorAtlas::getArchetype(uint32_t index) con
     return nullptr;
 }
 
-VkDescriptorSet TreeImpostorAtlas::getPreviewDescriptorSet(uint32_t archetypeIndex) {
+vk::DescriptorSet TreeImpostorAtlas::getPreviewDescriptorSet(uint32_t archetypeIndex) {
     if (archetypeIndex >= atlasTextures_.size()) {
         return VK_NULL_HANDLE;
     }
@@ -532,7 +532,7 @@ VkDescriptorSet TreeImpostorAtlas::getPreviewDescriptorSet(uint32_t archetypeInd
     return atlasTextures_[archetypeIndex].previewDescriptorSet;
 }
 
-VkDescriptorSet TreeImpostorAtlas::getNormalPreviewDescriptorSet(uint32_t archetypeIndex) {
+vk::DescriptorSet TreeImpostorAtlas::getNormalPreviewDescriptorSet(uint32_t archetypeIndex) {
     if (archetypeIndex >= atlasTextures_.size()) {
         return VK_NULL_HANDLE;
     }

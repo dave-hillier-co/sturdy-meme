@@ -46,7 +46,7 @@ DoubleBufferedImageBuilder& DoubleBufferedImageBuilder::setAspectMask(VkImageAsp
 bool DoubleBufferedImageBuilder::build(DoubleBufferedImageSet& outImages) const {
     if (!device_ || !allocator_ || width_ == 0 || height_ == 0) {
         SDL_Log("DoubleBufferedImageBuilder missing required fields (device=%p, allocator=%p, width=%u, height=%u)",
-                device_, allocator_, width_, height_);
+                (void*)static_cast<VkDevice>(device_), (void*)allocator_, width_, height_);
         return false;
     }
 

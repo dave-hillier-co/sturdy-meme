@@ -29,7 +29,7 @@ PipelineBuilder& PipelineBuilder::addDescriptorBinding(uint32_t binding, VkDescr
     layoutBinding.descriptorType = type;
     layoutBinding.descriptorCount = count;
     layoutBinding.stageFlags = stageFlags;
-    layoutBinding.pImmutableSamplers = immutableSamplers;
+    layoutBinding.pImmutableSamplers = reinterpret_cast<const VkSampler*>(immutableSamplers);
     descriptorBindings.push_back(layoutBinding);
     return *this;
 }

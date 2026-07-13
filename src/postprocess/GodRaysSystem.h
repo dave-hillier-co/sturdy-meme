@@ -103,6 +103,13 @@ private:
     std::optional<vk::raii::Pipeline> pipeline_;
     VkDescriptorSet descSet_ = VK_NULL_HANDLE;
 
+    // Views the descriptor set was last written with. The set must not be
+    // rewritten every frame - in-flight frames still execute with it bound
+    // (see recordGodRaysPass).
+    VkImageView writtenHdrView_ = VK_NULL_HANDLE;
+    VkImageView writtenDepthView_ = VK_NULL_HANDLE;
+    VkImageView writtenOutputView_ = VK_NULL_HANDLE;
+
     // Parameters
     glm::vec2 sunScreenPos_ = glm::vec2(0.5f, 0.5f);
     float intensity_ = 0.5f;

@@ -86,6 +86,13 @@ public:
     bool recordTileUpload(TileId id, const void* pixelData, uint32_t width, uint32_t height,
                           TileFormat format, VkCommandBuffer cmd, uint32_t frameIndex);
 
+    // Bracket a batch of recordTileUpload calls with a single pair of layout
+    // transitions instead of one pair per tile. Dozens of image barriers per
+    // frame force MoltenVK to split Metal encoders repeatedly, which showed up
+    // as blocky stale-tile corruption on Apple GPUs.
+    void recordUploadBatchBegin(VkCommandBuffer cmd);
+    void recordUploadBatchEnd(VkCommandBuffer cmd);
+
     // Reset the staging sub-allocation cursor for this frame. Must be called
     // once per frame before any recordTileUpload calls.
     void beginFrame();

@@ -103,6 +103,11 @@ private:
     std::optional<vk::raii::Pipeline> upsamplePipeline_;
     std::vector<VkDescriptorSet> upsampleDescSets;
 
+    // Source view the descriptor sets were last written with. Descriptor sets
+    // must not be rewritten every frame - in-flight frames still execute with
+    // them bound (see recordBloomPass).
+    VkImageView writtenHdrInput_ = VK_NULL_HANDLE;
+
     // Parameters
     float threshold = 1.0f;
     float intensity = 1.0f;

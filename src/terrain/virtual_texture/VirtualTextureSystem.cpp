@@ -276,6 +276,11 @@ void VirtualTextureSystem::recordPendingTileUploads(VkCommandBuffer cmd, uint32_
     uint32_t slotsPerAxis = config.getCacheTilesPerAxis();
     uint32_t uploaded = 0;
 
+    // One transition pair brackets the whole batch; per-tile barriers caused
+    // MoltenVK to split Metal encoders dozens of times per frame (blocky
+    // stale-tile corruption on Apple GPUs)
+    bool batchOpen = false;
+
     while (!pendingUploads_.empty() && uploaded < MAX_UPLOADS_PER_FRAME) {
         LoadedTile& tile = pendingUploads_.front();
         uint32_t packed = tile.id.pack();
@@ -296,6 +301,10 @@ void VirtualTextureSystem::recordPendingTileUploads(VkCommandBuffer cmd, uint32_
 
         // Record tile upload commands into the main command buffer
         // This uses per-frame staging buffers to avoid race conditions
+        if (!batchOpen) {
+            cache->recordUploadBatchBegin(cmd);
+            batchOpen = true;
+        }
         bool ok = cache->recordTileUpload(tile.id, tile.pixels.data(),
                                           tile.width, tile.height,
                                           tile.format, cmd, frameIndex);
@@ -317,6 +326,10 @@ void VirtualTextureSystem::recordPendingTileUploads(VkCommandBuffer cmd, uint32_
         // Whether uploaded or dropped, this tile is no longer pending
         pendingTiles.erase(packed);
         pendingUploads_.pop_front();
+    }
+
+    if (batchOpen) {
+        cache->recordUploadBatchEnd(cmd);
     }
 
     if (uploaded > 0) {

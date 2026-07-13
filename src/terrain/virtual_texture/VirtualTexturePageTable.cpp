@@ -43,7 +43,14 @@ bool VirtualTexturePageTable::initInternal(const InitInfo& info) {
     size_t totalEntries = 0;
     mipOffsets.resize(config.maxMipLevels);
     mipSizes.resize(config.maxMipLevels);
-    mipDirty.resize(config.maxMipLevels, false);
+    // Every mip starts dirty: the GPU image contents are undefined until the
+    // first upload, and a garbage entry with a non-zero valid byte makes the
+    // shader treat the tile as resident - it samples uninitialized cache
+    // memory (magenta) and never writes feedback, so the tile is never
+    // requested and the garbage persists. Uploading the zeroed CPU table over
+    // every layer on the first frame prevents that.
+    mipDirty.resize(config.maxMipLevels, true);
+    dirty = true;
 
     for (uint32_t mip = 0; mip < config.maxMipLevels; ++mip) {
         mipOffsets[mip] = totalEntries;

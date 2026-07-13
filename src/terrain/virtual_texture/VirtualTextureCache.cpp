@@ -406,28 +406,9 @@ bool VirtualTextureCache::recordTileUpload(TileId id, const void* pixelData,
 
     vk::CommandBuffer vkCmd(cmd);
 
-    // Transition to transfer dst
-    {
-        auto barrier = vk::ImageMemoryBarrier{}
-            .setSrcAccessMask(vk::AccessFlagBits::eShaderRead)
-            .setDstAccessMask(vk::AccessFlagBits::eTransferWrite)
-            .setOldLayout(vk::ImageLayout::eShaderReadOnlyOptimal)
-            .setNewLayout(vk::ImageLayout::eTransferDstOptimal)
-            .setSrcQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
-            .setDstQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
-            .setImage(cacheImage_.getImage())
-            .setSubresourceRange(vk::ImageSubresourceRange{}
-                .setAspectMask(vk::ImageAspectFlagBits::eColor)
-                .setBaseMipLevel(0)
-                .setLevelCount(1)
-                .setBaseArrayLayer(0)
-                .setLayerCount(1));
-        vkCmd.pipelineBarrier(vk::PipelineStageFlagBits::eFragmentShader,
-                              vk::PipelineStageFlagBits::eTransfer,
-                              {}, {}, {}, barrier);
-    }
-
-    // Copy buffer to image region at tile slot position
+    // Copy buffer to image region at tile slot position. The image is in
+    // TransferDstOptimal here - the caller brackets the batch with
+    // recordUploadBatchBegin/End.
     {
         auto region = vk::BufferImageCopy{}
             .setBufferOffset(stagingOffset)
@@ -445,28 +426,47 @@ bool VirtualTextureCache::recordTileUpload(TileId id, const void* pixelData,
                                 vk::ImageLayout::eTransferDstOptimal, region);
     }
 
-    // Transition back to shader read
-    {
-        auto barrier = vk::ImageMemoryBarrier{}
-            .setSrcAccessMask(vk::AccessFlagBits::eTransferWrite)
-            .setDstAccessMask(vk::AccessFlagBits::eShaderRead)
-            .setOldLayout(vk::ImageLayout::eTransferDstOptimal)
-            .setNewLayout(vk::ImageLayout::eShaderReadOnlyOptimal)
-            .setSrcQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
-            .setDstQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
-            .setImage(cacheImage_.getImage())
-            .setSubresourceRange(vk::ImageSubresourceRange{}
-                .setAspectMask(vk::ImageAspectFlagBits::eColor)
-                .setBaseMipLevel(0)
-                .setLevelCount(1)
-                .setBaseArrayLayer(0)
-                .setLayerCount(1));
-        vkCmd.pipelineBarrier(vk::PipelineStageFlagBits::eTransfer,
-                              vk::PipelineStageFlagBits::eFragmentShader,
-                              {}, {}, {}, barrier);
-    }
-
     return true;
+}
+
+void VirtualTextureCache::recordUploadBatchBegin(VkCommandBuffer cmd) {
+    auto barrier = vk::ImageMemoryBarrier{}
+        .setSrcAccessMask(vk::AccessFlagBits::eShaderRead)
+        .setDstAccessMask(vk::AccessFlagBits::eTransferWrite)
+        .setOldLayout(vk::ImageLayout::eShaderReadOnlyOptimal)
+        .setNewLayout(vk::ImageLayout::eTransferDstOptimal)
+        .setSrcQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
+        .setDstQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
+        .setImage(cacheImage_.getImage())
+        .setSubresourceRange(vk::ImageSubresourceRange{}
+            .setAspectMask(vk::ImageAspectFlagBits::eColor)
+            .setBaseMipLevel(0)
+            .setLevelCount(1)
+            .setBaseArrayLayer(0)
+            .setLayerCount(1));
+    vk::CommandBuffer(cmd).pipelineBarrier(vk::PipelineStageFlagBits::eFragmentShader,
+                                           vk::PipelineStageFlagBits::eTransfer,
+                                           {}, {}, {}, barrier);
+}
+
+void VirtualTextureCache::recordUploadBatchEnd(VkCommandBuffer cmd) {
+    auto barrier = vk::ImageMemoryBarrier{}
+        .setSrcAccessMask(vk::AccessFlagBits::eTransferWrite)
+        .setDstAccessMask(vk::AccessFlagBits::eShaderRead)
+        .setOldLayout(vk::ImageLayout::eTransferDstOptimal)
+        .setNewLayout(vk::ImageLayout::eShaderReadOnlyOptimal)
+        .setSrcQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
+        .setDstQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
+        .setImage(cacheImage_.getImage())
+        .setSubresourceRange(vk::ImageSubresourceRange{}
+            .setAspectMask(vk::ImageAspectFlagBits::eColor)
+            .setBaseMipLevel(0)
+            .setLevelCount(1)
+            .setBaseArrayLayer(0)
+            .setLayerCount(1));
+    vk::CommandBuffer(cmd).pipelineBarrier(vk::PipelineStageFlagBits::eTransfer,
+                                           vk::PipelineStageFlagBits::eFragmentShader,
+                                           {}, {}, {}, barrier);
 }
 
 uint32_t VirtualTextureCache::getUsedSlotCount() const {

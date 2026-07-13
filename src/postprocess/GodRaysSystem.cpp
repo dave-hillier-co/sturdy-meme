@@ -236,7 +236,10 @@ void GodRaysSystem::recordGodRaysPass(VkCommandBuffer cmd, VkImageView hdrView, 
     // The dispatch below overwrites every texel, so no separate initial clear is needed
     outputNeedsInitialClear_ = false;
 
-    // Transition output image to GENERAL
+    // Transition output image to GENERAL. Source stage must cover the
+    // composite pass's fragment reads from the previous frame - discarding
+    // (oldLayout Undefined) from TopOfPipe could overwrite the image while an
+    // in-flight frame still samples it (write-after-read hazard).
     {
         auto barrier = vk::ImageMemoryBarrier{}
             .setSrcAccessMask(vk::AccessFlagBits::eNone)
@@ -247,17 +250,26 @@ void GodRaysSystem::recordGodRaysPass(VkCommandBuffer cmd, VkImageView hdrView, 
             .setSubresourceRange(vk::ImageSubresourceRange{vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1});
 
         vkCmd.pipelineBarrier(
-            vk::PipelineStageFlagBits::eTopOfPipe,
+            vk::PipelineStageFlagBits::eFragmentShader,
             vk::PipelineStageFlagBits::eComputeShader,
             {}, {}, {}, barrier);
     }
 
-    // Update descriptor set
-    DescriptorManager::SetWriter(device_, descSet_)
-        .writeImage(0, hdrView, **sampler_, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL)
-        .writeImage(1, depthView, **sampler_, VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL)
-        .writeStorageImage(2, outputImageView_, VK_IMAGE_LAYOUT_GENERAL)
-        .update();
+    // Write the descriptor set only when the views change (first frame or
+    // after a resize). Rewriting it every frame while in-flight frames still
+    // execute with it bound is undefined behavior (torn argument buffers on
+    // MoltenVK).
+    if (writtenHdrView_ != hdrView || writtenDepthView_ != depthView ||
+        writtenOutputView_ != outputImageView_) {
+        DescriptorManager::SetWriter(device_, descSet_)
+            .writeImage(0, hdrView, **sampler_, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL)
+            .writeImage(1, depthView, **sampler_, VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL)
+            .writeStorageImage(2, outputImageView_, VK_IMAGE_LAYOUT_GENERAL)
+            .update();
+        writtenHdrView_ = hdrView;
+        writtenDepthView_ = depthView;
+        writtenOutputView_ = outputImageView_;
+    }
 
     // Bind pipeline and descriptor set
     vkCmd.bindPipeline(vk::PipelineBindPoint::eCompute, **pipeline_);

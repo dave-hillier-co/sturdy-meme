@@ -293,6 +293,8 @@ void BloomSystem::destroyMipChain() {
         if (mip.image) vmaDestroyImage(allocator, mip.image, mip.allocation);
     }
     mipChain.clear();
+    // Mip views are gone; force a descriptor rewrite on the next record
+    writtenHdrInput_ = VK_NULL_HANDLE;
 }
 
 void BloomSystem::recordBloomPass(VkCommandBuffer cmd, VkImageView hdrInput) {
@@ -300,13 +302,54 @@ void BloomSystem::recordBloomPass(VkCommandBuffer cmd, VkImageView hdrInput) {
 
     vk::CommandBuffer vkCmd(cmd);
 
+    // Write the descriptor sets only when the source views actually change
+    // (first frame or after a resize recreated the mip chain). Updating a
+    // descriptor set every frame while in-flight frames still execute with it
+    // bound is undefined behavior - on MoltenVK the GPU can read the argument
+    // buffer mid-rewrite, sampling garbage that showed up as blocky corruption.
+    if (writtenHdrInput_ != hdrInput) {
+        for (size_t i = 0; i < mipChain.size(); ++i) {
+            VkImageView sourceView = (i == 0) ? hdrInput : mipChain[i - 1].imageView;
+            DescriptorManager::SetWriter(device, downsampleDescSets[i])
+                .writeImage(0, sourceView, **sampler_)
+                .update();
+        }
+        for (size_t i = 0; i + 1 < mipChain.size(); ++i) {
+            DescriptorManager::SetWriter(device, upsampleDescSets[i])
+                .writeImage(0, mipChain[i + 1].imageView, **sampler_)
+                .update();
+        }
+        writtenHdrInput_ = hdrInput;
+    }
+
+    // The render passes only carry a ColorAttachmentOutput->ColorAttachmentOutput
+    // external dependency, which orders neither fragment-shader sampling of the
+    // previous pass's output nor the previous frame's composite reads of mip 0.
+    // MoltenVK places these images on Metal heaps (no automatic hazard
+    // tracking), so the missing dependencies showed up as torn blocky bloom.
+    // makeWriteVisible: previous pass's attachment writes -> this pass's reads.
+    auto makeWriteVisible = [&vkCmd]() {
+        auto mb = vk::MemoryBarrier{}
+            .setSrcAccessMask(vk::AccessFlagBits::eColorAttachmentWrite)
+            .setDstAccessMask(vk::AccessFlagBits::eShaderRead);
+        vkCmd.pipelineBarrier(vk::PipelineStageFlagBits::eColorAttachmentOutput,
+                              vk::PipelineStageFlagBits::eFragmentShader,
+                              {}, mb, {}, {});
+    };
+
+    // Write-after-read guard: the previous frame's composite may still be
+    // sampling mip 0 when this frame's downsample discards it. Execution
+    // dependency only - the discard doesn't need the old contents.
+    vkCmd.pipelineBarrier(vk::PipelineStageFlagBits::eFragmentShader,
+                          vk::PipelineStageFlagBits::eColorAttachmentOutput,
+                          {}, {}, {}, {});
+
     // Downsample pass - from HDR to smallest mip
     for (size_t i = 0; i < mipChain.size(); ++i) {
-        // Update descriptor set to sample from previous level
-        VkImageView sourceView = (i == 0) ? hdrInput : mipChain[i - 1].imageView;
-        DescriptorManager::SetWriter(device, downsampleDescSets[i])
-            .writeImage(0, sourceView, **sampler_)
-            .update();
+        // Make the previous mip's attachment writes visible before sampling it
+        if (i > 0) {
+            makeWriteVisible();
+        }
 
         // Begin render pass
         vk::Extent2D mipExtent{mipChain[i].extent.width, mipChain[i].extent.height};
@@ -365,10 +408,8 @@ void BloomSystem::recordBloomPass(VkCommandBuffer cmd, VkImageView hdrInput) {
     // Upsample pass - from smallest mip back to largest
     // Blend upsampled results additively into each level
     for (int i = static_cast<int>(mipChain.size()) - 2; i >= 0; --i) {
-        // Update descriptor set to sample from smaller mip (i+1)
-        DescriptorManager::SetWriter(device, upsampleDescSets[i])
-            .writeImage(0, mipChain[i + 1].imageView, **sampler_)
-            .update();
+        // Make mip[i+1]'s attachment writes visible before sampling it
+        makeWriteVisible();
 
         // Transition current mip to color attachment for blending
         BarrierHelpers::imageToColorAttachment(vkCmd, mipChain[i].image);

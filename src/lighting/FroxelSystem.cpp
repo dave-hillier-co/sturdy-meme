@@ -374,9 +374,31 @@ void FroxelSystem::recordFroxelUpdate(VkCommandBuffer cmd, uint32_t frameIndex,
     // Note: frameCounter was already incremented above, so first frame is frameCounter == 1
     bool isFirstFrame = (frameCounter == 1);
 
-    // Current scattering volume (write target) - can discard previous contents
+    // Current scattering volume (write target) - can discard previous
+    // contents, but the previous frame's froxel compute read this image as
+    // its history volume. The discard must wait for those reads
+    // (write-after-read hazard): a TopOfPipe barrier gives no execution
+    // dependency and let this frame's write overlap last frame's read.
     vk::CommandBuffer vkCmd(cmd);
-    BarrierHelpers::imageToGeneral(vkCmd, scatteringVolumes_[currentVolumeIdx].get());
+    {
+        auto barrier = vk::ImageMemoryBarrier{}
+            .setSrcAccessMask(vk::AccessFlags{})
+            .setDstAccessMask(vk::AccessFlagBits::eShaderWrite)
+            .setOldLayout(vk::ImageLayout::eUndefined)
+            .setNewLayout(vk::ImageLayout::eGeneral)
+            .setSrcQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
+            .setDstQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
+            .setImage(scatteringVolumes_[currentVolumeIdx].get())
+            .setSubresourceRange(vk::ImageSubresourceRange{}
+                .setAspectMask(vk::ImageAspectFlagBits::eColor)
+                .setBaseMipLevel(0)
+                .setLevelCount(1)
+                .setBaseArrayLayer(0)
+                .setLayerCount(1));
+        vkCmd.pipelineBarrier(vk::PipelineStageFlagBits::eComputeShader,
+                              vk::PipelineStageFlagBits::eComputeShader,
+                              {}, {}, {}, barrier);
+    }
 
     // History scattering volume (read source) - preserve data from previous frame
     if (isFirstFrame) {

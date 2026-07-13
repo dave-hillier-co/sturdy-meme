@@ -9,6 +9,7 @@
 #include <glm/glm.hpp>
 #include "DescriptorManager.h"
 #include "InitContext.h"
+#include "core/vulkan/VmaImage.h"
 
 /**
  * Quarter-resolution god rays system.
@@ -60,7 +61,7 @@ public:
      */
     void recordInitialClearIfNeeded(VkCommandBuffer cmd);
 
-    VkImageView getGodRaysOutput() const { return outputImageView_; }
+    VkImageView getGodRaysOutput() const { return outputImageView_ ? **outputImageView_ : VK_NULL_HANDLE; }
     VkSampler getSampler() const { return sampler_ ? **sampler_ : VK_NULL_HANDLE; }
 
     // Parameters
@@ -91,9 +92,8 @@ private:
     const vk::raii::Device* raiiDevice_ = nullptr;
 
     // Quarter-resolution output
-    VkImage outputImage_ = VK_NULL_HANDLE;
-    VmaAllocation outputAllocation_ = VK_NULL_HANDLE;
-    VkImageView outputImageView_ = VK_NULL_HANDLE;
+    ManagedImage outputImage_;
+    std::optional<vk::raii::ImageView> outputImageView_;
     VkExtent2D quarterExtent_ = {0, 0};
     bool outputNeedsInitialClear_ = true;
 

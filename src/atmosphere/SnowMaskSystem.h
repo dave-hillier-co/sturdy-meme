@@ -12,6 +12,7 @@
 #include "PerFrameBuffer.h"
 #include "SystemLifecycleHelper.h"
 #include "EnvironmentSettings.h"
+#include "core/vulkan/VmaImage.h"
 
 // Forward declarations
 class VolumetricSnowSystem;
@@ -82,7 +83,7 @@ public:
     void recordCompute(VkCommandBuffer cmd, uint32_t frameIndex);
 
     // Accessors for other systems to bind the snow mask texture
-    VkImageView getSnowMaskView() const { return snowMaskView; }
+    VkImageView getSnowMaskView() const { return snowMaskView ? static_cast<VkImageView>(**snowMaskView) : VK_NULL_HANDLE; }
     VkSampler getSnowMaskSampler() const { return snowMaskSampler_ ? **snowMaskSampler_ : VK_NULL_HANDLE; }
 
     // Get mask parameters for shader uniforms
@@ -117,9 +118,8 @@ private:
     static constexpr uint32_t SNOW_MASK_SIZE = 512;  // 512x512 texels
     static constexpr uint32_t MAX_INTERACTIONS = 32; // Max interaction sources per frame
 
-    VkImage snowMaskImage = VK_NULL_HANDLE;
-    VmaAllocation snowMaskAllocation = VK_NULL_HANDLE;
-    VkImageView snowMaskView = VK_NULL_HANDLE;
+    ManagedImage snowMaskImage;
+    std::optional<vk::raii::ImageView> snowMaskView;
     std::optional<vk::raii::Sampler> snowMaskSampler_;
 
     // Uniform buffers (per frame)

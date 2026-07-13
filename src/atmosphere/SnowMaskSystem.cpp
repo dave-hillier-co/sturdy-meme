@@ -87,14 +87,8 @@ void SnowMaskSystem::cleanup() {
     if (!lifecycle.getDevice()) return;  // Not initialized
 
     snowMaskSampler_.reset();
-    if (snowMaskView) {
-        vk::Device(lifecycle.getDevice()).destroyImageView(snowMaskView);
-        snowMaskView = VK_NULL_HANDLE;
-    }
-    if (snowMaskImage) {
-        vmaDestroyImage(lifecycle.getAllocator(), snowMaskImage, snowMaskAllocation);
-        snowMaskImage = VK_NULL_HANDLE;
-    }
+    snowMaskView.reset();
+    snowMaskImage.reset();
 
     lifecycle.destroy(lifecycle.getDevice(), lifecycle.getAllocator());
 }
@@ -131,27 +125,26 @@ bool SnowMaskSystem::createBuffers() {
 }
 
 bool SnowMaskSystem::createSnowMaskTexture() {
+    auto* raiiDevice = lifecycle.getRaiiDevice();
+    if (!raiiDevice) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "RAII device not available for snow mask texture");
+        return false;
+    }
+
     // Create snow mask texture (R16F, single channel for coverage 0-1)
-    ManagedImage image;
     if (!ImageBuilder(getAllocator())
             .setExtent(SNOW_MASK_SIZE, SNOW_MASK_SIZE)
             .setFormat(VK_FORMAT_R16_SFLOAT)
             .setUsage(VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT)
-            .build(getDevice(), image, snowMaskView)) {
+            .build(*raiiDevice, snowMaskImage, snowMaskView)) {
         SDL_Log("Failed to create snow mask image");
         return false;
     }
-    image.releaseToRaw(snowMaskImage, snowMaskAllocation);
 
     // Create sampler for other systems to sample the snow mask
-    if (auto* raiiDevice = lifecycle.getRaiiDevice(); raiiDevice) {
-        snowMaskSampler_ = SamplerFactory::createSamplerLinearClamp(*raiiDevice);
-        if (!snowMaskSampler_) {
-            SDL_Log("Failed to create snow mask sampler");
-            return false;
-        }
-    } else {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "RAII device not available for snow mask sampler");
+    snowMaskSampler_ = SamplerFactory::createSamplerLinearClamp(*raiiDevice);
+    if (!snowMaskSampler_) {
+        SDL_Log("Failed to create snow mask sampler");
         return false;
     }
 
@@ -195,7 +188,7 @@ bool SnowMaskSystem::createDescriptorSets() {
     // Update descriptor sets with image binding (same image for all frames)
     for (uint32_t i = 0; i < getFramesInFlight(); i++) {
         DescriptorManager::SetWriter(getDevice(), computeDescriptorSets[i])
-            .writeStorageImage(0, snowMaskView)
+            .writeStorageImage(0, getSnowMaskView())
             .writeBuffer(1, uniformBuffers.buffers[i], 0, sizeof(SnowMaskUniforms))
             .writeBuffer(2, interactionBuffers.buffers[i], 0, sizeof(SnowInteractionSource) * MAX_INTERACTIONS, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
             .update();
@@ -269,7 +262,7 @@ void SnowMaskSystem::recordCompute(VkCommandBuffer cmd, uint32_t frameIndex) {
         .setNewLayout(vk::ImageLayout::eGeneral)
         .setSrcQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
         .setDstQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
-        .setImage(snowMaskImage)
+        .setImage(snowMaskImage.get())
         .setSubresourceRange({vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1});
     vkCmd.pipelineBarrier(
         isFirstFrame ? vk::PipelineStageFlagBits::eTopOfPipe : vk::PipelineStageFlagBits::eFragmentShader,
@@ -287,7 +280,7 @@ void SnowMaskSystem::recordCompute(VkCommandBuffer cmd, uint32_t frameIndex) {
     vkCmd.dispatch(workgroupCount, workgroupCount, 1);
 
     // Transition snow mask to shader read optimal for fragment shaders
-    BarrierHelpers::imageToShaderRead(vkCmd, snowMaskImage, vk::PipelineStageFlagBits::eFragmentShader);
+    BarrierHelpers::imageToShaderRead(vkCmd, snowMaskImage.get(), vk::PipelineStageFlagBits::eFragmentShader);
 
     // Mark first frame as done
     isFirstFrame = false;

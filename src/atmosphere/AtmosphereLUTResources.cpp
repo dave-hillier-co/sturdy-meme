@@ -6,87 +6,96 @@
 #include <vulkan/vulkan.hpp>
 
 bool AtmosphereLUTSystem::createTransmittanceLUT() {
-    ManagedImage image;
+    if (!raiiDevice_) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "AtmosphereLUTSystem requires raiiDevice");
+        return false;
+    }
     if (!ImageBuilder(allocator)
             .setExtent(TRANSMITTANCE_WIDTH, TRANSMITTANCE_HEIGHT)
             .setFormat(VK_FORMAT_R16G16B16A16_SFLOAT)
             .setUsage(VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT)
-            .build(device, image, transmittanceLUTView)) {
+            .build(*raiiDevice_, transmittanceLUT, transmittanceLUTView)) {
         SDL_Log("Failed to create transmittance LUT");
         return false;
     }
-    image.releaseToRaw(transmittanceLUT, transmittanceLUTAllocation);
     return true;
 }
 
 bool AtmosphereLUTSystem::createMultiScatterLUT() {
-    ManagedImage image;
+    if (!raiiDevice_) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "AtmosphereLUTSystem requires raiiDevice");
+        return false;
+    }
     if (!ImageBuilder(allocator)
             .setExtent(MULTISCATTER_SIZE, MULTISCATTER_SIZE)
             .setFormat(VK_FORMAT_R16G16_SFLOAT)
             .setUsage(VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT)
-            .build(device, image, multiScatterLUTView)) {
+            .build(*raiiDevice_, multiScatterLUT, multiScatterLUTView)) {
         SDL_Log("Failed to create multi-scatter LUT");
         return false;
     }
-    image.releaseToRaw(multiScatterLUT, multiScatterLUTAllocation);
     return true;
 }
 
 bool AtmosphereLUTSystem::createSkyViewLUT() {
-    ManagedImage image;
+    if (!raiiDevice_) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "AtmosphereLUTSystem requires raiiDevice");
+        return false;
+    }
     if (!ImageBuilder(allocator)
             .setExtent(SKYVIEW_WIDTH, SKYVIEW_HEIGHT)
             .setFormat(VK_FORMAT_R16G16B16A16_SFLOAT)
             .setUsage(VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT)
-            .build(device, image, skyViewLUTView)) {
+            .build(*raiiDevice_, skyViewLUT, skyViewLUTView)) {
         SDL_Log("Failed to create sky-view LUT");
         return false;
     }
-    image.releaseToRaw(skyViewLUT, skyViewLUTAllocation);
     return true;
 }
 
 bool AtmosphereLUTSystem::createIrradianceLUTs() {
+    if (!raiiDevice_) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "AtmosphereLUTSystem requires raiiDevice");
+        return false;
+    }
+
     // Create Rayleigh Irradiance LUT (64×16, RGBA16F)
-    ManagedImage rayleighImage;
     if (!ImageBuilder(allocator)
             .setExtent(IRRADIANCE_WIDTH, IRRADIANCE_HEIGHT)
             .setFormat(VK_FORMAT_R16G16B16A16_SFLOAT)
             .setUsage(VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT)
-            .build(device, rayleighImage, rayleighIrradianceLUTView)) {
+            .build(*raiiDevice_, rayleighIrradianceLUT, rayleighIrradianceLUTView)) {
         SDL_Log("Failed to create Rayleigh irradiance LUT");
         return false;
     }
-    rayleighImage.releaseToRaw(rayleighIrradianceLUT, rayleighIrradianceLUTAllocation);
 
     // Create Mie Irradiance LUT (same dimensions and format)
-    ManagedImage mieImage;
     if (!ImageBuilder(allocator)
             .setExtent(IRRADIANCE_WIDTH, IRRADIANCE_HEIGHT)
             .setFormat(VK_FORMAT_R16G16B16A16_SFLOAT)
             .setUsage(VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT)
-            .build(device, mieImage, mieIrradianceLUTView)) {
+            .build(*raiiDevice_, mieIrradianceLUT, mieIrradianceLUTView)) {
         SDL_Log("Failed to create Mie irradiance LUT");
         return false;
     }
-    mieImage.releaseToRaw(mieIrradianceLUT, mieIrradianceLUTAllocation);
 
     return true;
 }
 
 bool AtmosphereLUTSystem::createCloudMapLUT() {
+    if (!raiiDevice_) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "AtmosphereLUTSystem requires raiiDevice");
+        return false;
+    }
     // Cloud Map LUT (256×256, RGBA16F) - Paraboloid projection
-    ManagedImage image;
     if (!ImageBuilder(allocator)
             .setExtent(CLOUDMAP_SIZE, CLOUDMAP_SIZE)
             .setFormat(VK_FORMAT_R16G16B16A16_SFLOAT)
             .setUsage(VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT)
-            .build(device, image, cloudMapLUTView)) {
+            .build(*raiiDevice_, cloudMapLUT, cloudMapLUTView)) {
         SDL_Log("Failed to create cloud map LUT");
         return false;
     }
-    image.releaseToRaw(cloudMapLUT, cloudMapLUTAllocation);
     return true;
 }
 
@@ -140,37 +149,21 @@ bool AtmosphereLUTSystem::createUniformBuffer() {
 }
 
 void AtmosphereLUTSystem::destroyLUTResources() {
-    vk::Device vkDevice(device);
+    transmittanceLUTView.reset();
+    transmittanceLUT.reset();
 
-    auto destroyView = [&](VkImageView& view) {
-        if (view != VK_NULL_HANDLE) {
-            vkDevice.destroyImageView(view);
-            view = VK_NULL_HANDLE;
-        }
-    };
+    multiScatterLUTView.reset();
+    multiScatterLUT.reset();
 
-    auto destroyImage = [&](VkImage& image, VmaAllocation& alloc) {
-        if (image != VK_NULL_HANDLE) {
-            vmaDestroyImage(allocator, image, alloc);
-            image = VK_NULL_HANDLE;
-        }
-    };
+    skyViewLUTView.reset();
+    skyViewLUT.reset();
 
-    destroyView(transmittanceLUTView);
-    destroyImage(transmittanceLUT, transmittanceLUTAllocation);
+    rayleighIrradianceLUTView.reset();
+    rayleighIrradianceLUT.reset();
 
-    destroyView(multiScatterLUTView);
-    destroyImage(multiScatterLUT, multiScatterLUTAllocation);
+    mieIrradianceLUTView.reset();
+    mieIrradianceLUT.reset();
 
-    destroyView(skyViewLUTView);
-    destroyImage(skyViewLUT, skyViewLUTAllocation);
-
-    destroyView(rayleighIrradianceLUTView);
-    destroyImage(rayleighIrradianceLUT, rayleighIrradianceLUTAllocation);
-
-    destroyView(mieIrradianceLUTView);
-    destroyImage(mieIrradianceLUT, mieIrradianceLUTAllocation);
-
-    destroyView(cloudMapLUTView);
-    destroyImage(cloudMapLUT, cloudMapLUTAllocation);
+    cloudMapLUTView.reset();
+    cloudMapLUT.reset();
 }

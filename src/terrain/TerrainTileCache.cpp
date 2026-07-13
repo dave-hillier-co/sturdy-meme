@@ -58,6 +58,7 @@ bool TerrainTileCache::initInternal(const InitInfo& info) {
     // Initialize tile array manager
     {
         TileArrayManager::InitInfo arrayInfo{};
+        arrayInfo.raiiDevice = raiiDevice_;
         arrayInfo.device = device;
         arrayInfo.allocator = allocator;
         arrayInfo.graphicsQueue = graphicsQueue;
@@ -749,6 +750,7 @@ void TerrainTileCache::preloadTilesAround(float worldX, float worldZ, float radi
 
 bool TerrainTileCache::loadBaseLODTiles() {
     BaseHeightMap::InitInfo baseInfo{};
+    baseInfo.raiiDevice = raiiDevice_;
     baseInfo.device = device;
     baseInfo.allocator = allocator;
     baseInfo.graphicsQueue = graphicsQueue;

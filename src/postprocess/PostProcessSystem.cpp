@@ -161,24 +161,11 @@ void PostProcessSystem::destroyHDRResources() {
         vkDevice.destroyFramebuffer(hdrFramebuffer);
         hdrFramebuffer = VK_NULL_HANDLE;
     }
-    if (hdrColorView != VK_NULL_HANDLE) {
-        vkDevice.destroyImageView(hdrColorView);
-        hdrColorView = VK_NULL_HANDLE;
-    }
-    if (hdrColorImage != VK_NULL_HANDLE) {
-        vmaDestroyImage(allocator, hdrColorImage, hdrColorAllocation);
-        hdrColorImage = VK_NULL_HANDLE;
-        hdrColorAllocation = VK_NULL_HANDLE;
-    }
-    if (hdrDepthView != VK_NULL_HANDLE) {
-        vkDevice.destroyImageView(hdrDepthView);
-        hdrDepthView = VK_NULL_HANDLE;
-    }
-    if (hdrDepthImage != VK_NULL_HANDLE) {
-        vmaDestroyImage(allocator, hdrDepthImage, hdrDepthAllocation);
-        hdrDepthImage = VK_NULL_HANDLE;
-        hdrDepthAllocation = VK_NULL_HANDLE;
-    }
+    // RAII: views before images
+    hdrColorView.reset();
+    hdrColorImage.reset();
+    hdrDepthView.reset();
+    hdrDepthImage.reset();
 }
 
 void PostProcessSystem::resize(VkExtent2D newExtent) {
@@ -194,8 +181,8 @@ void PostProcessSystem::resize(VkExtent2D newExtent) {
     // invalidating earlier pointers. Two writes per call is safe; three is not.
     for (size_t i = 0; i < framesInFlight; i++) {
         DescriptorManager::SetWriter(device, compositeDescriptorSets[i])
-            .writeImage(0, hdrColorView, **hdrSampler_)
-            .writeImage(2, hdrDepthView, **hdrSampler_, VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL)
+            .writeImage(0, **hdrColorView, **hdrSampler_)
+            .writeImage(2, **hdrDepthView, **hdrSampler_, VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL)
             .update();
 
         // Separate write for binding 6 (god rays placeholder) to avoid vector reallocation
@@ -205,7 +192,7 @@ void PostProcessSystem::resize(VkExtent2D newExtent) {
                 .update();
         } else {
             DescriptorManager::SetWriter(device, compositeDescriptorSets[i])
-                .writeImage(6, hdrColorView, **hdrSampler_)
+                .writeImage(6, **hdrColorView, **hdrSampler_)
                 .update();
         }
     }
@@ -214,30 +201,30 @@ void PostProcessSystem::resize(VkExtent2D newExtent) {
 bool PostProcessSystem::createHDRRenderTarget() {
     // Create HDR color image
     {
-        ManagedImage image;
+        VkImageView rawView = VK_NULL_HANDLE;
         if (!ImageBuilder(allocator)
                 .setExtent(extent.width, extent.height)
                 .setFormat(HDR_FORMAT)
                 .setUsage(VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_STORAGE_BIT)
-                .build(device, image, hdrColorView)) {
+                .build(device, hdrColorImage, rawView)) {
             SDL_Log("Failed to create HDR color image");
             return false;
         }
-        image.releaseToRaw(hdrColorImage, hdrColorAllocation);
+        hdrColorView.emplace(*raiiDevice_, rawView);
     }
 
     // Create HDR depth image
     {
-        ManagedImage image;
+        VkImageView rawView = VK_NULL_HANDLE;
         if (!ImageBuilder(allocator)
                 .setExtent(extent.width, extent.height)
                 .setFormat(DEPTH_FORMAT)
                 .setUsage(VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT)
-                .build(device, image, hdrDepthView, VK_IMAGE_ASPECT_DEPTH_BIT)) {
+                .build(device, hdrDepthImage, rawView, VK_IMAGE_ASPECT_DEPTH_BIT)) {
             SDL_Log("Failed to create HDR depth image");
             return false;
         }
-        image.releaseToRaw(hdrDepthImage, hdrDepthAllocation);
+        hdrDepthView.emplace(*raiiDevice_, rawView);
     }
 
     return true;
@@ -263,7 +250,7 @@ bool PostProcessSystem::createHDRRenderPass() {
 }
 
 bool PostProcessSystem::createHDRFramebuffer() {
-    std::array<vk::ImageView, 2> attachments = {hdrColorView, hdrDepthView};
+    std::array<vk::ImageView, 2> attachments = {**hdrColorView, **hdrDepthView};
 
     auto framebufferInfo = vk::FramebufferCreateInfo{}
         .setRenderPass(hdrRenderPass)
@@ -345,21 +332,21 @@ bool PostProcessSystem::createDescriptorSets() {
     for (size_t i = 0; i < framesInFlight; i++) {
         DescriptorManager::SetWriter writer(device, compositeDescriptorSets[i]);
         writer
-            .writeImage(0, hdrColorView, **hdrSampler_)
+            .writeImage(0, **hdrColorView, **hdrSampler_)
             .writeBuffer(1, uniformBuffers.buffers[i], 0, sizeof(PostProcessUniforms))
-            .writeImage(2, hdrDepthView, **hdrSampler_, VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL);
+            .writeImage(2, **hdrDepthView, **hdrSampler_, VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL);
 
         // Write placeholder for optional textures (use HDR color as fallback)
         // These will be replaced when the actual systems are connected
         if (froxelVolumeView != VK_NULL_HANDLE && froxelSampler != VK_NULL_HANDLE) {
             writer.writeImage(3, froxelVolumeView, froxelSampler);
         } else {
-            writer.writeImage(3, hdrColorView, **hdrSampler_);  // Placeholder for froxel
+            writer.writeImage(3, **hdrColorView, **hdrSampler_);  // Placeholder for froxel
         }
         if (bloomView != VK_NULL_HANDLE && bloomSampler != VK_NULL_HANDLE) {
             writer.writeImage(4, bloomView, bloomSampler);
         } else {
-            writer.writeImage(4, hdrColorView, **hdrSampler_);  // Placeholder for bloom
+            writer.writeImage(4, **hdrColorView, **hdrSampler_);  // Placeholder for bloom
         }
         // Note: bilateral grid (binding 5) is sampler3D - must be set by setBilateralGrid()
         // with a valid 3D texture before use. Skip placeholder as 2D/3D mismatch causes errors.
@@ -370,7 +357,7 @@ bool PostProcessSystem::createDescriptorSets() {
         if (godRaysView_ != VK_NULL_HANDLE && godRaysSampler_ != VK_NULL_HANDLE) {
             writer.writeImage(6, godRaysView_, godRaysSampler_);
         } else {
-            writer.writeImage(6, hdrColorView, **hdrSampler_);  // Placeholder for god rays (black = no rays)
+            writer.writeImage(6, **hdrColorView, **hdrSampler_);  // Placeholder for god rays (black = no rays)
         }
 
         writer.update();
@@ -767,7 +754,7 @@ bool PostProcessSystem::createHistogramDescriptorSets() {
     for (uint32_t i = 0; i < framesInFlight; i++) {
         // Build descriptor set
         DescriptorManager::SetWriter(device, histogramBuildDescSets[i])
-            .writeStorageImage(0, hdrColorView)
+            .writeStorageImage(0, **hdrColorView)
             .writeBuffer(1, histogramBuffer.get(), 0, HISTOGRAM_BINS * sizeof(uint32_t),
                          VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
             .writeBuffer(2, histogramParamsBuffers.buffers[i], 0, sizeof(HistogramParams))
@@ -856,7 +843,7 @@ void PostProcessSystem::recordHistogramCompute(VkCommandBuffer cmd, uint32_t fra
             .setNewLayout(vk::ImageLayout::eGeneral)
             .setSrcQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
             .setDstQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
-            .setImage(hdrColorImage)
+            .setImage(hdrColorImage.get())
             .setSubresourceRange(vk::ImageSubresourceRange{}
                 .setAspectMask(vk::ImageAspectFlagBits::eColor)
                 .setBaseMipLevel(0)
@@ -914,7 +901,7 @@ void PostProcessSystem::recordHistogramCompute(VkCommandBuffer cmd, uint32_t fra
             .setNewLayout(vk::ImageLayout::eShaderReadOnlyOptimal)
             .setSrcQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
             .setDstQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
-            .setImage(hdrColorImage)
+            .setImage(hdrColorImage.get())
             .setSubresourceRange(vk::ImageSubresourceRange{}
                 .setAspectMask(vk::ImageAspectFlagBits::eColor)
                 .setBaseMipLevel(0)

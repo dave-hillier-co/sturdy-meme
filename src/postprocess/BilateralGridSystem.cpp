@@ -124,15 +124,14 @@ bool BilateralGridSystem::createGridTextures() {
     allocInfo.usage = VMA_MEMORY_USAGE_GPU_ONLY;
 
     for (int i = 0; i < 2; i++) {
-        if (vmaCreateImage(allocator, reinterpret_cast<const VkImageCreateInfo*>(&imageInfo), &allocInfo,
-                          &gridImages[i], &gridAllocations[i], nullptr) != VK_SUCCESS) {
+        if (!VmaImage::create(allocator, imageInfo, allocInfo, gridImages[i])) {
             SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
                         "BilateralGridSystem: Failed to create grid image %d", i);
             return false;
         }
 
         auto viewInfo = vk::ImageViewCreateInfo{}
-            .setImage(gridImages[i])
+            .setImage(gridImages[i].get())
             .setViewType(vk::ImageViewType::e3D)
             .setFormat(static_cast<vk::Format>(GRID_FORMAT))
             .setSubresourceRange(vk::ImageSubresourceRange{}
@@ -142,30 +141,23 @@ bool BilateralGridSystem::createGridTextures() {
                 .setBaseArrayLayer(0)
                 .setLayerCount(1));
 
-        auto viewResult = vk::Device(device).createImageView(viewInfo);
-        if (viewResult == vk::ImageView{}) {
+        try {
+            gridViews[i].emplace(*raiiDevice_, viewInfo);
+        } catch (const vk::SystemError&) {
             SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
                         "BilateralGridSystem: Failed to create grid view %d", i);
             return false;
         }
-        gridViews[i] = viewResult;
     }
 
     return true;
 }
 
 void BilateralGridSystem::destroyGridResources() {
-    vk::Device vkDevice(device);
+    // RAII: views before images
     for (int i = 0; i < 2; i++) {
-        if (gridViews[i] != VK_NULL_HANDLE) {
-            vkDevice.destroyImageView(gridViews[i]);
-            gridViews[i] = VK_NULL_HANDLE;
-        }
-        if (gridImages[i] != VK_NULL_HANDLE) {
-            vmaDestroyImage(allocator, gridImages[i], gridAllocations[i]);
-            gridImages[i] = VK_NULL_HANDLE;
-            gridAllocations[i] = VK_NULL_HANDLE;
-        }
+        gridViews[i].reset();
+        gridImages[i].reset();
     }
 }
 
@@ -307,22 +299,22 @@ bool BilateralGridSystem::createDescriptorSets() {
 
         // X: 0 -> 1
         DescriptorWriter()
-            .add(WriteBuilder::storageImage(0, makeStorageImageInfo(gridViews[0])))
-            .add(WriteBuilder::storageImage(1, makeStorageImageInfo(gridViews[1])))
+            .add(WriteBuilder::storageImage(0, makeStorageImageInfo(**gridViews[0])))
+            .add(WriteBuilder::storageImage(1, makeStorageImageInfo(**gridViews[1])))
             .add(WriteBuilder::uniformBuffer(2, bufferInfo))
             .update(device, blurDescriptorSetsX[i]);
 
         // Y: 1 -> 0
         DescriptorWriter()
-            .add(WriteBuilder::storageImage(0, makeStorageImageInfo(gridViews[1])))
-            .add(WriteBuilder::storageImage(1, makeStorageImageInfo(gridViews[0])))
+            .add(WriteBuilder::storageImage(0, makeStorageImageInfo(**gridViews[1])))
+            .add(WriteBuilder::storageImage(1, makeStorageImageInfo(**gridViews[0])))
             .add(WriteBuilder::uniformBuffer(2, bufferInfo))
             .update(device, blurDescriptorSetsY[i]);
 
         // Z: 0 -> 1
         DescriptorWriter()
-            .add(WriteBuilder::storageImage(0, makeStorageImageInfo(gridViews[0])))
-            .add(WriteBuilder::storageImage(1, makeStorageImageInfo(gridViews[1])))
+            .add(WriteBuilder::storageImage(0, makeStorageImageInfo(**gridViews[0])))
+            .add(WriteBuilder::storageImage(1, makeStorageImageInfo(**gridViews[1])))
             .add(WriteBuilder::uniformBuffer(2, bufferInfo))
             .update(device, blurDescriptorSetsZ[i]);
     }
@@ -352,7 +344,7 @@ void BilateralGridSystem::recordClearGrid(VkCommandBuffer cmd) {
         .setNewLayout(vk::ImageLayout::eTransferDstOptimal)
         .setSrcAccessMask(vk::AccessFlags{})
         .setDstAccessMask(vk::AccessFlagBits::eTransferWrite)
-        .setImage(gridImages[0])
+        .setImage(gridImages[0].get())
         .setSubresourceRange(subresourceRange);
 
     vk::CommandBuffer vkCmdBarrier(cmd);
@@ -371,7 +363,7 @@ void BilateralGridSystem::recordClearGrid(VkCommandBuffer cmd) {
         .setBaseArrayLayer(0)
         .setLayerCount(1);
 
-    vkCmd.clearColorImage(gridImages[0], vk::ImageLayout::eTransferDstOptimal, clearColor, range);
+    vkCmd.clearColorImage(gridImages[0].get(), vk::ImageLayout::eTransferDstOptimal, clearColor, range);
 
     // Transition both grids to GENERAL for compute in a single batched barrier
     // grid[0]: TRANSFER_DST → GENERAL (after clear)
@@ -384,7 +376,7 @@ void BilateralGridSystem::recordClearGrid(VkCommandBuffer cmd) {
         .setNewLayout(vk::ImageLayout::eGeneral)
         .setSrcAccessMask(vk::AccessFlagBits::eTransferWrite)
         .setDstAccessMask(vk::AccessFlagBits::eShaderRead | vk::AccessFlagBits::eShaderWrite)
-        .setImage(gridImages[0])
+        .setImage(gridImages[0].get())
         .setSubresourceRange(subresourceRange);
 
     // grid[1]: discard, but the previous frame's tonemap may still sample it
@@ -393,7 +385,7 @@ void BilateralGridSystem::recordClearGrid(VkCommandBuffer cmd) {
         .setNewLayout(vk::ImageLayout::eGeneral)
         .setSrcAccessMask(vk::AccessFlags{})
         .setDstAccessMask(vk::AccessFlagBits::eShaderRead | vk::AccessFlagBits::eShaderWrite)
-        .setImage(gridImages[1])
+        .setImage(gridImages[1].get())
         .setSubresourceRange(subresourceRange);
 
     // Single barrier call for both transitions; source scope covers the
@@ -434,7 +426,7 @@ void BilateralGridSystem::recordBilateralGrid(VkCommandBuffer cmd, uint32_t fram
         .setImageView(hdrInputView)
         .setSampler(**gridSampler_);
 
-    auto gridInfo = makeStorageImageInfo(gridViews[0]);
+    auto gridInfo = makeStorageImageInfo(**gridViews[0]);
     auto bufferInfo = makeBufferInfo(buildUniformBuffers.buffers[frameIndex], 0, sizeof(BilateralBuildUniforms));
 
     DescriptorWriter()
@@ -455,7 +447,7 @@ void BilateralGridSystem::recordBilateralGrid(VkCommandBuffer cmd, uint32_t fram
     vkCmd.dispatch(groupsX, groupsY, 1);
 
     // Barrier after build
-    BarrierHelpers::computeWriteToComputeRead(vkCmd, gridImages[0]);
+    BarrierHelpers::computeWriteToComputeRead(vkCmd, gridImages[0].get());
 
     // Blur passes
     BilateralBlurUniforms blurUniforms{};
@@ -480,7 +472,7 @@ void BilateralGridSystem::recordBilateralGrid(VkCommandBuffer cmd, uint32_t fram
     vkCmd.dispatch(blurGroupsX, blurGroupsY, blurGroupsZ);
 
     // Barrier
-    BarrierHelpers::computeWriteToComputeRead(vkCmd, gridImages[1]);
+    BarrierHelpers::computeWriteToComputeRead(vkCmd, gridImages[1].get());
 
     // Y blur: grid[1] -> grid[0]
     blurUniforms.axis = 1;
@@ -493,6 +485,6 @@ void BilateralGridSystem::recordBilateralGrid(VkCommandBuffer cmd, uint32_t fram
     vkCmd.dispatch(blurGroupsX, blurGroupsY, blurGroupsZ);
 
     // Final barrier: compute write -> fragment shader read with layout transition
-    BarrierHelpers::imageToShaderRead(vkCmd, gridImages[0],
+    BarrierHelpers::imageToShaderRead(vkCmd, gridImages[0].get(),
         vk::PipelineStageFlagBits::eFragmentShader);
 }

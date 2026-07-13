@@ -226,19 +226,19 @@ bool AtmosphereLUTSystem::exportLUTsAsPNG(const std::string& outputDir) {
     SDL_Log("Exporting atmosphere LUTs as PNG...");
 
     bool success = true;
-    success &= exportImageToPNG(transmittanceLUT, VK_FORMAT_R16G16B16A16_SFLOAT,
+    success &= exportImageToPNG(transmittanceLUT.get(), VK_FORMAT_R16G16B16A16_SFLOAT,
                                 TRANSMITTANCE_WIDTH, TRANSMITTANCE_HEIGHT,
                                 outputDir + "/transmittance_lut.png");
 
-    success &= exportImageToPNG(multiScatterLUT, VK_FORMAT_R16G16_SFLOAT,
+    success &= exportImageToPNG(multiScatterLUT.get(), VK_FORMAT_R16G16_SFLOAT,
                                 MULTISCATTER_SIZE, MULTISCATTER_SIZE,
                                 outputDir + "/multiscatter_lut.png");
 
-    success &= exportImageToPNG(skyViewLUT, VK_FORMAT_R16G16B16A16_SFLOAT,
+    success &= exportImageToPNG(skyViewLUT.get(), VK_FORMAT_R16G16B16A16_SFLOAT,
                                 SKYVIEW_WIDTH, SKYVIEW_HEIGHT,
                                 outputDir + "/skyview_lut.png");
 
-    success &= exportImageToPNG(cloudMapLUT, VK_FORMAT_R16G16B16A16_SFLOAT,
+    success &= exportImageToPNG(cloudMapLUT.get(), VK_FORMAT_R16G16B16A16_SFLOAT,
                                 CLOUDMAP_SIZE, CLOUDMAP_SIZE,
                                 outputDir + "/cloudmap_lut.png");
 

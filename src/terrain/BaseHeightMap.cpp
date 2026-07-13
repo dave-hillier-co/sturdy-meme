@@ -15,6 +15,7 @@ BaseHeightMap::~BaseHeightMap() {
 }
 
 void BaseHeightMap::init(const InitInfo& info) {
+    raiiDevice_ = info.raiiDevice;
     device_ = info.device;
     allocator_ = info.allocator;
     graphicsQueue_ = info.graphicsQueue;
@@ -34,14 +35,8 @@ void BaseHeightMap::cleanup() {
     baseTiles_.clear();
     heightMapCpuData_.clear();
 
-    if (heightMapView_) {
-        vkDestroyImageView(device_, heightMapView_, nullptr);
-        heightMapView_ = VK_NULL_HANDLE;
-    }
-    if (heightMapImage_) {
-        vmaDestroyImage(allocator_, heightMapImage_, heightMapAllocation_);
-        heightMapImage_ = VK_NULL_HANDLE;
-    }
+    heightMapView_.reset();
+    heightMapImage_.reset();
 }
 
 bool BaseHeightMap::loadBaseLODTiles(const LoadTileFunc& loadTileFunc) {
@@ -142,17 +137,17 @@ bool BaseHeightMap::createCombinedHeightMap() {
     }
 
     // Create GPU image
-    {
-        ManagedImage image;
-        if (!ImageBuilder(allocator_)
-                .setExtent(heightMapResolution_, heightMapResolution_)
-                .setFormat(VK_FORMAT_R32_SFLOAT)
-                .setUsage(VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT)
-                .build(device_, image, heightMapView_)) {
-            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "BaseHeightMap: Failed to create heightmap image");
-            return false;
-        }
-        image.releaseToRaw(heightMapImage_, heightMapAllocation_);
+    if (!raiiDevice_) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "BaseHeightMap: raiiDevice is null");
+        return false;
+    }
+    if (!ImageBuilder(allocator_)
+            .setExtent(heightMapResolution_, heightMapResolution_)
+            .setFormat(VK_FORMAT_R32_SFLOAT)
+            .setUsage(VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT)
+            .build(*raiiDevice_, heightMapImage_, heightMapView_)) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "BaseHeightMap: Failed to create heightmap image");
+        return false;
     }
 
     // Upload to GPU
@@ -181,7 +176,7 @@ bool BaseHeightMap::createCombinedHeightMap() {
             .setNewLayout(vk::ImageLayout::eTransferDstOptimal)
             .setSrcQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
             .setDstQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
-            .setImage(heightMapImage_)
+            .setImage(heightMapImage_.get())
             .setSubresourceRange(vk::ImageSubresourceRange{}
                 .setAspectMask(vk::ImageAspectFlagBits::eColor)
                 .setBaseMipLevel(0)
@@ -206,7 +201,7 @@ bool BaseHeightMap::createCombinedHeightMap() {
                 .setLayerCount(1))
             .setImageOffset({0, 0, 0})
             .setImageExtent({heightMapResolution_, heightMapResolution_, 1});
-        vkCmd.copyBufferToImage(stagingBuffer.get(), heightMapImage_, vk::ImageLayout::eTransferDstOptimal, region);
+        vkCmd.copyBufferToImage(stagingBuffer.get(), heightMapImage_.get(), vk::ImageLayout::eTransferDstOptimal, region);
     }
 
     // Transition to shader read
@@ -218,7 +213,7 @@ bool BaseHeightMap::createCombinedHeightMap() {
             .setNewLayout(vk::ImageLayout::eShaderReadOnlyOptimal)
             .setSrcQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
             .setDstQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
-            .setImage(heightMapImage_)
+            .setImage(heightMapImage_.get())
             .setSubresourceRange(vk::ImageSubresourceRange{}
                 .setAspectMask(vk::ImageAspectFlagBits::eColor)
                 .setBaseMipLevel(0)

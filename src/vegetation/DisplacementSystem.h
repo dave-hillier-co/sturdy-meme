@@ -3,6 +3,7 @@
 #include "GrassConstants.h"
 #include "PerFrameBuffer.h"
 #include "DescriptorManager.h"
+#include "core/vulkan/VmaImage.h"
 #include <vulkan/vulkan.hpp>
 #include <vulkan/vulkan_raii.hpp>
 #include <vk_mem_alloc.h>
@@ -127,7 +128,7 @@ public:
      * Get image view for displacement texture.
      * Prefer getDescriptorInfo() for most use cases.
      */
-    vk::ImageView getImageView() const { return imageView_; }
+    vk::ImageView getImageView() const { return imageView_ ? **imageView_ : vk::ImageView{}; }
 
     /**
      * Get sampler for displacement texture.
@@ -173,9 +174,8 @@ private:
     const vk::raii::Device* raiiDevice_ = nullptr;
 
     // Displacement texture
-    vk::Image image_;
-    VmaAllocation allocation_ = VK_NULL_HANDLE;
-    vk::ImageView imageView_;
+    ManagedImage image_;
+    std::optional<vk::raii::ImageView> imageView_;
     bool imageInitialized_ = false;  // First transition discards; later ones preserve decay history
     std::optional<vk::raii::Sampler> sampler_;
 

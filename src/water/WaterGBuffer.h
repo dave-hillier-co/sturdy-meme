@@ -10,6 +10,7 @@
 #include <optional>
 
 #include "DescriptorManager.h"
+#include "VmaImage.h"
 
 /**
  * WaterGBuffer - Phase 3: Screen-Space Mini G-Buffer
@@ -128,17 +129,14 @@ private:
     float resolutionScale = 0.5f;
 
     // G-buffer images
-    VkImage dataImage = VK_NULL_HANDLE;
+    ManagedImage dataImage;
     std::optional<vk::raii::ImageView> dataImageView_;
-    VmaAllocation dataAllocation = VK_NULL_HANDLE;
 
-    VkImage normalImage = VK_NULL_HANDLE;
+    ManagedImage normalImage;
     std::optional<vk::raii::ImageView> normalImageView_;
-    VmaAllocation normalAllocation = VK_NULL_HANDLE;
 
-    VkImage depthImage = VK_NULL_HANDLE;
+    ManagedImage depthImage;
     std::optional<vk::raii::ImageView> depthImageView_;
-    VmaAllocation depthAllocation = VK_NULL_HANDLE;
 
     // Render pass and framebuffer (RAII-managed)
     std::optional<vk::raii::RenderPass> renderPass_;

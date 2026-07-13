@@ -9,6 +9,8 @@
 #include <memory>
 #include <optional>
 
+#include "VmaImage.h"
+
 /*
  * FlowMapGenerator - Generates flow maps for water rendering
  *
@@ -82,7 +84,7 @@ public:
     // Access the generated flow map
     VkImageView getFlowMapView() const { return flowMapView_ ? **flowMapView_ : VK_NULL_HANDLE; }
     VkSampler getFlowMapSampler() const { return flowMapSampler_ ? **flowMapSampler_ : VK_NULL_HANDLE; }
-    VkImage getFlowMapImage() const { return flowMapImage; }
+    VkImage getFlowMapImage() const { return flowMapImage.get(); }
 
     // Get flow map data for CPU-side queries
     const std::vector<glm::vec4>& getFlowData() const { return flowData; }
@@ -91,7 +93,7 @@ public:
     glm::vec4 sampleFlow(const glm::vec2& worldPos) const;
 
     // Check if flow map is valid
-    bool isValid() const { return flowMapImage != VK_NULL_HANDLE; }
+    bool isValid() const { return flowMapImage.get() != VK_NULL_HANDLE; }
 
     // Get resolution
     uint32_t getResolution() const { return currentResolution; }
@@ -120,8 +122,7 @@ private:
     VkQueue queue = VK_NULL_HANDLE;
     const vk::raii::Device* raiiDevice_ = nullptr;
 
-    VkImage flowMapImage = VK_NULL_HANDLE;
-    VmaAllocation flowMapAllocation = VK_NULL_HANDLE;
+    ManagedImage flowMapImage;
     std::optional<vk::raii::ImageView> flowMapView_;
     std::optional<vk::raii::Sampler> flowMapSampler_;
 

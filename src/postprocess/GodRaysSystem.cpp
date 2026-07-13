@@ -101,20 +101,19 @@ bool GodRaysSystem::createResources() {
     VmaAllocationCreateInfo allocInfo = {};
     allocInfo.usage = VMA_MEMORY_USAGE_GPU_ONLY;
 
-    if (vmaCreateImage(allocator_, reinterpret_cast<const VkImageCreateInfo*>(&imageInfo), &allocInfo, &outputImage_, &outputAllocation_, nullptr) != VK_SUCCESS) {
+    if (!VmaImage::create(allocator_, imageInfo, allocInfo, outputImage_)) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "GodRaysSystem: Failed to create output image");
         return false;
     }
 
     auto viewInfo = vk::ImageViewCreateInfo{}
-        .setImage(outputImage_)
+        .setImage(outputImage_.get())
         .setViewType(vk::ImageViewType::e2D)
         .setFormat(vk::Format::eR16G16B16A16Sfloat)
         .setSubresourceRange(vk::ImageSubresourceRange{vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1});
 
-    vk::Device vkDevice(device_);
     try {
-        outputImageView_ = vkDevice.createImageView(viewInfo);
+        outputImageView_.emplace(*raiiDevice_, viewInfo);
     } catch (const vk::SystemError& e) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "GodRaysSystem: Failed to create output image view: %s", e.what());
         return false;
@@ -136,13 +135,13 @@ void GodRaysSystem::recordInitialClearIfNeeded(VkCommandBuffer cmd) {
         .setDstAccessMask(vk::AccessFlagBits::eTransferWrite)
         .setOldLayout(vk::ImageLayout::eUndefined)
         .setNewLayout(vk::ImageLayout::eTransferDstOptimal)
-        .setImage(outputImage_)
+        .setImage(outputImage_.get())
         .setSubresourceRange(range);
     vkCmd.pipelineBarrier(vk::PipelineStageFlagBits::eTopOfPipe,
                           vk::PipelineStageFlagBits::eTransfer,
                           {}, {}, {}, toTransfer);
 
-    vkCmd.clearColorImage(outputImage_, vk::ImageLayout::eTransferDstOptimal,
+    vkCmd.clearColorImage(outputImage_.get(), vk::ImageLayout::eTransferDstOptimal,
                           vk::ClearColorValue(std::array<float, 4>{0.0f, 0.0f, 0.0f, 0.0f}), range);
 
     auto toSampled = vk::ImageMemoryBarrier{}
@@ -150,7 +149,7 @@ void GodRaysSystem::recordInitialClearIfNeeded(VkCommandBuffer cmd) {
         .setDstAccessMask(vk::AccessFlagBits::eShaderRead)
         .setOldLayout(vk::ImageLayout::eTransferDstOptimal)
         .setNewLayout(vk::ImageLayout::eShaderReadOnlyOptimal)
-        .setImage(outputImage_)
+        .setImage(outputImage_.get())
         .setSubresourceRange(range);
     vkCmd.pipelineBarrier(vk::PipelineStageFlagBits::eTransfer,
                           vk::PipelineStageFlagBits::eFragmentShader,
@@ -219,15 +218,9 @@ bool GodRaysSystem::createDescriptorSets() {
 }
 
 void GodRaysSystem::destroyResources() {
-    if (outputImageView_) {
-        vkDestroyImageView(device_, outputImageView_, nullptr);
-        outputImageView_ = VK_NULL_HANDLE;
-    }
-    if (outputImage_) {
-        vmaDestroyImage(allocator_, outputImage_, outputAllocation_);
-        outputImage_ = VK_NULL_HANDLE;
-        outputAllocation_ = VK_NULL_HANDLE;
-    }
+    // RAII: view before image
+    outputImageView_.reset();
+    outputImage_.reset();
 }
 
 void GodRaysSystem::recordGodRaysPass(VkCommandBuffer cmd, VkImageView hdrView, VkImageView depthView) {
@@ -246,7 +239,7 @@ void GodRaysSystem::recordGodRaysPass(VkCommandBuffer cmd, VkImageView hdrView, 
             .setDstAccessMask(vk::AccessFlagBits::eShaderWrite)
             .setOldLayout(vk::ImageLayout::eUndefined)
             .setNewLayout(vk::ImageLayout::eGeneral)
-            .setImage(outputImage_)
+            .setImage(outputImage_.get())
             .setSubresourceRange(vk::ImageSubresourceRange{vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1});
 
         vkCmd.pipelineBarrier(
@@ -260,15 +253,15 @@ void GodRaysSystem::recordGodRaysPass(VkCommandBuffer cmd, VkImageView hdrView, 
     // execute with it bound is undefined behavior (torn argument buffers on
     // MoltenVK).
     if (writtenHdrView_ != hdrView || writtenDepthView_ != depthView ||
-        writtenOutputView_ != outputImageView_) {
+        writtenOutputView_ != **outputImageView_) {
         DescriptorManager::SetWriter(device_, descSet_)
             .writeImage(0, hdrView, **sampler_, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL)
             .writeImage(1, depthView, **sampler_, VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL)
-            .writeStorageImage(2, outputImageView_, VK_IMAGE_LAYOUT_GENERAL)
+            .writeStorageImage(2, **outputImageView_, VK_IMAGE_LAYOUT_GENERAL)
             .update();
         writtenHdrView_ = hdrView;
         writtenDepthView_ = depthView;
-        writtenOutputView_ = outputImageView_;
+        writtenOutputView_ = **outputImageView_;
     }
 
     // Bind pipeline and descriptor set
@@ -304,7 +297,7 @@ void GodRaysSystem::recordGodRaysPass(VkCommandBuffer cmd, VkImageView hdrView, 
             .setDstAccessMask(vk::AccessFlagBits::eShaderRead)
             .setOldLayout(vk::ImageLayout::eGeneral)
             .setNewLayout(vk::ImageLayout::eShaderReadOnlyOptimal)
-            .setImage(outputImage_)
+            .setImage(outputImage_.get())
             .setSubresourceRange(vk::ImageSubresourceRange{vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1});
 
         vkCmd.pipelineBarrier(

@@ -14,6 +14,7 @@
 #include "DescriptorManager.h"
 #include "InitContext.h"
 #include "VmaBuffer.h"
+#include "core/vulkan/VmaImage.h"
 #include <vulkan/vulkan_raii.hpp>
 #include "interfaces/IPostProcessState.h"
 
@@ -103,8 +104,8 @@ public:
     void resize(VkExtent2D newExtent);
 
     // Render target accessors (vulkan-hpp)
-    vk::ImageView getHDRColorView() const { return vk::ImageView(hdrColorView); }
-    vk::ImageView getHDRDepthView() const { return vk::ImageView(hdrDepthView); }
+    vk::ImageView getHDRColorView() const { return hdrColorView ? **hdrColorView : vk::ImageView{}; }
+    vk::ImageView getHDRDepthView() const { return hdrDepthView ? **hdrDepthView : vk::ImageView{}; }
     vk::RenderPass getHDRRenderPass() const { return vk::RenderPass(hdrRenderPass); }
     vk::Framebuffer getHDRFramebuffer() const { return vk::Framebuffer(hdrFramebuffer); }
     vk::Extent2D getRenderExtent() const { return vk::Extent2D{}.setWidth(extent.width).setHeight(extent.height); }
@@ -273,13 +274,11 @@ private:
     static constexpr VkFormat DEPTH_FORMAT = VK_FORMAT_D32_SFLOAT;
 
     // HDR render target
-    VkImage hdrColorImage = VK_NULL_HANDLE;
-    VmaAllocation hdrColorAllocation = VK_NULL_HANDLE;
-    VkImageView hdrColorView = VK_NULL_HANDLE;
+    ManagedImage hdrColorImage;
+    std::optional<vk::raii::ImageView> hdrColorView;
 
-    VkImage hdrDepthImage = VK_NULL_HANDLE;
-    VmaAllocation hdrDepthAllocation = VK_NULL_HANDLE;
-    VkImageView hdrDepthView = VK_NULL_HANDLE;
+    ManagedImage hdrDepthImage;
+    std::optional<vk::raii::ImageView> hdrDepthView;
 
     const vk::raii::Device* raiiDevice_ = nullptr;
     std::optional<vk::raii::Sampler> hdrSampler_;

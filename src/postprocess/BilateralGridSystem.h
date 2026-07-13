@@ -12,6 +12,7 @@
 #include "PerFrameBuffer.h"
 #include "DescriptorManager.h"
 #include "InitContext.h"
+#include "core/vulkan/VmaImage.h"
 
 // Bilateral Grid Local Tone Mapping System
 // Ghost of Tsushima technique for detail-preserving contrast adjustment
@@ -72,7 +73,7 @@ public:
                              VkImageView hdrInputView);
 
     // Get the blurred grid for sampling in post-process
-    VkImageView getGridView() const { return gridViews[0]; }
+    VkImageView getGridView() const { return gridViews[0] ? **gridViews[0] : VK_NULL_HANDLE; }
     VkSampler getGridSampler() const { return gridSampler_ ? **gridSampler_ : VK_NULL_HANDLE; }
 
     // Local tone mapping parameters
@@ -123,9 +124,8 @@ private:
     static constexpr VkFormat GRID_FORMAT = VK_FORMAT_R16G16B16A16_SFLOAT;
 
     // Ping-pong grids for blur passes
-    VkImage gridImages[2] = {VK_NULL_HANDLE, VK_NULL_HANDLE};
-    VmaAllocation gridAllocations[2] = {VK_NULL_HANDLE, VK_NULL_HANDLE};
-    VkImageView gridViews[2] = {VK_NULL_HANDLE, VK_NULL_HANDLE};
+    ManagedImage gridImages[2];
+    std::optional<vk::raii::ImageView> gridViews[2];
 
     std::optional<vk::raii::Sampler> gridSampler_;
 

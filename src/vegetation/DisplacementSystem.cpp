@@ -78,15 +78,8 @@ void DisplacementSystem::cleanup() {
     descriptorSetLayout_.reset();
     sampler_.reset();
 
-    if (imageView_) {
-        device_.destroyImageView(imageView_);
-        imageView_ = nullptr;
-    }
-    if (image_ && allocator_) {
-        vmaDestroyImage(allocator_, image_, allocation_);
-        image_ = nullptr;
-        allocation_ = VK_NULL_HANDLE;
-    }
+    imageView_.reset();
+    image_.reset();
 
     BufferUtils::destroyBuffers(allocator_, sourceBuffers_);
     BufferUtils::destroyBuffers(allocator_, uniformBuffers_);
@@ -97,19 +90,13 @@ void DisplacementSystem::cleanup() {
 
 bool DisplacementSystem::createTexture() {
     // Create displacement texture (RG16F for XZ displacement vectors)
-    ManagedImage image;
-    VkImageView rawView = VK_NULL_HANDLE;
     if (!ImageBuilder(allocator_)
             .setExtent(GrassConstants::DISPLACEMENT_TEXTURE_SIZE, GrassConstants::DISPLACEMENT_TEXTURE_SIZE)
             .setFormat(VK_FORMAT_R16G16_SFLOAT)
             .setUsage(VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT)
-            .build(static_cast<VkDevice>(device_), image, rawView)) {
+            .build(*raiiDevice_, image_, imageView_)) {
         return false;
     }
-    imageView_ = rawView;
-    VkImage rawImage = VK_NULL_HANDLE;
-    image.releaseToRaw(rawImage, allocation_);
-    image_ = rawImage;
 
     // Create sampler for grass/leaf shaders to sample displacement
     sampler_ = SamplerFactory::createSamplerLinearClamp(*raiiDevice_);
@@ -187,7 +174,7 @@ bool DisplacementSystem::createPipeline() {
     // Write descriptor sets with image and per-frame buffers
     for (uint32_t i = 0; i < framesInFlight_; ++i) {
         DescriptorManager::SetWriter(device_, descriptorSets_[i])
-            .writeStorageImage(0, imageView_)
+            .writeStorageImage(0, getImageView())
             .writeBuffer(1, sourceBuffers_.buffers[i], 0,
                          sizeof(DisplacementSource) * GrassConstants::MAX_DISPLACEMENT_SOURCES,
                          VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
@@ -241,10 +228,10 @@ void DisplacementSystem::recordUpdate(vk::CommandBuffer cmd, uint32_t frameIndex
     // (displacement decays over frames), so after the first frame the
     // transition must preserve the contents - eUndefined discards them.
     if (imageInitialized_) {
-        BarrierHelpers::shaderReadToGeneral(cmd, image_,
+        BarrierHelpers::shaderReadToGeneral(cmd, image_.get(),
             vk::PipelineStageFlagBits::eComputeShader);
     } else {
-        BarrierHelpers::imageToGeneral(cmd, image_);
+        BarrierHelpers::imageToGeneral(cmd, image_.get());
         imageInitialized_ = true;
     }
 
@@ -257,13 +244,13 @@ void DisplacementSystem::recordUpdate(vk::CommandBuffer cmd, uint32_t frameIndex
     cmd.dispatch(GrassConstants::DISPLACEMENT_DISPATCH_SIZE, GrassConstants::DISPLACEMENT_DISPATCH_SIZE, 1);
 
     // Barrier: displacement compute write -> grass/leaf compute read
-    BarrierHelpers::imageToShaderRead(cmd, image_, vk::PipelineStageFlagBits::eComputeShader);
+    BarrierHelpers::imageToShaderRead(cmd, image_.get(), vk::PipelineStageFlagBits::eComputeShader);
 }
 
 vk::DescriptorImageInfo DisplacementSystem::getDescriptorInfo() const {
     return vk::DescriptorImageInfo{}
         .setSampler(getSampler())
-        .setImageView(imageView_)
+        .setImageView(getImageView())
         .setImageLayout(vk::ImageLayout::eShaderReadOnlyOptimal);
 }
 

@@ -81,14 +81,10 @@ void FoamBuffer::cleanup() {
     computePipelineLayout_.reset();
     sampler_.reset();
 
-    // Destroy foam buffers
+    // Destroy foam buffers (RAII-managed)
     for (int i = 0; i < 2; i++) {
         foamBufferView_[i].reset();
-        if (foamBuffer[i] != VK_NULL_HANDLE) {
-            vmaDestroyImage(allocator, foamBuffer[i], foamAllocation[i]);
-            foamBuffer[i] = VK_NULL_HANDLE;
-            foamAllocation[i] = VK_NULL_HANDLE;
-        }
+        foamBuffer[i].reset();
     }
 
     // Destroy wake uniform buffers (RAII-managed, destroyed automatically)
@@ -103,17 +99,15 @@ void FoamBuffer::cleanup() {
 bool FoamBuffer::createFoamBuffers() {
     // Create two foam buffers for ping-pong
     for (int i = 0; i < 2; i++) {
-        ManagedImage image;
         if (!ImageBuilder(allocator)
                 .setExtent(resolution, resolution)
                 .setFormat(VK_FORMAT_R16_SFLOAT)
                 .setUsage(VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT)
                 .setGpuOnly()
-                .build(*raiiDevice_, image, foamBufferView_[i])) {
+                .build(*raiiDevice_, foamBuffer[i], foamBufferView_[i])) {
             SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create foam buffer %d", i);
             return false;
         }
-        image.releaseToRaw(foamBuffer[i], foamAllocation[i]);
     }
 
     // Create sampler using factory
@@ -256,14 +250,14 @@ void FoamBuffer::recordCompute(VkCommandBuffer cmd, uint32_t frameIndex, float d
     // Transition write buffer to general layout (discard; the helper waits
     // for any in-flight readers of this image)
     vk::CommandBuffer vkCmd(cmd);
-    BarrierHelpers::imageToGeneral(vkCmd, foamBuffer[writeBuffer]);
+    BarrierHelpers::imageToGeneral(vkCmd, foamBuffer[writeBuffer].get());
 
     if (firstCompute_) {
         // The read buffer has never been written; give it a defined layout
         // once. From the next frame on it is already ShaderReadOnlyOptimal
         // from the exit transition below - the old unconditional eUndefined
         // transition here DISCARDED the accumulated foam history every frame.
-        BarrierHelpers::transitionImageLayout(vkCmd, foamBuffer[readBuffer],
+        BarrierHelpers::transitionImageLayout(vkCmd, foamBuffer[readBuffer].get(),
             vk::ImageLayout::eUndefined, vk::ImageLayout::eShaderReadOnlyOptimal,
             vk::PipelineStageFlagBits::eTopOfPipe, vk::PipelineStageFlagBits::eComputeShader,
             {}, vk::AccessFlagBits::eShaderRead);
@@ -299,7 +293,7 @@ void FoamBuffer::recordCompute(VkCommandBuffer cmd, uint32_t frameIndex, float d
     // Transition write buffer to shader read. Next frame's foam compute
     // samples this image as its history, so the dst scope must include
     // compute as well as the water fragment shader.
-    BarrierHelpers::imageToShaderRead(vkCmd, foamBuffer[writeBuffer],
+    BarrierHelpers::imageToShaderRead(vkCmd, foamBuffer[writeBuffer].get(),
         vk::PipelineStageFlagBits::eFragmentShader | vk::PipelineStageFlagBits::eComputeShader);
 
     // Swap buffers for next frame
@@ -355,15 +349,15 @@ void FoamBuffer::clear(VkCommandBuffer cmd) {
 
     for (int i = 0; i < 2; i++) {
         // Transition to transfer dst
-        BarrierHelpers::transitionImageLayout(vkCmd, foamBuffer[i],
+        BarrierHelpers::transitionImageLayout(vkCmd, foamBuffer[i].get(),
             vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal,
             vk::PipelineStageFlagBits::eTopOfPipe, vk::PipelineStageFlagBits::eTransfer,
             {}, vk::AccessFlagBits::eTransferWrite);
 
-        vkCmd.clearColorImage(foamBuffer[i], vk::ImageLayout::eTransferDstOptimal, clearValue, range);
+        vkCmd.clearColorImage(foamBuffer[i].get(), vk::ImageLayout::eTransferDstOptimal, clearValue, range);
 
         // Transition to shader read
-        BarrierHelpers::transitionImageLayout(vkCmd, foamBuffer[i],
+        BarrierHelpers::transitionImageLayout(vkCmd, foamBuffer[i].get(),
             vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eShaderReadOnlyOptimal,
             vk::PipelineStageFlagBits::eTransfer, vk::PipelineStageFlagBits::eFragmentShader,
             vk::AccessFlagBits::eTransferWrite, vk::AccessFlagBits::eShaderRead);

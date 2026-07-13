@@ -10,6 +10,7 @@
 #include <optional>
 #include "InitContext.h"
 #include "DescriptorManager.h"
+#include "core/vulkan/VmaImage.h"
 #include "interfaces/ITemporalSystem.h"
 
 /**
@@ -104,7 +105,7 @@ public:
                        const glm::vec3& cameraPos);
 
     // Get SSR result texture for sampling in water shader
-    VkImageView getSSRResultView() const { return ssrResultView[currentBuffer]; }
+    VkImageView getSSRResultView() const { return ssrResultView[currentBuffer] ? **ssrResultView[currentBuffer] : VK_NULL_HANDLE; }
     VkSampler getSampler() const { return sampler_ ? **sampler_ : VK_NULL_HANDLE; }
 
     // Configuration
@@ -166,9 +167,8 @@ private:
 
     // Double-buffered SSR result (ping-pong for temporal filtering)
     // RGBA16F format - rgb = reflection color, a = confidence
-    VkImage ssrResult[2] = {VK_NULL_HANDLE, VK_NULL_HANDLE};
-    VkImageView ssrResultView[2] = {VK_NULL_HANDLE, VK_NULL_HANDLE};
-    VmaAllocation ssrAllocation[2] = {VK_NULL_HANDLE, VK_NULL_HANDLE};
+    ManagedImage ssrResult[2];
+    std::optional<vk::raii::ImageView> ssrResultView[2];
     int currentBuffer = 0;
 
     // Sampler
@@ -188,9 +188,8 @@ private:
     std::vector<VkDescriptorSet> blurDescriptorSets;
 
     // Intermediate buffer for blur (SSR writes here, blur reads and writes to final)
-    VkImage ssrIntermediate = VK_NULL_HANDLE;
-    VkImageView ssrIntermediateView = VK_NULL_HANDLE;
-    VmaAllocation ssrIntermediateAllocation = VK_NULL_HANDLE;
+    ManagedImage ssrIntermediate;
+    std::optional<vk::raii::ImageView> ssrIntermediateView;
 
     // Store depth view for blur pass
     VkImageView cachedDepthView = VK_NULL_HANDLE;

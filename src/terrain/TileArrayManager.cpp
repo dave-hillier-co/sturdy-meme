@@ -13,6 +13,10 @@ TileArrayManager::~TileArrayManager() {
 }
 
 bool TileArrayManager::init(const InitInfo& info) {
+    if (!info.raiiDevice) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "TileArrayManager: raiiDevice is null");
+        return false;
+    }
     device_ = info.device;
     allocator_ = info.allocator;
     graphicsQueue_ = info.graphicsQueue;
@@ -21,18 +25,14 @@ bool TileArrayManager::init(const InitInfo& info) {
     maxLayers_ = info.maxLayers;
 
     // Create tile array image (2D array texture with maxLayers layers)
-    {
-        ManagedImage image;
-        if (!ImageBuilder(allocator_)
-                .setExtent(storedTileResolution_, storedTileResolution_)
-                .setFormat(VK_FORMAT_R32_SFLOAT)
-                .setArrayLayers(maxLayers_)
-                .setUsage(VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT)
-                .build(device_, image, arrayView_)) {
-            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "TileArrayManager: Failed to create tile array image");
-            return false;
-        }
-        image.releaseToRaw(arrayImage_, arrayAllocation_);
+    if (!ImageBuilder(allocator_)
+            .setExtent(storedTileResolution_, storedTileResolution_)
+            .setFormat(VK_FORMAT_R32_SFLOAT)
+            .setArrayLayers(maxLayers_)
+            .setUsage(VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT)
+            .build(*info.raiiDevice, arrayImage_, arrayView_)) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "TileArrayManager: Failed to create tile array image");
+        return false;
     }
 
     // Transition tile array to shader read layout
@@ -48,7 +48,7 @@ bool TileArrayManager::init(const InitInfo& info) {
             .setNewLayout(vk::ImageLayout::eShaderReadOnlyOptimal)
             .setSrcQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
             .setDstQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
-            .setImage(arrayImage_)
+            .setImage(arrayImage_.get())
             .setSubresourceRange(vk::ImageSubresourceRange{}
                 .setAspectMask(vk::ImageAspectFlagBits::eColor)
                 .setBaseMipLevel(0)
@@ -72,14 +72,8 @@ bool TileArrayManager::init(const InitInfo& info) {
 }
 
 void TileArrayManager::cleanup() {
-    if (arrayView_) {
-        vkDestroyImageView(device_, arrayView_, nullptr);
-        arrayView_ = VK_NULL_HANDLE;
-    }
-    if (arrayImage_) {
-        vmaDestroyImage(allocator_, arrayImage_, arrayAllocation_);
-        arrayImage_ = VK_NULL_HANDLE;
-    }
+    arrayView_.reset();
+    arrayImage_.reset();
 }
 
 int32_t TileArrayManager::allocateLayer() {
@@ -130,7 +124,7 @@ void TileArrayManager::copyTileToLayer(const TerrainTile& tile, uint32_t layerIn
             .setNewLayout(vk::ImageLayout::eTransferDstOptimal)
             .setSrcQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
             .setDstQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
-            .setImage(arrayImage_)
+            .setImage(arrayImage_.get())
             .setSubresourceRange(vk::ImageSubresourceRange{}
                 .setAspectMask(vk::ImageAspectFlagBits::eColor)
                 .setBaseMipLevel(0)
@@ -155,7 +149,7 @@ void TileArrayManager::copyTileToLayer(const TerrainTile& tile, uint32_t layerIn
                 .setLayerCount(1))
             .setImageOffset({0, 0, 0})
             .setImageExtent({actualRes, actualRes, 1});
-        vkCmd.copyBufferToImage(stagingBuffer.get(), arrayImage_, vk::ImageLayout::eTransferDstOptimal, region);
+        vkCmd.copyBufferToImage(stagingBuffer.get(), arrayImage_.get(), vk::ImageLayout::eTransferDstOptimal, region);
     }
 
     // Transition back to shader read
@@ -167,7 +161,7 @@ void TileArrayManager::copyTileToLayer(const TerrainTile& tile, uint32_t layerIn
             .setNewLayout(vk::ImageLayout::eShaderReadOnlyOptimal)
             .setSrcQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
             .setDstQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
-            .setImage(arrayImage_)
+            .setImage(arrayImage_.get())
             .setSubresourceRange(vk::ImageSubresourceRange{}
                 .setAspectMask(vk::ImageAspectFlagBits::eColor)
                 .setBaseMipLevel(0)

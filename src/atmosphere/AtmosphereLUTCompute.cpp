@@ -16,7 +16,7 @@ void AtmosphereLUTSystem::computeTransmittanceLUT(VkCommandBuffer cmd) {
     // Transition to GENERAL layout for compute write. Source stages cover in-flight
     // sampling (sky fragment shading + LUT compute) so a runtime recompute does not
     // overwrite the image while a previous frame still reads it.
-    BarrierHelpers::transitionImageLayout(vkCmd, transmittanceLUT,
+    BarrierHelpers::transitionImageLayout(vkCmd, transmittanceLUT.get(),
         vk::ImageLayout::eUndefined, vk::ImageLayout::eGeneral,
         vk::PipelineStageFlagBits::eFragmentShader | vk::PipelineStageFlagBits::eComputeShader,
         vk::PipelineStageFlagBits::eComputeShader,
@@ -32,7 +32,7 @@ void AtmosphereLUTSystem::computeTransmittanceLUT(VkCommandBuffer cmd) {
     vkCmd.dispatch(groupCountX, groupCountY, 1);
 
     // Sampled by the sky-view/multiscatter/irradiance compute passes AND by sky.frag
-    BarrierHelpers::imageToShaderRead(vkCmd, transmittanceLUT,
+    BarrierHelpers::imageToShaderRead(vkCmd, transmittanceLUT.get(),
         vk::PipelineStageFlagBits::eComputeShader | vk::PipelineStageFlagBits::eFragmentShader);
 
     SDL_Log("Computed transmittance LUT (%dx%d)", TRANSMITTANCE_WIDTH, TRANSMITTANCE_HEIGHT);
@@ -48,7 +48,7 @@ void AtmosphereLUTSystem::computeMultiScatterLUT(VkCommandBuffer cmd) {
 
     // Transition to GENERAL layout for compute write (see computeTransmittanceLUT
     // for why source stages include fragment + compute sampling)
-    BarrierHelpers::transitionImageLayout(vkCmd, multiScatterLUT,
+    BarrierHelpers::transitionImageLayout(vkCmd, multiScatterLUT.get(),
         vk::ImageLayout::eUndefined, vk::ImageLayout::eGeneral,
         vk::PipelineStageFlagBits::eFragmentShader | vk::PipelineStageFlagBits::eComputeShader,
         vk::PipelineStageFlagBits::eComputeShader,
@@ -64,7 +64,7 @@ void AtmosphereLUTSystem::computeMultiScatterLUT(VkCommandBuffer cmd) {
     vkCmd.dispatch(groupCountX, groupCountY, 1);
 
     // Sampled by the sky-view compute pass AND by sky.frag
-    BarrierHelpers::imageToShaderRead(vkCmd, multiScatterLUT,
+    BarrierHelpers::imageToShaderRead(vkCmd, multiScatterLUT.get(),
         vk::PipelineStageFlagBits::eComputeShader | vk::PipelineStageFlagBits::eFragmentShader);
 
     SDL_Log("Computed multi-scatter LUT (%dx%d)", MULTISCATTER_SIZE, MULTISCATTER_SIZE);
@@ -106,7 +106,7 @@ void AtmosphereLUTSystem::computeSkyViewLUT(VkCommandBuffer cmd, const glm::vec3
     vk::CommandBuffer vkCmd(cmd);
 
     // Transition to GENERAL layout for compute write (from UNDEFINED at startup)
-    BarrierHelpers::imageToGeneral(vkCmd, skyViewLUT);
+    BarrierHelpers::imageToGeneral(vkCmd, skyViewLUT.get());
 
     // Bind pipeline and dispatch (use frame 0's descriptor set for startup computation)
     vkCmd.bindPipeline(vk::PipelineBindPoint::eCompute, skyViewPipeline);
@@ -118,7 +118,7 @@ void AtmosphereLUTSystem::computeSkyViewLUT(VkCommandBuffer cmd, const glm::vec3
     vkCmd.dispatch(groupCountX, groupCountY, 1);
 
     // Transition to SHADER_READ for sampling
-    BarrierHelpers::imageToShaderRead(vkCmd, skyViewLUT, vk::PipelineStageFlagBits::eFragmentShader);
+    BarrierHelpers::imageToShaderRead(vkCmd, skyViewLUT.get(), vk::PipelineStageFlagBits::eFragmentShader);
 
     SDL_Log("Computed sky-view LUT (%dx%d)", SKYVIEW_WIDTH, SKYVIEW_HEIGHT);
 }
@@ -152,7 +152,7 @@ void AtmosphereLUTSystem::updateSkyViewLUT(VkCommandBuffer cmd, uint32_t frameIn
     vk::CommandBuffer vkCmd(cmd);
 
     // Transition from SHADER_READ_ONLY to GENERAL for compute write
-    BarrierHelpers::shaderReadToGeneral(vkCmd, skyViewLUT);
+    BarrierHelpers::shaderReadToGeneral(vkCmd, skyViewLUT.get());
 
     // Bind pipeline and per-frame descriptor set (double-buffered)
     vkCmd.bindPipeline(vk::PipelineBindPoint::eCompute, skyViewPipeline);
@@ -164,7 +164,7 @@ void AtmosphereLUTSystem::updateSkyViewLUT(VkCommandBuffer cmd, uint32_t frameIn
     vkCmd.dispatch(groupCountX, groupCountY, 1);
 
     // Transition back to SHADER_READ for sampling in sky.frag
-    BarrierHelpers::imageToShaderRead(vkCmd, skyViewLUT, vk::PipelineStageFlagBits::eFragmentShader);
+    BarrierHelpers::imageToShaderRead(vkCmd, skyViewLUT.get(), vk::PipelineStageFlagBits::eFragmentShader);
 }
 
 void AtmosphereLUTSystem::computeCloudMapLUT(VkCommandBuffer cmd, const glm::vec3& windOffset, float time) {
@@ -180,7 +180,7 @@ void AtmosphereLUTSystem::computeCloudMapLUT(VkCommandBuffer cmd, const glm::vec
     vk::CommandBuffer vkCmd(cmd);
 
     // Transition to GENERAL layout for compute write
-    BarrierHelpers::imageToGeneral(vkCmd, cloudMapLUT);
+    BarrierHelpers::imageToGeneral(vkCmd, cloudMapLUT.get());
 
     // Bind pipeline and dispatch (use frame 0's descriptor set for startup computation)
     vkCmd.bindPipeline(vk::PipelineBindPoint::eCompute, cloudMapPipeline);
@@ -192,7 +192,7 @@ void AtmosphereLUTSystem::computeCloudMapLUT(VkCommandBuffer cmd, const glm::vec
     vkCmd.dispatch(groupCountX, groupCountY, 1);
 
     // Sampled by sky.frag AND by cloud_shadow.comp
-    BarrierHelpers::imageToShaderRead(vkCmd, cloudMapLUT,
+    BarrierHelpers::imageToShaderRead(vkCmd, cloudMapLUT.get(),
         vk::PipelineStageFlagBits::eFragmentShader | vk::PipelineStageFlagBits::eComputeShader);
 
     SDL_Log("Computed cloud map LUT (%dx%d)", CLOUDMAP_SIZE, CLOUDMAP_SIZE);
@@ -231,7 +231,7 @@ void AtmosphereLUTSystem::updateCloudMapLUT(VkCommandBuffer cmd, uint32_t frameI
 
     // Transition from SHADER_READ_ONLY to GENERAL for compute write.
     // Prior readers are sky.frag (fragment) and cloud_shadow.comp (compute).
-    BarrierHelpers::shaderReadToGeneral(vkCmd, cloudMapLUT,
+    BarrierHelpers::shaderReadToGeneral(vkCmd, cloudMapLUT.get(),
         vk::PipelineStageFlagBits::eFragmentShader | vk::PipelineStageFlagBits::eComputeShader);
 
     // Bind pipeline and per-frame descriptor set (double-buffered)
@@ -244,7 +244,7 @@ void AtmosphereLUTSystem::updateCloudMapLUT(VkCommandBuffer cmd, uint32_t frameI
     vkCmd.dispatch(groupCountX, groupCountY, 1);
 
     // Sampled by sky.frag AND by cloud_shadow.comp (next frame's compute pass)
-    BarrierHelpers::imageToShaderRead(vkCmd, cloudMapLUT,
+    BarrierHelpers::imageToShaderRead(vkCmd, cloudMapLUT.get(),
         vk::PipelineStageFlagBits::eFragmentShader | vk::PipelineStageFlagBits::eComputeShader);
 }
 
@@ -269,7 +269,7 @@ void AtmosphereLUTSystem::barrierIrradianceLUTsForCompute(VkCommandBuffer cmd) {
     vk::CommandBuffer vkCmd(cmd);
     // Wait for any in-flight fragment sampling before a runtime recompute overwrites
     // the LUTs (contents are discarded via UNDEFINED).
-    for (VkImage lut : {rayleighIrradianceLUT, mieIrradianceLUT}) {
+    for (VkImage lut : {rayleighIrradianceLUT.get(), mieIrradianceLUT.get()}) {
         BarrierHelpers::transitionImageLayout(vkCmd, lut,
             vk::ImageLayout::eUndefined, vk::ImageLayout::eGeneral,
             vk::PipelineStageFlagBits::eFragmentShader,
@@ -280,6 +280,6 @@ void AtmosphereLUTSystem::barrierIrradianceLUTsForCompute(VkCommandBuffer cmd) {
 
 void AtmosphereLUTSystem::barrierIrradianceLUTsForSampling(VkCommandBuffer cmd) {
     vk::CommandBuffer vkCmd(cmd);
-    BarrierHelpers::imageToShaderRead(vkCmd, rayleighIrradianceLUT, vk::PipelineStageFlagBits::eFragmentShader);
-    BarrierHelpers::imageToShaderRead(vkCmd, mieIrradianceLUT, vk::PipelineStageFlagBits::eFragmentShader);
+    BarrierHelpers::imageToShaderRead(vkCmd, rayleighIrradianceLUT.get(), vk::PipelineStageFlagBits::eFragmentShader);
+    BarrierHelpers::imageToShaderRead(vkCmd, mieIrradianceLUT.get(), vk::PipelineStageFlagBits::eFragmentShader);
 }

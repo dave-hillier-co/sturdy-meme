@@ -10,6 +10,7 @@
 #include <optional>
 
 #include "VmaBuffer.h"
+#include "VmaImage.h"
 #include "interfaces/ITemporalSystem.h"
 
 /**
@@ -161,9 +162,8 @@ private:
 
     // Double-buffered foam maps (ping-pong for blur)
     // R16F format - single channel foam intensity
-    VkImage foamBuffer[2] = {VK_NULL_HANDLE, VK_NULL_HANDLE};
+    ManagedImage foamBuffer[2];
     std::optional<vk::raii::ImageView> foamBufferView_[2];
-    VmaAllocation foamAllocation[2] = {VK_NULL_HANDLE, VK_NULL_HANDLE};
     int currentBuffer = 0;  // Which buffer to read from
     bool firstCompute_ = true;  // Read buffer needs a one-time layout init
 

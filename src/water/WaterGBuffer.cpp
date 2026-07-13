@@ -139,42 +139,30 @@ void WaterGBuffer::resize(VkExtent2D newFullResExtent) {
 
 bool WaterGBuffer::createImages() {
     // Data image (RGBA8 - material data)
-    {
-        ManagedImage image;
-        if (!ImageBuilder(allocator)
-                .setExtent(gbufferExtent.width, gbufferExtent.height)
-                .setFormat(VK_FORMAT_R8G8B8A8_UNORM)
-                .setUsage(VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT)
-                .build(*raiiDevice_, image, dataImageView_)) {
-            return false;
-        }
-        image.releaseToRaw(dataImage, dataAllocation);
+    if (!ImageBuilder(allocator)
+            .setExtent(gbufferExtent.width, gbufferExtent.height)
+            .setFormat(VK_FORMAT_R8G8B8A8_UNORM)
+            .setUsage(VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT)
+            .build(*raiiDevice_, dataImage, dataImageView_)) {
+        return false;
     }
 
     // Normal image (RGBA16F - normals + depth)
-    {
-        ManagedImage image;
-        if (!ImageBuilder(allocator)
-                .setExtent(gbufferExtent.width, gbufferExtent.height)
-                .setFormat(VK_FORMAT_R16G16B16A16_SFLOAT)
-                .setUsage(VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT)
-                .build(*raiiDevice_, image, normalImageView_)) {
-            return false;
-        }
-        image.releaseToRaw(normalImage, normalAllocation);
+    if (!ImageBuilder(allocator)
+            .setExtent(gbufferExtent.width, gbufferExtent.height)
+            .setFormat(VK_FORMAT_R16G16B16A16_SFLOAT)
+            .setUsage(VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT)
+            .build(*raiiDevice_, normalImage, normalImageView_)) {
+        return false;
     }
 
     // Depth image (D32F - water-only depth)
-    {
-        ManagedImage image;
-        if (!ImageBuilder(allocator)
-                .setExtent(gbufferExtent.width, gbufferExtent.height)
-                .setFormat(VK_FORMAT_D32_SFLOAT)
-                .setUsage(VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT)
-                .build(*raiiDevice_, image, depthImageView_, vk::ImageAspectFlagBits::eDepth)) {
-            return false;
-        }
-        image.releaseToRaw(depthImage, depthAllocation);
+    if (!ImageBuilder(allocator)
+            .setExtent(gbufferExtent.width, gbufferExtent.height)
+            .setFormat(VK_FORMAT_D32_SFLOAT)
+            .setUsage(VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT)
+            .build(*raiiDevice_, depthImage, depthImageView_, vk::ImageAspectFlagBits::eDepth)) {
+        return false;
     }
 
     return true;
@@ -182,25 +170,13 @@ bool WaterGBuffer::createImages() {
 
 void WaterGBuffer::destroyImages() {
     dataImageView_.reset();
-    if (dataImage != VK_NULL_HANDLE) {
-        vmaDestroyImage(allocator, dataImage, dataAllocation);
-        dataImage = VK_NULL_HANDLE;
-        dataAllocation = VK_NULL_HANDLE;
-    }
+    dataImage.reset();
 
     normalImageView_.reset();
-    if (normalImage != VK_NULL_HANDLE) {
-        vmaDestroyImage(allocator, normalImage, normalAllocation);
-        normalImage = VK_NULL_HANDLE;
-        normalAllocation = VK_NULL_HANDLE;
-    }
+    normalImage.reset();
 
     depthImageView_.reset();
-    if (depthImage != VK_NULL_HANDLE) {
-        vmaDestroyImage(allocator, depthImage, depthAllocation);
-        depthImage = VK_NULL_HANDLE;
-        depthAllocation = VK_NULL_HANDLE;
-    }
+    depthImage.reset();
 }
 
 bool WaterGBuffer::createRenderPass() {

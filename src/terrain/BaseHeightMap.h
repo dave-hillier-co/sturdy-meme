@@ -1,10 +1,13 @@
 #pragma once
 
 #include <vulkan/vulkan.hpp>
+#include <vulkan/vulkan_raii.hpp>
 #include <vk_mem_alloc.h>
 #include <vector>
 #include <cstdint>
 #include <functional>
+#include <optional>
+#include "core/vulkan/VmaImage.h"
 
 struct TerrainTile;
 
@@ -17,6 +20,7 @@ public:
     using YieldCallback = std::function<void(float, const char*)>;
 
     struct InitInfo {
+        const vk::raii::Device* raiiDevice = nullptr;
         VkDevice device = VK_NULL_HANDLE;
         VmaAllocator allocator = VK_NULL_HANDLE;
         VkQueue graphicsQueue = VK_NULL_HANDLE;
@@ -59,13 +63,14 @@ public:
     const std::vector<TerrainTile*>& getBaseTiles() const { return baseTiles_; }
 
     // GPU combined heightmap accessors
-    VkImageView getHeightMapView() const { return heightMapView_; }
+    VkImageView getHeightMapView() const { return heightMapView_ ? static_cast<VkImageView>(**heightMapView_) : VK_NULL_HANDLE; }
     const std::vector<float>& getHeightMapData() const { return heightMapCpuData_; }
     uint32_t getHeightMapResolution() const { return heightMapResolution_; }
 
 private:
     bool createCombinedHeightMap();
 
+    const vk::raii::Device* raiiDevice_ = nullptr;
     VkDevice device_ = VK_NULL_HANDLE;
     VmaAllocator allocator_ = VK_NULL_HANDLE;
     VkQueue graphicsQueue_ = VK_NULL_HANDLE;
@@ -83,9 +88,8 @@ private:
     uint32_t baseLOD_ = 0;
 
     // Combined base heightmap
-    VkImage heightMapImage_ = VK_NULL_HANDLE;
-    VmaAllocation heightMapAllocation_ = VK_NULL_HANDLE;
-    VkImageView heightMapView_ = VK_NULL_HANDLE;
+    ManagedImage heightMapImage_;
+    std::optional<vk::raii::ImageView> heightMapView_;
     std::vector<float> heightMapCpuData_;
     uint32_t heightMapResolution_ = 512;
 };

@@ -15,6 +15,10 @@ HoleMaskManager::~HoleMaskManager() {
 }
 
 bool HoleMaskManager::init(const InitInfo& info) {
+    if (!info.raiiDevice) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "HoleMaskManager: raiiDevice is null");
+        return false;
+    }
     device_ = info.device;
     allocator_ = info.allocator;
     graphicsQueue_ = info.graphicsQueue;
@@ -23,18 +27,14 @@ bool HoleMaskManager::init(const InitInfo& info) {
     maxLayers_ = info.maxLayers;
 
     // Create Vulkan 2D array image for hole mask (R8_UNORM: 0=solid, 255=hole)
-    {
-        ManagedImage image;
-        if (!ImageBuilder(allocator_)
-                .setExtent(storedTileResolution_, storedTileResolution_)
-                .setFormat(VK_FORMAT_R8_UNORM)
-                .setArrayLayers(maxLayers_)
-                .setUsage(VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT)
-                .build(device_, image, arrayView_)) {
-            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "HoleMaskManager: Failed to create hole mask array image");
-            return false;
-        }
-        image.releaseToRaw(arrayImage_, arrayAllocation_);
+    if (!ImageBuilder(allocator_)
+            .setExtent(storedTileResolution_, storedTileResolution_)
+            .setFormat(VK_FORMAT_R8_UNORM)
+            .setArrayLayers(maxLayers_)
+            .setUsage(VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT)
+            .build(*info.raiiDevice, arrayImage_, arrayView_)) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "HoleMaskManager: Failed to create hole mask array image");
+        return false;
     }
 
     // Transition hole mask array to shader read layout
@@ -50,7 +50,7 @@ bool HoleMaskManager::init(const InitInfo& info) {
             .setNewLayout(vk::ImageLayout::eShaderReadOnlyOptimal)
             .setSrcQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
             .setDstQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
-            .setImage(arrayImage_)
+            .setImage(arrayImage_.get())
             .setSubresourceRange(vk::ImageSubresourceRange{}
                 .setAspectMask(vk::ImageAspectFlagBits::eColor)
                 .setBaseMipLevel(0)
@@ -65,10 +65,6 @@ bool HoleMaskManager::init(const InitInfo& info) {
     }
 
     // Create sampler (linear filtering for smooth edges)
-    if (!info.raiiDevice) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "HoleMaskManager: raiiDevice is null");
-        return false;
-    }
     auto holeSampler = SamplerFactory::createSamplerLinearClamp(*info.raiiDevice);
     if (!holeSampler) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "HoleMaskManager: Failed to create hole mask sampler");
@@ -84,14 +80,8 @@ bool HoleMaskManager::init(const InitInfo& info) {
 
 void HoleMaskManager::cleanup() {
     sampler_.reset();
-    if (arrayView_) {
-        vkDestroyImageView(device_, arrayView_, nullptr);
-        arrayView_ = VK_NULL_HANDLE;
-    }
-    if (arrayImage_) {
-        vmaDestroyImage(allocator_, arrayImage_, arrayAllocation_);
-        arrayImage_ = VK_NULL_HANDLE;
-    }
+    arrayView_.reset();
+    arrayImage_.reset();
     holes_.clear();
 }
 
@@ -141,7 +131,7 @@ void HoleMaskManager::uploadTileHoleMask(const TerrainTile& tile, int32_t layerI
             .setNewLayout(vk::ImageLayout::eTransferDstOptimal)
             .setSrcQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
             .setDstQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
-            .setImage(arrayImage_)
+            .setImage(arrayImage_.get())
             .setSubresourceRange(vk::ImageSubresourceRange{}
                 .setAspectMask(vk::ImageAspectFlagBits::eColor)
                 .setBaseMipLevel(0)
@@ -166,7 +156,7 @@ void HoleMaskManager::uploadTileHoleMask(const TerrainTile& tile, int32_t layerI
                 .setLayerCount(1))
             .setImageOffset({0, 0, 0})
             .setImageExtent({storedTileResolution_, storedTileResolution_, 1});
-        vkCmd.copyBufferToImage(stagingBuffer.get(), arrayImage_,
+        vkCmd.copyBufferToImage(stagingBuffer.get(), arrayImage_.get(),
                                 vk::ImageLayout::eTransferDstOptimal, region);
     }
 
@@ -179,7 +169,7 @@ void HoleMaskManager::uploadTileHoleMask(const TerrainTile& tile, int32_t layerI
             .setNewLayout(vk::ImageLayout::eShaderReadOnlyOptimal)
             .setSrcQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
             .setDstQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
-            .setImage(arrayImage_)
+            .setImage(arrayImage_.get())
             .setSubresourceRange(vk::ImageSubresourceRange{}
                 .setAspectMask(vk::ImageAspectFlagBits::eColor)
                 .setBaseMipLevel(0)

@@ -7,6 +7,7 @@
 #include <cstdint>
 #include <optional>
 #include "TileGridLogic.h"
+#include "core/vulkan/VmaImage.h"
 
 struct TerrainTile;
 
@@ -59,7 +60,7 @@ public:
     void uploadAllActiveMasks(const std::vector<TerrainTile*>& activeTiles);
 
     // GPU resource accessors
-    VkImageView getArrayView() const { return arrayView_; }
+    VkImageView getArrayView() const { return arrayView_ ? static_cast<VkImageView>(**arrayView_) : VK_NULL_HANDLE; }
     VkSampler getSampler() const { return sampler_ ? **sampler_ : VK_NULL_HANDLE; }
 
 private:
@@ -72,9 +73,8 @@ private:
     uint32_t storedTileResolution_ = 513;
     uint32_t maxLayers_ = 64;
 
-    VkImage arrayImage_ = VK_NULL_HANDLE;
-    VmaAllocation arrayAllocation_ = VK_NULL_HANDLE;
-    VkImageView arrayView_ = VK_NULL_HANDLE;
+    ManagedImage arrayImage_;
+    std::optional<vk::raii::ImageView> arrayView_;
     std::optional<vk::raii::Sampler> sampler_;
 
     std::vector<TerrainHole> holes_;

@@ -48,12 +48,7 @@ void FlowMapGenerator::cleanup() {
 
     flowMapSampler_.reset();
     flowMapView_.reset();
-
-    if (flowMapImage != VK_NULL_HANDLE) {
-        vmaDestroyImage(allocator, flowMapImage, flowMapAllocation);
-        flowMapImage = VK_NULL_HANDLE;
-        flowMapAllocation = VK_NULL_HANDLE;
-    }
+    flowMapImage.reset();
 
     device = VK_NULL_HANDLE;
     raiiDevice_ = nullptr;
@@ -63,30 +58,27 @@ void FlowMapGenerator::cleanup() {
 
 bool FlowMapGenerator::createImage(uint32_t resolution) {
     // Clean up existing image if resolution changed
-    if (flowMapImage != VK_NULL_HANDLE && currentResolution != resolution) {
+    if (flowMapImage && currentResolution != resolution) {
         flowMapView_.reset();
-        vmaDestroyImage(allocator, flowMapImage, flowMapAllocation);
-        flowMapImage = VK_NULL_HANDLE;
+        flowMapImage.reset();
     }
 
-    if (flowMapImage != VK_NULL_HANDLE) {
+    if (flowMapImage) {
         return true; // Already created at correct resolution
     }
 
     currentResolution = resolution;
 
     // Create image and view using ImageBuilder
-    ManagedImage image;
     if (!ImageBuilder(allocator)
             .setExtent(resolution, resolution)
             .setFormat(VK_FORMAT_R8G8B8A8_UNORM)
             .asTexture()
             .setGpuOnly()
-            .build(*raiiDevice_, image, flowMapView_)) {
+            .build(*raiiDevice_, flowMapImage, flowMapView_)) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create flow map image");
         return false;
     }
-    image.releaseToRaw(flowMapImage, flowMapAllocation);
 
     SDL_Log("Flow map created: %ux%u", resolution, resolution);
     return true;
@@ -103,7 +95,7 @@ bool FlowMapGenerator::createSampler() {
 }
 
 void FlowMapGenerator::uploadToGPU() {
-    if (flowData.empty() || flowMapImage == VK_NULL_HANDLE) return;
+    if (flowData.empty() || !flowMapImage) return;
 
     // Create staging buffer using RAII wrapper
     VkDeviceSize imageSize = currentResolution * currentResolution * 4; // RGBA8
@@ -140,7 +132,7 @@ void FlowMapGenerator::uploadToGPU() {
         .setNewLayout(vk::ImageLayout::eTransferDstOptimal)
         .setSrcQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
         .setDstQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
-        .setImage(flowMapImage)
+        .setImage(flowMapImage.get())
         .setSubresourceRange(vk::ImageSubresourceRange{}
             .setAspectMask(vk::ImageAspectFlagBits::eColor)
             .setBaseMipLevel(0)
@@ -162,7 +154,7 @@ void FlowMapGenerator::uploadToGPU() {
             .setLayerCount(1))
         .setImageOffset(vk::Offset3D{0, 0, 0})
         .setImageExtent(vk::Extent3D{currentResolution, currentResolution, 1});
-    vkCmd.copyBufferToImage(stagingBuffer.get(), flowMapImage, vk::ImageLayout::eTransferDstOptimal, copyRegion);
+    vkCmd.copyBufferToImage(stagingBuffer.get(), flowMapImage.get(), vk::ImageLayout::eTransferDstOptimal, copyRegion);
 
     // Transition image from TRANSFER_DST to SHADER_READ_ONLY
     barrier.setSrcAccessMask(vk::AccessFlagBits::eTransferWrite)

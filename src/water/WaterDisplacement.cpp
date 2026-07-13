@@ -88,20 +88,12 @@ void WaterDisplacement::cleanup() {
     // RAII-managed sampler
     sampler_.reset();
 
-    // Destroy displacement maps (RAII-managed image views)
+    // Destroy displacement maps (RAII-managed image views and images)
     displacementMapView_.reset();
-    if (displacementMap != VK_NULL_HANDLE) {
-        vmaDestroyImage(allocator, displacementMap, displacementAllocation);
-        displacementMap = VK_NULL_HANDLE;
-        displacementAllocation = VK_NULL_HANDLE;
-    }
+    displacementMap.reset();
 
     prevDisplacementMapView_.reset();
-    if (prevDisplacementMap != VK_NULL_HANDLE) {
-        vmaDestroyImage(allocator, prevDisplacementMap, prevDisplacementAllocation);
-        prevDisplacementMap = VK_NULL_HANDLE;
-        prevDisplacementAllocation = VK_NULL_HANDLE;
-    }
+    prevDisplacementMap.reset();
 
     device = VK_NULL_HANDLE;
     raiiDevice_ = nullptr;
@@ -110,31 +102,23 @@ void WaterDisplacement::cleanup() {
 
 bool WaterDisplacement::createDisplacementMap() {
     // Create current displacement map
-    {
-        ManagedImage image;
-        if (!ImageBuilder(allocator)
-                .setExtent(displacementResolution, displacementResolution)
-                .setFormat(VK_FORMAT_R16_SFLOAT)
-                .setUsage(VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT)
-                .setGpuOnly()
-                .build(*raiiDevice_, image, displacementMapView_)) {
-            return false;
-        }
-        image.releaseToRaw(displacementMap, displacementAllocation);
+    if (!ImageBuilder(allocator)
+            .setExtent(displacementResolution, displacementResolution)
+            .setFormat(VK_FORMAT_R16_SFLOAT)
+            .setUsage(VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT)
+            .setGpuOnly()
+            .build(*raiiDevice_, displacementMap, displacementMapView_)) {
+        return false;
     }
 
     // Create previous frame displacement map (for temporal blending)
-    {
-        ManagedImage image;
-        if (!ImageBuilder(allocator)
-                .setExtent(displacementResolution, displacementResolution)
-                .setFormat(VK_FORMAT_R16_SFLOAT)
-                .setUsage(VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT)
-                .setGpuOnly()
-                .build(*raiiDevice_, image, prevDisplacementMapView_)) {
-            return false;
-        }
-        image.releaseToRaw(prevDisplacementMap, prevDisplacementAllocation);
+    if (!ImageBuilder(allocator)
+            .setExtent(displacementResolution, displacementResolution)
+            .setFormat(VK_FORMAT_R16_SFLOAT)
+            .setUsage(VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT)
+            .setGpuOnly()
+            .build(*raiiDevice_, prevDisplacementMap, prevDisplacementMapView_)) {
+        return false;
     }
 
     // Create sampler using factory
@@ -158,7 +142,7 @@ bool WaterDisplacement::createDisplacementMap() {
             .setBaseArrayLayer(0)
             .setLayerCount(1);
 
-        for (VkImage image : {displacementMap, prevDisplacementMap}) {
+        for (VkImage image : {displacementMap.get(), prevDisplacementMap.get()}) {
             BarrierHelpers::transitionImageLayout(cmd.get(), image,
                 vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal,
                 vk::PipelineStageFlagBits::eTopOfPipe, vk::PipelineStageFlagBits::eTransfer,
@@ -352,7 +336,7 @@ void WaterDisplacement::recordCompute(VkCommandBuffer cmd, uint32_t frameIndex) 
 
     // Transition displacement map to general layout for compute write
     vk::CommandBuffer vkCmd(cmd);
-    BarrierHelpers::imageToGeneral(vkCmd, displacementMap);
+    BarrierHelpers::imageToGeneral(vkCmd, displacementMap.get());
 
     // Bind compute pipeline
     vkCmd.bindPipeline(vk::PipelineBindPoint::eCompute, **computePipeline_);
@@ -377,7 +361,7 @@ void WaterDisplacement::recordCompute(VkCommandBuffer cmd, uint32_t frameIndex) 
     vkCmd.dispatch(groupsX, groupsY, 1);
 
     // Transition to shader read for water shader sampling
-    BarrierHelpers::imageToShaderRead(vkCmd, displacementMap,
+    BarrierHelpers::imageToShaderRead(vkCmd, displacementMap.get(),
         vk::PipelineStageFlagBits::eVertexShader | vk::PipelineStageFlagBits::eFragmentShader);
 }
 

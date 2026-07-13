@@ -9,6 +9,7 @@
 #include <optional>
 #include "DescriptorManager.h"
 #include "InitContext.h"
+#include "core/vulkan/VmaImage.h"
 
 class BloomSystem {
 public:
@@ -45,7 +46,7 @@ public:
 
     void recordBloomPass(VkCommandBuffer cmd, VkImageView hdrInput);
 
-    VkImageView getBloomOutput() const { return mipChain.empty() ? VK_NULL_HANDLE : mipChain[0].imageView; }
+    VkImageView getBloomOutput() const { return mipChain.empty() ? VK_NULL_HANDLE : **mipChain[0].imageView; }
     VkSampler getBloomSampler() const { return sampler_ ? **sampler_ : VK_NULL_HANDLE; }
 
     void setThreshold(float t) { threshold = t; }
@@ -59,10 +60,9 @@ private:
     void cleanup();
 
     struct MipLevel {
-        VkImage image = VK_NULL_HANDLE;
-        VmaAllocation allocation = VK_NULL_HANDLE;
-        VkImageView imageView = VK_NULL_HANDLE;
-        VkFramebuffer framebuffer = VK_NULL_HANDLE;
+        ManagedImage image;
+        std::optional<vk::raii::ImageView> imageView;
+        std::optional<vk::raii::Framebuffer> framebuffer;
         VkExtent2D extent = {0, 0};
     };
 

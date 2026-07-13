@@ -5,7 +5,9 @@
 #include <vk_mem_alloc.h>
 #include <array>
 #include <cstdint>
+#include <optional>
 #include <vector>
+#include "core/vulkan/VmaImage.h"
 
 struct TerrainTile;
 
@@ -14,6 +16,7 @@ struct TerrainTile;
 class TileArrayManager {
 public:
     struct InitInfo {
+        const vk::raii::Device* raiiDevice = nullptr;
         VkDevice device = VK_NULL_HANDLE;
         VmaAllocator allocator = VK_NULL_HANDLE;
         VkQueue graphicsQueue = VK_NULL_HANDLE;
@@ -42,8 +45,8 @@ public:
     // Copy tile CPU data into a specific array layer (GPU upload)
     void copyTileToLayer(const TerrainTile& tile, uint32_t layerIndex);
 
-    VkImageView getArrayView() const { return arrayView_; }
-    VkImage getArrayImage() const { return arrayImage_; }
+    VkImageView getArrayView() const { return arrayView_ ? static_cast<VkImageView>(**arrayView_) : VK_NULL_HANDLE; }
+    VkImage getArrayImage() const { return arrayImage_.get(); }
     uint32_t getMaxLayers() const { return maxLayers_; }
 
 private:
@@ -54,9 +57,8 @@ private:
     uint32_t storedTileResolution_ = 513;
     uint32_t maxLayers_ = 64;
 
-    VkImage arrayImage_ = VK_NULL_HANDLE;
-    VmaAllocation arrayAllocation_ = VK_NULL_HANDLE;
-    VkImageView arrayView_ = VK_NULL_HANDLE;
+    ManagedImage arrayImage_;
+    std::optional<vk::raii::ImageView> arrayView_;
 
     std::array<bool, 64> freeLayers_;
 };

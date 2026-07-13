@@ -10,6 +10,7 @@
 #include <optional>
 #include "UBOs.h"
 #include "PerFrameBuffer.h"
+#include "core/vulkan/VmaImage.h"
 #include "DescriptorManager.h"
 #include "InitContext.h"
 #include <vulkan/vulkan_raii.hpp>
@@ -125,12 +126,12 @@ public:
     void updateCloudMapLUT(VkCommandBuffer cmd, uint32_t frameIndex, const glm::vec3& windOffset, float time);
 
     // Get LUT views for sampling in shaders
-    VkImageView getTransmittanceLUTView() const { return transmittanceLUTView; }
-    VkImageView getMultiScatterLUTView() const { return multiScatterLUTView; }
-    VkImageView getSkyViewLUTView() const { return skyViewLUTView; }
-    VkImageView getRayleighIrradianceLUTView() const { return rayleighIrradianceLUTView; }
-    VkImageView getMieIrradianceLUTView() const { return mieIrradianceLUTView; }
-    VkImageView getCloudMapLUTView() const { return cloudMapLUTView; }
+    VkImageView getTransmittanceLUTView() const { return transmittanceLUTView ? static_cast<VkImageView>(**transmittanceLUTView) : VK_NULL_HANDLE; }
+    VkImageView getMultiScatterLUTView() const { return multiScatterLUTView ? static_cast<VkImageView>(**multiScatterLUTView) : VK_NULL_HANDLE; }
+    VkImageView getSkyViewLUTView() const { return skyViewLUTView ? static_cast<VkImageView>(**skyViewLUTView) : VK_NULL_HANDLE; }
+    VkImageView getRayleighIrradianceLUTView() const { return rayleighIrradianceLUTView ? static_cast<VkImageView>(**rayleighIrradianceLUTView) : VK_NULL_HANDLE; }
+    VkImageView getMieIrradianceLUTView() const { return mieIrradianceLUTView ? static_cast<VkImageView>(**mieIrradianceLUTView) : VK_NULL_HANDLE; }
+    VkImageView getCloudMapLUTView() const { return cloudMapLUTView ? static_cast<VkImageView>(**cloudMapLUTView) : VK_NULL_HANDLE; }
     VkSampler getLUTSampler() const { return lutSampler_ ? **lutSampler_ : VK_NULL_HANDLE; }
 
     // Export LUTs as PNG files (for debugging/visualization)
@@ -200,37 +201,31 @@ private:
     const vk::raii::Device* raiiDevice_ = nullptr;
 
     // Transmittance LUT (256×64, RGBA16F)
-    VkImage transmittanceLUT = VK_NULL_HANDLE;
-    VmaAllocation transmittanceLUTAllocation = VK_NULL_HANDLE;
-    VkImageView transmittanceLUTView = VK_NULL_HANDLE;
+    ManagedImage transmittanceLUT;
+    std::optional<vk::raii::ImageView> transmittanceLUTView;
 
     // Multi-scatter LUT (32×32, RG16F)
-    VkImage multiScatterLUT = VK_NULL_HANDLE;
-    VmaAllocation multiScatterLUTAllocation = VK_NULL_HANDLE;
-    VkImageView multiScatterLUTView = VK_NULL_HANDLE;
+    ManagedImage multiScatterLUT;
+    std::optional<vk::raii::ImageView> multiScatterLUTView;
 
     // Sky-View LUT (192×108, RGBA16F)
-    VkImage skyViewLUT = VK_NULL_HANDLE;
-    VmaAllocation skyViewLUTAllocation = VK_NULL_HANDLE;
-    VkImageView skyViewLUTView = VK_NULL_HANDLE;
+    ManagedImage skyViewLUT;
+    std::optional<vk::raii::ImageView> skyViewLUTView;
 
     // Rayleigh Irradiance LUT (64×16, RGBA16F) - Phase 4.1.9
     // Stores scattered Rayleigh light *before* phase function multiplication
-    VkImage rayleighIrradianceLUT = VK_NULL_HANDLE;
-    VmaAllocation rayleighIrradianceLUTAllocation = VK_NULL_HANDLE;
-    VkImageView rayleighIrradianceLUTView = VK_NULL_HANDLE;
+    ManagedImage rayleighIrradianceLUT;
+    std::optional<vk::raii::ImageView> rayleighIrradianceLUTView;
 
     // Mie Irradiance LUT (64×16, RGBA16F) - Phase 4.1.9
     // Stores scattered Mie light *before* phase function multiplication
-    VkImage mieIrradianceLUT = VK_NULL_HANDLE;
-    VmaAllocation mieIrradianceLUTAllocation = VK_NULL_HANDLE;
-    VkImageView mieIrradianceLUTView = VK_NULL_HANDLE;
+    ManagedImage mieIrradianceLUT;
+    std::optional<vk::raii::ImageView> mieIrradianceLUTView;
 
     // Cloud Map LUT (256×256, RGBA16F) - Paraboloid projection
     // R = base density, G = detail noise, B = coverage mask, A = height gradient
-    VkImage cloudMapLUT = VK_NULL_HANDLE;
-    VmaAllocation cloudMapLUTAllocation = VK_NULL_HANDLE;
-    VkImageView cloudMapLUTView = VK_NULL_HANDLE;
+    ManagedImage cloudMapLUT;
+    std::optional<vk::raii::ImageView> cloudMapLUTView;
 
     // LUT sampler (bilinear filtering, clamp to edge)
     std::optional<vk::raii::Sampler> lutSampler_;

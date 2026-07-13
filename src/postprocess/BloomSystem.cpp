@@ -109,22 +109,20 @@ bool BloomSystem::createMipChain() {
         mip.extent = {width, height};
 
         // Create image using ImageBuilder
-        ManagedImage managedImage;
         VkImageView imageView;
         if (!ImageBuilder(allocator)
                 .setExtent(width, height)
                 .setFormat(BLOOM_FORMAT)
                 .asColorAttachment()
                 .setGpuOnly()
-                .build(device, managedImage, imageView)) {
+                .build(device, mip.image, imageView)) {
             return false;
         }
 
-        // Release to raw handles (BloomSystem uses raw handles for mip chain)
-        managedImage.releaseToRaw(mip.image, mip.allocation);
-        mip.imageView = imageView;
+        // Adopt the raw view into a RAII wrapper
+        mip.imageView.emplace(*raiiDevice_, imageView);
 
-        mipChain.push_back(mip);
+        mipChain.push_back(std::move(mip));
     }
 
     SDL_Log("BloomSystem: Created %zu mip levels, first mip: %ux%u",
@@ -134,9 +132,8 @@ bool BloomSystem::createMipChain() {
 
     // Create framebuffers for each mip level using vulkan-hpp builder
     // Use downsampleRenderPass - both render passes have compatible attachments
-    vk::Device vkDevice(device);
     for (auto& mip : mipChain) {
-        vk::ImageView attachment(mip.imageView);
+        vk::ImageView attachment(**mip.imageView);
         auto fbInfo = vk::FramebufferCreateInfo{}
             .setRenderPass(**downsampleRenderPass_)
             .setAttachments(attachment)
@@ -145,7 +142,7 @@ bool BloomSystem::createMipChain() {
             .setLayers(1);
 
         try {
-            mip.framebuffer = vkDevice.createFramebuffer(fbInfo);
+            mip.framebuffer.emplace(*raiiDevice_, fbInfo);
         } catch (const vk::SystemError&) {
             return false;
         }
@@ -286,12 +283,6 @@ bool BloomSystem::createDescriptorSets() {
 }
 
 void BloomSystem::destroyMipChain() {
-    vk::Device vkDevice(device);
-    for (auto& mip : mipChain) {
-        if (mip.framebuffer) vkDevice.destroyFramebuffer(mip.framebuffer);
-        if (mip.imageView) vkDevice.destroyImageView(mip.imageView);
-        if (mip.image) vmaDestroyImage(allocator, mip.image, mip.allocation);
-    }
     mipChain.clear();
     // Mip views are gone; force a descriptor rewrite on the next record
     writtenHdrInput_ = VK_NULL_HANDLE;
@@ -309,14 +300,14 @@ void BloomSystem::recordBloomPass(VkCommandBuffer cmd, VkImageView hdrInput) {
     // buffer mid-rewrite, sampling garbage that showed up as blocky corruption.
     if (writtenHdrInput_ != hdrInput) {
         for (size_t i = 0; i < mipChain.size(); ++i) {
-            VkImageView sourceView = (i == 0) ? hdrInput : mipChain[i - 1].imageView;
+            VkImageView sourceView = (i == 0) ? hdrInput : static_cast<VkImageView>(**mipChain[i - 1].imageView);
             DescriptorManager::SetWriter(device, downsampleDescSets[i])
                 .writeImage(0, sourceView, **sampler_)
                 .update();
         }
         for (size_t i = 0; i + 1 < mipChain.size(); ++i) {
             DescriptorManager::SetWriter(device, upsampleDescSets[i])
-                .writeImage(0, mipChain[i + 1].imageView, **sampler_)
+                .writeImage(0, **mipChain[i + 1].imageView, **sampler_)
                 .update();
         }
         writtenHdrInput_ = hdrInput;
@@ -355,7 +346,7 @@ void BloomSystem::recordBloomPass(VkCommandBuffer cmd, VkImageView hdrInput) {
         vk::Extent2D mipExtent{mipChain[i].extent.width, mipChain[i].extent.height};
         auto renderPassInfo = vk::RenderPassBeginInfo{}
             .setRenderPass(**downsampleRenderPass_)
-            .setFramebuffer(mipChain[i].framebuffer)
+            .setFramebuffer(**mipChain[i].framebuffer)
             .setRenderArea(vk::Rect2D{{0, 0}, mipExtent});
 
         vkCmd.beginRenderPass(renderPassInfo, vk::SubpassContents::eInline);
@@ -412,13 +403,13 @@ void BloomSystem::recordBloomPass(VkCommandBuffer cmd, VkImageView hdrInput) {
         makeWriteVisible();
 
         // Transition current mip to color attachment for blending
-        BarrierHelpers::imageToColorAttachment(vkCmd, mipChain[i].image);
+        BarrierHelpers::imageToColorAttachment(vkCmd, mipChain[i].image.get());
 
         // Begin render pass with LOAD operation to preserve downsampled content
         vk::Extent2D mipExtent{mipChain[i].extent.width, mipChain[i].extent.height};
         auto renderPassInfo = vk::RenderPassBeginInfo{}
             .setRenderPass(**upsampleRenderPass_)
-            .setFramebuffer(mipChain[i].framebuffer)
+            .setFramebuffer(**mipChain[i].framebuffer)
             .setRenderArea(vk::Rect2D{{0, 0}, mipExtent});
 
         vkCmd.beginRenderPass(renderPassInfo, vk::SubpassContents::eInline);

@@ -86,28 +86,14 @@ void SSRSystem::cleanup() {
 
     sampler_.reset();
 
-    // Destroy intermediate buffer
-    if (ssrIntermediateView != VK_NULL_HANDLE) {
-        vkDevice.destroyImageView(ssrIntermediateView);
-        ssrIntermediateView = VK_NULL_HANDLE;
-    }
-    if (ssrIntermediate != VK_NULL_HANDLE) {
-        vmaDestroyImage(allocator, ssrIntermediate, ssrIntermediateAllocation);
-        ssrIntermediate = VK_NULL_HANDLE;
-        ssrIntermediateAllocation = VK_NULL_HANDLE;
-    }
+    // Release intermediate buffer (RAII: view before image)
+    ssrIntermediateView.reset();
+    ssrIntermediate.reset();
 
-    // Destroy SSR buffers
+    // Release SSR buffers (RAII: views before images)
     for (int i = 0; i < 2; i++) {
-        if (ssrResultView[i] != VK_NULL_HANDLE) {
-            vkDevice.destroyImageView(ssrResultView[i]);
-            ssrResultView[i] = VK_NULL_HANDLE;
-        }
-        if (ssrResult[i] != VK_NULL_HANDLE) {
-            vmaDestroyImage(allocator, ssrResult[i], ssrAllocation[i]);
-            ssrResult[i] = VK_NULL_HANDLE;
-            ssrAllocation[i] = VK_NULL_HANDLE;
-        }
+        ssrResultView[i].reset();
+        ssrResult[i].reset();
     }
 
     device = VK_NULL_HANDLE;
@@ -119,31 +105,18 @@ void SSRSystem::resize(VkExtent2D newExtent) {
     }
 
     extent = newExtent;
-    vk::Device vkDevice(device);
 
     // Invalidate temporal history - buffers will contain garbage after resize
     temporalHistoryValid = false;
 
-    // Recreate intermediate buffer
-    if (ssrIntermediateView != VK_NULL_HANDLE) {
-        vkDevice.destroyImageView(ssrIntermediateView);
-        ssrIntermediateView = VK_NULL_HANDLE;
-    }
-    if (ssrIntermediate != VK_NULL_HANDLE) {
-        vmaDestroyImage(allocator, ssrIntermediate, ssrIntermediateAllocation);
-        ssrIntermediate = VK_NULL_HANDLE;
-    }
+    // Recreate intermediate buffer (RAII: view before image)
+    ssrIntermediateView.reset();
+    ssrIntermediate.reset();
 
-    // Recreate SSR buffers at new size
+    // Recreate SSR buffers at new size (RAII: views before images)
     for (int i = 0; i < 2; i++) {
-        if (ssrResultView[i] != VK_NULL_HANDLE) {
-            vkDevice.destroyImageView(ssrResultView[i]);
-            ssrResultView[i] = VK_NULL_HANDLE;
-        }
-        if (ssrResult[i] != VK_NULL_HANDLE) {
-            vmaDestroyImage(allocator, ssrResult[i], ssrAllocation[i]);
-            ssrResult[i] = VK_NULL_HANDLE;
-        }
+        ssrResultView[i].reset();
+        ssrResult[i].reset();
     }
 
     createSSRBuffers();
@@ -175,14 +148,13 @@ bool SSRSystem::createSSRBuffers() {
     allocInfo.usage = VMA_MEMORY_USAGE_GPU_ONLY;
 
     for (int i = 0; i < 2; i++) {
-        if (vmaCreateImage(allocator, reinterpret_cast<const VkImageCreateInfo*>(&imageInfo), &allocInfo,
-                           &ssrResult[i], &ssrAllocation[i], nullptr) != VK_SUCCESS) {
+        if (!VmaImage::create(allocator, imageInfo, allocInfo, ssrResult[i])) {
             SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create SSR result image %d", i);
             return false;
         }
 
         auto viewInfo = vk::ImageViewCreateInfo{}
-            .setImage(ssrResult[i])
+            .setImage(ssrResult[i].get())
             .setViewType(vk::ImageViewType::e2D)
             .setFormat(vk::Format::eR16G16B16A16Sfloat)
             .setSubresourceRange(vk::ImageSubresourceRange{}
@@ -192,9 +164,8 @@ bool SSRSystem::createSSRBuffers() {
                 .setBaseArrayLayer(0)
                 .setLayerCount(1));
 
-        vk::Device vkDevice(device);
         try {
-            ssrResultView[i] = static_cast<VkImageView>(vkDevice.createImageView(viewInfo));
+            ssrResultView[i].emplace(*raiiDevice_, viewInfo);
         } catch (const vk::SystemError& e) {
             SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create SSR result image view %d: %s", i, e.what());
             return false;
@@ -202,15 +173,14 @@ bool SSRSystem::createSSRBuffers() {
     }
 
     // Create intermediate buffer for blur pass
-    if (vmaCreateImage(allocator, reinterpret_cast<const VkImageCreateInfo*>(&imageInfo), &allocInfo,
-                       &ssrIntermediate, &ssrIntermediateAllocation, nullptr) != VK_SUCCESS) {
+    if (!VmaImage::create(allocator, imageInfo, allocInfo, ssrIntermediate)) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create SSR intermediate image");
         return false;
     }
 
     {
         auto viewInfo = vk::ImageViewCreateInfo{}
-            .setImage(ssrIntermediate)
+            .setImage(ssrIntermediate.get())
             .setViewType(vk::ImageViewType::e2D)
             .setFormat(vk::Format::eR16G16B16A16Sfloat)
             .setSubresourceRange(vk::ImageSubresourceRange{}
@@ -220,9 +190,8 @@ bool SSRSystem::createSSRBuffers() {
                 .setBaseArrayLayer(0)
                 .setLayerCount(1));
 
-        vk::Device vkDevice(device);
         try {
-            ssrIntermediateView = static_cast<VkImageView>(vkDevice.createImageView(viewInfo));
+            ssrIntermediateView.emplace(*raiiDevice_, viewInfo);
         } catch (const vk::SystemError& e) {
             SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create SSR intermediate image view: %s", e.what());
             return false;
@@ -252,7 +221,7 @@ bool SSRSystem::createSSRBuffers() {
                 .setNewLayout(vk::ImageLayout::eGeneral)
                 .setSrcQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
                 .setDstQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
-                .setImage(ssrResult[i])
+                .setImage(ssrResult[i].get())
                 .setSubresourceRange(vk::ImageSubresourceRange{}
                     .setAspectMask(vk::ImageAspectFlagBits::eColor)
                     .setBaseMipLevel(0)
@@ -275,7 +244,7 @@ bool SSRSystem::createSSRBuffers() {
                 .setNewLayout(vk::ImageLayout::eGeneral)
                 .setSrcQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
                 .setDstQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
-                .setImage(ssrIntermediate)
+                .setImage(ssrIntermediate.get())
                 .setSubresourceRange(vk::ImageSubresourceRange{}
                     .setAspectMask(vk::ImageAspectFlagBits::eColor)
                     .setBaseMipLevel(0)
@@ -422,15 +391,15 @@ void SSRSystem::recordCompute(VkCommandBuffer cmd, uint32_t frameIndex,
     // Determine where SSR writes to:
     // - If blur enabled: write to intermediate, blur will write to final
     // - If blur disabled: write directly to final
-    VkImageView ssrOutputView = blurEnabled ? ssrIntermediateView : ssrResultView[writeBuffer];
-    VkImage ssrOutputImage = blurEnabled ? ssrIntermediate : ssrResult[writeBuffer];
+    VkImageView ssrOutputView = blurEnabled ? **ssrIntermediateView : **ssrResultView[writeBuffer];
+    VkImage ssrOutputImage = blurEnabled ? ssrIntermediate.get() : ssrResult[writeBuffer].get();
 
     // Update descriptor set for main SSR pass using SetWriter
     DescriptorManager::SetWriter(device, descriptorSets[frameIndex])
         .writeImage(0, hdrColorView, **sampler_, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL)
         .writeImage(1, hdrDepthView, **sampler_, VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL)
         .writeStorageImage(2, ssrOutputView)
-        .writeImage(3, ssrResultView[currentBuffer], **sampler_, VK_IMAGE_LAYOUT_GENERAL)
+        .writeImage(3, **ssrResultView[currentBuffer], **sampler_, VK_IMAGE_LAYOUT_GENERAL)
         .update();
 
     // Build push constants for main SSR
@@ -472,9 +441,9 @@ void SSRSystem::recordCompute(VkCommandBuffer cmd, uint32_t frameIndex,
 
         // Update blur descriptor set using SetWriter
         DescriptorManager::SetWriter(device, blurDescriptorSets[frameIndex])
-            .writeImage(0, ssrIntermediateView, **sampler_, VK_IMAGE_LAYOUT_GENERAL)
+            .writeImage(0, **ssrIntermediateView, **sampler_, VK_IMAGE_LAYOUT_GENERAL)
             .writeImage(1, hdrDepthView, **sampler_, VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL)
-            .writeStorageImage(2, ssrResultView[writeBuffer])
+            .writeStorageImage(2, **ssrResultView[writeBuffer])
             .update();
 
         // Build blur push constants
@@ -494,7 +463,7 @@ void SSRSystem::recordCompute(VkCommandBuffer cmd, uint32_t frameIndex,
         vkCmd.dispatch(groupsX, groupsY, 1);
 
         // Final barrier: blur output -> fragment shader
-        BarrierHelpers::computeToFragment(vkCmd, ssrResult[writeBuffer]);
+        BarrierHelpers::computeToFragment(vkCmd, ssrResult[writeBuffer].get());
     } else {
         // No blur - barrier directly to fragment shader
         BarrierHelpers::computeToFragment(vkCmd, ssrOutputImage);

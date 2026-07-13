@@ -10,6 +10,7 @@
 #include <optional>
 
 #include "VmaBuffer.h"
+#include "VmaImage.h"
 #include "interfaces/ITemporalSystem.h"
 
 /**
@@ -139,14 +140,12 @@ private:
     float decayRate = 2.0f;  // Displacement decay per second
 
     // Displacement map (R16F - single channel height)
-    VkImage displacementMap = VK_NULL_HANDLE;
+    ManagedImage displacementMap;
     std::optional<vk::raii::ImageView> displacementMapView_;
-    VmaAllocation displacementAllocation = VK_NULL_HANDLE;
 
     // Previous frame displacement (for temporal blending)
-    VkImage prevDisplacementMap = VK_NULL_HANDLE;
+    ManagedImage prevDisplacementMap;
     std::optional<vk::raii::ImageView> prevDisplacementMapView_;
-    VmaAllocation prevDisplacementAllocation = VK_NULL_HANDLE;
 
     // Sampler (RAII-managed)
     std::optional<vk::raii::Sampler> sampler_;

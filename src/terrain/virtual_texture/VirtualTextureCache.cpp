@@ -107,10 +107,10 @@ bool VirtualTextureCache::initInternal(const InitInfo& info) {
     framesInFlight_ = info.framesInFlight;
     useCompression_ = info.useCompression;
 
-    VkDevice device = info.device;
+    vk::Device device = info.device;
     VmaAllocator allocator = info.allocator;
-    VkCommandPool commandPool = info.commandPool;
-    VkQueue queue = info.queue;
+    vk::CommandPool commandPool = info.commandPool;
+    vk::Queue queue = info.queue;
 
     // Initialize slot array
     uint32_t totalSlots = config.getTotalCacheSlots();
@@ -138,7 +138,7 @@ bool VirtualTextureCache::initInternal(const InitInfo& info) {
     // frames. Each buffer holds one region per upload that can be recorded in
     // a frame, since the copy commands execute after recording finishes.
     maxUploadsPerFrame_ = info.maxUploadsPerFrame;
-    VkDeviceSize stagingSize = getTileStagingSize() * maxUploadsPerFrame_;
+    vk::DeviceSize stagingSize = getTileStagingSize() * maxUploadsPerFrame_;
 
     stagingBuffers_.resize(framesInFlight_);
     stagingMapped_.resize(framesInFlight_);
@@ -158,8 +158,8 @@ bool VirtualTextureCache::initInternal(const InitInfo& info) {
     return true;
 }
 
-bool VirtualTextureCache::createCacheTexture(VkDevice device, VmaAllocator allocator,
-                                              VkCommandPool commandPool, VkQueue queue) {
+bool VirtualTextureCache::createCacheTexture(vk::Device device, VmaAllocator allocator,
+                                              vk::CommandPool commandPool, vk::Queue queue) {
     vk::Format cacheFormat = useCompression_ ? vk::Format::eBc1RgbSrgbBlock : vk::Format::eR8G8B8A8Srgb;
     VmaImageSpec spec{};
     spec = spec.withFormat(cacheFormat)
@@ -220,7 +220,7 @@ bool VirtualTextureCache::createCacheTexture(VkDevice device, VmaAllocator alloc
     return true;
 }
 
-bool VirtualTextureCache::createSampler(VkDevice device) {
+bool VirtualTextureCache::createSampler(vk::Device device) {
     if (!raiiDevice_) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "VirtualTextureCache::createSampler requires raiiDevice");
         return false;
@@ -323,7 +323,7 @@ size_t VirtualTextureCache::findLRUSlot(uint32_t currentFrame) const {
     return lruIndex;
 }
 
-VkDeviceSize VirtualTextureCache::getTileStagingSize() const {
+vk::DeviceSize VirtualTextureCache::getTileStagingSize() const {
     if (useCompression_) {
         // BC1: 8 bytes per 4x4 block
         uint32_t blockWidth = (config.tileSizePixels + 3) / 4;
@@ -340,7 +340,7 @@ void VirtualTextureCache::beginFrame() {
 
 bool VirtualTextureCache::recordTileUpload(TileId id, const void* pixelData,
                                             uint32_t width, uint32_t height,
-                                            TileFormat format, VkCommandBuffer cmd, uint32_t frameIndex) {
+                                            TileFormat format, vk::CommandBuffer cmd, uint32_t frameIndex) {
     // Find the slot for this tile
     auto it = tileToSlot.find(id.pack());
     if (it == tileToSlot.end()) {
@@ -378,7 +378,7 @@ bool VirtualTextureCache::recordTileUpload(TileId id, const void* pixelData,
     uint32_t slotY = slotIndex / slotsPerAxis;
 
     // Calculate data size based on format
-    VkDeviceSize dataSize;
+    vk::DeviceSize dataSize;
     if (useCompression_) {
         // BC1: 8 bytes per 4x4 block
         uint32_t blockWidth = (width + 3) / 4;
@@ -391,14 +391,14 @@ bool VirtualTextureCache::recordTileUpload(TileId id, const void* pixelData,
 
     // Sub-allocate a region of the per-frame staging buffer. Regions can't be
     // reused within a frame: the copy commands execute long after recording.
-    VkDeviceSize stagingCapacity = getTileStagingSize() * maxUploadsPerFrame_;
+    vk::DeviceSize stagingCapacity = getTileStagingSize() * maxUploadsPerFrame_;
     if (stagingCursor_ + dataSize > stagingCapacity) {
         SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
                     "VT staging buffer exhausted for this frame (%u uploads max)",
                     maxUploadsPerFrame_);
         return false;
     }
-    VkDeviceSize stagingOffset = stagingCursor_;
+    vk::DeviceSize stagingOffset = stagingCursor_;
     stagingCursor_ += dataSize;
 
     std::memcpy(static_cast<uint8_t*>(stagingMapped_[bufferIndex]) + stagingOffset,
@@ -429,7 +429,7 @@ bool VirtualTextureCache::recordTileUpload(TileId id, const void* pixelData,
     return true;
 }
 
-void VirtualTextureCache::recordUploadBatchBegin(VkCommandBuffer cmd) {
+void VirtualTextureCache::recordUploadBatchBegin(vk::CommandBuffer cmd) {
     auto barrier = vk::ImageMemoryBarrier{}
         .setSrcAccessMask(vk::AccessFlagBits::eShaderRead)
         .setDstAccessMask(vk::AccessFlagBits::eTransferWrite)
@@ -449,7 +449,7 @@ void VirtualTextureCache::recordUploadBatchBegin(VkCommandBuffer cmd) {
                                            {}, {}, {}, barrier);
 }
 
-void VirtualTextureCache::recordUploadBatchEnd(VkCommandBuffer cmd) {
+void VirtualTextureCache::recordUploadBatchEnd(vk::CommandBuffer cmd) {
     auto barrier = vk::ImageMemoryBarrier{}
         .setSrcAccessMask(vk::AccessFlagBits::eTransferWrite)
         .setDstAccessMask(vk::AccessFlagBits::eShaderRead)

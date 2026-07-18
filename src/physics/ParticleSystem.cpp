@@ -71,12 +71,12 @@ void ParticleSystem::advanceBufferSet() {
     computeBufferSet = (computeBufferSet + 1) % bufferSetCount;
 }
 
-void ParticleSystem::setComputeDescriptorSet(uint32_t index, VkDescriptorSet set) {
+void ParticleSystem::setComputeDescriptorSet(uint32_t index, vk::DescriptorSet set) {
     if (index >= computeDescriptorSets.size()) return;
     computeDescriptorSets[index] = set;
 }
 
-void ParticleSystem::setGraphicsDescriptorSet(uint32_t index, VkDescriptorSet set) {
+void ParticleSystem::setGraphicsDescriptorSet(uint32_t index, vk::DescriptorSet set) {
     if (index >= graphicsDescriptorSets.size()) return;
     graphicsDescriptorSets[index] = set;
 }
@@ -86,10 +86,10 @@ bool ParticleSystem::createStandardDescriptorSets() {
             bufferSetCount, (void*)getDescriptorPool());
     // Allocate descriptor sets for both buffer sets using managed pool
     for (uint32_t set = 0; set < bufferSetCount; set++) {
-        VkDescriptorSetLayout computeLayout = getComputePipelineHandles().descriptorSetLayout;
+        vk::DescriptorSetLayout computeLayout = getComputePipelineHandles().descriptorSetLayout;
         SDL_Log("  Allocating set %u compute, layout=%p", set, (void*)computeLayout);
         // Compute descriptor set
-        VkDescriptorSet computeSet = getDescriptorPool()->allocateSingle(computeLayout);
+        vk::DescriptorSet computeSet = getDescriptorPool()->allocateSingle(computeLayout);
         if (computeSet == VK_NULL_HANDLE) {
             SDL_Log("Failed to allocate particle system compute descriptor set (set %u)", set);
             return false;
@@ -98,7 +98,7 @@ bool ParticleSystem::createStandardDescriptorSets() {
         SDL_Log("  Allocated set %u compute OK, allocating graphics...", set);
 
         // Graphics descriptor set
-        VkDescriptorSet graphicsSet = getDescriptorPool()->allocateSingle(
+        vk::DescriptorSet graphicsSet = getDescriptorPool()->allocateSingle(
             getGraphicsPipelineHandles().descriptorSetLayout);
         if (graphicsSet == VK_NULL_HANDLE) {
             SDL_Log("Failed to allocate particle system graphics descriptor set (set %u)", set);

@@ -11,7 +11,7 @@ GPUInference::~GPUInference() {
     destroy();
 }
 
-bool GPUInference::init(VkDevice device, VmaAllocator allocator, const Config& cfg) {
+bool GPUInference::init(vk::Device device, VmaAllocator allocator, const Config& cfg) {
     device_ = device;
     allocator_ = allocator;
     config_ = cfg;
@@ -187,7 +187,7 @@ void GPUInference::uploadInputs(const std::vector<float>& latents,
                    npcCount * config_.obsDim * sizeof(float));
 }
 
-void GPUInference::recordDispatch(VkCommandBuffer cmd, uint32_t npcCount) {
+void GPUInference::recordDispatch(vk::CommandBuffer cmd, uint32_t npcCount) {
     if (!initialized_ || pipeline_ == VK_NULL_HANDLE) return;
 
     vk::CommandBuffer vkCmd(cmd);
@@ -262,7 +262,7 @@ bool GPUInference::createBuffer(GPUBuffer& buf, size_t size,
     allocInfo.flags = VMA_ALLOCATION_CREATE_MAPPED_BIT;
 
     if (vmaCreateBuffer(allocator_, reinterpret_cast<const VkBufferCreateInfo*>(&bufferInfo), &allocInfo,
-                        &buf.buffer, &buf.allocation, nullptr) != VK_SUCCESS) {
+                        reinterpret_cast<VkBuffer*>(&buf.buffer), &buf.allocation, nullptr) != VK_SUCCESS) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
                      "GPUInference: failed to create buffer (size=%zu)", size);
         return false;

@@ -45,9 +45,9 @@ public:
     struct InitInfo {
         std::string path;
         VmaAllocator allocator;
-        VkDevice device;
-        VkCommandPool commandPool;
-        VkQueue queue;
+        vk::Device device;
+        vk::CommandPool commandPool;
+        vk::Queue queue;
     };
 
     /**
@@ -83,8 +83,8 @@ public:
     // isGrounded: whether the character is on the ground
     // isJumping: whether the character just started a jump
     // worldTransform: character's world transform matrix (for IK ground queries)
-    void update(float deltaTime, VmaAllocator allocator, VkDevice device,
-                VkCommandPool commandPool, VkQueue queue,
+    void update(float deltaTime, VmaAllocator allocator, vk::Device device,
+                vk::CommandPool commandPool, vk::Queue queue,
                 float movementSpeed = 0.0f, bool isGrounded = true, bool isJumping = false,
                 const glm::mat4& worldTransform = glm::mat4(1.0f));
 

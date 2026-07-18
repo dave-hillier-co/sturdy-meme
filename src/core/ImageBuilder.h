@@ -264,8 +264,8 @@ public:
         return true;
     }
 
-    // Build image and view together - outputs raw VkImageView (for legacy code compatibility)
-    bool build(VkDevice device, ManagedImage& outImage, VkImageView& outView,
+    // Build image and view together - outputs raw vk::ImageView (for legacy code compatibility)
+    bool build(vk::Device device, ManagedImage& outImage, vk::ImageView& outView,
                VkImageAspectFlags aspectMask = VK_IMAGE_ASPECT_COLOR_BIT) const {
         if (!ManagedImage::create(allocator_, imageInfo_, allocInfo_, outImage)) {
             return false;
@@ -284,7 +284,7 @@ public:
 
         try {
             vk::Device vkDevice(device);
-            outView = static_cast<VkImageView>(vkDevice.createImageView(viewInfo));
+            outView = static_cast<vk::ImageView>(vkDevice.createImageView(viewInfo));
         } catch (const vk::SystemError& e) {
             SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "ImageBuilder: Failed to create image view: %s", e.what());
             outImage.reset();
@@ -295,7 +295,7 @@ public:
     }
 
     // Build into raw handles (for legacy code compatibility)
-    bool build(VkImage& outImage, VmaAllocation& outAllocation) const {
+    bool build(vk::Image& outImage, VmaAllocation& outAllocation) const {
         ManagedImage managedImage;
         if (!ManagedImage::create(allocator_, imageInfo_, allocInfo_, managedImage)) {
             return false;
@@ -355,7 +355,7 @@ private:
  *       .asStorageImage()
  *       .build(result);
  *
- *   // result.image - the VkImage with all mip levels
+ *   // result.image - the vk::Image with all mip levels
  *   // result.fullView - view of all mip levels
  *   // result.mipViews - individual per-level views
  */
@@ -381,11 +381,11 @@ public:
         }
     };
 
-    MipChainBuilder(VkDevice device, VmaAllocator allocator)
+    MipChainBuilder(vk::Device device, VmaAllocator allocator)
         : device_(device), raiiDevice_(nullptr), allocator_(allocator), imageBuilder_(allocator) {}
 
     MipChainBuilder(const vk::raii::Device& raiiDevice, VmaAllocator allocator)
-        : device_(static_cast<VkDevice>(*raiiDevice)), raiiDevice_(&raiiDevice), allocator_(allocator), imageBuilder_(allocator) {}
+        : device_(static_cast<vk::Device>(*raiiDevice)), raiiDevice_(&raiiDevice), allocator_(allocator), imageBuilder_(allocator) {}
 
     MipChainBuilder& reset() {
         imageBuilder_.reset();
@@ -555,7 +555,7 @@ public:
     }
 
 private:
-    VkDevice device_;
+    vk::Device device_;
     const vk::raii::Device* raiiDevice_ = nullptr;
     VmaAllocator allocator_;
     ImageBuilder imageBuilder_;
@@ -566,7 +566,7 @@ private:
 /**
  * ImageWithView - RAII container for a Vulkan image with its associated view
  *
- * Bundles a ManagedImage (VkImage + VmaAllocation) with a vk::raii::ImageView
+ * Bundles a ManagedImage (vk::Image + VmaAllocation) with a vk::raii::ImageView
  * for convenient lifetime management and passing around.
  *
  * Example usage:
@@ -599,12 +599,12 @@ struct ImageWithView {
         return image.get() != VK_NULL_HANDLE && view.has_value();
     }
 
-    // Get the raw VkImage handle
-    [[nodiscard]] VkImage getImage() const { return image.get(); }
+    // Get the raw vk::Image handle
+    [[nodiscard]] vk::Image getImage() const { return image.get(); }
 
-    // Get the raw VkImageView handle
-    [[nodiscard]] VkImageView getView() const {
-        return view.has_value() ? static_cast<VkImageView>(**view) : VK_NULL_HANDLE;
+    // Get the raw vk::ImageView handle
+    [[nodiscard]] vk::ImageView getView() const {
+        return view.has_value() ? static_cast<vk::ImageView>(**view) : VK_NULL_HANDLE;
     }
 };
 

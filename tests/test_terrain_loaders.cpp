@@ -262,7 +262,7 @@ TEST_SUITE("ErosionDataLoader") {
         CHECK(ErosionDataLoader::getFlowMapPath(cacheDir) == "/test/cache/flow_accumulation.exr");
         CHECK(ErosionDataLoader::getRiversPath(cacheDir) == "/test/cache/rivers.geojson");
         CHECK(ErosionDataLoader::getLakesPath(cacheDir) == "/test/cache/lakes.geojson");
-        CHECK(ErosionDataLoader::getMetadataPath(cacheDir) == "/test/cache/erosion_data.meta");
+        CHECK(ErosionDataLoader::getMetadataPath(cacheDir) == "/test/cache/watershed.meta");
     }
 
     TEST_CASE("isCacheValid returns false for missing files") {

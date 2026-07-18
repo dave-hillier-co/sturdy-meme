@@ -1,4 +1,5 @@
 #pragma once
+#include <vulkan/vulkan.hpp>
 
 #include "vulkan/AsyncTransferManager.h"
 #include "vulkan/ThreadedCommandPool.h"
@@ -46,9 +47,9 @@ public:
      * Initialize the asset registry separately (needs command pool from VulkanContext).
      * Called after init() once command pool is available.
      */
-    void initAssetRegistry(VkDevice device, VkPhysicalDevice physicalDevice,
-                           VmaAllocator allocator, VkCommandPool commandPool,
-                           VkQueue graphicsQueue);
+    void initAssetRegistry(vk::Device device, vk::PhysicalDevice physicalDevice,
+                           VmaAllocator allocator, vk::CommandPool commandPool,
+                           vk::Queue graphicsQueue);
 
     /**
      * Shutdown all infrastructure components in correct order.

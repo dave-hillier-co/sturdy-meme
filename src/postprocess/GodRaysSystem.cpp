@@ -123,7 +123,7 @@ bool GodRaysSystem::createResources() {
     return true;
 }
 
-void GodRaysSystem::recordInitialClearIfNeeded(VkCommandBuffer cmd) {
+void GodRaysSystem::recordInitialClearIfNeeded(vk::CommandBuffer cmd) {
     if (!outputNeedsInitialClear_) return;
     outputNeedsInitialClear_ = false;
 
@@ -223,7 +223,7 @@ void GodRaysSystem::destroyResources() {
     outputImage_.reset();
 }
 
-void GodRaysSystem::recordGodRaysPass(VkCommandBuffer cmd, VkImageView hdrView, VkImageView depthView) {
+void GodRaysSystem::recordGodRaysPass(vk::CommandBuffer cmd, vk::ImageView hdrView, vk::ImageView depthView) {
     vk::CommandBuffer vkCmd(cmd);
 
     // The dispatch below overwrites every texel, so no separate initial clear is needed

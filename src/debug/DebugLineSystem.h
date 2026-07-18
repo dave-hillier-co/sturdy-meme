@@ -26,11 +26,11 @@ public:
     explicit DebugLineSystem(ConstructToken) {}
 
     // Factory: returns nullptr on failure
-    static std::unique_ptr<DebugLineSystem> create(VkDevice device, VmaAllocator allocator,
-                                                    VkRenderPass renderPass,
+    static std::unique_ptr<DebugLineSystem> create(vk::Device device, VmaAllocator allocator,
+                                                    vk::RenderPass renderPass,
                                                     const std::string& shaderPath,
                                                     uint32_t framesInFlight);
-    static std::unique_ptr<DebugLineSystem> create(const InitContext& ctx, VkRenderPass renderPass);
+    static std::unique_ptr<DebugLineSystem> create(const InitContext& ctx, vk::RenderPass renderPass);
 
 
     // Destructor handles cleanup
@@ -74,7 +74,7 @@ public:
     void uploadLines();
 
     // Record draw commands
-    void recordCommands(VkCommandBuffer cmd, const glm::mat4& viewProj);
+    void recordCommands(vk::CommandBuffer cmd, const glm::mat4& viewProj);
 
     // Check if there are any lines to draw
     bool hasLines() const { return !lineVertices.empty() || !persistentLineVertices.empty(); }
@@ -84,25 +84,25 @@ public:
     size_t getTriangleCount() const { return triangleVertices.size() / 3; }
 
 private:
-    bool initInternal(VkDevice device, VmaAllocator allocator, VkRenderPass renderPass,
+    bool initInternal(vk::Device device, VmaAllocator allocator, vk::RenderPass renderPass,
                       const std::string& shaderPath, uint32_t framesInFlight);
-    bool createPipeline(VkRenderPass renderPass, const std::string& shaderPath);
+    bool createPipeline(vk::RenderPass renderPass, const std::string& shaderPath);
     void destroyPipeline();
     void cleanup();
 
-    VkDevice device = VK_NULL_HANDLE;
+    vk::Device device = VK_NULL_HANDLE;
     VmaAllocator allocator = VK_NULL_HANDLE;
 
     // Pipeline
-    VkPipelineLayout pipelineLayout = VK_NULL_HANDLE;
-    VkPipeline linePipeline = VK_NULL_HANDLE;
-    VkPipeline trianglePipeline = VK_NULL_HANDLE;
+    vk::PipelineLayout pipelineLayout = VK_NULL_HANDLE;
+    vk::Pipeline linePipeline = VK_NULL_HANDLE;
+    vk::Pipeline trianglePipeline = VK_NULL_HANDLE;
 
     // Per-frame vertex buffers (double-buffered)
     struct FrameData {
-        VkBuffer lineVertexBuffer = VK_NULL_HANDLE;
+        vk::Buffer lineVertexBuffer = VK_NULL_HANDLE;
         VmaAllocation lineVertexAllocation = VK_NULL_HANDLE;
-        VkBuffer triangleVertexBuffer = VK_NULL_HANDLE;
+        vk::Buffer triangleVertexBuffer = VK_NULL_HANDLE;
         VmaAllocation triangleVertexAllocation = VK_NULL_HANDLE;
         size_t lineBufferSize = 0;
         size_t triangleBufferSize = 0;

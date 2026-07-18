@@ -238,7 +238,7 @@ void RendererBuilder::setupPassScheduler(Renderer& r) {
 }
 
 bool RendererBuilder::createDescriptorSets(Renderer& r) {
-    VkDevice device = r.vulkanContext_->getVkDevice();
+    vk::Device device = r.vulkanContext_->getVkDevice();
 
     // Create descriptor sets for all materials via MaterialRegistry
     // This replaces the hardcoded per-material descriptor set allocation
@@ -338,8 +338,8 @@ bool RendererBuilder::createSkinnedMeshRendererDescriptorSets(Renderer& r) {
     const auto& materialRegistry = sceneBuilder.getMaterialRegistry();
 
     // Build point and spot shadow views for all frames
-    std::vector<VkImageView> pointShadowViews(Renderer::MAX_FRAMES_IN_FLIGHT);
-    std::vector<VkImageView> spotShadowViews(Renderer::MAX_FRAMES_IN_FLIGHT);
+    std::vector<vk::ImageView> pointShadowViews(Renderer::MAX_FRAMES_IN_FLIGHT);
+    std::vector<vk::ImageView> spotShadowViews(Renderer::MAX_FRAMES_IN_FLIGHT);
     for (uint32_t i = 0; i < Renderer::MAX_FRAMES_IN_FLIGHT; i++) {
         pointShadowViews[i] = r.systems_->shadow().getPointShadowArrayView(i);
         spotShadowViews[i] = r.systems_->shadow().getSpotShadowArrayView(i);
@@ -347,10 +347,10 @@ bool RendererBuilder::createSkinnedMeshRendererDescriptorSets(Renderer& r) {
 
     // Get the player's actual material from MaterialRegistry based on their materialId
     // This fixes the race condition where player could have different material based on FBX load success
-    VkImageView playerDiffuseView = whiteTexture->getImageView();
-    VkSampler playerDiffuseSampler = whiteTexture->getSampler();
-    VkImageView playerNormalView = whiteTexture->getImageView();
-    VkSampler playerNormalSampler = whiteTexture->getSampler();
+    vk::ImageView playerDiffuseView = whiteTexture->getImageView();
+    vk::Sampler playerDiffuseSampler = whiteTexture->getSampler();
+    vk::ImageView playerNormalView = whiteTexture->getImageView();
+    vk::Sampler playerNormalSampler = whiteTexture->getSampler();
 
     const ecs::World* ecsWorld = sceneBuilder.getECSWorld();
     ecs::Entity playerEntity = sceneBuilder.getPlayerEntity();
@@ -648,7 +648,7 @@ bool RendererBuilder::initDescriptorInfrastructure(Renderer& r) {
     }
 
     // Create descriptor pool (shared resource allocator)
-    VkDevice device = r.vulkanContext_->getVkDevice();
+    vk::Device device = r.vulkanContext_->getVkDevice();
     r.descriptorPool_.emplace(device, r.config_.setsPerPool, r.config_.descriptorPoolSizes);
 
     return true;
@@ -818,7 +818,7 @@ std::vector<Loading::SystemInitTask> RendererBuilder::buildInitTasks(Renderer& r
             if (r.progressCallback_) r.progressCallback_(0.28f, "Snow and weather systems");
             INIT_PROFILE_PHASE("SnowWeather");
 
-            VkRenderPass hdrRenderPass = r.systems_->postProcess().getHDRRenderPass();
+            vk::RenderPass hdrRenderPass = r.systems_->postProcess().getHDRRenderPass();
             SnowSystemGroup::CreateDeps snowDeps{*ctxPtr, hdrRenderPass};
             auto snowBundle = SnowSystemGroup::createAll(snowDeps);
             if (!snowBundle) return false;
@@ -1023,7 +1023,7 @@ std::vector<Loading::SystemInitTask> RendererBuilder::buildInitTasks(Renderer& r
         task.gpuWork = [&r, ctxPtr, sceneOrigin]() -> bool {
             if (r.progressCallback_) r.progressCallback_(0.85f, "Finalizing systems");
 
-            VkDevice device = r.vulkanContext_->getVkDevice();
+            vk::Device device = r.vulkanContext_->getVkDevice();
             CoreResources core = CoreResources::collect(
                 r.systems_->postProcess(), r.systems_->shadow(), r.systems_->terrain(), Renderer::MAX_FRAMES_IN_FLIGHT);
 
@@ -1035,8 +1035,8 @@ std::vector<Loading::SystemInitTask> RendererBuilder::buildInitTasks(Renderer& r
                 if (screenShadow) {
                     screenShadow->setDepthSource(core.hdr.depthView, r.vulkanContext_->getDepthSampler());
                     screenShadow->setShadowMapSource(
-                        static_cast<VkImageView>(r.systems_->shadow().getShadowImageView()),
-                        static_cast<VkSampler>(r.systems_->shadow().getShadowSampler()));
+                        static_cast<vk::ImageView>(r.systems_->shadow().getShadowImageView()),
+                        static_cast<vk::Sampler>(r.systems_->shadow().getShadowSampler()));
                     r.systems_->setScreenSpaceShadow(std::move(screenShadow));
                     SDL_Log("ScreenSpaceShadowSystem: Initialized for shadow buffer optimization");
                 }
@@ -1377,7 +1377,7 @@ void RendererBuilder::initResizeCoordinator(Renderer& r) {
     }
 
     // Register core resize handler for swapchain, depth buffer, and framebuffers
-    r.resizeCoordinator_->setCoreResizeHandler([&r](VkDevice, VmaAllocator) -> VkExtent2D {
+    r.resizeCoordinator_->setCoreResizeHandler([&r](vk::Device, VmaAllocator) -> VkExtent2D {
         // Recreate swapchain
         if (!r.vulkanContext_->recreateSwapchain()) {
             SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to recreate swapchain");

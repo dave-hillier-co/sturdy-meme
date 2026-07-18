@@ -117,9 +117,9 @@ struct CharacterLODMeshData {
 
 // GPU-uploaded mesh for a single LOD level
 struct CharacterLODMesh {
-    VkBuffer vertexBuffer = VK_NULL_HANDLE;
+    vk::Buffer vertexBuffer = VK_NULL_HANDLE;
     VmaAllocation vertexAllocation = VK_NULL_HANDLE;
-    VkBuffer indexBuffer = VK_NULL_HANDLE;
+    vk::Buffer indexBuffer = VK_NULL_HANDLE;
     VmaAllocation indexAllocation = VK_NULL_HANDLE;
     uint32_t indexCount = 0;
     uint32_t triangleCount = 0;

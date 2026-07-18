@@ -77,10 +77,10 @@ public:
     struct InitInfo {
         const vk::raii::Device* raiiDevice = nullptr;
         std::string cacheDirectory;
-        VkDevice device;
+        vk::Device device;
         VmaAllocator allocator;
-        VkQueue graphicsQueue;
-        VkCommandPool commandPool;
+        vk::Queue graphicsQueue;
+        vk::CommandPool commandPool;
         float terrainSize;      // Total terrain size in world units
         float heightScale;      // Height scale: h=1 -> worldY=heightScale
         YieldCallback yieldCallback;  // Optional: yield during long operations
@@ -132,10 +132,10 @@ public:
     bool isTileLoaded(TileCoord coord, uint32_t lod) const;
 
     // Get sampler for tile textures
-    VkSampler getSampler() const { return sampler_ ? **sampler_ : VK_NULL_HANDLE; }
+    vk::Sampler getSampler() const { return sampler_ ? **sampler_ : VK_NULL_HANDLE; }
 
     // Get tile array image view (sampler2DArray)
-    VkImageView getTileArrayView() const { return tileArray_.getArrayView(); }
+    vk::ImageView getTileArrayView() const { return tileArray_.getArrayView(); }
 
     // Get active tile count and descriptors for shader binding
     uint32_t getActiveTileCount() const { return static_cast<uint32_t>(activeTiles.size()); }
@@ -149,7 +149,7 @@ public:
     // IMPORTANT: Always use this per-frame version to avoid CPU-GPU sync issues.
     // The buffer is written by CPU during updateActiveTiles() and read by GPU shaders.
     // Using the wrong frame's buffer causes flickering artifacts.
-    VkBuffer getTileInfoBuffer(uint32_t frameIndex) const {
+    vk::Buffer getTileInfoBuffer(uint32_t frameIndex) const {
         return tileInfoBuffer_.getBuffer(frameIndex);
     }
 
@@ -192,16 +192,16 @@ public:
     bool hasBaseLODTiles() const { return baseHeightMap_.hasBaseTiles(); }
 
     // Get base heightmap texture (combined from LOD3 tiles) for GPU fallback
-    VkImageView getBaseHeightMapView() const { return baseHeightMap_.getHeightMapView(); }
-    VkSampler getBaseHeightMapSampler() const { return sampler_ ? **sampler_ : VK_NULL_HANDLE; }
+    vk::ImageView getBaseHeightMapView() const { return baseHeightMap_.getHeightMapView(); }
+    vk::Sampler getBaseHeightMapSampler() const { return sampler_ ? **sampler_ : VK_NULL_HANDLE; }
 
     // Get base heightmap CPU data for fallback height queries
     const std::vector<float>& getBaseHeightMapData() const { return baseHeightMap_.getHeightMapData(); }
     uint32_t getBaseHeightMapResolution() const { return baseHeightMap_.getHeightMapResolution(); }
 
     // Hole mask GPU resource accessors (tiled array texture)
-    VkImageView getHoleMaskArrayView() const { return holeMask_.getArrayView(); }
-    VkSampler getHoleMaskSampler() const { return holeMask_.getSampler(); }
+    vk::ImageView getHoleMaskArrayView() const { return holeMask_.getArrayView(); }
+    vk::Sampler getHoleMaskSampler() const { return holeMask_.getSampler(); }
 
     // Hole management - geometric primitives rasterized on demand
     void addHoleCircle(float centerX, float centerZ, float radius);
@@ -278,10 +278,10 @@ private:
 
     // Vulkan resources
     const vk::raii::Device* raiiDevice_ = nullptr;
-    VkDevice device = VK_NULL_HANDLE;
+    vk::Device device = VK_NULL_HANDLE;
     VmaAllocator allocator = VK_NULL_HANDLE;
-    VkQueue graphicsQueue = VK_NULL_HANDLE;
-    VkCommandPool commandPool = VK_NULL_HANDLE;
+    vk::Queue graphicsQueue = VK_NULL_HANDLE;
+    vk::CommandPool commandPool = VK_NULL_HANDLE;
     std::optional<vk::raii::Sampler> sampler_;
 
     // Yield callback for long operations (allows loading screen to update)

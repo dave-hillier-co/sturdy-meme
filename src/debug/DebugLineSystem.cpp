@@ -8,8 +8,8 @@
 #include <algorithm>
 
 // Factory methods
-std::unique_ptr<DebugLineSystem> DebugLineSystem::create(VkDevice device, VmaAllocator allocator,
-                                                          VkRenderPass renderPass,
+std::unique_ptr<DebugLineSystem> DebugLineSystem::create(vk::Device device, VmaAllocator allocator,
+                                                          vk::RenderPass renderPass,
                                                           const std::string& shaderPath,
                                                           uint32_t framesInFlight) {
     auto system = std::make_unique<DebugLineSystem>(ConstructToken{});
@@ -19,7 +19,7 @@ std::unique_ptr<DebugLineSystem> DebugLineSystem::create(VkDevice device, VmaAll
     return system;
 }
 
-std::unique_ptr<DebugLineSystem> DebugLineSystem::create(const InitContext& ctx, VkRenderPass renderPass) {
+std::unique_ptr<DebugLineSystem> DebugLineSystem::create(const InitContext& ctx, vk::RenderPass renderPass) {
     return create(ctx.device, ctx.allocator, renderPass, ctx.shaderPath, ctx.framesInFlight);
 }
 
@@ -73,7 +73,7 @@ DebugLineSystem& DebugLineSystem::operator=(DebugLineSystem&& other) noexcept {
 }
 
 // Internal initialization
-bool DebugLineSystem::initInternal(VkDevice device, VmaAllocator allocator, VkRenderPass renderPass,
+bool DebugLineSystem::initInternal(vk::Device device, VmaAllocator allocator, vk::RenderPass renderPass,
                                     const std::string& shaderPath, uint32_t framesInFlight) {
     this->device = device;
     this->allocator = allocator;
@@ -113,7 +113,7 @@ void DebugLineSystem::cleanup() {
     allocator = VK_NULL_HANDLE;
 }
 
-bool DebugLineSystem::createPipeline(VkRenderPass renderPass, const std::string& shaderPath) {
+bool DebugLineSystem::createPipeline(vk::RenderPass renderPass, const std::string& shaderPath) {
     // Load shaders
     auto vertShader = ShaderLoader::loadShaderModule(device, shaderPath + "/debug_line.vert.spv", ShaderLoader::RaiiTag{});
     auto fragShader = ShaderLoader::loadShaderModule(device, shaderPath + "/debug_line.frag.spv", ShaderLoader::RaiiTag{});
@@ -503,7 +503,7 @@ void DebugLineSystem::uploadLines() {
             allocInfo.flags = VMA_ALLOCATION_CREATE_MAPPED_BIT;
 
             if (vmaCreateBuffer(allocator, reinterpret_cast<const VkBufferCreateInfo*>(&bufferInfo), &allocInfo,
-                               &frame.lineVertexBuffer, &frame.lineVertexAllocation, nullptr) != VK_SUCCESS) {
+                               reinterpret_cast<VkBuffer*>(&frame.lineVertexBuffer), &frame.lineVertexAllocation, nullptr) != VK_SUCCESS) {
                 SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "DebugLineSystem: Failed to create line vertex buffer");
                 return;
             }
@@ -547,7 +547,7 @@ void DebugLineSystem::uploadLines() {
             allocInfo.flags = VMA_ALLOCATION_CREATE_MAPPED_BIT;
 
             if (vmaCreateBuffer(allocator, reinterpret_cast<const VkBufferCreateInfo*>(&bufferInfo), &allocInfo,
-                               &frame.triangleVertexBuffer, &frame.triangleVertexAllocation, nullptr) != VK_SUCCESS) {
+                               reinterpret_cast<VkBuffer*>(&frame.triangleVertexBuffer), &frame.triangleVertexAllocation, nullptr) != VK_SUCCESS) {
                 SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "DebugLineSystem: Failed to create triangle vertex buffer");
                 return;
             }
@@ -562,7 +562,7 @@ void DebugLineSystem::uploadLines() {
     }
 }
 
-void DebugLineSystem::recordCommands(VkCommandBuffer cmd, const glm::mat4& viewProj) {
+void DebugLineSystem::recordCommands(vk::CommandBuffer cmd, const glm::mat4& viewProj) {
     if (currentFrame >= frameData.size()) return;
 
     auto& frame = frameData[currentFrame];

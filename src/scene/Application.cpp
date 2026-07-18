@@ -602,7 +602,7 @@ bool Application::init(const std::string& title, int width, int height) {
     }
 
     // Set GUI render callback
-    renderer_->setGuiRenderCallback([this](VkCommandBuffer cmd) {
+    renderer_->setGuiRenderCallback([this](vk::CommandBuffer cmd) {
         gui_->endFrame(cmd);
     });
 
@@ -640,7 +640,7 @@ bool Application::init(const std::string& title, int width, int height) {
     }
 
     // Set ragdoll draw callback for rendering physics-driven ragdolls
-    renderer_->setRagdollDrawCallback([this](VkCommandBuffer cmd, uint32_t frameIndex) {
+    renderer_->setRagdollDrawCallback([this](vk::CommandBuffer cmd, uint32_t frameIndex) {
         if (!ragdollRenderer_.isConfigured() || ragdolls_.empty() || !physics_) return;
         auto& sceneBuilder = renderer_->getSystems().scene().getSceneBuilder();
         if (!sceneBuilder.hasCharacter()) return;

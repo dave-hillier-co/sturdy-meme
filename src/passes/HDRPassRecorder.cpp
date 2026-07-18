@@ -39,7 +39,7 @@ void HDRPassRecorder::beginHDRRenderPass(vk::CommandBuffer vkCmd, vk::SubpassCon
     vkCmd.beginRenderPass(hdrPassInfo, contents);
 }
 
-void HDRPassRecorder::record(VkCommandBuffer cmd, uint32_t frameIndex, float time, const Params& params) {
+void HDRPassRecorder::record(vk::CommandBuffer cmd, uint32_t frameIndex, float time, const Params& params) {
     vk::CommandBuffer vkCmd(cmd);
 
     profiler_.beginGpuZone(cmd, "HDRPass");
@@ -64,7 +64,7 @@ void HDRPassRecorder::record(VkCommandBuffer cmd, uint32_t frameIndex, float tim
     profiler_.endGpuZone(cmd, "HDRPass");
 }
 
-void HDRPassRecorder::recordWithSecondaries(VkCommandBuffer cmd, uint32_t frameIndex, float time,
+void HDRPassRecorder::recordWithSecondaries(vk::CommandBuffer cmd, uint32_t frameIndex, float time,
                                             const std::vector<vk::CommandBuffer>& secondaries,
                                             const Params& params) {
     (void)params;
@@ -88,7 +88,7 @@ void HDRPassRecorder::recordWithSecondaries(VkCommandBuffer cmd, uint32_t frameI
     profiler_.endGpuZone(cmd, "HDRPass");
 }
 
-void HDRPassRecorder::recordSecondarySlot(VkCommandBuffer cmd, uint32_t frameIndex, float time,
+void HDRPassRecorder::recordSecondarySlot(vk::CommandBuffer cmd, uint32_t frameIndex, float time,
                                           uint32_t slot, const Params& params) {
     // Record only drawables assigned to this slot
     for (const auto& entry : drawables_) {

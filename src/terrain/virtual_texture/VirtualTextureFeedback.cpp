@@ -8,7 +8,7 @@
 
 namespace VirtualTexture {
 
-std::unique_ptr<VirtualTextureFeedback> VirtualTextureFeedback::create(VkDevice device, VmaAllocator allocator,
+std::unique_ptr<VirtualTextureFeedback> VirtualTextureFeedback::create(vk::Device device, VmaAllocator allocator,
                                                                         uint32_t maxEntries, uint32_t frameCount) {
     auto feedback = std::make_unique<VirtualTextureFeedback>(ConstructToken{});
     if (!feedback->initInternal(device, allocator, maxEntries, frameCount)) {
@@ -21,7 +21,7 @@ VirtualTextureFeedback::~VirtualTextureFeedback() {
     cleanup();
 }
 
-bool VirtualTextureFeedback::initInternal(VkDevice device, VmaAllocator allocator,
+bool VirtualTextureFeedback::initInternal(vk::Device device, VmaAllocator allocator,
                                            uint32_t entries, uint32_t frameCount) {
     maxEntries = entries;
     frameBuffers.resize(frameCount);
@@ -49,8 +49,8 @@ void VirtualTextureFeedback::cleanup() {
 }
 
 bool VirtualTextureFeedback::createFrameBuffer(VmaAllocator allocator, FrameBuffer& fb) {
-    VkDeviceSize feedbackSize = maxEntries * sizeof(uint32_t);
-    VkDeviceSize counterSize = sizeof(uint32_t);
+    vk::DeviceSize feedbackSize = maxEntries * sizeof(uint32_t);
+    vk::DeviceSize counterSize = sizeof(uint32_t);
 
     // GPU feedback buffer (storage buffer, written by shader)
     if (!VmaBufferFactory::createStorageBuffer(allocator, feedbackSize, fb.feedbackBuffer)) {
@@ -77,7 +77,7 @@ bool VirtualTextureFeedback::createFrameBuffer(VmaAllocator allocator, FrameBuff
     return true;
 }
 
-void VirtualTextureFeedback::clear(VkCommandBuffer cmd, uint32_t frameIndex) {
+void VirtualTextureFeedback::clear(vk::CommandBuffer cmd, uint32_t frameIndex) {
     if (frameIndex >= frameBuffers.size()) return;
 
     FrameBuffer& fb = frameBuffers[frameIndex];
@@ -96,7 +96,7 @@ void VirtualTextureFeedback::clear(VkCommandBuffer cmd, uint32_t frameIndex) {
     }
 }
 
-void VirtualTextureFeedback::recordCopyToReadback(VkCommandBuffer cmd, uint32_t frameIndex) {
+void VirtualTextureFeedback::recordCopyToReadback(vk::CommandBuffer cmd, uint32_t frameIndex) {
     if (frameIndex >= frameBuffers.size()) return;
 
     FrameBuffer& fb = frameBuffers[frameIndex];
@@ -188,12 +188,12 @@ std::vector<TileId> VirtualTextureFeedback::getRequestedTiles() const {
     return requestedTilesSorted;
 }
 
-VkBuffer VirtualTextureFeedback::getFeedbackBuffer(uint32_t frameIndex) const {
+vk::Buffer VirtualTextureFeedback::getFeedbackBuffer(uint32_t frameIndex) const {
     if (frameIndex >= frameBuffers.size()) return VK_NULL_HANDLE;
     return frameBuffers[frameIndex].feedbackBuffer.get();
 }
 
-VkBuffer VirtualTextureFeedback::getCounterBuffer(uint32_t frameIndex) const {
+vk::Buffer VirtualTextureFeedback::getCounterBuffer(uint32_t frameIndex) const {
     if (frameIndex >= frameBuffers.size()) return VK_NULL_HANDLE;
     return frameBuffers[frameIndex].counterBuffer.get();
 }

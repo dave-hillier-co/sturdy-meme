@@ -53,7 +53,7 @@ public:
     // Execute a complete frame: sync → acquire → build → submit → present → advance.
     // Callback receives (imageIndex, frameIndex) and returns the recorded command buffer.
     // Return VK_NULL_HANDLE from the callback to skip the frame.
-    using FrameBuilder = std::function<VkCommandBuffer(uint32_t imageIndex, uint32_t frameIndex)>;
+    using FrameBuilder = std::function<vk::CommandBuffer(uint32_t imageIndex, uint32_t frameIndex)>;
     FrameResult execute(const FrameBuilder& builder);
 
     // Frame index for the current frame slot (valid between execute calls)
@@ -69,7 +69,7 @@ public:
 
 private:
     FrameResult acquireImage(uint32_t& imageIndex);
-    FrameResult submitCommandBuffer(VkCommandBuffer cmd, uint32_t imageIndex);
+    FrameResult submitCommandBuffer(vk::CommandBuffer cmd, uint32_t imageIndex);
     FrameResult present(uint32_t imageIndex);
 
     // Ensure the per-image present-wait semaphores match the current swapchain

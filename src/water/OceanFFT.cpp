@@ -392,7 +392,7 @@ bool OceanFFT::createDescriptorSets() {
     }
 
     vk::Device vkDevice(device);
-    auto allocateOne = [&](vk::DescriptorSetLayout layout, VkDescriptorSet& outSet) {
+    auto allocateOne = [&](vk::DescriptorSetLayout layout, vk::DescriptorSet& outSet) {
         auto allocInfo = vk::DescriptorSetAllocateInfo{}
             .setDescriptorPool(**descriptorPool_)
             .setSetLayouts(layout);
@@ -447,10 +447,10 @@ bool OceanFFT::createDescriptorSets() {
         // (pingpong 1) for each component. Written once, never rewritten.
         for (int c = 0; c < kComponents; c++) {
             for (int p = 0; p < 2; p++) {
-                VkDescriptorSet& set = fftDescSets[(i * kComponents + c) * 2 + p];
+                vk::DescriptorSet& set = fftDescSets[(i * kComponents + c) * 2 + p];
                 if (!allocateOne(**fftDescLayout_, set)) return false;
-                VkImageView inputView = (p == 0) ? **cascade.hktView[c] : **cascade.scratchView[c];
-                VkImageView outputView = (p == 0) ? **cascade.scratchView[c] : **cascade.hktView[c];
+                vk::ImageView inputView = (p == 0) ? **cascade.hktView[c] : **cascade.scratchView[c];
+                vk::ImageView outputView = (p == 0) ? **cascade.scratchView[c] : **cascade.hktView[c];
                 DescriptorManager::SetWriter(device, set)
                     .writeStorageImage(Bindings::OCEAN_FFT_INPUT, inputView)
                     .writeStorageImage(Bindings::OCEAN_FFT_OUTPUT, outputView)
@@ -491,7 +491,7 @@ bool OceanFFT::transitionImagesToGeneral() {
     return cmd.end();
 }
 
-void OceanFFT::recordCompute(VkCommandBuffer cmd, float time) {
+void OceanFFT::recordCompute(vk::CommandBuffer cmd, float time) {
     if (!enabled) return;
 
     vk::CommandBuffer vkCmd(cmd);
@@ -534,7 +534,7 @@ void OceanFFT::recordCompute(VkCommandBuffer cmd, float time) {
         {}, barrier, {}, {});
 }
 
-void OceanFFT::recordSpectrumGeneration(VkCommandBuffer cmd, int cascadeIndex) {
+void OceanFFT::recordSpectrumGeneration(vk::CommandBuffer cmd, int cascadeIndex) {
     // Update UBO with current parameters. The UBO is only read by this
     // dispatch; regeneration is rare (GUI parameter changes), so a single
     // buffer per cascade is sufficient.
@@ -559,7 +559,7 @@ void OceanFFT::recordSpectrumGeneration(VkCommandBuffer cmd, int cascadeIndex) {
     vkCmd.dispatch(groupCount, groupCount, 1);
 }
 
-void OceanFFT::recordTimeEvolution(VkCommandBuffer cmd, int cascadeIndex, float time) {
+void OceanFFT::recordTimeEvolution(vk::CommandBuffer cmd, int cascadeIndex, float time) {
     vk::CommandBuffer vkCmd(cmd);
     vkCmd.bindPipeline(vk::PipelineBindPoint::eCompute, **timeEvolutionPipeline_);
     vkCmd.bindDescriptorSets(vk::PipelineBindPoint::eCompute, **timeEvolutionPipelineLayout_,
@@ -578,7 +578,7 @@ void OceanFFT::recordTimeEvolution(VkCommandBuffer cmd, int cascadeIndex, float 
     vkCmd.dispatch(groupCount, groupCount, 1);
 }
 
-void OceanFFT::recordFFT(VkCommandBuffer cmd, int cascadeIndex, int component) {
+void OceanFFT::recordFFT(vk::CommandBuffer cmd, int cascadeIndex, int component) {
     // 2D inverse FFT: log2(N) horizontal butterfly passes, then log2(N)
     // vertical ones. Each pass ping-pongs between the component's hkt image
     // and its private scratch image; 2*log2(N) is even, so the final result
@@ -609,7 +609,7 @@ void OceanFFT::recordFFT(VkCommandBuffer cmd, int cascadeIndex, int component) {
     }
 }
 
-void OceanFFT::recordDisplacementGeneration(VkCommandBuffer cmd, int cascadeIndex) {
+void OceanFFT::recordDisplacementGeneration(vk::CommandBuffer cmd, int cascadeIndex) {
     vk::CommandBuffer vkCmd(cmd);
     vkCmd.bindPipeline(vk::PipelineBindPoint::eCompute, **displacementPipeline_);
     vkCmd.bindDescriptorSets(vk::PipelineBindPoint::eCompute, **displacementPipelineLayout_,
@@ -630,17 +630,17 @@ void OceanFFT::recordDisplacementGeneration(VkCommandBuffer cmd, int cascadeInde
     vkCmd.dispatch(groupCount, groupCount, 1);
 }
 
-VkImageView OceanFFT::getDisplacementView(int cascade) const {
+vk::ImageView OceanFFT::getDisplacementView(int cascade) const {
     if (cascade < 0 || cascade >= cascadeCount) return VK_NULL_HANDLE;
     return cascades[cascade].displacementMapView ? **cascades[cascade].displacementMapView : VK_NULL_HANDLE;
 }
 
-VkImageView OceanFFT::getNormalView(int cascade) const {
+vk::ImageView OceanFFT::getNormalView(int cascade) const {
     if (cascade < 0 || cascade >= cascadeCount) return VK_NULL_HANDLE;
     return cascades[cascade].normalMapView ? **cascades[cascade].normalMapView : VK_NULL_HANDLE;
 }
 
-VkImageView OceanFFT::getFoamView(int cascade) const {
+vk::ImageView OceanFFT::getFoamView(int cascade) const {
     if (cascade < 0 || cascade >= cascadeCount) return VK_NULL_HANDLE;
     return cascades[cascade].foamMapView ? **cascades[cascade].foamMapView : VK_NULL_HANDLE;
 }

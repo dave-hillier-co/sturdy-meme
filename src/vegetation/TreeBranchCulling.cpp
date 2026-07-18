@@ -77,7 +77,7 @@ bool TreeBranchCulling::createCullPipeline() {
            .addBinding(Bindings::TREE_BRANCH_SHADOW_UNIFORMS, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_COMPUTE_BIT)
            .addBinding(Bindings::TREE_BRANCH_SHADOW_GROUPS, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_COMPUTE_BIT);
 
-    VkDescriptorSetLayout rawDescSetLayout = builder.build();
+    vk::DescriptorSetLayout rawDescSetLayout = builder.build();
     if (rawDescSetLayout == VK_NULL_HANDLE) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
                      "TreeBranchCulling: Failed to create descriptor set layout");
@@ -85,7 +85,7 @@ bool TreeBranchCulling::createCullPipeline() {
     }
     cullDescriptorSetLayout_.emplace(*raiiDevice_, rawDescSetLayout);
 
-    VkPipelineLayout rawPipelineLayout = DescriptorManager::createPipelineLayout(device_, **cullDescriptorSetLayout_);
+    vk::PipelineLayout rawPipelineLayout = DescriptorManager::createPipelineLayout(device_, **cullDescriptorSetLayout_);
     if (rawPipelineLayout == VK_NULL_HANDLE) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
                      "TreeBranchCulling: Failed to create pipeline layout");
@@ -119,14 +119,14 @@ bool TreeBranchCulling::createBuffers() {
     allocInfo.usage = VMA_MEMORY_USAGE_CPU_TO_GPU;
     allocInfo.flags = VMA_ALLOCATION_CREATE_MAPPED_BIT;
 
-    if (vmaCreateBuffer(allocator_, reinterpret_cast<const VkBufferCreateInfo*>(&bufferInfo), &allocInfo, &inputBuffer_, &inputAllocation_, nullptr) != VK_SUCCESS) {
+    if (vmaCreateBuffer(allocator_, reinterpret_cast<const VkBufferCreateInfo*>(&bufferInfo), &allocInfo, reinterpret_cast<VkBuffer*>(&inputBuffer_), &inputAllocation_, nullptr) != VK_SUCCESS) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "TreeBranchCulling: Failed to create input buffer");
         return false;
     }
 
     // Mesh group metadata buffer
     bufferInfo.setSize(maxMeshGroups_ * sizeof(BranchMeshGroupGPU));
-    if (vmaCreateBuffer(allocator_, reinterpret_cast<const VkBufferCreateInfo*>(&bufferInfo), &allocInfo, &meshGroupBuffer_, &meshGroupAllocation_, nullptr) != VK_SUCCESS) {
+    if (vmaCreateBuffer(allocator_, reinterpret_cast<const VkBufferCreateInfo*>(&bufferInfo), &allocInfo, reinterpret_cast<VkBuffer*>(&meshGroupBuffer_), &meshGroupAllocation_, nullptr) != VK_SUCCESS) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "TreeBranchCulling: Failed to create mesh group buffer");
         return false;
     }
@@ -371,7 +371,7 @@ void TreeBranchCulling::updateTreeData(const TreeSystem& treeSystem, const TreeL
     }
 }
 
-void TreeBranchCulling::recordCulling(VkCommandBuffer cmd, uint32_t frameIndex,
+void TreeBranchCulling::recordCulling(vk::CommandBuffer cmd, uint32_t frameIndex,
                                        uint32_t cascadeIndex,
                                        const glm::vec4* cascadeFrustumPlanes,
                                        const glm::vec3& cameraPos,
@@ -439,10 +439,10 @@ void TreeBranchCulling::recordCulling(VkCommandBuffer cmd, uint32_t frameIndex,
     BarrierHelpers::computeToIndirectDrawAndShader(vkCmd);
 }
 
-VkBuffer TreeBranchCulling::getInstanceBuffer(uint32_t frameIndex) const {
+vk::Buffer TreeBranchCulling::getInstanceBuffer(uint32_t frameIndex) const {
     return outputBuffers_.getVk(frameIndex);
 }
 
-VkBuffer TreeBranchCulling::getIndirectBuffer(uint32_t frameIndex) const {
+vk::Buffer TreeBranchCulling::getIndirectBuffer(uint32_t frameIndex) const {
     return indirectBuffers_.getVk(frameIndex);
 }

@@ -62,7 +62,7 @@ struct GPUMeshBatch {
     // Optional set-0 descriptor override for objects without a MaterialRegistry materialId
     // (e.g. ScatterSystem rocks/detritus, which own a single set on the same layout).
     // When null, the draw resolves set 0 via MaterialRegistry::getDescriptorSet(materialId).
-    VkDescriptorSet overrideDescriptorSet = VK_NULL_HANDLE;
+    vk::DescriptorSet overrideDescriptorSet = VK_NULL_HANDLE;
 };
 
 /**
@@ -107,7 +107,7 @@ public:
     // Returns the object index, or -1 if buffer is full
     // overrideSet: optional set-0 descriptor for objects without a MaterialRegistry
     // materialId (e.g. scatter rocks/detritus). Pass VK_NULL_HANDLE for normal objects.
-    int32_t addObject(const ecs::RenderData& data, VkDescriptorSet overrideSet = VK_NULL_HANDLE);
+    int32_t addObject(const ecs::RenderData& data, vk::DescriptorSet overrideSet = VK_NULL_HANDLE);
 
     // Finalize the frame: upload to GPU
     // Call after all addObject() calls for the frame
@@ -117,13 +117,13 @@ public:
     void resetDrawCount(vk::CommandBuffer cmd);
 
     // Get buffer accessors
-    VkBuffer getInstanceBuffer(uint32_t frameIndex) const { return instanceBuffers_.buffers[frameIndex]; }
-    VkDeviceSize getInstanceBufferSize() const {
-        return static_cast<VkDeviceSize>(MAX_GPU_SCENE_OBJECTS) * sizeof(GPUSceneInstanceData);
+    vk::Buffer getInstanceBuffer(uint32_t frameIndex) const { return instanceBuffers_.buffers[frameIndex]; }
+    vk::DeviceSize getInstanceBufferSize() const {
+        return static_cast<vk::DeviceSize>(MAX_GPU_SCENE_OBJECTS) * sizeof(GPUSceneInstanceData);
     }
-    VkBuffer getCullObjectBuffer() const { return cullObjectBuffer_.get(); }
-    VkBuffer getIndirectBuffer(uint32_t frameIndex) const { return indirectBuffers_.buffers[frameIndex]; }
-    VkBuffer getDrawCountBuffer(uint32_t frameIndex) const { return drawCountBuffers_.buffers[frameIndex]; }
+    vk::Buffer getCullObjectBuffer() const { return cullObjectBuffer_.get(); }
+    vk::Buffer getIndirectBuffer(uint32_t frameIndex) const { return indirectBuffers_.buffers[frameIndex]; }
+    vk::Buffer getDrawCountBuffer(uint32_t frameIndex) const { return drawCountBuffers_.buffers[frameIndex]; }
 
     // Get object counts
     uint32_t getObjectCount() const { return static_cast<uint32_t>(instances_.size()); }
@@ -161,7 +161,7 @@ private:
     struct ObjectDrawInfo {
         const Mesh* mesh = nullptr;
         MaterialId materialId = INVALID_MATERIAL_ID;
-        VkDescriptorSet overrideSet = VK_NULL_HANDLE;
+        vk::DescriptorSet overrideSet = VK_NULL_HANDLE;
     };
     std::vector<ObjectDrawInfo> drawInfo_;
 

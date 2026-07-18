@@ -40,10 +40,10 @@ class ComputePipelineBuilder {
 public:
     // Construct with RAII device (preferred)
     explicit ComputePipelineBuilder(const vk::raii::Device& device)
-        : raiiDevice_(&device), rawDevice_(static_cast<VkDevice>(*device)) {}
+        : raiiDevice_(&device), rawDevice_(static_cast<vk::Device>(*device)) {}
 
     // Construct with raw device (for gradual migration)
-    explicit ComputePipelineBuilder(VkDevice device)
+    explicit ComputePipelineBuilder(vk::Device device)
         : raiiDevice_(nullptr), rawDevice_(device) {}
 
     // Reset builder for reuse
@@ -110,7 +110,7 @@ public:
     std::optional<vk::raii::Pipeline> build() {
         if (!raiiDevice_) {
             SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
-                "ComputePipelineBuilder: RAII device required for build(). Use buildRaw() for VkDevice.");
+                "ComputePipelineBuilder: RAII device required for build(). Use buildRaw() for vk::Device.");
             return std::nullopt;
         }
 
@@ -191,9 +191,9 @@ public:
         return false;
     }
 
-    // Build returning raw VkPipeline (for use with raw VkDevice)
+    // Build returning raw vk::Pipeline (for use with raw vk::Device)
     // Caller owns the returned pipeline handle
-    bool buildRaw(VkPipeline& outPipeline) {
+    bool buildRaw(vk::Pipeline& outPipeline) {
         if (!pipelineLayout_) {
             SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
                 "ComputePipelineBuilder: Pipeline layout not set");
@@ -271,7 +271,7 @@ public:
             return false;
         }
 
-        VkPipeline rawPipeline = VK_NULL_HANDLE;
+        vk::Pipeline rawPipeline = VK_NULL_HANDLE;
         if (!buildRaw(rawPipeline)) {
             return false;
         }
@@ -282,7 +282,7 @@ public:
 
 private:
     const vk::raii::Device* raiiDevice_ = nullptr;
-    VkDevice rawDevice_ = VK_NULL_HANDLE;
+    vk::Device rawDevice_ = VK_NULL_HANDLE;
 
     std::string shaderPath_;
     vk::ShaderModule shaderModule_ = nullptr;

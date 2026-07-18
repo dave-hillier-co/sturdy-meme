@@ -66,7 +66,7 @@ struct InstanceBatch {
  *   2. addInstance(renderable) for each scene object
  *   3. finalize() - Uploads data and builds batches
  *   4. getBatches() - Returns batches for instanced rendering
- *   5. getBuffer(frameIndex) - Get VkBuffer for descriptor binding
+ *   5. getBuffer(frameIndex) - Get vk::Buffer for descriptor binding
  */
 class SceneInstanceBuffer {
 public:
@@ -94,7 +94,7 @@ public:
     const std::vector<InstanceBatch>& getBatches() const { return batches_; }
 
     // Get the GPU buffer for the current frame (for descriptor binding)
-    VkBuffer getBuffer(uint32_t frameIndex) const {
+    vk::Buffer getBuffer(uint32_t frameIndex) const {
         return instanceBuffers_[frameIndex].get();
     }
 

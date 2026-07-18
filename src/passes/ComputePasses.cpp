@@ -44,7 +44,7 @@ PassIds addPasses(PassScheduler& graph, RendererSystems& systems, const Config& 
         .execute = [&systems, perfToggles](PassScheduler::RenderContext& ctx) {
             RenderContext* renderCtx = static_cast<RenderContext*>(ctx.userData);
             if (!renderCtx) return;
-            VkCommandBuffer cmd = renderCtx->cmd;
+            vk::CommandBuffer cmd = renderCtx->cmd;
             uint32_t frameIndex = renderCtx->frameIndex;
 
             systems.profiler().beginCpuZone("ComputeDispatch");
@@ -108,8 +108,8 @@ PassIds addPasses(PassScheduler& graph, RendererSystems& systems, const Config& 
             if (impostorCull && systems.tree()) {
                 systems.profiler().beginGpuZone(cmd, "ImpostorCull");
 
-                VkImageView hiZView = systems.hiZ().getHiZPyramidView();
-                VkSampler hiZSampler = systems.hiZ().getHiZSampler();
+                vk::ImageView hiZView = systems.hiZ().getHiZPyramidView();
+                vk::Sampler hiZSampler = systems.hiZ().getHiZSampler();
 
                 ImpostorCullSystem::LODParams lodParams;
                 if (systems.treeLOD()) {
@@ -190,7 +190,7 @@ PassIds addPasses(PassScheduler& graph, RendererSystems& systems, const Config& 
         .execute = [&systems, perfToggles](PassScheduler::RenderContext& ctx) {
             RenderContext* renderCtx = static_cast<RenderContext*>(ctx.userData);
             if (!renderCtx) return;
-            VkCommandBuffer cmd = renderCtx->cmd;
+            vk::CommandBuffer cmd = renderCtx->cmd;
             uint32_t frameIndex = renderCtx->frameIndex;
 
             systems.postProcess().setCameraPlanes(
@@ -257,7 +257,7 @@ PassIds addPasses(PassScheduler& graph, RendererSystems& systems, const Config& 
             .execute = [&systems](PassScheduler::RenderContext& ctx) {
                 RenderContext* renderCtx = static_cast<RenderContext*>(ctx.userData);
                 if (!renderCtx) return;
-                VkCommandBuffer cmd = renderCtx->cmd;
+                vk::CommandBuffer cmd = renderCtx->cmd;
                 uint32_t frameIndex = renderCtx->frameIndex;
 
                 GPUSceneBuffer& sceneBuffer = systems.gpuSceneBuffer();

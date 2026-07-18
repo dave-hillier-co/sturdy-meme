@@ -150,7 +150,7 @@ bool WaterSystem::createDescriptorSetLayout() {
     constexpr VkShaderStageFlags ALL_STAGES = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT |
                                                VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT | VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT;
 
-    VkDescriptorSetLayout rawLayout = DescriptorManager::LayoutBuilder(device)
+    vk::DescriptorSetLayout rawLayout = DescriptorManager::LayoutBuilder(device)
         .addUniformBuffer(ALL_STAGES)                           // 0: Main UBO (used by all stages)
         .addUniformBuffer(VERTEX_TESS | VK_SHADER_STAGE_FRAGMENT_BIT)  // 1: Water uniforms
         .addCombinedImageSampler(VK_SHADER_STAGE_FRAGMENT_BIT)  // 2: Shadow map
@@ -191,7 +191,7 @@ bool WaterSystem::createDescriptorSetLayout() {
     pushConstantRange.offset = 0;
     pushConstantRange.size = sizeof(PushConstants);
 
-    VkPipelineLayout rawPipelineLayout = DescriptorManager::createPipelineLayout(device, **descriptorSetLayout_, {pushConstantRange});
+    vk::PipelineLayout rawPipelineLayout = DescriptorManager::createPipelineLayout(device, **descriptorSetLayout_, {pushConstantRange});
     if (rawPipelineLayout == VK_NULL_HANDLE) {
         SDL_Log("Failed to create water pipeline layout");
         return false;
@@ -213,7 +213,7 @@ bool WaterSystem::createPipeline() {
 
     // Water pipeline: alpha blending, depth test but no depth write (for transparency)
     // Depth bias prevents z-fighting flickering at water/terrain intersection
-    VkPipeline rawPipeline = VK_NULL_HANDLE;
+    vk::Pipeline rawPipeline = VK_NULL_HANDLE;
     bool success = factory
         .setShaders(shaderPath + "/water.vert.spv", shaderPath + "/water.frag.spv")
         .setRenderPass(hdrRenderPass)
@@ -238,7 +238,7 @@ bool WaterSystem::createPipeline() {
     // Create tessellation pipeline for GPU wave geometry detail
     // This is optional - if it fails, we fall back to the regular pipeline
     factory.reset();
-    VkPipeline rawTessPipeline = VK_NULL_HANDLE;
+    vk::Pipeline rawTessPipeline = VK_NULL_HANDLE;
     bool tessSuccess = factory
         .setShaders(shaderPath + "/water_tess.vert.spv", shaderPath + "/water.frag.spv")
         .setTessellationShaders(shaderPath + "/water.tesc.spv", shaderPath + "/water.tese.spv")
@@ -426,26 +426,26 @@ bool WaterSystem::createEnvPlaceholderCube() {
     return initCmd.end();
 }
 
-bool WaterSystem::createDescriptorSets(const std::vector<VkBuffer>& uniformBuffers,
-                                        VkDeviceSize uniformBufferSize,
+bool WaterSystem::createDescriptorSets(const std::vector<vk::Buffer>& uniformBuffers,
+                                        vk::DeviceSize uniformBufferSize,
                                         ShadowSystem& shadowSystem,
-                                        VkImageView terrainHeightMapView,
-                                        VkSampler terrainHeightMapSampler,
-                                        VkImageView flowMapView,
-                                        VkSampler flowMapSampler,
-                                        VkImageView displacementMapView,
-                                        VkSampler displacementMapSampler,
-                                        VkImageView temporalFoamView,
-                                        VkSampler temporalFoamSampler,
-                                        VkImageView ssrView,
-                                        VkSampler ssrSampler,
-                                        VkImageView sceneDepthView,
-                                        VkSampler sceneDepthSampler,
-                                        VkImageView tileArrayView,
-                                        VkSampler tileSampler,
-                                        const std::array<VkBuffer, 3>& tileInfoBuffers,
-                                        VkImageView envCubemapView,
-                                        VkSampler envCubemapSampler,
+                                        vk::ImageView terrainHeightMapView,
+                                        vk::Sampler terrainHeightMapSampler,
+                                        vk::ImageView flowMapView,
+                                        vk::Sampler flowMapSampler,
+                                        vk::ImageView displacementMapView,
+                                        vk::Sampler displacementMapSampler,
+                                        vk::ImageView temporalFoamView,
+                                        vk::Sampler temporalFoamSampler,
+                                        vk::ImageView ssrView,
+                                        vk::Sampler ssrSampler,
+                                        vk::ImageView sceneDepthView,
+                                        vk::Sampler sceneDepthSampler,
+                                        vk::ImageView tileArrayView,
+                                        vk::Sampler tileSampler,
+                                        const std::array<vk::Buffer, 3>& tileInfoBuffers,
+                                        vk::ImageView envCubemapView,
+                                        vk::Sampler envCubemapSampler,
                                         const OceanCascadeViews* oceanViews) {
     // Store tile info buffers for per-frame updates (triple-buffered)
     tileInfoBuffers_.resize(tileInfoBuffers.size());
@@ -461,8 +461,8 @@ bool WaterSystem::createDescriptorSets(const std::vector<VkBuffer>& uniformBuffe
     }
 
     // Get shadow resources
-    VkImageView shadowView = shadowSystem.getShadowImageView();
-    VkSampler shadowSampler = shadowSystem.getShadowSampler();
+    vk::ImageView shadowView = shadowSystem.getShadowImageView();
+    vk::Sampler shadowSampler = shadowSystem.getShadowSampler();
 
     // Update each descriptor set - use non-fluent pattern to avoid copy semantics bug
     // Note: tile info buffer (binding 15) is updated per-frame in recordDraw
@@ -552,7 +552,7 @@ void WaterSystem::setWaterExtent(const glm::vec2& position, const glm::vec2& siz
                                        glm::vec3(position.x, waterUniforms.waterLevel, position.y));
 }
 
-void WaterSystem::recordDraw(VkCommandBuffer cmd, uint32_t frameIndex) {
+void WaterSystem::recordDraw(vk::CommandBuffer cmd, uint32_t frameIndex) {
     // Update tile info buffer binding to the correct frame's buffer (triple-buffered to avoid CPU-GPU sync)
     if (!tileInfoBuffers_.empty() && tileInfoBuffers_.at(frameIndex) != VK_NULL_HANDLE) {
         DescriptorManager::SetWriter(device, descriptorSets[frameIndex])
@@ -564,7 +564,7 @@ void WaterSystem::recordDraw(VkCommandBuffer cmd, uint32_t frameIndex) {
 
     // Use tessellation pipeline if enabled and available
     bool useTess = useTessellation_ && isTessellationSupported();
-    VkPipeline activePipeline = useTess ? **tessellationPipeline_ : **pipeline_;
+    vk::Pipeline activePipeline = useTess ? **tessellationPipeline_ : **pipeline_;
     vkCmd.bindPipeline(vk::PipelineBindPoint::eGraphics, activePipeline);
 
     // Set dynamic viewport and scissor to handle window resize
@@ -611,7 +611,7 @@ void WaterSystem::recordDraw(VkCommandBuffer cmd, uint32_t frameIndex) {
     DIAG_RECORD_DRAW();
 }
 
-void WaterSystem::recordMeshDraw(VkCommandBuffer cmd) {
+void WaterSystem::recordMeshDraw(vk::CommandBuffer cmd) {
     // Draw just the mesh (pipeline and descriptors bound externally)
     vk::CommandBuffer vkCmd(cmd);
     vk::Buffer vertexBuffers[] = {waterMesh->getVertexBuffer()};

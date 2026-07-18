@@ -17,10 +17,10 @@ class TileArrayManager {
 public:
     struct InitInfo {
         const vk::raii::Device* raiiDevice = nullptr;
-        VkDevice device = VK_NULL_HANDLE;
+        vk::Device device = VK_NULL_HANDLE;
         VmaAllocator allocator = VK_NULL_HANDLE;
-        VkQueue graphicsQueue = VK_NULL_HANDLE;
-        VkCommandPool commandPool = VK_NULL_HANDLE;
+        vk::Queue graphicsQueue = VK_NULL_HANDLE;
+        vk::CommandPool commandPool = VK_NULL_HANDLE;
         uint32_t storedTileResolution = 513;
         uint32_t maxLayers = 64;
     };
@@ -45,15 +45,15 @@ public:
     // Copy tile CPU data into a specific array layer (GPU upload)
     void copyTileToLayer(const TerrainTile& tile, uint32_t layerIndex);
 
-    VkImageView getArrayView() const { return arrayView_ ? static_cast<VkImageView>(**arrayView_) : VK_NULL_HANDLE; }
-    VkImage getArrayImage() const { return arrayImage_.get(); }
+    vk::ImageView getArrayView() const { return arrayView_ ? static_cast<vk::ImageView>(**arrayView_) : VK_NULL_HANDLE; }
+    vk::Image getArrayImage() const { return arrayImage_.get(); }
     uint32_t getMaxLayers() const { return maxLayers_; }
 
 private:
-    VkDevice device_ = VK_NULL_HANDLE;
+    vk::Device device_ = VK_NULL_HANDLE;
     VmaAllocator allocator_ = VK_NULL_HANDLE;
-    VkQueue graphicsQueue_ = VK_NULL_HANDLE;
-    VkCommandPool commandPool_ = VK_NULL_HANDLE;
+    vk::Queue graphicsQueue_ = VK_NULL_HANDLE;
+    vk::CommandPool commandPool_ = VK_NULL_HANDLE;
     uint32_t storedTileResolution_ = 513;
     uint32_t maxLayers_ = 64;
 

@@ -34,7 +34,7 @@ public:
      * Factory: Create and initialize buffer manager.
      * Returns nullptr on failure.
      */
-    static std::unique_ptr<GlobalBufferManager> create(VmaAllocator allocator, VkPhysicalDevice physicalDevice,
+    static std::unique_ptr<GlobalBufferManager> create(VmaAllocator allocator, vk::PhysicalDevice physicalDevice,
                                                         uint32_t frameCount, uint32_t maxBones = 128) {
         auto manager = std::make_unique<GlobalBufferManager>(ConstructToken{});
         if (!manager->initInternal(allocator, physicalDevice, frameCount, maxBones)) {
@@ -69,22 +69,22 @@ public:
     uint32_t getFramesInFlight() const { return framesInFlight_; }
     uint32_t getMaxBoneMatrices() const { return maxBoneMatrices_; }
 
-    // Buffer accessors - Return raw VkBuffer vectors (wrapped by BufferUtils::PerFrameBufferSet)
-    const std::vector<VkBuffer>& getUniformBuffers() const { return uniformBuffers.buffers; }
+    // Buffer accessors - Return raw vk::Buffer vectors (wrapped by BufferUtils::PerFrameBufferSet)
+    const std::vector<vk::Buffer>& getUniformBuffers() const { return uniformBuffers.buffers; }
     size_t getUniformBufferSize() const { return sizeof(UniformBufferObject); }
 
-    const std::vector<VkBuffer>& getLightBuffers() const { return lightBuffers.buffers; }
+    const std::vector<vk::Buffer>& getLightBuffers() const { return lightBuffers.buffers; }
     size_t getLightBufferSize() const { return sizeof(LightBuffer); }
 
     // Extended buffer accessors
-    const std::vector<VkBuffer>& getSnowBuffers() const { return snowBuffers.buffers; }
+    const std::vector<vk::Buffer>& getSnowBuffers() const { return snowBuffers.buffers; }
     size_t getSnowBufferSize() const { return sizeof(SnowUBO); }
 
-    const std::vector<VkBuffer>& getCloudShadowBuffers() const { return cloudShadowBuffers.buffers; }
+    const std::vector<vk::Buffer>& getCloudShadowBuffers() const { return cloudShadowBuffers.buffers; }
     size_t getCloudShadowBufferSize() const { return sizeof(CloudShadowUBO); }
 
 private:
-    bool initInternal(VmaAllocator allocator, VkPhysicalDevice physicalDevice,
+    bool initInternal(VmaAllocator allocator, vk::PhysicalDevice physicalDevice,
                       uint32_t frameCount, uint32_t maxBones) {
         allocator_ = allocator;
         framesInFlight_ = frameCount;

@@ -117,7 +117,7 @@ bool WaterTileCull::createBuffers() {
     }
 
     // Counter buffer - atomic counter for visible tile count (CPU-to-GPU, mapped)
-    VkDeviceSize counterSize = sizeof(uint32_t) * framesInFlight;
+    vk::DeviceSize counterSize = sizeof(uint32_t) * framesInFlight;
     if (!VmaBufferFactory::createStorageBufferHostReadable(allocator, counterSize, counterBuffer_)) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create counter buffer");
         return false;
@@ -236,11 +236,11 @@ bool WaterTileCull::createDescriptorSets() {
     return true;
 }
 
-void WaterTileCull::recordTileCull(VkCommandBuffer cmd, uint32_t frameIndex,
+void WaterTileCull::recordTileCull(vk::CommandBuffer cmd, uint32_t frameIndex,
                                     const glm::mat4& viewProj,
                                     const glm::vec3& cameraPos,
                                     float waterLevel,
-                                    VkImageView depthView) {
+                                    vk::ImageView depthView) {
     // Bounds check: frameIndex must be within descriptorSets range.
     // Without this, O3 vectorization of OOB access can cause crashes.
     // Also validate all required resources are initialized.
@@ -310,7 +310,7 @@ void WaterTileCull::recordTileCull(VkCommandBuffer cmd, uint32_t frameIndex,
     barrierCounterForHostRead(cmd, frameIndex);
 }
 
-void WaterTileCull::barrierCounterForTransfer(VkCommandBuffer cmd, uint32_t frameIndex) {
+void WaterTileCull::barrierCounterForTransfer(vk::CommandBuffer cmd, uint32_t frameIndex) {
     vk::CommandBuffer vkCmd(cmd);
 
     // Only the counter buffer needs to be ready for transfer
@@ -330,7 +330,7 @@ void WaterTileCull::barrierCounterForTransfer(VkCommandBuffer cmd, uint32_t fram
         {}, {}, barrier, {});
 }
 
-void WaterTileCull::barrierCullResultsForDraw(VkCommandBuffer cmd, [[maybe_unused]] uint32_t frameIndex) {
+void WaterTileCull::barrierCullResultsForDraw(vk::CommandBuffer cmd, [[maybe_unused]] uint32_t frameIndex) {
     vk::CommandBuffer vkCmd(cmd);
 
     // Tile buffer and indirect buffer are needed for drawing
@@ -360,7 +360,7 @@ void WaterTileCull::barrierCullResultsForDraw(VkCommandBuffer cmd, [[maybe_unuse
         {}, {}, barriers, {});
 }
 
-void WaterTileCull::barrierCounterForHostRead(VkCommandBuffer cmd, uint32_t frameIndex) {
+void WaterTileCull::barrierCounterForHostRead(vk::CommandBuffer cmd, uint32_t frameIndex) {
     vk::CommandBuffer vkCmd(cmd);
 
     auto barrier = vk::BufferMemoryBarrier{}

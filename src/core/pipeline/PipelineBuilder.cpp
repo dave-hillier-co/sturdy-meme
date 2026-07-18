@@ -4,7 +4,7 @@
 #include <glm/glm.hpp>
 #include <array>
 
-PipelineBuilder::PipelineBuilder(VkDevice device) : device(device) {}
+PipelineBuilder::PipelineBuilder(vk::Device device) : device(device) {}
 
 PipelineBuilder::~PipelineBuilder() { cleanupShaderModules(); }
 
@@ -17,24 +17,24 @@ PipelineBuilder& PipelineBuilder::reset() {
     return *this;
 }
 
-PipelineBuilder& PipelineBuilder::setPipelineCache(VkPipelineCache cache) {
+PipelineBuilder& PipelineBuilder::setPipelineCache(vk::PipelineCache cache) {
     pipelineCacheHandle = cache;
     return *this;
 }
 
 PipelineBuilder& PipelineBuilder::addDescriptorBinding(uint32_t binding, VkDescriptorType type, uint32_t count,
-                                                       VkShaderStageFlags stageFlags, const VkSampler* immutableSamplers) {
+                                                       VkShaderStageFlags stageFlags, const vk::Sampler* immutableSamplers) {
     VkDescriptorSetLayoutBinding layoutBinding{};
     layoutBinding.binding = binding;
     layoutBinding.descriptorType = type;
     layoutBinding.descriptorCount = count;
     layoutBinding.stageFlags = stageFlags;
-    layoutBinding.pImmutableSamplers = immutableSamplers;
+    layoutBinding.pImmutableSamplers = reinterpret_cast<const VkSampler*>(immutableSamplers);
     descriptorBindings.push_back(layoutBinding);
     return *this;
 }
 
-bool PipelineBuilder::buildDescriptorSetLayout(VkDescriptorSetLayout& layout) const {
+bool PipelineBuilder::buildDescriptorSetLayout(vk::DescriptorSetLayout& layout) const {
     auto layoutInfo = vk::DescriptorSetLayoutCreateInfo{}
         .setBindingCount(static_cast<uint32_t>(descriptorBindings.size()))
         .setPBindings(reinterpret_cast<const vk::DescriptorSetLayoutBinding*>(descriptorBindings.data()));
@@ -71,7 +71,7 @@ PipelineBuilder& PipelineBuilder::addShaderStage(const std::string& path, VkShad
     return *this;
 }
 
-bool PipelineBuilder::buildPipelineLayout(const std::vector<VkDescriptorSetLayout>& setLayouts, VkPipelineLayout& layout) const {
+bool PipelineBuilder::buildPipelineLayout(const std::vector<vk::DescriptorSetLayout>& setLayouts, vk::PipelineLayout& layout) const {
     auto layoutInfo = vk::PipelineLayoutCreateInfo{}
         .setSetLayoutCount(static_cast<uint32_t>(setLayouts.size()))
         .setPSetLayouts(reinterpret_cast<const vk::DescriptorSetLayout*>(setLayouts.data()))
@@ -83,7 +83,7 @@ bool PipelineBuilder::buildPipelineLayout(const std::vector<VkDescriptorSetLayou
     return true;
 }
 
-bool PipelineBuilder::buildComputePipeline(VkPipelineLayout layout, VkPipeline& pipeline) {
+bool PipelineBuilder::buildComputePipeline(vk::PipelineLayout layout, vk::Pipeline& pipeline) {
     if (shaderStages.empty()) {
         SDL_Log("No shader stages provided for compute pipeline");
         return false;
@@ -101,8 +101,8 @@ bool PipelineBuilder::buildComputePipeline(VkPipelineLayout layout, VkPipeline& 
     return true;
 }
 
-bool PipelineBuilder::buildGraphicsPipeline(const VkGraphicsPipelineCreateInfo& pipelineInfoBase, VkPipelineLayout layout,
-                                            VkPipeline& pipeline) {
+bool PipelineBuilder::buildGraphicsPipeline(const VkGraphicsPipelineCreateInfo& pipelineInfoBase, vk::PipelineLayout layout,
+                                            vk::Pipeline& pipeline) {
     if (shaderStages.empty()) {
         SDL_Log("No shader stages provided for graphics pipeline");
         return false;
@@ -126,15 +126,15 @@ bool PipelineBuilder::buildGraphicsPipeline(const VkGraphicsPipelineCreateInfo& 
 
 void PipelineBuilder::cleanupShaderModules() {
     vk::Device vkDevice(device);
-    for (VkShaderModule module : shaderModules) {
+    for (vk::ShaderModule module : shaderModules) {
         vkDevice.destroyShaderModule(module);
     }
     shaderModules.clear();
     shaderStages.clear();
 }
 
-bool PipelineBuilder::buildGraphicsPipeline(const GraphicsPipelineConfig& config, VkPipelineLayout layout,
-                                            VkPipeline& pipeline) {
+bool PipelineBuilder::buildGraphicsPipeline(const GraphicsPipelineConfig& config, vk::PipelineLayout layout,
+                                            vk::Pipeline& pipeline) {
     if (shaderStages.empty()) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "No shader stages provided for graphics pipeline");
         return false;

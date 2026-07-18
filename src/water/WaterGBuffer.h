@@ -29,8 +29,8 @@ public:
     explicit WaterGBuffer(ConstructToken) {}
 
     struct InitInfo {
-        VkDevice device;
-        VkPhysicalDevice physicalDevice;
+        vk::Device device;
+        vk::PhysicalDevice physicalDevice;
         VmaAllocator allocator;
         VkExtent2D fullResExtent;       // Full screen resolution
         float resolutionScale = 0.5f;   // G-buffer resolution relative to full res
@@ -73,37 +73,37 @@ public:
     void resize(VkExtent2D newFullResExtent);
 
     // Get render pass for position pass
-    VkRenderPass getRenderPass() const { return renderPass_ ? **renderPass_ : VK_NULL_HANDLE; }
-    VkFramebuffer getFramebuffer() const { return framebuffer_ ? **framebuffer_ : VK_NULL_HANDLE; }
+    vk::RenderPass getRenderPass() const { return renderPass_ ? **renderPass_ : VK_NULL_HANDLE; }
+    vk::Framebuffer getFramebuffer() const { return framebuffer_ ? **framebuffer_ : VK_NULL_HANDLE; }
     VkExtent2D getExtent() const { return gbufferExtent; }
 
     // Get G-buffer textures for sampling in composite pass
-    VkImageView getDataImageView() const { return dataImageView_ ? **dataImageView_ : VK_NULL_HANDLE; }
-    VkImageView getNormalImageView() const { return normalImageView_ ? **normalImageView_ : VK_NULL_HANDLE; }
-    VkImageView getDepthImageView() const { return depthImageView_ ? **depthImageView_ : VK_NULL_HANDLE; }
-    VkSampler getSampler() const { return sampler_ ? **sampler_ : VK_NULL_HANDLE; }
+    vk::ImageView getDataImageView() const { return dataImageView_ ? **dataImageView_ : VK_NULL_HANDLE; }
+    vk::ImageView getNormalImageView() const { return normalImageView_ ? **normalImageView_ : VK_NULL_HANDLE; }
+    vk::ImageView getDepthImageView() const { return depthImageView_ ? **depthImageView_ : VK_NULL_HANDLE; }
+    vk::Sampler getSampler() const { return sampler_ ? **sampler_ : VK_NULL_HANDLE; }
 
     // Get pipeline resources
-    VkPipeline getPipeline() const { return pipeline_ ? **pipeline_ : VK_NULL_HANDLE; }
-    VkPipelineLayout getPipelineLayout() const { return pipelineLayout_ ? **pipelineLayout_ : VK_NULL_HANDLE; }
+    vk::Pipeline getPipeline() const { return pipeline_ ? **pipeline_ : VK_NULL_HANDLE; }
+    vk::PipelineLayout getPipelineLayout() const { return pipelineLayout_ ? **pipelineLayout_ : VK_NULL_HANDLE; }
     bool hasDescriptorSets() const { return !descriptorSets.empty(); }
-    VkDescriptorSet getDescriptorSet(uint32_t frameIndex) const { return descriptorSets[frameIndex]; }
+    vk::DescriptorSet getDescriptorSet(uint32_t frameIndex) const { return descriptorSets[frameIndex]; }
 
     // Create descriptor sets after resources are available
     bool createDescriptorSets(
-        const std::vector<VkBuffer>& mainUBOs,
-        VkDeviceSize mainUBOSize,
-        const std::vector<VkBuffer>& waterUBOs,
-        VkDeviceSize waterUBOSize,
-        VkImageView terrainHeightView, VkSampler terrainSampler,
-        VkImageView flowMapView, VkSampler flowMapSampler);
+        const std::vector<vk::Buffer>& mainUBOs,
+        vk::DeviceSize mainUBOSize,
+        const std::vector<vk::Buffer>& waterUBOs,
+        vk::DeviceSize waterUBOSize,
+        vk::ImageView terrainHeightView, vk::Sampler terrainSampler,
+        vk::ImageView flowMapView, vk::Sampler flowMapSampler);
 
     // Begin/end G-buffer rendering
-    void beginRenderPass(VkCommandBuffer cmd);
-    void endRenderPass(VkCommandBuffer cmd);
+    void beginRenderPass(vk::CommandBuffer cmd);
+    void endRenderPass(vk::CommandBuffer cmd);
 
     // Clear G-buffer (call at start of frame)
-    void clear(VkCommandBuffer cmd);
+    void clear(vk::CommandBuffer cmd);
 
 private:
     bool initInternal(const InitInfo& info);
@@ -119,8 +119,8 @@ private:
     void destroyImages();
 
     // Device handles
-    VkDevice device = VK_NULL_HANDLE;
-    VkPhysicalDevice physicalDevice = VK_NULL_HANDLE;
+    vk::Device device = VK_NULL_HANDLE;
+    vk::PhysicalDevice physicalDevice = VK_NULL_HANDLE;
     VmaAllocator allocator = VK_NULL_HANDLE;
 
     // Resolution
@@ -150,7 +150,7 @@ private:
     std::optional<vk::raii::PipelineLayout> pipelineLayout_;
     std::optional<vk::raii::DescriptorSetLayout> descriptorSetLayout_;
     DescriptorManager::Pool* descriptorPool = nullptr;
-    std::vector<VkDescriptorSet> descriptorSets;
+    std::vector<vk::DescriptorSet> descriptorSets;
     std::string shaderPath;
     uint32_t framesInFlight = 0;
 

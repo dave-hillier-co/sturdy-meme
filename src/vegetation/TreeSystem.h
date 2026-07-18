@@ -103,11 +103,11 @@ public:
     explicit TreeSystem(ConstructToken) {}
 
     struct InitInfo {
-        VkDevice device;
+        vk::Device device;
         VmaAllocator allocator;
-        VkCommandPool commandPool;
-        VkQueue graphicsQueue;
-        VkPhysicalDevice physicalDevice;
+        vk::CommandPool commandPool;
+        vk::Queue graphicsQueue;
+        vk::PhysicalDevice physicalDevice;
         std::string resourcePath;
         std::function<float(float, float)> getTerrainHeight;  // Terrain height query
         float terrainSize;
@@ -226,8 +226,8 @@ public:
     void regenerateTree(uint32_t index);
 
     // Leaf instancing accessors (for TreeRenderer)
-    VkBuffer getLeafInstanceBuffer() const { return leafInstanceBuffer_; }
-    VkDeviceSize getLeafInstanceBufferSize() const { return leafInstanceBufferSize_; }
+    vk::Buffer getLeafInstanceBuffer() const { return leafInstanceBuffer_; }
+    vk::DeviceSize getLeafInstanceBufferSize() const { return leafInstanceBufferSize_; }
     const Mesh& getSharedLeafQuadMesh() const { return sharedLeafQuadMesh_; }
     const std::vector<LeafDrawInfo>& getLeafDrawInfo() const { return leafDrawInfoPerTree_; }
 
@@ -267,10 +267,10 @@ private:
 
     // Stored for RAII cleanup and reload
     VmaAllocator storedAllocator_ = VK_NULL_HANDLE;
-    VkDevice storedDevice_ = VK_NULL_HANDLE;
-    VkCommandPool storedCommandPool_ = VK_NULL_HANDLE;
-    VkQueue storedQueue_ = VK_NULL_HANDLE;
-    VkPhysicalDevice storedPhysicalDevice_ = VK_NULL_HANDLE;
+    vk::Device storedDevice_ = VK_NULL_HANDLE;
+    vk::CommandPool storedCommandPool_ = VK_NULL_HANDLE;
+    vk::Queue storedQueue_ = VK_NULL_HANDLE;
+    vk::PhysicalDevice storedPhysicalDevice_ = VK_NULL_HANDLE;
     std::string storedResourcePath_;
 
     // Tree generator
@@ -297,9 +297,9 @@ private:
     std::vector<LeafDrawInfo> leafDrawInfoPerTree_;
 
     // Leaf instance SSBO (storage buffer for GPU)
-    VkBuffer leafInstanceBuffer_ = VK_NULL_HANDLE;
+    vk::Buffer leafInstanceBuffer_ = VK_NULL_HANDLE;
     VmaAllocation leafInstanceAllocation_ = VK_NULL_HANDLE;
-    VkDeviceSize leafInstanceBufferSize_ = 0;
+    vk::DeviceSize leafInstanceBufferSize_ = 0;
 
     // Raw mesh data (stored for collision generation)
     std::vector<TreeMeshData> treeMeshData_;

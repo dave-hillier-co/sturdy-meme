@@ -22,8 +22,8 @@ struct DescriptorBindingInfo {
     uint32_t count = 1;
 };
 
-VkDescriptorSetLayout buildDescriptorSetLayout(
-    VkDevice device,
+vk::DescriptorSetLayout buildDescriptorSetLayout(
+    vk::Device device,
     const DescriptorBindingInfo* bindings,
     size_t bindingCount
 ) {
@@ -35,7 +35,7 @@ VkDescriptorSetLayout buildDescriptorSetLayout(
     return builder.build();
 }
 
-std::optional<VkPipelineLayout> buildPipelineLayoutRaw(
+std::optional<vk::PipelineLayout> buildPipelineLayoutRaw(
     const vk::raii::Device& device,
     vk::DescriptorSetLayout layout,
     vk::ShaderStageFlags pushStages,
@@ -115,7 +115,7 @@ GrassSystem::~GrassSystem() {
 }
 
 bool GrassSystem::initInternal(const InitInfo& info) {
-    SDL_Log("GrassSystem::init() starting, device=%p, pool=%p", (void*)(VkDevice)info.device, (void*)info.descriptorPool);
+    SDL_Log("GrassSystem::init() starting, device=%p, pool=%p", (void*)static_cast<VkDevice>(info.device), (void*)info.descriptorPool);
     shadowRenderPass_ = info.shadowRenderPass;
     shadowMapSize_ = info.shadowMapSize;
 
@@ -507,7 +507,7 @@ void GrassSystem::recordDraw(vk::CommandBuffer cmd, uint32_t frameIndex, float t
 
     cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, getGraphicsPipelineHandles().pipeline);
 
-    VkDescriptorSet graphicsSet = getGraphicsDescriptorSet(readSet);
+    vk::DescriptorSet graphicsSet = getGraphicsDescriptorSet(readSet);
 
     if (dynamicRendererUBO_ && dynamicRendererUBO_->isValid()) {
         uint32_t dynamicOffset = dynamicRendererUBO_->getDynamicOffset(frameIndex);

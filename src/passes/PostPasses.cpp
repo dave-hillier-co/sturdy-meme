@@ -102,7 +102,7 @@ PassIds addPasses(PassScheduler& graph, RendererSystems& systems, const Config& 
             systems.profiler().beginGpuZone(ctx.commandBuffer, "PostProcess");
             systems.postProcess().recordPostProcess(ctx.commandBuffer, ctx.frameIndex,
                 *(*framebuffers)[ctx.imageIndex], renderCtx->frame.deltaTime,
-                guiCallback ? *guiCallback : std::function<void(VkCommandBuffer)>{});
+                guiCallback ? *guiCallback : std::function<void(vk::CommandBuffer)>{});
             systems.profiler().endGpuZone(ctx.commandBuffer, "PostProcess");
         },
         .canUseSecondary = false,

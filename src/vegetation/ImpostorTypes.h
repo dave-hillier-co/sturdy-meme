@@ -27,8 +27,8 @@ struct TreeImpostorArchetype {
     float baseOffset;           // Offset from mesh origin to tree base (minBounds.y)
 
     // Atlas textures (owned by TreeImpostorAtlas)
-    VkImageView albedoAlphaView = VK_NULL_HANDLE;
-    VkImageView normalDepthAOView = VK_NULL_HANDLE;
+    vk::ImageView albedoAlphaView = VK_NULL_HANDLE;
+    vk::ImageView normalDepthAOView = VK_NULL_HANDLE;
 
     // Index into the atlas arrays
     uint32_t atlasIndex = 0;

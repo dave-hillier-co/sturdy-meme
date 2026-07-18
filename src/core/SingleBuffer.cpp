@@ -9,7 +9,7 @@ SingleBufferBuilder& SingleBufferBuilder::setAllocator(VmaAllocator newAllocator
     return *this;
 }
 
-SingleBufferBuilder& SingleBufferBuilder::setSize(VkDeviceSize size) {
+SingleBufferBuilder& SingleBufferBuilder::setSize(vk::DeviceSize size) {
     bufferSize_ = size;
     return *this;
 }
@@ -48,7 +48,7 @@ bool SingleBufferBuilder::build(SingleBuffer& outBuffer) const {
     SingleBuffer result{};
     VmaAllocationInfo allocationInfo{};
 
-    if (vmaCreateBuffer(allocator_, reinterpret_cast<const VkBufferCreateInfo*>(&bufferInfo), &allocInfo, &result.buffer, &result.allocation,
+    if (vmaCreateBuffer(allocator_, reinterpret_cast<const VkBufferCreateInfo*>(&bufferInfo), &allocInfo, reinterpret_cast<VkBuffer*>(&result.buffer), &result.allocation,
                         &allocationInfo) != VK_SUCCESS) {
         SDL_Log("Failed to create single buffer");
         return false;

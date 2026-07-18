@@ -145,7 +145,7 @@ bool TreeLODSystem::createBillboardMesh() {
     billboardIndexCount_ = 6;
 
     // Create vertex buffer
-    VkDeviceSize vertexSize = sizeof(vertices);
+    vk::DeviceSize vertexSize = sizeof(vertices);
     auto vertexBufferInfo = vk::BufferCreateInfo{}
         .setSize(vertexSize)
         .setUsage(vk::BufferUsageFlagBits::eVertexBuffer | vk::BufferUsageFlagBits::eTransferDst);
@@ -154,25 +154,25 @@ bool TreeLODSystem::createBillboardMesh() {
     allocInfo.usage = VMA_MEMORY_USAGE_GPU_ONLY;
 
     if (vmaCreateBuffer(allocator_, reinterpret_cast<const VkBufferCreateInfo*>(&vertexBufferInfo), &allocInfo,
-                        &billboardVertexBuffer_, &billboardVertexAllocation_, nullptr) != VK_SUCCESS) {
+                        reinterpret_cast<VkBuffer*>(&billboardVertexBuffer_), &billboardVertexAllocation_, nullptr) != VK_SUCCESS) {
         return false;
     }
 
     // Create index buffer
-    VkDeviceSize indexSize = sizeof(indices);
+    vk::DeviceSize indexSize = sizeof(indices);
     auto indexBufferInfo = vk::BufferCreateInfo{}
         .setSize(indexSize)
         .setUsage(vk::BufferUsageFlagBits::eIndexBuffer | vk::BufferUsageFlagBits::eTransferDst);
 
     if (vmaCreateBuffer(allocator_, reinterpret_cast<const VkBufferCreateInfo*>(&indexBufferInfo), &allocInfo,
-                        &billboardIndexBuffer_, &billboardIndexAllocation_, nullptr) != VK_SUCCESS) {
+                        reinterpret_cast<VkBuffer*>(&billboardIndexBuffer_), &billboardIndexAllocation_, nullptr) != VK_SUCCESS) {
         return false;
     }
 
     // Upload data via staging buffer
-    VkBuffer stagingBuffer;
+    vk::Buffer stagingBuffer;
     VmaAllocation stagingAllocation;
-    VkDeviceSize stagingSize = vertexSize + indexSize;
+    vk::DeviceSize stagingSize = vertexSize + indexSize;
 
     auto stagingInfo = vk::BufferCreateInfo{}
         .setSize(stagingSize)
@@ -182,7 +182,7 @@ bool TreeLODSystem::createBillboardMesh() {
     stagingAllocInfo.usage = VMA_MEMORY_USAGE_CPU_ONLY;
 
     if (vmaCreateBuffer(allocator_, reinterpret_cast<const VkBufferCreateInfo*>(&stagingInfo), &stagingAllocInfo,
-                        &stagingBuffer, &stagingAllocation, nullptr) != VK_SUCCESS) {
+                        reinterpret_cast<VkBuffer*>(&stagingBuffer), &stagingAllocation, nullptr) != VK_SUCCESS) {
         return false;
     }
 
@@ -486,7 +486,7 @@ bool TreeLODSystem::createInstanceBuffer(size_t maxInstances) {
     allocInfo.usage = VMA_MEMORY_USAGE_CPU_TO_GPU;
 
     return vmaCreateBuffer(allocator_, reinterpret_cast<const VkBufferCreateInfo*>(&bufferInfo), &allocInfo,
-                           &instanceBuffer_, &instanceAllocation_, nullptr) == VK_SUCCESS;
+                           reinterpret_cast<VkBuffer*>(&instanceBuffer_), &instanceAllocation_, nullptr) == VK_SUCCESS;
 }
 
 // computeScreenError is now in CullCommon.h
@@ -641,7 +641,7 @@ void TreeLODSystem::bindShadowPipeline(vk::CommandBuffer& cmd, uint32_t frameInd
                            0, vk::DescriptorSet(shadowDescriptorSets_[frameIndex]), {});
 }
 
-void TreeLODSystem::bindBillboardBuffers(vk::CommandBuffer& cmd, VkBuffer instanceBuf) {
+void TreeLODSystem::bindBillboardBuffers(vk::CommandBuffer& cmd, vk::Buffer instanceBuf) {
     (void)instanceBuf;  // Instance data comes from SSBO via descriptor set, not vertex buffers
     vk::DeviceSize offset = 0;
     cmd.bindVertexBuffers(0, vk::Buffer(billboardVertexBuffer_), offset);
@@ -727,12 +727,12 @@ void TreeLODSystem::updateInstanceBuffer(const std::vector<ImpostorInstanceGPU>&
     vmaUnmapMemory(allocator_, instanceAllocation_);
 }
 
-void TreeLODSystem::initializeDescriptorSets(const std::vector<VkBuffer>& uniformBuffers,
-                                               VkImageView shadowMap, VkSampler shadowSampler) {
+void TreeLODSystem::initializeDescriptorSets(const std::vector<vk::Buffer>& uniformBuffers,
+                                               vk::ImageView shadowMap, vk::Sampler shadowSampler) {
     // Use the shared array views that contain all archetypes
-    VkImageView albedoView = impostorAtlas_->getAlbedoAtlasArrayView();
-    VkImageView normalView = impostorAtlas_->getNormalAtlasArrayView();
-    VkSampler atlasSampler = impostorAtlas_->getAtlasSampler();
+    vk::ImageView albedoView = impostorAtlas_->getAlbedoAtlasArrayView();
+    vk::ImageView normalView = impostorAtlas_->getNormalAtlasArrayView();
+    vk::Sampler atlasSampler = impostorAtlas_->getAtlasSampler();
 
     if (albedoView == VK_NULL_HANDLE || normalView == VK_NULL_HANDLE) {
         SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "TreeLODSystem: Atlas views not ready for descriptor initialization");
@@ -776,7 +776,7 @@ void TreeLODSystem::initializeDescriptorSets(const std::vector<VkBuffer>& unifor
     SDL_Log("TreeLODSystem: Descriptor sets initialized");
 }
 
-void TreeLODSystem::initializeGPUCulledDescriptors(VkBuffer gpuInstanceBuffer) {
+void TreeLODSystem::initializeGPUCulledDescriptors(vk::Buffer gpuInstanceBuffer) {
     auto instanceInfo = makeBufferInfo(gpuInstanceBuffer);
 
     // Update the instance buffer binding to use GPU-culled buffer instead of CPU buffer
@@ -797,8 +797,8 @@ void TreeLODSystem::initializeGPUCulledDescriptors(VkBuffer gpuInstanceBuffer) {
     SDL_Log("TreeLODSystem: GPU-culled descriptor sets initialized");
 }
 
-void TreeLODSystem::renderImpostors(VkCommandBuffer cmd, uint32_t frameIndex,
-                                     VkBuffer uniformBuffer, VkImageView shadowMap, VkSampler shadowSampler) {
+void TreeLODSystem::renderImpostors(vk::CommandBuffer cmd, uint32_t frameIndex,
+                                     vk::Buffer uniformBuffer, vk::ImageView shadowMap, vk::Sampler shadowSampler) {
     (void)uniformBuffer; (void)shadowMap; (void)shadowSampler;
     if (visibleImpostors_.empty() || impostorAtlas_->getArchetypeCount() == 0) return;
     if (!getLODSettings().enableImpostors) return;
@@ -817,8 +817,8 @@ void TreeLODSystem::renderImpostors(VkCommandBuffer cmd, uint32_t frameIndex,
     DIAG_RECORD_DRAW();
 }
 
-void TreeLODSystem::renderImpostorShadows(VkCommandBuffer cmd, uint32_t frameIndex,
-                                           int cascadeIndex, VkBuffer uniformBuffer) {
+void TreeLODSystem::renderImpostorShadows(vk::CommandBuffer cmd, uint32_t frameIndex,
+                                           int cascadeIndex, vk::Buffer uniformBuffer) {
     (void)uniformBuffer;
     if (visibleImpostors_.empty() || impostorAtlas_->getArchetypeCount() == 0) return;
     if (!shadowPipeline_ || !getLODSettings().enableImpostors) return;
@@ -837,9 +837,9 @@ void TreeLODSystem::renderImpostorShadows(VkCommandBuffer cmd, uint32_t frameInd
     DIAG_RECORD_DRAW();
 }
 
-void TreeLODSystem::renderImpostorsGPUCulled(VkCommandBuffer cmd, uint32_t frameIndex,
-                                              VkBuffer uniformBuffer, VkImageView shadowMap, VkSampler shadowSampler,
-                                              VkBuffer gpuInstanceBuffer, VkBuffer indirectDrawBuffer) {
+void TreeLODSystem::renderImpostorsGPUCulled(vk::CommandBuffer cmd, uint32_t frameIndex,
+                                              vk::Buffer uniformBuffer, vk::ImageView shadowMap, vk::Sampler shadowSampler,
+                                              vk::Buffer gpuInstanceBuffer, vk::Buffer indirectDrawBuffer) {
     (void)uniformBuffer; (void)shadowMap; (void)shadowSampler; (void)gpuInstanceBuffer;
     if (impostorAtlas_->getArchetypeCount() == 0) return;
     if (!getLODSettings().enableImpostors || impostorDescriptorSets_.empty()) return;
@@ -858,9 +858,9 @@ void TreeLODSystem::renderImpostorsGPUCulled(VkCommandBuffer cmd, uint32_t frame
     DIAG_RECORD_DRAW();
 }
 
-void TreeLODSystem::renderImpostorShadowsGPUCulled(VkCommandBuffer cmd, uint32_t frameIndex,
-                                                   int cascadeIndex, VkBuffer uniformBuffer,
-                                                   VkBuffer gpuInstanceBuffer, VkBuffer indirectDrawBuffer) {
+void TreeLODSystem::renderImpostorShadowsGPUCulled(vk::CommandBuffer cmd, uint32_t frameIndex,
+                                                   int cascadeIndex, vk::Buffer uniformBuffer,
+                                                   vk::Buffer gpuInstanceBuffer, vk::Buffer indirectDrawBuffer) {
     (void)uniformBuffer; (void)gpuInstanceBuffer;
     if (impostorAtlas_->getArchetypeCount() == 0) return;
     if (!shadowPipeline_ || !getLODSettings().enableImpostors || shadowDescriptorSets_.empty()) return;
@@ -948,8 +948,8 @@ bool TreeLODSystem::shouldRenderLeafShadow(uint32_t treeIndex, uint32_t cascadeI
 int32_t TreeLODSystem::generateImpostor(const std::string& name, const TreeOptions& options,
                                          const Mesh& branchMesh,
                                          const std::vector<LeafInstanceGPU>& leafInstances,
-                                         VkImageView barkAlbedo, VkImageView barkNormal,
-                                         VkImageView leafAlbedo, VkSampler sampler) {
+                                         vk::ImageView barkAlbedo, vk::ImageView barkNormal,
+                                         vk::ImageView leafAlbedo, vk::Sampler sampler) {
     return impostorAtlas_->generateArchetype(name, options, branchMesh, leafInstances,
                                               barkAlbedo, barkNormal, leafAlbedo, sampler);
 }

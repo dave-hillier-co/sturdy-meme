@@ -56,10 +56,10 @@ static void checkVkResult(VkResult err) {
 }
 
 // Factory
-std::unique_ptr<GuiSystem> GuiSystem::create(SDL_Window* window, VkInstance instance,
-                                              VkPhysicalDevice physicalDevice, VkDevice device,
-                                              uint32_t graphicsQueueFamily, VkQueue graphicsQueue,
-                                              VkRenderPass renderPass, uint32_t imageCount) {
+std::unique_ptr<GuiSystem> GuiSystem::create(SDL_Window* window, vk::Instance instance,
+                                              vk::PhysicalDevice physicalDevice, vk::Device device,
+                                              uint32_t graphicsQueueFamily, vk::Queue graphicsQueue,
+                                              vk::RenderPass renderPass, uint32_t imageCount) {
     auto gui = std::make_unique<GuiSystem>(ConstructToken{});
     if (!gui->initInternal(window, instance, physicalDevice, device, graphicsQueueFamily,
                            graphicsQueue, renderPass, imageCount)) {
@@ -73,9 +73,9 @@ GuiSystem::~GuiSystem() {
     cleanup();
 }
 
-bool GuiSystem::initInternal(SDL_Window* window, VkInstance instance, VkPhysicalDevice physicalDevice,
-                              VkDevice device, uint32_t graphicsQueueFamily, VkQueue graphicsQueue,
-                              VkRenderPass renderPass, uint32_t imageCount) {
+bool GuiSystem::initInternal(SDL_Window* window, vk::Instance instance, vk::PhysicalDevice physicalDevice,
+                              vk::Device device, uint32_t graphicsQueueFamily, vk::Queue graphicsQueue,
+                              vk::RenderPass renderPass, uint32_t imageCount) {
     device_ = device;  // Store for cleanup
 
     // Create descriptor pool for ImGui
@@ -294,7 +294,7 @@ void GuiSystem::render(GuiInterfaces& ui, const Camera& camera, float deltaTime,
     }
 }
 
-void GuiSystem::endFrame(VkCommandBuffer cmd) {
+void GuiSystem::endFrame(vk::CommandBuffer cmd) {
     ImGui::Render();
     ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), cmd);
 }

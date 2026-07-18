@@ -68,8 +68,8 @@ public:
     explicit TreeBranchCulling(ConstructToken) {}
 
     struct InitInfo {
-        VkDevice device;
-        VkPhysicalDevice physicalDevice;
+        vk::Device device;
+        vk::PhysicalDevice physicalDevice;
         VmaAllocator allocator;
         DescriptorManager::Pool* descriptorPool;
         std::string resourcePath;
@@ -94,7 +94,7 @@ public:
     void updateTreeData(const TreeSystem& treeSystem, const TreeLODSystem* lodSystem);
 
     // Record culling compute pass for a specific cascade
-    void recordCulling(VkCommandBuffer cmd, uint32_t frameIndex,
+    void recordCulling(vk::CommandBuffer cmd, uint32_t frameIndex,
                        uint32_t cascadeIndex,
                        const glm::vec4* cascadeFrustumPlanes,
                        const glm::vec3& cameraPos,
@@ -108,19 +108,19 @@ public:
     bool isEnabledByUser() const { return enabled_; }
 
     // Get output buffers for rendering (use frameIndex to match compute dispatch)
-    VkBuffer getInstanceBuffer(uint32_t frameIndex) const;
-    VkBuffer getIndirectBuffer(uint32_t frameIndex) const;
+    vk::Buffer getInstanceBuffer(uint32_t frameIndex) const;
+    vk::Buffer getIndirectBuffer(uint32_t frameIndex) const;
 
     // Get mesh group info for rendering loop
     struct MeshGroupRenderInfo {
         uint32_t meshIndex;
         uint32_t barkTypeIndex;
-        VkDeviceSize indirectOffset;
+        vk::DeviceSize indirectOffset;
         uint32_t instanceOffset;
     };
     const std::vector<MeshGroupRenderInfo>& getMeshGroups() const { return meshGroupRenderInfo_; }
 
-    VkDevice getDevice() const { return device_; }
+    vk::Device getDevice() const { return device_; }
 
 
 private:
@@ -130,8 +130,8 @@ private:
     bool createBuffers();
     void updateDescriptorSets();
 
-    VkDevice device_ = VK_NULL_HANDLE;
-    VkPhysicalDevice physicalDevice_ = VK_NULL_HANDLE;
+    vk::Device device_ = VK_NULL_HANDLE;
+    vk::PhysicalDevice physicalDevice_ = VK_NULL_HANDLE;
     VmaAllocator allocator_ = VK_NULL_HANDLE;
     DescriptorManager::Pool* descriptorPool_ = nullptr;
     std::string resourcePath_;
@@ -148,15 +148,15 @@ private:
     std::optional<vk::raii::Pipeline> cullPipeline_;
     std::optional<vk::raii::PipelineLayout> cullPipelineLayout_;
     std::optional<vk::raii::DescriptorSetLayout> cullDescriptorSetLayout_;
-    std::vector<VkDescriptorSet> cullDescriptorSets_;
+    std::vector<vk::DescriptorSet> cullDescriptorSets_;
 
     // Input buffer: all tree transforms
-    VkBuffer inputBuffer_ = VK_NULL_HANDLE;
+    vk::Buffer inputBuffer_ = VK_NULL_HANDLE;
     VmaAllocation inputAllocation_ = VK_NULL_HANDLE;
-    VkDeviceSize inputBufferSize_ = 0;
+    vk::DeviceSize inputBufferSize_ = 0;
 
     // Mesh group metadata buffer
-    VkBuffer meshGroupBuffer_ = VK_NULL_HANDLE;
+    vk::Buffer meshGroupBuffer_ = VK_NULL_HANDLE;
     VmaAllocation meshGroupAllocation_ = VK_NULL_HANDLE;
 
     // Per-frame output buffers using FrameIndexedBuffers for type-safe access

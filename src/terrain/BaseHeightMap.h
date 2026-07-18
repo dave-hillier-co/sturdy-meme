@@ -21,10 +21,10 @@ public:
 
     struct InitInfo {
         const vk::raii::Device* raiiDevice = nullptr;
-        VkDevice device = VK_NULL_HANDLE;
+        vk::Device device = VK_NULL_HANDLE;
         VmaAllocator allocator = VK_NULL_HANDLE;
-        VkQueue graphicsQueue = VK_NULL_HANDLE;
-        VkCommandPool commandPool = VK_NULL_HANDLE;
+        vk::Queue graphicsQueue = VK_NULL_HANDLE;
+        vk::CommandPool commandPool = VK_NULL_HANDLE;
         float terrainSize = 16384.0f;
         float heightScale = 235.0f;
         uint32_t tileResolution = 512;
@@ -63,7 +63,7 @@ public:
     const std::vector<TerrainTile*>& getBaseTiles() const { return baseTiles_; }
 
     // GPU combined heightmap accessors
-    VkImageView getHeightMapView() const { return heightMapView_ ? static_cast<VkImageView>(**heightMapView_) : VK_NULL_HANDLE; }
+    vk::ImageView getHeightMapView() const { return heightMapView_ ? static_cast<vk::ImageView>(**heightMapView_) : VK_NULL_HANDLE; }
     const std::vector<float>& getHeightMapData() const { return heightMapCpuData_; }
     uint32_t getHeightMapResolution() const { return heightMapResolution_; }
 
@@ -71,10 +71,10 @@ private:
     bool createCombinedHeightMap();
 
     const vk::raii::Device* raiiDevice_ = nullptr;
-    VkDevice device_ = VK_NULL_HANDLE;
+    vk::Device device_ = VK_NULL_HANDLE;
     VmaAllocator allocator_ = VK_NULL_HANDLE;
-    VkQueue graphicsQueue_ = VK_NULL_HANDLE;
-    VkCommandPool commandPool_ = VK_NULL_HANDLE;
+    vk::Queue graphicsQueue_ = VK_NULL_HANDLE;
+    vk::CommandPool commandPool_ = VK_NULL_HANDLE;
     float terrainSize_ = 16384.0f;
     float heightScale_ = 235.0f;
     uint32_t tileResolution_ = 512;

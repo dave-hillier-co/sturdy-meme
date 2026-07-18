@@ -21,7 +21,7 @@ std::unique_ptr<WeatherSystem> WeatherSystem::create(const InitInfo& info) {
 
 std::optional<WeatherSystem::Bundle> WeatherSystem::createWithDependencies(
     const InitContext& ctx,
-    VkRenderPass hdrRenderPass
+    vk::RenderPass hdrRenderPass
 ) {
     // Create weather particle system (rain/snow)
     InitInfo weatherInfo{};
@@ -114,9 +114,9 @@ void WeatherSystem::destroyBuffers(VmaAllocator alloc) {
 }
 
 bool WeatherSystem::createBuffers() {
-    VkDeviceSize particleBufferSize = sizeof(WeatherParticle) * MAX_PARTICLES;
-    VkDeviceSize indirectBufferSize = sizeof(VkDrawIndirectCommand);
-    VkDeviceSize uniformBufferSize = sizeof(WeatherUniforms);
+    vk::DeviceSize particleBufferSize = sizeof(WeatherParticle) * MAX_PARTICLES;
+    vk::DeviceSize indirectBufferSize = sizeof(VkDrawIndirectCommand);
+    vk::DeviceSize uniformBufferSize = sizeof(WeatherUniforms);
 
     // Use framesInFlight for buffer set count to ensure proper triple buffering
     uint32_t bufferSetCount = getFramesInFlight();
@@ -296,14 +296,14 @@ void WeatherSystem::updateDescriptorSets(vk::Device dev, const std::vector<vk::B
                                           const std::vector<vk::Buffer>& windBuffers,
                                           vk::ImageView depthImageView, vk::Sampler depthSampler,
                                           const BufferUtils::DynamicUniformBuffer* dynamicRendererUBO) {
-    // Store external buffer references (convert to VkBuffer for internal storage)
+    // Store external buffer references (convert to vk::Buffer for internal storage)
     externalWindBuffers.resize(windBuffers.size());
     for (size_t i = 0; i < windBuffers.size(); ++i) {
-        externalWindBuffers[i] = static_cast<VkBuffer>(windBuffers[i]);
+        externalWindBuffers[i] = static_cast<vk::Buffer>(windBuffers[i]);
     }
     externalRendererUniformBuffers.resize(rendererUniformBuffers.size());
     for (size_t i = 0; i < rendererUniformBuffers.size(); ++i) {
-        externalRendererUniformBuffers[i] = static_cast<VkBuffer>(rendererUniformBuffers[i]);
+        externalRendererUniformBuffers[i] = static_cast<vk::Buffer>(rendererUniformBuffers[i]);
     }
 
     // Store dynamic renderer UBO reference for per-frame binding with dynamic offsets
@@ -388,7 +388,7 @@ void WeatherSystem::updateUniforms(uint32_t frameIndex, const glm::vec3& cameraP
     memcpy(uniformBuffers.mappedPointers[frameIndex], &uniforms, sizeof(WeatherUniforms));
 }
 
-void WeatherSystem::recordResetAndCompute(VkCommandBuffer cmd, uint32_t frameIndex, float time, float deltaTime) {
+void WeatherSystem::recordResetAndCompute(vk::CommandBuffer cmd, uint32_t frameIndex, float time, float deltaTime) {
     // Early-out: skip compute when weather is disabled
     if (weatherIntensity <= 0.0f) {
         return;
@@ -416,7 +416,7 @@ void WeatherSystem::recordResetAndCompute(VkCommandBuffer cmd, uint32_t frameInd
     // Dispatch weather compute shader
     auto& computePipeline = getComputePipelineHandles();
     vkCmd.bindPipeline(vk::PipelineBindPoint::eCompute, computePipeline.pipeline);
-    VkDescriptorSet computeSet = particleSystem->getComputeDescriptorSet(writeSet);
+    vk::DescriptorSet computeSet = particleSystem->getComputeDescriptorSet(writeSet);
     vkCmd.bindDescriptorSets(vk::PipelineBindPoint::eCompute,
                              computePipeline.pipelineLayout, 0,
                              vk::DescriptorSet(computeSet), {});
@@ -435,7 +435,7 @@ void WeatherSystem::recordResetAndCompute(VkCommandBuffer cmd, uint32_t frameInd
     BarrierHelpers::computeToIndirectDrawAndShader(vkCmd);
 }
 
-void WeatherSystem::recordDraw(VkCommandBuffer cmd, uint32_t frameIndex, float time) {
+void WeatherSystem::recordDraw(vk::CommandBuffer cmd, uint32_t frameIndex, float time) {
     // Early-out: skip all GPU work when weather is disabled
     if (weatherIntensity <= 0.0f) {
         return;
@@ -467,7 +467,7 @@ void WeatherSystem::recordDraw(VkCommandBuffer cmd, uint32_t frameIndex, float t
         .setExtent(vk::Extent2D{ext.width, ext.height});
     vkCmd.setScissor(0, scissor);
 
-    VkDescriptorSet graphicsSet = particleSystem->getGraphicsDescriptorSet(readSet);
+    vk::DescriptorSet graphicsSet = particleSystem->getGraphicsDescriptorSet(readSet);
 
     // Use dynamic offset for binding 0 (renderer UBO) if dynamic buffer is available
     if (dynamicRendererUBO_ && dynamicRendererUBO_->isValid()) {
@@ -494,7 +494,7 @@ void WeatherSystem::recordDraw(VkCommandBuffer cmd, uint32_t frameIndex, float t
 
 void WeatherSystem::advanceBufferSet() { particleSystem->advanceBufferSet(); }
 
-void WeatherSystem::setFroxelVolume(VkImageView volumeView, VkSampler volumeSampler,
+void WeatherSystem::setFroxelVolume(vk::ImageView volumeView, vk::Sampler volumeSampler,
                                      float farPlane, float depthDist) {
     froxelVolumeView = volumeView;
     froxelVolumeSampler = volumeSampler;

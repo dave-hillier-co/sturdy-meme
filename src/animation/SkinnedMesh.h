@@ -82,11 +82,11 @@ public:
     ~SkinnedMesh() = default;
 
     void setData(const SkinnedMeshData& data);
-    bool upload(VmaAllocator allocator, VkDevice device, VkCommandPool commandPool, VkQueue queue);
+    bool upload(VmaAllocator allocator, vk::Device device, vk::CommandPool commandPool, vk::Queue queue);
     void destroy(VmaAllocator allocator);
 
-    VkBuffer getVertexBuffer() const { return vertexBuffer; }
-    VkBuffer getIndexBuffer() const { return indexBuffer; }
+    vk::Buffer getVertexBuffer() const { return vertexBuffer; }
+    vk::Buffer getIndexBuffer() const { return indexBuffer; }
     uint32_t getIndexCount() const { return static_cast<uint32_t>(indices.size()); }
 
     const Skeleton& getSkeleton() const { return skeleton; }
@@ -101,9 +101,9 @@ private:
     std::vector<uint32_t> indices;
     Skeleton skeleton;
 
-    VkBuffer vertexBuffer = VK_NULL_HANDLE;
+    vk::Buffer vertexBuffer = VK_NULL_HANDLE;
     VmaAllocation vertexAllocation = VK_NULL_HANDLE;
-    VkBuffer indexBuffer = VK_NULL_HANDLE;
+    vk::Buffer indexBuffer = VK_NULL_HANDLE;
     VmaAllocation indexAllocation = VK_NULL_HANDLE;
 };
 

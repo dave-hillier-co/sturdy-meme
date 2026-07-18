@@ -60,7 +60,7 @@ public:
      */
     static std::optional<Bundle> createWithDependencies(
         const InitContext& ctx,
-        VkRenderPass hdrRenderPass
+        vk::RenderPass hdrRenderPass
     );
 
     ~SnowMaskSystem();
@@ -80,11 +80,11 @@ public:
     void clearInteractions();
 
     // Record compute dispatch for snow accumulation update
-    void recordCompute(VkCommandBuffer cmd, uint32_t frameIndex);
+    void recordCompute(vk::CommandBuffer cmd, uint32_t frameIndex);
 
     // Accessors for other systems to bind the snow mask texture
-    VkImageView getSnowMaskView() const { return snowMaskView ? static_cast<VkImageView>(**snowMaskView) : VK_NULL_HANDLE; }
-    VkSampler getSnowMaskSampler() const { return snowMaskSampler_ ? **snowMaskSampler_ : VK_NULL_HANDLE; }
+    vk::ImageView getSnowMaskView() const { return snowMaskView ? static_cast<vk::ImageView>(**snowMaskView) : VK_NULL_HANDLE; }
+    vk::Sampler getSnowMaskSampler() const { return snowMaskSampler_ ? **snowMaskSampler_ : VK_NULL_HANDLE; }
 
     // Get mask parameters for shader uniforms
     glm::vec2 getMaskOrigin() const { return maskOrigin; }
@@ -104,7 +104,7 @@ private:
     bool createDescriptorSets();
     void destroyBuffers(VmaAllocator allocator);
 
-    VkDevice getDevice() const { return lifecycle.getDevice(); }
+    vk::Device getDevice() const { return lifecycle.getDevice(); }
     VmaAllocator getAllocator() const { return lifecycle.getAllocator(); }
     DescriptorManager::Pool* getDescriptorPool() const { return lifecycle.getDescriptorPool(); }
     const std::string& getShaderPath() const { return lifecycle.getShaderPath(); }
@@ -129,7 +129,7 @@ private:
     BufferUtils::PerFrameBufferSet interactionBuffers;
 
     // Descriptor sets (per frame)
-    std::vector<VkDescriptorSet> computeDescriptorSets;
+    std::vector<vk::DescriptorSet> computeDescriptorSets;
 
     // Mask world-space parameters
     glm::vec2 maskOrigin = glm::vec2(0.0f);  // World XZ origin of mask

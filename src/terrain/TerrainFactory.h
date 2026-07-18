@@ -1,4 +1,5 @@
 #pragma once
+#include <vulkan/vulkan.hpp>
 
 #include "TerrainSystem.h"
 #include "InitContext.h"
@@ -31,8 +32,8 @@ public:
      */
     struct Config {
         // Required resources
-        VkRenderPass hdrRenderPass = VK_NULL_HANDLE;
-        VkRenderPass shadowRenderPass = VK_NULL_HANDLE;
+        vk::RenderPass hdrRenderPass = VK_NULL_HANDLE;
+        vk::RenderPass shadowRenderPass = VK_NULL_HANDLE;
         uint32_t shadowMapSize = 2048;
         std::string resourcePath;
 

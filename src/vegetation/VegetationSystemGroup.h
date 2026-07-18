@@ -102,8 +102,8 @@ struct VegetationSystemGroup {
      */
     struct CreateDeps {
         const InitContext& ctx;
-        VkRenderPass hdrRenderPass;
-        VkRenderPass shadowRenderPass;
+        vk::RenderPass hdrRenderPass;
+        vk::RenderPass shadowRenderPass;
         uint32_t shadowMapSize;
         float terrainSize;
         HeightFunc getTerrainHeight;

@@ -41,7 +41,7 @@ std::vector<Mesh*> SceneBuilder::addGeneratedMeshes(std::vector<MeshGeometry> ba
     std::vector<Mesh*> out(batch.size(), nullptr);
 
     std::vector<std::unique_ptr<Mesh>> meshes(batch.size());
-    VkDeviceSize total = 0;
+    vk::DeviceSize total = 0;
     for (size_t i = 0; i < batch.size(); ++i) {
         if (batch[i].vertices.empty() || batch[i].indices.empty()) continue;
         meshes[i] = std::make_unique<Mesh>();
@@ -70,7 +70,7 @@ std::vector<Mesh*> SceneBuilder::addGeneratedMeshes(std::vector<MeshGeometry> ba
         return out;
     }
 
-    VkDeviceSize offset = 0;
+    vk::DeviceSize offset = 0;
     for (const auto& mesh : meshes) {
         if (!mesh) continue;
         mesh->copyGeometryTo(static_cast<char*>(mapped) + offset);
@@ -84,7 +84,7 @@ std::vector<Mesh*> SceneBuilder::addGeneratedMeshes(std::vector<MeshGeometry> ba
     std::vector<bool> recorded(meshes.size(), false);
     for (size_t i = 0; i < meshes.size(); ++i) {
         if (!meshes[i]) continue;
-        VkDeviceSize meshOffset = offset;
+        vk::DeviceSize meshOffset = offset;
         offset += meshes[i]->stagedSize();
         recorded[i] = meshes[i]->uploadFromStaging(storedAllocator, cmd.get(),
                                                    staging.get(), meshOffset);
@@ -1071,7 +1071,7 @@ void SceneBuilder::createRenderables() {
     }
 }
 
-void SceneBuilder::uploadFlagClothMesh(VmaAllocator allocator, VkDevice device, VkCommandPool commandPool, VkQueue queue) {
+void SceneBuilder::uploadFlagClothMesh(VmaAllocator allocator, vk::Device device, vk::CommandPool commandPool, vk::Queue queue) {
     flagClothMesh.releaseGPUResources();
     flagClothMesh.upload(allocator, device, commandPool, queue);
 }
@@ -1112,8 +1112,8 @@ void SceneBuilder::updatePlayerTransform(const glm::mat4& transform) {
     }
 }
 
-void SceneBuilder::updateAnimatedCharacter(float deltaTime, VmaAllocator allocator, VkDevice device,
-                                            VkCommandPool commandPool, VkQueue queue,
+void SceneBuilder::updateAnimatedCharacter(float deltaTime, VmaAllocator allocator, vk::Device device,
+                                            vk::CommandPool commandPool, vk::Queue queue,
                                             float movementSpeed, bool isGrounded, bool isJumping,
                                             const glm::vec3& position, const glm::vec3& facing,
                                             const glm::vec3& inputDirection,

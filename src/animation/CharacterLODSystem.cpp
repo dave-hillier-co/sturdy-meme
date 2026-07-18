@@ -136,7 +136,7 @@ bool CharacterLODSystem::uploadLODMesh(uint32_t characterIndex, uint32_t lodLeve
     }
 
     // Upload vertex buffer
-    VkDeviceSize vertexSize = meshData.vertices.size() * sizeof(SkinnedVertex);
+    vk::DeviceSize vertexSize = meshData.vertices.size() * sizeof(SkinnedVertex);
     if (!BufferUtils::createBufferWithStaging(
             allocator_, device_, commandPool_, graphicsQueue_,
             meshData.vertices.data(), vertexSize,
@@ -147,7 +147,7 @@ bool CharacterLODSystem::uploadLODMesh(uint32_t characterIndex, uint32_t lodLeve
     }
 
     // Upload index buffer
-    VkDeviceSize indexSize = meshData.indices.size() * sizeof(uint32_t);
+    vk::DeviceSize indexSize = meshData.indices.size() * sizeof(uint32_t);
     if (!BufferUtils::createBufferWithStaging(
             allocator_, device_, commandPool_, graphicsQueue_,
             meshData.indices.data(), indexSize,

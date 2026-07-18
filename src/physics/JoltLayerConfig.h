@@ -91,10 +91,7 @@ public:
 class CharacterContactListener : public JPH::CharacterContactListener {
 public:
     void OnContactAdded(const JPH::CharacterVirtual* inCharacter,
-                        const JPH::BodyID& inBodyID2,
-                        const JPH::SubShapeID& inSubShapeID2,
-                        JPH::RVec3Arg inContactPosition,
-                        JPH::Vec3Arg inContactNormal,
+                        const JPH::CharacterContact& inContact,
                         JPH::CharacterContactSettings& ioSettings) override {
         // Allow character to be pushed and to push objects
         ioSettings.mCanPushCharacter = true;

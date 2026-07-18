@@ -74,12 +74,12 @@ struct MeshConfig {
  */
 class AssetRegistry {
 public:
-    // RAII wrapper for VkShaderModule
+    // RAII wrapper for vk::ShaderModule
     struct ShaderModule {
         vk::ShaderModule module;
-        VkDevice device;
+        vk::Device device;
 
-        ShaderModule(vk::ShaderModule m, VkDevice d) : module(m), device(d) {}
+        ShaderModule(vk::ShaderModule m, vk::Device d) : module(m), device(d) {}
         ~ShaderModule() {
             if (module && device) {
                 vk::Device(device).destroyShaderModule(module);
@@ -125,9 +125,9 @@ public:
      * Initialize the registry with Vulkan context.
      * Must be called before any asset loading.
      */
-    void init(VkDevice device, VkPhysicalDevice physicalDevice,
-              VmaAllocator allocator, VkCommandPool commandPool,
-              VkQueue queue);
+    void init(vk::Device device, vk::PhysicalDevice physicalDevice,
+              VmaAllocator allocator, vk::CommandPool commandPool,
+              vk::Queue queue);
 
     // ========================================================================
     // Texture Management
@@ -221,11 +221,11 @@ public:
 
 private:
     // Vulkan context
-    VkDevice device_ = VK_NULL_HANDLE;
-    VkPhysicalDevice physicalDevice_ = VK_NULL_HANDLE;
+    vk::Device device_ = VK_NULL_HANDLE;
+    vk::PhysicalDevice physicalDevice_ = VK_NULL_HANDLE;
     VmaAllocator allocator_ = VK_NULL_HANDLE;
-    VkCommandPool commandPool_ = VK_NULL_HANDLE;
-    VkQueue queue_ = VK_NULL_HANDLE;
+    vk::CommandPool commandPool_ = VK_NULL_HANDLE;
+    vk::Queue queue_ = VK_NULL_HANDLE;
 
     // Asset caches (thread-safe with automatic cleanup of expired entries)
     WeakCache<Texture> textureCache_;

@@ -402,7 +402,7 @@ void GuiTreeTab::render(ITreeControl& treeControl) {
                     }
 
                     // Get the appropriate descriptor set
-                    VkDescriptorSet previewSet = VK_NULL_HANDLE;
+                    vk::DescriptorSet previewSet = VK_NULL_HANDLE;
                     if (selectedTextureType == 0) {
                         previewSet = atlas->getPreviewDescriptorSet(static_cast<uint32_t>(selectedArchetype));
                     } else {
@@ -418,7 +418,7 @@ void GuiTreeTab::render(ITreeControl& treeControl) {
                                         OctahedralAtlasConfig::ATLAS_HEIGHT * scale);
 
                         ImVec2 cursorPos = ImGui::GetCursorScreenPos();
-                        ImGui::Image(reinterpret_cast<ImTextureID>(previewSet), imageSize);
+                        ImGui::Image(reinterpret_cast<ImTextureID>(static_cast<VkDescriptorSet>(previewSet)), imageSize);
 
                         // Draw grid lines
                         ImDrawList* drawList = ImGui::GetWindowDrawList();

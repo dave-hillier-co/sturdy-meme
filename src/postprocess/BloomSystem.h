@@ -19,7 +19,7 @@ public:
 
     // Legacy InitInfo - kept for backward compatibility during migration
     struct InitInfo {
-        VkDevice device;
+        vk::Device device;
         VmaAllocator allocator;
         DescriptorManager::Pool* descriptorPool;  // Auto-growing pool
         VkExtent2D extent;
@@ -44,10 +44,10 @@ public:
 
     void resize(VkExtent2D newExtent);
 
-    void recordBloomPass(VkCommandBuffer cmd, VkImageView hdrInput);
+    void recordBloomPass(vk::CommandBuffer cmd, vk::ImageView hdrInput);
 
-    VkImageView getBloomOutput() const { return mipChain.empty() ? VK_NULL_HANDLE : **mipChain[0].imageView; }
-    VkSampler getBloomSampler() const { return sampler_ ? **sampler_ : VK_NULL_HANDLE; }
+    vk::ImageView getBloomOutput() const { return mipChain.empty() ? VK_NULL_HANDLE : **mipChain[0].imageView; }
+    vk::Sampler getBloomSampler() const { return sampler_ ? **sampler_ : VK_NULL_HANDLE; }
 
     void setThreshold(float t) { threshold = t; }
     float getThreshold() const { return threshold; }
@@ -75,7 +75,7 @@ private:
 
     void destroyMipChain();
 
-    VkDevice device = VK_NULL_HANDLE;
+    vk::Device device = VK_NULL_HANDLE;
     VmaAllocator allocator = VK_NULL_HANDLE;
     DescriptorManager::Pool* descriptorPool = nullptr;
     VkExtent2D extent = {0, 0};
@@ -95,18 +95,18 @@ private:
     std::optional<vk::raii::DescriptorSetLayout> downsampleDescSetLayout_;
     std::optional<vk::raii::PipelineLayout> downsamplePipelineLayout_;
     std::optional<vk::raii::Pipeline> downsamplePipeline_;
-    std::vector<VkDescriptorSet> downsampleDescSets;
+    std::vector<vk::DescriptorSet> downsampleDescSets;
 
     // Upsample pipeline
     std::optional<vk::raii::DescriptorSetLayout> upsampleDescSetLayout_;
     std::optional<vk::raii::PipelineLayout> upsamplePipelineLayout_;
     std::optional<vk::raii::Pipeline> upsamplePipeline_;
-    std::vector<VkDescriptorSet> upsampleDescSets;
+    std::vector<vk::DescriptorSet> upsampleDescSets;
 
     // Source view the descriptor sets were last written with. Descriptor sets
     // must not be rewritten every frame - in-flight frames still execute with
     // them bound (see recordBloomPass).
-    VkImageView writtenHdrInput_ = VK_NULL_HANDLE;
+    vk::ImageView writtenHdrInput_ = VK_NULL_HANDLE;
 
     // Parameters
     float threshold = 1.0f;

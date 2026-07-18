@@ -228,16 +228,16 @@ bool WaterSystemGroup::configureSubsystems(
 
 bool WaterSystemGroup::createDescriptorSets(
     RendererSystems& systems,
-    const std::vector<VkBuffer>& uniformBuffers,
+    const std::vector<vk::Buffer>& uniformBuffers,
     size_t uniformBufferSize,
     ShadowSystem& shadowSystem,
     const TerrainSystem& terrainSystem,
     const PostProcessSystem& postProcessSystem,
-    VkSampler depthSampler
+    vk::Sampler depthSampler
 ) {
     // Create water descriptor sets with terrain heightmap, flow map, displacement map, temporal foam, SSR, scene depth, and tile cache
     // Pass triple-buffered tile info buffers to avoid CPU-GPU sync issues
-    std::array<VkBuffer, 3> waterTileInfoBuffers = {
+    std::array<vk::Buffer, 3> waterTileInfoBuffers = {
         terrainSystem.getTileInfoBuffer(0),
         terrainSystem.getTileInfoBuffer(1),
         terrainSystem.getTileInfoBuffer(2)

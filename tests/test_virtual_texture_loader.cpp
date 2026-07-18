@@ -218,16 +218,17 @@ TEST_SUITE("VirtualTextureTileLoader Loading") {
         auto loaded = loader->getLoadedTiles();
         REQUIRE(loaded.size() == 1);
 
-        // Placeholder is 128x128 pink checkerboard
+        // Placeholder is a 128x128 neutral-gray tile: a missing tile should look
+        // like bland ground rather than flashing a magenta debug pattern.
         CHECK(loaded[0].width == 128);
         CHECK(loaded[0].height == 128);
         CHECK(loaded[0].format == TileFormat::RGBA8);
         CHECK(loaded[0].isValid());
 
-        // Verify it's a checkerboard pattern (first pixel should be pink: 255, 0, 255)
-        CHECK(loaded[0].pixels[0] == 255);  // R
-        CHECK(loaded[0].pixels[1] == 0);    // G
-        CHECK(loaded[0].pixels[2] == 255);  // B
+        // Verify the neutral-gray fill (opaque)
+        CHECK(loaded[0].pixels[0] == 127);  // R
+        CHECK(loaded[0].pixels[1] == 127);  // G
+        CHECK(loaded[0].pixels[2] == 127);  // B
         CHECK(loaded[0].pixels[3] == 255);  // A
     }
 

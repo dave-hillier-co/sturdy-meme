@@ -16,7 +16,7 @@ std::unique_ptr<SkySystem> SkySystem::create(const InitInfo& info) {
     return system;
 }
 
-std::unique_ptr<SkySystem> SkySystem::create(const InitContext& ctx, VkRenderPass hdrPass) {
+std::unique_ptr<SkySystem> SkySystem::create(const InitContext& ctx, vk::RenderPass hdrPass) {
     InitInfo info{};
     info.device = ctx.device;
     info.allocator = ctx.allocator;
@@ -74,7 +74,7 @@ bool SkySystem::createDescriptorSetLayout() {
     // 5: Mie Irradiance LUT sampler (Phase 4.1.9)
     // 6: Cloud Map LUT sampler (Paraboloid projection, updated per-frame)
 
-    VkDescriptorSetLayout rawLayout = DescriptorManager::LayoutBuilder(device)
+    vk::DescriptorSetLayout rawLayout = DescriptorManager::LayoutBuilder(device)
             .addUniformBuffer(VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT)  // 0: UBO
             .addCombinedImageSampler(VK_SHADER_STAGE_FRAGMENT_BIT)  // 1: Transmittance LUT
             .addCombinedImageSampler(VK_SHADER_STAGE_FRAGMENT_BIT)  // 2: Multi-scatter LUT
@@ -102,8 +102,8 @@ bool SkySystem::createDescriptorSetLayout() {
     return true;
 }
 
-bool SkySystem::createDescriptorSets(const std::vector<VkBuffer>& uniformBuffers,
-                                      VkDeviceSize uniformBufferSize,
+bool SkySystem::createDescriptorSets(const std::vector<vk::Buffer>& uniformBuffers,
+                                      vk::DeviceSize uniformBufferSize,
                                       AtmosphereLUTSystem& atmosphereLUTSystem) {
     // Allocate sky descriptor sets using managed pool
     descriptorSets = descriptorPool->allocate(**descriptorSetLayout_, framesInFlight);
@@ -113,13 +113,13 @@ bool SkySystem::createDescriptorSets(const std::vector<VkBuffer>& uniformBuffers
     }
 
     // Get LUT views and sampler from atmosphere system
-    VkImageView transmittanceLUTView = atmosphereLUTSystem.getTransmittanceLUTView();
-    VkImageView multiScatterLUTView = atmosphereLUTSystem.getMultiScatterLUTView();
-    VkImageView skyViewLUTView = atmosphereLUTSystem.getSkyViewLUTView();
-    VkImageView rayleighIrradianceLUTView = atmosphereLUTSystem.getRayleighIrradianceLUTView();
-    VkImageView mieIrradianceLUTView = atmosphereLUTSystem.getMieIrradianceLUTView();
-    VkImageView cloudMapLUTView = atmosphereLUTSystem.getCloudMapLUTView();
-    VkSampler lutSampler = atmosphereLUTSystem.getLUTSampler();
+    vk::ImageView transmittanceLUTView = atmosphereLUTSystem.getTransmittanceLUTView();
+    vk::ImageView multiScatterLUTView = atmosphereLUTSystem.getMultiScatterLUTView();
+    vk::ImageView skyViewLUTView = atmosphereLUTSystem.getSkyViewLUTView();
+    vk::ImageView rayleighIrradianceLUTView = atmosphereLUTSystem.getRayleighIrradianceLUTView();
+    vk::ImageView mieIrradianceLUTView = atmosphereLUTSystem.getMieIrradianceLUTView();
+    vk::ImageView cloudMapLUTView = atmosphereLUTSystem.getCloudMapLUTView();
+    vk::Sampler lutSampler = atmosphereLUTSystem.getLUTSampler();
 
     // Update each descriptor set
     for (size_t i = 0; i < framesInFlight; i++) {
@@ -141,7 +141,7 @@ bool SkySystem::createDescriptorSets(const std::vector<VkBuffer>& uniformBuffers
 bool SkySystem::createPipeline() {
     GraphicsPipelineFactory factory(device);
 
-    VkPipeline rawPipeline = VK_NULL_HANDLE;
+    vk::Pipeline rawPipeline = VK_NULL_HANDLE;
     bool success = factory
         .applyPreset(GraphicsPipelineFactory::Preset::FullscreenQuad)
         .setShaders(shaderPath + "/sky.vert.spv", shaderPath + "/sky.frag.spv")
@@ -160,7 +160,7 @@ bool SkySystem::createPipeline() {
     return true;
 }
 
-void SkySystem::recordDraw(VkCommandBuffer cmd, uint32_t frameIndex) {
+void SkySystem::recordDraw(vk::CommandBuffer cmd, uint32_t frameIndex) {
     vk::CommandBuffer vkCmd(cmd);
 
     vkCmd.bindPipeline(vk::PipelineBindPoint::eGraphics, **pipeline_);

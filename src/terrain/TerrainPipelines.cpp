@@ -217,7 +217,7 @@ bool TerrainPipelines::createRenderPipeline() {
     builder.addShaderStage(shaderPath + "/terrain/terrain.vert.spv", VK_SHADER_STAGE_VERTEX_BIT)
            .addShaderStage(fragShader, VK_SHADER_STAGE_FRAGMENT_BIT);
 
-    VkPipeline rawPipeline = VK_NULL_HANDLE;
+    vk::Pipeline rawPipeline = VK_NULL_HANDLE;
     if (!builder.buildGraphicsPipeline(PipelinePresets::filled(renderPass), **renderPipelineLayout_, rawPipeline)) {
         return false;
     }
@@ -231,7 +231,7 @@ bool TerrainPipelines::createWireframePipeline() {
     builder.addShaderStage(shaderPath + "/terrain/terrain.vert.spv", VK_SHADER_STAGE_VERTEX_BIT)
            .addShaderStage(shaderPath + "/terrain/terrain_wireframe.frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT);
 
-    VkPipeline rawPipeline = VK_NULL_HANDLE;
+    vk::Pipeline rawPipeline = VK_NULL_HANDLE;
     if (!builder.buildGraphicsPipeline(PipelinePresets::wireframe(renderPass), **renderPipelineLayout_, rawPipeline)) {
         return false;
     }
@@ -244,7 +244,7 @@ bool TerrainPipelines::createShadowPipeline() {
     PipelineBuilder layoutBuilder(device);
     layoutBuilder.addPushConstantRange(VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(TerrainShadowPushConstants));
 
-    VkPipelineLayout rawLayout = VK_NULL_HANDLE;
+    vk::PipelineLayout rawLayout = VK_NULL_HANDLE;
     if (!layoutBuilder.buildPipelineLayout({renderDescriptorSetLayout}, rawLayout)) {
         return false;
     }
@@ -255,7 +255,7 @@ bool TerrainPipelines::createShadowPipeline() {
     builder.addShaderStage(shaderPath + "/terrain/terrain_shadow.vert.spv", VK_SHADER_STAGE_VERTEX_BIT)
            .addShaderStage(shaderPath + "/terrain/terrain_shadow.frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT);
 
-    VkPipeline rawPipeline = VK_NULL_HANDLE;
+    vk::Pipeline rawPipeline = VK_NULL_HANDLE;
     if (!builder.buildGraphicsPipeline(PipelinePresets::shadow(shadowRenderPass), **shadowPipelineLayout_, rawPipeline)) {
         return false;
     }
@@ -275,7 +275,7 @@ bool TerrainPipelines::createMeshletRenderPipeline() {
     auto cfg = PipelinePresets::filled(renderPass);
     cfg.useMeshletVertexInput = true;
 
-    VkPipeline rawPipeline = VK_NULL_HANDLE;
+    vk::Pipeline rawPipeline = VK_NULL_HANDLE;
     if (!builder.buildGraphicsPipeline(cfg, **renderPipelineLayout_, rawPipeline)) {
         return false;
     }
@@ -291,7 +291,7 @@ bool TerrainPipelines::createMeshletWireframePipeline() {
     auto cfg = PipelinePresets::wireframe(renderPass);
     cfg.useMeshletVertexInput = true;
 
-    VkPipeline rawPipeline = VK_NULL_HANDLE;
+    vk::Pipeline rawPipeline = VK_NULL_HANDLE;
     if (!builder.buildGraphicsPipeline(cfg, **renderPipelineLayout_, rawPipeline)) {
         return false;
     }
@@ -307,7 +307,7 @@ bool TerrainPipelines::createMeshletShadowPipeline() {
     auto cfg = PipelinePresets::shadow(shadowRenderPass);
     cfg.useMeshletVertexInput = true;
 
-    VkPipeline rawPipeline = VK_NULL_HANDLE;
+    vk::Pipeline rawPipeline = VK_NULL_HANDLE;
     if (!builder.buildGraphicsPipeline(cfg, **shadowPipelineLayout_, rawPipeline)) {
         return false;
     }

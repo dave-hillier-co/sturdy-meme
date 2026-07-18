@@ -3,7 +3,7 @@
 
 InitContext InitContext::build(
     const VulkanContext& vulkanContext,
-    VkCommandPool cmdPool,
+    vk::CommandPool cmdPool,
     DescriptorManager::Pool* descPool,
     const std::string& resourcePath,
     uint32_t framesInFlight,

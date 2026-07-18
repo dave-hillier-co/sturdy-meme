@@ -81,7 +81,7 @@ bool GPUCullPass::createPipeline() {
     // Binding 2: Indirect draw buffer (SSBO, write)
     // Binding 3: Draw count buffer (SSBO, atomic)
     // Binding 4: Hi-Z pyramid (optional sampler)
-    VkDescriptorSetLayout rawLayout = DescriptorManager::LayoutBuilder(device_)
+    vk::DescriptorSetLayout rawLayout = DescriptorManager::LayoutBuilder(device_)
         .addUniformBuffer(VK_SHADER_STAGE_COMPUTE_BIT)         // 0: Uniforms
         .addStorageBuffer(VK_SHADER_STAGE_COMPUTE_BIT)         // 1: Object data
         .addStorageBuffer(VK_SHADER_STAGE_COMPUTE_BIT)         // 2: Indirect draw buffer
@@ -294,7 +294,7 @@ void GPUCullPass::bindSceneBuffer(GPUSceneBuffer* sceneBuffer, uint32_t frameInd
     vk::Device(device_).updateDescriptorSets(writes, {});
 }
 
-void GPUCullPass::recordCulling(VkCommandBuffer cmd, uint32_t frameIndex) {
+void GPUCullPass::recordCulling(vk::CommandBuffer cmd, uint32_t frameIndex) {
     if (!currentSceneBuffer_ || currentSceneBuffer_->getObjectCount() == 0) {
         return;
     }
@@ -321,7 +321,7 @@ void GPUCullPass::recordCulling(VkCommandBuffer cmd, uint32_t frameIndex) {
     BarrierHelpers::computeToIndirectDraw(vkCmd);
 }
 
-VkBuffer GPUCullPass::getUniformBuffer(uint32_t frameIndex) const {
+vk::Buffer GPUCullPass::getUniformBuffer(uint32_t frameIndex) const {
     return uniformBuffers_.buffers[frameIndex];
 }
 
@@ -334,12 +334,12 @@ GPUCullPass::CullingStats GPUCullPass::getStats(uint32_t frameIndex) const {
     return stats;
 }
 
-void GPUCullPass::setHiZPyramid(VkImageView pyramidView, VkSampler sampler) {
+void GPUCullPass::setHiZPyramid(vk::ImageView pyramidView, vk::Sampler sampler) {
     hiZPyramidView_ = pyramidView;
     hiZSampler_ = sampler;
 }
 
-void GPUCullPass::setPlaceholderImage(VkImageView view, VkSampler sampler) {
+void GPUCullPass::setPlaceholderImage(vk::ImageView view, vk::Sampler sampler) {
     placeholderImageView_ = view;
     placeholderSampler_ = sampler;
 }

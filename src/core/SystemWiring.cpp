@@ -21,7 +21,7 @@
 #include "MaterialRegistry.h"
 #include "UBOs.h"
 
-SystemWiring::SystemWiring(VkDevice device, uint32_t framesInFlight)
+SystemWiring::SystemWiring(vk::Device device, uint32_t framesInFlight)
     : device_(device), framesInFlight_(framesInFlight) {}
 
 void SystemWiring::wireAll(RendererSystems& systems) {
@@ -172,8 +172,8 @@ void SystemWiring::wireCloudShadowToTerrain(RendererSystems& systems) {
 
 void SystemWiring::wireCloudShadowBindings(RendererSystems& systems) {
     auto& cloudShadow = systems.cloudShadow();
-    VkImageView cloudShadowView = cloudShadow.getShadowMapView();
-    VkSampler cloudShadowSampler = cloudShadow.getShadowMapSampler();
+    vk::ImageView cloudShadowView = cloudShadow.getShadowMapView();
+    vk::Sampler cloudShadowSampler = cloudShadow.getShadowMapSampler();
 
     // Update MaterialRegistry-managed descriptor sets
     systems.scene().getSceneBuilder().getMaterialRegistry().updateCloudShadowBinding(
@@ -211,15 +211,15 @@ void SystemWiring::wireCausticsToTerrain(RendererSystems& systems) {
     }
 }
 
-std::vector<VkBuffer> SystemWiring::collectWindBuffers(const WindSystem& wind) const {
-    std::vector<VkBuffer> windBuffers(framesInFlight_);
+std::vector<vk::Buffer> SystemWiring::collectWindBuffers(const WindSystem& wind) const {
+    std::vector<vk::Buffer> windBuffers(framesInFlight_);
     for (uint32_t i = 0; i < framesInFlight_; i++) {
         windBuffers[i] = wind.getBufferInfo(i).buffer;
     }
     return windBuffers;
 }
 
-std::array<VkBuffer, 3> SystemWiring::collectTileInfoBuffers(const TerrainSystem& terrain) const {
+std::array<vk::Buffer, 3> SystemWiring::collectTileInfoBuffers(const TerrainSystem& terrain) const {
     return {
         terrain.getTileInfoBuffer(0),
         terrain.getTileInfoBuffer(1),
@@ -227,7 +227,7 @@ std::array<VkBuffer, 3> SystemWiring::collectTileInfoBuffers(const TerrainSystem
     };
 }
 
-std::vector<vk::Buffer> SystemWiring::toVkBuffers(const std::vector<VkBuffer>& raw) {
+std::vector<vk::Buffer> SystemWiring::toVkBuffers(const std::vector<vk::Buffer>& raw) {
     std::vector<vk::Buffer> result;
     result.reserve(raw.size());
     for (auto b : raw) {

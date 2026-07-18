@@ -52,7 +52,7 @@ public:
     explicit GPUCullPass(ConstructToken) {}
 
     struct InitInfo {
-        VkDevice device;
+        vk::Device device;
         VmaAllocator allocator;
         DescriptorManager::Pool* descriptorPool;
         std::string shaderPath;
@@ -85,10 +85,10 @@ public:
 
     // Record culling compute pass
     // Assumes scene buffer is already uploaded
-    void recordCulling(VkCommandBuffer cmd, uint32_t frameIndex);
+    void recordCulling(vk::CommandBuffer cmd, uint32_t frameIndex);
 
     // Get the uniform buffer for external binding
-    VkBuffer getUniformBuffer(uint32_t frameIndex) const;
+    vk::Buffer getUniformBuffer(uint32_t frameIndex) const;
 
     // Statistics
     struct CullingStats {
@@ -102,10 +102,10 @@ public:
     bool isHiZEnabled() const { return hiZEnabled_; }
 
     // Set Hi-Z pyramid for occlusion culling (optional)
-    void setHiZPyramid(VkImageView pyramidView, VkSampler sampler);
+    void setHiZPyramid(vk::ImageView pyramidView, vk::Sampler sampler);
 
     // Set placeholder image for when Hi-Z is not available (required for MoltenVK)
-    void setPlaceholderImage(VkImageView view, VkSampler sampler);
+    void setPlaceholderImage(vk::ImageView view, vk::Sampler sampler);
 
 private:
     bool initInternal(const InitInfo& info);
@@ -122,7 +122,7 @@ private:
     // Extract frustum planes from view-projection matrix
     static void extractFrustumPlanes(const glm::mat4& viewProj, glm::vec4 planes[6]);
 
-    VkDevice device_ = VK_NULL_HANDLE;
+    vk::Device device_ = VK_NULL_HANDLE;
     VmaAllocator allocator_ = VK_NULL_HANDLE;
     DescriptorManager::Pool* descriptorPool_ = nullptr;
     std::string shaderPath_;
@@ -135,7 +135,7 @@ private:
     std::optional<vk::raii::Pipeline> pipeline_;
 
     // Per-frame descriptor sets
-    std::vector<VkDescriptorSet> descSets_;
+    std::vector<vk::DescriptorSet> descSets_;
 
     // Per-frame uniform buffers
     BufferUtils::PerFrameBufferSet uniformBuffers_;
@@ -144,13 +144,13 @@ private:
     GPUSceneBuffer* currentSceneBuffer_ = nullptr;
 
     // Hi-Z pyramid reference (optional)
-    VkImageView hiZPyramidView_ = VK_NULL_HANDLE;
-    VkSampler hiZSampler_ = VK_NULL_HANDLE;
+    vk::ImageView hiZPyramidView_ = VK_NULL_HANDLE;
+    vk::Sampler hiZSampler_ = VK_NULL_HANDLE;
     bool hiZEnabled_ = false;
 
     // Placeholder image for descriptor binding when Hi-Z is unavailable
-    VkImageView placeholderImageView_ = VK_NULL_HANDLE;
-    VkSampler placeholderSampler_ = VK_NULL_HANDLE;
+    vk::ImageView placeholderImageView_ = VK_NULL_HANDLE;
+    vk::Sampler placeholderSampler_ = VK_NULL_HANDLE;
 
     // Workgroup size (must match shader)
     static constexpr uint32_t WORKGROUP_SIZE = 64;

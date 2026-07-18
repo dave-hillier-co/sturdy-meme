@@ -98,7 +98,7 @@ void TileArrayManager::copyTileToLayer(const TerrainTile& tile, uint32_t layerIn
     // Infer actual resolution from tile data
     uint32_t actualRes = static_cast<uint32_t>(std::sqrt(tile.cpuData.size()));
 
-    VkDeviceSize imageSize = tile.cpuData.size() * sizeof(float);
+    vk::DeviceSize imageSize = tile.cpuData.size() * sizeof(float);
 
     ManagedBuffer stagingBuffer;
     if (!VmaBufferFactory::createStagingBuffer(allocator_, imageSize, stagingBuffer)) {

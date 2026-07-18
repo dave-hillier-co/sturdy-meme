@@ -17,10 +17,10 @@ public:
 
     struct InitInfo {
         const vk::raii::Device* raiiDevice = nullptr;
-        VkDevice device;
+        vk::Device device;
         VmaAllocator allocator;
-        VkQueue graphicsQueue;
-        VkCommandPool commandPool;
+        vk::Queue graphicsQueue;
+        vk::CommandPool commandPool;
         std::string resourcePath;
     };
 
@@ -37,27 +37,27 @@ public:
     TerrainTextures& operator=(const TerrainTextures&) = delete;
 
     // Terrain albedo texture
-    VkImageView getAlbedoView() const { return albedoImage_.getView(); }
-    VkSampler getAlbedoSampler() const { return albedoSampler_ ? **albedoSampler_ : VK_NULL_HANDLE; }
+    vk::ImageView getAlbedoView() const { return albedoImage_.getView(); }
+    vk::Sampler getAlbedoSampler() const { return albedoSampler_ ? **albedoSampler_ : VK_NULL_HANDLE; }
 
     // Grass far LOD texture (for terrain blending at distance)
-    VkImageView getGrassFarLODView() const { return grassFarLODImage_.getView(); }
-    VkSampler getGrassFarLODSampler() const { return grassFarLODSampler_ ? **grassFarLODSampler_ : VK_NULL_HANDLE; }
+    vk::ImageView getGrassFarLODView() const { return grassFarLODImage_.getView(); }
+    vk::Sampler getGrassFarLODSampler() const { return grassFarLODSampler_ ? **grassFarLODSampler_ : VK_NULL_HANDLE; }
 
 private:
     bool initInternal(const InitInfo& info);
     bool createAlbedoTexture();
     bool createGrassFarLODTexture();
-    bool uploadImageDataMipLevel(VkImage image, const void* data, uint32_t width, uint32_t height,
+    bool uploadImageDataMipLevel(vk::Image image, const void* data, uint32_t width, uint32_t height,
                                   VkFormat format, uint32_t bytesPerPixel, uint32_t mipLevel);
-    bool generateMipmaps(VkImage image, uint32_t width, uint32_t height, uint32_t mipLevels);
+    bool generateMipmaps(vk::Image image, uint32_t width, uint32_t height, uint32_t mipLevels);
 
     // Init params
     const vk::raii::Device* raiiDevice_ = nullptr;
-    VkDevice device = VK_NULL_HANDLE;
+    vk::Device device = VK_NULL_HANDLE;
     VmaAllocator allocator = VK_NULL_HANDLE;
-    VkQueue graphicsQueue = VK_NULL_HANDLE;
-    VkCommandPool commandPool = VK_NULL_HANDLE;
+    vk::Queue graphicsQueue = VK_NULL_HANDLE;
+    vk::CommandPool commandPool = VK_NULL_HANDLE;
     std::string resourcePath;
 
     // Terrain albedo texture

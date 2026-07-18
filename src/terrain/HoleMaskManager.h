@@ -19,10 +19,10 @@ class HoleMaskManager {
 public:
     struct InitInfo {
         const vk::raii::Device* raiiDevice = nullptr;
-        VkDevice device = VK_NULL_HANDLE;
+        vk::Device device = VK_NULL_HANDLE;
         VmaAllocator allocator = VK_NULL_HANDLE;
-        VkQueue graphicsQueue = VK_NULL_HANDLE;
-        VkCommandPool commandPool = VK_NULL_HANDLE;
+        vk::Queue graphicsQueue = VK_NULL_HANDLE;
+        vk::CommandPool commandPool = VK_NULL_HANDLE;
         uint32_t storedTileResolution = 513;
         uint32_t maxLayers = 64;
     };
@@ -60,16 +60,16 @@ public:
     void uploadAllActiveMasks(const std::vector<TerrainTile*>& activeTiles);
 
     // GPU resource accessors
-    VkImageView getArrayView() const { return arrayView_ ? static_cast<VkImageView>(**arrayView_) : VK_NULL_HANDLE; }
-    VkSampler getSampler() const { return sampler_ ? **sampler_ : VK_NULL_HANDLE; }
+    vk::ImageView getArrayView() const { return arrayView_ ? static_cast<vk::ImageView>(**arrayView_) : VK_NULL_HANDLE; }
+    vk::Sampler getSampler() const { return sampler_ ? **sampler_ : VK_NULL_HANDLE; }
 
 private:
     std::vector<uint8_t> generateTileHoleMask(const TerrainTile& tile) const;
 
-    VkDevice device_ = VK_NULL_HANDLE;
+    vk::Device device_ = VK_NULL_HANDLE;
     VmaAllocator allocator_ = VK_NULL_HANDLE;
-    VkQueue graphicsQueue_ = VK_NULL_HANDLE;
-    VkCommandPool commandPool_ = VK_NULL_HANDLE;
+    vk::Queue graphicsQueue_ = VK_NULL_HANDLE;
+    vk::CommandPool commandPool_ = VK_NULL_HANDLE;
     uint32_t storedTileResolution_ = 513;
     uint32_t maxLayers_ = 64;
 

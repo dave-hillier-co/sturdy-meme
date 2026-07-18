@@ -142,7 +142,7 @@ bool WaterDisplacement::createDisplacementMap() {
             .setBaseArrayLayer(0)
             .setLayerCount(1);
 
-        for (VkImage image : {displacementMap.get(), prevDisplacementMap.get()}) {
+        for (vk::Image image : {displacementMap.get(), prevDisplacementMap.get()}) {
             BarrierHelpers::transitionImageLayout(cmd.get(), image,
                 vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal,
                 vk::PipelineStageFlagBits::eTopOfPipe, vk::PipelineStageFlagBits::eTransfer,
@@ -168,7 +168,7 @@ bool WaterDisplacement::createParticleBuffer() {
     particleBuffers_.resize(framesInFlight);
     particleMapped.resize(framesInFlight);
 
-    VkDeviceSize bufferSize = sizeof(SplashParticle) * MAX_PARTICLES;
+    vk::DeviceSize bufferSize = sizeof(SplashParticle) * MAX_PARTICLES;
 
     for (uint32_t i = 0; i < framesInFlight; i++) {
         if (!VmaBufferFactory::createStorageBufferHostReadable(allocator, bufferSize, particleBuffers_[i])) {
@@ -328,7 +328,7 @@ void WaterDisplacement::updateParticleBuffer(uint32_t frameIndex) {
     }
 }
 
-void WaterDisplacement::recordCompute(VkCommandBuffer cmd, uint32_t frameIndex) {
+void WaterDisplacement::recordCompute(vk::CommandBuffer cmd, uint32_t frameIndex) {
     if (!computePipeline_) return;
 
     // Update particle buffer

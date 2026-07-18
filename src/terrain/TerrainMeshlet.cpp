@@ -133,8 +133,8 @@ std::unique_ptr<TerrainMeshlet> TerrainMeshlet::create(const InitInfo& info) {
 }
 
 bool TerrainMeshlet::createBuffers() {
-    VkDeviceSize vertexBufferSize = pendingVertices_.size() * sizeof(glm::vec2);
-    VkDeviceSize indexBufferSize = pendingIndices_.size() * sizeof(uint16_t);
+    vk::DeviceSize vertexBufferSize = pendingVertices_.size() * sizeof(glm::vec2);
+    vk::DeviceSize indexBufferSize = pendingIndices_.size() * sizeof(uint16_t);
 
     // Create device-local vertex buffer (with transfer dst for staging uploads)
     if (!VmaBufferFactory::createVertexStorageBuffer(allocator_, vertexBufferSize, vertexBuffer_)) {
@@ -169,8 +169,8 @@ bool TerrainMeshlet::initInternal(const InitInfo& info) {
     }
 
     // Create per-frame staging buffers (like VirtualTextureCache pattern)
-    VkDeviceSize vertexBufferSize = pendingVertices_.size() * sizeof(glm::vec2);
-    VkDeviceSize indexBufferSize = pendingIndices_.size() * sizeof(uint16_t);
+    vk::DeviceSize vertexBufferSize = pendingVertices_.size() * sizeof(glm::vec2);
+    vk::DeviceSize indexBufferSize = pendingIndices_.size() * sizeof(uint16_t);
 
     vertexStagingBuffers_.resize(framesInFlight_);
     indexStagingBuffers_.resize(framesInFlight_);
@@ -218,8 +218,8 @@ bool TerrainMeshlet::requestSubdivisionChange(uint32_t newLevel) {
         // This is the only case where we might need to be careful about in-flight frames
         // But since we're using per-frame staging, we just recreate everything
 
-        VkDeviceSize vertexBufferSize = pendingVertices_.size() * sizeof(glm::vec2);
-        VkDeviceSize indexBufferSize = pendingIndices_.size() * sizeof(uint16_t);
+        vk::DeviceSize vertexBufferSize = pendingVertices_.size() * sizeof(glm::vec2);
+        vk::DeviceSize indexBufferSize = pendingIndices_.size() * sizeof(uint16_t);
 
         // Recreate GPU buffers
         vertexBuffer_.reset();
@@ -271,7 +271,7 @@ bool TerrainMeshlet::requestSubdivisionChange(uint32_t newLevel) {
     return true;
 }
 
-void TerrainMeshlet::recordUpload(VkCommandBuffer cmd, uint32_t frameIndex) {
+void TerrainMeshlet::recordUpload(vk::CommandBuffer cmd, uint32_t frameIndex) {
     if (!pendingUpload_) {
         return;  // Nothing to upload
     }
@@ -285,8 +285,8 @@ void TerrainMeshlet::recordUpload(VkCommandBuffer cmd, uint32_t frameIndex) {
     }
 
     // Copy geometry to this frame's staging buffers
-    VkDeviceSize vertexDataSize = pendingVertices_.size() * sizeof(glm::vec2);
-    VkDeviceSize indexDataSize = pendingIndices_.size() * sizeof(uint16_t);
+    vk::DeviceSize vertexDataSize = pendingVertices_.size() * sizeof(glm::vec2);
+    vk::DeviceSize indexDataSize = pendingIndices_.size() * sizeof(uint16_t);
 
     if (vertexStagingMapped_[bufferIndex]) {
         std::memcpy(vertexStagingMapped_[bufferIndex], pendingVertices_.data(), vertexDataSize);

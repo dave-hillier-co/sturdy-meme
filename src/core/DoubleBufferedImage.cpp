@@ -4,7 +4,7 @@
 
 namespace BufferUtils {
 
-DoubleBufferedImageBuilder& DoubleBufferedImageBuilder::setDevice(VkDevice newDevice) {
+DoubleBufferedImageBuilder& DoubleBufferedImageBuilder::setDevice(vk::Device newDevice) {
     device_ = newDevice;
     return *this;
 }
@@ -46,7 +46,7 @@ DoubleBufferedImageBuilder& DoubleBufferedImageBuilder::setAspectMask(VkImageAsp
 bool DoubleBufferedImageBuilder::build(DoubleBufferedImageSet& outImages) const {
     if (!device_ || !allocator_ || width_ == 0 || height_ == 0) {
         SDL_Log("DoubleBufferedImageBuilder missing required fields (device=%p, allocator=%p, width=%u, height=%u)",
-                device_, allocator_, width_, height_);
+                (void*)static_cast<VkDevice>(device_), (void*)allocator_, width_, height_);
         return false;
     }
 
@@ -69,7 +69,7 @@ bool DoubleBufferedImageBuilder::build(DoubleBufferedImageSet& outImages) const 
 
     // Create both images
     for (int i = 0; i < 2; i++) {
-        if (vmaCreateImage(allocator_, reinterpret_cast<const VkImageCreateInfo*>(&imageInfo), &allocInfo, &result.images[i],
+        if (vmaCreateImage(allocator_, reinterpret_cast<const VkImageCreateInfo*>(&imageInfo), &allocInfo, reinterpret_cast<VkImage*>(&result.images[i]),
                            &result.allocations[i], nullptr) != VK_SUCCESS) {
             SDL_Log("Failed to create double-buffered image %d", i);
             // Clean up any already created
@@ -106,14 +106,14 @@ bool DoubleBufferedImageBuilder::build(DoubleBufferedImageSet& outImages) const 
             }
             return false;
         }
-        result.views[i] = static_cast<VkImageView>(viewResult);
+        result.views[i] = static_cast<vk::ImageView>(viewResult);
     }
 
     outImages = result;
     return true;
 }
 
-void destroyImages(VkDevice device, VmaAllocator allocator, DoubleBufferedImageSet& images) {
+void destroyImages(vk::Device device, VmaAllocator allocator, DoubleBufferedImageSet& images) {
     if (!device || !allocator) return;
 
     vk::Device vkDevice(device);

@@ -66,7 +66,7 @@ FrameResult FrameExecutor::execute(const FrameBuilder& builder) {
     uint32_t frameIndex = frameSync_.currentIndex();
 
     // Build frame — caller records commands
-    VkCommandBuffer cmd = builder(imageIndex, frameIndex);
+    vk::CommandBuffer cmd = builder(imageIndex, frameIndex);
     if (cmd == VK_NULL_HANDLE) {
         frameSync_.advance();
         return FrameResult::Skipped;
@@ -86,8 +86,8 @@ FrameResult FrameExecutor::execute(const FrameBuilder& builder) {
 }
 
 FrameResult FrameExecutor::acquireImage(uint32_t& imageIndex) {
-    VkDevice device = vulkanContext_->getVkDevice();
-    VkSwapchainKHR swapchain = vulkanContext_->getVkSwapchain();
+    vk::Device device = vulkanContext_->getVkDevice();
+    vk::SwapchainKHR swapchain = vulkanContext_->getVkSwapchain();
 
     constexpr uint64_t acquireTimeoutNs = 100'000'000; // 100ms
     VkResult vkResult = vkAcquireNextImageKHR(
@@ -113,8 +113,8 @@ FrameResult FrameExecutor::acquireImage(uint32_t& imageIndex) {
     return FrameResult::Success;
 }
 
-FrameResult FrameExecutor::submitCommandBuffer(VkCommandBuffer cmd, uint32_t imageIndex) {
-    VkQueue graphicsQueue = vulkanContext_->getVkGraphicsQueue();
+FrameResult FrameExecutor::submitCommandBuffer(vk::CommandBuffer cmd, uint32_t imageIndex) {
+    vk::Queue graphicsQueue = vulkanContext_->getVkGraphicsQueue();
     vk::CommandBuffer vkCmd(cmd);
 
     vk::Semaphore waitSemaphores[] = {frameSync_.currentImageAvailableSemaphore()};
@@ -157,8 +157,8 @@ FrameResult FrameExecutor::submitCommandBuffer(VkCommandBuffer cmd, uint32_t ima
 }
 
 FrameResult FrameExecutor::present(uint32_t imageIndex) {
-    VkQueue presentQueue = vulkanContext_->getVkPresentQueue();
-    VkSwapchainKHR swapchain = vulkanContext_->getVkSwapchain();
+    vk::Queue presentQueue = vulkanContext_->getVkPresentQueue();
+    vk::SwapchainKHR swapchain = vulkanContext_->getVkSwapchain();
 
     vk::Semaphore waitSemaphores[] = {frameSync_.renderFinishedSemaphoreForImage(imageIndex)};
     vk::SwapchainKHR swapChains[] = {swapchain};

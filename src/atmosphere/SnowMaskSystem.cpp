@@ -23,7 +23,7 @@ std::unique_ptr<SnowMaskSystem> SnowMaskSystem::create(const InitInfo& info) {
 
 std::optional<SnowMaskSystem::Bundle> SnowMaskSystem::createWithDependencies(
     const InitContext& ctx,
-    VkRenderPass hdrRenderPass
+    vk::RenderPass hdrRenderPass
 ) {
     // Create snow mask system
     InitInfo snowMaskInfo{};
@@ -99,8 +99,8 @@ void SnowMaskSystem::destroyBuffers(VmaAllocator alloc) {
 }
 
 bool SnowMaskSystem::createBuffers() {
-    VkDeviceSize uniformBufferSize = sizeof(SnowMaskUniforms);
-    VkDeviceSize interactionBufferSize = sizeof(SnowInteractionSource) * MAX_INTERACTIONS;
+    vk::DeviceSize uniformBufferSize = sizeof(SnowMaskUniforms);
+    vk::DeviceSize interactionBufferSize = sizeof(SnowInteractionSource) * MAX_INTERACTIONS;
 
     BufferUtils::PerFrameBufferBuilder uniformBuilder;
     if (!uniformBuilder.setAllocator(getAllocator())
@@ -251,7 +251,7 @@ void SnowMaskSystem::setMaskCenter(const glm::vec3& worldPos) {
     maskOrigin = glm::vec2(worldPos.x - maskSize * 0.5f, worldPos.z - maskSize * 0.5f);
 }
 
-void SnowMaskSystem::recordCompute(VkCommandBuffer cmd, uint32_t frameIndex) {
+void SnowMaskSystem::recordCompute(vk::CommandBuffer cmd, uint32_t frameIndex) {
     vk::CommandBuffer vkCmd(cmd);
 
     // Transition snow mask image to general layout for compute write

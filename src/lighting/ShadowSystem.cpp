@@ -47,8 +47,8 @@ std::unique_ptr<ShadowSystem> ShadowSystem::create(const InitInfo& info) {
 }
 
 std::unique_ptr<ShadowSystem> ShadowSystem::create(const InitContext& ctx,
-                                                    VkDescriptorSetLayout mainDescriptorSetLayout_,
-                                                    VkDescriptorSetLayout skinnedDescriptorSetLayout_) {
+                                                    vk::DescriptorSetLayout mainDescriptorSetLayout_,
+                                                    vk::DescriptorSetLayout skinnedDescriptorSetLayout_) {
     InitInfo info{};
     info.raiiDevice = ctx.raiiDevice;
     info.device = ctx.device;
@@ -64,7 +64,7 @@ std::unique_ptr<ShadowSystem> ShadowSystem::create(const InitContext& ctx,
 ShadowSystem::ShadowSystem(ConstructToken, const InitInfo& info)
     : initInfo_(info) {
     if (initInfo_.device == VK_NULL_HANDLE) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "ShadowSystem requires a valid VkDevice");
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "ShadowSystem requires a valid vk::Device");
         return;
     }
 
@@ -172,7 +172,7 @@ bool ShadowSystem::createShadowResources() {
     return true;
 }
 
-void ShadowSystem::recordInitialClearIfNeeded(VkCommandBuffer cmd) {
+void ShadowSystem::recordInitialClearIfNeeded(vk::CommandBuffer cmd) {
     if (csmInitialized_) return;
     csmInitialized_ = true;
 
@@ -197,11 +197,11 @@ void ShadowSystem::recordInitialClearIfNeeded(VkCommandBuffer cmd) {
 bool ShadowSystem::createShadowPipelineCommon(
     const std::string& vertShader,
     const std::string& fragShader,
-    VkDescriptorSetLayout descriptorSetLayout,
+    vk::DescriptorSetLayout descriptorSetLayout,
     const VkVertexInputBindingDescription& binding,
     const std::vector<VkVertexInputAttributeDescription>& attributes,
-    VkPipelineLayout& outLayout,
-    VkPipeline& outPipeline)
+    vk::PipelineLayout& outLayout,
+    vk::Pipeline& outPipeline)
 {
     PipelineBuilder layoutBuilder(initInfo_.device);
     layoutBuilder.addPushConstantRange(VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(ShadowPushConstants));
@@ -370,7 +370,7 @@ bool ShadowSystem::createInstancedShadowResources() {
     for (uint32_t i = 0; i < initInfo_.framesInFlight; i++) {
         VmaAllocationInfo allocResult;
         if (vmaCreateBuffer(initInfo_.allocator, reinterpret_cast<const VkBufferCreateInfo*>(&bufferInfo), &allocInfo,
-                            &instanceBuffers[i], &instanceAllocations[i], &allocResult) != VK_SUCCESS) {
+                            reinterpret_cast<VkBuffer*>(&instanceBuffers[i]), &instanceAllocations[i], &allocResult) != VK_SUCCESS) {
             SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create instance buffer %u", i);
             return false;
         }
@@ -387,7 +387,7 @@ bool ShadowSystem::createInstancedShadowResources() {
         .setMaxSets(initInfo_.framesInFlight)
         .setPoolSizes(poolSize);
 
-    VkDescriptorPool pool;
+    vk::DescriptorPool pool;
     try {
         pool = vkDevice.createDescriptorPool(poolInfo);
     } catch (const vk::SystemError& e) {
@@ -497,7 +497,7 @@ void ShadowSystem::destroyInstancedShadowResources() {
 }
 
 void ShadowSystem::drawShadowSceneInstanced(
-    VkCommandBuffer cmd,
+    vk::CommandBuffer cmd,
     uint32_t frameIndex,
     uint32_t cascadeIndex,
     const std::vector<ecs::RenderData>& sceneObjects)
@@ -661,10 +661,10 @@ bool ShadowSystem::initIndirectShadowPath(GPUSceneBuffer& sceneBuffer) {
     return true;
 }
 
-void ShadowSystem::recordShadowSceneIndirect(VkCommandBuffer cmd, uint32_t frameIndex, uint32_t cascade,
-                                             VkDescriptorSet uboDescriptorSet,
+void ShadowSystem::recordShadowSceneIndirect(vk::CommandBuffer cmd, uint32_t frameIndex, uint32_t cascade,
+                                             vk::DescriptorSet uboDescriptorSet,
                                              GPUSceneBuffer& sceneBuffer,
-                                             VkBuffer indirectBuffer, bool canMultiDrawIndirect) {
+                                             vk::Buffer indirectBuffer, bool canMultiDrawIndirect) {
     if (!indirectShadowReady_ || indirectShadowPipeline == VK_NULL_HANDLE) return;
     if (frameIndex >= indirectInstanceDescriptorSets.size()) return;
 
@@ -820,8 +820,8 @@ void ShadowSystem::updateCascadeMatrices(const glm::vec3& lightDir, const Camera
 }
 
 void ShadowSystem::drawShadowScene(
-    VkCommandBuffer cmd,
-    VkPipelineLayout layout,
+    vk::CommandBuffer cmd,
+    vk::PipelineLayout layout,
     uint32_t cascadeOrFaceIndex,
     const glm::mat4& lightMatrix,
     const std::vector<ecs::RenderData>& sceneObjects,
@@ -855,8 +855,8 @@ void ShadowSystem::drawShadowScene(
     if (skinnedCallback) skinnedCallback(cmd, cascadeOrFaceIndex, lightMatrix);
 }
 
-void ShadowSystem::recordShadowPass(VkCommandBuffer cmd, uint32_t frameIndex,
-                                     VkDescriptorSet descriptorSet,
+void ShadowSystem::recordShadowPass(vk::CommandBuffer cmd, uint32_t frameIndex,
+                                     vk::DescriptorSet descriptorSet,
                                      const std::vector<ecs::RenderData>& sceneObjects,
                                      const DrawCallback& terrainDrawCallback,
                                      const DrawCallback& grassDrawCallback,
@@ -987,7 +987,7 @@ void ShadowSystem::recordShadowPass(VkCommandBuffer cmd, uint32_t frameIndex,
     }
 }
 
-void ShadowSystem::bindSkinnedShadowPipeline(VkCommandBuffer cmd, VkDescriptorSet descriptorSet,
+void ShadowSystem::bindSkinnedShadowPipeline(vk::CommandBuffer cmd, vk::DescriptorSet descriptorSet,
                                               uint32_t boneMatrixOffset) {
     if (skinnedShadowPipeline == VK_NULL_HANDLE) return;
     vk::CommandBuffer vkCmd(cmd);
@@ -998,7 +998,7 @@ void ShadowSystem::bindSkinnedShadowPipeline(VkCommandBuffer cmd, VkDescriptorSe
                              0, vk::DescriptorSet(descriptorSet), boneMatrixOffset);
 }
 
-void ShadowSystem::recordSkinnedMeshShadow(VkCommandBuffer cmd, uint32_t cascade,
+void ShadowSystem::recordSkinnedMeshShadow(vk::CommandBuffer cmd, uint32_t cascade,
                                             const glm::mat4& modelMatrix,
                                             const SkinnedMesh& mesh) {
     if (skinnedShadowPipelineLayout == VK_NULL_HANDLE) return;
@@ -1019,8 +1019,8 @@ void ShadowSystem::recordSkinnedMeshShadow(VkCommandBuffer cmd, uint32_t cascade
     DIAG_RECORD_DRAW();
 }
 
-void ShadowSystem::renderDynamicShadows(VkCommandBuffer cmd, uint32_t frameIndex,
-                                        VkDescriptorSet descriptorSet,
+void ShadowSystem::renderDynamicShadows(vk::CommandBuffer cmd, uint32_t frameIndex,
+                                        vk::DescriptorSet descriptorSet,
                                         const std::vector<ecs::RenderData>& sceneObjects,
                                         const DrawCallback& terrainDrawCallback,
                                         const DrawCallback& grassDrawCallback,

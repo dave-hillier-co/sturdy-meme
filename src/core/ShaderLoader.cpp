@@ -4,7 +4,7 @@
 
 namespace ShaderLoader {
 
-ScopedShaderModule::ScopedShaderModule(VkDevice device, VkShaderModule module)
+ScopedShaderModule::ScopedShaderModule(vk::Device device, vk::ShaderModule module)
     : device_(device)
     , module_(module) {}
 
@@ -15,8 +15,8 @@ ScopedShaderModule::~ScopedShaderModule() {
 ScopedShaderModule::ScopedShaderModule(ScopedShaderModule&& other) noexcept
     : device_(other.device_)
     , module_(other.module_) {
-    other.device_ = VK_NULL_HANDLE;
-    other.module_ = VK_NULL_HANDLE;
+    other.device_ = nullptr;
+    other.module_ = nullptr;
 }
 
 ScopedShaderModule& ScopedShaderModule::operator=(ScopedShaderModule&& other) noexcept {
@@ -24,18 +24,18 @@ ScopedShaderModule& ScopedShaderModule::operator=(ScopedShaderModule&& other) no
         reset();
         device_ = other.device_;
         module_ = other.module_;
-        other.device_ = VK_NULL_HANDLE;
-        other.module_ = VK_NULL_HANDLE;
+        other.device_ = nullptr;
+        other.module_ = nullptr;
     }
     return *this;
 }
 
 void ScopedShaderModule::reset() {
-    if (device_ != VK_NULL_HANDLE && module_ != VK_NULL_HANDLE) {
-        vk::Device(device_).destroyShaderModule(module_);
+    if (device_ && module_) {
+        device_.destroyShaderModule(module_);
     }
-    device_ = VK_NULL_HANDLE;
-    module_ = VK_NULL_HANDLE;
+    device_ = nullptr;
+    module_ = nullptr;
 }
 
 std::optional<std::vector<char>> readFile(const std::string& filename) {
@@ -98,15 +98,15 @@ std::optional<vk::raii::ShaderModule> loadShaderModule(const vk::raii::Device& d
     return createShaderModule(device, *code);
 }
 
-std::optional<ScopedShaderModule> createShaderModule(VkDevice device, const std::vector<char>& code, RaiiTag) {
-    auto result = createShaderModule(vk::Device(device), code);
+std::optional<ScopedShaderModule> createShaderModule(vk::Device device, const std::vector<char>& code, RaiiTag) {
+    auto result = createShaderModule(device, code);
     if (!result) {
         return std::nullopt;
     }
-    return ScopedShaderModule(device, static_cast<VkShaderModule>(*result));
+    return ScopedShaderModule(device, *result);
 }
 
-std::optional<ScopedShaderModule> loadShaderModule(VkDevice device, std::string_view path, RaiiTag) {
+std::optional<ScopedShaderModule> loadShaderModule(vk::Device device, std::string_view path, RaiiTag) {
     auto code = readFile(std::string(path));
     if (!code) {
         return std::nullopt;

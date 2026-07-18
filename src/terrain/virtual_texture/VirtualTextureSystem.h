@@ -45,10 +45,10 @@ public:
 
     struct InitInfo {
         const vk::raii::Device* raiiDevice = nullptr;
-        VkDevice device = VK_NULL_HANDLE;
+        vk::Device device = VK_NULL_HANDLE;
         VmaAllocator allocator = VK_NULL_HANDLE;
-        VkCommandPool commandPool = VK_NULL_HANDLE;
-        VkQueue queue = VK_NULL_HANDLE;
+        vk::CommandPool commandPool = VK_NULL_HANDLE;
+        vk::Queue queue = VK_NULL_HANDLE;
         std::string tilePath;
         VirtualTextureConfig config;
         uint32_t framesInFlight = 3;
@@ -63,14 +63,14 @@ public:
     /**
      * Destroy all resources
      */
-    void destroy(VkDevice device, VmaAllocator allocator);
+    void destroy(vk::Device device, VmaAllocator allocator);
 
     /**
      * Begin a new frame - clears feedback buffer
      * @param cmd Command buffer to record clear commands
      * @param frameIndex Current frame index (for double buffering)
      */
-    void beginFrame(VkCommandBuffer cmd, uint32_t frameIndex);
+    void beginFrame(vk::CommandBuffer cmd, uint32_t frameIndex);
 
     /**
      * End frame - copy feedback to readback buffer.
@@ -78,7 +78,7 @@ public:
      * @param cmd Command buffer to record copy commands
      * @param frameIndex Current frame index
      */
-    void endFrame(VkCommandBuffer cmd, uint32_t frameIndex);
+    void endFrame(vk::CommandBuffer cmd, uint32_t frameIndex);
 
     /**
      * Process feedback from a PREVIOUS frame and record tile uploads.
@@ -94,29 +94,29 @@ public:
      * @param cmd Command buffer to record upload commands into
      * @param frameIndex Current frame index (NOT the frame being read back)
      */
-    void update(VkCommandBuffer cmd, uint32_t frameIndex);
+    void update(vk::CommandBuffer cmd, uint32_t frameIndex);
 
     /**
      * Get the physical cache texture for shader binding
      */
-    VkImageView getCacheImageView() const { return cache->getCacheImageView(); }
-    VkSampler getCacheSampler() const { return cache->getCacheSampler(); }
+    vk::ImageView getCacheImageView() const { return cache->getCacheImageView(); }
+    vk::Sampler getCacheSampler() const { return cache->getCacheSampler(); }
 
     /**
      * Get page table texture array (one layer per mip level) for shader binding
      */
-    VkImageView getPageTableImageView() const {
+    vk::ImageView getPageTableImageView() const {
         return pageTable->getCombinedImageView();
     }
-    VkSampler getPageTableSampler() const { return pageTable->getSampler(); }
+    vk::Sampler getPageTableSampler() const { return pageTable->getSampler(); }
 
     /**
      * Get feedback buffer for shader binding
      */
-    VkBuffer getFeedbackBuffer(uint32_t frameIndex) const {
+    vk::Buffer getFeedbackBuffer(uint32_t frameIndex) const {
         return feedback->getFeedbackBuffer(frameIndex);
     }
-    VkBuffer getCounterBuffer(uint32_t frameIndex) const {
+    vk::Buffer getCounterBuffer(uint32_t frameIndex) const {
         return feedback->getCounterBuffer(frameIndex);
     }
 
@@ -129,7 +129,7 @@ public:
      * Get the GPU uniform buffer holding VTParamsUBO (filled at init;
      * the params are constant for the lifetime of the system)
      */
-    VkBuffer getParamsBuffer() const { return paramsBuffer_.get(); }
+    vk::Buffer getParamsBuffer() const { return paramsBuffer_.get(); }
 
     /**
      * Get configuration
@@ -189,7 +189,7 @@ private:
     static constexpr uint32_t MAX_REQUESTS_PER_FRAME = 64;
 
     void processFeedback(uint32_t readbackFrameIndex);
-    void recordPendingTileUploads(VkCommandBuffer cmd, uint32_t frameIndex);
+    void recordPendingTileUploads(vk::CommandBuffer cmd, uint32_t frameIndex);
 };
 
 } // namespace VirtualTexture

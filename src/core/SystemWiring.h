@@ -43,7 +43,7 @@ struct EnvironmentSettings;
  */
 class SystemWiring {
 public:
-    SystemWiring(VkDevice device, uint32_t framesInFlight);
+    SystemWiring(vk::Device device, uint32_t framesInFlight);
 
     /**
      * Wire all system descriptors at once.
@@ -106,21 +106,21 @@ public:
     void wireCausticsToTerrain(RendererSystems& systems);
 
 private:
-    VkDevice device_;
+    vk::Device device_;
     uint32_t framesInFlight_;
 
     // Helper to get wind buffers from WindSystem
-    std::vector<VkBuffer> collectWindBuffers(const WindSystem& wind) const;
+    std::vector<vk::Buffer> collectWindBuffers(const WindSystem& wind) const;
 
     // Helper to get tile info buffers from TerrainSystem
-    std::array<VkBuffer, 3> collectTileInfoBuffers(const TerrainSystem& terrain) const;
+    std::array<vk::Buffer, 3> collectTileInfoBuffers(const TerrainSystem& terrain) const;
 
     // Helper to convert raw buffers to vulkan-hpp buffers
-    static std::vector<vk::Buffer> toVkBuffers(const std::vector<VkBuffer>& raw);
+    static std::vector<vk::Buffer> toVkBuffers(const std::vector<vk::Buffer>& raw);
 
     // Helper to convert raw buffer array to vulkan-hpp buffer array
     template<size_t N>
-    static std::array<vk::Buffer, N> toVkBuffersArray(const std::array<VkBuffer, N>& raw) {
+    static std::array<vk::Buffer, N> toVkBuffersArray(const std::array<vk::Buffer, N>& raw) {
         std::array<vk::Buffer, N> result;
         for (size_t i = 0; i < N; ++i) {
             result[i] = vk::Buffer(raw[i]);

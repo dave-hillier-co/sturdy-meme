@@ -45,9 +45,9 @@ public:
         const RendererSystems& systems,
         uint32_t swapchainImageIndex,
         const std::vector<vk::raii::Framebuffer>& framebuffers,
-        VkRenderPass swapchainRenderPass,
+        vk::RenderPass swapchainRenderPass,
         VkExtent2D swapchainExtent,
-        VkPipeline graphicsPipeline,
-        VkPipelineLayout pipelineLayout,
-        VkDescriptorSetLayout descriptorSetLayout);
+        vk::Pipeline graphicsPipeline,
+        vk::PipelineLayout pipelineLayout,
+        vk::DescriptorSetLayout descriptorSetLayout);
 };

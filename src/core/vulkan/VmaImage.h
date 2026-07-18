@@ -89,7 +89,7 @@ public:
     VmaAllocator allocator() const { return get_deleter().allocator; }
     VmaAllocation getAllocation() const { return get_deleter().allocation; }
 
-    void releaseToRaw(VkImage& outImage, VmaAllocation& outAllocation) {
+    void releaseToRaw(vk::Image& outImage, VmaAllocation& outAllocation) {
         outImage = get();
         outAllocation = get_deleter().allocation;
         release();

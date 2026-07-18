@@ -32,10 +32,10 @@ public:
                         SystemLifecycleHelper::PipelineHandles& handles);
 
     bool createTiledPipeline(const vk::raii::Device& device, const std::string& shaderPath,
-                              VkPipelineLayout pipelineLayout);
+                              vk::PipelineLayout pipelineLayout);
 
     bool allocateDescriptorSets(DescriptorManager::Pool* pool,
-                                VkDescriptorSetLayout layout, uint32_t count);
+                                vk::DescriptorSetLayout layout, uint32_t count);
 
     void writeInitialDescriptorSets(vk::Device device, const GrassBuffers& buffers, uint32_t count);
 
@@ -53,7 +53,7 @@ public:
                                 const SystemLifecycleHelper::PipelineHandles& computeHandles);
 
     // Descriptor set access
-    VkDescriptorSet getDescriptorSet(uint32_t index) const { return descriptorSets_[index]; }
+    vk::DescriptorSet getDescriptorSet(uint32_t index) const { return descriptorSets_[index]; }
 
     // Tiled pipeline access
     bool hasTiledPipeline() const { return tiledPipeline_.has_value(); }
@@ -62,6 +62,6 @@ public:
     void cleanup() { tiledPipeline_.reset(); }
 
 private:
-    std::vector<VkDescriptorSet> descriptorSets_;
+    std::vector<vk::DescriptorSet> descriptorSets_;
     std::optional<vk::raii::Pipeline> tiledPipeline_;
 };

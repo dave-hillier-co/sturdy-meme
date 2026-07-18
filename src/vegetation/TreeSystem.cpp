@@ -506,7 +506,7 @@ bool TreeSystem::uploadLeafInstanceBuffer() {
 
     VmaAllocationInfo allocationInfo{};
     if (vmaCreateBuffer(storedAllocator_, reinterpret_cast<const VkBufferCreateInfo*>(&bufferInfo), &allocInfo,
-                        &leafInstanceBuffer_, &leafInstanceAllocation_, &allocationInfo) != VK_SUCCESS) {
+                        reinterpret_cast<VkBuffer*>(&leafInstanceBuffer_), &leafInstanceAllocation_, &allocationInfo) != VK_SUCCESS) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create leaf instance SSBO");
         return false;
     }

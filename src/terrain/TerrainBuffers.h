@@ -32,32 +32,32 @@ public:
     TerrainBuffers& operator=(const TerrainBuffers&) = delete;
 
     // Uniform buffer accessors
-    VkBuffer getUniformBuffer(uint32_t frameIndex) const { return uniformBuffers.buffers[frameIndex]; }
+    vk::Buffer getUniformBuffer(uint32_t frameIndex) const { return uniformBuffers.buffers[frameIndex]; }
     void* getUniformMappedPtr(uint32_t frameIndex) const { return uniformBuffers.mappedPointers[frameIndex]; }
 
     // Indirect buffer accessors
-    VkBuffer getIndirectDispatchBuffer() const { return indirectDispatch.buffer; }
-    VkBuffer getIndirectDrawBuffer() const { return indirectDraw.buffer; }
+    vk::Buffer getIndirectDispatchBuffer() const { return indirectDispatch.buffer; }
+    vk::Buffer getIndirectDrawBuffer() const { return indirectDraw.buffer; }
     void* getIndirectDrawMappedPtr() const { return indirectDraw.mappedPointer; }
 
     // Visibility buffer accessors (stream compaction)
-    VkBuffer getVisibleIndicesBuffer() const { return visibleIndices.buffer; }
-    VkBuffer getCullIndirectDispatchBuffer() const { return cullIndirectDispatch.buffer; }
+    vk::Buffer getVisibleIndicesBuffer() const { return visibleIndices.buffer; }
+    vk::Buffer getCullIndirectDispatchBuffer() const { return cullIndirectDispatch.buffer; }
 
     // Shadow buffer accessors
-    VkBuffer getShadowVisibleBuffer() const { return shadowVisible.buffer; }
-    VkBuffer getShadowIndirectDrawBuffer() const { return shadowIndirectDraw.buffer; }
+    vk::Buffer getShadowVisibleBuffer() const { return shadowVisible.buffer; }
+    vk::Buffer getShadowIndirectDrawBuffer() const { return shadowIndirectDraw.buffer; }
 
     // Caustics UBO accessors
-    VkBuffer getCausticsUniformBuffer(uint32_t frameIndex) const { return causticsUniforms.buffers[frameIndex]; }
+    vk::Buffer getCausticsUniformBuffer(uint32_t frameIndex) const { return causticsUniforms.buffers[frameIndex]; }
     void* getCausticsMappedPtr(uint32_t frameIndex) const { return causticsUniforms.mappedPointers[frameIndex]; }
 
     // Liquid UBO accessors (composable material system - puddles, wet surfaces)
-    VkBuffer getLiquidUniformBuffer(uint32_t frameIndex) const { return liquidUniforms.buffers[frameIndex]; }
+    vk::Buffer getLiquidUniformBuffer(uint32_t frameIndex) const { return liquidUniforms.buffers[frameIndex]; }
     void* getLiquidMappedPtr(uint32_t frameIndex) const { return liquidUniforms.mappedPointers[frameIndex]; }
 
     // Material Layer UBO accessors (composable material system - layer blending)
-    VkBuffer getMaterialLayerUniformBuffer(uint32_t frameIndex) const { return materialLayerUniforms.buffers[frameIndex]; }
+    vk::Buffer getMaterialLayerUniformBuffer(uint32_t frameIndex) const { return materialLayerUniforms.buffers[frameIndex]; }
     void* getMaterialLayerMappedPtr(uint32_t frameIndex) const { return materialLayerUniforms.mappedPointers[frameIndex]; }
 
 private:

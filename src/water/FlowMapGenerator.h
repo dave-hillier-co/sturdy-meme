@@ -42,10 +42,10 @@ public:
     };
 
     struct InitInfo {
-        VkDevice device;
+        vk::Device device;
         VmaAllocator allocator;
-        VkCommandPool commandPool;
-        VkQueue queue;
+        vk::CommandPool commandPool;
+        vk::Queue queue;
         const vk::raii::Device* raiiDevice = nullptr;
     };
 
@@ -82,9 +82,9 @@ public:
                                 const Config& config);
 
     // Access the generated flow map
-    VkImageView getFlowMapView() const { return flowMapView_ ? **flowMapView_ : VK_NULL_HANDLE; }
-    VkSampler getFlowMapSampler() const { return flowMapSampler_ ? **flowMapSampler_ : VK_NULL_HANDLE; }
-    VkImage getFlowMapImage() const { return flowMapImage.get(); }
+    vk::ImageView getFlowMapView() const { return flowMapView_ ? **flowMapView_ : VK_NULL_HANDLE; }
+    vk::Sampler getFlowMapSampler() const { return flowMapSampler_ ? **flowMapSampler_ : VK_NULL_HANDLE; }
+    vk::Image getFlowMapImage() const { return flowMapImage.get(); }
 
     // Get flow map data for CPU-side queries
     const std::vector<glm::vec4>& getFlowData() const { return flowData; }
@@ -116,10 +116,10 @@ private:
     void normalizeAndEncode();
 
     // Vulkan resources
-    VkDevice device = VK_NULL_HANDLE;
+    vk::Device device = VK_NULL_HANDLE;
     VmaAllocator allocator = VK_NULL_HANDLE;
-    VkCommandPool commandPool = VK_NULL_HANDLE;
-    VkQueue queue = VK_NULL_HANDLE;
+    vk::CommandPool commandPool = VK_NULL_HANDLE;
+    vk::Queue queue = VK_NULL_HANDLE;
     const vk::raii::Device* raiiDevice_ = nullptr;
 
     ManagedImage flowMapImage;

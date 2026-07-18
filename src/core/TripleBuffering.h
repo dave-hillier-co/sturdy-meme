@@ -188,17 +188,17 @@ public:
     }
 
     // Get image available semaphore for current frame
-    VkSemaphore currentImageAvailableSemaphore() const {
+    vk::Semaphore currentImageAvailableSemaphore() const {
         return **frames_.current().imageAvailable;
     }
 
     // Get the render-finished (present-wait) semaphore for a swapchain image
-    VkSemaphore renderFinishedSemaphoreForImage(uint32_t imageIndex) const {
+    vk::Semaphore renderFinishedSemaphoreForImage(uint32_t imageIndex) const {
         return *presentSemaphores_[imageIndex];
     }
 
     // Get image available semaphore for any frame index
-    VkSemaphore imageAvailableSemaphore(uint32_t frameIndex) const {
+    vk::Semaphore imageAvailableSemaphore(uint32_t frameIndex) const {
         return **frames_.at(frameIndex).imageAvailable;
     }
 
@@ -215,7 +215,7 @@ public:
 
     // Legacy: Get "fence" for queue submit - now returns a timeline semaphore
     // Note: callers must update to use timeline semaphore submit info
-    VkSemaphore currentFence() const { return frameTimelineSemaphore(); }
+    vk::Semaphore currentFence() const { return frameTimelineSemaphore(); }
 
     // Legacy: Reset fence before submit - now a no-op (timeline semaphores don't reset)
     void resetCurrentFence() const { /* no-op for timeline semaphores */ }

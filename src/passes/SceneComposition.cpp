@@ -31,7 +31,7 @@ std::unique_ptr<HDRPassRecorder> buildHDRPassRecorder(
 
     // Virtual texture feedback: copy the GPU feedback buffer (written by the
     // terrain fragment shader during the HDR pass) to its CPU readback buffer
-    recorder->setPostPassCallback([&systems](VkCommandBuffer cmd, uint32_t frameIndex) {
+    recorder->setPostPassCallback([&systems](vk::CommandBuffer cmd, uint32_t frameIndex) {
         if (systems.terrain().hasVirtualTexture() && systems.terrain().isTerrainEnabled()) {
             systems.terrain().recordVirtualTextureFeedbackCopy(cmd, frameIndex);
         }

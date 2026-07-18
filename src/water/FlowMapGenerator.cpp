@@ -98,7 +98,7 @@ void FlowMapGenerator::uploadToGPU() {
     if (flowData.empty() || !flowMapImage) return;
 
     // Create staging buffer using RAII wrapper
-    VkDeviceSize imageSize = currentResolution * currentResolution * 4; // RGBA8
+    vk::DeviceSize imageSize = currentResolution * currentResolution * 4; // RGBA8
 
     ManagedBuffer stagingBuffer;
     if (!VmaBufferFactory::createStagingBuffer(allocator, imageSize, stagingBuffer)) {

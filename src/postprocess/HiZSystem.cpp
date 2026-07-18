@@ -148,7 +148,7 @@ bool HiZSystem::createPyramidPipeline() {
     // Binding 0: Source depth buffer (sampler2D)
     // Binding 1: Source Hi-Z mip (sampler2D) - for subsequent passes
     // Binding 2: Destination Hi-Z mip (storage image)
-    VkDescriptorSetLayout rawLayout = DescriptorManager::LayoutBuilder(device)
+    vk::DescriptorSetLayout rawLayout = DescriptorManager::LayoutBuilder(device)
         .addCombinedImageSampler(VK_SHADER_STAGE_COMPUTE_BIT)  // 0: Source depth
         .addCombinedImageSampler(VK_SHADER_STAGE_COMPUTE_BIT)  // 1: Source Hi-Z mip
         .addStorageImage(VK_SHADER_STAGE_COMPUTE_BIT)          // 2: Destination Hi-Z mip
@@ -182,7 +182,7 @@ bool HiZSystem::createCullingPipeline() {
     // Binding 2: Indirect draw buffer (SSBO, write)
     // Binding 3: Draw count buffer (SSBO, atomic)
     // Binding 4: Hi-Z pyramid (sampler2D)
-    VkDescriptorSetLayout rawLayout = DescriptorManager::LayoutBuilder(device)
+    vk::DescriptorSetLayout rawLayout = DescriptorManager::LayoutBuilder(device)
         .addUniformBuffer(VK_SHADER_STAGE_COMPUTE_BIT)         // 0: Uniforms
         .addStorageBuffer(VK_SHADER_STAGE_COMPUTE_BIT)         // 1: Object data
         .addStorageBuffer(VK_SHADER_STAGE_COMPUTE_BIT)         // 2: Indirect draw buffer
@@ -222,7 +222,7 @@ void HiZSystem::destroyPipelines() {
 }
 
 bool HiZSystem::createBuffers() {
-    VkDeviceSize objectBufferSize = sizeof(CullObjectData) * MAX_OBJECTS;
+    vk::DeviceSize objectBufferSize = sizeof(CullObjectData) * MAX_OBJECTS;
 
     // Create object data buffer using VulkanResourceFactory
     if (!VmaBufferFactory::createStorageBufferHostReadable(allocator, objectBufferSize, objectDataBuffer_)) {
@@ -232,7 +232,7 @@ bool HiZSystem::createBuffers() {
     objectBufferCapacity = MAX_OBJECTS;
 
     // Create indirect draw buffers (per frame)
-    VkDeviceSize indirectBufferSize = sizeof(DrawIndexedIndirectCommand) * MAX_OBJECTS;
+    vk::DeviceSize indirectBufferSize = sizeof(DrawIndexedIndirectCommand) * MAX_OBJECTS;
     bool success = BufferUtils::PerFrameBufferBuilder()
         .setAllocator(allocator)
         .setFrameCount(framesInFlight)
@@ -321,7 +321,7 @@ void HiZSystem::destroyDescriptorSets() {
     cullingDescSets.clear();
 }
 
-void HiZSystem::setDepthBuffer(VkImageView depthView, VkSampler depthSampler) {
+void HiZSystem::setDepthBuffer(vk::ImageView depthView, vk::Sampler depthSampler) {
     sourceDepthView = depthView;
     sourceDepthSampler = depthSampler;
 
@@ -331,7 +331,7 @@ void HiZSystem::setDepthBuffer(VkImageView depthView, VkSampler depthSampler) {
     }
 
     for (uint32_t mip = 0; mip < mipLevelCount; ++mip) {
-        VkImageView srcMipView = mip > 0 ? **hiZPyramid.mipViews[mip - 1] : **hiZPyramid.mipViews[0];
+        vk::ImageView srcMipView = mip > 0 ? **hiZPyramid.mipViews[mip - 1] : **hiZPyramid.mipViews[0];
 
         // Use General layout for source mip view during pyramid generation
         // (we keep the pyramid in General layout until the final transition)
@@ -445,7 +445,7 @@ void HiZSystem::gatherObjects(const std::vector<ecs::RenderData>& sceneObjects,
     updateObjectData(cullObjects);
 }
 
-void HiZSystem::recordPyramidGeneration(VkCommandBuffer cmd, uint32_t frameIndex) {
+void HiZSystem::recordPyramidGeneration(vk::CommandBuffer cmd, uint32_t frameIndex) {
     if (sourceDepthView == VK_NULL_HANDLE) {
         return;
     }
@@ -504,7 +504,7 @@ void HiZSystem::recordPyramidGeneration(VkCommandBuffer cmd, uint32_t frameIndex
     BarrierHelpers::mipChainToShaderRead(vkCmd, hiZPyramid.image.get(), mipLevelCount);
 }
 
-void HiZSystem::recordCulling(VkCommandBuffer cmd, uint32_t frameIndex) {
+void HiZSystem::recordCulling(vk::CommandBuffer cmd, uint32_t frameIndex) {
     if (objectCount == 0) {
         return;
     }
@@ -531,11 +531,11 @@ void HiZSystem::recordCulling(VkCommandBuffer cmd, uint32_t frameIndex) {
 }
 
 
-VkBuffer HiZSystem::getIndirectDrawBuffer(uint32_t frameIndex) const {
+vk::Buffer HiZSystem::getIndirectDrawBuffer(uint32_t frameIndex) const {
     return indirectDrawBuffers.buffers[frameIndex];
 }
 
-VkBuffer HiZSystem::getDrawCountBuffer(uint32_t frameIndex) const {
+vk::Buffer HiZSystem::getDrawCountBuffer(uint32_t frameIndex) const {
     return drawCountBuffers.buffers[frameIndex];
 }
 
@@ -546,7 +546,7 @@ uint32_t HiZSystem::getVisibleCount(uint32_t frameIndex) const {
     return *static_cast<uint32_t*>(drawCountBuffers.mappedPointers[frameIndex]);
 }
 
-VkImageView HiZSystem::getHiZMipView(uint32_t mipLevel) const {
+vk::ImageView HiZSystem::getHiZMipView(uint32_t mipLevel) const {
     if (mipLevel < hiZPyramid.mipViews.size() && hiZPyramid.mipViews[mipLevel]) {
         return **hiZPyramid.mipViews[mipLevel];
     }

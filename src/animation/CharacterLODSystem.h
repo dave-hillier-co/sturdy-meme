@@ -26,10 +26,10 @@ public:
     explicit CharacterLODSystem(ConstructToken) {}
 
     struct InitInfo {
-        VkDevice device;
+        vk::Device device;
         VmaAllocator allocator;
-        VkCommandPool commandPool;
-        VkQueue graphicsQueue;
+        vk::CommandPool commandPool;
+        vk::Queue graphicsQueue;
     };
 
     static std::unique_ptr<CharacterLODSystem> create(const InitInfo& info);
@@ -120,10 +120,10 @@ private:
     void updateCharacterLOD(uint32_t index, float deltaTime, const glm::vec3& cameraPos,
                              const CharacterScreenParams& screenParams);
 
-    VkDevice device_ = VK_NULL_HANDLE;
+    vk::Device device_ = VK_NULL_HANDLE;
     VmaAllocator allocator_ = VK_NULL_HANDLE;
-    VkCommandPool commandPool_ = VK_NULL_HANDLE;
-    VkQueue graphicsQueue_ = VK_NULL_HANDLE;
+    vk::CommandPool commandPool_ = VK_NULL_HANDLE;
+    vk::Queue graphicsQueue_ = VK_NULL_HANDLE;
 
     CharacterLODConfig config_;
 

@@ -7,10 +7,10 @@
 bool GrassBuffers::create(VmaAllocator allocator, uint32_t framesInFlight) {
     bufferSets_ = BufferSetManager(framesInFlight);
 
-    VkDeviceSize instanceBufferSize = sizeof(GrassInstance) * GrassConstants::MAX_INSTANCES;
-    VkDeviceSize indirectBufferSize = sizeof(VkDrawIndirectCommand);
-    VkDeviceSize cullingUniformSize = sizeof(CullingUniforms);
-    VkDeviceSize grassParamsSize = sizeof(GrassParams);
+    vk::DeviceSize instanceBufferSize = sizeof(GrassInstance) * GrassConstants::MAX_INSTANCES;
+    vk::DeviceSize indirectBufferSize = sizeof(VkDrawIndirectCommand);
+    vk::DeviceSize cullingUniformSize = sizeof(CullingUniforms);
+    vk::DeviceSize grassParamsSize = sizeof(GrassParams);
 
     uint32_t bufferSetCount = framesInFlight;
     const auto doubleBufferedConfig = BufferUtils::DoubleBufferedBufferConfig(allocator, bufferSetCount);

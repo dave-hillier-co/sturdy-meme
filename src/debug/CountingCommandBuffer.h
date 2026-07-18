@@ -24,13 +24,10 @@ public:
     CountingCommandBuffer(vk::CommandBuffer cmd, QueueSubmitDiagnostics* diag)
         : cmd_(cmd), diag_(diag) {}
 
-    CountingCommandBuffer(VkCommandBuffer cmd, QueueSubmitDiagnostics* diag)
-        : cmd_(cmd), diag_(diag) {}
-
     // Get the underlying command buffer for operations we don't wrap
     vk::CommandBuffer get() const { return cmd_; }
     operator vk::CommandBuffer() const { return cmd_; }
-    operator VkCommandBuffer() const { return static_cast<VkCommandBuffer>(cmd_); }
+    operator vk::CommandBuffer() const { return static_cast<vk::CommandBuffer>(cmd_); }
 
     // === Draw commands ===
     void draw(uint32_t vertexCount, uint32_t instanceCount, uint32_t firstVertex, uint32_t firstInstance) {

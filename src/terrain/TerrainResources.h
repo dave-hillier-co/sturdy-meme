@@ -13,8 +13,8 @@ class TerrainSystem;
  * systems that need terrain data (grass, rocks, water, object placement).
  */
 struct TerrainResources {
-    VkImageView heightMapView = VK_NULL_HANDLE;
-    VkSampler heightMapSampler = VK_NULL_HANDLE;
+    vk::ImageView heightMapView = VK_NULL_HANDLE;
+    vk::Sampler heightMapSampler = VK_NULL_HANDLE;
     std::function<float(float, float)> getHeightAt;
     float size = 0.0f;
     float heightScale = 0.0f;

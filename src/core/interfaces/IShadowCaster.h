@@ -35,7 +35,7 @@ public:
      * @param lightMatrix Light view-projection matrix for this cascade
      * @param cascade Cascade index (0 = nearest, higher = farther)
      */
-    virtual void recordShadowDraw(VkCommandBuffer cmd, uint32_t frameIndex,
+    virtual void recordShadowDraw(vk::CommandBuffer cmd, uint32_t frameIndex,
                                    const glm::mat4& lightMatrix, int cascade) = 0;
 
     /**
@@ -62,11 +62,11 @@ public:
      * @param time Animation time in seconds
      * @param cascade Cascade index
      */
-    virtual void recordShadowDraw(VkCommandBuffer cmd, uint32_t frameIndex,
+    virtual void recordShadowDraw(vk::CommandBuffer cmd, uint32_t frameIndex,
                                    float time, int cascade) = 0;
 
     // Default implementation ignores time
-    void recordShadowDraw(VkCommandBuffer cmd, uint32_t frameIndex,
+    void recordShadowDraw(vk::CommandBuffer cmd, uint32_t frameIndex,
                           const glm::mat4& lightMatrix, int cascade) override {
         (void)lightMatrix;  // Light matrix typically accessed via UBO
         recordShadowDraw(cmd, frameIndex, 0.0f, cascade);

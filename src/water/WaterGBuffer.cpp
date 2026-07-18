@@ -230,7 +230,7 @@ bool WaterGBuffer::createSampler() {
     return true;
 }
 
-void WaterGBuffer::beginRenderPass(VkCommandBuffer cmd) {
+void WaterGBuffer::beginRenderPass(vk::CommandBuffer cmd) {
     std::array<vk::ClearValue, 3> clearValues{};
     clearValues[0].color = vk::ClearColorValue(std::array<float, 4>{0.0f, 0.0f, 0.0f, 0.0f});  // Data (no water)
     clearValues[1].color = vk::ClearColorValue(std::array<float, 4>{0.0f, 0.0f, 0.0f, 0.0f});  // Normal
@@ -261,12 +261,12 @@ void WaterGBuffer::beginRenderPass(VkCommandBuffer cmd) {
     vkCmd.setScissor(0, scissor);
 }
 
-void WaterGBuffer::endRenderPass(VkCommandBuffer cmd) {
+void WaterGBuffer::endRenderPass(vk::CommandBuffer cmd) {
     vk::CommandBuffer vkCmd(cmd);
     vkCmd.endRenderPass();
 }
 
-void WaterGBuffer::clear(VkCommandBuffer cmd) {
+void WaterGBuffer::clear(vk::CommandBuffer cmd) {
     // The render pass already clears on begin, so this is a no-op
     // But could be used for mid-frame clearing if needed
 }
@@ -308,7 +308,7 @@ bool WaterGBuffer::createPipeline() {
     std::vector<VkVertexInputAttributeDescription> attributes(attrDescs.begin(), attrDescs.end());
 
     // G-buffer pipeline: write to both color attachments, depth test and write
-    VkPipeline rawPipeline = VK_NULL_HANDLE;
+    vk::Pipeline rawPipeline = VK_NULL_HANDLE;
     bool success = factory
         .setShaders(shaderPath + "/water_position.vert.spv",
                     shaderPath + "/water_position.frag.spv")
@@ -335,12 +335,12 @@ bool WaterGBuffer::createPipeline() {
 }
 
 bool WaterGBuffer::createDescriptorSets(
-    const std::vector<VkBuffer>& mainUBOs,
-    VkDeviceSize mainUBOSize,
-    const std::vector<VkBuffer>& waterUBOs,
-    VkDeviceSize waterUBOSize,
-    VkImageView terrainHeightView, VkSampler terrainSampler,
-    VkImageView flowMapView, VkSampler flowMapSampler) {
+    const std::vector<vk::Buffer>& mainUBOs,
+    vk::DeviceSize mainUBOSize,
+    const std::vector<vk::Buffer>& waterUBOs,
+    vk::DeviceSize waterUBOSize,
+    vk::ImageView terrainHeightView, vk::Sampler terrainSampler,
+    vk::ImageView flowMapView, vk::Sampler flowMapSampler) {
 
     if (descriptorPool == nullptr) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "WaterGBuffer: Descriptor pool is null");

@@ -16,7 +16,7 @@ bool GPUSceneBuffer::init(VmaAllocator allocator, uint32_t frameCount) {
     batches_.reserve(256);
 
     // Create per-frame instance buffers (SSBO)
-    VkDeviceSize instanceBufferSize = sizeof(GPUSceneInstanceData) * MAX_GPU_SCENE_OBJECTS;
+    vk::DeviceSize instanceBufferSize = sizeof(GPUSceneInstanceData) * MAX_GPU_SCENE_OBJECTS;
     bool success = BufferUtils::PerFrameBufferBuilder()
         .setAllocator(allocator)
         .setFrameCount(frameCount)
@@ -34,7 +34,7 @@ bool GPUSceneBuffer::init(VmaAllocator allocator, uint32_t frameCount) {
     }
 
     // Create cull object buffer (single, updated when scene changes)
-    VkDeviceSize cullBufferSize = sizeof(GPUCullObjectData) * MAX_GPU_SCENE_OBJECTS;
+    vk::DeviceSize cullBufferSize = sizeof(GPUCullObjectData) * MAX_GPU_SCENE_OBJECTS;
     if (!VmaBufferFactory::createStorageBufferHostWritable(allocator, cullBufferSize, cullObjectBuffer_)) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
             "GPUSceneBuffer: Failed to create cull object buffer");
@@ -43,7 +43,7 @@ bool GPUSceneBuffer::init(VmaAllocator allocator, uint32_t frameCount) {
     }
 
     // Create per-frame indirect draw buffers
-    VkDeviceSize indirectBufferSize = sizeof(GPUDrawIndexedIndirectCommand) * MAX_GPU_SCENE_OBJECTS;
+    vk::DeviceSize indirectBufferSize = sizeof(GPUDrawIndexedIndirectCommand) * MAX_GPU_SCENE_OBJECTS;
     success = BufferUtils::PerFrameBufferBuilder()
         .setAllocator(allocator)
         .setFrameCount(frameCount)
@@ -103,7 +103,7 @@ void GPUSceneBuffer::beginFrame(uint32_t frameIndex) {
     cullDataDirty_ = true;
 }
 
-int32_t GPUSceneBuffer::addObject(const ecs::RenderData& data, VkDescriptorSet overrideSet) {
+int32_t GPUSceneBuffer::addObject(const ecs::RenderData& data, vk::DescriptorSet overrideSet) {
     if (instances_.size() >= MAX_GPU_SCENE_OBJECTS) {
         SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
             "GPUSceneBuffer: Max objects reached (%zu)", MAX_GPU_SCENE_OBJECTS);
@@ -181,7 +181,7 @@ void GPUSceneBuffer::finalize() {
         if (drawInfo_[a].materialId != drawInfo_[b].materialId) {
             return drawInfo_[a].materialId < drawInfo_[b].materialId;
         }
-        return std::less<VkDescriptorSet>{}(drawInfo_[a].overrideSet, drawInfo_[b].overrideSet);
+        return std::less<vk::DescriptorSet>{}(drawInfo_[a].overrideSet, drawInfo_[b].overrideSet);
     });
 
     std::vector<GPUSceneInstanceData> sortedInstances;
@@ -206,7 +206,7 @@ void GPUSceneBuffer::finalize() {
     for (uint32_t i = 0; i < count;) {
         const Mesh* mesh = drawInfo_[i].mesh;
         const MaterialId materialId = drawInfo_[i].materialId;
-        const VkDescriptorSet overrideSet = drawInfo_[i].overrideSet;
+        const vk::DescriptorSet overrideSet = drawInfo_[i].overrideSet;
         const uint32_t first = i;
         while (i < count && drawInfo_[i].mesh == mesh && drawInfo_[i].materialId == materialId
                && drawInfo_[i].overrideSet == overrideSet) {
@@ -218,7 +218,7 @@ void GPUSceneBuffer::finalize() {
     // Upload instance data to current frame's buffer
     void* mapped = instanceBuffers_.mappedPointers[currentFrame_];
     if (mapped) {
-        VkDeviceSize bytes = instances_.size() * sizeof(GPUSceneInstanceData);
+        vk::DeviceSize bytes = instances_.size() * sizeof(GPUSceneInstanceData);
         memcpy(mapped, instances_.data(), bytes);
         vmaFlushAllocation(allocator_, instanceBuffers_.allocations[currentFrame_], 0, bytes);
     }
@@ -227,7 +227,7 @@ void GPUSceneBuffer::finalize() {
     if (cullDataDirty_) {
         void* cullMapped = cullObjectBuffer_.map();
         if (cullMapped) {
-            VkDeviceSize bytes = cullObjects_.size() * sizeof(GPUCullObjectData);
+            vk::DeviceSize bytes = cullObjects_.size() * sizeof(GPUCullObjectData);
             memcpy(cullMapped, cullObjects_.data(), bytes);
             vmaFlushAllocation(allocator_, cullObjectBuffer_.getAllocation(), 0, bytes);
             cullObjectBuffer_.unmap();

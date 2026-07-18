@@ -109,7 +109,7 @@ bool BloomSystem::createMipChain() {
         mip.extent = {width, height};
 
         // Create image using ImageBuilder
-        VkImageView imageView;
+        vk::ImageView imageView;
         if (!ImageBuilder(allocator)
                 .setExtent(width, height)
                 .setFormat(BLOOM_FORMAT)
@@ -227,7 +227,7 @@ bool BloomSystem::createPipelines() {
     // Create downsample pipeline using factory
     GraphicsPipelineFactory factory(device);
 
-    VkPipeline rawPipeline = VK_NULL_HANDLE;
+    vk::Pipeline rawPipeline = VK_NULL_HANDLE;
     bool success = factory
         .applyPreset(GraphicsPipelineFactory::Preset::FullscreenQuad)
         .setShaders(shaderPath + "/postprocess.vert.spv", shaderPath + "/bloom_downsample.frag.spv")
@@ -288,7 +288,7 @@ void BloomSystem::destroyMipChain() {
     writtenHdrInput_ = VK_NULL_HANDLE;
 }
 
-void BloomSystem::recordBloomPass(VkCommandBuffer cmd, VkImageView hdrInput) {
+void BloomSystem::recordBloomPass(vk::CommandBuffer cmd, vk::ImageView hdrInput) {
     if (mipChain.empty()) return;
 
     vk::CommandBuffer vkCmd(cmd);
@@ -300,7 +300,7 @@ void BloomSystem::recordBloomPass(VkCommandBuffer cmd, VkImageView hdrInput) {
     // buffer mid-rewrite, sampling garbage that showed up as blocky corruption.
     if (writtenHdrInput_ != hdrInput) {
         for (size_t i = 0; i < mipChain.size(); ++i) {
-            VkImageView sourceView = (i == 0) ? hdrInput : static_cast<VkImageView>(**mipChain[i - 1].imageView);
+            vk::ImageView sourceView = (i == 0) ? hdrInput : static_cast<vk::ImageView>(**mipChain[i - 1].imageView);
             DescriptorManager::SetWriter(device, downsampleDescSets[i])
                 .writeImage(0, sourceView, **sampler_)
                 .update();

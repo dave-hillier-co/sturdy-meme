@@ -45,9 +45,9 @@ const MaterialRegistry::MaterialDef* MaterialRegistry::getMaterial(MaterialId id
 }
 
 void MaterialRegistry::createDescriptorSets(
-    VkDevice device,
+    vk::Device device,
     IDescriptorAllocator& allocator,
-    VkDescriptorSetLayout layout,
+    vk::DescriptorSetLayout layout,
     uint32_t frames,
     const std::function<MaterialDescriptorFactory::CommonBindings(uint32_t frameIndex)>& getCommonBindings) {
 
@@ -105,7 +105,7 @@ void MaterialRegistry::createDescriptorSets(
     SDL_Log("MaterialRegistry: Created descriptor sets for %zu materials", materials.size());
 }
 
-VkDescriptorSet MaterialRegistry::getDescriptorSet(MaterialId id, uint32_t frameIndex) const {
+vk::DescriptorSet MaterialRegistry::getDescriptorSet(MaterialId id, uint32_t frameIndex) const {
     if (id < descriptorSets.size() && frameIndex < framesInFlight) {
         return descriptorSets[id][frameIndex];
     }
@@ -114,11 +114,11 @@ VkDescriptorSet MaterialRegistry::getDescriptorSet(MaterialId id, uint32_t frame
     return VK_NULL_HANDLE;
 }
 
-void MaterialRegistry::updateCloudShadowBinding(VkDevice device, VkImageView view, VkSampler sampler) {
+void MaterialRegistry::updateCloudShadowBinding(vk::Device device, vk::ImageView view, vk::Sampler sampler) {
     MaterialDescriptorFactory factory(device);
 
     for (const auto& materialSets : descriptorSets) {
-        for (VkDescriptorSet set : materialSets) {
+        for (vk::DescriptorSet set : materialSets) {
             factory.updateCloudShadowBinding(set, view, sampler);
         }
     }

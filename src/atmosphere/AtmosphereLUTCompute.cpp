@@ -5,7 +5,7 @@
 #include <array>
 #include <cstring>
 
-void AtmosphereLUTSystem::computeTransmittanceLUT(VkCommandBuffer cmd) {
+void AtmosphereLUTSystem::computeTransmittanceLUT(vk::CommandBuffer cmd) {
     // Update uniform buffer with atmosphere params
     AtmosphereUniforms uniforms{};
     uniforms.params = atmosphereParams;
@@ -38,7 +38,7 @@ void AtmosphereLUTSystem::computeTransmittanceLUT(VkCommandBuffer cmd) {
     SDL_Log("Computed transmittance LUT (%dx%d)", TRANSMITTANCE_WIDTH, TRANSMITTANCE_HEIGHT);
 }
 
-void AtmosphereLUTSystem::computeMultiScatterLUT(VkCommandBuffer cmd) {
+void AtmosphereLUTSystem::computeMultiScatterLUT(vk::CommandBuffer cmd) {
     // Update uniform buffer with atmosphere params
     AtmosphereUniforms uniforms{};
     uniforms.params = atmosphereParams;
@@ -70,7 +70,7 @@ void AtmosphereLUTSystem::computeMultiScatterLUT(VkCommandBuffer cmd) {
     SDL_Log("Computed multi-scatter LUT (%dx%d)", MULTISCATTER_SIZE, MULTISCATTER_SIZE);
 }
 
-void AtmosphereLUTSystem::computeIrradianceLUT(VkCommandBuffer cmd) {
+void AtmosphereLUTSystem::computeIrradianceLUT(vk::CommandBuffer cmd) {
     // Update uniform buffer with atmosphere params
     AtmosphereUniforms uniforms{};
     uniforms.params = atmosphereParams;
@@ -94,7 +94,7 @@ void AtmosphereLUTSystem::computeIrradianceLUT(VkCommandBuffer cmd) {
     SDL_Log("Computed irradiance LUTs (%dx%d)", IRRADIANCE_WIDTH, IRRADIANCE_HEIGHT);
 }
 
-void AtmosphereLUTSystem::computeSkyViewLUT(VkCommandBuffer cmd, const glm::vec3& sunDir,
+void AtmosphereLUTSystem::computeSkyViewLUT(vk::CommandBuffer cmd, const glm::vec3& sunDir,
                                             const glm::vec3& cameraPos, float cameraAltitude) {
     // Update uniform buffer (use frame 0's per-frame buffer for startup computation)
     AtmosphereUniforms uniforms{};
@@ -123,7 +123,7 @@ void AtmosphereLUTSystem::computeSkyViewLUT(VkCommandBuffer cmd, const glm::vec3
     SDL_Log("Computed sky-view LUT (%dx%d)", SKYVIEW_WIDTH, SKYVIEW_HEIGHT);
 }
 
-void AtmosphereLUTSystem::updateSkyViewLUT(VkCommandBuffer cmd, uint32_t frameIndex,
+void AtmosphereLUTSystem::updateSkyViewLUT(vk::CommandBuffer cmd, uint32_t frameIndex,
                                            const glm::vec3& sunDir,
                                            const glm::vec3& cameraPos, float cameraAltitude) {
     // Check if update is needed based on input changes
@@ -167,7 +167,7 @@ void AtmosphereLUTSystem::updateSkyViewLUT(VkCommandBuffer cmd, uint32_t frameIn
     BarrierHelpers::imageToShaderRead(vkCmd, skyViewLUT.get(), vk::PipelineStageFlagBits::eFragmentShader);
 }
 
-void AtmosphereLUTSystem::computeCloudMapLUT(VkCommandBuffer cmd, const glm::vec3& windOffset, float time) {
+void AtmosphereLUTSystem::computeCloudMapLUT(vk::CommandBuffer cmd, const glm::vec3& windOffset, float time) {
     // Update cloud map uniform buffer (use frame 0's per-frame buffer for startup computation)
     CloudMapUniforms uniforms{};
     uniforms.windOffset = glm::vec4(windOffset, time);
@@ -198,7 +198,7 @@ void AtmosphereLUTSystem::computeCloudMapLUT(VkCommandBuffer cmd, const glm::vec
     SDL_Log("Computed cloud map LUT (%dx%d)", CLOUDMAP_SIZE, CLOUDMAP_SIZE);
 }
 
-void AtmosphereLUTSystem::updateCloudMapLUT(VkCommandBuffer cmd, uint32_t frameIndex,
+void AtmosphereLUTSystem::updateCloudMapLUT(vk::CommandBuffer cmd, uint32_t frameIndex,
                                             const glm::vec3& windOffset, float time) {
     // Check if update is needed based on input changes
     bool windChanged = glm::length(windOffset - lastCloudWindOffset) > WIND_OFFSET_THRESHOLD;
@@ -248,7 +248,7 @@ void AtmosphereLUTSystem::updateCloudMapLUT(VkCommandBuffer cmd, uint32_t frameI
         vk::PipelineStageFlagBits::eFragmentShader | vk::PipelineStageFlagBits::eComputeShader);
 }
 
-void AtmosphereLUTSystem::recomputeStaticLUTs(VkCommandBuffer cmd) {
+void AtmosphereLUTSystem::recomputeStaticLUTs(vk::CommandBuffer cmd) {
     if (!paramsDirty) return;
 
     // Update uniform buffer with new atmosphere parameters
@@ -265,11 +265,11 @@ void AtmosphereLUTSystem::recomputeStaticLUTs(VkCommandBuffer cmd) {
     SDL_Log("Atmosphere LUTs recomputed with new parameters");
 }
 
-void AtmosphereLUTSystem::barrierIrradianceLUTsForCompute(VkCommandBuffer cmd) {
+void AtmosphereLUTSystem::barrierIrradianceLUTsForCompute(vk::CommandBuffer cmd) {
     vk::CommandBuffer vkCmd(cmd);
     // Wait for any in-flight fragment sampling before a runtime recompute overwrites
     // the LUTs (contents are discarded via UNDEFINED).
-    for (VkImage lut : {rayleighIrradianceLUT.get(), mieIrradianceLUT.get()}) {
+    for (vk::Image lut : {rayleighIrradianceLUT.get(), mieIrradianceLUT.get()}) {
         BarrierHelpers::transitionImageLayout(vkCmd, lut,
             vk::ImageLayout::eUndefined, vk::ImageLayout::eGeneral,
             vk::PipelineStageFlagBits::eFragmentShader,
@@ -278,7 +278,7 @@ void AtmosphereLUTSystem::barrierIrradianceLUTsForCompute(VkCommandBuffer cmd) {
     }
 }
 
-void AtmosphereLUTSystem::barrierIrradianceLUTsForSampling(VkCommandBuffer cmd) {
+void AtmosphereLUTSystem::barrierIrradianceLUTsForSampling(vk::CommandBuffer cmd) {
     vk::CommandBuffer vkCmd(cmd);
     BarrierHelpers::imageToShaderRead(vkCmd, rayleighIrradianceLUT.get(), vk::PipelineStageFlagBits::eFragmentShader);
     BarrierHelpers::imageToShaderRead(vkCmd, mieIrradianceLUT.get(), vk::PipelineStageFlagBits::eFragmentShader);

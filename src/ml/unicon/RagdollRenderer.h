@@ -1,4 +1,5 @@
 #pragma once
+#include <vulkan/vulkan.hpp>
 
 #include "StateEncoder.h"
 #include "../../physics/ArticulatedBody.h"
@@ -32,7 +33,7 @@ public:
                               uint32_t firstSlot = 32);
 
     // Record draw commands for all rendered ragdolls.
-    void recordDrawCommands(VkCommandBuffer cmd,
+    void recordDrawCommands(vk::CommandBuffer cmd,
                             uint32_t frameIndex,
                             AnimatedCharacter& templateCharacter,
                             SkinnedMeshRenderer& skinnedRenderer,

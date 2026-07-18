@@ -106,7 +106,7 @@ struct WaterSystemGroup {
      */
     struct CreateDeps {
         const InitContext& ctx;
-        VkRenderPass hdrRenderPass;
+        vk::RenderPass hdrRenderPass;
         float waterSize = 65536.0f;
         std::string assetPath;
     };
@@ -139,11 +139,11 @@ struct WaterSystemGroup {
      */
     static bool createDescriptorSets(
         RendererSystems& systems,
-        const std::vector<VkBuffer>& uniformBuffers,
+        const std::vector<vk::Buffer>& uniformBuffers,
         size_t uniformBufferSize,
         ShadowSystem& shadowSystem,
         const TerrainSystem& terrainSystem,
         const PostProcessSystem& postProcessSystem,
-        VkSampler depthSampler
+        vk::Sampler depthSampler
     );
 };

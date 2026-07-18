@@ -15,95 +15,95 @@ class MaterialDescriptorFactory {
 public:
     // Common resources shared across all material descriptor sets
     struct CommonBindings {
-        VkBuffer uniformBuffer;
-        VkDeviceSize uniformBufferSize;
+        vk::Buffer uniformBuffer;
+        vk::DeviceSize uniformBufferSize;
 
-        VkImageView shadowMapView;
-        VkSampler shadowMapSampler;
+        vk::ImageView shadowMapView;
+        vk::Sampler shadowMapSampler;
 
-        VkBuffer lightBuffer;
-        VkDeviceSize lightBufferSize;
+        vk::Buffer lightBuffer;
+        vk::DeviceSize lightBufferSize;
 
-        VkImageView emissiveMapView;
-        VkSampler emissiveMapSampler;
+        vk::ImageView emissiveMapView;
+        vk::Sampler emissiveMapSampler;
 
-        VkImageView pointShadowView;
-        VkSampler pointShadowSampler;
+        vk::ImageView pointShadowView;
+        vk::Sampler pointShadowSampler;
 
-        VkImageView spotShadowView;
-        VkSampler spotShadowSampler;
+        vk::ImageView spotShadowView;
+        vk::Sampler spotShadowSampler;
 
-        VkImageView snowMaskView;
-        VkSampler snowMaskSampler;
+        vk::ImageView snowMaskView;
+        vk::Sampler snowMaskSampler;
 
         // Optional: cloud shadow (may be added after initial creation)
-        VkImageView cloudShadowView = VK_NULL_HANDLE;
-        VkSampler cloudShadowSampler = VK_NULL_HANDLE;
+        vk::ImageView cloudShadowView = VK_NULL_HANDLE;
+        vk::Sampler cloudShadowSampler = VK_NULL_HANDLE;
 
         // Snow and cloud shadow UBOs (binding 10 and 11)
-        VkBuffer snowUboBuffer = VK_NULL_HANDLE;
-        VkDeviceSize snowUboBufferSize = 0;
-        VkBuffer cloudShadowUboBuffer = VK_NULL_HANDLE;
-        VkDeviceSize cloudShadowUboBufferSize = 0;
+        vk::Buffer snowUboBuffer = VK_NULL_HANDLE;
+        vk::DeviceSize snowUboBufferSize = 0;
+        vk::Buffer cloudShadowUboBuffer = VK_NULL_HANDLE;
+        vk::DeviceSize cloudShadowUboBufferSize = 0;
 
         // Optional: bone matrices for skinned meshes
-        VkBuffer boneMatricesBuffer = VK_NULL_HANDLE;
-        VkDeviceSize boneMatricesBufferSize = 0;
+        vk::Buffer boneMatricesBuffer = VK_NULL_HANDLE;
+        vk::DeviceSize boneMatricesBufferSize = 0;
 
         // Placeholder texture for unused PBR bindings (bindings 13-16 must always be written)
-        VkImageView placeholderTextureView = VK_NULL_HANDLE;
-        VkSampler placeholderTextureSampler = VK_NULL_HANDLE;
+        vk::ImageView placeholderTextureView = VK_NULL_HANDLE;
+        vk::Sampler placeholderTextureSampler = VK_NULL_HANDLE;
 
         // Wind UBO for vegetation animation (binding 17)
-        VkBuffer windBuffer = VK_NULL_HANDLE;
-        VkDeviceSize windBufferSize = 0;
+        vk::Buffer windBuffer = VK_NULL_HANDLE;
+        vk::DeviceSize windBufferSize = 0;
 
         // Screen-space shadow buffer (binding 21, optional)
-        VkImageView screenShadowView = VK_NULL_HANDLE;
-        VkSampler screenShadowSampler = VK_NULL_HANDLE;
+        vk::ImageView screenShadowView = VK_NULL_HANDLE;
+        vk::Sampler screenShadowSampler = VK_NULL_HANDLE;
     };
 
     // Per-material texture bindings
     struct MaterialTextures {
-        VkImageView diffuseView;
-        VkSampler diffuseSampler;
-        VkImageView normalView;
-        VkSampler normalSampler;
+        vk::ImageView diffuseView;
+        vk::Sampler diffuseSampler;
+        vk::ImageView normalView;
+        vk::Sampler normalSampler;
 
         // Optional PBR textures (for Substance/PBR materials)
         // Set to VK_NULL_HANDLE if not used - shader will use push constant values
-        VkImageView roughnessView = VK_NULL_HANDLE;
-        VkSampler roughnessSampler = VK_NULL_HANDLE;
-        VkImageView metallicView = VK_NULL_HANDLE;
-        VkSampler metallicSampler = VK_NULL_HANDLE;
-        VkImageView aoView = VK_NULL_HANDLE;
-        VkSampler aoSampler = VK_NULL_HANDLE;
-        VkImageView heightView = VK_NULL_HANDLE;
-        VkSampler heightSampler = VK_NULL_HANDLE;
+        vk::ImageView roughnessView = VK_NULL_HANDLE;
+        vk::Sampler roughnessSampler = VK_NULL_HANDLE;
+        vk::ImageView metallicView = VK_NULL_HANDLE;
+        vk::Sampler metallicSampler = VK_NULL_HANDLE;
+        vk::ImageView aoView = VK_NULL_HANDLE;
+        vk::Sampler aoSampler = VK_NULL_HANDLE;
+        vk::ImageView heightView = VK_NULL_HANDLE;
+        vk::Sampler heightSampler = VK_NULL_HANDLE;
     };
 
-    explicit MaterialDescriptorFactory(VkDevice device);
+    explicit MaterialDescriptorFactory(vk::Device device);
 
     // Write a complete material descriptor set using common + material-specific bindings
     void writeDescriptorSet(
-        VkDescriptorSet set,
+        vk::DescriptorSet set,
         const CommonBindings& common,
         const MaterialTextures& material);
 
     // Write a skinned material descriptor set (includes bone matrices at binding 10)
     void writeSkinnedDescriptorSet(
-        VkDescriptorSet set,
+        vk::DescriptorSet set,
         const CommonBindings& common,
         const MaterialTextures& material);
 
     // Update only the cloud shadow binding (for late initialization)
     void updateCloudShadowBinding(
-        VkDescriptorSet set,
-        VkImageView cloudShadowView,
-        VkSampler cloudShadowSampler);
+        vk::DescriptorSet set,
+        vk::ImageView cloudShadowView,
+        vk::Sampler cloudShadowSampler);
 
 private:
-    VkDevice device;
+    vk::Device device;
 
     void writeCommonBindings(
         DescriptorManager::SetWriter& writer,

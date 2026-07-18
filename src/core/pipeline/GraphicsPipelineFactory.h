@@ -42,14 +42,14 @@ public:
         Particle        // Alpha blending, no depth write
     };
 
-    explicit GraphicsPipelineFactory(VkDevice device);
+    explicit GraphicsPipelineFactory(vk::Device device);
     ~GraphicsPipelineFactory();
 
     // Reset all state to defaults
     GraphicsPipelineFactory& reset();
 
     // Set pipeline cache for faster pipeline creation
-    GraphicsPipelineFactory& setPipelineCache(VkPipelineCache cache);
+    GraphicsPipelineFactory& setPipelineCache(vk::PipelineCache cache);
 
     // Apply a preset configuration
     GraphicsPipelineFactory& applyPreset(Preset preset);
@@ -63,8 +63,8 @@ public:
     GraphicsPipelineFactory& setTessellationEvaluationShader(const std::string& path);
 
     // Render pass and layout
-    GraphicsPipelineFactory& setRenderPass(VkRenderPass renderPass, uint32_t subpass = 0);
-    GraphicsPipelineFactory& setPipelineLayout(VkPipelineLayout layout);
+    GraphicsPipelineFactory& setRenderPass(vk::RenderPass renderPass, uint32_t subpass = 0);
+    GraphicsPipelineFactory& setPipelineLayout(vk::PipelineLayout layout);
 
     // Viewport/scissor configuration
     GraphicsPipelineFactory& setExtent(VkExtent2D extent);
@@ -107,26 +107,26 @@ public:
     GraphicsPipelineFactory& setColorAttachmentCount(uint32_t count);  // For multiple render targets
 
     // Build the pipeline (raw handle - caller must manage lifetime)
-    bool build(VkPipeline& pipeline);
+    bool build(vk::Pipeline& pipeline);
 
     // Cleanup any allocated shader modules (called automatically by build)
     void cleanup();
 
 private:
-    VkDevice device;
-    VkPipelineCache pipelineCacheHandle = VK_NULL_HANDLE;
+    vk::Device device;
+    vk::PipelineCache pipelineCacheHandle = VK_NULL_HANDLE;
 
     // Shader state
     std::string vertShaderPath;
     std::string fragShaderPath;
     std::string tescShaderPath;  // Tessellation control shader
     std::string teseShaderPath;  // Tessellation evaluation shader
-    std::vector<VkShaderModule> shaderModules;
+    std::vector<vk::ShaderModule> shaderModules;
 
     // Pipeline configuration
-    VkRenderPass renderPass = VK_NULL_HANDLE;
+    vk::RenderPass renderPass = VK_NULL_HANDLE;
     uint32_t subpass = 0;
-    VkPipelineLayout pipelineLayout = VK_NULL_HANDLE;
+    vk::PipelineLayout pipelineLayout = VK_NULL_HANDLE;
 
     // Viewport state
     VkExtent2D extent = {0, 0};

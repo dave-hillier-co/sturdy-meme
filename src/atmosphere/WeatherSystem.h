@@ -69,7 +69,7 @@ public:
      */
     static std::optional<Bundle> createWithDependencies(
         const InitContext& ctx,
-        VkRenderPass hdrRenderPass
+        vk::RenderPass hdrRenderPass
     );
 
     ~WeatherSystem();
@@ -90,7 +90,7 @@ public:
                               const BufferUtils::DynamicUniformBuffer* dynamicRendererUBO = nullptr);
 
     // Set froxel volume for fog lighting on particles (Phase 4.3.9)
-    void setFroxelVolume(VkImageView volumeView, VkSampler volumeSampler,
+    void setFroxelVolume(vk::ImageView volumeView, vk::Sampler volumeSampler,
                          float farPlane, float depthDist);
 
     // Update weather uniforms each frame
@@ -99,10 +99,10 @@ public:
                         const WindSystem& windSystem);
 
     // Record compute dispatch for particle simulation
-    void recordResetAndCompute(VkCommandBuffer cmd, uint32_t frameIndex, float time, float deltaTime);
+    void recordResetAndCompute(vk::CommandBuffer cmd, uint32_t frameIndex, float time, float deltaTime);
 
     // Record draw commands for weather particles (implements IRecordableAnimated)
-    void recordDraw(VkCommandBuffer cmd, uint32_t frameIndex, float time) override;
+    void recordDraw(vk::CommandBuffer cmd, uint32_t frameIndex, float time) override;
 
     // Double-buffer management
     void advanceBufferSet();
@@ -130,9 +130,9 @@ private:
     void destroyBuffers(VmaAllocator allocator);
 
     // Accessors - use stored initInfo during init, particleSystem after init completes
-    VkDevice getDevice() const { return storedDevice; }
+    vk::Device getDevice() const { return storedDevice; }
     VmaAllocator getAllocator() const { return storedAllocator; }
-    VkRenderPass getRenderPass() const { return storedRenderPass; }
+    vk::RenderPass getRenderPass() const { return storedRenderPass; }
     DescriptorManager::Pool* getDescriptorPool() const { return storedDescriptorPool; }
     const VkExtent2D& getExtent() const { return particleSystem ? particleSystem->getExtent() : storedExtent; }
     const std::string& getShaderPath() const { return storedShaderPath; }
@@ -145,9 +145,9 @@ private:
     std::unique_ptr<ParticleSystem> particleSystem;
 
     // Stored init info (available during initialization before particleSystem is created)
-    VkDevice storedDevice = VK_NULL_HANDLE;
+    vk::Device storedDevice = VK_NULL_HANDLE;
     VmaAllocator storedAllocator = VK_NULL_HANDLE;
-    VkRenderPass storedRenderPass = VK_NULL_HANDLE;
+    vk::RenderPass storedRenderPass = VK_NULL_HANDLE;
     DescriptorManager::Pool* storedDescriptorPool = nullptr;
     VkExtent2D storedExtent = {0, 0};
     std::string storedShaderPath;
@@ -171,16 +171,16 @@ private:
     float groundLevel = 0.0f;           // Ground plane Y coordinate
 
     // External buffer references for per-frame descriptor updates
-    std::vector<VkBuffer> externalWindBuffers;
-    std::vector<VkBuffer> externalRendererUniformBuffers;
+    std::vector<vk::Buffer> externalWindBuffers;
+    std::vector<vk::Buffer> externalRendererUniformBuffers;
 
     // Dynamic renderer UBO - used with VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC
     // to avoid per-frame descriptor set updates
     const BufferUtils::DynamicUniformBuffer* dynamicRendererUBO_ = nullptr;
 
     // Froxel volume for fog particle lighting (Phase 4.3.9)
-    VkImageView froxelVolumeView = VK_NULL_HANDLE;
-    VkSampler froxelVolumeSampler = VK_NULL_HANDLE;
+    vk::ImageView froxelVolumeView = VK_NULL_HANDLE;
+    vk::Sampler froxelVolumeSampler = VK_NULL_HANDLE;
     float froxelFarPlane = 200.0f;
     float froxelDepthDist = 1.2f;
 

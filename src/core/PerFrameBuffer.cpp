@@ -6,7 +6,7 @@ namespace BufferUtils {
 namespace {
 
 void destroyCreatedBuffers(VmaAllocator allocator,
-                           const std::vector<VkBuffer>& buffers,
+                           const std::vector<vk::Buffer>& buffers,
                            const std::vector<VmaAllocation>& allocations,
                            size_t count) {
     for (size_t i = 0; i < count; i++) {
@@ -21,7 +21,7 @@ void destroyCreatedBuffers(VmaAllocator allocator,
 PerFrameBufferConfig::PerFrameBufferConfig(
     VmaAllocator allocator,
     uint32_t frameCount,
-    VkDeviceSize size,
+    vk::DeviceSize size,
     VkBufferUsageFlags usage,
     VmaMemoryUsage memoryUsage,
     VmaAllocationCreateFlags allocationFlags)
@@ -55,7 +55,7 @@ PerFrameBufferBuilder PerFrameBufferBuilder::withFrameCount(uint32_t count) cons
     return builder;
 }
 
-PerFrameBufferBuilder PerFrameBufferBuilder::withSize(VkDeviceSize size) const {
+PerFrameBufferBuilder PerFrameBufferBuilder::withSize(vk::DeviceSize size) const {
     auto builder = *this;
     builder.bufferSize_ = size;
     return builder;
@@ -89,7 +89,7 @@ PerFrameBufferBuilder& PerFrameBufferBuilder::setFrameCount(uint32_t count) {
     return *this;
 }
 
-PerFrameBufferBuilder& PerFrameBufferBuilder::setSize(VkDeviceSize size) {
+PerFrameBufferBuilder& PerFrameBufferBuilder::setSize(vk::DeviceSize size) {
     bufferSize_ = size;
     return *this;
 }
@@ -132,7 +132,7 @@ bool PerFrameBufferBuilder::build(PerFrameBufferSet& outBuffers) const {
 
     for (uint32_t i = 0; i < frameCount_; i++) {
         VmaAllocationInfo allocationInfo{};
-        if (vmaCreateBuffer(allocator_, reinterpret_cast<const VkBufferCreateInfo*>(&bufferInfo), &allocInfo, &result.buffers[i], &result.allocations[i],
+        if (vmaCreateBuffer(allocator_, reinterpret_cast<const VkBufferCreateInfo*>(&bufferInfo), &allocInfo, reinterpret_cast<VkBuffer*>(&result.buffers[i]), &result.allocations[i],
                             &allocationInfo) != VK_SUCCESS) {
             SDL_Log("Failed to create per-frame buffer %u", i);
             destroyCreatedBuffers(allocator_, result.buffers, result.allocations, i);

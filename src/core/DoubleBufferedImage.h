@@ -8,8 +8,8 @@ namespace BufferUtils {
 
 // Double-buffered images for ping-pong rendering (temporal effects, SSR, etc.)
 struct DoubleBufferedImageSet {
-    VkImage images[2] = {VK_NULL_HANDLE, VK_NULL_HANDLE};
-    VkImageView views[2] = {VK_NULL_HANDLE, VK_NULL_HANDLE};
+    vk::Image images[2] = {VK_NULL_HANDLE, VK_NULL_HANDLE};
+    vk::ImageView views[2] = {VK_NULL_HANDLE, VK_NULL_HANDLE};
     VmaAllocation allocations[2] = {VK_NULL_HANDLE, VK_NULL_HANDLE};
 
     bool isValid() const { return images[0] != VK_NULL_HANDLE && images[1] != VK_NULL_HANDLE; }
@@ -18,7 +18,7 @@ struct DoubleBufferedImageSet {
 // Builder for double-buffered images (ping-pong for temporal effects)
 class DoubleBufferedImageBuilder {
 public:
-    DoubleBufferedImageBuilder& setDevice(VkDevice device);
+    DoubleBufferedImageBuilder& setDevice(vk::Device device);
     DoubleBufferedImageBuilder& setAllocator(VmaAllocator allocator);
     DoubleBufferedImageBuilder& setExtent(uint32_t width, uint32_t height);
     DoubleBufferedImageBuilder& setExtent3D(uint32_t width, uint32_t height, uint32_t depth);
@@ -29,7 +29,7 @@ public:
     bool build(DoubleBufferedImageSet& outImages) const;
 
 private:
-    VkDevice device_ = VK_NULL_HANDLE;
+    vk::Device device_ = VK_NULL_HANDLE;
     VmaAllocator allocator_ = VK_NULL_HANDLE;
     uint32_t width_ = 0;
     uint32_t height_ = 0;
@@ -39,6 +39,6 @@ private:
     VkImageAspectFlags aspectMask_ = VK_IMAGE_ASPECT_COLOR_BIT;
 };
 
-void destroyImages(VkDevice device, VmaAllocator allocator, DoubleBufferedImageSet& images);
+void destroyImages(vk::Device device, VmaAllocator allocator, DoubleBufferedImageSet& images);
 
 }  // namespace BufferUtils

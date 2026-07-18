@@ -19,8 +19,8 @@ std::unique_ptr<FroxelSystem> FroxelSystem::create(const InitInfo& info) {
     return system;
 }
 
-std::unique_ptr<FroxelSystem> FroxelSystem::create(const InitContext& ctx, VkImageView shadowMapView_, VkSampler shadowSampler_,
-                                                    const std::vector<VkBuffer>& lightBuffers_) {
+std::unique_ptr<FroxelSystem> FroxelSystem::create(const InitContext& ctx, vk::ImageView shadowMapView_, vk::Sampler shadowSampler_,
+                                                    const std::vector<vk::Buffer>& lightBuffers_) {
     InitInfo info{};
     info.device = ctx.device;
     info.allocator = ctx.allocator;
@@ -204,7 +204,7 @@ bool FroxelSystem::createDescriptorSetLayout() {
     // 4: Light buffer (storage buffer)
     // 5: Previous scattering volume (storage image)
 
-    VkDescriptorSetLayout rawLayout = DescriptorManager::LayoutBuilder(initInfo_.device)
+    vk::DescriptorSetLayout rawLayout = DescriptorManager::LayoutBuilder(initInfo_.device)
         .addStorageImage(VkShaderStageFlags(vk::ShaderStageFlagBits::eCompute))            // 0: Scattering volume
         .addStorageImage(VkShaderStageFlags(vk::ShaderStageFlagBits::eCompute))            // 1: Integrated volume
         .addUniformBuffer(VkShaderStageFlags(vk::ShaderStageFlagBits::eCompute))           // 2: Uniform buffer
@@ -276,7 +276,7 @@ bool FroxelSystem::createIntegrationPipeline() {
         .buildInto(integrationPipeline_);
 }
 
-void FroxelSystem::recordInitialClearIfNeeded(VkCommandBuffer cmd) {
+void FroxelSystem::recordInitialClearIfNeeded(vk::CommandBuffer cmd) {
     if (integratedVolumeInitialized_) return;
     integratedVolumeInitialized_ = true;
 
@@ -310,7 +310,7 @@ void FroxelSystem::recordInitialClearIfNeeded(VkCommandBuffer cmd) {
                           {}, {}, {}, toSampled);
 }
 
-void FroxelSystem::recordFroxelUpdate(VkCommandBuffer cmd, uint32_t frameIndex,
+void FroxelSystem::recordFroxelUpdate(vk::CommandBuffer cmd, uint32_t frameIndex,
                                        const glm::mat4& view, const glm::mat4& proj,
                                        const glm::vec3& cameraPos,
                                        const glm::vec3& sunDir, float sunIntensity,

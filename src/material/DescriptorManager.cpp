@@ -6,7 +6,7 @@
 // DescriptorLayoutBuilder Implementation
 // ============================================================================
 
-DescriptorManager::DescriptorLayoutBuilder::DescriptorLayoutBuilder(VkDevice device)
+DescriptorManager::DescriptorLayoutBuilder::DescriptorLayoutBuilder(vk::Device device)
     : device(device) {}
 
 DescriptorManager::DescriptorLayoutBuilder DescriptorManager::DescriptorLayoutBuilder::addUniformBuffer(
@@ -62,7 +62,7 @@ DescriptorManager::DescriptorLayoutBuilder DescriptorManager::DescriptorLayoutBu
     return next;
 }
 
-VkDescriptorSetLayout DescriptorManager::DescriptorLayoutBuilder::build() const {
+vk::DescriptorSetLayout DescriptorManager::DescriptorLayoutBuilder::build() const {
     auto layoutInfo = vk::DescriptorSetLayoutCreateInfo{}
         .setBindingCount(static_cast<uint32_t>(bindings.size()))
         .setPBindings(reinterpret_cast<const vk::DescriptorSetLayoutBinding*>(bindings.data()));
@@ -76,7 +76,7 @@ VkDescriptorSetLayout DescriptorManager::DescriptorLayoutBuilder::build() const 
 // LayoutBuilder Implementation
 // ============================================================================
 
-DescriptorManager::LayoutBuilder::LayoutBuilder(VkDevice device)
+DescriptorManager::LayoutBuilder::LayoutBuilder(vk::Device device)
     : device(device) {}
 
 DescriptorManager::LayoutBuilder& DescriptorManager::LayoutBuilder::addUniformBuffer(
@@ -124,7 +124,7 @@ DescriptorManager::LayoutBuilder& DescriptorManager::LayoutBuilder::addBinding(
     return *this;
 }
 
-VkDescriptorSetLayout DescriptorManager::LayoutBuilder::build() {
+vk::DescriptorSetLayout DescriptorManager::LayoutBuilder::build() {
     auto layoutInfo = vk::DescriptorSetLayoutCreateInfo{}
         .setBindingCount(static_cast<uint32_t>(bindings.size()))
         .setPBindings(reinterpret_cast<const vk::DescriptorSetLayoutBinding*>(bindings.data()));
@@ -138,7 +138,7 @@ VkDescriptorSetLayout DescriptorManager::LayoutBuilder::build() {
 // SetWriter Implementation
 // ============================================================================
 
-DescriptorManager::SetWriter::SetWriter(VkDevice device, VkDescriptorSet set)
+DescriptorManager::SetWriter::SetWriter(vk::Device device, vk::DescriptorSet set)
     : device(device), set(set) {
     // Reserve space to avoid reallocation invalidating pointers
     // Increased to 32 to handle larger descriptor sets with tile cache bindings
@@ -148,14 +148,14 @@ DescriptorManager::SetWriter::SetWriter(VkDevice device, VkDescriptorSet set)
 }
 
 DescriptorManager::SetWriter& DescriptorManager::SetWriter::writeBuffer(
-    uint32_t binding, VkBuffer buffer, VkDeviceSize offset, VkDeviceSize range,
+    uint32_t binding, vk::Buffer buffer, vk::DeviceSize offset, vk::DeviceSize range,
     VkDescriptorType type) {
     return writeBufferArray(binding, 0, buffer, offset, range, type);
 }
 
 DescriptorManager::SetWriter& DescriptorManager::SetWriter::writeBufferArray(
-    uint32_t binding, uint32_t arrayElement, VkBuffer buffer,
-    VkDeviceSize offset, VkDeviceSize range, VkDescriptorType type) {
+    uint32_t binding, uint32_t arrayElement, vk::Buffer buffer,
+    vk::DeviceSize offset, vk::DeviceSize range, VkDescriptorType type) {
 
     bufferInfos.push_back({buffer, offset, range});
 
@@ -172,13 +172,13 @@ DescriptorManager::SetWriter& DescriptorManager::SetWriter::writeBufferArray(
 }
 
 DescriptorManager::SetWriter& DescriptorManager::SetWriter::writeImage(
-    uint32_t binding, VkImageView view, VkSampler sampler,
+    uint32_t binding, vk::ImageView view, vk::Sampler sampler,
     VkImageLayout layout, VkDescriptorType type) {
     return writeImageArray(binding, 0, view, sampler, layout, type);
 }
 
 DescriptorManager::SetWriter& DescriptorManager::SetWriter::writeImageArray(
-    uint32_t binding, uint32_t arrayElement, VkImageView view, VkSampler sampler,
+    uint32_t binding, uint32_t arrayElement, vk::ImageView view, vk::Sampler sampler,
     VkImageLayout layout, VkDescriptorType type) {
 
     imageInfos.push_back({sampler, view, layout});
@@ -196,7 +196,7 @@ DescriptorManager::SetWriter& DescriptorManager::SetWriter::writeImageArray(
 }
 
 DescriptorManager::SetWriter& DescriptorManager::SetWriter::writeStorageImage(
-    uint32_t binding, VkImageView view, VkImageLayout layout) {
+    uint32_t binding, vk::ImageView view, VkImageLayout layout) {
 
     imageInfos.push_back({VK_NULL_HANDLE, view, layout});
 
@@ -226,13 +226,13 @@ void DescriptorManager::SetWriter::update() {
 // Pool Implementation
 // ============================================================================
 
-DescriptorManager::Pool::Pool(VkDevice device, uint32_t initialSetsPerPool)
+DescriptorManager::Pool::Pool(vk::Device device, uint32_t initialSetsPerPool)
     : device(device), setsPerPool(initialSetsPerPool), poolSizes(DescriptorPoolSizes::standard()) {
     // Create initial pool
     pools.push_back(createPool());
 }
 
-DescriptorManager::Pool::Pool(VkDevice device, uint32_t initialSetsPerPool, const DescriptorPoolSizes& sizes)
+DescriptorManager::Pool::Pool(vk::Device device, uint32_t initialSetsPerPool, const DescriptorPoolSizes& sizes)
     : device(device), setsPerPool(initialSetsPerPool), poolSizes(sizes) {
     // Create initial pool with custom sizes
     SDL_Log("DescriptorManager: Creating pool with custom sizes (UBO=%u, SSBO=%u, samplers=%u, storage=%u)",
@@ -268,7 +268,7 @@ DescriptorManager::Pool& DescriptorManager::Pool::operator=(Pool&& other) noexce
     return *this;
 }
 
-VkDescriptorPool DescriptorManager::Pool::createPool() {
+vk::DescriptorPool DescriptorManager::Pool::createPool() {
     std::vector<VkDescriptorPoolSize> sizes;
 
     if (poolSizes.uniformBuffers > 0) {
@@ -310,11 +310,11 @@ VkDescriptorPool DescriptorManager::Pool::createPool() {
     return pool;
 }
 
-bool DescriptorManager::Pool::tryAllocate(VkDescriptorPool pool,
-                                          VkDescriptorSetLayout layout,
+bool DescriptorManager::Pool::tryAllocate(vk::DescriptorPool pool,
+                                          vk::DescriptorSetLayout layout,
                                           uint32_t count,
-                                          std::vector<VkDescriptorSet>& outSets) {
-    std::vector<VkDescriptorSetLayout> layouts(count, layout);
+                                          std::vector<vk::DescriptorSet>& outSets) {
+    std::vector<vk::DescriptorSetLayout> layouts(count, layout);
 
     auto allocInfo = vk::DescriptorSetAllocateInfo{}
         .setDescriptorPool(pool)
@@ -337,10 +337,10 @@ bool DescriptorManager::Pool::tryAllocate(VkDescriptorPool pool,
     }
 }
 
-std::vector<VkDescriptorSet> DescriptorManager::Pool::allocate(
-    VkDescriptorSetLayout layout, uint32_t count) {
+std::vector<vk::DescriptorSet> DescriptorManager::Pool::allocate(
+    vk::DescriptorSetLayout layout, uint32_t count) {
 
-    std::vector<VkDescriptorSet> sets;
+    std::vector<vk::DescriptorSet> sets;
 
     SDL_Log("DescriptorManager::allocate - pools.size()=%zu, currentPoolIndex=%u, device=%p",
             pools.size(), currentPoolIndex, (void*)device);
@@ -365,7 +365,7 @@ std::vector<VkDescriptorSet> DescriptorManager::Pool::allocate(
     }
 
     // All pools exhausted - create new one
-    VkDescriptorPool newPool = createPool();
+    vk::DescriptorPool newPool = createPool();
     if (newPool == VK_NULL_HANDLE) {
         SDL_Log("DescriptorManager: Failed to create new pool for allocation");
         return {};
@@ -383,7 +383,7 @@ std::vector<VkDescriptorSet> DescriptorManager::Pool::allocate(
     return {};
 }
 
-VkDescriptorSet DescriptorManager::Pool::allocateSingle(VkDescriptorSetLayout layout) {
+vk::DescriptorSet DescriptorManager::Pool::allocateSingle(vk::DescriptorSetLayout layout) {
     auto sets = allocate(layout, 1);
     return sets.empty() ? VK_NULL_HANDLE : sets[0];
 }
@@ -415,9 +415,9 @@ void DescriptorManager::Pool::destroy() {
 // Static Helpers
 // ============================================================================
 
-VkPipelineLayout DescriptorManager::createPipelineLayout(
-    VkDevice device,
-    const std::vector<VkDescriptorSetLayout>& setLayouts,
+vk::PipelineLayout DescriptorManager::createPipelineLayout(
+    vk::Device device,
+    const std::vector<vk::DescriptorSetLayout>& setLayouts,
     const std::vector<VkPushConstantRange>& pushConstants) {
 
     auto layoutInfo = vk::PipelineLayoutCreateInfo{}
@@ -431,9 +431,9 @@ VkPipelineLayout DescriptorManager::createPipelineLayout(
     return layout;
 }
 
-VkPipelineLayout DescriptorManager::createPipelineLayout(
-    VkDevice device,
-    VkDescriptorSetLayout setLayout,
+vk::PipelineLayout DescriptorManager::createPipelineLayout(
+    vk::Device device,
+    vk::DescriptorSetLayout setLayout,
     const std::vector<VkPushConstantRange>& pushConstants) {
-    return createPipelineLayout(device, std::vector<VkDescriptorSetLayout>{setLayout}, pushConstants);
+    return createPipelineLayout(device, std::vector<vk::DescriptorSetLayout>{setLayout}, pushConstants);
 }

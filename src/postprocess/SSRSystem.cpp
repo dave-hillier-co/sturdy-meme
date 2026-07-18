@@ -272,7 +272,7 @@ bool SSRSystem::createComputePipeline() {
     // 2: SSR output (storage image, write)
     // 3: Previous SSR (sampler2D, for temporal)
 
-    VkDescriptorSetLayout rawLayout = DescriptorManager::LayoutBuilder(device)
+    vk::DescriptorSetLayout rawLayout = DescriptorManager::LayoutBuilder(device)
         .addCombinedImageSampler(VK_SHADER_STAGE_COMPUTE_BIT)  // 0: HDR color input
         .addCombinedImageSampler(VK_SHADER_STAGE_COMPUTE_BIT)  // 1: Depth buffer
         .addStorageImage(VK_SHADER_STAGE_COMPUTE_BIT)          // 2: SSR output
@@ -312,7 +312,7 @@ bool SSRSystem::createBlurPipeline() {
     // 1: Depth buffer (sampler2D) for bilateral weights
     // 2: Blurred output (storage image, write)
 
-    VkDescriptorSetLayout rawLayout = DescriptorManager::LayoutBuilder(device)
+    vk::DescriptorSetLayout rawLayout = DescriptorManager::LayoutBuilder(device)
         .addCombinedImageSampler(VK_SHADER_STAGE_COMPUTE_BIT)  // 0: SSR input
         .addCombinedImageSampler(VK_SHADER_STAGE_COMPUTE_BIT)  // 1: Depth buffer
         .addStorageImage(VK_SHADER_STAGE_COMPUTE_BIT)          // 2: Blurred output
@@ -369,8 +369,8 @@ bool SSRSystem::createDescriptorSets() {
     return true;
 }
 
-void SSRSystem::recordCompute(VkCommandBuffer cmd, uint32_t frameIndex,
-                              VkImageView hdrColorView, VkImageView hdrDepthView,
+void SSRSystem::recordCompute(vk::CommandBuffer cmd, uint32_t frameIndex,
+                              vk::ImageView hdrColorView, vk::ImageView hdrDepthView,
                               const glm::mat4& view, const glm::mat4& proj,
                               const glm::vec3& cameraPos) {
     if (!enabled || descriptorSets.empty()) {
@@ -391,8 +391,8 @@ void SSRSystem::recordCompute(VkCommandBuffer cmd, uint32_t frameIndex,
     // Determine where SSR writes to:
     // - If blur enabled: write to intermediate, blur will write to final
     // - If blur disabled: write directly to final
-    VkImageView ssrOutputView = blurEnabled ? **ssrIntermediateView : **ssrResultView[writeBuffer];
-    VkImage ssrOutputImage = blurEnabled ? ssrIntermediate.get() : ssrResult[writeBuffer].get();
+    vk::ImageView ssrOutputView = blurEnabled ? **ssrIntermediateView : **ssrResultView[writeBuffer];
+    vk::Image ssrOutputImage = blurEnabled ? ssrIntermediate.get() : ssrResult[writeBuffer].get();
 
     // Update descriptor set for main SSR pass using SetWriter
     DescriptorManager::SetWriter(device, descriptorSets[frameIndex])

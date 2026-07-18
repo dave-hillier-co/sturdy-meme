@@ -64,7 +64,7 @@ public:
     // Immutable builder for descriptor set layouts with optional explicit bindings
     class DescriptorLayoutBuilder {
     public:
-        explicit DescriptorLayoutBuilder(VkDevice device);
+        explicit DescriptorLayoutBuilder(vk::Device device);
 
         DescriptorLayoutBuilder addUniformBuffer(VkShaderStageFlags stages, uint32_t count = 1,
                                                  std::optional<uint32_t> binding = std::nullopt) const;
@@ -82,10 +82,10 @@ public:
         DescriptorLayoutBuilder addBinding(VkDescriptorType type, VkShaderStageFlags stages,
                                            uint32_t count = 1, std::optional<uint32_t> binding = std::nullopt) const;
 
-        VkDescriptorSetLayout build() const;
+        vk::DescriptorSetLayout build() const;
 
     private:
-        VkDevice device;
+        vk::Device device;
         std::vector<VkDescriptorSetLayoutBinding> bindings;
         uint32_t nextBinding = 0;
     };
@@ -93,7 +93,7 @@ public:
     // Builder for creating descriptor set layouts with a declarative API
     class LayoutBuilder {
     public:
-        explicit LayoutBuilder(VkDevice device);
+        explicit LayoutBuilder(vk::Device device);
 
         // Add binding at next available index
         LayoutBuilder& addUniformBuffer(VkShaderStageFlags stages, uint32_t count = 1);
@@ -107,10 +107,10 @@ public:
                                   VkShaderStageFlags stages, uint32_t count = 1);
 
         // Build and return raw handle (caller must manage lifetime)
-        VkDescriptorSetLayout build();
+        vk::DescriptorSetLayout build();
 
     private:
-        VkDevice device;
+        vk::Device device;
         std::vector<VkDescriptorSetLayoutBinding> bindings;
         uint32_t nextBinding = 0;
     };
@@ -118,34 +118,34 @@ public:
     // Fluent writer for updating descriptor sets
     class SetWriter {
     public:
-        SetWriter(VkDevice device, VkDescriptorSet set);
+        SetWriter(vk::Device device, vk::DescriptorSet set);
 
-        SetWriter& writeBuffer(uint32_t binding, VkBuffer buffer,
-                               VkDeviceSize offset, VkDeviceSize range,
+        SetWriter& writeBuffer(uint32_t binding, vk::Buffer buffer,
+                               vk::DeviceSize offset, vk::DeviceSize range,
                                VkDescriptorType type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
 
-        SetWriter& writeImage(uint32_t binding, VkImageView view, VkSampler sampler,
+        SetWriter& writeImage(uint32_t binding, vk::ImageView view, vk::Sampler sampler,
                               VkImageLayout layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
                               VkDescriptorType type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
 
-        SetWriter& writeStorageImage(uint32_t binding, VkImageView view,
+        SetWriter& writeStorageImage(uint32_t binding, vk::ImageView view,
                                      VkImageLayout layout = VK_IMAGE_LAYOUT_GENERAL);
 
         // Write to a specific array element
         SetWriter& writeBufferArray(uint32_t binding, uint32_t arrayElement,
-                                    VkBuffer buffer, VkDeviceSize offset, VkDeviceSize range,
+                                    vk::Buffer buffer, vk::DeviceSize offset, vk::DeviceSize range,
                                     VkDescriptorType type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
 
         SetWriter& writeImageArray(uint32_t binding, uint32_t arrayElement,
-                                   VkImageView view, VkSampler sampler,
+                                   vk::ImageView view, vk::Sampler sampler,
                                    VkImageLayout layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
                                    VkDescriptorType type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
 
         void update();
 
     private:
-        VkDevice device;
-        VkDescriptorSet set;
+        vk::Device device;
+        vk::DescriptorSet set;
         std::vector<VkWriteDescriptorSet> writes;
         std::vector<VkDescriptorBufferInfo> bufferInfos;
         std::vector<VkDescriptorImageInfo> imageInfos;
@@ -155,10 +155,10 @@ public:
     class Pool : public IDescriptorAllocator {
     public:
         // Backwards-compatible constructor (uses standard defaults)
-        Pool(VkDevice device, uint32_t initialSetsPerPool = 32);
+        Pool(vk::Device device, uint32_t initialSetsPerPool = 32);
 
         // Constructor with configurable pool sizes
-        Pool(VkDevice device, uint32_t initialSetsPerPool, const DescriptorPoolSizes& sizes);
+        Pool(vk::Device device, uint32_t initialSetsPerPool, const DescriptorPoolSizes& sizes);
 
         ~Pool();
 
@@ -169,10 +169,10 @@ public:
         Pool& operator=(Pool&& other) noexcept;
 
         // Allocate descriptor sets (grows pool if needed)
-        std::vector<VkDescriptorSet> allocate(VkDescriptorSetLayout layout, uint32_t count) override;
+        std::vector<vk::DescriptorSet> allocate(vk::DescriptorSetLayout layout, uint32_t count) override;
 
         // Allocate a single set
-        VkDescriptorSet allocateSingle(VkDescriptorSetLayout layout) override;
+        vk::DescriptorSet allocateSingle(vk::DescriptorSetLayout layout) override;
 
         // Reset all pools (frees all allocated sets)
         void reset() override;
@@ -188,12 +188,12 @@ public:
         const DescriptorPoolSizes& getPoolSizes() const { return poolSizes; }
 
     private:
-        VkDescriptorPool createPool();
-        bool tryAllocate(VkDescriptorPool pool, VkDescriptorSetLayout layout,
-                         uint32_t count, std::vector<VkDescriptorSet>& outSets);
+        vk::DescriptorPool createPool();
+        bool tryAllocate(vk::DescriptorPool pool, vk::DescriptorSetLayout layout,
+                         uint32_t count, std::vector<vk::DescriptorSet>& outSets);
 
-        VkDevice device;
-        std::vector<VkDescriptorPool> pools;
+        vk::Device device;
+        std::vector<vk::DescriptorPool> pools;
         uint32_t setsPerPool;
         uint32_t currentPoolIndex = 0;
         uint32_t totalAllocatedSets = 0;
@@ -203,14 +203,14 @@ public:
     };
 
     // Helper: Create pipeline layout from descriptor set layouts (raw handle)
-    static VkPipelineLayout createPipelineLayout(
-        VkDevice device,
-        const std::vector<VkDescriptorSetLayout>& setLayouts,
+    static vk::PipelineLayout createPipelineLayout(
+        vk::Device device,
+        const std::vector<vk::DescriptorSetLayout>& setLayouts,
         const std::vector<VkPushConstantRange>& pushConstants = {});
 
     // Helper: Create pipeline layout from a single layout (raw handle)
-    static VkPipelineLayout createPipelineLayout(
-        VkDevice device,
-        VkDescriptorSetLayout setLayout,
+    static vk::PipelineLayout createPipelineLayout(
+        vk::Device device,
+        vk::DescriptorSetLayout setLayout,
         const std::vector<VkPushConstantRange>& pushConstants = {});
 };

@@ -14,8 +14,8 @@ struct DescriptorBindingInfo {
     uint32_t count = 1;
 };
 
-VkDescriptorSetLayout buildDescriptorSetLayout(
-    VkDevice device,
+vk::DescriptorSetLayout buildDescriptorSetLayout(
+    vk::Device device,
     const DescriptorBindingInfo* bindings,
     size_t bindingCount
 ) {
@@ -37,7 +37,7 @@ bool GrassShadowPass::createPipeline(const vk::raii::Device& device, vk::Device 
         {2, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_VERTEX_BIT}
     }};
 
-    VkDescriptorSetLayout rawDescSetLayout =
+    vk::DescriptorSetLayout rawDescSetLayout =
         buildDescriptorSetLayout(rawDevice, bindings.data(), bindings.size());
     if (rawDescSetLayout == VK_NULL_HANDLE) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create grass shadow descriptor set layout");
@@ -113,7 +113,7 @@ bool GrassShadowPass::createPipeline(const vk::raii::Device& device, vk::Device 
         .setRenderPass(shadowRenderPass)
         .setSubpass(0);
 
-    VkPipeline rawPipeline = VK_NULL_HANDLE;
+    vk::Pipeline rawPipeline = VK_NULL_HANDLE;
     if (!builder.buildGraphicsPipeline(pipelineInfo, **pipelineLayout_, rawPipeline)) {
         return false;
     }

@@ -44,8 +44,8 @@ public:
     TerrainMeshlet& operator=(TerrainMeshlet&&) = delete;
 
     // Buffer accessors
-    VkBuffer getVertexBuffer() const { return vertexBuffer_.get(); }
-    VkBuffer getIndexBuffer() const { return indexBuffer_.get(); }
+    vk::Buffer getVertexBuffer() const { return vertexBuffer_.get(); }
+    vk::Buffer getIndexBuffer() const { return indexBuffer_.get(); }
     uint32_t getVertexCount() const { return vertexCount_; }
     uint32_t getIndexCount() const { return indexCount_; }
     uint32_t getTriangleCount() const { return triangleCount_; }
@@ -72,7 +72,7 @@ public:
      * @param cmd Command buffer to record into (must be in recording state)
      * @param frameIndex Current frame index for staging buffer selection
      */
-    void recordUpload(VkCommandBuffer cmd, uint32_t frameIndex);
+    void recordUpload(vk::CommandBuffer cmd, uint32_t frameIndex);
 
     /**
      * Get number of frames still needing upload after subdivision change.

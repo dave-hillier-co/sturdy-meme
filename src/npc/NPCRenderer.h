@@ -57,7 +57,7 @@ public:
      * @param cmd Command buffer to record to (must be in recording state)
      * @param frameIndex Current frame index for triple-buffered resources
      */
-    void recordDraw(VkCommandBuffer cmd, uint32_t frameIndex) override;
+    void recordDraw(vk::CommandBuffer cmd, uint32_t frameIndex) override;
 
     // Statistics
     size_t getVisibleNPCCount() const { return visibleNPCCount_; }

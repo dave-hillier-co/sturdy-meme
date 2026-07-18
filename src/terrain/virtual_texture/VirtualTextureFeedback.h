@@ -31,7 +31,7 @@ public:
      * Factory: Create and initialize VirtualTextureFeedback.
      * Returns nullptr on failure.
      */
-    static std::unique_ptr<VirtualTextureFeedback> create(VkDevice device, VmaAllocator allocator,
+    static std::unique_ptr<VirtualTextureFeedback> create(vk::Device device, VmaAllocator allocator,
                                                            uint32_t maxEntries = 4096, uint32_t frameCount = 2);
 
     ~VirtualTextureFeedback();
@@ -46,7 +46,7 @@ public:
      * Clear the feedback buffer for a new frame
      * Should be called at the start of each frame before rendering
      */
-    void clear(VkCommandBuffer cmd, uint32_t frameIndex);
+    void clear(vk::CommandBuffer cmd, uint32_t frameIndex);
 
     /**
      * Record copy commands from GPU feedback buffers to CPU readback buffers.
@@ -56,7 +56,7 @@ public:
      * @param cmd Command buffer to record into
      * @param frameIndex Current frame index
      */
-    void recordCopyToReadback(VkCommandBuffer cmd, uint32_t frameIndex);
+    void recordCopyToReadback(vk::CommandBuffer cmd, uint32_t frameIndex);
 
     /**
      * Read back tile requests from a completed frame's readback buffer.
@@ -76,12 +76,12 @@ public:
     /**
      * Get the feedback buffer for shader binding
      */
-    VkBuffer getFeedbackBuffer(uint32_t frameIndex) const;
+    vk::Buffer getFeedbackBuffer(uint32_t frameIndex) const;
 
     /**
      * Get the counter buffer (atomic counter for number of requests)
      */
-    VkBuffer getCounterBuffer(uint32_t frameIndex) const;
+    vk::Buffer getCounterBuffer(uint32_t frameIndex) const;
 
     /**
      * Get buffer descriptor info for shader binding
@@ -93,7 +93,7 @@ public:
 
 
 private:
-    bool initInternal(VkDevice device, VmaAllocator allocator,
+    bool initInternal(vk::Device device, VmaAllocator allocator,
                       uint32_t maxEntries, uint32_t frameCount);
     void cleanup();
 

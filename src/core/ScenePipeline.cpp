@@ -33,7 +33,7 @@ void ScenePipeline::addCommonDescriptorBindings(DescriptorManager::LayoutBuilder
 }
 
 bool ScenePipeline::initLayout(VulkanContext& context) {
-    VkDevice device = context.getVkDevice();
+    vk::Device device = context.getVkDevice();
 
     if (!createDescriptorSetLayout(device, context.getRaiiDevice())) {
         return false;
@@ -43,10 +43,10 @@ bool ScenePipeline::initLayout(VulkanContext& context) {
     return true;
 }
 
-bool ScenePipeline::createDescriptorSetLayout(VkDevice device, const vk::raii::Device& raiiDevice) {
+bool ScenePipeline::createDescriptorSetLayout(vk::Device device, const vk::raii::Device& raiiDevice) {
     DescriptorManager::LayoutBuilder builder(device);
     addCommonDescriptorBindings(builder);
-    VkDescriptorSetLayout rawLayout = builder.build();
+    vk::DescriptorSetLayout rawLayout = builder.build();
 
     if (rawLayout == VK_NULL_HANDLE) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create descriptor set layout");
@@ -57,7 +57,7 @@ bool ScenePipeline::createDescriptorSetLayout(VkDevice device, const vk::raii::D
     return true;
 }
 
-bool ScenePipeline::createGraphicsPipeline(VulkanContext& context, VkRenderPass hdrRenderPass,
+bool ScenePipeline::createGraphicsPipeline(VulkanContext& context, vk::RenderPass hdrRenderPass,
                                             const std::string& resourcePath) {
     if (!initialized_) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "ScenePipeline::createGraphicsPipeline: not initialized");
@@ -84,7 +84,7 @@ bool ScenePipeline::createGraphicsPipeline(VulkanContext& context, VkRenderPass 
     auto bindingDescription = Vertex::getBindingDescription();
     auto attributeDescriptions = Vertex::getAttributeDescriptions();
 
-    VkPipeline rawPipeline = VK_NULL_HANDLE;
+    vk::Pipeline rawPipeline = VK_NULL_HANDLE;
     GraphicsPipelineFactory factory(device);
     bool success = factory
         .applyPreset(GraphicsPipelineFactory::Preset::Default)

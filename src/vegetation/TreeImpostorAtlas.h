@@ -22,11 +22,11 @@ public:
 
     struct InitInfo {
         const vk::raii::Device* raiiDevice;  // vulkan-hpp RAII device
-        VkDevice device;
-        VkPhysicalDevice physicalDevice;
+        vk::Device device;
+        vk::PhysicalDevice physicalDevice;
         VmaAllocator allocator;
-        VkCommandPool commandPool;
-        VkQueue graphicsQueue;
+        vk::CommandPool commandPool;
+        vk::Queue graphicsQueue;
         DescriptorManager::Pool* descriptorPool;
         std::string resourcePath;
         uint32_t maxArchetypes = 16;  // Maximum different tree types
@@ -48,10 +48,10 @@ public:
         const TreeOptions& options,
         const struct Mesh& branchMesh,
         const std::vector<struct LeafInstanceGPU>& leafInstances,
-        VkImageView barkAlbedo,
-        VkImageView barkNormal,
-        VkImageView leafAlbedo,
-        VkSampler sampler);
+        vk::ImageView barkAlbedo,
+        vk::ImageView barkNormal,
+        vk::ImageView leafAlbedo,
+        vk::Sampler sampler);
 
     // Get archetype by name
     const TreeImpostorArchetype* getArchetype(const std::string& name) const;
@@ -61,17 +61,17 @@ public:
     size_t getArchetypeCount() const { return archetypes_.size(); }
 
     // Get atlas array textures for binding (single array covers all archetypes)
-    VkImageView getAlbedoAtlasArrayView() const { return octaAlbedoArrayView_ ? **octaAlbedoArrayView_ : VK_NULL_HANDLE; }
-    VkImageView getNormalAtlasArrayView() const { return octaNormalArrayView_ ? **octaNormalArrayView_ : VK_NULL_HANDLE; }
-    VkSampler getAtlasSampler() const { return atlasSampler_ ? **atlasSampler_ : VK_NULL_HANDLE; }
+    vk::ImageView getAlbedoAtlasArrayView() const { return octaAlbedoArrayView_ ? **octaAlbedoArrayView_ : VK_NULL_HANDLE; }
+    vk::ImageView getNormalAtlasArrayView() const { return octaNormalArrayView_ ? **octaNormalArrayView_ : VK_NULL_HANDLE; }
+    vk::Sampler getAtlasSampler() const { return atlasSampler_ ? **atlasSampler_ : VK_NULL_HANDLE; }
 
     // LOD settings
     TreeLODSettings& getLODSettings() { return lodSettings_; }
     const TreeLODSettings& getLODSettings() const { return lodSettings_; }
 
     // Get atlas image for UI preview (lazy-initializes ImGui descriptor on first call)
-    VkDescriptorSet getPreviewDescriptorSet(uint32_t archetypeIndex);
-    VkDescriptorSet getNormalPreviewDescriptorSet(uint32_t archetypeIndex);
+    vk::DescriptorSet getPreviewDescriptorSet(uint32_t archetypeIndex);
+    vk::DescriptorSet getNormalPreviewDescriptorSet(uint32_t archetypeIndex);
 
 
 private:
@@ -90,7 +90,7 @@ private:
 
     // Octahedral rendering (implemented in TreeImpostorAtlasCapture.cpp)
     void renderOctahedralCell(
-        VkCommandBuffer cmd,
+        vk::CommandBuffer cmd,
         int cellX, int cellY,
         glm::vec3 viewDirection,
         const struct Mesh& branchMesh,
@@ -100,15 +100,15 @@ private:
         float halfHeight,
         float centerHeight,
         float baseY,
-        VkDescriptorSet branchDescSet,
-        VkDescriptorSet leafDescSet);
+        vk::DescriptorSet branchDescSet,
+        vk::DescriptorSet leafDescSet);
 
     const vk::raii::Device* raiiDevice_ = nullptr;
-    VkDevice device_ = VK_NULL_HANDLE;
-    VkPhysicalDevice physicalDevice_ = VK_NULL_HANDLE;
+    vk::Device device_ = VK_NULL_HANDLE;
+    vk::PhysicalDevice physicalDevice_ = VK_NULL_HANDLE;
     VmaAllocator allocator_ = VK_NULL_HANDLE;
-    VkCommandPool commandPool_ = VK_NULL_HANDLE;
-    VkQueue graphicsQueue_ = VK_NULL_HANDLE;
+    vk::CommandPool commandPool_ = VK_NULL_HANDLE;
+    vk::Queue graphicsQueue_ = VK_NULL_HANDLE;
     DescriptorManager::Pool* descriptorPool_ = nullptr;
     std::string resourcePath_;
 
@@ -124,9 +124,9 @@ private:
     std::optional<vk::raii::DescriptorSetLayout> leafCaptureDescriptorSetLayout_;
 
     // Leaf quad mesh for capture
-    VkBuffer leafQuadVertexBuffer_ = VK_NULL_HANDLE;
+    vk::Buffer leafQuadVertexBuffer_ = VK_NULL_HANDLE;
     VmaAllocation leafQuadVertexAllocation_ = VK_NULL_HANDLE;
-    VkBuffer leafQuadIndexBuffer_ = VK_NULL_HANDLE;
+    vk::Buffer leafQuadIndexBuffer_ = VK_NULL_HANDLE;
     VmaAllocation leafQuadIndexAllocation_ = VK_NULL_HANDLE;
     uint32_t leafQuadIndexCount_ = 0;
 
@@ -134,11 +134,11 @@ private:
     std::vector<TreeImpostorArchetype> archetypes_;
 
     // Texture array for all archetypes (shared across all archetypes)
-    VkImage octaAlbedoArrayImage_ = VK_NULL_HANDLE;
+    vk::Image octaAlbedoArrayImage_ = VK_NULL_HANDLE;
     VmaAllocation octaAlbedoArrayAllocation_ = VK_NULL_HANDLE;
     std::optional<vk::raii::ImageView> octaAlbedoArrayView_;
 
-    VkImage octaNormalArrayImage_ = VK_NULL_HANDLE;
+    vk::Image octaNormalArrayImage_ = VK_NULL_HANDLE;
     VmaAllocation octaNormalArrayAllocation_ = VK_NULL_HANDLE;
     std::optional<vk::raii::ImageView> octaNormalArrayView_;
 
@@ -148,26 +148,26 @@ private:
     std::optional<vk::raii::Sampler> atlasSampler_;
 
     // Capture descriptor sets (reused)
-    std::vector<VkDescriptorSet> captureDescriptorSets_;
+    std::vector<vk::DescriptorSet> captureDescriptorSets_;
 
     // LOD settings
     TreeLODSettings lodSettings_;
 
     // Leaf instance buffer for capture (temporary)
-    VkBuffer leafCaptureBuffer_ = VK_NULL_HANDLE;
+    vk::Buffer leafCaptureBuffer_ = VK_NULL_HANDLE;
     VmaAllocation leafCaptureAllocation_ = VK_NULL_HANDLE;
-    VkDeviceSize leafCaptureBufferSize_ = 0;
+    vk::DeviceSize leafCaptureBufferSize_ = 0;
 
     // Per-archetype atlas (depth buffers and framebuffers)
     struct AtlasTextures {
-        VkImage depthImage = VK_NULL_HANDLE;
+        vk::Image depthImage = VK_NULL_HANDLE;
         VmaAllocation depthAllocation = VK_NULL_HANDLE;
         std::optional<vk::raii::ImageView> albedoView;   // View into octaAlbedoArrayImage_
         std::optional<vk::raii::ImageView> normalView;   // View into octaNormalArrayImage_
         std::optional<vk::raii::ImageView> depthView;
         std::optional<vk::raii::Framebuffer> framebuffer;
-        VkDescriptorSet previewDescriptorSet = VK_NULL_HANDLE;
-        VkDescriptorSet normalPreviewDescriptorSet = VK_NULL_HANDLE;
+        vk::DescriptorSet previewDescriptorSet = VK_NULL_HANDLE;
+        vk::DescriptorSet normalPreviewDescriptorSet = VK_NULL_HANDLE;
     };
     std::vector<AtlasTextures> atlasTextures_;
 };

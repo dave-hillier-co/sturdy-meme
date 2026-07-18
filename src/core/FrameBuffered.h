@@ -1,4 +1,5 @@
 #pragma once
+#include <vulkan/vulkan.hpp>
 
 // ============================================================================
 // FrameBuffered.h - Generic template for triple-buffered (or N-buffered) resources
@@ -17,18 +18,18 @@
 // Usage examples:
 //
 // 1. Simple per-frame buffers:
-//    FrameBuffered<VkBuffer> uniformBuffers(3);
+//    FrameBuffered<vk::Buffer> uniformBuffers(3);
 //    uniformBuffers[frameIndex] = createBuffer(...);
 //    vkCmdBindBuffer(cmd, uniformBuffers.current());
 //    uniformBuffers.advance();
 //
 // 2. Per-frame descriptor sets:
-//    FrameBuffered<VkDescriptorSet> descriptorSets;
+//    FrameBuffered<vk::DescriptorSet> descriptorSets;
 //    descriptorSets.resize(3, allocateDescriptorSet());
 //    vkCmdBindDescriptorSets(..., descriptorSets.current(), ...);
 //
 // 3. Aggregate per-frame data:
-//    struct FrameData { VkBuffer ubo; VkDescriptorSet desc; };
+//    struct FrameData { vk::Buffer ubo; vk::DescriptorSet desc; };
 //    FrameBuffered<FrameData> frames(3);
 //    frames.current().ubo = ...;
 //

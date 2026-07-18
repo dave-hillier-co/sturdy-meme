@@ -161,7 +161,7 @@ bool VulkanContext::createInstance() {
 }
 
 bool VulkanContext::createSurface() {
-    if (!SDL_Vulkan_CreateSurface(window, instance, nullptr, &surface)) {
+    if (!SDL_Vulkan_CreateSurface(window, instance, nullptr, reinterpret_cast<VkSurfaceKHR*>(&surface))) {
         SDL_Log("Failed to create Vulkan surface: %s", SDL_GetError());
         return false;
     }
@@ -365,8 +365,14 @@ bool VulkanContext::createSwapchain() {
 
     auto vkbSwapchain = swapRet.value();
     swapchain = vkbSwapchain.swapchain;
-    swapchainImages = vkbSwapchain.get_images().value();
-    swapchainImageViews = vkbSwapchain.get_image_views().value();
+    // vk-bootstrap is a C-API boundary: it returns std::vector<VkImage>/<VkImageView>;
+    // copy element-wise into the native vk:: vectors (VkImage -> vk::Image implicit).
+    {
+        auto vkbImages = vkbSwapchain.get_images().value();
+        swapchainImages.assign(vkbImages.begin(), vkbImages.end());
+        auto vkbImageViews = vkbSwapchain.get_image_views().value();
+        swapchainImageViews.assign(vkbImageViews.begin(), vkbImageViews.end());
+    }
     swapchainImageFormat = vkbSwapchain.image_format;
     swapchainExtent = vkbSwapchain.extent;
 
@@ -473,7 +479,7 @@ void VulkanContext::clearSwapchainImages() {
         try {
             cmd.begin(vk::CommandBufferBeginInfo{}.setFlags(vk::CommandBufferUsageFlagBits::eOneTimeSubmit));
 
-            VkImage image = swapchainImages[imageIndex];
+            vk::Image image = swapchainImages[imageIndex];
 
             // Transition to TRANSFER_DST for clearing
             auto toTransfer = vk::ImageMemoryBarrier{}

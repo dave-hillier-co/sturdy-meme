@@ -88,11 +88,11 @@ public:
     };
 
     struct InitInfo {
-        VkDevice device;
-        VkPhysicalDevice physicalDevice;
+        vk::Device device;
+        vk::PhysicalDevice physicalDevice;
         VmaAllocator allocator;
-        VkCommandPool commandPool;
-        VkQueue computeQueue;
+        vk::CommandPool commandPool;
+        vk::Queue computeQueue;
         std::string shaderPath;
         uint32_t framesInFlight;
         OceanParams params;
@@ -117,14 +117,14 @@ public:
     // Record the full simulation for this frame (spectrum regen if dirty,
     // time evolution, IFFT, displacement/normal/foam generation).
     // Call from the compute pass, before any water rendering.
-    void recordCompute(VkCommandBuffer cmd, float time);
+    void recordCompute(vk::CommandBuffer cmd, float time);
 
     // Get output textures for the water shader.
     // Images are in VK_IMAGE_LAYOUT_GENERAL - bind descriptors accordingly.
-    VkImageView getDisplacementView(int cascade = 0) const;
-    VkImageView getNormalView(int cascade = 0) const;
-    VkImageView getFoamView(int cascade = 0) const;
-    VkSampler getSampler() const { return sampler_ ? **sampler_ : VK_NULL_HANDLE; }
+    vk::ImageView getDisplacementView(int cascade = 0) const;
+    vk::ImageView getNormalView(int cascade = 0) const;
+    vk::ImageView getFoamView(int cascade = 0) const;
+    vk::Sampler getSampler() const { return sampler_ ? **sampler_ : VK_NULL_HANDLE; }
 
     // Parameter access
     void setParams(const OceanParams& newParams);
@@ -195,17 +195,17 @@ private:
     bool createDescriptorSets();
     bool transitionImagesToGeneral();
 
-    void recordSpectrumGeneration(VkCommandBuffer cmd, int cascadeIndex);
-    void recordTimeEvolution(VkCommandBuffer cmd, int cascadeIndex, float time);
-    void recordFFT(VkCommandBuffer cmd, int cascadeIndex, int component);
-    void recordDisplacementGeneration(VkCommandBuffer cmd, int cascadeIndex);
+    void recordSpectrumGeneration(vk::CommandBuffer cmd, int cascadeIndex);
+    void recordTimeEvolution(vk::CommandBuffer cmd, int cascadeIndex, float time);
+    void recordFFT(vk::CommandBuffer cmd, int cascadeIndex, int component);
+    void recordDisplacementGeneration(vk::CommandBuffer cmd, int cascadeIndex);
 
     // Device resources
-    VkDevice device = VK_NULL_HANDLE;
-    VkPhysicalDevice physicalDevice = VK_NULL_HANDLE;
+    vk::Device device = VK_NULL_HANDLE;
+    vk::PhysicalDevice physicalDevice = VK_NULL_HANDLE;
     VmaAllocator allocator = VK_NULL_HANDLE;
-    VkCommandPool commandPool = VK_NULL_HANDLE;
-    VkQueue computeQueue = VK_NULL_HANDLE;
+    vk::CommandPool commandPool = VK_NULL_HANDLE;
+    vk::Queue computeQueue = VK_NULL_HANDLE;
     std::string shaderPath;
     uint32_t framesInFlight = 0;
 
@@ -238,13 +238,13 @@ private:
 
     // Descriptor pool and sets (all written once at init)
     std::optional<vk::raii::DescriptorPool> descriptorPool_;
-    std::vector<VkDescriptorSet> spectrumDescSets;       // [cascade]
-    std::vector<VkDescriptorSet> timeEvolutionDescSets;  // [cascade]
-    std::vector<VkDescriptorSet> displacementDescSets;   // [cascade]
+    std::vector<vk::DescriptorSet> spectrumDescSets;       // [cascade]
+    std::vector<vk::DescriptorSet> timeEvolutionDescSets;  // [cascade]
+    std::vector<vk::DescriptorSet> displacementDescSets;   // [cascade]
     // FFT sets: per cascade, per component, two directions of the ping-pong
     // (hkt -> scratch and scratch -> hkt).
-    std::vector<VkDescriptorSet> fftDescSets;            // [cascade][component][2]
-    VkDescriptorSet fftSet(int cascade, int component, int pingpong) const {
+    std::vector<vk::DescriptorSet> fftDescSets;            // [cascade][component][2]
+    vk::DescriptorSet fftSet(int cascade, int component, int pingpong) const {
         return fftDescSets[(cascade * kComponents + component) * 2 + pingpong];
     }
 

@@ -59,18 +59,18 @@ public:
         float seaLevel = 23.0f;
 
         // Descriptor resources needed for finalizing tree systems
-        std::vector<VkBuffer> uniformBuffers;
-        VkImageView shadowView = VK_NULL_HANDLE;
-        VkSampler shadowSampler = VK_NULL_HANDLE;
+        std::vector<vk::Buffer> uniformBuffers;
+        vk::ImageView shadowView = VK_NULL_HANDLE;
+        vk::Sampler shadowSampler = VK_NULL_HANDLE;
 
         // For creating detritus descriptor sets
-        VkDevice device = VK_NULL_HANDLE;
+        vk::Device device = VK_NULL_HANDLE;
         VmaAllocator allocator = VK_NULL_HANDLE;
-        VkCommandPool commandPool = VK_NULL_HANDLE;
-        VkQueue graphicsQueue = VK_NULL_HANDLE;
-        VkPhysicalDevice physicalDevice = VK_NULL_HANDLE;
+        vk::CommandPool commandPool = VK_NULL_HANDLE;
+        vk::Queue graphicsQueue = VK_NULL_HANDLE;
+        vk::PhysicalDevice physicalDevice = VK_NULL_HANDLE;
         DescriptorManager::Pool* descriptorPool = nullptr;
-        VkDescriptorSetLayout descriptorSetLayout = VK_NULL_HANDLE;
+        vk::DescriptorSetLayout descriptorSetLayout = VK_NULL_HANDLE;
         uint32_t framesInFlight = 3;
     };
 

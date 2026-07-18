@@ -120,7 +120,7 @@ bool TreeRenderer::createDescriptorSetLayout() {
                  .addBinding(Bindings::TREE_GFX_BARK_AO, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
                              VK_SHADER_STAGE_FRAGMENT_BIT);
 
-    VkDescriptorSetLayout rawBranchLayout = branchBuilder.build();
+    vk::DescriptorSetLayout rawBranchLayout = branchBuilder.build();
     if (rawBranchLayout == VK_NULL_HANDLE) {
         return false;
     }
@@ -143,7 +143,7 @@ bool TreeRenderer::createDescriptorSetLayout() {
                .addBinding(Bindings::TREE_GFX_SNOW_UBO, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
                            VK_SHADER_STAGE_FRAGMENT_BIT);
 
-    VkDescriptorSetLayout rawLeafLayout = leafBuilder.build();
+    vk::DescriptorSetLayout rawLeafLayout = leafBuilder.build();
     if (rawLeafLayout == VK_NULL_HANDLE) {
         return false;
     }
@@ -182,7 +182,7 @@ bool TreeRenderer::createPipelines(const InitInfo& info) {
 
     // Create branch pipeline
     GraphicsPipelineFactory factory(device_);
-    VkPipeline rawBranchPipeline;
+    vk::Pipeline rawBranchPipeline;
 
     bool success = factory
         .applyPreset(GraphicsPipelineFactory::Preset::Default)
@@ -203,7 +203,7 @@ bool TreeRenderer::createPipelines(const InitInfo& info) {
     branchPipeline_.emplace(*raiiDevice_, rawBranchPipeline);
 
     // Create leaf pipeline
-    VkPipeline rawLeafPipeline;
+    vk::Pipeline rawLeafPipeline;
     factory.reset();
     success = factory
         .applyPreset(GraphicsPipelineFactory::Preset::Default)
@@ -247,7 +247,7 @@ bool TreeRenderer::createPipelines(const InitInfo& info) {
     leafShadowPipelineLayout_ = std::move(leafShadowLayoutOpt);
 
     // Create branch shadow pipeline
-    VkPipeline rawBranchShadowPipeline;
+    vk::Pipeline rawBranchShadowPipeline;
     factory.reset();
     success = factory
         .applyPreset(GraphicsPipelineFactory::Preset::Shadow)
@@ -268,7 +268,7 @@ bool TreeRenderer::createPipelines(const InitInfo& info) {
     branchShadowPipeline_.emplace(*raiiDevice_, rawBranchShadowPipeline);
 
     // Create leaf shadow pipeline
-    VkPipeline rawLeafShadowPipeline;
+    vk::Pipeline rawLeafShadowPipeline;
     factory.reset();
     success = factory
         .applyPreset(GraphicsPipelineFactory::Preset::Shadow)
@@ -297,7 +297,7 @@ bool TreeRenderer::createPipelines(const InitInfo& info) {
                           .addBinding(Bindings::TREE_GFX_BRANCH_SHADOW_INSTANCES, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
                                       VK_SHADER_STAGE_VERTEX_BIT);
 
-    VkDescriptorSetLayout rawInstancedLayout = instancedShadowBuilder.build();
+    vk::DescriptorSetLayout rawInstancedLayout = instancedShadowBuilder.build();
     if (rawInstancedLayout == VK_NULL_HANDLE) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create instanced branch shadow descriptor set layout");
         return false;
@@ -314,7 +314,7 @@ bool TreeRenderer::createPipelines(const InitInfo& info) {
     }
     branchShadowInstancedPipelineLayout_ = std::move(instancedLayoutOpt);
 
-    VkPipeline rawBranchShadowInstancedPipeline;
+    vk::Pipeline rawBranchShadowInstancedPipeline;
     factory.reset();
     success = factory
         .applyPreset(GraphicsPipelineFactory::Preset::Shadow)
@@ -494,8 +494,8 @@ void TreeRenderer::updateCulledLeafDescriptorSet(
     }
 
     // Only write buffers if they're valid (they're created lazily in recordCulling)
-    VkBuffer outputBuffer = leafCulling_->getOutputBuffer(frameIndex);
-    VkBuffer treeDataBuffer = leafCulling_->getTreeRenderDataBuffer(frameIndex);
+    vk::Buffer outputBuffer = leafCulling_->getOutputBuffer(frameIndex);
+    vk::Buffer treeDataBuffer = leafCulling_->getTreeRenderDataBuffer(frameIndex);
     if (outputBuffer == VK_NULL_HANDLE || treeDataBuffer == VK_NULL_HANDLE) {
         return;
     }
@@ -601,7 +601,7 @@ void TreeRenderer::updateBranchCullingData(const TreeSystem& treeSystem, const T
 
     vk::Device vkDevice(device_);
     for (uint32_t i = 0; i < branchShadowInstancedDescriptorSets_.size(); ++i) {
-        VkBuffer instanceBuffer = branchShadowCulling_->getInstanceBuffer(i);
+        vk::Buffer instanceBuffer = branchShadowCulling_->getInstanceBuffer(i);
         if (instanceBuffer == VK_NULL_HANDLE) {
             SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
                         "TreeRenderer: Instance buffer %u is NULL, skipping descriptor update", i);

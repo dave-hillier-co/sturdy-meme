@@ -156,11 +156,11 @@ public:
     const VulkanContext& getVulkanContext() const { return *vulkanContext_; }
 
     // GUI rendering callback (called during swapchain render pass)
-    using GuiRenderCallback = std::function<void(VkCommandBuffer)>;
+    using GuiRenderCallback = std::function<void(vk::CommandBuffer)>;
     void setGuiRenderCallback(GuiRenderCallback callback) { guiRenderCallback = callback; }
 
     // Ragdoll draw callback (called during HDR skinned character pass)
-    using RagdollDrawCallback = std::function<void(VkCommandBuffer, uint32_t)>;
+    using RagdollDrawCallback = std::function<void(vk::CommandBuffer, uint32_t)>;
     void setRagdollDrawCallback(RagdollDrawCallback callback) { ragdollDrawCallback_ = std::move(callback); }
     const RagdollDrawCallback& getRagdollDrawCallback() const { return ragdollDrawCallback_; }
 
@@ -169,7 +169,7 @@ public:
     const RendererSystems& getSystems() const { return *systems_; }
 
     // Resource access
-    VkCommandPool getCommandPool() const { return vulkanContext_->getCommandPool(); }
+    vk::CommandPool getCommandPool() const { return vulkanContext_->getCommandPool(); }
     DescriptorManager::Pool* getDescriptorPool();
     std::string getShaderPath() const { return resourcePath + "/shaders"; }
     const std::string& getResourcePath() const { return resourcePath; }
@@ -214,7 +214,7 @@ private:
 
     // Frame building: updates UBOs, subsystems, records command buffer.
     // Called from the FrameExecutor callback during execute().
-    VkCommandBuffer buildFrame(const Camera& camera, uint32_t imageIndex, uint32_t frameIndex);
+    vk::CommandBuffer buildFrame(const Camera& camera, uint32_t imageIndex, uint32_t frameIndex);
 
     std::string resourcePath;
     Config config_;  // Renderer configuration

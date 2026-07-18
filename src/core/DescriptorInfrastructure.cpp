@@ -33,7 +33,7 @@ void DescriptorInfrastructure::addCommonDescriptorBindings(DescriptorManager::La
 }
 
 bool DescriptorInfrastructure::initDescriptors(VulkanContext& context, const Config& config) {
-    VkDevice device = context.getVkDevice();
+    vk::Device device = context.getVkDevice();
 
     if (!createDescriptorSetLayout(device, context.getRaiiDevice())) {
         return false;
@@ -47,10 +47,10 @@ bool DescriptorInfrastructure::initDescriptors(VulkanContext& context, const Con
     return true;
 }
 
-bool DescriptorInfrastructure::createDescriptorSetLayout(VkDevice device, const vk::raii::Device& raiiDevice) {
+bool DescriptorInfrastructure::createDescriptorSetLayout(vk::Device device, const vk::raii::Device& raiiDevice) {
     DescriptorManager::LayoutBuilder builder(device);
     addCommonDescriptorBindings(builder);
-    VkDescriptorSetLayout rawLayout = builder.build();
+    vk::DescriptorSetLayout rawLayout = builder.build();
 
     if (rawLayout == VK_NULL_HANDLE) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create descriptor set layout");
@@ -61,14 +61,14 @@ bool DescriptorInfrastructure::createDescriptorSetLayout(VkDevice device, const 
     return true;
 }
 
-bool DescriptorInfrastructure::createDescriptorPool(VkDevice device, const Config& config) {
+bool DescriptorInfrastructure::createDescriptorPool(vk::Device device, const Config& config) {
     // Create the auto-growing descriptor pool with configurable sizes
     // Will automatically grow if exhausted
     descriptorManagerPool_.emplace(device, config.setsPerPool, config.poolSizes);
     return true;
 }
 
-bool DescriptorInfrastructure::createGraphicsPipeline(VulkanContext& context, VkRenderPass hdrRenderPass,
+bool DescriptorInfrastructure::createGraphicsPipeline(VulkanContext& context, vk::RenderPass hdrRenderPass,
                                                        const std::string& resourcePath) {
     if (!initialized_) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "DescriptorInfrastructure::createGraphicsPipeline: not initialized");
@@ -95,7 +95,7 @@ bool DescriptorInfrastructure::createGraphicsPipeline(VulkanContext& context, Vk
     auto bindingDescription = Vertex::getBindingDescription();
     auto attributeDescriptions = Vertex::getAttributeDescriptions();
 
-    VkPipeline rawPipeline = VK_NULL_HANDLE;
+    vk::Pipeline rawPipeline = VK_NULL_HANDLE;
     GraphicsPipelineFactory factory(device);
     bool success = factory
         .applyPreset(GraphicsPipelineFactory::Preset::Default)

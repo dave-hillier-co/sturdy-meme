@@ -59,7 +59,7 @@ void AtmosphereLUTSystem::cleanup() {
     vk::Device vkDevice(device);
 
     // Destroy pipelines
-    auto destroyPipeline = [&](VkPipeline& pipeline) {
+    auto destroyPipeline = [&](vk::Pipeline& pipeline) {
         if (pipeline != VK_NULL_HANDLE) {
             vkDevice.destroyPipeline(pipeline);
             pipeline = VK_NULL_HANDLE;
@@ -72,7 +72,7 @@ void AtmosphereLUTSystem::cleanup() {
     destroyPipeline(cloudMapPipeline);
 
     // Destroy pipeline layouts
-    auto destroyLayout = [&](VkPipelineLayout& layout) {
+    auto destroyLayout = [&](vk::PipelineLayout& layout) {
         if (layout != VK_NULL_HANDLE) {
             vkDevice.destroyPipelineLayout(layout);
             layout = VK_NULL_HANDLE;
@@ -85,7 +85,7 @@ void AtmosphereLUTSystem::cleanup() {
     destroyLayout(cloudMapPipelineLayout);
 
     // Destroy descriptor set layouts
-    auto destroyDescLayout = [&](VkDescriptorSetLayout& layout) {
+    auto destroyDescLayout = [&](vk::DescriptorSetLayout& layout) {
         if (layout != VK_NULL_HANDLE) {
             vkDevice.destroyDescriptorSetLayout(layout);
             layout = VK_NULL_HANDLE;

@@ -28,10 +28,10 @@ public:
      * Factory: Create and initialize GUI system.
      * Returns nullptr on failure.
      */
-    static std::unique_ptr<GuiSystem> create(SDL_Window* window, VkInstance instance,
-                                              VkPhysicalDevice physicalDevice, VkDevice device,
-                                              uint32_t graphicsQueueFamily, VkQueue graphicsQueue,
-                                              VkRenderPass renderPass, uint32_t imageCount);
+    static std::unique_ptr<GuiSystem> create(SDL_Window* window, vk::Instance instance,
+                                              vk::PhysicalDevice physicalDevice, vk::Device device,
+                                              uint32_t graphicsQueueFamily, vk::Queue graphicsQueue,
+                                              vk::RenderPass renderPass, uint32_t imageCount);
 
     ~GuiSystem();
 
@@ -44,7 +44,7 @@ public:
     void processEvent(const SDL_Event& event);
     void beginFrame();
     void render(GuiInterfaces& interfaces, const Camera& camera, float deltaTime, float fps);
-    void endFrame(VkCommandBuffer cmd);
+    void endFrame(vk::CommandBuffer cmd);
     void cancelFrame();  // End frame without rendering (for early returns)
 
     bool wantsInput() const;
@@ -68,9 +68,9 @@ public:
     bool isGizmoActive() const;
 
 private:
-    bool initInternal(SDL_Window* window, VkInstance instance, VkPhysicalDevice physicalDevice,
-                      VkDevice device, uint32_t graphicsQueueFamily, VkQueue graphicsQueue,
-                      VkRenderPass renderPass, uint32_t imageCount);
+    bool initInternal(SDL_Window* window, vk::Instance instance, vk::PhysicalDevice physicalDevice,
+                      vk::Device device, uint32_t graphicsQueueFamily, vk::Queue graphicsQueue,
+                      vk::RenderPass renderPass, uint32_t imageCount);
     void cleanup();
 
     void renderMainMenuBar();
@@ -93,8 +93,8 @@ private:
     void renderSceneGraphWindow(GuiInterfaces& ui);
     void renderSceneEditorWindow(GuiInterfaces& ui);
 
-    VkDevice device_ = VK_NULL_HANDLE;  // Stored for cleanup
-    VkDescriptorPool imguiPool = VK_NULL_HANDLE;
+    vk::Device device_ = VK_NULL_HANDLE;  // Stored for cleanup
+    vk::DescriptorPool imguiPool = VK_NULL_HANDLE;
     bool visible = true;
 
     // IK debug settings

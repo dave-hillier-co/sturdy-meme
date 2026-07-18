@@ -7,7 +7,7 @@
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include <stb_image_write.h>
 
-bool AtmosphereLUTSystem::exportImageToPNG(VkImage image, VkFormat format, uint32_t width, uint32_t height, const std::string& filename) {
+bool AtmosphereLUTSystem::exportImageToPNG(vk::Image image, VkFormat format, uint32_t width, uint32_t height, const std::string& filename) {
     // Determine channel count from format
     uint32_t channelCount = 0;
     switch (format) {
@@ -26,7 +26,7 @@ bool AtmosphereLUTSystem::exportImageToPNG(VkImage image, VkFormat format, uint3
     }
 
     // Create staging buffer with correct size based on actual format
-    VkDeviceSize imageSize = width * height * channelCount * sizeof(uint16_t);
+    vk::DeviceSize imageSize = width * height * channelCount * sizeof(uint16_t);
 
     auto bufferInfo = vk::BufferCreateInfo{}
         .setSize(imageSize)

@@ -46,7 +46,7 @@ public:
     // Initialize all frame buffers to zero active tiles
     void initializeAllFrames();
 
-    VkBuffer getBuffer(uint32_t frameIndex) const {
+    vk::Buffer getBuffer(uint32_t frameIndex) const {
         return buffers_.at(frameIndex).get();
     }
 

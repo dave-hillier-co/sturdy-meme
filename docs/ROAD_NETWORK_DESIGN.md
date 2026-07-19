@@ -4,13 +4,23 @@ This document outlines the road network generation system.
 
 ## Implementation Status
 
-- [x] Space colonization algorithm (`SpaceColonization.h/cpp`)
+- [x] Space colonization algorithm (`SpaceColonization.h/cpp`) — implemented, but only
+  runs with `--use-colonization`, which the build pipeline does not pass
 - [x] SVG output for roads (`RoadSVG.h/cpp`)
 - [x] A* pathfinding with terrain awareness
 - [x] Settlement areas with geography masking
-- [ ] Bridge/ford detection at river crossings
-- [ ] Settlement internal streets generator
+- [x] Settlement internal streets generator (`StreetGenerator.h/cpp`, 7-phase pipeline
+  with block subdivision and burgage-plot lots) — implemented, but gated behind
+  `--generate-streets`, which the build pipeline does not pass, and its
+  `streets.geojson`/`lots.geojson` outputs have no runtime consumer
+- [ ] Bridge/ford detection at river crossings — roads currently cross open water
+  (including the Solent) as straight lines
 - [ ] Integration of colonization topology with A* routing
+- [ ] Runtime road geometry — `roads.geojson` is loaded by
+  `src/terrain/RoadNetworkLoader` but only feeds debug visualization; roads are visible
+  solely via the virtual-texture albedo bake
+
+Wiring these gaps up is scheduled in `WORLD_GENERATION_PLAN.md` (Phases 2–4).
 
 ## Overview
 

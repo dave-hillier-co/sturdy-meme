@@ -254,6 +254,30 @@ per that document; each rung is independently shippable.
 
 ---
 
+## Verification record (containerized environment)
+
+The implementation was verified in a Linux container without a GPU:
+
+- Full build compiles and links (vcpkg bootstrap + all tools + app); all 5 CTest
+  suites pass, including the town GeoJSON determinism test.
+- The complete `terrain_preprocessing` pipeline ran end-to-end against a synthetic
+  1024x1024 island heightmap: 46 lakes extracted and rasterized into the biome map,
+  44 roads with 5 bridge + 1 ford crossings (zero roads across open sea), 20 town
+  layouts, placeholder material textures, and the full VT tile pyramid (using the
+  placeholder fallback since the downloads art set is absent).
+- `world_preview.png` composites correctly (lake outlines align with their biome
+  patches after the coordinate-offset fix).
+- Runtime smoke test on lavapipe (SDL offscreen video + VK_EXT_headless_surface):
+  the app initializes Vulkan, loads all generated data (46 lakes, roads with
+  crossings), and executes every new generator — 5 bridge decks, 209 road/river/
+  street ribbon chunks, settlement buildings — before crashing inside llvmpipe's
+  JIT-compiled shader code at first-frame rendering. The same crash reproduces with
+  all generated content removed, so it is a software-driver limitation, not a
+  regression; on real hardware use `./run-debug.sh` per the phase test notes.
+- Note: rivers require the flow threshold to suit the heightmap — the synthetic
+  island yields rivers at `--threshold 20000` while the production value (250000)
+  is tuned for the real Isle of Wight input.
+
 ## Standing constraints
 
 - Every phase must leave `cmake --preset debug && cmake --build build/debug` compiling

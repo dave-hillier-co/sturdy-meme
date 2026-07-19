@@ -159,7 +159,12 @@ bool loadBiomeMap(const std::string& path, BiomeMap& bm) {
     return true;
 }
 
-std::vector<Polyline> loadLineStrings(const std::string& path, const char* what) {
+// coordOffset shifts loaded coordinates into content space [0, terrainSize]:
+// roads.geojson is already content-space (offset 0), while the watershed's
+// rivers.geojson/lakes.geojson use world-centered coordinates (offset
+// terrainSize/2).
+std::vector<Polyline> loadLineStrings(const std::string& path, const char* what,
+                                      float coordOffset = 0.0f) {
     std::vector<Polyline> lines;
     std::ifstream file(path);
     if (!file.is_open()) {
@@ -173,12 +178,14 @@ std::vector<Polyline> loadLineStrings(const std::string& path, const char* what)
             Polyline line;
             if (geom["type"] == "LineString") {
                 for (const auto& coord : geom["coordinates"]) {
-                    line.points.emplace_back(coord[0].get<float>(), coord[1].get<float>());
+                    line.points.emplace_back(coord[0].get<float>() + coordOffset,
+                                             coord[1].get<float>() + coordOffset);
                 }
             } else if (geom["type"] == "Polygon") {
                 // Outer ring drawn as a closed polyline (lakes)
                 for (const auto& coord : geom["coordinates"][0]) {
-                    line.points.emplace_back(coord[0].get<float>(), coord[1].get<float>());
+                    line.points.emplace_back(coord[0].get<float>() + coordOffset,
+                                             coord[1].get<float>() + coordOffset);
                 }
             } else {
                 continue;
@@ -413,8 +420,11 @@ int main(int argc, char* argv[]) {
     BiomeMap biome;
     bool hasBiome = loadBiomeMap(cfg.terrainDataDir + "/biome/biome_map.png", biome);
 
-    auto rivers = loadLineStrings(cfg.terrainDataDir + "/watershed/rivers.geojson", "rivers");
-    auto lakes = loadLineStrings(cfg.terrainDataDir + "/watershed/lakes.geojson", "lakes");
+    const float halfTerrain = cfg.terrainSize * 0.5f;
+    auto rivers = loadLineStrings(cfg.terrainDataDir + "/watershed/rivers.geojson", "rivers",
+                                  halfTerrain);
+    auto lakes = loadLineStrings(cfg.terrainDataDir + "/watershed/lakes.geojson", "lakes",
+                                 halfTerrain);
     auto roads = loadLineStrings(cfg.terrainDataDir + "/roads/roads.geojson", "roads");
     auto settlements = loadSettlements(cfg.terrainDataDir + "/biome/settlements.json");
     auto townBuildings = loadTownBuildings(cfg.terrainDataDir + "/towns", settlements);

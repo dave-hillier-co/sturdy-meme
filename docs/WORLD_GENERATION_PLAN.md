@@ -5,6 +5,11 @@ lays out a phased plan for closing the gaps. Each phase leaves the build compili
 app running, and the world looking better than the phase before — no phase depends on a
 later one to be presentable.
 
+**Implementation status**: Phases 0–4 and 6 are implemented (see per-phase status
+notes below); Phase 5 got a first increment (larger vegetation region). Phase 7 and
+the noted follow-ups (water-shader rivers, island-wide streamed trees, runtime
+interiors) remain open.
+
 Related documents: `PROCEDURAL_CITIES_REQUIREMENTS.md` (M1–M10 quality ladder),
 `ROAD_NETWORK_DESIGN.md` (road system design), `ARCHITECTURE.md` §"Procedural Content
 Pipeline", `PLAN.md` (overall engine plan).
@@ -75,6 +80,12 @@ of new code), then wire up the finished-but-dormant generators, then extend cove
 
 ### Phase 0 — Pipeline hygiene
 
+**Status: DONE.** `preprocess.sh` wraps the CMake target; the heightmap requirement is
+documented in README; the dead watershed code is removed; `material_texture_gen` is
+wired in as the placeholder-texture fallback for the VT compositor
+(`--materials-fallback`, chosen automatically when `assets/textures/downloads/` is
+absent).
+
 Make the pipeline honest about what it does and runnable from a fresh checkout.
 
 - Fix or retire `preprocess.sh`. Preferred: reduce it to a thin wrapper around
@@ -93,6 +104,12 @@ terrain, rivers, biomes, roads, settlements. `./run-debug.sh` runs without crash
 
 ### Phase 1 — Real lakes
 
+**Status: DONE.** `tools/watershed/src/lakes.cpp` extracts lakes via priority-flood
+depression filling (fill level, depth, area, traced boundary polygons);
+`biome_preprocess` rasterizes lake surfaces into the biome map; `world_preview` draws
+the polygons; the runtime places flat water discs at each lake's fill level
+(`Application::generateLinearWorldFeatures`).
+
 Replace the empty-FeatureCollection stub with actual lake extraction.
 
 - In `tools/watershed`, derive lakes from the depression-resolution pass: interior
@@ -110,6 +127,13 @@ the existing water shading. Determinism: run the pipeline twice, diff `lakes.geo
 
 ### Phase 2 — Roads that respect water: no sea crossings, bridges, fords
 
+**Status: DONE.** Sea is impassable to road A* (endpoints snap to land; unreachable
+connections are dropped, not drawn); crossings are detected per road and emitted as
+ford/bridge Point features; fords bake as widened road stamps in the VT albedo;
+`src/world/BridgeDeckGenerator` builds walkable decks with rails and colliders at
+bridge crossings. `tile_generator --rivers` also bakes riverbeds now (the loader was
+a stub).
+
 - In `RoadPathfinder`, make open sea impassable (currently a finite penalty lets A*
   cross the Solent). Settlements that become unreachable simply drop the connection.
 - Detect river crossings on accepted paths using stream order from the watershed data
@@ -126,6 +150,14 @@ river/road intersection carries a bridge or ford marker. In-game, walk a road ac
 river — cross on a deck or ford without falling into the riverbed.
 
 ### Phase 3 — Linear features as real geometry
+
+**Status: DONE (first pass).** `src/world/RibbonMeshGenerator` drapes road ribbons
+over the terrain (skipping bridge spans) and builds river ribbons at spline water
+level; `src/world/TownLinearFeatures` renders town street LineStrings as ribbons and
+extrudes wall runs with colliders, generated per settlement alongside the buildings.
+Follow-up: river ribbons use a tinted static material — routing them through the
+water shading pipeline (and feeding spline flow into `FlowMapGenerator`) is still
+open.
 
 Promote roads, rivers, and town streets/walls from debug cones and texture bakes to
 draped meshes. This is the largest visual step and makes the vector data load-bearing.
@@ -152,6 +184,12 @@ against source splines.
 
 ### Phase 4 — Intra-settlement streets and lots
 
+**Status: DONE.** The build passes `--generate-streets`; ownership is reconciled as:
+town layouts (Watabou) own streets wherever `town_<id>.geojson` exists, and the
+street generator's `streets.geojson`/`lots.geojson` are the fallback for settlements
+without one (streets feed the ribbon path, lots feed building footprints). Space
+colonization remains optional/unwired (`--use-colonization`).
+
 Wire up the dormant `StreetGenerator`.
 
 - Add `--generate-streets` to the `roads_gen` CMake command (and the `preview`
@@ -172,6 +210,12 @@ have lanes and plot-aligned buildings instead of a bare cluster. Determinism dif
 
 ### Phase 5 — Whole-island coverage
 
+**Status: PARTIAL.** The biome vegetation region grew from 2 km to 5 km radius with a
+proportionally larger tree budget (the candidate pass spreads the budget evenly, so
+coverage extends at reduced density). True island-wide coverage at full density needs
+streamed/instanced distant trees (see `ECS_TREES_PLAN.md` and the tree roadmap) and
+remains open.
+
 - Extend biome-driven vegetation from the current limited radius to island-wide, using
   the existing impostor/LOD systems for distant trees (see `PLAN.md` backlog and the
   tree systems already in place).
@@ -183,6 +227,11 @@ shows appropriate vegetation to the horizon; walk between two settlements withou
 hitches or bare patches; frame time stays within existing budgets.
 
 ### Phase 6 — Dwellings and building interiors
+
+**Status: PARTIAL.** `dwelling_generator` now writes `dwelling.json` (rooms, doors,
+windows, stairs per floor, grid-cell coordinates) alongside its SVGs — the
+interchange format for interiors. The per-lot build step and the runtime interior
+pilot remain open.
 
 Connect the orphaned `dwelling_generator` toward the M9 interiors milestone.
 

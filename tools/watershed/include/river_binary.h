@@ -2,6 +2,7 @@
 
 #include "river_svg.h"
 #include "elevation_grid.h"
+#include "lakes.h"
 #include <string>
 #include <cstdint>
 
@@ -25,5 +26,13 @@ bool write_rivers_geojson(
     const RiverGeoJsonConfig& config
 );
 
-// Write empty lakes.geojson file (required by ErosionDataLoader)
-bool write_lakes_geojson(const std::string& filename);
+// Write lakes in GeoJSON format compatible with ErosionDataLoader:
+// Polygon features (world-space [x, z, y] rings at the water surface) with
+// waterLevel/depth/area/radius properties in meters.
+bool write_lakes_geojson(
+    const std::string& filename,
+    const std::vector<Lake>& lakes,
+    int processing_width,
+    int processing_height,
+    const RiverGeoJsonConfig& config
+);

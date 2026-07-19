@@ -169,10 +169,19 @@ std::vector<Polyline> loadLineStrings(const std::string& path, const char* what)
     try {
         json j = json::parse(file);
         for (const auto& feature : j.value("features", json::array())) {
-            if (feature["geometry"]["type"] != "LineString") continue;
+            const auto& geom = feature["geometry"];
             Polyline line;
-            for (const auto& coord : feature["geometry"]["coordinates"]) {
-                line.points.emplace_back(coord[0].get<float>(), coord[1].get<float>());
+            if (geom["type"] == "LineString") {
+                for (const auto& coord : geom["coordinates"]) {
+                    line.points.emplace_back(coord[0].get<float>(), coord[1].get<float>());
+                }
+            } else if (geom["type"] == "Polygon") {
+                // Outer ring drawn as a closed polyline (lakes)
+                for (const auto& coord : geom["coordinates"][0]) {
+                    line.points.emplace_back(coord[0].get<float>(), coord[1].get<float>());
+                }
+            } else {
+                continue;
             }
             if (feature.contains("properties")) {
                 line.width = feature["properties"].value("width", 5.0f);

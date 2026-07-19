@@ -155,10 +155,11 @@ public:
     bool loadHeightmap(const std::string& path);
     bool loadBiomeMap(const std::string& path);
     bool loadRoads(const std::string& jsonPath);
-    bool loadRivers(const std::string& erosionCachePath);
+    bool loadRivers(const std::string& riversGeojsonPath);
 
     // Set material library base path
-    void setMaterialBasePath(const std::string& path);
+    void setMaterialBasePath(const std::string& path,
+                             const std::string& fallbackPath = std::string());
 
     // Generate a single tile at specified mip level
     void generateTile(uint32_t tileX, uint32_t tileY, uint32_t mipLevel, OutputTile& outTile);

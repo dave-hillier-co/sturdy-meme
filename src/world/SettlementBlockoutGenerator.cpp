@@ -172,6 +172,50 @@ std::vector<std::pair<std::vector<glm::vec2>, bool>> loadTownFootprints(const st
     return footprints;
 }
 
+// Fallback plots from the street generator's lots.geojson (settlements with
+// no town layout). Lot polygons are full burgage plots; the building
+// occupies a shrunk core so gardens/yards remain around it.
+std::vector<std::pair<std::vector<glm::vec2>, bool>> loadLotFootprints(
+    const std::string& streetsDir, uint32_t settlementId) {
+    std::vector<std::pair<std::vector<glm::vec2>, bool>> footprints;
+    if (streetsDir.empty()) return footprints;
+
+    std::string path = streetsDir + "/settlement_" + std::to_string(settlementId) +
+                       "/lots.geojson";
+    std::ifstream file(path);
+    if (!file.is_open()) return footprints;
+
+    try {
+        nlohmann::json j;
+        file >> j;
+        for (const auto& feature : j.value("features", nlohmann::json::array())) {
+            if (feature["geometry"]["type"] != "Polygon") continue;
+            const auto& rings = feature["geometry"]["coordinates"];
+            if (rings.empty()) continue;
+
+            std::vector<glm::vec2> ring;
+            glm::vec2 centroid(0.0f);
+            for (const auto& coord : rings[0]) {
+                glm::vec2 content(coord[0].get<float>(), coord[1].get<float>());
+                ring.push_back(WorldCoords::contentToWorld(content));
+                centroid += ring.back();
+            }
+            if (ring.size() < 3) continue;
+            centroid /= static_cast<float>(ring.size());
+            for (auto& p : ring) {
+                p = centroid + (p - centroid) * 0.65f;
+            }
+            footprints.emplace_back(std::move(ring), false);
+        }
+    } catch (const std::exception& e) {
+        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                    "SettlementBlockout: Failed to parse %s: %s", path.c_str(), e.what());
+        footprints.clear();
+    }
+
+    return footprints;
+}
+
 } // namespace
 
 SettlementBlockoutGenerator::SettlementBlockoutGenerator(Config config)
@@ -265,6 +309,11 @@ std::vector<ecs::Entity> SettlementBlockoutGenerator::generateSettlement(
             std::string townPath = config.townsDir + "/town_" +
                                    std::to_string(settlement.id) + ".geojson";
             auto footprints = loadTownFootprints(townPath);
+            if (footprints.empty()) {
+                // No town layout: fall back to the street generator's burgage
+                // lots so the settlement still gets plot-aligned buildings.
+                footprints = loadLotFootprints(config.streetsDir, settlement.id);
+            }
             if (!footprints.empty()) {
                 const uint32_t seed = settlement.id * 7919u + 1u;
                 int created = 0;

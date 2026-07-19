@@ -334,13 +334,41 @@ bool TileCompositor::loadRoads(const std::string& geojsonPath) {
             }
         }
 
+        // Ford crossings (Point features) are baked as short, widened road
+        // stamps across the riverbed so the crossing reads as rocky shallows.
+        size_t fords = 0;
+        for (const auto& feature : j.value("features", nlohmann::json::array())) {
+            if (feature["geometry"]["type"] != "Point") continue;
+            const auto& props = feature["properties"];
+            if (props.value("kind", "") != "ford") continue;
+
+            glm::vec2 pos(feature["geometry"]["coordinates"][0].get<float>(),
+                          feature["geometry"]["coordinates"][1].get<float>());
+            glm::vec2 dir(1.0f, 0.0f);
+            if (props.contains("direction")) {
+                dir = glm::vec2(props["direction"][0].get<float>(),
+                                props["direction"][1].get<float>());
+            }
+            float span = props.value("span_m", 10.0f);
+            RoadGen::RoadType type = RoadGen::parseRoadType(props.value("road_type", "lane"));
+
+            RoadGen::RoadSpline stamp;
+            stamp.type = type;
+            float halfLength = span * 0.5f + 6.0f;
+            float stampWidth = RoadGen::getRoadWidth(type) + 4.0f;
+            stamp.controlPoints.emplace_back(pos - dir * halfLength, stampWidth);
+            stamp.controlPoints.emplace_back(pos + dir * halfLength, stampWidth);
+            roads.push_back(std::move(stamp));
+            ++fords;
+        }
+
         if (roads.empty()) {
             SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "No roads parsed from %s", geojsonPath.c_str());
             return false;
         }
 
         splineRasterizer.setRoads(roads);
-        SDL_Log("Loaded %zu roads from %s", roads.size(), geojsonPath.c_str());
+        SDL_Log("Loaded %zu roads (%zu ford stamps) from %s", roads.size(), fords, geojsonPath.c_str());
         return true;
 
     } catch (const std::exception& e) {
@@ -349,17 +377,70 @@ bool TileCompositor::loadRoads(const std::string& geojsonPath) {
     }
 }
 
-bool TileCompositor::loadRivers(const std::string& erosionCachePath) {
-    // Rivers would come from erosion simulation cache
-    // For now, just log that we'd load them
-    SDL_Log("River loading from erosion cache not yet implemented: %s", erosionCachePath.c_str());
-    return true;
+bool TileCompositor::loadRivers(const std::string& riversGeojsonPath) {
+    std::ifstream file(riversGeojsonPath);
+    if (!file.is_open()) {
+        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                    "Could not open rivers file: %s - riverbeds not baked", riversGeojsonPath.c_str());
+        return false;
+    }
+
+    try {
+        nlohmann::json j;
+        file >> j;
+
+        // rivers.geojson coordinates are world-centered [x, z, y]; the
+        // rasterizer works in content space [0, terrainSize].
+        const float halfSize = config.terrainSize * 0.5f;
+
+        std::vector<RiverSpline> rivers;
+        for (const auto& feature : j.value("features", nlohmann::json::array())) {
+            if (feature["geometry"]["type"] != "LineString") continue;
+
+            RiverSpline river;
+            const auto& props = feature["properties"];
+            river.totalFlow = props.value("totalFlow", 0.0f);
+            float defaultWidth = props.value("width", 5.0f);
+
+            const auto& coords = feature["geometry"]["coordinates"];
+            for (const auto& coord : coords) {
+                float x = coord[0].get<float>() + halfSize;
+                float z = coord[1].get<float>() + halfSize;
+                float y = coord.size() > 2 ? coord[2].get<float>() : 0.0f;
+                river.controlPoints.emplace_back(x, y, z);
+            }
+            if (props.contains("widths")) {
+                for (const auto& w : props["widths"]) {
+                    river.widths.push_back(w.get<float>());
+                }
+            }
+            river.widths.resize(river.controlPoints.size(), defaultWidth);
+
+            if (river.controlPoints.size() >= 2) {
+                rivers.push_back(std::move(river));
+            }
+        }
+
+        splineRasterizer.setRivers(rivers);
+        SDL_Log("Loaded %zu rivers from %s", rivers.size(), riversGeojsonPath.c_str());
+        return true;
+
+    } catch (const std::exception& e) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Error parsing rivers GeoJSON: %s", e.what());
+        return false;
+    }
 }
 
-void TileCompositor::setMaterialBasePath(const std::string& path) {
+void TileCompositor::setMaterialBasePath(const std::string& path,
+                                         const std::string& fallbackPath) {
     materialBasePath = path;
-    // MaterialLibrary uses its internal base path, but we store the path here
-    // for direct texture loading in TileCompositor
+    // Initialize the material library so every material path is resolved to
+    // an absolute path, preferring basePath and falling back to the
+    // build-generated placeholder set when the preferred file is absent.
+    MaterialLibraryConfig matConfig;
+    matConfig.basePath = path;
+    matConfig.fallbackPath = fallbackPath;
+    materials.init(matConfig);
 }
 
 float TileCompositor::smoothstep(float edge0, float edge1, float x) {
@@ -396,9 +477,8 @@ float TileCompositor::noise2D(glm::vec2 pos) const {
 
 glm::vec4 TileCompositor::sampleMaterialTriplanar(const TerrainMaterial& material,
                                                    glm::vec2 worldPos, glm::vec3 normal) {
-    // Get the texture - construct full path from base path
-    std::string fullPath = materialBasePath + "/" + material.albedoPath;
-    const TextureData* tex = textureCache.getTexture(fullPath);
+    // Material paths are pre-resolved to absolute paths by MaterialLibrary::init
+    const TextureData* tex = textureCache.getTexture(material.albedoPath);
 
     if (!tex || !tex->isValid()) {
         // Return a debug color based on material name
@@ -535,8 +615,7 @@ void TileCompositor::generateTile(uint32_t tileX, uint32_t tileY, uint32_t mipLe
                     RoadType roadType = static_cast<RoadType>(static_cast<uint8_t>(srcRoadType));
 
                     const RoadMaterial& roadMat = materials.getRoadMaterial(roadType);
-                    std::string roadTexPath = materialBasePath + "/" + roadMat.albedoPath;
-                    const TextureData* roadTex = textureCache.getTexture(roadTexPath);
+                    const TextureData* roadTex = textureCache.getTexture(roadMat.albedoPath);
                     if (roadTex && roadTex->isValid()) {
                         glm::vec4 roadColor = roadTex->sampleWrap(roadUV);
                         color = glm::mix(color, roadColor, roadMask);
@@ -555,8 +634,7 @@ void TileCompositor::generateTile(uint32_t tileX, uint32_t tileY, uint32_t mipLe
                     glm::vec2 riverbedUV = splineTile.sampleRiverbedUV(px, py);
 
                     const RiverbedMaterial& riverbedMat = materials.getRiverbedMaterial();
-                    std::string riverbedTexPath = materialBasePath + "/" + riverbedMat.centerAlbedoPath;
-                    const TextureData* riverbedTex = textureCache.getTexture(riverbedTexPath);
+                    const TextureData* riverbedTex = textureCache.getTexture(riverbedMat.centerAlbedoPath);
                     if (riverbedTex && riverbedTex->isValid()) {
                         glm::vec4 riverbedColor = riverbedTex->sampleWrap(riverbedUV);
                         color = glm::mix(color, riverbedColor, riverbedMask);

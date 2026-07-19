@@ -2,6 +2,7 @@
 #include <SDL3/SDL_log.h>
 #include <stb_image.h>
 #include <lodepng.h>
+#include <nlohmann/json.hpp>
 // tinyexr implementation is provided by the prebuilt vcpkg library
 // (unofficial::tinyexr::tinyexr); do not define TINYEXR_IMPLEMENTATION here, as
 // the implementation block pulls in headers (exr_reader.hh) that the package
@@ -663,6 +664,88 @@ void BiomeGenerator::classifyZones(ProgressCallback callback) {
     }
 }
 
+void BiomeGenerator::rasterizeLakes(ProgressCallback callback) {
+    // Mark lake water surfaces (from the watershed tool's priority-flood
+    // extraction) as River zone so texturing, vegetation suppression and
+    // settlement placement treat them as water.
+    std::string lakesPath = config.erosionCacheDir + "/lakes.geojson";
+    std::ifstream file(lakesPath);
+    if (!file.is_open()) {
+        SDL_Log("No lakes.geojson at %s - skipping lake rasterization", lakesPath.c_str());
+        return;
+    }
+    if (callback) callback(0.42f, "Rasterizing lakes...");
+
+    uint32_t lakeCount = 0;
+    uint32_t cellCount = 0;
+    try {
+        nlohmann::json j;
+        file >> j;
+        const float halfSize = config.terrainSize * 0.5f;
+
+        for (const auto& feature : j.value("features", nlohmann::json::array())) {
+            const auto& geom = feature["geometry"];
+            if (geom["type"] != "Polygon") continue;
+            const auto& ring = geom["coordinates"][0];
+            if (ring.size() < 4) continue;
+
+            // Lake coords are world-centered [x, z, y]; the biome grid maps
+            // [0, terrainSize] across its resolution.
+            std::vector<std::pair<float, float>> pts;
+            pts.reserve(ring.size());
+            float minGX = static_cast<float>(result.width);
+            float maxGX = 0.0f, minGY = static_cast<float>(result.height), maxGY = 0.0f;
+            for (const auto& coord : ring) {
+                float gx = (coord[0].get<float>() + halfSize) / config.terrainSize * result.width;
+                float gy = (coord[1].get<float>() + halfSize) / config.terrainSize * result.height;
+                pts.emplace_back(gx, gy);
+                minGX = std::min(minGX, gx); maxGX = std::max(maxGX, gx);
+                minGY = std::min(minGY, gy); maxGY = std::max(maxGY, gy);
+            }
+
+            int y0 = std::max(0, static_cast<int>(std::floor(minGY)));
+            int y1 = std::min(static_cast<int>(result.height) - 1,
+                              static_cast<int>(std::ceil(maxGY)));
+            int x0 = std::max(0, static_cast<int>(std::floor(minGX)));
+            int x1 = std::min(static_cast<int>(result.width) - 1,
+                              static_cast<int>(std::ceil(maxGX)));
+
+            for (int y = y0; y <= y1; ++y) {
+                float cy = y + 0.5f;
+                // Even-odd rule: collect x-crossings of the ring with this row
+                std::vector<float> xs;
+                for (size_t i = 0; i + 1 < pts.size(); ++i) {
+                    float ay = pts[i].second, by = pts[i + 1].second;
+                    if ((ay <= cy && by > cy) || (by <= cy && ay > cy)) {
+                        float t = (cy - ay) / (by - ay);
+                        xs.push_back(pts[i].first + t * (pts[i + 1].first - pts[i].first));
+                    }
+                }
+                std::sort(xs.begin(), xs.end());
+                for (size_t i = 0; i + 1 < xs.size(); i += 2) {
+                    int sx = std::max(x0, static_cast<int>(std::ceil(xs[i] - 0.5f)));
+                    int ex = std::min(x1, static_cast<int>(std::floor(xs[i + 1] - 0.5f)));
+                    for (int x = sx; x <= ex; ++x) {
+                        BiomeCell& cell = result.cells[y * result.width + x];
+                        if (cell.zone != BiomeZone::Sea) {
+                            cell.zone = BiomeZone::River;
+                            ++cellCount;
+                        }
+                    }
+                }
+            }
+            ++lakeCount;
+        }
+    } catch (const std::exception& e) {
+        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                    "Failed to parse %s: %s - lakes not rasterized",
+                    lakesPath.c_str(), e.what());
+        return;
+    }
+
+    SDL_Log("Rasterized %u lakes into biome map (%u cells)", lakeCount, cellCount);
+}
+
 void BiomeGenerator::applySubZoneNoise(ProgressCallback callback) {
     if (callback) callback(0.5f, "Applying sub-zone variation...");
 
@@ -915,6 +998,7 @@ bool BiomeGenerator::generate(const BiomeConfig& cfg, ProgressCallback callback)
 
     // Classify zones (now uses TWI and stream order)
     classifyZones(callback);
+    rasterizeLakes(callback);
     applySubZoneNoise(callback);
 
     // Place settlements

@@ -229,6 +229,9 @@ set(SOURCES
     # World content
     src/world/SettlementRegistry.cpp
     src/world/SettlementBlockoutGenerator.cpp
+    src/world/BridgeDeckGenerator.cpp
+    src/world/RibbonMeshGenerator.cpp
+    src/world/TownLinearFeatures.cpp
     src/world/FootprintRing.cpp
     src/world/KitMeshLoader.cpp
     src/world/KitBuildingAssembler.cpp
@@ -576,8 +579,9 @@ add_custom_command(
         --min-altitude -15
         --max-altitude 220
         --grid-resolution 512
+        --generate-streets
     DEPENDS ${TERRAIN_HEIGHTMAP} ${BIOME_MAP_PNG} ${BIOME_SETTLEMENTS_JSON}
-    COMMENT "Generating road network (after biome)"
+    COMMENT "Generating road network and settlement streets (after biome)"
 )
 
 # Explicit target for road generation
@@ -606,6 +610,26 @@ add_custom_target(towns_gen DEPENDS ${TOWNS_META})
 add_dependencies(towns_gen biome_gen)
 
 # ============================================================================
+# PLACEHOLDER MATERIAL TEXTURES: procedural fallbacks for the VT compositor
+# Used by tile_generator when the hand-downloaded art set under
+# assets/textures/downloads/ is absent (fresh checkout).
+# ============================================================================
+
+set(MATERIAL_TEXTURES_DIR ${CMAKE_CURRENT_SOURCE_DIR}/generated/material_textures)
+set(MATERIAL_TEXTURES_STAMP ${MATERIAL_TEXTURES_DIR}/material_textures.stamp)
+
+add_custom_command(
+    OUTPUT ${MATERIAL_TEXTURES_STAMP}
+    COMMAND ${CMAKE_COMMAND} -E make_directory ${MATERIAL_TEXTURES_DIR}
+    COMMAND $<TARGET_FILE:material_texture_gen> ${MATERIAL_TEXTURES_DIR}
+    COMMAND ${CMAKE_COMMAND} -E touch ${MATERIAL_TEXTURES_STAMP}
+    DEPENDS material_texture_gen
+    COMMENT "Generating placeholder material textures"
+)
+
+add_custom_target(material_textures_gen DEPENDS ${MATERIAL_TEXTURES_STAMP})
+
+# ============================================================================
 # SEQUENTIAL PHASE: tile_generator runs after roads complete
 # Virtual texture tiles composite biome materials, riverbeds and roads
 # ============================================================================
@@ -623,20 +647,22 @@ add_custom_command(
         --heightmap ${TERRAIN_HEIGHTMAP}
         --biomemap ${BIOME_MAP_PNG}
         --roads ${ROADS_GEOJSON}
+        --rivers ${WATERSHED_RIVERS_GEOJSON}
         --output ${VT_TILES_DIR}
         --materials ${CMAKE_CURRENT_SOURCE_DIR}/assets/textures
+        --materials-fallback ${MATERIAL_TEXTURES_DIR}
         --terrain-size 16384
         --tile-res 128
         --tiles-per-axis 64
         --max-mip 6
     COMMAND ${CMAKE_COMMAND} -E touch ${VT_TILES_STAMP}
-    DEPENDS ${TERRAIN_HEIGHTMAP} ${BIOME_MAP_PNG} ${ROADS_GEOJSON}
+    DEPENDS ${TERRAIN_HEIGHTMAP} ${BIOME_MAP_PNG} ${ROADS_GEOJSON} ${WATERSHED_RIVERS_GEOJSON} ${MATERIAL_TEXTURES_STAMP}
     COMMENT "Generating virtual texture tiles (after roads)"
 )
 
 # Explicit target for virtual texture tile generation
 add_custom_target(vt_tiles_gen DEPENDS ${VT_TILES_STAMP})
-add_dependencies(vt_tiles_gen tile_generator roads_gen)
+add_dependencies(vt_tiles_gen tile_generator roads_gen material_textures_gen)
 
 # ============================================================================
 # UMBRELLA TARGET: terrain_preprocessing depends on all outputs

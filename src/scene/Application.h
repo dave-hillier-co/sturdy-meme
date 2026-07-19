@@ -24,6 +24,10 @@
 #include "ml/unicon/Controller.h"
 #include "ml/unicon/RagdollRenderer.h"
 #include "world/SettlementBlockoutGenerator.h"
+#include "world/RibbonMeshGenerator.h"
+#include "world/TownLinearFeatures.h"
+
+class SceneBuilder;
 
 class Application {
 public:
@@ -49,6 +53,7 @@ private:
     void spawnRagdoll();
     void teleportTo(float worldX, float worldZ);
     void stepSettlementGeneration();
+    void generateLinearWorldFeatures(ecs::World& world, SceneBuilder& sceneBuilder);
 
     SDL_Window* window = nullptr;
     std::unique_ptr<Renderer> renderer_;
@@ -66,6 +71,11 @@ private:
     std::unique_ptr<SettlementBlockoutGenerator> settlementGen_;
     std::vector<Settlement> settlementQueue_;
     size_t settlementQueueNext_ = 0;
+
+    // Linear world features generated alongside settlements: draped road and
+    // river ribbons plus per-town street ribbons and wall runs.
+    std::unique_ptr<RibbonMeshGenerator> ribbonGen_;
+    std::unique_ptr<TownLinearFeatures> townFeatures_;
 
     // Input system
     InputSystem input;

@@ -114,11 +114,63 @@ bool write_rivers_geojson(
     return true;
 }
 
-bool write_lakes_geojson(const std::string& filename) {
-    // Create empty FeatureCollection for lakes
+bool write_lakes_geojson(
+    const std::string& filename,
+    const std::vector<Lake>& lakes,
+    int processing_width,
+    int processing_height,
+    const RiverGeoJsonConfig& config
+) {
+    // Same processing-grid -> world transform as the rivers writer.
+    double scale_x = config.terrainSize / processing_width;
+    double scale_z = config.terrainSize / processing_height;
+    double offset = config.terrainSize / 2.0;
+    double height_range = config.maxAltitude - config.minAltitude;
+    double cell_area = scale_x * scale_z; // m^2 per processing cell
+
+    auto raw_to_meters = [&](uint16_t raw) {
+        return config.minAltitude + (static_cast<double>(raw) / 65535.0) * height_range;
+    };
+
     json featureCollection;
     featureCollection["type"] = "FeatureCollection";
-    featureCollection["features"] = json::array();
+    featureCollection["properties"] = {
+        {"terrainSize", config.terrainSize},
+        {"minAltitude", config.minAltitude},
+        {"maxAltitude", config.maxAltitude}
+    };
+
+    json features = json::array();
+    for (const auto& lake : lakes) {
+        float waterLevel = static_cast<float>(raw_to_meters(lake.fill_level));
+        float depth = static_cast<float>(
+            raw_to_meters(lake.fill_level) - raw_to_meters(lake.min_elevation));
+        float area = static_cast<float>(lake.area_cells * cell_area);
+        float radius = std::sqrt(area / static_cast<float>(M_PI));
+
+        json ring = json::array();
+        for (const auto& [px, py] : lake.boundary) {
+            float worldX = static_cast<float>(px * scale_x - offset);
+            float worldZ = static_cast<float>(py * scale_z - offset);
+            ring.push_back({worldX, worldZ, waterLevel});
+        }
+
+        json feature;
+        feature["type"] = "Feature";
+        feature["geometry"] = {
+            {"type", "Polygon"},
+            {"coordinates", json::array({ring})}
+        };
+        feature["properties"] = {
+            {"waterLevel", waterLevel},
+            {"depth", depth},
+            {"area", area},
+            {"radius", radius}
+        };
+        features.push_back(feature);
+    }
+
+    featureCollection["features"] = features;
 
     std::ofstream file(filename);
     if (!file.is_open()) {
@@ -133,6 +185,6 @@ bool write_lakes_geojson(const std::string& filename) {
         return false;
     }
 
-    SDL_Log("Saved lakes GeoJSON: %s (0 lakes, placeholder)", filename.c_str());
+    SDL_Log("Saved lakes GeoJSON: %s (%zu lakes)", filename.c_str(), lakes.size());
     return true;
 }

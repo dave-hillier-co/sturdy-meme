@@ -40,6 +40,7 @@ struct TerrainData {
     float sampleSlope(float x, float z, float terrainSize) const;
     BiomeZone sampleBiome(float x, float z, float terrainSize) const;
     bool isWater(float x, float z, float terrainSize) const;
+    bool isSea(float x, float z, float terrainSize) const;
 };
 
 // A* pathfinder for road generation
@@ -88,6 +89,14 @@ private:
     float heuristic(glm::ivec2 from, glm::ivec2 to) const;
     bool isValidGridPos(glm::ivec2 pos) const;
     std::vector<glm::ivec2> getNeighbors(glm::ivec2 pos) const;
+
+    // Find the nearest non-sea grid cell to pos (searches outward, returns
+    // pos unchanged if none found within maxRadius cells)
+    glm::ivec2 snapOffSea(glm::ivec2 pos, int maxRadius = 8) const;
+
+    // Detect river crossings along a finished road and append them to
+    // outNetwork.crossings (fords for narrow spans, bridges otherwise)
+    void detectCrossings(const RoadSpline& road, RoadNetwork& outNetwork) const;
 
     // Path simplification using Douglas-Peucker algorithm
     void simplifyPath(std::vector<RoadControlPoint>& path) const;

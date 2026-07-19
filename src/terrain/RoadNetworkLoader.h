@@ -50,9 +50,21 @@ struct RoadSpline {
     }
 };
 
+// A point where a road crosses a river (from the road generator's crossing
+// detection). Fords are baked into the terrain texture; bridges get a deck
+// mesh at runtime.
+struct WaterCrossing {
+    glm::vec2 position;         // Content-space XZ (same space as roads)
+    glm::vec2 direction;        // Road direction at the crossing (normalized)
+    float span = 0.0f;          // Water span along the road in meters
+    bool isBridge = false;      // false = ford
+    RoadType roadType = RoadType::Lane;
+};
+
 // Collection of all roads in the network
 struct RoadNetwork {
     std::vector<RoadSpline> roads;
+    std::vector<WaterCrossing> crossings;
     float terrainSize = 16384.0f;
 };
 

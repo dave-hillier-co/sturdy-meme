@@ -84,6 +84,10 @@ bool TerrainData::isWater(float x, float z, float terrainSize) const {
     return zone == BiomeZone::Sea || zone == BiomeZone::River;
 }
 
+bool TerrainData::isSea(float x, float z, float terrainSize) const {
+    return sampleBiome(x, z, terrainSize) == BiomeZone::Sea;
+}
+
 // RoadPathfinder implementations
 RoadPathfinder::RoadPathfinder() = default;
 
@@ -237,6 +241,11 @@ bool RoadPathfinder::findPath(glm::vec2 start, glm::vec2 end, std::vector<RoadCo
     startGrid = glm::clamp(startGrid, glm::ivec2(0), glm::ivec2(gridSize - 1));
     endGrid = glm::clamp(endGrid, glm::ivec2(0), glm::ivec2(gridSize - 1));
 
+    // Open sea is impassable; coastal settlements can have endpoints that
+    // sample as sea, so nudge them onto the nearest land cell.
+    startGrid = snapOffSea(startGrid);
+    endGrid = snapOffSea(endGrid);
+
     // If start == end, return single point
     if (startGrid == endGrid) {
         outPath.push_back(RoadControlPoint(start));
@@ -316,6 +325,16 @@ bool RoadPathfinder::findPath(glm::vec2 start, glm::vec2 end, std::vector<RoadCo
         for (const glm::ivec2& neighborPos : getNeighbors(currentPos)) {
             if (closedSet.count(neighborPos)) continue;
 
+            // Open sea is impassable (rivers stay crossable at a penalty and
+            // become fords/bridges). The goal cell is exempt so snapped
+            // coastal endpoints remain reachable.
+            if (neighborPos != endGrid) {
+                glm::vec2 neighborWorld = gridToWorld(neighborPos);
+                if (terrain.isSea(neighborWorld.x, neighborWorld.y, config.terrainSize)) {
+                    continue;
+                }
+            }
+
             float tentativeG = current.gCost + calculateCost(currentPos, neighborPos);
 
             auto it = allNodes.find(neighborPos);
@@ -334,14 +353,79 @@ bool RoadPathfinder::findPath(glm::vec2 start, glm::vec2 end, std::vector<RoadCo
         }
     }
 
-    // No path found - create direct line as fallback
+    // No path found (e.g. the settlements are separated by open sea).
+    // The caller drops the connection - no straight-line fallback across
+    // impassable terrain.
     SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
-                "No path found from (%.1f, %.1f) to (%.1f, %.1f), using direct line",
+                "No path found from (%.1f, %.1f) to (%.1f, %.1f), dropping connection",
                 start.x, start.y, end.x, end.y);
-
-    outPath.push_back(RoadControlPoint(start));
-    outPath.push_back(RoadControlPoint(end));
     return false;
+}
+
+glm::ivec2 RoadPathfinder::snapOffSea(glm::ivec2 pos, int maxRadius) const {
+    glm::vec2 world = gridToWorld(pos);
+    if (!terrain.isSea(world.x, world.y, config.terrainSize)) {
+        return pos;
+    }
+    for (int r = 1; r <= maxRadius; ++r) {
+        for (int dy = -r; dy <= r; ++dy) {
+            for (int dx = -r; dx <= r; ++dx) {
+                if (std::max(std::abs(dx), std::abs(dy)) != r) continue; // ring only
+                glm::ivec2 candidate = pos + glm::ivec2(dx, dy);
+                if (!isValidGridPos(candidate)) continue;
+                glm::vec2 w = gridToWorld(candidate);
+                if (!terrain.isSea(w.x, w.y, config.terrainSize)) {
+                    return candidate;
+                }
+            }
+        }
+    }
+    return pos;
+}
+
+void RoadPathfinder::detectCrossings(const RoadSpline& road, RoadNetwork& outNetwork) const {
+    // Walk the road at fine steps; contiguous runs of River-zone cells are
+    // water crossings. Short spans become fords, longer ones bridges.
+    constexpr float stepSize = 4.0f;      // meters
+    constexpr float fordMaxSpan = 20.0f;  // meters; wider crossings need a bridge
+
+    float length = road.getLength();
+    if (length < stepSize * 2.0f) return;
+
+    bool inWater = false;
+    float spanStart = 0.0f;
+
+    auto emitCrossing = [&](float t0, float t1) {
+        float mid = (t0 + t1) * 0.5f;
+        WaterCrossing crossing;
+        crossing.position = road.samplePosition(mid);
+        glm::vec2 before = road.samplePosition(std::max(0.0f, mid - stepSize));
+        glm::vec2 after = road.samplePosition(std::min(length, mid + stepSize));
+        glm::vec2 dir = after - before;
+        float dirLen = glm::length(dir);
+        crossing.direction = dirLen > 0.001f ? dir / dirLen : glm::vec2(1.0f, 0.0f);
+        crossing.span = t1 - t0;
+        crossing.isBridge = crossing.span > fordMaxSpan;
+        crossing.roadType = road.type;
+        crossing.fromSettlementId = road.fromSettlementId;
+        crossing.toSettlementId = road.toSettlementId;
+        outNetwork.crossings.push_back(crossing);
+    };
+
+    for (float t = 0.0f; t <= length; t += stepSize) {
+        glm::vec2 pos = road.samplePosition(t);
+        bool water = terrain.sampleBiome(pos.x, pos.y, config.terrainSize) == BiomeZone::River;
+        if (water && !inWater) {
+            inWater = true;
+            spanStart = t;
+        } else if (!water && inWater) {
+            inWater = false;
+            emitCrossing(spanStart, t);
+        }
+    }
+    if (inWater) {
+        emitCrossing(spanStart, length);
+    }
 }
 
 void RoadPathfinder::simplifyPath(std::vector<RoadControlPoint>& path) const {
@@ -530,17 +614,18 @@ bool RoadPathfinder::generateRoadNetwork(const std::vector<Settlement>& settleme
         }
 
         if (findPath(startPos, endPos, road.controlPoints)) {
+            detectCrossings(road, outNetwork);
             outNetwork.roads.push_back(std::move(road));
             completed++;
         } else {
-            // Still add the road even if pathfinding failed (uses direct line)
-            outNetwork.roads.push_back(std::move(road));
+            // Unreachable (typically separated by open sea) - drop the
+            // connection rather than drawing a road across the water.
             failed++;
         }
     }
 
-    SDL_Log("Road generation complete: %zu roads (%zu with pathfinding, %zu direct)",
-            outNetwork.roads.size(), completed - failed, failed);
+    SDL_Log("Road generation complete: %zu roads (%zu dropped as unreachable), %zu water crossings",
+            outNetwork.roads.size(), failed, outNetwork.crossings.size());
 
     // Log statistics by road type
     SDL_Log("Road breakdown:");

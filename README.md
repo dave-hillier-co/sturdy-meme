@@ -232,6 +232,36 @@ vulkan-game/
 └── docs/                   # Architecture and design documentation
 ```
 
+## Terrain input data
+
+The whole procedural world derives from a single authored input that is NOT
+committed to the repository (it is gitignored along with everything under
+`generated/`):
+
+- `assets/terrain/isleofwight-0m-200m.png` — 16-bit grayscale PNG heightmap
+  of the Isle of Wight. Height convention: value 0 = −15 m altitude,
+  value 65535 = 220 m (the range the CMake pipeline passes via
+  `--min-altitude -15 --max-altitude 220`), covering a 16384 m square.
+
+Place the file at that exact path before building the world. Without it the
+`terrain_preprocessing` and `preview` targets fail at the first stage, and
+the app runs with no terrain data. Any 16-bit heightmap of the same
+resolution class works for experiments if you keep the filename (or adjust
+the paths/parameters in `CMakeLists.txt`).
+
+To run the full pipeline once the heightmap is in place:
+
+```bash
+./preprocess.sh            # builds the terrain_preprocessing CMake target
+./preprocess.sh --preview  # fast 2D composite preview (world_preview.png)
+```
+
+Terrain texturing prefers a hand-downloaded art set under
+`assets/textures/downloads/` (also not committed). When it is absent, the
+build generates procedural placeholder textures via `material_texture_gen`
+into `generated/material_textures/` and the VT tile compositor falls back to
+those automatically.
+
 ## Preprocessing Tools
 
 The project includes standalone tools for terrain and content preprocessing. Build all tools with:

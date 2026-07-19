@@ -290,11 +290,32 @@ bool saveRoadsGeoJson(const std::string& path, const RoadGen::RoadNetwork& netwo
         features.push_back(feature);
     }
 
+    // Water crossings: Point features marking where roads cross rivers.
+    // kind is "ford" (shallow, walkable) or "bridge" (needs a deck).
+    for (const auto& crossing : network.crossings) {
+        json feature;
+        feature["type"] = "Feature";
+        feature["geometry"] = {
+            {"type", "Point"},
+            {"coordinates", {crossing.position.x, crossing.position.y}}
+        };
+        feature["properties"] = {
+            {"kind", crossing.isBridge ? "bridge" : "ford"},
+            {"road_type", RoadGen::getRoadTypeName(crossing.roadType)},
+            {"span_m", crossing.span},
+            {"direction", {crossing.direction.x, crossing.direction.y}},
+            {"from_settlement", crossing.fromSettlementId},
+            {"to_settlement", crossing.toSettlementId}
+        };
+        features.push_back(feature);
+    }
+
     featureCollection["features"] = features;
 
     file << featureCollection.dump(2);
 
-    SDL_Log("Saved roads GeoJSON: %s", path.c_str());
+    SDL_Log("Saved roads GeoJSON: %s (%zu roads, %zu crossings)",
+            path.c_str(), network.roads.size(), network.crossings.size());
     return true;
 }
 

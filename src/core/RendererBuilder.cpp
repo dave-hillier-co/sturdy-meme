@@ -1060,8 +1060,13 @@ std::vector<Loading::SystemInitTask> RendererBuilder::buildInitTasks(Renderer& r
                 // init but generation only runs after the first frame
                 deferredConfig.biomeMap = &r.systems_->biomeMap();
                 deferredConfig.settlements = &r.systems_->settlements().settlements();
-                deferredConfig.biomeRegionRadius = 2000.0f;
-                deferredConfig.maxBiomeTrees = 4500;
+                // Cover the whole roamable area between settlements. The
+                // candidate pass spreads the budget evenly over the region,
+                // so a bigger radius trades local density for coverage;
+                // island-wide full density needs streamed/instanced trees
+                // (WORLD_GENERATION_PLAN.md Phase 5 follow-up).
+                deferredConfig.biomeRegionRadius = 5000.0f;
+                deferredConfig.maxBiomeTrees = 12000;
                 deferredConfig.uniformBuffers = r.systems_->globalBuffers().uniformBuffers.buffers;
                 deferredConfig.shadowView = r.systems_->shadow().getShadowImageView();
                 deferredConfig.shadowSampler = r.systems_->shadow().getShadowSampler();

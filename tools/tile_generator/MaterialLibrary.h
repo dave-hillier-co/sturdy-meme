@@ -69,6 +69,10 @@ struct RiverbedMaterial {
 // Configuration for the material library
 struct MaterialLibraryConfig {
     std::string basePath;           // Base path for all material assets
+    std::string fallbackPath;       // Base path for build-generated placeholder
+                                    // textures, used when a material is absent
+                                    // under basePath (e.g. fresh checkout
+                                    // without the downloaded art set)
     float defaultTilingScale = 4.0f;
     float slopeThreshold = 0.7f;    // Threshold for cliff material
 };

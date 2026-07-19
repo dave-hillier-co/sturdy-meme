@@ -404,11 +404,6 @@ D8Result resolve_dafa_by_merging(const ElevationGrid& elevation, D8Result d8, ui
             to_root = root2;
             from_x = sp.x1; from_y = sp.y1;
             to_x = sp.x2; to_y = sp.y2;
-            if (find(sp.ws1) != root1) {
-                // Need to find the correct boundary cells for the merged watershed
-                from_x = sp.x1; from_y = sp.y1;
-                to_x = sp.x2; to_y = sp.y2;
-            }
         } else if (ws1.is_boundary && !ws2.is_boundary) {
             from_root = root2;
             to_root = root1;

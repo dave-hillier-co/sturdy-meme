@@ -3,6 +3,7 @@
 #include "png_io.h"
 #include "river_svg.h"
 #include "river_binary.h"
+#include "lakes.h"
 #include <SDL3/SDL_log.h>
 #include <string>
 #include <cstdlib>
@@ -351,9 +352,15 @@ int main(int argc, char* argv[]) {
                 geojson_config.minAltitude, geojson_config.maxAltitude);
         write_rivers_geojson(rivers_geojson, rivers, full_elevation, d8.width, d8.height, geojson_config);
 
+        SDL_Log("Extracting lakes (priority-flood depression filling)...");
+        // Minimum lake area: 8 processing cells. At the default 512
+        // processing resolution over 16384m that is ~8000 m^2, filtering
+        // out single-cell noise pits.
+        std::vector<Lake> lakes = extract_lakes(elevation, sea_level, 8);
+
         std::string lakes_geojson = (fs::path(output_dir) / "lakes.geojson").string();
         SDL_Log("Writing lakes GeoJSON to: %s", lakes_geojson.c_str());
-        write_lakes_geojson(lakes_geojson);
+        write_lakes_geojson(lakes_geojson, lakes, d8.width, d8.height, geojson_config);
 
         // Save build stamp for future runs
         saveWatershedBuildStamp(buildConfig);

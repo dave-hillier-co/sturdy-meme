@@ -59,6 +59,7 @@ target_link_libraries(biome_preprocess PRIVATE
     SDL3::SDL3
     glm::glm
     lodepng
+    nlohmann_json::nlohmann_json
     unofficial::tinyexr::tinyexr
 )
 
@@ -185,6 +186,7 @@ add_executable(watershed
     watershed/src/png_io.cpp
     watershed/src/river_svg.cpp
     watershed/src/river_binary.cpp
+    watershed/src/lakes.cpp
 )
 
 target_include_directories(watershed PRIVATE
@@ -207,6 +209,7 @@ add_executable(dwelling_generator
     dwelling_generator/DwellingPlan.cpp
     dwelling_generator/DwellingHouse.cpp
     dwelling_generator/DwellingSVG.cpp
+    dwelling_generator/DwellingJSON.cpp
 )
 
 target_include_directories(dwelling_generator PRIVATE
@@ -215,6 +218,7 @@ target_include_directories(dwelling_generator PRIVATE
 
 target_link_libraries(dwelling_generator PRIVATE
     SDL3::SDL3
+    nlohmann_json::nlohmann_json
 )
 
 target_compile_features(dwelling_generator PRIVATE cxx_std_17)

@@ -172,6 +172,7 @@ private:
     void computeWatershedMetrics(ProgressCallback callback);
 
     void classifyZones(ProgressCallback callback);
+    void rasterizeLakes(ProgressCallback callback);
     void applySubZoneNoise(ProgressCallback callback);
     void placeSettlements(ProgressCallback callback);
     void computeSettlementDistances(ProgressCallback callback);

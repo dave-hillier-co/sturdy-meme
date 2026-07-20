@@ -125,9 +125,22 @@ struct RoadSpline {
     }
 };
 
+// A point where a road crosses a river: rendered as a ford (shallow, rocky
+// crossing) or a bridge depending on the water span.
+struct WaterCrossing {
+    glm::vec2 position;         // Crossing midpoint, world XZ (content space)
+    glm::vec2 direction;        // Road direction at the crossing (normalized)
+    float span = 0.0f;          // Water span along the road in meters
+    bool isBridge = false;      // false = ford
+    RoadType roadType = RoadType::Lane;
+    uint32_t fromSettlementId = 0;
+    uint32_t toSettlementId = 0;
+};
+
 // Collection of all roads in the network
 struct RoadNetwork {
     std::vector<RoadSpline> roads;
+    std::vector<WaterCrossing> crossings;
     float terrainSize = 16384.0f;
 
     // Get total road length in the network

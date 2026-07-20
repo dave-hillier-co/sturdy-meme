@@ -16,7 +16,10 @@ void printUsage(const char* programName) {
     SDL_Log("");
     SDL_Log("Optional options:");
     SDL_Log("  --materials <path>    Base path for material textures (default: assets/textures/terrain)");
+    SDL_Log("  --materials-fallback <path>  Base path for generated placeholder textures,");
+    SDL_Log("                        used when a material is absent under --materials");
     SDL_Log("  --roads <path>        Path to roads.geojson file");
+    SDL_Log("  --rivers <path>       Path to rivers.geojson file (bakes riverbeds)");
     SDL_Log("  --terrain-size <f>    Terrain size in meters (default: 16384)");
     SDL_Log("  --tile-res <n>        Tile resolution in pixels (default: 128)");
     SDL_Log("  --tiles-per-axis <n>  Number of tiles per axis at mip 0 (default: 512)");
@@ -32,7 +35,9 @@ struct GeneratorOptions {
     std::string biomemapPath;
     std::string outputDir;
     std::string materialsPath = "assets/textures/terrain";
+    std::string materialsFallbackPath;
     std::string roadsPath;
+    std::string riversPath;
 
     float terrainSize = 16384.0f;
     uint32_t tileResolution = 128;
@@ -69,8 +74,14 @@ bool parseArguments(int argc, char* argv[], GeneratorOptions& opts) {
         else if (arg == "--materials" && i + 1 < argc) {
             opts.materialsPath = argv[++i];
         }
+        else if (arg == "--materials-fallback" && i + 1 < argc) {
+            opts.materialsFallbackPath = argv[++i];
+        }
         else if (arg == "--roads" && i + 1 < argc) {
             opts.roadsPath = argv[++i];
+        }
+        else if (arg == "--rivers" && i + 1 < argc) {
+            opts.riversPath = argv[++i];
         }
         else if (arg == "--terrain-size" && i + 1 < argc) {
             opts.terrainSize = std::stof(argv[++i]);
@@ -159,7 +170,7 @@ int main(int argc, char* argv[]) {
     // Create compositor
     VirtualTexture::TileCompositor compositor;
     compositor.init(config);
-    compositor.setMaterialBasePath(opts.materialsPath);
+    compositor.setMaterialBasePath(opts.materialsPath, opts.materialsFallbackPath);
 
     // Load data
     SDL_Log("");
@@ -182,6 +193,11 @@ int main(int argc, char* argv[]) {
                          opts.roadsPath.c_str());
             return 1;
         }
+    }
+
+    if (!opts.riversPath.empty()) {
+        // Missing rivers degrade the bake (no riverbeds) but are not fatal.
+        compositor.loadRivers(opts.riversPath);
     }
 
     SDL_Log("");

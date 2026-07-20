@@ -69,6 +69,11 @@ public:
         // otherwise the settlement falls back to random blockout boxes.
         std::string townsDir;
 
+        // Directory containing the street generator's settlement_<id>/
+        // lots.geojson outputs. Used as a fallback footprint source for
+        // settlements that have no town layout.
+        std::string streetsDir;
+
         // Kit-wall mode: when kitModelsDir is set (and createMeshes/kitMaterial
         // are provided), buildings are assembled from modular kit wall pieces
         // traced along their footprint edges instead of extruded prisms or

@@ -59,6 +59,11 @@ MaterialLibrary::MaterialLibrary() {
 bool MaterialLibrary::init(const MaterialLibraryConfig& cfg) {
     config = cfg;
 
+    // Re-run material setup now that the base path is known: the choice
+    // between the downloaded art set and the generated placeholder set is
+    // probed against config.basePath.
+    setupDefaultMaterials();
+
     // Resolve all paths relative to base path
     for (auto& mat : zoneMaterials) {
         if (!mat.albedoPath.empty())
@@ -102,22 +107,42 @@ bool MaterialLibrary::init(const MaterialLibraryConfig& cfg) {
 }
 
 void MaterialLibrary::setupDefaultMaterials() {
-    // Albedo sources. The dedicated terrain/* art set was never added to the
-    // repo, so the megatexture baked flat gray (sampleMaterialTriplanar's
-    // missing-texture fallback). Point each biome at a real 512x512 PNG that
-    // ships under assets/textures/downloads/ instead. Paths are relative to the
-    // --materials base path (assets/textures). Only albedoPath is sampled by the
-    // tile compositor; normal/roughness maps are left empty here.
-    const std::string GRASS   = "downloads/Grass001_2K-JPG/Grass001.png";
-    const std::string DIRT    = "downloads/Ground037_2K-JPG/Ground037.png";
-    const std::string FOREST  = "downloads/Ground048_2K-JPG/Ground048.png";
-    const std::string MUD     = "downloads/Ground042_2K-JPG/Ground042.png";
-    const std::string MARSH   = "downloads/Ground054_2K-JPG/Ground054.png";
-    const std::string SAND    = "downloads/Ground078_2K-JPG/Ground078.png";
-    const std::string GRAVEL  = "downloads/Gravel022_2K-JPG/Gravel022.png";
-    const std::string CHALK   = "downloads/Rock027_2K-JPG/Rock027.png";
-    const std::string ROCK    = "downloads/Rock030_2K-JPG/Rock030.png";
-    const std::string PAVING  = "downloads/PavingStones070_2K-JPG/PavingStones070.png";
+    // Albedo sources. Preferred: the hand-downloaded art set under
+    // assets/textures/downloads/ (not committed — see README). When it is
+    // absent (fresh checkout), fall back to the procedural placeholder set
+    // that material_texture_gen writes into the build tree; those paths
+    // resolve through config.fallbackPath in resolvePath(). Only albedoPath
+    // is sampled by the tile compositor; normal/roughness maps are left
+    // empty here.
+    const bool haveDownloads = !config.basePath.empty() &&
+        std::filesystem::exists(std::filesystem::path(config.basePath) /
+                                "downloads/Grass001_2K-JPG/Grass001.png");
+
+    const std::string GRASS   = haveDownloads ? "downloads/Grass001_2K-JPG/Grass001.png"
+                                              : "terrain/grassland/chalk_grass_albedo.png";
+    const std::string DIRT    = haveDownloads ? "downloads/Ground037_2K-JPG/Ground037.png"
+                                              : "terrain/agricultural/ploughed_albedo.png";
+    const std::string FOREST  = haveDownloads ? "downloads/Ground048_2K-JPG/Ground048.png"
+                                              : "terrain/woodland/forest_floor_albedo.png";
+    const std::string MUD     = haveDownloads ? "downloads/Ground042_2K-JPG/Ground042.png"
+                                              : "terrain/wetland/muddy_albedo.png";
+    const std::string MARSH   = haveDownloads ? "downloads/Ground054_2K-JPG/Ground054.png"
+                                              : "terrain/marsh/muddy_grass_albedo.png";
+    const std::string SAND    = haveDownloads ? "downloads/Ground078_2K-JPG/Ground078.png"
+                                              : "terrain/beach/sand_albedo.png";
+    const std::string GRAVEL  = haveDownloads ? "downloads/Gravel022_2K-JPG/Gravel022.png"
+                                              : "terrain/river/gravel_albedo.png";
+    const std::string CHALK   = haveDownloads ? "downloads/Rock027_2K-JPG/Rock027.png"
+                                              : "terrain/cliff/exposed_chalk_albedo.png";
+    const std::string ROCK    = haveDownloads ? "downloads/Rock030_2K-JPG/Rock030.png"
+                                              : "terrain/cliff/rock_albedo.png";
+    const std::string PAVING  = haveDownloads ? "downloads/PavingStones070_2K-JPG/PavingStones070.png"
+                                              : "roads/road_albedo.png";
+    if (!haveDownloads && !config.basePath.empty()) {
+        SDL_Log("MaterialLibrary: downloaded art set not found under %s, "
+                "using generated placeholder textures from %s",
+                config.basePath.c_str(), config.fallbackPath.c_str());
+    }
 
     const float ts = config.defaultTilingScale;
 
@@ -172,9 +197,16 @@ std::string MaterialLibrary::resolvePath(const std::string& relativePath) const 
     if (config.basePath.empty()) {
         return relativePath;
     }
-    std::filesystem::path basePath(config.basePath);
     std::filesystem::path relPath(relativePath);
-    return (basePath / relPath).string();
+    std::filesystem::path resolved = std::filesystem::path(config.basePath) / relPath;
+    if (!std::filesystem::exists(resolved) && !config.fallbackPath.empty()) {
+        std::filesystem::path fallback =
+            std::filesystem::path(config.fallbackPath) / relPath;
+        if (std::filesystem::exists(fallback)) {
+            return fallback.string();
+        }
+    }
+    return resolved.string();
 }
 
 const TerrainMaterial& MaterialLibrary::getZoneMaterial(BiomeZone zone) const {

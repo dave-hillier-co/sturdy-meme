@@ -46,10 +46,12 @@ The Watabou-style 2D layout generator is now wired end-to-end:
 - SVG output (`src/svg/SVGWriter.cpp`) plus a **GeoJSON exporter** (`src/geojson/GeoJSONWriter.cpp`)
 - **Batch mode in the build pipeline**: `town_generator --settlements settlements.json --output-dir ...`
   emits one content-space `town_<id>.geojson` per settlement (footprints, streets, walls)
-- **Runtime consumption**: `src/world/SettlementBlockoutGenerator` extrudes the exact footprint
-  polygons into one merged mesh per settlement (deferred until terrain heights are ready;
-  buildings kept at realistic sizes — median 7m footprint — with towns growing past their
-  nominal radius, exported as `extent_radius` and fed back into vegetation suppression);
+- **Runtime consumption**: `src/world/SettlementBlockoutGenerator` +
+  `src/world/KitBuildingAssembler` assemble buildings from modular kit pieces (facade
+  grammar, gabled roofs) along the exact footprint polygons, with box/mesh colliders
+  registered into Jolt physics (deferred until terrain heights are ready; buildings kept
+  at realistic sizes — median 7m footprint — with towns growing past their nominal
+  radius, exported as `extent_radius` and fed back into vegetation suppression);
   `src/world/SettlementRegistry` and `src/world/BiomeMap` feed teleporting, debug markers
   and biome-driven vegetation
 - Fast feedback: `cmake --build build/debug --target preview` composites the whole generated
@@ -67,12 +69,20 @@ streaming and interiors are the target for later milestones.
 
 ### Next steps
 
-1. **Building collision** — blockout boxes have no colliders; characters walk through them (M3).
-2. **In-engine street/wall geometry** — street and wall LineStrings are exported but not rendered.
-3. **Bridge/ford handling** — inter-settlement roads cross the Solent as straight lines
-   (`ROAD_NETWORK_DESIGN.md` gap; obvious on the preview map).
-4. **Whole-island vegetation** — biome-driven trees currently cover a 2km radius; island-wide
-   coverage needs instanced tree rendering (see `TREE_RENDERING_ROADMAP.md`).
+The full audited gap list and phased plan for world generation now live in
+`WORLD_GENERATION_PLAN.md`. Headlines (building collision is done — kit buildings
+register Jolt colliders):
+
+1. **Pipeline hygiene** — `preprocess.sh` is stale/broken vs the CMake pipeline; the
+   watershed lakes output is an empty stub (Phases 0–1).
+2. **Bridge/ford handling** — inter-settlement roads cross the Solent as straight lines
+   (`ROAD_NETWORK_DESIGN.md` gap; obvious on the preview map) (Phase 2).
+3. **In-engine road/river/street/wall geometry** — the GeoJSON is loaded but only feeds
+   debug cones; streets and walls are exported but not rendered (Phase 3).
+4. **Wire dormant generators** — `StreetGenerator` lots/streets and `dwelling_generator`
+   are implemented but never invoked or consumed (Phases 4 and 6).
+5. **Whole-island vegetation** — biome-driven trees currently cover a limited radius
+   (Phase 5).
 
 ### Visual Milestones
 Target checkpoints (M2.5 is the key roamable-world milestone):

@@ -1,4 +1,5 @@
 #include "DwellingHouse.h"
+#include "DwellingJSON.h"
 #include "DwellingSVG.h"
 #include <SDL3/SDL_log.h>
 #include <cstdlib>
@@ -164,6 +165,13 @@ int main(int argc, char* argv[]) {
     {
         std::string filename = outputDir + "/dwelling_facade.svg";
         dwelling::writeFacadeViewSVG(filename, house, renderOptions);
+    }
+
+    // Write machine-readable plan (rooms/doors/windows/stairs) for the
+    // runtime interiors pipeline
+    {
+        std::string filename = outputDir + "/dwelling.json";
+        dwelling::writeDwellingJson(filename, house);
     }
 
     SDL_Log(" ");

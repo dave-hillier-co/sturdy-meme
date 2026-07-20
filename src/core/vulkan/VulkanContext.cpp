@@ -118,9 +118,15 @@ bool VulkanContext::createInstance() {
     // Enable the surface extensions SDL's active video driver requires.
     // vk-bootstrap only enables the compile-time platform defaults, which
     // misses drivers like SDL's offscreen backend (VK_EXT_headless_surface).
+    // set_headless stops vk-bootstrap from also demanding its compile-time
+    // platform windowing extensions - the SDL list below is authoritative
+    // (and includes VK_KHR_surface), so windowed runs are unaffected while
+    // offscreen/software runs stop failing with
+    // windowing_extensions_not_present.
     builder.set_app_name("Vulkan Game")
         .request_validation_layers(enableValidation)
         .use_default_debug_messenger()
+        .set_headless(true)
         .require_api_version(1, 2, 0);
 
     // The extension list is only complete after SDL has loaded its Vulkan

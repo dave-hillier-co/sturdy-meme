@@ -26,6 +26,11 @@
 #include "core/RendererSystems.h"
 #include "world/SettlementRegistry.h"
 #include "world/SettlementBlockoutGenerator.h"
+#include "world/BridgeDeckGenerator.h"
+#include "world/GeneratedMeshUtil.h"
+#include "world/WorldCoords.h"
+#include "terrain/RoadNetworkLoader.h"
+#include "terrain/ErosionDataLoader.h"
 #include "world/KitBuildingAssembler.h"
 #include "EnvironmentSettings.h"
 #include "TimeSystem.h"
@@ -398,6 +403,7 @@ bool Application::init(const std::string& title, int width, int height) {
             };
             cfg.seaLevel = 23.0f;
             cfg.townsDir = getResourcePath() + "/terrain_data/towns";
+            cfg.streetsDir = getResourcePath() + "/terrain_data/roads";
             // Keep clear of the hand-placed content at the scene origin: spawn,
             // well, crates, NPCs (within 5m) and the four demo trees (up to 58m
             // out). The empty core reads as a village green.
@@ -419,6 +425,72 @@ bool Application::init(const std::string& title, int width, int height) {
             });
             settlementQueueNext_ = 0;
             settlementGen_ = std::make_unique<SettlementBlockoutGenerator>(std::move(cfg));
+
+            // Bridge decks at the road network's river crossings (fords are
+            // baked into the terrain texture; bridges need walkable geometry).
+            const auto& crossings = systems.roadData().getRoadNetwork().crossings;
+            if (!crossings.empty()) {
+                BridgeDeckGenerator::Config bridgeCfg;
+                bridgeCfg.getTerrainHeight = [terrainSys](float x, float z) {
+                    return terrainSys->getHeightAt(x, z);
+                };
+                bridgeCfg.preloadTiles = [terrainSys](float x, float z, float radius) {
+                    if (auto* cache = terrainSys->getTileCache()) {
+                        cache->preloadTilesAround(x, z, radius);
+                    }
+                };
+                bridgeCfg.createMeshes = [sb = &sceneBuilder](std::vector<MeshGeometry> batch) {
+                    return sb->addGeneratedMeshes(std::move(batch));
+                };
+                bridgeCfg.addCollider = [this](const glm::vec3& center,
+                                               const glm::vec3& halfExtents, float yaw) {
+                    physics().createStaticBox(center, halfExtents,
+                                              glm::angleAxis(yaw, glm::vec3(0.0f, 1.0f, 0.0f)));
+                };
+                bridgeCfg.deckMaterial = sceneBuilder.getKitMaterialId("MI_RockTrim");
+                BridgeDeckGenerator bridgeGen(std::move(bridgeCfg));
+                auto bridgeResult = bridgeGen.generate(*world, crossings);
+                for (ecs::Entity e : bridgeResult.entities) {
+                    sceneBuilder.addExternalSceneEntity(e);
+                }
+            }
+
+            // Shared ribbon generator for roads, rivers and town streets
+            RibbonMeshGenerator::Config ribbonCfg;
+            ribbonCfg.getTerrainHeight = [terrainSys](float x, float z) {
+                return terrainSys->getHeightAt(x, z);
+            };
+            ribbonCfg.preloadTiles = [terrainSys](float x, float z, float radius) {
+                if (auto* cache = terrainSys->getTileCache()) {
+                    cache->preloadTilesAround(x, z, radius);
+                }
+            };
+            ribbonCfg.createMeshes = [sb = &sceneBuilder](std::vector<MeshGeometry> batch) {
+                return sb->addGeneratedMeshes(std::move(batch));
+            };
+            ribbonGen_ = std::make_unique<RibbonMeshGenerator>(std::move(ribbonCfg));
+
+            generateLinearWorldFeatures(*world, sceneBuilder);
+
+            // Town street/wall geometry generates per settlement alongside the
+            // buildings (stepSettlementGeneration).
+            TownLinearFeatures::Config townCfg;
+            townCfg.townsDir = getResourcePath() + "/terrain_data/towns";
+            townCfg.streetsDir = getResourcePath() + "/terrain_data/roads";
+            townCfg.streetMaterial = sceneBuilder.getKitMaterialId("MI_RockTrim");
+            townCfg.wallMaterial = sceneBuilder.getKitMaterialId("MI_UnevenBrick");
+            townCfg.getTerrainHeight = [terrainSys](float x, float z) {
+                return terrainSys->getHeightAt(x, z);
+            };
+            townCfg.createMeshes = [sb = &sceneBuilder](std::vector<MeshGeometry> batch) {
+                return sb->addGeneratedMeshes(std::move(batch));
+            };
+            townCfg.addCollider = [this](const glm::vec3& center,
+                                         const glm::vec3& halfExtents, float yaw) {
+                physics().createStaticBox(center, halfExtents,
+                                          glm::angleAxis(yaw, glm::vec3(0.0f, 1.0f, 0.0f)));
+            };
+            townFeatures_ = std::make_unique<TownLinearFeatures>(std::move(townCfg));
         });
     }
 
@@ -1427,11 +1499,107 @@ void Application::stepSettlementGeneration() {
         sceneBuilder.addExternalSceneEntity(e);
     }
 
+    // Street ribbons and wall runs from the same town layout (previously
+    // exported but unrendered LineStrings).
+    if (townFeatures_ && ribbonGen_) {
+        auto townResult = townFeatures_->generateForSettlement(*world, *ribbonGen_, settlement);
+        for (ecs::Entity e : townResult.entities) {
+            sceneBuilder.addExternalSceneEntity(e);
+        }
+    }
+
     if (settlementQueueNext_ >= settlementQueue_.size()) {
         settlementGen_->logSummary();
         settlementGen_.reset();
+        townFeatures_.reset();
         settlementQueue_.clear();
         settlementQueueNext_ = 0;
+    }
+}
+
+void Application::generateLinearWorldFeatures(ecs::World& world, SceneBuilder& sceneBuilder) {
+    auto& systems = renderer_->getSystems();
+
+    // Roads: draped ribbons following the terrain. Bridge crossings are
+    // skipped (the deck geometry covers them); ford crossings stay draped so
+    // the road dips through the shallow water.
+    const RoadNetwork& roadNetwork = systems.roadData().getRoadNetwork();
+    std::vector<RibbonMeshGenerator::SkipZone> skipZones;
+    for (const auto& crossing : roadNetwork.crossings) {
+        if (!crossing.isBridge) continue;
+        glm::vec2 w = WorldCoords::contentToWorld(crossing.position);
+        skipZones.push_back({w, crossing.span * 0.5f + 5.0f});
+    }
+
+    std::vector<RibbonMeshGenerator::Ribbon> ribbons;
+    for (const auto& road : roadNetwork.roads) {
+        if (road.controlPoints.size() < 2) continue;
+        RibbonMeshGenerator::Ribbon ribbon;
+        ribbon.material = sceneBuilder.getKitMaterialId("MI_RockTrim");
+        ribbon.followTerrain = true;
+        // Paved types read as pale stone; tracks and paths read as dirt.
+        switch (road.type) {
+            case RoadType::MainRoad:
+            case RoadType::Road:
+                ribbon.color = glm::vec4(0.85f, 0.82f, 0.75f, 1.0f);
+                break;
+            case RoadType::Lane:
+                ribbon.color = glm::vec4(0.72f, 0.62f, 0.48f, 1.0f);
+                break;
+            default:
+                ribbon.color = glm::vec4(0.60f, 0.50f, 0.38f, 1.0f);
+                break;
+        }
+        for (size_t i = 0; i < road.controlPoints.size(); ++i) {
+            glm::vec2 w = WorldCoords::contentToWorld(road.controlPoints[i].position);
+            ribbon.points.emplace_back(w.x, 0.0f, w.y);
+            ribbon.widths.push_back(road.getWidthAt(i));
+        }
+        ribbons.push_back(std::move(ribbon));
+    }
+
+    // Rivers: ribbons at the water surface height from the spline data,
+    // tinted as water (the real water shader integration is tracked in
+    // WORLD_GENERATION_PLAN.md Phase 3 follow-up).
+    const WaterPlacementData& waterData = systems.erosionData().getWaterData();
+    for (const auto& river : waterData.rivers) {
+        if (river.controlPoints.size() < 2) continue;
+        RibbonMeshGenerator::Ribbon ribbon;
+        ribbon.material = sceneBuilder.getWhiteMaterialId();
+        ribbon.followTerrain = false;
+        ribbon.color = glm::vec4(0.16f, 0.32f, 0.45f, 1.0f);
+        ribbon.points = river.controlPoints;
+        ribbon.widths = river.widths;
+        ribbons.push_back(std::move(ribbon));
+    }
+
+    if (!ribbons.empty()) {
+        auto ribbonResult = ribbonGen_->generate(world, ribbons, skipZones);
+        for (ecs::Entity e : ribbonResult.entities) {
+            sceneBuilder.addExternalSceneEntity(e);
+        }
+    }
+
+    // Lakes: flat water discs at each lake's fill level
+    if (!waterData.lakes.empty()) {
+        MeshGeometry lakeGeo;
+        for (const auto& lake : waterData.lakes) {
+            GeneratedMeshUtil::appendDisc(
+                lakeGeo, glm::vec3(lake.position.x, lake.waterLevel + 0.05f, lake.position.y),
+                lake.radius, 48, glm::vec4(0.16f, 0.32f, 0.45f, 1.0f));
+        }
+        if (!lakeGeo.vertices.empty()) {
+            std::vector<MeshGeometry> batch;
+            batch.push_back(std::move(lakeGeo));
+            std::vector<Mesh*> meshes = sceneBuilder.addGeneratedMeshes(std::move(batch));
+            ecs::EntityFactory factory(world);
+            for (Mesh* mesh : meshes) {
+                if (!mesh) continue;
+                ecs::Entity e = factory.createStaticMesh(
+                    mesh, sceneBuilder.getWhiteMaterialId(), glm::mat4(1.0f), false);
+                sceneBuilder.addExternalSceneEntity(e);
+            }
+        }
     }
 }
 

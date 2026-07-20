@@ -29,10 +29,39 @@ bool RoadNetworkLoader::loadFromGeoJson(const std::string& path) {
         }
 
         roadNetwork.roads.clear();
+        roadNetwork.crossings.clear();
 
         // Read features (roads)
         if (j.contains("features")) {
             for (const auto& feature : j["features"]) {
+                if (feature["geometry"]["type"] == "Point") {
+                    // Water crossing marker (ford or bridge)
+                    const auto& props = feature["properties"];
+                    std::string kind = props.value("kind", "");
+                    if (kind != "ford" && kind != "bridge") continue;
+
+                    WaterCrossing crossing;
+                    crossing.position.x = feature["geometry"]["coordinates"][0].get<float>();
+                    crossing.position.y = feature["geometry"]["coordinates"][1].get<float>();
+                    if (props.contains("direction")) {
+                        crossing.direction.x = props["direction"][0].get<float>();
+                        crossing.direction.y = props["direction"][1].get<float>();
+                    } else {
+                        crossing.direction = glm::vec2(1.0f, 0.0f);
+                    }
+                    crossing.span = props.value("span_m", 10.0f);
+                    crossing.isBridge = (kind == "bridge");
+
+                    std::string typeStr = props.value("road_type", "lane");
+                    if (typeStr == "footpath") crossing.roadType = RoadType::Footpath;
+                    else if (typeStr == "bridleway") crossing.roadType = RoadType::Bridleway;
+                    else if (typeStr == "road") crossing.roadType = RoadType::Road;
+                    else if (typeStr == "main_road") crossing.roadType = RoadType::MainRoad;
+                    else crossing.roadType = RoadType::Lane;
+
+                    roadNetwork.crossings.push_back(crossing);
+                    continue;
+                }
                 if (feature["geometry"]["type"] != "LineString") continue;
 
                 RoadSpline road;
@@ -67,7 +96,8 @@ bool RoadNetworkLoader::loadFromGeoJson(const std::string& path) {
         }
 
         loaded = true;
-        SDL_Log("RoadNetworkLoader: Loaded %zu roads from %s", roadNetwork.roads.size(), path.c_str());
+        SDL_Log("RoadNetworkLoader: Loaded %zu roads, %zu water crossings from %s",
+                roadNetwork.roads.size(), roadNetwork.crossings.size(), path.c_str());
         return true;
 
     } catch (const std::exception& e) {

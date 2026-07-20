@@ -343,15 +343,18 @@ Do not hand-write C++ mirrors of reflected UBOs. Terrain height calculations mus
 
 ## Procedural Content Pipeline
 
-The build-time terrain pipeline is intended to be:
+The build-time terrain pipeline (CMake target `terrain_preprocessing`; see
+`WORLD_GENERATION_PLAN.md` for audited status) is:
 
 ```text
 heightmap
   +--> terrain tile preprocessing
-  +--> watershed
-         -> biome classification
-              -> road generation
-                   -> virtual-texture tile composition
+  +--> watershed (flow, rivers, lakes)
+         -> biome classification + settlement placement
+              +--> road generation ------------+
+              +--> town generation (per-settlement GeoJSON)
+                                               |
+                            virtual-texture tile composition
 ```
 
 Canonical interchange formats are:

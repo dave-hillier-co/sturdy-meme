@@ -28,8 +28,8 @@ public:
         glm::vec4 alleyColor{0.62f, 0.58f, 0.52f, 1.0f};
 
         MaterialId wallMaterial = 0;
-        float wallHeight = 5.0f;
-        float wallThickness = 1.0f;
+        float wallHeight = 8.0f;
+        float wallThickness = 2.5f;
 
         // Register a static box collider (center, half extents, yaw)
         std::function<void(const glm::vec3&, const glm::vec3&, float)> addCollider;

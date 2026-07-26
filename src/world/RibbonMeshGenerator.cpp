@@ -131,8 +131,8 @@ RibbonMeshGenerator::Result RibbonMeshGenerator::generate(
                 uint32_t base = static_cast<uint32_t>(geo.vertices.size()) - 4;
                 // Two triangles between the previous and current cross-sections
                 geo.indices.insert(geo.indices.end(),
-                                   {base, base + 2, base + 1,
-                                    base + 1, base + 2, base + 3});
+                                   {base, base + 1, base + 2,
+                                    base + 1, base + 3, base + 2});
             }
             stripOpen = true;
         };

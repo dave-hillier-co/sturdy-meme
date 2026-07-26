@@ -248,7 +248,9 @@ bool GeoJSONWriter::write(const building::City& model,
     auto emitWall = [&](const building::CurtainWall* wall) {
         if (!wall || wall->shape.length() < 3) return;
         em.beginFeature("LineString");
-        em.lineCoords(wall->shape);
+        // A curtain wall is a closed circuit: repeat the first vertex so the
+        // runtime extrudes the segment back to the start.
+        em.ring(wall->shape);
         em.endFeature(lineProps("wall"));
     };
     emitWall(model.wall);

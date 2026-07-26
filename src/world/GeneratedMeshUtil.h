@@ -50,7 +50,7 @@ inline void appendOrientedBox(MeshGeometry& geo, const glm::vec3& center,
             geo.vertices.push_back(v);
         }
         geo.indices.insert(geo.indices.end(),
-                           {base, base + 1, base + 2, base, base + 2, base + 3});
+                           {base, base + 2, base + 1, base, base + 3, base + 2});
     }
 }
 

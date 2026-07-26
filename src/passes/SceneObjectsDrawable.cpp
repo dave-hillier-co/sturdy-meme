@@ -164,7 +164,7 @@ void SceneObjectsDrawable::recordSceneObjects(vk::CommandBuffer cmd, uint32_t fr
     }
 
     // Render procedural trees using dedicated TreeRenderer with wind animation
-    if (resources_.tree && resources_.treeRenderer) {
+    if (resources_.tree && resources_.treeRenderer && resources_.tree->isRenderReady()) {
         resources_.treeRenderer->render(vk::CommandBuffer(cmd), frameIndex,
                                         resources_.wind->getTime(),
                                         *resources_.tree, resources_.treeLOD);

@@ -4,6 +4,7 @@
 #include "../threading/TaskScheduler.h"
 #include <SDL3/SDL.h>
 #include <algorithm>
+#include <chrono>
 
 namespace Loading {
 
@@ -168,11 +169,21 @@ void AsyncSystemLoader::workerLoop() {
     }
 }
 
-uint32_t AsyncSystemLoader::pollCompletions() {
+uint32_t AsyncSystemLoader::pollCompletions(float budgetMs) {
     uint32_t completed = 0;
+    const auto pollStart = std::chrono::steady_clock::now();
 
-    // Process all completed CPU tasks
+    // Process completed CPU tasks until the queue is drained or the caller's
+    // time budget is spent (so the caller can present a frame between polls)
     while (true) {
+        if (budgetMs >= 0.0f && completed > 0) {
+            float elapsedMs = std::chrono::duration<float, std::milli>(
+                std::chrono::steady_clock::now() - pollStart).count();
+            if (elapsedMs > budgetMs) {
+                break;
+            }
+        }
+
         std::string taskId;
 
         {

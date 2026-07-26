@@ -26,7 +26,6 @@ void BaseHeightMap::init(const InitInfo& info) {
     tilesX_ = info.tilesX;
     tilesZ_ = info.tilesZ;
     numLODLevels_ = info.numLODLevels;
-    yieldCallback_ = info.yieldCallback;
 
     baseLOD_ = numLODLevels_ - 1;
 }
@@ -65,10 +64,6 @@ bool BaseHeightMap::loadBaseLODTiles(const LoadTileFunc& loadTileFunc) {
                 tilesFailed++;
             }
 
-            if (yieldCallback_) {
-                float progress = static_cast<float>(tilesLoaded + tilesFailed) / totalTiles * 0.5f;
-                yieldCallback_(progress, "Loading terrain tiles");
-            }
         }
     }
 
@@ -102,7 +97,6 @@ bool BaseHeightMap::createCombinedHeightMap() {
     heightMapCpuData_.resize(heightMapResolution_ * heightMapResolution_);
 
     float invTerrainSize = 1.0f / terrainSize_;
-    constexpr uint32_t YIELD_INTERVAL = 32;
 
     for (uint32_t y = 0; y < heightMapResolution_; y++) {
         for (uint32_t x = 0; x < heightMapResolution_; x++) {
@@ -128,11 +122,6 @@ bool BaseHeightMap::createCombinedHeightMap() {
             }
 
             heightMapCpuData_[y * heightMapResolution_ + x] = height;
-        }
-
-        if (yieldCallback_ && (y % YIELD_INTERVAL) == 0) {
-            float progress = 0.5f + (static_cast<float>(y) / heightMapResolution_) * 0.4f;
-            yieldCallback_(progress, "Building terrain heightmap");
         }
     }
 

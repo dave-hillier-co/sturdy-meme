@@ -1,5 +1,6 @@
 #include "FrameExecutor.h"
 #include "VulkanContext.h"
+#include "vulkan/QueueLock.h"
 #include <SDL3/SDL.h>
 
 bool FrameExecutor::init(VulkanContext* ctx, uint32_t frameCount) {
@@ -144,6 +145,7 @@ FrameResult FrameExecutor::submitCommandBuffer(vk::CommandBuffer cmd, uint32_t i
         .setSignalSemaphores(signalSemaphores);
 
     try {
+        GraphicsQueueLock::Guard lock(GraphicsQueueLock::mutex());
         vk::Queue(graphicsQueue).submit(submitInfo, nullptr);
     } catch (const vk::DeviceLostError&) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Device lost during queue submit");
@@ -169,6 +171,7 @@ FrameResult FrameExecutor::present(uint32_t imageIndex) {
         .setImageIndices(imageIndex);
 
     try {
+        GraphicsQueueLock::Guard lock(GraphicsQueueLock::mutex());
         auto presentResult = vk::Queue(presentQueue).presentKHR(presentInfo);
         (void)presentResult;
     } catch (const vk::OutOfDateKHRError&) {

@@ -107,6 +107,15 @@ public:
     // Command pool/buffer getters
     vk::CommandPool getCommandPool() const { return commandPool_ ? **commandPool_ : VK_NULL_HANDLE; }
     const vk::raii::CommandPool& getRaiiCommandPool() const { return *commandPool_; }
+
+    /**
+     * Create a command pool for use by one async-init worker task. Command
+     * pools are externally synchronized, so each concurrently-running init
+     * task needs its own instead of sharing the main pool. Owned by the
+     * context (systems store the handle for later on-demand uploads, so the
+     * pool must outlive them). Call from the main thread before workers start.
+     */
+    vk::CommandPool createWorkerCommandPool();
     const std::vector<vk::CommandBuffer>& getCommandBuffers() const { return commandBuffers_; }
     vk::CommandBuffer getCommandBuffer(uint32_t frameIndex) const {
         return frameIndex < commandBuffers_.size() ? commandBuffers_[frameIndex] : VK_NULL_HANDLE;
@@ -198,5 +207,6 @@ private:
 
     // Command pool and buffers
     std::optional<vk::raii::CommandPool> commandPool_;
+    std::vector<vk::raii::CommandPool> workerCommandPools_;
     std::vector<vk::CommandBuffer> commandBuffers_;
 };

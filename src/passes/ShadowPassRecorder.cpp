@@ -59,7 +59,8 @@ void ShadowPassRecorder::record(vk::CommandBuffer cmd, uint32_t frameIndex, floa
 
     auto treeCallback = [this, frameIndex](vk::CommandBuffer cb, uint32_t cascade, const glm::mat4& lightMatrix) {
         (void)lightMatrix;
-        if (resources_.vegetation.hasTree() && resources_.vegetation.hasTreeRenderer()) {
+        if (resources_.vegetation.hasTree() && resources_.vegetation.hasTreeRenderer() &&
+            resources_.vegetation.tree()->isRenderReady()) {
             resources_.profiler->beginGpuZone(cb, "Shadow:Trees");
             resources_.vegetation.treeRenderer()->renderShadows(cb, frameIndex, *resources_.vegetation.tree(), static_cast<int>(cascade), resources_.vegetation.treeLOD());
             resources_.profiler->endGpuZone(cb, "Shadow:Trees");
@@ -168,7 +169,8 @@ void ShadowPassRecorder::record(vk::CommandBuffer cmd, uint32_t frameIndex, floa
     // Pre-cascade compute callback for GPU culling (runs before each cascade's render pass)
     ShadowSystem::ComputeCallback preCascadeComputeCallback = [this, cameraPosition](
         vk::CommandBuffer cb, uint32_t frame, uint32_t cascade, const glm::mat4& lightMatrix) {
-        if (resources_.vegetation.hasTreeRenderer() && resources_.vegetation.hasTree() && resources_.vegetation.hasTreeLOD()) {
+        if (resources_.vegetation.hasTreeRenderer() && resources_.vegetation.hasTree() &&
+            resources_.vegetation.hasTreeLOD() && resources_.vegetation.tree()->isRenderReady()) {
             // Extract frustum planes from the light view-projection matrix
             glm::vec4 cascadeFrustumPlanes[6];
             extractFrustumPlanes(lightMatrix, cascadeFrustumPlanes);

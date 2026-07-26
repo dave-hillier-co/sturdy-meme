@@ -31,6 +31,19 @@
   - NEVER write `static_cast<VkFormat>(vk::Format::e...)` or other `vk::`→C-enum round-trips. Keep the value as `vk::Format` and pass it to hpp APIs directly. If some external API truly needs the C enum, convert only at that boundary.
   - Run `./scripts/analyze-vulkan-usage.sh` to audit usage.
 
+## Threading and Loading Design Principles
+
+The thread that presents (renders the loading screen during startup, frames afterwards) must never be stalled by loading or initialization work:
+
+- **Main-thread budget**: no single unit of work on the presenting thread may exceed ~5 ms. Anything longer belongs on `AsyncSystemLoader` worker threads.
+- **`SystemInitTask.gpuWork` is finalize-only**: it runs on the main thread inside `pollCompletions()`, so it may only adopt and wire objects that workers already built (`systems_->setX(...)`, pointer wiring). Pipeline compilation, buffer/image creation, staging uploads, file IO, and mesh/texture generation belong in `cpuWork`.
+- **Vulkan off the main thread is allowed and expected**: `vkCreateGraphicsPipelines`, buffer/image creation, and descriptor allocation are legal from any thread. Workers use per-thread `vk::CommandPool`s, a shared `vk::PipelineCache`, and mutex-guarded queue submission; VMA is thread-safe by default. Never share a command pool or submit to a queue from two threads without synchronization.
+- **Callbacks publish state, they do not render**: progress/yield callbacks must only record progress (atomic or mutex-guarded). Never call `render()`, `SDL_PumpEvents()`, or `SDL_Delay()` from inside initialization or loading code — the loading loop owns the frame cadence and reads progress state each frame.
+- **Poll loops are time-boxed**: main-thread completion polling processes finalize jobs up to a per-frame budget, then returns so a frame can be presented.
+- These rules apply to runtime streaming too (VT tiles, grass tiles, shader warm-up), not just startup.
+
+Audit with `./scripts/analyze-main-thread-stalls.sh` (static scan; `--strict` exits nonzero on violations). At runtime, `InitProfiler` logs a warning when a main-thread init phase exceeds the budget.
+
 ## Preprocessing Tool Output Formats
 
 Preprocessing tools in `tools/` must use standard, widely-supported file formats. Do NOT use custom binary formats (`.dat`, `.bin`). Preferred formats:

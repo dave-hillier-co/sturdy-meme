@@ -1,5 +1,6 @@
 #include "LoadingRenderer.h"
 #include "vulkan/VulkanContext.h"
+#include "vulkan/QueueLock.h"
 #include "ShaderLoader.h"
 #include "core/vulkan/RenderPassBuilder.h"
 #include <SDL3/SDL.h>
@@ -385,9 +386,14 @@ bool LoadingRenderer::render() {
     submitInfo.signalSemaphoreCount = 1;
     submitInfo.pSignalSemaphores = signalSemaphores;
 
-    if (vkQueueSubmit(ctx_->get().getVkGraphicsQueue(), 1, &submitInfo, **inFlightFence_) != VK_SUCCESS) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "LoadingRenderer: Failed to submit draw command");
-        return false;
+    {
+        // Async-init workers submit uploads on the same graphics queue while
+        // the loading screen presents; queue access must be serialized.
+        GraphicsQueueLock::Guard lock(GraphicsQueueLock::mutex());
+        if (vkQueueSubmit(ctx_->get().getVkGraphicsQueue(), 1, &submitInfo, **inFlightFence_) != VK_SUCCESS) {
+            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "LoadingRenderer: Failed to submit draw command");
+            return false;
+        }
     }
 
     // Present
@@ -401,7 +407,10 @@ bool LoadingRenderer::render() {
     presentInfo.pSwapchains = swapchains;
     presentInfo.pImageIndices = &imageIndex;
 
-    vkQueuePresentKHR(ctx_->get().getVkPresentQueue(), &presentInfo);
+    {
+        GraphicsQueueLock::Guard lock(GraphicsQueueLock::mutex());
+        vkQueuePresentKHR(ctx_->get().getVkPresentQueue(), &presentInfo);
+    }
 
     return true;
 }

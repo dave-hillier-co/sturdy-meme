@@ -340,6 +340,8 @@ bool DescriptorManager::Pool::tryAllocate(vk::DescriptorPool pool,
 std::vector<vk::DescriptorSet> DescriptorManager::Pool::allocate(
     vk::DescriptorSetLayout layout, uint32_t count) {
 
+    std::lock_guard<std::mutex> lock(allocMutex_);
+
     std::vector<vk::DescriptorSet> sets;
 
     SDL_Log("DescriptorManager::allocate - pools.size()=%zu, currentPoolIndex=%u, device=%p",
@@ -389,6 +391,7 @@ vk::DescriptorSet DescriptorManager::Pool::allocateSingle(vk::DescriptorSetLayou
 }
 
 void DescriptorManager::Pool::reset() {
+    std::lock_guard<std::mutex> lock(allocMutex_);
     vk::Device vkDevice(device);
     for (auto pool : pools) {
         vkDevice.resetDescriptorPool(pool);

@@ -38,7 +38,6 @@ bool TerrainTileCache::initInternal(const InitInfo& info) {
     commandPool = info.commandPool;
     terrainSize = info.terrainSize;
     heightScale = info.heightScale;
-    yieldCallback_ = info.yieldCallback;
 
     // Load metadata from cache
     if (!loadMetadata()) {
@@ -761,7 +760,6 @@ bool TerrainTileCache::loadBaseLODTiles() {
     baseInfo.tilesX = tilesX;
     baseInfo.tilesZ = tilesZ;
     baseInfo.numLODLevels = numLODLevels;
-    baseInfo.yieldCallback = yieldCallback_;
     baseHeightMap_.init(baseInfo);
 
     return baseHeightMap_.loadBaseLODTiles([this](int32_t tx, int32_t tz, uint32_t lod) -> TerrainTile* {

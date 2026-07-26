@@ -97,9 +97,10 @@ public:
     void setOnTreesGeneratedCallback(OnTreesGeneratedFunc func) { onTreesGenerated_ = std::move(func); }
 
     /**
-     * Set callback invoked once when all deferred generation completes
-     * (terrain is loaded and heights are queryable). Used for other
-     * terrain-dependent content such as settlement building blockouts.
+     * Set callback invoked once when deferred generation starts (terrain is
+     * loaded and heights are queryable; trees may still be generating in the
+     * background). Used for other terrain-dependent content such as
+     * settlement building blockouts.
      */
     using OnGeneratedFunc = std::function<void()>;
     void setOnGeneratedCallback(OnGeneratedFunc func) { onGenerated_ = std::move(func); }
@@ -142,10 +143,27 @@ public:
 private:
     bool initInternal(const Config& config);
 
+    // First call: quick scene-object/demo-tree setup, then queue the biome
+    // forest on background workers. Subsequent calls: upload completed trees
+    // under a per-frame time budget, finalize once everything is placed.
+    bool startGeneration(SceneManager* sceneManager, TreeSystem* tree);
+    bool uploadCompletedTrees(TreeSystem& tree);
+    bool finalizeGeneration(
+        TreeSystem* tree,
+        TreeLODSystem* treeLOD,
+        ImpostorCullSystem* impostorCull,
+        TreeRenderer* treeRenderer,
+        std::unique_ptr<ScatterSystem>& detritus);
+
     Config config_;
     GetCommonBindingsFunc getCommonBindings_;
     OnTreesGeneratedFunc onTreesGenerated_;
     OnGeneratedFunc onGenerated_;
     bool generated_ = false;
     bool generating_ = false;
+
+    // Incremental biome-forest generation state
+    std::unique_ptr<ThreadedTreeGenerator> treeGen_;
+    std::vector<ThreadedTreeGenerator::StagedTree> stagedBacklog_;
+    int uploadedTreeCount_ = 0;
 };

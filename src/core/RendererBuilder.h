@@ -3,6 +3,7 @@
 #include "Renderer.h"
 #include "InitContext.h"
 
+#include <deque>
 #include <memory>
 #include <vector>
 
@@ -13,6 +14,10 @@
 struct AsyncInitState {
     std::unique_ptr<Loading::AsyncSystemLoader> loader;
     InitContext ctx;  // Stored for async task access (lifetime == this state)
+    // Per-task InitContext copies, each carrying its own worker command pool
+    // (command pools are externally synchronized so concurrent tasks must not
+    // share one). Deque for stable addresses; tasks capture pointers.
+    std::deque<InitContext> taskContexts;
 };
 
 // RendererBuilder - stateless construction/initialization helper for Renderer.

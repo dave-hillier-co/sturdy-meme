@@ -1,5 +1,7 @@
 #pragma once
 
+#include "QueueLock.h"
+
 #include <vulkan/vulkan.hpp>
 #include <SDL3/SDL_log.h>
 #include <vector>
@@ -74,7 +76,12 @@ public:
             .setPCommandBuffers(&commandBuffer_);
 
         try {
-            queue_.submit(submitInfo, fence);
+            {
+                // Queue submission is externally synchronized; init-time uploads
+                // may run on worker threads while the loading screen presents.
+                GraphicsQueueLock::Guard lock(GraphicsQueueLock::mutex());
+                queue_.submit(submitInfo, fence);
+            }
             auto result = device_.waitForFences(fence, vk::True, UINT64_MAX);
             device_.destroyFence(fence);
             if (result != vk::Result::eSuccess) {

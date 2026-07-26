@@ -94,7 +94,8 @@ PassIds addPasses(PassScheduler& graph, RendererSystems& systems, const Config& 
             }
 
             // Tree leaf culling compute pass
-            if (systems.tree() && systems.treeRenderer() && systems.treeRenderer()->isLeafCullingEnabled()) {
+            if (systems.tree() && systems.tree()->isRenderReady() &&
+                systems.treeRenderer() && systems.treeRenderer()->isLeafCullingEnabled()) {
                 systems.profiler().beginGpuZone(cmd, "TreeLeafCull");
                 systems.treeRenderer()->recordLeafCulling(
                     cmd, frameIndex, *systems.tree(),

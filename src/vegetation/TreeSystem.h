@@ -174,6 +174,15 @@ public:
      */
     bool finalizeLeafInstanceBuffer();
 
+    /**
+     * Rendering gate for incremental forest generation: while trees stream in
+     * over multiple frames, the shared leaf instance buffer and culling data
+     * are not yet finalized, so render/culling paths must skip trees until
+     * setRenderReady(true) after finalization.
+     */
+    void setRenderReady(bool ready) { renderReady_ = ready; }
+    bool isRenderReady() const { return renderReady_; }
+
     void removeTree(uint32_t index);
     void selectTree(int index);
     int getSelectedTreeIndex() const { return selectedTreeIndex_; }
@@ -320,6 +329,7 @@ private:
     // tree index; indices here are ephemeral per bake.
     std::vector<TreeInstanceData> treeInstances_;
     int selectedTreeIndex_ = -1;
+    bool renderReady_ = true;  // Cleared while a forest streams in incrementally
 
     // ONE-WAY DERIVED render bake, rebuilt on add/remove/regenerate/edit (never
     // per draw). These may be SPARSER than treeInstances_ (a tree with an empty

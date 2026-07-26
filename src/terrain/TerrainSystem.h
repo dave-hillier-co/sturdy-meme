@@ -156,16 +156,12 @@ public:
         vk::CommandPool commandPool;
     };
 
-    // Callback invoked during long operations to yield to the UI
-    using YieldCallback = std::function<void(float, const char*)>;
-
     // System-specific params for InitContext-based init
     struct TerrainInitParams {
         vk::RenderPass renderPass;
         vk::RenderPass shadowRenderPass;
         uint32_t shadowMapSize;
         std::string texturePath;
-        YieldCallback yieldCallback;  // Optional: yield during long operations
     };
 
     /**
@@ -392,9 +388,6 @@ private:
     uint32_t framesInFlight = 0;
     vk::Queue graphicsQueue;
     vk::CommandPool commandPool;
-
-    // Yield callback for long init operations
-    YieldCallback yieldCallback_;
 
     // Composed subsystems (RAII-managed)
     std::unique_ptr<TerrainTextures> textures;

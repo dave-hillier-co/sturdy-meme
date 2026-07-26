@@ -1,5 +1,6 @@
 #pragma once
 
+#include "ThreadedTreeGenerator.h"
 #include <glm/glm.hpp>
 #include <string>
 #include <vector>
@@ -72,15 +73,16 @@ public:
         uint32_t seed = 12345);
 
     /**
-     * Generate biome-driven vegetation over a region.
+     * Build generation requests for biome-driven vegetation over a region.
      * Trees are placed on a jittered grid; density and species follow the
      * biome map (woodland dense, grassland/agricultural sparse), suppressed
      * inside settlement radii and below sea level. Deterministic: placement
      * depends only on position hashes and the seed.
-     * Returns number of trees placed.
+     * Queue the returned requests on a ThreadedTreeGenerator and upload
+     * completed trees incrementally — generating 12k trees takes minutes,
+     * so no caller may block on the full set.
      */
-    int generateBiomeForest(
-        TreeSystem& treeSystem,
+    std::vector<ThreadedTreeGenerator::TreeRequest> buildBiomeForestRequests(
         const BiomeMap& biomeMap,
         const std::vector<Settlement>* settlements,
         const glm::vec2& center,

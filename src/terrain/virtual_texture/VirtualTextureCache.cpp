@@ -1,5 +1,6 @@
 #include "VirtualTextureCache.h"
 #include "VmaBufferFactory.h"
+#include "core/vulkan/QueueLock.h"
 #include "SamplerFactory.h"
 #include "VmaImageHandle.h"
 #include <vulkan/vulkan.hpp>
@@ -212,8 +213,16 @@ bool VirtualTextureCache::createCacheTexture(vk::Device device, VmaAllocator all
     auto submitInfo = vk::SubmitInfo{}
         .setCommandBuffers(vkCmd);
 
-    vkQueue.submit(submitInfo, VK_NULL_HANDLE);
-    vkQueue.waitIdle();
+    // Runs during async init while the loading screen presents on the same
+    // queue: hold the queue lock for the submit, wait on a fence (not the
+    // queue) so the lock is never held during the wait.
+    vk::Fence fence = vkDevice.createFence(vk::FenceCreateInfo{});
+    {
+        GraphicsQueueLock::Guard lock(GraphicsQueueLock::mutex());
+        vkQueue.submit(submitInfo, fence);
+    }
+    (void)vkDevice.waitForFences(fence, vk::True, UINT64_MAX);
+    vkDevice.destroyFence(fence);
 
     vkDevice.freeCommandBuffers(commandPool, vkCmd);
 

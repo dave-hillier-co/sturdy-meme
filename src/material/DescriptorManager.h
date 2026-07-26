@@ -2,6 +2,7 @@
 
 #include "IDescriptorAllocator.h"
 #include <vulkan/vulkan.hpp>
+#include <mutex>
 #include <vector>
 #include <unordered_map>
 #include <optional>
@@ -193,6 +194,10 @@ public:
                          uint32_t count, std::vector<vk::DescriptorSet>& outSets);
 
         vk::Device device;
+        // Allocations happen from async-init worker threads concurrently;
+        // vkAllocateDescriptorSets requires external sync per pool. Not moved
+        // with the pool state (moves only occur single-threaded during init).
+        mutable std::mutex allocMutex_;
         std::vector<vk::DescriptorPool> pools;
         uint32_t setsPerPool;
         uint32_t currentPoolIndex = 0;

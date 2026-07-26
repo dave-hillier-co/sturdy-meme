@@ -16,9 +16,6 @@ struct TerrainTile;
 // CPU height queries and a GPU fallback texture.
 class BaseHeightMap {
 public:
-    // Callback invoked during long operations to yield to the UI
-    using YieldCallback = std::function<void(float, const char*)>;
-
     struct InitInfo {
         const vk::raii::Device* raiiDevice = nullptr;
         vk::Device device = VK_NULL_HANDLE;
@@ -31,7 +28,6 @@ public:
         uint32_t tilesX = 32;
         uint32_t tilesZ = 32;
         uint32_t numLODLevels = 4;
-        YieldCallback yieldCallback;
     };
 
     BaseHeightMap() = default;
@@ -81,7 +77,6 @@ private:
     uint32_t tilesX_ = 32;
     uint32_t tilesZ_ = 32;
     uint32_t numLODLevels_ = 4;
-    YieldCallback yieldCallback_;
 
     // Base LOD tiles (pointers into TerrainTileCache's loadedTiles)
     std::vector<TerrainTile*> baseTiles_;

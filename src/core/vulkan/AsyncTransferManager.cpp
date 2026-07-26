@@ -1,5 +1,6 @@
 #include "AsyncTransferManager.h"
 #include "VulkanContext.h"
+#include "QueueLock.h"
 #include "VmaBufferFactory.h"
 #include <SDL3/SDL_log.h>
 
@@ -491,7 +492,10 @@ void AsyncTransferManager::submitOwnershipAcquire(PendingTransfer& transfer) {
         .setWaitDstStageMask(waitStages)
         .setCommandBuffers(cmd);
 
-    graphicsQueue_.submit(submitInfo, *fence);
+    {
+        GraphicsQueueLock::Guard lock(GraphicsQueueLock::mutex());
+        graphicsQueue_.submit(submitInfo, *fence);
+    }
 
     transfer.acquireCmdBuffer = cmd;
     transfer.acquireFence.emplace(std::move(fence));

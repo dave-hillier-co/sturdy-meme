@@ -121,9 +121,12 @@ public:
     /**
      * Poll for completed CPU work and execute GPU work
      * Must be called from main thread
+     * @param budgetMs Stop processing further tasks once this much time has
+     *                 elapsed (at least one task is always processed);
+     *                 negative = no budget, drain the queue
      * Returns number of tasks that completed GPU work this call
      */
-    uint32_t pollCompletions();
+    uint32_t pollCompletions(float budgetMs = -1.0f);
 
     /**
      * Check if all tasks are complete (both CPU and GPU work)

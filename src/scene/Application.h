@@ -26,6 +26,8 @@
 #include "world/SettlementBlockoutGenerator.h"
 #include "world/RibbonMeshGenerator.h"
 #include "world/TownLinearFeatures.h"
+#include "world/BridgeDeckGenerator.h"
+#include "terrain/RoadNetworkLoader.h"
 
 class SceneBuilder;
 
@@ -53,7 +55,8 @@ private:
     void spawnRagdoll();
     void teleportTo(float worldX, float worldZ);
     void stepSettlementGeneration();
-    void generateLinearWorldFeatures(ecs::World& world, SceneBuilder& sceneBuilder);
+    void stepWorldFeatureGeneration();
+    void queueLinearWorldFeatures(SceneBuilder& sceneBuilder);
 
     SDL_Window* window = nullptr;
     std::unique_ptr<Renderer> renderer_;
@@ -76,6 +79,16 @@ private:
     // river ribbons plus per-town street ribbons and wall runs.
     std::unique_ptr<RibbonMeshGenerator> ribbonGen_;
     std::unique_ptr<TownLinearFeatures> townFeatures_;
+
+    // Bridges and road/river ribbons drape over terrain (forcing tile loads),
+    // so they generate one item per frame after settlements finish instead of
+    // all at once in the completion callback.
+    std::unique_ptr<BridgeDeckGenerator> bridgeGen_;
+    std::vector<WaterCrossing> bridgeQueue_;
+    size_t bridgeQueueNext_ = 0;
+    std::vector<RibbonMeshGenerator::Ribbon> ribbonQueue_;
+    std::vector<RibbonMeshGenerator::SkipZone> ribbonSkipZones_;
+    size_t ribbonQueueNext_ = 0;
 
     // Input system
     InputSystem input;

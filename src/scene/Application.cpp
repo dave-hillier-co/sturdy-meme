@@ -3,6 +3,9 @@
 #include <chrono>
 #include <cmath>
 #include <cstdio>
+#include <future>
+#include <memory>
+#include <mutex>
 #include <unordered_set>
 #include "core/vulkan/VulkanContext.h"
 #include "core/LoadingRenderer.h"
@@ -128,6 +131,12 @@ bool Application::init(const std::string& title, int width, int height) {
             SDL_Log("Warning: LoadingRenderer creation failed, initialization will proceed without visual feedback");
         }
     }
+    // Presentation exists from here on; main-thread budget warnings arm now
+    // (creating the loading renderer itself cannot stall a frame - there was
+    // nothing presenting yet).
+    if (loadingRenderer) {
+        InitProfiler::get().setPresentingActive(true);
+    }
 
     // Create full renderer with progress callback to update loading screen
     // The loading screen stays visible and animated during subsystem initialization
@@ -137,15 +146,24 @@ bool Application::init(const std::string& title, int width, int height) {
     rendererInfo.vulkanContext = std::move(vulkanContext);  // Transfer ownership
     rendererInfo.asyncInit = true;  // Enable async subsystem loading
 
-    // Progress callback renders loading screen during initialization
-    if (loadingRenderer) {
-        rendererInfo.progressCallback = [&loadingRenderer](float progress, const char* phase) {
-            loadingRenderer->setProgress(progress);
-            loadingRenderer->render();
-            SDL_PumpEvents();
-            SDL_Delay(1);  // Small yield to keep window responsive
-        };
-    }
+    // Progress callbacks only publish state; they may be invoked from worker
+    // threads and must never render or pump events (see CLAUDE.md: Threading
+    // and Loading Design Principles). The loading loop below owns the frame
+    // cadence and reads this state each frame.
+    struct ProgressState {
+        std::mutex mutex;
+        float progress = 0.0f;
+    };
+    auto progressState = std::make_shared<ProgressState>();
+    rendererInfo.progressCallback = [progressState](float progress, const char* phase) {
+        std::lock_guard<std::mutex> lock(progressState->mutex);
+        progressState->progress = std::max(progressState->progress, progress);
+    };
+
+    // Physics world creation is CPU-only and renderer-independent; build it
+    // concurrently with renderer initialization so it does not delay the
+    // first frame after loading completes.
+    auto physicsFuture = std::async(std::launch::async, [] { return PhysicsWorld::create(); });
 
     renderer_ = Renderer::create(rendererInfo);
 
@@ -154,8 +172,12 @@ bool Application::init(const std::string& title, int width, int height) {
         SDL_Log("Async initialization started, running loading loop...");
 
         while (!renderer_->pollAsyncInit()) {
-            // Render loading screen
+            // Render loading screen; present pacing (vsync) throttles the loop
             if (loadingRenderer) {
+                {
+                    std::lock_guard<std::mutex> lock(progressState->mutex);
+                    loadingRenderer->setProgress(progressState->progress);
+                }
                 loadingRenderer->render();
             }
 
@@ -173,14 +195,15 @@ bool Application::init(const std::string& title, int width, int height) {
                     return false;
                 }
             }
-
-            SDL_Delay(1);  // Small yield
         }
 
         SDL_Log("Async initialization complete");
     }
 
-    // Cleanup loading renderer now that full renderer is ready
+    // Cleanup loading renderer now that full renderer is ready. Between here
+    // and the first main-loop frame nothing presents, so main-thread budget
+    // warnings pause until the render loop takes over.
+    InitProfiler::get().setPresentingActive(false);
     if (loadingRenderer) {
         loadingRenderer->cleanup();
         loadingRenderer.reset();
@@ -221,10 +244,10 @@ bool Application::init(const std::string& title, int width, int height) {
         return false;
     }
 
-    // Initialize physics system using RAII factory
+    // Adopt the physics world built concurrently with renderer init
     {
         INIT_PROFILE_PHASE("Physics");
-        physics_ = PhysicsWorld::create();
+        physics_ = physicsFuture.get();
         if (!physics_) {
             SDL_Log("Failed to initialize physics system");
             return false;
@@ -428,6 +451,8 @@ bool Application::init(const std::string& title, int width, int height) {
 
             // Bridge decks at the road network's river crossings (fords are
             // baked into the terrain texture; bridges need walkable geometry).
+            // Draping forces terrain tile loads, so decks generate one per
+            // frame (stepWorldFeatureGeneration) instead of all at once here.
             const auto& crossings = systems.roadData().getRoadNetwork().crossings;
             if (!crossings.empty()) {
                 BridgeDeckGenerator::Config bridgeCfg;
@@ -448,11 +473,9 @@ bool Application::init(const std::string& title, int width, int height) {
                                               glm::angleAxis(yaw, glm::vec3(0.0f, 1.0f, 0.0f)));
                 };
                 bridgeCfg.deckMaterial = sceneBuilder.getKitMaterialId("MI_RockTrim");
-                BridgeDeckGenerator bridgeGen(std::move(bridgeCfg));
-                auto bridgeResult = bridgeGen.generate(*world, crossings);
-                for (ecs::Entity e : bridgeResult.entities) {
-                    sceneBuilder.addExternalSceneEntity(e);
-                }
+                bridgeGen_ = std::make_unique<BridgeDeckGenerator>(std::move(bridgeCfg));
+                bridgeQueue_ = crossings;
+                bridgeQueueNext_ = 0;
             }
 
             // Shared ribbon generator for roads, rivers and town streets
@@ -470,7 +493,7 @@ bool Application::init(const std::string& title, int width, int height) {
             };
             ribbonGen_ = std::make_unique<RibbonMeshGenerator>(std::move(ribbonCfg));
 
-            generateLinearWorldFeatures(*world, sceneBuilder);
+            queueLinearWorldFeatures(sceneBuilder);
 
             // Town street/wall geometry generates per settlement alongside the
             // buildings (stepSettlementGeneration).
@@ -943,6 +966,7 @@ void Application::run() {
 
         // Update ECS systems (visibility culling, LOD)
         stepSettlementGeneration();
+        stepWorldFeatureGeneration();
         updateECS(deltaTime);
 
         // Update player state in PlayerControlSubsystem for grass/snow/leaf interaction
@@ -1517,21 +1541,67 @@ void Application::stepSettlementGeneration() {
     }
 }
 
-void Application::generateLinearWorldFeatures(ecs::World& world, SceneBuilder& sceneBuilder) {
+void Application::stepWorldFeatureGeneration() {
+    // Settlements (nearest-first) get the per-frame budget until done
+    if (settlementGen_) return;
+    if (!bridgeGen_ && ribbonQueueNext_ >= ribbonQueue_.size()) return;
+
     auto& systems = renderer_->getSystems();
+    ecs::World* world = systems.ecsWorld();
+    if (!world || !systems.scenePtr()) return;
+    auto& sceneBuilder = systems.scene().getSceneBuilder();
+
+    // One bridge deck per frame
+    if (bridgeGen_) {
+        if (bridgeQueueNext_ < bridgeQueue_.size()) {
+            std::vector<WaterCrossing> one{bridgeQueue_[bridgeQueueNext_++]};
+            auto result = bridgeGen_->generate(*world, one);
+            for (ecs::Entity e : result.entities) {
+                sceneBuilder.addExternalSceneEntity(e);
+            }
+            return;
+        }
+        bridgeGen_.reset();
+        bridgeQueue_.clear();
+        bridgeQueueNext_ = 0;
+    }
+
+    // One road/river ribbon per frame
+    if (ribbonGen_ && ribbonQueueNext_ < ribbonQueue_.size()) {
+        std::vector<RibbonMeshGenerator::Ribbon> one;
+        one.push_back(std::move(ribbonQueue_[ribbonQueueNext_++]));
+        auto result = ribbonGen_->generate(*world, one, ribbonSkipZones_);
+        for (ecs::Entity e : result.entities) {
+            sceneBuilder.addExternalSceneEntity(e);
+        }
+        if (ribbonQueueNext_ >= ribbonQueue_.size()) {
+            ribbonQueue_.clear();
+            ribbonSkipZones_.clear();
+            ribbonQueueNext_ = 0;
+            SDL_Log("Application: Linear world features complete");
+        }
+    }
+}
+
+void Application::queueLinearWorldFeatures(SceneBuilder& sceneBuilder) {
+    auto& systems = renderer_->getSystems();
+    ecs::World* world = systems.ecsWorld();
+    if (!world) return;
 
     // Roads: draped ribbons following the terrain. Bridge crossings are
     // skipped (the deck geometry covers them); ford crossings stay draped so
-    // the road dips through the shallow water.
+    // the road dips through the shallow water. Draping loads terrain tiles,
+    // so ribbons are queued here and generated one per frame.
     const RoadNetwork& roadNetwork = systems.roadData().getRoadNetwork();
-    std::vector<RibbonMeshGenerator::SkipZone> skipZones;
+    ribbonSkipZones_.clear();
     for (const auto& crossing : roadNetwork.crossings) {
         if (!crossing.isBridge) continue;
         glm::vec2 w = WorldCoords::contentToWorld(crossing.position);
-        skipZones.push_back({w, crossing.span * 0.5f + 5.0f});
+        ribbonSkipZones_.push_back({w, crossing.span * 0.5f + 5.0f});
     }
 
-    std::vector<RibbonMeshGenerator::Ribbon> ribbons;
+    ribbonQueue_.clear();
+    ribbonQueueNext_ = 0;
     for (const auto& road : roadNetwork.roads) {
         if (road.controlPoints.size() < 2) continue;
         RibbonMeshGenerator::Ribbon ribbon;
@@ -1555,7 +1625,7 @@ void Application::generateLinearWorldFeatures(ecs::World& world, SceneBuilder& s
             ribbon.points.emplace_back(w.x, 0.0f, w.y);
             ribbon.widths.push_back(road.getWidthAt(i));
         }
-        ribbons.push_back(std::move(ribbon));
+        ribbonQueue_.push_back(std::move(ribbon));
     }
 
     // Rivers: ribbons at the water surface height from the spline data,
@@ -1570,17 +1640,11 @@ void Application::generateLinearWorldFeatures(ecs::World& world, SceneBuilder& s
         ribbon.color = glm::vec4(0.16f, 0.32f, 0.45f, 1.0f);
         ribbon.points = river.controlPoints;
         ribbon.widths = river.widths;
-        ribbons.push_back(std::move(ribbon));
+        ribbonQueue_.push_back(std::move(ribbon));
     }
 
-    if (!ribbons.empty()) {
-        auto ribbonResult = ribbonGen_->generate(world, ribbons, skipZones);
-        for (ecs::Entity e : ribbonResult.entities) {
-            sceneBuilder.addExternalSceneEntity(e);
-        }
-    }
-
-    // Lakes: flat water discs at each lake's fill level
+    // Lakes: flat water discs at each lake's fill level (no terrain draping,
+    // cheap enough to build immediately)
     if (!waterData.lakes.empty()) {
         MeshGeometry lakeGeo;
         for (const auto& lake : waterData.lakes) {
@@ -1592,7 +1656,7 @@ void Application::generateLinearWorldFeatures(ecs::World& world, SceneBuilder& s
             std::vector<MeshGeometry> batch;
             batch.push_back(std::move(lakeGeo));
             std::vector<Mesh*> meshes = sceneBuilder.addGeneratedMeshes(std::move(batch));
-            ecs::EntityFactory factory(world);
+            ecs::EntityFactory factory(*world);
             for (Mesh* mesh : meshes) {
                 if (!mesh) continue;
                 ecs::Entity e = factory.createStaticMesh(

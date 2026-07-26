@@ -506,8 +506,9 @@ bool RendererBuilder::pollAsyncInit(Renderer& r) {
 
     Loading::AsyncSystemLoader& loader = *r.asyncInit_->loader;
 
-    // Poll for completed tasks
-    loader.pollCompletions();
+    // Poll for completed tasks. The budget keeps main-thread finalize work
+    // short enough that the loading screen presents a frame between polls.
+    loader.pollCompletions(5.0f);
 
     // Update progress callback
     if (r.progressCallback_) {
@@ -686,6 +687,20 @@ std::vector<Loading::SystemInitTask> RendererBuilder::buildInitTasks(Renderer& r
     const InitContext* ctxPtr = &initCtx;
     VkFormat swapchainImageFormat = static_cast<VkFormat>(r.vulkanContext_->getVkSwapchainImageFormat());
 
+    // Task bodies run on worker threads (cpuWork), so tasks that can execute
+    // concurrently must not share a command pool (pools are externally
+    // synchronized). Each task gets its own InitContext copy with a dedicated
+    // worker pool; the sync fallback path (no asyncInit_) shares the one
+    // context since it runs tasks sequentially.
+    auto makeTaskContext = [&r, ctxPtr]() -> const InitContext* {
+        if (!r.asyncInit_) return ctxPtr;
+        InitContext taskCtx = *ctxPtr;
+        vk::CommandPool workerPool = r.vulkanContext_->createWorkerCommandPool();
+        if (workerPool) taskCtx.commandPool = workerPool;
+        r.asyncInit_->taskContexts.push_back(taskCtx);
+        return &r.asyncInit_->taskContexts.back();
+    };
+
     // Shared constants
     // Scene origin sits at Town 1 (settlement id 1, content coords 11000,5200)
     // so the hand-placed green spawns inside the largest procedural town.
@@ -698,7 +713,7 @@ std::vector<Loading::SystemInitTask> RendererBuilder::buildInitTasks(Renderer& r
         task.id = "core";
         task.displayName = "Core GPU systems";
         task.weight = 0.1f;
-        task.gpuWork = [&r, ctxPtr, swapchainImageFormat]() -> bool {
+        task.cpuWork = [&r, ctxPtr = makeTaskContext(), swapchainImageFormat]() -> bool {
             // PostProcess (creates HDR render pass needed by almost everything)
             if (r.progressCallback_) r.progressCallback_(0.12f, "Post-processing systems");
             {
@@ -777,7 +792,7 @@ std::vector<Loading::SystemInitTask> RendererBuilder::buildInitTasks(Renderer& r
         task.displayName = "Terrain system";
         task.dependencies = {"core"};
         task.weight = 0.15f;
-        task.gpuWork = [&r, ctxPtr]() -> bool {
+        task.cpuWork = [&r, ctxPtr = makeTaskContext()]() -> bool {
             if (r.progressCallback_) r.progressCallback_(0.20f, "Terrain system");
             INIT_PROFILE_PHASE("TerrainSystem");
 
@@ -791,13 +806,6 @@ std::vector<Loading::SystemInitTask> RendererBuilder::buildInitTasks(Renderer& r
             terrainFactoryConfig.useVirtualTexture =
                 terrainFactoryConfig.useVirtualTexture &&
                 r.vulkanContext_->hasFragmentStoresAndAtomics();
-
-            // Yield callback keeps the window responsive during heavy terrain loading
-            terrainFactoryConfig.yieldCallback = [&r](float subProgress, const char* phase) {
-                float overallProgress = 0.20f + subProgress * 0.08f;
-                if (r.progressCallback_) r.progressCallback_(overallProgress, phase);
-                SDL_PumpEvents();
-            };
 
             auto terrainSystem = TerrainFactory::create(*ctxPtr, terrainFactoryConfig);
             if (!terrainSystem) return false;
@@ -814,7 +822,7 @@ std::vector<Loading::SystemInitTask> RendererBuilder::buildInitTasks(Renderer& r
         task.displayName = "Snow and weather";
         task.dependencies = {"core"};
         task.weight = 0.05f;
-        task.gpuWork = [&r, ctxPtr]() -> bool {
+        task.cpuWork = [&r, ctxPtr = makeTaskContext()]() -> bool {
             if (r.progressCallback_) r.progressCallback_(0.28f, "Snow and weather systems");
             INIT_PROFILE_PHASE("SnowWeather");
 
@@ -839,7 +847,7 @@ std::vector<Loading::SystemInitTask> RendererBuilder::buildInitTasks(Renderer& r
         task.displayName = "Scene manager";
         task.dependencies = {"terrain", "snow_weather"};
         task.weight = 0.15f;
-        task.gpuWork = [&r, sceneOrigin]() -> bool {
+        task.cpuWork = [&r, sceneOrigin]() -> bool {
             if (r.progressCallback_) r.progressCallback_(0.32f, "Scene manager");
             INIT_PROFILE_PHASE("SceneManager");
 
@@ -880,7 +888,7 @@ std::vector<Loading::SystemInitTask> RendererBuilder::buildInitTasks(Renderer& r
         task.displayName = "Vegetation systems";
         task.dependencies = {"scene"};
         task.weight = 0.2f;
-        task.gpuWork = [&r, ctxPtr, sceneOrigin]() -> bool {
+        task.cpuWork = [&r, ctxPtr = makeTaskContext(), sceneOrigin]() -> bool {
             if (r.progressCallback_) r.progressCallback_(0.45f, "Vegetation systems");
             INIT_PROFILE_PHASE("VegetationSystems");
 
@@ -935,7 +943,7 @@ std::vector<Loading::SystemInitTask> RendererBuilder::buildInitTasks(Renderer& r
         task.displayName = "Atmosphere systems";
         task.dependencies = {"scene"};
         task.weight = 0.1f;
-        task.gpuWork = [&r, ctxPtr]() -> bool {
+        task.cpuWork = [&r, ctxPtr = makeTaskContext()]() -> bool {
             if (r.progressCallback_) r.progressCallback_(0.60f, "Atmosphere systems");
             INIT_PROFILE_PHASE("AtmosphereSubsystems");
 
@@ -970,7 +978,7 @@ std::vector<Loading::SystemInitTask> RendererBuilder::buildInitTasks(Renderer& r
         task.displayName = "Water systems";
         task.dependencies = {"vegetation", "atmosphere"};
         task.weight = 0.1f;
-        task.gpuWork = [&r, ctxPtr]() -> bool {
+        task.cpuWork = [&r, ctxPtr = makeTaskContext()]() -> bool {
             if (r.progressCallback_) r.progressCallback_(0.75f, "Water systems");
             INIT_PROFILE_PHASE("WaterSystems");
 
@@ -1020,7 +1028,7 @@ std::vector<Loading::SystemInitTask> RendererBuilder::buildInitTasks(Renderer& r
         task.displayName = "Finalizing systems";
         task.dependencies = {"water"};
         task.weight = 0.15f;
-        task.gpuWork = [&r, ctxPtr, sceneOrigin]() -> bool {
+        task.cpuWork = [&r, ctxPtr = makeTaskContext(), sceneOrigin]() -> bool {
             if (r.progressCallback_) r.progressCallback_(0.85f, "Finalizing systems");
 
             vk::Device device = r.vulkanContext_->getVkDevice();

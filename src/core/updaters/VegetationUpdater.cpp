@@ -87,6 +87,7 @@ void VegetationUpdater::updateGrass(RendererSystems& systems, const FrameData& f
 void VegetationUpdater::updateTreeDescriptors(RendererSystems& systems, const FrameData& frame,
                                                const VegetationRenderContext& ctx) {
     if (!systems.treeRenderer() || !systems.tree()) return;
+    if (!systems.tree()->isRenderReady()) return;  // Forest still streaming in
 
     systems.profiler().beginCpuZone("Update:TreeDesc");
 
@@ -154,6 +155,7 @@ void VegetationUpdater::updateTreeDescriptors(RendererSystems& systems, const Fr
 
 void VegetationUpdater::updateTreeLOD(RendererSystems& systems, const FrameData& frame, VkExtent2D extent) {
     if (!systems.treeLOD() || !systems.tree()) return;
+    if (!systems.tree()->isRenderReady()) return;  // Forest still streaming in
 
     systems.profiler().beginCpuZone("Update:TreeLOD");
 

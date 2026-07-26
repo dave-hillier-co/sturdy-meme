@@ -90,7 +90,6 @@ bool TerrainSystem::initInternal(const InitInfo& info, const TerrainConfig& cfg)
         tileCacheInfo.commandPool = commandPool;
         tileCacheInfo.terrainSize = config.size;
         tileCacheInfo.heightScale = config.heightScale;
-        tileCacheInfo.yieldCallback = yieldCallback_;
         tileCache = TerrainTileCache::create(tileCacheInfo);
         if (!tileCache) {
             SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "Failed to initialize tile cache, using global heightmap only");
@@ -186,9 +185,6 @@ bool TerrainSystem::initInternal(const InitInfo& info, const TerrainConfig& cfg)
 }
 
 bool TerrainSystem::initInternal(const InitContext& ctx, const TerrainInitParams& params, const TerrainConfig& cfg) {
-    // Store yield callback for use during initialization
-    yieldCallback_ = params.yieldCallback;
-
     InitInfo info{};
     info.raiiDevice = ctx.raiiDevice;
     info.device = ctx.device;

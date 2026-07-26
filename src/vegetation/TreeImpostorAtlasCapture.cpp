@@ -4,6 +4,7 @@
 
 #include "TreeImpostorAtlas.h"
 #include "TreeSystem.h"
+#include "core/vulkan/QueueLock.h"
 #include "Mesh.h"
 #include "ShaderLoader.h"
 #include "OctahedralMapping.h"
@@ -318,8 +319,16 @@ bool TreeImpostorAtlas::createLeafQuadMesh() {
     cmd.end();
 
     vk::Queue queue(graphicsQueue_);
-    queue.submit(vk::SubmitInfo{}.setCommandBuffers(cmd));
-    queue.waitIdle();
+    {
+        vk::Device dev(device_);
+        vk::Fence fence = dev.createFence(vk::FenceCreateInfo{});
+        {
+            GraphicsQueueLock::Guard lock(GraphicsQueueLock::mutex());
+            queue.submit(vk::SubmitInfo{}.setCommandBuffers(cmd), fence);
+        }
+        (void)dev.waitForFences(fence, vk::True, UINT64_MAX);
+        dev.destroyFence(fence);
+    }
 
     vk::Device(device_).freeCommandBuffers(commandPool_, cmd);
     vmaDestroyBuffer(allocator_, stagingBuffer, stagingAllocation);

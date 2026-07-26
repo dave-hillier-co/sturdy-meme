@@ -707,6 +707,19 @@ bool VulkanContext::recreateSwapchainResources() {
 // Command pool and buffers
 // ============================================================================
 
+vk::CommandPool VulkanContext::createWorkerCommandPool() {
+    try {
+        auto poolInfo = vk::CommandPoolCreateInfo{}
+            .setFlags(vk::CommandPoolCreateFlagBits::eResetCommandBuffer)
+            .setQueueFamilyIndex(getGraphicsQueueFamily());
+        workerCommandPools_.emplace_back(*raiiDevice_, poolInfo);
+        return *workerCommandPools_.back();
+    } catch (const vk::SystemError& e) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create worker command pool: %s", e.what());
+        return VK_NULL_HANDLE;
+    }
+}
+
 bool VulkanContext::createCommandPoolAndBuffers(uint32_t frameCount) {
     if (frameCount == 0) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Cannot create command buffers: frame count is 0");
@@ -751,4 +764,5 @@ void VulkanContext::destroyCommandPoolAndBuffers() {
     // Command buffers are implicitly freed when pool is destroyed
     commandBuffers_.clear();
     commandPool_.reset();
+    workerCommandPools_.clear();
 }

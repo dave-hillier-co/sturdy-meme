@@ -88,8 +88,11 @@ public:
 };
 
 // Contact listener for character
+// Jolt 5.5 replaced the per-parameter OnContactAdded overload with one taking
+// a CharacterContact struct; support both so local (5.4) and web builds work.
 class CharacterContactListener : public JPH::CharacterContactListener {
 public:
+#if JPH_VERSION_MAJOR > 5 || (JPH_VERSION_MAJOR == 5 && JPH_VERSION_MINOR >= 5)
     void OnContactAdded(const JPH::CharacterVirtual* inCharacter,
                         const JPH::CharacterContact& inContact,
                         JPH::CharacterContactSettings& ioSettings) override {
@@ -97,6 +100,18 @@ public:
         ioSettings.mCanPushCharacter = true;
         ioSettings.mCanReceiveImpulses = true;
     }
+#else
+    void OnContactAdded(const JPH::CharacterVirtual* inCharacter,
+                        const JPH::BodyID& inBodyID2,
+                        const JPH::SubShapeID& inSubShapeID2,
+                        JPH::RVec3Arg inContactPosition,
+                        JPH::Vec3Arg inContactNormal,
+                        JPH::CharacterContactSettings& ioSettings) override {
+        // Allow character to be pushed and to push objects
+        ioSettings.mCanPushCharacter = true;
+        ioSettings.mCanReceiveImpulses = true;
+    }
+#endif
 };
 
 // Global instances (defined in .cpp file)

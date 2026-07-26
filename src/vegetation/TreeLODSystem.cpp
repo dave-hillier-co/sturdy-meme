@@ -1,5 +1,6 @@
 #include "TreeLODSystem.h"
 #include "TreeSystem.h"
+#include "core/vulkan/QueueLock.h"
 #include "TreeOptions.h"
 #include "CullCommon.h"
 #include "Mesh.h"
@@ -211,10 +212,16 @@ bool TreeLODSystem::createBillboardMesh() {
 
     vkCmd.end();
 
-    vk::Queue(graphicsQueue_).submit(
-        vk::SubmitInfo{}.setCommandBuffers(vkCmd),
-        nullptr);
-    vk::Queue(graphicsQueue_).waitIdle();
+    {
+        vk::Fence fence = vkDevice.createFence(vk::FenceCreateInfo{});
+        {
+            GraphicsQueueLock::Guard lock(GraphicsQueueLock::mutex());
+            vk::Queue(graphicsQueue_).submit(
+                vk::SubmitInfo{}.setCommandBuffers(vkCmd), fence);
+        }
+        (void)vkDevice.waitForFences(fence, vk::True, UINT64_MAX);
+        vkDevice.destroyFence(fence);
+    }
 
     vkDevice.freeCommandBuffers(commandPool_, vkCmd);
     vmaDestroyBuffer(allocator_, stagingBuffer, stagingAllocation);

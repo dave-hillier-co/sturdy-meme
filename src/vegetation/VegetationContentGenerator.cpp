@@ -218,8 +218,7 @@ int VegetationContentGenerator::generateForest(
     return treesPlaced;
 }
 
-int VegetationContentGenerator::generateBiomeForest(
-    TreeSystem& treeSystem,
+std::vector<ThreadedTreeGenerator::TreeRequest> VegetationContentGenerator::buildBiomeForestRequests(
     const BiomeMap& biomeMap,
     const std::vector<Settlement>* settlements,
     const glm::vec2& center,
@@ -344,40 +343,9 @@ int VegetationContentGenerator::generateBiomeForest(
         requests.push_back(req);
     }
 
-    auto threadedGen = ThreadedTreeGenerator::create(4);
-    int uploadedCount = 0;
-
-    if (threadedGen) {
-        threadedGen->queueTrees(requests);
-        SDL_Log("VegetationContentGenerator: Queued %zu biome trees for parallel generation",
-                requests.size());
-        threadedGen->waitForAll();
-
-        auto stagedTrees = threadedGen->getCompletedTrees();
-        for (auto& staged : stagedTrees) {
-            uint32_t treeIdx = treeSystem.addTreeFromStagedData(
-                staged.position, staged.rotation, staged.scale,
-                staged.options,
-                staged.branchVertexData, staged.branchVertexCount,
-                staged.branchIndices,
-                staged.leafInstanceData, staged.leafInstanceCount,
-                staged.archetypeIndex);
-            if (treeIdx != UINT32_MAX) {
-                uploadedCount++;
-            }
-        }
-        treeSystem.finalizeLeafInstanceBuffer();
-    } else {
-        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "Threaded tree generator unavailable, using serial");
-        for (const auto& req : requests) {
-            treeSystem.addTree(req.position, req.rotation, req.scale, req.options);
-            uploadedCount++;
-        }
-    }
-
-    SDL_Log("VegetationContentGenerator: Biome forest - %d trees placed (region radius %.0fm)",
-            uploadedCount, radius);
-    return uploadedCount;
+    SDL_Log("VegetationContentGenerator: Biome forest - %zu tree requests built (region radius %.0fm)",
+            requests.size(), radius);
+    return requests;
 }
 
 void VegetationContentGenerator::generateImpostorArchetypes(

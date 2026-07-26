@@ -1,7 +1,10 @@
 #pragma once
 
+#include <atomic>
 #include <chrono>
+#include <mutex>
 #include <string>
+#include <thread>
 #include <vector>
 #include <unordered_map>
 #include <SDL3/SDL.h>
@@ -71,9 +74,18 @@ public:
     }
 
     /**
+     * Mark whether anything can currently present frames (a loading screen or
+     * the main render loop). Main-thread budget warnings only fire while
+     * active: before a swapchain/presenter exists, long phases delay startup
+     * but cannot stall a frame.
+     */
+    void setPresentingActive(bool active) { presentingActive_ = active; }
+
+    /**
      * Reset profiler for a new initialization run.
      */
     void reset() {
+        std::lock_guard<std::mutex> lock(mutex_);
         results_.totalTimeMs = 0.0f;
         results_.phases.clear();
         activePhases_.clear();
@@ -82,12 +94,14 @@ public:
         overallStartTime_ = Clock::now();
         currentDepth_ = 0;
         finalized_ = false;
+        mainThreadId_ = std::this_thread::get_id();
     }
 
     /**
      * Begin a named initialization phase.
      */
     void beginPhase(const char* phaseName) {
+        std::lock_guard<std::mutex> lock(mutex_);
         std::string name(phaseName);
         PhaseData data;
         data.startTime = Clock::now();
@@ -101,6 +115,7 @@ public:
      * End a named initialization phase.
      */
     void endPhase(const char* phaseName) {
+        std::lock_guard<std::mutex> lock(mutex_);
         std::string name(phaseName);
         auto it = activePhases_.find(name);
         if (it == activePhases_.end()) {
@@ -126,6 +141,17 @@ public:
         // Log immediately for visibility during init
         std::string indent(result.depth * 2, ' ');
         SDL_Log("%s[Init] %s: %.1f ms", indent.c_str(), phaseName, elapsedMs);
+
+        // A long phase on the presenting thread freezes the loading screen for
+        // its whole duration (see CLAUDE.md: Threading and Loading Design
+        // Principles). Parent phases include their children, so start fixing
+        // from the deepest warned phase.
+        if (presentingActive_ && std::this_thread::get_id() == mainThreadId_ &&
+            elapsedMs > kMainThreadBudgetMs) {
+            SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                        "[Init] Main-thread stall: phase '%s' ran %.1f ms on the presenting thread (budget %.0f ms) - move to a worker thread",
+                        phaseName, elapsedMs, kMainThreadBudgetMs);
+        }
     }
 
     /**
@@ -133,6 +159,7 @@ public:
      * Call this after all init phases complete.
      */
     void finalize() {
+        std::lock_guard<std::mutex> lock(mutex_);
         if (finalized_) return;
 
         auto endTime = Clock::now();
@@ -168,6 +195,10 @@ public:
 private:
     InitProfiler() = default;
 
+    // Budget for a single init phase on the presenting thread; anything longer
+    // is a visible loading-screen stall.
+    static constexpr float kMainThreadBudgetMs = 5.0f;
+
     using Clock = std::chrono::high_resolution_clock;
     using TimePoint = Clock::time_point;
 
@@ -180,7 +211,10 @@ private:
     std::unordered_map<std::string, PhaseData> activePhases_;
     std::vector<std::string> phaseOrder_;  // Order phases were started
     std::unordered_map<std::string, PhaseResult> phaseTimes_;  // Completed phase times
+    mutable std::mutex mutex_;  // Phases are recorded from worker threads during async init
+    std::atomic<bool> presentingActive_{false};
     TimePoint overallStartTime_;
+    std::thread::id mainThreadId_{};  // Captured in reset(); reset() must run on the presenting thread
     int currentDepth_ = 0;
     bool finalized_ = false;
 };

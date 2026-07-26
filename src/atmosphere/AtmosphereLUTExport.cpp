@@ -1,5 +1,6 @@
 #include "AtmosphereLUTSystem.h"
 #include "VmaBuffer.h"
+#include "core/vulkan/QueueLock.h"
 #include <SDL3/SDL_log.h>
 #include <vulkan/vulkan.hpp>
 #include <vector>
@@ -119,14 +120,21 @@ bool AtmosphereLUTSystem::exportImageToPNG(vk::Image image, VkFormat format, uin
 
     commandBuffer.end();
 
-    // Submit and wait
+    // Submit and wait on a fence: this runs during async init while the
+    // loading screen submits on the same queue, so the submit must hold the
+    // queue lock and the wait must NOT (waitIdle would stall the lock holder).
     vk::Queue graphicsQueue = vkDevice.getQueue(0, 0);
 
     auto submitInfo = vk::SubmitInfo{}
         .setCommandBuffers(commandBuffer);
 
-    graphicsQueue.submit(submitInfo);
-    graphicsQueue.waitIdle();
+    vk::Fence fence = vkDevice.createFence(vk::FenceCreateInfo{});
+    {
+        GraphicsQueueLock::Guard lock(GraphicsQueueLock::mutex());
+        graphicsQueue.submit(submitInfo, fence);
+    }
+    (void)vkDevice.waitForFences(fence, vk::True, UINT64_MAX);
+    vkDevice.destroyFence(fence);
 
     // Helper lambda to convert FP16 to float32
     auto fp16ToFloat = [](uint16_t h) -> float {

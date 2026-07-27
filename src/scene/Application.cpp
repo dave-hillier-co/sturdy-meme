@@ -157,7 +157,9 @@ bool Application::init(const std::string& title, int width, int height) {
     auto progressState = std::make_shared<ProgressState>();
     rendererInfo.progressCallback = [progressState](float progress, const char* phase) {
         std::lock_guard<std::mutex> lock(progressState->mutex);
-        progressState->progress = std::max(progressState->progress, progress);
+        // Async subsystem init owns the first 75% of the bar; the world setup
+        // worker below fills the remainder.
+        progressState->progress = std::max(progressState->progress, progress * 0.75f);
     };
 
     // Physics world creation is CPU-only and renderer-independent; build it
@@ -200,8 +202,61 @@ bool Application::init(const std::string& title, int width, int height) {
         SDL_Log("Async initialization complete");
     }
 
-    // Cleanup loading renderer now that full renderer is ready. Between here
-    // and the first main-loop frame nothing presents, so main-thread budget
+    if (!renderer_) {
+        SDL_Log("Failed to initialize renderer");
+        if (loadingRenderer) {
+            loadingRenderer->cleanup();
+            loadingRenderer.reset();
+        }
+        SDL_DestroyWindow(window);
+        SDL_Quit();
+        return false;
+    }
+
+    camera.setAspectRatio(static_cast<float>(width) / static_cast<float>(height));
+
+    // World setup (terrain preloads, physics terrain tiles, colliders, ECS,
+    // deferred content kick-off) runs on a worker thread while the loading
+    // screen keeps presenting, so the window never freezes between "renderer
+    // ready" and the first main-loop frame. GPU uploads inside go through
+    // CommandScope, which takes GraphicsQueueLock, so they safely overlap the
+    // loading renderer's queue submits.
+    auto publishProgress = [progressState](float p) {
+        std::lock_guard<std::mutex> lock(progressState->mutex);
+        progressState->progress = std::max(progressState->progress, p);
+    };
+
+    auto worldSetupFuture = std::async(std::launch::async,
+        [this, publishProgress, physicsFuture = std::move(physicsFuture)]() mutable {
+            return setupWorld(std::move(physicsFuture), publishProgress);
+        });
+
+    // Keep presenting the loading screen while world setup runs on the worker
+    bool quitDuringSetup = false;
+    while (worldSetupFuture.wait_for(std::chrono::milliseconds(
+               loadingRenderer ? 0 : 50)) != std::future_status::ready) {
+        if (loadingRenderer) {
+            {
+                std::lock_guard<std::mutex> lock(progressState->mutex);
+                loadingRenderer->setProgress(progressState->progress);
+            }
+            loadingRenderer->render();
+        }
+        SDL_PumpEvents();
+        SDL_Event event;
+        while (SDL_PollEvent(&event)) {
+            if (event.type == SDL_EVENT_QUIT) {
+                SDL_Log("Quit requested during world setup");
+                // The worker cannot be cancelled; note the request and exit
+                // once it completes.
+                quitDuringSetup = true;
+            }
+        }
+    }
+    const bool worldSetupOk = worldSetupFuture.get();
+
+    // Cleanup loading renderer now that world setup is done. Between here and
+    // the first main-loop frame nothing presents, so main-thread budget
     // warnings pause until the render loop takes over.
     InitProfiler::get().setPresentingActive(false);
     if (loadingRenderer) {
@@ -209,14 +264,95 @@ bool Application::init(const std::string& title, int width, int height) {
         loadingRenderer.reset();
     }
 
-    if (!renderer_) {
-        SDL_Log("Failed to initialize renderer");
-        SDL_DestroyWindow(window);
-        SDL_Quit();
+    if (quitDuringSetup || !worldSetupOk) {
         return false;
     }
 
-    camera.setAspectRatio(static_cast<float>(width) / static_cast<float>(height));
+    // Initialize GUI system via factory
+    {
+        INIT_PROFILE_PHASE("GUI");
+        const VulkanContext& vkCtx = renderer_->getVulkanContext();
+        gui_ = GuiSystem::create(window, vkCtx.getVkInstance(), vkCtx.getVkPhysicalDevice(),
+                                  vkCtx.getVkDevice(), vkCtx.getGraphicsQueueFamily(),
+                                  vkCtx.getVkGraphicsQueue(), vkCtx.getRenderPass(),
+                                  vkCtx.getSwapchainImageCount());
+        if (!gui_) {
+            SDL_Log("Failed to initialize GUI system");
+            return false;
+        }
+    }
+
+    // Set GUI render callback
+    renderer_->setGuiRenderCallback([this](vk::CommandBuffer cmd) {
+        gui_->endFrame(cmd);
+    });
+
+    // Wire up ragdoll spawn callback for debug UI
+    renderer_->getSystems().debugControl().setSpawnRagdollCallback([this]() {
+        spawnRagdoll();
+    });
+    renderer_->getSystems().debugControl().setRagdollCountCallback([this]() -> int {
+        return static_cast<int>(ragdolls_.size());
+    });
+
+    // Wire up world teleport for debug UI, with settlements as destinations
+    for (const auto& settlement : renderer_->getSystems().settlements().settlements()) {
+        IDebugControl::TeleportTarget target;
+        target.name = settlement.displayName();
+        target.worldX = settlement.worldPos.x;
+        target.worldZ = settlement.worldPos.y;
+        target.radius = settlement.radius;
+        teleportTargets_.push_back(std::move(target));
+    }
+    renderer_->getSystems().debugControl().setTeleportCallback([this](float x, float z) {
+        teleportTo(x, z);
+    });
+    renderer_->getSystems().debugControl().setTeleportTargetsCallback(
+        [this]() -> const std::vector<IDebugControl::TeleportTarget>& {
+            return teleportTargets_;
+        });
+
+    // Configure ragdoll renderer if player character is available
+    {
+        auto& sceneBuilder = renderer_->getSystems().scene().getSceneBuilder();
+        if (sceneBuilder.hasCharacter()) {
+            ragdollRenderer_.configure(sceneBuilder.getAnimatedCharacter().getSkeleton());
+        }
+    }
+
+    // Set ragdoll draw callback for rendering physics-driven ragdolls
+    renderer_->setRagdollDrawCallback([this](vk::CommandBuffer cmd, uint32_t frameIndex) {
+        if (!ragdollRenderer_.isConfigured() || ragdolls_.empty() || !physics_) return;
+        auto& sceneBuilder = renderer_->getSystems().scene().getSceneBuilder();
+        if (!sceneBuilder.hasCharacter()) return;
+
+        // Upload ragdoll bone matrices (done here because we need the frame index)
+        ragdollRenderer_.updateBoneMatrices(ragdolls_, physics(),
+                                             renderer_->getSystems().skinnedMesh(),
+                                             frameIndex);
+
+        // Record draw commands using player character's mesh
+        ragdollRenderer_.recordDrawCommands(cmd, frameIndex,
+                                             sceneBuilder.getAnimatedCharacter(),
+                                             renderer_->getSystems().skinnedMesh());
+    });
+
+    // Set up input system with GUI reference for input blocking
+    input.setGuiSystem(gui_.get());
+    input.setMoveSpeed(moveSpeed);
+
+    // Finalize init profiler and log results
+    InitProfiler::get().finalize();
+
+    // Capture init timing to flamegraph
+    renderer_->getSystems().profiler().captureInitFlamegraph();
+
+    running = true;
+    return true;
+}
+
+bool Application::setupWorld(std::future<std::optional<PhysicsWorld>> physicsFuture,
+                             const std::function<void(float)>& publishProgress) {
 
     // Position camera at a settlement (Town 1: market town with coastal/agricultural features)
     // Settlement coords are 0-16384, world coords are centered (-8192 to +8192)
@@ -238,6 +374,7 @@ bool Application::init(const std::string& title, int width, int height) {
         camera.setYaw(45.0f);    // Look roughly northeast
         camera.setPitch(0.0f);   // Level view
     }
+    publishProgress(0.80f);
 
     if (!renderer_->getSystems().hasTerrain()) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Terrain system failed to initialize");
@@ -260,6 +397,7 @@ bool Application::init(const std::string& title, int width, int height) {
             uniconController_.initRandomPolicy();
         }
     }
+    publishProgress(0.82f);
 
     // Create terrain hole at well entrance location
     // This must be done before terrain physics is initialized
@@ -310,6 +448,7 @@ bool Application::init(const std::string& title, int width, int height) {
             SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Terrain tile cache not available for physics!");
         }
     }
+    publishProgress(0.87f);
 
     // Initialize scene physics (dynamic objects)
     if (renderer_->getSystems().scenePtr()) {
@@ -339,6 +478,7 @@ bool Application::init(const std::string& title, int width, int height) {
         treesWithColliders = treeInstances.size();
         SDL_Log("Created %zu tree compound capsule colliders", treeInstances.size());
     }
+    publishProgress(0.89f);
 
     // Register callback for deferred tree generation (forest/woods trees)
     // These trees are generated after terrain is ready, so we need to create colliders then
@@ -556,6 +696,7 @@ bool Application::init(const std::string& title, int width, int height) {
                               PlayerMovement::CAPSULE_HEIGHT, PlayerMovement::CAPSULE_RADIUS);
 
     SDL_Log("Physics initialized with %d active bodies", physics().getActiveBodyCount());
+    publishProgress(0.92f);
 
     // Configure breadcrumb tracker for safe respawn positions
     // Safety check: not in water, not in terrain holes
@@ -580,6 +721,7 @@ bool Application::init(const std::string& title, int width, int height) {
 
     // Initialize ECS world with scene entities
     initECS();
+    publishProgress(0.94f);
 
     // Wire up ECS world for lighting (SceneManager's world was already set in initECS()).
     renderer_->setECSWorld(&ecsWorld_);
@@ -681,87 +823,28 @@ bool Application::init(const std::string& title, int width, int height) {
             SDL_Log("Created %zu detritus convex hull colliders (from ECS)", detritusColliders);
         }
     }
+    publishProgress(0.97f);
 
-    // Initialize GUI system via factory
+    // Kick off deferred terrain-dependent content (scene renderables, the
+    // biome forest scan, settlement/bridge/ribbon queues) here so its one-time
+    // setup cost lands behind the loading screen instead of inside the first
+    // rendered frame. Tree meshes keep streaming in budgeted batches per frame
+    // after startup - only the kick-off is front-loaded.
     {
-        INIT_PROFILE_PHASE("GUI");
-        const VulkanContext& vkCtx = renderer_->getVulkanContext();
-        gui_ = GuiSystem::create(window, vkCtx.getVkInstance(), vkCtx.getVkPhysicalDevice(),
-                                  vkCtx.getVkDevice(), vkCtx.getGraphicsQueueFamily(),
-                                  vkCtx.getVkGraphicsQueue(), vkCtx.getRenderPass(),
-                                  vkCtx.getSwapchainImageCount());
-        if (!gui_) {
-            SDL_Log("Failed to initialize GUI system");
-            return false;
+        auto& systems = renderer_->getSystems();
+        if (auto* deferredObjects = systems.deferredTerrainObjects()) {
+            std::unique_ptr<ScatterSystem> detritusSystem;
+            bool generatedNow = deferredObjects->tryGenerate(
+                &systems.scene(), systems.tree(), systems.treeLOD(),
+                systems.impostorCull(), systems.treeRenderer(), &systems.rocks(),
+                detritusSystem, true);
+            if (generatedNow && detritusSystem) {
+                systems.setDetritus(std::move(detritusSystem));
+            }
         }
     }
+    publishProgress(1.0f);
 
-    // Set GUI render callback
-    renderer_->setGuiRenderCallback([this](vk::CommandBuffer cmd) {
-        gui_->endFrame(cmd);
-    });
-
-    // Wire up ragdoll spawn callback for debug UI
-    renderer_->getSystems().debugControl().setSpawnRagdollCallback([this]() {
-        spawnRagdoll();
-    });
-    renderer_->getSystems().debugControl().setRagdollCountCallback([this]() -> int {
-        return static_cast<int>(ragdolls_.size());
-    });
-
-    // Wire up world teleport for debug UI, with settlements as destinations
-    for (const auto& settlement : renderer_->getSystems().settlements().settlements()) {
-        IDebugControl::TeleportTarget target;
-        target.name = settlement.displayName();
-        target.worldX = settlement.worldPos.x;
-        target.worldZ = settlement.worldPos.y;
-        target.radius = settlement.radius;
-        teleportTargets_.push_back(std::move(target));
-    }
-    renderer_->getSystems().debugControl().setTeleportCallback([this](float x, float z) {
-        teleportTo(x, z);
-    });
-    renderer_->getSystems().debugControl().setTeleportTargetsCallback(
-        [this]() -> const std::vector<IDebugControl::TeleportTarget>& {
-            return teleportTargets_;
-        });
-
-    // Configure ragdoll renderer if player character is available
-    {
-        auto& sceneBuilder = renderer_->getSystems().scene().getSceneBuilder();
-        if (sceneBuilder.hasCharacter()) {
-            ragdollRenderer_.configure(sceneBuilder.getAnimatedCharacter().getSkeleton());
-        }
-    }
-
-    // Set ragdoll draw callback for rendering physics-driven ragdolls
-    renderer_->setRagdollDrawCallback([this](vk::CommandBuffer cmd, uint32_t frameIndex) {
-        if (!ragdollRenderer_.isConfigured() || ragdolls_.empty() || !physics_) return;
-        auto& sceneBuilder = renderer_->getSystems().scene().getSceneBuilder();
-        if (!sceneBuilder.hasCharacter()) return;
-
-        // Upload ragdoll bone matrices (done here because we need the frame index)
-        ragdollRenderer_.updateBoneMatrices(ragdolls_, physics(),
-                                             renderer_->getSystems().skinnedMesh(),
-                                             frameIndex);
-
-        // Record draw commands using player character's mesh
-        ragdollRenderer_.recordDrawCommands(cmd, frameIndex,
-                                             sceneBuilder.getAnimatedCharacter(),
-                                             renderer_->getSystems().skinnedMesh());
-    });
-
-    // Set up input system with GUI reference for input blocking
-    input.setGuiSystem(gui_.get());
-    input.setMoveSpeed(moveSpeed);
-
-    // Finalize init profiler and log results
-    InitProfiler::get().finalize();
-
-    // Capture init timing to flamegraph
-    renderer_->getSystems().profiler().captureInitFlamegraph();
-
-    running = true;
     return true;
 }
 

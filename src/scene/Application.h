@@ -5,6 +5,8 @@
 #include <vector>
 #include <optional>
 #include <memory>
+#include <functional>
+#include <future>
 #include "Renderer.h"
 #include "Camera.h"
 #include "PlayerState.h"
@@ -44,6 +46,13 @@ public:
     Renderer& getRenderer() { return *renderer_; }
 
 private:
+    // Heavy world setup after renderer init (terrain preloads, physics tiles,
+    // colliders, ECS, deferred content kick-off). Runs on a worker thread
+    // while the loading screen presents; publishProgress reports [0,1] bar
+    // progress and must be thread-safe.
+    bool setupWorld(std::future<std::optional<PhysicsWorld>> physicsFuture,
+                    const std::function<void(float)>& publishProgress);
+
     void processEvents();
     void applyInputToCamera();
     std::string getResourcePath();

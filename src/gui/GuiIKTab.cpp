@@ -1,4 +1,5 @@
 #include "GuiIKTab.h"
+#include "GuiStyle.h"
 #include "core/interfaces/ISceneControl.h"
 #include "Camera.h"
 #include "AnimatedCharacter.h"
@@ -22,9 +23,7 @@ void GuiIKTab::render(ISceneControl& sceneControl, const Camera& camera, IKDebug
     auto& ikSystem = character.getIKSystem();
 
     // Debug Visualization section
-    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.5f, 0.9f, 0.5f, 1.0f));
-    ImGui::Text("DEBUG VISUALIZATION");
-    ImGui::PopStyleColor();
+    GuiStyle::sectionHeader("DEBUG VISUALIZATION");
 
     ImGui::Checkbox("Show Skeleton", &settings.showSkeleton);
     if (ImGui::IsItemHovered()) {
@@ -41,9 +40,7 @@ void GuiIKTab::render(ISceneControl& sceneControl, const Camera& camera, IKDebug
     ImGui::Spacing();
 
     // Look-At IK section
-    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.5f, 0.8f, 1.0f, 1.0f));
-    ImGui::Text("LOOK-AT IK");
-    ImGui::PopStyleColor();
+    GuiStyle::sectionHeader("LOOK-AT IK");
 
     if (ImGui::Checkbox("Enable Look-At", &settings.lookAtEnabled)) {
         ikSystem.setLookAtEnabled(settings.lookAtEnabled);
@@ -94,9 +91,7 @@ void GuiIKTab::render(ISceneControl& sceneControl, const Camera& camera, IKDebug
     ImGui::Spacing();
 
     // Foot Placement IK section
-    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.8f, 0.5f, 1.0f));
-    ImGui::Text("FOOT PLACEMENT IK");
-    ImGui::PopStyleColor();
+    GuiStyle::sectionHeader("FOOT PLACEMENT IK");
 
     if (ImGui::Checkbox("Enable Foot Placement", &settings.footPlacementEnabled)) {
         // Enable/disable both feet
@@ -126,9 +121,7 @@ void GuiIKTab::render(ISceneControl& sceneControl, const Camera& camera, IKDebug
     ImGui::Spacing();
 
     // Straddle IK section
-    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.6f, 0.8f, 1.0f));
-    ImGui::Text("STRADDLE IK");
-    ImGui::PopStyleColor();
+    GuiStyle::sectionHeader("STRADDLE IK");
 
     if (ImGui::Checkbox("Enable Straddling", &settings.straddleEnabled)) {
         ikSystem.setStraddleEnabled(settings.straddleEnabled);
@@ -142,9 +135,7 @@ void GuiIKTab::render(ISceneControl& sceneControl, const Camera& camera, IKDebug
     ImGui::Spacing();
 
     // IK Chain Info
-    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.7f, 0.7f, 0.7f, 1.0f));
-    ImGui::Text("IK CHAINS");
-    ImGui::PopStyleColor();
+    GuiStyle::sectionHeader("IK CHAINS");
 
     // Show configured chains
     const auto& skeleton = character.getSkeleton();

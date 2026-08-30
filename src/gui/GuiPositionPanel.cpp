@@ -1,4 +1,5 @@
 #include "GuiPositionPanel.h"
+#include "GuiStyle.h"
 #include "Camera.h"
 
 #include <imgui.h>
@@ -6,9 +7,7 @@
 
 void GuiPositionPanel::render(const Camera& camera) {
     // Position section
-    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.5f, 0.8f, 1.0f, 1.0f));
-    ImGui::Text("POSITION");
-    ImGui::PopStyleColor();
+    GuiStyle::sectionHeader("POSITION");
 
     glm::vec3 pos = camera.getPosition();
     ImGui::Text("X: %.1f", pos.x);
@@ -20,9 +19,7 @@ void GuiPositionPanel::render(const Camera& camera) {
     ImGui::Spacing();
 
     // Orientation section
-    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.8f, 0.7f, 0.5f, 1.0f));
-    ImGui::Text("ORIENTATION");
-    ImGui::PopStyleColor();
+    GuiStyle::sectionHeader("ORIENTATION");
 
     float yaw = camera.getYaw();
     float pitch = camera.getPitch();
@@ -35,9 +32,7 @@ void GuiPositionPanel::render(const Camera& camera) {
     ImGui::Spacing();
 
     // Compass section
-    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.6f, 0.9f, 0.6f, 1.0f));
-    ImGui::Text("COMPASS");
-    ImGui::PopStyleColor();
+    GuiStyle::sectionHeader("COMPASS");
 
     // Draw compass
     ImDrawList* drawList = ImGui::GetWindowDrawList();

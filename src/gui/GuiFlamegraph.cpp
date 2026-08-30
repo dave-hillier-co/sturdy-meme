@@ -182,9 +182,7 @@ void render(const char* label, const FlamegraphCapture& capture,
         }
         ImGui::Text("Start: %.3f ms", hoveredNode->startMs);
         if (hoveredNode->isWaitZone) {
-            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.3f, 0.7f, 0.9f, 1.0f));
-            ImGui::Text("(Wait zone - CPU idle)");
-            ImGui::PopStyleColor();
+            ImGui::TextColored(ImVec4(0.3f, 0.7f, 0.9f, 1.0f), "(Wait zone - CPU idle)");
         }
         if (!hoveredNode->children.empty()) {
             ImGui::Text("Children: %zu", hoveredNode->children.size());

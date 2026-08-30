@@ -1,4 +1,5 @@
 #include "GuiPostFXTab.h"
+#include "GuiStyle.h"
 #include "core/interfaces/IPostProcessState.h"
 #include "core/interfaces/ICloudShadowControl.h"
 #include "HiZSystem.h"
@@ -10,9 +11,7 @@ void GuiPostFXTab::render(IPostProcessState& postProcess, ICloudShadowControl& c
     ImGui::Spacing();
 
     // HDR Tonemapping toggle
-    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.7f, 0.4f, 1.0f));
-    ImGui::Text("HDR PIPELINE");
-    ImGui::PopStyleColor();
+    GuiStyle::sectionHeader("HDR PIPELINE");
 
     bool hdrPassEnabled = postProcess.isHDRPassEnabled();
     if (ImGui::Checkbox("HDR Pass (Scene Rendering)", &hdrPassEnabled)) {
@@ -35,9 +34,7 @@ void GuiPostFXTab::render(IPostProcessState& postProcess, ICloudShadowControl& c
     ImGui::Spacing();
 
     // Cloud shadows toggle
-    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.7f, 0.8f, 1.0f, 1.0f));
-    ImGui::Text("CLOUD SHADOWS");
-    ImGui::PopStyleColor();
+    GuiStyle::sectionHeader("CLOUD SHADOWS");
 
     bool cloudShadowEnabled = cloudShadow.isEnabled();
     if (ImGui::Checkbox("Cloud Shadows", &cloudShadowEnabled)) {
@@ -58,9 +55,7 @@ void GuiPostFXTab::render(IPostProcessState& postProcess, ICloudShadowControl& c
     ImGui::Separator();
     ImGui::Spacing();
 
-    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.8f, 0.5f, 1.0f));
-    ImGui::Text("BLOOM");
-    ImGui::PopStyleColor();
+    GuiStyle::sectionHeader("BLOOM");
 
     bool bloomEnabled = postProcess.isBloomEnabled();
     if (ImGui::Checkbox("Enable Bloom", &bloomEnabled)) {
@@ -74,9 +69,7 @@ void GuiPostFXTab::render(IPostProcessState& postProcess, ICloudShadowControl& c
     ImGui::Separator();
     ImGui::Spacing();
 
-    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.9f, 0.6f, 1.0f));
-    ImGui::Text("GOD RAYS");
-    ImGui::PopStyleColor();
+    GuiStyle::sectionHeader("GOD RAYS");
 
     bool godRaysEnabled = postProcess.isGodRaysEnabled();
     if (ImGui::Checkbox("Enable God Rays", &godRaysEnabled)) {
@@ -102,9 +95,7 @@ void GuiPostFXTab::render(IPostProcessState& postProcess, ICloudShadowControl& c
     ImGui::Separator();
     ImGui::Spacing();
 
-    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.7f, 0.9f, 1.0f, 1.0f));
-    ImGui::Text("VOLUMETRIC FOG");
-    ImGui::PopStyleColor();
+    GuiStyle::sectionHeader("VOLUMETRIC FOG");
 
     bool froxelHighQuality = postProcess.isFroxelFilterHighQuality();
     if (ImGui::Checkbox("High Quality Fog Filter", &froxelHighQuality)) {
@@ -145,9 +136,7 @@ void GuiPostFXTab::render(IPostProcessState& postProcess, ICloudShadowControl& c
     ImGui::Separator();
     ImGui::Spacing();
 
-    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.9f, 0.85f, 0.7f, 1.0f));
-    ImGui::Text("LOCAL TONE MAPPING");
-    ImGui::PopStyleColor();
+    GuiStyle::sectionHeader("LOCAL TONE MAPPING");
 
     bool localToneMapEnabled = postProcess.isLocalToneMapEnabled();
     if (ImGui::Checkbox("Enable Local Tone Mapping", &localToneMapEnabled)) {
@@ -187,9 +176,7 @@ void GuiPostFXTab::render(IPostProcessState& postProcess, ICloudShadowControl& c
     ImGui::Separator();
     ImGui::Spacing();
 
-    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.8f, 0.8f, 1.0f, 1.0f));
-    ImGui::Text("EXPOSURE");
-    ImGui::PopStyleColor();
+    GuiStyle::sectionHeader("EXPOSURE");
 
     bool autoExposure = postProcess.isAutoExposureEnabled();
     if (ImGui::Checkbox("Auto Exposure", &autoExposure)) {

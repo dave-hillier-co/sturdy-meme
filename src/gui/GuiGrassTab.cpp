@@ -1,4 +1,5 @@
 #include "GuiGrassTab.h"
+#include "GuiStyle.h"
 #include "core/interfaces/IGrassControl.h"
 #include "vegetation/GrassConstants.h"
 #include <imgui.h>
@@ -6,10 +7,7 @@
 
 void GuiGrassTab::render(IGrassControl& grass) {
     // System Overview
-    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.5f, 0.9f, 0.5f, 1.0f));
-    ImGui::Text("GRASS SYSTEM");
-    ImGui::PopStyleColor();
-    ImGui::Separator();
+    GuiStyle::sectionHeader("GRASS SYSTEM");
 
     ImGui::TextDisabled("Continuous stochastic culling - no discrete LOD levels");
 
@@ -17,10 +15,7 @@ void GuiGrassTab::render(IGrassControl& grass) {
     ImGui::Separator();
 
     // Statistics section
-    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.5f, 0.8f, 1.0f, 1.0f));
-    ImGui::Text("STATISTICS");
-    ImGui::PopStyleColor();
-    ImGui::Separator();
+    GuiStyle::sectionHeader("STATISTICS");
 
     // Fixed 5x5 tile dispatch around camera (not using tile manager)
     constexpr uint32_t TILES_PER_AXIS = 5;
@@ -51,10 +46,7 @@ void GuiGrassTab::render(IGrassControl& grass) {
     ImGui::Separator();
 
     // Culling Parameters
-    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.9f, 0.7f, 0.5f, 1.0f));
-    ImGui::Text("CULLING DISTANCES");
-    ImGui::PopStyleColor();
-    ImGui::Separator();
+    GuiStyle::sectionHeader("CULLING DISTANCES");
 
     ImGui::Text("Full Density: < %.0fm", GrassConstants::CULL_START_DISTANCE);
     ImGui::Text("Fade to Zero: %.0fm - %.0fm",
@@ -87,10 +79,7 @@ void GuiGrassTab::render(IGrassControl& grass) {
     ImGui::Separator();
 
     // Tile Configuration
-    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.8f, 0.8f, 0.5f, 1.0f));
-    ImGui::Text("TILE CONFIGURATION");
-    ImGui::PopStyleColor();
-    ImGui::Separator();
+    GuiStyle::sectionHeader("TILE CONFIGURATION");
 
     ImGui::Text("Grid Size: %u x %u per tile", GrassConstants::TILE_GRID_SIZE, GrassConstants::TILE_GRID_SIZE);
     ImGui::Text("Tile Size: %.1fm x %.1fm", GrassConstants::TILE_SIZE, GrassConstants::TILE_SIZE);
@@ -101,10 +90,7 @@ void GuiGrassTab::render(IGrassControl& grass) {
     ImGui::Separator();
 
     // Debug Visualization section
-    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.6f, 0.6f, 1.0f));
-    ImGui::Text("DEBUG");
-    ImGui::PopStyleColor();
-    ImGui::Separator();
+    GuiStyle::sectionHeader("DEBUG");
 
     bool debugEnabled = grass.isDebugVisualizationEnabled();
     if (ImGui::Checkbox("Enable Debug Overlay", &debugEnabled)) {

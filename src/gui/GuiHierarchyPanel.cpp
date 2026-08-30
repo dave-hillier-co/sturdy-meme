@@ -1,4 +1,5 @@
 #include "GuiHierarchyPanel.h"
+#include "GuiStyle.h"
 #include "core/interfaces/ISceneControl.h"
 #include "scene/SceneBuilder.h"
 #include "ecs/World.h"
@@ -285,9 +286,7 @@ void GuiHierarchyPanel::render(ISceneControl& sceneControl, SceneEditorState& st
     ecs::World* world = sceneControl.getECSWorld();
 
     // Header
-    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.5f, 0.9f, 0.5f, 1.0f));
-    ImGui::Text("HIERARCHY");
-    ImGui::PopStyleColor();
+    GuiStyle::sectionHeader("HIERARCHY");
 
     if (!world) {
         ImGui::TextDisabled("ECS World not available");

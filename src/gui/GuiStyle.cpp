@@ -2,6 +2,12 @@
 
 #include <imgui.h>
 
+void GuiStyle::sectionHeader(const char* label) {
+    ImGui::PushStyleColor(ImGuiCol_Text, kHeaderAccent);
+    ImGui::SeparatorText(label);
+    ImGui::PopStyleColor();
+}
+
 void GuiStyle::apply() {
     ImGuiStyle& style = ImGui::GetStyle();
     ImVec4* colors = style.Colors;

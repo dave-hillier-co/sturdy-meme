@@ -40,7 +40,6 @@ struct SceneEditorState {
 
     // Drag state for hierarchy reparenting
     ecs::Entity draggedEntity = ecs::NullEntity;
-    ecs::Entity dropTargetEntity = ecs::NullEntity;
 
     // Entity creation state
     bool showCreateEntityPopup = false;

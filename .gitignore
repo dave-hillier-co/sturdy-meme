@@ -56,3 +56,6 @@ assets/textures/downloads
 
 # Local convenience symlink to assets/textures for running from the repo root
 /textures
+
+# ImGui window layout (written next to the executable / working directory at runtime)
+imgui_layout.ini

@@ -6,6 +6,7 @@
 #include <glm/glm.hpp>
 #include <string>
 #include <memory>
+#include <vector>
 
 #include "GuiIKTab.h"
 #include "GuiPlayerTab.h"
@@ -14,9 +15,11 @@
 #include "GuiTileLoaderTab.h"
 #include "GuiDashboard.h"
 #include "GuiInterfaces.h"
+#include "GuiPanelRegistry.h"
 #include "SceneEditorState.h"
 
 class Camera;
+typedef unsigned int ImGuiID;
 
 class GuiSystem {
 public:
@@ -52,17 +55,9 @@ public:
     void toggleVisibility() { visible = !visible; }
     void setVisible(bool v) { visible = v; }
 
-    // Get IK debug settings for external systems
-    IKDebugSettings& getIKDebugSettings() { return ikDebugSettings; }
-    const IKDebugSettings& getIKDebugSettings() const { return ikDebugSettings; }
-
     // Get player settings for external systems
     PlayerSettings& getPlayerSettings() { return playerSettings; }
     const PlayerSettings& getPlayerSettings() const { return playerSettings; }
-
-    // Get scene editor state for external systems
-    SceneEditorState& getSceneEditorState() { return sceneEditorState; }
-    const SceneEditorState& getSceneEditorState() const { return sceneEditorState; }
 
     // Check if gizmo is being used (for input blocking)
     bool isGizmoActive() const;
@@ -73,25 +68,9 @@ private:
                       vk::RenderPass renderPass, uint32_t imageCount);
     void cleanup();
 
+    void buildPanelRegistry();
     void renderMainMenuBar();
-    void renderDashboard(GuiInterfaces& interfaces, const Camera& camera, float deltaTime, float fps);
-    void renderPositionPanel(const Camera& camera);
-    void renderTimeWindow(GuiInterfaces& ui);
-    void renderWeatherWindow(GuiInterfaces& ui);
-    void renderEnvironmentWindow(GuiInterfaces& ui);
-    void renderPostFXWindow(GuiInterfaces& ui);
-    void renderTerrainWindow(GuiInterfaces& ui);
-    void renderWaterWindow(GuiInterfaces& ui);
-    void renderTreesWindow(GuiInterfaces& ui);
-    void renderGrassWindow(GuiInterfaces& ui);
-    void renderPlayerWindow(GuiInterfaces& ui);
-    void renderIKWindow(GuiInterfaces& ui, const Camera& camera);
-    void renderDebugWindow(GuiInterfaces& ui);
-    void renderPerformanceWindow(GuiInterfaces& ui);
-    void renderProfilerWindow(GuiInterfaces& ui);
-    void renderTileLoaderWindow(GuiInterfaces& ui, const Camera& camera);
-    void renderSceneGraphWindow(GuiInterfaces& ui);
-    void renderSceneEditorWindow(GuiInterfaces& ui);
+    void applyDefaultDockLayout(ImGuiID dockspaceId);
 
     vk::Device device_ = VK_NULL_HANDLE;  // Stored for cleanup
     vk::DescriptorPool imguiPool = VK_NULL_HANDLE;
@@ -109,7 +88,7 @@ private:
     // Scene graph tab state
     SceneGraphTabState sceneGraphTabState;
 
-    // Scene editor state (Unity-like hierarchy + inspector)
+    // Scene editor state (hierarchy + inspector + gizmo)
     SceneEditorState sceneEditorState;
 
     // Dashboard state (frame time tracking)
@@ -118,30 +97,15 @@ private:
     // Tile loader state
     GuiTileLoaderTab::State tileLoaderState;
 
-    // Window visibility states for menu-based UI
-    struct WindowStates {
-        bool showDashboard = true;
-        bool showPosition = true;
-        bool showTime = false;
-        bool showWeather = false;
-        bool showEnvironment = false;
-        bool showPostFX = false;
-        bool showTerrain = false;
-        bool showWater = false;
-        bool showTrees = false;
-        bool showGrass = false;
-        bool showPlayer = false;
-        bool showIK = false;
-        bool showDebug = false;
-        bool showPerformance = false;
-        bool showProfiler = false;
-        bool showTileLoader = false;
-        bool showSceneGraph = false;
-        bool showSceneEditor = false;  // Unity-like scene editor
-        bool showHierarchy = false;     // ECS hierarchy panel (independent dockable window)
-        bool showInspector = false;     // Entity inspector panel (independent dockable window)
-    } windowStates;
+    // Panel registry: one entry per menu-toggleable debug panel
+    std::vector<PanelDesc> panels_;
 
-    // Track whether the default dock layout has been applied
+    // Special-cased dockable editor panels (inline handling + gizmo)
+    bool showHierarchy_ = false;
+    bool showInspector_ = false;
+
+    // Layout persistence: stable ini path (ImGui keeps the pointer)
+    std::string iniFilePath_;
+    bool applyDefaultLayout_ = false;   // true when no ini existed at startup
     bool dockLayoutInitialized_ = false;
 };

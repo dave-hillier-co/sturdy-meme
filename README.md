@@ -90,7 +90,8 @@ The game supports two camera modes: **Free Camera** and **Third Person**. Press 
 | 4 | Set time to midnight |
 | + | Speed up time (2x) |
 | - | Slow down time (0.5x) |
-| R | Reset to real-time |
+| R | Resume auto time (real-time) |
+| G | Spawn ragdoll |
 | 6 | Toggle cascade debug visualization |
 | 7 | Toggle snow depth debug visualization |
 | 8 | Toggle Hi-Z occlusion culling |
@@ -107,6 +108,8 @@ The game supports two camera modes: **Free Camera** and **Third Person**. Press 
 | . | Increase snow amount |
 | / | Toggle snow (0.0 ↔ 1.0) |
 | T | Toggle terrain wireframe |
+
+Global debug shortcuts are defined in a single command table (`src/controls/DebugCommands.h`, built in `Application::buildDebugCommands`). The in-app cheatsheet (Debug tab, F1 to open the GUI) is generated from that table, so it is always current.
 
 ### Keyboard - Free Camera Mode
 

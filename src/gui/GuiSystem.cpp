@@ -257,7 +257,7 @@ void GuiSystem::buildPanelRegistry() {
     // Debug
     panels_.push_back({"Debug Visualizations", MenuCategory::Debug,
         [](const GuiFrameContext& ctx) {
-            GuiDebugTab::render(ctx.interfaces.debug);
+            GuiDebugTab::render(ctx.interfaces.debug, ctx.interfaces.debugCommands);
         }});
     panels_.push_back({"Performance Toggles", MenuCategory::Debug,
         [](const GuiFrameContext& ctx) {

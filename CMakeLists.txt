@@ -67,6 +67,7 @@ set(SOURCES
     # Note: Some systems implement their interfaces directly (CelestialCalculator -> ILocationControl,
     #       TerrainSystem -> ITerrainControl, Profiler -> IProfilerControl, WeatherSystem -> IWeatherState,
     #       PostProcessSystem -> IPostProcessState, CloudShadowSystem -> ICloudShadowControl)
+    src/controls/DebugCommands.cpp
     src/controls/EnvironmentControlSubsystem.cpp
     src/controls/WaterControlSubsystem.cpp
     src/controls/TreeControlSubsystem.cpp

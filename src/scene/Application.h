@@ -30,6 +30,7 @@
 #include "world/TownLinearFeatures.h"
 #include "world/BridgeDeckGenerator.h"
 #include "terrain/RoadNetworkLoader.h"
+#include "controls/DebugCommands.h"
 
 class SceneBuilder;
 
@@ -62,6 +63,8 @@ private:
     void initECS();
     void updateECS(float deltaTime);
     void spawnRagdoll();
+    void buildDebugCommands();
+    void runTerrainHeightDiagnostic();
     void teleportTo(float worldX, float worldZ);
     void stepSettlementGeneration();
     void stepWorldFeatureGeneration();
@@ -101,6 +104,10 @@ private:
 
     // Input system
     InputSystem input;
+
+    // Debug keybinding command table (built once at init, dispatched from
+    // processEvents, rendered as the GUI cheatsheet)
+    std::vector<DebugCommand> debugCommands_;
 
     // Breadcrumb tracker for fast respawn (Ghost of Tsushima optimization)
     // Tracks safe player positions so respawns load most content from cache

@@ -848,7 +848,231 @@ bool Application::setupWorld(std::future<std::optional<PhysicsWorld>> physicsFut
     return true;
 }
 
+void Application::buildDebugCommands() {
+    debugCommands_.clear();
+    auto& sys = renderer_->getSystems();
+
+    // Application
+    debugCommands_.push_back({"app.quit", "Quit", "Application", SDL_SCANCODE_ESCAPE,
+        [this] { running = false; }});
+    debugCommands_.push_back({"app.toggleGui", "Toggle GUI", "Application", SDL_SCANCODE_F1,
+        [this] { gui_->toggleVisibility(); }});
+
+    // Time
+    debugCommands_.push_back({"time.sunrise", "Set time to sunrise", "Time", SDL_SCANCODE_1,
+        [&sys] { sys.time().setTimeOfDay(0.25f); }});
+    debugCommands_.push_back({"time.noon", "Set time to noon", "Time", SDL_SCANCODE_2,
+        [&sys] { sys.time().setTimeOfDay(0.5f); }});
+    debugCommands_.push_back({"time.sunset", "Set time to sunset", "Time", SDL_SCANCODE_3,
+        [&sys] { sys.time().setTimeOfDay(0.75f); }});
+    debugCommands_.push_back({"time.midnight", "Set time to midnight", "Time", SDL_SCANCODE_4,
+        [&sys] { sys.time().setTimeOfDay(0.0f); }});
+    debugCommands_.push_back({"time.faster", "Speed up time (2x)", "Time", SDL_SCANCODE_EQUALS,
+        [&sys] { sys.time().setTimeScale(sys.time().getTimeScale() * 2.0f); }});
+    debugCommands_.push_back({"time.slower", "Slow down time (0.5x)", "Time", SDL_SCANCODE_MINUS,
+        [&sys] { sys.time().setTimeScale(sys.time().getTimeScale() * 0.5f); }});
+    debugCommands_.push_back({"time.resume", "Resume auto time (real-time)", "Time", SDL_SCANCODE_R,
+        [&sys] {
+            sys.time().resumeAutoTime();
+            sys.time().setTimeScale(1.0f);
+        }});
+
+    // Weather
+    debugCommands_.push_back({"weather.intensityDown", "Decrease weather intensity", "Weather", SDL_SCANCODE_Z,
+        [&sys] {
+            float currentIntensity = sys.weatherState().getIntensity();
+            sys.weatherState().setIntensity(std::max(0.0f, currentIntensity - 0.1f));
+            SDL_Log("Weather intensity: %.1f", sys.weatherState().getIntensity());
+        }});
+    debugCommands_.push_back({"weather.intensityUp", "Increase weather intensity", "Weather", SDL_SCANCODE_X,
+        [&sys] {
+            float currentIntensity = sys.weatherState().getIntensity();
+            sys.weatherState().setIntensity(std::min(1.0f, currentIntensity + 0.1f));
+            SDL_Log("Weather intensity: %.1f", sys.weatherState().getIntensity());
+        }});
+    debugCommands_.push_back({"weather.cycle", "Cycle weather (Clear/Rain/Snow)", "Weather", SDL_SCANCODE_C,
+        [&sys] {
+            uint32_t currentType = sys.weatherState().getWeatherType();
+            if (sys.weatherState().getIntensity() == 0.0f && currentType == 0) {
+                sys.weatherState().setWeatherType(0);
+                sys.weatherState().setIntensity(0.5f);
+            } else if (currentType == 0) {
+                sys.weatherState().setWeatherType(1);
+                sys.weatherState().setIntensity(0.5f);
+            } else if (currentType == 1) {
+                sys.weatherState().setWeatherType(0);
+                sys.weatherState().setIntensity(0.0f);
+            }
+
+            std::string weatherStatus = "Clear";
+            if (sys.weatherState().getIntensity() > 0.0f) {
+                if (sys.weatherState().getWeatherType() == 0) {
+                    weatherStatus = "Rain";
+                } else if (sys.weatherState().getWeatherType() == 1) {
+                    weatherStatus = "Snow";
+                }
+            }
+            SDL_Log("Weather type: %s, Intensity: %.1f", weatherStatus.c_str(), sys.weatherState().getIntensity());
+        }});
+    debugCommands_.push_back({"weather.snowDown", "Decrease snow amount", "Weather", SDL_SCANCODE_COMMA,
+        [&sys] {
+            float snow = sys.environmentSettings().snowAmount;
+            sys.environmentSettings().snowAmount = std::max(0.0f, snow - 0.1f);
+            SDL_Log("Snow amount: %.1f", sys.environmentSettings().snowAmount);
+        }});
+    debugCommands_.push_back({"weather.snowUp", "Increase snow amount", "Weather", SDL_SCANCODE_PERIOD,
+        [&sys] {
+            float snow = sys.environmentSettings().snowAmount;
+            sys.environmentSettings().snowAmount = std::min(1.0f, snow + 0.1f);
+            SDL_Log("Snow amount: %.1f", sys.environmentSettings().snowAmount);
+        }});
+    debugCommands_.push_back({"weather.snowToggle", "Toggle snow (0.0/1.0)", "Weather", SDL_SCANCODE_SLASH,
+        [&sys] {
+            float snow = sys.environmentSettings().snowAmount;
+            sys.environmentSettings().snowAmount = (snow < 0.5f ? 1.0f : 0.0f);
+            SDL_Log("Snow amount: %.1f", sys.environmentSettings().snowAmount);
+        }});
+
+    // Environment
+    debugCommands_.push_back({"env.cloudStyle", "Toggle cloud style", "Environment", SDL_SCANCODE_V,
+        [&sys] {
+            sys.environmentControl().toggleCloudStyle();
+            SDL_Log("Cloud style: %s", sys.environmentControl().isUsingParaboloidClouds() ? "Paraboloid LUT Hybrid" : "Procedural");
+        }});
+    debugCommands_.push_back({"env.fogDown", "Decrease fog density", "Environment", SDL_SCANCODE_LEFTBRACKET,
+        [&sys] {
+            float density = sys.environmentControl().getFogDensity();
+            sys.environmentControl().setFogDensity(std::max(0.0f, density - 0.0025f));
+            SDL_Log("Fog density: %.3f", sys.environmentControl().getFogDensity());
+        }});
+    debugCommands_.push_back({"env.fogUp", "Increase fog density", "Environment", SDL_SCANCODE_RIGHTBRACKET,
+        [&sys] {
+            float density = sys.environmentControl().getFogDensity();
+            sys.environmentControl().setFogDensity(std::min(0.2f, density + 0.0025f));
+            SDL_Log("Fog density: %.3f", sys.environmentControl().getFogDensity());
+        }});
+    debugCommands_.push_back({"env.fogToggle", "Toggle fog", "Environment", SDL_SCANCODE_BACKSLASH,
+        [&sys] {
+            sys.environmentControl().setFogEnabled(!sys.environmentControl().isFogEnabled());
+            SDL_Log("Fog: %s", sys.environmentControl().isFogEnabled() ? "ON" : "OFF");
+        }});
+    debugCommands_.push_back({"env.confetti", "Spawn confetti at player", "Environment", SDL_SCANCODE_F,
+        [this, &sys] {
+            glm::vec3 playerPos = player_.transform.position;
+            sys.environmentControl().spawnConfetti(playerPos, 8.0f, 100.0f, 0.5f);
+            SDL_Log("Confetti!");
+        }});
+
+    // Physics
+    debugCommands_.push_back({"physics.spawnRagdoll", "Spawn ragdoll", "Physics", SDL_SCANCODE_G,
+        [this] { spawnRagdoll(); }});
+
+    // Debug visualization
+    debugCommands_.push_back({"debug.cascades", "Toggle cascade debug visualization", "Debug", SDL_SCANCODE_6,
+        [&sys] {
+            sys.debugControl().toggleCascadeDebug();
+            SDL_Log("Cascade debug visualization: %s", sys.debugControl().isShowingCascadeDebug() ? "ON" : "OFF");
+        }});
+    debugCommands_.push_back({"debug.snowDepth", "Toggle snow depth debug visualization", "Debug", SDL_SCANCODE_7,
+        [&sys] {
+            sys.debugControl().toggleSnowDepthDebug();
+            SDL_Log("Snow depth debug visualization: %s", sys.debugControl().isShowingSnowDepthDebug() ? "ON" : "OFF");
+        }});
+    debugCommands_.push_back({"debug.hiZ", "Toggle Hi-Z occlusion culling", "Debug", SDL_SCANCODE_8,
+        [&sys] {
+            sys.debugControl().setHiZCullingEnabled(!sys.debugControl().isHiZCullingEnabled());
+            SDL_Log("Hi-Z occlusion culling: %s", sys.debugControl().isHiZCullingEnabled() ? "ON" : "OFF");
+        }});
+    debugCommands_.push_back({"debug.terrainHeight", "Terrain height diagnostic", "Debug", SDL_SCANCODE_9,
+        [this] { runTerrainHeightDiagnostic(); }});
+
+    // Terrain
+    debugCommands_.push_back({"terrain.wireframe", "Toggle terrain wireframe", "Terrain", SDL_SCANCODE_T,
+        [&sys] {
+            sys.terrainControl().toggleTerrainWireframe();
+            SDL_Log("Terrain wireframe: %s", sys.terrainControl().isTerrainWireframeMode() ? "ON" : "OFF");
+        }});
+}
+
+void Application::runTerrainHeightDiagnostic() {
+    // Terrain height diagnostic - compare CPU height vs physics raycast
+    // Samples on a grid at integer positions (should align with physics samples)
+    auto& sys = renderer_->getSystems();
+    auto& debugLines = sys.debugControl().getDebugLineSystem();
+    debugLines.clearPersistentLines();
+
+    // Use scene origin (where objects are placed) as center for diagnostic
+    // Scene is at Town 1: settlement coords (11000, 5200) -> world coords (2808, -2992)
+    const float halfTerrain = 8192.0f;
+    float centerX = 11000.0f - halfTerrain;
+    float centerZ = 5200.0f - halfTerrain;
+
+    int gridSize = 5;  // 5x5 grid of samples at 1m spacing
+    float rayStartY = 500.0f;
+
+    SDL_Log("=== Terrain Height Diagnostic (center=%.0f,%.0f grid=%dx%d) ===",
+            centerX, centerZ, gridSize, gridSize);
+    SDL_Log("Format: (x,z) cpu=H phys=H diff=D [tile info] hits=N");
+
+    for (int gz = -gridSize/2; gz <= gridSize/2; gz++) {
+        for (int gx = -gridSize/2; gx <= gridSize/2; gx++) {
+            float x = centerX + gx;
+            float z = centerZ + gz;
+
+            // CPU height with debug info
+            auto cpuInfo = sys.terrain().getHeightAtDebug(x, z);
+            float cpuH = cpuInfo.height;
+
+            // Physics height via raycast - get ALL hits to see overlapping tiles
+            glm::vec3 rayFrom(x, rayStartY, z);
+            glm::vec3 rayTo(x, -100.0f, z);
+            auto hits = physics().castRayAllHits(rayFrom, rayTo);
+
+            // Sort by Y to get highest hit
+            float physicsH = cpuH;  // Default if no hit
+            bool hasPhysicsHit = false;
+            size_t numHits = hits.size();
+
+            // Log all hits if multiple (indicates overlapping tiles)
+            if (numHits > 1) {
+                SDL_Log("  (%.0f, %.0f) MULTIPLE HITS (%zu):", x, z, numHits);
+                for (size_t i = 0; i < numHits; i++) {
+                    SDL_Log("    hit[%zu] y=%.3f bodyId=%u",
+                            i, hits[i].position.y, hits[i].bodyId);
+                }
+            }
+
+            for (const auto& hit : hits) {
+                if (hit.hit && hit.position.y > physicsH - 50.0f) {
+                    physicsH = hit.position.y;
+                    hasPhysicsHit = true;
+                    break;
+                }
+            }
+
+            float diff = physicsH - cpuH;
+            SDL_Log("  (%.0f, %.0f) cpu=%.3f phys=%.3f diff=%.4f [%s LOD%u tile(%d,%d)] hits=%zu%s",
+                    x, z, cpuH, physicsH, diff,
+                    cpuInfo.source, cpuInfo.lod, cpuInfo.tileX, cpuInfo.tileZ,
+                    numHits, hasPhysicsHit ? "" : " (no hit)");
+
+            // Add debug sphere at CPU height (green)
+            debugLines.addSphere(glm::vec3(x, cpuH, z), 0.3f, glm::vec4(0.0f, 1.0f, 0.0f, 1.0f), 8);
+
+            // Add debug sphere at physics height (red) - only if different
+            if (std::abs(diff) > 0.001f && hasPhysicsHit) {
+                debugLines.addSphere(glm::vec3(x, physicsH, z), 0.25f, glm::vec4(1.0f, 0.0f, 0.0f, 1.0f), 8);
+            }
+        }
+    }
+
+    SDL_Log("=== End Diagnostic (Green=CPU, Red=Physics) ===");
+    SDL_Log("Press 9 again to re-run, spheres visible in debug mode");
+}
+
 void Application::run() {
+    buildDebugCommands();
+
     auto lastTime = std::chrono::high_resolution_clock::now();
     float smoothedFps = 60.0f;
 
@@ -865,29 +1089,7 @@ void Application::run() {
 
         processEvents();
 
-        // Begin GUI frame
-        gui_->beginFrame();
         auto& systems = renderer_->getSystems();
-        GuiInterfaces guiInterfaces{
-            systems.time(),
-            systems.locationControl(),
-            systems.weatherState(),
-            systems.environmentControl(),
-            systems.postProcessState(),
-            systems.cloudShadowControl(),
-            systems.terrainControl(),
-            systems.waterControl(),
-            systems.treeControl(),
-            systems.grassControl(),
-            systems.debugControl(),
-            systems.profilerControl(),
-            systems.performanceControl(),
-            systems.sceneControl(),
-            systems.playerControl(),
-            systems.environmentSettings(),
-            &physicsTerrainManager_
-        };
-        gui_->render(guiInterfaces, camera, lastDeltaTime, currentFps);
 
         // Update input system
         input.update(deltaTime, camera.getForward());
@@ -1167,6 +1369,33 @@ void Application::run() {
 
         camera.setAspectRatio(static_cast<float>(renderer_->getWidth()) / static_cast<float>(renderer_->getHeight()));
 
+        // Build the GUI after input and simulation so panels show this frame's
+        // state rather than one-frame-stale data. beginFrame starts the ImGui
+        // frame; renderer_->render() ends it via the draw callback, and
+        // cancelFrame handles skipped frames below.
+        gui_->beginFrame();
+        GuiInterfaces guiInterfaces{
+            systems.time(),
+            systems.locationControl(),
+            systems.weatherState(),
+            systems.environmentControl(),
+            systems.postProcessState(),
+            systems.cloudShadowControl(),
+            systems.terrainControl(),
+            systems.waterControl(),
+            systems.treeControl(),
+            systems.grassControl(),
+            systems.debugControl(),
+            systems.profilerControl(),
+            systems.performanceControl(),
+            systems.sceneControl(),
+            systems.playerControl(),
+            systems.environmentSettings(),
+            &physicsTerrainManager_,
+            &debugCommands_
+        };
+        gui_->render(guiInterfaces, camera, lastDeltaTime, currentFps);
+
         // Update physics debug visualization (before render)
 #ifdef JPH_DEBUG_RENDERER
         renderer_->updatePhysicsDebug(physics(), camera.getPosition());
@@ -1264,202 +1493,9 @@ void Application::processEvents() {
                     renderer_->notifyWindowRestored();
                 }
                 break;
-            case SDL_EVENT_KEY_DOWN: {
-                auto& sys = renderer_->getSystems();
-                if (event.key.scancode == SDL_SCANCODE_ESCAPE) {
-                    running = false;
-                }
-                else if (event.key.scancode == SDL_SCANCODE_F1) {
-                    gui_->toggleVisibility();
-                }
-                else if (event.key.scancode == SDL_SCANCODE_1) {
-                    sys.time().setTimeOfDay(0.25f);
-                }
-                else if (event.key.scancode == SDL_SCANCODE_2) {
-                    sys.time().setTimeOfDay(0.5f);
-                }
-                else if (event.key.scancode == SDL_SCANCODE_3) {
-                    sys.time().setTimeOfDay(0.75f);
-                }
-                else if (event.key.scancode == SDL_SCANCODE_4) {
-                    sys.time().setTimeOfDay(0.0f);
-                }
-                else if (event.key.scancode == SDL_SCANCODE_EQUALS) {
-                    sys.time().setTimeScale(sys.time().getTimeScale() * 2.0f);
-                }
-                else if (event.key.scancode == SDL_SCANCODE_MINUS) {
-                    sys.time().setTimeScale(sys.time().getTimeScale() * 0.5f);
-                }
-                else if (event.key.scancode == SDL_SCANCODE_R) {
-                    sys.time().resumeAutoTime();
-                    sys.time().setTimeScale(1.0f);
-                }
-                else if (event.key.scancode == SDL_SCANCODE_6) {
-                    sys.debugControl().toggleCascadeDebug();
-                    SDL_Log("Cascade debug visualization: %s", sys.debugControl().isShowingCascadeDebug() ? "ON" : "OFF");
-                }
-                else if (event.key.scancode == SDL_SCANCODE_7) {
-                    sys.debugControl().toggleSnowDepthDebug();
-                    SDL_Log("Snow depth debug visualization: %s", sys.debugControl().isShowingSnowDepthDebug() ? "ON" : "OFF");
-                }
-                else if (event.key.scancode == SDL_SCANCODE_8) {
-                    sys.debugControl().setHiZCullingEnabled(!sys.debugControl().isHiZCullingEnabled());
-                    SDL_Log("Hi-Z occlusion culling: %s", sys.debugControl().isHiZCullingEnabled() ? "ON" : "OFF");
-                }
-                else if (event.key.scancode == SDL_SCANCODE_Z) {
-                    float currentIntensity = sys.weatherState().getIntensity();
-                    sys.weatherState().setIntensity(std::max(0.0f, currentIntensity - 0.1f));
-                    SDL_Log("Weather intensity: %.1f", sys.weatherState().getIntensity());
-                }
-                else if (event.key.scancode == SDL_SCANCODE_X) {
-                    float currentIntensity = sys.weatherState().getIntensity();
-                    sys.weatherState().setIntensity(std::min(1.0f, currentIntensity + 0.1f));
-                    SDL_Log("Weather intensity: %.1f", sys.weatherState().getIntensity());
-                }
-                else if (event.key.scancode == SDL_SCANCODE_C) {
-                    uint32_t currentType = sys.weatherState().getWeatherType();
-                    if (sys.weatherState().getIntensity() == 0.0f && currentType == 0) {
-                        sys.weatherState().setWeatherType(0);
-                        sys.weatherState().setIntensity(0.5f);
-                    } else if (currentType == 0) {
-                        sys.weatherState().setWeatherType(1);
-                        sys.weatherState().setIntensity(0.5f);
-                    } else if (currentType == 1) {
-                        sys.weatherState().setWeatherType(0);
-                        sys.weatherState().setIntensity(0.0f);
-                    }
-
-                    std::string weatherStatus = "Clear";
-                    if (sys.weatherState().getIntensity() > 0.0f) {
-                        if (sys.weatherState().getWeatherType() == 0) {
-                            weatherStatus = "Rain";
-                        } else if (sys.weatherState().getWeatherType() == 1) {
-                            weatherStatus = "Snow";
-                        }
-                    }
-                    SDL_Log("Weather type: %s, Intensity: %.1f", weatherStatus.c_str(), sys.weatherState().getIntensity());
-                }
-                else if (event.key.scancode == SDL_SCANCODE_F) {
-                    glm::vec3 playerPos = player_.transform.position;
-                    sys.environmentControl().spawnConfetti(playerPos, 8.0f, 100.0f, 0.5f);
-                    SDL_Log("Confetti!");
-                }
-                else if (event.key.scancode == SDL_SCANCODE_R) {
-                    spawnRagdoll();
-                }
-                else if (event.key.scancode == SDL_SCANCODE_V) {
-                    sys.environmentControl().toggleCloudStyle();
-                    SDL_Log("Cloud style: %s", sys.environmentControl().isUsingParaboloidClouds() ? "Paraboloid LUT Hybrid" : "Procedural");
-                }
-                else if (event.key.scancode == SDL_SCANCODE_LEFTBRACKET) {
-                    float density = sys.environmentControl().getFogDensity();
-                    sys.environmentControl().setFogDensity(std::max(0.0f, density - 0.0025f));
-                    SDL_Log("Fog density: %.3f", sys.environmentControl().getFogDensity());
-                }
-                else if (event.key.scancode == SDL_SCANCODE_RIGHTBRACKET) {
-                    float density = sys.environmentControl().getFogDensity();
-                    sys.environmentControl().setFogDensity(std::min(0.2f, density + 0.0025f));
-                    SDL_Log("Fog density: %.3f", sys.environmentControl().getFogDensity());
-                }
-                else if (event.key.scancode == SDL_SCANCODE_BACKSLASH) {
-                    sys.environmentControl().setFogEnabled(!sys.environmentControl().isFogEnabled());
-                    SDL_Log("Fog: %s", sys.environmentControl().isFogEnabled() ? "ON" : "OFF");
-                }
-                else if (event.key.scancode == SDL_SCANCODE_COMMA) {
-                    float snow = sys.environmentSettings().snowAmount;
-                    sys.environmentSettings().snowAmount = std::max(0.0f, snow - 0.1f);
-                    SDL_Log("Snow amount: %.1f", sys.environmentSettings().snowAmount);
-                }
-                else if (event.key.scancode == SDL_SCANCODE_PERIOD) {
-                    float snow = sys.environmentSettings().snowAmount;
-                    sys.environmentSettings().snowAmount = std::min(1.0f, snow + 0.1f);
-                    SDL_Log("Snow amount: %.1f", sys.environmentSettings().snowAmount);
-                }
-                else if (event.key.scancode == SDL_SCANCODE_SLASH) {
-                    float snow = sys.environmentSettings().snowAmount;
-                    sys.environmentSettings().snowAmount = (snow < 0.5f ? 1.0f : 0.0f);
-                    SDL_Log("Snow amount: %.1f", sys.environmentSettings().snowAmount);
-                }
-                else if (event.key.scancode == SDL_SCANCODE_T) {
-                    sys.terrainControl().toggleTerrainWireframe();
-                    SDL_Log("Terrain wireframe: %s", sys.terrainControl().isTerrainWireframeMode() ? "ON" : "OFF");
-                }
-                else if (event.key.scancode == SDL_SCANCODE_9) {
-                    // Terrain height diagnostic - compare CPU height vs physics raycast
-                    // Samples on a grid at integer positions (should align with physics samples)
-                    auto& debugLines = sys.debugControl().getDebugLineSystem();
-                    debugLines.clearPersistentLines();
-
-                    // Use scene origin (where objects are placed) as center for diagnostic
-                    // Scene is at Town 1: settlement coords (11000, 5200) -> world coords (2808, -2992)
-                    const float halfTerrain = 8192.0f;
-                    float centerX = 11000.0f - halfTerrain;
-                    float centerZ = 5200.0f - halfTerrain;
-
-                    int gridSize = 5;  // 5x5 grid of samples at 1m spacing
-                    float rayStartY = 500.0f;
-
-                    SDL_Log("=== Terrain Height Diagnostic (center=%.0f,%.0f grid=%dx%d) ===",
-                            centerX, centerZ, gridSize, gridSize);
-                    SDL_Log("Format: (x,z) cpu=H phys=H diff=D [tile info] hits=N");
-
-                    for (int gz = -gridSize/2; gz <= gridSize/2; gz++) {
-                        for (int gx = -gridSize/2; gx <= gridSize/2; gx++) {
-                            float x = centerX + gx;
-                            float z = centerZ + gz;
-
-                            // CPU height with debug info
-                            auto cpuInfo = sys.terrain().getHeightAtDebug(x, z);
-                            float cpuH = cpuInfo.height;
-
-                            // Physics height via raycast - get ALL hits to see overlapping tiles
-                            glm::vec3 rayFrom(x, rayStartY, z);
-                            glm::vec3 rayTo(x, -100.0f, z);
-                            auto hits = physics().castRayAllHits(rayFrom, rayTo);
-
-                            // Sort by Y to get highest hit
-                            float physicsH = cpuH;  // Default if no hit
-                            bool hasPhysicsHit = false;
-                            size_t numHits = hits.size();
-
-                            // Log all hits if multiple (indicates overlapping tiles)
-                            if (numHits > 1) {
-                                SDL_Log("  (%.0f, %.0f) MULTIPLE HITS (%zu):", x, z, numHits);
-                                for (size_t i = 0; i < numHits; i++) {
-                                    SDL_Log("    hit[%zu] y=%.3f bodyId=%u",
-                                            i, hits[i].position.y, hits[i].bodyId);
-                                }
-                            }
-
-                            for (const auto& hit : hits) {
-                                if (hit.hit && hit.position.y > physicsH - 50.0f) {
-                                    physicsH = hit.position.y;
-                                    hasPhysicsHit = true;
-                                    break;
-                                }
-                            }
-
-                            float diff = physicsH - cpuH;
-                            SDL_Log("  (%.0f, %.0f) cpu=%.3f phys=%.3f diff=%.4f [%s LOD%u tile(%d,%d)] hits=%zu%s",
-                                    x, z, cpuH, physicsH, diff,
-                                    cpuInfo.source, cpuInfo.lod, cpuInfo.tileX, cpuInfo.tileZ,
-                                    numHits, hasPhysicsHit ? "" : " (no hit)");
-
-                            // Add debug sphere at CPU height (green)
-                            debugLines.addSphere(glm::vec3(x, cpuH, z), 0.3f, glm::vec4(0.0f, 1.0f, 0.0f, 1.0f), 8);
-
-                            // Add debug sphere at physics height (red) - only if different
-                            if (std::abs(diff) > 0.001f && hasPhysicsHit) {
-                                debugLines.addSphere(glm::vec3(x, physicsH, z), 0.25f, glm::vec4(1.0f, 0.0f, 0.0f, 1.0f), 8);
-                            }
-                        }
-                    }
-
-                    SDL_Log("=== End Diagnostic (Green=CPU, Red=Physics) ===");
-                    SDL_Log("Press 9 again to re-run, spheres visible in debug mode");
-                }
+            case SDL_EVENT_KEY_DOWN:
+                DebugCommands::dispatchKey(debugCommands_, event.key.scancode);
                 break;
-            }
             case SDL_EVENT_GAMEPAD_BUTTON_DOWN: {
                 auto& time = renderer_->getSystems().time();
                 if (event.gbutton.button == SDL_GAMEPAD_BUTTON_SOUTH) {

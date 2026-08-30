@@ -122,42 +122,6 @@ bool GuiGizmo::render(const Camera& camera, ISceneControl& sceneControl, SceneEd
     return manipulated;
 }
 
-void GuiGizmo::renderViewCube(const Camera& camera, int position, float size) {
-    glm::mat4 view = camera.getViewMatrix();
-
-    // Calculate position based on corner
-    ImGuiIO& io = ImGui::GetIO();
-    float x = 0, y = 0;
-
-    switch (position) {
-        case 0: // top-left
-            x = size / 2 + 10;
-            y = size / 2 + 10;
-            break;
-        case 1: // top-right (default)
-            x = io.DisplaySize.x - size / 2 - 10;
-            y = size / 2 + 10;
-            break;
-        case 2: // bottom-left
-            x = size / 2 + 10;
-            y = io.DisplaySize.y - size / 2 - 10;
-            break;
-        case 3: // bottom-right
-            x = io.DisplaySize.x - size / 2 - 10;
-            y = io.DisplaySize.y - size / 2 - 10;
-            break;
-    }
-
-    ImGuizmo::SetDrawlist(ImGui::GetBackgroundDrawList());
-    ImGuizmo::ViewManipulate(
-        glm::value_ptr(const_cast<glm::mat4&>(view)),
-        8.0f,  // Camera distance for the cube
-        ImVec2(x - size / 2, y - size / 2),
-        ImVec2(size, size),
-        0x10101010  // Background color (transparent dark)
-    );
-}
-
 bool GuiGizmo::isOver() {
     return ImGuizmo::IsOver();
 }

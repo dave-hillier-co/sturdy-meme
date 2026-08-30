@@ -25,16 +25,6 @@ namespace GuiGizmo {
     bool render(const Camera& camera, ISceneControl& sceneControl, SceneEditorState& state);
 
     /**
-     * Render a view manipulation cube in the corner of the viewport.
-     * Allows quick camera orientation changes.
-     *
-     * @param camera The scene camera
-     * @param position Corner position (0=top-left, 1=top-right, 2=bottom-left, 3=bottom-right)
-     * @param size Size of the cube widget
-     */
-    void renderViewCube(const Camera& camera, int position = 1, float size = 100.0f);
-
-    /**
      * Check if the mouse is currently over the gizmo.
      * Use this to prevent camera controls when manipulating gizmos.
      */

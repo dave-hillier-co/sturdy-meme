@@ -1,4 +1,5 @@
 #include "GuiTreeTab.h"
+#include "GuiStyle.h"
 #include "core/interfaces/ITreeControl.h"
 #include "vegetation/TreeSystem.h"
 #include "vegetation/TreeOptions.h"
@@ -9,6 +10,36 @@
 #include "core/RendererSystems.h"
 
 #include <imgui.h>
+#include <imgui_impl_vulkan.h>
+#include <unordered_map>
+
+namespace {
+
+// Cache of ImGui preview descriptor sets, keyed by image view handle.
+// The GUI layer owns ImGui backend knowledge; the atlas only exposes its
+// vk::ImageView + vk::Sampler. Sets are allocated from ImGui's descriptor
+// pool and are reclaimed when that pool is destroyed at GUI shutdown
+// (matching the lifetime of the previous atlas-side cache, which also
+// never called ImGui_ImplVulkan_RemoveTexture).
+vk::DescriptorSet getOrCreatePreviewDescriptorSet(vk::Sampler sampler, vk::ImageView view) {
+    static std::unordered_map<VkImageView, VkDescriptorSet> cache;
+
+    if (!view || !sampler) {
+        return VK_NULL_HANDLE;
+    }
+
+    auto it = cache.find(view);
+    if (it != cache.end()) {
+        return it->second;
+    }
+
+    VkDescriptorSet set = ImGui_ImplVulkan_AddTexture(
+        sampler, view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+    cache.emplace(view, set);
+    return set;
+}
+
+} // anonymous namespace
 
 void GuiTreeTab::render(ITreeControl& treeControl) {
     auto* treeSystem = treeControl.getTreeSystem();
@@ -20,9 +51,7 @@ void GuiTreeTab::render(ITreeControl& treeControl) {
     ImGui::Spacing();
 
     // Tree selection header
-    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.6f, 0.9f, 0.6f, 1.0f));
-    ImGui::Text("TREE EDITOR");
-    ImGui::PopStyleColor();
+    GuiStyle::sectionHeader("TREE EDITOR");
 
     ImGui::Text("Trees: %zu", treeSystem->getTreeCount());
 
@@ -117,10 +146,7 @@ void GuiTreeTab::render(ITreeControl& treeControl) {
 
             // Reduced Detail LOD (LOD1) settings
             ImGui::Spacing();
-            ImGui::Separator();
-            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.5f, 0.9f, 0.7f, 1.0f));
-            ImGui::Text("Reduced Detail LOD (LOD1):");
-            ImGui::PopStyleColor();
+            GuiStyle::sectionHeader("REDUCED DETAIL LOD (LOD1)");
 
             ImGui::Checkbox("Enable LOD1", &settings.enableReducedDetailLOD);
             if (ImGui::IsItemHovered()) {
@@ -210,10 +236,7 @@ void GuiTreeTab::render(ITreeControl& treeControl) {
             }
 
             ImGui::Spacing();
-            ImGui::Separator();
-            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.6f, 0.8f, 1.0f, 1.0f));
-            ImGui::Text("Octahedral Impostor Atlas:");
-            ImGui::PopStyleColor();
+            GuiStyle::sectionHeader("OCTAHEDRAL IMPOSTOR ATLAS");
             ImGui::Checkbox("Frame Blending", &settings.enableFrameBlending);
             if (ImGui::IsItemHovered()) {
                 ImGui::SetTooltip("Blend between 3 nearest frames for smooth transitions.\n"
@@ -269,10 +292,7 @@ void GuiTreeTab::render(ITreeControl& treeControl) {
 
             // Shadow LOD Settings
             ImGui::Spacing();
-            ImGui::Separator();
-            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.8f, 0.6f, 1.0f, 1.0f));
-            ImGui::Text("Shadow LOD:");
-            ImGui::PopStyleColor();
+            GuiStyle::sectionHeader("SHADOW LOD");
 
             auto& shadowSettings = settings.shadow;
             ImGui::Checkbox("Cascade-Aware Shadows", &shadowSettings.enableCascadeLOD);
@@ -401,13 +421,12 @@ void GuiTreeTab::render(ITreeControl& treeControl) {
                         selectedArchetype = 0;
                     }
 
-                    // Get the appropriate descriptor set
-                    vk::DescriptorSet previewSet = VK_NULL_HANDLE;
-                    if (selectedTextureType == 0) {
-                        previewSet = atlas->getPreviewDescriptorSet(static_cast<uint32_t>(selectedArchetype));
-                    } else {
-                        previewSet = atlas->getNormalPreviewDescriptorSet(static_cast<uint32_t>(selectedArchetype));
-                    }
+                    // Get the appropriate atlas view and build/reuse an ImGui descriptor set
+                    vk::ImageView previewView = (selectedTextureType == 0)
+                        ? atlas->getAlbedoAtlasView(static_cast<uint32_t>(selectedArchetype))
+                        : atlas->getNormalAtlasView(static_cast<uint32_t>(selectedArchetype));
+                    vk::DescriptorSet previewSet =
+                        getOrCreatePreviewDescriptorSet(atlas->getAtlasSampler(), previewView);
 
                     if (previewSet != VK_NULL_HANDLE) {
                         ImGui::Spacing();
@@ -455,9 +474,7 @@ void GuiTreeTab::render(ITreeControl& treeControl) {
     }
 
     // Presets
-    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.9f, 0.8f, 0.5f, 1.0f));
-    ImGui::Text("PRESETS");
-    ImGui::PopStyleColor();
+    GuiStyle::sectionHeader("PRESETS");
 
     if (ImGui::Button("Oak")) { treeSystem->loadPreset("oak"); }
     ImGui::SameLine();

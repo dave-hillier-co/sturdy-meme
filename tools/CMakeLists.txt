@@ -333,6 +333,12 @@ target_compile_features(world_preview PRIVATE cxx_std_17)
 find_package(meshoptimizer CONFIG REQUIRED)
 find_package(fastgltf CONFIG REQUIRED)
 find_package(unofficial-openfbx CONFIG REQUIRED)
+# Older vcpkg openfbx ports export a typo'd target name ("unoffical"); newer ones fixed it.
+if(TARGET unofficial::openfbx::openfbx)
+    set(OPENFBX_TARGET unofficial::openfbx::openfbx)
+else()
+    set(OPENFBX_TARGET unoffical::openfbx::openfbx)
+endif()
 
 add_executable(skinned_mesh_lod
     skinned_mesh_lod/main.cpp
@@ -348,7 +354,7 @@ target_link_libraries(skinned_mesh_lod PRIVATE
     glm::glm
     meshoptimizer::meshoptimizer
     fastgltf::fastgltf
-    unoffical::openfbx::openfbx
+    ${OPENFBX_TARGET}
     nlohmann_json::nlohmann_json
 )
 

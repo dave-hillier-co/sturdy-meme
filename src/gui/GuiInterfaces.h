@@ -1,5 +1,7 @@
 #pragma once
 
+#include <vector>
+
 // Forward declarations for all GUI control interfaces
 class ITimeSystem;
 class ILocationControl;
@@ -18,6 +20,7 @@ class ISceneControl;
 class IPlayerControl;
 class PhysicsTerrainTileManager;
 struct EnvironmentSettings;
+struct DebugCommand;
 
 /**
  * GuiInterfaces - Aggregates all control interfaces needed by the GUI system.
@@ -44,4 +47,5 @@ struct GuiInterfaces {
     IPlayerControl& player;
     EnvironmentSettings& environmentSettings;
     PhysicsTerrainTileManager* physicsTerrainTiles = nullptr;  // Optional, may be null
+    const std::vector<DebugCommand>* debugCommands = nullptr;  // Optional, may be null
 };

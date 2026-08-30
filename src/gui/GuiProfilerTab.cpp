@@ -1,4 +1,5 @@
 #include "GuiProfilerTab.h"
+#include "GuiStyle.h"
 #include "GuiFlamegraph.h"
 #include "core/interfaces/IProfilerControl.h"
 #include "Profiler.h"
@@ -101,9 +102,7 @@ void GuiProfilerTab::render(IProfilerControl& profilerControl) {
     ImGui::Spacing();
 
     // GPU Profiling Section
-    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.4f, 0.8f, 1.0f, 1.0f));
-    ImGui::Text("GPU TIMING");
-    ImGui::PopStyleColor();
+    GuiStyle::sectionHeader("GPU TIMING");
 
     const auto& gpuStats = profiler.getSmoothedGpuResults();
 
@@ -134,11 +133,11 @@ void GuiProfilerTab::render(IProfilerControl& profilerControl) {
                 ImGui::TableNextColumn();
                 // Color code by percentage
                 if (zone.percentOfFrame > 30.0f) {
-                    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.4f, 0.4f, 1.0f));
+                    ImGui::PushStyleColor(ImGuiCol_Text, GuiStyle::kBad);
                 } else if (zone.percentOfFrame > 15.0f) {
-                    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.8f, 0.4f, 1.0f));
+                    ImGui::PushStyleColor(ImGuiCol_Text, GuiStyle::kWarning);
                 } else {
-                    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.4f, 1.0f, 0.4f, 1.0f));
+                    ImGui::PushStyleColor(ImGuiCol_Text, GuiStyle::kGood);
                 }
                 ImGui::Text("%.1f%%", zone.percentOfFrame);
                 ImGui::PopStyleColor();
@@ -197,9 +196,7 @@ void GuiProfilerTab::render(IProfilerControl& profilerControl) {
     ImGui::Spacing();
 
     // CPU Profiling Section
-    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.8f, 0.4f, 1.0f));
-    ImGui::Text("CPU TIMING");
-    ImGui::PopStyleColor();
+    GuiStyle::sectionHeader("CPU TIMING");
 
     const auto& cpuStats = profiler.getSmoothedCpuResults();
 
@@ -268,11 +265,11 @@ void GuiProfilerTab::render(IProfilerControl& profilerControl) {
                 if (zone.isWaitZone) {
                     ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.4f, 0.8f, 1.0f, 1.0f));
                 } else if (zone.percentOfFrame > 30.0f) {
-                    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.4f, 0.4f, 1.0f));
+                    ImGui::PushStyleColor(ImGuiCol_Text, GuiStyle::kBad);
                 } else if (zone.percentOfFrame > 15.0f) {
-                    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.8f, 0.4f, 1.0f));
+                    ImGui::PushStyleColor(ImGuiCol_Text, GuiStyle::kWarning);
                 } else {
-                    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.4f, 1.0f, 0.4f, 1.0f));
+                    ImGui::PushStyleColor(ImGuiCol_Text, GuiStyle::kGood);
                 }
                 ImGui::Text("%.1f%%", zone.percentOfFrame);
                 ImGui::PopStyleColor();
@@ -321,15 +318,13 @@ void GuiProfilerTab::render(IProfilerControl& profilerControl) {
     ImGui::Spacing();
 
     // Queue Submit Diagnostics Section
-    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.6f, 0.8f, 1.0f));
-    ImGui::Text("QUEUE SUBMIT DIAGNOSTICS");
-    ImGui::PopStyleColor();
+    GuiStyle::sectionHeader("QUEUE SUBMIT DIAGNOSTICS");
     {
         const auto& diag = profiler.getQueueSubmitDiagnostics();
 
         // Validation layer warning (most common cause of high submit time)
         if (diag.validationLayersEnabled) {
-            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.4f, 0.4f, 1.0f));
+            ImGui::PushStyleColor(ImGuiCol_Text, GuiStyle::kBad);
             ImGui::TextWrapped("WARNING: Validation layers enabled! This adds significant overhead to vkQueueSubmit.");
             ImGui::PopStyleColor();
             ImGui::Spacing();
@@ -339,12 +334,10 @@ void GuiProfilerTab::render(IProfilerControl& profilerControl) {
         ImGui::Text("Fence Status:");
         if (diag.fenceWasAlreadySignaled) {
             ImGui::SameLine();
-            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.4f, 1.0f, 0.4f, 1.0f));
-            ImGui::Text("Already signaled (GPU was idle)");
-            ImGui::PopStyleColor();
+            ImGui::TextColored(GuiStyle::kGood, "Already signaled (GPU was idle)");
         } else {
             ImGui::SameLine();
-            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.8f, 0.4f, 1.0f));
+            ImGui::PushStyleColor(ImGuiCol_Text, GuiStyle::kWarning);
             ImGui::Text("Waited %.2f ms (GPU still working)", diag.fenceWaitTimeMs);
             ImGui::PopStyleColor();
         }
@@ -362,7 +355,7 @@ void GuiProfilerTab::render(IProfilerControl& profilerControl) {
                 ImGui::Text("%s", name);
                 ImGui::TableNextColumn();
                 if (warnThreshold > 0.0f && timeMs > warnThreshold) {
-                    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.4f, 0.4f, 1.0f));
+                    ImGui::PushStyleColor(ImGuiCol_Text, GuiStyle::kBad);
                     ImGui::Text("%.3f", timeMs);
                     ImGui::PopStyleColor();
                 } else {
@@ -380,9 +373,7 @@ void GuiProfilerTab::render(IProfilerControl& profilerControl) {
                                diag.queueSubmitTimeMs + diag.presentTimeMs;
             ImGui::TableNextRow();
             ImGui::TableNextColumn();
-            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.8f, 0.8f, 1.0f, 1.0f));
-            ImGui::Text("Total (excl. fence)");
-            ImGui::PopStyleColor();
+            ImGui::TextColored(ImVec4(0.8f, 0.8f, 1.0f, 1.0f), "Total (excl. fence)");
             ImGui::TableNextColumn();
             ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.8f, 0.8f, 1.0f, 1.0f));
             ImGui::Text("%.3f", totalTimeMs);
@@ -406,7 +397,7 @@ void GuiProfilerTab::render(IProfilerControl& profilerControl) {
                 ImGui::Text("%s", name);
                 ImGui::TableNextColumn();
                 if (warnThreshold > 0 && count > warnThreshold) {
-                    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.8f, 0.4f, 1.0f));
+                    ImGui::PushStyleColor(ImGuiCol_Text, GuiStyle::kWarning);
                     ImGui::Text("%u", count);
                     ImGui::PopStyleColor();
                 } else {
@@ -424,9 +415,7 @@ void GuiProfilerTab::render(IProfilerControl& profilerControl) {
 
             ImGui::TableNextRow();
             ImGui::TableNextColumn();
-            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.8f, 0.8f, 1.0f, 1.0f));
-            ImGui::Text("Total Commands");
-            ImGui::PopStyleColor();
+            ImGui::TextColored(ImVec4(0.8f, 0.8f, 1.0f, 1.0f), "Total Commands");
             ImGui::TableNextColumn();
             ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.8f, 0.8f, 1.0f, 1.0f));
             ImGui::Text("%u", diag.totalCommandCount());
@@ -459,7 +448,7 @@ void GuiProfilerTab::render(IProfilerControl& profilerControl) {
                         ImGui::Text("%u", pass.dispatches);
                         ImGui::TableNextColumn();
                         if (pass.recordTimeMs > 1.0f) {
-                            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.8f, 0.4f, 1.0f));
+                            ImGui::PushStyleColor(ImGuiCol_Text, GuiStyle::kWarning);
                             ImGui::Text("%.3f", pass.recordTimeMs);
                             ImGui::PopStyleColor();
                         } else {
@@ -501,9 +490,7 @@ void GuiProfilerTab::render(IProfilerControl& profilerControl) {
             // Total
             ImGui::TableNextRow();
             ImGui::TableNextColumn();
-            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.8f, 0.8f, 1.0f, 1.0f));
-            ImGui::Text("Total Bandwidth");
-            ImGui::PopStyleColor();
+            ImGui::TextColored(ImVec4(0.8f, 0.8f, 1.0f, 1.0f), "Total Bandwidth");
             ImGui::TableNextColumn();
             uint64_t totalBytes = diag.getTotalBandwidthBytes();
             ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.8f, 0.8f, 1.0f, 1.0f));
@@ -627,9 +614,7 @@ void GuiProfilerTab::render(IProfilerControl& profilerControl) {
     ImGui::Spacing();
 
     // Frame budget indicator
-    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.8f, 0.8f, 1.0f, 1.0f));
-    ImGui::Text("FRAME BUDGET");
-    ImGui::PopStyleColor();
+    GuiStyle::sectionHeader("FRAME BUDGET");
 
     float targetMs = 16.67f;  // 60 FPS target
     float gpuTime = gpuStats.totalGpuTimeMs;
@@ -640,11 +625,11 @@ void GuiProfilerTab::render(IProfilerControl& profilerControl) {
     float budgetUsed = maxTimeVal / targetMs;
     ImVec4 budgetColor;
     if (budgetUsed < 0.8f) {
-        budgetColor = ImVec4(0.4f, 1.0f, 0.4f, 1.0f);  // Green
+        budgetColor = GuiStyle::kGood;  // Green
     } else if (budgetUsed < 1.0f) {
-        budgetColor = ImVec4(1.0f, 0.8f, 0.4f, 1.0f);  // Yellow
+        budgetColor = GuiStyle::kWarning;  // Yellow
     } else {
-        budgetColor = ImVec4(1.0f, 0.4f, 0.4f, 1.0f);  // Red
+        budgetColor = GuiStyle::kBad;  // Red
     }
 
     ImGui::PushStyleColor(ImGuiCol_PlotHistogram, budgetColor);
@@ -660,21 +645,13 @@ void GuiProfilerTab::render(IProfilerControl& profilerControl) {
     bool waitBound = cpuStats.waitTimeMs > cpuStats.workTimeMs && cpuStats.waitTimeMs > 0.5f;
 
     if (gpuBound) {
-        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.4f, 0.4f, 1.0f));
-        ImGui::Text("Status: GPU Bound");
-        ImGui::PopStyleColor();
+        ImGui::TextColored(GuiStyle::kBad, "Status: GPU Bound");
     } else if (cpuWorkBound) {
-        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.8f, 0.4f, 1.0f));
-        ImGui::Text("Status: CPU Bound");
-        ImGui::PopStyleColor();
+        ImGui::TextColored(GuiStyle::kWarning, "Status: CPU Bound");
     } else if (waitBound) {
-        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.4f, 0.8f, 1.0f, 1.0f));
-        ImGui::Text("Status: Wait Bound (CPU idle, waiting for GPU)");
-        ImGui::PopStyleColor();
+        ImGui::TextColored(ImVec4(0.4f, 0.8f, 1.0f, 1.0f), "Status: Wait Bound (CPU idle, waiting for GPU)");
     } else {
-        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.4f, 1.0f, 0.4f, 1.0f));
-        ImGui::Text("Status: Balanced");
-        ImGui::PopStyleColor();
+        ImGui::TextColored(GuiStyle::kGood, "Status: Balanced");
     }
 
     // Initialization Timing Section (collapsed by default)
@@ -719,11 +696,11 @@ void GuiProfilerTab::render(IProfilerControl& profilerControl) {
                     ImGui::TableNextColumn();
                     // Color code by percentage
                     if (phase.percentOfTotal > 30.0f) {
-                        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.4f, 0.4f, 1.0f));
+                        ImGui::PushStyleColor(ImGuiCol_Text, GuiStyle::kBad);
                     } else if (phase.percentOfTotal > 15.0f) {
-                        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.8f, 0.4f, 1.0f));
+                        ImGui::PushStyleColor(ImGuiCol_Text, GuiStyle::kWarning);
                     } else {
-                        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.4f, 1.0f, 0.4f, 1.0f));
+                        ImGui::PushStyleColor(ImGuiCol_Text, GuiStyle::kGood);
                     }
                     ImGui::Text("%.1f%%", phase.percentOfTotal);
                     ImGui::PopStyleColor();

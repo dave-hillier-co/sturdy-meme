@@ -109,6 +109,16 @@ void InputSystem::update(float deltaTime, const glm::vec3& cameraForward) {
     timeScaleInput = 0.0f;
     orientationLockToggleRequested = false;
 
+    // Camera must not respond to mouse-look/drag or zoom while a gizmo is
+    // being manipulated (the accumulators were already loaded above, so they
+    // must be discarded here)
+    if (guiSystem && guiSystem->isGizmoActive()) {
+        cameraYawInput = 0.0f;
+        cameraPitchInput = 0.0f;
+        cameraZoomInput = 0.0f;
+        return;
+    }
+
     // Skip game input if GUI wants it
     if (isGuiBlocking()) {
         return;

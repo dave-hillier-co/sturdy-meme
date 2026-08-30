@@ -1,4 +1,5 @@
 #include "GuiWaterTab.h"
+#include "GuiStyle.h"
 #include "core/interfaces/IWaterControl.h"
 #include "WaterSystem.h"
 #include "WaterTileCull.h"
@@ -14,9 +15,7 @@ void GuiWaterTab::render(IWaterControl& waterControl) {
     auto& water = waterControl.getWaterSystem();
 
     // Water info header
-    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.4f, 0.7f, 0.9f, 1.0f));
-    ImGui::Text("WATER SYSTEM");
-    ImGui::PopStyleColor();
+    GuiStyle::sectionHeader("WATER SYSTEM");
 
     ImGui::Text("Current Level: %.2f m", water.getWaterLevel());
     ImGui::Text("Base Level: %.2f m", water.getBaseWaterLevel());
@@ -26,9 +25,7 @@ void GuiWaterTab::render(IWaterControl& waterControl) {
     ImGui::Spacing();
 
     // Water level controls
-    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.5f, 0.8f, 1.0f, 1.0f));
-    ImGui::Text("LEVEL & TIDES");
-    ImGui::PopStyleColor();
+    GuiStyle::sectionHeader("LEVEL & TIDES");
 
     float baseLevel = water.getBaseWaterLevel();
     if (ImGui::SliderFloat("Base Water Level", &baseLevel, -50.0f, 50.0f, "%.1f m")) {
@@ -48,9 +45,7 @@ void GuiWaterTab::render(IWaterControl& waterControl) {
     ImGui::Spacing();
 
     // Wave parameters
-    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.6f, 0.9f, 0.8f, 1.0f));
-    ImGui::Text("WAVES");
-    ImGui::PopStyleColor();
+    GuiStyle::sectionHeader("WAVES");
 
     // FFT Ocean toggle
     OceanFFT* ocean = waterControl.getOceanFFT();
@@ -145,9 +140,7 @@ void GuiWaterTab::render(IWaterControl& waterControl) {
     ImGui::Spacing();
 
     // Appearance
-    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.7f, 0.8f, 1.0f, 1.0f));
-    ImGui::Text("APPEARANCE");
-    ImGui::PopStyleColor();
+    GuiStyle::sectionHeader("APPEARANCE");
 
     glm::vec4 waterColor = water.getWaterColor();
     float col[4] = {waterColor.r, waterColor.g, waterColor.b, waterColor.a};
@@ -238,9 +231,7 @@ void GuiWaterTab::render(IWaterControl& waterControl) {
     ImGui::Spacing();
 
     // Performance optimization controls
-    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.9f, 0.7f, 0.5f, 1.0f));
-    ImGui::Text("PERFORMANCE");
-    ImGui::PopStyleColor();
+    GuiStyle::sectionHeader("PERFORMANCE");
 
     auto& tileCull = waterControl.getWaterTileCull();
     bool tileCullEnabled = tileCull.isEnabled();

@@ -14,7 +14,6 @@
 #include <SDL3/SDL.h>
 #include <glm/gtc/matrix_transform.hpp>
 #include <array>
-#include <imgui_impl_vulkan.h>
 #include <vulkan/vulkan.hpp>
 
 std::unique_ptr<TreeImpostorAtlas> TreeImpostorAtlas::create(const InitInfo& info) {
@@ -531,38 +530,16 @@ const TreeImpostorArchetype* TreeImpostorAtlas::getArchetype(uint32_t index) con
     return nullptr;
 }
 
-vk::DescriptorSet TreeImpostorAtlas::getPreviewDescriptorSet(uint32_t archetypeIndex) {
-    if (archetypeIndex >= atlasTextures_.size()) {
+vk::ImageView TreeImpostorAtlas::getAlbedoAtlasView(uint32_t archetypeIndex) const {
+    if (archetypeIndex >= atlasTextures_.size() || !atlasTextures_[archetypeIndex].albedoView) {
         return VK_NULL_HANDLE;
     }
-
-    if (atlasTextures_[archetypeIndex].previewDescriptorSet == VK_NULL_HANDLE) {
-        if (atlasTextures_[archetypeIndex].albedoView) {
-            atlasTextures_[archetypeIndex].previewDescriptorSet = ImGui_ImplVulkan_AddTexture(
-                **atlasSampler_,
-                **atlasTextures_[archetypeIndex].albedoView,
-                VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
-            );
-        }
-    }
-
-    return atlasTextures_[archetypeIndex].previewDescriptorSet;
+    return **atlasTextures_[archetypeIndex].albedoView;
 }
 
-vk::DescriptorSet TreeImpostorAtlas::getNormalPreviewDescriptorSet(uint32_t archetypeIndex) {
-    if (archetypeIndex >= atlasTextures_.size()) {
+vk::ImageView TreeImpostorAtlas::getNormalAtlasView(uint32_t archetypeIndex) const {
+    if (archetypeIndex >= atlasTextures_.size() || !atlasTextures_[archetypeIndex].normalView) {
         return VK_NULL_HANDLE;
     }
-
-    if (atlasTextures_[archetypeIndex].normalPreviewDescriptorSet == VK_NULL_HANDLE) {
-        if (atlasTextures_[archetypeIndex].normalView) {
-            atlasTextures_[archetypeIndex].normalPreviewDescriptorSet = ImGui_ImplVulkan_AddTexture(
-                **atlasSampler_,
-                **atlasTextures_[archetypeIndex].normalView,
-                VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
-            );
-        }
-    }
-
-    return atlasTextures_[archetypeIndex].normalPreviewDescriptorSet;
+    return **atlasTextures_[archetypeIndex].normalView;
 }

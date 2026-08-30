@@ -1,4 +1,6 @@
 #include "GuiSceneGraphTab.h"
+#include "GuiStyle.h"
+#include "GuiPropertyEditors.h"
 #include "core/interfaces/ISceneControl.h"
 #include "scene/SceneBuilder.h"
 #include "ecs/Components.h"
@@ -17,28 +19,6 @@ namespace {
         return glm::vec3(transform[3]);
     }
 
-    // Extract scale (approximate - assumes uniform or near-uniform scale)
-    glm::vec3 extractScale(const glm::mat4& transform) {
-        glm::vec3 scale;
-        scale.x = glm::length(glm::vec3(transform[0]));
-        scale.y = glm::length(glm::vec3(transform[1]));
-        scale.z = glm::length(glm::vec3(transform[2]));
-        return scale;
-    }
-
-    // Extract Euler angles using quaternion conversion
-    glm::vec3 extractEulerAngles(const glm::mat4& transform) {
-        glm::vec3 scale = extractScale(transform);
-        glm::mat3 rotMat(
-            glm::vec3(transform[0]) / scale.x,
-            glm::vec3(transform[1]) / scale.y,
-            glm::vec3(transform[2]) / scale.z
-        );
-
-        glm::quat q = glm::quat_cast(rotMat);
-        return glm::degrees(glm::eulerAngles(q));
-    }
-
     // Get a display name for a renderable based on its properties
     const char* getObjectTypeName(const ecs::RenderData& obj) {
         if (obj.gpuSkinned) {
@@ -51,21 +31,6 @@ namespace {
             return "Alpha-Test";
         }
         return "Object";
-    }
-
-    // Draw a color preview square
-    void drawColorPreview(const glm::vec3& color, float size = 16.0f) {
-        ImVec2 pos = ImGui::GetCursorScreenPos();
-        ImDrawList* drawList = ImGui::GetWindowDrawList();
-        ImU32 col = IM_COL32(
-            static_cast<int>(color.r * 255),
-            static_cast<int>(color.g * 255),
-            static_cast<int>(color.b * 255),
-            255
-        );
-        drawList->AddRectFilled(pos, ImVec2(pos.x + size, pos.y + size), col);
-        drawList->AddRect(pos, ImVec2(pos.x + size, pos.y + size), IM_COL32(100, 100, 100, 255));
-        ImGui::Dummy(ImVec2(size, size));
     }
 }
 
@@ -95,14 +60,8 @@ void GuiSceneGraphTab::render(ISceneControl& sceneControl, SceneGraphTabState& s
     ImGui::Spacing();
 
     // Header with object count
-    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.5f, 0.9f, 0.5f, 1.0f));
-    ImGui::Text("SCENE GRAPH");
-    ImGui::PopStyleColor();
-    ImGui::SameLine();
+    GuiStyle::sectionHeader("SCENE GRAPH");
     ImGui::TextDisabled("(%zu objects)", renderables.size());
-
-    ImGui::Spacing();
-    ImGui::Separator();
     ImGui::Spacing();
 
     // Filter input
@@ -191,9 +150,7 @@ void GuiSceneGraphTab::render(ISceneControl& sceneControl, SceneGraphTabState& s
     ImGui::Spacing();
 
     // Properties panel for selected object
-    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.9f, 0.7f, 0.5f, 1.0f));
-    ImGui::Text("PROPERTIES");
-    ImGui::PopStyleColor();
+    GuiStyle::sectionHeader("PROPERTIES");
 
     ImGui::Spacing();
 
@@ -211,83 +168,11 @@ void GuiSceneGraphTab::render(ISceneControl& sceneControl, SceneGraphTabState& s
         drawList->AddRectFilled(barStart, barEnd, IM_COL32(100, 200, 100, 255));
 
         if (ImGui::BeginChild("Properties", ImVec2(-1, -1), false)) {
-            // Transform section
-            if (ImGui::CollapsingHeader("Transform", state.showTransformSection ? ImGuiTreeNodeFlags_DefaultOpen : 0)) {
-                state.showTransformSection = true;
+            // Transform section (shared read-only display)
+            GuiPropertyEditors::renderTransformDisplay(selected.transform, state.showTransformSection);
 
-                glm::vec3 position = extractPosition(selected.transform);
-                glm::vec3 scale = extractScale(selected.transform);
-                glm::vec3 rotation = extractEulerAngles(selected.transform);
-
-                ImGui::Text("Position");
-                ImGui::Indent();
-                ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f), "X: %.3f", position.x);
-                ImGui::SameLine(100);
-                ImGui::TextColored(ImVec4(0.4f, 1.0f, 0.4f, 1.0f), "Y: %.3f", position.y);
-                ImGui::SameLine(200);
-                ImGui::TextColored(ImVec4(0.4f, 0.4f, 1.0f, 1.0f), "Z: %.3f", position.z);
-                ImGui::Unindent();
-
-                ImGui::Text("Rotation (deg)");
-                ImGui::Indent();
-                ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f), "P: %.1f", rotation.x);
-                ImGui::SameLine(100);
-                ImGui::TextColored(ImVec4(0.4f, 1.0f, 0.4f, 1.0f), "Y: %.1f", rotation.y);
-                ImGui::SameLine(200);
-                ImGui::TextColored(ImVec4(0.4f, 0.4f, 1.0f, 1.0f), "R: %.1f", rotation.z);
-                ImGui::Unindent();
-
-                ImGui::Text("Scale");
-                ImGui::Indent();
-                if (std::abs(scale.x - scale.y) < 0.001f && std::abs(scale.y - scale.z) < 0.001f) {
-                    ImGui::Text("Uniform: %.3f", scale.x);
-                } else {
-                    ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f), "X: %.3f", scale.x);
-                    ImGui::SameLine(100);
-                    ImGui::TextColored(ImVec4(0.4f, 1.0f, 0.4f, 1.0f), "Y: %.3f", scale.y);
-                    ImGui::SameLine(200);
-                    ImGui::TextColored(ImVec4(0.4f, 0.4f, 1.0f, 1.0f), "Z: %.3f", scale.z);
-                }
-                ImGui::Unindent();
-
-                ImGui::Spacing();
-            }
-
-            // Material section
-            if (ImGui::CollapsingHeader("Material", state.showMaterialSection ? ImGuiTreeNodeFlags_DefaultOpen : 0)) {
-                state.showMaterialSection = true;
-
-                ImGui::Text("Material ID: %u", selected.materialId);
-                ImGui::Text("Roughness: %.2f", selected.roughness);
-                ImGui::Text("Metallic: %.2f", selected.metallic);
-                ImGui::Text("Opacity: %.2f", selected.opacity);
-
-                if (selected.alphaTestThreshold > 0.0f) {
-                    ImGui::Text("Alpha Test: %.2f", selected.alphaTestThreshold);
-                }
-
-                ImGui::Spacing();
-
-                // Emissive info
-                if (selected.emissiveIntensity > 0.0f) {
-                    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.9f, 0.5f, 1.0f));
-                    ImGui::Text("Emissive");
-                    ImGui::PopStyleColor();
-                    ImGui::Indent();
-                    ImGui::Text("Intensity: %.2f", selected.emissiveIntensity);
-                    ImGui::Text("Color:");
-                    ImGui::SameLine();
-                    drawColorPreview(selected.emissiveColor);
-                    ImGui::SameLine();
-                    ImGui::Text("(%.2f, %.2f, %.2f)",
-                        selected.emissiveColor.r,
-                        selected.emissiveColor.g,
-                        selected.emissiveColor.b);
-                    ImGui::Unindent();
-                }
-
-                ImGui::Spacing();
-            }
+            // Material section (shared read-only display)
+            GuiPropertyEditors::renderMaterialDisplay(selected, state.showMaterialSection);
 
             // Info section
             if (ImGui::CollapsingHeader("Info", state.showInfoSection ? ImGuiTreeNodeFlags_DefaultOpen : 0)) {

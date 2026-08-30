@@ -1,4 +1,5 @@
 #include "GuiDashboard.h"
+#include "GuiStyle.h"
 #include "Camera.h"
 #include "core/interfaces/ITerrainControl.h"
 #include "core/interfaces/ITimeSystem.h"
@@ -23,9 +24,9 @@ void GuiDashboard::render(ITerrainControl& terrain, ITimeSystem& time, const Cam
     ImGui::SetColumnWidth(0, 140);
 
     ImGui::Text("FPS");
-    ImGui::PushStyleColor(ImGuiCol_Text, fps > 55.0f ? ImVec4(0.4f, 0.9f, 0.4f, 1.0f) :
-                                          fps > 30.0f ? ImVec4(0.9f, 0.9f, 0.4f, 1.0f) :
-                                                        ImVec4(0.9f, 0.4f, 0.4f, 1.0f));
+    ImGui::PushStyleColor(ImGuiCol_Text, fps > 55.0f ? GuiStyle::kGood :
+                                          fps > 30.0f ? GuiStyle::kWarning :
+                                                        GuiStyle::kBad);
     ImGui::SameLine(60);
     ImGui::Text("%.0f", fps);
     ImGui::PopStyleColor();

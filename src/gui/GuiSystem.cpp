@@ -35,10 +35,10 @@
 #include "GuiPerformanceTab.h"
 #include "GuiIKTab.h"
 #include "GuiPlayerTab.h"
+#include "GuiNPCTab.h"
 #include "GuiTreeTab.h"
 #include "GuiGrassTab.h"
 #include "GuiSceneGraphTab.h"
-#include "GuiSceneEditor.h"
 #include "GuiHierarchyPanel.h"
 #include "GuiInspectorPanel.h"
 #include "GuiGizmo.h"
@@ -49,11 +49,38 @@
 #include <imgui_impl_vulkan.h>
 #include <vulkan/vulkan.hpp>
 
+#include <filesystem>
+
 static void checkVkResult(VkResult err) {
     if (err != VK_SUCCESS) {
         SDL_Log("ImGui Vulkan Error: VkResult = %d", err);
     }
 }
+
+namespace {
+
+const char* menuCategoryName(MenuCategory category) {
+    switch (category) {
+        case MenuCategory::View: return "View";
+        case MenuCategory::Environment: return "Environment";
+        case MenuCategory::Rendering: return "Rendering";
+        case MenuCategory::Character: return "Character";
+        case MenuCategory::Scene: return "Scene";
+        case MenuCategory::Debug: return "Debug";
+    }
+    return "";
+}
+
+constexpr MenuCategory kMenuOrder[] = {
+    MenuCategory::View,
+    MenuCategory::Environment,
+    MenuCategory::Rendering,
+    MenuCategory::Character,
+    MenuCategory::Scene,
+    MenuCategory::Debug,
+};
+
+} // anonymous namespace
 
 // Factory
 std::unique_ptr<GuiSystem> GuiSystem::create(SDL_Window* window, vk::Instance instance,
@@ -113,6 +140,17 @@ bool GuiSystem::initInternal(SDL_Window* window, vk::Instance instance, vk::Phys
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
     io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
 
+    // Persist window layout to a deterministic path next to the executable.
+    // The std::string member keeps the pointer alive for the ImGui context.
+    const char* basePath = SDL_GetBasePath();
+    iniFilePath_ = basePath ? std::string(basePath) + "imgui_layout.ini"
+                            : std::string("imgui_layout.ini");
+    io.IniFilename = iniFilePath_.c_str();
+
+    // First run (no saved layout): build a default dock layout on first render
+    std::error_code ec;
+    applyDefaultLayout_ = !std::filesystem::exists(iniFilePath_, ec);
+
     // Setup Platform/Renderer backends
     ImGui_ImplSDL3_InitForVulkan(window);
 
@@ -145,8 +183,100 @@ bool GuiSystem::initInternal(SDL_Window* window, vk::Instance instance, vk::Phys
     // Setup custom style
     GuiStyle::apply();
 
+    buildPanelRegistry();
+
     SDL_Log("ImGui initialized successfully");
     return true;
+}
+
+void GuiSystem::buildPanelRegistry() {
+    panels_.clear();
+
+    // View
+    panels_.push_back({"Dashboard", MenuCategory::View,
+        [this](const GuiFrameContext& ctx) {
+            GuiDashboard::render(ctx.interfaces.terrain, ctx.interfaces.time, ctx.camera,
+                                 ctx.deltaTime, ctx.fps, dashboardState);
+        }, true});
+    panels_.push_back({"Position", MenuCategory::View,
+        [](const GuiFrameContext& ctx) {
+            GuiPositionPanel::render(ctx.camera);
+        }, true});
+
+    // Environment
+    panels_.push_back({"Time", MenuCategory::Environment,
+        [](const GuiFrameContext& ctx) {
+            GuiTimeTab::render(ctx.interfaces.time, ctx.interfaces.location);
+        }});
+    panels_.push_back({"Weather", MenuCategory::Environment,
+        [](const GuiFrameContext& ctx) {
+            GuiWeatherTab::render(ctx.interfaces.weather, ctx.interfaces.environmentSettings);
+        }});
+    panels_.push_back({"Atmosphere", MenuCategory::Environment,
+        [this](const GuiFrameContext& ctx) {
+            GuiEnvironmentTab::render(ctx.interfaces.environment, environmentTabState);
+        }});
+
+    // Rendering
+    panels_.push_back({"Post FX", MenuCategory::Rendering,
+        [](const GuiFrameContext& ctx) {
+            GuiPostFXTab::render(ctx.interfaces.postProcess, ctx.interfaces.cloudShadow);
+        }});
+    panels_.push_back({"Terrain", MenuCategory::Rendering,
+        [](const GuiFrameContext& ctx) {
+            GuiTerrainTab::render(ctx.interfaces.terrain);
+        }});
+    panels_.push_back({"Water", MenuCategory::Rendering,
+        [](const GuiFrameContext& ctx) {
+            GuiWaterTab::render(ctx.interfaces.water);
+        }});
+    panels_.push_back({"Trees", MenuCategory::Rendering,
+        [](const GuiFrameContext& ctx) {
+            GuiTreeTab::render(ctx.interfaces.tree);
+        }});
+    panels_.push_back({"Grass", MenuCategory::Rendering,
+        [](const GuiFrameContext& ctx) {
+            GuiGrassTab::render(ctx.interfaces.grass);
+        }});
+
+    // Character
+    panels_.push_back({"Player", MenuCategory::Character,
+        [this](const GuiFrameContext& ctx) {
+            GuiPlayerTab::render(ctx.interfaces.player, playerSettings);
+        }});
+    panels_.push_back({"NPC LOD", MenuCategory::Character,
+        [](const GuiFrameContext& ctx) {
+            GuiNPCTab::render(ctx.interfaces.player);
+        }});
+    panels_.push_back({"IK / Animation", MenuCategory::Character,
+        [this](const GuiFrameContext& ctx) {
+            GuiIKTab::render(ctx.interfaces.scene, ctx.camera, ikDebugSettings);
+        }});
+
+    // Scene (Hierarchy and Inspector are special-cased outside the registry)
+    panels_.push_back({"Scene Graph", MenuCategory::Scene,
+        [this](const GuiFrameContext& ctx) {
+            GuiSceneGraphTab::render(ctx.interfaces.scene, sceneGraphTabState);
+        }});
+
+    // Debug
+    panels_.push_back({"Debug Visualizations", MenuCategory::Debug,
+        [](const GuiFrameContext& ctx) {
+            GuiDebugTab::render(ctx.interfaces.debug, ctx.interfaces.debugCommands);
+        }});
+    panels_.push_back({"Performance Toggles", MenuCategory::Debug,
+        [](const GuiFrameContext& ctx) {
+            GuiPerformanceTab::render(ctx.interfaces.performance);
+        }});
+    panels_.push_back({"Profiler", MenuCategory::Debug,
+        [](const GuiFrameContext& ctx) {
+            GuiProfilerTab::render(ctx.interfaces.profiler);
+        }});
+    panels_.push_back({"Tile Loader", MenuCategory::Debug,
+        [this](const GuiFrameContext& ctx) {
+            GuiTileLoaderTab::render(ctx.interfaces.terrain, ctx.interfaces.physicsTerrainTiles,
+                                     ctx.camera, tileLoaderState);
+        }});
 }
 
 void GuiSystem::cleanup() {
@@ -173,6 +303,26 @@ void GuiSystem::beginFrame() {
     ImGui::NewFrame();
 }
 
+void GuiSystem::applyDefaultDockLayout(ImGuiID dockspaceId) {
+    const ImGuiViewport* viewport = ImGui::GetMainViewport();
+
+    ImGui::DockBuilderRemoveNode(dockspaceId);
+    ImGui::DockBuilderAddNode(dockspaceId, ImGuiDockNodeFlags_DockSpace);
+    ImGui::DockBuilderSetNodeSize(dockspaceId, viewport->Size);
+
+    // Hierarchy docked left, Inspector docked right, Dashboard docked bottom
+    ImGuiID dockMain = dockspaceId;
+    ImGuiID dockRight = ImGui::DockBuilderSplitNode(dockMain, ImGuiDir_Right, 0.22f, nullptr, &dockMain);
+    ImGuiID dockLeft = ImGui::DockBuilderSplitNode(dockMain, ImGuiDir_Left, 0.20f, nullptr, &dockMain);
+    ImGuiID dockBottom = ImGui::DockBuilderSplitNode(dockMain, ImGuiDir_Down, 0.25f, nullptr, &dockMain);
+
+    ImGui::DockBuilderDockWindow("Hierarchy", dockLeft);
+    ImGui::DockBuilderDockWindow("Inspector", dockRight);
+    ImGui::DockBuilderDockWindow("Dashboard", dockBottom);
+
+    ImGui::DockBuilderFinish(dockspaceId);
+}
+
 void GuiSystem::render(GuiInterfaces& ui, const Camera& camera, float deltaTime, float fps) {
     if (!visible) return;
 
@@ -180,104 +330,62 @@ void GuiSystem::render(GuiInterfaces& ui, const Camera& camera, float deltaTime,
     ImGuiID mainDockspaceId = ImGui::DockSpaceOverViewport(0, ImGui::GetMainViewport(),
         ImGuiDockNodeFlags_PassthruCentralNode | ImGuiDockNodeFlags_NoDockingOverCentralNode);
 
-    // Set up default dock layout on first use when editor panels are shown
-    if (!dockLayoutInitialized_ && (windowStates.showHierarchy || windowStates.showInspector)) {
-        ImGui::DockBuilderRemoveNode(mainDockspaceId);
-        ImGui::DockBuilderAddNode(mainDockspaceId, ImGuiDockNodeFlags_DockSpace);
-        ImGui::DockBuilderSetNodeSize(mainDockspaceId, ImGui::GetMainViewport()->Size);
-
-        // Split: right 20% for inspector, then left side split for hierarchy
-        ImGuiID dockMain = mainDockspaceId;
-        ImGuiID dockRight = ImGui::DockBuilderSplitNode(dockMain, ImGuiDir_Right, 0.22f, nullptr, &dockMain);
-        ImGuiID dockLeft = ImGui::DockBuilderSplitNode(dockMain, ImGuiDir_Left, 0.20f, nullptr, &dockMain);
-
-        ImGui::DockBuilderDockWindow("Hierarchy", dockLeft);
-        ImGui::DockBuilderDockWindow("Inspector", dockRight);
-
-        ImGui::DockBuilderFinish(mainDockspaceId);
+    // First run only (no saved layout): build the default dock layout
+    if (!dockLayoutInitialized_) {
+        if (applyDefaultLayout_) {
+            applyDefaultDockLayout(mainDockspaceId);
+        }
         dockLayoutInitialized_ = true;
     }
 
-    // Main menu bar
+    // Main menu bar (generated from the panel registry)
     renderMainMenuBar();
 
-    // Render individual windows based on visibility state
-    if (windowStates.showDashboard) {
-        renderDashboard(ui, camera, deltaTime, fps);
-    }
-    if (windowStates.showPosition) {
-        renderPositionPanel(camera);
-    }
-    if (windowStates.showTime) {
-        renderTimeWindow(ui);
-    }
-    if (windowStates.showWeather) {
-        renderWeatherWindow(ui);
-    }
-    if (windowStates.showEnvironment) {
-        renderEnvironmentWindow(ui);
-    }
-    if (windowStates.showPostFX) {
-        renderPostFXWindow(ui);
-    }
-    if (windowStates.showTerrain) {
-        renderTerrainWindow(ui);
-    }
-    if (windowStates.showWater) {
-        renderWaterWindow(ui);
-    }
-    if (windowStates.showTrees) {
-        renderTreesWindow(ui);
-    }
-    if (windowStates.showGrass) {
-        renderGrassWindow(ui);
-    }
-    if (windowStates.showPlayer) {
-        renderPlayerWindow(ui);
-    }
-    if (windowStates.showIK) {
-        renderIKWindow(ui, camera);
-    }
-    if (windowStates.showDebug) {
-        renderDebugWindow(ui);
-    }
-    if (windowStates.showPerformance) {
-        renderPerformanceWindow(ui);
-    }
-    if (windowStates.showProfiler) {
-        renderProfilerWindow(ui);
-    }
-    if (windowStates.showTileLoader) {
-        renderTileLoaderWindow(ui, camera);
-    }
-    if (windowStates.showSceneGraph) {
-        renderSceneGraphWindow(ui);
-    }
+    GuiFrameContext ctx{ui, camera, deltaTime, fps};
 
-    // Scene Editor: render Hierarchy and Inspector as independent dockable windows
-    if (windowStates.showSceneEditor) {
-        // Legacy nested dockspace mode (keep for backwards compat if both flags are off)
-        if (!windowStates.showHierarchy && !windowStates.showInspector) {
-            renderSceneEditorWindow(ui);
+    // Floating-window first-use defaults: cascade from the viewport work area,
+    // sized relative to the viewport (never hardcoded pixel literals)
+    const ImGuiViewport* viewport = ImGui::GetMainViewport();
+    const float cascadeStep = ImGui::GetFontSize() * 2.0f;
+
+    for (size_t i = 0; i < panels_.size(); ++i) {
+        PanelDesc& panel = panels_[i];
+        if (!panel.open) continue;
+
+        const float offset = static_cast<float>(i) * cascadeStep;
+        ImGui::SetNextWindowPos(
+            ImVec2(viewport->WorkPos.x + viewport->WorkSize.x * 0.03f + offset,
+                   viewport->WorkPos.y + viewport->WorkSize.y * 0.05f + offset),
+            ImGuiCond_FirstUseEver);
+        ImGui::SetNextWindowSize(
+            ImVec2(viewport->WorkSize.x * 0.22f, viewport->WorkSize.y * 0.40f),
+            ImGuiCond_FirstUseEver);
+
+        if (ImGui::Begin(panel.title.c_str(), &panel.open)) {
+            panel.draw(ctx);
         }
-        GuiGizmo::render(camera, ui.scene, sceneEditorState);
+        ImGui::End();
     }
 
-    // Independent dockable Hierarchy and Inspector panels
-    if (windowStates.showHierarchy) {
-        if (ImGui::Begin("Hierarchy", &windowStates.showHierarchy, ImGuiWindowFlags_MenuBar)) {
+    // Independent dockable Hierarchy and Inspector panels (special-cased:
+    // menu bar in Hierarchy and shared selection state don't fit the loop)
+    if (showHierarchy_) {
+        if (ImGui::Begin("Hierarchy", &showHierarchy_, ImGuiWindowFlags_MenuBar)) {
             GuiHierarchyPanel::renderCreateMenuBar(ui.scene, sceneEditorState);
             GuiHierarchyPanel::render(ui.scene, sceneEditorState);
         }
         ImGui::End();
-        // Render gizmo when hierarchy is showing
-        GuiGizmo::render(camera, ui.scene, sceneEditorState);
     }
-    if (windowStates.showInspector) {
-        if (ImGui::Begin("Inspector", &windowStates.showInspector)) {
+    if (showInspector_) {
+        if (ImGui::Begin("Inspector", &showInspector_)) {
             GuiInspectorPanel::render(ui.scene, sceneEditorState);
         }
         ImGui::End();
+    }
+
+    // Transform gizmo: exactly once per frame while editor panels are in use
+    if (showHierarchy_ || showInspector_) {
+        GuiGizmo::render(camera, ui.scene, sceneEditorState);
     }
 
     // Skeleton/IK debug overlay
@@ -311,233 +419,45 @@ bool GuiSystem::wantsInput() const {
 }
 
 void GuiSystem::renderMainMenuBar() {
-    if (ImGui::BeginMainMenuBar()) {
-        if (ImGui::BeginMenu("View")) {
-            ImGui::MenuItem("Dashboard", nullptr, &windowStates.showDashboard);
-            ImGui::MenuItem("Position", nullptr, &windowStates.showPosition);
-            ImGui::EndMenu();
-        }
+    if (!ImGui::BeginMainMenuBar()) return;
 
-        if (ImGui::BeginMenu("Environment")) {
-            ImGui::MenuItem("Time", nullptr, &windowStates.showTime);
-            ImGui::MenuItem("Weather", nullptr, &windowStates.showWeather);
-            ImGui::MenuItem("Atmosphere", nullptr, &windowStates.showEnvironment);
-            ImGui::EndMenu();
-        }
+    for (MenuCategory category : kMenuOrder) {
+        if (!ImGui::BeginMenu(menuCategoryName(category))) continue;
 
-        if (ImGui::BeginMenu("Rendering")) {
-            ImGui::MenuItem("Post FX", nullptr, &windowStates.showPostFX);
-            ImGui::MenuItem("Terrain", nullptr, &windowStates.showTerrain);
-            ImGui::MenuItem("Water", nullptr, &windowStates.showWater);
-            ImGui::MenuItem("Trees", nullptr, &windowStates.showTrees);
-            ImGui::MenuItem("Grass", nullptr, &windowStates.showGrass);
-            ImGui::EndMenu();
-        }
-
-        if (ImGui::BeginMenu("Character")) {
-            ImGui::MenuItem("Player", nullptr, &windowStates.showPlayer);
-            ImGui::MenuItem("IK / Animation", nullptr, &windowStates.showIK);
-            ImGui::EndMenu();
-        }
-
-        if (ImGui::BeginMenu("Scene")) {
-            ImGui::MenuItem("Hierarchy", nullptr, &windowStates.showHierarchy);
-            ImGui::MenuItem("Inspector", nullptr, &windowStates.showInspector);
+        // Special-cased editor panels live at the top of the Scene menu
+        if (category == MenuCategory::Scene) {
+            ImGui::MenuItem("Hierarchy", nullptr, &showHierarchy_);
+            ImGui::MenuItem("Inspector", nullptr, &showInspector_);
             ImGui::Separator();
-            ImGui::MenuItem("Scene Editor (Legacy)", nullptr, &windowStates.showSceneEditor);
-            ImGui::MenuItem("Scene Graph", nullptr, &windowStates.showSceneGraph);
-            ImGui::EndMenu();
         }
 
-        if (ImGui::BeginMenu("Debug")) {
-            ImGui::MenuItem("Debug Visualizations", nullptr, &windowStates.showDebug);
-            ImGui::MenuItem("Performance Toggles", nullptr, &windowStates.showPerformance);
-            ImGui::MenuItem("Profiler", nullptr, &windowStates.showProfiler);
-            ImGui::MenuItem("Tile Loader", nullptr, &windowStates.showTileLoader);
-            ImGui::EndMenu();
+        for (PanelDesc& panel : panels_) {
+            if (panel.category == category) {
+                ImGui::MenuItem(panel.title.c_str(), nullptr, &panel.open);
+            }
         }
 
-        ImGui::EndMainMenuBar();
+        // View -> Windows: every panel in one list
+        if (category == MenuCategory::View) {
+            ImGui::Separator();
+            if (ImGui::BeginMenu("Windows")) {
+                ImGui::MenuItem("Hierarchy", nullptr, &showHierarchy_);
+                ImGui::MenuItem("Inspector", nullptr, &showInspector_);
+                for (PanelDesc& panel : panels_) {
+                    ImGui::MenuItem(panel.title.c_str(), nullptr, &panel.open);
+                }
+                ImGui::EndMenu();
+            }
+        }
+
+        ImGui::EndMenu();
     }
-}
 
-void GuiSystem::renderDashboard(GuiInterfaces& ui, const Camera& camera, float deltaTime, float fps) {
-    ImGui::SetNextWindowPos(ImVec2(20, 40), ImGuiCond_FirstUseEver);
-    ImGui::SetNextWindowSize(ImVec2(280, 200), ImGuiCond_FirstUseEver);
-
-    if (ImGui::Begin("Dashboard", &windowStates.showDashboard)) {
-        GuiDashboard::render(ui.terrain, ui.time, camera, deltaTime, fps, dashboardState);
-    }
-    ImGui::End();
-}
-
-void GuiSystem::renderPositionPanel(const Camera& camera) {
-    // Position in top-right corner
-    ImGui::SetNextWindowPos(ImVec2(ImGui::GetIO().DisplaySize.x - 200, 40), ImGuiCond_FirstUseEver);
-    ImGui::SetNextWindowSize(ImVec2(180, 280), ImGuiCond_FirstUseEver);
-
-    if (ImGui::Begin("Position", &windowStates.showPosition)) {
-        GuiPositionPanel::render(camera);
-    }
-    ImGui::End();
-}
-
-void GuiSystem::renderTimeWindow(GuiInterfaces& ui) {
-    ImGui::SetNextWindowPos(ImVec2(20, 260), ImGuiCond_FirstUseEver);
-    ImGui::SetNextWindowSize(ImVec2(280, 200), ImGuiCond_FirstUseEver);
-
-    if (ImGui::Begin("Time", &windowStates.showTime)) {
-        GuiTimeTab::render(ui.time, ui.location);
-    }
-    ImGui::End();
-}
-
-void GuiSystem::renderWeatherWindow(GuiInterfaces& ui) {
-    ImGui::SetNextWindowPos(ImVec2(20, 260), ImGuiCond_FirstUseEver);
-    ImGui::SetNextWindowSize(ImVec2(280, 220), ImGuiCond_FirstUseEver);
-
-    if (ImGui::Begin("Weather", &windowStates.showWeather)) {
-        GuiWeatherTab::render(ui.weather, ui.environmentSettings);
-    }
-    ImGui::End();
-}
-
-void GuiSystem::renderEnvironmentWindow(GuiInterfaces& ui) {
-    ImGui::SetNextWindowPos(ImVec2(20, 260), ImGuiCond_FirstUseEver);
-    ImGui::SetNextWindowSize(ImVec2(280, 300), ImGuiCond_FirstUseEver);
-
-    if (ImGui::Begin("Atmosphere", &windowStates.showEnvironment)) {
-        GuiEnvironmentTab::render(ui.environment, environmentTabState);
-    }
-    ImGui::End();
-}
-
-void GuiSystem::renderPostFXWindow(GuiInterfaces& ui) {
-    ImGui::SetNextWindowPos(ImVec2(320, 40), ImGuiCond_FirstUseEver);
-    ImGui::SetNextWindowSize(ImVec2(280, 280), ImGuiCond_FirstUseEver);
-
-    if (ImGui::Begin("Post FX", &windowStates.showPostFX)) {
-        GuiPostFXTab::render(ui.postProcess, ui.cloudShadow);
-    }
-    ImGui::End();
-}
-
-void GuiSystem::renderTerrainWindow(GuiInterfaces& ui) {
-    ImGui::SetNextWindowPos(ImVec2(320, 40), ImGuiCond_FirstUseEver);
-    ImGui::SetNextWindowSize(ImVec2(280, 250), ImGuiCond_FirstUseEver);
-
-    if (ImGui::Begin("Terrain", &windowStates.showTerrain)) {
-        GuiTerrainTab::render(ui.terrain);
-    }
-    ImGui::End();
-}
-
-void GuiSystem::renderWaterWindow(GuiInterfaces& ui) {
-    ImGui::SetNextWindowPos(ImVec2(320, 40), ImGuiCond_FirstUseEver);
-    ImGui::SetNextWindowSize(ImVec2(280, 200), ImGuiCond_FirstUseEver);
-
-    if (ImGui::Begin("Water", &windowStates.showWater)) {
-        GuiWaterTab::render(ui.water);
-    }
-    ImGui::End();
-}
-
-void GuiSystem::renderTreesWindow(GuiInterfaces& ui) {
-    ImGui::SetNextWindowPos(ImVec2(320, 40), ImGuiCond_FirstUseEver);
-    ImGui::SetNextWindowSize(ImVec2(280, 200), ImGuiCond_FirstUseEver);
-
-    if (ImGui::Begin("Trees", &windowStates.showTrees)) {
-        GuiTreeTab::render(ui.tree);
-    }
-    ImGui::End();
-}
-
-void GuiSystem::renderGrassWindow(GuiInterfaces& ui) {
-    ImGui::SetNextWindowPos(ImVec2(320, 260), ImGuiCond_FirstUseEver);
-    ImGui::SetNextWindowSize(ImVec2(320, 450), ImGuiCond_FirstUseEver);
-
-    if (ImGui::Begin("Grass", &windowStates.showGrass)) {
-        GuiGrassTab::render(ui.grass);
-    }
-    ImGui::End();
-}
-
-void GuiSystem::renderPlayerWindow(GuiInterfaces& ui) {
-    ImGui::SetNextWindowPos(ImVec2(620, 40), ImGuiCond_FirstUseEver);
-    ImGui::SetNextWindowSize(ImVec2(280, 180), ImGuiCond_FirstUseEver);
-
-    if (ImGui::Begin("Player", &windowStates.showPlayer)) {
-        GuiPlayerTab::render(ui.player, playerSettings);
-    }
-    ImGui::End();
-}
-
-void GuiSystem::renderIKWindow(GuiInterfaces& ui, const Camera& camera) {
-    ImGui::SetNextWindowPos(ImVec2(620, 40), ImGuiCond_FirstUseEver);
-    ImGui::SetNextWindowSize(ImVec2(280, 350), ImGuiCond_FirstUseEver);
-
-    if (ImGui::Begin("IK / Animation", &windowStates.showIK)) {
-        GuiIKTab::render(ui.scene, camera, ikDebugSettings);
-    }
-    ImGui::End();
-}
-
-void GuiSystem::renderDebugWindow(GuiInterfaces& ui) {
-    ImGui::SetNextWindowPos(ImVec2(920, 40), ImGuiCond_FirstUseEver);
-    ImGui::SetNextWindowSize(ImVec2(320, 400), ImGuiCond_FirstUseEver);
-
-    if (ImGui::Begin("Debug Visualizations", &windowStates.showDebug)) {
-        GuiDebugTab::render(ui.debug);
-    }
-    ImGui::End();
-}
-
-void GuiSystem::renderPerformanceWindow(GuiInterfaces& ui) {
-    ImGui::SetNextWindowPos(ImVec2(920, 40), ImGuiCond_FirstUseEver);
-    ImGui::SetNextWindowSize(ImVec2(320, 500), ImGuiCond_FirstUseEver);
-
-    if (ImGui::Begin("Performance Toggles", &windowStates.showPerformance)) {
-        GuiPerformanceTab::render(ui.performance);
-    }
-    ImGui::End();
-}
-
-void GuiSystem::renderProfilerWindow(GuiInterfaces& ui) {
-    ImGui::SetNextWindowPos(ImVec2(920, 40), ImGuiCond_FirstUseEver);
-    ImGui::SetNextWindowSize(ImVec2(400, 600), ImGuiCond_FirstUseEver);
-
-    if (ImGui::Begin("Profiler", &windowStates.showProfiler)) {
-        GuiProfilerTab::render(ui.profiler);
-    }
-    ImGui::End();
-}
-
-void GuiSystem::renderTileLoaderWindow(GuiInterfaces& ui, const Camera& camera) {
-    ImGui::SetNextWindowPos(ImVec2(320, 300), ImGuiCond_FirstUseEver);
-    // Window size: 32x32 grid * 16px cells = 512x512, plus padding and title
-    ImGui::SetNextWindowSize(ImVec2(560, 650), ImGuiCond_FirstUseEver);
-
-    if (ImGui::Begin("Tile Loader", &windowStates.showTileLoader)) {
-        GuiTileLoaderTab::render(ui.terrain, ui.physicsTerrainTiles, camera, tileLoaderState);
-    }
-    ImGui::End();
-}
-
-void GuiSystem::renderSceneGraphWindow(GuiInterfaces& ui) {
-    ImGui::SetNextWindowPos(ImVec2(620, 260), ImGuiCond_FirstUseEver);
-    ImGui::SetNextWindowSize(ImVec2(340, 500), ImGuiCond_FirstUseEver);
-
-    if (ImGui::Begin("Scene Graph", &windowStates.showSceneGraph)) {
-        GuiSceneGraphTab::render(ui.scene, sceneGraphTabState);
-    }
-    ImGui::End();
-}
-
-void GuiSystem::renderSceneEditorWindow(GuiInterfaces& ui) {
-    GuiSceneEditor::render(ui.scene, sceneEditorState, &windowStates.showSceneEditor);
+    ImGui::EndMainMenuBar();
 }
 
 bool GuiSystem::isGizmoActive() const {
-    if (!windowStates.showSceneEditor && !windowStates.showHierarchy) return false;
+    if (!visible) return false;
+    if (!showHierarchy_ && !showInspector_) return false;
     return GuiGizmo::isUsing() || GuiGizmo::isOver();
 }

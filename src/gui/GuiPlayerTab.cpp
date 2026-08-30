@@ -1,10 +1,10 @@
 #include "GuiPlayerTab.h"
+#include "GuiStyle.h"
 #include "core/interfaces/IPlayerControl.h"
 #include "SceneBuilder.h"
 #include "Camera.h"
 #include "animation/AnimatedCharacter.h"
 #include "animation/MotionMatchingController.h"
-#include "npc/NPCSimulation.h"
 #include "ecs/World.h"
 #include "ecs/Components.h"
 #include "GLTFLoader.h"  // For Skeleton
@@ -23,9 +23,7 @@ void GuiPlayerTab::render(IPlayerControl& playerControl, PlayerSettings& setting
     }
 
     // Cape section
-    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.9f, 0.5f, 0.5f, 1.0f));
-    ImGui::Text("CAPE");
-    ImGui::PopStyleColor();
+    GuiStyle::sectionHeader("CAPE");
 
     ImGui::Checkbox("Enable Cape", &settings.capeEnabled);
     if (ImGui::IsItemHovered()) {
@@ -42,9 +40,7 @@ void GuiPlayerTab::render(IPlayerControl& playerControl, PlayerSettings& setting
     ImGui::Spacing();
 
     // Weapons section
-    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.5f, 0.8f, 0.9f, 1.0f));
-    ImGui::Text("WEAPONS");
-    ImGui::PopStyleColor();
+    GuiStyle::sectionHeader("WEAPONS");
 
     ImGui::Checkbox("Show Sword", &settings.showSword);
     if (ImGui::IsItemHovered()) {
@@ -66,9 +62,7 @@ void GuiPlayerTab::render(IPlayerControl& playerControl, PlayerSettings& setting
     ImGui::Spacing();
 
     // Character LOD section
-    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.5f, 0.9f, 0.5f, 1.0f));
-    ImGui::Text("CHARACTER LOD");
-    ImGui::PopStyleColor();
+    GuiStyle::sectionHeader("CHARACTER LOD");
 
     auto& character = sceneBuilder.getAnimatedCharacter();
     {
@@ -104,13 +98,9 @@ void GuiPlayerTab::render(IPlayerControl& playerControl, PlayerSettings& setting
         ImGui::Text("Animation Update:");
         ImGui::SameLine();
         if (animSkipped) {
-            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.5f, 0.5f, 1.0f));
-            ImGui::Text("SKIPPED (using cached)");
-            ImGui::PopStyleColor();
+            ImGui::TextColored(GuiStyle::kBad, "SKIPPED (using cached)");
         } else {
-            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.5f, 1.0f, 0.5f, 1.0f));
-            ImGui::Text("ACTIVE");
-            ImGui::PopStyleColor();
+            ImGui::TextColored(GuiStyle::kGood, "ACTIVE");
         }
 
         ImGui::Spacing();
@@ -148,132 +138,20 @@ void GuiPlayerTab::render(IPlayerControl& playerControl, PlayerSettings& setting
     ImGui::Spacing();
 
     // Cape info
-    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.7f, 0.7f, 0.7f, 1.0f));
-    ImGui::Text("CAPE INFO");
-    ImGui::PopStyleColor();
+    GuiStyle::sectionHeader("CAPE INFO");
 
     ImGui::BulletText("Cloth simulation: Verlet integration");
     ImGui::BulletText("Body colliders: Spheres + Capsules");
     ImGui::BulletText("Attachments: Shoulders + Upper back");
 
-    // NPC LOD section
-    if (auto* npcSim = sceneBuilder.getNPCSimulation()) {
-        ImGui::Spacing();
-        ImGui::Separator();
-        ImGui::Spacing();
-
-        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.9f, 0.7f, 0.5f, 1.0f));
-        ImGui::Text("NPC LOD");
-        ImGui::PopStyleColor();
-
-        ecs::World* ecsWorld = sceneBuilder.getECSWorld();
-        size_t npcCount = npcSim->getNPCCount();
-
-        // Helper: read an NPC's ECS LOD controller (authoritative per-NPC state).
-        auto getLOD = [&](size_t i) -> const ecs::NPCLODController* {
-            if (!ecsWorld) return nullptr;
-            ecs::Entity e = npcSim->getNPCEntity(i);
-            if (e == ecs::NullEntity || !ecsWorld->valid(e) ||
-                !ecsWorld->has<ecs::NPCLODController>(e)) {
-                return nullptr;
-            }
-            return &ecsWorld->get<ecs::NPCLODController>(e);
-        };
-
-        if (npcCount == 0) {
-            ImGui::TextDisabled("No NPCs in scene");
-        } else {
-            // Count NPCs per LOD level
-            uint32_t virtualCount = 0, bulkCount = 0, realCount = 0;
-            for (size_t i = 0; i < npcCount; ++i) {
-                const ecs::NPCLODController* lod = getLOD(i);
-                if (!lod) continue;
-                switch (lod->level) {
-                    case ecs::NPCLODLevel::Virtual: virtualCount++; break;
-                    case ecs::NPCLODLevel::Bulk: bulkCount++; break;
-                    case ecs::NPCLODLevel::Real: realCount++; break;
-                }
-            }
-
-            // LOD colors
-            ImVec4 colorReal(0.2f, 1.0f, 0.2f, 1.0f);     // Green
-            ImVec4 colorBulk(1.0f, 0.8f, 0.2f, 1.0f);     // Yellow
-            ImVec4 colorVirtual(1.0f, 0.3f, 0.3f, 1.0f);  // Red
-
-            ImGui::Text("Total NPCs: %zu", npcCount);
-
-            // Summary counts
-            ImGui::TextColored(colorReal, "Real (<25m):");
-            ImGui::SameLine();
-            ImGui::Text("%u", realCount);
-            ImGui::SameLine();
-            ImGui::TextColored(colorBulk, "  Bulk (25-50m):");
-            ImGui::SameLine();
-            ImGui::Text("%u", bulkCount);
-            ImGui::SameLine();
-            ImGui::TextColored(colorVirtual, "  Virtual (>50m):");
-            ImGui::SameLine();
-            ImGui::Text("%u", virtualCount);
-
-            ImGui::Spacing();
-
-            // Per-NPC details (collapsible)
-            if (ImGui::TreeNode("NPC Details")) {
-                for (size_t i = 0; i < npcCount; ++i) {
-                    const ecs::NPCLODController* lod = getLOD(i);
-
-                    const char* lodName = "Unknown";
-                    ImVec4 lodColor = ImVec4(1.0f, 1.0f, 1.0f, 1.0f);
-                    uint32_t frames = 0;
-
-                    if (lod) {
-                        frames = lod->framesSinceUpdate;
-                        switch (lod->level) {
-                            case ecs::NPCLODLevel::Real:
-                                lodName = "Real";
-                                lodColor = colorReal;
-                                break;
-                            case ecs::NPCLODLevel::Bulk:
-                                lodName = "Bulk";
-                                lodColor = colorBulk;
-                                break;
-                            case ecs::NPCLODLevel::Virtual:
-                                lodName = "Virtual";
-                                lodColor = colorVirtual;
-                                break;
-                        }
-                    }
-
-                    ImGui::Text("NPC %zu:", i);
-                    ImGui::SameLine();
-                    ImGui::TextColored(lodColor, "%s", lodName);
-                    ImGui::SameLine();
-                    ImGui::TextDisabled("(frames: %u)", frames);
-                }
-                ImGui::TreePop();
-            }
-
-            // LOD toggle
-            bool lodEnabled = npcSim->isLODEnabled();
-            if (ImGui::Checkbox("Enable NPC LOD", &lodEnabled)) {
-                const_cast<NPCSimulation*>(npcSim)->setLODEnabled(lodEnabled);
-            }
-            if (ImGui::IsItemHovered()) {
-                ImGui::SetTooltip("Virtual: >50m, no render, update every ~10s\n"
-                                  "Bulk: 25-50m, reduced updates ~1s\n"
-                                  "Real: <25m, full animation every frame");
-            }
-        }
-    }
+    // NPC LOD stats moved to GuiNPCTab (Character > NPC LOD window)
 
     // Animation mode section
     ImGui::Spacing();
     ImGui::Separator();
     ImGui::Spacing();
 
-    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.6f, 0.9f, 0.6f, 1.0f));
-    ImGui::Text("ANIMATION MODE");
-    ImGui::PopStyleColor();
+    GuiStyle::sectionHeader("ANIMATION MODE");
 
     // character already declared above, reuse it
 
@@ -317,16 +195,12 @@ void GuiPlayerTab::render(IPlayerControl& playerControl, PlayerSettings& setting
     // Motion matching detail section (only when that mode is active)
     if (character.isUsingMotionMatching()) {
         ImGui::Spacing();
-        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.3f, 0.8f, 1.0f, 1.0f));
-        ImGui::Text("MOTION MATCHING");
-        ImGui::PopStyleColor();
+        GuiStyle::sectionHeader("MOTION MATCHING");
 
         ImGui::Indent();
 
         // Strafe mode section
-        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.7f, 0.3f, 1.0f));
-        ImGui::Text("CHARACTER FACING");
-        ImGui::PopStyleColor();
+        GuiStyle::sectionHeader("CHARACTER FACING");
 
         auto& controller = const_cast<MotionMatching::MotionMatchingController&>(
             character.getMotionMatchingController());

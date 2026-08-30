@@ -1,4 +1,5 @@
 #include "GuiTerrainTab.h"
+#include "GuiStyle.h"
 #include "core/interfaces/ITerrainControl.h"
 #include "TerrainSystem.h"
 
@@ -8,9 +9,7 @@ void GuiTerrainTab::render(ITerrainControl& terrainControl) {
     ImGui::Spacing();
 
     // Terrain info
-    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.6f, 0.8f, 0.6f, 1.0f));
-    ImGui::Text("TERRAIN SYSTEM");
-    ImGui::PopStyleColor();
+    GuiStyle::sectionHeader("TERRAIN SYSTEM");
 
     const auto& terrain = terrainControl.getTerrainSystem();
     const auto& config = terrain.getConfig();
@@ -20,9 +19,9 @@ void GuiTerrainTab::render(ITerrainControl& terrainControl) {
 
     // Triangle count with color coding
     uint32_t triangleCount = terrainControl.getTerrainNodeCount();
-    ImVec4 triColor = triangleCount < 100000 ? ImVec4(0.4f, 0.9f, 0.4f, 1.0f) :
-                      triangleCount < 500000 ? ImVec4(0.9f, 0.9f, 0.4f, 1.0f) :
-                                               ImVec4(0.9f, 0.4f, 0.4f, 1.0f);
+    ImVec4 triColor = triangleCount < 100000 ? GuiStyle::kGood :
+                      triangleCount < 500000 ? GuiStyle::kWarning :
+                                               GuiStyle::kBad;
     ImGui::Text("Triangles:");
     ImGui::SameLine();
     ImGui::PushStyleColor(ImGuiCol_Text, triColor);
@@ -45,9 +44,7 @@ void GuiTerrainTab::render(ITerrainControl& terrainControl) {
     ImGui::Spacing();
 
     // LOD parameters (modifiable at runtime)
-    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.8f, 0.7f, 0.5f, 1.0f));
-    ImGui::Text("LOD PARAMETERS");
-    ImGui::PopStyleColor();
+    GuiStyle::sectionHeader("LOD PARAMETERS");
 
     auto& terrainMut = terrainControl.getTerrainSystem();
     TerrainConfig cfg = terrainMut.getConfig();
@@ -110,9 +107,7 @@ void GuiTerrainTab::render(ITerrainControl& terrainControl) {
     ImGui::Spacing();
 
     // Debug toggles
-    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.9f, 0.6f, 0.6f, 1.0f));
-    ImGui::Text("DEBUG");
-    ImGui::PopStyleColor();
+    GuiStyle::sectionHeader("DEBUG");
 
     bool terrainEnabled = terrainControl.isTerrainEnabled();
     if (ImGui::Checkbox("Enable Terrain", &terrainEnabled)) {
@@ -135,9 +130,7 @@ void GuiTerrainTab::render(ITerrainControl& terrainControl) {
     ImGui::Spacing();
 
     // Meshlet rendering
-    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.5f, 0.8f, 0.9f, 1.0f));
-    ImGui::Text("MESHLET RENDERING");
-    ImGui::PopStyleColor();
+    GuiStyle::sectionHeader("MESHLET RENDERING");
 
     bool meshletsEnabled = terrainMut.isMeshletsEnabled();
     if (ImGui::Checkbox("Enable Meshlets", &meshletsEnabled)) {
@@ -165,9 +158,7 @@ void GuiTerrainTab::render(ITerrainControl& terrainControl) {
     ImGui::Spacing();
 
     // Optimization toggles
-    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.8f, 0.6f, 0.8f, 1.0f));
-    ImGui::Text("OPTIMIZATIONS");
-    ImGui::PopStyleColor();
+    GuiStyle::sectionHeader("OPTIMIZATIONS");
 
     bool skipFrameOpt = terrainMut.isSkipFrameOptimizationEnabled();
     if (ImGui::Checkbox("Skip-Frame (Camera Still)", &skipFrameOpt)) {
@@ -199,9 +190,7 @@ void GuiTerrainTab::render(ITerrainControl& terrainControl) {
     ImGui::Spacing();
 
     // Streaming stats (Ghost of Tsushima style)
-    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.6f, 0.9f, 0.8f, 1.0f));
-    ImGui::Text("STREAMING");
-    ImGui::PopStyleColor();
+    GuiStyle::sectionHeader("STREAMING");
 
     uint32_t activeTiles = 0;
     uint32_t maxTiles = 64;  // MAX_ACTIVE_TILES constant
@@ -211,9 +200,9 @@ void GuiTerrainTab::render(ITerrainControl& terrainControl) {
 
     // Active tiles with color coding
     float tileUsage = static_cast<float>(activeTiles) / static_cast<float>(maxTiles);
-    ImVec4 tileColor = tileUsage < 0.5f ? ImVec4(0.4f, 0.9f, 0.4f, 1.0f) :
-                       tileUsage < 0.8f ? ImVec4(0.9f, 0.9f, 0.4f, 1.0f) :
-                                          ImVec4(0.9f, 0.4f, 0.4f, 1.0f);
+    ImVec4 tileColor = tileUsage < 0.5f ? GuiStyle::kGood :
+                       tileUsage < 0.8f ? GuiStyle::kWarning :
+                                          GuiStyle::kBad;
     ImGui::Text("Height Tiles:");
     ImGui::SameLine();
     ImGui::PushStyleColor(ImGuiCol_Text, tileColor);

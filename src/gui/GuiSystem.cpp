@@ -487,7 +487,7 @@ void GuiSystem::renderDebugWindow(GuiInterfaces& ui) {
     ImGui::SetNextWindowSize(ImVec2(320, 400), ImGuiCond_FirstUseEver);
 
     if (ImGui::Begin("Debug Visualizations", &windowStates.showDebug)) {
-        GuiDebugTab::render(ui.debug);
+        GuiDebugTab::render(ui.debug, ui.debugCommands);
     }
     ImGui::End();
 }

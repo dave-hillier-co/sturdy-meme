@@ -1,5 +1,6 @@
 #include "GuiDebugTab.h"
 #include "core/interfaces/IDebugControl.h"
+#include "controls/DebugCommands.h"
 #include "DebugLineSystem.h"
 #ifdef JPH_DEBUG_RENDERER
 #include "PhysicsDebugRenderer.h"
@@ -7,7 +8,8 @@
 
 #include <imgui.h>
 
-void GuiDebugTab::render(IDebugControl& debugControl) {
+void GuiDebugTab::render(IDebugControl& debugControl,
+                         const std::vector<DebugCommand>* debugCommands) {
     ImGui::Spacing();
 
     ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.6f, 0.6f, 1.0f));
@@ -208,21 +210,26 @@ void GuiDebugTab::render(IDebugControl& debugControl) {
     ImGui::Text("KEYBOARD SHORTCUTS");
     ImGui::PopStyleColor();
 
-    ImGui::BulletText("F1 - Toggle GUI");
-    ImGui::BulletText("F2 - Tree Editor");
-    ImGui::BulletText("P - Place tree at camera");
-    ImGui::BulletText("Tab - Toggle camera mode");
-    ImGui::BulletText("1-4 - Time presets");
-    ImGui::BulletText("+/- - Time scale");
-    ImGui::BulletText("C - Cycle weather");
-    ImGui::BulletText("Z/X - Weather intensity");
-    ImGui::BulletText(",/. - Snow amount");
-    ImGui::BulletText("T - Terrain wireframe");
-    ImGui::BulletText("6 - Cascade debug");
-    ImGui::BulletText("7 - Snow depth debug");
-    ImGui::BulletText("8 - Hi-Z culling toggle");
-    ImGui::BulletText("[ ] - Fog density");
-    ImGui::BulletText("\\ - Toggle fog");
-    ImGui::BulletText("F - Spawn confetti");
-    ImGui::BulletText("R - Spawn ragdoll");
+    if (debugCommands && !debugCommands->empty()) {
+        // Generated from the Application's command table, so this list always
+        // matches the actual keybindings.
+        const char* lastCategory = nullptr;
+        for (const auto& command : *debugCommands) {
+            if (!lastCategory || command.category != lastCategory) {
+                ImGui::Spacing();
+                ImGui::TextDisabled("%s", command.category.c_str());
+                lastCategory = command.category.c_str();
+            }
+            ImGui::BulletText("%s - %s",
+                              DebugCommands::keyName(command).c_str(),
+                              command.label.c_str());
+        }
+        ImGui::Spacing();
+        ImGui::TextDisabled("Movement");
+        ImGui::BulletText("Tab - Toggle camera mode");
+        ImGui::BulletText("M - Toggle mouse look");
+        ImGui::BulletText("WASD / arrows - Move and look (see README for full movement controls)");
+    } else {
+        ImGui::TextDisabled("Command table not available");
+    }
 }

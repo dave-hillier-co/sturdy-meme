@@ -79,6 +79,9 @@ FrameResult FrameExecutor::execute(const FrameBuilder& builder) {
 
     // Present
     FrameResult presentResult = present(imageIndex);
+    if (presentResult == FrameResult::Success) {
+        lastPresentedImageIndex_ = imageIndex;
+    }
 
     // Advance to next frame slot regardless of present result
     frameSync_.advance();

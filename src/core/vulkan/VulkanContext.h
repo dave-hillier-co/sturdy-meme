@@ -91,6 +91,7 @@ public:
 
     const std::vector<vk::ImageView>& getSwapchainImageViews() const { return swapchainImageViews; }
     uint32_t getSwapchainImageCount() const { return static_cast<uint32_t>(swapchainImages.size()); }
+    vk::Image getSwapchainImage(uint32_t index) const { return swapchainImages[index]; }
     uint32_t getWidth() const { return swapchainExtent.width; }
     uint32_t getHeight() const { return swapchainExtent.height; }
 

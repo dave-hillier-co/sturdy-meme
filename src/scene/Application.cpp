@@ -50,6 +50,9 @@
 
 #ifdef JPH_DEBUG_RENDERER
 #include "PhysicsDebugRenderer.h"
+#include "debug/ScreenshotCapture.h"
+
+#include <filesystem>
 #endif
 
 #ifdef __APPLE__
@@ -1073,6 +1076,14 @@ void Application::runTerrainHeightDiagnostic() {
 void Application::run() {
     buildDebugCommands();
 
+    // Debug boot verification: SCREENSHOT_AFTER_FRAMES=N captures the swapchain
+    // to screenshot.png after N presented frames and logs "Screenshot saved: <path>".
+    int screenshotAfterFrames = -1;
+    if (const char* screenshotEnv = SDL_getenv("SCREENSHOT_AFTER_FRAMES")) {
+        screenshotAfterFrames = SDL_atoi(screenshotEnv);
+    }
+    int presentedFrames = 0;
+
     auto lastTime = std::chrono::high_resolution_clock::now();
     float smoothedFps = 60.0f;
 
@@ -1404,6 +1415,14 @@ void Application::run() {
         // Render frame - if skipped (window minimized/suspended), cancel GUI frame
         if (!renderer_->render(camera)) {
             gui_->cancelFrame();
+        } else if (screenshotAfterFrames > 0 && ++presentedFrames == screenshotAfterFrames) {
+            renderer_->waitIdle();
+            std::string screenshotPath = std::filesystem::absolute("screenshot.png").string();
+            if (ScreenshotCapture::captureSwapchainImage(renderer_->getVulkanContext(),
+                                                         renderer_->getLastPresentedImageIndex(),
+                                                         screenshotPath)) {
+                SDL_Log("Screenshot saved: %s", screenshotPath.c_str());
+            }
         }
 
         // Update window title with FPS, time of day, and camera mode

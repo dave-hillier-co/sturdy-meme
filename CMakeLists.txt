@@ -18,6 +18,12 @@ find_package(imgui CONFIG REQUIRED)
 find_package(imguizmo CONFIG REQUIRED)
 find_package(fastgltf CONFIG REQUIRED)
 find_package(unofficial-openfbx CONFIG REQUIRED)
+# Older vcpkg openfbx ports export a typo'd target name ("unoffical"); newer ones fixed it.
+if(TARGET unofficial::openfbx::openfbx)
+    set(OPENFBX_TARGET unofficial::openfbx::openfbx)
+else()
+    set(OPENFBX_TARGET unoffical::openfbx::openfbx)
+endif()
 find_package(lodepng CONFIG REQUIRED)
 find_package(nlohmann_json CONFIG REQUIRED)
 find_package(EnTT CONFIG REQUIRED)
@@ -390,7 +396,7 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     imgui::imgui
     imguizmo::imguizmo
     fastgltf::fastgltf
-    unoffical::openfbx::openfbx
+    ${OPENFBX_TARGET}
     lodepng
     nlohmann_json::nlohmann_json
     EnTT::EnTT
@@ -1757,7 +1763,7 @@ if(BUILD_TESTS)
         GPUOpen::VulkanMemoryAllocator
         SDL3::SDL3
         fastgltf::fastgltf
-        unoffical::openfbx::openfbx
+        ${OPENFBX_TARGET}
     )
 
     target_compile_features(motion_matching_integration_tests PRIVATE cxx_std_17)
@@ -1808,7 +1814,7 @@ if(BUILD_TESTS)
         GPUOpen::VulkanMemoryAllocator
         SDL3::SDL3
         fastgltf::fastgltf
-        unoffical::openfbx::openfbx
+        ${OPENFBX_TARGET}
     )
 
     target_compile_features(motion_matching_data_driven_tests PRIVATE cxx_std_17)

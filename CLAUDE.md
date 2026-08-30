@@ -13,6 +13,7 @@
 - compile with `cmake --preset debug && cmake --build build/debug`
 - run with `./run-debug.sh` do not attempt to combine with timeouts or sleeps
 - DO NOT use `timeout` or `gtimeout` to attempt to run - instead run in the background and use pkill
+- Screenshots: F12 saves a PNG of the presented frame (GUI included) to `screenshots/` at the repo root (`SCREENSHOT_DIR` overrides). For visual verification without a keypress, run `SCREENSHOT_AFTER_FRAMES=300 ./run-debug.sh` in the background — it captures once, N rendered frames after startup, and logs `Screenshot saved: <path>`; wait for that log line, then pkill and inspect the PNG.
 - Prefer composition over inheritance - assume pretty much all of the time you want to use inheritance you are wrong.
 - ShaderLoader API: use `ShaderLoader::loadShaderModule(device, path)` or the two-step `readFile` + `createShaderModule`. There is NO `loadShader` method.
 - Terrain height uses `h * heightScale` where h is normalized [0,1]. Use functions from `shaders/terrain_height_common.glsl` (shaders) or `src/TerrainHeight.h` (C++). Do NOT duplicate the formula.

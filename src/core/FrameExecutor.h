@@ -67,10 +67,6 @@ public:
 
     void setWindowSuspended(bool suspended) { windowSuspended_ = suspended; }
 
-    // Swapchain image index used by the most recent successfully presented frame.
-    // Valid only after execute() returned Success.
-    uint32_t lastPresentedImageIndex() const { return lastPresentedImageIndex_; }
-
 private:
     FrameResult acquireImage(uint32_t& imageIndex);
     FrameResult submitCommandBuffer(vk::CommandBuffer cmd, uint32_t imageIndex);
@@ -84,5 +80,4 @@ private:
     TripleBuffering frameSync_;
     VulkanContext* vulkanContext_ = nullptr;
     bool windowSuspended_ = false;
-    uint32_t lastPresentedImageIndex_ = 0;
 };

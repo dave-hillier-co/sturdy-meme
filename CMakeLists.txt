@@ -316,7 +316,6 @@ set(SOURCES
     src/ik/ClimbingIKSolver.cpp
     # Debug
     src/debug/GpuProfiler.cpp
-    src/debug/ScreenshotCapture.cpp
     src/debug/CpuProfiler.cpp
     src/debug/DebugLineSystem.cpp
     src/debug/RoadRiverVisualization.cpp

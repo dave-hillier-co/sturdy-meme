@@ -119,10 +119,6 @@ public:
     uint32_t getWidth() const { return vulkanContext_->getWidth(); }
     uint32_t getHeight() const { return vulkanContext_->getHeight(); }
 
-    // Swapchain image index of the most recently presented frame
-    // (valid after render() returned true). Used for debug screenshot capture.
-    uint32_t getLastPresentedImageIndex() const { return frameExecutor_.lastPresentedImageIndex(); }
-
     // Handle window resize (recreate swapchain and dependent resources)
     bool handleResize();
 

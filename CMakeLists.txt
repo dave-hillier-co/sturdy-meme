@@ -267,9 +267,11 @@ set(SOURCES
     src/gui/GuiFlamegraph.cpp
     src/gui/GuiIKTab.cpp
     src/gui/GuiPlayerTab.cpp
+    src/gui/GuiNPCTab.cpp
     src/gui/GuiPerformanceTab.cpp
     src/gui/GuiTreeTab.cpp
     src/gui/GuiGrassTab.cpp
+    src/gui/GuiPropertyEditors.cpp
     src/gui/GuiSceneGraphTab.cpp
     src/gui/GuiHierarchyPanel.cpp
     src/gui/GuiInspectorPanel.cpp

@@ -1,4 +1,5 @@
 #include "GuiInspectorPanel.h"
+#include "GuiPropertyEditors.h"
 #include "core/interfaces/ISceneControl.h"
 #include "scene/SceneBuilder.h"
 #include "ecs/World.h"
@@ -14,219 +15,9 @@
 
 namespace {
 
-// Helper to draw a color preview square
-void drawColorPreview(const glm::vec3& color, float size = 16.0f) {
-    ImVec2 pos = ImGui::GetCursorScreenPos();
-    ImDrawList* drawList = ImGui::GetWindowDrawList();
-    ImU32 col = IM_COL32(
-        static_cast<int>(std::clamp(color.r, 0.0f, 1.0f) * 255),
-        static_cast<int>(std::clamp(color.g, 0.0f, 1.0f) * 255),
-        static_cast<int>(std::clamp(color.b, 0.0f, 1.0f) * 255),
-        255
-    );
-    drawList->AddRectFilled(pos, ImVec2(pos.x + size, pos.y + size), col);
-    drawList->AddRect(pos, ImVec2(pos.x + size, pos.y + size), IM_COL32(100, 100, 100, 255));
-    ImGui::Dummy(ImVec2(size, size));
-}
-
-// Helper to edit vec3 with colored labels
-bool editVec3(const char* label, glm::vec3& value, float speed = 0.1f, float min = -10000.0f, float max = 10000.0f) {
-    bool changed = false;
-    ImGui::PushID(label);
-
-    ImGui::Text("%s", label);
-    ImGui::SameLine(100);
-
-    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.4f, 0.4f, 1.0f));
-    ImGui::SetNextItemWidth(60);
-    changed |= ImGui::DragFloat("##X", &value.x, speed, min, max, "X:%.2f");
-    ImGui::PopStyleColor();
-    ImGui::SameLine();
-
-    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.4f, 1.0f, 0.4f, 1.0f));
-    ImGui::SetNextItemWidth(60);
-    changed |= ImGui::DragFloat("##Y", &value.y, speed, min, max, "Y:%.2f");
-    ImGui::PopStyleColor();
-    ImGui::SameLine();
-
-    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.4f, 0.4f, 1.0f, 1.0f));
-    ImGui::SetNextItemWidth(60);
-    changed |= ImGui::DragFloat("##Z", &value.z, speed, min, max, "Z:%.2f");
-    ImGui::PopStyleColor();
-
-    ImGui::PopID();
-    return changed;
-}
-
-// Helper to edit a color with preview
-bool editColor(const char* label, glm::vec3& color) {
-    ImGui::PushID(label);
-    ImGui::Text("%s", label);
-    ImGui::SameLine(100);
-
-    float col[3] = { color.r, color.g, color.b };
-    bool changed = ImGui::ColorEdit3("##color", col, ImGuiColorEditFlags_NoInputs | ImGuiColorEditFlags_NoLabel);
-    if (changed) {
-        color = glm::vec3(col[0], col[1], col[2]);
-    }
-    ImGui::SameLine();
-    drawColorPreview(color);
-
-    ImGui::PopID();
-    return changed;
-}
-
-// Render transform section
-void renderTransformSection(ecs::World& world, ecs::Entity entity, SceneEditorState& state) {
-    if (!ImGui::CollapsingHeader("Transform", state.showTransformSection ? ImGuiTreeNodeFlags_DefaultOpen : 0)) {
-        return;
-    }
-
-    // Transform mode selector
-    ImGui::Text("Mode:");
-    ImGui::SameLine();
-    if (ImGui::RadioButton("Translate", state.transformMode == SceneEditorState::TransformMode::Translate)) {
-        state.transformMode = SceneEditorState::TransformMode::Translate;
-    }
-    ImGui::SameLine();
-    if (ImGui::RadioButton("Rotate", state.transformMode == SceneEditorState::TransformMode::Rotate)) {
-        state.transformMode = SceneEditorState::TransformMode::Rotate;
-    }
-    ImGui::SameLine();
-    if (ImGui::RadioButton("Scale", state.transformMode == SceneEditorState::TransformMode::Scale)) {
-        state.transformMode = SceneEditorState::TransformMode::Scale;
-    }
-
-    // Space selector
-    ImGui::Text("Space:");
-    ImGui::SameLine();
-    if (ImGui::RadioButton("Local", state.transformSpace == SceneEditorState::TransformSpace::Local)) {
-        state.transformSpace = SceneEditorState::TransformSpace::Local;
-    }
-    ImGui::SameLine();
-    if (ImGui::RadioButton("World", state.transformSpace == SceneEditorState::TransformSpace::World)) {
-        state.transformSpace = SceneEditorState::TransformSpace::World;
-    }
-
-    ImGui::Spacing();
-    ImGui::Separator();
-    ImGui::Spacing();
-
-    // Edit LocalTransform if available
-    if (world.has<ecs::LocalTransform>(entity)) {
-        auto& local = world.get<ecs::LocalTransform>(entity);
-
-        if (editVec3("Position", local.position, 0.1f)) {
-            // Mark for world transform update
-            ecs::systems::updateWorldTransforms(world);
-        }
-
-        // Convert quaternion to euler for editing
-        glm::vec3 eulerDegrees = glm::degrees(glm::eulerAngles(local.rotation));
-        if (editVec3("Rotation", eulerDegrees, 1.0f, -360.0f, 360.0f)) {
-            local.rotation = glm::quat(glm::radians(eulerDegrees));
-            ecs::systems::updateWorldTransforms(world);
-        }
-
-        if (editVec3("Scale", local.scale, 0.01f, 0.01f, 100.0f)) {
-            ecs::systems::updateWorldTransforms(world);
-        }
-
-        // Uniform scale checkbox
-        static bool uniformScale = true;
-        ImGui::Checkbox("Uniform Scale", &uniformScale);
-        if (uniformScale) {
-            ImGui::SameLine();
-            float avgScale = (local.scale.x + local.scale.y + local.scale.z) / 3.0f;
-            ImGui::SetNextItemWidth(100);
-            if (ImGui::DragFloat("##uniformScale", &avgScale, 0.01f, 0.01f, 100.0f)) {
-                local.scale = glm::vec3(avgScale);
-                ecs::systems::updateWorldTransforms(world);
-            }
-        }
-    } else if (world.has<ecs::Transform>(entity)) {
-        // Read-only world transform display
-        const auto& transform = world.get<ecs::Transform>(entity);
-        glm::vec3 pos = transform.position();
-
-        // Decompose matrix for display
-        glm::vec3 scale;
-        glm::quat rotation;
-        glm::vec3 translation;
-        glm::vec3 skew;
-        glm::vec4 perspective;
-        glm::decompose(transform.matrix, scale, rotation, translation, skew, perspective);
-
-        glm::vec3 eulerDegrees = glm::degrees(glm::eulerAngles(rotation));
-
-        ImGui::TextDisabled("(World Transform - Read Only)");
-        ImGui::Text("Position: %.2f, %.2f, %.2f", pos.x, pos.y, pos.z);
-        ImGui::Text("Rotation: %.1f, %.1f, %.1f", eulerDegrees.x, eulerDegrees.y, eulerDegrees.z);
-        ImGui::Text("Scale: %.2f, %.2f, %.2f", scale.x, scale.y, scale.z);
-
-        // Offer to add LocalTransform
-        if (ImGui::Button("Add LocalTransform")) {
-            world.add<ecs::LocalTransform>(entity, translation, rotation, scale);
-        }
-    } else {
-        ImGui::TextDisabled("No transform component");
-        if (ImGui::Button("Add Transform")) {
-            world.add<ecs::Transform>(entity);
-            world.add<ecs::LocalTransform>(entity);
-        }
-    }
-
-    ImGui::Spacing();
-}
-
-// Render material/PBR section
-void renderMaterialSection(ecs::World& world, ecs::Entity entity, SceneEditorState& state) {
-    if (!ImGui::CollapsingHeader("Material", state.showMaterialSection ? ImGuiTreeNodeFlags_DefaultOpen : 0)) {
-        return;
-    }
-
-    if (world.has<ecs::MaterialRef>(entity)) {
-        auto& matRef = world.get<ecs::MaterialRef>(entity);
-        ImGui::Text("Material ID: %u", matRef.id);
-    }
-
-    if (world.has<ecs::PBRProperties>(entity)) {
-        auto& pbr = world.get<ecs::PBRProperties>(entity);
-
-        ImGui::SliderFloat("Roughness", &pbr.roughness, 0.0f, 1.0f);
-        ImGui::SliderFloat("Metallic", &pbr.metallic, 0.0f, 1.0f);
-
-        ImGui::Spacing();
-        ImGui::Text("Emissive");
-        ImGui::Indent();
-        ImGui::SliderFloat("Intensity##emissive", &pbr.emissiveIntensity, 0.0f, 10.0f);
-        editColor("Color##emissive", pbr.emissiveColor);
-        ImGui::Unindent();
-
-        if (pbr.alphaTestThreshold > 0.0f) {
-            ImGui::SliderFloat("Alpha Test", &pbr.alphaTestThreshold, 0.0f, 1.0f);
-        }
-    } else {
-        ImGui::TextDisabled("No PBR properties");
-        if (ImGui::Button("Add PBR Properties")) {
-            world.add<ecs::PBRProperties>(entity);
-        }
-    }
-
-    // Opacity
-    if (world.has<ecs::Opacity>(entity)) {
-        auto& opacity = world.get<ecs::Opacity>(entity);
-        ImGui::SliderFloat("Opacity", &opacity.value, 0.0f, 1.0f);
-    }
-
-    // Hue Shift
-    if (world.has<ecs::HueShift>(entity)) {
-        auto& hue = world.get<ecs::HueShift>(entity);
-        ImGui::SliderFloat("Hue Shift", &hue.value, -1.0f, 1.0f);
-    }
-
-    ImGui::Spacing();
-}
+// Shared editors (transform/material sections, color/vec3 widgets) live in
+// GuiPropertyEditors and are also used by GuiSceneGraphTab.
+using GuiPropertyEditors::editColor;
 
 // Render components section
 void renderComponentsSection(ecs::World& world, ecs::Entity entity, SceneEditorState& state) {
@@ -499,8 +290,8 @@ void GuiInspectorPanel::render(ISceneControl& sceneControl, SceneEditorState& st
 
     // Scrollable content area
     if (ImGui::BeginChild("InspectorContent", ImVec2(0, 0), false)) {
-        renderTransformSection(*world, state.selectedEntity, state);
-        renderMaterialSection(*world, state.selectedEntity, state);
+        GuiPropertyEditors::renderTransformEditor(*world, state.selectedEntity, state);
+        GuiPropertyEditors::renderMaterialEditor(*world, state.selectedEntity, state);
         renderComponentsSection(*world, state.selectedEntity, state);
         renderTagsSection(*world, state.selectedEntity, state);
     }

@@ -35,6 +35,7 @@
 #include "GuiPerformanceTab.h"
 #include "GuiIKTab.h"
 #include "GuiPlayerTab.h"
+#include "GuiNPCTab.h"
 #include "GuiTreeTab.h"
 #include "GuiGrassTab.h"
 #include "GuiSceneGraphTab.h"
@@ -235,6 +236,9 @@ void GuiSystem::render(GuiInterfaces& ui, const Camera& camera, float deltaTime,
     if (windowStates.showPlayer) {
         renderPlayerWindow(ui);
     }
+    if (windowStates.showNPC) {
+        renderNPCWindow(ui);
+    }
     if (windowStates.showIK) {
         renderIKWindow(ui, camera);
     }
@@ -336,6 +340,7 @@ void GuiSystem::renderMainMenuBar() {
 
         if (ImGui::BeginMenu("Character")) {
             ImGui::MenuItem("Player", nullptr, &windowStates.showPlayer);
+            ImGui::MenuItem("NPC LOD", nullptr, &windowStates.showNPC);
             ImGui::MenuItem("IK / Animation", nullptr, &windowStates.showIK);
             ImGui::EndMenu();
         }
@@ -468,6 +473,16 @@ void GuiSystem::renderPlayerWindow(GuiInterfaces& ui) {
 
     if (ImGui::Begin("Player", &windowStates.showPlayer)) {
         GuiPlayerTab::render(ui.player, playerSettings);
+    }
+    ImGui::End();
+}
+
+void GuiSystem::renderNPCWindow(GuiInterfaces& ui) {
+    ImGui::SetNextWindowPos(ImVec2(620, 240), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSize(ImVec2(280, 220), ImGuiCond_FirstUseEver);
+
+    if (ImGui::Begin("NPC LOD", &windowStates.showNPC)) {
+        GuiNPCTab::render(ui.player);
     }
     ImGui::End();
 }

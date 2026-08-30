@@ -85,6 +85,7 @@ private:
     void renderTreesWindow(GuiInterfaces& ui);
     void renderGrassWindow(GuiInterfaces& ui);
     void renderPlayerWindow(GuiInterfaces& ui);
+    void renderNPCWindow(GuiInterfaces& ui);
     void renderIKWindow(GuiInterfaces& ui, const Camera& camera);
     void renderDebugWindow(GuiInterfaces& ui);
     void renderPerformanceWindow(GuiInterfaces& ui);
@@ -131,6 +132,7 @@ private:
         bool showTrees = false;
         bool showGrass = false;
         bool showPlayer = false;
+        bool showNPC = false;
         bool showIK = false;
         bool showDebug = false;
         bool showPerformance = false;

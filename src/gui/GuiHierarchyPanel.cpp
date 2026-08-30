@@ -241,6 +241,59 @@ void renderEntityNode(ecs::World& world, ecs::Entity entity, SceneEditorState& s
     ImGui::PopID();
 }
 
+// Shared entity-creation menu items used by both the "Create" menubar menu and
+// the "Create Entity" popup. Renders: Empty Entity, [Empty Child], Separator,
+// Point Light, Spot Light.
+// - withDebugNames: attach DebugName components to created entities (menubar behavior)
+// - includeEmptyChild: offer "Empty Child" under the selected entity (popup behavior)
+void renderCreateEntityItems(ecs::World& world, SceneEditorState& state,
+                             bool withDebugNames, bool includeEmptyChild) {
+    if (ImGui::MenuItem("Empty Entity")) {
+        ecs::Entity e = world.create();
+        world.add<ecs::Transform>(e);
+        world.add<ecs::LocalTransform>(e);
+        if (withDebugNames) {
+            world.add<ecs::DebugName>(e, "Empty");
+        }
+        state.select(e);
+    }
+    if (includeEmptyChild) {
+        if (ImGui::MenuItem("Empty Child") && state.selectedEntity != ecs::NullEntity) {
+            ecs::Entity e = world.create();
+            world.add<ecs::Transform>(e);
+            world.add<ecs::LocalTransform>(e);
+            ecs::systems::attachToParent(world, e, state.selectedEntity);
+            if (!world.has<ecs::Children>(state.selectedEntity)) {
+                world.add<ecs::Children>(state.selectedEntity);
+            }
+            state.select(e);
+        }
+    }
+    ImGui::Separator();
+    if (ImGui::MenuItem("Point Light")) {
+        ecs::Entity e = world.create();
+        world.add<ecs::Transform>(e);
+        world.add<ecs::LocalTransform>(e);
+        world.add<ecs::PointLightComponent>(e, glm::vec3(1.0f), 1.0f, 10.0f);
+        world.add<ecs::LightSourceTag>(e);
+        if (withDebugNames) {
+            world.add<ecs::DebugName>(e, "New Point Light");
+        }
+        state.select(e);
+    }
+    if (ImGui::MenuItem("Spot Light")) {
+        ecs::Entity e = world.create();
+        world.add<ecs::Transform>(e);
+        world.add<ecs::LocalTransform>(e);
+        world.add<ecs::SpotLightComponent>(e, glm::vec3(1.0f), 1.0f);
+        world.add<ecs::LightSourceTag>(e);
+        if (withDebugNames) {
+            world.add<ecs::DebugName>(e, "New Spot Light");
+        }
+        state.select(e);
+    }
+}
+
 } // anonymous namespace
 
 void GuiHierarchyPanel::renderCreateMenuBar(ISceneControl& sceneControl, SceneEditorState& state) {
@@ -249,32 +302,7 @@ void GuiHierarchyPanel::renderCreateMenuBar(ISceneControl& sceneControl, SceneEd
     if (ImGui::BeginMenu("Create")) {
         ecs::World* world = sceneControl.getECSWorld();
         if (world) {
-            if (ImGui::MenuItem("Empty Entity")) {
-                ecs::Entity e = world->create();
-                world->add<ecs::Transform>(e);
-                world->add<ecs::LocalTransform>(e);
-                world->add<ecs::DebugName>(e, "Empty");
-                state.select(e);
-            }
-            ImGui::Separator();
-            if (ImGui::MenuItem("Point Light")) {
-                ecs::Entity e = world->create();
-                world->add<ecs::Transform>(e);
-                world->add<ecs::LocalTransform>(e);
-                world->add<ecs::PointLightComponent>(e, glm::vec3(1.0f), 1.0f, 10.0f);
-                world->add<ecs::LightSourceTag>(e);
-                world->add<ecs::DebugName>(e, "New Point Light");
-                state.select(e);
-            }
-            if (ImGui::MenuItem("Spot Light")) {
-                ecs::Entity e = world->create();
-                world->add<ecs::Transform>(e);
-                world->add<ecs::LocalTransform>(e);
-                world->add<ecs::SpotLightComponent>(e, glm::vec3(1.0f), 1.0f);
-                world->add<ecs::LightSourceTag>(e);
-                world->add<ecs::DebugName>(e, "New Spot Light");
-                state.select(e);
-            }
+            renderCreateEntityItems(*world, state, /*withDebugNames=*/true, /*includeEmptyChild=*/false);
         }
         ImGui::EndMenu();
     }
@@ -332,39 +360,7 @@ void GuiHierarchyPanel::render(ISceneControl& sceneControl, SceneEditorState& st
     }
 
     if (ImGui::BeginPopup("Create Entity")) {
-        if (ImGui::MenuItem("Empty Entity")) {
-            ecs::Entity newEntity = world->create();
-            world->add<ecs::Transform>(newEntity);
-            world->add<ecs::LocalTransform>(newEntity);
-            state.select(newEntity);
-        }
-        if (ImGui::MenuItem("Empty Child") && state.selectedEntity != ecs::NullEntity) {
-            ecs::Entity newEntity = world->create();
-            world->add<ecs::Transform>(newEntity);
-            world->add<ecs::LocalTransform>(newEntity);
-            ecs::systems::attachToParent(*world, newEntity, state.selectedEntity);
-            if (!world->has<ecs::Children>(state.selectedEntity)) {
-                world->add<ecs::Children>(state.selectedEntity);
-            }
-            state.select(newEntity);
-        }
-        ImGui::Separator();
-        if (ImGui::MenuItem("Point Light")) {
-            ecs::Entity newEntity = world->create();
-            world->add<ecs::Transform>(newEntity);
-            world->add<ecs::LocalTransform>(newEntity);
-            world->add<ecs::PointLightComponent>(newEntity, glm::vec3(1.0f), 1.0f, 10.0f);
-            world->add<ecs::LightSourceTag>(newEntity);
-            state.select(newEntity);
-        }
-        if (ImGui::MenuItem("Spot Light")) {
-            ecs::Entity newEntity = world->create();
-            world->add<ecs::Transform>(newEntity);
-            world->add<ecs::LocalTransform>(newEntity);
-            world->add<ecs::SpotLightComponent>(newEntity, glm::vec3(1.0f), 1.0f);
-            world->add<ecs::LightSourceTag>(newEntity);
-            state.select(newEntity);
-        }
+        renderCreateEntityItems(*world, state, /*withDebugNames=*/false, /*includeEmptyChild=*/true);
         ImGui::EndPopup();
     }
 

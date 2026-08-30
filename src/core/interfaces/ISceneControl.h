@@ -8,7 +8,7 @@ namespace ecs { class World; }
 /**
  * Interface for scene/character controls.
  * Used by GuiIKTab to access animated character and skeleton.
- * Used by GuiSceneEditor for entity hierarchy and property editing.
+ * Used by the GUI scene panels (hierarchy, inspector, gizmo) for entity hierarchy and property editing.
  */
 class ISceneControl {
 public:

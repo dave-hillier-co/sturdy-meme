@@ -1,4 +1,5 @@
 #include "GuiPlayerTab.h"
+#include "GuiStyle.h"
 #include "core/interfaces/IPlayerControl.h"
 #include "SceneBuilder.h"
 #include "Camera.h"
@@ -22,9 +23,7 @@ void GuiPlayerTab::render(IPlayerControl& playerControl, PlayerSettings& setting
     }
 
     // Cape section
-    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.9f, 0.5f, 0.5f, 1.0f));
-    ImGui::Text("CAPE");
-    ImGui::PopStyleColor();
+    GuiStyle::sectionHeader("CAPE");
 
     ImGui::Checkbox("Enable Cape", &settings.capeEnabled);
     if (ImGui::IsItemHovered()) {
@@ -41,9 +40,7 @@ void GuiPlayerTab::render(IPlayerControl& playerControl, PlayerSettings& setting
     ImGui::Spacing();
 
     // Weapons section
-    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.5f, 0.8f, 0.9f, 1.0f));
-    ImGui::Text("WEAPONS");
-    ImGui::PopStyleColor();
+    GuiStyle::sectionHeader("WEAPONS");
 
     ImGui::Checkbox("Show Sword", &settings.showSword);
     if (ImGui::IsItemHovered()) {
@@ -65,9 +62,7 @@ void GuiPlayerTab::render(IPlayerControl& playerControl, PlayerSettings& setting
     ImGui::Spacing();
 
     // Character LOD section
-    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.5f, 0.9f, 0.5f, 1.0f));
-    ImGui::Text("CHARACTER LOD");
-    ImGui::PopStyleColor();
+    GuiStyle::sectionHeader("CHARACTER LOD");
 
     auto& character = sceneBuilder.getAnimatedCharacter();
     {
@@ -103,13 +98,9 @@ void GuiPlayerTab::render(IPlayerControl& playerControl, PlayerSettings& setting
         ImGui::Text("Animation Update:");
         ImGui::SameLine();
         if (animSkipped) {
-            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.5f, 0.5f, 1.0f));
-            ImGui::Text("SKIPPED (using cached)");
-            ImGui::PopStyleColor();
+            ImGui::TextColored(GuiStyle::kBad, "SKIPPED (using cached)");
         } else {
-            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.5f, 1.0f, 0.5f, 1.0f));
-            ImGui::Text("ACTIVE");
-            ImGui::PopStyleColor();
+            ImGui::TextColored(GuiStyle::kGood, "ACTIVE");
         }
 
         ImGui::Spacing();
@@ -147,9 +138,7 @@ void GuiPlayerTab::render(IPlayerControl& playerControl, PlayerSettings& setting
     ImGui::Spacing();
 
     // Cape info
-    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.7f, 0.7f, 0.7f, 1.0f));
-    ImGui::Text("CAPE INFO");
-    ImGui::PopStyleColor();
+    GuiStyle::sectionHeader("CAPE INFO");
 
     ImGui::BulletText("Cloth simulation: Verlet integration");
     ImGui::BulletText("Body colliders: Spheres + Capsules");
@@ -162,9 +151,7 @@ void GuiPlayerTab::render(IPlayerControl& playerControl, PlayerSettings& setting
     ImGui::Separator();
     ImGui::Spacing();
 
-    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.6f, 0.9f, 0.6f, 1.0f));
-    ImGui::Text("ANIMATION MODE");
-    ImGui::PopStyleColor();
+    GuiStyle::sectionHeader("ANIMATION MODE");
 
     // character already declared above, reuse it
 
@@ -208,16 +195,12 @@ void GuiPlayerTab::render(IPlayerControl& playerControl, PlayerSettings& setting
     // Motion matching detail section (only when that mode is active)
     if (character.isUsingMotionMatching()) {
         ImGui::Spacing();
-        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.3f, 0.8f, 1.0f, 1.0f));
-        ImGui::Text("MOTION MATCHING");
-        ImGui::PopStyleColor();
+        GuiStyle::sectionHeader("MOTION MATCHING");
 
         ImGui::Indent();
 
         // Strafe mode section
-        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.7f, 0.3f, 1.0f));
-        ImGui::Text("CHARACTER FACING");
-        ImGui::PopStyleColor();
+        GuiStyle::sectionHeader("CHARACTER FACING");
 
         auto& controller = const_cast<MotionMatching::MotionMatchingController&>(
             character.getMotionMatchingController());

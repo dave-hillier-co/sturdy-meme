@@ -1,4 +1,5 @@
 #include "GuiTreeTab.h"
+#include "GuiStyle.h"
 #include "core/interfaces/ITreeControl.h"
 #include "vegetation/TreeSystem.h"
 #include "vegetation/TreeOptions.h"
@@ -50,9 +51,7 @@ void GuiTreeTab::render(ITreeControl& treeControl) {
     ImGui::Spacing();
 
     // Tree selection header
-    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.6f, 0.9f, 0.6f, 1.0f));
-    ImGui::Text("TREE EDITOR");
-    ImGui::PopStyleColor();
+    GuiStyle::sectionHeader("TREE EDITOR");
 
     ImGui::Text("Trees: %zu", treeSystem->getTreeCount());
 
@@ -147,10 +146,7 @@ void GuiTreeTab::render(ITreeControl& treeControl) {
 
             // Reduced Detail LOD (LOD1) settings
             ImGui::Spacing();
-            ImGui::Separator();
-            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.5f, 0.9f, 0.7f, 1.0f));
-            ImGui::Text("Reduced Detail LOD (LOD1):");
-            ImGui::PopStyleColor();
+            GuiStyle::sectionHeader("REDUCED DETAIL LOD (LOD1)");
 
             ImGui::Checkbox("Enable LOD1", &settings.enableReducedDetailLOD);
             if (ImGui::IsItemHovered()) {
@@ -240,10 +236,7 @@ void GuiTreeTab::render(ITreeControl& treeControl) {
             }
 
             ImGui::Spacing();
-            ImGui::Separator();
-            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.6f, 0.8f, 1.0f, 1.0f));
-            ImGui::Text("Octahedral Impostor Atlas:");
-            ImGui::PopStyleColor();
+            GuiStyle::sectionHeader("OCTAHEDRAL IMPOSTOR ATLAS");
             ImGui::Checkbox("Frame Blending", &settings.enableFrameBlending);
             if (ImGui::IsItemHovered()) {
                 ImGui::SetTooltip("Blend between 3 nearest frames for smooth transitions.\n"
@@ -299,10 +292,7 @@ void GuiTreeTab::render(ITreeControl& treeControl) {
 
             // Shadow LOD Settings
             ImGui::Spacing();
-            ImGui::Separator();
-            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.8f, 0.6f, 1.0f, 1.0f));
-            ImGui::Text("Shadow LOD:");
-            ImGui::PopStyleColor();
+            GuiStyle::sectionHeader("SHADOW LOD");
 
             auto& shadowSettings = settings.shadow;
             ImGui::Checkbox("Cascade-Aware Shadows", &shadowSettings.enableCascadeLOD);
@@ -484,9 +474,7 @@ void GuiTreeTab::render(ITreeControl& treeControl) {
     }
 
     // Presets
-    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.9f, 0.8f, 0.5f, 1.0f));
-    ImGui::Text("PRESETS");
-    ImGui::PopStyleColor();
+    GuiStyle::sectionHeader("PRESETS");
 
     if (ImGui::Button("Oak")) { treeSystem->loadPreset("oak"); }
     ImGui::SameLine();

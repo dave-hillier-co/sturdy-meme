@@ -1,4 +1,5 @@
 #include "GuiInspectorPanel.h"
+#include "GuiStyle.h"
 #include "GuiPropertyEditors.h"
 #include "core/interfaces/ISceneControl.h"
 #include "scene/SceneBuilder.h"
@@ -244,9 +245,7 @@ void GuiInspectorPanel::render(ISceneControl& sceneControl, SceneEditorState& st
     ecs::World* world = sceneControl.getECSWorld();
 
     // Header
-    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.9f, 0.7f, 0.5f, 1.0f));
-    ImGui::Text("INSPECTOR");
-    ImGui::PopStyleColor();
+    GuiStyle::sectionHeader("INSPECTOR");
 
     if (!world) {
         ImGui::TextDisabled("ECS World not available");

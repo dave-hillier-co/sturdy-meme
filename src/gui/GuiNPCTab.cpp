@@ -5,6 +5,8 @@
 #include "ecs/World.h"
 #include "ecs/Components.h"
 
+#include "GuiStyle.h"
+
 #include <imgui.h>
 
 void GuiNPCTab::render(IPlayerControl& playerControl) {
@@ -16,7 +18,7 @@ void GuiNPCTab::render(IPlayerControl& playerControl) {
         return;
     }
 
-    ImGui::SeparatorText("NPC LOD");
+    GuiStyle::sectionHeader("NPC LOD");
 
     ecs::World* ecsWorld = sceneBuilder.getECSWorld();
     size_t npcCount = npcSim->getNPCCount();

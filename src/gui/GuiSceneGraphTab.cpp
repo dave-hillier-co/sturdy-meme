@@ -1,4 +1,5 @@
 #include "GuiSceneGraphTab.h"
+#include "GuiStyle.h"
 #include "GuiPropertyEditors.h"
 #include "core/interfaces/ISceneControl.h"
 #include "scene/SceneBuilder.h"
@@ -59,14 +60,8 @@ void GuiSceneGraphTab::render(ISceneControl& sceneControl, SceneGraphTabState& s
     ImGui::Spacing();
 
     // Header with object count
-    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.5f, 0.9f, 0.5f, 1.0f));
-    ImGui::Text("SCENE GRAPH");
-    ImGui::PopStyleColor();
-    ImGui::SameLine();
+    GuiStyle::sectionHeader("SCENE GRAPH");
     ImGui::TextDisabled("(%zu objects)", renderables.size());
-
-    ImGui::Spacing();
-    ImGui::Separator();
     ImGui::Spacing();
 
     // Filter input
@@ -155,9 +150,7 @@ void GuiSceneGraphTab::render(ISceneControl& sceneControl, SceneGraphTabState& s
     ImGui::Spacing();
 
     // Properties panel for selected object
-    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.9f, 0.7f, 0.5f, 1.0f));
-    ImGui::Text("PROPERTIES");
-    ImGui::PopStyleColor();
+    GuiStyle::sectionHeader("PROPERTIES");
 
     ImGui::Spacing();
 

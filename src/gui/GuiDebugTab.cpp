@@ -1,4 +1,5 @@
 #include "GuiDebugTab.h"
+#include "GuiStyle.h"
 #include "core/interfaces/IDebugControl.h"
 #include "controls/DebugCommands.h"
 #include "DebugLineSystem.h"
@@ -12,9 +13,7 @@ void GuiDebugTab::render(IDebugControl& debugControl,
                          const std::vector<DebugCommand>* debugCommands) {
     ImGui::Spacing();
 
-    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.6f, 0.6f, 1.0f));
-    ImGui::Text("DEBUG VISUALIZATIONS");
-    ImGui::PopStyleColor();
+    GuiStyle::sectionHeader("DEBUG VISUALIZATIONS");
 
     bool cascadeDebug = debugControl.isShowingCascadeDebug();
     if (ImGui::Checkbox("Shadow Cascade Debug", &cascadeDebug)) {
@@ -130,9 +129,7 @@ void GuiDebugTab::render(IDebugControl& debugControl,
         ImGui::Separator();
         ImGui::Spacing();
 
-        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.6f, 1.0f, 0.6f, 1.0f));
-        ImGui::Text("WORLD");
-        ImGui::PopStyleColor();
+        GuiStyle::sectionHeader("WORLD");
 
         static float gotoX = 0.0f;
         static float gotoZ = 0.0f;
@@ -169,9 +166,7 @@ void GuiDebugTab::render(IDebugControl& debugControl,
     ImGui::Separator();
     ImGui::Spacing();
 
-    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.6f, 0.8f, 1.0f, 1.0f));
-    ImGui::Text("OCCLUSION CULLING");
-    ImGui::PopStyleColor();
+    GuiStyle::sectionHeader("OCCLUSION CULLING");
 
     bool hiZEnabled = debugControl.isHiZCullingEnabled();
     if (ImGui::Checkbox("Hi-Z Occlusion Culling", &hiZEnabled)) {
@@ -192,9 +187,7 @@ void GuiDebugTab::render(IDebugControl& debugControl,
     ImGui::Separator();
     ImGui::Spacing();
 
-    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.8f, 0.8f, 0.5f, 1.0f));
-    ImGui::Text("SYSTEM INFO");
-    ImGui::PopStyleColor();
+    GuiStyle::sectionHeader("SYSTEM INFO");
 
     ImGui::Text("Renderer: Vulkan");
     ImGui::Text("Shadow Cascades: 4");
@@ -206,9 +199,7 @@ void GuiDebugTab::render(IDebugControl& debugControl,
     ImGui::Spacing();
 
     // Keyboard shortcuts reference
-    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.7f, 0.7f, 0.7f, 1.0f));
-    ImGui::Text("KEYBOARD SHORTCUTS");
-    ImGui::PopStyleColor();
+    GuiStyle::sectionHeader("KEYBOARD SHORTCUTS");
 
     if (debugCommands && !debugCommands->empty()) {
         // Generated from the Application's command table, so this list always

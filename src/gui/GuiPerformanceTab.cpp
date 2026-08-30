@@ -1,4 +1,5 @@
 #include "GuiPerformanceTab.h"
+#include "GuiStyle.h"
 #include "core/interfaces/IPerformanceControl.h"
 #include "PerformanceToggles.h"
 
@@ -11,9 +12,7 @@ void GuiPerformanceTab::render(IPerformanceControl& perfControl) {
     PerformanceToggles& toggles = perfControl.getPerformanceToggles();
 
     // Quick actions
-    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.8f, 0.4f, 1.0f));
-    ImGui::Text("QUICK ACTIONS");
-    ImGui::PopStyleColor();
+    GuiStyle::sectionHeader("QUICK ACTIONS");
 
     if (ImGui::Button("Enable All")) {
         toggles.enableAll();
@@ -97,9 +96,7 @@ void GuiPerformanceTab::render(IPerformanceControl& perfControl) {
     ImGui::Spacing();
 
     // Show sync debugging hint
-    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.6f, 0.6f, 1.0f));
-    ImGui::Text("SYNC DEBUGGING");
-    ImGui::PopStyleColor();
+    GuiStyle::sectionHeader("SYNC DEBUGGING");
     ImGui::TextWrapped("If disabling a compute pass fixes stuttering, "
                        "check for missing barriers between that pass and dependent draws.");
 }

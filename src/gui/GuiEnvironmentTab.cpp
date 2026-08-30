@@ -1,4 +1,5 @@
 #include "GuiEnvironmentTab.h"
+#include "GuiStyle.h"
 #include "core/interfaces/IEnvironmentControl.h"
 #include "AtmosphereLUTSystem.h"
 #include "EnvironmentSettings.h"
@@ -10,9 +11,7 @@ void GuiEnvironmentTab::render(IEnvironmentControl& envControl, EnvironmentTabSt
     ImGui::Spacing();
 
     // ========== FROXEL VOLUMETRIC FOG ==========
-    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.7f, 0.7f, 0.9f, 1.0f));
-    ImGui::Text("FROXEL VOLUMETRIC FOG");
-    ImGui::PopStyleColor();
+    GuiStyle::sectionHeader("FROXEL VOLUMETRIC FOG");
 
     bool fogEnabled = envControl.isFogEnabled();
     if (ImGui::Checkbox("Enable Froxel Fog", &fogEnabled)) {
@@ -94,9 +93,7 @@ void GuiEnvironmentTab::render(IEnvironmentControl& envControl, EnvironmentTabSt
 
         // Extreme test presets for froxel behavior testing
         ImGui::Spacing();
-        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.6f, 0.3f, 1.0f));
-        ImGui::Text("Extreme Tests:");
-        ImGui::PopStyleColor();
+        GuiStyle::sectionHeader("EXTREME TESTS");
 
         if (ImGui::Button("Max Density")) {
             envControl.setFogDensity(1.0f);
@@ -234,9 +231,7 @@ void GuiEnvironmentTab::render(IEnvironmentControl& envControl, EnvironmentTabSt
     ImGui::Spacing();
 
     // ========== HEIGHT FOG LAYER ==========
-    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.6f, 0.8f, 0.9f, 1.0f));
-    ImGui::Text("HEIGHT FOG LAYER");
-    ImGui::PopStyleColor();
+    GuiStyle::sectionHeader("HEIGHT FOG LAYER");
 
     if (fogEnabled) {
         // Enable toggle for height fog layer
@@ -307,9 +302,7 @@ void GuiEnvironmentTab::render(IEnvironmentControl& envControl, EnvironmentTabSt
     ImGui::Spacing();
 
     // ========== ATMOSPHERIC SCATTERING ==========
-    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.5f, 0.7f, 1.0f, 1.0f));
-    ImGui::Text("ATMOSPHERIC SCATTERING");
-    ImGui::PopStyleColor();
+    GuiStyle::sectionHeader("ATMOSPHERIC SCATTERING");
 
     // Sky exposure - controls overall sky brightness
     float skyExposure = envControl.getSkyExposure();
@@ -483,9 +476,7 @@ void GuiEnvironmentTab::render(IEnvironmentControl& envControl, EnvironmentTabSt
     ImGui::Spacing();
 
     // Leaf system
-    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.9f, 0.7f, 0.5f, 1.0f));
-    ImGui::Text("FALLING LEAVES");
-    ImGui::PopStyleColor();
+    GuiStyle::sectionHeader("FALLING LEAVES");
 
     float leafIntensity = envControl.getLeafIntensity();
     if (ImGui::SliderFloat("Leaf Intensity", &leafIntensity, 0.0f, 1.0f)) {
@@ -497,9 +488,7 @@ void GuiEnvironmentTab::render(IEnvironmentControl& envControl, EnvironmentTabSt
     ImGui::Spacing();
 
     // Cloud style
-    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.9f, 0.9f, 0.7f, 1.0f));
-    ImGui::Text("CLOUDS");
-    ImGui::PopStyleColor();
+    GuiStyle::sectionHeader("CLOUDS");
 
     bool paraboloid = envControl.isUsingParaboloidClouds();
     if (ImGui::Checkbox("Paraboloid LUT Clouds", &paraboloid)) {
@@ -554,9 +543,7 @@ void GuiEnvironmentTab::render(IEnvironmentControl& envControl, EnvironmentTabSt
     ImGui::Spacing();
 
     // Grass interaction
-    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.5f, 0.9f, 0.5f, 1.0f));
-    ImGui::Text("GRASS INTERACTION");
-    ImGui::PopStyleColor();
+    GuiStyle::sectionHeader("GRASS INTERACTION");
 
     auto& env = envControl.getEnvironmentSettings();
     if (ImGui::SliderFloat("Displacement Decay", &env.grassDisplacementDecay, 0.1f, 5.0f)) {}

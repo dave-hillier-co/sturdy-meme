@@ -1,4 +1,5 @@
 #include "GuiWeatherTab.h"
+#include "GuiStyle.h"
 #include "interfaces/IWeatherState.h"
 #include "EnvironmentSettings.h"
 
@@ -37,9 +38,7 @@ void GuiWeatherTab::render(IWeatherState& weatherState, EnvironmentSettings& env
     ImGui::Spacing();
 
     // Snow coverage
-    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.7f, 0.85f, 1.0f, 1.0f));
-    ImGui::Text("SNOW COVERAGE");
-    ImGui::PopStyleColor();
+    GuiStyle::sectionHeader("SNOW COVERAGE");
 
     if (ImGui::SliderFloat("Snow Amount", &env.snowAmount, 0.0f, 1.0f)) {}
 
@@ -57,9 +56,7 @@ void GuiWeatherTab::render(IWeatherState& weatherState, EnvironmentSettings& env
     ImGui::Spacing();
 
     // Wind settings
-    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.6f, 0.9f, 0.7f, 1.0f));
-    ImGui::Text("WIND");
-    ImGui::PopStyleColor();
+    GuiStyle::sectionHeader("WIND");
 
     float windDir[2] = {env.windDirection.x, env.windDirection.y};
     if (ImGui::SliderFloat2("Direction", windDir, -1.0f, 1.0f)) {

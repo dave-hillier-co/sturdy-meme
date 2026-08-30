@@ -90,6 +90,9 @@ public:
     SDL_Window* getWindow() const { return window; }
 
     const std::vector<vk::ImageView>& getSwapchainImageViews() const { return swapchainImageViews; }
+    vk::Image getSwapchainImage(uint32_t index) const {
+        return index < swapchainImages.size() ? swapchainImages[index] : vk::Image{};
+    }
     uint32_t getSwapchainImageCount() const { return static_cast<uint32_t>(swapchainImages.size()); }
     uint32_t getWidth() const { return swapchainExtent.width; }
     uint32_t getHeight() const { return swapchainExtent.height; }

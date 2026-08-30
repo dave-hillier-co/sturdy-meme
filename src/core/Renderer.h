@@ -20,6 +20,7 @@
 #include "loading/LoadJobFactory.h"
 #include "asset/AssetRegistry.h"
 #include "ScenePipeline.h"
+#include "ScreenshotCapture.h"
 #include "InstancedScenePipeline.h"
 #include "material/DescriptorManager.h"
 
@@ -140,6 +141,11 @@ public:
 
     bool isWindowSuspended() const { return windowSuspended; }
 
+    // Capture the next presented frame (including GUI) to screenshots/*.png.
+    // Non-blocking: the copy rides the frame's command buffer and PNG encoding
+    // runs on a worker thread.
+    void requestScreenshot();
+
     // Notify renderer that window lost focus (user clicked another app)
     // On macOS, this can cause compositor to cache stale content
     void notifyWindowFocusLost() { windowFocusLost_ = true; }
@@ -246,6 +252,11 @@ private:
 
     // Frame execution (owns TripleBuffering, sync, acquire, submit, present)
     FrameExecutor frameExecutor_;
+
+    // Screen grab capture (lazily created on first requestScreenshot)
+    std::unique_ptr<ScreenshotCapture> screenshotCapture_;
+    uint64_t renderedFrameCount_ = 0;
+    uint64_t autoScreenshotFrame_ = 0;  // from SCREENSHOT_AFTER_FRAMES; 0 = disabled
 
     // Pass recorders (encapsulate pass recording logic extracted from Renderer)
     std::unique_ptr<ShadowPassRecorder> shadowPassRecorder_;

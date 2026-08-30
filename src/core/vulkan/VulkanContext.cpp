@@ -356,12 +356,24 @@ bool VulkanContext::createSwapchain() {
         }
     }
 
+    // Extra usage beyond the default COLOR_ATTACHMENT: TRANSFER_SRC enables
+    // screenshot readback, TRANSFER_DST enables clearSwapchainImages(). Only
+    // request what the surface actually supports.
+    VkImageUsageFlags extraUsage = 0;
+    if (surfaceCaps.supportedUsageFlags & vk::ImageUsageFlagBits::eTransferSrc) {
+        extraUsage |= VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
+    }
+    if (surfaceCaps.supportedUsageFlags & vk::ImageUsageFlagBits::eTransferDst) {
+        extraUsage |= VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+    }
+
     vkb::SwapchainBuilder swapchainBuilder{vkbDevice};
     auto swapRet = swapchainBuilder
         .set_desired_format({VK_FORMAT_B8G8R8A8_SRGB, VK_COLOR_SPACE_SRGB_NONLINEAR_KHR})
         .set_desired_present_mode(VK_PRESENT_MODE_FIFO_KHR)
         // Use selected composite alpha mode to prevent ghost frames
         .set_composite_alpha_flags(compositeAlpha)
+        .add_image_usage_flags(extraUsage)
         .build();
 
     if (!swapRet) {

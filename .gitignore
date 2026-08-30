@@ -59,3 +59,5 @@ assets/textures/downloads
 
 # ImGui window layout (written next to the executable / working directory at runtime)
 imgui_layout.ini
+
+screenshots/

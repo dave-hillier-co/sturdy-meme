@@ -19,6 +19,9 @@ export VK_ICD_FILENAMES="/opt/homebrew/etc/vulkan/icd.d/MoltenVK_icd.json:/usr/l
 # Enable Vulkan validation layers for debugging (optional - comment out if too noisy)
 # export VK_INSTANCE_LAYERS="VK_LAYER_KHRONOS_validation"
 
+# F12 screenshots go to the repo-root screenshots/ dir (not inside the bundle)
+export SCREENSHOT_DIR="$(cd "$(dirname "$0")" && pwd)/screenshots"
+
 # Run from the bundle directory so resource paths work
 cd "$(dirname "$0")/build/debug/vulkan-game.app/Contents/MacOS"
 ./vulkan-game "$@"

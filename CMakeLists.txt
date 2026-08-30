@@ -58,6 +58,7 @@ set(SOURCES
     # Core
     src/core/CrashHandler.cpp
     src/core/Renderer.cpp
+    src/core/ScreenshotCapture.cpp
     src/core/RendererBuilder.cpp
     src/core/SelectionOutlineRenderer.cpp
     src/core/FrameExecutor.cpp

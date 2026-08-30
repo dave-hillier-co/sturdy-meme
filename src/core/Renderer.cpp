@@ -108,7 +108,11 @@ bool Renderer::pollAsyncInit() {
     return RendererBuilder::pollAsyncInit(*this);
 }
 
-Renderer::Renderer(ConstructToken) {}
+Renderer::Renderer(ConstructToken) {
+    if (const char* env = SDL_getenv("SCREENSHOT_AFTER_FRAMES")) {
+        autoScreenshotFrame_ = std::strtoull(env, nullptr, 10);
+    }
+}
 
 Renderer::~Renderer() {
     cleanup();
@@ -155,6 +159,10 @@ void Renderer::cleanup() {
 
     if (device != VK_NULL_HANDLE) {
         vkDeviceWaitIdle(device);
+
+        // Joins the PNG-encode thread and frees the staging buffer while the
+        // allocator is still alive.
+        screenshotCapture_.reset();
 
         // Drop the frame-graph pass lambdas now (after the GPU is idle, before any captured
         // object is torn down). They capture raw pointers to Renderer members (recorders,
@@ -203,6 +211,12 @@ bool Renderer::render(const Camera& camera) {
         framebufferResized = false;
     }
 
+    // Automation hook: SCREENSHOT_AFTER_FRAMES=N captures a screenshot once,
+    // N rendered frames after startup (for scripted visual verification).
+    if (autoScreenshotFrame_ != 0 && ++renderedFrameCount_ == autoScreenshotFrame_) {
+        requestScreenshot();
+    }
+
     FrameResult result = frameExecutor_.execute(
         [&](uint32_t imageIndex, uint32_t frameIndex) {
             return buildFrame(camera, imageIndex, frameIndex);
@@ -216,7 +230,22 @@ bool Renderer::render(const Camera& camera) {
     return result == FrameResult::Success;
 }
 
+void Renderer::requestScreenshot() {
+    if (!screenshotCapture_) {
+        const char* dir = SDL_getenv("SCREENSHOT_DIR");
+        screenshotCapture_ = std::make_unique<ScreenshotCapture>(
+            vulkanContext_->getAllocator(), dir ? dir : "screenshots");
+    }
+    screenshotCapture_->request();
+}
+
 vk::CommandBuffer Renderer::buildFrame(const Camera& camera, uint32_t imageIndex, uint32_t frameIndex) {
+    // The fence for this frame slot has been waited (FrameExecutor::execute),
+    // so a screenshot recorded the last time this slot ran is now readable.
+    if (screenshotCapture_) {
+        screenshotCapture_->pollCompleted(frameIndex);
+    }
+
     // Simulation-update phase: transfers, time, UBOs, bone matrices, FrameData,
     // per-system updates, and GPU scene buffer population.
     FrameUpdate::Config cfg;
@@ -264,6 +293,16 @@ vk::CommandBuffer Renderer::buildFrame(const Camera& camera, uint32_t imageIndex
     passScheduler_.execute(psCtx, &TaskScheduler::instance());
 
     systems_->profiler().endGpuFrame(cmd, frame.frameIndex);
+
+    // Screenshot: the swapchain image is in ePresentSrcKHR after the GUI/composite
+    // pass; append the readback copy before ending the command buffer.
+    if (screenshotCapture_) {
+        screenshotCapture_->recordIfRequested(
+            vkCmd, vulkanContext_->getSwapchainImage(imageIndex),
+            vulkanContext_->getVkSwapchainExtent(),
+            vulkanContext_->getVkSwapchainImageFormat(), frame.frameIndex);
+    }
+
     vkCmd.end();
 
     // Advance buffer sets for next frame (safe before submit — command buffer

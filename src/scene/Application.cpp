@@ -857,6 +857,8 @@ void Application::buildDebugCommands() {
         [this] { running = false; }});
     debugCommands_.push_back({"app.toggleGui", "Toggle GUI", "Application", SDL_SCANCODE_F1,
         [this] { gui_->toggleVisibility(); }});
+    debugCommands_.push_back({"app.screenshot", "Save screenshot", "Application", SDL_SCANCODE_F12,
+        [this] { renderer_->requestScreenshot(); }});
 
     // Time
     debugCommands_.push_back({"time.sunrise", "Set time to sunrise", "Time", SDL_SCANCODE_1,

@@ -35,6 +35,7 @@
 #include "GuiPerformanceTab.h"
 #include "GuiIKTab.h"
 #include "GuiPlayerTab.h"
+#include "GuiNPCTab.h"
 #include "GuiTreeTab.h"
 #include "GuiGrassTab.h"
 #include "GuiSceneGraphTab.h"
@@ -242,6 +243,10 @@ void GuiSystem::buildPanelRegistry() {
     panels_.push_back({"Player", MenuCategory::Character,
         [this](const GuiFrameContext& ctx) {
             GuiPlayerTab::render(ctx.interfaces.player, playerSettings);
+        }});
+    panels_.push_back({"NPC LOD", MenuCategory::Character,
+        [](const GuiFrameContext& ctx) {
+            GuiNPCTab::render(ctx.interfaces.player);
         }});
     panels_.push_back({"IK / Animation", MenuCategory::Character,
         [this](const GuiFrameContext& ctx) {

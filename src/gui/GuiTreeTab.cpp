@@ -9,6 +9,36 @@
 #include "core/RendererSystems.h"
 
 #include <imgui.h>
+#include <imgui_impl_vulkan.h>
+#include <unordered_map>
+
+namespace {
+
+// Cache of ImGui preview descriptor sets, keyed by image view handle.
+// The GUI layer owns ImGui backend knowledge; the atlas only exposes its
+// vk::ImageView + vk::Sampler. Sets are allocated from ImGui's descriptor
+// pool and are reclaimed when that pool is destroyed at GUI shutdown
+// (matching the lifetime of the previous atlas-side cache, which also
+// never called ImGui_ImplVulkan_RemoveTexture).
+vk::DescriptorSet getOrCreatePreviewDescriptorSet(vk::Sampler sampler, vk::ImageView view) {
+    static std::unordered_map<VkImageView, VkDescriptorSet> cache;
+
+    if (!view || !sampler) {
+        return VK_NULL_HANDLE;
+    }
+
+    auto it = cache.find(view);
+    if (it != cache.end()) {
+        return it->second;
+    }
+
+    VkDescriptorSet set = ImGui_ImplVulkan_AddTexture(
+        sampler, view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+    cache.emplace(view, set);
+    return set;
+}
+
+} // anonymous namespace
 
 void GuiTreeTab::render(ITreeControl& treeControl) {
     auto* treeSystem = treeControl.getTreeSystem();
@@ -401,13 +431,12 @@ void GuiTreeTab::render(ITreeControl& treeControl) {
                         selectedArchetype = 0;
                     }
 
-                    // Get the appropriate descriptor set
-                    vk::DescriptorSet previewSet = VK_NULL_HANDLE;
-                    if (selectedTextureType == 0) {
-                        previewSet = atlas->getPreviewDescriptorSet(static_cast<uint32_t>(selectedArchetype));
-                    } else {
-                        previewSet = atlas->getNormalPreviewDescriptorSet(static_cast<uint32_t>(selectedArchetype));
-                    }
+                    // Get the appropriate atlas view and build/reuse an ImGui descriptor set
+                    vk::ImageView previewView = (selectedTextureType == 0)
+                        ? atlas->getAlbedoAtlasView(static_cast<uint32_t>(selectedArchetype))
+                        : atlas->getNormalAtlasView(static_cast<uint32_t>(selectedArchetype));
+                    vk::DescriptorSet previewSet =
+                        getOrCreatePreviewDescriptorSet(atlas->getAtlasSampler(), previewView);
 
                     if (previewSet != VK_NULL_HANDLE) {
                         ImGui::Spacing();

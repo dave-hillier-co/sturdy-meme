@@ -69,9 +69,10 @@ public:
     TreeLODSettings& getLODSettings() { return lodSettings_; }
     const TreeLODSettings& getLODSettings() const { return lodSettings_; }
 
-    // Get atlas image for UI preview (lazy-initializes ImGui descriptor on first call)
-    vk::DescriptorSet getPreviewDescriptorSet(uint32_t archetypeIndex);
-    vk::DescriptorSet getNormalPreviewDescriptorSet(uint32_t archetypeIndex);
+    // Per-archetype atlas views for UI preview. Pair with getAtlasSampler().
+    // The GUI layer (GuiTreeTab) owns any ImGui descriptor-set creation.
+    vk::ImageView getAlbedoAtlasView(uint32_t archetypeIndex) const;
+    vk::ImageView getNormalAtlasView(uint32_t archetypeIndex) const;
 
 
 private:
@@ -166,8 +167,6 @@ private:
         std::optional<vk::raii::ImageView> normalView;   // View into octaNormalArrayImage_
         std::optional<vk::raii::ImageView> depthView;
         std::optional<vk::raii::Framebuffer> framebuffer;
-        vk::DescriptorSet previewDescriptorSet = VK_NULL_HANDLE;
-        vk::DescriptorSet normalPreviewDescriptorSet = VK_NULL_HANDLE;
     };
     std::vector<AtlasTextures> atlasTextures_;
 };

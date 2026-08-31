@@ -324,6 +324,14 @@ void GuiSystem::applyDefaultDockLayout(ImGuiID dockspaceId) {
 }
 
 void GuiSystem::render(GuiInterfaces& ui, const Camera& camera, float deltaTime, float fps) {
+    // Debug dashboard respects the F1 visibility flag; the player-facing
+    // pause menu is drawn every frame regardless (the ImGui frame always
+    // runs: beginFrame/endFrame are unconditional in the main loop).
+    renderDebugUi(ui, camera, deltaTime, fps);
+    gameMenu_.render();
+}
+
+void GuiSystem::renderDebugUi(GuiInterfaces& ui, const Camera& camera, float deltaTime, float fps) {
     if (!visible) return;
 
     // Create main viewport dockspace - allows all windows to be freely dockable
@@ -414,6 +422,9 @@ void GuiSystem::cancelFrame() {
 }
 
 bool GuiSystem::wantsInput() const {
+    // The pause menu suppresses all gameplay input while open, even when
+    // ImGui's capture flags briefly read false (e.g. cursor over the dim).
+    if (gameMenu_.isOpen()) return true;
     ImGuiIO& io = ImGui::GetIO();
     return io.WantCaptureMouse || io.WantCaptureKeyboard;
 }

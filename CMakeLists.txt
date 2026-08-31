@@ -284,6 +284,7 @@ set(SOURCES
     src/gui/GuiHierarchyPanel.cpp
     src/gui/GuiInspectorPanel.cpp
     src/gui/GuiGizmo.cpp
+    src/gui/game/GameMenu.cpp
     # Subdivision
     src/subdivision/CatmullClarkCBT.cpp
     src/subdivision/CatmullClarkMesh.cpp

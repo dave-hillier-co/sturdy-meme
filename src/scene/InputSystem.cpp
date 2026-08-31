@@ -56,6 +56,9 @@ bool InputSystem::processEvent(const SDL_Event& event) {
             break;
 
         case SDL_EVENT_KEY_DOWN:
+            // Mode toggles are gameplay input: suppressed while the GUI
+            // (pause menu, or a focused debug widget) wants the keyboard
+            if (isGuiBlocking()) break;
             if (event.key.scancode == SDL_SCANCODE_TAB) {
                 thirdPersonMode = !thirdPersonMode;
                 modeSwitchedThisFrame = true;
@@ -63,9 +66,7 @@ bool InputSystem::processEvent(const SDL_Event& event) {
                 return true;
             }
             if (event.key.scancode == SDL_SCANCODE_M) {
-                mouseLookEnabled = !mouseLookEnabled;
-                SDL_SetWindowRelativeMouseMode(SDL_GetKeyboardFocus(), mouseLookEnabled);
-                SDL_Log("Mouse look: %s", mouseLookEnabled ? "ON" : "OFF");
+                setMouseLookEnabled(!mouseLookEnabled);
                 return true;
             }
             break;
@@ -73,8 +74,9 @@ bool InputSystem::processEvent(const SDL_Event& event) {
         case SDL_EVENT_MOUSE_MOTION:
             if (mouseLookEnabled) {
                 // Accumulate mouse motion for camera control
-                mouseYawAccumulator += event.motion.xrel * 0.1f;
-                mousePitchAccumulator -= event.motion.yrel * 0.1f;
+                const float pitchSign = invertMouseY ? 1.0f : -1.0f;
+                mouseYawAccumulator += event.motion.xrel * 0.1f * mouseSensitivity;
+                mousePitchAccumulator += event.motion.yrel * 0.1f * mouseSensitivity * pitchSign;
                 return true;
             }
             break;
@@ -137,6 +139,13 @@ void InputSystem::update(float deltaTime, const glm::vec3& cameraForward) {
 bool InputSystem::isKeyPressed(SDL_Scancode scancode) const {
     if (!keyboardState) return false;
     return keyboardState[scancode];
+}
+
+void InputSystem::setMouseLookEnabled(bool enabled) {
+    if (mouseLookEnabled == enabled) return;
+    mouseLookEnabled = enabled;
+    SDL_SetWindowRelativeMouseMode(SDL_GetKeyboardFocus(), enabled);
+    SDL_Log("Mouse look: %s", enabled ? "ON" : "OFF");
 }
 
 bool InputSystem::isGuiBlocking() const {

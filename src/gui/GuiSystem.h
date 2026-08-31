@@ -12,6 +12,7 @@
 #include "GuiPlayerTab.h"
 #include "GuiPanelRegistry.h"
 #include "SceneEditorState.h"
+#include "game/GameMenu.h"
 
 class Camera;
 class RendererSystems;
@@ -73,6 +74,11 @@ public:
     // Check if gizmo is being used (for input blocking)
     bool isGizmoActive() const;
 
+    // Player-facing pause menu / settings screen. Drawn every frame,
+    // independent of the debug-GUI visibility flag.
+    GameMenu& gameMenu() { return gameMenu_; }
+    const GameMenu& gameMenu() const { return gameMenu_; }
+
 private:
     bool initInternal(SDL_Window* window, vk::Instance instance, vk::PhysicalDevice physicalDevice,
                       vk::Device device, uint32_t graphicsQueueFamily, vk::Queue graphicsQueue,
@@ -82,6 +88,7 @@ private:
     void buildPanelRegistry(GuiDebugTab::Hooks debugHooks,
                             PhysicsTerrainTileManager* physicsTerrainTiles,
                             const std::vector<DebugCommand>* debugCommands);
+    void renderDebugUi(const Camera& camera, float deltaTime, float fps);
     void renderMainMenuBar();
     void applyDefaultDockLayout(ImGuiID dockspaceId);
 
@@ -108,6 +115,9 @@ private:
 
     // Panel registry: one entry per menu-toggleable debug panel
     std::vector<PanelDesc> panels_;
+
+    // Player-facing pause menu (independent of the debug dashboard)
+    GameMenu gameMenu_;
 
     // Special-cased dockable editor panels (inline handling + gizmo)
     bool showHierarchy_ = false;

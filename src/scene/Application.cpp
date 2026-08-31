@@ -297,6 +297,19 @@ bool Application::init(const std::string& title, int width, int height) {
         gui_->endFrame(cmd);
     });
 
+    // Wire the player-facing pause menu. Performance toggles are looked up
+    // per frame (systems come up asynchronously and may rebind).
+    {
+        GameMenu::Hooks menuHooks;
+        menuHooks.input = &input;
+        menuHooks.window = window;
+        menuHooks.performanceToggles = [this]() -> PerformanceToggles* {
+            return renderer_ ? &renderer_->getSystems().performanceToggles() : nullptr;
+        };
+        menuHooks.requestQuit = [this] { running = false; };
+        gui_->gameMenu().setHooks(std::move(menuHooks));
+    }
+
     // Collect settlements as teleport destinations for the debug panel
     for (const auto& settlement : renderer_->getSystems().settlements().settlements()) {
         GuiDebugTab::TeleportTarget target;
@@ -848,8 +861,8 @@ void Application::buildDebugCommands() {
     auto& sys = renderer_->getSystems();
 
     // Application
-    debugCommands_.push_back({"app.quit", "Quit", "Application", SDL_SCANCODE_ESCAPE,
-        [this] { running = false; }});
+    debugCommands_.push_back({"app.pauseMenu", "Pause menu", "Application", SDL_SCANCODE_ESCAPE,
+        [this] { gui_->gameMenu().handleEscape(); }});
     debugCommands_.push_back({"app.toggleGui", "Toggle GUI", "Application", SDL_SCANCODE_F1,
         [this] { gui_->toggleVisibility(); }});
     debugCommands_.push_back({"app.screenshot", "Save screenshot", "Application", SDL_SCANCODE_F12,

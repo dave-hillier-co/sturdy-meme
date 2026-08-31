@@ -73,6 +73,17 @@ public:
     float getMoveSpeed() const { return moveSpeed; }
     float getRotateSpeed() const { return rotateSpeed; }
 
+    // Mouse-look settings (exposed to the pause menu settings screen)
+    float getMouseSensitivity() const { return mouseSensitivity; }
+    void setMouseSensitivity(float sensitivity) { mouseSensitivity = sensitivity; }
+    bool getInvertMouseY() const { return invertMouseY; }
+    void setInvertMouseY(bool invert) { invertMouseY = invert; }
+
+    // Mouse-look (relative mouse) mode; also toggled by the M key.
+    // The pause menu releases it while open and restores it on close.
+    bool isMouseLookEnabled() const { return mouseLookEnabled; }
+    void setMouseLookEnabled(bool enabled);
+
 private:
     // Gamepad management
     void openGamepad(SDL_JoystickID id);
@@ -142,6 +153,8 @@ private:
     // Input settings
     float moveSpeed = 5.0f;
     float rotateSpeed = 60.0f;
+    float mouseSensitivity = 1.0f;
+    bool invertMouseY = false;
 
     // Mouse wheel accumulator (accumulated between frames, consumed during update)
     float mouseWheelAccumulator = 0.0f;

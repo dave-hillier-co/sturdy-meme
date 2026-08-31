@@ -13,6 +13,7 @@
 #include "GuiPanelRegistry.h"
 #include "SceneEditorState.h"
 #include "game/GameMenu.h"
+#include "game/GameHud.h"
 
 class Camera;
 class RendererSystems;
@@ -79,6 +80,11 @@ public:
     GameMenu& gameMenu() { return gameMenu_; }
     const GameMenu& gameMenu() const { return gameMenu_; }
 
+    // Player-facing gameplay HUD (compass, time of day). Drawn every frame
+    // like the pause menu, hidden while the menu is open.
+    GameHud& gameHud() { return gameHud_; }
+    const GameHud& gameHud() const { return gameHud_; }
+
 private:
     bool initInternal(SDL_Window* window, vk::Instance instance, vk::PhysicalDevice physicalDevice,
                       vk::Device device, uint32_t graphicsQueueFamily, vk::Queue graphicsQueue,
@@ -118,6 +124,9 @@ private:
 
     // Player-facing pause menu (independent of the debug dashboard)
     GameMenu gameMenu_;
+
+    // Player-facing gameplay HUD (independent of the debug dashboard)
+    GameHud gameHud_;
 
     // Special-cased dockable editor panels (inline handling + gizmo)
     bool showHierarchy_ = false;

@@ -1,5 +1,6 @@
 #include "GuiHierarchyPanel.h"
 #include "GuiStyle.h"
+#include "GuiPropertyEditors.h"
 #include "core/interfaces/ISceneControl.h"
 #include "scene/SceneBuilder.h"
 #include "ecs/World.h"
@@ -7,7 +8,9 @@
 #include "ecs/Systems.h"
 
 #include <imgui.h>
+#include <glm/glm.hpp>
 #include <algorithm>
+#include <cstdio>
 #include <cstring>
 
 namespace {
@@ -310,7 +313,11 @@ void GuiHierarchyPanel::renderCreateMenuBar(ISceneControl& sceneControl, SceneEd
     ImGui::EndMenuBar();
 }
 
-void GuiHierarchyPanel::render(ISceneControl& sceneControl, SceneEditorState& state) {
+namespace {
+
+// "Entities" tab: the ECS entity tree with filtering, drag-drop reparenting,
+// and create/delete toolbar.
+void renderEntitiesTab(ISceneControl& sceneControl, SceneEditorState& state) {
     ecs::World* world = sceneControl.getECSWorld();
 
     // Header
@@ -415,4 +422,115 @@ void GuiHierarchyPanel::render(ISceneControl& sceneControl, SceneEditorState& st
         }
     }
     ImGui::EndChild();
+}
+
+// "Renderables" tab: flat, filterable list of render rows rebuilt from the
+// ECS each frame. Selecting one drives the shared selection so the Inspector
+// shows its read-only properties.
+void renderRenderablesTab(ISceneControl& sceneControl, SceneEditorState& state) {
+    std::vector<ecs::RenderData> renderables = GuiPropertyEditors::collectRenderables(sceneControl);
+
+    // Header with object count
+    GuiStyle::sectionHeader("SCENE GRAPH");
+    ImGui::TextDisabled("(%zu objects)", renderables.size());
+    ImGui::Spacing();
+
+    // Filter input
+    ImGui::SetNextItemWidth(-1);
+    ImGui::InputTextWithHint("##renderableFilter", "Filter objects...",
+                             state.renderableFilterText, sizeof(state.renderableFilterText));
+
+    ImGui::Spacing();
+
+    // Object list - using child window for scroll
+    if (ImGui::BeginChild("ObjectList", ImVec2(0, 0), true)) {
+        for (size_t i = 0; i < renderables.size(); ++i) {
+            const ecs::RenderData& obj = renderables[i];
+
+            // Build display name
+            char displayName[128];
+            const char* typeName = GuiPropertyEditors::renderableTypeName(obj);
+            snprintf(displayName, sizeof(displayName), "[%zu] %s", i, typeName);
+
+            // Apply filter
+            if (state.renderableFilterText[0] != '\0') {
+                bool matches = false;
+                // Case-insensitive search
+                char lowerFilter[256];
+                char lowerName[128];
+                strncpy(lowerFilter, state.renderableFilterText, sizeof(lowerFilter) - 1);
+                lowerFilter[sizeof(lowerFilter) - 1] = '\0';
+                strncpy(lowerName, displayName, sizeof(lowerName) - 1);
+                lowerName[sizeof(lowerName) - 1] = '\0';
+
+                for (char* p = lowerFilter; *p; ++p) *p = static_cast<char>(tolower(*p));
+                for (char* p = lowerName; *p; ++p) *p = static_cast<char>(tolower(*p));
+
+                if (strstr(lowerName, lowerFilter) != nullptr) {
+                    matches = true;
+                }
+                // Also match by type name
+                char lowerType[64];
+                strncpy(lowerType, typeName, sizeof(lowerType) - 1);
+                lowerType[sizeof(lowerType) - 1] = '\0';
+                for (char* p = lowerType; *p; ++p) *p = static_cast<char>(tolower(*p));
+                if (strstr(lowerType, lowerFilter) != nullptr) {
+                    matches = true;
+                }
+
+                if (!matches) continue;
+            }
+
+            bool isSelected =
+                state.selectionKind == SceneEditorState::SelectionKind::Renderable &&
+                state.selectedRenderableIndex == static_cast<int>(i);
+
+            // Color code by type
+            ImVec4 itemColor = ImVec4(0.9f, 0.9f, 0.9f, 1.0f);  // Default white
+            if (obj.gpuSkinned) {
+                itemColor = ImVec4(0.3f, 0.9f, 0.3f, 1.0f);  // Green for characters
+            } else if (obj.emissiveIntensity > 0.0f) {
+                itemColor = ImVec4(1.0f, 0.8f, 0.3f, 1.0f);  // Yellow for emissive
+            } else if (!obj.castsShadow) {
+                itemColor = ImVec4(0.6f, 0.6f, 0.8f, 1.0f);  // Blue-ish for non-shadow casters
+            }
+
+            ImGui::PushStyleColor(ImGuiCol_Text, itemColor);
+
+            if (ImGui::Selectable(displayName, isSelected)) {
+                state.selectRenderable(static_cast<int>(i));
+            }
+
+            ImGui::PopStyleColor();
+
+            // Tooltip with quick info
+            if (ImGui::IsItemHovered()) {
+                ImGui::BeginTooltip();
+                glm::vec3 pos = glm::vec3(obj.transform[3]);
+                ImGui::Text("Position: (%.1f, %.1f, %.1f)", pos.x, pos.y, pos.z);
+                ImGui::Text("Material ID: %u", obj.materialId);
+                if (obj.emissiveIntensity > 0.0f) {
+                    ImGui::Text("Emissive: %.2f", obj.emissiveIntensity);
+                }
+                ImGui::EndTooltip();
+            }
+        }
+    }
+    ImGui::EndChild();
+}
+
+} // anonymous namespace
+
+void GuiHierarchyPanel::render(ISceneControl& sceneControl, SceneEditorState& state) {
+    if (ImGui::BeginTabBar("HierarchyViews")) {
+        if (ImGui::BeginTabItem("Entities")) {
+            renderEntitiesTab(sceneControl, state);
+            ImGui::EndTabItem();
+        }
+        if (ImGui::BeginTabItem("Renderables")) {
+            renderRenderablesTab(sceneControl, state);
+            ImGui::EndTabItem();
+        }
+        ImGui::EndTabBar();
+    }
 }

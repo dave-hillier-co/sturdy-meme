@@ -38,7 +38,6 @@
 #include "GuiNPCTab.h"
 #include "GuiTreeTab.h"
 #include "GuiGrassTab.h"
-#include "GuiSceneGraphTab.h"
 #include "GuiHierarchyPanel.h"
 #include "GuiInspectorPanel.h"
 #include "GuiGizmo.h"
@@ -253,11 +252,8 @@ void GuiSystem::buildPanelRegistry() {
             GuiIKTab::render(ctx.interfaces.scene, ctx.camera, ikDebugSettings);
         }});
 
-    // Scene (Hierarchy and Inspector are special-cased outside the registry)
-    panels_.push_back({"Scene Graph", MenuCategory::Scene,
-        [this](const GuiFrameContext& ctx) {
-            GuiSceneGraphTab::render(ctx.interfaces.scene, sceneGraphTabState);
-        }});
+    // Scene: Hierarchy and Inspector are special-cased outside the registry.
+    // The former "Scene Graph" panel is now the "Renderables" tab inside Hierarchy.
 
     // Debug
     panels_.push_back({"Debug Visualizations", MenuCategory::Debug,

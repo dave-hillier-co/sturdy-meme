@@ -1,6 +1,9 @@
 #include "GuiPropertyEditors.h"
+#include "core/interfaces/ISceneControl.h"
+#include "scene/SceneBuilder.h"
 #include "ecs/Components.h"
 #include "ecs/Systems.h"
+#include "Mesh.h"
 
 #include <imgui.h>
 #include <glm/glm.hpp>
@@ -330,4 +333,67 @@ void GuiPropertyEditors::renderMaterialDisplay(const ecs::RenderData& renderData
     }
 
     ImGui::Spacing();
+}
+
+void GuiPropertyEditors::renderRenderableInfoDisplay(const ecs::RenderData& renderData,
+                                                     int objectIndex, bool& showSection) {
+    if (!ImGui::CollapsingHeader("Info", showSection ? ImGuiTreeNodeFlags_DefaultOpen : 0)) {
+        return;
+    }
+    showSection = true;
+
+    ImGui::Text("Casts Shadow: %s", renderData.castsShadow ? "Yes" : "No");
+    ImGui::Text("PBR Flags: 0x%X", renderData.pbrFlags);
+
+    if (renderData.mesh) {
+        ImGui::Spacing();
+        ImGui::Text("Mesh Info");
+        ImGui::Indent();
+        ImGui::Text("Index Count: %u", renderData.mesh->getIndexCount());
+        ImGui::Text("Vertex Count: %u", renderData.mesh->getVertexCount());
+        ImGui::Unindent();
+    }
+
+    ImGui::Spacing();
+    ImGui::Text("Object Index: %d", objectIndex);
+    if (renderData.gpuSkinned) {
+        ImGui::TextColored(ImVec4(0.3f, 1.0f, 0.3f, 1.0f), "(GPU Skinned Character)");
+    }
+}
+
+std::vector<ecs::RenderData> GuiPropertyEditors::collectRenderables(ISceneControl& sceneControl) {
+    std::vector<ecs::RenderData> renderables;
+
+    // Look the world up per frame through the scene builder — it is bound late
+    // during async init and may not exist yet.
+    SceneBuilder& sceneBuilder = sceneControl.getSceneBuilder();
+    const ecs::World* world = sceneBuilder.getECSWorld();
+    if (!world) return renderables;
+
+    const auto& entities = sceneBuilder.getSceneEntities();
+    renderables.reserve(entities.size());
+    for (ecs::Entity e : entities) {
+        if (!world->valid(e)) {
+            renderables.emplace_back();
+            continue;
+        }
+        ecs::RenderData row = ecs::extractRenderData(*world, e);
+        // extractRenderData does not populate gpuSkinned; derive it from the tag.
+        row.gpuSkinned = world->has<ecs::GPUSkinned>(e);
+        renderables.push_back(row);
+    }
+    return renderables;
+}
+
+const char* GuiPropertyEditors::renderableTypeName(const ecs::RenderData& renderData) {
+    if (renderData.gpuSkinned) {
+        return "Character";
+    }
+    if (renderData.emissiveIntensity > 0.0f) {
+        return "Emissive";
+    }
+    if (renderData.alphaTestThreshold > 0.0f) {
+        return "Alpha-Test";
+    }
+    return "Object";
 }

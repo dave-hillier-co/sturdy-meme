@@ -11,7 +11,6 @@
 #include "GuiIKTab.h"
 #include "GuiPlayerTab.h"
 #include "GuiEnvironmentTab.h"
-#include "GuiSceneGraphTab.h"
 #include "GuiTileLoaderTab.h"
 #include "GuiDashboard.h"
 #include "GuiInterfaces.h"
@@ -84,9 +83,6 @@ private:
 
     // Environment tab state
     EnvironmentTabState environmentTabState;
-
-    // Scene graph tab state
-    SceneGraphTabState sceneGraphTabState;
 
     // Scene editor state (hierarchy + inspector + gizmo)
     SceneEditorState sceneEditorState;

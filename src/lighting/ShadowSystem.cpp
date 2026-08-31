@@ -771,6 +771,10 @@ glm::mat4 ShadowSystem::calculateCascadeMatrix(const glm::vec3& lightDir, const 
     for (const auto& corner : frustumCorners) {
         radius = std::max(radius, glm::length(corner - center));
     }
+    // Keep the ortho extent (and therefore the texel size) stable across frames:
+    // the sphere radius is constant for a rigid frustum, but float noise in the
+    // corner positions would otherwise wiggle it and break texel snapping below.
+    radius = std::ceil(radius * 16.0f) / 16.0f;
 
     glm::vec3 up = (std::abs(lightDirNorm.y) > 0.99f) ? glm::vec3(0.0f, 0.0f, 1.0f) : glm::vec3(0.0f, 1.0f, 0.0f);
     glm::vec3 lightPos = center + lightDirNorm * (radius + 50.0f);
@@ -784,7 +788,17 @@ glm::mat4 ShadowSystem::calculateCascadeMatrix(const glm::vec3& lightDir, const 
     lightProjection[2][2] = lightProjection[2][2] * 0.5f;
     lightProjection[3][2] = lightProjection[3][2] * 0.5f + 0.5f;
 
-    return lightProjection * lightView;
+    // Snap the light-space origin to whole shadow-map texels so sub-texel camera
+    // movement doesn't shift the rasterization grid (shadow edge shimmer).
+    glm::mat4 lightMatrix = lightProjection * lightView;
+    glm::vec4 shadowOrigin = lightMatrix * glm::vec4(0.0f, 0.0f, 0.0f, 1.0f);
+    shadowOrigin *= static_cast<float>(SHADOW_MAP_SIZE) * 0.5f;
+    glm::vec2 roundedOrigin = glm::round(glm::vec2(shadowOrigin));
+    glm::vec2 roundOffset = (roundedOrigin - glm::vec2(shadowOrigin)) * (2.0f / static_cast<float>(SHADOW_MAP_SIZE));
+    lightMatrix[3][0] += roundOffset.x;
+    lightMatrix[3][1] += roundOffset.y;
+
+    return lightMatrix;
 }
 
 void ShadowSystem::updateCascadeMatrices(const glm::vec3& lightDir, const Camera& camera) {

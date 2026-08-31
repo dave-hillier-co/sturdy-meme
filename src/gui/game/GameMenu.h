@@ -4,7 +4,8 @@
 #include <functional>
 
 class InputSystem;
-class PerformanceToggles;
+struct GameSettings;
+struct PerformanceToggles;
 
 /**
  * GameMenu - Player-facing pause menu and settings screen.
@@ -22,6 +23,11 @@ public:
     struct Hooks {
         InputSystem* input = nullptr;   // sensitivity / invert-Y / mouse-look mode
         SDL_Window* window = nullptr;   // fullscreen toggle
+        // Persistent settings backing the widgets (single source of truth,
+        // owned by Application). Live systems are updated on change.
+        GameSettings* settings = nullptr;
+        // Called after any settings-page change so the owner can persist.
+        std::function<void()> settingsChanged;
         // Per-frame lookup; may return nullptr while systems are still loading
         std::function<PerformanceToggles*()> performanceToggles;
         std::function<void()> requestQuit;

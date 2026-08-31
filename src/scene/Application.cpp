@@ -97,6 +97,20 @@ bool Application::init(const std::string& title, int width, int height) {
         }
     }
 
+    // Load persistent player settings once, before the frame loop exists.
+    // Sensitivity, invert-Y, and fullscreen apply immediately; quality-toggle
+    // overrides apply later, once async renderer init has finished.
+    {
+        INIT_PROFILE_PHASE("GameSettings");
+        settingsPath_ = GameSettings::defaultFilePath();
+        settings_ = GameSettings::loadFromFile(settingsPath_);
+        input.setMouseSensitivity(settings_.mouseSensitivity);
+        input.setInvertMouseY(settings_.invertMouseY);
+        if (settings_.fullscreen) {
+            SDL_SetWindowFullscreen(window, true);
+        }
+    }
+
     std::string resourcePath = getResourcePath();
 
     // Complete Vulkan device initialization (surface, device, swapchain)
@@ -303,11 +317,35 @@ bool Application::init(const std::string& title, int width, int height) {
         GameMenu::Hooks menuHooks;
         menuHooks.input = &input;
         menuHooks.window = window;
+        menuHooks.settings = &settings_;
+        menuHooks.settingsChanged = [this] { settings_.saveToFile(settingsPath_); };
         menuHooks.performanceToggles = [this]() -> PerformanceToggles* {
             return renderer_ ? &renderer_->getSystems().performanceToggles() : nullptr;
         };
         menuHooks.requestQuit = [this] { running = false; };
         gui_->gameMenu().setHooks(std::move(menuHooks));
+    }
+
+    // Apply persisted quality-toggle overrides now that async init has
+    // completed and PerformanceToggles is wired (it does not exist at the
+    // point settings are loaded). Unknown names are ignored with a warning
+    // so renamed toggles never crash a stale settings file.
+    {
+        PerformanceToggles& perfToggles = renderer_->getSystems().performanceToggles();
+        auto toggles = perfToggles.getAllToggles();
+        for (const auto& [name, enabled] : settings_.qualityOverrides) {
+            auto it = std::find_if(toggles.begin(), toggles.end(),
+                                   [&name](const PerformanceToggles::Toggle& t) {
+                                       return t.name == name;
+                                   });
+            if (it != toggles.end()) {
+                *it->value = enabled;
+            } else {
+                SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                            "GameSettings: unknown quality toggle '%s' ignored",
+                            name.c_str());
+            }
+        }
     }
 
     // Collect settlements as teleport destinations for the debug panel
@@ -1414,6 +1452,20 @@ void Application::run() {
 }
 
 void Application::shutdown() {
+    // Catch-all settings save: sync values that other paths (debug GUI, OS
+    // fullscreen button) may have changed live, then persist. Quality
+    // overrides are only ever recorded by the settings page, so they are
+    // already current.
+    if (!settingsPath_.empty()) {
+        settings_.mouseSensitivity = input.getMouseSensitivity();
+        settings_.invertMouseY = input.getInvertMouseY();
+        if (window) {
+            settings_.fullscreen =
+                (SDL_GetWindowFlags(window) & SDL_WINDOW_FULLSCREEN) != 0;
+        }
+        settings_.saveToFile(settingsPath_);
+    }
+
     renderer_->waitIdle();
     gui_.reset();  // RAII cleanup via destructor
     // InputSystem cleanup handled by destructor (RAII)

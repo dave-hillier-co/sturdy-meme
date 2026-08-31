@@ -57,6 +57,7 @@ set(SOURCES
     src/npc/CharacterTemplate.cpp
     # Core
     src/core/CrashHandler.cpp
+    src/core/GameSettings.cpp
     src/core/Renderer.cpp
     src/core/ScreenshotCapture.cpp
     src/core/RendererBuilder.cpp

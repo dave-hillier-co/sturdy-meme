@@ -16,8 +16,8 @@
 
 namespace {
 
-// Shared editors (transform/material sections, color/vec3 widgets) live in
-// GuiPropertyEditors and are also used by GuiSceneGraphTab.
+// Shared editors and read-only displays (transform/material sections,
+// color/vec3 widgets) live in GuiPropertyEditors.
 using GuiPropertyEditors::editColor;
 
 // Render components section
@@ -239,6 +239,39 @@ void renderTagsSection(ecs::World& world, ecs::Entity entity, SceneEditorState& 
     ImGui::Spacing();
 }
 
+// Read-only inspector for a selected renderable (Hierarchy "Renderables" tab).
+// Rows are rebuilt from the ECS each frame; no gizmo and no editing apply.
+void renderRenderableInspector(ISceneControl& sceneControl, SceneEditorState& state) {
+    std::vector<ecs::RenderData> renderables = GuiPropertyEditors::collectRenderables(sceneControl);
+
+    if (state.selectedRenderableIndex < 0 ||
+        state.selectedRenderableIndex >= static_cast<int>(renderables.size())) {
+        ImGui::TextDisabled("Selected renderable no longer exists");
+        if (ImGui::Button("Clear Selection")) {
+            state.clearSelection();
+        }
+        return;
+    }
+
+    const ecs::RenderData& selected = renderables[static_cast<size_t>(state.selectedRenderableIndex)];
+
+    ImGui::Text("Renderable [%d] %s", state.selectedRenderableIndex,
+                GuiPropertyEditors::renderableTypeName(selected));
+    ImGui::TextDisabled("(read-only)");
+
+    ImGui::Spacing();
+    ImGui::Separator();
+    ImGui::Spacing();
+
+    if (ImGui::BeginChild("RenderableInspectorContent", ImVec2(0, 0), false)) {
+        GuiPropertyEditors::renderTransformDisplay(selected.transform, state.showTransformSection);
+        GuiPropertyEditors::renderMaterialDisplay(selected, state.showMaterialSection);
+        GuiPropertyEditors::renderRenderableInfoDisplay(selected, state.selectedRenderableIndex,
+                                                        state.showInfoSection);
+    }
+    ImGui::EndChild();
+}
+
 } // anonymous namespace
 
 void GuiInspectorPanel::render(ISceneControl& sceneControl, SceneEditorState& state) {
@@ -255,6 +288,12 @@ void GuiInspectorPanel::render(ISceneControl& sceneControl, SceneEditorState& st
     ImGui::Spacing();
     ImGui::Separator();
     ImGui::Spacing();
+
+    // Renderable selection (from the Hierarchy "Renderables" tab): read-only view
+    if (state.selectionKind == SceneEditorState::SelectionKind::Renderable) {
+        renderRenderableInspector(sceneControl, state);
+        return;
+    }
 
     // Check if an entity is selected
     if (state.selectedEntity == ecs::NullEntity) {

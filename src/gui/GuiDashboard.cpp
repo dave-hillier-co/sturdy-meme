@@ -1,12 +1,12 @@
 #include "GuiDashboard.h"
 #include "GuiStyle.h"
 #include "Camera.h"
-#include "core/interfaces/ITerrainControl.h"
+#include "TerrainSystem.h"
 #include "core/interfaces/ITimeSystem.h"
 
 #include <imgui.h>
 
-void GuiDashboard::render(ITerrainControl& terrain, ITimeSystem& time, const Camera& camera,
+void GuiDashboard::render(TerrainSystem& terrain, ITimeSystem& time, const Camera& camera,
                            float deltaTime, float fps, State& state) {
     // Update frame time history
     state.frameTimeHistory[state.frameTimeIndex] = deltaTime * 1000.0f;

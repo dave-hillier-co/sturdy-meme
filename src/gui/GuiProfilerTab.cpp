@@ -1,7 +1,6 @@
 #include "GuiProfilerTab.h"
 #include "GuiStyle.h"
 #include "GuiFlamegraph.h"
-#include "core/interfaces/IProfilerControl.h"
 #include "Profiler.h"
 #include "InitProfiler.h"
 #include "QueueSubmitDiagnostics.h"
@@ -74,10 +73,9 @@ std::string generateMarkdownReport(const Profiler& profiler) {
 
 } // anonymous namespace
 
-void GuiProfilerTab::render(IProfilerControl& profilerControl) {
+void GuiProfilerTab::render(Profiler& profiler) {
     ImGui::Spacing();
 
-    auto& profiler = profilerControl.getProfiler();
 
     // Enable/disable toggle
     bool enabled = profiler.isEnabled();

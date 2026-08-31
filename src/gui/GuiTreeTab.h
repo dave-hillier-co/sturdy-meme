@@ -1,7 +1,9 @@
 #pragma once
 
-class ITreeControl;
+class RendererSystems;
 
 namespace GuiTreeTab {
-    void render(ITreeControl& treeControl);
+    // Takes RendererSystems because TreeSystem and TreeLODSystem are created
+    // late (deferred world content); they must be looked up every frame.
+    void render(RendererSystems& systems);
 }

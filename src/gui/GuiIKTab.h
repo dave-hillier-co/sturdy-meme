@@ -25,7 +25,27 @@ struct IKDebugSettings {
     float groundOffset = 0.0f;
 };
 
-namespace GuiIKTab {
-    void render(ISceneControl& sceneControl, const Camera& camera, IKDebugSettings& settings);
-    void renderSkeletonOverlay(ISceneControl& sceneControl, const Camera& camera, const IKDebugSettings& settings, bool showCapeColliders);
-}
+/**
+ * IK / animation panel. Owns the IK debug settings; ISceneControl is bound
+ * at construction.
+ */
+class GuiIKTab {
+public:
+    explicit GuiIKTab(ISceneControl& sceneControl) : sceneControl_(sceneControl) {}
+
+    void draw(const Camera& camera) { render(sceneControl_, camera, settings_); }
+
+    void drawSkeletonOverlay(const Camera& camera, bool showCapeColliders) {
+        renderSkeletonOverlay(sceneControl_, camera, settings_, showCapeColliders);
+    }
+
+    const IKDebugSettings& settings() const { return settings_; }
+
+private:
+    static void render(ISceneControl& sceneControl, const Camera& camera, IKDebugSettings& settings);
+    static void renderSkeletonOverlay(ISceneControl& sceneControl, const Camera& camera,
+                                      const IKDebugSettings& settings, bool showCapeColliders);
+
+    ISceneControl& sceneControl_;
+    IKDebugSettings settings_;
+};

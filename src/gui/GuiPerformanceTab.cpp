@@ -1,15 +1,13 @@
 #include "GuiPerformanceTab.h"
 #include "GuiStyle.h"
-#include "core/interfaces/IPerformanceControl.h"
 #include "PerformanceToggles.h"
 
 #include <imgui.h>
 #include <string>
 
-void GuiPerformanceTab::render(IPerformanceControl& perfControl) {
+void GuiPerformanceTab::render(PerformanceToggles& toggles) {
     ImGui::Spacing();
 
-    PerformanceToggles& toggles = perfControl.getPerformanceToggles();
 
     // Quick actions
     GuiStyle::sectionHeader("QUICK ACTIONS");

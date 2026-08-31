@@ -1,24 +1,23 @@
 #include "GuiTerrainTab.h"
 #include "GuiStyle.h"
-#include "core/interfaces/ITerrainControl.h"
 #include "TerrainSystem.h"
 
 #include <imgui.h>
 
-void GuiTerrainTab::render(ITerrainControl& terrainControl) {
+void GuiTerrainTab::render(TerrainSystem& terrainSystem) {
     ImGui::Spacing();
 
     // Terrain info
     GuiStyle::sectionHeader("TERRAIN SYSTEM");
 
-    const auto& terrain = terrainControl.getTerrainSystem();
+    const auto& terrain = terrainSystem;
     const auto& config = terrain.getConfig();
 
     ImGui::Text("Size: %.0f x %.0f meters", config.size, config.size);
     ImGui::Text("Height Scale: %.1f", config.heightScale);
 
     // Triangle count with color coding
-    uint32_t triangleCount = terrainControl.getTerrainNodeCount();
+    uint32_t triangleCount = terrainSystem.getTerrainNodeCount();
     ImVec4 triColor = triangleCount < 100000 ? GuiStyle::kGood :
                       triangleCount < 500000 ? GuiStyle::kWarning :
                                                GuiStyle::kBad;
@@ -46,7 +45,7 @@ void GuiTerrainTab::render(ITerrainControl& terrainControl) {
     // LOD parameters (modifiable at runtime)
     GuiStyle::sectionHeader("LOD PARAMETERS");
 
-    auto& terrainMut = terrainControl.getTerrainSystem();
+    auto& terrainMut = terrainSystem;
     TerrainConfig cfg = terrainMut.getConfig();
     bool configChanged = false;
 
@@ -109,17 +108,17 @@ void GuiTerrainTab::render(ITerrainControl& terrainControl) {
     // Debug toggles
     GuiStyle::sectionHeader("DEBUG");
 
-    bool terrainEnabled = terrainControl.isTerrainEnabled();
+    bool terrainEnabled = terrainSystem.isTerrainEnabled();
     if (ImGui::Checkbox("Enable Terrain", &terrainEnabled)) {
-        terrainControl.setTerrainEnabled(terrainEnabled);
+        terrainSystem.setTerrainEnabled(terrainEnabled);
     }
     if (ImGui::IsItemHovered()) {
         ImGui::SetTooltip("Toggle terrain rendering on/off");
     }
 
-    bool wireframe = terrainControl.isTerrainWireframeMode();
+    bool wireframe = terrainSystem.isTerrainWireframeMode();
     if (ImGui::Checkbox("Wireframe Mode", &wireframe)) {
-        terrainControl.toggleTerrainWireframe();
+        terrainSystem.toggleTerrainWireframe();
     }
     if (ImGui::IsItemHovered()) {
         ImGui::SetTooltip("Show terrain mesh wireframe overlay");
@@ -182,7 +181,7 @@ void GuiTerrainTab::render(ITerrainControl& terrainControl) {
     ImGui::Spacing();
 
     // Height query demo
-    ImGui::Text("Height at origin: %.2f", terrainControl.getTerrainHeightAt(0.0f, 0.0f));
+    ImGui::Text("Height at origin: %.2f", terrainSystem.getTerrainHeightAt(0.0f, 0.0f));
     ImGui::Text("Press 9 for height diagnostic (CPU vs Physics)");
 
     ImGui::Spacing();

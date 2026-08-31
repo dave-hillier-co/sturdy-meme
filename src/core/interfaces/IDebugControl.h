@@ -1,9 +1,6 @@
 #pragma once
 
 #include <cstdint>
-#include <functional>
-#include <string>
-#include <vector>
 
 class DebugLineSystem;
 
@@ -61,35 +58,4 @@ public:
     };
     virtual CullingStats getHiZCullingStats() const = 0;
 
-    // Articulated body ragdoll spawning (for testing)
-    using SpawnRagdollCallback = std::function<void()>;
-    using RagdollCountCallback = std::function<int()>;
-    void setSpawnRagdollCallback(SpawnRagdollCallback callback) { ragdollCallback_ = std::move(callback); }
-    void setRagdollCountCallback(RagdollCountCallback callback) { ragdollCountCallback_ = std::move(callback); }
-    void spawnRagdoll() { if (ragdollCallback_) ragdollCallback_(); }
-    int getActiveRagdollCount() const { return ragdollCountCallback_ ? ragdollCountCallback_() : 0; }
-
-    // World teleport (jump camera/player to a world XZ position)
-    struct TeleportTarget {
-        std::string name;
-        float worldX = 0.0f;
-        float worldZ = 0.0f;
-        float radius = 0.0f;
-    };
-    using TeleportCallback = std::function<void(float worldX, float worldZ)>;
-    using TeleportTargetsCallback = std::function<const std::vector<TeleportTarget>&()>;
-    void setTeleportCallback(TeleportCallback callback) { teleportCallback_ = std::move(callback); }
-    void setTeleportTargetsCallback(TeleportTargetsCallback callback) { teleportTargetsCallback_ = std::move(callback); }
-    bool canTeleport() const { return static_cast<bool>(teleportCallback_); }
-    void teleportTo(float worldX, float worldZ) { if (teleportCallback_) teleportCallback_(worldX, worldZ); }
-    const std::vector<TeleportTarget>& getTeleportTargets() const {
-        static const std::vector<TeleportTarget> empty;
-        return teleportTargetsCallback_ ? teleportTargetsCallback_() : empty;
-    }
-
-private:
-    SpawnRagdollCallback ragdollCallback_;
-    RagdollCountCallback ragdollCountCallback_;
-    TeleportCallback teleportCallback_;
-    TeleportTargetsCallback teleportTargetsCallback_;
 };

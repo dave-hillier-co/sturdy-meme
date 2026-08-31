@@ -18,11 +18,8 @@
 
 // Forward declarations for control subsystems (only those that coordinate multiple systems)
 class EnvironmentControlSubsystem;
-class WaterControlSubsystem;
-class TreeControlSubsystem;
 class GrassControlAdapter;
 class DebugControlSubsystem;
-class PerformanceControlSubsystem;
 class SceneControlSubsystem;
 class PlayerControlSubsystem;
 
@@ -34,13 +31,8 @@ class IWeatherState;
 class IEnvironmentControl;
 class IPostProcessState;
 class ICloudShadowControl;
-class ITerrainControl;
-class IWaterControl;
-class ITreeControl;
 class IGrassControl;
 class IDebugControl;
-class IProfilerControl;
-class IPerformanceControl;
 class ISceneControl;
 class IPlayerControl;
 
@@ -468,12 +460,6 @@ public:
     const IPostProcessState& postProcessState() const;
     ICloudShadowControl& cloudShadowControl();
     const ICloudShadowControl& cloudShadowControl() const;
-    ITerrainControl& terrainControl();
-    const ITerrainControl& terrainControl() const;
-    IWaterControl& waterControl();
-    const IWaterControl& waterControl() const;
-    ITreeControl& treeControl();
-    const ITreeControl& treeControl() const;
     IGrassControl& grassControl();
     const IGrassControl& grassControl() const;
     IDebugControl& debugControl();
@@ -481,17 +467,15 @@ public:
     // Direct access for internal callers that need concrete type
     DebugControlSubsystem& debugControlSubsystem();
     const DebugControlSubsystem& debugControlSubsystem() const;
-    IProfilerControl& profilerControl();
-    const IProfilerControl& profilerControl() const;
-    IPerformanceControl& performanceControl();
-    const IPerformanceControl& performanceControl() const;
+    // Performance toggles: registered by initControlSubsystems (owned by Renderer)
+    PerformanceToggles& performanceToggles() { return *perfToggles_; }
+    const PerformanceToggles& performanceToggles() const { return *perfToggles_; }
     ISceneControl& sceneControl();
     const ISceneControl& sceneControl() const;
     IPlayerControl& playerControl();
     const IPlayerControl& playerControl() const;
 
     // Set the sync callback for performance control (must be called after initControlSubsystems)
-    void setPerformanceSyncCallback(std::function<void()> callback);
 
     // ========================================================================
     // ECS Integration (Phase 6: Renderable Elimination)
@@ -544,6 +528,9 @@ private:
 
     bool initialized_ = false;
     bool controlsInitialized_ = false;
+
+    // Renderer-owned performance toggles; set by initControlSubsystems
+    PerformanceToggles* perfToggles_ = nullptr;
 
     // Temporal systems registry - non-owning pointers to systems that need reset on window focus
     std::vector<ITemporalSystem*> temporalSystems_;

@@ -1,6 +1,5 @@
 #include "GuiTileLoaderTab.h"
 #include "Camera.h"
-#include "core/interfaces/ITerrainControl.h"
 #include "terrain/TerrainSystem.h"
 #include "terrain/TerrainTileCache.h"
 #include "physics/PhysicsTerrainTileManager.h"
@@ -9,9 +8,9 @@
 #include <unordered_map>
 #include <string>
 
-void GuiTileLoaderTab::render(ITerrainControl& terrain, PhysicsTerrainTileManager* physicsTerrainTiles,
+void GuiTileLoaderTab::render(TerrainSystem& terrain, PhysicsTerrainTileManager* physicsTerrainTiles,
                                const Camera& camera, State& state) {
-    const TerrainTileCache* tileCache = terrain.getTerrainSystem().getTileCache();
+    const TerrainTileCache* tileCache = terrain.getTileCache();
 
     if (!tileCache) {
         ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.5f, 1.0f), "Tile cache not enabled");

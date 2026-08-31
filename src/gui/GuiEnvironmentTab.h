@@ -11,6 +11,19 @@ struct EnvironmentTabState {
     float cachedMieScale = 3.996f;
 };
 
-namespace GuiEnvironmentTab {
-    void render(IEnvironmentControl& envControl, EnvironmentTabState& state);
-}
+/**
+ * Atmosphere/fog panel. Owns its toggle state; the environment control
+ * facade is bound at construction.
+ */
+class GuiEnvironmentTab {
+public:
+    explicit GuiEnvironmentTab(IEnvironmentControl& envControl) : envControl_(envControl) {}
+
+    void draw() { render(envControl_, state_); }
+
+private:
+    static void render(IEnvironmentControl& envControl, EnvironmentTabState& state);
+
+    IEnvironmentControl& envControl_;
+    EnvironmentTabState state_;
+};

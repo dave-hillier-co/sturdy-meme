@@ -7,7 +7,6 @@
 #include "Flamegraph.h"
 #include "QueueSubmitDiagnostics.h"
 #include "CommandCapture.h"
-#include "interfaces/IProfilerControl.h"
 #include <memory>
 #include <optional>
 
@@ -21,7 +20,7 @@
  *   auto profiler = Profiler::create(device, physicalDevice, framesInFlight);
  *   // GPU may be disabled if init fails, but CPU profiling always works
  */
-class Profiler : public IProfilerControl {
+class Profiler {
 public:
     // Passkey for controlled construction via make_unique
     struct ConstructToken { explicit ConstructToken() = default; };
@@ -179,9 +178,7 @@ public:
     const GpuProfiler& getGpuProfiler() const { return *gpuProfiler_; }
     const CpuProfiler& getCpuProfiler() const { return cpuProfiler; }
 
-    // IProfilerControl implementation
-    Profiler& getProfiler() override { return *this; }
-    const Profiler& getProfiler() const override { return *this; }
+
 
     // Flamegraph capture
     /**

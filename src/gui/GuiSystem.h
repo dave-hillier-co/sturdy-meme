@@ -8,33 +8,45 @@
 #include <memory>
 #include <vector>
 
-#include "GuiIKTab.h"
+#include "GuiDebugTab.h"
 #include "GuiPlayerTab.h"
-#include "GuiEnvironmentTab.h"
-#include "GuiSceneGraphTab.h"
-#include "GuiTileLoaderTab.h"
-#include "GuiDashboard.h"
-#include "GuiInterfaces.h"
 #include "GuiPanelRegistry.h"
 #include "SceneEditorState.h"
+#include "game/GameMenu.h"
 
 class Camera;
+class RendererSystems;
+class PhysicsTerrainTileManager;
+struct DebugCommand;
+class GuiDashboard;
+class GuiEnvironmentTab;
+class GuiIKTab;
+class GuiTileLoaderTab;
 typedef unsigned int ImGuiID;
 
 class GuiSystem {
 public:
     // Passkey for controlled construction via make_unique
     struct ConstructToken { explicit ConstructToken() = default; };
-    explicit GuiSystem(ConstructToken) {}
+    // Defined in the .cpp: member unique_ptrs hold forward-declared panel types
+    explicit GuiSystem(ConstructToken);
 
     /**
      * Factory: Create and initialize GUI system.
+     * Panels bind their (narrow) system dependencies from `systems` at
+     * construction; `debugHooks` supplies Application-level debug actions,
+     * `physicsTerrainTiles` (nullable) and `debugCommands` (nullable, but
+     * with stable address) feed the tile-loader and debug panels.
      * Returns nullptr on failure.
      */
     static std::unique_ptr<GuiSystem> create(SDL_Window* window, vk::Instance instance,
                                               vk::PhysicalDevice physicalDevice, vk::Device device,
                                               uint32_t graphicsQueueFamily, vk::Queue graphicsQueue,
-                                              vk::RenderPass renderPass, uint32_t imageCount);
+                                              vk::RenderPass renderPass, uint32_t imageCount,
+                                              RendererSystems& systems,
+                                              GuiDebugTab::Hooks debugHooks,
+                                              PhysicsTerrainTileManager* physicsTerrainTiles,
+                                              const std::vector<DebugCommand>* debugCommands);
 
     ~GuiSystem();
 
@@ -46,7 +58,7 @@ public:
 
     void processEvent(const SDL_Event& event);
     void beginFrame();
-    void render(GuiInterfaces& interfaces, const Camera& camera, float deltaTime, float fps);
+    void render(const Camera& camera, float deltaTime, float fps);
     void endFrame(vk::CommandBuffer cmd);
     void cancelFrame();  // End frame without rendering (for early returns)
 
@@ -55,12 +67,17 @@ public:
     void toggleVisibility() { visible = !visible; }
     void setVisible(bool v) { visible = v; }
 
-    // Get player settings for external systems
-    PlayerSettings& getPlayerSettings() { return playerSettings; }
-    const PlayerSettings& getPlayerSettings() const { return playerSettings; }
+    // Get player settings for external systems (owned by the Player panel)
+    PlayerSettings& getPlayerSettings();
+    const PlayerSettings& getPlayerSettings() const;
 
     // Check if gizmo is being used (for input blocking)
     bool isGizmoActive() const;
+
+    // Player-facing pause menu / settings screen. Drawn every frame,
+    // independent of the debug-GUI visibility flag.
+    GameMenu& gameMenu() { return gameMenu_; }
+    const GameMenu& gameMenu() const { return gameMenu_; }
 
 private:
     bool initInternal(SDL_Window* window, vk::Instance instance, vk::PhysicalDevice physicalDevice,
@@ -68,7 +85,10 @@ private:
                       vk::RenderPass renderPass, uint32_t imageCount);
     void cleanup();
 
-    void buildPanelRegistry();
+    void buildPanelRegistry(GuiDebugTab::Hooks debugHooks,
+                            PhysicsTerrainTileManager* physicsTerrainTiles,
+                            const std::vector<DebugCommand>* debugCommands);
+    void renderDebugUi(const Camera& camera, float deltaTime, float fps);
     void renderMainMenuBar();
     void applyDefaultDockLayout(ImGuiID dockspaceId);
 
@@ -76,29 +96,28 @@ private:
     vk::DescriptorPool imguiPool = VK_NULL_HANDLE;
     bool visible = true;
 
-    // IK debug settings
-    IKDebugSettings ikDebugSettings;
+    // Stable systems accessor. Used for late-bound dependencies (ECS world,
+    // tree/ocean systems created after init) and for the parallel-lane
+    // scene editor panels.
+    RendererSystems* systems_ = nullptr;
 
-    // Player settings
-    PlayerSettings playerSettings;
-
-    // Environment tab state
-    EnvironmentTabState environmentTabState;
-
-    // Scene graph tab state
-    SceneGraphTabState sceneGraphTabState;
+    // Panel objects: each owns its persistent state, with dependencies bound
+    // at construction (built in buildPanelRegistry).
+    std::unique_ptr<GuiDashboard> dashboard_;
+    std::unique_ptr<GuiEnvironmentTab> environmentTab_;
+    std::unique_ptr<GuiPlayerTab> playerTab_;
+    std::unique_ptr<GuiIKTab> ikTab_;
+    std::unique_ptr<GuiDebugTab> debugTab_;
+    std::unique_ptr<GuiTileLoaderTab> tileLoaderTab_;
 
     // Scene editor state (hierarchy + inspector + gizmo)
     SceneEditorState sceneEditorState;
 
-    // Dashboard state (frame time tracking)
-    GuiDashboard::State dashboardState;
-
-    // Tile loader state
-    GuiTileLoaderTab::State tileLoaderState;
-
     // Panel registry: one entry per menu-toggleable debug panel
     std::vector<PanelDesc> panels_;
+
+    // Player-facing pause menu (independent of the debug dashboard)
+    GameMenu gameMenu_;
 
     // Special-cased dockable editor panels (inline handling + gizmo)
     bool showHierarchy_ = false;

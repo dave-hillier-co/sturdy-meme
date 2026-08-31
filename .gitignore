@@ -61,3 +61,4 @@ assets/textures/downloads
 imgui_layout.ini
 
 screenshots/
+.claude/scheduled_tasks.lock

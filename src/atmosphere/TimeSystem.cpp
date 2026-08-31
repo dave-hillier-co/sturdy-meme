@@ -11,12 +11,28 @@ TimingData TimeSystem::update() {
         initialized = true;
     }
 
+    auto frameDuration = currentTime - lastFrameTime;
+    lastFrameTime = currentTime;
+
+    if (paused_) {
+        // Hold elapsed time by shifting the epoch forward over the paused
+        // frame; lastFrameTime stays current, so unpausing produces a normal
+        // per-frame delta with no catch-up step.
+        startTime += frameDuration;
+        lastDeltaTime = 0.0f;
+
+        TimingData timing;
+        timing.deltaTime = 0.0f;
+        timing.elapsedTime = lastElapsedTime;
+        timing.timeOfDay = currentTimeOfDay;
+        return timing;
+    }
+
     // Calculate elapsed time since start
     float elapsedTime = std::chrono::duration<float>(currentTime - startTime).count();
 
     // Calculate delta time since last frame
-    float deltaTime = std::chrono::duration<float>(currentTime - lastFrameTime).count();
-    lastFrameTime = currentTime;
+    float deltaTime = std::chrono::duration<float>(frameDuration).count();
 
     // Store for accessor methods
     lastDeltaTime = deltaTime;

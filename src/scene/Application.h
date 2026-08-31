@@ -16,6 +16,7 @@
 #include "ClothSimulation.h"
 #include "GuiSystem.h"
 #include "InputSystem.h"
+#include "core/GameSettings.h"
 #include "BreadcrumbTracker.h"
 #include "gui/GuiDebugTab.h"
 #include "ecs/World.h"
@@ -104,6 +105,11 @@ private:
 
     // Input system
     InputSystem input;
+
+    // Persistent player settings (loaded once at startup, saved on change by
+    // the pause menu and again on clean shutdown)
+    GameSettings settings_;
+    std::string settingsPath_;
 
     // Debug keybinding command table (built once at init, dispatched from
     // processEvents, rendered as the GUI cheatsheet)

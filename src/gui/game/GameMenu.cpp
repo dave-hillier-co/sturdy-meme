@@ -2,6 +2,7 @@
 
 #include "gui/GuiStyle.h"
 #include "scene/InputSystem.h"
+#include "core/GameSettings.h"
 #include "core/PerformanceToggles.h"
 
 #include <imgui.h>
@@ -150,16 +151,23 @@ void GameMenu::renderSettings() {
 
     ImGui::PushItemWidth(contentWidth * 0.55f);
 
+    // Widgets read and write the persistent GameSettings struct (single
+    // source of truth); every change is also applied to the live system
+    // immediately, and `changed` triggers a save through the hook below.
+    GameSettings* settings = hooks_.settings;
+    bool changed = false;
+
     // Mouse
     GuiStyle::sectionHeader("Mouse");
-    if (hooks_.input) {
-        float sensitivity = hooks_.input->getMouseSensitivity();
-        if (ImGui::SliderFloat("Sensitivity", &sensitivity, 0.1f, 3.0f, "%.2f")) {
-            hooks_.input->setMouseSensitivity(sensitivity);
+    if (hooks_.input && settings) {
+        if (ImGui::SliderFloat("Sensitivity", &settings->mouseSensitivity,
+                               0.1f, 3.0f, "%.2f")) {
+            hooks_.input->setMouseSensitivity(settings->mouseSensitivity);
+            changed = true;
         }
-        bool invertY = hooks_.input->getInvertMouseY();
-        if (ImGui::Checkbox("Invert Y Axis", &invertY)) {
-            hooks_.input->setInvertMouseY(invertY);
+        if (ImGui::Checkbox("Invert Y Axis", &settings->invertMouseY)) {
+            hooks_.input->setInvertMouseY(settings->invertMouseY);
+            changed = true;
         }
     } else {
         ImGui::TextColored(GuiStyle::kDim, "Input system unavailable");
@@ -167,10 +175,14 @@ void GameMenu::renderSettings() {
 
     // Display
     GuiStyle::sectionHeader("Display");
-    if (hooks_.window) {
-        bool fullscreen = (SDL_GetWindowFlags(hooks_.window) & SDL_WINDOW_FULLSCREEN) != 0;
-        if (ImGui::Checkbox("Fullscreen", &fullscreen)) {
-            SDL_SetWindowFullscreen(hooks_.window, fullscreen);
+    if (hooks_.window && settings) {
+        // Track external transitions (e.g. the OS window button) so the
+        // checkbox always reflects the real window state.
+        settings->fullscreen =
+            (SDL_GetWindowFlags(hooks_.window) & SDL_WINDOW_FULLSCREEN) != 0;
+        if (ImGui::Checkbox("Fullscreen", &settings->fullscreen)) {
+            SDL_SetWindowFullscreen(hooks_.window, settings->fullscreen);
+            changed = true;
         }
     }
 
@@ -183,7 +195,11 @@ void GameMenu::renderSettings() {
         for (const QualityEntry& entry : kQualityEntries) {
             for (const auto& toggle : toggles) {
                 if (toggle.name != entry.toggleName) continue;
-                ImGui::Checkbox(entry.label, toggle.value);
+                if (ImGui::Checkbox(entry.label, toggle.value) && settings) {
+                    // Persist only toggles the player explicitly changed.
+                    settings->qualityOverrides[entry.toggleName] = *toggle.value;
+                    changed = true;
+                }
                 break;
             }
         }
@@ -192,6 +208,10 @@ void GameMenu::renderSettings() {
     }
 
     ImGui::PopItemWidth();
+
+    if (changed && hooks_.settingsChanged) {
+        hooks_.settingsChanged();
+    }
 
     ImGui::Dummy(ImVec2(0.0f, ImGui::GetFontSize() * 0.5f));
     if (menuButton("Back", ImGui::GetFontSize() * 8.0f)) {

@@ -97,6 +97,20 @@ bool Application::init(const std::string& title, int width, int height) {
         }
     }
 
+    // Load persistent player settings once, before the frame loop exists.
+    // Sensitivity, invert-Y, and fullscreen apply immediately; quality-toggle
+    // overrides apply later, once async renderer init has finished.
+    {
+        INIT_PROFILE_PHASE("GameSettings");
+        settingsPath_ = GameSettings::defaultFilePath();
+        settings_ = GameSettings::loadFromFile(settingsPath_);
+        input.setMouseSensitivity(settings_.mouseSensitivity);
+        input.setInvertMouseY(settings_.invertMouseY);
+        if (settings_.fullscreen) {
+            SDL_SetWindowFullscreen(window, true);
+        }
+    }
+
     std::string resourcePath = getResourcePath();
 
     // Complete Vulkan device initialization (surface, device, swapchain)
@@ -303,11 +317,35 @@ bool Application::init(const std::string& title, int width, int height) {
         GameMenu::Hooks menuHooks;
         menuHooks.input = &input;
         menuHooks.window = window;
+        menuHooks.settings = &settings_;
+        menuHooks.settingsChanged = [this] { settings_.saveToFile(settingsPath_); };
         menuHooks.performanceToggles = [this]() -> PerformanceToggles* {
             return renderer_ ? &renderer_->getSystems().performanceToggles() : nullptr;
         };
         menuHooks.requestQuit = [this] { running = false; };
         gui_->gameMenu().setHooks(std::move(menuHooks));
+    }
+
+    // Apply persisted quality-toggle overrides now that async init has
+    // completed and PerformanceToggles is wired (it does not exist at the
+    // point settings are loaded). Unknown names are ignored with a warning
+    // so renamed toggles never crash a stale settings file.
+    {
+        PerformanceToggles& perfToggles = renderer_->getSystems().performanceToggles();
+        auto toggles = perfToggles.getAllToggles();
+        for (const auto& [name, enabled] : settings_.qualityOverrides) {
+            auto it = std::find_if(toggles.begin(), toggles.end(),
+                                   [&name](const PerformanceToggles::Toggle& t) {
+                                       return t.name == name;
+                                   });
+            if (it != toggles.end()) {
+                *it->value = enabled;
+            } else {
+                SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                            "GameSettings: unknown quality toggle '%s' ignored",
+                            name.c_str());
+            }
+        }
     }
 
     // Collect settlements as teleport destinations for the debug panel
@@ -867,6 +905,8 @@ void Application::buildDebugCommands() {
         [this] { gui_->toggleVisibility(); }});
     debugCommands_.push_back({"app.screenshot", "Save screenshot", "Application", SDL_SCANCODE_F12,
         [this] { renderer_->requestScreenshot(); }});
+    debugCommands_.push_back({"app.toggleHud", "Toggle HUD", "Application", SDL_SCANCODE_H,
+        [this] { gui_->gameHud().toggleVisible(); }});
 
     // Time
     debugCommands_.push_back({"time.sunrise", "Set time to sunrise", "Time", SDL_SCANCODE_1,
@@ -1101,6 +1141,13 @@ void Application::run() {
 
         auto& systems = renderer_->getSystems();
 
+        // While the pause menu is open the world freezes but the app stays
+        // responsive: rendering, GUI, streaming and deferred generation
+        // continue below. TimeSystem::update() runs on the render path, so
+        // it holds time-of-day/elapsed itself while paused.
+        const bool simPaused = gui_->gameMenu().isOpen();
+        systems.time().setPaused(simPaused);
+
         // Update input system
         input.update(deltaTime, camera.getForward());
 
@@ -1111,158 +1158,167 @@ void Application::run() {
         glm::vec3 desiredVelocity(0.0f);
         auto& playerTransform = player_.transform;
         auto& playerMovement = player_.movement;
+        bool isJumping = false;
+        glm::vec3 physicsVelocity(0.0f);
 
-        if (input.isThirdPersonMode()) {
-            // Handle orientation lock toggle
-            if (input.wantsOrientationLockToggle()) {
-                playerMovement.orientationLocked = !playerMovement.orientationLocked;
-                if (playerMovement.orientationLocked) {
-                    playerMovement.lockedYaw = playerTransform.getYaw();
-                }
-                SDL_Log("Orientation lock: %s", playerMovement.orientationLocked ? "ON" : "OFF");
-            }
-
-            // Temporarily lock orientation if holding trigger/middle mouse
-            bool effectiveLock = playerMovement.orientationLocked || input.isOrientationLockHeld();
-
-            // Get facing mode settings
-            auto& playerSettings = gui_->getPlayerSettings();
-            FacingMode facingMode = playerSettings.facingMode;
-            bool guiStrafeEnabled = (facingMode != FacingMode::FollowMovement);
-
-            // Handle FollowTarget mode - place target if not set
-            if (facingMode == FacingMode::FollowTarget && !playerSettings.hasTarget) {
-                // Place target 5m in front of player
-                glm::vec3 forward = playerTransform.getForward();
-                playerSettings.targetPosition = playerTransform.position + forward * 5.0f;
-                playerSettings.hasTarget = true;
-                SDL_Log("Target placed at (%.1f, %.1f, %.1f)",
-                    playerSettings.targetPosition.x,
-                    playerSettings.targetPosition.y,
-                    playerSettings.targetPosition.z);
-            }
-
-            glm::vec3 moveDir = input.getMovementDirection();
-            float moveLen = glm::length(moveDir);
-            if (moveLen > 0.001f) {
-                // Clamp rather than normalize so analog stick magnitude scales speed
-                if (moveLen > 1.0f) moveDir /= moveLen;
-                float currentSpeed = input.isSprinting() ? sprintSpeed : moveSpeed;
-                desiredVelocity = moveDir * currentSpeed;
-
-                // Only rotate player to face movement direction if not locked and not in GUI strafe mode
-                if (!effectiveLock && !guiStrafeEnabled) {
-                    float newYaw = glm::degrees(atan2(moveDir.x, moveDir.z));
-                    float currentYaw = playerTransform.getYaw();
-                    float yawDiff = newYaw - currentYaw;
-                    // Normalize yaw difference
-                    while (yawDiff > 180.0f) yawDiff -= 360.0f;
-                    while (yawDiff < -180.0f) yawDiff += 360.0f;
-                    // Use slower rotation when motion matching is active so the trajectory
-                    // predictor has time to show direction changes to the matcher.
-                    // Fast rotation (10x) makes every query look like "moving forward" in
-                    // local space, causing idle selection during turns.
-                    auto& sceneBuilder = renderer_->getSystems().scene().getSceneBuilder();
-                    float yawRate = (sceneBuilder.hasCharacter() &&
-                                     sceneBuilder.getAnimatedCharacter().isUsingMotionMatching())
-                                    ? 4.0f : 10.0f;
-                    float smoothedYaw = currentYaw + yawDiff * (1.0f - std::exp(-yawRate * deltaTime));
-                    // Keep yaw in reasonable range
-                    while (smoothedYaw > 360.0f) smoothedYaw -= 360.0f;
-                    while (smoothedYaw < 0.0f) smoothedYaw += 360.0f;
-                    playerTransform.setYaw(smoothedYaw);
-                }
-            }
-
-            // Handle strafe/lock-on facing modes
-            if (guiStrafeEnabled) {
-                glm::vec3 targetDir;
-                if (facingMode == FacingMode::FollowCamera) {
-                    // Face camera direction
-                    targetDir = camera.getForward();
-                } else if (facingMode == FacingMode::FollowTarget && playerSettings.hasTarget) {
-                    // Face target position
-                    targetDir = playerSettings.targetPosition - playerTransform.position;
-                } else {
-                    targetDir = playerTransform.getForward();
-                }
-
-                targetDir.y = 0.0f;
-                if (glm::length(targetDir) > 0.001f) {
-                    targetDir = glm::normalize(targetDir);
-                    float targetYaw = glm::degrees(atan2(targetDir.x, targetDir.z));
-                    float currentYaw = playerTransform.getYaw();
-                    float yawDiff = targetYaw - currentYaw;
-                    while (yawDiff > 180.0f) yawDiff -= 360.0f;
-                    while (yawDiff < -180.0f) yawDiff += 360.0f;
-                    // Faster rotation for strafe mode responsiveness
-                    float smoothedYaw = currentYaw + yawDiff * (1.0f - std::exp(-15.0f * deltaTime));
-                    while (smoothedYaw > 360.0f) smoothedYaw -= 360.0f;
-                    while (smoothedYaw < 0.0f) smoothedYaw += 360.0f;
-                    playerTransform.setYaw(smoothedYaw);
-                }
-            }
-        }
-
-        // Detect jump BEFORE physics update (character is still grounded when jump is requested)
-        bool wasGrounded = physics().isCharacterOnGround();
-        bool wantsJump = input.wantsJump();
-        bool isJumping = wantsJump && wasGrounded;
-
-        // If starting a jump, compute trajectory for animation sync
-        if (isJumping) {
-            glm::vec3 startPos = physics().getCharacterPosition();
-            // Velocity: horizontal from input + jump impulse (5.0 m/s up, matching PhysicsSystem)
-            glm::vec3 jumpVelocity = desiredVelocity;
-            jumpVelocity.y = 5.0f;
-            renderer_->getSystems().scene().getSceneBuilder().startCharacterJump(startPos, jumpVelocity, 9.81f, &physics());
-        }
-
-        // Always update physics character controller (handles gravity, jumping, and movement)
-        physics().updateCharacter(deltaTime, desiredVelocity, wantsJump);
-
-        // Apply ML policy torques to ragdolls before physics step
-        uniconController_.update(ragdolls_, physics(), deltaTime);
-
-        // Update physics simulation
-        physics().update(deltaTime);
-
-        // Detect and destroy ragdolls with NaN state (constraint solver diverged)
-        ragdolls_.erase(
-            std::remove_if(ragdolls_.begin(), ragdolls_.end(),
-                [this](ArticulatedBody& ragdoll) {
-                    if (ragdoll.hasNaNState(physics())) {
-                        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
-                                    "Destroying ragdoll with NaN physics state");
-                        ragdoll.destroy(physics());
-                        return true;
+        // Gameplay simulation freezes while the pause menu is open: no
+        // physics stepping, character/ragdoll/NPC motion, cloth, or player
+        // state changes. Presentation and streaming below keep running.
+        if (!simPaused) {
+            if (input.isThirdPersonMode()) {
+                // Handle orientation lock toggle
+                if (input.wantsOrientationLockToggle()) {
+                    playerMovement.orientationLocked = !playerMovement.orientationLocked;
+                    if (playerMovement.orientationLocked) {
+                        playerMovement.lockedYaw = playerTransform.getYaw();
                     }
-                    return false;
-                }),
-            ragdolls_.end());
+                    SDL_Log("Orientation lock: %s", playerMovement.orientationLocked ? "ON" : "OFF");
+                }
 
-        // Update physics terrain tiles based on player position
-        glm::vec3 playerPos = physics().getCharacterPosition();
-        physicsTerrainManager_.update(playerPos);
+                // Temporarily lock orientation if holding trigger/middle mouse
+                bool effectiveLock = playerMovement.orientationLocked || input.isOrientationLockHeld();
 
-        // Sync player entity position from physics character controller
-        glm::vec3 physicsVelocity = physics().getCharacterVelocity();
-        playerTransform.position = playerPos;
-        player_.grounded = physics().isCharacterOnGround();
+                // Get facing mode settings
+                auto& playerSettings = gui_->getPlayerSettings();
+                FacingMode facingMode = playerSettings.facingMode;
+                bool guiStrafeEnabled = (facingMode != FacingMode::FollowMovement);
 
-        // Update breadcrumb tracker (Ghost of Tsushima respawn optimization)
-        // Only track positions when player is grounded and not in water/hazards
-        if (player_.grounded) {
-            breadcrumbTracker.update(playerPos);
+                // Handle FollowTarget mode - place target if not set
+                if (facingMode == FacingMode::FollowTarget && !playerSettings.hasTarget) {
+                    // Place target 5m in front of player
+                    glm::vec3 forward = playerTransform.getForward();
+                    playerSettings.targetPosition = playerTransform.position + forward * 5.0f;
+                    playerSettings.hasTarget = true;
+                    SDL_Log("Target placed at (%.1f, %.1f, %.1f)",
+                        playerSettings.targetPosition.x,
+                        playerSettings.targetPosition.y,
+                        playerSettings.targetPosition.z);
+                }
+
+                glm::vec3 moveDir = input.getMovementDirection();
+                float moveLen = glm::length(moveDir);
+                if (moveLen > 0.001f) {
+                    // Clamp rather than normalize so analog stick magnitude scales speed
+                    if (moveLen > 1.0f) moveDir /= moveLen;
+                    float currentSpeed = input.isSprinting() ? sprintSpeed : moveSpeed;
+                    desiredVelocity = moveDir * currentSpeed;
+
+                    // Only rotate player to face movement direction if not locked and not in GUI strafe mode
+                    if (!effectiveLock && !guiStrafeEnabled) {
+                        float newYaw = glm::degrees(atan2(moveDir.x, moveDir.z));
+                        float currentYaw = playerTransform.getYaw();
+                        float yawDiff = newYaw - currentYaw;
+                        // Normalize yaw difference
+                        while (yawDiff > 180.0f) yawDiff -= 360.0f;
+                        while (yawDiff < -180.0f) yawDiff += 360.0f;
+                        // Use slower rotation when motion matching is active so the trajectory
+                        // predictor has time to show direction changes to the matcher.
+                        // Fast rotation (10x) makes every query look like "moving forward" in
+                        // local space, causing idle selection during turns.
+                        auto& sceneBuilder = renderer_->getSystems().scene().getSceneBuilder();
+                        float yawRate = (sceneBuilder.hasCharacter() &&
+                                         sceneBuilder.getAnimatedCharacter().isUsingMotionMatching())
+                                        ? 4.0f : 10.0f;
+                        float smoothedYaw = currentYaw + yawDiff * (1.0f - std::exp(-yawRate * deltaTime));
+                        // Keep yaw in reasonable range
+                        while (smoothedYaw > 360.0f) smoothedYaw -= 360.0f;
+                        while (smoothedYaw < 0.0f) smoothedYaw += 360.0f;
+                        playerTransform.setYaw(smoothedYaw);
+                    }
+                }
+
+                // Handle strafe/lock-on facing modes
+                if (guiStrafeEnabled) {
+                    glm::vec3 targetDir;
+                    if (facingMode == FacingMode::FollowCamera) {
+                        // Face camera direction
+                        targetDir = camera.getForward();
+                    } else if (facingMode == FacingMode::FollowTarget && playerSettings.hasTarget) {
+                        // Face target position
+                        targetDir = playerSettings.targetPosition - playerTransform.position;
+                    } else {
+                        targetDir = playerTransform.getForward();
+                    }
+
+                    targetDir.y = 0.0f;
+                    if (glm::length(targetDir) > 0.001f) {
+                        targetDir = glm::normalize(targetDir);
+                        float targetYaw = glm::degrees(atan2(targetDir.x, targetDir.z));
+                        float currentYaw = playerTransform.getYaw();
+                        float yawDiff = targetYaw - currentYaw;
+                        while (yawDiff > 180.0f) yawDiff -= 360.0f;
+                        while (yawDiff < -180.0f) yawDiff += 360.0f;
+                        // Faster rotation for strafe mode responsiveness
+                        float smoothedYaw = currentYaw + yawDiff * (1.0f - std::exp(-15.0f * deltaTime));
+                        while (smoothedYaw > 360.0f) smoothedYaw -= 360.0f;
+                        while (smoothedYaw < 0.0f) smoothedYaw += 360.0f;
+                        playerTransform.setYaw(smoothedYaw);
+                    }
+                }
+            }
+
+            // Detect jump BEFORE physics update (character is still grounded when jump is requested)
+            bool wasGrounded = physics().isCharacterOnGround();
+            bool wantsJump = input.wantsJump();
+            isJumping = wantsJump && wasGrounded;
+
+            // If starting a jump, compute trajectory for animation sync
+            if (isJumping) {
+                glm::vec3 startPos = physics().getCharacterPosition();
+                // Velocity: horizontal from input + jump impulse (5.0 m/s up, matching PhysicsSystem)
+                glm::vec3 jumpVelocity = desiredVelocity;
+                jumpVelocity.y = 5.0f;
+                renderer_->getSystems().scene().getSceneBuilder().startCharacterJump(startPos, jumpVelocity, 9.81f, &physics());
+            }
+
+            // Always update physics character controller (handles gravity, jumping, and movement)
+            physics().updateCharacter(deltaTime, desiredVelocity, wantsJump);
+
+            // Apply ML policy torques to ragdolls before physics step
+            uniconController_.update(ragdolls_, physics(), deltaTime);
+
+            // Update physics simulation
+            physics().update(deltaTime);
+
+            // Detect and destroy ragdolls with NaN state (constraint solver diverged)
+            ragdolls_.erase(
+                std::remove_if(ragdolls_.begin(), ragdolls_.end(),
+                    [this](ArticulatedBody& ragdoll) {
+                        if (ragdoll.hasNaNState(physics())) {
+                            SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                                        "Destroying ragdoll with NaN physics state");
+                            ragdoll.destroy(physics());
+                            return true;
+                        }
+                        return false;
+                    }),
+                ragdolls_.end());
+
+            glm::vec3 playerPos = physics().getCharacterPosition();
+
+            // Sync player entity position from physics character controller
+            physicsVelocity = physics().getCharacterVelocity();
+            playerTransform.position = playerPos;
+            player_.grounded = physics().isCharacterOnGround();
+
+            // Update breadcrumb tracker (Ghost of Tsushima respawn optimization)
+            // Only track positions when player is grounded and not in water/hazards
+            if (player_.grounded) {
+                breadcrumbTracker.update(playerPos);
+            }
+
+            // Update scene object transforms from physics
+            renderer_->getSystems().scene().update(physics());
         }
 
-        // Update scene object transforms from physics
-        renderer_->getSystems().scene().update(physics());
+        // Physics terrain tile streaming continues while paused (it only
+        // loads/unloads static collision tiles around the player).
+        physicsTerrainManager_.update(playerTransform.position);
 
         // Update ECS systems (visibility culling, LOD)
         stepSettlementGeneration();
         stepWorldFeatureGeneration();
-        updateECS(deltaTime);
+        updateECS(simPaused ? 0.0f : deltaTime);
 
         // Update player state in PlayerControlSubsystem for grass/snow/leaf interaction
         renderer_->getSystems().playerControl().setPlayerState(playerTransform.position, physicsVelocity, PlayerMovement::CAPSULE_RADIUS);
@@ -1272,96 +1328,98 @@ void Application::run() {
         // is still reading them from the previous frame.
         renderer_->waitForPreviousFrame();
 
-        // Update flag cloth simulation
-        updateFlag(deltaTime);
-
-        // Update animated character (skeletal animation)
-        // Calculate movement speed from desired velocity for animation state machine
-        float movementSpeed = glm::length(glm::vec2(desiredVelocity.x, desiredVelocity.z));
-        bool isGrounded = physics().isCharacterOnGround();
-
         // Sync settings from GUI
         renderer_->getSystems().scene().getSceneBuilder().setCapeEnabled(gui_->getPlayerSettings().capeEnabled);
         renderer_->getSystems().scene().getSceneBuilder().setShowSword(gui_->getPlayerSettings().showSword);
         renderer_->getSystems().scene().getSceneBuilder().setShowShield(gui_->getPlayerSettings().showShield);
         renderer_->getSystems().scene().getSceneBuilder().setShowWeaponAxes(gui_->getPlayerSettings().showWeaponAxes);
 
-        // Pass motion matching parameters: position, facing direction, and input direction
-        glm::vec3 inputDirection = glm::vec3(desiredVelocity.x, 0.0f, desiredVelocity.z);
-        glm::vec3 facingDirection = playerTransform.getForward();
+        if (!simPaused) {
+            // Update flag cloth simulation
+            updateFlag(deltaTime);
 
-        // Determine strafe mode (GUI-enabled or orientation lock is active)
-        auto& settings = gui_->getPlayerSettings();
-        bool strafeMode = (settings.facingMode != FacingMode::FollowMovement) ||
-            (input.isThirdPersonMode() &&
-             (playerMovement.orientationLocked || input.isOrientationLockHeld()));
+            // Update animated character (skeletal animation)
+            // Calculate movement speed from desired velocity for animation state machine
+            float movementSpeed = glm::length(glm::vec2(desiredVelocity.x, desiredVelocity.z));
+            bool isGrounded = physics().isCharacterOnGround();
 
-        // Get facing direction for strafe mode
-        glm::vec3 strafeFacingDirection;
-        if (settings.facingMode == FacingMode::FollowTarget && settings.hasTarget) {
-            // Face toward target
-            strafeFacingDirection = settings.targetPosition - playerTransform.position;
-        } else {
-            // Face camera direction
-            strafeFacingDirection = camera.getForward();
-        }
-        strafeFacingDirection.y = 0.0f;  // Horizontal only
-        if (glm::length(strafeFacingDirection) > 0.001f) {
-            strafeFacingDirection = glm::normalize(strafeFacingDirection);
-        } else {
-            strafeFacingDirection = glm::vec3(0.0f, 0.0f, 1.0f);
-        }
+            // Pass motion matching parameters: position, facing direction, and input direction
+            glm::vec3 inputDirection = glm::vec3(desiredVelocity.x, 0.0f, desiredVelocity.z);
+            glm::vec3 facingDirection = playerTransform.getForward();
 
-        renderer_->getSystems().scene().getSceneBuilder().updateAnimatedCharacter(
-            deltaTime, renderer_->getVulkanContext().getAllocator(), renderer_->getVulkanContext().getVkDevice(),
-            renderer_->getCommandPool(), renderer_->getVulkanContext().getVkGraphicsQueue(),
-            movementSpeed, isGrounded, isJumping,
-            playerTransform.position, facingDirection, inputDirection,
-            strafeMode, strafeFacingDirection);
+            // Determine strafe mode (GUI-enabled or orientation lock is active)
+            auto& settings = gui_->getPlayerSettings();
+            bool strafeMode = (settings.facingMode != FacingMode::FollowMovement) ||
+                (input.isThirdPersonMode() &&
+                 (playerMovement.orientationLocked || input.isOrientationLockHeld()));
 
-        // Feed animation-driven root yaw into character facing.
-        // For walk/run clips this is near-zero (no visible effect). For turn-in-place
-        // clips the extracted yaw delta drives the character's actual rotation, so the
-        // turn animation produces real world-space rotation.
-        {
-            auto& sb = renderer_->getSystems().scene().getSceneBuilder();
-            if (sb.hasCharacter() && sb.getAnimatedCharacter().isUsingMotionMatching()) {
-                float yawDelta = sb.getAnimatedCharacter()
-                    .getMotionMatchingController().getExtractedRootYawDelta();
-                if (std::abs(yawDelta) > 0.001f) {
-                    float currentYaw = playerTransform.getYaw();
-                    float newYaw = currentYaw + glm::degrees(yawDelta);
-                    while (newYaw > 360.0f) newYaw -= 360.0f;
-                    while (newYaw < 0.0f) newYaw += 360.0f;
-                    playerTransform.setYaw(newYaw);
+            // Get facing direction for strafe mode
+            glm::vec3 strafeFacingDirection;
+            if (settings.facingMode == FacingMode::FollowTarget && settings.hasTarget) {
+                // Face toward target
+                strafeFacingDirection = settings.targetPosition - playerTransform.position;
+            } else {
+                // Face camera direction
+                strafeFacingDirection = camera.getForward();
+            }
+            strafeFacingDirection.y = 0.0f;  // Horizontal only
+            if (glm::length(strafeFacingDirection) > 0.001f) {
+                strafeFacingDirection = glm::normalize(strafeFacingDirection);
+            } else {
+                strafeFacingDirection = glm::vec3(0.0f, 0.0f, 1.0f);
+            }
+
+            renderer_->getSystems().scene().getSceneBuilder().updateAnimatedCharacter(
+                deltaTime, renderer_->getVulkanContext().getAllocator(), renderer_->getVulkanContext().getVkDevice(),
+                renderer_->getCommandPool(), renderer_->getVulkanContext().getVkGraphicsQueue(),
+                movementSpeed, isGrounded, isJumping,
+                playerTransform.position, facingDirection, inputDirection,
+                strafeMode, strafeFacingDirection);
+
+            // Feed animation-driven root yaw into character facing.
+            // For walk/run clips this is near-zero (no visible effect). For turn-in-place
+            // clips the extracted yaw delta drives the character's actual rotation, so the
+            // turn animation produces real world-space rotation.
+            {
+                auto& sb = renderer_->getSystems().scene().getSceneBuilder();
+                if (sb.hasCharacter() && sb.getAnimatedCharacter().isUsingMotionMatching()) {
+                    float yawDelta = sb.getAnimatedCharacter()
+                        .getMotionMatchingController().getExtractedRootYawDelta();
+                    if (std::abs(yawDelta) > 0.001f) {
+                        float currentYaw = playerTransform.getYaw();
+                        float newYaw = currentYaw + glm::degrees(yawDelta);
+                        while (newYaw > 360.0f) newYaw -= 360.0f;
+                        while (newYaw < 0.0f) newYaw += 360.0f;
+                        playerTransform.setYaw(newYaw);
+                    }
                 }
             }
+
+            // Draw debug target indicator when in FollowTarget mode
+            if (settings.facingMode == FacingMode::FollowTarget && settings.hasTarget) {
+                auto& debugLines = renderer_->getSystems().debugControl().getDebugLineSystem();
+                glm::vec3 targetPos = settings.targetPosition;
+
+                // Draw a small sphere at target position
+                debugLines.addSphere(targetPos, 0.3f, glm::vec4(1.0f, 0.3f, 0.3f, 1.0f), 12);
+
+                // Draw a vertical line to make it more visible
+                debugLines.addLine(targetPos, targetPos + glm::vec3(0.0f, 2.0f, 0.0f),
+                                   glm::vec4(1.0f, 0.3f, 0.3f, 1.0f));
+
+                // Draw line from player to target
+                debugLines.addLine(playerTransform.position + glm::vec3(0.0f, 1.0f, 0.0f),
+                                   targetPos + glm::vec3(0.0f, 1.0f, 0.0f),
+                                   glm::vec4(1.0f, 0.5f, 0.0f, 0.5f));
+            }
+
+            // Update NPC animations with LOD based on camera position
+            renderer_->getSystems().scene().getSceneBuilder().updateNPCs(
+                deltaTime, camera.getPosition());
         }
-
-        // Draw debug target indicator when in FollowTarget mode
-        if (settings.facingMode == FacingMode::FollowTarget && settings.hasTarget) {
-            auto& debugLines = renderer_->getSystems().debugControl().getDebugLineSystem();
-            glm::vec3 targetPos = settings.targetPosition;
-
-            // Draw a small sphere at target position
-            debugLines.addSphere(targetPos, 0.3f, glm::vec4(1.0f, 0.3f, 0.3f, 1.0f), 12);
-
-            // Draw a vertical line to make it more visible
-            debugLines.addLine(targetPos, targetPos + glm::vec3(0.0f, 2.0f, 0.0f),
-                               glm::vec4(1.0f, 0.3f, 0.3f, 1.0f));
-
-            // Draw line from player to target
-            debugLines.addLine(playerTransform.position + glm::vec3(0.0f, 1.0f, 0.0f),
-                               targetPos + glm::vec3(0.0f, 1.0f, 0.0f),
-                               glm::vec4(1.0f, 0.5f, 0.0f, 0.5f));
-        }
-
-        // Update NPC animations with LOD based on camera position
-        renderer_->getSystems().scene().getSceneBuilder().updateNPCs(
-            deltaTime, camera.getPosition());
 
         // Update camera and player based on mode
-        if (input.isThirdPersonMode()) {
+        if (!simPaused && input.isThirdPersonMode()) {
             camera.setThirdPersonTarget(playerMovement.getFocusPoint(playerTransform.position));
             camera.updateThirdPerson(deltaTime);
             renderer_->getSystems().scene().updatePlayerTransform(playerMovement.getModelMatrix(playerTransform));
@@ -1414,6 +1472,20 @@ void Application::run() {
 }
 
 void Application::shutdown() {
+    // Catch-all settings save: sync values that other paths (debug GUI, OS
+    // fullscreen button) may have changed live, then persist. Quality
+    // overrides are only ever recorded by the settings page, so they are
+    // already current.
+    if (!settingsPath_.empty()) {
+        settings_.mouseSensitivity = input.getMouseSensitivity();
+        settings_.invertMouseY = input.getInvertMouseY();
+        if (window) {
+            settings_.fullscreen =
+                (SDL_GetWindowFlags(window) & SDL_WINDOW_FULLSCREEN) != 0;
+        }
+        settings_.saveToFile(settingsPath_);
+    }
+
     renderer_->waitIdle();
     gui_.reset();  // RAII cleanup via destructor
     // InputSystem cleanup handled by destructor (RAII)

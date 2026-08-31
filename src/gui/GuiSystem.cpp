@@ -328,6 +328,11 @@ void GuiSystem::render(const Camera& camera, float deltaTime, float fps) {
     // pause menu is drawn every frame regardless (the ImGui frame always
     // runs: beginFrame/endFrame are unconditional in the main loop).
     renderDebugUi(camera, deltaTime, fps);
+    // Gameplay HUD: always-drawn path like the menu (before it, so the pause
+    // overlay dims it); hidden while the pause menu is open.
+    if (!gameMenu_.isOpen()) {
+        gameHud_.render(camera, systems_->time());
+    }
     gameMenu_.render();
 }
 

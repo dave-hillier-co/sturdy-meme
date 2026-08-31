@@ -1,6 +1,5 @@
 #include "GuiTreeTab.h"
 #include "GuiStyle.h"
-#include "core/interfaces/ITreeControl.h"
 #include "vegetation/TreeSystem.h"
 #include "vegetation/TreeOptions.h"
 #include "vegetation/TreeLODSystem.h"
@@ -41,8 +40,8 @@ vk::DescriptorSet getOrCreatePreviewDescriptorSet(vk::Sampler sampler, vk::Image
 
 } // anonymous namespace
 
-void GuiTreeTab::render(ITreeControl& treeControl) {
-    auto* treeSystem = treeControl.getTreeSystem();
+void GuiTreeTab::render(RendererSystems& systems) {
+    auto* treeSystem = systems.tree();
     if (!treeSystem) {
         ImGui::Text("Tree system not initialized");
         return;
@@ -64,7 +63,7 @@ void GuiTreeTab::render(ITreeControl& treeControl) {
     ImGui::Separator();
 
     // LOD Settings Section
-    auto* treeLOD = treeControl.getSystems().treeLOD();
+    auto* treeLOD = systems.treeLOD();
     if (treeLOD) {
         if (ImGui::CollapsingHeader("LOD Settings", ImGuiTreeNodeFlags_DefaultOpen)) {
             auto& settings = treeLOD->getLODSettings();
@@ -246,7 +245,7 @@ void GuiTreeTab::render(ITreeControl& treeControl) {
             ImGui::TextColored(ImVec4(0.5f, 1.0f, 0.5f, 1.0f), "  8x8 grid = 64 views");
 
             // Two-phase leaf culling toggle
-            auto* treeRenderer = treeControl.getSystems().treeRenderer();
+            auto* treeRenderer = systems.treeRenderer();
             if (treeRenderer) {
                 bool twoPhase = treeRenderer->isTwoPhaseLeafCullingEnabled();
                 if (ImGui::Checkbox("Two-Phase Leaf Culling", &twoPhase)) {
@@ -260,7 +259,7 @@ void GuiTreeTab::render(ITreeControl& treeControl) {
             }
 
             // Temporal coherence toggle (Phase 5)
-            auto* impostorCull = treeControl.getSystems().impostorCull();
+            auto* impostorCull = systems.impostorCull();
             if (impostorCull) {
                 bool temporal = impostorCull->isTemporalEnabled();
                 if (ImGui::Checkbox("Temporal Coherence", &temporal)) {

@@ -8,7 +8,6 @@
 #include <string>
 #include <array>
 #include <memory>
-#include "interfaces/ITerrainControl.h"
 #include "interfaces/IRecordable.h"
 #include "interfaces/IShadowCaster.h"
 #include "UBOs.h"
@@ -133,7 +132,7 @@ struct TerrainConfig {
     bool useVirtualTexture = false;     // Enable virtual texturing for terrain
 };
 
-class TerrainSystem : public ITerrainControl, public IRecordable, public IShadowCaster {
+class TerrainSystem : public IRecordable, public IShadowCaster {
 public:
     // Passkey for controlled construction via make_unique
     struct ConstructToken { explicit ConstructToken() = default; };
@@ -343,15 +342,13 @@ public:
         return tileCache ? vk::Sampler(tileCache->getHoleMaskSampler()) : vk::Sampler{};
     }
 
-    // ITerrainControl implementation
-    void setTerrainEnabled(bool enabled) override { terrainEnabled_ = enabled; }
-    bool isTerrainEnabled() const override { return terrainEnabled_; }
-    void toggleTerrainWireframe() override { wireframeMode = !wireframeMode; }
-    bool isTerrainWireframeMode() const override { return wireframeMode; }
-    uint32_t getTerrainNodeCount() const override { return getTriangleCount(); }
-    float getTerrainHeightAt(float x, float z) const override { return getHeightAt(x, z); }
-    TerrainSystem& getTerrainSystem() override { return *this; }
-    const TerrainSystem& getTerrainSystem() const override { return *this; }
+    // Terrain control convenience API (used by the debug GUI)
+    void setTerrainEnabled(bool enabled) { terrainEnabled_ = enabled; }
+    bool isTerrainEnabled() const { return terrainEnabled_; }
+    void toggleTerrainWireframe() { wireframeMode = !wireframeMode; }
+    bool isTerrainWireframeMode() const { return wireframeMode; }
+    uint32_t getTerrainNodeCount() const { return getTriangleCount(); }
+    float getTerrainHeightAt(float x, float z) const { return getHeightAt(x, z); }
 
     // Toggle wireframe mode for debugging (legacy, prefer toggleTerrainWireframe)
     void setWireframeMode(bool enabled) { wireframeMode = enabled; }

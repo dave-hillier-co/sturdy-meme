@@ -17,7 +17,7 @@
 #include "GuiSystem.h"
 #include "InputSystem.h"
 #include "BreadcrumbTracker.h"
-#include "core/interfaces/IDebugControl.h"
+#include "gui/GuiDebugTab.h"
 #include "ecs/World.h"
 #include "ecs/Components.h"
 #include "ecs/Systems.h"
@@ -114,7 +114,7 @@ private:
     BreadcrumbTracker breadcrumbTracker;
 
     // Teleport destinations for the debug World section (built from settlements)
-    std::vector<IDebugControl::TeleportTarget> teleportTargets_;
+    std::vector<GuiDebugTab::TeleportTarget> teleportTargets_;
 
     // Flag simulation
     ClothSimulation clothSim;

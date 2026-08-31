@@ -1,6 +1,5 @@
 #include "GuiWaterTab.h"
 #include "GuiStyle.h"
-#include "core/interfaces/IWaterControl.h"
 #include "WaterSystem.h"
 #include "WaterTileCull.h"
 #include "OceanFFT.h"
@@ -9,10 +8,9 @@
 #include <glm/glm.hpp>
 #include <cmath>
 
-void GuiWaterTab::render(IWaterControl& waterControl) {
+void GuiWaterTab::render(WaterSystem& water, WaterTileCull& tileCull, OceanFFT* oceanFFT) {
     ImGui::Spacing();
 
-    auto& water = waterControl.getWaterSystem();
 
     // Water info header
     GuiStyle::sectionHeader("WATER SYSTEM");
@@ -48,7 +46,7 @@ void GuiWaterTab::render(IWaterControl& waterControl) {
     GuiStyle::sectionHeader("WAVES");
 
     // FFT Ocean toggle
-    OceanFFT* ocean = waterControl.getOceanFFT();
+    OceanFFT* ocean = oceanFFT;
     bool useFFT = water.getUseFFTOcean();
     if (ImGui::Checkbox("FFT Ocean (Tessendorf)", &useFFT)) {
         water.setUseFFTOcean(useFFT);
@@ -233,8 +231,7 @@ void GuiWaterTab::render(IWaterControl& waterControl) {
     // Performance optimization controls
     GuiStyle::sectionHeader("PERFORMANCE");
 
-    auto& tileCull = waterControl.getWaterTileCull();
-    bool tileCullEnabled = tileCull.isEnabled();
+        bool tileCullEnabled = tileCull.isEnabled();
     if (ImGui::Checkbox("Tile Culling", &tileCullEnabled)) {
         tileCull.setEnabled(tileCullEnabled);
     }

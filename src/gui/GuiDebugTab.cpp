@@ -9,7 +9,7 @@
 
 #include <imgui.h>
 
-void GuiDebugTab::render(IDebugControl& debugControl,
+void GuiDebugTab::render(IDebugControl& debugControl, const Hooks& hooks,
                          const std::vector<DebugCommand>* debugCommands) {
     ImGui::Spacing();
 
@@ -110,13 +110,13 @@ void GuiDebugTab::render(IDebugControl& debugControl,
 
         // Ragdoll spawning
         ImGui::Spacing();
-        if (ImGui::Button("Spawn Ragdoll")) {
-            debugControl.spawnRagdoll();
+        if (hooks.spawnRagdoll && ImGui::Button("Spawn Ragdoll")) {
+            hooks.spawnRagdoll();
         }
         if (ImGui::IsItemHovered()) {
             ImGui::SetTooltip("Drop an articulated ragdoll from 5m above player (also: R key)");
         }
-        int ragdollCount = debugControl.getActiveRagdollCount();
+        int ragdollCount = hooks.ragdollCount ? hooks.ragdollCount() : 0;
         if (ragdollCount > 0) {
             ImGui::SameLine();
             ImGui::Text("Active: %d", ragdollCount);
@@ -124,7 +124,7 @@ void GuiDebugTab::render(IDebugControl& debugControl,
     }
 #endif
 
-    if (debugControl.canTeleport()) {
+    if (hooks.teleport) {
         ImGui::Spacing();
         ImGui::Separator();
         ImGui::Spacing();
@@ -140,18 +140,19 @@ void GuiDebugTab::render(IDebugControl& debugControl,
         ImGui::InputFloat("Z", &gotoZ, 0.0f, 0.0f, "%.0f");
         ImGui::SameLine();
         if (ImGui::Button("Go")) {
-            debugControl.teleportTo(gotoX, gotoZ);
+            hooks.teleport(gotoX, gotoZ);
         }
         if (ImGui::IsItemHovered()) {
             ImGui::SetTooltip("Teleport to world XZ position (terrain is -8192..8192)");
         }
 
-        const auto& targets = debugControl.getTeleportTargets();
+        static const std::vector<GuiDebugTab::TeleportTarget> kNoTargets;
+        const auto& targets = hooks.teleportTargets ? hooks.teleportTargets() : kNoTargets;
         if (!targets.empty() && ImGui::TreeNode("Settlements", "Settlements (%zu)", targets.size())) {
             for (const auto& target : targets) {
                 ImGui::PushID(target.name.c_str());
                 if (ImGui::Button("Teleport")) {
-                    debugControl.teleportTo(target.worldX, target.worldZ);
+                    hooks.teleport(target.worldX, target.worldZ);
                 }
                 ImGui::SameLine();
                 ImGui::Text("%s (%.0f, %.0f) r=%.0fm",

@@ -44,10 +44,29 @@ struct PlayerSettings {
     bool thirdPersonCamera = false;   // Third-person camera mode (for strafe testing)
 };
 
-namespace GuiPlayerTab {
-    void render(IPlayerControl& playerControl, PlayerSettings& settings);
+/**
+ * Player panel. Owns the PlayerSettings the Application reads back
+ * (via GuiSystem::getPlayerSettings); IPlayerControl is bound at construction.
+ */
+class GuiPlayerTab {
+public:
+    explicit GuiPlayerTab(IPlayerControl& playerControl) : playerControl_(playerControl) {}
 
-    // Render motion matching debug overlay (trajectory visualization)
-    void renderMotionMatchingOverlay(IPlayerControl& playerControl, const Camera& camera,
-                                      const PlayerSettings& settings);
-}
+    void draw() { render(playerControl_, settings_); }
+
+    // Motion matching debug overlay (trajectory visualization)
+    void drawMotionMatchingOverlay(const Camera& camera) {
+        renderMotionMatchingOverlay(playerControl_, camera, settings_);
+    }
+
+    PlayerSettings& settings() { return settings_; }
+    const PlayerSettings& settings() const { return settings_; }
+
+private:
+    static void render(IPlayerControl& playerControl, PlayerSettings& settings);
+    static void renderMotionMatchingOverlay(IPlayerControl& playerControl, const Camera& camera,
+                                            const PlayerSettings& settings);
+
+    IPlayerControl& playerControl_;
+    PlayerSettings settings_;
+};

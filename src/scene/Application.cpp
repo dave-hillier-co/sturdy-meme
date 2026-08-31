@@ -25,7 +25,6 @@
 #include "SceneManager.h"
 #include "WaterSystem.h"
 #include "WindSystem.h"
-#include "GuiInterfaces.h"
 #include "core/RendererSystems.h"
 #include "world/SettlementRegistry.h"
 #include "world/SettlementBlockoutGenerator.h"
@@ -38,10 +37,9 @@
 #include "EnvironmentSettings.h"
 #include "TimeSystem.h"
 #include "core/interfaces/ITimeSystem.h"
-#include "core/interfaces/IEnvironmentControl.h"
 #include "core/interfaces/IDebugControl.h"
+#include "core/interfaces/IEnvironmentControl.h"
 #include "core/interfaces/IWeatherState.h"
-#include "core/interfaces/ITerrainControl.h"
 #include "core/interfaces/IPlayerControl.h"
 #include "DebugLineSystem.h"
 #include "npc/NPCSimulation.h"
@@ -268,14 +266,26 @@ bool Application::init(const std::string& title, int width, int height) {
         return false;
     }
 
-    // Initialize GUI system via factory
+    // Initialize GUI system via factory. Panels bind their dependencies from
+    // RendererSystems at construction; Application-level debug actions and the
+    // debug command cheatsheet (stable member addresses, populated later) are
+    // injected here.
     {
         INIT_PROFILE_PHASE("GUI");
+        GuiDebugTab::Hooks debugHooks;
+        debugHooks.spawnRagdoll = [this]() { spawnRagdoll(); };
+        debugHooks.ragdollCount = [this]() -> int { return static_cast<int>(ragdolls_.size()); };
+        debugHooks.teleport = [this](float x, float z) { teleportTo(x, z); };
+        debugHooks.teleportTargets =
+            [this]() -> const std::vector<GuiDebugTab::TeleportTarget>& { return teleportTargets_; };
+
         const VulkanContext& vkCtx = renderer_->getVulkanContext();
         gui_ = GuiSystem::create(window, vkCtx.getVkInstance(), vkCtx.getVkPhysicalDevice(),
                                   vkCtx.getVkDevice(), vkCtx.getGraphicsQueueFamily(),
                                   vkCtx.getVkGraphicsQueue(), vkCtx.getRenderPass(),
-                                  vkCtx.getSwapchainImageCount());
+                                  vkCtx.getSwapchainImageCount(),
+                                  renderer_->getSystems(), std::move(debugHooks),
+                                  &physicsTerrainManager_, &debugCommands_);
         if (!gui_) {
             SDL_Log("Failed to initialize GUI system");
             return false;
@@ -287,30 +297,15 @@ bool Application::init(const std::string& title, int width, int height) {
         gui_->endFrame(cmd);
     });
 
-    // Wire up ragdoll spawn callback for debug UI
-    renderer_->getSystems().debugControl().setSpawnRagdollCallback([this]() {
-        spawnRagdoll();
-    });
-    renderer_->getSystems().debugControl().setRagdollCountCallback([this]() -> int {
-        return static_cast<int>(ragdolls_.size());
-    });
-
-    // Wire up world teleport for debug UI, with settlements as destinations
+    // Collect settlements as teleport destinations for the debug panel
     for (const auto& settlement : renderer_->getSystems().settlements().settlements()) {
-        IDebugControl::TeleportTarget target;
+        GuiDebugTab::TeleportTarget target;
         target.name = settlement.displayName();
         target.worldX = settlement.worldPos.x;
         target.worldZ = settlement.worldPos.y;
         target.radius = settlement.radius;
         teleportTargets_.push_back(std::move(target));
     }
-    renderer_->getSystems().debugControl().setTeleportCallback([this](float x, float z) {
-        teleportTo(x, z);
-    });
-    renderer_->getSystems().debugControl().setTeleportTargetsCallback(
-        [this]() -> const std::vector<IDebugControl::TeleportTarget>& {
-            return teleportTargets_;
-        });
 
     // Configure ragdoll renderer if player character is available
     {
@@ -991,8 +986,8 @@ void Application::buildDebugCommands() {
     // Terrain
     debugCommands_.push_back({"terrain.wireframe", "Toggle terrain wireframe", "Terrain", SDL_SCANCODE_T,
         [&sys] {
-            sys.terrainControl().toggleTerrainWireframe();
-            SDL_Log("Terrain wireframe: %s", sys.terrainControl().isTerrainWireframeMode() ? "ON" : "OFF");
+            sys.terrain().toggleTerrainWireframe();
+            SDL_Log("Terrain wireframe: %s", sys.terrain().isTerrainWireframeMode() ? "ON" : "OFF");
         }});
 }
 
@@ -1376,27 +1371,7 @@ void Application::run() {
         // frame; renderer_->render() ends it via the draw callback, and
         // cancelFrame handles skipped frames below.
         gui_->beginFrame();
-        GuiInterfaces guiInterfaces{
-            systems.time(),
-            systems.locationControl(),
-            systems.weatherState(),
-            systems.environmentControl(),
-            systems.postProcessState(),
-            systems.cloudShadowControl(),
-            systems.terrainControl(),
-            systems.waterControl(),
-            systems.treeControl(),
-            systems.grassControl(),
-            systems.debugControl(),
-            systems.profilerControl(),
-            systems.performanceControl(),
-            systems.sceneControl(),
-            systems.playerControl(),
-            systems.environmentSettings(),
-            &physicsTerrainManager_,
-            &debugCommands_
-        };
-        gui_->render(guiInterfaces, camera, lastDeltaTime, currentFps);
+        gui_->render(camera, lastDeltaTime, currentFps);
 
         // Update physics debug visualization (before render)
 #ifdef JPH_DEBUG_RENDERER

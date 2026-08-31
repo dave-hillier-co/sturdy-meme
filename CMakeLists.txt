@@ -72,12 +72,10 @@ set(SOURCES
     src/core/InstancedScenePipeline.cpp
     # Control subsystems (coordinate multiple systems for GUI interfaces)
     # Note: Some systems implement their interfaces directly (CelestialCalculator -> ILocationControl,
-    #       TerrainSystem -> ITerrainControl, Profiler -> IProfilerControl, WeatherSystem -> IWeatherState,
-    #       PostProcessSystem -> IPostProcessState, CloudShadowSystem -> ICloudShadowControl)
+    #       WeatherSystem -> IWeatherState, PostProcessSystem -> IPostProcessState,
+    #       CloudShadowSystem -> ICloudShadowControl)
     src/controls/DebugCommands.cpp
     src/controls/EnvironmentControlSubsystem.cpp
-    src/controls/WaterControlSubsystem.cpp
-    src/controls/TreeControlSubsystem.cpp
     src/controls/DebugControlSubsystem.cpp
     src/controls/SceneControlSubsystem.cpp
     src/controls/PlayerControlSubsystem.cpp

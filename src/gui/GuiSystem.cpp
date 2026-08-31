@@ -1,23 +1,8 @@
 #include "GuiSystem.h"
-#include "GuiInterfaces.h"
 #include "Camera.h"
 
-// Interface headers
-#include "core/interfaces/ITimeSystem.h"
-#include "core/interfaces/ILocationControl.h"
-#include "core/interfaces/IWeatherState.h"
-#include "core/interfaces/IEnvironmentControl.h"
-#include "core/interfaces/IPostProcessState.h"
-#include "core/interfaces/ICloudShadowControl.h"
-#include "core/interfaces/ITerrainControl.h"
-#include "core/interfaces/IWaterControl.h"
-#include "core/interfaces/ITreeControl.h"
-#include "core/interfaces/IDebugControl.h"
-#include "core/interfaces/IProfilerControl.h"
-#include "core/interfaces/IPerformanceControl.h"
-#include "core/interfaces/ISceneControl.h"
-#include "core/interfaces/IPlayerControl.h"
-#include "EnvironmentSettings.h"
+#include "core/RendererSystems.h"
+#include "TimeSystem.h"  // TimeSystem& -> ITimeSystem& conversions need the complete type
 
 // GUI module headers
 #include "GuiStyle.h"
@@ -86,14 +71,22 @@ constexpr MenuCategory kMenuOrder[] = {
 std::unique_ptr<GuiSystem> GuiSystem::create(SDL_Window* window, vk::Instance instance,
                                               vk::PhysicalDevice physicalDevice, vk::Device device,
                                               uint32_t graphicsQueueFamily, vk::Queue graphicsQueue,
-                                              vk::RenderPass renderPass, uint32_t imageCount) {
+                                              vk::RenderPass renderPass, uint32_t imageCount,
+                                              RendererSystems& systems,
+                                              GuiDebugTab::Hooks debugHooks,
+                                              PhysicsTerrainTileManager* physicsTerrainTiles,
+                                              const std::vector<DebugCommand>* debugCommands) {
     auto gui = std::make_unique<GuiSystem>(ConstructToken{});
+    gui->systems_ = &systems;
     if (!gui->initInternal(window, instance, physicalDevice, device, graphicsQueueFamily,
                            graphicsQueue, renderPass, imageCount)) {
         return nullptr;
     }
+    gui->buildPanelRegistry(std::move(debugHooks), physicsTerrainTiles, debugCommands);
     return gui;
 }
+
+GuiSystem::GuiSystem(ConstructToken) {}
 
 // Destructor
 GuiSystem::~GuiSystem() {
@@ -183,100 +176,103 @@ bool GuiSystem::initInternal(SDL_Window* window, vk::Instance instance, vk::Phys
     // Setup custom style
     GuiStyle::apply();
 
-    buildPanelRegistry();
-
     SDL_Log("ImGui initialized successfully");
     return true;
 }
 
-void GuiSystem::buildPanelRegistry() {
+void GuiSystem::buildPanelRegistry(GuiDebugTab::Hooks debugHooks,
+                                   PhysicsTerrainTileManager* physicsTerrainTiles,
+                                   const std::vector<DebugCommand>* debugCommands) {
+    RendererSystems& systems = *systems_;
     panels_.clear();
+
+    // Panel objects own their persistent state; dependencies that are stable
+    // for the GUI's lifetime are bound here, once.
+    dashboard_ = std::make_unique<GuiDashboard>(systems.terrain(), systems.time());
+    environmentTab_ = std::make_unique<GuiEnvironmentTab>(systems.environmentControl());
+    playerTab_ = std::make_unique<GuiPlayerTab>(systems.playerControl());
+    ikTab_ = std::make_unique<GuiIKTab>(systems.sceneControl());
+    debugTab_ = std::make_unique<GuiDebugTab>(systems.debugControl(), std::move(debugHooks),
+                                              debugCommands);
+    tileLoaderTab_ = std::make_unique<GuiTileLoaderTab>(systems.terrain(), physicsTerrainTiles);
 
     // View
     panels_.push_back({"Dashboard", MenuCategory::View,
-        [this](const GuiFrameContext& ctx) {
-            GuiDashboard::render(ctx.interfaces.terrain, ctx.interfaces.time, ctx.camera,
-                                 ctx.deltaTime, ctx.fps, dashboardState);
-        }, true});
+        [this](const GuiFrameContext& ctx) { dashboard_->draw(ctx); }, true});
     panels_.push_back({"Position", MenuCategory::View,
-        [](const GuiFrameContext& ctx) {
-            GuiPositionPanel::render(ctx.camera);
-        }, true});
+        [](const GuiFrameContext& ctx) { GuiPositionPanel::render(ctx.camera); }, true});
 
     // Environment
     panels_.push_back({"Time", MenuCategory::Environment,
-        [](const GuiFrameContext& ctx) {
-            GuiTimeTab::render(ctx.interfaces.time, ctx.interfaces.location);
+        [&time = systems.time(), &location = systems.locationControl()](const GuiFrameContext&) {
+            GuiTimeTab::render(time, location);
         }});
     panels_.push_back({"Weather", MenuCategory::Environment,
-        [](const GuiFrameContext& ctx) {
-            GuiWeatherTab::render(ctx.interfaces.weather, ctx.interfaces.environmentSettings);
+        [&weather = systems.weatherState(),
+         &env = systems.environmentSettings()](const GuiFrameContext&) {
+            GuiWeatherTab::render(weather, env);
         }});
     panels_.push_back({"Atmosphere", MenuCategory::Environment,
-        [this](const GuiFrameContext& ctx) {
-            GuiEnvironmentTab::render(ctx.interfaces.environment, environmentTabState);
-        }});
+        [this](const GuiFrameContext&) { environmentTab_->draw(); }});
 
     // Rendering
     panels_.push_back({"Post FX", MenuCategory::Rendering,
-        [](const GuiFrameContext& ctx) {
-            GuiPostFXTab::render(ctx.interfaces.postProcess, ctx.interfaces.cloudShadow);
+        [&postProcess = systems.postProcessState(),
+         &cloudShadow = systems.cloudShadowControl()](const GuiFrameContext&) {
+            GuiPostFXTab::render(postProcess, cloudShadow);
         }});
     panels_.push_back({"Terrain", MenuCategory::Rendering,
-        [](const GuiFrameContext& ctx) {
-            GuiTerrainTab::render(ctx.interfaces.terrain);
+        [&terrain = systems.terrain()](const GuiFrameContext&) {
+            GuiTerrainTab::render(terrain);
         }});
     panels_.push_back({"Water", MenuCategory::Rendering,
-        [](const GuiFrameContext& ctx) {
-            GuiWaterTab::render(ctx.interfaces.water);
+        [this](const GuiFrameContext&) {
+            // OceanFFT is optional and created late (setOceanFFT); look it up
+            // per frame instead of caching a pointer at construction.
+            RendererSystems& sys = *systems_;
+            GuiWaterTab::render(sys.water(), sys.waterTileCull(),
+                                sys.hasOceanFFT() ? &sys.oceanFFT() : nullptr);
         }});
     panels_.push_back({"Trees", MenuCategory::Rendering,
-        [](const GuiFrameContext& ctx) {
-            GuiTreeTab::render(ctx.interfaces.tree);
+        [this](const GuiFrameContext&) {
+            // TreeSystem/TreeLODSystem arrive with deferred world content;
+            // GuiTreeTab looks them up through RendererSystems every frame.
+            GuiTreeTab::render(*systems_);
         }});
     panels_.push_back({"Grass", MenuCategory::Rendering,
-        [](const GuiFrameContext& ctx) {
-            GuiGrassTab::render(ctx.interfaces.grass);
+        [&grass = systems.grassControl()](const GuiFrameContext&) {
+            GuiGrassTab::render(grass);
         }});
 
     // Character
     panels_.push_back({"Player", MenuCategory::Character,
-        [this](const GuiFrameContext& ctx) {
-            GuiPlayerTab::render(ctx.interfaces.player, playerSettings);
-        }});
+        [this](const GuiFrameContext&) { playerTab_->draw(); }});
     panels_.push_back({"NPC LOD", MenuCategory::Character,
-        [](const GuiFrameContext& ctx) {
-            GuiNPCTab::render(ctx.interfaces.player);
+        [&player = systems.playerControl()](const GuiFrameContext&) {
+            GuiNPCTab::render(player);
         }});
     panels_.push_back({"IK / Animation", MenuCategory::Character,
-        [this](const GuiFrameContext& ctx) {
-            GuiIKTab::render(ctx.interfaces.scene, ctx.camera, ikDebugSettings);
-        }});
+        [this](const GuiFrameContext& ctx) { ikTab_->draw(ctx.camera); }});
 
     // Scene (Hierarchy and Inspector are special-cased outside the registry)
     panels_.push_back({"Scene Graph", MenuCategory::Scene,
-        [this](const GuiFrameContext& ctx) {
-            GuiSceneGraphTab::render(ctx.interfaces.scene, sceneGraphTabState);
+        [this](const GuiFrameContext&) {
+            GuiSceneGraphTab::render(systems_->sceneControl(), sceneGraphTabState);
         }});
 
     // Debug
     panels_.push_back({"Debug Visualizations", MenuCategory::Debug,
-        [](const GuiFrameContext& ctx) {
-            GuiDebugTab::render(ctx.interfaces.debug, ctx.interfaces.debugCommands);
-        }});
+        [this](const GuiFrameContext&) { debugTab_->draw(); }});
     panels_.push_back({"Performance Toggles", MenuCategory::Debug,
-        [](const GuiFrameContext& ctx) {
-            GuiPerformanceTab::render(ctx.interfaces.performance);
+        [&toggles = systems.performanceToggles()](const GuiFrameContext&) {
+            GuiPerformanceTab::render(toggles);
         }});
     panels_.push_back({"Profiler", MenuCategory::Debug,
-        [](const GuiFrameContext& ctx) {
-            GuiProfilerTab::render(ctx.interfaces.profiler);
+        [&profiler = systems.profiler()](const GuiFrameContext&) {
+            GuiProfilerTab::render(profiler);
         }});
     panels_.push_back({"Tile Loader", MenuCategory::Debug,
-        [this](const GuiFrameContext& ctx) {
-            GuiTileLoaderTab::render(ctx.interfaces.terrain, ctx.interfaces.physicsTerrainTiles,
-                                     ctx.camera, tileLoaderState);
-        }});
+        [this](const GuiFrameContext& ctx) { tileLoaderTab_->draw(ctx); }});
 }
 
 void GuiSystem::cleanup() {
@@ -303,6 +299,14 @@ void GuiSystem::beginFrame() {
     ImGui::NewFrame();
 }
 
+PlayerSettings& GuiSystem::getPlayerSettings() {
+    return playerTab_->settings();
+}
+
+const PlayerSettings& GuiSystem::getPlayerSettings() const {
+    return playerTab_->settings();
+}
+
 void GuiSystem::applyDefaultDockLayout(ImGuiID dockspaceId) {
     const ImGuiViewport* viewport = ImGui::GetMainViewport();
 
@@ -323,7 +327,7 @@ void GuiSystem::applyDefaultDockLayout(ImGuiID dockspaceId) {
     ImGui::DockBuilderFinish(dockspaceId);
 }
 
-void GuiSystem::render(GuiInterfaces& ui, const Camera& camera, float deltaTime, float fps) {
+void GuiSystem::render(const Camera& camera, float deltaTime, float fps) {
     if (!visible) return;
 
     // Create main viewport dockspace - allows all windows to be freely dockable
@@ -341,7 +345,7 @@ void GuiSystem::render(GuiInterfaces& ui, const Camera& camera, float deltaTime,
     // Main menu bar (generated from the panel registry)
     renderMainMenuBar();
 
-    GuiFrameContext ctx{ui, camera, deltaTime, fps};
+    GuiFrameContext ctx{camera, deltaTime, fps};
 
     // Floating-window first-use defaults: cascade from the viewport work area,
     // sized relative to the viewport (never hardcoded pixel literals)
@@ -368,37 +372,41 @@ void GuiSystem::render(GuiInterfaces& ui, const Camera& camera, float deltaTime,
     }
 
     // Independent dockable Hierarchy and Inspector panels (special-cased:
-    // menu bar in Hierarchy and shared selection state don't fit the loop)
+    // menu bar in Hierarchy and shared selection state don't fit the loop).
+    // ISceneControl is fetched per frame: the ECS world it exposes binds late.
+    ISceneControl& sceneControl = systems_->sceneControl();
     if (showHierarchy_) {
         if (ImGui::Begin("Hierarchy", &showHierarchy_, ImGuiWindowFlags_MenuBar)) {
-            GuiHierarchyPanel::renderCreateMenuBar(ui.scene, sceneEditorState);
-            GuiHierarchyPanel::render(ui.scene, sceneEditorState);
+            GuiHierarchyPanel::renderCreateMenuBar(sceneControl, sceneEditorState);
+            GuiHierarchyPanel::render(sceneControl, sceneEditorState);
         }
         ImGui::End();
     }
     if (showInspector_) {
         if (ImGui::Begin("Inspector", &showInspector_)) {
-            GuiInspectorPanel::render(ui.scene, sceneEditorState);
+            GuiInspectorPanel::render(sceneControl, sceneEditorState);
         }
         ImGui::End();
     }
 
     // Transform gizmo: exactly once per frame while editor panels are in use
     if (showHierarchy_ || showInspector_) {
-        GuiGizmo::render(camera, ui.scene, sceneEditorState);
+        GuiGizmo::render(camera, sceneControl, sceneEditorState);
     }
 
     // Skeleton/IK debug overlay
-    if (ikDebugSettings.showSkeleton || ikDebugSettings.showIKTargets) {
-        GuiIKTab::renderSkeletonOverlay(ui.scene, camera, ikDebugSettings, playerSettings.showCapeColliders);
+    const IKDebugSettings& ikSettings = ikTab_->settings();
+    if (ikSettings.showSkeleton || ikSettings.showIKTargets) {
+        ikTab_->drawSkeletonOverlay(camera, playerTab_->settings().showCapeColliders);
     }
 
     // Motion matching debug overlay
+    const PlayerSettings& playerSettings = playerTab_->settings();
     if (playerSettings.motionMatchingEnabled &&
         (playerSettings.showMotionMatchingTrajectory ||
          playerSettings.showMotionMatchingFeatures ||
          playerSettings.showMotionMatchingStats)) {
-        GuiPlayerTab::renderMotionMatchingOverlay(ui.player, camera, playerSettings);
+        playerTab_->drawMotionMatchingOverlay(camera);
     }
 }
 

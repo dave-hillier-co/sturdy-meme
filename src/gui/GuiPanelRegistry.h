@@ -4,7 +4,6 @@
 #include <string>
 
 class Camera;
-struct GuiInterfaces;
 
 /**
  * Menu bar category a panel is listed under.
@@ -20,12 +19,11 @@ enum class MenuCategory {
 };
 
 /**
- * Per-frame data handed to every panel draw callback.
- * GuiInterfaces holds references, so panels obtain mutable interface refs
- * through the const struct reference.
+ * Per-frame data handed to every panel draw callback. Panels receive their
+ * system dependencies at construction time (bound in GuiSystem's registry),
+ * so this carries only data that genuinely changes each frame.
  */
 struct GuiFrameContext {
-    const GuiInterfaces& interfaces;
     const Camera& camera;
     float deltaTime;
     float fps;

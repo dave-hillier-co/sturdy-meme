@@ -64,11 +64,8 @@
 
 // Include control subsystem headers
 #include "controls/EnvironmentControlSubsystem.h"
-#include "controls/WaterControlSubsystem.h"
-#include "controls/TreeControlSubsystem.h"
 #include "vegetation/GrassControlAdapter.h"
 #include "controls/DebugControlSubsystem.h"
-#include "controls/PerformanceControlSubsystem.h"
 #include "controls/SceneControlSubsystem.h"
 #include "controls/PlayerControlSubsystem.h"
 
@@ -340,16 +337,11 @@ void RendererSystems::initControlSubsystems(VulkanContext& vulkanContext, Perfor
         registry_.get<FroxelSystem>(), registry_.get<AtmosphereLUTSystem>(),
         registry_.get<LeafSystem>(), registry_.get<CloudShadowSystem>(),
         registry_.get<PostProcessSystem>(), registry_.get<EnvironmentSettings>()));
-    registry_.add<WaterControlSubsystem>(std::make_unique<WaterControlSubsystem>(
-        registry_.get<WaterSystem>(), registry_.get<WaterTileCull>(), registry_.find<OceanFFT>()));
-    registry_.add<TreeControlSubsystem>(std::make_unique<TreeControlSubsystem>(
-        registry_.find<TreeSystem>(), *this));
     registry_.add<GrassControlAdapter>(std::make_unique<GrassControlAdapter>(
         registry_.get<GrassSystem>()));
     registry_.add<DebugControlSubsystem>(std::make_unique<DebugControlSubsystem>(
         registry_.get<DebugLineSystem>(), registry_.get<HiZSystem>(), *this));
-    registry_.add<PerformanceControlSubsystem>(std::make_unique<PerformanceControlSubsystem>(
-        perfToggles, nullptr));
+    perfToggles_ = &perfToggles;
     registry_.add<SceneControlSubsystem>(std::make_unique<SceneControlSubsystem>(
         registry_.get<SceneManager>(), vulkanContext));
     registry_.add<PlayerControlSubsystem>(std::make_unique<PlayerControlSubsystem>(
@@ -357,12 +349,6 @@ void RendererSystems::initControlSubsystems(VulkanContext& vulkanContext, Perfor
 
     controlsInitialized_ = true;
     SDL_Log("Control subsystems initialized");
-}
-
-void RendererSystems::setPerformanceSyncCallback(std::function<void()> callback) {
-    if (auto* perf = registry_.find<PerformanceControlSubsystem>()) {
-        perf->setSyncCallback(callback);
-    }
 }
 
 // ============================================================================
@@ -404,15 +390,6 @@ const IPostProcessState& RendererSystems::postProcessState() const { return regi
 ICloudShadowControl& RendererSystems::cloudShadowControl() { return registry_.get<CloudShadowSystem>(); }
 const ICloudShadowControl& RendererSystems::cloudShadowControl() const { return registry_.get<CloudShadowSystem>(); }
 
-ITerrainControl& RendererSystems::terrainControl() { return registry_.get<TerrainSystem>(); }
-const ITerrainControl& RendererSystems::terrainControl() const { return registry_.get<TerrainSystem>(); }
-
-IWaterControl& RendererSystems::waterControl() { return registry_.get<WaterControlSubsystem>(); }
-const IWaterControl& RendererSystems::waterControl() const { return registry_.get<WaterControlSubsystem>(); }
-
-ITreeControl& RendererSystems::treeControl() { return registry_.get<TreeControlSubsystem>(); }
-const ITreeControl& RendererSystems::treeControl() const { return registry_.get<TreeControlSubsystem>(); }
-
 IGrassControl& RendererSystems::grassControl() { return registry_.get<GrassControlAdapter>(); }
 const IGrassControl& RendererSystems::grassControl() const { return registry_.get<GrassControlAdapter>(); }
 
@@ -420,12 +397,6 @@ IDebugControl& RendererSystems::debugControl() { return registry_.get<DebugContr
 const IDebugControl& RendererSystems::debugControl() const { return registry_.get<DebugControlSubsystem>(); }
 DebugControlSubsystem& RendererSystems::debugControlSubsystem() { return registry_.get<DebugControlSubsystem>(); }
 const DebugControlSubsystem& RendererSystems::debugControlSubsystem() const { return registry_.get<DebugControlSubsystem>(); }
-
-IProfilerControl& RendererSystems::profilerControl() { return registry_.get<Profiler>(); }
-const IProfilerControl& RendererSystems::profilerControl() const { return registry_.get<Profiler>(); }
-
-IPerformanceControl& RendererSystems::performanceControl() { return registry_.get<PerformanceControlSubsystem>(); }
-const IPerformanceControl& RendererSystems::performanceControl() const { return registry_.get<PerformanceControlSubsystem>(); }
 
 ISceneControl& RendererSystems::sceneControl() { return registry_.get<SceneControlSubsystem>(); }
 const ISceneControl& RendererSystems::sceneControl() const { return registry_.get<SceneControlSubsystem>(); }

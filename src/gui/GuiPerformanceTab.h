@@ -1,7 +1,7 @@
 #pragma once
 
-class IPerformanceControl;
+struct PerformanceToggles;
 
 namespace GuiPerformanceTab {
-    void render(IPerformanceControl& perfControl);
+    void render(PerformanceToggles& toggles);
 }

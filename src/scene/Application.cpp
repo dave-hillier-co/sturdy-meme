@@ -905,6 +905,8 @@ void Application::buildDebugCommands() {
         [this] { gui_->toggleVisibility(); }});
     debugCommands_.push_back({"app.screenshot", "Save screenshot", "Application", SDL_SCANCODE_F12,
         [this] { renderer_->requestScreenshot(); }});
+    debugCommands_.push_back({"app.toggleHud", "Toggle HUD", "Application", SDL_SCANCODE_H,
+        [this] { gui_->gameHud().toggleVisible(); }});
 
     // Time
     debugCommands_.push_back({"time.sunrise", "Set time to sunrise", "Time", SDL_SCANCODE_1,

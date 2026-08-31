@@ -283,6 +283,7 @@ set(SOURCES
     src/gui/GuiInspectorPanel.cpp
     src/gui/GuiGizmo.cpp
     src/gui/game/GameMenu.cpp
+    src/gui/game/GameHud.cpp
     # Subdivision
     src/subdivision/CatmullClarkCBT.cpp
     src/subdivision/CatmullClarkMesh.cpp

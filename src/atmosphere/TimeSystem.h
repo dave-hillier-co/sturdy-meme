@@ -58,6 +58,13 @@ public:
     void resumeAutoTime() override { if (timeScale == 0.0f) timeScale = 1.0f; }
     float getTimeOfDay() const override { return currentTimeOfDay; }
 
+    // Hard pause, independent of timeScale (which the debug time controls
+    // own). While paused, update() returns deltaTime = 0, holds elapsedTime
+    // and timeOfDay, and keeps the internal frame timer current so the first
+    // post-pause frame sees a normal delta rather than the paused wall time.
+    void setPaused(bool paused) { paused_ = paused; }
+    bool isPaused() const { return paused_; }
+
     // Day cycle duration (seconds for a full day cycle in auto mode)
     void setCycleDuration(float seconds) { cycleDuration = seconds; }
     float getCycleDuration() const { return cycleDuration; }
@@ -104,6 +111,9 @@ private:
     TimePoint lastFrameTime;
     float lastDeltaTime = 0.0f;
     float lastElapsedTime = 0.0f;
+
+    // Hard pause (pause menu); orthogonal to timeScale
+    bool paused_ = false;
 
     // Day/night cycle
     float timeScale = 0.0f;        // Start paused (0 = paused, 1 = real-time, higher = faster)

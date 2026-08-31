@@ -10,7 +10,6 @@
 
 #include "GuiDebugTab.h"
 #include "GuiPlayerTab.h"
-#include "GuiSceneGraphTab.h"
 #include "GuiPanelRegistry.h"
 #include "SceneEditorState.h"
 
@@ -103,9 +102,6 @@ private:
     std::unique_ptr<GuiIKTab> ikTab_;
     std::unique_ptr<GuiDebugTab> debugTab_;
     std::unique_ptr<GuiTileLoaderTab> tileLoaderTab_;
-
-    // Scene graph tab state (panel merged by a parallel lane; state stays here)
-    SceneGraphTabState sceneGraphTabState;
 
     // Scene editor state (hierarchy + inspector + gizmo)
     SceneEditorState sceneEditorState;

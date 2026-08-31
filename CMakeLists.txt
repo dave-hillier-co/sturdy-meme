@@ -278,7 +278,6 @@ set(SOURCES
     src/gui/GuiTreeTab.cpp
     src/gui/GuiGrassTab.cpp
     src/gui/GuiPropertyEditors.cpp
-    src/gui/GuiSceneGraphTab.cpp
     src/gui/GuiHierarchyPanel.cpp
     src/gui/GuiInspectorPanel.cpp
     src/gui/GuiGizmo.cpp

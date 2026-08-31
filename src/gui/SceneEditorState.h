@@ -9,19 +9,33 @@
  * Used by GuiHierarchyPanel and GuiInspectorPanel.
  */
 struct SceneEditorState {
-    // Selection state
+    // Selection state: exactly one of an ECS entity or a renderable index
+    // (an index into SceneBuilder::getSceneEntities()) is selected, or nothing.
+    // The gizmo and editable inspector apply only to Entity selections;
+    // a Renderable selection is read-only.
+    enum class SelectionKind {
+        None,
+        Entity,
+        Renderable
+    };
+    SelectionKind selectionKind = SelectionKind::None;
     ecs::Entity selectedEntity = ecs::NullEntity;
+    int selectedRenderableIndex = -1;         // Valid when selectionKind == Renderable
     std::vector<ecs::Entity> multiSelection;  // For multi-select (shift+click)
 
     // Hierarchy panel state
     char hierarchyFilterText[256] = "";
     bool showHierarchyFilter = true;
 
+    // Renderables view state (Hierarchy "Renderables" tab)
+    char renderableFilterText[256] = "";
+
     // Inspector panel state
     bool showTransformSection = true;
     bool showMaterialSection = true;
     bool showComponentsSection = true;
     bool showTagsSection = true;
+    bool showInfoSection = true;              // Renderable info section
 
     // Editor mode
     enum class TransformMode {
@@ -57,18 +71,31 @@ struct SceneEditorState {
     }
 
     void select(ecs::Entity entity) {
+        selectionKind = SelectionKind::Entity;
         selectedEntity = entity;
+        selectedRenderableIndex = -1;
+        multiSelection.clear();
+    }
+
+    void selectRenderable(int index) {
+        selectionKind = SelectionKind::Renderable;
+        selectedRenderableIndex = index;
+        selectedEntity = ecs::NullEntity;
         multiSelection.clear();
     }
 
     void addToSelection(ecs::Entity entity) {
+        selectionKind = SelectionKind::Entity;
+        selectedRenderableIndex = -1;
         if (!isSelected(entity)) {
             multiSelection.push_back(entity);
         }
     }
 
     void clearSelection() {
+        selectionKind = SelectionKind::None;
         selectedEntity = ecs::NullEntity;
+        selectedRenderableIndex = -1;
         multiSelection.clear();
     }
 

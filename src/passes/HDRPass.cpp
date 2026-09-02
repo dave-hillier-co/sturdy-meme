@@ -84,7 +84,6 @@ PassScheduler::PassId addPass(PassScheduler& graph, RendererSystems& systems, co
             }
         },
         .canUseSecondary = true,
-        .mainThreadOnly = true,  // Main thread begins render pass, but secondaries record in parallel
         .priority = 30,
         .secondarySlots = 3,  // 3 parallel recording slots
         .secondaryRecord = [&systems, cfg](PassScheduler::RenderContext& ctx, uint32_t slot) {

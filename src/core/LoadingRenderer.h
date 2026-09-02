@@ -70,6 +70,15 @@ public:
     void cleanup();
 
     /**
+     * The borrowed VulkanContext has already been destroyed (the full Renderer
+     * took ownership of it and failed to initialize). Its device took every
+     * object this renderer created down with it, so forget them without
+     * touching the device. Afterwards the renderer is inert and cleanup() is
+     * a no-op.
+     */
+    void abandon();
+
+    /**
      * Set loading progress (0.0 to 1.0) for optional progress display.
      */
     void setProgress(float progress) { progress_ = progress; }

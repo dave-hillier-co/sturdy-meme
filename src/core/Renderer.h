@@ -45,6 +45,13 @@ namespace Loading {
 // and reset() once async init completes.
 struct AsyncInitState;
 
+// Result of polling async renderer initialization.
+enum class AsyncInitStatus {
+    Pending,  // Still loading: keep presenting the loading screen and poll again
+    Ready,    // All subsystems initialized; the renderer can render frames
+    Failed    // A task failed; see Renderer::asyncInitError(). Release the renderer.
+};
+
 // PBR texture flags - indicates which optional PBR textures are bound
 // Must match definitions in push_constants_common.glsl
 constexpr uint32_t PBR_HAS_ROUGHNESS_MAP = (1u << 0);
@@ -207,10 +214,25 @@ public:
     bool isAsyncInitComplete() const { return asyncInitComplete_; }
 
     /**
-     * Poll async loader for completions - call from main thread
-     * Returns true if all initialization is complete
+     * Poll async loader for completions - call from main thread.
+     * Pending while tasks are still running, Ready once everything is wired,
+     * Failed if a task failed (asyncInitError() carries the loader's message).
      */
-    bool pollAsyncInit();
+    AsyncInitStatus pollAsyncInit();
+
+    /**
+     * Loader error message after pollAsyncInit() returned Failed (empty otherwise)
+     */
+    const std::string& asyncInitError() const { return asyncInitError_; }
+
+    /**
+     * Stop async initialization and join its worker threads. Call before
+     * touching the device from outside the renderer (e.g. tearing down the
+     * loading screen) while init may still be running: workers submit to the
+     * graphics queue, and vkDeviceWaitIdle elsewhere would race them.
+     * Idempotent; a no-op when init is synchronous or already finished.
+     */
+    void cancelAsyncInit();
 
 private:
     void cleanup();
@@ -306,4 +328,5 @@ private:
     std::unique_ptr<AsyncInitState> asyncInit_;
     bool asyncInitComplete_ = true;  // True when not using async, or when async is done
     bool asyncInitFailed_ = false;   // True if async init encountered an error
+    std::string asyncInitError_;     // Loader error message when asyncInitFailed_
 };

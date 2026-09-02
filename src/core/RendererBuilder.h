@@ -39,11 +39,17 @@ public:
     static void initControlSubsystems(Renderer& r);
     static void initTemporalSystems(Renderer& r);
 
-    static bool createDescriptorSets(Renderer& r);
-    static bool initSkinnedMeshRenderer(Renderer& r);
-    static bool createSkinnedMeshRendererDescriptorSets(Renderer& r);
+    // Helpers used inside task bodies. They take the systems built by the same
+    // task explicitly (staged, not yet in the registry) because registry
+    // registration only happens in that task's gpuWork.
+    static bool createDescriptorSets(Renderer& r, SceneManager& scene);
+    static bool initSkinnedMeshRenderer(Renderer& r, vk::RenderPass hdrRenderPass,
+                                        std::unique_ptr<SkinnedMeshRenderer>& outSkinnedMesh,
+                                        std::unique_ptr<NPCRenderer>& outNpcRenderer);
+    static bool createSkinnedMeshRendererDescriptorSets(Renderer& r, SceneManager& scene,
+                                                        SkinnedMeshRenderer& skinnedMesh);
 
     static void setupPassScheduler(Renderer& r);
 
-    static bool pollAsyncInit(Renderer& r);
+    static AsyncInitStatus pollAsyncInit(Renderer& r);
 };

@@ -181,7 +181,6 @@ PassIds addPasses(PassScheduler& graph, RendererSystems& systems, const Config& 
             systems.profiler().endCpuZone("ComputeDispatch");
         },
         .canUseSecondary = false,
-        .mainThreadOnly = true,
         .priority = 100  // Highest priority - runs first
     });
 
@@ -247,7 +246,8 @@ PassIds addPasses(PassScheduler& graph, RendererSystems& systems, const Config& 
             systems.profiler().endGpuZone(cmd, "Atmosphere");
         },
         .canUseSecondary = false,
-        .mainThreadOnly = false,  // Can run parallel with Shadow
+        // Independent of Shadow in the graph, but records sequentially like every
+        // other pass: all passes share the frame's primary command buffer.
         .priority = 50
     });
 
@@ -290,7 +290,6 @@ PassIds addPasses(PassScheduler& graph, RendererSystems& systems, const Config& 
                 systems.profiler().endGpuZone(cmd, "GPUCull");
             },
             .canUseSecondary = false,
-            .mainThreadOnly = true,
             .priority = 90  // Run after main compute, before HDR
         });
     }

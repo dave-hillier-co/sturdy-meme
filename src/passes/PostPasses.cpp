@@ -29,7 +29,6 @@ PassIds addPasses(PassScheduler& graph, RendererSystems& systems, const Config& 
             systems.profiler().endGpuZone(ctx.commandBuffer, "HiZPyramid");
         },
         .canUseSecondary = false,
-        .mainThreadOnly = true,
         .priority = 15
     });
 
@@ -46,7 +45,6 @@ PassIds addPasses(PassScheduler& graph, RendererSystems& systems, const Config& 
             systems.profiler().endGpuZone(ctx.commandBuffer, "Bloom");
         },
         .canUseSecondary = false,
-        .mainThreadOnly = true,
         .priority = 10
     });
 
@@ -73,7 +71,6 @@ PassIds addPasses(PassScheduler& graph, RendererSystems& systems, const Config& 
             systems.profiler().endGpuZone(ctx.commandBuffer, "GodRays");
         },
         .canUseSecondary = false,
-        .mainThreadOnly = true,
         .priority = 10
     });
 
@@ -89,7 +86,6 @@ PassIds addPasses(PassScheduler& graph, RendererSystems& systems, const Config& 
             }
         },
         .canUseSecondary = false,
-        .mainThreadOnly = true,
         .priority = 10
     });
 
@@ -106,7 +102,6 @@ PassIds addPasses(PassScheduler& graph, RendererSystems& systems, const Config& 
             systems.profiler().endGpuZone(ctx.commandBuffer, "PostProcess");
         },
         .canUseSecondary = false,
-        .mainThreadOnly = true,
         .priority = 0  // Lowest priority - runs last
     });
 

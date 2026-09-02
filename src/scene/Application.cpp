@@ -167,11 +167,34 @@ bool Application::init(const std::string& title, int width, int height) {
 
     renderer_ = Renderer::create(rendererInfo);
 
+    // Tear down everything created so far when init cannot continue. Order
+    // matters: async-init workers submit to the graphics queue, so they must
+    // be joined before the loading renderer waits for the device to go idle
+    // (a failed task does not stop its siblings, and on quit every worker is
+    // still running). The loading renderer borrows the VulkanContext the
+    // renderer owns, so it is cleaned up before the renderer is released.
+    auto abortInit = [this, &loadingRenderer]() {
+        InitProfiler::get().setPresentingActive(false);
+        if (renderer_) {
+            renderer_->cancelAsyncInit();
+        }
+        if (loadingRenderer) {
+            loadingRenderer->cleanup();
+            loadingRenderer.reset();
+        }
+        renderer_.reset();
+        TaskScheduler::instance().shutdown();
+        SDL_DestroyWindow(window);
+        window = nullptr;
+        SDL_Quit();
+    };
+
     // If async init is enabled, poll for completion while rendering loading screen
     if (renderer_ && !renderer_->isAsyncInitComplete()) {
         SDL_Log("Async initialization started, running loading loop...");
 
-        while (!renderer_->pollAsyncInit()) {
+        AsyncInitStatus status = AsyncInitStatus::Pending;
+        while ((status = renderer_->pollAsyncInit()) == AsyncInitStatus::Pending) {
             // Render loading screen; present pacing (vsync) throttles the loop
             if (loadingRenderer) {
                 {
@@ -189,12 +212,17 @@ bool Application::init(const std::string& title, int width, int height) {
             while (SDL_PollEvent(&event)) {
                 if (event.type == SDL_EVENT_QUIT) {
                     SDL_Log("Quit requested during loading");
-                    if (loadingRenderer) {
-                        loadingRenderer->cleanup();
-                    }
+                    abortInit();
                     return false;
                 }
             }
+        }
+
+        if (status == AsyncInitStatus::Failed) {
+            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
+                         "Renderer initialization failed: %s", renderer_->asyncInitError().c_str());
+            abortInit();
+            return false;
         }
 
         SDL_Log("Async initialization complete");
@@ -202,12 +230,13 @@ bool Application::init(const std::string& title, int width, int height) {
 
     if (!renderer_) {
         SDL_Log("Failed to initialize renderer");
+        // Renderer::create took ownership of the VulkanContext and destroyed
+        // it on failure, so the loading renderer's device is already gone:
+        // it must not try to clean up against it.
         if (loadingRenderer) {
-            loadingRenderer->cleanup();
-            loadingRenderer.reset();
+            loadingRenderer->abandon();
         }
-        SDL_DestroyWindow(window);
-        SDL_Quit();
+        abortInit();
         return false;
     }
 

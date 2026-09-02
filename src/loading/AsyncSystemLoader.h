@@ -12,9 +12,6 @@
 #include <unordered_set>
 #include <vector>
 
-class VulkanContext;
-class LoadingRenderer;
-
 namespace Loading {
 
 /**
@@ -65,22 +62,23 @@ struct SystemLoadProgress {
  * - GPU work runs on main thread after CPU work completes
  * - Main thread polls for completions and can render loading screen between polls
  *
+ * The loader is Vulkan-independent: task bodies are plain callables. The
+ * caller owns the loading-screen frame cadence (see Application::init).
+ *
  * Usage:
- *   AsyncSystemLoader loader;
- *   loader.init(vulkanContext, loadingRenderer);
+ *   auto loader = AsyncSystemLoader::create({});
  *
  *   // Add tasks with dependencies
- *   loader.addTask({.id = "terrain", .cpuWork = [...], .gpuWork = [...]});
- *   loader.addTask({.id = "scene", .dependencies = {"terrain"}, ...});
+ *   loader->addTask({.id = "terrain", .cpuWork = [...], .gpuWork = [...]});
+ *   loader->addTask({.id = "scene", .dependencies = {"terrain"}, ...});
  *
  *   // Start async loading
- *   loader.start();
+ *   loader->start();
  *
- *   // Poll loop (allows rendering loading screen)
- *   while (!loader.isComplete()) {
- *       loader.pollCompletions();  // Process completed CPU work, run GPU work
- *       loadingRenderer->render();
- *       SDL_PumpEvents();
+ *   // Poll loop on the main thread, presenting a frame between polls
+ *   while (!loader->isComplete()) {
+ *       loader->pollCompletions(budgetMs);  // Run finished tasks' gpuWork
+ *       ...render loading screen, pump events...
  *   }
  */
 class AsyncSystemLoader {
@@ -90,8 +88,6 @@ public:
     explicit AsyncSystemLoader(ConstructToken) {}
 
     struct InitInfo {
-        VulkanContext* vulkanContext = nullptr;
-        LoadingRenderer* loadingRenderer = nullptr;  // Optional, for progress display
         uint32_t workerCount = 0;  // 0 = auto (hardware concurrency - 1)
     };
 
@@ -149,13 +145,15 @@ public:
     SystemLoadProgress getProgress() const;
 
     /**
-     * Run the loading loop - blocks until all tasks complete
-     * Renders loading screen frames between processing
+     * Stop scheduling work and join the worker threads. Task bodies already
+     * executing run to completion; queued tasks are never started. Idempotent
+     * and safe to call at any time (including before start()). Task storage
+     * (and anything the task lambdas own) is kept until shutdown().
      */
-    void runLoadingLoop();
+    void cancel();
 
     /**
-     * Shutdown and release resources
+     * Shutdown and release resources (cancel() + release task storage)
      */
     void shutdown();
 
@@ -198,9 +196,6 @@ private:
     std::atomic<bool> hasError_{false};
     mutable std::mutex errorMutex_;
     std::string errorMessage_;
-
-    // Loading renderer (optional)
-    LoadingRenderer* loadingRenderer_ = nullptr;
 };
 
 } // namespace Loading

@@ -47,7 +47,6 @@ PassIds addPasses(PassScheduler& graph, RendererSystems& systems, const Config& 
             }
         },
         .canUseSecondary = false,
-        .mainThreadOnly = true,
         .priority = 40
     });
 
@@ -67,7 +66,6 @@ PassIds addPasses(PassScheduler& graph, RendererSystems& systems, const Config& 
             }
         },
         .canUseSecondary = false,
-        .mainThreadOnly = true,
         .priority = 20
     });
 
@@ -87,7 +85,6 @@ PassIds addPasses(PassScheduler& graph, RendererSystems& systems, const Config& 
             }
         },
         .canUseSecondary = false,
-        .mainThreadOnly = true,
         .priority = 20
     });
 

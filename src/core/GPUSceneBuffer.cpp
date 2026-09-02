@@ -84,10 +84,15 @@ bool GPUSceneBuffer::init(VmaAllocator allocator, uint32_t frameCount) {
 }
 
 void GPUSceneBuffer::cleanup() {
-    BufferUtils::destroyBuffers(allocator_, drawCountBuffers_);
-    BufferUtils::destroyBuffers(allocator_, indirectBuffers_);
+    auto release = [this](auto& set) {
+        BufferUtils::destroyBuffers(allocator_, set);
+        set.buffers.clear();
+        set.allocations.clear();
+    };
+    release(drawCountBuffers_);
+    release(indirectBuffers_);
     cullObjectBuffer_.reset();
-    BufferUtils::destroyBuffers(allocator_, instanceBuffers_);
+    release(instanceBuffers_);
 
     instances_.clear();
     cullObjects_.clear();

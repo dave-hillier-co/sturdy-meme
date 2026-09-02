@@ -24,8 +24,10 @@ struct QueueSubmitDiagnostics;
  *
  * The frame graph:
  * 1. Defines render passes as nodes with dependencies
- * 2. Compiles to find parallelization opportunities
- * 3. Executes passes in dependency order, running independent passes in parallel
+ * 2. Compiles a topological order (dependency levels) for sequential recording
+ * 3. Executes passes in dependency order, recording sequentially into the frame's
+ *    primary command buffer (passes never record into the primary from worker
+ *    threads); HDR additionally records its secondary command buffers in parallel
  *
  * Example graph:
  *   ComputeStage ──┬──> ShadowPass ──> HDRPass ──> PostProcess
@@ -70,11 +72,8 @@ public:
         PassFunction execute;
 
         // If true, this pass can record using secondary command buffers
-        // and be parallelized with other secondary-capable passes at the same level
+        // (recorded in parallel, then executed from the primary on the calling thread)
         bool canUseSecondary = false;
-
-        // If true, this pass must run on the main thread
-        bool mainThreadOnly = true;
 
         // Priority within the same dependency level (higher = earlier)
         int32_t priority = 0;
@@ -130,15 +129,16 @@ public:
 
     /**
      * Compile the graph for execution.
-     * Performs topological sort and identifies parallelization opportunities.
+     * Performs a topological sort into dependency levels; passes within a level are
+     * independent but are still recorded sequentially.
      * Must be called after adding all passes and dependencies.
      */
     bool compile();
 
     /**
-     * Execute all enabled passes in dependency order.
+     * Execute all enabled passes in dependency order on the calling thread.
      * @param context Frame context for the current frame
-     * @param scheduler Optional task scheduler for parallel execution
+     * @param scheduler Optional task scheduler, used only for secondary command buffer recording
      */
     void execute(FrameContext& context, TaskScheduler* scheduler = nullptr);
 
@@ -191,7 +191,8 @@ private:
     std::unordered_map<std::string, PassId> nameToId_;
 
     // Compiled execution order: levels[level][passIndex]
-    // Passes in the same level can potentially run in parallel
+    // Passes in the same level are independent of each other but still record
+    // sequentially, since they share the frame's primary command buffer
     std::vector<std::vector<PassId>> executionLevels_;
 
     PassId nextPassId_ = 0;

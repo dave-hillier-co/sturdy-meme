@@ -1656,7 +1656,9 @@ if(BUILD_TESTS)
         tests/test_calm_hlc_fsm.cpp
         tests/test_calm_model_loader.cpp
         tests/test_quaternion_math.cpp
+        tests/test_async_system_loader.cpp
         # Source files needed by tests
+        src/loading/AsyncSystemLoader.cpp
         src/atmosphere/CelestialCalculator.cpp
         src/animation/Animation.cpp
         src/animation/AnimationBlend.cpp

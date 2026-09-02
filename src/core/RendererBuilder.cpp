@@ -237,15 +237,16 @@ void RendererBuilder::setupPassScheduler(Renderer& r) {
     }
 }
 
-bool RendererBuilder::createDescriptorSets(Renderer& r) {
+bool RendererBuilder::createDescriptorSets(Renderer& r, SceneManager& scene) {
     vk::Device device = r.vulkanContext_->getVkDevice();
 
     // Create descriptor sets for all materials via MaterialRegistry
     // This replaces the hardcoded per-material descriptor set allocation
-    auto& materialRegistry = r.systems_->scene().getSceneBuilder().getMaterialRegistry();
+    auto& materialRegistry = scene.getSceneBuilder().getMaterialRegistry();
 
     // Lambda to build common bindings for a given frame (using GlobalBufferManager)
-    auto getCommonBindings = [&r](uint32_t frameIndex) -> MaterialDescriptorFactory::CommonBindings {
+    SceneManager* scenePtr = &scene;
+    auto getCommonBindings = [&r, scenePtr](uint32_t frameIndex) -> MaterialDescriptorFactory::CommonBindings {
         MaterialDescriptorFactory::CommonBindings common{};
         common.uniformBuffer = r.systems_->globalBuffers().uniformBuffers.buffers[frameIndex];
         common.uniformBufferSize = sizeof(UniformBufferObject);
@@ -253,8 +254,8 @@ bool RendererBuilder::createDescriptorSets(Renderer& r) {
         common.shadowMapSampler = r.systems_->shadow().getShadowSampler();
         common.lightBuffer = r.systems_->globalBuffers().lightBuffers.buffers[frameIndex];
         common.lightBufferSize = sizeof(LightBuffer);
-        common.emissiveMapView = r.systems_->scene().getSceneBuilder().getDefaultEmissiveMap()->getImageView();
-        common.emissiveMapSampler = r.systems_->scene().getSceneBuilder().getDefaultEmissiveMap()->getSampler();
+        common.emissiveMapView = scenePtr->getSceneBuilder().getDefaultEmissiveMap()->getImageView();
+        common.emissiveMapSampler = scenePtr->getSceneBuilder().getDefaultEmissiveMap()->getSampler();
         common.pointShadowView = r.systems_->shadow().getPointShadowArrayView(frameIndex);
         common.pointShadowSampler = r.systems_->shadow().getPointShadowSampler();
         common.spotShadowView = r.systems_->shadow().getSpotShadowArrayView(frameIndex);
@@ -268,8 +269,8 @@ bool RendererBuilder::createDescriptorSets(Renderer& r) {
         common.cloudShadowUboBufferSize = sizeof(CloudShadowUBO);
         // Cloud shadow texture is added later in init() after cloudShadowSystem is initialized
         // Placeholder texture for unused PBR bindings (13-16)
-        common.placeholderTextureView = r.systems_->scene().getSceneBuilder().getWhiteTexture()->getImageView();
-        common.placeholderTextureSampler = r.systems_->scene().getSceneBuilder().getWhiteTexture()->getSampler();
+        common.placeholderTextureView = scenePtr->getSceneBuilder().getWhiteTexture()->getImageView();
+        common.placeholderTextureSampler = scenePtr->getSceneBuilder().getWhiteTexture()->getSampler();
         if (r.systems_->hasScreenSpaceShadow()) {
             common.screenShadowView = r.systems_->screenSpaceShadow()->getShadowBufferView();
             common.screenShadowSampler = r.systems_->screenSpaceShadow()->getShadowBufferSampler();
@@ -297,14 +298,16 @@ bool RendererBuilder::createDescriptorSets(Renderer& r) {
 
 // ===== GPU Skinning Implementation =====
 
-bool RendererBuilder::initSkinnedMeshRenderer(Renderer& r) {
+bool RendererBuilder::initSkinnedMeshRenderer(Renderer& r, vk::RenderPass hdrRenderPass,
+                                              std::unique_ptr<SkinnedMeshRenderer>& outSkinnedMesh,
+                                              std::unique_ptr<NPCRenderer>& outNpcRenderer) {
     SkinnedMeshRenderer::InitInfo info{};
     info.device = r.vulkanContext_->getVkDevice();
     info.physicalDevice = r.vulkanContext_->getVkPhysicalDevice();  // For dynamic UBO alignment
     info.raiiDevice = &r.vulkanContext_->getRaiiDevice();
     info.allocator = r.vulkanContext_->getAllocator();
     info.descriptorPool = r.getDescriptorPool();
-    info.renderPass = r.systems_->postProcess().getHDRRenderPass();
+    info.renderPass = hdrRenderPass;
     info.extent = r.vulkanContext_->getVkSwapchainExtent();
     info.shaderPath = r.resourcePath + "/shaders";
     info.framesInFlight = Renderer::MAX_FRAMES_IN_FLIGHT;
@@ -317,24 +320,24 @@ bool RendererBuilder::initSkinnedMeshRenderer(Renderer& r) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create SkinnedMeshRenderer");
         return false;
     }
-    r.systems_->setSkinnedMesh(std::move(skinnedMeshRenderer));
+    outSkinnedMesh = std::move(skinnedMeshRenderer);
 
     // Create NPCRenderer (uses SkinnedMeshRenderer for draw calls)
     NPCRenderer::InitInfo npcInfo{};
-    npcInfo.skinnedMeshRenderer = &r.systems_->skinnedMesh();
-    auto npcRenderer = NPCRenderer::create(npcInfo);
-    if (npcRenderer) {
-        r.systems_->setNPCRenderer(std::move(npcRenderer));
+    npcInfo.skinnedMeshRenderer = outSkinnedMesh.get();
+    outNpcRenderer = NPCRenderer::create(npcInfo);
+    if (outNpcRenderer) {
         SDL_Log("NPCRenderer created successfully");
     }
 
     return true;
 }
 
-bool RendererBuilder::createSkinnedMeshRendererDescriptorSets(Renderer& r) {
-    const auto* whiteTexture = r.systems_->scene().getSceneBuilder().getWhiteTexture();
-    const auto* emissiveMap = r.systems_->scene().getSceneBuilder().getDefaultEmissiveMap();
-    const auto& sceneBuilder = r.systems_->scene().getSceneBuilder();
+bool RendererBuilder::createSkinnedMeshRendererDescriptorSets(Renderer& r, SceneManager& scene,
+                                                              SkinnedMeshRenderer& skinnedMesh) {
+    const auto* whiteTexture = scene.getSceneBuilder().getWhiteTexture();
+    const auto* emissiveMap = scene.getSceneBuilder().getDefaultEmissiveMap();
+    const auto& sceneBuilder = scene.getSceneBuilder();
     const auto& materialRegistry = sceneBuilder.getMaterialRegistry();
 
     // Build point and spot shadow views for all frames
@@ -389,7 +392,7 @@ bool RendererBuilder::createSkinnedMeshRendererDescriptorSets(Renderer& r) {
     resources.playerNormalView = playerNormalView;
     resources.playerNormalSampler = playerNormalSampler;
 
-    return r.systems_->skinnedMesh().createDescriptorSets(resources);
+    return skinnedMesh.createDescriptorSets(resources);
 }
 
 // ===== Async Initialization Implementation =====
@@ -473,8 +476,6 @@ bool RendererBuilder::initInternalAsync(Renderer& r, const Renderer::InitInfo& i
 
     // Create async loader and set up tasks
     Loading::AsyncSystemLoader::InitInfo loaderInfo;
-    loaderInfo.vulkanContext = r.vulkanContext_.get();
-    loaderInfo.loadingRenderer = nullptr;  // We handle rendering separately
     loaderInfo.workerCount = 0;  // Auto-detect
 
     r.asyncInit_->loader = Loading::AsyncSystemLoader::create(loaderInfo);
@@ -494,14 +495,14 @@ bool RendererBuilder::initInternalAsync(Renderer& r, const Renderer::InitInfo& i
     return true;
 }
 
-bool RendererBuilder::pollAsyncInit(Renderer& r) {
+AsyncInitStatus RendererBuilder::pollAsyncInit(Renderer& r) {
     if (r.asyncInitComplete_) {
-        return !r.asyncInitFailed_;  // Return false if init failed
+        return r.asyncInitFailed_ ? AsyncInitStatus::Failed : AsyncInitStatus::Ready;
     }
 
     if (!r.asyncInit_ || !r.asyncInit_->loader) {
         r.asyncInitComplete_ = true;
-        return true;
+        return AsyncInitStatus::Ready;
     }
 
     Loading::AsyncSystemLoader& loader = *r.asyncInit_->loader;
@@ -521,11 +522,14 @@ bool RendererBuilder::pollAsyncInit(Renderer& r) {
     // Check if all tasks are complete
     if (loader.isComplete()) {
         if (loader.hasError()) {
+            r.asyncInitError_ = loader.getErrorMessage();
             SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
-                        "Async init failed: %s", loader.getErrorMessage().c_str());
+                        "Async init failed: %s", r.asyncInitError_.c_str());
+            // The loader (and any still-running sibling task) is stopped by
+            // Renderer::cleanup when the caller releases the renderer.
             r.asyncInitComplete_ = true;
             r.asyncInitFailed_ = true;
-            return false;  // Indicate failure consistently
+            return AsyncInitStatus::Failed;
         }
 
         // Finalize initialization (quick synchronous steps)
@@ -579,9 +583,10 @@ bool RendererBuilder::pollAsyncInit(Renderer& r) {
 
         r.asyncInitComplete_ = true;
         SDL_Log("Async initialization complete");
+        return AsyncInitStatus::Ready;
     }
 
-    return r.asyncInitComplete_;
+    return AsyncInitStatus::Pending;
 }
 
 bool RendererBuilder::initSubsystemsAsync(Renderer& r) {
@@ -707,36 +712,55 @@ std::vector<Loading::SystemInitTask> RendererBuilder::buildInitTasks(Renderer& r
     const float halfTerrain = 8192.0f;
     glm::vec2 sceneOrigin(11000.0f - halfTerrain, 5200.0f - halfTerrain);
 
+    // Registry writes happen only in gpuWork (main thread, inside
+    // pollCompletions). cpuWork builds every system into per-task staging
+    // shared by both lambdas and reads back its own products through those
+    // staged pointers; siblings running concurrently only read systems that
+    // earlier tasks already registered. The loader schedules a dependent only
+    // after its dependencies' gpuWork ran, so a dependent's cpuWork never
+    // looks up an unregistered system.
+
     // ========== TASK: Core Systems (Tier 0) ==========
     {
+        struct Staged {
+            std::unique_ptr<PostProcessSystem> postProcess;
+            std::unique_ptr<BloomSystem> bloom;
+            std::unique_ptr<BilateralGridSystem> bilateralGrid;
+            std::unique_ptr<GodRaysSystem> godRays;
+            std::unique_ptr<SkinnedMeshRenderer> skinnedMesh;
+            std::unique_ptr<NPCRenderer> npcRenderer;
+            std::unique_ptr<GlobalBufferManager> globalBuffers;
+            std::unique_ptr<ShadowSystem> shadow;
+        };
+        auto staged = std::make_shared<Staged>();
+
         Loading::SystemInitTask task;
         task.id = "core";
         task.displayName = "Core GPU systems";
         task.weight = 0.1f;
-        task.cpuWork = [&r, ctxPtr = makeTaskContext(), swapchainImageFormat]() -> bool {
+        task.cpuWork = [&r, ctxPtr = makeTaskContext(), swapchainImageFormat, staged]() -> bool {
             // PostProcess (creates HDR render pass needed by almost everything)
             if (r.progressCallback_) r.progressCallback_(0.12f, "Post-processing systems");
             {
                 INIT_PROFILE_PHASE("PostProcessing");
                 auto bundle = PostProcessSystem::createWithDependencies(*ctxPtr, r.vulkanContext_->getRenderPass(), swapchainImageFormat);
                 if (!bundle) return false;
-                r.systems_->setPostProcess(std::move(bundle->postProcess));
-                r.systems_->setBloom(std::move(bundle->bloom));
-                r.systems_->setBilateralGrid(std::move(bundle->bilateralGrid));
-                r.systems_->setGodRays(std::move(bundle->godRays));
+                staged->postProcess = std::move(bundle->postProcess);
+                staged->bloom = std::move(bundle->bloom);
+                staged->bilateralGrid = std::move(bundle->bilateralGrid);
+                staged->godRays = std::move(bundle->godRays);
             }
+            vk::RenderPass hdrRenderPass = staged->postProcess->getHDRRenderPass();
 
             // Graphics pipeline
             if (r.progressCallback_) r.progressCallback_(0.14f, "Graphics pipeline");
             {
                 INIT_PROFILE_PHASE("GraphicsPipeline");
-                if (!r.scenePipeline_.createGraphicsPipeline(*r.vulkanContext_,
-                        r.systems_->postProcess().getHDRRenderPass(), r.resourcePath)) {
+                if (!r.scenePipeline_.createGraphicsPipeline(*r.vulkanContext_, hdrRenderPass, r.resourcePath)) {
                     SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create graphics pipeline");
                     return false;
                 }
-                if (!r.instancedScenePipeline_.createGraphicsPipeline(*r.vulkanContext_,
-                        r.systems_->postProcess().getHDRRenderPass(), r.resourcePath)) {
+                if (!r.instancedScenePipeline_.createGraphicsPipeline(*r.vulkanContext_, hdrRenderPass, r.resourcePath)) {
                     SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create instanced graphics pipeline");
                     return false;
                 }
@@ -746,40 +770,49 @@ std::vector<Loading::SystemInitTask> RendererBuilder::buildInitTasks(Renderer& r
             if (r.progressCallback_) r.progressCallback_(0.15f, "Skinned mesh renderer");
             {
                 INIT_PROFILE_PHASE("SkinnedMeshRenderer");
-                if (!initSkinnedMeshRenderer(r)) return false;
+                if (!initSkinnedMeshRenderer(r, hdrRenderPass, staged->skinnedMesh, staged->npcRenderer)) return false;
             }
 
             // Global buffer manager
             if (r.progressCallback_) r.progressCallback_(0.17f, "Global buffers");
             {
                 INIT_PROFILE_PHASE("GlobalBufferManager");
-                auto globalBuffers = GlobalBufferManager::create(r.vulkanContext_->getAllocator(),
+                staged->globalBuffers = GlobalBufferManager::create(r.vulkanContext_->getAllocator(),
                     r.vulkanContext_->getVkPhysicalDevice(), Renderer::MAX_FRAMES_IN_FLIGHT);
-                if (!globalBuffers) {
+                if (!staged->globalBuffers) {
                     SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to initialize GlobalBufferManager");
                     return false;
                 }
-                r.systems_->setGlobalBuffers(std::move(globalBuffers));
             }
 
             // Initialize light buffers with empty data
             for (uint32_t i = 0; i < Renderer::MAX_FRAMES_IN_FLIGHT; i++) {
                 LightBuffer emptyBuffer{};
                 emptyBuffer.lightCount = glm::uvec4(0, 0, 0, 0);
-                r.systems_->globalBuffers().updateLightBuffer(i, emptyBuffer);
+                staged->globalBuffers->updateLightBuffer(i, emptyBuffer);
             }
 
             // Shadow system
             if (r.progressCallback_) r.progressCallback_(0.19f, "Shadow system");
             {
                 INIT_PROFILE_PHASE("ShadowSystem");
-                auto shadowSystem = ShadowSystem::create(*ctxPtr,
+                staged->shadow = ShadowSystem::create(*ctxPtr,
                     r.scenePipeline_.getVkDescriptorSetLayout(),
-                    r.systems_->skinnedMesh().getDescriptorSetLayout());
-                if (!shadowSystem) return false;
-                r.systems_->setShadow(std::move(shadowSystem));
+                    staged->skinnedMesh->getDescriptorSetLayout());
+                if (!staged->shadow) return false;
             }
 
+            return true;
+        };
+        task.gpuWork = [&r, staged]() -> bool {
+            r.systems_->setPostProcess(std::move(staged->postProcess));
+            r.systems_->setBloom(std::move(staged->bloom));
+            r.systems_->setBilateralGrid(std::move(staged->bilateralGrid));
+            r.systems_->setGodRays(std::move(staged->godRays));
+            r.systems_->setSkinnedMesh(std::move(staged->skinnedMesh));
+            if (staged->npcRenderer) r.systems_->setNPCRenderer(std::move(staged->npcRenderer));
+            r.systems_->setGlobalBuffers(std::move(staged->globalBuffers));
+            r.systems_->setShadow(std::move(staged->shadow));
             return true;
         };
         tasks.push_back(std::move(task));
@@ -787,12 +820,17 @@ std::vector<Loading::SystemInitTask> RendererBuilder::buildInitTasks(Renderer& r
 
     // ========== TASK: Terrain System (Tier 1) ==========
     {
+        struct Staged {
+            std::unique_ptr<TerrainSystem> terrain;
+        };
+        auto staged = std::make_shared<Staged>();
+
         Loading::SystemInitTask task;
         task.id = "terrain";
         task.displayName = "Terrain system";
         task.dependencies = {"core"};
         task.weight = 0.15f;
-        task.cpuWork = [&r, ctxPtr = makeTaskContext()]() -> bool {
+        task.cpuWork = [&r, ctxPtr = makeTaskContext(), staged]() -> bool {
             if (r.progressCallback_) r.progressCallback_(0.20f, "Terrain system");
             INIT_PROFILE_PHASE("TerrainSystem");
 
@@ -807,9 +845,11 @@ std::vector<Loading::SystemInitTask> RendererBuilder::buildInitTasks(Renderer& r
                 terrainFactoryConfig.useVirtualTexture &&
                 r.vulkanContext_->hasFragmentStoresAndAtomics();
 
-            auto terrainSystem = TerrainFactory::create(*ctxPtr, terrainFactoryConfig);
-            if (!terrainSystem) return false;
-            r.systems_->setTerrain(std::move(terrainSystem));
+            staged->terrain = TerrainFactory::create(*ctxPtr, terrainFactoryConfig);
+            return staged->terrain != nullptr;
+        };
+        task.gpuWork = [&r, staged]() -> bool {
+            r.systems_->setTerrain(std::move(staged->terrain));
             return true;
         };
         tasks.push_back(std::move(task));
@@ -817,12 +857,20 @@ std::vector<Loading::SystemInitTask> RendererBuilder::buildInitTasks(Renderer& r
 
     // ========== TASK: Snow/Weather Systems (Tier 2a - parallel with terrain) ==========
     {
+        struct Staged {
+            std::unique_ptr<SnowMaskSystem> snowMask;
+            std::unique_ptr<VolumetricSnowSystem> volumetricSnow;
+            std::unique_ptr<WeatherSystem> weather;
+            std::unique_ptr<LeafSystem> leaf;
+        };
+        auto staged = std::make_shared<Staged>();
+
         Loading::SystemInitTask task;
         task.id = "snow_weather";
         task.displayName = "Snow and weather";
         task.dependencies = {"core"};
         task.weight = 0.05f;
-        task.cpuWork = [&r, ctxPtr = makeTaskContext()]() -> bool {
+        task.cpuWork = [&r, ctxPtr = makeTaskContext(), staged]() -> bool {
             if (r.progressCallback_) r.progressCallback_(0.28f, "Snow and weather systems");
             INIT_PROFILE_PHASE("SnowWeather");
 
@@ -831,10 +879,17 @@ std::vector<Loading::SystemInitTask> RendererBuilder::buildInitTasks(Renderer& r
             auto snowBundle = SnowSystemGroup::createAll(snowDeps);
             if (!snowBundle) return false;
 
-            r.systems_->setSnowMask(std::move(snowBundle->snowMask));
-            r.systems_->setVolumetricSnow(std::move(snowBundle->volumetricSnow));
-            r.systems_->setWeather(std::move(snowBundle->weather));
-            r.systems_->setLeaf(std::move(snowBundle->leaf));
+            staged->snowMask = std::move(snowBundle->snowMask);
+            staged->volumetricSnow = std::move(snowBundle->volumetricSnow);
+            staged->weather = std::move(snowBundle->weather);
+            staged->leaf = std::move(snowBundle->leaf);
+            return true;
+        };
+        task.gpuWork = [&r, staged]() -> bool {
+            r.systems_->setSnowMask(std::move(staged->snowMask));
+            r.systems_->setVolumetricSnow(std::move(staged->volumetricSnow));
+            r.systems_->setWeather(std::move(staged->weather));
+            r.systems_->setLeaf(std::move(staged->leaf));
             return true;
         };
         tasks.push_back(std::move(task));
@@ -842,12 +897,17 @@ std::vector<Loading::SystemInitTask> RendererBuilder::buildInitTasks(Renderer& r
 
     // ========== TASK: Scene Manager (Tier 2b) ==========
     {
+        struct Staged {
+            std::unique_ptr<SceneManager> scene;
+        };
+        auto staged = std::make_shared<Staged>();
+
         Loading::SystemInitTask task;
         task.id = "scene";
         task.displayName = "Scene manager";
         task.dependencies = {"terrain", "snow_weather"};
         task.weight = 0.15f;
-        task.cpuWork = [&r, sceneOrigin]() -> bool {
+        task.cpuWork = [&r, sceneOrigin, staged]() -> bool {
             if (r.progressCallback_) r.progressCallback_(0.32f, "Scene manager");
             INIT_PROFILE_PHASE("SceneManager");
 
@@ -865,17 +925,20 @@ std::vector<Loading::SystemInitTask> RendererBuilder::buildInitTasks(Renderer& r
             sceneInfo.sceneOrigin = sceneOrigin;
             sceneInfo.deferRenderables = true;
 
-            auto sceneManager = SceneManager::create(sceneInfo);
-            if (!sceneManager) {
+            staged->scene = SceneManager::create(sceneInfo);
+            if (!staged->scene) {
                 SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create SceneManager");
                 return false;
             }
-            r.systems_->setScene(std::move(sceneManager));
 
             // Create descriptor sets (needs scene + snow systems)
-            if (!createDescriptorSets(r)) return false;
-            if (!createSkinnedMeshRendererDescriptorSets(r)) return false;
+            if (!createDescriptorSets(r, *staged->scene)) return false;
+            if (!createSkinnedMeshRendererDescriptorSets(r, *staged->scene, r.systems_->skinnedMesh())) return false;
 
+            return true;
+        };
+        task.gpuWork = [&r, staged]() -> bool {
+            r.systems_->setScene(std::move(staged->scene));
             return true;
         };
         tasks.push_back(std::move(task));
@@ -883,12 +946,24 @@ std::vector<Loading::SystemInitTask> RendererBuilder::buildInitTasks(Renderer& r
 
     // ========== TASK: Vegetation Systems (Tier 3) ==========
     {
+        struct Staged {
+            std::unique_ptr<WindSystem> wind;
+            std::unique_ptr<DisplacementSystem> displacement;
+            std::unique_ptr<GrassSystem> grass;
+            std::unique_ptr<ScatterSystem> rocks;
+            std::unique_ptr<TreeSystem> tree;
+            std::unique_ptr<TreeRenderer> treeRenderer;
+            std::unique_ptr<TreeLODSystem> treeLOD;
+            std::unique_ptr<ImpostorCullSystem> impostorCull;
+        };
+        auto staged = std::make_shared<Staged>();
+
         Loading::SystemInitTask task;
         task.id = "vegetation";
         task.displayName = "Vegetation systems";
         task.dependencies = {"scene"};
         task.weight = 0.2f;
-        task.cpuWork = [&r, ctxPtr = makeTaskContext(), sceneOrigin]() -> bool {
+        task.cpuWork = [&r, ctxPtr = makeTaskContext(), sceneOrigin, staged]() -> bool {
             if (r.progressCallback_) r.progressCallback_(0.45f, "Vegetation systems");
             INIT_PROFILE_PHASE("VegetationSystems");
 
@@ -922,15 +997,25 @@ std::vector<Loading::SystemInitTask> RendererBuilder::buildInitTasks(Renderer& r
             auto vegBundle = VegetationSystemGroup::createAll(vegDeps);
             if (!vegBundle) return false;
 
-            r.systems_->setWind(std::move(vegBundle->wind));
-            r.systems_->setDisplacement(std::move(vegBundle->displacement));
-            r.systems_->setGrass(std::move(vegBundle->grass));
-            r.systems_->setRocks(std::move(vegBundle->rocks));
-            r.systems_->setTree(std::move(vegBundle->tree));
-            r.systems_->setTreeRenderer(std::move(vegBundle->treeRenderer));
-            if (vegBundle->treeLOD) r.systems_->setTreeLOD(std::move(vegBundle->treeLOD));
-            if (vegBundle->impostorCull) r.systems_->setImpostorCull(std::move(vegBundle->impostorCull));
-
+            staged->wind = std::move(vegBundle->wind);
+            staged->displacement = std::move(vegBundle->displacement);
+            staged->grass = std::move(vegBundle->grass);
+            staged->rocks = std::move(vegBundle->rocks);
+            staged->tree = std::move(vegBundle->tree);
+            staged->treeRenderer = std::move(vegBundle->treeRenderer);
+            staged->treeLOD = std::move(vegBundle->treeLOD);
+            staged->impostorCull = std::move(vegBundle->impostorCull);
+            return true;
+        };
+        task.gpuWork = [&r, staged]() -> bool {
+            r.systems_->setWind(std::move(staged->wind));
+            r.systems_->setDisplacement(std::move(staged->displacement));
+            r.systems_->setGrass(std::move(staged->grass));
+            r.systems_->setRocks(std::move(staged->rocks));
+            r.systems_->setTree(std::move(staged->tree));
+            r.systems_->setTreeRenderer(std::move(staged->treeRenderer));
+            if (staged->treeLOD) r.systems_->setTreeLOD(std::move(staged->treeLOD));
+            if (staged->impostorCull) r.systems_->setImpostorCull(std::move(staged->impostorCull));
             return true;
         };
         tasks.push_back(std::move(task));
@@ -938,12 +1023,20 @@ std::vector<Loading::SystemInitTask> RendererBuilder::buildInitTasks(Renderer& r
 
     // ========== TASK: Atmosphere Systems (Tier 3b - parallel with vegetation) ==========
     {
+        struct Staged {
+            std::unique_ptr<SkySystem> sky;
+            std::unique_ptr<FroxelSystem> froxel;
+            std::unique_ptr<AtmosphereLUTSystem> atmosphereLUT;
+            std::unique_ptr<CloudShadowSystem> cloudShadow;
+        };
+        auto staged = std::make_shared<Staged>();
+
         Loading::SystemInitTask task;
         task.id = "atmosphere";
         task.displayName = "Atmosphere systems";
         task.dependencies = {"scene"};
         task.weight = 0.1f;
-        task.cpuWork = [&r, ctxPtr = makeTaskContext()]() -> bool {
+        task.cpuWork = [&r, ctxPtr = makeTaskContext(), staged]() -> bool {
             if (r.progressCallback_) r.progressCallback_(0.60f, "Atmosphere systems");
             INIT_PROFILE_PHASE("AtmosphereSubsystems");
 
@@ -960,25 +1053,48 @@ std::vector<Loading::SystemInitTask> RendererBuilder::buildInitTasks(Renderer& r
             auto atmosBundle = AtmosphereSystemGroup::createAll(atmosDeps);
             if (!atmosBundle) return false;
 
-            r.systems_->setSky(std::move(atmosBundle->sky));
-            r.systems_->setFroxel(std::move(atmosBundle->froxel));
-            r.systems_->setAtmosphereLUT(std::move(atmosBundle->atmosphereLUT));
-            r.systems_->setCloudShadow(std::move(atmosBundle->cloudShadow));
+            staged->sky = std::move(atmosBundle->sky);
+            staged->froxel = std::move(atmosBundle->froxel);
+            staged->atmosphereLUT = std::move(atmosBundle->atmosphereLUT);
+            staged->cloudShadow = std::move(atmosBundle->cloudShadow);
 
-            AtmosphereSystemGroup::wireToPostProcess(r.systems_->froxel(), r.systems_->postProcess());
+            AtmosphereSystemGroup::wireToPostProcess(*staged->froxel, r.systems_->postProcess());
+            return true;
+        };
+        task.gpuWork = [&r, staged]() -> bool {
+            r.systems_->setSky(std::move(staged->sky));
+            r.systems_->setFroxel(std::move(staged->froxel));
+            r.systems_->setAtmosphereLUT(std::move(staged->atmosphereLUT));
+            r.systems_->setCloudShadow(std::move(staged->cloudShadow));
             return true;
         };
         tasks.push_back(std::move(task));
     }
 
     // ========== TASK: Water Systems (Tier 4) ==========
+    // Creates the water systems only. Their configuration (flow-map generation)
+    // and descriptor sets go through WaterSystemGroup's RendererSystems-based
+    // API, so they run at the start of the finalize task, once these systems
+    // are registered.
     {
+        struct Staged {
+            std::unique_ptr<WaterSystem> water;
+            std::unique_ptr<FlowMapGenerator> flowMap;
+            std::unique_ptr<WaterDisplacement> displacement;
+            std::unique_ptr<FoamBuffer> foam;
+            std::unique_ptr<SSRSystem> ssr;
+            std::unique_ptr<WaterTileCull> tileCull;
+            std::unique_ptr<WaterGBuffer> gBuffer;
+            std::unique_ptr<OceanFFT> oceanFFT;
+        };
+        auto staged = std::make_shared<Staged>();
+
         Loading::SystemInitTask task;
         task.id = "water";
         task.displayName = "Water systems";
         task.dependencies = {"vegetation", "atmosphere"};
         task.weight = 0.1f;
-        task.cpuWork = [&r, ctxPtr = makeTaskContext()]() -> bool {
+        task.cpuWork = [&r, ctxPtr = makeTaskContext(), staged]() -> bool {
             if (r.progressCallback_) r.progressCallback_(0.75f, "Water systems");
             INIT_PROFILE_PHASE("WaterSystems");
 
@@ -995,63 +1111,100 @@ std::vector<Loading::SystemInitTask> RendererBuilder::buildInitTasks(Renderer& r
             auto waterBundle = WaterSystemGroup::createAll(waterDeps);
             if (!waterBundle) return false;
 
-            r.systems_->setWater(std::move(waterBundle->system));
-            r.systems_->setFlowMap(std::move(waterBundle->flowMap));
-            r.systems_->setWaterDisplacement(std::move(waterBundle->displacement));
-            r.systems_->setFoam(std::move(waterBundle->foam));
-            r.systems_->setSSR(std::move(waterBundle->ssr));
-            if (waterBundle->tileCull) r.systems_->setWaterTileCull(std::move(waterBundle->tileCull));
-            if (waterBundle->gBuffer) r.systems_->setWaterGBuffer(std::move(waterBundle->gBuffer));
-            if (waterBundle->oceanFFT) r.systems_->setOceanFFT(std::move(waterBundle->oceanFFT));
-
-            // Configure water subsystems
-            TerrainFactory::Config terrainFactoryConfig{};
-            terrainFactoryConfig.resourcePath = r.resourcePath;
-            TerrainConfig terrainConfig = TerrainFactory::buildTerrainConfig(terrainFactoryConfig);
-
-            if (!WaterSystemGroup::configureSubsystems(*r.systems_, terrainConfig)) return false;
-            if (!WaterSystemGroup::createDescriptorSets(*r.systems_,
-                    r.systems_->globalBuffers().uniformBuffers.buffers,
-                    sizeof(UniformBufferObject), r.systems_->shadow(), r.systems_->terrain(),
-                    r.systems_->postProcess(), r.vulkanContext_->getDepthSampler())) return false;
-
+            staged->water = std::move(waterBundle->system);
+            staged->flowMap = std::move(waterBundle->flowMap);
+            staged->displacement = std::move(waterBundle->displacement);
+            staged->foam = std::move(waterBundle->foam);
+            staged->ssr = std::move(waterBundle->ssr);
+            staged->tileCull = std::move(waterBundle->tileCull);
+            staged->gBuffer = std::move(waterBundle->gBuffer);
+            staged->oceanFFT = std::move(waterBundle->oceanFFT);
+            return true;
+        };
+        task.gpuWork = [&r, staged]() -> bool {
+            r.systems_->setWater(std::move(staged->water));
+            r.systems_->setFlowMap(std::move(staged->flowMap));
+            r.systems_->setWaterDisplacement(std::move(staged->displacement));
+            r.systems_->setFoam(std::move(staged->foam));
+            r.systems_->setSSR(std::move(staged->ssr));
+            if (staged->tileCull) r.systems_->setWaterTileCull(std::move(staged->tileCull));
+            if (staged->gBuffer) r.systems_->setWaterGBuffer(std::move(staged->gBuffer));
+            if (staged->oceanFFT) r.systems_->setOceanFFT(std::move(staged->oceanFFT));
             return true;
         };
         tasks.push_back(std::move(task));
     }
 
     // ========== TASK: Finalization (Tier 5) ==========
-    // Wiring, geometry, culling, debug, profiler, roads, UBO builder
+    // Water configuration, wiring, geometry, culling, debug, profiler, roads, UBO builder
     {
+        struct Staged {
+            std::unique_ptr<ScreenSpaceShadowSystem> screenShadow;
+            std::unique_ptr<DeferredTerrainObjects> deferredObjects;
+            std::unique_ptr<CatmullClarkSystem> catmullClark;
+            std::unique_ptr<HiZSystem> hiZ;
+            std::unique_ptr<GPUSceneBuffer> gpuSceneBuffer;
+            std::unique_ptr<GPUCullPass> gpuCullPass;
+            std::unique_ptr<ShadowCullPass> shadowCullPass;
+            std::unique_ptr<Profiler> profiler;
+            std::unique_ptr<DebugLineSystem> debugLine;
+        };
+        auto staged = std::make_shared<Staged>();
+
         Loading::SystemInitTask task;
         task.id = "finalize";
         task.displayName = "Finalizing systems";
         task.dependencies = {"water"};
         task.weight = 0.15f;
-        task.cpuWork = [&r, ctxPtr = makeTaskContext(), sceneOrigin]() -> bool {
+        task.cpuWork = [&r, ctxPtr = makeTaskContext(), sceneOrigin, staged]() -> bool {
             if (r.progressCallback_) r.progressCallback_(0.85f, "Finalizing systems");
 
             vk::Device device = r.vulkanContext_->getVkDevice();
             CoreResources core = CoreResources::collect(
                 r.systems_->postProcess(), r.systems_->shadow(), r.systems_->terrain(), Renderer::MAX_FRAMES_IN_FLIGHT);
 
+            // Configure water subsystems (registered by the water task's gpuWork)
+            {
+                INIT_PROFILE_PHASE("WaterConfigure");
+                TerrainFactory::Config terrainFactoryConfig{};
+                terrainFactoryConfig.resourcePath = r.resourcePath;
+                TerrainConfig terrainConfig = TerrainFactory::buildTerrainConfig(terrainFactoryConfig);
+
+                if (!WaterSystemGroup::configureSubsystems(*r.systems_, terrainConfig)) return false;
+                if (!WaterSystemGroup::createDescriptorSets(*r.systems_,
+                        r.systems_->globalBuffers().uniformBuffers.buffers,
+                        sizeof(UniformBufferObject), r.systems_->shadow(), r.systems_->terrain(),
+                        r.systems_->postProcess(), r.vulkanContext_->getDepthSampler())) return false;
+            }
+
             // Screen-space shadow resolve (pre-compute shadows into buffer)
             // Must be created BEFORE descriptor wiring so terrain/grass/material
             // descriptors bind the real shadow buffer instead of placeholders.
             {
-                auto screenShadow = ScreenSpaceShadowSystem::create(*ctxPtr);
-                if (screenShadow) {
-                    screenShadow->setDepthSource(core.hdr.depthView, r.vulkanContext_->getDepthSampler());
-                    screenShadow->setShadowMapSource(
+                staged->screenShadow = ScreenSpaceShadowSystem::create(*ctxPtr);
+                if (staged->screenShadow) {
+                    staged->screenShadow->setDepthSource(core.hdr.depthView, r.vulkanContext_->getDepthSampler());
+                    staged->screenShadow->setShadowMapSource(
                         static_cast<vk::ImageView>(r.systems_->shadow().getShadowImageView()),
                         static_cast<vk::Sampler>(r.systems_->shadow().getShadowSampler()));
-                    r.systems_->setScreenSpaceShadow(std::move(screenShadow));
                     SDL_Log("ScreenSpaceShadowSystem: Initialized for shadow buffer optimization");
                 }
             }
+            // Raw pointer for bindings built below: stable across the move into
+            // the registry, and also used by the runtime-invoked bindings lambda.
+            ScreenSpaceShadowSystem* screenShadow = staged->screenShadow.get();
 
-            // Cross-system descriptor set wiring
+            // Cross-system descriptor set wiring. SystemWiring looks the screen
+            // shadow buffer up in the registry, which does not hold it until this
+            // task's gpuWork, so hand it to terrain and grass here (both setters
+            // only store the handles for their descriptor updates).
             SystemWiring wiring(device, Renderer::MAX_FRAMES_IN_FLIGHT);
+            if (screenShadow) {
+                r.systems_->terrain().setScreenShadowBuffer(
+                    screenShadow->getShadowBufferView(), screenShadow->getShadowBufferSampler());
+                r.systems_->grass().setScreenShadowBuffer(
+                    screenShadow->getShadowBufferView(), screenShadow->getShadowBufferSampler());
+            }
             wiring.wireTerrainDescriptors(*r.systems_);
 
             // Deferred terrain objects (trees, detritus - generated on first frame)
@@ -1087,14 +1240,11 @@ std::vector<Loading::SystemInitTask> RendererBuilder::buildInitTasks(Renderer& r
                 deferredConfig.descriptorSetLayout = r.scenePipeline_.getVkDescriptorSetLayout();
                 deferredConfig.framesInFlight = Renderer::MAX_FRAMES_IN_FLIGHT;
 
-                auto deferredObjects = DeferredTerrainObjects::create(deferredConfig);
-                if (deferredObjects) {
-                    r.systems_->setDeferredTerrainObjects(std::move(deferredObjects));
-                }
+                staged->deferredObjects = DeferredTerrainObjects::create(deferredConfig);
             }
 
             // Common bindings for descriptor sets
-            auto getCommonBindings = [&r](uint32_t frameIndex) -> MaterialDescriptorFactory::CommonBindings {
+            auto getCommonBindings = [&r, screenShadow](uint32_t frameIndex) -> MaterialDescriptorFactory::CommonBindings {
                 MaterialDescriptorFactory::CommonBindings common{};
                 common.uniformBuffer = r.systems_->globalBuffers().uniformBuffers.buffers[frameIndex];
                 common.uniformBufferSize = sizeof(UniformBufferObject);
@@ -1112,9 +1262,9 @@ std::vector<Loading::SystemInitTask> RendererBuilder::buildInitTasks(Renderer& r
                 common.snowMaskSampler = r.systems_->snowMask().getSnowMaskSampler();
                 common.placeholderTextureView = r.systems_->scene().getSceneBuilder().getWhiteTexture()->getImageView();
                 common.placeholderTextureSampler = r.systems_->scene().getSceneBuilder().getWhiteTexture()->getSampler();
-                if (r.systems_->hasScreenSpaceShadow()) {
-                    common.screenShadowView = r.systems_->screenSpaceShadow()->getShadowBufferView();
-                    common.screenShadowSampler = r.systems_->screenSpaceShadow()->getShadowBufferSampler();
+                if (screenShadow) {
+                    common.screenShadowView = screenShadow->getShadowBufferView();
+                    common.screenShadowSampler = screenShadow->getShadowBufferSampler();
                 }
                 return common;
             };
@@ -1127,8 +1277,8 @@ std::vector<Loading::SystemInitTask> RendererBuilder::buildInitTasks(Renderer& r
                 return false;
             }
 
-            if (r.systems_->deferredTerrainObjects()) {
-                r.systems_->deferredTerrainObjects()->setCommonBindingsFunc(getCommonBindings);
+            if (staged->deferredObjects) {
+                staged->deferredObjects->setCommonBindingsFunc(getCommonBindings);
             }
 
             // Wire all remaining cross-system descriptors
@@ -1152,7 +1302,7 @@ std::vector<Loading::SystemInitTask> RendererBuilder::buildInitTasks(Renderer& r
                 };
                 auto geomBundle = GeometrySystemGroup::createAll(geomDeps);
                 if (!geomBundle) return false;
-                r.systems_->setCatmullClark(std::move(geomBundle->catmullClark));
+                staged->catmullClark = std::move(geomBundle->catmullClark);
             }
 
             // Sky descriptor sets
@@ -1161,15 +1311,14 @@ std::vector<Loading::SystemInitTask> RendererBuilder::buildInitTasks(Renderer& r
                     sizeof(UniformBufferObject), r.systems_->atmosphereLUT())) return false;
 
             // Hi-Z occlusion culling (optional)
-            auto hiZSystem = HiZSystem::create(*ctxPtr, r.vulkanContext_->getDepthFormat());
-            if (hiZSystem) {
-                r.systems_->setHiZ(std::move(hiZSystem));
-                r.systems_->hiZ().setDepthBuffer(core.hdr.depthView, r.vulkanContext_->getDepthSampler());
+            staged->hiZ = HiZSystem::create(*ctxPtr, r.vulkanContext_->getDepthFormat());
+            if (staged->hiZ) {
+                staged->hiZ->setDepthBuffer(core.hdr.depthView, r.vulkanContext_->getDepthSampler());
                 // Scene objects are deferred and do not exist at bootstrap; only rocks are
                 // present. Per-frame Hi-Z culling of scene objects runs off the ECS-sourced
                 // GPUSceneBuffer path, so no scene list is gathered here.
                 const std::vector<ecs::RenderData> noSceneObjects;
-                r.systems_->hiZ().gatherObjects(
+                staged->hiZ->gatherObjects(
                     noSceneObjects,
                     r.systems_->rocks().getSceneObjects());
             }
@@ -1178,13 +1327,13 @@ std::vector<Loading::SystemInitTask> RendererBuilder::buildInitTasks(Renderer& r
             {
                 auto gpuSceneBuffer = std::make_unique<GPUSceneBuffer>();
                 if (gpuSceneBuffer->init(r.vulkanContext_->getAllocator(), Renderer::MAX_FRAMES_IN_FLIGHT)) {
-                    r.systems_->setGPUSceneBuffer(std::move(gpuSceneBuffer));
+                    staged->gpuSceneBuffer = std::move(gpuSceneBuffer);
                     SDL_Log("GPUSceneBuffer: Initialized for GPU-driven rendering");
                 }
             }
 
             // GPU culling pass
-            if (r.systems_->hasGPUSceneBuffer()) {
+            if (staged->gpuSceneBuffer) {
                 GPUCullPass::InitInfo cullInfo{};
                 cullInfo.device = device;
                 cullInfo.raiiDevice = &r.vulkanContext_->getRaiiDevice();
@@ -1195,10 +1344,10 @@ std::vector<Loading::SystemInitTask> RendererBuilder::buildInitTasks(Renderer& r
 
                 auto gpuCullPass = GPUCullPass::create(cullInfo);
                 if (gpuCullPass) {
-                    if (r.systems_->hiZ().getHiZPyramidView() != VK_NULL_HANDLE) {
+                    if (staged->hiZ && staged->hiZ->getHiZPyramidView() != VK_NULL_HANDLE) {
                         gpuCullPass->setHiZPyramid(
-                            r.systems_->hiZ().getHiZPyramidView(),
-                            r.systems_->hiZ().getHiZSampler());
+                            staged->hiZ->getHiZPyramidView(),
+                            staged->hiZ->getHiZSampler());
                     }
                     const auto* whiteTexture = r.systems_->scene().getSceneBuilder().getWhiteTexture();
                     if (whiteTexture) {
@@ -1206,7 +1355,7 @@ std::vector<Loading::SystemInitTask> RendererBuilder::buildInitTasks(Renderer& r
                             whiteTexture->getImageView(),
                             whiteTexture->getSampler());
                     }
-                    r.systems_->setGPUCullPass(std::move(gpuCullPass));
+                    staged->gpuCullPass = std::move(gpuCullPass);
                     SDL_Log("GPUCullPass: Initialized for frustum culling");
                 }
             }
@@ -1214,7 +1363,7 @@ std::vector<Loading::SystemInitTask> RendererBuilder::buildInitTasks(Renderer& r
             // Per-cascade shadow culling pass + GPU-driven indirect shadow draw resources.
             // Reuses the scene cull-object buffer (shared with the color pass) and the
             // GPUSceneBuffer instance buffer; produces one indirect command buffer per cascade.
-            if (r.systems_->hasGPUSceneBuffer()) {
+            if (staged->gpuSceneBuffer) {
                 ShadowCullPass::InitInfo shadowCullInfo{};
                 shadowCullInfo.device = device;
                 shadowCullInfo.raiiDevice = &r.vulkanContext_->getRaiiDevice();
@@ -1232,11 +1381,11 @@ std::vector<Loading::SystemInitTask> RendererBuilder::buildInitTasks(Renderer& r
                             whiteTexture->getImageView(), whiteTexture->getSampler());
                     }
                     // Write the cull descriptor sets once (buffers are stable for their lifetime).
-                    shadowCullPass->prepareDescriptors(&r.systems_->gpuSceneBuffer());
-                    r.systems_->setShadowCullPass(std::move(shadowCullPass));
+                    shadowCullPass->prepareDescriptors(staged->gpuSceneBuffer.get());
+                    staged->shadowCullPass = std::move(shadowCullPass);
 
                     // Build the indirect shadow pipeline + instance descriptor sets.
-                    if (!r.systems_->shadow().initIndirectShadowPath(r.systems_->gpuSceneBuffer())) {
+                    if (!r.systems_->shadow().initIndirectShadowPath(*staged->gpuSceneBuffer)) {
                         SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
                             "ShadowSystem: indirect shadow path unavailable; using instanced path");
                     }
@@ -1245,13 +1394,13 @@ std::vector<Loading::SystemInitTask> RendererBuilder::buildInitTasks(Renderer& r
 
             // Instance descriptor sets (set 1) for the instanced indirect draw pipeline.
             // Created here because it needs the GPUSceneBuffer's instance buffers.
-            if (r.systems_->hasGPUSceneBuffer() && r.getDescriptorPool()) {
+            if (staged->gpuSceneBuffer && r.getDescriptorPool()) {
                 r.instancedScenePipeline_.createInstanceDescriptorSets(
-                    device, *r.getDescriptorPool(), r.systems_->gpuSceneBuffer(), Renderer::MAX_FRAMES_IN_FLIGHT);
+                    device, *r.getDescriptorPool(), *staged->gpuSceneBuffer, Renderer::MAX_FRAMES_IN_FLIGHT);
             }
 
             // Profiler
-            r.systems_->setProfiler(Profiler::create(device, r.vulkanContext_->getVkPhysicalDevice(), Renderer::MAX_FRAMES_IN_FLIGHT));
+            staged->profiler = Profiler::create(device, r.vulkanContext_->getVkPhysicalDevice(), Renderer::MAX_FRAMES_IN_FLIGHT);
 
             // Wire caustics (after water is fully initialized)
             wiring.wireCausticsToTerrain(*r.systems_);
@@ -1263,9 +1412,8 @@ std::vector<Loading::SystemInitTask> RendererBuilder::buildInitTasks(Renderer& r
             }
 
             // Debug line system
-            auto debugLineSystem = DebugLineSystem::create(*ctxPtr, core.hdr.renderPass);
-            if (!debugLineSystem) return false;
-            r.systems_->setDebugLineSystem(std::move(debugLineSystem));
+            staged->debugLine = DebugLineSystem::create(*ctxPtr, core.hdr.renderPass);
+            if (!staged->debugLine) return false;
 
             // Road/river data
             {
@@ -1330,6 +1478,18 @@ std::vector<Loading::SystemInitTask> RendererBuilder::buildInitTasks(Renderer& r
             r.systems_->uboBuilder().setSystems(uboSystems);
 
             if (r.progressCallback_) r.progressCallback_(0.95f, "Systems ready");
+            return true;
+        };
+        task.gpuWork = [&r, staged]() -> bool {
+            if (staged->screenShadow) r.systems_->setScreenSpaceShadow(std::move(staged->screenShadow));
+            if (staged->deferredObjects) r.systems_->setDeferredTerrainObjects(std::move(staged->deferredObjects));
+            r.systems_->setCatmullClark(std::move(staged->catmullClark));
+            if (staged->hiZ) r.systems_->setHiZ(std::move(staged->hiZ));
+            if (staged->gpuSceneBuffer) r.systems_->setGPUSceneBuffer(std::move(staged->gpuSceneBuffer));
+            if (staged->gpuCullPass) r.systems_->setGPUCullPass(std::move(staged->gpuCullPass));
+            if (staged->shadowCullPass) r.systems_->setShadowCullPass(std::move(staged->shadowCullPass));
+            r.systems_->setProfiler(std::move(staged->profiler));
+            r.systems_->setDebugLineSystem(std::move(staged->debugLine));
             return true;
         };
         tasks.push_back(std::move(task));

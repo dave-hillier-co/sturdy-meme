@@ -444,3 +444,33 @@ void LoadingRenderer::cleanup() {
     initialized_ = false;
     SDL_Log("LoadingRenderer cleaned up");
 }
+
+void LoadingRenderer::abandon() {
+    if (!initialized_) return;
+
+    // The raii handles would call vkDestroy* on the dead device from their
+    // destructors; release() detaches the handle so they do not.
+    auto drop = [](auto& handle) {
+        if (handle) {
+            (void)handle->release();
+            handle.reset();
+        }
+    };
+    drop(inFlightFence_);
+    drop(renderFinishedSemaphore_);
+    drop(imageAvailableSemaphore_);
+    commandBuffers_.clear();
+    drop(commandPool_);
+    drop(pipeline_);
+    drop(pipelineLayout_);
+    for (auto& framebuffer : framebuffers_) {
+        (void)framebuffer.release();
+    }
+    framebuffers_.clear();
+    drop(renderPass_);
+
+    ctx_.reset();
+    initialized_ = false;
+    SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                "LoadingRenderer abandoned: its VulkanContext was destroyed before cleanup");
+}

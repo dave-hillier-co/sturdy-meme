@@ -13,7 +13,6 @@ PassScheduler::PassId PassScheduler::addPass(const std::string& name, PassFuncti
         .name = name,
         .execute = std::move(execute),
         .canUseSecondary = false,
-        .mainThreadOnly = true,
         .priority = 0
     });
 }
@@ -196,66 +195,44 @@ void PassScheduler::execute(FrameContext& context, TaskScheduler* scheduler) {
         return;
     }
 
+    // Every pass records into context.commandBuffer, the single frame primary.
+    // Vulkan command buffers are externally synchronized, so passes within a
+    // level must record sequentially on the calling thread; dependency levels
+    // only order recording. The one parallel path is HDR's secondary command
+    // buffers (executeWithSecondaryBuffers), which record into per-thread
+    // secondaries and are then executed from the primary on this thread.
     for (const auto& level : executionLevels_) {
-        if (level.empty()) continue;
-
-        // Check if we can parallelize this level
-        bool canParallelize = scheduler != nullptr && level.size() > 1;
-        if (canParallelize) {
-            // Check if all passes in level support parallel execution
-            for (PassId id : level) {
-                if (passes_[id].config.mainThreadOnly) {
-                    canParallelize = false;
-                    break;
-                }
+        for (PassId id : level) {
+            // Bounds check
+            if (id >= passes_.size()) {
+                SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
+                    "PassScheduler: Invalid pass ID %u (max %zu)", id, passes_.size());
+                continue;
             }
-        }
 
-        if (canParallelize) {
-            // Execute passes in parallel using task scheduler
-            TaskGroup group;
-            for (PassId id : level) {
-                if (!passes_[id].enabled) continue;
+            if (!passes_[id].enabled) continue;
 
-                scheduler->submit([this, id, &context]() {
-                    passes_[id].config.execute(context);
-                }, &group);
+            const auto& config = passes_[id].config;
+
+            // Skip passes with null execute function
+            if (!config.execute) {
+                SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                    "PassScheduler: Skipping pass %s with null execute function", config.name.c_str());
+                continue;
             }
-            group.wait();
-        } else {
-            // Execute passes sequentially
-            for (PassId id : level) {
-                // Bounds check
-                if (id >= passes_.size()) {
-                    SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
-                        "PassScheduler: Invalid pass ID %u (max %zu)", id, passes_.size());
-                    continue;
-                }
 
-                if (!passes_[id].enabled) continue;
+            // Check if this pass uses secondary command buffers for parallel recording
+            if (config.canUseSecondary &&
+                config.secondarySlots > 0 &&
+                config.secondaryRecord &&
+                context.threadedCommandPool &&
+                scheduler) {
 
-                const auto& config = passes_[id].config;
-
-                // Skip passes with null execute function
-                if (!config.execute) {
-                    SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
-                        "PassScheduler: Skipping pass %s with null execute function", config.name.c_str());
-                    continue;
-                }
-
-                // Check if this pass uses secondary command buffers for parallel recording
-                if (config.canUseSecondary &&
-                    config.secondarySlots > 0 &&
-                    config.secondaryRecord &&
-                    context.threadedCommandPool &&
-                    scheduler) {
-
-                    // Parallel secondary command buffer recording (Phase 4)
-                    executeWithSecondaryBuffers(context, passes_[id], scheduler);
-                } else {
-                    // Standard primary buffer execution
-                    config.execute(context);
-                }
+                // Parallel secondary command buffer recording (Phase 4)
+                executeWithSecondaryBuffers(context, passes_[id], scheduler);
+            } else {
+                // Standard primary buffer execution
+                config.execute(context);
             }
         }
     }

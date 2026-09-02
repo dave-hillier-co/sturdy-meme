@@ -67,7 +67,6 @@ PassIds addPasses(PassScheduler& graph, RendererSystems& systems, const Config& 
             }
         },
         .canUseSecondary = false,
-        .mainThreadOnly = true,
         .priority = 50
     });
 
@@ -83,7 +82,6 @@ PassIds addPasses(PassScheduler& graph, RendererSystems& systems, const Config& 
                 systems.profiler().endGpuZone(ctx.commandBuffer, "ShadowResolve");
             },
             .canUseSecondary = false,
-            .mainThreadOnly = true,
             .priority = 45  // Between shadow (50) and HDR (30)
         });
     }

@@ -1,7 +1,4 @@
 #include "AsyncSystemLoader.h"
-#include "../LoadingRenderer.h"
-#include "../vulkan/VulkanContext.h"
-#include "../threading/TaskScheduler.h"
 #include <SDL3/SDL.h>
 #include <algorithm>
 #include <chrono>
@@ -21,8 +18,6 @@ AsyncSystemLoader::~AsyncSystemLoader() {
 }
 
 bool AsyncSystemLoader::init(const InitInfo& info) {
-    loadingRenderer_ = info.loadingRenderer;
-
     // Determine worker count
     uint32_t workerCount = info.workerCount;
     if (workerCount == 0) {
@@ -114,7 +109,9 @@ void AsyncSystemLoader::workerLoop() {
                 return !cpuWorkQueue_.empty() || !running_;
             });
 
-            if (!running_ && cpuWorkQueue_.empty()) {
+            // Leave immediately on cancel, even with queued work: a cancelled
+            // loader must not start tasks whose dependencies may be torn down.
+            if (!running_) {
                 return;
             }
 
@@ -289,43 +286,13 @@ SystemLoadProgress AsyncSystemLoader::getProgress() const {
     return progress;
 }
 
-void AsyncSystemLoader::runLoadingLoop() {
-    SDL_Log("AsyncSystemLoader: Starting loading loop");
-
-    while (!isComplete()) {
-        // Process completed CPU work (GPU uploads on main thread)
-        pollCompletions();
-
-        // Render loading screen frame
-        if (loadingRenderer_) {
-            auto progress = getProgress();
-            loadingRenderer_->setProgress(progress.progress);
-            loadingRenderer_->render();
-        }
-
-        // Keep window responsive
-        SDL_PumpEvents();
-
-        // Small sleep to avoid spinning too fast
-        SDL_Delay(1);
-    }
-
-    // Process any remaining completed jobs
-    pollCompletions();
-
-    auto finalProgress = getProgress();
-    if (finalProgress.hasError) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
-                    "AsyncSystemLoader: Loading failed - %s",
-                    finalProgress.errorMessage.c_str());
-    } else {
-        SDL_Log("AsyncSystemLoader: Loading complete (%u tasks)",
-                finalProgress.completedTasks);
-    }
-}
-
-void AsyncSystemLoader::shutdown() {
+void AsyncSystemLoader::cancel() {
     running_ = false;
+    {
+        // Take the queue lock so a worker cannot miss the wake-up between
+        // checking the predicate and blocking on the condition variable.
+        std::lock_guard<std::mutex> lock(queueMutex_);
+    }
     queueCondition_.notify_all();
 
     for (auto& worker : workers_) {
@@ -334,6 +301,10 @@ void AsyncSystemLoader::shutdown() {
         }
     }
     workers_.clear();
+}
+
+void AsyncSystemLoader::shutdown() {
+    cancel();
 
     tasks_.clear();
     taskOrder_.clear();

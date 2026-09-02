@@ -104,7 +104,7 @@ std::unique_ptr<Renderer> Renderer::create(const InitInfo& info) {
     return instance;
 }
 
-bool Renderer::pollAsyncInit() {
+AsyncInitStatus Renderer::pollAsyncInit() {
     return RendererBuilder::pollAsyncInit(*this);
 }
 
@@ -153,12 +153,29 @@ void Renderer::updatePhysicsDebug(PhysicsWorld& physics, const glm::vec3& camera
 }
 #endif
 
+void Renderer::cancelAsyncInit() {
+    if (asyncInit_ && asyncInit_->loader) {
+        asyncInit_->loader->cancel();
+    }
+}
+
 void Renderer::cleanup() {
+    // Async init may still be running (quit during the loading screen, or an
+    // init failure after the loader started). Stop scheduling and join the
+    // workers before anything they read or build is torn down. Task storage
+    // (staged, never-registered systems and per-task command-pool contexts)
+    // is released only after the device is idle, below.
+    cancelAsyncInit();
+
     vk::Device device = vulkanContext_->getVkDevice();
     VmaAllocator allocator = vulkanContext_->getAllocator();
 
     if (device != VK_NULL_HANDLE) {
         vkDeviceWaitIdle(device);
+
+        // Drops the loader (task lambdas and anything they still own) and the
+        // stored InitContexts now that no worker runs and the GPU is idle.
+        asyncInit_.reset();
 
         // Joins the PNG-encode thread and frees the staging buffer while the
         // allocator is still alive.

@@ -205,8 +205,11 @@ Compute
 
 Square brackets denote conditionally registered passes.
 
-The graph orders command recording and exposes dependency levels. Most passes currently record
-sequentially into the primary command buffer. HDR uses three secondary-command-buffer slots:
+The graph orders command recording and exposes dependency levels. Passes always record
+sequentially on the calling thread into the single frame primary command buffer, even when they
+share a dependency level; Vulkan command buffers are externally synchronized, so the levels
+express independence, not parallel recording. The only parallel recording is HDR, which uses
+three secondary-command-buffer slots recorded on worker threads and executed from the primary:
 
 | Slot | Drawables |
 | --- | --- |

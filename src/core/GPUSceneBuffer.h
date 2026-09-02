@@ -84,20 +84,20 @@ struct GPUMeshBatch {
 class GPUSceneBuffer {
 public:
     GPUSceneBuffer() = default;
-    ~GPUSceneBuffer() = default;
+    // Releases the GPU buffers (cleanup() is idempotent, so an explicit
+    // earlier cleanup() is also fine). Held by unique_ptr; not movable so a
+    // moved-from instance can never double-free.
+    ~GPUSceneBuffer() { cleanup(); }
 
-    // Non-copyable
     GPUSceneBuffer(const GPUSceneBuffer&) = delete;
     GPUSceneBuffer& operator=(const GPUSceneBuffer&) = delete;
-
-    // Movable
-    GPUSceneBuffer(GPUSceneBuffer&&) = default;
-    GPUSceneBuffer& operator=(GPUSceneBuffer&&) = default;
+    GPUSceneBuffer(GPUSceneBuffer&&) = delete;
+    GPUSceneBuffer& operator=(GPUSceneBuffer&&) = delete;
 
     // Initialize buffers (call once at startup)
     bool init(VmaAllocator allocator, uint32_t frameCount);
 
-    // Cleanup (call before shutdown)
+    // Release GPU buffers. Idempotent; also run by the destructor.
     void cleanup();
 
     // Begin a new frame (clears previous frame's data)

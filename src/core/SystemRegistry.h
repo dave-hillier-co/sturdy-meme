@@ -2,6 +2,8 @@
 
 #include <entt/entt.hpp>
 #include <memory>
+#include <mutex>
+#include <shared_mutex>
 #include <vector>
 #include <functional>
 
@@ -23,6 +25,13 @@
  *   registry.add<ScatterSystem, DetritusTag>(std::move(detritus));
  *
  * Destruction happens in reverse registration order via destroyAll().
+ *
+ * Thread safety: registration (add/emplace) and erasure take an exclusive
+ * lock; lookups (get/find/has) take a shared lock. Async init registers
+ * systems on the main thread while loader workers may still be looking up
+ * already-registered ones. Returning T& after the lock is released is safe:
+ * Holder owns the unique_ptr, so the T* is stable across the underlying
+ * dense-map rehash, and a system is only erased by destroyAll().
  */
 class SystemRegistry {
 public:
@@ -42,9 +51,18 @@ public:
     template<typename T, typename Tag = void>
     T& add(std::unique_ptr<T> system) {
         T* raw = system.get();
+        std::unique_lock<std::shared_mutex> lock(mutex_);
         registry_.ctx().emplace<Holder<T, Tag>>(std::move(system));
         destructors_.push_back([this]() {
-            registry_.ctx().erase<Holder<T, Tag>>();
+            // Unlink under the exclusive lock, but run the system's destructor
+            // outside it so a destructor that looks up other systems cannot
+            // deadlock against the registry lock.
+            std::unique_ptr<T> victim;
+            {
+                std::unique_lock<std::shared_mutex> eraseLock(mutex_);
+                victim = std::move(registry_.ctx().get<Holder<T, Tag>>().ptr);
+                registry_.ctx().erase<Holder<T, Tag>>();
+            }
         });
         return *raw;
     }
@@ -64,12 +82,14 @@ public:
      */
     template<typename T, typename Tag = void>
     T& get() {
+        std::shared_lock<std::shared_mutex> lock(mutex_);
         auto& holder = registry_.ctx().get<Holder<T, Tag>>();
         return *holder.ptr;
     }
 
     template<typename T, typename Tag = void>
     const T& get() const {
+        std::shared_lock<std::shared_mutex> lock(mutex_);
         const auto& holder = registry_.ctx().get<const Holder<T, Tag>>();
         return *holder.ptr;
     }
@@ -79,12 +99,14 @@ public:
      */
     template<typename T, typename Tag = void>
     T* find() {
+        std::shared_lock<std::shared_mutex> lock(mutex_);
         auto* holder = registry_.ctx().find<Holder<T, Tag>>();
         return holder ? holder->ptr.get() : nullptr;
     }
 
     template<typename T, typename Tag = void>
     const T* find() const {
+        std::shared_lock<std::shared_mutex> lock(mutex_);
         const auto* holder = registry_.ctx().find<const Holder<T, Tag>>();
         return holder ? holder->ptr.get() : nullptr;
     }
@@ -94,6 +116,7 @@ public:
      */
     template<typename T, typename Tag = void>
     bool has() const {
+        std::shared_lock<std::shared_mutex> lock(mutex_);
         return registry_.ctx().find<const Holder<T, Tag>>() != nullptr;
     }
 
@@ -102,10 +125,14 @@ public:
      * Safe to call multiple times.
      */
     void destroyAll() {
-        for (auto it = destructors_.rbegin(); it != destructors_.rend(); ++it) {
+        std::vector<std::function<void()>> destructors;
+        {
+            std::unique_lock<std::shared_mutex> lock(mutex_);
+            destructors.swap(destructors_);
+        }
+        for (auto it = destructors.rbegin(); it != destructors.rend(); ++it) {
             (*it)();
         }
-        destructors_.clear();
     }
 
 private:
@@ -115,6 +142,7 @@ private:
         explicit Holder(std::unique_ptr<T> p) : ptr(std::move(p)) {}
     };
 
+    mutable std::shared_mutex mutex_;
     entt::registry registry_;
     std::vector<std::function<void()>> destructors_;
 };

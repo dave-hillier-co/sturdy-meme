@@ -80,7 +80,7 @@ bool Application::init(const std::string& title, int width, int height) {
         vulkanContext = std::make_unique<VulkanContext>();
         if (!vulkanContext->initInstance()) {
             SDL_Log("Failed to initialize Vulkan instance (early init)");
-            SDL_Quit();
+            shutdown();
             return false;
         }
     }
@@ -92,7 +92,7 @@ bool Application::init(const std::string& title, int width, int height) {
         window = SDL_CreateWindow(title.c_str(), width, height, SDL_WINDOW_VULKAN | SDL_WINDOW_RESIZABLE);
         if (!window) {
             SDL_Log("Failed to create window: %s", SDL_GetError());
-            SDL_Quit();
+            shutdown();
             return false;
         }
     }
@@ -105,8 +105,7 @@ bool Application::init(const std::string& title, int width, int height) {
         INIT_PROFILE_PHASE("VulkanDevice");
         if (!vulkanContext->initDevice(window)) {
             SDL_Log("Failed to initialize Vulkan device");
-            SDL_DestroyWindow(window);
-            SDL_Quit();
+            shutdown();
             return false;
         }
     }
@@ -173,6 +172,8 @@ bool Application::init(const std::string& title, int width, int height) {
     // (a failed task does not stop its siblings, and on quit every worker is
     // still running). The loading renderer borrows the VulkanContext the
     // renderer owns, so it is cleaned up before the renderer is released.
+    // Everything else (renderer, physics, GUI, window, TaskScheduler, SDL) is
+    // released by shutdown(), which tolerates whatever subset exists so far.
     auto abortInit = [this, &loadingRenderer]() {
         InitProfiler::get().setPresentingActive(false);
         if (renderer_) {
@@ -182,11 +183,7 @@ bool Application::init(const std::string& title, int width, int height) {
             loadingRenderer->cleanup();
             loadingRenderer.reset();
         }
-        renderer_.reset();
-        TaskScheduler::instance().shutdown();
-        SDL_DestroyWindow(window);
-        window = nullptr;
-        SDL_Quit();
+        shutdown();
     };
 
     // If async init is enabled, poll for completion while rendering loading screen
@@ -292,6 +289,9 @@ bool Application::init(const std::string& title, int width, int height) {
     }
 
     if (quitDuringSetup || !worldSetupOk) {
+        // World setup may have adopted the physics world and populated the
+        // ECS before failing; shutdown() releases whatever exists.
+        abortInit();
         return false;
     }
 
@@ -317,6 +317,7 @@ bool Application::init(const std::string& title, int width, int height) {
                                   &physicsTerrainManager_, &debugCommands_);
         if (!gui_) {
             SDL_Log("Failed to initialize GUI system");
+            abortInit();
             return false;
         }
     }
@@ -1442,14 +1443,22 @@ void Application::run() {
     renderer_->waitIdle();
 }
 
+// Idempotent and safe after a partially completed init(): every step checks
+// that what it tears down exists, so init() failure paths and main() can both
+// call it, and a second call is a no-op.
 void Application::shutdown() {
-    renderer_->waitIdle();
+    running = false;
+    if (renderer_) {
+        renderer_->waitIdle();
+    }
     gui_.reset();  // RAII cleanup via destructor
     // InputSystem cleanup handled by destructor (RAII)
 
     // Destroy ragdolls before physics world
-    for (auto& ragdoll : ragdolls_) {
-        ragdoll.destroy(physics());
+    if (physics_) {
+        for (auto& ragdoll : ragdolls_) {
+            ragdoll.destroy(physics());
+        }
     }
     ragdolls_.clear();
 

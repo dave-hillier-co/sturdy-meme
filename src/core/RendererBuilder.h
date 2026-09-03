@@ -49,7 +49,9 @@ public:
     static bool createSkinnedMeshRendererDescriptorSets(Renderer& r, SceneManager& scene,
                                                         SkinnedMeshRenderer& skinnedMesh);
 
-    static void setupPassScheduler(Renderer& r);
+    // Returns false when the frame graph cannot be built; renderer creation
+    // must then fail rather than run with a partially configured scheduler.
+    static bool setupPassScheduler(Renderer& r);
 
     static AsyncInitStatus pollAsyncInit(Renderer& r);
 };

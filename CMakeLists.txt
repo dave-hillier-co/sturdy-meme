@@ -346,9 +346,13 @@ set(SOURCES
     src/training/VecEnv.cpp
 )
 
-add_executable(${PROJECT_NAME} ${SOURCES})
+# Compile definitions and include directories shared by the app and every test
+# target. Test executables compile production sources (e.g. the Jolt-based
+# ragdoll code), and Jolt requires identical defines between the library and
+# all of its consumers, so these are declared exactly once here.
+add_library(engine_compile_options INTERFACE)
 
-target_include_directories(${PROJECT_NAME} PRIVATE
+target_include_directories(engine_compile_options INTERFACE
     ${CMAKE_CURRENT_SOURCE_DIR}/src
     ${CMAKE_CURRENT_SOURCE_DIR}/src/ecs
     ${CMAKE_CURRENT_SOURCE_DIR}/src/animation
@@ -384,7 +388,20 @@ target_include_directories(${PROJECT_NAME} PRIVATE
     ${STB_INCLUDE_DIRS}
 )
 
+target_compile_definitions(engine_compile_options INTERFACE
+    JPH_DEBUG_RENDERER                    # Enable Jolt Physics debug renderer for visualization
+    VULKAN_HPP_NO_STRUCT_CONSTRUCTORS     # Force use of setters/.set*() builder methods
+    VULKAN_HPP_DISPATCH_LOADER_DYNAMIC=1  # Use dynamic dispatch for flexibility
+)
+
+if(APPLE)
+    target_compile_definitions(engine_compile_options INTERFACE VK_USE_PLATFORM_METAL_EXT)
+endif()
+
+add_executable(${PROJECT_NAME} ${SOURCES})
+
 target_link_libraries(${PROJECT_NAME} PRIVATE
+    engine_compile_options
     Vulkan::Vulkan
     Vulkan::Headers
     SDL3::SDL3
@@ -399,15 +416,6 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     lodepng
     nlohmann_json::nlohmann_json
     EnTT::EnTT
-)
-
-# Enable Jolt Physics debug renderer for visualization
-target_compile_definitions(${PROJECT_NAME} PRIVATE JPH_DEBUG_RENDERER)
-
-# Configure Vulkan-HPP: disable positional constructors to enforce builder pattern
-target_compile_definitions(${PROJECT_NAME} PRIVATE
-    VULKAN_HPP_NO_STRUCT_CONSTRUCTORS   # Force use of setters/.set*() builder methods
-    VULKAN_HPP_DISPATCH_LOADER_DYNAMIC=1  # Use dynamic dispatch for flexibility
 )
 
 # Platform-specific setup
@@ -1608,7 +1616,6 @@ endif()
 endif() # SHADERS_AVAILABLE
 
 if(APPLE)
-    target_compile_definitions(${PROJECT_NAME} PRIVATE VK_USE_PLATFORM_METAL_EXT)
     target_link_libraries(${PROJECT_NAME} PRIVATE
         "-framework QuartzCore"
         "-framework Metal"
@@ -1675,8 +1682,6 @@ if(BUILD_TESTS)
         src/terrain/virtual_texture/VirtualTextureTileLoader.cpp
         src/scene/Transform.cpp
         src/scene/Camera.cpp
-        src/animation/AnimationBlend.cpp
-        src/animation/MotionMatchingKDTree.cpp
         src/ml/MLPNetwork.cpp
         src/ml/ModelLoader.cpp
         src/ml/CharacterConfig.cpp
@@ -1694,21 +1699,8 @@ if(BUILD_TESTS)
         src/physics/RagdollInstance.cpp
     )
 
-    target_include_directories(vulkan_game_tests PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/src
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/loaders  # For GLTFLoader.h used by animation
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/animation # For AnimationBlend.h
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/core     # For Mesh.h used by loaders
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/physics  # For CharacterController.h
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/terrain  # For TileGridLogic.h, ErosionDataLoader.h
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/terrain/virtual_texture  # For VirtualTextureTypes.h
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/water    # For WaterPlacementData.h
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/debug    # For Flamegraph.h
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/ml       # For MLP inference
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/vegetation  # For TreeGenerator, BranchGenerator
-    )
-
     target_link_libraries(vulkan_game_tests PRIVATE
+        engine_compile_options
         doctest::doctest
         glm::glm
         Vulkan::Vulkan                           # For Vulkan types in Mesh.h, VK_FORMAT in DDSLoader
@@ -1750,14 +1742,8 @@ if(BUILD_TESTS)
         src/scene/Transform.cpp
     )
 
-    target_include_directories(motion_matching_integration_tests PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/src
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/loaders
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/core
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/animation
-    )
-
     target_link_libraries(motion_matching_integration_tests PRIVATE
+        engine_compile_options
         doctest::doctest
         glm::glm
         Vulkan::Vulkan
@@ -1801,14 +1787,8 @@ if(BUILD_TESTS)
         src/scene/Transform.cpp
     )
 
-    target_include_directories(motion_matching_data_driven_tests PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/src
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/loaders
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/core
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/animation
-    )
-
     target_link_libraries(motion_matching_data_driven_tests PRIVATE
+        engine_compile_options
         doctest::doctest
         glm::glm
         Vulkan::Vulkan

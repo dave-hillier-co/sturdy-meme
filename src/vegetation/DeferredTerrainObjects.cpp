@@ -112,6 +112,11 @@ bool DeferredTerrainObjects::startGeneration(SceneManager* sceneManager, TreeSys
                 ? std::thread::hardware_concurrency() - 2 : 4u);
             treeGen_ = ThreadedTreeGenerator::create(workers);
             if (treeGen_) {
+                // Uploads are budgeted per frame and run far slower than the
+                // workers generate, so bound how much staged geometry may sit
+                // in CPU memory (each staged tree is several MB); the rest
+                // waits as lightweight requests until uploads catch up.
+                treeGen_->setMaxStagedTrees(workers * 2);
                 treeGen_->queueTrees(requests);
                 SDL_Log("DeferredTerrainObjects: Queued %zu biome trees for background generation",
                         requests.size());
@@ -135,10 +140,11 @@ bool DeferredTerrainObjects::uploadCompletedTrees(TreeSystem& tree) {
     constexpr float kUploadBudgetMs = 4.0f;
     const auto start = std::chrono::steady_clock::now();
 
-    auto newlyStaged = treeGen_->getCompletedTrees();
-    stagedBacklog_.insert(stagedBacklog_.end(),
-                          std::make_move_iterator(newlyStaged.begin()),
-                          std::make_move_iterator(newlyStaged.end()));
+    // Only pull more staged trees once the previous batch is uploaded, so the
+    // backlog stays bounded by the generator's staged-tree cap
+    if (stagedBacklog_.empty()) {
+        stagedBacklog_ = treeGen_->getCompletedTrees();
+    }
 
     size_t uploaded = 0;
     while (uploaded < stagedBacklog_.size()) {
@@ -163,7 +169,9 @@ bool DeferredTerrainObjects::uploadCompletedTrees(TreeSystem& tree) {
     }
     stagedBacklog_.erase(stagedBacklog_.begin(), stagedBacklog_.begin() + uploaded);
 
-    if (!treeGen_->isComplete() || !stagedBacklog_.empty()) {
+    // Pending counts trees not yet handed back by getCompletedTrees(), so a
+    // job finishing between the drain above and this check is not lost
+    if (treeGen_->getPendingCount() > 0 || !stagedBacklog_.empty()) {
         return false;
     }
 

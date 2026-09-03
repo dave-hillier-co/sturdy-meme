@@ -8,6 +8,8 @@
 #include <memory>
 #include <functional>
 #include <atomic>
+#include <deque>
+#include <mutex>
 
 /**
  * ThreadedTreeGenerator - Generates tree meshes in parallel using LoadJobQueue
@@ -61,9 +63,6 @@ public:
         // Options for texture selection
         TreeOptions options;
         uint32_t archetypeIndex = 0;
-
-        // Raw mesh data for collision
-        TreeMeshData meshData;
     };
 
     /**
@@ -78,6 +77,16 @@ public:
     // Non-copyable, non-movable
     ThreadedTreeGenerator(const ThreadedTreeGenerator&) = delete;
     ThreadedTreeGenerator& operator=(const ThreadedTreeGenerator&) = delete;
+
+    /**
+     * Bound the number of trees that may be staged in CPU memory at once
+     * (submitted to workers but not yet retrieved via getCompletedTrees()).
+     * Requests beyond the cap are held as lightweight TreeRequests and fed to
+     * the workers as completed trees are consumed, so staged geometry never
+     * piles up faster than the consumer uploads it. 0 = unbounded (default).
+     * waitForAll() lifts the cap so a blocking consumer cannot deadlock.
+     */
+    void setMaxStagedTrees(uint32_t cap);
 
     /**
      * Queue a tree for generation on a background thread
@@ -113,7 +122,7 @@ public:
     void waitForAll();
 
     /**
-     * Get count of pending trees
+     * Get count of pending trees (queued but not yet returned by getCompletedTrees())
      */
     uint32_t getPendingCount() const { return pendingCount_.load(); }
 
@@ -125,8 +134,18 @@ public:
 private:
     bool init(uint32_t workerCount);
 
+    // Move held requests onto the job queue while under the staged-tree cap
+    void submitHeldRequests();
+
     std::unique_ptr<Loading::LoadJobQueue> jobQueue_;
     std::atomic<uint32_t> pendingCount_{0};
     std::atomic<uint32_t> completedCount_{0};
     std::atomic<uint32_t> totalQueued_{0};
+
+    // Requests accepted but not yet handed to workers (protected by requestMutex_)
+    mutable std::mutex requestMutex_;
+    std::deque<TreeRequest> heldRequests_;
+    uint32_t maxStaged_ = 0;
+    uint32_t inFlight_ = 0;  // Submitted to workers, not yet retrieved
+    uint32_t nextJobId_ = 0;
 };

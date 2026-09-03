@@ -1,6 +1,7 @@
 #include "VulkanContext.h"
 #include "VulkanHelpers.h"
 #include "MetalLayerFix.h"
+#include "QueueLock.h"
 #include <vulkan/vulkan.hpp>
 #include <vulkan/vulkan_raii.hpp>
 #include <SDL3/SDL_vulkan.h>
@@ -424,7 +425,12 @@ void VulkanContext::destroySwapchain() {
 }
 
 bool VulkanContext::recreateSwapchain() {
-    vk::Device(device).waitIdle();
+    {
+        // vkDeviceWaitIdle requires every queue to be externally synchronized;
+        // streaming workers may still be submitting under the graphics lock.
+        GraphicsQueueLock::Guard lock(GraphicsQueueLock::mutex());
+        vk::Device(device).waitIdle();
+    }
     destroySwapchain();
     return createSwapchain();
 }
@@ -544,21 +550,26 @@ void VulkanContext::clearSwapchainImages() {
                 .setCommandBuffers(cmd)
                 .setSignalSemaphores(renderSem);
 
-            vkGfxQueue.submit(submitInfo, nullptr);
+            {
+                // Submit, present and queue-wait are externally synchronized
+                // against worker-thread uploads (VT tiles, tree atlases).
+                GraphicsQueueLock::Guard lock(GraphicsQueueLock::mutex());
+                vkGfxQueue.submit(submitInfo, nullptr);
 
-            // Present the cleared image
-            auto presentInfo = vk::PresentInfoKHR{}
-                .setWaitSemaphores(renderSem)
-                .setSwapchains(vkSwapchain)
-                .setImageIndices(imageIndex);
+                // Present the cleared image
+                auto presentInfo = vk::PresentInfoKHR{}
+                    .setWaitSemaphores(renderSem)
+                    .setSwapchains(vkSwapchain)
+                    .setImageIndices(imageIndex);
 
-            auto presentResult = vkPresentQueue.presentKHR(presentInfo);
-            if (presentResult == vk::Result::eSuccess || presentResult == vk::Result::eSuboptimalKHR) {
-                presentCount++;
+                auto presentResult = vkPresentQueue.presentKHR(presentInfo);
+                if (presentResult == vk::Result::eSuccess || presentResult == vk::Result::eSuboptimalKHR) {
+                    presentCount++;
+                }
+
+                // Wait for this present to complete before next iteration
+                vkGfxQueue.waitIdle();
             }
-
-            // Wait for this present to complete before next iteration
-            vkGfxQueue.waitIdle();
 
             // Reset command buffer for next use
             cmd.reset(vk::CommandBufferResetFlagBits::eReleaseResources);
@@ -579,6 +590,7 @@ void VulkanContext::clearSwapchainImages() {
 
 void VulkanContext::waitIdle() {
     if (device != VK_NULL_HANDLE) {
+        GraphicsQueueLock::Guard lock(GraphicsQueueLock::mutex());
         vk::Device(device).waitIdle();
     }
 }

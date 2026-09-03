@@ -12,19 +12,28 @@ verification criteria pass.
 
 | Priority | Issue | Status |
 | --- | --- | --- |
-| Critical | Async initialization cannot represent failure to its polling caller | Open |
-| High | Procedural build graph and file formats are inconsistent | Open |
+| Critical | Async initialization cannot represent failure to its polling caller | Resolved |
+| High | Procedural build graph and file formats are inconsistent | Resolved |
 | High | Optional subsystem and renderer-readiness contracts are not enforced | Open |
 | High | Partial initialization and shutdown are not uniformly RAII-safe | Open |
 | Medium | Renderer subsystem registry hides dependencies | Open |
 | Medium | ECS and legacy render-data mirrors have dual authority | Resolved |
-| Medium | Async subsystem loader performs all heavy work on the main thread | Open |
+| Medium | Async subsystem loader performs all heavy work on the main thread | Resolved |
 | Medium | Build targets do not enforce module boundaries | Open |
 | Medium | Architecture tests do not cover composition and failure paths | Open |
 
-## Critical: Async Initialization Failure State
+## Critical: Async Initialization Failure State — RESOLVED (2026-09-02)
 
-### Evidence
+Closed by commit f9a14ee7. `Renderer::pollAsyncInit()` returns `AsyncInitStatus`
+(`Pending` / `Ready` / `Failed`); `Application::init()` loops only while the status is `Pending`
+and exits the loading loop with a startup error on `Failed`. `AsyncSystemLoader` gained an
+idempotent `cancel()`; `Renderer::cleanup()` and the `Application` abort path cancel and join the
+loader before touching the device. A doctest suite covers loader success, failure, dependency
+ordering, and cancellation.
+
+The original evidence and direction are retained below for history.
+
+### (Historical) Evidence
 
 - `Application::init()` waits with `while (!renderer_->pollAsyncInit())`.
 - `RendererBuilder::pollAsyncInit()` returns `false` while work is pending.
@@ -56,9 +65,17 @@ cleanly unwind for `Failed`.
 - Renderer and loading-screen resources are released.
 - Successful asynchronous startup remains unchanged.
 
-## High: Procedural Build Contract Drift
+## High: Procedural Build Contract Drift — RESOLVED (2026-09-02)
 
-### Evidence
+Verified against the tree: `CMakeLists.txt` declares no `.bin`, `.dat`, or `roads.json` terrain
+outputs (the only remaining `.bin` is the UniCon policy-weights input). The tile generator is
+passed `${ROADS_GEOJSON}`, `tools/tile_generator/TileCompositor.cpp::loadRoads` parses a GeoJSON
+`FeatureCollection` of `LineString` features, and `tools/tile_generator/main.cpp` refuses to
+generate tiles when an explicitly supplied roads file fails to load.
+
+The original evidence and direction are retained below for history.
+
+### (Historical) Evidence
 
 The generator and runtime formats are:
 
@@ -295,9 +312,18 @@ Continue the migration in working slices:
   `PBRProperties`; tree typing lives in dedicated components (`BarkType`/`LeafType`,
   `src/ecs/Components.h:300-313`).
 
-## Medium: Async Loader Without Background Staging
+## Medium: Async Loader Without Background Staging — RESOLVED (2026-09-02)
 
-### Evidence
+Closed by commit f9a14ee7. Every renderer initialization task now performs its heavy work
+(pipeline compilation, buffer/image creation, uploads, file IO, mesh/texture generation) in
+`cpuWork` on `AsyncSystemLoader` worker threads, staging the built objects in per-task storage.
+`gpuWork` runs on the main thread inside `pollCompletions()` and only adopts and registers the
+staged systems. `SystemRegistry` is guarded by a `std::shared_mutex` for the reads that can still
+overlap with registration.
+
+The original evidence and direction are retained below for history.
+
+### (Historical) Evidence
 
 All renderer initialization tasks define `gpuWork`; none define `cpuWork`. Worker threads therefore
 only move ready task IDs to the main-thread completion queue. Heavy factories execute from

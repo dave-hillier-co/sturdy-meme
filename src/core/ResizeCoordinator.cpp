@@ -1,4 +1,5 @@
 #include "ResizeCoordinator.h"
+#include "vulkan/QueueLock.h"
 #include <SDL3/SDL_log.h>
 #include <algorithm>
 #include <memory>
@@ -25,11 +26,18 @@ void ResizeCoordinator::ensureSorted() {
 }
 
 bool ResizeCoordinator::performResize(vk::Device device, VmaAllocator allocator, VkExtent2D newExtent) {
+    // Wait for the GPU to finish all in-flight work before any handler destroys
+    // or recreates resources. vkDeviceWaitIdle requires every queue to be
+    // externally synchronized, and streaming workers submit under the graphics
+    // queue lock, so hold it for the wait. Released before the handlers run:
+    // the lock is not recursive and handlers may submit their own work.
+    {
+        GraphicsQueueLock::Guard lock(GraphicsQueueLock::mutex());
+        device.waitIdle();
+    }
+
     // If we have a core resize handler and no explicit extent, let it determine the extent
     if (coreResizeHandler_ && newExtent.width == 0 && newExtent.height == 0) {
-        // Wait for GPU to finish all work before resizing
-        vkDeviceWaitIdle(device);
-
         newExtent = coreResizeHandler_(device, allocator);
 
         // Handle minimized window or failure

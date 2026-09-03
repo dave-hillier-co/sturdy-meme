@@ -282,23 +282,6 @@ void RendererSystems::setProfiler(std::unique_ptr<Profiler> profiler) {
     registry_.add<Profiler>(std::move(profiler));
 }
 
-// ============================================================================
-// Initialization
-// ============================================================================
-
-bool RendererSystems::init(const InitContext& /*initCtx*/,
-                            vk::RenderPass /*swapchainRenderPass*/,
-                            VkFormat /*swapchainImageFormat*/,
-                            vk::DescriptorSetLayout /*mainDescriptorSetLayout*/,
-                            VkFormat /*depthFormat*/,
-                            vk::Sampler /*depthSampler*/,
-                            const std::string& /*resourcePath*/) {
-    // NOTE: This centralized init is not currently used.
-    // Initialization is done via RendererInitPhases.cpp which calls each subsystem directly.
-    SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "RendererSystems::init() is not implemented - use RendererInitPhases instead");
-    return false;
-}
-
 void RendererSystems::destroy(vk::Device device, VmaAllocator allocator) {
     SDL_Log("RendererSystems::destroy starting");
 

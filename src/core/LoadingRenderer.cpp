@@ -420,8 +420,12 @@ void LoadingRenderer::cleanup() {
 
     vk::Device device = ctx_->get().getVkDevice();
 
-    // Wait for GPU to finish
-    vkDeviceWaitIdle(device);
+    // Wait for GPU to finish. Other threads submit under GraphicsQueueLock, and
+    // a device-wide wait requires every queue to be externally synchronized.
+    {
+        GraphicsQueueLock::Guard lock(GraphicsQueueLock::mutex());
+        device.waitIdle();
+    }
 
     // Free command buffers before destroying pool
     if (!commandBuffers_.empty() && commandPool_) {

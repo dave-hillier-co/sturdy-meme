@@ -204,7 +204,7 @@ bool RendererBuilder::initInternal(Renderer& r, const Renderer::InitInfo& info) 
     reportProgress(0.99f, "Configuring frame graph");
     {
         INIT_PROFILE_PHASE("PassScheduler");
-        setupPassScheduler(r);
+        if (!setupPassScheduler(r)) return false;
     }
     SDL_Log("Frame graph configured");
 
@@ -213,7 +213,7 @@ bool RendererBuilder::initInternal(Renderer& r, const Renderer::InitInfo& info) 
     return true;
 }
 
-void RendererBuilder::setupPassScheduler(Renderer& r) {
+bool RendererBuilder::setupPassScheduler(Renderer& r) {
     // GUI callback (PostPasses still uses it)
     PassSchedulerBuilder::Callbacks callbacks;
     callbacks.guiRenderCallback = &r.guiRenderCallback;
@@ -234,7 +234,9 @@ void RendererBuilder::setupPassScheduler(Renderer& r) {
     // Use PassSchedulerBuilder to configure all passes and dependencies
     if (!PassSchedulerBuilder::build(r.passScheduler_, *r.systems_, callbacks, state)) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to build frame graph");
+        return false;
     }
+    return true;
 }
 
 bool RendererBuilder::createDescriptorSets(Renderer& r, SceneManager& scene) {
@@ -568,7 +570,14 @@ AsyncInitStatus RendererBuilder::pollAsyncInit(Renderer& r) {
         if (r.progressCallback_) r.progressCallback_(0.99f, "Configuring frame graph");
         {
             INIT_PROFILE_PHASE("PassScheduler");
-            setupPassScheduler(r);
+            if (!setupPassScheduler(r)) {
+                r.asyncInitError_ = "Failed to build frame graph";
+                // The loader is stopped by Renderer::cleanup when the caller
+                // releases the renderer, as on a task failure above.
+                r.asyncInitComplete_ = true;
+                r.asyncInitFailed_ = true;
+                return AsyncInitStatus::Failed;
+            }
         }
         SDL_Log("Frame graph configured");
 
@@ -1310,10 +1319,16 @@ std::vector<Loading::SystemInitTask> RendererBuilder::buildInitTasks(Renderer& r
                     r.systems_->globalBuffers().uniformBuffers.buffers,
                     sizeof(UniformBufferObject), r.systems_->atmosphereLUT())) return false;
 
-            // Hi-Z occlusion culling (optional)
+            // Hi-Z occlusion culling. Required: the post/compute passes,
+            // DebugControlSubsystem and the resize coordinator all take the
+            // system by reference, so init fails when it cannot be created.
             staged->hiZ = HiZSystem::create(*ctxPtr, r.vulkanContext_->getDepthFormat());
-            if (staged->hiZ) {
-                staged->hiZ->setDepthBuffer(core.hdr.depthView, r.vulkanContext_->getDepthSampler());
+            if (!staged->hiZ) {
+                SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create HiZSystem");
+                return false;
+            }
+            staged->hiZ->setDepthBuffer(core.hdr.depthView, r.vulkanContext_->getDepthSampler());
+            {
                 // Scene objects are deferred and do not exist at bootstrap; only rocks are
                 // present. Per-frame Hi-Z culling of scene objects runs off the ECS-sourced
                 // GPUSceneBuffer path, so no scene list is gathered here.
@@ -1344,7 +1359,7 @@ std::vector<Loading::SystemInitTask> RendererBuilder::buildInitTasks(Renderer& r
 
                 auto gpuCullPass = GPUCullPass::create(cullInfo);
                 if (gpuCullPass) {
-                    if (staged->hiZ && staged->hiZ->getHiZPyramidView() != VK_NULL_HANDLE) {
+                    if (staged->hiZ->getHiZPyramidView()) {
                         gpuCullPass->setHiZPyramid(
                             staged->hiZ->getHiZPyramidView(),
                             staged->hiZ->getHiZSampler());
@@ -1484,7 +1499,7 @@ std::vector<Loading::SystemInitTask> RendererBuilder::buildInitTasks(Renderer& r
             if (staged->screenShadow) r.systems_->setScreenSpaceShadow(std::move(staged->screenShadow));
             if (staged->deferredObjects) r.systems_->setDeferredTerrainObjects(std::move(staged->deferredObjects));
             r.systems_->setCatmullClark(std::move(staged->catmullClark));
-            if (staged->hiZ) r.systems_->setHiZ(std::move(staged->hiZ));
+            r.systems_->setHiZ(std::move(staged->hiZ));
             if (staged->gpuSceneBuffer) r.systems_->setGPUSceneBuffer(std::move(staged->gpuSceneBuffer));
             if (staged->gpuCullPass) r.systems_->setGPUCullPass(std::move(staged->gpuCullPass));
             if (staged->shadowCullPass) r.systems_->setShadowCullPass(std::move(staged->shadowCullPass));

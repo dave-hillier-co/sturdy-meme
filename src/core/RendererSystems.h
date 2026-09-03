@@ -109,7 +109,7 @@ class PhysicsDebugRenderer;
  *
  * Lifecycle:
  * - Create with create() factory method
- * - Initialize with init() after VulkanContext is ready
+ * - Populated by RendererBuilder's init tasks via the set*() adopters
  * - Destroy automatically via destructor
  */
 class RendererSystems {
@@ -124,25 +124,13 @@ public:
     RendererSystems& operator=(RendererSystems&&) = delete;
 
     /**
-     * Initialize all subsystems in proper dependency order
-     * Returns false if any critical system fails to initialize
-     */
-    bool init(const InitContext& initCtx,
-              vk::RenderPass swapchainRenderPass,
-              VkFormat swapchainImageFormat,
-              vk::DescriptorSetLayout mainDescriptorSetLayout,
-              VkFormat depthFormat,
-              vk::Sampler depthSampler,
-              const std::string& resourcePath);
-
-    /**
      * Destroy all subsystems in reverse dependency order
      */
     void destroy(vk::Device device, VmaAllocator allocator);
 
     /**
      * Get tier-1 core resources for dependent system initialization
-     * Only valid after init() completes Phase 1
+     * Only valid once the core systems (post-process, shadow, terrain) are registered
      */
     CoreResources getCoreResources(uint32_t framesInFlight) const;
 

@@ -37,7 +37,7 @@ class SceneBuilder;
 class Application {
 public:
     Application() = default;
-    ~Application() = default;
+    ~Application() { shutdown(); }  // shutdown() is idempotent and safe after partial init
 
     bool init(const std::string& title, int width, int height);
     void run();

@@ -61,38 +61,41 @@ echo -e "${CYAN}└────────────────────�
 echo ""
 
 # Define RAII types and their vulkan-hpp equivalents
-declare -A RAII_TYPES=(
-    ["ManagedBuffer"]="vk::raii::Buffer"
-    ["ManagedImage"]="vk::raii::Image"
-    ["ManagedImageView"]="vk::raii::ImageView"
-    ["ManagedSampler"]="vk::raii::Sampler"
-    ["ManagedPipeline"]="vk::raii::Pipeline"
-    ["ManagedPipelineLayout"]="vk::raii::PipelineLayout"
-    ["ManagedRenderPass"]="vk::raii::RenderPass"
-    ["ManagedFramebuffer"]="vk::raii::Framebuffer"
-    ["ManagedDescriptorSetLayout"]="vk::raii::DescriptorSetLayout"
-    ["ManagedCommandPool"]="vk::raii::CommandPool"
-    ["ManagedSemaphore"]="vk::raii::Semaphore"
-    ["ManagedFence"]="vk::raii::Fence"
-    ["UniqueVmaBuffer"]="vk::raii::Buffer + VmaAllocation"
-    ["UniqueVmaImage"]="vk::raii::Image + VmaAllocation"
-    ["UniquePipeline"]="vk::raii::Pipeline"
-    ["UniqueRenderPass"]="vk::raii::RenderPass"
-    ["UniquePipelineLayout"]="vk::raii::PipelineLayout"
-    ["UniqueDescriptorSetLayout"]="vk::raii::DescriptorSetLayout"
-    ["UniqueImageView"]="vk::raii::ImageView"
-    ["UniqueFramebuffer"]="vk::raii::Framebuffer"
-    ["UniqueFence"]="vk::raii::Fence"
-    ["UniqueSemaphore"]="vk::raii::Semaphore"
-    ["UniqueCommandPool"]="vk::raii::CommandPool"
-    ["UniqueDescriptorPool"]="vk::raii::DescriptorPool"
-    ["UniqueSampler"]="vk::raii::Sampler"
+# Entries are "name|vulkan-hpp equivalent" (bash 3.2 has no associative arrays)
+RAII_TYPES=(
+    "ManagedBuffer|vk::raii::Buffer"
+    "ManagedImage|vk::raii::Image"
+    "ManagedImageView|vk::raii::ImageView"
+    "ManagedSampler|vk::raii::Sampler"
+    "ManagedPipeline|vk::raii::Pipeline"
+    "ManagedPipelineLayout|vk::raii::PipelineLayout"
+    "ManagedRenderPass|vk::raii::RenderPass"
+    "ManagedFramebuffer|vk::raii::Framebuffer"
+    "ManagedDescriptorSetLayout|vk::raii::DescriptorSetLayout"
+    "ManagedCommandPool|vk::raii::CommandPool"
+    "ManagedSemaphore|vk::raii::Semaphore"
+    "ManagedFence|vk::raii::Fence"
+    "UniqueVmaBuffer|vk::raii::Buffer + VmaAllocation"
+    "UniqueVmaImage|vk::raii::Image + VmaAllocation"
+    "UniquePipeline|vk::raii::Pipeline"
+    "UniqueRenderPass|vk::raii::RenderPass"
+    "UniquePipelineLayout|vk::raii::PipelineLayout"
+    "UniqueDescriptorSetLayout|vk::raii::DescriptorSetLayout"
+    "UniqueImageView|vk::raii::ImageView"
+    "UniqueFramebuffer|vk::raii::Framebuffer"
+    "UniqueFence|vk::raii::Fence"
+    "UniqueSemaphore|vk::raii::Semaphore"
+    "UniqueCommandPool|vk::raii::CommandPool"
+    "UniqueDescriptorPool|vk::raii::DescriptorPool"
+    "UniqueSampler|vk::raii::Sampler"
 )
 
-for TYPE in "${!RAII_TYPES[@]}"; do
+for ENTRY in "${RAII_TYPES[@]}"; do
+    TYPE="${ENTRY%%|*}"
+    REPLACEMENT="${ENTRY#*|}"
     COUNT=$(grep -r --include="*.cpp" --include="*.h" -l "$TYPE" "$SEARCH_PATH" 2>/dev/null | wc -l | tr -d ' ')
     if [[ $COUNT -gt 0 ]]; then
-        echo -e "${YELLOW}$TYPE${NC} found in ${BOLD}$COUNT${NC} files → ${GREEN}${RAII_TYPES[$TYPE]}${NC}"
+        echo -e "${YELLOW}$TYPE${NC} found in ${BOLD}$COUNT${NC} files → ${GREEN}${REPLACEMENT}${NC}"
         if [[ "$VERBOSE" == "true" ]]; then
             grep -r --include="*.cpp" --include="*.h" -n "$TYPE" "$SEARCH_PATH" 2>/dev/null | head -5
             echo ""
@@ -111,31 +114,34 @@ echo -e "${CYAN}└────────────────────�
 echo ""
 
 # vkCreate* functions and their vulkan-hpp builder equivalents
-declare -A VK_CREATE_FUNCS=(
-    ["vkCreateBuffer"]="device.createBuffer(vk::BufferCreateInfo{}.setSize(...).setUsage(...))"
-    ["vkCreateImage"]="device.createImage(vk::ImageCreateInfo{}.setImageType(...).setFormat(...))"
-    ["vkCreateImageView"]="device.createImageView(vk::ImageViewCreateInfo{}.setImage(...).setViewType(...))"
-    ["vkCreateSampler"]="device.createSampler(vk::SamplerCreateInfo{}.setMagFilter(...).setMinFilter(...))"
-    ["vkCreatePipeline"]="device.createGraphicsPipeline(cache, vk::GraphicsPipelineCreateInfo{}.setStages(...))"
-    ["vkCreateGraphicsPipelines"]="device.createGraphicsPipelines(cache, pipelineInfos)"
-    ["vkCreateComputePipelines"]="device.createComputePipelines(cache, pipelineInfos)"
-    ["vkCreatePipelineLayout"]="device.createPipelineLayout(vk::PipelineLayoutCreateInfo{}.setSetLayouts(...))"
-    ["vkCreateRenderPass"]="device.createRenderPass(vk::RenderPassCreateInfo{}.setAttachments(...).setSubpasses(...))"
-    ["vkCreateFramebuffer"]="device.createFramebuffer(vk::FramebufferCreateInfo{}.setRenderPass(...).setAttachments(...))"
-    ["vkCreateDescriptorSetLayout"]="device.createDescriptorSetLayout(vk::DescriptorSetLayoutCreateInfo{}.setBindings(...))"
-    ["vkCreateDescriptorPool"]="device.createDescriptorPool(vk::DescriptorPoolCreateInfo{}.setMaxSets(...).setPoolSizes(...))"
-    ["vkCreateCommandPool"]="device.createCommandPool(vk::CommandPoolCreateInfo{}.setQueueFamilyIndex(...).setFlags(...))"
-    ["vkCreateFence"]="device.createFence(vk::FenceCreateInfo{}.setFlags(...))"
-    ["vkCreateSemaphore"]="device.createSemaphore(vk::SemaphoreCreateInfo{})"
-    ["vkCreateShaderModule"]="device.createShaderModule(vk::ShaderModuleCreateInfo{}.setCodeSize(...).setPCode(...))"
-    ["vkCreateSwapchainKHR"]="device.createSwapchainKHR(vk::SwapchainCreateInfoKHR{}.setSurface(...).setMinImageCount(...))"
+# Entries are "name|vulkan-hpp equivalent" (bash 3.2 has no associative arrays)
+VK_CREATE_FUNCS=(
+    "vkCreateBuffer|device.createBuffer(vk::BufferCreateInfo{}.setSize(...).setUsage(...))"
+    "vkCreateImage|device.createImage(vk::ImageCreateInfo{}.setImageType(...).setFormat(...))"
+    "vkCreateImageView|device.createImageView(vk::ImageViewCreateInfo{}.setImage(...).setViewType(...))"
+    "vkCreateSampler|device.createSampler(vk::SamplerCreateInfo{}.setMagFilter(...).setMinFilter(...))"
+    "vkCreatePipeline|device.createGraphicsPipeline(cache, vk::GraphicsPipelineCreateInfo{}.setStages(...))"
+    "vkCreateGraphicsPipelines|device.createGraphicsPipelines(cache, pipelineInfos)"
+    "vkCreateComputePipelines|device.createComputePipelines(cache, pipelineInfos)"
+    "vkCreatePipelineLayout|device.createPipelineLayout(vk::PipelineLayoutCreateInfo{}.setSetLayouts(...))"
+    "vkCreateRenderPass|device.createRenderPass(vk::RenderPassCreateInfo{}.setAttachments(...).setSubpasses(...))"
+    "vkCreateFramebuffer|device.createFramebuffer(vk::FramebufferCreateInfo{}.setRenderPass(...).setAttachments(...))"
+    "vkCreateDescriptorSetLayout|device.createDescriptorSetLayout(vk::DescriptorSetLayoutCreateInfo{}.setBindings(...))"
+    "vkCreateDescriptorPool|device.createDescriptorPool(vk::DescriptorPoolCreateInfo{}.setMaxSets(...).setPoolSizes(...))"
+    "vkCreateCommandPool|device.createCommandPool(vk::CommandPoolCreateInfo{}.setQueueFamilyIndex(...).setFlags(...))"
+    "vkCreateFence|device.createFence(vk::FenceCreateInfo{}.setFlags(...))"
+    "vkCreateSemaphore|device.createSemaphore(vk::SemaphoreCreateInfo{})"
+    "vkCreateShaderModule|device.createShaderModule(vk::ShaderModuleCreateInfo{}.setCodeSize(...).setPCode(...))"
+    "vkCreateSwapchainKHR|device.createSwapchainKHR(vk::SwapchainCreateInfoKHR{}.setSurface(...).setMinImageCount(...))"
 )
 
-for FUNC in "${!VK_CREATE_FUNCS[@]}"; do
+for ENTRY in "${VK_CREATE_FUNCS[@]}"; do
+    FUNC="${ENTRY%%|*}"
+    REPLACEMENT="${ENTRY#*|}"
     COUNT=$(grep -r --include="*.cpp" --include="*.h" "$FUNC" "$SEARCH_PATH" 2>/dev/null | grep -v "^\s*//" | wc -l | tr -d ' ')
     if [[ $COUNT -gt 0 ]]; then
         echo -e "${RED}$FUNC${NC} found ${BOLD}$COUNT${NC} times"
-        echo -e "  ${GREEN}→ ${VK_CREATE_FUNCS[$FUNC]}${NC}"
+        echo -e "  ${GREEN}→ ${REPLACEMENT}${NC}"
         if [[ "$VERBOSE" == "true" ]]; then
             grep -r --include="*.cpp" --include="*.h" -n "$FUNC" "$SEARCH_PATH" 2>/dev/null | grep -v "^\s*//" | head -3
         fi
@@ -151,32 +157,35 @@ echo -e "${CYAN}│ Section 3: Vulkan Command Buffer Functions (vkCmd*)         
 echo -e "${CYAN}└──────────────────────────────────────────────────────────────────────────┘${NC}"
 echo ""
 
-declare -A VK_CMD_FUNCS=(
-    ["vkCmdBeginRenderPass"]="cmd.beginRenderPass(vk::RenderPassBeginInfo{}.setRenderPass(...).setFramebuffer(...), vk::SubpassContents::eInline)"
-    ["vkCmdEndRenderPass"]="cmd.endRenderPass()"
-    ["vkCmdBindPipeline"]="cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, pipeline)"
-    ["vkCmdBindVertexBuffers"]="cmd.bindVertexBuffers(0, buffers, offsets)"
-    ["vkCmdBindIndexBuffer"]="cmd.bindIndexBuffer(buffer, offset, vk::IndexType::eUint32)"
-    ["vkCmdBindDescriptorSets"]="cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, layout, 0, sets, dynamicOffsets)"
-    ["vkCmdDraw"]="cmd.draw(vertexCount, instanceCount, firstVertex, firstInstance)"
-    ["vkCmdDrawIndexed"]="cmd.drawIndexed(indexCount, instanceCount, firstIndex, vertexOffset, firstInstance)"
-    ["vkCmdDrawIndexedIndirect"]="cmd.drawIndexedIndirect(buffer, offset, drawCount, stride)"
-    ["vkCmdDispatch"]="cmd.dispatch(groupCountX, groupCountY, groupCountZ)"
-    ["vkCmdCopyBuffer"]="cmd.copyBuffer(src, dst, vk::BufferCopy{}.setSrcOffset(...).setDstOffset(...).setSize(...))"
-    ["vkCmdCopyBufferToImage"]="cmd.copyBufferToImage(buffer, image, layout, regions)"
-    ["vkCmdCopyImage"]="cmd.copyImage(src, srcLayout, dst, dstLayout, regions)"
-    ["vkCmdBlitImage"]="cmd.blitImage(src, srcLayout, dst, dstLayout, regions, filter)"
-    ["vkCmdPipelineBarrier"]="cmd.pipelineBarrier(srcStage, dstStage, {}, memoryBarriers, bufferBarriers, imageBarriers)"
-    ["vkCmdPushConstants"]="cmd.pushConstants(layout, stages, offset, size, data)"
-    ["vkCmdSetViewport"]="cmd.setViewport(0, vk::Viewport{}.setX(...).setY(...).setWidth(...).setHeight(...))"
-    ["vkCmdSetScissor"]="cmd.setScissor(0, vk::Rect2D{}.setOffset(...).setExtent(...))"
+# Entries are "name|vulkan-hpp equivalent" (bash 3.2 has no associative arrays)
+VK_CMD_FUNCS=(
+    "vkCmdBeginRenderPass|cmd.beginRenderPass(vk::RenderPassBeginInfo{}.setRenderPass(...).setFramebuffer(...), vk::SubpassContents::eInline)"
+    "vkCmdEndRenderPass|cmd.endRenderPass()"
+    "vkCmdBindPipeline|cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, pipeline)"
+    "vkCmdBindVertexBuffers|cmd.bindVertexBuffers(0, buffers, offsets)"
+    "vkCmdBindIndexBuffer|cmd.bindIndexBuffer(buffer, offset, vk::IndexType::eUint32)"
+    "vkCmdBindDescriptorSets|cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, layout, 0, sets, dynamicOffsets)"
+    "vkCmdDraw|cmd.draw(vertexCount, instanceCount, firstVertex, firstInstance)"
+    "vkCmdDrawIndexed|cmd.drawIndexed(indexCount, instanceCount, firstIndex, vertexOffset, firstInstance)"
+    "vkCmdDrawIndexedIndirect|cmd.drawIndexedIndirect(buffer, offset, drawCount, stride)"
+    "vkCmdDispatch|cmd.dispatch(groupCountX, groupCountY, groupCountZ)"
+    "vkCmdCopyBuffer|cmd.copyBuffer(src, dst, vk::BufferCopy{}.setSrcOffset(...).setDstOffset(...).setSize(...))"
+    "vkCmdCopyBufferToImage|cmd.copyBufferToImage(buffer, image, layout, regions)"
+    "vkCmdCopyImage|cmd.copyImage(src, srcLayout, dst, dstLayout, regions)"
+    "vkCmdBlitImage|cmd.blitImage(src, srcLayout, dst, dstLayout, regions, filter)"
+    "vkCmdPipelineBarrier|cmd.pipelineBarrier(srcStage, dstStage, {}, memoryBarriers, bufferBarriers, imageBarriers)"
+    "vkCmdPushConstants|cmd.pushConstants(layout, stages, offset, size, data)"
+    "vkCmdSetViewport|cmd.setViewport(0, vk::Viewport{}.setX(...).setY(...).setWidth(...).setHeight(...))"
+    "vkCmdSetScissor|cmd.setScissor(0, vk::Rect2D{}.setOffset(...).setExtent(...))"
 )
 
-for FUNC in "${!VK_CMD_FUNCS[@]}"; do
+for ENTRY in "${VK_CMD_FUNCS[@]}"; do
+    FUNC="${ENTRY%%|*}"
+    REPLACEMENT="${ENTRY#*|}"
     COUNT=$(grep -r --include="*.cpp" --include="*.h" "$FUNC" "$SEARCH_PATH" 2>/dev/null | grep -v "^\s*//" | wc -l | tr -d ' ')
     if [[ $COUNT -gt 0 ]]; then
         echo -e "${RED}$FUNC${NC} found ${BOLD}$COUNT${NC} times"
-        echo -e "  ${GREEN}→ ${VK_CMD_FUNCS[$FUNC]}${NC}"
+        echo -e "  ${GREEN}→ ${REPLACEMENT}${NC}"
         echo ""
     fi
 done
@@ -251,36 +260,39 @@ echo -e "${CYAN}│ Section 5: Raw Vulkan Handle Types                          
 echo -e "${CYAN}└──────────────────────────────────────────────────────────────────────────┘${NC}"
 echo ""
 
-declare -A VK_HANDLES=(
-    ["VkDevice[^A-Za-z]"]="vk::Device or vk::raii::Device"
-    ["VkInstance[^A-Za-z]"]="vk::Instance or vk::raii::Instance"
-    ["VkPhysicalDevice[^A-Za-z]"]="vk::PhysicalDevice or vk::raii::PhysicalDevice"
-    ["VkQueue[^A-Za-z]"]="vk::Queue or vk::raii::Queue"
-    ["VkCommandBuffer[^A-Za-z]"]="vk::CommandBuffer or vk::raii::CommandBuffer"
-    ["VkBuffer[^A-Za-z]"]="vk::Buffer or vk::raii::Buffer"
-    ["VkImage[^A-Za-z]"]="vk::Image or vk::raii::Image"
-    ["VkImageView[^A-Za-z]"]="vk::ImageView or vk::raii::ImageView"
-    ["VkSampler[^A-Za-z]"]="vk::Sampler or vk::raii::Sampler"
-    ["VkPipeline[^A-Za-z]"]="vk::Pipeline or vk::raii::Pipeline"
-    ["VkPipelineLayout[^A-Za-z]"]="vk::PipelineLayout or vk::raii::PipelineLayout"
-    ["VkRenderPass[^A-Za-z]"]="vk::RenderPass or vk::raii::RenderPass"
-    ["VkFramebuffer[^A-Za-z]"]="vk::Framebuffer or vk::raii::Framebuffer"
-    ["VkDescriptorSet[^A-Za-z]"]="vk::DescriptorSet or vk::raii::DescriptorSet"
-    ["VkDescriptorSetLayout[^A-Za-z]"]="vk::DescriptorSetLayout or vk::raii::DescriptorSetLayout"
-    ["VkDescriptorPool[^A-Za-z]"]="vk::DescriptorPool or vk::raii::DescriptorPool"
-    ["VkCommandPool[^A-Za-z]"]="vk::CommandPool or vk::raii::CommandPool"
-    ["VkFence[^A-Za-z]"]="vk::Fence or vk::raii::Fence"
-    ["VkSemaphore[^A-Za-z]"]="vk::Semaphore or vk::raii::Semaphore"
-    ["VkShaderModule[^A-Za-z]"]="vk::ShaderModule or vk::raii::ShaderModule"
-    ["VkSwapchainKHR"]="vk::SwapchainKHR or vk::raii::SwapchainKHR"
-    ["VkSurfaceKHR"]="vk::SurfaceKHR or vk::raii::SurfaceKHR"
+# Entries are "name|vulkan-hpp equivalent" (bash 3.2 has no associative arrays)
+VK_HANDLES=(
+    "VkDevice[^A-Za-z]|vk::Device or vk::raii::Device"
+    "VkInstance[^A-Za-z]|vk::Instance or vk::raii::Instance"
+    "VkPhysicalDevice[^A-Za-z]|vk::PhysicalDevice or vk::raii::PhysicalDevice"
+    "VkQueue[^A-Za-z]|vk::Queue or vk::raii::Queue"
+    "VkCommandBuffer[^A-Za-z]|vk::CommandBuffer or vk::raii::CommandBuffer"
+    "VkBuffer[^A-Za-z]|vk::Buffer or vk::raii::Buffer"
+    "VkImage[^A-Za-z]|vk::Image or vk::raii::Image"
+    "VkImageView[^A-Za-z]|vk::ImageView or vk::raii::ImageView"
+    "VkSampler[^A-Za-z]|vk::Sampler or vk::raii::Sampler"
+    "VkPipeline[^A-Za-z]|vk::Pipeline or vk::raii::Pipeline"
+    "VkPipelineLayout[^A-Za-z]|vk::PipelineLayout or vk::raii::PipelineLayout"
+    "VkRenderPass[^A-Za-z]|vk::RenderPass or vk::raii::RenderPass"
+    "VkFramebuffer[^A-Za-z]|vk::Framebuffer or vk::raii::Framebuffer"
+    "VkDescriptorSet[^A-Za-z]|vk::DescriptorSet or vk::raii::DescriptorSet"
+    "VkDescriptorSetLayout[^A-Za-z]|vk::DescriptorSetLayout or vk::raii::DescriptorSetLayout"
+    "VkDescriptorPool[^A-Za-z]|vk::DescriptorPool or vk::raii::DescriptorPool"
+    "VkCommandPool[^A-Za-z]|vk::CommandPool or vk::raii::CommandPool"
+    "VkFence[^A-Za-z]|vk::Fence or vk::raii::Fence"
+    "VkSemaphore[^A-Za-z]|vk::Semaphore or vk::raii::Semaphore"
+    "VkShaderModule[^A-Za-z]|vk::ShaderModule or vk::raii::ShaderModule"
+    "VkSwapchainKHR|vk::SwapchainKHR or vk::raii::SwapchainKHR"
+    "VkSurfaceKHR|vk::SurfaceKHR or vk::raii::SurfaceKHR"
 )
 
-for PATTERN in "${!VK_HANDLES[@]}"; do
+for ENTRY in "${VK_HANDLES[@]}"; do
+    PATTERN="${ENTRY%%|*}"
+    REPLACEMENT="${ENTRY#*|}"
     DISPLAY_NAME=$(echo "$PATTERN" | sed 's/\[.*$//')
     COUNT=$(grep -rE --include="*.cpp" --include="*.h" "$PATTERN" "$SEARCH_PATH" 2>/dev/null | grep -v "^\s*//" | wc -l | tr -d ' ')
     if [[ $COUNT -gt 0 ]]; then
-        echo -e "${YELLOW}$DISPLAY_NAME${NC} found ${BOLD}$COUNT${NC} times → ${GREEN}${VK_HANDLES[$PATTERN]}${NC}"
+        echo -e "${YELLOW}$DISPLAY_NAME${NC} found ${BOLD}$COUNT${NC} times → ${GREEN}${REPLACEMENT}${NC}"
     fi
 done
 

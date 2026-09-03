@@ -118,7 +118,9 @@ void LoadJobQueue::workerLoop() {
                 return !running_ || !jobQueue_.empty();
             });
 
-            if (!running_ && jobQueue_.empty()) {
+            // Exit as soon as shutdown is requested; queued-but-unstarted jobs
+            // are discarded by shutdown(), so teardown never drains the queue.
+            if (!running_) {
                 return;
             }
 

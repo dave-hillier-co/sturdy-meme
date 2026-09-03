@@ -1,4 +1,5 @@
 #include "ClothSimulation.h"
+#include <algorithm>
 #include "WindSystem.h"
 #include <cmath>
 
@@ -170,8 +171,12 @@ void ClothSimulation::updatePositions(float deltaTime) {
 void ClothSimulation::update(float deltaTime, const WindSystem* windSystem) {
     // Use smaller fixed timesteps for stability
     const float fixedDt = 0.016f;  // ~60 FPS
+    // Cap the catch-up work per call. Without a cap, one slow frame (or a
+    // window that is not presenting) makes the next frame do more substeps,
+    // which makes it slower still, until the main loop never returns.
+    constexpr int maxSubsteps = 4;
     static float accumulator = 0.0f;
-    accumulator += deltaTime;
+    accumulator = std::min(accumulator + deltaTime, fixedDt * maxSubsteps);
 
     while (accumulator >= fixedDt) {
         applyForces(windSystem);

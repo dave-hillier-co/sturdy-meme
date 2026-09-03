@@ -7,6 +7,8 @@
 #include <cstdint>
 #include <memory>
 
+#include "DeferredBufferRelease.h"
+
 // CPU-side cell structure
 struct TreeCell {
     glm::vec3 boundsMin;        // AABB minimum
@@ -86,8 +88,14 @@ public:
     /**
      * Upload cell and sorted tree data to GPU buffers.
      * Call after rebuild() to make data available for shaders.
+     *
+     * Any previous GPU buffers are handed to `retiredBuffers` rather than
+     * destroyed: frames already submitted may still read them (destroying
+     * early produced garbage treeIndex values - "all trees become oak").
+     * Descriptor sets bound to the old buffers must be rewritten per frame
+     * slot by the caller.
      */
-    bool uploadToGPU();
+    bool uploadToGPU(DeferredBufferRelease& retiredBuffers);
 
     // Accessors for GPU buffers (frame-indexed to prevent race conditions)
     vk::Buffer getCellBuffer(uint32_t frameIndex) const {
@@ -124,6 +132,8 @@ public:
 private:
     bool initInternal(const InitInfo& info);
     void cleanup();
+    // Move current GPU buffers into the deferred release queue.
+    void retireGPUBuffers(DeferredBufferRelease& retiredBuffers);
 
     // Calculate cell coordinates for a world position
     void worldToCell(const glm::vec3& worldPos, int32_t& cellX, int32_t& cellZ) const;

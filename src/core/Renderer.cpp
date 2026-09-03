@@ -171,7 +171,7 @@ void Renderer::cleanup() {
     VmaAllocator allocator = vulkanContext_->getAllocator();
 
     if (device != VK_NULL_HANDLE) {
-        vkDeviceWaitIdle(device);
+        vulkanContext_->waitIdle();  // device-wide wait under GraphicsQueueLock
 
         // Drops the loader (task lambdas and anything they still own) and the
         // stored InitContexts now that no worker runs and the GPU is idle.

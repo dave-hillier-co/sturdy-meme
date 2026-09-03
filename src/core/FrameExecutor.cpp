@@ -40,11 +40,6 @@ void FrameExecutor::destroy() {
     vulkanContext_ = nullptr;
 }
 
-void FrameExecutor::prepareForResize() {
-    frameSync_.waitForAllFrames();
-    frameSync_.resetForResize();
-}
-
 FrameResult FrameExecutor::execute(const FrameBuilder& builder) {
     if (windowSuspended_) return FrameResult::Skipped;
 

@@ -189,16 +189,26 @@ void TreeSpatialIndex::rebuild(const std::vector<glm::mat4>& transforms,
             transforms.size(), nonEmptyCellCount_);
 }
 
-bool TreeSpatialIndex::uploadToGPU() {
-    // CRITICAL: Wait for all in-flight frames to complete before destroying buffers.
-    // Without this, the GPU may still be reading from buffers we're about to destroy,
-    // causing undefined behavior (garbage data -> wrong treeIndex -> all trees become oak).
-    if (!cellBuffers_.empty()) {
-        vk::Device(device_).waitIdle();
+void TreeSpatialIndex::retireGPUBuffers(DeferredBufferRelease& retiredBuffers) {
+    for (size_t i = 0; i < cellBuffers_.size(); ++i) {
+        retiredBuffers.retire(allocator_, cellBuffers_[i], cellAllocations_[i]);
     }
+    cellBuffers_.clear();
+    cellAllocations_.clear();
 
-    // Clean up old buffers (now safe since no frames are in-flight)
-    cleanup();
+    for (size_t i = 0; i < sortedTreeBuffers_.size(); ++i) {
+        retiredBuffers.retire(allocator_, sortedTreeBuffers_[i], sortedTreeAllocations_[i]);
+    }
+    sortedTreeBuffers_.clear();
+    sortedTreeAllocations_.clear();
+}
+
+bool TreeSpatialIndex::uploadToGPU(DeferredBufferRelease& retiredBuffers) {
+    // CRITICAL: In-flight frames may still be reading the old buffers. Destroying
+    // them now causes undefined behavior (garbage data -> wrong treeIndex -> all
+    // trees become oak). Hand them to the deferred release queue instead of
+    // stalling the device; they are destroyed once those frames have completed.
+    retireGPUBuffers(retiredBuffers);
 
     if (cells_.empty() || sortedTrees_.empty()) {
         SDL_Log("TreeSpatialIndex: No data to upload");

@@ -62,6 +62,9 @@ int main(int argc, char* argv[]) {
     Application app;
 
     if (!app.init("Vulkan Game", 1280, 720)) {
+        // init() releases what it created before returning false; shutdown()
+        // is idempotent, so this only guards against a partially built state.
+        app.shutdown();
         return 1;
     }
 

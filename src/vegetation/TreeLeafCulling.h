@@ -15,6 +15,7 @@
 #include "DescriptorManager.h"
 #include "PerFrameBuffer.h"
 #include "FrameIndexedBuffers.h"
+#include "DeferredBufferRelease.h"
 
 // Forward declarations
 class TreeSystem;
@@ -222,7 +223,20 @@ private:
     // twoPhaseLeafCullDescriptorsDirtyMask_.
     void writeTwoPhaseLeafCullDescriptorSet(const TreeSystem& treeSystem, uint32_t frameIndex);
 
-    void updateCullDescriptorSets(const TreeSystem& treeSystem);
+    // Same rule for the other three descriptor set groups: each is written only
+    // for the frame slot being recorded, driven by a per-frame dirty mask.
+    void writeCullDescriptorSet(const TreeSystem& treeSystem, uint32_t frameIndex);
+    void writeCellCullDescriptorSet(uint32_t frameIndex);
+    void writeTreeFilterDescriptorSet(uint32_t frameIndex);
+
+    // Replace treeDataBuffers_/treeRenderDataBuffers_ with larger ones when
+    // numTrees exceeds the current capacity. Allocates before retiring the old
+    // buffers, so on failure the current buffers stay valid. Returns false on
+    // allocation failure.
+    bool growTreeBuffers(uint32_t numTrees);
+
+    // Hand a per-frame uniform buffer set to deferredRelease_ before rebuilding it.
+    void retirePerFrameBuffers(BufferUtils::PerFrameBufferSet& buffers);
 
     const vk::raii::Device* raiiDevice_ = nullptr;
     vk::Device device_ = VK_NULL_HANDLE;
@@ -233,6 +247,12 @@ private:
     uint32_t maxFramesInFlight_ = 0;
     float terrainSize_ = 4096.0f;
 
+    // Buffers replaced at runtime (spatial index rebuild, tree-count growth) are
+    // retired here instead of vkDeviceWaitIdle: frames in flight may still read
+    // them. Ticked once per frame in recordCulling(); destroys after
+    // maxFramesInFlight_ ticks.
+    DeferredBufferRelease deferredRelease_;
+
     CullingParams params_;
 
     // =========================================================================
@@ -242,6 +262,7 @@ private:
     std::optional<vk::raii::PipelineLayout> cullPipelineLayout_;
     std::optional<vk::raii::DescriptorSetLayout> cullDescriptorSetLayout_;
     std::vector<vk::DescriptorSet> cullDescriptorSets_;
+    uint32_t cullDescriptorsDirtyMask_ = 0;  // bit f: rewrite cullDescriptorSets_[f] on its next record
 
     // Triple-buffered output buffers using FrameIndexedBuffers for type-safe access.
     // This enforces that buffer access always uses frameIndex, preventing the common
@@ -273,6 +294,7 @@ private:
     std::optional<vk::raii::PipelineLayout> cellCullPipelineLayout_;
     std::optional<vk::raii::DescriptorSetLayout> cellCullDescriptorSetLayout_;
     std::vector<vk::DescriptorSet> cellCullDescriptorSets_;
+    uint32_t cellCullDescriptorsDirtyMask_ = 0;
 
     // Triple-buffered intermediate buffers to prevent race conditions.
     // These are reset and written each frame, so they must be triple-buffered
@@ -292,6 +314,7 @@ private:
     std::optional<vk::raii::PipelineLayout> treeFilterPipelineLayout_;
     std::optional<vk::raii::DescriptorSetLayout> treeFilterDescriptorSetLayout_;
     std::vector<vk::DescriptorSet> treeFilterDescriptorSets_;
+    uint32_t treeFilterDescriptorsDirtyMask_ = 0;
 
     BufferUtils::PerFrameBufferSet treeFilterUniformBuffers_;  // CullingUniforms at binding 6
     BufferUtils::PerFrameBufferSet treeFilterParamsBuffers_;  // TreeFilterParams at binding 7
@@ -321,5 +344,4 @@ private:
     BufferUtils::FrameIndexedBuffers leafCullIndirectDispatchBuffers_;
 
     bool twoPhaseEnabled_ = true;
-    bool descriptorSetsInitialized_ = false;
 };

@@ -33,7 +33,7 @@ The principal responsibilities are:
 | `VulkanContext` | Vulkan instance, surface, device, queues, allocator, swapchain, command pools, core render targets |
 | `FrameUpdate` | Per-frame CPU-side renderer state updates before command recording |
 | `PassScheduler` | Dependency ordering and execution of render passes |
-| `SceneManager` / `SceneBuilder` | Scene assets, scene entities, legacy render-data mirror, physics-to-scene synchronization |
+| `SceneManager` / `SceneBuilder` | Scene assets, scene entities, physics-to-scene synchronization |
 | `ecs::World` | Authoritative component storage for entities that have completed ECS migration |
 
 ## Application Lifetime
@@ -98,9 +98,14 @@ The main task contents are:
 - **water**: surface rendering, displacement, flow, foam, culling, G-buffer, SSR;
 - **finalize**: cross-system descriptor wiring, geometry, GPU culling, profiling, frame execution.
 
-Both synchronous and asynchronous entry points use this task list. At present, the task bodies
-are GPU/main-thread work; the async loader does not yet stage heavy CPU work in the background.
-See the architecture review for the resulting limitation.
+Both synchronous and asynchronous entry points use this task list. Each task's `cpuWork` runs on
+an `AsyncSystemLoader` worker thread and does the heavy work (pipeline compilation, buffer/image
+creation, uploads, file IO, mesh/texture generation), staging the built objects in per-task
+storage. Each task's `gpuWork` runs on the main thread inside `pollCompletions()` and only adopts
+and registers the staged systems. `SystemRegistry` is guarded by a `std::shared_mutex` so reads
+that overlap registration are safe. `Renderer::pollAsyncInit()` reports `Pending`, `Ready`, or
+`Failed`; `Application` leaves the loading loop on `Failed`, and `Renderer::cleanup()` cancels
+and joins the loader before touching the device.
 
 `RendererBuilder` also:
 
@@ -243,8 +248,18 @@ Examples include:
 - cloud-shadow bindings for materials and skinned meshes;
 - water caustics bindings for terrain.
 
-GUI code should depend on interfaces from `src/core/interfaces/`, not concrete rendering systems.
-Control adapters in `src/controls/` combine concrete systems behind those interfaces.
+The target rule is that GUI code depends only on interfaces from `src/core/interfaces/`, with
+control adapters in `src/controls/` combining concrete systems behind those interfaces. This is
+not yet the state of the code. Panels that go through interfaces include the Hierarchy,
+Inspector, Gizmo, property editors, and IK tab (`ISceneControl`), Time tab and Dashboard
+(`ITimeSystem`, `ILocationControl`), Player and NPC tabs (`IPlayerControl`), Environment tab
+(`IEnvironmentControl`), Grass tab (`IGrassControl`), Debug tab (`IDebugControl`), and PostFX tab
+(`IPostProcessState`, `ICloudShadowControl`). The rest bind concrete systems directly: the
+Terrain, Tile Loader, and Dashboard panels include `TerrainSystem`, the Tree tab includes the
+vegetation systems and `RendererSystems`, the Water tab includes `WaterSystem`, `WaterTileCull`,
+and `OceanFFT`, and the PostFX, NPC, Debug, and IK tabs also include `PostProcessSystem`,
+`NPCSimulation`, `PhysicsDebugRenderer`, and `PlayerCape` respectively. New panels should use
+interfaces; migrating the remaining concrete bindings is outstanding work.
 
 The registry is currently a service locator as well as an owner. New feature groups should prefer
 explicit constructor/factory dependencies and keep registry lookup at the composition boundary.
@@ -299,8 +314,12 @@ The code uses vulkan-hpp and a mixture of `vk::raii` objects and VMA wrappers:
 - command and render-pass scopes;
 - per-frame and dynamically indexed buffer wrappers.
 
-Public interfaces that cross module boundaries may use C Vulkan handle types to keep migrations
-localized. Implementation code uses vulkan-hpp builder-style create infos.
+Native `vk::` types are used everywhere, including public header signatures and struct members;
+`vk::` handles and structs convert implicitly to their C counterparts, so a native header does
+not ripple to includers. A `VkFoo` C type is acceptable only at a genuine external-C-API boundary
+that literally requires it (VMA, SDL, Dear ImGui), obtained at the call site by implicit
+conversion or `static_cast`. Create-infos use the vulkan-hpp builder pattern and scoped enums;
+`vk::` to C-enum round-trips such as `static_cast<VkFormat>(vk::Format::e...)` are not allowed.
 
 ## Threading
 
@@ -371,9 +390,9 @@ Canonical interchange formats are:
 | Watershed labels | RGBA PNG encoding `uint32_t` labels |
 | Generated textures | PNG |
 
-The generator implementations and runtime loaders use these formats. The current CMake output
-declarations and tile-generator road parser have not fully migrated and are tracked as an open
-architecture issue.
+The generator implementations, CMake output declarations, runtime loaders, and the tile-generator
+road parser all use these formats. The tile generator is passed `roads.geojson` and fails when an
+explicitly supplied roads file cannot be loaded.
 
 ## Build and Validation
 

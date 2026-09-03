@@ -41,7 +41,6 @@ Every object pays memory cost for every field. Adding features means expanding t
 ### What Exists But Isn't Connected
 
 - **HiZSystem**: GPU occlusion culling with indirect draw buffers - used for tree impostors only
-- **SceneInstanceBuffer**: Instanced rendering infrastructure - used for shadow pass only
 - **CullObjectData**: Bounding sphere + AABB for GPU culling - not used for main scene
 
 ## The Core Insight: ECS Data Layout = GPU Buffer Layout

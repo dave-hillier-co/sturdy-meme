@@ -62,9 +62,6 @@ public:
     // Wait for the previous frame's GPU work (safe to destroy resources after this)
     void waitForPreviousFrame() { frameSync_.waitForPreviousFrame(); }
 
-    // Call before swapchain recreation: waits for all GPU work and resets frame state
-    void prepareForResize();
-
     void setWindowSuspended(bool suspended) { windowSuspended_ = suspended; }
 
 private:

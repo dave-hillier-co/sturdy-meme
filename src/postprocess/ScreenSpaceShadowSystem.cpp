@@ -17,9 +17,7 @@ std::unique_ptr<ScreenSpaceShadowSystem> ScreenSpaceShadowSystem::create(const I
     return system;
 }
 
-ScreenSpaceShadowSystem::~ScreenSpaceShadowSystem() {
-    cleanup();
-}
+ScreenSpaceShadowSystem::~ScreenSpaceShadowSystem() = default;
 
 bool ScreenSpaceShadowSystem::initInternal(const InitContext& ctx) {
     device_ = ctx.device;
@@ -59,23 +57,6 @@ bool ScreenSpaceShadowSystem::initInternal(const InitContext& ctx) {
     return true;
 }
 
-void ScreenSpaceShadowSystem::cleanup() {
-    if (device_ == VK_NULL_HANDLE) return;
-
-    descriptorSets_.clear();
-    BufferUtils::destroyBuffers(allocator_, uniformBuffers_);
-
-    pipeline_.reset();
-    pipelineLayout_.reset();
-    descSetLayout_.reset();
-
-    shadowBufferSampler_.reset();
-    shadowBufferView_.reset();
-    shadowBufferImage_.reset();
-
-    device_ = VK_NULL_HANDLE;
-}
-
 bool ScreenSpaceShadowSystem::createShadowBuffer() {
     // Create R8_UNORM image for shadow buffer (storage + sampled)
     if (!ImageBuilder(allocator_)
@@ -109,7 +90,7 @@ bool ScreenSpaceShadowSystem::createPipeline() {
         .addUniformBuffer(VK_SHADER_STAGE_COMPUTE_BIT)                // 3: uniforms
         .build();
 
-    if (rawLayout == VK_NULL_HANDLE) {
+    if (!rawLayout) {
         return false;
     }
     descSetLayout_.emplace(*raiiDevice_, rawLayout);
@@ -127,12 +108,13 @@ bool ScreenSpaceShadowSystem::createPipeline() {
 }
 
 bool ScreenSpaceShadowSystem::createUniformBuffers() {
-    return BufferUtils::PerFrameBufferBuilder()
-        .setAllocator(allocator_)
-        .setFrameCount(framesInFlight_)
-        .setSize(sizeof(ShadowResolveUBO))
-        .setUsage(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT)
-        .build(uniformBuffers_);
+    return PerFrameOwnedBuffers::build(allocator_,
+        BufferUtils::PerFrameBufferBuilder()
+            .setAllocator(allocator_)
+            .setFrameCount(framesInFlight_)
+            .setSize(sizeof(ShadowResolveUBO))
+            .setUsage(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT),
+        uniformBuffers_);
 }
 
 bool ScreenSpaceShadowSystem::createDescriptorSets() {
@@ -146,7 +128,7 @@ bool ScreenSpaceShadowSystem::createDescriptorSets() {
     for (uint32_t i = 0; i < framesInFlight_; ++i) {
         DescriptorManager::SetWriter(device_, descriptorSets_[i])
             .writeStorageImage(0, **shadowBufferView_)
-            .writeBuffer(3, uniformBuffers_.buffers[i], 0, sizeof(ShadowResolveUBO))
+            .writeBuffer(3, uniformBuffers_.buffer(i), 0, sizeof(ShadowResolveUBO))
             .update();
     }
 
@@ -155,7 +137,7 @@ bool ScreenSpaceShadowSystem::createDescriptorSets() {
 
 void ScreenSpaceShadowSystem::updateDescriptorSets() {
     if (!descriptorsNeedUpdate_) return;
-    if (depthView_ == VK_NULL_HANDLE || shadowMapView_ == VK_NULL_HANDLE) return;
+    if (!depthView_ || !shadowMapView_) return;
 
     for (uint32_t i = 0; i < framesInFlight_; ++i) {
         DescriptorManager::SetWriter(device_, descriptorSets_[i])
@@ -164,7 +146,7 @@ void ScreenSpaceShadowSystem::updateDescriptorSets() {
                        VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL)
             .writeImage(2, shadowMapView_, shadowMapSampler_,
                        VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL)
-            .writeBuffer(3, uniformBuffers_.buffers[i], 0, sizeof(ShadowResolveUBO))
+            .writeBuffer(3, uniformBuffers_.buffer(i), 0, sizeof(ShadowResolveUBO))
             .update();
     }
 
@@ -191,7 +173,7 @@ void ScreenSpaceShadowSystem::updatePerFrame(uint32_t frameIndex,
     ubo.cascadeSplits = cascadeSplits;
     ubo.lightDir = glm::vec4(lightDir, shadowMapSize);
 
-    memcpy(uniformBuffers_.mappedPointers[frameIndex], &ubo, sizeof(ShadowResolveUBO));
+    memcpy(uniformBuffers_.mapped[frameIndex], &ubo, sizeof(ShadowResolveUBO));
 
     // Store for next frame
     prevViewProj_ = currentViewProj;
@@ -211,7 +193,7 @@ void ScreenSpaceShadowSystem::setShadowMapSource(vk::ImageView shadowMapView, vk
 }
 
 void ScreenSpaceShadowSystem::record(vk::CommandBuffer cmd, uint32_t frameIndex) {
-    if (depthView_ == VK_NULL_HANDLE || shadowMapView_ == VK_NULL_HANDLE) {
+    if (!depthView_ || !shadowMapView_) {
         return;
     }
 
@@ -258,9 +240,9 @@ void ScreenSpaceShadowSystem::resize(VkExtent2D newExtent) {
 }
 
 vk::ImageView ScreenSpaceShadowSystem::getShadowBufferView() const {
-    return shadowBufferView_ ? **shadowBufferView_ : VK_NULL_HANDLE;
+    return shadowBufferView_ ? **shadowBufferView_ : vk::ImageView{};
 }
 
 vk::Sampler ScreenSpaceShadowSystem::getShadowBufferSampler() const {
-    return shadowBufferSampler_ ? **shadowBufferSampler_ : VK_NULL_HANDLE;
+    return shadowBufferSampler_ ? **shadowBufferSampler_ : vk::Sampler{};
 }

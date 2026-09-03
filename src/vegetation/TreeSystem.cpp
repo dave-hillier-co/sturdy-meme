@@ -36,7 +36,15 @@ std::unique_ptr<TreeSystem> TreeSystem::create(const InitInfo& info) {
 }
 
 TreeSystem::~TreeSystem() {
-    cleanup();
+    // Destroy all ECS entities - the only teardown member destruction cannot do
+    if (world_) {
+        for (auto e : treeEntities_) {
+            if (e != ecs::NullEntity) {
+                world_->destroy(e);
+            }
+        }
+    }
+    treeEntities_.clear();
 }
 
 bool TreeSystem::initInternal(const InitInfo& info) {
@@ -131,51 +139,6 @@ void TreeSystem::refreshMeshRefs() {
     }
 }
 
-void TreeSystem::cleanup() {
-    if (storedDevice_ == VK_NULL_HANDLE) return;
-
-    // Destroy all ECS entities
-    if (world_) {
-        for (auto e : treeEntities_) {
-            if (e != ecs::NullEntity) {
-                world_->destroy(e);
-            }
-        }
-    }
-    treeEntities_.clear();
-
-    // RAII-managed textures - just reset the maps
-    barkTextures_.clear();
-    barkNormalMaps_.clear();
-    leafTextures_.clear();
-
-    // Manually managed mesh vector
-    for (auto& mesh : branchMeshes_) {
-        mesh.releaseGPUResources();
-    }
-    branchMeshes_.clear();
-
-    // Shared leaf quad mesh
-    sharedLeafQuadMesh_.releaseGPUResources();
-
-    // Leaf instance SSBO
-    if (leafInstanceBuffer_ != VK_NULL_HANDLE) {
-        vmaDestroyBuffer(storedAllocator_, leafInstanceBuffer_, leafInstanceAllocation_);
-        leafInstanceBuffer_ = VK_NULL_HANDLE;
-        leafInstanceAllocation_ = VK_NULL_HANDLE;
-        leafInstanceBufferSize_ = 0;
-    }
-    leafInstancesPerTree_.clear();
-    allLeafInstances_.clear();
-    leafDrawInfoPerTree_.clear();
-
-    branchRenderables_.clear();
-    leafRenderables_.clear();
-    treeInstances_.clear();
-    treeOptions_.clear();
-    treeMeshData_.clear();
-    fullTreeBounds_.clear();
-}
 
 bool TreeSystem::loadTextures(const InitInfo& info) {
     std::string texturePath = info.resourcePath + "/textures/";
@@ -464,11 +427,7 @@ bool TreeSystem::createSharedLeafQuadMesh() {
 
 bool TreeSystem::uploadLeafInstanceBuffer() {
     // Destroy old buffer if it exists
-    if (leafInstanceBuffer_ != VK_NULL_HANDLE) {
-        vmaDestroyBuffer(storedAllocator_, leafInstanceBuffer_, leafInstanceAllocation_);
-        leafInstanceBuffer_ = VK_NULL_HANDLE;
-        leafInstanceAllocation_ = VK_NULL_HANDLE;
-    }
+    leafInstanceBuffer_ = VmaBuffer{};
 
     // Flatten all per-tree leaf instances into a single array and compute draw info
     allLeafInstances_.clear();
@@ -504,14 +463,14 @@ bool TreeSystem::uploadLeafInstanceBuffer() {
     allocInfo.usage = VMA_MEMORY_USAGE_AUTO;
     allocInfo.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT;
 
-    VmaAllocationInfo allocationInfo{};
-    if (vmaCreateBuffer(storedAllocator_, reinterpret_cast<const VkBufferCreateInfo*>(&bufferInfo), &allocInfo,
-                        reinterpret_cast<VkBuffer*>(&leafInstanceBuffer_), &leafInstanceAllocation_, &allocationInfo) != VK_SUCCESS) {
+    if (!VmaBuffer::create(storedAllocator_, bufferInfo, allocInfo, leafInstanceBuffer_)) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create leaf instance SSBO");
         return false;
     }
 
-    // Copy data to the mapped buffer
+    // Copy data to the persistently mapped buffer (VMA_ALLOCATION_CREATE_MAPPED_BIT)
+    VmaAllocationInfo allocationInfo{};
+    vmaGetAllocationInfo(storedAllocator_, leafInstanceBuffer_.getAllocation(), &allocationInfo);
     memcpy(allocationInfo.pMappedData, allLeafInstances_.data(), leafInstanceBufferSize_);
 
     SDL_Log("TreeSystem: Uploaded %zu leaf instances to SSBO (%zu bytes)",

@@ -11,7 +11,12 @@
 #include <SDL3/SDL.h>
 
 std::unique_ptr<TerrainDescriptorSets> TerrainDescriptorSets::create(const InitInfo& info) {
+    if (!info.raiiDevice) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "TerrainDescriptorSets: raiiDevice is null");
+        return nullptr;
+    }
     auto ds = std::unique_ptr<TerrainDescriptorSets>(new TerrainDescriptorSets());
+    ds->raiiDevice_ = info.raiiDevice;
     ds->device_ = info.device;
     ds->descriptorPool_ = info.descriptorPool;
     ds->framesInFlight_ = info.framesInFlight;
@@ -22,19 +27,13 @@ std::unique_ptr<TerrainDescriptorSets> TerrainDescriptorSets::create(const InitI
     return ds;
 }
 
-TerrainDescriptorSets::~TerrainDescriptorSets() {
-    if (!device_) return;
-    if (computeLayout_) device_.destroyDescriptorSetLayout(computeLayout_);
-    if (renderLayout_) device_.destroyDescriptorSetLayout(renderLayout_);
-}
-
 bool TerrainDescriptorSets::createLayouts() {
     // Compute bindings:
     // 0: CBT buffer, 1: indirect dispatch, 2: indirect draw, 3: height map
     // 4: terrain uniforms, 5: visible indices, 6: cull indirect dispatch
     // 14: shadow visible indices, 15: shadow indirect draw
     // 19: tile array, 20: tile info
-    computeLayout_ = DescriptorManager::LayoutBuilder(device_)
+    vk::DescriptorSetLayout rawComputeLayout = DescriptorManager::LayoutBuilder(device_)
         .addStorageBuffer(VK_SHADER_STAGE_COMPUTE_BIT)           // 0: CBT buffer
         .addStorageBuffer(VK_SHADER_STAGE_COMPUTE_BIT)           // 1: indirect dispatch
         .addStorageBuffer(VK_SHADER_STAGE_COMPUTE_BIT)           // 2: indirect draw
@@ -48,7 +47,8 @@ bool TerrainDescriptorSets::createLayouts() {
         .addBinding(20, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_COMPUTE_BIT)
         .build();
 
-    if (!computeLayout_) return false;
+    if (!rawComputeLayout) return false;
+    computeLayout_.emplace(*raiiDevice_, rawComputeLayout);
 
     // Render bindings:
     // 0: CBT (vertex), 3: heightmap, 4: terrain UBO, 5: scene UBO
@@ -58,7 +58,7 @@ bool TerrainDescriptorSets::createLayouts() {
     // 21: caustics, 22: caustics UBO, 29: liquid UBO, 30: material layer UBO
     // 31: screen-space shadow
     // 24-28: virtual texture (page table, cache, feedback, counter, params)
-    renderLayout_ = DescriptorManager::LayoutBuilder(device_)
+    vk::DescriptorSetLayout rawRenderLayout = DescriptorManager::LayoutBuilder(device_)
         .addBinding(0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_VERTEX_BIT)
         .addBinding(3, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT)
         .addBinding(4, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT)
@@ -89,11 +89,13 @@ bool TerrainDescriptorSets::createLayouts() {
         .addBinding(31, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT)
         .build();
 
-    return renderLayout_ != VK_NULL_HANDLE;
+    if (!rawRenderLayout) return false;
+    renderLayout_.emplace(*raiiDevice_, rawRenderLayout);
+    return true;
 }
 
 bool TerrainDescriptorSets::allocateSets() {
-    auto rawComputeSets = descriptorPool_->allocate(computeLayout_, framesInFlight_);
+    auto rawComputeSets = descriptorPool_->allocate(**computeLayout_, framesInFlight_);
     if (rawComputeSets.size() != framesInFlight_) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "TerrainDescriptorSets: Failed to allocate compute sets");
         return false;
@@ -103,7 +105,7 @@ bool TerrainDescriptorSets::allocateSets() {
         computeSets_.push_back(vk::DescriptorSet(set));
     }
 
-    auto rawRenderSets = descriptorPool_->allocate(renderLayout_, framesInFlight_);
+    auto rawRenderSets = descriptorPool_->allocate(**renderLayout_, framesInFlight_);
     if (rawRenderSets.size() != framesInFlight_) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "TerrainDescriptorSets: Failed to allocate render sets");
         return false;

@@ -126,23 +126,12 @@ bool SkinnedMesh::upload(VmaAllocator allocator, vk::Device device, vk::CommandP
         return false;
     }
 
-    // Success - transfer ownership to member variables
-    managedVertexBuffer.releaseToRaw(vertexBuffer, vertexAllocation);
-    managedIndexBuffer.releaseToRaw(indexBuffer, indexAllocation);
+    // Success - transfer ownership to member variables (replaces any previous upload)
+    vertexBuffer_ = std::move(managedVertexBuffer);
+    indexBuffer_ = std::move(managedIndexBuffer);
 
     // Staging buffers automatically destroyed here
 
     SDL_Log("SkinnedMesh: Uploaded %zu vertices, %zu indices", vertices.size(), indices.size());
     return true;
-}
-
-void SkinnedMesh::destroy(VmaAllocator allocator) {
-    if (vertexBuffer != VK_NULL_HANDLE) {
-        vmaDestroyBuffer(allocator, vertexBuffer, vertexAllocation);
-        vertexBuffer = VK_NULL_HANDLE;
-    }
-    if (indexBuffer != VK_NULL_HANDLE) {
-        vmaDestroyBuffer(allocator, indexBuffer, indexAllocation);
-        indexBuffer = VK_NULL_HANDLE;
-    }
 }

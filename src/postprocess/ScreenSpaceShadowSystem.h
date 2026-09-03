@@ -13,6 +13,7 @@
 #include "InitContext.h"
 #include "VmaImage.h"
 #include "PerFrameBuffer.h"
+#include "PerFrameOwnedBuffers.h"
 
 /**
  * ScreenSpaceShadowSystem - Pre-computes shadows into a screen-space buffer
@@ -87,7 +88,6 @@ public:
 
 private:
     bool initInternal(const InitContext& ctx);
-    void cleanup();
 
     bool createShadowBuffer();
     bool createPipeline();
@@ -104,11 +104,12 @@ private:
         glm::vec4 lightDir;  // xyz = to-sun direction, w = shadow map size
     };
 
-    // Core Vulkan handles
-    vk::Device device_ = VK_NULL_HANDLE;
-    VmaAllocator allocator_ = VK_NULL_HANDLE;
-    DescriptorManager::Pool* descriptorPool_ = nullptr;
+    // Non-owning device/context handles. raiiDevice_ must outlive every
+    // vk::raii member below (VulkanContext guarantees this).
     const vk::raii::Device* raiiDevice_ = nullptr;
+    vk::Device device_{};
+    VmaAllocator allocator_ = nullptr;
+    DescriptorManager::Pool* descriptorPool_ = nullptr;
     VkExtent2D extent_ = {0, 0};
     std::string shaderPath_;
     uint32_t framesInFlight_ = 0;
@@ -123,15 +124,15 @@ private:
     std::optional<vk::raii::PipelineLayout> pipelineLayout_;
     std::optional<vk::raii::Pipeline> pipeline_;
 
-    // Per-frame descriptor sets and uniform buffers
+    // Per-frame descriptor sets (pool-owned) and uniform buffers (RAII)
     std::vector<vk::DescriptorSet> descriptorSets_;
-    BufferUtils::PerFrameBufferSet uniformBuffers_;
+    PerFrameOwnedBuffers uniformBuffers_;
 
-    // External resource references
-    vk::ImageView depthView_ = VK_NULL_HANDLE;
-    vk::Sampler depthSampler_ = VK_NULL_HANDLE;
-    vk::ImageView shadowMapView_ = VK_NULL_HANDLE;
-    vk::Sampler shadowMapSampler_ = VK_NULL_HANDLE;
+    // External resource references (borrowed, non-owning)
+    vk::ImageView depthView_{};
+    vk::Sampler depthSampler_{};
+    vk::ImageView shadowMapView_{};
+    vk::Sampler shadowMapSampler_{};
     bool descriptorsNeedUpdate_ = true;
 
     // Previous frame tracking for temporal reprojection

@@ -70,7 +70,8 @@ private:
                       uint32_t tileResolution,
                       uint32_t storedTileResolution,
                       uint32_t workerCount);
-    void cleanup();
+    // Idempotent: signals workers to exit and joins them. Called from the destructor.
+    void stop();
     void workerLoop();
     bool loadTileFromDisk(TileCoord coord, uint32_t lod, LoadedTile& out) const;
     std::string getTilePath(TileCoord coord, uint32_t lod) const;
@@ -97,6 +98,9 @@ private:
     uint32_t tileResolution_ = 512;
     uint32_t storedTileResolution_ = 513;
 
+    // The destructor joins workers_ explicitly (see stop()) before any member is
+    // destroyed, so the relative order of workers_ and the queues below is not
+    // load-bearing.
     std::vector<std::thread> workers_;
     std::atomic<bool> running_{false};
 

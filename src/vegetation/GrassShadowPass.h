@@ -39,12 +39,6 @@ public:
 
     vk::DescriptorSetLayout getDescriptorSetLayout() const { return **descriptorSetLayout_; }
 
-    void cleanup() {
-        pipeline_.reset();
-        pipelineLayout_.reset();
-        descriptorSetLayout_.reset();
-    }
-
 private:
     std::optional<vk::raii::DescriptorSetLayout> descriptorSetLayout_;
     std::optional<vk::raii::PipelineLayout> pipelineLayout_;

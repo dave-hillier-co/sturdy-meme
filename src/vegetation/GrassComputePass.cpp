@@ -132,12 +132,12 @@ bool GrassComputePass::allocateDescriptorSets(DescriptorManager::Pool* pool,
 void GrassComputePass::writeInitialDescriptorSets(vk::Device device, const GrassBuffers& buffers, uint32_t count) {
     for (uint32_t set = 0; set < count; set++) {
         DescriptorManager::SetWriter writer(device, descriptorSets_[set]);
-        writer.writeBuffer(0, buffers.instanceBuffers().buffers[set], 0,
+        writer.writeBuffer(0, buffers.instanceBuffers().get(set), 0,
                            sizeof(GrassInstance) * GrassConstants::MAX_INSTANCES, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
-        writer.writeBuffer(1, buffers.indirectBuffers().buffers[set], 0,
+        writer.writeBuffer(1, buffers.indirectBuffers().get(set), 0,
                            sizeof(VkDrawIndirectCommand), VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
-        writer.writeBuffer(2, buffers.uniformBuffers().buffers[0], 0, sizeof(CullingUniforms));
-        writer.writeBuffer(7, buffers.paramsBuffers().buffers[0], 0, sizeof(GrassParams));
+        writer.writeBuffer(2, buffers.uniformBuffers().get(0), 0, sizeof(CullingUniforms));
+        writer.writeBuffer(7, buffers.paramsBuffers().get(0), 0, sizeof(GrassParams));
         writer.update();
     }
 }
@@ -193,7 +193,7 @@ void GrassComputePass::recordResetAndCompute(vk::CommandBuffer cmd, uint32_t fra
     BarrierHelpers::indirectDrawAndShaderToComputeWrite(cmd);
 
     // Reset indirect buffer before compute dispatch
-    cmd.fillBuffer(buffers.indirectBuffers().buffers[writeSet], 0, sizeof(VkDrawIndirectCommand), 0);
+    cmd.fillBuffer(buffers.indirectBuffers().get(writeSet), 0, sizeof(VkDrawIndirectCommand), 0);
     BarrierHelpers::fillBufferToCompute(cmd);
 
     // Bind the tiled compute pipeline if available, otherwise use the base pipeline

@@ -10,8 +10,8 @@
 #include <memory>
 
 #include "ParticleSystem.h"
-#include "PerFrameBuffer.h"
-#include "DoubleBufferedBuffer.h"
+#include "FrameIndexedBuffers.h"
+#include "MappedFrameBuffers.h"
 #include "DynamicUniformBuffer.h"
 #include "UBOs.h"
 #include "interfaces/ILeafControl.h"
@@ -63,8 +63,8 @@ public:
      */
     static std::unique_ptr<LeafSystem> create(const InitInfo& info);
 
-
-    ~LeafSystem();
+    // Member-driven teardown: RAII buffers first, then the ParticleSystem's pipelines
+    ~LeafSystem() = default;
 
     // Non-copyable, non-movable
     LeafSystem(const LeafSystem&) = delete;
@@ -128,7 +128,6 @@ private:
     bool createGraphicsDescriptorSetLayout(SystemLifecycleHelper::PipelineHandles& handles);
     bool createGraphicsPipeline(SystemLifecycleHelper::PipelineHandles& handles);
     bool createDescriptorSets();
-    void destroyBuffers(VmaAllocator allocator);
 
     // Accessors - use stored initInfo during init, particleSystem after init completes
     vk::Device getDevice() const { return storedDevice; }
@@ -156,12 +155,12 @@ private:
     // Triple-buffered storage buffers: one per frame in flight
     // Each frame gets its own buffer set to avoid GPU read/CPU write conflicts.
     // Buffer set count MUST match frames in flight (3) to prevent race conditions.
-    BufferUtils::DoubleBufferedBufferSet particleBuffers;
-    BufferUtils::DoubleBufferedBufferSet indirectBuffers;
+    BufferUtils::FrameIndexedBuffers particleBuffers;
+    BufferUtils::FrameIndexedBuffers indirectBuffers;
 
-    // Uniform buffers (per frame)
-    BufferUtils::PerFrameBufferSet uniformBuffers;    // CullingUniforms at binding 3
-    BufferUtils::PerFrameBufferSet paramsBuffers;     // LeafPhysicsParams at binding 10
+    // Uniform buffers (per frame, persistently mapped)
+    BufferUtils::MappedFrameBuffers uniformBuffers;    // CullingUniforms at binding 3
+    BufferUtils::MappedFrameBuffers paramsBuffers;     // LeafPhysicsParams at binding 10
 
     // Descriptor sets
     // Descriptor sets managed through ParticleSystem helper
@@ -193,7 +192,7 @@ private:
     const BufferUtils::DynamicUniformBuffer* dynamicRendererUBO_ = nullptr;
 
     // Displacement region uniform buffer (per-frame)
-    BufferUtils::PerFrameBufferSet displacementRegionBuffers;
+    BufferUtils::MappedFrameBuffers displacementRegionBuffers;
 
     // Displacement region center (updated from camera position)
     glm::vec2 displacementRegionCenter = glm::vec2(0.0f);
@@ -206,5 +205,4 @@ private:
     static constexpr uint32_t WORKGROUP_SIZE = 256;
 
     bool initInternal(const InitInfo& info);
-    void cleanup();
 };

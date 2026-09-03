@@ -111,7 +111,10 @@ std::optional<GrassSystem::Bundle> GrassSystem::createWithDependencies(
 }
 
 GrassSystem::~GrassSystem() {
-    cleanup();
+    // Pipelines/layouts held by the lifecycle helper are raw handles; everything
+    // else (raii pipelines in the passes, GrassBuffers, the tile manager) is
+    // released by member destruction.
+    lifecycle_.destroy();
 }
 
 bool GrassSystem::initInternal(const InitInfo& info) {
@@ -156,7 +159,7 @@ bool GrassSystem::initInternal(const InitInfo& info) {
                                      lifecycle_.getGraphicsPipeline());
     };
     hooks.createDescriptorSets = [this]() { return createDescriptorSets(); };
-    hooks.destroyBuffers = [this](VmaAllocator allocator) { buffers_.destroy(allocator); };
+    hooks.destroyBuffers = [](VmaAllocator) {};  // GrassBuffers is RAII; hook must be non-null
 
     // Build lifecycle init info from GrassSystem::InitInfo
     SystemLifecycleHelper::InitInfo lifecycleInfo{};
@@ -180,20 +183,6 @@ bool GrassSystem::initInternal(const InitInfo& info) {
     computePass_.writeInitialDescriptorSets(device_, buffers_, buffers_.getBufferSetCount());
     SDL_Log("GrassSystem::init() - done writing compute descriptor sets");
     return true;
-}
-
-void GrassSystem::cleanup() {
-    if (!device_) return;  // Not initialized
-
-    // Reset composed component RAII resources
-    computePass_.cleanup();
-    shadowPass_.cleanup();
-
-    // Destroy lifecycle resources (pipelines and buffers)
-    lifecycle_.destroy();
-
-    device_ = nullptr;
-    raiiDevice_ = nullptr;
 }
 
 bool GrassSystem::createGraphicsDescriptorSetLayout(SystemLifecycleHelper::PipelineHandles& handles) {
@@ -354,10 +343,9 @@ bool GrassSystem::createExtraPipelines(SystemLifecycleHelper::PipelineHandles& c
         tileInfo.graphicsPipelineLayout = graphicsHandles.pipelineLayout;
         tileInfo.graphicsPipeline = graphicsHandles.pipeline;
 
-        tileManager_ = std::make_unique<GrassTileManager>();
-        if (!tileManager_->init(tileInfo)) {
+        tileManager_ = GrassTileManager::create(tileInfo);
+        if (!tileManager_) {
             SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to initialize GrassTileManager");
-            tileManager_.reset();
             tiledModeEnabled_ = false;
         }
     }
@@ -413,7 +401,7 @@ void GrassSystem::updateDescriptorSets(vk::Device dev, const std::vector<vk::Buf
             graphicsWriter.writeBuffer(0, rendererUniformBuffers[0], 0, 160,
                                        VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC);
         }
-        graphicsWriter.writeBuffer(1, buffers_.instanceBuffers().buffers[set], 0,
+        graphicsWriter.writeBuffer(1, buffers_.instanceBuffers().get(set), 0,
                                    sizeof(GrassInstance) * GrassConstants::MAX_INSTANCES,
                                    VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
         graphicsWriter.writeImage(2, shadowMapView, shadowSampler, VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL);
@@ -437,14 +425,12 @@ void GrassSystem::updateDescriptorSets(vk::Device dev, const std::vector<vk::Buf
     if (tiledModeEnabled_ && tileManager_) {
         uint32_t firstBufferSet = 0;
         tileManager_->setSharedBuffers(
-            buffers_.instanceBuffers().buffers[firstBufferSet],
-            buffers_.indirectBuffers().buffers[firstBufferSet]
+            buffers_.instanceBuffers().get(firstBufferSet),
+            buffers_.indirectBuffers().get(firstBufferSet)
         );
 
-        std::vector<vk::Buffer> vkCullingBuffers(buffers_.uniformBuffers().buffers.begin(),
-                                                   buffers_.uniformBuffers().buffers.end());
-        std::vector<vk::Buffer> vkParamsBuffers(buffers_.paramsBuffers().buffers.begin(),
-                                                  buffers_.paramsBuffers().buffers.end());
+        std::vector<vk::Buffer> vkCullingBuffers = buffers_.uniformBuffers().handles();
+        std::vector<vk::Buffer> vkParamsBuffers = buffers_.paramsBuffers().handles();
 
         std::array<vk::Buffer, 3> tileInfoArray{};
         for (size_t i = 0; i < tileInfoBuffers_.size() && i < 3; ++i) {
@@ -476,8 +462,8 @@ void GrassSystem::recordResetAndCompute(vk::CommandBuffer cmd, uint32_t frameInd
 
     // Update compute descriptor set with per-frame buffers before dispatch
     DescriptorManager::SetWriter writer(getDevice(), computePass_.getDescriptorSet(writeSet));
-    writer.writeBuffer(2, buffers_.uniformBuffers().buffers[frameIndex], 0, sizeof(CullingUniforms));
-    writer.writeBuffer(7, buffers_.paramsBuffers().buffers[frameIndex], 0, sizeof(GrassParams));
+    writer.writeBuffer(2, buffers_.uniformBuffers().get(frameIndex), 0, sizeof(CullingUniforms));
+    writer.writeBuffer(7, buffers_.paramsBuffers().get(frameIndex), 0, sizeof(GrassParams));
     if (!tileInfoBuffers_.empty() && tileInfoBuffers_.at(frameIndex)) {
         writer.writeBuffer(6, tileInfoBuffers_.at(frameIndex), 0, VK_WHOLE_SIZE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
     }
@@ -534,7 +520,7 @@ void GrassSystem::recordDraw(vk::CommandBuffer cmd, uint32_t frameIndex, float t
         vk::ShaderStageFlagBits::eVertex,
         0, grassPush);
 
-    cmd.drawIndirect(buffers_.indirectBuffers().buffers[readSet], 0, 1, sizeof(VkDrawIndirectCommand));
+    cmd.drawIndirect(buffers_.indirectBuffers().get(readSet), 0, 1, sizeof(VkDrawIndirectCommand));
     DIAG_RECORD_DRAW();
 }
 

@@ -24,12 +24,11 @@ std::unique_ptr<AnimatedCharacter> AnimatedCharacter::create(const InitInfo& inf
     return instance;
 }
 
-AnimatedCharacter::~AnimatedCharacter() {
-    cleanup();
-}
+// Out-of-line: members hold forward-declared/owning types. skinnedMesh and
+// renderMesh release their GPU buffers in their own destructors.
+AnimatedCharacter::~AnimatedCharacter() = default;
 
 bool AnimatedCharacter::loadInternal(const InitInfo& info) {
-    allocator_ = info.allocator;
     modelPath_ = info.path;
 
     std::optional<GLTFSkinnedLoadResult> result;
@@ -115,20 +114,6 @@ bool AnimatedCharacter::loadInternal(const InitInfo& info) {
     buildBoneLODMasks();
 
     return true;
-}
-
-void AnimatedCharacter::cleanup() {
-    if (allocator_ != VK_NULL_HANDLE) {
-        skinnedMesh.destroy(allocator_);
-        renderMesh.releaseGPUResources();
-    }
-    bindPoseVertices.clear();
-    indices.clear();
-    skeleton.joints.clear();
-    bindPoseLocalTransforms.clear();
-    animations.clear();
-    meshVertices.clear();
-    loaded = false;
 }
 
 void AnimatedCharacter::loadAdditionalAnimations(const std::vector<std::string>& paths) {

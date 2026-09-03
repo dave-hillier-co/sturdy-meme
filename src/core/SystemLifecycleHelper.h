@@ -9,6 +9,38 @@
 
 class SystemLifecycleHelper {
 public:
+    SystemLifecycleHelper() = default;
+
+    // Releases the pipeline handles if the owning system never called
+    // destroy(). The destroyBuffers hook is deliberately NOT run here: it
+    // captures the owning system's `this` and would execute after that
+    // system's destructor body, when its buffer members may already be gone.
+    // Systems that own buffers through this helper keep calling destroy().
+    ~SystemLifecycleHelper() {
+        if (!initialized) return;
+        if (graphicsEnabled) destroyPipelineHandles(initInfo.device, graphicsPipeline);
+        if (computeEnabled) destroyPipelineHandles(initInfo.device, computePipeline);
+    }
+
+    // Owns raw pipeline handles: copying would double-destroy them. Moving
+    // transfers them and leaves the source uninitialized (inert destructor).
+    SystemLifecycleHelper(const SystemLifecycleHelper&) = delete;
+    SystemLifecycleHelper& operator=(const SystemLifecycleHelper&) = delete;
+    SystemLifecycleHelper(SystemLifecycleHelper&& other) noexcept { moveFrom(other); }
+    SystemLifecycleHelper& operator=(SystemLifecycleHelper&& other) noexcept {
+        if (this != &other) {
+            // Explicit destroy() by the owner is the documented teardown; a
+            // still-initialized target only releases its pipeline handles
+            // here (see the destructor for why destroyBuffers is not run).
+            if (initialized) {
+                if (graphicsEnabled) destroyPipelineHandles(initInfo.device, graphicsPipeline);
+                if (computeEnabled) destroyPipelineHandles(initInfo.device, computePipeline);
+            }
+            moveFrom(other);
+        }
+        return *this;
+    }
+
     struct InitInfo {
         vk::Device device;
         VmaAllocator allocator;
@@ -21,9 +53,9 @@ public:
     };
 
     struct PipelineHandles {
-        vk::DescriptorSetLayout descriptorSetLayout = VK_NULL_HANDLE;
-        vk::PipelineLayout pipelineLayout = VK_NULL_HANDLE;
-        vk::Pipeline pipeline = VK_NULL_HANDLE;
+        vk::DescriptorSetLayout descriptorSetLayout{};
+        vk::PipelineLayout pipelineLayout{};
+        vk::Pipeline pipeline{};
     };
 
     struct Hooks {
@@ -70,11 +102,11 @@ public:
         return true;
     }
 
-    void destroy(vk::Device deviceOverride = VK_NULL_HANDLE, VmaAllocator allocatorOverride = VK_NULL_HANDLE) {
+    void destroy(vk::Device deviceOverride = {}, VmaAllocator allocatorOverride = nullptr) {
         if (!initialized) return;
 
-        vk::Device dev = deviceOverride == VK_NULL_HANDLE ? initInfo.device : deviceOverride;
-        VmaAllocator alloc = allocatorOverride == VK_NULL_HANDLE ? initInfo.allocator : allocatorOverride;
+        vk::Device dev = deviceOverride ? deviceOverride : initInfo.device;
+        VmaAllocator alloc = allocatorOverride ? allocatorOverride : initInfo.allocator;
 
         if (graphicsEnabled) {
             destroyPipelineHandles(dev, graphicsPipeline);
@@ -102,14 +134,27 @@ public:
     PipelineHandles& getGraphicsPipeline() { return graphicsPipeline; }
 
 private:
+    void moveFrom(SystemLifecycleHelper& other) noexcept {
+        initInfo = std::move(other.initInfo);
+        callbacks = std::move(other.callbacks);
+        computePipeline = other.computePipeline;
+        graphicsPipeline = other.graphicsPipeline;
+        computeEnabled = other.computeEnabled;
+        graphicsEnabled = other.graphicsEnabled;
+        initialized = other.initialized;
+        other.computePipeline = {};
+        other.graphicsPipeline = {};
+        other.initialized = false;
+    }
+
+    // vkDestroy* accept null handles, so this is safe on an empty set.
     void destroyPipelineHandles(vk::Device dev, PipelineHandles& handles) {
-        vk::Device hppDevice(dev);
-        hppDevice.destroyPipeline(vk::Pipeline(handles.pipeline));
-        hppDevice.destroyPipelineLayout(vk::PipelineLayout(handles.pipelineLayout));
-        hppDevice.destroyDescriptorSetLayout(vk::DescriptorSetLayout(handles.descriptorSetLayout));
-        handles.pipeline = VK_NULL_HANDLE;
-        handles.pipelineLayout = VK_NULL_HANDLE;
-        handles.descriptorSetLayout = VK_NULL_HANDLE;
+        dev.destroyPipeline(handles.pipeline);
+        dev.destroyPipelineLayout(handles.pipelineLayout);
+        dev.destroyDescriptorSetLayout(handles.descriptorSetLayout);
+        handles.pipeline = vk::Pipeline{};
+        handles.pipelineLayout = vk::PipelineLayout{};
+        handles.descriptorSetLayout = vk::DescriptorSetLayout{};
     }
 
     InitInfo initInfo{};

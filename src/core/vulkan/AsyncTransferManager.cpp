@@ -4,81 +4,16 @@
 #include "VmaBufferFactory.h"
 #include <SDL3/SDL_log.h>
 
+std::unique_ptr<AsyncTransferManager> AsyncTransferManager::create(VulkanContext& context) {
+    auto manager = std::make_unique<AsyncTransferManager>(ConstructToken{}, context);
+    if (!manager->ready()) {
+        return nullptr;  // whatever was created dies with the object
+    }
+    return manager;
+}
+
 AsyncTransferManager::~AsyncTransferManager() {
-    shutdown();
-}
-
-bool AsyncTransferManager::initialize(VulkanContext& context) {
-    if (initialized_) {
-        return true;
-    }
-
-    context_.emplace(context);
-    device_ = context.getVkDevice();
-    transferQueue_ = context.getVkTransferQueue();
-    graphicsQueue_ = context.getVkGraphicsQueue();
-    transferQueueFamily_ = context.getTransferQueueFamily();
-    graphicsQueueFamily_ = context.getGraphicsQueueFamily();
-    hasDedicatedTransfer_ = context.hasDedicatedTransferQueue();
-    allocator_ = context.getAllocator();
-
-    // Create command pool for transfer queue
-    auto poolInfo = vk::CommandPoolCreateInfo{}
-        .setFlags(vk::CommandPoolCreateFlagBits::eResetCommandBuffer |
-                  vk::CommandPoolCreateFlagBits::eTransient)
-        .setQueueFamilyIndex(transferQueueFamily_);
-
-    try {
-        transferCommandPool_.emplace(context.getRaiiDevice(), poolInfo);
-    } catch (const vk::SystemError& e) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
-            "AsyncTransferManager: Failed to create command pool: %s", e.what());
-        return false;
-    }
-
-    // With a dedicated transfer queue, textures destined for graphics access need
-    // a queue-family ownership transfer: the release is recorded on the transfer
-    // queue, but the matching acquire must be recorded on the graphics queue.
-    // Allocate a separate pool for those acquire command buffers.
-    if (hasDedicatedTransfer_) {
-        auto graphicsPoolInfo = vk::CommandPoolCreateInfo{}
-            .setFlags(vk::CommandPoolCreateFlagBits::eResetCommandBuffer |
-                      vk::CommandPoolCreateFlagBits::eTransient)
-            .setQueueFamilyIndex(graphicsQueueFamily_);
-        try {
-            graphicsCommandPool_.emplace(context.getRaiiDevice(), graphicsPoolInfo);
-        } catch (const vk::SystemError& e) {
-            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
-                "AsyncTransferManager: Failed to create graphics acquire command pool: %s", e.what());
-            return false;
-        }
-    }
-
-    // Create timeline semaphore for tracking transfer completion (Vulkan 1.2)
-    try {
-        auto typeInfo = vk::SemaphoreTypeCreateInfo{}
-            .setSemaphoreType(vk::SemaphoreType::eTimeline)
-            .setInitialValue(0);
-
-        auto semaphoreInfo = vk::SemaphoreCreateInfo{}
-            .setPNext(&typeInfo);
-
-        transferTimeline_.emplace(context.getRaiiDevice(), semaphoreInfo);
-        nextTimelineValue_ = 1;
-    } catch (const vk::SystemError& e) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
-            "AsyncTransferManager: Failed to create timeline semaphore: %s", e.what());
-        return false;
-    }
-
-    initialized_ = true;
-    SDL_Log("AsyncTransferManager: Initialized with timeline semaphore (dedicated transfer: %s)",
-            hasDedicatedTransfer_ ? "yes" : "no");
-    return true;
-}
-
-void AsyncTransferManager::shutdown() {
-    if (!initialized_) {
+    if (!ready()) {
         return;
     }
 
@@ -96,12 +31,70 @@ void AsyncTransferManager::shutdown() {
         pendingTransfers_.clear();
     }
 
-    transferTimeline_.reset();
-    graphicsCommandPool_.reset();
-    transferCommandPool_.reset();
-    initialized_ = false;
-
+    // Timeline semaphore and command pools are released by their destructors
     SDL_Log("AsyncTransferManager: Shutdown complete");
+}
+
+AsyncTransferManager::AsyncTransferManager(ConstructToken, VulkanContext& context)
+    : context_(context)
+    , device_(context.getVkDevice())
+    , transferQueue_(context.getVkTransferQueue())
+    , graphicsQueue_(context.getVkGraphicsQueue())
+    , transferQueueFamily_(context.getTransferQueueFamily())
+    , graphicsQueueFamily_(context.getGraphicsQueueFamily())
+    , hasDedicatedTransfer_(context.hasDedicatedTransferQueue())
+    , allocator_(context.getAllocator()) {
+    // Create command pool for transfer queue
+    auto poolInfo = vk::CommandPoolCreateInfo{}
+        .setFlags(vk::CommandPoolCreateFlagBits::eResetCommandBuffer |
+                  vk::CommandPoolCreateFlagBits::eTransient)
+        .setQueueFamilyIndex(transferQueueFamily_);
+
+    try {
+        transferCommandPool_.emplace(context.getRaiiDevice(), poolInfo);
+    } catch (const vk::SystemError& e) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
+            "AsyncTransferManager: Failed to create command pool: %s", e.what());
+        return;
+    }
+
+    // With a dedicated transfer queue, textures destined for graphics access need
+    // a queue-family ownership transfer: the release is recorded on the transfer
+    // queue, but the matching acquire must be recorded on the graphics queue.
+    // Allocate a separate pool for those acquire command buffers.
+    if (hasDedicatedTransfer_) {
+        auto graphicsPoolInfo = vk::CommandPoolCreateInfo{}
+            .setFlags(vk::CommandPoolCreateFlagBits::eResetCommandBuffer |
+                      vk::CommandPoolCreateFlagBits::eTransient)
+            .setQueueFamilyIndex(graphicsQueueFamily_);
+        try {
+            graphicsCommandPool_.emplace(context.getRaiiDevice(), graphicsPoolInfo);
+        } catch (const vk::SystemError& e) {
+            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
+                "AsyncTransferManager: Failed to create graphics acquire command pool: %s", e.what());
+            return;
+        }
+    }
+
+    // Create timeline semaphore for tracking transfer completion (Vulkan 1.2)
+    try {
+        auto typeInfo = vk::SemaphoreTypeCreateInfo{}
+            .setSemaphoreType(vk::SemaphoreType::eTimeline)
+            .setInitialValue(0);
+
+        auto semaphoreInfo = vk::SemaphoreCreateInfo{}
+            .setPNext(&typeInfo);
+
+        transferTimeline_.emplace(context.getRaiiDevice(), semaphoreInfo);
+        nextTimelineValue_ = 1;
+    } catch (const vk::SystemError& e) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
+            "AsyncTransferManager: Failed to create timeline semaphore: %s", e.what());
+        return;
+    }
+
+    SDL_Log("AsyncTransferManager: Initialized with timeline semaphore (dedicated transfer: %s)",
+            hasDedicatedTransfer_ ? "yes" : "no");
 }
 
 vk::CommandBuffer AsyncTransferManager::allocateTransferCommandBuffer() {
@@ -177,7 +170,7 @@ TransferHandle AsyncTransferManager::submitBufferTransfer(
     vk::Buffer dstBuffer, vk::DeviceSize dstOffset,
     CompletionCallback onComplete)
 {
-    if (!initialized_ || !data || size == 0) {
+    if (!ready() || !data || size == 0) {
         return {};
     }
 
@@ -257,7 +250,7 @@ TransferHandle AsyncTransferManager::submitImageTransfer(
     uint32_t layerCount,
     CompletionCallback onComplete)
 {
-    if (!initialized_ || !data || size == 0) {
+    if (!ready() || !data || size == 0) {
         return {};
     }
 
@@ -530,7 +523,7 @@ void AsyncTransferManager::wait(TransferHandle handle) {
     for (;;) {
         processPendingTransfers();
 
-        vk::Fence acquireFence = nullptr;
+        vk::Fence acquireFence{};
         {
             std::lock_guard<std::mutex> lock(transferMutex_);
             bool stillPending = false;
@@ -551,7 +544,7 @@ void AsyncTransferManager::wait(TransferHandle handle) {
 }
 
 void AsyncTransferManager::processPendingTransfers() {
-    if (!initialized_ || !transferTimeline_) return;
+    if (!ready()) return;
 
     std::vector<PendingTransfer> completed;
 
@@ -597,7 +590,7 @@ void AsyncTransferManager::processPendingTransfers() {
 }
 
 void AsyncTransferManager::waitAll() {
-    if (!initialized_ || !transferTimeline_) return;
+    if (!ready()) return;
 
     // Find the highest timeline value we need to wait for
     uint64_t maxValue = 0;

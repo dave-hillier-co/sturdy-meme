@@ -11,8 +11,7 @@
 // the command buffer. Everything else is handled internally.
 //
 // Usage:
-//   FrameExecutor executor;
-//   executor.init(vulkanContext);
+//   auto executor = FrameExecutor::create(vulkanContext);
 //
 //   // In render loop:
 //   FrameResult result = executor.execute(
@@ -24,6 +23,7 @@
 #include "TripleBuffering.h"
 #include <vulkan/vulkan.hpp>
 #include <functional>
+#include <memory>
 
 class VulkanContext;
 
@@ -39,20 +39,24 @@ enum class FrameResult {
 
 class FrameExecutor {
 public:
-    FrameExecutor() = default;
+    // Passkey for controlled construction via make_unique
+    struct ConstructToken { explicit ConstructToken() = default; };
+    FrameExecutor(ConstructToken, VulkanContext& ctx, TripleBuffering&& frameSync);
     ~FrameExecutor() = default;
 
     FrameExecutor(const FrameExecutor&) = delete;
     FrameExecutor& operator=(const FrameExecutor&) = delete;
-    FrameExecutor(FrameExecutor&&) noexcept = default;
-    FrameExecutor& operator=(FrameExecutor&&) noexcept = default;
+    FrameExecutor(FrameExecutor&&) = delete;
+    FrameExecutor& operator=(FrameExecutor&&) = delete;
 
-    bool init(VulkanContext* ctx, uint32_t frameCount = TripleBuffering::DEFAULT_FRAME_COUNT);
-    void destroy();
+    // Create the executor and its sync objects. The context must outlive the
+    // executor. Returns nullptr on failure.
+    static std::unique_ptr<FrameExecutor> create(VulkanContext& ctx,
+                                                 uint32_t frameCount = TripleBuffering::DEFAULT_FRAME_COUNT);
 
     // Execute a complete frame: sync → acquire → build → submit → present → advance.
     // Callback receives (imageIndex, frameIndex) and returns the recorded command buffer.
-    // Return VK_NULL_HANDLE from the callback to skip the frame.
+    // Return a null vk::CommandBuffer from the callback to skip the frame.
     using FrameBuilder = std::function<vk::CommandBuffer(uint32_t imageIndex, uint32_t frameIndex)>;
     FrameResult execute(const FrameBuilder& builder);
 
@@ -75,6 +79,6 @@ private:
     bool ensurePresentSemaphores();
 
     TripleBuffering frameSync_;
-    VulkanContext* vulkanContext_ = nullptr;
+    VulkanContext* vulkanContext_ = nullptr;  // borrowed
     bool windowSuspended_ = false;
 };

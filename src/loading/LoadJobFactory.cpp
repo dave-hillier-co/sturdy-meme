@@ -316,7 +316,7 @@ vk::Buffer StagedResourceUploader::uploadBuffer(const StagedBuffer& staged, VkBu
     if (staged.data.empty()) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
                     "Cannot upload empty buffer '%s'", staged.name.c_str());
-        return VK_NULL_HANDLE;
+        return vk::Buffer{};
     }
 
     vk::DeviceSize bufferSize = staged.data.size();
@@ -324,13 +324,13 @@ vk::Buffer StagedResourceUploader::uploadBuffer(const StagedBuffer& staged, VkBu
     // Create staging buffer
     ManagedBuffer stagingBuffer;
     if (!VmaBufferFactory::createStagingBuffer(ctx_.allocator, bufferSize, stagingBuffer)) {
-        return VK_NULL_HANDLE;
+        return vk::Buffer{};
     }
 
     // Copy to staging
     void* data = stagingBuffer.map();
     if (!data) {
-        return VK_NULL_HANDLE;
+        return vk::Buffer{};
     }
     std::memcpy(data, staged.data.data(), bufferSize);
     stagingBuffer.unmap();
@@ -338,7 +338,7 @@ vk::Buffer StagedResourceUploader::uploadBuffer(const StagedBuffer& staged, VkBu
     // Create device-local storage buffer (includes TRANSFER_DST usage)
     ManagedBuffer deviceBuffer;
     if (!VmaBufferFactory::createStorageBuffer(ctx_.allocator, bufferSize, deviceBuffer)) {
-        return VK_NULL_HANDLE;
+        return vk::Buffer{};
     }
 
     // Use CommandScope for transfer
@@ -347,7 +347,7 @@ vk::Buffer StagedResourceUploader::uploadBuffer(const StagedBuffer& staged, VkBu
                               vk::CommandPool(ctx_.commandPool),
                               vk::Queue(ctx_.queue));
         if (!cmdScope.begin()) {
-            return VK_NULL_HANDLE;
+            return vk::Buffer{};
         }
 
         vk::CommandBuffer vkCmd(cmdScope.getHandle());
@@ -355,7 +355,7 @@ vk::Buffer StagedResourceUploader::uploadBuffer(const StagedBuffer& staged, VkBu
         vkCmd.copyBuffer(stagingBuffer.get(), deviceBuffer.get(), copyRegion);
 
         if (!cmdScope.end()) {
-            return VK_NULL_HANDLE;
+            return vk::Buffer{};
         }
     }
 
@@ -365,66 +365,39 @@ vk::Buffer StagedResourceUploader::uploadBuffer(const StagedBuffer& staged, VkBu
 
 // AsyncTextureUploader implementation
 
-AsyncTextureUploader::~AsyncTextureUploader() {
-    shutdown();
-}
-
-bool AsyncTextureUploader::initialize(vk::Device device, VmaAllocator allocator,
-                                       AsyncTransferManager* transferManager) {
-    if (initialized_) {
-        return true;
-    }
-
-    if (!device || !allocator || !transferManager) {
+std::unique_ptr<AsyncTextureUploader> AsyncTextureUploader::create(vk::Device device, VmaAllocator allocator,
+                                                                   AsyncTransferManager& transferManager) {
+    if (!device || !allocator) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
             "AsyncTextureUploader: Invalid initialization parameters");
-        return false;
+        return nullptr;
     }
-
-    device_ = device;
-    allocator_ = allocator;
-    transferManager_ = transferManager;
-    initialized_ = true;
-
-    SDL_Log("AsyncTextureUploader: Initialized");
-    return true;
+    return std::make_unique<AsyncTextureUploader>(ConstructToken{}, device, allocator, transferManager);
 }
 
-void AsyncTextureUploader::shutdown() {
-    if (!initialized_) {
-        return;
-    }
+AsyncTextureUploader::AsyncTextureUploader(ConstructToken, vk::Device device, VmaAllocator allocator,
+                                           AsyncTransferManager& transferManager)
+    : device_(device), allocator_(allocator), transferManager_(transferManager) {
+    SDL_Log("AsyncTextureUploader: Initialized");
+}
 
-    // Wait for all pending transfers and clean up
+AsyncTextureUploader::~AsyncTextureUploader() {
+    // Wait for all pending transfers; the pending images and views then
+    // release themselves when the map is cleared.
     {
         std::lock_guard<std::mutex> lock(pendingMutex_);
-        vk::Device vkDevice(device_);
         for (auto& [id, upload] : pendingUploads_) {
-            // Wait for transfer to complete before destroying resources
             if (upload.transferHandle.isValid()) {
-                transferManager_->wait(upload.transferHandle);
+                transferManager_.get().wait(upload.transferHandle);
             }
-
-            // Clean up GPU resources
-            if (upload.view != VK_NULL_HANDLE) {
-                vkDevice.destroyImageView(upload.view);
-            }
-            // ManagedImage destructor handles image cleanup
         }
         pendingUploads_.clear();
     }
 
-    initialized_ = false;
     SDL_Log("AsyncTextureUploader: Shutdown complete");
 }
 
 AsyncTextureHandle AsyncTextureUploader::submitTexture(const StagedTexture& staged) {
-    if (!initialized_) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
-            "AsyncTextureUploader: Not initialized");
-        return {};
-    }
-
     if (staged.pixels.empty() || staged.width == 0 || staged.height == 0) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
             "AsyncTextureUploader: Cannot upload empty texture '%s'", staged.name.c_str());
@@ -459,10 +432,9 @@ AsyncTextureHandle AsyncTextureUploader::submitTexture(const StagedTexture& stag
             .setBaseArrayLayer(0)
             .setLayerCount(1));
 
-    vk::ImageView imageView;
-    vk::Device vkDevice(device_);
+    vk::UniqueImageView imageView;
     try {
-        imageView = static_cast<vk::ImageView>(vkDevice.createImageView(viewInfo));
+        imageView = device_.createImageViewUnique(viewInfo);
     } catch (const vk::SystemError& e) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
             "AsyncTextureUploader: Failed to create image view for '%s': %s", staged.name.c_str(), e.what());
@@ -470,7 +442,7 @@ AsyncTextureHandle AsyncTextureUploader::submitTexture(const StagedTexture& stag
     }
 
     // Submit async transfer
-    TransferHandle transferHandle = transferManager_->submitImageTransfer(
+    TransferHandle transferHandle = transferManager_.get().submitImageTransfer(
         staged.pixels.data(),
         static_cast<vk::DeviceSize>(staged.pixels.size()),
         vk::Image(managedImage.get()),
@@ -483,8 +455,7 @@ AsyncTextureHandle AsyncTextureUploader::submitTexture(const StagedTexture& stag
     if (!transferHandle.isValid()) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
             "AsyncTextureUploader: Failed to submit transfer for '%s'", staged.name.c_str());
-        vkDevice.destroyImageView(imageView);
-        return {};
+        return {};  // image view and image release themselves
     }
 
     // Track pending upload
@@ -495,7 +466,7 @@ AsyncTextureHandle AsyncTextureUploader::submitTexture(const StagedTexture& stag
             .id = id,
             .transferHandle = transferHandle,
             .image = std::move(managedImage),
-            .view = imageView,
+            .view = std::move(imageView),
             .width = staged.width,
             .height = staged.height,
             .name = staged.name
@@ -510,7 +481,7 @@ AsyncTextureHandle AsyncTextureUploader::submitTexture(const StagedTexture& stag
 }
 
 bool AsyncTextureUploader::isComplete(AsyncTextureHandle handle) const {
-    if (!initialized_ || !handle.isValid()) {
+    if (!handle.isValid()) {
         return false;
     }
 
@@ -520,13 +491,13 @@ bool AsyncTextureUploader::isComplete(AsyncTextureHandle handle) const {
         return false;  // Already taken or invalid
     }
 
-    return transferManager_->isComplete(it->second.transferHandle);
+    return transferManager_.get().isComplete(it->second.transferHandle);
 }
 
 AsyncUploadedTexture AsyncTextureUploader::takeCompletedTexture(AsyncTextureHandle handle) {
     AsyncUploadedTexture result;
 
-    if (!initialized_ || !handle.isValid()) {
+    if (!handle.isValid()) {
         return result;
     }
 
@@ -537,20 +508,20 @@ AsyncUploadedTexture AsyncTextureUploader::takeCompletedTexture(AsyncTextureHand
     }
 
     // Check if complete
-    if (!transferManager_->isComplete(it->second.transferHandle)) {
+    if (!transferManager_.get().isComplete(it->second.transferHandle)) {
         return result;  // Not ready yet
     }
 
     // Extract the completed upload
     PendingUpload& upload = it->second;
 
-    // Transfer ownership to result
+    // Transfer ownership to result (the caller now owns image, allocation and view)
     vk::Image rawImage;
     VmaAllocation rawAlloc;
     upload.image.releaseToRaw(rawImage, rawAlloc);
 
     result.image = rawImage;
-    result.view = upload.view;
+    result.view = upload.view.release();
     result.allocation = rawAlloc;
     result.width = upload.width;
     result.height = upload.height;
@@ -569,15 +540,11 @@ AsyncUploadedTexture AsyncTextureUploader::takeCompletedTexture(AsyncTextureHand
 std::vector<AsyncUploadedTexture> AsyncTextureUploader::takeAllCompleted() {
     std::vector<AsyncUploadedTexture> results;
 
-    if (!initialized_) {
-        return results;
-    }
-
     std::lock_guard<std::mutex> lock(pendingMutex_);
 
     std::vector<uint64_t> completedIds;
     for (const auto& [id, upload] : pendingUploads_) {
-        if (transferManager_->isComplete(upload.transferHandle)) {
+        if (transferManager_.get().isComplete(upload.transferHandle)) {
             completedIds.push_back(id);
         }
     }
@@ -594,7 +561,7 @@ std::vector<AsyncUploadedTexture> AsyncTextureUploader::takeAllCompleted() {
         upload.image.releaseToRaw(rawImage, rawAlloc);
 
         result.image = rawImage;
-        result.view = upload.view;
+        result.view = upload.view.release();
         result.allocation = rawAlloc;
         result.width = upload.width;
         result.height = upload.height;
@@ -612,10 +579,6 @@ std::vector<AsyncUploadedTexture> AsyncTextureUploader::takeAllCompleted() {
 }
 
 size_t AsyncTextureUploader::getPendingCount() const {
-    if (!initialized_) {
-        return 0;
-    }
-
     std::lock_guard<std::mutex> lock(pendingMutex_);
     return pendingUploads_.size();
 }

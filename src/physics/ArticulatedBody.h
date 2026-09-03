@@ -7,6 +7,7 @@
 #include <string>
 #include <vector>
 #include <memory>
+#include <optional>
 
 // Forward declarations
 struct Skeleton;
@@ -57,22 +58,22 @@ ArticulatedBodyConfig createHumanoidConfig(const Skeleton& skeleton);
 // Uses Jolt's Ragdoll API for numerically stable constraint solving.
 class ArticulatedBody {
 public:
-    ArticulatedBody() = default;
+    // Factory: create all rigid bodies and constraints from config and add
+    // them to the physics world. rootPosition: world position for the root
+    // (pelvis) body. Returns nullopt on failure. The physics world must
+    // outlive the returned body; destruction removes the ragdoll from it.
+    static std::optional<ArticulatedBody> create(PhysicsWorld& physics,
+                                                 const ArticulatedBodyConfig& config,
+                                                 const glm::vec3& rootPosition);
+
+    // Removes the ragdoll (bodies + constraints) from the physics world.
     ~ArticulatedBody();
 
     // Move-only
-    ArticulatedBody(ArticulatedBody&& other) noexcept;
-    ArticulatedBody& operator=(ArticulatedBody&& other) noexcept;
+    ArticulatedBody(ArticulatedBody&& other) noexcept = default;
+    ArticulatedBody& operator=(ArticulatedBody&& other) noexcept = default;
     ArticulatedBody(const ArticulatedBody&) = delete;
     ArticulatedBody& operator=(const ArticulatedBody&) = delete;
-
-    // Create all rigid bodies and constraints from config.
-    // rootPosition: world position for the root (pelvis) body.
-    bool create(PhysicsWorld& physics, const ArticulatedBodyConfig& config,
-                const glm::vec3& rootPosition);
-
-    // Remove all bodies and constraints from the physics world.
-    void destroy(PhysicsWorld& physics);
 
     bool isValid() const { return ragdoll_ != nullptr; }
 
@@ -109,9 +110,17 @@ public:
     bool hasNaNState(const PhysicsWorld& physics) const;
 
 private:
-    void cleanup(PhysicsWorld& physics);
+    ArticulatedBody() = default;
+    bool createInternal(PhysicsWorld& physics, const ArticulatedBodyConfig& config,
+                        const glm::vec3& rootPosition);
 
-    JPH::Ragdoll* ragdoll_ = nullptr;              // Jolt ragdoll instance (manages bodies + constraints)
+    // Removes the ragdoll from its physics system and deletes it. Defined in
+    // the .cpp so Jolt headers stay out of this header.
+    struct RagdollDeleter {
+        void operator()(JPH::Ragdoll* ragdoll) const noexcept;
+    };
+
+    std::unique_ptr<JPH::Ragdoll, RagdollDeleter> ragdoll_;  // Jolt ragdoll instance (manages bodies + constraints)
     std::vector<PhysicsBodyID> bodyIDs_;            // Cached body IDs from ragdoll
     std::vector<int32_t> jointIndices_;             // Maps part index -> skeleton joint index
     std::vector<float> effortFactors_;              // Torque scaling per part

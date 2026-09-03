@@ -7,7 +7,7 @@
 #include <vector>
 #include <memory>
 
-#include "PerFrameBuffer.h"
+#include "core/vulkan/VmaBuffer.h"
 #include "UBOs.h"
 
 // Wind system for CPU-side wind management and GPU uniform updates
@@ -31,7 +31,7 @@ public:
      */
     static std::unique_ptr<WindSystem> create(const InitInfo& info);
 
-    ~WindSystem();
+    ~WindSystem() = default;
 
     // Non-copyable, non-movable
     WindSystem(const WindSystem&) = delete;
@@ -46,7 +46,7 @@ public:
     void updateUniforms(uint32_t frameIndex);
 
     // Get descriptor buffer info for binding
-    VkDescriptorBufferInfo getBufferInfo(uint32_t frameIndex) const;
+    vk::DescriptorBufferInfo getBufferInfo(uint32_t frameIndex) const;
 
     // Shared environment settings
     const EnvironmentSettings& getEnvironmentSettings() const { return environmentSettings; }
@@ -83,7 +83,6 @@ public:
 
 private:
     bool initInternal(const InitInfo& info);
-    void cleanup();
 
     // CPU-side Perlin noise for gameplay sampling
     float perlinNoise(float x, float y) const;
@@ -97,9 +96,9 @@ private:
     // Time tracking
     float totalTime = 0.0f;
 
-    // Vulkan resources
-    VmaAllocator allocator = VK_NULL_HANDLE;
-    BufferUtils::PerFrameBufferSet uniformBuffers;
+    // Per-frame uniform buffers (RAII; unmapped and freed on destruction)
+    std::vector<ManagedBuffer> uniformBuffers_;
+    std::vector<void*> uniformMapped_;
     uint32_t framesInFlight = 0;
 
     // Pre-computed gradient table for Perlin noise (same seed as GPU)

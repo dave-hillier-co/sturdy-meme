@@ -7,12 +7,18 @@
 
 namespace ml {
 
-GPUInference::~GPUInference() {
-    destroy();
+std::unique_ptr<GPUInference> GPUInference::create(const vk::raii::Device& device,
+                                                   VmaAllocator allocator,
+                                                   const Config& config) {
+    auto inference = std::make_unique<GPUInference>(ConstructToken{});
+    if (!inference->initInternal(device, allocator, config)) {
+        return nullptr;
+    }
+    return inference;
 }
 
-bool GPUInference::init(vk::Device device, VmaAllocator allocator, const Config& cfg) {
-    device_ = device;
+bool GPUInference::initInternal(const vk::raii::Device& device, VmaAllocator allocator, const Config& cfg) {
+    device_ = *device;
     allocator_ = allocator;
     config_ = cfg;
 
@@ -22,16 +28,14 @@ bool GPUInference::init(vk::Device device, VmaAllocator allocator, const Config&
     size_t actionBufSize = cfg.maxNPCs * cfg.actionDim * sizeof(float);
 
     if (!createBuffer(latentBuffer_, latentBufSize,
-                      VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+                      vk::BufferUsageFlagBits::eStorageBuffer,
                       VMA_MEMORY_USAGE_CPU_TO_GPU)) return false;
     if (!createBuffer(obsBuffer_, obsBufSize,
-                      VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+                      vk::BufferUsageFlagBits::eStorageBuffer,
                       VMA_MEMORY_USAGE_CPU_TO_GPU)) return false;
     if (!createBuffer(actionBuffer_, actionBufSize,
-                      VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+                      vk::BufferUsageFlagBits::eStorageBuffer,
                       VMA_MEMORY_USAGE_GPU_TO_CPU)) return false;
-
-    vk::Device vkDevice(device_);
 
     // Descriptor set layout: 5 storage buffers
     std::array<vk::DescriptorSetLayoutBinding, 5> bindings{};
@@ -46,7 +50,7 @@ bool GPUInference::init(vk::Device device, VmaAllocator allocator, const Config&
     auto layoutInfo = vk::DescriptorSetLayoutCreateInfo{}
         .setBindings(bindings);
     try {
-        descriptorSetLayout_ = vkDevice.createDescriptorSetLayout(layoutInfo);
+        descriptorSetLayout_.emplace(device, layoutInfo);
     } catch (const vk::SystemError&) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "GPUInference: failed to create descriptor set layout");
         return false;
@@ -61,7 +65,7 @@ bool GPUInference::init(vk::Device device, VmaAllocator allocator, const Config&
         .setMaxSets(1)
         .setPoolSizes(poolSize);
     try {
-        descriptorPool_ = vkDevice.createDescriptorPool(poolInfo);
+        descriptorPool_.emplace(device, poolInfo);
     } catch (const vk::SystemError&) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "GPUInference: failed to create descriptor pool");
         return false;
@@ -76,19 +80,19 @@ bool GPUInference::init(vk::Device device, VmaAllocator allocator, const Config&
         .setSize(sizeof(InferencePushConstants));
 
     // Pipeline layout
-    vk::DescriptorSetLayout setLayout(descriptorSetLayout_);
+    vk::DescriptorSetLayout setLayout = **descriptorSetLayout_;
     auto plInfo = vk::PipelineLayoutCreateInfo{}
         .setSetLayouts(setLayout)
         .setPushConstantRanges(pushRange);
     try {
-        pipelineLayout_ = vkDevice.createPipelineLayout(plInfo);
+        pipelineLayout_.emplace(device, plInfo);
     } catch (const vk::SystemError&) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "GPUInference: failed to create pipeline layout");
         return false;
     }
 
-    // Load compute shader
-    auto shaderModule = ShaderLoader::loadShaderModule(device_, cfg.shaderPath);
+    // Load compute shader (RAII module: destroyed at end of scope, after pipeline creation)
+    auto shaderModule = ShaderLoader::loadShaderModule(device, cfg.shaderPath);
     if (!shaderModule) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
                      "GPUInference: failed to load shader %s", cfg.shaderPath.c_str());
@@ -119,39 +123,34 @@ bool GPUInference::init(vk::Device device, VmaAllocator allocator, const Config&
 
     auto stageInfo = vk::PipelineShaderStageCreateInfo{}
         .setStage(vk::ShaderStageFlagBits::eCompute)
-        .setModule(*shaderModule)
+        .setModule(**shaderModule)
         .setPName("main")
         .setPSpecializationInfo(&specInfo);
 
     auto pipelineInfo = vk::ComputePipelineCreateInfo{}
         .setStage(stageInfo)
-        .setLayout(pipelineLayout_);
+        .setLayout(**pipelineLayout_);
 
-    auto pipelineResult = vkDevice.createComputePipeline(nullptr, pipelineInfo);
-    vkDevice.destroyShaderModule(*shaderModule);
-
-    if (pipelineResult.result != vk::Result::eSuccess) {
+    try {
+        pipeline_.emplace(device, nullptr, pipelineInfo);
+    } catch (const vk::SystemError&) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "GPUInference: failed to create compute pipeline");
         return false;
     }
-    pipeline_ = pipelineResult.value;
 
-    initialized_ = true;
     SDL_Log("GPUInference: initialized (maxNPCs=%u, latent=%u, obs=%u, action=%u)",
             cfg.maxNPCs, cfg.latentDim, cfg.obsDim, cfg.actionDim);
     return true;
 }
 
 bool GPUInference::uploadWeights(const calm::LowLevelController& llc) {
-    if (!initialized_) return false;
-
     std::vector<float> packedWeights;
     std::vector<GPULayerMeta> layerMetas;
     if (!packWeights(llc, packedWeights, layerMetas)) return false;
 
     size_t weightSize = packedWeights.size() * sizeof(float);
     if (!createBuffer(weightBuffer_, weightSize,
-                      VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+                      vk::BufferUsageFlagBits::eStorageBuffer,
                       VMA_MEMORY_USAGE_CPU_TO_GPU)) return false;
     uploadToBuffer(weightBuffer_, packedWeights.data(), weightSize);
 
@@ -166,7 +165,7 @@ bool GPUInference::uploadWeights(const calm::LowLevelController& llc) {
     }
     size_t metaSize = metaFlat.size() * sizeof(uint32_t);
     if (!createBuffer(layerMetaBuffer_, metaSize,
-                      VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+                      vk::BufferUsageFlagBits::eStorageBuffer,
                       VMA_MEMORY_USAGE_CPU_TO_GPU)) return false;
     uploadToBuffer(layerMetaBuffer_, metaFlat.data(), metaSize);
 
@@ -180,7 +179,6 @@ bool GPUInference::uploadWeights(const calm::LowLevelController& llc) {
 void GPUInference::uploadInputs(const std::vector<float>& latents,
                                  const std::vector<float>& observations,
                                  uint32_t npcCount) {
-    if (!initialized_) return;
     uploadToBuffer(latentBuffer_, latents.data(),
                    npcCount * config_.latentDim * sizeof(float));
     uploadToBuffer(obsBuffer_, observations.data(),
@@ -188,14 +186,14 @@ void GPUInference::uploadInputs(const std::vector<float>& latents,
 }
 
 void GPUInference::recordDispatch(vk::CommandBuffer cmd, uint32_t npcCount) {
-    if (!initialized_ || pipeline_ == VK_NULL_HANDLE) return;
+    if (!pipeline_) return;
 
     vk::CommandBuffer vkCmd(cmd);
 
-    vkCmd.bindPipeline(vk::PipelineBindPoint::eCompute, pipeline_);
+    vkCmd.bindPipeline(vk::PipelineBindPoint::eCompute, **pipeline_);
     vkCmd.bindDescriptorSets(vk::PipelineBindPoint::eCompute,
-                             pipelineLayout_, 0, vk::DescriptorSet(descriptorSet_), {});
-    vkCmd.pushConstants(pipelineLayout_, vk::ShaderStageFlagBits::eCompute,
+                             **pipelineLayout_, 0, descriptorSet_, {});
+    vkCmd.pushConstants(**pipelineLayout_, vk::ShaderStageFlagBits::eCompute,
                         0, sizeof(pushConstants_), &pushConstants_);
 
     vkCmd.dispatch(npcCount, 1, 1);
@@ -210,98 +208,63 @@ void GPUInference::recordDispatch(vk::CommandBuffer cmd, uint32_t npcCount) {
 }
 
 void GPUInference::readBackActions(std::vector<float>& actions, uint32_t npcCount) {
-    if (!initialized_) return;
     size_t totalFloats = npcCount * config_.actionDim;
     actions.resize(totalFloats);
     readFromBuffer(actionBuffer_, actions.data(), totalFloats * sizeof(float));
 }
 
-void GPUInference::destroy() {
-    if (!initialized_ && device_ == VK_NULL_HANDLE) return;
-
-    destroyBuffer(weightBuffer_);
-    destroyBuffer(layerMetaBuffer_);
-    destroyBuffer(latentBuffer_);
-    destroyBuffer(obsBuffer_);
-    destroyBuffer(actionBuffer_);
-
-    vk::Device vkDevice(device_);
-    if (pipeline_ != VK_NULL_HANDLE) {
-        vkDevice.destroyPipeline(pipeline_);
-        pipeline_ = VK_NULL_HANDLE;
-    }
-    if (pipelineLayout_ != VK_NULL_HANDLE) {
-        vkDevice.destroyPipelineLayout(pipelineLayout_);
-        pipelineLayout_ = VK_NULL_HANDLE;
-    }
-    if (descriptorPool_ != VK_NULL_HANDLE) {
-        vkDevice.destroyDescriptorPool(descriptorPool_);
-        descriptorPool_ = VK_NULL_HANDLE;
-    }
-    if (descriptorSetLayout_ != VK_NULL_HANDLE) {
-        vkDevice.destroyDescriptorSetLayout(descriptorSetLayout_);
-        descriptorSetLayout_ = VK_NULL_HANDLE;
-    }
-
-    initialized_ = false;
-}
-
 // --- Buffer helpers ---
 
 bool GPUInference::createBuffer(GPUBuffer& buf, size_t size,
-                                 VkBufferUsageFlags usage,
+                                 vk::BufferUsageFlags usage,
                                  VmaMemoryUsage memUsage) {
-    if (buf.buffer != VK_NULL_HANDLE) destroyBuffer(buf);
-
     auto bufferInfo = vk::BufferCreateInfo{}
         .setSize(size)
-        .setUsage(static_cast<vk::BufferUsageFlags>(usage));
+        .setUsage(usage);
 
     VmaAllocationCreateInfo allocInfo{};
     allocInfo.usage = memUsage;
     allocInfo.flags = VMA_ALLOCATION_CREATE_MAPPED_BIT;
 
-    if (vmaCreateBuffer(allocator_, reinterpret_cast<const VkBufferCreateInfo*>(&bufferInfo), &allocInfo,
-                        reinterpret_cast<VkBuffer*>(&buf.buffer), &buf.allocation, nullptr) != VK_SUCCESS) {
+    // Replaces (and frees) any previous buffer
+    VmaBuffer created;
+    if (!VmaBuffer::create(allocator_, bufferInfo, allocInfo, created)) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
                      "GPUInference: failed to create buffer (size=%zu)", size);
         return false;
     }
+    buf.buffer = std::move(created);
     buf.size = size;
     return true;
 }
 
-void GPUInference::destroyBuffer(GPUBuffer& buf) {
-    if (buf.buffer != VK_NULL_HANDLE && allocator_) {
-        vmaDestroyBuffer(allocator_, buf.buffer, buf.allocation);
-        buf = {};
-    }
-}
-
 void GPUInference::uploadToBuffer(GPUBuffer& buf, const void* data, size_t size) {
+    VmaAllocation allocation = buf.buffer.getAllocation();
     void* mapped = nullptr;
-    vmaMapMemory(allocator_, buf.allocation, &mapped);
+    vmaMapMemory(allocator_, allocation, &mapped);
     std::memcpy(mapped, data, size);
-    vmaUnmapMemory(allocator_, buf.allocation);
-    vmaFlushAllocation(allocator_, buf.allocation, 0, size);
+    vmaUnmapMemory(allocator_, allocation);
+    vmaFlushAllocation(allocator_, allocation, 0, size);
 }
 
 void GPUInference::readFromBuffer(const GPUBuffer& buf, void* data, size_t size) {
-    vmaInvalidateAllocation(allocator_, buf.allocation, 0, size);
+    VmaAllocation allocation = buf.buffer.getAllocation();
+    vmaInvalidateAllocation(allocator_, allocation, 0, size);
     void* mapped = nullptr;
-    vmaMapMemory(allocator_, buf.allocation, &mapped);
+    vmaMapMemory(allocator_, allocation, &mapped);
     std::memcpy(data, mapped, size);
-    vmaUnmapMemory(allocator_, buf.allocation);
+    vmaUnmapMemory(allocator_, allocation);
 }
 
 bool GPUInference::createDescriptorSet() {
-    vk::DescriptorSetLayout setLayout(descriptorSetLayout_);
+    vk::DescriptorSetLayout setLayout = **descriptorSetLayout_;
     auto allocInfo = vk::DescriptorSetAllocateInfo{}
-        .setDescriptorPool(descriptorPool_)
+        .setDescriptorPool(**descriptorPool_)
         .setSetLayouts(setLayout);
 
+    // Pool-owned: released when descriptorPool_ is destroyed
     vk::DescriptorSet set;
-    vk::Result result = vk::Device(device_).allocateDescriptorSets(&allocInfo, &set);
+    vk::Result result = device_.allocateDescriptorSets(&allocInfo, &set);
     descriptorSet_ = set;
     return result == vk::Result::eSuccess;
 }
@@ -318,10 +281,10 @@ void GPUInference::updateDescriptorSet() {
 
     for (int i = 0; i < 5; ++i) {
         auto* b = buffers[i].buf;
-        if (b->buffer == VK_NULL_HANDLE) continue;
+        if (!b->buffer) continue;
 
         bufInfos[i] = vk::DescriptorBufferInfo{}
-            .setBuffer(b->buffer)
+            .setBuffer(vk::Buffer(b->buffer.get()))
             .setOffset(0)
             .setRange(b->size);
 
@@ -334,7 +297,7 @@ void GPUInference::updateDescriptorSet() {
     }
 
     if (!writes.empty()) {
-        vk::Device(device_).updateDescriptorSets(writes, {});
+        device_.updateDescriptorSets(writes, {});
     }
 }
 

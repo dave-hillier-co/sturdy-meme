@@ -17,10 +17,6 @@ std::unique_ptr<ShadowCullPass> ShadowCullPass::create(const InitInfo& info) {
     return pass;
 }
 
-ShadowCullPass::~ShadowCullPass() {
-    cleanup();
-}
-
 bool ShadowCullPass::initInternal(const InitInfo& info) {
     device_ = info.device;
     allocator_ = info.allocator;
@@ -47,21 +43,6 @@ bool ShadowCullPass::initInternal(const InitInfo& info) {
     return true;
 }
 
-void ShadowCullPass::cleanup() {
-    if (device_ == VK_NULL_HANDLE) return;
-    for (auto& set : uniformBuffers_) BufferUtils::destroyBuffers(allocator_, set);
-    for (auto& set : indirectBuffers_) BufferUtils::destroyBuffers(allocator_, set);
-    for (auto& set : countBuffers_) BufferUtils::destroyBuffers(allocator_, set);
-    uniformBuffers_.clear();
-    indirectBuffers_.clear();
-    countBuffers_.clear();
-    descSets_.clear();
-    pipeline_.reset();
-    pipelineLayout_.reset();
-    descSetLayout_.reset();
-    device_ = VK_NULL_HANDLE;
-}
-
 bool ShadowCullPass::createPipeline() {
     // Same descriptor layout as the color cull pass (scene_cull.comp is shared).
     vk::DescriptorSetLayout rawLayout = DescriptorManager::LayoutBuilder(device_)
@@ -72,7 +53,7 @@ bool ShadowCullPass::createPipeline() {
         .addCombinedImageSampler(VK_SHADER_STAGE_COMPUTE_BIT)  // 4: Hi-Z (placeholder)
         .build();
 
-    if (rawLayout == VK_NULL_HANDLE) return false;
+    if (!rawLayout) return false;
     descSetLayout_.emplace(*raiiDevice_, rawLayout);
 
     if (!PipelineLayoutBuilder(*raiiDevice_)
@@ -88,41 +69,63 @@ bool ShadowCullPass::createPipeline() {
 }
 
 bool ShadowCullPass::createBuffers() {
+    uniformBuffers_.clear();
+    indirectBuffers_.clear();
+    countBuffers_.clear();
     uniformBuffers_.resize(cascadeCount_);
     indirectBuffers_.resize(cascadeCount_);
     countBuffers_.resize(cascadeCount_);
+    uniformMapped_.assign(cascadeCount_, std::vector<void*>(framesInFlight_, nullptr));
+    countMapped_.assign(cascadeCount_, std::vector<void*>(framesInFlight_, nullptr));
 
     const vk::DeviceSize indirectSize = sizeof(GPUDrawIndexedIndirectCommand) * MAX_OBJECTS;
 
+    // Creates framesInFlight buffers of one kind for a cascade; records the persistent
+    // mapping (if any) into `mapped`.
+    auto createSet = [&](std::vector<ManagedBuffer>& out, std::vector<void*>* mapped,
+                         vk::DeviceSize size, vk::BufferUsageFlags usage,
+                         VmaAllocationCreateFlags allocFlags) {
+        auto bufferInfo = vk::BufferCreateInfo{}
+            .setSize(size)
+            .setUsage(usage)
+            .setSharingMode(vk::SharingMode::eExclusive);
+        VmaAllocationCreateInfo allocInfo{};
+        allocInfo.usage = VMA_MEMORY_USAGE_AUTO;
+        allocInfo.flags = allocFlags;
+
+        out.resize(framesInFlight_);
+        for (uint32_t f = 0; f < framesInFlight_; ++f) {
+            if (!VmaBuffer::create(allocator_, bufferInfo, allocInfo, out[f])) {
+                return false;
+            }
+            if (mapped) {
+                VmaAllocationInfo allocationInfo{};
+                vmaGetAllocationInfo(allocator_, out[f].getAllocation(), &allocationInfo);
+                (*mapped)[f] = allocationInfo.pMappedData;
+            }
+        }
+        return true;
+    };
+
     for (uint32_t c = 0; c < cascadeCount_; ++c) {
-        if (!BufferUtils::PerFrameBufferBuilder()
-                .setAllocator(allocator_)
-                .setFrameCount(framesInFlight_)
-                .setSize(sizeof(GPUCullUniforms))
-                .setUsage(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT)
-                .build(uniformBuffers_[c])) {
+        if (!createSet(uniformBuffers_[c], &uniformMapped_[c], sizeof(GPUCullUniforms),
+                       vk::BufferUsageFlagBits::eUniformBuffer,
+                       VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
+                       VMA_ALLOCATION_CREATE_MAPPED_BIT)) {
             return false;
         }
 
-        if (!BufferUtils::PerFrameBufferBuilder()
-                .setAllocator(allocator_)
-                .setFrameCount(framesInFlight_)
-                .setSize(indirectSize)
-                .setUsage(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT |
-                          VK_BUFFER_USAGE_TRANSFER_DST_BIT)
-                .setAllocationFlags(0)  // GPU-only
-                .build(indirectBuffers_[c])) {
+        if (!createSet(indirectBuffers_[c], nullptr, indirectSize,
+                       vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eIndirectBuffer |
+                       vk::BufferUsageFlagBits::eTransferDst,
+                       0)) {  // GPU-only
             return false;
         }
 
-        if (!BufferUtils::PerFrameBufferBuilder()
-                .setAllocator(allocator_)
-                .setFrameCount(framesInFlight_)
-                .setSize(sizeof(uint32_t))
-                .setUsage(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT)
-                .setAllocationFlags(VMA_ALLOCATION_CREATE_HOST_ACCESS_RANDOM_BIT |
-                                    VMA_ALLOCATION_CREATE_MAPPED_BIT)
-                .build(countBuffers_[c])) {
+        if (!createSet(countBuffers_[c], &countMapped_[c], sizeof(uint32_t),
+                       vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eTransferDst,
+                       VMA_ALLOCATION_CREATE_HOST_ACCESS_RANDOM_BIT |
+                       VMA_ALLOCATION_CREATE_MAPPED_BIT)) {
             return false;
         }
     }
@@ -138,7 +141,7 @@ bool ShadowCullPass::createDescriptorSets() {
     for (uint32_t c = 0; c < cascadeCount_; ++c) {
         for (uint32_t f = 0; f < framesInFlight_; ++f) {
             DescriptorManager::SetWriter(device_, descSets_[flatIndex(c, f)])
-                .writeBuffer(BINDING_SCENE_CULL_UNIFORMS, uniformBuffers_[c].buffers[f], 0, sizeof(GPUCullUniforms))
+                .writeBuffer(BINDING_SCENE_CULL_UNIFORMS, uniformBuffers_[c][f].get(), 0, sizeof(GPUCullUniforms))
                 .update();
         }
     }
@@ -175,9 +178,9 @@ void ShadowCullPass::updateUniforms(uint32_t frameIndex, uint32_t cascade,
 
     lastObjectCount_ = objectCount;
 
-    void* dst = uniformBuffers_[cascade].mappedPointers[frameIndex];
+    void* dst = uniformMapped_[cascade][frameIndex];
     memcpy(dst, &uniforms, sizeof(GPUCullUniforms));
-    vmaFlushAllocation(allocator_, uniformBuffers_[cascade].allocations[frameIndex], 0, sizeof(GPUCullUniforms));
+    vmaFlushAllocation(allocator_, uniformBuffers_[cascade][frameIndex].getAllocation(), 0, sizeof(GPUCullUniforms));
 }
 
 bool ShadowCullPass::prepareDescriptors(GPUSceneBuffer* sceneBuffer) {
@@ -200,10 +203,10 @@ bool ShadowCullPass::prepareDescriptors(GPUSceneBuffer* sceneBuffer) {
     for (uint32_t c = 0; c < cascadeCount_; ++c) {
         for (uint32_t f = 0; f < framesInFlight_; ++f) {
             std::array<vk::DescriptorBufferInfo, 4> bufferInfos = {{
-                {uniformBuffers_[c].buffers[f], 0, sizeof(GPUCullUniforms)},
+                {uniformBuffers_[c][f].get(), 0, sizeof(GPUCullUniforms)},
                 {cullObjBuffer, 0, VK_WHOLE_SIZE},
-                {indirectBuffers_[c].buffers[f], 0, VK_WHOLE_SIZE},
-                {countBuffers_[c].buffers[f], 0, sizeof(uint32_t)}
+                {indirectBuffers_[c][f].get(), 0, VK_WHOLE_SIZE},
+                {countBuffers_[c][f].get(), 0, sizeof(uint32_t)}
             }};
             vk::DescriptorImageInfo imageInfo{sampler, imageView, vk::ImageLayout::eShaderReadOnlyOptimal};
 
@@ -233,7 +236,7 @@ void ShadowCullPass::recordCulling(vk::CommandBuffer cmd, uint32_t frameIndex, u
     vk::CommandBuffer vkCmd(cmd);
 
     // Reset this cascade's draw count, then barrier before the compute reads/writes.
-    vkCmd.fillBuffer(countBuffers_[cascade].buffers[frameIndex], 0, sizeof(uint32_t), 0);
+    vkCmd.fillBuffer(countBuffers_[cascade][frameIndex].get(), 0, sizeof(uint32_t), 0);
     BarrierHelpers::fillBufferToCompute(vkCmd);
 
     vkCmd.bindPipeline(vk::PipelineBindPoint::eCompute, **pipeline_);
@@ -247,13 +250,13 @@ void ShadowCullPass::recordCulling(vk::CommandBuffer cmd, uint32_t frameIndex, u
 }
 
 vk::Buffer ShadowCullPass::getIndirectBuffer(uint32_t frameIndex, uint32_t cascade) const {
-    if (cascade >= cascadeCount_ || frameIndex >= framesInFlight_) return VK_NULL_HANDLE;
-    return indirectBuffers_[cascade].buffers[frameIndex];
+    if (cascade >= cascadeCount_ || frameIndex >= framesInFlight_) return vk::Buffer{};
+    return indirectBuffers_[cascade][frameIndex].get();
 }
 
 uint32_t ShadowCullPass::getVisibleCount(uint32_t frameIndex, uint32_t cascade) const {
     if (cascade >= cascadeCount_ || frameIndex >= framesInFlight_) return 0;
-    const auto& mapped = countBuffers_[cascade].mappedPointers;
+    const auto& mapped = countMapped_[cascade];
     if (frameIndex >= mapped.size() || !mapped[frameIndex]) return 0;
     return *static_cast<uint32_t*>(mapped[frameIndex]);
 }

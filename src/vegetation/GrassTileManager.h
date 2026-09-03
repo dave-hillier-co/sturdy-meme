@@ -59,22 +59,24 @@ public:
         float teleportThreshold = 500.0f;     // Distance to detect teleportation
     };
 
-    GrassTileManager() = default;
-    ~GrassTileManager();
+    // Passkey for controlled construction via make_unique
+    struct ConstructToken { explicit ConstructToken() = default; };
+    explicit GrassTileManager(ConstructToken) {}
+
+    /**
+     * Factory: Create and initialize the tile manager.
+     * Returns nullptr on failure.
+     */
+    static std::unique_ptr<GrassTileManager> create(const InitInfo& info);
+
+    // Owns no device objects: the resource pool's descriptor sets belong to the
+    // DescriptorManager::Pool and every pipeline/buffer handle here is a
+    // non-owning copy from GrassSystem.
+    ~GrassTileManager() = default;
 
     // Non-copyable, non-movable
     GrassTileManager(const GrassTileManager&) = delete;
     GrassTileManager& operator=(const GrassTileManager&) = delete;
-
-    /**
-     * Initialize the tile manager
-     */
-    bool init(const InitInfo& info);
-
-    /**
-     * Cleanup resources
-     */
-    void destroy();
 
     /**
      * Update active tiles based on camera position
@@ -135,7 +137,7 @@ public:
     /**
      * Get total number of loaded tiles
      */
-    size_t getTotalTileCount() const { return resourcePool_.getAllocatedTileCount(); }
+    size_t getTotalTileCount() const { return resourcePool_->getAllocatedTileCount(); }
 
     /**
      * Access to tracker for testing/debugging
@@ -162,6 +164,8 @@ public:
     }
 
 private:
+    bool initInternal(const InitInfo& info);
+
     /**
      * Process tile load requests (respects per-frame budget)
      */
@@ -179,7 +183,7 @@ private:
 
     // Composed components
     GrassTileTracker tracker_;
-    GrassTileResourcePool resourcePool_;
+    std::unique_ptr<GrassTileResourcePool> resourcePool_;
     GrassTileLoadQueue loadQueue_;
 
     // Shared pipeline resources

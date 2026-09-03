@@ -23,7 +23,10 @@ std::unique_ptr<ImpostorCullSystem> ImpostorCullSystem::create(const InitInfo& i
 }
 
 ImpostorCullSystem::~ImpostorCullSystem() {
-    cleanup();
+    // Pre-existing device-idle rule kept; everything else is released by member destruction.
+    if (device_) {
+        vk::Device(device_).waitIdle();
+    }
 }
 
 bool ImpostorCullSystem::initInternal(const InitInfo& info) {
@@ -66,34 +69,6 @@ bool ImpostorCullSystem::initInternal(const InitInfo& info) {
     return true;
 }
 
-void ImpostorCullSystem::cleanup() {
-    if (device_ == VK_NULL_HANDLE) return;
-
-    vk::Device(device_).waitIdle();
-
-    BufferUtils::destroyBuffers(allocator_, uniformBuffers_);
-
-    if (treeInputBuffer_ != VK_NULL_HANDLE) {
-        vmaDestroyBuffer(allocator_, treeInputBuffer_, treeInputAllocation_);
-        treeInputBuffer_ = VK_NULL_HANDLE;
-    }
-    if (archetypeBuffer_ != VK_NULL_HANDLE) {
-        vmaDestroyBuffer(allocator_, archetypeBuffer_, archetypeAllocation_);
-        archetypeBuffer_ = VK_NULL_HANDLE;
-    }
-    if (visibleImpostorBuffer_ != VK_NULL_HANDLE) {
-        vmaDestroyBuffer(allocator_, visibleImpostorBuffer_, visibleImpostorAllocation_);
-        visibleImpostorBuffer_ = VK_NULL_HANDLE;
-    }
-    if (indirectDrawBuffer_ != VK_NULL_HANDLE) {
-        vmaDestroyBuffer(allocator_, indirectDrawBuffer_, indirectDrawAllocation_);
-        indirectDrawBuffer_ = VK_NULL_HANDLE;
-    }
-    // FrameIndexedBuffers handles cleanup via RAII
-    visibilityCacheBuffers_.destroy();
-
-    device_ = VK_NULL_HANDLE;
-}
 
 bool ImpostorCullSystem::createDescriptorSetLayout() {
     return DescriptorSetLayoutBuilder()
@@ -158,16 +133,14 @@ bool ImpostorCullSystem::createBuffers() {
     VmaAllocationCreateInfo allocInfo{};
     allocInfo.usage = VMA_MEMORY_USAGE_CPU_TO_GPU;
 
-    if (vmaCreateBuffer(allocator_, reinterpret_cast<const VkBufferCreateInfo*>(&bufferInfo), &allocInfo,
-                        reinterpret_cast<VkBuffer*>(&treeInputBuffer_), &treeInputAllocation_, nullptr) != VK_SUCCESS) {
+    if (!VmaBuffer::create(allocator_, bufferInfo, allocInfo, treeInputBuffer_)) {
         return false;
     }
 
     // Archetype buffer
     archetypeBufferSize_ = maxArchetypes_ * sizeof(ArchetypeCullData);
     bufferInfo.setSize(archetypeBufferSize_);
-    if (vmaCreateBuffer(allocator_, reinterpret_cast<const VkBufferCreateInfo*>(&bufferInfo), &allocInfo,
-                        reinterpret_cast<VkBuffer*>(&archetypeBuffer_), &archetypeAllocation_, nullptr) != VK_SUCCESS) {
+    if (!VmaBuffer::create(allocator_, bufferInfo, allocInfo, archetypeBuffer_)) {
         return false;
     }
 
@@ -178,8 +151,7 @@ bool ImpostorCullSystem::createBuffers() {
         .setUsage(vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eVertexBuffer);
     allocInfo.usage = VMA_MEMORY_USAGE_GPU_ONLY;
 
-    if (vmaCreateBuffer(allocator_, reinterpret_cast<const VkBufferCreateInfo*>(&bufferInfo), &allocInfo,
-                        reinterpret_cast<VkBuffer*>(&visibleImpostorBuffer_), &visibleImpostorAllocation_, nullptr) != VK_SUCCESS) {
+    if (!VmaBuffer::create(allocator_, bufferInfo, allocInfo, visibleImpostorBuffer_)) {
         return false;
     }
 
@@ -190,18 +162,17 @@ bool ImpostorCullSystem::createBuffers() {
                   vk::BufferUsageFlagBits::eTransferDst);
     allocInfo.usage = VMA_MEMORY_USAGE_GPU_ONLY;
 
-    if (vmaCreateBuffer(allocator_, reinterpret_cast<const VkBufferCreateInfo*>(&bufferInfo), &allocInfo,
-                        reinterpret_cast<VkBuffer*>(&indirectDrawBuffer_), &indirectDrawAllocation_, nullptr) != VK_SUCCESS) {
+    if (!VmaBuffer::create(allocator_, bufferInfo, allocInfo, indirectDrawBuffer_)) {
         return false;
     }
 
     // Uniform buffers
-    if (!BufferUtils::PerFrameBufferBuilder()
-            .setAllocator(allocator_)
-            .setFrameCount(maxFramesInFlight_)
-            .setSize(sizeof(ImpostorCullUniforms))
-            .setUsage(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT)
-            .build(uniformBuffers_)) {
+    BufferUtils::PerFrameBufferBuilder uniformBuilder;
+    uniformBuilder.setAllocator(allocator_)
+        .setFrameCount(maxFramesInFlight_)
+        .setSize(sizeof(ImpostorCullUniforms))
+        .setUsage(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
+    if (!BufferUtils::MappedFrameBuffers::build(allocator_, uniformBuilder, uniformBuffers_)) {
         return false;
     }
 
@@ -281,10 +252,9 @@ void ImpostorCullSystem::updateTreeData(const TreeSystem& treeSystem, const Tree
     }
 
     // Upload to GPU
-    void* data;
-    vmaMapMemory(allocator_, treeInputAllocation_, &data);
+    void* data = treeInputBuffer_.map();
     memcpy(data, inputData.data(), inputData.size() * sizeof(TreeCullInputData));
-    vmaUnmapMemory(allocator_, treeInputAllocation_);
+    treeInputBuffer_.unmap();
 }
 
 void ImpostorCullSystem::updateArchetypeData(const TreeImpostorAtlas* atlas) {
@@ -322,23 +292,22 @@ void ImpostorCullSystem::updateArchetypeData(const TreeImpostorAtlas* atlas) {
     }
 
     // Upload to GPU
-    void* data;
-    vmaMapMemory(allocator_, archetypeAllocation_, &data);
+    void* data = archetypeBuffer_.map();
     memcpy(data, archetypeData.data(), archetypeData.size() * sizeof(ArchetypeCullData));
-    vmaUnmapMemory(allocator_, archetypeAllocation_);
+    archetypeBuffer_.unmap();
 }
 
 void ImpostorCullSystem::initializeDescriptorSets() {
     vk::Device vkDevice(device_);
 
     // Static buffer info (shared across frames)
-    auto inputInfo = makeBufferInfo(treeInputBuffer_);
-    auto outputInfo = makeBufferInfo(visibleImpostorBuffer_);
-    auto indirectInfo = makeBufferInfo(indirectDrawBuffer_);
-    auto archetypeInfo = makeBufferInfo(archetypeBuffer_);
+    auto inputInfo = makeBufferInfo(treeInputBuffer_.get());
+    auto outputInfo = makeBufferInfo(visibleImpostorBuffer_.get());
+    auto indirectInfo = makeBufferInfo(indirectDrawBuffer_.get());
+    auto archetypeInfo = makeBufferInfo(archetypeBuffer_.get());
 
     for (uint32_t frameIndex = 0; frameIndex < maxFramesInFlight_; ++frameIndex) {
-        auto uniformInfo = makeBufferInfo(uniformBuffers_.buffers[frameIndex], 0, sizeof(ImpostorCullUniforms));
+        auto uniformInfo = makeBufferInfo(uniformBuffers_.get(frameIndex), 0, sizeof(ImpostorCullUniforms));
         auto visibilityInfo = makeBufferInfo(visibilityCacheBuffers_.getVk(frameIndex));
 
         DescriptorWriter()
@@ -463,11 +432,8 @@ void ImpostorCullSystem::recordCulling(vk::CommandBuffer cmd, uint32_t frameInde
     uniforms.temporalUpdateCount = temporalUpdateCount;
     uniforms.maxVisibleImpostors = maxTrees_;  // Output buffer capacity
 
-    // Upload uniforms
-    void* data;
-    vmaMapMemory(allocator_, uniformBuffers_.allocations[frameIndex], &data);
-    memcpy(data, &uniforms, sizeof(ImpostorCullUniforms));
-    vmaUnmapMemory(allocator_, uniformBuffers_.allocations[frameIndex]);
+    // Upload uniforms (per-frame buffers are persistently mapped, host-coherent)
+    memcpy(uniformBuffers_.mapped(frameIndex), &uniforms, sizeof(ImpostorCullUniforms));
 
     // Update Hi-Z descriptor only if Hi-Z view changed
     if (hiZPyramidView != lastHiZView_) {
@@ -485,7 +451,7 @@ void ImpostorCullSystem::recordCulling(vk::CommandBuffer cmd, uint32_t frameInde
     resetCmd.vertexOffset = 0;
     resetCmd.firstInstance = 0;
     vk::CommandBuffer vkCmdUpdate(cmd);
-    vkCmdUpdate.updateBuffer<VkDrawIndexedIndirectCommand>(indirectDrawBuffer_, 0, resetCmd);
+    vkCmdUpdate.updateBuffer<VkDrawIndexedIndirectCommand>(indirectDrawBuffer_.get(), 0, resetCmd);
 
     // Memory barrier to ensure fill is complete before compute
     vk::CommandBuffer vkCmd(cmd);

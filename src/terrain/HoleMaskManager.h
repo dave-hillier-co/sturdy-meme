@@ -3,6 +3,7 @@
 #include <vulkan/vulkan.hpp>
 #include <vulkan/vulkan_raii.hpp>
 #include <vk_mem_alloc.h>
+#include <memory>
 #include <vector>
 #include <cstdint>
 #include <optional>
@@ -17,26 +18,30 @@ using TerrainHole = TileGrid::TerrainHole;
 // Holes are circular cutouts rasterized per-tile into a 2D array texture.
 class HoleMaskManager {
 public:
+    // Passkey for controlled construction via make_unique
+    struct ConstructToken { explicit ConstructToken() = default; };
+    explicit HoleMaskManager(ConstructToken) {}
+
     struct InitInfo {
         const vk::raii::Device* raiiDevice = nullptr;
-        vk::Device device = VK_NULL_HANDLE;
-        VmaAllocator allocator = VK_NULL_HANDLE;
-        vk::Queue graphicsQueue = VK_NULL_HANDLE;
-        vk::CommandPool commandPool = VK_NULL_HANDLE;
+        vk::Device device;
+        VmaAllocator allocator = nullptr;
+        vk::Queue graphicsQueue;
+        vk::CommandPool commandPool;
         uint32_t storedTileResolution = 513;
         uint32_t maxLayers = 64;
     };
 
-    HoleMaskManager() = default;
-    ~HoleMaskManager();
+    // Factory: creates the hole mask array image and sampler.
+    // Returns nullptr on failure. GPU resources are released by the destructor.
+    static std::unique_ptr<HoleMaskManager> create(const InitInfo& info);
+
+    ~HoleMaskManager() = default;
 
     HoleMaskManager(const HoleMaskManager&) = delete;
     HoleMaskManager& operator=(const HoleMaskManager&) = delete;
     HoleMaskManager(HoleMaskManager&&) = delete;
     HoleMaskManager& operator=(HoleMaskManager&&) = delete;
-
-    bool init(const InitInfo& info);
-    void cleanup();
 
     // Hole management
     void addHoleCircle(float centerX, float centerZ, float radius,
@@ -60,19 +65,21 @@ public:
     void uploadAllActiveMasks(const std::vector<TerrainTile*>& activeTiles);
 
     // GPU resource accessors
-    vk::ImageView getArrayView() const { return arrayView_ ? static_cast<vk::ImageView>(**arrayView_) : VK_NULL_HANDLE; }
-    vk::Sampler getSampler() const { return sampler_ ? **sampler_ : VK_NULL_HANDLE; }
+    vk::ImageView getArrayView() const { return arrayView_ ? static_cast<vk::ImageView>(**arrayView_) : vk::ImageView{}; }
+    vk::Sampler getSampler() const { return sampler_ ? **sampler_ : vk::Sampler{}; }
 
 private:
+    bool initInternal(const InitInfo& info);
     std::vector<uint8_t> generateTileHoleMask(const TerrainTile& tile) const;
 
-    vk::Device device_ = VK_NULL_HANDLE;
-    VmaAllocator allocator_ = VK_NULL_HANDLE;
-    vk::Queue graphicsQueue_ = VK_NULL_HANDLE;
-    vk::CommandPool commandPool_ = VK_NULL_HANDLE;
+    vk::Device device_;
+    VmaAllocator allocator_ = nullptr;
+    vk::Queue graphicsQueue_;
+    vk::CommandPool commandPool_;
     uint32_t storedTileResolution_ = 513;
     uint32_t maxLayers_ = 64;
 
+    // Declaration order matters: sampler and view are destroyed before the image.
     ManagedImage arrayImage_;
     std::optional<vk::raii::ImageView> arrayView_;
     std::optional<vk::raii::Sampler> sampler_;

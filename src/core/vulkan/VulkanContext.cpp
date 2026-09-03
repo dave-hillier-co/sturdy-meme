@@ -49,55 +49,17 @@ bool VulkanContext::init(SDL_Window* win) {
     return true;
 }
 
-void VulkanContext::shutdown() {
-    if (device != VK_NULL_HANDLE) {
-        vk::Device(device).waitIdle();
-    }
-
-    // Destroy command pool and buffers before swapchain resources
-    destroyCommandPoolAndBuffers();
-
-    // Destroy swapchain-dependent resources (render pass, depth buffer, framebuffers)
-    destroySwapchainResources();
-
-    destroySwapchain();
-
-    pipelineCache.shutdown();
-
-    if (allocator != VK_NULL_HANDLE) {
-        vmaDestroyAllocator(allocator);
-        allocator = VK_NULL_HANDLE;
-    }
-
-    // Release handles from RAII wrappers before manual destruction
-    // (RAII wrappers took ownership, but we need to destroy in specific order with vkb cleanup)
-    if (raiiDevice_) {
-        raiiDevice_->release();
-        raiiDevice_.reset();
-    }
-    if (raiiPhysicalDevice_) {
-        raiiPhysicalDevice_.reset();  // Physical devices don't need destruction
-    }
-    if (raiiInstance_) {
-        raiiInstance_->release();
-        raiiInstance_.reset();
-    }
-
-    if (device != VK_NULL_HANDLE) {
-        vk::Device(device).destroy();
-        device = VK_NULL_HANDLE;
-    }
-
-    if (surface != VK_NULL_HANDLE) {
-        vk::Instance(instance).destroySurfaceKHR(surface);
-        surface = VK_NULL_HANDLE;
-    }
-
-    if (instance != VK_NULL_HANDLE) {
-        vkb::destroy_debug_utils_messenger(instance, vkbInstance.debug_messenger);
-        vk::Instance(instance).destroy();
-        instance = VK_NULL_HANDLE;
-    }
+VulkanContext::~VulkanContext() {
+    SDL_Log("VulkanContext shutdown starting");
+    // Every queue submitter has been joined by now; the guard keeps the
+    // device-wide wait externally synchronized against any straggler.
+    waitIdle();
+    // Command buffers are implicitly freed with their pools; every other
+    // resource is destroyed by its member destructor in reverse declaration
+    // order (see the member list in VulkanContext.h).
+    commandBuffers_.clear();
+    swapchainImageViews.clear();
+    swapchainImages.clear();
 }
 
 bool VulkanContext::createInstance() {
@@ -159,19 +121,29 @@ bool VulkanContext::createInstance() {
     instance = vkbInstance.instance;
 
     // Initialize vulkan-hpp dynamic dispatcher with instance-level functions
-    VULKAN_HPP_DEFAULT_DISPATCHER.init(vk::Instance(instance), vkGetInstanceProcAddr);
+    VULKAN_HPP_DEFAULT_DISPATCHER.init(instance, vkGetInstanceProcAddr);
 
     // Create RAII wrapper for instance (takes ownership)
     raiiInstance_ = std::make_unique<vk::raii::Instance>(raiiContext_, instance);
+
+    // Adopt the debug messenger vk-bootstrap created (absent when validation is off)
+    if (vkbInstance.debug_messenger) {
+        debugMessenger_.emplace(*raiiInstance_, vkbInstance.debug_messenger);
+    }
 
     return true;
 }
 
 bool VulkanContext::createSurface() {
-    if (!SDL_Vulkan_CreateSurface(window, instance, nullptr, reinterpret_cast<VkSurfaceKHR*>(&surface))) {
+    // SDL is a C-API boundary: it hands back a VkSurfaceKHR that the raii
+    // wrapper adopts and destroys with the instance.
+    VkSurfaceKHR rawSurface = nullptr;
+    if (!SDL_Vulkan_CreateSurface(window, instance, nullptr, &rawSurface)) {
         SDL_Log("Failed to create Vulkan surface: %s", SDL_GetError());
         return false;
     }
+    surface_.emplace(*raiiInstance_, rawSurface);
+    surface = **surface_;
     return true;
 }
 
@@ -204,7 +176,7 @@ bool VulkanContext::selectPhysicalDevice() {
     physicalDevice = vkbPhysicalDevice.physical_device;
 
     // Verify Vulkan 1.2 API version
-    vk::PhysicalDeviceProperties props = vk::PhysicalDevice(physicalDevice).getProperties();
+    vk::PhysicalDeviceProperties props = physicalDevice.getProperties();
     uint32_t major = VK_API_VERSION_MAJOR(props.apiVersion);
     uint32_t minor = VK_API_VERSION_MINOR(props.apiVersion);
 
@@ -218,7 +190,7 @@ bool VulkanContext::selectPhysicalDevice() {
         props.deviceName.data(), major, minor, VK_API_VERSION_PATCH(props.apiVersion));
 
     // Verify timeline semaphore support (should always be true if we got here)
-    auto featuresChain = vk::PhysicalDevice(physicalDevice)
+    auto featuresChain = physicalDevice
         .getFeatures2<vk::PhysicalDeviceFeatures2, vk::PhysicalDeviceVulkan12Features>();
     const auto& supportedFeatures12 = featuresChain.get<vk::PhysicalDeviceVulkan12Features>();
 
@@ -275,7 +247,7 @@ bool VulkanContext::createLogicalDevice() {
     device = vkbDevice.device;
 
     // Initialize vulkan-hpp dynamic dispatcher with device-level functions
-    VULKAN_HPP_DEFAULT_DISPATCHER.init(vk::Device(device));
+    VULKAN_HPP_DEFAULT_DISPATCHER.init(device);
 
     // Create RAII wrapper for device (takes ownership)
     raiiDevice_ = std::make_unique<vk::raii::Device>(*raiiPhysicalDevice_, device);
@@ -323,17 +295,18 @@ bool VulkanContext::createAllocator() {
     allocatorInfo.instance = instance;
     allocatorInfo.vulkanApiVersion = VK_API_VERSION_1_2;
 
-    if (vmaCreateAllocator(&allocatorInfo, &allocator) != VK_SUCCESS) {
+    VmaAllocator rawAllocator = nullptr;
+    if (vmaCreateAllocator(&allocatorInfo, &rawAllocator) != VK_SUCCESS) {
         SDL_Log("Failed to create VMA allocator");
         return false;
     }
+    allocator_.reset(rawAllocator);
     return true;
 }
 
 bool VulkanContext::createSwapchain() {
     // Query surface capabilities to understand composite alpha support
-    vk::SurfaceCapabilitiesKHR surfaceCaps =
-        vk::PhysicalDevice(physicalDevice).getSurfaceCapabilitiesKHR(vk::SurfaceKHR(surface));
+    vk::SurfaceCapabilitiesKHR surfaceCaps = physicalDevice.getSurfaceCapabilitiesKHR(surface);
 
     // Log supported composite alpha modes for debugging ghost frame issues
     SDL_Log("Swapchain: Supported composite alpha modes: %s%s%s%s",
@@ -383,17 +356,23 @@ bool VulkanContext::createSwapchain() {
     }
 
     auto vkbSwapchain = swapRet.value();
-    swapchain = vkbSwapchain.swapchain;
-    // vk-bootstrap is a C-API boundary: it returns std::vector<VkImage>/<VkImageView>;
-    // copy element-wise into the native vk:: vectors (VkImage -> vk::Image implicit).
+    // vk-bootstrap is a C-API boundary: it returns raw VkSwapchainKHR/VkImage/
+    // VkImageView handles. The swapchain and the views it created are adopted
+    // by raii wrappers (destroyed with this context or on recreate); the
+    // images belong to the swapchain and are only cached.
+    swapchain_.emplace(*raiiDevice_, vkbSwapchain.swapchain);
     {
         auto vkbImages = vkbSwapchain.get_images().value();
         swapchainImages.assign(vkbImages.begin(), vkbImages.end());
         auto vkbImageViews = vkbSwapchain.get_image_views().value();
-        swapchainImageViews.assign(vkbImageViews.begin(), vkbImageViews.end());
+        swapchainImageViewOwners_.reserve(vkbImageViews.size());
+        for (VkImageView view : vkbImageViews) {
+            swapchainImageViewOwners_.emplace_back(*raiiDevice_, view);
+            swapchainImageViews.push_back(*swapchainImageViewOwners_.back());
+        }
     }
-    swapchainImageFormat = vkbSwapchain.image_format;
-    swapchainExtent = vkbSwapchain.extent;
+    swapchainImageFormat = static_cast<vk::Format>(vkbSwapchain.image_format);
+    swapchainExtent = vk::Extent2D{vkbSwapchain.extent.width, vkbSwapchain.extent.height};
 
     SDL_Log("Swapchain: Created with composite alpha mode: %s",
         compositeAlpha == VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR ? "OPAQUE" :
@@ -409,19 +388,11 @@ bool VulkanContext::createSwapchain() {
 }
 
 void VulkanContext::destroySwapchain() {
-    if (device == VK_NULL_HANDLE) return;
-
-    vk::Device vkDevice(device);
-    for (auto imageView : swapchainImageViews) {
-        vkDevice.destroyImageView(imageView);
-    }
+    // Views before the swapchain that owns their images.
     swapchainImageViews.clear();
+    swapchainImageViewOwners_.clear();
     swapchainImages.clear();
-
-    if (swapchain != VK_NULL_HANDLE) {
-        vkDevice.destroySwapchainKHR(swapchain);
-        swapchain = VK_NULL_HANDLE;
-    }
+    swapchain_.reset();
 }
 
 bool VulkanContext::recreateSwapchain() {
@@ -429,7 +400,7 @@ bool VulkanContext::recreateSwapchain() {
         // vkDeviceWaitIdle requires every queue to be externally synchronized;
         // streaming workers may still be submitting under the graphics lock.
         GraphicsQueueLock::Guard lock(GraphicsQueueLock::mutex());
-        vk::Device(device).waitIdle();
+        device.waitIdle();
     }
     destroySwapchain();
     return createSwapchain();
@@ -440,14 +411,14 @@ void VulkanContext::clearSwapchainImages() {
     // Simply clearing isn't enough - we must present to force the compositor to update
     // This cycles through all swapchain images, acquiring, clearing, and presenting each
 
-    if (swapchainImages.empty() || !commandPool_ || swapchain == VK_NULL_HANDLE) {
+    if (swapchainImages.empty() || !commandPool_ || !swapchain_) {
         return;
     }
 
-    vk::Device vkDevice(device);
-    vk::Queue vkGfxQueue(graphicsQueue);
-    vk::Queue vkPresentQueue(presentQueue);
-    vk::SwapchainKHR vkSwapchain(swapchain);
+    vk::Device vkDevice = device;
+    vk::Queue vkGfxQueue = graphicsQueue;
+    vk::Queue vkPresentQueue = presentQueue;
+    vk::SwapchainKHR vkSwapchain = **swapchain_;
 
     // Create a temporary semaphore for synchronization
     vk::Semaphore acquireSem, renderSem;
@@ -589,9 +560,9 @@ void VulkanContext::clearSwapchainImages() {
 }
 
 void VulkanContext::waitIdle() {
-    if (device != VK_NULL_HANDLE) {
+    if (device) {
         GraphicsQueueLock::Guard lock(GraphicsQueueLock::mutex());
-        vk::Device(device).waitIdle();
+        device.waitIdle();
     }
 }
 
@@ -608,7 +579,8 @@ uint32_t VulkanContext::getTransferQueueFamily() const {
 }
 
 bool VulkanContext::createPipelineCache() {
-    return pipelineCache.init(*raiiDevice_, "pipeline_cache.bin");
+    pipelineCache_ = PipelineCache::create(*raiiDevice_, "pipeline_cache.bin");
+    return pipelineCache_.has_value();
 }
 
 // ============================================================================
@@ -616,11 +588,12 @@ bool VulkanContext::createPipelineCache() {
 // ============================================================================
 
 bool VulkanContext::createRenderPass() {
-    depthFormat_ = VK_FORMAT_D32_SFLOAT;
+    depthFormat_ = vk::Format::eD32Sfloat;
 
+    // RenderPassConfig is still C-typed; convert at that boundary only.
     RenderPassConfig config{};
-    config.colorFormat = swapchainImageFormat;
-    config.depthFormat = depthFormat_;
+    config.colorFormat = static_cast<VkFormat>(swapchainImageFormat);
+    config.depthFormat = static_cast<VkFormat>(depthFormat_);
     config.finalColorLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
     config.finalDepthLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;  // For Hi-Z
     config.storeDepth = true;  // For Hi-Z pyramid generation
@@ -636,9 +609,8 @@ bool VulkanContext::createRenderPass() {
 
 bool VulkanContext::createDepthResources() {
     DepthResources depth;
-    vk::Extent2D extent{swapchainExtent.width, swapchainExtent.height};
-    if (!::createDepthResources(*raiiDevice_, allocator, extent,
-                                 static_cast<vk::Format>(depthFormat_), depth)) {
+    if (!::createDepthResources(*raiiDevice_, allocator_.get(), swapchainExtent,
+                                 depthFormat_, depth)) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create depth resources");
         return false;
     }
@@ -672,13 +644,11 @@ bool VulkanContext::recreateDepthResources() {
     depthImageView_.reset();
     depthImage_.reset();
 
-    vk::Extent2D extent{swapchainExtent.width, swapchainExtent.height};
     VmaImage newImage;
     std::optional<vk::raii::ImageView> newView;
 
-    if (!::createDepthImageAndView(*raiiDevice_, allocator, extent,
-                                    static_cast<vk::Format>(depthFormat_),
-                                    newImage, newView)) {
+    if (!::createDepthImageAndView(*raiiDevice_, allocator_.get(), swapchainExtent,
+                                    depthFormat_, newImage, newView)) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to recreate depth resources");
         return false;
     }
@@ -694,15 +664,6 @@ bool VulkanContext::createSwapchainResources() {
     if (!createFramebuffers()) return false;
     SDL_Log("Swapchain resources created (render pass, depth buffer, framebuffers)");
     return true;
-}
-
-void VulkanContext::destroySwapchainResources() {
-    // RAII handles cleanup - just clear containers and reset managed objects
-    framebuffers_.clear();
-    depthSampler_.reset();
-    depthImageView_.reset();
-    depthImage_.reset();
-    renderPass_.reset();
 }
 
 bool VulkanContext::recreateSwapchainResources() {
@@ -740,7 +701,7 @@ vk::CommandPool VulkanContext::createWorkerCommandPool() {
         return *workerCommandPools_.back();
     } catch (const vk::SystemError& e) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create worker command pool: %s", e.what());
-        return VK_NULL_HANDLE;
+        return vk::CommandPool{};
     }
 }
 
@@ -764,8 +725,7 @@ bool VulkanContext::createCommandPoolAndBuffers(uint32_t frameCount) {
             .setCommandBufferCount(frameCount);
 
         try {
-            std::vector<vk::CommandBuffer> allocated =
-                vk::Device(device).allocateCommandBuffers(allocInfo);
+            std::vector<vk::CommandBuffer> allocated = device.allocateCommandBuffers(allocInfo);
             for (uint32_t i = 0; i < frameCount; ++i) {
                 commandBuffers_[i] = allocated[i];
             }
@@ -782,11 +742,4 @@ bool VulkanContext::createCommandPoolAndBuffers(uint32_t frameCount) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create command pool: %s", e.what());
         return false;
     }
-}
-
-void VulkanContext::destroyCommandPoolAndBuffers() {
-    // Command buffers are implicitly freed when pool is destroyed
-    commandBuffers_.clear();
-    commandPool_.reset();
-    workerCommandPools_.clear();
 }

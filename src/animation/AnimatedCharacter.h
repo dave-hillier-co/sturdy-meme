@@ -244,15 +244,11 @@ public:
 
 private:
     bool loadInternal(const InitInfo& info);
-    void cleanup();
 
     // Populate the locomotion state machine (idle/walk/run/jump) from the
     // currently loaded animation clips. Shared by initial load and by
     // loadAdditionalAnimations so the clip classification lives in one place.
     void rebuildLocomotionStateMachine();
-
-    // Stored for RAII cleanup
-    VmaAllocator allocator_ = VK_NULL_HANDLE;
 
     // Original skinned mesh data (bind pose)
     std::vector<SkinnedVertex> bindPoseVertices;

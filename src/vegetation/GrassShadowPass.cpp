@@ -142,7 +142,7 @@ void GrassShadowPass::updateDescriptorSets(vk::Device device, uint32_t count,
     for (uint32_t set = 0; set < count; set++) {
         DescriptorManager::SetWriter shadowWriter(device, descriptorSets_[set]);
         shadowWriter.writeBuffer(0, rendererUniformBuffers[0], 0, 160);  // sizeof(UniformBufferObject)
-        shadowWriter.writeBuffer(1, buffers.instanceBuffers().buffers[set], 0,
+        shadowWriter.writeBuffer(1, buffers.instanceBuffers().get(set), 0,
                                  sizeof(GrassInstance) * GrassConstants::MAX_INSTANCES,
                                  VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
         shadowWriter.writeBuffer(2, windBuffers[0], 0, 32);  // sizeof(WindUniforms)
@@ -175,6 +175,6 @@ void GrassShadowPass::recordDraw(vk::CommandBuffer cmd, uint32_t frameIndex, flo
         vk::ShaderStageFlagBits::eVertex,
         0, grassPush);
 
-    cmd.drawIndirect(buffers.indirectBuffers().buffers[readSet], 0, 1, sizeof(VkDrawIndirectCommand));
+    cmd.drawIndirect(buffers.indirectBuffers().get(readSet), 0, 1, sizeof(VkDrawIndirectCommand));
     DIAG_RECORD_DRAW();
 }

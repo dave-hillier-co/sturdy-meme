@@ -137,6 +137,7 @@ Application
 Subsystems are stored as `std::unique_ptr` instances in `SystemRegistry`. Destruction is performed
 in reverse registration order after the device is idle. Many subsystems use RAII members, but some
 still expose `init`, `cleanup`, `destroy`, or `shutdown` methods around raw Vulkan/VMA resources.
+`scripts/analyze-raii.sh` counts both per header and `--check` ratchets the totals against `scripts/raii-baseline.txt` so they can only decrease.
 
 The current lifetime model is transitional:
 

@@ -2,6 +2,7 @@
 
 #include "IDescriptorAllocator.h"
 #include <vulkan/vulkan.hpp>
+#include <vulkan/vulkan_raii.hpp>
 #include <mutex>
 #include <vector>
 #include <unordered_map>
@@ -155,19 +156,20 @@ public:
     // Pool that automatically grows when exhausted
     class Pool : public IDescriptorAllocator {
     public:
-        // Backwards-compatible constructor (uses standard defaults)
-        Pool(vk::Device device, uint32_t initialSetsPerPool = 32);
+        // Constructor with standard pool sizes. The raii device must outlive the pool.
+        explicit Pool(const vk::raii::Device& raiiDevice, uint32_t initialSetsPerPool = 32);
 
         // Constructor with configurable pool sizes
-        Pool(vk::Device device, uint32_t initialSetsPerPool, const DescriptorPoolSizes& sizes);
+        Pool(const vk::raii::Device& raiiDevice, uint32_t initialSetsPerPool, const DescriptorPoolSizes& sizes);
 
-        ~Pool();
+        // RAII descriptor pools are released by the member destructors
+        ~Pool() = default;
 
-        // Non-copyable but movable
+        // Non-copyable, non-movable (owns a std::mutex; constructed in place via std::optional)
         Pool(const Pool&) = delete;
         Pool& operator=(const Pool&) = delete;
-        Pool(Pool&& other) noexcept;
-        Pool& operator=(Pool&& other) noexcept;
+        Pool(Pool&&) = delete;
+        Pool& operator=(Pool&&) = delete;
 
         // Allocate descriptor sets (grows pool if needed)
         std::vector<vk::DescriptorSet> allocate(vk::DescriptorSetLayout layout, uint32_t count) override;
@@ -178,9 +180,6 @@ public:
         // Reset all pools (frees all allocated sets)
         void reset() override;
 
-        // Destroy all pools
-        void destroy();
-
         // Get statistics
         uint32_t getPoolCount() const { return static_cast<uint32_t>(pools.size()); }
         uint32_t getTotalAllocatedSets() const { return totalAllocatedSets; }
@@ -189,16 +188,16 @@ public:
         const DescriptorPoolSizes& getPoolSizes() const { return poolSizes; }
 
     private:
-        vk::DescriptorPool createPool();
-        bool tryAllocate(vk::DescriptorPool pool, vk::DescriptorSetLayout layout,
+        vk::raii::DescriptorPool createPool();
+        bool tryAllocate(const vk::raii::DescriptorPool& pool, vk::DescriptorSetLayout layout,
                          uint32_t count, std::vector<vk::DescriptorSet>& outSets);
 
+        const vk::raii::Device* raiiDevice_ = nullptr;
         vk::Device device;
         // Allocations happen from async-init worker threads concurrently;
-        // vkAllocateDescriptorSets requires external sync per pool. Not moved
-        // with the pool state (moves only occur single-threaded during init).
+        // vkAllocateDescriptorSets requires external sync per pool.
         mutable std::mutex allocMutex_;
-        std::vector<vk::DescriptorPool> pools;
+        std::vector<vk::raii::DescriptorPool> pools;
         uint32_t setsPerPool;
         uint32_t currentPoolIndex = 0;
         uint32_t totalAllocatedSets = 0;

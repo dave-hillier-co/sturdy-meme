@@ -4,6 +4,7 @@
 #include <vk_mem_alloc.h>
 #include <glm/glm.hpp>
 #include <array>
+#include <memory>
 #include <vector>
 #include <cstdint>
 #include "core/vulkan/VmaBuffer.h"
@@ -24,12 +25,20 @@ class TileInfoBuffer {
 public:
     static constexpr uint32_t FRAMES_IN_FLIGHT = TripleBuffered<int>::DEFAULT_FRAME_COUNT;
 
+    // Passkey for controlled construction via make_unique
+    struct ConstructToken { explicit ConstructToken() = default; };
+    explicit TileInfoBuffer(ConstructToken) {}
+
     struct InitInfo {
-        VmaAllocator allocator = VK_NULL_HANDLE;
+        VmaAllocator allocator = nullptr;
         uint32_t maxActiveTiles = 64;
     };
 
-    TileInfoBuffer() = default;
+    // Factory: creates the per-frame buffers, maps them and zeroes the active
+    // tile count in every frame. Returns nullptr on failure. Buffers are unmapped
+    // and freed by the ManagedBuffer destructors.
+    static std::unique_ptr<TileInfoBuffer> create(const InitInfo& info);
+
     ~TileInfoBuffer() = default;
 
     TileInfoBuffer(const TileInfoBuffer&) = delete;
@@ -37,20 +46,19 @@ public:
     TileInfoBuffer(TileInfoBuffer&&) = delete;
     TileInfoBuffer& operator=(TileInfoBuffer&&) = delete;
 
-    bool init(const InitInfo& info);
-    void cleanup();
-
     // Update the buffer for the current frame with the given active tiles
     void update(uint32_t frameIndex, const std::vector<TerrainTile*>& activeTiles);
-
-    // Initialize all frame buffers to zero active tiles
-    void initializeAllFrames();
 
     vk::Buffer getBuffer(uint32_t frameIndex) const {
         return buffers_.at(frameIndex).get();
     }
 
 private:
+    bool initInternal(const InitInfo& info);
+
+    // Initialize all frame buffers to zero active tiles
+    void initializeAllFrames();
+
     uint32_t maxActiveTiles_ = 64;
 
     TripleBuffered<ManagedBuffer> buffers_;

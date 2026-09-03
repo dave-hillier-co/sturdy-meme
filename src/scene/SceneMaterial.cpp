@@ -1,17 +1,6 @@
 #include "SceneMaterial.h"
 #include <SDL3/SDL_log.h>
 
-SceneMaterial::~SceneMaterial() {
-    cleanup();
-}
-
-void SceneMaterial::init(const InitInfo& info, const MaterialProperties& matProps) {
-    storedAllocator_ = info.allocator;
-    storedDevice_ = info.device;
-    materialProps_ = matProps;
-    initialized_ = true;
-}
-
 void SceneMaterial::setMeshes(std::vector<Mesh>&& meshes) {
     // Clean up existing meshes first
     for (auto& mesh : meshes_) {
@@ -73,20 +62,13 @@ void SceneMaterial::rebuildSceneObjects(
 }
 
 void SceneMaterial::cleanup() {
-    if (storedDevice_ == VK_NULL_HANDLE) return;
-
     // Release RAII-managed textures
     diffuseTexture_.reset();
     normalTexture_.reset();
 
-    // Manually release mesh GPU resources
-    for (auto& mesh : meshes_) {
-        mesh.releaseGPUResources();
-    }
+    // Mesh frees its GPU buffers in ~Mesh
     meshes_.clear();
 
     instances_.clear();
     sceneObjects_.clear();
-
-    initialized_ = false;
 }

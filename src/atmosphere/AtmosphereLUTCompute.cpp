@@ -9,7 +9,7 @@ void AtmosphereLUTSystem::computeTransmittanceLUT(vk::CommandBuffer cmd) {
     // Update uniform buffer with atmosphere params
     AtmosphereUniforms uniforms{};
     uniforms.params = atmosphereParams;
-    memcpy(staticUniformBuffers.mappedPointers[0], &uniforms, sizeof(AtmosphereUniforms));
+    memcpy(staticUniformMapped_, &uniforms, sizeof(AtmosphereUniforms));
 
     vk::CommandBuffer vkCmd(cmd);
 
@@ -23,8 +23,8 @@ void AtmosphereLUTSystem::computeTransmittanceLUT(vk::CommandBuffer cmd) {
         vk::AccessFlags{}, vk::AccessFlagBits::eShaderWrite);
 
     // Bind pipeline and dispatch
-    vkCmd.bindPipeline(vk::PipelineBindPoint::eCompute, transmittancePipeline);
-    vkCmd.bindDescriptorSets(vk::PipelineBindPoint::eCompute, transmittancePipelineLayout,
+    vkCmd.bindPipeline(vk::PipelineBindPoint::eCompute, **transmittancePipeline);
+    vkCmd.bindDescriptorSets(vk::PipelineBindPoint::eCompute, **transmittancePipelineLayout,
                              0, vk::DescriptorSet(transmittanceDescriptorSet), {});
 
     uint32_t groupCountX = (TRANSMITTANCE_WIDTH + 15) / 16;
@@ -42,7 +42,7 @@ void AtmosphereLUTSystem::computeMultiScatterLUT(vk::CommandBuffer cmd) {
     // Update uniform buffer with atmosphere params
     AtmosphereUniforms uniforms{};
     uniforms.params = atmosphereParams;
-    memcpy(staticUniformBuffers.mappedPointers[0], &uniforms, sizeof(AtmosphereUniforms));
+    memcpy(staticUniformMapped_, &uniforms, sizeof(AtmosphereUniforms));
 
     vk::CommandBuffer vkCmd(cmd);
 
@@ -55,8 +55,8 @@ void AtmosphereLUTSystem::computeMultiScatterLUT(vk::CommandBuffer cmd) {
         vk::AccessFlags{}, vk::AccessFlagBits::eShaderWrite);
 
     // Bind pipeline and dispatch
-    vkCmd.bindPipeline(vk::PipelineBindPoint::eCompute, multiScatterPipeline);
-    vkCmd.bindDescriptorSets(vk::PipelineBindPoint::eCompute, multiScatterPipelineLayout,
+    vkCmd.bindPipeline(vk::PipelineBindPoint::eCompute, **multiScatterPipeline);
+    vkCmd.bindDescriptorSets(vk::PipelineBindPoint::eCompute, **multiScatterPipelineLayout,
                              0, vk::DescriptorSet(multiScatterDescriptorSet), {});
 
     uint32_t groupCountX = (MULTISCATTER_SIZE + 7) / 8;
@@ -74,15 +74,15 @@ void AtmosphereLUTSystem::computeIrradianceLUT(vk::CommandBuffer cmd) {
     // Update uniform buffer with atmosphere params
     AtmosphereUniforms uniforms{};
     uniforms.params = atmosphereParams;
-    memcpy(staticUniformBuffers.mappedPointers[0], &uniforms, sizeof(AtmosphereUniforms));
+    memcpy(staticUniformMapped_, &uniforms, sizeof(AtmosphereUniforms));
 
     barrierIrradianceLUTsForCompute(cmd);
 
     vk::CommandBuffer vkCmd(cmd);
 
     // Bind pipeline and dispatch
-    vkCmd.bindPipeline(vk::PipelineBindPoint::eCompute, irradiancePipeline);
-    vkCmd.bindDescriptorSets(vk::PipelineBindPoint::eCompute, irradiancePipelineLayout,
+    vkCmd.bindPipeline(vk::PipelineBindPoint::eCompute, **irradiancePipeline);
+    vkCmd.bindDescriptorSets(vk::PipelineBindPoint::eCompute, **irradiancePipelineLayout,
                              0, vk::DescriptorSet(irradianceDescriptorSet), {});
 
     uint32_t groupCountX = (IRRADIANCE_WIDTH + 7) / 8;
@@ -101,7 +101,7 @@ void AtmosphereLUTSystem::computeSkyViewLUT(vk::CommandBuffer cmd, const glm::ve
     uniforms.params = atmosphereParams;
     uniforms.toSunDirection = glm::vec4(sunDir, 0.0f);
     uniforms.cameraPosition = glm::vec4(cameraPos, cameraAltitude);
-    memcpy(skyViewUniformBuffers.mappedPointers[0], &uniforms, sizeof(AtmosphereUniforms));
+    memcpy(skyViewUniformMapped_[0], &uniforms, sizeof(AtmosphereUniforms));
 
     vk::CommandBuffer vkCmd(cmd);
 
@@ -109,8 +109,8 @@ void AtmosphereLUTSystem::computeSkyViewLUT(vk::CommandBuffer cmd, const glm::ve
     BarrierHelpers::imageToGeneral(vkCmd, skyViewLUT.get());
 
     // Bind pipeline and dispatch (use frame 0's descriptor set for startup computation)
-    vkCmd.bindPipeline(vk::PipelineBindPoint::eCompute, skyViewPipeline);
-    vkCmd.bindDescriptorSets(vk::PipelineBindPoint::eCompute, skyViewPipelineLayout,
+    vkCmd.bindPipeline(vk::PipelineBindPoint::eCompute, **skyViewPipeline);
+    vkCmd.bindDescriptorSets(vk::PipelineBindPoint::eCompute, **skyViewPipelineLayout,
                              0, vk::DescriptorSet(skyViewDescriptorSets[0]), {});
 
     uint32_t groupCountX = (SKYVIEW_WIDTH + 15) / 16;
@@ -147,7 +147,7 @@ void AtmosphereLUTSystem::updateSkyViewLUT(vk::CommandBuffer cmd, uint32_t frame
     uniforms.params = atmosphereParams;
     uniforms.toSunDirection = glm::vec4(sunDir, 0.0f);
     uniforms.cameraPosition = glm::vec4(cameraPos, cameraAltitude);
-    memcpy(skyViewUniformBuffers.mappedPointers[frameIndex], &uniforms, sizeof(AtmosphereUniforms));
+    memcpy(skyViewUniformMapped_[frameIndex], &uniforms, sizeof(AtmosphereUniforms));
 
     vk::CommandBuffer vkCmd(cmd);
 
@@ -155,8 +155,8 @@ void AtmosphereLUTSystem::updateSkyViewLUT(vk::CommandBuffer cmd, uint32_t frame
     BarrierHelpers::shaderReadToGeneral(vkCmd, skyViewLUT.get());
 
     // Bind pipeline and per-frame descriptor set (double-buffered)
-    vkCmd.bindPipeline(vk::PipelineBindPoint::eCompute, skyViewPipeline);
-    vkCmd.bindDescriptorSets(vk::PipelineBindPoint::eCompute, skyViewPipelineLayout,
+    vkCmd.bindPipeline(vk::PipelineBindPoint::eCompute, **skyViewPipeline);
+    vkCmd.bindDescriptorSets(vk::PipelineBindPoint::eCompute, **skyViewPipelineLayout,
                              0, vk::DescriptorSet(skyViewDescriptorSets[frameIndex]), {});
 
     uint32_t groupCountX = (SKYVIEW_WIDTH + 15) / 16;
@@ -175,7 +175,7 @@ void AtmosphereLUTSystem::computeCloudMapLUT(vk::CommandBuffer cmd, const glm::v
     uniforms.density = 1.0f;       // Full density multiplier
     uniforms.sharpness = 0.3f;     // Coverage transition sharpness
     uniforms.detailScale = 2.5f;   // Detail noise scale
-    memcpy(cloudMapUniformBuffers.mappedPointers[0], &uniforms, sizeof(CloudMapUniforms));
+    memcpy(cloudMapUniformMapped_[0], &uniforms, sizeof(CloudMapUniforms));
 
     vk::CommandBuffer vkCmd(cmd);
 
@@ -183,8 +183,8 @@ void AtmosphereLUTSystem::computeCloudMapLUT(vk::CommandBuffer cmd, const glm::v
     BarrierHelpers::imageToGeneral(vkCmd, cloudMapLUT.get());
 
     // Bind pipeline and dispatch (use frame 0's descriptor set for startup computation)
-    vkCmd.bindPipeline(vk::PipelineBindPoint::eCompute, cloudMapPipeline);
-    vkCmd.bindDescriptorSets(vk::PipelineBindPoint::eCompute, cloudMapPipelineLayout,
+    vkCmd.bindPipeline(vk::PipelineBindPoint::eCompute, **cloudMapPipeline);
+    vkCmd.bindDescriptorSets(vk::PipelineBindPoint::eCompute, **cloudMapPipelineLayout,
                              0, vk::DescriptorSet(cloudMapDescriptorSets[0]), {});
 
     uint32_t groupCountX = (CLOUDMAP_SIZE + 15) / 16;
@@ -225,7 +225,7 @@ void AtmosphereLUTSystem::updateCloudMapLUT(vk::CommandBuffer cmd, uint32_t fram
     uniforms.density = cloudDensity;      // From UI controls
     uniforms.sharpness = 0.3f;            // Coverage transition sharpness
     uniforms.detailScale = 2.5f;          // Detail noise scale
-    memcpy(cloudMapUniformBuffers.mappedPointers[frameIndex], &uniforms, sizeof(CloudMapUniforms));
+    memcpy(cloudMapUniformMapped_[frameIndex], &uniforms, sizeof(CloudMapUniforms));
 
     vk::CommandBuffer vkCmd(cmd);
 
@@ -235,8 +235,8 @@ void AtmosphereLUTSystem::updateCloudMapLUT(vk::CommandBuffer cmd, uint32_t fram
         vk::PipelineStageFlagBits::eFragmentShader | vk::PipelineStageFlagBits::eComputeShader);
 
     // Bind pipeline and per-frame descriptor set (double-buffered)
-    vkCmd.bindPipeline(vk::PipelineBindPoint::eCompute, cloudMapPipeline);
-    vkCmd.bindDescriptorSets(vk::PipelineBindPoint::eCompute, cloudMapPipelineLayout,
+    vkCmd.bindPipeline(vk::PipelineBindPoint::eCompute, **cloudMapPipeline);
+    vkCmd.bindDescriptorSets(vk::PipelineBindPoint::eCompute, **cloudMapPipelineLayout,
                              0, vk::DescriptorSet(cloudMapDescriptorSets[frameIndex]), {});
 
     uint32_t groupCountX = (CLOUDMAP_SIZE + 15) / 16;
@@ -254,7 +254,7 @@ void AtmosphereLUTSystem::recomputeStaticLUTs(vk::CommandBuffer cmd) {
     // Update uniform buffer with new atmosphere parameters
     AtmosphereUniforms uniforms{};
     uniforms.params = atmosphereParams;
-    memcpy(staticUniformBuffers.mappedPointers[0], &uniforms, sizeof(AtmosphereUniforms));
+    memcpy(staticUniformMapped_, &uniforms, sizeof(AtmosphereUniforms));
 
     // Recompute the static LUTs that depend on atmosphere parameters
     computeTransmittanceLUT(cmd);

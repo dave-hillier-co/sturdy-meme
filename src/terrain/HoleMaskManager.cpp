@@ -10,11 +10,15 @@
 #include <algorithm>
 #include <cmath>
 
-HoleMaskManager::~HoleMaskManager() {
-    cleanup();
+std::unique_ptr<HoleMaskManager> HoleMaskManager::create(const InitInfo& info) {
+    auto manager = std::make_unique<HoleMaskManager>(ConstructToken{});
+    if (!manager->initInternal(info)) {
+        return nullptr;
+    }
+    return manager;
 }
 
-bool HoleMaskManager::init(const InitInfo& info) {
+bool HoleMaskManager::initInternal(const InitInfo& info) {
     if (!info.raiiDevice) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "HoleMaskManager: raiiDevice is null");
         return false;
@@ -76,13 +80,6 @@ bool HoleMaskManager::init(const InitInfo& info) {
             storedTileResolution_, storedTileResolution_, maxLayers_);
 
     return true;
-}
-
-void HoleMaskManager::cleanup() {
-    sampler_.reset();
-    arrayView_.reset();
-    arrayImage_.reset();
-    holes_.clear();
 }
 
 bool HoleMaskManager::isHole(float x, float z) const {

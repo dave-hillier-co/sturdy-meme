@@ -138,13 +138,12 @@ public:
 
 private:
     bool initInternal(const InitInfo& info);
-    void cleanup();
 
     // Stored initialization data
-    VmaAllocator allocator_ = VK_NULL_HANDLE;
-    vk::Device device_ = VK_NULL_HANDLE;
-    vk::CommandPool commandPool_ = VK_NULL_HANDLE;
-    vk::Queue graphicsQueue_ = VK_NULL_HANDLE;
+    VmaAllocator allocator_ = nullptr;
+    vk::Device device_{};
+    vk::CommandPool commandPool_{};
+    vk::Queue graphicsQueue_{};
     std::string resourcePath_;
     HeightQueryFunc terrainHeightFunc_;
     glm::vec2 sceneOrigin_ = glm::vec2(0.0f);

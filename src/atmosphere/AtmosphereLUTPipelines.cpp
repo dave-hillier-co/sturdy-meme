@@ -3,12 +3,12 @@
 #include <SDL3/SDL_log.h>
 
 bool AtmosphereLUTSystem::createComputePipelines() {
-    ComputePipelineBuilder builder(device);
+    ComputePipelineBuilder builder(*raiiDevice_);
 
     // Create transmittance pipeline
     if (!builder.setShader(shaderPath + "/transmittance_lut.comp.spv")
-                .setPipelineLayout(transmittancePipelineLayout)
-                .buildRaw(transmittancePipeline)) {
+                .setPipelineLayout(**transmittancePipelineLayout)
+                .buildInto(transmittancePipeline)) {
         SDL_Log("Failed to create transmittance pipeline");
         return false;
     }
@@ -16,8 +16,8 @@ bool AtmosphereLUTSystem::createComputePipelines() {
     // Create multi-scatter pipeline
     if (!builder.reset()
                 .setShader(shaderPath + "/multiscatter_lut.comp.spv")
-                .setPipelineLayout(multiScatterPipelineLayout)
-                .buildRaw(multiScatterPipeline)) {
+                .setPipelineLayout(**multiScatterPipelineLayout)
+                .buildInto(multiScatterPipeline)) {
         SDL_Log("Failed to create multi-scatter pipeline");
         return false;
     }
@@ -25,8 +25,8 @@ bool AtmosphereLUTSystem::createComputePipelines() {
     // Create sky-view pipeline
     if (!builder.reset()
                 .setShader(shaderPath + "/skyview_lut.comp.spv")
-                .setPipelineLayout(skyViewPipelineLayout)
-                .buildRaw(skyViewPipeline)) {
+                .setPipelineLayout(**skyViewPipelineLayout)
+                .buildInto(skyViewPipeline)) {
         SDL_Log("Failed to create sky-view pipeline");
         return false;
     }
@@ -34,8 +34,8 @@ bool AtmosphereLUTSystem::createComputePipelines() {
     // Create irradiance pipeline
     if (!builder.reset()
                 .setShader(shaderPath + "/irradiance_lut.comp.spv")
-                .setPipelineLayout(irradiancePipelineLayout)
-                .buildRaw(irradiancePipeline)) {
+                .setPipelineLayout(**irradiancePipelineLayout)
+                .buildInto(irradiancePipeline)) {
         SDL_Log("Failed to create irradiance pipeline");
         return false;
     }
@@ -43,8 +43,8 @@ bool AtmosphereLUTSystem::createComputePipelines() {
     // Create cloud map pipeline
     if (!builder.reset()
                 .setShader(shaderPath + "/cloudmap_lut.comp.spv")
-                .setPipelineLayout(cloudMapPipelineLayout)
-                .buildRaw(cloudMapPipeline)) {
+                .setPipelineLayout(**cloudMapPipelineLayout)
+                .buildInto(cloudMapPipeline)) {
         SDL_Log("Failed to create cloud map pipeline");
         return false;
     }

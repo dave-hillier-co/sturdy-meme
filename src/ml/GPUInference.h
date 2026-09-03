@@ -3,10 +3,14 @@
 #include "Tensor.h"
 #include "MLPNetwork.h"
 #include "calm/LowLevelController.h"
+#include "VmaBuffer.h"
 #include <vulkan/vulkan.hpp>
+#include <vulkan/vulkan_raii.hpp>
 #include <vk_mem_alloc.h>
 #include <vector>
 #include <cstdint>
+#include <memory>
+#include <optional>
 #include <string>
 
 namespace ml {
@@ -36,7 +40,7 @@ struct InferencePushConstants {
 // (same archetype). For mixed archetypes, create one GPUInference per type.
 //
 // Usage:
-//   1. Create and upload weights (once at load time)
+//   1. create() and upload weights (once at load time)
 //   2. Each frame: upload batched latent+obs, dispatch, read back actions
 //   3. Apply actions to skeletons on CPU
 //
@@ -53,15 +57,28 @@ public:
         std::string shaderPath;         // Path to calm_inference.comp.spv
     };
 
-    GPUInference() = default;
-    ~GPUInference();
+    // Passkey for controlled construction via make_unique
+    struct ConstructToken { explicit ConstructToken() = default; };
+    explicit GPUInference(ConstructToken) {}
 
-    // Non-copyable
+    /**
+     * Factory: create GPU resources (pipeline, descriptor set, buffers).
+     * The raii device and allocator must outlive the returned object.
+     * Returns nullptr on failure.
+     */
+    static std::unique_ptr<GPUInference> create(const vk::raii::Device& device,
+                                                VmaAllocator allocator,
+                                                const Config& config);
+
+    // Members release in reverse declaration order (pipeline, layout, pool,
+    // set layout, buffers).
+    ~GPUInference() = default;
+
+    // Non-copyable, non-movable
     GPUInference(const GPUInference&) = delete;
     GPUInference& operator=(const GPUInference&) = delete;
-
-    // Initialize GPU resources (pipeline, descriptor sets, buffers).
-    bool init(vk::Device device, VmaAllocator allocator, const Config& config);
+    GPUInference(GPUInference&&) = delete;
+    GPUInference& operator=(GPUInference&&) = delete;
 
     // Upload LLC network weights to the GPU.
     bool uploadWeights(const calm::LowLevelController& llc);
@@ -77,33 +94,20 @@ public:
     // Read back the computed actions from the GPU.
     void readBackActions(std::vector<float>& actions, uint32_t npcCount);
 
-    // Check if initialized and ready for dispatch
-    bool isReady() const { return initialized_; }
-
     // Get the config
     const Config& config() const { return config_; }
 
-    // Release GPU resources
-    void destroy();
-
 private:
+    bool initInternal(const vk::raii::Device& device, VmaAllocator allocator, const Config& config);
+
     Config config_;
-    bool initialized_ = false;
 
-    vk::Device device_ = VK_NULL_HANDLE;
-    VmaAllocator allocator_ = VK_NULL_HANDLE;
+    vk::Device device_{};
+    VmaAllocator allocator_ = nullptr;
 
-    // Vulkan objects
-    vk::DescriptorSetLayout descriptorSetLayout_ = VK_NULL_HANDLE;
-    vk::DescriptorPool descriptorPool_ = VK_NULL_HANDLE;
-    vk::DescriptorSet descriptorSet_ = VK_NULL_HANDLE;
-    vk::PipelineLayout pipelineLayout_ = VK_NULL_HANDLE;
-    vk::Pipeline pipeline_ = VK_NULL_HANDLE;
-
-    // GPU buffers (VMA-allocated)
+    // GPU buffers (VMA-allocated, persistently mapped; RAII via VmaBuffer)
     struct GPUBuffer {
-        vk::Buffer buffer = VK_NULL_HANDLE;
-        VmaAllocation allocation = VK_NULL_HANDLE;
+        VmaBuffer buffer;
         size_t size = 0;
     };
 
@@ -113,12 +117,18 @@ private:
     GPUBuffer obsBuffer_;
     GPUBuffer actionBuffer_;
 
+    // Vulkan objects (RAII, declared in dependency order)
+    std::optional<vk::raii::DescriptorSetLayout> descriptorSetLayout_;
+    std::optional<vk::raii::DescriptorPool> descriptorPool_;
+    vk::DescriptorSet descriptorSet_{};  // Pool-owned
+    std::optional<vk::raii::PipelineLayout> pipelineLayout_;
+    std::optional<vk::raii::Pipeline> pipeline_;
+
     InferencePushConstants pushConstants_{};
 
     // Helpers
     bool createBuffer(GPUBuffer& buf, size_t size,
-                      VkBufferUsageFlags usage, VmaMemoryUsage memUsage);
-    void destroyBuffer(GPUBuffer& buf);
+                      vk::BufferUsageFlags usage, VmaMemoryUsage memUsage);
     void uploadToBuffer(GPUBuffer& buf, const void* data, size_t size);
     void readFromBuffer(const GPUBuffer& buf, void* data, size_t size);
 

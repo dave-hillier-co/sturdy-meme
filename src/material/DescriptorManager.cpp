@@ -198,7 +198,7 @@ DescriptorManager::SetWriter& DescriptorManager::SetWriter::writeImageArray(
 DescriptorManager::SetWriter& DescriptorManager::SetWriter::writeStorageImage(
     uint32_t binding, vk::ImageView view, VkImageLayout layout) {
 
-    imageInfos.push_back({VK_NULL_HANDLE, view, layout});
+    imageInfos.push_back({VkSampler{}, view, layout});
 
     auto write = vk::WriteDescriptorSet{}
         .setDstSet(set)
@@ -226,49 +226,21 @@ void DescriptorManager::SetWriter::update() {
 // Pool Implementation
 // ============================================================================
 
-DescriptorManager::Pool::Pool(vk::Device device, uint32_t initialSetsPerPool)
-    : device(device), setsPerPool(initialSetsPerPool), poolSizes(DescriptorPoolSizes::standard()) {
+DescriptorManager::Pool::Pool(const vk::raii::Device& raiiDevice, uint32_t initialSetsPerPool)
+    : raiiDevice_(&raiiDevice), device(*raiiDevice), setsPerPool(initialSetsPerPool), poolSizes(DescriptorPoolSizes::standard()) {
     // Create initial pool
     pools.push_back(createPool());
 }
 
-DescriptorManager::Pool::Pool(vk::Device device, uint32_t initialSetsPerPool, const DescriptorPoolSizes& sizes)
-    : device(device), setsPerPool(initialSetsPerPool), poolSizes(sizes) {
+DescriptorManager::Pool::Pool(const vk::raii::Device& raiiDevice, uint32_t initialSetsPerPool, const DescriptorPoolSizes& sizes)
+    : raiiDevice_(&raiiDevice), device(*raiiDevice), setsPerPool(initialSetsPerPool), poolSizes(sizes) {
     // Create initial pool with custom sizes
     SDL_Log("DescriptorManager: Creating pool with custom sizes (UBO=%u, SSBO=%u, samplers=%u, storage=%u)",
             sizes.uniformBuffers, sizes.storageBuffers, sizes.combinedImageSamplers, sizes.storageImages);
     pools.push_back(createPool());
 }
 
-DescriptorManager::Pool::~Pool() {
-    destroy();
-}
-
-DescriptorManager::Pool::Pool(Pool&& other) noexcept
-    : device(other.device)
-    , pools(std::move(other.pools))
-    , setsPerPool(other.setsPerPool)
-    , currentPoolIndex(other.currentPoolIndex)
-    , totalAllocatedSets(other.totalAllocatedSets)
-    , poolSizes(other.poolSizes) {
-    other.device = VK_NULL_HANDLE;
-}
-
-DescriptorManager::Pool& DescriptorManager::Pool::operator=(Pool&& other) noexcept {
-    if (this != &other) {
-        destroy();
-        device = other.device;
-        pools = std::move(other.pools);
-        setsPerPool = other.setsPerPool;
-        currentPoolIndex = other.currentPoolIndex;
-        totalAllocatedSets = other.totalAllocatedSets;
-        poolSizes = other.poolSizes;
-        other.device = VK_NULL_HANDLE;
-    }
-    return *this;
-}
-
-vk::DescriptorPool DescriptorManager::Pool::createPool() {
+vk::raii::DescriptorPool DescriptorManager::Pool::createPool() {
     std::vector<VkDescriptorPoolSize> sizes;
 
     if (poolSizes.uniformBuffers > 0) {
@@ -302,22 +274,21 @@ vk::DescriptorPool DescriptorManager::Pool::createPool() {
         .setPPoolSizes(reinterpret_cast<const vk::DescriptorPoolSize*>(sizes.data()))
         .setMaxSets(setsPerPool);
 
-    vk::Device vkDevice(device);
-    vk::DescriptorPool pool = vkDevice.createDescriptorPool(poolInfo);
+    vk::raii::DescriptorPool pool(*raiiDevice_, poolInfo);
 
     SDL_Log("DescriptorManager: Created new descriptor pool (total: %zu)",
             pools.size() + 1);
     return pool;
 }
 
-bool DescriptorManager::Pool::tryAllocate(vk::DescriptorPool pool,
+bool DescriptorManager::Pool::tryAllocate(const vk::raii::DescriptorPool& pool,
                                           vk::DescriptorSetLayout layout,
                                           uint32_t count,
                                           std::vector<vk::DescriptorSet>& outSets) {
     std::vector<vk::DescriptorSetLayout> layouts(count, layout);
 
     auto allocInfo = vk::DescriptorSetAllocateInfo{}
-        .setDescriptorPool(pool)
+        .setDescriptorPool(*pool)
         .setDescriptorSetCount(count)
         .setPSetLayouts(reinterpret_cast<const vk::DescriptorSetLayout*>(layouts.data()));
 
@@ -367,16 +338,15 @@ std::vector<vk::DescriptorSet> DescriptorManager::Pool::allocate(
     }
 
     // All pools exhausted - create new one
-    vk::DescriptorPool newPool = createPool();
-    if (newPool == VK_NULL_HANDLE) {
-        SDL_Log("DescriptorManager: Failed to create new pool for allocation");
+    try {
+        pools.push_back(createPool());
+    } catch (const vk::SystemError& e) {
+        SDL_Log("DescriptorManager: Failed to create new pool for allocation: %s", e.what());
         return {};
     }
-
-    pools.push_back(newPool);
     currentPoolIndex = static_cast<uint32_t>(pools.size() - 1);
 
-    if (tryAllocate(newPool, layout, count, sets)) {
+    if (tryAllocate(pools.back(), layout, count, sets)) {
         totalAllocatedSets += count;
         return sets;
     }
@@ -387,29 +357,14 @@ std::vector<vk::DescriptorSet> DescriptorManager::Pool::allocate(
 
 vk::DescriptorSet DescriptorManager::Pool::allocateSingle(vk::DescriptorSetLayout layout) {
     auto sets = allocate(layout, 1);
-    return sets.empty() ? VK_NULL_HANDLE : sets[0];
+    return sets.empty() ? vk::DescriptorSet{} : sets[0];
 }
 
 void DescriptorManager::Pool::reset() {
     std::lock_guard<std::mutex> lock(allocMutex_);
-    vk::Device vkDevice(device);
-    for (auto pool : pools) {
-        vkDevice.resetDescriptorPool(pool);
+    for (auto& pool : pools) {
+        device.resetDescriptorPool(*pool);
     }
-    currentPoolIndex = 0;
-    totalAllocatedSets = 0;
-}
-
-void DescriptorManager::Pool::destroy() {
-    if (device != VK_NULL_HANDLE) {
-        vk::Device vkDevice(device);
-        for (auto pool : pools) {
-            if (pool != VK_NULL_HANDLE) {
-                vkDevice.destroyDescriptorPool(pool);
-            }
-        }
-    }
-    pools.clear();
     currentPoolIndex = 0;
     totalAllocatedSets = 0;
 }

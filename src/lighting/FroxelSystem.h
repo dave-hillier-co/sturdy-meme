@@ -9,7 +9,7 @@
 #include <memory>
 #include <optional>
 #include "UBOs.h"
-#include "PerFrameBuffer.h"
+#include "core/vulkan/VmaBuffer.h"
 #include "DescriptorManager.h"
 #include "InitContext.h"
 #include "VmaImage.h"
@@ -57,7 +57,7 @@ public:
                                                  const std::vector<vk::Buffer>& lightBuffers);
 
 
-    ~FroxelSystem();
+    ~FroxelSystem() = default;
 
     // Non-copyable, non-movable
     FroxelSystem(const FroxelSystem&) = delete;
@@ -83,10 +83,10 @@ public:
     void recordInitialClearIfNeeded(vk::CommandBuffer cmd);
 
     // Get the scattering volume (raw, pre-integration) - returns current frame's output
-    vk::ImageView getScatteringVolumeView() const { return scatteringVolumeViews_[frameCounter % 2] ? **scatteringVolumeViews_[frameCounter % 2] : VK_NULL_HANDLE; }
+    vk::ImageView getScatteringVolumeView() const { return scatteringVolumeViews_[frameCounter % 2] ? **scatteringVolumeViews_[frameCounter % 2] : vk::ImageView{}; }
     // Get the integrated volume for compositing (front-to-back integrated result)
-    vk::ImageView getIntegratedVolumeView() const { return integratedVolumeView_ ? **integratedVolumeView_ : VK_NULL_HANDLE; }
-    vk::Sampler getVolumeSampler() const { return volumeSampler_ ? **volumeSampler_ : VK_NULL_HANDLE; }
+    vk::ImageView getIntegratedVolumeView() const { return integratedVolumeView_ ? **integratedVolumeView_ : vk::ImageView{}; }
+    vk::Sampler getVolumeSampler() const { return volumeSampler_ ? **volumeSampler_ : vk::Sampler{}; }
 
     // IFogControl implementation (reset temporal history on change for immediate feedback)
     void setEnabled(bool e) override { enabled = e; }
@@ -137,8 +137,6 @@ private:
     bool createFroxelUpdatePipeline();
     bool createIntegrationPipeline();
 
-    void destroyVolumeResources();
-
     // Convert linear depth to froxel slice index
     float depthToSlice(float linearDepth) const {
         float normalized = linearDepth / volumetricFarPlane;
@@ -178,8 +176,9 @@ private:
 
     std::vector<vk::DescriptorSet> froxelDescriptorSets;
 
-    // Uniform buffers (per frame)
-    BufferUtils::PerFrameBufferSet uniformBuffers;
+    // Uniform buffers (per frame, RAII, persistently mapped)
+    std::vector<ManagedBuffer> uniformBuffers_;
+    std::vector<void*> uniformMapped_;
 
     // Previous view-proj for temporal reprojection
     glm::mat4 prevViewProj = glm::mat4(1.0f);

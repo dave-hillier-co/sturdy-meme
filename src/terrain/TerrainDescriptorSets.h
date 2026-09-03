@@ -1,8 +1,10 @@
 #pragma once
 
 #include <vulkan/vulkan.hpp>
+#include <vulkan/vulkan_raii.hpp>
 #include <vector>
 #include <memory>
+#include <optional>
 #include <cstdint>
 #include "DescriptorManager.h"
 
@@ -30,6 +32,7 @@ namespace VirtualTexture { class VirtualTextureSystem; }
 class TerrainDescriptorSets {
 public:
     struct InitInfo {
+        const vk::raii::Device* raiiDevice = nullptr;
         vk::Device device;
         DescriptorManager::Pool* descriptorPool;
         uint32_t framesInFlight;
@@ -37,15 +40,15 @@ public:
     };
 
     static std::unique_ptr<TerrainDescriptorSets> create(const InitInfo& info);
-    ~TerrainDescriptorSets();
+    ~TerrainDescriptorSets() = default;
 
     // Non-copyable, non-movable
     TerrainDescriptorSets(const TerrainDescriptorSets&) = delete;
     TerrainDescriptorSets& operator=(const TerrainDescriptorSets&) = delete;
 
     // Layout accessors (needed by TerrainPipelines during init)
-    vk::DescriptorSetLayout getComputeLayout() const { return computeLayout_; }
-    vk::DescriptorSetLayout getRenderLayout() const { return renderLayout_; }
+    vk::DescriptorSetLayout getComputeLayout() const { return computeLayout_ ? **computeLayout_ : vk::DescriptorSetLayout{}; }
+    vk::DescriptorSetLayout getRenderLayout() const { return renderLayout_ ? **renderLayout_ : vk::DescriptorSetLayout{}; }
 
     // Set accessors (needed by TerrainRecording for command buffer binding)
     vk::DescriptorSet getComputeSet(uint32_t frameIndex) const { return computeSets_[frameIndex]; }
@@ -92,16 +95,17 @@ private:
     bool createLayouts();
     bool allocateSets();
 
+    const vk::raii::Device* raiiDevice_ = nullptr;
     vk::Device device_;
     DescriptorManager::Pool* descriptorPool_ = nullptr;
     uint32_t framesInFlight_ = 0;
     uint32_t maxVisibleTriangles_ = 0;
 
-    // Descriptor set layouts
-    vk::DescriptorSetLayout computeLayout_;
-    vk::DescriptorSetLayout renderLayout_;
+    // Descriptor set layouts (RAII; destroyed with this object)
+    std::optional<vk::raii::DescriptorSetLayout> computeLayout_;
+    std::optional<vk::raii::DescriptorSetLayout> renderLayout_;
 
-    // Per-frame descriptor sets
+    // Per-frame descriptor sets (owned by descriptorPool_; released with the pool)
     std::vector<vk::DescriptorSet> computeSets_;
     std::vector<vk::DescriptorSet> renderSets_;
 

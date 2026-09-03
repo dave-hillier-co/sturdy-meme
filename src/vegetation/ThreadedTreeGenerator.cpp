@@ -7,9 +7,12 @@
 
 std::unique_ptr<ThreadedTreeGenerator> ThreadedTreeGenerator::create(uint32_t workerCount) {
     auto gen = std::make_unique<ThreadedTreeGenerator>(ConstructToken{});
-    if (!gen->init(workerCount)) {
+    gen->jobQueue_ = Loading::LoadJobQueue::create(workerCount);
+    if (!gen->jobQueue_) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "ThreadedTreeGenerator: Failed to create job queue");
         return nullptr;
     }
+    SDL_Log("ThreadedTreeGenerator initialized with %u workers", workerCount);
     return gen;
 }
 
@@ -17,16 +20,6 @@ ThreadedTreeGenerator::~ThreadedTreeGenerator() {
     if (jobQueue_) {
         jobQueue_->shutdown();
     }
-}
-
-bool ThreadedTreeGenerator::init(uint32_t workerCount) {
-    jobQueue_ = Loading::LoadJobQueue::create(workerCount);
-    if (!jobQueue_) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "ThreadedTreeGenerator: Failed to create job queue");
-        return false;
-    }
-    SDL_Log("ThreadedTreeGenerator initialized with %u workers", workerCount);
-    return true;
 }
 
 namespace {

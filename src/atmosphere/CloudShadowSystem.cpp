@@ -2,6 +2,7 @@
 #include "ShaderLoader.h"
 #include "DescriptorManager.h"
 #include "VmaImage.h"
+#include "core/vulkan/VmaBufferFactory.h"
 #include "SamplerFactory.h"
 #include "core/vulkan/BarrierHelpers.h"
 #include "core/vulkan/PipelineLayoutBuilder.h"
@@ -33,10 +34,6 @@ std::unique_ptr<CloudShadowSystem> CloudShadowSystem::create(const InitContext& 
     return create(info);
 }
 
-CloudShadowSystem::~CloudShadowSystem() {
-    cleanup();
-}
-
 bool CloudShadowSystem::initInternal(const InitInfo& info) {
     device = info.device;
     allocator = info.allocator;
@@ -63,21 +60,6 @@ bool CloudShadowSystem::initInternal(const InitInfo& info) {
     return true;
 }
 
-void CloudShadowSystem::cleanup() {
-    if (!device) return;  // Not initialized
-
-    // RAII wrappers handle cleanup automatically
-    computePipeline_.reset();
-    pipelineLayout_.reset();
-    descriptorSetLayout_.reset();
-
-    BufferUtils::destroyBuffers(allocator, uniformBuffers);
-
-    shadowMapSampler_.reset();
-    shadowMapView_.reset();
-    shadowMap_.reset();
-}
-
 bool CloudShadowSystem::createShadowMap() {
     // Create cloud shadow map texture
     // R16F format stores shadow attenuation factor (0 = full shadow, 1 = no shadow)
@@ -96,7 +78,7 @@ bool CloudShadowSystem::createShadowMap() {
     VmaAllocationCreateInfo allocInfo{};
     allocInfo.usage = VMA_MEMORY_USAGE_GPU_ONLY;
 
-    if (!ManagedImage::create(allocator, reinterpret_cast<const VkImageCreateInfo&>(imageInfo), allocInfo, shadowMap_)) {
+    if (!ManagedImage::create(allocator, imageInfo, allocInfo, shadowMap_)) {
         SDL_Log("Failed to create cloud shadow map");
         return false;
     }
@@ -134,16 +116,18 @@ bool CloudShadowSystem::createSampler() {
 }
 
 bool CloudShadowSystem::createUniformBuffers() {
-    if (!BufferUtils::PerFrameBufferBuilder()
-            .setAllocator(allocator)
-            .setFrameCount(framesInFlight)
-            .setSize(sizeof(CloudShadowUniforms))
-            .setUsage(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT)
-            .setMemoryUsage(VMA_MEMORY_USAGE_CPU_TO_GPU)
-            .setAllocationFlags(VMA_ALLOCATION_CREATE_MAPPED_BIT)
-            .build(uniformBuffers)) {
-        SDL_Log("Failed to create cloud shadow uniform buffers");
-        return false;
+    uniformBuffers_.resize(framesInFlight);
+    uniformMapped_.resize(framesInFlight, nullptr);
+    for (uint32_t i = 0; i < framesInFlight; ++i) {
+        if (!VmaBufferFactory::createUniformBuffer(allocator, sizeof(CloudShadowUniforms), uniformBuffers_[i])) {
+            SDL_Log("Failed to create cloud shadow uniform buffers");
+            return false;
+        }
+        uniformMapped_[i] = uniformBuffers_[i].map();
+        if (!uniformMapped_[i]) {
+            SDL_Log("Failed to create cloud shadow uniform buffers");
+            return false;
+        }
     }
 
     return true;
@@ -170,7 +154,7 @@ bool CloudShadowSystem::createDescriptorSets() {
         DescriptorManager::SetWriter(device, descriptorSets[i])
             .writeStorageImage(0, **shadowMapView_)
             .writeImage(1, cloudMapLUTView, cloudMapLUTSampler)
-            .writeBuffer(2, uniformBuffers.buffers[i], 0, sizeof(CloudShadowUniforms))
+            .writeBuffer(2, uniformBuffers_[i].get(), 0, sizeof(CloudShadowUniforms))
             .update();
     }
 
@@ -267,7 +251,7 @@ void CloudShadowSystem::recordUpdate(vk::CommandBuffer cmd, uint32_t frameIndex,
     uniforms.shadowBias = 0.001f;
     uniforms.padding = 0.0f;
 
-    memcpy(uniformBuffers.mappedPointers[frameIndex], &uniforms, sizeof(uniforms));
+    memcpy(uniformMapped_[frameIndex], &uniforms, sizeof(uniforms));
 
     // Bind pipeline and descriptor set
     vk::CommandBuffer vkCmd(cmd);

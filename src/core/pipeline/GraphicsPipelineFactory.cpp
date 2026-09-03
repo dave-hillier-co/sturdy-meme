@@ -6,26 +6,22 @@ GraphicsPipelineFactory::GraphicsPipelineFactory(vk::Device device) : device(dev
     initDefaultColorBlendAttachment();
 }
 
-GraphicsPipelineFactory::~GraphicsPipelineFactory() {
-    cleanup();
-}
-
 GraphicsPipelineFactory& GraphicsPipelineFactory::setPipelineCache(vk::PipelineCache cache) {
     pipelineCacheHandle = cache;
     return *this;
 }
 
 GraphicsPipelineFactory& GraphicsPipelineFactory::reset() {
-    cleanup();
+    shaderModules.clear();
 
     vertShaderPath.clear();
     fragShaderPath.clear();
     tescShaderPath.clear();
     teseShaderPath.clear();
-    renderPass = VK_NULL_HANDLE;
+    renderPass = vk::RenderPass{};
     subpass = 0;
-    pipelineLayout = VK_NULL_HANDLE;
-    pipelineCacheHandle = VK_NULL_HANDLE;
+    pipelineLayout = vk::PipelineLayout{};
+    pipelineCacheHandle = vk::PipelineCache{};
     extent = {0, 0};
     dynamicViewport = false;
     vertexBindings.clear();
@@ -329,30 +325,27 @@ bool GraphicsPipelineFactory::loadShaderModules(std::vector<VkPipelineShaderStag
         return false;
     }
 
-    auto vertModule = ShaderLoader::createShaderModule(device, *vertCode);
-    auto fragModule = ShaderLoader::createShaderModule(device, *fragCode);
-
-    vk::Device vkDevice(device);
+    // Scoped modules destroy themselves on every early return below.
+    auto vertModule = ShaderLoader::createShaderModule(device, *vertCode, ShaderLoader::RaiiTag{});
+    auto fragModule = ShaderLoader::createShaderModule(device, *fragCode, ShaderLoader::RaiiTag{});
 
     if (!vertModule || !fragModule) {
         SDL_Log("GraphicsPipelineFactory: Failed to create shader modules");
-        if (vertModule) vkDevice.destroyShaderModule(*vertModule);
-        if (fragModule) vkDevice.destroyShaderModule(*fragModule);
         return false;
     }
 
-    shaderModules.push_back(*vertModule);
-    shaderModules.push_back(*fragModule);
-
     auto vertStage = vk::PipelineShaderStageCreateInfo{}
         .setStage(vk::ShaderStageFlagBits::eVertex)
-        .setModule(*vertModule)
+        .setModule(vertModule->get())
         .setPName("main");
 
     auto fragStage = vk::PipelineShaderStageCreateInfo{}
         .setStage(vk::ShaderStageFlagBits::eFragment)
-        .setModule(*fragModule)
+        .setModule(fragModule->get())
         .setPName("main");
+
+    shaderModules.push_back(std::move(*vertModule));
+    shaderModules.push_back(std::move(*fragModule));
 
     stages.push_back(vertStage);
 
@@ -366,28 +359,26 @@ bool GraphicsPipelineFactory::loadShaderModules(std::vector<VkPipelineShaderStag
             return false;
         }
 
-        auto tescModule = ShaderLoader::createShaderModule(device, *tescCode);
-        auto teseModule = ShaderLoader::createShaderModule(device, *teseCode);
+        auto tescModule = ShaderLoader::createShaderModule(device, *tescCode, ShaderLoader::RaiiTag{});
+        auto teseModule = ShaderLoader::createShaderModule(device, *teseCode, ShaderLoader::RaiiTag{});
 
         if (!tescModule || !teseModule) {
             SDL_Log("GraphicsPipelineFactory: Failed to create tessellation shader modules");
-            if (tescModule) vkDevice.destroyShaderModule(*tescModule);
-            if (teseModule) vkDevice.destroyShaderModule(*teseModule);
             return false;
         }
 
-        shaderModules.push_back(*tescModule);
-        shaderModules.push_back(*teseModule);
-
         auto tescStage = vk::PipelineShaderStageCreateInfo{}
             .setStage(vk::ShaderStageFlagBits::eTessellationControl)
-            .setModule(*tescModule)
+            .setModule(tescModule->get())
             .setPName("main");
 
         auto teseStage = vk::PipelineShaderStageCreateInfo{}
             .setStage(vk::ShaderStageFlagBits::eTessellationEvaluation)
-            .setModule(*teseModule)
+            .setModule(teseModule->get())
             .setPName("main");
+
+        shaderModules.push_back(std::move(*tescModule));
+        shaderModules.push_back(std::move(*teseModule));
 
         stages.push_back(tescStage);
         stages.push_back(teseStage);
@@ -400,11 +391,11 @@ bool GraphicsPipelineFactory::loadShaderModules(std::vector<VkPipelineShaderStag
 
 bool GraphicsPipelineFactory::build(vk::Pipeline& pipeline) {
     // Validate required state
-    if (renderPass == VK_NULL_HANDLE) {
+    if (!renderPass) {
         SDL_Log("GraphicsPipelineFactory: Render pass not set");
         return false;
     }
-    if (pipelineLayout == VK_NULL_HANDLE) {
+    if (!pipelineLayout) {
         SDL_Log("GraphicsPipelineFactory: Pipeline layout not set");
         return false;
     }
@@ -413,9 +404,12 @@ bool GraphicsPipelineFactory::build(vk::Pipeline& pipeline) {
         return false;
     }
 
-    // Load shaders
+    // Load shaders (a failed load leaves any partially loaded modules to be
+    // released here, before the next build)
+    shaderModules.clear();
     std::vector<VkPipelineShaderStageCreateInfo> shaderStages;
     if (!loadShaderModules(shaderStages)) {
+        shaderModules.clear();
         return false;
     }
 
@@ -527,18 +521,9 @@ bool GraphicsPipelineFactory::build(vk::Pipeline& pipeline) {
         .setRenderPass(renderPass)
         .setSubpass(subpass);
 
-    vk::Device vkDevice(device);
-    auto result = vkDevice.createGraphicsPipelines(pipelineCacheHandle, pipelineInfo);
-    cleanup();
+    auto result = device.createGraphicsPipelines(pipelineCacheHandle, pipelineInfo);
+    shaderModules.clear();  // modules are only needed until pipeline creation
 
     pipeline = result.value[0];
     return true;
-}
-
-void GraphicsPipelineFactory::cleanup() {
-    vk::Device vkDevice(device);
-    for (vk::ShaderModule module : shaderModules) {
-        vkDevice.destroyShaderModule(module);
-    }
-    shaderModules.clear();
 }

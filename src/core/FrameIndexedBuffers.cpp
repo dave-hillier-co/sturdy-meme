@@ -3,32 +3,6 @@
 
 namespace BufferUtils {
 
-FrameIndexedBuffers::~FrameIndexedBuffers() {
-    destroy();
-}
-
-FrameIndexedBuffers::FrameIndexedBuffers(FrameIndexedBuffers&& other) noexcept
-    : buffers_(std::move(other.buffers_))
-    , allocations_(std::move(other.allocations_))
-    , frameCount_(other.frameCount_)
-    , allocator_(other.allocator_) {
-    other.frameCount_ = 0;
-    other.allocator_ = VK_NULL_HANDLE;
-}
-
-FrameIndexedBuffers& FrameIndexedBuffers::operator=(FrameIndexedBuffers&& other) noexcept {
-    if (this != &other) {
-        destroy();
-        buffers_ = std::move(other.buffers_);
-        allocations_ = std::move(other.allocations_);
-        frameCount_ = other.frameCount_;
-        allocator_ = other.allocator_;
-        other.frameCount_ = 0;
-        other.allocator_ = VK_NULL_HANDLE;
-    }
-    return *this;
-}
-
 bool FrameIndexedBuffers::resize(VmaAllocator allocator, uint32_t frameCount, vk::DeviceSize size,
                                   vk::BufferUsageFlags usage, VmaMemoryUsage memoryUsage) {
     destroy();
@@ -40,11 +14,6 @@ bool FrameIndexedBuffers::resize(VmaAllocator allocator, uint32_t frameCount, vk
         return false;
     }
 
-    allocator_ = allocator;
-    frameCount_ = frameCount;
-    buffers_.resize(frameCount);
-    allocations_.resize(frameCount);
-
     auto bufferInfo = vk::BufferCreateInfo{}
         .setSize(size)
         .setUsage(usage)
@@ -53,48 +22,34 @@ bool FrameIndexedBuffers::resize(VmaAllocator allocator, uint32_t frameCount, vk
     VmaAllocationCreateInfo allocInfo{};
     allocInfo.usage = memoryUsage;
 
+    buffers_.reserve(frameCount);
     for (uint32_t i = 0; i < frameCount; ++i) {
-        vk::Buffer rawBuffer;
-        VkResult result = vmaCreateBuffer(
-            allocator,
-            reinterpret_cast<const VkBufferCreateInfo*>(&bufferInfo),
-            &allocInfo,
-            reinterpret_cast<VkBuffer*>(&rawBuffer),
-            &allocations_[i],
-            nullptr);
-
-        if (result != VK_SUCCESS) {
+        VmaBuffer buffer;
+        if (!VmaBuffer::create(allocator, bufferInfo, allocInfo, buffer)) {
             SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
                 "FrameIndexedBuffers::resize: failed to create buffer %u", i);
-            destroy();
+            destroy();  // frees the buffers created so far
             return false;
         }
-        buffers_[i] = vk::Buffer(rawBuffer);
+        buffers_.push_back(std::move(buffer));
     }
+    frameCount_ = frameCount;
 
     return true;
 }
 
 void FrameIndexedBuffers::destroy() {
-    if (allocator_) {
-        for (uint32_t i = 0; i < buffers_.size(); ++i) {
-            if (buffers_[i]) {
-                vmaDestroyBuffer(allocator_, static_cast<vk::Buffer>(buffers_[i]), allocations_[i]);
-            }
-        }
-    }
     buffers_.clear();
-    allocations_.clear();
     frameCount_ = 0;
 }
 
 vk::Buffer FrameIndexedBuffers::get(uint32_t frameIndex) const {
     if (buffers_.empty()) return vk::Buffer{};
-    return buffers_[frameIndex % frameCount_];
+    return vk::Buffer(buffers_[frameIndex % frameCount_].get());
 }
 
 vk::Buffer FrameIndexedBuffers::getVk(uint32_t frameIndex) const {
-    return static_cast<vk::Buffer>(get(frameIndex));
+    return get(frameIndex);
 }
 
 }  // namespace BufferUtils

@@ -16,7 +16,7 @@ std::unique_ptr<TerrainTileDiskLoader> TerrainTileDiskLoader::create(
 }
 
 TerrainTileDiskLoader::~TerrainTileDiskLoader() {
-    cleanup();
+    stop();
 }
 
 bool TerrainTileDiskLoader::initInternal(const std::string& cacheDirectory,
@@ -38,7 +38,7 @@ bool TerrainTileDiskLoader::initInternal(const std::string& cacheDirectory,
     return true;
 }
 
-void TerrainTileDiskLoader::cleanup() {
+void TerrainTileDiskLoader::stop() {
     {
         std::lock_guard<std::mutex> lock(queueMutex_);
         running_ = false;
@@ -51,16 +51,6 @@ void TerrainTileDiskLoader::cleanup() {
         }
     }
     workers_.clear();
-
-    {
-        std::lock_guard<std::mutex> lock(queueMutex_);
-        while (!requestQueue_.empty()) requestQueue_.pop();
-        inFlight_.clear();
-    }
-    {
-        std::lock_guard<std::mutex> lock(completedMutex_);
-        completed_.clear();
-    }
 }
 
 void TerrainTileDiskLoader::queueTile(TileCoord coord, uint32_t lod, int priority) {

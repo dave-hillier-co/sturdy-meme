@@ -3,7 +3,15 @@
 #include "core/vulkan/VmaBufferFactory.h"
 #include <SDL3/SDL.h>
 
-bool TileInfoBuffer::init(const InitInfo& info) {
+std::unique_ptr<TileInfoBuffer> TileInfoBuffer::create(const InitInfo& info) {
+    auto buffer = std::make_unique<TileInfoBuffer>(ConstructToken{});
+    if (!buffer->initInternal(info)) {
+        return nullptr;
+    }
+    return buffer;
+}
+
+bool TileInfoBuffer::initInternal(const InitInfo& info) {
     maxActiveTiles_ = info.maxActiveTiles;
 
     // Layout: uint activeTileCount, uint padding[3], TileInfoGPU tiles[maxActiveTiles]
@@ -17,15 +25,8 @@ bool TileInfoBuffer::init(const InitInfo& info) {
         mappedPtrs_[i] = buffers_[i].map();
     }
 
+    initializeAllFrames();
     return true;
-}
-
-void TileInfoBuffer::cleanup() {
-    buffers_.forEach([](uint32_t, ManagedBuffer& buffer) {
-        buffer.reset();
-    });
-    buffers_.clear();
-    mappedPtrs_.fill(nullptr);
 }
 
 void TileInfoBuffer::initializeAllFrames() {

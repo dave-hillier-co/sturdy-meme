@@ -13,47 +13,39 @@ bool GrassBuffers::create(VmaAllocator allocator, uint32_t framesInFlight) {
     vk::DeviceSize grassParamsSize = sizeof(GrassParams);
 
     uint32_t bufferSetCount = framesInFlight;
-    const auto doubleBufferedConfig = BufferUtils::DoubleBufferedBufferConfig(allocator, bufferSetCount);
     const auto perFrameConfig = BufferUtils::PerFrameBufferConfig(allocator, framesInFlight);
 
-    if (!BufferUtils::DoubleBufferedBufferBuilder::fromConfig(doubleBufferedConfig)
-             .withSize(instanceBufferSize)
-             .withUsage(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT)
-             .build(instanceBuffers_)) {
+    // GPU-only sets, one per buffer set (matches the former DoubleBufferedBufferSet: AUTO memory usage)
+    if (!instanceBuffers_.resize(allocator, bufferSetCount, instanceBufferSize,
+                                 vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eVertexBuffer,
+                                 VMA_MEMORY_USAGE_AUTO)) {
         SDL_Log("Failed to create grass instance buffers");
         return false;
     }
 
-    if (!BufferUtils::DoubleBufferedBufferBuilder::fromConfig(doubleBufferedConfig)
-             .withSize(indirectBufferSize)
-             .withUsage(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT)
-             .build(indirectBuffers_)) {
+    if (!indirectBuffers_.resize(allocator, bufferSetCount, indirectBufferSize,
+                                 vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eIndirectBuffer |
+                                 vk::BufferUsageFlagBits::eTransferDst,
+                                 VMA_MEMORY_USAGE_AUTO)) {
         SDL_Log("Failed to create grass indirect buffers");
         return false;
     }
 
-    if (!BufferUtils::PerFrameBufferBuilder::fromConfig(perFrameConfig)
-             .withSize(cullingUniformSize)
-             .build(uniformBuffers_)) {
+    if (!BufferUtils::MappedFrameBuffers::build(allocator,
+             BufferUtils::PerFrameBufferBuilder::fromConfig(perFrameConfig).withSize(cullingUniformSize),
+             uniformBuffers_)) {
         SDL_Log("Failed to create grass culling uniform buffers");
         return false;
     }
 
-    if (!BufferUtils::PerFrameBufferBuilder::fromConfig(perFrameConfig)
-             .withSize(grassParamsSize)
-             .build(paramsBuffers_)) {
+    if (!BufferUtils::MappedFrameBuffers::build(allocator,
+             BufferUtils::PerFrameBufferBuilder::fromConfig(perFrameConfig).withSize(grassParamsSize),
+             paramsBuffers_)) {
         SDL_Log("Failed to create grass params buffers");
         return false;
     }
 
     return true;
-}
-
-void GrassBuffers::destroy(VmaAllocator allocator) {
-    BufferUtils::destroyBuffers(allocator, instanceBuffers_);
-    BufferUtils::destroyBuffers(allocator, indirectBuffers_);
-    BufferUtils::destroyBuffers(allocator, uniformBuffers_);
-    BufferUtils::destroyBuffers(allocator, paramsBuffers_);
 }
 
 void GrassBuffers::updateUniforms(uint32_t frameIndex, const glm::vec3& cameraPos, const glm::mat4& viewProj,
@@ -68,7 +60,7 @@ void GrassBuffers::updateUniforms(uint32_t frameIndex, const glm::vec3& cameraPo
     culling.lodTransitionStart = -1.0f;
     culling.lodTransitionEnd = -1.0f;
     culling.maxLodDropRate = 0.0f;
-    memcpy(uniformBuffers_.mappedPointers[frameIndex], &culling, sizeof(CullingUniforms));
+    memcpy(uniformBuffers_.mapped(frameIndex), &culling, sizeof(CullingUniforms));
 
     // Fill GrassParams (grass-specific parameters)
     GrassParams params{};
@@ -87,5 +79,5 @@ void GrassBuffers::updateUniforms(uint32_t frameIndex, const glm::vec3& cameraPo
     // Terrain parameters for heightmap sampling
     params.terrainSize = terrainSize;
     params.terrainHeightScale = terrainHeightScale;
-    memcpy(paramsBuffers_.mappedPointers[frameIndex], &params, sizeof(GrassParams));
+    memcpy(paramsBuffers_.mapped(frameIndex), &params, sizeof(GrassParams));
 }

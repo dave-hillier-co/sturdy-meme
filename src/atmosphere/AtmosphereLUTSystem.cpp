@@ -20,10 +20,6 @@ std::unique_ptr<AtmosphereLUTSystem> AtmosphereLUTSystem::create(const InitConte
     return create(info);
 }
 
-AtmosphereLUTSystem::~AtmosphereLUTSystem() {
-    cleanup();
-}
-
 bool AtmosphereLUTSystem::initInternal(const InitInfo& info) {
     device = info.device;
     allocator = info.allocator;
@@ -45,57 +41,4 @@ bool AtmosphereLUTSystem::initInternal(const InitInfo& info) {
 
     SDL_Log("Atmosphere LUT System initialized");
     return true;
-}
-
-void AtmosphereLUTSystem::cleanup() {
-    if (!device) return;  // Not initialized
-    destroyLUTResources();
-
-    // Destroy all uniform buffers using consistent BufferUtils pattern
-    BufferUtils::destroyBuffers(allocator, staticUniformBuffers);
-    BufferUtils::destroyBuffers(allocator, skyViewUniformBuffers);
-    BufferUtils::destroyBuffers(allocator, cloudMapUniformBuffers);
-
-    vk::Device vkDevice(device);
-
-    // Destroy pipelines
-    auto destroyPipeline = [&](vk::Pipeline& pipeline) {
-        if (pipeline != VK_NULL_HANDLE) {
-            vkDevice.destroyPipeline(pipeline);
-            pipeline = VK_NULL_HANDLE;
-        }
-    };
-    destroyPipeline(transmittancePipeline);
-    destroyPipeline(multiScatterPipeline);
-    destroyPipeline(skyViewPipeline);
-    destroyPipeline(irradiancePipeline);
-    destroyPipeline(cloudMapPipeline);
-
-    // Destroy pipeline layouts
-    auto destroyLayout = [&](vk::PipelineLayout& layout) {
-        if (layout != VK_NULL_HANDLE) {
-            vkDevice.destroyPipelineLayout(layout);
-            layout = VK_NULL_HANDLE;
-        }
-    };
-    destroyLayout(transmittancePipelineLayout);
-    destroyLayout(multiScatterPipelineLayout);
-    destroyLayout(skyViewPipelineLayout);
-    destroyLayout(irradiancePipelineLayout);
-    destroyLayout(cloudMapPipelineLayout);
-
-    // Destroy descriptor set layouts
-    auto destroyDescLayout = [&](vk::DescriptorSetLayout& layout) {
-        if (layout != VK_NULL_HANDLE) {
-            vkDevice.destroyDescriptorSetLayout(layout);
-            layout = VK_NULL_HANDLE;
-        }
-    };
-    destroyDescLayout(transmittanceDescriptorSetLayout);
-    destroyDescLayout(multiScatterDescriptorSetLayout);
-    destroyDescLayout(skyViewDescriptorSetLayout);
-    destroyDescLayout(irradianceDescriptorSetLayout);
-    destroyDescLayout(cloudMapDescriptorSetLayout);
-
-    lutSampler_.reset();
 }

@@ -4,8 +4,7 @@
 #include <unordered_map>
 #include <vector>
 #include <cstdint>
-#include <functional>
-#include <optional>
+#include <memory>
 #include "PhysicsSystem.h"
 
 class TerrainTileCache;
@@ -31,13 +30,29 @@ public:
         float heightScale = 0.0f;
     };
 
-    PhysicsTerrainTileManager() = default;
-    ~PhysicsTerrainTileManager() = default;
+    // Passkey for controlled construction via make_unique
+    struct ConstructToken { explicit ConstructToken() = default; };
+    PhysicsTerrainTileManager(ConstructToken, PhysicsWorld& physics, TerrainTileCache& tileCache,
+                              const Config& config);
 
-    bool init(PhysicsWorld& physics, TerrainTileCache& tileCache, const Config& config);
+    /**
+     * Factory: binds the physics world and terrain tile cache (both must outlive
+     * the manager). Returns nullptr on failure.
+     */
+    static std::unique_ptr<PhysicsTerrainTileManager> create(PhysicsWorld& physics,
+                                                             TerrainTileCache& tileCache,
+                                                             const Config& config);
+
+    // Removes every loaded physics tile body from the physics world.
+    ~PhysicsTerrainTileManager();
+
+    // Non-copyable, non-movable (holds references; stored via unique_ptr)
+    PhysicsTerrainTileManager(const PhysicsTerrainTileManager&) = delete;
+    PhysicsTerrainTileManager& operator=(const PhysicsTerrainTileManager&) = delete;
+    PhysicsTerrainTileManager(PhysicsTerrainTileManager&&) = delete;
+    PhysicsTerrainTileManager& operator=(PhysicsTerrainTileManager&&) = delete;
 
     void update(const glm::vec3& playerPosition);
-    void cleanup();
 
     uint32_t getLoadedTileCount() const { return static_cast<uint32_t>(loadedTiles_.size()); }
     const Config& getConfig() const { return config_; }
@@ -57,8 +72,8 @@ private:
     };
     std::vector<TileRequest> calculateRequiredTiles(const glm::vec3& position) const;
 
-    std::optional<std::reference_wrapper<PhysicsWorld>> physics_;
-    std::optional<std::reference_wrapper<TerrainTileCache>> tileCache_;
+    PhysicsWorld& physics_;
+    TerrainTileCache& tileCache_;
     Config config_;
 
     std::unordered_map<uint64_t, PhysicsTileEntry> loadedTiles_;

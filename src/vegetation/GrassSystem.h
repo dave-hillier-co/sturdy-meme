@@ -143,7 +143,6 @@ public:
 
 private:
     bool initInternal(const InitInfo& info);
-    void cleanup();
 
     bool createGraphicsDescriptorSetLayout(SystemLifecycleHelper::PipelineHandles& handles);
     bool createGraphicsPipeline(SystemLifecycleHelper::PipelineHandles& handles);
@@ -166,13 +165,16 @@ private:
     // Descriptor set access
     vk::DescriptorSet getGraphicsDescriptorSet(uint32_t index) const { return graphicsDescriptorSets_[index]; }
 
-    // Composed components
+    // Composed components. Declaration order is destruction order in reverse:
+    // the passes' raii pipelines (built against lifecycle_'s layouts) die before
+    // lifecycle_, and the buffers last.
     GrassBuffers buffers_;
+
+    // Core lifecycle helper (raw pipeline handles, released in ~GrassSystem)
+    SystemLifecycleHelper lifecycle_;
+
     GrassComputePass computePass_;
     GrassShadowPass shadowPass_;
-
-    // Core lifecycle helper
-    SystemLifecycleHelper lifecycle_;
 
     // Graphics descriptor sets (one per buffer set)
     std::vector<vk::DescriptorSet> graphicsDescriptorSets_;

@@ -15,9 +15,9 @@
 #include "InitContext.h"
 #include "Light.h"
 #include "ecs/Components.h"
-#include "ecs/Components.h"
 #include "SkinnedMesh.h"
 #include "VulkanHelpers.h"
+#include "core/vulkan/VmaBuffer.h"
 
 // Forward declarations for the GPU-driven indirect shadow path
 class GPUSceneBuffer;
@@ -43,7 +43,7 @@ public:
         vk::PhysicalDevice physicalDevice;
         VmaAllocator allocator;
         vk::DescriptorSetLayout mainDescriptorSetLayout;  // For pipeline compatibility
-        vk::DescriptorSetLayout skinnedDescriptorSetLayout = VK_NULL_HANDLE;  // For skinned shadow pipeline (optional)
+        vk::DescriptorSetLayout skinnedDescriptorSetLayout{};  // For skinned shadow pipeline (optional)
         std::string shaderPath;
         uint32_t framesInFlight;
     };
@@ -59,9 +59,10 @@ public:
     static std::unique_ptr<ShadowSystem> create(const InitInfo& info);
     static std::unique_ptr<ShadowSystem> create(const InitContext& ctx,
                                                  vk::DescriptorSetLayout mainDescriptorSetLayout,
-                                                 vk::DescriptorSetLayout skinnedDescriptorSetLayout = VK_NULL_HANDLE);
+                                                 vk::DescriptorSetLayout skinnedDescriptorSetLayout = {});
 
-    ~ShadowSystem();
+    // All Vulkan resources are RAII members, released in reverse declaration order
+    ~ShadowSystem() = default;
 
     // Non-copyable, non-movable (stored via unique_ptr)
     ShadowSystem(ShadowSystem&&) = delete;
@@ -142,16 +143,16 @@ public:
     vk::ImageView getCascadeView(uint32_t cascade) const {
         return cascade < NUM_SHADOW_CASCADES ? vk::ImageView(csmResources.getLayerView(cascade)) : vk::ImageView{};
     }
-    vk::RenderPass getShadowRenderPass() const { return vk::RenderPass(shadowRenderPass); }
+    vk::RenderPass getShadowRenderPass() const { return shadowRenderPass_ ? **shadowRenderPass_ : vk::RenderPass{}; }
     vk::Framebuffer getCascadeFramebuffer(uint32_t cascade) const {
-        return cascade < cascadeFramebuffers.size() ? vk::Framebuffer(cascadeFramebuffers[cascade]) : vk::Framebuffer{};
+        return cascade < cascadeFramebuffers_.size() ? *cascadeFramebuffers_[cascade] : vk::Framebuffer{};
     }
 
     // Additional shadow pipeline accessors (not in interface)
-    vk::Pipeline getShadowPipeline() const { return shadowPipeline; }
-    vk::PipelineLayout getShadowPipelineLayout() const { return shadowPipelineLayout; }
-    vk::Pipeline getSkinnedShadowPipeline() const { return skinnedShadowPipeline; }
-    vk::PipelineLayout getSkinnedShadowPipelineLayout() const { return skinnedShadowPipelineLayout; }
+    vk::Pipeline getShadowPipeline() const { return shadowPipeline_ ? **shadowPipeline_ : vk::Pipeline{}; }
+    vk::PipelineLayout getShadowPipelineLayout() const { return shadowPipelineLayout_ ? **shadowPipelineLayout_ : vk::PipelineLayout{}; }
+    vk::Pipeline getSkinnedShadowPipeline() const { return skinnedShadowPipeline_ ? **skinnedShadowPipeline_ : vk::Pipeline{}; }
+    vk::PipelineLayout getSkinnedShadowPipelineLayout() const { return skinnedShadowPipelineLayout_ ? **skinnedShadowPipelineLayout_ : vk::PipelineLayout{}; }
 
     // Cascade data accessors
     const std::array<glm::mat4, NUM_SHADOW_CASCADES>& getCascadeMatrices() const { return cascadeMatrices; }
@@ -160,13 +161,13 @@ public:
     // Dynamic shadow resource accessors (for binding in main shader)
     // Bounds-checked accessors to prevent O3 UB from OOB access
     vk::ImageView getPointShadowArrayView(uint32_t frameIndex) const {
-        return frameIndex < pointShadowResources.size() ? pointShadowResources[frameIndex].getArrayView() : VK_NULL_HANDLE;
+        return frameIndex < pointShadowResources.size() ? pointShadowResources[frameIndex].getArrayView() : vk::ImageView{};
     }
-    vk::Sampler getPointShadowSampler() const { return pointShadowResources.empty() ? VK_NULL_HANDLE : pointShadowResources[0].getSampler(); }
+    vk::Sampler getPointShadowSampler() const { return pointShadowResources.empty() ? vk::Sampler{} : pointShadowResources[0].getSampler(); }
     vk::ImageView getSpotShadowArrayView(uint32_t frameIndex) const {
-        return frameIndex < spotShadowResources.size() ? spotShadowResources[frameIndex].getArrayView() : VK_NULL_HANDLE;
+        return frameIndex < spotShadowResources.size() ? spotShadowResources[frameIndex].getArrayView() : vk::ImageView{};
     }
-    vk::Sampler getSpotShadowSampler() const { return spotShadowResources.empty() ? VK_NULL_HANDLE : spotShadowResources[0].getSampler(); }
+    vk::Sampler getSpotShadowSampler() const { return spotShadowResources.empty() ? vk::Sampler{} : spotShadowResources[0].getSampler(); }
 
     // Dynamic shadow rendering (placeholder for future implementation)
     void renderDynamicShadows(vk::CommandBuffer cmd, uint32_t frameIndex,
@@ -188,7 +189,6 @@ private:
     // Dynamic shadow creation methods
     bool createDynamicShadowResources();
     bool createDynamicShadowPipeline();
-    void destroyDynamicShadowResources();
 
     // Pipeline helper
     bool createShadowPipelineCommon(
@@ -197,8 +197,11 @@ private:
         vk::DescriptorSetLayout descriptorSetLayout,
         const VkVertexInputBindingDescription& binding,
         const std::vector<VkVertexInputAttributeDescription>& attributes,
-        vk::PipelineLayout& outLayout,
-        vk::Pipeline& outPipeline);
+        std::optional<vk::raii::PipelineLayout>& outLayout,
+        std::optional<vk::raii::Pipeline>& outPipeline);
+
+    // Framebuffer helper: one single-layer depth framebuffer on the shadow render pass
+    std::optional<vk::raii::Framebuffer> createShadowFramebuffer(vk::ImageView layerView, uint32_t size) const;
 
     // Draw helper
     void drawShadowScene(
@@ -218,14 +221,32 @@ private:
 
     const InitInfo initInfo_;
 
+    // ------------------------------------------------------------------
+    // RAII members. Destruction runs in reverse declaration order, so the
+    // order below tears down pipelines -> layouts -> descriptor pools ->
+    // set layout -> buffers -> framebuffers -> image views -> render pass.
+    // ------------------------------------------------------------------
+
+    // Shadow render pass (shared by CSM and dynamic light shadow maps)
+    std::optional<vk::raii::RenderPass> shadowRenderPass_;
+
     // CSM shadow map resources
     static constexpr uint32_t SHADOW_MAP_SIZE = 2048;
     DepthArrayResources csmResources;
-    std::optional<vk::raii::RenderPass> shadowRenderPass_;
-    vk::RenderPass shadowRenderPass = VK_NULL_HANDLE;  // Raw handle for compatibility
-    std::vector<vk::Framebuffer> cascadeFramebuffers;
-    vk::Pipeline shadowPipeline = VK_NULL_HANDLE;
-    vk::PipelineLayout shadowPipelineLayout = VK_NULL_HANDLE;
+
+    // Dynamic light shadow maps
+    static constexpr uint32_t DYNAMIC_SHADOW_MAP_SIZE = 1024;
+    static constexpr uint32_t MAX_SHADOW_CASTING_LIGHTS = 8;
+
+    // Point light shadows (cube maps) - per frame
+    std::vector<DepthArrayResources> pointShadowResources;
+    // Spot light shadows (2D depth textures) - per frame
+    std::vector<DepthArrayResources> spotShadowResources;
+
+    // Framebuffers (declared after the views they attach)
+    std::vector<vk::raii::Framebuffer> cascadeFramebuffers_;
+    std::vector<std::vector<vk::raii::Framebuffer>> pointShadowFramebuffers_;  // [frame][face]
+    std::vector<std::vector<vk::raii::Framebuffer>> spotShadowFramebuffers_;   // [frame][light]
 
     // CSM cascade data
     std::vector<float> cascadeSplitDepths;
@@ -238,34 +259,36 @@ private:
     glm::mat4 lastView_{1.0f};
     glm::mat4 lastProj_{1.0f};
 
-    // Dynamic light shadow maps
-    static constexpr uint32_t DYNAMIC_SHADOW_MAP_SIZE = 1024;
-    static constexpr uint32_t MAX_SHADOW_CASTING_LIGHTS = 8;
-
-    // Point light shadows (cube maps) - per frame
-    std::vector<DepthArrayResources> pointShadowResources;
-    std::vector<std::vector<vk::Framebuffer>> pointShadowFramebuffers;  // [frame][face]
-
-    // Spot light shadows (2D depth textures) - per frame
-    std::vector<DepthArrayResources> spotShadowResources;
-    std::vector<std::vector<vk::Framebuffer>> spotShadowFramebuffers;   // [frame][light]
-
-    vk::Pipeline dynamicShadowPipeline = VK_NULL_HANDLE;
-    vk::PipelineLayout dynamicShadowPipelineLayout = VK_NULL_HANDLE;
-
-    // Skinned mesh shadow pipeline (for GPU-skinned characters)
-    vk::Pipeline skinnedShadowPipeline = VK_NULL_HANDLE;
-    vk::PipelineLayout skinnedShadowPipelineLayout = VK_NULL_HANDLE;
-
     // Instanced shadow rendering (batches scene objects by mesh)
     static constexpr uint32_t MAX_SHADOW_INSTANCES = 512;  // Max instances per frame
-    vk::Pipeline instancedShadowPipeline = VK_NULL_HANDLE;
-    vk::PipelineLayout instancedShadowPipelineLayout = VK_NULL_HANDLE;
-    vk::DescriptorSetLayout instancedShadowDescriptorSetLayout = VK_NULL_HANDLE;
-    std::vector<vk::DescriptorSet> instancedShadowDescriptorSets;  // Per frame
-    std::vector<vk::Buffer> instanceBuffers;      // Per frame
-    std::vector<VmaAllocation> instanceAllocations;  // Per frame
-    std::vector<void*> instanceMappedPtrs;      // Persistently mapped
+    std::optional<vk::raii::DescriptorSetLayout> instancedShadowDescriptorSetLayout_;
+    std::vector<ManagedBuffer> instanceBuffers_;   // Per frame (persistently mapped)
+    std::vector<void*> instanceMappedPtrs;         // Per frame mapped pointers
+    std::optional<vk::raii::DescriptorPool> instancedShadowPool_;
+    std::vector<vk::DescriptorSet> instancedShadowDescriptorSets;  // Per frame (owned by instancedShadowPool_)
+
+    // GPU-driven indirect shadow rendering (reuses GPUSceneBuffer instance buffer + the
+    // per-cascade ShadowCullPass output). set 0 = main UBO (cascade matrices), set 1 =
+    // scene instance SSBO (reuses instancedShadowDescriptorSetLayout_).
+    struct IndirectShadowPushConstants {
+        uint32_t cascadeIndex;
+    };
+    std::optional<vk::raii::DescriptorPool> indirectShadowPool_;
+    std::vector<vk::DescriptorSet> indirectInstanceDescriptorSets;  // per frame -> instance SSBO (owned by indirectShadowPool_)
+
+    // Pipeline layouts
+    std::optional<vk::raii::PipelineLayout> shadowPipelineLayout_;
+    std::optional<vk::raii::PipelineLayout> skinnedShadowPipelineLayout_;
+    std::optional<vk::raii::PipelineLayout> dynamicShadowPipelineLayout_;
+    std::optional<vk::raii::PipelineLayout> instancedShadowPipelineLayout_;
+    std::optional<vk::raii::PipelineLayout> indirectShadowPipelineLayout_;
+
+    // Pipelines
+    std::optional<vk::raii::Pipeline> shadowPipeline_;
+    std::optional<vk::raii::Pipeline> skinnedShadowPipeline_;   // GPU-skinned characters
+    std::optional<vk::raii::Pipeline> dynamicShadowPipeline_;
+    std::optional<vk::raii::Pipeline> instancedShadowPipeline_;
+    std::optional<vk::raii::Pipeline> indirectShadowPipeline_;
 
     // Push constants for instanced shadow rendering
     struct InstancedShadowPushConstants {
@@ -275,7 +298,6 @@ private:
 
     bool createInstancedShadowPipeline();
     bool createInstancedShadowResources();
-    void destroyInstancedShadowResources();
 
     // Draw scene objects using instanced rendering (batches by mesh)
     void drawShadowSceneInstanced(
@@ -284,16 +306,6 @@ private:
         uint32_t cascadeIndex,
         const std::vector<ecs::RenderData>& sceneObjects);
 
-    // GPU-driven indirect shadow rendering (reuses GPUSceneBuffer instance buffer + the
-    // per-cascade ShadowCullPass output). set 0 = main UBO (cascade matrices), set 1 =
-    // scene instance SSBO (reuses instancedShadowDescriptorSetLayout).
-    struct IndirectShadowPushConstants {
-        uint32_t cascadeIndex;
-    };
-    vk::Pipeline indirectShadowPipeline = VK_NULL_HANDLE;
-    vk::PipelineLayout indirectShadowPipelineLayout = VK_NULL_HANDLE;
-    vk::DescriptorPool indirectShadowPool = VK_NULL_HANDLE;
-    std::vector<vk::DescriptorSet> indirectInstanceDescriptorSets;  // per frame -> instance SSBO
     bool indirectShadowReady_ = false;
     bool csmInitialized_ = false;
 

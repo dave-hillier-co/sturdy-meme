@@ -4,83 +4,14 @@
 #include <algorithm>
 #include <cstring>
 
-// Private constructor
-GpuProfiler::GpuProfiler() = default;
-
-// Factory
-std::optional<GpuProfiler> GpuProfiler::create(vk::Device device, vk::PhysicalDevice physicalDevice,
-                                                uint32_t framesInFlight, uint32_t maxZones) {
-    GpuProfiler profiler;
-    if (!profiler.initInternal(device, physicalDevice, framesInFlight, maxZones)) {
-        return std::nullopt;
-    }
-    return profiler;
+GpuProfiler::GpuProfiler(ConstructToken, const vk::raii::Device& raiiDevice, vk::PhysicalDevice physicalDevice,
+                         uint32_t framesInFlight_, uint32_t maxZones_) {
+    initialized_ = initInternal(raiiDevice, physicalDevice, framesInFlight_, maxZones_);
 }
 
-// Destructor
-GpuProfiler::~GpuProfiler() {
-    cleanup();
-}
-
-// Move constructor
-GpuProfiler::GpuProfiler(GpuProfiler&& other) noexcept
-    : device(other.device)
-    , queryPools(std::move(other.queryPools))
-    , timestampPeriod(other.timestampPeriod)
-    , maxZones(other.maxZones)
-    , framesInFlight(other.framesInFlight)
-    , enabled(other.enabled)
-    , currentQueryIndex(other.currentQueryIndex.load(std::memory_order_relaxed))
-    , currentZoneSlot(other.currentZoneSlot.load(std::memory_order_relaxed))
-    , currentFrameIndex(other.currentFrameIndex)
-    , zoneSlots_(std::move(other.zoneSlots_))
-    , frameQueryCounts(std::move(other.frameQueryCounts))
-    , frameZoneCounts(std::move(other.frameZoneCounts))
-    , lastFrameStats(std::move(other.lastFrameStats))
-    , smoothedStats(std::move(other.smoothedStats))
-    , smoothedZoneTimes(std::move(other.smoothedZoneTimes))
-    , zoneNames(std::move(other.zoneNames))
-    , smoothedFrameTimeMs(other.smoothedFrameTimeMs)
-    , frameStartQuery(other.frameStartQuery)
-    , frameEndQuery(other.frameEndQuery)
-{
-    // Null out source to prevent double-free
-    other.device = VK_NULL_HANDLE;
-}
-
-// Move assignment
-GpuProfiler& GpuProfiler::operator=(GpuProfiler&& other) noexcept {
-    if (this != &other) {
-        cleanup();
-
-        device = other.device;
-        queryPools = std::move(other.queryPools);
-        timestampPeriod = other.timestampPeriod;
-        maxZones = other.maxZones;
-        framesInFlight = other.framesInFlight;
-        enabled = other.enabled;
-        currentQueryIndex.store(other.currentQueryIndex.load(std::memory_order_relaxed), std::memory_order_relaxed);
-        currentZoneSlot.store(other.currentZoneSlot.load(std::memory_order_relaxed), std::memory_order_relaxed);
-        currentFrameIndex = other.currentFrameIndex;
-        zoneSlots_ = std::move(other.zoneSlots_);
-        frameQueryCounts = std::move(other.frameQueryCounts);
-        frameZoneCounts = std::move(other.frameZoneCounts);
-        lastFrameStats = std::move(other.lastFrameStats);
-        smoothedStats = std::move(other.smoothedStats);
-        smoothedZoneTimes = std::move(other.smoothedZoneTimes);
-        zoneNames = std::move(other.zoneNames);
-        smoothedFrameTimeMs = other.smoothedFrameTimeMs;
-        frameStartQuery = other.frameStartQuery;
-        frameEndQuery = other.frameEndQuery;
-
-        other.device = VK_NULL_HANDLE;
-    }
-    return *this;
-}
-
-bool GpuProfiler::initInternal(vk::Device dev, vk::PhysicalDevice physicalDevice,
+bool GpuProfiler::initInternal(const vk::raii::Device& raiiDevice, vk::PhysicalDevice physicalDevice,
                                 uint32_t framesInFlight_, uint32_t maxZones_) {
-    device = dev;
+    device = *raiiDevice;
     framesInFlight = framesInFlight_;
     maxZones = maxZones_;
 
@@ -100,18 +31,18 @@ bool GpuProfiler::initInternal(vk::Device dev, vk::PhysicalDevice physicalDevice
     // Each zone needs 2 queries (start + end), plus 2 for frame start/end
     uint32_t queriesPerFrame = (maxZones * QUERIES_PER_ZONE) + 2;
 
-    queryPools.resize(framesInFlight);
-    vk::Device vkDevice(device);
+    queryPools_.reserve(framesInFlight);
     for (uint32_t i = 0; i < framesInFlight; i++) {
         auto poolInfo = vk::QueryPoolCreateInfo{}
             .setQueryType(vk::QueryType::eTimestamp)
             .setQueryCount(queriesPerFrame);
 
         try {
-            queryPools[i] = vkDevice.createQueryPool(poolInfo);
+            queryPools_.emplace_back(raiiDevice, poolInfo);
         } catch (const vk::SystemError& e) {
             SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create GPU profiler query pool %d: %s", i, e.what());
-            cleanup();
+            queryPools_.clear();
+            zoneSlots_.clear();
             return false;
         }
     }
@@ -130,23 +61,8 @@ bool GpuProfiler::initInternal(vk::Device dev, vk::PhysicalDevice physicalDevice
     return true;
 }
 
-void GpuProfiler::cleanup() {
-    if (device != VK_NULL_HANDLE) {
-        vk::Device vkDevice(device);
-        for (auto& pool : queryPools) {
-            if (pool != VK_NULL_HANDLE) {
-                vkDevice.destroyQueryPool(pool);
-                pool = VK_NULL_HANDLE;
-            }
-        }
-    }
-    queryPools.clear();
-    zoneSlots_.clear();
-    device = VK_NULL_HANDLE;
-}
-
 void GpuProfiler::beginFrame(vk::CommandBuffer cmd, uint32_t frameIndex) {
-    if (!enabled || queryPools.empty()) return;
+    if (!enabled || queryPools_.empty()) return;
 
     // Collect results from previous frame first (before reset)
     collectResults(frameIndex);
@@ -168,21 +84,21 @@ void GpuProfiler::beginFrame(vk::CommandBuffer cmd, uint32_t frameIndex) {
     vk::CommandBuffer vkCmd(cmd);
 
     // Reset the query pool for this frame
-    vkCmd.resetQueryPool(queryPools[frameIndex], 0, (maxZones * QUERIES_PER_ZONE) + 2);
+    vkCmd.resetQueryPool(*queryPools_[frameIndex], 0, (maxZones * QUERIES_PER_ZONE) + 2);
 
     // Write frame start timestamp
     frameStartQuery = currentQueryIndex.fetch_add(1, std::memory_order_relaxed);
-    vkCmd.writeTimestamp(vk::PipelineStageFlagBits::eTopOfPipe, queryPools[frameIndex], frameStartQuery);
+    vkCmd.writeTimestamp(vk::PipelineStageFlagBits::eTopOfPipe, *queryPools_[frameIndex], frameStartQuery);
 }
 
 void GpuProfiler::endFrame(vk::CommandBuffer cmd, uint32_t frameIndex) {
-    if (!enabled || queryPools.empty()) return;
+    if (!enabled || queryPools_.empty()) return;
 
     vk::CommandBuffer vkCmd(cmd);
 
     // Write frame end timestamp
     frameEndQuery = currentQueryIndex.fetch_add(1, std::memory_order_relaxed);
-    vkCmd.writeTimestamp(vk::PipelineStageFlagBits::eBottomOfPipe, queryPools[frameIndex], frameEndQuery);
+    vkCmd.writeTimestamp(vk::PipelineStageFlagBits::eBottomOfPipe, *queryPools_[frameIndex], frameEndQuery);
 
     // Store the query count and zone count for this frame for later collection
     frameQueryCounts[frameIndex] = currentQueryIndex.load(std::memory_order_relaxed);
@@ -190,7 +106,7 @@ void GpuProfiler::endFrame(vk::CommandBuffer cmd, uint32_t frameIndex) {
 }
 
 void GpuProfiler::beginZone(vk::CommandBuffer cmd, const char* zoneName) {
-    if (!enabled || queryPools.empty()) return;
+    if (!enabled || queryPools_.empty()) return;
 
     // Atomically allocate a zone slot - lock-free
     uint32_t slotIdx = currentZoneSlot.fetch_add(1, std::memory_order_relaxed);
@@ -211,11 +127,11 @@ void GpuProfiler::beginZone(vk::CommandBuffer cmd, const char* zoneName) {
 
     // Write start timestamp - use ALL_COMMANDS to ensure prior work is complete
     vkCmd.writeTimestamp(vk::PipelineStageFlagBits::eAllCommands,
-                         queryPools[currentFrameIndex], queryIdx);
+                         *queryPools_[currentFrameIndex], queryIdx);
 }
 
 void GpuProfiler::endZone(vk::CommandBuffer cmd, const char* zoneName) {
-    if (!enabled || queryPools.empty()) return;
+    if (!enabled || queryPools_.empty()) return;
 
     // Find the zone slot by name - lock-free linear scan
     // This is O(n) but n is small (typically < 20 zones per frame)
@@ -248,11 +164,11 @@ void GpuProfiler::endZone(vk::CommandBuffer cmd, const char* zoneName) {
 
     // Write end timestamp - use ALL_COMMANDS to capture actual work completion
     vkCmd.writeTimestamp(vk::PipelineStageFlagBits::eAllCommands,
-                         queryPools[currentFrameIndex], endQueryIdx);
+                         *queryPools_[currentFrameIndex], endQueryIdx);
 }
 
 void GpuProfiler::collectResults(uint32_t frameIndex) {
-    if (!enabled || queryPools.empty()) return;
+    if (!enabled || queryPools_.empty()) return;
 
     // We collect from the frame we're about to overwrite (previous use of this pool)
     // On first few frames, there won't be valid data
@@ -270,7 +186,7 @@ void GpuProfiler::collectResults(uint32_t frameIndex) {
     // Get query results - use e64 for timestamps
     // Don't use eWait since we're in the middle of frame setup
     vk::Result result = vk::Device(device).getQueryPoolResults(
-        queryPools[frameIndex],
+        *queryPools_[frameIndex],
         0,
         queryCount,
         timestamps.size() * sizeof(uint64_t),

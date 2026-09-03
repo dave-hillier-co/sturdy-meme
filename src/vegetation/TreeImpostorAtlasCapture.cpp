@@ -292,7 +292,7 @@ bool TreeImpostorAtlas::createLeafQuadMesh() {
     VmaAllocationCreateInfo gpuAllocInfo{};
     gpuAllocInfo.usage = VMA_MEMORY_USAGE_GPU_ONLY;
 
-    if (vmaCreateBuffer(allocator_, reinterpret_cast<const VkBufferCreateInfo*>(&vertexBufferInfo), &gpuAllocInfo, reinterpret_cast<VkBuffer*>(&leafQuadVertexBuffer_), &leafQuadVertexAllocation_, nullptr) != VK_SUCCESS) {
+    if (!VmaBuffer::create(allocator_, vertexBufferInfo, gpuAllocInfo, leafQuadVertexBuffer_)) {
         vmaDestroyBuffer(allocator_, stagingBuffer, stagingAllocation);
         return false;
     }
@@ -301,21 +301,24 @@ bool TreeImpostorAtlas::createLeafQuadMesh() {
         .setSize(indexSize)
         .setUsage(vk::BufferUsageFlagBits::eIndexBuffer | vk::BufferUsageFlagBits::eTransferDst);
 
-    if (vmaCreateBuffer(allocator_, reinterpret_cast<const VkBufferCreateInfo*>(&indexBufferInfo), &gpuAllocInfo, reinterpret_cast<VkBuffer*>(&leafQuadIndexBuffer_), &leafQuadIndexAllocation_, nullptr) != VK_SUCCESS) {
+    if (!VmaBuffer::create(allocator_, indexBufferInfo, gpuAllocInfo, leafQuadIndexBuffer_)) {
         vmaDestroyBuffer(allocator_, stagingBuffer, stagingAllocation);
         return false;
     }
 
-    vk::CommandBuffer cmd = (*raiiDevice_).allocateCommandBuffers(
+    // Keep the RAII command buffer alive for the whole scope; it frees itself
+    // on exit. Taking [0] out of the temporary vector would free it immediately.
+    auto cmdBuffers = raiiDevice_->allocateCommandBuffers(
         vk::CommandBufferAllocateInfo{}
             .setCommandPool(commandPool_)
             .setLevel(vk::CommandBufferLevel::ePrimary)
             .setCommandBufferCount(1)
-    )[0];
+    );
+    vk::CommandBuffer cmd = *cmdBuffers[0];
 
     cmd.begin(vk::CommandBufferBeginInfo{}.setFlags(vk::CommandBufferUsageFlagBits::eOneTimeSubmit));
-    cmd.copyBuffer(stagingBuffer, leafQuadVertexBuffer_, vk::BufferCopy{0, 0, vertexSize});
-    cmd.copyBuffer(stagingBuffer, leafQuadIndexBuffer_, vk::BufferCopy{vertexSize, 0, indexSize});
+    cmd.copyBuffer(stagingBuffer, leafQuadVertexBuffer_.get(), vk::BufferCopy{0, 0, vertexSize});
+    cmd.copyBuffer(stagingBuffer, leafQuadIndexBuffer_.get(), vk::BufferCopy{vertexSize, 0, indexSize});
     cmd.end();
 
     vk::Queue queue(graphicsQueue_);
@@ -330,7 +333,6 @@ bool TreeImpostorAtlas::createLeafQuadMesh() {
         dev.destroyFence(fence);
     }
 
-    vk::Device(device_).freeCommandBuffers(commandPool_, cmd);
     vmaDestroyBuffer(allocator_, stagingBuffer, stagingAllocation);
 
     SDL_Log("TreeImpostorAtlas: Created leaf quad mesh");
@@ -428,9 +430,9 @@ void TreeImpostorAtlas::renderOctahedralCell(
         vk::DescriptorSet leafDescSetVk(leafDescSet);
         vkCmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, **leafCapturePipelineLayout_, 0, leafDescSetVk, {});
 
-        vk::Buffer leafVertexBuffers[] = {vk::Buffer(leafQuadVertexBuffer_)};
+        vk::Buffer leafVertexBuffers[] = {leafQuadVertexBuffer_.get()};
         vkCmd.bindVertexBuffers(0, 1, leafVertexBuffers, offsets);
-        vkCmd.bindIndexBuffer(vk::Buffer(leafQuadIndexBuffer_), 0, vk::IndexType::eUint32);
+        vkCmd.bindIndexBuffer(leafQuadIndexBuffer_.get(), 0, vk::IndexType::eUint32);
 
         vkCmd.setViewport(0, viewport);
         vkCmd.setScissor(0, scissor);

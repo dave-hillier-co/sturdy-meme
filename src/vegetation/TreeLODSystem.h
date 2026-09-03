@@ -11,6 +11,8 @@
 
 #include "TreeImpostorAtlas.h"
 #include "DescriptorManager.h"
+#include "DeferredBufferRelease.h"
+#include "core/vulkan/VmaBuffer.h"
 
 class TreeSystem;
 struct TreeInstanceData;
@@ -76,6 +78,7 @@ public:
     };
 
     static std::unique_ptr<TreeLODSystem> create(const InitInfo& info);
+    // Waits for the device, then member destruction releases buffers, pipelines and the atlas
     ~TreeLODSystem();
 
     // Non-copyable, non-movable
@@ -239,16 +242,28 @@ private:
     std::vector<vk::DescriptorSet> impostorDescriptorSets_;
     std::vector<vk::DescriptorSet> shadowDescriptorSets_;
 
+    // Set when instanceBuffer_ is replaced (growth) while the descriptor sets
+    // still point at the CPU instance buffer: bit i means frame slot i must
+    // rewrite its instance binding before it records, so a set is never
+    // updated while a frame that uses it is in flight. Not used once
+    // initializeGPUCulledDescriptors() has redirected the binding.
+    uint32_t instanceDescriptorsDirtyMask_ = 0;
+    bool usingGPUCulledInstances_ = false;
+    void writeInstanceBindingIfDirty(uint32_t frameIndex);
+
+    // Instance buffers replaced while frames are in flight (growth in
+    // updateInstanceBuffer) are retired here instead of destroyed; ticked once
+    // per frame in update(). Declared before the buffers it may hold so pending
+    // owners are released before the live ones (allocator_ outlives both).
+    DeferredBufferRelease deferredRelease_;
+
     // Billboard quad mesh
-    vk::Buffer billboardVertexBuffer_ = VK_NULL_HANDLE;
-    VmaAllocation billboardVertexAllocation_ = VK_NULL_HANDLE;
-    vk::Buffer billboardIndexBuffer_ = VK_NULL_HANDLE;
-    VmaAllocation billboardIndexAllocation_ = VK_NULL_HANDLE;
+    VmaBuffer billboardVertexBuffer_;
+    VmaBuffer billboardIndexBuffer_;
     uint32_t billboardIndexCount_ = 0;
 
     // Instance buffer for impostor rendering
-    vk::Buffer instanceBuffer_ = VK_NULL_HANDLE;
-    VmaAllocation instanceAllocation_ = VK_NULL_HANDLE;
+    VmaBuffer instanceBuffer_;
     vk::DeviceSize instanceBufferSize_ = 0;
     size_t maxInstances_ = 0;
 

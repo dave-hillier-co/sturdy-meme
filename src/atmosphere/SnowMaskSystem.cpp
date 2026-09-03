@@ -1,12 +1,14 @@
 #include "SnowMaskSystem.h"
 #include "VolumetricSnowSystem.h"
 #include "InitContext.h"
-#include "ShaderLoader.h"
-#include "PipelineBuilder.h"
 #include "VmaImage.h"
 #include "SamplerFactory.h"
 #include "DescriptorManager.h"
 #include "core/vulkan/BarrierHelpers.h"
+#include "core/vulkan/VmaBufferFactory.h"
+#include "core/vulkan/DescriptorSetLayoutBuilder.h"
+#include "core/vulkan/PipelineLayoutBuilder.h"
+#include "core/pipeline/ComputePipelineBuilder.h"
 #include "core/ImageBuilder.h"
 #include <SDL3/SDL.h>
 #include <vulkan/vulkan.hpp>
@@ -65,71 +67,69 @@ std::optional<SnowMaskSystem::Bundle> SnowMaskSystem::createWithDependencies(
     };
 }
 
-SnowMaskSystem::~SnowMaskSystem() {
-    cleanup();
-}
-
 bool SnowMaskSystem::initInternal(const InitInfo& info) {
-    SystemLifecycleHelper::Hooks hooks{};
-    hooks.createBuffers = [this]() { return createBuffers(); };
-    hooks.createComputeDescriptorSetLayout = [this]() { return createComputeDescriptorSetLayout(); };
-    hooks.createComputePipeline = [this]() { return createComputePipeline(); };
-    hooks.createGraphicsDescriptorSetLayout = []() { return true; };  // No graphics pipeline
-    hooks.createGraphicsPipeline = []() { return true; };             // No graphics pipeline
-    hooks.createDescriptorSets = [this]() { return createDescriptorSets(); };
-    hooks.destroyBuffers = [this](VmaAllocator allocator) { destroyBuffers(allocator); };
-    hooks.usesGraphicsPipeline = []() { return false; };  // Compute-only system
+    device_ = info.device;
+    allocator_ = info.allocator;
+    descriptorPool_ = info.descriptorPool;
+    shaderPath_ = info.shaderPath;
+    framesInFlight_ = info.framesInFlight;
+    raiiDevice_ = info.raiiDevice;
 
-    return lifecycle.init(info, hooks);
-}
+    if (!raiiDevice_) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "RAII device not available for snow mask texture");
+        return false;
+    }
 
-void SnowMaskSystem::cleanup() {
-    if (!lifecycle.getDevice()) return;  // Not initialized
+    // Compute-only system: buffers, layout, pipeline, then descriptor sets
+    if (!createBuffers()) return false;
+    if (!createComputeDescriptorSetLayout()) return false;
+    if (!createComputePipeline()) return false;
+    if (!createDescriptorSets()) return false;
 
-    snowMaskSampler_.reset();
-    snowMaskView.reset();
-    snowMaskImage.reset();
-
-    lifecycle.destroy(lifecycle.getDevice(), lifecycle.getAllocator());
-}
-
-void SnowMaskSystem::destroyBuffers(VmaAllocator alloc) {
-    BufferUtils::destroyBuffers(alloc, uniformBuffers);
-    BufferUtils::destroyBuffers(alloc, interactionBuffers);
+    return true;
 }
 
 bool SnowMaskSystem::createBuffers() {
     vk::DeviceSize uniformBufferSize = sizeof(SnowMaskUniforms);
     vk::DeviceSize interactionBufferSize = sizeof(SnowInteractionSource) * MAX_INTERACTIONS;
 
-    BufferUtils::PerFrameBufferBuilder uniformBuilder;
-    if (!uniformBuilder.setAllocator(getAllocator())
-             .setFrameCount(getFramesInFlight())
-             .setSize(uniformBufferSize)
-             .build(uniformBuffers)) {
-        SDL_Log("Failed to create snow mask uniform buffers");
-        return false;
+    uniformBuffers_.resize(getFramesInFlight());
+    uniformMapped_.resize(getFramesInFlight(), nullptr);
+    for (uint32_t i = 0; i < getFramesInFlight(); ++i) {
+        if (!VmaBufferFactory::createUniformBuffer(getAllocator(), uniformBufferSize, uniformBuffers_[i])) {
+            SDL_Log("Failed to create snow mask uniform buffers");
+            return false;
+        }
+        uniformMapped_[i] = uniformBuffers_[i].map();
+        if (!uniformMapped_[i]) {
+            SDL_Log("Failed to create snow mask uniform buffers");
+            return false;
+        }
     }
 
-    BufferUtils::PerFrameBufferBuilder interactionBuilder;
-    if (!interactionBuilder.setAllocator(getAllocator())
-             .setFrameCount(getFramesInFlight())
-             .setSize(interactionBufferSize)
-             .setUsage(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT)
-             .build(interactionBuffers)) {
-        SDL_Log("Failed to create snow interaction buffers");
-        return false;
+    interactionBuffers_.resize(getFramesInFlight());
+    interactionMapped_.resize(getFramesInFlight(), nullptr);
+    for (uint32_t i = 0; i < getFramesInFlight(); ++i) {
+        if (!BufferBuilder(getAllocator())
+                 .setSize(interactionBufferSize)
+                 .asStorage()
+                 .hostVisible()
+                 .build(interactionBuffers_[i])) {
+            SDL_Log("Failed to create snow interaction buffers");
+            return false;
+        }
+        interactionMapped_[i] = interactionBuffers_[i].map();
+        if (!interactionMapped_[i]) {
+            SDL_Log("Failed to create snow interaction buffers");
+            return false;
+        }
     }
 
     return createSnowMaskTexture();
 }
 
 bool SnowMaskSystem::createSnowMaskTexture() {
-    auto* raiiDevice = lifecycle.getRaiiDevice();
-    if (!raiiDevice) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "RAII device not available for snow mask texture");
-        return false;
-    }
+    const vk::raii::Device* raiiDevice = raiiDevice_;
 
     // Create snow mask texture (R16F, single channel for coverage 0-1)
     if (!ImageBuilder(getAllocator())
@@ -152,34 +152,32 @@ bool SnowMaskSystem::createSnowMaskTexture() {
 }
 
 bool SnowMaskSystem::createComputeDescriptorSetLayout() {
-    PipelineBuilder builder(getDevice());
-    // binding 0: snow mask storage image (read/write)
-    builder.addDescriptorBinding(0, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1, VK_SHADER_STAGE_COMPUTE_BIT)
-    // binding 1: uniform buffer
-           .addDescriptorBinding(1, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT)
-    // binding 2: interaction sources SSBO
-           .addDescriptorBinding(2, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT);
-
-    return builder.buildDescriptorSetLayout(getComputePipelineHandles().descriptorSetLayout);
+    return DescriptorSetLayoutBuilder()
+        // binding 0: snow mask storage image (read/write)
+        .addBinding(BindingBuilder::storageImage(0, vk::ShaderStageFlagBits::eCompute))
+        // binding 1: uniform buffer
+        .addBinding(BindingBuilder::uniformBuffer(1, vk::ShaderStageFlagBits::eCompute))
+        // binding 2: interaction sources SSBO
+        .addBinding(BindingBuilder::storageBuffer(2, vk::ShaderStageFlagBits::eCompute))
+        .buildInto(*raiiDevice_, computeSetLayout_);
 }
 
 bool SnowMaskSystem::createComputePipeline() {
-    PipelineBuilder builder(getDevice());
-    builder.addShaderStage(getShaderPath() + "/snow_accumulation.comp.spv", VK_SHADER_STAGE_COMPUTE_BIT);
-
-    if (!builder.buildPipelineLayout({getComputePipelineHandles().descriptorSetLayout},
-                                      getComputePipelineHandles().pipelineLayout)) {
+    if (!PipelineLayoutBuilder(*raiiDevice_)
+             .addDescriptorSetLayout(**computeSetLayout_)
+             .buildInto(computePipelineLayout_)) {
         return false;
     }
 
-    return builder.buildComputePipeline(getComputePipelineHandles().pipelineLayout,
-                                         getComputePipelineHandles().pipeline);
+    return ComputePipelineBuilder(*raiiDevice_)
+        .setShader(getShaderPath() + "/snow_accumulation.comp.spv")
+        .setPipelineLayout(**computePipelineLayout_)
+        .buildInto(computePipeline_);
 }
 
 bool SnowMaskSystem::createDescriptorSets() {
     // Allocate descriptor sets using managed pool
-    computeDescriptorSets = getDescriptorPool()->allocate(
-        getComputePipelineHandles().descriptorSetLayout, getFramesInFlight());
+    computeDescriptorSets = getDescriptorPool()->allocate(**computeSetLayout_, getFramesInFlight());
     if (computeDescriptorSets.size() != getFramesInFlight()) {
         SDL_Log("Failed to allocate snow mask descriptor sets");
         return false;
@@ -189,8 +187,8 @@ bool SnowMaskSystem::createDescriptorSets() {
     for (uint32_t i = 0; i < getFramesInFlight(); i++) {
         DescriptorManager::SetWriter(getDevice(), computeDescriptorSets[i])
             .writeStorageImage(0, getSnowMaskView())
-            .writeBuffer(1, uniformBuffers.buffers[i], 0, sizeof(SnowMaskUniforms))
-            .writeBuffer(2, interactionBuffers.buffers[i], 0, sizeof(SnowInteractionSource) * MAX_INTERACTIONS, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+            .writeBuffer(1, uniformBuffers_[i].get(), 0, sizeof(SnowMaskUniforms))
+            .writeBuffer(2, interactionBuffers_[i].get(), 0, sizeof(SnowInteractionSource) * MAX_INTERACTIONS, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
             .update();
     }
 
@@ -219,14 +217,14 @@ void SnowMaskSystem::updateUniforms(uint32_t frameIndex, float deltaTime, bool i
     );
 
     // Bounds check: frameIndex must be within range
-    if (frameIndex >= uniformBuffers.mappedPointers.size()) return;
-    memcpy(uniformBuffers.mappedPointers[frameIndex], &uniforms, sizeof(SnowMaskUniforms));
+    if (frameIndex >= uniformMapped_.size()) return;
+    memcpy(uniformMapped_[frameIndex], &uniforms, sizeof(SnowMaskUniforms));
 
     // Copy interaction sources to buffer
-    if (!currentInteractions.empty() && frameIndex < interactionBuffers.mappedPointers.size()) {
+    if (!currentInteractions.empty() && frameIndex < interactionMapped_.size()) {
         size_t copySize = sizeof(SnowInteractionSource) * std::min(currentInteractions.size(),
                                                                     static_cast<size_t>(MAX_INTERACTIONS));
-        memcpy(interactionBuffers.mappedPointers[frameIndex], currentInteractions.data(), copySize);
+        memcpy(interactionMapped_[frameIndex], currentInteractions.data(), copySize);
     }
 }
 
@@ -270,9 +268,9 @@ void SnowMaskSystem::recordCompute(vk::CommandBuffer cmd, uint32_t frameIndex) {
         {}, {}, {}, prepareBarrier);
 
     // Bind compute pipeline and descriptor set
-    vkCmd.bindPipeline(vk::PipelineBindPoint::eCompute, getComputePipelineHandles().pipeline);
+    vkCmd.bindPipeline(vk::PipelineBindPoint::eCompute, **computePipeline_);
     vkCmd.bindDescriptorSets(vk::PipelineBindPoint::eCompute,
-                             getComputePipelineHandles().pipelineLayout, 0,
+                             **computePipelineLayout_, 0,
                              vk::DescriptorSet(computeDescriptorSets[frameIndex]), {});
 
     // Dispatch: 512x512 / 16x16 = 32x32 workgroups

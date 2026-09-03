@@ -21,43 +21,32 @@ using namespace PhysicsConversions;
 // Unique group ID counter for ragdoll collision groups
 static uint32_t sNextRagdollGroupID = 1000;
 
-// ─── ArticulatedBody move semantics ────────────────────────────────────────────
+// ─── Lifetime ──────────────────────────────────────────────────────────────────
 
-ArticulatedBody::~ArticulatedBody() {
-    if (ragdoll_) {
-        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
-                    "ArticulatedBody destroyed without calling destroy() - ragdoll leaked");
+void ArticulatedBody::RagdollDeleter::operator()(JPH::Ragdoll* ragdoll) const noexcept {
+    if (ragdoll) {
+        ragdoll->RemoveFromPhysicsSystem();
+        delete ragdoll;
     }
 }
 
-ArticulatedBody::ArticulatedBody(ArticulatedBody&& other) noexcept
-    : ragdoll_(other.ragdoll_)
-    , bodyIDs_(std::move(other.bodyIDs_))
-    , jointIndices_(std::move(other.jointIndices_))
-    , effortFactors_(std::move(other.effortFactors_))
-    , ownerPhysics_(other.ownerPhysics_)
-{
-    other.ragdoll_ = nullptr;
-    other.ownerPhysics_ = nullptr;
-}
-
-ArticulatedBody& ArticulatedBody::operator=(ArticulatedBody&& other) noexcept {
-    if (this != &other) {
-        ragdoll_ = other.ragdoll_;
-        bodyIDs_ = std::move(other.bodyIDs_);
-        jointIndices_ = std::move(other.jointIndices_);
-        effortFactors_ = std::move(other.effortFactors_);
-        ownerPhysics_ = other.ownerPhysics_;
-        other.ragdoll_ = nullptr;
-        other.ownerPhysics_ = nullptr;
-    }
-    return *this;
-}
+// Out-of-line so the unique_ptr deleter runs where JPH::Ragdoll is complete.
+ArticulatedBody::~ArticulatedBody() = default;
 
 // ─── create ────────────────────────────────────────────────────────────────────
 
-bool ArticulatedBody::create(PhysicsWorld& physics, const ArticulatedBodyConfig& config,
-                             const glm::vec3& rootPosition) {
+std::optional<ArticulatedBody> ArticulatedBody::create(PhysicsWorld& physics,
+                                                       const ArticulatedBodyConfig& config,
+                                                       const glm::vec3& rootPosition) {
+    ArticulatedBody body;
+    if (!body.createInternal(physics, config, rootPosition)) {
+        return std::nullopt;
+    }
+    return body;
+}
+
+bool ArticulatedBody::createInternal(PhysicsWorld& physics, const ArticulatedBodyConfig& config,
+                                     const glm::vec3& rootPosition) {
     if (config.parts.empty()) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "ArticulatedBody::create: empty config");
         return false;
@@ -161,7 +150,7 @@ bool ArticulatedBody::create(PhysicsWorld& physics, const ArticulatedBodyConfig&
 
     // Phase 5: Create the ragdoll instance
     uint32_t groupID = sNextRagdollGroupID++;
-    ragdoll_ = ragdollSettings->CreateRagdoll(groupID, 0, joltSystem);
+    ragdoll_.reset(ragdollSettings->CreateRagdoll(groupID, 0, joltSystem));
     if (!ragdoll_) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
                      "ArticulatedBody::create: CreateRagdoll failed");
@@ -187,25 +176,6 @@ bool ArticulatedBody::create(PhysicsWorld& physics, const ArticulatedBodyConfig&
     SDL_Log("ArticulatedBody created via Jolt Ragdoll API: %zu parts, group %u",
             numParts, groupID);
     return true;
-}
-
-// ─── destroy ───────────────────────────────────────────────────────────────────
-
-void ArticulatedBody::destroy(PhysicsWorld& physics) {
-    cleanup(physics);
-}
-
-void ArticulatedBody::cleanup(PhysicsWorld& physics) {
-    if (ragdoll_) {
-        ragdoll_->RemoveFromPhysicsSystem();
-        delete ragdoll_;
-        ragdoll_ = nullptr;
-    }
-
-    bodyIDs_.clear();
-    jointIndices_.clear();
-    effortFactors_.clear();
-    ownerPhysics_ = nullptr;
 }
 
 // ─── State extraction ──────────────────────────────────────────────────────────

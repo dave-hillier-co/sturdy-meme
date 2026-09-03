@@ -22,7 +22,11 @@ std::unique_ptr<TerrainSystem> TerrainSystem::create(const InitContext& ctx,
 }
 
 TerrainSystem::~TerrainSystem() {
-    cleanup();
+    // Subsystems are released by member destruction in reverse declaration order;
+    // the only thing members cannot express is draining in-flight GPU work first.
+    if (device) {
+        device.waitIdle();
+    }
 }
 
 bool TerrainSystem::initInternal(const InitInfo& info, const TerrainConfig& cfg) {
@@ -105,7 +109,6 @@ bool TerrainSystem::initInternal(const InitInfo& info, const TerrainConfig& cfg)
 
     // Initialize virtual texture system (if configured)
     if (config.useVirtualTexture && !config.virtualTextureTileDir.empty()) {
-        virtualTexture = std::make_unique<VirtualTexture::VirtualTextureSystem>();
         VirtualTexture::VirtualTextureConfig vtConfig{};
         // Use smaller config for testing - 64 tiles per axis, 6 mip levels
         vtConfig.virtualSizePixels = 8192;  // 64 * 128 = 8192
@@ -126,9 +129,9 @@ bool TerrainSystem::initInternal(const InitInfo& info, const TerrainConfig& cfg)
         vtInfo.config = vtConfig;
         vtInfo.framesInFlight = framesInFlight;
 
-        if (!virtualTexture->init(vtInfo)) {
+        virtualTexture = VirtualTexture::VirtualTextureSystem::create(vtInfo);
+        if (!virtualTexture) {
             SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "Failed to initialize virtual texture system");
-            virtualTexture.reset();
         } else {
             SDL_Log("Virtual texture system initialized: %s", config.virtualTextureTileDir.c_str());
         }
@@ -152,6 +155,7 @@ bool TerrainSystem::initInternal(const InitInfo& info, const TerrainConfig& cfg)
 
     // Create descriptor set layouts and per-frame sets
     TerrainDescriptorSets::InitInfo dsInfo{};
+    dsInfo.raiiDevice = raiiDevice_;
     dsInfo.device = device;
     dsInfo.descriptorPool = descriptorPool;
     dsInfo.framesInFlight = framesInFlight;
@@ -202,27 +206,6 @@ bool TerrainSystem::initInternal(const InitContext& ctx, const TerrainInitParams
     info.graphicsQueue = ctx.graphicsQueue;
     info.commandPool = ctx.commandPool;
     return initInternal(info, cfg);
-}
-
-void TerrainSystem::cleanup() {
-    if (device == VK_NULL_HANDLE) return;  // Not initialized
-    vk::Device vkDevice(device);
-    vkDevice.waitIdle();
-
-    // RAII-managed subsystems destroyed automatically
-    pipelines.reset();
-    descriptorSets_.reset();
-
-    // Reset all RAII-managed subsystems
-    buffers.reset();
-    if (virtualTexture) {
-        virtualTexture->destroy(device, allocator);
-        virtualTexture.reset();
-    }
-    tileCache.reset();
-    meshlet.reset();
-    cbt.reset();
-    textures.reset();
 }
 
 

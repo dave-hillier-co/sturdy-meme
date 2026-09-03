@@ -1,6 +1,7 @@
 #pragma once
 
 #include <vulkan/vulkan.hpp>
+#include <vulkan/vulkan_raii.hpp>
 #include <string>
 #include <vector>
 #include <unordered_map>
@@ -18,8 +19,9 @@
  * Uses double-buffered query pools to avoid pipeline stalls.
  *
  * Usage:
- *   auto profiler = GpuProfiler::create(device, physicalDevice, framesInFlight);
- *   if (!profiler) { handle error; }
+ *   std::optional<GpuProfiler> profiler;
+ *   profiler.emplace(GpuProfiler::ConstructToken{}, raiiDevice, physicalDevice, framesInFlight);
+ *   if (!profiler->isInitialized()) { profiler.reset(); }
  *   profiler->beginFrame(cmd, frameIndex);
  *   profiler->beginZone(cmd, "ShadowPass");
  *   // ... shadow pass commands ...
@@ -40,22 +42,31 @@ public:
         std::vector<TimingResult> zones;
     };
 
+    // Passkey for controlled in-place construction (e.g. std::optional::emplace)
+    struct ConstructToken { explicit ConstructToken() = default; };
+
     /**
-     * Factory: Create a GPU profiler.
-     * Returns nullopt if initialization fails (fatal error).
-     * Note: If timestamps are unsupported, returns a valid but disabled profiler.
+     * Construct a GPU profiler in place. Check isInitialized() afterwards: false means
+     * query pool creation failed (fatal for profiling; drop the instance).
+     * Note: If timestamps are unsupported, the profiler is valid but disabled.
      */
-    static std::optional<GpuProfiler> create(vk::Device device, vk::PhysicalDevice physicalDevice,
-                                              uint32_t framesInFlight, uint32_t maxZones = 64);
+    GpuProfiler(ConstructToken, const vk::raii::Device& raiiDevice, vk::PhysicalDevice physicalDevice,
+                uint32_t framesInFlight, uint32_t maxZones = 64);
 
-    // Destructor handles cleanup
-    ~GpuProfiler();
+    // RAII query pools are released by the member destructors
+    ~GpuProfiler() = default;
 
-    // Move-only (owns Vulkan resources)
-    GpuProfiler(GpuProfiler&& other) noexcept;
-    GpuProfiler& operator=(GpuProfiler&& other) noexcept;
+    // Non-copyable, non-movable (atomics + RAII query pools; constructed in place)
+    GpuProfiler(GpuProfiler&&) = delete;
+    GpuProfiler& operator=(GpuProfiler&&) = delete;
     GpuProfiler(const GpuProfiler&) = delete;
     GpuProfiler& operator=(const GpuProfiler&) = delete;
+
+    /**
+     * True when construction succeeded (query pools created, or timestamps unsupported
+     * and profiling disabled). False only on a fatal creation error.
+     */
+    bool isInitialized() const { return initialized_; }
 
     /**
      * Call at the start of frame command buffer recording.
@@ -105,11 +116,8 @@ public:
     const std::vector<std::string>& getZoneNames() const { return zoneNames; }
 
 private:
-    GpuProfiler();  // Private: use factory
-
-    bool initInternal(vk::Device device, vk::PhysicalDevice physicalDevice,
+    bool initInternal(const vk::raii::Device& raiiDevice, vk::PhysicalDevice physicalDevice,
                       uint32_t framesInFlight, uint32_t maxZones);
-    void cleanup();
 
     static constexpr uint32_t QUERIES_PER_ZONE = 2;  // Start + end timestamp
 
@@ -120,8 +128,9 @@ private:
         const char* name = nullptr;  // Set atomically with startQueryIndex
     };
 
-    vk::Device device = VK_NULL_HANDLE;
-    std::vector<vk::QueryPool> queryPools;  // One per frame in flight
+    vk::Device device{};
+    std::vector<vk::raii::QueryPool> queryPools_;  // One per frame in flight (RAII)
+    bool initialized_ = false;
 
     float timestampPeriod = 0.0f;  // Nanoseconds per timestamp tick
     uint32_t maxZones = 0;

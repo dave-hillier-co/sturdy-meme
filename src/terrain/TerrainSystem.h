@@ -364,7 +364,6 @@ public:
 private:
     bool initInternal(const InitInfo& info, const TerrainConfig& config);
     bool initInternal(const InitContext& ctx, const TerrainInitParams& params, const TerrainConfig& config);
-    void cleanup();
 
     // Utility functions
     void extractFrustumPlanes(const glm::mat4& viewProj, glm::vec4 planes[6]);
@@ -374,7 +373,7 @@ private:
     const vk::raii::Device* raiiDevice_ = nullptr;
     vk::Device device;
     vk::PhysicalDevice physicalDevice;
-    VmaAllocator allocator = VK_NULL_HANDLE;
+    VmaAllocator allocator = nullptr;
     vk::RenderPass renderPass;
     vk::RenderPass shadowRenderPass;
     DescriptorManager::Pool* descriptorPool = nullptr;
@@ -386,7 +385,8 @@ private:
     vk::Queue graphicsQueue;
     vk::CommandPool commandPool;
 
-    // Composed subsystems (RAII-managed)
+    // Composed subsystems (RAII-managed). Destroyed in reverse declaration order:
+    // pipelines, descriptor sets, buffers, virtual texture, tile cache, meshlet, cbt, textures.
     std::unique_ptr<TerrainTextures> textures;
     std::unique_ptr<TerrainCBT> cbt;
     std::unique_ptr<TerrainMeshlet> meshlet;
@@ -394,8 +394,8 @@ private:
     std::unique_ptr<VirtualTexture::VirtualTextureSystem> virtualTexture;  // Virtual texture system
     std::unique_ptr<TerrainBuffers> buffers;      // Uniform, indirect, and visibility buffers
     TerrainCameraOptimizer cameraOptimizer;                  // Skip-frame optimization (no destroy needed)
-    std::unique_ptr<TerrainPipelines> pipelines;  // All compute and graphics pipelines
     std::unique_ptr<TerrainDescriptorSets> descriptorSets_;  // Descriptor layouts and per-frame sets
+    std::unique_ptr<TerrainPipelines> pipelines;  // All compute and graphics pipelines
 
     // Configuration
     TerrainConfig config;

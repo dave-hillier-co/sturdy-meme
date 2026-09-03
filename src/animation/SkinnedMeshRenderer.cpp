@@ -18,9 +18,10 @@ std::unique_ptr<SkinnedMeshRenderer> SkinnedMeshRenderer::create(const InitInfo&
     return system;
 }
 
-SkinnedMeshRenderer::~SkinnedMeshRenderer() {
-    cleanup();
-}
+// Members release in reverse declaration order: bone matrices storage, then
+// pipeline, pipeline layout, descriptor set layout. Descriptor sets are freed
+// with the DescriptorManager::Pool.
+SkinnedMeshRenderer::~SkinnedMeshRenderer() = default;
 
 bool SkinnedMeshRenderer::initInternal(const InitInfo& info) {
     device = info.device;
@@ -52,20 +53,6 @@ bool SkinnedMeshRenderer::initInternal(const InitInfo& info) {
     return true;
 }
 
-void SkinnedMeshRenderer::cleanup() {
-    if (device == VK_NULL_HANDLE) return;
-
-    // RAII wrappers handle cleanup automatically
-    pipeline_.reset();
-    pipelineLayout_.reset();
-    descriptorSetLayout_.reset();
-
-    BufferUtils::destroyBuffer(allocator, boneMatricesBuffer_);
-
-    // Descriptor sets are freed when the pool is destroyed
-    descriptorSets.clear();
-}
-
 bool SkinnedMeshRenderer::createDescriptorSetLayout() {
     // Skinned descriptor set layout:
     // Same as main layout but with binding 12 as DYNAMIC uniform buffer for bone matrices
@@ -76,7 +63,7 @@ bool SkinnedMeshRenderer::createDescriptorSetLayout() {
     builder.addBinding(Bindings::BONE_MATRICES, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, VK_SHADER_STAGE_VERTEX_BIT);
 
     vk::DescriptorSetLayout rawLayout = builder.build();
-    if (rawLayout == VK_NULL_HANDLE) {
+    if (!rawLayout) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create skinned descriptor set layout");
         return false;
     }
@@ -103,7 +90,7 @@ bool SkinnedMeshRenderer::createPipeline() {
     auto bindingDescription = SkinnedVertex::getBindingDescription();
     auto attributeDescriptions = SkinnedVertex::getAttributeDescriptions();
 
-    vk::Pipeline rawPipeline = VK_NULL_HANDLE;
+    vk::Pipeline rawPipeline{};
     GraphicsPipelineFactory factory(device);
     bool success = factory
         .applyPreset(GraphicsPipelineFactory::Preset::Default)
@@ -142,6 +129,9 @@ bool SkinnedMeshRenderer::createBoneMatricesBuffers() {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create bone matrices dynamic buffer");
         return false;
     }
+    // Adopt ownership of the buffer + allocation; the struct keeps offsets and the mapped pointer
+    boneMatricesStorage_ = VmaBuffer::fromRaw(allocator, boneMatricesBuffer_.buffer,
+                                              boneMatricesBuffer_.allocation);
 
     // Initialize all slots with identity matrices
     for (uint32_t frame = 0; frame < framesInFlight; frame++) {

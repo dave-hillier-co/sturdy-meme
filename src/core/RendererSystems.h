@@ -108,9 +108,8 @@ class PhysicsDebugRenderer;
  * - Provides typed access when needed
  *
  * Lifecycle:
- * - Create with create() factory method
  * - Populated by RendererBuilder's init tasks via the set*() adopters
- * - Destroy automatically via destructor
+ * - The destructor destroys every system in reverse registration order
  */
 class RendererSystems {
 public:
@@ -122,11 +121,6 @@ public:
     RendererSystems& operator=(const RendererSystems&) = delete;
     RendererSystems(RendererSystems&&) = delete;
     RendererSystems& operator=(RendererSystems&&) = delete;
-
-    /**
-     * Destroy all subsystems in reverse dependency order
-     */
-    void destroy(vk::Device device, VmaAllocator allocator);
 
     /**
      * Get tier-1 core resources for dependent system initialization

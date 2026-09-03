@@ -1,7 +1,7 @@
 #pragma once
 
 #include "GrassConstants.h"
-#include "PerFrameBuffer.h"
+#include "MappedFrameBuffers.h"
 #include "DescriptorManager.h"
 #include "core/vulkan/VmaImage.h"
 #include <vulkan/vulkan.hpp>
@@ -72,7 +72,8 @@ public:
     static std::unique_ptr<DisplacementSystem> create(const InitContext& ctx);
 
     explicit DisplacementSystem(ConstructToken);
-    ~DisplacementSystem();
+    // Member-driven teardown: buffers, then pipeline -> layouts -> sampler -> view -> image
+    ~DisplacementSystem() = default;
 
     // Non-copyable, non-movable
     DisplacementSystem(const DisplacementSystem&) = delete;
@@ -158,8 +159,7 @@ public:
     glm::vec4 getRegionVec4() const;
 
 private:
-    bool init(const InitInfo& info);
-    void cleanup();
+    bool initInternal(const InitInfo& info);
 
     bool createTexture();
     bool createPipeline();
@@ -185,9 +185,9 @@ private:
     std::optional<vk::raii::Pipeline> pipeline_;
     std::vector<vk::DescriptorSet> descriptorSets_;
 
-    // Per-frame buffers
-    BufferUtils::PerFrameBufferSet sourceBuffers_;
-    BufferUtils::PerFrameBufferSet uniformBuffers_;
+    // Per-frame buffers (persistently mapped, RAII)
+    BufferUtils::MappedFrameBuffers sourceBuffers_;
+    BufferUtils::MappedFrameBuffers uniformBuffers_;
 
     // Runtime state
     glm::vec2 regionCenter_ = glm::vec2(0.0f);

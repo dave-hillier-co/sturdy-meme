@@ -75,7 +75,9 @@ private:
     Camera camera;
     PlayerState player_;  // Player state (transform, movement, grounded)
     std::optional<PhysicsWorld> physics_;
-    PhysicsTerrainTileManager physicsTerrainManager_;
+    // Declared after physics_ so it is destroyed first (removes its bodies).
+    // Null when terrain streaming is unavailable.
+    std::unique_ptr<PhysicsTerrainTileManager> physicsTerrainManager_;
 
     // Helper to access physics (assumes physics is initialized)
     PhysicsWorld& physics() { return *physics_; }

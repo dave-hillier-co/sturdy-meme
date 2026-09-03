@@ -11,6 +11,7 @@
 #include <optional>
 
 #include "PerFrameBuffer.h"
+#include "PerFrameOwnedBuffers.h"
 #include "DescriptorManager.h"
 #include "InitContext.h"
 #include "Mesh.h"
@@ -77,7 +78,7 @@ public:
         VkExtent2D extent;
         std::string shaderPath;
         uint32_t framesInFlight;
-        VkFormat depthFormat;       // Format of the source depth buffer
+        vk::Format depthFormat;     // Format of the source depth buffer
         const vk::raii::Device* raiiDevice = nullptr;
     };
 
@@ -86,7 +87,7 @@ public:
      * Returns nullptr on failure.
      */
     static std::unique_ptr<HiZSystem> create(const InitInfo& info);
-    static std::unique_ptr<HiZSystem> create(const InitContext& ctx, VkFormat depthFormat);
+    static std::unique_ptr<HiZSystem> create(const InitContext& ctx, vk::Format depthFormat);
 
     ~HiZSystem();
 
@@ -134,8 +135,8 @@ public:
     uint32_t getVisibleCount(uint32_t frameIndex) const;
 
     // Hi-Z pyramid access (for debugging/visualization and external occlusion culling)
-    vk::ImageView getHiZPyramidView() const { return hiZPyramid.fullView ? **hiZPyramid.fullView : VK_NULL_HANDLE; }
-    vk::Sampler getHiZSampler() const { return hiZSampler_ ? **hiZSampler_ : VK_NULL_HANDLE; }
+    vk::ImageView getHiZPyramidView() const { return hiZPyramid.fullView ? **hiZPyramid.fullView : vk::ImageView{}; }
+    vk::Sampler getHiZSampler() const { return hiZSampler_ ? **hiZSampler_ : vk::Sampler{}; }
     vk::ImageView getHiZMipView(uint32_t mipLevel) const;
     uint32_t getMipLevelCount() const { return mipLevelCount; }
 
@@ -155,24 +156,20 @@ public:
 
 private:
     bool initInternal(const InitInfo& info);
-    void cleanup();
 
-    // Hi-Z pyramid resources
+    // Hi-Z pyramid resources (idempotent release used by resize())
     bool createHiZPyramid();
     void destroyHiZPyramid();
 
     // Compute pipelines
     bool createPyramidPipeline();
     bool createCullingPipeline();
-    void destroyPipelines();
 
-    // Descriptor sets
+    // Descriptor sets (pool-owned; re-allocated on resize)
     bool createDescriptorSets();
-    void destroyDescriptorSets();
 
     // Buffers
     bool createBuffers();
-    void destroyBuffers();
 
     // Calculate number of mip levels for given extent
     static uint32_t calculateMipLevels(VkExtent2D extent) {
@@ -186,14 +183,16 @@ private:
     // Synchronize culling output for indirect draw consumption
     void barrierCullingToIndirectDraw(vk::CommandBuffer cmd);
 
-    vk::Device device = VK_NULL_HANDLE;
-    VmaAllocator allocator = VK_NULL_HANDLE;
+    // Non-owning device/context handles. raiiDevice_ must outlive every
+    // vk::raii member below (VulkanContext guarantees this).
+    const vk::raii::Device* raiiDevice_ = nullptr;
+    vk::Device device{};
+    VmaAllocator allocator = nullptr;
     DescriptorManager::Pool* descriptorPool = nullptr;
     VkExtent2D extent = {0, 0};
     std::string shaderPath;
     uint32_t framesInFlight = 0;
-    VkFormat depthFormat = VK_FORMAT_D32_SFLOAT;
-    const vk::raii::Device* raiiDevice_ = nullptr;
+    vk::Format depthFormat = vk::Format::eD32Sfloat;
 
     // Hi-Z pyramid texture (R32_SFLOAT for max depth values)
     static constexpr VkFormat HIZ_FORMAT = VK_FORMAT_R32_SFLOAT;
@@ -202,8 +201,8 @@ private:
     uint32_t mipLevelCount = 0;
 
     // Source depth buffer reference
-    vk::ImageView sourceDepthView = VK_NULL_HANDLE;
-    vk::Sampler sourceDepthSampler = VK_NULL_HANDLE;
+    vk::ImageView sourceDepthView{};
+    vk::Sampler sourceDepthSampler{};
 
     // Pyramid generation pipeline
     std::optional<vk::raii::DescriptorSetLayout> pyramidDescSetLayout_;
@@ -223,13 +222,13 @@ private:
     uint32_t objectBufferCapacity = 0;
 
     // Indirect draw buffer (output from culling)
-    BufferUtils::PerFrameBufferSet indirectDrawBuffers;
+    PerFrameOwnedBuffers indirectDrawBuffers;
 
     // Draw count buffer (for vkCmdDrawIndexedIndirectCount)
-    BufferUtils::PerFrameBufferSet drawCountBuffers;
+    PerFrameOwnedBuffers drawCountBuffers;
 
     // Culling uniforms (per frame)
-    BufferUtils::PerFrameBufferSet uniformBuffers;
+    PerFrameOwnedBuffers uniformBuffers;
 
     // State
     bool hiZEnabled = true;

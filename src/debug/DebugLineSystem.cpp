@@ -8,74 +8,30 @@
 #include <algorithm>
 
 // Factory methods
-std::unique_ptr<DebugLineSystem> DebugLineSystem::create(vk::Device device, VmaAllocator allocator,
+std::unique_ptr<DebugLineSystem> DebugLineSystem::create(const vk::raii::Device& raiiDevice, VmaAllocator allocator,
                                                           vk::RenderPass renderPass,
                                                           const std::string& shaderPath,
                                                           uint32_t framesInFlight) {
     auto system = std::make_unique<DebugLineSystem>(ConstructToken{});
-    if (!system->initInternal(device, allocator, renderPass, shaderPath, framesInFlight)) {
+    if (!system->initInternal(raiiDevice, allocator, renderPass, shaderPath, framesInFlight)) {
         return nullptr;
     }
     return system;
 }
 
 std::unique_ptr<DebugLineSystem> DebugLineSystem::create(const InitContext& ctx, vk::RenderPass renderPass) {
-    return create(ctx.device, ctx.allocator, renderPass, ctx.shaderPath, ctx.framesInFlight);
-}
-
-// Destructor
-DebugLineSystem::~DebugLineSystem() {
-    cleanup();
-}
-
-// Move constructor
-DebugLineSystem::DebugLineSystem(DebugLineSystem&& other) noexcept
-    : device(other.device)
-    , allocator(other.allocator)
-    , pipelineLayout(other.pipelineLayout)
-    , linePipeline(other.linePipeline)
-    , trianglePipeline(other.trianglePipeline)
-    , frameData(std::move(other.frameData))
-    , currentFrame(other.currentFrame)
-    , lineVertices(std::move(other.lineVertices))
-    , triangleVertices(std::move(other.triangleVertices))
-{
-    // Null out the source to prevent double-free
-    other.device = VK_NULL_HANDLE;
-    other.allocator = VK_NULL_HANDLE;
-    other.pipelineLayout = VK_NULL_HANDLE;
-    other.linePipeline = VK_NULL_HANDLE;
-    other.trianglePipeline = VK_NULL_HANDLE;
-}
-
-// Move assignment
-DebugLineSystem& DebugLineSystem::operator=(DebugLineSystem&& other) noexcept {
-    if (this != &other) {
-        cleanup();
-
-        device = other.device;
-        allocator = other.allocator;
-        pipelineLayout = other.pipelineLayout;
-        linePipeline = other.linePipeline;
-        trianglePipeline = other.trianglePipeline;
-        frameData = std::move(other.frameData);
-        currentFrame = other.currentFrame;
-        lineVertices = std::move(other.lineVertices);
-        triangleVertices = std::move(other.triangleVertices);
-
-        other.device = VK_NULL_HANDLE;
-        other.allocator = VK_NULL_HANDLE;
-        other.pipelineLayout = VK_NULL_HANDLE;
-        other.linePipeline = VK_NULL_HANDLE;
-        other.trianglePipeline = VK_NULL_HANDLE;
+    if (!ctx.raiiDevice) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "DebugLineSystem requires raiiDevice");
+        return nullptr;
     }
-    return *this;
+    return create(*ctx.raiiDevice, ctx.allocator, renderPass, ctx.shaderPath, ctx.framesInFlight);
 }
 
 // Internal initialization
-bool DebugLineSystem::initInternal(vk::Device device, VmaAllocator allocator, vk::RenderPass renderPass,
+bool DebugLineSystem::initInternal(const vk::raii::Device& raiiDevice, VmaAllocator allocator, vk::RenderPass renderPass,
                                     const std::string& shaderPath, uint32_t framesInFlight) {
-    this->device = device;
+    this->raiiDevice_ = &raiiDevice;
+    this->device = *raiiDevice;
     this->allocator = allocator;
 
     // Create per-frame data
@@ -91,28 +47,6 @@ bool DebugLineSystem::initInternal(vk::Device device, VmaAllocator allocator, vk
     return true;
 }
 
-// Cleanup (called by destructor)
-void DebugLineSystem::cleanup() {
-    if (device == VK_NULL_HANDLE) return;
-
-    vk::Device(device).waitIdle();
-
-    for (auto& frame : frameData) {
-        if (frame.lineVertexBuffer != VK_NULL_HANDLE) {
-            vmaDestroyBuffer(allocator, frame.lineVertexBuffer, frame.lineVertexAllocation);
-        }
-        if (frame.triangleVertexBuffer != VK_NULL_HANDLE) {
-            vmaDestroyBuffer(allocator, frame.triangleVertexBuffer, frame.triangleVertexAllocation);
-        }
-    }
-    frameData.clear();
-
-    destroyPipeline();
-
-    device = VK_NULL_HANDLE;
-    allocator = VK_NULL_HANDLE;
-}
-
 bool DebugLineSystem::createPipeline(vk::RenderPass renderPass, const std::string& shaderPath) {
     // Load shaders
     auto vertShader = ShaderLoader::loadShaderModule(device, shaderPath + "/debug_line.vert.spv", ShaderLoader::RaiiTag{});
@@ -122,8 +56,6 @@ bool DebugLineSystem::createPipeline(vk::RenderPass renderPass, const std::strin
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "DebugLineSystem: Failed to load shaders");
         return false;
     }
-
-    vk::Device vkDevice(device);
 
     // Push constant for view-projection matrix
     auto pushConstantRange = vk::PushConstantRange{}
@@ -135,7 +67,7 @@ bool DebugLineSystem::createPipeline(vk::RenderPass renderPass, const std::strin
         .setPushConstantRanges(pushConstantRange);
 
     try {
-        pipelineLayout = vkDevice.createPipelineLayout(layoutInfo);
+        pipelineLayout_.emplace(*raiiDevice_, layoutInfo);
     } catch (const vk::SystemError& e) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "DebugLineSystem: Failed to create pipeline layout: %s", e.what());
         return false;
@@ -233,45 +165,28 @@ bool DebugLineSystem::createPipeline(vk::RenderPass renderPass, const std::strin
         .setPDepthStencilState(&depthStencil)
         .setPColorBlendState(&colorBlending)
         .setPDynamicState(&dynamicState)
-        .setLayout(pipelineLayout)
+        .setLayout(**pipelineLayout_)
         .setRenderPass(renderPass)
         .setSubpass(0);
 
-    auto lineResult = vkDevice.createGraphicsPipeline(nullptr, pipelineInfo);
-    if (lineResult.result != vk::Result::eSuccess) {
+    try {
+        linePipeline_.emplace(*raiiDevice_, nullptr, pipelineInfo);
+    } catch (const vk::SystemError&) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "DebugLineSystem: Failed to create line pipeline");
         return false;
     }
-    linePipeline = lineResult.value;
 
     // Create triangle pipeline
     pipelineInfo.setPInputAssemblyState(&inputAssemblyTriangle);
-    auto triangleResult = vkDevice.createGraphicsPipeline(nullptr, pipelineInfo);
-    if (triangleResult.result != vk::Result::eSuccess) {
+    try {
+        trianglePipeline_.emplace(*raiiDevice_, nullptr, pipelineInfo);
+    } catch (const vk::SystemError&) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "DebugLineSystem: Failed to create triangle pipeline");
-        vkDevice.destroyPipeline(linePipeline);
-        linePipeline = VK_NULL_HANDLE;
+        linePipeline_.reset();
         return false;
     }
-    trianglePipeline = triangleResult.value;
 
     return true;
-}
-
-void DebugLineSystem::destroyPipeline() {
-    vk::Device vkDevice(device);
-    if (trianglePipeline != VK_NULL_HANDLE) {
-        vkDevice.destroyPipeline(trianglePipeline);
-        trianglePipeline = VK_NULL_HANDLE;
-    }
-    if (linePipeline != VK_NULL_HANDLE) {
-        vkDevice.destroyPipeline(linePipeline);
-        linePipeline = VK_NULL_HANDLE;
-    }
-    if (pipelineLayout != VK_NULL_HANDLE) {
-        vkDevice.destroyPipelineLayout(pipelineLayout);
-        pipelineLayout = VK_NULL_HANDLE;
-    }
 }
 
 void DebugLineSystem::beginFrame(uint32_t frameIndex) {
@@ -473,6 +388,38 @@ void DebugLineSystem::importFromPhysicsDebugRenderer(const PhysicsDebugRenderer&
 }
 #endif
 
+bool DebugLineSystem::ensureVertexBuffer(VertexBuffer& vb, size_t requiredSize, const char* what) {
+    if (vb.size >= requiredSize) return true;
+
+    // Releasing the old buffer here is safe: this frame slot was last used
+    // framesInFlight frames ago, so no submitted work references it.
+    vb.buffer = ManagedBuffer();
+    vb.mapped = nullptr;
+    vb.size = 0;
+
+    size_t newSize = std::max(requiredSize, INITIAL_BUFFER_SIZE);
+
+    auto bufferInfo = vk::BufferCreateInfo{}
+        .setSize(newSize)
+        .setUsage(vk::BufferUsageFlagBits::eVertexBuffer)
+        .setSharingMode(vk::SharingMode::eExclusive);
+
+    VmaAllocationCreateInfo allocInfo{};
+    allocInfo.usage = VMA_MEMORY_USAGE_CPU_TO_GPU;
+    allocInfo.flags = VMA_ALLOCATION_CREATE_MAPPED_BIT;
+
+    if (!VmaBuffer::create(allocator, bufferInfo, allocInfo, vb.buffer)) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "DebugLineSystem: Failed to create %s vertex buffer", what);
+        return false;
+    }
+
+    VmaAllocationInfo allocationInfo{};
+    vmaGetAllocationInfo(allocator, vb.buffer.getAllocation(), &allocationInfo);
+    vb.mapped = allocationInfo.pMappedData;
+    vb.size = newSize;
+    return true;
+}
+
 void DebugLineSystem::uploadLines() {
     if (currentFrame >= frameData.size()) return;
 
@@ -486,35 +433,12 @@ void DebugLineSystem::uploadLines() {
         size_t requiredSize = totalLineVertices * sizeof(DebugLineVertex);
 
         // Recreate buffer if too small
-        if (frame.lineBufferSize < requiredSize) {
-            if (frame.lineVertexBuffer != VK_NULL_HANDLE) {
-                vmaDestroyBuffer(allocator, frame.lineVertexBuffer, frame.lineVertexAllocation);
-            }
-
-            size_t newSize = std::max(requiredSize, INITIAL_BUFFER_SIZE);
-
-            auto bufferInfo = vk::BufferCreateInfo{}
-                .setSize(newSize)
-                .setUsage(vk::BufferUsageFlagBits::eVertexBuffer)
-                .setSharingMode(vk::SharingMode::eExclusive);
-
-            VmaAllocationCreateInfo allocInfo{};
-            allocInfo.usage = VMA_MEMORY_USAGE_CPU_TO_GPU;
-            allocInfo.flags = VMA_ALLOCATION_CREATE_MAPPED_BIT;
-
-            if (vmaCreateBuffer(allocator, reinterpret_cast<const VkBufferCreateInfo*>(&bufferInfo), &allocInfo,
-                               reinterpret_cast<VkBuffer*>(&frame.lineVertexBuffer), &frame.lineVertexAllocation, nullptr) != VK_SUCCESS) {
-                SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "DebugLineSystem: Failed to create line vertex buffer");
-                return;
-            }
-
-            frame.lineBufferSize = newSize;
+        if (!ensureVertexBuffer(frame.lines, requiredSize, "line")) {
+            return;
         }
 
         // Copy persistent lines first, then per-frame lines
-        void* data;
-        vmaMapMemory(allocator, frame.lineVertexAllocation, &data);
-        char* dst = static_cast<char*>(data);
+        char* dst = static_cast<char*>(frame.lines.mapped);
         if (!persistentLineVertices.empty()) {
             size_t persistentSize = persistentLineVertices.size() * sizeof(DebugLineVertex);
             memcpy(dst, persistentLineVertices.data(), persistentSize);
@@ -523,42 +447,17 @@ void DebugLineSystem::uploadLines() {
         if (!lineVertices.empty()) {
             memcpy(dst, lineVertices.data(), lineVertices.size() * sizeof(DebugLineVertex));
         }
-        vmaUnmapMemory(allocator, frame.lineVertexAllocation);
     }
 
     // Upload triangles
     if (!triangleVertices.empty()) {
         size_t requiredSize = triangleVertices.size() * sizeof(DebugLineVertex);
 
-        if (frame.triangleBufferSize < requiredSize) {
-            if (frame.triangleVertexBuffer != VK_NULL_HANDLE) {
-                vmaDestroyBuffer(allocator, frame.triangleVertexBuffer, frame.triangleVertexAllocation);
-            }
-
-            size_t newSize = std::max(requiredSize, INITIAL_BUFFER_SIZE);
-
-            auto bufferInfo = vk::BufferCreateInfo{}
-                .setSize(newSize)
-                .setUsage(vk::BufferUsageFlagBits::eVertexBuffer)
-                .setSharingMode(vk::SharingMode::eExclusive);
-
-            VmaAllocationCreateInfo allocInfo{};
-            allocInfo.usage = VMA_MEMORY_USAGE_CPU_TO_GPU;
-            allocInfo.flags = VMA_ALLOCATION_CREATE_MAPPED_BIT;
-
-            if (vmaCreateBuffer(allocator, reinterpret_cast<const VkBufferCreateInfo*>(&bufferInfo), &allocInfo,
-                               reinterpret_cast<VkBuffer*>(&frame.triangleVertexBuffer), &frame.triangleVertexAllocation, nullptr) != VK_SUCCESS) {
-                SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "DebugLineSystem: Failed to create triangle vertex buffer");
-                return;
-            }
-
-            frame.triangleBufferSize = newSize;
+        if (!ensureVertexBuffer(frame.triangles, requiredSize, "triangle")) {
+            return;
         }
 
-        void* data;
-        vmaMapMemory(allocator, frame.triangleVertexAllocation, &data);
-        memcpy(data, triangleVertices.data(), requiredSize);
-        vmaUnmapMemory(allocator, frame.triangleVertexAllocation);
+        memcpy(frame.triangles.mapped, triangleVertices.data(), requiredSize);
     }
 }
 
@@ -571,22 +470,22 @@ void DebugLineSystem::recordCommands(vk::CommandBuffer cmd, const glm::mat4& vie
 
     // Draw lines (persistent + per-frame)
     size_t totalLineVertices = persistentLineVertices.size() + lineVertices.size();
-    if (totalLineVertices > 0 && frame.lineVertexBuffer != VK_NULL_HANDLE) {
-        vkCmd.bindPipeline(vk::PipelineBindPoint::eGraphics, linePipeline);
-        vkCmd.pushConstants<glm::mat4>(pipelineLayout, vk::ShaderStageFlagBits::eVertex, 0, viewProj);
+    if (totalLineVertices > 0 && frame.lines.buffer) {
+        vkCmd.bindPipeline(vk::PipelineBindPoint::eGraphics, **linePipeline_);
+        vkCmd.pushConstants<glm::mat4>(**pipelineLayout_, vk::ShaderStageFlagBits::eVertex, 0, viewProj);
 
-        vk::Buffer buffer(frame.lineVertexBuffer);
+        vk::Buffer buffer = frame.lines.buffer.get();
         vk::DeviceSize offset = 0;
         vkCmd.bindVertexBuffers(0, buffer, offset);
         vkCmd.draw(static_cast<uint32_t>(totalLineVertices), 1, 0, 0);
     }
 
     // Draw triangles (as wireframe)
-    if (!triangleVertices.empty() && frame.triangleVertexBuffer != VK_NULL_HANDLE) {
-        vkCmd.bindPipeline(vk::PipelineBindPoint::eGraphics, trianglePipeline);
-        vkCmd.pushConstants<glm::mat4>(pipelineLayout, vk::ShaderStageFlagBits::eVertex, 0, viewProj);
+    if (!triangleVertices.empty() && frame.triangles.buffer) {
+        vkCmd.bindPipeline(vk::PipelineBindPoint::eGraphics, **trianglePipeline_);
+        vkCmd.pushConstants<glm::mat4>(**pipelineLayout_, vk::ShaderStageFlagBits::eVertex, 0, viewProj);
 
-        vk::Buffer buffer(frame.triangleVertexBuffer);
+        vk::Buffer buffer = frame.triangles.buffer.get();
         vk::DeviceSize offset = 0;
         vkCmd.bindVertexBuffers(0, buffer, offset);
         vkCmd.draw(static_cast<uint32_t>(triangleVertices.size()), 1, 0, 0);

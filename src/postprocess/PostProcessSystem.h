@@ -11,6 +11,7 @@
 #include <optional>
 #include "UBOs.h"
 #include "PerFrameBuffer.h"
+#include "PerFrameOwnedBuffers.h"
 #include "DescriptorManager.h"
 #include "InitContext.h"
 #include "VmaBuffer.h"
@@ -106,8 +107,8 @@ public:
     // Render target accessors (vulkan-hpp)
     vk::ImageView getHDRColorView() const { return hdrColorView ? **hdrColorView : vk::ImageView{}; }
     vk::ImageView getHDRDepthView() const { return hdrDepthView ? **hdrDepthView : vk::ImageView{}; }
-    vk::RenderPass getHDRRenderPass() const { return vk::RenderPass(hdrRenderPass); }
-    vk::Framebuffer getHDRFramebuffer() const { return vk::Framebuffer(hdrFramebuffer); }
+    vk::RenderPass getHDRRenderPass() const { return hdrRenderPass_ ? **hdrRenderPass_ : vk::RenderPass{}; }
+    vk::Framebuffer getHDRFramebuffer() const { return hdrFramebuffer_ ? **hdrFramebuffer_ : vk::Framebuffer{}; }
     vk::Extent2D getRenderExtent() const { return vk::Extent2D{}.setWidth(extent.width).setHeight(extent.height); }
 
     // Legacy raw handle accessors (for existing code)
@@ -235,7 +236,6 @@ public:
 
 private:
     bool initInternal(const InitInfo& info);
-    void cleanup();
 
     bool createHDRRenderTarget();
     bool createHDRRenderPass();
@@ -250,7 +250,6 @@ private:
     bool createHistogramResources();
     bool createHistogramPipelines();
     bool createHistogramDescriptorSets();
-    void destroyHistogramResources();
     void recordHistogramCompute(vk::CommandBuffer cmd, uint32_t frameIndex, float deltaTime);
 
     // Synchronize histogram build output for reduce pass
@@ -259,12 +258,17 @@ private:
     // Synchronize histogram reduce output for CPU read and HDR image for sampling
     void barrierHistogramReduceComplete(vk::CommandBuffer cmd, uint32_t frameIndex);
 
-    void destroyHDRResources();
+    // Idempotent release of the resolution-dependent HDR target (framebuffer,
+    // views, images); used by resize() before re-creating at the new extent.
+    void releaseHDRTarget();
 
-    vk::Device device = VK_NULL_HANDLE;
-    VmaAllocator allocator = VK_NULL_HANDLE;
+    // Non-owning device/context handles. raiiDevice_ must outlive every
+    // vk::raii member below (VulkanContext guarantees this).
+    const vk::raii::Device* raiiDevice_ = nullptr;
+    vk::Device device{};
+    VmaAllocator allocator = nullptr;
     DescriptorManager::Pool* descriptorPool = nullptr;
-    vk::RenderPass outputRenderPass = VK_NULL_HANDLE;
+    vk::RenderPass outputRenderPass{};
     VkExtent2D extent = {0, 0};
     VkFormat swapchainFormat = VK_FORMAT_UNDEFINED;
     std::string shaderPath;
@@ -273,29 +277,28 @@ private:
     static constexpr VkFormat HDR_FORMAT = VK_FORMAT_R16G16B16A16_SFLOAT;
     static constexpr VkFormat DEPTH_FORMAT = VK_FORMAT_D32_SFLOAT;
 
-    // HDR render target
+    // HDR render target (members destroy in reverse declaration order:
+    // framebuffer -> render pass -> sampler -> views -> images)
     ManagedImage hdrColorImage;
     std::optional<vk::raii::ImageView> hdrColorView;
 
     ManagedImage hdrDepthImage;
     std::optional<vk::raii::ImageView> hdrDepthView;
 
-    const vk::raii::Device* raiiDevice_ = nullptr;
     std::optional<vk::raii::Sampler> hdrSampler_;
     std::optional<vk::raii::RenderPass> hdrRenderPass_;
-    vk::RenderPass hdrRenderPass = VK_NULL_HANDLE;  // Raw handle for compatibility
-    vk::Framebuffer hdrFramebuffer = VK_NULL_HANDLE;
+    std::optional<vk::raii::Framebuffer> hdrFramebuffer_;
 
     // Final composite pipeline
-    vk::DescriptorSetLayout compositeDescriptorSetLayout = VK_NULL_HANDLE;
-    vk::PipelineLayout compositePipelineLayout = VK_NULL_HANDLE;
+    std::optional<vk::raii::DescriptorSetLayout> compositeDescriptorSetLayout_;
+    std::optional<vk::raii::PipelineLayout> compositePipelineLayout_;
     // Pipeline variants for different god ray sample counts
     // Index 0=Low(16), 1=Medium(32), 2=High(64)
-    std::array<vk::Pipeline, 3> compositePipelines = {VK_NULL_HANDLE, VK_NULL_HANDLE, VK_NULL_HANDLE};
-    std::vector<vk::DescriptorSet> compositeDescriptorSets;
+    std::array<std::optional<vk::raii::Pipeline>, 3> compositePipelines_;
+    std::vector<vk::DescriptorSet> compositeDescriptorSets;  // Pool-owned
 
     // Uniform buffers (per frame)
-    BufferUtils::PerFrameBufferSet uniformBuffers;
+    PerFrameOwnedBuffers uniformBuffers;
 
     // Exposure control
     float manualExposure = 0.0f;
@@ -318,10 +321,10 @@ private:
     bool froxelFilterHighQuality = true;  // Tricubic (true) vs trilinear (false)
 
     // Froxel volumetrics (Phase 4.3)
-    vk::ImageView froxelVolumeView = VK_NULL_HANDLE;
-    vk::Sampler froxelSampler = VK_NULL_HANDLE;
-    vk::ImageView bloomView = VK_NULL_HANDLE;
-    vk::Sampler bloomSampler = VK_NULL_HANDLE;
+    vk::ImageView froxelVolumeView{};
+    vk::Sampler froxelSampler{};
+    vk::ImageView bloomView{};
+    vk::Sampler bloomSampler{};
     bool froxelEnabled = false;
     bool hdrEnabled = true;  // HDR tonemapping enabled by default
     bool hdrPassEnabled = true;  // HDR pass enabled by default
@@ -333,13 +336,13 @@ private:
     int froxelDebugMode = 0;  // 0=Normal, 1=Depth slices, 2=Density, 3=Transmittance, 4=Grid cells
 
     // Local tone mapping (bilateral grid)
-    vk::ImageView bilateralGridView = VK_NULL_HANDLE;
-    vk::Sampler bilateralGridSampler = VK_NULL_HANDLE;
+    vk::ImageView bilateralGridView{};
+    vk::Sampler bilateralGridSampler{};
     bool localToneMapEnabled = false;  // Disabled by default
 
     // Quarter-resolution god rays (compute optimization)
-    vk::ImageView godRaysView_ = VK_NULL_HANDLE;
-    vk::Sampler godRaysSampler_ = VK_NULL_HANDLE;
+    vk::ImageView godRaysView_{};
+    vk::Sampler godRaysSampler_{};
     float localToneMapContrast = 0.5f; // 0=none, 0.5=typical, 1.0=flat
     float localToneMapDetail = 1.0f;   // 1.0=neutral, 1.5=punchy
     float bilateralBlend = 0.4f;       // GOT used 40% bilateral, 60% gaussian
@@ -369,20 +372,20 @@ private:
     // Histogram-based exposure resources
     ManagedBuffer histogramBuffer;
 
-    BufferUtils::PerFrameBufferSet exposureBuffers;  // Per-frame exposure output
+    PerFrameOwnedBuffers exposureBuffers;  // Per-frame exposure output
 
-    BufferUtils::PerFrameBufferSet histogramParamsBuffers;  // Per-frame histogram params
+    PerFrameOwnedBuffers histogramParamsBuffers;  // Per-frame histogram params
 
     // Histogram compute pipelines
-    vk::DescriptorSetLayout histogramBuildDescLayout = VK_NULL_HANDLE;
-    vk::DescriptorSetLayout histogramReduceDescLayout = VK_NULL_HANDLE;
-    vk::PipelineLayout histogramBuildPipelineLayout = VK_NULL_HANDLE;
-    vk::PipelineLayout histogramReducePipelineLayout = VK_NULL_HANDLE;
-    vk::Pipeline histogramBuildPipeline = VK_NULL_HANDLE;
-    vk::Pipeline histogramReducePipeline = VK_NULL_HANDLE;
+    std::optional<vk::raii::DescriptorSetLayout> histogramBuildDescLayout_;
+    std::optional<vk::raii::PipelineLayout> histogramBuildPipelineLayout_;
+    std::optional<vk::raii::Pipeline> histogramBuildPipeline_;
+    std::optional<vk::raii::DescriptorSetLayout> histogramReduceDescLayout_;
+    std::optional<vk::raii::PipelineLayout> histogramReducePipelineLayout_;
+    std::optional<vk::raii::Pipeline> histogramReducePipeline_;
 
-    std::vector<vk::DescriptorSet> histogramBuildDescSets;
-    std::vector<vk::DescriptorSet> histogramReduceDescSets;
+    std::vector<vk::DescriptorSet> histogramBuildDescSets;   // Pool-owned
+    std::vector<vk::DescriptorSet> histogramReduceDescSets;  // Pool-owned
 
     float calculateAverageLuminance();
 };

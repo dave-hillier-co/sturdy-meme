@@ -587,7 +587,6 @@ AsyncInitStatus RendererBuilder::pollAsyncInit(Renderer& r) {
         // the only place asyncInit_ is reset, exactly where the loader was
         // reset before, so the InitContext (read by the tasks) stays alive
         // until every task has completed.
-        loader.shutdown();
         r.asyncInit_.reset();
 
         r.asyncInitComplete_ = true;
@@ -625,22 +624,27 @@ bool RendererBuilder::initCoreVulkanResources(Renderer& r) {
 
         uint32_t threadCount = TaskScheduler::instance().getThreadCount();
 
-        if (!r.asyncTransferManager_.initialize(*r.vulkanContext_)) {
+        r.asyncTransferManager_ = AsyncTransferManager::create(*r.vulkanContext_);
+        if (!r.asyncTransferManager_) {
             SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
                 "AsyncTransferManager initialization failed - using synchronous transfers");
         }
 
         if (threadCount > 0) {
-            if (!r.threadedCommandPool_.initialize(*r.vulkanContext_, threadCount + 1)) {
+            r.threadedCommandPool_ = ThreadedCommandPool::create(*r.vulkanContext_, threadCount + 1);
+            if (!r.threadedCommandPool_) {
                 SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
                     "ThreadedCommandPool initialization failed - using single-threaded recording");
             }
         }
 
-        if (!r.asyncTextureUploader_.initialize(
+        if (r.asyncTransferManager_) {
+            r.asyncTextureUploader_ = Loading::AsyncTextureUploader::create(
                 r.vulkanContext_->getVkDevice(),
                 r.vulkanContext_->getAllocator(),
-                &r.asyncTransferManager_)) {
+                *r.asyncTransferManager_);
+        }
+        if (!r.asyncTextureUploader_) {
             SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
                 "AsyncTextureUploader initialization failed - using synchronous uploads");
         }
@@ -663,8 +667,7 @@ bool RendererBuilder::initDescriptorInfrastructure(Renderer& r) {
     }
 
     // Create descriptor pool (shared resource allocator)
-    vk::Device device = r.vulkanContext_->getVkDevice();
-    r.descriptorPool_.emplace(device, r.config_.setsPerPool, r.config_.descriptorPoolSizes);
+    r.descriptorPool_.emplace(r.vulkanContext_->getRaiiDevice(), r.config_.setsPerPool, r.config_.descriptorPoolSizes);
 
     return true;
 }
@@ -1415,13 +1418,14 @@ std::vector<Loading::SystemInitTask> RendererBuilder::buildInitTasks(Renderer& r
             }
 
             // Profiler
-            staged->profiler = Profiler::create(device, r.vulkanContext_->getVkPhysicalDevice(), Renderer::MAX_FRAMES_IN_FLIGHT);
+            staged->profiler = Profiler::create(r.vulkanContext_->getRaiiDevice(), r.vulkanContext_->getVkPhysicalDevice(), Renderer::MAX_FRAMES_IN_FLIGHT);
 
             // Wire caustics (after water is fully initialized)
             wiring.wireCausticsToTerrain(*r.systems_);
 
             // FrameExecutor (owns sync objects / TripleBuffering)
-            if (!r.frameExecutor_.init(r.vulkanContext_.get(), Renderer::MAX_FRAMES_IN_FLIGHT)) {
+            r.frameExecutor_ = FrameExecutor::create(*r.vulkanContext_, Renderer::MAX_FRAMES_IN_FLIGHT);
+            if (!r.frameExecutor_) {
                 SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to initialize FrameExecutor");
                 return false;
             }

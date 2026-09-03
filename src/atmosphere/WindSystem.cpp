@@ -1,5 +1,5 @@
 #include "WindSystem.h"
-#include "PerFrameBuffer.h"
+#include "core/vulkan/VmaBufferFactory.h"
 #include <SDL3/SDL.h>
 #include <cstring>
 #include <cmath>
@@ -12,20 +12,19 @@ std::unique_ptr<WindSystem> WindSystem::create(const InitInfo& info) {
     return system;
 }
 
-WindSystem::~WindSystem() {
-    cleanup();
-}
-
 bool WindSystem::initInternal(const InitInfo& info) {
-    allocator = info.allocator;
     framesInFlight = info.framesInFlight;
 
-    BufferUtils::PerFrameBufferBuilder builder;
-    if (!builder.setAllocator(allocator)
-             .setFrameCount(framesInFlight)
-             .setSize(sizeof(WindUniforms))
-             .build(uniformBuffers)) {
-        return false;
+    uniformBuffers_.resize(framesInFlight);
+    uniformMapped_.resize(framesInFlight, nullptr);
+    for (uint32_t i = 0; i < framesInFlight; ++i) {
+        if (!VmaBufferFactory::createUniformBuffer(info.allocator, sizeof(WindUniforms), uniformBuffers_[i])) {
+            return false;
+        }
+        uniformMapped_[i] = uniformBuffers_[i].map();
+        if (!uniformMapped_[i]) {
+            return false;
+        }
     }
 
     // Initialize permutation table for Perlin noise
@@ -33,13 +32,6 @@ bool WindSystem::initInternal(const InitInfo& info) {
 
     SDL_Log("Wind system initialized successfully");
     return true;
-}
-
-void WindSystem::cleanup() {
-    if (allocator == VK_NULL_HANDLE) return;  // Not initialized
-
-    BufferUtils::destroyBuffers(allocator, uniformBuffers);
-    uniformBuffers = {};
 }
 
 void WindSystem::initPermutationTable() {
@@ -93,15 +85,14 @@ void WindSystem::updateUniforms(uint32_t frameIndex) {
         totalTime
     );
 
-    memcpy(uniformBuffers.mappedPointers[frameIndex], &uniforms, sizeof(WindUniforms));
+    memcpy(uniformMapped_[frameIndex], &uniforms, sizeof(WindUniforms));
 }
 
-VkDescriptorBufferInfo WindSystem::getBufferInfo(uint32_t frameIndex) const {
-    VkDescriptorBufferInfo info{};
-    info.buffer = uniformBuffers.buffers[frameIndex];
-    info.offset = 0;
-    info.range = sizeof(WindUniforms);
-    return info;
+vk::DescriptorBufferInfo WindSystem::getBufferInfo(uint32_t frameIndex) const {
+    return vk::DescriptorBufferInfo{}
+        .setBuffer(uniformBuffers_[frameIndex].get())
+        .setOffset(0)
+        .setRange(sizeof(WindUniforms));
 }
 
 void WindSystem::setWindDirection(const glm::vec2& direction) {

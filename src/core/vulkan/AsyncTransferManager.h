@@ -5,6 +5,7 @@
 #include "VmaBuffer.h"
 #include <deque>
 #include <functional>
+#include <memory>
 #include <mutex>
 #include <optional>
 #include <vector>
@@ -51,7 +52,14 @@ class AsyncTransferManager {
 public:
     using CompletionCallback = std::function<void()>;
 
-    AsyncTransferManager() = default;
+    // Passkey for controlled construction via make_unique
+    struct ConstructToken { explicit ConstructToken() = default; };
+    AsyncTransferManager(ConstructToken, VulkanContext& context);
+
+    // Drains every pending transfer (waitAll), then the members release
+    // themselves in reverse declaration order: staging buffers and pending
+    // transfers (with their acquire fences) before the timeline semaphore,
+    // before the command pools.
     ~AsyncTransferManager();
 
     // Non-copyable
@@ -59,15 +67,11 @@ public:
     AsyncTransferManager& operator=(const AsyncTransferManager&) = delete;
 
     /**
-     * Initialize the transfer manager.
-     * @param context Vulkan context (provides device, queues, allocator)
+     * Create the transfer manager.
+     * @param context Vulkan context (provides device, queues, allocator; must outlive the manager)
+     * @return nullptr on failure
      */
-    bool initialize(VulkanContext& context);
-
-    /**
-     * Shutdown and wait for all pending transfers.
-     */
-    void shutdown();
+    static std::unique_ptr<AsyncTransferManager> create(VulkanContext& context);
 
     /**
      * Submit a buffer transfer (CPU to GPU).
@@ -187,7 +191,7 @@ private:
     uint32_t transferQueueFamily_ = 0;
     uint32_t graphicsQueueFamily_ = 0;
     bool hasDedicatedTransfer_ = false;
-    VmaAllocator allocator_ = VK_NULL_HANDLE;
+    VmaAllocator allocator_ = nullptr;
 
     // Command pool for transfer operations (created per transfer queue family).
     // Vulkan command pools are externally synchronised: commandPoolMutex_ guards
@@ -219,5 +223,6 @@ private:
     std::mutex stagingMutex_;
     static constexpr size_t MAX_STAGING_POOL_SIZE = 8;
 
-    bool initialized_ = false;
+    // True once every GPU object exists (false only when create() failed part-way)
+    bool ready() const { return transferTimeline_.has_value(); }
 };

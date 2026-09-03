@@ -1,8 +1,10 @@
 #include "VolumetricSnowSystem.h"
-#include "ShaderLoader.h"
-#include "PipelineBuilder.h"
 #include "SamplerFactory.h"
 #include "DescriptorManager.h"
+#include "core/vulkan/VmaBufferFactory.h"
+#include "core/vulkan/DescriptorSetLayoutBuilder.h"
+#include "core/vulkan/PipelineLayoutBuilder.h"
+#include "core/pipeline/ComputePipelineBuilder.h"
 #include <SDL3/SDL.h>
 #include <vulkan/vulkan.hpp>
 #include <cstring>
@@ -17,70 +19,62 @@ std::unique_ptr<VolumetricSnowSystem> VolumetricSnowSystem::create(const InitInf
     return system;
 }
 
-VolumetricSnowSystem::~VolumetricSnowSystem() {
-    cleanup();
-}
-
 bool VolumetricSnowSystem::initInternal(const InitInfo& info) {
-    SystemLifecycleHelper::Hooks hooks{};
-    hooks.createBuffers = [this]() { return createBuffers(); };
-    hooks.createComputeDescriptorSetLayout = [this]() { return createComputeDescriptorSetLayout(); };
-    hooks.createComputePipeline = [this]() { return createComputePipeline(); };
-    hooks.createGraphicsDescriptorSetLayout = []() { return true; };  // No graphics pipeline
-    hooks.createGraphicsPipeline = []() { return true; };             // No graphics pipeline
-    hooks.createDescriptorSets = [this]() { return createDescriptorSets(); };
-    hooks.destroyBuffers = [this](VmaAllocator allocator) { destroyBuffers(allocator); };
-    hooks.usesGraphicsPipeline = []() { return false; };  // Compute-only system
+    device_ = info.device;
+    allocator_ = info.allocator;
+    descriptorPool_ = info.descriptorPool;
+    shaderPath_ = info.shaderPath;
+    framesInFlight_ = info.framesInFlight;
+    raiiDevice_ = info.raiiDevice;
 
-    return lifecycle.init(info, hooks);
-}
-
-void VolumetricSnowSystem::cleanup() {
-    if (!lifecycle.getDevice()) return;  // Not initialized
-
-    cascadeSampler_.reset();
-
-    vk::Device vkDevice(lifecycle.getDevice());
-    for (uint32_t i = 0; i < NUM_SNOW_CASCADES; i++) {
-        if (cascadeViews[i]) {
-            vkDevice.destroyImageView(cascadeViews[i]);
-            cascadeViews[i] = VK_NULL_HANDLE;
-        }
-        if (cascadeImages[i]) {
-            vmaDestroyImage(lifecycle.getAllocator(), cascadeImages[i], cascadeAllocations[i]);
-            cascadeImages[i] = VK_NULL_HANDLE;
-        }
+    if (!raiiDevice_) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "RAII device not available for cascade sampler");
+        return false;
     }
 
-    lifecycle.destroy(lifecycle.getDevice(), lifecycle.getAllocator());
-}
+    // Compute-only system: buffers, layout, pipeline, then descriptor sets
+    if (!createBuffers()) return false;
+    if (!createComputeDescriptorSetLayout()) return false;
+    if (!createComputePipeline()) return false;
+    if (!createDescriptorSets()) return false;
 
-void VolumetricSnowSystem::destroyBuffers(VmaAllocator alloc) {
-    BufferUtils::destroyBuffers(alloc, uniformBuffers);
-    BufferUtils::destroyBuffers(alloc, interactionBuffers);
+    return true;
 }
 
 bool VolumetricSnowSystem::createBuffers() {
     vk::DeviceSize uniformBufferSize = sizeof(VolumetricSnowUniforms);
     vk::DeviceSize interactionBufferSize = sizeof(VolumetricSnowInteraction) * MAX_INTERACTIONS;
 
-    BufferUtils::PerFrameBufferBuilder uniformBuilder;
-    if (!uniformBuilder.setAllocator(getAllocator())
-             .setFrameCount(getFramesInFlight())
-             .setSize(uniformBufferSize)
-             .build(uniformBuffers)) {
-        SDL_Log("Failed to create volumetric snow uniform buffers");
-        return false;
+    uniformBuffers_.resize(getFramesInFlight());
+    uniformMapped_.resize(getFramesInFlight(), nullptr);
+    for (uint32_t i = 0; i < getFramesInFlight(); ++i) {
+        if (!VmaBufferFactory::createUniformBuffer(getAllocator(), uniformBufferSize, uniformBuffers_[i])) {
+            SDL_Log("Failed to create volumetric snow uniform buffers");
+            return false;
+        }
+        uniformMapped_[i] = uniformBuffers_[i].map();
+        if (!uniformMapped_[i]) {
+            SDL_Log("Failed to create volumetric snow uniform buffers");
+            return false;
+        }
     }
 
-    BufferUtils::PerFrameBufferBuilder interactionBuilder;
-    if (!interactionBuilder.setAllocator(getAllocator())
-             .setFrameCount(getFramesInFlight())
-             .setSize(interactionBufferSize)
-             .setUsage(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT)
-             .build(interactionBuffers)) {
-        SDL_Log("Failed to create volumetric snow interaction buffers");
-        return false;
+    interactionBuffers_.resize(getFramesInFlight());
+    interactionMapped_.resize(getFramesInFlight(), nullptr);
+    for (uint32_t i = 0; i < getFramesInFlight(); ++i) {
+        if (!BufferBuilder(getAllocator())
+                 .setSize(interactionBufferSize)
+                 .asStorage()
+                 .hostVisible()
+                 .build(interactionBuffers_[i])) {
+            SDL_Log("Failed to create volumetric snow interaction buffers");
+            return false;
+        }
+        interactionMapped_[i] = interactionBuffers_[i].map();
+        if (!interactionMapped_[i]) {
+            SDL_Log("Failed to create volumetric snow interaction buffers");
+            return false;
+        }
     }
 
     return createCascadeTextures();
@@ -104,15 +98,14 @@ bool VolumetricSnowSystem::createCascadeTextures() {
         VmaAllocationCreateInfo allocInfo{};
         allocInfo.usage = VMA_MEMORY_USAGE_AUTO;
 
-        if (vmaCreateImage(getAllocator(), reinterpret_cast<const VkImageCreateInfo*>(&imageInfo), &allocInfo,
-                           reinterpret_cast<VkImage*>(&cascadeImages[i]), &cascadeAllocations[i], nullptr) != VK_SUCCESS) {
+        if (!ManagedImage::create(getAllocator(), imageInfo, allocInfo, cascadeImages_[i])) {
             SDL_Log("Failed to create volumetric snow cascade %d image", i);
             return false;
         }
 
         // Create image view
         auto viewInfo = vk::ImageViewCreateInfo{}
-            .setImage(cascadeImages[i])
+            .setImage(cascadeImages_[i].get())
             .setViewType(vk::ImageViewType::e2D)
             .setFormat(vk::Format::eR16Sfloat)
             .setSubresourceRange(vk::ImageSubresourceRange{}
@@ -122,9 +115,8 @@ bool VolumetricSnowSystem::createCascadeTextures() {
                 .setBaseArrayLayer(0)
                 .setLayerCount(1));
 
-        vk::Device vkDevice(getDevice());
         try {
-            cascadeViews[i] = static_cast<vk::ImageView>(vkDevice.createImageView(viewInfo));
+            cascadeViews_[i].emplace(*raiiDevice_, viewInfo);
         } catch (const vk::SystemError& e) {
             SDL_Log("Failed to create volumetric snow cascade %d image view: %s", i, e.what());
             return false;
@@ -132,14 +124,9 @@ bool VolumetricSnowSystem::createCascadeTextures() {
     }
 
     // Create shared sampler for all cascades
-    if (auto* raiiDevice = lifecycle.getRaiiDevice(); raiiDevice) {
-        cascadeSampler_ = SamplerFactory::createSamplerLinearClamp(*raiiDevice);
-        if (!cascadeSampler_) {
-            SDL_Log("Failed to create volumetric snow cascade sampler");
-            return false;
-        }
-    } else {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "RAII device not available for cascade sampler");
+    cascadeSampler_ = SamplerFactory::createSamplerLinearClamp(*raiiDevice_);
+    if (!cascadeSampler_) {
+        SDL_Log("Failed to create volumetric snow cascade sampler");
         return false;
     }
 
@@ -153,39 +140,36 @@ bool VolumetricSnowSystem::createCascadeTextures() {
 }
 
 bool VolumetricSnowSystem::createComputeDescriptorSetLayout() {
-    PipelineBuilder builder(getDevice());
-
-    // binding 0: cascade 0 storage image (read/write)
-    builder.addDescriptorBinding(0, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1, VK_SHADER_STAGE_COMPUTE_BIT)
-    // binding 1: cascade 1 storage image (read/write)
-           .addDescriptorBinding(1, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1, VK_SHADER_STAGE_COMPUTE_BIT)
-    // binding 2: cascade 2 storage image (read/write)
-           .addDescriptorBinding(2, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1, VK_SHADER_STAGE_COMPUTE_BIT)
-    // binding 3: uniform buffer
-           .addDescriptorBinding(3, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT)
-    // binding 4: interaction sources SSBO
-           .addDescriptorBinding(4, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT);
-
-    return builder.buildDescriptorSetLayout(getComputePipelineHandles().descriptorSetLayout);
+    return DescriptorSetLayoutBuilder()
+        // binding 0: cascade 0 storage image (read/write)
+        .addBinding(BindingBuilder::storageImage(0, vk::ShaderStageFlagBits::eCompute))
+        // binding 1: cascade 1 storage image (read/write)
+        .addBinding(BindingBuilder::storageImage(1, vk::ShaderStageFlagBits::eCompute))
+        // binding 2: cascade 2 storage image (read/write)
+        .addBinding(BindingBuilder::storageImage(2, vk::ShaderStageFlagBits::eCompute))
+        // binding 3: uniform buffer
+        .addBinding(BindingBuilder::uniformBuffer(3, vk::ShaderStageFlagBits::eCompute))
+        // binding 4: interaction sources SSBO
+        .addBinding(BindingBuilder::storageBuffer(4, vk::ShaderStageFlagBits::eCompute))
+        .buildInto(*raiiDevice_, computeSetLayout_);
 }
 
 bool VolumetricSnowSystem::createComputePipeline() {
-    PipelineBuilder builder(getDevice());
-    builder.addShaderStage(getShaderPath() + "/volumetric_snow.comp.spv", VK_SHADER_STAGE_COMPUTE_BIT);
-
-    if (!builder.buildPipelineLayout({getComputePipelineHandles().descriptorSetLayout},
-                                      getComputePipelineHandles().pipelineLayout)) {
+    if (!PipelineLayoutBuilder(*raiiDevice_)
+             .addDescriptorSetLayout(**computeSetLayout_)
+             .buildInto(computePipelineLayout_)) {
         return false;
     }
 
-    return builder.buildComputePipeline(getComputePipelineHandles().pipelineLayout,
-                                         getComputePipelineHandles().pipeline);
+    return ComputePipelineBuilder(*raiiDevice_)
+        .setShader(getShaderPath() + "/volumetric_snow.comp.spv")
+        .setPipelineLayout(**computePipelineLayout_)
+        .buildInto(computePipeline_);
 }
 
 bool VolumetricSnowSystem::createDescriptorSets() {
     // Allocate descriptor sets using managed pool
-    computeDescriptorSets = getDescriptorPool()->allocate(
-        getComputePipelineHandles().descriptorSetLayout, getFramesInFlight());
+    computeDescriptorSets = getDescriptorPool()->allocate(**computeSetLayout_, getFramesInFlight());
     if (computeDescriptorSets.size() != getFramesInFlight()) {
         SDL_Log("Failed to allocate volumetric snow descriptor sets");
         return false;
@@ -193,11 +177,11 @@ bool VolumetricSnowSystem::createDescriptorSets() {
 
     for (uint32_t i = 0; i < getFramesInFlight(); i++) {
         DescriptorManager::SetWriter(getDevice(), computeDescriptorSets[i])
-            .writeStorageImage(0, cascadeViews[0])
-            .writeStorageImage(1, cascadeViews[1])
-            .writeStorageImage(2, cascadeViews[2])
-            .writeBuffer(3, uniformBuffers.buffers[i], 0, sizeof(VolumetricSnowUniforms))
-            .writeBuffer(4, interactionBuffers.buffers[i], 0, sizeof(VolumetricSnowInteraction) * MAX_INTERACTIONS, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+            .writeStorageImage(0, **cascadeViews_[0])
+            .writeStorageImage(1, **cascadeViews_[1])
+            .writeStorageImage(2, **cascadeViews_[2])
+            .writeBuffer(3, uniformBuffers_[i].get(), 0, sizeof(VolumetricSnowUniforms))
+            .writeBuffer(4, interactionBuffers_[i].get(), 0, sizeof(VolumetricSnowInteraction) * MAX_INTERACTIONS, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
             .update();
     }
 
@@ -260,14 +244,14 @@ void VolumetricSnowSystem::updateUniforms(uint32_t frameIndex, float deltaTime, 
     uniforms.cameraPosition = glm::vec4(lastCameraPosition, 0.0f);
 
     // Bounds check: frameIndex must be within range
-    if (frameIndex >= uniformBuffers.mappedPointers.size()) return;
-    memcpy(uniformBuffers.mappedPointers[frameIndex], &uniforms, sizeof(VolumetricSnowUniforms));
+    if (frameIndex >= uniformMapped_.size()) return;
+    memcpy(uniformMapped_[frameIndex], &uniforms, sizeof(VolumetricSnowUniforms));
 
     // Copy interaction sources to buffer
-    if (!currentInteractions.empty() && frameIndex < interactionBuffers.mappedPointers.size()) {
+    if (!currentInteractions.empty() && frameIndex < interactionMapped_.size()) {
         size_t copySize = sizeof(VolumetricSnowInteraction) * std::min(currentInteractions.size(),
                                                                         static_cast<size_t>(MAX_INTERACTIONS));
-        memcpy(interactionBuffers.mappedPointers[frameIndex], currentInteractions.data(), copySize);
+        memcpy(interactionMapped_[frameIndex], currentInteractions.data(), copySize);
     }
 }
 
@@ -302,9 +286,9 @@ void VolumetricSnowSystem::recordCompute(vk::CommandBuffer cmd, uint32_t frameIn
 
     // Bind compute pipeline and descriptor set
     vk::CommandBuffer vkCmd(cmd);
-    vkCmd.bindPipeline(vk::PipelineBindPoint::eCompute, getComputePipelineHandles().pipeline);
+    vkCmd.bindPipeline(vk::PipelineBindPoint::eCompute, **computePipeline_);
     vkCmd.bindDescriptorSets(vk::PipelineBindPoint::eCompute,
-                             getComputePipelineHandles().pipelineLayout, 0,
+                             **computePipelineLayout_, 0,
                              vk::DescriptorSet(computeDescriptorSets[frameIndex]), {});
 
     // Dispatch for each cascade (same shader, different region in uniforms)
@@ -342,7 +326,7 @@ void VolumetricSnowSystem::barrierCascadesForCompute(vk::CommandBuffer cmd) {
             .setNewLayout(vk::ImageLayout::eGeneral)
             .setSrcQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
             .setDstQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
-            .setImage(cascadeImages[i])
+            .setImage(cascadeImages_[i].get())
             .setSubresourceRange({vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1}));
     }
     vkCmd.pipelineBarrier(srcStage, vk::PipelineStageFlagBits::eComputeShader, {}, {}, {}, barriers);
@@ -360,7 +344,7 @@ void VolumetricSnowSystem::barrierCascadesForSampling(vk::CommandBuffer cmd) {
             .setNewLayout(vk::ImageLayout::eShaderReadOnlyOptimal)
             .setSrcQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
             .setDstQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
-            .setImage(cascadeImages[i])
+            .setImage(cascadeImages_[i].get())
             .setSubresourceRange({vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1}));
     }
     vkCmd.pipelineBarrier(vk::PipelineStageFlagBits::eComputeShader, vk::PipelineStageFlagBits::eFragmentShader,

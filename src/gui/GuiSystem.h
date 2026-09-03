@@ -1,11 +1,13 @@
 #pragma once
 
 #include <vulkan/vulkan.hpp>
+#include <vulkan/vulkan_raii.hpp>
 #include <SDL3/SDL.h>
 #include <vk_mem_alloc.h>
 #include <glm/glm.hpp>
 #include <string>
 #include <memory>
+#include <optional>
 #include <vector>
 
 #include "GuiDebugTab.h"
@@ -40,7 +42,8 @@ public:
      * Returns nullptr on failure.
      */
     static std::unique_ptr<GuiSystem> create(SDL_Window* window, vk::Instance instance,
-                                              vk::PhysicalDevice physicalDevice, vk::Device device,
+                                              vk::PhysicalDevice physicalDevice,
+                                              const vk::raii::Device& device,
                                               uint32_t graphicsQueueFamily, vk::Queue graphicsQueue,
                                               vk::RenderPass renderPass, uint32_t imageCount,
                                               RendererSystems& systems,
@@ -81,9 +84,8 @@ public:
 
 private:
     bool initInternal(SDL_Window* window, vk::Instance instance, vk::PhysicalDevice physicalDevice,
-                      vk::Device device, uint32_t graphicsQueueFamily, vk::Queue graphicsQueue,
-                      vk::RenderPass renderPass, uint32_t imageCount);
-    void cleanup();
+                      const vk::raii::Device& device, uint32_t graphicsQueueFamily,
+                      vk::Queue graphicsQueue, vk::RenderPass renderPass, uint32_t imageCount);
 
     void buildPanelRegistry(GuiDebugTab::Hooks debugHooks,
                             PhysicsTerrainTileManager* physicsTerrainTiles,
@@ -92,8 +94,23 @@ private:
     void renderMainMenuBar();
     void applyDefaultDockLayout(ImGuiID dockspaceId);
 
-    vk::Device device_ = VK_NULL_HANDLE;  // Stored for cleanup
-    vk::DescriptorPool imguiPool = VK_NULL_HANDLE;
+    // Descriptor pool used by the ImGui Vulkan backend. Declared before the
+    // backend so it is destroyed after the backend has released its sets.
+    std::optional<vk::raii::DescriptorPool> imguiPool_;
+
+    // Owns the ImGui context and platform/renderer backends; tears down in
+    // reverse init order (Vulkan backend, SDL backend, context).
+    struct ImGuiBackend {
+        bool contextCreated = false;
+        bool sdlInitialized = false;
+        bool vulkanInitialized = false;
+        ImGuiBackend() = default;
+        ~ImGuiBackend();
+        ImGuiBackend(const ImGuiBackend&) = delete;
+        ImGuiBackend& operator=(const ImGuiBackend&) = delete;
+    };
+    ImGuiBackend backend_;
+
     bool visible = true;
 
     // Stable systems accessor. Used for late-bound dependencies (ECS world,

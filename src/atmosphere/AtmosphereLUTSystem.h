@@ -9,7 +9,7 @@
 #include <cmath>
 #include <optional>
 #include "UBOs.h"
-#include "PerFrameBuffer.h"
+#include "core/vulkan/VmaBuffer.h"
 #include "core/vulkan/VmaImage.h"
 #include "DescriptorManager.h"
 #include "InitContext.h"
@@ -105,7 +105,7 @@ public:
     static std::unique_ptr<AtmosphereLUTSystem> create(const InitInfo& info);
     static std::unique_ptr<AtmosphereLUTSystem> create(const InitContext& ctx);
 
-    ~AtmosphereLUTSystem();
+    ~AtmosphereLUTSystem() = default;
 
     // Non-copyable, non-movable
     AtmosphereLUTSystem(const AtmosphereLUTSystem&) = delete;
@@ -126,13 +126,13 @@ public:
     void updateCloudMapLUT(vk::CommandBuffer cmd, uint32_t frameIndex, const glm::vec3& windOffset, float time);
 
     // Get LUT views for sampling in shaders
-    vk::ImageView getTransmittanceLUTView() const { return transmittanceLUTView ? static_cast<vk::ImageView>(**transmittanceLUTView) : VK_NULL_HANDLE; }
-    vk::ImageView getMultiScatterLUTView() const { return multiScatterLUTView ? static_cast<vk::ImageView>(**multiScatterLUTView) : VK_NULL_HANDLE; }
-    vk::ImageView getSkyViewLUTView() const { return skyViewLUTView ? static_cast<vk::ImageView>(**skyViewLUTView) : VK_NULL_HANDLE; }
-    vk::ImageView getRayleighIrradianceLUTView() const { return rayleighIrradianceLUTView ? static_cast<vk::ImageView>(**rayleighIrradianceLUTView) : VK_NULL_HANDLE; }
-    vk::ImageView getMieIrradianceLUTView() const { return mieIrradianceLUTView ? static_cast<vk::ImageView>(**mieIrradianceLUTView) : VK_NULL_HANDLE; }
-    vk::ImageView getCloudMapLUTView() const { return cloudMapLUTView ? static_cast<vk::ImageView>(**cloudMapLUTView) : VK_NULL_HANDLE; }
-    vk::Sampler getLUTSampler() const { return lutSampler_ ? **lutSampler_ : VK_NULL_HANDLE; }
+    vk::ImageView getTransmittanceLUTView() const { return transmittanceLUTView ? static_cast<vk::ImageView>(**transmittanceLUTView) : vk::ImageView{}; }
+    vk::ImageView getMultiScatterLUTView() const { return multiScatterLUTView ? static_cast<vk::ImageView>(**multiScatterLUTView) : vk::ImageView{}; }
+    vk::ImageView getSkyViewLUTView() const { return skyViewLUTView ? static_cast<vk::ImageView>(**skyViewLUTView) : vk::ImageView{}; }
+    vk::ImageView getRayleighIrradianceLUTView() const { return rayleighIrradianceLUTView ? static_cast<vk::ImageView>(**rayleighIrradianceLUTView) : vk::ImageView{}; }
+    vk::ImageView getMieIrradianceLUTView() const { return mieIrradianceLUTView ? static_cast<vk::ImageView>(**mieIrradianceLUTView) : vk::ImageView{}; }
+    vk::ImageView getCloudMapLUTView() const { return cloudMapLUTView ? static_cast<vk::ImageView>(**cloudMapLUTView) : vk::ImageView{}; }
+    vk::Sampler getLUTSampler() const { return lutSampler_ ? **lutSampler_ : vk::Sampler{}; }
 
     // Export LUTs as PNG files (for debugging/visualization)
     bool exportLUTsAsPNG(const std::string& outputDir);
@@ -182,8 +182,6 @@ private:
     bool createUniformBuffer();
     bool createComputePipelines();
 
-    void destroyLUTResources();
-
     // Transition irradiance LUTs for compute write
     void barrierIrradianceLUTsForCompute(vk::CommandBuffer cmd);
 
@@ -193,8 +191,8 @@ private:
     // Helper to export a 2D image to PNG
     bool exportImageToPNG(vk::Image image, VkFormat format, uint32_t width, uint32_t height, const std::string& filename);
 
-    vk::Device device = VK_NULL_HANDLE;
-    VmaAllocator allocator = VK_NULL_HANDLE;
+    vk::Device device{};
+    VmaAllocator allocator = nullptr;
     DescriptorManager::Pool* descriptorPool = nullptr;
     std::string shaderPath;
     uint32_t framesInFlight = 0;
@@ -230,41 +228,45 @@ private:
     // LUT sampler (bilinear filtering, clamp to edge)
     std::optional<vk::raii::Sampler> lutSampler_;
 
-    // Compute pipelines
-    vk::DescriptorSetLayout transmittanceDescriptorSetLayout = VK_NULL_HANDLE;
-    vk::DescriptorSetLayout multiScatterDescriptorSetLayout = VK_NULL_HANDLE;
-    vk::DescriptorSetLayout skyViewDescriptorSetLayout = VK_NULL_HANDLE;
-    vk::DescriptorSetLayout irradianceDescriptorSetLayout = VK_NULL_HANDLE;
-    vk::DescriptorSetLayout cloudMapDescriptorSetLayout = VK_NULL_HANDLE;
+    // Uniform buffer for one-time LUT computation (at startup); persistently mapped
+    ManagedBuffer staticUniformBuffer_;
+    void* staticUniformMapped_ = nullptr;
 
-    vk::PipelineLayout transmittancePipelineLayout = VK_NULL_HANDLE;
-    vk::PipelineLayout multiScatterPipelineLayout = VK_NULL_HANDLE;
-    vk::PipelineLayout skyViewPipelineLayout = VK_NULL_HANDLE;
-    vk::PipelineLayout irradiancePipelineLayout = VK_NULL_HANDLE;
-    vk::PipelineLayout cloudMapPipelineLayout = VK_NULL_HANDLE;
+    // Per-frame uniform buffers for per-frame updates (double-buffered); persistently mapped
+    std::vector<ManagedBuffer> skyViewUniformBuffers_;
+    std::vector<void*> skyViewUniformMapped_;
+    std::vector<ManagedBuffer> cloudMapUniformBuffers_;
+    std::vector<void*> cloudMapUniformMapped_;
 
-    vk::Pipeline transmittancePipeline = VK_NULL_HANDLE;
-    vk::Pipeline multiScatterPipeline = VK_NULL_HANDLE;
-    vk::Pipeline skyViewPipeline = VK_NULL_HANDLE;
-    vk::Pipeline irradiancePipeline = VK_NULL_HANDLE;
-    vk::Pipeline cloudMapPipeline = VK_NULL_HANDLE;
+    // Compute pipelines (RAII; declared after the resources they reference so
+    // reverse-order destruction releases pipelines before layouts and buffers)
+    std::optional<vk::raii::DescriptorSetLayout> transmittanceDescriptorSetLayout;
+    std::optional<vk::raii::DescriptorSetLayout> multiScatterDescriptorSetLayout;
+    std::optional<vk::raii::DescriptorSetLayout> skyViewDescriptorSetLayout;
+    std::optional<vk::raii::DescriptorSetLayout> irradianceDescriptorSetLayout;
+    std::optional<vk::raii::DescriptorSetLayout> cloudMapDescriptorSetLayout;
 
+    std::optional<vk::raii::PipelineLayout> transmittancePipelineLayout;
+    std::optional<vk::raii::PipelineLayout> multiScatterPipelineLayout;
+    std::optional<vk::raii::PipelineLayout> skyViewPipelineLayout;
+    std::optional<vk::raii::PipelineLayout> irradiancePipelineLayout;
+    std::optional<vk::raii::PipelineLayout> cloudMapPipelineLayout;
+
+    std::optional<vk::raii::Pipeline> transmittancePipeline;
+    std::optional<vk::raii::Pipeline> multiScatterPipeline;
+    std::optional<vk::raii::Pipeline> skyViewPipeline;
+    std::optional<vk::raii::Pipeline> irradiancePipeline;
+    std::optional<vk::raii::Pipeline> cloudMapPipeline;
+
+    // Descriptor sets are pool-owned (DescriptorManager::Pool) and released with the pool.
     // Single descriptor sets for one-time LUT computation (at startup)
-    vk::DescriptorSet transmittanceDescriptorSet = VK_NULL_HANDLE;
-    vk::DescriptorSet multiScatterDescriptorSet = VK_NULL_HANDLE;
-    vk::DescriptorSet irradianceDescriptorSet = VK_NULL_HANDLE;
+    vk::DescriptorSet transmittanceDescriptorSet{};
+    vk::DescriptorSet multiScatterDescriptorSet{};
+    vk::DescriptorSet irradianceDescriptorSet{};
 
     // Per-frame descriptor sets for per-frame LUT updates (double-buffered)
     std::vector<vk::DescriptorSet> skyViewDescriptorSets;
     std::vector<vk::DescriptorSet> cloudMapDescriptorSets;
-
-    // Uniform buffers for one-time LUT computation (at startup)
-    // Uses PerFrameBufferSet with frame count of 1 for consistency
-    BufferUtils::PerFrameBufferSet staticUniformBuffers;
-
-    // Per-frame uniform buffers for per-frame updates (double-buffered)
-    BufferUtils::PerFrameBufferSet skyViewUniformBuffers;
-    BufferUtils::PerFrameBufferSet cloudMapUniformBuffers;
 
     // Atmosphere parameters
     AtmosphereParams atmosphereParams;
@@ -297,5 +299,4 @@ private:
     static constexpr float CLOUD_PARAM_THRESHOLD = 0.001f;   // Cloud coverage/density change
 
     bool initInternal(const InitInfo& info);
-    void cleanup();
 };

@@ -13,6 +13,8 @@
 #include "TreeOptions.h"
 #include "ImpostorTypes.h"
 #include "DescriptorManager.h"
+#include "core/vulkan/VmaBuffer.h"
+#include "core/vulkan/VmaImage.h"
 
 class TreeImpostorAtlas {
 public:
@@ -33,6 +35,8 @@ public:
     };
 
     static std::unique_ptr<TreeImpostorAtlas> create(const InitInfo& info);
+    // Waits for the device, then member destruction releases everything:
+    // per-archetype framebuffer -> views -> depth image, array views -> array images, buffers, pipelines.
     ~TreeImpostorAtlas();
 
     // Non-copyable, non-movable
@@ -125,22 +129,19 @@ private:
     std::optional<vk::raii::DescriptorSetLayout> leafCaptureDescriptorSetLayout_;
 
     // Leaf quad mesh for capture
-    vk::Buffer leafQuadVertexBuffer_ = VK_NULL_HANDLE;
-    VmaAllocation leafQuadVertexAllocation_ = VK_NULL_HANDLE;
-    vk::Buffer leafQuadIndexBuffer_ = VK_NULL_HANDLE;
-    VmaAllocation leafQuadIndexAllocation_ = VK_NULL_HANDLE;
+    VmaBuffer leafQuadVertexBuffer_;
+    VmaBuffer leafQuadIndexBuffer_;
     uint32_t leafQuadIndexCount_ = 0;
 
     // Archetype data
     std::vector<TreeImpostorArchetype> archetypes_;
 
-    // Texture array for all archetypes (shared across all archetypes)
-    vk::Image octaAlbedoArrayImage_ = VK_NULL_HANDLE;
-    VmaAllocation octaAlbedoArrayAllocation_ = VK_NULL_HANDLE;
+    // Texture array for all archetypes (shared across all archetypes).
+    // Images are declared before their views so the views are destroyed first.
+    VmaImage octaAlbedoArrayImage_;
     std::optional<vk::raii::ImageView> octaAlbedoArrayView_;
 
-    vk::Image octaNormalArrayImage_ = VK_NULL_HANDLE;
-    VmaAllocation octaNormalArrayAllocation_ = VK_NULL_HANDLE;
+    VmaImage octaNormalArrayImage_;
     std::optional<vk::raii::ImageView> octaNormalArrayView_;
 
     uint32_t maxArchetypes_ = 16;  // Maximum layers in the array
@@ -155,14 +156,13 @@ private:
     TreeLODSettings lodSettings_;
 
     // Leaf instance buffer for capture (temporary)
-    vk::Buffer leafCaptureBuffer_ = VK_NULL_HANDLE;
-    VmaAllocation leafCaptureAllocation_ = VK_NULL_HANDLE;
+    VmaBuffer leafCaptureBuffer_;
     vk::DeviceSize leafCaptureBufferSize_ = 0;
 
-    // Per-archetype atlas (depth buffers and framebuffers)
+    // Per-archetype atlas (depth buffers and framebuffers). Reverse member
+    // destruction: framebuffer -> views -> depth image.
     struct AtlasTextures {
-        vk::Image depthImage = VK_NULL_HANDLE;
-        VmaAllocation depthAllocation = VK_NULL_HANDLE;
+        VmaImage depthImage;
         std::optional<vk::raii::ImageView> albedoView;   // View into octaAlbedoArrayImage_
         std::optional<vk::raii::ImageView> normalView;   // View into octaNormalArrayImage_
         std::optional<vk::raii::ImageView> depthView;

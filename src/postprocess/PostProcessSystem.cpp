@@ -10,6 +10,8 @@
 #include "CommandBufferUtils.h"
 #include "core/vulkan/BarrierHelpers.h"
 #include "core/vulkan/RenderPassBuilder.h"
+#include "core/vulkan/FramebufferBuilder.h"
+#include "core/vulkan/PipelineLayoutBuilder.h"
 #include "core/ImageBuilder.h"
 #include <SDL3/SDL.h>
 #include <array>
@@ -88,9 +90,7 @@ std::optional<PostProcessSystem::Bundle> PostProcessSystem::createWithDependenci
     };
 }
 
-PostProcessSystem::~PostProcessSystem() {
-    cleanup();
-}
+PostProcessSystem::~PostProcessSystem() = default;
 
 bool PostProcessSystem::initInternal(const InitInfo& info) {
     device = info.device;
@@ -125,43 +125,9 @@ bool PostProcessSystem::initInternal(const InitInfo& info) {
     return true;
 }
 
-void PostProcessSystem::cleanup() {
-    if (device == VK_NULL_HANDLE) return;  // Not initialized
-
-    destroyHDRResources();
-    destroyHistogramResources();
-
-    BufferUtils::destroyBuffers(allocator, uniformBuffers);
-
-    vk::Device vkDevice(device);
-    for (auto& pipeline : compositePipelines) {
-        if (pipeline != VK_NULL_HANDLE) {
-            vkDevice.destroyPipeline(pipeline);
-            pipeline = VK_NULL_HANDLE;
-        }
-    }
-    if (compositePipelineLayout != VK_NULL_HANDLE) {
-        vkDevice.destroyPipelineLayout(compositePipelineLayout);
-        compositePipelineLayout = VK_NULL_HANDLE;
-    }
-    if (compositeDescriptorSetLayout != VK_NULL_HANDLE) {
-        vkDevice.destroyDescriptorSetLayout(compositeDescriptorSetLayout);
-        compositeDescriptorSetLayout = VK_NULL_HANDLE;
-    }
-
-    hdrSampler_.reset();
-    // Render pass - handled by RAII hdrRenderPass_ member
-    hdrRenderPass_.reset();
-    hdrRenderPass = VK_NULL_HANDLE;
-}
-
-void PostProcessSystem::destroyHDRResources() {
-    vk::Device vkDevice(device);
-    if (hdrFramebuffer != VK_NULL_HANDLE) {
-        vkDevice.destroyFramebuffer(hdrFramebuffer);
-        hdrFramebuffer = VK_NULL_HANDLE;
-    }
-    // RAII: views before images
+void PostProcessSystem::releaseHDRTarget() {
+    // Framebuffer references the views, so it goes first; then views before images
+    hdrFramebuffer_.reset();
     hdrColorView.reset();
     hdrColorImage.reset();
     hdrDepthView.reset();
@@ -170,7 +136,7 @@ void PostProcessSystem::destroyHDRResources() {
 
 void PostProcessSystem::resize(VkExtent2D newExtent) {
     extent = newExtent;
-    destroyHDRResources();
+    releaseHDRTarget();
     createHDRRenderTarget();
     createHDRFramebuffer();
 
@@ -186,7 +152,7 @@ void PostProcessSystem::resize(VkExtent2D newExtent) {
             .update();
 
         // Separate write for binding 6 (god rays placeholder) to avoid vector reallocation
-        if (godRaysView_ != VK_NULL_HANDLE && godRaysSampler_ != VK_NULL_HANDLE) {
+        if (godRaysView_ && godRaysSampler_) {
             DescriptorManager::SetWriter(device, compositeDescriptorSets[i])
                 .writeImage(6, godRaysView_, godRaysSampler_)
                 .update();
@@ -199,32 +165,24 @@ void PostProcessSystem::resize(VkExtent2D newExtent) {
 }
 
 bool PostProcessSystem::createHDRRenderTarget() {
-    // Create HDR color image
-    {
-        vk::ImageView rawView = VK_NULL_HANDLE;
-        if (!ImageBuilder(allocator)
-                .setExtent(extent.width, extent.height)
-                .setFormat(HDR_FORMAT)
-                .setUsage(VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_STORAGE_BIT)
-                .build(device, hdrColorImage, rawView)) {
-            SDL_Log("Failed to create HDR color image");
-            return false;
-        }
-        hdrColorView.emplace(*raiiDevice_, rawView);
+    // Create HDR color image (image + raii view)
+    if (!ImageBuilder(allocator)
+            .setExtent(extent.width, extent.height)
+            .setFormat(HDR_FORMAT)
+            .setUsage(VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_STORAGE_BIT)
+            .build(*raiiDevice_, hdrColorImage, hdrColorView)) {
+        SDL_Log("Failed to create HDR color image");
+        return false;
     }
 
-    // Create HDR depth image
-    {
-        vk::ImageView rawView = VK_NULL_HANDLE;
-        if (!ImageBuilder(allocator)
-                .setExtent(extent.width, extent.height)
-                .setFormat(DEPTH_FORMAT)
-                .setUsage(VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT)
-                .build(device, hdrDepthImage, rawView, VK_IMAGE_ASPECT_DEPTH_BIT)) {
-            SDL_Log("Failed to create HDR depth image");
-            return false;
-        }
-        hdrDepthView.emplace(*raiiDevice_, rawView);
+    // Create HDR depth image (image + raii view)
+    if (!ImageBuilder(allocator)
+            .setExtent(extent.width, extent.height)
+            .setFormat(DEPTH_FORMAT)
+            .setUsage(VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT)
+            .build(*raiiDevice_, hdrDepthImage, hdrDepthView, vk::ImageAspectFlagBits::eDepth)) {
+        SDL_Log("Failed to create HDR depth image");
+        return false;
     }
 
     return true;
@@ -244,27 +202,20 @@ bool PostProcessSystem::createHDRRenderPass() {
         return false;
     }
     hdrRenderPass_ = std::move(*renderPassOpt);
-    hdrRenderPass = **hdrRenderPass_;
 
     return true;
 }
 
 bool PostProcessSystem::createHDRFramebuffer() {
-    std::array<vk::ImageView, 2> attachments = {**hdrColorView, **hdrDepthView};
-
-    auto framebufferInfo = vk::FramebufferCreateInfo{}
-        .setRenderPass(hdrRenderPass)
-        .setAttachments(attachments)
-        .setWidth(extent.width)
-        .setHeight(extent.height)
-        .setLayers(1);
-
-    auto result = vk::Device(device).createFramebuffer(framebufferInfo);
-    if (!result) {
+    if (!FramebufferBuilder()
+            .renderPass(*hdrRenderPass_)
+            .addAttachment(hdrColorView)
+            .addAttachment(hdrDepthView)
+            .extent(extent.width, extent.height)
+            .buildInto(*raiiDevice_, hdrFramebuffer_)) {
         SDL_Log("Failed to create HDR framebuffer");
         return false;
     }
-    hdrFramebuffer = result;
 
     return true;
 }
@@ -280,7 +231,7 @@ bool PostProcessSystem::createSampler() {
 }
 
 bool PostProcessSystem::createDescriptorSetLayout() {
-    compositeDescriptorSetLayout = DescriptorManager::LayoutBuilder(device)
+    vk::DescriptorSetLayout rawLayout = DescriptorManager::LayoutBuilder(device)
         .addCombinedImageSampler(VK_SHADER_STAGE_FRAGMENT_BIT)  // 0: HDR color
         .addUniformBuffer(VK_SHADER_STAGE_FRAGMENT_BIT)         // 1: uniforms
         .addCombinedImageSampler(VK_SHADER_STAGE_FRAGMENT_BIT)  // 2: depth
@@ -290,28 +241,30 @@ bool PostProcessSystem::createDescriptorSetLayout() {
         .addCombinedImageSampler(VK_SHADER_STAGE_FRAGMENT_BIT)  // 6: god rays (quarter-res)
         .build();
 
-    if (compositeDescriptorSetLayout == VK_NULL_HANDLE) {
+    if (!rawLayout) {
         SDL_Log("Failed to create composite descriptor set layout");
         return false;
     }
+    compositeDescriptorSetLayout_.emplace(*raiiDevice_, rawLayout);
 
     return true;
 }
 
 bool PostProcessSystem::createUniformBuffers() {
-    if (!BufferUtils::PerFrameBufferBuilder()
-            .setAllocator(allocator)
-            .setFrameCount(framesInFlight)
-            .setSize(sizeof(PostProcessUniforms))
-            .setUsage(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT)
-            .build(uniformBuffers)) {
+    if (!PerFrameOwnedBuffers::build(allocator,
+            BufferUtils::PerFrameBufferBuilder()
+                .setAllocator(allocator)
+                .setFrameCount(framesInFlight)
+                .setSize(sizeof(PostProcessUniforms))
+                .setUsage(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT),
+            uniformBuffers)) {
         SDL_Log("Failed to create post-process uniform buffers");
         return false;
     }
 
     // Initialize with defaults
     for (size_t i = 0; i < framesInFlight; i++) {
-        PostProcessUniforms* ubo = static_cast<PostProcessUniforms*>(uniformBuffers.mappedPointers[i]);
+        PostProcessUniforms* ubo = static_cast<PostProcessUniforms*>(uniformBuffers.mapped[i]);
         ubo->exposure = 0.0f;
         ubo->bloomThreshold = 1.0f;
         ubo->bloomIntensity = 0.5f;
@@ -323,7 +276,7 @@ bool PostProcessSystem::createUniformBuffers() {
 
 bool PostProcessSystem::createDescriptorSets() {
     // Allocate composite descriptor sets using managed pool
-    compositeDescriptorSets = descriptorPool->allocate(compositeDescriptorSetLayout, framesInFlight);
+    compositeDescriptorSets = descriptorPool->allocate(**compositeDescriptorSetLayout_, framesInFlight);
     if (compositeDescriptorSets.size() != framesInFlight) {
         SDL_Log("Failed to allocate composite descriptor sets");
         return false;
@@ -333,28 +286,28 @@ bool PostProcessSystem::createDescriptorSets() {
         DescriptorManager::SetWriter writer(device, compositeDescriptorSets[i]);
         writer
             .writeImage(0, **hdrColorView, **hdrSampler_)
-            .writeBuffer(1, uniformBuffers.buffers[i], 0, sizeof(PostProcessUniforms))
+            .writeBuffer(1, uniformBuffers.buffer(i), 0, sizeof(PostProcessUniforms))
             .writeImage(2, **hdrDepthView, **hdrSampler_, VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL);
 
         // Write placeholder for optional textures (use HDR color as fallback)
         // These will be replaced when the actual systems are connected
-        if (froxelVolumeView != VK_NULL_HANDLE && froxelSampler != VK_NULL_HANDLE) {
+        if (froxelVolumeView && froxelSampler) {
             writer.writeImage(3, froxelVolumeView, froxelSampler);
         } else {
             writer.writeImage(3, **hdrColorView, **hdrSampler_);  // Placeholder for froxel
         }
-        if (bloomView != VK_NULL_HANDLE && bloomSampler != VK_NULL_HANDLE) {
+        if (bloomView && bloomSampler) {
             writer.writeImage(4, bloomView, bloomSampler);
         } else {
             writer.writeImage(4, **hdrColorView, **hdrSampler_);  // Placeholder for bloom
         }
         // Note: bilateral grid (binding 5) is sampler3D - must be set by setBilateralGrid()
         // with a valid 3D texture before use. Skip placeholder as 2D/3D mismatch causes errors.
-        if (bilateralGridView != VK_NULL_HANDLE && bilateralGridSampler != VK_NULL_HANDLE) {
+        if (bilateralGridView && bilateralGridSampler) {
             writer.writeImage(5, bilateralGridView, bilateralGridSampler);
         }
         // God rays (binding 6) is sampler2D - use HDR color as safe placeholder
-        if (godRaysView_ != VK_NULL_HANDLE && godRaysSampler_ != VK_NULL_HANDLE) {
+        if (godRaysView_ && godRaysSampler_) {
             writer.writeImage(6, godRaysView_, godRaysSampler_);
         } else {
             writer.writeImage(6, **hdrColorView, **hdrSampler_);  // Placeholder for god rays (black = no rays)
@@ -375,20 +328,18 @@ bool PostProcessSystem::createCompositePipeline() {
         return false;
     }
 
-    auto vertShaderModule = ShaderLoader::createShaderModule(device, *vertShaderCode);
-    auto fragShaderModule = ShaderLoader::createShaderModule(device, *fragShaderCode);
+    // RAII shader modules: only needed until the pipelines are built
+    auto vertShaderModule = ShaderLoader::createShaderModule(*raiiDevice_, *vertShaderCode);
+    auto fragShaderModule = ShaderLoader::createShaderModule(*raiiDevice_, *fragShaderCode);
 
     if (!vertShaderModule || !fragShaderModule) {
         SDL_Log("Failed to create post-process shader modules");
-        vk::Device vkDevice(device);
-        if (vertShaderModule) vkDevice.destroyShaderModule(*vertShaderModule);
-        if (fragShaderModule) vkDevice.destroyShaderModule(*fragShaderModule);
         return false;
     }
 
     auto vertShaderStageInfo = vk::PipelineShaderStageCreateInfo{}
         .setStage(vk::ShaderStageFlagBits::eVertex)
-        .setModule(*vertShaderModule)
+        .setModule(**vertShaderModule)
         .setPName("main");
 
     // Specialization constant for god ray sample count
@@ -403,7 +354,7 @@ bool PostProcessSystem::createCompositePipeline() {
 
     auto fragShaderStageInfo = vk::PipelineShaderStageCreateInfo{}
         .setStage(vk::ShaderStageFlagBits::eFragment)
-        .setModule(*fragShaderModule)
+        .setModule(**fragShaderModule)
         .setPName("main");
 
     std::array<vk::PipelineShaderStageCreateInfo, 2> shaderStages = {vertShaderStageInfo, fragShaderStageInfo};
@@ -452,12 +403,10 @@ bool PostProcessSystem::createCompositePipeline() {
     auto dynamicState = vk::PipelineDynamicStateCreateInfo{}
         .setDynamicStates(dynamicStates);
 
-    compositePipelineLayout = DescriptorManager::createPipelineLayout(device, compositeDescriptorSetLayout);
-    if (compositePipelineLayout == VK_NULL_HANDLE) {
+    if (!PipelineLayoutBuilder(*raiiDevice_)
+            .addDescriptorSetLayout(**compositeDescriptorSetLayout_)
+            .buildInto(compositePipelineLayout_)) {
         SDL_Log("Failed to create composite pipeline layout");
-        vk::Device vkDevice(device);
-        vkDevice.destroyShaderModule(*vertShaderModule);
-        vkDevice.destroyShaderModule(*fragShaderModule);
         return false;
     }
 
@@ -471,11 +420,9 @@ bool PostProcessSystem::createCompositePipeline() {
         .setPDepthStencilState(&depthStencil)
         .setPColorBlendState(&colorBlending)
         .setPDynamicState(&dynamicState)
-        .setLayout(compositePipelineLayout)
+        .setLayout(**compositePipelineLayout_)
         .setRenderPass(outputRenderPass)
         .setSubpass(0);
-
-    vk::Device vkDevice(device);
 
     // Create pipeline variants for each god ray quality level
     for (int i = 0; i < 3; i++) {
@@ -488,19 +435,14 @@ bool PostProcessSystem::createCompositePipeline() {
         shaderStages[1].setPSpecializationInfo(&specInfo);
         pipelineInfo.setStages(shaderStages);
 
-        auto result = vkDevice.createGraphicsPipeline(nullptr, pipelineInfo);
-        if (result.result != vk::Result::eSuccess) {
+        try {
+            compositePipelines_[i].emplace(*raiiDevice_, nullptr, pipelineInfo);
+        } catch (const vk::SystemError&) {
             SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create composite graphics pipeline variant %d", i);
-            vkDevice.destroyShaderModule(*vertShaderModule);
-            vkDevice.destroyShaderModule(*fragShaderModule);
             return false;
         }
-        compositePipelines[i] = result.value;
         SDL_Log("Created post-process pipeline variant %d (god ray samples: %d)", i, sampleCounts[i]);
     }
-
-    vkDevice.destroyShaderModule(*vertShaderModule);
-    vkDevice.destroyShaderModule(*fragShaderModule);
 
     return true;
 }
@@ -516,18 +458,18 @@ void PostProcessSystem::recordPostProcess(vk::CommandBuffer cmd, uint32_t frameI
     uint32_t readFrameIndex = (frameIndex + framesInFlight - 1) % framesInFlight;
     float computedExposure = manualExposure;
 
-    if (autoExposureEnabled && exposureBuffers.mappedPointers.size() > readFrameIndex) {
+    if (autoExposureEnabled && exposureBuffers.mapped.size() > readFrameIndex) {
         // Invalidate to ensure CPU sees GPU writes
-        vmaInvalidateAllocation(allocator, exposureBuffers.allocations[readFrameIndex], 0, sizeof(ExposureData));
+        vmaInvalidateAllocation(allocator, exposureBuffers.allocation(readFrameIndex), 0, sizeof(ExposureData));
 
-        ExposureData* exposureData = static_cast<ExposureData*>(exposureBuffers.mappedPointers[readFrameIndex]);
+        ExposureData* exposureData = static_cast<ExposureData*>(exposureBuffers.mapped[readFrameIndex]);
         computedExposure = exposureData->adaptedExposure;
         currentExposure = computedExposure;
         adaptedLuminance = exposureData->averageLuminance;
     }
 
     // Update uniform buffer
-    PostProcessUniforms* ubo = static_cast<PostProcessUniforms*>(uniformBuffers.mappedPointers[frameIndex]);
+    PostProcessUniforms* ubo = static_cast<PostProcessUniforms*>(uniformBuffers.mapped[frameIndex]);
     ubo->exposure = autoExposureEnabled ? computedExposure : manualExposure;
     ubo->autoExposure = 0.0f;  // Disable fragment shader auto-exposure (now using compute)
     ubo->previousExposure = lastAutoExposure;
@@ -589,9 +531,9 @@ void PostProcessSystem::recordPostProcess(vk::CommandBuffer cmd, uint32_t frameI
 
         // Select pipeline variant based on god ray quality setting
         vk::CommandBuffer vkCmd(cmd);
-        vk::Pipeline selectedPipeline = compositePipelines[static_cast<int>(godRayQuality)];
+        vk::Pipeline selectedPipeline = **compositePipelines_[static_cast<int>(godRayQuality)];
         vkCmd.bindPipeline(vk::PipelineBindPoint::eGraphics, selectedPipeline);
-        vkCmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, compositePipelineLayout,
+        vkCmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, **compositePipelineLayout_,
                                  0, vk::DescriptorSet(compositeDescriptorSets[frameIndex]), {});
 
         vk::Viewport viewport{
@@ -631,37 +573,39 @@ bool PostProcessSystem::createHistogramResources() {
     }
 
     // Create per-frame exposure buffers (readable from CPU, writable from GPU)
-    if (!BufferUtils::PerFrameBufferBuilder()
-            .setAllocator(allocator)
-            .setFrameCount(framesInFlight)
-            .setSize(sizeof(ExposureData))
-            .setUsage(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT)
-            .setAllocationFlags(VMA_ALLOCATION_CREATE_HOST_ACCESS_RANDOM_BIT |
-                                VMA_ALLOCATION_CREATE_MAPPED_BIT)
-            .build(exposureBuffers)) {
+    if (!PerFrameOwnedBuffers::build(allocator,
+            BufferUtils::PerFrameBufferBuilder()
+                .setAllocator(allocator)
+                .setFrameCount(framesInFlight)
+                .setSize(sizeof(ExposureData))
+                .setUsage(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT)
+                .setAllocationFlags(VMA_ALLOCATION_CREATE_HOST_ACCESS_RANDOM_BIT |
+                                    VMA_ALLOCATION_CREATE_MAPPED_BIT),
+            exposureBuffers)) {
         SDL_Log("Failed to create exposure buffers");
         return false;
     }
 
     // Initialize exposure data
     for (uint32_t i = 0; i < framesInFlight; i++) {
-        ExposureData* data = static_cast<ExposureData*>(exposureBuffers.mappedPointers[i]);
+        ExposureData* data = static_cast<ExposureData*>(exposureBuffers.mapped[i]);
         data->averageLuminance = 0.18f;
         data->exposureValue = 0.0f;
         data->previousExposure = 0.0f;
         data->adaptedExposure = 0.0f;
 
         // Flush to ensure initial values are visible to GPU
-        vmaFlushAllocation(allocator, exposureBuffers.allocations[i], 0, sizeof(ExposureData));
+        vmaFlushAllocation(allocator, exposureBuffers.allocation(i), 0, sizeof(ExposureData));
     }
 
     // Create per-frame histogram params buffers
-    if (!BufferUtils::PerFrameBufferBuilder()
-            .setAllocator(allocator)
-            .setFrameCount(framesInFlight)
-            .setSize(sizeof(HistogramReduceParams))
-            .setUsage(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT)
-            .build(histogramParamsBuffers)) {
+    if (!PerFrameOwnedBuffers::build(allocator,
+            BufferUtils::PerFrameBufferBuilder()
+                .setAllocator(allocator)
+                .setFrameCount(framesInFlight)
+                .setSize(sizeof(HistogramReduceParams))
+                .setUsage(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT),
+            histogramParamsBuffers)) {
         SDL_Log("Failed to create histogram params buffers");
         return false;
     }
@@ -675,27 +619,29 @@ bool PostProcessSystem::createHistogramPipelines() {
     // ============================================
     {
         // Descriptor set layout for histogram build
-        histogramBuildDescLayout = DescriptorManager::LayoutBuilder(device)
+        vk::DescriptorSetLayout rawLayout = DescriptorManager::LayoutBuilder(device)
             .addStorageImage(VK_SHADER_STAGE_COMPUTE_BIT)   // 0: HDR color
             .addStorageBuffer(VK_SHADER_STAGE_COMPUTE_BIT)  // 1: histogram
             .addUniformBuffer(VK_SHADER_STAGE_COMPUTE_BIT)  // 2: params
             .build();
 
-        if (histogramBuildDescLayout == VK_NULL_HANDLE) {
+        if (!rawLayout) {
             SDL_Log("Failed to create histogram build descriptor set layout");
             return false;
         }
+        histogramBuildDescLayout_.emplace(*raiiDevice_, rawLayout);
 
-        histogramBuildPipelineLayout = DescriptorManager::createPipelineLayout(device, histogramBuildDescLayout);
-        if (histogramBuildPipelineLayout == VK_NULL_HANDLE) {
+        if (!PipelineLayoutBuilder(*raiiDevice_)
+                .addDescriptorSetLayout(**histogramBuildDescLayout_)
+                .buildInto(histogramBuildPipelineLayout_)) {
             SDL_Log("Failed to create histogram build pipeline layout");
             return false;
         }
 
-        ComputePipelineBuilder builder(device);
-        if (!builder.setShader(shaderPath + "/histogram_build.comp.spv")
-                    .setPipelineLayout(histogramBuildPipelineLayout)
-                    .buildRaw(histogramBuildPipeline)) {
+        if (!ComputePipelineBuilder(*raiiDevice_)
+                .setShader(shaderPath + "/histogram_build.comp.spv")
+                .setPipelineLayout(**histogramBuildPipelineLayout_)
+                .buildInto(histogramBuildPipeline_)) {
             SDL_Log("Failed to create histogram build pipeline");
             return false;
         }
@@ -706,27 +652,29 @@ bool PostProcessSystem::createHistogramPipelines() {
     // ============================================
     {
         // Descriptor set layout for histogram reduce
-        histogramReduceDescLayout = DescriptorManager::LayoutBuilder(device)
+        vk::DescriptorSetLayout rawLayout = DescriptorManager::LayoutBuilder(device)
             .addStorageBuffer(VK_SHADER_STAGE_COMPUTE_BIT)  // 0: histogram
             .addStorageBuffer(VK_SHADER_STAGE_COMPUTE_BIT)  // 1: exposure
             .addUniformBuffer(VK_SHADER_STAGE_COMPUTE_BIT)  // 2: params
             .build();
 
-        if (histogramReduceDescLayout == VK_NULL_HANDLE) {
+        if (!rawLayout) {
             SDL_Log("Failed to create histogram reduce descriptor set layout");
             return false;
         }
+        histogramReduceDescLayout_.emplace(*raiiDevice_, rawLayout);
 
-        histogramReducePipelineLayout = DescriptorManager::createPipelineLayout(device, histogramReduceDescLayout);
-        if (histogramReducePipelineLayout == VK_NULL_HANDLE) {
+        if (!PipelineLayoutBuilder(*raiiDevice_)
+                .addDescriptorSetLayout(**histogramReduceDescLayout_)
+                .buildInto(histogramReducePipelineLayout_)) {
             SDL_Log("Failed to create histogram reduce pipeline layout");
             return false;
         }
 
-        ComputePipelineBuilder builder(device);
-        if (!builder.setShader(shaderPath + "/histogram_reduce.comp.spv")
-                    .setPipelineLayout(histogramReducePipelineLayout)
-                    .buildRaw(histogramReducePipeline)) {
+        if (!ComputePipelineBuilder(*raiiDevice_)
+                .setShader(shaderPath + "/histogram_reduce.comp.spv")
+                .setPipelineLayout(**histogramReducePipelineLayout_)
+                .buildInto(histogramReducePipeline_)) {
             SDL_Log("Failed to create histogram reduce pipeline");
             return false;
         }
@@ -737,14 +685,14 @@ bool PostProcessSystem::createHistogramPipelines() {
 
 bool PostProcessSystem::createHistogramDescriptorSets() {
     // Allocate histogram build descriptor sets using managed pool
-    histogramBuildDescSets = descriptorPool->allocate(histogramBuildDescLayout, framesInFlight);
+    histogramBuildDescSets = descriptorPool->allocate(**histogramBuildDescLayout_, framesInFlight);
     if (histogramBuildDescSets.size() != framesInFlight) {
         SDL_Log("Failed to allocate histogram build descriptor sets");
         return false;
     }
 
     // Allocate histogram reduce descriptor sets using managed pool
-    histogramReduceDescSets = descriptorPool->allocate(histogramReduceDescLayout, framesInFlight);
+    histogramReduceDescSets = descriptorPool->allocate(**histogramReduceDescLayout_, framesInFlight);
     if (histogramReduceDescSets.size() != framesInFlight) {
         SDL_Log("Failed to allocate histogram reduce descriptor sets");
         return false;
@@ -757,55 +705,20 @@ bool PostProcessSystem::createHistogramDescriptorSets() {
             .writeStorageImage(0, **hdrColorView)
             .writeBuffer(1, histogramBuffer.get(), 0, HISTOGRAM_BINS * sizeof(uint32_t),
                          VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
-            .writeBuffer(2, histogramParamsBuffers.buffers[i], 0, sizeof(HistogramParams))
+            .writeBuffer(2, histogramParamsBuffers.buffer(i), 0, sizeof(HistogramParams))
             .update();
 
         // Reduce descriptor set
         DescriptorManager::SetWriter(device, histogramReduceDescSets[i])
             .writeBuffer(0, histogramBuffer.get(), 0, HISTOGRAM_BINS * sizeof(uint32_t),
                          VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
-            .writeBuffer(1, exposureBuffers.buffers[i], 0, sizeof(ExposureData),
+            .writeBuffer(1, exposureBuffers.buffer(i), 0, sizeof(ExposureData),
                          VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
-            .writeBuffer(2, histogramParamsBuffers.buffers[i], 0, sizeof(HistogramReduceParams))
+            .writeBuffer(2, histogramParamsBuffers.buffer(i), 0, sizeof(HistogramReduceParams))
             .update();
     }
 
     return true;
-}
-
-void PostProcessSystem::destroyHistogramResources() {
-    histogramBuffer.reset();
-
-    BufferUtils::destroyBuffers(allocator, exposureBuffers);
-    BufferUtils::destroyBuffers(allocator, histogramParamsBuffers);
-
-    vk::Device vkDevice(device);
-    if (histogramBuildPipeline != VK_NULL_HANDLE) {
-        vkDevice.destroyPipeline(histogramBuildPipeline);
-        histogramBuildPipeline = VK_NULL_HANDLE;
-    }
-    if (histogramReducePipeline != VK_NULL_HANDLE) {
-        vkDevice.destroyPipeline(histogramReducePipeline);
-        histogramReducePipeline = VK_NULL_HANDLE;
-    }
-
-    if (histogramBuildPipelineLayout != VK_NULL_HANDLE) {
-        vkDevice.destroyPipelineLayout(histogramBuildPipelineLayout);
-        histogramBuildPipelineLayout = VK_NULL_HANDLE;
-    }
-    if (histogramReducePipelineLayout != VK_NULL_HANDLE) {
-        vkDevice.destroyPipelineLayout(histogramReducePipelineLayout);
-        histogramReducePipelineLayout = VK_NULL_HANDLE;
-    }
-
-    if (histogramBuildDescLayout != VK_NULL_HANDLE) {
-        vkDevice.destroyDescriptorSetLayout(histogramBuildDescLayout);
-        histogramBuildDescLayout = VK_NULL_HANDLE;
-    }
-    if (histogramReduceDescLayout != VK_NULL_HANDLE) {
-        vkDevice.destroyDescriptorSetLayout(histogramReduceDescLayout);
-        histogramReduceDescLayout = VK_NULL_HANDLE;
-    }
 }
 
 void PostProcessSystem::recordHistogramCompute(vk::CommandBuffer cmd, uint32_t frameIndex, float deltaTime) {
@@ -814,7 +727,7 @@ void PostProcessSystem::recordHistogramCompute(vk::CommandBuffer cmd, uint32_t f
     // Update histogram parameters (HistogramReduceParams is a superset of HistogramBuildParams)
     // Both shaders read from the same buffer, so we only need to write once
     float logRange = MAX_LOG_LUMINANCE - MIN_LOG_LUMINANCE;
-    HistogramReduceParams* params = static_cast<HistogramReduceParams*>(histogramParamsBuffers.mappedPointers[frameIndex]);
+    HistogramReduceParams* params = static_cast<HistogramReduceParams*>(histogramParamsBuffers.mapped[frameIndex]);
     params->minLogLum = MIN_LOG_LUMINANCE;
     params->maxLogLum = MAX_LOG_LUMINANCE;
     params->invLogLumRange = 1.0f / logRange;
@@ -830,7 +743,7 @@ void PostProcessSystem::recordHistogramCompute(vk::CommandBuffer cmd, uint32_t f
 
     // Flush mapped memory to ensure CPU writes are visible to GPU
     // (required if memory is not HOST_COHERENT)
-    vmaFlushAllocation(allocator, histogramParamsBuffers.allocations[frameIndex], 0, sizeof(HistogramReduceParams));
+    vmaFlushAllocation(allocator, histogramParamsBuffers.allocation(frameIndex), 0, sizeof(HistogramReduceParams));
 
     vk::CommandBuffer vkCmd(cmd);
 
@@ -864,8 +777,8 @@ void PostProcessSystem::recordHistogramCompute(vk::CommandBuffer cmd, uint32_t f
     BarrierHelpers::fillBufferToCompute(vkCmd);
 
     // Dispatch histogram build
-    vkCmd.bindPipeline(vk::PipelineBindPoint::eCompute, histogramBuildPipeline);
-    vkCmd.bindDescriptorSets(vk::PipelineBindPoint::eCompute, histogramBuildPipelineLayout,
+    vkCmd.bindPipeline(vk::PipelineBindPoint::eCompute, **histogramBuildPipeline_);
+    vkCmd.bindDescriptorSets(vk::PipelineBindPoint::eCompute, **histogramBuildPipelineLayout_,
                              0, vk::DescriptorSet(histogramBuildDescSets[frameIndex]), {});
 
     uint32_t groupsX = (extent.width + 15) / 16;
@@ -876,8 +789,8 @@ void PostProcessSystem::recordHistogramCompute(vk::CommandBuffer cmd, uint32_t f
     BarrierHelpers::bufferComputeToCompute(vkCmd, histogramBuffer.get());
 
     // Dispatch histogram reduce (single workgroup of 256 threads)
-    vkCmd.bindPipeline(vk::PipelineBindPoint::eCompute, histogramReducePipeline);
-    vkCmd.bindDescriptorSets(vk::PipelineBindPoint::eCompute, histogramReducePipelineLayout,
+    vkCmd.bindPipeline(vk::PipelineBindPoint::eCompute, **histogramReducePipeline_);
+    vkCmd.bindDescriptorSets(vk::PipelineBindPoint::eCompute, **histogramReducePipelineLayout_,
                              0, vk::DescriptorSet(histogramReduceDescSets[frameIndex]), {});
     vkCmd.dispatch(1, 1, 1);
 
@@ -889,7 +802,7 @@ void PostProcessSystem::recordHistogramCompute(vk::CommandBuffer cmd, uint32_t f
             .setDstAccessMask(vk::AccessFlagBits::eHostRead)
             .setSrcQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
             .setDstQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
-            .setBuffer(exposureBuffers.buffers[frameIndex])
+            .setBuffer(exposureBuffers.buffer(frameIndex))
             .setOffset(0)
             .setSize(sizeof(ExposureData));
 

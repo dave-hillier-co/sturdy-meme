@@ -17,6 +17,7 @@
 #include "TreeCollision.h"
 #include "Mesh.h"
 #include "Texture.h"
+#include "core/vulkan/VmaBuffer.h"
 #include "scene/Transform.h"
 #include "ecs/World.h"
 #include "ecs/Components.h"
@@ -119,7 +120,8 @@ public:
      */
     static std::unique_ptr<TreeSystem> create(const InitInfo& info);
 
-
+    // Destroys this system's ECS entities; GPU resources (meshes, textures, the
+    // leaf instance SSBO) are RAII members released by member destruction.
     ~TreeSystem();
 
     // Non-copyable, non-movable
@@ -235,7 +237,7 @@ public:
     void regenerateTree(uint32_t index);
 
     // Leaf instancing accessors (for TreeRenderer)
-    vk::Buffer getLeafInstanceBuffer() const { return leafInstanceBuffer_; }
+    vk::Buffer getLeafInstanceBuffer() const { return leafInstanceBuffer_.get(); }
     vk::DeviceSize getLeafInstanceBufferSize() const { return leafInstanceBufferSize_; }
     const Mesh& getSharedLeafQuadMesh() const { return sharedLeafQuadMesh_; }
     const std::vector<LeafDrawInfo>& getLeafDrawInfo() const { return leafDrawInfoPerTree_; }
@@ -250,7 +252,6 @@ public:
 
 private:
     bool initInternal(const InitInfo& info);
-    void cleanup();
     bool loadTextures(const InitInfo& info);
     bool generateTreeMesh(const TreeOptions& options, Mesh& branchMesh, std::vector<LeafInstanceGPU>& leafInstances,
                           TreeMeshData* meshDataOut = nullptr);
@@ -305,9 +306,8 @@ private:
     // Per-tree leaf instance offsets and counts for instanced drawing
     std::vector<LeafDrawInfo> leafDrawInfoPerTree_;
 
-    // Leaf instance SSBO (storage buffer for GPU)
-    vk::Buffer leafInstanceBuffer_ = VK_NULL_HANDLE;
-    VmaAllocation leafInstanceAllocation_ = VK_NULL_HANDLE;
+    // Leaf instance SSBO (storage buffer for GPU, persistently mapped at creation)
+    VmaBuffer leafInstanceBuffer_;
     vk::DeviceSize leafInstanceBufferSize_ = 0;
 
     // Raw mesh data (stored for collision generation)

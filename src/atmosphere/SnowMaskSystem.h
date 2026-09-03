@@ -9,9 +9,9 @@
 #include <memory>
 #include <optional>
 
-#include "PerFrameBuffer.h"
-#include "SystemLifecycleHelper.h"
+#include "SystemLifecycleHelper.h"  // InitInfo type only; resources are RAII members
 #include "EnvironmentSettings.h"
+#include "core/vulkan/VmaBuffer.h"
 #include "core/vulkan/VmaImage.h"
 
 // Forward declarations
@@ -63,7 +63,7 @@ public:
         vk::RenderPass hdrRenderPass
     );
 
-    ~SnowMaskSystem();
+    ~SnowMaskSystem() = default;
 
     // Non-copyable, non-movable
     SnowMaskSystem(const SnowMaskSystem&) = delete;
@@ -83,8 +83,8 @@ public:
     void recordCompute(vk::CommandBuffer cmd, uint32_t frameIndex);
 
     // Accessors for other systems to bind the snow mask texture
-    vk::ImageView getSnowMaskView() const { return snowMaskView ? static_cast<vk::ImageView>(**snowMaskView) : VK_NULL_HANDLE; }
-    vk::Sampler getSnowMaskSampler() const { return snowMaskSampler_ ? **snowMaskSampler_ : VK_NULL_HANDLE; }
+    vk::ImageView getSnowMaskView() const { return snowMaskView ? static_cast<vk::ImageView>(**snowMaskView) : vk::ImageView{}; }
+    vk::Sampler getSnowMaskSampler() const { return snowMaskSampler_ ? **snowMaskSampler_ : vk::Sampler{}; }
 
     // Get mask parameters for shader uniforms
     glm::vec2 getMaskOrigin() const { return maskOrigin; }
@@ -102,33 +102,44 @@ private:
     bool createComputeDescriptorSetLayout();
     bool createComputePipeline();
     bool createDescriptorSets();
-    void destroyBuffers(VmaAllocator allocator);
 
-    vk::Device getDevice() const { return lifecycle.getDevice(); }
-    VmaAllocator getAllocator() const { return lifecycle.getAllocator(); }
-    DescriptorManager::Pool* getDescriptorPool() const { return lifecycle.getDescriptorPool(); }
-    const std::string& getShaderPath() const { return lifecycle.getShaderPath(); }
-    uint32_t getFramesInFlight() const { return lifecycle.getFramesInFlight(); }
+    vk::Device getDevice() const { return device_; }
+    VmaAllocator getAllocator() const { return allocator_; }
+    DescriptorManager::Pool* getDescriptorPool() const { return descriptorPool_; }
+    const std::string& getShaderPath() const { return shaderPath_; }
+    uint32_t getFramesInFlight() const { return framesInFlight_; }
 
-    SystemLifecycleHelper::PipelineHandles& getComputePipelineHandles() { return lifecycle.getComputePipeline(); }
-
-    SystemLifecycleHelper lifecycle;
+    vk::Device device_{};
+    VmaAllocator allocator_ = nullptr;
+    DescriptorManager::Pool* descriptorPool_ = nullptr;
+    std::string shaderPath_;
+    uint32_t framesInFlight_ = 0;
+    const vk::raii::Device* raiiDevice_ = nullptr;
 
     // Snow mask texture (world-space coverage)
     static constexpr uint32_t SNOW_MASK_SIZE = 512;  // 512x512 texels
     static constexpr uint32_t MAX_INTERACTIONS = 32; // Max interaction sources per frame
 
+    // Members below are declared in dependency order: reverse-order destruction
+    // releases the pipeline first and the image last.
     ManagedImage snowMaskImage;
     std::optional<vk::raii::ImageView> snowMaskView;
     std::optional<vk::raii::Sampler> snowMaskSampler_;
 
-    // Uniform buffers (per frame)
-    BufferUtils::PerFrameBufferSet uniformBuffers;
+    // Uniform buffers (per frame, persistently mapped)
+    std::vector<ManagedBuffer> uniformBuffers_;
+    std::vector<void*> uniformMapped_;
 
-    // Interaction sources buffer (per frame)
-    BufferUtils::PerFrameBufferSet interactionBuffers;
+    // Interaction sources buffer (per frame, persistently mapped)
+    std::vector<ManagedBuffer> interactionBuffers_;
+    std::vector<void*> interactionMapped_;
 
-    // Descriptor sets (per frame)
+    // Compute pipeline (RAII-managed)
+    std::optional<vk::raii::DescriptorSetLayout> computeSetLayout_;
+    std::optional<vk::raii::PipelineLayout> computePipelineLayout_;
+    std::optional<vk::raii::Pipeline> computePipeline_;
+
+    // Descriptor sets (per frame; pool-owned, released with the pool)
     std::vector<vk::DescriptorSet> computeDescriptorSets;
 
     // Mask world-space parameters
@@ -146,5 +157,4 @@ private:
     bool isFirstFrame = true;  // Track first frame for layout transitions
 
     bool initInternal(const InitInfo& info);
-    void cleanup();
 };
